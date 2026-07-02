@@ -138,24 +138,48 @@ Write-Host ""
 Write-Host "  Bu oynani OCHIQ qoldiring. To'xtatish: Ctrl+C" -ForegroundColor DarkGray
 Write-Host ""
 
-while ($listener.IsListening) {
-  try {
-    $ctx = $listener.GetContext()
-  } catch { break }
+# ── Har so'rovni alohida oqim (runspace)да qayta ishlaydigan handler ──────────
+# Bir vaqtda bir necha printerga chiqarilganда biri ikkinchisini KUTMASLIGI uchun
+# har HTTP so'rov mustaqil runspace'да ishlaydi (max 8 parallel). Handler o'zi-
+# yetarli — kerakli yordamchilarni ichida qayta ta'riflaydi ([ShersetRawPrinter]
+# AppDomain-global, shu sabab hamma runspace'да ko'rinadi).
+$handler = {
+  param($ctx)
+
+  function Write-Response($ctx, [int]$status, [string]$body, [string]$contentType = 'application/json') {
+    $resp = $ctx.Response
+    $resp.StatusCode = $status
+    $resp.ContentType = $contentType
+    $resp.Headers['Access-Control-Allow-Origin']  = '*'
+    $resp.Headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+    $resp.Headers['Access-Control-Allow-Headers'] = 'Content-Type'
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($body)
+    $resp.ContentLength64 = $bytes.Length
+    $resp.OutputStream.Write($bytes, 0, $bytes.Length)
+    $resp.OutputStream.Close()
+  }
+  function Get-PrinterNames {
+    try { return @(Get-CimInstance -ClassName Win32_Printer -ErrorAction Stop | Select-Object -ExpandProperty Name) }
+    catch { return @(Get-WmiObject -Class Win32_Printer | Select-Object -ExpandProperty Name) }
+  }
+  function Build-EscPos([string]$text) {
+    $esc = [char]27; $gs = [char]29
+    $init = "$esc@"
+    $cut  = "$gs" + "V" + [char]66 + [char]0
+    $payload = $init + $text + "`n`n`n" + $cut
+    return [System.Text.Encoding]::GetEncoding(1251).GetBytes($payload)
+  }
 
   $req = $ctx.Request
   $path = $req.Url.AbsolutePath.TrimEnd('/')
   $method = $req.HttpMethod
 
   try {
-    if ($method -eq 'OPTIONS') {
-      Write-Response $ctx 204 ''
-      continue
-    }
+    if ($method -eq 'OPTIONS') { Write-Response $ctx 204 ''; return }
 
     switch ("$method $path") {
       'GET /health' {
-        Write-Response $ctx 200 '{"ok":true,"agent":"sherset-print-agent","version":"1.0"}'
+        Write-Response $ctx 200 '{"ok":true,"agent":"sherset-print-agent","version":"1.1","concurrent":true}'
       }
       'GET /printers' {
         $names = Get-PrinterNames
@@ -168,8 +192,7 @@ while ($listener.IsListening) {
         $data = $raw | ConvertFrom-Json
         $printer = [string]$data.printer
         if ([string]::IsNullOrWhiteSpace($printer)) {
-          Write-Response $ctx 400 '{"ok":false,"error":"printer nomi yo''q"}'
-          continue
+          Write-Response $ctx 400 '{"ok":false,"error":"printer nomi berilmadi"}'; return
         }
         [byte[]]$bytes = $null
         if ($data.PSObject.Properties.Name -contains 'dataBase64' -and $data.dataBase64) {
@@ -177,22 +200,47 @@ while ($listener.IsListening) {
         } elseif ($data.PSObject.Properties.Name -contains 'text' -and $data.text) {
           $bytes = Build-EscPos ([string]$data.text)
         } else {
-          Write-Response $ctx 400 '{"ok":false,"error":"dataBase64 yoki text kerak"}'
-          continue
+          Write-Response $ctx 400 '{"ok":false,"error":"dataBase64 yoki text kerak"}'; return
         }
         [ShersetRawPrinter]::SendBytes($printer, $bytes) | Out-Null
-        Write-Host "  -> chop etildi: '$printer' ($($bytes.Length) bayt)" -ForegroundColor Cyan
+        try { Write-Host ("  -> chop etildi: '" + $printer + "' (" + $bytes.Length + " bayt)") -ForegroundColor Cyan } catch {}
         Write-Response $ctx 200 '{"ok":true}'
       }
-      default {
-        Write-Response $ctx 404 '{"ok":false,"error":"not found"}'
-      }
+      default { Write-Response $ctx 404 '{"ok":false,"error":"not found"}' }
     }
   } catch {
     $msg = ($_.Exception.Message -replace '"','\"' -replace "`r?`n",' ')
     try { Write-Response $ctx 500 "{`"ok`":false,`"error`":`"$msg`"}" } catch {}
-    Write-Host "  !! xato: $msg" -ForegroundColor Red
+    try { Write-Host "  !! xato: $msg" -ForegroundColor Red } catch {}
   }
 }
 
+# Runspace pool — bir vaqtда 8 tagacha so'rov mustaqil qayta ishlanadi.
+$iss = [System.Management.Automation.Runspaces.InitialSessionState]::CreateDefault()
+$pool = [runspacefactory]::CreateRunspacePool(1, 8, $iss, $Host)
+$pool.Open()
+$pending = New-Object System.Collections.ArrayList
+
+while ($listener.IsListening) {
+  try {
+    $ctx = $listener.GetContext()   # ulanishni qabul qilish (tez) — keyin darhol oqimга topshiriladi
+  } catch { break }
+
+  $ps = [powershell]::Create()
+  $ps.RunspacePool = $pool
+  [void]$ps.AddScript($handler).AddArgument($ctx)
+  $async = $ps.BeginInvoke()
+  [void]$pending.Add(@{ PS = $ps; Async = $async })
+
+  # Tugagan handlerlarni tozalash (xotira o'smasligi uchun).
+  for ($i = $pending.Count - 1; $i -ge 0; $i--) {
+    if ($pending[$i].Async.IsCompleted) {
+      try { $pending[$i].PS.EndInvoke($pending[$i].Async) } catch {}
+      $pending[$i].PS.Dispose()
+      $pending.RemoveAt($i)
+    }
+  }
+}
+
+$pool.Close()
 $listener.Stop()

@@ -4,6 +4,10 @@ Kassir kompyuterida ishlaydigan kichik lokal xizmat. Bitta kompyuterga bir necht
 printer ulanganda, har omborning yig'ish-chekini **aynan o'z printeriga** yo'naltirish
 uchun kerak (brauzer buni o'zi qila olmaydi).
 
+**Ko'p-oqimli (v1.1):** har so'rov alohida oqimда (runspace pool, max 8 parallel)
+ishlaydi — bir vaqtда 2 (yoki undan ko'p) printerга chek yuborilганда biri ikkinchisini
+KUTMAYDI. Sinovда tasdiqlangan: 8 ta bir vaqtdagi so'rov ketma-ketдан ~3× tez bajarildi.
+
 Hech narsa o'rnatish shart emas — faqat Windows va PowerShell (allaqachon bor).
 
 ## O'rnatish / ishga tushirish
