@@ -12,6 +12,7 @@
 import { randomUUID } from 'node:crypto';
 import * as argon2 from 'argon2';
 import { PrismaClient } from '../src/generated/index.js';
+import { CATALOG_50 } from './delixi-uzkabel-data.js';
 import { seedCountries } from './country-seed.js';
 import { seedHelpArticles } from './help-seed.js';
 
@@ -289,28 +290,7 @@ async function main(): Promise<void> {
         });
       }
     }
-    const [firstName, ...rest] = sr.demo.name.split(' ');
-    const empHash = await argon2.hash(sr.password, { type: argon2.argon2id });
-    const emp = await prisma.employee.upsert({
-      where: { accountId_email: { accountId: account.id, email: sr.demo.email } },
-      update: { passwordHash: empHash, username: sr.demo.username },
-      create: {
-        accountId: account.id,
-        email: sr.demo.email,
-        username: sr.demo.username,
-        passwordHash: empHash,
-        name: sr.demo.name,
-        firstName,
-        lastName: rest.join(' ') || sr.demo.username,
-        position: sr.demo.position,
-      },
-    });
-    await prisma.employeeRole.upsert({
-      where: { employeeId_roleId: { employeeId: emp.id, roleId: role.id } },
-      update: {},
-      create: { employeeId: emp.id, roleId: role.id },
-    });
-    console.log(`  ✓ Role + demo xodim: ${sr.name} (login: ${sr.demo.username} / ${sr.password})`);
+    console.log(`  ✓ Role: ${sr.name}`);
   }
 
   // Named staff accounts — 2 kassir + 2 omborchi, all password '123456'.
@@ -433,19 +413,16 @@ async function main(): Promise<void> {
     update: {},
     create: {
       accountId: account.id,
-      name: 'Asosiy ombor',
+      name: 'Ombor 1',
       code: 'MAIN',
-      address: "Tashkent, Amir Temur ko'chasi, 10",
+      address: 'Toshkent, Chilonzor tumani',
     },
   });
   console.log('  ✓ Store:', store.name);
 
-  // Two extra named warehouses (ombor) beyond the main one.
+  // Exactly two warehouses (ombor): «Ombor 1» (main) + «Ombor 2».
   const warehouseIds: string[] = [store.id];
-  for (const s of [
-    { name: 'Ombor 1', code: 'WH01', address: 'Toshkent, Chilonzor tumani' },
-    { name: 'Ombor 2', code: 'WH02', address: 'Toshkent, Yunusobod tumani' },
-  ]) {
+  for (const s of [{ name: 'Ombor 2', code: 'WH02', address: 'Toshkent, Yunusobod tumani' }]) {
     const st = await prisma.store.upsert({
       where: { accountId_code: { accountId: account.id, code: s.code } },
       update: {},
@@ -539,55 +516,57 @@ async function main(): Promise<void> {
     console.log('  ✓ Product:', prod.name);
   }
 
-  // 50 bulk demo products (tovar) — realistic UZS prices + full attributes
-  // (barcode, article, weight, shelf location). Idempotent by code; the
-  // `update` block backfills these fields onto already-seeded rows.
-  const bulkProducts = Array.from({ length: 50 }, (_, i) => {
-    const n = i + 1;
-    const buyUzs = 50_000 + n * 2_000;
-    const saleUzs = Math.round(buyUzs * 1.3);
-    return {
-      name: `Mahsulot ${n}`,
-      code: `SKU-${String(n).padStart(4, '0')}`,
-      buyPrice: BigInt(buyUzs * 100), // minor units (tiyin)
-      salePrice: BigInt(saleUzs * 100),
-      barcode: `200${String(n).padStart(10, '0')}`, // 13-digit EAN-like
-      article: `ART-${String(n).padStart(4, '0')}`,
-      weightG: 100 + n * 5,
-      locSklad: ((n - 1) % 5) + 1, // склад 1-5
-      locPolka: ((n - 1) % 10) + 1, // полка 1-10
-      locQavat: ((n - 1) % 3) + 1, // ярус 1-3
-      locYacheyka: n, // ячейка
-    };
+  // ── Delixi & UzKabel catalog: 50 products (30 Delixi + 20 UzKabel), each with
+  //    full attributes (barcode, article, weight, shelf location, buy/sale price)
+  //    under a per-brand folder. Idempotent by code. ──
+  const delixiFolder = await prisma.productFolder.upsert({
+    where: { accountId_code: { accountId: account.id, code: 'DELIXI' } },
+    update: {},
+    create: { accountId: account.id, name: 'Delixi', code: 'DELIXI', pathName: 'Delixi', vat: 12, vatEnabled: true },
   });
+  const uzkabelFolder = await prisma.productFolder.upsert({
+    where: { accountId_code: { accountId: account.id, code: 'UZKABEL' } },
+    update: {},
+    create: { accountId: account.id, name: 'UzKabel', code: 'UZKABEL', pathName: 'UzKabel', vat: 12, vatEnabled: true },
+  });
+
   const bulkStock: Array<{ id: string; buyPrice: bigint }> = [];
-  for (const p of bulkProducts) {
+  let catIdx = 0;
+  for (const p of CATALOG_50) {
+    catIdx++;
+    const isUz = p.code.startsWith('UK-');
     const attrs = {
       name: p.name,
       kind: 'product',
-      buyPrice: p.buyPrice,
-      salePrices: [{ priceTypeId: retailType.id, value: p.salePrice.toString() }],
+      buyPrice: BigInt(p.buy * 100), // so'm → tiyin
+      salePrices: [{ priceTypeId: retailType.id, value: String(p.sale * 100) }],
       vat: 12,
       vatEnabled: true,
       useParentVat: false,
-      uom: 'шт',
-      barcodes: [p.barcode],
-      article: p.article,
-      weightG: p.weightG,
-      locSklad: p.locSklad,
-      locPolka: p.locPolka,
-      locQavat: p.locQavat,
-      locYacheyka: p.locYacheyka,
+      uom: p.uom,
+      barcodes: [`200${String(catIdx).padStart(10, '0')}`],
+      article: p.code,
+      weightG: 100 + catIdx * 5,
+      locSklad: ((catIdx - 1) % 5) + 1,
+      locPolka: ((catIdx - 1) % 12) + 1,
+      locQavat: ((catIdx - 1) % 4) + 1,
+      locYacheyka: catIdx,
     };
     const prod = await prisma.product.upsert({
       where: { accountId_code: { accountId: account.id, code: p.code } },
       update: attrs,
-      create: { accountId: account.id, ownerId: admin.id, productFolderId: folder.id, code: p.code, ...attrs },
+      create: {
+        accountId: account.id,
+        ownerId: admin.id,
+        productFolderId: isUz ? uzkabelFolder.id : delixiFolder.id,
+        code: p.code,
+        ...attrs,
+      },
     });
     productByCode.set(p.code, prod.id);
-    bulkStock.push({ id: prod.id, buyPrice: p.buyPrice });
+    bulkStock.push({ id: prod.id, buyPrice: attrs.buyPrice });
   }
-  console.log(`  ✓ Bulk products (barcode/article/weight/location): ${bulkProducts.length}`);
+  console.log(`  ✓ Delixi/UzKabel products (barcode/article/weight/location/price): ${CATALOG_50.length}`);
 
   // Initial stock (kirim) for the 50 bulk products — random 20-200 units per
   // product spread across the 3 warehouses. Writes both the balance (stocks)
@@ -601,17 +580,11 @@ async function main(): Promise<void> {
       select: { assortmentId: true },
     });
     if (already) continue;
-    // split a random 20-200 total into 3 warehouse portions
-    const total = 20 + Math.floor(Math.random() * 181);
-    const parts = [
-      Math.floor(total * 0.5),
-      Math.floor(total * 0.3),
-      total - Math.floor(total * 0.5) - Math.floor(total * 0.3),
-    ];
+    // Every product is stocked in EACH warehouse with an independent 20-200 qty.
     for (let w = 0; w < warehouseIds.length; w++) {
       const storeId = warehouseIds[w];
       const docId = enterDocIds[w];
-      const qty = parts[w] ?? 0;
+      const qty = 20 + Math.floor(Math.random() * 181);
       if (!storeId || !docId || qty <= 0) continue;
       const cost = BigInt(qty) * s.buyPrice;
       await prisma.stock.create({
