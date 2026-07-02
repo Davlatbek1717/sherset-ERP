@@ -393,6 +393,19 @@ async function main(): Promise<void> {
   });
   console.log('  ✓ Store:', store.name);
 
+  // Two extra named warehouses (ombor) beyond the main one.
+  for (const s of [
+    { name: 'Ombor 1', code: 'WH01', address: 'Toshkent, Chilonzor tumani' },
+    { name: 'Ombor 2', code: 'WH02', address: 'Toshkent, Yunusobod tumani' },
+  ]) {
+    const st = await prisma.store.upsert({
+      where: { accountId_code: { accountId: account.id, code: s.code } },
+      update: {},
+      create: { accountId: account.id, name: s.name, code: s.code, address: s.address },
+    });
+    console.log('  ✓ Store:', st.name);
+  }
+
   const folder = await prisma.productFolder.upsert({
     where: { accountId_code: { accountId: account.id, code: 'PHONES' } },
     update: {},
@@ -476,6 +489,42 @@ async function main(): Promise<void> {
     productByCode.set(p.code, prod.id);
     console.log('  ✓ Product:', prod.name);
   }
+
+  // 50 bulk demo products (tovar) — realistic UZS prices, all under the same
+  // folder + default retail price type. Idempotent by code (SKU-0001..0050).
+  const bulkProducts = Array.from({ length: 50 }, (_, i) => {
+    const n = i + 1;
+    const buyUzs = 50_000 + n * 2_000;
+    const saleUzs = Math.round(buyUzs * 1.3);
+    return {
+      name: `Mahsulot ${n}`,
+      code: `SKU-${String(n).padStart(4, '0')}`,
+      buyPrice: BigInt(buyUzs * 100), // minor units (tiyin)
+      salePrice: BigInt(saleUzs * 100),
+    };
+  });
+  for (const p of bulkProducts) {
+    const prod = await prisma.product.upsert({
+      where: { accountId_code: { accountId: account.id, code: p.code } },
+      update: {},
+      create: {
+        accountId: account.id,
+        ownerId: admin.id,
+        productFolderId: folder.id,
+        name: p.name,
+        code: p.code,
+        kind: 'product',
+        buyPrice: p.buyPrice,
+        salePrices: [{ priceTypeId: retailType.id, value: p.salePrice.toString() }],
+        vat: 12,
+        vatEnabled: true,
+        useParentVat: false,
+        uom: 'шт',
+      },
+    });
+    productByCode.set(p.code, prod.id);
+  }
+  console.log(`  ✓ Bulk products seeded: ${bulkProducts.length}`);
 
   const cps = [
     {
