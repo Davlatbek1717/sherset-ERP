@@ -30,7 +30,9 @@ const MODULE_ENTITIES: Record<string, string[]> = {
   // must NOT reveal the Stock (operations) module. Gate on stock DOCUMENTS only.
   stock: ['move', 'enter', 'loss', 'inventory', 'internalorder'],
   money: ['paymentin', 'paymentout', 'cashin', 'cashout', 'prepayment'],
-  retail: ['retailsale', 'cashiersession'],
+  // Retail (POS) is gated on cashiersession only — a warehouse worker gets
+  // retailsale view/update for the picking flow but must NOT see the POS module.
+  retail: ['cashiersession'],
   production: ['processing', 'processingorder', 'bom'],
   tasks: ['task'],
   hr: ['employee'],
@@ -354,6 +356,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     { key: 'pickingwaves', label: tStock('picking_waves'), href: '/picking-waves' },
     { key: 'internalorders', label: tStock('internal_orders'), href: '/internal-orders' },
     { key: 'restocktasks', label: tStock('restock'), href: '/restock-tasks' },
+    { key: 'omborchi', label: 'Omborchi (yig\'ish)', href: '/omborchi' },
     { key: 'remains', label: tStock('remains'), href: '/stock-balance' },
     { key: 'turnover', label: tStock('turnover'), href: '/turnover' },
     { key: 'stores', label: tStock('stores'), href: '/stores' },
@@ -390,7 +393,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   const retailSubNav: SubNavItem[] = [
     { key: 'sotuv', label: tRetail('sotuv'), href: '/sotuv' },
-    { key: 'omborchi', label: 'Omborchi', href: '/omborchi' },
     { key: 'sessions', label: tRetail('sessions'), href: '/retail/sessions' },
     { key: 'sales', label: tRetail('sales'), href: '/retail/sales' },
     { key: 'z_report', label: tRetail('z_report'), href: '/retail/z-report' },
@@ -499,6 +501,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   pathname.startsWith('/stores') ||
                   pathname.startsWith('/turnover') ||
                   pathname.startsWith('/stock-balance') ||
+                  pathname.startsWith('/omborchi') ||
+                  pathname.startsWith('/restock-tasks') ||
                   pathname.startsWith('/stock')
                 ? 'stock'
                 : pathname.startsWith('/reports')

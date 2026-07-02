@@ -269,6 +269,9 @@ async function main(): Promise<void> {
         internalorder: ['view', 'create'],
         supply: ['view', 'update'],
         demand: ['view'],
+        // Picking flow: the omborchi reads retail sales sent to picking and
+        // marks them ready → needs retailsale view + update (NOT create/sell).
+        retailsale: ['view', 'update'],
         report: ['view'],
       },
       demo: { email: 'skladchi@demo.local', username: 'skladchi', name: 'Skladchi Demo', position: 'Omborchi' },
@@ -309,6 +312,7 @@ async function main(): Promise<void> {
     { username: 'omborchi1', name: 'Omborchi 1', position: 'Omborchi', roleId: skladchiRole?.id },
     { username: 'omborchi2', name: 'Omborchi 2', position: 'Omborchi', roleId: skladchiRole?.id },
   ];
+  const empByUsername = new Map<string, string>();
   for (const s of staffAccounts) {
     const parts = s.name.split(' ');
     const emp = await prisma.employee.upsert({
@@ -325,6 +329,7 @@ async function main(): Promise<void> {
         position: s.position,
       },
     });
+    empByUsername.set(s.username, emp.id);
     if (s.roleId) {
       await prisma.employeeRole.upsert({
         where: { employeeId_roleId: { employeeId: emp.id, roleId: s.roleId } },
@@ -333,6 +338,24 @@ async function main(): Promise<void> {
       });
     }
     console.log(`  ✓ Xodim: ${s.username} / 123456 (${s.position})`);
+  }
+
+  // Sklad-keepers (ombor mas'uli) — every product sits in sklad 1 or 2 (see the
+  // catalog locSklad below), so a picking sale is auto-assigned to the keeper of
+  // its product's sklad. Without a keeper the picking task has no assignee and
+  // never reaches an omborchi. Map: sklad 1 → omborchi1, sklad 2 → omborchi2.
+  for (const k of [
+    { skladNo: 1, username: 'omborchi1', name: 'Omborchi 1' },
+    { skladNo: 2, username: 'omborchi2', name: 'Omborchi 2' },
+  ]) {
+    const empId = empByUsername.get(k.username);
+    if (!empId) continue;
+    await prisma.skladKeeper.upsert({
+      where: { accountId_skladNo: { accountId: account.id, skladNo: k.skladNo } },
+      update: { employeeId: empId, employeeName: k.name },
+      create: { accountId: account.id, skladNo: k.skladNo, employeeId: empId, employeeName: k.name },
+    });
+    console.log(`  ✓ Sklad-keeper: sklad ${k.skladNo} → ${k.username}`);
   }
 
   const org = await prisma.organization.upsert({
@@ -547,7 +570,9 @@ async function main(): Promise<void> {
       barcodes: [`200${String(catIdx).padStart(10, '0')}`],
       article: p.code,
       weightG: 100 + catIdx * 5,
-      locSklad: ((catIdx - 1) % 5) + 1,
+      // sklad 1 or 2 only — matches the two seeded sklad-keepers so every
+      // picking sale is assignable to omborchi1 (sklad 1) or omborchi2 (sklad 2).
+      locSklad: ((catIdx - 1) % 2) + 1,
       locPolka: ((catIdx - 1) % 12) + 1,
       locQavat: ((catIdx - 1) % 4) + 1,
       locYacheyka: catIdx,
