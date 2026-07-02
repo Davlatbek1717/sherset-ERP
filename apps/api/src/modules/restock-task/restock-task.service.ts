@@ -204,10 +204,25 @@ export class RestockTaskService {
       .map(([key, entries]) => {
         const skladNo = key === NULL_SKLAD ? null : key;
         const keeper = skladNo != null ? keeperBySklad.get(skladNo) : undefined;
+        // Serpentine (boustrophedon) pick route: walk the aisles (polka) in
+        // order, but reverse the cell (yacheyka) direction on every other aisle
+        // so the picker snakes through the zone without backtracking. Tier
+        // (qavat) is the secondary key; items with no location sort last.
+        const routed = [...entries].sort((a, b) => {
+          const pa = a.prod?.locPolka ?? 9999;
+          const pb = b.prod?.locPolka ?? 9999;
+          if (pa !== pb) return pa - pb;
+          const qa = a.prod?.locQavat ?? 0;
+          const qb = b.prod?.locQavat ?? 0;
+          if (qa !== qb) return qa - qb;
+          const ya = a.prod?.locYacheyka ?? 0;
+          const yb = b.prod?.locYacheyka ?? 0;
+          return pa % 2 === 0 ? yb - ya : ya - yb;
+        });
         return {
           skladNo,
           omborchiName: keeper?.employeeName ?? null,
-          lines: entries.map((e) => ({
+          lines: routed.map((e) => ({
             productId: e.prod?.id ?? null,
             productName: e.prod?.name ?? '—',
             quantity: e.pos.quantity,
