@@ -154,6 +154,7 @@ export function FilterDrawer({
                 </Button>
                 <Dialog.Close asChild>
                   <button
+                    type="button"
                     className="w-8 h-8 rounded-[var(--ms-radius-default)] hover:bg-[var(--ms-bg-hover)] flex items-center justify-center text-[var(--ms-text-muted)]"
                     aria-label="Yopish"
                   >

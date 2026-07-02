@@ -43,36 +43,22 @@ export function DocumentDisclosurePanel({
       )}
       data-test-id={testId}
     >
-      <header
-        className="flex cursor-pointer select-none items-center gap-2 border-l-4 border-l-[var(--ms-warning-300,#f5a623)] px-3 py-2"
-        onClick={() => setOpen((v) => !v)}
-        role="button"
-        tabIndex={0}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            setOpen((v) => !v);
-          }
-        }}
-        aria-expanded={open}
-      >
-        <Icons.down
-          className={cn(
-            'h-4 w-4 text-[var(--ms-text-muted)] transition-transform',
-            !open && '-rotate-90',
-          )}
-        />
-        <span className="font-medium text-[var(--ms-text-primary)] text-sm">{title}</span>
-        {headerAction && (
-          <span
-            className="ml-auto"
-            onClick={(e) => e.stopPropagation()}
-            onKeyDown={(e) => e.stopPropagation()}
-            role="presentation"
-          >
-            {headerAction}
-          </span>
-        )}
+      <header className="flex items-center gap-2 border-l-4 border-l-[var(--ms-warning-300,#f5a623)] px-3 py-2">
+        <button
+          type="button"
+          className="flex flex-1 cursor-pointer select-none items-center gap-2 text-left"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+        >
+          <Icons.down
+            className={cn(
+              'h-4 w-4 text-[var(--ms-text-muted)] transition-transform',
+              !open && '-rotate-90',
+            )}
+          />
+          <span className="font-medium text-[var(--ms-text-primary)] text-sm">{title}</span>
+        </button>
+        {headerAction && <span className="ml-auto">{headerAction}</span>}
       </header>
       {open && (
         <div className="border-[var(--ms-border-default)] border-t p-3">{children}</div>

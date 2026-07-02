@@ -194,6 +194,7 @@ function ToastItem({
 }) {
   const Icon = ICON[toast.tone];
   return (
+    // biome-ignore lint/a11y/useSemanticElements: role="status" is the idiomatic ARIA live region for a toast; <output> implies form association that doesn't fit.
     <div
       role="status"
       aria-live={TONE_ARIA[toast.tone]}

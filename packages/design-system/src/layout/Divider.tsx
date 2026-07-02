@@ -7,6 +7,7 @@ export interface DividerProps extends React.HTMLAttributes<HTMLDivElement> {
 
 export const Divider = React.forwardRef<HTMLDivElement, DividerProps>(
   ({ className, orientation = 'horizontal', ...props }, ref) => (
+    // biome-ignore lint/a11y/useFocusableInteractive: a static visual separator is a structure role, not a focusable splitter — it must NOT be in the tab order.
     <div
       ref={ref}
       role="separator"
