@@ -77,7 +77,7 @@ export class RetailSaleController {
   @Post(':id/mark-ready')
   @RequirePermission({ entity: 'retailsale', action: 'update' })
   async markReady(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
-    return this.sales.markReady(user.accountId, id);
+    return this.sales.markReady(user.accountId, id, user.sub);
   }
 
   @Post(':id/cancel')

@@ -682,7 +682,19 @@ export class RetailSaleService {
     }
   }
 
-  async markReady(accountId: string, id: string) {
+  /**
+   * Omborchi «✓ Tayyor» — PER-WAREHOUSE. A sale that spans several sklads has one
+   * picking RestockTask per warehouse (createPickingTasksForSale). This marks ONLY
+   * the calling omborchi's own task(s) done, and flips the sale 'picking' → 'ready'
+   * ONLY once EVERY warehouse's picking task is done. Previously one keeper pressing
+   * «Tayyor» force-closed all tasks and readied the whole sale, so another warehouse's
+   * items were silently skipped — this fixes that multi-warehouse leak.
+   *
+   * Fallback: if the caller owns no picking task for this sale (e.g. a single-shop
+   * setup with no sklad-keepers, or a manual admin override), every picking task is
+   * marked done so the button still works.
+   */
+  async markReady(accountId: string, id: string, userId: string) {
     const sale = await this.prisma.client.retailSale.findFirst({
       where: { id, accountId },
       select: { id: true, state: true },
@@ -693,15 +705,48 @@ export class RetailSaleService {
         `Only picking sales can be marked ready (current: ${sale.state})`,
       );
     }
-    const result = await this.prisma.client.retailSale.updateMany({
-      where: { id, accountId, state: 'picking' },
-      data: { state: 'ready' },
+
+    // Does THIS omborchi own a picking task for this sale?
+    const myTaskCount = await this.prisma.client.restockTask.count({
+      where: {
+        accountId,
+        sourceId: id,
+        sourceType: 'retailsale',
+        type: 'picking',
+        assigneeId: userId,
+      },
     });
-    if (result.count === 0) {
-      throw new ConflictException('Sale state changed; mark-ready aborted');
+
+    if (myTaskCount > 0) {
+      // Per-warehouse: close only the caller's own zone.
+      await this.prisma.client.restockTask.updateMany({
+        where: {
+          accountId,
+          sourceId: id,
+          sourceType: 'retailsale',
+          type: 'picking',
+          assigneeId: userId,
+          status: { not: 'done' },
+        },
+        data: { status: 'done' },
+      });
+    } else {
+      // No keeper-assigned task for this user → legacy behaviour: close everything.
+      await this.prisma.client.restockTask.updateMany({
+        where: {
+          accountId,
+          sourceId: id,
+          sourceType: 'retailsale',
+          type: 'picking',
+          status: { not: 'done' },
+        },
+        data: { status: 'done' },
+      });
     }
-    // Mark all picking RestockTasks for this sale as done.
-    await this.prisma.client.restockTask.updateMany({
+
+    // Any warehouse still outstanding? Then the sale stays 'picking' — this
+    // omborchi's zone is done, but another keeper hasn't collected theirs yet.
+    const remaining = await this.prisma.client.restockTask.count({
       where: {
         accountId,
         sourceId: id,
@@ -709,8 +754,19 @@ export class RetailSaleService {
         type: 'picking',
         status: { not: 'done' },
       },
-      data: { status: 'done' },
     });
+    if (remaining > 0) {
+      return this.prisma.client.retailSale.findUniqueOrThrow({ where: { id } });
+    }
+
+    // All warehouses done → flip to 'ready' (atomic guard against a racing post/cancel).
+    const result = await this.prisma.client.retailSale.updateMany({
+      where: { id, accountId, state: 'picking' },
+      data: { state: 'ready' },
+    });
+    if (result.count === 0) {
+      throw new ConflictException('Sale state changed; mark-ready aborted');
+    }
     return this.prisma.client.retailSale.findUniqueOrThrow({ where: { id } });
   }
 
