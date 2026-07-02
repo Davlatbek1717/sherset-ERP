@@ -240,8 +240,9 @@ async function main(): Promise<void> {
       desc: 'Kassir — chakana savdo va kassa',
       password: 'kassir123',
       perms: {
-        retailsale: ['view', 'create', 'update', 'print'],
-        cashiersession: ['view', 'create', 'update'],
+        // approve = take payment (POST /retail-sales/:id/post) + refund.
+        retailsale: ['view', 'create', 'update', 'approve', 'print'],
+        cashiersession: ['view', 'create', 'update', 'approve'],
         cashin: ['view', 'create'],
         cashout: ['view', 'create'],
         paymentin: ['view', 'create'],

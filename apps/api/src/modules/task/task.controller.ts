@@ -33,8 +33,9 @@ export class TaskController {
    * them, not done/cancelled, dueAt in the past or not set. Drives the
    * red badge on the navbar Задачи tab (moysklad parity).
    */
+  // Personal navbar counter (the current user's own overdue/active tasks) —
+  // shown on every page, so no module permission is required.
   @Get('badge-count')
-  @RequirePermission({ entity: 'task', action: 'view' })
   async badgeCount(@CurrentUser() user: AuthenticatedUser) {
     return { count: await this.svc.badgeCount(user.accountId, user.sub) };
   }
