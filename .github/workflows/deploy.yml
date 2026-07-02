@@ -1,0 +1,29 @@
+name: Deploy to VPS
+
+# Manual trigger only (Actions tab → "Deploy to VPS" → Run workflow).
+# Requires repo secrets: VPS_HOST, VPS_USER, VPS_PASSWORD.
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH deploy (pull → build → reload)
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          command_timeout: 20m
+          script: |
+            set -e
+            export PATH="$HOME/.local/share/pnpm:/usr/local/bin:/usr/bin:/bin:$PATH"
+            cd /var/www/sherset
+            git pull origin main
+            pnpm install --frozen-lockfile
+            pnpm --filter @moysklad/money build
+            pnpm build:web
+            pm2 reload sherset-api sherset-web --update-env
+            pm2 save
+            echo "deployed: $(git log --oneline -1)"

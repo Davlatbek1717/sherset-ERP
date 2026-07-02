@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.11.0'
+          cache: pnpm
+
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Prisma generate
+        run: pnpm --filter @moysklad/db exec prisma generate
+
+      - name: Build source packages (money → dist, needed by typecheck)
+        run: pnpm --filter @moysklad/money build
+
+      # GATE — must pass. Mirrors the local pre-push hook.
+      - name: Typecheck
+        run: pnpm typecheck
+
+      # Report-only for now (repo carries ~458 pre-existing biome findings).
+      - name: Lint (report only)
+        run: pnpm lint || true
+        continue-on-error: true
+
+      # Report-only until the suite is stabilised in CI.
+      - name: Unit tests (report only)
+        run: pnpm test || true
+        continue-on-error: true
