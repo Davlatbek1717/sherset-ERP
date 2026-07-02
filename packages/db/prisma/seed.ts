@@ -9,6 +9,7 @@
  *  - 2 sample Counterparties
  */
 
+import { randomUUID } from 'node:crypto';
 import * as argon2 from 'argon2';
 import { PrismaClient } from '../src/generated/index.js';
 import { seedCountries } from './country-seed.js';
@@ -394,6 +395,7 @@ async function main(): Promise<void> {
   console.log('  ✓ Store:', store.name);
 
   // Two extra named warehouses (ombor) beyond the main one.
+  const warehouseIds: string[] = [store.id];
   for (const s of [
     { name: 'Ombor 1', code: 'WH01', address: 'Toshkent, Chilonzor tumani' },
     { name: 'Ombor 2', code: 'WH02', address: 'Toshkent, Yunusobod tumani' },
@@ -403,6 +405,7 @@ async function main(): Promise<void> {
       update: {},
       create: { accountId: account.id, name: s.name, code: s.code, address: s.address },
     });
+    warehouseIds.push(st.id);
     console.log('  ✓ Store:', st.name);
   }
 
@@ -490,8 +493,9 @@ async function main(): Promise<void> {
     console.log('  ✓ Product:', prod.name);
   }
 
-  // 50 bulk demo products (tovar) — realistic UZS prices, all under the same
-  // folder + default retail price type. Idempotent by code (SKU-0001..0050).
+  // 50 bulk demo products (tovar) — realistic UZS prices + full attributes
+  // (barcode, article, weight, shelf location). Idempotent by code; the
+  // `update` block backfills these fields onto already-seeded rows.
   const bulkProducts = Array.from({ length: 50 }, (_, i) => {
     const n = i + 1;
     const buyUzs = 50_000 + n * 2_000;
@@ -501,30 +505,97 @@ async function main(): Promise<void> {
       code: `SKU-${String(n).padStart(4, '0')}`,
       buyPrice: BigInt(buyUzs * 100), // minor units (tiyin)
       salePrice: BigInt(saleUzs * 100),
+      barcode: `200${String(n).padStart(10, '0')}`, // 13-digit EAN-like
+      article: `ART-${String(n).padStart(4, '0')}`,
+      weightG: 100 + n * 5,
+      locSklad: ((n - 1) % 5) + 1, // склад 1-5
+      locPolka: ((n - 1) % 10) + 1, // полка 1-10
+      locQavat: ((n - 1) % 3) + 1, // ярус 1-3
+      locYacheyka: n, // ячейка
     };
   });
+  const bulkStock: Array<{ id: string; buyPrice: bigint }> = [];
   for (const p of bulkProducts) {
+    const attrs = {
+      name: p.name,
+      kind: 'product',
+      buyPrice: p.buyPrice,
+      salePrices: [{ priceTypeId: retailType.id, value: p.salePrice.toString() }],
+      vat: 12,
+      vatEnabled: true,
+      useParentVat: false,
+      uom: 'шт',
+      barcodes: [p.barcode],
+      article: p.article,
+      weightG: p.weightG,
+      locSklad: p.locSklad,
+      locPolka: p.locPolka,
+      locQavat: p.locQavat,
+      locYacheyka: p.locYacheyka,
+    };
     const prod = await prisma.product.upsert({
       where: { accountId_code: { accountId: account.id, code: p.code } },
-      update: {},
-      create: {
-        accountId: account.id,
-        ownerId: admin.id,
-        productFolderId: folder.id,
-        name: p.name,
-        code: p.code,
-        kind: 'product',
-        buyPrice: p.buyPrice,
-        salePrices: [{ priceTypeId: retailType.id, value: p.salePrice.toString() }],
-        vat: 12,
-        vatEnabled: true,
-        useParentVat: false,
-        uom: 'шт',
-      },
+      update: attrs,
+      create: { accountId: account.id, ownerId: admin.id, productFolderId: folder.id, code: p.code, ...attrs },
     });
     productByCode.set(p.code, prod.id);
+    bulkStock.push({ id: prod.id, buyPrice: p.buyPrice });
   }
-  console.log(`  ✓ Bulk products seeded: ${bulkProducts.length}`);
+  console.log(`  ✓ Bulk products (barcode/article/weight/location): ${bulkProducts.length}`);
+
+  // Initial stock (kirim) for the 50 bulk products — random 20-200 units per
+  // product spread across the 3 warehouses. Writes both the balance (stocks)
+  // and a ledger entry (stock_operations, docType 'enter'). Idempotent: a
+  // product that already has any stock row is skipped.
+  const enterDocIds = warehouseIds.map(() => randomUUID());
+  let stockSeeded = 0;
+  for (const s of bulkStock) {
+    const already = await prisma.stock.findFirst({
+      where: { accountId: account.id, assortmentId: s.id },
+      select: { assortmentId: true },
+    });
+    if (already) continue;
+    // split a random 20-200 total into 3 warehouse portions
+    const total = 20 + Math.floor(Math.random() * 181);
+    const parts = [
+      Math.floor(total * 0.5),
+      Math.floor(total * 0.3),
+      total - Math.floor(total * 0.5) - Math.floor(total * 0.3),
+    ];
+    for (let w = 0; w < warehouseIds.length; w++) {
+      const storeId = warehouseIds[w];
+      const docId = enterDocIds[w];
+      const qty = parts[w] ?? 0;
+      if (!storeId || !docId || qty <= 0) continue;
+      const cost = BigInt(qty) * s.buyPrice;
+      await prisma.stock.create({
+        data: {
+          accountId: account.id,
+          storeId,
+          assortmentKind: 'product',
+          assortmentId: s.id,
+          qty: qty.toString(),
+          costBalanceMinor: cost,
+        },
+      });
+      await prisma.stockOperation.create({
+        data: {
+          accountId: account.id,
+          storeId,
+          assortmentKind: 'product',
+          assortmentId: s.id,
+          qtyDelta: qty.toString(),
+          costDeltaMinor: cost,
+          docType: 'enter',
+          docId,
+          reason: 'post',
+          createdById: admin.id,
+        },
+      });
+    }
+    stockSeeded++;
+  }
+  console.log(`  ✓ Initial stock seeded for ${stockSeeded} products across ${warehouseIds.length} warehouses`);
 
   const cps = [
     {
