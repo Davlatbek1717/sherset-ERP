@@ -287,6 +287,7 @@ exports.Prisma.StoreScalarFieldEnum = {
   shared: 'shared',
   attributes: 'attributes',
   allowNegativeStock: 'allowNegativeStock',
+  isForward: 'isForward',
   archived: 'archived',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt',
@@ -673,6 +674,7 @@ exports.Prisma.SkladKeeperScalarFieldEnum = {
   skladNo: 'skladNo',
   employeeId: 'employeeId',
   employeeName: 'employeeName',
+  printerName: 'printerName',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 };
@@ -2119,6 +2121,7 @@ exports.Prisma.ProductScalarFieldEnum = {
   locPolka: 'locPolka',
   locQavat: 'locQavat',
   locYacheyka: 'locYacheyka',
+  forwardMax: 'forwardMax',
   vat: 'vat',
   vatEnabled: 'vatEnabled',
   useParentVat: 'useParentVat',
