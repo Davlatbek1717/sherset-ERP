@@ -121,7 +121,7 @@ function CheckIcon() {
       viewBox="0 0 20 20"
       fill="currentColor"
       className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600"
-      aria-hidden
+      aria-hidden="true"
     >
       <path
         fillRule="evenodd"
