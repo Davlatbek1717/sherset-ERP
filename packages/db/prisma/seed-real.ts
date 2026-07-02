@@ -131,19 +131,34 @@ async function fetchMoyskladPaged<T>(path: string): Promise<T[]> {
     let res: Response;
     let attempt = 0;
     for (;;) {
-      res = await fetch(url, {
-        headers: {
-          Authorization: `Bearer ${MOYSKLAD_TOKEN}`,
-          'Accept-Encoding': 'gzip',
-        },
-      });
+      // Retry on BOTH transient network failures (ECONNRESET / connect
+      // timeout — the VPS↔moysklad link blips intermittently) and 429s.
+      // A single unretried fetch reject would otherwise abort the whole
+      // multi-minute import.
+      try {
+        res = await fetch(url, {
+          headers: {
+            Authorization: `Bearer ${MOYSKLAD_TOKEN}`,
+            'Accept-Encoding': 'gzip',
+          },
+        });
+      } catch (err) {
+        attempt++;
+        if (attempt > 8) throw err;
+        const wait = 1000 * 2 ** Math.min(attempt, 5); // cap backoff at 32s
+        console.log(
+          `    ⚠ network error (${err instanceof Error ? err.message : err}), retry ${attempt}/8 after ${wait}ms`,
+        );
+        await new Promise((r) => setTimeout(r, wait));
+        continue;
+      }
       if (res.status !== 429) break;
       attempt++;
-      if (attempt > 5) {
-        throw new Error(`moysklad ${path}: rate-limited 5×`);
+      if (attempt > 8) {
+        throw new Error(`moysklad ${path}: rate-limited`);
       }
-      const wait = 1000 * 2 ** attempt; // 2s, 4s, 8s, 16s, 32s
-      console.log(`    ⚠ 429 rate-limited, retry ${attempt}/5 after ${wait}ms`);
+      const wait = 1000 * 2 ** Math.min(attempt, 5); // 2s..32s
+      console.log(`    ⚠ 429 rate-limited, retry ${attempt}/8 after ${wait}ms`);
       await new Promise((r) => setTimeout(r, wait));
     }
 
@@ -190,14 +205,20 @@ async function importLiveCounterparties(): Promise<number> {
         where: { accountId: ACCOUNT_ID, externalCode },
         select: { id: true },
       });
+      // Truncate to column limits — moysklad phone can hold several numbers
+      // (>20 chars) and names/titles can exceed 255, which the DB rejects.
+      const name = r.name.slice(0, 255);
+      const phone = r.phone ? r.phone.slice(0, 20) : null;
+      const email = r.email ? r.email.slice(0, 255) : null;
+      const legalTitle = r.legalTitle ? r.legalTitle.slice(0, 255) : null;
       if (existing) {
         await prisma.counterparty.update({
           where: { id: existing.id },
           data: {
-            name: r.name,
-            phone: r.phone ?? null,
-            email: r.email ?? null,
-            legalTitle: r.legalTitle ?? null,
+            name,
+            phone,
+            email,
+            legalTitle,
             description: r.description ?? null,
             archived: r.archived ?? false,
             uzRequisites: r.inn ? { inn: r.inn } : undefined,
@@ -208,10 +229,10 @@ async function importLiveCounterparties(): Promise<number> {
           data: {
             accountId: ACCOUNT_ID,
             externalCode,
-            name: r.name,
-            phone: r.phone ?? null,
-            email: r.email ?? null,
-            legalTitle: r.legalTitle ?? null,
+            name,
+            phone,
+            email,
+            legalTitle,
             description: r.description ?? null,
             archived: r.archived ?? false,
             companyType: r.legalTitle ? 'legal' : 'individual',
@@ -263,8 +284,8 @@ async function importLiveOrganizations(): Promise<number> {
         name: r.name.slice(0, 255),
         legalTitle: r.legalTitle?.slice(0, 255) ?? null,
         legalAddress: r.legalAddress ?? null,
-        phone: r.phone ?? null,
-        email: r.email ?? null,
+        phone: r.phone?.slice(0, 20) ?? null,
+        email: r.email?.slice(0, 255) ?? null,
         archived: r.archived ?? false,
         uzRequisites: r.inn ? { inn: r.inn } : undefined,
       };
@@ -342,6 +363,11 @@ async function importLiveStores(): Promise<number> {
 // Products
 // ──────────────────────────────────────────────────────────────
 
+interface MsSalePrice {
+  value: number;
+  priceType?: { id?: string; name?: string; externalCode?: string };
+}
+
 interface MsProduct {
   id: string;
   name: string;
@@ -351,7 +377,7 @@ interface MsProduct {
   archived?: boolean;
   buyPrice?: { value: number };
   minPrice?: { value: number };
-  salePrices?: Array<{ value: number; priceType?: { name: string } }>;
+  salePrices?: MsSalePrice[];
 }
 
 /** Resolve the account's default PriceType id for stamping salePrices; falls
@@ -362,6 +388,72 @@ async function resolveSeedDefaultPriceTypeId(): Promise<string> {
     select: { id: true },
   });
   return pt?.id ?? 'default';
+}
+
+// ──────────────────────────────────────────────────────────────
+// Price-type resolution.
+//
+// moysklad's dedicated price-type endpoint (/context/companysettings/
+// pricetype) returns [] for this account, but every product's salePrices
+// carry the full priceType meta ({ id, name, externalCode }). So we derive
+// the real price types (e.g. «Розночная цена», «Оптовая цена») from the
+// products themselves — upserting each by externalCode `ms:<id>` and caching
+// the msId → our-PriceType-id mapping so each salePrice keeps its own type
+// instead of collapsing them all onto the single «default» type.
+// ──────────────────────────────────────────────────────────────
+const priceTypeCache = new Map<string, string>();
+
+async function resolvePriceTypeId(
+  pt: MsSalePrice['priceType'],
+  fallback: string,
+): Promise<string> {
+  const msId = pt?.id;
+  if (!msId) return fallback;
+  const cached = priceTypeCache.get(msId);
+  if (cached) return cached;
+  const externalCode = `ms:${msId}`;
+  const name = (pt?.name ?? 'Price').slice(0, 100);
+  // Match by externalCode OR name — PriceType has a unique (accountId, name)
+  // constraint and the base seed may already own a same-named type (e.g.
+  // «Оптовая цена»), so we must reuse it instead of creating a duplicate.
+  const existing = await prisma.priceType.findFirst({
+    where: { accountId: ACCOUNT_ID, OR: [{ externalCode }, { name }] },
+    select: { id: true },
+  });
+  let id: string;
+  if (existing) {
+    id = existing.id;
+  } else {
+    const created = await prisma.priceType.create({
+      data: { accountId: ACCOUNT_ID, name, externalCode },
+      select: { id: true },
+    });
+    id = created.id;
+    console.log(`    + price type «${name}» created`);
+  }
+  priceTypeCache.set(msId, id);
+  return id;
+}
+
+/** moysklad ships money in MINOR units (tiyin/kopeck) — the SAME unit our
+ * schema stores. So the conversion is 1:1, not ×100. (The legacy ×100 here
+ * inflated every price 100×; the document importers already use 1:1.) */
+function priceToMinor(v: number | undefined): bigint | null {
+  return v === undefined ? null : BigInt(Math.round(v));
+}
+
+/** Build salePrices JSON preserving each entry's real price type. */
+async function buildSalePrices(
+  sps: MsSalePrice[] | undefined,
+  fallbackTypeId: string,
+): Promise<Array<{ priceTypeId: string; value: string }>> {
+  if (!sps?.length) return [];
+  const out: Array<{ priceTypeId: string; value: string }> = [];
+  for (const p of sps) {
+    const priceTypeId = await resolvePriceTypeId(p.priceType, fallbackTypeId);
+    out.push({ priceTypeId, value: String(Math.round(p.value)) });
+  }
+  return out;
 }
 
 async function importLiveProducts(): Promise<number> {
@@ -378,24 +470,15 @@ async function importLiveProducts(): Promise<number> {
         where: { accountId: ACCOUNT_ID, externalCode },
         select: { id: true },
       });
-      // moysklad ships prices in MAJOR units as floats (e.g. 21.32 RUB/UZS).
-      // Our schema stores BigInt minor (×100). Round to nearest tiyin so
-      // decimals like 21.32 → 2132 rather than crashing the BigInt cast.
-      const toMinor = (v: number | undefined): bigint | null =>
-        v === undefined ? null : BigInt(Math.round(v * 100));
       const data = {
         name: r.name.slice(0, 255),
         code: r.code?.slice(0, 50) ?? null,
         article: r.article?.slice(0, 100) ?? null,
         description: r.description ?? null,
         archived: r.archived ?? false,
-        buyPrice: toMinor(r.buyPrice?.value),
-        minPrice: toMinor(r.minPrice?.value),
-        salePrices:
-          r.salePrices?.map((p) => ({
-            priceTypeId: defaultPtId,
-            value: String(Math.round(p.value * 100)),
-          })) ?? [],
+        buyPrice: priceToMinor(r.buyPrice?.value),
+        minPrice: priceToMinor(r.minPrice?.value),
+        salePrices: await buildSalePrices(r.salePrices, defaultPtId),
       };
       if (existing) {
         await prisma.product.update({ where: { id: existing.id }, data });
@@ -1054,8 +1137,6 @@ async function importLiveProductsByKind(
   } catch {
     return 0;
   }
-  const toMinor = (v: number | undefined): bigint | null =>
-    v === undefined ? null : BigInt(Math.round(v * 100));
   const defaultPtId = await resolveSeedDefaultPriceTypeId();
   let inserted = 0;
   for (const r of rows) {
@@ -1072,13 +1153,9 @@ async function importLiveProductsByKind(
         article: r.article?.slice(0, 100) ?? null,
         description: r.description ?? null,
         archived: r.archived ?? false,
-        buyPrice: toMinor(r.buyPrice?.value),
-        minPrice: toMinor(r.minPrice?.value),
-        salePrices:
-          r.salePrices?.map((p) => ({
-            priceTypeId: defaultPtId,
-            value: String(Math.round(p.value * 100)),
-          })) ?? [],
+        buyPrice: priceToMinor(r.buyPrice?.value),
+        minPrice: priceToMinor(r.minPrice?.value),
+        salePrices: await buildSalePrices(r.salePrices, defaultPtId),
         kind, // override on existing rows too — moysklad source-of-truth
       };
       if (existing) {
@@ -1209,12 +1286,20 @@ async function importLiveMoneyDocs(
   return inserted;
 }
 
+// MASTER_ONLY=1 imports only real-MoySklad master data (catalog +
+// counterparties + orgs/stores/currencies/price-types + contacts + variants
+// + bundles/services). It skips the legacy non-MoySklad JSON and ALL
+// documents (orders, demands, supplies, money docs, tasks). Used for the
+// production "clean + reseed from real MoySklad" flow.
+const MASTER_ONLY = process.env.MASTER_ONLY === '1';
+
 async function main(): Promise<void> {
   console.log('🌱 Real-data import starting…');
   console.log(`  Target account: ${ACCOUNT_ID}`);
   console.log(`  Token configured: ${MOYSKLAD_TOKEN ? 'yes' : 'no (legacy JSON only)'}`);
+  console.log(`  Mode: ${MASTER_ONLY ? 'MASTER_ONLY (real MoySklad master data)' : 'FULL'}`);
 
-  const legacyCount = await importLegacyCounterparties();
+  const legacyCount = MASTER_ONLY ? 0 : await importLegacyCounterparties();
   const liveCounterparties = await importLiveCounterparties();
   const liveOrgs = await importLiveOrganizations();
   const liveStores = await importLiveStores();
@@ -1225,32 +1310,36 @@ async function main(): Promise<void> {
   const liveCurrencies = await importLiveCurrencies();
   const liveFolders = await importLiveProductFolders();
   const liveContacts = await importLiveContactPersons();
-  const liveTasks = await importLiveTasks();
-  const liveCustomerOrders = await importLiveCustomerOrders();
+  const liveTasks = MASTER_ONLY ? 0 : await importLiveTasks();
+  const liveCustomerOrders = MASTER_ONLY ? 0 : await importLiveCustomerOrders();
 
   const docTotals: Record<string, number> = {};
-  for (const spec of DOC_SPECS) {
-    docTotals[spec.label] = await importLiveDocuments(spec);
+  if (!MASTER_ONLY) {
+    for (const spec of DOC_SPECS) {
+      docTotals[spec.label] = await importLiveDocuments(spec);
+    }
   }
 
-  // Sub-types of Product (kind discriminator)
+  // Sub-types of Product (kind discriminator) — master data, always imported.
   docTotals.bundles = await importLiveProductsByKind('/entity/bundle', 'bundle', 'bundles');
   docTotals.services = await importLiveProductsByKind('/entity/service', 'service', 'services');
   docTotals.variants = await importLiveVariants();
 
-  // Money documents (cash + bank)
-  docTotals['cash-in'] = await importLiveMoneyDocs('/entity/cashin', 'cashIn', 'cash-in');
-  docTotals['cash-out'] = await importLiveMoneyDocs('/entity/cashout', 'cashOut', 'cash-out');
-  docTotals['payments-in'] = await importLiveMoneyDocs(
-    '/entity/paymentin',
-    'paymentIn',
-    'payments-in',
-  );
-  docTotals['payments-out'] = await importLiveMoneyDocs(
-    '/entity/paymentout',
-    'paymentOut',
-    'payments-out',
-  );
+  // Money documents (cash + bank) — skipped in MASTER_ONLY mode.
+  if (!MASTER_ONLY) {
+    docTotals['cash-in'] = await importLiveMoneyDocs('/entity/cashin', 'cashIn', 'cash-in');
+    docTotals['cash-out'] = await importLiveMoneyDocs('/entity/cashout', 'cashOut', 'cash-out');
+    docTotals['payments-in'] = await importLiveMoneyDocs(
+      '/entity/paymentin',
+      'paymentIn',
+      'payments-in',
+    );
+    docTotals['payments-out'] = await importLiveMoneyDocs(
+      '/entity/paymentout',
+      'paymentOut',
+      'payments-out',
+    );
+  }
 
   const totals = {
     counterparties: await prisma.counterparty.count({ where: { accountId: ACCOUNT_ID } }),
