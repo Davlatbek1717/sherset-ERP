@@ -225,6 +225,48 @@ function ChekDetailPanel({ saleId, onBack }: { saleId: string; onBack: () => voi
     queryFn: () => api.get(`/retail-sales/${saleId}`),
   });
 
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const [returnMode, setReturnMode] = useState(false);
+  // positionId → qty to return (defaults to the full sold qty on entering mode).
+  const [returnQty, setReturnQty] = useState<Record<string, number>>({});
+
+  const refundMut = useMutation({
+    mutationFn: async () => {
+      const positions = (data?.positions ?? [])
+        .filter((p) => (returnQty[p.id] ?? 0) > 0)
+        .map((p) => ({
+          productId: p.product.id,
+          quantity: String(returnQty[p.id]),
+          priceMinor: p.priceMinor,
+        }));
+      if (positions.length === 0) throw new Error('Qaytariladigan tovar tanlanmagan');
+      const cashRefund = positions.reduce(
+        (sum, pos) => sum + BigInt(pos.priceMinor) * BigInt(pos.quantity),
+        0n,
+      );
+      await api.post(`/retail-sales/${saleId}/refund`, {
+        positions,
+        cashAmountMinor: cashRefund.toString(),
+        cardAmountMinor: '0',
+        description: 'POS qaytarish',
+      });
+    },
+    onSuccess: () => {
+      toast.success('Qaytarildi — tovar omborga qaytdi, omborchiga joylashtirish yuborildi');
+      setReturnMode(false);
+      setReturnQty({});
+      qc.invalidateQueries({ queryKey: ['retail-sale-detail', saleId] });
+      qc.invalidateQueries({ queryKey: ['retail-sales-session'] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const startReturn = () => {
+    setReturnQty(Object.fromEntries((data?.positions ?? []).map((p) => [p.id, Number(p.quantity)])));
+    setReturnMode(true);
+  };
+
   if (isLoading || !data) {
     return (
       <div className="flex flex-1 items-center justify-center text-sm text-[var(--ms-text-muted)]">
@@ -273,6 +315,24 @@ function ChekDetailPanel({ saleId, onBack }: { saleId: string; onBack: () => voi
         >
           🖨 Chek
         </button>
+        {data.state === 'posted' &&
+          (returnMode ? (
+            <button
+              type="button"
+              onClick={() => setReturnMode(false)}
+              className="flex h-8 items-center gap-1.5 rounded-lg border border-[var(--ms-border)] px-3 text-xs font-medium text-[var(--ms-text-muted)] hover:bg-[var(--ms-bg-hover)]"
+            >
+              Bekor
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={startReturn}
+              className="flex h-8 items-center gap-1.5 rounded-lg bg-[var(--ms-destructive-500)] px-3 text-xs font-bold text-white hover:opacity-90"
+            >
+              ↩ Qaytarish
+            </button>
+          ))}
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
@@ -310,6 +370,25 @@ function ChekDetailPanel({ saleId, onBack }: { saleId: string; onBack: () => voi
                     <div className="text-xs text-[var(--ms-text-muted)]">{p.product.code}</div>
                   )}
                 </div>
+                {returnMode && (
+                  <div className="flex shrink-0 items-center gap-1">
+                    <span className="text-xs text-[var(--ms-text-muted)]">Qaytadi:</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={Number(p.quantity)}
+                      value={returnQty[p.id] ?? 0}
+                      onChange={(e) =>
+                        setReturnQty((prev) => ({
+                          ...prev,
+                          [p.id]: Math.max(0, Math.min(Number(p.quantity), Number(e.target.value) || 0)),
+                        }))
+                      }
+                      className="w-14 rounded border border-[var(--ms-border)] bg-[var(--ms-bg-input)] px-1.5 py-0.5 text-right text-sm tabular-nums focus:border-[var(--ms-border-focus)] focus:outline-none"
+                    />
+                    <span className="text-xs text-[var(--ms-text-muted)]">/ {Number(p.quantity)}</span>
+                  </div>
+                )}
                 <div className="shrink-0 text-right">
                   <div className="text-sm font-semibold tabular-nums text-[var(--ms-text-primary)]">
                     {formatMoney(BigInt(p.sumMinor))}
@@ -350,6 +429,35 @@ function ChekDetailPanel({ saleId, onBack }: { saleId: string; onBack: () => voi
           </div>
         </div>
       </div>
+
+      {returnMode && (
+        <div className="shrink-0 border-t border-[var(--ms-border)] bg-[var(--ms-bg-surface)] p-4">
+          {(() => {
+            const refundMinor = data.positions.reduce(
+              (sum, p) => sum + BigInt(p.priceMinor) * BigInt(returnQty[p.id] ?? 0),
+              0n,
+            );
+            return (
+              <>
+                <div className="mb-3 flex items-center justify-between">
+                  <span className="text-sm text-[var(--ms-text-muted)]">Qaytariladigan summa (naqd)</span>
+                  <span className="font-bold text-lg tabular-nums text-[var(--ms-destructive-500)]">
+                    {formatMoney(refundMinor)}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  disabled={refundMinor <= 0n || refundMut.isPending}
+                  onClick={() => refundMut.mutate()}
+                  className="w-full rounded-xl bg-[var(--ms-destructive-500)] py-3 font-bold text-white hover:opacity-90 disabled:opacity-40"
+                >
+                  {refundMut.isPending ? 'Qaytarilmoqda...' : '↩ Qaytarishni tasdiqlash'}
+                </button>
+              </>
+            );
+          })()}
+        </div>
+      )}
     </div>
   );
 }

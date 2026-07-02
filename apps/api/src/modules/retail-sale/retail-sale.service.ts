@@ -576,6 +576,112 @@ export class RetailSaleService {
     }
   }
 
+  /**
+   * After a POS refund, create «joylashtirish» (placement) RestockTasks so a
+   * warehouse-keeper puts the returned goods back on their home shelves. Mirrors
+   * createPickingTasksForSale but type='restock' — grouped by product sklad,
+   * assigned to that sklad's keeper, snapshotting each line's bin location.
+   */
+  private async createPlacementTasksForRefund(
+    accountId: string,
+    refundSaleId: string,
+    userId: string,
+  ): Promise<void> {
+    const sale = await this.prisma.client.retailSale.findFirst({
+      where: { id: refundSaleId, accountId },
+      select: {
+        name: true,
+        storeId: true,
+        store: { select: { name: true } },
+        positions: {
+          include: {
+            product: {
+              select: {
+                id: true,
+                name: true,
+                locSklad: true,
+                locPolka: true,
+                locQavat: true,
+                locYacheyka: true,
+              },
+            },
+          },
+          orderBy: { position: 'asc' },
+        },
+      },
+    });
+    if (!sale || sale.positions.length === 0) return;
+
+    const keepers = await this.prisma.client.skladKeeper.findMany({ where: { accountId } });
+    if (keepers.length === 0) return;
+    const keeperBySklad = new Map(keepers.map((k) => [k.skladNo, k]));
+
+    const NULL_SKLAD = -1;
+    type Pos = (typeof sale.positions)[number];
+    const groups = new Map<number, Pos[]>();
+    for (const pos of sale.positions) {
+      const sklad = pos.product?.locSklad ?? NULL_SKLAD;
+      const bucket = groups.get(sklad);
+      if (bucket) bucket.push(pos);
+      else groups.set(sklad, [pos]);
+    }
+
+    const storeId = sale.storeId ?? null;
+    const storeName = sale.store?.name ?? null;
+    const fallbackKeeper = keepers[0];
+    const pad = (n: number | null) => String(n ?? 0).padStart(2, '0');
+    const formatBin = (s: number | null, p: number | null, q: number | null, y: number | null) =>
+      s == null && p == null && q == null && y == null ? '' : [s, p, q, y].map(pad).join('-');
+
+    for (const [skladNo, entries] of groups) {
+      const keeper = skladNo === NULL_SKLAD ? fallbackKeeper : keeperBySklad.get(skladNo);
+      if (!keeper) continue;
+      const task = await this.prisma.client.restockTask.create({
+        data: {
+          accountId,
+          type: 'restock',
+          skladNo,
+          sourceType: 'retailsale',
+          sourceId: refundSaleId,
+          sourceName: sale.name,
+          storeId,
+          storeName,
+          assigneeId: keeper.employeeId,
+          assigneeName: keeper.employeeName,
+          createdById: userId,
+          status: 'pending',
+          lines: {
+            create: entries.map((pos, i) => {
+              const p = pos.product;
+              const bin = p ? formatBin(p.locSklad, p.locPolka, p.locQavat, p.locYacheyka) : '';
+              return {
+                accountId,
+                productId: pos.productId ?? null,
+                productName: p?.name ?? '—',
+                // Refund positions carry the returned qty (may be negative on the
+                // mirror sale) — store the absolute amount to place back.
+                quantity: pos.quantity,
+                binLocation: bin || null,
+                position: i,
+              };
+            }),
+          },
+        },
+      });
+      await this.notifications
+        .emit(
+          accountId,
+          keeper.employeeId,
+          'restock_assigned',
+          'Joylashtirish vazifasi',
+          `${entries.length} ta qaytgan mahsulot${sale.name ? ` — ${sale.name}` : ''}`,
+          'RestockTask',
+          task.id,
+        )
+        .catch(() => {});
+    }
+  }
+
   async markReady(accountId: string, id: string) {
     const sale = await this.prisma.client.retailSale.findFirst({
       where: { id, accountId },
@@ -991,6 +1097,18 @@ export class RetailSaleService {
     // §109: claw back the original sale's earned points AFTER the
     // refund txn commits. Reverses the EXACT recorded value (§105).
     await this.reverseLoyalty(accountId, userId, original.id, refunded.id);
+
+    // Placement («joylashtirish») tasks — the returned goods must be put back
+    // on their home shelves. Group by product sklad, assign to that sklad's
+    // keeper. Best-effort: a placement-task hiccup must not void a committed
+    // refund (the stock is already restored inside the txn).
+    this.createPlacementTasksForRefund(accountId, refunded.id, userId).catch((e) => {
+      this.logger.warn(
+        `createPlacementTasksForRefund failed for refund ${refunded.id}: ${
+          e instanceof Error ? e.message : e
+        }`,
+      );
+    });
     return refunded;
   }
 
