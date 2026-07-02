@@ -62,29 +62,30 @@ export default function NewSmenaPage() {
 
       <form onSubmit={submit} className="flex flex-col gap-4">
         <div>
-          <label className="block text-sm font-medium mb-1">Nomi <span className="text-[var(--ms-text-destructive)]">*</span></label>
-          <Input value={name} onChange={e => setName(e.target.value)} placeholder="1-smena, Asosiy zal" autoFocus />
+          <label htmlFor="sm-name" className="block text-sm font-medium mb-1">Nomi <span className="text-[var(--ms-text-destructive)]">*</span></label>
+          <Input id="sm-name" value={name} onChange={e => setName(e.target.value)} placeholder="1-smena, Asosiy zal" autoFocus />
         </div>
 
         <div>
-          <label className="block text-sm font-medium mb-1">Ish vaqti <span className="text-[var(--ms-text-destructive)]">*</span></label>
-          <NativeSelect value={scheduleId} onChange={e => setScheduleId(e.target.value)} className={SEL}>
+          <label htmlFor="sm-schedule" className="block text-sm font-medium mb-1">Ish vaqti <span className="text-[var(--ms-text-destructive)]">*</span></label>
+          <NativeSelect id="sm-schedule" value={scheduleId} onChange={e => setScheduleId(e.target.value)} className={SEL}>
             <option value="">— tanlang —</option>
             {schedules?.map(s => <option key={s.id} value={s.id}>{s.name} ({s.startTime}–{s.endTime})</option>)}
           </NativeSelect>
         </div>
 
         <div>
-          <label className="block text-sm font-medium mb-1">Tashkilot <span className="text-[var(--ms-text-destructive)]">*</span></label>
-          <NativeSelect value={organizationId} onChange={e => setOrganizationId(e.target.value)} className={SEL}>
+          <label htmlFor="sm-org" className="block text-sm font-medium mb-1">Tashkilot <span className="text-[var(--ms-text-destructive)]">*</span></label>
+          <NativeSelect id="sm-org" value={organizationId} onChange={e => setOrganizationId(e.target.value)} className={SEL}>
             <option value="">— tanlang —</option>
             {orgs?.items.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
           </NativeSelect>
         </div>
 
         <div>
-          <label className="block text-sm font-medium mb-1">Xodimlar <span className="text-[var(--ms-text-destructive)]">*</span></label>
+          <label htmlFor="sm-emp" className="block text-sm font-medium mb-1">Xodimlar <span className="text-[var(--ms-text-destructive)]">*</span></label>
           <NativeSelect
+            id="sm-emp"
             className={SEL}
             value=""
             onChange={e => { addEmployee(e.target.value); e.target.value = ''; }}

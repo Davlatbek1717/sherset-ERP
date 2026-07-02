@@ -46,9 +46,10 @@ export default function SmenaListPage() {
       ) : (
         <div className="flex flex-col gap-3">
           {data.map((s) => (
-            <div
+            <button
+              type="button"
               key={s.id}
-              className="rounded-xl border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] p-4 cursor-pointer hover:border-[var(--ms-border-strong)] transition-colors"
+              className="w-full text-left rounded-xl border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] p-4 cursor-pointer hover:border-[var(--ms-border-strong)] transition-colors"
               onClick={() => router.push(`/settings/smena/${s.id}`)}
             >
               <div className="flex items-start justify-between">
@@ -76,7 +77,7 @@ export default function SmenaListPage() {
                   ))}
                 </div>
               )}
-            </div>
+            </button>
           ))}
         </div>
       )}

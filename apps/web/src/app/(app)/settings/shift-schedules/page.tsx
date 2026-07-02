@@ -106,17 +106,17 @@ export default function ShiftSchedulesPage() {
       >
         <div className="flex flex-col gap-4 p-4">
           <div>
-            <label className="block text-sm font-medium mb-1">Nomi <span className="text-[var(--ms-text-destructive)]">*</span></label>
-            <Input value={form.name} onChange={(e) => setForm(f => ({ ...f, name: e.target.value }))} placeholder="1-smena" autoFocus />
+            <label htmlFor="ss-name" className="block text-sm font-medium mb-1">Nomi <span className="text-[var(--ms-text-destructive)]">*</span></label>
+            <Input id="ss-name" value={form.name} onChange={(e) => setForm(f => ({ ...f, name: e.target.value }))} placeholder="1-smena" autoFocus />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm font-medium mb-1">Boshlanish</label>
-              <Input type="time" value={form.startTime} onChange={(e) => setForm(f => ({ ...f, startTime: e.target.value }))} />
+              <label htmlFor="ss-start" className="block text-sm font-medium mb-1">Boshlanish</label>
+              <Input id="ss-start" type="time" value={form.startTime} onChange={(e) => setForm(f => ({ ...f, startTime: e.target.value }))} />
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1">Tugash</label>
-              <Input type="time" value={form.endTime} onChange={(e) => setForm(f => ({ ...f, endTime: e.target.value }))} />
+              <label htmlFor="ss-end" className="block text-sm font-medium mb-1">Tugash</label>
+              <Input id="ss-end" type="time" value={form.endTime} onChange={(e) => setForm(f => ({ ...f, endTime: e.target.value }))} />
             </div>
           </div>
           {error && <p className="text-sm text-[var(--ms-text-destructive)]">{error}</p>}
