@@ -217,6 +217,97 @@ async function main(): Promise<void> {
     console.log('  ✓ Role:', r.name);
   }
 
+  // --- Specialized business roles (Kassir, Skladchi) + demo employees ---
+  // Unlike the uniform system roles above, these grant PER-ENTITY access so a
+  // cashier sees only POS/money screens and a warehouse worker only stock
+  // screens. isSystem:false → freely editable/removable in Settings → Rollar.
+  type Act = 'view' | 'create' | 'update' | 'delete' | 'approve' | 'print';
+  const specializedRoles: Array<{
+    name: string;
+    desc: string;
+    password: string;
+    perms: Record<string, Act[]>;
+    demo: { email: string; username: string; name: string; position: string };
+  }> = [
+    {
+      name: 'Kassir',
+      desc: 'Kassir — chakana savdo va kassa',
+      password: 'kassir123',
+      perms: {
+        retailsale: ['view', 'create', 'update', 'print'],
+        cashiersession: ['view', 'create', 'update'],
+        cashin: ['view', 'create'],
+        cashout: ['view', 'create'],
+        paymentin: ['view', 'create'],
+        product: ['view'],
+        counterparty: ['view', 'create'],
+        store: ['view'],
+        cashdesk: ['view'],
+        organization: ['view'],
+        report: ['view'],
+      },
+      demo: { email: 'kassir@demo.local', username: 'kassir', name: 'Kassir Demo', position: 'Kassir' },
+    },
+    {
+      name: 'Skladchi',
+      desc: 'Skladchi — ombor operatsiyalari',
+      password: 'skladchi123',
+      perms: {
+        store: ['view'],
+        product: ['view'],
+        productfolder: ['view'],
+        move: ['view', 'create', 'update'],
+        enter: ['view', 'create', 'update'],
+        loss: ['view', 'create', 'update'],
+        inventory: ['view', 'create', 'update'],
+        internalorder: ['view', 'create'],
+        supply: ['view', 'update'],
+        demand: ['view'],
+        report: ['view'],
+      },
+      demo: { email: 'skladchi@demo.local', username: 'skladchi', name: 'Skladchi Demo', position: 'Omborchi' },
+    },
+  ];
+  for (const sr of specializedRoles) {
+    const role = await prisma.role.upsert({
+      where: { accountId_name: { accountId: account.id, name: sr.name } },
+      update: { description: sr.desc, isSystem: false },
+      create: { accountId: account.id, name: sr.name, description: sr.desc, isSystem: false },
+    });
+    for (const entity of entities) {
+      for (const action of actions) {
+        const scope = sr.perms[entity]?.includes(action as Act) ? 'ALL' : 'NO';
+        await prisma.rolePermission.upsert({
+          where: { roleId_entity_action: { roleId: role.id, entity, action } },
+          update: { scope },
+          create: { roleId: role.id, entity, action, scope },
+        });
+      }
+    }
+    const [firstName, ...rest] = sr.demo.name.split(' ');
+    const empHash = await argon2.hash(sr.password, { type: argon2.argon2id });
+    const emp = await prisma.employee.upsert({
+      where: { accountId_email: { accountId: account.id, email: sr.demo.email } },
+      update: { passwordHash: empHash, username: sr.demo.username },
+      create: {
+        accountId: account.id,
+        email: sr.demo.email,
+        username: sr.demo.username,
+        passwordHash: empHash,
+        name: sr.demo.name,
+        firstName,
+        lastName: rest.join(' ') || sr.demo.username,
+        position: sr.demo.position,
+      },
+    });
+    await prisma.employeeRole.upsert({
+      where: { employeeId_roleId: { employeeId: emp.id, roleId: role.id } },
+      update: {},
+      create: { employeeId: emp.id, roleId: role.id },
+    });
+    console.log(`  ✓ Role + demo xodim: ${sr.name} (login: ${sr.demo.username} / ${sr.password})`);
+  }
+
   const org = await prisma.organization.upsert({
     where: { id: '00000000-0000-0000-0000-000000000010' },
     update: {},
