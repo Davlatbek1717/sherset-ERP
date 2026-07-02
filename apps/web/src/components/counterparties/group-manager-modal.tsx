@@ -38,7 +38,18 @@ export function CounterpartyGroupManagerModal({
   });
   // Pending name edits, keyed by group id (un-keyed groups show their stored name).
   const [edits, setEdits] = useState<Record<string, string>>({});
+  // «Новая группа» — the create-group input (POST /counterparty-groups). The
+  // backend has always supported create; this is the missing self-service UI.
+  const [newName, setNewName] = useState('');
   const refetch = () => qc.invalidateQueries({ queryKey: ['counterparty-groups'] });
+
+  const createMut = useApiMutation({
+    mutationFn: (name: string) => api.post('/counterparty-groups', { name }),
+    onSuccess: () => {
+      setNewName('');
+      refetch();
+    },
+  });
 
   const renameMut = useApiMutation({
     mutationFn: (vars: { id: string; name: string }) =>
@@ -62,6 +73,27 @@ export function CounterpartyGroupManagerModal({
   return (
     <Modal open={open} onOpenChange={(o) => !o && onClose()} title="Управление группами">
       <div className="space-y-2" data-test-id="cp-group-manager">
+        {/* «Новая группа» — create a new counterparty group (e.g. Ta'minotchilar, Mijozlar). */}
+        <div className="flex items-center gap-2 border-[var(--ms-border-default)] border-b pb-3">
+          <Input
+            value={newName}
+            placeholder="Новая группа"
+            onChange={(e) => setNewName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && newName.trim()) createMut.mutate(newName.trim());
+            }}
+            data-test-id="cp-group-new-name"
+          />
+          <Button
+            variant="primary"
+            disabled={!newName.trim() || createMut.isPending}
+            onClick={() => createMut.mutate(newName.trim())}
+            data-test-id="cp-group-create"
+          >
+            <Icons.create className="h-4 w-4" />
+            Добавить
+          </Button>
+        </div>
         {groups.length === 0 ? (
           <p className="text-[var(--ms-text-muted)] text-sm">Групп пока нет.</p>
         ) : (

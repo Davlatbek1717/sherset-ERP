@@ -3,6 +3,7 @@
 import { ColumnSettings } from '@/components/column-settings';
 import { CounterpartyBulkActionsDropdown } from '@/components/counterparties/bulk-actions-dropdown';
 import { CounterpartyCreateTasksModal } from '@/components/counterparties/create-tasks-modal';
+import { CounterpartyGroupManagerModal } from '@/components/counterparties/group-manager-modal';
 import { CounterpartyMassEditModal } from '@/components/counterparties/mass-edit-modal';
 import { CounterpartyPrintDropdown } from '@/components/counterparties/print-dropdown';
 import { CounterpartyStatusDropdown } from '@/components/counterparties/status-dropdown';
@@ -205,6 +206,9 @@ export default function CounterpartiesPage() {
   const [tasksOpen, setTasksOpen] = useState(false);
   // «Массовое редактирование» wizard (un-greys the «Изменить ▾» menu item).
   const [massEditOpen, setMassEditOpen] = useState(false);
+  // «Группы» self-service manager — create / rename / delete counterparty groups
+  // (Ta'minotchilar, Mijozlar, …). The backend CRUD always existed; this exposes it.
+  const [groupMgrOpen, setGroupMgrOpen] = useState(false);
 
   // CRM states (Статус) for the dropdown — tenant rows keyed by
   // entityType. Same pattern the StatusChangeDropdown uses for
@@ -1245,6 +1249,16 @@ export default function CounterpartiesPage() {
             >
               {t('create_tasks_button')}
             </Button>
+            {/* «Группы» — self-service counterparty-group manager (create/rename/delete).
+                Always enabled (not selection-dependent); groups drive the «Группы» column/filter. */}
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setGroupMgrOpen(true)}
+              data-test-id="counterparties-manage-groups"
+            >
+              Группы
+            </Button>
             {/* climart's toolbar is exactly Контрагент · Фильтр · Изменить ·
                 Статус · Печать · Создать задачи — no Импорт/Экспорт (those were
                 the stale ozodbek account). The /counterparties/import route still
@@ -1331,6 +1345,7 @@ export default function CounterpartiesPage() {
           bulk.clearSelection();
         }}
       />
+      <CounterpartyGroupManagerModal open={groupMgrOpen} onClose={() => setGroupMgrOpen(false)} />
     </>
   );
 }
