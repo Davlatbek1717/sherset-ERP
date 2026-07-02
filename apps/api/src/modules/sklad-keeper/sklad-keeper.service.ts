@@ -43,8 +43,15 @@ export class SkladKeeperService {
         skladNo: input.skladNo,
         employeeId: emp.id,
         employeeName: emp.name,
+        printerName: input.printerName ?? null,
       },
-      update: { employeeId: emp.id, employeeName: emp.name },
+      // printerName only overwritten when the caller sent the field (undefined =
+      // leave as-is, so editing the keeper alone doesn't wipe the printer).
+      update: {
+        employeeId: emp.id,
+        employeeName: emp.name,
+        ...(input.printerName !== undefined ? { printerName: input.printerName } : {}),
+      },
     });
   }
 

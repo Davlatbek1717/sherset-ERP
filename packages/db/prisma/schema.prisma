@@ -1544,6 +1544,10 @@ model SkladKeeper {
   skladNo      Int      @map("sklad_no")
   employeeId   String   @map("employee_id") @db.Uuid
   employeeName String?  @map("employee_name") @db.VarChar(255)
+  // Windows printer name this warehouse's picking sheet is routed to (via the
+  // local print-agent). Two sklads may share one printer (→ both receipts on it)
+  // or use separate printers (→ each on its own). Null ⇒ falls back on print.
+  printerName  String?  @map("printer_name") @db.VarChar(255)
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz()
 

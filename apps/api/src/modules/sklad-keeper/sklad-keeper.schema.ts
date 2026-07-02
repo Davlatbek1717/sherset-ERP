@@ -13,5 +13,8 @@ const uuid = z.string().uuid();
 export const UpsertSkladKeeperSchema = z.object({
   skladNo: z.coerce.number().int().min(0).max(99999),
   employeeId: uuid.nullable(),
+  // Windows printer name this zone's picking sheet is routed to (print-agent).
+  // Optional; null/omitted leaves it unset.
+  printerName: z.string().max(255).nullable().optional(),
 });
 export type UpsertSkladKeeperInput = z.infer<typeof UpsertSkladKeeperSchema>;

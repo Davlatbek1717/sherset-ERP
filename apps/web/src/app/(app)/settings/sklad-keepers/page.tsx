@@ -11,24 +11,27 @@
 
 import { useApiMutation } from '@/hooks/use-api-mutation';
 import { api } from '@/lib/api-client';
+import { fetchAgentPrinters } from '@/lib/print-agent';
 import {
   Button,
   CatalogPicker,
   CatalogPickerField,
   Input,
   Modal,
+  NativeSelect,
   type PickerItem,
   useConfirm,
 } from '@moysklad/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 interface KeeperRow {
   id: string;
   skladNo: number;
   employeeId: string;
   employeeName: string | null;
+  printerName: string | null;
 }
 
 export default function SkladKeepersPage() {
@@ -48,8 +51,26 @@ export default function SkladKeepersPage() {
   const [skladNo, setSkladNo] = useState('');
   const [empId, setEmpId] = useState<string | null>(null);
   const [empLabel, setEmpLabel] = useState('');
+  const [printerName, setPrinterName] = useState('');
   const [pickerOpen, setPickerOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Printers installed on THIS (cashier) PC, read from the local print-agent.
+  // Empty when the agent isn't running → the field falls back to manual text.
+  const [agentPrinters, setAgentPrinters] = useState<string[]>([]);
+  const [agentChecked, setAgentChecked] = useState(false);
+  useEffect(() => {
+    if (!modalOpen) return;
+    let alive = true;
+    fetchAgentPrinters().then((list) => {
+      if (!alive) return;
+      setAgentPrinters(list);
+      setAgentChecked(true);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [modalOpen]);
 
   const empFetcher = async (search: string): Promise<PickerItem[]> => {
     const d = await api.get<{ items: Array<{ id: string; name: string; email?: string | null }> }>(
@@ -59,7 +80,12 @@ export default function SkladKeepersPage() {
   };
 
   const upsertMut = useMutation({
-    mutationFn: () => api.put('/sklad-keepers', { skladNo: Number(skladNo), employeeId: empId }),
+    mutationFn: () =>
+      api.put('/sklad-keepers', {
+        skladNo: Number(skladNo),
+        employeeId: empId,
+        printerName: printerName.trim() || null,
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['sklad-keepers'] });
       closeModal();
@@ -77,6 +103,7 @@ export default function SkladKeepersPage() {
     setSkladNo('');
     setEmpId(null);
     setEmpLabel('');
+    setPrinterName('');
     setError(null);
     setModalOpen(true);
   }
@@ -85,6 +112,7 @@ export default function SkladKeepersPage() {
     setSkladNo(String(row.skladNo));
     setEmpId(row.employeeId);
     setEmpLabel(row.employeeName ?? '');
+    setPrinterName(row.printerName ?? '');
     setError(null);
     setModalOpen(true);
   }
@@ -125,6 +153,7 @@ export default function SkladKeepersPage() {
             <tr className="border-[var(--ms-border-default)] border-b bg-[var(--ms-bg-muted)] text-left text-[var(--ms-text-secondary)] text-xs">
               <th className="px-4 py-2 font-medium">{t('col_sklad')}</th>
               <th className="px-4 py-2 font-medium">{t('col_omborchi')}</th>
+              <th className="px-4 py-2 font-medium">Printer</th>
               <th className="px-4 py-2" />
             </tr>
           </thead>
@@ -142,6 +171,16 @@ export default function SkladKeepersPage() {
                 </td>
                 <td className="px-4 py-2.5 font-medium text-[var(--ms-text-primary)]">
                   {row.employeeName ?? '—'}
+                </td>
+                <td className="px-4 py-2.5 text-[var(--ms-text-secondary)]">
+                  {row.printerName ? (
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                      {row.printerName}
+                    </span>
+                  ) : (
+                    <span className="text-[var(--ms-text-muted)]">—</span>
+                  )}
                 </td>
                 <td className="px-4 py-2.5 text-right">
                   <div className="flex items-center justify-end gap-3">
@@ -175,7 +214,7 @@ export default function SkladKeepersPage() {
             {!isLoading && items.length === 0 && (
               <tr>
                 <td
-                  colSpan={3}
+                  colSpan={4}
                   className="px-4 py-10 text-center text-[var(--ms-text-muted)]"
                   data-test-id="sklad-keepers-empty"
                 >
@@ -240,6 +279,43 @@ export default function SkladKeepersPage() {
               }}
               testId="sklad-keeper-omborchi"
             />
+          </div>
+
+          {/* Printer — this sklad's picking sheet is routed here. Dropdown from the
+              local print-agent's installed printers; if the agent isn't running,
+              falls back to a manual text input so the value can still be set. */}
+          <div className="flex flex-col gap-1">
+            <span className="font-medium text-[var(--ms-text-primary)] text-sm">Printer</span>
+            {agentPrinters.length > 0 ? (
+              <NativeSelect
+                value={printerName}
+                onChange={(e) => setPrinterName(e.target.value)}
+                data-test-id="sklad-keeper-printer"
+              >
+                <option value="">— (chiqarilmaydi)</option>
+                {/* keep a stored value that's no longer installed selectable */}
+                {printerName && !agentPrinters.includes(printerName) && (
+                  <option value={printerName}>{printerName} (ulanmagan)</option>
+                )}
+                {agentPrinters.map((p) => (
+                  <option key={p} value={p}>
+                    {p}
+                  </option>
+                ))}
+              </NativeSelect>
+            ) : (
+              <Input
+                value={printerName}
+                onChange={(e) => setPrinterName(e.target.value)}
+                placeholder="Printer nomi (masalan XP-80C)"
+                data-test-id="sklad-keeper-printer"
+              />
+            )}
+            <span className="text-[var(--ms-text-muted)] text-xs">
+              {agentChecked && agentPrinters.length === 0
+                ? "Print-agent topilmadi — nomni qo'lda kiriting (yoki agentni ishga tushiring)."
+                : 'Shu ombor cheki qaysi printerdan chiqishini tanlang. Bir printerni bir necha omborga ham berish mumkin.'}
+            </span>
           </div>
 
           {error && (
