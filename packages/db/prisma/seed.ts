@@ -37,12 +37,16 @@ async function main(): Promise<void> {
 
   const admin = await prisma.employee.upsert({
     where: { accountId_email: { accountId: account.id, email: 'admin@demo.local' } },
-    update: { passwordHash: devPasswordHash, username: 'admin' },
+    // hrRoles:['admin'] → HR module's own guard (HrPermissionGuard) grants full
+    // access to hr/employees, hr/roles, etc. Without it even the owner gets 403
+    // on the HR pages (main RBAC roles do NOT cover the HR permission system).
+    update: { passwordHash: devPasswordHash, username: 'admin', hrRoles: ['admin'] },
     create: {
       accountId: account.id,
       email: 'admin@demo.local',
       username: 'admin',
       passwordHash: devPasswordHash,
+      hrRoles: ['admin'],
       name: 'Admin User',
       firstName: 'Admin',
       lastName: 'User',
