@@ -456,6 +456,21 @@ async function main(): Promise<void> {
     console.log('  ✓ Store:', st.name);
   }
 
+  // Asosiy kassa (cash desk) — required to open a POS session and take/refund
+  // cash. Without it the cashier can't open a proper session and cash refunds
+  // fail ("Session has no cash desk").
+  const cashDesk = await prisma.cashDesk.upsert({
+    where: { id: '00000000-0000-0000-0000-000000000020' },
+    update: {},
+    create: {
+      id: '00000000-0000-0000-0000-000000000020',
+      accountId: account.id,
+      name: 'Asosiy kassa',
+      currency: 'UZS',
+    },
+  });
+  console.log('  ✓ CashDesk:', cashDesk.name);
+
   const folder = await prisma.productFolder.upsert({
     where: { accountId_code: { accountId: account.id, code: 'PHONES' } },
     update: {},
