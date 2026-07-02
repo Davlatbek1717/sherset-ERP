@@ -123,8 +123,8 @@ export default function RetailSalesListPage() {
     {
       key: 'cash_desk',
       header: t('cash_desk'),
-      cell: (row) => <span className="text-sm">{row.session.cashDesk.name}</span>,
-      cellText: (r) => r.session.cashDesk.name,
+      cell: (row) => <span className="text-sm">{row.session.cashDesk?.name ?? '—'}</span>,
+      cellText: (r) => r.session.cashDesk?.name ?? '—',
     },
     {
       key: 'sum',
