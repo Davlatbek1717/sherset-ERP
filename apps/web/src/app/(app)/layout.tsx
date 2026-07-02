@@ -8,11 +8,32 @@ import { LocaleSwitcher } from '@/components/locale-switcher';
 import { NotificationBell } from '@/components/notification-bell';
 import { useNotificationStream } from '@/hooks/use-notification-stream';
 import { useTasksBadgeCount } from '@/hooks/use-tasks-badge-count';
+import { api } from '@/lib/api-client';
 import { hasAuthHint, logout, useAuth } from '@/lib/auth-store';
 import { AppShell, Icons, type NavItem, ShersetLogo, SubNav, type SubNavItem } from '@moysklad/ui';
+import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect } from 'react';
+
+// Each top-level navbar module → the entities that make it relevant. A module
+// is shown when the user can view ANY of them (empty = always visible). Keep in
+// sync with the ENTITIES list in permissions.controller.ts (backend).
+const MODULE_ENTITIES: Record<string, string[]> = {
+  homepage: [],
+  apps: [],
+  purchases: ['purchaseorder', 'invoicein', 'supply', 'purchasereturn', 'facturein'],
+  sales: ['customerorder', 'invoiceout', 'demand', 'salesreturn', 'factureout', 'commissionreport'],
+  goods: ['product', 'productfolder', 'pricelist'],
+  crm: ['counterparty', 'contract', 'call'],
+  stock: ['move', 'enter', 'loss', 'inventory', 'internalorder', 'store'],
+  money: ['paymentin', 'paymentout', 'cashin', 'cashout', 'prepayment'],
+  retail: ['retailsale', 'cashiersession'],
+  production: ['processing', 'processingorder', 'bom'],
+  tasks: ['task'],
+  hr: ['employee'],
+  analitika: ['analitika'],
+};
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -55,6 +76,23 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   // tasks past their dueAt). The hook gracefully returns 0 when the
   // user isn't yet authenticated.
   const tasksBadgeCount = useTasksBadgeCount();
+
+  // Effective permission matrix → drives which navbar modules are visible.
+  // Admin (HR 'admin') sees everything; otherwise a module shows only when the
+  // user can view at least one of its entities. While the matrix is still
+  // loading (permMine undefined) we show all items to avoid an empty-nav flash.
+  const isNavAdmin = auth.user?.hrRoles?.includes('admin') ?? false;
+  const { data: permMine } = useQuery<{ matrix: Record<string, Record<string, string>> }>({
+    queryKey: ['permissions-me'],
+    queryFn: () => api.get('/permissions/me'),
+    enabled: !!auth.user && !isNavAdmin,
+    staleTime: 5 * 60_000,
+  });
+  const canViewModule = (ents: string[]) =>
+    isNavAdmin ||
+    ents.length === 0 ||
+    !permMine ||
+    ents.some((e) => (permMine.matrix?.[e]?.view ?? 'NO') !== 'NO');
 
   if (!auth.initialized) {
     return (
@@ -485,7 +523,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                                   ? 'homepage'
                                   : null;
 
-  const navWithActive = moduleNav.map((m) => ({ ...m, active: m.key === activeModule }));
+  const navWithActive = moduleNav
+    .filter((m) => canViewModule(MODULE_ENTITIES[m.key] ?? []))
+    .map((m) => ({ ...m, active: m.key === activeModule }));
 
   const matchActive = (items: SubNavItem[]): SubNavItem[] =>
     items.map((i) => ({ ...i, active: pathname === i.href || pathname.startsWith(`${i.href}/`) }));
