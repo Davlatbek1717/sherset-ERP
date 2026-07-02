@@ -1,7 +1,7 @@
 'use client';
 
 import * as DM from '@radix-ui/react-dropdown-menu';
-import * as React from 'react';
+import type * as React from 'react';
 import { Icons } from '../icons/action-icons.ts';
 import { cn } from '../lib/cn.ts';
 import { Button, type ButtonProps } from './Button.tsx';

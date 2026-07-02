@@ -30,7 +30,7 @@ function AllProviders({ children, messages, queryClient }: AllProvidersProps) {
     queryClient ??
     new QueryClient({
       defaultOptions: {
-        queries: { retry: false, staleTime: Infinity },
+        queries: { retry: false, staleTime: Number.POSITIVE_INFINITY },
         mutations: { retry: false },
       },
     });
