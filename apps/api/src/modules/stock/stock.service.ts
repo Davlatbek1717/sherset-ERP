@@ -132,6 +132,82 @@ export function netOutstandingReservations(
 export class StockService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
+  /**
+   * Forward-pick replenishment list — products whose balance in the forward
+   * (fast-pick) store is below their `forwardMax` target, sorted by the biggest
+   * shortfall first. Powers the «To'ldirish kerak» screen so the omborchi tops
+   * the forward zone up from reserve.
+   */
+  async replenishmentList(accountId: string): Promise<{
+    forwardStore: { id: string; name: string } | null;
+    items: Array<{
+      productId: string;
+      name: string;
+      code: string | null;
+      binLocation: string | null;
+      forwardMax: number;
+      currentQty: number;
+      shortfall: number;
+    }>;
+  }> {
+    const forward = await this.prisma.client.store.findFirst({
+      where: { accountId, isForward: true, archived: false },
+      select: { id: true, name: true },
+    });
+    if (!forward) return { forwardStore: null, items: [] };
+
+    const products = await this.prisma.client.product.findMany({
+      where: { accountId, forwardMax: { not: null }, archived: false },
+      select: {
+        id: true,
+        name: true,
+        code: true,
+        forwardMax: true,
+        locSklad: true,
+        locPolka: true,
+        locQavat: true,
+        locYacheyka: true,
+      },
+    });
+    if (products.length === 0) return { forwardStore: forward, items: [] };
+
+    const stocks = await this.prisma.client.stock.findMany({
+      where: {
+        accountId,
+        storeId: forward.id,
+        assortmentKind: 'product',
+        assortmentId: { in: products.map((p) => p.id) },
+      },
+      select: { assortmentId: true, qty: true },
+    });
+    const qtyById = new Map(stocks.map((s) => [s.assortmentId, Number(s.qty)]));
+
+    const pad = (n: number | null) => String(n ?? 0).padStart(2, '0');
+    const bin = (p: { locSklad: number | null; locPolka: number | null; locQavat: number | null; locYacheyka: number | null }) =>
+      p.locSklad == null && p.locPolka == null && p.locQavat == null && p.locYacheyka == null
+        ? null
+        : `${pad(p.locSklad)}-${pad(p.locPolka)}-${pad(p.locQavat)}-${pad(p.locYacheyka)}`;
+
+    const items = products
+      .map((p) => {
+        const currentQty = qtyById.get(p.id) ?? 0;
+        const forwardMax = p.forwardMax ?? 0;
+        return {
+          productId: p.id,
+          name: p.name,
+          code: p.code,
+          binLocation: bin(p),
+          forwardMax,
+          currentQty,
+          shortfall: forwardMax - currentQty,
+        };
+      })
+      .filter((x) => x.shortfall > 0)
+      .sort((a, b) => b.shortfall - a.shortfall);
+
+    return { forwardStore: forward, items };
+  }
+
   /** Read balances for a set of (store × assortment) pairs. Returns a map keyed by assortmentId. */
   async getBalances(
     accountId: string,

@@ -649,6 +649,9 @@ model Store {
   shared             Boolean  @default(false)
   attributes         Json?    @default("{}")
   allowNegativeStock Boolean  @default(false) @map("allow_negative_stock")
+  // Forward (fast-pick) warehouse — replenishment compares each product's
+  // forward-store balance against Product.forwardMax. Only one store is forward.
+  isForward          Boolean  @default(false) @map("is_forward")
   archived           Boolean  @default(false)
   createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamptz()
@@ -4570,6 +4573,11 @@ model Product {
   locPolka    Int? @map("loc_polka") // полка (shelf)
   locQavat    Int? @map("loc_qavat") // этаж/ярус (level)
   locYacheyka Int? @map("loc_yacheyka") // ячейка (cell)
+  // Forward-pick replenishment target: keep up to `forwardMax` units in the
+  // forward (fast-pick) store. When the forward-store balance drops below this,
+  // the product surfaces in the «To'ldirish kerak» replenishment list. null = no
+  // forward policy.
+  forwardMax  Int? @map("forward_max")
 
   // VAT
   vat          Int?

@@ -357,6 +357,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     { key: 'internalorders', label: tStock('internal_orders'), href: '/internal-orders' },
     { key: 'restocktasks', label: tStock('restock'), href: '/restock-tasks' },
     { key: 'omborchi', label: 'Omborchi (yig\'ish)', href: '/omborchi' },
+    { key: 'replenishment', label: 'To\'ldirish kerak', href: '/replenishment' },
     { key: 'remains', label: tStock('remains'), href: '/stock-balance' },
     { key: 'turnover', label: tStock('turnover'), href: '/turnover' },
     { key: 'stores', label: tStock('stores'), href: '/stores' },
@@ -502,6 +503,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   pathname.startsWith('/turnover') ||
                   pathname.startsWith('/stock-balance') ||
                   pathname.startsWith('/omborchi') ||
+                  pathname.startsWith('/replenishment') ||
                   pathname.startsWith('/restock-tasks') ||
                   pathname.startsWith('/stock')
                 ? 'stock'

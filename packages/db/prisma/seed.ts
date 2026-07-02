@@ -434,15 +434,16 @@ async function main(): Promise<void> {
 
   const store = await prisma.store.upsert({
     where: { accountId_code: { accountId: account.id, code: 'MAIN' } },
-    update: {},
+    update: { isForward: true },
     create: {
       accountId: account.id,
       name: 'Ombor 1',
       code: 'MAIN',
       address: 'Toshkent, Chilonzor tumani',
+      isForward: true, // forward (fast-pick) warehouse
     },
   });
-  console.log('  ✓ Store:', store.name);
+  console.log('  ✓ Store:', store.name, '(forward)');
 
   // Exactly two warehouses (ombor): «Ombor 1» (main) + «Ombor 2».
   const warehouseIds: string[] = [store.id];
@@ -592,6 +593,7 @@ async function main(): Promise<void> {
       locPolka: ((catIdx - 1) % 12) + 1,
       locQavat: ((catIdx - 1) % 4) + 1,
       locYacheyka: catIdx,
+      forwardMax: 40, // keep up to 40 units in the forward (fast-pick) store
     };
     const prod = await prisma.product.upsert({
       where: { accountId_code: { accountId: account.id, code: p.code } },
