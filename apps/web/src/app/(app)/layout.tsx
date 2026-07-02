@@ -26,7 +26,9 @@ const MODULE_ENTITIES: Record<string, string[]> = {
   sales: ['customerorder', 'invoiceout', 'demand', 'salesreturn', 'factureout', 'commissionreport'],
   goods: ['product', 'productfolder', 'pricelist'],
   crm: ['counterparty', 'contract', 'call'],
-  stock: ['move', 'enter', 'loss', 'inventory', 'internalorder', 'store'],
+  // 'store' is a catalog/reference entity many roles need for dropdowns — it
+  // must NOT reveal the Stock (operations) module. Gate on stock DOCUMENTS only.
+  stock: ['move', 'enter', 'loss', 'inventory', 'internalorder'],
   money: ['paymentin', 'paymentout', 'cashin', 'cashout', 'prepayment'],
   retail: ['retailsale', 'cashiersession'],
   production: ['processing', 'processingorder', 'bom'],
