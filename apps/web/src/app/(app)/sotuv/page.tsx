@@ -1084,6 +1084,7 @@ function SalesScreen({ session }: { session: CurrentSession }) {
                     value={drawerAmount}
                     onChange={(e) => setDrawerAmount(e.target.value)}
                     placeholder="Summa (so'm)"
+                    // biome-ignore lint/a11y/noAutofocus: intentional POS focus — cashier types the amount immediately when this drawer opens.
                     autoFocus
                     className="h-10 w-full rounded-lg border border-[var(--ms-border)] bg-[var(--ms-bg-input)] px-3 text-sm focus:outline-none focus:border-[var(--ms-border-focus)]"
                   />
@@ -1129,6 +1130,7 @@ function SalesScreen({ session }: { session: CurrentSession }) {
                     value={closingCash}
                     onChange={(e) => setClosingCash(e.target.value)}
                     placeholder="Kassadagi naqd pul (so'm)"
+                    // biome-ignore lint/a11y/noAutofocus: intentional POS focus — cashier enters the closing cash count immediately when this dialog opens.
                     autoFocus
                     className="h-10 w-full rounded-lg border border-[var(--ms-border)] bg-[var(--ms-bg-input)] px-3 text-sm focus:outline-none focus:border-[var(--ms-border-focus)]"
                   />
@@ -1320,6 +1322,7 @@ function SalesScreen({ session }: { session: CurrentSession }) {
                     type="number"
                     min="0"
                     max="100"
+                    // biome-ignore lint/a11y/noAutofocus: intentional POS focus — cashier types the discount percent immediately when this popover opens.
                     autoFocus
                     value={discountPct === 0 ? '' : discountPct}
                     onChange={(e) =>
@@ -1355,12 +1358,12 @@ function SalesScreen({ session }: { session: CurrentSession }) {
           >
             {sendToPickingMut.isPending ? (
               <span className="flex items-center gap-2">
-                <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
+                <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
                 Yuborilmoqda...
               </span>
             ) : (
               <>
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <path d="M5 12h14M12 5l7 7-7 7"/>
                 </svg>
                 Omborchiga yuborish

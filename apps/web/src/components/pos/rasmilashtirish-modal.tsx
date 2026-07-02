@@ -432,7 +432,7 @@ export function RasmiyashtirishModal({
                 >
                   {loading ? (
                     <span className="flex items-center justify-center gap-2">
-                      <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                      <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
                       </svg>
@@ -459,6 +459,7 @@ export function RasmiyashtirishModal({
                   value={activeField === 'cash' ? cashInput : activeField === 'card' ? cardInput : terminalInput}
                   onChange={(e) => setActive(e.target.value)}
                   placeholder="0"
+                  // biome-ignore lint/a11y/noAutofocus: intentional POS focus — cashier types the payment amount immediately when this modal opens.
                   autoFocus
                   className="w-full bg-transparent text-2xl font-bold tabular-nums text-[var(--ms-text-primary)] leading-none outline-none placeholder:text-[var(--ms-text-muted)] placeholder:font-normal placeholder:text-lg [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                 />
