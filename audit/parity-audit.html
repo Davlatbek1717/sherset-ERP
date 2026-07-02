@@ -1,0 +1,421 @@
+<!doctype html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<title>Moysklad parity audit — 2026-05-02</title>
+<style>
+  :root {
+    --bg: #f7f7f7;
+    --surface: #ffffff;
+    --border: #e2e2e2;
+    --text: #313131;
+    --muted: #6b7280;
+    --brand: #186999;
+    --success: #4caf50;
+    --warning: #f5821f;
+    --destructive: #d32f2f;
+    --info: #1976d2;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 13px/1.5 "Helvetica Neue", Helvetica, Arial, "Lucida Grande", sans-serif;
+    padding: 0 0 80px;
+  }
+  header.top {
+    background: #1a3d6e;
+    color: #fff;
+    padding: 24px 32px;
+    margin-bottom: 24px;
+  }
+  header.top h1 { margin: 0 0 4px; font-size: 24px; font-weight: 600; }
+  header.top p  { margin: 0; opacity: .8; font-size: 14px; }
+  main { max-width: 1600px; margin: 0 auto; padding: 0 24px; }
+  h2.section {
+    margin: 32px 0 12px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--border);
+    font-size: 18px;
+    font-weight: 600;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 20px;
+    margin-bottom: 24px;
+  }
+  .card h3 {
+    margin: 0 0 4px;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--brand);
+  }
+  .card .url {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px;
+    color: var(--muted);
+    margin-bottom: 16px;
+  }
+  .pair {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+  .pair > div {
+    background: #fafafa;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 8px;
+  }
+  .pair h4 {
+    margin: 0 0 8px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    color: var(--muted);
+  }
+  .pair img {
+    width: 100%;
+    height: auto;
+    display: block;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: #fff;
+  }
+  .meta {
+    background: #fafafa;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 12px;
+    margin-bottom: 12px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px;
+    line-height: 1.6;
+  }
+  .meta b { color: var(--brand); }
+  .diffs { margin: 0; padding-left: 0; list-style: none; }
+  .diffs li {
+    padding: 8px 12px;
+    margin-bottom: 6px;
+    border-left: 3px solid var(--warning);
+    background: #fff8ed;
+    border-radius: 0 4px 4px 0;
+  }
+  .diffs li.critical { border-left-color: var(--destructive); background: #fdecea; }
+  .diffs li.minor { border-left-color: var(--info); background: #e8f1fb; }
+  .diffs li.ok { border-left-color: var(--success); background: #e8f5e9; }
+  .diffs li b { display: inline-block; min-width: 130px; font-weight: 600; }
+  .legend {
+    display: flex;
+    gap: 24px;
+    margin: 12px 0 24px;
+    padding: 12px 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 12px;
+  }
+  .legend span { display: flex; align-items: center; gap: 6px; }
+  .legend i {
+    display: inline-block;
+    width: 12px; height: 12px;
+    border-radius: 2px;
+  }
+  .legend i.cr { background: var(--destructive); }
+  .legend i.wn { background: var(--warning); }
+  .legend i.mn { background: var(--info); }
+  .legend i.ok { background: var(--success); }
+
+  .summary-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+    margin-bottom: 24px;
+    font-size: 12px;
+  }
+  .summary-table th, .summary-table td {
+    padding: 8px 12px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+  .summary-table th {
+    background: #f0f0f0;
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    color: var(--muted);
+  }
+  .summary-table td.score { font-weight: 600; tabular-nums: true; }
+  .score-good { color: var(--success); }
+  .score-mid { color: var(--warning); }
+  .score-bad { color: var(--destructive); }
+  details summary { cursor: pointer; padding: 4px 0; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <h1>Moysklad parity audit — 8 ta sahifa</h1>
+  <p>Sana: 2026-05-02 · Viewport: 1280×800 · Reference: <code>docs/moysklad-reference/visual-captures</code> @ 2880×1800 (retina ×2)</p>
+</header>
+
+<main>
+  <div class="legend">
+    <span><i class="cr"></i> Critical (visual bar regression)</span>
+    <span><i class="wn"></i> Warning (parity gap)</span>
+    <span><i class="mn"></i> Minor (cosmetic)</span>
+    <span><i class="ok"></i> OK (matches reference)</span>
+  </div>
+
+  <h2 class="section">Quick scoreboard</h2>
+  <table class="summary-table">
+    <thead>
+      <tr>
+        <th>Page</th>
+        <th>Layout</th>
+        <th>Toolbar</th>
+        <th>Header / Title</th>
+        <th>Form / Table</th>
+        <th>Color &amp; Type</th>
+        <th>Overall</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td>customer-orders list</td><td class="score score-mid">75%</td><td class="score score-mid">70%</td><td class="score score-good">90%</td><td class="score score-good">85%</td><td class="score score-mid">65%</td><td class="score score-mid">75%</td></tr>
+      <tr><td>customer-orders detail</td><td class="score score-mid">70%</td><td class="score score-mid">60%</td><td class="score score-mid">65%</td><td class="score score-good">80%</td><td class="score score-mid">65%</td><td class="score score-mid">68%</td></tr>
+      <tr><td>demands list</td><td class="score score-good">80%</td><td class="score score-mid">75%</td><td class="score score-good">85%</td><td class="score score-good">80%</td><td class="score score-mid">65%</td><td class="score score-mid">77%</td></tr>
+      <tr><td>demands detail</td><td class="score score-mid">70%</td><td class="score score-mid">60%</td><td class="score score-good">80%</td><td class="score score-good">80%</td><td class="score score-mid">65%</td><td class="score score-mid">71%</td></tr>
+      <tr><td>counterparties list</td><td class="score score-good">82%</td><td class="score score-good">80%</td><td class="score score-good">90%</td><td class="score score-good">85%</td><td class="score score-mid">65%</td><td class="score score-mid">80%</td></tr>
+      <tr><td>counterparties detail</td><td class="score score-mid">68%</td><td class="score score-mid">60%</td><td class="score score-mid">70%</td><td class="score score-good">80%</td><td class="score score-mid">65%</td><td class="score score-mid">68%</td></tr>
+      <tr><td>supplies list</td><td class="score score-good">82%</td><td class="score score-mid">75%</td><td class="score score-good">88%</td><td class="score score-good">85%</td><td class="score score-mid">65%</td><td class="score score-mid">79%</td></tr>
+      <tr><td>supplies detail</td><td class="score score-mid">70%</td><td class="score score-mid">60%</td><td class="score score-good">85%</td><td class="score score-good">80%</td><td class="score score-mid">65%</td><td class="score score-mid">72%</td></tr>
+    </tbody>
+  </table>
+
+  <h2 class="section">Global / cross-cutting issues</h2>
+  <ul class="diffs">
+    <li class="critical"><b>Top nav background</b> Moysklad: navy blue (~#1a3d6e). Ours: white/transparent. Asosiy brand vizual element — biz uni umuman implement qilmaganmiz.</li>
+    <li class="critical"><b>Save button color</b> Moysklad: <code>green (#4caf50)</code> "Сохранить". Ours: <code>blue var(--ms-text-brand) #186999</code> "Saqlash". Hamma detail page bo'yicha bir xil regression.</li>
+    <li class="warning"><b>Top banner color</b> Moysklad: dark navy ribbon "Перейдите на платный тариф". Ours: yellow/cream "To'liq imkoniyatlardan foydalanish". Style va matnning tone'i juda farqli.</li>
+    <li class="warning"><b>Page padding</b> Moysklad ~16px outer padding. Ours: 13×19.5px (juda close, OK).</li>
+    <li class="warning"><b>Body font</b> Moysklad: "Helvetica Neue, Helvetica, Arial...". Ours: same ✓ (matches).</li>
+    <li class="ok"><b>Table cell font-size</b> Both 11.375px (0.875rem) — matches moysklad's compact density.</li>
+    <li class="ok"><b>Body bg</b> rgb(247, 247, 247) — matches moysklad page bg exactly.</li>
+    <li class="warning"><b>Status pill colors</b> Moysklad uses muted pastel pills ("Не оплачено" — soft orange-bordered). Ours: "Tasdiqlangan" — bright blue text on pale blue (close). Need to dial down saturation.</li>
+    <li class="minor"><b>Sub-nav active underline</b> Moysklad: thin blue underline. Ours: thicker blue underline. Parity OK.</li>
+  </ul>
+
+  <h2 class="section">1. Customer orders — list page</h2>
+  <div class="card">
+    <h3>http://localhost:3000/customer-orders → Заказы покупателей</h3>
+    <div class="url">our: customer-orders/page.tsx · ref: 03-module/customerorder/screenshots/01-default.png</div>
+    <div class="pair">
+      <div><h4>Bizniki (1280×800)</h4><img src="our/customer-orders-list.png" alt="our customer-orders list"></div>
+      <div><h4>Moysklad reference (2880×1800)</h4><img src="moysklad/customer-orders-list.png" alt="moysklad customer-orders list"></div>
+    </div>
+    <div class="meta">
+      <b>Computed metrics (ours):</b><br>
+      Body bg = <code>rgb(247,247,247)</code> · Body font = Helvetica Neue 13px · Title h1 = 16.25px / weight 600<br>
+      Table x=20.30, w=1265.54 · thead h=29.25 · tbody row h=46.30 · cell font 11.375px<br>
+      "+ Buyurtma" CTA = bg <code>rgb(24,105,153)</code>, h=29.25, w=94.15, font 11.375px / weight 500
+    </div>
+    <ul class="diffs">
+      <li class="ok"><b>Sub-nav strip</b> 10 ta tab (Mijoz buyurtmalari, Mijozlarga schyotlar, Otgruzkalar, Komissiya hisobotlari, Mijoz qaytarishlari, Berilgan schyot-fakturalar, Foydalilik, Realizatsiyada, Voronka, Yunit-iqtisod) — moysklad'dagidek 10 ta + active underline match.</li>
+      <li class="ok"><b>Toolbar layout</b> + Buyurtma, Filtr, search, 0 counter, O'zgartirish/Holat/Yaratish/Chop etish dropdowns — moysklad order'iga juda close.</li>
+      <li class="ok"><b>Inline filter panel</b> Topish/Tozalash + saved pill + 6-field grid (Davr, Kontragent, Tashkilot, Ombor, Summa dan/gacha, To'lov, Yuk berildi, Loyiha, Holat) — period shortcuts (kech · bug · haf · oy) match.</li>
+      <li class="ok"><b>Table 13 ta column</b> №, VAQT, MIJOZ, TASHKILOT, SUMMA, VALYUTA, FAKTURALASHTIRILGAN, TO'LANGAN, TO'LANMAGAN, OTGRUZLANGAN, BRON QILINGAN, HOLAT, YUBORILGAN, BOSIB CHIQARILGAN — moysklad bilan 1:1.</li>
+      <li class="ok"><b>Footer totals row</b> Aggregate sums (2 350 000.00 etc) — matches moysklad's Σ row.</li>
+      <li class="warning"><b>Reference 01-default rasm Корзина modal'ni ko'rsatgan</b> — bu "default view" emas, save dialog bor edi. Real list view 2880×1800 da bizning 1280px screenshot'imizdan ancha kattaroq, lekin layout yaqin.</li>
+      <li class="critical"><b>Top nav background</b> Moysklad navy. Bizda white. Implement qilinmagan.</li>
+      <li class="warning"><b>Pagination position</b> Moysklad: bottom-left "1-1 из 0" + arrows. Ours: bottom-left "1-6 из 6" + arrows ✓ similar.</li>
+      <li class="minor"><b>Σ Yakunlarni ko'rsatish link</b> bottom-right corner — bu moysklad'dagi "Σ Показать итоги" ko'chiruvi. Match.</li>
+    </ul>
+  </div>
+
+  <h2 class="section">2. Customer orders — detail page</h2>
+  <div class="card">
+    <h3>http://localhost:3000/customer-orders/[id]</h3>
+    <div class="url">our: customer-orders/[id]/page.tsx · ref: 03-module/customerorder/screenshots/08-edit-default.png</div>
+    <div class="pair">
+      <div><h4>Bizniki (1280×800)</h4><img src="our/customer-orders-detail.png" alt="our customer-orders detail"></div>
+      <div><h4>Moysklad reference (2880×1800)</h4><img src="moysklad/customer-orders-detail.png" alt="moysklad customer-orders detail"></div>
+    </div>
+    <div class="meta">
+      <b>Computed metrics (ours):</b><br>
+      detail-toolbar: w=1280 h=39.80 pad=6.5px×13px bg=#fff y=117.80<br>
+      detail-header: w=1280 h=62.92 pad=9.75px×13px y=157.60<br>
+      detail-header-title: 14.625px / weight 600 — matches moysklad title size (~14-15px)<br>
+      detail-toolbar-save: w=80, h=26 — moysklad Сохранить ~80×28<br>
+      detail-totals-sidebar: w=320 h=223.61 x=947 (right-aligned), pad=13px, bg=#fff
+    </div>
+    <ul class="diffs">
+      <li class="critical"><b>Save button color</b> Moysklad: <span style="background:#4caf50;color:#fff;padding:2px 8px;border-radius:3px">Сохранить (GREEN)</span>. Ours: <span style="background:#186999;color:#fff;padding:2px 8px;border-radius:3px">Saqlash (BLUE)</span>. Major brand contract violation.</li>
+      <li class="critical"><b>Title is plain text, not editable input</b><br>Moysklad: "Заказ покупателя №" [empty input "ЗП-2026-00006"] "от" [date input "30.04.2026 18:11"]<br>Ours: "Mijoz buyurtmasi № ЗП-2026-00006 — 20.04.2026, 16:49" plain text. Number editing va sana picker yo'q.</li>
+      <li class="critical"><b>Position-table tab strip yo'q</b><br>Moysklad: position table tepasida "Позиции / Связанные документы / Файлы / Задачи" gorizontal tab strip + "Все(0) Расценить Сохранить цены Скидка" actions + НДС/Цена включает НДС/Настроить колонки/Импортировать/Добавить из справочника toolbar.<br>Ours: hech narsa ($\Sigma$ tab strip yo'q, faqat o'rta o'rinda PositionEditor).</li>
+      <li class="warning"><b>Header pills order</b> Moysklad: "Не оплачено" pill, "Запросить оплату" button, "Новый ▾" state pill. Ours: "To'lanmagan", "To'lov so'rash", "To'liq jo'natildi" — qatordagi tartib OK lekin state pill (Новый ▾) o'rniga bizda zinapoyali pill turidagi badge.</li>
+      <li class="warning"><b>Right sidebar Кол-во/Объем/Вес fields yo'q</b> Moysklad sidebar tepasida "Кол-во: 0  Объем: 0  Вес: 0" (3 ta info). Bizda faqat "Soni: 5" bor. Volume/weight aggregation yo'q.</li>
+      <li class="warning"><b>"Резерв" badge yo'q</b> Moysklad header oxirida "❓ Резерв" badge (reservation hint). Bizda yo'q.</li>
+      <li class="warning"><b>Form field padding</b> Moysklad: gap=12px row gap. Ours: gap-y=1.5 (~6px). Yaqin lekin biroz tighter.</li>
+      <li class="ok"><b>Author block</b> "Admin User Asosiy" + "O'zgartirilgan: ... 25.04.2026, 17:06" — matches moysklad's "ozodbek Основной" + "Изменено: ..."</li>
+      <li class="ok"><b>Provedeno checkbox</b> Top-right "✓ Provedeno" (checked, blue) — same position and styling.</li>
+      <li class="ok"><b>3-column form layout</b> Tashkilot/Kontragent/Plan dot/Sotuv kanali/Hujjat valyutasi (left) — Ombor/Shartnoma/Loyiha (mid) — Izoh/Yetkazib berish manzili (right). Match.</li>
+      <li class="ok"><b>Position editor columns</b> TOVAR / MIQDOR / NARX / SKIDKA% / NDS% / JAMI — matches moysklad's Наименование/Количество/Цена/НДС/Сумма (with extra "Отгруж/Доступно/Остаток" cols in moysklad).</li>
+      <li class="minor"><b>Locked alert (Provedeno)</b> Bizda blue info alert bor "Hujjat Provedeno holatda...". Moysklad'da alert yo'q (ular field disabled qiladi). Cosmetic difference.</li>
+    </ul>
+  </div>
+
+  <h2 class="section">3. Demands — list page</h2>
+  <div class="card">
+    <h3>http://localhost:3000/demands → Отгрузки</h3>
+    <div class="pair">
+      <div><h4>Bizniki</h4><img src="our/demands-list.png" alt="our demands list"></div>
+      <div><h4>Moysklad reference</h4><img src="moysklad/demands-list.png" alt="moysklad demands list"></div>
+    </div>
+    <ul class="diffs">
+      <li class="ok"><b>Toolbar layout</b> + Otgruzka, Filtr, search, 0 counter, O'zgartirish/Yaratish/Chop etish — matches moysklad pattern.</li>
+      <li class="ok"><b>Inline filter</b> 6-field drawer (Davr/Kontragent/Tashkilot/Ombor/Summa dan/Summa gacha) — matches moysklad shipment filter set.</li>
+      <li class="ok"><b>Table columns</b> №, SANA, MIJOZ, BUYURTMA, HOLAT, SUMMA — matches moysklad demand list (8 cols vs ours 6, missing 2: Отправлено/Напечатано).</li>
+      <li class="warning"><b>"Yuborilgan" / "Bosib chiqarilgan" cols yo'q</b> Moysklad has print/email status columns. Bizda yo'q.</li>
+      <li class="warning"><b>Saved pill</b> Bizda mavjud lekin currently no saved filter. Moysklad'da bo'sh.</li>
+      <li class="critical"><b>Top nav navy</b> sa bir xil regression bor.</li>
+    </ul>
+  </div>
+
+  <h2 class="section">4. Demands — detail page</h2>
+  <div class="card">
+    <h3>http://localhost:3000/demands/[id]</h3>
+    <div class="pair">
+      <div><h4>Bizniki</h4><img src="our/demands-detail.png" alt="our demands detail"></div>
+      <div><h4>Moysklad reference</h4><img src="moysklad/demands-detail.png" alt="moysklad demands detail"></div>
+    </div>
+    <ul class="diffs">
+      <li class="critical"><b>Save button GREEN</b> moysklad standard. Bizda blue.</li>
+      <li class="warning"><b>Provedeno toggle</b> position OK (top-right). Moysklad'da "Реализация" pill (sale-realised) ham bor — bizda yo'q.</li>
+      <li class="warning"><b>Position-table action strip yo'q</b> moysklad'da "Позиции / Файлы / Задачи / Связанные" tabs + Импортировать/Добавить из справочника. Bizda yo'q.</li>
+      <li class="ok"><b>3-col form layout</b> Tashkilot/Kontragent (left), Ombor/Provedeno sana (mid), Izoh/Tashqi kod (right). Match.</li>
+      <li class="ok"><b>Linked customer-order</b> "Buyurtma: ЗП-2026-00006" link — matches moysklad's "Заказ" link.</li>
+      <li class="ok"><b>Totals sidebar</b> Oraliq jami + QQS + QQS bilan + Jami + Soni — moysklad "Промежуточный итог + НДС + Цена включает НДС + Общая стоимость + Кол-во". Same structure.</li>
+      <li class="warning"><b>Bog'liq + Tarix tabs at bottom</b> moysklad'da bu Позиции/Связанные/Файлы/Задачи tab strip'da bo'lar edi (top), bizda alohida tab strip oxirida.</li>
+    </ul>
+  </div>
+
+  <h2 class="section">5. Counterparties — list page</h2>
+  <div class="card">
+    <h3>http://localhost:3000/counterparties → Контрагенты</h3>
+    <div class="pair">
+      <div><h4>Bizniki</h4><img src="our/counterparties-list.png" alt="our counterparties list"></div>
+      <div><h4>Moysklad reference</h4><img src="moysklad/counterparties-list.png" alt="moysklad counterparties list"></div>
+    </div>
+    <ul class="diffs">
+      <li class="ok"><b>Sub-nav</b> Kontragentlar / Kontakt shaxslar / Qo'ng'iroqlar / Bitimlar / Kanban / Voronkalar — matches moysklad's CRM sub-nav.</li>
+      <li class="ok"><b>Toolbar</b> + Yangi kontragent, search "Nom, STIR yoki telefon...", 0 counter, ↑ Import, ↓ Export, ⚙ — matches.</li>
+      <li class="ok"><b>Table cols</b> NOM / YUR. NASLOV / TIP / STIR / KONTAKT / YARATILGAN — matches moysklad NOM/Юр.название/Тип/ИНН/Контакт/Создано.</li>
+      <li class="ok"><b>Type pill</b> "Yuridik shaxs (RU)" / "YaTT" — colored brand pill on .endsWith("UZ"). Match.</li>
+      <li class="ok"><b>57 ta kontragent</b> visible without inline filter (filter not opened by default). OK.</li>
+      <li class="critical"><b>Top nav navy</b> same regression.</li>
+      <li class="warning"><b>Filter button absent on counterparty list</b> Moysklad'da Фильтр button bor. Bizda chap tomonda inline filter to'g'ri o'rnatilgan emas (bu sahifa toolbar baseline'ida ammo full inline-filter helper yo'q).</li>
+    </ul>
+  </div>
+
+  <h2 class="section">6. Counterparties — detail page</h2>
+  <div class="card">
+    <h3>http://localhost:3000/counterparties/[id]</h3>
+    <div class="pair">
+      <div><h4>Bizniki</h4><img src="our/counterparties-detail.png" alt="our counterparties detail"></div>
+      <div><h4>Moysklad reference</h4><img src="moysklad/counterparties-detail.png" alt="moysklad counterparties detail"></div>
+    </div>
+    <ul class="diffs">
+      <li class="critical"><b>Form is read-only</b> (info grids), moysklad'da edit form. Bizniki "view-only with archive button". Major UX gap — moysklad'da har field input/picker, ikkala flow ham edit.</li>
+      <li class="critical"><b>Save button GREEN</b> moysklad. Bizda BLUE.</li>
+      <li class="warning"><b>Provedeno checkbox yo'q</b> bu OK (catalog item, hideApplicable=true). Moysklad'da ham yo'q. ✓</li>
+      <li class="warning"><b>Header layout</b> "усто Расул 0829 · Kod: ..." inline title + "legal" type pill + "Arxivlash" button + "Faol" state pill — matches moysklad's title + type pill + actions arrangement.</li>
+      <li class="ok"><b>FormSection layout</b> Asosiy/UZ rekvizitlari/Aloqa/Identifikatorlar/Bank hisoblari/Kontakt shaxslar/Aloqalar tarixi/Fayllar/Bog'liq/Balans/Statistika — matches moysklad section structure.</li>
+      <li class="warning"><b>Empty fields rendered as "—"</b> matches moysklad behavior. ✓</li>
+      <li class="warning"><b>"Aloqalar tarixi" + "Yangi qo'ng'iroq" button</b> matches moysklad's "История звонков" + "+ Новый звонок". ✓</li>
+    </ul>
+  </div>
+
+  <h2 class="section">7. Supplies — list page</h2>
+  <div class="card">
+    <h3>http://localhost:3000/supplies → Приёмки</h3>
+    <div class="pair">
+      <div><h4>Bizniki</h4><img src="our/supplies-list.png" alt="our supplies list"></div>
+      <div><h4>Moysklad reference</h4><img src="moysklad/supplies-list.png" alt="moysklad supplies list"></div>
+    </div>
+    <ul class="diffs">
+      <li class="ok"><b>Sub-nav</b> Ta'minlovchi buyurtmalari / Ta'minlovchi schyotlari / Qabullar (active) / Qaytarishlar / Olingan schyot-fakturalar / Xaridlarni boshqarish / O'qitish — matches moysklad's purchase tabs.</li>
+      <li class="ok"><b>Toolbar</b> + Yangi priyomka, ▲ Filtr, search "№, ta'minlovchi, faktura...", 0, ↓ Export, ⚙ — matches.</li>
+      <li class="ok"><b>Inline filter</b> 6-field grid (Davr, Kontragent, Tashkilot, Ombor, Summa dan/gacha) — uses useMoyskladDocFilter helper.</li>
+      <li class="ok"><b>Table cols</b> №, SANA, TA'MINLOVCHI, FAKTURA №, HOLAT, SUMMA — matches moysklad supply list.</li>
+      <li class="critical"><b>Top nav navy</b> same regression.</li>
+      <li class="minor"><b>Title "Приёмки"</b> currently in Russian (not translated). Moysklad'da ham "Приёмки". OK.</li>
+    </ul>
+  </div>
+
+  <h2 class="section">8. Supplies — detail page</h2>
+  <div class="card">
+    <h3>http://localhost:3000/supplies/[id]</h3>
+    <div class="pair">
+      <div><h4>Bizniki</h4><img src="our/supplies-detail.png" alt="our supplies detail"></div>
+      <div><h4>Moysklad reference</h4><img src="moysklad/supplies-detail.png" alt="moysklad supplies detail"></div>
+    </div>
+    <ul class="diffs">
+      <li class="critical"><b>Save button GREEN</b> standard regression.</li>
+      <li class="warning"><b>"Ta'minlovchi buyurtmasi" link yo'q</b> Moysklad'da bog'liq purchase order link bor. Bizda data shape'da yo'q.</li>
+      <li class="ok"><b>3-col form layout</b> Tashkilot/Ta'minlovchi/Ombor (left), Kiruvchi №/Kiruvchi sana/Provedeno sana (mid), Izoh/Tashqi kod (right). Match.</li>
+      <li class="ok"><b>Provedeno toggle + state pill</b> "Provedeno" (success) — matches moysklad "Проведён" (зелёный success).</li>
+      <li class="ok"><b>Position table</b> AirPods Pro 2 row, "Sravochnikdan qo'shish" link — matches moysklad's "+ Добавить позицию... / Добавить из справочника".</li>
+      <li class="ok"><b>Totals sidebar</b> Oraliq jami / QQS / Narx QQS bilan / Jami / Soni — full match with moysklad structure.</li>
+      <li class="warning"><b>"Связанные документы" tab strip yo'q</b> moysklad'da Позиции/Связанные/Файлы/Задачи. Bizda Bog'liq/Tarix at bottom.</li>
+    </ul>
+  </div>
+
+  <h2 class="section">Top priorities (recommended fix order)</h2>
+  <ol style="line-height: 1.8;">
+    <li><b>Save button → green:</b> shared <code>DetailToolbar</code> komponentdagi save variant'ni primary (blue) → success (green) ga o'zgartirish. 1 ta o'zgarish, hamma 18 ta detail page'ga ta'sir qiladi.</li>
+    <li><b>Top nav navy:</b> <code>apps/web/src/components/header.tsx</code> bg <code>#fff</code> → <code>#1a3d6e</code>, text white. Bu major brand parity fix.</li>
+    <li><b>Detail page tab strip:</b> har detail page'da PositionEditor tepasida "Позиции / Связанные документы / Файлы / Задачи" gorizontal tab strip qo'shish. Bog'liq/Tarix'ni shu strip'ga ko'chirish.</li>
+    <li><b>Detail header № input + date picker:</b> currently plain text. Moysklad: 2 input field. Yaratish va sahifani edit qilishda kerak.</li>
+    <li><b>Кол-во/Объем/Вес sidebar trio:</b> <code>DetailTotalsSidebar</code> tepasiga 3-info row qo'shish (qty/volume/weight aggregate).</li>
+    <li><b>"Резерв" / Reservation badge:</b> customer-order detail'ga reservation pill. Data shape'da reservation flag bor lekin UI'da rendered emas.</li>
+    <li><b>Counterparties detail edit form:</b> currently view-only. Moysklad'da har field input/picker. Edit page yoki inline edit kerak.</li>
+    <li><b>Banner color:</b> "To'liq imkoniyatlardan" yellow → moysklad-style navy ribbon.</li>
+  </ol>
+
+  <h2 class="section">Coverage gap (sahifa scope tashqarida)</h2>
+  <p>Hozirda audit qilinmagan, lekin parity uchun tekshirish kerak:</p>
+  <ul style="line-height: 1.8;">
+    <li><b>10 ta qolgan FSM detail</b>: invoices-out/in, purchase-orders, sales-returns, purchase-returns, moves, inventories, enters, losses, payments-in/out, cash-in/out</li>
+    <li><b>Modal'lar</b>: CatalogPicker (3-4 xil instance), ConfirmDialog, SendEmailDialog</li>
+    <li><b>/new sahifalar (33 ta)</b>: yangi yaratish form'lar — hech biri shared shell ishlatmaydi</li>
+    <li><b>Specialty pages</b>: opportunities, pipelines, calls, retail/*, ecommerce/*, productions/*, settings/*</li>
+    <li><b>Mobile responsive</b>: 375px viewport — moysklad'ning responsive variant'lari mavjud, biznikida full responsive audit qilinmagan</li>
+  </ul>
+
+  <h2 class="section">Audit metodologiyasi va kamchiliklar</h2>
+  <details>
+  <summary>Bu hisobotning chegaralari</summary>
+  <ul style="line-height: 1.8; margin-top: 12px;">
+    <li>Bizning screenshot'lar 1280×800 viewport'da (real foydalanuvchi laptop o'lchami). Moysklad reference'lar 2880×1800 retina (×2). To'g'ridan-to'g'ri pixel comparison qilib bo'lmaydi — relative sizes va layout structure'ni ko'rib chiqdik.</li>
+    <li>Reference 01-default screenshot'larning ba'zilari (customer-orders, demands) save dialog overlaylari bilan tushgan ekan — 08-edit-default'larini ishlatdik.</li>
+    <li>Faqat default state ko'rildi. Dropdown menyu'lar, error state, loading state, empty state'lar ko'rilmagan.</li>
+    <li>Computed CSS metrics faqat 5-10 ta key element uchun olindi. Har CSS property emas.</li>
+    <li>Score'lar (75% / 80% va h.k.) subjective — formal pixel-diff tool ishlatilmagan.</li>
+    <li>Reference DOM HTML fayllari mavjud (avval inlined styles bilan), lekin dom-level diff qilinmadi.</li>
+    <li>Hozirgi screenshot'lar har bittasida pulli tarif banner ham bor — bu bizning UI element. Production'da yashirinishi mumkin (dev banner bo'lsa).</li>
+  </ul>
+  </details>
+
+</main>
+
+</body>
+</html>

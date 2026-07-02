@@ -1,0 +1,24 @@
+- button "help"
+- heading "Mijoz buyurtmalari" [level=1]
+- button "refresh":
+  - img
+- link "Buyurtma":
+  - /url: /customer-orders/new
+  - img
+  - text: ""
+- button "Filtr" [expanded]
+- img
+- textbox "Raqam yoki izoh"
+- text: "0"
+- button "O'zgartirish" [disabled]:
+  - text: ""
+  - img
+- button "Holat" [disabled]:
+  - text: ""
+  - img
+- button "Yaratish" [disabled]:
+  - text: ""
+  - img
+- button "Chop etish":
+  - text: ""
+  - img

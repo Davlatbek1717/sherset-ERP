@@ -1,0 +1,103 @@
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Inject,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
+import type { AuthenticatedUser } from '../auth/auth.schema.js';
+import { CurrentUser } from '../auth/current-user.decorator.js';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
+import { RequirePermission } from '../permissions/require-permission.decorator.js';
+import { BulkIdsSchema, BulkTransitionSchema, runBulk } from '../shared/bulk.js';
+import { LossService } from './loss.service.js';
+
+@Controller('losses')
+@UseGuards(JwtAuthGuard)
+export class LossController {
+  constructor(@Inject(LossService) private readonly svc: LossService) {}
+
+  @Get()
+  @RequirePermission({ entity: 'loss', action: 'view' })
+  async list(@CurrentUser() user: AuthenticatedUser, @Query() query: Record<string, unknown>) {
+    return this.svc.list(user.accountId, query);
+  }
+
+  // moysklad «Итого» — pinned footer total over the active filter set (mirrors
+  // invoice-in.controller). Two segments, so it never collides with `:id`.
+  @Get('aggregate/totals')
+  @RequirePermission({ entity: 'loss', action: 'view' })
+  async aggregateTotals(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: Record<string, unknown>,
+  ) {
+    return this.svc.aggregateTotals(user.accountId, query);
+  }
+
+  // moysklad toolbar «N из ВСЕГО ‹ ›» — position in the full list + neighbours.
+  // Two segments, so it never collides with `:id`. Mirrors enter/purchase-order.
+  @Get(':id/position')
+  @RequirePermission({ entity: 'loss', action: 'view' })
+  async position(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.svc.findPosition(user.accountId, id);
+  }
+
+  @Get(':id')
+  @RequirePermission({ entity: 'loss', action: 'view' })
+  async findById(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.svc.findById(user.accountId, id);
+  }
+  @Post()
+  @RequirePermission({ entity: 'loss', action: 'create' })
+  async create(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
+    return this.svc.create(user.accountId, user.sub, body);
+  }
+  @Patch(':id')
+  @RequirePermission({ entity: 'loss', action: 'update' })
+  async update(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    return this.svc.update(user.accountId, user.sub, id, body);
+  }
+  @Post(':id/transitions/:target')
+  @RequirePermission({ entity: 'loss', action: 'approve' })
+  async transition(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Param('target') target: string,
+  ) {
+    return this.svc.transition(user.accountId, user.sub, id, target);
+  }
+  @Delete(':id')
+  @RequirePermission({ entity: 'loss', action: 'delete' })
+  async delete(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.svc.delete(user.accountId, user.sub, id);
+  }
+
+  @Post(':id/clone')
+  @RequirePermission({ entity: 'loss', action: 'create' })
+  clone(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.svc.clone(user.accountId, user.sub, id);
+  }
+
+  @Post('bulk-delete')
+  @RequirePermission({ entity: 'loss', action: 'delete' })
+  async bulkDelete(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
+    const { ids } = BulkIdsSchema.parse(body);
+    return runBulk(ids, (id) => this.svc.delete(user.accountId, user.sub, id));
+  }
+
+  @Post('bulk-transition')
+  @RequirePermission({ entity: 'loss', action: 'approve' })
+  async bulkTransition(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
+    const { ids, target } = BulkTransitionSchema.parse(body);
+    return runBulk(ids, (id) => this.svc.transition(user.accountId, user.sub, id, target));
+  }
+}

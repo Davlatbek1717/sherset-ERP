@@ -1,0 +1,18 @@
+- button "help"
+- heading "Приёмки" [level=1]
+- button "refresh":
+  - img
+- link "Yangi priyomka":
+  - /url: /supplies/new
+  - img
+  - text: ""
+- button "Filtr" [expanded]
+- img
+- textbox "№, ta'minlovchi, faktura..."
+- text: "0"
+- button "O'zgartirish" [disabled]:
+  - text: ""
+  - img
+- button "Chop etish":
+  - text: ""
+  - img

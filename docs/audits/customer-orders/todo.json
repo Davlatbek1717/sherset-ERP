@@ -1,0 +1,59 @@
+{
+  "module": "customer-orders",
+  "source": "live",
+  "verdict": "delta",
+  "dropdowns": {
+    "bulk": {
+      "matched": 8,
+      "missing": [],
+      "extra": [],
+      "disabledMismatch": [
+        {
+          "label": "Удалить",
+          "moysklad": true,
+          "ours": false
+        },
+        {
+          "label": "Копировать",
+          "moysklad": true,
+          "ours": false
+        },
+        {
+          "label": "Провести",
+          "moysklad": true,
+          "ours": false
+        }
+      ],
+      "orderMismatch": false
+    },
+    "print": {
+      "matched": 3,
+      "missing": [
+        {
+          "label": "Комплект...",
+          "disabled": true
+        }
+      ],
+      "extra": [
+        {
+          "label": "Комплект…",
+          "disabled": true
+        }
+      ],
+      "disabledMismatch": [
+        {
+          "label": "Заказ",
+          "moysklad": true,
+          "ours": false
+        }
+      ],
+      "orderMismatch": false
+    }
+  },
+  "totals": {
+    "missing": 1,
+    "extra": 1,
+    "disabledMismatch": 4,
+    "orderMismatch": 0
+  }
+}

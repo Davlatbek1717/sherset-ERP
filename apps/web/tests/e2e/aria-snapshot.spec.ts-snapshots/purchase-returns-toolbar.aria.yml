@@ -1,0 +1,12 @@
+- button "help"
+- heading "Ta'minlovchiga qaytaruvlar" [level=1]
+- button "refresh":
+  - img
+- link "Yangi qaytarish":
+  - /url: /purchase-returns/new
+  - img
+  - text: ""
+- button "Filtr" [expanded]
+- img
+- textbox "№, ta'minlovchi, sabab..."
+- text: "0"

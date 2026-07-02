@@ -1,0 +1,473 @@
+import type { Prisma } from '@moysklad/db';
+import { scaleMinorByQty } from '@moysklad/money';
+import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { allocateDocumentNumber } from '../../prisma/document-number.js';
+import { PrismaService } from '../../prisma/prisma.service.js';
+import { tashkentRangeBounds } from '../report/report-date-bounds.util.js';
+import { resolveCreatorGroupId } from '../shared/group-stamp.js';
+import { assertMassEditRefsInTenant } from '../shared/mass-edit.js';
+import { mapVersionedUpdateError } from '../shared/optimistic-lock.js';
+import {
+  CreateInternalOrderSchema,
+  type InternalOrderFilterInput,
+  InternalOrderFilterSchema,
+  type InternalOrderPositionInput,
+  UpdateInternalOrderSchema,
+} from './internal-order.schema.js';
+
+/**
+ * InternalOrder service — internal stock-transfer requests.
+ *
+ * Money math note: the document carries `sumMinor` / `vatSumMinor`
+ * derived from the position table for REPORTING ONLY. Posting does NOT
+ * touch the counterparty balance (there's no counterparty involved) and
+ * does NOT touch the stock balance (stock moves when a separate Move
+ * document is posted referencing this order). So the FSM here is purely
+ * about lifecycle tracking — no transaction needed beyond the row
+ * updates themselves.
+ *
+ * Fulfilment: `movedSumMinor` on the header and `movedQuantity` per
+ * position are bumped by the Move module (out of scope for this file)
+ * when a Move references this order.
+ */
+@Injectable()
+export class InternalOrderService {
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+
+  async list(accountId: string, raw: unknown) {
+    const filter = InternalOrderFilterSchema.parse(raw);
+    const where = this.buildListWhere(accountId, filter);
+
+    // moysklad parity: relational sort for organization / store (the
+    // list-view exposes these column headers as sortable). Mirror
+    // move.service.ts / supply.service.ts buildListWhere orderBy.
+    const orderBy =
+      filter.sortBy === 'organization'
+        ? { organization: { name: filter.sortDir } }
+        : filter.sortBy === 'store'
+          ? { store: { name: filter.sortDir } }
+          : { [filter.sortBy]: filter.sortDir };
+
+    const rows = await this.prisma.client.internalOrder.findMany({
+      where,
+      orderBy,
+      take: filter.limit + 1,
+      ...(filter.cursor ? { cursor: { id: filter.cursor }, skip: 1 } : {}),
+      include: {
+        organization: { select: { id: true, name: true } },
+        store: { select: { id: true, name: true } },
+        owner: { select: { id: true, name: true } },
+        _count: { select: { positions: true } },
+      },
+    });
+    const hasMore = rows.length > filter.limit;
+    const items = hasMore ? rows.slice(0, filter.limit) : rows;
+    const nextCursor = hasMore ? items[items.length - 1]?.id : undefined;
+    const total = await this.prisma.client.internalOrder.count({ where });
+    return { items, nextCursor, total };
+  }
+
+  /**
+   * Shared WHERE builder for `list` (and any future aggregate that reuses
+   * the active filter set). Extracted to mirror move.service.ts so the
+   * InternalOrder filter panel reaches moysklad «Внутренние заказы» parity
+   * (~12 backed fields) without two-place drift. Preserves the accountId
+   * tenant guard + deletedAt/includeDeleted soft-delete handling.
+   *
+   * NOTE: InternalOrder is an internal stock-transfer request — it has NO
+   * agentId, agentAccountId, contractId, organizationAccountId, or
+   * salesChannelId (no counterparty). DO NOT add those clauses.
+   */
+  private buildListWhere(
+    accountId: string,
+    filter: InternalOrderFilterInput,
+  ): Prisma.InternalOrderWhereInput {
+    const momentRange =
+      filter.momentFrom || filter.momentTo
+        ? {
+            moment: tashkentRangeBounds(filter.momentFrom, filter.momentTo),
+          }
+        : {};
+    const deliveryRange =
+      filter.deliveryFrom || filter.deliveryTo
+        ? {
+            deliveryPlannedMoment: tashkentRangeBounds(filter.deliveryFrom, filter.deliveryTo),
+          }
+        : {};
+    const updatedRange =
+      filter.updatedFrom || filter.updatedTo
+        ? {
+            updatedAt: tashkentRangeBounds(filter.updatedFrom, filter.updatedTo),
+          }
+        : {};
+    const sumRange =
+      filter.sumMinorFrom !== undefined || filter.sumMinorTo !== undefined
+        ? {
+            sumMinor: {
+              ...(filter.sumMinorFrom !== undefined ? { gte: BigInt(filter.sumMinorFrom) } : {}),
+              ...(filter.sumMinorTo !== undefined ? { lte: BigInt(filter.sumMinorTo) } : {}),
+            },
+          }
+        : {};
+
+    return {
+      accountId,
+      ...(filter.includeDeleted ? {} : { deletedAt: null }),
+      ...(filter.state ? { state: filter.state } : {}),
+      ...(filter.organizationId ? { organizationId: filter.organizationId } : {}),
+      ...(filter.storeId ? { storeId: filter.storeId } : {}),
+      ...(filter.projectId ? { projectId: filter.projectId } : {}),
+      ...(filter.ownerId ? { ownerId: filter.ownerId } : {}),
+      ...(filter.groupId ? { groupId: filter.groupId } : {}),
+      ...(filter.applicable !== undefined ? { applicable: filter.applicable } : {}),
+      ...(filter.printed !== undefined ? { printed: filter.printed } : {}),
+      ...(filter.published !== undefined ? { published: filter.published } : {}),
+      ...(filter.currency ? { currency: filter.currency } : {}),
+      ...momentRange,
+      ...deliveryRange,
+      ...updatedRange,
+      ...sumRange,
+      ...(filter.search
+        ? {
+            OR: [
+              { name: { contains: filter.search, mode: 'insensitive' } },
+              { description: { contains: filter.search, mode: 'insensitive' } },
+            ],
+          }
+        : {}),
+    };
+  }
+
+  async findById(accountId: string, id: string) {
+    const row = await this.prisma.client.internalOrder.findFirst({
+      where: { id, accountId, deletedAt: null },
+      include: {
+        organization: true,
+        store: true,
+        project: { select: { id: true, name: true } },
+        owner: { select: { id: true, name: true, email: true } },
+        positions: {
+          orderBy: { position: 'asc' },
+          include: {
+            product: {
+              select: {
+                id: true,
+                name: true,
+                code: true,
+                uom: true,
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!row) throw new NotFoundException(`InternalOrder ${id} not found`);
+    return row;
+  }
+
+  /** Compute header totals from positions — kept centralised so create + update agree. */
+  private computeTotals(positions: InternalOrderPositionInput[]) {
+    let sumMinor = 0n;
+    let vatSumMinor = 0n;
+    for (const p of positions) {
+      const price = BigInt(p.priceMinor ?? '0');
+      // price × qty via the shared 6-dp, round-half-up primitive — the
+      // quantity column is Decimal(20,6), and /internal-orders/new computes the
+      // preview the same way, so the stored total matches what the user sees.
+      const lineMinor = scaleMinorByQty(price, String(p.quantity));
+      sumMinor += lineMinor;
+      if (p.vatEnabled && p.vat) {
+        // VAT inclusive convention is handled by the doc's `vatIncluded`
+        // flag at totals time; per-line we just stash the percent for
+        // reporting and let the header aggregate decide. For simplicity
+        // here we treat VAT as additive (matches `vatIncluded=false`
+        // default) — refine on next iteration if needed.
+        vatSumMinor += (lineMinor * BigInt(p.vat)) / 100n;
+      }
+    }
+    return { sumMinor, vatSumMinor };
+  }
+
+  async create(accountId: string, ownerId: string, raw: unknown) {
+    const data = CreateInternalOrderSchema.parse(raw);
+    const n = await allocateDocumentNumber(
+      this.prisma.client,
+      accountId,
+      'internalorder',
+      async () => {
+        // moysklad-parity: plain 5-digit zero-padded «Номер» (no prefix). Seed = highest
+        // TRAILING number across all names (handles legacy prefixed + new plain) → continues.
+        const rows = await this.prisma.client.internalOrder.findMany({
+          where: { accountId },
+          select: { name: true },
+        });
+        let max = 0;
+        for (const r of rows) {
+          const m = r.name.match(/\d+$/);
+          if (m) max = Math.max(max, Number.parseInt(m[0], 10) || 0);
+        }
+        return max;
+      },
+    );
+    const name = String(n).padStart(5, '0');
+
+    const moment = data.moment ? new Date(data.moment) : new Date();
+    const deliveryPlannedMoment = data.deliveryPlannedMoment
+      ? new Date(data.deliveryPlannedMoment)
+      : null;
+    const applicable = data.applicable ?? false;
+    const state = applicable ? 'posted' : 'draft';
+    const postedAt = applicable ? new Date() : null;
+    const totals = this.computeTotals(data.positions);
+
+    const created = await this.prisma.client.$transaction(async (tx) => {
+      const creatorGroupId = await resolveCreatorGroupId(this.prisma.client, accountId, ownerId);
+      const row = await tx.internalOrder.create({
+        data: {
+          accountId,
+          ownerId,
+          groupId: creatorGroupId,
+          organizationId: data.organizationId,
+          storeId: data.storeId,
+          projectId: data.projectId ?? null,
+          name,
+          moment,
+          deliveryPlannedMoment,
+          applicable,
+          state,
+          postedAt,
+          sumMinor: totals.sumMinor,
+          vatSumMinor: totals.vatSumMinor,
+          vatEnabled: data.vatEnabled,
+          vatIncluded: data.vatIncluded,
+          currency: data.currency,
+          rateValue: BigInt(data.rateValue),
+          description: data.description,
+          externalCode: data.externalCode,
+        },
+      });
+      await tx.internalOrderPosition.createMany({
+        data: data.positions.map((p, idx) => ({
+          internalOrderId: row.id,
+          accountId,
+          position: idx + 1,
+          assortmentKind: p.assortmentKind,
+          assortmentId: p.assortmentId,
+          productId: p.productId ?? (p.assortmentKind === 'product' ? p.assortmentId : null),
+          quantity: p.quantity,
+          priceMinor: p.priceMinor ? BigInt(p.priceMinor) : null,
+          vat: p.vat ?? null,
+          vatEnabled: p.vatEnabled,
+        })),
+      });
+      return row;
+    });
+    await this.logAudit(accountId, ownerId, 'create', created.id, null);
+    return created;
+  }
+
+  async update(accountId: string, userId: string, id: string, raw: unknown) {
+    const data = UpdateInternalOrderSchema.parse(raw);
+    const row = await this.findById(accountId, id);
+    if (row.applicable) {
+      throw new BadRequestException(
+        'Provedeno hujjatni tahrirlash mumkin emas — avval unpost qiling',
+      );
+    }
+    try {
+      // Optimistic-lock guard (lost-update). The version-filtered header update
+      // runs FIRST inside the tx; if a concurrent edit bumped the version, it
+      // touches zero rows → P2025 → the whole tx (incl. the destructive
+      // position deleteMany) rolls back, so positions are NOT lost (Class A).
+      // Single versioned update — totals are folded into it; there is no
+      // second update.
+      const result = await this.prisma.client.$transaction(async (tx) => {
+        const totals = data.positions ? this.computeTotals(data.positions) : null;
+        await tx.internalOrder.update({
+          where: { id, accountId, version: data.version },
+          data: {
+            ...(data.organizationId ? { organizationId: data.organizationId } : {}),
+            ...(data.storeId ? { storeId: data.storeId } : {}),
+            ...(data.projectId !== undefined ? { projectId: data.projectId ?? null } : {}),
+            ...(data.moment ? { moment: new Date(data.moment) } : {}),
+            ...(data.deliveryPlannedMoment !== undefined
+              ? {
+                  deliveryPlannedMoment: data.deliveryPlannedMoment
+                    ? new Date(data.deliveryPlannedMoment)
+                    : null,
+                }
+              : {}),
+            ...(data.vatEnabled !== undefined ? { vatEnabled: data.vatEnabled } : {}),
+            ...(data.vatIncluded !== undefined ? { vatIncluded: data.vatIncluded } : {}),
+            ...(data.currency ? { currency: data.currency } : {}),
+            ...(data.rateValue ? { rateValue: BigInt(data.rateValue) } : {}),
+            ...(data.description !== undefined ? { description: data.description } : {}),
+            ...(data.externalCode !== undefined ? { externalCode: data.externalCode } : {}),
+            ...(totals ? { sumMinor: totals.sumMinor, vatSumMinor: totals.vatSumMinor } : {}),
+            version: { increment: 1 },
+          },
+        });
+        if (data.positions) {
+          await tx.internalOrderPosition.deleteMany({ where: { internalOrderId: id } });
+          if (data.positions.length > 0) {
+            await tx.internalOrderPosition.createMany({
+              data: data.positions.map((p, idx) => ({
+                internalOrderId: id,
+                accountId,
+                position: idx + 1,
+                assortmentKind: p.assortmentKind,
+                assortmentId: p.assortmentId,
+                productId: p.productId ?? (p.assortmentKind === 'product' ? p.assortmentId : null),
+                quantity: p.quantity,
+                priceMinor: p.priceMinor ? BigInt(p.priceMinor) : null,
+                vat: p.vat ?? null,
+                vatEnabled: p.vatEnabled,
+              })),
+            });
+          }
+        }
+        return tx.internalOrder.findUniqueOrThrow({
+          where: { id },
+          include: { positions: { orderBy: { position: 'asc' } } },
+        });
+      });
+      await this.logAudit(accountId, userId, 'update', id, null);
+      return result;
+    } catch (e) {
+      mapVersionedUpdateError(e, 'InternalOrder');
+      throw e;
+    }
+  }
+
+  async softDelete(accountId: string, userId: string, id: string) {
+    const row = await this.findById(accountId, id);
+    if (row.applicable) {
+      throw new BadRequestException(
+        "Provedeno hujjatni o'chirish mumkin emas — avval unpost yoki cancel qiling",
+      );
+    }
+    await this.prisma.client.internalOrder.update({
+      where: { id },
+      data: { deletedAt: new Date(), state: 'cancelled' },
+    });
+    await this.logAudit(accountId, userId, 'delete', id, null);
+    return { ok: true };
+  }
+
+  async massEditApply(
+    accountId: string,
+    userId: string,
+    id: string,
+    patch: { ownerId?: string | null; projectId?: string | null; description?: string | null },
+  ) {
+    await this.findById(accountId, id);
+    await assertMassEditRefsInTenant(this.prisma, accountId, patch);
+    const data: Record<string, unknown> = {};
+    if ('ownerId' in patch) data.ownerId = patch.ownerId;
+    if ('projectId' in patch) data.projectId = patch.projectId;
+    if ('description' in patch) data.description = patch.description;
+    const updated = await this.prisma.client.internalOrder.update({
+      where: { id, accountId },
+      data,
+    });
+    await this.logAudit(accountId, userId, 'mass-edit', id, patch as Record<string, unknown>);
+    return updated;
+  }
+
+  async markPrinted(accountId: string, id: string, printed: boolean) {
+    await this.findById(accountId, id);
+    return this.prisma.client.internalOrder.update({
+      where: { id, accountId },
+      data: { printed },
+    });
+  }
+
+  async clone(accountId: string, ownerId: string, sourceId: string) {
+    const src = await this.findById(accountId, sourceId);
+    return this.create(accountId, ownerId, {
+      organizationId: src.organizationId,
+      storeId: src.storeId,
+      projectId: src.projectId ?? undefined,
+      vatEnabled: src.vatEnabled,
+      vatIncluded: src.vatIncluded,
+      currency: src.currency,
+      rateValue: src.rateValue.toString(),
+      description: src.description ?? undefined,
+      externalCode: src.externalCode ?? undefined,
+      applicable: false,
+      positions: src.positions.map((p) => ({
+        assortmentKind: p.assortmentKind as 'product' | 'variant' | 'bundle',
+        assortmentId: p.assortmentId,
+        productId: p.productId ?? undefined,
+        quantity: p.quantity.toString(),
+        priceMinor: p.priceMinor ? p.priceMinor.toString() : undefined,
+        vat: p.vat,
+        vatEnabled: p.vatEnabled,
+      })),
+    });
+  }
+
+  async transition(
+    accountId: string,
+    userId: string,
+    id: string,
+    target: 'post' | 'unpost' | 'cancel',
+  ) {
+    const row = await this.findById(accountId, id);
+    if (target === 'post') {
+      if (row.applicable) throw new BadRequestException('Already posted');
+      await this.prisma.client.internalOrder.update({
+        where: { id },
+        data: { applicable: true, state: 'posted', postedAt: new Date() },
+      });
+      await this.logAudit(accountId, userId, 'transition:posted', id, {
+        from: { before: row.state, after: 'posted' },
+      });
+    } else if (target === 'unpost') {
+      if (!row.applicable) throw new BadRequestException('Not posted');
+      await this.prisma.client.internalOrder.update({
+        where: { id },
+        data: { applicable: false, state: 'draft', postedAt: null },
+      });
+      await this.logAudit(accountId, userId, 'transition:unposted', id, {
+        from: { before: row.state, after: 'draft' },
+      });
+    } else if (target === 'cancel') {
+      await this.prisma.client.internalOrder.update({
+        where: { id },
+        data: { applicable: false, state: 'cancelled' },
+      });
+      await this.logAudit(accountId, userId, 'transition:cancelled', id, {
+        from: { before: row.state, after: 'cancelled' },
+      });
+    }
+    return this.findById(accountId, id);
+  }
+
+  /**
+   * Write an audit-trail row for the document's «Tarix» / History tab.
+   * The tab fetches /audit-logs?entity=InternalOrder (exact-match the web
+   * page's auditEntity="InternalOrder"), so this `entity` string MUST stay
+   * in sync or the tab renders empty. Non-transactional: InternalOrder has
+   * NO balance/stock side effects (see the class doc-comment), so the audit
+   * row needs no atomic delta (unlike prepayment's posted-balance path).
+   */
+  private async logAudit(
+    accountId: string,
+    userId: string,
+    action: string,
+    entityId: string,
+    fieldChanges: Record<string, unknown> | null,
+  ): Promise<void> {
+    await this.prisma.client.auditLog.create({
+      data: {
+        accountId,
+        userId,
+        entity: 'InternalOrder',
+        entityId,
+        action,
+        fieldChanges: fieldChanges as Prisma.InputJsonValue | undefined,
+      },
+    });
+  }
+}

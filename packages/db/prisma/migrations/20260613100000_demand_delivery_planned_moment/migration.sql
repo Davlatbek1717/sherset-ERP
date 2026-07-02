@@ -1,0 +1,15 @@
+-- moysklad «План. дата отгрузки» (planned shipment date) for Demand.
+--
+-- Parity gap (grounded 2026-06-13 from the demand edit capture
+-- dom/08-edit-default.html, DOM-role `<td class="label first"><div
+-- class="gwt-Label">План. дата отгрузки</div></td>` + b-calendar widget):
+-- the /demands/new editor bound an editable date control and POSTed
+-- `deliveryPlannedMoment`, but neither CreateDemandSchema nor the Demand
+-- model had the field — Zod stripped the unknown key, so the user's chosen
+-- date was silently discarded. Sibling docs (InternalOrder, CustomerOrder,
+-- PurchaseOrder) already carry `delivery_planned_moment`; this closes the
+-- Demand-only gap.
+--
+-- Additive NULLABLE column — optional metadata, no default/backfill (existing
+-- rows simply have no planned shipment date).
+ALTER TABLE "demands" ADD COLUMN "delivery_planned_moment" TIMESTAMPTZ;

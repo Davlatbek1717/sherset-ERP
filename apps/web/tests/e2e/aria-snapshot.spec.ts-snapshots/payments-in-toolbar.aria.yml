@@ -1,0 +1,14 @@
+- button "help"
+- heading "Kiruvchi to'lovlar" [level=1]
+- button "refresh":
+  - img
+- link "Yangi to'lov":
+  - /url: /payments-in/new
+  - img
+  - text: ""
+- button "Filtr"
+- img
+- textbox "№, to'lovchi, maqsad..."
+- text: "0"
+- button "O'zgartirish"
+- button "Chop etish"

@@ -1,0 +1,463 @@
+[
+  {
+    "entity": "counterparties",
+    "list": {
+      "status": 200,
+      "ms": 15
+    },
+    "create": {
+      "status": 201,
+      "ms": 15
+    },
+    "get": {
+      "status": 200,
+      "ms": 9
+    },
+    "patch": {
+      "status": 200,
+      "ms": 47
+    },
+    "delete": {
+      "status": 200,
+      "ms": 100
+    },
+    "cleanup": {
+      "status": 404,
+      "ms": 12
+    },
+    "errors": [],
+    "shape_ok": true,
+    "created_id": "31c813cb-fd9b-47d7-aa1a-378792808291",
+    "db_after_create": 1,
+    "db_after_delete": 0,
+    "audit_logs": 1
+  },
+  {
+    "entity": "contact-persons",
+    "list": {
+      "status": 200,
+      "ms": 21
+    },
+    "create": {
+      "status": 201,
+      "ms": 9
+    },
+    "get": {
+      "status": 200,
+      "ms": 0
+    },
+    "patch": null,
+    "delete": {
+      "status": 200,
+      "ms": 44
+    },
+    "cleanup": {
+      "status": 404,
+      "ms": 6
+    },
+    "errors": [],
+    "shape_ok": true,
+    "created_id": "bcd7b9ba-1f6c-4ad2-bc5e-c7b2bb71d17b",
+    "db_after_create": 1,
+    "db_after_delete": 0,
+    "audit_logs": 1
+  },
+  {
+    "entity": "price-types",
+    "list": {
+      "status": 200,
+      "ms": 14
+    },
+    "create": {
+      "status": 201,
+      "ms": 8
+    },
+    "get": {
+      "status": 200,
+      "ms": 14
+    },
+    "patch": {
+      "status": 200,
+      "ms": 33
+    },
+    "delete": null,
+    "cleanup": null,
+    "errors": [],
+    "shape_ok": true,
+    "created_id": "1b7c370a-361c-4548-a028-0a043d77cfb9",
+    "db_after_create": 1,
+    "db_after_delete": null,
+    "audit_logs": 1
+  },
+  {
+    "entity": "customer-orders",
+    "list": {
+      "status": 200,
+      "ms": 18
+    },
+    "create": {
+      "status": 201,
+      "ms": 22
+    },
+    "get": {
+      "status": 200,
+      "ms": 26
+    },
+    "patch": {
+      "status": 200,
+      "ms": 21
+    },
+    "delete": {
+      "status": 200,
+      "ms": 29
+    },
+    "cleanup": {
+      "status": 404,
+      "ms": 0
+    },
+    "errors": [],
+    "shape_ok": true,
+    "created_id": "9bc1517c-9865-4a58-a5c9-28d712bc5b33",
+    "db_after_create": 1,
+    "db_after_delete": 1,
+    "audit_logs": 1
+  },
+  {
+    "entity": "tasks",
+    "list": {
+      "status": 200,
+      "ms": 15
+    },
+    "create": {
+      "status": 201,
+      "ms": 11
+    },
+    "get": {
+      "status": 200,
+      "ms": 16
+    },
+    "patch": {
+      "status": 200,
+      "ms": 15
+    },
+    "delete": {
+      "status": 200,
+      "ms": 15
+    },
+    "cleanup": {
+      "status": 404,
+      "ms": 0
+    },
+    "errors": [],
+    "shape_ok": true,
+    "created_id": "c9f9f52c-9b29-4cc6-b6ce-fdcc82f1213f",
+    "db_after_create": 1,
+    "db_after_delete": 0,
+    "audit_logs": 1
+  },
+  {
+    "entity": "opportunities",
+    "list": {
+      "status": 200,
+      "ms": 22
+    },
+    "create": {
+      "status": 201,
+      "ms": 14
+    },
+    "get": {
+      "status": 200,
+      "ms": 15
+    },
+    "patch": {
+      "status": 200,
+      "ms": 25
+    },
+    "delete": {
+      "status": 200,
+      "ms": 12
+    },
+    "cleanup": {
+      "status": 404,
+      "ms": 19
+    },
+    "errors": [],
+    "shape_ok": true,
+    "created_id": "9d927865-1e94-4450-a508-bd82ac902023",
+    "db_after_create": 1,
+    "db_after_delete": 0,
+    "audit_logs": 1
+  },
+  {
+    "entity": "demands",
+    "list": {
+      "status": 200,
+      "ms": 27
+    },
+    "create": {
+      "status": 201,
+      "ms": 46
+    },
+    "get": {
+      "status": 200,
+      "ms": 17
+    },
+    "patch": {
+      "status": 200,
+      "ms": 39
+    },
+    "delete": {
+      "status": 200,
+      "ms": 25
+    },
+    "cleanup": {
+      "status": 404,
+      "ms": 16
+    },
+    "errors": [],
+    "shape_ok": true,
+    "created_id": "ef39982b-9556-46d6-ba5c-6a57661a021d",
+    "db_after_create": 1,
+    "db_after_delete": 1,
+    "audit_logs": 1
+  },
+  {
+    "entity": "invoices-out",
+    "list": {
+      "status": 200,
+      "ms": 0
+    },
+    "create": {
+      "status": 201,
+      "ms": 32
+    },
+    "get": {
+      "status": 200,
+      "ms": 12
+    },
+    "patch": {
+      "status": 200,
+      "ms": 28
+    },
+    "delete": {
+      "status": 200,
+      "ms": 21
+    },
+    "cleanup": {
+      "status": 404,
+      "ms": 2
+    },
+    "errors": [],
+    "shape_ok": true,
+    "created_id": "4c64eec6-3a7c-4953-a520-76f416a7ff86",
+    "db_after_create": 1,
+    "db_after_delete": 1,
+    "audit_logs": 1
+  },
+  {
+    "entity": "sales-returns",
+    "list": {
+      "status": 200,
+      "ms": 15
+    },
+    "create": {
+      "status": 201,
+      "ms": 24
+    },
+    "get": {
+      "status": 200,
+      "ms": 16
+    },
+    "patch": {
+      "status": 200,
+      "ms": 33
+    },
+    "delete": {
+      "status": 200,
+      "ms": 30
+    },
+    "cleanup": {
+      "status": 404,
+      "ms": 11
+    },
+    "errors": [],
+    "shape_ok": true,
+    "created_id": "1b5bc17b-967a-4046-81d1-6afbc32692e0",
+    "db_after_create": 1,
+    "db_after_delete": 1,
+    "audit_logs": 1
+  },
+  {
+    "entity": "purchase-orders",
+    "list": {
+      "status": 200,
+      "ms": 12
+    },
+    "create": {
+      "status": 201,
+      "ms": 26
+    },
+    "get": {
+      "status": 200,
+      "ms": 9
+    },
+    "patch": {
+      "status": 200,
+      "ms": 49
+    },
+    "delete": {
+      "status": 200,
+      "ms": 16
+    },
+    "cleanup": {
+      "status": 404,
+      "ms": 14
+    },
+    "errors": [],
+    "shape_ok": true,
+    "created_id": "ddc7bea4-7066-45c5-9700-92259de4d810",
+    "db_after_create": 1,
+    "db_after_delete": 1,
+    "audit_logs": 1
+  },
+  {
+    "entity": "supplies",
+    "list": {
+      "status": 200,
+      "ms": 21
+    },
+    "create": {
+      "status": 201,
+      "ms": 31
+    },
+    "get": {
+      "status": 200,
+      "ms": 6
+    },
+    "patch": {
+      "status": 200,
+      "ms": 25
+    },
+    "delete": {
+      "status": 200,
+      "ms": 22
+    },
+    "cleanup": {
+      "status": 404,
+      "ms": 2
+    },
+    "errors": [],
+    "shape_ok": true,
+    "created_id": "273eb117-c686-4c23-b6f5-285249c986db",
+    "db_after_create": 1,
+    "db_after_delete": 1,
+    "audit_logs": 1
+  },
+  {
+    "entity": "invoices-in",
+    "list": {
+      "status": 200,
+      "ms": 4
+    },
+    "create": {
+      "status": 201,
+      "ms": 49
+    },
+    "get": {
+      "status": 200,
+      "ms": 16
+    },
+    "patch": {
+      "status": 200,
+      "ms": 36
+    },
+    "delete": {
+      "status": 200,
+      "ms": 30
+    },
+    "cleanup": {
+      "status": 404,
+      "ms": 10
+    },
+    "errors": [],
+    "shape_ok": true,
+    "created_id": "bc192dd1-7868-447f-b425-4ebdfedc0365",
+    "db_after_create": 1,
+    "db_after_delete": 1,
+    "audit_logs": 1
+  },
+  {
+    "entity": "purchase-returns",
+    "list": {
+      "status": 200,
+      "ms": 22
+    },
+    "create": {
+      "status": 201,
+      "ms": 29
+    },
+    "get": {
+      "status": 200,
+      "ms": 24
+    },
+    "patch": {
+      "status": 200,
+      "ms": 41
+    },
+    "delete": {
+      "status": 200,
+      "ms": 24
+    },
+    "cleanup": {
+      "status": 404,
+      "ms": 16
+    },
+    "errors": [],
+    "shape_ok": true,
+    "created_id": "7e7a55c6-49ab-414b-9607-1e03d7ccaa9f",
+    "db_after_create": 1,
+    "db_after_delete": 1,
+    "audit_logs": 1
+  },
+  {
+    "entity": "products",
+    "list": {
+      "status": 200,
+      "ms": 10
+    },
+    "create": {
+      "status": 201,
+      "ms": 33
+    },
+    "get": {
+      "status": 200,
+      "ms": 13
+    },
+    "patch": {
+      "status": 200,
+      "ms": 13
+    },
+    "delete": {
+      "status": 200,
+      "ms": 22
+    },
+    "cleanup": {
+      "status": 404,
+      "ms": 8
+    },
+    "errors": [],
+    "shape_ok": true,
+    "created_id": "5ee826ac-41e3-478e-94b4-c5220c8148e2",
+    "db_after_create": 1,
+    "db_after_delete": 1,
+    "audit_logs": 1
+  },
+  {
+    "test": "tenant_isolation",
+    "foreign_id": "93adff56-252d-44d4-bfe9-1fa05bc72883",
+    "errors": [],
+    "cross_tenant_status": 404,
+    "cross_tenant_patch_status": 404,
+    "cross_tenant_delete_status": 404
+  }
+]

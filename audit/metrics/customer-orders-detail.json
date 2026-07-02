@@ -1,0 +1,12 @@
+{
+  "viewport": { "w": 1280, "h": 800 },
+  "pageHeight": 1247,
+  "samples": [
+    { "sel": "detail-toolbar", "w": 1280, "h": 39.80, "y": 117.80, "fs": "13px", "bg": "rgb(255, 255, 255)", "pad": "6.5px 13px" },
+    { "sel": "detail-header", "w": 1280, "h": 62.92, "y": 157.60, "pad": "9.75px 13px" },
+    { "sel": "detail-header-title", "w": 964.21, "h": 18.27, "fs": "14.625px", "fw": "600" },
+    { "sel": "detail-toolbar-save", "w": 80.09, "h": 26, "fs": "11.375px", "fw": "500", "bg": "rgb(24, 105, 153)" },
+    { "sel": "detail-totals-sidebar", "w": 320, "h": 223.61, "x": 947, "y": 612.09, "fs": "11.375px", "bg": "rgb(255, 255, 255)", "pad": "13px" },
+    { "sel": "h2-section", "fs": "13px", "fw": "600" }
+  ]
+}

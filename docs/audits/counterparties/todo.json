@@ -1,0 +1,65 @@
+{
+  "_stale": "Predates archive-label fix c2aa5722 (2026-06-01). The «В архив»/«Из архива» extra + «Поместить в архив»/«Извлечь из архива» missing entries below are RESOLVED app-wide. Print dropdown (Список контрагентов / …(Узбекистан) / Настроить…) + «Удалить» disabledMismatch remain OPEN. Regenerate via `pnpm audit:module counterparties`. Source of truth = docs/progress.json.",
+  "module": "counterparties",
+  "source": "static",
+  "verdict": "delta",
+  "dropdowns": {
+    "bulk": {
+      "matched": 4,
+      "missing": [
+        {
+          "label": "Поместить в архив",
+          "disabled": true
+        },
+        {
+          "label": "Извлечь из архива",
+          "disabled": true
+        }
+      ],
+      "extra": [
+        {
+          "label": "В архив",
+          "disabled": false
+        },
+        {
+          "label": "Из архива",
+          "disabled": false
+        }
+      ],
+      "disabledMismatch": [
+        {
+          "label": "Удалить",
+          "moysklad": true,
+          "ours": false
+        }
+      ],
+      "orderMismatch": false
+    },
+    "print": {
+      "matched": 0,
+      "missing": [
+        {
+          "label": "Список контрагентов",
+          "disabled": false
+        },
+        {
+          "label": "Список контрагентов (Узбекистан)",
+          "disabled": false
+        },
+        {
+          "label": "Настроить...",
+          "disabled": false
+        }
+      ],
+      "extra": [],
+      "disabledMismatch": [],
+      "orderMismatch": false
+    }
+  },
+  "totals": {
+    "missing": 5,
+    "extra": 2,
+    "disabledMismatch": 1,
+    "orderMismatch": 0
+  }
+}

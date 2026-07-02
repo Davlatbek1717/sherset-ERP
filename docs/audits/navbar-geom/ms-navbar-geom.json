@@ -1,0 +1,143 @@
+{
+  "moduleLabel": {
+    "text": "Показатели",
+    "rect": {
+      "w": 59,
+      "h": 12,
+      "top": 39,
+      "left": 66
+    },
+    "font": {
+      "fontSize": "11px",
+      "fontWeight": "400",
+      "lineHeight": "normal",
+      "color": "rgb(198, 221, 234)"
+    }
+  },
+  "moduleCell": {
+    "tag": "TBODY",
+    "cls": "",
+    "rect": {
+      "w": 75,
+      "h": 58,
+      "top": 0,
+      "left": 58
+    },
+    "pad": {
+      "paddingTop": "0px",
+      "paddingBottom": "0px",
+      "paddingLeft": "0px",
+      "paddingRight": "0px"
+    }
+  },
+  "moduleIcon": {
+    "tag": "IMG",
+    "rect": {
+      "w": 24,
+      "h": 24,
+      "top": 15,
+      "left": 84
+    },
+    "bgImage": "none"
+  },
+  "subLabel": {
+    "text": "Заказы покупателей",
+    "rect": {
+      "w": 0,
+      "h": 0,
+      "top": 0,
+      "left": 0
+    },
+    "font": {
+      "fontSize": "12px",
+      "fontWeight": "400",
+      "color": "rgb(34, 34, 34)"
+    }
+  },
+  "subCell": {
+    "tag": "HTML",
+    "rect": {
+      "w": 1680,
+      "h": 1000,
+      "top": 0,
+      "left": 0
+    },
+    "pad": {
+      "paddingTop": "0px",
+      "paddingBottom": "0px",
+      "paddingLeft": "0px",
+      "paddingRight": "0px"
+    }
+  },
+  "subBar": {
+    "tag": "HTML",
+    "cls": "",
+    "rect": {
+      "w": 1680,
+      "h": 1000,
+      "top": 0,
+      "left": 0
+    }
+  },
+  "separators": [
+    {
+      "cls": "topMenu-new-separator",
+      "rect": {
+        "w": 0,
+        "h": 58,
+        "top": 0,
+        "left": 133
+      },
+      "bg": "rgba(0, 0, 0, 0)",
+      "bgImage": "none",
+      "borderLeft": "0px rgb(34, 34, 34)",
+      "borderRight": "0px rgb(34, 34, 34)"
+    },
+    {
+      "cls": "topMenu-new-separator",
+      "rect": {
+        "w": 0,
+        "h": 58,
+        "top": 0,
+        "left": 201
+      },
+      "bg": "rgba(0, 0, 0, 0)",
+      "bgImage": "none",
+      "borderLeft": "0px rgb(34, 34, 34)",
+      "borderRight": "0px rgb(34, 34, 34)"
+    },
+    {
+      "cls": "topMenu-new-separator",
+      "rect": {
+        "w": 0,
+        "h": 58,
+        "top": 0,
+        "left": 269
+      },
+      "bg": "rgba(0, 0, 0, 0)",
+      "bgImage": "none",
+      "borderLeft": "0px rgb(34, 34, 34)",
+      "borderRight": "0px rgb(34, 34, 34)"
+    },
+    {
+      "cls": "topMenu-new-separator",
+      "rect": {
+        "w": 0,
+        "h": 58,
+        "top": 0,
+        "left": 337
+      },
+      "bg": "rgba(0, 0, 0, 0)",
+      "bgImage": "none",
+      "borderLeft": "0px rgb(34, 34, 34)",
+      "borderRight": "0px rgb(34, 34, 34)"
+    }
+  ],
+  "derivedNavbarHeight": 0,
+  "viewport": {
+    "w": 1680,
+    "h": 1000,
+    "rootFont": "12px",
+    "bodyFont": "12px"
+  }
+}

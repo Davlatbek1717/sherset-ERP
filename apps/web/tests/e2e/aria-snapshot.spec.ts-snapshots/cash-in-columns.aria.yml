@@ -1,0 +1,29 @@
+- rowgroup:
+  - row "Select all rows № Resize column Sana Resize column Tashkilot Resize column To'lovchi Resize column Kassa Resize column Summa Resize column Maqsad Resize column Customize columns":
+    - columnheader "Select all rows":
+      - checkbox "Select all rows"
+    - columnheader "№ Resize column":
+      - text: ""
+      - separator "Resize column"
+    - columnheader "Sana Resize column":
+      - text: ""
+      - separator "Resize column"
+    - columnheader "Tashkilot Resize column":
+      - text: ""
+      - separator "Resize column"
+    - columnheader "To'lovchi Resize column":
+      - text: ""
+      - separator "Resize column"
+    - columnheader "Kassa Resize column":
+      - text: ""
+      - separator "Resize column"
+    - columnheader "Summa Resize column":
+      - text: ""
+      - separator "Resize column"
+    - columnheader "Maqsad Resize column":
+      - text: ""
+      - separator "Resize column"
+    - columnheader "Customize columns":
+      - button "Customize columns":
+        - img
+        - text: ""

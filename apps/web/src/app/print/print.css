@@ -1,0 +1,340 @@
+/*
+ * Print-friendly stylesheet — used both on-screen (preview) and on
+ * the actual print medium. Keeps the layout B/W safe, A4-sized, and
+ * removes app-shell decorations.
+ */
+
+.print-root {
+  background: #ffffff;
+  color: #000000;
+  font-family: "Inter", system-ui, -apple-system, "Helvetica Neue", sans-serif;
+  font-size: 12px;
+  line-height: 1.4;
+  min-height: 100vh;
+  padding: 24px;
+  display: flex;
+  justify-content: center;
+}
+
+.print-root .print-page {
+  background: #ffffff;
+  width: 210mm;
+  min-height: 297mm;
+  padding: 16mm 18mm;
+  box-shadow: 0 0 0 1px #e5e7eb, 0 4px 16px rgba(0, 0, 0, 0.06);
+  box-sizing: border-box;
+}
+
+.print-root h1,
+.print-root h2,
+.print-root h3 {
+  color: #000000;
+  margin: 0;
+  font-weight: 600;
+}
+
+.print-root .doc-header {
+  border-bottom: 2px solid #000000;
+  padding-bottom: 10px;
+  margin-bottom: 16px;
+}
+
+.print-root .doc-title {
+  font-size: 22px;
+  letter-spacing: -0.01em;
+  margin-bottom: 4px;
+}
+
+.print-root .doc-subtitle {
+  font-size: 11px;
+  color: #444444;
+}
+
+.print-root .org-block {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.print-root .party-card {
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  padding: 8px 10px;
+}
+
+.print-root .party-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6b7280;
+  margin-bottom: 2px;
+}
+
+.print-root .party-name {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.print-root .party-detail {
+  font-size: 11px;
+  color: #374151;
+  margin-top: 2px;
+  white-space: pre-line;
+}
+
+.print-root table.positions {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 12px;
+  font-size: 11px;
+}
+
+.print-root table.positions th {
+  background: #f3f4f6;
+  border: 1px solid #d1d5db;
+  padding: 6px 8px;
+  text-align: left;
+  font-weight: 600;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.print-root table.positions td {
+  border: 1px solid #d1d5db;
+  padding: 6px 8px;
+  vertical-align: top;
+}
+
+.print-root table.positions td.num,
+.print-root table.positions th.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.print-root .totals {
+  margin-top: 12px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.print-root .totals table {
+  border-collapse: collapse;
+  font-size: 11px;
+  min-width: 280px;
+}
+
+.print-root .totals td {
+  padding: 4px 10px;
+}
+
+.print-root .totals tr.grand td {
+  font-size: 13px;
+  font-weight: 700;
+  border-top: 2px solid #000000;
+  padding-top: 8px;
+}
+
+.print-root .totals td.label {
+  text-align: right;
+  color: #4b5563;
+}
+
+.print-root .totals td.value {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.print-root .signatures {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 32px;
+  margin-top: 36px;
+  page-break-inside: avoid;
+}
+
+.print-root .sig-line {
+  border-top: 1px solid #000000;
+  padding-top: 4px;
+  font-size: 10px;
+  color: #4b5563;
+  text-align: center;
+}
+
+.print-root .sig-name {
+  font-size: 11px;
+  font-weight: 500;
+  color: #111827;
+  margin-bottom: 14px;
+}
+
+.print-root .description-block {
+  margin-top: 12px;
+  padding: 8px 10px;
+  background: #f9fafb;
+  border-radius: 4px;
+  font-size: 11px;
+  color: #374151;
+  white-space: pre-wrap;
+}
+
+.print-root .toolbar {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  gap: 8px;
+  z-index: 10;
+}
+
+.print-root .toolbar button,
+.print-root .toolbar a {
+  appearance: none;
+  background: #111827;
+  color: #ffffff;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.print-root .toolbar button.secondary,
+.print-root .toolbar a.secondary {
+  background: #ffffff;
+  color: #111827;
+  border: 1px solid #d1d5db;
+}
+
+.print-root .receipt-amount {
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 24px 0 4px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.print-root .receipt-amount-words {
+  text-align: center;
+  font-size: 11px;
+  color: #4b5563;
+  font-style: italic;
+  margin-bottom: 16px;
+}
+
+/* ----- Print-only rules -------------------------------------------------
+ *
+ * Browser "Save as PDF" is the sanctioned way to produce a paper-perfect
+ * PDF from these screens — moysklad.uz uses the same pattern. The rules
+ * below tighten the rendered page so the browser-side PDF matches what
+ * shows up on a thermal printer / A4 sheet.
+ *
+ * If we ever introduce server-side PDF (Puppeteer), it will hit these
+ * same pages at /print/[type]/[id] and inherit this CSS unchanged.
+ */
+@media print {
+  /* Force exact colour reproduction — without this, Chrome strips
+   * background colours on every td/th to save toner, which kills our
+   * status badges and table-header tint. */
+  *,
+  *::before,
+  *::after {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .print-root {
+    background: #ffffff;
+    padding: 0;
+  }
+  .print-root .print-page {
+    box-shadow: none;
+    margin: 0;
+    width: auto;
+    min-height: auto;
+  }
+
+  /* Hide every interactive surface. The toolbar was already hidden;
+   * also strip Next.js dev tools button + any browser scrollbars. */
+  .print-root .toolbar,
+  .print-root .no-print,
+  .print-root [data-nextjs-toast],
+  .print-root [data-test-id$="-action"] {
+    display: none !important;
+  }
+
+  /* Tables: keep header row on every page break and never split a row
+   * across pages. Without these, multi-page invoices look broken. */
+  table {
+    page-break-inside: auto;
+  }
+  thead {
+    display: table-header-group;
+  }
+  tfoot {
+    display: table-footer-group;
+  }
+  tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+  }
+
+  /* Section markers — opt-in via class, used by templates that
+   * compose a multi-section detail page. */
+  .print-page-break {
+    page-break-before: always;
+  }
+  .print-keep-together {
+    page-break-inside: avoid;
+  }
+
+  /* Anchor links print as plain text — no hover blue, no underline
+   * trail in the PDF. */
+  a {
+    color: inherit !important;
+    text-decoration: none !important;
+  }
+
+  /* Page geometry. The 12 mm margin matches what moysklad.uz uses for
+   * its tax-invoice templates so they match in side-by-side prints. */
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+  /* Receipt template flips to a thermal-strip page geometry — it
+   * activates by adding `class="print-thermal"` to the print-page wrapper. */
+  @page :left {
+    @bottom-center {
+      content: counter(page) ' / ' counter(pages);
+      font-size: 9pt;
+      color: #6b7280;
+    }
+  }
+  @page :right {
+    @bottom-center {
+      content: counter(page) ' / ' counter(pages);
+      font-size: 9pt;
+      color: #6b7280;
+    }
+  }
+}
+
+/* Thermal receipt size — 80 mm strip, no margins (printers handle
+ * tear-off). Activates only when the page itself opts in. */
+@media print {
+  .print-thermal {
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  .print-thermal-page {
+    width: 80mm;
+  }
+}

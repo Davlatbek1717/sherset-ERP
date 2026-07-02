@@ -1,0 +1,64 @@
+{
+  "checkboxes": {
+    "provedeno": false,
+    "nds": "not-found",
+    "priceIncludesNds": false
+  },
+  "allCheckboxes": [
+    {
+      "checked": false,
+      "y": 0,
+      "label": "Проведено"
+    },
+    {
+      "checked": false,
+      "y": 0,
+      "label": ""
+    },
+    {
+      "checked": false,
+      "y": 0,
+      "label": ""
+    },
+    {
+      "checked": false,
+      "y": 0,
+      "label": "НДС:"
+    },
+    {
+      "checked": false,
+      "y": 0,
+      "label": "Цена включает НДС"
+    },
+    {
+      "checked": true,
+      "y": 166,
+      "label": "Проведено"
+    },
+    {
+      "checked": false,
+      "y": 453,
+      "label": ""
+    },
+    {
+      "checked": false,
+      "y": 453,
+      "label": ""
+    },
+    {
+      "checked": false,
+      "y": 462,
+      "label": ""
+    },
+    {
+      "checked": true,
+      "y": 565,
+      "label": "НДС:"
+    },
+    {
+      "checked": true,
+      "y": 585,
+      "label": "Цена включает НДС"
+    }
+  ]
+}

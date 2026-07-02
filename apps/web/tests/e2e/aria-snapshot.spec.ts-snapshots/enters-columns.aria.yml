@@ -1,0 +1,34 @@
+- rowgroup:
+  - row "Select all rows № Resize column Vaqt Resize column Omborga Resize column Tashkilot Resize column Summa Resize column Valyuta Resize column Yuborilgan Resize column Bosib chiqarilgan Resize column Izoh Resize column Ustunlarni sozlash":
+    - columnheader "Select all rows":
+      - checkbox "Select all rows"
+    - columnheader "№ Resize column":
+      - text: ""
+      - separator "Resize column"
+    - columnheader "Vaqt Resize column":
+      - text: ""
+      - separator "Resize column"
+    - columnheader "Omborga Resize column":
+      - text: ""
+      - separator "Resize column"
+    - columnheader "Tashkilot Resize column":
+      - text: ""
+      - separator "Resize column"
+    - columnheader "Summa Resize column":
+      - text: ""
+      - separator "Resize column"
+    - columnheader "Valyuta Resize column":
+      - text: ""
+      - separator "Resize column"
+    - columnheader "Yuborilgan Resize column":
+      - text: ""
+      - separator "Resize column"
+    - columnheader "Bosib chiqarilgan Resize column":
+      - text: ""
+      - separator "Resize column"
+    - columnheader "Izoh Resize column":
+      - text: ""
+      - separator "Resize column"
+    - columnheader "Ustunlarni sozlash":
+      - button "Ustunlarni sozlash":
+        - img

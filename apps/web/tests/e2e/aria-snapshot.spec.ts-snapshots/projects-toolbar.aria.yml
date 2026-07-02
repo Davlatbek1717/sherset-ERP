@@ -1,0 +1,14 @@
+- heading "Loyihalar" [level=1]
+- button "refresh":
+  - img
+- link "+ Loyiha":
+  - /url: /settings/projects/new
+  - img
+  - text: ""
+- button "Filtr" [expanded]
+- img
+- textbox "Nomi, kod yoki tavsif bo'yicha..."
+- text: "0"
+- button "O'zgartirish" [disabled]:
+  - text: ""
+  - img

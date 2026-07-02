@@ -1,0 +1,14 @@
+- button "help"
+- heading "Kirim kassa orderlari" [level=1]
+- button "refresh":
+  - img
+- link "Yangi ПКО":
+  - /url: /cash-in/new
+  - img
+  - text: ""
+- button "Filtr"
+- img
+- textbox "№, to'lovchi, maqsad..."
+- text: "0"
+- button "O'zgartirish"
+- button "Chop etish"

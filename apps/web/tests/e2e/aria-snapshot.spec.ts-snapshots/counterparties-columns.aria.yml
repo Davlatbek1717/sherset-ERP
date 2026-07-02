@@ -1,0 +1,26 @@
+- rowgroup:
+  - row "Select all rows Nom Resize column Yaratilgan Resize column Kod Resize column Telefon Resize column E-mail Resize column Sotuvlar summasi Resize column Customize columns":
+    - columnheader "Select all rows":
+      - checkbox "Select all rows"
+    - columnheader "Nom Resize column":
+      - text: ""
+      - separator "Resize column"
+    - columnheader "Yaratilgan Resize column":
+      - text: ""
+      - separator "Resize column"
+    - columnheader "Kod Resize column":
+      - text: ""
+      - separator "Resize column"
+    - columnheader "Telefon Resize column":
+      - text: ""
+      - separator "Resize column"
+    - columnheader "E-mail Resize column":
+      - text: ""
+      - separator "Resize column"
+    - columnheader "Sotuvlar summasi Resize column":
+      - text: ""
+      - separator "Resize column"
+    - columnheader "Customize columns":
+      - button "Customize columns":
+        - img
+        - text: ""

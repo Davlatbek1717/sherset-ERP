@@ -1,0 +1,8 @@
+- rowgroup:
+  - row "Select all rows Nomi Kod Tavsif Holat":
+    - columnheader "Select all rows":
+      - checkbox "Select all rows" [disabled]
+    - columnheader "Nomi"
+    - columnheader "Kod"
+    - columnheader "Tavsif"
+    - columnheader "Holat"

@@ -1,0 +1,9 @@
+{
+  "selects": [
+    {
+      "label": "Проведено",
+      "options": ["", "Нет", "Да"],
+      "visible": false
+    }
+  ]
+}

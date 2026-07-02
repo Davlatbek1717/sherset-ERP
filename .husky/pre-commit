@@ -1,0 +1,4 @@
+#!/usr/bin/env sh
+set -e
+npx lint-staged
+pnpm -s progress > /dev/null 2>&1 && git add docs/progress.json || echo "⚠️  progress hook skipped (pnpm progress failed — commit allowed but progress.json may be stale)"

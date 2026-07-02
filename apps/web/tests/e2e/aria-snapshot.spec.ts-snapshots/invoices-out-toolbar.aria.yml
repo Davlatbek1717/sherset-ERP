@@ -1,0 +1,14 @@
+- button "help"
+- heading "Mijozlarga schyotlar" [level=1]
+- button "refresh":
+  - img
+- link "Schyot":
+  - /url: /invoices-out/new
+  - img
+  - text: ""
+- button "Filtr" [expanded]
+- img
+- textbox "Raqam yoki izoh"
+- text: "0"
+- button "O'zgartirish"
+- button "Chop etish"

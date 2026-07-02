@@ -1,0 +1,13 @@
+- heading "O'lchov birliklari" [level=1]
+- button "refresh":
+  - img
+- img
+- textbox "Nom yoki kod bo'yicha..."
+- text: "0"
+- button "O'zgartirish" [disabled]:
+  - text: ""
+  - img
+- link "+ O'lchov birligi":
+  - /url: /settings/uoms/new
+  - img
+  - text: ""

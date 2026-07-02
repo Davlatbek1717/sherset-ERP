@@ -1,0 +1,35 @@
+{
+  "meta": {
+    "href": "https://api.moysklad.ru/api/remap/1.2/report/counterparty/7d551394-40fd-11f0-0a80-1aa40002b515",
+    "metadataHref": "https://api.moysklad.ru/api/remap/1.2/report/counterparty/metadata",
+    "type": "counterparty",
+    "mediaType": "application/json",
+    "uuidHref": "https://online.moysklad.ru/app/#company/edit?id=7d551394-40fd-11f0-0a80-1aa40002b515"
+  },
+  "counterparty": {
+    "meta": {
+      "href": "https://api.moysklad.ru/api/remap/1.2/entity/counterparty/7d551394-40fd-11f0-0a80-1aa40002b515",
+      "metadataHref": "https://api.moysklad.ru/api/remap/1.2/entity/counterparty/metadata",
+      "type": "counterparty",
+      "mediaType": "application/json",
+      "uuidHref": "https://online.moysklad.ru/app/#company/edit?id=7d551394-40fd-11f0-0a80-1aa40002b515"
+    },
+    "id": "7d551394-40fd-11f0-0a80-1aa40002b515",
+    "name": "Устасизлар Азизбек",
+    "externalCode": "JwFbde22ggmmFFQ6mUkzu2",
+    "companyType": "legal"
+  },
+  "firstDemandDate": "2025-06-04 07:36:00.000",
+  "lastDemandDate": "2026-06-26 09:38:00.000",
+  "demandsCount": 2892,
+  "demandsSum": 247191117014.21204,
+  "averageReceipt": 85474106.85138729,
+  "returnsCount": 222,
+  "returnsSum": 8645045682.846817,
+  "discountsSum": 928282821.7258921,
+  "balance": 0,
+  "profit": 56512743096.21202,
+  "lastEventDate": null,
+  "lastEventText": null,
+  "updated": "2025-06-04 07:36:32.207"
+}

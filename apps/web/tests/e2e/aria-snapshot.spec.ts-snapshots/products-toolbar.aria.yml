@@ -1,0 +1,18 @@
+- button "help"
+- heading "Tovar va xizmatlar" [level=1]
+- button "refresh":
+  - img
+- link "Yangi tovar":
+  - /url: /products/new
+  - img
+  - text: ""
+- button "Filtr" [expanded]
+- img
+- textbox "Nom yoki kod..."
+- text: "0"
+- button "O'zgartirish" [disabled]:
+  - text: ""
+  - img
+- button "Chop etish":
+  - text: ""
+  - img

@@ -1,0 +1,20 @@
+- button "help"
+- heading "Kontragentlar" [level=1]
+- button "refresh":
+  - img
+- link "Yangi kontragent":
+  - /url: /counterparties/new
+  - img
+  - text: ""
+- button "Filtr" [expanded]
+- img
+- textbox "Nom, STIR yoki telefon..."
+- text: "0"
+- button "O'zgartirish" [disabled]:
+  - text: ""
+  - img
+- button "Chop etish":
+  - text: ""
+  - img
+- link "Import":
+  - /url: /counterparties/import

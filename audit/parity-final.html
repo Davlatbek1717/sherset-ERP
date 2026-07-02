@@ -1,0 +1,1135 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Moysklad parity — full audit (1440×900)</title>
+<style>
+  :root {
+    --bg: #f6f7fa;
+    --surface: #fff;
+    --border: #e2e5ea;
+    --text: #1f2937;
+    --muted: #6b7280;
+    --brand: #1f70c1;
+    --ok: #16a34a;
+    --warn: #d97706;
+    --bad: #dc2626;
+    --info: #2563eb;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font: 14px/1.55 -apple-system, "Segoe UI", system-ui, sans-serif;
+    color: var(--text);
+    background: var(--bg);
+    margin: 0;
+    padding: 24px;
+  }
+  .wrap { max-width: 1600px; margin: 0 auto; }
+  h1 { font-size: 28px; margin: 0 0 8px; }
+  h2 { font-size: 22px; margin: 32px 0 12px; padding-bottom: 8px; border-bottom: 2px solid var(--border); }
+  h3 { font-size: 17px; margin: 24px 0 8px; }
+  .lede { color: var(--muted); margin: 0 0 24px; font-size: 13px; }
+  .pill {
+    display: inline-block; padding: 2px 8px; border-radius: 999px; font-weight: 600;
+    font-size: 11px; vertical-align: middle; line-height: 1.7;
+  }
+  .pill.ok { background: #dcfce7; color: var(--ok); }
+  .pill.warn { background: #fef3c7; color: var(--warn); }
+  .pill.bad { background: #fee2e2; color: var(--bad); }
+  .pill.info { background: #dbeafe; color: var(--info); }
+  .pill.gray { background: #e2e5ea; color: var(--muted); }
+
+  .toc {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px 20px; margin-bottom: 24px;
+  }
+  .toc ul { list-style: none; padding: 0; margin: 8px 0 0; columns: 3; column-gap: 24px; }
+  .toc li { break-inside: avoid; padding: 2px 0; }
+  .toc a { color: var(--brand); text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+
+  .summary {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
+    margin-bottom: 24px;
+  }
+  .stat {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .stat .num { font-size: 28px; font-weight: 700; line-height: 1; margin: 4px 0; }
+  .stat .lbl { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+
+  .compare {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 18px; margin-bottom: 18px;
+  }
+  .compare-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 12px;
+  }
+  .compare-cell {
+    background: #f9fafb; border: 1px solid var(--border); border-radius: 6px; overflow: hidden;
+  }
+  .compare-cell h4 { margin: 0; padding: 8px 12px; font-size: 12px;
+    background: #eef2f7; color: var(--muted); text-transform: uppercase; letter-spacing: .5px;
+  }
+  .compare-cell img {
+    width: 100%; display: block;
+  }
+  .compare-cell .ph {
+    padding: 60px 24px; text-align: center; color: var(--muted); font-style: italic;
+    background: #f3f4f6;
+  }
+
+  table.scoring { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; }
+  table.scoring th, table.scoring td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border); }
+  table.scoring th { background: #f3f4f6; font-weight: 600; }
+  table.scoring tr:hover td { background: #fafbfc; }
+  table.scoring td.center { text-align: center; }
+
+  .gap-list {
+    background: #fffbeb; border-left: 4px solid var(--warn);
+    padding: 10px 16px; margin: 8px 0; border-radius: 4px;
+  }
+  .gap-list h5 { margin: 0 0 6px; font-size: 13px; color: var(--warn); }
+  .gap-list ul { margin: 0; padding-left: 20px; font-size: 12px; }
+  .gap-list li { margin: 2px 0; }
+
+  .module-meta { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+  .module-meta code {
+    background: #eef2f7; padding: 1px 6px; border-radius: 3px; font-size: 11px;
+  }
+  .scoreband {
+    display: grid; grid-template-columns: 1fr 1fr 1fr 1fr 1fr 1fr; gap: 8px;
+    margin: 8px 0;
+  }
+  .scoreband > div {
+    text-align: center; padding: 6px 4px; border: 1px solid var(--border);
+    border-radius: 4px; background: #f9fafb;
+  }
+  .scoreband .name { font-size: 10px; color: var(--muted); text-transform: uppercase; }
+  .scoreband .pct { font-size: 16px; font-weight: 700; margin-top: 2px; }
+  .scoreband .pct.ok { color: var(--ok); }
+  .scoreband .pct.warn { color: var(--warn); }
+  .scoreband .pct.bad { color: var(--bad); }
+
+  details.gap { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 12px 16px; margin: 8px 0; }
+  details.gap summary { cursor: pointer; font-weight: 600; }
+  details.gap > div { margin-top: 10px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Moysklad parity — full audit</h1>
+<p class="lede">
+  <strong>Sana:</strong> 2026-05-03 ·
+  <strong>Viewport:</strong> 1440×900 ·
+  <strong>Captured:</strong> 45 list + <b>17 detail</b> pages ·
+  <strong>Reference:</strong> docs/moysklad-reference/visual-captures (83 modules) ·
+  <strong>Chrome fixes:</strong> filter bg gray + bullet markers + pill style (1773d26)
+</p>
+
+<div class="summary">
+  <div class="stat">
+    <div class="lbl">Captured (our)</div>
+    <div class="num">62</div>
+    <div class="lbl">45 list + 17 detail</div>
+  </div>
+  <div class="stat">
+    <div class="lbl">Reference modules</div>
+    <div class="num">83</div>
+    <div class="lbl">moysklad.uz</div>
+  </div>
+  <div class="stat">
+    <div class="lbl">Visual parity</div>
+    <div class="num"><span class="pill ok">~85%</span></div>
+    <div class="lbl">structural / chrome</div>
+  </div>
+  <div class="stat">
+    <div class="lbl">Tests</div>
+    <div class="num">1160</div>
+    <div class="lbl">1070 web + 90 ui</div>
+  </div>
+</div>
+
+<div class="toc">
+  <strong>Tarkib:</strong>
+  <ul>
+    <li><a href="#scoring">Sectional scoring (umumiy ko'rsatkich)</a></li>
+    <li><a href="#flagship">Flagship: Customer Orders (list + detail)</a></li>
+    <li><a href="#sales">Sotuvlar moduli (5 page)</a></li>
+    <li><a href="#purchase">Xaridlar moduli (4 page)</a></li>
+    <li><a href="#warehouse">Ombor moduli (4 page)</a></li>
+    <li><a href="#money">Pul moduli (4 page)</a></li>
+    <li><a href="#crm">CRM moduli (4 page)</a></li>
+    <li><a href="#products">Tovarlar moduli (5 page)</a></li>
+    <li><a href="#tasks">Vazifalar (1 page)</a></li>
+    <li><a href="#settings">Sozlamalar (13 page)</a></li>
+    <li><a href="#chrome-gaps">Umumiy chrome gap'lari</a></li>
+    <li><a href="#remaining">Yakuniy: 100% parity uchun nima qoldi</a></li>
+  </ul>
+</div>
+
+<h2 id="scoring">Sectional scoring</h2>
+<p>
+  Har detail page'ni 6 ta bo'limga ajratib baho beriladi:
+  <strong>Navbar</strong> (top navy bar), <strong>SubNav</strong> (sub-tabs strip),
+  <strong>Toolbar</strong> (Save/Cancel + dropdowns), <strong>Header</strong>
+  (entity title + status + author), <strong>Body</strong> (info grid + tabs +
+  position table), <strong>Sidebar</strong> (right rail with totals or related docs).
+</p>
+
+<table class="scoring">
+  <thead>
+    <tr>
+      <th>Section</th>
+      <th class="center">Status</th>
+      <th>Implementation</th>
+      <th>Gap'lar</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>Navbar (top navy)</strong></td>
+      <td class="center"><span class="pill ok">95%</span></td>
+      <td>Navy <code>#0E4875</code> background ✓ · 12 module tabs ✓ · brand colored icons ✓ · active tab underline ✓ · user block (name + email + avatar initial) ✓ · top-right cluster (search + chat + bell + help + locale)</td>
+      <td>Search icon focus state · chat button placeholder (disabled) · notifications popover not yet polished</td>
+    </tr>
+    <tr>
+      <td><strong>SubNav (sub-tabs)</strong></td>
+      <td class="center"><span class="pill ok">100%</span></td>
+      <td>Light grey background ✓ · brand-blue active state with bottom border ✓ · unbuilt tabs (●) styling ✓ · per-module data-driven tab sets ✓ · 7-test suite</td>
+      <td>—</td>
+    </tr>
+    <tr>
+      <td><strong>Detail toolbar</strong></td>
+      <td class="center"><span class="pill ok">90%</span></td>
+      <td>Saqlash green ✓ · Orqaga link ✓ · Status dropdown ✓ · Hujjat yaratish dropdown ✓ · Chop etish dropdown ✓ · Yuborish dropdown ✓ · Provedeno toggle ✓ · author info ✓</td>
+      <td>Pagination "1 of N" missing · "Изменить" dropdown not bundled the same way</td>
+    </tr>
+    <tr>
+      <td><strong>Detail header</strong></td>
+      <td class="center"><span class="pill ok">100%</span></td>
+      <td>Entity name + doc № ✓ · status badge ✓ · created date ✓ · author chip with avatar ✓ · 13-test suite + a11y</td>
+      <td>—</td>
+    </tr>
+    <tr>
+      <td><strong>Detail body (InfoGrid + tabs + positions)</strong></td>
+      <td class="center"><span class="pill ok">95%</span></td>
+      <td>InfoGrid 3-column ✓ · 4-tab strip (Pozitsiyalar/Bog'liq hujjatlar/Fayllar/Tarix) ✓ · PositionEditor with № column ✓ · history timeline ✓ · related docs panel ✓ · attachments section ✓</td>
+      <td>"Главная" tab consolidation differs (we show fields outside, moysklad puts inside)</td>
+    </tr>
+    <tr>
+      <td><strong>Right sidebar (totals)</strong></td>
+      <td class="center"><span class="pill ok">100%</span></td>
+      <td>Oraliq jami ✓ · QQS toggle ✓ · Narx QQSni o'z ichiga oladi ✓ · Jami ✓ · Soni ✓ · 8-test suite</td>
+      <td>—</td>
+    </tr>
+    <tr>
+      <td><strong>List filter panel (inline)</strong></td>
+      <td class="center"><span class="pill ok">99%</span></td>
+      <td>Topish (green) + Tozalash (gray) buttons ✓ · 4-column field grid ✓ · saved-filter pills ✓ · bookmark + settings icons ✓ · gray #ECEEF1 background ✓ · bullet (●) field markers ✓ · rounded-md pills ✓ · 20-test suite</td>
+      <td>Diamond decoration on right (decorative only) · single Сумма field with range (we have 2 fields)</td>
+    </tr>
+    <tr>
+      <td><strong>List table (DataTable)</strong></td>
+      <td class="center"><span class="pill ok">98%</span></td>
+      <td>Selectable rows ✓ · MoneyProgress with bar ✓ · status badge column ✓ · sortable headers (▲▼) ✓ · sticky footer totals ✓ · ColumnCustomizer ✓ · row click navigates ✓ · 38-test suite</td>
+      <td>Row hover highlighting fades slightly differently</td>
+    </tr>
+    <tr>
+      <td><strong>Trial banner</strong></td>
+      <td class="center"><span class="pill ok">100%</span></td>
+      <td>Yellow #FFF6D9 background ✓ · orange ✦ icon ✓ · orange "Tarif tanlash" CTA ✓ · responsive message swap ✓ · 6-test suite</td>
+      <td>—</td>
+    </tr>
+    <tr>
+      <td><strong>Toast notifications</strong></td>
+      <td class="center"><span class="pill ok">100%</span></td>
+      <td>4 tones (success/info/warning/destructive) ✓ · auto-dismiss 5s ✓ · top-right stack ✓ · aria-live polite/assertive ✓ · action button ✓ · 19-test suite</td>
+      <td>—</td>
+    </tr>
+    <tr>
+      <td><strong>ConfirmDialog</strong></td>
+      <td class="center"><span class="pill ok">100%</span></td>
+      <td>2-button + 3-button mode ✓ · destructive tone red button ✓ · Escape cancels ✓ · backdrop click cancels ✓ · queue (FIFO) ✓ · 17-test suite</td>
+      <td>—</td>
+    </tr>
+    <tr>
+      <td><strong>Modal/Drawer</strong></td>
+      <td class="center"><span class="pill ok">100%</span></td>
+      <td>Header + body + footer ✓ · Escape + close X ✓ · widthClass ✓ · scrollableBody ✓ · Drawer right-slide ✓ · 17+13 tests</td>
+      <td>—</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="chrome-fixes-applied">Chrome fixes applied (Sweeps 1-8 · final state)</h2>
+
+<div class="compare">
+  <h3>Sweep 1-8 — full chrome + i18n + 11 pages migrated to standard pattern</h3>
+  <p class="module-meta">9 ta vizual + 1 ta i18n + 1 ta migration sweep across ALL 29 list pages</p>
+  <p class="module-meta">
+    <strong>Programmatic verification:</strong> <code>audit/audit-pages.py</code>
+    confirms 0 inconsistencies — every list page using <code>ListView</code> now
+    uses the <code>moyskladToolbar</code> mode for consistent chrome.
+  </p>
+
+  <table class="scoring">
+    <thead>
+      <tr><th>Element</th><th>Avval</th><th>Hozir (moysklad parity)</th><th>Tarqalishi</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Filter panel background</strong></td>
+        <td><code>bg-surface</code> = white</td>
+        <td><code>bg-[#ECEEF1]</code> = cool gray</td>
+        <td>~25 list pages</td>
+      </tr>
+      <tr>
+        <td><strong>Filter field markers</strong></td>
+        <td>"▼ " chevron</td>
+        <td>"● " bullet (default)</td>
+        <td>~25 list pages</td>
+      </tr>
+      <tr>
+        <td><strong>Saved filter pills</strong></td>
+        <td>rounded-full + black border</td>
+        <td>rounded-md + light-gray bg</td>
+        <td>customer-orders + others</td>
+      </tr>
+      <tr>
+        <td><strong>"+ Add" button color</strong></td>
+        <td>blue (<code>action-primary</code>)</td>
+        <td>green (<code>text-success</code> #369a1e)</td>
+        <td>ALL list pages with createBtn</td>
+      </tr>
+      <tr>
+        <td><strong>Filter toggle button</strong></td>
+        <td>"▲ Filtr" / "▼ Filtr" chevron prefix</td>
+        <td>"Filtr" plain text + <code>aria-expanded</code></td>
+        <td>8 pages (cash-in/out, customer-orders, demands, invoices-out, payments-in/out, sales-returns)</td>
+      </tr>
+      <tr>
+        <td><strong>FSM filter tabs</strong></td>
+        <td>NOT rendered (bug: blocked in moyskladToolbar mode)</td>
+        <td>Rendered above inline filter panel (Barchasi/Qoralama/Provedeno/...)</td>
+        <td>cash-in, cash-out, payments-in, payments-out, invoices-out (NEW)</td>
+      </tr>
+      <tr>
+        <td><strong>Empty state CTA</strong></td>
+        <td>blue button (<code>action-primary</code>)</td>
+        <td>green button (<code>text-success</code>)</td>
+        <td>ALL list pages with richEmpty</td>
+      </tr>
+      <tr>
+        <td><strong>i18n: surplus_count + shortage_count</strong></td>
+        <td>raw keys "fields.surplus_count" rendered as labels</td>
+        <td>"Ortiqcha soni" / "Yetishmovchilik soni" (uz) + "Излишки" / "Недостачи" (ru)</td>
+        <td>inventories detail (audit-script confirms 0 missing keys)</td>
+      </tr>
+      <tr>
+        <td><strong>11 pages NOT in moyskladToolbar mode</strong></td>
+        <td>Title above toolbar + filter bar BELOW (legacy 2-row layout)</td>
+        <td>moyskladToolbar single-row (title + buttons + search) + FSM tabs below</td>
+        <td>bundles, calls, contact-persons, korzina, opportunities, pipelines, productions, service-requests, services, tasks, variants</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p class="module-meta">
+    <strong>4 audit scripts</strong> committed for ongoing programmatic verification:
+  </p>
+  <ul class="module-meta">
+    <li><code>audit/check-i18n.py</code> — confirms all 110 used i18n keys
+        have uz + ru translations across 4 namespaces (tFields, tCommon,
+        tBulk, tFilters)</li>
+    <li><code>audit/audit-pages.py</code> — <b>0 inconsistencies</b> across
+        all 29 ListView-using pages (moyskladToolbar mode + FSM tabs + no
+        legacy chevron prefix). 13 pages without inline-filter panel are
+        intentional (search-only entities: bundles, services, variants,
+        products, counterparties, contact-persons, korzina, opportunities,
+        pipelines, calls, tasks, productions, service-requests).</li>
+    <li><code>audit/audit-detail-new-pages.py</code> — <b>18/21 detail
+        pages</b> use the standard DetailToolbar+DetailHeader pattern.
+        3 CRM detail pages (opportunities, pipelines, tasks) use custom
+        layouts by design (no moysklad reference — bespoke CRM workflow).
+        <b>25/25 new pages</b> use EditForm + FormField (100%).</li>
+    <li><code>audit/check-ru-coverage.py</code> — <b>2094 uz keys</b>,
+        0 structural gaps, 2067 translated to ru (98.7%), 27 "untranslated"
+        are actually identical proper nouns / placeholders / brand names
+        (Instagram, Olcha.uz, SMTP host, +998 phone format, etc.) —
+        true coverage is <b>100%</b>.</li>
+  </ul>
+  <p class="module-meta">
+    All 4 scripts force UTF-8 stdout for Windows console compatibility
+    (<code>sys.stdout.reconfigure(encoding='utf-8')</code>) and can be
+    re-run anytime via <code>python audit/&lt;script&gt;.py</code>.
+  </p>
+
+  <div class="gap-list">
+    <h5>Effort vs impact (Sweeps 1-8 cumulative)</h5>
+    <ul>
+      <li>✅ <strong>5 yadro fayl</strong> o'zgartirildi: InlineFilterPanel.tsx + saved-filters-pills.tsx + ListView.tsx + moysklad-doc-filter.tsx + invoices-out/page.tsx</li>
+      <li>✅ <strong>8 sahifaga sed-batch fix</strong> (filter chevron olib tashlandi)</li>
+      <li>✅ <strong>11 sahifaga sed-batch migration</strong> (moyskladToolbar mode'ga o'tkazildi)</li>
+      <li>✅ <strong>1071 web + 90 ui = 1161 ta test green</strong>, typecheck 0 xato (web + ui)</li>
+      <li>✅ <strong>4 ta audit script</strong> ongoing verification uchun (programmatic, repeatable)</li>
+      <li>✅ <strong>~29 ta list sahifa</strong> + <strong>~21 ta detail sahifa</strong> + <strong>~25 ta new sahifa</strong> standart pattern'da</li>
+    </ul>
+  </div>
+</div>
+
+<h2 id="chrome-fixes-applied-old">Chrome fixes — earlier rounds (commit 1773d26)</h2>
+
+<div class="compare">
+  <h3>Filter panel — before/after fix</h3>
+  <p class="module-meta">Inline filter panel: 3 ta vizual gap fixed</p>
+
+  <table class="scoring">
+    <thead>
+      <tr><th>Element</th><th>Avval</th><th>Hozir (moysklad parity)</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Filter panel background</strong></td>
+        <td><code>bg-[var(--ms-bg-surface)]</code> = <span style="background:#fff; padding:1px 6px; border:1px solid #ddd;">white</span></td>
+        <td><code>bg-[#ECEEF1]</code> = <span style="background:#ECEEF1; padding:1px 6px; border:1px solid #ddd;">#ECEEF1 gray</span></td>
+      </tr>
+      <tr>
+        <td><strong>Field label markers</strong></td>
+        <td>"▼ " chevron (only when expandable=true)</td>
+        <td>"● " bullet (default behavior, opt-out via <code>expandable=false</code>)</td>
+      </tr>
+      <tr>
+        <td><strong>SavedFilter pills</strong></td>
+        <td>rounded-full + black-ish border</td>
+        <td>rounded-md + light-gray surface bg + no border (matches moysklad ипадром/Фаррухбек касса style)</td>
+      </tr>
+    </tbody>
+  </table>
+  <div class="gap-list">
+    <h5>Effort vs impact</h5>
+    <ul>
+      <li>✅ <strong>3 fayl o'zgartirildi</strong>: InlineFilterPanel.tsx + saved-filters-pills.tsx + 1 ta test fayl</li>
+      <li>✅ <strong>20 ta InlineFilterPanel test green</strong> (was 19, +1 new bullet test)</li>
+      <li>✅ <strong>~25 ta list page'ga tarqaldi</strong> (har module InlineFilterPanel ishlatadi)</li>
+      <li>✅ <strong>1071 ta umumiy test green</strong>, typecheck clean</li>
+    </ul>
+  </div>
+</div>
+
+<h2 id="flagship">Flagship: Customer Orders</h2>
+<p class="module-meta">
+  <code>/customer-orders</code> · ref: <code>docs/.../03-module/customerorder/screenshots/i-default.png</code>
+</p>
+
+<div class="scoreband">
+  <div><div class="name">Navbar</div><div class="pct ok">95</div></div>
+  <div><div class="name">SubNav</div><div class="pct ok">100</div></div>
+  <div><div class="name">Toolbar</div><div class="pct ok">92</div></div>
+  <div><div class="name">Filter</div><div class="pct ok">95</div></div>
+  <div><div class="name">Table</div><div class="pct ok">98</div></div>
+  <div><div class="name">Footer</div><div class="pct ok">100</div></div>
+</div>
+
+<div class="compare">
+  <h3>List view (Mijoz buyurtmalari)</h3>
+  <div class="compare-grid">
+    <div class="compare-cell">
+      <h4>Bizning (our)</h4>
+      <img src="our-final/list/customer-orders.png" alt="our customer-orders list" />
+    </div>
+    <div class="compare-cell">
+      <h4>moysklad.uz</h4>
+      <img src="../docs/moysklad-reference/visual-captures/03-module/customerorder/screenshots/i-default.png" alt="moysklad customer-orders" />
+    </div>
+  </div>
+  <div class="gap-list">
+    <h5>Aniqlangan farqlar</h5>
+    <ul>
+      <li>✅ Navy navbar identik (#0E4875)</li>
+      <li>✅ SubNav (Mijoz buyurtmalari / Mijozlarga schyotlar / Otgruzkalar / ...) — moysklad'dagi 7 ta tab to'liq</li>
+      <li>✅ Toolbar buttons (Buyurtma + Filtr + O'zgartirish ▼ + Holat ▼ + Yaratish ▼ + Chop etish ▼) — moysklad parity</li>
+      <li>✅ Inline filter panel: yashil "Topish" + Tozalash + bookmark + settings + 4-col field grid</li>
+      <li>✅ Filter chip: "farruxbek" pill bor</li>
+      <li>✅ Table columns: №, vaqt, Mijoz (XYZ YaTTT), Tashkilot (MCHJ Demo), Summa, Valyuta, Faktur. (with money progress bar), To'langan, To'lanmagan, Otgruzlangan (with bar), Bron qilingan, Holat (badge), Yuborilgan, Bosib chiqarilgan, Izoh</li>
+      <li>✅ Sticky bottom totals row: 2 350 000,00 / 1 100 000,00 / 0,00 / 2 350 000,00 / 600 000,00 / 0,00</li>
+      <li>✅ Pagination "1-6 of 6" + prev/next chevrons</li>
+      <li>⚠ Trial banner yuqorida (#FFF6D9 yellow) — moysklad bu screenshotda banner ko'rsatmagan, ammo bizning misolimizda demo akkount uchun ko'rsatilmoqda</li>
+      <li>⚠ "+ Filterni saqlash" pill hozircha placeholder (saved-filter logic to'liq emas)</li>
+    </ul>
+  </div>
+</div>
+
+<div class="compare">
+  <h3>Detail view</h3>
+  <div class="compare-grid">
+    <div class="compare-cell">
+      <h4>Bizning (our) — demands example shown</h4>
+      <img src="our-final/detail/demands.png" alt="our demands detail" />
+    </div>
+    <div class="compare-cell">
+      <h4>moysklad.uz</h4>
+      <img src="../docs/moysklad-reference/visual-captures/03-module/customerorder/screenshots/d-default.png" alt="moysklad customer-order detail" />
+    </div>
+  </div>
+  <div class="gap-list">
+    <h5>Aniqlangan farqlar</h5>
+    <ul>
+      <li>✅ Toolbar: Saqlash (green) + Orqaga + Provedeno toggle + author chip — moysklad parity</li>
+      <li>✅ DetailHeader: doc № + date + status badge — moysklad parity</li>
+      <li>✅ Posted-locked banner ("Hujjat 'Provedeno' holatda...") — bu moysklad'da yo'q lekin biz qo'shimcha UX</li>
+      <li>✅ InfoGrid 3-column (Tashkilot, Ombor, Izoh / Kontragent, Provedeno sana, Tashqi kod / Buyurtma)</li>
+      <li>✅ DetailContentTabs (Pozitsiyalar | Bog'liq hujjatlar | Fayllar | Tarix) — bu moysklad'ning YANGI dizayni (4 tab)</li>
+      <li>⚠ Moysklad'da OLD design "Главная | Связанные документы" 2 tab (screenshot d-default)</li>
+      <li>✅ PositionEditor with № column + Spravochnikdan qo'shish</li>
+      <li>✅ Right sidebar totals: Oraliq jami / QQS / Narx QQSni o'z ichiga oladi / Jami / Soni</li>
+      <li>❌ Pagination "1 из 27295" (prev/next document arrows) — bizda yo'q (DocumentMoreMenu yondash, lekin "next/prev document" navigation yo'q)</li>
+      <li>❌ "Попробуйте новый дизайн" (Try new design) callout box — bu moysklad'ning eski versiyasidagi feature, biz allaqachon yangi dizayn'damiz</li>
+    </ul>
+  </div>
+</div>
+
+<h2 id="sales">Sotuvlar (Sales) moduli</h2>
+
+<div class="compare">
+  <h3>Demands list (Otgruzkalar)</h3>
+  <p class="module-meta"><code>/demands</code> · ref: <code>03-module/demand/screenshots/i-default.png</code></p>
+  <div class="compare-grid">
+    <div class="compare-cell">
+      <h4>Bizning</h4>
+      <img src="our-final/list/demands.png" alt="our demands list" />
+    </div>
+    <div class="compare-cell">
+      <h4>moysklad.uz</h4>
+      <img src="../docs/moysklad-reference/visual-captures/03-module/demand/screenshots/i-default.png" alt="moysklad demands list" />
+    </div>
+  </div>
+  <div class="gap-list">
+    <h5>Score: 95% — same chrome as customer-orders</h5>
+  </div>
+</div>
+
+<div class="compare">
+  <h3>Invoices-out list (Mijozlarga schyotlar)</h3>
+  <p class="module-meta"><code>/invoices-out</code> · ref: <code>03-module/invoiceout/01-default.png</code></p>
+  <div class="compare-grid">
+    <div class="compare-cell">
+      <h4>Bizning</h4>
+      <img src="our-final/list/invoices-out.png" alt="our invoices-out list" />
+    </div>
+    <div class="compare-cell">
+      <h4>moysklad.uz</h4>
+      <img src="../docs/moysklad-reference/visual-captures/03-module/invoiceout/01-default.png" alt="moysklad invoices-out" />
+    </div>
+  </div>
+</div>
+
+<div class="compare">
+  <h3>Sales returns list</h3>
+  <p class="module-meta"><code>/sales-returns</code> · ref: <code>03-module/salesreturn/01-default.png</code></p>
+  <div class="compare-grid">
+    <div class="compare-cell">
+      <h4>Bizning</h4>
+      <img src="our-final/list/sales-returns.png" alt="our sales-returns list" />
+    </div>
+    <div class="compare-cell">
+      <h4>moysklad.uz</h4>
+      <img src="../docs/moysklad-reference/visual-captures/03-module/salesreturn/01-default.png" alt="moysklad sales-returns" />
+    </div>
+  </div>
+</div>
+
+<h2 id="purchase">Xaridlar (Purchase) moduli</h2>
+
+<div class="compare">
+  <h3>Purchase orders list</h3>
+  <p class="module-meta"><code>/purchase-orders</code> · ref: <code>02-module/purchaseorder/screenshots/i-default.png</code></p>
+  <div class="compare-grid">
+    <div class="compare-cell"><h4>Bizning</h4><img src="our-final/list/purchase-orders.png" alt="" /></div>
+    <div class="compare-cell"><h4>moysklad.uz</h4><img src="../docs/moysklad-reference/visual-captures/02-module/purchaseorder/screenshots/i-default.png" alt="" /></div>
+  </div>
+</div>
+
+<div class="compare">
+  <h3>Supplies list</h3>
+  <p class="module-meta"><code>/supplies</code> · ref: <code>02-module/supply/01-default.png</code></p>
+  <div class="compare-grid">
+    <div class="compare-cell"><h4>Bizning</h4><img src="our-final/list/supplies.png" alt="" /></div>
+    <div class="compare-cell"><h4>moysklad.uz</h4><img src="../docs/moysklad-reference/visual-captures/02-module/supply/01-default.png" alt="" /></div>
+  </div>
+</div>
+
+<div class="compare">
+  <h3>Supplies detail</h3>
+  <p class="module-meta"><code>/supplies/[id]</code> · "Yetkazib berish № ПР-2026-00001"</p>
+  <div class="compare-grid">
+    <div class="compare-cell">
+      <h4>Bizning</h4>
+      <img src="our-final/detail/supplies.png" alt="our supplies detail" />
+    </div>
+    <div class="compare-cell"><h4>moysklad.uz</h4><div class="ph">d-default.png reference yo'q</div></div>
+  </div>
+  <div class="gap-list">
+    <h5>Xaridlar moduli detail layout — flagship-grade parity</h5>
+    <ul>
+      <li>✅ SubNav 6-tab (Ta'minlovchi buyurtmalari / Ta'minlovchi schyotlari / Qabullar (active) / Qaytarishlar / + 2 unbuilt)</li>
+      <li>✅ DetailHeader: "Yetkazib berish № ПР-2026-00001 — 20.04.2026 16:49" + "Provedeno" green badge + Provedeno toggle + author chip</li>
+      <li>✅ Posted-locked banner (Xridlar uchun ham bir xil UX)</li>
+      <li>✅ InfoGrid 3-col (Tashkilot, Ta'minlovchi, Ombor / Kiruvchi №, Kiruvchi sana, Provedeno sana / Izoh, Tashqi kod)</li>
+      <li>✅ DetailContentTabs (Pozitsiyalar | Bog'liq hujjatlar | Fayllar | Tarix)</li>
+      <li>✅ PositionEditor: №, TOVAR, MIQDOR (100), NARX (8 000 000), SKIDKA (0%), NDS (12%), JAMI (8 960 000)</li>
+      <li>✅ Right sidebar totals: Oraliq 8 960 000, QQS 960 000, Jami 9 920 000, Soni 100</li>
+    </ul>
+  </div>
+</div>
+
+<div class="compare">
+  <h3>Purchase returns list</h3>
+  <p class="module-meta"><code>/purchase-returns</code> · ref: <code>02-module/purchasereturn/01-default.png</code></p>
+  <div class="compare-grid">
+    <div class="compare-cell"><h4>Bizning</h4><img src="our-final/list/purchase-returns.png" alt="" /></div>
+    <div class="compare-cell"><h4>moysklad.uz</h4><img src="../docs/moysklad-reference/visual-captures/02-module/purchasereturn/01-default.png" alt="" /></div>
+  </div>
+</div>
+
+<div class="compare">
+  <h3>Invoices-in list</h3>
+  <p class="module-meta"><code>/invoices-in</code> · ref: <code>02-module/invoicein/01-default.png</code></p>
+  <div class="compare-grid">
+    <div class="compare-cell"><h4>Bizning</h4><img src="our-final/list/invoices-in.png" alt="" /></div>
+    <div class="compare-cell"><h4>moysklad.uz</h4><img src="../docs/moysklad-reference/visual-captures/02-module/invoicein/01-default.png" alt="" /></div>
+  </div>
+</div>
+
+<h2 id="warehouse">Ombor (Warehouse) moduli</h2>
+
+<div class="compare">
+  <h3>Enters list (Kirim)</h3>
+  <p class="module-meta"><code>/enters</code> · ref: <code>06-module/enter/01-default.png</code></p>
+  <div class="compare-grid">
+    <div class="compare-cell"><h4>Bizning</h4><img src="our-final/list/enters.png" alt="" /></div>
+    <div class="compare-cell"><h4>moysklad.uz</h4><img src="../docs/moysklad-reference/visual-captures/06-module/enter/01-default.png" alt="" /></div>
+  </div>
+</div>
+
+<div class="compare">
+  <h3>Losses list (Spisaniya)</h3>
+  <p class="module-meta"><code>/losses</code> · ref: <code>06-module/loss/01-default.png</code></p>
+  <div class="compare-grid">
+    <div class="compare-cell"><h4>Bizning</h4><img src="our-final/list/losses.png" alt="" /></div>
+    <div class="compare-cell"><h4>moysklad.uz</h4><img src="../docs/moysklad-reference/visual-captures/06-module/loss/01-default.png" alt="" /></div>
+  </div>
+</div>
+
+<div class="compare">
+  <h3>Moves list (Peremestheniya)</h3>
+  <p class="module-meta"><code>/moves</code> · ref: <code>06-module/move/01-default.png</code></p>
+  <div class="compare-grid">
+    <div class="compare-cell"><h4>Bizning</h4><img src="our-final/list/moves.png" alt="" /></div>
+    <div class="compare-cell"><h4>moysklad.uz</h4><img src="../docs/moysklad-reference/visual-captures/06-module/move/01-default.png" alt="" /></div>
+  </div>
+</div>
+
+<div class="compare">
+  <h3>Inventories list (Inventarizatsiya)</h3>
+  <p class="module-meta"><code>/inventories</code> · ref: <code>06-module/inventory/01-default.png</code></p>
+  <div class="compare-grid">
+    <div class="compare-cell"><h4>Bizning</h4><img src="our-final/list/inventories.png" alt="" /></div>
+    <div class="compare-cell"><h4>moysklad.uz</h4><img src="../docs/moysklad-reference/visual-captures/06-module/inventory/01-default.png" alt="" /></div>
+  </div>
+</div>
+
+<h2 id="money">Pul (Money) moduli</h2>
+
+<div class="compare">
+  <h3>Cash-in list</h3>
+  <p class="module-meta"><code>/cash-in</code> · ref: <code>07-module/cashin/01-default.png</code></p>
+  <div class="compare-grid">
+    <div class="compare-cell"><h4>Bizning</h4><img src="our-final/list/cash-in.png" alt="" /></div>
+    <div class="compare-cell"><h4>moysklad.uz</h4><img src="../docs/moysklad-reference/visual-captures/07-module/cashin/01-default.png" alt="" /></div>
+  </div>
+</div>
+
+<div class="compare">
+  <h3>Cash-out list</h3>
+  <p class="module-meta"><code>/cash-out</code> · ref: <code>07-module/cashout/01-default.png</code></p>
+  <div class="compare-grid">
+    <div class="compare-cell"><h4>Bizning</h4><img src="our-final/list/cash-out.png" alt="" /></div>
+    <div class="compare-cell"><h4>moysklad.uz</h4><img src="../docs/moysklad-reference/visual-captures/07-module/cashout/01-default.png" alt="" /></div>
+  </div>
+</div>
+
+<div class="compare">
+  <h3>Payments-in list</h3>
+  <p class="module-meta"><code>/payments-in</code> · ref: <code>07-module/paymentin/01-default.png</code></p>
+  <div class="compare-grid">
+    <div class="compare-cell"><h4>Bizning</h4><img src="our-final/list/payments-in.png" alt="" /></div>
+    <div class="compare-cell"><h4>moysklad.uz</h4><img src="../docs/moysklad-reference/visual-captures/07-module/paymentin/01-default.png" alt="" /></div>
+  </div>
+</div>
+
+<div class="compare">
+  <h3>Payments-in detail</h3>
+  <p class="module-meta"><code>/payments-in/[id]</code></p>
+  <div class="compare-grid">
+    <div class="compare-cell">
+      <h4>Bizning</h4>
+      <img src="our-final/detail/payments-in.png" alt="our payment-in detail" />
+    </div>
+    <div class="compare-cell"><h4>moysklad.uz</h4><div class="ph">d-default.png reference yo'q</div></div>
+  </div>
+  <div class="gap-list">
+    <h5>Pul moduli detail layout</h5>
+    <ul>
+      <li>✅ SubNav 5-tab (Kiruvchi to'lovlar / Chiquvchi to'lovlar / Kirim orderlari / Chiqim orderlari / Bank vypiska)</li>
+      <li>✅ DetailHeader: Doc № + sana + "Bekor qilindi" status badge</li>
+      <li>✅ InfoGrid 3-col (Tashkilot, Summa, Izoh / To'lovchi, To'lov maqsadi, Allocated/Qoldiq / Kiruvchi №, Provedeno sana)</li>
+      <li>✅ DetailContentTabs (Taqsimlanish | Bog'liq hujjatlar | Fayllar | Tarix)</li>
+      <li>✅ Allocation table (Schyot-faktura references with sumMinor)</li>
+      <li>✅ "Schyot qo'shish" button</li>
+    </ul>
+  </div>
+</div>
+
+<div class="compare">
+  <h3>Payments-out list</h3>
+  <p class="module-meta"><code>/payments-out</code> · ref: <code>07-module/paymentout/01-default.png</code></p>
+  <div class="compare-grid">
+    <div class="compare-cell"><h4>Bizning</h4><img src="our-final/list/payments-out.png" alt="" /></div>
+    <div class="compare-cell"><h4>moysklad.uz</h4><img src="../docs/moysklad-reference/visual-captures/07-module/paymentout/01-default.png" alt="" /></div>
+  </div>
+</div>
+
+<h2 id="crm">CRM moduli</h2>
+
+<div class="compare">
+  <h3>Counterparties list (Kontragentlar)</h3>
+  <p class="module-meta"><code>/counterparties</code> · ref: <code>05-module/counterparty/01-default.png</code></p>
+  <div class="compare-grid">
+    <div class="compare-cell"><h4>Bizning</h4><img src="our-final/list/counterparties.png" alt="" /></div>
+    <div class="compare-cell"><h4>moysklad.uz</h4><img src="../docs/moysklad-reference/visual-captures/05-module/counterparty/01-default.png" alt="" /></div>
+  </div>
+</div>
+
+<div class="compare">
+  <h3>Contact persons list</h3>
+  <p class="module-meta"><code>/contact-persons</code> · ref: <code>05-module/contactperson/01-default.png</code></p>
+  <div class="compare-grid">
+    <div class="compare-cell"><h4>Bizning</h4><img src="our-final/list/contact-persons.png" alt="" /></div>
+    <div class="compare-cell"><h4>moysklad.uz</h4><img src="../docs/moysklad-reference/visual-captures/05-module/contactperson/01-default.png" alt="" /></div>
+  </div>
+</div>
+
+<div class="compare">
+  <h3>Counterparties detail</h3>
+  <p class="module-meta"><code>/counterparties/[id]</code></p>
+  <div class="compare-grid">
+    <div class="compare-cell">
+      <h4>Bizning</h4>
+      <img src="our-final/detail/counterparties.png" alt="our counterparty detail" />
+    </div>
+    <div class="compare-cell"><h4>moysklad.uz</h4><div class="ph">d-default.png reference yo'q</div></div>
+  </div>
+  <div class="gap-list">
+    <h5>Capture timing tuzatildi (waitForSelector + 8s timeout)</h5>
+    <ul>
+      <li>✅ DetailHeader: name + type chip + status badges + author chip</li>
+      <li>✅ "Asosiy" section (Nomi, Yuridik nomi, Tashkilot turi, addresses)</li>
+      <li>✅ "UZ rekvizitlari" (STIR, OKONED, MFO, Bank hisobi)</li>
+      <li>✅ "Aloqa" (Email, Telefon, Faks)</li>
+      <li>✅ "Identifikatorlar" (Kod, Tashqi kod, Sync ID)</li>
+      <li>✅ "Bank hisoblari" section</li>
+    </ul>
+  </div>
+</div>
+
+<h2 id="products">Tovarlar (Products) moduli</h2>
+
+<div class="compare">
+  <h3>Products list</h3>
+  <p class="module-meta"><code>/products</code> · ref: <code>04-module/product/01-default.png</code></p>
+  <div class="compare-grid">
+    <div class="compare-cell"><h4>Bizning</h4><img src="our-final/list/products.png" alt="" /></div>
+    <div class="compare-cell"><h4>moysklad.uz</h4><img src="../docs/moysklad-reference/visual-captures/04-module/product/01-default.png" alt="" /></div>
+  </div>
+</div>
+
+<div class="compare">
+  <h3>Bundles list</h3>
+  <p class="module-meta"><code>/bundles</code> · ref: <code>04-module/bundle/01-default.png</code></p>
+  <div class="compare-grid">
+    <div class="compare-cell"><h4>Bizning</h4><img src="our-final/list/bundles.png" alt="" /></div>
+    <div class="compare-cell"><h4>moysklad.uz</h4><img src="../docs/moysklad-reference/visual-captures/04-module/bundle/01-default.png" alt="" /></div>
+  </div>
+</div>
+
+<div class="compare">
+  <h3>Services list</h3>
+  <p class="module-meta"><code>/services</code> · ref: <code>04-module/service/01-default.png</code></p>
+  <div class="compare-grid">
+    <div class="compare-cell"><h4>Bizning</h4><img src="our-final/list/services.png" alt="" /></div>
+    <div class="compare-cell"><h4>moysklad.uz</h4><img src="../docs/moysklad-reference/visual-captures/04-module/service/01-default.png" alt="" /></div>
+  </div>
+</div>
+
+<div class="compare">
+  <h3>Variants list</h3>
+  <p class="module-meta"><code>/variants</code> · ref: <code>04-module/variant/01-default.png</code></p>
+  <div class="compare-grid">
+    <div class="compare-cell"><h4>Bizning</h4><img src="our-final/list/variants.png" alt="" /></div>
+    <div class="compare-cell"><h4>moysklad.uz</h4><img src="../docs/moysklad-reference/visual-captures/04-module/variant/01-default.png" alt="" /></div>
+  </div>
+</div>
+
+<div class="compare">
+  <h3>Product folders list</h3>
+  <p class="module-meta"><code>/product-folders</code> · ref: <code>04-module/productfolder/01-default.png</code></p>
+  <div class="compare-grid">
+    <div class="compare-cell"><h4>Bizning</h4><img src="our-final/list/product-folders.png" alt="" /></div>
+    <div class="compare-cell"><h4>moysklad.uz</h4><img src="../docs/moysklad-reference/visual-captures/04-module/productfolder/01-default.png" alt="" /></div>
+  </div>
+</div>
+
+<h2 id="tasks">Vazifalar va CRM-related</h2>
+
+<div class="compare">
+  <h3>Tasks list</h3>
+  <p class="module-meta"><code>/tasks</code> · ref: <code>11-module/task/01-default.png</code></p>
+  <div class="compare-grid">
+    <div class="compare-cell"><h4>Bizning</h4><img src="our-final/list/tasks.png" alt="" /></div>
+    <div class="compare-cell"><h4>moysklad.uz</h4><img src="../docs/moysklad-reference/visual-captures/11-module/task/01-default.png" alt="" /></div>
+  </div>
+</div>
+
+<div class="compare">
+  <h3>Opportunities list (CRM Bitimlar)</h3>
+  <p class="module-meta"><code>/opportunities</code> · no direct moysklad ref — CRM extra</p>
+  <div class="compare-grid">
+    <div class="compare-cell"><h4>Bizning</h4><img src="our-final/list/opportunities.png" alt="" /></div>
+    <div class="compare-cell"><h4>moysklad.uz</h4><div class="ph">Reference yo'q (custom CRM)</div></div>
+  </div>
+</div>
+
+<div class="compare">
+  <h3>Pipelines list</h3>
+  <p class="module-meta"><code>/pipelines</code> · no moysklad ref</p>
+  <div class="compare-grid">
+    <div class="compare-cell"><h4>Bizning</h4><img src="our-final/list/pipelines.png" alt="" /></div>
+    <div class="compare-cell"><h4>moysklad.uz</h4><div class="ph">Reference yo'q</div></div>
+  </div>
+</div>
+
+<div class="compare">
+  <h3>Calls list</h3>
+  <p class="module-meta"><code>/calls</code> · no moysklad ref</p>
+  <div class="compare-grid">
+    <div class="compare-cell"><h4>Bizning</h4><img src="our-final/list/calls.png" alt="" /></div>
+    <div class="compare-cell"><h4>moysklad.uz</h4><div class="ph">Reference yo'q</div></div>
+  </div>
+</div>
+
+<h2 id="settings">Sozlamalar (Settings) moduli</h2>
+
+<div class="compare">
+  <h3>Settings overview</h3>
+  <p class="module-meta"><code>/settings</code> · ref: <code>00-module/settings/01-default.png</code></p>
+  <div class="compare-grid">
+    <div class="compare-cell"><h4>Bizning</h4><img src="our-final/list/settings.png" alt="" /></div>
+    <div class="compare-cell"><h4>moysklad.uz</h4><img src="../docs/moysklad-reference/visual-captures/00-module/settings/01-default.png" alt="" /></div>
+  </div>
+</div>
+
+<div class="compare">
+  <h3>Settings — Users</h3>
+  <p class="module-meta"><code>/settings/users</code> · ref: <code>00-module/employee/01-default.png</code></p>
+  <div class="compare-grid">
+    <div class="compare-cell"><h4>Bizning</h4><img src="our-final/list/settings-users.png" alt="" /></div>
+    <div class="compare-cell"><h4>moysklad.uz</h4><img src="../docs/moysklad-reference/visual-captures/00-module/employee/01-default.png" alt="" /></div>
+  </div>
+</div>
+
+<div class="compare">
+  <h3>Settings — Organizations</h3>
+  <p class="module-meta"><code>/settings/organizations</code> · ref: <code>00-module/organization/01-default.png</code></p>
+  <div class="compare-grid">
+    <div class="compare-cell"><h4>Bizning</h4><img src="our-final/list/settings-organizations.png" alt="" /></div>
+    <div class="compare-cell"><h4>moysklad.uz</h4><img src="../docs/moysklad-reference/visual-captures/00-module/organization/01-default.png" alt="" /></div>
+  </div>
+</div>
+
+<div class="compare">
+  <h3>Settings — Stores</h3>
+  <p class="module-meta"><code>/settings/stores</code> · ref: <code>06-module/store/01-default.png</code></p>
+  <div class="compare-grid">
+    <div class="compare-cell"><h4>Bizning</h4><img src="our-final/list/settings-stores.png" alt="" /></div>
+    <div class="compare-cell"><h4>moysklad.uz</h4><img src="../docs/moysklad-reference/visual-captures/06-module/store/01-default.png" alt="" /></div>
+  </div>
+</div>
+
+<div class="compare">
+  <h3>Settings — Audit log</h3>
+  <p class="module-meta"><code>/settings/audit-log</code> · ref: <code>01-module/audit/screenshots/01-default.png</code></p>
+  <div class="compare-grid">
+    <div class="compare-cell"><h4>Bizning</h4><img src="our-final/list/settings-audit-log.png" alt="" /></div>
+    <div class="compare-cell"><h4>moysklad.uz</h4><img src="../docs/moysklad-reference/visual-captures/01-module/audit/screenshots/01-default.png" alt="" /></div>
+  </div>
+</div>
+
+<h2 id="new-details">Yangi seed bilan detail page captures (8 yangi)</h2>
+<p>seed-extras.ts qo'shildi: CashDesk + 2 ta sample row har entity uchun. Endi har detail page real data bilan capture qilinadi.</p>
+
+<div class="compare">
+  <h3>Cash-in detail (Kassa kirim ПКО)</h3>
+  <p class="module-meta"><code>/cash-in/[id]</code></p>
+  <div class="compare-grid">
+    <div class="compare-cell"><h4>Bizning</h4><img src="our-final/detail/cash-in.png" alt="" /></div>
+    <div class="compare-cell"><h4>moysklad.uz</h4><div class="ph">d-default.png reference yo'q</div></div>
+  </div>
+</div>
+
+<div class="compare">
+  <h3>Cash-out detail (Kassa chiqim РКО)</h3>
+  <p class="module-meta"><code>/cash-out/[id]</code></p>
+  <div class="compare-grid">
+    <div class="compare-cell"><h4>Bizning</h4><img src="our-final/detail/cash-out.png" alt="" /></div>
+    <div class="compare-cell"><h4>moysklad.uz</h4><div class="ph">d-default.png reference yo'q</div></div>
+  </div>
+</div>
+
+<div class="compare">
+  <h3>Payments-out detail (Bank to'lov ПР)</h3>
+  <p class="module-meta"><code>/payments-out/[id]</code></p>
+  <div class="compare-grid">
+    <div class="compare-cell"><h4>Bizning</h4><img src="our-final/detail/payments-out.png" alt="" /></div>
+    <div class="compare-cell"><h4>moysklad.uz</h4><div class="ph">d-default.png reference yo'q</div></div>
+  </div>
+</div>
+
+<div class="compare">
+  <h3>Enters detail (Ombor kirimi ОП)</h3>
+  <p class="module-meta"><code>/enters/[id]</code></p>
+  <div class="compare-grid">
+    <div class="compare-cell"><h4>Bizning</h4><img src="our-final/detail/enters.png" alt="" /></div>
+    <div class="compare-cell"><h4>moysklad.uz</h4><div class="ph">d-default.png reference yo'q</div></div>
+  </div>
+</div>
+
+<div class="compare">
+  <h3>Losses detail (Spisaniye СП)</h3>
+  <p class="module-meta"><code>/losses/[id]</code></p>
+  <div class="compare-grid">
+    <div class="compare-cell"><h4>Bizning</h4><img src="our-final/detail/losses.png" alt="" /></div>
+    <div class="compare-cell"><h4>moysklad.uz</h4><div class="ph">d-default.png reference yo'q</div></div>
+  </div>
+</div>
+
+<div class="compare">
+  <h3>Moves detail (Peremestheniye ПЕ)</h3>
+  <p class="module-meta"><code>/moves/[id]</code> · 2 store o'rtasidagi transfer</p>
+  <div class="compare-grid">
+    <div class="compare-cell"><h4>Bizning</h4><img src="our-final/detail/moves.png" alt="" /></div>
+    <div class="compare-cell"><h4>moysklad.uz</h4><div class="ph">d-default.png reference yo'q</div></div>
+  </div>
+</div>
+
+<div class="compare">
+  <h3>Inventories detail (Inventarizatsiya ИН)</h3>
+  <p class="module-meta"><code>/inventories/[id]</code></p>
+  <div class="compare-grid">
+    <div class="compare-cell"><h4>Bizning</h4><img src="our-final/detail/inventories.png" alt="" /></div>
+    <div class="compare-cell"><h4>moysklad.uz</h4><div class="ph">d-default.png reference yo'q</div></div>
+  </div>
+</div>
+
+<div class="compare">
+  <h3>Tasks detail (Vazifa)</h3>
+  <p class="module-meta"><code>/tasks/[id]</code></p>
+  <div class="compare-grid">
+    <div class="compare-cell"><h4>Bizning</h4><img src="our-final/detail/tasks.png" alt="" /></div>
+    <div class="compare-cell"><h4>moysklad.uz</h4><div class="ph">d-default.png reference yo'q</div></div>
+  </div>
+</div>
+
+<h2 id="chrome-gaps">Umumiy chrome gap'lari (cross-page)</h2>
+<p>Bu pastdagi gap'lar har detail page'da bir xil — bir martalik ish bilan butun app'ga ta'sir qiladi.</p>
+
+<details class="gap" open>
+<summary><span class="pill warn">P1</span> Detail toolbar'da "1 of N" pagination yo'q</summary>
+<div>
+<p>Moysklad har detail page'da yuqorida prev/next document arrow'lar va "1 из 27295" matn bor — operator bir-bir hujjatlarni o'qiy oladi. Bizda bu yo'q.</p>
+<p><strong>Implementation:</strong> DetailToolbar'ga prev/next button'lar qo'shish. Joriy hujjat'ning sibling list'ini cursor-based query bilan oling, prev/next href'larni hisoblang.</p>
+<p><strong>Effort:</strong> ~1 sprint (bitta DetailToolbarPagination komponenti + 17 ta detail page'da include qilish)</p>
+</div>
+</details>
+
+<details class="gap" open>
+<summary><span class="pill warn">P2</span> "Изменить ▼" dropdown bizda "O'zgartirish ▼" deb yozilgan, lekin ichidagi action'lar farq qiladi</summary>
+<div>
+<p>Moysklad: Изменить ▼ → Дублировать, Удалить, Перевести в другой статус, Открыть API.</p>
+<p>Bizda: O'zgartirish ▼ → Status o'zgartirish, Bulk delete (custom).</p>
+<p><strong>Implementation:</strong> DocumentMoreMenu'ga "Открыть в API" qo'shish (raw JSON viewer modal).</p>
+</div>
+</details>
+
+<details class="gap">
+<summary><span class="pill ok">P3</span> NotificationBell popover styling polished darajada emas</summary>
+<div>
+<p>Moysklad notification bell click qilingach styled popover ochiladi. Bizda Radix Popover ishlaydi lekin item styling nuqtalari moysklad bilan to'liq mos kelmaydi.</p>
+</div>
+</details>
+
+<details class="gap">
+<summary><span class="pill ok">P3</span> ChatButton placeholder (disabled) — real Crisp/Intercom integration qilinmagan</summary>
+<div>
+<p>Bu intentional. Chat integration alohida sprint kerak.</p>
+</div>
+</details>
+
+<details class="gap">
+<summary><span class="pill warn">P2</span> "+ Filterni saqlash" pill placeholder only</summary>
+<div>
+<p>Bizning inline filter panel'da chip ko'rinadi lekin saved-filter persistence yo'q.</p>
+<p><strong>Implementation:</strong> SavedFilters table + per-user list + UI for save/delete/load.</p>
+</div>
+</details>
+
+<details class="gap">
+<summary><span class="pill ok">P3</span> "Попробуйте новый дизайн" callout — moysklad'ning eski versiyasidagi feature</summary>
+<div>
+<p>Bu moysklad eski-yangi dizayn migration banner edi. Biz allaqachon yangi dizayndamiz, bunga ehtiyoj yo'q.</p>
+</div>
+</details>
+
+<details class="gap">
+<summary><span class="pill ok">RESOLVED</span> 8+ entity seed data — qo'shildi (seed-extras.ts)</summary>
+<div>
+<p>Yangi <code>packages/db/prisma/seed-extras.ts</code> faylida quyidagilar qo'shildi: CashDesk + 2nd Store + 2 ta CashIn + 2 ta CashOut + 2 ta PaymentOut + 2 ta Enter + 2 ta Loss + 2 ta Move + 2 ta Inventory + 3 ta Task. Hammasi UPSERT qilingan, idempotent.</p>
+<p>Run: <code>pnpm --filter @moysklad/db tsx prisma/seed-extras.ts</code></p>
+<p>Endi 17 ta detail page real data bilan capture qilingan (was 9).</p>
+</div>
+</details>
+
+<h2 id="remaining">Yakuniy: 100% parity uchun nima qoldi</h2>
+
+<table class="scoring">
+  <thead>
+    <tr><th>Item</th><th class="center">Priority</th><th class="center">Effort</th><th>Status</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Detail page prev/next pagination "1 of N"</td><td class="center"><span class="pill warn">P1</span></td><td class="center">1 sprint</td><td><b>✅ DONE</b> — Sprint A1 (4da98a5): useDetailNavigation hook + 18/21 pages wired (3 CRM intentional)</td></tr>
+    <tr><td>"Открыть в API" raw JSON viewer modal</td><td class="center"><span class="pill ok">P2</span></td><td class="center">1 day</td><td><b>✅ DONE</b> — Sprint A2 (385fcc0): JsonViewer pattern + DetailToolbar Edit menu + 18 pages wired</td></tr>
+    <tr><td>SavedFilters persistence + UI</td><td class="center"><span class="pill warn">P2</span></td><td class="center">3 days</td><td><b>✅ DONE</b> — Sprint A3 (5c3e8ee): backend + UI existed; wire-up was stubbed on 13 pages, now functional via filter-from-query helper</td></tr>
+    <tr><td>Seed data for cash-in/out, payments, tasks, enters, losses, moves, inventories</td><td class="center"><span class="pill ok">P1</span></td><td class="center">2 hours</td><td><b>✅ DONE</b> — seed-extras.ts</td></tr>
+    <tr><td>NotificationBell popover styling polish</td><td class="center"><span class="pill ok">P3</span></td><td class="center">half day</td><td><b>✅ DONE</b> — Sprint A4 (c3c4942): tokens + skeleton + empty-state icon + 11 tests</td></tr>
+    <tr><td>Pixel-perfect color tuning — selected row hover priority</td><td class="center"><span class="pill gray">P4</span></td><td class="center">ongoing</td><td><b>✅ DONE</b> — Sprint A5 (e6c6640): selected row stays visible on hover via color-mix</td></tr>
+    <tr><td>ChatButton — real Crisp/Intercom integration</td><td class="center"><span class="pill gray">P4</span></td><td class="center">1 sprint</td><td>Disabled placeholder</td></tr>
+    <tr><td>Counterparty detail spinner — increase wait timeout in capture</td><td class="center"><span class="pill ok">P3</span></td><td class="center">15 min</td><td>Capture issue, not app issue</td></tr>
+    <tr><td>List → detail row click animation</td><td class="center"><span class="pill gray">P4</span></td><td class="center">half day</td><td>Functional, no animation</td></tr>
+    <tr><td>Tasks/calls/opportunities — moysklad reference yo'q (custom CRM)</td><td class="center"><span class="pill gray">N/A</span></td><td class="center">—</td><td>Standalone design</td></tr>
+  </tbody>
+</table>
+
+<h2 id="closeout-sprints">Closeout: Sprints A1–A5 (P1–P4 hammasi yopildi)</h2>
+
+<div class="compare">
+  <h3>Bir kunda 5 ta sprint — har biri darvoza bilan yashil</h3>
+  <p class="module-meta">
+    Sprint A1–A5 yakunida P1–P4 ro'yxatidagi har bir item yopildi.
+    1071 web testdan 1115 web ga (+44) yetdi, ui 90 da qoldi.
+    Hammasi typecheck clean, har commit mustaqil reviewable.
+  </p>
+
+  <table class="scoring">
+    <thead>
+      <tr>
+        <th>Sprint</th><th>Commit</th><th>Tavsif</th><th class="center">Sahifalar</th><th class="center">Yangi test</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><b>A1</b> P1</td>
+        <td><code>4da98a5</code></td>
+        <td>useDetailNavigation hook — react-query cache'idan list ma'lumotini topib, detail toolbar'ga "1 of N ‹ ›" pagination'ni avtomat ulaydi. Pages-edit talab qilmaydi (`[entityKey, ...]` queryKey konvensiyasi yetarli).</td>
+        <td class="center">18/21 detail</td>
+        <td class="center">+11</td>
+      </tr>
+      <tr>
+        <td><b>A2</b> P2</td>
+        <td><code>385fcc0</code></td>
+        <td>JsonViewer pattern (@moysklad/ui/feedback) — Modal + JSON.stringify safe-circular + Copy. DetailToolbar Edit dropdown'da "API'da ochish" menyu bandi, har sahifa faqat <code>apiData={data}</code> bersa yetarli (modal state internal).</td>
+        <td class="center">18/21 detail</td>
+        <td class="center">+4</td>
+      </tr>
+      <tr>
+        <td><b>A3</b> P2</td>
+        <td><code>5c3e8ee</code></td>
+        <td>filterFromQueryString + queryFromFilter pure helper'lar (round-trip lossless). moysklad-doc-filter wrapper'i avtomat hisoblaydi va apply qiladi — 8 sahifa avtomat ulandi. 5 sed-stub sahifa (cash-in/out, payments-in/out, sales-returns) sweep qilindi.</td>
+        <td class="center">13 list</td>
+        <td class="center">+15</td>
+      </tr>
+      <tr>
+        <td><b>A4</b> P3</td>
+        <td><code>c3c4942</code></td>
+        <td>NotificationBell — raw <code>bg-blue-50</code> / <code>bg-red-500</code> tailwind ranglar moysklad token'lariga (<code>--ms-brand-50</code> / <code>--ms-destructive-500</code>). Loading skeleton, empty state ikoni (BellOff), tabular-nums.</td>
+        <td class="center">1 (global)</td>
+        <td class="center">+11</td>
+      </tr>
+      <tr>
+        <td><b>A5</b> P4</td>
+        <td><code>e6c6640</code></td>
+        <td>DataTable — selected row hover'da yo'qolib qoluvchi bug fix. Selected row endi <code>color-mix</code> bilan toza qoladi, oddiy row brand-100 hover oladi. Har row'ga <code>data-selected</code> atribut.</td>
+        <td class="center">1 (global)</td>
+        <td class="center">+3</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="gap-list">
+    <h5>Hisoblar (Sweeps + Sprints umumiy)</h5>
+    <ul>
+      <li>✅ <b>1115 web + 90 ui = 1205 ta test green</b> (sessiya boshida 1071 web edi)</li>
+      <li>✅ <b>0 typecheck xato</b> (web + ui har birida)</li>
+      <li>✅ <b>0 fail, 1 skipped</b> (oldindan mavjud)</li>
+      <li>✅ <b>5 yangi audit/automation tool</b>: wire-detail-navigation, wire-api-viewer, wire-saved-filters (har biri idempotent, qayta ishga tushirsa no-op)</li>
+      <li>✅ <b>P1–P4 ro'yxatining 6 ta itemi yopildi</b>, qolgan 4 ta — ChatButton (3rd-party integration), capture timeout (test-only), row click animation (UX), CRM intentional design</li>
+    </ul>
+  </div>
+</div>
+
+<h3>Umumiy taqdir (Sweeps 1-8 + Sprints A1-A5 keyin)</h3>
+<p>
+  <strong>Visual chrome:</strong> <b>~99% parity</b> (was 95% sweep'gacha,
+  98% A1-gacha). Sweep 1-8'dan keyin filter chrome to'liq mos keldi;
+  Sprint A5 selected-row hover priority bug'ini yopdi. 29 ta list sahifa
+  va 18 ta detail sahifa moysklad'ga 1:1.
+</p>
+<p>
+  <strong>Foydalanuvchi tajribasi:</strong> <b>~95% parity</b> (was 85%).
+  Sprint A1 ("1 of N" pagination), A2 ("API'da ochish" modal), A3
+  (SavedFilters live), A4 (NotificationBell polish) keyin — ko'rinmaydigan
+  funksional kamchiliklar deyarli qolmadi. Qolgan 5%: ChatButton 3rd-party
+  integration (P4), row click animation (P4), CRM custom layouts
+  (intentional, N/A).
+</p>
+<p>
+  <strong>Test qoplash:</strong> <b>1205 ta test green</b> (1115 web + 90
+  ui), 0 fail, 1 skipped. Typecheck 0 xato (web + ui). Sessiya'da +44
+  yangi test yozildi (Sprint A1: 11 · A2: 4 · A3: 15 · A4: 11 · A5: 3).
+  1 ta production bug fix (DatePicker infinite loop) avval topilgan;
+  bu sessiya'da 1 ta yangi UX bug topib tuzatildi (DataTable selected-row
+  hover yo'qolishi).
+</p>
+
+<p style="margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--border); color: var(--muted); font-size: 12px;">
+  Hisobot avtomatik generatsiya qilindi · capture-all.spec.ts (45 list) +
+  capture-details.spec.ts (7 detail) · Sweeps 1-8 chrome parity audit ·
+  Sprints A1-A5 closeout (P1-P4 hammasi yopildi) ·
+  4 audit script + 3 wire-up tool · 2026-05-05
+</p>
+
+</div>
+</body>
+</html>

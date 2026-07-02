@@ -1,0 +1,353 @@
+{
+  "select": {
+    "total": 1,
+    "files": 1,
+    "canonical": 0,
+    "classGroups": {
+      "(dynamic)": 1
+    },
+    "sites": [
+      {
+        "file": "app/(app)/analitika/sozlamalar/_components/permission-matrix.tsx",
+        "line": 308,
+        "type": null,
+        "className": "(dynamic)",
+        "testId": null,
+        "selfClosing": false,
+        "tag": "<select value={value} disabled={disabled} onChange={(e) => onChange(e.target.value as Scope)} className={`h-7 cursor-pointer appearance-none rounded border px-2 text-center font-medium text-xs tabular-nums focus:outline-none focus:ring-2 focus:ring-[var(--ms-border-focus)] disabled:cursor-default disabled:opacity-60 ${"
+      }
+    ]
+  },
+  "textarea": {
+    "total": 0,
+    "files": 0,
+    "canonical": 0,
+    "classGroups": {},
+    "sites": []
+  },
+  "input": {
+    "total": 31,
+    "files": 22,
+    "canonical": 0,
+    "classGroups": {
+      "sr-only": 8,
+      "h-6 w-24 rounded-[var(--ms-radius-sm)] border border-[var(--ms-border-default)] px-1 text-right text-xs tabular-nums focus:outline-none focus:ring-1 focus:ring-[var(--ms-text-brand)]": 8,
+      "h-9 w-full rounded-lg border border-[var(--ms-border)] bg-[var(--ms-bg-input)] px-3 text-sm": 4,
+      "(none)": 3,
+      "block w-full text-sm file:mr-3 file:rounded file:border-0 file:bg-[var(--ms-bg-muted)] file:px-3 file:py-1.5 file:font-medium file:text-sm hover:file:bg-[var(--ms-bg-default)]": 2,
+      "hidden": 2,
+      "block w-full text-sm": 1,
+      "h-11 w-full rounded-xl border border-[var(--ms-border)] bg-[var(--ms-bg-surface)] pr-10 pl-4 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-[var(--ms-brand)]": 1,
+      "h-6 w-24 bg-transparent text-[var(--ms-text-primary)] text-xs focus:outline-none": 1,
+      "h-7 rounded-full border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] px-3 text-xs": 1
+    },
+    "inputTypes": {
+      "text": 12,
+      "radio": 9,
+      "file": 5,
+      "number": 3,
+      "date": 1,
+      "datetime-local": 1
+    },
+    "sites": [
+      {
+        "file": "app/(app)/analitika/kontragentlar/[id]/page.tsx",
+        "line": 50,
+        "type": "date",
+        "className": null,
+        "testId": null,
+        "selfClosing": false,
+        "tag": "<input type=\"date\">"
+      },
+      {
+        "file": "app/(app)/bank-import/page.tsx",
+        "line": 206,
+        "type": "file",
+        "className": "block w-full text-sm",
+        "testId": "file-input",
+        "selfClosing": true,
+        "tag": "<input type=\"file\" accept=\".csv,text/csv\" onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleFileRead(f); }} data-test-id=\"file-input\" className=\"block w-full text-sm\" />"
+      },
+      {
+        "file": "app/(app)/counterparties/import/page.tsx",
+        "line": 271,
+        "type": "file",
+        "className": "block w-full text-sm file:mr-3 file:rounded file:border-0 file:bg-[var(--ms-bg-muted)] file:px-3 file:py-1.5 file:font-medium file:text-sm hover:file:bg-[var(--ms-bg-default)]",
+        "testId": "import-file",
+        "selfClosing": true,
+        "tag": "<input type=\"file\" accept=\".csv,text/csv\" onChange={onFileChange} data-test-id=\"import-file\" className=\"block w-full text-sm file:mr-3 file:rounded file:border-0 file:bg-[var(--ms-bg-muted)] file:px-3 file:py-1.5 file:font-medium file:text-sm hover:file:bg-[var(--ms-bg-default)]\" />"
+      },
+      {
+        "file": "app/(app)/counterparty-adjustments/new/page.tsx",
+        "line": 206,
+        "type": "radio",
+        "className": "sr-only",
+        "testId": "direction-increase",
+        "selfClosing": true,
+        "tag": "<input type=\"radio\" name=\"direction\" value=\"INCREASE\" checked={direction === 'INCREASE'} onChange={() => setDirection('INCREASE')} className=\"sr-only\" data-test-id=\"direction-increase\" />"
+      },
+      {
+        "file": "app/(app)/counterparty-adjustments/new/page.tsx",
+        "line": 224,
+        "type": "radio",
+        "className": "sr-only",
+        "testId": "direction-decrease",
+        "selfClosing": true,
+        "tag": "<input type=\"radio\" name=\"direction\" value=\"DECREASE\" checked={direction === 'DECREASE'} onChange={() => setDirection('DECREASE')} className=\"sr-only\" data-test-id=\"direction-decrease\" />"
+      },
+      {
+        "file": "app/(app)/counterparty-adjustments/[id]/page.tsx",
+        "line": 369,
+        "type": "radio",
+        "className": "sr-only",
+        "testId": "direction-increase",
+        "selfClosing": true,
+        "tag": "<input type=\"radio\" name=\"direction\" value=\"INCREASE\" checked={form.direction === 'INCREASE'} onChange={() => setForm({ ...form, direction: 'INCREASE' })} className=\"sr-only\" data-test-id=\"direction-increase\" />"
+      },
+      {
+        "file": "app/(app)/counterparty-adjustments/[id]/page.tsx",
+        "line": 387,
+        "type": "radio",
+        "className": "sr-only",
+        "testId": "direction-decrease",
+        "selfClosing": true,
+        "tag": "<input type=\"radio\" name=\"direction\" value=\"DECREASE\" checked={form.direction === 'DECREASE'} onChange={() => setForm({ ...form, direction: 'DECREASE' })} className=\"sr-only\" data-test-id=\"direction-decrease\" />"
+      },
+      {
+        "file": "app/(app)/customer-orders/new/page.tsx",
+        "line": 512,
+        "type": "text",
+        "className": "h-6 w-24 rounded-[var(--ms-radius-sm)] border border-[var(--ms-border-default)] px-1 text-right text-xs tabular-nums focus:outline-none focus:ring-1 focus:ring-[var(--ms-text-brand)]",
+        "testId": "rate-input",
+        "selfClosing": true,
+        "tag": "<input type=\"text\" inputMode=\"decimal\" value={rateOverride ?? effectiveRate} onChange={(e) => setRateOverride(e.target.value)} onBlur={() => setRateEditing(false)} className=\"h-6 w-24 rounded-[var(--ms-radius-sm)] border border-[var(--ms-border-default)] px-1 text-right text-xs tabular-nums focus:outline-none focus:rin"
+      },
+      {
+        "file": "app/(app)/demands/new/page.tsx",
+        "line": 630,
+        "type": "text",
+        "className": "h-6 w-24 rounded-[var(--ms-radius-sm)] border border-[var(--ms-border-default)] px-1 text-right text-xs tabular-nums focus:outline-none focus:ring-1 focus:ring-[var(--ms-text-brand)]",
+        "testId": "rate-input",
+        "selfClosing": true,
+        "tag": "<input type=\"text\" inputMode=\"decimal\" value={rateOverride ?? effectiveRate} onChange={(e) => setRateOverride(e.target.value)} onBlur={() => setRateEditing(false)} className=\"h-6 w-24 rounded-[var(--ms-radius-sm)] border border-[var(--ms-border-default)] px-1 text-right text-xs tabular-nums focus:outline-none focus:rin"
+      },
+      {
+        "file": "app/(app)/hr/employees/[id]/permissions/page.tsx",
+        "line": 213,
+        "type": "radio",
+        "className": null,
+        "testId": "(dynamic)",
+        "selfClosing": true,
+        "tag": "<input type=\"radio\" name={rowKey(row)} checked={row.level === l.value} onChange={() => setLevel(idx, l.value)} aria-label={t(l.key)} data-test-id={`hr-perm-${row.pageKey}-${row.section ?? 'main'}-${l.value}`} />"
+      },
+      {
+        "file": "app/(app)/invoices-in/new/page.tsx",
+        "line": 590,
+        "type": "text",
+        "className": "h-6 w-24 rounded-[var(--ms-radius-sm)] border border-[var(--ms-border-default)] px-1 text-right text-xs tabular-nums focus:outline-none focus:ring-1 focus:ring-[var(--ms-text-brand)]",
+        "testId": "rate-input",
+        "selfClosing": true,
+        "tag": "<input type=\"text\" inputMode=\"decimal\" value={rateOverride ?? effectiveRate} onChange={(e) => setRateOverride(e.target.value)} onBlur={() => setRateEditing(false)} className=\"h-6 w-24 rounded-[var(--ms-radius-sm)] border border-[var(--ms-border-default)] px-1 text-right text-xs tabular-nums focus:outline-none focus:rin"
+      },
+      {
+        "file": "app/(app)/invoices-out/new/page.tsx",
+        "line": 563,
+        "type": "text",
+        "className": "h-6 w-24 rounded-[var(--ms-radius-sm)] border border-[var(--ms-border-default)] px-1 text-right text-xs tabular-nums focus:outline-none focus:ring-1 focus:ring-[var(--ms-text-brand)]",
+        "testId": "rate-input",
+        "selfClosing": true,
+        "tag": "<input type=\"text\" inputMode=\"decimal\" value={rateOverride ?? effectiveRate} onChange={(e) => setRateOverride(e.target.value)} onBlur={() => setRateEditing(false)} className=\"h-6 w-24 rounded-[var(--ms-radius-sm)] border border-[var(--ms-border-default)] px-1 text-right text-xs tabular-nums focus:outline-none focus:rin"
+      },
+      {
+        "file": "app/(app)/productions/[id]/page.tsx",
+        "line": 120,
+        "type": "datetime-local",
+        "className": null,
+        "testId": null,
+        "selfClosing": false,
+        "tag": "<input type=\"datetime-local\">"
+      },
+      {
+        "file": "app/(app)/purchase-orders/new/page.tsx",
+        "line": 571,
+        "type": "text",
+        "className": "h-6 w-24 rounded-[var(--ms-radius-sm)] border border-[var(--ms-border-default)] px-1 text-right text-xs tabular-nums focus:outline-none focus:ring-1 focus:ring-[var(--ms-text-brand)]",
+        "testId": "rate-input",
+        "selfClosing": true,
+        "tag": "<input type=\"text\" inputMode=\"decimal\" value={rateOverride ?? effectiveRate} onChange={(e) => setRateOverride(e.target.value)} onBlur={() => setRateEditing(false)} className=\"h-6 w-24 rounded-[var(--ms-radius-sm)] border border-[var(--ms-border-default)] px-1 text-right text-xs tabular-nums focus:outline-none focus:rin"
+      },
+      {
+        "file": "app/(app)/purchase-returns/new/page.tsx",
+        "line": 635,
+        "type": "text",
+        "className": "h-6 w-24 rounded-[var(--ms-radius-sm)] border border-[var(--ms-border-default)] px-1 text-right text-xs tabular-nums focus:outline-none focus:ring-1 focus:ring-[var(--ms-text-brand)]",
+        "testId": "rate-input",
+        "selfClosing": true,
+        "tag": "<input type=\"text\" inputMode=\"decimal\" value={rateOverride ?? effectiveRate} onChange={(e) => setRateOverride(e.target.value)} onBlur={() => setRateEditing(false)} className=\"h-6 w-24 rounded-[var(--ms-radius-sm)] border border-[var(--ms-border-default)] px-1 text-right text-xs tabular-nums focus:outline-none focus:rin"
+      },
+      {
+        "file": "app/(app)/retail/page.tsx",
+        "line": 179,
+        "type": "number",
+        "className": "h-9 w-full rounded-lg border border-[var(--ms-border)] bg-[var(--ms-bg-input)] px-3 text-sm",
+        "testId": null,
+        "selfClosing": true,
+        "tag": "<input type=\"number\" min=\"0\" value={openingCash} onChange={(e) => setOpeningCash(e.target.value)} className=\"h-9 w-full rounded-lg border border-[var(--ms-border)] bg-[var(--ms-bg-input)] px-3 text-sm\" />"
+      },
+      {
+        "file": "app/(app)/retail/page.tsx",
+        "line": 433,
+        "type": "number",
+        "className": "h-9 w-full rounded-lg border border-[var(--ms-border)] bg-[var(--ms-bg-input)] px-3 text-sm",
+        "testId": "register-drawer-amount",
+        "selfClosing": true,
+        "tag": "<input type=\"number\" min=\"0\" step=\"0.01\" inputMode=\"decimal\" value={drawerAmount} onChange={(e) => setDrawerAmount(e.target.value)} className=\"h-9 w-full rounded-lg border border-[var(--ms-border)] bg-[var(--ms-bg-input)] px-3 text-sm\" data-test-id=\"register-drawer-amount\" />"
+      },
+      {
+        "file": "app/(app)/retail/page.tsx",
+        "line": 448,
+        "type": "text",
+        "className": "h-9 w-full rounded-lg border border-[var(--ms-border)] bg-[var(--ms-bg-input)] px-3 text-sm",
+        "testId": "register-drawer-comment",
+        "selfClosing": true,
+        "tag": "<input type=\"text\" value={drawerComment} onChange={(e) => setDrawerComment(e.target.value)} placeholder={tSessions('drawer_comment')} className=\"h-9 w-full rounded-lg border border-[var(--ms-border)] bg-[var(--ms-bg-input)] px-3 text-sm\" data-test-id=\"register-drawer-comment\" />"
+      },
+      {
+        "file": "app/(app)/retail/page.tsx",
+        "line": 489,
+        "type": "text",
+        "className": "h-11 w-full rounded-xl border border-[var(--ms-border)] bg-[var(--ms-bg-surface)] pr-10 pl-4 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-[var(--ms-brand)]",
+        "testId": "register-scan-input",
+        "selfClosing": true,
+        "tag": "<input type=\"text\" value={productSearch} onChange={(e) => setProductSearch(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); const first = products?.items?.[0]; if (first) addToCart(first); } }} placeholder={t('search_product')} data-test-id=\"register-scan-input\" className=\"h-11 w-full r"
+      },
+      {
+        "file": "app/(app)/retail/page.tsx",
+        "line": 549,
+        "type": "number",
+        "className": "h-9 w-full rounded-lg border border-[var(--ms-border)] bg-[var(--ms-bg-input)] px-3 text-sm",
+        "testId": null,
+        "selfClosing": true,
+        "tag": "<input type=\"number\" min=\"0\" value={closingCash} onChange={(e) => setClosingCash(e.target.value)} className=\"h-9 w-full rounded-lg border border-[var(--ms-border)] bg-[var(--ms-bg-input)] px-3 text-sm\" />"
+      },
+      {
+        "file": "app/(app)/sales-returns/new/page.tsx",
+        "line": 633,
+        "type": "text",
+        "className": "h-6 w-24 rounded-[var(--ms-radius-sm)] border border-[var(--ms-border-default)] px-1 text-right text-xs tabular-nums focus:outline-none focus:ring-1 focus:ring-[var(--ms-text-brand)]",
+        "testId": "rate-input",
+        "selfClosing": true,
+        "tag": "<input type=\"text\" inputMode=\"decimal\" value={rateOverride ?? effectiveRate} onChange={(e) => setRateOverride(e.target.value)} onBlur={() => setRateEditing(false)} className=\"h-6 w-24 rounded-[var(--ms-radius-sm)] border border-[var(--ms-border-default)] px-1 text-right text-xs tabular-nums focus:outline-none focus:rin"
+      },
+      {
+        "file": "app/(app)/settings/label-templates/new/page.tsx",
+        "line": 148,
+        "type": "radio",
+        "className": "sr-only",
+        "testId": null,
+        "selfClosing": true,
+        "tag": "<input type=\"radio\" name=\"pageSize\" checked={pageSize === size} onChange={() => onPageSizeChange(size)} className=\"sr-only\" />"
+      },
+      {
+        "file": "app/(app)/settings/label-templates/new/page.tsx",
+        "line": 306,
+        "type": "radio",
+        "className": "sr-only",
+        "testId": null,
+        "selfClosing": true,
+        "tag": "<input type=\"radio\" name=\"barcodeFormat\" checked={barcodeFormat === fmt} onChange={() => setBarcodeFormat(fmt)} className=\"sr-only\" />"
+      },
+      {
+        "file": "app/(app)/settings/label-templates/[id]/page.tsx",
+        "line": 207,
+        "type": "radio",
+        "className": "sr-only",
+        "testId": null,
+        "selfClosing": true,
+        "tag": "<input type=\"radio\" name=\"pageSize\" checked={form.pageSize === size} onChange={() => onPageSizeChange(size)} className=\"sr-only\" />"
+      },
+      {
+        "file": "app/(app)/settings/label-templates/[id]/page.tsx",
+        "line": 340,
+        "type": "radio",
+        "className": "sr-only",
+        "testId": null,
+        "selfClosing": true,
+        "tag": "<input type=\"radio\" name=\"barcodeFormat\" checked={form.barcodeFormat === fmt} onChange={() => set('barcodeFormat', fmt)} className=\"sr-only\" />"
+      },
+      {
+        "file": "app/(app)/settings/mxik/import/page.tsx",
+        "line": 253,
+        "type": "file",
+        "className": "block w-full text-sm file:mr-3 file:rounded file:border-0 file:bg-[var(--ms-bg-muted)] file:px-3 file:py-1.5 file:font-medium file:text-sm hover:file:bg-[var(--ms-bg-default)]",
+        "testId": "import-file",
+        "selfClosing": true,
+        "tag": "<input type=\"file\" accept=\".csv,text/csv\" onChange={onFileChange} data-test-id=\"import-file\" className=\"block w-full text-sm file:mr-3 file:rounded file:border-0 file:bg-[var(--ms-bg-muted)] file:px-3 file:py-1.5 file:font-medium file:text-sm hover:file:bg-[var(--ms-bg-default)]\" />"
+      },
+      {
+        "file": "app/(app)/supplies/new/page.tsx",
+        "line": 553,
+        "type": "text",
+        "className": "h-6 w-24 rounded-[var(--ms-radius-sm)] border border-[var(--ms-border-default)] px-1 text-right text-xs tabular-nums focus:outline-none focus:ring-1 focus:ring-[var(--ms-text-brand)]",
+        "testId": "rate-input",
+        "selfClosing": true,
+        "tag": "<input type=\"text\" inputMode=\"decimal\" value={rateOverride ?? effectiveRate} onChange={(e) => setRateOverride(e.target.value)} onBlur={() => setRateEditing(false)} className=\"h-6 w-24 rounded-[var(--ms-radius-sm)] border border-[var(--ms-border-default)] px-1 text-right text-xs tabular-nums focus:outline-none focus:rin"
+      },
+      {
+        "file": "components/attachments-section.tsx",
+        "line": 211,
+        "type": "file",
+        "className": "hidden",
+        "testId": "attachment-file-input",
+        "selfClosing": true,
+        "tag": "<input ref={fileInputRef} type=\"file\" multiple className=\"hidden\" onChange={handlePicked} data-test-id=\"attachment-file-input\" />"
+      },
+      {
+        "file": "components/customer-orders/saved-filters-pills.tsx",
+        "line": 105,
+        "type": "text",
+        "className": "h-6 w-24 bg-transparent text-[var(--ms-text-primary)] text-xs focus:outline-none",
+        "testId": "(dynamic)",
+        "selfClosing": true,
+        "tag": "<input type=\"text\" value={editName} onChange={(e) => setEditName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && editName.trim()) { rename.mutate({ id: f.id, name: editName.trim() }); setEditingId(null); } if (e.key === 'Escape') setEditingId(null); }} className=\"h-6 w-24 bg-transparent text-[var(--ms-tex"
+      },
+      {
+        "file": "components/customer-orders/saved-filters-pills.tsx",
+        "line": 223,
+        "type": "text",
+        "className": "h-7 rounded-full border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] px-3 text-xs",
+        "testId": "saved-filter-name-input",
+        "selfClosing": true,
+        "tag": "<input type=\"text\" value={name} onChange={(e) => setName(e.target.value)} placeholder={t('name_placeholder')} className=\"h-7 rounded-full border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] px-3 text-xs\" // biome-ignore lint/a11y/noAutofocus: explicit user action autoFocus data-test-id=\"saved-filter-name"
+      },
+      {
+        "file": "components/image-gallery.tsx",
+        "line": 187,
+        "type": "file",
+        "className": "hidden",
+        "testId": "image-file-input",
+        "selfClosing": true,
+        "tag": "<input ref={fileInputRef} type=\"file\" accept=\"image/png,image/jpeg,image/webp,image/gif\" multiple className=\"hidden\" onChange={handlePicked} data-test-id=\"image-file-input\" />"
+      }
+    ]
+  },
+  "checkbox": {
+    "total": 1,
+    "files": 1,
+    "canonical": 0,
+    "classGroups": {
+      "pointer-events-none": 1
+    },
+    "sites": [
+      {
+        "file": "app/(app)/hr/employees/_components/role-multi-select.tsx",
+        "line": 150,
+        "type": "checkbox",
+        "className": "pointer-events-none",
+        "testId": null,
+        "selfClosing": true,
+        "tag": "<input type=\"checkbox\" checked={selected} readOnly tabIndex={-1} className=\"pointer-events-none\" />"
+      }
+    ]
+  }
+}

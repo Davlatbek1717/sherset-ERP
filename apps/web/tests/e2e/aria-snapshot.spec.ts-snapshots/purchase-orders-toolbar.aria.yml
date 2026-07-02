@@ -1,0 +1,15 @@
+- button "help"
+- heading "Ta'minlovchi buyurtmalari" [level=1]
+- button "refresh":
+  - img
+- link "Buyurtma":
+  - /url: /purchase-orders/new
+  - img
+  - text: ""
+- button "Filtr" [expanded]
+- img
+- textbox "Raqam yoki izoh"
+- text: "0"
+- button "O'zgartirish" [disabled]
+- button "Yaratish" [disabled]
+- button "Chop etish"

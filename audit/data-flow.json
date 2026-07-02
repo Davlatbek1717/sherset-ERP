@@ -1,0 +1,5475 @@
+{
+  "rows": [
+    {
+      "route": "<root>",
+      "page_file": "apps\\web\\src\\app\\(app)\\page.tsx",
+      "feature": "home",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/reports/dashboard",
+          "prefix": "reports",
+          "module": "report",
+          "module_path": "apps\\api\\src\\modules\\report",
+          "models": [
+            "CashIn",
+            "CashOut",
+            "Counterparty",
+            "CounterpartyBalance",
+            "CustomerOrder",
+            "Demand",
+            "Employee",
+            "InvoiceOut",
+            "Organization",
+            "PaymentIn",
+            "PaymentOut",
+            "Product",
+            "SalesReturn",
+            "Stock",
+            "Store",
+            "Task"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "apps",
+      "page_file": "apps\\web\\src\\app\\(app)\\apps\\page.tsx",
+      "feature": "apps",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/app-installs/available",
+          "prefix": "app-installs",
+          "module": "app-install",
+          "module_path": "apps\\api\\src\\modules\\app-install",
+          "models": [
+            "AppInstall"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "apps/[appKey]",
+      "page_file": "apps\\web\\src\\app\\(app)\\apps\\[appKey]\\page.tsx",
+      "feature": "apps",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/app-installs/available",
+          "prefix": "app-installs",
+          "module": "app-install",
+          "module_path": "apps\\api\\src\\modules\\app-install",
+          "models": [
+            "AppInstall"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "bank-import",
+      "page_file": "apps\\web\\src\\app\\(app)\\bank-import\\page.tsx",
+      "feature": "bank-import",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/bank-import/:id",
+          "prefix": "bank-import",
+          "module": "bank-import",
+          "module_path": "apps\\api\\src\\modules\\bank-import",
+          "models": [
+            "BankStatement",
+            "BankStatementRow",
+            "Counterparty",
+            "PaymentIn",
+            "PaymentOut"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/organizations",
+          "prefix": "organizations",
+          "module": "reference",
+          "module_path": "apps\\api\\src\\modules\\reference",
+          "models": [
+            "CashDesk",
+            "Employee",
+            "Organization",
+            "OrganizationAccount",
+            "Store"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/bank-import",
+          "prefix": "bank-import",
+          "module": "bank-import",
+          "module_path": "apps\\api\\src\\modules\\bank-import",
+          "models": [
+            "BankStatement",
+            "BankStatementRow",
+            "Counterparty",
+            "PaymentIn",
+            "PaymentOut"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "bundles",
+      "page_file": "apps\\web\\src\\app\\(app)\\bundles\\page.tsx",
+      "feature": "bundles",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/products",
+          "prefix": "products",
+          "module": "product",
+          "module_path": "apps\\api\\src\\modules\\product",
+          "models": [
+            "AuditLog",
+            "Product",
+            "ProductPack"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "bundles/new",
+      "page_file": "apps\\web\\src\\app\\(app)\\bundles\\new\\page.tsx",
+      "feature": "bundles",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/products",
+          "prefix": "products",
+          "module": "product",
+          "module_path": "apps\\api\\src\\modules\\product",
+          "models": [
+            "AuditLog",
+            "Product",
+            "ProductPack"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/products",
+          "prefix": "products",
+          "module": "product",
+          "module_path": "apps\\api\\src\\modules\\product",
+          "models": [
+            "AuditLog",
+            "Product",
+            "ProductPack"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "calls",
+      "page_file": "apps\\web\\src\\app\\(app)\\calls\\page.tsx",
+      "feature": "calls",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/calls",
+          "prefix": "calls",
+          "module": "call",
+          "module_path": "apps\\api\\src\\modules\\call",
+          "models": [
+            "Call",
+            "ContactPerson",
+            "Counterparty"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "calls/new",
+      "page_file": "apps\\web\\src\\app\\(app)\\calls\\new\\page.tsx",
+      "feature": "calls",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/contact-persons",
+          "prefix": "contact-persons",
+          "module": "contact-person",
+          "module_path": "apps\\api\\src\\modules\\contact-person",
+          "models": [
+            "ContactPerson",
+            "Counterparty"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/counterparties",
+          "prefix": "counterparties",
+          "module": "counterparty",
+          "module_path": "apps\\api\\src\\modules\\counterparty",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "CounterpartyAccount"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/calls",
+          "prefix": "calls",
+          "module": "call",
+          "module_path": "apps\\api\\src\\modules\\call",
+          "models": [
+            "Call",
+            "ContactPerson",
+            "Counterparty"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "cash-in",
+      "page_file": "apps\\web\\src\\app\\(app)\\cash-in\\page.tsx",
+      "feature": "cash-in",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/cash-in",
+          "prefix": "cash-in",
+          "module": "cash-in",
+          "module_path": "apps\\api\\src\\modules\\cash-in",
+          "models": [
+            "AuditLog",
+            "CashDesk",
+            "CashIn",
+            "CashInOperation",
+            "Counterparty",
+            "InvoiceOut",
+            "Organization"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/counterparties",
+          "prefix": "counterparties",
+          "module": "counterparty",
+          "module_path": "apps\\api\\src\\modules\\counterparty",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "CounterpartyAccount"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/organizations",
+          "prefix": "organizations",
+          "module": "reference",
+          "module_path": "apps\\api\\src\\modules\\reference",
+          "models": [
+            "CashDesk",
+            "Employee",
+            "Organization",
+            "OrganizationAccount",
+            "Store"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "cash-in/[id]",
+      "page_file": "apps\\web\\src\\app\\(app)\\cash-in\\[id]\\page.tsx",
+      "feature": "cash-in",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/cash-desks",
+          "prefix": "cash-desks",
+          "module": "reference",
+          "module_path": "apps\\api\\src\\modules\\reference",
+          "models": [
+            "CashDesk",
+            "Employee",
+            "Organization",
+            "OrganizationAccount",
+            "Store"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/invoices-out",
+          "prefix": "invoices-out",
+          "module": "invoice-out",
+          "module_path": "apps\\api\\src\\modules\\invoice-out",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "CustomerOrder",
+            "InvoiceOut",
+            "InvoiceOutPosition",
+            "Organization"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/organizations",
+          "prefix": "organizations",
+          "module": "reference",
+          "module_path": "apps\\api\\src\\modules\\reference",
+          "models": [
+            "CashDesk",
+            "Employee",
+            "Organization",
+            "OrganizationAccount",
+            "Store"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/cash-in/:id/clone",
+          "prefix": "cash-in",
+          "module": "cash-in",
+          "module_path": "apps\\api\\src\\modules\\cash-in",
+          "models": [
+            "AuditLog",
+            "CashDesk",
+            "CashIn",
+            "CashInOperation",
+            "Counterparty",
+            "InvoiceOut",
+            "Organization"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "cash-in/new",
+      "page_file": "apps\\web\\src\\app\\(app)\\cash-in\\new\\page.tsx",
+      "feature": "cash-in",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/cash-desks",
+          "prefix": "cash-desks",
+          "module": "reference",
+          "module_path": "apps\\api\\src\\modules\\reference",
+          "models": [
+            "CashDesk",
+            "Employee",
+            "Organization",
+            "OrganizationAccount",
+            "Store"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/invoices-out",
+          "prefix": "invoices-out",
+          "module": "invoice-out",
+          "module_path": "apps\\api\\src\\modules\\invoice-out",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "CustomerOrder",
+            "InvoiceOut",
+            "InvoiceOutPosition",
+            "Organization"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/organizations",
+          "prefix": "organizations",
+          "module": "reference",
+          "module_path": "apps\\api\\src\\modules\\reference",
+          "models": [
+            "CashDesk",
+            "Employee",
+            "Organization",
+            "OrganizationAccount",
+            "Store"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/cash-in",
+          "prefix": "cash-in",
+          "module": "cash-in",
+          "module_path": "apps\\api\\src\\modules\\cash-in",
+          "models": [
+            "AuditLog",
+            "CashDesk",
+            "CashIn",
+            "CashInOperation",
+            "Counterparty",
+            "InvoiceOut",
+            "Organization"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "cash-out",
+      "page_file": "apps\\web\\src\\app\\(app)\\cash-out\\page.tsx",
+      "feature": "cash-out",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/cash-out",
+          "prefix": "cash-out",
+          "module": "cash-out",
+          "module_path": "apps\\api\\src\\modules\\cash-out",
+          "models": [
+            "AuditLog",
+            "CashDesk",
+            "CashOut",
+            "CashOutOperation",
+            "Counterparty",
+            "InvoiceIn",
+            "Organization"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/counterparties",
+          "prefix": "counterparties",
+          "module": "counterparty",
+          "module_path": "apps\\api\\src\\modules\\counterparty",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "CounterpartyAccount"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/organizations",
+          "prefix": "organizations",
+          "module": "reference",
+          "module_path": "apps\\api\\src\\modules\\reference",
+          "models": [
+            "CashDesk",
+            "Employee",
+            "Organization",
+            "OrganizationAccount",
+            "Store"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "cash-out/[id]",
+      "page_file": "apps\\web\\src\\app\\(app)\\cash-out\\[id]\\page.tsx",
+      "feature": "cash-out",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/cash-desks",
+          "prefix": "cash-desks",
+          "module": "reference",
+          "module_path": "apps\\api\\src\\modules\\reference",
+          "models": [
+            "CashDesk",
+            "Employee",
+            "Organization",
+            "OrganizationAccount",
+            "Store"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/invoices-in",
+          "prefix": "invoices-in",
+          "module": "invoice-in",
+          "module_path": "apps\\api\\src\\modules\\invoice-in",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "InvoiceIn",
+            "InvoiceInPosition",
+            "Organization",
+            "PurchaseOrder"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/organizations",
+          "prefix": "organizations",
+          "module": "reference",
+          "module_path": "apps\\api\\src\\modules\\reference",
+          "models": [
+            "CashDesk",
+            "Employee",
+            "Organization",
+            "OrganizationAccount",
+            "Store"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/cash-out/:id/clone",
+          "prefix": "cash-out",
+          "module": "cash-out",
+          "module_path": "apps\\api\\src\\modules\\cash-out",
+          "models": [
+            "AuditLog",
+            "CashDesk",
+            "CashOut",
+            "CashOutOperation",
+            "Counterparty",
+            "InvoiceIn",
+            "Organization"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "cash-out/new",
+      "page_file": "apps\\web\\src\\app\\(app)\\cash-out\\new\\page.tsx",
+      "feature": "cash-out",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/cash-desks",
+          "prefix": "cash-desks",
+          "module": "reference",
+          "module_path": "apps\\api\\src\\modules\\reference",
+          "models": [
+            "CashDesk",
+            "Employee",
+            "Organization",
+            "OrganizationAccount",
+            "Store"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/invoices-in",
+          "prefix": "invoices-in",
+          "module": "invoice-in",
+          "module_path": "apps\\api\\src\\modules\\invoice-in",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "InvoiceIn",
+            "InvoiceInPosition",
+            "Organization",
+            "PurchaseOrder"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/organizations",
+          "prefix": "organizations",
+          "module": "reference",
+          "module_path": "apps\\api\\src\\modules\\reference",
+          "models": [
+            "CashDesk",
+            "Employee",
+            "Organization",
+            "OrganizationAccount",
+            "Store"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/cash-out",
+          "prefix": "cash-out",
+          "module": "cash-out",
+          "module_path": "apps\\api\\src\\modules\\cash-out",
+          "models": [
+            "AuditLog",
+            "CashDesk",
+            "CashOut",
+            "CashOutOperation",
+            "Counterparty",
+            "InvoiceIn",
+            "Organization"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "contact-persons",
+      "page_file": "apps\\web\\src\\app\\(app)\\contact-persons\\page.tsx",
+      "feature": "contact-persons",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/contact-persons",
+          "prefix": "contact-persons",
+          "module": "contact-person",
+          "module_path": "apps\\api\\src\\modules\\contact-person",
+          "models": [
+            "ContactPerson",
+            "Counterparty"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "contact-persons/new",
+      "page_file": "apps\\web\\src\\app\\(app)\\contact-persons\\new\\page.tsx",
+      "feature": "contact-persons",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/counterparties",
+          "prefix": "counterparties",
+          "module": "counterparty",
+          "module_path": "apps\\api\\src\\modules\\counterparty",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "CounterpartyAccount"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/contact-persons",
+          "prefix": "contact-persons",
+          "module": "contact-person",
+          "module_path": "apps\\api\\src\\modules\\contact-person",
+          "models": [
+            "ContactPerson",
+            "Counterparty"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "counterparties",
+      "page_file": "apps\\web\\src\\app\\(app)\\counterparties\\page.tsx",
+      "feature": "counterparties",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/counterparties",
+          "prefix": "counterparties",
+          "module": "counterparty",
+          "module_path": "apps\\api\\src\\modules\\counterparty",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "CounterpartyAccount"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "counterparties/[id]",
+      "page_file": "apps\\web\\src\\app\\(app)\\counterparties\\[id]\\page.tsx",
+      "feature": "counterparties",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/counterparties/:id",
+          "prefix": "counterparties",
+          "module": "counterparty",
+          "module_path": "apps\\api\\src\\modules\\counterparty",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "CounterpartyAccount"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "counterparties/import",
+      "page_file": "apps\\web\\src\\app\\(app)\\counterparties\\import\\page.tsx",
+      "feature": "counterparties",
+      "endpoints": [
+        {
+          "verb": "POST",
+          "url": "/counterparties/bulk-import",
+          "prefix": "counterparties",
+          "module": "counterparty",
+          "module_path": "apps\\api\\src\\modules\\counterparty",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "CounterpartyAccount"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "counterparties/new",
+      "page_file": "apps\\web\\src\\app\\(app)\\counterparties\\new\\page.tsx",
+      "feature": "counterparties",
+      "endpoints": [
+        {
+          "verb": "POST",
+          "url": "/counterparties",
+          "prefix": "counterparties",
+          "module": "counterparty",
+          "module_path": "apps\\api\\src\\modules\\counterparty",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "CounterpartyAccount"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "customer-orders",
+      "page_file": "apps\\web\\src\\app\\(app)\\customer-orders\\page.tsx",
+      "feature": "customer-orders",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/counterparties",
+          "prefix": "counterparties",
+          "module": "counterparty",
+          "module_path": "apps\\api\\src\\modules\\counterparty",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "CounterpartyAccount"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/customer-orders",
+          "prefix": "customer-orders",
+          "module": "customer-order",
+          "module_path": "apps\\api\\src\\modules\\customer-order",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "CustomerOrder",
+            "CustomerOrderPosition",
+            "Demand",
+            "InvoiceOut",
+            "Organization",
+            "Store"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/organizations",
+          "prefix": "organizations",
+          "module": "reference",
+          "module_path": "apps\\api\\src\\modules\\reference",
+          "models": [
+            "CashDesk",
+            "Employee",
+            "Organization",
+            "OrganizationAccount",
+            "Store"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/projects",
+          "prefix": "projects",
+          "module": "project",
+          "module_path": "apps\\api\\src\\modules\\project",
+          "models": [
+            "Project"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/stores",
+          "prefix": "stores",
+          "module": "reference",
+          "module_path": "apps\\api\\src\\modules\\reference",
+          "models": [
+            "CashDesk",
+            "Employee",
+            "Organization",
+            "OrganizationAccount",
+            "Store"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "customer-orders/[id]",
+      "page_file": "apps\\web\\src\\app\\(app)\\customer-orders\\[id]\\page.tsx",
+      "feature": "customer-orders",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/products",
+          "prefix": "products",
+          "module": "product",
+          "module_path": "apps\\api\\src\\modules\\product",
+          "models": [
+            "AuditLog",
+            "Product",
+            "ProductPack"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/customer-orders/:id/clone",
+          "prefix": "customer-orders",
+          "module": "customer-order",
+          "module_path": "apps\\api\\src\\modules\\customer-order",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "CustomerOrder",
+            "CustomerOrderPosition",
+            "Demand",
+            "InvoiceOut",
+            "Organization",
+            "Store"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/demands/from-customer-order/:id",
+          "prefix": "demands",
+          "module": "demand",
+          "module_path": "apps\\api\\src\\modules\\demand",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "CustomerOrder",
+            "Demand",
+            "DemandPosition",
+            "DemandPositionCostConsumption",
+            "Organization",
+            "Store",
+            "SupplyPosition"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/invoices-out/from-customer-order/:id",
+          "prefix": "invoices-out",
+          "module": "invoice-out",
+          "module_path": "apps\\api\\src\\modules\\invoice-out",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "CustomerOrder",
+            "InvoiceOut",
+            "InvoiceOutPosition",
+            "Organization"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "customer-orders/new",
+      "page_file": "apps\\web\\src\\app\\(app)\\customer-orders\\new\\page.tsx",
+      "feature": "customer-orders",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/organizations",
+          "prefix": "organizations",
+          "module": "reference",
+          "module_path": "apps\\api\\src\\modules\\reference",
+          "models": [
+            "CashDesk",
+            "Employee",
+            "Organization",
+            "OrganizationAccount",
+            "Store"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/products",
+          "prefix": "products",
+          "module": "product",
+          "module_path": "apps\\api\\src\\modules\\product",
+          "models": [
+            "AuditLog",
+            "Product",
+            "ProductPack"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/stores",
+          "prefix": "stores",
+          "module": "reference",
+          "module_path": "apps\\api\\src\\modules\\reference",
+          "models": [
+            "CashDesk",
+            "Employee",
+            "Organization",
+            "OrganizationAccount",
+            "Store"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/customer-orders",
+          "prefix": "customer-orders",
+          "module": "customer-order",
+          "module_path": "apps\\api\\src\\modules\\customer-order",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "CustomerOrder",
+            "CustomerOrderPosition",
+            "Demand",
+            "InvoiceOut",
+            "Organization",
+            "Store"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "demands",
+      "page_file": "apps\\web\\src\\app\\(app)\\demands\\page.tsx",
+      "feature": "demands",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/counterparties",
+          "prefix": "counterparties",
+          "module": "counterparty",
+          "module_path": "apps\\api\\src\\modules\\counterparty",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "CounterpartyAccount"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/demands",
+          "prefix": "demands",
+          "module": "demand",
+          "module_path": "apps\\api\\src\\modules\\demand",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "CustomerOrder",
+            "Demand",
+            "DemandPosition",
+            "DemandPositionCostConsumption",
+            "Organization",
+            "Store",
+            "SupplyPosition"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/organizations",
+          "prefix": "organizations",
+          "module": "reference",
+          "module_path": "apps\\api\\src\\modules\\reference",
+          "models": [
+            "CashDesk",
+            "Employee",
+            "Organization",
+            "OrganizationAccount",
+            "Store"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/stores",
+          "prefix": "stores",
+          "module": "reference",
+          "module_path": "apps\\api\\src\\modules\\reference",
+          "models": [
+            "CashDesk",
+            "Employee",
+            "Organization",
+            "OrganizationAccount",
+            "Store"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "demands/[id]",
+      "page_file": "apps\\web\\src\\app\\(app)\\demands\\[id]\\page.tsx",
+      "feature": "demands",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/products",
+          "prefix": "products",
+          "module": "product",
+          "module_path": "apps\\api\\src\\modules\\product",
+          "models": [
+            "AuditLog",
+            "Product",
+            "ProductPack"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/demands/:id/clone",
+          "prefix": "demands",
+          "module": "demand",
+          "module_path": "apps\\api\\src\\modules\\demand",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "CustomerOrder",
+            "Demand",
+            "DemandPosition",
+            "DemandPositionCostConsumption",
+            "Organization",
+            "Store",
+            "SupplyPosition"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "demands/new",
+      "page_file": "apps\\web\\src\\app\\(app)\\demands\\new\\page.tsx",
+      "feature": "demands",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/organizations",
+          "prefix": "organizations",
+          "module": "reference",
+          "module_path": "apps\\api\\src\\modules\\reference",
+          "models": [
+            "CashDesk",
+            "Employee",
+            "Organization",
+            "OrganizationAccount",
+            "Store"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/products",
+          "prefix": "products",
+          "module": "product",
+          "module_path": "apps\\api\\src\\modules\\product",
+          "models": [
+            "AuditLog",
+            "Product",
+            "ProductPack"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/stores",
+          "prefix": "stores",
+          "module": "reference",
+          "module_path": "apps\\api\\src\\modules\\reference",
+          "models": [
+            "CashDesk",
+            "Employee",
+            "Organization",
+            "OrganizationAccount",
+            "Store"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/demands",
+          "prefix": "demands",
+          "module": "demand",
+          "module_path": "apps\\api\\src\\modules\\demand",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "CustomerOrder",
+            "Demand",
+            "DemandPosition",
+            "DemandPositionCostConsumption",
+            "Organization",
+            "Store",
+            "SupplyPosition"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "ecommerce",
+      "page_file": "apps\\web\\src\\app\\(app)\\ecommerce\\page.tsx",
+      "feature": "ecommerce",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/online-orders/counts",
+          "prefix": "online-orders",
+          "module": "online-order",
+          "module_path": "apps\\api\\src\\modules\\online-order",
+          "models": [
+            "OnlineOrder",
+            "SalesChannel"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/sales-channels",
+          "prefix": "sales-channels",
+          "module": "sales-channel",
+          "module_path": "apps\\api\\src\\modules\\sales-channel",
+          "models": [
+            "OnlineOrder",
+            "SalesChannel"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "ecommerce/channels",
+      "page_file": "apps\\web\\src\\app\\(app)\\ecommerce\\channels\\page.tsx",
+      "feature": "ecommerce",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/sales-channels",
+          "prefix": "sales-channels",
+          "module": "sales-channel",
+          "module_path": "apps\\api\\src\\modules\\sales-channel",
+          "models": [
+            "OnlineOrder",
+            "SalesChannel"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "ecommerce/channels/[id]",
+      "page_file": "apps\\web\\src\\app\\(app)\\ecommerce\\channels\\[id]\\page.tsx",
+      "feature": "ecommerce",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/sales-channels/:id",
+          "prefix": "sales-channels",
+          "module": "sales-channel",
+          "module_path": "apps\\api\\src\\modules\\sales-channel",
+          "models": [
+            "OnlineOrder",
+            "SalesChannel"
+          ]
+        },
+        {
+          "verb": "PATCH",
+          "url": "/sales-channels/:id",
+          "prefix": "sales-channels",
+          "module": "sales-channel",
+          "module_path": "apps\\api\\src\\modules\\sales-channel",
+          "models": [
+            "OnlineOrder",
+            "SalesChannel"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "ecommerce/channels/new",
+      "page_file": "apps\\web\\src\\app\\(app)\\ecommerce\\channels\\new\\page.tsx",
+      "feature": "ecommerce",
+      "endpoints": [
+        {
+          "verb": "POST",
+          "url": "/sales-channels",
+          "prefix": "sales-channels",
+          "module": "sales-channel",
+          "module_path": "apps\\api\\src\\modules\\sales-channel",
+          "models": [
+            "OnlineOrder",
+            "SalesChannel"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "ecommerce/orders",
+      "page_file": "apps\\web\\src\\app\\(app)\\ecommerce\\orders\\page.tsx",
+      "feature": "ecommerce",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/online-orders",
+          "prefix": "online-orders",
+          "module": "online-order",
+          "module_path": "apps\\api\\src\\modules\\online-order",
+          "models": [
+            "OnlineOrder",
+            "SalesChannel"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "ecommerce/orders/[id]",
+      "page_file": "apps\\web\\src\\app\\(app)\\ecommerce\\orders\\[id]\\page.tsx",
+      "feature": "ecommerce",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/online-orders/:id",
+          "prefix": "online-orders",
+          "module": "online-order",
+          "module_path": "apps\\api\\src\\modules\\online-order",
+          "models": [
+            "OnlineOrder",
+            "SalesChannel"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "enters",
+      "page_file": "apps\\web\\src\\app\\(app)\\enters\\page.tsx",
+      "feature": "enters",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/enters",
+          "prefix": "enters",
+          "module": "enter",
+          "module_path": "apps\\api\\src\\modules\\enter",
+          "models": [
+            "AuditLog",
+            "Enter",
+            "EnterPosition",
+            "Organization",
+            "Store"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "enters/[id]",
+      "page_file": "apps\\web\\src\\app\\(app)\\enters\\[id]\\page.tsx",
+      "feature": "enters",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/products",
+          "prefix": "products",
+          "module": "product",
+          "module_path": "apps\\api\\src\\modules\\product",
+          "models": [
+            "AuditLog",
+            "Product",
+            "ProductPack"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/enters/:id/clone",
+          "prefix": "enters",
+          "module": "enter",
+          "module_path": "apps\\api\\src\\modules\\enter",
+          "models": [
+            "AuditLog",
+            "Enter",
+            "EnterPosition",
+            "Organization",
+            "Store"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "enters/new",
+      "page_file": "apps\\web\\src\\app\\(app)\\enters\\new\\page.tsx",
+      "feature": "enters",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/organizations",
+          "prefix": "organizations",
+          "module": "reference",
+          "module_path": "apps\\api\\src\\modules\\reference",
+          "models": [
+            "CashDesk",
+            "Employee",
+            "Organization",
+            "OrganizationAccount",
+            "Store"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/products",
+          "prefix": "products",
+          "module": "product",
+          "module_path": "apps\\api\\src\\modules\\product",
+          "models": [
+            "AuditLog",
+            "Product",
+            "ProductPack"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/stores",
+          "prefix": "stores",
+          "module": "reference",
+          "module_path": "apps\\api\\src\\modules\\reference",
+          "models": [
+            "CashDesk",
+            "Employee",
+            "Organization",
+            "OrganizationAccount",
+            "Store"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/enters",
+          "prefix": "enters",
+          "module": "enter",
+          "module_path": "apps\\api\\src\\modules\\enter",
+          "models": [
+            "AuditLog",
+            "Enter",
+            "EnterPosition",
+            "Organization",
+            "Store"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "inventories",
+      "page_file": "apps\\web\\src\\app\\(app)\\inventories\\page.tsx",
+      "feature": "inventories",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/inventories",
+          "prefix": "inventories",
+          "module": "inventory",
+          "module_path": "apps\\api\\src\\modules\\inventory",
+          "models": [
+            "AuditLog",
+            "Inventory",
+            "InventoryPosition",
+            "Organization",
+            "Stock",
+            "Store"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "inventories/[id]",
+      "page_file": "apps\\web\\src\\app\\(app)\\inventories\\[id]\\page.tsx",
+      "feature": "inventories",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/products",
+          "prefix": "products",
+          "module": "product",
+          "module_path": "apps\\api\\src\\modules\\product",
+          "models": [
+            "AuditLog",
+            "Product",
+            "ProductPack"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/inventories/:id/clone",
+          "prefix": "inventories",
+          "module": "inventory",
+          "module_path": "apps\\api\\src\\modules\\inventory",
+          "models": [
+            "AuditLog",
+            "Inventory",
+            "InventoryPosition",
+            "Organization",
+            "Stock",
+            "Store"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "inventories/new",
+      "page_file": "apps\\web\\src\\app\\(app)\\inventories\\new\\page.tsx",
+      "feature": "inventories",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/organizations",
+          "prefix": "organizations",
+          "module": "reference",
+          "module_path": "apps\\api\\src\\modules\\reference",
+          "models": [
+            "CashDesk",
+            "Employee",
+            "Organization",
+            "OrganizationAccount",
+            "Store"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/products",
+          "prefix": "products",
+          "module": "product",
+          "module_path": "apps\\api\\src\\modules\\product",
+          "models": [
+            "AuditLog",
+            "Product",
+            "ProductPack"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/stores",
+          "prefix": "stores",
+          "module": "reference",
+          "module_path": "apps\\api\\src\\modules\\reference",
+          "models": [
+            "CashDesk",
+            "Employee",
+            "Organization",
+            "OrganizationAccount",
+            "Store"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/inventories",
+          "prefix": "inventories",
+          "module": "inventory",
+          "module_path": "apps\\api\\src\\modules\\inventory",
+          "models": [
+            "AuditLog",
+            "Inventory",
+            "InventoryPosition",
+            "Organization",
+            "Stock",
+            "Store"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "invoices-in",
+      "page_file": "apps\\web\\src\\app\\(app)\\invoices-in\\page.tsx",
+      "feature": "invoices-in",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/invoices-in",
+          "prefix": "invoices-in",
+          "module": "invoice-in",
+          "module_path": "apps\\api\\src\\modules\\invoice-in",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "InvoiceIn",
+            "InvoiceInPosition",
+            "Organization",
+            "PurchaseOrder"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "invoices-in/[id]",
+      "page_file": "apps\\web\\src\\app\\(app)\\invoices-in\\[id]\\page.tsx",
+      "feature": "invoices-in",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/products",
+          "prefix": "products",
+          "module": "product",
+          "module_path": "apps\\api\\src\\modules\\product",
+          "models": [
+            "AuditLog",
+            "Product",
+            "ProductPack"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/invoices-in/:id/clone",
+          "prefix": "invoices-in",
+          "module": "invoice-in",
+          "module_path": "apps\\api\\src\\modules\\invoice-in",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "InvoiceIn",
+            "InvoiceInPosition",
+            "Organization",
+            "PurchaseOrder"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/payments-out/from-invoice-in/:id",
+          "prefix": "payments-out",
+          "module": "payment-out",
+          "module_path": "apps\\api\\src\\modules\\payment-out",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "InvoiceIn",
+            "Organization",
+            "PaymentOut",
+            "PaymentOutOperation",
+            "PurchaseOrder"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "invoices-in/new",
+      "page_file": "apps\\web\\src\\app\\(app)\\invoices-in\\new\\page.tsx",
+      "feature": "invoices-in",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/organizations",
+          "prefix": "organizations",
+          "module": "reference",
+          "module_path": "apps\\api\\src\\modules\\reference",
+          "models": [
+            "CashDesk",
+            "Employee",
+            "Organization",
+            "OrganizationAccount",
+            "Store"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/products",
+          "prefix": "products",
+          "module": "product",
+          "module_path": "apps\\api\\src\\modules\\product",
+          "models": [
+            "AuditLog",
+            "Product",
+            "ProductPack"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/purchase-orders",
+          "prefix": "purchase-orders",
+          "module": "purchase-order",
+          "module_path": "apps\\api\\src\\modules\\purchase-order",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "Organization",
+            "PurchaseOrder",
+            "PurchaseOrderPosition",
+            "Store"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/invoices-in",
+          "prefix": "invoices-in",
+          "module": "invoice-in",
+          "module_path": "apps\\api\\src\\modules\\invoice-in",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "InvoiceIn",
+            "InvoiceInPosition",
+            "Organization",
+            "PurchaseOrder"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "invoices-out",
+      "page_file": "apps\\web\\src\\app\\(app)\\invoices-out\\page.tsx",
+      "feature": "invoices-out",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/counterparties",
+          "prefix": "counterparties",
+          "module": "counterparty",
+          "module_path": "apps\\api\\src\\modules\\counterparty",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "CounterpartyAccount"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/invoices-out",
+          "prefix": "invoices-out",
+          "module": "invoice-out",
+          "module_path": "apps\\api\\src\\modules\\invoice-out",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "CustomerOrder",
+            "InvoiceOut",
+            "InvoiceOutPosition",
+            "Organization"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/organizations",
+          "prefix": "organizations",
+          "module": "reference",
+          "module_path": "apps\\api\\src\\modules\\reference",
+          "models": [
+            "CashDesk",
+            "Employee",
+            "Organization",
+            "OrganizationAccount",
+            "Store"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/stores",
+          "prefix": "stores",
+          "module": "reference",
+          "module_path": "apps\\api\\src\\modules\\reference",
+          "models": [
+            "CashDesk",
+            "Employee",
+            "Organization",
+            "OrganizationAccount",
+            "Store"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "invoices-out/[id]",
+      "page_file": "apps\\web\\src\\app\\(app)\\invoices-out\\[id]\\page.tsx",
+      "feature": "invoices-out",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/products",
+          "prefix": "products",
+          "module": "product",
+          "module_path": "apps\\api\\src\\modules\\product",
+          "models": [
+            "AuditLog",
+            "Product",
+            "ProductPack"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/invoices-out/:id/clone",
+          "prefix": "invoices-out",
+          "module": "invoice-out",
+          "module_path": "apps\\api\\src\\modules\\invoice-out",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "CustomerOrder",
+            "InvoiceOut",
+            "InvoiceOutPosition",
+            "Organization"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/payments-in/from-invoice-out/:id",
+          "prefix": "payments-in",
+          "module": "payment-in",
+          "module_path": "apps\\api\\src\\modules\\payment-in",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "InvoiceOut",
+            "Organization",
+            "PaymentIn",
+            "PaymentInOperation"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "korzina",
+      "page_file": "apps\\web\\src\\app\\(app)\\korzina\\page.tsx",
+      "feature": "korzina",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/korzina",
+          "prefix": "korzina",
+          "module": "korzina",
+          "module_path": "apps\\api\\src\\modules\\korzina",
+          "models": []
+        }
+      ]
+    },
+    {
+      "route": "losses",
+      "page_file": "apps\\web\\src\\app\\(app)\\losses\\page.tsx",
+      "feature": "losses",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/losses",
+          "prefix": "losses",
+          "module": "loss",
+          "module_path": "apps\\api\\src\\modules\\loss",
+          "models": [
+            "AuditLog",
+            "Loss",
+            "LossPosition",
+            "Organization",
+            "Store"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "losses/[id]",
+      "page_file": "apps\\web\\src\\app\\(app)\\losses\\[id]\\page.tsx",
+      "feature": "losses",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/products",
+          "prefix": "products",
+          "module": "product",
+          "module_path": "apps\\api\\src\\modules\\product",
+          "models": [
+            "AuditLog",
+            "Product",
+            "ProductPack"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/losses/:id/clone",
+          "prefix": "losses",
+          "module": "loss",
+          "module_path": "apps\\api\\src\\modules\\loss",
+          "models": [
+            "AuditLog",
+            "Loss",
+            "LossPosition",
+            "Organization",
+            "Store"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "losses/new",
+      "page_file": "apps\\web\\src\\app\\(app)\\losses\\new\\page.tsx",
+      "feature": "losses",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/organizations",
+          "prefix": "organizations",
+          "module": "reference",
+          "module_path": "apps\\api\\src\\modules\\reference",
+          "models": [
+            "CashDesk",
+            "Employee",
+            "Organization",
+            "OrganizationAccount",
+            "Store"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/products",
+          "prefix": "products",
+          "module": "product",
+          "module_path": "apps\\api\\src\\modules\\product",
+          "models": [
+            "AuditLog",
+            "Product",
+            "ProductPack"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/stores",
+          "prefix": "stores",
+          "module": "reference",
+          "module_path": "apps\\api\\src\\modules\\reference",
+          "models": [
+            "CashDesk",
+            "Employee",
+            "Organization",
+            "OrganizationAccount",
+            "Store"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/losses",
+          "prefix": "losses",
+          "module": "loss",
+          "module_path": "apps\\api\\src\\modules\\loss",
+          "models": [
+            "AuditLog",
+            "Loss",
+            "LossPosition",
+            "Organization",
+            "Store"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "moves",
+      "page_file": "apps\\web\\src\\app\\(app)\\moves\\page.tsx",
+      "feature": "moves",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/moves",
+          "prefix": "moves",
+          "module": "move",
+          "module_path": "apps\\api\\src\\modules\\move",
+          "models": [
+            "AuditLog",
+            "Move",
+            "MovePosition",
+            "Organization",
+            "Stock",
+            "Store"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "moves/[id]",
+      "page_file": "apps\\web\\src\\app\\(app)\\moves\\[id]\\page.tsx",
+      "feature": "moves",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/products",
+          "prefix": "products",
+          "module": "product",
+          "module_path": "apps\\api\\src\\modules\\product",
+          "models": [
+            "AuditLog",
+            "Product",
+            "ProductPack"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/moves/:id/clone",
+          "prefix": "moves",
+          "module": "move",
+          "module_path": "apps\\api\\src\\modules\\move",
+          "models": [
+            "AuditLog",
+            "Move",
+            "MovePosition",
+            "Organization",
+            "Stock",
+            "Store"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "moves/new",
+      "page_file": "apps\\web\\src\\app\\(app)\\moves\\new\\page.tsx",
+      "feature": "moves",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/organizations",
+          "prefix": "organizations",
+          "module": "reference",
+          "module_path": "apps\\api\\src\\modules\\reference",
+          "models": [
+            "CashDesk",
+            "Employee",
+            "Organization",
+            "OrganizationAccount",
+            "Store"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/products",
+          "prefix": "products",
+          "module": "product",
+          "module_path": "apps\\api\\src\\modules\\product",
+          "models": [
+            "AuditLog",
+            "Product",
+            "ProductPack"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/stores",
+          "prefix": "stores",
+          "module": "reference",
+          "module_path": "apps\\api\\src\\modules\\reference",
+          "models": [
+            "CashDesk",
+            "Employee",
+            "Organization",
+            "OrganizationAccount",
+            "Store"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/moves",
+          "prefix": "moves",
+          "module": "move",
+          "module_path": "apps\\api\\src\\modules\\move",
+          "models": [
+            "AuditLog",
+            "Move",
+            "MovePosition",
+            "Organization",
+            "Stock",
+            "Store"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "opportunities",
+      "page_file": "apps\\web\\src\\app\\(app)\\opportunities\\page.tsx",
+      "feature": "opportunities",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/opportunities",
+          "prefix": "opportunities",
+          "module": "opportunity",
+          "module_path": "apps\\api\\src\\modules\\opportunity",
+          "models": [
+            "ContactPerson",
+            "Counterparty",
+            "Opportunity",
+            "PipelineStage"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "opportunities/[id]",
+      "page_file": "apps\\web\\src\\app\\(app)\\opportunities\\[id]\\page.tsx",
+      "feature": "opportunities",
+      "endpoints": [
+        {
+          "verb": "DELETE",
+          "url": "/opportunities/:id",
+          "prefix": "opportunities",
+          "module": "opportunity",
+          "module_path": "apps\\api\\src\\modules\\opportunity",
+          "models": [
+            "ContactPerson",
+            "Counterparty",
+            "Opportunity",
+            "PipelineStage"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/opportunities/:id",
+          "prefix": "opportunities",
+          "module": "opportunity",
+          "module_path": "apps\\api\\src\\modules\\opportunity",
+          "models": [
+            "ContactPerson",
+            "Counterparty",
+            "Opportunity",
+            "PipelineStage"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/opportunities/:id/${archive ",
+          "prefix": "opportunities",
+          "module": "opportunity",
+          "module_path": "apps\\api\\src\\modules\\opportunity",
+          "models": [
+            "ContactPerson",
+            "Counterparty",
+            "Opportunity",
+            "PipelineStage"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/opportunities/:id/transition",
+          "prefix": "opportunities",
+          "module": "opportunity",
+          "module_path": "apps\\api\\src\\modules\\opportunity",
+          "models": [
+            "ContactPerson",
+            "Counterparty",
+            "Opportunity",
+            "PipelineStage"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "opportunities/board",
+      "page_file": "apps\\web\\src\\app\\(app)\\opportunities\\board\\page.tsx",
+      "feature": "opportunities",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/opportunities/board:id",
+          "prefix": "opportunities",
+          "module": "opportunity",
+          "module_path": "apps\\api\\src\\modules\\opportunity",
+          "models": [
+            "ContactPerson",
+            "Counterparty",
+            "Opportunity",
+            "PipelineStage"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/pipelines",
+          "prefix": "pipelines",
+          "module": "pipeline",
+          "module_path": "apps\\api\\src\\modules\\pipeline",
+          "models": [
+            "Opportunity",
+            "Pipeline",
+            "PipelineStage"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/opportunities/:id/transition",
+          "prefix": "opportunities",
+          "module": "opportunity",
+          "module_path": "apps\\api\\src\\modules\\opportunity",
+          "models": [
+            "ContactPerson",
+            "Counterparty",
+            "Opportunity",
+            "PipelineStage"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "opportunities/new",
+      "page_file": "apps\\web\\src\\app\\(app)\\opportunities\\new\\page.tsx",
+      "feature": "opportunities",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/contact-persons",
+          "prefix": "contact-persons",
+          "module": "contact-person",
+          "module_path": "apps\\api\\src\\modules\\contact-person",
+          "models": [
+            "ContactPerson",
+            "Counterparty"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/counterparties",
+          "prefix": "counterparties",
+          "module": "counterparty",
+          "module_path": "apps\\api\\src\\modules\\counterparty",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "CounterpartyAccount"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/pipelines",
+          "prefix": "pipelines",
+          "module": "pipeline",
+          "module_path": "apps\\api\\src\\modules\\pipeline",
+          "models": [
+            "Opportunity",
+            "Pipeline",
+            "PipelineStage"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/opportunities",
+          "prefix": "opportunities",
+          "module": "opportunity",
+          "module_path": "apps\\api\\src\\modules\\opportunity",
+          "models": [
+            "ContactPerson",
+            "Counterparty",
+            "Opportunity",
+            "PipelineStage"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "payments-in",
+      "page_file": "apps\\web\\src\\app\\(app)\\payments-in\\page.tsx",
+      "feature": "payments-in",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/counterparties",
+          "prefix": "counterparties",
+          "module": "counterparty",
+          "module_path": "apps\\api\\src\\modules\\counterparty",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "CounterpartyAccount"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/organizations",
+          "prefix": "organizations",
+          "module": "reference",
+          "module_path": "apps\\api\\src\\modules\\reference",
+          "models": [
+            "CashDesk",
+            "Employee",
+            "Organization",
+            "OrganizationAccount",
+            "Store"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/payments-in",
+          "prefix": "payments-in",
+          "module": "payment-in",
+          "module_path": "apps\\api\\src\\modules\\payment-in",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "InvoiceOut",
+            "Organization",
+            "PaymentIn",
+            "PaymentInOperation"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "payments-in/[id]",
+      "page_file": "apps\\web\\src\\app\\(app)\\payments-in\\[id]\\page.tsx",
+      "feature": "payments-in",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/invoices-out",
+          "prefix": "invoices-out",
+          "module": "invoice-out",
+          "module_path": "apps\\api\\src\\modules\\invoice-out",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "CustomerOrder",
+            "InvoiceOut",
+            "InvoiceOutPosition",
+            "Organization"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/organizations",
+          "prefix": "organizations",
+          "module": "reference",
+          "module_path": "apps\\api\\src\\modules\\reference",
+          "models": [
+            "CashDesk",
+            "Employee",
+            "Organization",
+            "OrganizationAccount",
+            "Store"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/payments-in/:id/clone",
+          "prefix": "payments-in",
+          "module": "payment-in",
+          "module_path": "apps\\api\\src\\modules\\payment-in",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "InvoiceOut",
+            "Organization",
+            "PaymentIn",
+            "PaymentInOperation"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "payments-in/new",
+      "page_file": "apps\\web\\src\\app\\(app)\\payments-in\\new\\page.tsx",
+      "feature": "payments-in",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/invoices-out",
+          "prefix": "invoices-out",
+          "module": "invoice-out",
+          "module_path": "apps\\api\\src\\modules\\invoice-out",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "CustomerOrder",
+            "InvoiceOut",
+            "InvoiceOutPosition",
+            "Organization"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/organizations",
+          "prefix": "organizations",
+          "module": "reference",
+          "module_path": "apps\\api\\src\\modules\\reference",
+          "models": [
+            "CashDesk",
+            "Employee",
+            "Organization",
+            "OrganizationAccount",
+            "Store"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/payments-in",
+          "prefix": "payments-in",
+          "module": "payment-in",
+          "module_path": "apps\\api\\src\\modules\\payment-in",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "InvoiceOut",
+            "Organization",
+            "PaymentIn",
+            "PaymentInOperation"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "payments-out",
+      "page_file": "apps\\web\\src\\app\\(app)\\payments-out\\page.tsx",
+      "feature": "payments-out",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/counterparties",
+          "prefix": "counterparties",
+          "module": "counterparty",
+          "module_path": "apps\\api\\src\\modules\\counterparty",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "CounterpartyAccount"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/organizations",
+          "prefix": "organizations",
+          "module": "reference",
+          "module_path": "apps\\api\\src\\modules\\reference",
+          "models": [
+            "CashDesk",
+            "Employee",
+            "Organization",
+            "OrganizationAccount",
+            "Store"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/payments-out",
+          "prefix": "payments-out",
+          "module": "payment-out",
+          "module_path": "apps\\api\\src\\modules\\payment-out",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "InvoiceIn",
+            "Organization",
+            "PaymentOut",
+            "PaymentOutOperation",
+            "PurchaseOrder"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "payments-out/[id]",
+      "page_file": "apps\\web\\src\\app\\(app)\\payments-out\\[id]\\page.tsx",
+      "feature": "payments-out",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/invoices-in",
+          "prefix": "invoices-in",
+          "module": "invoice-in",
+          "module_path": "apps\\api\\src\\modules\\invoice-in",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "InvoiceIn",
+            "InvoiceInPosition",
+            "Organization",
+            "PurchaseOrder"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/organizations",
+          "prefix": "organizations",
+          "module": "reference",
+          "module_path": "apps\\api\\src\\modules\\reference",
+          "models": [
+            "CashDesk",
+            "Employee",
+            "Organization",
+            "OrganizationAccount",
+            "Store"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/purchase-orders",
+          "prefix": "purchase-orders",
+          "module": "purchase-order",
+          "module_path": "apps\\api\\src\\modules\\purchase-order",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "Organization",
+            "PurchaseOrder",
+            "PurchaseOrderPosition",
+            "Store"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/payments-out/:id/clone",
+          "prefix": "payments-out",
+          "module": "payment-out",
+          "module_path": "apps\\api\\src\\modules\\payment-out",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "InvoiceIn",
+            "Organization",
+            "PaymentOut",
+            "PaymentOutOperation",
+            "PurchaseOrder"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "payments-out/new",
+      "page_file": "apps\\web\\src\\app\\(app)\\payments-out\\new\\page.tsx",
+      "feature": "payments-out",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/invoices-in",
+          "prefix": "invoices-in",
+          "module": "invoice-in",
+          "module_path": "apps\\api\\src\\modules\\invoice-in",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "InvoiceIn",
+            "InvoiceInPosition",
+            "Organization",
+            "PurchaseOrder"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/organizations",
+          "prefix": "organizations",
+          "module": "reference",
+          "module_path": "apps\\api\\src\\modules\\reference",
+          "models": [
+            "CashDesk",
+            "Employee",
+            "Organization",
+            "OrganizationAccount",
+            "Store"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/purchase-orders",
+          "prefix": "purchase-orders",
+          "module": "purchase-order",
+          "module_path": "apps\\api\\src\\modules\\purchase-order",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "Organization",
+            "PurchaseOrder",
+            "PurchaseOrderPosition",
+            "Store"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/payments-out",
+          "prefix": "payments-out",
+          "module": "payment-out",
+          "module_path": "apps\\api\\src\\modules\\payment-out",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "InvoiceIn",
+            "Organization",
+            "PaymentOut",
+            "PaymentOutOperation",
+            "PurchaseOrder"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "pipelines",
+      "page_file": "apps\\web\\src\\app\\(app)\\pipelines\\page.tsx",
+      "feature": "pipelines",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/pipelines",
+          "prefix": "pipelines",
+          "module": "pipeline",
+          "module_path": "apps\\api\\src\\modules\\pipeline",
+          "models": [
+            "Opportunity",
+            "Pipeline",
+            "PipelineStage"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "pipelines/[id]",
+      "page_file": "apps\\web\\src\\app\\(app)\\pipelines\\[id]\\page.tsx",
+      "feature": "pipelines",
+      "endpoints": [
+        {
+          "verb": "DELETE",
+          "url": "/pipelines/:id",
+          "prefix": "pipelines",
+          "module": "pipeline",
+          "module_path": "apps\\api\\src\\modules\\pipeline",
+          "models": [
+            "Opportunity",
+            "Pipeline",
+            "PipelineStage"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/pipelines/:id",
+          "prefix": "pipelines",
+          "module": "pipeline",
+          "module_path": "apps\\api\\src\\modules\\pipeline",
+          "models": [
+            "Opportunity",
+            "Pipeline",
+            "PipelineStage"
+          ]
+        },
+        {
+          "verb": "PATCH",
+          "url": "/pipelines/:id",
+          "prefix": "pipelines",
+          "module": "pipeline",
+          "module_path": "apps\\api\\src\\modules\\pipeline",
+          "models": [
+            "Opportunity",
+            "Pipeline",
+            "PipelineStage"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/pipelines/:id/archive",
+          "prefix": "pipelines",
+          "module": "pipeline",
+          "module_path": "apps\\api\\src\\modules\\pipeline",
+          "models": [
+            "Opportunity",
+            "Pipeline",
+            "PipelineStage"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/pipelines/:id/restore",
+          "prefix": "pipelines",
+          "module": "pipeline",
+          "module_path": "apps\\api\\src\\modules\\pipeline",
+          "models": [
+            "Opportunity",
+            "Pipeline",
+            "PipelineStage"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "pipelines/new",
+      "page_file": "apps\\web\\src\\app\\(app)\\pipelines\\new\\page.tsx",
+      "feature": "pipelines",
+      "endpoints": [
+        {
+          "verb": "POST",
+          "url": "/pipelines",
+          "prefix": "pipelines",
+          "module": "pipeline",
+          "module_path": "apps\\api\\src\\modules\\pipeline",
+          "models": [
+            "Opportunity",
+            "Pipeline",
+            "PipelineStage"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "price-types",
+      "page_file": "apps\\web\\src\\app\\(app)\\price-types\\page.tsx",
+      "feature": "price-types",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/price-types",
+          "prefix": "price-types",
+          "module": "price-type",
+          "module_path": "apps\\api\\src\\modules\\price-type",
+          "models": [
+            "PriceType"
+          ]
+        },
+        {
+          "verb": "PATCH",
+          "url": "/price-types/:id",
+          "prefix": "price-types",
+          "module": "price-type",
+          "module_path": "apps\\api\\src\\modules\\price-type",
+          "models": [
+            "PriceType"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/price-types",
+          "prefix": "price-types",
+          "module": "price-type",
+          "module_path": "apps\\api\\src\\modules\\price-type",
+          "models": [
+            "PriceType"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "product-folders",
+      "page_file": "apps\\web\\src\\app\\(app)\\product-folders\\page.tsx",
+      "feature": "product-folders",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/product-folders/tree",
+          "prefix": "product-folders",
+          "module": "product-folder",
+          "module_path": "apps\\api\\src\\modules\\product-folder",
+          "models": [
+            "AuditLog",
+            "ProductFolder"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "production",
+      "page_file": "apps\\web\\src\\app\\(app)\\production\\page.tsx",
+      "feature": "production",
+      "endpoints": []
+    },
+    {
+      "route": "production/boms",
+      "page_file": "apps\\web\\src\\app\\(app)\\production\\boms\\page.tsx",
+      "feature": "production",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/boms",
+          "prefix": "boms",
+          "module": "bom",
+          "module_path": "apps\\api\\src\\modules\\bom",
+          "models": [
+            "BillOfMaterials",
+            "BomComponent",
+            "Product"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "production/boms/[id]",
+      "page_file": "apps\\web\\src\\app\\(app)\\production\\boms\\[id]\\page.tsx",
+      "feature": "production",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/boms/:id",
+          "prefix": "boms",
+          "module": "bom",
+          "module_path": "apps\\api\\src\\modules\\bom",
+          "models": [
+            "BillOfMaterials",
+            "BomComponent",
+            "Product"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/products",
+          "prefix": "products",
+          "module": "product",
+          "module_path": "apps\\api\\src\\modules\\product",
+          "models": [
+            "AuditLog",
+            "Product",
+            "ProductPack"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "production/boms/new",
+      "page_file": "apps\\web\\src\\app\\(app)\\production\\boms\\new\\page.tsx",
+      "feature": "production",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/products",
+          "prefix": "products",
+          "module": "product",
+          "module_path": "apps\\api\\src\\modules\\product",
+          "models": [
+            "AuditLog",
+            "Product",
+            "ProductPack"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/boms",
+          "prefix": "boms",
+          "module": "bom",
+          "module_path": "apps\\api\\src\\modules\\bom",
+          "models": [
+            "BillOfMaterials",
+            "BomComponent",
+            "Product"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "production/work-orders",
+      "page_file": "apps\\web\\src\\app\\(app)\\production\\work-orders\\page.tsx",
+      "feature": "production",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/work-orders",
+          "prefix": "work-orders",
+          "module": "work-order",
+          "module_path": "apps\\api\\src\\modules\\work-order",
+          "models": [
+            "AuditLog",
+            "BillOfMaterials",
+            "Employee",
+            "Store",
+            "WorkOrder"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "production/work-orders/[id]",
+      "page_file": "apps\\web\\src\\app\\(app)\\production\\work-orders\\[id]\\page.tsx",
+      "feature": "production",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/work-orders/:id",
+          "prefix": "work-orders",
+          "module": "work-order",
+          "module_path": "apps\\api\\src\\modules\\work-order",
+          "models": [
+            "AuditLog",
+            "BillOfMaterials",
+            "Employee",
+            "Store",
+            "WorkOrder"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "production/work-orders/new",
+      "page_file": "apps\\web\\src\\app\\(app)\\production\\work-orders\\new\\page.tsx",
+      "feature": "production",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/boms",
+          "prefix": "boms",
+          "module": "bom",
+          "module_path": "apps\\api\\src\\modules\\bom",
+          "models": [
+            "BillOfMaterials",
+            "BomComponent",
+            "Product"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/work-orders",
+          "prefix": "work-orders",
+          "module": "work-order",
+          "module_path": "apps\\api\\src\\modules\\work-order",
+          "models": [
+            "AuditLog",
+            "BillOfMaterials",
+            "Employee",
+            "Store",
+            "WorkOrder"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "productions",
+      "page_file": "apps\\web\\src\\app\\(app)\\productions\\page.tsx",
+      "feature": "productions",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/productions",
+          "prefix": "productions",
+          "module": "production",
+          "module_path": "apps\\api\\src\\modules\\production",
+          "models": [
+            "AuditLog",
+            "CustomerOrder",
+            "Organization",
+            "ProcessingOrder",
+            "Production",
+            "Store"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "products",
+      "page_file": "apps\\web\\src\\app\\(app)\\products\\page.tsx",
+      "feature": "products",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/products",
+          "prefix": "products",
+          "module": "product",
+          "module_path": "apps\\api\\src\\modules\\product",
+          "models": [
+            "AuditLog",
+            "Product",
+            "ProductPack"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "products/[id]",
+      "page_file": "apps\\web\\src\\app\\(app)\\products\\[id]\\page.tsx",
+      "feature": "products",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/products/:id",
+          "prefix": "products",
+          "module": "product",
+          "module_path": "apps\\api\\src\\modules\\product",
+          "models": [
+            "AuditLog",
+            "Product",
+            "ProductPack"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "products/new",
+      "page_file": "apps\\web\\src\\app\\(app)\\products\\new\\page.tsx",
+      "feature": "products",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/product-folders",
+          "prefix": "product-folders",
+          "module": "product-folder",
+          "module_path": "apps\\api\\src\\modules\\product-folder",
+          "models": [
+            "AuditLog",
+            "ProductFolder"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/products",
+          "prefix": "products",
+          "module": "product",
+          "module_path": "apps\\api\\src\\modules\\product",
+          "models": [
+            "AuditLog",
+            "Product",
+            "ProductPack"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "purchase-orders",
+      "page_file": "apps\\web\\src\\app\\(app)\\purchase-orders\\page.tsx",
+      "feature": "purchase-orders",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/purchase-orders",
+          "prefix": "purchase-orders",
+          "module": "purchase-order",
+          "module_path": "apps\\api\\src\\modules\\purchase-order",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "Organization",
+            "PurchaseOrder",
+            "PurchaseOrderPosition",
+            "Store"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "purchase-orders/[id]",
+      "page_file": "apps\\web\\src\\app\\(app)\\purchase-orders\\[id]\\page.tsx",
+      "feature": "purchase-orders",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/products",
+          "prefix": "products",
+          "module": "product",
+          "module_path": "apps\\api\\src\\modules\\product",
+          "models": [
+            "AuditLog",
+            "Product",
+            "ProductPack"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/invoices-in/from-purchase-order/:id",
+          "prefix": "invoices-in",
+          "module": "invoice-in",
+          "module_path": "apps\\api\\src\\modules\\invoice-in",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "InvoiceIn",
+            "InvoiceInPosition",
+            "Organization",
+            "PurchaseOrder"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/payments-out/from-purchase-order/:id",
+          "prefix": "payments-out",
+          "module": "payment-out",
+          "module_path": "apps\\api\\src\\modules\\payment-out",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "InvoiceIn",
+            "Organization",
+            "PaymentOut",
+            "PaymentOutOperation",
+            "PurchaseOrder"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/purchase-orders/:id/clone",
+          "prefix": "purchase-orders",
+          "module": "purchase-order",
+          "module_path": "apps\\api\\src\\modules\\purchase-order",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "Organization",
+            "PurchaseOrder",
+            "PurchaseOrderPosition",
+            "Store"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/supplies/from-purchase-order/:id",
+          "prefix": "supplies",
+          "module": "supply",
+          "module_path": "apps\\api\\src\\modules\\supply",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "Organization",
+            "PurchaseOrder",
+            "Store",
+            "Supply",
+            "SupplyPosition"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "purchase-orders/new",
+      "page_file": "apps\\web\\src\\app\\(app)\\purchase-orders\\new\\page.tsx",
+      "feature": "purchase-orders",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/organizations",
+          "prefix": "organizations",
+          "module": "reference",
+          "module_path": "apps\\api\\src\\modules\\reference",
+          "models": [
+            "CashDesk",
+            "Employee",
+            "Organization",
+            "OrganizationAccount",
+            "Store"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/products",
+          "prefix": "products",
+          "module": "product",
+          "module_path": "apps\\api\\src\\modules\\product",
+          "models": [
+            "AuditLog",
+            "Product",
+            "ProductPack"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/stores",
+          "prefix": "stores",
+          "module": "reference",
+          "module_path": "apps\\api\\src\\modules\\reference",
+          "models": [
+            "CashDesk",
+            "Employee",
+            "Organization",
+            "OrganizationAccount",
+            "Store"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/purchase-orders",
+          "prefix": "purchase-orders",
+          "module": "purchase-order",
+          "module_path": "apps\\api\\src\\modules\\purchase-order",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "Organization",
+            "PurchaseOrder",
+            "PurchaseOrderPosition",
+            "Store"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "purchase-returns",
+      "page_file": "apps\\web\\src\\app\\(app)\\purchase-returns\\page.tsx",
+      "feature": "purchase-returns",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/purchase-returns",
+          "prefix": "purchase-returns",
+          "module": "purchase-return",
+          "module_path": "apps\\api\\src\\modules\\purchase-return",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "Organization",
+            "PurchaseReturn",
+            "PurchaseReturnPosition",
+            "Store",
+            "Supply",
+            "SupplyPosition"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "purchase-returns/[id]",
+      "page_file": "apps\\web\\src\\app\\(app)\\purchase-returns\\[id]\\page.tsx",
+      "feature": "purchase-returns",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/products",
+          "prefix": "products",
+          "module": "product",
+          "module_path": "apps\\api\\src\\modules\\product",
+          "models": [
+            "AuditLog",
+            "Product",
+            "ProductPack"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/purchase-returns/:id/clone",
+          "prefix": "purchase-returns",
+          "module": "purchase-return",
+          "module_path": "apps\\api\\src\\modules\\purchase-return",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "Organization",
+            "PurchaseReturn",
+            "PurchaseReturnPosition",
+            "Store",
+            "Supply",
+            "SupplyPosition"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "purchase-returns/new",
+      "page_file": "apps\\web\\src\\app\\(app)\\purchase-returns\\new\\page.tsx",
+      "feature": "purchase-returns",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/organizations",
+          "prefix": "organizations",
+          "module": "reference",
+          "module_path": "apps\\api\\src\\modules\\reference",
+          "models": [
+            "CashDesk",
+            "Employee",
+            "Organization",
+            "OrganizationAccount",
+            "Store"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/products",
+          "prefix": "products",
+          "module": "product",
+          "module_path": "apps\\api\\src\\modules\\product",
+          "models": [
+            "AuditLog",
+            "Product",
+            "ProductPack"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/stores",
+          "prefix": "stores",
+          "module": "reference",
+          "module_path": "apps\\api\\src\\modules\\reference",
+          "models": [
+            "CashDesk",
+            "Employee",
+            "Organization",
+            "OrganizationAccount",
+            "Store"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/purchase-returns",
+          "prefix": "purchase-returns",
+          "module": "purchase-return",
+          "module_path": "apps\\api\\src\\modules\\purchase-return",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "Organization",
+            "PurchaseReturn",
+            "PurchaseReturnPosition",
+            "Store",
+            "Supply",
+            "SupplyPosition"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "reports",
+      "page_file": "apps\\web\\src\\app\\(app)\\reports\\page.tsx",
+      "feature": "reports",
+      "endpoints": []
+    },
+    {
+      "route": "reports/abc-analysis",
+      "page_file": "apps\\web\\src\\app\\(app)\\reports\\abc-analysis\\page.tsx",
+      "feature": "reports",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/reports/abc-analysis",
+          "prefix": "reports",
+          "module": "report",
+          "module_path": "apps\\api\\src\\modules\\report",
+          "models": [
+            "CashIn",
+            "CashOut",
+            "Counterparty",
+            "CounterpartyBalance",
+            "CustomerOrder",
+            "Demand",
+            "Employee",
+            "InvoiceOut",
+            "Organization",
+            "PaymentIn",
+            "PaymentOut",
+            "Product",
+            "SalesReturn",
+            "Stock",
+            "Store",
+            "Task"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "reports/aging",
+      "page_file": "apps\\web\\src\\app\\(app)\\reports\\aging\\page.tsx",
+      "feature": "reports",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/reports/aging",
+          "prefix": "reports",
+          "module": "report",
+          "module_path": "apps\\api\\src\\modules\\report",
+          "models": [
+            "CashIn",
+            "CashOut",
+            "Counterparty",
+            "CounterpartyBalance",
+            "CustomerOrder",
+            "Demand",
+            "Employee",
+            "InvoiceOut",
+            "Organization",
+            "PaymentIn",
+            "PaymentOut",
+            "Product",
+            "SalesReturn",
+            "Stock",
+            "Store",
+            "Task"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "reports/cash-flow",
+      "page_file": "apps\\web\\src\\app\\(app)\\reports\\cash-flow\\page.tsx",
+      "feature": "reports",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/reports/cash-flow",
+          "prefix": "reports",
+          "module": "report",
+          "module_path": "apps\\api\\src\\modules\\report",
+          "models": [
+            "CashIn",
+            "CashOut",
+            "Counterparty",
+            "CounterpartyBalance",
+            "CustomerOrder",
+            "Demand",
+            "Employee",
+            "InvoiceOut",
+            "Organization",
+            "PaymentIn",
+            "PaymentOut",
+            "Product",
+            "SalesReturn",
+            "Stock",
+            "Store",
+            "Task"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "reports/counterparty-balance",
+      "page_file": "apps\\web\\src\\app\\(app)\\reports\\counterparty-balance\\page.tsx",
+      "feature": "reports",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/reports/counterparty-balance",
+          "prefix": "reports",
+          "module": "report",
+          "module_path": "apps\\api\\src\\modules\\report",
+          "models": [
+            "CashIn",
+            "CashOut",
+            "Counterparty",
+            "CounterpartyBalance",
+            "CustomerOrder",
+            "Demand",
+            "Employee",
+            "InvoiceOut",
+            "Organization",
+            "PaymentIn",
+            "PaymentOut",
+            "Product",
+            "SalesReturn",
+            "Stock",
+            "Store",
+            "Task"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "reports/pnl",
+      "page_file": "apps\\web\\src\\app\\(app)\\reports\\pnl\\page.tsx",
+      "feature": "reports",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/reports/pnl",
+          "prefix": "reports",
+          "module": "report",
+          "module_path": "apps\\api\\src\\modules\\report",
+          "models": [
+            "CashIn",
+            "CashOut",
+            "Counterparty",
+            "CounterpartyBalance",
+            "CustomerOrder",
+            "Demand",
+            "Employee",
+            "InvoiceOut",
+            "Organization",
+            "PaymentIn",
+            "PaymentOut",
+            "Product",
+            "SalesReturn",
+            "Stock",
+            "Store",
+            "Task"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "reports/returns-ratio",
+      "page_file": "apps\\web\\src\\app\\(app)\\reports\\returns-ratio\\page.tsx",
+      "feature": "reports",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/reports/returns-ratio",
+          "prefix": "reports",
+          "module": "report",
+          "module_path": "apps\\api\\src\\modules\\report",
+          "models": [
+            "CashIn",
+            "CashOut",
+            "Counterparty",
+            "CounterpartyBalance",
+            "CustomerOrder",
+            "Demand",
+            "Employee",
+            "InvoiceOut",
+            "Organization",
+            "PaymentIn",
+            "PaymentOut",
+            "Product",
+            "SalesReturn",
+            "Stock",
+            "Store",
+            "Task"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "reports/sales",
+      "page_file": "apps\\web\\src\\app\\(app)\\reports\\sales\\page.tsx",
+      "feature": "reports",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/reports/sales",
+          "prefix": "reports",
+          "module": "report",
+          "module_path": "apps\\api\\src\\modules\\report",
+          "models": [
+            "CashIn",
+            "CashOut",
+            "Counterparty",
+            "CounterpartyBalance",
+            "CustomerOrder",
+            "Demand",
+            "Employee",
+            "InvoiceOut",
+            "Organization",
+            "PaymentIn",
+            "PaymentOut",
+            "Product",
+            "SalesReturn",
+            "Stock",
+            "Store",
+            "Task"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "reports/stock-balance",
+      "page_file": "apps\\web\\src\\app\\(app)\\reports\\stock-balance\\page.tsx",
+      "feature": "reports",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/reports/stock-balance",
+          "prefix": "reports",
+          "module": "report",
+          "module_path": "apps\\api\\src\\modules\\report",
+          "models": [
+            "CashIn",
+            "CashOut",
+            "Counterparty",
+            "CounterpartyBalance",
+            "CustomerOrder",
+            "Demand",
+            "Employee",
+            "InvoiceOut",
+            "Organization",
+            "PaymentIn",
+            "PaymentOut",
+            "Product",
+            "SalesReturn",
+            "Stock",
+            "Store",
+            "Task"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/stores",
+          "prefix": "stores",
+          "module": "reference",
+          "module_path": "apps\\api\\src\\modules\\reference",
+          "models": [
+            "CashDesk",
+            "Employee",
+            "Organization",
+            "OrganizationAccount",
+            "Store"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "retail",
+      "page_file": "apps\\web\\src\\app\\(app)\\retail\\page.tsx",
+      "feature": "retail",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/cashier-sessions/current",
+          "prefix": "cashier-sessions",
+          "module": "cashier-session",
+          "module_path": "apps\\api\\src\\modules\\cashier-session",
+          "models": [
+            "CashDesk",
+            "CashierSession",
+            "Organization",
+            "RetailSale",
+            "Store"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/retail-sales",
+          "prefix": "retail-sales",
+          "module": "retail-sale",
+          "module_path": "apps\\api\\src\\modules\\retail-sale",
+          "models": [
+            "CashDesk",
+            "CashierSession",
+            "RetailSale",
+            "RetailSalePosition"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "retail/sales",
+      "page_file": "apps\\web\\src\\app\\(app)\\retail\\sales\\page.tsx",
+      "feature": "retail",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/retail-sales",
+          "prefix": "retail-sales",
+          "module": "retail-sale",
+          "module_path": "apps\\api\\src\\modules\\retail-sale",
+          "models": [
+            "CashDesk",
+            "CashierSession",
+            "RetailSale",
+            "RetailSalePosition"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "retail/sales/[id]",
+      "page_file": "apps\\web\\src\\app\\(app)\\retail\\sales\\[id]\\page.tsx",
+      "feature": "retail",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/retail-sales/:id",
+          "prefix": "retail-sales",
+          "module": "retail-sale",
+          "module_path": "apps\\api\\src\\modules\\retail-sale",
+          "models": [
+            "CashDesk",
+            "CashierSession",
+            "RetailSale",
+            "RetailSalePosition"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "retail/sessions",
+      "page_file": "apps\\web\\src\\app\\(app)\\retail\\sessions\\page.tsx",
+      "feature": "retail",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/cashier-sessions",
+          "prefix": "cashier-sessions",
+          "module": "cashier-session",
+          "module_path": "apps\\api\\src\\modules\\cashier-session",
+          "models": [
+            "CashDesk",
+            "CashierSession",
+            "Organization",
+            "RetailSale",
+            "Store"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "retail/sessions/[id]",
+      "page_file": "apps\\web\\src\\app\\(app)\\retail\\sessions\\[id]\\page.tsx",
+      "feature": "retail",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/cashier-sessions/:id",
+          "prefix": "cashier-sessions",
+          "module": "cashier-session",
+          "module_path": "apps\\api\\src\\modules\\cashier-session",
+          "models": [
+            "CashDesk",
+            "CashierSession",
+            "Organization",
+            "RetailSale",
+            "Store"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/retail-sales/z-report",
+          "prefix": "retail-sales",
+          "module": "retail-sale",
+          "module_path": "apps\\api\\src\\modules\\retail-sale",
+          "models": [
+            "CashDesk",
+            "CashierSession",
+            "RetailSale",
+            "RetailSalePosition"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "retail/z-report",
+      "page_file": "apps\\web\\src\\app\\(app)\\retail\\z-report\\page.tsx",
+      "feature": "retail",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/cashier-sessions",
+          "prefix": "cashier-sessions",
+          "module": "cashier-session",
+          "module_path": "apps\\api\\src\\modules\\cashier-session",
+          "models": [
+            "CashDesk",
+            "CashierSession",
+            "Organization",
+            "RetailSale",
+            "Store"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "sales-returns",
+      "page_file": "apps\\web\\src\\app\\(app)\\sales-returns\\page.tsx",
+      "feature": "sales-returns",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/counterparties",
+          "prefix": "counterparties",
+          "module": "counterparty",
+          "module_path": "apps\\api\\src\\modules\\counterparty",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "CounterpartyAccount"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/organizations",
+          "prefix": "organizations",
+          "module": "reference",
+          "module_path": "apps\\api\\src\\modules\\reference",
+          "models": [
+            "CashDesk",
+            "Employee",
+            "Organization",
+            "OrganizationAccount",
+            "Store"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/sales-returns",
+          "prefix": "sales-returns",
+          "module": "sales-return",
+          "module_path": "apps\\api\\src\\modules\\sales-return",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "CustomerOrder",
+            "Demand",
+            "DemandPosition",
+            "Organization",
+            "SalesReturn",
+            "SalesReturnPosition",
+            "Store"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/stores",
+          "prefix": "stores",
+          "module": "reference",
+          "module_path": "apps\\api\\src\\modules\\reference",
+          "models": [
+            "CashDesk",
+            "Employee",
+            "Organization",
+            "OrganizationAccount",
+            "Store"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "sales-returns/[id]",
+      "page_file": "apps\\web\\src\\app\\(app)\\sales-returns\\[id]\\page.tsx",
+      "feature": "sales-returns",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/products",
+          "prefix": "products",
+          "module": "product",
+          "module_path": "apps\\api\\src\\modules\\product",
+          "models": [
+            "AuditLog",
+            "Product",
+            "ProductPack"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/sales-returns/:id/clone",
+          "prefix": "sales-returns",
+          "module": "sales-return",
+          "module_path": "apps\\api\\src\\modules\\sales-return",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "CustomerOrder",
+            "Demand",
+            "DemandPosition",
+            "Organization",
+            "SalesReturn",
+            "SalesReturnPosition",
+            "Store"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "sales-returns/new",
+      "page_file": "apps\\web\\src\\app\\(app)\\sales-returns\\new\\page.tsx",
+      "feature": "sales-returns",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/organizations",
+          "prefix": "organizations",
+          "module": "reference",
+          "module_path": "apps\\api\\src\\modules\\reference",
+          "models": [
+            "CashDesk",
+            "Employee",
+            "Organization",
+            "OrganizationAccount",
+            "Store"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/products",
+          "prefix": "products",
+          "module": "product",
+          "module_path": "apps\\api\\src\\modules\\product",
+          "models": [
+            "AuditLog",
+            "Product",
+            "ProductPack"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/stores",
+          "prefix": "stores",
+          "module": "reference",
+          "module_path": "apps\\api\\src\\modules\\reference",
+          "models": [
+            "CashDesk",
+            "Employee",
+            "Organization",
+            "OrganizationAccount",
+            "Store"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/sales-returns",
+          "prefix": "sales-returns",
+          "module": "sales-return",
+          "module_path": "apps\\api\\src\\modules\\sales-return",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "CustomerOrder",
+            "Demand",
+            "DemandPosition",
+            "Organization",
+            "SalesReturn",
+            "SalesReturnPosition",
+            "Store"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "service-requests",
+      "page_file": "apps\\web\\src\\app\\(app)\\service-requests\\page.tsx",
+      "feature": "service-requests",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/service-requests",
+          "prefix": "service-requests",
+          "module": "service-desk",
+          "module_path": "apps\\api\\src\\modules\\service-desk",
+          "models": [
+            "AuditLog",
+            "ContactPerson",
+            "Counterparty",
+            "Employee",
+            "ServiceRequest"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "services",
+      "page_file": "apps\\web\\src\\app\\(app)\\services\\page.tsx",
+      "feature": "services",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/products",
+          "prefix": "products",
+          "module": "product",
+          "module_path": "apps\\api\\src\\modules\\product",
+          "models": [
+            "AuditLog",
+            "Product",
+            "ProductPack"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "services/new",
+      "page_file": "apps\\web\\src\\app\\(app)\\services\\new\\page.tsx",
+      "feature": "services",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/product-folders",
+          "prefix": "product-folders",
+          "module": "product-folder",
+          "module_path": "apps\\api\\src\\modules\\product-folder",
+          "models": [
+            "AuditLog",
+            "ProductFolder"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/products",
+          "prefix": "products",
+          "module": "product",
+          "module_path": "apps\\api\\src\\modules\\product",
+          "models": [
+            "AuditLog",
+            "Product",
+            "ProductPack"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "settings",
+      "page_file": "apps\\web\\src\\app\\(app)\\settings\\page.tsx",
+      "feature": "settings",
+      "endpoints": []
+    },
+    {
+      "route": "settings/attributes",
+      "page_file": "apps\\web\\src\\app\\(app)\\settings\\attributes\\page.tsx",
+      "feature": "settings",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/attribute-metadata",
+          "prefix": "attribute-metadata",
+          "module": "attribute-metadata",
+          "module_path": "apps\\api\\src\\modules\\attribute-metadata",
+          "models": [
+            "AttributeMetadata",
+            "CustomEntity"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "settings/audit-log",
+      "page_file": "apps\\web\\src\\app\\(app)\\settings\\audit-log\\page.tsx",
+      "feature": "settings",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/admin/audit-logs",
+          "prefix": "admin/audit-logs",
+          "module": "audit-log",
+          "module_path": "apps\\api\\src\\modules\\audit-log",
+          "models": [
+            "AuditLog"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "settings/bank-accounts",
+      "page_file": "apps\\web\\src\\app\\(app)\\settings\\bank-accounts\\page.tsx",
+      "feature": "settings",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/admin/organization-accounts",
+          "prefix": "admin/organization-accounts",
+          "module": "organization-account",
+          "module_path": "apps\\api\\src\\modules\\organization-account",
+          "models": [
+            "MoneyOperation",
+            "OrganizationAccount"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "settings/bank-accounts/[id]",
+      "page_file": "apps\\web\\src\\app\\(app)\\settings\\bank-accounts\\[id]\\page.tsx",
+      "feature": "settings",
+      "endpoints": [
+        {
+          "verb": "DELETE",
+          "url": "/admin/organization-accounts/:id",
+          "prefix": "admin/organization-accounts",
+          "module": "organization-account",
+          "module_path": "apps\\api\\src\\modules\\organization-account",
+          "models": [
+            "MoneyOperation",
+            "OrganizationAccount"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/admin/organization-accounts/:id",
+          "prefix": "admin/organization-accounts",
+          "module": "organization-account",
+          "module_path": "apps\\api\\src\\modules\\organization-account",
+          "models": [
+            "MoneyOperation",
+            "OrganizationAccount"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/admin/organizations",
+          "prefix": "admin/organizations",
+          "module": "organization",
+          "module_path": "apps\\api\\src\\modules\\organization",
+          "models": [
+            "Demand",
+            "InvoiceOut",
+            "Organization",
+            "PaymentIn",
+            "Supply"
+          ]
+        },
+        {
+          "verb": "PATCH",
+          "url": "/admin/organization-accounts/:id",
+          "prefix": "admin/organization-accounts",
+          "module": "organization-account",
+          "module_path": "apps\\api\\src\\modules\\organization-account",
+          "models": [
+            "MoneyOperation",
+            "OrganizationAccount"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/admin/organization-accounts/:id/archive",
+          "prefix": "admin/organization-accounts",
+          "module": "organization-account",
+          "module_path": "apps\\api\\src\\modules\\organization-account",
+          "models": [
+            "MoneyOperation",
+            "OrganizationAccount"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/admin/organization-accounts/:id/restore",
+          "prefix": "admin/organization-accounts",
+          "module": "organization-account",
+          "module_path": "apps\\api\\src\\modules\\organization-account",
+          "models": [
+            "MoneyOperation",
+            "OrganizationAccount"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "settings/bank-accounts/new",
+      "page_file": "apps\\web\\src\\app\\(app)\\settings\\bank-accounts\\new\\page.tsx",
+      "feature": "settings",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/admin/organizations",
+          "prefix": "admin/organizations",
+          "module": "organization",
+          "module_path": "apps\\api\\src\\modules\\organization",
+          "models": [
+            "Demand",
+            "InvoiceOut",
+            "Organization",
+            "PaymentIn",
+            "Supply"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/admin/organization-accounts",
+          "prefix": "admin/organization-accounts",
+          "module": "organization-account",
+          "module_path": "apps\\api\\src\\modules\\organization-account",
+          "models": [
+            "MoneyOperation",
+            "OrganizationAccount"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "settings/cash-desks",
+      "page_file": "apps\\web\\src\\app\\(app)\\settings\\cash-desks\\page.tsx",
+      "feature": "settings",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/admin/cash-desks",
+          "prefix": "admin/cash-desks",
+          "module": "cash-desk",
+          "module_path": "apps\\api\\src\\modules\\cash-desk",
+          "models": [
+            "CashDesk",
+            "CashIn",
+            "CashOut"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "settings/cash-desks/[id]",
+      "page_file": "apps\\web\\src\\app\\(app)\\settings\\cash-desks\\[id]\\page.tsx",
+      "feature": "settings",
+      "endpoints": [
+        {
+          "verb": "DELETE",
+          "url": "/admin/cash-desks/:id",
+          "prefix": "admin/cash-desks",
+          "module": "cash-desk",
+          "module_path": "apps\\api\\src\\modules\\cash-desk",
+          "models": [
+            "CashDesk",
+            "CashIn",
+            "CashOut"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/admin/cash-desks/:id",
+          "prefix": "admin/cash-desks",
+          "module": "cash-desk",
+          "module_path": "apps\\api\\src\\modules\\cash-desk",
+          "models": [
+            "CashDesk",
+            "CashIn",
+            "CashOut"
+          ]
+        },
+        {
+          "verb": "PATCH",
+          "url": "/admin/cash-desks/:id",
+          "prefix": "admin/cash-desks",
+          "module": "cash-desk",
+          "module_path": "apps\\api\\src\\modules\\cash-desk",
+          "models": [
+            "CashDesk",
+            "CashIn",
+            "CashOut"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/admin/cash-desks/:id/archive",
+          "prefix": "admin/cash-desks",
+          "module": "cash-desk",
+          "module_path": "apps\\api\\src\\modules\\cash-desk",
+          "models": [
+            "CashDesk",
+            "CashIn",
+            "CashOut"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/admin/cash-desks/:id/restore",
+          "prefix": "admin/cash-desks",
+          "module": "cash-desk",
+          "module_path": "apps\\api\\src\\modules\\cash-desk",
+          "models": [
+            "CashDesk",
+            "CashIn",
+            "CashOut"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "settings/cash-desks/new",
+      "page_file": "apps\\web\\src\\app\\(app)\\settings\\cash-desks\\new\\page.tsx",
+      "feature": "settings",
+      "endpoints": [
+        {
+          "verb": "POST",
+          "url": "/admin/cash-desks",
+          "prefix": "admin/cash-desks",
+          "module": "cash-desk",
+          "module_path": "apps\\api\\src\\modules\\cash-desk",
+          "models": [
+            "CashDesk",
+            "CashIn",
+            "CashOut"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "settings/email",
+      "page_file": "apps\\web\\src\\app\\(app)\\settings\\email\\page.tsx",
+      "feature": "settings",
+      "endpoints": [
+        {
+          "verb": "DELETE",
+          "url": "/email/config",
+          "prefix": "email",
+          "module": "email",
+          "module_path": "apps\\api\\src\\modules\\email",
+          "models": [
+            "Attachment",
+            "EmailConfig",
+            "EmailLog"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/email/config",
+          "prefix": "email",
+          "module": "email",
+          "module_path": "apps\\api\\src\\modules\\email",
+          "models": [
+            "Attachment",
+            "EmailConfig",
+            "EmailLog"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/email/config/test",
+          "prefix": "email",
+          "module": "email",
+          "module_path": "apps\\api\\src\\modules\\email",
+          "models": [
+            "Attachment",
+            "EmailConfig",
+            "EmailLog"
+          ]
+        },
+        {
+          "verb": "PUT",
+          "url": "/email/config",
+          "prefix": "email",
+          "module": "email",
+          "module_path": "apps\\api\\src\\modules\\email",
+          "models": [
+            "Attachment",
+            "EmailConfig",
+            "EmailLog"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "settings/email/log",
+      "page_file": "apps\\web\\src\\app\\(app)\\settings\\email\\log\\page.tsx",
+      "feature": "settings",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/email/logs",
+          "prefix": "email",
+          "module": "email",
+          "module_path": "apps\\api\\src\\modules\\email",
+          "models": [
+            "Attachment",
+            "EmailConfig",
+            "EmailLog"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "settings/exchange-rates",
+      "page_file": "apps\\web\\src\\app\\(app)\\settings\\exchange-rates\\page.tsx",
+      "feature": "settings",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/exchange-rates/latest",
+          "prefix": "exchange-rates",
+          "module": "exchange-rate",
+          "module_path": "apps\\api\\src\\modules\\exchange-rate",
+          "models": [
+            "ExchangeRate"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/exchange-rates/sync",
+          "prefix": "exchange-rates",
+          "module": "exchange-rate",
+          "module_path": "apps\\api\\src\\modules\\exchange-rate",
+          "models": [
+            "ExchangeRate"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "settings/mxik",
+      "page_file": "apps\\web\\src\\app\\(app)\\settings\\mxik\\page.tsx",
+      "feature": "settings",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/mxik",
+          "prefix": "mxik",
+          "module": "mxik",
+          "module_path": "apps\\api\\src\\modules\\mxik",
+          "models": [
+            "MxikCode"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "settings/mxik/import",
+      "page_file": "apps\\web\\src\\app\\(app)\\settings\\mxik\\import\\page.tsx",
+      "feature": "settings",
+      "endpoints": [
+        {
+          "verb": "POST",
+          "url": "/mxik/bulk-import",
+          "prefix": "mxik",
+          "module": "mxik",
+          "module_path": "apps\\api\\src\\modules\\mxik",
+          "models": [
+            "MxikCode"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "settings/organizations",
+      "page_file": "apps\\web\\src\\app\\(app)\\settings\\organizations\\page.tsx",
+      "feature": "settings",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/admin/organizations",
+          "prefix": "admin/organizations",
+          "module": "organization",
+          "module_path": "apps\\api\\src\\modules\\organization",
+          "models": [
+            "Demand",
+            "InvoiceOut",
+            "Organization",
+            "PaymentIn",
+            "Supply"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "settings/organizations/[id]",
+      "page_file": "apps\\web\\src\\app\\(app)\\settings\\organizations\\[id]\\page.tsx",
+      "feature": "settings",
+      "endpoints": [
+        {
+          "verb": "DELETE",
+          "url": "/admin/organizations/:id",
+          "prefix": "admin/organizations",
+          "module": "organization",
+          "module_path": "apps\\api\\src\\modules\\organization",
+          "models": [
+            "Demand",
+            "InvoiceOut",
+            "Organization",
+            "PaymentIn",
+            "Supply"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/admin/organizations/:id",
+          "prefix": "admin/organizations",
+          "module": "organization",
+          "module_path": "apps\\api\\src\\modules\\organization",
+          "models": [
+            "Demand",
+            "InvoiceOut",
+            "Organization",
+            "PaymentIn",
+            "Supply"
+          ]
+        },
+        {
+          "verb": "PATCH",
+          "url": "/admin/organizations/:id",
+          "prefix": "admin/organizations",
+          "module": "organization",
+          "module_path": "apps\\api\\src\\modules\\organization",
+          "models": [
+            "Demand",
+            "InvoiceOut",
+            "Organization",
+            "PaymentIn",
+            "Supply"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/admin/organizations/:id/archive",
+          "prefix": "admin/organizations",
+          "module": "organization",
+          "module_path": "apps\\api\\src\\modules\\organization",
+          "models": [
+            "Demand",
+            "InvoiceOut",
+            "Organization",
+            "PaymentIn",
+            "Supply"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/admin/organizations/:id/restore",
+          "prefix": "admin/organizations",
+          "module": "organization",
+          "module_path": "apps\\api\\src\\modules\\organization",
+          "models": [
+            "Demand",
+            "InvoiceOut",
+            "Organization",
+            "PaymentIn",
+            "Supply"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "settings/organizations/new",
+      "page_file": "apps\\web\\src\\app\\(app)\\settings\\organizations\\new\\page.tsx",
+      "feature": "settings",
+      "endpoints": [
+        {
+          "verb": "POST",
+          "url": "/admin/organizations",
+          "prefix": "admin/organizations",
+          "module": "organization",
+          "module_path": "apps\\api\\src\\modules\\organization",
+          "models": [
+            "Demand",
+            "InvoiceOut",
+            "Organization",
+            "PaymentIn",
+            "Supply"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "settings/price-types",
+      "page_file": "apps\\web\\src\\app\\(app)\\settings\\price-types\\page.tsx",
+      "feature": "settings",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/price-types",
+          "prefix": "price-types",
+          "module": "price-type",
+          "module_path": "apps\\api\\src\\modules\\price-type",
+          "models": [
+            "PriceType"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "settings/price-types/[id]",
+      "page_file": "apps\\web\\src\\app\\(app)\\settings\\price-types\\[id]\\page.tsx",
+      "feature": "settings",
+      "endpoints": [
+        {
+          "verb": "DELETE",
+          "url": "/price-types/:id",
+          "prefix": "price-types",
+          "module": "price-type",
+          "module_path": "apps\\api\\src\\modules\\price-type",
+          "models": [
+            "PriceType"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/price-types/:id",
+          "prefix": "price-types",
+          "module": "price-type",
+          "module_path": "apps\\api\\src\\modules\\price-type",
+          "models": [
+            "PriceType"
+          ]
+        },
+        {
+          "verb": "PATCH",
+          "url": "/price-types/:id",
+          "prefix": "price-types",
+          "module": "price-type",
+          "module_path": "apps\\api\\src\\modules\\price-type",
+          "models": [
+            "PriceType"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/price-types/:id/archive",
+          "prefix": "price-types",
+          "module": "price-type",
+          "module_path": "apps\\api\\src\\modules\\price-type",
+          "models": [
+            "PriceType"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/price-types/:id/restore",
+          "prefix": "price-types",
+          "module": "price-type",
+          "module_path": "apps\\api\\src\\modules\\price-type",
+          "models": [
+            "PriceType"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "settings/price-types/new",
+      "page_file": "apps\\web\\src\\app\\(app)\\settings\\price-types\\new\\page.tsx",
+      "feature": "settings",
+      "endpoints": [
+        {
+          "verb": "POST",
+          "url": "/price-types",
+          "prefix": "price-types",
+          "module": "price-type",
+          "module_path": "apps\\api\\src\\modules\\price-type",
+          "models": [
+            "PriceType"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "settings/print-templates",
+      "page_file": "apps\\web\\src\\app\\(app)\\settings\\print-templates\\page.tsx",
+      "feature": "settings",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/print-templates",
+          "prefix": "print-templates",
+          "module": "print-template",
+          "module_path": "apps\\api\\src\\modules\\print-template",
+          "models": [
+            "PrintTemplate"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "settings/stores",
+      "page_file": "apps\\web\\src\\app\\(app)\\settings\\stores\\page.tsx",
+      "feature": "settings",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/admin/stores",
+          "prefix": "admin/stores",
+          "module": "store",
+          "module_path": "apps\\api\\src\\modules\\store",
+          "models": [
+            "Stock",
+            "Store"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "settings/stores/[id]",
+      "page_file": "apps\\web\\src\\app\\(app)\\settings\\stores\\[id]\\page.tsx",
+      "feature": "settings",
+      "endpoints": [
+        {
+          "verb": "DELETE",
+          "url": "/admin/stores/:id",
+          "prefix": "admin/stores",
+          "module": "store",
+          "module_path": "apps\\api\\src\\modules\\store",
+          "models": [
+            "Stock",
+            "Store"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/admin/stores",
+          "prefix": "admin/stores",
+          "module": "store",
+          "module_path": "apps\\api\\src\\modules\\store",
+          "models": [
+            "Stock",
+            "Store"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/admin/stores/:id",
+          "prefix": "admin/stores",
+          "module": "store",
+          "module_path": "apps\\api\\src\\modules\\store",
+          "models": [
+            "Stock",
+            "Store"
+          ]
+        },
+        {
+          "verb": "PATCH",
+          "url": "/admin/stores/:id",
+          "prefix": "admin/stores",
+          "module": "store",
+          "module_path": "apps\\api\\src\\modules\\store",
+          "models": [
+            "Stock",
+            "Store"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/admin/stores/:id/archive",
+          "prefix": "admin/stores",
+          "module": "store",
+          "module_path": "apps\\api\\src\\modules\\store",
+          "models": [
+            "Stock",
+            "Store"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/admin/stores/:id/restore",
+          "prefix": "admin/stores",
+          "module": "store",
+          "module_path": "apps\\api\\src\\modules\\store",
+          "models": [
+            "Stock",
+            "Store"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "settings/stores/new",
+      "page_file": "apps\\web\\src\\app\\(app)\\settings\\stores\\new\\page.tsx",
+      "feature": "settings",
+      "endpoints": [
+        {
+          "verb": "POST",
+          "url": "/admin/stores",
+          "prefix": "admin/stores",
+          "module": "store",
+          "module_path": "apps\\api\\src\\modules\\store",
+          "models": [
+            "Stock",
+            "Store"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "settings/users",
+      "page_file": "apps\\web\\src\\app\\(app)\\settings\\users\\page.tsx",
+      "feature": "settings",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/auth/me",
+          "prefix": "auth",
+          "module": "auth",
+          "module_path": "apps\\api\\src\\modules\\auth",
+          "models": [
+            "Employee",
+            "RefreshToken"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "settings/users/[id]",
+      "page_file": "apps\\web\\src\\app\\(app)\\settings\\users\\[id]\\page.tsx",
+      "feature": "settings",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/auth/me",
+          "prefix": "auth",
+          "module": "auth",
+          "module_path": "apps\\api\\src\\modules\\auth",
+          "models": [
+            "Employee",
+            "RefreshToken"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "settings/webhooks",
+      "page_file": "apps\\web\\src\\app\\(app)\\settings\\webhooks\\page.tsx",
+      "feature": "settings",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/webhook",
+          "prefix": "webhook",
+          "module": "webhook",
+          "module_path": "apps\\api\\src\\modules\\webhook",
+          "models": [
+            "Webhook",
+            "WebhookDelivery",
+            "WebhookStock"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "settings/webhooks/[id]/deliveries",
+      "page_file": "apps\\web\\src\\app\\(app)\\settings\\webhooks\\[id]\\deliveries\\page.tsx",
+      "feature": "settings",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/webhook/:id/deliveries",
+          "prefix": "webhook",
+          "module": "webhook",
+          "module_path": "apps\\api\\src\\modules\\webhook",
+          "models": [
+            "Webhook",
+            "WebhookDelivery",
+            "WebhookStock"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "supplies",
+      "page_file": "apps\\web\\src\\app\\(app)\\supplies\\page.tsx",
+      "feature": "supplies",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/supplies",
+          "prefix": "supplies",
+          "module": "supply",
+          "module_path": "apps\\api\\src\\modules\\supply",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "Organization",
+            "PurchaseOrder",
+            "Store",
+            "Supply",
+            "SupplyPosition"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "supplies/[id]",
+      "page_file": "apps\\web\\src\\app\\(app)\\supplies\\[id]\\page.tsx",
+      "feature": "supplies",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/products",
+          "prefix": "products",
+          "module": "product",
+          "module_path": "apps\\api\\src\\modules\\product",
+          "models": [
+            "AuditLog",
+            "Product",
+            "ProductPack"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/supplies/:id/clone",
+          "prefix": "supplies",
+          "module": "supply",
+          "module_path": "apps\\api\\src\\modules\\supply",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "Organization",
+            "PurchaseOrder",
+            "Store",
+            "Supply",
+            "SupplyPosition"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "supplies/new",
+      "page_file": "apps\\web\\src\\app\\(app)\\supplies\\new\\page.tsx",
+      "feature": "supplies",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/organizations",
+          "prefix": "organizations",
+          "module": "reference",
+          "module_path": "apps\\api\\src\\modules\\reference",
+          "models": [
+            "CashDesk",
+            "Employee",
+            "Organization",
+            "OrganizationAccount",
+            "Store"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/products",
+          "prefix": "products",
+          "module": "product",
+          "module_path": "apps\\api\\src\\modules\\product",
+          "models": [
+            "AuditLog",
+            "Product",
+            "ProductPack"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/stores",
+          "prefix": "stores",
+          "module": "reference",
+          "module_path": "apps\\api\\src\\modules\\reference",
+          "models": [
+            "CashDesk",
+            "Employee",
+            "Organization",
+            "OrganizationAccount",
+            "Store"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/supplies",
+          "prefix": "supplies",
+          "module": "supply",
+          "module_path": "apps\\api\\src\\modules\\supply",
+          "models": [
+            "AuditLog",
+            "Counterparty",
+            "Organization",
+            "PurchaseOrder",
+            "Store",
+            "Supply",
+            "SupplyPosition"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "tasks",
+      "page_file": "apps\\web\\src\\app\\(app)\\tasks\\page.tsx",
+      "feature": "tasks",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/tasks",
+          "prefix": "tasks",
+          "module": "task",
+          "module_path": "apps\\api\\src\\modules\\task",
+          "models": [
+            "Employee",
+            "Task"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "tasks/[id]",
+      "page_file": "apps\\web\\src\\app\\(app)\\tasks\\[id]\\page.tsx",
+      "feature": "tasks",
+      "endpoints": [
+        {
+          "verb": "DELETE",
+          "url": "/tasks/:id",
+          "prefix": "tasks",
+          "module": "task",
+          "module_path": "apps\\api\\src\\modules\\task",
+          "models": [
+            "Employee",
+            "Task"
+          ]
+        },
+        {
+          "verb": "GET",
+          "url": "/tasks/:id",
+          "prefix": "tasks",
+          "module": "task",
+          "module_path": "apps\\api\\src\\modules\\task",
+          "models": [
+            "Employee",
+            "Task"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/tasks/:id/${archive ",
+          "prefix": "tasks",
+          "module": "task",
+          "module_path": "apps\\api\\src\\modules\\task",
+          "models": [
+            "Employee",
+            "Task"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/tasks/:id/transition",
+          "prefix": "tasks",
+          "module": "task",
+          "module_path": "apps\\api\\src\\modules\\task",
+          "models": [
+            "Employee",
+            "Task"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "tasks/new",
+      "page_file": "apps\\web\\src\\app\\(app)\\tasks\\new\\page.tsx",
+      "feature": "tasks",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/employees",
+          "prefix": "employees",
+          "module": "reference",
+          "module_path": "apps\\api\\src\\modules\\reference",
+          "models": [
+            "CashDesk",
+            "Employee",
+            "Organization",
+            "OrganizationAccount",
+            "Store"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/tasks",
+          "prefix": "tasks",
+          "module": "task",
+          "module_path": "apps\\api\\src\\modules\\task",
+          "models": [
+            "Employee",
+            "Task"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "variants",
+      "page_file": "apps\\web\\src\\app\\(app)\\variants\\page.tsx",
+      "feature": "variants",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/variants",
+          "prefix": "variants",
+          "module": "variant",
+          "module_path": "apps\\api\\src\\modules\\variant",
+          "models": [
+            "Product",
+            "Variant"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "variants/new",
+      "page_file": "apps\\web\\src\\app\\(app)\\variants\\new\\page.tsx",
+      "feature": "variants",
+      "endpoints": [
+        {
+          "verb": "GET",
+          "url": "/products",
+          "prefix": "products",
+          "module": "product",
+          "module_path": "apps\\api\\src\\modules\\product",
+          "models": [
+            "AuditLog",
+            "Product",
+            "ProductPack"
+          ]
+        },
+        {
+          "verb": "POST",
+          "url": "/variants",
+          "prefix": "variants",
+          "module": "variant",
+          "module_path": "apps\\api\\src\\modules\\variant",
+          "models": [
+            "Product",
+            "Variant"
+          ]
+        }
+      ]
+    }
+  ],
+  "prefix_index": {
+    "reports": {
+      "module": "report",
+      "module_path": "apps\\api\\src\\modules\\report",
+      "models": [
+        "CashIn",
+        "CashOut",
+        "Counterparty",
+        "CounterpartyBalance",
+        "CustomerOrder",
+        "Demand",
+        "Employee",
+        "InvoiceOut",
+        "Organization",
+        "PaymentIn",
+        "PaymentOut",
+        "Product",
+        "SalesReturn",
+        "Stock",
+        "Store",
+        "Task"
+      ]
+    },
+    "app-installs": {
+      "module": "app-install",
+      "module_path": "apps\\api\\src\\modules\\app-install",
+      "models": [
+        "AppInstall"
+      ]
+    },
+    "bank-import": {
+      "module": "bank-import",
+      "module_path": "apps\\api\\src\\modules\\bank-import",
+      "models": [
+        "BankStatement",
+        "BankStatementRow",
+        "Counterparty",
+        "PaymentIn",
+        "PaymentOut"
+      ]
+    },
+    "organizations": {
+      "module": "reference",
+      "module_path": "apps\\api\\src\\modules\\reference",
+      "models": [
+        "CashDesk",
+        "Employee",
+        "Organization",
+        "OrganizationAccount",
+        "Store"
+      ]
+    },
+    "products": {
+      "module": "product",
+      "module_path": "apps\\api\\src\\modules\\product",
+      "models": [
+        "AuditLog",
+        "Product",
+        "ProductPack"
+      ]
+    },
+    "calls": {
+      "module": "call",
+      "module_path": "apps\\api\\src\\modules\\call",
+      "models": [
+        "Call",
+        "ContactPerson",
+        "Counterparty"
+      ]
+    },
+    "contact-persons": {
+      "module": "contact-person",
+      "module_path": "apps\\api\\src\\modules\\contact-person",
+      "models": [
+        "ContactPerson",
+        "Counterparty"
+      ]
+    },
+    "counterparties": {
+      "module": "counterparty",
+      "module_path": "apps\\api\\src\\modules\\counterparty",
+      "models": [
+        "AuditLog",
+        "Counterparty",
+        "CounterpartyAccount"
+      ]
+    },
+    "cash-in": {
+      "module": "cash-in",
+      "module_path": "apps\\api\\src\\modules\\cash-in",
+      "models": [
+        "AuditLog",
+        "CashDesk",
+        "CashIn",
+        "CashInOperation",
+        "Counterparty",
+        "InvoiceOut",
+        "Organization"
+      ]
+    },
+    "cash-desks": {
+      "module": "reference",
+      "module_path": "apps\\api\\src\\modules\\reference",
+      "models": [
+        "CashDesk",
+        "Employee",
+        "Organization",
+        "OrganizationAccount",
+        "Store"
+      ]
+    },
+    "invoices-out": {
+      "module": "invoice-out",
+      "module_path": "apps\\api\\src\\modules\\invoice-out",
+      "models": [
+        "AuditLog",
+        "Counterparty",
+        "CustomerOrder",
+        "InvoiceOut",
+        "InvoiceOutPosition",
+        "Organization"
+      ]
+    },
+    "cash-out": {
+      "module": "cash-out",
+      "module_path": "apps\\api\\src\\modules\\cash-out",
+      "models": [
+        "AuditLog",
+        "CashDesk",
+        "CashOut",
+        "CashOutOperation",
+        "Counterparty",
+        "InvoiceIn",
+        "Organization"
+      ]
+    },
+    "invoices-in": {
+      "module": "invoice-in",
+      "module_path": "apps\\api\\src\\modules\\invoice-in",
+      "models": [
+        "AuditLog",
+        "Counterparty",
+        "InvoiceIn",
+        "InvoiceInPosition",
+        "Organization",
+        "PurchaseOrder"
+      ]
+    },
+    "customer-orders": {
+      "module": "customer-order",
+      "module_path": "apps\\api\\src\\modules\\customer-order",
+      "models": [
+        "AuditLog",
+        "Counterparty",
+        "CustomerOrder",
+        "CustomerOrderPosition",
+        "Demand",
+        "InvoiceOut",
+        "Organization",
+        "Store"
+      ]
+    },
+    "projects": {
+      "module": "project",
+      "module_path": "apps\\api\\src\\modules\\project",
+      "models": [
+        "Project"
+      ]
+    },
+    "stores": {
+      "module": "reference",
+      "module_path": "apps\\api\\src\\modules\\reference",
+      "models": [
+        "CashDesk",
+        "Employee",
+        "Organization",
+        "OrganizationAccount",
+        "Store"
+      ]
+    },
+    "demands": {
+      "module": "demand",
+      "module_path": "apps\\api\\src\\modules\\demand",
+      "models": [
+        "AuditLog",
+        "Counterparty",
+        "CustomerOrder",
+        "Demand",
+        "DemandPosition",
+        "DemandPositionCostConsumption",
+        "Organization",
+        "Store",
+        "SupplyPosition"
+      ]
+    },
+    "online-orders": {
+      "module": "online-order",
+      "module_path": "apps\\api\\src\\modules\\online-order",
+      "models": [
+        "OnlineOrder",
+        "SalesChannel"
+      ]
+    },
+    "sales-channels": {
+      "module": "sales-channel",
+      "module_path": "apps\\api\\src\\modules\\sales-channel",
+      "models": [
+        "OnlineOrder",
+        "SalesChannel"
+      ]
+    },
+    "enters": {
+      "module": "enter",
+      "module_path": "apps\\api\\src\\modules\\enter",
+      "models": [
+        "AuditLog",
+        "Enter",
+        "EnterPosition",
+        "Organization",
+        "Store"
+      ]
+    },
+    "inventories": {
+      "module": "inventory",
+      "module_path": "apps\\api\\src\\modules\\inventory",
+      "models": [
+        "AuditLog",
+        "Inventory",
+        "InventoryPosition",
+        "Organization",
+        "Stock",
+        "Store"
+      ]
+    },
+    "payments-out": {
+      "module": "payment-out",
+      "module_path": "apps\\api\\src\\modules\\payment-out",
+      "models": [
+        "AuditLog",
+        "Counterparty",
+        "InvoiceIn",
+        "Organization",
+        "PaymentOut",
+        "PaymentOutOperation",
+        "PurchaseOrder"
+      ]
+    },
+    "purchase-orders": {
+      "module": "purchase-order",
+      "module_path": "apps\\api\\src\\modules\\purchase-order",
+      "models": [
+        "AuditLog",
+        "Counterparty",
+        "Organization",
+        "PurchaseOrder",
+        "PurchaseOrderPosition",
+        "Store"
+      ]
+    },
+    "payments-in": {
+      "module": "payment-in",
+      "module_path": "apps\\api\\src\\modules\\payment-in",
+      "models": [
+        "AuditLog",
+        "Counterparty",
+        "InvoiceOut",
+        "Organization",
+        "PaymentIn",
+        "PaymentInOperation"
+      ]
+    },
+    "korzina": {
+      "module": "korzina",
+      "module_path": "apps\\api\\src\\modules\\korzina",
+      "models": []
+    },
+    "losses": {
+      "module": "loss",
+      "module_path": "apps\\api\\src\\modules\\loss",
+      "models": [
+        "AuditLog",
+        "Loss",
+        "LossPosition",
+        "Organization",
+        "Store"
+      ]
+    },
+    "moves": {
+      "module": "move",
+      "module_path": "apps\\api\\src\\modules\\move",
+      "models": [
+        "AuditLog",
+        "Move",
+        "MovePosition",
+        "Organization",
+        "Stock",
+        "Store"
+      ]
+    },
+    "opportunities": {
+      "module": "opportunity",
+      "module_path": "apps\\api\\src\\modules\\opportunity",
+      "models": [
+        "ContactPerson",
+        "Counterparty",
+        "Opportunity",
+        "PipelineStage"
+      ]
+    },
+    "pipelines": {
+      "module": "pipeline",
+      "module_path": "apps\\api\\src\\modules\\pipeline",
+      "models": [
+        "Opportunity",
+        "Pipeline",
+        "PipelineStage"
+      ]
+    },
+    "price-types": {
+      "module": "price-type",
+      "module_path": "apps\\api\\src\\modules\\price-type",
+      "models": [
+        "PriceType"
+      ]
+    },
+    "product-folders": {
+      "module": "product-folder",
+      "module_path": "apps\\api\\src\\modules\\product-folder",
+      "models": [
+        "AuditLog",
+        "ProductFolder"
+      ]
+    },
+    "boms": {
+      "module": "bom",
+      "module_path": "apps\\api\\src\\modules\\bom",
+      "models": [
+        "BillOfMaterials",
+        "BomComponent",
+        "Product"
+      ]
+    },
+    "work-orders": {
+      "module": "work-order",
+      "module_path": "apps\\api\\src\\modules\\work-order",
+      "models": [
+        "AuditLog",
+        "BillOfMaterials",
+        "Employee",
+        "Store",
+        "WorkOrder"
+      ]
+    },
+    "productions": {
+      "module": "production",
+      "module_path": "apps\\api\\src\\modules\\production",
+      "models": [
+        "AuditLog",
+        "CustomerOrder",
+        "Organization",
+        "ProcessingOrder",
+        "Production",
+        "Store"
+      ]
+    },
+    "supplies": {
+      "module": "supply",
+      "module_path": "apps\\api\\src\\modules\\supply",
+      "models": [
+        "AuditLog",
+        "Counterparty",
+        "Organization",
+        "PurchaseOrder",
+        "Store",
+        "Supply",
+        "SupplyPosition"
+      ]
+    },
+    "purchase-returns": {
+      "module": "purchase-return",
+      "module_path": "apps\\api\\src\\modules\\purchase-return",
+      "models": [
+        "AuditLog",
+        "Counterparty",
+        "Organization",
+        "PurchaseReturn",
+        "PurchaseReturnPosition",
+        "Store",
+        "Supply",
+        "SupplyPosition"
+      ]
+    },
+    "cashier-sessions": {
+      "module": "cashier-session",
+      "module_path": "apps\\api\\src\\modules\\cashier-session",
+      "models": [
+        "CashDesk",
+        "CashierSession",
+        "Organization",
+        "RetailSale",
+        "Store"
+      ]
+    },
+    "retail-sales": {
+      "module": "retail-sale",
+      "module_path": "apps\\api\\src\\modules\\retail-sale",
+      "models": [
+        "CashDesk",
+        "CashierSession",
+        "RetailSale",
+        "RetailSalePosition"
+      ]
+    },
+    "sales-returns": {
+      "module": "sales-return",
+      "module_path": "apps\\api\\src\\modules\\sales-return",
+      "models": [
+        "AuditLog",
+        "Counterparty",
+        "CustomerOrder",
+        "Demand",
+        "DemandPosition",
+        "Organization",
+        "SalesReturn",
+        "SalesReturnPosition",
+        "Store"
+      ]
+    },
+    "service-requests": {
+      "module": "service-desk",
+      "module_path": "apps\\api\\src\\modules\\service-desk",
+      "models": [
+        "AuditLog",
+        "ContactPerson",
+        "Counterparty",
+        "Employee",
+        "ServiceRequest"
+      ]
+    },
+    "attribute-metadata": {
+      "module": "attribute-metadata",
+      "module_path": "apps\\api\\src\\modules\\attribute-metadata",
+      "models": [
+        "AttributeMetadata",
+        "CustomEntity"
+      ]
+    },
+    "admin/audit-logs": {
+      "module": "audit-log",
+      "module_path": "apps\\api\\src\\modules\\audit-log",
+      "models": [
+        "AuditLog"
+      ]
+    },
+    "admin/organization-accounts": {
+      "module": "organization-account",
+      "module_path": "apps\\api\\src\\modules\\organization-account",
+      "models": [
+        "MoneyOperation",
+        "OrganizationAccount"
+      ]
+    },
+    "admin/organizations": {
+      "module": "organization",
+      "module_path": "apps\\api\\src\\modules\\organization",
+      "models": [
+        "Demand",
+        "InvoiceOut",
+        "Organization",
+        "PaymentIn",
+        "Supply"
+      ]
+    },
+    "admin/cash-desks": {
+      "module": "cash-desk",
+      "module_path": "apps\\api\\src\\modules\\cash-desk",
+      "models": [
+        "CashDesk",
+        "CashIn",
+        "CashOut"
+      ]
+    },
+    "email": {
+      "module": "email",
+      "module_path": "apps\\api\\src\\modules\\email",
+      "models": [
+        "Attachment",
+        "EmailConfig",
+        "EmailLog"
+      ]
+    },
+    "exchange-rates": {
+      "module": "exchange-rate",
+      "module_path": "apps\\api\\src\\modules\\exchange-rate",
+      "models": [
+        "ExchangeRate"
+      ]
+    },
+    "mxik": {
+      "module": "mxik",
+      "module_path": "apps\\api\\src\\modules\\mxik",
+      "models": [
+        "MxikCode"
+      ]
+    },
+    "print-templates": {
+      "module": "print-template",
+      "module_path": "apps\\api\\src\\modules\\print-template",
+      "models": [
+        "PrintTemplate"
+      ]
+    },
+    "admin/stores": {
+      "module": "store",
+      "module_path": "apps\\api\\src\\modules\\store",
+      "models": [
+        "Stock",
+        "Store"
+      ]
+    },
+    "auth": {
+      "module": "auth",
+      "module_path": "apps\\api\\src\\modules\\auth",
+      "models": [
+        "Employee",
+        "RefreshToken"
+      ]
+    },
+    "webhook": {
+      "module": "webhook",
+      "module_path": "apps\\api\\src\\modules\\webhook",
+      "models": [
+        "Webhook",
+        "WebhookDelivery",
+        "WebhookStock"
+      ]
+    },
+    "tasks": {
+      "module": "task",
+      "module_path": "apps\\api\\src\\modules\\task",
+      "models": [
+        "Employee",
+        "Task"
+      ]
+    },
+    "employees": {
+      "module": "reference",
+      "module_path": "apps\\api\\src\\modules\\reference",
+      "models": [
+        "CashDesk",
+        "Employee",
+        "Organization",
+        "OrganizationAccount",
+        "Store"
+      ]
+    },
+    "variants": {
+      "module": "variant",
+      "module_path": "apps\\api\\src\\modules\\variant",
+      "models": [
+        "Product",
+        "Variant"
+      ]
+    }
+  }
+}

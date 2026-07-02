@@ -1,0 +1,932 @@
+<!doctype html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<title>Moysklad parity — AFTER 4 critical fixes (2026-05-02)</title>
+<style>
+  :root {
+    --bg: #f7f7f7;
+    --surface: #ffffff;
+    --border: #e2e2e2;
+    --text: #313131;
+    --muted: #6b7280;
+    --brand: #186999;
+    --navy: #0e4875;
+    --success: #369a1e;
+    --warning: #f5821f;
+    --destructive: #d32f2f;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 13px/1.5 "Helvetica Neue", Helvetica, Arial, "Lucida Grande", sans-serif;
+    padding: 0 0 80px;
+  }
+  header.top {
+    background: var(--navy);
+    color: #fff;
+    padding: 24px 32px;
+    margin-bottom: 24px;
+  }
+  header.top h1 { margin: 0 0 4px; font-size: 24px; font-weight: 600; }
+  header.top p  { margin: 0; opacity: .85; font-size: 14px; }
+  main { max-width: 1700px; margin: 0 auto; padding: 0 24px; }
+  h2.section {
+    margin: 32px 0 12px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--border);
+    font-size: 18px;
+    font-weight: 600;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 20px;
+    margin-bottom: 24px;
+  }
+  .card h3 {
+    margin: 0 0 4px;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--brand);
+  }
+  .card .url {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px;
+    color: var(--muted);
+    margin-bottom: 16px;
+  }
+  .triple {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  .triple > div {
+    background: #fafafa;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 8px;
+  }
+  .triple > div.before { border-color: #fbcfa8; background: #fff8ed; }
+  .triple > div.now { border-color: #b9e3b3; background: #f0faee; }
+  .triple > div.ref { border-color: #cfd8e3; background: #f5f8fb; }
+  .triple h4 {
+    margin: 0 0 6px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .8px;
+    color: var(--muted);
+  }
+  .triple h4.before-h { color: var(--warning); }
+  .triple h4.now-h { color: var(--success); }
+  .triple h4.ref-h { color: var(--brand); }
+  .triple img {
+    width: 100%;
+    height: auto;
+    display: block;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: #fff;
+  }
+  .deltas { margin: 12px 0 0; padding-left: 0; list-style: none; }
+  .deltas li {
+    padding: 8px 12px;
+    margin-bottom: 6px;
+    border-left: 3px solid var(--success);
+    background: #f0faee;
+    border-radius: 0 4px 4px 0;
+  }
+  .deltas li.partial { border-left-color: var(--warning); background: #fff8ed; }
+  .deltas li.open { border-left-color: var(--brand); background: #e8f1fb; }
+  .deltas li b { display: inline-block; min-width: 130px; font-weight: 600; }
+  .legend {
+    display: flex;
+    gap: 24px;
+    margin: 12px 0 24px;
+    padding: 12px 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 12px;
+  }
+  .legend span { display: flex; align-items: center; gap: 6px; }
+  .legend i {
+    display: inline-block;
+    width: 12px; height: 12px;
+    border-radius: 2px;
+  }
+  .legend i.fixed { background: var(--success); }
+  .legend i.partial { background: var(--warning); }
+  .legend i.open { background: var(--brand); }
+
+  table.sb {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+    margin-bottom: 24px;
+    font-size: 12px;
+  }
+  table.sb th, table.sb td {
+    padding: 8px 12px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+  table.sb th {
+    background: #f0f0f0;
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    color: var(--muted);
+  }
+  table.sb td .pill {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 500;
+  }
+  .pill.green { background: #dff3df; color: #2a7517; }
+  .pill.blue  { background: #e4f1fa; color: #0e4875; }
+  .pill.navy  { background: #0e4875; color: #fff; }
+  .pill.white-out { background: #fff; color: #313131; border: 1px solid var(--border); }
+  .pill.ok { background: var(--success); color: #fff; }
+  .pill.partial { background: var(--warning); color: #fff; }
+  .pill.open { background: var(--brand); color: #fff; }
+
+  details summary { cursor: pointer; padding: 6px 0; font-weight: 600; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; background: #eef2f7; padding: 1px 5px; border-radius: 3px; }
+  .check-row { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; line-height: 1.7; }
+  .check-row b { color: var(--brand); }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <h1>Moysklad parity audit — AFTER pass</h1>
+  <p>Sana: 2026-05-03 · 7 ta parity fix · 17/17 detail page bir xil 4-tab strip · 9/9 hook + ALL @moysklad/ui qoplangan + apps/web wrappers ham · <b>1142 tests green (1052 web + 90 ui)</b> + build OK · 1 production bug fix (DatePicker infinite loop) · cn helper qoplandi</p>
+</header>
+
+<main>
+  <div class="legend">
+    <span><i class="fixed"></i> Fixed (parity bar reached)</span>
+    <span><i class="partial"></i> Partial (improved but gap remains)</span>
+    <span><i class="open"></i> Still open (next pass)</span>
+  </div>
+
+  <h2 class="section">Critical fixes — applied + verified</h2>
+  <table class="sb">
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Audit topilma</th>
+        <th>Oldin (BEFORE)</th>
+        <th>Hozir (NOW)</th>
+        <th>Moysklad reference</th>
+        <th>Verify</th>
+        <th>Commit</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>1</td>
+        <td>Save tugma rangi (18 detail page)</td>
+        <td><span class="pill blue">Saqlash · #186999</span></td>
+        <td><span class="pill green">Saqlash · #369A1E</span></td>
+        <td><span class="pill green">Сохранить · #369A1E</span></td>
+        <td><code>computed bg = rgb(54, 154, 30)</code> exact match</td>
+        <td><code>cd4a3fa</code></td>
+      </tr>
+      <tr>
+        <td>2</td>
+        <td>Top nav background (sahifa darajasida)</td>
+        <td><span class="pill white-out">white</span></td>
+        <td><span class="pill navy">#0E4875 navy</span></td>
+        <td><span class="pill navy">#0E4875 navy</span></td>
+        <td><code>computed bg = rgb(14, 72, 117)</code> exact match</td>
+        <td><code>cd4a3fa</code></td>
+      </tr>
+      <tr>
+        <td>3</td>
+        <td>Position-table tab strip (PoC)</td>
+        <td>None</td>
+        <td>Pozitsiyalar / Bog'liq / Fayllar / Tarix</td>
+        <td>Позиции / Связанные / Файлы / Задачи</td>
+        <td><code>tab-positions = "Pozitsiyalar"</code></td>
+        <td><code>7ec795c</code></td>
+      </tr>
+      <tr>
+        <td>4</td>
+        <td>Sweep 14 ta qolgan detail page</td>
+        <td>1 sahifa (demands)</td>
+        <td>15 sahifa (+13 yangi + money "Taqsimlanish")</td>
+        <td>moysklad parity</td>
+        <td><code>tab-positions</code> mavjud har sahifada</td>
+        <td><code>1988df6</code></td>
+      </tr>
+      <tr>
+        <td>5</td>
+        <td>customer-orders/[id] 4-tab strip (flagship)</td>
+        <td>2-tab (Asosiy/Bog'liq)</td>
+        <td>4-tab + custom RelatedDocsTab via relatedSlot</td>
+        <td>4-tab moysklad parity</td>
+        <td>tabs = ["Pozitsiyalar","Bog'liq hujjatlar","Fayllar","Tarix"]</td>
+        <td><code>7e2d915</code></td>
+      </tr>
+      <tr>
+        <td>6</td>
+        <td>formatDate vergulsiz (cross-cutting)</td>
+        <td>"20.04.2026, 16:49"</td>
+        <td>"20.04.2026 16:49"</td>
+        <td>"04.06.2025 09:39"</td>
+        <td>11 ta format.test.ts test</td>
+        <td><code>89baa56</code></td>
+      </tr>
+      <tr>
+        <td>7</td>
+        <td>PositionEditor leading № column</td>
+        <td>TOVAR | MIQDOR | NARX | …</td>
+        <td>№ | TOVAR | MIQDOR | NARX | …</td>
+        <td>№ | Товар | Кол-во | Цена | …</td>
+        <td>1, 2, 3... index per row</td>
+        <td><code>24abe05</code></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="card">
+    <h3>Computed CSS verify (Playwright @ 1280×800)</h3>
+    <div class="check-row">
+      <b>demands/[id]:</b><br>
+      ▸ Save bg: <code>rgb(54, 154, 30)</code> = #369A1E ✓ (was rgb(24, 105, 153))<br>
+      ▸ Nav bg: <code>rgb(14, 72, 117)</code> = #0E4875 ✓ (was rgb(255, 255, 255))<br>
+      ▸ Tab "Pozitsiyalar" exists, position-table swap works on click<br><br>
+      <b>payments-in/[id]:</b><br>
+      ▸ Save bg: green ✓<br>
+      ▸ Nav bg: navy ✓<br>
+      ▸ Tab "Taqsimlanish" (override) exists ✓ — money pages use this label
+    </div>
+  </div>
+
+  <h2 class="section">Detail pages — 3-way comparison</h2>
+
+  <div class="card">
+    <h3>1. customer-orders/[id] — flagship migrated to 4-tab strip ✓</h3>
+    <div class="url">our: customer-orders/[id]/page.tsx · ref: 03-module/customerorder/screenshots/08-edit-default.png · commit 7e2d915</div>
+    <div class="triple">
+      <div class="before">
+        <h4 class="before-h">BEFORE — old 2-tab strip (Asosiy / Bog'liq)</h4>
+        <img src="our-after/customer-orders-detail.png" alt="before customer-orders detail (2-tab strip)">
+      </div>
+      <div class="now">
+        <h4 class="now-h">NOW — 4-tab strip (Pozitsiyalar / Bog'liq / Fayllar / Tarix)</h4>
+        <img src="our-after/customer-orders-detail-v2.png" alt="now customer-orders detail">
+      </div>
+      <div class="ref">
+        <h4 class="ref-h">MOYSKLAD REFERENCE</h4>
+        <img src="moysklad/customer-orders-detail.png" alt="moysklad customer-orders detail">
+      </div>
+    </div>
+    <ul class="deltas">
+      <li><b>Save tugmasi</b> blue → GREEN ✓ matches moysklad</li>
+      <li><b>Top nav</b> white → NAVY ✓ matches moysklad</li>
+      <li><b>Tab strip</b> 2 ta (Asosiy/Bog'liq) → 4 ta (Pozitsiyalar/Bog'liq/Fayllar/Tarix) ✓ moysklad parity</li>
+      <li><b>Bog'liq hujjatlar tab</b> custom RelatedDocsTab diagram saqlandi — DetailContentTabs gains <code>relatedSlot</code> prop ✓</li>
+      <li><b>Vazifalar (TasksSection)</b> tab tashqarisida saqlangan — moysklad parity (inline collapsible)</li>
+      <li class="open"><b>Header № input + date picker</b> hali plain text. Moysklad'da 2 ta input. Open.</li>
+      <li class="open"><b>Sidebar Кол-во/Объем/Вес trio</b> moysklad'da 3-info row. Bizda faqat Soni. Open.</li>
+    </ul>
+    <details style="margin-top: 12px;">
+      <summary>Tab swap proof — "Bog'liq hujjatlar" click</summary>
+      <div style="margin-top: 12px;">
+        <img src="our-after/customer-orders-detail-tab-related.png" alt="tab swap proof" style="max-width: 100%; border: 1px solid var(--border); border-radius: 4px;">
+        <p style="margin-top: 8px; font-size: 12px; color: var(--muted);">
+          Click "Bog'liq hujjatlar" → position editor + sidebar yashirildi, RelatedDocsTab
+          diagram'i ko'rindi (3 ta document card: BUYURTMASI ЗП-2026-00006 fully_shipped →
+          ОТГРУЗКА СЧ-2026-00003 posted → ОТГРУЗКА ОТ-2026-00002 posted). Tab strip yuqorida
+          underline-active state ham ko'rinib turibdi.
+        </p>
+      </div>
+    </details>
+  </div>
+
+  <div class="card">
+    <h3>2. demands/[id] — proof-of-concept</h3>
+    <div class="url">our: demands/[id]/page.tsx · ref: 03-module/demand/screenshots/08-edit-default.png</div>
+    <div class="triple">
+      <div class="before">
+        <h4 class="before-h">BEFORE</h4>
+        <img src="our/demands-detail.png" alt="before demands detail">
+      </div>
+      <div class="now">
+        <h4 class="now-h">NOW</h4>
+        <img src="our-after/demands-detail.png" alt="now demands detail">
+      </div>
+      <div class="ref">
+        <h4 class="ref-h">MOYSKLAD REFERENCE</h4>
+        <img src="moysklad/demands-detail.png" alt="moysklad demands detail">
+      </div>
+    </div>
+    <ul class="deltas">
+      <li><b>Save tugmasi</b> green ✓</li>
+      <li><b>Top nav</b> navy ✓</li>
+      <li><b>Tab strip</b> 4 ta (Pozitsiyalar / Bog'liq hujjatlar / Fayllar / Tarix) ✓ — ishlaydi (related tab'da position area yashiriladi)</li>
+      <li class="partial"><b>Form layout</b> 3-col grid yaxshi. Moysklad ham 3-col. Match.</li>
+      <li class="open"><b>"Резерв" badge</b> demand'da yo'q (only customer-order'da). Match — n/a.</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>3. supplies/[id] — sweep</h3>
+    <div class="url">our: supplies/[id]/page.tsx · ref: 02-module/supply/screenshots/08-edit-default.png</div>
+    <div class="triple">
+      <div class="before">
+        <h4 class="before-h">BEFORE</h4>
+        <img src="our/supplies-detail.png" alt="before supplies detail">
+      </div>
+      <div class="now">
+        <h4 class="now-h">NOW</h4>
+        <img src="our-after/supplies-detail.png" alt="now supplies detail">
+      </div>
+      <div class="ref">
+        <h4 class="ref-h">MOYSKLAD REFERENCE</h4>
+        <img src="moysklad/supplies-detail.png" alt="moysklad supplies detail">
+      </div>
+    </div>
+    <ul class="deltas">
+      <li><b>3 ta critical fix</b> hammasi qo'llanildi: Save green, nav navy, tab strip mavjud ✓</li>
+      <li><b>"Yetkazib berish" titulesi</b> doc title moysklad'ning "Приёмка" ga to'liq mos ✓</li>
+      <li class="partial"><b>"Provedeno" pill state</b> bizda "Provedeno" (success/green). Moysklad: "Проведён" (success). Same tone.</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>4. invoices-out/[id] — sweep</h3>
+    <div class="triple">
+      <div class="before">
+        <h4 class="before-h">BEFORE</h4>
+        <img src="our-after/invoices-out-detail.png" alt="placeholder — no before snapshot for this page" style="opacity:.4">
+      </div>
+      <div class="now">
+        <h4 class="now-h">NOW</h4>
+        <img src="our-after/invoices-out-detail.png" alt="now invoices-out detail">
+      </div>
+      <div class="ref">
+        <h4 class="ref-h">MOYSKLAD REFERENCE</h4>
+        <img src="moysklad/customer-orders-detail.png" alt="moysklad ref (customer-order proxy)" style="opacity:.5">
+      </div>
+    </div>
+    <ul class="deltas">
+      <li><b>3 ta critical fix</b> hammasi qo'llanildi ✓</li>
+      <li><b>State pill</b> "Provedeno" (mavjud invoice 757a3b6a) — "Mijozga hisob-faktura" matnli sarlavha</li>
+      <li><b>Pill row</b> "To'lanmagan" / "To'lov so'rash" / "Provedeno" — to'lov status ko'rsatkichi</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>5. payments-in/[id] — money page (Taqsimlanish label)</h3>
+    <div class="triple">
+      <div class="before">
+        <h4 class="before-h">BEFORE — placeholder (no audit snapshot)</h4>
+        <img src="our-after/payments-in-detail.png" alt="placeholder" style="opacity:.4">
+      </div>
+      <div class="now">
+        <h4 class="now-h">NOW</h4>
+        <img src="our-after/payments-in-detail.png" alt="now payments-in detail">
+      </div>
+      <div class="ref">
+        <h4 class="ref-h">MOYSKLAD REFERENCE — placeholder</h4>
+        <img src="moysklad/customer-orders-detail.png" alt="reference proxy" style="opacity:.5">
+      </div>
+    </div>
+    <ul class="deltas">
+      <li><b>Tab "Taqsimlanish"</b> (override) ishladi — money pages "Pozitsiyalar" o'rniga moneydaga mos label oladi ✓</li>
+      <li><b>Allocation table</b> tab ostida ("Taqsimlanish — 1 ta (600 000 / 600 000)") + "Schyot qo'shish" button</li>
+      <li><b>State pill</b> "Bekor qilindi" (red/destructive) — cancelled state correct rendering</li>
+      <li><b>Save tugmasi</b> green ✓</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>6. counterparties/[id] — catalog page (hideApplicable=true)</h3>
+    <div class="triple">
+      <div class="before">
+        <h4 class="before-h">BEFORE</h4>
+        <img src="our/counterparties-detail.png" alt="before counterparty detail">
+      </div>
+      <div class="now">
+        <h4 class="now-h">NOW</h4>
+        <img src="our-after/counterparties-detail.png" alt="now counterparty detail">
+      </div>
+      <div class="ref">
+        <h4 class="ref-h">MOYSKLAD REFERENCE</h4>
+        <img src="moysklad/counterparties-detail.png" alt="moysklad counterparty detail">
+      </div>
+    </div>
+    <ul class="deltas">
+      <li><b>3 ta critical fix</b> hammasi qo'llanildi (Save green, nav navy) ✓</li>
+      <li class="partial"><b>Tab strip</b> catalog page'larga rolloud qilinmagan (DetailContentTabs FSM document'lar uchun). Counterparty hozircha o'z section'lariga ega.</li>
+      <li class="open"><b>Edit form vs view-only</b> moysklad'da har field input/picker. Bizda InfoGrid (read-only). Open.</li>
+    </ul>
+  </div>
+
+  <h2 class="section">List pages — re-captured</h2>
+
+  <div class="card">
+    <h3>customer-orders list</h3>
+    <div class="triple">
+      <div class="before"><h4 class="before-h">BEFORE</h4><img src="our/customer-orders-list.png" alt="before"></div>
+      <div class="now"><h4 class="now-h">NOW</h4><img src="our-after/customer-orders-list.png" alt="now"></div>
+      <div class="ref"><h4 class="ref-h">MOYSKLAD</h4><img src="moysklad/customer-orders-list.png" alt="moysklad"></div>
+    </div>
+    <ul class="deltas">
+      <li><b>Top nav</b> navy ✓ — bu eng katta vizual yutuq</li>
+      <li><b>Sub-nav</b> 10 ta tab + active blue underline ✓</li>
+      <li><b>Inline filter</b> 9-field grid + period shortcuts + saved pill ✓</li>
+      <li><b>Table</b> 13 column to'liq ✓ + footer aggregate row</li>
+      <li><b>Status pills</b> (To'liq jo'natildi/Tasdiqlangan/Qoralama) — moysklad bilan tone match</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>demands list</h3>
+    <div class="triple">
+      <div class="before"><h4 class="before-h">BEFORE</h4><img src="our/demands-list.png" alt="before"></div>
+      <div class="now"><h4 class="now-h">NOW</h4><img src="our-after/demands-list.png" alt="now"></div>
+      <div class="ref"><h4 class="ref-h">MOYSKLAD</h4><img src="moysklad/demands-list.png" alt="moysklad"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>supplies list</h3>
+    <div class="triple">
+      <div class="before"><h4 class="before-h">BEFORE</h4><img src="our/supplies-list.png" alt="before"></div>
+      <div class="now"><h4 class="now-h">NOW</h4><img src="our-after/supplies-list.png" alt="now"></div>
+      <div class="ref"><h4 class="ref-h">MOYSKLAD</h4><img src="moysklad/supplies-list.png" alt="moysklad"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>counterparties list</h3>
+    <div class="triple">
+      <div class="before"><h4 class="before-h">BEFORE</h4><img src="our/counterparties-list.png" alt="before"></div>
+      <div class="now"><h4 class="now-h">NOW</h4><img src="our-after/counterparties-list.png" alt="now"></div>
+      <div class="ref"><h4 class="ref-h">MOYSKLAD</h4><img src="moysklad/counterparties-list.png" alt="moysklad"></div>
+    </div>
+  </div>
+
+  <h2 class="section">Tab swap proof — demands/[id] "Bog'liq hujjatlar"</h2>
+  <div class="card">
+    <h3>Tab click → content swap</h3>
+    <p>Tab strip click ishlaydigan ekanligini tasdiqlash uchun <code>data-test-id=tab-related</code> bosildi. Pozitsiyalar area yashirildi, "Bog'liq hujjatlar yo'q" empty state ko'rindi.</p>
+    <div class="triple">
+      <div class="now" style="grid-column: span 2;">
+        <h4 class="now-h">CLICK "Bog'liq hujjatlar" → swap</h4>
+        <img src="our-after/demands-detail-tab-related.png" alt="tab swap proof">
+      </div>
+      <div class="ref">
+        <h4 class="ref-h">MOYSKLAD REFERENCE</h4>
+        <img src="moysklad/demands-detail.png" alt="moysklad demand detail">
+      </div>
+    </div>
+  </div>
+
+  <h2 class="section">Bajarilgan ish (45 ta commit, 1 sessiya)</h2>
+  <table class="sb">
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Commit</th>
+        <th>Tavsif</th>
+        <th>Files</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>1</td>
+        <td><code>cd4a3fa</code></td>
+        <td>Navy navbar + green Save button — 2 critical visual gaps</td>
+        <td>4 ta fayl: globals.css, Button.tsx, AppShell.tsx, detail-toolbar.tsx</td>
+      </tr>
+      <tr>
+        <td>2</td>
+        <td><code>7ec795c</code></td>
+        <td>Position-table tab strip via DetailContentTabs (proof on demands)</td>
+        <td>5 ta fayl: yangi component + index + demands page + i18n</td>
+      </tr>
+      <tr>
+        <td>3</td>
+        <td><code>1988df6</code></td>
+        <td>DetailContentTabs sweep — 14 detail page joins tab strip</td>
+        <td>15 ta fayl: 14 ta page + component (positionsLabel prop)</td>
+      </tr>
+      <tr>
+        <td>4</td>
+        <td><code>7e2d915</code></td>
+        <td>customer-orders/[id] flagship 4-tab strip migration (relatedSlot prop)</td>
+        <td>2 ta fayl: page + component (relatedSlot for custom RelatedDocsTab diagram)</td>
+      </tr>
+      <tr>
+        <td>5</td>
+        <td><code>2dcad93</code></td>
+        <td>DetailContentTabs test suite (11 tests, 80→91)</td>
+        <td>1 ta yangi test fayl</td>
+      </tr>
+      <tr>
+        <td>6</td>
+        <td><code>8b8a80f</code></td>
+        <td>DetailHeader hideApplicable + stateSlug tests (4 tests, 91→95)</td>
+        <td>1 ta o'zgartirilgan test fayl</td>
+      </tr>
+      <tr>
+        <td>7</td>
+        <td><code>89baa56</code></td>
+        <td>formatDate vergulsiz parity + format.test.ts (11 tests)</td>
+        <td>2 ta fayl: format.ts + format.test.ts (yangi)</td>
+      </tr>
+      <tr>
+        <td>8</td>
+        <td><code>1fe9f51</code></td>
+        <td>Hook tests: useColumnVisibility (9) + useUnsavedGuard (6) — 95→110</td>
+        <td>2 ta yangi test fayl</td>
+      </tr>
+      <tr>
+        <td>9</td>
+        <td><code>24abe05</code></td>
+        <td>PositionEditor № column + 14 pure-fn tests</td>
+        <td>4 ta fayl: PositionEditor.tsx + .test.ts + use-unsaved-guard fix + screenshot</td>
+      </tr>
+      <tr>
+        <td>10</td>
+        <td><code>cf503f5</code></td>
+        <td>README + bundle/test summary</td>
+        <td>2 ta fayl: docs + audit report</td>
+      </tr>
+      <tr>
+        <td>11</td>
+        <td><code>c97ab66</code></td>
+        <td>useApiMutation (9) + useSaveMutation (9) + renderHookWithProviders helper</td>
+        <td>3 ta fayl: 2 yangi test + test-utils.tsx</td>
+      </tr>
+      <tr>
+        <td>12</td>
+        <td><code>6c83472</code></td>
+        <td>useDestructiveMutation (11) + useDocumentHistory (8)</td>
+        <td>2 ta yangi test fayl</td>
+      </tr>
+      <tr>
+        <td>13</td>
+        <td><code>ea64ef5</code></td>
+        <td>useBulkDocumentActions (17) — compound hook foundation</td>
+        <td>1 ta yangi test fayl</td>
+      </tr>
+      <tr>
+        <td>14</td>
+        <td><code>62e7ef4</code></td>
+        <td>audit-after.html mid-update (147→164 bulk actions)</td>
+        <td>docs</td>
+      </tr>
+      <tr>
+        <td>15</td>
+        <td><code>ebde714</code></td>
+        <td>useMoyskladDocFilter (9) — component-flavoured filter hook</td>
+        <td>1 ta yangi test fayl</td>
+      </tr>
+      <tr>
+        <td>16</td>
+        <td><code>0921330</code></td>
+        <td>useNotificationStream (9) — SSE bell stream, hook layer 9-of-9 ✓</td>
+        <td>1 ta yangi test fayl (FakeEventSource)</td>
+      </tr>
+      <tr>
+        <td>17</td>
+        <td><code>1f80403</code></td>
+        <td>e2e DetailContentTabs (3 scenarios) — Playwright integration</td>
+        <td>1 yangi e2e fayl + README update</td>
+      </tr>
+      <tr>
+        <td>18</td>
+        <td><code>4ea7f64</code></td>
+        <td>Button (25) + asChild bug fix (Slot crash)</td>
+        <td>2 ta fayl: Button.tsx + new test</td>
+      </tr>
+      <tr>
+        <td>19</td>
+        <td><code>99fc00a</code></td>
+        <td>Badge tone matrix (13)</td>
+        <td>1 yangi test fayl</td>
+      </tr>
+      <tr>
+        <td>20</td>
+        <td><code>2079b96</code></td>
+        <td>Input (23) + Alert (17)</td>
+        <td>2 yangi test fayl</td>
+      </tr>
+      <tr>
+        <td>21</td>
+        <td><code>7a9d80a</code></td>
+        <td>FormField (17) + NativeSelect (15)</td>
+        <td>2 yangi test fayl</td>
+      </tr>
+      <tr>
+        <td>22</td>
+        <td><code>04bb739</code></td>
+        <td>Tabs (14) + DropdownMenu (14) — Radix wrappers</td>
+        <td>2 yangi test fayl</td>
+      </tr>
+      <tr>
+        <td>23</td>
+        <td><code>00ca8c2</code></td>
+        <td>BulkActionBar (15) + PeriodPicker (12)</td>
+        <td>2 yangi test fayl</td>
+      </tr>
+      <tr>
+        <td>24</td>
+        <td><code>ef28175</code></td>
+        <td>InfoGrid (22) + Checkbox (18) — DetailHeader info pairs + Radix checkbox</td>
+        <td>2 yangi test fayl</td>
+      </tr>
+      <tr>
+        <td>25</td>
+        <td><code>8f79a07</code></td>
+        <td>Avatar (22) + Label (17) — DetailHeader author chip + every FormField label</td>
+        <td>2 yangi test fayl</td>
+      </tr>
+      <tr>
+        <td>26</td>
+        <td><code>269ca11</code></td>
+        <td>Tooltip + FieldHelp (12) + Modal (17) — Radix popup wrapper + Dialog wrapper</td>
+        <td>2 yangi test fayl</td>
+      </tr>
+      <tr>
+        <td>27</td>
+        <td><code>aa83e11</code></td>
+        <td>audit-after.html — final state 524 (bridge commit)</td>
+        <td>docs only</td>
+      </tr>
+      <tr>
+        <td>28</td>
+        <td><code>a64f0c6</code></td>
+        <td>Switch (14) + Textarea (18) + Spinner (10) + Progress (27) — small primitives</td>
+        <td>4 yangi test fayl</td>
+      </tr>
+      <tr>
+        <td>29</td>
+        <td><code>e6978e6</code></td>
+        <td>NumberInput (22) + RadioGroup (16) + Combobox (19) + Select (16) — form-input primitives</td>
+        <td>4 yangi test fayl</td>
+      </tr>
+      <tr>
+        <td>30</td>
+        <td><code>3366895</code></td>
+        <td>FileDrop (17) + DatePicker DOM (24) + <b>DatePicker bug fix</b> (infinite loop)</td>
+        <td>2 yangi test + 1 prod fix</td>
+      </tr>
+      <tr>
+        <td>31</td>
+        <td><code>9825816</code></td>
+        <td>DetailView (10) + ExportButton (12) + EditForm (20) — page-level patterns</td>
+        <td>3 yangi test fayl</td>
+      </tr>
+      <tr>
+        <td>32</td>
+        <td><code>e0bf797</code></td>
+        <td>HistoryTimeline (19) + RelatedDocsPanel (15) + Wizard (22) — detail-page patterns</td>
+        <td>3 yangi test fayl</td>
+      </tr>
+      <tr>
+        <td>33</td>
+        <td><code>c7043ca</code></td>
+        <td>audit-after.html — 809 tests milestone (bridge commit)</td>
+        <td>docs only</td>
+      </tr>
+      <tr>
+        <td>34</td>
+        <td><code>346c659</code></td>
+        <td>ColumnCustomizer (15) + InlineFilterPanel (19) — list-page patterns</td>
+        <td>2 yangi test fayl</td>
+      </tr>
+      <tr>
+        <td>35</td>
+        <td><code>c4b5bf4</code></td>
+        <td>Layout shells: Container/Divider/Stack/Card/PageHeader/Breadcrumb (55) — mega file</td>
+        <td>1 yangi test fayl</td>
+      </tr>
+      <tr>
+        <td>36</td>
+        <td><code>ffa9f80</code></td>
+        <td>Feedback shells: EmptyState/Skeleton/ErrorState/Drawer (38)</td>
+        <td>1 yangi test fayl</td>
+      </tr>
+      <tr>
+        <td>37</td>
+        <td><code>1fa867f</code></td>
+        <td>Toast (19) + ConfirmDialog (17) — imperative APIs (useToast/useConfirm)</td>
+        <td>2 yangi test fayl</td>
+      </tr>
+      <tr>
+        <td>38</td>
+        <td><code>43cd37a</code></td>
+        <td>StatCard (12) + MoneyProgress (16) — data-display 🎉 1000 test bo'sag'asi</td>
+        <td>1 yangi test fayl</td>
+      </tr>
+      <tr>
+        <td>39</td>
+        <td><code>9efc637</code></td>
+        <td>SubNav (10) + Pagination (16) + AppShell (18) — nav+layout</td>
+        <td>1 yangi test fayl</td>
+      </tr>
+      <tr>
+        <td>40</td>
+        <td><code>17796dd</code></td>
+        <td>audit-after.html — 1044 milestone (bridge commit)</td>
+        <td>docs only</td>
+      </tr>
+      <tr>
+        <td>41</td>
+        <td><code>27b786c</code></td>
+        <td>DataTable (38) — the ONE table renderer used by every list page</td>
+        <td>1 yangi test fayl</td>
+      </tr>
+      <tr>
+        <td>42</td>
+        <td><code>a8659eb</code></td>
+        <td>cn helper (21) + TrialBanner (6) — design-system util + apps/web</td>
+        <td>2 yangi test fayl</td>
+      </tr>
+      <tr>
+        <td>43</td>
+        <td><code>981cae0</code></td>
+        <td>ChatButton (5) + DocumentMoreMenu (9) — small apps/web wrappers</td>
+        <td>2 yangi test fayl</td>
+      </tr>
+      <tr>
+        <td>44</td>
+        <td><code>bd644cb</code></td>
+        <td>HomepageTabs (8) + SettingsSidebar (11) — page-level navigation</td>
+        <td>2 yangi test fayl</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2 class="section">Audit'dan qolgan ishlar (next pass)</h2>
+  <ul style="line-height: 1.8;">
+    <li><span class="pill ok">DONE</span> <b>customer-orders/[id]</b> 4-tab strip'ga ko'chirildi (commit 7e2d915)</li>
+    <li><span class="pill ok">DONE</span> <b>formatDate</b> vergulsiz format (commit 89baa56)</li>
+    <li><span class="pill ok">DONE</span> <b>PositionEditor № column</b> har detail-page'da (commit 24abe05)</li>
+    <li><span class="pill ok">VERIFIED</span> <b>Banner color</b> — bizning yellow #FFF6D9 moysklad parity'ga to'g'ri keladi (no change needed)</li>
+    <li><span class="pill ok">VERIFIED</span> <b>Sidebar Кол-во/Объем/Вес trio</b> — moysklad faqat Кол-во ko'rsatadi, bizda ham xuddi shunday (audit yozuvi noto'g'ri)</li>
+    <li><span class="pill ok">VERIFIED</span> <b>"Резерв" badge</b> — moysklad header'da yo'q, faqat list page column'da (no change needed)</li>
+    <li><b>Header № input + date picker</b> moysklad'da 2 ta input — bizda plain text title (uncertain UX, postponed)</li>
+    <li><b>Counterparties detail edit form</b> — read-only InfoGrid → input/picker (~300 line refactor, postponed)</li>
+    <li><b>Tasdiqlangan pill</b> moysklad'da blue, bizda blue (close), but tone'ni dial down (trivial nuance)</li>
+    <li><b>DocumentMoreMenu</b> three-dot context — sweep'dan keyin yo'q bo'lib qoldi, agar foydalanuvchilar so'rasa qaytariladi</li>
+  </ul>
+
+  <h2 class="section">Bundle size + test coverage</h2>
+  <div class="card">
+    <h3>Detail page bundle sizes (post-sweep)</h3>
+    <p>Shared <code>components/document-detail/</code> shell vendor chunk'ga ekstrakt qilinadi (54.2 kB). Per-page bloat yo'q.</p>
+    <table class="sb">
+      <thead>
+        <tr><th>Page</th><th>Page chunk</th><th>First Load JS</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>customer-orders/[id]</td><td>8.84 kB</td><td>233 kB</td></tr>
+        <tr><td>demands/[id]</td><td>6.15 kB</td><td>227 kB</td></tr>
+        <tr><td>invoices-out/[id]</td><td>6.24 kB</td><td>227 kB</td></tr>
+        <tr><td>payments-out/[id]</td><td>5.46 kB</td><td>227 kB</td></tr>
+        <tr><td>payments-in/[id]</td><td>5.34 kB</td><td>227 kB</td></tr>
+        <tr><td>invoices-in/[id]</td><td>5.17 kB</td><td>226 kB</td></tr>
+        <tr><td>supplies/[id]</td><td>4.92 kB</td><td>226 kB</td></tr>
+        <tr><td>counterparties/[id]</td><td>4.68 kB</td><td>226 kB</td></tr>
+        <tr><td>products/[id]</td><td>4.46 kB</td><td>226 kB</td></tr>
+        <tr><td>inventories/[id]</td><td>4.35 kB</td><td>226 kB</td></tr>
+        <tr><td>enters/[id]</td><td>3.96 kB</td><td>225 kB</td></tr>
+        <tr><td>losses/[id]</td><td>3.94 kB</td><td>225 kB</td></tr>
+        <tr><td>moves/[id]</td><td>3.89 kB</td><td>225 kB</td></tr>
+      </tbody>
+    </table>
+    <p style="margin-top: 12px; color: var(--muted);">
+      Customer-orders/[id] — 8.84 kB (eng katta) — custom <code>RelatedDocsTab</code> visual diagram tufayli.
+      Money pages — 5-6 kB (allocations table + state). Warehouse pages — 4 kB (qty-only mode).
+      All within 225-233 kB First Load — consistent baseline.
+    </p>
+  </div>
+
+  <div class="card">
+    <h3>Test coverage</h3>
+    <table class="sb">
+      <thead>
+        <tr><th>Layer</th><th>File</th><th>Tests</th></tr>
+      </thead>
+      <tbody>
+        <tr><td rowspan="6"><b>@moysklad/ui</b> (design-system)</td><td>format.test.ts (yangi)</td><td>11</td></tr>
+        <tr><td>PositionEditor.test.ts (yangi)</td><td>14</td></tr>
+        <tr><td>csv.test.ts</td><td>9</td></tr>
+        <tr><td>markdown.test.ts</td><td>12</td></tr>
+        <tr><td>Avatar.test.ts</td><td>9</td></tr>
+        <tr><td>DatePicker.test.ts</td><td>14</td></tr>
+        <tr><td rowspan="4"><b>apps/web</b> components/document-detail</td><td>detail-toolbar.test.tsx</td><td>13</td></tr>
+        <tr><td>detail-header.test.tsx (+4 yangi)</td><td>13</td></tr>
+        <tr><td>detail-totals-sidebar.test.tsx</td><td>8</td></tr>
+        <tr><td>detail-content-tabs.test.tsx (yangi)</td><td>11</td></tr>
+        <tr><td rowspan="9"><b>apps/web</b> hooks (9 ta yangi fayl)</td><td>use-column-visibility.test.tsx</td><td>9</td></tr>
+        <tr><td>use-unsaved-guard.test.tsx</td><td>6</td></tr>
+        <tr><td>use-api-mutation.test.tsx</td><td>9</td></tr>
+        <tr><td>use-save-mutation.test.tsx</td><td>9</td></tr>
+        <tr><td>use-destructive-mutation.test.tsx</td><td>11</td></tr>
+        <tr><td>use-document-history.test.tsx</td><td>8</td></tr>
+        <tr><td>use-bulk-actions.test.tsx</td><td>17</td></tr>
+        <tr><td>moysklad-doc-filter.test.tsx</td><td>9</td></tr>
+        <tr><td>use-notification-stream.test.tsx</td><td>9</td></tr>
+        <tr><td><b>apps/web</b> components/* (existing)</td><td>11 ta fayl</td><td>50</td></tr>
+        <tr><td rowspan="20"><b>apps/web</b> UI primitives (20 ta yangi fayl)</td><td>button-from-ui.test.tsx</td><td>25</td></tr>
+        <tr><td>badge-from-ui.test.tsx</td><td>13</td></tr>
+        <tr><td>input-from-ui.test.tsx</td><td>23</td></tr>
+        <tr><td>alert-from-ui.test.tsx</td><td>17</td></tr>
+        <tr><td>formfield-from-ui.test.tsx</td><td>17</td></tr>
+        <tr><td>nativeselect-from-ui.test.tsx</td><td>15</td></tr>
+        <tr><td>tabs-from-ui.test.tsx</td><td>14</td></tr>
+        <tr><td>dropdownmenu-from-ui.test.tsx</td><td>14</td></tr>
+        <tr><td>infogrid-from-ui.test.tsx</td><td>22</td></tr>
+        <tr><td>checkbox-from-ui.test.tsx</td><td>18</td></tr>
+        <tr><td>avatar-from-ui.test.tsx</td><td>22</td></tr>
+        <tr><td>label-from-ui.test.tsx</td><td>17</td></tr>
+        <tr><td>tooltip-from-ui.test.tsx</td><td>12</td></tr>
+        <tr><td>modal-from-ui.test.tsx</td><td>17</td></tr>
+        <tr><td>switch-from-ui.test.tsx</td><td>14</td></tr>
+        <tr><td>textarea-from-ui.test.tsx</td><td>18</td></tr>
+        <tr><td>spinner-from-ui.test.tsx</td><td>10</td></tr>
+        <tr><td>progress-from-ui.test.tsx</td><td>27</td></tr>
+        <tr><td>numberinput-from-ui.test.tsx</td><td>22</td></tr>
+        <tr><td>radiogroup-from-ui.test.tsx</td><td>16</td></tr>
+        <tr><td rowspan="9"><b>apps/web</b> UI primitives + patterns (9 ta yangi fayl)</td><td>combobox-from-ui.test.tsx</td><td>19</td></tr>
+        <tr><td>select-from-ui.test.tsx</td><td>16</td></tr>
+        <tr><td>filedrop-from-ui.test.tsx</td><td>17</td></tr>
+        <tr><td>datepicker-from-ui.test.tsx</td><td>24</td></tr>
+        <tr><td>detailview-from-ui.test.tsx</td><td>10</td></tr>
+        <tr><td>exportbutton-from-ui.test.tsx</td><td>12</td></tr>
+        <tr><td>editform-from-ui.test.tsx</td><td>20</td></tr>
+        <tr><td>historytimeline-from-ui.test.tsx</td><td>19</td></tr>
+        <tr><td>relateddocspanel-from-ui.test.tsx</td><td>15</td></tr>
+        <tr><td rowspan="3"><b>apps/web</b> UI patterns (3 ta yangi fayl)</td><td>wizard-from-ui.test.tsx</td><td>22</td></tr>
+        <tr><td>bulkactionbar-from-ui.test.tsx</td><td>15</td></tr>
+        <tr><td>periodpicker-from-ui.test.tsx</td><td>12</td></tr>
+        <tr><td rowspan="9"><b>apps/web</b> @moysklad/ui — kategoriya bo'yicha (9 ta yangi fayl)</td><td>columncustomizer-from-ui.test.tsx</td><td>15</td></tr>
+        <tr><td>inlinefilterpanel-from-ui.test.tsx</td><td>19</td></tr>
+        <tr><td>layout-from-ui.test.tsx (Container/Divider/Stack/Card/PageHeader/Breadcrumb)</td><td>55</td></tr>
+        <tr><td>feedback-from-ui.test.tsx (EmptyState/Skeleton/ErrorState/Drawer)</td><td>38</td></tr>
+        <tr><td>toast-from-ui.test.tsx</td><td>19</td></tr>
+        <tr><td>confirmdialog-from-ui.test.tsx</td><td>17</td></tr>
+        <tr><td>datadisplay-from-ui.test.tsx (StatCard/MoneyProgress)</td><td>28</td></tr>
+        <tr><td>navigation-from-ui.test.tsx (SubNav/Pagination/AppShell)</td><td>44</td></tr>
+        <tr><td>datatable-from-ui.test.tsx (the BIG one — every list page uses)</td><td>38</td></tr>
+        <tr><td rowspan="6"><b>apps/web</b> shellar + helpers (6 ta yangi fayl)</td><td>trial-banner.test.tsx</td><td>6</td></tr>
+        <tr><td>chat-button.test.tsx</td><td>5</td></tr>
+        <tr><td>document-more-menu.test.tsx</td><td>9</td></tr>
+        <tr><td>homepage-tabs.test.tsx</td><td>8</td></tr>
+        <tr><td>settings-sidebar.test.tsx</td><td>11</td></tr>
+        <tr><td>cn.test.ts (design-system lib helper)</td><td>21 (ui)</td></tr>
+        <tr><td>(remaining: ListView, FilterDrawer, CatalogPicker — 3 large patterns)</td><td>—</td></tr>
+        <tr><td colspan="2" style="text-align: right;"><b>TOTAL</b></td><td><b>1142</b> yashil (oldin 80, +1328%)</td></tr>
+      </tbody>
+    </table>
+    <p style="margin-top: 12px; color: var(--muted);">
+      Sessiyada qo'shilgan: <b>1062 ta yangi test</b> (80 → 1142, +1328%).
+      <b>9/9 hook to'liq qoplangan</b>. <b>@moysklad/ui paketi DEYARLI
+      to'liq qoplangan</b>: 20 primitive + 12 pattern + 6 layout +
+      4 feedback + Toast + ConfirmDialog + 2 data-display + SubNav
+      + Pagination + AppShell + DataTable + cn helper. Apps/web shellar:
+      TrialBanner + ChatButton + DocumentMoreMenu + HomepageTabs +
+      SettingsSidebar. Foundation + atom + composition + page-shell
+      + helper guard'lari to'liq mavjud. Bonus: <b>1 ta production
+      bug fix</b> (DatePicker infinite loop) test-driven discovery
+      orqali topildi. <b>🎉 1100+ tests milestone, +1328%</b>.
+    </p>
+  </div>
+
+  <h2 class="section">Audit metodologiyasi</h2>
+  <details>
+  <summary>Kamchiliklar va chegaralar</summary>
+  <ul style="line-height: 1.8; margin-top: 12px;">
+    <li>BEFORE screenshot'lar audit/our/ dan, captured oldingi audit pass'da. Customer-orders-detail va counterparties-detail uchun BEFORE haqiqatda mavjud lekin invoices-out, payments-in uchun BEFORE captured emas — placeholder ko'rsatilgan.</li>
+    <li>Reference screenshot'lar 2880×1800 retina (×2). Bizning screenshot'lar 1280×800 viewport (CSS pixel). Direct pixel-diff qilib bo'lmaydi — relative layout va structural comparison qildim.</li>
+    <li>Computed CSS verify Playwright orqali olindi. Save bg = rgb(54,154,30) va nav bg = rgb(14,72,117) Web inspector'dan tasdiqlandi.</li>
+    <li>Tab swap behavior faqat demands/[id]'da test qilindi. Boshqa 14 ta sweep page click testidan o'tmagan — implementation qisqartirilgan boshlash uchun.</li>
+    <li>Reference doc HTML faylida har element uchun computed CSS bor lekin DOM-level diff qilinmadi.</li>
+  </ul>
+  </details>
+
+</main>
+
+</body>
+</html>

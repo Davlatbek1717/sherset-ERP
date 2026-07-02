@@ -1,0 +1,810 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="UTF-8">
+<title>Moysklad Clone — Bo'limlar xaritasi</title>
+<style>
+  :root {
+    --bg: #f5f7fa;
+    --surface: #ffffff;
+    --border: #d8dde6;
+    --text: #1c2030;
+    --muted: #707a8a;
+    --brand: #036ce5;
+    --success: #2e8e3e;
+    --green-bg: #ecfdf5;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, system-ui, sans-serif; background: var(--bg); color: var(--text); line-height: 1.55; }
+
+  header {
+    position: sticky; top: 0; z-index: 10;
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    padding: 16px 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  }
+  header h1 { margin: 0 0 4px 0; font-size: 22px; }
+  header p { margin: 0; color: var(--muted); font-size: 13px; }
+
+  .progress { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+  .progress-bar { flex: 1; height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; }
+  .progress-fill { height: 100%; background: var(--success); width: 0%; transition: width 0.3s; }
+  .progress-text { font-size: 13px; font-weight: 600; color: var(--text); min-width: 110px; text-align: right; }
+  .actions { margin-top: 12px; display: flex; gap: 8px; }
+  .actions button {
+    padding: 6px 12px; font-size: 13px; cursor: pointer;
+    border: 1px solid var(--border); background: var(--surface); border-radius: 4px;
+  }
+  .actions button:hover { background: var(--bg); }
+
+  main { padding: 24px; max-width: 1100px; margin: 0 auto; }
+
+  section.module {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    margin-bottom: 18px; overflow: hidden;
+  }
+  section.module > .mod-head {
+    padding: 16px 20px;
+    background: linear-gradient(180deg, #fafbfc 0%, #f5f7fa 100%);
+    border-bottom: 1px solid var(--border);
+  }
+  section.module > .mod-head h2 {
+    margin: 0 0 4px 0; font-size: 18px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  section.module > .mod-head h2 .icon {
+    width: 26px; height: 26px; display: inline-flex;
+    align-items: center; justify-content: center;
+    background: var(--brand); color: white; border-radius: 5px;
+    font-size: 14px; font-weight: 600;
+  }
+  section.module > .mod-head h2 .count {
+    margin-left: auto; font-size: 12px; font-weight: 500;
+    color: var(--muted); background: var(--surface); padding: 3px 9px; border-radius: 10px; border: 1px solid var(--border);
+  }
+  section.module > .mod-head p.purpose {
+    margin: 4px 0 0 36px;
+    font-size: 13px; color: var(--muted);
+  }
+
+  .submodule {
+    border-top: 1px solid var(--border);
+    padding: 12px 20px 14px 20px;
+    display: grid; grid-template-columns: auto 1fr;
+    gap: 12px; align-items: start;
+  }
+  .submodule:first-of-type { border-top: 1px solid var(--border); }
+  .submodule input[type=checkbox] {
+    width: 18px; height: 18px; cursor: pointer; margin-top: 2px;
+  }
+  .submodule .content { min-width: 0; }
+  .submodule h3 {
+    margin: 0 0 2px 0; font-size: 14.5px; font-weight: 600;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .submodule h3.done { color: var(--muted); text-decoration: line-through; }
+  .submodule p.what {
+    margin: 2px 0 0 0; font-size: 13px; color: var(--text);
+  }
+  .submodule p.why {
+    margin: 4px 0 0 0; font-size: 12.5px; color: var(--muted);
+    font-style: italic;
+  }
+  .submodule .open-btn {
+    margin-top: 6px; font-size: 11.5px; color: var(--brand);
+    text-decoration: none;
+    padding: 2px 8px; border: 1px solid var(--border); border-radius: 4px;
+    background: var(--surface); display: inline-block;
+  }
+  .submodule .open-btn:hover { background: var(--bg); }
+
+  footer { padding: 24px; text-align: center; color: var(--muted); font-size: 12px; }
+
+  @media print {
+    header, footer, .actions, .open-btn { display: none; }
+    body { background: white; }
+    section.module { border: 1px solid #aaa; box-shadow: none; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>📋 Moysklad Clone — Bo'limlar xaritasi</h1>
+  <p>Har bir bo'limni ko'rib chiqsangiz, oldidagi belgini bosing. Holat avtomat saqlanadi.</p>
+  <div class="progress">
+    <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+    <div class="progress-text" id="progressText">0 / 0</div>
+  </div>
+  <div class="actions">
+    <button onclick="toggleAll(true)">Hammasini belgilash</button>
+    <button onclick="toggleAll(false)">Hammasini tozalash</button>
+    <button onclick="window.print()">Chop etish</button>
+  </div>
+</header>
+
+<main id="main"></main>
+
+<footer>Holatlar localStorage'da saqlanadi · Browser yopilsa ham yo'qolmaydi</footer>
+
+<script>
+const BASE_URL = 'http://localhost:3030';
+
+const STRUCTURE = [
+  {
+    id: 'home', icon: '🏠', label: "Ko'rsatkichlar",
+    purpose: "Biznesning umumiy holatini bir qarashda ko'rish — kunlik tushum, mavjud qoldiq, qarzlar.",
+    items: [
+      {
+        id: 'home-main',
+        name: "Bosh sahifa (Dashboard)",
+        what: "Asosiy o'lchamlar bir ekranda: bugungi sotuv, kassa qoldig'i, qarzlar, eng so'nggi hujjatlar.",
+        why: "Ertalab tizimga kirgan zahoti — qaysi ishlar muhimligini ko'rib olish uchun.",
+        open: '/'
+      },
+    ]
+  },
+  {
+    id: 'purchases', icon: '🛒', label: "Xaridlar",
+    purpose: "Ta'minlovchidan tovar olish — buyurtma berishdan to qabul qilib NDS hujjat olishgacha.",
+    items: [
+      {
+        id: 'po',
+        name: "Ta'minlovchiga buyurtma",
+        what: "«Shu kuni shu tovarni shu narxga olib kelaman» degan oldindan kelishuv hujjati.",
+        why: "Tovar hali yetib kelmagan bo'lsa-da, kelishilgan summa va sana yodda qoladi. Ta'minlovchi schyot yuborganda taqqoslash uchun manba.",
+        open: '/purchase-orders'
+      },
+      {
+        id: 'invoicein',
+        name: "Ta'minlovchining schyot-fakturasi",
+        what: "Ta'minlovchi sizga «mana shu summa to'lashingiz kerak» degan rasmiy schyot.",
+        why: "Pulingiz qancha qarzdor ekanligini aniq belgilaydi. To'lashdan oldin tasdiqlash uchun.",
+        open: '/invoices-in'
+      },
+      {
+        id: 'supply',
+        name: "Qabul (Priyomka)",
+        what: "Tovar haqiqatan omborga kirib keldi — shu kun, shu miqdor, shu narxga.",
+        why: "Omborda nima borligini hisoblaydi. Hujjat ochib provedeno qilinsa, qoldiq avtomat oshadi.",
+        open: '/supplies'
+      },
+      {
+        id: 'preturn',
+        name: "Ta'minlovchiga qaytarish",
+        what: "Olingan tovar yaroqsiz/buzilgan chiqdi — qaytarib bermoqdamiz.",
+        why: "Omborni xato hisoblamaslik uchun. Qaytarilgan tovar uchun pul ham qaytishi kerak.",
+        open: '/purchase-returns'
+      },
+      {
+        id: 'facturein',
+        name: "Olingan SF-fakturalar",
+        what: "Ta'minlovchidan kelgan NDS hujjatlari ro'yxati.",
+        why: "Soliqqa hisobotda input-NDS chegirma olish uchun. Soliq.uz tizimi bilan sinxron.",
+        open: '/factures-in'
+      },
+      {
+        id: 'purchasereport',
+        name: "Xaridlarni boshqarish (hisobot)",
+        what: "Har ta'minlovchi bo'yicha: necha buyurtma bergansiz, qancha o'z vaqtida yetkazilgan, qancha to'langan.",
+        why: "Qaysi ta'minlovchi ishonchli, qaysi biri kechikadi — buni hisoblash uchun.",
+        open: '/reports/purchase-management'
+      },
+      {
+        id: 'eduPurchase',
+        name: "O'qitish (Education)",
+        what: "Xaridlar moduliga oid maslahat, video, qo'llanma.",
+        why: "Yangi xodimlar tizimni o'rganishi uchun — har bir hujjatning vazifasi tushuntiriladi.",
+        open: '/help/purchases'
+      },
+    ]
+  },
+  {
+    id: 'sales', icon: '💰', label: "Sotuvlar",
+    purpose: "Mijozga tovar sotish — buyurtma qabul qilishdan to otgruzka va NDS hujjat berishgacha.",
+    items: [
+      {
+        id: 'co',
+        name: "Mijoz buyurtmasi",
+        what: "Mijoz «menga shu kuni shu tovardan shu kerak» dedi — yozib qo'yamiz.",
+        why: "Tovar otgruzka qilinmasdan oldin ham, mijoz nima istayotganini eslab qolish va omborni rezervlash uchun.",
+        open: '/customer-orders'
+      },
+      {
+        id: 'invoiceout',
+        name: "Mijozga schyot-faktura",
+        what: "Mijozga «mana shuncha to'lashingiz kerak» degan rasmiy schyot.",
+        why: "Mijoz qarzini aniq belgilash. To'lashdan oldin yuboriladigan asosiy hujjat.",
+        open: '/invoices-out'
+      },
+      {
+        id: 'demand',
+        name: "Otgruzka (yuk jo'natish)",
+        what: "Tovar haqiqatan mijozga jo'natildi — shu kun, shu miqdor.",
+        why: "Omborni kamaytiradi (Stock −N). Mijoz qarzini paydo qiladi.",
+        open: '/demands'
+      },
+      {
+        id: 'commreport',
+        name: "Komissioner hisoboti",
+        what: "Boshqalarning tovarini siz sotsangiz — qancha sotilganini va sizga necha foiz tegishini yozasiz.",
+        why: "Konsignatsiya (komissiya) bilan ishlashda — siz boshqa kompaniyalar tovarini sotyapsiz, ularga hisobot bering.",
+        open: '/commission-reports'
+      },
+      {
+        id: 'sreturn',
+        name: "Mijozdan qaytarish",
+        what: "Mijoz tovarni qaytarib berdi — yaroqsiz, fikrini o'zgartirdi, va h.k.",
+        why: "Omborni qaytarib oshirish + mijozga pul yoki kredit qaytarish.",
+        open: '/sales-returns'
+      },
+      {
+        id: 'factureout',
+        name: "Berilgan SF-fakturalar",
+        what: "Mijozlarga yuborilgan NDS hujjatlari.",
+        why: "Soliqqa output-NDS hisobiga kiradi. Soliq.uz tizimiga jo'natiladi.",
+        open: '/factures-out'
+      },
+      {
+        id: 'profitReport',
+        name: "Daromad hisoboti (Profitability)",
+        what: "Har bir tovar bo'yicha sof foyda: sotilgan narxdan tannarx ayirilgan.",
+        why: "Qaysi tovar haqiqatan daromad keltiradi, qaysi biri zarar — bilish uchun.",
+        open: '/reports/profitability'
+      },
+      {
+        id: 'consignments',
+        name: "Realizatsiyadagi tovarlar (partiyalar)",
+        what: "Bir tovarning turli partiyalari (lot, batch) bo'yicha qoldiq, muddati, shtrix-kod.",
+        why: "Sut, dori, oziq-ovqat kabi muddatli tovar uchun FEFO (eski avval ketadi) ish jarayoni.",
+        open: '/consignments'
+      },
+      {
+        id: 'funnel',
+        name: "Sotuv voronkasi",
+        what: "Mijoz lid → potensial → bitim → won/lost jarayoni vizualizatsiyasi.",
+        why: "Sotish jarayonida qaysi etapda eng ko'p mijoz tushib qolayotganini ko'rish.",
+        open: '/sales-funnel'
+      },
+      {
+        id: 'unitEcon',
+        name: "Birlik iqtisodi (Unit Economics)",
+        what: "Har bir SKU bo'yicha bir donadagi o'rtacha narx, tannarx, marja.",
+        why: "Qaysi tovarni ko'paytirib sotish foydali, qaysi biri zaifligini aniqlash.",
+        open: '/reports/unit-economics'
+      },
+    ]
+  },
+  {
+    id: 'goods', icon: '📦', label: "Tovarlar",
+    purpose: "Sotadigan va sotib oladigan barcha tovarlar, ularning narxi, xususiyatlari, qoldig'i.",
+    items: [
+      {
+        id: 'productList',
+        name: "Mahsulotlar (Tovarlar)",
+        what: "Sizning katalog'ingiz — barcha sotiladigan/sotib olinadigan tovarlar.",
+        why: "Har hujjat (buyurtma, qabul, sotuv) shu ro'yxatdan tovar tanlaydi. Markaziy karta.",
+        open: '/products'
+      },
+      {
+        id: 'productFolders',
+        name: "Tovar guruhlari",
+        what: "Tovarlarni kategoriya bo'yicha tartibga solish (Telefonlar > Apple > iPhone).",
+        why: "Yuzlab tovar bo'lsa, daraxt ko'rinishida tezroq topish va hisobotlar uchun.",
+        open: '/product-folders'
+      },
+      {
+        id: 'variants',
+        name: "Modifikatsiyalar (variants)",
+        what: "Bir tovarning turli xususiyatlari: «Futbolka Red size M / Blue size L».",
+        why: "Asosiy tovar bitta, lekin rang/o'lcham bo'yicha alohida qoldiq yuritish.",
+        open: '/variants'
+      },
+      {
+        id: 'services',
+        name: "Xizmatlar",
+        what: "Ombor qoldig'iga ta'sir qilmaydigan «tovar» — yetkazib berish, montaj, konsultatsiya.",
+        why: "Schyotga qo'shish mumkin lekin stock bo'lmaydi. Masalan «Yetkazib berish — 50,000 so'm».",
+        open: '/services'
+      },
+      {
+        id: 'bundles',
+        name: "Komplektlar",
+        what: "Bir nechta tovar birga sotiladigan to'plam («Smartfon + Kabel + Halqacha»).",
+        why: "Bitta narx bilan sotish, lekin stocked'da har komponent alohida hisoblanadi.",
+        open: '/bundles'
+      },
+      {
+        id: 'stockBalance',
+        name: "Qoldiqlar",
+        what: "Hozir omborda har bir tovardan necha dona borligi.",
+        why: "Sotishdan oldin tekshirish, kam qolganlarini qaytarib buyurtma qilish.",
+        open: '/stock-balance'
+      },
+      {
+        id: 'priceTypes',
+        name: "Narx turlari",
+        what: "Bir xil tovarning bir necha narxi: chakana, optom, VIP, aksiya.",
+        why: "Har mijoz uchun mos narx tanlanadi avtomat.",
+        open: '/price-types'
+      },
+    ]
+  },
+  {
+    id: 'crm', icon: '👥', label: "CRM (Mijozlar)",
+    purpose: "Mijoz va ta'minlovchilarga oid hamma narsa: aloqa, qo'ng'iroqlar, sotuv potensiali.",
+    items: [
+      {
+        id: 'cps',
+        name: "Kontragentlar",
+        what: "Mijoz va ta'minlovchilar bazasi: ism, telefon, INN, manzil, balans.",
+        why: "Har savdo, schyot, to'lov shu ro'yxatga bog'lanadi. Kim qarzdor, kim qarzdorlikni biladi.",
+        open: '/counterparties'
+      },
+      {
+        id: 'contacts',
+        name: "Kontakt shaxslar",
+        what: "Bir kontragentda bir nechta odam ishlashi mumkin: «MCHJ ABC — direktor Anvar, buxgalter Madina».",
+        why: "Aniq kimga qo'ng'iroq qilish kerakligi yodga olinadi.",
+        open: '/contact-persons'
+      },
+      {
+        id: 'calls',
+        name: "Qo'ng'iroqlar",
+        what: "Har qo'ng'iroq jurnal: kim, qachon, qancha vaqt, nima haqida.",
+        why: "Sotuvchi yodida tutib bo'lmaydi — tizim eslatadi. «1 hafta oldin bog'langan» — yodga oladi.",
+        open: '/calls'
+      },
+      {
+        id: 'opps',
+        name: "Imkoniyatlar (sotuv bitimlari)",
+        what: "Potensial sotuv: «ABC firma bilan 50M so'mlik kontrakt bo'yicha gaplashyapmiz».",
+        why: "Hali sotuv bo'lmagan, lekin ehtimoli bor — uni yodda saqlash va kuzatish.",
+        open: '/opportunities'
+      },
+      {
+        id: 'pipelines',
+        name: "Sotuv voronkalari",
+        what: "Sotuv etaplari: «Lid → Aloqa → Tanishuv → Taklif → Won/Lost».",
+        why: "Bitimlarni qaysi etapda ekanligini ko'rish va ularni keyingi bosqichga ko'chirish.",
+        open: '/pipelines'
+      },
+    ]
+  },
+  {
+    id: 'stock', icon: '🏬', label: "Ombor",
+    purpose: "Omborlar orasidagi tovar harakati va xato/yo'qotishlarni qayd qilish.",
+    items: [
+      {
+        id: 'moves',
+        name: "Ko'chirish (omborlar orasida)",
+        what: "Tovarni Filial-1 omboridan Filial-2 omborga olib o'tdik.",
+        why: "Bir kompaniyada bir nechta ombor bo'lsa, qaysida nima borligini aniq bilish uchun.",
+        open: '/moves'
+      },
+      {
+        id: 'losses',
+        name: "Spisaniye (yo'qotish)",
+        what: "Tovar buzildi/yo'qoldi/o'g'irlandi — ombor qoldig'idan o'chiramiz.",
+        why: "Real qoldiq bilan tizim qoldig'i mos kelishi uchun. Buxgalteriyaga zarar sifatida.",
+        open: '/losses'
+      },
+      {
+        id: 'enters',
+        name: "Oprixodovaniye (qo'shish)",
+        what: "Tizimda yo'q lekin omborda bor tovar — qo'shamiz. Yoki ochilish qoldig'i.",
+        why: "Topib qolingan tovar (sanaganda ortiqcha chiqdi) yoki yangi biznes boshlash uchun.",
+        open: '/enters'
+      },
+      {
+        id: 'inventories',
+        name: "Inventarizatsiya (qoldiq tekshirish)",
+        what: "Omborga kirib har tovarni sanab, tizimdagi qoldiq bilan taqqoslash.",
+        why: "Oyda/yarim yilda bir bor — kam-ko'pini topish, sotuvchi nazoratini kuchaytirish.",
+        open: '/inventories'
+      },
+      {
+        id: 'remains',
+        name: "Qoldiqlar (umumiy hisobot)",
+        what: "Hozir har omborda har tovardan necha dona borligi bir jadvalda.",
+        why: "Tezda topish — qaysi omborda nima yetishmayotganini ko'rish.",
+        open: '/reports/stock-balance'
+      },
+    ]
+  },
+  {
+    id: 'money', icon: '💵', label: "Pul",
+    purpose: "Pul kelishi va ketishi: naqd, bank, qarz, hisobot.",
+    items: [
+      {
+        id: 'pin',
+        name: "Bankka tushgan to'lov",
+        what: "Mijoz pulni bank orqali sizga o'tkazdi.",
+        why: "Mijoz qarzini kamaytiradi. Bank hisobiga pul tushganini qayd qiladi.",
+        open: '/payments-in'
+      },
+      {
+        id: 'pout',
+        name: "Bankdan chiqgan to'lov",
+        what: "Siz pulni ta'minlovchiga (yoki boshqalarga) bank orqali jo'natdingiz.",
+        why: "Sizning ta'minlovchiga qarzingiz kamayadi. Bank balansi kamayadi.",
+        open: '/payments-out'
+      },
+      {
+        id: 'cin',
+        name: "Kassaga kirim (naqd)",
+        what: "Mijoz naqd pul to'ladi — kassada saqlanadi.",
+        why: "Naqd savdo (chakana do'kon) uchun. Kun oxirida sanab tekshirish uchun.",
+        open: '/cash-in'
+      },
+      {
+        id: 'cout',
+        name: "Kassadan chiqim (naqd)",
+        what: "Naqd pulni kassadan olib chiqdik — ta'minlovchiga, xodimga, xarajatga.",
+        why: "Kassa balansi kamayadi. Pulning qayerga ketganini bilish uchun.",
+        open: '/cash-out'
+      },
+      {
+        id: 'bankImp',
+        name: "Bank statement import",
+        what: "Bank tomonidan yuborilgan kunlik hisobotni yuklab, avtomat to'lovlarga aylantirish.",
+        why: "Qo'lda kiritishdan ko'ra — minglarcha tranzaksiyani bir click bilan yuklab olish.",
+        open: '/bank-import'
+      },
+    ]
+  },
+  {
+    id: 'retail', icon: '🏪', label: "Chakana savdo (POS)",
+    purpose: "Do'kondagi nakd sotuv — kassir terminali, smenalar, kunlik hisobot.",
+    items: [
+      {
+        id: 'pos',
+        name: "Kassa terminali (POS)",
+        what: "Sotuvchi kompyuteri/planshetida tovar sotish ekrani: shtrix-kod skanerlash, naqd qabul qilish.",
+        why: "Chakana do'konda har minutda sotuv — tezroq va xatosiz qilish uchun.",
+        open: '/retail'
+      },
+      {
+        id: 'sessions',
+        name: "Smenalar (kassir kunlari)",
+        what: "Kassir ish kunining boshi/oxiri, ochilgan/yopilgan pul miqdori.",
+        why: "Kim qachon ishlagani, qancha sotgani, qancha pul topshirganini bilish.",
+        open: '/retail/sessions'
+      },
+      {
+        id: 'rsales',
+        name: "Chakana sotuvlar",
+        what: "POS orqali bo'lgan har sotuv yozuvi.",
+        why: "Har bir chekni keyin tekshirish, qaytarish/almashtirish uchun.",
+        open: '/retail/sales'
+      },
+      {
+        id: 'zReport',
+        name: "Z-hisobot (kunlik)",
+        what: "Smena yopilganida — kunlik jami: sotilgan tovar, naqd, terminal, qaytarish.",
+        why: "Soliqqa kunlik hisobot. Pul boshqaruvchiga topshirish uchun.",
+        open: '/retail/z-report'
+      },
+    ]
+  },
+  {
+    id: 'ecom', icon: '🌐', label: "Onlayn savdo (E-commerce)",
+    purpose: "Veb-sayt, marketplace (Uzum, Yandex) va boshqa onlayn kanaldan kelgan buyurtmalar.",
+    items: [
+      {
+        id: 'ecomOverview',
+        name: "Umumiy ko'rinish",
+        what: "Onlayn kanallar dashboard'i — qaysi kanaldan necha buyurtma kelgan.",
+        why: "Bir nechta marketplace ishlatsangiz — qaysi biri ko'p sotyapti bilish uchun.",
+        open: '/ecommerce'
+      },
+      {
+        id: 'channels',
+        name: "Sotuv kanallari",
+        what: "Veb-sayt, Uzum, Yandex Market, Instagram va h.k. — har biri alohida konfiguratsiya.",
+        why: "Har kanal o'z narxi va aksiyalariga ega bo'lishi mumkin.",
+        open: '/ecommerce/channels'
+      },
+      {
+        id: 'eorders',
+        name: "Onlayn buyurtmalar",
+        what: "Internet orqali kelgan buyurtmalar ro'yxati (sayt/marketplace'dan).",
+        why: "Real vaqtda yangi buyurtmani ko'rish va tezroq qayta ishlash.",
+        open: '/ecommerce/orders'
+      },
+    ]
+  },
+  {
+    id: 'production', icon: '⚙️', label: "Ishlab chiqarish",
+    purpose: "Xom-ashyodan tayyor mahsulot yasash: retsept (BOM) va ishlab chiqarish buyurtmasi.",
+    items: [
+      {
+        id: 'prodOverview',
+        name: "Umumiy ko'rinish",
+        what: "Ishlab chiqarish moduli dashboard'i.",
+        why: "Aktiv buyurtmalar, kunlik ishlab chiqarish hajmi.",
+        open: '/production'
+      },
+      {
+        id: 'boms',
+        name: "Tekhkartalar (retsept / BOM)",
+        what: "«1 ta non = 200g un + 5g tuz + 10g yog'» — har tayyor mahsulot uchun retsept.",
+        why: "Ishlab chiqarish vaqtida qancha xom-ashyo ishlatilishini avtomat hisoblash.",
+        open: '/production/boms'
+      },
+      {
+        id: 'workOrders',
+        name: "Ishlab chiqarish buyurtmalari",
+        what: "«100 ta non yasash» — retseptga asosan xom-ashyo ombordan kamaytirilib, tayyor mahsulot omborga qo'shiladi.",
+        why: "Pekarya, vinoxonalik, mebel ustaxonasi — har ishlab chiqarish bosqichini qayd qilish.",
+        open: '/production/work-orders'
+      },
+    ]
+  },
+  {
+    id: 'tasks', icon: '✅', label: "Vazifalar",
+    purpose: "Xodimlarning bajaradigan ishlari — eslatma, vazifa, xizmat so'rovlari.",
+    items: [
+      {
+        id: 'taskList',
+        name: "Vazifalar",
+        what: "«Mijozga ertaga 10:00 da qo'ng'iroq qilish» — odamlar uchun reminder.",
+        why: "Hech qachon unutmaslik. Bajariladigan ishlar ro'yxati.",
+        open: '/tasks'
+      },
+      {
+        id: 'serviceReq',
+        name: "Xizmat so'rovlari",
+        what: "Mijoz/xodim murojaati: muammo, savol, xizmat so'rovi.",
+        why: "Helpdesk ish jarayoni — har so'rovni kuzatib bajarish.",
+        open: '/service-requests'
+      },
+      {
+        id: 'korzina',
+        name: "Korzina (savatcha)",
+        what: "O'chirilgan hujjatlar va elementlar — 30 kunda butunlay yo'qoladi.",
+        why: "Tasodifan o'chirilgan narsani qaytarib olish imkoni.",
+        open: '/korzina'
+      },
+    ]
+  },
+  {
+    id: 'reports', icon: '📊', label: "Hisobotlar",
+    purpose: "Oy/chorak/yil oxiri tahlil — pul, foyda, qarz, eng yaxshi sotiladigan tovarlar.",
+    items: [
+      {
+        id: 'salesReport',
+        name: "Sotuv hisoboti",
+        what: "Davr bo'yicha jami sotilgan tovar, summa, foyda.",
+        why: "Oy yakuni — biznes qancha o'sgan/kichraygan bilish uchun.",
+        open: '/reports/sales'
+      },
+      {
+        id: 'cashflow',
+        name: "Pul oqimi (Cash Flow)",
+        what: "Pul kelishi (kirim) va ketishi (chiqim) — kun/oy/yil bo'yicha.",
+        why: "Likvidlik — yaqin orada to'lashga pul yetadi yoki yo'q bilish.",
+        open: '/reports/cash-flow'
+      },
+      {
+        id: 'pnl',
+        name: "P&L (Foyda/Zarar)",
+        what: "Davr foydasi: daromad − xarajat = sof foyda.",
+        why: "Asosiy biznes ko'rsatkichi. Investorlarga ko'rsatiladigan hujjat.",
+        open: '/reports/pnl'
+      },
+      {
+        id: 'cpBalance',
+        name: "Kontragent balans",
+        what: "Har mijoz/ta'minlovchi bo'yicha qancha qarzdor, qancha qarzdorligi.",
+        why: "Pul yig'ish uchun ro'yxat. Eski qarzdorlar.",
+        open: '/reports/counterparty-balance'
+      },
+      {
+        id: 'abc',
+        name: "ABC analiz",
+        what: "Tovarlarni 3 toifaga: A (eng ko'p foyda) / B (o'rta) / C (kam).",
+        why: "Diqqatni qaysi tovarga qaratish — A toifasiga ko'proq investitsiya.",
+        open: '/reports/abc-analysis'
+      },
+      {
+        id: 'aging',
+        name: "Aging (eskigan qarzlar)",
+        what: "Qarzlar yoshi bo'yicha: 0-30 kun, 30-60, 60-90, 90+.",
+        why: "Eskigan qarzlar — risk. Tezroq yig'ish kerak.",
+        open: '/reports/aging'
+      },
+      {
+        id: 'returnsRatio',
+        name: "Qaytarish nisbati",
+        what: "Sotilgan / qaytarilgan tovar nisbati.",
+        why: "Yuqori qaytarish — sifat muammosi belgisi.",
+        open: '/reports/returns-ratio'
+      },
+    ]
+  },
+  {
+    id: 'settings', icon: '⚙️', label: "Sozlamalar",
+    purpose: "Tashkilot rekvizitlari, omborlar, kassalar, foydalanuvchilar, valyuta kurslari — tizim asosi.",
+    items: [
+      {
+        id: 'orgs',
+        name: "Tashkilotlar",
+        what: "Sizning kompaniya(lar): INN, manzil, bank rekvizitlari.",
+        why: "Har hujjatda «kim chiqaradi» kerak. Bir nechta yur. shaxs bo'lsa — har birini sozlash.",
+        open: '/settings/organizations'
+      },
+      {
+        id: 'stores',
+        name: "Omborlar",
+        what: "Fizik omborlar: «Markaziy ombor», «Filial-2 ombori».",
+        why: "Tovar qayerda turishini bilish va omborlar orasida ko'chirish uchun.",
+        open: '/settings/stores'
+      },
+      {
+        id: 'cashDesks',
+        name: "Kassalar",
+        what: "Naqd pul saqlanadigan joylar: «Markaziy kassa», «Smena kassa-1».",
+        why: "Har kassada qancha pul borligini alohida hisoblash.",
+        open: '/settings/cash-desks'
+      },
+      {
+        id: 'bankAccounts',
+        name: "Bank hisoblar",
+        what: "Bank rekvizitlari: hisob raqami, valyuta, bank nomi.",
+        why: "Bank to'lovlarini qaysi hisobdan/hisobga ekanligini bilish.",
+        open: '/settings/bank-accounts'
+      },
+      {
+        id: 'priceTypesSettings',
+        name: "Narx turlari",
+        what: "Chakana, optom, VIP — har xil mijozlar uchun har xil narx.",
+        why: "Bir tovarning 3-5 ta narxi bo'lishi mumkin — VIP'ga kichik, oddiyga oddiy.",
+        open: '/settings/price-types'
+      },
+      {
+        id: 'usersSettings',
+        name: "Foydalanuvchilar (xodimlar)",
+        what: "Tizimga kira oladigan xodimlar va ularning ruxsatlari (rol).",
+        why: "Kassir faqat sotuvni ko'radi, menejer hammasini — har xodim uchun mos huquq.",
+        open: '/settings/users'
+      },
+      {
+        id: 'email',
+        name: "Email",
+        what: "Tizim email yuborish sozlamalari (mijozga schyot, eslatma).",
+        why: "Avtomat schyot/eslatma yuborish.",
+        open: '/settings/email'
+      },
+      {
+        id: 'exchangeRates',
+        name: "Valyuta kurslari",
+        what: "USD/EUR/RUB → UZS kunlik kurs (CBU yoki qo'lda).",
+        why: "Ko'p valyutali biznes — har kunlik kurs bilan UZS'ga aylantirish.",
+        open: '/settings/exchange-rates'
+      },
+      {
+        id: 'mxik',
+        name: "MXIK (IKPU) kodlari",
+        what: "Soliq.uz tasniflagichi — har tovar uchun majburiy kod.",
+        why: "SF-faktura va soliq hisobotida ishlatiladi. O'zbekistonda majburiy.",
+        open: '/settings/mxik'
+      },
+      {
+        id: 'auditLog',
+        name: "Audit log",
+        what: "Kim qachon nima qildi (yaratdi, o'zgartirdi, o'chirdi).",
+        why: "Xato sodir bo'lsa — kim, qachon, qanday qilganini topish.",
+        open: '/settings/audit-log'
+      },
+      {
+        id: 'attributes',
+        name: "Qo'shimcha xususiyatlar",
+        what: "Tizim entity'larida (tovar, kontragent) qo'shimcha custom maydonlar.",
+        why: "Sizning biznesingizga xos ma'lumotni saqlash («ranglar», «brend», «import partner»).",
+        open: '/settings/attributes'
+      },
+      {
+        id: 'printTemplates',
+        name: "Chop etish shabloni",
+        what: "Schyot, akt, kvitansiya va h.k. uchun chop etish formati.",
+        why: "Kompaniyangiz logosi va dizayni bilan chop qilish.",
+        open: '/settings/print-templates'
+      },
+      {
+        id: 'webhooks',
+        name: "Webhooks (integratsiyalar)",
+        what: "Boshqa tizim hodisalar haqida xabar olishi: «Yangi buyurtma keldi → Telegram'ga jo'nat».",
+        why: "Tizim avtomatlashtirish — qo'lda ish kamayadi.",
+        open: '/settings/webhooks'
+      },
+    ]
+  },
+  {
+    id: 'apps', icon: '🧩', label: "Yechimlar (Apps)",
+    purpose: "Tizimga qo'shimcha modullar (Telegram bot, Eskiz SMS, soliq.uz, 1C va boshqalar).",
+    items: [
+      {
+        id: 'appList',
+        name: "Ilovalar katalogi",
+        what: "Tizimga ulanishi mumkin bo'lgan plagin va integratsiyalar ro'yxati.",
+        why: "O'z biznesi uchun kerakli qo'shimcha funksiyani yoqish.",
+        open: '/apps'
+      },
+    ]
+  },
+];
+
+// Render
+const main = document.getElementById('main');
+
+STRUCTURE.forEach((mod) => {
+  const section = document.createElement('section');
+  section.className = 'module';
+  const itemCount = mod.items.length;
+
+  section.innerHTML = `
+    <div class="mod-head">
+      <h2>
+        <span class="icon">${mod.icon}</span>
+        ${mod.label}
+        <span class="count">${itemCount} ta bo'limcha</span>
+      </h2>
+      <p class="purpose">${mod.purpose}</p>
+    </div>
+  `;
+
+  mod.items.forEach(item => {
+    const div = document.createElement('div');
+    div.className = 'submodule';
+    div.innerHTML = `
+      <input type="checkbox" id="${item.id}" data-id="${item.id}">
+      <div class="content">
+        <label for="${item.id}"><h3 id="h3-${item.id}">${item.name}</h3></label>
+        <p class="what">${item.what}</p>
+        <p class="why">💡 Nima uchun: ${item.why}</p>
+        <a class="open-btn" href="${BASE_URL}${item.open}" target="_blank">Sahifani ochish →</a>
+      </div>
+    `;
+    section.appendChild(div);
+  });
+
+  main.appendChild(section);
+});
+
+// Restore state
+const STORAGE_KEY = 'nav-checklist-v2';
+const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}');
+document.querySelectorAll('input[type=checkbox]').forEach(cb => {
+  if (saved[cb.dataset.id]) {
+    cb.checked = true;
+    document.getElementById('h3-' + cb.dataset.id)?.classList.add('done');
+  }
+  cb.addEventListener('change', () => {
+    saved[cb.dataset.id] = cb.checked;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(saved));
+    document.getElementById('h3-' + cb.dataset.id)?.classList.toggle('done', cb.checked);
+    updateProgress();
+  });
+});
+
+function updateProgress() {
+  const all = document.querySelectorAll('input[type=checkbox]');
+  const done = document.querySelectorAll('input[type=checkbox]:checked').length;
+  const pct = all.length ? (done / all.length * 100) : 0;
+  document.getElementById('progressFill').style.width = pct + '%';
+  document.getElementById('progressText').textContent = `${done} / ${all.length} (${pct.toFixed(0)}%)`;
+}
+
+function toggleAll(val) {
+  document.querySelectorAll('input[type=checkbox]').forEach(cb => {
+    cb.checked = val;
+    saved[cb.dataset.id] = val;
+    document.getElementById('h3-' + cb.dataset.id)?.classList.toggle('done', val);
+  });
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(saved));
+  updateProgress();
+}
+
+updateProgress();
+</script>
+</body>
+</html>

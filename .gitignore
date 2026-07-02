@@ -1,0 +1,157 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+.pnpm-debug.log*
+
+# Build outputs
+dist/
+build/
+.next/
+.next-dev/
+out/
+.turbo/
+.cache/
+*.tsbuildinfo
+
+# Testing
+coverage/
+.nyc_output/
+playwright-report/
+playwright/.cache/
+test-results/
+.screenshots/
+
+# Claude Code local config (local-only) — but workflows/ is a project asset
+.claude/*
+!.claude/workflows
+!.claude/workflows/**
+
+# Env / secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+.credentials/
+secrets.json
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+!.vscode/settings.json.sample
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Runtime
+.pm2/
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# Generated
+prisma/generated/
+openapi.yaml
+!openapi.template.yaml
+
+# Discovery captures (large binaries — stored via LFS or external)
+docs/moysklad-reference/visual-captures/**/*.png
+docs/moysklad-reference/visual-captures/**/*.mp4
+!docs/moysklad-reference/visual-captures/INDEX.md
+
+# Local data
+data/
+uploads/
+tmp/
+packages/db/src/generated/*.tmp*
+qa-*.png
+smoke-*.png
+# Sub-nav module page captures from the Playwright smoke pass
+factures-*-page.png
+commission-reports-page.png
+consignments-page.png
+# Lesson screenshots + sort-demo screenshots — captured for explanation
+# in the chat, not part of the codebase
+lesson*-*.png
+sort-demo-*.png
+po-new-*.png
+po-detail-*.png
+products-*.png
+counter-*.png
+po-*.png
+.playwright-mcp/
+
+# Temporary scrape artifacts (reference HTML, transient JSON dumps)
+html.md
+tools/old-*.json
+
+# Root-level audit/capture artifact dumps (transient dev output, not source —
+# some contain real/test account data: names, phones). Never commit.
+/*-audit*.yml
+/moysklad-co.yml
+/moysklad-login.yml
+
+# Runtime artifacts from the dev launch scripts
+*.err
+.commit-msg.txt
+.api-dev.log
+.web-dev.log
+
+tools/scripts/.api-token
+docs/moysklad-reference/_api-real/
+
+# Moysklad audit reference screenshots — captured by
+# `pnpm capture-moysklad` (Audit Protocol v2.1). PNG'lar git'ga
+# olinmaydi (size + copyright); metadata.json (DOM dumps, dropdown
+# items, column gear items) commit qilinadi va PR'da review uchun.
+docs/moysklad-reference/**/states/*.png
+# Detail/edit-form captures (`--detail`): same policy — PNG'lar git'ga olinmaydi,
+# *.html DOM dump'lar + detail-metadata.json (dropdown items) commit qilinadi.
+docs/moysklad-reference/**/detail/*.png
+!docs/moysklad-reference/**/metadata.json
+!docs/moysklad-reference/**/detail-metadata.json
+
+# Migration script ID-map (real-account UUIDs → test-account UUIDs)
+.migration-id-map.json
+
+# Drag-and-drop screenshots
+image*.png
+
+# Playwright saqlangan moysklad sessiyasi (hech qachon commit qilinmaydi)
+.auth/
+
+# Throwaway research/analysis notes (session-start audit flagged as workspace noise)
+scratch/
+
+# local list-audit loop logs
+scripts/.loop-logs/
+
+# Live moysklad deep-spec captures (real account data: names/phones) — NEVER commit
+moysklad-co-new-*.png
+moysklad-co-new-*.yml
+moysklad-co-new-*.json
+moysklad-co-new-*.txt
+
+# Local app self-verify screenshots — never commit
+ours-co-new-*.png
+ours-*.png
+verify-*.png
+# Live moysklad captures (contain real account names/phones) — never commit
+moysklad-*.png
+ms-*.png
+# Local Playwright cert profiles + cert/measure scripts (hold dev credentials)
+.playwright-cert-profile/
+.playwright-ms-profile/
+*.playwright-cert-profile/
+scripts/cert-*.cjs
+scripts/measure-moysklad-*.cjs

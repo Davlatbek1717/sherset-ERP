@@ -1,0 +1,7 @@
+/* @import must precede all other rules (CSS spec — Turbopack enforces
+   this; webpack/PostCSS used to tolerate it after @tailwind). */
+@import "@moysklad/ui/globals.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;

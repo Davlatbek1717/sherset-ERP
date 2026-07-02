@@ -1,0 +1,14 @@
+- button "help"
+- heading "Ta'minlovchi schyotlari" [level=1]
+- button "refresh":
+  - img
+- link "Yangi faktura":
+  - /url: /invoices-in/new
+  - img
+  - text: ""
+- button "Filtr" [expanded]
+- img
+- textbox "№, kiruvchi №, ta'minlovchi..."
+- text: "0"
+- button "O'zgartirish"
+- button "Chop etish"

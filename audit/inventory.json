@@ -1,0 +1,252 @@
+{
+  "_meta": {
+    "purpose": "Complete inventory of our routes vs moysklad reference screenshots",
+    "viewport_for_capture": { "width": 1440, "height": 900 },
+    "reference_root": "docs/moysklad-reference/visual-captures",
+    "our_capture_root": "audit/our-final"
+  },
+  "modules": [
+    {
+      "name": "homepage",
+      "route_list": "/",
+      "ref_list": "01-module/homepage/01-default.png",
+      "priority": "high"
+    },
+    {
+      "name": "documents-all",
+      "route_list": "/korzina",
+      "ref_list": "01-module/documents-all/screenshots/01-default.png",
+      "priority": "low"
+    },
+    {
+      "name": "audit",
+      "route_list": "/settings/audit-log",
+      "ref_list": "01-module/audit/screenshots/01-default.png",
+      "priority": "low"
+    },
+    {
+      "name": "recyclebin",
+      "route_list": "/korzina",
+      "ref_list": "01-module/recyclebin/screenshots/01-default.png",
+      "priority": "low"
+    },
+    {
+      "name": "purchaseorder",
+      "route_list": "/purchase-orders",
+      "route_detail_template": "/purchase-orders/{id}",
+      "ref_list": "02-module/purchaseorder/screenshots/i-default.png",
+      "priority": "high"
+    },
+    {
+      "name": "supply",
+      "route_list": "/supplies",
+      "route_detail_template": "/supplies/{id}",
+      "ref_list": "02-module/supply/01-default.png",
+      "priority": "high"
+    },
+    {
+      "name": "purchasereturn",
+      "route_list": "/purchase-returns",
+      "route_detail_template": "/purchase-returns/{id}",
+      "ref_list": "02-module/purchasereturn/01-default.png",
+      "priority": "med"
+    },
+    {
+      "name": "invoicein",
+      "route_list": "/invoices-in",
+      "route_detail_template": "/invoices-in/{id}",
+      "ref_list": "02-module/invoicein/01-default.png",
+      "priority": "med"
+    },
+    {
+      "name": "facturein",
+      "route_list": "/invoices-in",
+      "ref_list": "02-module/facturein/01-default.png",
+      "priority": "low"
+    },
+    {
+      "name": "customerorder",
+      "route_list": "/customer-orders",
+      "route_detail_template": "/customer-orders/{id}",
+      "ref_list": "03-module/customerorder/screenshots/i-default.png",
+      "ref_detail": "03-module/customerorder/screenshots/d-default.png",
+      "priority": "FLAGSHIP"
+    },
+    {
+      "name": "demand",
+      "route_list": "/demands",
+      "route_detail_template": "/demands/{id}",
+      "ref_list": "03-module/demand/screenshots/i-default.png",
+      "priority": "high"
+    },
+    {
+      "name": "invoiceout",
+      "route_list": "/invoices-out",
+      "route_detail_template": "/invoices-out/{id}",
+      "ref_list": "03-module/invoiceout/01-default.png",
+      "priority": "high"
+    },
+    {
+      "name": "salesreturn",
+      "route_list": "/sales-returns",
+      "route_detail_template": "/sales-returns/{id}",
+      "ref_list": "03-module/salesreturn/01-default.png",
+      "priority": "med"
+    },
+    {
+      "name": "factureout",
+      "route_list": "/invoices-out",
+      "ref_list": "03-module/factureout/01-default.png",
+      "priority": "low"
+    },
+    {
+      "name": "product",
+      "route_list": "/products",
+      "route_detail_template": "/products/{id}",
+      "ref_list": "04-module/product/01-default.png",
+      "priority": "high"
+    },
+    {
+      "name": "service",
+      "route_list": "/services",
+      "ref_list": "04-module/service/01-default.png",
+      "priority": "med"
+    },
+    {
+      "name": "bundle",
+      "route_list": "/bundles",
+      "ref_list": "04-module/bundle/01-default.png",
+      "priority": "med"
+    },
+    {
+      "name": "productfolder",
+      "route_list": "/product-folders",
+      "ref_list": "04-module/productfolder/01-default.png",
+      "priority": "low"
+    },
+    {
+      "name": "variant",
+      "route_list": "/variants",
+      "ref_list": "04-module/variant/01-default.png",
+      "priority": "low"
+    },
+    {
+      "name": "pricetype",
+      "route_list": "/price-types",
+      "ref_list": "04-module/pricetype/01-default.png",
+      "priority": "low"
+    },
+    {
+      "name": "counterparty",
+      "route_list": "/counterparties",
+      "route_detail_template": "/counterparties/{id}",
+      "ref_list": "05-module/counterparty/01-default.png",
+      "priority": "high"
+    },
+    {
+      "name": "contactperson",
+      "route_list": "/contact-persons",
+      "ref_list": "05-module/contactperson/01-default.png",
+      "priority": "low"
+    },
+    {
+      "name": "enter",
+      "route_list": "/enters",
+      "route_detail_template": "/enters/{id}",
+      "ref_list": "06-module/enter/01-default.png",
+      "priority": "med"
+    },
+    {
+      "name": "loss",
+      "route_list": "/losses",
+      "route_detail_template": "/losses/{id}",
+      "ref_list": "06-module/loss/01-default.png",
+      "priority": "med"
+    },
+    {
+      "name": "move",
+      "route_list": "/moves",
+      "route_detail_template": "/moves/{id}",
+      "ref_list": "06-module/move/01-default.png",
+      "priority": "med"
+    },
+    {
+      "name": "inventory",
+      "route_list": "/inventories",
+      "route_detail_template": "/inventories/{id}",
+      "ref_list": "06-module/inventory/01-default.png",
+      "priority": "med"
+    },
+    {
+      "name": "internalorder",
+      "route_list": "/inventories",
+      "ref_list": "06-module/internalorder/01-default.png",
+      "priority": "low"
+    },
+    {
+      "name": "store",
+      "route_list": "/settings/stores",
+      "ref_list": "06-module/store/01-default.png",
+      "priority": "med"
+    },
+    {
+      "name": "cashin",
+      "route_list": "/cash-in",
+      "route_detail_template": "/cash-in/{id}",
+      "ref_list": "07-module/cashin/01-default.png",
+      "priority": "high"
+    },
+    {
+      "name": "cashout",
+      "route_list": "/cash-out",
+      "route_detail_template": "/cash-out/{id}",
+      "ref_list": "07-module/cashout/01-default.png",
+      "priority": "high"
+    },
+    {
+      "name": "paymentin",
+      "route_list": "/payments-in",
+      "route_detail_template": "/payments-in/{id}",
+      "ref_list": "07-module/paymentin/01-default.png",
+      "priority": "high"
+    },
+    {
+      "name": "paymentout",
+      "route_list": "/payments-out",
+      "route_detail_template": "/payments-out/{id}",
+      "ref_list": "07-module/paymentout/01-default.png",
+      "priority": "high"
+    },
+    {
+      "name": "task",
+      "route_list": "/tasks",
+      "route_detail_template": "/tasks/{id}",
+      "ref_list": "11-module/task/01-default.png",
+      "priority": "high"
+    },
+    {
+      "name": "settings",
+      "route_list": "/settings",
+      "ref_list": "00-module/settings/01-default.png",
+      "priority": "med"
+    },
+    {
+      "name": "organization",
+      "route_list": "/settings/organizations",
+      "ref_list": "00-module/organization/01-default.png",
+      "priority": "med"
+    },
+    {
+      "name": "employee",
+      "route_list": "/settings/users",
+      "ref_list": "00-module/employee/01-default.png",
+      "priority": "med"
+    },
+    {
+      "name": "role",
+      "route_list": "/settings/users",
+      "ref_list": "00-module/role/01-default.png",
+      "priority": "low"
+    }
+  ]
+}

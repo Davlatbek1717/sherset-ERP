@@ -1,0 +1,327 @@
+/* Moysklad Clone Design System — Global CSS
+ * Colors extracted from real Moysklad stylesheet
+ * (cdn-static.moysklad.ru/app/cdn/r1657/_common.css). */
+
+:root {
+  /* Brand — Sherset blue scale (primary #0652FF, measured from the logo) */
+  --ms-brand-50: #edf3ff;
+  --ms-brand-100: #dce6ff;
+  --ms-brand-200: #b4cbff;
+  --ms-brand-300: #82a8ff;
+  --ms-brand-400: #447dff;
+  --ms-brand-500: #0652ff; /* PRIMARY */
+  --ms-brand-600: #0546db;
+  --ms-brand-700: #0439b2;
+  --ms-brand-800: #032b85;
+  --ms-brand-900: #07194d; /* DARK NAVY — navbar */
+
+  /* Accent — bright Sherset blue (hyperlinks) */
+  --ms-accent-400: #5c8dff;
+  --ms-accent-500: #2e6bff;
+  --ms-accent-600: #0652ff;
+
+  /* Neutral grays — from Moysklad CSS */
+  --ms-neutral-0: #ffffff;
+  --ms-neutral-50: #f7f7f7;
+  --ms-neutral-100: #f2f2f2;
+  --ms-neutral-150: #ededed;
+  --ms-neutral-200: #e6e6e6;
+  --ms-neutral-300: #d6d6d6;
+  --ms-neutral-400: #bfbfbf;
+  --ms-neutral-500: #909090;
+  --ms-neutral-600: #808080;
+  --ms-neutral-700: #767676;
+  --ms-neutral-800: #5f6d79;
+  --ms-neutral-900: #313131;
+  --ms-neutral-1000: #091739;
+
+  /* Success (#369a1e from Moysklad) */
+  --ms-success-50: #dff3df;
+  --ms-success-100: #cce255;
+  --ms-success-500: #369a1e;
+  --ms-success-700: #2a7517;
+
+  /* Warning (#f88001 from Moysklad) */
+  --ms-warning-50: #ffe6d5;
+  --ms-warning-100: #fffb8c;
+  --ms-warning-500: #f88001;
+  --ms-warning-600: #db7609;
+  --ms-warning-700: #d1622a;
+
+  /* Destructive (#ce1b1b from Moysklad) */
+  --ms-destructive-50: #ffe3e0;
+  --ms-destructive-100: #ee644a;
+  --ms-destructive-500: #ce1b1b;
+  --ms-destructive-600: #e92919;
+  --ms-destructive-700: #a81313;
+
+  /* Info = brand blue */
+  --ms-info-50: #dce6ff;
+  --ms-info-100: #b4cbff;
+  --ms-info-500: #0652ff;
+  --ms-info-700: #0439b2;
+
+  /* ===== Semantic (light mode) ===== */
+  --ms-bg-app: var(--ms-neutral-50);
+  --ms-bg-surface: var(--ms-neutral-0);
+  --ms-bg-surface-elevated: var(--ms-neutral-0);
+  --ms-bg-muted: var(--ms-neutral-100);
+  --ms-bg-hover: var(--ms-brand-100);
+  --ms-bg-selected: var(--ms-brand-200);
+  /* moysklad goods-grid row hover — a pale warm yellow (b-inlineeditor-table
+   * tr:hover), distinct from the blue selection tint. */
+  --ms-row-hover: #fdf6cc;
+  /* Navbar tone — moysklad.uz uses a medium blue (≈ brand-600 #1f75a8),
+   * NOT the darker brand-800 we used pre-parity. The lighter tone lets
+   * per-module icon colors read as muted brand accents instead of high-
+   * contrast saturated icons against dark navy (the visual gap users
+   * flagged when comparing screenshots). Hover lightens via brand-500. */
+  --ms-bg-navbar: var(--ms-brand-600);
+  --ms-bg-navbar-hover: var(--ms-brand-500);
+
+  /* moysklad primary text is #222 (blueprint body color rgb(34,34,34)); our
+   * neutral-900 was #313131 — a touch lighter. Override to match exactly. */
+  /* moysklad parity (user 2026-06-22, 2nd pass): «ALL text — table headers,
+   * inputs, labels, buttons — must read black & crisp like moysklad, not grey».
+   * A first darkening (secondary #3f3f3f / muted #6f6f6f) wasn't enough, so the
+   * whole content text ramp is pushed to near-black. Primary nudged #222→#1a1a1a
+   * (the user reads #222 as grey on screen); secondary → #1f1f1f (labels now
+   * black); muted → #4a4a4a (hints/ghost-buttons clearly darker, not faded).
+   * Links / sub-nav / active states stay blue via --ms-text-brand (unchanged).
+   * The neutral-* ramp is untouched (borders/icons keep their tone). */
+  --ms-text-primary: #1a1a1a;
+  --ms-text-secondary: #1f1f1f;
+  /* muted is what list DATE columns + secondary cells use (e.g. counterparties
+   * «Qachon o'zgartirilgan»). The user reads even #4a4a4a as grey, so push it to
+   * near-black #333 — content reads crisp; only true placeholders/«—» stay a
+   * touch lighter via their own dimming. */
+  --ms-text-muted: #333333;
+  /* Input PLACEHOLDER text (user 2026-06-24: «placeholder kulrangroq, qora
+   * emas»). Content/muted text is near-black (#333) for crisp reading, but a
+   * placeholder is a HINT — it must look faded, not like a real value. So
+   * placeholders get their OWN light-grey token (decoupled from --ms-text-muted,
+   * which the «all text crisp black» pass pushed to #333). Tunable in one place. */
+  --ms-text-placeholder: #9e9e9e;
+  --ms-text-disabled: var(--ms-neutral-400);
+  --ms-text-inverse: var(--ms-neutral-0);
+  --ms-text-brand: var(--ms-brand-500);
+  --ms-text-link: var(--ms-accent-600);
+  --ms-text-success: var(--ms-success-700);
+  --ms-text-warning: var(--ms-warning-700);
+  --ms-text-destructive: var(--ms-destructive-500);
+
+  --ms-border-default: var(--ms-neutral-200);
+  --ms-border-strong: var(--ms-neutral-400);
+  --ms-border-focus: var(--ms-brand-500);
+  /* Form-control border (user 2026-06-23: «input border qora bo'lishi kerak
+   * aniq»). The resting control border was #bfbfbf (border-strong) which read
+   * faded/grey on white; this near-black token makes every input/select/picker
+   * border crisp & dark. Used ONLY by form controls so table/card/divider
+   * borders keep their lighter neutral tone. moysklad inputs are 0-radius with
+   * a blue border on focus and NO outer ring — matched in the control classes. */
+  --ms-border-input: #333333;
+
+  --ms-action-primary: var(--ms-brand-500);
+  --ms-action-primary-hover: var(--ms-brand-600);
+  --ms-action-primary-active: var(--ms-brand-700);
+  --ms-action-destructive: var(--ms-destructive-500);
+  --ms-action-destructive-hover: var(--ms-destructive-600);
+  /* Save button = green per moysklad.uz convention. The `success` Button
+   * variant uses these tokens; primary blue is reserved for create/upload
+   * CTAs ("+ Buyurtma" etc). */
+  --ms-action-success: var(--ms-success-500);
+  --ms-action-success-hover: var(--ms-success-700);
+  /* moysklad «Сохранить» is NOT a filled green button — it is a white/
+   * surface button with a lime-green border + dark text (blueprint
+   * computed style: bg transparent, border rgb(161,185,0)=#a1b900,
+   * color #222). This border token drives the `success` Button variant. */
+  --ms-action-success-border: #a1b900;
+
+  /* Control sizing — moysklad form controls are short/dense. Blueprint
+   * (blueprint-customerorder-edit-new.json) measures picker/input/select
+   * boxes at 19.4px tall (vs our prior h-9 = 27px, which read as "chunky,
+   * not moysklad"). One token drives every DS control height (Input,
+   * NativeSelect, CatalogPickerField, DatePicker) so density stays uniform
+   * app-wide and is tunable in one place. */
+  --ms-control-h: 19px;
+
+  /* Radii — Moysklad minimal */
+  --ms-radius-sm: 2px;
+  --ms-radius-default: 3px;
+  --ms-radius-md: 4px;
+  --ms-radius-lg: 6px;
+
+  /* Shadows — Moysklad uses hairline borders, minimal shadows */
+  --ms-shadow-xs: 0 1px 2px 0 rgba(9, 23, 57, 0.05);
+  --ms-shadow-sm: 0 1px 3px 0 rgba(9, 23, 57, 0.08);
+  --ms-shadow-md: 0 2px 6px 0 rgba(9, 23, 57, 0.1);
+  --ms-shadow-lg: 0 4px 12px 0 rgba(9, 23, 57, 0.12);
+  --ms-shadow-focus: 0 0 0 2px rgba(24, 105, 153, 0.3);
+
+  /* Motion */
+  --ms-duration-fast: 100ms;
+  --ms-duration-normal: 150ms;
+  --ms-duration-slow: 250ms;
+  --ms-easing: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Z-index scale — keep in sync with packages/design-system/src/tokens/z-indices.ts */
+  --ms-z-base: 0;
+  --ms-z-raised: 10;
+  --ms-z-dropdown: 100;
+  --ms-z-sticky: 200;
+  --ms-z-overlay: 300;
+  --ms-z-modal: 400;
+  /* Confirm/conflict dialogs sit ABOVE modals: a confirm is an interrupt that
+     can be invoked from WITHIN an open Modal (e.g. an optimistic-lock conflict
+     reload, or a delete prompt inside an edit modal). At equal z-index the
+     body-portaled Radix Modal would paint over the confirm and swallow its
+     clicks — so confirm must outrank modal. */
+  --ms-z-confirm: 450;
+  --ms-z-popover: 500;
+  --ms-z-tooltip: 600;
+  --ms-z-toast: 700;
+  --ms-z-max: 9999;
+
+  /* Font families (from Moysklad CSS) */
+  --ms-font-sans: "Helvetica Neue", Helvetica, Arial, "Lucida Grande", sans-serif;
+  --ms-font-dense: Tahoma, Geneva, sans-serif;
+  --ms-font-mono: "JetBrains Mono", Menlo, Monaco, Consolas, monospace;
+}
+
+.dark {
+  --ms-bg-app: var(--ms-neutral-1000);
+  --ms-bg-surface: #1a2744;
+  --ms-bg-surface-elevated: #243457;
+  --ms-bg-muted: #1a2744;
+  --ms-bg-hover: #2a3d67;
+  --ms-bg-selected: #2a4c7a;
+  /* Row-hover tint — a muted warm row highlight that reads on the dark grid. */
+  --ms-row-hover: #33405e;
+
+  --ms-text-primary: #f0f4fa;
+  --ms-text-secondary: #c0cbdb;
+  --ms-text-muted: #8092ab;
+  --ms-text-disabled: #5b6a83;
+  --ms-text-brand: var(--ms-brand-300);
+  --ms-text-link: var(--ms-accent-400);
+
+  --ms-border-default: #2a3d67;
+  --ms-border-strong: #3d527d;
+  --ms-border-focus: var(--ms-brand-400);
+  /* dark-mode control border: a touch lighter than strong so it reads on the
+   * dark surface (the light-mode #333 would vanish). */
+  --ms-border-input: #5b6a83;
+
+  --ms-action-primary-hover: var(--ms-brand-400);
+  --ms-action-primary-active: var(--ms-brand-300);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--ms-bg-app);
+  color: var(--ms-text-primary);
+  font-family: var(--ms-font-sans);
+  /* moysklad ground-truth (blueprint-customerorder-edit-new.json): body is
+   * "Helvetica Neue" 12px #222. Was 13px — the 1px gap read as "not moysklad"
+   * (denser type is the defining moysklad feel). rem base shrinks with it, so
+   * all rem-based spacing tightens proportionally toward moysklad density. */
+  font-size: 12px;
+  line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+:focus-visible {
+  outline: 2px solid var(--ms-border-focus);
+  outline-offset: 2px;
+  /* NOTE: do NOT set border-radius here. This rule's `border-radius` rounds the
+   * ELEMENT (not just the outline) on focus — it made square inputs round their
+   * corners the moment they were focused (user 2026-06-23 «radius kerak emas»).
+   * The focus outline already follows each element's own border-radius. */
+}
+
+/* Form controls (user 2026-06-23: «active/hover bo'lganda input chiziqdan
+ * tashqari yana bitta chiziq paydo bo'ladi — tuzat»). The offset outline above
+ * is the right a11y affordance for buttons/links, but on a text field it paints
+ * a SECOND line outside the field's own border. moysklad inputs show no outer
+ * ring — focus just turns the field's border blue. So suppress the global
+ * outline on real input elements (their components set a focus border instead).
+ * Element selectors keep this scoped to inputs — buttons/links keep the ring. */
+input:focus,
+input:focus-visible,
+textarea:focus,
+textarea:focus-visible,
+select:focus,
+select:focus-visible {
+  outline: none;
+  /* stay square on focus too (no rounding jump) */
+  border-radius: 0;
+}
+
+/* Placeholders read a light grey app-wide (user 2026-06-24: «placeholder
+ * kulrangroq, qora emas»). The DS Input/Textarea utilities also point at
+ * --ms-text-placeholder, but `!important` here makes this the SINGLE source of
+ * truth — every <input>/<textarea> placeholder is grey regardless of any
+ * per-component utility, so a stray dark `placeholder:text-...` class can never
+ * make a placeholder read like a real value. A placeholder is a HINT — it must
+ * look faded, not near-black like content text. opacity:1 cancels Firefox's
+ * default placeholder dimming so the token color renders exactly. */
+input::placeholder,
+textarea::placeholder {
+  color: var(--ms-text-placeholder) !important;
+  opacity: 1;
+}
+
+::selection {
+  background-color: var(--ms-brand-200);
+  color: var(--ms-brand-900);
+}
+
+/* Moysklad-style app navbar (medium-blue theme — matches moysklad.uz
+ * reference). The .ms-navbar class only sets the bar's background +
+ * default inherited text color. Active/inactive tab styling is owned
+ * by Tailwind utilities on the link itself (`bg-white
+ * text-[var(--ms-text-brand)]` for active, `text-white/85
+ * hover:bg-white/10` for inactive) — historically we had `.ms-navbar
+ * a { color: ... }` here too, but that selector's specificity beats
+ * Tailwind utilities and made the active pill render white-on-white
+ * (icon + label invisible on the white background). Removed. */
+.ms-navbar {
+  background-color: var(--ms-bg-navbar);
+  color: rgba(255, 255, 255, 0.92);
+}
+
+/* moysklad grid parity (user 2026-06-22): every table header shows a vertical
+ * column-boundary separator so all column widths are visible at a glance. The
+ * shared DataTable sets this on its own <th>s; this global rule covers the
+ * hand-written <table> blocks (analitika, hr, reports, embedded sections) too —
+ * binding them to the common look without migrating each. Header-only (thead)
+ * so body rows stay clean, matching moysklad's list grid. */
+@media screen {
+  thead th:not(:last-child) {
+    border-right: 1px solid var(--ms-border-default);
+  }
+}
+
+/* Scrollbar (webkit) — subtle like Moysklad */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--ms-bg-muted);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--ms-neutral-400);
+  border-radius: var(--ms-radius-default);
+  border: 2px solid var(--ms-bg-muted);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--ms-neutral-500);
+}

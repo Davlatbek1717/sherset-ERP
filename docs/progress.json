@@ -1,0 +1,407 @@
+{
+  "generatedAt": "2026-06-26T07:45:42.932Z",
+  "list_pages": {
+    "total_target": 56,
+    "actual_routes_in_app": 65,
+    "toolbar_components_built": 18,
+    "toolbar_components_pct": 32,
+    "dedicated_components": 14,
+    "shared_assortment_reuse": 4,
+    "inline_page_level": 0,
+    "dedicated_list": [
+      "assortment",
+      "counterparties",
+      "currencies",
+      "customer-orders",
+      "demands",
+      "enters",
+      "inventories",
+      "losses",
+      "moves",
+      "projects",
+      "purchase-returns",
+      "sales-returns",
+      "supplies",
+      "uoms"
+    ]
+  },
+  "detail_pages": {
+    "total_target": 66,
+    "actual_in_app": 66,
+    "audited": 63,
+    "audited_pct": 95,
+    "files": [
+      "analitika-buyurtmalar-detail.audit.md",
+      "analitika-kontragentlar-detail.audit.md",
+      "analitika-xodimlar-detail.audit.md",
+      "bank-accounts-detail.audit.md",
+      "boms-detail.audit.md",
+      "bundles-detail.audit.md",
+      "cash-desks-detail.audit.md",
+      "cash-in-detail.audit.md",
+      "cash-out-detail.audit.md",
+      "contact-persons-detail.audit.md",
+      "counterparties-detail.audit.md",
+      "counterparty-adjustments-detail.audit.md",
+      "custom-entities-detail.audit.md",
+      "customer-orders-detail.audit.md",
+      "demands-detail.audit.md",
+      "discounts-detail.audit.md",
+      "ecommerce-channels-detail.audit.md",
+      "ecommerce-orders-detail.audit.md",
+      "enters-detail.audit.md",
+      "expense-items-detail.audit.md",
+      "hr-employees-detail.audit.md",
+      "internal-orders-detail.audit.md",
+      "inventories-detail.audit.md",
+      "invoices-in-detail.audit.md",
+      "invoices-out-detail.audit.md",
+      "label-templates-detail.audit.md",
+      "losses-detail.audit.md",
+      "moves-detail.audit.md",
+      "opportunities-detail.audit.md",
+      "organizations-detail.audit.md",
+      "payments-in-detail.audit.md",
+      "payments-out-detail.audit.md",
+      "payrolls-detail.audit.md",
+      "pipelines-detail.audit.md",
+      "prepayment-returns-detail.audit.md",
+      "prepayments-detail.audit.md",
+      "price-lists-detail.audit.md",
+      "price-types-detail.audit.md",
+      "processes-detail.audit.md",
+      "processing-orders-detail.audit.md",
+      "processings-detail.audit.md",
+      "productions-detail.audit.md",
+      "products-detail.audit.md",
+      "projects-detail.audit.md",
+      "publications-detail.audit.md",
+      "purchase-orders-detail.audit.md",
+      "purchase-returns-detail.audit.md",
+      "regions-detail.audit.md",
+      "retail-sales-detail.audit.md",
+      "retail-sessions-detail.audit.md",
+      "roles-detail.audit.md",
+      "sales-returns-detail.audit.md",
+      "services-detail.audit.md",
+      "stages-detail.audit.md",
+      "stores-detail.audit.md",
+      "supplies-detail.audit.md",
+      "tasks-detail.audit.md",
+      "tax-rates-detail.audit.md",
+      "tracking-codes-detail.audit.md",
+      "uoms-detail.audit.md",
+      "users-detail.audit.md",
+      "variants-detail.audit.md",
+      "work-orders-detail.audit.md"
+    ]
+  },
+  "list_audits": {
+    "audited": 71,
+    "files": [
+      "attributes-list.audit.md",
+      "bank-accounts-list.audit.md",
+      "boms-list.audit.md",
+      "bundles-list.audit.md",
+      "cash-desks-list.audit.md",
+      "cash-in-list.audit.md",
+      "cash-out-list.audit.md",
+      "commission-reports-list.audit.md",
+      "consignments-list.audit.md",
+      "contact-persons-list.audit.md",
+      "counterparties-list.audit.md",
+      "counterparty-adjustments-list.audit.md",
+      "currencies-list.audit.md",
+      "custom-entities-list.audit.md",
+      "customer-orders-list.audit.md",
+      "demands-list.audit.md",
+      "discounts-list.audit.md",
+      "employees-list.audit.md",
+      "enters-list.audit.md",
+      "exchange-rates-list.audit.md",
+      "expense-items-list.audit.md",
+      "factures-in-list.audit.md",
+      "factures-out-list.audit.md",
+      "internal-orders-list.audit.md",
+      "inventories-list.audit.md",
+      "invoices-in-list.audit.md",
+      "invoices-out-list.audit.md",
+      "label-templates-list.audit.md",
+      "losses-list.audit.md",
+      "moves-list.audit.md",
+      "mxik-list.audit.md",
+      "online-orders-list.audit.md",
+      "opportunities-list.audit.md",
+      "organizations-list.audit.md",
+      "payments-in-list.audit.md",
+      "payments-out-list.audit.md",
+      "payroll-list.audit.md",
+      "pipelines-list.audit.md",
+      "prepayment-returns-list.audit.md",
+      "prepayments-list.audit.md",
+      "price-lists-list.audit.md",
+      "price-types-list.audit.md",
+      "print-templates-list.audit.md",
+      "processes-list.audit.md",
+      "processing-orders-list.audit.md",
+      "processings-list.audit.md",
+      "product-folders-list.audit.md",
+      "productions-list.audit.md",
+      "products-list.audit.md",
+      "projects-list.audit.md",
+      "publications-list.audit.md",
+      "purchase-orders-list.audit.md",
+      "purchase-returns-list.audit.md",
+      "regions-list.audit.md",
+      "retail-sales-list.audit.md",
+      "retail-sessions-list.audit.md",
+      "sales-channels-list.audit.md",
+      "sales-returns-list.audit.md",
+      "services-list.audit.md",
+      "stages-list.audit.md",
+      "stores-list.audit.md",
+      "supplies-list.audit.md",
+      "task-types-list.audit.md",
+      "tasks-list.audit.md",
+      "tax-rates-list.audit.md",
+      "tracking-codes-list.audit.md",
+      "uoms-list.audit.md",
+      "users-list.audit.md",
+      "variants-list.audit.md",
+      "webhooks-list.audit.md",
+      "work-orders-list.audit.md"
+    ]
+  },
+  "mass_edit": {
+    "backend_endpoints": 25,
+    "smoke_log_hint": "Run `pnpm smoke:all` and parse the tail for live-smoke + adversarial counts"
+  },
+  "moysklad_reference": {
+    "captured_modules": 25,
+    "detail_captured_modules": 12,
+    "modules": [
+      "cash-in",
+      "cash-out",
+      "contact-persons",
+      "counterparties",
+      "currencies",
+      "customer-orders",
+      "demands",
+      "employees",
+      "enters",
+      "internalorder",
+      "inventories",
+      "invoices-in",
+      "invoices-out",
+      "losses",
+      "moves",
+      "payments-in",
+      "payments-out",
+      "processing",
+      "processingplan",
+      "products",
+      "projects",
+      "purchase-orders",
+      "supplies",
+      "uoms",
+      "variants"
+    ]
+  },
+  "phase2": {
+    "cohorts_total": 7,
+    "cohorts_done": 7,
+    "pct": 100,
+    "pages_total": 35,
+    "not_production_ready": true,
+    "note": "Phase-2 = runtime browser+adversarial QA per cohort. cohorts_done is COMPUTED from proof-doc existence (docs/audits/_PHASE2-*.audit.md) — not hand-set. 100% means QA cohorts verified, NOT production-ready (Phase-3/4 not started). Source of truth: docs/audits/_PHASE2-100-PLAN.md + scripts/progress-report.ts manifest.",
+    "cohorts": [
+      {
+        "name": "Hujjat-detail (Cohort A)",
+        "page_count": 13,
+        "pages": [
+          "customer-orders",
+          "demands",
+          "supplies",
+          "cash-in",
+          "cash-out",
+          "moves",
+          "payments-in",
+          "payments-out",
+          "invoices-in",
+          "invoices-out",
+          "sales-returns",
+          "purchase-returns",
+          "purchase-orders"
+        ],
+        "proof_docs": [
+          "_PHASE2-cohortA-session2-clearfield.audit.md",
+          "_PHASE2-cohortA-session3-returns-cogs.audit.md"
+        ],
+        "verified_inline": false,
+        "done": true,
+        "missing_proof_docs": []
+      },
+      {
+        "name": "Katalog (Cohort B)",
+        "page_count": 5,
+        "pages": [
+          "counterparties",
+          "products",
+          "projects",
+          "stores",
+          "uoms"
+        ],
+        "proof_docs": [
+          "_PHASE2-katalog-cohort.audit.md"
+        ],
+        "verified_inline": false,
+        "done": true,
+        "missing_proof_docs": []
+      },
+      {
+        "name": "Stock + internal",
+        "page_count": 4,
+        "pages": [
+          "enters",
+          "losses",
+          "inventories",
+          "internal-orders"
+        ],
+        "proof_docs": [
+          "_PHASE2-stock-internal-cohort.audit.md"
+        ],
+        "verified_inline": false,
+        "done": true,
+        "missing_proof_docs": []
+      },
+      {
+        "name": "Production-config",
+        "page_count": 4,
+        "pages": [
+          "production/boms",
+          "production/processes",
+          "production/stages",
+          "production/work-orders"
+        ],
+        "proof_docs": [
+          "_PHASE2-production-config-cohort.audit.md"
+        ],
+        "verified_inline": true,
+        "done": true,
+        "missing_proof_docs": []
+      },
+      {
+        "name": "Money / returns",
+        "page_count": 3,
+        "pages": [
+          "prepayments",
+          "prepayment-returns",
+          "counterparty-adjustments"
+        ],
+        "proof_docs": [
+          "_PHASE2-money-returns-cohort.audit.md"
+        ],
+        "verified_inline": true,
+        "done": true,
+        "missing_proof_docs": []
+      },
+      {
+        "name": "Retail",
+        "page_count": 2,
+        "pages": [
+          "retail/sales",
+          "retail/sessions"
+        ],
+        "proof_docs": [
+          "_PHASE2-retail-cash-scale.audit.md",
+          "_PHASE2-retail-register.audit.md"
+        ],
+        "verified_inline": false,
+        "done": true,
+        "missing_proof_docs": []
+      },
+      {
+        "name": "Catalog items",
+        "page_count": 4,
+        "pages": [
+          "bundles",
+          "services",
+          "variants",
+          "tracking-codes"
+        ],
+        "proof_docs": [
+          "_PHASE2-catalog-cohort.audit.md"
+        ],
+        "verified_inline": false,
+        "done": true,
+        "missing_proof_docs": []
+      }
+    ],
+    "issues": []
+  },
+  "ui_conventions": {
+    "total": 8,
+    "locked": 8,
+    "pct": 100,
+    "note": "UI-uniformity track (docs/audits/_UI-CONVENTIONS.md). `locked` is COMPUTED from each guard test existing under apps/web/src/__tests__/ — not hand-set. All 8 conventions (1-8) now locked. Conv-4 (2026-06-11) locks the filter-bar STRUCTURE (InlineFilterPanel + FilterToggleButton across 49 pages) + 2 functional-filter regression locks; per-entity field-parity enrichment is incremental backlog (_CONV4-FILTER-AUDIT-2026-06-11.md), not part of the lock.",
+    "conventions": [
+      {
+        "num": 1,
+        "name": "Document state → Badge tone (documentStateTone)",
+        "guard_test": "document-state-tone.test.ts",
+        "surfaces": 55,
+        "locked": true
+      },
+      {
+        "num": 2,
+        "name": "Action → Button variant (FilterToggleButton ×49 + 44 raw action sites → DS Button; census map + 6 drift fixes; DS link-cva fix)",
+        "guard_test": "button-conventions.test.tsx",
+        "surfaces": 93,
+        "locked": true
+      },
+      {
+        "num": 3,
+        "name": "Toolbar composition & order (moyskladToolbar slot canon: createPosition/onRefresh/FilterToggleButton-slot/no-dead-end-selection + DocumentEditor label spread ×26)",
+        "guard_test": "toolbar-conventions.test.ts",
+        "surfaces": 83,
+        "locked": true
+      },
+      {
+        "num": 4,
+        "name": "Filter-bar structure (InlineFilterPanel + FilterToggleButton ×49 filter-bearing list pages) + 2 functional-filter regression locks (variants stockMinor-crash removed; tasks ownership=team department-scoped). Field-parity enrichment = incremental backlog, see _CONV4-FILTER-AUDIT-2026-06-11.md",
+        "guard_test": "filter-conventions.test.ts",
+        "surfaces": 49,
+        "locked": true
+      },
+      {
+        "num": 5,
+        "name": "Detail-header layout (DetailToolbar+DetailHeader composite pairing ×43 + record-pager lock + analitika h1)",
+        "guard_test": "header-conventions.test.ts",
+        "surfaces": 43,
+        "locked": true
+      },
+      {
+        "num": 6,
+        "name": "Domain-status → tone (domain-status-tone: ~20 vocabularies — calls/CRM/HR/settings/reports)",
+        "guard_test": "domain-status-tone.test.ts",
+        "surfaces": 41,
+        "locked": true
+      },
+      {
+        "num": 7,
+        "name": "Archived/active record → tone (archivedTone)",
+        "guard_test": "archived-tone.test.ts",
+        "surfaces": 40,
+        "locked": true
+      },
+      {
+        "num": 8,
+        "name": "Raw form elements → DS primitives (select→NativeSelect ×137 · textarea→Textarea ×31 · checkbox→Checkbox ×41 · input→Input ×54; EXEMPT registries in guard: rate-micro ×8 · POS ×5 · pills ×2 · radio ×9 · file ×5)",
+        "guard_test": "raw-element-conventions.test.ts",
+        "surfaces": 263,
+        "locked": true
+      }
+    ],
+    "issues": []
+  }
+}

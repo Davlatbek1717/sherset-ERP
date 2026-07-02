@@ -1,0 +1,401 @@
+import { ConflictException } from '@nestjs/common';
+import { describe, expect, it, vi } from 'vitest';
+import { mockDocumentSequence } from '../../prisma/document-sequence.mock.js';
+import { RetailSaleService } from './retail-sale.service.js';
+
+/**
+ * CAS (compare-and-swap) state-guard tests.
+ *
+ * These tests lock in the behavior added in commit c7063f0:
+ * `post()`, `cancel()`, and `refund()` use `updateMany WHERE state = '<expected>'`
+ * so concurrent transitions can't both succeed. If a peer flips the row first,
+ * `updateMany` returns count=0 and we throw ConflictException instead of
+ * applying side effects (cash inflow, refund mirror, stock decrement) on top
+ * of stale state.
+ *
+ * Stock cascade (added in V2): post() also calls StockService.lockBalances +
+ * assertAvailable + applyDeltas before the cash inflow. We stub StockService
+ * with a minimal mock that satisfies the Map<string, StockBalance> contract.
+ *
+ * We mock Prisma at the tx level — count=0 simulates "lost the race".
+ */
+
+const ACCOUNT = 'acc-1';
+const USER_ID = 'user-1';
+const SALE_ID = 'sale-1';
+const SESSION_ID = 'sess-1';
+const CASHDESK_ID = 'cd-1';
+const STORE_ID = 'store-1';
+
+interface PrismaLike {
+  client: unknown;
+}
+
+function makeStockStub() {
+  return {
+    lockBalances: vi.fn().mockResolvedValue(new Map()),
+    assertAvailable: vi.fn(),
+    applyDeltas: vi.fn().mockResolvedValue(undefined),
+  };
+}
+
+function makeMoneyStub() {
+  return {
+    applyDeltas: vi.fn().mockResolvedValue(undefined),
+  };
+}
+
+function makeService(
+  client: unknown,
+  stock: ReturnType<typeof makeStockStub> = makeStockStub(),
+  money: ReturnType<typeof makeMoneyStub> = makeMoneyStub(),
+): RetailSaleService {
+  return new RetailSaleService(
+    { client } as unknown as PrismaLike as never,
+    stock as never,
+    money as never,
+  );
+}
+
+describe('RetailSaleService.post — CAS state guard', () => {
+  it('throws ConflictException when updateMany returns count=0 (lost race)', async () => {
+    const tx = {
+      retailSale: {
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+        findUniqueOrThrow: vi.fn(),
+      },
+      cashDesk: { update: vi.fn() },
+      cashierSession: { update: vi.fn() },
+    };
+
+    const client = {
+      documentSequence: mockDocumentSequence(),
+      employee: { findUnique: vi.fn(async () => null) },
+      retailSale: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: SALE_ID,
+          state: 'draft',
+          sumMinor: 100_000n,
+          sessionId: SESSION_ID,
+          session: {
+            id: SESSION_ID,
+            state: 'open',
+            cashDeskId: CASHDESK_ID,
+            storeId: STORE_ID,
+            salesCount: 0,
+            salesSumMinor: 0n,
+            store: { allowNegativeStock: true },
+            cashDesk: { currency: 'UZS' },
+          },
+          positions: [],
+        }),
+      },
+      $transaction: vi.fn().mockImplementation(async (fn: (tx: typeof tx) => Promise<unknown>) => {
+        return fn(tx);
+      }),
+    };
+
+    const stock = makeStockStub();
+    const money = makeMoneyStub();
+    const svc = makeService(client, stock, money);
+    await expect(
+      svc.post(ACCOUNT, USER_ID, SALE_ID, {
+        cashAmountMinor: '100000',
+        cardAmountMinor: '0',
+        expectedSumMinor: '100000',
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    // Critical: NO side effects must have fired (cash, session, stock, ledger)
+    expect(tx.cashierSession.update).not.toHaveBeenCalled();
+    expect(stock.applyDeltas).not.toHaveBeenCalled();
+    expect(money.applyDeltas).not.toHaveBeenCalled();
+  });
+
+  it('proceeds with cash inflow + session aggregate when CAS succeeds (count=1)', async () => {
+    const tx = {
+      retailSale: {
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        findUniqueOrThrow: vi.fn().mockResolvedValue({ id: SALE_ID, state: 'posted' }),
+      },
+      cashDesk: { update: vi.fn().mockResolvedValue({}) },
+      cashierSession: { update: vi.fn().mockResolvedValue({}) },
+    };
+
+    const client = {
+      documentSequence: mockDocumentSequence(),
+      employee: { findUnique: vi.fn(async () => null) },
+      retailSale: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: SALE_ID,
+          state: 'draft',
+          sumMinor: 100_000n,
+          sessionId: SESSION_ID,
+          session: {
+            id: SESSION_ID,
+            state: 'open',
+            cashDeskId: CASHDESK_ID,
+            storeId: STORE_ID,
+            salesCount: 0,
+            salesSumMinor: 0n,
+            store: { allowNegativeStock: true },
+            cashDesk: { currency: 'UZS' },
+          },
+          positions: [],
+        }),
+      },
+      $transaction: vi.fn().mockImplementation(async (fn: (tx: typeof tx) => Promise<unknown>) => {
+        return fn(tx);
+      }),
+    };
+
+    const money = makeMoneyStub();
+    await makeService(client, undefined, money).post(ACCOUNT, USER_ID, SALE_ID, {
+      cashAmountMinor: '100000',
+      cardAmountMinor: '0',
+      expectedSumMinor: '100000',
+    });
+
+    expect(money.applyDeltas).toHaveBeenCalledTimes(1);
+    const moneyArgs = money.applyDeltas.mock.calls[0]?.[2] as Array<{
+      sourceKind: string;
+      sourceId: string;
+      deltaMinor: bigint;
+      currency: string;
+      documentKind: string;
+    }>;
+    expect(moneyArgs).toEqual([
+      expect.objectContaining({
+        sourceKind: 'cash_desk',
+        sourceId: CASHDESK_ID,
+        deltaMinor: 100_000n,
+        currency: 'UZS',
+        documentKind: 'retailsale',
+      }),
+    ]);
+    expect(tx.cashierSession.update).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips cashDesk.update when cashAmount is zero (card-only payment)', async () => {
+    const tx = {
+      retailSale: {
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        findUniqueOrThrow: vi.fn().mockResolvedValue({ id: SALE_ID, state: 'posted' }),
+      },
+      cashDesk: { update: vi.fn() },
+      cashierSession: { update: vi.fn().mockResolvedValue({}) },
+    };
+
+    const client = {
+      documentSequence: mockDocumentSequence(),
+      employee: { findUnique: vi.fn(async () => null) },
+      retailSale: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: SALE_ID,
+          state: 'draft',
+          sumMinor: 50_000n,
+          sessionId: SESSION_ID,
+          session: {
+            id: SESSION_ID,
+            state: 'open',
+            cashDeskId: CASHDESK_ID,
+            storeId: STORE_ID,
+            salesCount: 0,
+            salesSumMinor: 0n,
+            store: { allowNegativeStock: true },
+            cashDesk: { currency: 'UZS' },
+          },
+          positions: [],
+        }),
+      },
+      $transaction: vi
+        .fn()
+        .mockImplementation(async (fn: (tx: typeof tx) => Promise<unknown>) => fn(tx)),
+    };
+
+    const money = makeMoneyStub();
+    await makeService(client, undefined, money).post(ACCOUNT, USER_ID, SALE_ID, {
+      cashAmountMinor: '0',
+      cardAmountMinor: '50000',
+      expectedSumMinor: '50000',
+    });
+    // Card-only payment must NOT touch the cash ledger.
+    expect(money.applyDeltas).not.toHaveBeenCalled();
+  });
+
+  it('runs the stock cascade for positions with productId and skips service-only rows', async () => {
+    const tx = {
+      retailSale: {
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        findUniqueOrThrow: vi.fn().mockResolvedValue({ id: SALE_ID, state: 'posted' }),
+      },
+      cashDesk: { update: vi.fn().mockResolvedValue({}) },
+      cashierSession: { update: vi.fn().mockResolvedValue({}) },
+    };
+
+    const client = {
+      documentSequence: mockDocumentSequence(),
+      employee: { findUnique: vi.fn(async () => null) },
+      retailSale: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: SALE_ID,
+          state: 'draft',
+          sumMinor: 100_000n,
+          sessionId: SESSION_ID,
+          session: {
+            id: SESSION_ID,
+            state: 'open',
+            cashDeskId: CASHDESK_ID,
+            storeId: STORE_ID,
+            salesCount: 0,
+            salesSumMinor: 0n,
+            store: { allowNegativeStock: true },
+            cashDesk: { currency: 'UZS' },
+          },
+          positions: [
+            { id: 'pos-1', productId: 'prod-1', quantity: 2 },
+            { id: 'pos-2', productId: null, quantity: 1 }, // service line — skip
+            { id: 'pos-3', productId: 'prod-2', quantity: 5 },
+          ],
+        }),
+      },
+      $transaction: vi
+        .fn()
+        .mockImplementation(async (fn: (tx: typeof tx) => Promise<unknown>) => fn(tx)),
+    };
+
+    const stock = makeStockStub();
+    const money = makeMoneyStub();
+    await makeService(client, stock, money).post(ACCOUNT, USER_ID, SALE_ID, {
+      cashAmountMinor: '100000',
+      cardAmountMinor: '0',
+      expectedSumMinor: '100000',
+    });
+
+    // Two product rows in, two deltas out (service row skipped)
+    expect(stock.applyDeltas).toHaveBeenCalledTimes(1);
+    const deltasArg = stock.applyDeltas.mock.calls[0]?.[3] as Array<{
+      assortmentId: string;
+      qtyDelta: string;
+    }>;
+    expect(deltasArg).toHaveLength(2);
+    expect(deltasArg.map((d) => d.assortmentId).sort()).toEqual(['prod-1', 'prod-2']);
+    // All outflows are negative
+    expect(deltasArg.every((d) => d.qtyDelta.startsWith('-'))).toBe(true);
+    // Money ledger fired exactly once for the cash inflow
+    expect(money.applyDeltas).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('RetailSaleService.cancel — CAS state guard', () => {
+  it('throws ConflictException when the sale was posted between read and cancel', async () => {
+    const client = {
+      documentSequence: mockDocumentSequence(),
+      employee: { findUnique: vi.fn(async () => null) },
+      retailSale: {
+        findFirst: vi.fn().mockResolvedValue({ id: SALE_ID, state: 'draft' }),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+        findUniqueOrThrow: vi.fn(),
+      },
+    };
+
+    await expect(makeService(client).cancel(ACCOUNT, SALE_ID)).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+  });
+
+  it('cancels successfully when CAS matches', async () => {
+    const client = {
+      documentSequence: mockDocumentSequence(),
+      employee: { findUnique: vi.fn(async () => null) },
+      retailSale: {
+        findFirst: vi.fn().mockResolvedValue({ id: SALE_ID, state: 'draft' }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        findUniqueOrThrow: vi.fn().mockResolvedValue({ id: SALE_ID, state: 'cancelled' }),
+      },
+    };
+
+    const result = (await makeService(client).cancel(ACCOUNT, SALE_ID)) as {
+      state: string;
+    };
+    expect(result.state).toBe('cancelled');
+    expect(client.retailSale.updateMany).toHaveBeenCalledWith({
+      where: { id: SALE_ID, accountId: ACCOUNT, state: 'draft' },
+      data: { state: 'cancelled' },
+    });
+  });
+});
+
+describe('RetailSaleService.refund — CAS state guard', () => {
+  it('throws ConflictException when another refund already flipped state', async () => {
+    const tx = {
+      retailSale: {
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+        create: vi.fn(),
+      },
+      retailSalePosition: { findMany: vi.fn().mockResolvedValue([]) },
+      cashDesk: { update: vi.fn() },
+      cashierSession: { update: vi.fn() },
+    };
+
+    const client = {
+      documentSequence: mockDocumentSequence(),
+      employee: { findUnique: vi.fn(async () => null) },
+      retailSale: {
+        findFirst: vi.fn(),
+      },
+      $transaction: vi
+        .fn()
+        .mockImplementation(async (fn: (tx: typeof tx) => Promise<unknown>) => fn(tx)),
+    };
+    // nextRetailSaleName uses findFirst on retailSale.
+    let firstCall = true;
+    (client.retailSale.findFirst as ReturnType<typeof vi.fn>).mockImplementation(async () => {
+      if (firstCall) {
+        firstCall = false;
+        return {
+          id: SALE_ID,
+          state: 'posted',
+          sessionId: SESSION_ID,
+          agentId: null,
+          name: 'TRN-001',
+          session: {
+            id: SESSION_ID,
+            state: 'open',
+            cashDeskId: CASHDESK_ID,
+            storeId: STORE_ID,
+            cashDesk: { currency: 'UZS' },
+          },
+          // §105: refund() now loads + validates original positions
+          // (over-refund guard). Mirror the real query shape so this
+          // CAS test still exercises the posted→refunded state guard.
+          positions: [{ productId: '00000000-0000-0000-0000-000000000099', quantity: '1' }],
+        };
+      }
+      return null;
+    });
+
+    const stock = makeStockStub();
+    const money = makeMoneyStub();
+    await expect(
+      makeService(client, stock, money).refund(ACCOUNT, USER_ID, SALE_ID, {
+        positions: [
+          {
+            productId: '00000000-0000-0000-0000-000000000099',
+            quantity: '1',
+            priceMinor: '100000',
+            discount: '0',
+          },
+        ],
+        cashAmountMinor: '100000',
+        cardAmountMinor: '0',
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    // Critical: refund mirror must NOT have been created, NO stock restored,
+    // and NO money ledger entry written.
+    expect(tx.retailSale.create).not.toHaveBeenCalled();
+    expect(stock.applyDeltas).not.toHaveBeenCalled();
+    expect(money.applyDeltas).not.toHaveBeenCalled();
+  });
+});

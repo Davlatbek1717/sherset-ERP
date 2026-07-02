@@ -1,0 +1,39 @@
+#!/usr/bin/env sh
+# Pre-push gate (2026-06-10 wrap session — closes the "prose says typecheck,
+# hook doesn't run it" honesty gap):
+#
+#   1. TYPECHECK GATE (blocking) — `turbo run typecheck`. Turbo caches per
+#      package, so this is ~instant when nothing changed and only re-runs the
+#      packages you actually touched. This makes the project rule "push -> CI
+#      green / typecheck before push" LOCALLY ENFORCED. It used to be prose-only
+#      (pre-commit runs only lint-staged + progress). Don't bypass with
+#      --no-verify — fix the type errors.
+#
+#   2. DRIFT DETECTOR (warning only, 2026-05-31 layer 3) — if the last 3 commits
+#      touched list-page bulk-actions but no detail page ([id]/page.tsx), print a
+#      visible reminder. Does NOT block the push.
+
+echo "-> pre-push: typecheck (turbo-cached; fix errors, don't --no-verify)..."
+if ! pnpm -s typecheck; then
+  echo ""
+  echo "X pre-push blocked: typecheck failed. Fix the type errors before pushing."
+  echo "  (Project rule: push -> CI green. Don't bypass with --no-verify.)"
+  echo ""
+  exit 1
+fi
+
+# --- drift detector (warning only) ---
+list_hits=$(git log -3 --name-only --format= 2>/dev/null | grep -cE 'components/[^/]+/bulk-actions|components/assortment/' || true)
+detail_hits=$(git log -3 --name-only --format= 2>/dev/null | grep -cE 'app/\(app\)/[^/]+/\[id\]/page\.tsx' || true)
+
+if [ "${list_hits:-0}" -ge 3 ] && [ "${detail_hits:-0}" -eq 0 ]; then
+  echo ""
+  echo "!  Drift signal — oxirgi 3 commit list-page'larga tegdi, detail'ga 0"
+  echo "   list_hits=$list_hits  detail_hits=$detail_hits"
+  if [ -f docs/progress.json ] && command -v node >/dev/null 2>&1; then
+    node -e "try{const j=require('./docs/progress.json');console.error('   joriy: phase2='+j.phase2.pct+'%  detail='+j.detail_pages.audited_pct+'%')}catch(e){}" 2>&1 || true
+  fi
+  echo "   -> Q2 (detail page) ga o'tish vaqti — 9-sessiyalik drift'ni qaytarmaslik uchun"
+  echo "   (Bu warning push'ni bloklamaydi.)"
+  echo ""
+fi

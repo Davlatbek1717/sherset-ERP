@@ -1,0 +1,18 @@
+- button "help"
+- heading "Spisaniyalar" [level=1]
+- button "refresh":
+  - img
+- link "Yangi spisaniye":
+  - /url: /losses/new
+  - img
+  - text: ""
+- button "Filtr" [expanded]
+- img
+- textbox "№, sabab, izoh..."
+- text: "0"
+- button "O'zgartirish" [disabled]:
+  - text: ""
+  - img
+- button "Chop etish":
+  - text: ""
+  - img

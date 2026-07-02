@@ -1,0 +1,68 @@
+import { Body, Controller, Get, Inject, Param, Post, Query, UseGuards } from '@nestjs/common';
+import type { AuthenticatedUser } from '../auth/auth.schema.js';
+import { CurrentUser } from '../auth/current-user.decorator.js';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
+import { RestockTaskService } from './restock-task.service.js';
+
+/**
+ * RestockTask (Sherset custom) — return-to-warehouse restock tasks.
+ *
+ * Guarded by auth + tenant scoping only (no fine-grained permission-matrix
+ * entity yet — a follow-up). Every method scopes by user.accountId.
+ */
+@Controller('restock-tasks')
+@UseGuards(JwtAuthGuard)
+export class RestockTaskController {
+  constructor(@Inject(RestockTaskService) private readonly svc: RestockTaskService) {}
+
+  @Get()
+  async list(@CurrentUser() user: AuthenticatedUser, @Query() query: Record<string, unknown>) {
+    return this.svc.list(user.accountId, user.sub, query);
+  }
+
+  @Get(':id')
+  async findById(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.svc.findById(user.accountId, id);
+  }
+
+  /** «Omborchiga yubordim» — create a restock task from a SalesReturn. */
+  @Post('from-sales-return')
+  async createFromSalesReturn(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
+    return this.svc.createFromSalesReturn(user.accountId, user.sub, body);
+  }
+
+  /**
+   * Read-only per-sklad picking SHEETS for the print view («Yig'ish varaqalari»).
+   * source = 'customerorder' | 'retailsale'. Creates NO tasks, sends NO
+   * notifications — pure print computation grouped by sklad.
+   */
+  @Get('picking-sheets/:source/:id')
+  async getPickingSheets(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('source') source: string,
+    @Param('id') id: string,
+  ) {
+    return this.svc.getPickingSheets(user.accountId, source, id);
+  }
+
+  /** Manual per-line placement confirm. */
+  @Post(':id/lines/:lineId/confirm')
+  async confirmLine(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Param('lineId') lineId: string,
+    @Body() body: unknown,
+  ) {
+    return this.svc.confirmLine(user.accountId, user.sub, id, lineId, body);
+  }
+
+  /** Confirm by scanning the senik QR (matches the first unconfirmed line). */
+  @Post(':id/confirm-scan')
+  async confirmScan(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    return this.svc.confirmScan(user.accountId, user.sub, id, body);
+  }
+}

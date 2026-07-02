@@ -1,0 +1,57 @@
+{
+  "source": "live",
+  "byKind": {
+    "bulk": [
+      {
+        "label": "Удалить",
+        "disabled": false
+      },
+      {
+        "label": "Копировать",
+        "disabled": false
+      },
+      {
+        "label": "Массовое редактирование",
+        "disabled": false
+      },
+      {
+        "label": "Провести",
+        "disabled": false
+      },
+      {
+        "label": "Снять проведение",
+        "disabled": true
+      },
+      {
+        "label": "Объединить",
+        "disabled": true
+      },
+      {
+        "label": "Зарезервировать",
+        "disabled": true
+      },
+      {
+        "label": "Очистить резерв",
+        "disabled": true
+      }
+    ],
+    "print": [
+      {
+        "label": "Список заказов",
+        "disabled": false
+      },
+      {
+        "label": "Заказ",
+        "disabled": false
+      },
+      {
+        "label": "Комплект…",
+        "disabled": true
+      },
+      {
+        "label": "Настроить...",
+        "disabled": false
+      }
+    ]
+  }
+}

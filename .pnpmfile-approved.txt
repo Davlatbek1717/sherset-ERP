@@ -1,0 +1,7 @@
+@prisma/client
+@prisma/engines
+prisma
+esbuild
+@nestjs/core
+@biomejs/biome
+sharp

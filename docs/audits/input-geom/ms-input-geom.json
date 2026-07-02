@@ -1,0 +1,33 @@
+{
+  "count": 14,
+  "blur": {
+    "height": "29px",
+    "borderTopWidth": "1px",
+    "borderTopColor": "rgb(47, 155, 255)",
+    "borderTopStyle": "solid",
+    "borderBottomColor": "rgb(47, 155, 255)",
+    "borderRadius": "0px",
+    "outlineWidth": "1px",
+    "outlineColor": "rgb(47, 155, 255)",
+    "outlineStyle": "solid",
+    "boxShadow": "none",
+    "backgroundColor": "rgb(255, 255, 255)",
+    "color": "rgb(0, 0, 0)",
+    "fontSize": "20px"
+  },
+  "focus": {
+    "height": "29px",
+    "borderTopWidth": "1px",
+    "borderTopColor": "rgb(47, 155, 255)",
+    "borderTopStyle": "solid",
+    "borderBottomColor": "rgb(47, 155, 255)",
+    "borderRadius": "0px",
+    "outlineWidth": "1px",
+    "outlineColor": "rgb(47, 155, 255)",
+    "outlineStyle": "solid",
+    "boxShadow": "none",
+    "backgroundColor": "rgb(255, 255, 255)",
+    "color": "rgb(0, 0, 0)",
+    "fontSize": "20px"
+  }
+}

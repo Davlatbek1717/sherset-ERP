@@ -1,0 +1,26 @@
+#!/usr/bin/env sh
+set -e
+npx --no-install commitlint --edit "$1"
+
+# Honesty gate (2026-05-31 drift-prevention layer 2):
+# If the commit body claims "tugadi / verified / tasdiqlandi / complete",
+# require concrete evidence in the same message — smoke output, verify
+# script path, test count, or the literal word "live"/"smoke".
+# This stops the "tugadi" prose claim without proof bug-class.
+if grep -qiE '(\btugadi\b|\btugatildi\b|\bverified\b|\bcompleted?\b|\btasdiqlandi\b|\bgreen\b)' "$1"; then
+  if ! grep -qiE '(smoke|verify-[a-z0-9_-]+\.[tj]s|\blive\b|[0-9]+/[0-9]+ ?(test|pass|smoke|green|item|row|module|modul))' "$1"; then
+    echo ""
+    echo "X Honesty gate: this commit claims tugadi/verified/tasdiqlandi/complete/green"
+    echo "  but contains no concrete evidence. Include one of:"
+    echo "    - smoke output count   (e.g. live smoke 25/25 pass)"
+    echo "    - verify-*.ts path     (e.g. scripts/verify-currencies-smoke.ts)"
+    echo "    - test count delta     (e.g. +8 test green)"
+    echo "    - the literal words    live  /  smoke"
+    echo ""
+    echo "  Why this gate: 9-session drift made 'tugadi' claims without smoke"
+    echo "  a recurring bug-class. To bypass intentionally, rephrase the"
+    echo "  commit message (don't disable the hook)."
+    echo ""
+    exit 1
+  fi
+fi

@@ -1,0 +1,38 @@
+- rowgroup:
+  - row "Select all rows № Resize column Sana Resize column Ombor Resize column Ta'minlovchi Resize column Tashkilot Resize column Summa Resize column Valyuta Resize column Yuborilgan Resize column Bosib chiqarilgan Resize column Izoh Resize column Customize columns":
+    - columnheader "Select all rows":
+      - checkbox "Select all rows"
+    - columnheader "№ Resize column":
+      - text: ""
+      - separator "Resize column"
+    - columnheader "Sana Resize column":
+      - text: ""
+      - separator "Resize column"
+    - columnheader "Ombor Resize column":
+      - text: ""
+      - separator "Resize column"
+    - columnheader "Ta'minlovchi Resize column":
+      - text: ""
+      - separator "Resize column"
+    - columnheader "Tashkilot Resize column":
+      - text: ""
+      - separator "Resize column"
+    - columnheader "Summa Resize column":
+      - text: ""
+      - separator "Resize column"
+    - columnheader "Valyuta Resize column":
+      - text: ""
+      - separator "Resize column"
+    - columnheader "Yuborilgan Resize column":
+      - text: ""
+      - separator "Resize column"
+    - columnheader "Bosib chiqarilgan Resize column":
+      - text: ""
+      - separator "Resize column"
+    - columnheader "Izoh Resize column":
+      - text: ""
+      - separator "Resize column"
+    - columnheader "Customize columns":
+      - button "Customize columns":
+        - img
+        - text: ""

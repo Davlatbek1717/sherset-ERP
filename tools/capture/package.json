@@ -1,0 +1,34 @@
+{
+  "name": "@moysklad/capture",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Playwright-based automated capture of moysklad.uz — API docs + app UI + design tokens",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "install:browser": "playwright install chromium --with-deps",
+    "auth": "tsx src/cli.ts auth",
+    "scrape-api": "tsx src/cli.ts scrape-api",
+    "scrape-app": "tsx src/cli.ts scrape-app",
+    "scrape-tokens": "tsx src/cli.ts scrape-tokens",
+    "scrape-deep": "tsx src/cli.ts scrape-deep",
+    "discover-settings": "tsx src/cli.ts discover-settings",
+    "scrape-print-templates": "tsx src/cli.ts scrape-print-templates",
+    "scrape-reports": "tsx src/cli.ts scrape-reports",
+    "scrape-all": "tsx src/cli.ts scrape-all"
+  },
+  "dependencies": {
+    "@moysklad/config": "workspace:*",
+    "@playwright/test": "^1.49.0",
+    "kleur": "^4.1.5",
+    "pino": "^9.5.0",
+    "pino-pretty": "^13.0.0",
+    "playwright": "^1.49.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "menus": {
+    "Изменить": {
+      "found": true,
+      "items": []
+    },
+    "Создать документ": {
+      "found": false
+    },
+    "Печать": {
+      "found": true,
+      "items": []
+    },
+    "Отправить": {
+      "found": false
+    }
+  },
+  "opened": false,
+  "toolbarText": "Заказы поставщикам\n    \n\n\n\n\n\n\n\n\n\n\n\n    \n"
+}

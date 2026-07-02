@@ -1,0 +1,57 @@
+# Default: normalize line endings to LF in the repo
+* text=auto eol=lf
+
+# Source code: always LF
+*.ts      text eol=lf
+*.tsx     text eol=lf
+*.js      text eol=lf
+*.jsx     text eol=lf
+*.mjs     text eol=lf
+*.cjs     text eol=lf
+*.json    text eol=lf
+*.jsonc   text eol=lf
+*.json5   text eol=lf
+*.yml     text eol=lf
+*.yaml    text eol=lf
+*.toml    text eol=lf
+*.md      text eol=lf
+*.mdx     text eol=lf
+*.html    text eol=lf
+*.css     text eol=lf
+*.scss    text eol=lf
+*.sql     text eol=lf
+*.sh      text eol=lf
+*.bash    text eol=lf
+*.env     text eol=lf
+
+# Windows-specific scripts: CRLF
+*.bat     text eol=crlf
+*.cmd     text eol=crlf
+*.ps1     text eol=crlf
+*.psm1    text eol=crlf
+
+# Binary files: no conversion
+*.png     binary
+*.jpg     binary
+*.jpeg    binary
+*.gif     binary
+*.webp    binary
+*.ico     binary
+*.pdf     binary
+*.zip     binary
+*.gz      binary
+*.woff    binary
+*.woff2   binary
+*.ttf     binary
+*.otf     binary
+*.eot     binary
+*.mp4     binary
+*.webm    binary
+
+# Captured DOM snapshots — treat as text for diffs but don't normalize
+docs/moysklad-reference/visual-captures/**/*.html text eol=lf -diff
+
+# Lockfiles
+pnpm-lock.yaml    text eol=lf -diff
+package-lock.json text eol=lf -diff
+yarn.lock         text eol=lf -diff

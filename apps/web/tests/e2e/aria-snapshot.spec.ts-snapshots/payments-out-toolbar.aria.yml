@@ -1,0 +1,14 @@
+- button "help"
+- heading "Chiquvchi to'lovlar" [level=1]
+- button "refresh":
+  - img
+- link "Yangi to'lov":
+  - /url: /payments-out/new
+  - img
+  - text: ""
+- button "Filtr"
+- img
+- textbox "№, qabul qiluvchi, maqsad..."
+- text: "0"
+- button "O'zgartirish"
+- button "Chop etish"

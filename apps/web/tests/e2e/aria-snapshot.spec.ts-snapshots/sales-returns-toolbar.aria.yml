@@ -1,0 +1,12 @@
+- button "help"
+- heading "Mijoz qaytaruvlari" [level=1]
+- button "refresh":
+  - img
+- link "Yangi qaytarish":
+  - /url: /sales-returns/new
+  - img
+  - text: ""
+- button "Filtr" [expanded]
+- img
+- textbox "№, mijoz, sabab..."
+- text: "0"

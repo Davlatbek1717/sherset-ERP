@@ -1,0 +1,15 @@
+{
+  "viewport": { "w": 1280, "h": 800 },
+  "bodyFont": "\"Helvetica Neue\", Helvetica, Arial, \"Lucida Grande\", sans-serif",
+  "bodyBg": "rgb(247, 247, 247)",
+  "rowCount": 6,
+  "samples": [
+    { "sel": "main", "w": 1280, "h": 772.67, "x": 0, "y": 85.30, "fs": "13px", "fw": "400", "color": "rgb(49, 49, 49)", "pad": "0px" },
+    { "sel": "[data-test-id=customer-orders-page]", "w": 1280, "h": 705.27, "pad": "13px 19.5px" },
+    { "sel": "h1", "w": 143.55, "h": 16.25, "fs": "16.25px", "fw": "600", "color": "rgb(49, 49, 49)" },
+    { "sel": "table", "w": 1265.54, "h": 337.5, "x": 20.30, "y": 435.17, "fs": "11.375px" },
+    { "sel": "thead tr", "h": 29.25, "fs": "11.375px" },
+    { "sel": "tbody tr", "h": 46.30, "fs": "11.375px" },
+    { "sel": "a[href=/customer-orders/new]", "w": 94.15, "h": 29.25, "x": 325.08, "y": 133.20, "fs": "11.375px", "fw": "500", "color": "rgb(255, 255, 255)", "bg": "rgb(24, 105, 153)", "pad": "0px 13px" }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "source": "static",
+  "byKind": {
+    "bulk": [
+      {
+        "label": "Удалить",
+        "disabled": false
+      },
+      {
+        "label": "Копировать",
+        "disabled": true
+      },
+      {
+        "label": "Массовое редактирование",
+        "disabled": false
+      },
+      {
+        "label": "В архив",
+        "disabled": false
+      },
+      {
+        "label": "Из архива",
+        "disabled": false
+      },
+      {
+        "label": "Объединить",
+        "disabled": true
+      }
+    ],
+    "print": []
+  }
+}

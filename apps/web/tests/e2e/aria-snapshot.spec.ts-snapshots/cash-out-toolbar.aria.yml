@@ -1,0 +1,14 @@
+- button "help"
+- heading "Chiqim kassa orderlari" [level=1]
+- button "refresh":
+  - img
+- link "Yangi РКО":
+  - /url: /cash-out/new
+  - img
+  - text: ""
+- button "Filtr"
+- img
+- textbox "№, qabul qiluvchi, maqsad..."
+- text: "0"
+- button "O'zgartirish"
+- button "Chop etish"

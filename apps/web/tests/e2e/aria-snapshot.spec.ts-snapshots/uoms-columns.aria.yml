@@ -1,0 +1,7 @@
+- rowgroup:
+  - row "Select all rows Nomi Kod Tavsif":
+    - columnheader "Select all rows":
+      - checkbox "Select all rows"
+    - columnheader "Nomi"
+    - columnheader "Kod"
+    - columnheader "Tavsif"

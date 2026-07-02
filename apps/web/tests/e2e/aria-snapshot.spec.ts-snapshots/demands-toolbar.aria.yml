@@ -1,0 +1,21 @@
+- button "help"
+- heading "Otgruzkalar" [level=1]
+- button "refresh":
+  - img
+- link "Otgruzka":
+  - /url: /demands/new
+  - img
+  - text: ""
+- button "Filtr" [expanded]
+- img
+- textbox "Raqam yoki izoh"
+- text: "0"
+- button "O'zgartirish" [disabled]:
+  - text: ""
+  - img
+- button "Yaratish" [disabled]:
+  - text: ""
+  - img
+- button "Chop etish":
+  - text: ""
+  - img

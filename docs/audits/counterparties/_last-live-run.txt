@@ -1,0 +1,30 @@
+
+=== audit:module counterparties ===
+
+[1/5] moysklad capture
+  ✓ reusing capture: D:\projects\moysklad\docs\moysklad-reference\counterparties\states\metadata.json
+
+[2/5] our dropdown dump
+  → live capture @ http://localhost:3100
+    ⚠ bulk: could not open dropdown (trigger not found)
+    ⚠ print: could not open dropdown (trigger not found)
+
+[3/5] diff (moysklad ↔ ours)
+  source: live · verdict: delta
+  bulk: 0 matched
+    − missing (in moysklad): "Удалить"
+    − missing (in moysklad): "Копировать"
+    − missing (in moysklad): "Массовое редактирование"
+    − missing (in moysklad): "Поместить в архив"
+    − missing (in moysklad): "Извлечь из архива"
+    − missing (in moysklad): "Объединить"
+  print: 0 matched
+    − missing (in moysklad): "Список контрагентов"
+    − missing (in moysklad): "Список контрагентов (Узбекистан)"
+    − missing (in moysklad): "Настроить..."
+
+[4/5] typecheck — skipped (--skip-typecheck)
+
+[5/5] smoke — skipped (--skip-smoke)
+
+❌ counterparties: 9 missing · 0 extra · 0 disabled-mismatch · 0 order → see docs/audits/counterparties/todo.json

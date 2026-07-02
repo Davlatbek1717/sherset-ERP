@@ -1,0 +1,77 @@
+{
+  "name": "moysklad-clone",
+  "version": "0.0.1",
+  "private": true,
+  "description": "1:1 clone of moysklad.uz for Uzbekistan market",
+  "engines": {
+    "node": ">=20.11.0",
+    "pnpm": ">=9.0.0"
+  },
+  "packageManager": "pnpm@10.33.0",
+  "scripts": {
+    "dev": "turbo run dev --parallel",
+    "build:web": "pnpm --filter @moysklad/web build",
+    "serve:fast": "turbo run serve --parallel",
+    "dev:fast": "pnpm build:web && pnpm serve:fast",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "lint": "biome check .",
+    "lint:fix": "biome check --apply .",
+    "format": "biome format --write .",
+    "test": "turbo run test",
+    "test:e2e": "turbo run test:e2e",
+    "test:visual": "turbo run test:visual",
+    "db:migrate": "pnpm --filter @moysklad/db migrate",
+    "db:seed": "pnpm --filter @moysklad/db seed",
+    "db:studio": "pnpm --filter @moysklad/db studio",
+    "db:reset": "pnpm --filter @moysklad/db reset",
+    "capture:api-docs": "pnpm --filter @moysklad/capture run scrape:api",
+    "capture:ui": "pnpm --filter @moysklad/capture run scrape:ui",
+    "i18n:wire": "node --import ./apps/api/node_modules/tsx/dist/loader.mjs scripts/i18n-wire.ts",
+    "i18n:gate": "pnpm --filter @moysklad/web exec vitest run src/__tests__/i18n-key-existence.test.ts src/__tests__/i18n-no-hardcoded.test.ts",
+    "capture-moysklad": "node --env-file=.env.local --import ./apps/api/node_modules/tsx/dist/loader.mjs scripts/capture-moysklad-references.ts",
+    "capture-moysklad:login": "node --env-file=.env.local --import ./apps/api/node_modules/tsx/dist/loader.mjs scripts/capture-moysklad-references.ts --login",
+    "smoke": "bash scripts/smoke-mass-edit.sh",
+    "smoke:all": "bash scripts/smoke-mass-edit.sh --all",
+    "progress": "node --import ./apps/api/node_modules/tsx/dist/loader.mjs scripts/progress-report.ts",
+    "audit:module": "node --env-file=.env.local --import ./apps/api/node_modules/tsx/dist/loader.mjs scripts/audit-module.ts",
+    "migrate-moysklad": "node --env-file=.env.local --import ./apps/api/node_modules/tsx/dist/loader.mjs scripts/migrate-moysklad-data.ts",
+    "codegen:prisma": "pnpm --filter @moysklad/codegen run prisma",
+    "codegen:zod": "pnpm --filter @moysklad/codegen run zod",
+    "validate:fsm": "pnpm --filter @moysklad/workflows validate",
+    "validate:data-model": "pnpm --filter @moysklad/workflows validate:data-model",
+    "validate:all": "pnpm validate:fsm && pnpm validate:data-model",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@commitlint/cli": "^19.6.0",
+    "@commitlint/config-conventional": "^19.6.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.2.11",
+    "playwright": "1.59.1",
+    "turbo": "^2.3.3",
+    "typescript": "^5.7.2"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,jsx,json}": ["biome check --apply --no-errors-on-unmatched"]
+  },
+  "commitlint": {
+    "extends": ["@commitlint/config-conventional"]
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@biomejs/biome",
+      "@nestjs/core",
+      "@parcel/watcher",
+      "@prisma/client",
+      "@prisma/engines",
+      "@sentry-internal/node-cpu-profiler",
+      "@swc/core",
+      "argon2",
+      "esbuild",
+      "prisma",
+      "sharp"
+    ]
+  }
+}

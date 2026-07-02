@@ -1,0 +1,34 @@
+{
+  "name": "@moysklad/db",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./client": "./src/client.ts"
+  },
+  "scripts": {
+    "generate": "prisma generate",
+    "migrate": "prisma migrate dev",
+    "migrate:deploy": "prisma migrate deploy",
+    "migrate:reset": "prisma migrate reset --force",
+    "studio": "prisma studio",
+    "seed": "tsx prisma/seed.ts",
+    "seed:hr": "tsx prisma/seed-hr.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@moysklad/money": "workspace:*",
+    "@prisma/client": "^5.22.0",
+    "argon2": "^0.41.1"
+  },
+  "devDependencies": {
+    "@moysklad/config": "workspace:*",
+    "@types/node": "^20.14.0",
+    "prisma": "^5.22.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.2"
+  }
+}
