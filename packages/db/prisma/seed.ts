@@ -313,6 +313,48 @@ async function main(): Promise<void> {
     console.log(`  ✓ Role + demo xodim: ${sr.name} (login: ${sr.demo.username} / ${sr.password})`);
   }
 
+  // Named staff accounts — 2 kassir + 2 omborchi, all password '123456'.
+  const kassirRole = await prisma.role.findFirst({
+    where: { accountId: account.id, name: 'Kassir' },
+    select: { id: true },
+  });
+  const skladchiRole = await prisma.role.findFirst({
+    where: { accountId: account.id, name: 'Skladchi' },
+    select: { id: true },
+  });
+  const staffHash = await argon2.hash('123456', { type: argon2.argon2id });
+  const staffAccounts = [
+    { username: 'kassir1', name: 'Kassir 1', position: 'Kassir', roleId: kassirRole?.id },
+    { username: 'kassir2', name: 'Kassir 2', position: 'Kassir', roleId: kassirRole?.id },
+    { username: 'omborchi1', name: 'Omborchi 1', position: 'Omborchi', roleId: skladchiRole?.id },
+    { username: 'omborchi2', name: 'Omborchi 2', position: 'Omborchi', roleId: skladchiRole?.id },
+  ];
+  for (const s of staffAccounts) {
+    const parts = s.name.split(' ');
+    const emp = await prisma.employee.upsert({
+      where: { accountId_email: { accountId: account.id, email: `${s.username}@demo.local` } },
+      update: { passwordHash: staffHash, username: s.username },
+      create: {
+        accountId: account.id,
+        email: `${s.username}@demo.local`,
+        username: s.username,
+        passwordHash: staffHash,
+        name: s.name,
+        firstName: parts[0] ?? s.username,
+        lastName: parts[1] ?? '',
+        position: s.position,
+      },
+    });
+    if (s.roleId) {
+      await prisma.employeeRole.upsert({
+        where: { employeeId_roleId: { employeeId: emp.id, roleId: s.roleId } },
+        update: {},
+        create: { employeeId: emp.id, roleId: s.roleId },
+      });
+    }
+    console.log(`  ✓ Xodim: ${s.username} / 123456 (${s.position})`);
+  }
+
   const org = await prisma.organization.upsert({
     where: { id: '00000000-0000-0000-0000-000000000010' },
     update: {},
