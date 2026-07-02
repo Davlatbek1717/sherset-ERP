@@ -596,6 +596,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         email: auth.user.email,
       }}
       onLogout={logout}
+      onSettings={() => router.push('/settings/profile')}
     >
       {subNavItems && <SubNav items={subNavItems} />}
       {/* Natural document scroll — the app grows with its content and the

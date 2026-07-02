@@ -37,6 +37,8 @@ export interface AppShellProps {
   children: React.ReactNode;
   className?: string;
   onLogout?: () => void;
+  /** Opens the settings hub — rendered as a "Sozlamalar" item in the account menu. */
+  onSettings?: () => void;
 }
 
 /**
@@ -53,6 +55,7 @@ export function AppShell({
   children,
   className,
   onLogout,
+  onSettings,
 }: AppShellProps) {
   return (
     <div
@@ -210,6 +213,9 @@ export function AppShell({
                 </button>
               }
             >
+              {onSettings && (
+                <DropdownMenu.Item onSelect={onSettings}>Sozlamalar</DropdownMenu.Item>
+              )}
               {onLogout && (
                 <DropdownMenu.Item onSelect={onLogout} destructive>
                   Chiqish
