@@ -35,9 +35,10 @@ interface RetailSaleDetail {
   session: {
     id: string;
     state: string;
-    cashDesk: { id: string; name: string; currency: string };
+    // cashDesk/store are SetNull relations — null after the desk/store is deleted.
+    cashDesk: { id: string; name: string; currency: string } | null;
     cashier: { id: string; name: string };
-    store: { id: string; name: string };
+    store: { id: string; name: string } | null;
     organization: { id: string; name: string; legalTitle: string | null };
   };
   positions: PositionDetail[];
@@ -70,7 +71,7 @@ export default function RetailSaleDetailPage() {
   const cardAmount = BigInt(sale.cardAmountMinor);
   const change = BigInt(sale.changeMinor);
   // Money on a receipt is in the till's currency, not the UZS default. (2026-06-03h)
-  const currency = sale.session.cashDesk.currency;
+  const currency = sale.session.cashDesk?.currency ?? 'UZS';
 
   return (
     <div className="max-w-2xl p-4">
@@ -104,7 +105,7 @@ export default function RetailSaleDetailPage() {
         </div>
         <div>
           <div className="mb-0.5 text-[var(--ms-text-muted)] text-xs">{t('cash_desk')}</div>
-          <div>{sale.session.cashDesk.name}</div>
+          <div>{sale.session.cashDesk?.name ?? '—'}</div>
         </div>
         <div>
           <div className="mb-0.5 text-[var(--ms-text-muted)] text-xs">{t('cashier')}</div>
