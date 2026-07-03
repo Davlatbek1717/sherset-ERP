@@ -13,6 +13,8 @@ interface PickingLine {
   productName: string;
   quantity: string;
   binLocation: string | null;
+  // Multi-bin: additional shelves this product also sits on.
+  extraBins?: string[];
 }
 interface PickingSheet {
   skladNo: number | null;
@@ -186,6 +188,11 @@ function SaleCard({ sale, onDone, myZone }: { sale: SaleRow; onDone: () => void;
                           </div>
                           {line.binLocation && (
                             <div className="mt-0.5 font-mono text-xs text-[var(--ms-text-muted)]">{line.binLocation}</div>
+                          )}
+                          {line.extraBins && line.extraBins.length > 0 && (
+                            <div className="mt-0.5 font-mono text-[10px] text-[var(--ms-text-muted)]">
+                              yana: {line.extraBins.join(' · ')}
+                            </div>
                           )}
                         </div>
                         <div className="shrink-0 rounded-lg bg-[var(--ms-bg-app)] px-3 py-1 text-sm font-bold tabular-nums text-[var(--ms-text-primary)]">

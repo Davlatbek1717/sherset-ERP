@@ -71,6 +71,12 @@ export class RestockTaskService {
         locPolka: true,
         locQavat: true,
         locYacheyka: true,
+        // Multi-bin: additional shelves this product also sits on — shown
+        // alongside the primary bin so the picker knows every place to look.
+        extraLocations: {
+          select: { sklad: true, polka: true, qavat: true, yacheyka: true },
+          orderBy: [{ position: 'asc' }, { createdAt: 'asc' }],
+        },
       },
     });
     const byId = new Map(products.map((p) => [p.id, p]));
@@ -179,6 +185,12 @@ export class RestockTaskService {
         locPolka: true,
         locQavat: true,
         locYacheyka: true,
+        // Multi-bin: additional shelves this product also sits on — shown
+        // alongside the primary bin so the picker knows every place to look.
+        extraLocations: {
+          select: { sklad: true, polka: true, qavat: true, yacheyka: true },
+          orderBy: [{ position: 'asc' }, { createdAt: 'asc' }],
+        },
       },
     });
     const byId = new Map(products.map((p) => [p.id, p]));
@@ -233,6 +245,11 @@ export class RestockTaskService {
               ? formatBin(e.prod.locSklad, e.prod.locPolka, e.prod.locQavat, e.prod.locYacheyka) ||
                 null
               : null,
+            // Multi-bin: every ADDITIONAL shelf this product also sits on, so
+            // the picker/omborchi can look in any of them.
+            extraBins: (e.prod?.extraLocations ?? [])
+              .map((x) => formatBin(x.sklad, x.polka, x.qavat, x.yacheyka))
+              .filter((s): s is string => !!s),
           })),
         };
       });

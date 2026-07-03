@@ -30,6 +30,8 @@ interface SheetLine {
   productName: string;
   quantity: string;
   binLocation: string | null;
+  // Multi-bin: additional shelves this product also sits on (besides the primary).
+  extraBins?: string[];
 }
 interface PickingSheet {
   skladNo: number | null;
@@ -76,6 +78,7 @@ function sheetToText(
   sheet.lines.forEach((line, i) => {
     L.push(`${i + 1}. ${line.productName}`);
     L.push(`   ${line.binLocation ?? '—'}   ${Number(line.quantity)} dona  [ ]`);
+    if (line.extraBins?.length) L.push(`   yana: ${line.extraBins.join(', ')}`);
   });
   L.push(bar);
   const qty = sheet.lines.reduce((s, l) => s + Number(l.quantity), 0);
@@ -265,6 +268,11 @@ export default function PrintPickingPage() {
                         </span>
                         <span style={{ fontSize: fs + 4 }}>☐</span>
                       </div>
+                      {line.extraBins && line.extraBins.length > 0 && (
+                        <div style={{ fontSize: fs - 1, color: '#555', marginTop: 1 }}>
+                          yana: {line.extraBins.join(' · ')}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
