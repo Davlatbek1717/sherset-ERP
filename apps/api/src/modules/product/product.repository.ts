@@ -473,7 +473,56 @@ export class ProductRepository {
         group: { select: { id: true, name: true } },
         supplier: { select: { id: true, name: true } },
         packs: { orderBy: [{ position: 'asc' }, { createdAt: 'asc' }] },
+        // Multi-bin: additional shelf locations beyond the primary loc* home.
+        extraLocations: { orderBy: [{ position: 'asc' }, { createdAt: 'asc' }] },
       },
+    });
+  }
+
+  /** Multi-bin: list a product's ADDITIONAL shelf locations (primary loc* aside). */
+  async listLocations(accountId: string, productId: string) {
+    return this.prisma.client.productLocation.findMany({
+      where: { accountId, productId },
+      orderBy: [{ position: 'asc' }, { createdAt: 'asc' }],
+    });
+  }
+
+  /**
+   * Replace-all a product's additional locations in one transaction: wipe the
+   * old set, insert the new. Simple + idempotent — the card always sends the
+   * full list. Duplicate identical addresses are rejected by the unique index.
+   */
+  async setLocations(
+    accountId: string,
+    productId: string,
+    locations: Array<{
+      sklad: number;
+      polka: number | null;
+      qavat: number | null;
+      yacheyka: number | null;
+      note: string | null;
+    }>,
+  ) {
+    return this.prisma.client.$transaction(async (tx) => {
+      await tx.productLocation.deleteMany({ where: { accountId, productId } });
+      if (locations.length > 0) {
+        await tx.productLocation.createMany({
+          data: locations.map((l, i) => ({
+            accountId,
+            productId,
+            sklad: l.sklad,
+            polka: l.polka,
+            qavat: l.qavat,
+            yacheyka: l.yacheyka,
+            note: l.note,
+            position: i,
+          })),
+        });
+      }
+      return tx.productLocation.findMany({
+        where: { accountId, productId },
+        orderBy: [{ position: 'asc' }, { createdAt: 'asc' }],
+      });
     });
   }
 

@@ -47,6 +47,28 @@ export class ProductService {
     return product;
   }
 
+  /** Multi-bin: list a product's additional shelf locations. */
+  async listLocations(accountId: string, id: string) {
+    await this.findById(accountId, id); // existence / tenant guard → 404
+    return this.repo.listLocations(accountId, id);
+  }
+
+  /** Multi-bin: replace a product's additional shelf locations (full list). */
+  async setLocations(
+    accountId: string,
+    id: string,
+    locations: Array<{
+      sklad: number;
+      polka: number | null;
+      qavat: number | null;
+      yacheyka: number | null;
+      note: string | null;
+    }>,
+  ) {
+    await this.findById(accountId, id); // existence / tenant guard → 404
+    return this.repo.setLocations(accountId, id, locations);
+  }
+
   /** Scan page: product detail + stock balance per store. */
   async getScanInfo(accountId: string, id: string) {
     const product = await this.findById(accountId, id);

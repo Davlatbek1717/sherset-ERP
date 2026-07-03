@@ -38,6 +38,7 @@ import { Controller } from 'react-hook-form';
 export function ProductFormLeftCards({
   pf,
   imagesSlot,
+  extraLocationsSlot,
 }: {
   pf: ProductFormApi;
   /**
@@ -46,6 +47,12 @@ export function ProductFormLeftCards({
    * ImageGallery (immediate upload/list/delete against the existing product).
    */
   imagesSlot?: ReactNode;
+  /**
+   * Multi-bin «Qo'shimcha yacheykalar» card — additional shelf locations beyond
+   * the primary loc* home. Edit-only (needs an existing product id); the create
+   * form omits it (add extra bins after the product exists).
+   */
+  extraLocationsSlot?: ReactNode;
 }) {
   const router = useRouter();
   const {
@@ -524,6 +531,9 @@ export function ProductFormLeftCards({
           })()}
         </div>
       </ProductFormCard>
+
+      {/* Multi-bin: additional shelf locations (edit-only, own save). */}
+      {extraLocationsSlot}
 
       {/* Неснижаемый остаток — «?» title icon + dismissable blue info-banner, then
         the 3 modes (only «sum» maps to our field). moysklad puts the «sum» input

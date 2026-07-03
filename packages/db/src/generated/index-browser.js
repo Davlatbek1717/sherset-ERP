@@ -2146,6 +2146,20 @@ exports.Prisma.ProductScalarFieldEnum = {
   deletedAt: 'deletedAt'
 };
 
+exports.Prisma.ProductLocationScalarFieldEnum = {
+  id: 'id',
+  accountId: 'accountId',
+  productId: 'productId',
+  sklad: 'sklad',
+  polka: 'polka',
+  qavat: 'qavat',
+  yacheyka: 'yacheyka',
+  note: 'note',
+  position: 'position',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
 exports.Prisma.ProductAnalogScalarFieldEnum = {
   id: 'id',
   accountId: 'accountId',
@@ -4106,6 +4120,7 @@ exports.Prisma.ModelName = {
   MarkingCodeOrder: 'MarkingCodeOrder',
   RetireOrder: 'RetireOrder',
   Product: 'Product',
+  ProductLocation: 'ProductLocation',
   ProductAnalog: 'ProductAnalog',
   ProductPack: 'ProductPack',
   CustomerOrder: 'CustomerOrder',

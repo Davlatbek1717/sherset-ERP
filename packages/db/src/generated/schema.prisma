@@ -4569,10 +4569,11 @@ model Product {
   weighed  Boolean @default(false) // weighed goods (kg, not pcs)
   uom      String? @db.VarChar(20) // unit of measurement (e.g., "шт", "кг")
 
-  // Warehouse home location (Sherset custom — NOT moysklad parity). Each product
-  // has ONE physical home bin, addressed as 4 numeric segments composed into the
+  // Warehouse PRIMARY home location (Sherset custom — NOT moysklad parity).
+  // The product's main bin, addressed as 4 numeric segments composed into the
   // «NN-NN-NN-NN» code (sklad-polka-qavat-yacheyka). All optional; null = unset.
   // Used by the price-tag/QR label and the return-to-warehouse restock flow.
+  // ADDITIONAL bins (multi-bin) live in the ProductLocation table (extraLocations).
   locSklad    Int? @map("loc_sklad") // склад (warehouse)
   locPolka    Int? @map("loc_polka") // полка (shelf)
   locQavat    Int? @map("loc_qavat") // этаж/ярус (level)
@@ -4684,6 +4685,9 @@ model Product {
   // shows), `analogOf` are rows where this product is someone else's analog.
   analogs                 ProductAnalog[]          @relation("ProductAnalogsOwner")
   analogOf                ProductAnalog[]          @relation("ProductAnalogsTarget")
+  // Multi-bin: ADDITIONAL shelf locations where this product also sits, beyond
+  // the primary loc* home above. Empty ⇒ single-location product.
+  extraLocations          ProductLocation[]        @relation("ProductExtraLocations")
 
   @@unique([accountId, code])
   @@unique([accountId, externalCode])
@@ -4696,6 +4700,35 @@ model Product {
   @@index([accountId, groupId])
   @@index([accountId, modifiedById])
   @@map("products")
+}
+
+// Multi-bin: ADDITIONAL warehouse shelf locations for a product beyond its
+// primary loc* home (Sherset custom, NOT moysklad parity). One product → many
+// locations, each a «NN-NN-NN-NN» address. Phase 1 is address-only (no per-cell
+// quantity) — it tells pickers/putaway EVERY shelf a product can be found on;
+// stock is still tracked per-store, not per-cell. Segments mirror Product.loc*.
+model ProductLocation {
+  id        String @id @default(uuid()) @db.Uuid
+  accountId String @map("account_id") @db.Uuid
+  productId String @map("product_id") @db.Uuid
+
+  sklad    Int     @map("sklad") // склад (warehouse zone) — required key of the address
+  polka    Int?    @map("polka") // полка (shelf)
+  qavat    Int?    @map("qavat") // этаж/ярус (level)
+  yacheyka Int?    @map("yacheyka") // ячейка (cell)
+  note     String? @db.VarChar(255) // optional free note (e.g. «zaxira», «pastki»)
+
+  position  Int      @default(0) // display order on the product card
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  product Product @relation("ProductExtraLocations", fields: [productId], references: [id], onDelete: Cascade)
+
+  // The same product can't list one identical address twice.
+  @@unique([productId, sklad, polka, qavat, yacheyka])
+  @@index([accountId, productId])
+  @@index([accountId, sklad])
+  @@map("product_locations")
 }
 
 // «Аналоги» — substitute products for a product. Mirrors moysklad's analog
@@ -4754,7 +4787,7 @@ model ProductPack {
   // column, default "EAN13"). Same enum as a product barcode type
   // (ean13/ean8/code128/gtin). Null = treated as ean13 in the UI.
   codeType   String?  @map("code_type") @db.VarChar(20)
-  // «Код упаковки ТАСНИФ» — Uzbekistan TASNIF package classification code
+  // «Код упаковки Т��СНИФ» — Uzbekistan TASNIF package classification code
   // (moysklad «Товары и услуги» offers it as a column + Фильтр field). Optional;
   // set via the product editor's pack rows or import.
   tasnifCode String?  @map("tasnif_code") @db.VarChar(50)

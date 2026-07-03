@@ -16,6 +16,7 @@ import { DetailToolbar } from '@/components/document-detail';
 import { ImageGallery } from '@/components/image-gallery';
 import { type PackDraft, ProductDetailWidget } from '@/components/product-detail-widget';
 import { ProductFormShell } from '@/components/product-form-layout';
+import { ProductExtraLocations } from '@/components/products/product-extra-locations';
 import { ProductFormLeftCards } from '@/components/products/product-form-left-cards';
 import { ProductPriceEditor } from '@/components/products/product-price-editor';
 import { type ProductHydrateInput, useProductForm } from '@/components/products/use-product-form';
@@ -64,6 +65,13 @@ interface ProductDetail extends ProductHydrateInput {
   updatedAt: string;
   owner: { id: string; name: string; email: string } | null;
   packs: ProductPack[];
+  extraLocations?: Array<{
+    sklad: number;
+    polka: number | null;
+    qavat: number | null;
+    yacheyka: number | null;
+    note: string | null;
+  }>;
 }
 
 export default function ProductDetailPage() {
@@ -327,7 +335,15 @@ export default function ProductDetailPage() {
         )}
 
         <ProductFormShell
-          left={<ProductFormLeftCards pf={pf} imagesSlot={<ImageGallery productId={data.id} />} />}
+          left={
+            <ProductFormLeftCards
+              pf={pf}
+              imagesSlot={<ImageGallery productId={data.id} />}
+              extraLocationsSlot={
+                <ProductExtraLocations productId={data.id} initial={data.extraLocations ?? []} />
+              }
+            />
+          }
           right={
             <ProductDetailWidget
               productId={data.id}

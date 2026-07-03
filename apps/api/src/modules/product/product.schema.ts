@@ -334,6 +334,35 @@ export const BulkMoveSchema = z.object({
 });
 export type BulkMoveInput = z.infer<typeof BulkMoveSchema>;
 
+// Multi-bin: replace-all of a product's ADDITIONAL shelf locations. Each is a
+// «NN-NN-NN-NN» address; `sklad` is required, the finer segments optional. The
+// segments coerce undefined→null so the repository always gets `number | null`.
+const seg = z
+  .number()
+  .int()
+  .min(0)
+  .max(99999)
+  .nullish()
+  .transform((v) => v ?? null);
+export const SetProductLocationsSchema = z.object({
+  locations: z
+    .array(
+      z.object({
+        sklad: z.number().int().min(0).max(99999),
+        polka: seg,
+        qavat: seg,
+        yacheyka: seg,
+        note: z
+          .string()
+          .max(255)
+          .nullish()
+          .transform((v) => v ?? null),
+      }),
+    )
+    .max(50),
+});
+export type SetProductLocationsInput = z.infer<typeof SetProductLocationsSchema>;
+
 // «Изменить цены» — moysklad's bulk price-change drawer. Sets ONE target price
 // type on the selected products by one of three modes, with an optional ±
 // adjustment (currency units or %) and optional rounding to whole units. Other

@@ -7,6 +7,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -17,7 +18,12 @@ import { RequirePermission } from '../permissions/require-permission.decorator.j
 import { BulkIdsSchema, runBulk } from '../shared/bulk.js';
 import { AddAnalogSchema } from './product-analog.schema.js';
 import { ProductAnalogService } from './product-analog.service.js';
-import { BulkMoveSchema, BulkSetPricesSchema, BulkUpdateSchema } from './product.schema.js';
+import {
+  BulkMoveSchema,
+  BulkSetPricesSchema,
+  BulkUpdateSchema,
+  SetProductLocationsSchema,
+} from './product.schema.js';
 import { ProductService } from './product.service.js';
 
 @Controller('products')
@@ -132,6 +138,24 @@ export class ProductController {
     @Param('analogId') analogId: string,
   ) {
     return this.analogs.remove(user.accountId, id, analogId);
+  }
+
+  // ── Multi-bin: additional shelf locations (beyond the primary loc* home) ──
+  @Get(':id/locations')
+  @RequirePermission({ entity: 'product', action: 'view' })
+  async listLocations(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.service.listLocations(user.accountId, id);
+  }
+
+  @Put(':id/locations')
+  @RequirePermission({ entity: 'product', action: 'update' })
+  async setLocations(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    const { locations } = SetProductLocationsSchema.parse(body);
+    return this.service.setLocations(user.accountId, id, locations);
   }
 
   @Post('bulk-delete')
