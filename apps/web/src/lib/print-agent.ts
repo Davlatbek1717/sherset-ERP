@@ -14,6 +14,37 @@ import { api } from './api-client';
 
 export const PRINT_AGENT_URL = 'http://127.0.0.1:17777';
 
+// ─── Electron desktop shell bridge (optional) ────────────────────────────────
+// When the web app runs inside the Sherset desktop app (Electron), the shell
+// exposes window.electronAPI for NATIVE per-printer printing — no HTTP agent,
+// no ESC/POS codepage (the Windows driver renders the HTML, Cyrillic included).
+// Outside Electron (a normal browser) this is undefined and everything falls
+// back to the localhost print-agent over HTTP.
+interface ElectronBridge {
+  isSherset: boolean;
+  version: string;
+  listPrinters: () => Promise<string[]>;
+  printSheet: (printerName: string, html: string) => Promise<{ ok: boolean; error?: string }>;
+}
+declare global {
+  interface Window {
+    electronAPI?: ElectronBridge;
+  }
+}
+function electron(): ElectronBridge | null {
+  if (typeof window === 'undefined') return null;
+  const el = window.electronAPI;
+  return el?.isSherset ? el : null;
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 async function agentFetch(path: string, init?: RequestInit, timeoutMs = 4000): Promise<Response> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
@@ -24,8 +55,9 @@ async function agentFetch(path: string, init?: RequestInit, timeoutMs = 4000): P
   }
 }
 
-/** Is the agent up? (GET /health) */
+/** Is a printing backend available? (Electron native, or the HTTP agent /health) */
 export async function checkPrintAgent(): Promise<boolean> {
+  if (electron()) return true; // native printing is always available in the shell
   try {
     const r = await agentFetch('/health', {}, 2000);
     if (!r.ok) return false;
@@ -36,8 +68,16 @@ export async function checkPrintAgent(): Promise<boolean> {
   }
 }
 
-/** Installed Windows printers on the cashier PC (GET /printers). [] if unreachable. */
+/** Installed Windows printers on the cashier PC (Electron native, or GET /printers). */
 export async function fetchAgentPrinters(): Promise<string[]> {
+  const el = electron();
+  if (el) {
+    try {
+      return await el.listPrinters();
+    } catch {
+      return [];
+    }
+  }
   try {
     const r = await agentFetch('/printers', {}, 3000);
     if (!r.ok) return [];
@@ -124,6 +164,42 @@ function buildSheetText(sheet: AgentPickingSheet, orderName: string): string {
   return lines.join('\n');
 }
 
+/** 80mm-thermal HTML picking sheet for Electron native printing (driver renders
+ *  it — so Cyrillic works without ESC/POS codepages). */
+function buildSheetHtml(sheet: AgentPickingSheet, orderName: string): string {
+  const sklad = sheet.skladNo != null ? String(sheet.skladNo).padStart(2, '0') : '—';
+  let totalQty = 0;
+  const rows = sheet.lines
+    .map((l, i) => {
+      const qty = Number(l.quantity);
+      totalQty += qty;
+      return `<div class="ln"><div class="nm">${i + 1}. ${escapeHtml(l.productName)}</div><div class="mt"><span class="loc">${escapeHtml(l.binLocation ?? '—')}</span><span>x ${qty}</span><span>&#9744;</span></div></div>`;
+    })
+    .join('');
+  return `<!doctype html><html><head><meta charset="utf-8"><style>
+@page{margin:0}
+*{box-sizing:border-box}
+body{width:72mm;margin:0 auto;padding:2mm 1mm;font-family:'Segoe UI',Arial,sans-serif;font-size:12px;color:#000}
+.h{text-align:center;font-weight:700}
+.big{font-size:16px;line-height:1.2}
+.sep{border-top:1px dashed #000;margin:4px 0}
+.ln{margin-bottom:6px}
+.nm{font-weight:600}
+.mt{display:flex;justify-content:space-between;align-items:center;gap:6px}
+.loc{font-family:monospace;font-weight:700;letter-spacing:.04em}
+</style></head><body>
+<div class="h big">YIG'ISH VARAG'I</div>
+<div class="h big">SKLAD ${sklad}</div>
+<div class="sep"></div>
+<div>Buyurtma: <b>${escapeHtml(orderName || '—')}</b></div>
+<div>Omborchi: ${escapeHtml(sheet.omborchiName ?? '—')}</div>
+<div class="sep"></div>
+${rows}
+<div class="sep"></div>
+<div>Jami: ${sheet.lines.length} tovar, ${totalQty} dona</div>
+</body></html>`;
+}
+
 export interface PickingPrintOutcome {
   /** true = the agent handled printing (route to per-warehouse printers). */
   handled: boolean;
@@ -161,13 +237,16 @@ export async function printPickingViaAgent(saleId: string): Promise<PickingPrint
   // Nothing to route (agent up but no printer configured) → let caller fall back.
   if (sheets.length === 0 || !anyMapped) return idle;
 
+  const el = electron();
   const results = await Promise.all(
     sheets.map(async (sheet) => {
       const printer = sheet.skladNo != null ? printerBySklad.get(sheet.skladNo) : undefined;
       if (!printer) return 'skipped' as const;
-      const r = await agentPrint(printer, {
-        text: buildSheetText(sheet, sheetsRes.sourceName ?? ''),
-      });
+      // Electron shell → native driver print (HTML, Cyrillic-safe).
+      // Plain browser → HTTP print-agent (raw ESC/POS).
+      const r = el
+        ? await el.printSheet(printer, buildSheetHtml(sheet, sheetsRes.sourceName ?? ''))
+        : await agentPrint(printer, { text: buildSheetText(sheet, sheetsRes.sourceName ?? '') });
       return r.ok ? ('printed' as const) : ('error' as const);
     }),
   );
