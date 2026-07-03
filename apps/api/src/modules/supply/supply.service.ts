@@ -5,6 +5,7 @@ import {
   ConflictException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
@@ -13,6 +14,7 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 import { AttributeMetadataService } from '../attribute-metadata/attribute-metadata.service.js';
 import { type CurrencyRate, toBaseMinor } from '../currency/currency-convert.js';
 import { HR_EVENT, type SupplyPostedEvent } from '../hr/hr-shared/hr-events.types.js';
+import { NotificationService } from '../notification/notification.service.js';
 import { PurchaseOrderService } from '../purchase-order/purchase-order.service.js';
 import { tashkentRangeBounds } from '../report/report-date-bounds.util.js';
 import { resolveCreatorGroupId } from '../shared/group-stamp.js';
@@ -57,6 +59,8 @@ interface ComputedTotals {
  */
 @Injectable()
 export class SupplyService {
+  private readonly logger = new Logger(SupplyService.name);
+
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(StockService) private readonly stock: StockService,
@@ -64,6 +68,7 @@ export class SupplyService {
     @Inject(AttributeMetadataService) private readonly attrs: AttributeMetadataService,
     @Inject(WebhookFireService) private readonly webhookFire: WebhookFireService,
     @Inject(EventEmitter2) private readonly events: EventEmitter2,
+    @Inject(NotificationService) private readonly notifications: NotificationService,
   ) {}
 
   async list(accountId: string, rawFilter: unknown) {
@@ -982,7 +987,128 @@ export class SupplyService {
       postedAt: posted.postedAt ?? new Date(),
     };
     this.events.emit(HR_EVENT.SUPPLY_POSTED, payload);
+
+    // Fire the omborchi «joylashtirish» (putaway) tasks — one per sklad — so a
+    // warehouse-keeper shelves the newly-received goods. Best-effort and post-
+    // commit: it must never block or roll back a successful Приёмка posting.
+    this.createPlacementTasksForSupply(accountId, posted.id, userId).catch((e) => {
+      this.logger.warn(
+        `createPlacementTasksForSupply failed for supply ${posted.id}: ${
+          e instanceof Error ? e.message : e
+        }`,
+      );
+    });
+
     return posted;
+  }
+
+  /**
+   * After a Приёмка (supply) is posted, create «joylashtirish» (placement)
+   * RestockTasks so a warehouse-keeper shelves the newly-received goods —
+   * one task per sklad, assigned to that sklad's keeper, each line snapshotting
+   * its product's home bin location. Mirrors retail-sale's
+   * createPlacementTasksForRefund (the inbound counterpart of the same putaway
+   * queue). No keepers configured ⇒ no tasks (self-scoping, like printer
+   * routing), so a single-shop setup is untouched.
+   */
+  private async createPlacementTasksForSupply(
+    accountId: string,
+    supplyId: string,
+    userId: string,
+  ): Promise<void> {
+    const supply = await this.prisma.client.supply.findFirst({
+      where: { id: supplyId, accountId },
+      select: {
+        name: true,
+        storeId: true,
+        store: { select: { name: true } },
+        positions: {
+          // Only stockable product lines have a shelf; skip services/other kinds.
+          where: { assortmentKind: 'product' },
+          include: {
+            product: {
+              select: {
+                id: true,
+                name: true,
+                locSklad: true,
+                locPolka: true,
+                locQavat: true,
+                locYacheyka: true,
+              },
+            },
+          },
+          orderBy: { position: 'asc' },
+        },
+      },
+    });
+    if (!supply || supply.positions.length === 0) return;
+
+    const keepers = await this.prisma.client.skladKeeper.findMany({ where: { accountId } });
+    if (keepers.length === 0) return;
+    const keeperBySklad = new Map(keepers.map((k) => [k.skladNo, k]));
+
+    const NULL_SKLAD = -1;
+    type Pos = (typeof supply.positions)[number];
+    const groups = new Map<number, Pos[]>();
+    for (const pos of supply.positions) {
+      const sklad = pos.product?.locSklad ?? NULL_SKLAD;
+      const bucket = groups.get(sklad);
+      if (bucket) bucket.push(pos);
+      else groups.set(sklad, [pos]);
+    }
+
+    const storeId = supply.storeId ?? null;
+    const storeName = supply.store?.name ?? null;
+    const fallbackKeeper = keepers[0];
+    const pad = (n: number | null) => String(n ?? 0).padStart(2, '0');
+    const formatBin = (s: number | null, p: number | null, q: number | null, y: number | null) =>
+      s == null && p == null && q == null && y == null ? '' : [s, p, q, y].map(pad).join('-');
+
+    for (const [skladNo, entries] of groups) {
+      const keeper = skladNo === NULL_SKLAD ? fallbackKeeper : keeperBySklad.get(skladNo);
+      if (!keeper) continue;
+      const task = await this.prisma.client.restockTask.create({
+        data: {
+          accountId,
+          type: 'restock',
+          skladNo,
+          sourceType: 'supply',
+          sourceId: supplyId,
+          sourceName: supply.name,
+          storeId,
+          storeName,
+          assigneeId: keeper.employeeId,
+          assigneeName: keeper.employeeName,
+          createdById: userId,
+          status: 'pending',
+          lines: {
+            create: entries.map((pos, i) => {
+              const p = pos.product;
+              const bin = p ? formatBin(p.locSklad, p.locPolka, p.locQavat, p.locYacheyka) : '';
+              return {
+                accountId,
+                productId: pos.productId ?? null,
+                productName: p?.name ?? '—',
+                quantity: pos.quantity,
+                binLocation: bin || null,
+                position: i,
+              };
+            }),
+          },
+        },
+      });
+      await this.notifications
+        .emit(
+          accountId,
+          keeper.employeeId,
+          'restock_assigned',
+          'Joylashtirish vazifasi',
+          `${entries.length} ta yangi kelgan mahsulot${supply.name ? ` — ${supply.name}` : ''}`,
+          'RestockTask',
+          task.id,
+        )
+        .catch(() => {});
+    }
   }
 
   private async unpost(
