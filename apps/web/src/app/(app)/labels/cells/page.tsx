@@ -8,15 +8,16 @@
  * bo'yicha labellari generatsiya qilinadi (masalan sklad 01, polka 1–3,
  * qavat 1–2, yacheyka 1–10 → 60 ta label).
  *
- * QR PLAIN bin-kod matnini kodlaydi (URL emas) — istalgan skaner o'qiy oladi
- * va kelajakdagi yacheyka-scan oqimlari shu matnni parse qiladi. Chop formati
- * /labels/print bilan BIR XIL A4 2×5 (87.5×50mm) — bitta yorliq-qog'oz zaxirasi.
+ * Shtrix-kod (CODE128C) TIRESIZ 8 raqamni kodlaydi («01020304» — har segment
+ * 2 xona, shuning uchun segmentlar 0–99 bilan cheklangan): raqam-juftlik
+ * kodlash tire aralash matndan ~40% kalta chiziq beradi. Skaner 8 raqam
+ * qaytaradi → NN·NN·NN·NN deb parse qilinadi. Chop formati /labels/print
+ * bilan BIR XIL A4 2×5 (87.5×50mm) — bitta yorliq-qog'oz zaxirasi.
  */
 
 import { Button, Icons, Input } from '@moysklad/ui';
 import JsBarcode from 'jsbarcode';
 import { useRouter } from 'next/navigation';
-import { QRCodeSVG } from 'qrcode.react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 const TPL = {
@@ -42,12 +43,14 @@ interface Range {
 }
 const emptyRange = (): Range => ({ from: '', to: '' });
 
-/** '' from ⇒ segment 0 (unset); '' to ⇒ to=from. Invalid ⇒ null (error). */
+/** '' from ⇒ segment 0 (unset); '' to ⇒ to=from. Invalid ⇒ null (error).
+ * 0–99 chegarasi label formati «NN-NN-NN-NN» + 8-raqamli CODE128C shtrix
+ * kodlashning sharti (har segment aynan 2 xona). */
 function expand(r: Range): number[] | null {
   const from = r.from.trim() === '' ? 0 : Number(r.from);
   const to = r.to.trim() === '' ? from : Number(r.to);
   if (!Number.isInteger(from) || !Number.isInteger(to)) return null;
-  if (from < 0 || to > 99999 || to < from) return null;
+  if (from < 0 || to > 99 || to < from) return null;
   const out: number[] = [];
   for (let i = from; i <= to; i++) out.push(i);
   return out;
@@ -79,7 +82,7 @@ export default function CellLabelsPage() {
 
   const handlePreview = () => {
     if (!codes) {
-      setError("Diapazon noto'g'ri — butun son, from ≤ to (0–99999)");
+      setError("Diapazon noto'g'ri — butun son, dan ≤ gacha (0–99)");
       return;
     }
     if (codes.total === 0) {
@@ -261,20 +264,20 @@ function RenderedCells({ codes, onBack }: { codes: string[]; onBack: () => void 
 function CellLabel({ code, x, y, mmPx }: { code: string; x: number; y: number; mmPx: number }) {
   const widthPx = TPL.labelWidthMm * mmPx;
   const heightPx = TPL.labelHeightMm * mmPx;
-  const qrSize = Math.round(heightPx * 0.4);
   const barcodeRef = useRef<SVGSVGElement>(null);
 
-  // CODE128 shtrix-kod — plain bin-kod matnini kodlaydi (QR bilan bir xil
-  // qiymat). Yacheyka doimiy, ichidagi tovar almashadi — label yacheykani
-  // identifikatsiya qiladi; oddiy 1D USB-skanerlar ham o'qiy oladi.
+  // Yacheyka doimiy, ichidagi tovar almashadi — label YACHEYKANI
+  // identifikatsiya qiladi. Bitta CODE128C shtrix yetadi: tiresiz 8 raqam
+  // («01020304») — raqam-juftlik kodlash tire aralash matndan ancha kalta.
+  // Skaner 8 raqam qaytaradi → NN·NN·NN·NN deb parse qilinadi.
   useEffect(() => {
     if (!barcodeRef.current) return;
-    JsBarcode(barcodeRef.current, code, {
-      format: 'CODE128',
+    JsBarcode(barcodeRef.current, code.replace(/-/g, ''), {
+      format: 'CODE128C',
       displayValue: false,
       margin: 0,
-      height: 42,
-      width: 1.6,
+      height: 52,
+      width: 2.2,
     });
   }, [code]);
 
@@ -283,20 +286,15 @@ function CellLabel({ code, x, y, mmPx }: { code: string; x: number; y: number; m
       className="absolute flex flex-col items-center justify-between overflow-hidden border border-slate-200 px-3 py-2"
       style={{ left: `${x * mmPx}px`, top: `${y * mmPx}px`, width: widthPx, height: heightPx }}
     >
-      <div className="flex w-full items-center justify-center gap-3">
-        {/* Kichik QR (telefon-kamera oqimlari uchun) — shu kod matni */}
-        <QRCodeSVG value={code} size={qrSize} level="M" marginSize={0} />
-        <div className="flex flex-col items-center">
-          <div className="text-[9px] text-slate-400 uppercase tracking-widest">Yacheyka</div>
-          <div
-            className="font-bold font-mono text-[20px] text-slate-900 tabular-nums tracking-widest"
-            data-test-id="cell-label-code"
-          >
-            {code}
-          </div>
+      <div className="flex flex-col items-center">
+        <div className="text-[9px] text-slate-400 uppercase tracking-widest">Yacheyka</div>
+        <div
+          className="font-bold font-mono text-[22px] text-slate-900 tabular-nums tracking-widest"
+          data-test-id="cell-label-code"
+        >
+          {code}
         </div>
       </div>
-      {/* CODE128 strip — skaner shu kod matnini qaytaradi */}
       <svg ref={barcodeRef} data-test-id="cell-label-barcode" aria-hidden="true" />
     </div>
   );
