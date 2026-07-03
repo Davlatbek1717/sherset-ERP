@@ -145,6 +145,8 @@ export class CounterpartyService {
       ...(filter.companyType ? { companyType: filter.companyType } : {}),
       ...(filter.ownerId ? { ownerId: filter.ownerId } : {}),
       ...(filter.groupId ? { groupId: filter.groupId } : {}),
+      // m2m counterparty-group membership (Mijozlar / Ta'minotchilar tabs).
+      ...(filter.cpGroupId ? { groups: { some: { id: filter.cpGroupId } } } : {}),
       ...(filter.stateId ? { stateId: filter.stateId } : {}),
       ...(filter.priceTypeId ? { priceTypeId: filter.priceTypeId } : {}),
       ...(filter.tags ? { tags: { has: filter.tags } } : {}),

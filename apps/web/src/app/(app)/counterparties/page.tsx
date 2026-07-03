@@ -210,6 +210,23 @@ export default function CounterpartiesPage() {
   // (Ta'minotchilar, Mijozlar, …). The backend CRUD always existed; this exposes it.
   const [groupMgrOpen, setGroupMgrOpen] = useState(false);
 
+  // Kontragent tablari: Hammasi / Mijozlar / Ta'minotchilar. Mijozlar/Ta'minotchilar
+  // filter by the matching m2m counterparty-group (resolved by name → cpGroupId).
+  const [tab, setTab] = useState<'all' | 'customers' | 'suppliers'>('all');
+  const cpGroupsQuery = useQuery<{ items: { id: string; name: string }[] }>({
+    queryKey: ['counterparty-groups'],
+    queryFn: () => api.get('/counterparty-groups'),
+    staleTime: 5 * 60 * 1000,
+  });
+  const groupIdByName = (n: string) =>
+    cpGroupsQuery.data?.items.find((g) => g.name.trim().toLowerCase() === n.toLowerCase())?.id;
+  const activeCpGroupId =
+    tab === 'customers'
+      ? groupIdByName('Mijozlar')
+      : tab === 'suppliers'
+        ? groupIdByName("Ta'minotchilar")
+        : undefined;
+
   // CRM states (Статус) for the dropdown — tenant rows keyed by
   // entityType. Same pattern the StatusChangeDropdown uses for
   // customerorder; here we scope to 'counterparty'. Failure (e.g. a
@@ -248,6 +265,7 @@ export default function CounterpartiesPage() {
     archived: archived === 'all' ? 'all' : archived === 'archived' ? 'true' : 'false',
     ...(stateId ? { stateId } : {}),
     ...(ownerId ? { ownerId } : {}),
+    ...(activeCpGroupId ? { cpGroupId: activeCpGroupId } : {}),
     ...(name.trim() ? { name: name.trim() } : {}),
     ...(phone.trim() ? { phone: phone.trim() } : {}),
     ...(address.trim() ? { address: address.trim() } : {}),
@@ -271,6 +289,7 @@ export default function CounterpartiesPage() {
     archived,
     stateId,
     ownerId,
+    activeCpGroupId ?? '',
     name,
     phone,
     address,
@@ -864,6 +883,36 @@ export default function CounterpartiesPage() {
 
   return (
     <>
+      {/* Kontragent tablari — bitta sahifada Hammasi / Mijozlar / Ta'minotchilar.
+          Mijozlar/Ta'minotchilar mos m2m guruh (cpGroupId) bo'yicha filtrlanadi. */}
+      <div className="border-[var(--ms-border-default)] border-b bg-[var(--ms-bg-surface)] px-4 pt-2">
+        <div className="inline-flex gap-1">
+          {(
+            [
+              { k: 'all', label: 'Hammasi' },
+              { k: 'customers', label: 'Mijozlar' },
+              { k: 'suppliers', label: "Ta'minotchilar" },
+            ] as const
+          ).map((tb) => (
+            <button
+              key={tb.k}
+              type="button"
+              onClick={() => {
+                setTab(tb.k);
+                setPage(1);
+              }}
+              className={`-mb-px rounded-t-md border-b-2 px-4 py-2 font-medium text-sm transition-colors ${
+                tab === tb.k
+                  ? 'border-[var(--ms-text-brand)] text-[var(--ms-text-brand)]'
+                  : 'border-transparent text-[var(--ms-text-muted)] hover:text-[var(--ms-text-primary)]'
+              }`}
+              data-test-id={`cp-tab-${tb.k}`}
+            >
+              {tb.label}
+            </button>
+          ))}
+        </div>
+      </div>
       <ListView
         testId="counterparties-page"
         title={t('title')}

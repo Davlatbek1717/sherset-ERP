@@ -166,6 +166,9 @@ export const CounterpartyFilterSchema = z
       .default(false),
     ownerId: uuid.optional(),
     groupId: uuid.optional(),
+    // «Группы» — m2m counterparty-group membership (Mijozlar / Ta'minotchilar),
+    // distinct from groupId (=Отдел/access dept). Powers the /counterparties tabs.
+    cpGroupId: uuid.optional(),
     stateId: uuid.optional(),
     // «Цены» — filter by the counterparty's assigned price type
     // (Counterparty.priceTypeId → PriceType). Picker hits /price-types.
