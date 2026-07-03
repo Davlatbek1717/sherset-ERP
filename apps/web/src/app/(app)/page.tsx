@@ -4,6 +4,8 @@ import { HomepageTabs } from '@/components/homepage-tabs';
 import { api } from '@/lib/api-client';
 import { Button, Container, formatMoney } from '@moysklad/ui';
 import { useQuery } from '@tanstack/react-query';
+import { ClipboardList, Package, Receipt, Wallet } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
 import { useState } from 'react';
 import {
@@ -828,6 +830,105 @@ function RecentDocsSection({
 }
 
 // ---------------------------------------------------------------------------
+// Live KPI cards — at-a-glance operational metrics at the top of the dashboard.
+// Today's sales + cash come free from the dashboard result; stock + picking are
+// two extra light count queries. All auto-refresh so the numbers stay live.
+// ---------------------------------------------------------------------------
+
+function KpiCard({
+  icon: Icon,
+  label,
+  primary,
+  secondary,
+  accent,
+}: {
+  icon: LucideIcon;
+  label: string;
+  primary: string;
+  secondary?: string;
+  accent?: string;
+}) {
+  return (
+    <div className="rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] p-4">
+      <div className="mb-2 flex items-center gap-2">
+        <span className="flex h-8 w-8 items-center justify-center rounded-md bg-[var(--ms-bg-muted)] text-[var(--ms-text-brand)]">
+          <Icon className="h-4 w-4" aria-hidden />
+        </span>
+        <span className="text-[var(--ms-text-muted)] text-xs">{label}</span>
+      </div>
+      <div
+        className="font-light text-2xl tabular-nums leading-none"
+        style={{ color: accent ?? 'var(--ms-text-primary)' }}
+      >
+        {primary}
+      </div>
+      {secondary ? (
+        <div className="mt-1 text-[var(--ms-text-muted)] text-xs">{secondary}</div>
+      ) : null}
+    </div>
+  );
+}
+
+function KpiCards({ data, loading }: { data: DashboardResult | undefined; loading: boolean }) {
+  const productsQ = useQuery<{ total: number }>({
+    queryKey: ['kpi-products'],
+    queryFn: () => api.get('/products?limit=1'),
+    staleTime: 60_000,
+    refetchInterval: 60_000,
+  });
+  const lowStockQ = useQuery<{ items: unknown[] }>({
+    queryKey: ['kpi-lowstock'],
+    queryFn: () => api.get('/stocks/replenishment'),
+    staleTime: 30_000,
+    refetchInterval: 30_000,
+  });
+  const pickingQ = useQuery<{ total: number }>({
+    queryKey: ['kpi-picking'],
+    queryFn: () => api.get('/retail-sales?state=picking&limit=1'),
+    staleTime: 15_000,
+    refetchInterval: 15_000,
+  });
+  const readyQ = useQuery<{ total: number }>({
+    queryKey: ['kpi-ready'],
+    queryFn: () => api.get('/retail-sales?state=ready&limit=1'),
+    staleTime: 15_000,
+    refetchInterval: 15_000,
+  });
+
+  const today = data?.sales.today;
+  const dash = (v: string) => (loading ? '…' : v);
+
+  return (
+    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <KpiCard
+        icon={Receipt}
+        label="Bugungi savdo"
+        primary={dash(fmt(today?.sumMinor ?? '0'))}
+        secondary={`${today?.count ?? 0} ta chek`}
+        accent="#3e9f9f"
+      />
+      <KpiCard
+        icon={Wallet}
+        label="Kassa qoldig'i"
+        primary={dash(fmt(data?.money.totalSumMinor ?? '0'))}
+      />
+      <KpiCard
+        icon={Package}
+        label="Ombor"
+        primary={productsQ.data ? `${productsQ.data.total.toLocaleString('uz-UZ')} tovar` : '…'}
+        secondary={lowStockQ.data ? `${lowStockQ.data.items.length} kam qolgan` : 'kam qolgan: —'}
+      />
+      <KpiCard
+        icon={ClipboardList}
+        label="Yig'ish"
+        primary={pickingQ.data ? `${pickingQ.data.total} jarayonda` : '…'}
+        secondary={readyQ.data ? `${readyQ.data.total} tayyor — kassir kutmoqda` : undefined}
+      />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main page
 // ---------------------------------------------------------------------------
 
@@ -845,6 +946,8 @@ export default function HomePage() {
     <Container size="lg" className="space-y-8 py-4">
       {/* Page-level tabs (Показатели / Документы / Корзина / Аудит / Файлы / Начало работы) */}
       <HomepageTabs activeKey="metrics" />
+
+      <KpiCards data={data} loading={isLoading} />
 
       <SalesSection data={data} loading={isLoading} period={period} setPeriod={setPeriod} />
       <OverdueSection data={data} loading={isLoading} />
