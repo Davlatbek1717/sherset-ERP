@@ -1,8 +1,8 @@
 {
-  "generatedAt": "2026-06-26T07:45:42.932Z",
+  "generatedAt": "2026-07-03T13:23:22.386Z",
   "list_pages": {
     "total_target": 56,
-    "actual_routes_in_app": 65,
+    "actual_routes_in_app": 69,
     "toolbar_components_built": 18,
     "toolbar_components_pct": 32,
     "dedicated_components": 14,
@@ -26,10 +26,10 @@
     ]
   },
   "detail_pages": {
-    "total_target": 66,
-    "actual_in_app": 66,
+    "total_target": 69,
+    "actual_in_app": 69,
     "audited": 63,
-    "audited_pct": 95,
+    "audited_pct": 91,
     "files": [
       "analitika-buyurtmalar-detail.audit.md",
       "analitika-kontragentlar-detail.audit.md",
@@ -177,35 +177,9 @@
     "smoke_log_hint": "Run `pnpm smoke:all` and parse the tail for live-smoke + adversarial counts"
   },
   "moysklad_reference": {
-    "captured_modules": 25,
-    "detail_captured_modules": 12,
-    "modules": [
-      "cash-in",
-      "cash-out",
-      "contact-persons",
-      "counterparties",
-      "currencies",
-      "customer-orders",
-      "demands",
-      "employees",
-      "enters",
-      "internalorder",
-      "inventories",
-      "invoices-in",
-      "invoices-out",
-      "losses",
-      "moves",
-      "payments-in",
-      "payments-out",
-      "processing",
-      "processingplan",
-      "products",
-      "projects",
-      "purchase-orders",
-      "supplies",
-      "uoms",
-      "variants"
-    ]
+    "captured_modules": 0,
+    "detail_captured_modules": 0,
+    "modules": []
   },
   "phase2": {
     "cohorts_total": 7,

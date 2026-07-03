@@ -14,9 +14,10 @@
  */
 
 import { Button, Icons, Input } from '@moysklad/ui';
+import JsBarcode from 'jsbarcode';
 import { useRouter } from 'next/navigation';
-import { useMemo, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 const TPL = {
   pageWidthMm: 210,
@@ -71,7 +72,8 @@ export default function CellLabelsPage() {
     if (total > MAX_LABELS) return { total, list: [] as string[] };
     const list: string[] = [];
     for (const a of s)
-      for (const b of p) for (const c of q) for (const d of y) list.push([a, b, c, d].map(pad2).join('-'));
+      for (const b of p)
+        for (const c of q) for (const d of y) list.push([a, b, c, d].map(pad2).join('-'));
     return { total, list };
   }, [sklad, polka, qavat, yacheyka]);
 
@@ -108,7 +110,9 @@ export default function CellLabelsPage() {
     <div className="mx-auto max-w-2xl space-y-6 p-6" data-test-id="cell-labels-page">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="font-semibold text-[var(--ms-text-primary)] text-xl">Yacheyka labellari</h1>
+          <h1 className="font-semibold text-[var(--ms-text-primary)] text-xl">
+            Yacheyka labellari
+          </h1>
           <p className="mt-1 text-[var(--ms-text-muted)] text-sm">
             Javon qatoriga yopishtiriladigan kod+QR labellar. Har segment uchun diapazon kiriting
             (bo'sh «gacha» = «dan» bilan teng; bo'sh «dan» = 00).
@@ -217,7 +221,11 @@ function RenderedCells({ codes, onBack }: { codes: string[]; onBack: () => void 
             <Button variant="ghost" onClick={onBack}>
               ← Orqaga
             </Button>
-            <Button variant="primary" onClick={() => window.print()} data-test-id="cell-labels-print">
+            <Button
+              variant="primary"
+              onClick={() => window.print()}
+              data-test-id="cell-labels-print"
+            >
               <Icons.print className="h-4 w-4" />
               Chop etish
             </Button>
@@ -253,24 +261,43 @@ function RenderedCells({ codes, onBack }: { codes: string[]; onBack: () => void 
 function CellLabel({ code, x, y, mmPx }: { code: string; x: number; y: number; mmPx: number }) {
   const widthPx = TPL.labelWidthMm * mmPx;
   const heightPx = TPL.labelHeightMm * mmPx;
-  const qrSize = Math.round(heightPx * 0.72);
+  const qrSize = Math.round(heightPx * 0.4);
+  const barcodeRef = useRef<SVGSVGElement>(null);
+
+  // CODE128 shtrix-kod — plain bin-kod matnini kodlaydi (QR bilan bir xil
+  // qiymat). Yacheyka doimiy, ichidagi tovar almashadi — label yacheykani
+  // identifikatsiya qiladi; oddiy 1D USB-skanerlar ham o'qiy oladi.
+  useEffect(() => {
+    if (!barcodeRef.current) return;
+    JsBarcode(barcodeRef.current, code, {
+      format: 'CODE128',
+      displayValue: false,
+      margin: 0,
+      height: 42,
+      width: 1.6,
+    });
+  }, [code]);
 
   return (
     <div
-      className="absolute flex items-center gap-3 overflow-hidden border border-slate-200 px-3"
+      className="absolute flex flex-col items-center justify-between overflow-hidden border border-slate-200 px-3 py-2"
       style={{ left: `${x * mmPx}px`, top: `${y * mmPx}px`, width: widthPx, height: heightPx }}
     >
-      {/* QR plain bin-kod matnini kodlaydi — istalgan skaner o'qiydi */}
-      <QRCodeSVG value={code} size={qrSize} level="M" marginSize={0} />
-      <div className="flex min-w-0 flex-1 flex-col items-center gap-1">
-        <div className="text-[10px] text-slate-400 uppercase tracking-widest">Yacheyka</div>
-        <div
-          className="font-bold font-mono text-[22px] text-slate-900 tabular-nums tracking-widest"
-          data-test-id="cell-label-code"
-        >
-          {code}
+      <div className="flex w-full items-center justify-center gap-3">
+        {/* Kichik QR (telefon-kamera oqimlari uchun) — shu kod matni */}
+        <QRCodeSVG value={code} size={qrSize} level="M" marginSize={0} />
+        <div className="flex flex-col items-center">
+          <div className="text-[9px] text-slate-400 uppercase tracking-widest">Yacheyka</div>
+          <div
+            className="font-bold font-mono text-[20px] text-slate-900 tabular-nums tracking-widest"
+            data-test-id="cell-label-code"
+          >
+            {code}
+          </div>
         </div>
       </div>
+      {/* CODE128 strip — skaner shu kod matnini qaytaradi */}
+      <svg ref={barcodeRef} data-test-id="cell-label-barcode" aria-hidden="true" />
     </div>
   );
 }
