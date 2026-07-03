@@ -222,6 +222,9 @@ export class RestockTaskService {
         return {
           skladNo,
           omborchiName: keeper?.employeeName ?? null,
+          // Named printer this sklad's strip is routed to (via the local
+          // print-agent). null ⇒ no per-printer routing → browser print.
+          printerName: keeper?.printerName ?? null,
           lines: routed.map((e) => ({
             productId: e.prod?.id ?? null,
             productName: e.prod?.name ?? '—',
