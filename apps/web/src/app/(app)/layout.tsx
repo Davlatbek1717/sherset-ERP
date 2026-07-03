@@ -358,9 +358,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     { key: 'restocktasks', label: tStock('restock'), href: '/restock-tasks' },
     { key: 'omborchi', label: 'Omborchi (yig\'ish)', href: '/omborchi' },
     { key: 'replenishment', label: 'To\'ldirish kerak', href: '/replenishment' },
-    { key: 'remains', label: tStock('remains'), href: '/stock-balance' },
+    // «Остатки» (/stock-balance) removed — that route has no page (dead link);
+    // the working stock-balance lives under Hisobotlar → /reports/stock-balance.
     { key: 'turnover', label: tStock('turnover'), href: '/turnover' },
-    { key: 'stores', label: tStock('stores'), href: '/stores' },
+    // «Склады» (/stores) removed — it duplicated Sozlamalar → Склады (same
+    // StoresListView). The warehouse list stays under /settings/stores.
     { key: 'training', label: tStock('training'), href: '/stock-training' },
   ];
 
