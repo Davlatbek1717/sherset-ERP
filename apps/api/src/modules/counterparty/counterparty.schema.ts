@@ -166,9 +166,12 @@ export const CounterpartyFilterSchema = z
       .default(false),
     ownerId: uuid.optional(),
     groupId: uuid.optional(),
-    // «Группы» — m2m counterparty-group membership (Mijozlar / Ta'minotchilar),
-    // distinct from groupId (=Отдел/access dept). Powers the /counterparties tabs.
+    // «Группы» — m2m counterparty-group membership, distinct from groupId (=Отдел).
     cpGroupId: uuid.optional(),
+    // Auto-detected role for the /counterparties tabs (usage-based, not manual):
+    //   customer → has any sale (retailSale OR demand)
+    //   supplier → has any supply (kirim)
+    role: z.enum(['customer', 'supplier']).optional(),
     stateId: uuid.optional(),
     // «Цены» — filter by the counterparty's assigned price type
     // (Counterparty.priceTypeId → PriceType). Picker hits /price-types.

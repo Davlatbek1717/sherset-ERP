@@ -125,6 +125,112 @@ interface ListResponse {
 // Moysklad parity — 100 rows per page (matches every other list).
 const LIMIT = 100;
 
+// ─── «Tranzaksiyalar» tab — merged sale/supply/payment feed ──────────────────
+
+interface TxnRow {
+  id: string;
+  type: 'sale' | 'supply' | 'payment_in' | 'payment_out';
+  number: string;
+  counterpartyName: string | null;
+  moment: string;
+  sumMinor: string;
+  sign: 1 | -1;
+}
+const TXN_LABEL: Record<TxnRow['type'], string> = {
+  sale: 'Savdo',
+  supply: 'Kirim',
+  payment_in: "Kiruvchi to'lov",
+  payment_out: "Chiquvchi to'lov",
+};
+
+function CounterpartyTransactionsView() {
+  const [page, setPage] = useState(1);
+  const limit = 50;
+  const { data, isLoading } = useQuery<{ items: TxnRow[]; total: number }>({
+    queryKey: ['counterparty-transactions', page],
+    queryFn: () => api.get(`/counterparty-transactions?limit=${limit}&page=${page}`),
+    refetchInterval: 30_000,
+  });
+  const items = data?.items ?? [];
+  const total = data?.total ?? 0;
+  const lastPage = Math.max(1, Math.ceil(total / limit));
+
+  return (
+    <div className="p-4" data-test-id="cp-transactions">
+      <div className="overflow-hidden rounded-xl border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)]">
+        <table className="w-full text-sm">
+          <thead className="border-[var(--ms-border-default)] border-b bg-[var(--ms-bg-muted)] text-[10px] text-[var(--ms-text-muted)] uppercase tracking-widest">
+            <tr>
+              <th className="px-4 py-2 text-left">Sana</th>
+              <th className="px-4 py-2 text-left">Tur</th>
+              <th className="px-4 py-2 text-left">Hujjat</th>
+              <th className="px-4 py-2 text-left">Kontragent</th>
+              <th className="px-4 py-2 text-right">Summa</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[var(--ms-border-default)]">
+            {isLoading ? (
+              <tr>
+                <td colSpan={5} className="px-4 py-8 text-center text-[var(--ms-text-muted)]">
+                  Yuklanmoqda...
+                </td>
+              </tr>
+            ) : items.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="px-4 py-10 text-center text-[var(--ms-text-muted)]">
+                  Hozircha tranzaksiya yo'q (savdo/kirim/to'lov qilinganda shu yerda chiqadi)
+                </td>
+              </tr>
+            ) : (
+              items.map((t) => (
+                <tr key={`${t.type}-${t.id}`} className="hover:bg-[var(--ms-bg-hover)]">
+                  <td className="px-4 py-2.5 text-[var(--ms-text-muted)] text-xs">
+                    {formatDate(t.moment)}
+                  </td>
+                  <td className="px-4 py-2.5">{TXN_LABEL[t.type]}</td>
+                  <td className="px-4 py-2.5 font-mono text-xs">{t.number}</td>
+                  <td className="px-4 py-2.5">{t.counterpartyName ?? '—'}</td>
+                  <td
+                    className={`px-4 py-2.5 text-right font-medium tabular-nums ${
+                      t.sign > 0 ? 'text-emerald-600' : 'text-amber-600'
+                    }`}
+                  >
+                    {t.sign > 0 ? '+' : '−'}
+                    {formatMoney(t.sumMinor, 'UZS', { displayAs: 'none' })}
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+      {total > limit && (
+        <div className="mt-3 flex items-center justify-end gap-3 text-sm">
+          <span className="text-[var(--ms-text-muted)]">
+            {page} / {lastPage} ({total} ta)
+          </span>
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={page <= 1}
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+          >
+            ←
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={page >= lastPage}
+            onClick={() => setPage((p) => p + 1)}
+          >
+            →
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function CounterpartiesPage() {
   const t = useTranslations('pages.counterparties');
   const tCommon = useTranslations('common');
@@ -210,22 +316,11 @@ export default function CounterpartiesPage() {
   // (Ta'minotchilar, Mijozlar, …). The backend CRUD always existed; this exposes it.
   const [groupMgrOpen, setGroupMgrOpen] = useState(false);
 
-  // Kontragent tablari: Hammasi / Mijozlar / Ta'minotchilar. Mijozlar/Ta'minotchilar
-  // filter by the matching m2m counterparty-group (resolved by name → cpGroupId).
-  const [tab, setTab] = useState<'all' | 'customers' | 'suppliers'>('all');
-  const cpGroupsQuery = useQuery<{ items: { id: string; name: string }[] }>({
-    queryKey: ['counterparty-groups'],
-    queryFn: () => api.get('/counterparty-groups'),
-    staleTime: 5 * 60 * 1000,
-  });
-  const groupIdByName = (n: string) =>
-    cpGroupsQuery.data?.items.find((g) => g.name.trim().toLowerCase() === n.toLowerCase())?.id;
-  const activeCpGroupId =
-    tab === 'customers'
-      ? groupIdByName('Mijozlar')
-      : tab === 'suppliers'
-        ? groupIdByName("Ta'minotchilar")
-        : undefined;
+  // Kontragent tablari. Mijozlar/Ta'minotchilar AUTO-detected by usage (backend
+  // role filter): customer = has a sale, supplier = has a supply. «transactions»
+  // swaps the list for the merged sale/supply/payment feed.
+  const [tab, setTab] = useState<'all' | 'customers' | 'suppliers' | 'transactions'>('all');
+  const role = tab === 'customers' ? 'customer' : tab === 'suppliers' ? 'supplier' : undefined;
 
   // CRM states (Статус) for the dropdown — tenant rows keyed by
   // entityType. Same pattern the StatusChangeDropdown uses for
@@ -265,7 +360,7 @@ export default function CounterpartiesPage() {
     archived: archived === 'all' ? 'all' : archived === 'archived' ? 'true' : 'false',
     ...(stateId ? { stateId } : {}),
     ...(ownerId ? { ownerId } : {}),
-    ...(activeCpGroupId ? { cpGroupId: activeCpGroupId } : {}),
+    ...(role ? { role } : {}),
     ...(name.trim() ? { name: name.trim() } : {}),
     ...(phone.trim() ? { phone: phone.trim() } : {}),
     ...(address.trim() ? { address: address.trim() } : {}),
@@ -289,7 +384,7 @@ export default function CounterpartiesPage() {
     archived,
     stateId,
     ownerId,
-    activeCpGroupId ?? '',
+    role ?? '',
     name,
     phone,
     address,
@@ -892,6 +987,7 @@ export default function CounterpartiesPage() {
               { k: 'all', label: 'Hammasi' },
               { k: 'customers', label: 'Mijozlar' },
               { k: 'suppliers', label: "Ta'minotchilar" },
+              { k: 'transactions', label: 'Tranzaksiyalar' },
             ] as const
           ).map((tb) => (
             <button
@@ -913,58 +1009,61 @@ export default function CounterpartiesPage() {
           ))}
         </div>
       </div>
-      <ListView
-        testId="counterparties-page"
-        title={t('title')}
-        moyskladToolbar
-        onRefresh={() => refetch()}
-        onHelp={() => window.open('/help/counterparties', '_blank')}
-        selectionCount={bulk.selectedIds.size}
-        createHref="/counterparties/new"
-        createLabel={t('create_button')}
-        createPosition="start"
-        search={searchInput}
-        onSearchChange={(v) => {
-          setSearchInput(v);
-          setPage(1);
-        }}
-        sortKey={sortKey}
-        sortDir={sortDir}
-        onSortChange={(key, dir) => {
-          setSortKey(key);
-          setSortDir(dir);
-          setPage(1);
-        }}
-        searchPlaceholder={t('search_placeholder')}
-        columns={columns}
-        rows={data?.items ?? []}
-        keyField="id"
-        rowTestId={(cp) => `counterparty-row-${cp.id}`}
-        rowActions={(cp) => bulk.rowDelete(cp.id)}
-        total={data?.total ?? 0}
-        limit={pageSize}
-        paginationOffset={(page - 1) * pageSize}
-        hasNext={page < lastPage}
-        hasPrevious={page > 1}
-        onFirst={() => setPage(1)}
-        onPrevious={() => setPage((p) => Math.max(1, p - 1))}
-        onNext={() => setPage((p) => p + 1)}
-        onLast={() => setPage(lastPage)}
-        loading={isLoading}
-        error={error as Error | null}
-        onRetry={() => refetch()}
-        emptyTitle={hasFilter ? tCommon('no_results') : t('empty_title')}
-        hasActiveFilter={hasFilter}
-        richEmpty={{
-          heading: t('empty_rich_heading'),
-          cta: { label: t('create_button'), href: '/counterparties/new' },
-          helper: { label: t('empty_rich_helper'), href: '/contact-persons/new' },
-        }}
-        {...bulk.listViewProps}
-        visibleColumnKeys={cols.visibleKeys}
-        footerRow={footerRow}
-        headerSlot={
-          /* Inline filter panel — reconciled 2026-06-18 to the USER'S OWN account
+      {tab === 'transactions' ? (
+        <CounterpartyTransactionsView />
+      ) : (
+        <ListView
+          testId="counterparties-page"
+          title={t('title')}
+          moyskladToolbar
+          onRefresh={() => refetch()}
+          onHelp={() => window.open('/help/counterparties', '_blank')}
+          selectionCount={bulk.selectedIds.size}
+          createHref="/counterparties/new"
+          createLabel={t('create_button')}
+          createPosition="start"
+          search={searchInput}
+          onSearchChange={(v) => {
+            setSearchInput(v);
+            setPage(1);
+          }}
+          sortKey={sortKey}
+          sortDir={sortDir}
+          onSortChange={(key, dir) => {
+            setSortKey(key);
+            setSortDir(dir);
+            setPage(1);
+          }}
+          searchPlaceholder={t('search_placeholder')}
+          columns={columns}
+          rows={data?.items ?? []}
+          keyField="id"
+          rowTestId={(cp) => `counterparty-row-${cp.id}`}
+          rowActions={(cp) => bulk.rowDelete(cp.id)}
+          total={data?.total ?? 0}
+          limit={pageSize}
+          paginationOffset={(page - 1) * pageSize}
+          hasNext={page < lastPage}
+          hasPrevious={page > 1}
+          onFirst={() => setPage(1)}
+          onPrevious={() => setPage((p) => Math.max(1, p - 1))}
+          onNext={() => setPage((p) => p + 1)}
+          onLast={() => setPage(lastPage)}
+          loading={isLoading}
+          error={error as Error | null}
+          onRetry={() => refetch()}
+          emptyTitle={hasFilter ? tCommon('no_results') : t('empty_title')}
+          hasActiveFilter={hasFilter}
+          richEmpty={{
+            heading: t('empty_rich_heading'),
+            cta: { label: t('create_button'), href: '/counterparties/new' },
+            helper: { label: t('empty_rich_helper'), href: '/contact-persons/new' },
+          }}
+          {...bulk.listViewProps}
+          visibleColumnKeys={cols.visibleKeys}
+          footerRow={footerRow}
+          headerSlot={
+            /* Inline filter panel — reconciled 2026-06-18 to the USER'S OWN account
              (farrux@climart_santex_group) live filter: Создан · Наименование ·
              Телефон · Адрес · Показывать · Статус · Владелец-сотрудник + dynamic
              custom «Дополнительные поля» (Усто/tgid). The earlier 11k fields
@@ -972,364 +1071,367 @@ export default function CounterpartiesPage() {
              изменен) were from a DIFFERENT account — climart's filter has none, so
              removed. DEFERRED (climart has, backend lacks): «Баланс» от/до
              (computed) · «Дата/Текст события» (no CRM event log). */
-          <InlineFilterPanel
-            hidden={!filterOpen}
-            applyLabel={tFilters('find')}
-            clearLabel={tFilters('clear')}
-            onClear={() => {
-              setArchived('active');
-              setStateId('');
-              setOwnerId('');
-              setOwnerLabel('');
-              setNameInput('');
-              setPhoneInput('');
-              setAddressInput('');
-              setBalanceFromInput('');
-              setBalanceToInput('');
-              setCreatedFrom('');
-              setCreatedTo('');
-              setEventFrom('');
-              setEventTo('');
-              setEventTextInput('');
-              setAttrFilters({});
-              setAttrRefLabels({});
-              setPage(1);
-            }}
-            testId="counterparties-inline-filter"
-          >
-            {/* Создан — half-open day range over createdAt. Compact moysklad layout:
+            <InlineFilterPanel
+              hidden={!filterOpen}
+              applyLabel={tFilters('find')}
+              clearLabel={tFilters('clear')}
+              onClear={() => {
+                setArchived('active');
+                setStateId('');
+                setOwnerId('');
+                setOwnerLabel('');
+                setNameInput('');
+                setPhoneInput('');
+                setAddressInput('');
+                setBalanceFromInput('');
+                setBalanceToInput('');
+                setCreatedFrom('');
+                setCreatedTo('');
+                setEventFrom('');
+                setEventTo('');
+                setEventTextInput('');
+                setAttrFilters({});
+                setAttrRefLabels({});
+                setPage(1);
+              }}
+              testId="counterparties-inline-filter"
+            >
+              {/* Создан — half-open day range over createdAt. Compact moysklad layout:
                 «вч·сег·нед·мес» shortcuts INLINE with the label + date boxes below (the
                 split PeriodShortcuts/PeriodInputs the other lists use), so «Создан» and
                 «Дата события» sit side-by-side on ONE row (climart parity), not stacked. */}
-            <InlineFilterPanel.Field
-              label={tFilters('created_period')}
-              expandable
-              inlineSuffix={
-                <PeriodShortcuts
+              <InlineFilterPanel.Field
+                label={tFilters('created_period')}
+                expandable
+                inlineSuffix={
+                  <PeriodShortcuts
+                    onChange={({ from, to }) => {
+                      setCreatedFrom(from ?? '');
+                      setCreatedTo(to ?? '');
+                      setPage(1);
+                    }}
+                    labels={{
+                      yesterday: tFilters('period_yesterday'),
+                      today: tFilters('period_today'),
+                      week: tFilters('period_week'),
+                      month: tFilters('period_month'),
+                    }}
+                  />
+                }
+              >
+                <PeriodInputs
+                  from={createdFrom}
+                  to={createdTo}
                   onChange={({ from, to }) => {
                     setCreatedFrom(from ?? '');
                     setCreatedTo(to ?? '');
                     setPage(1);
                   }}
-                  labels={{
-                    yesterday: tFilters('period_yesterday'),
-                    today: tFilters('period_today'),
-                    week: tFilters('period_week'),
-                    month: tFilters('period_month'),
-                  }}
+                  testId="filter-created-period"
                 />
-              }
-            >
-              <PeriodInputs
-                from={createdFrom}
-                to={createdTo}
-                onChange={({ from, to }) => {
-                  setCreatedFrom(from ?? '');
-                  setCreatedTo(to ?? '');
-                  setPage(1);
-                }}
-                testId="filter-created-period"
-              />
-            </InlineFilterPanel.Field>
-            {/* Дата события (последнее) — period over the counterparty's Calls. Same
+              </InlineFilterPanel.Field>
+              {/* Дата события (последнее) — period over the counterparty's Calls. Same
                 compact split as «Создан» so the two period filters share one row. */}
-            <InlineFilterPanel.Field
-              label={t('col_event_date')}
-              expandable
-              inlineSuffix={
-                <PeriodShortcuts
+              <InlineFilterPanel.Field
+                label={t('col_event_date')}
+                expandable
+                inlineSuffix={
+                  <PeriodShortcuts
+                    onChange={({ from, to }) => {
+                      setEventFrom(from ?? '');
+                      setEventTo(to ?? '');
+                      setPage(1);
+                    }}
+                    labels={{
+                      yesterday: tFilters('period_yesterday'),
+                      today: tFilters('period_today'),
+                      week: tFilters('period_week'),
+                      month: tFilters('period_month'),
+                    }}
+                  />
+                }
+              >
+                <PeriodInputs
+                  from={eventFrom}
+                  to={eventTo}
                   onChange={({ from, to }) => {
                     setEventFrom(from ?? '');
                     setEventTo(to ?? '');
                     setPage(1);
                   }}
-                  labels={{
-                    yesterday: tFilters('period_yesterday'),
-                    today: tFilters('period_today'),
-                    week: tFilters('period_week'),
-                    month: tFilters('period_month'),
-                  }}
+                  testId="filter-event-period"
                 />
-              }
-            >
-              <PeriodInputs
-                from={eventFrom}
-                to={eventTo}
-                onChange={({ from, to }) => {
-                  setEventFrom(from ?? '');
-                  setEventTo(to ?? '');
-                  setPage(1);
-                }}
-                testId="filter-event-period"
-              />
-            </InlineFilterPanel.Field>
-            {/* Текст события (последнее) — Call summary contains. */}
-            <InlineFilterPanel.Field label={t('col_event_text')} expandable>
-              <Input
-                value={eventTextInput}
-                onChange={(e) => {
-                  setEventTextInput(e.target.value);
-                  setPage(1);
-                }}
-                data-test-id="filter-event-text"
-              />
-            </InlineFilterPanel.Field>
-            {/* Наименование — name (contains, insensitive). */}
-            <InlineFilterPanel.Field label={t('col_name')} expandable>
-              <Input
-                value={nameInput}
-                onChange={(e) => {
-                  setNameInput(e.target.value);
-                  setPage(1);
-                }}
-                data-test-id="filter-name"
-              />
-            </InlineFilterPanel.Field>
-            {/* Телефон — phone (contains, insensitive). */}
-            <InlineFilterPanel.Field label={tFields('phone')} expandable>
-              <Input
-                value={phoneInput}
-                onChange={(e) => {
-                  setPhoneInput(e.target.value);
-                  setPage(1);
-                }}
-                data-test-id="filter-phone"
-              />
-            </InlineFilterPanel.Field>
-            {/* Адрес — actualAddress (contains, insensitive). */}
-            <InlineFilterPanel.Field label={tFilters('address')} expandable>
-              <Input
-                value={addressInput}
-                onChange={(e) => {
-                  setAddressInput(e.target.value);
-                  setPage(1);
-                }}
-                data-test-id="filter-address"
-              />
-            </InlineFilterPanel.Field>
-            {/* Показывать — tri-state visibility. */}
-            <InlineFilterPanel.Field label={tFilters('show')} expandable>
-              <NativeSelect
-                value={archived}
-                onChange={(e) => {
-                  setArchived(e.target.value as 'active' | 'archived' | 'all');
-                  setPage(1);
-                }}
-                data-test-id="filter-archived"
-              >
-                <option value="active">{tFilters('show_regular')}</option>
-                <option value="archived">{tFilters('show_archived')}</option>
-                <option value="all">{tCommon('all')}</option>
-              </NativeSelect>
-            </InlineFilterPanel.Field>
-            {/* Баланс — base-currency (UZS) от/до range over CounterpartyBalance. */}
-            <InlineFilterPanel.Field label={t('col_balance')} expandable>
-              <div className="flex items-center gap-1">
+              </InlineFilterPanel.Field>
+              {/* Текст события (последнее) — Call summary contains. */}
+              <InlineFilterPanel.Field label={t('col_event_text')} expandable>
                 <Input
-                  type="number"
-                  value={balanceFromInput}
+                  value={eventTextInput}
                   onChange={(e) => {
-                    setBalanceFromInput(e.target.value);
+                    setEventTextInput(e.target.value);
                     setPage(1);
                   }}
-                  placeholder={tFilters('period_from')}
-                  data-test-id="filter-balance-from"
+                  data-test-id="filter-event-text"
                 />
-                <span className="text-[var(--ms-text-muted)]">—</span>
+              </InlineFilterPanel.Field>
+              {/* Наименование — name (contains, insensitive). */}
+              <InlineFilterPanel.Field label={t('col_name')} expandable>
                 <Input
-                  type="number"
-                  value={balanceToInput}
+                  value={nameInput}
                   onChange={(e) => {
-                    setBalanceToInput(e.target.value);
+                    setNameInput(e.target.value);
                     setPage(1);
                   }}
-                  placeholder={tFilters('period_to')}
-                  data-test-id="filter-balance-to"
+                  data-test-id="filter-name"
                 />
-              </div>
-            </InlineFilterPanel.Field>
-            {/* Статус — tenant CRM states. */}
-            <InlineFilterPanel.Field label={tFields('state')} expandable>
-              <NativeSelect
-                value={stateId}
-                onChange={(e) => {
-                  setStateId(e.target.value);
-                  setPage(1);
-                }}
-                data-test-id="filter-state"
-              >
-                <option value="" />
-                {(crmStates?.items ?? []).map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </NativeSelect>
-            </InlineFilterPanel.Field>
-            {/* Владелец-сотрудник — Employee picker via /employees. */}
-            <InlineFilterPanel.Field label={tFilters('owner_employee')} expandable>
-              <CatalogPickerField
-                value={ownerId ? { id: ownerId, label: ownerLabel || ownerId } : null}
-                placeholder=""
-                onPick={() => setPickerOpen('owner')}
-                onClear={() => {
-                  setOwnerId('');
-                  setOwnerLabel('');
-                  setPage(1);
-                }}
-                inlineFetcher={async (q) => {
-                  const r = await api.get<{ items: { id: string; name: string }[] }>(
-                    `/employees?search=${encodeURIComponent(q)}&limit=20`,
-                  );
-                  return r.items.map((x) => ({ id: x.id, primary: x.name }));
-                }}
-                onInlineSelect={(item) => {
-                  setOwnerId(item.id);
-                  setOwnerLabel(String(item.primary));
-                  setPage(1);
-                }}
-                testId="filter-owner"
-              />
-            </InlineFilterPanel.Field>
-            {/* Dynamic «Дополнительные поля» (e.g. Усто/tgid). Reference-type attrs
+              </InlineFilterPanel.Field>
+              {/* Телефон — phone (contains, insensitive). */}
+              <InlineFilterPanel.Field label={tFields('phone')} expandable>
+                <Input
+                  value={phoneInput}
+                  onChange={(e) => {
+                    setPhoneInput(e.target.value);
+                    setPage(1);
+                  }}
+                  data-test-id="filter-phone"
+                />
+              </InlineFilterPanel.Field>
+              {/* Адрес — actualAddress (contains, insensitive). */}
+              <InlineFilterPanel.Field label={tFilters('address')} expandable>
+                <Input
+                  value={addressInput}
+                  onChange={(e) => {
+                    setAddressInput(e.target.value);
+                    setPage(1);
+                  }}
+                  data-test-id="filter-address"
+                />
+              </InlineFilterPanel.Field>
+              {/* Показывать — tri-state visibility. */}
+              <InlineFilterPanel.Field label={tFilters('show')} expandable>
+                <NativeSelect
+                  value={archived}
+                  onChange={(e) => {
+                    setArchived(e.target.value as 'active' | 'archived' | 'all');
+                    setPage(1);
+                  }}
+                  data-test-id="filter-archived"
+                >
+                  <option value="active">{tFilters('show_regular')}</option>
+                  <option value="archived">{tFilters('show_archived')}</option>
+                  <option value="all">{tCommon('all')}</option>
+                </NativeSelect>
+              </InlineFilterPanel.Field>
+              {/* Баланс — base-currency (UZS) от/до range over CounterpartyBalance. */}
+              <InlineFilterPanel.Field label={t('col_balance')} expandable>
+                <div className="flex items-center gap-1">
+                  <Input
+                    type="number"
+                    value={balanceFromInput}
+                    onChange={(e) => {
+                      setBalanceFromInput(e.target.value);
+                      setPage(1);
+                    }}
+                    placeholder={tFilters('period_from')}
+                    data-test-id="filter-balance-from"
+                  />
+                  <span className="text-[var(--ms-text-muted)]">—</span>
+                  <Input
+                    type="number"
+                    value={balanceToInput}
+                    onChange={(e) => {
+                      setBalanceToInput(e.target.value);
+                      setPage(1);
+                    }}
+                    placeholder={tFilters('period_to')}
+                    data-test-id="filter-balance-to"
+                  />
+                </div>
+              </InlineFilterPanel.Field>
+              {/* Статус — tenant CRM states. */}
+              <InlineFilterPanel.Field label={tFields('state')} expandable>
+                <NativeSelect
+                  value={stateId}
+                  onChange={(e) => {
+                    setStateId(e.target.value);
+                    setPage(1);
+                  }}
+                  data-test-id="filter-state"
+                >
+                  <option value="" />
+                  {(crmStates?.items ?? []).map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </InlineFilterPanel.Field>
+              {/* Владелец-сотрудник — Employee picker via /employees. */}
+              <InlineFilterPanel.Field label={tFilters('owner_employee')} expandable>
+                <CatalogPickerField
+                  value={ownerId ? { id: ownerId, label: ownerLabel || ownerId } : null}
+                  placeholder=""
+                  onPick={() => setPickerOpen('owner')}
+                  onClear={() => {
+                    setOwnerId('');
+                    setOwnerLabel('');
+                    setPage(1);
+                  }}
+                  inlineFetcher={async (q) => {
+                    const r = await api.get<{ items: { id: string; name: string }[] }>(
+                      `/employees?search=${encodeURIComponent(q)}&limit=20`,
+                    );
+                    return r.items.map((x) => ({ id: x.id, primary: x.name }));
+                  }}
+                  onInlineSelect={(item) => {
+                    setOwnerId(item.id);
+                    setOwnerLabel(String(item.primary));
+                    setPage(1);
+                  }}
+                  testId="filter-owner"
+                />
+              </InlineFilterPanel.Field>
+              {/* Dynamic «Дополнительные поля» (e.g. Усто/tgid). Reference-type attrs
                 (Усто = counterparty) render an entity PICKER → the filter sends the
                 picked id (BE matches the .id path); scalar attrs are a contains text. */}
-            {(attrMeta?.items ?? [])
-              .filter((a) => !a.archived)
-              .sort((a, b) => a.position - b.position)
-              .map((attr) => {
-                if (attrReferenceEndpoint(attr)) {
-                  const refVal = attrFilters[attr.code];
+              {(attrMeta?.items ?? [])
+                .filter((a) => !a.archived)
+                .sort((a, b) => a.position - b.position)
+                .map((attr) => {
+                  if (attrReferenceEndpoint(attr)) {
+                    const refVal = attrFilters[attr.code];
+                    return (
+                      <InlineFilterPanel.Field key={attr.code} label={attr.name} expandable>
+                        <CatalogPickerField
+                          value={
+                            refVal
+                              ? { id: refVal, label: attrRefLabels[attr.code] || refVal }
+                              : null
+                          }
+                          placeholder=""
+                          onPick={() => setPickerOpen({ code: attr.code, type: attr.type })}
+                          onClear={() => {
+                            setAttrFilters((prev) => {
+                              const next = { ...prev };
+                              delete next[attr.code];
+                              return next;
+                            });
+                            setAttrRefLabels((prev) => {
+                              const next = { ...prev };
+                              delete next[attr.code];
+                              return next;
+                            });
+                            setPage(1);
+                          }}
+                          inlineFetcher={async (q) => {
+                            const ep = attrReferenceEndpoint(attr);
+                            if (!ep) return [];
+                            const r = await api.get<{ items: { id: string; name: string }[] }>(
+                              `${ep}?search=${encodeURIComponent(q)}&limit=20`,
+                            );
+                            return r.items.map((x) => ({ id: x.id, primary: x.name }));
+                          }}
+                          onInlineSelect={(item) => {
+                            setAttrFilters((prev) => ({ ...prev, [attr.code]: item.id }));
+                            setAttrRefLabels((prev) => ({
+                              ...prev,
+                              [attr.code]: String(item.primary),
+                            }));
+                            setPage(1);
+                          }}
+                          testId={`filter-attr-${attr.code}`}
+                        />
+                      </InlineFilterPanel.Field>
+                    );
+                  }
                   return (
                     <InlineFilterPanel.Field key={attr.code} label={attr.name} expandable>
-                      <CatalogPickerField
-                        value={
-                          refVal ? { id: refVal, label: attrRefLabels[attr.code] || refVal } : null
-                        }
-                        placeholder=""
-                        onPick={() => setPickerOpen({ code: attr.code, type: attr.type })}
-                        onClear={() => {
-                          setAttrFilters((prev) => {
-                            const next = { ...prev };
-                            delete next[attr.code];
-                            return next;
-                          });
-                          setAttrRefLabels((prev) => {
-                            const next = { ...prev };
-                            delete next[attr.code];
-                            return next;
-                          });
+                      <Input
+                        value={attrFilters[attr.code] ?? ''}
+                        onChange={(e) => {
+                          setAttrFilters((prev) => ({ ...prev, [attr.code]: e.target.value }));
                           setPage(1);
                         }}
-                        inlineFetcher={async (q) => {
-                          const ep = attrReferenceEndpoint(attr);
-                          if (!ep) return [];
-                          const r = await api.get<{ items: { id: string; name: string }[] }>(
-                            `${ep}?search=${encodeURIComponent(q)}&limit=20`,
-                          );
-                          return r.items.map((x) => ({ id: x.id, primary: x.name }));
-                        }}
-                        onInlineSelect={(item) => {
-                          setAttrFilters((prev) => ({ ...prev, [attr.code]: item.id }));
-                          setAttrRefLabels((prev) => ({
-                            ...prev,
-                            [attr.code]: String(item.primary),
-                          }));
-                          setPage(1);
-                        }}
-                        testId={`filter-attr-${attr.code}`}
+                        data-test-id={`filter-attr-${attr.code}`}
                       />
                     </InlineFilterPanel.Field>
                   );
-                }
-                return (
-                  <InlineFilterPanel.Field key={attr.code} label={attr.name} expandable>
-                    <Input
-                      value={attrFilters[attr.code] ?? ''}
-                      onChange={(e) => {
-                        setAttrFilters((prev) => ({ ...prev, [attr.code]: e.target.value }));
-                        setPage(1);
-                      }}
-                      data-test-id={`filter-attr-${attr.code}`}
-                    />
-                  </InlineFilterPanel.Field>
-                );
-              })}
-          </InlineFilterPanel>
-        }
-        extraActionsLeft={
-          <FilterToggleButton
-            open={filterOpen}
-            onToggle={() => setFilterOpen((v) => !v)}
-            label={tFilters('trigger')}
-          />
-        }
-        extraActions={
-          <>
-            {/* moysklad parity: «Изменить · Статус · Печать» render as ONE connected
+                })}
+            </InlineFilterPanel>
+          }
+          extraActionsLeft={
+            <FilterToggleButton
+              open={filterOpen}
+              onToggle={() => setFilterOpen((v) => !v)}
+              label={tFilters('trigger')}
+            />
+          }
+          extraActions={
+            <>
+              {/* moysklad parity: «Изменить · Статус · Печать» render as ONE connected
                 segmented group (shared borders, no inner gaps); «Создать задачи» stays a
                 separate button. Each dropdown renders its trigger <button> directly, so the
                 arbitrary-variant rules below round only the group's outer corners and overlap
                 the inner borders by 1px. */}
-            <div className="[&>button:not(:first-child)]:-ml-px flex items-center [&>button:first-child]:rounded-l-[var(--ms-radius-default)] [&>button:focus-within]:z-[1] [&>button:hover]:z-[1] [&>button:last-child]:rounded-r-[var(--ms-radius-default)] [&>button]:rounded-none">
-              <CounterpartyBulkActionsDropdown
-                selectedIds={bulk.selectedIds}
-                listQueryKey={listQueryKey}
-                onClearSelection={bulk.clearSelection}
-                onMassEdit={() => setMassEditOpen(true)}
-              />
-              {/* «Статус ▾» — bulk CRM-status quick-set. */}
-              <CounterpartyStatusDropdown
-                selectedIds={bulk.selectedIds}
-                states={crmStates?.items ?? []}
-                listQueryKey={listQueryKey}
-                onClearSelection={bulk.clearSelection}
-              />
-              <CounterpartyPrintDropdown onExportList={handleListExport} />
-            </div>
-            {/* «Создать задачи» — bulk task-create drawer (separate button, after the group).
+              <div className="[&>button:not(:first-child)]:-ml-px flex items-center [&>button:first-child]:rounded-l-[var(--ms-radius-default)] [&>button:focus-within]:z-[1] [&>button:hover]:z-[1] [&>button:last-child]:rounded-r-[var(--ms-radius-default)] [&>button]:rounded-none">
+                <CounterpartyBulkActionsDropdown
+                  selectedIds={bulk.selectedIds}
+                  listQueryKey={listQueryKey}
+                  onClearSelection={bulk.clearSelection}
+                  onMassEdit={() => setMassEditOpen(true)}
+                />
+                {/* «Статус ▾» — bulk CRM-status quick-set. */}
+                <CounterpartyStatusDropdown
+                  selectedIds={bulk.selectedIds}
+                  states={crmStates?.items ?? []}
+                  listQueryKey={listQueryKey}
+                  onClearSelection={bulk.clearSelection}
+                />
+                <CounterpartyPrintDropdown onExportList={handleListExport} />
+              </div>
+              {/* «Создать задачи» — bulk task-create drawer (separate button, after the group).
                 Disabled w/o a selection (one task is created per selected counterparty). */}
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => setTasksOpen(true)}
-              disabled={bulk.selectedIds.size === 0}
-              data-test-id="counterparties-create-tasks"
-            >
-              {t('create_tasks_button')}
-            </Button>
-            {/* «Группы» — self-service counterparty-group manager (create/rename/delete).
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setTasksOpen(true)}
+                disabled={bulk.selectedIds.size === 0}
+                data-test-id="counterparties-create-tasks"
+              >
+                {t('create_tasks_button')}
+              </Button>
+              {/* «Группы» — self-service counterparty-group manager (create/rename/delete).
                 Always enabled (not selection-dependent); groups drive the «Группы» column/filter. */}
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => setGroupMgrOpen(true)}
-              data-test-id="counterparties-manage-groups"
-            >
-              Группы
-            </Button>
-            {/* climart's toolbar is exactly Контрагент · Фильтр · Изменить ·
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setGroupMgrOpen(true)}
+                data-test-id="counterparties-manage-groups"
+              >
+                Группы
+              </Button>
+              {/* climart's toolbar is exactly Контрагент · Фильтр · Изменить ·
                 Статус · Печать · Создать задачи — no Импорт/Экспорт (those were
                 the stale ozodbek account). The /counterparties/import route still
                 exists; it just has no toolbar button, matching climart 1:1. */}
-          </>
-        }
-        headerEndSlot={
-          <ColumnSettings
-            columns={columns.map((c) => ({ key: c.key, label: c.header }))}
-            visibleKeys={cols.visibleKeys}
-            onChange={cols.setVisibleKeys}
-            onReset={cols.reset}
-            rowsPerPage={pageSize}
-            onRowsPerPageChange={(n) => {
-              setPageSize(n);
-              setPage(1);
-            }}
-          />
-        }
-        columnWidths={colWidths.values}
-        onColumnResize={colWidths.set}
-      />
+            </>
+          }
+          headerEndSlot={
+            <ColumnSettings
+              columns={columns.map((c) => ({ key: c.key, label: c.header }))}
+              visibleKeys={cols.visibleKeys}
+              onChange={cols.setVisibleKeys}
+              onReset={cols.reset}
+              rowsPerPage={pageSize}
+              onRowsPerPageChange={(n) => {
+                setPageSize(n);
+                setPage(1);
+              }}
+            />
+          }
+          columnWidths={colWidths.values}
+          onColumnResize={colWidths.set}
+        />
+      )}
 
       {/* Владелец picker — opened from the inline filter's owner field.
           Sources employees from the /employees reference endpoint (same

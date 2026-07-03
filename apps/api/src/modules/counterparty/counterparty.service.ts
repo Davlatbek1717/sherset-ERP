@@ -145,8 +145,14 @@ export class CounterpartyService {
       ...(filter.companyType ? { companyType: filter.companyType } : {}),
       ...(filter.ownerId ? { ownerId: filter.ownerId } : {}),
       ...(filter.groupId ? { groupId: filter.groupId } : {}),
-      // m2m counterparty-group membership (Mijozlar / Ta'minotchilar tabs).
+      // m2m counterparty-group membership (manual groups).
       ...(filter.cpGroupId ? { groups: { some: { id: filter.cpGroupId } } } : {}),
+      // Auto-detected role tabs — customer = sold to (retailSale/demand),
+      // supplier = bought from (supply). EXISTS subqueries, no manual tagging.
+      ...(filter.role === 'customer'
+        ? { OR: [{ retailSales: { some: {} } }, { demands: { some: {} } }] }
+        : {}),
+      ...(filter.role === 'supplier' ? { supplies: { some: {} } } : {}),
       ...(filter.stateId ? { stateId: filter.stateId } : {}),
       ...(filter.priceTypeId ? { priceTypeId: filter.priceTypeId } : {}),
       ...(filter.tags ? { tags: { has: filter.tags } } : {}),
