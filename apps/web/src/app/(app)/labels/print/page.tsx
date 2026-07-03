@@ -179,7 +179,13 @@ export default function PrintLabelsPage() {
     <div className="mx-auto max-w-2xl space-y-6 p-6">
       <div className="flex items-center justify-between">
         <h1 className="font-semibold text-[var(--ms-text-primary)] text-xl">Yorliq chop etish</h1>
-        <Button variant="ghost" onClick={() => router.back()}>← {tCommon('back')}</Button>
+        <div className="flex items-center gap-2">
+          {/* Javon qatoriga yopishtiriladigan yacheyka-kod labellari (Sherset custom) */}
+          <Button variant="secondary" onClick={() => router.push('/labels/cells')} data-test-id="goto-cell-labels">
+            Yacheyka labellari
+          </Button>
+          <Button variant="ghost" onClick={() => router.back()}>← {tCommon('back')}</Button>
+        </div>
       </div>
 
       {error && (
