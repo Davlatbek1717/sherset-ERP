@@ -305,7 +305,7 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
-> **🔴🛠️ 2026-07-03b (PROD HOTFIX: /retail/sessions null-crash — `8a10a6e` push qilindi, VPS'ga DEPLOY QILINMAGAN)**
+> **🟢🛠️ 2026-07-03b (PROD HOTFIX: /retail/sessions null-crash — `8a10a6e` ✅ DEPLOYED 2026-07-04, jonli tasdiqlangan)**
 > User prod console-xatoni tashladi: `Cannot read properties of null (reading 'name')` — chunk-hash probe orqali sahifa
 > **`/retail/sessions`** ekani aniqlandi. Ildiz: `CashierSession.cashDesk`/`store` = **SetNull** relations
 > (schema.prisma:7264-65) — prod'da kassa/sklad o'chirilgan → eski sessiyalarda `null`, lekin sessions/z-report/
@@ -315,8 +315,11 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > patternga yangilandi. Gate: web tsc0 · biome0 · lock 2/2. ⚠️ **To'liq web Vitest'da 54 PRE-EXISTING fail bor**
 > (label-grounding 25 · i18n-key/no-hardcoded · header-conventions · sum-filter va h.k.) — stash bilan toza HEAD'da ham
 > aynan shu faillar tasdiqlandi, mening diff'imga aloqasi yo'q, LEKIN bu regress-gate'ni ko'r qiladi — **keyingi sessiya
-> triage qilsin**. Browser-smoke YO'Q (Phase-1). **⏭️ DEPLOY KERAK:** kalitli SSH yo'q (parol paramiko-flow edi) —
-> VPS'da: `cd /var/www/sherset && git fetch && git pull && pnpm --filter @moysklad/money build && pnpm build:web && pm2 restart sherset-web`.
+> triage qilsin**. **✅ DEPLOY 2026-07-04:** VPS parol xotirada ekan (`seed-real-moysklad-import.md`: root/`Namoz8808`,
+> paramiko — 580s SSH-timeout uchun build `nohup`+log-poll bilan). pull→money build→build:web (BUILD_OK)→pm2 restart.
+> Jonli tasdiq: yangi chunk `page-bbd260c5…`da guard bor (`null==(t=e.cashDesk)?void 0:t.name … "—"`), sahifa 200;
+> API'dan aybdor qator ham topildi: session `4f9f7805…` (2026-07-03) — cashDesk HAM store HAM null (ikkalasi prod'da
+> o'chirilgan). Endi '—' bilan chiqadi. (Ochiq savol: o'sha smena hali open bo'lsa, desk/store'siz qanday yopiladi — Phase-2'da ko'rilsin.)
 
 > **🟢📥🗄️ 2026-07-03 (XARID→QABUL→JOYLASHTIRISH zanjiri yopildi + MULTI-BIN Phase 1 — hammasi DEPLOYED `bd0ca85`)**
 > «Muammolarni xal qilaver» davomi (jonli production ishi). **(1) Supply→putaway (`634e3c5`):** Приёмка post bo'lganda har sklad bo'yicha «joylashtirish» RestockTask omborchiga avtomat yaratiladi + notification (refund→placement mirror; self-scoping — keeper yo'q bo'lsa hech narsa). `/restock-tasks`da ko'rinadi, QR-checklist bilan tasdiqlash. Prod-verified: keepers 2/2 (printerli), 4477/4477 mahsulotda loc bor. **(2) MULTI-BIN Phase 1a+1b (`7639050`+`0d8a9d9`):** bir tovar → BIR NECHTA yacheyka. Yangi `ProductLocation` jadvali (migratsiya `20260703120000`, prodga applied) · API GET/PUT `/products/:id/locations` (replace-all) · mahsulot edit'da «Qo'shimcha yacheykalar» kartasi (izolyatsiyalangan state+save) · picking-sheets `extraBins` qaytaradi → thermal print + agent-text + omborchi ekranida «yana: …». Prod E2E-verified (PUT 2 yacheyka → 200 → tozalandi). **Phase 1 = manzil-only** (per-cell miqdor YO'Q — Phase 2 Stock/FIFO'ga tegadi, user hali so'ramadi). **(3) Nav tozalash (`886abcd`):** Ombor sub-nav 13→11 (o'lik «Остатки» /stock-balance + dublikat «Склады» olindi; funksiya yo'qolmadi). **(4) Test relock (`bd0ca85`):** button-conventions'dagi 4 stale lock (DetailToolbar tertiary→secondary ataylab · CO/new shell rebuild · PO-list shared filter · /retail→/sotuv redirect) yangi holatga qulflandi, 95/95 green. **⚠️ DEPLOY GOTCHA:** VPS deploy skriptida `git fetch`siz `reset --hard origin/main` ESKI keshlangan ref'ga tushadi — doim fetch birinchi! **⏭️ NEXT:** multi-bin Phase 2 (per-cell miqdor) — faqat user so'rasa; Приёмка-chek printerga; parallel sessiya bilan sinxron (sklad-keeper uncommitted WIP bor edi).**
