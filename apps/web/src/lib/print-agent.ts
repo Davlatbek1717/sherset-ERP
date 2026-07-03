@@ -258,3 +258,186 @@ export async function printPickingViaAgent(saleId: string): Promise<PickingPrint
     errors: results.filter((r) => r === 'error').length,
   };
 }
+
+// ─── Customer sales receipt («mijoz cheki») routing ──────────────────────────
+// The receipt counterpart of picking-sheet routing: the whole account has one
+// configured receipt printer (Settings → Sklad-keepers → «Chek printeri»,
+// stored on CompanySettings). When the agent (or Electron) is up and that
+// printer is set, the receipt prints straight to it — one action, correct
+// thermal size — exactly like the omborchi sheet. Otherwise the caller falls
+// back to the browser popup print (/print/retail-sale/[id]).
+
+interface ReceiptPosition {
+  quantity: string;
+  priceMinor: string;
+  sumMinor: string;
+  product: { name: string } | null;
+}
+interface ReceiptSale {
+  name: string;
+  moment: string;
+  sumMinor: string;
+  cashAmountMinor: string;
+  cardAmountMinor: string;
+  terminalAmountMinor: string;
+  advancePaymentSumMinor: string;
+  changeMinor: string;
+  description: string | null;
+  agent: { name: string; legalTitle: string | null } | null;
+  session: {
+    cashDesk: { name: string } | null;
+    cashier: { name: string };
+    store: { name: string } | null;
+    organization: { name: string; legalTitle: string | null };
+  };
+  positions: ReceiptPosition[];
+}
+
+/** Whole sums grouped by thousands with a plain ASCII space (ESC/POS-safe). */
+function sumStr(minorStr: string): string {
+  const whole = Math.round(Number(minorStr || '0') / 100);
+  return String(whole).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+}
+
+/** ESC/POS plain-text receipt. 32-char columns — matches the picking sheet the
+ *  cashier's printer already renders nicely. */
+function buildReceiptText(sale: ReceiptSale): string {
+  const W = 32;
+  const bar = '-'.repeat(W);
+  const center = (s: string) => {
+    if (s.length >= W) return s;
+    const pad = Math.floor((W - s.length) / 2);
+    return ' '.repeat(pad) + s;
+  };
+  const row = (l: string, r: string) => {
+    const space = W - l.length - r.length;
+    return space > 0 ? l + ' '.repeat(space) + r : `${l} ${r}`;
+  };
+
+  const L: string[] = [];
+  L.push(center(sale.session.organization.legalTitle ?? sale.session.organization.name));
+  if (sale.session.cashDesk) L.push(center(sale.session.cashDesk.name));
+  if (sale.session.store) L.push(center(sale.session.store.name));
+  L.push(bar);
+  L.push(row('Chek', sale.name));
+  L.push(row('Sana', fmtReceiptDate(sale.moment)));
+  L.push(row('Kassir', sale.session.cashier.name));
+  if (sale.agent) L.push(row('Mijoz', sale.agent.legalTitle ?? sale.agent.name));
+  L.push(bar);
+  for (const p of sale.positions) {
+    L.push(p.product?.name ?? '—');
+    L.push(row(`${Number(p.quantity)} x ${sumStr(p.priceMinor)}`, sumStr(p.sumMinor)));
+  }
+  L.push(bar);
+  L.push(row('JAMI', `${sumStr(sale.sumMinor)} so'm`));
+  L.push(bar);
+  if (Number(sale.cashAmountMinor) > 0) L.push(row('Naqd', sumStr(sale.cashAmountMinor)));
+  if (Number(sale.cardAmountMinor) > 0) L.push(row('Karta', sumStr(sale.cardAmountMinor)));
+  if (Number(sale.terminalAmountMinor) > 0)
+    L.push(row('Terminal', sumStr(sale.terminalAmountMinor)));
+  if (Number(sale.advancePaymentSumMinor) > 0)
+    L.push(row('Qarz', sumStr(sale.advancePaymentSumMinor)));
+  if (Number(sale.changeMinor) > 0) L.push(row('Qaytim', sumStr(sale.changeMinor)));
+  if (sale.description) L.push(sale.description);
+  L.push('');
+  L.push(center('Xarid uchun rahmat!'));
+  return L.join('\n');
+}
+
+function fmtReceiptDate(iso: string): string {
+  return new Date(iso).toLocaleString('ru-RU', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+/** 80mm-thermal HTML receipt for Electron native printing (driver renders it). */
+function buildReceiptHtml(sale: ReceiptSale): string {
+  const org = escapeHtml(sale.session.organization.legalTitle ?? sale.session.organization.name);
+  const rowsHtml = sale.positions
+    .map(
+      (p) =>
+        `<div class="ln"><div class="nm">${escapeHtml(p.product?.name ?? '—')}</div><div class="mt"><span>${Number(p.quantity)} x ${sumStr(p.priceMinor)}</span><span class="b">${sumStr(p.sumMinor)}</span></div></div>`,
+    )
+    .join('');
+  const pay = (label: string, minor: string, cls = '') =>
+    Number(minor) > 0
+      ? `<div class="mt${cls ? ` ${cls}` : ''}"><span>${label}</span><span>${sumStr(minor)}</span></div>`
+      : '';
+  return `<!doctype html><html><head><meta charset="utf-8"><style>
+@page{margin:0}
+*{box-sizing:border-box}
+body{width:72mm;margin:0 auto;padding:2mm 1mm;font-family:'Segoe UI',Arial,sans-serif;font-size:12px;color:#000}
+.h{text-align:center}
+.org{font-weight:700;font-size:15px}
+.sep{border-top:1px dashed #000;margin:4px 0}
+.ln{margin-bottom:4px}
+.nm{font-weight:600}
+.mt{display:flex;justify-content:space-between;gap:6px}
+.b{font-weight:700}
+.tot{font-weight:700;font-size:15px}
+.thanks{text-align:center;margin-top:8px}
+</style></head><body>
+<div class="h org">${org}</div>
+${sale.session.cashDesk ? `<div class="h">${escapeHtml(sale.session.cashDesk.name)}</div>` : ''}
+${sale.session.store ? `<div class="h">${escapeHtml(sale.session.store.name)}</div>` : ''}
+<div class="sep"></div>
+<div class="mt"><span>Chek</span><span class="b">${escapeHtml(sale.name)}</span></div>
+<div class="mt"><span>Sana</span><span>${escapeHtml(fmtReceiptDate(sale.moment))}</span></div>
+<div class="mt"><span>Kassir</span><span>${escapeHtml(sale.session.cashier.name)}</span></div>
+${sale.agent ? `<div class="mt"><span>Mijoz</span><span>${escapeHtml(sale.agent.legalTitle ?? sale.agent.name)}</span></div>` : ''}
+<div class="sep"></div>
+${rowsHtml}
+<div class="sep"></div>
+<div class="mt tot"><span>JAMI</span><span>${sumStr(sale.sumMinor)} so'm</span></div>
+<div class="sep"></div>
+${pay('Naqd', sale.cashAmountMinor)}
+${pay('Karta', sale.cardAmountMinor)}
+${pay('Terminal', sale.terminalAmountMinor)}
+${pay('Qarz', sale.advancePaymentSumMinor)}
+${pay('Qaytim', sale.changeMinor)}
+${sale.description ? `<div>${escapeHtml(sale.description)}</div>` : ''}
+<div class="thanks">Xarid uchun rahmat!</div>
+</body></html>`;
+}
+
+export interface ReceiptPrintOutcome {
+  /** true = the agent/Electron handled printing → caller must NOT popup-print. */
+  handled: boolean;
+  ok: boolean;
+  error?: string;
+}
+
+/**
+ * Print the customer sales receipt straight to the configured receipt printer
+ * via the local agent (or Electron native). Returns handled=false — so the
+ * caller falls back to the browser popup — when the agent is down, the printer
+ * isn't configured, or the sale can't be loaded.
+ */
+export async function printReceiptViaAgent(saleId: string): Promise<ReceiptPrintOutcome> {
+  const idle: ReceiptPrintOutcome = { handled: false, ok: false };
+  if (!(await checkPrintAgent())) return idle;
+
+  let printer: string | null;
+  let sale: ReceiptSale;
+  try {
+    const [settings, saleDetail] = await Promise.all([
+      api.get<{ receiptPrinterName: string | null }>('/sklad-keepers'),
+      api.get<ReceiptSale>(`/retail-sales/${saleId}`),
+    ]);
+    printer = settings.receiptPrinterName ?? null;
+    sale = saleDetail;
+  } catch {
+    return idle;
+  }
+  if (!printer) return idle; // not configured → browser popup fallback
+
+  const el = electron();
+  const r = el
+    ? await el.printSheet(printer, buildReceiptHtml(sale))
+    : await agentPrint(printer, { text: buildReceiptText(sale) });
+  return { handled: true, ok: r.ok, error: r.error };
+}

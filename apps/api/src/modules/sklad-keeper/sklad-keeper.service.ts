@@ -1,6 +1,6 @@
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
-import { UpsertSkladKeeperSchema } from './sklad-keeper.schema.js';
+import { SetReceiptPrinterSchema, UpsertSkladKeeperSchema } from './sklad-keeper.schema.js';
 
 /**
  * SkladKeeperService — manage the sklad(zone)→omborchi assignment table.
@@ -12,11 +12,31 @@ export class SkladKeeperService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   async list(accountId: string) {
-    const items = await this.prisma.client.skladKeeper.findMany({
+    const [items, settings] = await Promise.all([
+      this.prisma.client.skladKeeper.findMany({
+        where: { accountId },
+        orderBy: { skladNo: 'asc' },
+      }),
+      this.prisma.client.companySettings.findUnique({
+        where: { accountId },
+        select: { receiptPrinterName: true },
+      }),
+    ]);
+    // receiptPrinterName rides along on the settings list so the sotuv receipt
+    // flow and the settings page both read it in one call.
+    return { items, receiptPrinterName: settings?.receiptPrinterName ?? null };
+  }
+
+  /** Set (or clear) the account-wide customer-receipt printer on CompanySettings. */
+  async setReceiptPrinter(accountId: string, raw: unknown) {
+    const { printerName } = SetReceiptPrinterSchema.parse(raw);
+    const value = printerName?.trim() || null;
+    await this.prisma.client.companySettings.upsert({
       where: { accountId },
-      orderBy: { skladNo: 'asc' },
+      create: { accountId, receiptPrinterName: value },
+      update: { receiptPrinterName: value },
     });
-    return { items };
+    return { ok: true, receiptPrinterName: value };
   }
 
   /** Upsert (or clear, when employeeId is null) one sklad→keeper mapping. */

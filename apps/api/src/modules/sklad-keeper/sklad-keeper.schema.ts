@@ -18,3 +18,13 @@ export const UpsertSkladKeeperSchema = z.object({
   printerName: z.string().max(255).nullable().optional(),
 });
 export type UpsertSkladKeeperInput = z.infer<typeof UpsertSkladKeeperSchema>;
+
+/**
+ * Account-wide customer-receipt printer («mijoz cheki») — the receipt
+ * counterpart of SkladKeeper.printerName. Empty/null ⇒ clear it (falls back to
+ * the browser popup print). Stored on CompanySettings.
+ */
+export const SetReceiptPrinterSchema = z.object({
+  printerName: z.string().max(255).nullable(),
+});
+export type SetReceiptPrinterInput = z.infer<typeof SetReceiptPrinterSchema>;

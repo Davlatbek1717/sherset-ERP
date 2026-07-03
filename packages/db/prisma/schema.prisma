@@ -2381,6 +2381,10 @@ model CompanySettings {
   /// Pre-defined sale price types referenced from products + price lists.
   /// JSON for moysklad parity (their schema exposes a list, not a relation).
   priceTypesJson           Json?    @map("price_types_json")
+  /// Windows printer name the customer sales receipt («mijoz cheki») is routed
+  /// to via the local print-agent — the receipt counterpart of
+  /// SkladKeeper.printerName. Null ⇒ falls back to the browser popup print.
+  receiptPrinterName       String?  @map("receipt_printer_name") @db.VarChar(255)
   createdAt                DateTime @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt                DateTime @updatedAt @map("updated_at") @db.Timestamptz()
 

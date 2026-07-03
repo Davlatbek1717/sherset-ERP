@@ -2381,6 +2381,10 @@ model CompanySettings {
   /// Pre-defined sale price types referenced from products + price lists.
   /// JSON for moysklad parity (their schema exposes a list, not a relation).
   priceTypesJson           Json?    @map("price_types_json")
+  /// Windows printer name the customer sales receipt («mijoz cheki») is routed
+  /// to via the local print-agent — the receipt counterpart of
+  /// SkladKeeper.printerName. Null ⇒ falls back to the browser popup print.
+  receiptPrinterName       String?  @map("receipt_printer_name") @db.VarChar(255)
   createdAt                DateTime @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt                DateTime @updatedAt @map("updated_at") @db.Timestamptz()
 
@@ -4783,11 +4787,11 @@ model ProductPack {
   // quantity/stock convention) so 0.5 ≡ 500 and 12 ≡ 12000.
   multiplier BigInt
   barcode    String?  @db.VarChar(50)
-  // «Тип кода» — barcode symbology of THIS pack's `barcode` (moysklad's pack-row
+  // «Т��п кода» — barcode symbology of THIS pack's `barcode` (moysklad's pack-row
   // column, default "EAN13"). Same enum as a product barcode type
   // (ean13/ean8/code128/gtin). Null = treated as ean13 in the UI.
   codeType   String?  @map("code_type") @db.VarChar(20)
-  // «Код упаковки Т��СНИФ» — Uzbekistan TASNIF package classification code
+  // «Код упаковки ТАСНИФ» — Uzbekistan TASNIF package classification code
   // (moysklad «Товары и услуги» offers it as a column + Фильтр field). Optional;
   // set via the product editor's pack rows or import.
   tasnifCode String?  @map("tasnif_code") @db.VarChar(50)

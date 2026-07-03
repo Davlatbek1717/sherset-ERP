@@ -25,6 +25,12 @@ export class SkladKeeperController {
     return this.svc.upsert(user.accountId, body);
   }
 
+  /** Set (or clear) the account-wide customer-receipt printer. */
+  @Put('receipt-printer')
+  async setReceiptPrinter(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
+    return this.svc.setReceiptPrinter(user.accountId, body);
+  }
+
   @Delete(':skladNo')
   async remove(@CurrentUser() user: AuthenticatedUser, @Param('skladNo') skladNo: string) {
     return this.svc.remove(user.accountId, Number(skladNo));

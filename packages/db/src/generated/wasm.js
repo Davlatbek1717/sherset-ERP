@@ -1028,6 +1028,7 @@ exports.Prisma.CompanySettingsScalarFieldEnum = {
   companyAddress: 'companyAddress',
   discountStrategy: 'discountStrategy',
   priceTypesJson: 'priceTypesJson',
+  receiptPrinterName: 'receiptPrinterName',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 };

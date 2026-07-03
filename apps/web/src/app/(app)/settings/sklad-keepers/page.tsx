@@ -40,7 +40,7 @@ export default function SkladKeepersPage() {
   const qc = useQueryClient();
   const { confirm } = useConfirm();
 
-  const { data, isLoading } = useQuery<{ items: KeeperRow[] }>({
+  const { data, isLoading } = useQuery<{ items: KeeperRow[]; receiptPrinterName: string | null }>({
     queryKey: ['sklad-keepers'],
     queryFn: () => api.get('/sklad-keepers'),
   });
@@ -57,10 +57,11 @@ export default function SkladKeepersPage() {
 
   // Printers installed on THIS (cashier) PC, read from the local print-agent.
   // Empty when the agent isn't running → the field falls back to manual text.
+  // Fetched on mount so both the receipt-printer card and the keeper modal
+  // share one probe.
   const [agentPrinters, setAgentPrinters] = useState<string[]>([]);
   const [agentChecked, setAgentChecked] = useState(false);
   useEffect(() => {
-    if (!modalOpen) return;
     let alive = true;
     fetchAgentPrinters().then((list) => {
       if (!alive) return;
@@ -70,7 +71,20 @@ export default function SkladKeepersPage() {
     return () => {
       alive = false;
     };
-  }, [modalOpen]);
+  }, []);
+
+  // ── Customer-receipt («mijoz cheki») printer — account-wide setting ─────────
+  const [receiptPrinter, setReceiptPrinter] = useState('');
+  const receiptLoaded = data !== undefined;
+  useEffect(() => {
+    if (data) setReceiptPrinter(data.receiptPrinterName ?? '');
+  }, [data]);
+  const receiptMut = useMutation({
+    mutationFn: (name: string) =>
+      api.put('/sklad-keepers/receipt-printer', { printerName: name.trim() || null }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['sklad-keepers'] }),
+  });
+  const receiptDirty = receiptLoaded && receiptPrinter !== (data?.receiptPrinterName ?? '');
 
   const empFetcher = async (search: string): Promise<PickerItem[]> => {
     const d = await api.get<{ items: Array<{ id: string; name: string; email?: string | null }> }>(
@@ -145,6 +159,65 @@ export default function SkladKeepersPage() {
         <Button variant="primary" onClick={openCreate} data-test-id="sklad-keeper-add">
           {t('add')}
         </Button>
+      </div>
+
+      {/* Customer-receipt printer — account-wide. The «mijoz cheki» prints
+          straight to this printer via the agent (one action, correct thermal
+          size), exactly like each sklad's picking sheet. */}
+      <div
+        className="rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] p-4"
+        data-test-id="receipt-printer-card"
+      >
+        <div className="flex flex-col gap-1.5 sm:flex-row sm:items-end sm:gap-3">
+          <div className="flex-1">
+            <span className="font-medium text-[var(--ms-text-primary)] text-sm">
+              Chek printeri (mijoz cheki)
+            </span>
+            <p className="mt-0.5 text-[var(--ms-text-muted)] text-xs">
+              Mijoz cheki shu printerdan chiqadi. Bo'sh qoldirilsa — brauzer orqali chiqadi.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            {agentPrinters.length > 0 ? (
+              <NativeSelect
+                value={receiptPrinter}
+                onChange={(e) => setReceiptPrinter(e.target.value)}
+                className="min-w-[220px]"
+                data-test-id="receipt-printer-select"
+              >
+                <option value="">— (brauzer orqali)</option>
+                {receiptPrinter && !agentPrinters.includes(receiptPrinter) && (
+                  <option value={receiptPrinter}>{receiptPrinter} (ulanmagan)</option>
+                )}
+                {agentPrinters.map((p) => (
+                  <option key={p} value={p}>
+                    {p}
+                  </option>
+                ))}
+              </NativeSelect>
+            ) : (
+              <Input
+                value={receiptPrinter}
+                onChange={(e) => setReceiptPrinter(e.target.value)}
+                placeholder="Printer nomi (masalan XP-80C)"
+                className="min-w-[220px]"
+                data-test-id="receipt-printer-input"
+              />
+            )}
+            <Button
+              onClick={() => receiptMut.mutate(receiptPrinter)}
+              disabled={!receiptDirty || receiptMut.isPending}
+              data-test-id="receipt-printer-save"
+            >
+              {tCommon('save')}
+            </Button>
+          </div>
+        </div>
+        {agentChecked && agentPrinters.length === 0 && (
+          <p className="mt-2 text-[var(--ms-text-muted)] text-xs">
+            Print-agent topilmadi — nomni qo'lda kiriting (yoki agentni ishga tushiring).
+          </p>
+        )}
       </div>
 
       <div className="overflow-hidden rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)]">
