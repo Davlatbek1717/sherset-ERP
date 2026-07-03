@@ -164,9 +164,15 @@ $handler = {
   }
   function Build-EscPos([string]$text) {
     $esc = [char]27; $gs = [char]29
-    $init = "$esc@"
+    # ESC @  = init (reset). ESC t n = select character code page — needed so the
+    # printer renders Cyrillic (product names). CP1251/WPC1251 is page 17 on most
+    # Xprinter-class 80mm printers. IF CYRILLIC PRINTS AS GARBAGE, change $cp to
+    # your printer's WPC1251 page number (see its manual/self-test page).
+    $cp = 17
+    $init = "$esc@" + "$esc" + "t" + [char]$cp
     $cut  = "$gs" + "V" + [char]66 + [char]0
     $payload = $init + $text + "`n`n`n" + $cut
+    # Bytes must be encoded in the SAME code page selected above (WPC1251 = 1251).
     return [System.Text.Encoding]::GetEncoding(1251).GetBytes($payload)
   }
 
@@ -179,7 +185,7 @@ $handler = {
 
     switch ("$method $path") {
       'GET /health' {
-        Write-Response $ctx 200 '{"ok":true,"agent":"sherset-print-agent","version":"1.1","concurrent":true}'
+        Write-Response $ctx 200 '{"ok":true,"agent":"sherset-print-agent","version":"1.2","concurrent":true}'
       }
       'GET /printers' {
         $names = Get-PrinterNames

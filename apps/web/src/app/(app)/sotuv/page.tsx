@@ -3,6 +3,7 @@
 import { RasmiyashtirishModal } from '@/components/pos/rasmilashtirish-modal';
 import { api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-store';
+import { printPickingViaAgent } from '@/lib/print-agent';
 import { resolveDefaultSalePrice, resolveDefaultSalePriceOrZero } from '@/lib/sale-price';
 import { Money } from '@moysklad/money';
 import { isCurrencyCode } from '@moysklad/money/currencies';
@@ -55,7 +56,7 @@ interface CartLine {
   productName: string;
   quantity: number;
   priceMinor: bigint;
-  priceStr: string;       // user-editable price string (major units)
+  priceStr: string; // user-editable price string (major units)
   availableStock?: number;
 }
 
@@ -63,7 +64,6 @@ interface ListResponse<T> {
   items: T[];
   total: number;
 }
-
 
 // ── Open Shift Form ─────────────────────────────────────────────────────────
 
@@ -127,7 +127,10 @@ function OpenShiftForm() {
         <p className="text-sm text-[var(--ms-text-muted)]">
           Admin sizga smena biriktirishi kerak.
           <br />
-          <a href="/settings/smena" className="text-[var(--ms-text-brand)] underline mt-1 inline-block">
+          <a
+            href="/settings/smena"
+            className="text-[var(--ms-text-brand)] underline mt-1 inline-block"
+          >
             Smenalarni boshqarish →
           </a>
         </p>
@@ -151,7 +154,9 @@ function OpenShiftForm() {
         </div>
         <div className="flex justify-between">
           <span className="text-[var(--ms-text-muted)]">Ish vaqti</span>
-          <span className={withinShift ? 'text-green-600 font-medium' : 'text-orange-500 font-medium'}>
+          <span
+            className={withinShift ? 'text-green-600 font-medium' : 'text-orange-500 font-medium'}
+          >
             {smena.schedule.startTime}–{smena.schedule.endTime}
             {withinShift ? ' ✓' : ' (vaqtdan tashqari)'}
           </span>
@@ -166,7 +171,8 @@ function OpenShiftForm() {
       {showReasonInput && !withinShift && (
         <div className="mb-4">
           <p className="text-sm text-orange-600 mb-2">
-            Siz o'z ish vaqtingizdan ({smena.schedule.startTime}–{smena.schedule.endTime}) tashqarisida ishlayapsiz. Sabab yozing:
+            Siz o'z ish vaqtingizdan ({smena.schedule.startTime}–{smena.schedule.endTime})
+            tashqarisida ishlayapsiz. Sabab yozing:
           </p>
           <Input
             value={reason}
@@ -263,7 +269,9 @@ function ChekDetailPanel({ saleId, onBack }: { saleId: string; onBack: () => voi
   });
 
   const startReturn = () => {
-    setReturnQty(Object.fromEntries((data?.positions ?? []).map((p) => [p.id, Number(p.quantity)])));
+    setReturnQty(
+      Object.fromEntries((data?.positions ?? []).map((p) => [p.id, Number(p.quantity)])),
+    );
     setReturnMode(true);
   };
 
@@ -281,7 +289,7 @@ function ChekDetailPanel({ saleId, onBack }: { saleId: string; onBack: () => voi
   const stateLabel: Record<string, string> = {
     posted: "To'langan",
     draft: 'Qoralama',
-    picking: 'Yig\'ilmoqda',
+    picking: "Yig'ilmoqda",
     ready: 'Tayyor',
     cancelled: 'Bekor',
     refunded: 'Qaytarilgan',
@@ -301,16 +309,35 @@ function ChekDetailPanel({ saleId, onBack }: { saleId: string; onBack: () => voi
         <div className="min-w-0 flex-1">
           <div className="font-bold text-[var(--ms-text-primary)]">{data.name}</div>
           <div className="text-xs text-[var(--ms-text-muted)]">
-            {new Date(data.moment).toLocaleString('uz-UZ', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+            {new Date(data.moment).toLocaleString('uz-UZ', {
+              day: '2-digit',
+              month: '2-digit',
+              hour: '2-digit',
+              minute: '2-digit',
+            })}
             {' · '}
-            <span className={data.state === 'posted' ? 'text-emerald-600 font-medium' : data.state === 'cancelled' ? 'text-red-500' : ''}>
+            <span
+              className={
+                data.state === 'posted'
+                  ? 'text-emerald-600 font-medium'
+                  : data.state === 'cancelled'
+                    ? 'text-red-500'
+                    : ''
+              }
+            >
               {stateLabel[data.state] ?? data.state}
             </span>
           </div>
         </div>
         <button
           type="button"
-          onClick={() => window.open(`/print/retail-sale/${data.id}?auto=1`, '_blank', 'width=420,height=680,noopener')}
+          onClick={() =>
+            window.open(
+              `/print/retail-sale/${data.id}?auto=1`,
+              '_blank',
+              'width=420,height=680,noopener',
+            )
+          }
           className="flex h-8 items-center gap-1.5 rounded-lg border border-[var(--ms-border)] px-3 text-xs font-medium text-[var(--ms-text-muted)] hover:bg-[var(--ms-bg-hover)]"
         >
           🖨 Chek
@@ -365,7 +392,9 @@ function ChekDetailPanel({ saleId, onBack }: { saleId: string; onBack: () => voi
             {data.positions.map((p) => (
               <div key={p.id} className="flex items-center gap-3 px-4 py-2.5">
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm font-medium text-[var(--ms-text-primary)]">{p.product.name}</div>
+                  <div className="text-sm font-medium text-[var(--ms-text-primary)]">
+                    {p.product.name}
+                  </div>
                   {p.product.code && (
                     <div className="text-xs text-[var(--ms-text-muted)]">{p.product.code}</div>
                   )}
@@ -381,12 +410,17 @@ function ChekDetailPanel({ saleId, onBack }: { saleId: string; onBack: () => voi
                       onChange={(e) =>
                         setReturnQty((prev) => ({
                           ...prev,
-                          [p.id]: Math.max(0, Math.min(Number(p.quantity), Number(e.target.value) || 0)),
+                          [p.id]: Math.max(
+                            0,
+                            Math.min(Number(p.quantity), Number(e.target.value) || 0),
+                          ),
                         }))
                       }
                       className="w-14 rounded border border-[var(--ms-border)] bg-[var(--ms-bg-input)] px-1.5 py-0.5 text-right text-sm tabular-nums focus:border-[var(--ms-border-focus)] focus:outline-none"
                     />
-                    <span className="text-xs text-[var(--ms-text-muted)]">/ {Number(p.quantity)}</span>
+                    <span className="text-xs text-[var(--ms-text-muted)]">
+                      / {Number(p.quantity)}
+                    </span>
                   </div>
                 )}
                 <div className="shrink-0 text-right">
@@ -440,7 +474,9 @@ function ChekDetailPanel({ saleId, onBack }: { saleId: string; onBack: () => voi
             return (
               <>
                 <div className="mb-3 flex items-center justify-between">
-                  <span className="text-sm text-[var(--ms-text-muted)]">Qaytariladigan summa (naqd)</span>
+                  <span className="text-sm text-[var(--ms-text-muted)]">
+                    Qaytariladigan summa (naqd)
+                  </span>
                   <span className="font-bold text-lg tabular-nums text-[var(--ms-destructive-500)]">
                     {formatMoney(refundMinor)}
                   </span>
@@ -482,7 +518,9 @@ function SalesScreen({ session }: { session: CurrentSession }) {
   const [discountEditing, setDiscountEditing] = useState(false);
 
   // Smena tab — drawer + close shift
-  const tillCurrency = isCurrencyCode(session.cashDesk?.currency) ? session.cashDesk!.currency : 'UZS';
+  const tillCurrency = isCurrencyCode(session.cashDesk?.currency)
+    ? session.cashDesk!.currency
+    : 'UZS';
   const [drawerMode, setDrawerMode] = useState<'in' | 'out' | null>(null);
   const [drawerAmount, setDrawerAmount] = useState('');
   const [drawerComment, setDrawerComment] = useState('');
@@ -502,7 +540,10 @@ function SalesScreen({ session }: { session: CurrentSession }) {
     moment: string;
     state: string;
     agent: { id: string; name: string } | null;
-    session: { cashier: { id: string; name: string }; cashDesk: { name: string; currency: string } | null };
+    session: {
+      cashier: { id: string; name: string };
+      cashDesk: { name: string; currency: string } | null;
+    };
     _count?: { positions: number };
   }
   interface SaleDetail extends SaleRow {
@@ -549,7 +590,8 @@ function SalesScreen({ session }: { session: CurrentSession }) {
 
   const cartCount = cart.reduce((n, l) => n + l.quantity, 0);
   const cartTotal = cart.reduce((sum, l) => sum + l.priceMinor * BigInt(l.quantity), 0n);
-  const discountedTotal = discountPct > 0 ? cartTotal - (cartTotal * BigInt(discountPct) / 100n) : cartTotal;
+  const discountedTotal =
+    discountPct > 0 ? cartTotal - (cartTotal * BigInt(discountPct)) / 100n : cartTotal;
 
   const addToCart = useCallback((product: ProductRow) => {
     setCart((prev) => {
@@ -654,14 +696,33 @@ function SalesScreen({ session }: { session: CurrentSession }) {
       await api.post(`/retail-sales/${draft.id}/send-to-picking`, {});
       return draft.id;
     },
-    onSuccess: (saleId) => {
+    onSuccess: async (saleId) => {
       setCart([]);
       setDiscountPct(0);
       setDiscountEditing(false);
       qc.invalidateQueries({ queryKey: ['retail-sales-ready', session.id] });
       qc.invalidateQueries({ queryKey: ['retail-sales-picking', session.id] });
       toast.success('Omborchiga yuborildi');
-      window.open(`/print/picking/${saleId}?source=retailsale&auto=1`, '_blank', 'width=520,height=800,noopener');
+      // Per-warehouse routing via the local print-agent: each sklad's sheet goes
+      // to its own mapped printer (Settings → Sklad-keepers). If the agent isn't
+      // running or no printer is mapped, fall back to the browser popup print.
+      const outcome = await printPickingViaAgent(saleId);
+      if (outcome.handled) {
+        if (outcome.printed > 0) {
+          toast.success(
+            `Chek chiqarildi: ${outcome.printed} ta printer` +
+              (outcome.skipped > 0 ? ` (${outcome.skipped} ombor printersiz)` : ''),
+          );
+        }
+        if (outcome.errors > 0)
+          toast.error(`${outcome.errors} ta chek chiqmadi — printerni tekshiring`);
+      } else {
+        window.open(
+          `/print/picking/${saleId}?source=retailsale&auto=1`,
+          '_blank',
+          'width=520,height=800,noopener',
+        );
+      }
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -692,7 +753,7 @@ function SalesScreen({ session }: { session: CurrentSession }) {
 
   const drawerMut = useMutation({
     mutationFn: () => {
-      if (!(Number(drawerAmount) > 0)) throw new Error('Summa musbat bo\'lishi kerak');
+      if (!(Number(drawerAmount) > 0)) throw new Error("Summa musbat bo'lishi kerak");
       const sumMinor = Money.fromMajor(drawerAmount, tillCurrency).toMinor().toString();
       const path = drawerMode === 'in' ? 'drawer-in' : 'drawer-out';
       return api.post(`/cashier-sessions/${session.id}/${path}`, {
@@ -713,7 +774,9 @@ function SalesScreen({ session }: { session: CurrentSession }) {
   const closeMut = useMutation({
     mutationFn: () =>
       api.post(`/cashier-sessions/${session.id}/close`, {
-        closingCashMinor: Money.fromMajor(closingCash || '0', tillCurrency).toMinor().toString(),
+        closingCashMinor: Money.fromMajor(closingCash || '0', tillCurrency)
+          .toMinor()
+          .toString(),
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['cashier-session-current'] });
@@ -730,7 +793,8 @@ function SalesScreen({ session }: { session: CurrentSession }) {
         <div className="flex items-center gap-3 rounded-xl border border-[var(--ms-border)] bg-[var(--ms-bg-surface)] px-3 py-2 text-sm">
           <Badge tone="success">{t('shift_open')}</Badge>
           <span className="text-[var(--ms-text-muted)]">
-            {session.cashier.name}{session.store ? ` · ${session.store.name}` : ''}
+            {session.cashier.name}
+            {session.store ? ` · ${session.store.name}` : ''}
           </span>
           <span className="ml-auto font-medium">
             {session.salesCount} · {formatMoney(BigInt(session.salesSumMinor))}
@@ -828,7 +892,12 @@ function SalesScreen({ session }: { session: CurrentSession }) {
             }`}
           >
             <ShoppingCart className="h-4 w-4" />
-            {t('cart_title')} {cartCount > 0 && <span className="rounded-full bg-[var(--ms-brand)] px-1.5 py-0.5 text-[10px] text-white">{cartCount}</span>}
+            {t('cart_title')}{' '}
+            {cartCount > 0 && (
+              <span className="rounded-full bg-[var(--ms-brand)] px-1.5 py-0.5 text-[10px] text-white">
+                {cartCount}
+              </span>
+            )}
           </button>
           <button
             type="button"
@@ -880,7 +949,9 @@ function SalesScreen({ session }: { session: CurrentSession }) {
               <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-[var(--ms-text-muted)]">
                 <Clock className="h-10 w-10 opacity-30" />
                 <p className="text-sm">Hozircha jarayonda savdo yo'q</p>
-                <p className="text-xs">Savatni rasmiylashtirsangiz, omborchi yig'ishi shu yerda ko'rinadi</p>
+                <p className="text-xs">
+                  Savatni rasmiylashtirsangiz, omborchi yig'ishi shu yerda ko'rinadi
+                </p>
               </div>
             ) : (
               <div className="flex flex-col gap-4">
@@ -892,13 +963,19 @@ function SalesScreen({ session }: { session: CurrentSession }) {
                     </p>
                     <div className="flex flex-col gap-1.5">
                       {pickingSales.map((s) => (
-                        <div key={s.id} className="flex items-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2">
+                        <div
+                          key={s.id}
+                          className="flex items-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2"
+                        >
                           <Clock className="h-4 w-4 shrink-0 animate-pulse text-amber-500" />
                           <div className="min-w-0 flex-1">
-                            <div className="truncate text-sm font-semibold text-[var(--ms-text-primary)]">{s.name}</div>
+                            <div className="truncate text-sm font-semibold text-[var(--ms-text-primary)]">
+                              {s.name}
+                            </div>
                             <div className="text-xs text-[var(--ms-text-muted)]">
                               {formatMoney(BigInt(s.sumMinor))}
-                              {s._count?.positions != null && ` · ${s._count.positions} ta pozitsiya`}
+                              {s._count?.positions != null &&
+                                ` · ${s._count.positions} ta pozitsiya`}
                             </div>
                           </div>
                           <span className="shrink-0 rounded-full bg-amber-200 px-2 py-0.5 text-[10px] font-medium text-amber-800">
@@ -917,10 +994,17 @@ function SalesScreen({ session }: { session: CurrentSession }) {
                     </p>
                     <div className="flex flex-col gap-1.5">
                       {readySales.map((s) => (
-                        <div key={s.id} className="flex items-center gap-2 rounded-xl border border-emerald-300 bg-white px-3 py-2">
+                        <div
+                          key={s.id}
+                          className="flex items-center gap-2 rounded-xl border border-emerald-300 bg-white px-3 py-2"
+                        >
                           <div className="min-w-0 flex-1">
-                            <div className="truncate text-sm font-semibold text-[var(--ms-text-primary)]">{s.name}</div>
-                            <div className="text-xs text-[var(--ms-text-muted)]">{formatMoney(BigInt(s.sumMinor))}</div>
+                            <div className="truncate text-sm font-semibold text-[var(--ms-text-primary)]">
+                              {s.name}
+                            </div>
+                            <div className="text-xs text-[var(--ms-text-muted)]">
+                              {formatMoney(BigInt(s.sumMinor))}
+                            </div>
                           </div>
                           <button
                             type="button"
@@ -965,7 +1049,10 @@ function SalesScreen({ session }: { session: CurrentSession }) {
                           {formatMoney(BigInt(sale.sumMinor))}
                         </span>
                         <span className="shrink-0 text-xs text-[var(--ms-text-muted)]">
-                          {new Date(sale.moment).toLocaleTimeString('uz-UZ', { hour: '2-digit', minute: '2-digit' })}
+                          {new Date(sale.moment).toLocaleTimeString('uz-UZ', {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
                         </span>
                       </div>
                       <div className="mt-0.5 flex items-center gap-2 text-xs text-[var(--ms-text-muted)]">
@@ -995,16 +1082,12 @@ function SalesScreen({ session }: { session: CurrentSession }) {
 
         {/* ── CHEK DETAIL ── */}
         {tab === 'cheklar' && selectedChekId && (
-          <ChekDetailPanel
-            saleId={selectedChekId}
-            onBack={() => setSelectedChekId(null)}
-          />
+          <ChekDetailPanel saleId={selectedChekId} onBack={() => setSelectedChekId(null)} />
         )}
 
         {/* ── SMENA TAB ── */}
         {tab === 'smena' && (
           <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
-
             {/* Session info */}
             <div className="rounded-xl border border-[var(--ms-border)] bg-[var(--ms-bg-app)] px-4 py-3 text-sm">
               <div className="flex justify-between mb-1">
@@ -1026,7 +1109,10 @@ function SalesScreen({ session }: { session: CurrentSession }) {
               <div className="flex justify-between mb-1">
                 <span className="text-[var(--ms-text-muted)]">Ochilgan</span>
                 <span className="font-medium tabular-nums">
-                  {new Date(session.openedAt).toLocaleTimeString('uz-UZ', { hour: '2-digit', minute: '2-digit' })}
+                  {new Date(session.openedAt).toLocaleTimeString('uz-UZ', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
                 </span>
               </div>
               <div className="flex justify-between">
@@ -1100,10 +1186,16 @@ function SalesScreen({ session }: { session: CurrentSession }) {
                     onClick={() => drawerMut.mutate()}
                     disabled={drawerMut.isPending || !(Number(drawerAmount) > 0)}
                     className={`h-10 w-full rounded-lg font-semibold text-sm text-white disabled:opacity-40 ${
-                      drawerMode === 'in' ? 'bg-emerald-500 hover:bg-emerald-600' : 'bg-orange-500 hover:bg-orange-600'
+                      drawerMode === 'in'
+                        ? 'bg-emerald-500 hover:bg-emerald-600'
+                        : 'bg-orange-500 hover:bg-orange-600'
                     }`}
                   >
-                    {drawerMut.isPending ? '...' : drawerMode === 'in' ? 'Kirim tasdiqlash' : 'Chiqim tasdiqlash'}
+                    {drawerMut.isPending
+                      ? '...'
+                      : drawerMode === 'in'
+                        ? 'Kirim tasdiqlash'
+                        : 'Chiqim tasdiqlash'}
                   </button>
                 </div>
               )}
@@ -1145,7 +1237,10 @@ function SalesScreen({ session }: { session: CurrentSession }) {
                     </button>
                     <button
                       type="button"
-                      onClick={() => { setShowCloseForm(false); setClosingCash(''); }}
+                      onClick={() => {
+                        setShowCloseForm(false);
+                        setClosingCash('');
+                      }}
                       className="h-10 rounded-lg border border-[var(--ms-border)] px-4 text-sm text-[var(--ms-text-muted)] hover:bg-[var(--ms-bg-hover)]"
                     >
                       Bekor
@@ -1154,230 +1249,282 @@ function SalesScreen({ session }: { session: CurrentSession }) {
                 </div>
               )}
             </div>
-
           </div>
         )}
 
         {/* ── SAVAT TAB ── */}
         {tab === 'savat' && (
-        <>
-        <div className="flex shrink-0 items-center gap-2 border-[var(--ms-border)] border-b px-4 py-2">
-          <span className="text-sm text-[var(--ms-text-muted)]">Savat</span>
-          {cart.length > 0 && (
-            <Button
-              variant="link"
-              className="ml-auto text-xs"
-              onClick={() => setCart([])}
-              data-test-id="sotuv-cart-clear"
-            >
-              {t('clear')}
-            </Button>
-          )}
-        </div>
-
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          {cart.length === 0 ? (
-            <div className="flex h-full flex-col items-center justify-center gap-1 text-[var(--ms-text-muted)]">
-              <ShoppingCart className="h-8 w-8 opacity-40" />
-              <span className="font-medium text-sm">{t('cart_empty_title')}</span>
-              <span className="text-xs">{t('cart_empty_hint')}</span>
+          <>
+            <div className="flex shrink-0 items-center gap-2 border-[var(--ms-border)] border-b px-4 py-2">
+              <span className="text-sm text-[var(--ms-text-muted)]">Savat</span>
+              {cart.length > 0 && (
+                <Button
+                  variant="link"
+                  className="ml-auto text-xs"
+                  onClick={() => setCart([])}
+                  data-test-id="sotuv-cart-clear"
+                >
+                  {t('clear')}
+                </Button>
+              )}
             </div>
-          ) : (
-            <div className="flex flex-col divide-y divide-[var(--ms-border)]">
-              {cart.map((line) => (
-                <div key={line.productId} className="px-3 py-2 hover:bg-[var(--ms-bg-hover)]">
-                  {/* Qator 1: Nom + soni + o'chirish */}
-                  <div className="flex items-center gap-2">
-                    <div className="min-w-0 flex-1 truncate text-sm font-medium text-[var(--ms-text-primary)]">
-                      {line.productName}
-                    </div>
-                    {/* Soni */}
-                    <div className="flex shrink-0 items-center gap-0.5">
-                      <button
-                        type="button"
-                        onClick={() => updateQty(line.productId, -1)}
-                        className="flex h-6 w-6 items-center justify-center rounded border border-[var(--ms-border)] bg-[var(--ms-bg-input)] text-sm leading-none hover:bg-[var(--ms-bg-hover)]"
-                      >
-                        −
-                      </button>
-                      <span className="w-8 text-center text-sm tabular-nums">{line.quantity}</span>
-                      <button
-                        type="button"
-                        onClick={() => updateQty(line.productId, 1)}
-                        className="flex h-6 w-6 items-center justify-center rounded border border-[var(--ms-border)] bg-[var(--ms-bg-input)] text-sm leading-none hover:bg-[var(--ms-bg-hover)]"
-                      >
-                        +
-                      </button>
-                    </div>
-                    {/* O'chirish */}
-                    <button
-                      type="button"
-                      onClick={() => removeFromCart(line.productId)}
-                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-[var(--ms-text-muted)] text-xs hover:bg-red-50 hover:text-red-500"
-                    >
-                      ✕
-                    </button>
-                  </div>
 
-                  {/* Qator 2: Qolgan + narx input + summa */}
-                  <div className="mt-1.5 flex items-center gap-3">
-                    {/* Qolgan */}
-                    {line.availableStock !== undefined && (
-                      <span className="text-xs text-[var(--ms-text-muted)]">
-                        Qolgan:{' '}
-                        <span className={line.availableStock <= 0 ? 'text-red-500 font-medium' : 'tabular-nums'}>
-                          {line.availableStock}
-                        </span>
-                      </span>
-                    )}
-                    <div className="flex flex-1 items-center justify-end gap-2">
-                      {/* Narx (tahrir qilsa bo'ladi) */}
-                      <div className="flex items-center gap-1">
-                        <span className="text-xs text-[var(--ms-text-muted)]">Narx:</span>
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          value={line.priceStr}
-                          onChange={(e) => updatePrice(line.productId, e.target.value)}
-                          onFocus={(e) => e.target.select()}
-                          className="w-24 rounded border border-[var(--ms-border)] bg-[var(--ms-bg-input)] px-1.5 py-0.5 text-right text-sm tabular-nums focus:border-[var(--ms-border-focus)] focus:outline-none"
-                        />
-                      </div>
-                      {/* Summa */}
-                      <div className="w-28 text-right text-sm font-semibold tabular-nums text-[var(--ms-text-primary)]">
-                        {formatMoney(line.priceMinor * BigInt(line.quantity))}
-                      </div>
-                    </div>
-                  </div>
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              {cart.length === 0 ? (
+                <div className="flex h-full flex-col items-center justify-center gap-1 text-[var(--ms-text-muted)]">
+                  <ShoppingCart className="h-8 w-8 opacity-40" />
+                  <span className="font-medium text-sm">{t('cart_empty_title')}</span>
+                  <span className="text-xs">{t('cart_empty_hint')}</span>
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
+              ) : (
+                <div className="flex flex-col divide-y divide-[var(--ms-border)]">
+                  {cart.map((line) => (
+                    <div key={line.productId} className="px-3 py-2 hover:bg-[var(--ms-bg-hover)]">
+                      {/* Qator 1: Nom + soni + o'chirish */}
+                      <div className="flex items-center gap-2">
+                        <div className="min-w-0 flex-1 truncate text-sm font-medium text-[var(--ms-text-primary)]">
+                          {line.productName}
+                        </div>
+                        {/* Soni */}
+                        <div className="flex shrink-0 items-center gap-0.5">
+                          <button
+                            type="button"
+                            onClick={() => updateQty(line.productId, -1)}
+                            className="flex h-6 w-6 items-center justify-center rounded border border-[var(--ms-border)] bg-[var(--ms-bg-input)] text-sm leading-none hover:bg-[var(--ms-bg-hover)]"
+                          >
+                            −
+                          </button>
+                          <span className="w-8 text-center text-sm tabular-nums">
+                            {line.quantity}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => updateQty(line.productId, 1)}
+                            className="flex h-6 w-6 items-center justify-center rounded border border-[var(--ms-border)] bg-[var(--ms-bg-input)] text-sm leading-none hover:bg-[var(--ms-bg-hover)]"
+                          >
+                            +
+                          </button>
+                        </div>
+                        {/* O'chirish */}
+                        <button
+                          type="button"
+                          onClick={() => removeFromCart(line.productId)}
+                          className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-[var(--ms-text-muted)] text-xs hover:bg-red-50 hover:text-red-500"
+                        >
+                          ✕
+                        </button>
+                      </div>
 
-        {/* Ready sales — tayyor, to'lov kutmoqda */}
-        {readySales.length > 0 && (
-          <div className="shrink-0 border-t border-[var(--ms-border)] bg-emerald-50 px-3 py-2">
-            <p className="mb-1.5 text-[10px] font-bold uppercase tracking-widest text-emerald-700">
-              Tayyor — to'lov kutmoqda
-            </p>
-            <div className="flex flex-col gap-1.5">
-              {readySales.map((s) => (
-                <div key={s.id} className="flex items-center gap-2 rounded-xl border border-emerald-300 bg-white px-3 py-2">
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm font-semibold text-[var(--ms-text-primary)]">{s.name}</div>
-                    <div className="text-xs text-[var(--ms-text-muted)]">{formatMoney(BigInt(s.sumMinor))}</div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => loadReadyToCart(s.id)}
-                    className="flex h-8 items-center gap-1 rounded-lg bg-emerald-500 px-3 text-xs font-bold text-white hover:bg-emerald-600"
-                  >
-                    💳 To'lov
-                  </button>
+                      {/* Qator 2: Qolgan + narx input + summa */}
+                      <div className="mt-1.5 flex items-center gap-3">
+                        {/* Qolgan */}
+                        {line.availableStock !== undefined && (
+                          <span className="text-xs text-[var(--ms-text-muted)]">
+                            Qolgan:{' '}
+                            <span
+                              className={
+                                line.availableStock <= 0
+                                  ? 'text-red-500 font-medium'
+                                  : 'tabular-nums'
+                              }
+                            >
+                              {line.availableStock}
+                            </span>
+                          </span>
+                        )}
+                        <div className="flex flex-1 items-center justify-end gap-2">
+                          {/* Narx (tahrir qilsa bo'ladi) */}
+                          <div className="flex items-center gap-1">
+                            <span className="text-xs text-[var(--ms-text-muted)]">Narx:</span>
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              value={line.priceStr}
+                              onChange={(e) => updatePrice(line.productId, e.target.value)}
+                              onFocus={(e) => e.target.select()}
+                              className="w-24 rounded border border-[var(--ms-border)] bg-[var(--ms-bg-input)] px-1.5 py-0.5 text-right text-sm tabular-nums focus:border-[var(--ms-border-focus)] focus:outline-none"
+                            />
+                          </div>
+                          {/* Summa */}
+                          <div className="w-28 text-right text-sm font-semibold tabular-nums text-[var(--ms-text-primary)]">
+                            {formatMoney(line.priceMinor * BigInt(line.quantity))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              )}
             </div>
-          </div>
-        )}
 
-        {/* Footer — mijoz turi + Rasmilashtirish */}
-        <div className="shrink-0 border-[var(--ms-border)] border-t bg-[var(--ms-bg-surface)] px-4 pt-4 pb-5">
-
-          {/* Jami summa — ikki marta bosib chegirma */}
-          <div className="mb-4 text-center">
-            <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-widest text-[var(--ms-text-muted)]">
-              {t('total')}
-            </p>
-
-            {/* Summa — ikki marta bosish chegirmani ochadi */}
-            <div
-              className="cursor-default select-none"
-              onDoubleClick={() => setDiscountEditing((v) => !v)}
-              title="Chegirma uchun ikki marta bosing"
-            >
-              {discountPct > 0 && (
-                <p className="text-sm tabular-nums text-[var(--ms-text-muted)] line-through">
-                  {formatMoney(cartTotal)}
+            {/* Ready sales — tayyor, to'lov kutmoqda */}
+            {readySales.length > 0 && (
+              <div className="shrink-0 border-t border-[var(--ms-border)] bg-emerald-50 px-3 py-2">
+                <p className="mb-1.5 text-[10px] font-bold uppercase tracking-widest text-emerald-700">
+                  Tayyor — to'lov kutmoqda
                 </p>
-              )}
-              <p className={`font-bold tabular-nums leading-none text-3xl ${discountPct > 0 ? 'text-emerald-600' : 'text-[var(--ms-text-primary)]'}`}>
-                {formatMoney(discountedTotal)}
-              </p>
-              {discountPct > 0 && (
-                <p className="mt-0.5 text-xs font-medium text-emerald-600">−{discountPct}% chegirma</p>
-              )}
-            </div>
-
-            {cartCount > 0 && (
-              <p className="mt-1 text-xs text-[var(--ms-text-muted)]">{cartCount} ta mahsulot</p>
-            )}
-
-            {/* Inline chegirma input */}
-            {discountEditing && (
-              <div className="mt-2 flex items-center justify-center gap-2">
-                <span className="text-xs text-[var(--ms-text-muted)]">Chegirma:</span>
-                <div className="flex items-center gap-1 rounded-lg border border-emerald-300 bg-emerald-50 px-2.5 py-1.5">
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    // biome-ignore lint/a11y/noAutofocus: intentional POS focus — cashier types the discount percent immediately when this popover opens.
-                    autoFocus
-                    value={discountPct === 0 ? '' : discountPct}
-                    onChange={(e) =>
-                      setDiscountPct(Math.min(100, Math.max(0, Number.parseInt(e.target.value, 10) || 0)))
-                    }
-                    onBlur={() => setDiscountEditing(false)}
-                    onKeyDown={(e) => e.key === 'Enter' && setDiscountEditing(false)}
-                    placeholder="0"
-                    className="w-10 bg-transparent text-center text-sm font-bold text-emerald-700 outline-none"
-                  />
-                  <span className="text-sm font-bold text-emerald-600">%</span>
+                <div className="flex flex-col gap-1.5">
+                  {readySales.map((s) => (
+                    <div
+                      key={s.id}
+                      className="flex items-center gap-2 rounded-xl border border-emerald-300 bg-white px-3 py-2"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-semibold text-[var(--ms-text-primary)]">
+                          {s.name}
+                        </div>
+                        <div className="text-xs text-[var(--ms-text-muted)]">
+                          {formatMoney(BigInt(s.sumMinor))}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => loadReadyToCart(s.id)}
+                        className="flex h-8 items-center gap-1 rounded-lg bg-emerald-500 px-3 text-xs font-bold text-white hover:bg-emerald-600"
+                      >
+                        💳 To'lov
+                      </button>
+                    </div>
+                  ))}
                 </div>
-                {discountPct > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => { setDiscountPct(0); setDiscountEditing(false); }}
-                    className="text-xs text-[var(--ms-text-muted)] hover:text-red-500"
-                  >
-                    ✕
-                  </button>
-                )}
               </div>
             )}
-          </div>
 
-          {/* Omborchiga yuborish */}
-          <button
-            type="button"
-            onClick={() => sendToPickingMut.mutate()}
-            disabled={cart.length === 0 || sendToPickingMut.isPending}
-            data-test-id="sotuv-pay"
-            className="flex h-14 w-full items-center justify-center gap-2 rounded-2xl bg-emerald-500 font-semibold text-base text-white shadow-lg transition-all hover:bg-emerald-600 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {sendToPickingMut.isPending ? (
-              <span className="flex items-center gap-2">
-                <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
-                Yuborilmoqda...
-              </span>
-            ) : (
-              <>
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M5 12h14M12 5l7 7-7 7"/>
-                </svg>
-                Omborchiga yuborish
-              </>
-            )}
-          </button>
-        </div>
-        </>
+            {/* Footer — mijoz turi + Rasmilashtirish */}
+            <div className="shrink-0 border-[var(--ms-border)] border-t bg-[var(--ms-bg-surface)] px-4 pt-4 pb-5">
+              {/* Jami summa — ikki marta bosib chegirma */}
+              <div className="mb-4 text-center">
+                <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-widest text-[var(--ms-text-muted)]">
+                  {t('total')}
+                </p>
+
+                {/* Summa — ikki marta bosish chegirmani ochadi */}
+                <div
+                  className="cursor-default select-none"
+                  onDoubleClick={() => setDiscountEditing((v) => !v)}
+                  title="Chegirma uchun ikki marta bosing"
+                >
+                  {discountPct > 0 && (
+                    <p className="text-sm tabular-nums text-[var(--ms-text-muted)] line-through">
+                      {formatMoney(cartTotal)}
+                    </p>
+                  )}
+                  <p
+                    className={`font-bold tabular-nums leading-none text-3xl ${discountPct > 0 ? 'text-emerald-600' : 'text-[var(--ms-text-primary)]'}`}
+                  >
+                    {formatMoney(discountedTotal)}
+                  </p>
+                  {discountPct > 0 && (
+                    <p className="mt-0.5 text-xs font-medium text-emerald-600">
+                      −{discountPct}% chegirma
+                    </p>
+                  )}
+                </div>
+
+                {cartCount > 0 && (
+                  <p className="mt-1 text-xs text-[var(--ms-text-muted)]">
+                    {cartCount} ta mahsulot
+                  </p>
+                )}
+
+                {/* Inline chegirma input */}
+                {discountEditing && (
+                  <div className="mt-2 flex items-center justify-center gap-2">
+                    <span className="text-xs text-[var(--ms-text-muted)]">Chegirma:</span>
+                    <div className="flex items-center gap-1 rounded-lg border border-emerald-300 bg-emerald-50 px-2.5 py-1.5">
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        // biome-ignore lint/a11y/noAutofocus: intentional POS focus — cashier types the discount percent immediately when this popover opens.
+                        autoFocus
+                        value={discountPct === 0 ? '' : discountPct}
+                        onChange={(e) =>
+                          setDiscountPct(
+                            Math.min(100, Math.max(0, Number.parseInt(e.target.value, 10) || 0)),
+                          )
+                        }
+                        onBlur={() => setDiscountEditing(false)}
+                        onKeyDown={(e) => e.key === 'Enter' && setDiscountEditing(false)}
+                        placeholder="0"
+                        className="w-10 bg-transparent text-center text-sm font-bold text-emerald-700 outline-none"
+                      />
+                      <span className="text-sm font-bold text-emerald-600">%</span>
+                    </div>
+                    {discountPct > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDiscountPct(0);
+                          setDiscountEditing(false);
+                        }}
+                        className="text-xs text-[var(--ms-text-muted)] hover:text-red-500"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Omborchiga yuborish */}
+              <button
+                type="button"
+                onClick={() => sendToPickingMut.mutate()}
+                disabled={cart.length === 0 || sendToPickingMut.isPending}
+                data-test-id="sotuv-pay"
+                className="flex h-14 w-full items-center justify-center gap-2 rounded-2xl bg-emerald-500 font-semibold text-base text-white shadow-lg transition-all hover:bg-emerald-600 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {sendToPickingMut.isPending ? (
+                  <span className="flex items-center gap-2">
+                    <svg
+                      className="h-4 w-4 animate-spin"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      aria-hidden="true"
+                    >
+                      <circle
+                        className="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                      />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                    </svg>
+                    Yuborilmoqda...
+                  </span>
+                ) : (
+                  <>
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      className="h-5 w-5"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M5 12h14M12 5l7 7-7 7" />
+                    </svg>
+                    Omborchiga yuborish
+                  </>
+                )}
+              </button>
+            </div>
+          </>
         )}
       </div>
 
       <RasmiyashtirishModal
         open={checkoutOpen}
-        onOpenChange={(o) => { setCheckoutOpen(o); if (!o) setPayingSale(null); }}
+        onOpenChange={(o) => {
+          setCheckoutOpen(o);
+          if (!o) setPayingSale(null);
+        }}
         sumMinor={payingSale ? payingSale.sumMinor : discountedTotal}
         onConfirm={(p) => payReadySaleMut.mutate(p)}
         loading={payReadySaleMut.isPending}
