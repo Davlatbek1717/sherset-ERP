@@ -305,6 +305,20 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🟢🔄 2026-07-04b (MOYSKLAD JONLI SYNC — `a4475e5` ✅ DEPLOYED + prod'da yugurtirildi: 1553 kontragent keldi)**
+> User to'g'ri akkaunt tokenini berdi (org «Elektro sentr (Sherset)», context/employee bilan tasdiqlandi — avvalgi
+> «climart santex» xatosi takrorlanmadi). **Yangi modul** `moysklad-sync`: `POST /moysklad-sync/run` (fon), `GET
+> /moysklad-sync/status` (bosqich/progress/natija). remap/1.2: uom → papkalar → tovarlar(+narx-turlari) → kontragentlar;
+> identity `externalCode='ms:<id>'` (fayl-import bilan bir xil → qayta yugurtirish YANGILAYDI, dublikat qilmaydi);
+> narx 1:1 minor (seed-real ×100 klassiga test-lock); phone/name truncate. Token **VPS `apps/api/.env`da**
+> (`MOYSKLAD_TOKEN`) — diqqat: root `/var/www/sherset/.env` YO'Q edi, deploy-doc'dagi symlink sxemasi realda boshqacha,
+> API haqiqiy faylni `apps/api/.env`dan o'qiydi. **Jonli natija (91s):** folders 59 upd · products 4477 upd + 5 new
+> (=4482, dublikat 0) · **counterparties 1553 created** (prod'da 0 edi) — spot-check: narxlar to'g'ri (Panasonik buy
+> 20 150 → retail 23 700 / optom 22 600), telefonlar bilan. Gate: api tsc0 · biome0 · mapper vitest 4/4.
+> **⏭️ SYNC KEYINGI:** (1) Settings'da «Sync» tugma + oxirgi natija UI; (2) cron (kechasi avtomat); (3) qoldiqlar
+> (оприходование orqali) — user so'rasa. **TG:** infra tayyor (telegram moduli: config+outbox+webhook bor), lekin user
+> «bot kerak emas» dedi — botsiz TG'da avto-xabar YO'Q (userbot=ban xavfi); bot yaratishga ko'ndirish yoki SMS(Eskiz).
+
 > **🟢📊 2026-07-04 (OMBOR-OPERATSIYALARI DASHBOARD — `020ff1f` ✅ DEPLOYED + jonli tasdiqlangan)**
 > «Muammolarni xal qil» davomi. User so'rovi: qabul→joylashtirish→otish zanjiri ma'lumotlarini dashboardda ko'rish.
 > Zanjir o'zi tayyor edi (03-iyul), lekin raqamlar 4 alohida ro'yxatda yashardi. **Yangi:** API
