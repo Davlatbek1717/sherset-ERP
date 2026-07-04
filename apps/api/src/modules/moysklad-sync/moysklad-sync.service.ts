@@ -653,6 +653,14 @@ export class MoyskladSyncService {
       return (msId ? cpMap.get(`ms:${msId}`) : undefined) ?? archiveCpId;
     };
 
+    // moysklad does NOT enforce unique document numbers; our tables do
+    // (@@unique accountId+name). On a P2002 collision retry once with a short
+    // ms-id suffix so the duplicate still lands in the archive.
+    const isUniqueErr = (e: unknown): boolean =>
+      e instanceof Error && e.message.includes('Unique constraint failed');
+    const dedupName = (name: string, msId: string): string =>
+      `${name.slice(0, 90)}~${msId.slice(0, 8)}`;
+
     // ── demands (sotuvlar) — expand=positions caps the page size at 100 ────
     s.stage = 'history-demands';
     try {
@@ -683,10 +691,10 @@ export class MoyskladSyncService {
             positions = await this.fetchAll<MsDemandPos>(token, `entity/demand/${r.id}/positions`);
           }
           const moment = msMoment(r.moment);
-          await db.demand.create({
+          const buildDemand = (name: string) => ({
             data: {
               accountId,
-              name: r.name.slice(0, 100),
+              name,
               externalCode: `ms:${r.id}`,
               agentId: agentOf(r.agent),
               organizationId: org.id,
@@ -721,6 +729,12 @@ export class MoyskladSyncService {
               },
             },
           });
+          try {
+            await db.demand.create(buildDemand(r.name.slice(0, 100)));
+          } catch (e) {
+            if (!isUniqueErr(e)) throw e;
+            await db.demand.create(buildDemand(dedupName(r.name, r.id)));
+          }
           dc.created++;
         } catch (e) {
           dc.skipped++;
@@ -737,7 +751,7 @@ export class MoyskladSyncService {
     const moneyStages: Array<{
       key: string;
       entity: string;
-      create: (r: MsMoneyDocRow, moment: Date) => Promise<unknown>;
+      create: (r: MsMoneyDocRow, moment: Date, name: string) => Promise<unknown>;
       list: () => Promise<Array<{ id: string; externalCode: string | null }>>;
       needsCashDesk: boolean;
     }> = [
@@ -750,11 +764,11 @@ export class MoyskladSyncService {
             where: { accountId, externalCode: { startsWith: 'ms:' } },
             select: { id: true, externalCode: true },
           }),
-        create: (r, moment) =>
+        create: (r, moment, name) =>
           db.paymentIn.create({
             data: {
               accountId,
-              name: r.name.slice(0, 100),
+              name,
               externalCode: `ms:${r.id}`,
               agentId: agentOf(r.agent),
               organizationId: org.id,
@@ -777,11 +791,11 @@ export class MoyskladSyncService {
             where: { accountId, externalCode: { startsWith: 'ms:' } },
             select: { id: true, externalCode: true },
           }),
-        create: (r, moment) =>
+        create: (r, moment, name) =>
           db.paymentOut.create({
             data: {
               accountId,
-              name: r.name.slice(0, 100),
+              name,
               externalCode: `ms:${r.id}`,
               agentId: agentOf(r.agent),
               organizationId: org.id,
@@ -804,11 +818,11 @@ export class MoyskladSyncService {
             where: { accountId, externalCode: { startsWith: 'ms:' } },
             select: { id: true, externalCode: true },
           }),
-        create: (r, moment) =>
+        create: (r, moment, name) =>
           db.cashIn.create({
             data: {
               accountId,
-              name: r.name.slice(0, 100),
+              name,
               externalCode: `ms:${r.id}`,
               agentId: agentOf(r.agent),
               organizationId: org.id,
@@ -834,11 +848,11 @@ export class MoyskladSyncService {
             where: { accountId, externalCode: { startsWith: 'ms:' } },
             select: { id: true, externalCode: true },
           }),
-        create: (r, moment) =>
+        create: (r, moment, name) =>
           db.cashOut.create({
             data: {
               accountId,
-              name: r.name.slice(0, 100),
+              name,
               externalCode: `ms:${r.id}`,
               agentId: agentOf(r.agent),
               organizationId: org.id,
@@ -875,7 +889,13 @@ export class MoyskladSyncService {
               mc.skipped++;
               continue;
             }
-            await stage.create(r, msMoment(r.moment));
+            const moment = msMoment(r.moment);
+            try {
+              await stage.create(r, moment, r.name.slice(0, 100));
+            } catch (e) {
+              if (!isUniqueErr(e)) throw e;
+              await stage.create(r, moment, dedupName(r.name, r.id));
+            }
             mc.created++;
           } catch (e) {
             mc.skipped++;
