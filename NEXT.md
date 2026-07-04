@@ -317,7 +317,10 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > legacy/bo'sh param ham to'g'ri. ⚠️ Browser-UI smoke YO'Q (faqat API+200). Deploy gotcha: paramiko `nohup` ishga
 > tushirishda `</dev/null` SHART — aks holda kanal EOF kutib timeout (build o'zi ketaveradi, qayta ulanish yetadi).
 
-> **🟢🏷️ 2026-07-04g (YACHEYKA LABELLARI → OMBORLAR SAHIFASI — Phase-1, browser-smoke YO'Q)**
+> **🟢🏷️ 2026-07-04g (YACHEYKA LABELLARI → OMBORLAR SAHIFASI — `fa79a78` ✅ DEPLOYED)**
+> **Deploy 07-04:** alohida deploy KERAK BO'LMADI — parallel sessiyaning `bf89a49` deploy'i `fa79a78`ni (ajdodi)
+> o'z ichiga olgan. Jonli HTTP-verify: `/stores/cell-labels` 200 + «Yacheyka labellari» SSR-HTML'da, eski
+> `/labels/cells` 404, `/settings/stores` 200. ⚠️ Browser-UI smoke (havola bosish, print-preview) hali YO'Q.
 > User talabi: yacheyka-label generatori tovar-seniklar sahifasi orqasidan omborlarga ko'chsin. (1) Route ko'chdi:
 > `/labels/cells` → `/stores/cell-labels` (`(app)/stores/cell-labels/page.tsx`; `startsWith('/stores')` tufayli
 > «Sklad» moduli yonadi); (2) `?sklad=NN` — ombor kodi 0–99 raqam bo'lsa Sklad segmenti prefill, `?store=<nom>` —
