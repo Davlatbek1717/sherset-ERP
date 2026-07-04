@@ -339,6 +339,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     { key: 'internalorders', label: tStock('internal_orders'), href: '/internal-orders' },
     { key: 'restocktasks', label: tStock('restock'), href: '/restock-tasks' },
     { key: 'omborchi', label: "Omborchi (yig'ish)", href: '/omborchi' },
+    { key: 'cellscanner', label: 'Yacheyka skaneri', href: '/cell' },
     { key: 'replenishment', label: "To'ldirish kerak", href: '/replenishment' },
     // «Остатки» (/stock-balance) removed — that route has no page (dead link);
     // the working stock-balance lives under Hisobotlar → /reports/stock-balance.

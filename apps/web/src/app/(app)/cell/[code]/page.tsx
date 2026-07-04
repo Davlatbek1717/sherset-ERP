@@ -29,7 +29,14 @@ interface CellItem {
 }
 
 interface CellContentsResponse {
-  cell: { code: string; sklad: number; polka: number; qavat: number; yacheyka: number };
+  cell: {
+    code: string;
+    sklad: number;
+    polka: number;
+    qavat: number;
+    yacheyka: number;
+    store: { id: string; name: string } | null;
+  };
   items: CellItem[];
 }
 
@@ -93,6 +100,11 @@ export default function CellContentsPage() {
             <p className="mt-0.5 text-[var(--ms-text-muted)] text-sm">
               Sklad {cell.sklad} · Polka {cell.polka} · Etaj {cell.qavat} · Yacheyka {cell.yacheyka}
             </p>
+            {cell.store ? (
+              <p className="mt-0.5 font-medium text-[var(--ms-text-primary)] text-sm">
+                Ombor: {cell.store.name}
+              </p>
+            ) : null}
           </div>
           <span className="rounded-full bg-blue-100 px-2.5 py-0.5 font-bold text-blue-700 text-xs">
             {items.length} tovar

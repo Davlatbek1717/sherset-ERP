@@ -109,7 +109,7 @@ export class ProductService {
       archived: true,
     } satisfies Prisma.ProductSelect;
 
-    const [primary, extra] = await Promise.all([
+    const [primary, extra, store] = await Promise.all([
       this.prisma.client.product.findMany({
         where: {
           accountId,
@@ -136,6 +136,16 @@ export class ProductService {
           product: { deletedAt: null },
         },
         include: { product: { select: productSelect } },
+      }),
+      // Yacheyka↔ombor bog'i (konvensiya: Store.code = sklad raqami, 0–99) —
+      // kartochkada «Ombor: <nom>» ko'rsatish uchun. Padded/unpadded ikkalasi.
+      this.prisma.client.store.findFirst({
+        where: {
+          accountId,
+          archived: false,
+          code: { in: [String(addr.sklad), String(addr.sklad).padStart(2, '0')] },
+        },
+        select: { id: true, name: true },
       }),
     ]);
 
@@ -170,7 +180,7 @@ export class ProductService {
     }
 
     return {
-      cell: { code: formatCellCode(addr), ...addr },
+      cell: { code: formatCellCode(addr), ...addr, store: store ?? null },
       items: [...byId.values()].map(({ product, source, note }) => {
         const rows = stocksByProduct.get(product.id) ?? [];
         return {

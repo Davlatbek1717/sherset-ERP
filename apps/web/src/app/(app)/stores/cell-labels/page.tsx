@@ -13,8 +13,9 @@
  * `?store=<nom>` sarlavhada ombor nomini ko'rsatadi.
  *
  * CHOP FORMATI (2026-07-04 user talabi): A4 to'r EMAS — LABEL-QOG'OZ (rulon):
- * har senik ALOHIDA sahifa, @page o'lchami = label o'lchami (default 60×40mm,
- * formada o'zgartiriladi) → label-printer har stikerga bittadan bosadi.
+ * har senik ALOHIDA sahifa, @page o'lchami = label o'lchami (default 58×29mm —
+ * userning real stiker qog'ozi; formada o'zgartiriladi) → label-printer har
+ * stikerga bittadan bosadi.
  *
  * Shtrix-kod (CODE128C) TIRESIZ 8 raqamni kodlaydi («01020304» — har segment
  * 2 xona, shuning uchun segmentlar 0–99 bilan cheklangan): raqam-juftlik
@@ -30,9 +31,9 @@ import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 const MAX_LABELS = 500;
 const MM_PX = 3.7795; // CSS px per mm (96dpi)
 
-/** Label-qog'oz o'lchami (mm) — rulon stiker; default 60×40. */
-const DEFAULT_LABEL_W = 60;
-const DEFAULT_LABEL_H = 40;
+/** Label-qog'oz o'lchami (mm) — userning real stikeri 58×29mm (2026-07-04j). */
+const DEFAULT_LABEL_W = 58;
+const DEFAULT_LABEL_H = 29;
 const SIZE_MIN = 20;
 const SIZE_MAX = 210;
 
