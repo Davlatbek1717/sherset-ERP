@@ -3589,12 +3589,39 @@ exports.Prisma.TelegramConfigScalarFieldEnum = {
   webhookUrl: 'webhookUrl',
   webhookSecret: 'webhookSecret',
   defaultChatId: 'defaultChatId',
+  businessConnectionId: 'businessConnectionId',
+  businessUserId: 'businessUserId',
+  businessUserName: 'businessUserName',
   lastTestedAt: 'lastTestedAt',
   lastTestOk: 'lastTestOk',
   lastTestMsg: 'lastTestMsg',
   enabled: 'enabled',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
+};
+
+exports.Prisma.TelegramChatScalarFieldEnum = {
+  id: 'id',
+  accountId: 'accountId',
+  chatId: 'chatId',
+  firstName: 'firstName',
+  lastName: 'lastName',
+  username: 'username',
+  counterpartyId: 'counterpartyId',
+  lastMessageAt: 'lastMessageAt',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.TelegramChatMessageScalarFieldEnum = {
+  id: 'id',
+  accountId: 'accountId',
+  chatRefId: 'chatRefId',
+  direction: 'direction',
+  text: 'text',
+  tgMessageId: 'tgMessageId',
+  senderName: 'senderName',
+  createdAt: 'createdAt'
 };
 
 exports.Prisma.TelegramOutboxScalarFieldEnum = {
@@ -4186,6 +4213,8 @@ exports.Prisma.ModelName = {
   MarkingConfig: 'MarkingConfig',
   MarkingCodeRecord: 'MarkingCodeRecord',
   TelegramConfig: 'TelegramConfig',
+  TelegramChat: 'TelegramChat',
+  TelegramChatMessage: 'TelegramChatMessage',
   TelegramOutbox: 'TelegramOutbox',
   PaymentGatewayConfig: 'PaymentGatewayConfig',
   PaymentGatewayTx: 'PaymentGatewayTx',

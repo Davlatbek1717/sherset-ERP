@@ -16,6 +16,7 @@
 
 import { BankAccountsSection } from '@/components/bank-accounts-section';
 import { ContactPersonsSection } from '@/components/contact-persons-section';
+import { TelegramChatCard } from '@/components/counterparties/telegram-chat-card';
 import { CounterpartyActivityWidget } from '@/components/counterparty-activity-widget';
 import {
   type AddressFull,
@@ -926,8 +927,12 @@ export default function CounterpartyDetailPage() {
             </div>
           }
           right={
-            /* moysklad CRM activity widget — События/Задачи/Документы/Файлы/Показатели. */
-            <CounterpartyActivityWidget counterpartyId={data.id} counterpartyName={data.name} />
+            <div className="space-y-4">
+              {/* moysklad CRM activity widget — События/Задачи/Документы/Файлы/Показатели. */}
+              <CounterpartyActivityWidget counterpartyId={data.id} counterpartyName={data.name} />
+              {/* Sherset custom — Telegram Business chat with this counterparty. */}
+              <TelegramChatCard counterpartyId={data.id} />
+            </div>
           }
         />
       </main>

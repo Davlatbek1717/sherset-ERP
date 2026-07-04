@@ -3,6 +3,7 @@ import { BadRequestException, Inject, Injectable, Logger, NotFoundException } fr
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { decryptPassword, encryptPassword } from '../email/crypto.js';
+import { parseBusinessUpdate } from './telegram-business.util.js';
 import {
   TelegramApiError,
   tgDeleteWebhook,
@@ -211,9 +212,198 @@ export class TelegramService {
    * versions can route /commands to handler functions.
    */
   async handleInbound(accountId: string, update: unknown): Promise<{ ok: true }> {
+    const parsed = parseBusinessUpdate(update);
+
+    if (parsed.kind === 'business_connection') {
+      // Owner connected/disconnected the bot in TG Business settings.
+      await this.prisma.client.telegramConfig.updateMany({
+        where: { accountId },
+        data: parsed.enabled
+          ? {
+              businessConnectionId: parsed.connectionId,
+              businessUserId: BigInt(parsed.user.id),
+              businessUserName: parsed.user.name || null,
+            }
+          : { businessConnectionId: null },
+      });
+      this.logger.log(
+        `Telegram business_connection ${parsed.enabled ? 'ON' : 'OFF'} for ${accountId} (${parsed.user.name})`,
+      );
+      return { ok: true };
+    }
+
+    if (parsed.kind === 'business_message') {
+      const cfg = await this.prisma.client.telegramConfig.findUnique({ where: { accountId } });
+      if (!cfg) return { ok: true };
+      // from == the connected Premium user => owner wrote from the phone (out).
+      const direction =
+        parsed.fromId != null &&
+        cfg.businessUserId != null &&
+        BigInt(parsed.fromId) === cfg.businessUserId
+          ? 'out'
+          : 'in';
+      const chat = await this.prisma.client.telegramChat.upsert({
+        where: { accountId_chatId: { accountId, chatId: BigInt(parsed.chatId) } },
+        update: {
+          firstName: parsed.chatFirstName,
+          lastName: parsed.chatLastName,
+          username: parsed.chatUsername,
+          lastMessageAt: new Date(),
+        },
+        create: {
+          accountId,
+          chatId: BigInt(parsed.chatId),
+          firstName: parsed.chatFirstName,
+          lastName: parsed.chatLastName,
+          username: parsed.chatUsername,
+          lastMessageAt: new Date(),
+        },
+      });
+      await this.prisma.client.telegramChatMessage.create({
+        data: {
+          accountId,
+          chatRefId: chat.id,
+          direction,
+          text: parsed.text,
+          tgMessageId: parsed.tgMessageId != null ? BigInt(parsed.tgMessageId) : null,
+          senderName: parsed.fromName,
+        },
+      });
+      return { ok: true };
+    }
+
     this.logger.log(`Telegram inbound for ${accountId}: ${JSON.stringify(update).slice(0, 500)}`);
-    // Future: parse `/start`, `/help`, etc. and respond via send().
     return { ok: true };
+  }
+
+  // --- Telegram Business (owner-account) chats ---------------------------
+
+  async businessStatus(accountId: string) {
+    const cfg = await this.prisma.client.telegramConfig.findUnique({ where: { accountId } });
+    return {
+      configured: !!cfg,
+      botUsername: cfg?.botUsername ?? null,
+      webhookSet: !!cfg?.webhookUrl,
+      connected: !!cfg?.businessConnectionId,
+      businessUserName: cfg?.businessUserName ?? null,
+    };
+  }
+
+  async listChats(accountId: string, raw: Record<string, unknown>) {
+    const counterpartyId =
+      typeof raw.counterpartyId === 'string' && raw.counterpartyId ? raw.counterpartyId : undefined;
+    const unbound = raw.unbound === 'true';
+    const q = typeof raw.q === 'string' && raw.q ? raw.q : undefined;
+    const items = await this.prisma.client.telegramChat.findMany({
+      where: {
+        accountId,
+        ...(counterpartyId ? { counterpartyId } : {}),
+        ...(unbound ? { counterpartyId: null } : {}),
+        ...(q
+          ? {
+              OR: [
+                { firstName: { contains: q, mode: 'insensitive' } },
+                { lastName: { contains: q, mode: 'insensitive' } },
+                { username: { contains: q, mode: 'insensitive' } },
+              ],
+            }
+          : {}),
+      },
+      orderBy: { lastMessageAt: 'desc' },
+      take: 50,
+      include: { counterparty: { select: { id: true, name: true } } },
+    });
+    return {
+      items: items.map((c) => ({
+        id: c.id,
+        chatId: c.chatId.toString(),
+        name:
+          [c.firstName, c.lastName].filter(Boolean).join(' ') || c.username || c.chatId.toString(),
+        username: c.username,
+        counterparty: c.counterparty,
+        lastMessageAt: c.lastMessageAt,
+      })),
+    };
+  }
+
+  async listChatMessages(accountId: string, chatRefId: string, raw: Record<string, unknown>) {
+    const limit = Math.min(Number(raw.limit) || 30, 200);
+    const chat = await this.prisma.client.telegramChat.findFirst({
+      where: { id: chatRefId, accountId },
+    });
+    if (!chat) throw new NotFoundException('Chat topilmadi');
+    const rows = await this.prisma.client.telegramChatMessage.findMany({
+      where: { accountId, chatRefId },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+    });
+    return {
+      items: rows.reverse().map((m) => ({
+        id: m.id,
+        direction: m.direction,
+        text: m.text,
+        senderName: m.senderName,
+        createdAt: m.createdAt,
+      })),
+    };
+  }
+
+  async bindChat(accountId: string, chatRefId: string, counterpartyId: string | null) {
+    const chat = await this.prisma.client.telegramChat.findFirst({
+      where: { id: chatRefId, accountId },
+    });
+    if (!chat) throw new NotFoundException('Chat topilmadi');
+    if (counterpartyId) {
+      const cp = await this.prisma.client.counterparty.findFirst({
+        where: { id: counterpartyId, accountId },
+        select: { id: true },
+      });
+      if (!cp) throw new NotFoundException('Kontragent topilmadi');
+    }
+    await this.prisma.client.telegramChat.update({
+      where: { id: chat.id },
+      data: { counterpartyId },
+    });
+    return { ok: true };
+  }
+
+  /** Send a message ON BEHALF OF the connected Premium account (owner's name). */
+  async sendBusinessMessage(accountId: string, chatRefId: string, raw: unknown) {
+    const body = raw as { text?: unknown };
+    const text = typeof body?.text === 'string' ? body.text.trim() : '';
+    if (!text || text.length > 4096) {
+      throw new BadRequestException('text majburiy (1-4096 belgi)');
+    }
+    const cfg = await this.requireConfig(accountId);
+    if (!cfg.businessConnectionId) {
+      throw new BadRequestException(
+        "Telegram Business ulanmagan — Telegram'da Settings -> Telegram Business -> Chatbots'da botni ulang",
+      );
+    }
+    const chat = await this.prisma.client.telegramChat.findFirst({
+      where: { id: chatRefId, accountId },
+    });
+    if (!chat) throw new NotFoundException('Chat topilmadi');
+    const result = await tgSendMessage(decryptPassword(cfg.botTokenCipher), {
+      chatId: chat.chatId.toString(),
+      text,
+      businessConnectionId: cfg.businessConnectionId,
+    });
+    const msg = await this.prisma.client.telegramChatMessage.create({
+      data: {
+        accountId,
+        chatRefId: chat.id,
+        direction: 'out',
+        text,
+        tgMessageId: BigInt(result.message_id),
+        senderName: cfg.businessUserName,
+      },
+    });
+    await this.prisma.client.telegramChat.update({
+      where: { id: chat.id },
+      data: { lastMessageAt: new Date() },
+    });
+    return { id: msg.id, ok: true };
   }
 
   // --- cron worker -----------------------------------------------------

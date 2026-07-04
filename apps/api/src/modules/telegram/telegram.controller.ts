@@ -83,6 +83,50 @@ export class TelegramController {
     return this.svc.retryOutbox(user.accountId, id);
   }
 
+  // --- Telegram Business (owner-account) chats -------------------------
+
+  @Get('business-status')
+  @RequirePermission({ entity: 'counterparty', action: 'view' })
+  async businessStatus(@CurrentUser() user: AuthenticatedUser) {
+    return this.svc.businessStatus(user.accountId);
+  }
+
+  @Get('chats')
+  @RequirePermission({ entity: 'counterparty', action: 'view' })
+  async chats(@CurrentUser() user: AuthenticatedUser, @Query() query: Record<string, unknown>) {
+    return this.svc.listChats(user.accountId, query);
+  }
+
+  @Get('chats/:id/messages')
+  @RequirePermission({ entity: 'counterparty', action: 'view' })
+  async chatMessages(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Query() query: Record<string, unknown>,
+  ) {
+    return this.svc.listChatMessages(user.accountId, id, query);
+  }
+
+  @Put('chats/:id/bind')
+  @RequirePermission({ entity: 'counterparty', action: 'update' })
+  async bindChat(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: { counterpartyId?: string | null },
+  ) {
+    return this.svc.bindChat(user.accountId, id, body?.counterpartyId ?? null);
+  }
+
+  @Post('chats/:id/send')
+  @RequirePermission({ entity: 'counterparty', action: 'update' })
+  async sendChat(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    return this.svc.sendBusinessMessage(user.accountId, id, body);
+  }
+
   // Inbound webhook lives on TelegramWebhookController (no JWT) —
   // Telegram doesn't carry our auth token.
 }

@@ -56,6 +56,8 @@ export interface TelegramSendMessageArgs {
   /** 'HTML' | 'MarkdownV2' | undefined (plain). */
   parseMode?: 'HTML' | 'MarkdownV2';
   disableWebPagePreview?: boolean;
+  /** Telegram Business: send ON BEHALF OF the connected Premium account. */
+  businessConnectionId?: string;
 }
 
 export interface TelegramSendMessageResult {
@@ -74,6 +76,7 @@ export async function tgSendMessage(
     text: args.text,
     parse_mode: args.parseMode,
     disable_web_page_preview: args.disableWebPagePreview ?? true,
+    ...(args.businessConnectionId ? { business_connection_id: args.businessConnectionId } : {}),
   });
 }
 
@@ -98,7 +101,14 @@ export async function tgSetWebhook(
   await call<true>(token, 'setWebhook', {
     url,
     secret_token: secretToken,
-    allowed_updates: ['message', 'callback_query', 'inline_query'],
+    // business_* updates power the Telegram Business (owner-account) chats.
+    allowed_updates: [
+      'message',
+      'callback_query',
+      'inline_query',
+      'business_connection',
+      'business_message',
+    ],
   });
   return true;
 }

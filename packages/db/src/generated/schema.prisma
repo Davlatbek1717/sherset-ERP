@@ -165,6 +165,8 @@ model Account {
   markingCodeRecords             MarkingCodeRecord[]
   telegramConfig                 TelegramConfig?
   telegramOutbox                 TelegramOutbox[]
+  telegramChats                  TelegramChat[]
+  telegramChatMessages           TelegramChatMessage[]
   paymentGatewayConfigs          PaymentGatewayConfig[]
   paymentGatewayTxs              PaymentGatewayTx[]
   bankApiConfigs                 BankApiConfig[]
@@ -1779,6 +1781,8 @@ model Counterparty {
 
   hrChatHistories HrChatHistory[]    @relation("HrChatHistoryCp")
   hrOutboxEntries HrTelegramOutbox[] @relation("HrOutboxCp")
+
+  telegramChats TelegramChat[]
 
   @@index([accountId, archived])
   @@index([accountId, companyType])
@@ -4787,7 +4791,7 @@ model ProductPack {
   // quantity/stock convention) so 0.5 ≡ 500 and 12 ≡ 12000.
   multiplier BigInt
   barcode    String?  @db.VarChar(50)
-  // «Т��п кода» — barcode symbology of THIS pack's `barcode` (moysklad's pack-row
+  // «Тип кода» — barcode symbology of THIS pack's `barcode` (moysklad's pack-row
   // column, default "EAN13"). Same enum as a product barcode type
   // (ean13/ean8/code128/gtin). Null = treated as ean13 in the UI.
   codeType   String?  @map("code_type") @db.VarChar(20)
@@ -8175,6 +8179,15 @@ model TelegramConfig {
   /// Default chat to send broadcast notifications (admin group, channel).
   defaultChatId String? @map("default_chat_id") @db.VarChar(40)
 
+  /// Telegram Business: when the owner (Premium account) connects this bot in
+  /// Settings → Telegram Business → Chatbots, Telegram pushes a
+  /// business_connection update — we store it here and can then send messages
+  /// ON BEHALF OF the owner (business_connection_id param). Null = not connected.
+  businessConnectionId String? @map("business_connection_id") @db.VarChar(64)
+  /// Telegram user id of the connected Premium account (message.from == this ⇒ outgoing).
+  businessUserId       BigInt? @map("business_user_id")
+  businessUserName     String? @map("business_user_name") @db.VarChar(128)
+
   lastTestedAt DateTime? @map("last_tested_at") @db.Timestamptz()
   lastTestOk   Boolean?  @map("last_test_ok")
   lastTestMsg  String?   @map("last_test_msg") @db.VarChar(500)
@@ -8186,6 +8199,56 @@ model TelegramConfig {
   account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
   @@map("telegram_configs")
+}
+
+/// Telegram Business chat with a client (Sherset custom). One row per client
+/// the connected Premium account talks to; optionally bound to a Counterparty
+/// so the chat shows on the counterparty card.
+model TelegramChat {
+  id        String @id @default(uuid()) @db.Uuid
+  accountId String @map("account_id") @db.Uuid
+
+  /// Telegram chat id (client's private chat with the owner).
+  chatId    BigInt  @map("chat_id")
+  firstName String? @map("first_name") @db.VarChar(128)
+  lastName  String? @map("last_name") @db.VarChar(128)
+  username  String? @db.VarChar(64)
+
+  counterpartyId String? @map("counterparty_id") @db.Uuid
+
+  lastMessageAt DateTime? @map("last_message_at") @db.Timestamptz()
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
+
+  account      Account               @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  counterparty Counterparty?         @relation(fields: [counterpartyId], references: [id], onDelete: SetNull)
+  messages     TelegramChatMessage[]
+
+  @@unique([accountId, chatId])
+  @@index([accountId, counterpartyId])
+  @@index([accountId, lastMessageAt(sort: Desc)])
+  @@map("telegram_chats")
+}
+
+/// One message in a Telegram Business chat (both directions).
+model TelegramChatMessage {
+  id        String @id @default(uuid()) @db.Uuid
+  accountId String @map("account_id") @db.Uuid
+  chatRefId String @map("chat_ref_id") @db.Uuid
+
+  /// 'in' = client wrote us; 'out' = sent from the owner's name.
+  direction   String  @db.VarChar(3)
+  text        String  @db.VarChar(4096)
+  tgMessageId BigInt? @map("tg_message_id")
+  senderName  String? @map("sender_name") @db.VarChar(128)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  account Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  chat    TelegramChat @relation(fields: [chatRefId], references: [id], onDelete: Cascade)
+
+  @@index([accountId, chatRefId, createdAt(sort: Desc)])
+  @@map("telegram_chat_messages")
 }
 
 /// Outbound Telegram messages — same retry queue pattern as SMS/email.

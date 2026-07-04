@@ -27,20 +27,20 @@ datasource db {
 
 // Tenant. Everything else scopes to this.
 model Account {
-  id        String   @id @default(uuid()) @db.Uuid
-  name      String   @db.VarChar(255)
-  country   String   @default("UZ") @db.VarChar(2)
-  currency  String   @default("UZS") @db.VarChar(3)
-  locale    String   @default("uz-Latn") @db.VarChar(10)
-  timezone  String   @default("Asia/Tashkent") @db.VarChar(50)
-  plan      String   @default("trial") @db.VarChar(20)
+  id                  String   @id @default(uuid()) @db.Uuid
+  name                String   @db.VarChar(255)
+  country             String   @default("UZ") @db.VarChar(2)
+  currency            String   @default("UZS") @db.VarChar(3)
+  locale              String   @default("uz-Latn") @db.VarChar(10)
+  timezone            String   @default("Asia/Tashkent") @db.VarChar(50)
+  plan                String   @default("trial") @db.VarChar(20)
   // H4 record-scope (RFC _H4-OWN-GROUP-SCOPE-RFC.md, W4). Per-account opt-in for
   // OWN/OWN_GROUP per-record visibility enforcement. Default OFF — when false the
   // read-path adds no scope filter (today's behaviour). Flip per account only after
   // the cohort's groupId is backfilled + the manager-visibility test passes.
-  recordScopeEnforced Boolean @default(false) @map("record_scope_enforced")
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+  recordScopeEnforced Boolean  @default(false) @map("record_scope_enforced")
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt           DateTime @updatedAt @map("updated_at") @db.Timestamptz()
 
   employees                      Employee[]
   organizations                  Organization[]
@@ -165,6 +165,8 @@ model Account {
   markingCodeRecords             MarkingCodeRecord[]
   telegramConfig                 TelegramConfig?
   telegramOutbox                 TelegramOutbox[]
+  telegramChats                  TelegramChat[]
+  telegramChatMessages           TelegramChatMessage[]
   paymentGatewayConfigs          PaymentGatewayConfig[]
   paymentGatewayTxs              PaymentGatewayTx[]
   bankApiConfigs                 BankApiConfig[]
@@ -784,7 +786,7 @@ model ShiftSchedule {
   accountId String   @map("account_id") @db.Uuid
   name      String   @db.VarChar(100)
   startTime String   @map("start_time") @db.VarChar(5) // "08:00"
-  endTime   String   @map("end_time") @db.VarChar(5)   // "16:00"
+  endTime   String   @map("end_time") @db.VarChar(5) // "16:00"
   archived  Boolean  @default(false)
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
@@ -800,18 +802,18 @@ model ShiftSchedule {
 // Ish vaqti shabloni va xodimlar belgilanadi.
 // Bir nechta xodim biriktirilishi mumkin.
 model Smena {
-  id             String  @id @default(uuid()) @db.Uuid
-  accountId      String  @map("account_id") @db.Uuid
-  name           String  @db.VarChar(100)
-  scheduleId     String  @map("schedule_id") @db.Uuid
-  organizationId String  @map("organization_id") @db.Uuid
-  archived       Boolean @default(false)
+  id             String   @id @default(uuid()) @db.Uuid
+  accountId      String   @map("account_id") @db.Uuid
+  name           String   @db.VarChar(100)
+  scheduleId     String   @map("schedule_id") @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  archived       Boolean  @default(false)
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz()
 
-  account      Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  schedule     ShiftSchedule @relation(fields: [scheduleId], references: [id], onDelete: Restrict)
-  organization Organization  @relation("SmenaOrganization", fields: [organizationId], references: [id], onDelete: Restrict)
+  account      Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  schedule     ShiftSchedule    @relation(fields: [scheduleId], references: [id], onDelete: Restrict)
+  organization Organization     @relation("SmenaOrganization", fields: [organizationId], references: [id], onDelete: Restrict)
   employees    SmenaEmployee[]
   sessions     CashierSession[]
 
@@ -1493,35 +1495,35 @@ model Notification {
 // Scalar refs only (no Prisma relations to shared models) — display values are
 // snapshotted at send time, so the checklist is stable even if data later changes.
 model RestockTask {
-  id           String   @id @default(uuid()) @db.Uuid
-  accountId    String   @map("account_id") @db.Uuid
+  id            String   @id @default(uuid()) @db.Uuid
+  accountId     String   @map("account_id") @db.Uuid
   // Warehouse-task kind: 'restock' (inbound — put returned goods back) or
   // 'picking' (outbound — collect a sold order's goods for shipment). Picking
   // tasks are split per sklad (one task per warehouse zone / omborchi).
-  type         String   @default("restock") @db.VarChar(20)
+  type          String   @default("restock") @db.VarChar(20)
   // For picking tasks: the sklad (warehouse zone) number this task collects from
   // (the 1st segment of the bin code). Null for restock tasks.
-  skladNo      Int?     @map("sklad_no")
+  skladNo       Int?     @map("sklad_no")
   // Source document the goods relate to ('salesreturn' for restock,
   // 'customerorder' for picking).
-  sourceType   String   @default("salesreturn") @map("source_type") @db.VarChar(30)
-  sourceId     String   @map("source_id") @db.Uuid
-  sourceName   String?  @map("source_name") @db.VarChar(255)
-  storeId      String?  @map("store_id") @db.Uuid
-  storeName    String?  @map("store_name") @db.VarChar(255)
+  sourceType    String   @default("salesreturn") @map("source_type") @db.VarChar(30)
+  sourceId      String   @map("source_id") @db.Uuid
+  sourceName    String?  @map("source_name") @db.VarChar(255)
+  storeId       String?  @map("store_id") @db.Uuid
+  storeName     String?  @map("store_name") @db.VarChar(255)
   // The warehouse-keeper (omborchi) the task is assigned to. Nullable for
   // picking groups whose sklad has no keeper configured yet (shows unassigned).
-  assigneeId   String?  @map("assignee_id") @db.Uuid
-  assigneeName String?  @map("assignee_name") @db.VarChar(255)
+  assigneeId    String?  @map("assignee_id") @db.Uuid
+  assigneeName  String?  @map("assignee_name") @db.VarChar(255)
   // The cashier / employee who sent it.
-  createdById   String  @map("created_by_id") @db.Uuid
-  createdByName String? @map("created_by_name") @db.VarChar(255)
+  createdById   String   @map("created_by_id") @db.Uuid
+  createdByName String?  @map("created_by_name") @db.VarChar(255)
   // pending | in_progress | done
-  status    String   @default("pending") @db.VarChar(20)
-  note      String?
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
-  version   Int      @default(1)
+  status        String   @default("pending") @db.VarChar(20)
+  note          String?
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+  version       Int      @default(1)
 
   lines RestockTaskLine[]
 
@@ -1559,12 +1561,12 @@ model SkladKeeper {
 // One returned product to put back, with its home bin location snapshot and a
 // per-line placement confirmation (scan the senik QR or press «placed»).
 model RestockTaskLine {
-  id            String   @id @default(uuid()) @db.Uuid
-  accountId     String   @map("account_id") @db.Uuid
-  restockTaskId String   @map("restock_task_id") @db.Uuid
-  productId     String?  @map("product_id") @db.Uuid
-  productName   String   @map("product_name") @db.VarChar(255)
-  quantity      Decimal  @db.Decimal(20, 6)
+  id              String    @id @default(uuid()) @db.Uuid
+  accountId       String    @map("account_id") @db.Uuid
+  restockTaskId   String    @map("restock_task_id") @db.Uuid
+  productId       String?   @map("product_id") @db.Uuid
+  productName     String    @map("product_name") @db.VarChar(255)
+  quantity        Decimal   @db.Decimal(20, 6)
   // Snapshot of the product's home location «NN-NN-NN-NN» at send time (null = unset).
   binLocation     String?   @map("bin_location") @db.VarChar(20)
   confirmedAt     DateTime? @map("confirmed_at") @db.Timestamptz()
@@ -1780,6 +1782,8 @@ model Counterparty {
   hrChatHistories HrChatHistory[]    @relation("HrChatHistoryCp")
   hrOutboxEntries HrTelegramOutbox[] @relation("HrOutboxCp")
 
+  telegramChats TelegramChat[]
+
   @@index([accountId, archived])
   @@index([accountId, companyType])
   @@index([groupId])
@@ -1940,7 +1944,7 @@ model State {
   createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz()
 
-  account        Account        @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  account        Account         @relation(fields: [accountId], references: [id], onDelete: Cascade)
   counterparties Counterparty[]
   customerOrders CustomerOrder[] @relation("CustomerOrderStatus")
   purchaseOrders PurchaseOrder[] @relation("PurchaseOrderStatus")
@@ -3932,14 +3936,14 @@ model LabelTemplate {
   labelHeightMm Int @default(30) @map("label_height_mm")
 
   /// Which product fields to print on each label.
-  includeName    Boolean @default(true) @map("include_name")
-  includePrice   Boolean @default(true) @map("include_price")
-  includeBarcode Boolean @default(true) @map("include_barcode")
-  includeArticle Boolean @default(true) @map("include_article")
+  includeName     Boolean @default(true) @map("include_name")
+  includePrice    Boolean @default(true) @map("include_price")
+  includeBarcode  Boolean @default(true) @map("include_barcode")
+  includeArticle  Boolean @default(true) @map("include_article")
   /// Sherset custom — show the product's warehouse home location «NN-NN-NN-NN».
   includeLocation Boolean @default(true) @map("include_location")
   /// Optional fixed header text (shop name, etc).
-  headerText     String? @map("header_text") @db.VarChar(255)
+  headerText      String? @map("header_text") @db.VarChar(255)
 
   /// Barcode format — 'EAN13' | 'CODE128' | 'QR'.
   barcodeFormat String @default("EAN13") @map("barcode_format") @db.VarChar(20)
@@ -4554,8 +4558,8 @@ model Product {
   kind String @default("product") @db.VarChar(20)
 
   // Pricing (stored in minor units = tiyin; scale 100)
-  minPrice   BigInt? @map("min_price")
-  buyPrice   BigInt? @map("buy_price")
+  minPrice         BigInt? @map("min_price")
+  buyPrice         BigInt? @map("buy_price")
   // Per-price currency (ISO code) — moysklad parity: each price row picks its
   // own currency. NULL = the account base currency. NOTE: the stored amount is
   // the as-entered value in that currency; downstream cost/profit/document math
@@ -4565,7 +4569,7 @@ model Product {
   buyPriceCurrency String? @map("buy_price_currency") @db.VarChar(3)
   minPriceCurrency String? @map("min_price_currency") @db.VarChar(3)
   // Multi-tier prices: [{ priceTypeId, value, currencyCode }]
-  salePrices Json?   @map("sale_prices")
+  salePrices       Json?   @map("sale_prices")
 
   // Physical
   weightG  Int?    @map("weight_g") // weight in grams
@@ -4632,17 +4636,17 @@ model Product {
   minimumBalanceMinor BigInt @default(0) @map("minimum_balance_minor")
 
   // Metadata
-  shared     Boolean  @default(false)
-  archived   Boolean  @default(false)
-  syncId     String?  @map("sync_id") @db.Uuid
-  barcodes   String[] @default([])
+  shared       Boolean  @default(false)
+  archived     Boolean  @default(false)
+  syncId       String?  @map("sync_id") @db.Uuid
+  barcodes     String[] @default([])
   // Per-barcode GTIN type (moysklad parity — moysklad stores barcodes typed:
   // `[{ean13: "…"}]`). Index-aligned PARALLEL array to `barcodes` (barcodeTypes[i]
   // is the type of barcodes[i]); empty/short ⇒ the FE defaults the row to "ean13".
   // Kept SEPARATE from `barcodes` on purpose so the list/search `has` filters over
   // raw barcode values stay unchanged. Additive, defaults [] (back-compat).
   barcodeTypes String[] @default([]) @map("barcode_types")
-  attributes Json?
+  attributes   Json?
 
   /// Optimistic concurrency version (moysklad parity). Incremented on every
   /// field-edit save; a stale value rejects the write with HTTP 409 so two
@@ -4716,10 +4720,10 @@ model ProductLocation {
   accountId String @map("account_id") @db.Uuid
   productId String @map("product_id") @db.Uuid
 
-  sklad    Int  @map("sklad") // склад (warehouse zone) — required key of the address
-  polka    Int? @map("polka") // полка (shelf)
-  qavat    Int? @map("qavat") // этаж/ярус (level)
-  yacheyka Int? @map("yacheyka") // ячейка (cell)
+  sklad    Int     @map("sklad") // склад (warehouse zone) — required key of the address
+  polka    Int?    @map("polka") // полка (shelf)
+  qavat    Int?    @map("qavat") // этаж/ярус (level)
+  yacheyka Int?    @map("yacheyka") // ячейка (cell)
   note     String? @db.VarChar(255) // optional free note (e.g. «zaxira», «pastki»)
 
   position  Int      @default(0) // display order on the product card
@@ -6365,7 +6369,7 @@ model LossPosition {
   // moysklad «Ячейка» — warehouse bin/cell reference, free-text (mirror
   // EnterPosition.cell; NOT a validated address-storage picker — that needs a
   // warehouse-cell model). Shown on the #loss editor grid.
-  cell String? @db.VarChar(255)
+  cell   String? @db.VarChar(255)
 
   loss    Loss     @relation(fields: [lossId], references: [id], onDelete: Cascade)
   product Product? @relation("ProductLossPositions", fields: [productId], references: [id], onDelete: Restrict)
@@ -6380,10 +6384,10 @@ model LossPosition {
 ///      draft → (soft-deleted)
 /// Used for: initial stock, found goods, gifts, corrections.
 model Enter {
-  id        String  @id @default(uuid()) @db.Uuid
-  accountId String  @map("account_id") @db.Uuid
-  ownerId   String? @map("owner_id") @db.Uuid
-  groupId   String? @map("group_id") @db.Uuid
+  id           String  @id @default(uuid()) @db.Uuid
+  accountId    String  @map("account_id") @db.Uuid
+  ownerId      String? @map("owner_id") @db.Uuid
+  groupId      String? @map("group_id") @db.Uuid
   // moysklad-parity «Кто изменил» — author of last update. SetNull on user
   // deletion to preserve attribution. Mirrors Move.modifiedById.
   modifiedById String? @map("modified_by_id") @db.Uuid
@@ -6478,8 +6482,8 @@ model EnterPosition {
   // per-position fields on the #enter grid. РНПТ here is a plain text field (NOT
   // the full Честный Знак marking system); Ячейка is a free-text cell reference
   // (NOT the validated address-storage picker — that needs a warehouse cell model).
-  rnpt String? @db.VarChar(255)
-  cell String? @db.VarChar(255)
+  rnpt        String? @db.VarChar(255)
+  cell        String? @db.VarChar(255)
 
   enter   Enter    @relation(fields: [enterId], references: [id], onDelete: Cascade)
   product Product? @relation("ProductEnterPositions", fields: [productId], references: [id], onDelete: Restrict)
@@ -8175,6 +8179,15 @@ model TelegramConfig {
   /// Default chat to send broadcast notifications (admin group, channel).
   defaultChatId String? @map("default_chat_id") @db.VarChar(40)
 
+  /// Telegram Business: when the owner (Premium account) connects this bot in
+  /// Settings → Telegram Business → Chatbots, Telegram pushes a
+  /// business_connection update — we store it here and can then send messages
+  /// ON BEHALF OF the owner (business_connection_id param). Null = not connected.
+  businessConnectionId String? @map("business_connection_id") @db.VarChar(64)
+  /// Telegram user id of the connected Premium account (message.from == this ⇒ outgoing).
+  businessUserId       BigInt? @map("business_user_id")
+  businessUserName     String? @map("business_user_name") @db.VarChar(128)
+
   lastTestedAt DateTime? @map("last_tested_at") @db.Timestamptz()
   lastTestOk   Boolean?  @map("last_test_ok")
   lastTestMsg  String?   @map("last_test_msg") @db.VarChar(500)
@@ -8186,6 +8199,56 @@ model TelegramConfig {
   account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
   @@map("telegram_configs")
+}
+
+/// Telegram Business chat with a client (Sherset custom). One row per client
+/// the connected Premium account talks to; optionally bound to a Counterparty
+/// so the chat shows on the counterparty card.
+model TelegramChat {
+  id        String @id @default(uuid()) @db.Uuid
+  accountId String @map("account_id") @db.Uuid
+
+  /// Telegram chat id (client's private chat with the owner).
+  chatId    BigInt  @map("chat_id")
+  firstName String? @map("first_name") @db.VarChar(128)
+  lastName  String? @map("last_name") @db.VarChar(128)
+  username  String? @db.VarChar(64)
+
+  counterpartyId String? @map("counterparty_id") @db.Uuid
+
+  lastMessageAt DateTime? @map("last_message_at") @db.Timestamptz()
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
+
+  account      Account               @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  counterparty Counterparty?         @relation(fields: [counterpartyId], references: [id], onDelete: SetNull)
+  messages     TelegramChatMessage[]
+
+  @@unique([accountId, chatId])
+  @@index([accountId, counterpartyId])
+  @@index([accountId, lastMessageAt(sort: Desc)])
+  @@map("telegram_chats")
+}
+
+/// One message in a Telegram Business chat (both directions).
+model TelegramChatMessage {
+  id        String @id @default(uuid()) @db.Uuid
+  accountId String @map("account_id") @db.Uuid
+  chatRefId String @map("chat_ref_id") @db.Uuid
+
+  /// 'in' = client wrote us; 'out' = sent from the owner's name.
+  direction   String  @db.VarChar(3)
+  text        String  @db.VarChar(4096)
+  tgMessageId BigInt? @map("tg_message_id")
+  senderName  String? @map("sender_name") @db.VarChar(128)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  account Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  chat    TelegramChat @relation(fields: [chatRefId], references: [id], onDelete: Cascade)
+
+  @@index([accountId, chatRefId, createdAt(sort: Desc)])
+  @@map("telegram_chat_messages")
 }
 
 /// Outbound Telegram messages — same retry queue pattern as SMS/email.
