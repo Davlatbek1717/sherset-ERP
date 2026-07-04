@@ -1,4 +1,4 @@
-import { Controller, Get, Inject, Post, UseGuards } from '@nestjs/common';
+import { Controller, Get, Inject, Post, Query, UseGuards } from '@nestjs/common';
 import type { AuthenticatedUser } from '../auth/auth.schema.js';
 import { CurrentUser } from '../auth/current-user.decorator.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
@@ -14,10 +14,21 @@ import { MoyskladSyncService } from './moysklad-sync.service.js';
 export class MoyskladSyncController {
   constructor(@Inject(MoyskladSyncService) private readonly svc: MoyskladSyncService) {}
 
-  /** Start a background sync (no-op if one is already running). */
+  /**
+   * Start a background sync (no-op if one is already running).
+   * `?mode=balances` = one-time counterparty balance migration import
+   * (add `&dry=1` to preview sign totals without writing).
+   */
   @Post('run')
-  run(@CurrentUser() user: AuthenticatedUser) {
-    return this.svc.run(user.accountId);
+  run(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('mode') mode?: string,
+    @Query('dry') dry?: string,
+  ) {
+    return this.svc.run(user.accountId, {
+      mode: mode === 'balances' ? 'balances' : 'full',
+      dryRun: dry === '1' || dry === 'true',
+    });
   }
 
   @Get('status')
