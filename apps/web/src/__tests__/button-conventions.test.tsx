@@ -261,7 +261,10 @@ const MIGRATED: Array<[string, string[]]> = [
     'app/(app)/opportunities/[id]/page.tsx',
     ['variant="destructive"', 'data-test-id="lost-confirm"'],
   ],
-  ['app/(app)/page.tsx', ['variant="ghost"']],
+  // 2026-07-04 relock: homepage is now the Sherset kassa dashboard only —
+  // the moysklad «Показатели» sections (and their ghost refresh Button) were
+  // removed; lock the KPI section + top time-filter wiring instead.
+  ['app/(app)/page.tsx', ['SotuvKpiSection', 'DateFilterBar', 'dateFrom']],
   ['app/(app)/price-lists/[id]/page.tsx', ['size="icon-sm"']],
   ['app/(app)/price-lists/new/page.tsx', ['size="icon-sm"']],
   ['app/(app)/processing-orders/new/page.tsx', ['variant="link"']],

@@ -28,9 +28,51 @@ import { reportDateBounds } from './report-date-bounds.util.js';
  *  - cashiers     = today's posted sales grouped by session cashier.
  */
 export const SotuvDashboardFilterSchema = z.object({
-  /** Tashkent calendar day, "YYYY-MM-DD". Defaults to today. */
+  /** Tashkent calendar day, "YYYY-MM-DD". Defaults to today. (legacy single-day param) */
   date: z.coerce.date().optional(),
+  /** Range start, "YYYY-MM-DD" (Tashkent day, inclusive). Wins over `date`. */
+  dateFrom: z.coerce.date().optional(),
+  /** Range end, "YYYY-MM-DD" (Tashkent day, inclusive). Defaults: dateFrom bilan kelsa bugun, yolg'iz kelsa e'tiborga olinmaydi. */
+  dateTo: z.coerce.date().optional(),
 });
+
+export type SotuvDashboardFilter = z.infer<typeof SotuvDashboardFilterSchema>;
+
+/**
+ * Collapse any instant to the UTC-midnight of ITS Tashkent calendar day —
+ * the exact input shape reportDateBounds expects (FE date-only coercion).
+ */
+export function tashkentDayUtcMidnight(instant: Date): Date {
+  const shifted = new Date(instant.getTime() + 5 * 60 * 60 * 1000);
+  return new Date(Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate()));
+}
+
+/**
+ * Inclusive Tashkent-day window the report covers. Pure (unit-tested):
+ *  - dateFrom bor  → [dateFrom, dateTo ?? bugun]
+ *  - faqat date    → [date, date]  (legacy single-day)
+ *  - hech biri yo'q → [bugun, bugun]
+ * Teskari diapazon (to < from) bitta from-kunga qisqartiriladi.
+ */
+export function resolveSotuvWindow(
+  filter: Pick<SotuvDashboardFilter, 'date' | 'dateFrom' | 'dateTo'>,
+  now: Date = new Date(),
+): { fromDay: Date; toDay: Date } {
+  let fromDay: Date;
+  let toDay: Date;
+  if (filter.dateFrom) {
+    fromDay = tashkentDayUtcMidnight(filter.dateFrom);
+    toDay = tashkentDayUtcMidnight(filter.dateTo ?? now);
+  } else if (filter.date) {
+    fromDay = tashkentDayUtcMidnight(filter.date);
+    toDay = fromDay;
+  } else {
+    fromDay = tashkentDayUtcMidnight(now);
+    toDay = fromDay;
+  }
+  if (toDay.getTime() < fromDay.getTime()) toDay = fromDay;
+  return { fromDay, toDay };
+}
 
 export interface PaymentMethodBlock {
   sumMinor: string;
@@ -45,7 +87,9 @@ export interface CashierRow {
 }
 
 export interface SotuvDashboardResult {
-  date: string; // the Tashkent day this report covers (YYYY-MM-DD)
+  date: string; // window start (YYYY-MM-DD, Tashkent) — legacy alias of dateFrom
+  dateFrom: string; // inclusive window start (YYYY-MM-DD, Tashkent)
+  dateTo: string; // inclusive window end (YYYY-MM-DD, Tashkent)
 
   salesCount: number;
   /** Full receipt total incl. the debt portion (Σ sumMinor). */
@@ -92,10 +136,11 @@ export class SotuvDashboardService {
 
   async report(accountId: string, raw: unknown): Promise<SotuvDashboardResult> {
     const filter = SotuvDashboardFilterSchema.parse(raw);
-    // Normalise to a date-only UTC midnight so reportDateBounds sees the same
-    // shape the FE's "YYYY-MM-DD" coercion produces. Default = today Tashkent.
-    const day = this.tashkentDayUtcMidnight(filter.date ?? new Date());
-    const { gte, lt } = reportDateBounds(day, day);
+    // Inclusive Tashkent-day window (single day by default; dateFrom/dateTo
+    // widen it — windowed metrics aggregate over the range, snapshot metrics
+    // (balances, product count, stock value) stay current-point).
+    const { fromDay, toDay } = resolveSotuvWindow(filter);
+    const { gte, lt } = reportDateBounds(fromDay, toDay);
 
     const [salesAgg, profitRow, debtIn, expenses, balances, productCount, stockValueRow, cashiers] =
       await Promise.all([
@@ -216,7 +261,9 @@ export class SotuvDashboardService {
     const expense = expenses[0].total ?? 0n;
 
     return {
-      date: this.tashkentDayIso(day),
+      date: this.tashkentDayIso(fromDay),
+      dateFrom: this.tashkentDayIso(fromDay),
+      dateTo: this.tashkentDayIso(toDay),
 
       salesCount: s.cnt,
       salesSumMinor: (s.total ?? 0n).toString(),
@@ -257,17 +304,6 @@ export class SotuvDashboardService {
         salesSumMinor: (c.total ?? 0n).toString(),
       })),
     };
-  }
-
-  /**
-   * Collapse any instant to the UTC-midnight of ITS Tashkent calendar day —
-   * the exact input shape reportDateBounds expects (FE date-only coercion).
-   */
-  private tashkentDayUtcMidnight(instant: Date): Date {
-    const shifted = new Date(instant.getTime() + 5 * 60 * 60 * 1000);
-    return new Date(
-      Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate()),
-    );
   }
 
   private tashkentDayIso(dayUtcMidnight: Date): string {
