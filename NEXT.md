@@ -305,6 +305,18 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🟢📊 2026-07-04h (DASHBOARD: VAQT-FILTR TEPADA + MOYSKLAD BO'LIMLARI O'CHDI — `bf89a49` ✅ DEPLOYED, API jonli tasdiqlangan)**
+> User: «statistika kartalarining time filtrlarini tepaga joylashtir, pastdagi keraksizlarni olib tashla». **FE**
+> (`(app)/page.tsx`, 1100→~390 qator): tepada DateFilterBar — preset pill'lar (Bugun/Kecha/Shu hafta/Shu oy/Shu yil)
+> + erkin sana-oralig'i inputlari, kartalarni boshqaradi; Sales(chart)/Overdue/Money/RecentDocs (moysklad Показатели
+> merosi) BUTUNLAY o'chirildi (−832 qator; detal ko'rinishlar /sales·/money·/audit'da qoladi); snapshot kartalar
+> «(bugungi)»→«(joriy)». **API**: sotuv-dashboard `?dateFrom&dateTo` (legacy `?date` saqlanadi) — `resolveSotuvWindow`
+> pure util + 8 vitest; windowed metrikalar diapazon bo'ylab, snapshot'lar joriy-nuqta. button-conventions relock
+> (ghost-Button → KPI+filtr markerlari). Gate: api·web tsc0 · biome0 · report-modul 261/261 · button-conv 95/95.
+> **Jonli verify (prod)**: sahifa 200 · `?dateFrom=06-28&dateTo=07-04` → kirim 1.89 mlrd (hafta) vs 34.8 mln (bugun),
+> legacy/bo'sh param ham to'g'ri. ⚠️ Browser-UI smoke YO'Q (faqat API+200). Deploy gotcha: paramiko `nohup` ishga
+> tushirishda `</dev/null` SHART — aks holda kanal EOF kutib timeout (build o'zi ketaveradi, qayta ulanish yetadi).
+
 > **🟢🏷️ 2026-07-04g (YACHEYKA LABELLARI → OMBORLAR SAHIFASI — Phase-1, browser-smoke YO'Q)**
 > User talabi: yacheyka-label generatori tovar-seniklar sahifasi orqasidan omborlarga ko'chsin. (1) Route ko'chdi:
 > `/labels/cells` → `/stores/cell-labels` (`(app)/stores/cell-labels/page.tsx`; `startsWith('/stores')` tufayli
