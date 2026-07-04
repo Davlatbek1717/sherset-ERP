@@ -24,7 +24,13 @@ interface ElectronBridge {
   isSherset: boolean;
   version: string;
   listPrinters: () => Promise<string[]>;
-  printSheet: (printerName: string, html: string) => Promise<{ ok: boolean; error?: string }>;
+  printSheet: (
+    printerName: string,
+    html: string,
+    // v1.0.3+: label kabi qat'iy qog'oz o'lchami (mikron). Eski exe'lar
+    // qo'shimcha argumentni bilmaydi — jim e'tiborsiz qoldiradi (80mm legacy).
+    pageSizeMicrons?: { width: number; height: number },
+  ) => Promise<{ ok: boolean; error?: string }>;
 }
 declare global {
   interface Window {
@@ -63,16 +69,25 @@ export function hasNativePrinting(): boolean {
 /**
  * Tayyor HTML hujjatni tanlangan printerga JIM (dialogsiz) bosish — faqat
  * Electron qobiqda ishlaydi (offscreen BrowserWindow → webContents.print).
- * Senik/label kabi maxsus @page o'lchamli sahifalar uchun.
+ * Senik/label kabi maxsus @page o'lchamli sahifalar uchun `pageSizeMm`
+ * MAJBURIY berilsin (aks holda exe legacy 80mm-chek rejimida bosadi);
+ * exe v1.0.3+ shu o'lchamni driver'ga uzatadi.
  */
 export async function printHtmlNative(
   printerName: string,
   html: string,
+  pageSizeMm?: { widthMm: number; heightMm: number },
 ): Promise<{ ok: boolean; error?: string }> {
   const el = electron();
   if (!el) return { ok: false, error: 'Electron qobiq emas' };
+  const pageSizeMicrons = pageSizeMm
+    ? {
+        width: Math.round(pageSizeMm.widthMm * 1000),
+        height: Math.round(pageSizeMm.heightMm * 1000),
+      }
+    : undefined;
   try {
-    return await el.printSheet(printerName, html);
+    return await el.printSheet(printerName, html, pageSizeMicrons);
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }

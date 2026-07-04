@@ -334,7 +334,7 @@ html,body{margin:0;padding:0}
       return;
     }
     setPrintState('busy');
-    const res = await printHtmlNative(printer, buildNativeHtml());
+    const res = await printHtmlNative(printer, buildNativeHtml(), { widthMm: w, heightMm: h });
     if (res.ok) {
       setPrintState('ok');
       setTimeout(() => setPrintState('idle'), 3000);
