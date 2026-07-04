@@ -1,10 +1,19 @@
 'use client';
 
-import { useAuth } from '@/lib/auth-store';
 import { api } from '@/lib/api-client';
+import { useAuth } from '@/lib/auth-store';
 import { formatBinLocation } from '@/lib/bin-location';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle, Clock, ExternalLink, Package, Printer, RefreshCw, Warehouse } from 'lucide-react';
+import {
+  CheckCircle,
+  Clock,
+  ExternalLink,
+  Package,
+  Printer,
+  RefreshCw,
+  ScanBarcode,
+  Warehouse,
+} from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 
@@ -55,7 +64,11 @@ function fmtDate(iso: string) {
   return new Date(iso).toLocaleDateString('uz-UZ', { day: '2-digit', month: '2-digit' });
 }
 
-function SaleCard({ sale, onDone, myZone }: { sale: SaleRow; onDone: () => void; myZone: number | null }) {
+function SaleCard({
+  sale,
+  onDone,
+  myZone,
+}: { sale: SaleRow; onDone: () => void; myZone: number | null }) {
   const [expanded, setExpanded] = useState(false);
   const qc = useQueryClient();
 
@@ -66,9 +79,10 @@ function SaleCard({ sale, onDone, myZone }: { sale: SaleRow; onDone: () => void;
   });
 
   // Show only this omborchi's sklad sheet; if myZone is unknown show all.
-  const visibleSheets = myZone != null
-    ? (sheets?.sheets ?? []).filter((s) => s.skladNo === myZone)
-    : (sheets?.sheets ?? []);
+  const visibleSheets =
+    myZone != null
+      ? (sheets?.sheets ?? []).filter((s) => s.skladNo === myZone)
+      : (sheets?.sheets ?? []);
 
   const readyMut = useMutation({
     mutationFn: () => api.post(`/retail-sales/${sale.id}/mark-ready`, {}),
@@ -81,16 +95,22 @@ function SaleCard({ sale, onDone, myZone }: { sale: SaleRow; onDone: () => void;
   const isReady = sale.state === 'ready';
 
   return (
-    <div className={`rounded-2xl border-2 bg-[var(--ms-bg-surface)] shadow-sm transition-all ${
-      isReady ? 'border-emerald-300' : 'border-[var(--ms-border)]'
-    }`}>
+    <div
+      className={`rounded-2xl border-2 bg-[var(--ms-bg-surface)] shadow-sm transition-all ${
+        isReady ? 'border-emerald-300' : 'border-[var(--ms-border)]'
+      }`}
+    >
       <div className="flex items-center gap-3 p-4">
-        <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
-          isReady ? 'bg-emerald-100' : 'bg-orange-100'
-        }`}>
-          {isReady
-            ? <CheckCircle className="h-5 w-5 text-emerald-600" />
-            : <Package className="h-5 w-5 text-orange-500" />}
+        <div
+          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
+            isReady ? 'bg-emerald-100' : 'bg-orange-100'
+          }`}
+        >
+          {isReady ? (
+            <CheckCircle className="h-5 w-5 text-emerald-600" />
+          ) : (
+            <Package className="h-5 w-5 text-orange-500" />
+          )}
         </div>
 
         <div className="min-w-0 flex-1">
@@ -104,7 +124,9 @@ function SaleCard({ sale, onDone, myZone }: { sale: SaleRow; onDone: () => void;
           </div>
           <div className="flex items-center gap-2 text-xs text-[var(--ms-text-muted)]">
             <Clock className="h-3 w-3" />
-            <span>{fmtDate(sale.moment)} {fmtTime(sale.moment)}</span>
+            <span>
+              {fmtDate(sale.moment)} {fmtTime(sale.moment)}
+            </span>
             <span>·</span>
             <span>{sale._count.positions} ta tovar</span>
             {sale.agent && (
@@ -119,7 +141,13 @@ function SaleCard({ sale, onDone, myZone }: { sale: SaleRow; onDone: () => void;
         <div className="flex shrink-0 items-center gap-2">
           <button
             type="button"
-            onClick={() => window.open(`/print/picking/${sale.id}?source=retailsale&auto=1`, '_blank', 'width=520,height=800')}
+            onClick={() =>
+              window.open(
+                `/print/picking/${sale.id}?source=retailsale&auto=1`,
+                '_blank',
+                'width=520,height=800',
+              )
+            }
             className="flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--ms-border)] text-[var(--ms-text-muted)] hover:bg-[var(--ms-bg-hover)]"
             title="Picking sheet chop etish"
           >
@@ -152,12 +180,17 @@ function SaleCard({ sale, onDone, myZone }: { sale: SaleRow; onDone: () => void;
           {sheetsLoading ? (
             <p className="text-center text-sm text-[var(--ms-text-muted)] py-4">Yuklanmoqda...</p>
           ) : visibleSheets.length === 0 ? (
-            <p className="text-center text-sm text-[var(--ms-text-muted)] py-4">Ma'lumot topilmadi</p>
+            <p className="text-center text-sm text-[var(--ms-text-muted)] py-4">
+              Ma'lumot topilmadi
+            </p>
           ) : (
             <div className="flex flex-col gap-3">
               {visibleSheets.map((sheet, si) => (
                 // biome-ignore lint/suspicious/noArrayIndexKey: positional
-                <div key={si} className="rounded-xl border border-[var(--ms-border)] overflow-hidden">
+                <div
+                  key={si}
+                  className="rounded-xl border border-[var(--ms-border)] overflow-hidden"
+                >
                   <div className="flex items-center gap-2 bg-[var(--ms-bg-app)] px-3 py-2">
                     <span className="text-xs font-bold uppercase tracking-wide text-[var(--ms-text-muted)]">
                       Sklad {sheet.skladNo != null ? String(sheet.skladNo).padStart(2, '0') : '—'}
@@ -165,7 +198,9 @@ function SaleCard({ sale, onDone, myZone }: { sale: SaleRow; onDone: () => void;
                     {sheet.omborchiName && (
                       <>
                         <span className="text-[var(--ms-text-muted)]">·</span>
-                        <span className="text-xs font-semibold text-[var(--ms-text-primary)]">{sheet.omborchiName}</span>
+                        <span className="text-xs font-semibold text-[var(--ms-text-primary)]">
+                          {sheet.omborchiName}
+                        </span>
                       </>
                     )}
                   </div>
@@ -175,7 +210,9 @@ function SaleCard({ sale, onDone, myZone }: { sale: SaleRow; onDone: () => void;
                       <div key={li} className="flex items-center gap-3 px-3 py-2.5">
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-1">
-                            <span className="text-sm font-medium text-[var(--ms-text-primary)]">{line.productName}</span>
+                            <span className="text-sm font-medium text-[var(--ms-text-primary)]">
+                              {line.productName}
+                            </span>
                             {line.productId && (
                               <Link
                                 href={`/scan/${line.productId}`}
@@ -187,7 +224,9 @@ function SaleCard({ sale, onDone, myZone }: { sale: SaleRow; onDone: () => void;
                             )}
                           </div>
                           {line.binLocation && (
-                            <div className="mt-0.5 font-mono text-xs text-[var(--ms-text-muted)]">{line.binLocation}</div>
+                            <div className="mt-0.5 font-mono text-xs text-[var(--ms-text-muted)]">
+                              {line.binLocation}
+                            </div>
                           )}
                           {line.extraBins && line.extraBins.length > 0 && (
                             <div className="mt-0.5 font-mono text-[10px] text-[var(--ms-text-muted)]">
@@ -217,20 +256,20 @@ export default function OmborchiPage() {
   const myId = user?.id;
 
   // Find current user's zone from sklad-keepers
-  const { data: keepersData } = useQuery<{ items: Array<{ skladNo: number; employeeId: string }> }>({
-    queryKey: ['sklad-keepers'],
-    queryFn: () => api.get('/sklad-keepers'),
-    enabled: !!myId,
-  });
+  const { data: keepersData } = useQuery<{ items: Array<{ skladNo: number; employeeId: string }> }>(
+    {
+      queryKey: ['sklad-keepers'],
+      queryFn: () => api.get('/sklad-keepers'),
+      enabled: !!myId,
+    },
+  );
   const myZone = keepersData?.items.find((k) => k.employeeId === myId)?.skladNo ?? null;
 
   // Picking orders — filtered by assigneeId (via RestockTask) if zone is assigned
   const pickingParams = myId
     ? `state=picking&limit=50&assigneeId=${myId}`
     : 'state=picking&limit=50';
-  const readyParams = myId
-    ? `state=ready&limit=20&assigneeId=${myId}`
-    : 'state=ready&limit=20';
+  const readyParams = myId ? `state=ready&limit=20&assigneeId=${myId}` : 'state=ready&limit=20';
 
   const { data: pickingData, isLoading } = useQuery<{ items: SaleRow[]; total: number }>({
     queryKey: ['omborchi-picking', myId],
@@ -294,17 +333,26 @@ export default function OmborchiPage() {
           <p className="text-xs text-[var(--ms-text-muted)]">
             {myZone != null
               ? `Sklad ${myZone} — faqat sizga biriktirilgan buyurtmalar`
-              : 'Barcha yig\'ish buyurtmalari'}
+              : "Barcha yig'ish buyurtmalari"}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={refresh}
-          className="flex items-center gap-1.5 rounded-lg border border-[var(--ms-border)] px-3 py-2 text-xs font-medium text-[var(--ms-text-muted)] hover:bg-[var(--ms-bg-hover)]"
-        >
-          <RefreshCw className="h-3.5 w-3.5" />
-          Yangilash
-        </button>
+        <div className="flex items-center gap-2">
+          <a
+            href="/cell"
+            className="flex items-center gap-1.5 rounded-lg border border-[var(--ms-border)] px-3 py-2 text-xs font-medium text-[var(--ms-text-muted)] hover:bg-[var(--ms-bg-hover)]"
+          >
+            <ScanBarcode className="h-3.5 w-3.5" />
+            Yacheyka skaneri
+          </a>
+          <button
+            type="button"
+            onClick={refresh}
+            className="flex items-center gap-1.5 rounded-lg border border-[var(--ms-border)] px-3 py-2 text-xs font-medium text-[var(--ms-text-muted)] hover:bg-[var(--ms-bg-hover)]"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            Yangilash
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-8">
@@ -323,7 +371,9 @@ export default function OmborchiPage() {
           </div>
 
           {isLoading ? (
-            <div className="py-8 text-center text-sm text-[var(--ms-text-muted)]">Yuklanmoqda...</div>
+            <div className="py-8 text-center text-sm text-[var(--ms-text-muted)]">
+              Yuklanmoqda...
+            </div>
           ) : picking.length === 0 ? (
             <div className="rounded-2xl border-2 border-dashed border-[var(--ms-border)] py-12 text-center">
               <Package className="mx-auto mb-2 h-8 w-8 text-[var(--ms-text-muted)] opacity-40" />
@@ -380,7 +430,9 @@ export default function OmborchiPage() {
 
             {zoneProducts.length === 0 ? (
               <div className="rounded-2xl border-2 border-dashed border-[var(--ms-border)] py-8 text-center">
-                <p className="text-sm text-[var(--ms-text-muted)]">Bu sklad bo'sh yoki tovarlar joylashuvi belgilanmagan</p>
+                <p className="text-sm text-[var(--ms-text-muted)]">
+                  Bu sklad bo'sh yoki tovarlar joylashuvi belgilanmagan
+                </p>
               </div>
             ) : (
               <div className="rounded-2xl border border-[var(--ms-border)] bg-[var(--ms-bg-surface)] overflow-hidden">
@@ -388,7 +440,9 @@ export default function OmborchiPage() {
                   {zoneProducts.map((p) => (
                     <div key={p.id} className="flex items-center gap-3 px-4 py-2.5">
                       <div className="min-w-0 flex-1">
-                        <div className="text-sm font-medium text-[var(--ms-text-primary)] truncate">{p.name}</div>
+                        <div className="text-sm font-medium text-[var(--ms-text-primary)] truncate">
+                          {p.name}
+                        </div>
                         {p.code && (
                           <div className="text-xs text-[var(--ms-text-muted)]">{p.code}</div>
                         )}

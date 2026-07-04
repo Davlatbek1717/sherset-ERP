@@ -48,6 +48,15 @@ export class ProductController {
     return this.service.characteristicValues(user.accountId);
   }
 
+  // Yacheyka scan — cell kod (NN-NN-NN-NN yoki 8 raqamli barcode) bo'yicha shu
+  // manzilga biriktirilgan tovarlar + qoldiqlar. Literal 'cell' segmenti `:id`
+  // route'idan OLDIN turishi shart (aks holda 'cell' id deb qabul qilinadi).
+  @Get('cell/:code')
+  @RequirePermission({ entity: 'product', action: 'view' })
+  async cellContents(@CurrentUser() user: AuthenticatedUser, @Param('code') code: string) {
+    return this.service.getCellContents(user.accountId, code);
+  }
+
   // Scan page — product detail + per-store stock balances. Declared before `:id`
   // so the literal segment 'scan' is not captured as an id parameter.
   @Get(':id/scan')

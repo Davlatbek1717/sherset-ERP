@@ -10,6 +10,7 @@ import { allocateDocumentNumber } from '../../prisma/document-number.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { resolveCreatorGroupId } from '../shared/group-stamp.js';
 import { mapVersionedUpdateError } from '../shared/optimistic-lock.js';
+import { formatCellCode, parseCellCode, segmentWhere } from './cell-code.util.js';
 import {
   type BulkUpdatePatch,
   ProductRepository,
@@ -84,6 +85,107 @@ export class ProductService {
     }));
     const totalQty = stocks.reduce((sum, s) => sum + Number(s.qty.toFixed(6)), 0);
     return { product, balances, totalQty };
+  }
+
+  /**
+   * Yacheyka scan sahifasi — cell kod bo'yicha shu manzilga biriktirilgan
+   * tovarlar: asosiy manzil (Product.loc*) ∪ qo'shimcha yacheykalar
+   * (ProductLocation), har biriga ombor qoldiqlari bilan. Kodda 0-segment =
+   * «belgilanmagan» (label 00 deb bosadi) — NULL'ga ham mos keladi.
+   */
+  async getCellContents(accountId: string, rawCode: string) {
+    const addr = parseCellCode(rawCode);
+    if (!addr) {
+      throw new BadRequestException(
+        "Yacheyka kodi noto'g'ri — NN-NN-NN-NN yoki 8 raqamli barcode kutiladi",
+      );
+    }
+    const productSelect = {
+      id: true,
+      name: true,
+      code: true,
+      article: true,
+      uom: true,
+      archived: true,
+    } satisfies Prisma.ProductSelect;
+
+    const [primary, extra] = await Promise.all([
+      this.prisma.client.product.findMany({
+        where: {
+          accountId,
+          deletedAt: null,
+          AND: [
+            segmentWhere('locSklad', addr.sklad),
+            segmentWhere('locPolka', addr.polka),
+            segmentWhere('locQavat', addr.qavat),
+            segmentWhere('locYacheyka', addr.yacheyka),
+          ] as Prisma.ProductWhereInput[],
+        },
+        select: productSelect,
+        orderBy: { name: 'asc' },
+      }),
+      this.prisma.client.productLocation.findMany({
+        where: {
+          accountId,
+          sklad: addr.sklad,
+          AND: [
+            segmentWhere('polka', addr.polka),
+            segmentWhere('qavat', addr.qavat),
+            segmentWhere('yacheyka', addr.yacheyka),
+          ] as Prisma.ProductLocationWhereInput[],
+          product: { deletedAt: null },
+        },
+        include: { product: { select: productSelect } },
+      }),
+    ]);
+
+    // Bir tovar ham asosiy, ham qo'shimcha manzil bilan chiqishi mumkin —
+    // primary yorlig'i ustun, note esa extra-yozuvdan olinadi.
+    const byId = new Map<
+      string,
+      { product: (typeof primary)[number]; source: 'primary' | 'extra'; note: string | null }
+    >();
+    for (const p of primary) byId.set(p.id, { product: p, source: 'primary', note: null });
+    for (const l of extra) {
+      const existing = byId.get(l.productId);
+      if (existing) {
+        existing.note = existing.note ?? l.note ?? null;
+      } else {
+        byId.set(l.productId, { product: l.product, source: 'extra', note: l.note ?? null });
+      }
+    }
+
+    const ids = [...byId.keys()];
+    const stocks = ids.length
+      ? await this.prisma.client.stock.findMany({
+          where: { accountId, assortmentKind: 'product', assortmentId: { in: ids } },
+          include: { store: { select: { name: true } } },
+        })
+      : [];
+    const stocksByProduct = new Map<string, typeof stocks>();
+    for (const s of stocks) {
+      const list = stocksByProduct.get(s.assortmentId) ?? [];
+      list.push(s);
+      stocksByProduct.set(s.assortmentId, list);
+    }
+
+    return {
+      cell: { code: formatCellCode(addr), ...addr },
+      items: [...byId.values()].map(({ product, source, note }) => {
+        const rows = stocksByProduct.get(product.id) ?? [];
+        return {
+          ...product,
+          source,
+          note,
+          totalQty: rows.reduce((sum, s) => sum + Number(s.qty.toFixed(6)), 0),
+          balances: rows.map((s) => ({
+            storeId: s.storeId,
+            storeName: s.store?.name ?? null,
+            qty: s.qty.toString(),
+          })),
+        };
+      }),
+    };
   }
 
   async create(accountId: string, userId: string, input: unknown) {
