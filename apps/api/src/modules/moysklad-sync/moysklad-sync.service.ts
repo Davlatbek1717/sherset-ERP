@@ -68,8 +68,12 @@ export interface MsCounterparty {
 /** GET /report/counterparty row — «Показатели контрагентов». */
 export interface MsCounterpartyReportRow {
   counterparty?: { meta?: { href?: string }; name?: string };
-  /** Mutual-settlement balance, minor units. moysklad convention:
-   *  positive → counterparty owes us (same sign as our CounterpartyBalance). */
+  /** Mutual-settlement balance, minor units. moysklad sign is the OPPOSITE
+   *  of our CounterpartyBalance: MS positive → WE owe the counterparty,
+   *  MS negative → the counterparty owes us. Verified against the live
+   *  account 2026-07-04: «1покупатель»/usta/quruvchi customers are all
+   *  negative; Delixi/Azia Kabel/Uzkabel/Jinko supplier factories are all
+   *  positive. Import must therefore INVERT the value. */
   balance?: number;
 }
 
@@ -413,8 +417,10 @@ export class MoyskladSyncService {
    * Balances-only migration import — «Показатели контрагентов» report →
    * counterparty_balances SNAPSHOT (upsert SET, not increment).
    *
-   * moysklad sign convention matches ours (positive → counterparty owes us;
-   * see CounterpartyBalanceService header), so the value copies 1:1.
+   * moysklad's sign is the opposite of ours (see MsCounterpartyReportRow),
+   * so the value INVERTS on write: local = −msBalance. After inversion the
+   * summary buckets read in OUR convention — positive* = mijoz qarzlari
+   * (they owe us), negative* = shaxsiy qarzlar (we owe them).
    *
    * ⚠ Overwrite semantics: this stomps any locally-accumulated debt for the
    * matched counterparties (POS qarz sales, kirim orderlari). Intended as a
@@ -467,7 +473,8 @@ export class MoyskladSyncService {
       }
       summary.matched++;
 
-      const balance = BigInt(Math.round(r.balance ?? 0));
+      // Sign inversion — MS positive means WE owe them; ours means they owe us.
+      const balance = -BigInt(Math.round(r.balance ?? 0));
       if (balance > 0n) {
         posSum += balance;
         summary.positiveCount++;
