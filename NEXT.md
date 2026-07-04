@@ -305,6 +305,21 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🟢🧹 2026-07-04c (TO'LIQ QAYTA IMPORT: baza tozalandi + MoySklad'dan katalog·kontragent·QOLDIQ — prod'da bajarildi, kod o'zgarishi yo'q)**
+> User buyrug'i: «hammasini o'chir, qayta import qil». Bajarilgan runbook (hammasi jonli prod'da): **①** pg_dump →
+> `/root/db-backups/pre-full-reimport-20260704-0455.dump` (⚠️ URL'dagi `?schema=` pg_dump'ni yiqitadi — `sed 's/?.*//'`).
+> **②** yacheykalar eksporti (`/root/db-backups/export-locations.ts` → locations.json, 4477 yozuv). **③** `cleanup-db.ts`
+> (14 sotuv·22 task·8954 stock·1554 CP·4482 tovar o'chdi; users/rollar/sozlamalar qoldi; Move/Loss/Inventory 0 edi —
+> FK to'siq yo'q). **④** sync qayta: 59 papka + 4482 tovar + 1553 CP hammasi created (59s). **⑤** yacheykalar qaytarildi
+> (restore-locations.ts: 4477/4477, missing 0). **⑥** skladlar qayta qurildi: eski 4 (Ombor 1/2·Иподром·Чуп База) DELETE,
+> yangi 4: **Основной склад · Щит цех** (MS externalCode bilan) **· Иподром Склад · Чуп База Склад** (bo'sh); MS
+> `report/stock/bystore` → 3092 pozitsiya «Оприходование» ×8 (org=MCHJ Demo, costMinor=buyPrice) POST+post — Щит цех'da
+> musbat qoldiq 0 ekan. **⑦** verify: products 4482 · CP 1553 · enters 8 · «Panasonik ramka 4x» stock 59=MS 59.0 aniq,
+> yacheyka 2-17-2-15 qaytgan, buy 2 015 000. Gotchalar: store mutatsiyalari **`/admin/stores`**da (GET /stores boshqa);
+> products pagination **cursor** (offset emas); MS API gzip-majburiy (python'da gunzip); DELETE'ga Content-Type json
+> qo'yma (bo'sh body 400). Skriptlar scratchpad + `/root/db-backups/`da. ⚠️ Omborchi SkladKeeper skladNo↔yangi sklad
+> bog'lamalarini QAYTA TEKSHIRISH kerak (storeId emas, skladNo bo'yicha — ehtimol o'zgarish shart emas, lekin smoke yo'q).
+
 > **🟢🔄 2026-07-04b (MOYSKLAD JONLI SYNC — `a4475e5` ✅ DEPLOYED + prod'da yugurtirildi: 1553 kontragent keldi)**
 > User to'g'ri akkaunt tokenini berdi (org «Elektro sentr (Sherset)», context/employee bilan tasdiqlandi — avvalgi
 > «climart santex» xatosi takrorlanmadi). **Yangi modul** `moysklad-sync`: `POST /moysklad-sync/run` (fon), `GET
