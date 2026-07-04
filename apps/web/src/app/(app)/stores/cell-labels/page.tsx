@@ -4,7 +4,7 @@
  * /stores/cell-labels — YACHEYKA (javon qatori) labellari (Sherset custom).
  *
  * Har yacheyka uchun javonga yopishtiriladigan label: katta mono «NN-NN-NN-NN»
- * kod + QR. Diapazon kiritiladi (har segment from–to) → dekart ko'paytmasi
+ * kod + shtrix. Diapazon kiritiladi (har segment from–to) → dekart ko'paytmasi
  * bo'yicha labellari generatsiya qilinadi (masalan sklad 01, polka 1–3,
  * qavat 1–2, yacheyka 1–10 → 60 ta label).
  *
@@ -12,11 +12,14 @@
  * `?sklad=NN` ombor kodidan Sklad segmentini oldindan to'ldiradi,
  * `?store=<nom>` sarlavhada ombor nomini ko'rsatadi.
  *
+ * CHOP FORMATI (2026-07-04 user talabi): A4 to'r EMAS — LABEL-QOG'OZ (rulon):
+ * har senik ALOHIDA sahifa, @page o'lchami = label o'lchami (default 60×40mm,
+ * formada o'zgartiriladi) → label-printer har stikerga bittadan bosadi.
+ *
  * Shtrix-kod (CODE128C) TIRESIZ 8 raqamni kodlaydi («01020304» — har segment
  * 2 xona, shuning uchun segmentlar 0–99 bilan cheklangan): raqam-juftlik
  * kodlash tire aralash matndan ~40% kalta chiziq beradi. Skaner 8 raqam
- * qaytaradi → NN·NN·NN·NN deb parse qilinadi. Chop formati /labels/print
- * bilan BIR XIL A4 2×5 (87.5×50mm) — bitta yorliq-qog'oz zaxirasi.
+ * qaytaradi → NN·NN·NN·NN deb parse qilinadi.
  */
 
 import { Button, Icons, Input } from '@moysklad/ui';
@@ -24,20 +27,14 @@ import JsBarcode from 'jsbarcode';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 
-const TPL = {
-  pageWidthMm: 210,
-  pageHeightMm: 297,
-  cols: 2,
-  rows: 5,
-  marginLeftMm: 12.5,
-  marginTopMm: 17.4,
-  columnGapMm: 5,
-  rowGapMm: 2.4,
-  labelWidthMm: 87.5,
-  labelHeightMm: 50,
-} as const;
-
 const MAX_LABELS = 500;
+const MM_PX = 3.7795; // CSS px per mm (96dpi)
+
+/** Label-qog'oz o'lchami (mm) — rulon stiker; default 60×40. */
+const DEFAULT_LABEL_W = 60;
+const DEFAULT_LABEL_H = 40;
+const SIZE_MIN = 20;
+const SIZE_MAX = 210;
 
 const pad2 = (n: number) => String(n).padStart(2, '0');
 
@@ -58,6 +55,13 @@ function expand(r: Range): number[] | null {
   const out: number[] = [];
   for (let i = from; i <= to; i++) out.push(i);
   return out;
+}
+
+function parseSizeMm(s: string, fallback: number): number | null {
+  if (s.trim() === '') return fallback;
+  const n = Number(s);
+  if (!Number.isFinite(n) || n < SIZE_MIN || n > SIZE_MAX) return null;
+  return n;
 }
 
 export default function CellLabelsPage() {
@@ -84,7 +88,9 @@ function CellLabelsContent() {
   const [polka, setPolka] = useState<Range>(emptyRange());
   const [qavat, setQavat] = useState<Range>(emptyRange());
   const [yacheyka, setYacheyka] = useState<Range>(emptyRange());
-  const [rendered, setRendered] = useState<string[] | null>(null);
+  const [labelW, setLabelW] = useState('');
+  const [labelH, setLabelH] = useState('');
+  const [rendered, setRendered] = useState<{ codes: string[]; w: number; h: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const codes = useMemo(() => {
@@ -115,12 +121,25 @@ function CellLabelsContent() {
       setError(`Juda ko'p: ${codes.total} ta (maksimum ${MAX_LABELS}). Diapazonni toraytiring.`);
       return;
     }
+    const w = parseSizeMm(labelW, DEFAULT_LABEL_W);
+    const h = parseSizeMm(labelH, DEFAULT_LABEL_H);
+    if (w == null || h == null) {
+      setError(`Label o'lchami noto'g'ri — ${SIZE_MIN}–${SIZE_MAX} mm oralig'ida bo'lsin`);
+      return;
+    }
     setError(null);
-    setRendered(codes.list);
+    setRendered({ codes: codes.list, w, h });
   };
 
   if (rendered) {
-    return <RenderedCells codes={rendered} onBack={() => setRendered(null)} />;
+    return (
+      <RenderedCells
+        codes={rendered.codes}
+        w={rendered.w}
+        h={rendered.h}
+        onBack={() => setRendered(null)}
+      />
+    );
   }
 
   const segments: Array<[string, Range, (r: Range) => void]> = [
@@ -147,8 +166,9 @@ function CellLabelsContent() {
             </p>
           )}
           <p className="mt-1 text-[var(--ms-text-muted)] text-sm">
-            Javon qatoriga yopishtiriladigan kod+QR labellar. Har segment uchun diapazon kiriting
-            (bo'sh «gacha» = «dan» bilan teng; bo'sh «dan» = 00).
+            Javonga yopishtiriladigan kod+shtrix labellar — har biri alohida label-qog'ozga chiqadi.
+            Har segment uchun diapazon kiriting (bo'sh «gacha» = «dan» bilan teng; bo'sh «dan» =
+            00).
           </p>
         </div>
         <Button variant="ghost" onClick={() => router.back()}>
@@ -199,13 +219,39 @@ function CellLabelsContent() {
           </div>
         ))}
 
+        <div className="grid grid-cols-[90px_1fr_1fr] items-center gap-2 border-[var(--ms-border-default)] border-t pt-3">
+          <label
+            htmlFor="cell-label-w"
+            className="font-medium text-[var(--ms-text-primary)] text-sm"
+          >
+            Qog'oz (mm)
+          </label>
+          <Input
+            id="cell-label-w"
+            inputMode="numeric"
+            placeholder={`eni ${DEFAULT_LABEL_W}`}
+            value={labelW}
+            onChange={(e) => setLabelW(e.target.value)}
+            className="text-center tabular-nums"
+            data-test-id="cell-label-width"
+          />
+          <Input
+            inputMode="numeric"
+            placeholder={`bo'yi ${DEFAULT_LABEL_H}`}
+            value={labelH}
+            onChange={(e) => setLabelH(e.target.value)}
+            className="text-center tabular-nums"
+            data-test-id="cell-label-height"
+          />
+        </div>
+
         <div className="flex items-center justify-between border-[var(--ms-border-default)] border-t pt-3">
           <span className="text-[var(--ms-text-muted)] text-sm" data-test-id="cell-labels-count">
             {codes == null
               ? '—'
               : codes.total > MAX_LABELS
                 ? `${codes.total} ta — juda ko'p (max ${MAX_LABELS})`
-                : `${previewTotal} ta label · ${Math.ceil(previewTotal / (TPL.cols * TPL.rows))} sahifa A4`}
+                : `${previewTotal} ta label`}
           </span>
           <Button
             variant="primary"
@@ -222,23 +268,28 @@ function CellLabelsContent() {
   );
 }
 
-// ── Rendered sheet (A4 2×5 — /labels/print bilan bir xil format) ─────────────
+// ── Rendered labels (har senik = alohida label-qog'oz sahifasi) ───────────────
 
-function RenderedCells({ codes, onBack }: { codes: string[]; onBack: () => void }) {
-  const mmPx = 3.7795;
-  const perPage = TPL.cols * TPL.rows;
-  const pages: string[][] = [];
-  for (let i = 0; i < codes.length; i += perPage) pages.push(codes.slice(i, i + perPage));
-
+function RenderedCells({
+  codes,
+  w,
+  h,
+  onBack,
+}: {
+  codes: string[];
+  w: number;
+  h: number;
+  onBack: () => void;
+}) {
   return (
     <div className="min-h-screen bg-slate-100">
       <style>{`
         @media print {
-          @page { size: ${TPL.pageWidthMm}mm ${TPL.pageHeightMm}mm; margin: 0; }
+          @page { size: ${w}mm ${h}mm; margin: 0; }
           html, body { background: white; margin: 0; padding: 0; }
           .no-print { display: none !important; }
-          .print-page { page-break-after: always; margin: 0 !important; box-shadow: none !important; border: none !important; }
-          .print-page:last-child { page-break-after: auto; }
+          .label-page { page-break-after: always; margin: 0 !important; box-shadow: none !important; }
+          .label-page:last-child { page-break-after: auto; }
         }
       `}</style>
 
@@ -247,7 +298,7 @@ function RenderedCells({ codes, onBack }: { codes: string[]; onBack: () => void 
           <div>
             <div className="font-medium text-slate-800">Yacheyka labellari</div>
             <div className="text-slate-500 text-xs">
-              {codes.length} ta · {pages.length} sahifa · A4 · {TPL.cols}×{TPL.rows}
+              {codes.length} ta · {w}×{h} mm label-qog'oz · har biri alohida sahifa
             </div>
           </div>
           <div className="flex gap-2">
@@ -266,34 +317,16 @@ function RenderedCells({ codes, onBack }: { codes: string[]; onBack: () => void 
         </div>
       </div>
 
-      <div className="py-6">
-        {pages.map((pageCodes, pageIdx) => (
-          <div
-            // biome-ignore lint/suspicious/noArrayIndexKey: print pages are positional
-            key={pageIdx}
-            className="print-page relative mx-auto mb-6 bg-white shadow-sm"
-            style={{
-              width: `${TPL.pageWidthMm * mmPx}px`,
-              height: `${TPL.pageHeightMm * mmPx}px`,
-            }}
-          >
-            {pageCodes.map((code, idx) => {
-              const ri = Math.floor(idx / TPL.cols);
-              const ci = idx % TPL.cols;
-              const x = TPL.marginLeftMm + ci * (TPL.labelWidthMm + TPL.columnGapMm);
-              const y = TPL.marginTopMm + ri * (TPL.labelHeightMm + TPL.rowGapMm);
-              return <CellLabel key={code} code={code} x={x} y={y} mmPx={mmPx} />;
-            })}
-          </div>
+      <div className="flex flex-col items-center gap-4 py-6 print:block print:gap-0 print:py-0">
+        {codes.map((code) => (
+          <CellLabel key={code} code={code} w={w} h={h} />
         ))}
       </div>
     </div>
   );
 }
 
-function CellLabel({ code, x, y, mmPx }: { code: string; x: number; y: number; mmPx: number }) {
-  const widthPx = TPL.labelWidthMm * mmPx;
-  const heightPx = TPL.labelHeightMm * mmPx;
+function CellLabel({ code, w, h }: { code: string; w: number; h: number }) {
   const barcodeRef = useRef<SVGSVGElement>(null);
 
   // Yacheyka doimiy, ichidagi tovar almashadi — label YACHEYKANI
@@ -306,26 +339,36 @@ function CellLabel({ code, x, y, mmPx }: { code: string; x: number; y: number; m
       format: 'CODE128C',
       displayValue: false,
       margin: 0,
-      height: 52,
-      width: 2.2,
+      height: Math.max(24, Math.round(h * MM_PX * 0.34)),
+      width: 2,
     });
-  }, [code]);
+  }, [code, h]);
+
+  // Kod shrifti label eniga moslashadi: «NN-NN-NN-NN» = 11 belgi mono
+  // (belgi eni ≈ 0.62em), label enining ~82% ini egallasin.
+  const codeFontPx = Math.min(24, Math.round((w * MM_PX * 0.82) / 11 / 0.62));
 
   return (
     <div
-      className="absolute flex flex-col items-center justify-between overflow-hidden border border-slate-200 px-3 py-2"
-      style={{ left: `${x * mmPx}px`, top: `${y * mmPx}px`, width: widthPx, height: heightPx }}
+      className="label-page flex flex-col items-center justify-between overflow-hidden bg-white px-2 py-1.5 shadow-sm"
+      style={{ width: `${w * MM_PX}px`, height: `${h * MM_PX}px` }}
     >
-      <div className="flex flex-col items-center">
-        <div className="text-[9px] text-slate-400 uppercase tracking-widest">Yacheyka</div>
+      <div className="flex min-h-0 flex-col items-center">
+        <div className="text-[8px] text-slate-400 uppercase tracking-widest">Yacheyka</div>
         <div
-          className="font-bold font-mono text-[22px] text-slate-900 tabular-nums tracking-widest"
+          className="font-bold font-mono text-slate-900 tabular-nums tracking-wider"
+          style={{ fontSize: `${codeFontPx}px`, lineHeight: 1.15 }}
           data-test-id="cell-label-code"
         >
           {code}
         </div>
       </div>
-      <svg ref={barcodeRef} data-test-id="cell-label-barcode" aria-hidden="true" />
+      <svg
+        ref={barcodeRef}
+        className="max-w-full"
+        data-test-id="cell-label-barcode"
+        aria-hidden="true"
+      />
     </div>
   );
 }

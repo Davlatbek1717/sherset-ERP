@@ -343,8 +343,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     // «Остатки» (/stock-balance) removed — that route has no page (dead link);
     // the working stock-balance lives under Hisobotlar → /reports/stock-balance.
     { key: 'turnover', label: tStock('turnover'), href: '/turnover' },
-    // «Склады» (/stores) removed — it duplicated Sozlamalar → Склады (same
-    // StoresListView). The warehouse list stays under /settings/stores.
+    // «Склады» (/stores) 2026-07-04 user talabi bilan QAYTARILDI — yacheyka
+    // labellari kirish nuqtasi shu ro'yxatda (Sozlamalar → Склады bilan bir
+    // xil StoresListView, faqat Sklad-modul chrome'ida).
+    { key: 'stores', label: tStock('stores'), href: '/stores' },
     { key: 'training', label: tStock('training'), href: '/stock-training' },
   ];
 
