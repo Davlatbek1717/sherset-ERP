@@ -305,6 +305,22 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🟢💬 2026-07-04d (TELEGRAM BUSINESS — kontragent chatlari EGANING NOMIDAN — `c3aee3f` ✅ DEPLOYED, token kutilmoqda)**
+> User: MoySklad'dagi kabi «kontragent kartasida TG chat + mening nomimdan xabar». Yechim = **rasmiy Telegram Business**
+> (user Premium bor): «ko'rinmas» bot Settings→Telegram Business→Chatbots'da ulanadi → mijoz botni KO'RMAYDI, xabar
+> egasining nomidan ketadi/keladi. **DB** (`20260704160000`, prodga applied): TelegramConfig += businessConnectionId/
+> UserId/UserName · yangi `TelegramChat` (accountId+chatId unique, counterparty bind SetNull) + `TelegramChatMessage`
+> (in/out). **API:** webhook endi `business_connection`/`business_message`ni parse qiladi (pure util + 5 test);
+> setWebhook allowed_updates kengaydi; `/telegram/business-status` · `/telegram/chats` (+?counterpartyId/?unbound/q) ·
+> `chats/:id/messages` · `chats/:id/bind` (PUT) · `chats/:id/send` (business_connection_id bilan yuboradi). **Web:**
+> `TelegramChatCard` kontragent sahifasi o'ng ustunida (activity widget ostida) — unbound chatni bog'lash, tarix
+> (10s poll), egasining nomidan yozish; ru+uz i18n. Gate: api/web tsc0 · biome0 · tg vitest 5/5 · i18n-key pass.
+> Jonli: endpoints 200 (`configured:false`). **⏭️ QOLGAN (user amali):** (1) @BotFather'da bot → token; (2) men PUT
+> /telegram/config + webhook o'rnataman (url = `…/api/v1/telegram-webhook/<accountId>`, account `…0001`); (3) user
+> TG Settings→Telegram Business→Chatbots'da botni ulaydi; (4) sinov: mijoz yozadi → kartada ko'rinadi → javob egasining
+> nomidan. Keyin Phase-2: avto-xabarlar (buyurtma holati/qarz) shu kanal orqali. ⚠️ Cheklov: faqat MAVJUD chatlarga.
+> (Parallel sessiya shu orada `2ba937b` kassa-KPI + `a71ede3` balances-import qildi — mening diff'im path-cheklangan.)
+
 > **🟢🧹 2026-07-04c (TO'LIQ QAYTA IMPORT: baza tozalandi + MoySklad'dan katalog·kontragent·QOLDIQ — prod'da bajarildi, kod o'zgarishi yo'q)**
 > User buyrug'i: «hammasini o'chir, qayta import qil». Bajarilgan runbook (hammasi jonli prod'da): **①** pg_dump →
 > `/root/db-backups/pre-full-reimport-20260704-0455.dump` (⚠️ URL'dagi `?schema=` pg_dump'ni yiqitadi — `sed 's/?.*//'`).
