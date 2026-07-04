@@ -305,6 +305,18 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🟢🧭 2026-07-04e (NAV: «Pul»+«CRM» → bitta «Kontragentlar» moduli — `a2b8302` ✅ DEPLOYED)**
+> User qarori: 2 topbar bo'lim o'rniga bitta kontragent-markazli sahifa. Topbar'da endi «Kontragentlar» (ichki key
+> 'crm' qoldi — ripple kam); strip tablari: Kontragentlar · To'lovlar (/payments birlashgan lenta) · O'zaro
+> hisob-kitoblar (/reports/counterparty-balance, module-highlight maxsus-case) · Avanslar · Shartnomalar · Chegirmalar ·
+> Ballar · Tuzatishlar · Bank vypiska. Nav'dan olindi (URL ishlaydi): calls · opportunities/kanban/pipelines; /payrolls
+> endi HR'ni yoritadi; cash-flow/PnL Hisobotlarda (dublikat edi). NAV_PERMISSIONS.crm pul entitilarini yutdi.
+> nav.crm relabel uz/ru. Gate: web tsc0 · biome0 · navigation-test 50/51 (1 = eski pagination lock) · i18n pass.
+> Jonli: /counterparties va /payments 200, yangi build restart qilindi. AskUserQuestion timeout → tavsiya variantlar
+> qo'llandi (user keyin o'zgartirsa: calls/bitimlarni qaytarish = crmSubNav'ga 2 qator). **⏭️ G'oya (Phase-2):**
+> /counterparties sahifasining o'zida haqiqiy Tabs-komponent (hozir strip-nav orqali) + «To'lovlar»da kontragent-filtr
+> default. Qolgan umumiy qarzlar 04c/04d entrylarida.
+
 > **🟢💬 2026-07-04d (TELEGRAM BUSINESS — kontragent chatlari EGANING NOMIDAN — `c3aee3f` ✅ DEPLOYED, token kutilmoqda)**
 > User: MoySklad'dagi kabi «kontragent kartasida TG chat + mening nomimdan xabar». Yechim = **rasmiy Telegram Business**
 > (user Premium bor): «ko'rinmas» bot Settings→Telegram Business→Chatbots'da ulanadi → mijoz botni KO'RMAYDI, xabar
