@@ -1,12 +1,13 @@
 # CLAUDE.md — moysklad loyiha qoidalari (har sessiya auto-loaded)
 
-> Bu fayl global `~/.claude/CLAUDE.md` ustiga loyiha-spetsifik qoidalar qo'shadi.
+> Bu fayl — loyihaning yagona doimiy qoidalar fayli (global `~/.claude/CLAUDE.md` MAVJUD EMAS — unga ishora qilma).
 > Asosiy hand-off — `NEXT.md` (har sessiya `davom et` da o'qiladi). Bu yerda faqat
 > **doim amal qiluvchi** loyiha qoidalari turadi.
+> Slash-commandlar: `/davom` (fokus-sessiya) · `/deploy` (VPS deploy) · `/qa-cohort` (Phase-2 QA) — `.claude/commands/`.
 
 ## 0. Ish rejimi — `davom et` = fokus-sessiya · juda sifatli · OPUS (Sonnet EMAS) (2026-06-07; 2026-06-11d tahriri)
 
-**Bu qoida global `~/.claude/CLAUDE.md` dagi «think with Opus, type with Sonnet» ni bu loyiha uchun BEKOR qiladi.**
+**«Think with Opus, type with Sonnet» uslubi bu loyihada AMAL QILMAYDI — doim flagship model.**
 2026-06-11d foydalanuvchi qarori: limit 1 kunda 3 kunlik ketayotgani uchun **token-iqtisod kiritildi, LEKIN tejash
 modeldan EMAS** («ozish sonnetdan emas — doim Opus») va sifat o'lchovlaridan EMAS:
 
@@ -37,7 +38,7 @@ Detail/list parity-audit ishi **ikki alohida fazaga** bo'linadi. Ularni aralasht
 
 ### Phase 2 — QA sessiyasi (alohida, COHORT bo'yicha)
 - **Qachon**: mantiqiy guruh (cohort) tugaganda — masalan «barcha hujjat-detail», keyin «barcha katalog», keyin «retail/processing». **«Hammasini 63 oxirida» QILMASLIK** (sovuq-kontekst debug = qimmat). Cohort ~8–12 sahifa.
-- **Maqsad**: *runtime correctness* — real brauzer + adversarial QA (global CLAUDE.md'dagi concurrency / timeout / data-integrity / edge / authorization savollari), nafaqat «render bo'ldimi».
+- **Maqsad**: *runtime correctness* — real brauzer + adversarial QA (concurrency / timeout / data-integrity / edge-case / authorization savollari), nafaqat «render bo'ldimi».
 - **Stack** (bu yerda ishlaydi): DB = PostgreSQL `moysklad_dev` @ `localhost:5433` (103+ migration, up-to-date) · `pnpm dev` (turbo --parallel: api `tsx watch`, web `next dev`) · seed `pnpm db:seed` / `seed-real`. Playwright MCP mavjud.
 - **Natija**: cohort sahifalari status **«Phase-1» → «Phase-2 verified»**ga o'tadi; topilgan buglar darhol (issiq-kontekst) tuzatiladi.
 - **QA-backlog** (qaysi cohort kutmoqda) — `NEXT.md` → «QA-backlog (Phase 2)» bo'limida.
@@ -79,3 +80,44 @@ qiymatlar + page-wiring qaytib buzilmasligi. **Yangi audited label'ni shu regist
 **Re-runnable audit:** `scripts/wf-label-grounding-audit.js` (workflow) — har cohort tugagach yoki shubha bo'lsa,
 audited sahifalarning capture-grounded label'larini DOM-kontekst bo'yicha qayta-tekshiradi (agent grep-count emas,
 element-rol o'qiydi). Cohort F'dan keyin ishga tushirilib, A–E'da 8+ misground label topdi (`5ee9b314` tuzatildi).
+
+## 5. Loyiha xaritasi (2026-07-04 — qidirishdan oldin shu yerga qara)
+
+pnpm/turbo monorepo (MoySklad-klon ERP). Kod izlashda avval shu xaritadan joyni aniqlab ol:
+
+```
+# APPS
+apps/api                       — NestJS backend (REST + Prisma); main.ts bootstrap, observability.ts logging
+apps/api/src/modules/*         — ~130 domain modul, har biri .controller/.service/.schema/.test.ts (testlar co-located)
+   moysklad-sync               — MoySklad'dan jonli import/sync · moysklad-compat — MS JSON API moslik qatlami
+   money, payment-in/out, cash-in/out, cash-desk, exchange-rate, currency — pul/kassa
+   product, variant, bundle, bom, stock, store, move, enter, loss, inventory — tovar/ombor
+   customer-order, demand, invoice-in/out, purchase-order, supply, retail-sale — savdo hujjatlari
+   counterparty*, contract, contact-person — kontragentlar · auth, permissions, organization, hr, payroll
+   sklad-keeper                — CompanySettings CRUD + omborchi/print sozlamalari
+   task, pipeline, opportunity, call, service-desk — CRM
+apps/web                       — Next.js App Router frontend (dev port 3100, prod 3010)
+apps/web/src/app/(app)/*       — ~90 ERP route; sotuv/ = custom POS sahifa; retail/ = MS-parity chakana (sales/sessions/z-report)
+apps/web/src/app/(app)/settings/* — sozlamalar · app/{login,print,p,actions} — auth/chop/public/server-actions
+apps/web/src/components/*      — domain UI (pos/, print/, money/, filters/, document-detail/…)
+apps/web/src/lib               — api-client.ts, auth-store.ts, print-agent.ts, doc-totals.ts
+apps/web/src/messages/{ru,uz}.json — i18n tarjimalar (next-intl config: src/i18n)
+apps/web/tests/e2e             — Playwright e2e
+apps/marketing                 — alohida marketing sayti
+
+# PACKAGES
+packages/money                 — @moysklad/money: pul/valyuta/kurs mantiq (WEB'DAN OLDIN build!)
+packages/db                    — @moysklad/db: prisma/schema.prisma (yagona sxema, CompanySettings shu yerda),
+                                 prisma/migrations (155+), seed*.ts; src/generated — Prisma client
+packages/design-system         — @moysklad/ui React primitivlar · packages/workflows — data-model/CLI · packages/config — tsconfig
+
+# SCRIPTS / TOOLS / QOLGANLAR
+scripts/preflight.mjs          — sessiya-boshi deterministik tekshiruv (SessionStart hook yugurtiradi)
+scripts/audit-module*.ts       — audit dvigateli · capture-moysklad-*.ts — MS reference capture
+scripts/wf-*.js                — workflow skriptlar (cohort-detail-audit, label-grounding-audit…)
+scripts/cert-*.mjs, ground-*.mjs, verify-* — bir-martalik sertifikatsiya/grounding skriptlar (graveyard)
+tools/print-agent              — Windows print agent (.ps1/.bat) · tools/{capture,extract-i18n,admin}
+deploy/                        — nginx conf + pm2 ecosystem.config.cjs + DEPLOY-sherset.md
+desktop/                       — Electron desktop o'rami · docs/ — roadmap/ADR/arxivlar · audit/ — parity audit natijalar
+turbo.json · biome.json · pnpm-workspace.yaml · tsconfig.base.json — monorepo config
+```

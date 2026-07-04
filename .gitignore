@@ -21,10 +21,12 @@ playwright/.cache/
 test-results/
 .screenshots/
 
-# Claude Code local config (local-only) — but workflows/ is a project asset
+# Claude Code local config (local-only) — but workflows/ and commands/ are project assets
 .claude/*
 !.claude/workflows
 !.claude/workflows/**
+!.claude/commands
+!.claude/commands/**
 
 # Env / secrets
 .env
