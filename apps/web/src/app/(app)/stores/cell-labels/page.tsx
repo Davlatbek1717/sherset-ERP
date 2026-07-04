@@ -351,6 +351,13 @@ html,body{margin:0;padding:0}
           @page { size: ${w}mm ${h}mm; margin: 0; }
           html, body { background: white; margin: 0; padding: 0; }
           .no-print { display: none !important; }
+          /* Ilova qobig'i (navbar + modul-tablar + banner) chop'ga chiqmasin —
+             sahifa (app) layout ichida render bo'ladi, ular label sahifalariga
+             aralashib qolardi. */
+          header.ms-navbar,
+          nav[aria-label="Module sub-navigation"] {
+            display: none !important;
+          }
           .label-page { page-break-after: always; margin: 0 !important; box-shadow: none !important; }
           .label-page:last-child { page-break-after: auto; }
         }
