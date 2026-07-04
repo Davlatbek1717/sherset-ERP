@@ -305,6 +305,20 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🟢📡 2026-07-04j (YACHEYKA SKANERI: cell barcode → ichidagi tovarlar — `84c9db2` ✅ DEPLOYED + jonli tasdiqlangan)**
+> User maqsadi: «yacheyka barcode'ini skanerlasa yoki dasturdan kirsa — unda qanaqa tovar borligi va tovar haqida
+> ma'lumot». **API** `GET /products/cell/:code` (NN-NN-NN-NN, unpadded yoki skaner yuboradigan tiresiz 8 raqam —
+> label CODE128C formati): asosiy manzil (Product.loc*) ∪ qo'shimcha yacheykalar (ProductLocation) + har tovarga
+> ombor qoldiqlari; `cell-code.util.ts` (parseCellCode/segmentWhere, 0-segment=NULL semantika) + 8 vitest. **Web**:
+> `/cell` — skaner kirish sahifasi (autofocus input, Enter→kartochka); `/cell/[kod]` — yacheyka kartochkasi (tovarlar,
+> rangli qoldiq, → /scan/<id> to'liq info; keyingi yacheykani uzluksiz skanerlash input'i); omborchi panelida
+> «Yacheyka skaneri» havolasi. Gate: api·web tsc0 · biome0 · yangi 8/8 · button-conv tegilmagan. ⚠️ product-modulda
+> 4 PRE-EXISTING test-fail (filter-parity regex + service-mock findMany) — toza HEAD'da ham tasdiqlandi, mening
+> diff'imga aloqasiz, keyingi sessiya triage qilsin. **Jonli verify (prod)**: `cell/02-17-02-15` va `02170215` →
+> 200, «Panasonik ramka 4x, qoldiq 59» (real DB mos!); `xx-bad` → 400 uzbek xabari; /cell va /cell/[kod] 200.
+> ⚠️ Browser-UI smoke YO'Q. Deploy gotcha tasdiqlandi: paramiko'da nohup-launch kanalni baribir osiltirishi mumkin —
+> ishonchli yo'l: launch'ni alohida channel'da o'qimasdan yopish (fire-and-forget) + log-poll alohida exec'da.
+
 > **🟢🏷️ 2026-07-04i (YACHEYKA SENIKLARI LABEL-QOG'OZ FORMATIDA + SKLAD TABIDA «OMBORLAR» — `8e2d1a3` ✅ DEPLOYED)**
 > 07-04g davomi, user talabi: «A4 emas — har senik label qog'oz formatida; /stores uchun tab yo'q». (1) Chop endi
 > A4 2×5 to'r EMAS: har senik ALOHIDA sahifa, `@page` = label o'lchami (default 60×40mm, formada «Qog'oz (mm)»
