@@ -18,6 +18,7 @@ import { ReturnsRatioService } from './returns-ratio.service.js';
 import { SalesByChannelService } from './sales-by-channel.service.js';
 import { SalesByHourService } from './sales-by-hour.service.js';
 import { SlowMoversService } from './slow-movers.service.js';
+import { SotuvDashboardService } from './sotuv-dashboard.service.js';
 import { StockBalanceService } from './stock-balance.service.js';
 import { TurnoverService } from './turnover.service.js';
 import { UnitEconomicsService } from './unit-economics.service.js';
@@ -49,7 +50,19 @@ export class ReportController {
     private readonly unitEcon: UnitEconomicsService,
     @Inject(WarehouseOpsService)
     private readonly warehouseOps: WarehouseOpsService,
+    @Inject(SotuvDashboardService)
+    private readonly sotuvDashboard: SotuvDashboardService,
   ) {}
+
+  /** Sherset custom — daily kassa summary cards for the homepage dashboard. */
+  @Get('sotuv-dashboard')
+  @RequirePermission({ entity: 'report', action: 'view' })
+  async sotuvDashboardReport(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: Record<string, unknown>,
+  ) {
+    return this.sotuvDashboard.report(user.accountId, query);
+  }
 
   /** Sherset custom — supply→putaway→picking chain dashboard. */
   @Get('warehouse-ops')

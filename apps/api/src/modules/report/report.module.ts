@@ -17,6 +17,7 @@ import { ReturnsRatioService } from './returns-ratio.service.js';
 import { SalesByChannelService } from './sales-by-channel.service.js';
 import { SalesByHourService } from './sales-by-hour.service.js';
 import { SlowMoversService } from './slow-movers.service.js';
+import { SotuvDashboardService } from './sotuv-dashboard.service.js';
 import { StockBalanceService } from './stock-balance.service.js';
 import { TurnoverService } from './turnover.service.js';
 import { UnitEconomicsService } from './unit-economics.service.js';
@@ -45,6 +46,7 @@ import { WarehouseOpsService } from './warehouse-ops.service.js';
     PurchaseManagementService,
     UnitEconomicsService,
     WarehouseOpsService,
+    SotuvDashboardService,
   ],
   exports: [
     ReportService,
@@ -66,6 +68,7 @@ import { WarehouseOpsService } from './warehouse-ops.service.js';
     PurchaseManagementService,
     UnitEconomicsService,
     WarehouseOpsService,
+    SotuvDashboardService,
   ],
 })
 export class ReportModule {}
