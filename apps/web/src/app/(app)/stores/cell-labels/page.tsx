@@ -320,7 +320,7 @@ function RenderedCells({
     return `<!doctype html><html><head><meta charset="utf-8"><style>
 @page{size:${w}mm ${h}mm;margin:0}
 html,body{margin:0;padding:0}
-.lp{width:${w}mm;height:${h}mm;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;justify-content:space-between;overflow:hidden;padding:1.5mm 2mm;page-break-after:always}
+.lp{width:${w}mm;height:${h}mm;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1mm;overflow:hidden;padding:1mm 2mm;page-break-after:always}
 .lp:last-child{page-break-after:auto}
 .hd{text-align:center}
 .t{font-size:8px;color:#94a3b8;letter-spacing:2px}
@@ -447,9 +447,10 @@ function CellLabel({ code, w, h }: { code: string; w: number; h: number }) {
 
   return (
     <div
-      className="label-page flex flex-col items-center justify-between overflow-hidden bg-white px-2 py-1.5 shadow-sm"
+      className="label-page flex flex-col items-center justify-center gap-1 overflow-hidden bg-white px-2 py-1.5 shadow-sm"
       // mm birligi to'g'ridan-to'g'ri — px orqali aylantirish print-rendering'da
       // og'ish/bo'sh-sahifa berishi mumkin; mm esa @page bilan aynan mos tushadi.
+      // justify-center: mazmun stiker MARKAZIDA (space-between chetlarga yoyardi).
       style={{ width: `${w}mm`, height: `${h}mm` }}
     >
       <div className="flex min-h-0 flex-col items-center">
