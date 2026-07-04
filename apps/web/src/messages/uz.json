@@ -1174,7 +1174,8 @@
     "performer": "Ijrochi",
     "document_type": "Hujjat turi",
     "sent": "Yuborilgan",
-    "comment": "Izoh"
+    "comment": "Izoh",
+    "products": "Tovarlar"
   },
   "states": {
     "facture": {
@@ -2550,7 +2551,9 @@
       "purchase_management_card_title": "Xaridlarni boshqarish",
       "purchase_management_card_description": "Ta'minot ehtiyoji, buyurtma/qabul holati",
       "unit_economics_card_title": "Yunit-iqtisod",
-      "unit_economics_card_description": "Bir birlik bo‘yicha tushum, tannarx va marja"
+      "unit_economics_card_description": "Bir birlik bo‘yicha tushum, tannarx va marja",
+      "warehouse_ops_card_title": "Ombor operatsiyalari",
+      "warehouse_ops_card_description": "Qabul, joylashtirish va yig'ish: navbat hamda bajarilishi omborchilar kesimida"
     },
     "factures_out": {
       "title": "Berilgan hisobvaraq-fakturalar",
@@ -6099,6 +6102,39 @@
         "PENDING": "Kutilmoqda",
         "CANCELLED": "Bekor qilingan"
       }
+    },
+    "report_warehouse_ops": {
+      "title": "Ombor operatsiyalari",
+      "subtitle": "Qabul → joylashtirish → yig'ish: navbat va bajarilishi omborchilar kesimida",
+      "breadcrumb_reports": "Hisobotlar",
+      "date_from": "Boshlanish",
+      "date_to": "Tugash",
+      "loading": "Yuklanmoqda...",
+      "error": "Hisobotni yuklab bo'lmadi",
+      "retry": "Qayta urinish",
+      "currency_mixed_warn": "Diqqat: bir nechta valyuta bor — summalar hisob valyutasiga kurs bo'yicha konvertatsiya qilingan",
+      "tile_inbound": "Davr ichida qabul",
+      "tile_inbound_drafts": "qoralama: {count}",
+      "tile_putaway": "Joylashtirish — navbatda",
+      "tile_putaway_done": "davr ichida joylashtirildi: {count}",
+      "tile_picking": "Yig'ish — navbatda",
+      "tile_picking_done": "davr ichida yig'ildi: {count}",
+      "tile_outbound": "Davr ichida otgruzka",
+      "tile_in_progress": "jarayonda: {count}",
+      "tile_docs_count": "{count} ta hujjat",
+      "backlog_note": "Navbat — hozirgi holat (davr filtriga bog'liq emas)",
+      "keepers_title": "Omborchilar kesimida",
+      "col_keeper": "Omborchi",
+      "col_putaway_backlog": "Joylashtirish: navbatda",
+      "col_putaway_done": "Joylashtirildi",
+      "col_picking_backlog": "Yig'ish: navbatda",
+      "col_picking_done": "Yig'ildi",
+      "unassigned": "Biriktirilmagan",
+      "empty_keepers": "Hozircha vazifalar yo'q",
+      "link_supplies": "Qabul hujjatlari",
+      "link_restock": "Joylashtirish vazifalari",
+      "link_omborchi": "Omborchi ekrani",
+      "link_demands": "Otgruzka hujjatlari"
     }
   },
   "print_entity": {

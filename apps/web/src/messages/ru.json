@@ -1174,7 +1174,8 @@
     "performer": "Исполнитель",
     "document_type": "Тип документа",
     "sent": "Отправлено",
-    "comment": "Комментарий"
+    "comment": "Комментарий",
+    "products": "Товары"
   },
   "states": {
     "facture": {
@@ -2550,7 +2551,9 @@
       "purchase_management_card_title": "Управление закупками",
       "purchase_management_card_description": "Потребность в снабжении, статус заказов/приёмок",
       "unit_economics_card_title": "Юнит-экономика",
-      "unit_economics_card_description": "Выручка, себестоимость и маржа на единицу"
+      "unit_economics_card_description": "Выручка, себестоимость и маржа на единицу",
+      "warehouse_ops_card_title": "Складские операции",
+      "warehouse_ops_card_description": "Приёмка, размещение и сборка: очередь и выполнение по кладовщикам"
     },
     "factures_out": {
       "title": "Счета-фактуры выданные",
@@ -6099,6 +6102,39 @@
         "PENDING": "Ожидает",
         "CANCELLED": "Отменено"
       }
+    },
+    "report_warehouse_ops": {
+      "title": "Складские операции",
+      "subtitle": "Приёмка → размещение → сборка: очередь и выполнение по кладовщикам",
+      "breadcrumb_reports": "Отчёты",
+      "date_from": "С",
+      "date_to": "По",
+      "loading": "Загрузка...",
+      "error": "Не удалось загрузить отчёт",
+      "retry": "Повторить",
+      "currency_mixed_warn": "Внимание: несколько валют — суммы конвертированы в валюту учёта по курсу",
+      "tile_inbound": "Приёмки за период",
+      "tile_inbound_drafts": "черновиков: {count}",
+      "tile_putaway": "Размещение — в очереди",
+      "tile_putaway_done": "размещено за период: {count}",
+      "tile_picking": "Сборка — в очереди",
+      "tile_picking_done": "собрано за период: {count}",
+      "tile_outbound": "Отгрузки за период",
+      "tile_in_progress": "в работе: {count}",
+      "tile_docs_count": "{count} док.",
+      "backlog_note": "Очередь — текущее состояние (не зависит от периода)",
+      "keepers_title": "По кладовщикам",
+      "col_keeper": "Кладовщик",
+      "col_putaway_backlog": "Размещение: в очереди",
+      "col_putaway_done": "Размещено",
+      "col_picking_backlog": "Сборка: в очереди",
+      "col_picking_done": "Собрано",
+      "unassigned": "Не назначен",
+      "empty_keepers": "Задач пока нет",
+      "link_supplies": "Приёмки",
+      "link_restock": "Задачи размещения",
+      "link_omborchi": "Экран кладовщика",
+      "link_demands": "Отгрузки"
     }
   },
   "print_entity": {
