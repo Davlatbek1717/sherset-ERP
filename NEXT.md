@@ -305,6 +305,15 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🟢🏬 2026-07-04k (YACHEYKA↔OMBOR BOG'I + 58×29mm SENIK + SKLAD'DA SKANER TABI — `96a8936` ✅ DEPLOYED)**
+> 07-04j davomi, user: «Omborlar tabi + skaner ombor bilan mos + senik 29×58mm qog'ozga mos». (1) cell-labels
+> default 58×29mm (60×40 edi; forma inputlari qoladi); (2) Sklad subnav'ga «Yacheyka skaneri» (/cell) —
+> «Omborlar» (07-04i) yonida; (3) `GET /products/cell/:code` javobida `cell.store` (Store.code=sklad raqami
+> konvensiyasi, padded/unpadded lookup) → kartochkada «Ombor: <nom>». Gate: tc0 · biome0(1 warn). Jonli verify:
+> build+restart OK, cell API 200 (Panasonik topildi), labels sahifasida 58 SSR'da, prod 200. ⚠️ **Prod'da 4 ombor
+> ham `code=NULL`** (API bilan tekshirildi) — «Ombor: …» chiqishi uchun user Sozlamalar→Omborlar'da har omborga
+> Kod=sklad raqamini kiritishi kerak (masalan Основной=2). Browser-UI smoke YO'Q; 58×29 print real printerda sinalsin.
+
 > **🟢📡 2026-07-04j (YACHEYKA SKANERI: cell barcode → ichidagi tovarlar — `84c9db2` ✅ DEPLOYED + jonli tasdiqlangan)**
 > User maqsadi: «yacheyka barcode'ini skanerlasa yoki dasturdan kirsa — unda qanaqa tovar borligi va tovar haqida
 > ma'lumot». **API** `GET /products/cell/:code` (NN-NN-NN-NN, unpadded yoki skaner yuboradigan tiresiz 8 raqam —
