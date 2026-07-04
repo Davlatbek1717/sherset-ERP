@@ -305,6 +305,15 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🟢🧰 2026-07-04f (CLAUDE MUHITI KUCHAYTIRILDI — `84cf1d1`, kod o'zgarishi YO'Q)**
+> Harness-sozlash: (1) **NEXT.md 1691→535 qator** — 06-10…06-25 entry'lar `docs/audits/_ARCHIVE-NEXT-2026-07-04.md`ga
+> VERBATIM (qoida: bu bo'limda eng yangi ~8–10 entry qoladi, oshsa arxivga); (2) **CLAUDE.md §5 «Loyiha xaritasi»**
+> qo'shildi — kod izlashdan OLDIN shu yerga qara + yo'q global-CLAUDE.md ishoralari tozalandi; (3) **`.claude/commands/`**:
+> `/davom` (fokus-sessiya protokoli) · `/deploy` (VPS tartibi+gotcha) · `/qa-cohort` (Phase-2 QA) — gitignore istisno
+> qo'shildi; (4) repo TASHQARISIDA: parent papka `.claude/settings.local.json` — bir-martalik permission qatorlar
+> wildcard'ga tozalandi (60+→23) + **SessionStart hook**: `node scripts/preflight.mjs` endi har sessiya avto yugadi.
+> Memory: `claude-harness-setup.md`. ⚠️ Parallel sessiyaning uncommitted diff'i (labels, stores, desktop/) TEGILMADI.
+
 > **🟢🧭 2026-07-04e (NAV: «Pul»+«CRM» → bitta «Kontragentlar» moduli — `a2b8302` ✅ DEPLOYED)**
 > User qarori: 2 topbar bo'lim o'rniga bitta kontragent-markazli sahifa. Topbar'da endi «Kontragentlar» (ichki key
 > 'crm' qoldi — ripple kam); strip tablari: Kontragentlar · To'lovlar (/payments birlashgan lenta) · O'zaro
