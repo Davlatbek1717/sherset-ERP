@@ -55,6 +55,29 @@ async function agentFetch(path: string, init?: RequestInit, timeoutMs = 4000): P
   }
 }
 
+/** Electron qobiqdamizmi — native (dialogsiz, printer-tanlab) chop bor-yo'qligi. */
+export function hasNativePrinting(): boolean {
+  return electron() != null;
+}
+
+/**
+ * Tayyor HTML hujjatni tanlangan printerga JIM (dialogsiz) bosish — faqat
+ * Electron qobiqda ishlaydi (offscreen BrowserWindow → webContents.print).
+ * Senik/label kabi maxsus @page o'lchamli sahifalar uchun.
+ */
+export async function printHtmlNative(
+  printerName: string,
+  html: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const el = electron();
+  if (!el) return { ok: false, error: 'Electron qobiq emas' };
+  try {
+    return await el.printSheet(printerName, html);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 /** Is a printing backend available? (Electron native, or the HTTP agent /health) */
 export async function checkPrintAgent(): Promise<boolean> {
   if (electron()) return true; // native printing is always available in the shell

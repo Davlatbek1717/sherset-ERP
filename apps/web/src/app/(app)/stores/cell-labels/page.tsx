@@ -23,6 +23,7 @@
  * qaytaradi → NN·NN·NN·NN deb parse qilinadi.
  */
 
+import { fetchAgentPrinters, hasNativePrinting, printHtmlNative } from '@/lib/print-agent';
 import { Button, Icons, Input } from '@moysklad/ui';
 import JsBarcode from 'jsbarcode';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -282,6 +283,67 @@ function RenderedCells({
   h: number;
   onBack: () => void;
 }) {
+  // Electron (.exe) qobiqda — dialogsiz, tanlangan label-printerga to'g'ridan-
+  // to'g'ri bosish. Brauzerda avvalgidek window.print() qoladi. Printer
+  // tanlovi shu kompyuterda eslab qolinadi (printerlar per-PC bo'ladi).
+  const LS_PRINTER = 'sherset.labelPrinterName';
+  const native = hasNativePrinting();
+  const [printers, setPrinters] = useState<string[]>([]);
+  const [printer, setPrinter] = useState('');
+  const [printState, setPrintState] = useState<'idle' | 'busy' | 'ok' | 'err'>('idle');
+  const [printErr, setPrintErr] = useState('');
+
+  useEffect(() => {
+    if (!native) return;
+    fetchAgentPrinters().then((list) => {
+      setPrinters(list);
+      const saved = localStorage.getItem(LS_PRINTER);
+      if (saved && list.includes(saved)) setPrinter(saved);
+      else if (list.length === 1) setPrinter(list[0] ?? '');
+    });
+  }, [native]);
+
+  /** Preview'dagi shtrix-svg'larni yig'ib, offscreen oynaga (Tailwind'siz)
+   * inline-uslubli mustaqil HTML quradi — @page = label o'lchami. */
+  const buildNativeHtml = (): string => {
+    const svgs = Array.from(document.querySelectorAll('[data-test-id="cell-label-barcode"]'));
+    const codeFontPx = Math.min(24, Math.round((w * MM_PX * 0.82) / 11 / 0.62));
+    const labels = codes
+      .map((code, i) => {
+        const svg = (svgs[i]?.outerHTML ?? '').replace(
+          '<svg ',
+          `<svg style="max-width:${w - 4}mm;max-height:${(h * 0.45).toFixed(1)}mm" `,
+        );
+        return `<div class="lp"><div class="hd"><div class="t">YACHEYKA</div><div class="c" style="font-size:${codeFontPx}px">${code}</div></div>${svg}</div>`;
+      })
+      .join('');
+    return `<!doctype html><html><head><meta charset="utf-8"><style>
+@page{size:${w}mm ${h}mm;margin:0}
+html,body{margin:0;padding:0}
+.lp{width:${w}mm;height:${h}mm;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;justify-content:space-between;overflow:hidden;padding:1.5mm 2mm;page-break-after:always}
+.lp:last-child{page-break-after:auto}
+.hd{text-align:center}
+.t{font-size:8px;color:#94a3b8;letter-spacing:2px}
+.c{font-family:ui-monospace,Consolas,monospace;font-weight:700;line-height:1.15;letter-spacing:1px}
+</style></head><body>${labels}</body></html>`;
+  };
+
+  const handlePrint = async () => {
+    if (!native || !printer) {
+      window.print();
+      return;
+    }
+    setPrintState('busy');
+    const res = await printHtmlNative(printer, buildNativeHtml());
+    if (res.ok) {
+      setPrintState('ok');
+      setTimeout(() => setPrintState('idle'), 3000);
+    } else {
+      setPrintState('err');
+      setPrintErr(res.error ?? "noma'lum xato");
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-100">
       <style>{`
@@ -302,20 +364,54 @@ function RenderedCells({
               {codes.length} ta · {w}×{h} mm label-qog'oz · har biri alohida sahifa
             </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
             <Button variant="ghost" onClick={onBack}>
               ← Orqaga
             </Button>
+            {native && printers.length > 0 ? (
+              <select
+                value={printer}
+                onChange={(e) => {
+                  setPrinter(e.target.value);
+                  localStorage.setItem(LS_PRINTER, e.target.value);
+                }}
+                aria-label="Label printer"
+                className="h-9 max-w-[220px] rounded-md border border-slate-300 bg-white px-2 text-slate-700 text-sm"
+              >
+                <option value="">Printer tanlang…</option>
+                {printers.map((p) => (
+                  <option key={p} value={p}>
+                    {p}
+                  </option>
+                ))}
+              </select>
+            ) : null}
             <Button
               variant="primary"
-              onClick={() => window.print()}
+              onClick={handlePrint}
+              disabled={printState === 'busy'}
               data-test-id="cell-labels-print"
             >
               <Icons.print className="h-4 w-4" />
-              Chop etish
+              {printState === 'busy'
+                ? 'Yuborilmoqda…'
+                : native && printer
+                  ? 'Chop etish (avtomatik)'
+                  : 'Chop etish'}
             </Button>
           </div>
         </div>
+        {printState === 'ok' ? (
+          <div className="mx-auto max-w-5xl pt-1 text-emerald-600 text-xs">
+            ✓ Printerga yuborildi
+          </div>
+        ) : null}
+        {printState === 'err' ? (
+          <div className="mx-auto max-w-5xl pt-1 text-red-600 text-xs">
+            Xato: {printErr} — printer tanlovini «Printer tanlang…» ga qaytarib, brauzer-dialog
+            bilan urinib ko'ring
+          </div>
+        ) : null}
       </div>
 
       <div className="flex flex-col items-center gap-4 py-6 print:block print:gap-0 print:py-0">
