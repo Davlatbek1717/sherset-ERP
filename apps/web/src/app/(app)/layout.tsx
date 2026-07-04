@@ -25,11 +25,12 @@ const MODULE_ENTITIES: Record<string, string[]> = {
   purchases: ['purchaseorder', 'invoicein', 'supply', 'purchasereturn', 'facturein'],
   sales: ['customerorder', 'invoiceout', 'demand', 'salesreturn', 'factureout', 'commissionreport'],
   goods: ['product', 'productfolder', 'pricelist'],
-  crm: ['counterparty', 'contract', 'call'],
+  // «Kontragentlar» (merged CRM+Money, user decision 2026-07-04): counterparty
+  // work AND its money documents live in one module now.
+  crm: ['counterparty', 'contract', 'paymentin', 'paymentout', 'cashin', 'cashout', 'prepayment'],
   // 'store' is a catalog/reference entity many roles need for dropdowns — it
   // must NOT reveal the Stock (operations) module. Gate on stock DOCUMENTS only.
   stock: ['move', 'enter', 'loss', 'inventory', 'internalorder'],
-  money: ['paymentin', 'paymentout', 'cashin', 'cashout', 'prepayment'],
   // Retail (POS) is gated on cashiersession only — a warehouse worker gets
   // retailsale view/update for the picking flow but must NOT see the POS module.
   retail: ['cashiersession'],
@@ -180,12 +181,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       icon: <Icons.stock className={navIconClass} />,
     },
     {
-      key: 'money',
-      label: tNav('money'),
-      href: '/payments-in',
-      icon: <Icons.money className={navIconClass} />,
-    },
-    {
       key: 'retail',
       label: tNav('retail'),
       href: '/retail',
@@ -243,11 +238,24 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   // (Сделки/Канбан/Воронки) are moysklad's tariff-gated advanced CRM — not surfaced
   // here; Контактные лица live inside the counterparty card; «Скидки» is not a CRM
   // section in moysklad. Those routes still exist but are no longer linked in the strip.
+  // «Kontragentlar» — the merged CRM+Money strip (user decision 2026-07-04):
+  // everything counterparty-related on one page. Deals/Kanban/Funnels/Calls left
+  // the strip (routes still work by URL); payroll moved to HR; the cash-flow/PnL
+  // reports stay in «Hisobotlar».
   const crmSubNav: SubNavItem[] = [
     { key: 'counterparties', label: tCrm('counterparties'), href: '/counterparties' },
+    { key: 'payments', label: tMoney('payments'), href: '/payments' },
+    {
+      key: 'mutualsettlements',
+      label: tMoney('mutual_settlements'),
+      href: '/reports/counterparty-balance',
+    },
+    { key: 'prepayments', label: tMoney('prepayments'), href: '/prepayments' },
     { key: 'contracts', label: tCrm('contracts'), href: '/contracts' },
-    { key: 'calls', label: tCrm('calls'), href: '/calls' },
+    { key: 'discounts', label: tCrm('discounts'), href: '/discounts' },
     { key: 'bonus_operations', label: tCrm('bonus_operations'), href: '/loyalty-operations' },
+    { key: 'corrections', label: tMoney('corrections'), href: '/counterparty-adjustments' },
+    { key: 'bank_import', label: tMoney('bank_import'), href: '/bank-import' },
   ];
 
   // Order matches moysklad's "Закупки" sub-nav strip exactly:
@@ -272,32 +280,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       key: 'education',
       label: tPurchases('education'),
       href: '/help/purchases',
-    },
-  ];
-
-  // Order + labels match moysklad's «Деньги» sub-nav exactly (live-grounded
-  // 2026-06-25, docs/audits/payments-in-audit-2026-06-25/create-menus-ground.json
-  // `dengiTabs` + 01-list-full.png): Платежи · Движение денежных средств ·
-  // Прибыли и убытки · Взаиморасчеты · Начисления зарплаты · Корректировки.
-  // The old by-document-type pages (/payments-in, /cash-in, /money, …) stay
-  // reachable by URL + the «Платежи» create-menus; they just leave the menu.
-  // The 3 report tabs point at the existing /reports/* pages (those pages live
-  // in the «Отчёты» module today, so landing there highlights Отчёты — the
-  // per-tab deep work will give them a Деньги-native home).
-  const moneySubNav: SubNavItem[] = [
-    { key: 'payments', label: tMoney('payments'), href: '/payments' },
-    { key: 'cashflow', label: tMoney('cash_flow'), href: '/reports/cash-flow' },
-    { key: 'pnl', label: tMoney('pnl'), href: '/reports/pnl' },
-    {
-      key: 'mutualsettlements',
-      label: tMoney('mutual_settlements'),
-      href: '/reports/counterparty-balance',
-    },
-    { key: 'payrolls', label: tMoney('payroll_accruals'), href: '/payrolls' },
-    {
-      key: 'corrections',
-      label: tMoney('corrections'),
-      href: '/counterparty-adjustments',
     },
   ];
 
@@ -356,8 +338,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     { key: 'pickingwaves', label: tStock('picking_waves'), href: '/picking-waves' },
     { key: 'internalorders', label: tStock('internal_orders'), href: '/internal-orders' },
     { key: 'restocktasks', label: tStock('restock'), href: '/restock-tasks' },
-    { key: 'omborchi', label: 'Omborchi (yig\'ish)', href: '/omborchi' },
-    { key: 'replenishment', label: 'To\'ldirish kerak', href: '/replenishment' },
+    { key: 'omborchi', label: "Omborchi (yig'ish)", href: '/omborchi' },
+    { key: 'replenishment', label: "To'ldirish kerak", href: '/replenishment' },
     // «Остатки» (/stock-balance) removed — that route has no page (dead link);
     // the working stock-balance lives under Hisobotlar → /reports/stock-balance.
     { key: 'turnover', label: tStock('turnover'), href: '/turnover' },
@@ -469,7 +451,20 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           pathname.startsWith('/loyalty-operations') ||
           pathname.startsWith('/opportunities') ||
           pathname.startsWith('/pipelines') ||
-          pathname.startsWith('/discounts')
+          pathname.startsWith('/discounts') ||
+          // merged «Pul» routes (user decision 2026-07-04) — one module now
+          pathname === '/payments' ||
+          pathname.startsWith('/payments-in') ||
+          pathname.startsWith('/payments-out') ||
+          pathname.startsWith('/cash-in') ||
+          pathname.startsWith('/cash-out') ||
+          pathname.startsWith('/bank-import') ||
+          pathname.startsWith('/counterparty-adjustments') ||
+          pathname.startsWith('/prepayments') ||
+          pathname.startsWith('/prepayment-returns') ||
+          pathname.startsWith('/money') ||
+          // the «O'zaro hisob-kitoblar» tab lives at /reports/* but belongs here
+          pathname.startsWith('/reports/counterparty-balance')
         ? 'crm'
         : pathname.startsWith('/customer-orders') ||
             pathname.startsWith('/invoices-out') ||
@@ -483,55 +478,43 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               pathname.startsWith('/supplies') ||
               pathname.startsWith('/purchase-returns')
             ? 'purchases'
-            : pathname === '/payments' ||
-                pathname.startsWith('/payments-in') ||
-                pathname.startsWith('/payments-out') ||
-                pathname.startsWith('/cash-in') ||
-                pathname.startsWith('/cash-out') ||
-                pathname.startsWith('/bank-import') ||
-                pathname.startsWith('/counterparty-adjustments') ||
-                pathname.startsWith('/prepayments') ||
-                pathname.startsWith('/prepayment-returns') ||
-                pathname.startsWith('/payrolls') ||
-                pathname.startsWith('/money')
-              ? 'money'
-              : pathname.startsWith('/moves') ||
-                  pathname.startsWith('/internal-orders') ||
-                  pathname.startsWith('/losses') ||
-                  pathname.startsWith('/enters') ||
-                  pathname.startsWith('/inventories') ||
-                  pathname.startsWith('/picking-waves') ||
-                  pathname.startsWith('/stores') ||
-                  pathname.startsWith('/turnover') ||
-                  pathname.startsWith('/stock-balance') ||
-                  pathname.startsWith('/omborchi') ||
-                  pathname.startsWith('/replenishment') ||
-                  pathname.startsWith('/restock-tasks') ||
-                  pathname.startsWith('/stock')
-                ? 'stock'
-                : pathname.startsWith('/reports')
-                  ? 'reports'
-                  : pathname.startsWith('/settings')
-                    ? 'settings'
-                    : pathname.startsWith('/production') ||
-                        pathname.startsWith('/processing-orders') ||
-                        pathname.startsWith('/processings')
-                      ? 'production'
-                      : pathname.startsWith('/retail') || pathname.startsWith('/sotuv')
-                        ? 'retail'
-                        : // e-commerce lives UNDER «Решения» (apps), not as its own
-                          // tab — /ecommerce highlights the Решения module.
-                          pathname.startsWith('/ecommerce')
+            : pathname.startsWith('/moves') ||
+                pathname.startsWith('/internal-orders') ||
+                pathname.startsWith('/losses') ||
+                pathname.startsWith('/enters') ||
+                pathname.startsWith('/inventories') ||
+                pathname.startsWith('/picking-waves') ||
+                pathname.startsWith('/stores') ||
+                pathname.startsWith('/turnover') ||
+                pathname.startsWith('/stock-balance') ||
+                pathname.startsWith('/omborchi') ||
+                pathname.startsWith('/replenishment') ||
+                pathname.startsWith('/restock-tasks') ||
+                pathname.startsWith('/stock')
+              ? 'stock'
+              : pathname.startsWith('/reports')
+                ? 'reports'
+                : pathname.startsWith('/settings')
+                  ? 'settings'
+                  : pathname.startsWith('/production') ||
+                      pathname.startsWith('/processing-orders') ||
+                      pathname.startsWith('/processings')
+                    ? 'production'
+                    : pathname.startsWith('/retail') || pathname.startsWith('/sotuv')
+                      ? 'retail'
+                      : // e-commerce lives UNDER «Решения» (apps), not as its own
+                        // tab — /ecommerce highlights the Решения module.
+                        pathname.startsWith('/ecommerce')
+                        ? 'apps'
+                        : pathname.startsWith('/apps')
                           ? 'apps'
-                          : pathname.startsWith('/apps')
-                            ? 'apps'
-                            : pathname.startsWith('/hr')
-                              ? 'hr'
-                              : pathname.startsWith('/analitika')
-                                ? 'analitika'
-                                : pathname === '/'
-                                  ? 'homepage'
-                                  : null;
+                          : pathname.startsWith('/hr') || pathname.startsWith('/payrolls')
+                            ? 'hr'
+                            : pathname.startsWith('/analitika')
+                              ? 'analitika'
+                              : pathname === '/'
+                                ? 'homepage'
+                                : null;
 
   const navWithActive = moduleNav
     .filter((m) => canViewModule(MODULE_ENTITIES[m.key] ?? []))
@@ -549,27 +532,25 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           ? matchActive(salesSubNav)
           : activeModule === 'purchases'
             ? matchActive(purchasesSubNav)
-            : activeModule === 'money'
-              ? matchActive(moneySubNav)
-              : activeModule === 'stock'
-                ? matchActive(stockSubNav)
-                : activeModule === 'reports'
-                  ? matchActive(reportsSubNav)
-                  : activeModule === 'settings'
-                    ? null /* settings now uses left sidebar (SettingsSidebar) */
-                    : activeModule === 'production'
-                      ? matchActive(productionSubNav)
-                      : activeModule === 'retail'
-                        ? matchActive(retailSubNav)
-                        : // on /ecommerce the active module is «apps» (Решения), but we
-                          // still surface the e-commerce sub-nav (overview/channels/orders).
-                          pathname.startsWith('/ecommerce')
-                          ? matchActive(ecomSubNav)
-                          : activeModule === 'hr'
-                            ? matchActive(hrSubNav)
-                            : activeModule === 'analitika'
-                              ? matchActive(analitikaSubNav)
-                              : null;
+            : activeModule === 'stock'
+              ? matchActive(stockSubNav)
+              : activeModule === 'reports'
+                ? matchActive(reportsSubNav)
+                : activeModule === 'settings'
+                  ? null /* settings now uses left sidebar (SettingsSidebar) */
+                  : activeModule === 'production'
+                    ? matchActive(productionSubNav)
+                    : activeModule === 'retail'
+                      ? matchActive(retailSubNav)
+                      : // on /ecommerce the active module is «apps» (Решения), but we
+                        // still surface the e-commerce sub-nav (overview/channels/orders).
+                        pathname.startsWith('/ecommerce')
+                        ? matchActive(ecomSubNav)
+                        : activeModule === 'hr'
+                          ? matchActive(hrSubNav)
+                          : activeModule === 'analitika'
+                            ? matchActive(analitikaSubNav)
+                            : null;
 
   // Trial banner removed from the global layout — moysklad surfaces the
   // upgrade CTA in /settings/billing instead, and the orange strip across
