@@ -305,6 +305,23 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🟢🖨️ 2026-07-04l (SENIK CHOP ZANJIRI: exe v1.0.3 avto-chop + aniq o'lcham + markazlash — ✅ DEPLOYED)**
+> 07-04k davomi, user shikoyatlari ketma-ket hal qilindi: «exe'da avtomatik chiqmayapti» → «o'lcham noto'g'ri» →
+> «markazga chiqsin». (1) **mm-birlik** (`c870c43`): label div px→mm (@page bilan aynan mos). (2) **exe'da avto-chop**
+> (`d7edf9e`): cell-labels'da Electron'da printer-tanlash (localStorage, per-PC) + «Chop etish (avtomatik)» —
+> `printHtmlNative` (print-agent'ga yangi eksport) inline-uslubli HTML'ni silent bosadi; brauzerda window.print
+> fallback. (3) **ILDIZ BUG**: desktop `main.js` printSheet 80mm-chek qog'oziga qattiq yozilgan edi (width=80mm,
+> height=kontentdan) — label noto'g'ri o'lchamda chiqardi. **exe v1.0.3** (`c571c4a`, feat/desktop-app):
+> `pageSizeMicrons` param (10–300mm validatsiya, legacy 80mm saqlanadi); web `printHtmlNative(..., {widthMm,heightMm})`
+> uzatadi (`23d9cb4`). Build+upload: `Sherset-Setup-1.0.3.exe`+latest.yml+blockmap → `/var/www/sherset-updates/`
+> (82MB exec-kanal, 157s; yml/exe HTTPS 200) — auto-update hamma PC'ga o'zi boradi. (4) **markazlash** (`3569841`):
+> label mazmuni space-between emas markazda (preview + native HTML). Jonli: barcha buildlar BUILD_OK, sahifa 200.
+> ⚠️ Real label-printerda jonli chop hali USER tomonidan tasdiqlanmagan; siljisa — «Siljitish X/Y» kalibrlash rejada.
+> ⚠️ SSH-uzilishlar ko'p kuzatildi (10054, ehtimol 82MB upload paytida) — deploy-poll'ni qayta-ulanish bilan qilish.
+> 💡 TAKLIF (3× kuzatilgan muammo): har deploy'da ~5 daqiqalik chunk-400 oynasi bor (build .next ustidan yozadi) —
+> ATOMIC DEPLOY (alohida papkada build → symlink swap) keyingi infra-ish sifatida qilinishi kerak.
+> Desktop worktree: `../sherset-desktop` (node_modules junction bilan) — kelajak exe-release'lar uchun qoldirildi.
+
 > **🟢🏬 2026-07-04k (YACHEYKA↔OMBOR BOG'I + 58×29mm SENIK + SKLAD'DA SKANER TABI — `96a8936` ✅ DEPLOYED)**
 > 07-04j davomi, user: «Omborlar tabi + skaner ombor bilan mos + senik 29×58mm qog'ozga mos». (1) cell-labels
 > default 58×29mm (60×40 edi; forma inputlari qoladi); (2) Sklad subnav'ga «Yacheyka skaneri» (/cell) —
