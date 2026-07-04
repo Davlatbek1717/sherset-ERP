@@ -122,6 +122,26 @@ export function StoresListView({ formBasePath = '/settings/stores' }: { formBase
       cellText: (row) => row.address ?? '',
     },
     {
+      key: 'cellLabels',
+      header: t('cell_labels'),
+      width: '160px',
+      cell: (row) => {
+        // Ombor kodi 0–99 raqam bo'lsa Sklad segmenti oldindan to'ldiriladi
+        const params = new URLSearchParams({ store: row.name });
+        if (row.code && /^\d{1,2}$/.test(row.code.trim())) params.set('sklad', row.code.trim());
+        return (
+          <a
+            href={`/stores/cell-labels?${params.toString()}`}
+            className="text-[var(--ms-text-brand)] text-sm underline-offset-2 hover:underline"
+            data-test-id={`store-cell-labels-${row.id}`}
+          >
+            {t('cell_labels')}
+          </a>
+        );
+      },
+      cellText: () => '',
+    },
+    {
       key: 'allowNegativeStock',
       header: t('allow_negative_stock'),
       width: '180px',

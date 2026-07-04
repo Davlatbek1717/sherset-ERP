@@ -305,6 +305,16 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🟢🏷️ 2026-07-04g (YACHEYKA LABELLARI → OMBORLAR SAHIFASI — Phase-1, browser-smoke YO'Q)**
+> User talabi: yacheyka-label generatori tovar-seniklar sahifasi orqasidan omborlarga ko'chsin. (1) Route ko'chdi:
+> `/labels/cells` → `/stores/cell-labels` (`(app)/stores/cell-labels/page.tsx`; `startsWith('/stores')` tufayli
+> «Sklad» moduli yonadi); (2) `?sklad=NN` — ombor kodi 0–99 raqam bo'lsa Sklad segmenti prefill, `?store=<nom>` —
+> header'da «Ombor: …» (useSearchParams `<Suspense>` bilan); (3) StoresListView har qatorida «Yacheyka labellari»
+> ustun-havolasi (`pages.stores.cell_labels` uz/ru); (4) `/labels/print`dagi goto-cell-labels tugmasi o'chirildi.
+> Chop formati o'zgarmagan: A4 2×5 87.5×50mm senik-qog'oz + CODE128C. Gate: tc0 · biome0 (print sahifada eskidan
+> qolgan nursery-warning) · web Vitest **regress YO'Q** — 53 fail HEAD'da ham aynan shu (stash-tekshiruv bilan
+> isbotlandi), 2318 pass. Parallel sessiya: NEXT.md/progress/desktop diff'iga tegilmadi, diff path-cheklangan.
+
 > **🟢🧰 2026-07-04f (CLAUDE MUHITI KUCHAYTIRILDI — `84cf1d1`, kod o'zgarishi YO'Q)**
 > Harness-sozlash: (1) **NEXT.md 1691→535 qator** — 06-10…06-25 entry'lar `docs/audits/_ARCHIVE-NEXT-2026-07-04.md`ga
 > VERBATIM (qoida: bu bo'limda eng yangi ~8–10 entry qoladi, oshsa arxivga); (2) **CLAUDE.md §5 «Loyiha xaritasi»**

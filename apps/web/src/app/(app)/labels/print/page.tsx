@@ -92,7 +92,12 @@ export default function PrintLabelsPage() {
       const rows = await Promise.all(
         prefillIds.map(async (id) => {
           const p = await api.get<{ id: string; name: string }>(`/products/${id}`);
-          return { _uid: genUid(), productId: p.id, productLabel: p.name, quantity: 1 } satisfies PrintItem;
+          return {
+            _uid: genUid(),
+            productId: p.id,
+            productLabel: p.name,
+            quantity: 1,
+          } satisfies PrintItem;
         }),
       );
       if (rows.length > 0) setItems(rows);
@@ -103,7 +108,12 @@ export default function PrintLabelsPage() {
 
   const productFetcher = async (s: string): Promise<PickerItem[]> => {
     const d = await api.get<{
-      items: Array<{ id: string; name: string; code: string | null; salePrices: Array<{ value: string }> }>;
+      items: Array<{
+        id: string;
+        name: string;
+        code: string | null;
+        salePrices: Array<{ value: string }>;
+      }>;
     }>(`/products?search=${encodeURIComponent(s)}&limit=50`);
     return d.items.map((p) => ({
       id: p.id,
@@ -117,12 +127,14 @@ export default function PrintLabelsPage() {
     setItems((arr) => [...arr, { _uid: genUid(), productId: '', productLabel: '', quantity: 1 }]);
   const updateItem = (uid: string, patch: Partial<PrintItem>) =>
     setItems((arr) => arr.map((i) => (i._uid === uid ? { ...i, ...patch } : i)));
-  const removeItem = (uid: string) =>
-    setItems((arr) => arr.filter((i) => i._uid !== uid));
+  const removeItem = (uid: string) => setItems((arr) => arr.filter((i) => i._uid !== uid));
 
   const handlePreview = async () => {
     const filled = items.filter((i) => i.productId && i.quantity > 0);
-    if (filled.length === 0) { setError('Kamida 1 ta mahsulot qo\'shing'); return; }
+    if (filled.length === 0) {
+      setError("Kamida 1 ta mahsulot qo'shing");
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -179,17 +191,15 @@ export default function PrintLabelsPage() {
     <div className="mx-auto max-w-2xl space-y-6 p-6">
       <div className="flex items-center justify-between">
         <h1 className="font-semibold text-[var(--ms-text-primary)] text-xl">Yorliq chop etish</h1>
-        <div className="flex items-center gap-2">
-          {/* Javon qatoriga yopishtiriladigan yacheyka-kod labellari (Sherset custom) */}
-          <Button variant="secondary" onClick={() => router.push('/labels/cells')} data-test-id="goto-cell-labels">
-            Yacheyka labellari
-          </Button>
-          <Button variant="ghost" onClick={() => router.back()}>← {tCommon('back')}</Button>
-        </div>
+        <Button variant="ghost" onClick={() => router.back()}>
+          ← {tCommon('back')}
+        </Button>
       </div>
 
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-red-700 text-sm">{error}</div>
+        <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-red-700 text-sm">
+          {error}
+        </div>
       )}
 
       <div className="space-y-4 rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] p-4">
@@ -227,10 +237,17 @@ export default function PrintLabelsPage() {
                   min="1"
                   max="10000"
                   value={it.quantity}
-                  onChange={(e) => updateItem(it._uid, { quantity: Math.max(1, Number(e.target.value)) })}
+                  onChange={(e) =>
+                    updateItem(it._uid, { quantity: Math.max(1, Number(e.target.value)) })
+                  }
                   className="text-right tabular-nums"
                 />
-                <Button type="button" size="icon-sm" variant="ghost" onClick={() => removeItem(it._uid)}>
+                <Button
+                  type="button"
+                  size="icon-sm"
+                  variant="ghost"
+                  onClick={() => removeItem(it._uid)}
+                >
                   <Icons.close className="h-4 w-4" />
                 </Button>
               </div>
@@ -245,7 +262,7 @@ export default function PrintLabelsPage() {
             onClick={handlePreview}
             disabled={items.length === 0 || loading}
           >
-            {loading ? 'Yuklanmoqda...' : 'Ko\'rish va chop etish'}
+            {loading ? 'Yuklanmoqda...' : "Ko'rish va chop etish"}
           </Button>
         </div>
       </div>
@@ -276,7 +293,8 @@ function RenderedSheet({
   const mmPx = 3.7795;
   const labelsPerPage = tpl.cols * tpl.rows;
   const pages: LabelData[][] = [];
-  for (let i = 0; i < labels.length; i += labelsPerPage) pages.push(labels.slice(i, i + labelsPerPage));
+  for (let i = 0; i < labels.length; i += labelsPerPage)
+    pages.push(labels.slice(i, i + labelsPerPage));
 
   return (
     <div className="min-h-screen bg-slate-100">
@@ -299,7 +317,9 @@ function RenderedSheet({
             </div>
           </div>
           <div className="flex gap-2">
-            <Button variant="ghost" onClick={onBack}>← Orqaga</Button>
+            <Button variant="ghost" onClick={onBack}>
+              ← Orqaga
+            </Button>
             <Button variant="primary" onClick={onPrint}>
               <Icons.print className="h-4 w-4" />
               Chop etish
@@ -333,7 +353,12 @@ function RenderedSheet({
 
 // ── LabelCell ─────────────────────────────────────────────────────────────────
 
-function LabelCell({ label, x, y, mmPx }: { label: LabelData; x: number; y: number; mmPx: number }) {
+function LabelCell({
+  label,
+  x,
+  y,
+  mmPx,
+}: { label: LabelData; x: number; y: number; mmPx: number }) {
   const tpl = DEFAULT_TEMPLATE;
   const widthPx = tpl.labelWidthMm * mmPx;
   const heightPx = tpl.labelHeightMm * mmPx;
@@ -346,14 +371,24 @@ function LabelCell({ label, x, y, mmPx }: { label: LabelData; x: number; y: numb
   return (
     <div
       className="absolute flex flex-col justify-between overflow-hidden border border-slate-200 px-2 py-1.5"
-      style={{ left: `${x * mmPx}px`, top: `${y * mmPx}px`, width: widthPx, height: heightPx, fontSize: '9px', lineHeight: '12px' }}
+      style={{
+        left: `${x * mmPx}px`,
+        top: `${y * mmPx}px`,
+        width: widthPx,
+        height: heightPx,
+        fontSize: '9px',
+        lineHeight: '12px',
+      }}
     >
       <div className="line-clamp-2 font-medium text-slate-800" style={{ fontSize: '10px' }}>
         {label.productName}
       </div>
 
       {label.binLocation && (
-        <div className="font-mono font-bold text-slate-900 tabular-nums tracking-widest" style={{ fontSize: '13px' }}>
+        <div
+          className="font-mono font-bold text-slate-900 tabular-nums tracking-widest"
+          style={{ fontSize: '13px' }}
+        >
           {label.binLocation}
         </div>
       )}
@@ -361,12 +396,17 @@ function LabelCell({ label, x, y, mmPx }: { label: LabelData; x: number; y: numb
       <div className="flex items-end justify-between gap-1">
         <div className="flex flex-col gap-0.5">
           {label.article && (
-            <div className="text-slate-400" style={{ fontSize: '7px' }}>{label.article}</div>
+            <div className="text-slate-400" style={{ fontSize: '7px' }}>
+              {label.article}
+            </div>
           )}
           <QRCodeSVG value={qrValue} size={qrSize} level="M" marginSize={0} />
         </div>
         {label.priceMinor !== '0' && (
-          <div className="shrink-0 self-end text-right font-bold text-slate-900 tabular-nums" style={{ fontSize: '13px' }}>
+          <div
+            className="shrink-0 self-end text-right font-bold text-slate-900 tabular-nums"
+            style={{ fontSize: '13px' }}
+          >
             {(Number(label.priceMinor) / 100).toLocaleString('uz', { maximumFractionDigits: 0 })}
           </div>
         )}

@@ -1,12 +1,16 @@
 'use client';
 
 /**
- * /labels/cells — YACHEYKA (javon qatori) labellari (Sherset custom).
+ * /stores/cell-labels — YACHEYKA (javon qatori) labellari (Sherset custom).
  *
  * Har yacheyka uchun javonga yopishtiriladigan label: katta mono «NN-NN-NN-NN»
  * kod + QR. Diapazon kiritiladi (har segment from–to) → dekart ko'paytmasi
  * bo'yicha labellari generatsiya qilinadi (masalan sklad 01, polka 1–3,
  * qavat 1–2, yacheyka 1–10 → 60 ta label).
+ *
+ * Kirish nuqtasi — omborlar ro'yxati (StoresListView) qatoridagi havola;
+ * `?sklad=NN` ombor kodidan Sklad segmentini oldindan to'ldiradi,
+ * `?store=<nom>` sarlavhada ombor nomini ko'rsatadi.
  *
  * Shtrix-kod (CODE128C) TIRESIZ 8 raqamni kodlaydi («01020304» — har segment
  * 2 xona, shuning uchun segmentlar 0–99 bilan cheklangan): raqam-juftlik
@@ -17,8 +21,8 @@
 
 import { Button, Icons, Input } from '@moysklad/ui';
 import JsBarcode from 'jsbarcode';
-import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 
 const TPL = {
   pageWidthMm: 210,
@@ -57,8 +61,26 @@ function expand(r: Range): number[] | null {
 }
 
 export default function CellLabelsPage() {
+  return (
+    <Suspense>
+      <CellLabelsContent />
+    </Suspense>
+  );
+}
+
+function CellLabelsContent() {
   const router = useRouter();
-  const [sklad, setSklad] = useState<Range>(emptyRange());
+  const searchParams = useSearchParams();
+  const storeName = searchParams.get('store');
+  const [sklad, setSklad] = useState<Range>(() => {
+    // Ombor qatoridan kelganda sklad segmenti ombor kodi bilan to'ldiriladi
+    const p = searchParams.get('sklad');
+    if (p && /^\d{1,2}$/.test(p.trim())) {
+      const v = pad2(Number(p.trim()));
+      return { from: v, to: v };
+    }
+    return emptyRange();
+  });
   const [polka, setPolka] = useState<Range>(emptyRange());
   const [qavat, setQavat] = useState<Range>(emptyRange());
   const [yacheyka, setYacheyka] = useState<Range>(emptyRange());
@@ -116,6 +138,14 @@ export default function CellLabelsPage() {
           <h1 className="font-semibold text-[var(--ms-text-primary)] text-xl">
             Yacheyka labellari
           </h1>
+          {storeName && (
+            <p
+              className="mt-1 font-medium text-[var(--ms-text-primary)] text-sm"
+              data-test-id="cell-labels-store"
+            >
+              Ombor: {storeName}
+            </p>
+          )}
           <p className="mt-1 text-[var(--ms-text-muted)] text-sm">
             Javon qatoriga yopishtiriladigan kod+QR labellar. Har segment uchun diapazon kiriting
             (bo'sh «gacha» = «dan» bilan teng; bo'sh «dan» = 00).
