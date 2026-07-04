@@ -305,6 +305,23 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🟢📊 2026-07-04 (OMBOR-OPERATSIYALARI DASHBOARD — `020ff1f` ✅ DEPLOYED + jonli tasdiqlangan)**
+> «Muammolarni xal qil» davomi. User so'rovi: qabul→joylashtirish→otish zanjiri ma'lumotlarini dashboardda ko'rish.
+> Zanjir o'zi tayyor edi (03-iyul), lekin raqamlar 4 alohida ro'yxatda yashardi. **Yangi:** API
+> `GET /reports/warehouse-ops?dateFrom&dateTo` (`warehouse-ops.service.ts`, report-modul konvensiyasida:
+> reportDateBounds + loadRateContext/consolidateToBase) — inbound (posted supplies count+sum, drafts) · putaway/picking
+> (RestockTask type restock/picking: joriy backlog **davr filtrisiz** + done-in-window updatedAt bo'yicha) · outbound
+> (posted demands) · per-omborchi jadval (backlog bo'yicha sort). **FE** `/reports/warehouse-ops`: sana filtrlari,
+> 4 stat-tile (har biri o'z ish-ro'yxatiga link: /supplies · /restock-tasks · /omborchi · /demands), omborchilar jadvali;
+> reports-landing'da karta; ru+uz i18n. **+mayda:** `fields.products` kaliti (labels/print qarzi) → i18n-key-existence
+> testi yana yashil. Gate: api tsc0 · web tsc0 · biome0 · report-modul vitest 253/253 (+3 yangi) · sweep-testlarda
+> yangi regress 0 (o'sha eski 9). **Jonli prod-verify:** endpoint real data qaytardi — oxirgi hafta picking done 22
+> (Omborchi 1: 14, Omborchi 2: 8), backlog 0; sahifa 200. Diqqat: prod base-currency kodi `"860"` (ISO-raqamli UZS,
+> real-import merosi) — displayAs:'none' bo'lgani uchun UI'da ko'rinmaydi, lekin bilib qo'yish kerak.
+> **⏭️ QOLGAN:** (1) to'liq web Vitest'dagi ~48 pre-existing fail triage (label-grounding 25 · no-hardcoded 6 ·
+> header-conventions · sum-filter va h.k. — 03b'da stash bilan toza HEAD'da tasdiqlangan); (2) desk/store'siz ochiq
+> smena yopilish oqimi (03b'dagi null-row); (3) losses/labels'dagi 6 hardcoded literal.
+
 > **🟢🛠️ 2026-07-03b (PROD HOTFIX: /retail/sessions null-crash — `8a10a6e` ✅ DEPLOYED 2026-07-04, jonli tasdiqlangan)**
 > User prod console-xatoni tashladi: `Cannot read properties of null (reading 'name')` — chunk-hash probe orqali sahifa
 > **`/retail/sessions`** ekani aniqlandi. Ildiz: `CashierSession.cashDesk`/`store` = **SetNull** relations
