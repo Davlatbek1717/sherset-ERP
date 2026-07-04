@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { extractMsId, mapCounterparty, priceToMinor } from './moysklad-sync.service.js';
+import {
+  extractMsId,
+  mapBarcodes,
+  mapCounterparty,
+  priceToMinor,
+} from './moysklad-sync.service.js';
 
 describe('moysklad-sync mappers', () => {
   it('extractMsId pulls the uuid out of a remap href', () => {
@@ -38,6 +43,21 @@ describe('moysklad-sync mappers', () => {
     expect(m.phone).toHaveLength(20); // VarChar(20) — seed-real overflow class
     expect(m.companyType).toBe('legalUZ');
     expect(m.archived).toBe(false);
+  });
+
+  it('mapBarcodes keeps values/types index-aligned and skips malformed entries', () => {
+    expect(
+      mapBarcodes([
+        { ean13: '4600000000017' },
+        { code128: 'ABC-128' },
+        {}, // malformed — no entries
+        { ean8: '' }, // malformed — empty value
+      ]),
+    ).toEqual({
+      barcodes: ['4600000000017', 'ABC-128'],
+      barcodeTypes: ['ean13', 'code128'],
+    });
+    expect(mapBarcodes(undefined)).toEqual({ barcodes: [], barcodeTypes: [] });
   });
 
   it('mapCounterparty passes real fields through', () => {

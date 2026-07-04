@@ -18,6 +18,8 @@ export class MoyskladSyncController {
    * Start a background sync (no-op if one is already running).
    * `?mode=balances` = one-time counterparty balance migration import
    * (add `&dry=1` to preview sign totals without writing).
+   * `?mode=history` = one-time document-archive import (demands + money docs,
+   * no stock/balance side effects).
    */
   @Post('run')
   run(
@@ -26,7 +28,7 @@ export class MoyskladSyncController {
     @Query('dry') dry?: string,
   ) {
     return this.svc.run(user.accountId, {
-      mode: mode === 'balances' ? 'balances' : 'full',
+      mode: mode === 'balances' ? 'balances' : mode === 'history' ? 'history' : 'full',
       dryRun: dry === '1' || dry === 'true',
     });
   }
