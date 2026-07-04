@@ -110,12 +110,26 @@ infos.push(
   `detail: ${prog.detail_pages?.audited}/${prog.detail_pages?.total_target} · list_audits: ${prog.list_audits?.audited}`,
 );
 
-// ── 5. MEMORY.md limiti
-const memPath = 'C:\\Users\\user\\.claude\\projects\\d--projects-moysklad\\memory\\MEMORY.md';
+// ── 5. MEMORY.md limiti (2026-07-04: eski d--projects-moysklad yo'li tuzatildi —
+// yo'l noto'g'ri bo'lgani uchun tekshiruv jimgina o'tkazib yuborilayotgan edi)
+const memPath =
+  'C:\\Users\\user\\.claude\\projects\\C--Users-user-Desktop-vps-dagi-sherset\\memory\\MEMORY.md';
 if (existsSync(memPath)) {
   const kb = statSync(memPath).size / 1024;
   if (kb > 24.4) issues.push(`MEMORY.md ${kb.toFixed(1)}KB > 24.4KB auto-load limiti (trim kerak)`);
   else infos.push(`MEMORY.md: ${kb.toFixed(1)}KB (limit ichida)`);
+} else {
+  issues.push(`MEMORY.md topilmadi: ${memPath} (yo'l ko'chganmi? preflight'ni yangilang)`);
+}
+
+// ── 5b. NEXT.md hajmi (arxiv qoidasi: «Aniq keyingi vazifa»da eng yangi ~8–10 entry qoladi)
+const nextLines = next.split('\n').length;
+if (nextLines > 600) {
+  issues.push(
+    `NEXT.md ${nextLines} qator > 600 — eski entry'larni docs/audits/_ARCHIVE-NEXT-<sana>.md ga ko'chir (VERBATIM)`,
+  );
+} else {
+  infos.push(`NEXT.md hajmi: ${nextLines} qator (600 limit ichida)`);
 }
 
 // ── 6. portlar (axborot)
