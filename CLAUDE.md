@@ -121,3 +121,23 @@ deploy/                        — nginx conf + pm2 ecosystem.config.cjs + DEPLO
 desktop/                       — Electron desktop o'rami · docs/ — roadmap/ADR/arxivlar · audit/ — parity audit natijalar
 turbo.json · biome.json · pnpm-workspace.yaml · tsconfig.base.json — monorepo config
 ```
+
+## 6. Parallel sessiyalar protokoli (2026-07-04 — MAJBURIY)
+
+Bir vaqtda bir nechta Claude sessiyasi ishlashi mumkin. Halaqit bermaslik qoidalari:
+
+1. **Seniki bo'lmagan o'zgarishlarga TEGMA.** Preflight dirty-tree ko'rsatsa va u fayllarni SEN o'zgartirmagan
+   bo'lsang — bu parallel sessiyaning faol ishi: o'qish mumkin, yozish/stash/revert/`git checkout --` TAQIQ.
+2. **Faqat aniq yo'llar bilan stage.** `git add <aniq fayllar>` — hech qachon `git add -A` / `git add .` /
+   `git commit -a` (hook mexanik bloklaydi: `scripts/hook-git-add-guard.mjs`). Commit'dan oldin `git status --short`
+   bilan staged ro'yxatda FAQAT o'z fayllaring ekanini tasdiqla. Diqqat: lint-staged commit paytida butun tree'ni
+   stash qiladi — parallel sessiya commit qilayotgan payt commit BOSHLAMA (ketma-ket).
+3. **NEXT.md entry kolliziyasi:** sana+harf yorlig'ini yozishdan oldin band harflarni tekshir (`grep` sana bo'yicha),
+   keyingi bo'sh harfni ol. Edit «modified since read» xatosi bersa — qayta o'qib faqat o'z qo'shimchangni kirit.
+4. **Umumiy resurslar bir vaqtda bitta sessiyada:** `prisma migrate`/`db:seed` (lokal 5433 yoki prod), `pnpm dev`
+   portlari (3100/4000), VPS deploy + `pm2 restart`. Port/lock band bo'lsa — jarayonni o'ldirib qayta ochish EMAS,
+   avval parallel sessiya ishlatayotgan bo'lishi mumkinligini hisobga ol (userdan so'ra).
+5. **Katta/uzoq mustaqil ish → worktree izolyatsiyasi** (EnterWorktree yoki Agent `isolation: worktree`) — jismonan
+   alohida checkout, merge git orqali. Bir checkout'da faqat path-kesishmaydigan ishlar parallel yuradi.
+6. **Diff'ing path-cheklangan bo'lsin**; parallel sessiya ishini ko'rgan bo'lsang NEXT.md entry'ingda qayd et
+   («parallel sessiya X qildi, diff'im path-cheklangan» uslubida).

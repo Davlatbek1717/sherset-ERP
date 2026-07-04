@@ -37,7 +37,9 @@ const infos = [];
 // ── 1. working tree
 const porcelain = sh('git status --porcelain');
 if (porcelain) {
-  issues.push(`working tree TOZA EMAS (uzilgan sessiya artefakti?):\n${porcelain}`);
+  issues.push(
+    `working tree TOZA EMAS (uzilgan sessiya artefakti YOKI PARALLEL SESSIYA ishlayapti — CLAUDE.md §6: bu fayllarga TEGMA, faqat aniq yo'llar bilan stage qil):\n${porcelain}`,
+  );
 } else {
   infos.push('tree: toza');
 }
