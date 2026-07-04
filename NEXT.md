@@ -305,6 +305,17 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🟢🏷️ 2026-07-04i (YACHEYKA SENIKLARI LABEL-QOG'OZ FORMATIDA + SKLAD TABIDA «OMBORLAR» — `8e2d1a3` ✅ DEPLOYED)**
+> 07-04g davomi, user talabi: «A4 emas — har senik label qog'oz formatida; /stores uchun tab yo'q». (1) Chop endi
+> A4 2×5 to'r EMAS: har senik ALOHIDA sahifa, `@page` = label o'lchami (default 60×40mm, formada «Qog'oz (mm)»
+> eni/bo'yi inputlari, 20–210mm); kod shrifti enga, shtrix balandligi bo'yga moslashadi. (2) `stockSubNav`ga
+> «Omborlar» (/stores) QAYTARILDI (o'chirilgan-dublikat izohi bekor — yacheyka labellari kirish nuqtasi shu yerda;
+> `subnav.stock.stores` kaliti mavjud edi). Gate: tc0 · biome0 · navigation-test 47/48 (1 = eski pagination lock).
+> Deploy: build BUILD_OK · `pm2 restart sherset-web` (api tegilmadi — pull web-only). Jonli HTTP-verify:
+> /stores/cell-labels 200 + yangi matn/inputlar SSR'da («Qog'oz» ×3), /moves HTML'da «Omborlar» tab, /stores 200.
+> ⚠️ Browser-UI smoke YO'Q (print-preview'ni real label-printerda sinash qoldi). Paramiko gotcha tasdiqlandi:
+> jim (output'siz) uzun kanal PipeTimeout beradi — poll'ni qisqa, chiqishli probe'lar bilan qilish kerak.
+
 > **🟢📊 2026-07-04h (DASHBOARD: VAQT-FILTR TEPADA + MOYSKLAD BO'LIMLARI O'CHDI — `bf89a49` ✅ DEPLOYED, API jonli tasdiqlangan)**
 > User: «statistika kartalarining time filtrlarini tepaga joylashtir, pastdagi keraksizlarni olib tashla». **FE**
 > (`(app)/page.tsx`, 1100→~390 qator): tepada DateFilterBar — preset pill'lar (Bugun/Kecha/Shu hafta/Shu oy/Shu yil)
