@@ -352,7 +352,9 @@ function CellLabel({ code, w, h }: { code: string; w: number; h: number }) {
   return (
     <div
       className="label-page flex flex-col items-center justify-between overflow-hidden bg-white px-2 py-1.5 shadow-sm"
-      style={{ width: `${w * MM_PX}px`, height: `${h * MM_PX}px` }}
+      // mm birligi to'g'ridan-to'g'ri — px orqali aylantirish print-rendering'da
+      // og'ish/bo'sh-sahifa berishi mumkin; mm esa @page bilan aynan mos tushadi.
+      style={{ width: `${w}mm`, height: `${h}mm` }}
     >
       <div className="flex min-h-0 flex-col items-center">
         <div className="text-[8px] text-slate-400 uppercase tracking-widest">Yacheyka</div>
