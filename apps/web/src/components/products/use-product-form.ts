@@ -78,6 +78,11 @@ export const makeProductFormSchema = (t: (key: string) => string) =>
     locPolka: z.string().regex(/^\d*$/, t('number_invalid')).optional(),
     locQavat: z.string().regex(/^\d*$/, t('number_invalid')).optional(),
     locYacheyka: z.string().regex(/^\d*$/, t('number_invalid')).optional(),
+    // Per-cell qty at the primary bin (Phase 2) — fractional allowed (kg/m).
+    locQty: z
+      .string()
+      .regex(/^\d*(\.\d{1,6})?$/, t('number_invalid'))
+      .optional(),
     minimumBalance: z
       .string()
       .regex(/^\d*(\.\d{1,3})?$/, t('min_balance_invalid'))
@@ -133,6 +138,8 @@ export interface ProductHydrateInput {
   locPolka: number | null;
   locQavat: number | null;
   locYacheyka: number | null;
+  // Decimal column — the API serializes it as a string (e.g. "30").
+  locQty?: string | number | null;
   mxikCode: string | null;
   trackingType: string | null;
   gtin?: string | null;
@@ -439,6 +446,7 @@ export function useProductForm() {
       locPolka: v.locPolka ? Number(v.locPolka) : blank,
       locQavat: v.locQavat ? Number(v.locQavat) : blank,
       locYacheyka: v.locYacheyka ? Number(v.locYacheyka) : blank,
+      locQty: v.locQty ? Number(v.locQty) : blank,
       // NON-nullable column (`bigIntString.optional()` — rejects null) → OMIT when
       // empty (both modes), mirroring the proven create/edit forms. (Emptying the
       // field therefore leaves the stored threshold unchanged, not cleared to 0.)
@@ -491,6 +499,7 @@ export function useProductForm() {
       locPolka: data.locPolka != null ? String(data.locPolka) : '',
       locQavat: data.locQavat != null ? String(data.locQavat) : '',
       locYacheyka: data.locYacheyka != null ? String(data.locYacheyka) : '',
+      locQty: data.locQty != null ? String(data.locQty) : '',
       minimumBalance: minorToDecimal(data.minimumBalanceMinor),
       mxikCode: data.mxikCode ?? '',
       gtin: data.gtin ?? '',

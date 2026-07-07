@@ -509,6 +509,21 @@ export function ProductFormLeftCards({
             </div>
           ))}
         </div>
+        {/* Per-cell qty (multi-bin Phase 2) — units sitting in the primary bin
+          above. Manually maintained; empty = not tracked. */}
+        <div className="mt-2 flex flex-col gap-1">
+          <label htmlFor="locQty" className="text-[var(--ms-text-secondary)] text-xs">
+            {t('loc_qty_label')}
+          </label>
+          <Input
+            id="locQty"
+            data-test-id="field-locQty"
+            inputMode="decimal"
+            placeholder="—"
+            className="w-28 text-center tabular-nums"
+            {...form.register('locQty')}
+          />
+        </div>
         <div className="mt-2 flex items-center gap-2 text-sm">
           <span className="text-[var(--ms-text-muted)]">{t('loc_code_label')}:</span>
           {(() => {

@@ -1,6 +1,33 @@
 # ARXIV — NEXT.md «Aniq keyingi vazifa» entry'lari (2026-06-10 … 2026-06-25)
 
 > 2026-07-04 kontekst-slimlashda NEXT.md'dan VERBATIM ko'chirildi. Manba tartibi saqlangan (eng yangi tepada).
+> 2026-07-07 kontekst-slimlash (3-tur): quyidagi 2026-06-26 entry'lari NEXT.md'dan VERBATIM ko'chirildi.
+
+> **🟢🧾✏️💰 2026-06-26 (/invoices-out/new «Счёт покупателю» CREATE → moysklad 1:1 + post-on-create — `bc8807c3`; Phase-1 strukturaviy + browser-smoke)**
+> User: «/invoices-out/new … to'liq extiyot bo'lib taxmin qilmasdan real sinab ko'rib playwright … 100% 1:1 piksel darajda».
+> LIVE-grounded (`tools/capture/ms-invoiceout-editor-ground.mjs`+`ms-invoiceout-new-clips.mjs`; `docs/audits/invoices-out-new-2026-06-26/`).
+> Eski sahifa = all-MODAL picker + noto'g'ri maydon tartibi → **PO/invoice-in/new SHELLiga** ko'chirildi. Meta (row-paired,
+> INLINE type-to-search): Организация(+«Сум» subRow)↔Склад · Контрагент(+«Баланс» CounterpartyBalanceInline)↔Договор ·
+> План.дата оплаты(DatePicker)↔Проект · Канал продаж(left) · Валюта документа(+FX «1 USD=N UZS» ✎, left). Owner-popover ·
+> rich positions (Цена▾ reprice/save · Скидка▾ · Сумма⚙) · RelatedDocsTab kind=invoice-out. **SALES specifics:** narx=SALE
+> price (`resolveDefaultSalePriceOrZero`+default price-type; «Сохранить цены»→salePrices NOT buyPrice); «Канал продаж» bor;
+> «Входящий номер»/«Счёт контрагента»/«Внешний код» YO'Q. **Grounded default:** «Проведено»+«Цена включает НДС» CHECKED
+> (`clips-state.json`). **BE:** CreateInvoiceOutSchema += owner/group/shared/**applicable**; `create()` owner-refs in-tenant
+> validate+persist (fallback creator) va **applicable=true bo'lsa yangi draft'ni POST qiladi** (test qilingan `post()` cascade
+> qayta ishlatiladi → counterparty balance += sum). `createFromCustomerOrder` draft qoladi. Gate: api tc0(meniki)·web tc0·
+> biome0·invoice-out.schema 19/19·list-filter+i18n-key green. **Cert (browser LIVE):** layout pixel-1:1; product dropdown→
+> unit/Доступно/НДС prefill; Narx 100000→VAT-incl Промежуточный 89 285,71+НДС 10 714,29=Итого 100 000; **Save→post-on-create
+> →СЧ-2026-00052 POSTED+locked, «Усто Нодир» balance 0→«bizga qarz 100 000,00 сум»**; list'da; 0 page-err. §1 path-limited
+> commit (parallel session cp-metrics/counterparty WIP — leak yo'q). Memory: `session-2026-06-26-invoices-out-new-editor.md`.
+> **⏭️ NEXT (invoices-out qolgan):** **`/invoices-out/[id]` (EDIT) hali ESKI shell** (modal picker · agentAccount/externalCode ·
+> owner/balance/relations YO'Q) → shu shellga converge qil (invoice-in/[id] sessiyasini mirror: `b527a944` editable=state!=='cancelled',
+> BE update() balance reverse+reapply). Kichik: post-on-create atomik emas (create txn→post txn); «Канал продаж» `+` create yo'q.
+
+> **🟢🧱 2026-06-26 (/losses/[id] EDIT → moysklad 1:1 (mirror /new) — `9f02fcc9`; ✅ losses COHORT COMPLETE)**
+> ⚠️ (2026-07-07 arxiv eslatmasi) Bu «/losses/[id]» entry'ning tanasi NEXT.md'da allaqachon yo'qolgan edi —
+> 2026-07-04 arxivlashda (2-tur) tana o'rniga arxiv-eslatma + 2026-06-10 fragmenti aralashib qolgan. Faqat
+> sarlavha qatori saqlanib qolgan; sessiya tafsiloti: commit `9f02fcc9` (eski repo, 07-02 re-init'dan oldin).
+
 
 > **🟢💱 2026-06-25 (USD «Валюта документа» rate-source bug → 9 hujjat-editor tuzatildi — `5012d3cf`·`c89f7bf6`·`198b77ee`)**
 > User: «Валюта документа … ko'plab //new //id … dollarda xato qiladi» + «kursni admin belgilaydiku nega 2 xil». ROOT

@@ -63,6 +63,7 @@ export class ProductService {
       polka: number | null;
       qavat: number | null;
       yacheyka: number | null;
+      qty: number | null;
       note: string | null;
     }>,
   ) {
@@ -107,6 +108,9 @@ export class ProductService {
       article: true,
       uom: true,
       archived: true,
+      // Per-cell qty of the PRIMARY home bin (Phase 2) — shown when the
+      // scanned cell IS the product's primary address.
+      locQty: true,
     } satisfies Prisma.ProductSelect;
 
     const [primary, extra, store] = await Promise.all([
@@ -150,18 +154,32 @@ export class ProductService {
     ]);
 
     // Bir tovar ham asosiy, ham qo'shimcha manzil bilan chiqishi mumkin —
-    // primary yorlig'i ustun, note esa extra-yozuvdan olinadi.
+    // primary yorlig'i ustun, note/qty esa extra-yozuvdan to'ldiriladi.
     const byId = new Map<
       string,
-      { product: (typeof primary)[number]; source: 'primary' | 'extra'; note: string | null }
+      {
+        product: (typeof primary)[number];
+        source: 'primary' | 'extra';
+        note: string | null;
+        // SHU yacheykadagi soni (Phase 2): primary → Product.locQty,
+        // extra → ProductLocation.qty. null = yuritilmaydi.
+        cellQty: Prisma.Decimal | null;
+      }
     >();
-    for (const p of primary) byId.set(p.id, { product: p, source: 'primary', note: null });
+    for (const p of primary)
+      byId.set(p.id, { product: p, source: 'primary', note: null, cellQty: p.locQty });
     for (const l of extra) {
       const existing = byId.get(l.productId);
       if (existing) {
         existing.note = existing.note ?? l.note ?? null;
+        existing.cellQty = existing.cellQty ?? l.qty ?? null;
       } else {
-        byId.set(l.productId, { product: l.product, source: 'extra', note: l.note ?? null });
+        byId.set(l.productId, {
+          product: l.product,
+          source: 'extra',
+          note: l.note ?? null,
+          cellQty: l.qty ?? null,
+        });
       }
     }
 
@@ -181,12 +199,16 @@ export class ProductService {
 
     return {
       cell: { code: formatCellCode(addr), ...addr, store: store ?? null },
-      items: [...byId.values()].map(({ product, source, note }) => {
+      items: [...byId.values()].map(({ product, source, note, cellQty }) => {
         const rows = stocksByProduct.get(product.id) ?? [];
+        // locQty is an internal fetch detail (feeds cellQty) — not part of the response.
+        const { locQty: _locQty, ...productFields } = product;
         return {
-          ...product,
+          ...productFields,
           source,
           note,
+          // SHU yacheykada nechta dona turishi (Phase 2, qo'lda yuritiladi).
+          cellQty: cellQty != null ? cellQty.toString() : null,
           totalQty: rows.reduce((sum, s) => sum + Number(s.qty.toFixed(6)), 0),
           balances: rows.map((s) => ({
             storeId: s.storeId,

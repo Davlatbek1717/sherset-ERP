@@ -2220,6 +2220,7 @@
       "loc_polka_label": "Polka",
       "loc_qavat_label": "Etaj",
       "loc_yacheyka_label": "Qator",
+      "loc_qty_label": "Soni (shu yacheykada)",
       "loc_code_label": "Kod",
       "print_senik": "Senik (QR) chiqarish",
       "print_configure": "Sozlash…",

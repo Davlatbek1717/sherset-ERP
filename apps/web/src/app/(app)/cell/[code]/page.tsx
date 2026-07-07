@@ -24,6 +24,8 @@ interface CellItem {
   archived: boolean;
   source: 'primary' | 'extra';
   note: string | null;
+  // SHU yacheykadagi soni (Phase 2, qo'lda yuritiladi) — null = yuritilmaydi.
+  cellQty: string | null;
   totalQty: number;
   balances: CellItemBalance[];
 }
@@ -147,20 +149,34 @@ export default function CellContentsPage() {
                     {item.note ? <> · {item.note}</> : null}
                   </div>
                 </div>
-                <div className="flex shrink-0 items-center gap-1.5">
-                  <span
-                    className={`font-bold tabular-nums text-base ${
-                      item.totalQty <= 0
-                        ? 'text-red-500'
-                        : item.totalQty <= 5
-                          ? 'text-amber-500'
-                          : 'text-emerald-600'
-                    }`}
-                  >
-                    {item.totalQty}
-                  </span>
-                  <span className="text-[var(--ms-text-muted)] text-xs">{item.uom ?? 'ta'}</span>
-                  <ChevronRight className="h-4 w-4 text-[var(--ms-text-muted)]" />
+                <div className="flex shrink-0 flex-col items-end">
+                  <div className="flex items-center gap-1.5">
+                    {item.cellQty != null ? (
+                      /* SHU yacheykadagi soni (Phase 2) — asosiy raqam. */
+                      <span className="font-bold text-base text-blue-600 tabular-nums">
+                        {item.cellQty}
+                      </span>
+                    ) : (
+                      <span
+                        className={`font-bold text-base tabular-nums ${
+                          item.totalQty <= 0
+                            ? 'text-red-500'
+                            : item.totalQty <= 5
+                              ? 'text-amber-500'
+                              : 'text-emerald-600'
+                        }`}
+                      >
+                        {item.totalQty}
+                      </span>
+                    )}
+                    <span className="text-[var(--ms-text-muted)] text-xs">{item.uom ?? 'ta'}</span>
+                    <ChevronRight className="h-4 w-4 text-[var(--ms-text-muted)]" />
+                  </div>
+                  {item.cellQty != null ? (
+                    <span className="text-[10px] text-[var(--ms-text-muted)]">
+                      shu yacheykada · jami {item.totalQty}
+                    </span>
+                  ) : null}
                 </div>
               </div>
             </Link>

@@ -500,6 +500,7 @@ export class ProductRepository {
       polka: number | null;
       qavat: number | null;
       yacheyka: number | null;
+      qty: number | null;
       note: string | null;
     }>,
   ) {
@@ -514,6 +515,7 @@ export class ProductRepository {
             polka: l.polka,
             qavat: l.qavat,
             yacheyka: l.yacheyka,
+            qty: l.qty,
             note: l.note,
             position: i,
           })),
@@ -563,6 +565,7 @@ export class ProductRepository {
         locPolka: input.locPolka,
         locQavat: input.locQavat,
         locYacheyka: input.locYacheyka,
+        locQty: input.locQty,
         vat: input.vat ?? null,
         vatEnabled: input.vatEnabled,
         useParentVat: input.useParentVat,
@@ -654,6 +657,7 @@ export class ProductRepository {
     if (input.locPolka !== undefined) data.locPolka = input.locPolka;
     if (input.locQavat !== undefined) data.locQavat = input.locQavat;
     if (input.locYacheyka !== undefined) data.locYacheyka = input.locYacheyka;
+    if (input.locQty !== undefined) data.locQty = input.locQty;
     if (input.vat !== undefined) data.vat = input.vat;
     if (input.vatEnabled !== undefined) data.vatEnabled = input.vatEnabled;
     if (input.useParentVat !== undefined) data.useParentVat = input.useParentVat;

@@ -17,6 +17,15 @@ function formatBin(s: number | null, p: number | null, q: number | null, y: numb
 }
 
 /**
+ * Append the per-cell qty (Phase 2, manually maintained) to a bin code:
+ * «01-02-03-05 ×30». null qty (not tracked) or empty code → unchanged.
+ */
+function withCellQty(bin: string, qty: Prisma.Decimal | null): string | null {
+  if (!bin) return null;
+  return qty != null ? `${bin} ×${qty.toString()}` : bin;
+}
+
+/**
  * RestockTaskService — create a restock task from a SalesReturn (snapshotting
  * products + bin locations), notify the omborchi, and confirm placement per line
  * (manual or by scanning the senik QR). Tenant-scoped by accountId throughout.
@@ -185,10 +194,12 @@ export class RestockTaskService {
         locPolka: true,
         locQavat: true,
         locYacheyka: true,
+        // Per-cell qty of the primary bin (Phase 2) — shown as a «×N» suffix.
+        locQty: true,
         // Multi-bin: additional shelves this product also sits on — shown
         // alongside the primary bin so the picker knows every place to look.
         extraLocations: {
-          select: { sklad: true, polka: true, qavat: true, yacheyka: true },
+          select: { sklad: true, polka: true, qavat: true, yacheyka: true, qty: true },
           orderBy: [{ position: 'asc' }, { createdAt: 'asc' }],
         },
       },
@@ -241,14 +252,19 @@ export class RestockTaskService {
             productId: e.prod?.id ?? null,
             productName: e.prod?.name ?? '—',
             quantity: e.pos.quantity,
+            // «01-02-03-05 ×30» — per-cell qty (Phase 2) rides along as a
+            // suffix so every existing consumer (omborchi panel + print strip)
+            // shows it without a shape change. No qty tracked → plain code.
             binLocation: e.prod
-              ? formatBin(e.prod.locSklad, e.prod.locPolka, e.prod.locQavat, e.prod.locYacheyka) ||
-                null
+              ? withCellQty(
+                  formatBin(e.prod.locSklad, e.prod.locPolka, e.prod.locQavat, e.prod.locYacheyka),
+                  e.prod.locQty,
+                )
               : null,
             // Multi-bin: every ADDITIONAL shelf this product also sits on, so
             // the picker/omborchi can look in any of them.
             extraBins: (e.prod?.extraLocations ?? [])
-              .map((x) => formatBin(x.sklad, x.polka, x.qavat, x.yacheyka))
+              .map((x) => withCellQty(formatBin(x.sklad, x.polka, x.qavat, x.yacheyka), x.qty))
               .filter((s): s is string => !!s),
           })),
         };

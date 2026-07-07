@@ -4582,15 +4582,19 @@ model Product {
   // «NN-NN-NN-NN» code (sklad-polka-qavat-yacheyka). All optional; null = unset.
   // Used by the price-tag/QR label and the return-to-warehouse restock flow.
   // ADDITIONAL bins (multi-bin) live in the ProductLocation table (extraLocations).
-  locSklad    Int? @map("loc_sklad") // склад (warehouse)
-  locPolka    Int? @map("loc_polka") // полка (shelf)
-  locQavat    Int? @map("loc_qavat") // этаж/ярус (level)
-  locYacheyka Int? @map("loc_yacheyka") // ячейка (cell)
+  locSklad    Int?     @map("loc_sklad") // склад (warehouse)
+  locPolka    Int?     @map("loc_polka") // полка (shelf)
+  locQavat    Int?     @map("loc_qavat") // этаж/ярус (level)
+  locYacheyka Int?     @map("loc_yacheyka") // ячейка (cell)
+  // Per-cell quantity (multi-bin Phase 2) — units sitting in the PRIMARY home
+  // bin above. Manually maintained; null = not tracked. Extra bins keep their
+  // own qty on ProductLocation.qty.
+  locQty      Decimal? @map("loc_qty") @db.Decimal(20, 6)
   // Forward-pick replenishment target: keep up to `forwardMax` units in the
   // forward (fast-pick) store. When the forward-store balance drops below this,
   // the product surfaces in the «To'ldirish kerak» replenishment list. null = no
   // forward policy.
-  forwardMax  Int? @map("forward_max")
+  forwardMax  Int?     @map("forward_max")
 
   // VAT
   vat          Int?
@@ -4720,11 +4724,14 @@ model ProductLocation {
   accountId String @map("account_id") @db.Uuid
   productId String @map("product_id") @db.Uuid
 
-  sklad    Int     @map("sklad") // склад (warehouse zone) — required key of the address
-  polka    Int?    @map("polka") // полка (shelf)
-  qavat    Int?    @map("qavat") // этаж/ярус (level)
-  yacheyka Int?    @map("yacheyka") // ячейка (cell)
-  note     String? @db.VarChar(255) // optional free note (e.g. «zaxira», «pastki»)
+  sklad    Int      @map("sklad") // склад (warehouse zone) — required key of the address
+  polka    Int?     @map("polka") // полка (shelf)
+  qavat    Int?     @map("qavat") // этаж/ярус (level)
+  yacheyka Int?     @map("yacheyka") // ячейка (cell)
+  // Per-cell quantity (multi-bin Phase 2) — units sitting in THIS cell.
+  // Manually maintained (no document posts to it yet); null = not tracked.
+  qty      Decimal? @db.Decimal(20, 6)
+  note     String?  @db.VarChar(255) // optional free note (e.g. «zaxira», «pastki»)
 
   position  Int      @default(0) // display order on the product card
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()

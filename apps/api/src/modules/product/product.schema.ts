@@ -135,6 +135,9 @@ export const CreateProductSchema = z.object({
   locPolka: z.number().int().min(0).max(99999).nullish(),
   locQavat: z.number().int().min(0).max(99999).nullish(),
   locYacheyka: z.number().int().min(0).max(99999).nullish(),
+  // Per-cell qty (multi-bin Phase 2) — units in the PRIMARY home bin above.
+  // Fractional allowed (weighed/metered goods); null clears (= not tracked).
+  locQty: z.number().min(0).max(1e12).nullish(),
 
   vat: z.number().int().min(0).max(100).nullable().optional(),
   vatEnabled: z.boolean().default(true),
@@ -352,6 +355,14 @@ export const SetProductLocationsSchema = z.object({
         polka: seg,
         qavat: seg,
         yacheyka: seg,
+        // Per-cell qty (Phase 2) — units in this bin. Fractional allowed
+        // (weighed/metered goods); null = not tracked.
+        qty: z
+          .number()
+          .min(0)
+          .max(1e12)
+          .nullish()
+          .transform((v) => v ?? null),
         note: z
           .string()
           .max(255)

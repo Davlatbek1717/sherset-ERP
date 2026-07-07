@@ -8,8 +8,9 @@
  * react-hook-form product save. Replace-all semantics: the card always PUTs the
  * full list to /products/:id/locations. Edit-only (needs an existing id).
  *
- * Phase 1 is address-only (no per-cell quantity) — these bins just tell the
- * picker/omborchi every shelf the product can be found on.
+ * Phase 2 adds an optional per-cell qty per row (manually maintained — no
+ * document posts to it); the addresses still tell the picker/omborchi every
+ * shelf the product can be found on.
  */
 
 import { api } from '@/lib/api-client';
@@ -22,6 +23,8 @@ interface InitialLoc {
   polka: number | null;
   qavat: number | null;
   yacheyka: number | null;
+  // Per-cell qty (Phase 2) — Decimal column, serialized as a string.
+  qty?: string | number | null;
   note: string | null;
 }
 interface Row {
@@ -30,6 +33,7 @@ interface Row {
   polka: string;
   qavat: string;
   yacheyka: string;
+  qty: string;
   note: string;
 }
 
@@ -55,6 +59,7 @@ export function ProductExtraLocations({
       polka: numStr(l.polka),
       qavat: numStr(l.qavat),
       yacheyka: numStr(l.yacheyka),
+      qty: l.qty == null ? '' : String(l.qty),
       note: l.note ?? '',
     })),
   );
@@ -69,6 +74,7 @@ export function ProductExtraLocations({
           polka: numOrNull(r.polka),
           qavat: numOrNull(r.qavat),
           yacheyka: numOrNull(r.yacheyka),
+          qty: numOrNull(r.qty),
           note: r.note.trim() || null,
         }));
       return api.put(`/products/${productId}/locations`, { locations });
@@ -85,7 +91,7 @@ export function ProductExtraLocations({
   const addRow = () =>
     setRows((prev) => [
       ...prev,
-      { uid: nextUid(), sklad: '', polka: '', qavat: '', yacheyka: '', note: '' },
+      { uid: nextUid(), sklad: '', polka: '', qavat: '', yacheyka: '', qty: '', note: '' },
     ]);
   const removeRow = (uid: string) => setRows((prev) => prev.filter((r) => r.uid !== uid));
 
@@ -108,8 +114,8 @@ export function ProductExtraLocations({
         </button>
       </div>
       <p className="mb-3 text-[var(--ms-text-muted)] text-xs">
-        Asosiy joydan tashqari, shu tovar turadigan boshqa yacheykalar (sklad·polka·qavat·yacheyka).
-        Terish va joylashtirishda ko'rsatiladi.
+        Asosiy joydan tashqari, shu tovar turadigan boshqa yacheykalar (sklad·polka·qavat·yacheyka),
+        yoniga shu yacheykadagi sonini ham yozish mumkin. Terish va joylashtirishda ko'rsatiladi.
       </p>
 
       {rows.length === 0 ? (
@@ -131,6 +137,15 @@ export function ProductExtraLocations({
                   data-test-id={`extra-loc-${f}`}
                 />
               ))}
+              {/* Per-cell qty (Phase 2) — units in this bin; empty = not tracked. */}
+              <Input
+                value={r.qty}
+                onChange={(e) => update(r.uid, 'qty', e.target.value)}
+                inputMode="decimal"
+                placeholder="soni"
+                className="w-16 text-center tabular-nums"
+                data-test-id="extra-loc-qty"
+              />
               <Input
                 value={r.note}
                 onChange={(e) => update(r.uid, 'note', e.target.value)}
@@ -153,7 +168,10 @@ export function ProductExtraLocations({
       )}
 
       {error && (
-        <p className="mt-2 text-[var(--ms-text-destructive)] text-xs" data-test-id="extra-loc-error">
+        <p
+          className="mt-2 text-[var(--ms-text-destructive)] text-xs"
+          data-test-id="extra-loc-error"
+        >
           {error}
         </p>
       )}

@@ -70,6 +70,8 @@ interface ProductDetail extends ProductHydrateInput {
     polka: number | null;
     qavat: number | null;
     yacheyka: number | null;
+    // Per-cell qty (Phase 2) — Decimal column, serialized as a string.
+    qty: string | null;
     note: string | null;
   }>;
 }

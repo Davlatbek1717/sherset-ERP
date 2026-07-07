@@ -305,6 +305,28 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🟡🔢 2026-07-07 (MULTI-BIN PHASE 2: yacheykaga SON bog'lash, qo'lda — Phase-1 strukturaviy, DEPLOY QILINMAGAN)**
+> User: «A tovar 30 dona 1-ombor 1-polka 1-qavat 10-yacheykada, 70 donasi 2-ombor…9-yacheykada — qanday qilaman?»
+> → Phase 2 quraldi (per-cell qty, QO'LDA yuritiladi — hech qanday hujjat unga post qilmaydi, null=yuritilmaydi).
+> **(1) DB:** `Product.locQty` + `ProductLocation.qty` (Decimal(20,6)); migratsiya `20260704170000_cell_qty` —
+> **prod'ga HALI applied EMAS** (lokal db ham down edi — hech qayerda apply qilinmagan, deploy'da `migrate deploy`).
+> Generated client qayta generatsiya qilindi (committed). **(2) API:** Create/Update `locQty` qabul qiladi; PUT
+> `/products/:id/locations` har qatorda `qty`; `GET /products/cell/:code` har item'da `cellQty` (primary→locQty,
+> extra→ProductLocation.qty; locQty javobdan strip); picking-sheets `binLocation`/`extraBins` endi «01-02-03-05 ×30»
+> suffiksli — omborchi panel + termoprint hech qanday FE o'zgarishsiz ko'rsatadi. **(3) Web:** tovar kartasi
+> «Joylashuv»da «Soni (shu yacheykada)» input (i18n `loc_qty_label` ru+uz) · «Qo'shimcha yacheykalar» kartasida qty
+> ustuni (soni placeholder) · `/cell/[kod]`da cellQty ko'k asosiy raqam + «shu yacheykada · jami N» (cellQty yo'q
+> bo'lsa eski totalQty rangli ko'rinish). **Gate:** tc0 · biome0 · api product-schema 35/35 (+4 yangi qty test) ·
+> web Vitest **0 regress**. ⚠️ **PRE-EXISTING failure'lar hujjatlandi (meniki EMAS — toza HEAD worktree'da AYNAN
+> takrorlandi):** web 53 test/16 fayl (convention-lock'lar: label-grounding ×4 modul, money-input-rollout,
+> retail-cash-scale, raw-element, header-conventions, i18n-no-hardcoded…) + api 4 (product-filter-parity
+> `ProductPackSchema…tasnifCode` regex {0,200} oynasidan `codeType` qo'shilganda chiqib ketgan; product.service.test
+> create-mock'ida `variant.findMany` yo'q). **Keyingi sessiya bu lock-qarzni alohida ko'rsin** (relock yoki fix).
+> ⚠️ Browser-smoke YO'Q · deploy YO'Q. NEXT.md 620→~590 (3-tur arxiv: 2×2026-06-26 → `_ARCHIVE-NEXT-2026-07-04.md`,
+> 06-08o dublikati + 06-10 fragmenti olib tashlandi — arxivda verbatim bor edi). ⏭️ NEXT: `/deploy` (migrate deploy
+> shart!) + jonli smoke (kartada qty saqlash → /cell'da ×N → picking'da suffiks); keyin ixtiyoriy Phase 2b: qty
+> yig'indisi vs ombor qoldig'i solishtiruv-ogohlantirish; hujjat-post bilan avto-yuritish = KATTA alohida qaror.
+
 > **🟢🖨️ 2026-07-04l (SENIK CHOP ZANJIRI: exe v1.0.3 avto-chop + aniq o'lcham + markazlash — ✅ DEPLOYED)**
 > 07-04k davomi, user shikoyatlari ketma-ket hal qilindi: «exe'da avtomatik chiqmayapti» → «o'lcham noto'g'ri» →
 > «markazga chiqsin». (1) **mm-birlik** (`c870c43`): label div px→mm (@page bilan aynan mos). (2) **exe'da avto-chop**
@@ -486,43 +508,11 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > **🟢📦🔧 2026-07-02 (REAL MoySklad katalog → PRODUCTION + migration-qarzi tasdiqlab yopildi + stale Prisma client tuzatildi — branch `chore/real-import-and-migration-cleanup`; push qilinmagan)**
 > `davom et`/«muammolarni xal qil» (jonli production ishi, VPS root SSH). **(1) Real import:** birinchi berilgan MoySklad token (`03b29b…` = "climart santex") NOTO'G'RI account edi → to'g'ri account fayl-export sifatida berildi (`moysklad-export.zip`, faqat katalog: 4477 mahsulot · 59 papka · 64 uom, kontragent YO'Q). Yozildi `packages/db/prisma/import-ms-export.ts` (fayldan-import, MoySklad {meta,rows} shakli; narx 1:1 minor-units; narx-turi externalCode-YOKI-nom bo'yicha; uom=string, FK emas; papka href-id bo'yicha bog'lanadi). Oqim: pg_dump → cleanup-db → `delete price_types where external_code like 'ms:%'` → import. Data loyihaga ko'chirildi: `packages/db/prisma/data/moysklad-export/` (VPS'da). **Natija:** 4477/4477 mahsulot (0 skip), 1832 papkali; login 201, narxlar to'g'ri (Panasonik buy 35280→retail 41500>optom 39500). ⚠️ **Production'da 0 kontragent** (export'da yo'q edi; climart'niki o'chirildi). Xotira: `seed-real-moysklad-import.md`. **(2) `seed-real.ts` 5 bug-fix** (price ×100 overcount → 1:1; narx-turi collapse; MASTER_ONLY; phone/name VarChar-overflow truncate; fetch network-retry). **(3) Migration-qarzi TASDIQLAB YOPILDI:** eski repo-qarz («migrate deploy yetarli emas, db push kerak») aslida `fc1a936`+`20260702120000_sync_schema_to_prisma` da tuzatilган; men toza DB'ga 151 migratsiya deploy qilib `migrate diff` = «empty» → **drift 0, db push KERAK EMAS** (deploy memory tuzatildi). Adashgan `migrations/temp_smena.sql` o'chirildi. **(4) Stale Prisma client:** committed `packages/db/src/generated/*` schema'dan orqada edi (isForward/printerName/forwardMax yo'q) → `prisma generate` bilan sync qilindi, db tc0. Working tree endi TOZA. **⏭️ NEXT:** branch push qilinmagan (user push so'rasa); kontragentlar kerak bo'lsa to'g'ri-account token/export kerak; qolган Faza-2 QA + feature ishlari dev-stack talab qiladi.
 
-> **🟢🧾✏️💰 2026-06-26 (/invoices-out/new «Счёт покупателю» CREATE → moysklad 1:1 + post-on-create — `bc8807c3`; Phase-1 strukturaviy + browser-smoke)**
-> User: «/invoices-out/new … to'liq extiyot bo'lib taxmin qilmasdan real sinab ko'rib playwright … 100% 1:1 piksel darajda».
-> LIVE-grounded (`tools/capture/ms-invoiceout-editor-ground.mjs`+`ms-invoiceout-new-clips.mjs`; `docs/audits/invoices-out-new-2026-06-26/`).
-> Eski sahifa = all-MODAL picker + noto'g'ri maydon tartibi → **PO/invoice-in/new SHELLiga** ko'chirildi. Meta (row-paired,
-> INLINE type-to-search): Организация(+«Сум» subRow)↔Склад · Контрагент(+«Баланс» CounterpartyBalanceInline)↔Договор ·
-> План.дата оплаты(DatePicker)↔Проект · Канал продаж(left) · Валюта документа(+FX «1 USD=N UZS» ✎, left). Owner-popover ·
-> rich positions (Цена▾ reprice/save · Скидка▾ · Сумма⚙) · RelatedDocsTab kind=invoice-out. **SALES specifics:** narx=SALE
-> price (`resolveDefaultSalePriceOrZero`+default price-type; «Сохранить цены»→salePrices NOT buyPrice); «Канал продаж» bor;
-> «Входящий номер»/«Счёт контрагента»/«Внешний код» YO'Q. **Grounded default:** «Проведено»+«Цена включает НДС» CHECKED
-> (`clips-state.json`). **BE:** CreateInvoiceOutSchema += owner/group/shared/**applicable**; `create()` owner-refs in-tenant
-> validate+persist (fallback creator) va **applicable=true bo'lsa yangi draft'ni POST qiladi** (test qilingan `post()` cascade
-> qayta ishlatiladi → counterparty balance += sum). `createFromCustomerOrder` draft qoladi. Gate: api tc0(meniki)·web tc0·
-> biome0·invoice-out.schema 19/19·list-filter+i18n-key green. **Cert (browser LIVE):** layout pixel-1:1; product dropdown→
-> unit/Доступно/НДС prefill; Narx 100000→VAT-incl Промежуточный 89 285,71+НДС 10 714,29=Итого 100 000; **Save→post-on-create
-> →СЧ-2026-00052 POSTED+locked, «Усто Нодир» balance 0→«bizga qarz 100 000,00 сум»**; list'da; 0 page-err. §1 path-limited
-> commit (parallel session cp-metrics/counterparty WIP — leak yo'q). Memory: `session-2026-06-26-invoices-out-new-editor.md`.
-> **⏭️ NEXT (invoices-out qolgan):** **`/invoices-out/[id]` (EDIT) hali ESKI shell** (modal picker · agentAccount/externalCode ·
-> owner/balance/relations YO'Q) → shu shellga converge qil (invoice-in/[id] sessiyasini mirror: `b527a944` editable=state!=='cancelled',
-> BE update() balance reverse+reapply). Kichik: post-on-create atomik emas (create txn→post txn); «Канал продаж» `+` create yo'q.
-
-> **🟢🧱 2026-06-26 (/losses/[id] EDIT → moysklad 1:1 (mirror /new) — `9f02fcc9`; ✅ losses COHORT COMPLETE)**
 > 📦 **Eski sessiya-entry'lar arxivlandi (2026-07-04 kontekst-slimlash, 2-tur):** 2026-06-10 … 2026-06-25
 > oralig'idagi «Aniq keyingi vazifa» entry'lari VERBATIM `docs/audits/_ARCHIVE-NEXT-2026-07-04.md`ga ko'chirildi
 > (~1170 qator). Hech narsa o'chirilmadi — faqat ko'chirildi. Qoida: bu bo'limda eng yangi ~8–10 entry qoladi,
 > eskilari arxivga tushadi (birinchi arxiv: `_ARCHIVE-NEXT-2026-06-10.md`).
-> seed-bor 7** · **Session-3 = Cohort A demo-bo'sh 6 + yakuniy 100% wrap-up**. Har sessiya pre-flight: NEXT/MEMORY yangidan o'qish ·
-> harness 180/180 · stack/MCP tekshiruv. Grounding-gated 6 item (RS4-display, IO-3/4, boms cost-split, WO docDate, drawer maydonlari,
-> inventories feature) 100% hisobiga KIRMAYDI — foydalanuvchidan capture so'ralgan (reja §6). ~~Hozirgi holat: **4/7 cohort ✅ (~57%)**~~
-> → **✅ SESSION-1 BAJARILDI 2026-06-10b** (yuqoridagi top entry'ga qara: Cohort S + Cohort B verified, Loss-COGS HIGH fix) → holat
-> endi **6/7 (~86%)**; qolgani faqat Cohort A (Session-2 + Session-3). ~~6/7~~ → **✅ 7/7 (100%) 2026-06-10c** (Session-3 ham bajarildi — top entry).
-
-> **🆕🔬🟠 2026-06-08o — PHASE-2 BROWSER-QA (production owed smokes drained) → 🟠 retail register CASH-SCALE bug-class topildi+tuzatildi (open/close-shift `parseInt*100`).** `davom et` (lokal Opus, ultracode). **Anti-konfabulyatsiya AVVAL:** optimistic-lock harness **180/180** (30 entity jonli) + git log NEXT.md commit'lariga mos. ⚠️ **session-start-audit workflow foydalanuvchining `davom et` qayta-yuborishi bilan UZILDI** (interrupt 3 audit-agentni synthesis'dan oldin o'ldirdi) → maqsadi yuqoridagi to'g'ridan-to'g'ri verifikatsiya + har-fix runtime isboti bilan almashtirildi. Stack jonli: web :3100 · api :4000 · db :5433 · Playwright MCP (orphaned mcp-chrome — 7 chrome.exe profil-lock'da, kill bilan tozalandi).
-> **✅ PART A — 3 production/catalog owed smoke RUNTIME-CONFIRMED (Phase-1 fix'lar ushlab turibdi):** **B4** BOM `outputQty=0` → FE «Количество должно быть больше 0» (POST yo'q) + **adversarial API-direct** `POST /boms {outputQty:'0'}`→**400** «outputQty must be > 0», `'-1'`→400 (backend `.refine(v>0)` API-caller'larni ham yopadi). **P1** bo'sh process → **ko'rinadigan qizil banner** 3 sub-case: P1c bo'sh nom→«Название — обязательное поле» · P1b tanlanmagan etap→«Выберите этап» (button label «Выбрать этап»dan farqli) · P1a 0 etap→«Добавьте хотя бы один этап» (count label to'g'ri «Этапов: 0»). **S1/S2** materialStore + named performer (`allPerformers=false`) stage → **fresh GET reload**'da store=«Asosiy ombor», performer chip=«Admin User», **sahifada 0 ta UUID** (backend findById `materialStore.name`+`performers.employee.name` include qiladi). Yangi bug YO'Q.
-> **🟠 PART B — NEW BUG (adversarial exploration): retail register cash-entry money-scale class.** `retail/page.tsx` open-shift (`openingCashMinor`) + close-shift (`closingCashMinor`) major→minor'ni `String(Number.parseInt(x||'0',10)*100)` bilan hisoblardi — **08k POS-drawer fix'ining un-hardened sibling'i** (drawer line ~334 allaqachon `Money.fromMajor(drawerAmount, tillCurrency)`). Ikki nuqson: (1) **decimal truncation (LIVE, har 2-decimal/UZS kassa):** ikkala input free-form `type="number"` decimal qabul qiladi → `parseInt("150.50")`=150→15000, **50 tiyin jim yo'qoladi** (bugungi data-integrity bug); (2) **hardcoded `*100` (latent):** 0-decimal kassa (JPY) 100× shishadi. Gate-ko'rmas (tc/biome/unit konversiyani render qilmaydi). **✅ FIX:** ikkalasi `Money.fromMajor(<entry>||'0', <deskCurrency>).toMinor().toString()` — close→`tillCurrency` (session.cashDesk.currency'dan), open→**tanlangan kassa** valyutasi (`isCurrencyCode(cashDesks…find(d=>d.id===cashDeskId)?.currency)?…:'UZS'`). **🔬 BROWSER end-to-end (jonli register, real DB):** UZS sessiya yopish closingCash **"150.50"**→stored `closingCashMinor`=**15050** (decimal saqlandi; eski kod→15000) · **JPY** kassa (test uchun yaratildi) openingCash **"150"**→`openingCashMinor`=**150** (JPY 0-decimal; eski `*100`→15000, 100× shish) — per-desk currency derivation + scale ikkalasi isbotlandi. Env tiklandi (JPY sessiya yopildi, fresh UZS Smoke-kassa ochildi, JPY kassa arxivlandi → active desks UZS×2). **Guard:** `retail-cash-scale.test.ts` (+3, source-scan: ikkala entry `Money.fromMajor`, open `isCurrencyCode(deskCurrency)`, buggy `parseInt*100` yo'q — non-vacuous).
-> **🟡 SCOPE (ataylab TEGILMADI, hujjatlangan):** (a) `components/pos/payment-dialog.tsx` bu klassda EMAS — keypad **integer-only** (decimal kiritib bo'lmaydi) → truncation yo'q, currency olmaydi; (b) DS **`formatMoney` `/100` hardcode qiladi** (`packages/design-system/src/lib/format.ts`) — *display* qatlami hamma yerda 2-decimal deb faraz qiladi (`currency` arg faqat suffix'ni o'zgartiradi, scale'ni emas) → non-2-decimal (JPY) hech qayerda to'g'ri **ko'rsatilmaydi**, 2-decimal non-UZS (USD/EUR) noto'g'ri suffix beradi. **To'liq non-2-decimal/non-UZS currency support = alohida, grounding-kutuvchi DS ishi** (moysklad non-UZS retail kassa beradi-mi? capture kerak) — bu yerda ko'r-ko'rona QILINMADI. Cash-WRITE path endi to'g'ri; DISPLAY path = ma'lum cheklov.
-> **Gate (TO'LIQ yashil): web tc0 · biome0(2 fayl) · web Vitest 1461(+3, 0 regress, was 1458) · api tegilmadi(2805).** Audit: `_PHASE2-retail-cash-scale.audit.md`.
-> **➡️ KEYINGI `davom et`:** (a) qolgan production smoke'lar to'liq tugadi (B4/P1/S1/S2/W1/W3 ✓; S1/S2 endi ✓) → keyingi QA cohort yoki RS4-display (formatMoney /100 — grounding kerak) · (b) BE-backlog (boms cost-split, work-orders docDate — moysklad-grounding kerak, ko'r-ko'rona EMAS) · (c) non-2-decimal currency display = DS-wide effort (grounding-gated).
+> (3-tur, 2026-07-07): 2026-06-26 ikkala entry ham o'sha faylga ko'chirildi; 06-08o dublikati va 06-10 fragmenti olib tashlandi (arxivda verbatim bor edi).
 
 > 📦 **Eski sessiya-entry'lar arxivlandi (2026-06-10 kontekst-slimlash):** 2026-06-08n dan 2026-05-30 gacha BARCHA
 > «Aniq keyingi vazifa» entry'lari VERBATIM `docs/audits/_ARCHIVE-NEXT-2026-06-10.md` §2 da (08n History-feed fix,

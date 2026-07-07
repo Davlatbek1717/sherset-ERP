@@ -2220,6 +2220,7 @@
       "loc_polka_label": "Полка",
       "loc_qavat_label": "Этаж",
       "loc_yacheyka_label": "Ряд",
+      "loc_qty_label": "Кол-во (в этой ячейке)",
       "loc_code_label": "Код",
       "print_senik": "Печать ценника (QR)",
       "print_configure": "Настроить…",
