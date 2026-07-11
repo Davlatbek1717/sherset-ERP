@@ -46,17 +46,32 @@ export default function NewDebtPage() {
   const [nextContactAt, setNextContactAt] = useState('');
   const [error, setError] = useState<string | null>(null);
 
+  // Kontragent tanlagichi ikki rejimda ishlaydi:
+  //   1. Boshlang'ich ro'yxat — limit=250 (API maksimumi! 500 so'ralsa Zod 400
+  //      qaytaradi va ro'yxat BO'M-BO'SH qoladi — prod'da tutilgan real bug),
+  //      createdAt desc default tartibi yangi qo'shilgan mijozni tepaga chiqaradi.
+  //   2. Yozib qidirilganda — SERVER qidiruvi (name/phone/STIR bo'yicha), shunda
+  //      bazadagi minglab kontragentning istalgani topiladi, 250-lik oyna cheklamaydi.
   const counterparties = useQuery({
     queryKey: ['counterparties', 'lite'],
-    // Counterparty ro'yxati {items: [...]} shaklida keladi (rows EMAS) —
-    // jonli smoke-testda tutilgan kontrakt-drift.
-    queryFn: () => api.get<{ items: CounterpartyLite[] }>('/counterparties?limit=500'),
+    queryFn: () => api.get<{ items: CounterpartyLite[] }>('/counterparties?limit=250'),
   });
 
-  const items: ComboboxItem<string>[] = (counterparties.data?.items ?? []).map((c) => ({
+  const toItem = (c: CounterpartyLite): ComboboxItem<string> => ({
     value: c.id,
     label: c.phone ? `${c.name} · ${c.phone}` : c.name,
-  }));
+  });
+
+  const items: ComboboxItem<string>[] = (counterparties.data?.items ?? []).map(toItem);
+
+  const searchCounterparties = async (query: string): Promise<ComboboxItem<string>[]> => {
+    const q = query.trim();
+    if (!q) return items;
+    const res = await api.get<{ items: CounterpartyLite[] }>(
+      `/counterparties?limit=50&search=${encodeURIComponent(q)}`,
+    );
+    return res.items.map(toItem);
+  };
 
   const create = useMutation({
     mutationFn: () =>
@@ -97,6 +112,7 @@ export default function NewDebtPage() {
               value={counterpartyId}
               onChange={(v) => setCounterpartyId(v ?? undefined)}
               items={items}
+              onSearch={searchCounterparties}
               placeholder={t('field_counterparty')}
               data-test-id="debt-counterparty"
             />
