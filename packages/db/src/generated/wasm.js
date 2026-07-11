@@ -4015,6 +4015,52 @@ exports.Prisma.AnalitikaOrderLineScalarFieldEnum = {
   sumMinor: 'sumMinor'
 };
 
+exports.Prisma.DebtScalarFieldEnum = {
+  id: 'id',
+  accountId: 'accountId',
+  counterpartyId: 'counterpartyId',
+  name: 'name',
+  totalMinor: 'totalMinor',
+  paidMinor: 'paidMinor',
+  currency: 'currency',
+  status: 'status',
+  nextContactAt: 'nextContactAt',
+  ownerId: 'ownerId',
+  issuedById: 'issuedById',
+  comment: 'comment',
+  closedAt: 'closedAt',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
+  deletedAt: 'deletedAt'
+};
+
+exports.Prisma.DebtPaymentScalarFieldEnum = {
+  id: 'id',
+  accountId: 'accountId',
+  debtId: 'debtId',
+  amountMinor: 'amountMinor',
+  method: 'method',
+  sourceName: 'sourceName',
+  cashDeskId: 'cashDeskId',
+  attachmentId: 'attachmentId',
+  comment: 'comment',
+  receivedById: 'receivedById',
+  receivedByRole: 'receivedByRole',
+  createdAt: 'createdAt'
+};
+
+exports.Prisma.DebtNoteScalarFieldEnum = {
+  id: 'id',
+  accountId: 'accountId',
+  debtId: 'debtId',
+  text: 'text',
+  nextContactAt: 'nextContactAt',
+  authorId: 'authorId',
+  authorRole: 'authorRole',
+  kind: 'kind',
+  createdAt: 'createdAt'
+};
+
 exports.Prisma.SortOrder = {
   asc: 'asc',
   desc: 'desc'
@@ -4245,7 +4291,10 @@ exports.Prisma.ModelName = {
   AnalitikaReasonCode: 'AnalitikaReasonCode',
   AnalitikaVarianceConfig: 'AnalitikaVarianceConfig',
   AnalitikaOrder: 'AnalitikaOrder',
-  AnalitikaOrderLine: 'AnalitikaOrderLine'
+  AnalitikaOrderLine: 'AnalitikaOrderLine',
+  Debt: 'Debt',
+  DebtPayment: 'DebtPayment',
+  DebtNote: 'DebtNote'
 };
 
 /**

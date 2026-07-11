@@ -110,7 +110,20 @@ export type PermissionEntity =
   | 'label'
   | 'settings'
   // Analitika module
-  | 'analitika';
+  | 'analitika'
+  // «Qarz undirish» (debt collection) — TZ §6 rol matritsasi.
+  // To'rtga bo'lingani ataylab: kassir bilan operator BOSHQA-BOSHQA amal
+  // qiladi, shuning uchun ular alohida entity — bitta `debt.create` ostida
+  // birlashtirilsa, operator kassa to'lovini kirita olib qolardi.
+  //   debt            — ro'yxat/profil (view) · yangi qarz berish (create, KASSIR)
+  //                     · izoh+keyingi sana (update, operator+kassir) · o'chirish
+  //   debtpayment     — kassada naqd/terminal to'lov (create, FAQAT KASSIR)
+  //   debtcardpayment — karta screenshot to'lovi   (create, FAQAT OPERATOR)
+  //   debtreport      — kassirlar/operatorlar kunlik hisoboti (view)
+  | 'debt'
+  | 'debtpayment'
+  | 'debtcardpayment'
+  | 'debtreport';
 
 export type PermissionAction =
   | 'view'
@@ -216,6 +229,76 @@ export const SYSTEM_ROLE_TEMPLATES = {
       print: 'ALL',
     } as Record<PermissionAction, PermissionScope>,
   },
+
+  // ── «Qarz undirish» rollari — TZ §6 ruxsat matritsasi ────────────────────
+  //
+  // Bu ikki rol AYNAN bir-birini to'ldiradi: operator kassa to'lovini kirita
+  // OLMAYDI, kassir screenshot to'lovini kirita olmaydi. `defaults` butun
+  // entity-olamiga qo'llanadi, `overrides` esa aynan qarz entity'larida uni
+  // bekor qiladi — TZ jadvalining mashinaga tushirilgan ko'rinishi.
+
+  QarzOperatori: {
+    description: "Call-markaz operatori — qo'ng'iroq, izoh, karta (screenshot) to'lovi",
+    // Boshqa modullarda faqat ko'radi (mijoz kartochkasi, tovarlar).
+    defaults: {
+      view: 'ALL',
+      create: 'NO',
+      update: 'NO',
+      delete: 'NO',
+      approve: 'NO',
+      print: 'ALL',
+    } as Record<PermissionAction, PermissionScope>,
+    overrides: {
+      // Qarzdorlar ro'yxatini ko'radi; izoh + keyingi qo'ng'iroq vaqtini yozadi.
+      // Yangi qarz BERA OLMAYDI (create: NO).
+      debt: { view: 'ALL', update: 'ALL' },
+      // §3.7 — screenshot asosidagi karta to'lovi: BU OPERATOR VAZIFASI.
+      debtcardpayment: { create: 'ALL' },
+      // §3.6 — kassadagi naqd/terminal to'lov: TAQIQ (defaults'dan NO keladi).
+      // §3.9 — kassirlar bo'yicha kunlik hisobotni KO'RADI.
+      debtreport: { view: 'ALL' },
+    } as Partial<Record<PermissionEntity, Partial<Record<PermissionAction, PermissionScope>>>>,
+  },
+
+  QarzKassiri: {
+    description: 'Kassir — qarz berish, naqd/terminal to‘lov qabul qilish',
+    defaults: {
+      view: 'ALL',
+      create: 'NO',
+      update: 'NO',
+      delete: 'NO',
+      approve: 'NO',
+      print: 'ALL',
+    } as Record<PermissionAction, PermissionScope>,
+    overrides: {
+      // §3.3 — yangi qarz beradi (izoh + keyingi sana majburiy) va §3.4 izoh yozadi.
+      debt: { view: 'ALL', create: 'ALL', update: 'ALL' },
+      // §3.6 — kassada naqd/terminal to'lov qabul qiladi.
+      debtpayment: { create: 'ALL' },
+      // §3.7 — screenshot to'lovi: TAQIQ (operator vazifasi) — defaults.create = NO.
+      // §3.9 — kassirlar hisoboti kassirga KO'RINMAYDI (call-markaz rahbariyati
+      // uchun). Bu AYNIQSA yozilgan: defaults.view = 'ALL' bo'lgani uchun
+      // override'siz hisobot kassirga ochiq qolardi (test tutgan real xato).
+      debtreport: { view: 'NO' },
+    } as Partial<Record<PermissionEntity, Partial<Record<PermissionAction, PermissionScope>>>>,
+  },
 } as const;
 
 export type SystemRoleName = keyof typeof SYSTEM_ROLE_TEMPLATES;
+
+/**
+ * Rol shablonidan (entity, action) uchun yakuniy scope'ni chiqaradi:
+ * avval per-entity override, keyin defaults, oxirida 'NO'.
+ */
+export function scopeFromTemplate(
+  tpl: {
+    defaults: Record<PermissionAction, PermissionScope>;
+    overrides?: Partial<
+      Record<PermissionEntity, Partial<Record<PermissionAction, PermissionScope>>>
+    >;
+  },
+  entity: PermissionEntity,
+  action: PermissionAction,
+): PermissionScope {
+  return tpl.overrides?.[entity]?.[action] ?? tpl.defaults[action] ?? 'NO';
+}

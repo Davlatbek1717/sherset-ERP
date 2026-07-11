@@ -11,6 +11,7 @@ import {
   canAccessRecord,
   isAtLeast,
   maxScope,
+  scopeFromTemplate,
 } from './permissions.types.js';
 
 /**
@@ -313,6 +314,11 @@ export class PermissionsService {
       'auditlog',
       'report',
       'analitika',
+      // «Qarz undirish» (TZ §6) — kassir/operator ajratmasi shu to'rtlikda yashaydi.
+      'debt',
+      'debtpayment',
+      'debtcardpayment',
+      'debtreport',
     ];
     const actions: PermissionAction[] = ['view', 'create', 'update', 'delete', 'approve', 'print'];
 
@@ -336,7 +342,10 @@ export class PermissionsService {
       const perms: Prisma.RolePermissionCreateManyInput[] = [];
       for (const entity of entities) {
         for (const action of actions) {
-          const scope = (tpl.defaults as Record<string, string>)[action] ?? 'NO';
+          // Per-entity override (qarz rollari) → defaults → 'NO'. Shu funksiya
+          // tufayli «kassir naqd qabul qiladi, lekin screenshot kirita olmaydi»
+          // qoidasi seed'da mexanik ravishda yoziladi (TZ §6).
+          const scope = scopeFromTemplate(tpl, entity, action);
           perms.push({
             roleId: role.id,
             entity,

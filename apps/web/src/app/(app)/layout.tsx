@@ -250,6 +250,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       label: tMoney('mutual_settlements'),
       href: '/reports/counterparty-balance',
     },
+    // «Qarz undirish» (TZ v2) — call-markaz + kassa moduli. Kontragent
+    // bo'limida turadi, chunki qarz har doim KONTRAGENTGA bog'langan; o'zaro
+    // hisob-kitobdan farqi — bu FAOL UNDIRISH jarayoni (qo'ng'iroq, izoh,
+    // keyingi aloqa sanasi), sof balans ko'rinishi emas.
+    { key: 'debts', label: tCrm('debts'), href: '/debts' },
     { key: 'prepayments', label: tMoney('prepayments'), href: '/prepayments' },
     { key: 'contracts', label: tCrm('contracts'), href: '/contracts' },
     { key: 'discounts', label: tCrm('discounts'), href: '/discounts' },
@@ -466,6 +471,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           pathname.startsWith('/prepayments') ||
           pathname.startsWith('/prepayment-returns') ||
           pathname.startsWith('/money') ||
+          // «Qarz undirish» (TZ v2) — call-markaz + kassa moduli
+          pathname.startsWith('/debts') ||
           // the «O'zaro hisob-kitoblar» tab lives at /reports/* but belongs here
           pathname.startsWith('/reports/counterparty-balance')
         ? 'crm'

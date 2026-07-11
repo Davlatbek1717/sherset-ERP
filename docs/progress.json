@@ -1,8 +1,8 @@
 {
-  "generatedAt": "2026-07-07T06:07:09.490Z",
+  "generatedAt": "2026-07-11T11:42:06.359Z",
   "list_pages": {
     "total_target": 56,
-    "actual_routes_in_app": 70,
+    "actual_routes_in_app": 71,
     "toolbar_components_built": 18,
     "toolbar_components_pct": 32,
     "dedicated_components": 14,
@@ -26,10 +26,10 @@
     ]
   },
   "detail_pages": {
-    "total_target": 69,
-    "actual_in_app": 69,
+    "total_target": 70,
+    "actual_in_app": 70,
     "audited": 63,
-    "audited_pct": 91,
+    "audited_pct": 90,
     "files": [
       "analitika-buyurtmalar-detail.audit.md",
       "analitika-kontragentlar-detail.audit.md",

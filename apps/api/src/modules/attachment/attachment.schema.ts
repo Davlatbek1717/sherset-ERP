@@ -26,6 +26,9 @@ export const ATTACHMENT_ENTITIES = [
   'Opportunity',
   'Product',
   'Task',
+  // «Qarz undirish» §3.7 — karta to'lovining chek screenshot'i. Rasm shu
+  // polimorf jadvalda yashaydi; DebtPayment.attachmentId unga id-ishora.
+  'DebtPayment',
 ] as const;
 
 const Entity = z.enum(ATTACHMENT_ENTITIES);

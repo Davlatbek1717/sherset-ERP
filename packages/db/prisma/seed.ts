@@ -12,8 +12,8 @@
 import { randomUUID } from 'node:crypto';
 import * as argon2 from 'argon2';
 import { PrismaClient } from '../src/generated/index.js';
-import { CATALOG_50 } from './delixi-uzkabel-data.js';
 import { seedCountries } from './country-seed.js';
+import { CATALOG_50 } from './delixi-uzkabel-data.js';
 import { seedHelpArticles } from './help-seed.js';
 
 const prisma = new PrismaClient();
@@ -145,6 +145,11 @@ async function main(): Promise<void> {
     'publication',
     'label',
     'settings',
+    // «Qarz undirish» (TZ v2) — debt-collection moduli (permissions.types.ts bilan mos)
+    'debt',
+    'debtpayment',
+    'debtcardpayment',
+    'debtreport',
   ];
   const actions = ['view', 'create', 'update', 'delete', 'approve', 'print'];
   const systemRoles = [
@@ -196,6 +201,43 @@ async function main(): Promise<void> {
         print: 'ALL',
       },
     },
+    // «Qarz undirish» rollari (TZ §6) — API'dagi SYSTEM_ROLE_TEMPLATES bilan mos.
+    // Operator kassa to'lovini kirita OLMAYDI; kassir screenshot to'lovini kirita
+    // olmaydi; kassir kunlik hisobotni KO'RMAYDI (call-markaz rahbariyati uchun).
+    {
+      name: 'QarzOperatori',
+      desc: "Call-markaz operatori — qo'ng'iroq, izoh, karta (screenshot) to'lovi",
+      defaults: {
+        view: 'ALL',
+        create: 'NO',
+        update: 'NO',
+        delete: 'NO',
+        approve: 'NO',
+        print: 'ALL',
+      },
+      overrides: {
+        debt: { view: 'ALL', update: 'ALL' },
+        debtcardpayment: { create: 'ALL' },
+        debtreport: { view: 'ALL' },
+      },
+    },
+    {
+      name: 'QarzKassiri',
+      desc: "Kassir — qarz berish, naqd/terminal to'lov qabul qilish",
+      defaults: {
+        view: 'ALL',
+        create: 'NO',
+        update: 'NO',
+        delete: 'NO',
+        approve: 'NO',
+        print: 'ALL',
+      },
+      overrides: {
+        debt: { view: 'ALL', create: 'ALL', update: 'ALL' },
+        debtpayment: { create: 'ALL' },
+        debtreport: { view: 'NO' },
+      },
+    },
   ];
   for (const r of systemRoles) {
     const role = await prisma.role.upsert({
@@ -205,7 +247,10 @@ async function main(): Promise<void> {
     });
     for (const entity of entities) {
       for (const action of actions) {
-        const scope = (r.defaults as Record<string, string>)[action] ?? 'NO';
+        // Per-entity override (qarz rollari) -> defaults -> 'NO'.
+        const overrides = (r as { overrides?: Record<string, Record<string, string>> }).overrides;
+        const scope =
+          overrides?.[entity]?.[action] ?? (r.defaults as Record<string, string>)[action] ?? 'NO';
         await prisma.rolePermission.upsert({
           where: { roleId_entity_action: { roleId: role.id, entity, action } },
           update: { scope },
@@ -253,7 +298,12 @@ async function main(): Promise<void> {
         organization: ['view'],
         report: ['view'],
       },
-      demo: { email: 'kassir@demo.local', username: 'kassir', name: 'Kassir Demo', position: 'Kassir' },
+      demo: {
+        email: 'kassir@demo.local',
+        username: 'kassir',
+        name: 'Kassir Demo',
+        position: 'Kassir',
+      },
     },
     {
       name: 'Skladchi',
@@ -275,7 +325,12 @@ async function main(): Promise<void> {
         retailsale: ['view', 'update'],
         report: ['view'],
       },
-      demo: { email: 'skladchi@demo.local', username: 'skladchi', name: 'Skladchi Demo', position: 'Omborchi' },
+      demo: {
+        email: 'skladchi@demo.local',
+        username: 'skladchi',
+        name: 'Skladchi Demo',
+        position: 'Omborchi',
+      },
     },
   ];
   for (const sr of specializedRoles) {
@@ -354,7 +409,12 @@ async function main(): Promise<void> {
     await prisma.skladKeeper.upsert({
       where: { accountId_skladNo: { accountId: account.id, skladNo: k.skladNo } },
       update: { employeeId: empId, employeeName: k.name },
-      create: { accountId: account.id, skladNo: k.skladNo, employeeId: empId, employeeName: k.name },
+      create: {
+        accountId: account.id,
+        skladNo: k.skladNo,
+        employeeId: empId,
+        employeeName: k.name,
+      },
     });
     console.log(`  ✓ Sklad-keeper: sklad ${k.skladNo} → ${k.username}`);
   }
@@ -562,12 +622,26 @@ async function main(): Promise<void> {
   const delixiFolder = await prisma.productFolder.upsert({
     where: { accountId_code: { accountId: account.id, code: 'DELIXI' } },
     update: {},
-    create: { accountId: account.id, name: 'Delixi', code: 'DELIXI', pathName: 'Delixi', vat: 12, vatEnabled: true },
+    create: {
+      accountId: account.id,
+      name: 'Delixi',
+      code: 'DELIXI',
+      pathName: 'Delixi',
+      vat: 12,
+      vatEnabled: true,
+    },
   });
   const uzkabelFolder = await prisma.productFolder.upsert({
     where: { accountId_code: { accountId: account.id, code: 'UZKABEL' } },
     update: {},
-    create: { accountId: account.id, name: 'UzKabel', code: 'UZKABEL', pathName: 'UzKabel', vat: 12, vatEnabled: true },
+    create: {
+      accountId: account.id,
+      name: 'UzKabel',
+      code: 'UZKABEL',
+      pathName: 'UzKabel',
+      vat: 12,
+      vatEnabled: true,
+    },
   });
 
   const bulkStock: Array<{ id: string; buyPrice: bigint }> = [];
@@ -609,7 +683,9 @@ async function main(): Promise<void> {
     productByCode.set(p.code, prod.id);
     bulkStock.push({ id: prod.id, buyPrice: attrs.buyPrice });
   }
-  console.log(`  ✓ Delixi/UzKabel products (barcode/article/weight/location/price): ${CATALOG_50.length}`);
+  console.log(
+    `  ✓ Delixi/UzKabel products (barcode/article/weight/location/price): ${CATALOG_50.length}`,
+  );
 
   // Initial stock (kirim) for the 50 bulk products — random 20-200 units per
   // product spread across the 3 warehouses. Writes both the balance (stocks)
@@ -657,7 +733,9 @@ async function main(): Promise<void> {
     }
     stockSeeded++;
   }
-  console.log(`  ✓ Initial stock seeded for ${stockSeeded} products across ${warehouseIds.length} warehouses`);
+  console.log(
+    `  ✓ Initial stock seeded for ${stockSeeded} products across ${warehouseIds.length} warehouses`,
+  );
 
   const cps = [
     {

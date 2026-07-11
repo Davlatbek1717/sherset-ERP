@@ -1,0 +1,214 @@
+/**
+ * «Qarz undirish» (TZ v2) — API tiplari va so'rovlari.
+ *
+ * Server javob shakli bilan 1:1 mos (apps/api/src/modules/debt/debt.service.ts).
+ * Pul — HAR DOIM minor (tiyin) string: BigInt JSON'da string bo'lib keladi
+ * (main.ts BigInt.toJSON). Hech qachon `number` ga aylantirmang — 2^53 dan
+ * katta tiyin summalari aniqlikni yo'qotadi.
+ *
+ * REAL-TIME (§3.8): kassa va call-markaz jismonan boshqa joyda. React Query
+ * `refetchInterval` bilan ro'yxat va profil avtomatik yangilanadi — operator
+ * mijoz kassada to'lov qilganini sahifani yangilamasdan ko'radi.
+ */
+
+import { api } from './api-client';
+
+/** Ro'yxat/profil avtomatik yangilanish oralig'i (§3.8 «minimal kechikish»). */
+export const DEBT_POLL_MS = 10_000;
+
+export type DebtStatus = 'unpaid' | 'partial' | 'paid';
+export type DebtPaymentMethod = 'cash' | 'terminal' | 'card_screenshot';
+export type DebtNoteKind = 'call' | 'debt_issue' | 'payment';
+export type DebtAuthorRole = 'operator' | 'cashier' | 'admin';
+export type DebtScope = 'active' | 'today' | 'overdue' | 'all';
+
+export interface DebtRow {
+  id: string;
+  name: string;
+  counterpartyId: string | null;
+  counterpartyName: string | null;
+  phone: string | null;
+  totalMinor: string;
+  paidMinor: string;
+  remainingMinor: string;
+  currency: string;
+  status: DebtStatus;
+  nextContactAt: string | null;
+  /** Server hisoblaydi — keyingi aloqa sanasi o'tib ketgan (§3.5 qizil qator). */
+  overdue: boolean;
+  lastNote: string | null;
+  comment: string | null;
+  ownerId: string | null;
+  ownerName: string | null;
+  issuedByName: string | null;
+  closedAt: string | null;
+  createdAt: string;
+}
+
+export interface DebtPaymentRow {
+  id: string;
+  amountMinor: string;
+  method: DebtPaymentMethod;
+  /** §3.8 — «qayerdan qabul qilingani»: kassa nomi yoki «Karta — screenshot». */
+  sourceName: string | null;
+  /** §3.7 — chek rasmi; `/api/v1/attachments/{id}/raw` orqali ochiladi. */
+  attachmentId: string | null;
+  comment: string | null;
+  receivedByName: string | null;
+  receivedByRole: DebtAuthorRole;
+  createdAt: string;
+}
+
+export interface DebtNoteRow {
+  id: string;
+  text: string;
+  nextContactAt: string | null;
+  authorName: string | null;
+  authorRole: DebtAuthorRole;
+  kind: DebtNoteKind;
+  createdAt: string;
+}
+
+export interface DebtDetail extends DebtRow {
+  payments: DebtPaymentRow[];
+  notes: DebtNoteRow[];
+}
+
+export interface DebtListResponse {
+  rows: DebtRow[];
+  total: number;
+  outstandingMinor: string;
+}
+
+export interface DebtSummary {
+  outstandingMinor: string;
+  debtorCount: number;
+  overdueMinor: string;
+  overdueCount: number;
+  todayCallCount: number;
+}
+
+export interface CashierReportRow {
+  cashierId: string;
+  cashierName: string;
+  collectedMinor: string;
+  collectedCount: number;
+  issuedMinor: string;
+  issuedCount: number;
+}
+
+export interface CashierReport {
+  date: string;
+  rows: CashierReportRow[];
+  totals: {
+    collectedMinor: string;
+    issuedMinor: string;
+    collectedCount: number;
+    issuedCount: number;
+  };
+}
+
+export interface OperatorReportRow {
+  operatorId: string;
+  operatorName: string;
+  callCount: number;
+  screenshotCount: number;
+  screenshotMinor: string;
+}
+
+export interface OperatorReport {
+  date: string;
+  rows: OperatorReportRow[];
+}
+
+// ── so'rovlar ────────────────────────────────────────────────────────────────
+
+export interface DebtListParams {
+  scope?: DebtScope;
+  ownerId?: string;
+  search?: string;
+  sortBy?: 'nextContactAt' | 'remainingMinor' | 'totalMinor' | 'createdAt' | 'counterparty';
+  sortDir?: 'asc' | 'desc';
+  limit?: number;
+  offset?: number;
+}
+
+function qs(params: Record<string, unknown>): string {
+  const sp = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== null && v !== '') sp.set(k, String(v));
+  }
+  const s = sp.toString();
+  return s ? `?${s}` : '';
+}
+
+export const debtApi = {
+  list: (p: DebtListParams = {}) => api.get<DebtListResponse>(`/debts${qs({ ...p })}`),
+
+  summary: () => api.get<DebtSummary>('/debts/summary'),
+
+  get: (id: string) => api.get<DebtDetail>(`/debts/${id}`),
+
+  /** §3.5 — bugungi qo'ng'iroqlar (muddati o'tganlar ham, `overdue` bayrog'i bilan). */
+  todayCalls: (ownerId?: string) =>
+    api.get<{ rows: DebtRow[] }>(`/debts/calls/today${qs({ ownerId })}`),
+
+  /** §3.3 — yangi qarz berish (KASSIR). Izoh + keyingi sana MAJBURIY. */
+  create: (body: {
+    counterpartyId: string;
+    totalMinor: string;
+    comment: string;
+    nextContactAt: string;
+    ownerId?: string | null;
+  }) => api.post<DebtRow>('/debts', body),
+
+  /** §3.4 — izoh + keyingi qo'ng'iroq vaqti (operator VA kassir). */
+  addNote: (id: string, body: { text: string; nextContactAt?: string | null }) =>
+    api.post<DebtNoteRow>(`/debts/${id}/notes`, body),
+
+  /** §3.6 — kassada naqd/terminal to'lov (FAQAT KASSIR). */
+  addCashPayment: (
+    id: string,
+    body: {
+      amountMinor: string;
+      method: 'cash' | 'terminal';
+      cashDeskId?: string | null;
+      comment?: string;
+      nextContactAt?: string | null;
+    },
+  ) => api.post<DebtRow>(`/debts/${id}/payments`, body),
+
+  /** §3.7 — karta (screenshot) to'lovi (FAQAT OPERATOR). */
+  addCardPayment: (
+    id: string,
+    body: {
+      amountMinor: string;
+      screenshotBase64: string;
+      filename: string;
+      mime: string;
+      comment?: string;
+      nextContactAt?: string | null;
+    },
+  ) => api.post<DebtPaymentRow>(`/debts/${id}/card-payments`, body),
+
+  cashierReport: (date?: string) =>
+    api.get<CashierReport>(`/debts/reports/cashiers${qs({ date })}`),
+
+  operatorReport: (date?: string) =>
+    api.get<OperatorReport>(`/debts/reports/operators${qs({ date })}`),
+};
+
+/** Faylni base64 data-URI'ga o'giradi (§3.7 screenshot yuklash). */
+export function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error('Faylni o‘qib bo‘lmadi'));
+    reader.readAsDataURL(file);
+  });
+}
+
+/** Chek rasmini ochish havolasi (§3.7 — nizoli holatda tekshirish). */
+export function screenshotUrl(attachmentId: string): string {
+  return `/api/v1/attachments/${attachmentId}/raw`;
+}

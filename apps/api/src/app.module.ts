@@ -31,6 +31,7 @@ import { CountryModule } from './modules/country/country.module.js';
 import { CurrencyModule } from './modules/currency/currency.module.js';
 import { CustomEntityModule } from './modules/custom-entity/custom-entity.module.js';
 import { CustomerOrderModule } from './modules/customer-order/customer-order.module.js';
+import { DebtModule } from './modules/debt/debt.module.js';
 import { DemandModule } from './modules/demand/demand.module.js';
 import { DiscountModule } from './modules/discount/discount.module.js';
 import { EdoModule } from './modules/edo/edo.module.js';
@@ -143,6 +144,7 @@ import { PrismaModule } from './prisma/prisma.module.js';
     GroupModule,
     PresenceModule,
     CustomerOrderModule,
+    DebtModule,
     StockModule,
     DemandModule,
     InvoiceOutModule,
