@@ -15,7 +15,13 @@
  * Ruxsat: `debtreport.view` — kassirga BERILMAGAN (server 403 qaytaradi).
  */
 
-import { type CashierReportRow, type OperatorReportRow, debtApi } from '@/lib/debt-api';
+import {
+  type CashierReportRow,
+  type DebtPaymentFeedRow,
+  type OperatorReportRow,
+  debtApi,
+  fetchAllPayments,
+} from '@/lib/debt-api';
 import {
   Button,
   Container,
@@ -53,6 +59,14 @@ export default function DebtReportsPage() {
   const operators = useQuery({
     queryKey: ['debts', 'report', 'operators', date],
     queryFn: () => debtApi.operatorReport(date),
+  });
+
+  // «AYNAN QAYSI MIJOZ to'lagani» — tanlangan kunning har bir to'lovi mijoz
+  // ismi bilan (foydalanuvchi talabi 2026-07-11: hisobotda ham, Excel'da ham
+  // ism aniq ko'rinsin). Kassir-jamlanmasi javob bermaydigan savolga javob.
+  const payments = useQuery({
+    queryKey: ['debts', 'report', 'payments', date],
+    queryFn: () => debtApi.paymentsFeed({ from: date, to: date, limit: 200 }),
   });
 
   const cashierCols: DataTableColumn<CashierReportRow>[] = [
@@ -115,6 +129,80 @@ export default function DebtReportsPage() {
     },
   ];
 
+  // Mijozlar kesimidagi jadval ustunlari — ism BOSILADIGAN havola (kartochkaga).
+  const paymentCols: DataTableColumn<DebtPaymentFeedRow>[] = [
+    {
+      key: 'time',
+      header: t('col_time'),
+      cell: (r) => (
+        <span className="tabular-nums">
+          {new Date(r.createdAt).toLocaleTimeString('ru-RU', {
+            hour: '2-digit',
+            minute: '2-digit',
+          })}
+        </span>
+      ),
+      cellText: (r) => r.createdAt,
+    },
+    {
+      key: 'client',
+      header: t('col_counterparty'),
+      cell: (r) => (
+        <Link
+          href={`/debts/${r.debtId}`}
+          className="font-medium text-[var(--ms-primary-600)] hover:underline"
+        >
+          {r.counterpartyName}
+        </Link>
+      ),
+      cellText: (r) => r.counterpartyName,
+    },
+    {
+      key: 'debtName',
+      header: t('col_number'),
+      cell: (r) => <span className="text-[var(--ms-text-muted)]">{r.debtName}</span>,
+      cellText: (r) => r.debtName,
+    },
+    {
+      key: 'amount',
+      header: t('col_amount'),
+      cell: (r) => (
+        <span className="font-semibold text-[var(--ms-text-success)] tabular-nums">
+          {formatMoney(r.amountMinor)}
+        </span>
+      ),
+      cellText: (r) => r.amountMinor,
+    },
+    {
+      key: 'method',
+      header: t('col_method'),
+      cell: (r) =>
+        r.method === 'cash'
+          ? t('method_cash')
+          : r.method === 'terminal'
+            ? t('method_terminal')
+            : t('method_card_screenshot'),
+      cellText: (r) => r.method,
+    },
+    {
+      key: 'receivedBy',
+      header: t('col_received_by'),
+      cell: (r) => r.receivedByName ?? '—',
+      cellText: (r) => r.receivedByName ?? '',
+    },
+    {
+      key: 'remaining',
+      header: t('col_remaining'),
+      cell: (r) =>
+        r.debtStatus === 'paid' ? (
+          <span className="font-medium text-[var(--ms-text-success)]">{t('paid_full')}</span>
+        ) : (
+          <span className="tabular-nums">{formatMoney(r.remainingMinor)}</span>
+        ),
+      cellText: (r) => r.remainingMinor,
+    },
+  ];
+
   function exportCashiers() {
     const rows = cashiers.data?.rows ?? [];
     const csv = buildCsv<CashierReportRow>(
@@ -132,6 +220,56 @@ export default function DebtReportsPage() {
     downloadCsv(csv, `kassirlar-${date}-${csvTimestamp()}.csv`);
   }
 
+  /**
+   * Excel eksport — MIJOZ ISMI bilan, tanlangan kunning har bir to'lovi.
+   * Server sahifalab beradi (max 200) — fetchAllPayments hammasini yig'adi.
+   * Summalar Excel hisob-kitobi uchun toza SO'M raqamida (bo'sh joysiz).
+   */
+  async function exportPayments() {
+    const rows = await fetchAllPayments({ from: date, to: date });
+    const csv = buildCsv<DebtPaymentFeedRow>(
+      [
+        {
+          header: t('col_time'),
+          cellText: (r) => new Date(r.createdAt).toLocaleString('ru-RU'),
+        },
+        { header: t('col_counterparty'), cellText: (r) => r.counterpartyName },
+        { header: t('col_phone'), cellText: (r) => r.phone ?? '' },
+        { header: t('col_number'), cellText: (r) => r.debtName },
+        {
+          header: `${t('col_amount')} (so'm)`,
+          cellText: (r) => String(Number(r.amountMinor) / 100),
+        },
+        {
+          header: t('col_method'),
+          cellText: (r) =>
+            r.method === 'cash'
+              ? t('method_cash')
+              : r.method === 'terminal'
+                ? t('method_terminal')
+                : t('method_card_screenshot'),
+        },
+        { header: t('col_source'), cellText: (r) => r.sourceName ?? '' },
+        { header: t('col_received_by'), cellText: (r) => r.receivedByName ?? '' },
+        {
+          header: `${t('col_remaining')} (so'm)`,
+          cellText: (r) => String(Number(r.remainingMinor) / 100),
+        },
+        {
+          header: t('col_status'),
+          cellText: (r) =>
+            r.debtStatus === 'paid'
+              ? t('paid_full')
+              : r.debtStatus === 'partial'
+                ? t('status_partial')
+                : t('status_unpaid'),
+        },
+      ],
+      rows,
+    );
+    downloadCsv(csv, `tolovlar-mijozlar-${date}-${csvTimestamp()}.csv`);
+  }
+
   const totals = cashiers.data?.totals;
 
   return (
@@ -143,6 +281,9 @@ export default function DebtReportsPage() {
           <div className="flex items-center gap-2">
             <Button variant="secondary" onClick={exportCashiers}>
               {t('export_csv')}
+            </Button>
+            <Button variant="secondary" onClick={() => void exportPayments()}>
+              {t('export_payments_csv')}
             </Button>
             <Button variant="secondary" asChild>
               <Link href="/debts">{t('back_to_list')}</Link>
@@ -191,7 +332,7 @@ export default function DebtReportsPage() {
       </section>
 
       {/* ── Operatorlar hisoboti (§4) ──────────────────────────────────── */}
-      <section>
+      <section className="mb-6">
         <h2 className="mb-2 font-semibold text-sm">{t('report_operators')}</h2>
         <DataTable
           columns={operatorCols}
@@ -199,6 +340,23 @@ export default function DebtReportsPage() {
           keyField="operatorId"
           loading={operators.isLoading}
           empty={<EmptyState title={t('empty')} />}
+        />
+      </section>
+
+      {/* ── AYNAN QAYSI MIJOZ to'lagani — kunning har bir to'lovi ismi bilan ── */}
+      <section>
+        <div className="mb-2 flex items-center justify-between">
+          <h2 className="font-semibold text-sm">{t('report_payments')}</h2>
+          <span className="text-[var(--ms-text-muted)] text-xs">
+            {payments.data?.total ?? 0} · {formatMoney(payments.data?.totalAmountMinor ?? '0')}
+          </span>
+        </div>
+        <DataTable
+          columns={paymentCols}
+          rows={payments.data?.rows ?? []}
+          keyField="id"
+          loading={payments.isLoading}
+          empty={<EmptyState title={t('payments_empty')} />}
         />
       </section>
     </Container>

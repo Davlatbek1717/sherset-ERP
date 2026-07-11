@@ -6244,7 +6244,9 @@
       "filter_to": "Sanagacha",
       "filter_method": "Usul",
       "filter_all_methods": "Barcha usullar",
-      "col_method": "Usul"
+      "col_method": "Usul",
+      "report_payments": "To'lovlar — mijozlar kesimida",
+      "export_payments_csv": "Excel — mijoz ismlari bilan"
     }
   },
   "print_entity": {

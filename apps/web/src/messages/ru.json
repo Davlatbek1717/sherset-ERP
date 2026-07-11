@@ -6244,7 +6244,9 @@
       "filter_to": "По дату",
       "filter_method": "Способ",
       "filter_all_methods": "Все способы",
-      "col_method": "Способ"
+      "col_method": "Способ",
+      "report_payments": "Платежи — по клиентам",
+      "export_payments_csv": "Excel — с именами клиентов"
     }
   },
   "print_entity": {

@@ -235,6 +235,24 @@ export const debtApi = {
     api.get<DebtPaymentsFeed>(`/debts/payments/feed${qs({ ...p })}`),
 };
 
+/**
+ * Davr bo'yicha BARCHA to'lovlarni yuklaydi (Excel eksport uchun) — server
+ * sahifasi 200 ta bilan cheklangani uchun offset bo'yicha aylanadi.
+ */
+export async function fetchAllPayments(
+  p: Omit<DebtPaymentsFeedParams, 'limit' | 'offset'>,
+): Promise<DebtPaymentFeedRow[]> {
+  const out: DebtPaymentFeedRow[] = [];
+  let offset = 0;
+  for (;;) {
+    const page = await debtApi.paymentsFeed({ ...p, limit: 200, offset });
+    out.push(...page.rows);
+    if (out.length >= page.total || page.rows.length === 0) break;
+    offset += 200;
+  }
+  return out;
+}
+
 /** Faylni base64 data-URI'ga o'giradi (§3.7 screenshot yuklash). */
 export function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {

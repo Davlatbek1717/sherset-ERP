@@ -17,6 +17,7 @@ import {
   type DebtPaymentFeedRow,
   type DebtPaymentMethod,
   debtApi,
+  fetchAllPayments,
 } from '@/lib/debt-api';
 import {
   Badge,
@@ -26,6 +27,9 @@ import {
   Input,
   NativeSelect,
   PageHeader,
+  buildCsv,
+  csvTimestamp,
+  downloadCsv,
   formatMoney,
 } from '@moysklad/ui';
 import { useQuery } from '@tanstack/react-query';
@@ -65,15 +69,67 @@ export default function DebtPaymentsFeedPage() {
         ? t('method_terminal')
         : t('method_card_screenshot');
 
+  /**
+   * Excel eksport — MIJOZ ISMI bilan, joriy filtrlar bo'yicha HAMMA to'lov
+   * (server 200-talik sahifalarini fetchAllPayments yig'adi). Summalar toza
+   * so'm raqamida — Excel'da yig'indini formulaga solish mumkin.
+   */
+  async function exportCsv() {
+    const all = await fetchAllPayments({
+      from: from || undefined,
+      to: to || undefined,
+      method: method || undefined,
+      search: search || undefined,
+    });
+    const csv = buildCsv<DebtPaymentFeedRow>(
+      [
+        {
+          header: t('col_time'),
+          cellText: (r) => new Date(r.createdAt).toLocaleString('ru-RU'),
+        },
+        { header: t('col_counterparty'), cellText: (r) => r.counterpartyName },
+        { header: t('col_phone'), cellText: (r) => r.phone ?? '' },
+        { header: t('col_number'), cellText: (r) => r.debtName },
+        {
+          header: `${t('col_amount')} (so'm)`,
+          cellText: (r) => String(Number(r.amountMinor) / 100),
+        },
+        { header: t('col_method'), cellText: (r) => methodLabel(r.method) },
+        { header: t('col_source'), cellText: (r) => r.sourceName ?? '' },
+        { header: t('col_received_by'), cellText: (r) => r.receivedByName ?? '' },
+        {
+          header: `${t('col_remaining')} (so'm)`,
+          cellText: (r) => String(Number(r.remainingMinor) / 100),
+        },
+        {
+          header: t('col_status'),
+          cellText: (r) =>
+            r.debtStatus === 'paid'
+              ? t('paid_full')
+              : r.debtStatus === 'partial'
+                ? t('status_partial')
+                : t('status_unpaid'),
+        },
+      ],
+      all,
+    );
+    downloadCsv(csv, `tolovlar-mijozlar-${csvTimestamp()}.csv`);
+  }
+
   return (
     <Container>
       <PageHeader
         title={t('tab_payments')}
         subtitle={t('payments_subtitle')}
         actions={
-          <Button variant="secondary" asChild>
-            <Link href="/debts">{t('back_to_list')}</Link>
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="secondary" onClick={() => void exportCsv()}>
+              {t('export_payments_csv')}
+            </Button>
+            <Button variant="secondary" asChild>
+              <Link href="/debts">{t('back_to_list')}</Link>
+            </Button>
+          </div>
         }
       />
 
