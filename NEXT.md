@@ -327,6 +327,23 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > shart!) + jonli smoke (kartada qty saqlash → /cell'da ×N → picking'da suffiks); keyin ixtiyoriy Phase 2b: qty
 > yig'indisi vs ombor qoldig'i solishtiruv-ogohlantirish; hujjat-post bilan avto-yuritish = KATTA alohida qaror.
 
+> **🟢💰 2026-07-11a (QARZ UNDIRISH MODULI — TZ v2 to'liq · ✅ DEPLOYED + jonli HTTP-verify)**
+> Foydalanuvchi TZ'si (`Qarz_undirish_TZ.docx`) bo'yicha yangi mustaqil bo'lim (`9d8cbca`): qarzdorlar ro'yxati
+> (§3.1) · mijoz profili 3 ajratilgan bo'lim (§3.2) · qarz berish izoh+sana MAJBURIY (§3.3) · muloqot tarixi
+> append-only rol bilan (§3.4) · bugungi qo'ng'iroqlar, overdue qizil (§3.5) · kassa to'lovi, qisman=izoh majburiy
+> (§3.6) · karta-screenshot to'lovi attachment'da (§3.7) · 10s polling sinxron (§3.8) · kassir/operator kunlik
+> hisobot (§3.9). DB: debts/debt_payments/debt_notes (additive, CounterpartyBalance'ga TEGMAYDI — TZ §7). RBAC:
+> 4 entity + QarzOperatori/QarzKassiri (matritsa testda qulflangan, jumladan «kassir hisobot ko'rmaydi» — test
+> tutgan real xato). Gate: tc 0+0 · debt test 31/31 · biome 0 · i18n (o'z fayllari) 0. **DEPLOY (bu mashinada
+> birinchi)**: GitHub kirish YO'Q edi → git bundle+scp → ff-merge 7549408→9d8cbca; pg_dump zaxira 16MB
+> (`/root/backups/sherset_pre_debt_20260711_134720.dump`) → money build → build:web nohup BUILD_OK → migrate
+> deploy → seed-debt-roles (prod-xavfsiz, +144 ruxsat qatori, demo-data YO'Q) → pm2 restart faqat sherset-* →
+> verify: /debts 200 (chunk'da «Qarz undirish» bor) · API 401-korrekt · boshqa ijarachilar tegilmagan (8D uptime,
+> climartgroup 200; climart.biznesjon.uz 410 — OLDINDAN shunday, menga aloqasiz). Lokal dev ham to'liq ko'tarildi
+> (PostgreSQL lokal user+db yaratildi, 157 migratsiya, seed). ⚠️ i18n gate'da 7 eski buzilish bor (losses/labels —
+> mening ishimdan OLDIN mavjud). ⏭️ NEXT: prod'da QarzOperatori/QarzKassiri rollarini real xodimlarga biriktirish +
+> Phase-2 QA (real brauzer); ixtiyoriy: Telegram bildirishnoma (§3.8 tavsiya) + WS o'rniga polling'ni ko'rib chiqish.
+
 > **🟢🖨️ 2026-07-04l (SENIK CHOP ZANJIRI: exe v1.0.3 avto-chop + aniq o'lcham + markazlash — ✅ DEPLOYED)**
 > 07-04k davomi, user shikoyatlari ketma-ket hal qilindi: «exe'da avtomatik chiqmayapti» → «o'lcham noto'g'ri» →
 > «markazga chiqsin». (1) **mm-birlik** (`c870c43`): label div px→mm (@page bilan aynan mos). (2) **exe'da avto-chop**
