@@ -169,6 +169,9 @@ export default function DebtsPage() {
               <Link href="/debts/calls">{t('tab_calls')}</Link>
             </Button>
             <Button variant="secondary" asChild>
+              <Link href="/debts/payments">{t('tab_payments')}</Link>
+            </Button>
+            <Button variant="secondary" asChild>
               <Link href="/debts/reports">{t('tab_reports')}</Link>
             </Button>
             <Button asChild>

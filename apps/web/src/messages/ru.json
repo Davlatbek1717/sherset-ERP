@@ -6232,7 +6232,19 @@
       "paid_full": "Долг полностью погашен",
       "export_csv": "Скачать CSV",
       "back_to_list": "Вернуться к списку",
-      "saved": "Сохранено"
+      "saved": "Сохранено",
+      "tab_payments": "Платежи",
+      "payments_subtitle": "Какой клиент, когда и сколько оплатил — живая лента",
+      "payments_total": "Поступило за период",
+      "payments_empty": "За этот период платежей нет",
+      "col_amount": "Сумма",
+      "col_source": "Откуда",
+      "col_received_by": "Кто принял",
+      "filter_from": "С даты",
+      "filter_to": "По дату",
+      "filter_method": "Способ",
+      "filter_all_methods": "Все способы",
+      "col_method": "Способ"
     }
   },
   "print_entity": {

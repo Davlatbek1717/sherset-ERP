@@ -133,6 +133,39 @@ export interface DebtListParams {
   offset?: number;
 }
 
+/** «To'lovlar lentasi» qatori — aynan qaysi mijoz to'lagani. */
+export interface DebtPaymentFeedRow {
+  id: string;
+  debtId: string;
+  debtName: string;
+  counterpartyName: string;
+  phone: string | null;
+  amountMinor: string;
+  method: DebtPaymentMethod;
+  sourceName: string | null;
+  receivedByName: string | null;
+  receivedByRole: DebtAuthorRole;
+  /** To'lovdan keyingi qarz holati — 'paid' bo'lsa «TO'LIQ YOPILDI». */
+  debtStatus: DebtStatus;
+  remainingMinor: string;
+  createdAt: string;
+}
+
+export interface DebtPaymentsFeed {
+  rows: DebtPaymentFeedRow[];
+  total: number;
+  totalAmountMinor: string;
+}
+
+export interface DebtPaymentsFeedParams {
+  from?: string;
+  to?: string;
+  method?: DebtPaymentMethod;
+  search?: string;
+  limit?: number;
+  offset?: number;
+}
+
 function qs(params: Record<string, unknown>): string {
   const sp = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) {
@@ -196,6 +229,10 @@ export const debtApi = {
 
   operatorReport: (date?: string) =>
     api.get<OperatorReport>(`/debts/reports/operators${qs({ date })}`),
+
+  /** «To'lovlar lentasi» — aynan qaysi mijoz to'lagani (default: bugun). */
+  paymentsFeed: (p: DebtPaymentsFeedParams = {}) =>
+    api.get<DebtPaymentsFeed>(`/debts/payments/feed${qs({ ...p })}`),
 };
 
 /** Faylni base64 data-URI'ga o'giradi (§3.7 screenshot yuklash). */

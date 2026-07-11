@@ -6232,7 +6232,19 @@
       "paid_full": "Qarz to'liq yopildi",
       "export_csv": "CSV yuklab olish",
       "back_to_list": "Ro'yxatga qaytish",
-      "saved": "Saqlandi"
+      "saved": "Saqlandi",
+      "tab_payments": "To'lovlar",
+      "payments_subtitle": "Qaysi mijoz qachon va qancha to'lagani — jonli lenta",
+      "payments_total": "Tanlangan davrda tushgan",
+      "payments_empty": "Bu davrda to'lovlar yo'q",
+      "col_amount": "Summa",
+      "col_source": "Qayerdan",
+      "col_received_by": "Kim qabul qildi",
+      "filter_from": "Sanadan",
+      "filter_to": "Sanagacha",
+      "filter_method": "Usul",
+      "filter_all_methods": "Barcha usullar",
+      "col_method": "Usul"
     }
   },
   "print_entity": {

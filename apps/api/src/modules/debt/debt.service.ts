@@ -25,6 +25,7 @@ import {
   type DebtFilterInput,
   DebtFilterSchema,
   type DebtNoteKind,
+  DebtPaymentsFeedFilterSchema,
   type DebtPaymentsReportFilterInput,
   DebtPaymentsReportFilterSchema,
   type DebtStatus,
@@ -782,6 +783,88 @@ export class DebtService {
     const totalMinor = grouped.reduce((acc, g) => acc + (g._sum.amountMinor ?? 0n), 0n).toString();
 
     return { byMethod, totalMinor, from: bounds.gte ?? null, to: bounds.lt ?? null };
+  }
+
+  /**
+   * «To'lovlar lentasi» — AYNAN QAYSI MIJOZ to'laganini ko'rsatadigan
+   * xronologik ro'yxat (eng yangisi tepada). Har qatorda: mijoz, qarz raqami,
+   * summa, usul, qayerdan (§3.8), kim qabul qilgani va to'lovdan keyingi
+   * QOLDIQ + qarz statusi — «to'liq yopildi»mi bir qarashda ko'rinadi.
+   *
+   * Default davr — BUGUNGI Toshkent kuni («bugun kim to'ladi?» savoli);
+   * sana/usul/qidiruv filtri bilan istalgan davr ochiladi.
+   */
+  async paymentsFeed(accountId: string, raw: unknown) {
+    const f = DebtPaymentsFeedFilterSchema.parse(raw);
+    // Sana berilmasa — bugungi kun (lenta odatiy holda kunlik).
+    const bounds = f.from || f.to ? tashkentRangeBounds(f.from, f.to) : this.tashkentDay();
+
+    const where: Prisma.DebtPaymentWhereInput = {
+      accountId,
+      createdAt: bounds,
+      ...(f.method ? { method: f.method } : {}),
+      ...(f.search
+        ? {
+            debt: {
+              counterparty: {
+                OR: [
+                  { name: { contains: f.search, mode: 'insensitive' } },
+                  { phone: { contains: f.search, mode: 'insensitive' } },
+                ],
+              },
+            },
+          }
+        : {}),
+    };
+
+    const [rows, total, agg] = await Promise.all([
+      this.prisma.client.debtPayment.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        take: f.limit,
+        skip: f.offset,
+        include: {
+          receivedBy: { select: { name: true } },
+          cashDesk: { select: { name: true } },
+          debt: {
+            select: {
+              id: true,
+              name: true,
+              status: true,
+              totalMinor: true,
+              paidMinor: true,
+              counterparty: { select: { id: true, name: true, phone: true } },
+            },
+          },
+        },
+      }),
+      this.prisma.client.debtPayment.count({ where }),
+      this.prisma.client.debtPayment.aggregate({ where, _sum: { amountMinor: true } }),
+    ]);
+
+    return {
+      rows: rows.map((p) => {
+        const remaining = p.debt.totalMinor - p.debt.paidMinor;
+        return {
+          id: p.id,
+          debtId: p.debt.id,
+          debtName: p.debt.name,
+          counterpartyName: p.debt.counterparty.name,
+          phone: p.debt.counterparty.phone,
+          amountMinor: p.amountMinor.toString(),
+          method: p.method,
+          sourceName: p.sourceName ?? p.cashDesk?.name ?? null,
+          receivedByName: p.receivedBy?.name ?? null,
+          receivedByRole: p.receivedByRole,
+          /** To'lovdan keyin qarzning JORIY holati — «to'liq yopildi» belgisi shu yerdan. */
+          debtStatus: p.debt.status,
+          remainingMinor: (remaining > 0n ? remaining : 0n).toString(),
+          createdAt: p.createdAt,
+        };
+      }),
+      total,
+      totalAmountMinor: (agg._sum.amountMinor ?? 0n).toString(),
+    };
   }
 
   /** §4 — umumiy qarzdorlik + muddati o'tganlar (dashboard kartochkalari). */

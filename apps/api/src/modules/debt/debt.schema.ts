@@ -165,3 +165,19 @@ export const DebtPaymentsReportFilterSchema = z.object({
   method: DebtPaymentMethodSchema.optional(),
 });
 export type DebtPaymentsReportFilterInput = z.infer<typeof DebtPaymentsReportFilterSchema>;
+
+/**
+ * «To'lovlar lentasi» — AYNAN QAYSI MIJOZ to'laganini ko'rsatadigan
+ * xronologik ro'yxat (§3.8 kengaytmasi, foydalanuvchi talabi 2026-07-11).
+ * Default: bugungi Toshkent kuni; sana oralig'i va usul bo'yicha filtr.
+ */
+export const DebtPaymentsFeedFilterSchema = z.object({
+  from: z.string().optional(),
+  to: z.string().optional(),
+  method: DebtPaymentMethodSchema.optional(),
+  /** F.I.Sh / telefon bo'yicha qidiruv. */
+  search: z.string().max(100).optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  offset: z.coerce.number().int().min(0).default(0),
+});
+export type DebtPaymentsFeedFilterInput = z.infer<typeof DebtPaymentsFeedFilterSchema>;

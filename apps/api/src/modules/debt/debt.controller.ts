@@ -110,6 +110,17 @@ export class DebtController {
     return this.service.paymentsReport(user.accountId, q);
   }
 
+  /**
+   * «To'lovlar lentasi» — aynan qaysi mijoz to'laganini ko'rsatadi.
+   * Ruxsat: debt.view (hisobot EMAS — kassir ham o'z kiritganini ko'rishi
+   * tabiiy; §3.8 umumiy-ko'rinish printsipi). Statik yo'l — ':id' dan OLDIN.
+   */
+  @Get('payments/feed')
+  @RequirePermission({ entity: 'debt', action: 'view' })
+  paymentsFeed(@CurrentUser() user: AuthenticatedUser, @Query() q: Record<string, unknown>) {
+    return this.service.paymentsFeed(user.accountId, q);
+  }
+
   // ── §3.2 mijoz profili ────────────────────────────────────────────────────
 
   @Get(':id')
