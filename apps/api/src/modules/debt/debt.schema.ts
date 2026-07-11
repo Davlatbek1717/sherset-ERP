@@ -130,6 +130,13 @@ export const DebtFilterSchema = z.object({
   scope: DebtScopeSchema.default('active'),
   status: DebtStatusSchema.optional(),
   counterpartyId: z.string().uuid().optional(),
+  /**
+   * Mijoz-segment filtri (2026-07-11 talab: «Elektriklar / Boshqalar»).
+   * counterpartyGroupId — qarzdor SHU guruhda bo'lsin (masalan Elektriklar);
+   * counterpartyGroupExclude — shu guruhda BO'LMASIN (Boshqalar tabi).
+   */
+  counterpartyGroupId: z.string().uuid().optional(),
+  counterpartyGroupExclude: z.string().uuid().optional(),
   /** Mas'ul xodim bo'yicha (§3.1). */
   ownerId: z.string().uuid().optional(),
   /** F.I.Sh yoki telefon bo'yicha qidiruv. */

@@ -202,13 +202,24 @@ export class DebtService {
       where.nextContactAt = { lt: now };
     }
 
+    // Kontragent bo'yicha shartlar bitta obyektga YIG'ILADI — search ham,
+    // segment (guruh) ham bir vaqtda ishlashi mumkin (masalan Elektriklar
+    // ichida ism qidirish).
+    const cpWhere: Prisma.CounterpartyWhereInput = {};
     if (f.search) {
-      where.counterparty = {
-        OR: [
-          { name: { contains: f.search, mode: 'insensitive' } },
-          { phone: { contains: f.search, mode: 'insensitive' } },
-        ],
+      cpWhere.OR = [
+        { name: { contains: f.search, mode: 'insensitive' } },
+        { phone: { contains: f.search, mode: 'insensitive' } },
+      ];
+    }
+    if (f.counterpartyGroupId || f.counterpartyGroupExclude) {
+      cpWhere.groups = {
+        ...(f.counterpartyGroupId ? { some: { id: f.counterpartyGroupId } } : {}),
+        ...(f.counterpartyGroupExclude ? { none: { id: f.counterpartyGroupExclude } } : {}),
       };
+    }
+    if (Object.keys(cpWhere).length > 0) {
+      where.counterparty = cpWhere;
     }
 
     // Saralash. `remainingMinor` — hisoblanuvchi ustun, SQL'da yo'q; Prisma uni

@@ -6246,7 +6246,10 @@
       "filter_all_methods": "Barcha usullar",
       "col_method": "Usul",
       "report_payments": "To'lovlar — mijozlar kesimida",
-      "export_payments_csv": "Excel — mijoz ismlari bilan"
+      "export_payments_csv": "Excel — mijoz ismlari bilan",
+      "segment_all": "Hammasi",
+      "segment_elektrik": "⚡ Elektriklar",
+      "segment_boshqa": "Boshqalar"
     }
   },
   "print_entity": {

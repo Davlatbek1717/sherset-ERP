@@ -127,6 +127,10 @@ export interface DebtListParams {
   scope?: DebtScope;
   ownerId?: string;
   search?: string;
+  /** Segment: qarzdor shu guruhda bo'lsin (Elektriklar tabi). */
+  counterpartyGroupId?: string;
+  /** Segment: shu guruhda BO'LMASIN (Boshqalar tabi). */
+  counterpartyGroupExclude?: string;
   sortBy?: 'nextContactAt' | 'remainingMinor' | 'totalMinor' | 'createdAt' | 'counterparty';
   sortDir?: 'asc' | 'desc';
   limit?: number;

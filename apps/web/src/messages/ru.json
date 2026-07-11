@@ -6246,7 +6246,10 @@
       "filter_all_methods": "Все способы",
       "col_method": "Способ",
       "report_payments": "Платежи — по клиентам",
-      "export_payments_csv": "Excel — с именами клиентов"
+      "export_payments_csv": "Excel — с именами клиентов",
+      "segment_all": "Все",
+      "segment_elektrik": "⚡ Электрики",
+      "segment_boshqa": "Остальные"
     }
   },
   "print_entity": {

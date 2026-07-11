@@ -12,6 +12,7 @@
  * qabul qilingan to'lov call-markaz ekranida sahifani yangilamasdan ko'rinadi.
  */
 
+import { api } from '@/lib/api-client';
 import { DEBT_POLL_MS, type DebtRow, type DebtScope, debtApi } from '@/lib/debt-api';
 import {
   Badge,
@@ -34,15 +35,28 @@ import { useState } from 'react';
 
 const SCOPES: DebtScope[] = ['active', 'today', 'overdue', 'all'];
 
+/** Mijoz-segment tablari (2026-07-11 talab): Hammasi · Elektriklar · Boshqalar. */
+type Segment = 'all' | 'elektrik' | 'boshqa';
+
 export default function DebtsPage() {
   const t = useTranslations('pages.debts');
   const router = useRouter();
 
   const [scope, setScope] = useState<DebtScope>('active');
+  const [segment, setSegment] = useState<Segment>('all');
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState<'nextContactAt' | 'remainingMinor' | 'totalMinor'>(
     'nextContactAt',
   );
+
+  // «Elektriklar» guruhi id'si nom bo'yicha topiladi — guruh hali yaratilmagan
+  // akkauntlarda tablar shunchaki ko'rinmaydi (graceful degradation).
+  const groups = useQuery({
+    queryKey: ['counterparty-groups'],
+    queryFn: () => api.get<{ items: { id: string; name: string }[] }>('/counterparty-groups'),
+    staleTime: 5 * 60_000,
+  });
+  const elektrikGroupId = groups.data?.items.find((g) => g.name === 'Elektriklar')?.id;
 
   const summary = useQuery({
     queryKey: ['debts', 'summary'],
@@ -51,11 +65,16 @@ export default function DebtsPage() {
   });
 
   const list = useQuery({
-    queryKey: ['debts', 'list', scope, search, sortBy],
+    queryKey: ['debts', 'list', scope, segment, elektrikGroupId, search, sortBy],
     queryFn: () =>
       debtApi.list({
         scope,
         search: search || undefined,
+        // Segment → guruh filtri: Elektriklar = guruh ichida, Boshqalar = tashqarida.
+        counterpartyGroupId:
+          segment === 'elektrik' && elektrikGroupId ? elektrikGroupId : undefined,
+        counterpartyGroupExclude:
+          segment === 'boshqa' && elektrikGroupId ? elektrikGroupId : undefined,
         sortBy,
         // Qo'ng'iroq sanasi — eng erta yuqorida; pul — eng katta yuqorida.
         sortDir: sortBy === 'nextContactAt' ? 'asc' : 'desc',
@@ -200,6 +219,32 @@ export default function DebtsPage() {
           tone="warning"
         />
       </div>
+
+      {/* Mijoz-segment tablari: Hammasi · ⚡ Elektriklar · Boshqalar */}
+      {elektrikGroupId && (
+        <div className="mb-3 flex items-center gap-1" data-test-id="debt-segment">
+          {(['all', 'elektrik', 'boshqa'] as Segment[]).map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => setSegment(s)}
+              className={[
+                'rounded-[var(--ms-radius-default)] px-3 py-1.5 font-medium text-sm transition-colors',
+                segment === s
+                  ? 'bg-[var(--ms-primary-600)] text-white'
+                  : 'bg-[var(--ms-bg-muted)] text-[var(--ms-text-secondary)] hover:bg-[var(--ms-bg-hover)]',
+              ].join(' ')}
+              data-test-id={`debt-segment-${s}`}
+            >
+              {s === 'all'
+                ? t('segment_all')
+                : s === 'elektrik'
+                  ? t('segment_elektrik')
+                  : t('segment_boshqa')}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Filtrlar (§3.1) */}
       <div className="mb-3 flex flex-wrap items-center gap-2">
