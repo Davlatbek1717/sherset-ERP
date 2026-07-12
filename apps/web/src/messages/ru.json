@@ -2018,7 +2018,8 @@
       "loc_summary_bins_total": "Итого по полкам",
       "loc_summary_match": "Полки совпадают со складом",
       "loc_summary_mismatch": "Расхождение",
-      "loc_summary_untracked": "На некоторых местах не указано количество — заполните для сверки"
+      "loc_summary_untracked": "На некоторых местах не указано количество — заполните для сверки",
+      "loc_popover_empty": "Места не указаны"
     },
     "product_folders": {
       "title": "Группы товаров",

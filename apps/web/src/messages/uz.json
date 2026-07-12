@@ -2018,7 +2018,8 @@
       "loc_summary_bins_total": "Polkalarda jami",
       "loc_summary_match": "Polkalar ombor bilan mos",
       "loc_summary_mismatch": "Nomuvofiqlik",
-      "loc_summary_untracked": "Ba'zi joylarda son kiritilmagan — solishtirish uchun hammasiga son yozing"
+      "loc_summary_untracked": "Ba'zi joylarda son kiritilmagan — solishtirish uchun hammasiga son yozing",
+      "loc_popover_empty": "Joylashuv kiritilmagan"
     },
     "product_folders": {
       "title": "Tovar guruhlari",

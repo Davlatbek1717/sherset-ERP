@@ -6,6 +6,7 @@ import { ColumnSettings } from '@/components/column-settings';
 import { SavedFiltersPills } from '@/components/customer-orders/saved-filters-pills';
 import { FilterToggleButton } from '@/components/filters/filter-toggle-button';
 import { ProductFolderTree } from '@/components/products/product-folder-tree';
+import { ProductLocationsPopover } from '@/components/products/product-locations-popover';
 import { useBulkDocumentActions } from '@/hooks/use-bulk-actions';
 import { useColumnVisibility } from '@/hooks/use-column-visibility';
 import { useColumnWidths } from '@/hooks/use-column-widths';
@@ -620,11 +621,9 @@ export default function ProductsPage() {
       header: t('col_yacheyka'),
       width: '120px',
       align: 'center',
-      cell: (p) => (
-        <span className="font-mono text-[var(--ms-text-secondary)] text-xs tabular-nums tracking-wider">
-          {formatBinLocation(p) || '—'}
-        </span>
-      ),
+      // 2026-07-12: kod endi bosiladigan 📍 popover — kartochkaga kirmasdan
+      // BARCHA joylar (asosiy + qo'shimcha polkalar) sonlari bilan ochiladi.
+      cell: (p) => <ProductLocationsPopover productId={p.id} primaryLabel={formatBinLocation(p)} />,
       cellText: (r: Product) => formatBinLocation(r),
     },
     // moysklad ⚙ column-customizer — extra (non-default) columns in moysklad's
