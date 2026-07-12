@@ -504,7 +504,12 @@ export default function CounterpartiesPage() {
       // moysklad list names are plain dark text (#222, 11px, weight 400, NO
       // underline) — clickable but NOT a blue link (measured live on climart).
       cell: (cp) => (
-        <a href={`/counterparties/${cp.id}`} className="text-[var(--ms-text-primary)]">
+        <a
+          href={`/counterparties/${cp.id}`}
+          // Qator-klik ham shu manzilga boradi — ikki marta otilmasin.
+          onClick={(e) => e.stopPropagation()}
+          className="text-[var(--ms-text-primary)]"
+        >
           {cp.name}
         </a>
       ),
@@ -1022,6 +1027,13 @@ export default function CounterpartiesPage() {
           createHref="/counterparties/new"
           createLabel={t('create_button')}
           createPosition="start"
+          // 2026-07-12: qatorning ISTALGAN joyi bosilganda mijoz sahifasi
+          // ochiladi (avval faqat ism havolasi ishlar edi). Belgilash
+          // checkboxlari DataTable ichida stopPropagation qilingan — bulk
+          // tanlashga xalaqit bermaydi.
+          onRowClick={(cp) => {
+            window.location.href = `/counterparties/${cp.id}`;
+          }}
           search={searchInput}
           onSearchChange={(v) => {
             setSearchInput(v);
