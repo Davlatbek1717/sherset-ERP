@@ -3,12 +3,15 @@ import {
   Controller,
   Delete,
   Get,
+  Header,
   Inject,
   Param,
   Post,
   Query,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import type { FastifyReply } from 'fastify';
 import type { AuthenticatedUser } from '../auth/auth.schema.js';
 import { CurrentUser } from '../auth/current-user.decorator.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
@@ -119,6 +122,31 @@ export class DebtController {
   @RequirePermission({ entity: 'debt', action: 'view' })
   paymentsFeed(@CurrentUser() user: AuthenticatedUser, @Query() q: Record<string, unknown>) {
     return this.service.paymentsFeed(user.accountId, q);
+  }
+
+  // ── Qarzdorlar ro'yxati PDF (2026-07-12) — joriy filtr holati bilan ───────
+
+  /**
+   * GET /debts/print/pdf?scope=...&counterpartyGroupId=...&heading=Elektriklar
+   * Joriy tab/filtr bo'yicha BARCHA qarzdorlar bitta PDF jadvalda.
+   * Statik yo'l — ':id' dan OLDIN.
+   */
+  @Get('print/pdf')
+  @RequirePermission({ entity: 'debt', action: 'print' })
+  @Header('Content-Type', 'application/pdf')
+  async printPdf(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() q: Record<string, unknown>,
+    @Res() reply: FastifyReply,
+  ) {
+    const { heading, ...filter } = q;
+    const pdf = await this.service.printPdf(
+      user.accountId,
+      filter,
+      typeof heading === 'string' && heading.length > 0 ? heading.slice(0, 60) : null,
+    );
+    const date = new Date().toISOString().slice(0, 10);
+    reply.header('Content-Disposition', `attachment; filename="qarzdorlar-${date}.pdf"`).send(pdf);
   }
 
   // ── §3.2 mijoz profili ────────────────────────────────────────────────────

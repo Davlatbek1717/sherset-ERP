@@ -6259,7 +6259,8 @@
       "outcome_paid_full": "✅ Оплатил",
       "outcome_paid_partial": "🟡 Оплатил частично",
       "outcome_not_paid": "🔴 Не оплатил",
-      "outcome_callback": "🔁 Перезвонить"
+      "outcome_callback": "🔁 Перезвонить",
+      "export_pdf": "Скачать PDF"
     }
   },
   "print_entity": {

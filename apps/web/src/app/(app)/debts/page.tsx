@@ -116,6 +116,36 @@ export default function DebtsPage() {
     refetchInterval: DEBT_POLL_MS,
   });
 
+  /**
+   * PDF eksport (2026-07-12) — EKRANDAGI holatni aynan chiqaradi:
+   * tanlangan tab (Elektriklar/Boshqalar/Hammasi), scope, qidiruv, natija
+   * filtri — hammasi PDF'ga o'tadi; sarlavhaga tab nomi yoziladi.
+   */
+  async function exportPdf() {
+    const params = new URLSearchParams();
+    params.set('scope', scope);
+    if (search) params.set('search', search);
+    if (segment === 'elektrik' && elektrikGroupId)
+      params.set('counterpartyGroupId', elektrikGroupId);
+    if (segment === 'boshqa' && elektrikGroupId)
+      params.set('counterpartyGroupExclude', elektrikGroupId);
+    if (scope === 'called' && calledDate) params.set('calledDate', calledDate);
+    if (scope === 'called' && callOutcome) params.set('callOutcome', callOutcome);
+    params.set('sortBy', sortBy);
+    params.set('sortDir', sortBy === 'nextContactAt' ? 'asc' : 'desc');
+    const heading =
+      segment === 'elektrik'
+        ? t('segment_elektrik')
+        : segment === 'boshqa'
+          ? t('segment_boshqa')
+          : t('segment_all');
+    params.set('heading', heading.replace('⚡ ', ''));
+    await api.download(
+      `/debts/print/pdf?${params.toString()}`,
+      `qarzdorlar-${new Date().toISOString().slice(0, 10)}.pdf`,
+    );
+  }
+
   const statusTone = (r: DebtRow) =>
     r.status === 'paid' ? 'success' : r.status === 'partial' ? 'warning' : 'neutral';
 
@@ -250,6 +280,9 @@ export default function DebtsPage() {
             </Button>
             <Button variant="secondary" asChild>
               <Link href="/debts/reports">{t('tab_reports')}</Link>
+            </Button>
+            <Button variant="secondary" onClick={() => void exportPdf()} data-test-id="debt-pdf">
+              {t('export_pdf')}
             </Button>
             <Button asChild>
               <Link href="/debts/new">{t('new_debt')}</Link>

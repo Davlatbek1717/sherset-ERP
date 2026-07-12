@@ -6259,7 +6259,8 @@
       "outcome_paid_full": "✅ To'ladi",
       "outcome_paid_partial": "🟡 Bir qismini to'ladi",
       "outcome_not_paid": "🔴 To'lamadi",
-      "outcome_callback": "🔁 Qayta qo'ng'iroq"
+      "outcome_callback": "🔁 Qayta qo'ng'iroq",
+      "export_pdf": "PDF yuklab olish"
     }
   },
   "print_entity": {

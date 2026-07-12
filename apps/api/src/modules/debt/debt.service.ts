@@ -9,6 +9,7 @@ import {
 import { allocateDocumentNumber } from '../../prisma/document-number.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { AttachmentService } from '../attachment/attachment.service.js';
+import { HtmlPdfService } from '../print-template/html-pdf.service.js';
 import { TASHKENT_OFFSET_MS, tashkentRangeBounds } from '../report/report-date-bounds.util.js';
 import {
   CASHIER_METHODS,
@@ -61,6 +62,7 @@ export class DebtService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(AttachmentService) private readonly attachments: AttachmentService,
+    @Inject(HtmlPdfService) private readonly htmlPdf: HtmlPdfService,
   ) {}
 
   // ────────────────────────────────────────────────────────────── helpers ──
@@ -986,6 +988,116 @@ export class DebtService {
       overdueCount: overdue._count._all,
       todayCallCount: todayCount,
     };
+  }
+
+  // ───────────────────────────── qarzdorlar ro'yxati PDF (2026-07-12 talab) ──
+
+  /**
+   * Joriy filtr holatidagi (segment/scope/qidiruv/natija) BARCHA qarzdorlarni
+   * bitta PDF jadvalga chiqaradi. Sahifalash list() orqali aylanadi (bir xil
+   * filtr-mantiq, dublikat yo'q); remainingMinor saralashi sahifalararo buzilmasin
+   * deb yakunda global qayta-saralanadi. 5000 qator xavfsizlik qopqog'i.
+   */
+  async printPdf(accountId: string, raw: unknown, heading: string | null): Promise<Buffer> {
+    const f = DebtFilterSchema.parse(raw);
+    type Row = Awaited<ReturnType<DebtService['list']>>['rows'][number];
+    const rows: Row[] = [];
+    let outstanding = '0';
+    for (let offset = 0; offset < 5000; offset += 500) {
+      const page = await this.list(accountId, { ...f, limit: 500, offset });
+      rows.push(...page.rows);
+      outstanding = page.outstandingMinor;
+      if (rows.length >= page.total || page.rows.length === 0) break;
+    }
+    if (f.sortBy === 'remainingMinor') {
+      rows.sort((a, b) => {
+        const d = BigInt(a.remainingMinor) - BigInt(b.remainingMinor);
+        const n = d > 0n ? 1 : d < 0n ? -1 : 0;
+        return f.sortDir === 'asc' ? n : -n;
+      });
+    }
+
+    const fmtSom = (minor: string): string => {
+      const som = (BigInt(minor) / 100n).toString();
+      return som.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+    };
+    const fmtDate = (iso: Date | string | null): string =>
+      iso
+        ? new Date(iso).toLocaleString('ru-RU', {
+            timeZone: 'Asia/Tashkent',
+            day: '2-digit',
+            month: '2-digit',
+            year: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+          })
+        : '—';
+    const esc = (s: string | null): string =>
+      (s ?? '—').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const STATUS: Record<string, string> = {
+      unpaid: "To'lanmagan",
+      partial: "Qisman to'langan",
+      paid: "To'liq to'langan",
+    };
+    const OUTCOME: Record<string, string> = {
+      paid_full: "✓ to'ladi",
+      paid_partial: '◐ qisman',
+      not_paid: "✗ to'lamadi",
+      callback: "↻ qayta qo'ng'iroq",
+    };
+
+    const now = new Date().toLocaleString('ru-RU', { timeZone: 'Asia/Tashkent' });
+    const body = rows
+      .map(
+        (r, i) => `<tr>
+          <td class="n">${i + 1}</td>
+          <td><b>${esc(r.counterpartyName)}</b><div class="sub">${esc(r.phone)}</div></td>
+          <td class="mono">${esc(r.name)}</td>
+          <td class="num">${fmtSom(r.totalMinor)}</td>
+          <td class="num"><b>${fmtSom(r.remainingMinor)}</b></td>
+          <td>${fmtDate(r.nextContactAt)}</td>
+          <td>${STATUS[r.status] ?? r.status}${
+            r.lastCallOutcome ? `<div class="sub">${OUTCOME[r.lastCallOutcome] ?? ''}</div>` : ''
+          }</td>
+        </tr>`,
+      )
+      .join('\n');
+
+    const html = `<!doctype html><html><head><meta charset="utf-8"><style>
+      * { box-sizing: border-box; font-family: Arial, sans-serif; }
+      body { margin: 0; font-size: 10.5px; color: #111; }
+      h1 { font-size: 16px; margin: 0 0 2px; }
+      .meta { color: #555; font-size: 10px; margin-bottom: 10px; }
+      .totals { font-size: 11px; margin-bottom: 8px; }
+      table { width: 100%; border-collapse: collapse; }
+      th, td { border: 1px solid #bbb; padding: 4px 6px; text-align: left; vertical-align: top; }
+      th { background: #f0f0f0; font-size: 10px; }
+      td.n { width: 26px; color: #777; }
+      td.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+      td.mono { white-space: nowrap; color: #555; }
+      .sub { color: #777; font-size: 9.5px; }
+      tr { page-break-inside: avoid; }
+      thead { display: table-header-group; }
+    </style></head><body>
+      <h1>Qarzdorlar ro'yxati${heading ? ` — ${esc(heading)}` : ''}</h1>
+      <div class="meta">Chiqarilgan: ${now} · sherset.biznesjon.uz</div>
+      <div class="totals"><b>${rows.length} ta qarzdor</b> · umumiy qoldiq: <b>${fmtSom(outstanding)} so'm</b></div>
+      <table>
+        <thead><tr>
+          <th>№</th><th>Mijoz / telefon</th><th>Qarz №</th>
+          <th>Jami (so'm)</th><th>Qoldiq (so'm)</th>
+          <th>Keyingi qo'ng'iroq</th><th>Holat</th>
+        </tr></thead>
+        <tbody>${body}</tbody>
+      </table>
+    </body></html>`;
+
+    return this.htmlPdf.renderHtmlToPdf(html, {
+      marginTop: 10,
+      marginRight: 8,
+      marginBottom: 10,
+      marginLeft: 8,
+    });
   }
 
   // ───────────────────────────────────────────────────────────── soft-delete ──
