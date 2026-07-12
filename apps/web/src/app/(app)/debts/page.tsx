@@ -68,6 +68,8 @@ export default function DebtsPage() {
   const [callOutcome, setCallOutcome] = useState<CallOutcome | ''>('');
   // «Qo'ng'iroq qilindi» modali ochiq turgan qarzdor.
   const [callTarget, setCallTarget] = useState<DebtRow | null>(null);
+  // CHECKBOX bilan belgilangan qarzlar (2026-07-12) — «aynan shularni PDF qil».
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   // «Elektriklar» guruhi id'si nom bo'yicha topiladi — guruh hali yaratilmagan
   // akkauntlarda tablar shunchaki ko'rinmaydi (graceful degradation).
@@ -122,6 +124,11 @@ export default function DebtsPage() {
    * filtri — hammasi PDF'ga o'tadi; sarlavhaga tab nomi yoziladi.
    */
   async function exportPdf() {
+    // Belgilanganlar bor — AYNAN o'shalarni chiqaramiz (filtrdan mustaqil).
+    if (selected.size > 0) {
+      await debtApi.printSelectedPdf([...selected], `${t('heading_selected')} (${selected.size})`);
+      return;
+    }
     const params = new URLSearchParams();
     params.set('scope', scope);
     if (search) params.set('search', search);
@@ -156,7 +163,53 @@ export default function DebtsPage() {
         ? t('status_partial')
         : t('status_unpaid');
 
+  // Checkbox tanlash yordamchilari — ko'rinayotgan qatorlar kesimida.
+  const visibleRows = list.data?.rows ?? [];
+  const allVisibleSelected = visibleRows.length > 0 && visibleRows.every((r) => selected.has(r.id));
+  function toggleOne(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  function toggleAllVisible() {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (allVisibleSelected) for (const r of visibleRows) next.delete(r.id);
+      else for (const r of visibleRows) next.add(r.id);
+      return next;
+    });
+  }
+
   const columns: DataTableColumn<DebtRow>[] = [
+    {
+      key: 'select',
+      // Master-checkbox: ko'rinayotgan hammasini belgilash/bekor qilish.
+      header: (
+        <input
+          type="checkbox"
+          checked={allVisibleSelected}
+          onChange={toggleAllVisible}
+          className="h-4 w-4 cursor-pointer"
+          data-test-id="debt-select-all"
+        />
+      ),
+      cell: (r) => (
+        // biome-ignore lint/a11y/useKeyWithClickEvents: checkbox o'zi klaviaturaga ega; wrapper faqat qator-klik navigatsiyasini to'xtatadi
+        <span onClick={(e) => e.stopPropagation()}>
+          <input
+            type="checkbox"
+            checked={selected.has(r.id)}
+            onChange={() => toggleOne(r.id)}
+            className="h-4 w-4 cursor-pointer"
+            data-test-id={`debt-select-${r.id}`}
+          />
+        </span>
+      ),
+      cellText: () => '',
+    },
     {
       key: 'counterparty',
       header: t('col_counterparty'),
@@ -281,8 +334,19 @@ export default function DebtsPage() {
             <Button variant="secondary" asChild>
               <Link href="/debts/reports">{t('tab_reports')}</Link>
             </Button>
+            {selected.size > 0 && (
+              <Button
+                variant="secondary"
+                onClick={() => setSelected(new Set())}
+                data-test-id="debt-clear-selection"
+              >
+                ✕ {selected.size}
+              </Button>
+            )}
             <Button variant="secondary" onClick={() => void exportPdf()} data-test-id="debt-pdf">
-              {t('export_pdf')}
+              {selected.size > 0
+                ? `${t('export_pdf_selected')} (${selected.size})`
+                : t('export_pdf')}
             </Button>
             <Button asChild>
               <Link href="/debts/new">{t('new_debt')}</Link>

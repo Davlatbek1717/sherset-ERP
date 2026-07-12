@@ -6260,7 +6260,9 @@
       "outcome_paid_partial": "🟡 Оплатил частично",
       "outcome_not_paid": "🔴 Не оплатил",
       "outcome_callback": "🔁 Перезвонить",
-      "export_pdf": "Скачать PDF"
+      "export_pdf": "Скачать PDF",
+      "export_pdf_selected": "PDF: выбранные",
+      "heading_selected": "Выбранные"
     }
   },
   "print_entity": {

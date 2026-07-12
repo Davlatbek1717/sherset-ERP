@@ -159,3 +159,19 @@ describe("MarkCallSchema — «qo'ng'iroq qilindi» natijasi (2026-07-12)", () =
     );
   });
 });
+
+describe('DebtFilterSchema.ids — checkbox-tanlash (2026-07-12)', () => {
+  it("uuid ro'yxatini qabul qiladi", () => {
+    const ids = [CP, '22222222-2222-2222-2222-222222222222'];
+    expect(DebtFilterSchema.parse({ ids }).ids).toEqual(ids);
+  });
+
+  it("noto'g'ri uuid rad etiladi", () => {
+    expect(() => DebtFilterSchema.parse({ ids: ['abc'] })).toThrow();
+  });
+
+  it("2000 dan ortiq id rad etiladi (xavfsizlik qopqog'i)", () => {
+    const many = Array.from({ length: 2001 }, () => CP);
+    expect(() => DebtFilterSchema.parse({ ids: many })).toThrow();
+  });
+});

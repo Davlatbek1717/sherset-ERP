@@ -6260,7 +6260,9 @@
       "outcome_paid_partial": "🟡 Bir qismini to'ladi",
       "outcome_not_paid": "🔴 To'lamadi",
       "outcome_callback": "🔁 Qayta qo'ng'iroq",
-      "export_pdf": "PDF yuklab olish"
+      "export_pdf": "PDF yuklab olish",
+      "export_pdf_selected": "PDF: belgilanganlar",
+      "heading_selected": "Belgilanganlar"
     }
   },
   "print_entity": {

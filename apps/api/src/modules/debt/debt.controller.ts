@@ -149,6 +149,29 @@ export class DebtController {
     reply.header('Content-Disposition', `attachment; filename="qarzdorlar-${date}.pdf"`).send(pdf);
   }
 
+  /**
+   * POST varianti — CHECKBOX bilan belgilangan qarzlar PDF'i (2026-07-12).
+   * Body: { ids: uuid[], heading?, ...filter }. ids berilsa scope chetlab
+   * o'tiladi (service) — aynan tanlanganlar chiqadi.
+   */
+  @Post('print/pdf')
+  @RequirePermission({ entity: 'debt', action: 'print' })
+  @Header('Content-Type', 'application/pdf')
+  async printPdfSelected(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: Record<string, unknown>,
+    @Res() reply: FastifyReply,
+  ) {
+    const { heading, ...filter } = body ?? {};
+    const pdf = await this.service.printPdf(
+      user.accountId,
+      filter,
+      typeof heading === 'string' && heading.length > 0 ? heading.slice(0, 60) : null,
+    );
+    const date = new Date().toISOString().slice(0, 10);
+    reply.header('Content-Disposition', `attachment; filename="qarzdorlar-${date}.pdf"`).send(pdf);
+  }
+
   // ── §3.2 mijoz profili ────────────────────────────────────────────────────
 
   @Get(':id')

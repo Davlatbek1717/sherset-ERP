@@ -155,6 +155,13 @@ export const DebtFilterSchema = z.object({
   status: DebtStatusSchema.optional(),
   counterpartyId: z.string().uuid().optional(),
   /**
+   * ANIQ TANLANGAN qarzlar (2026-07-12: «belgilab chiqarib olish»).
+   * Berilsa — scope/status e'tiborga olinmaydi: foydalanuvchi checkbox bilan
+   * aynan shu yozuvlarni so'ragan, filtr ularni yashirmasligi kerak.
+   * POST print/pdf body orqali keladi (GET query'da ishlatilmaydi).
+   */
+  ids: z.array(z.string().uuid()).max(2000).optional(),
+  /**
    * Mijoz-segment filtri (2026-07-11 talab: «Elektriklar / Boshqalar»).
    * counterpartyGroupId — qarzdor SHU guruhda bo'lsin (masalan Elektriklar);
    * counterpartyGroupExclude — shu guruhda BO'LMASIN (Boshqalar tabi).

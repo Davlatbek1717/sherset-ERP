@@ -195,9 +195,18 @@ export class DebtService {
       ...(f.status ? { status: f.status } : {}),
     };
 
+    // ANIQ TANLANGAN idlar (checkbox-eksport) — scope'ni chetlab o'tadi:
+    // foydalanuvchi ro'yxatdan qo'lda belgilagan yozuvlar filtr holatidan
+    // qat'i nazar chiqishi kerak.
+    if (f.ids?.length) {
+      where.id = { in: f.ids };
+    }
+
     // scope — TZ §3.1 filtrlari.
     const now = new Date();
-    if (f.scope === 'active') {
+    if (f.ids?.length) {
+      // ids rejimida status/scope torlashtirilmaydi.
+    } else if (f.scope === 'active') {
       // «Faqat qarzi to'liq yopilmagan (qoldiq > 0) mijozlar ko'rinadi.»
       where.status = f.status ?? { in: ['unpaid', 'partial'] };
     } else if (f.scope === 'today') {

@@ -255,6 +255,17 @@ export const debtApi = {
   /** «To'lovlar lentasi» — aynan qaysi mijoz to'lagani (default: bugun). */
   paymentsFeed: (p: DebtPaymentsFeedParams = {}) =>
     api.get<DebtPaymentsFeed>(`/debts/payments/feed${qs({ ...p })}`),
+
+  /**
+   * CHECKBOX bilan belgilangan qarzlar PDF'i (2026-07-12) — aynan tanlangan
+   * yozuvlar, filtr holatidan qat'i nazar.
+   */
+  printSelectedPdf: (ids: string[], heading: string) =>
+    api.postDownload(
+      '/debts/print/pdf',
+      { ids, heading },
+      `qarzdorlar-belgilangan-${new Date().toISOString().slice(0, 10)}.pdf`,
+    ),
 };
 
 /**
