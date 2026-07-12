@@ -2022,7 +2022,8 @@
       "loc_popover_empty": "Места не указаны",
       "loc_col_address": "Адрес",
       "loc_col_note": "Примечание",
-      "loc_col_qty": "Кол-во"
+      "loc_col_qty": "Кол-во",
+      "loc_open_card": "Открыть карточку"
     },
     "product_folders": {
       "title": "Группы товаров",

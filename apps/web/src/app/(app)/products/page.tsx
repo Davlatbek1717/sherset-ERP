@@ -6,7 +6,7 @@ import { ColumnSettings } from '@/components/column-settings';
 import { SavedFiltersPills } from '@/components/customer-orders/saved-filters-pills';
 import { FilterToggleButton } from '@/components/filters/filter-toggle-button';
 import { ProductFolderTree } from '@/components/products/product-folder-tree';
-import { ProductLocationsPopover } from '@/components/products/product-locations-popover';
+import { ProductLocationsModal } from '@/components/products/product-locations-popover';
 import { useBulkDocumentActions } from '@/hooks/use-bulk-actions';
 import { useColumnVisibility } from '@/hooks/use-column-visibility';
 import { useColumnWidths } from '@/hooks/use-column-widths';
@@ -238,6 +238,8 @@ export default function ProductsPage() {
   // (live-grounded 2026-06-18 — a fresh login shows just the toolbar + grid; the
   // panel opens only when «Фильтр» is clicked). Was open-by-default.
   const [filterOpen, setFilterOpen] = useState(false);
+  // Joylashuvlar modali (2026-07-12): qator-klik HAM, 📍 belgisi HAM ochadi.
+  const [locTarget, setLocTarget] = useState<Product | null>(null);
   // moysklad's filter 🔖 (bookmark) icon opens the «save current filter» input —
   // shared open-state between the InlineFilterPanel icon and the SavedFiltersPills.
   const [saveFilterOpen, setSaveFilterOpen] = useState(false);
@@ -582,6 +584,8 @@ export default function ProductsPage() {
       cell: (p) => (
         <a
           href={`/products/${p.id}`}
+          // Nom bosilganda KARTOCHKAGA o'tiladi — qator-klik modalini ochmasin.
+          onClick={(e) => e.stopPropagation()}
           className="font-medium text-[var(--ms-text-primary)] underline-offset-2 hover:text-[var(--ms-text-brand)] hover:underline"
         >
           {p.name}
@@ -624,11 +628,10 @@ export default function ProductsPage() {
       // 2026-07-12: kod endi bosiladigan 📍 popover — kartochkaga kirmasdan
       // BARCHA joylar (asosiy + qo'shimcha polkalar) sonlari bilan ochiladi.
       cell: (p) => (
-        <ProductLocationsPopover
-          productId={p.id}
-          productName={p.name}
-          primaryLabel={formatBinLocation(p)}
-        />
+        <span className="inline-flex items-center gap-1 font-mono text-[var(--ms-text-secondary)] text-xs tabular-nums tracking-wider">
+          {formatBinLocation(p) || '—'}
+          <span aria-hidden>📍</span>
+        </span>
       ),
       cellText: (r: Product) => formatBinLocation(r),
     },
@@ -870,6 +873,9 @@ export default function ProductsPage() {
         columns={columns}
         rows={data?.items ?? []}
         keyField="id"
+        // 2026-07-12: qatorning ISTALGAN joyi bosilganda joylashuvlar modali
+        // ochiladi (kartochkaga o'tish — nom havolasi yoki modal tugmasi orqali).
+        onRowClick={(p) => setLocTarget(p)}
         rowTestId={(p) => `product-row-${p.id}`}
         rowActions={(p) => bulk.rowDelete(p.id)}
         total={data?.total ?? 0}
@@ -1485,6 +1491,19 @@ export default function ProductsPage() {
           setPage(1);
         }}
       />
+
+      {/* Joylashuvlar modali — qator-klik/📍 dan ochiladi */}
+      {locTarget && (
+        <ProductLocationsModal
+          productId={locTarget.id}
+          productName={locTarget.name}
+          open={locTarget !== null}
+          onOpenChange={(o) => !o && setLocTarget(null)}
+          onOpenCard={() => {
+            window.location.href = `/products/${locTarget.id}`;
+          }}
+        />
+      )}
     </>
   );
 }
