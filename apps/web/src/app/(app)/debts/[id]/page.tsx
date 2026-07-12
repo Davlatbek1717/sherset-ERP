@@ -48,7 +48,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 /** Bo'limlarni vizual ajratuvchi kartochka (§3.2 — «vizual va funksional jihatdan ajratilgan»). */
 function Section({
@@ -119,6 +119,16 @@ export default function DebtProfilePage() {
   const [cashMethod, setCashMethod] = useState<'cash' | 'terminal'>('cash');
   const [cashComment, setCashComment] = useState('');
   const [cashNext, setCashNext] = useState(nowInputValue());
+  // 2026-07-12 aniqlik: default sahifa OCHILGAN payt emas, TO'LOV PAYTIDAGI
+  // ayni vaqt bo'lishi kerak. Kassir qo'l tegizmaguncha maydon har 30s da
+  // hozirgi vaqtga yangilanib turadi (jonli soat); qo'lda o'zgartirsa — to'xtaydi.
+  const [cashNextDirty, setCashNextDirty] = useState(false);
+  useEffect(() => {
+    if (cashNextDirty) return;
+    setCashNext(nowInputValue());
+    const tick = setInterval(() => setCashNext(nowInputValue()), 30_000);
+    return () => clearInterval(tick);
+  }, [cashNextDirty]);
   const [cashErr, setCashErr] = useState<string | null>(null);
 
   const addCash = useMutation({
@@ -133,6 +143,7 @@ export default function DebtProfilePage() {
       setCashMinor('0');
       setCashComment('');
       setCashNext(nowInputValue());
+      setCashNextDirty(false);
       setCashErr(null);
       invalidate();
     },
@@ -317,7 +328,10 @@ export default function DebtProfilePage() {
             <Input
               type="datetime-local"
               value={cashNext}
-              onChange={(e) => setCashNext(e.target.value)}
+              onChange={(e) => {
+                setCashNextDirty(true);
+                setCashNext(e.target.value);
+              }}
               disabled={isPaid}
               data-test-id="cash-next"
             />
