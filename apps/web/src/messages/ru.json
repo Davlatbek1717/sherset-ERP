@@ -6249,7 +6249,17 @@
       "export_payments_csv": "Excel — с именами клиентов",
       "segment_all": "Все",
       "segment_elektrik": "⚡ Электрики",
-      "segment_boshqa": "Остальные"
+      "segment_boshqa": "Остальные",
+      "scope_called": "Обзвонённые",
+      "call_button": "Звонок сделан",
+      "call_modal_title": "Результат звонка",
+      "call_comment_placeholder": "Комментарий к разговору (необязательно)...",
+      "call_save": "Сохранить",
+      "outcome_all": "Все результаты",
+      "outcome_paid_full": "✅ Оплатил",
+      "outcome_paid_partial": "🟡 Оплатил частично",
+      "outcome_not_paid": "🔴 Не оплатил",
+      "outcome_callback": "🔁 Перезвонить"
     }
   },
   "print_entity": {

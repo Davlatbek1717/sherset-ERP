@@ -6,6 +6,7 @@ import {
   CreateDebtNoteSchema,
   CreateDebtSchema,
   DebtFilterSchema,
+  MarkCallSchema,
 } from './debt.schema.js';
 
 const CP = '11111111-1111-1111-1111-111111111111';
@@ -126,5 +127,35 @@ describe('DebtFilterSchema — §3.1 qarzdorlar ro‘yxati filtri', () => {
 
   it('noma’lum scope ni RAD ETADI', () => {
     expect(() => DebtFilterSchema.parse({ scope: 'hammasi' })).toThrow();
+  });
+});
+
+describe("MarkCallSchema — «qo'ng'iroq qilindi» natijasi (2026-07-12)", () => {
+  it("to'rt natijani ham qabul qiladi", () => {
+    for (const outcome of ['paid_full', 'paid_partial', 'not_paid'] as const) {
+      expect(MarkCallSchema.parse({ outcome }).outcome).toBe(outcome);
+    }
+    expect(
+      MarkCallSchema.parse({ outcome: 'callback', nextContactAt: '2026-07-13T09:00:00Z' }).outcome,
+    ).toBe('callback');
+  });
+
+  it("callback SANASIZ rad etiladi (qachon qo'ng'iroq qilishni bilish shart)", () => {
+    expect(() => MarkCallSchema.parse({ outcome: 'callback' })).toThrow();
+  });
+
+  it("boshqa natijalar sanasiz ham o'tadi (ixtiyoriy)", () => {
+    expect(MarkCallSchema.parse({ outcome: 'not_paid' }).nextContactAt).toBeUndefined();
+  });
+
+  it("noma'lum natija rad etiladi", () => {
+    expect(() => MarkCallSchema.parse({ outcome: 'keyin' })).toThrow();
+  });
+
+  it("scope 'called' filtrga qo'shildi", () => {
+    expect(DebtFilterSchema.parse({ scope: 'called' }).scope).toBe('called');
+    expect(DebtFilterSchema.parse({ scope: 'called', callOutcome: 'not_paid' }).callOutcome).toBe(
+      'not_paid',
+    );
   });
 });

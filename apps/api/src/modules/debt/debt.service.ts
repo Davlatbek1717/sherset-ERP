@@ -29,6 +29,8 @@ import {
   type DebtPaymentsReportFilterInput,
   DebtPaymentsReportFilterSchema,
   type DebtStatus,
+  type MarkCallInput,
+  MarkCallSchema,
 } from './debt.schema.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -94,6 +96,8 @@ export class DebtService {
     currency: string;
     status: string;
     nextContactAt: Date | null;
+    lastCallAt?: Date | null;
+    lastCallOutcome?: string | null;
     comment: string | null;
     closedAt: Date | null;
     createdAt: Date;
@@ -120,6 +124,8 @@ export class DebtService {
       /** §3.5 — muddati o'tgan qo'ng'iroq qizil bilan ajratiladi. */
       overdue: d.status !== 'paid' && d.nextContactAt !== null && d.nextContactAt.getTime() < now,
       lastNote: d.notes?.[0]?.text ?? null,
+      lastCallAt: d.lastCallAt ?? null,
+      lastCallOutcome: d.lastCallOutcome ?? null,
       comment: d.comment,
       ownerId: d.owner?.id ?? null,
       ownerName: d.owner?.name ?? null,
@@ -200,6 +206,13 @@ export class DebtService {
     } else if (f.scope === 'overdue') {
       where.status = { in: ['unpaid', 'partial'] };
       where.nextContactAt = { lt: now };
+    } else if (f.scope === 'called') {
+      // «Qo'ng'iroq qilinganlar» (2026-07-12): tanlangan Toshkent kunida
+      // qo'ng'iroq belgilangan qarzlar — statusidan qat'i nazar (to'lab
+      // yopilganlar ham ko'rinadi, natijani baholash uchun).
+      const day = this.tashkentDay(f.calledDate);
+      where.lastCallAt = { gte: day.gte, lt: day.lt };
+      if (f.callOutcome) where.lastCallOutcome = f.callOutcome;
     }
 
     // Kontragent bo'yicha shartlar bitta obyektga YIG'ILADI — search ham,
@@ -427,6 +440,58 @@ export class DebtService {
         });
       }
       return note;
+    });
+  }
+
+  // ─────────────────────────── «Qo'ng'iroq qilindi» belgisi (2026-07-12 talab) ──
+
+  /**
+   * Operator qarzdor kartochkasida «qo'ng'iroq qilindi» deb natijani bosadi:
+   *   to'ladi / qisman to'ladi / to'lamadi / qayta qo'ng'iroq (sana majburiy).
+   *
+   * Bitta tranzaksiyada: (1) muloqot tarixiga kind='call' + outcome yozuvi
+   * (§3.4 — hech narsa o'chmaydi), (2) Debt.lastCallAt/lastCallOutcome
+   * yangilanadi («Qo'ng'iroq qilinganlar» bo'limi shundan filtrlanadi),
+   * (3) callback bo'lsa nextContactAt ham ko'chadi — «Bugungi qo'ng'iroqlar»
+   * ro'yxatiga o'sha kunda qaytib tushadi.
+   */
+  async markCall(accountId: string, userId: string, role: ActorRole, debtId: string, raw: unknown) {
+    const input: MarkCallInput = MarkCallSchema.parse(raw);
+    const debt = await this.mustFind(accountId, debtId);
+
+    const OUTCOME_LABEL: Record<MarkCallInput['outcome'], string> = {
+      paid_full: "Qo'ng'iroq: to'ladi",
+      paid_partial: "Qo'ng'iroq: bir qismini to'ladi",
+      not_paid: "Qo'ng'iroq: to'lamadi",
+      callback: "Qo'ng'iroq: qayta qo'ng'iroq kerak",
+    };
+
+    return this.prisma.client.$transaction(async (tx) => {
+      await tx.debtNote.create({
+        data: {
+          accountId,
+          debtId,
+          // Izoh bo'sh bo'lsa ham tarixda natija matni qoladi.
+          text: input.text?.length ? input.text : OUTCOME_LABEL[input.outcome],
+          nextContactAt: input.nextContactAt ?? null,
+          outcome: input.outcome,
+          authorId: userId,
+          authorRole: role,
+          kind: 'call' satisfies DebtNoteKind,
+        },
+      });
+
+      return tx.debt.update({
+        where: { id: debtId },
+        data: {
+          lastCallAt: new Date(),
+          lastCallOutcome: input.outcome,
+          // Yopilgan qarzga keyingi sana qo'yilmaydi (§3.6 intizomi).
+          ...(input.nextContactAt && debt.status !== 'paid'
+            ? { nextContactAt: input.nextContactAt }
+            : {}),
+        },
+      });
     });
   }
 

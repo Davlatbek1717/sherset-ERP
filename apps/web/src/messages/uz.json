@@ -6249,7 +6249,17 @@
       "export_payments_csv": "Excel — mijoz ismlari bilan",
       "segment_all": "Hammasi",
       "segment_elektrik": "⚡ Elektriklar",
-      "segment_boshqa": "Boshqalar"
+      "segment_boshqa": "Boshqalar",
+      "scope_called": "Qo'ng'iroq qilinganlar",
+      "call_button": "Qo'ng'iroq qilindi",
+      "call_modal_title": "Qo'ng'iroq natijasi",
+      "call_comment_placeholder": "Suhbat izohi (ixtiyoriy)...",
+      "call_save": "Saqlash",
+      "outcome_all": "Barcha natijalar",
+      "outcome_paid_full": "✅ To'ladi",
+      "outcome_paid_partial": "🟡 Bir qismini to'ladi",
+      "outcome_not_paid": "🔴 To'lamadi",
+      "outcome_callback": "🔁 Qayta qo'ng'iroq"
     }
   },
   "print_entity": {

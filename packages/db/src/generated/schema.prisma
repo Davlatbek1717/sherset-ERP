@@ -9021,6 +9021,13 @@ model Debt {
   /// Qarz to'liq yopilganda (§3.6) endi kerak emas ⇒ null'ga tushadi.
   nextContactAt DateTime? @map("next_contact_at") @db.Timestamptz()
 
+  /// Oxirgi qo'ng'iroq belgisi (2026-07-12 talab): operator «qo'ng'iroq qilindi»
+  /// deb saqlaganda to'ladi. Outcome — suhbat natijasi:
+  /// 'paid_full' | 'paid_partial' | 'not_paid' | 'callback'.
+  /// «Qo'ng'iroq qilinganlar» bo'limi shu maydonlardan filtrlanadi.
+  lastCallAt      DateTime? @map("last_call_at") @db.Timestamptz()
+  lastCallOutcome String?   @map("last_call_outcome") @db.VarChar(20)
+
   /// Mas'ul xodim (call-markaz operatori) — ro'yxat filtri.
   ownerId    String? @map("owner_id") @db.Uuid
   /// Qarzni bergan kassir — §3.9 kunlik kassir hisoboti shu ustundan yig'iladi.
@@ -9046,6 +9053,8 @@ model Debt {
   @@index([accountId, status, nextContactAt])
   /// «Bugungi qo'ng'iroqlar» (§3.5) — sana bo'yicha tanlash.
   @@index([accountId, nextContactAt])
+  /// «Qo'ng'iroq qilinganlar» — kun kesimida tez tanlash.
+  @@index([accountId, lastCallAt])
   @@index([accountId, counterpartyId])
   @@index([accountId, ownerId])
   @@index([accountId, issuedById, createdAt])
@@ -9104,6 +9113,10 @@ model DebtNote {
 
   text          String
   nextContactAt DateTime? @map("next_contact_at") @db.Timestamptz()
+
+  /// Qo'ng'iroq NATIJASI (kind='call' yozuvlarda, 2026-07-12):
+  /// 'paid_full' | 'paid_partial' | 'not_paid' | 'callback' | null (oddiy izoh).
+  outcome String? @db.VarChar(20)
 
   authorId   String? @map("author_id") @db.Uuid
   /// 'operator' | 'cashier' | 'admin' — §3.4: yozuvda rol ko'rsatiladi.

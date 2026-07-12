@@ -15,6 +15,7 @@
  * yangi izoh + keyingi sanani kiritadi — TZ ning aniq talabi.
  */
 
+import { CallOutcomeModal } from '@/components/debts/call-outcome-modal';
 import { DEBT_POLL_MS, type DebtRow, debtApi } from '@/lib/debt-api';
 import {
   Badge,
@@ -37,6 +38,7 @@ export default function DebtCallsPage() {
   const qc = useQueryClient();
 
   const [active, setActive] = useState<DebtRow | null>(null);
+  const [callTarget, setCallTarget] = useState<DebtRow | null>(null);
   const [text, setText] = useState('');
   const [nextAt, setNextAt] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -143,8 +145,17 @@ export default function DebtCallsPage() {
                 </div>
               </div>
 
-              {/* §3.5 — alohida sahifaga o'tmasdan izoh kiritish */}
-              <Button size="sm" onClick={() => open(r)} data-test-id={`call-note-${r.id}`}>
+              {/* «Qo'ng'iroq qilindi» — natija tugmasi (2026-07-12); eski izoh
+                  modali ham qoladi (natijasiz oddiy izoh uchun). */}
+              <Button size="sm" onClick={() => setCallTarget(r)} data-test-id={`call-mark-${r.id}`}>
+                📞 {t('call_button')}
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => open(r)}
+                data-test-id={`call-note-${r.id}`}
+              >
                 {t('note_save')}
               </Button>
             </div>
@@ -203,6 +214,16 @@ export default function DebtCallsPage() {
           {error && <div className="text-[var(--ms-text-destructive)] text-sm">{error}</div>}
         </div>
       </Modal>
+
+      {/* «Qo'ng'iroq qilindi» — natija modali (umumiy komponent) */}
+      {callTarget && (
+        <CallOutcomeModal
+          debtId={callTarget.id}
+          debtorName={callTarget.counterpartyName ?? callTarget.name}
+          open={callTarget !== null}
+          onClose={() => setCallTarget(null)}
+        />
+      )}
     </Container>
   );
 }

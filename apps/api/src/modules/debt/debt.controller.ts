@@ -151,6 +151,19 @@ export class DebtController {
     return this.service.addNote(user.accountId, user.sub, role, id, body);
   }
 
+  // ── «Qo'ng'iroq qilindi» + natija (operator/kassir — debt.update) ─────────
+
+  @Post(':id/call')
+  @RequirePermission({ entity: 'debt', action: 'update' })
+  async markCall(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    const role = await this.actorRole(user.sub);
+    return this.service.markCall(user.accountId, user.sub, role, id, body);
+  }
+
   // ── §3.6 kassada to'lov — naqd/terminal (FAQAT KASSIR) ────────────────────
 
   @Post(':id/payments')

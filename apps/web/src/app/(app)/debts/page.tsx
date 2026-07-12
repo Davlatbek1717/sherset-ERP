@@ -12,8 +12,15 @@
  * qabul qilingan to'lov call-markaz ekranida sahifani yangilamasdan ko'rinadi.
  */
 
+import { CallOutcomeModal } from '@/components/debts/call-outcome-modal';
 import { api } from '@/lib/api-client';
-import { DEBT_POLL_MS, type DebtRow, type DebtScope, debtApi } from '@/lib/debt-api';
+import {
+  type CallOutcome,
+  DEBT_POLL_MS,
+  type DebtRow,
+  type DebtScope,
+  debtApi,
+} from '@/lib/debt-api';
 import {
   Badge,
   Button,
@@ -33,7 +40,15 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
-const SCOPES: DebtScope[] = ['active', 'today', 'overdue', 'all'];
+const SCOPES: DebtScope[] = ['active', 'today', 'overdue', 'called', 'all'];
+
+/** Qo'ng'iroq natijasi → badge rangi (2026-07-12). */
+const OUTCOME_TONE: Record<CallOutcome, 'success' | 'warning' | 'destructive' | 'neutral'> = {
+  paid_full: 'success',
+  paid_partial: 'warning',
+  not_paid: 'destructive',
+  callback: 'neutral',
+};
 
 /** Mijoz-segment tablari (2026-07-11 talab): Hammasi · Elektriklar · Boshqalar. */
 type Segment = 'all' | 'elektrik' | 'boshqa';
@@ -48,6 +63,11 @@ export default function DebtsPage() {
   const [sortBy, setSortBy] = useState<'nextContactAt' | 'remainingMinor' | 'totalMinor'>(
     'nextContactAt',
   );
+  // «Qo'ng'iroq qilinganlar» ko'rinishi filtrlari (2026-07-12).
+  const [calledDate, setCalledDate] = useState('');
+  const [callOutcome, setCallOutcome] = useState<CallOutcome | ''>('');
+  // «Qo'ng'iroq qilindi» modali ochiq turgan qarzdor.
+  const [callTarget, setCallTarget] = useState<DebtRow | null>(null);
 
   // «Elektriklar» guruhi id'si nom bo'yicha topiladi — guruh hali yaratilmagan
   // akkauntlarda tablar shunchaki ko'rinmaydi (graceful degradation).
@@ -65,7 +85,17 @@ export default function DebtsPage() {
   });
 
   const list = useQuery({
-    queryKey: ['debts', 'list', scope, segment, elektrikGroupId, search, sortBy],
+    queryKey: [
+      'debts',
+      'list',
+      scope,
+      segment,
+      elektrikGroupId,
+      search,
+      sortBy,
+      calledDate,
+      callOutcome,
+    ],
     queryFn: () =>
       debtApi.list({
         scope,
@@ -75,6 +105,9 @@ export default function DebtsPage() {
           segment === 'elektrik' && elektrikGroupId ? elektrikGroupId : undefined,
         counterpartyGroupExclude:
           segment === 'boshqa' && elektrikGroupId ? elektrikGroupId : undefined,
+        // «Qo'ng'iroq qilinganlar» ko'rinishi: kun (default bugun) + natija filtri.
+        calledDate: scope === 'called' && calledDate ? calledDate : undefined,
+        callOutcome: scope === 'called' && callOutcome ? callOutcome : undefined,
         sortBy,
         // Qo'ng'iroq sanasi — eng erta yuqorida; pul — eng katta yuqorida.
         sortDir: sortBy === 'nextContactAt' ? 'asc' : 'desc',
@@ -171,9 +204,34 @@ export default function DebtsPage() {
         <div className="flex items-center gap-1.5">
           <Badge tone={statusTone(r)}>{statusLabel(r)}</Badge>
           {r.overdue && <Badge tone="destructive">{t('badge_overdue')}</Badge>}
+          {/* Oxirgi qo'ng'iroq natijasi — bir qarashda ko'rinadi (2026-07-12). */}
+          {r.lastCallOutcome && (
+            <Badge tone={OUTCOME_TONE[r.lastCallOutcome]}>
+              📞 {t(`outcome_${r.lastCallOutcome}` as 'outcome_paid_full')}
+            </Badge>
+          )}
         </div>
       ),
       cellText: (r) => r.status,
+    },
+    {
+      key: 'call',
+      header: '',
+      // «Qo'ng'iroq qilindi» — har qatorda; qator bosilishiga xalaqit bermaydi.
+      cell: (r) => (
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={(e) => {
+            e.stopPropagation();
+            setCallTarget(r);
+          }}
+          data-test-id={`call-btn-${r.id}`}
+        >
+          📞 {t('call_button')}
+        </Button>
+      ),
+      cellText: () => '',
     },
   ];
 
@@ -281,6 +339,31 @@ export default function DebtsPage() {
           <option value="remainingMinor">{t('sort_remaining')}</option>
           <option value="totalMinor">{t('sort_total')}</option>
         </NativeSelect>
+
+        {/* «Qo'ng'iroq qilinganlar» rejimi: kun (bo'sh = bugun) + natija filtri */}
+        {scope === 'called' && (
+          <>
+            <Input
+              type="date"
+              value={calledDate}
+              onChange={(e) => setCalledDate(e.target.value)}
+              className="w-[170px]"
+              data-test-id="called-date"
+            />
+            <NativeSelect
+              value={callOutcome}
+              onChange={(e) => setCallOutcome(e.target.value as CallOutcome | '')}
+              className="w-[210px]"
+              data-test-id="called-outcome"
+            >
+              <option value="">{t('outcome_all')}</option>
+              <option value="paid_full">{t('outcome_paid_full')}</option>
+              <option value="paid_partial">{t('outcome_paid_partial')}</option>
+              <option value="not_paid">{t('outcome_not_paid')}</option>
+              <option value="callback">{t('outcome_callback')}</option>
+            </NativeSelect>
+          </>
+        )}
       </div>
 
       <DataTable
@@ -292,6 +375,16 @@ export default function DebtsPage() {
         rowTestId={(r) => `debt-row-${r.id}`}
         empty={<EmptyState title={t('empty')} />}
       />
+
+      {/* «Qo'ng'iroq qilindi» — natija modali (umumiy komponent) */}
+      {callTarget && (
+        <CallOutcomeModal
+          debtId={callTarget.id}
+          debtorName={callTarget.counterpartyName ?? callTarget.name}
+          open={callTarget !== null}
+          onClose={() => setCallTarget(null)}
+        />
+      )}
     </Container>
   );
 }

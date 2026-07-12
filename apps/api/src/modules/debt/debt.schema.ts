@@ -115,6 +115,30 @@ export const CreateDebtNoteSchema = z.object({
 export type CreateDebtNoteInput = z.infer<typeof CreateDebtNoteSchema>;
 
 /**
+ * «QO'NG'IROQ QILINDI» belgisi (2026-07-12 talab) — suhbat natijasi:
+ *   paid_full    — to'ladi (yoki to'layman dedi, to'liq)
+ *   paid_partial — bir qismini to'ladi/to'laydi
+ *   not_paid     — to'lamadi
+ *   callback     — yana qo'ng'iroq qilish kerak (sana MAJBURIY)
+ */
+export const CallOutcomeSchema = z.enum(['paid_full', 'paid_partial', 'not_paid', 'callback']);
+export type CallOutcome = z.infer<typeof CallOutcomeSchema>;
+
+export const MarkCallSchema = z
+  .object({
+    outcome: CallOutcomeSchema,
+    /** Suhbat izohi — ixtiyoriy (natija tugmasining o'zi ham yozuv qoldiradi). */
+    text: z.string().trim().max(4000).optional(),
+    /** Keyingi qo'ng'iroq vaqti — callback uchun MAJBURIY. */
+    nextContactAt: z.coerce.date().nullish(),
+  })
+  .refine((v) => v.outcome !== 'callback' || v.nextContactAt != null, {
+    message: "«Qayta qo'ng'iroq» uchun keyingi sana majburiy",
+    path: ['nextContactAt'],
+  });
+export type MarkCallInput = z.infer<typeof MarkCallSchema>;
+
+/**
  * TZ §3.1 — QARZDORLAR RO'YXATI filtri.
  *
  * `scope`:
@@ -123,7 +147,7 @@ export type CreateDebtNoteInput = z.infer<typeof CreateDebtNoteSchema>;
  *   overdue  — keyingi aloqa sanasi O'TIB KETGAN
  *   all      — yopilganlar ham (tarix)
  */
-export const DebtScopeSchema = z.enum(['active', 'today', 'overdue', 'all']);
+export const DebtScopeSchema = z.enum(['active', 'today', 'overdue', 'all', 'called']);
 export type DebtScope = z.infer<typeof DebtScopeSchema>;
 
 export const DebtFilterSchema = z.object({
@@ -137,6 +161,10 @@ export const DebtFilterSchema = z.object({
    */
   counterpartyGroupId: z.string().uuid().optional(),
   counterpartyGroupExclude: z.string().uuid().optional(),
+  /** scope='called' uchun: qaysi KUN qo'ng'iroq qilinganlar (default: bugun). */
+  calledDate: z.string().optional(),
+  /** scope='called' uchun: natija bo'yicha filtr. */
+  callOutcome: CallOutcomeSchema.optional(),
   /** Mas'ul xodim bo'yicha (§3.1). */
   ownerId: z.string().uuid().optional(),
   /** F.I.Sh yoki telefon bo'yicha qidiruv. */

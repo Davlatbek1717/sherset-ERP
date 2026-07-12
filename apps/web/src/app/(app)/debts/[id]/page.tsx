@@ -20,6 +20,7 @@
  * to'lov bo'lsa, operator ekranida qoldiq o'zi kamayadi.
  */
 
+import { CallOutcomeModal } from '@/components/debts/call-outcome-modal';
 import {
   DEBT_POLL_MS,
   type DebtNoteRow,
@@ -92,6 +93,8 @@ export default function DebtProfilePage() {
   // ── 1) Izoh / qo'ng'iroq (§3.4) ───────────────────────────────────────────
   const [noteText, setNoteText] = useState('');
   const [noteNext, setNoteNext] = useState('');
+  // «Qo'ng'iroq qilindi» natija modali (2026-07-12).
+  const [callOpen, setCallOpen] = useState(false);
   const [noteErr, setNoteErr] = useState<string | null>(null);
 
   const addNote = useMutation({
@@ -234,6 +237,14 @@ export default function DebtProfilePage() {
         {/* 1) Izoh / qo'ng'iroq — operator + kassir */}
         <Section title={t('section_notes')} tone="notes" testId="section-notes">
           <div className="flex flex-col gap-2">
+            {/* «Qo'ng'iroq qilindi» + natija — kartochkaning o'zida (2026-07-12) */}
+            <Button
+              variant="secondary"
+              onClick={() => setCallOpen(true)}
+              data-test-id="detail-call-btn"
+            >
+              📞 {t('call_button')}
+            </Button>
             <Textarea
               value={noteText}
               onChange={(e) => setNoteText(e.target.value)}
@@ -463,6 +474,14 @@ export default function DebtProfilePage() {
           <EmptyState title={t('note_empty')} />
         )}
       </section>
+
+      {/* «Qo'ng'iroq qilindi» — natija modali (umumiy komponent) */}
+      <CallOutcomeModal
+        debtId={id}
+        debtorName={d?.counterpartyName ?? ''}
+        open={callOpen}
+        onClose={() => setCallOpen(false)}
+      />
     </Container>
   );
 }

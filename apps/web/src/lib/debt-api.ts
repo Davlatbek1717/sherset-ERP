@@ -20,7 +20,9 @@ export type DebtStatus = 'unpaid' | 'partial' | 'paid';
 export type DebtPaymentMethod = 'cash' | 'terminal' | 'card_screenshot';
 export type DebtNoteKind = 'call' | 'debt_issue' | 'payment';
 export type DebtAuthorRole = 'operator' | 'cashier' | 'admin';
-export type DebtScope = 'active' | 'today' | 'overdue' | 'all';
+export type DebtScope = 'active' | 'today' | 'overdue' | 'all' | 'called';
+/** Qo'ng'iroq natijasi (2026-07-12): to'ladi / qisman / to'lamadi / qayta qo'ng'iroq. */
+export type CallOutcome = 'paid_full' | 'paid_partial' | 'not_paid' | 'callback';
 
 export interface DebtRow {
   id: string;
@@ -37,6 +39,9 @@ export interface DebtRow {
   /** Server hisoblaydi — keyingi aloqa sanasi o'tib ketgan (§3.5 qizil qator). */
   overdue: boolean;
   lastNote: string | null;
+  /** Oxirgi qo'ng'iroq belgisi (2026-07-12). */
+  lastCallAt: string | null;
+  lastCallOutcome: CallOutcome | null;
   comment: string | null;
   ownerId: string | null;
   ownerName: string | null;
@@ -131,6 +136,10 @@ export interface DebtListParams {
   counterpartyGroupId?: string;
   /** Segment: shu guruhda BO'LMASIN (Boshqalar tabi). */
   counterpartyGroupExclude?: string;
+  /** scope='called': qaysi kun (YYYY-MM-DD, default bugun). */
+  calledDate?: string;
+  /** scope='called': natija bo'yicha filtr. */
+  callOutcome?: CallOutcome;
   sortBy?: 'nextContactAt' | 'remainingMinor' | 'totalMinor' | 'createdAt' | 'counterparty';
   sortDir?: 'asc' | 'desc';
   limit?: number;
@@ -202,6 +211,15 @@ export const debtApi = {
   /** §3.4 — izoh + keyingi qo'ng'iroq vaqti (operator VA kassir). */
   addNote: (id: string, body: { text: string; nextContactAt?: string | null }) =>
     api.post<DebtNoteRow>(`/debts/${id}/notes`, body),
+
+  /**
+   * «Qo'ng'iroq qilindi» + natija (2026-07-12). callback uchun nextContactAt
+   * majburiy — server ham tekshiradi.
+   */
+  markCall: (
+    id: string,
+    body: { outcome: CallOutcome; text?: string; nextContactAt?: string | null },
+  ) => api.post<DebtRow>(`/debts/${id}/call`, body),
 
   /** §3.6 — kassada naqd/terminal to'lov (FAQAT KASSIR). */
   addCashPayment: (
