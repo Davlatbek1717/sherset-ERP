@@ -2019,7 +2019,10 @@
       "loc_summary_match": "Polkalar ombor bilan mos",
       "loc_summary_mismatch": "Nomuvofiqlik",
       "loc_summary_untracked": "Ba'zi joylarda son kiritilmagan — solishtirish uchun hammasiga son yozing",
-      "loc_popover_empty": "Joylashuv kiritilmagan"
+      "loc_popover_empty": "Joylashuv kiritilmagan",
+      "loc_col_address": "Manzil",
+      "loc_col_note": "Izoh",
+      "loc_col_qty": "Soni"
     },
     "product_folders": {
       "title": "Tovar guruhlari",

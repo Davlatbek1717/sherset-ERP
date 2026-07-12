@@ -1,18 +1,22 @@
 'use client';
 
 /**
- * Ro'yxat qatoridagi 📍 popover (2026-07-12 talab): tovar USTIDA turib,
- * kartochkaga kirmasdan «qayerda qanchadan» ko'rish.
+ * Ro'yxat qatoridagi 📍 trigger → MODAL (2026-07-12, v2).
  *
- * Bosilganda /products/:id/scan dan (bitta so'rov) asosiy joy + barcha
- * qo'shimcha polkalar sonlari bilan mini-jadval ochiladi; ostida polkalar
- * jami vs ombordagi haqiqiy qoldiq (farq bo'lsa qizil). Ma'lumot faqat
- * ochilganda yuklanadi (ro'yxat og'irlashmaydi) va react-query keshida
- * qoladi. stopPropagation — qator-klik navigatsiyasi otilib ketmasin.
+ * v1 kichik dropdown edi — jadval katagi ichida qisilib, o'qib bo'lmas holda
+ * ochilardi (foydalanuvchi skrinshot bilan qaytardi). Endi bosilganda
+ * markazda to'laqonli Modal ochiladi: tovar nomi sarlavhada, ichida barcha
+ * joylar (asosiy + qo'shimcha polkalar) sonlari bilan keng jadval, ostida
+ * polkalar-jami vs ombordagi haqiqiy qoldiq mosligi (✓/⚠️).
+ *
+ * Ma'lumot faqat modal ochilganda yuklanadi (scan endpoint, react-query
+ * keshi) — ro'yxat og'irlashmaydi. stopPropagation — qator-klik
+ * navigatsiyasi otilib ketmasin.
  */
 
 import { api } from '@/lib/api-client';
 import { formatBinLocation } from '@/lib/bin-location';
+import { Badge, Modal } from '@moysklad/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useState } from 'react';
@@ -33,14 +37,17 @@ interface ScanInfo {
       note: string | null;
     }>;
   };
+  balances: Array<{ storeId: string; storeName: string | null; qty: string }>;
   totalQty: number;
 }
 
 export function ProductLocationsPopover({
   productId,
+  productName,
   primaryLabel,
 }: {
   productId: string;
+  productName: string;
   primaryLabel: string;
 }) {
   const t = useTranslations('pages.products');
@@ -57,14 +64,16 @@ export function ProductLocationsPopover({
     Number(v).toLocaleString('ru-RU', { maximumFractionDigits: 3 });
 
   const p = scan.data?.product;
-  const rows: Array<{ code: string; qty: string | null; note: string | null }> = [];
+  const rows: Array<{ code: string; note: string | null; qty: string | null; primary: boolean }> =
+    [];
   if (p) {
     const primary = formatBinLocation(p);
     if (primary) {
       rows.push({
         code: primary,
-        qty: p.locQty == null || p.locQty === '' ? null : String(p.locQty),
         note: t('loc_summary_primary'),
+        qty: p.locQty == null || p.locQty === '' ? null : String(p.locQty),
+        primary: true,
       });
     }
     for (const l of p.extraLocations ?? []) {
@@ -75,8 +84,9 @@ export function ProductLocationsPopover({
           locQavat: l.qavat,
           locYacheyka: l.yacheyka,
         }),
-        qty: l.qty,
         note: l.note,
+        qty: l.qty,
+        primary: false,
       });
     }
   }
@@ -87,11 +97,11 @@ export function ProductLocationsPopover({
   const matches = comparable && Math.abs(binsTotal - (warehouseTotal as number)) < 0.000001;
 
   return (
-    // biome-ignore lint/a11y/useKeyWithClickEvents: ichki tugma klaviaturani boshqaradi; wrapper faqat qator-navigatsiyani to'xtatadi
-    <span className="relative inline-block" onClick={(e) => e.stopPropagation()}>
+    // biome-ignore lint/a11y/useKeyWithClickEvents: ichki tugma klaviaturani boshqaradi; wrapper faqat qator-klik navigatsiyasini to'xtatadi
+    <span className="inline-block" onClick={(e) => e.stopPropagation()}>
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => setOpen(true)}
         className="inline-flex items-center gap-1 rounded px-1 font-mono text-[var(--ms-text-secondary)] text-xs tabular-nums tracking-wider hover:bg-[var(--ms-bg-hover)] hover:text-[var(--ms-text-primary)]"
         aria-label={t('loc_summary_title')}
         data-test-id={`loc-popover-${productId}`}
@@ -100,67 +110,85 @@ export function ProductLocationsPopover({
         <span aria-hidden>📍</span>
       </button>
 
-      {open && (
-        <>
-          {/* Tashqariga bosilganda yopish uchun shaffof qatlam */}
-          {/* biome-ignore lint/a11y/useKeyWithClickEvents: vizual bo'lmagan yopish-qatlami */}
-          <span className="fixed inset-0 z-40 cursor-default" onClick={() => setOpen(false)} />
-          <span
-            className="absolute right-0 z-50 mt-1 block w-[280px] rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] p-3 text-left shadow-lg"
-            data-test-id="loc-popover-card"
-          >
-            <span className="mb-2 block font-semibold text-xs">📍 {t('loc_summary_title')}</span>
-            {scan.isLoading && (
-              <span className="block py-2 text-[var(--ms-text-muted)] text-xs">…</span>
+      <Modal
+        open={open}
+        onOpenChange={setOpen}
+        title={`📍 ${productName}`}
+        description={t('loc_summary_title')}
+        widthClass="w-[520px]"
+        testId="loc-modal"
+      >
+        {scan.isLoading && (
+          <div className="py-6 text-center text-[var(--ms-text-muted)] text-sm">…</div>
+        )}
+
+        {!scan.isLoading && rows.length === 0 && (
+          <div className="py-4 text-[var(--ms-text-muted)] text-sm">{t('loc_popover_empty')}</div>
+        )}
+
+        {rows.length > 0 && (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-[var(--ms-border-default)] border-b text-left text-[var(--ms-text-muted)] text-xs">
+                <th className="py-2">{t('loc_col_address')}</th>
+                <th className="py-2">{t('loc_col_note')}</th>
+                <th className="py-2 text-right">{t('loc_col_qty')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr
+                  key={r.code + (r.primary ? '-p' : (r.note ?? ''))}
+                  className="border-[var(--ms-border-default)] border-b last:border-0"
+                >
+                  <td className="py-2 font-mono font-semibold tabular-nums tracking-wider">
+                    {r.code}
+                  </td>
+                  <td className="py-2 text-[var(--ms-text-muted)]">
+                    {r.primary ? t('loc_summary_primary') : (r.note ?? '')}
+                  </td>
+                  <td className="py-2 text-right font-semibold tabular-nums">
+                    {r.qty != null ? fmt(r.qty) : '—'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td className="pt-3 font-medium" colSpan={2}>
+                  {t('loc_summary_bins_total')}
+                </td>
+                <td className="pt-3 text-right font-bold tabular-nums">{fmt(binsTotal)}</td>
+              </tr>
+              {warehouseTotal != null && (
+                <tr>
+                  <td className="pt-1 text-[var(--ms-text-muted)]" colSpan={2}>
+                    {t('loc_summary_warehouse')}
+                  </td>
+                  <td className="pt-1 text-right tabular-nums">{fmt(warehouseTotal)}</td>
+                </tr>
+              )}
+            </tfoot>
+          </table>
+        )}
+
+        {comparable && (
+          <div className="mt-3">
+            {matches ? (
+              <Badge tone="success">✓ {t('loc_summary_match')}</Badge>
+            ) : (
+              <Badge tone="destructive">
+                ⚠️ {t('loc_summary_mismatch')}: {fmt(binsTotal)} ≠ {fmt(warehouseTotal as number)}
+              </Badge>
             )}
-            {!scan.isLoading && rows.length === 0 && (
-              <span className="block py-1 text-[var(--ms-text-muted)] text-xs">
-                {t('loc_popover_empty')}
-              </span>
-            )}
-            {rows.map((r) => (
-              <span
-                key={r.code + (r.note ?? '')}
-                className="flex items-center justify-between gap-2 border-[var(--ms-border-default)] border-b py-1 text-xs last:border-0"
-              >
-                <span className="font-mono tabular-nums tracking-wider">{r.code}</span>
-                <span className="min-w-0 flex-1 truncate text-[var(--ms-text-muted)]">
-                  {r.note ?? ''}
-                </span>
-                <span className="font-semibold tabular-nums">
-                  {r.qty != null ? fmt(r.qty) : '—'}
-                </span>
-              </span>
-            ))}
-            {rows.length > 0 && (
-              <span className="mt-1.5 flex items-center justify-between text-xs">
-                <span className="font-medium">{t('loc_summary_bins_total')}</span>
-                <span className="font-bold tabular-nums">{fmt(binsTotal)}</span>
-              </span>
-            )}
-            {warehouseTotal != null && (
-              <span className="mt-0.5 flex items-center justify-between text-[var(--ms-text-muted)] text-xs">
-                <span>{t('loc_summary_warehouse')}</span>
-                <span className="tabular-nums">{fmt(warehouseTotal)}</span>
-              </span>
-            )}
-            {comparable && (
-              <span
-                className={[
-                  'mt-1.5 block rounded px-1.5 py-0.5 font-medium text-xs',
-                  matches
-                    ? 'bg-[var(--ms-success-50)] text-[var(--ms-success-700)]'
-                    : 'bg-[var(--ms-destructive-50)] text-[var(--ms-destructive-700)]',
-                ].join(' ')}
-              >
-                {matches
-                  ? `✓ ${t('loc_summary_match')}`
-                  : `⚠️ ${t('loc_summary_mismatch')}: ${fmt(binsTotal)} ≠ ${fmt(warehouseTotal as number)}`}
-              </span>
-            )}
-          </span>
-        </>
-      )}
+          </div>
+        )}
+        {!comparable && rows.length > tracked.length && (
+          <div className="mt-3 text-[var(--ms-text-muted)] text-xs">
+            {t('loc_summary_untracked')}
+          </div>
+        )}
+      </Modal>
     </span>
   );
 }

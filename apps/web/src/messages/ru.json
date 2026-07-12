@@ -2019,7 +2019,10 @@
       "loc_summary_match": "Полки совпадают со складом",
       "loc_summary_mismatch": "Расхождение",
       "loc_summary_untracked": "На некоторых местах не указано количество — заполните для сверки",
-      "loc_popover_empty": "Места не указаны"
+      "loc_popover_empty": "Места не указаны",
+      "loc_col_address": "Адрес",
+      "loc_col_note": "Примечание",
+      "loc_col_qty": "Кол-во"
     },
     "product_folders": {
       "title": "Группы товаров",

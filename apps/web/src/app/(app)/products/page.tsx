@@ -623,7 +623,13 @@ export default function ProductsPage() {
       align: 'center',
       // 2026-07-12: kod endi bosiladigan 📍 popover — kartochkaga kirmasdan
       // BARCHA joylar (asosiy + qo'shimcha polkalar) sonlari bilan ochiladi.
-      cell: (p) => <ProductLocationsPopover productId={p.id} primaryLabel={formatBinLocation(p)} />,
+      cell: (p) => (
+        <ProductLocationsPopover
+          productId={p.id}
+          productName={p.name}
+          primaryLabel={formatBinLocation(p)}
+        />
+      ),
       cellText: (r: Product) => formatBinLocation(r),
     },
     // moysklad ⚙ column-customizer — extra (non-default) columns in moysklad's
