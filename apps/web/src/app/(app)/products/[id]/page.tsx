@@ -18,6 +18,7 @@ import { type PackDraft, ProductDetailWidget } from '@/components/product-detail
 import { ProductFormShell } from '@/components/product-form-layout';
 import { ProductExtraLocations } from '@/components/products/product-extra-locations';
 import { ProductFormLeftCards } from '@/components/products/product-form-left-cards';
+import { ProductLocationSummary } from '@/components/products/product-location-summary';
 import { ProductPriceEditor } from '@/components/products/product-price-editor';
 import { type ProductHydrateInput, useProductForm } from '@/components/products/use-product-form';
 import { useApiMutation } from '@/hooks/use-api-mutation';
@@ -342,7 +343,19 @@ export default function ProductDetailPage() {
               pf={pf}
               imagesSlot={<ImageGallery productId={data.id} />}
               extraLocationsSlot={
-                <ProductExtraLocations productId={data.id} initial={data.extraLocations ?? []} />
+                <div className="flex flex-col gap-3">
+                  {/* «Qayerda qanchadan turibdi» — o'qish paneli (2026-07-12) */}
+                  <ProductLocationSummary
+                    productId={data.id}
+                    locSklad={data.locSklad}
+                    locPolka={data.locPolka}
+                    locQavat={data.locQavat}
+                    locYacheyka={data.locYacheyka}
+                    locQty={data.locQty ?? null}
+                    extraLocations={data.extraLocations ?? []}
+                  />
+                  <ProductExtraLocations productId={data.id} initial={data.extraLocations ?? []} />
+                </div>
               }
             />
           }

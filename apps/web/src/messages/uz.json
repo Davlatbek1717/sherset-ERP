@@ -2011,7 +2011,14 @@
       "payment_item_type_compound": "Kompleks to'lov",
       "payment_item_type_other": "Boshqa",
       "empty_rich_heading": "Sotadigan tovarlar va xizmatlarni qo'shing",
-      "empty_rich_helper": "Har tovar modifikatsiyalar, narxlar va qoldiqlar bilan bo'lishi mumkin"
+      "empty_rich_helper": "Har tovar modifikatsiyalar, narxlar va qoldiqlar bilan bo'lishi mumkin",
+      "loc_summary_title": "Joylashuvlar bo'yicha taqsimot",
+      "loc_summary_primary": "asosiy joy",
+      "loc_summary_warehouse": "Omborda jami",
+      "loc_summary_bins_total": "Polkalarda jami",
+      "loc_summary_match": "Polkalar ombor bilan mos",
+      "loc_summary_mismatch": "Nomuvofiqlik",
+      "loc_summary_untracked": "Ba'zi joylarda son kiritilmagan — solishtirish uchun hammasiga son yozing"
     },
     "product_folders": {
       "title": "Tovar guruhlari",

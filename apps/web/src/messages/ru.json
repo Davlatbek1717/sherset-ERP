@@ -2011,7 +2011,14 @@
       "payment_item_type_compound": "Сложный платёж",
       "payment_item_type_other": "Другое",
       "empty_rich_heading": "Заводите товары и услуги, которыми торгуете",
-      "empty_rich_helper": "Каждый товар может быть с модификациями, ценами и остатками"
+      "empty_rich_helper": "Каждый товар может быть с модификациями, ценами и остатками",
+      "loc_summary_title": "Распределение по местам",
+      "loc_summary_primary": "основное место",
+      "loc_summary_warehouse": "Всего на складе",
+      "loc_summary_bins_total": "Итого по полкам",
+      "loc_summary_match": "Полки совпадают со складом",
+      "loc_summary_mismatch": "Расхождение",
+      "loc_summary_untracked": "На некоторых местах не указано количество — заполните для сверки"
     },
     "product_folders": {
       "title": "Группы товаров",

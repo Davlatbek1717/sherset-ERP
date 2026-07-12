@@ -1,21 +1,12 @@
 'use client';
 
-import { useAuth } from '@/lib/auth-store';
 import { api } from '@/lib/api-client';
+import { useAuth } from '@/lib/auth-store';
 import { formatBinLocation } from '@/lib/bin-location';
 import { useQuery } from '@tanstack/react-query';
-import { useEffect } from 'react';
+import { AlertCircle, Archive, Box, Loader2, MapPin, Package, Tag, Warehouse } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
-import {
-  AlertCircle,
-  Archive,
-  Box,
-  Loader2,
-  MapPin,
-  Package,
-  Tag,
-  Warehouse,
-} from 'lucide-react';
+import { useEffect } from 'react';
 
 interface ProductDetail {
   id: string;
@@ -31,6 +22,17 @@ interface ProductDetail {
   locPolka: number | null;
   locQavat: number | null;
   locYacheyka: number | null;
+  /** Asosiy joydagi son (qo'lda yuritiladi). */
+  locQty?: string | number | null;
+  /** Qo'shimcha polkalar (multi-bin) — «yana qayerlarda qanchadan». */
+  extraLocations?: Array<{
+    sklad: number;
+    polka: number | null;
+    qavat: number | null;
+    yacheyka: number | null;
+    qty: string | null;
+    note: string | null;
+  }>;
   group: { id: string; name: string } | null;
   productFolder: { id: string; name: string; pathName: string } | null;
   supplier: { id: string; name: string } | null;
@@ -86,9 +88,7 @@ export default function ScanPage() {
     return (
       <div className="flex h-[calc(100dvh-58px)] flex-col items-center justify-center gap-3 px-6">
         <AlertCircle className="h-10 w-10 text-red-400" />
-        <p className="text-center text-sm text-[var(--ms-text-muted)]">
-          Tovar topilmadi
-        </p>
+        <p className="text-center text-sm text-[var(--ms-text-muted)]">Tovar topilmadi</p>
       </div>
     );
   }
@@ -122,13 +122,47 @@ export default function ScanPage() {
           </div>
         </div>
 
-        {/* Bin location badge */}
+        {/* Bin location badge — asosiy joy (soni bilan) */}
         {hasBin && (
           <div className="mt-3 inline-flex items-center gap-2 rounded-xl bg-amber-50 border border-amber-200 px-4 py-2">
             <MapPin className="h-4 w-4 text-amber-600 shrink-0" />
             <span className="font-mono text-base font-bold text-amber-800 tracking-widest">
               {binLabel}
             </span>
+            {product.locQty != null && product.locQty !== '' && (
+              <span className="rounded-full bg-amber-200 px-2 py-0.5 font-bold text-amber-900 text-xs tabular-nums">
+                {Number(product.locQty).toLocaleString('ru-RU')} dona
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* Qo'shimcha polkalar (2026-07-12): «yana qayerlarda qanchadan» —
+            avval skaner faqat asosiy joyni ko'rsatardi, qolgan 400 tasi
+            «ko'rinmas» edi. Endi hammasi shu yerda. */}
+        {(product.extraLocations?.length ?? 0) > 0 && (
+          <div className="mt-2 flex flex-wrap gap-2" data-test-id="scan-extra-locations">
+            {product.extraLocations?.map((l) => (
+              <div
+                key={`${l.sklad}-${l.polka}-${l.qavat}-${l.yacheyka}`}
+                className="inline-flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50/60 px-3 py-1.5"
+              >
+                <span className="font-mono font-semibold text-amber-800 text-sm tracking-widest">
+                  {formatBinLocation({
+                    locSklad: l.sklad,
+                    locPolka: l.polka,
+                    locQavat: l.qavat,
+                    locYacheyka: l.yacheyka,
+                  })}
+                </span>
+                {l.qty != null && (
+                  <span className="rounded-full bg-amber-200 px-2 py-0.5 font-bold text-amber-900 text-xs tabular-nums">
+                    {Number(l.qty).toLocaleString('ru-RU')} dona
+                  </span>
+                )}
+                {l.note && <span className="text-amber-700 text-xs">{l.note}</span>}
+              </div>
+            ))}
           </div>
         )}
       </div>
@@ -207,27 +241,26 @@ export default function ScanPage() {
             <Row label="Katalog" value={product.productFolder?.pathName} />
             <Row label="Yetkazuvchi" value={product.supplier?.name} />
             <Row label="QQS" value={product.vat ? `${product.vat}%` : null} />
-            <Row
-              label="Og'irlik"
-              value={product.weightG ? `${product.weightG} g` : null}
-            />
-            <Row
-              label="Hajm"
-              value={product.volumeML ? `${product.volumeML} ml` : null}
-            />
+            <Row label="Og'irlik" value={product.weightG ? `${product.weightG} g` : null} />
+            <Row label="Hajm" value={product.volumeML ? `${product.volumeML} ml` : null} />
             {product.description && (
               <div className="py-2.5">
                 <p className="text-xs text-[var(--ms-text-muted)] mb-1">Tavsif</p>
                 <p className="text-sm text-[var(--ms-text-primary)]">{product.description}</p>
               </div>
             )}
-            {!product.uom && !product.group && !product.productFolder &&
-              !product.supplier && !product.vat && !product.weightG &&
-              !product.volumeML && !product.description && (
-              <div className="py-4 text-center text-sm text-[var(--ms-text-muted)]">
-                Tasniflar kiritilmagan
-              </div>
-            )}
+            {!product.uom &&
+              !product.group &&
+              !product.productFolder &&
+              !product.supplier &&
+              !product.vat &&
+              !product.weightG &&
+              !product.volumeML &&
+              !product.description && (
+                <div className="py-4 text-center text-sm text-[var(--ms-text-muted)]">
+                  Tasniflar kiritilmagan
+                </div>
+              )}
           </div>
         </div>
 
