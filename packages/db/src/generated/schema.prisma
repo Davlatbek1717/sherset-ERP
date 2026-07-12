@@ -9027,6 +9027,10 @@ model Debt {
   /// «Qo'ng'iroq qilinganlar» bo'limi shu maydonlardan filtrlanadi.
   lastCallAt      DateTime? @map("last_call_at") @db.Timestamptz()
   lastCallOutcome String?   @map("last_call_outcome") @db.VarChar(20)
+  /// Eslatma-cron dedup belgisi: nextContactAt uchun bildirishnoma yuborilgan
+  /// payt. Yangi nextContactAt qo'yilganda NULL'ga tushadi — keyingi muddat
+  /// uchun eslatma qayta ishlaydi.
+  callRemindedAt  DateTime? @map("call_reminded_at") @db.Timestamptz()
 
   /// Mas'ul xodim (call-markaz operatori) — ro'yxat filtri.
   ownerId    String? @map("owner_id") @db.Uuid

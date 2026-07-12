@@ -218,7 +218,13 @@ export const debtApi = {
    */
   markCall: (
     id: string,
-    body: { outcome: CallOutcome; text?: string; nextContactAt?: string | null },
+    body: {
+      outcome: CallOutcome;
+      text?: string;
+      nextContactAt?: string | null;
+      /** paid_partial: mijoz qancha to'lagani (tiyin) — tarixga yoziladi. */
+      amountMinor?: string;
+    },
   ) => api.post<DebtRow>(`/debts/${id}/call`, body),
 
   /** §3.6 — kassada naqd/terminal to'lov (FAQAT KASSIR). */

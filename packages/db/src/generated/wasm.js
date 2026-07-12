@@ -4027,6 +4027,7 @@ exports.Prisma.DebtScalarFieldEnum = {
   nextContactAt: 'nextContactAt',
   lastCallAt: 'lastCallAt',
   lastCallOutcome: 'lastCallOutcome',
+  callRemindedAt: 'callRemindedAt',
   ownerId: 'ownerId',
   issuedById: 'issuedById',
   comment: 'comment',

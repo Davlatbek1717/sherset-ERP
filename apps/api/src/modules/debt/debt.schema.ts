@@ -129,11 +129,29 @@ export const MarkCallSchema = z
     outcome: CallOutcomeSchema,
     /** Suhbat izohi — ixtiyoriy (natija tugmasining o'zi ham yozuv qoldiradi). */
     text: z.string().trim().max(4000).optional(),
-    /** Keyingi qo'ng'iroq vaqti — callback uchun MAJBURIY. */
+    /** Keyingi qo'ng'iroq vaqti — callback va paid_partial uchun MAJBURIY. */
     nextContactAt: z.coerce.date().nullish(),
+    /**
+     * paid_partial uchun MAJBURIY (2026-07-12): mijoz qancha to'lagani (tiyin).
+     * Bu MA'LUMOT sifatida tarixga yoziladi — rasmiy to'lov emas (rasmiy
+     * to'lovni kassir §3.6 orqali kiritadi, rol matritsasi buzilmaydi).
+     */
+    amountMinor: z
+      .string()
+      .regex(/^\d+$/, 'Summa — butun tiyin')
+      .refine((v) => BigInt(v) > 0n, "Summa 0 dan katta bo'lishi kerak")
+      .optional(),
   })
   .refine((v) => v.outcome !== 'callback' || v.nextContactAt != null, {
     message: "«Qayta qo'ng'iroq» uchun keyingi sana majburiy",
+    path: ['nextContactAt'],
+  })
+  .refine((v) => v.outcome !== 'paid_partial' || v.amountMinor != null, {
+    message: "«Qisman to'ladi» uchun summa majburiy",
+    path: ['amountMinor'],
+  })
+  .refine((v) => v.outcome !== 'paid_partial' || v.nextContactAt != null, {
+    message: "«Qisman to'ladi» uchun keyingi sana majburiy (qoldiq bor)",
     path: ['nextContactAt'],
   });
 export type MarkCallInput = z.infer<typeof MarkCallSchema>;

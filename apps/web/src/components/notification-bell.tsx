@@ -28,6 +28,9 @@ interface NotificationsResponse {
 }
 
 function entityHref(kind: string, entity: string | null, entityId: string | null): string | null {
+  // Qarz-eslatma (2026-07-12): «Qaysilar?» — Bugungi qo'ng'iroqlar sahifasiga.
+  // entityId'siz sahifa-havola, shuning uchun null-tekshiruvdan OLDIN.
+  if (kind === 'debt_call_due' || entity === 'DebtCalls') return '/debts/calls';
   if (!entityId) return null;
   if (kind.startsWith('task_') || entity === 'Task') return `/tasks/${entityId}`;
   if (kind === 'restock_assigned' || entity === 'RestockTask') return `/restock-tasks/${entityId}`;

@@ -6274,7 +6274,9 @@
       "outcome_callback": "🔁 Перезвонить",
       "export_pdf": "Скачать PDF",
       "export_pdf_selected": "PDF: выбранные",
-      "heading_selected": "Выбранные"
+      "heading_selected": "Выбранные",
+      "call_amount_label": "Сколько оплатил? (сум)",
+      "call_paid_full_hint": "Внимание: долг будет закрыт как ПОЛНОСТЬЮ ОПЛАЧЕННЫЙ и уйдёт из списка должников."
     }
   },
   "print_entity": {

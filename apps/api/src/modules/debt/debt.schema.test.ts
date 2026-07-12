@@ -131,21 +131,51 @@ describe('DebtFilterSchema — §3.1 qarzdorlar ro‘yxati filtri', () => {
 });
 
 describe("MarkCallSchema — «qo'ng'iroq qilindi» natijasi (2026-07-12)", () => {
-  it("to'rt natijani ham qabul qiladi", () => {
-    for (const outcome of ['paid_full', 'paid_partial', 'not_paid'] as const) {
-      expect(MarkCallSchema.parse({ outcome }).outcome).toBe(outcome);
-    }
+  const NEXT = '2026-07-13T09:00:00Z';
+
+  it("to'rt natijani ham qabul qiladi (har biri o'z majburiyligi bilan)", () => {
+    expect(MarkCallSchema.parse({ outcome: 'paid_full' }).outcome).toBe('paid_full');
+    expect(MarkCallSchema.parse({ outcome: 'not_paid' }).outcome).toBe('not_paid');
     expect(
-      MarkCallSchema.parse({ outcome: 'callback', nextContactAt: '2026-07-13T09:00:00Z' }).outcome,
-    ).toBe('callback');
+      MarkCallSchema.parse({
+        outcome: 'paid_partial',
+        amountMinor: '50000000',
+        nextContactAt: NEXT,
+      }).outcome,
+    ).toBe('paid_partial');
+    expect(MarkCallSchema.parse({ outcome: 'callback', nextContactAt: NEXT }).outcome).toBe(
+      'callback',
+    );
   });
 
   it("callback SANASIZ rad etiladi (qachon qo'ng'iroq qilishni bilish shart)", () => {
     expect(() => MarkCallSchema.parse({ outcome: 'callback' })).toThrow();
   });
 
-  it("boshqa natijalar sanasiz ham o'tadi (ixtiyoriy)", () => {
+  // 2026-07-12 talab: «qisman to'lov qildi deganda qancha summaligini so'rasin».
+  it('paid_partial SUMMASIZ rad etiladi', () => {
+    expect(() => MarkCallSchema.parse({ outcome: 'paid_partial', nextContactAt: NEXT })).toThrow();
+  });
+
+  it('paid_partial SANASIZ rad etiladi (qoldiq kuzatuvi davom etadi)', () => {
+    expect(() => MarkCallSchema.parse({ outcome: 'paid_partial', amountMinor: '100' })).toThrow();
+  });
+
+  it('paid_partial nol/kasr summani rad etadi', () => {
+    expect(() =>
+      MarkCallSchema.parse({ outcome: 'paid_partial', amountMinor: '0', nextContactAt: NEXT }),
+    ).toThrow();
+    expect(() =>
+      MarkCallSchema.parse({ outcome: 'paid_partial', amountMinor: '10.5', nextContactAt: NEXT }),
+    ).toThrow();
+  });
+
+  it("not_paid sanasiz ham o'tadi (ixtiyoriy)", () => {
     expect(MarkCallSchema.parse({ outcome: 'not_paid' }).nextContactAt).toBeUndefined();
+  });
+
+  it("paid_full sanasiz o'tadi (qarz yopiladi — sana kerak emas)", () => {
+    expect(MarkCallSchema.parse({ outcome: 'paid_full' }).nextContactAt).toBeUndefined();
   });
 
   it("noma'lum natija rad etiladi", () => {

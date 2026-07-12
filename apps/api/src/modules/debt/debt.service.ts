@@ -447,7 +447,8 @@ export class DebtService {
       if (input.nextContactAt && debt.status !== 'paid') {
         await tx.debt.update({
           where: { id: debtId },
-          data: { nextContactAt: input.nextContactAt },
+          // callRemindedAt: null — yangi muddat uchun eslatma qaytadan ishlasin.
+          data: { nextContactAt: input.nextContactAt, callRemindedAt: null },
         });
       }
       return note;
@@ -470,20 +471,28 @@ export class DebtService {
     const input: MarkCallInput = MarkCallSchema.parse(raw);
     const debt = await this.mustFind(accountId, debtId);
 
+    const fmtSom = (minor: string): string =>
+      (BigInt(minor) / 100n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+
+    // Tarix matni: natija + (partial'da SUMMA) + operator izohi.
     const OUTCOME_LABEL: Record<MarkCallInput['outcome'], string> = {
-      paid_full: "Qo'ng'iroq: to'ladi",
-      paid_partial: "Qo'ng'iroq: bir qismini to'ladi",
+      paid_full: "Qo'ng'iroq: to'ladi — qarz to'liq yopildi",
+      paid_partial: input.amountMinor
+        ? `Qo'ng'iroq: qisman to'ladi — ${fmtSom(input.amountMinor)} so'm`
+        : "Qo'ng'iroq: bir qismini to'ladi",
       not_paid: "Qo'ng'iroq: to'lamadi",
       callback: "Qo'ng'iroq: qayta qo'ng'iroq kerak",
     };
+    const noteText = input.text?.length
+      ? `${OUTCOME_LABEL[input.outcome]}. ${input.text}`
+      : OUTCOME_LABEL[input.outcome];
 
     return this.prisma.client.$transaction(async (tx) => {
       await tx.debtNote.create({
         data: {
           accountId,
           debtId,
-          // Izoh bo'sh bo'lsa ham tarixda natija matni qoladi.
-          text: input.text?.length ? input.text : OUTCOME_LABEL[input.outcome],
+          text: noteText,
           nextContactAt: input.nextContactAt ?? null,
           outcome: input.outcome,
           authorId: userId,
@@ -492,6 +501,26 @@ export class DebtService {
         },
       });
 
+      // «TO'LADI» (2026-07-12 talab): qarz BUTUNLAY «to'liq to'langan»
+      // hisobiga o'tadi — ro'yxatdan chiqadi, keyingi sana o'chadi.
+      // Eslatma: bu deriveStatus invariantining YAGONA qo'lda istisnosi —
+      // operator suhbatda to'liq to'lovni tasdiqladi (masalan kassadan
+      // tashqarida to'langan). paidMinor tegilmaydi; keyin rasmiy to'lov
+      // kiritilsa recalc o'z holicha ishlayveradi.
+      if (input.outcome === 'paid_full') {
+        return tx.debt.update({
+          where: { id: debtId },
+          data: {
+            lastCallAt: new Date(),
+            lastCallOutcome: 'paid_full',
+            status: 'paid',
+            closedAt: new Date(),
+            nextContactAt: null,
+            callRemindedAt: null,
+          },
+        });
+      }
+
       return tx.debt.update({
         where: { id: debtId },
         data: {
@@ -499,7 +528,11 @@ export class DebtService {
           lastCallOutcome: input.outcome,
           // Yopilgan qarzga keyingi sana qo'yilmaydi (§3.6 intizomi).
           ...(input.nextContactAt && debt.status !== 'paid'
-            ? { nextContactAt: input.nextContactAt }
+            ? {
+                nextContactAt: input.nextContactAt,
+                // Yangi muddat — eslatma-cron shu muddat uchun qaytadan ishlasin.
+                callRemindedAt: null,
+              }
             : {}),
         },
       });

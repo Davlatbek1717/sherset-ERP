@@ -15,6 +15,9 @@ export const NotificationKind = z.enum([
   'restock_assigned',
   // Sherset custom — a sold order's picking task was assigned to an omborchi.
   'picking_assigned',
+  // Sherset custom (qarz undirish) — qo'ng'iroq vaqti kelgan qarzdorlar
+  // eslatmasi; bell'da «/debts/calls» ga yo'naltiradi.
+  'debt_call_due',
   'system',
 ]);
 export type NotificationKindValue = z.infer<typeof NotificationKind>;

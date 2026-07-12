@@ -6274,7 +6274,9 @@
       "outcome_callback": "🔁 Qayta qo'ng'iroq",
       "export_pdf": "PDF yuklab olish",
       "export_pdf_selected": "PDF: belgilanganlar",
-      "heading_selected": "Belgilanganlar"
+      "heading_selected": "Belgilanganlar",
+      "call_amount_label": "Qancha to'ladi? (so'm)",
+      "call_paid_full_hint": "Diqqat: qarz TO'LIQ TO'LANGAN deb yopiladi va qarzdorlar ro'yxatidan chiqadi."
     }
   },
   "print_entity": {

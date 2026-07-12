@@ -14,7 +14,7 @@
  */
 
 import { type CallOutcome, debtApi } from '@/lib/debt-api';
-import { Button, Input, Modal, Textarea } from '@moysklad/ui';
+import { Button, Input, Modal, MoneyInput, Textarea } from '@moysklad/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useState } from 'react';
@@ -47,6 +47,8 @@ export function CallOutcomeModal({
   const [outcome, setOutcome] = useState<CallOutcome | null>(null);
   const [text, setText] = useState('');
   const [nextAt, setNextAt] = useState('');
+  // «Qisman to'ladi» summasi (tiyin) — 2026-07-12 talab.
+  const [amountMinor, setAmountMinor] = useState('0');
   const [error, setError] = useState<string | null>(null);
 
   const save = useMutation({
@@ -55,6 +57,7 @@ export function CallOutcomeModal({
         outcome: outcome as CallOutcome,
         text: text.trim() || undefined,
         nextContactAt: nextAt ? new Date(nextAt).toISOString() : null,
+        amountMinor: outcome === 'paid_partial' && amountMinor !== '0' ? amountMinor : undefined,
       }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['debts'] });
@@ -68,11 +71,19 @@ export function CallOutcomeModal({
     setOutcome(null);
     setText('');
     setNextAt('');
+    setAmountMinor('0');
     setError(null);
   }
 
-  // callback → sana majburiy (TZ intizomi — call-markaz qachonligini bilsin).
-  const valid = outcome !== null && (outcome !== 'callback' || nextAt !== '');
+  // Majburiylik qoidalari (2026-07-12):
+  //   callback     → keyingi sana shart
+  //   paid_partial → SUMMA + keyingi sana shart (qoldiq bor — kuzatuv davom etadi)
+  //   paid_full    → sana kerak emas (qarz butunlay yopiladi)
+  const needsDate = outcome === 'callback' || outcome === 'paid_partial';
+  const valid =
+    outcome !== null &&
+    (!needsDate || nextAt !== '') &&
+    (outcome !== 'paid_partial' || (amountMinor !== '' && amountMinor !== '0'));
 
   return (
     <Modal
@@ -127,6 +138,28 @@ export function CallOutcomeModal({
           ))}
         </div>
 
+        {/* «Qisman to'ladi» — SUMMA majburiy (2026-07-12) */}
+        {outcome === 'paid_partial' && (
+          <div>
+            <div className="mb-1 text-[var(--ms-text-muted)] text-xs">
+              {t('call_amount_label')}
+              <span className="ml-1 text-[var(--ms-destructive-500)]">*</span>
+            </div>
+            <MoneyInput
+              valueMinor={amountMinor}
+              onChangeMinor={setAmountMinor}
+              data-test-id="call-amount"
+            />
+          </div>
+        )}
+
+        {/* «To'ladi» — qarz butunlay yopilishi haqida ogohlantirish */}
+        {outcome === 'paid_full' && (
+          <div className="rounded-[var(--ms-radius-default)] bg-[var(--ms-success-50)] px-3 py-2 text-[var(--ms-success-700)] text-xs">
+            {t('call_paid_full_hint')}
+          </div>
+        )}
+
         <Textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
@@ -134,20 +167,21 @@ export function CallOutcomeModal({
           rows={2}
         />
 
-        <div>
-          <div className="mb-1 text-[var(--ms-text-muted)] text-xs">
-            {t('field_next_contact')}
-            {outcome === 'callback' && (
-              <span className="ml-1 text-[var(--ms-destructive-500)]">*</span>
-            )}
+        {/* paid_full'da keyingi sana kerak emas — qarz yopiladi */}
+        {outcome !== 'paid_full' && (
+          <div>
+            <div className="mb-1 text-[var(--ms-text-muted)] text-xs">
+              {t('field_next_contact')}
+              {needsDate && <span className="ml-1 text-[var(--ms-destructive-500)]">*</span>}
+            </div>
+            <Input
+              type="datetime-local"
+              value={nextAt}
+              onChange={(e) => setNextAt(e.target.value)}
+              data-test-id="call-next-at"
+            />
           </div>
-          <Input
-            type="datetime-local"
-            value={nextAt}
-            onChange={(e) => setNextAt(e.target.value)}
-            data-test-id="call-next-at"
-          />
-        </div>
+        )}
 
         {error && <div className="text-[var(--ms-destructive-600)] text-sm">{error}</div>}
       </div>
