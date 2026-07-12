@@ -16,7 +16,7 @@
  */
 
 import { CallOutcomeModal } from '@/components/debts/call-outcome-modal';
-import { DEBT_POLL_MS, type DebtRow, debtApi } from '@/lib/debt-api';
+import { DEBT_POLL_MS, type DebtRow, debtApi, todayAt9InputValue } from '@/lib/debt-api';
 import {
   Badge,
   Button,
@@ -64,7 +64,7 @@ export default function DebtCallsPage() {
   function open(row: DebtRow) {
     setActive(row);
     setText('');
-    setNextAt('');
+    setNextAt(todayAt9InputValue());
     setError(null);
   }
   function close() {

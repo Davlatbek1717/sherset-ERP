@@ -13,7 +13,7 @@
  * shu bitta komponentni ishlatadi (bir xil xulq).
  */
 
-import { type CallOutcome, debtApi } from '@/lib/debt-api';
+import { type CallOutcome, debtApi, todayAt9InputValue } from '@/lib/debt-api';
 import { Button, Input, Modal, MoneyInput, Textarea } from '@moysklad/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
@@ -46,7 +46,7 @@ export function CallOutcomeModal({
 
   const [outcome, setOutcome] = useState<CallOutcome | null>(null);
   const [text, setText] = useState('');
-  const [nextAt, setNextAt] = useState('');
+  const [nextAt, setNextAt] = useState(todayAt9InputValue());
   // «Qisman to'ladi» summasi (tiyin) — 2026-07-12 talab.
   const [amountMinor, setAmountMinor] = useState('0');
   const [error, setError] = useState<string | null>(null);
@@ -70,7 +70,7 @@ export function CallOutcomeModal({
   function reset() {
     setOutcome(null);
     setText('');
-    setNextAt('');
+    setNextAt(todayAt9InputValue());
     setAmountMinor('0');
     setError(null);
   }

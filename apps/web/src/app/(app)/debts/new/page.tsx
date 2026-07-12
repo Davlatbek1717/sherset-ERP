@@ -13,7 +13,7 @@
  */
 
 import { api } from '@/lib/api-client';
-import { debtApi } from '@/lib/debt-api';
+import { debtApi, todayAt9InputValue } from '@/lib/debt-api';
 import {
   Button,
   Combobox,
@@ -43,7 +43,7 @@ export default function NewDebtPage() {
   const [counterpartyId, setCounterpartyId] = useState<string | undefined>();
   const [totalMinor, setTotalMinor] = useState('0');
   const [comment, setComment] = useState('');
-  const [nextContactAt, setNextContactAt] = useState('');
+  const [nextContactAt, setNextContactAt] = useState(todayAt9InputValue());
   const [error, setError] = useState<string | null>(null);
 
   // Kontragent tanlagichi ikki rejimda ishlaydi:

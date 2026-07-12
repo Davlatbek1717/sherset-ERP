@@ -27,7 +27,9 @@ import {
   type DebtPaymentRow,
   debtApi,
   fileToBase64,
+  nowInputValue,
   screenshotUrl,
+  todayAt9InputValue,
 } from '@/lib/debt-api';
 import {
   Badge,
@@ -92,7 +94,7 @@ export default function DebtProfilePage() {
 
   // ── 1) Izoh / qo'ng'iroq (§3.4) ───────────────────────────────────────────
   const [noteText, setNoteText] = useState('');
-  const [noteNext, setNoteNext] = useState('');
+  const [noteNext, setNoteNext] = useState(todayAt9InputValue());
   // «Qo'ng'iroq qilindi» natija modali (2026-07-12).
   const [callOpen, setCallOpen] = useState(false);
   const [noteErr, setNoteErr] = useState<string | null>(null);
@@ -105,7 +107,7 @@ export default function DebtProfilePage() {
       }),
     onSuccess: () => {
       setNoteText('');
-      setNoteNext('');
+      setNoteNext(todayAt9InputValue());
       setNoteErr(null);
       invalidate();
     },
@@ -116,7 +118,7 @@ export default function DebtProfilePage() {
   const [cashMinor, setCashMinor] = useState('0');
   const [cashMethod, setCashMethod] = useState<'cash' | 'terminal'>('cash');
   const [cashComment, setCashComment] = useState('');
-  const [cashNext, setCashNext] = useState('');
+  const [cashNext, setCashNext] = useState(nowInputValue());
   const [cashErr, setCashErr] = useState<string | null>(null);
 
   const addCash = useMutation({
@@ -130,7 +132,7 @@ export default function DebtProfilePage() {
     onSuccess: () => {
       setCashMinor('0');
       setCashComment('');
-      setCashNext('');
+      setCashNext(nowInputValue());
       setCashErr(null);
       invalidate();
     },

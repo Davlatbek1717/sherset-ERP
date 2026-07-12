@@ -292,6 +292,26 @@ export async function fetchAllPayments(
   return out;
 }
 
+/**
+ * datetime-local input uchun HOZIRGI mahalliy vaqt ('YYYY-MM-DDTHH:mm').
+ * To'lov formalari defaulti (2026-07-12: «to'lovda ayni vaqt tursin»).
+ */
+export function nowInputValue(): string {
+  const d = new Date();
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+  return d.toISOString().slice(0, 16);
+}
+
+/**
+ * BUGUNGI sana + 09:00 — «keyingi qo'ng'iroq» maydonlari defaulti
+ * (2026-07-12: «sana ayni vaqtniki, vaqti default 9:00»).
+ */
+export function todayAt9InputValue(): string {
+  const d = new Date();
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+  return `${d.toISOString().slice(0, 10)}T09:00`;
+}
+
 /** Faylni base64 data-URI'ga o'giradi (§3.7 screenshot yuklash). */
 export function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
