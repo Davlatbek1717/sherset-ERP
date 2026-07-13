@@ -21,6 +21,7 @@
  */
 
 import { CallOutcomeModal } from '@/components/debts/call-outcome-modal';
+import { useBackspaceBack } from '@/hooks/use-keyboard-nav';
 import {
   DEBT_POLL_MS,
   type DebtNoteRow,
@@ -81,6 +82,8 @@ function Section({
 
 export default function DebtProfilePage() {
   const t = useTranslations('pages.debts');
+  // Backspace → orqaga («Ro'yxatga qaytish» bosmasdan; matn maydonlarida ishlamaydi).
+  useBackspaceBack();
   const { id } = useParams<{ id: string }>();
   const qc = useQueryClient();
 

@@ -35,6 +35,10 @@ export interface DataTableProps<T> {
   rows: T[];
   keyField: keyof T;
   onRowClick?: (row: T) => void;
+  /** Sichqoncha qator ustiga kelganda (hover + Enter navigatsiyasi uchun). */
+  onRowMouseEnter?: (row: T) => void;
+  /** Sichqoncha qatordan chiqqanda. */
+  onRowMouseLeave?: () => void;
   rowTestId?: (row: T) => string | undefined;
   /**
    * moysklad parity: per-row actions rendered in the trailing cell (under the
@@ -140,6 +144,8 @@ export function DataTable<T extends object>({
   rows,
   keyField,
   onRowClick,
+  onRowMouseEnter,
+  onRowMouseLeave,
   rowTestId,
   rowActions,
   rowClassName,
@@ -508,6 +514,8 @@ export function DataTable<T extends object>({
                     data-test-id={rowTestId?.(row)}
                     data-selected={isSelected || undefined}
                     onClick={onRowClick ? () => onRowClick(row) : undefined}
+                    onMouseEnter={onRowMouseEnter ? () => onRowMouseEnter(row) : undefined}
+                    onMouseLeave={onRowMouseLeave}
                     className={cn(
                       'group border-[var(--ms-border-default)] border-t',
                       'transition-colors duration-[var(--ms-duration-fast)]',

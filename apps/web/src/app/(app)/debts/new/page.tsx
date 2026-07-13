@@ -12,6 +12,7 @@
  * va qarz belgilangan sanada «Bugungi qo'ng'iroqlar» ro'yxatiga chiqadi.
  */
 
+import { useBackspaceBack } from '@/hooks/use-keyboard-nav';
 import { api } from '@/lib/api-client';
 import { debtApi, todayAt9InputValue } from '@/lib/debt-api';
 import {
@@ -38,6 +39,8 @@ interface CounterpartyLite {
 
 export default function NewDebtPage() {
   const t = useTranslations('pages.debts');
+  // Backspace → orqaga («Ro'yxatga qaytish» bosmasdan; matn maydonlarida ishlamaydi).
+  useBackspaceBack();
   const router = useRouter();
 
   const [counterpartyId, setCounterpartyId] = useState<string | undefined>();

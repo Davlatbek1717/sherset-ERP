@@ -13,6 +13,7 @@
  */
 
 import { CallOutcomeModal } from '@/components/debts/call-outcome-modal';
+import { useEnterOnHover } from '@/hooks/use-keyboard-nav';
 import { api } from '@/lib/api-client';
 import {
   type CallOutcome,
@@ -39,7 +40,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 
 const SCOPES: DebtScope[] = ['active', 'today', 'overdue', 'called', 'all'];
 
@@ -81,6 +82,9 @@ export default function DebtsPage() {
   // limit/offset bilan sahifalaydi, «1-100 / 591» ko'rsatkichi bilan.
   const [page, setPage] = useState(1);
   const offset = (page - 1) * PAGE_SIZE;
+  // 2026-07-13: sichqoncha qator ustida turganda ENTER → mijoz sahifasi.
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  useEnterOnHover(useCallback(() => (hoveredId ? `/debts/${hoveredId}` : null), [hoveredId]));
 
   // «Elektriklar» guruhi id'si nom bo'yicha topiladi — guruh hali yaratilmagan
   // akkauntlarda tablar shunchaki ko'rinmaydi (graceful degradation).
@@ -503,6 +507,8 @@ export default function DebtsPage() {
         keyField="id"
         loading={list.isLoading}
         onRowClick={(r) => router.push(`/debts/${r.id}`)}
+        onRowMouseEnter={(r) => setHoveredId(r.id)}
+        onRowMouseLeave={() => setHoveredId(null)}
         rowTestId={(r) => `debt-row-${r.id}`}
         empty={<EmptyState title={t('empty')} />}
       />

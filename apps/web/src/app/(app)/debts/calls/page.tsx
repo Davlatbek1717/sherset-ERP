@@ -16,6 +16,7 @@
  */
 
 import { CallOutcomeModal } from '@/components/debts/call-outcome-modal';
+import { useBackspaceBack } from '@/hooks/use-keyboard-nav';
 import { DEBT_POLL_MS, type DebtRow, debtApi, todayAt9InputValue } from '@/lib/debt-api';
 import {
   Badge,
@@ -35,6 +36,8 @@ import { useState } from 'react';
 
 export default function DebtCallsPage() {
   const t = useTranslations('pages.debts');
+  // Backspace → orqaga («Ro'yxatga qaytish» bosmasdan; matn maydonlarida ishlamaydi).
+  useBackspaceBack();
   const qc = useQueryClient();
 
   const [active, setActive] = useState<DebtRow | null>(null);

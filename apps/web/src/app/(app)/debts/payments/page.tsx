@@ -12,6 +12,7 @@
  * turadi — bir qarashda kim uzil-kesil qutulgani ko'rinadi.
  */
 
+import { useBackspaceBack } from '@/hooks/use-keyboard-nav';
 import {
   DEBT_POLL_MS,
   type DebtPaymentFeedRow,
@@ -41,6 +42,8 @@ const METHODS: Array<DebtPaymentMethod | ''> = ['', 'cash', 'terminal', 'card_sc
 
 export default function DebtPaymentsFeedPage() {
   const t = useTranslations('pages.debts');
+  // Backspace → orqaga («Ro'yxatga qaytish» bosmasdan; matn maydonlarida ishlamaydi).
+  useBackspaceBack();
 
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');

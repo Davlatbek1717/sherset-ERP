@@ -12,6 +12,7 @@
  * lastCallOutcome — natija, lastNote — oxirgi izoh matni).
  */
 
+import { useBackspaceBack } from '@/hooks/use-keyboard-nav';
 import {
   type CallOutcome,
   DEBT_POLL_MS,
@@ -48,6 +49,8 @@ function todayDate(): string {
 
 export default function DebtCalledPage() {
   const t = useTranslations('pages.debts');
+  // Backspace → orqaga («Ro'yxatga qaytish» bosmasdan; matn maydonlarida ishlamaydi).
+  useBackspaceBack();
 
   const [date, setDate] = useState(todayDate());
   const [outcome, setOutcome] = useState<CallOutcome | ''>('');

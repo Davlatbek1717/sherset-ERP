@@ -15,6 +15,7 @@
  * Ruxsat: `debtreport.view` — kassirga BERILMAGAN (server 403 qaytaradi).
  */
 
+import { useBackspaceBack } from '@/hooks/use-keyboard-nav';
 import {
   type CashierReportRow,
   type DebtPaymentFeedRow,
@@ -49,6 +50,8 @@ function todayTashkent(): string {
 
 export default function DebtReportsPage() {
   const t = useTranslations('pages.debts');
+  // Backspace → orqaga («Ro'yxatga qaytish» bosmasdan; matn maydonlarida ishlamaydi).
+  useBackspaceBack();
   const [date, setDate] = useState(todayTashkent());
 
   const cashiers = useQuery({

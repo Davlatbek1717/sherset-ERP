@@ -11,6 +11,7 @@ import { FilterToggleButton } from '@/components/filters/filter-toggle-button';
 import { useBulkDocumentActions } from '@/hooks/use-bulk-actions';
 import { useColumnVisibility } from '@/hooks/use-column-visibility';
 import { useColumnWidths } from '@/hooks/use-column-widths';
+import { useEnterOnHover } from '@/hooks/use-keyboard-nav';
 import { api } from '@/lib/api-client';
 import { attrReferenceEndpoint } from '@/lib/custom-attr';
 import {
@@ -36,7 +37,7 @@ import {
 } from '@moysklad/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 interface Counterparty {
   id: string;
@@ -315,6 +316,11 @@ export default function CounterpartiesPage() {
   // «Группы» self-service manager — create / rename / delete counterparty groups
   // (Ta'minotchilar, Mijozlar, …). The backend CRUD always existed; this exposes it.
   const [groupMgrOpen, setGroupMgrOpen] = useState(false);
+  // 2026-07-13: sichqoncha qator ustida turganda ENTER → mijoz sahifasi.
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  useEnterOnHover(
+    useCallback(() => (hoveredId ? `/counterparties/${hoveredId}` : null), [hoveredId]),
+  );
 
   // Kontragent tablari. Mijozlar/Ta'minotchilar AUTO-detected by usage (backend
   // role filter): customer = has a sale, supplier = has a supply. «transactions»
@@ -1034,6 +1040,8 @@ export default function CounterpartiesPage() {
           onRowClick={(cp) => {
             window.location.href = `/counterparties/${cp.id}`;
           }}
+          onRowMouseEnter={(cp) => setHoveredId(cp.id)}
+          onRowMouseLeave={() => setHoveredId(null)}
           search={searchInput}
           onSearchChange={(v) => {
             setSearchInput(v);

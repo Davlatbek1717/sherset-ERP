@@ -95,6 +95,9 @@ export interface ListViewProps<T> {
   rows: T[];
   keyField: keyof T;
   onRowClick?: (row: T) => void;
+  /** Sichqoncha qator ustiga kelganda (hover + Enter navigatsiyasi). */
+  onRowMouseEnter?: (row: T) => void;
+  onRowMouseLeave?: () => void;
   rowTestId?: (row: T) => string | undefined;
   /** Per-row hover actions (⋮ menu) rendered in the trailing cell. Forwarded to DataTable. */
   rowActions?: (row: T) => React.ReactNode;
@@ -310,6 +313,8 @@ export function ListView<T extends object>({
   rows,
   keyField,
   onRowClick,
+  onRowMouseEnter,
+  onRowMouseLeave,
   rowTestId,
   rowActions,
   rowClassName,
@@ -730,6 +735,8 @@ export function ListView<T extends object>({
               rows={rows}
               keyField={keyField}
               onRowClick={onRowClick}
+              onRowMouseEnter={onRowMouseEnter}
+              onRowMouseLeave={onRowMouseLeave}
               rowTestId={rowTestId}
               rowActions={rowActions}
               rowClassName={rowClassName}
