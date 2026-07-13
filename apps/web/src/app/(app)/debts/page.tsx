@@ -14,6 +14,7 @@
 
 import { CallOutcomeModal } from '@/components/debts/call-outcome-modal';
 import { useEnterOnHover } from '@/hooks/use-keyboard-nav';
+import { useListState, useReturnToRow } from '@/hooks/use-list-memory';
 import { api } from '@/lib/api-client';
 import {
   type CallOutcome,
@@ -40,7 +41,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 
 const SCOPES: DebtScope[] = ['active', 'today', 'overdue', 'called', 'all'];
 
@@ -62,15 +63,29 @@ export default function DebtsPage() {
   const t = useTranslations('pages.debts');
   const router = useRouter();
 
-  const [scope, setScope] = useState<DebtScope>('active');
-  const [segment, setSegment] = useState<Segment>('all');
-  const [search, setSearch] = useState('');
-  // 2026-07-13 talab: qarzdorlar EG KATTA qoldiqdan boshlab tursin — yangi
-  // qarz o'z summasiga qarab avtomatik joyiga tushadi (server remainingMinor
-  // desc saralaydi).
-  const [sortBy, setSortBy] = useState<'nextContactAt' | 'remainingMinor' | 'totalMinor'>(
-    'remainingMinor',
-  );
+  // 2026-07-13: ro'yxat holati (tab/filtr/saralash/sahifa) sessionStorage'da —
+  // kartochkadan orqaga qaytganda AYNAN o'sha ko'rinish tiklanadi, ro'yxat
+  // boshiga tashlanmaydi («kimga telefon qilayotgandim?» muammosi).
+  // sortBy default = remainingMinor (eng katta qoldiq tepada).
+  const [ls, setLs] = useListState<{
+    scope: DebtScope;
+    segment: Segment;
+    search: string;
+    sortBy: 'nextContactAt' | 'remainingMinor' | 'totalMinor';
+    page: number;
+  }>('debts:list', {
+    scope: 'active',
+    segment: 'all',
+    search: '',
+    sortBy: 'remainingMinor',
+    page: 1,
+  });
+  const { scope, segment, search, sortBy } = ls;
+  const setScope = (v: DebtScope) => setLs({ scope: v, page: 1 });
+  const setSegment = (v: Segment) => setLs({ segment: v, page: 1 });
+  const setSearch = (v: string) => setLs({ search: v, page: 1 });
+  const setSortBy = (v: 'nextContactAt' | 'remainingMinor' | 'totalMinor') =>
+    setLs({ sortBy: v, page: 1 });
   // «Qo'ng'iroq qilinganlar» ko'rinishi filtrlari (2026-07-12).
   const [calledDate, setCalledDate] = useState('');
   const [callOutcome, setCallOutcome] = useState<CallOutcome | ''>('');
@@ -80,11 +95,21 @@ export default function DebtsPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   // SAHIFALASH (2026-07-13): 591 qarzdor bir sahifaga sig'maydi — server
   // limit/offset bilan sahifalaydi, «1-100 / 591» ko'rsatkichi bilan.
-  const [page, setPage] = useState(1);
+  const page = ls.page;
+  const setPage = (updater: number | ((p: number) => number)) =>
+    setLs({ page: typeof updater === 'function' ? updater(ls.page) : updater });
   const offset = (page - 1) * PAGE_SIZE;
   // 2026-07-13: sichqoncha qator ustida turganda ENTER → mijoz sahifasi.
   const [hoveredId, setHoveredId] = useState<string | null>(null);
-  useEnterOnHover(useCallback(() => (hoveredId ? `/debts/${hoveredId}` : null), [hoveredId]));
+  useEnterOnHover(
+    useCallback(() => {
+      if (!hoveredId) return null;
+      rememberRef.current?.(hoveredId);
+      return `/debts/${hoveredId}`;
+    }, [hoveredId]),
+  );
+  // remember() list'dan keyin e'lon qilinadi — ref orqali oldindan bog'laymiz.
+  const rememberRef = useRef<((id: string) => void) | null>(null);
 
   // «Elektriklar» guruhi id'si nom bo'yicha topiladi — guruh hali yaratilmagan
   // akkauntlarda tablar shunchaki ko'rinmaydi (graceful degradation).
@@ -136,6 +161,14 @@ export default function DebtsPage() {
     // Sahifa almashganda eski qatorlar turib tursin (miltillamasin).
     placeholderData: (prev) => prev,
   });
+
+  // Kartochkadan qaytganda — oxirgi ochilgan qatorga surish + qisqa yoritish.
+  const { remember, highlightId } = useReturnToRow(
+    'debts',
+    Boolean(list.data),
+    useCallback((id: string) => `[data-test-id="debt-row-${id}"]`, []),
+  );
+  rememberRef.current = remember;
 
   /**
    * PDF eksport (2026-07-12) — EKRANDAGI holatni aynan chiqaradi:
@@ -410,10 +443,7 @@ export default function DebtsPage() {
             <button
               key={s}
               type="button"
-              onClick={() => {
-                setSegment(s);
-                setPage(1);
-              }}
+              onClick={() => setSegment(s)}
               className={[
                 'rounded-[var(--ms-radius-default)] px-3 py-1.5 font-medium text-sm transition-colors',
                 segment === s
@@ -436,10 +466,7 @@ export default function DebtsPage() {
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <NativeSelect
           value={scope}
-          onChange={(e) => {
-            setScope(e.target.value as DebtScope);
-            setPage(1);
-          }}
+          onChange={(e) => setScope(e.target.value as DebtScope)}
           className="w-[220px]"
           data-test-id="debt-scope"
         >
@@ -452,10 +479,7 @@ export default function DebtsPage() {
 
         <Input
           value={search}
-          onChange={(e) => {
-            setSearch(e.target.value);
-            setPage(1);
-          }}
+          onChange={(e) => setSearch(e.target.value)}
           placeholder={t('filter_search')}
           className="w-[240px]"
           data-test-id="debt-search"
@@ -463,10 +487,9 @@ export default function DebtsPage() {
 
         <NativeSelect
           value={sortBy}
-          onChange={(e) => {
-            setSortBy(e.target.value as 'nextContactAt' | 'remainingMinor' | 'totalMinor');
-            setPage(1);
-          }}
+          onChange={(e) =>
+            setSortBy(e.target.value as 'nextContactAt' | 'remainingMinor' | 'totalMinor')
+          }
           className="w-[200px]"
           data-test-id="debt-sort"
         >
@@ -506,7 +529,15 @@ export default function DebtsPage() {
         rows={list.data?.rows ?? []}
         keyField="id"
         loading={list.isLoading}
-        onRowClick={(r) => router.push(`/debts/${r.id}`)}
+        onRowClick={(r) => {
+          remember(r.id);
+          router.push(`/debts/${r.id}`);
+        }}
+        rowClassName={(r) =>
+          r.id === highlightId
+            ? 'bg-[var(--ms-warning-100)] transition-colors duration-500'
+            : undefined
+        }
         onRowMouseEnter={(r) => setHoveredId(r.id)}
         onRowMouseLeave={() => setHoveredId(null)}
         rowTestId={(r) => `debt-row-${r.id}`}

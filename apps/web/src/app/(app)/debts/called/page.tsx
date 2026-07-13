@@ -13,6 +13,7 @@
  */
 
 import { useBackspaceBack } from '@/hooks/use-keyboard-nav';
+import { useReturnToRow } from '@/hooks/use-list-memory';
 import {
   type CallOutcome,
   DEBT_POLL_MS,
@@ -33,7 +34,7 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 
 const OUTCOME_TONE: Record<CallOutcome, 'success' | 'warning' | 'destructive' | 'neutral'> = {
   paid_full: 'success',
@@ -71,6 +72,12 @@ export default function DebtCalledPage() {
   });
 
   const rows = list.data?.rows ?? [];
+
+  const { remember, highlightId } = useReturnToRow(
+    'debts-called',
+    Boolean(list.data),
+    useCallback((id: string) => `[data-test-id="called-row-${id}"]`, []),
+  );
   const outcomeLabel = (o: CallOutcome): string =>
     o === 'paid_full'
       ? t('outcome_paid_full')
@@ -146,7 +153,10 @@ export default function DebtCalledPage() {
                 <tr
                   key={r.id}
                   data-test-id={`called-row-${r.id}`}
-                  className="border-[var(--ms-border-default)] border-b"
+                  className={[
+                    'border-[var(--ms-border-default)] border-b',
+                    r.id === highlightId ? 'bg-[var(--ms-warning-100)]' : '',
+                  ].join(' ')}
                 >
                   <td className="px-2 py-2 text-right text-[var(--ms-text-muted)] tabular-nums">
                     {i + 1}
@@ -162,6 +172,7 @@ export default function DebtCalledPage() {
                   <td className="px-2 py-2">
                     <Link
                       href={`/debts/${r.id}`}
+                      onClick={() => remember(r.id)}
                       className="font-medium text-[var(--ms-primary-600)] hover:underline"
                     >
                       {r.counterpartyName}

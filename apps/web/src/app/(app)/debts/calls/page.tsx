@@ -17,6 +17,7 @@
 
 import { CallOutcomeModal } from '@/components/debts/call-outcome-modal';
 import { useBackspaceBack } from '@/hooks/use-keyboard-nav';
+import { useReturnToRow } from '@/hooks/use-list-memory';
 import { DEBT_POLL_MS, type DebtRow, debtApi, todayAt9InputValue } from '@/lib/debt-api';
 import {
   Badge,
@@ -32,7 +33,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 
 export default function DebtCallsPage() {
   const t = useTranslations('pages.debts');
@@ -77,6 +78,14 @@ export default function DebtCallsPage() {
 
   const rows = calls.data?.rows ?? [];
 
+  // Kartochkadan qaytganda — oxirgi ochilgan qatorga surish + yoritish
+  // (2026-07-13: navbat yo'qolmasin, «kimga telefon qilayotgandim?»).
+  const { remember, highlightId } = useReturnToRow(
+    'debts-calls',
+    Boolean(calls.data),
+    useCallback((id: string) => `[data-test-id="call-row-${id}"]`, []),
+  );
+
   return (
     <Container>
       <PageHeader
@@ -103,6 +112,10 @@ export default function DebtCallsPage() {
                 r.overdue
                   ? 'border-[var(--ms-destructive-200)] bg-[var(--ms-destructive-50)]'
                   : 'border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)]',
+                // Orqaga qaytilgan qator — qisqa vaqt sariq bilan yoritiladi.
+                r.id === highlightId
+                  ? 'ring-2 ring-[var(--ms-warning-400)] transition-shadow duration-500'
+                  : '',
               ].join(' ')}
             >
               {/* Qo'ng'iroq vaqti */}
@@ -124,6 +137,7 @@ export default function DebtCallsPage() {
               <div className="min-w-[180px] flex-1">
                 <Link
                   href={`/debts/${r.id}`}
+                  onClick={() => remember(r.id)}
                   className="font-medium text-[var(--ms-text-brand)] hover:underline"
                 >
                   {r.counterpartyName ?? '—'}
