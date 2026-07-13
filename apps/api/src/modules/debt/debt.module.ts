@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { AttachmentModule } from '../attachment/attachment.module.js';
 import { AuthModule } from '../auth/auth.module.js';
+import { CounterpartyBalanceModule } from '../counterparty-balance/counterparty-balance.module.js';
 import { NotificationModule } from '../notification/notification.module.js';
 import { PermissionsModule } from '../permissions/permissions.module.js';
 import { PrintTemplateModule } from '../print-template/print-template.module.js';
@@ -23,6 +24,8 @@ import { DebtService } from './debt.service.js';
     PrintTemplateModule,
     // Qo'ng'iroq-eslatma cron'i bildirishnoma yuboradi (2026-07-12).
     NotificationModule,
+    // Qarz to'lovi kontragent balansini ham kamaytiradi (2026-07-13).
+    CounterpartyBalanceModule,
   ],
   controllers: [DebtController],
   providers: [DebtService, DebtReminderService],

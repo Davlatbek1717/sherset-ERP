@@ -9,6 +9,7 @@ import {
 import { allocateDocumentNumber } from '../../prisma/document-number.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { AttachmentService } from '../attachment/attachment.service.js';
+import { CounterpartyBalanceService } from '../counterparty-balance/counterparty-balance.service.js';
 import { HtmlPdfService } from '../print-template/html-pdf.service.js';
 import { TASHKENT_OFFSET_MS, tashkentRangeBounds } from '../report/report-date-bounds.util.js';
 import {
@@ -63,6 +64,8 @@ export class DebtService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(AttachmentService) private readonly attachments: AttachmentService,
     @Inject(HtmlPdfService) private readonly htmlPdf: HtmlPdfService,
+    @Inject(CounterpartyBalanceService)
+    private readonly balances: CounterpartyBalanceService,
   ) {}
 
   // ────────────────────────────────────────────────────────────── helpers ──
@@ -156,8 +159,18 @@ export class DebtService {
 
     const debt = await tx.debt.findFirstOrThrow({
       where: { id: debtId, accountId },
-      select: { totalMinor: true },
+      select: { totalMinor: true, paidMinor: true, currency: true, counterpartyId: true },
     });
+
+    // 2026-07-13: qarz to'lovi KONTRAGENT BALANSINI ham kamaytiradi — mijoz
+    // kartochkasidagi «Balans (bizga qarz)» qarz yopilganda 0 ga tushsin.
+    // Delta = YANGI to'langan − ESKI to'langan (idempotent: recalc qayta
+    // chaqirilsa qo'sha ketmaydi). Balans musbat = mijoz bizga qarzdor,
+    // shuning uchun to'lov MANFIY delta.
+    const paidDelta = paid - debt.paidMinor;
+    if (paidDelta !== 0n) {
+      await this.balances.applyDelta(tx, accountId, debt.counterpartyId, debt.currency, -paidDelta);
+    }
 
     const status = this.deriveStatus(debt.totalMinor, paid);
     const closed = status === 'paid';
