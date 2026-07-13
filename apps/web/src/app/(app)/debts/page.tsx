@@ -31,6 +31,7 @@ import {
   Input,
   NativeSelect,
   PageHeader,
+  Pagination,
   StatCard,
   formatMoney,
 } from '@moysklad/ui';
@@ -41,6 +42,9 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
 const SCOPES: DebtScope[] = ['active', 'today', 'overdue', 'called', 'all'];
+
+/** Bir sahifadagi qarzdorlar soni (server max 500). */
+const PAGE_SIZE = 100;
 
 /** Qo'ng'iroq natijasi → badge rangi (2026-07-12). */
 const OUTCOME_TONE: Record<CallOutcome, 'success' | 'warning' | 'destructive' | 'neutral'> = {
@@ -73,6 +77,10 @@ export default function DebtsPage() {
   const [callTarget, setCallTarget] = useState<DebtRow | null>(null);
   // CHECKBOX bilan belgilangan qarzlar (2026-07-12) — «aynan shularni PDF qil».
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  // SAHIFALASH (2026-07-13): 591 qarzdor bir sahifaga sig'maydi — server
+  // limit/offset bilan sahifalaydi, «1-100 / 591» ko'rsatkichi bilan.
+  const [page, setPage] = useState(1);
+  const offset = (page - 1) * PAGE_SIZE;
 
   // «Elektriklar» guruhi id'si nom bo'yicha topiladi — guruh hali yaratilmagan
   // akkauntlarda tablar shunchaki ko'rinmaydi (graceful degradation).
@@ -100,6 +108,7 @@ export default function DebtsPage() {
       sortBy,
       calledDate,
       callOutcome,
+      page,
     ],
     queryFn: () =>
       debtApi.list({
@@ -116,9 +125,12 @@ export default function DebtsPage() {
         sortBy,
         // Qo'ng'iroq sanasi — eng erta yuqorida; pul — eng katta yuqorida.
         sortDir: sortBy === 'nextContactAt' ? 'asc' : 'desc',
-        limit: 200,
+        limit: PAGE_SIZE,
+        offset,
       }),
     refetchInterval: DEBT_POLL_MS,
+    // Sahifa almashganda eski qatorlar turib tursin (miltillamasin).
+    placeholderData: (prev) => prev,
   });
 
   /**
@@ -171,7 +183,7 @@ export default function DebtsPage() {
   // 2026-07-13: «№» ustuni — ro'yxatdagi tartib raqami (1..N). DataTable cell'ga
   // index uzatmaydi, shuning uchun id→raqam xaritasi. Saralash o'zgarsa raqamlar
   // ham qayta joylashadi (ro'yxat tartibiga aynan mos).
-  const rowNumber = new Map(visibleRows.map((r, i) => [r.id, i + 1]));
+  const rowNumber = new Map(visibleRows.map((r, i) => [r.id, offset + i + 1]));
   const allVisibleSelected = visibleRows.length > 0 && visibleRows.every((r) => selected.has(r.id));
   function toggleOne(id: string) {
     setSelected((prev) => {
@@ -404,7 +416,10 @@ export default function DebtsPage() {
             <button
               key={s}
               type="button"
-              onClick={() => setSegment(s)}
+              onClick={() => {
+                setSegment(s);
+                setPage(1);
+              }}
               className={[
                 'rounded-[var(--ms-radius-default)] px-3 py-1.5 font-medium text-sm transition-colors',
                 segment === s
@@ -427,7 +442,10 @@ export default function DebtsPage() {
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <NativeSelect
           value={scope}
-          onChange={(e) => setScope(e.target.value as DebtScope)}
+          onChange={(e) => {
+            setScope(e.target.value as DebtScope);
+            setPage(1);
+          }}
           className="w-[220px]"
           data-test-id="debt-scope"
         >
@@ -440,7 +458,10 @@ export default function DebtsPage() {
 
         <Input
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            setPage(1);
+          }}
           placeholder={t('filter_search')}
           className="w-[240px]"
           data-test-id="debt-search"
@@ -448,9 +469,10 @@ export default function DebtsPage() {
 
         <NativeSelect
           value={sortBy}
-          onChange={(e) =>
-            setSortBy(e.target.value as 'nextContactAt' | 'remainingMinor' | 'totalMinor')
-          }
+          onChange={(e) => {
+            setSortBy(e.target.value as 'nextContactAt' | 'remainingMinor' | 'totalMinor');
+            setPage(1);
+          }}
           className="w-[200px]"
           data-test-id="debt-sort"
         >
@@ -494,6 +516,25 @@ export default function DebtsPage() {
         rowTestId={(r) => `debt-row-${r.id}`}
         empty={<EmptyState title={t('empty')} />}
       />
+
+      {/* Sahifalash — «1-100 / 591» (2026-07-13) */}
+      {(list.data?.total ?? 0) > PAGE_SIZE && (
+        <div className="mt-3">
+          <Pagination
+            total={list.data?.total ?? 0}
+            limit={PAGE_SIZE}
+            offset={offset}
+            visibleCount={visibleRows.length}
+            hasPrevious={page > 1}
+            hasNext={offset + visibleRows.length < (list.data?.total ?? 0)}
+            onFirst={() => setPage(1)}
+            onPrevious={() => setPage((p) => Math.max(1, p - 1))}
+            onNext={() => setPage((p) => p + 1)}
+            onLast={() => setPage(Math.ceil((list.data?.total ?? 1) / PAGE_SIZE))}
+            data-test-id="debt-pagination"
+          />
+        </div>
+      )}
 
       {/* «Qo'ng'iroq qilindi» — natija modali (umumiy komponent) */}
       {callTarget && (
