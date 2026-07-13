@@ -260,16 +260,6 @@ export default function DebtsPage() {
       cellText: (r) => r.totalMinor,
     },
     {
-      key: 'paid',
-      header: t('col_paid'),
-      cell: (r) => (
-        <span className="text-[var(--ms-text-success)] tabular-nums">
-          {formatMoney(r.paidMinor, r.currency)}
-        </span>
-      ),
-      cellText: (r) => r.paidMinor,
-    },
-    {
       key: 'remaining',
       header: t('col_remaining'),
       cell: (r) => (
