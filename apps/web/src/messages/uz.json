@@ -6287,7 +6287,8 @@
       "called_col_answer": "Javobi",
       "method_manual_close": "To'liq to'landi (qo'ng'iroqda)",
       "call_paid_full_confirm": "Qarz butunlay to'landimi?",
-      "call_paid_full_amount": "To'lovlarga yoziladigan summa"
+      "call_paid_full_amount": "To'lovlarga yoziladigan summa",
+      "col_num": "№"
     }
   },
   "print_entity": {

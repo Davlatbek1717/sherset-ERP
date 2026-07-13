@@ -130,6 +130,7 @@ export default function DebtCalledPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-[var(--ms-border-default)] border-b text-left text-[var(--ms-text-muted)]">
+                <th className="px-2 py-2 text-right">{t('col_num')}</th>
                 <th className="px-2 py-2">{t('col_time')}</th>
                 <th className="px-2 py-2">{t('col_counterparty')}</th>
                 <th className="px-2 py-2">{t('called_col_outcome')}</th>
@@ -138,12 +139,15 @@ export default function DebtCalledPage() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((r: DebtRow) => (
+              {rows.map((r: DebtRow, i: number) => (
                 <tr
                   key={r.id}
                   data-test-id={`called-row-${r.id}`}
                   className="border-[var(--ms-border-default)] border-b"
                 >
+                  <td className="px-2 py-2 text-right text-[var(--ms-text-muted)] tabular-nums">
+                    {i + 1}
+                  </td>
                   <td className="whitespace-nowrap px-2 py-2 tabular-nums">
                     {r.lastCallAt
                       ? new Date(r.lastCallAt).toLocaleString('ru-RU', {

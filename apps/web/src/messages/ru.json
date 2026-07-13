@@ -6287,7 +6287,8 @@
       "called_col_answer": "Ответ",
       "method_manual_close": "Полностью оплачен (по звонку)",
       "call_paid_full_confirm": "Долг погашен полностью?",
-      "call_paid_full_amount": "Сумма, попадающая в платежи"
+      "call_paid_full_amount": "Сумма, попадающая в платежи",
+      "col_num": "№"
     }
   },
   "print_entity": {

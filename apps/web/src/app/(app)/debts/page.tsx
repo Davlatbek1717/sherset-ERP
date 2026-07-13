@@ -168,6 +168,10 @@ export default function DebtsPage() {
 
   // Checkbox tanlash yordamchilari — ko'rinayotgan qatorlar kesimida.
   const visibleRows = list.data?.rows ?? [];
+  // 2026-07-13: «№» ustuni — ro'yxatdagi tartib raqami (1..N). DataTable cell'ga
+  // index uzatmaydi, shuning uchun id→raqam xaritasi. Saralash o'zgarsa raqamlar
+  // ham qayta joylashadi (ro'yxat tartibiga aynan mos).
+  const rowNumber = new Map(visibleRows.map((r, i) => [r.id, i + 1]));
   const allVisibleSelected = visibleRows.length > 0 && visibleRows.every((r) => selected.has(r.id));
   function toggleOne(id: string) {
     setSelected((prev) => {
@@ -212,6 +216,18 @@ export default function DebtsPage() {
         </span>
       ),
       cellText: () => '',
+    },
+    {
+      key: 'rownum',
+      header: t('col_num'),
+      width: '52px',
+      align: 'right',
+      cell: (r) => (
+        <span className="text-[var(--ms-text-muted)] tabular-nums">
+          {rowNumber.get(r.id) ?? ''}
+        </span>
+      ),
+      cellText: (r) => String(rowNumber.get(r.id) ?? ''),
     },
     {
       key: 'counterparty',
