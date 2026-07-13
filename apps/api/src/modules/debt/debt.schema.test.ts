@@ -135,11 +135,15 @@ describe("MarkCallSchema — «qo'ng'iroq qilindi» natijasi (2026-07-12)", () =
   const NEXT = '2026-07-13T09:00:00Z';
 
   it("to'rt natijani ham qabul qiladi (har biri o'z majburiyligi bilan)", () => {
-    expect(MarkCallSchema.parse({ outcome: 'paid_full' }).outcome).toBe('paid_full');
+    // 2026-07-13: to'lov bo'lgan natijalarda KANAL (naqd/Click) majburiy.
+    expect(MarkCallSchema.parse({ outcome: 'paid_full', paymentKind: 'cash' }).outcome).toBe(
+      'paid_full',
+    );
     expect(MarkCallSchema.parse({ outcome: 'not_paid' }).outcome).toBe('not_paid');
     expect(
       MarkCallSchema.parse({
         outcome: 'paid_partial',
+        paymentKind: 'cash',
         amountMinor: '50000000',
         nextContactAt: NEXT,
       }).outcome,
@@ -155,19 +159,33 @@ describe("MarkCallSchema — «qo'ng'iroq qilindi» natijasi (2026-07-12)", () =
 
   // 2026-07-12 talab: «qisman to'lov qildi deganda qancha summaligini so'rasin».
   it('paid_partial SUMMASIZ rad etiladi', () => {
-    expect(() => MarkCallSchema.parse({ outcome: 'paid_partial', nextContactAt: NEXT })).toThrow();
+    expect(() =>
+      MarkCallSchema.parse({ outcome: 'paid_partial', paymentKind: 'cash', nextContactAt: NEXT }),
+    ).toThrow();
   });
 
   it('paid_partial SANASIZ rad etiladi (qoldiq kuzatuvi davom etadi)', () => {
-    expect(() => MarkCallSchema.parse({ outcome: 'paid_partial', amountMinor: '100' })).toThrow();
+    expect(() =>
+      MarkCallSchema.parse({ outcome: 'paid_partial', paymentKind: 'cash', amountMinor: '100' }),
+    ).toThrow();
   });
 
   it('paid_partial nol/kasr summani rad etadi', () => {
     expect(() =>
-      MarkCallSchema.parse({ outcome: 'paid_partial', amountMinor: '0', nextContactAt: NEXT }),
+      MarkCallSchema.parse({
+        outcome: 'paid_partial',
+        paymentKind: 'cash',
+        amountMinor: '0',
+        nextContactAt: NEXT,
+      }),
     ).toThrow();
     expect(() =>
-      MarkCallSchema.parse({ outcome: 'paid_partial', amountMinor: '10.5', nextContactAt: NEXT }),
+      MarkCallSchema.parse({
+        outcome: 'paid_partial',
+        paymentKind: 'cash',
+        amountMinor: '10.5',
+        nextContactAt: NEXT,
+      }),
     ).toThrow();
   });
 
@@ -176,7 +194,92 @@ describe("MarkCallSchema — «qo'ng'iroq qilindi» natijasi (2026-07-12)", () =
   });
 
   it("paid_full sanasiz o'tadi (qarz yopiladi — sana kerak emas)", () => {
-    expect(MarkCallSchema.parse({ outcome: 'paid_full' }).nextContactAt).toBeUndefined();
+    expect(
+      MarkCallSchema.parse({ outcome: 'paid_full', paymentKind: 'cash' }).nextContactAt,
+    ).toBeUndefined();
+  });
+
+  // ── 2026-07-13: to'lov KANALI, VALYUTA va CHEK RASMI ──────────────────────
+
+  it("to'lov bo'lgan natijada KANAL majburiy (naqd yoki Click)", () => {
+    expect(() => MarkCallSchema.parse({ outcome: 'paid_full' })).toThrow();
+    expect(() =>
+      MarkCallSchema.parse({
+        outcome: 'paid_partial',
+        amountMinor: '100',
+        nextContactAt: NEXT,
+      }),
+    ).toThrow();
+    // To'lovsiz natijalarda kanal SO'RALMAYDI.
+    expect(MarkCallSchema.parse({ outcome: 'not_paid' }).paymentKind).toBeUndefined();
+  });
+
+  it("Click to'lovida CHEK RASMI majburiy", () => {
+    expect(() =>
+      MarkCallSchema.parse({
+        outcome: 'paid_full',
+        paymentKind: 'click',
+        amountOriginalMinor: '100000',
+      }),
+    ).toThrow();
+    expect(
+      MarkCallSchema.parse({
+        outcome: 'paid_full',
+        paymentKind: 'click',
+        amountOriginalMinor: '100000',
+        screenshotBase64: 'data:image/png;base64,iVBORw0KGgo=',
+      }).screenshotBase64,
+    ).toContain('base64');
+  });
+
+  it("Click faqat so'mda bo'ladi (dollar Click rad etiladi)", () => {
+    expect(() =>
+      MarkCallSchema.parse({
+        outcome: 'paid_full',
+        paymentKind: 'click',
+        currency: 'USD',
+        exchangeRate: '128000000',
+        amountOriginalMinor: '10000',
+        screenshotBase64: 'data:image/png;base64,iVBORw0KGgo=',
+      }),
+    ).toThrow();
+  });
+
+  it("dollar naqdda KURS majburiy (so'mga o'girish uchun)", () => {
+    expect(() =>
+      MarkCallSchema.parse({
+        outcome: 'paid_full',
+        paymentKind: 'cash',
+        currency: 'USD',
+        amountOriginalMinor: '10000',
+      }),
+    ).toThrow();
+
+    const ok = MarkCallSchema.parse({
+      outcome: 'paid_full',
+      paymentKind: 'cash',
+      currency: 'USD',
+      amountOriginalMinor: '10000', // 100.00 $
+      exchangeRate: '128000000', // 12 800 so'm
+    });
+    expect(ok.currency).toBe('USD');
+    expect(ok.exchangeRate).toBe('128000000');
+  });
+
+  it("valyuta ko'rsatilmasa — so'm (UZS) deb olinadi", () => {
+    expect(MarkCallSchema.parse({ outcome: 'paid_full', paymentKind: 'cash' }).currency).toBe(
+      'UZS',
+    );
+  });
+
+  it("qisman to'lovda summa yangi maydon orqali ham berilishi mumkin", () => {
+    const v = MarkCallSchema.parse({
+      outcome: 'paid_partial',
+      paymentKind: 'cash',
+      amountOriginalMinor: '50000000',
+      nextContactAt: NEXT,
+    });
+    expect(v.amountOriginalMinor).toBe('50000000');
   });
 
   it("noma'lum natija rad etiladi", () => {

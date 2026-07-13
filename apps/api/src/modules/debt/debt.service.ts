@@ -27,6 +27,7 @@ import {
   type DebtFilterInput,
   DebtFilterSchema,
   type DebtNoteKind,
+  type DebtPaymentMethod,
   DebtPaymentsFeedFilterSchema,
   type DebtPaymentsReportFilterInput,
   DebtPaymentsReportFilterSchema,
@@ -416,6 +417,12 @@ export class DebtService {
         id: p.id,
         amountMinor: p.amountMinor.toString(),
         method: p.method,
+        // To'lov VALYUTASI (2026-07-13): naqd dollarda berilgan bo'lsa, mijoz
+        // kartochkasida asl summa va kurs ham ko'rinadi — «qancha dollar,
+        // qaysi kursda» degan savol javobsiz qolmasin.
+        currency: p.currency,
+        amountOriginalMinor: p.amountOriginalMinor?.toString() ?? null,
+        exchangeRate: p.exchangeRate?.toString() ?? null,
         // §3.8 — «qayerdan qabul qilingani» har yozuvda ko'rinadi.
         sourceName: p.sourceName ?? p.cashDesk?.name ?? null,
         attachmentId: p.attachmentId,
@@ -484,15 +491,77 @@ export class DebtService {
     const input: MarkCallInput = MarkCallSchema.parse(raw);
     const debt = await this.mustFind(accountId, debtId);
 
-    const fmtSom = (minor: string): string =>
-      (BigInt(minor) / 100n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+    const fmtSom = (minor: bigint): string =>
+      (minor / 100n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
 
-    // Tarix matni: natija + (partial'da SUMMA) + operator izohi.
+    const isPayment = input.outcome === 'paid_full' || input.outcome === 'paid_partial';
+    const remaining = debt.totalMinor - debt.paidMinor;
+
+    // ── To'lovni SO'MGA keltirish ────────────────────────────────────────────
+    // Mijoz naqdni dollarda bergan bo'lishi mumkin, lekin qarz daftari so'mda
+    // yuritiladi. Shuning uchun har doim ikki qiymat saqlanadi:
+    //   amountMinor          — so'mdagi ekvivalent (qarz hisobi shundan)
+    //   amountOriginalMinor  — mijoz ASLIDA bergan summa (USD → sent)
+    // USD → so'm: sent × (kurs×10000) / 10000 = tiyin.
+    let paidSomMinor = 0n;
+    let originalMinor: bigint | null = null;
+    let rate: bigint | null = null;
+
+    if (isPayment) {
+      rate = input.exchangeRate ? BigInt(input.exchangeRate) : null;
+      originalMinor = input.amountOriginalMinor
+        ? BigInt(input.amountOriginalMinor)
+        : input.amountMinor
+          ? BigInt(input.amountMinor)
+          : null;
+
+      if (input.currency === 'USD') {
+        // Kurs schema'da majburiy qilingan; bu yerda faqat hisob.
+        if (originalMinor == null || rate == null || rate <= 0n) {
+          throw new BadRequestException('Dollar to’lovida summa va kurs majburiy');
+        }
+        paidSomMinor = (originalMinor * rate) / 10_000n;
+      } else {
+        paidSomMinor = originalMinor ?? 0n;
+      }
+
+      if (input.outcome === 'paid_full') {
+        // «To'liq to'ladi» — qarz butunlay yopiladi. Operator kiritgan summa
+        // yaxlitlash tufayli qoldiqdan bir necha tiyinga farq qilishi mumkin,
+        // shuning uchun daftarga QOLDIQ yoziladi (qarz 0 ga tushsin), asl
+        // summa/valyuta/kurs esa metama'lumot sifatida saqlanadi.
+        paidSomMinor = remaining;
+        if (originalMinor == null) originalMinor = remaining;
+        if (input.currency === 'UZS') rate = null;
+      } else {
+        // Qisman to'lov — kiritilgan summa aynan shu qiymatda yoziladi.
+        if (paidSomMinor <= 0n) {
+          throw new BadRequestException('To’lov summasi 0 dan katta bo’lishi kerak');
+        }
+        if (paidSomMinor > remaining) {
+          throw new BadRequestException(
+            `To’lov qoldiqdan katta (qoldiq: ${fmtSom(remaining)} so’m)`,
+          );
+        }
+      }
+    }
+
+    // Tarix matni: natija + (to'lovda SUMMA va KANAL) + operator izohi.
+    const KIND_LABEL = input.paymentKind === 'click' ? 'Click' : 'naqd';
+    const origLabel =
+      input.currency === 'USD' && originalMinor != null
+        ? ` (${(Number(originalMinor) / 100).toFixed(2)} $ × ${
+            rate != null ? (Number(rate) / 10_000).toLocaleString('ru-RU') : '—'
+          })`
+        : '';
+
     const OUTCOME_LABEL: Record<MarkCallInput['outcome'], string> = {
-      paid_full: "Qo'ng'iroq: to'ladi — qarz to'liq yopildi",
-      paid_partial: input.amountMinor
-        ? `Qo'ng'iroq: qisman to'ladi — ${fmtSom(input.amountMinor)} so'm`
-        : "Qo'ng'iroq: bir qismini to'ladi",
+      paid_full: `Qo'ng'iroq: to'ladi — qarz to'liq yopildi, ${fmtSom(
+        paidSomMinor,
+      )} so'm ${KIND_LABEL}${origLabel}`,
+      paid_partial: `Qo'ng'iroq: qisman to'ladi — ${fmtSom(
+        paidSomMinor,
+      )} so'm ${KIND_LABEL}${origLabel}`,
       not_paid: "Qo'ng'iroq: to'lamadi",
       callback: "Qo'ng'iroq: qayta qo'ng'iroq kerak",
     };
@@ -500,7 +569,18 @@ export class DebtService {
       ? `${OUTCOME_LABEL[input.outcome]}. ${input.text}`
       : OUTCOME_LABEL[input.outcome];
 
-    return this.prisma.client.$transaction(async (tx) => {
+    // Kanal → daftar metodi. Click = karta o'tkazmasi (chek rasmi bor), shuning
+    // uchun mavjud 'card_screenshot' turiga tushadi va mijoz kartochkasining
+    // KARTA bo'limida ko'rinadi. Naqd — 'cash', NAQD bo'limida ko'rinadi.
+    const method: DebtPaymentMethod = input.paymentKind === 'click' ? 'card_screenshot' : 'cash';
+    const sourceName =
+      input.paymentKind === 'click'
+        ? "Click — qo'ng'iroqda"
+        : input.currency === 'USD'
+          ? "Naqd (dollar) — qo'ng'iroqda"
+          : "Naqd — qo'ng'iroqda";
+
+    const result = await this.prisma.client.$transaction(async (tx) => {
       await tx.debtNote.create({
         data: {
           accountId,
@@ -514,68 +594,79 @@ export class DebtService {
         },
       });
 
-      // «TO'LADI» (2026-07-12 talab): qarz BUTUNLAY «to'liq to'langan»
-      // hisobiga o'tadi — ro'yxatdan chiqadi, keyingi sana o'chadi.
-      // Eslatma: bu deriveStatus invariantining YAGONA qo'lda istisnosi —
-      // operator suhbatda to'liq to'lovni tasdiqladi (masalan kassadan
-      // tashqarida to'langan). paidMinor tegilmaydi; keyin rasmiy to'lov
-      // kiritilsa recalc o'z holicha ishlayveradi.
-      if (input.outcome === 'paid_full') {
-        // 2026-07-13 tuzatish: avval faqat status o'zgarardi — natijada to'lov
-        // «To'lovlar» lentasida ham, hisobotlarda ham KO'RINMASDI. Endi qolgan
-        // qoldiq HAQIQIY to'lov yozuvi bo'lib tushadi (method='manual_close'),
-        // paidMinor recalc bilan yopiladi. Kassir kunlik hisoboti buzilmaydi —
-        // u faqat cash+terminal ni sanaydi (§3.9).
-        const remaining = debt.totalMinor - debt.paidMinor;
-        if (remaining > 0n) {
-          await tx.debtPayment.create({
-            data: {
-              accountId,
-              debtId,
-              amountMinor: remaining,
-              method: 'manual_close',
-              sourceName: "Qo'ng'iroqda tasdiqlandi",
-              comment: input.text?.length ? input.text : null,
-              receivedById: userId,
-              receivedByRole: role === 'admin' ? 'operator' : role,
-            },
-          });
-        }
-
-        // recalc paidMinor = Σ to'lovlar → status='paid', closedAt, sana null.
-        const updated = await this.recalc(tx, accountId, debtId, null);
-        return tx.debt.update({
-          where: { id: debtId },
+      // To'lov bo'lgan bo'lsa — HAQIQIY to'lov yozuvi (2026-07-13). Ilgari
+      // «to'ladi» faqat statusni o'zgartirardi va to'lov na lentada, na
+      // hisobotda ko'rinardi. Endi paidMinor recalc orqali yopiladi.
+      let paymentId: string | null = null;
+      if (isPayment && paidSomMinor > 0n) {
+        const created = await tx.debtPayment.create({
           data: {
-            lastCallAt: new Date(),
-            lastCallOutcome: 'paid_full',
-            callRemindedAt: null,
-            // recalc allaqachon status/closedAt/nextContactAt ni to'g'riladi;
-            // qoldiq 0 bo'lmagan chekka holatda (to'lov yaratilmagan) status'ni
-            // majburan yopamiz — «To'ladi» degani operatorning uzil-kesil hukmi.
-            ...(updated.status === 'paid'
-              ? {}
-              : { status: 'paid', closedAt: new Date(), nextContactAt: null }),
+            accountId,
+            debtId,
+            amountMinor: paidSomMinor,
+            currency: input.currency,
+            amountOriginalMinor: originalMinor,
+            exchangeRate: rate,
+            method,
+            sourceName,
+            comment: input.text?.length ? input.text : null,
+            receivedById: userId,
+            receivedByRole: role === 'admin' ? 'operator' : role,
           },
         });
+        paymentId = created.id;
       }
 
-      return tx.debt.update({
+      // recalc: paidMinor = Σ to'lovlar → status/closedAt + kontragent balansi.
+      const updated = await this.recalc(
+        tx,
+        accountId,
+        debtId,
+        input.outcome === 'paid_full' ? null : (input.nextContactAt ?? null),
+      );
+
+      const debtRow = await tx.debt.update({
         where: { id: debtId },
         data: {
           lastCallAt: new Date(),
           lastCallOutcome: input.outcome,
-          // Yopilgan qarzga keyingi sana qo'yilmaydi (§3.6 intizomi).
-          ...(input.nextContactAt && debt.status !== 'paid'
+          ...(input.outcome === 'paid_full'
             ? {
-                nextContactAt: input.nextContactAt,
-                // Yangi muddat — eslatma-cron shu muddat uchun qaytadan ishlasin.
                 callRemindedAt: null,
+                // Chekka holat: qoldiq 0 bo'lib to'lov yaratilmagan bo'lsa ham,
+                // «to'ladi» — operatorning uzil-kesil hukmi, qarz yopiladi.
+                ...(updated.status === 'paid'
+                  ? {}
+                  : { status: 'paid', closedAt: new Date(), nextContactAt: null }),
               }
-            : {}),
+            : input.nextContactAt && updated.status !== 'paid'
+              ? { nextContactAt: input.nextContactAt, callRemindedAt: null }
+              : {}),
         },
       });
+
+      return { debtRow, paymentId };
     });
+
+    // Chek rasmi — tranzaksiyadan TASHQARIDA (blob yozish pul tranzaksiyasini
+    // ushlab turmasin; §3.7 dagi bilan bir xil intizom).
+    if (result.paymentId && input.paymentKind === 'click' && input.screenshotBase64) {
+      const buffer = this.decodeImage(input.screenshotBase64);
+      const attachment = await this.attachments.createFromBuffer(accountId, userId, {
+        entity: 'DebtPayment',
+        entityId: result.paymentId,
+        filename: input.filename,
+        mime: input.mime,
+        buffer,
+        description: 'Qarz to’lovi — Click chek',
+      });
+      await this.prisma.client.debtPayment.update({
+        where: { id: result.paymentId },
+        data: { attachmentId: attachment.id },
+      });
+    }
+
+    return result.debtRow;
   }
 
   // ───────────────────────────────────────── §3.6 kassada to'lov (naqd/terminal) ──

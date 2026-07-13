@@ -134,17 +134,45 @@ export type CreateDebtNoteInput = z.infer<typeof CreateDebtNoteSchema>;
 export const CallOutcomeSchema = z.enum(['paid_full', 'paid_partial', 'not_paid', 'callback']);
 export type CallOutcome = z.infer<typeof CallOutcomeSchema>;
 
+/**
+ * Qo'ng'iroqda qabul qilingan to'lov kanali (2026-07-13):
+ *   cash  — NAQD (so'm yoki dollar; dollarda kurs majburiy)
+ *   click — CLICK/karta o'tkazmasi (chek rasmi majburiy)
+ * DB'da click → method='card_screenshot' (mavjud tur, tarix buzilmaydi).
+ */
+export const CallPaymentKindSchema = z.enum(['cash', 'click']);
+export type CallPaymentKind = z.infer<typeof CallPaymentKindSchema>;
+
+/** To'lov valyutasi — naqd so'mda ham, dollarda ham bo'lishi mumkin. */
+export const PaymentCurrencySchema = z.enum(['UZS', 'USD']);
+export type PaymentCurrency = z.infer<typeof PaymentCurrencySchema>;
+
 export const MarkCallSchema = z
   .object({
     outcome: CallOutcomeSchema,
+    /** To'lov kanali — paid_full/paid_partial da MAJBURIY (§ 2026-07-13). */
+    paymentKind: CallPaymentKindSchema.optional(),
+    /** Naqd valyutasi (default UZS). USD bo'lsa `exchangeRate` majburiy. */
+    currency: PaymentCurrencySchema.default('UZS'),
+    /**
+     * ASL valyutadagi summa (USD → sent). Qisman to'lovda MAJBURIY.
+     * To'liq to'lovda (paid_full) bo'sh qoldirilsa — server qoldiqni oladi.
+     */
+    amountOriginalMinor: z.string().regex(/^\d+$/, 'Summa — butun minor birlik').optional(),
+    /** Kurs ×10000 (12 800,50 so'm → 128005000). USD to'lovda MAJBURIY. */
+    exchangeRate: z.string().regex(/^\d+$/, 'Kurs — butun son').optional(),
+    /** Click to'lovida chek rasmi MAJBURIY (data-URI yoki toza base64). */
+    screenshotBase64: z.string().optional(),
+    filename: z.string().max(255).default('chek.png'),
+    mime: z.string().max(100).default('image/png'),
     /** Suhbat izohi — ixtiyoriy (natija tugmasining o'zi ham yozuv qoldiradi). */
     text: z.string().trim().max(4000).optional(),
     /** Keyingi qo'ng'iroq vaqti — callback va paid_partial uchun MAJBURIY. */
     nextContactAt: z.coerce.date().nullish(),
     /**
-     * paid_partial uchun MAJBURIY (2026-07-12): mijoz qancha to'lagani (tiyin).
-     * Bu MA'LUMOT sifatida tarixga yoziladi — rasmiy to'lov emas (rasmiy
-     * to'lovni kassir §3.6 orqali kiritadi, rol matritsasi buzilmaydi).
+     * ESKI maydon (2026-07-12) — SO'MDAGI summa (tiyin). Yangi FE endi
+     * `amountOriginalMinor` + `currency` yuboradi; bu esa so'm to'lovlar uchun
+     * moslik sifatida qoladi (eski klient/testlar buzilmasin).
      */
     amountMinor: z
       .string()
@@ -156,10 +184,35 @@ export const MarkCallSchema = z
     message: "«Qayta qo'ng'iroq» uchun keyingi sana majburiy",
     path: ['nextContactAt'],
   })
-  .refine((v) => v.outcome !== 'paid_partial' || v.amountMinor != null, {
-    message: "«Qisman to'ladi» uchun summa majburiy",
-    path: ['amountMinor'],
+  // 2026-07-13: to'lov bo'lgan natijalarda KANAL majburiy (naqd yoki Click).
+  .refine((v) => !['paid_full', 'paid_partial'].includes(v.outcome) || v.paymentKind != null, {
+    message: "To'lov turini tanlang (Naqd yoki Click)",
+    path: ['paymentKind'],
   })
+  // Click to'lovida chek RASMI majburiy.
+  .refine((v) => v.paymentKind !== 'click' || (v.screenshotBase64?.length ?? 0) > 0, {
+    message: 'Click to‘lovida chek rasmi majburiy',
+    path: ['screenshotBase64'],
+  })
+  // Dollarda to'lansa — KURS majburiy (so'mga o'girish uchun).
+  .refine((v) => v.currency !== 'USD' || (v.exchangeRate != null && BigInt(v.exchangeRate) > 0n), {
+    message: 'Dollar to‘lovida kurs majburiy',
+    path: ['exchangeRate'],
+  })
+  // Click — bank/karta o'tkazmasi, u DOIM so'mda keladi (dollar Click yo'q).
+  .refine((v) => v.paymentKind !== 'click' || v.currency === 'UZS', {
+    message: 'Click to‘lovi faqat so‘mda bo‘ladi',
+    path: ['currency'],
+  })
+  // Qisman to'lovda summa majburiy — yangi (amountOriginalMinor) yoki eski
+  // (amountMinor) maydon orqali; ikkalasi ham bo'sh bo'lsa — xato.
+  .refine(
+    (v) =>
+      v.outcome !== 'paid_partial' ||
+      (v.amountOriginalMinor != null && BigInt(v.amountOriginalMinor) > 0n) ||
+      v.amountMinor != null,
+    { message: "«Qisman to'ladi» uchun summa majburiy", path: ['amountOriginalMinor'] },
+  )
   .refine((v) => v.outcome !== 'paid_partial' || v.nextContactAt != null, {
     message: "«Qisman to'ladi» uchun keyingi sana majburiy (qoldiq bor)",
     path: ['nextContactAt'],

@@ -9087,6 +9087,17 @@ model DebtPayment {
   /// attachment polimorf jadval, Prisma relation'i yo'q — id sifatida saqlanadi.
   attachmentId String? @map("attachment_id") @db.Uuid
 
+  /// To'lov VALYUTASI (2026-07-13): mijoz naqdni so'mda ham, dollarda ham
+  /// berishi mumkin. `amountMinor` HAR DOIM qarz valyutasida (so'm/tiyin) —
+  /// qarz hisobi shundan yuritiladi. Quyidagi uchlik esa ASL to'lovni saqlaydi:
+  ///   currency            — 'UZS' | 'USD'
+  ///   amountOriginalMinor — asl valyutadagi summa (USD → sent)
+  ///   exchangeRate        — kurs ×10000 (masalan 12 800,50 so'm → 128005000)
+  /// UZS to'lovda: currency='UZS', original=amountMinor, rate=null.
+  currency            String  @default("UZS") @db.VarChar(3)
+  amountOriginalMinor BigInt? @map("amount_original_minor")
+  exchangeRate        BigInt? @map("exchange_rate")
+
   comment String?
 
   receivedById   String? @map("received_by_id") @db.Uuid

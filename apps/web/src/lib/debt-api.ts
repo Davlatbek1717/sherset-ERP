@@ -24,6 +24,20 @@ export type DebtScope = 'active' | 'today' | 'overdue' | 'all' | 'called';
 /** Qo'ng'iroq natijasi (2026-07-12): to'ladi / qisman / to'lamadi / qayta qo'ng'iroq. */
 export type CallOutcome = 'paid_full' | 'paid_partial' | 'not_paid' | 'callback';
 
+/**
+ * Qo'ng'iroqda qabul qilingan to'lov KANALI (2026-07-13):
+ *   cash  — naqd (so'm yoki dollar; dollarda kurs majburiy)
+ *   click — Click/karta o'tkazmasi (chek rasmi majburiy)
+ * Serverda click → method='card_screenshot' bo'lib yoziladi.
+ */
+export type CallPaymentKind = 'cash' | 'click';
+
+/** To'lov valyutasi — naqd so'mda ham, dollarda ham bo'lishi mumkin. */
+export type PaymentCurrency = 'UZS' | 'USD';
+
+/** Kurs saqlanish ko'paytmasi: 12 800,50 so'm → 128 005 000. */
+export const RATE_SCALE = 10_000;
+
 export interface DebtRow {
   id: string;
   name: string;
@@ -52,8 +66,15 @@ export interface DebtRow {
 
 export interface DebtPaymentRow {
   id: string;
+  /** SO'MDAGI summa (tiyin) — qarz hisobi doim shundan yuritiladi. */
   amountMinor: string;
   method: DebtPaymentMethod;
+  /** To'lov valyutasi (2026-07-13): mijoz naqdni dollarda ham berishi mumkin. */
+  currency: PaymentCurrency;
+  /** Mijoz ASLIDA bergan summa (USD → sent). UZS to'lovda amountMinor bilan bir xil. */
+  amountOriginalMinor: string | null;
+  /** Kurs ×10000 (12 800,50 so'm → 128005000). Faqat USD to'lovda to'ladi. */
+  exchangeRate: string | null;
   /** §3.8 — «qayerdan qabul qilingani»: kassa nomi yoki «Karta — screenshot». */
   sourceName: string | null;
   /** §3.7 — chek rasmi; `/api/v1/attachments/{id}/raw` orqali ochiladi. */
@@ -222,7 +243,19 @@ export const debtApi = {
       outcome: CallOutcome;
       text?: string;
       nextContactAt?: string | null;
-      /** paid_partial: mijoz qancha to'lagani (tiyin) — tarixga yoziladi. */
+      /** To'lov bo'lgan natijalarda MAJBURIY: naqd yoki Click. */
+      paymentKind?: CallPaymentKind;
+      /** Naqd valyutasi (default UZS). USD bo'lsa kurs majburiy. */
+      currency?: PaymentCurrency;
+      /** Mijoz bergan ASL summa minor birlikda (so'm → tiyin, dollar → sent). */
+      amountOriginalMinor?: string;
+      /** Kurs ×10000 — USD to'lovda majburiy. */
+      exchangeRate?: string;
+      /** Click to'lovida chek rasmi (data-URI) — majburiy. */
+      screenshotBase64?: string;
+      filename?: string;
+      mime?: string;
+      /** Eski maydon (so'mdagi tiyin) — moslik uchun qoldirilgan. */
       amountMinor?: string;
     },
   ) => api.post<DebtRow>(`/debts/${id}/call`, body),

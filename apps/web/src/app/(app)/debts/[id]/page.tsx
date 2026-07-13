@@ -20,7 +20,6 @@
  * to'lov bo'lsa, operator ekranida qoldiq o'zi kamayadi.
  */
 
-import { CallOutcomeModal } from '@/components/debts/call-outcome-modal';
 import { useBackspaceBack } from '@/hooks/use-keyboard-nav';
 import {
   DEBT_POLL_MS,
@@ -80,6 +79,99 @@ function Section({
   );
 }
 
+/**
+ * Bitta KANALDAGI to'lovlar ro'yxati (2026-07-13 talab).
+ *
+ * Naqd bo'limida — naqd to'lovlar, Click bo'limida — Click to'lovlari.
+ * Dollarda berilgan naqd uchun asl summa ($) va KURS ham ko'rsatiladi:
+ * so'mdagi qiymat qanday chiqqani ko'rinib tursin.
+ */
+function PaymentLines({
+  payments,
+  currency,
+  emptyLabel,
+  testPrefix,
+}: {
+  payments: DebtPaymentRow[];
+  currency: string;
+  emptyLabel: string;
+  testPrefix: string;
+}) {
+  const t = useTranslations('pages.debts');
+
+  if (payments.length === 0) {
+    return (
+      <div
+        className="rounded-[var(--ms-radius-sm)] bg-[var(--ms-bg-muted)] p-2 text-center text-[var(--ms-text-muted)] text-xs"
+        data-test-id={`${testPrefix}-payments-empty`}
+      >
+        {emptyLabel}
+      </div>
+    );
+  }
+
+  const fmtUsd = (cents: string) => `${(Number(cents) / 100).toFixed(2)} $`;
+  // Kurs DB'da ×10000 saqlanadi (12 800,50 so'm → 128 005 000).
+  const fmtRate = (rate: string) => (Number(rate) / 10_000).toLocaleString('ru-RU');
+
+  return (
+    <div className="flex flex-col gap-1.5" data-test-id={`${testPrefix}-payments`}>
+      {payments.map((p) => (
+        <div
+          key={p.id}
+          data-test-id={`${testPrefix}-payment-${p.id}`}
+          className="rounded-[var(--ms-radius-sm)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-muted)] px-2.5 py-2 text-xs"
+        >
+          <div className="flex flex-wrap items-baseline gap-x-2">
+            <span className="font-semibold text-sm tabular-nums">
+              {formatMoney(p.amountMinor, currency)}
+            </span>
+            <span className="text-[var(--ms-text-secondary)] tabular-nums">
+              {new Date(p.createdAt).toLocaleString('ru-RU', {
+                day: '2-digit',
+                month: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+              })}
+            </span>
+            {p.receivedByName && (
+              <span className="text-[var(--ms-text-secondary)]">· {p.receivedByName}</span>
+            )}
+          </div>
+
+          {/* DOLLARDA berilgan naqd — asl summa va kurs (so'm qayerdan chiqqani) */}
+          {p.currency === 'USD' && p.amountOriginalMinor && (
+            <div className="mt-0.5 text-[var(--ms-text-secondary)] tabular-nums">
+              {t('payment_original')}: <b>{fmtUsd(p.amountOriginalMinor)}</b>
+              {p.exchangeRate && (
+                <>
+                  {' · '}
+                  {t('payment_rate')}: <b>{fmtRate(p.exchangeRate)}</b>
+                </>
+              )}
+            </div>
+          )}
+
+          {p.comment && <div className="mt-0.5 text-[var(--ms-text-secondary)]">{p.comment}</div>}
+
+          {/* Click cheki — istalgan vaqt ochib ko'riladi (nizoli holat) */}
+          {p.attachmentId && (
+            <a
+              href={screenshotUrl(p.attachmentId)}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-0.5 inline-block text-[var(--ms-text-brand)] hover:underline"
+              data-test-id={`${testPrefix}-shot-${p.id}`}
+            >
+              {t('view_screenshot')}
+            </a>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function DebtProfilePage() {
   const t = useTranslations('pages.debts');
   // Backspace → orqaga («Ro'yxatga qaytish» bosmasdan; matn maydonlarida ishlamaydi).
@@ -99,7 +191,6 @@ export default function DebtProfilePage() {
   const [noteText, setNoteText] = useState('');
   const [noteNext, setNoteNext] = useState(todayAt9InputValue());
   // «Qo'ng'iroq qilindi» natija modali (2026-07-12).
-  const [callOpen, setCallOpen] = useState(false);
   const [noteErr, setNoteErr] = useState<string | null>(null);
 
   const addNote = useMutation({
@@ -184,6 +275,15 @@ export default function DebtProfilePage() {
   const d = debt.data;
   const isPaid = d?.status === 'paid';
 
+  // To'lovlarni KANAL bo'yicha ajratamiz (2026-07-13 talab): naqd bo'limida
+  // naqd to'lovlar, Click bo'limida Click to'lovlari ko'rinsin.
+  //   cash / terminal / manual_close → NAQD bo'limi
+  //     (manual_close — eski «qo'ng'iroqda yopildi» yozuvlari; ular ham naqd
+  //      tarafda turadi, chunki Click emas va cheki yo'q)
+  //   card_screenshot                → CLICK/KARTA bo'limi
+  const cashPayments = (d?.payments ?? []).filter((p) => p.method !== 'card_screenshot');
+  const cardPayments = (d?.payments ?? []).filter((p) => p.method === 'card_screenshot');
+
   const roleLabel = (r: DebtNoteRow['authorRole']) =>
     r === 'cashier'
       ? t('author_cashier')
@@ -255,14 +355,10 @@ export default function DebtProfilePage() {
         {/* 1) Izoh / qo'ng'iroq — operator + kassir */}
         <Section title={t('section_notes')} tone="notes" testId="section-notes">
           <div className="flex flex-col gap-2">
-            {/* «Qo'ng'iroq qilindi» + natija — kartochkaning o'zida (2026-07-12) */}
-            <Button
-              variant="secondary"
-              onClick={() => setCallOpen(true)}
-              data-test-id="detail-call-btn"
-            >
-              📞 {t('call_button')}
-            </Button>
+            {/* 2026-07-13: bu yerda «📞 Qo'ng'iroq qilindi» tugmasi bor edi —
+                u qarzdorlar RO'YXATIDAGI har qatorda ham turardi, ya'ni bitta
+                amal uchun ikkita tugma. Chalkashmasin deb kartochkadan olib
+                tashlandi: qo'ng'iroq natijasi ro'yxatdan belgilanadi. */}
             <Textarea
               value={noteText}
               onChange={(e) => setNoteText(e.target.value)}
@@ -355,6 +451,16 @@ export default function DebtProfilePage() {
                 {cashErr}
               </div>
             )}
+
+            {/* 2026-07-13 talab: NAQD kiritilgan to'lovlar aynan shu — naqd
+                bo'limida ko'rinadi (summa + valyuta + kurs). Qo'ng'iroqda
+                «naqd» deb belgilangan to'lovlar ham shu yerga tushadi. */}
+            <PaymentLines
+              payments={cashPayments}
+              currency={d?.currency ?? 'UZS'}
+              emptyLabel={t('payments_empty')}
+              testPrefix="cash"
+            />
           </div>
         </Section>
 
@@ -412,6 +518,14 @@ export default function DebtProfilePage() {
                 {cardErr}
               </div>
             )}
+
+            {/* CLICK/karta to'lovlari — chek rasmi bilan (nizoda ochib ko'riladi). */}
+            <PaymentLines
+              payments={cardPayments}
+              currency={d?.currency ?? 'UZS'}
+              emptyLabel={t('payments_empty')}
+              testPrefix="card"
+            />
           </div>
         </Section>
       </div>
@@ -495,15 +609,6 @@ export default function DebtProfilePage() {
           <EmptyState title={t('note_empty')} />
         )}
       </section>
-
-      {/* «Qo'ng'iroq qilindi» — natija modali (umumiy komponent) */}
-      <CallOutcomeModal
-        debtId={id}
-        debtorName={d?.counterpartyName ?? ''}
-        remainingMinor={d?.remainingMinor}
-        open={callOpen}
-        onClose={() => setCallOpen(false)}
-      />
     </Container>
   );
 }
