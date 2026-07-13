@@ -6,6 +6,7 @@ import {
   CreateDebtNoteSchema,
   CreateDebtSchema,
   DebtFilterSchema,
+  DebtPaymentsFeedFilterSchema,
   MarkCallSchema,
 } from './debt.schema.js';
 
@@ -203,5 +204,26 @@ describe('DebtFilterSchema.ids — checkbox-tanlash (2026-07-12)', () => {
   it("2000 dan ortiq id rad etiladi (xavfsizlik qopqog'i)", () => {
     const many = Array.from({ length: 2001 }, () => CP);
     expect(() => DebtFilterSchema.parse({ ids: many })).toThrow();
+  });
+});
+
+describe("manual_close — «To'ladi» to'lov yozuvi (2026-07-13)", () => {
+  it("to'rtinchi usul sifatida qabul qilinadi", () => {
+    expect(DebtPaymentsFeedFilterSchema.parse({ method: 'manual_close' }).method).toBe(
+      'manual_close',
+    );
+  });
+
+  // §3.9 qulfi: kassir kunlik hisoboti FAQAT kassa kanallarini sanaydi —
+  // «To'ladi» belgisi kassir statistikasini shishirmasligi kerak.
+  it('KASSIR kanallariga KIRMAYDI (kassir hisoboti buzilmaydi)', () => {
+    expect([...CASHIER_METHODS]).toEqual(['cash', 'terminal']);
+    expect(CASHIER_METHODS).not.toContain('manual_close');
+  });
+
+  it('kassa endpointida manual_close RAD ETILADI (u faqat markCall ichida)', () => {
+    expect(() =>
+      CreateCashPaymentSchema.parse({ amountMinor: '100', method: 'manual_close' }),
+    ).toThrow();
   });
 });

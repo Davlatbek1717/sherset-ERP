@@ -67,7 +67,9 @@ export default function DebtPaymentsFeedPage() {
       ? t('method_cash')
       : m === 'terminal'
         ? t('method_terminal')
-        : t('method_card_screenshot');
+        : m === 'manual_close'
+          ? t('method_manual_close')
+          : t('method_card_screenshot');
 
   /**
    * Excel eksport — MIJOZ ISMI bilan, joriy filtrlar bo'yicha HAMMA to'lov

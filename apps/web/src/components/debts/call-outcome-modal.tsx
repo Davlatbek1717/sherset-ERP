@@ -14,7 +14,7 @@
  */
 
 import { type CallOutcome, debtApi, todayAt9InputValue } from '@/lib/debt-api';
-import { Button, Input, Modal, MoneyInput, Textarea } from '@moysklad/ui';
+import { Button, Input, Modal, MoneyInput, Textarea, formatMoney } from '@moysklad/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useState } from 'react';
@@ -35,11 +35,14 @@ export function CallOutcomeModal({
   debtorName,
   open,
   onClose,
+  remainingMinor,
 }: {
   debtId: string;
   debtorName: string;
   open: boolean;
   onClose: () => void;
+  /** Qolgan qarz (tiyin) — «To'ladi» tasdig'ida aynan shu summa yoziladi. */
+  remainingMinor?: string;
 }) {
   const t = useTranslations('pages.debts');
   const qc = useQueryClient();
@@ -153,10 +156,16 @@ export function CallOutcomeModal({
           </div>
         )}
 
-        {/* «To'ladi» — qarz butunlay yopilishi haqida ogohlantirish */}
+        {/* «To'ladi» — TASDIQ: qolgan qoldiq to'lov sifatida yoziladi (2026-07-13) */}
         {outcome === 'paid_full' && (
           <div className="rounded-[var(--ms-radius-default)] bg-[var(--ms-success-50)] px-3 py-2 text-[var(--ms-success-700)] text-xs">
-            {t('call_paid_full_hint')}
+            <div className="font-semibold">{t('call_paid_full_confirm')}</div>
+            {remainingMinor && (
+              <div className="mt-1 tabular-nums">
+                {t('call_paid_full_amount')}: <b>{formatMoney(remainingMinor)}</b>
+              </div>
+            )}
+            <div className="mt-1">{t('call_paid_full_hint')}</div>
           </div>
         )}
 

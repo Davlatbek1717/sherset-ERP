@@ -484,6 +484,7 @@ export default function DebtsPage() {
         <CallOutcomeModal
           debtId={callTarget.id}
           debtorName={callTarget.counterpartyName ?? callTarget.name}
+          remainingMinor={callTarget.remainingMinor}
           open={callTarget !== null}
           onClose={() => setCallTarget(null)}
         />

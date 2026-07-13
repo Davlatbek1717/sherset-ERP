@@ -181,7 +181,9 @@ export default function DebtReportsPage() {
           ? t('method_cash')
           : r.method === 'terminal'
             ? t('method_terminal')
-            : t('method_card_screenshot'),
+            : r.method === 'manual_close'
+              ? t('method_manual_close')
+              : t('method_card_screenshot'),
       cellText: (r) => r.method,
     },
     {
@@ -247,7 +249,9 @@ export default function DebtReportsPage() {
               ? t('method_cash')
               : r.method === 'terminal'
                 ? t('method_terminal')
-                : t('method_card_screenshot'),
+                : r.method === 'manual_close'
+                  ? t('method_manual_close')
+                  : t('method_card_screenshot'),
         },
         { header: t('col_source'), cellText: (r) => r.sourceName ?? '' },
         { header: t('col_received_by'), cellText: (r) => r.receivedByName ?? '' },

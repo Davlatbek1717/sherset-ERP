@@ -508,15 +508,41 @@ export class DebtService {
       // tashqarida to'langan). paidMinor tegilmaydi; keyin rasmiy to'lov
       // kiritilsa recalc o'z holicha ishlayveradi.
       if (input.outcome === 'paid_full') {
+        // 2026-07-13 tuzatish: avval faqat status o'zgarardi — natijada to'lov
+        // «To'lovlar» lentasida ham, hisobotlarda ham KO'RINMASDI. Endi qolgan
+        // qoldiq HAQIQIY to'lov yozuvi bo'lib tushadi (method='manual_close'),
+        // paidMinor recalc bilan yopiladi. Kassir kunlik hisoboti buzilmaydi —
+        // u faqat cash+terminal ni sanaydi (§3.9).
+        const remaining = debt.totalMinor - debt.paidMinor;
+        if (remaining > 0n) {
+          await tx.debtPayment.create({
+            data: {
+              accountId,
+              debtId,
+              amountMinor: remaining,
+              method: 'manual_close',
+              sourceName: "Qo'ng'iroqda tasdiqlandi",
+              comment: input.text?.length ? input.text : null,
+              receivedById: userId,
+              receivedByRole: role === 'admin' ? 'operator' : role,
+            },
+          });
+        }
+
+        // recalc paidMinor = Σ to'lovlar → status='paid', closedAt, sana null.
+        const updated = await this.recalc(tx, accountId, debtId, null);
         return tx.debt.update({
           where: { id: debtId },
           data: {
             lastCallAt: new Date(),
             lastCallOutcome: 'paid_full',
-            status: 'paid',
-            closedAt: new Date(),
-            nextContactAt: null,
             callRemindedAt: null,
+            // recalc allaqachon status/closedAt/nextContactAt ni to'g'riladi;
+            // qoldiq 0 bo'lmagan chekka holatda (to'lov yaratilmagan) status'ni
+            // majburan yopamiz — «To'ladi» degani operatorning uzil-kesil hukmi.
+            ...(updated.status === 'paid'
+              ? {}
+              : { status: 'paid', closedAt: new Date(), nextContactAt: null }),
           },
         });
       }

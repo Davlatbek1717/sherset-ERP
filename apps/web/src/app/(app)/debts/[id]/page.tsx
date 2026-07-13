@@ -200,7 +200,9 @@ export default function DebtProfilePage() {
       ? t('method_cash')
       : m === 'terminal'
         ? t('method_terminal')
-        : t('method_card_screenshot');
+        : m === 'manual_close'
+          ? t('method_manual_close')
+          : t('method_card_screenshot');
 
   const when = (iso: string) =>
     new Date(iso).toLocaleString('ru-RU', {
@@ -495,6 +497,7 @@ export default function DebtProfilePage() {
       <CallOutcomeModal
         debtId={id}
         debtorName={d?.counterpartyName ?? ''}
+        remainingMinor={d?.remainingMinor}
         open={callOpen}
         onClose={() => setCallOpen(false)}
       />

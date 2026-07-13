@@ -18,9 +18,19 @@ export type DebtStatus = z.infer<typeof DebtStatusSchema>;
  * TZ §3.6 + §3.7 — to'lov kanali.
  *   cash / terminal  — kassada, KASSIR kiritadi
  *   card_screenshot  — mijoz kartadan o'tkazdi, chek rasmi, OPERATOR kiritadi
+ *   manual_close     — «To'ladi» deb belgilangan (2026-07-13): qo'ng'iroqda
+ *                      to'liq to'lov tasdiqlandi, qoldiq to'lov sifatida
+ *                      yoziladi. To'lovlar lentasi va davr-hisobotida
+ *                      ko'rinadi, lekin KASSIR kunlik hisobotiga KIRMAYDI
+ *                      (bu kassa operatsiyasi emas — §3.9 buzilmaydi).
  * §3.9: kassir kunlik hisobotiga faqat cash+terminal kiradi.
  */
-export const DebtPaymentMethodSchema = z.enum(['cash', 'terminal', 'card_screenshot']);
+export const DebtPaymentMethodSchema = z.enum([
+  'cash',
+  'terminal',
+  'card_screenshot',
+  'manual_close',
+]);
 export type DebtPaymentMethod = z.infer<typeof DebtPaymentMethodSchema>;
 
 /** Kassada qabul qilinadigan kanallar (operator bularni kirita OLMAYDI). */

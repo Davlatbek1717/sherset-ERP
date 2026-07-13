@@ -6276,7 +6276,7 @@
       "export_pdf_selected": "PDF: выбранные",
       "heading_selected": "Выбранные",
       "call_amount_label": "Сколько оплатил? (сум)",
-      "call_paid_full_hint": "Внимание: долг будет закрыт как ПОЛНОСТЬЮ ОПЛАЧЕННЫЙ и уйдёт из списка должников.",
+      "call_paid_full_hint": "При подтверждении остаток запишется как ПЛАТЁЖ (виден в Платежах и Отчётах), долг закроется.",
       "tab_called": "Обзвонённые",
       "called_subtitle": "Кому сегодня звонили и что ответили",
       "called_total": "Всего",
@@ -6284,7 +6284,10 @@
       "called_outcome": "Результат",
       "called_empty": "За этот день обзвонов нет",
       "called_col_outcome": "Результат",
-      "called_col_answer": "Ответ"
+      "called_col_answer": "Ответ",
+      "method_manual_close": "Полностью оплачен (по звонку)",
+      "call_paid_full_confirm": "Долг погашен полностью?",
+      "call_paid_full_amount": "Сумма, попадающая в платежи"
     }
   },
   "print_entity": {

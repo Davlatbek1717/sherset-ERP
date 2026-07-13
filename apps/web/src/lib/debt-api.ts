@@ -17,7 +17,7 @@ import { api } from './api-client';
 export const DEBT_POLL_MS = 10_000;
 
 export type DebtStatus = 'unpaid' | 'partial' | 'paid';
-export type DebtPaymentMethod = 'cash' | 'terminal' | 'card_screenshot';
+export type DebtPaymentMethod = 'cash' | 'terminal' | 'card_screenshot' | 'manual_close';
 export type DebtNoteKind = 'call' | 'debt_issue' | 'payment';
 export type DebtAuthorRole = 'operator' | 'cashier' | 'admin';
 export type DebtScope = 'active' | 'today' | 'overdue' | 'all' | 'called';
