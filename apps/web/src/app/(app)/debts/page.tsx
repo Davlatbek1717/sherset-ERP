@@ -12,7 +12,6 @@
  * qabul qilingan to'lov call-markaz ekranida sahifani yangilamasdan ko'rinadi.
  */
 
-import { CallOutcomeModal } from '@/components/debts/call-outcome-modal';
 import { useEnterOnHover } from '@/hooks/use-keyboard-nav';
 import { useListState, useReturnToRow } from '@/hooks/use-list-memory';
 import { api } from '@/lib/api-client';
@@ -90,7 +89,6 @@ export default function DebtsPage() {
   const [calledDate, setCalledDate] = useState('');
   const [callOutcome, setCallOutcome] = useState<CallOutcome | ''>('');
   // «Qo'ng'iroq qilindi» modali ochiq turgan qarzdor.
-  const [callTarget, setCallTarget] = useState<DebtRow | null>(null);
   // CHECKBOX bilan belgilangan qarzlar (2026-07-12) — «aynan shularni PDF qil».
   const [selected, setSelected] = useState<Set<string>>(new Set());
   // SAHIFALASH (2026-07-13): 591 qarzdor bir sahifaga sig'maydi — server
@@ -355,25 +353,10 @@ export default function DebtsPage() {
       ),
       cellText: (r) => r.status,
     },
-    {
-      key: 'call',
-      header: '',
-      // «Qo'ng'iroq qilindi» — har qatorda; qator bosilishiga xalaqit bermaydi.
-      cell: (r) => (
-        <Button
-          size="sm"
-          variant="secondary"
-          onClick={(e) => {
-            e.stopPropagation();
-            setCallTarget(r);
-          }}
-          data-test-id={`call-btn-${r.id}`}
-        >
-          📞 {t('call_button')}
-        </Button>
-      ),
-      cellText: () => '',
-    },
+    // 2026-07-13: bu yerda har qatorda «📞 Qo'ng'iroq qilindi» tugmasi bor edi.
+    // Xuddi shu tugma MIJOZ SAHIFASIDA ham turadi — bitta amal uchun ikkita
+    // tugma chalkashtirardi. Ro'yxatdagisi olib tashlandi: operator mijozga
+    // kirib, o'sha yerdan natijani belgilaydi.
   ];
 
   return (
@@ -564,15 +547,6 @@ export default function DebtsPage() {
       )}
 
       {/* «Qo'ng'iroq qilindi» — natija modali (umumiy komponent) */}
-      {callTarget && (
-        <CallOutcomeModal
-          debtId={callTarget.id}
-          debtorName={callTarget.counterpartyName ?? callTarget.name}
-          remainingMinor={callTarget.remainingMinor}
-          open={callTarget !== null}
-          onClose={() => setCallTarget(null)}
-        />
-      )}
     </Container>
   );
 }

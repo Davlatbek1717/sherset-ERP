@@ -20,6 +20,7 @@
  * to'lov bo'lsa, operator ekranida qoldiq o'zi kamayadi.
  */
 
+import { CallOutcomeModal } from '@/components/debts/call-outcome-modal';
 import { useBackspaceBack } from '@/hooks/use-keyboard-nav';
 import {
   DEBT_POLL_MS,
@@ -190,6 +191,9 @@ export default function DebtProfilePage() {
   // ── 1) Izoh / qo'ng'iroq (§3.4) ───────────────────────────────────────────
   const [noteText, setNoteText] = useState('');
   const [noteNext, setNoteNext] = useState(todayAt9InputValue());
+  // «Qo'ng'iroq qilindi» natija modali — MIJOZ SAHIFASIDA (2026-07-13: aynan
+  // shu yerda qoladi; qarzdorlar ro'yxati qatoridagi dublikat olib tashlandi).
+  const [callOpen, setCallOpen] = useState(false);
   // «Qo'ng'iroq qilindi» natija modali (2026-07-12).
   const [noteErr, setNoteErr] = useState<string | null>(null);
 
@@ -355,10 +359,16 @@ export default function DebtProfilePage() {
         {/* 1) Izoh / qo'ng'iroq — operator + kassir */}
         <Section title={t('section_notes')} tone="notes" testId="section-notes">
           <div className="flex flex-col gap-2">
-            {/* 2026-07-13: bu yerda «📞 Qo'ng'iroq qilindi» tugmasi bor edi —
-                u qarzdorlar RO'YXATIDAGI har qatorda ham turardi, ya'ni bitta
-                amal uchun ikkita tugma. Chalkashmasin deb kartochkadan olib
-                tashlandi: qo'ng'iroq natijasi ro'yxatdan belgilanadi. */}
+            {/* «Qo'ng'iroq qilindi» + natija (to'ladi / qisman / to'lamadi /
+                qayta qo'ng'iroq). To'lov bo'lsa — naqd (so'm/dollar) yoki Click
+                (chek rasmi) so'raladi va pastdagi tegishli bo'limda ko'rinadi. */}
+            <Button
+              variant="secondary"
+              onClick={() => setCallOpen(true)}
+              data-test-id="detail-call-btn"
+            >
+              📞 {t('call_button')}
+            </Button>
             <Textarea
               value={noteText}
               onChange={(e) => setNoteText(e.target.value)}
@@ -609,6 +619,14 @@ export default function DebtProfilePage() {
           <EmptyState title={t('note_empty')} />
         )}
       </section>
+      {/* «Qo'ng'iroq qilindi» — natija modali (naqd/Click, valyuta, chek) */}
+      <CallOutcomeModal
+        debtId={id}
+        debtorName={d?.counterpartyName ?? ''}
+        remainingMinor={d?.remainingMinor}
+        open={callOpen}
+        onClose={() => setCallOpen(false)}
+      />
     </Container>
   );
 }
