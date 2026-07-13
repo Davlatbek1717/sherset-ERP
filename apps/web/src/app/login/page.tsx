@@ -10,8 +10,11 @@ export default function LoginPage() {
   const router = useRouter();
   const params = useSearchParams();
   const t = useTranslations('auth');
-  const [username, setUsername] = useState('admin');
-  const [password, setPassword] = useState('admin123');
+  // XAVFSIZLIK (2026-07-13): maydonlar BO'SH boshlanadi. Ilgari bu yerda
+  // demo-hisob (admin/admin123) oldindan to'ldirilgan va sahifa pastida ochiq
+  // yozilgan edi — istalgan odam saytga kirib o'qib olishi mumkin edi.
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -73,10 +76,6 @@ export default function LoginPage() {
             <Button type="submit" className="w-full" loading={pending} data-test-id="login-submit">
               {pending ? t('submitting') : t('submit')}
             </Button>
-
-            <p className="pt-2 text-center text-[var(--ms-text-muted)] text-xs">
-              Demo: admin / admin123
-            </p>
           </form>
         </div>
       </Container>
