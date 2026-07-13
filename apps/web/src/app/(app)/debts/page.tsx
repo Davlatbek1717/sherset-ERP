@@ -60,8 +60,11 @@ export default function DebtsPage() {
   const [scope, setScope] = useState<DebtScope>('active');
   const [segment, setSegment] = useState<Segment>('all');
   const [search, setSearch] = useState('');
+  // 2026-07-13 talab: qarzdorlar EG KATTA qoldiqdan boshlab tursin — yangi
+  // qarz o'z summasiga qarab avtomatik joyiga tushadi (server remainingMinor
+  // desc saralaydi).
   const [sortBy, setSortBy] = useState<'nextContactAt' | 'remainingMinor' | 'totalMinor'>(
-    'nextContactAt',
+    'remainingMinor',
   );
   // «Qo'ng'iroq qilinganlar» ko'rinishi filtrlari (2026-07-12).
   const [calledDate, setCalledDate] = useState('');
@@ -327,6 +330,9 @@ export default function DebtsPage() {
           <div className="flex items-center gap-2">
             <Button variant="secondary" asChild>
               <Link href="/debts/calls">{t('tab_calls')}</Link>
+            </Button>
+            <Button variant="secondary" asChild>
+              <Link href="/debts/called">{t('tab_called')}</Link>
             </Button>
             <Button variant="secondary" asChild>
               <Link href="/debts/payments">{t('tab_payments')}</Link>

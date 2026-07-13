@@ -6276,7 +6276,15 @@
       "export_pdf_selected": "PDF: выбранные",
       "heading_selected": "Выбранные",
       "call_amount_label": "Сколько оплатил? (сум)",
-      "call_paid_full_hint": "Внимание: долг будет закрыт как ПОЛНОСТЬЮ ОПЛАЧЕННЫЙ и уйдёт из списка должников."
+      "call_paid_full_hint": "Внимание: долг будет закрыт как ПОЛНОСТЬЮ ОПЛАЧЕННЫЙ и уйдёт из списка должников.",
+      "tab_called": "Обзвонённые",
+      "called_subtitle": "Кому сегодня звонили и что ответили",
+      "called_total": "Всего",
+      "called_date": "Дата",
+      "called_outcome": "Результат",
+      "called_empty": "За этот день обзвонов нет",
+      "called_col_outcome": "Результат",
+      "called_col_answer": "Ответ"
     }
   },
   "print_entity": {

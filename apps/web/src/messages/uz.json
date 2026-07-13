@@ -6276,7 +6276,15 @@
       "export_pdf_selected": "PDF: belgilanganlar",
       "heading_selected": "Belgilanganlar",
       "call_amount_label": "Qancha to'ladi? (so'm)",
-      "call_paid_full_hint": "Diqqat: qarz TO'LIQ TO'LANGAN deb yopiladi va qarzdorlar ro'yxatidan chiqadi."
+      "call_paid_full_hint": "Diqqat: qarz TO'LIQ TO'LANGAN deb yopiladi va qarzdorlar ro'yxatidan chiqadi.",
+      "tab_called": "Qo'ng'iroq qilinganlar",
+      "called_subtitle": "Bugun kimga qo'ng'iroq qilingan va kim nima javob bergan",
+      "called_total": "Jami",
+      "called_date": "Sana",
+      "called_outcome": "Natija",
+      "called_empty": "Bu kunda qo'ng'iroq qilinganlar yo'q",
+      "called_col_outcome": "Natija",
+      "called_col_answer": "Javobi"
     }
   },
   "print_entity": {
