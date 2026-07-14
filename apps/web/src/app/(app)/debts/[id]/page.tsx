@@ -1,27 +1,6 @@
 'use client';
-
-/**
- * §3.2 — MIJOZ PROFILI.
- *
- * TZ ning aniq talabi: uch funksiya bir-biridan ALOHIDA (interfeysda
- * aralashtirilmagan holda) joylashadi, «toki xodimlar bir-birining vazifasiga
- * tegishli bo'lmagan amalni bajarmasin»:
- *
- *   1. «Izoh / qo'ng'iroq»              — operator + kassir  (§3.4)
- *   2. «To'lov qabul qilish (kassa)»    — FAQAT kassir       (§3.6)
- *   3. «Karta orqali to'lov (screenshot)» — FAQAT operator   (§3.7)
- *
- * Ruxsat SERVERDA kuchga ega (RBAC: debtpayment / debtcardpayment). Bu yerdagi
- * ajratma — vizual va xato-oldini-olish qatlami: xodim noto'g'ri bo'limga
- * yozmasligi uchun. Ruxsati yo'q bo'lim 403 qaytaradi va shu kartochkada
- * xato ko'rsatiladi (yashirilmaydi — chunki FE rolni bilmaydi, server biladi).
- *
- * §3.8 real-time: profil `refetchInterval` bilan yangilanadi — kassada
- * to'lov bo'lsa, operator ekranida qoldiq o'zi kamayadi.
- */
-
 import { TelegramChatCard } from '@/components/counterparties/telegram-chat-card';
-import { CallOutcomeModal } from '@/components/debts/call-outcome-modal';
+import { CallOutcomeForm } from '@/components/debts/call-outcome-modal';
 import { ReceiptViewer } from '@/components/debts/receipt-viewer';
 import { useBackspaceBack } from '@/hooks/use-keyboard-nav';
 import {
@@ -29,8 +8,6 @@ import {
   type DebtNoteRow,
   type DebtPaymentRow,
   debtApi,
-  fileToBase64,
-  nowInputValue,
   todayAt9InputValue,
 } from '@/lib/debt-api';
 import {
@@ -39,8 +16,6 @@ import {
   Container,
   EmptyState,
   Input,
-  MoneyInput,
-  NativeSelect,
   PageHeader,
   StatCard,
   Textarea,
@@ -50,7 +25,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 /** Bo'limlarni vizual ajratuvchi kartochka (§3.2 — «vizual va funksional jihatdan ajratilgan»). */
 function Section({
@@ -196,9 +171,6 @@ export default function DebtProfilePage() {
   // ── 1) Izoh / qo'ng'iroq (§3.4) ───────────────────────────────────────────
   const [noteText, setNoteText] = useState('');
   const [noteNext, setNoteNext] = useState(todayAt9InputValue());
-  // «Qo'ng'iroq qilindi» natija modali — MIJOZ SAHIFASIDA (2026-07-13: aynan
-  // shu yerda qoladi; qarzdorlar ro'yxati qatoridagi dublikat olib tashlandi).
-  const [callOpen, setCallOpen] = useState(false);
   // Ochilgan chek (2026-07-14) — null bo'lsa modal yopiq.
   const [receiptId, setReceiptId] = useState<string | null>(null);
   // «Qo'ng'iroq qilindi» natija modali (2026-07-12).
@@ -219,69 +191,11 @@ export default function DebtProfilePage() {
     onError: (e: Error) => setNoteErr(e.message),
   });
 
-  // ── 2) Kassa to'lovi (§3.6) — FAQAT KASSIR ────────────────────────────────
-  const [cashMinor, setCashMinor] = useState('0');
-  const [cashMethod, setCashMethod] = useState<'cash' | 'terminal'>('cash');
-  const [cashComment, setCashComment] = useState('');
-  const [cashNext, setCashNext] = useState(nowInputValue());
-  // 2026-07-12 aniqlik: default sahifa OCHILGAN payt emas, TO'LOV PAYTIDAGI
-  // ayni vaqt bo'lishi kerak. Kassir qo'l tegizmaguncha maydon har 30s da
-  // hozirgi vaqtga yangilanib turadi (jonli soat); qo'lda o'zgartirsa — to'xtaydi.
-  const [cashNextDirty, setCashNextDirty] = useState(false);
-  useEffect(() => {
-    if (cashNextDirty) return;
-    setCashNext(nowInputValue());
-    const tick = setInterval(() => setCashNext(nowInputValue()), 30_000);
-    return () => clearInterval(tick);
-  }, [cashNextDirty]);
-  const [cashErr, setCashErr] = useState<string | null>(null);
-
-  const addCash = useMutation({
-    mutationFn: () =>
-      debtApi.addCashPayment(id, {
-        amountMinor: cashMinor,
-        method: cashMethod,
-        comment: cashComment.trim() || undefined,
-        nextContactAt: cashNext ? new Date(cashNext).toISOString() : null,
-      }),
-    onSuccess: () => {
-      setCashMinor('0');
-      setCashComment('');
-      setCashNext(nowInputValue());
-      setCashNextDirty(false);
-      setCashErr(null);
-      invalidate();
-    },
-    onError: (e: Error) => setCashErr(e.message),
-  });
-
-  // ── 3) Karta (screenshot) to'lovi (§3.7) — FAQAT OPERATOR ─────────────────
-  const [cardMinor, setCardMinor] = useState('0');
-  const [cardFile, setCardFile] = useState<File | null>(null);
-  const [cardComment, setCardComment] = useState('');
-  const [cardErr, setCardErr] = useState<string | null>(null);
-
-  const addCard = useMutation({
-    mutationFn: async () => {
-      if (!cardFile) throw new Error(t('card_upload'));
-      const base64 = await fileToBase64(cardFile);
-      return debtApi.addCardPayment(id, {
-        amountMinor: cardMinor,
-        screenshotBase64: base64,
-        filename: cardFile.name,
-        mime: cardFile.type || 'image/png',
-        comment: cardComment.trim() || undefined,
-      });
-    },
-    onSuccess: () => {
-      setCardMinor('0');
-      setCardFile(null);
-      setCardComment('');
-      setCardErr(null);
-      invalidate();
-    },
-    onError: (e: Error) => setCardErr(e.message),
-  });
+  // 2026-07-14: bu yerda IKKITA to'lov formasining holati va mutatsiyalari
+  // (addCash / addCard) turardi. Endi to'lov QO'NG'IROQ NATIJASI formasidan
+  // kiritiladi (CallOutcomeForm) — bitta joyda, bitta oqim. Server tarafdagi
+  // /payments va /card-payments endpointlari o'z holicha qoladi (boshqa
+  // ekranlar ishlatishi mumkin), faqat bu sahifadan chaqirilmaydi.
 
   const d = debt.data;
   const isPaid = d?.status === 'paid';
@@ -308,15 +222,6 @@ export default function DebtProfilePage() {
       : k === 'payment'
         ? t('kind_payment')
         : t('kind_call');
-
-  const methodLabel = (m: DebtPaymentRow['method']) =>
-    m === 'cash'
-      ? t('method_cash')
-      : m === 'terminal'
-        ? t('method_terminal')
-        : m === 'manual_close'
-          ? t('method_manual_close')
-          : t('method_card_screenshot');
 
   const when = (iso: string) =>
     new Date(iso).toLocaleString('ru-RU', {
@@ -366,16 +271,9 @@ export default function DebtProfilePage() {
         {/* 1) Izoh / qo'ng'iroq — operator + kassir */}
         <Section title={t('section_notes')} tone="notes" testId="section-notes">
           <div className="flex flex-col gap-2">
-            {/* «Qo'ng'iroq qilindi» + natija (to'ladi / qisman / to'lamadi /
-                qayta qo'ng'iroq). To'lov bo'lsa — naqd (so'm/dollar) yoki Click
-                (chek rasmi) so'raladi va pastdagi tegishli bo'limda ko'rinadi. */}
-            <Button
-              variant="secondary"
-              onClick={() => setCallOpen(true)}
-              data-test-id="detail-call-btn"
-            >
-              📞 {t('call_button')}
-            </Button>
+            {/* 2026-07-14: bu yerda «📞 Qo'ng'iroq qilindi» tugmasi bor edi —
+                u modal ochardi. Endi natija formasi yonma-yon TURADI, tugma
+                keraksiz. Bu bo'lim faqat ERKIN IZOH uchun qoladi. */}
             <Textarea
               value={noteText}
               onChange={(e) => setNoteText(e.target.value)}
@@ -406,197 +304,60 @@ export default function DebtProfilePage() {
           </div>
         </Section>
 
-        {/* 2) Kassa to'lovi — FAQAT KASSIR (§3.6) */}
-        <Section title={t('section_cash')} tone="cash" testId="section-cash">
-          <div className="flex flex-col gap-2">
-            <div>
-              <div className="mb-1 text-[var(--ms-text-secondary)] text-xs">{t('cash_amount')}</div>
-              <MoneyInput
-                valueMinor={cashMinor}
-                onChangeMinor={setCashMinor}
-                disabled={isPaid}
-                data-test-id="cash-amount"
-              />
-            </div>
-            <div>
-              <div className="mb-1 text-[var(--ms-text-secondary)] text-xs">{t('cash_method')}</div>
-              <NativeSelect
-                value={cashMethod}
-                onChange={(e) => setCashMethod(e.target.value as 'cash' | 'terminal')}
-                disabled={isPaid}
-                data-test-id="cash-method"
-              >
-                <option value="cash">{t('method_cash')}</option>
-                <option value="terminal">{t('method_terminal')}</option>
-              </NativeSelect>
-            </div>
+        {/* ─── 2) QO'NG'IROQ NATIJASI — joyida (2026-07-14 talab) ───────────
+            Ilgari bu yerda IKKITA alohida to'lov formasi turardi (kassa +
+            karta), natijani belgilash uchun esa «📞 Qo'ng'iroq qilindi»
+            tugmasini bosib MODAL ochish kerak edi. Ya'ni bitta suhbat uchun
+            uch xil joy — operator adashardi.
 
-            {/* §3.6 — qisman to'lovda izoh + keyingi sana MAJBURIY (server ham tekshiradi) */}
-            <div className="rounded-[var(--ms-radius-sm)] bg-[var(--ms-bg-muted)] p-2 text-[var(--ms-text-secondary)] text-xs">
-              {t('partial_warning')}
-            </div>
-            <Textarea
-              value={cashComment}
-              onChange={(e) => setCashComment(e.target.value)}
-              placeholder={t('field_comment')}
-              rows={2}
-              disabled={isPaid}
-              data-test-id="cash-comment"
-            />
-            <Input
-              type="datetime-local"
-              value={cashNext}
-              onChange={(e) => {
-                setCashNextDirty(true);
-                setCashNext(e.target.value);
-              }}
-              disabled={isPaid}
-              data-test-id="cash-next"
-            />
-
-            <Button
-              variant="success"
-              loading={addCash.isPending}
-              disabled={isPaid || cashMinor === '0' || cashMinor === ''}
-              onClick={() => addCash.mutate()}
-              data-test-id="cash-submit"
-            >
-              {t('cash_submit')}
-            </Button>
-            {cashErr && (
-              <div className="text-[var(--ms-text-destructive)] text-sm" data-test-id="cash-error">
-                {cashErr}
-              </div>
-            )}
-
-            {/* 2026-07-13 talab: NAQD kiritilgan to'lovlar aynan shu — naqd
-                bo'limida ko'rinadi (summa + valyuta + kurs). Qo'ng'iroqda
-                «naqd» deb belgilangan to'lovlar ham shu yerga tushadi. */}
-            <PaymentLines
-              payments={cashPayments}
-              currency={d?.currency ?? 'UZS'}
-              emptyLabel={t('payments_empty')}
-              testPrefix="cash"
-              onOpenReceipt={setReceiptId}
-            />
-          </div>
+            Endi hammasi BITTA formada: to'ladi / qisman / to'lamadi / qayta
+            qo'ng'iroq · naqd yoki Click · summa, valyuta, kurs, chek rasmi ·
+            keyingi qo'ng'iroq sanasi · muammoli mijoz belgisi.
+            Qabul qilingan to'lovlar pastdagi NAQD va CLICK bo'limlarida
+            ko'rinadi (o'sha yerda). */}
+        <Section title={t('call_modal_title')} tone="cash" testId="section-call">
+          <CallOutcomeForm
+            debtId={id}
+            debtorName={d?.counterpartyName ?? ''}
+            remainingMinor={d?.remainingMinor}
+            onSaved={invalidate}
+          />
         </Section>
 
-        {/* 3) Karta (screenshot) to'lovi — FAQAT OPERATOR (§3.7) */}
-        <Section title={t('section_card')} tone="card" testId="section-card">
-          <div className="flex flex-col gap-2">
+        {/* ─── 3) QABUL QILINGAN TO'LOVLAR ──────────────────────────────────
+            Naqd va Click alohida — mijoz «men Clickda to'lagandim» desa,
+            operator darhol o'sha bo'limdan tekshiradi. */}
+        <Section title={t('section_payments')} tone="card" testId="section-payments">
+          <div className="flex flex-col gap-3">
             <div>
-              <div className="mb-1 text-[var(--ms-text-secondary)] text-xs">{t('card_amount')}</div>
-              <MoneyInput
-                valueMinor={cardMinor}
-                onChangeMinor={setCardMinor}
-                disabled={isPaid}
-                data-test-id="card-amount"
-              />
-            </div>
-
-            {/* TZ §3.7 — «tizim buni avtomatik tekshirmaydi» */}
-            <div className="rounded-[var(--ms-radius-sm)] bg-[var(--ms-bg-muted)] p-2 text-[var(--ms-text-secondary)] text-xs">
-              {t('card_hint')}
-            </div>
-
-            <div>
-              <div className="mb-1 text-[var(--ms-text-secondary)] text-xs">{t('card_upload')}</div>
-              <Input
-                type="file"
-                accept="image/*"
-                disabled={isPaid}
-                onChange={(e) => setCardFile(e.target.files?.[0] ?? null)}
-                data-test-id="card-file"
-              />
-              {cardFile && (
-                <div className="mt-1 text-[var(--ms-text-secondary)] text-xs">{cardFile.name}</div>
-              )}
-            </div>
-
-            <Textarea
-              value={cardComment}
-              onChange={(e) => setCardComment(e.target.value)}
-              placeholder={t('field_comment')}
-              rows={2}
-              disabled={isPaid}
-              data-test-id="card-comment"
-            />
-
-            <Button
-              loading={addCard.isPending}
-              disabled={isPaid || cardMinor === '0' || cardMinor === '' || cardFile === null}
-              onClick={() => addCard.mutate()}
-              data-test-id="card-submit"
-            >
-              {t('card_submit')}
-            </Button>
-            {cardErr && (
-              <div className="text-[var(--ms-text-destructive)] text-sm" data-test-id="card-error">
-                {cardErr}
+              <div className="mb-1 font-medium text-[var(--ms-text-muted)] text-xs">
+                {t('section_cash')}
               </div>
-            )}
-
-            {/* CLICK/karta to'lovlari — chek rasmi bilan (nizoda ochib ko'riladi). */}
-            <PaymentLines
-              payments={cardPayments}
-              currency={d?.currency ?? 'UZS'}
-              emptyLabel={t('payments_empty')}
-              testPrefix="card"
-              onOpenReceipt={setReceiptId}
-            />
+              <PaymentLines
+                payments={cashPayments}
+                currency={d?.currency ?? 'UZS'}
+                emptyLabel={t('payments_empty')}
+                testPrefix="cash"
+                onOpenReceipt={setReceiptId}
+              />
+            </div>
+            <div>
+              <div className="mb-1 font-medium text-[var(--ms-text-muted)] text-xs">
+                {t('section_card')}
+              </div>
+              <PaymentLines
+                payments={cardPayments}
+                currency={d?.currency ?? 'UZS'}
+                emptyLabel={t('payments_empty')}
+                testPrefix="card"
+                onOpenReceipt={setReceiptId}
+              />
+            </div>
           </div>
         </Section>
       </div>
 
-      {/* ─── To'lovlar tarixi (§3.7: manba ajratib ko'rsatiladi) ─────────── */}
-      <section className="mt-6">
-        <h2 className="mb-2 font-semibold text-sm">{t('section_payments')}</h2>
-        {d && d.payments.length > 0 ? (
-          <div className="flex flex-col gap-2">
-            {d.payments.map((p) => (
-              <div
-                key={p.id}
-                data-test-id={`payment-${p.id}`}
-                className="flex flex-wrap items-center gap-3 rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] p-3"
-              >
-                <span className="w-[140px] shrink-0 font-semibold tabular-nums">
-                  {formatMoney(p.amountMinor, d.currency)}
-                </span>
-                <Badge tone={p.method === 'card_screenshot' ? 'info' : 'success'}>
-                  {methodLabel(p.method)}
-                </Badge>
-                {/* §3.8 — «qayerdan qabul qilingani» */}
-                <span className="text-[var(--ms-text-secondary)] text-sm">
-                  {p.sourceName ?? '—'}
-                </span>
-                <span className="text-[var(--ms-text-secondary)] text-sm">
-                  {p.receivedByName ?? '—'} · {roleLabel(p.receivedByRole)}
-                </span>
-                <span className="text-[var(--ms-text-secondary)] text-sm tabular-nums">
-                  {when(p.createdAt)}
-                </span>
-                {p.comment && <span className="text-sm">{p.comment}</span>}
-                {/* §3.7 — chek istalgan vaqt MODAL oynada ochiladi (nizoli holat) */}
-                {p.attachmentId && (
-                  <button
-                    type="button"
-                    onClick={() => setReceiptId(p.attachmentId as string)}
-                    className="ml-auto text-[var(--ms-text-brand)] text-sm hover:underline"
-                    data-test-id={`screenshot-${p.id}`}
-                  >
-                    🧾 {t('view_screenshot')}
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-        ) : (
-          <EmptyState title={t('empty')} />
-        )}
-      </section>
-
-      {/* ─── TELEGRAM CHAT (2026-07-13) ──────────────────────────────────────
+      {/* ─── TELEGRAM CHAT ────────────────────────────────────────────────
           Operator qo'ng'iroq qilayotganda mijoz bilan Telegram'da nima
           yozilganini SHU YERDA ko'radi: yuborilgan xabarlar, mijoz javobi va
           u yuborgan CHEK RASMI. Alohida sahifaga o'tish shart emas. */}
@@ -643,15 +404,6 @@ export default function DebtProfilePage() {
         title={d?.counterpartyName ?? undefined}
         open={receiptId !== null}
         onClose={() => setReceiptId(null)}
-      />
-
-      {/* «Qo'ng'iroq qilindi» — natija modali (naqd/Click, valyuta, chek) */}
-      <CallOutcomeModal
-        debtId={id}
-        debtorName={d?.counterpartyName ?? ''}
-        remainingMinor={d?.remainingMinor}
-        open={callOpen}
-        onClose={() => setCallOpen(false)}
       />
     </Container>
   );
