@@ -12,6 +12,7 @@
  * turadi — bir qarashda kim uzil-kesil qutulgani ko'rinadi.
  */
 
+import { ReceiptViewer } from '@/components/debts/receipt-viewer';
 import { StatusLegend } from '@/components/debts/status-legend';
 import { useBackspaceBack } from '@/hooks/use-keyboard-nav';
 import {
@@ -51,6 +52,8 @@ export default function DebtPaymentsFeedPage() {
   useBackspaceBack();
 
   const [from, setFrom] = useState('');
+  // Ochilgan chek (2026-07-14) — null bo'lsa modal yopiq.
+  const [receiptId, setReceiptId] = useState<string | null>(null);
   const [to, setTo] = useState('');
   const [method, setMethod] = useState<DebtPaymentMethod | ''>('');
   const [search, setSearch] = useState('');
@@ -232,6 +235,7 @@ export default function DebtPaymentsFeedPage() {
                 <th className="px-3 py-2.5">{t('col_method')}</th>
                 <th className="px-3 py-2.5">{t('col_source')}</th>
                 <th className="px-3 py-2.5">{t('col_received_by')}</th>
+                <th className="px-3 py-2.5">{t('receipt_title')}</th>
                 <th className="px-3 py-2.5 text-right">{t('col_remaining')}</th>
               </tr>
             </thead>
@@ -281,6 +285,22 @@ export default function DebtPaymentsFeedPage() {
                   <td className="whitespace-nowrap px-3 py-2.5">{methodLabel(r.method)}</td>
                   <td className="px-3 py-2.5">{r.sourceName ?? '—'}</td>
                   <td className="px-3 py-2.5">{r.receivedByName ?? '—'}</td>
+                  {/* CHEK (2026-07-14): Click to'lovining skrinshoti shu yerdan
+                      modal oynada ochiladi — mijoz sahifasiga o'tish shart emas. */}
+                  <td className="px-3 py-2.5">
+                    {r.attachmentId ? (
+                      <button
+                        type="button"
+                        onClick={() => setReceiptId(r.attachmentId as string)}
+                        className="text-[var(--ms-text-brand)] hover:underline"
+                        data-test-id={`feed-receipt-${r.id}`}
+                      >
+                        🧾 {t('view_screenshot')}
+                      </button>
+                    ) : (
+                      <span className="text-[var(--ms-text-muted)]">—</span>
+                    )}
+                  </td>
                   <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums">
                     {r.debtStatus === 'paid' ? (
                       <Badge tone="success">{t('paid_full')}</Badge>
@@ -313,6 +333,13 @@ export default function DebtPaymentsFeedPage() {
           />
         </div>
       )}
+      {/* CHEK — modal oynada (rasm API'si token talab qiladi, havola 401 berardi) */}
+      <ReceiptViewer
+        attachmentId={receiptId}
+        title={rows.find((r) => r.attachmentId === receiptId)?.counterpartyName}
+        open={receiptId !== null}
+        onClose={() => setReceiptId(null)}
+      />
     </Container>
   );
 }

@@ -9,6 +9,7 @@
  * of the unbound incoming chats.
  */
 
+import { ReceiptViewer } from '@/components/debts/receipt-viewer';
 import { api } from '@/lib/api-client';
 import { Button, Input, NativeSelect } from '@moysklad/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -61,6 +62,9 @@ export function TelegramChatCard({ counterpartyId }: { counterpartyId: string })
   const qc = useQueryClient();
   const [draft, setDraft] = useState('');
   const [bindChatId, setBindChatId] = useState('');
+  // Ochilgan rasm/chek (2026-07-14). Ilgari <img src> to'g'ridan-to'g'ri API'ga
+  // qarardi va 401 olardi — rasm ko'rinmasdi. Endi modal token bilan yuklaydi.
+  const [receiptId, setReceiptId] = useState<string | null>(null);
 
   const { data: status } = useQuery<BusinessStatus>({
     queryKey: ['tg-business-status'],
@@ -211,33 +215,20 @@ export function TelegramChatCard({ counterpartyId }: { counterpartyId: string })
                   {/* CHEK RASMI (2026-07-13): ilgari media umuman saqlanmasdi.
                       Endi mijoz yuborgan chek shu yerda ko'rinadi — bosilsa
                       to'liq o'lchamda ochiladi. */}
-                  {m.kind === 'photo' && m.attachmentId && (
-                    <a
-                      href={`/api/v1/attachments/${m.attachmentId}/raw`}
-                      target="_blank"
-                      rel="noreferrer"
-                      data-test-id={`tg-photo-${m.id}`}
-                    >
-                      {/* next/image emas: rasm bizning API'dan oqim bo'lib keladi */}
-                      <img
-                        src={`/api/v1/attachments/${m.attachmentId}/raw`}
-                        alt={m.fileName ?? 'chek'}
-                        className="mb-1 max-h-56 rounded border border-[var(--ms-border-default)]"
-                      />
-                    </a>
-                  )}
-
-                  {/* Hujjat / ovoz / video — havola bilan */}
-                  {m.kind !== 'photo' && m.kind !== 'text' && m.attachmentId && (
-                    <a
-                      href={`/api/v1/attachments/${m.attachmentId}/raw`}
-                      target="_blank"
-                      rel="noreferrer"
+                  {/* CHEK/RASM — modal oynada ochiladi. To'g'ridan-to'g'ri <img src>
+                      ISHLAMAYDI: rasm API'si token talab qiladi, brauzer esa uni
+                      yubormaydi (401). Shuning uchun tugma + ReceiptViewer. */}
+                  {m.attachmentId && m.kind !== 'text' && (
+                    <button
+                      type="button"
+                      onClick={() => setReceiptId(m.attachmentId as string)}
                       className="mb-1 block text-[var(--ms-text-brand)] underline"
                       data-test-id={`tg-file-${m.id}`}
                     >
-                      {m.fileName ?? t('open_file')}
-                    </a>
+                      {m.kind === 'photo'
+                        ? `🧾 ${m.fileName ?? 'chek'}`
+                        : (m.fileName ?? t('open_file'))}
+                    </button>
                   )}
 
                   <div className="whitespace-pre-wrap break-words">{m.text}</div>
@@ -283,6 +274,14 @@ export function TelegramChatCard({ counterpartyId }: { counterpartyId: string })
           )}
         </div>
       )}
+
+      {/* Mijoz yuborgan chek/rasm — modal oynada (token bilan yuklanadi) */}
+      <ReceiptViewer
+        attachmentId={receiptId}
+        title={chat?.name}
+        open={receiptId !== null}
+        onClose={() => setReceiptId(null)}
+      />
     </Card>
   );
 }

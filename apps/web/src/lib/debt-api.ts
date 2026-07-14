@@ -177,6 +177,11 @@ export interface DebtPaymentFeedRow {
   amountMinor: string;
   method: DebtPaymentMethod;
   sourceName: string | null;
+  /** Click cheki — modal oynada ochiladi (`/attachments/:id/raw`, token bilan). */
+  attachmentId: string | null;
+  currency: PaymentCurrency;
+  amountOriginalMinor: string | null;
+  exchangeRate: string | null;
   receivedByName: string | null;
   receivedByRole: DebtAuthorRole;
   /** To'lovdan keyingi qarz holati — 'paid' bo'lsa «TO'LIQ YOPILDI». */

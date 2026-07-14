@@ -202,6 +202,35 @@ async function postOpenInBrowser(path: string, body: unknown, retry = true): Pro
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
+/**
+ * Rasm/faylni TOKEN bilan yuklab olib, brauzerda ko'rsatiladigan obyekt-URL
+ * qaytaradi (2026-07-14).
+ *
+ * NEGA KERAK: `/attachments/:id/raw` JwtAuthGuard ostida. Oddiy `<img src>` yoki
+ * `<a href>` `Authorization` sarlavhasini YUBORMAYDI — server 401 qaytaradi va
+ * chek OCHILMAYDI. (Jonli tekshirildi: sarlavhasiz 401, token bilan 200.)
+ * Shuning uchun rasmni fetch bilan olib, blob URL yasaymiz.
+ *
+ * Chaqiruvchi ishi tugagach `URL.revokeObjectURL(url)` qilishi SHART — aks holda
+ * xotira sizadi (har chek ~1-5 MB).
+ */
+async function blobUrl(path: string, retry = true): Promise<{ url: string; mime: string }> {
+  const token = getAccessToken();
+  const headers: Record<string, string> = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const res = await fetch(`${BASE}${path}`, { headers, credentials: 'include' });
+
+  if (res.status === 401 && retry && token) {
+    const refreshed = await refresh();
+    if (refreshed) return blobUrl(path, false);
+  }
+  if (!res.ok) throw new Error(`Faylni yuklab bo'lmadi: HTTP ${res.status}`);
+
+  const blob = await res.blob();
+  return { url: URL.createObjectURL(blob), mime: blob.type };
+}
+
 export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body: unknown) =>
@@ -214,4 +243,5 @@ export const api = {
   download,
   postDownload,
   postOpenInBrowser,
+  blobUrl,
 };

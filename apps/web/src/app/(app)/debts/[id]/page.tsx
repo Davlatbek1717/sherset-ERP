@@ -22,6 +22,7 @@
 
 import { TelegramChatCard } from '@/components/counterparties/telegram-chat-card';
 import { CallOutcomeModal } from '@/components/debts/call-outcome-modal';
+import { ReceiptViewer } from '@/components/debts/receipt-viewer';
 import { useBackspaceBack } from '@/hooks/use-keyboard-nav';
 import {
   DEBT_POLL_MS,
@@ -30,7 +31,6 @@ import {
   debtApi,
   fileToBase64,
   nowInputValue,
-  screenshotUrl,
   todayAt9InputValue,
 } from '@/lib/debt-api';
 import {
@@ -93,11 +93,14 @@ function PaymentLines({
   currency,
   emptyLabel,
   testPrefix,
+  onOpenReceipt,
 }: {
   payments: DebtPaymentRow[];
   currency: string;
   emptyLabel: string;
   testPrefix: string;
+  /** Chekni modal oynada ochadi (havola 401 berardi — token yuborilmasdi). */
+  onOpenReceipt: (attachmentId: string) => void;
 }) {
   const t = useTranslations('pages.debts');
 
@@ -156,17 +159,18 @@ function PaymentLines({
 
           {p.comment && <div className="mt-0.5 text-[var(--ms-text-secondary)]">{p.comment}</div>}
 
-          {/* Click cheki — istalgan vaqt ochib ko'riladi (nizoli holat) */}
+          {/* Click cheki — MODAL oynada ochiladi (2026-07-14).
+              Ilgari bu oddiy <a href> edi va 401 qaytarardi: rasm API'si token
+              talab qiladi, havola esa uni yubormaydi ⇒ chek umuman ochilmasdi. */}
           {p.attachmentId && (
-            <a
-              href={screenshotUrl(p.attachmentId)}
-              target="_blank"
-              rel="noreferrer"
+            <button
+              type="button"
+              onClick={() => onOpenReceipt(p.attachmentId as string)}
               className="mt-0.5 inline-block text-[var(--ms-text-brand)] hover:underline"
               data-test-id={`${testPrefix}-shot-${p.id}`}
             >
-              {t('view_screenshot')}
-            </a>
+              🧾 {t('view_screenshot')}
+            </button>
           )}
         </div>
       ))}
@@ -195,6 +199,8 @@ export default function DebtProfilePage() {
   // «Qo'ng'iroq qilindi» natija modali — MIJOZ SAHIFASIDA (2026-07-13: aynan
   // shu yerda qoladi; qarzdorlar ro'yxati qatoridagi dublikat olib tashlandi).
   const [callOpen, setCallOpen] = useState(false);
+  // Ochilgan chek (2026-07-14) — null bo'lsa modal yopiq.
+  const [receiptId, setReceiptId] = useState<string | null>(null);
   // «Qo'ng'iroq qilindi» natija modali (2026-07-12).
   const [noteErr, setNoteErr] = useState<string | null>(null);
 
@@ -471,6 +477,7 @@ export default function DebtProfilePage() {
               currency={d?.currency ?? 'UZS'}
               emptyLabel={t('payments_empty')}
               testPrefix="cash"
+              onOpenReceipt={setReceiptId}
             />
           </div>
         </Section>
@@ -536,6 +543,7 @@ export default function DebtProfilePage() {
               currency={d?.currency ?? 'UZS'}
               emptyLabel={t('payments_empty')}
               testPrefix="card"
+              onOpenReceipt={setReceiptId}
             />
           </div>
         </Section>
@@ -569,17 +577,16 @@ export default function DebtProfilePage() {
                   {when(p.createdAt)}
                 </span>
                 {p.comment && <span className="text-sm">{p.comment}</span>}
-                {/* §3.7 — chek istalgan vaqt ochib ko'riladi (nizoli holat) */}
+                {/* §3.7 — chek istalgan vaqt MODAL oynada ochiladi (nizoli holat) */}
                 {p.attachmentId && (
-                  <a
-                    href={screenshotUrl(p.attachmentId)}
-                    target="_blank"
-                    rel="noreferrer"
+                  <button
+                    type="button"
+                    onClick={() => setReceiptId(p.attachmentId as string)}
                     className="ml-auto text-[var(--ms-text-brand)] text-sm hover:underline"
                     data-test-id={`screenshot-${p.id}`}
                   >
-                    {t('view_screenshot')}
-                  </a>
+                    🧾 {t('view_screenshot')}
+                  </button>
                 )}
               </div>
             ))}
@@ -630,6 +637,14 @@ export default function DebtProfilePage() {
           <EmptyState title={t('note_empty')} />
         )}
       </section>
+      {/* CHEK — modal oynada (havola 401 berardi, endi token bilan yuklanadi) */}
+      <ReceiptViewer
+        attachmentId={receiptId}
+        title={d?.counterpartyName ?? undefined}
+        open={receiptId !== null}
+        onClose={() => setReceiptId(null)}
+      />
+
       {/* «Qo'ng'iroq qilindi» — natija modali (naqd/Click, valyuta, chek) */}
       <CallOutcomeModal
         debtId={id}

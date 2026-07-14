@@ -1193,6 +1193,12 @@ export class DebtService {
           amountMinor: p.amountMinor.toString(),
           method: p.method,
           sourceName: p.sourceName ?? p.cashDesk?.name ?? null,
+          /** CHEK (2026-07-14): to'lovlar sahifasidan ham ochib ko'rilsin. */
+          attachmentId: p.attachmentId,
+          /** Naqd dollarda berilgan bo'lsa — asl summa va kurs ko'rinsin. */
+          currency: p.currency,
+          amountOriginalMinor: p.amountOriginalMinor?.toString() ?? null,
+          exchangeRate: p.exchangeRate?.toString() ?? null,
           receivedByName: p.receivedBy?.name ?? null,
           receivedByRole: p.receivedByRole,
           /** To'lovdan keyin qarzning JORIY holati — «to'liq yopildi» belgisi shu yerdan. */
