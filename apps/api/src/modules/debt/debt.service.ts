@@ -36,6 +36,8 @@ import {
   type DebtStatus,
   type MarkCallInput,
   MarkCallSchema,
+  type SetProblemInput,
+  SetProblemSchema,
 } from './debt.schema.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -109,6 +111,9 @@ export class DebtService {
     nextContactAt: Date | null;
     lastCallAt?: Date | null;
     lastCallOutcome?: string | null;
+    problem?: boolean;
+    problemReason?: string | null;
+    problemAt?: Date | null;
     comment: string | null;
     closedAt: Date | null;
     createdAt: Date;
@@ -137,6 +142,10 @@ export class DebtService {
       lastNote: d.notes?.[0]?.text ?? null,
       lastCallAt: d.lastCallAt ?? null,
       lastCallOutcome: d.lastCallOutcome ?? null,
+      /** MUAMMOLI MIJOZ (2026-07-14) — alohida bo'lim shundan filtrlanadi. */
+      problem: d.problem ?? false,
+      problemReason: d.problemReason ?? null,
+      problemAt: d.problemAt ?? null,
       comment: d.comment,
       ownerId: d.owner?.id ?? null,
       ownerName: d.owner?.name ?? null,
@@ -297,6 +306,11 @@ export class DebtService {
     } else if (f.scope === 'overdue') {
       where.status = { in: ['unpaid', 'partial'] };
       where.nextContactAt = { lt: now };
+    } else if (f.scope === 'problem') {
+      // «MUAMMOLI QARZDORLAR» (2026-07-14): operator qo'ng'iroqda belgilagan
+      // mijozlar. Yopilgan qarz bu yerda ko'rinmaydi — muammo hal bo'lgan.
+      where.problem = true;
+      where.status = { in: ['unpaid', 'partial'] };
     } else if (f.scope === 'called') {
       // «Qo'ng'iroq qilinganlar» (2026-07-12): tanlangan Toshkent kunida
       // qo'ng'iroq belgilangan qarzlar — statusidan qat'i nazar (to'lab
@@ -701,14 +715,54 @@ export class DebtService {
         input.outcome === 'paid_full' ? null : (input.nextContactAt ?? null),
       );
 
+      // ── MUAMMOLI MIJOZ (2026-07-14) ────────────────────────────────────────
+      // `problem` BERILMAGAN bo'lsa — TEGILMAYDI. Ya'ni oddiy qo'ng'iroq
+      // (masalan «to'lamadi») mavjud muammo belgisini tasodifan o'chirmaydi.
+      // Belgilanganda/yechilganda muloqot tarixiga ham yozuv tushadi: kim,
+      // qachon, nega — bu yo'qolmasligi kerak.
+      const problemPatch =
+        input.problem === true
+          ? {
+              problem: true,
+              problemReason: input.problemReason ?? null,
+              problemAt: new Date(),
+              problemById: userId,
+            }
+          : input.problem === false
+            ? { problem: false, problemAt: null, problemById: null }
+            : {};
+
+      if (input.problem !== undefined) {
+        await tx.debtNote.create({
+          data: {
+            accountId,
+            debtId,
+            text:
+              input.problem === true
+                ? `⚠️ MUAMMOLI mijoz deb belgilandi. Sabab: ${input.problemReason ?? '—'}`
+                : '✅ Muammoli belgisi olib tashlandi',
+            nextContactAt: input.nextContactAt ?? null,
+            authorId: userId,
+            authorRole: role,
+            kind: 'call' satisfies DebtNoteKind,
+          },
+        });
+      }
+
       const debtRow = await tx.debt.update({
         where: { id: debtId },
         data: {
           lastCallAt: new Date(),
           lastCallOutcome: input.outcome,
+          ...problemPatch,
           ...(input.outcome === 'paid_full'
             ? {
                 callRemindedAt: null,
+                // Qarz yopilsa muammo ham yopiladi — qarzsiz «muammoli mijoz»
+                // ro'yxatda osilib qolmasin.
+                problem: false,
+                problemAt: null,
+                problemById: null,
                 // Chekka holat: qoldiq 0 bo'lib to'lov yaratilmagan bo'lsa ham,
                 // «to'ladi» — operatorning uzil-kesil hukmi, qarz yopiladi.
                 ...(updated.status === 'paid'
@@ -1217,7 +1271,7 @@ export class DebtService {
     const now = new Date();
     const day = this.tashkentDay();
 
-    const [all, overdue, todayCount] = await Promise.all([
+    const [all, overdue, todayCount, problemCount] = await Promise.all([
       this.prisma.client.debt.aggregate({
         where: { accountId, deletedAt: null, status: { in: ['unpaid', 'partial'] } },
         _sum: { totalMinor: true, paidMinor: true },
@@ -1241,6 +1295,15 @@ export class DebtService {
           nextContactAt: { gte: day.gte, lt: day.lt },
         },
       }),
+      // MUAMMOLI mijozlar (2026-07-14) — dashboard kartochkasi.
+      this.prisma.client.debt.count({
+        where: {
+          accountId,
+          deletedAt: null,
+          problem: true,
+          status: { in: ['unpaid', 'partial'] },
+        },
+      }),
     ]);
 
     const out = (a: { _sum: { totalMinor: bigint | null; paidMinor: bigint | null } }) => {
@@ -1254,7 +1317,60 @@ export class DebtService {
       overdueMinor: out(overdue),
       overdueCount: overdue._count._all,
       todayCallCount: todayCount,
+      /** «Muammoli qarzdorlar» bo'limidagi mijozlar soni. */
+      problemCount,
     };
+  }
+
+  // ───────────────────────────────── MUAMMOLI MIJOZ (2026-07-14 talab) ──────
+
+  /**
+   * Muammo belgisini QO'YISH yoki YECHISH — «Muammoli qarzdorlar» sahifasidan.
+   *
+   * Qo'ng'iroq modalidan tashqari alohida yo'l kerak: muammo hal bo'lganda
+   * operator qayta qo'ng'iroq qilmasdan ham ro'yxatdan chiqarishi mumkin
+   * bo'lsin. Har ikkala amal MULOQOT TARIXIGA yoziladi — kim, qachon, nega.
+   */
+  async setProblem(
+    accountId: string,
+    userId: string,
+    role: ActorRole,
+    debtId: string,
+    raw: unknown,
+  ) {
+    const input: SetProblemInput = SetProblemSchema.parse(raw);
+    await this.mustFind(accountId, debtId);
+
+    return this.prisma.client.$transaction(async (tx) => {
+      await tx.debtNote.create({
+        data: {
+          accountId,
+          debtId,
+          text: input.problem
+            ? `⚠️ MUAMMOLI mijoz deb belgilandi. Sabab: ${input.problemReason ?? '—'}`
+            : `✅ Muammoli belgisi olib tashlandi${input.problemReason ? `. ${input.problemReason}` : ''}`,
+          nextContactAt: input.nextContactAt ?? null,
+          authorId: userId,
+          authorRole: role,
+          kind: 'call' satisfies DebtNoteKind,
+        },
+      });
+
+      return tx.debt.update({
+        where: { id: debtId },
+        data: input.problem
+          ? {
+              problem: true,
+              problemReason: input.problemReason ?? null,
+              problemAt: new Date(),
+              problemById: userId,
+              ...(input.nextContactAt
+                ? { nextContactAt: input.nextContactAt, callRemindedAt: null }
+                : {}),
+            }
+          : { problem: false, problemAt: null, problemById: null },
+      });
+    });
   }
 
   // ───────────────────────────── qarzdorlar ro'yxati PDF (2026-07-12 talab) ──

@@ -170,6 +170,14 @@ export const MarkCallSchema = z
     /** Keyingi qo'ng'iroq vaqti — callback va paid_partial uchun MAJBURIY. */
     nextContactAt: z.coerce.date().nullish(),
     /**
+     * MUAMMOLI MIJOZ (2026-07-14). `true` — mijoz «Muammoli qarzdorlar»
+     * bo'limiga tushadi; `false` — muammodan chiqariladi; berilmasa — tegilmaydi
+     * (oddiy qo'ng'iroq muammo belgisini tasodifan o'chirib yubormasin).
+     */
+    problem: z.boolean().optional(),
+    /** Muammo SABABI — `problem: true` da MAJBURIY (sababsiz belgi foydasiz). */
+    problemReason: z.string().trim().max(2000).optional(),
+    /**
      * ESKI maydon (2026-07-12) — SO'MDAGI summa (tiyin). Yangi FE endi
      * `amountOriginalMinor` + `currency` yuboradi; bu esa so'm to'lovlar uchun
      * moslik sifatida qoladi (eski klient/testlar buzilmasin).
@@ -216,8 +224,43 @@ export const MarkCallSchema = z
   .refine((v) => v.outcome !== 'paid_partial' || v.nextContactAt != null, {
     message: "«Qisman to'ladi» uchun keyingi sana majburiy (qoldiq bor)",
     path: ['nextContactAt'],
+  })
+  // Muammoli deb belgilashda SABAB majburiy — «muammoli» degan quruq belgi
+  // keyingi operatorga hech narsa aytmaydi.
+  .refine((v) => v.problem !== true || (v.problemReason?.length ?? 0) > 0, {
+    message: 'Muammo sababini yozing',
+    path: ['problemReason'],
+  })
+  // Muammoli mijozga QACHON qayta qo'ng'iroq qilish ham majburiy — aks holda u
+  // ro'yxatda «osilib» qoladi va hech kim qaytib ko'rmaydi.
+  .refine((v) => v.problem !== true || v.nextContactAt != null, {
+    message: "Muammoli mijozga qayta qo'ng'iroq sanasini belgilang",
+    path: ['nextContactAt'],
   });
 export type MarkCallInput = z.infer<typeof MarkCallSchema>;
+
+/**
+ * MUAMMOLI MIJOZ belgisini qo'yish/yechish (2026-07-14) — «Muammoli qarzdorlar»
+ * sahifasidan, qo'ng'iroq modalidan tashqari.
+ *
+ * Belgilashda SABAB va QAYTA QO'NG'IROQ SANASI majburiy: sababsiz belgi keyingi
+ * operatorga hech narsa aytmaydi, sanasiz esa mijoz ro'yxatda «osilib» qoladi.
+ */
+export const SetProblemSchema = z
+  .object({
+    problem: z.boolean(),
+    problemReason: z.string().trim().max(2000).optional(),
+    nextContactAt: z.coerce.date().nullish(),
+  })
+  .refine((v) => !v.problem || (v.problemReason?.length ?? 0) > 0, {
+    message: 'Muammo sababini yozing',
+    path: ['problemReason'],
+  })
+  .refine((v) => !v.problem || v.nextContactAt != null, {
+    message: "Qayta qo'ng'iroq sanasini belgilang",
+    path: ['nextContactAt'],
+  });
+export type SetProblemInput = z.infer<typeof SetProblemSchema>;
 
 /**
  * TZ §3.1 — QARZDORLAR RO'YXATI filtri.
@@ -228,7 +271,17 @@ export type MarkCallInput = z.infer<typeof MarkCallSchema>;
  *   overdue  — keyingi aloqa sanasi O'TIB KETGAN
  *   all      — yopilganlar ham (tarix)
  */
-export const DebtScopeSchema = z.enum(['active', 'today', 'overdue', 'all', 'called']);
+/**
+ * Ro'yxat ko'rinishlari.
+ *   active   — joriy qarzdorlar (odatiy)
+ *   today    — bugun qo'ng'iroq qilinishi kerak
+ *   overdue  — muddati o'tgan
+ *   called   — tanlangan kunda qo'ng'iroq qilinganlar
+ *   problem  — MUAMMOLI mijozlar (2026-07-14): telefonni ko'tarmaydi, va'da
+ *              berib bermaydi va h.k. Operator qo'ng'iroqda belgilaydi.
+ *   all      — hammasi
+ */
+export const DebtScopeSchema = z.enum(['active', 'today', 'overdue', 'all', 'called', 'problem']);
 export type DebtScope = z.infer<typeof DebtScopeSchema>;
 
 export const DebtFilterSchema = z.object({

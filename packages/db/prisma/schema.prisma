@@ -9064,6 +9064,22 @@ model Debt {
   /// uchun eslatma qayta ishlaydi.
   callRemindedAt DateTime? @map("call_reminded_at") @db.Timestamptz()
 
+  /// MUAMMOLI MIJOZ (2026-07-14 talab). Operator qo'ng'iroq natijasini
+  /// belgilaganda mijozni «muammoli» deb ajratib qo'yishi mumkin: telefonni
+  /// ko'tarmaydi, va'da berib bermaydi, janjal qiladi va h.k.
+  ///
+  /// Bu `lastCallOutcome` dan ALOHIDA o'q: mijoz «qisman to'ladi» bo'lib ham,
+  /// ayni paytda muammoli bo'lishi mumkin. Shuning uchun alohida bayroq.
+  ///   problem       — «Muammoli qarzdorlar» bo'limi shundan filtrlanadi
+  ///   problemReason — NIMA muammo (majburiy: sababsiz belgi foydasiz)
+  ///   problemAt / problemById — qachon va kim belgilagan
+  /// Muammo hal bo'lsa `problem=false` bo'ladi, lekin sabab MULOQOT TARIXIDA
+  /// qoladi — kim, qachon, nega degani yo'qolmasin.
+  problem       Boolean   @default(false)
+  problemReason String?   @map("problem_reason")
+  problemAt     DateTime? @map("problem_at") @db.Timestamptz()
+  problemById   String?   @map("problem_by_id") @db.Uuid
+
   /// Mas'ul xodim (call-markaz operatori) — ro'yxat filtri.
   ownerId String? @map("owner_id") @db.Uuid
   /// Qarzni bergan kassir — §3.9 kunlik kassir hisoboti shu ustundan yig'iladi.

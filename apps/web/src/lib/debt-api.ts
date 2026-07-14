@@ -20,7 +20,11 @@ export type DebtStatus = 'unpaid' | 'partial' | 'paid';
 export type DebtPaymentMethod = 'cash' | 'terminal' | 'card_screenshot' | 'manual_close';
 export type DebtNoteKind = 'call' | 'debt_issue' | 'payment';
 export type DebtAuthorRole = 'operator' | 'cashier' | 'admin';
-export type DebtScope = 'active' | 'today' | 'overdue' | 'all' | 'called';
+/**
+ * Ro'yxat ko'rinishlari.
+ *   problem — MUAMMOLI mijozlar (2026-07-14): operator qo'ng'iroqda belgilagan.
+ */
+export type DebtScope = 'active' | 'today' | 'overdue' | 'all' | 'called' | 'problem';
 /** Qo'ng'iroq natijasi (2026-07-12): to'ladi / qisman / to'lamadi / qayta qo'ng'iroq. */
 export type CallOutcome = 'paid_full' | 'paid_partial' | 'not_paid' | 'callback';
 
@@ -56,6 +60,10 @@ export interface DebtRow {
   /** Oxirgi qo'ng'iroq belgisi (2026-07-12). */
   lastCallAt: string | null;
   lastCallOutcome: CallOutcome | null;
+  /** MUAMMOLI MIJOZ (2026-07-14) — «Muammoli qarzdorlar» bo'limi shundan. */
+  problem: boolean;
+  problemReason: string | null;
+  problemAt: string | null;
   comment: string | null;
   ownerId: string | null;
   ownerName: string | null;
@@ -112,6 +120,8 @@ export interface DebtSummary {
   overdueMinor: string;
   overdueCount: number;
   todayCallCount: number;
+  /** Muammoli mijozlar soni. */
+  problemCount: number;
 }
 
 export interface CashierReportRow {
@@ -262,8 +272,17 @@ export const debtApi = {
       mime?: string;
       /** Eski maydon (so'mdagi tiyin) — moslik uchun qoldirilgan. */
       amountMinor?: string;
+      /** MUAMMOLI mijoz deb belgilash (sabab + qayta qo'ng'iroq sanasi majburiy). */
+      problem?: boolean;
+      problemReason?: string;
     },
   ) => api.post<DebtRow>(`/debts/${id}/call`, body),
+
+  /** Muammoli belgisini qo'yish/yechish — «Muammoli qarzdorlar» sahifasidan. */
+  setProblem: (
+    id: string,
+    body: { problem: boolean; problemReason?: string; nextContactAt?: string | null },
+  ) => api.post<DebtRow>(`/debts/${id}/problem`, body),
 
   /** §3.6 — kassada naqd/terminal to'lov (FAQAT KASSIR). */
   addCashPayment: (

@@ -8,6 +8,7 @@ import {
   DebtFilterSchema,
   DebtPaymentsFeedFilterSchema,
   MarkCallSchema,
+  SetProblemSchema,
 } from './debt.schema.js';
 
 const CP = '11111111-1111-1111-1111-111111111111';
@@ -328,5 +329,60 @@ describe("manual_close — «To'ladi» to'lov yozuvi (2026-07-13)", () => {
     expect(() =>
       CreateCashPaymentSchema.parse({ amountMinor: '100', method: 'manual_close' }),
     ).toThrow();
+  });
+});
+
+// ── MUAMMOLI MIJOZ (2026-07-14 talab) ───────────────────────────────────────
+describe('Muammoli mijoz', () => {
+  const NEXT = '2026-07-20T09:00:00Z';
+
+  it('markCall: muammoli deb belgilashda SABAB majburiy', () => {
+    expect(() =>
+      MarkCallSchema.parse({ outcome: 'not_paid', problem: true, nextContactAt: NEXT }),
+    ).toThrow();
+
+    const ok = MarkCallSchema.parse({
+      outcome: 'not_paid',
+      problem: true,
+      problemReason: "Telefonni ko'tarmaydi",
+      nextContactAt: NEXT,
+    });
+    expect(ok.problem).toBe(true);
+    expect(ok.problemReason).toBe("Telefonni ko'tarmaydi");
+  });
+
+  it('markCall: muammoli mijozga QAYTA QONGIROQ sanasi majburiy', () => {
+    // Sanasiz belgilansa mijoz royxatda osilib qoladi — hech kim qaytib kormaydi.
+    expect(() =>
+      MarkCallSchema.parse({ outcome: 'not_paid', problem: true, problemReason: 'janjal' }),
+    ).toThrow();
+  });
+
+  it('markCall: problem BERILMASA tegilmaydi (mavjud belgi ochib ketmasin)', () => {
+    const v = MarkCallSchema.parse({ outcome: 'not_paid' });
+    expect(v.problem).toBeUndefined();
+  });
+
+  it('markCall: problem=false bilan muammodan chiqarish mumkin (sabab shart emas)', () => {
+    const v = MarkCallSchema.parse({ outcome: 'not_paid', problem: false });
+    expect(v.problem).toBe(false);
+  });
+
+  it('SetProblemSchema: belgilashda sabab + sana majburiy', () => {
+    expect(() => SetProblemSchema.parse({ problem: true })).toThrow();
+    expect(() => SetProblemSchema.parse({ problem: true, problemReason: 'x' })).toThrow();
+    expect(() => SetProblemSchema.parse({ problem: true, nextContactAt: NEXT })).toThrow();
+
+    const ok = SetProblemSchema.parse({
+      problem: true,
+      problemReason: "Va'da berib bermaydi",
+      nextContactAt: NEXT,
+    });
+    expect(ok.problem).toBe(true);
+  });
+
+  it('SetProblemSchema: YECHISHDA sabab ham, sana ham shart emas', () => {
+    const v = SetProblemSchema.parse({ problem: false });
+    expect(v.problem).toBe(false);
   });
 });

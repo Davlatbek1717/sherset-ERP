@@ -11,7 +11,7 @@
 
 import { useTranslations } from 'next-intl';
 
-type LegendKey = 'paid' | 'partial' | 'not_paid' | 'callback' | 'no_call';
+type LegendKey = 'paid' | 'partial' | 'not_paid' | 'callback' | 'no_call' | 'problem';
 
 const TONE: Record<LegendKey, string> = {
   paid: 'bg-[var(--ms-row-paid-bg)] border-[var(--ms-row-paid-accent)]',
@@ -19,6 +19,8 @@ const TONE: Record<LegendKey, string> = {
   not_paid: 'bg-[var(--ms-row-unpaid-bg)] border-[var(--ms-row-unpaid-accent)]',
   callback: 'bg-[var(--ms-row-callback-bg)] border-[var(--ms-row-callback-accent)]',
   no_call: 'bg-[var(--ms-bg-surface)] border-[var(--ms-border-strong)]',
+  // Muammoli — qizil, lekin QALIN chiziq bilan (to'lamadi dan farqlansin)
+  problem: 'bg-[var(--ms-row-unpaid-bg)] border-l-4 border-[var(--ms-row-unpaid-accent)]',
 };
 
 const LABEL: Record<LegendKey, string> = {
@@ -27,6 +29,7 @@ const LABEL: Record<LegendKey, string> = {
   not_paid: 'legend_not_paid',
   callback: 'legend_callback',
   no_call: 'legend_no_call',
+  problem: 'legend_problem',
 };
 
 export function StatusLegend({ items }: { items: LegendKey[] }) {

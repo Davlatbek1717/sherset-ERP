@@ -81,6 +81,12 @@ function rowTone(r: DebtRow, highlightId: string | null): string | undefined {
     r.id === highlightId ? ' ring-2 ring-inset ring-[var(--ms-warning-500)] duration-500' : '';
 
   const base = 'border-l-[3px] transition-colors';
+
+  // MUAMMOLI mijoz (2026-07-14) — qo'ng'iroq natijasidan QAT'I NAZAR qizil
+  // fon + qalin chiziq bilan ajraladi: eng og'irlari ko'zdan qochmasin.
+  if (r.problem) {
+    return `border-l-4 border-l-[var(--ms-row-unpaid-accent)] bg-[var(--ms-row-unpaid-bg)] font-medium transition-colors${ring}`;
+  }
   switch (r.lastCallOutcome) {
     case 'not_paid':
       return `${base} border-l-[var(--ms-row-unpaid-accent)] bg-[var(--ms-row-unpaid-bg)]${ring}`;
@@ -410,6 +416,9 @@ export default function DebtsPage() {
               <Link href="/debts/called">{t('tab_called')}</Link>
             </Button>
             <Button variant="secondary" asChild>
+              <Link href="/debts/problems">{t('tab_problems')}</Link>
+            </Button>
+            <Button variant="secondary" asChild>
               <Link href="/debts/payments">{t('tab_payments')}</Link>
             </Button>
             <Button variant="secondary" asChild>
@@ -437,7 +446,7 @@ export default function DebtsPage() {
       />
 
       {/* §4 — umumiy hisobot kartochkalari */}
-      <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <StatCard
           label={t('kpi_outstanding')}
           value={formatMoney(summary.data?.outstandingMinor ?? '0')}
@@ -454,6 +463,14 @@ export default function DebtsPage() {
           value={summary.data?.todayCallCount ?? 0}
           tone="warning"
         />
+        {/* MUAMMOLI mijozlar (2026-07-14) — bosilsa alohida sahifaga o'tadi */}
+        <Link href="/debts/problems" className="block">
+          <StatCard
+            label={t('kpi_problem')}
+            value={summary.data?.problemCount ?? 0}
+            tone="destructive"
+          />
+        </Link>
       </div>
 
       {/* Mijoz-segment tablari: Hammasi · ⚡ Elektriklar · Boshqalar */}
@@ -545,7 +562,7 @@ export default function DebtsPage() {
       </div>
 
       {/* Ranglar izohi — rang o'zi jumboq bo'lib qolmasin */}
-      <StatusLegend items={['not_paid', 'partial', 'callback', 'no_call']} />
+      <StatusLegend items={['problem', 'not_paid', 'partial', 'callback', 'no_call']} />
 
       <DataTable
         columns={columns}

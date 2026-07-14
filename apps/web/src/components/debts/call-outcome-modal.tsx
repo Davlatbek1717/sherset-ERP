@@ -101,6 +101,11 @@ export function CallOutcomeModal({
   /** Chek rasmi — data-URI. */
   const [shot, setShot] = useState<{ dataUri: string; name: string; mime: string } | null>(null);
 
+  // MUAMMOLI MIJOZ (2026-07-14). Natijadan MUSTAQIL: mijoz «qisman to'ladi»
+  // bo'lib ham muammoli bo'lishi mumkin (har safar va'da berib, kam to'laydi).
+  const [problem, setProblem] = useState(false);
+  const [problemReason, setProblemReason] = useState('');
+
   const isPayment = outcome === 'paid_full' || outcome === 'paid_partial';
   const rateMinor = rateToMinor(rateText);
   const usdCents = usdToCents(usdText);
@@ -121,6 +126,8 @@ export function CallOutcomeModal({
     setUsdText('');
     setRateText('');
     setShot(null);
+    setProblem(false);
+    setProblemReason('');
     setError(null);
   }
 
@@ -162,8 +169,17 @@ export function CallOutcomeModal({
       return debtApi.markCall(debtId, {
         outcome: outcome as CallOutcome,
         text: text.trim() || undefined,
+        // «To'ladi» da sana kerak emas (qarz yopiladi) — LEKIN muammoli deb
+        // belgilansa sana MAJBURIY, aks holda server 400 qaytaradi.
         nextContactAt:
-          outcome === 'paid_full' ? null : nextAt ? new Date(nextAt).toISOString() : null,
+          outcome === 'paid_full' && !problem
+            ? null
+            : nextAt
+              ? new Date(nextAt).toISOString()
+              : null,
+        // Muammoli belgisi FAQAT belgilangan bo'lsa yuboriladi — aks holda
+        // mavjud belgi tasodifan o'chib ketardi (server `undefined` ni tegmaydi).
+        ...(problem ? { problem: true, problemReason: problemReason.trim() } : {}),
         ...(isPayment && kind
           ? {
               paymentKind: kind,
@@ -200,7 +216,7 @@ export function CallOutcomeModal({
   //   paid_full    → to'lov turi + summa (sana kerak emas — qarz yopiladi)
   //   click        → chek rasmi
   //   dollar       → kurs
-  const needsDate = outcome === 'callback' || outcome === 'paid_partial';
+  const needsDate = outcome === 'callback' || outcome === 'paid_partial' || problem;
   const amountOk =
     !isPayment ||
     (kind === 'cash' && currency === 'USD'
@@ -208,12 +224,18 @@ export function CallOutcomeModal({
       : somMinor !== '' && somMinor !== '0');
   const shotOk = !isPayment || kind !== 'click' || shot !== null;
 
+  // Muammoli deb belgilansa — SABAB va QAYTA QO'NG'IROQ SANASI majburiy.
+  // Sababsiz belgi keyingi operatorga hech narsa aytmaydi; sanasiz esa mijoz
+  // ro'yxatda «osilib» qoladi va hech kim qaytib ko'rmaydi.
+  const problemOk = !problem || (problemReason.trim().length > 0 && nextAt !== '');
+
   const valid =
     outcome !== null &&
     (!needsDate || nextAt !== '') &&
     (!isPayment || kind !== null) &&
     amountOk &&
-    shotOk;
+    shotOk &&
+    problemOk;
 
   return (
     <Modal
@@ -475,6 +497,49 @@ export function CallOutcomeModal({
           </div>
         )}
 
+        {/* ── MUAMMOLI MIJOZ (2026-07-14) ────────────────────────────────────
+            Natijadan MUSTAQIL bayroq: mijoz qisman to'lasa ham muammoli
+            bo'lishi mumkin. Belgilansa — «Muammoli qarzdorlar» bo'limiga
+            tushadi va sabab bilan qayta qo'ng'iroq sanasi majburiy bo'ladi. */}
+        <div
+          className={[
+            'rounded-[var(--ms-radius-default)] border p-3 transition-colors',
+            problem
+              ? 'border-[var(--ms-row-unpaid-accent)] bg-[var(--ms-row-unpaid-bg)]'
+              : 'border-[var(--ms-border-default)]',
+          ].join(' ')}
+        >
+          <label className="flex cursor-pointer items-start gap-2">
+            <input
+              type="checkbox"
+              checked={problem}
+              onChange={(e) => setProblem(e.target.checked)}
+              className="mt-0.5 h-4 w-4"
+              data-test-id="call-problem"
+            />
+            <span>
+              <span className="font-semibold text-sm">{t('problem_mark')}</span>
+              <span className="block text-[var(--ms-text-muted)] text-xs">{t('problem_hint')}</span>
+            </span>
+          </label>
+
+          {problem && (
+            <div className="mt-2">
+              <div className="mb-1 text-[var(--ms-text-muted)] text-xs">
+                {t('problem_reason')}
+                <span className="ml-1 text-[var(--ms-destructive-500)]">*</span>
+              </div>
+              <Textarea
+                value={problemReason}
+                onChange={(e) => setProblemReason(e.target.value)}
+                placeholder={t('problem_reason_placeholder')}
+                rows={2}
+                data-test-id="call-problem-reason"
+              />
+            </div>
+          )}
+        </div>
+
         <Textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
@@ -482,8 +547,10 @@ export function CallOutcomeModal({
           rows={2}
         />
 
-        {/* paid_full'da keyingi sana kerak emas — qarz yopiladi */}
-        {outcome !== 'paid_full' && (
+        {/* paid_full'da keyingi sana kerak emas — qarz yopiladi.
+            LEKIN muammoli deb belgilansa sana MAJBURIY, shuning uchun
+            ko'rsatiladi (mijoz muammoli bo'lsa qarz ham yopilmagan bo'ladi). */}
+        {(outcome !== 'paid_full' || problem) && (
           <div>
             <div className="mb-1 text-[var(--ms-text-muted)] text-xs">
               {t('field_next_contact')}

@@ -8242,6 +8242,14 @@ model TelegramChat {
   /// Kontragent avtomatik topildimi (ism/telefon bo'yicha) yoki qo'lda bog'landimi.
   boundBy        String? @map("bound_by") @db.VarChar(10) // 'auto' | 'manual'
 
+  /// Chat qayerdan keldi — xabar YUBORISH usuli shunga bog'liq:
+  ///   'business' — egasining shaxsiy Telegram'i orqali (business_connection_id
+  ///                bilan yuboriladi, mijoz egasining NOMIDAN xabar oladi)
+  ///   'bot'      — mijoz botga o'zi yozgan (oddiy sendMessage)
+  /// Noto'g'ri usul bilan yuborilsa Telegram xato qaytaradi, shuning uchun
+  /// buni saqlab qo'yamiz.
+  source String @default("business") @db.VarChar(10)
+
   lastMessageAt DateTime? @map("last_message_at") @db.Timestamptz()
   createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
@@ -9055,6 +9063,22 @@ model Debt {
   /// payt. Yangi nextContactAt qo'yilganda NULL'ga tushadi — keyingi muddat
   /// uchun eslatma qayta ishlaydi.
   callRemindedAt  DateTime? @map("call_reminded_at") @db.Timestamptz()
+
+  /// MUAMMOLI MIJOZ (2026-07-14 talab). Operator qo'ng'iroq natijasini
+  /// belgilaganda mijozni «muammoli» deb ajratib qo'yishi mumkin: telefonni
+  /// ko'tarmaydi, va'da berib bermaydi, janjal qiladi va h.k.
+  ///
+  /// Bu `lastCallOutcome` dan ALOHIDA o'q: mijoz «qisman to'ladi» bo'lib ham,
+  /// ayni paytda muammoli bo'lishi mumkin. Shuning uchun alohida bayroq.
+  ///   problem       — «Muammoli qarzdorlar» bo'limi shundan filtrlanadi
+  ///   problemReason — NIMA muammo (majburiy: sababsiz belgi foydasiz)
+  ///   problemAt / problemById — qachon va kim belgilagan
+  /// Muammo hal bo'lsa `problem=false` bo'ladi, lekin sabab MULOQOT TARIXIDA
+  /// qoladi — kim, qachon, nega degani yo'qolmasin.
+  problem       Boolean   @default(false)
+  problemReason String?   @map("problem_reason")
+  problemAt     DateTime? @map("problem_at") @db.Timestamptz()
+  problemById   String?   @map("problem_by_id") @db.Uuid
 
   /// Mas'ul xodim (call-markaz operatori) — ro'yxat filtri.
   ownerId    String? @map("owner_id") @db.Uuid
