@@ -28,7 +28,7 @@ import {
   debtApi,
   todayAt9InputValue,
 } from '@/lib/debt-api';
-import { Button, Input, Modal, MoneyInput, Textarea, formatMoney } from '@moysklad/ui';
+import { Button, Input, Modal, MoneyInput, Textarea, formatMoney, useToast } from '@moysklad/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useRef, useState } from 'react';
@@ -81,6 +81,7 @@ export function CallOutcomeModal({
 }) {
   const t = useTranslations('pages.debts');
   const qc = useQueryClient();
+  const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [outcome, setOutcome] = useState<CallOutcome | null>(null);
@@ -179,10 +180,18 @@ export function CallOutcomeModal({
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['debts'] });
+      // TASDIQ (2026-07-13 UX): ilgari modal jimgina yopilardi — operator
+      // saqlandimi yoki yo'qmi bilmasdi va ikkinchi marta bosardi.
+      toast.success(t('call_saved'), {
+        description: `${debtorName} — ${t(outcomeLabelKey(outcome as CallOutcome) as 'outcome_paid_full')}`,
+      });
       reset();
       onClose();
     },
-    onError: (e: Error) => setError(e.message),
+    onError: (e: Error) => {
+      setError(e.message);
+      toast.error(t('call_save_failed'), { description: e.message });
+    },
   });
 
   // Majburiylik qoidalari:

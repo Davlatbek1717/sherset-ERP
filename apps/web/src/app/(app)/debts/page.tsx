@@ -12,6 +12,7 @@
  * qabul qilingan to'lov call-markaz ekranida sahifani yangilamasdan ko'rinadi.
  */
 
+import { StatusLegend } from '@/components/debts/status-legend';
 import { useEnterOnHover } from '@/hooks/use-keyboard-nav';
 import { useListState, useReturnToRow } from '@/hooks/use-list-memory';
 import { api } from '@/lib/api-client';
@@ -57,6 +58,42 @@ const OUTCOME_TONE: Record<CallOutcome, 'success' | 'warning' | 'destructive' | 
 
 /** Mijoz-segment tablari (2026-07-11 talab): Hammasi · Elektriklar · Boshqalar. */
 type Segment = 'all' | 'elektrik' | 'boshqa';
+
+/**
+ * QATOR RANGI — oxirgi qo'ng'iroq natijasiga qarab (2026-07-13 talab).
+ *
+ * Ilgari hamma qator oq edi: operator ro'yxatga qaraganda kimga qo'ng'iroq
+ * qilingani va natijasi nima bo'lgani ko'rinmasdi. Endi bir qarashda ma'lum:
+ *
+ *   🔴 to'lamadi        → QIZIL   (bosim kerak)
+ *   🟡 qisman to'ladi   → SARIQ   (qoldiq bor, kuzatuvda)
+ *   🔵 qayta qo'ng'iroq → KO'K    (vaqti belgilangan)
+ *   ⚪ hali qo'ng'iroq qilinmagan → OQ (navbatda)
+ *
+ * Rang YAGONA belgi emas: «Holat» ustunidagi badge ham turadi — rang
+ * ko'rmaydigan foydalanuvchi ham ajrata oladi.
+ *
+ * Orqaga qaytilgan qator (highlightId) rangdan QAT'I NAZAR sariq halqa bilan
+ * yoritiladi — «mana shu yerda edingiz».
+ */
+function rowTone(r: DebtRow, highlightId: string | null): string | undefined {
+  const ring =
+    r.id === highlightId ? ' ring-2 ring-inset ring-[var(--ms-warning-500)] duration-500' : '';
+
+  const base = 'border-l-[3px] transition-colors';
+  switch (r.lastCallOutcome) {
+    case 'not_paid':
+      return `${base} border-l-[var(--ms-row-unpaid-accent)] bg-[var(--ms-row-unpaid-bg)]${ring}`;
+    case 'paid_partial':
+      return `${base} border-l-[var(--ms-row-partial-accent)] bg-[var(--ms-row-partial-bg)]${ring}`;
+    case 'callback':
+      return `${base} border-l-[var(--ms-row-callback-accent)] bg-[var(--ms-row-callback-bg)]${ring}`;
+    default:
+      // Qo'ng'iroq qilinmagan (yoki to'liq to'lagan — u ro'yxatdan chiqib ketadi):
+      // OQ qoladi, faqat chap chiziq shaffof — qatorlar tekis tursin.
+      return `${base} border-l-transparent${ring}`;
+  }
+}
 
 export default function DebtsPage() {
   const t = useTranslations('pages.debts');
@@ -507,20 +544,22 @@ export default function DebtsPage() {
         )}
       </div>
 
+      {/* Ranglar izohi — rang o'zi jumboq bo'lib qolmasin */}
+      <StatusLegend items={['not_paid', 'partial', 'callback', 'no_call']} />
+
       <DataTable
         columns={columns}
         rows={list.data?.rows ?? []}
         keyField="id"
+        // Sarlavha KO'K — qatorlar rangli bo'lgani uchun kulrang sarlavha
+        // ular bilan qo'shilib ketardi.
+        headerTone="brand"
         loading={list.isLoading}
         onRowClick={(r) => {
           remember(r.id);
           router.push(`/debts/${r.id}`);
         }}
-        rowClassName={(r) =>
-          r.id === highlightId
-            ? 'bg-[var(--ms-warning-100)] transition-colors duration-500'
-            : undefined
-        }
+        rowClassName={(r) => rowTone(r, highlightId)}
         onRowMouseEnter={(r) => setHoveredId(r.id)}
         onRowMouseLeave={() => setHoveredId(null)}
         rowTestId={(r) => `debt-row-${r.id}`}

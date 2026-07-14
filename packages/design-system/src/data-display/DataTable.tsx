@@ -2,6 +2,9 @@ import * as React from 'react';
 import { cn } from '../lib/cn.ts';
 import { Checkbox } from '../primitives/Checkbox.tsx';
 
+/** Yuklanish paytidagi fantom qatorlar — barqaror kalitlar (index-key emas). */
+const SKELETON_KEYS = ['sk1', 'sk2', 'sk3', 'sk4', 'sk5', 'sk6', 'sk7', 'sk8'] as const;
+
 export interface DataTableColumn<T> {
   key: string;
   header: React.ReactNode;
@@ -52,6 +55,13 @@ export interface DataTableProps<T> {
    * undefined for the ~80 callers that don't need per-row styling.
    */
   rowClassName?: (row: T) => string | undefined;
+  /**
+   * Sarlavha ohangi (2026-07-13).
+   *   'default' — kulrang (odatiy, ~90 sahifa shunday qoladi)
+   *   'brand'   — KO'K sarlavha: qatorlari rangli jadvallarda (qarz undirish)
+   *               sarlavha qator ranglariga qo'shilib ketmasin, aniq ajralsin.
+   */
+  headerTone?: 'default' | 'brand';
   empty?: React.ReactNode;
   loading?: boolean;
   className?: string;
@@ -149,6 +159,7 @@ export function DataTable<T extends object>({
   rowTestId,
   rowActions,
   rowClassName,
+  headerTone = 'default',
   empty,
   loading,
   className,
@@ -298,7 +309,15 @@ export function DataTable<T extends object>({
         <table
           // moysklad parity: data cells render at 11px (ours was text-sm =
           // 10.5px). Header + footer carry their own explicit text-[11px].
-          className="w-full caption-bottom text-[11px]"
+          className={cn(
+            'w-full caption-bottom text-[11px]',
+            // MOBIL SCROLL (2026-07-13 UX auditi): jadval `w-full` bo'lgani uchun
+            // konteynerdan hech qachon kengaymasdi ⇒ `overflow-x-auto` ISHGA
+            // TUSHMASDI. 390px telefonda 10 ustunli jadval har ustunni ~30px ga
+            // siqib, hamma katakni «…» qilib qo'yardi. Endi ustun ko'p bo'lsa
+            // jadvalning minimal kengligi bor va ekran tor bo'lsa SURILADI.
+            columns.length >= 6 && 'min-w-[900px]',
+          )}
           // moysklad parity: fixed table layout when ANY column has an
           // explicit / persisted width OR resize handles are enabled —
           // otherwise the browser's auto-layout overrides `width`, which
@@ -309,7 +328,9 @@ export function DataTable<T extends object>({
         >
           <thead
             className={cn(
-              'bg-[var(--ms-bg-muted)]',
+              headerTone === 'brand'
+                ? 'border-[var(--ms-thead-border)] border-b-2 bg-[var(--ms-thead-bg)] font-semibold text-[var(--ms-thead-text)]'
+                : 'bg-[var(--ms-bg-muted)]',
               // fill mode: pin the header to the top of the internal scroll box
               // so column titles stay visible while the rows scroll (moysklad
               // grid parity).
@@ -488,14 +509,21 @@ export function DataTable<T extends object>({
           </thead>
           <tbody>
             {loading ? (
-              <tr>
-                <td
-                  colSpan={totalCols}
-                  className="h-24 text-center text-[var(--ms-text-muted)] text-sm"
-                >
-                  Yuklanmoqda...
-                </td>
-              </tr>
+              /* YUKLANISH (2026-07-13 UX auditi): ilgari 96px balandlikdagi bitta
+                 katakda «Yuklanmoqda...» turardi — (a) matn QATTIQ o'zbekcha edi,
+                 ya'ni rus tilidagi interfeysga sizib chiqardi; (b) yuklangach 96px
+                 qutidan to'la jadvalga sakrardi — layout sakrashi, klik noto'g'ri
+                 joyga tushardi. Endi haqiqiy qatorlar o'lchamida skeleton chiqadi:
+                 matn yo'q (tilga bog'liq emas) va balandlik o'zgarmaydi. */
+              SKELETON_KEYS.map((rk) => (
+                <tr key={rk} className="border-[var(--ms-border-default)] border-b">
+                  {Array.from({ length: totalCols }, (_, c) => `${rk}-c${c}`).map((ck) => (
+                    <td key={ck} className="px-2 py-2">
+                      <div className="h-3 animate-pulse rounded bg-[var(--ms-bg-muted)]" />
+                    </td>
+                  ))}
+                </tr>
+              ))
             ) : rows.length === 0 ? (
               <tr>
                 <td colSpan={totalCols} className="p-0">

@@ -182,6 +182,31 @@
   --ms-z-toast: 700;
   --ms-z-max: 9999;
 
+  /* ═══ HOLAT QATORLARI (2026-07-13) ═════════════════════════════════════════
+   * Jadval qatorining HOLATINI rang bilan ko'rsatish uchun. Muammo: qarz
+   * to'lovlari va qarzdorlar ro'yxatida hamma qator bir xil oq edi — ko'z
+   * ilg'amasdi, qatorlar bir-biriga qo'shilib ketardi.
+   *
+   * Har holat UCH belgi bilan beriladi (faqat rangga tayanmaymiz — rang
+   * ko'rmaydigan foydalanuvchi ham ajrata olsin):
+   *   1) yengil fon  (…-bg)
+   *   2) chapdagi rangli chiziq (…-accent) — 3px border-left
+   *   3) matnli belgi/badge (komponentda)
+   * Fon ATAYLAB och: matn kontrasti WCAG AA dan pastga tushmasin.
+   */
+  --ms-row-paid-bg: #e8f6e6; /* to'liq to'landi — yashil */
+  --ms-row-paid-accent: #369a1e;
+  --ms-row-partial-bg: #fff8d9; /* qisman to'ladi — sariq */
+  --ms-row-partial-accent: #e0a800;
+  --ms-row-unpaid-bg: #fdeceb; /* to'lamadi — qizil */
+  --ms-row-unpaid-accent: #ce1b1b;
+  --ms-row-callback-bg: #e7eeff; /* qayta qo'ng'iroq — ko'k */
+  --ms-row-callback-accent: #0652ff;
+  /* Jadval sarlavhasi — ko'k, ajralib tursin */
+  --ms-thead-bg: #e7eeff;
+  --ms-thead-text: #0439b2;
+  --ms-thead-border: #b4cbff;
+
   /* Font families (from Moysklad CSS) */
   --ms-font-sans: "Helvetica Neue", Helvetica, Arial, "Lucida Grande", sans-serif;
   --ms-font-dense: Tahoma, Geneva, sans-serif;
@@ -204,6 +229,19 @@
   --ms-text-disabled: #5b6a83;
   --ms-text-brand: var(--ms-brand-300);
   --ms-text-link: var(--ms-accent-400);
+
+  /* Holat qatorlari — qorong'i fonda to'yingan emas, chuqur ohangda */
+  --ms-row-paid-bg: #17331b;
+  --ms-row-paid-accent: #4caf50;
+  --ms-row-partial-bg: #3a3216;
+  --ms-row-partial-accent: #ffc107;
+  --ms-row-unpaid-bg: #3a1d1d;
+  --ms-row-unpaid-accent: #ef5350;
+  --ms-row-callback-bg: #1c2a4d;
+  --ms-row-callback-accent: #5b8dff;
+  --ms-thead-bg: #1c2a4d;
+  --ms-thead-text: #b4cbff;
+  --ms-thead-border: #3d527d;
 
   --ms-border-default: #2a3d67;
   --ms-border-strong: #3d527d;
