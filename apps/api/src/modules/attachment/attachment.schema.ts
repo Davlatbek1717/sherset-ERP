@@ -29,6 +29,9 @@ export const ATTACHMENT_ENTITIES = [
   // «Qarz undirish» §3.7 — karta to'lovining chek screenshot'i. Rasm shu
   // polimorf jadvalda yashaydi; DebtPayment.attachmentId unga id-ishora.
   'DebtPayment',
+  // Telegram chat (2026-07-13) — mijoz yuborgan chek rasmi / hujjat. Telegram
+  // `file_id` MUDDATLI, shuning uchun fayl nusxasi shu yerda saqlanadi.
+  'TelegramChatMessage',
 ] as const;
 
 const Entity = z.enum(ATTACHMENT_ENTITIES);

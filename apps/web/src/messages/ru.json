@@ -6754,16 +6754,17 @@
     "delete_confirm": "Удалить статус? Контрагенты с этим статусом сохранятся (статус будет очищен)."
   },
   "telegram_chat": {
-    "title": "Telegram",
-    "not_configured": "Telegram-бот не настроен — администратор должен указать токен бота в настройках",
-    "connected": "Подключено",
-    "business_not_connected": "Telegram Business не подключён",
-    "no_chat_bound": "К контрагенту не привязан Telegram-чат. Если клиент писал вам в Telegram — выберите чат ниже.",
-    "pick_chat": "Выберите чат…",
     "bind": "Привязать",
-    "unbind": "Отвязать",
+    "business_not_connected": "Telegram Business не подключён",
+    "connected": "Подключено",
+    "no_chat_bound": "К контрагенту не привязан Telegram-чат. Если клиент писал вам в Telegram — выберите чат ниже.",
     "no_messages": "Сообщений пока нет",
-    "write_placeholder": "Напишите сообщение… (уйдёт от вашего имени)",
-    "send": "Отправить"
+    "not_configured": "Telegram-бот не настроен — администратор должен указать токен бота в настройках",
+    "open_file": "Открыть файл",
+    "pick_chat": "Выберите чат…",
+    "send": "Отправить",
+    "title": "Telegram",
+    "unbind": "Отвязать",
+    "write_placeholder": "Напишите сообщение… (уйдёт от вашего имени)"
   }
 }

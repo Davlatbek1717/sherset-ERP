@@ -3609,7 +3609,10 @@ exports.Prisma.TelegramChatScalarFieldEnum = {
   firstName: 'firstName',
   lastName: 'lastName',
   username: 'username',
+  phone: 'phone',
   counterpartyId: 'counterpartyId',
+  boundBy: 'boundBy',
+  source: 'source',
   lastMessageAt: 'lastMessageAt',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
@@ -3623,6 +3626,12 @@ exports.Prisma.TelegramChatMessageScalarFieldEnum = {
   text: 'text',
   tgMessageId: 'tgMessageId',
   senderName: 'senderName',
+  kind: 'kind',
+  fileId: 'fileId',
+  fileName: 'fileName',
+  mimeType: 'mimeType',
+  attachmentId: 'attachmentId',
+  autoKind: 'autoKind',
   createdAt: 'createdAt'
 };
 

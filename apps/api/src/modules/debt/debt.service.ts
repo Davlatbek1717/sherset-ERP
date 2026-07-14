@@ -12,6 +12,8 @@ import { AttachmentService } from '../attachment/attachment.service.js';
 import { CounterpartyBalanceService } from '../counterparty-balance/counterparty-balance.service.js';
 import { HtmlPdfService } from '../print-template/html-pdf.service.js';
 import { TASHKENT_OFFSET_MS, tashkentRangeBounds } from '../report/report-date-bounds.util.js';
+import { TelegramService } from '../telegram/telegram.service.js';
+import { debtClosedMessage, debtIssuedMessage, paymentMessage } from './debt-telegram.util.js';
 import {
   CASHIER_METHODS,
   type CashierReportFilterInput,
@@ -67,6 +69,9 @@ export class DebtService {
     @Inject(HtmlPdfService) private readonly htmlPdf: HtmlPdfService,
     @Inject(CounterpartyBalanceService)
     private readonly balances: CounterpartyBalanceService,
+    // Mijozga Telegram xabari (2026-07-13). Xabar YUBORILMASA ham qarz oqimi
+    // to'xtamaydi — chat bog'lanmagan bo'lishi mumkin (mijoz botga yozmagan).
+    @Inject(TelegramService) private readonly telegram: TelegramService,
   ) {}
 
   // ────────────────────────────────────────────────────────────── helpers ──
@@ -185,6 +190,67 @@ export class DebtService {
         nextContactAt: closed ? null : (nextContactAt ?? undefined),
         closedAt: closed ? new Date() : null,
       },
+    });
+  }
+
+  // ── MIJOZGA TELEGRAM XABARI (2026-07-13) ─────────────────────────────────
+  //
+  // «Fire-and-forget»: xabar yuborilmasa ham QARZ OQIMI TO'XTAMAYDI. Sabab —
+  // Telegram boti mijozga faqat u avval yozgan bo'lsa (yoki egasining
+  // Telegram'ida chat bo'lsa) yozolladi. Chat yo'q bo'lsa xabar shunchaki
+  // ketmaydi va bu XATO EMAS: kassir kassada turibdi, uning ishi to'xtamasin.
+  // Xatolik loglanadi, foydalanuvchiga 500 qaytmaydi.
+
+  /** Qarz holatiga qarab mijozga xabar yuboradi (to'lov / to'liq yopildi). */
+  private notifyPayment(accountId: string, debtId: string, amountMinor: bigint): void {
+    void (async () => {
+      const debt = await this.prisma.client.debt.findFirst({
+        where: { id: debtId, accountId },
+        select: {
+          totalMinor: true,
+          paidMinor: true,
+          counterpartyId: true,
+          counterparty: { select: { name: true } },
+        },
+      });
+      if (!debt) return;
+      const remaining = debt.totalMinor - debt.paidMinor;
+      const name = debt.counterparty?.name ?? 'mijoz';
+      const closed = remaining <= 0n;
+
+      await this.telegram.notifyCounterparty(
+        accountId,
+        debt.counterpartyId,
+        closed
+          ? debtClosedMessage({ name, amountMinor })
+          : paymentMessage({ name, amountMinor, remainingMinor: remaining }),
+        closed ? 'debt_closed' : 'payment',
+      );
+    })().catch(() => {
+      /* Telegram ishlamasa ham to'lov saqlangan — jim o'tamiz (servis loglaydi) */
+    });
+  }
+
+  /** Yangi qarz berilganda mijozga xabar. */
+  private notifyDebtIssued(
+    accountId: string,
+    counterpartyId: string,
+    totalMinor: bigint,
+    nextContactAt: Date | null,
+  ): void {
+    void (async () => {
+      const cp = await this.prisma.client.counterparty.findFirst({
+        where: { id: counterpartyId, accountId },
+        select: { name: true },
+      });
+      await this.telegram.notifyCounterparty(
+        accountId,
+        counterpartyId,
+        debtIssuedMessage({ name: cp?.name ?? 'mijoz', totalMinor, nextContactAt }),
+        'debt_issued',
+      );
+    })().catch(() => {
+      /* qarz saqlangan — xabar ketmasa ham oqim davom etadi */
     });
   }
 
@@ -332,7 +398,7 @@ export class DebtService {
     });
     if (!cp) throw new BadRequestException('Kontragent topilmadi');
 
-    return this.prisma.client.$transaction(async (tx) => {
+    const created = await this.prisma.client.$transaction(async (tx) => {
       const year = new Date().getFullYear();
       const prefix = `QRZ-${year}-`;
       const seq = await allocateDocumentNumber(tx, accountId, prefix, async () => {
@@ -375,6 +441,16 @@ export class DebtService {
 
       return debt;
     });
+
+    // Mijozga xabar: «Sizga N so'm qarz yozildi, muddat: ...»
+    this.notifyDebtIssued(
+      accountId,
+      created.counterpartyId,
+      created.totalMinor,
+      created.nextContactAt,
+    );
+
+    return created;
   }
 
   // ────────────────────────────────────────────────────── §3.2 mijoz profili ──
@@ -666,6 +742,11 @@ export class DebtService {
       });
     }
 
+    // Qo'ng'iroqda to'lov qabul qilingan bo'lsa — mijozga ham xabar ketadi.
+    if (isPayment && paidSomMinor > 0n) {
+      this.notifyPayment(accountId, debtId, paidSomMinor);
+    }
+
     return result.debtRow;
   }
 
@@ -708,7 +789,7 @@ export class DebtService {
       cashDeskName = cd.name;
     }
 
-    return this.prisma.client.$transaction(async (tx) => {
+    const updated = await this.prisma.client.$transaction(async (tx) => {
       await tx.debtPayment.create({
         data: {
           accountId,
@@ -740,6 +821,11 @@ export class DebtService {
 
       return this.recalc(tx, accountId, debtId, input.nextContactAt ?? null);
     });
+
+    // Mijozga xabar: «N so'm to'lovingiz qabul qilindi, qoldiq: M»
+    this.notifyPayment(accountId, debtId, amount);
+
+    return updated;
   }
 
   // ────────────────────────────────── §3.7 karta to'lovi (screenshot, operator) ──
@@ -819,6 +905,9 @@ export class DebtService {
       where: { id: payment.id },
       data: { attachmentId: attachment.id },
     });
+
+    // Mijozga xabar: to'lov qabul qilindi / qarz yopildi
+    this.notifyPayment(accountId, debtId, amount);
 
     return { ...payment, attachmentId: attachment.id, amountMinor: payment.amountMinor.toString() };
   }

@@ -5,6 +5,7 @@ import { CounterpartyBalanceModule } from '../counterparty-balance/counterparty-
 import { NotificationModule } from '../notification/notification.module.js';
 import { PermissionsModule } from '../permissions/permissions.module.js';
 import { PrintTemplateModule } from '../print-template/print-template.module.js';
+import { TelegramModule } from '../telegram/telegram.module.js';
 import { DebtReminderService } from './debt-reminder.service.js';
 import { DebtController } from './debt.controller.js';
 import { DebtService } from './debt.service.js';
@@ -26,6 +27,8 @@ import { DebtService } from './debt.service.js';
     NotificationModule,
     // Qarz to'lovi kontragent balansini ham kamaytiradi (2026-07-13).
     CounterpartyBalanceModule,
+    // Mijozga Telegram xabari: qarz berildi / to'lov qabul qilindi / yopildi.
+    TelegramModule,
   ],
   controllers: [DebtController],
   providers: [DebtService, DebtReminderService],

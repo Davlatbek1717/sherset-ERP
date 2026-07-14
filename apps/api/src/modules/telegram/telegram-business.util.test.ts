@@ -43,6 +43,7 @@ describe('parseBusinessUpdate', () => {
     });
     expect(r).toEqual({
       kind: 'business_message',
+      source: 'business',
       chatId: 555,
       chatFirstName: 'Feruz',
       chatLastName: null,
@@ -51,22 +52,103 @@ describe('parseBusinessUpdate', () => {
       fromName: 'Feruz',
       text: 'Salom, narx qancha?',
       tgMessageId: 42,
+      messageKind: 'text',
+      fileId: null,
+      fileName: null,
+      mimeType: null,
+      contactPhone: null,
     });
   });
 
-  it('uses caption when text is absent; skips media without caption', () => {
+  it('uses caption when text is absent', () => {
     const withCaption = parseBusinessUpdate({
       business_message: { message_id: 1, chat: { id: 9 }, caption: 'rasm izohi' },
     });
     expect(withCaption.kind).toBe('business_message');
     if (withCaption.kind === 'business_message') expect(withCaption.text).toBe('rasm izohi');
-
-    const bare = parseBusinessUpdate({ business_message: { message_id: 2, chat: { id: 9 } } });
-    expect(bare.kind).toBe('other');
   });
 
-  it('classifies plain bot updates as other', () => {
-    expect(parseBusinessUpdate({ message: { chat: { id: 1 }, text: 'hi' } }).kind).toBe('other');
+  // ── 2026-07-13: MEDIA ────────────────────────────────────────────────────
+  // Ilgari matnsiz xabar TASHLAB YUBORILARDI («skip in V1») — mijoz CHEK
+  // rasmini yuborsa, u hech qayerda ko'rinmasdi. Endi saqlanadi.
+
+  it('izohsiz RASM ham qabul qilinadi (chek yoqolmasin)', () => {
+    const r = parseBusinessUpdate({
+      business_message: {
+        message_id: 7,
+        chat: { id: 9, first_name: 'Feruz' },
+        photo: [
+          { file_id: 'small', file_size: 1000 },
+          { file_id: 'big', file_size: 90000 },
+        ],
+      },
+    });
+    expect(r.kind).toBe('business_message');
+    if (r.kind !== 'business_message') return;
+    expect(r.messageKind).toBe('photo');
+    // ENG KATTA o'lcham olinadi — chek o'qilarli bo'lishi kerak
+    expect(r.fileId).toBe('big');
+    expect(r.mimeType).toBe('image/jpeg');
+    expect(r.text).toBe('📷 Rasm');
+  });
+
+  it('rasm izohi bilan kelsa: izoh matn boladi', () => {
+    const r = parseBusinessUpdate({
+      business_message: {
+        message_id: 8,
+        chat: { id: 9 },
+        photo: [{ file_id: 'f1', file_size: 500 }],
+        caption: 'Chek shu',
+      },
+    });
+    if (r.kind !== 'business_message') throw new Error('business_message kutilgandi');
+    expect(r.messageKind).toBe('photo');
+    expect(r.text).toBe('Chek shu');
+  });
+
+  it('hujjat / ovoz ham qabul qilinadi', () => {
+    const doc = parseBusinessUpdate({
+      business_message: {
+        message_id: 9,
+        chat: { id: 9 },
+        document: { file_id: 'd1', file_name: 'chek.pdf', mime_type: 'application/pdf' },
+      },
+    });
+    if (doc.kind !== 'business_message') throw new Error('business_message kutilgandi');
+    expect(doc.messageKind).toBe('document');
+    expect(doc.fileName).toBe('chek.pdf');
+
+    const voice = parseBusinessUpdate({
+      business_message: { message_id: 10, chat: { id: 9 }, voice: { file_id: 'v1' } },
+    });
+    if (voice.kind !== 'business_message') throw new Error('business_message kutilgandi');
+    expect(voice.messageKind).toBe('voice');
+  });
+
+  it('mijoz KONTAKTINI ulashsa: telefon ajratiladi (avtomatik boglash uchun)', () => {
+    const r = parseBusinessUpdate({
+      message: {
+        message_id: 11,
+        chat: { id: 9, first_name: 'Feruz' },
+        contact: { phone_number: '+998901234567', first_name: 'Feruz' },
+      },
+    });
+    if (r.kind !== 'business_message') throw new Error('business_message kutilgandi');
+    expect(r.source).toBe('bot');
+    expect(r.messageKind).toBe('contact');
+    expect(r.contactPhone).toBe('+998901234567');
+  });
+
+  it('oddiy BOT chati ham saqlanadi (source=bot)', () => {
+    const r = parseBusinessUpdate({ message: { chat: { id: 1 }, text: 'hi' } });
+    expect(r.kind).toBe('business_message');
+    if (r.kind === 'business_message') expect(r.source).toBe('bot');
+  });
+
+  it('stiker kabi bosh xabar saqlanmaydi', () => {
+    expect(parseBusinessUpdate({ business_message: { message_id: 2, chat: { id: 9 } } }).kind).toBe(
+      'other',
+    );
     expect(parseBusinessUpdate(null).kind).toBe('other');
     expect(parseBusinessUpdate('x').kind).toBe('other');
   });

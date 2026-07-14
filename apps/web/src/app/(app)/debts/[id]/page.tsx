@@ -20,6 +20,7 @@
  * to'lov bo'lsa, operator ekranida qoldiq o'zi kamayadi.
  */
 
+import { TelegramChatCard } from '@/components/counterparties/telegram-chat-card';
 import { CallOutcomeModal } from '@/components/debts/call-outcome-modal';
 import { useBackspaceBack } from '@/hooks/use-keyboard-nav';
 import {
@@ -587,6 +588,16 @@ export default function DebtProfilePage() {
           <EmptyState title={t('empty')} />
         )}
       </section>
+
+      {/* ─── TELEGRAM CHAT (2026-07-13) ──────────────────────────────────────
+          Operator qo'ng'iroq qilayotganda mijoz bilan Telegram'da nima
+          yozilganini SHU YERDA ko'radi: yuborilgan xabarlar, mijoz javobi va
+          u yuborgan CHEK RASMI. Alohida sahifaga o'tish shart emas. */}
+      {d?.counterpartyId && (
+        <section className="mt-6">
+          <TelegramChatCard counterpartyId={d.counterpartyId} />
+        </section>
+      )}
 
       {/* ─── Muloqot tarixi (§3.4: xronologik, oxirgisi yuqorida) ────────── */}
       <section className="mt-6">

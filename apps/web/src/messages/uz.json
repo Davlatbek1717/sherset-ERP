@@ -6754,16 +6754,17 @@
     "delete_confirm": "Statusni o'chirasizmi? Bu statusli kontragentlar saqlanadi (status tozalanadi)."
   },
   "telegram_chat": {
-    "title": "Telegram",
-    "not_configured": "Telegram bot sozlanmagan — administrator sozlamalarda bot tokenini kiritishi kerak",
-    "connected": "Ulangan",
-    "business_not_connected": "Telegram Business ulanmagan",
-    "no_chat_bound": "Bu kontragentga Telegram chat bog'lanmagan. Mijoz sizga Telegram'da yozgan bo'lsa, quyidan tanlab bog'lang.",
-    "pick_chat": "Chatni tanlang…",
     "bind": "Bog'lash",
-    "unbind": "Uzish",
+    "business_not_connected": "Telegram Business ulanmagan",
+    "connected": "Ulangan",
+    "no_chat_bound": "Bu kontragentga Telegram chat bog'lanmagan. Mijoz sizga Telegram'da yozgan bo'lsa, quyidan tanlab bog'lang.",
     "no_messages": "Xabarlar hali yo'q",
-    "write_placeholder": "Xabar yozing… (sizning nomingizdan ketadi)",
-    "send": "Yuborish"
+    "not_configured": "Telegram bot sozlanmagan — administrator sozlamalarda bot tokenini kiritishi kerak",
+    "open_file": "Faylni ochish",
+    "pick_chat": "Chatni tanlang…",
+    "send": "Yuborish",
+    "title": "Telegram",
+    "unbind": "Uzish",
+    "write_placeholder": "Xabar yozing… (sizning nomingizdan ketadi)"
   }
 }

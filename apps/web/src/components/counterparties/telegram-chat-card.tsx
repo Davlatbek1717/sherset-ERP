@@ -37,8 +37,24 @@ interface MessageRow {
   direction: 'in' | 'out';
   text: string;
   senderName: string | null;
+  /** 'text' | 'photo' | 'document' | 'voice' | 'video' | 'contact' */
+  kind: string;
+  /** Rasm/hujjat bo'lsa — `/api/v1/attachments/:id/raw` orqali ochiladi. */
+  attachmentId: string | null;
+  fileName: string | null;
+  mimeType: string | null;
+  /** Avtomatik xabar bo'lsa sababi: 'debt_issued' | 'payment' | ... */
+  autoKind: string | null;
   createdAt: string;
 }
+
+/** Avtomatik xabar belgisi — operator qo'lda yozganidan ajralsin. */
+const AUTO_BADGE: Record<string, string> = {
+  debt_issued: '🧾 Qarz yozildi',
+  payment: "💵 To'lov",
+  debt_closed: '✅ Qarz yopildi',
+  reminder: '⏰ Eslatma',
+};
 
 export function TelegramChatCard({ counterpartyId }: { counterpartyId: string }) {
   const t = useTranslations('telegram_chat');
@@ -180,10 +196,50 @@ export function TelegramChatCard({ counterpartyId }: { counterpartyId: string })
                 <div
                   className={`max-w-[85%] rounded-lg px-2.5 py-1.5 text-sm ${
                     m.direction === 'out'
-                      ? 'bg-[var(--ms-bg-brand-subtle,#e7f3ff)] text-[var(--ms-text-primary)]'
-                      : 'bg-[var(--ms-bg-surface)] text-[var(--ms-text-primary)] border border-[var(--ms-border-default)]'
+                      ? 'bg-[var(--ms-row-callback-bg)] text-[var(--ms-text-primary)]'
+                      : 'border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] text-[var(--ms-text-primary)]'
                   }`}
+                  data-test-id={`tg-msg-${m.id}`}
                 >
+                  {/* Avtomatik xabar — operator yozganidan ajralib tursin */}
+                  {m.autoKind && (
+                    <div className="mb-1 font-medium text-[10px] text-[var(--ms-text-muted)]">
+                      {AUTO_BADGE[m.autoKind] ?? m.autoKind}
+                    </div>
+                  )}
+
+                  {/* CHEK RASMI (2026-07-13): ilgari media umuman saqlanmasdi.
+                      Endi mijoz yuborgan chek shu yerda ko'rinadi — bosilsa
+                      to'liq o'lchamda ochiladi. */}
+                  {m.kind === 'photo' && m.attachmentId && (
+                    <a
+                      href={`/api/v1/attachments/${m.attachmentId}/raw`}
+                      target="_blank"
+                      rel="noreferrer"
+                      data-test-id={`tg-photo-${m.id}`}
+                    >
+                      {/* next/image emas: rasm bizning API'dan oqim bo'lib keladi */}
+                      <img
+                        src={`/api/v1/attachments/${m.attachmentId}/raw`}
+                        alt={m.fileName ?? 'chek'}
+                        className="mb-1 max-h-56 rounded border border-[var(--ms-border-default)]"
+                      />
+                    </a>
+                  )}
+
+                  {/* Hujjat / ovoz / video — havola bilan */}
+                  {m.kind !== 'photo' && m.kind !== 'text' && m.attachmentId && (
+                    <a
+                      href={`/api/v1/attachments/${m.attachmentId}/raw`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mb-1 block text-[var(--ms-text-brand)] underline"
+                      data-test-id={`tg-file-${m.id}`}
+                    >
+                      {m.fileName ?? t('open_file')}
+                    </a>
+                  )}
+
                   <div className="whitespace-pre-wrap break-words">{m.text}</div>
                   <div className="mt-0.5 text-[10px] text-[var(--ms-text-muted)] tabular-nums">
                     {new Date(m.createdAt).toLocaleString('ru-RU', {
@@ -251,8 +307,12 @@ function Card({
         <h3 className="font-semibold text-[var(--ms-text-primary)] text-sm">{title}</h3>
         {badge && (
           <span
+            // Dark mode: ilgari bg-green-50/text-green-700 QATTIQ yozilgan edi va
+            // qorong'i fonda o'qib bo'lmasdi. Endi tema o'zgaruvchilari.
             className={`rounded px-1.5 py-0.5 text-[11px] ${
-              badgeTone === 'ok' ? 'bg-green-50 text-green-700' : 'bg-yellow-50 text-yellow-700'
+              badgeTone === 'ok'
+                ? 'bg-[var(--ms-row-paid-bg)] text-[var(--ms-row-paid-accent)]'
+                : 'bg-[var(--ms-row-partial-bg)] text-[var(--ms-row-partial-accent)]'
             }`}
           >
             {badge}

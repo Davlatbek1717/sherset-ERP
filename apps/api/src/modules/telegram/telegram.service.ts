@@ -2,11 +2,13 @@ import type { Prisma } from '@moysklad/db';
 import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { AttachmentService } from '../attachment/attachment.service.js';
 import { decryptPassword, encryptPassword } from '../email/crypto.js';
 import { parseBusinessUpdate } from './telegram-business.util.js';
 import {
   TelegramApiError,
   tgDeleteWebhook,
+  tgDownloadFile,
   tgGetMe,
   tgSendMessage,
   tgSetWebhook,
@@ -51,7 +53,10 @@ export class TelegramService {
   private readonly logger = new Logger(TelegramService.name);
   private isRunning = false;
 
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(AttachmentService) private readonly attachments: AttachmentService,
+  ) {}
 
   // --- config ----------------------------------------------------------
 
@@ -242,6 +247,7 @@ export class TelegramService {
         BigInt(parsed.fromId) === cfg.businessUserId
           ? 'out'
           : 'in';
+
       const chat = await this.prisma.client.telegramChat.upsert({
         where: { accountId_chatId: { accountId, chatId: BigInt(parsed.chatId) } },
         update: {
@@ -249,6 +255,7 @@ export class TelegramService {
           lastName: parsed.chatLastName,
           username: parsed.chatUsername,
           lastMessageAt: new Date(),
+          ...(parsed.contactPhone ? { phone: parsed.contactPhone } : {}),
         },
         create: {
           accountId,
@@ -257,9 +264,12 @@ export class TelegramService {
           lastName: parsed.chatLastName,
           username: parsed.chatUsername,
           lastMessageAt: new Date(),
+          phone: parsed.contactPhone,
+          source: parsed.source,
         },
       });
-      await this.prisma.client.telegramChatMessage.create({
+
+      const msg = await this.prisma.client.telegramChatMessage.create({
         data: {
           accountId,
           chatRefId: chat.id,
@@ -267,13 +277,212 @@ export class TelegramService {
           text: parsed.text,
           tgMessageId: parsed.tgMessageId != null ? BigInt(parsed.tgMessageId) : null,
           senderName: parsed.fromName,
+          kind: parsed.messageKind,
+          fileId: parsed.fileId,
+          fileName: parsed.fileName,
+          mimeType: parsed.mimeType,
         },
       });
+
+      // ── CHEK RASMI (2026-07-13) ────────────────────────────────────────────
+      // Fayl webhook javobidan TASHQARIDA yuklab olinadi: Telegram webhook'ga
+      // tez javob kutadi (sekin bo'lsa qayta yuboradi ⇒ dublikat xabar). Rasm
+      // yuklanmasa ham XABAR SAQLANGAN bo'ladi — matn yo'qolmaydi.
+      if (parsed.fileId) {
+        void this.storeIncomingFile(accountId, msg.id, parsed.fileId, {
+          fileName: parsed.fileName,
+          mimeType: parsed.mimeType,
+        }).catch((e: Error) =>
+          this.logger.warn(`Telegram fayl saqlanmadi (xabar saqlandi): ${e.message}`),
+        );
+      }
+
+      // ── KONTRAGENTGA AVTOMATIK BOG'LASH ───────────────────────────────────
+      // Bog'lanmagan chat hech qayerda ko'rinmaydi va unga xabar yuborib
+      // bo'lmaydi. Shuning uchun har xabarda urinib ko'ramiz (arzon).
+      if (!chat.counterpartyId) {
+        void this.autoBind(accountId, chat.id).catch((e: Error) =>
+          this.logger.warn(`Telegram avtomatik bog'lash: ${e.message}`),
+        );
+      }
+
       return { ok: true };
     }
 
     this.logger.log(`Telegram inbound for ${accountId}: ${JSON.stringify(update).slice(0, 500)}`);
     return { ok: true };
+  }
+
+  // ── MEDIA + AVTOMATIK BOG'LASH (2026-07-13) ──────────────────────────────
+
+  /**
+   * Telegram faylini yuklab olib, o'zimizning `attachments` jadvaliga saqlaydi.
+   *
+   * NEGA NUSXA OLAMIZ: Telegram `file_id` MUDDATLI — bir necha oydan keyin
+   * ishlamay qolishi mumkin. Chek rasmi esa nizoli holatda yillar o'tib ham
+   * kerak bo'ladi. Shuning uchun bayt-baytiga o'zimizda turadi.
+   */
+  private async storeIncomingFile(
+    accountId: string,
+    messageId: string,
+    fileId: string,
+    meta: { fileName: string | null; mimeType: string | null },
+  ): Promise<void> {
+    const cfg = await this.prisma.client.telegramConfig.findUnique({ where: { accountId } });
+    if (!cfg) return;
+
+    const buffer = await tgDownloadFile(decryptPassword(cfg.botTokenCipher), fileId);
+    const attachment = await this.attachments.createFromBuffer(accountId, null, {
+      entity: 'TelegramChatMessage',
+      entityId: messageId,
+      filename: meta.fileName ?? 'telegram-file',
+      mime: meta.mimeType ?? 'application/octet-stream',
+      buffer,
+      description: 'Telegram chat — mijoz yuborgan fayl',
+    });
+    await this.prisma.client.telegramChatMessage.update({
+      where: { id: messageId },
+      data: { attachmentId: attachment.id },
+    });
+  }
+
+  /** Telefonni solishtirish uchun oxirgi 9 raqam (+998 90 123-45-67 → 901234567). */
+  private static phoneKey(raw: string | null | undefined): string | null {
+    const d = String(raw ?? '').replace(/\D/g, '');
+    return d.length >= 9 ? d.slice(-9) : null;
+  }
+
+  /** Ism solishtirish uchun: kichik harf, ortiqcha belgilarsiz. */
+  private static nameKey(raw: string | null | undefined): string {
+    return String(raw ?? '')
+      .toLowerCase()
+      .replace(/[`'’‘"]/g, "'")
+      .replace(/[^a-zа-яё0-9' ]/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  /**
+   * Chatni kontragentga AVTOMATIK bog'laydi.
+   *
+   * Ikki yo'l:
+   *   1) TELEFON — mijoz botga kontaktini ulashgan bo'lsa (eng ishonchli).
+   *   2) ISM — Telegram Business xabarlarida telefon KELMAYDI (Telegram
+   *      bermaydi), lekin egasining telefonida kontakt qanday saqlangan bo'lsa,
+   *      chat nomi shunday keladi — odatda kontragent nomi bilan bir xil.
+   *      Faqat YAGONA mos kelganda bog'laymiz; ikkita bir xil ismli mijoz
+   *      bo'lsa — TEGMAYMIZ (noto'g'ri odamga qarz xabari ketmasin).
+   */
+  private async autoBind(accountId: string, chatRefId: string): Promise<void> {
+    const chat = await this.prisma.client.telegramChat.findFirst({
+      where: { id: chatRefId, accountId },
+    });
+    if (!chat || chat.counterpartyId) return;
+
+    // 1) Telefon bo'yicha
+    const pk = TelegramService.phoneKey(chat.phone);
+    if (pk) {
+      const rows = await this.prisma.client.$queryRaw<{ id: string }[]>`
+        SELECT id FROM counterparties
+        WHERE account_id = ${accountId}::uuid
+          AND right(regexp_replace(coalesce(phone, ''), '\D', '', 'g'), 9) = ${pk}
+        LIMIT 2`;
+      const only = rows[0];
+      if (rows.length === 1 && only) {
+        await this.prisma.client.telegramChat.update({
+          where: { id: chat.id },
+          data: { counterpartyId: only.id, boundBy: 'auto' },
+        });
+        this.logger.log(`Telegram chat ${chat.id} → kontragent (telefon bo'yicha)`);
+        return;
+      }
+    }
+
+    // 2) Ism bo'yicha — faqat YAGONA mos kelsa
+    const chatName = TelegramService.nameKey(
+      [chat.firstName, chat.lastName].filter(Boolean).join(' '),
+    );
+    if (chatName.length < 3) return;
+
+    const candidates = await this.prisma.client.counterparty.findMany({
+      where: { accountId, archived: false },
+      select: { id: true, name: true },
+    });
+    const matches = candidates.filter((c) => TelegramService.nameKey(c.name) === chatName);
+    const hit = matches[0];
+    // FAQAT yagona mos kelganda — ikkita bir xil ismli mijoz bo'lsa tegmaymiz
+    // (noto'g'ri odamga qarz xabari ketib qolmasin).
+    if (matches.length === 1 && hit) {
+      await this.prisma.client.telegramChat.update({
+        where: { id: chat.id },
+        data: { counterpartyId: hit.id, boundBy: 'auto' },
+      });
+      this.logger.log(`Telegram chat ${chat.id} → kontragent (ism bo'yicha)`);
+    }
+  }
+
+  // ── QARZ XABARNOMALARI (2026-07-13) ──────────────────────────────────────
+
+  /**
+   * Kontragentga Telegram orqali xabar yuboradi (qarz berildi / to'lov qabul
+   * qilindi / qarz yopildi / eslatma).
+   *
+   * MUHIM: xabar faqat kontragentga BOG'LANGAN chat bo'lsa ketadi. Telegram
+   * boti telefon raqamini bilgani uchun notanish odamga YOZOLMAYDI — mijoz
+   * avval yozgan bo'lishi (yoki egasining Telegram'ida chat bo'lishi) shart.
+   * Chat topilmasa — jimgina `sent:false` qaytadi va qarz oqimi TO'XTAMAYDI.
+   */
+  async notifyCounterparty(
+    accountId: string,
+    counterpartyId: string,
+    text: string,
+    autoKind: 'debt_issued' | 'payment' | 'debt_closed' | 'reminder',
+  ): Promise<{ sent: boolean; reason?: string }> {
+    const cfg = await this.prisma.client.telegramConfig.findUnique({ where: { accountId } });
+    if (!cfg?.enabled) return { sent: false, reason: 'telegram_off' };
+
+    const chat = await this.prisma.client.telegramChat.findFirst({
+      where: { accountId, counterpartyId },
+      orderBy: { lastMessageAt: 'desc' },
+    });
+    if (!chat) return { sent: false, reason: 'no_chat' };
+
+    // Business chatga egasining NOMIDAN, bot chatiga oddiy yuboriladi.
+    // Noto'g'ri usul Telegram xatosi beradi, shuning uchun `source` saqlanadi.
+    const useBusiness = chat.source === 'business';
+    if (useBusiness && !cfg.businessConnectionId) {
+      return { sent: false, reason: 'business_not_connected' };
+    }
+
+    try {
+      const result = await tgSendMessage(decryptPassword(cfg.botTokenCipher), {
+        chatId: chat.chatId.toString(),
+        text,
+        parseMode: 'HTML',
+        ...(useBusiness ? { businessConnectionId: cfg.businessConnectionId as string } : {}),
+      });
+      await this.prisma.client.telegramChatMessage.create({
+        data: {
+          accountId,
+          chatRefId: chat.id,
+          direction: 'out',
+          text,
+          tgMessageId: BigInt(result.message_id),
+          senderName: cfg.businessUserName,
+          kind: 'text',
+          autoKind,
+        },
+      });
+      await this.prisma.client.telegramChat.update({
+        where: { id: chat.id },
+        data: { lastMessageAt: new Date() },
+      });
+      return { sent: true };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      this.logger.warn(`Telegram xabar yuborilmadi (${autoKind}): ${msg}`);
+      return { sent: false, reason: msg.slice(0, 200) };
+    }
   }
 
   // --- Telegram Business (owner-account) chats ---------------------------
@@ -320,7 +529,11 @@ export class TelegramService {
         name:
           [c.firstName, c.lastName].filter(Boolean).join(' ') || c.username || c.chatId.toString(),
         username: c.username,
+        phone: c.phone,
         counterparty: c.counterparty,
+        /** 'auto' — tizim topgan, 'manual' — qo'lda tanlangan, null — bog'lanmagan. */
+        boundBy: c.boundBy,
+        source: c.source,
         lastMessageAt: c.lastMessageAt,
       })),
     };
@@ -343,6 +556,14 @@ export class TelegramService {
         direction: m.direction,
         text: m.text,
         senderName: m.senderName,
+        /** 'text' | 'photo' | 'document' | 'voice' | 'video' | 'contact' */
+        kind: m.kind,
+        /** Rasm/hujjat bo'lsa — `/attachments/:id/raw` orqali ochiladi. */
+        attachmentId: m.attachmentId,
+        fileName: m.fileName,
+        mimeType: m.mimeType,
+        /** Avtomatik xabar bo'lsa sababi (qarz berildi / to'lov / ...). */
+        autoKind: m.autoKind,
         createdAt: m.createdAt,
       })),
     };
@@ -362,7 +583,7 @@ export class TelegramService {
     }
     await this.prisma.client.telegramChat.update({
       where: { id: chat.id },
-      data: { counterpartyId },
+      data: { counterpartyId, boundBy: counterpartyId ? 'manual' : null },
     });
     return { ok: true };
   }

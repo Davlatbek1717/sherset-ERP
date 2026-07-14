@@ -8233,7 +8233,14 @@ model TelegramChat {
   lastName  String? @map("last_name") @db.VarChar(128)
   username  String? @db.VarChar(64)
 
+  /// Mijoz botga kontaktini ulashsa — telefon shu yerga tushadi va kontragent
+  /// AVTOMATIK topiladi. Telegram Business xabarlarida telefon kelmaydi,
+  /// shuning uchun u yerda ISM bo'yicha avtomatik taklif qilinadi.
+  phone String? @db.VarChar(32)
+
   counterpartyId String? @map("counterparty_id") @db.Uuid
+  /// Kontragent avtomatik topildimi (ism/telefon bo'yicha) yoki qo'lda bog'landimi.
+  boundBy        String? @map("bound_by") @db.VarChar(10) // 'auto' | 'manual'
 
   lastMessageAt DateTime? @map("last_message_at") @db.Timestamptz()
   createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz()
@@ -8260,6 +8267,23 @@ model TelegramChatMessage {
   text        String  @db.VarChar(4096)
   tgMessageId BigInt? @map("tg_message_id")
   senderName  String? @map("sender_name") @db.VarChar(128)
+
+  /// MEDIA (2026-07-13): mijoz CHEK rasmini yuborganda ko'rinishi shart.
+  /// Ilgari media'li xabar butunlay tashlab yuborilardi ("skip in V1") — chek
+  /// yo'qolardi. Endi fayl Telegram'dan yuklab olinib, mavjud `attachments`
+  /// jadvaliga yoziladi va chatda rasm bo'lib chiqadi.
+  ///   kind       — 'text' | 'photo' | 'document' | 'voice' | 'video' | 'other'
+  ///   fileId     — Telegram file_id (qayta yuklab olish uchun)
+  ///   attachment — bizdagi nusxasi (yo'qolmasin: Telegram file_id muddatli)
+  kind         String  @default("text") @db.VarChar(16)
+  fileId       String? @map("file_id") @db.VarChar(200)
+  fileName     String? @map("file_name") @db.VarChar(255)
+  mimeType     String? @map("mime_type") @db.VarChar(100)
+  attachmentId String? @map("attachment_id") @db.Uuid
+
+  /// Avtomatik xabar bo'lsa — sababi ('debt_issued' | 'payment' | 'debt_closed'
+  /// | 'reminder'). Qo'lda yozilgan xabarda null. Chatda belgisi ko'rinadi.
+  autoKind String? @map("auto_kind") @db.VarChar(20)
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
 
@@ -9086,6 +9110,17 @@ model DebtPayment {
   /// §3.7 — chek rasmi. `attachments.id` (entity='debtpayment'). FK EMAS:
   /// attachment polimorf jadval, Prisma relation'i yo'q — id sifatida saqlanadi.
   attachmentId String? @map("attachment_id") @db.Uuid
+
+  /// To'lov VALYUTASI (2026-07-13): mijoz naqdni so'mda ham, dollarda ham
+  /// berishi mumkin. `amountMinor` HAR DOIM qarz valyutasida (so'm/tiyin) —
+  /// qarz hisobi shundan yuritiladi. Quyidagi uchlik esa ASL to'lovni saqlaydi:
+  ///   currency            — 'UZS' | 'USD'
+  ///   amountOriginalMinor — asl valyutadagi summa (USD → sent)
+  ///   exchangeRate        — kurs ×10000 (masalan 12 800,50 so'm → 128005000)
+  /// UZS to'lovda: currency='UZS', original=amountMinor, rate=null.
+  currency            String  @default("UZS") @db.VarChar(3)
+  amountOriginalMinor BigInt? @map("amount_original_minor")
+  exchangeRate        BigInt? @map("exchange_rate")
 
   comment String?
 

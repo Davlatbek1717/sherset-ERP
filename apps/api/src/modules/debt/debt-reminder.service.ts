@@ -2,6 +2,8 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { NotificationService } from '../notification/notification.service.js';
+import { TelegramService } from '../telegram/telegram.service.js';
+import { reminderMessage } from './debt-telegram.util.js';
 
 /**
  * QO'NG'IROQ ESLATMASI (2026-07-12 talab): «vaqt kelganda notification bilan
@@ -26,6 +28,9 @@ export class DebtReminderService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(NotificationService) private readonly notifications: NotificationService,
+    // Mijozning O'ZIGA ham eslatma ketadi (2026-07-13) — operator qo'ng'iroq
+    // qilishidan oldin mijoz allaqachon xabardor bo'ladi.
+    @Inject(TelegramService) private readonly telegram: TelegramService,
   ) {}
 
   @Cron('0 * * * * *') // har daqiqa, 0-soniyada
@@ -43,6 +48,9 @@ export class DebtReminderService {
           id: true,
           accountId: true,
           ownerId: true,
+          counterpartyId: true,
+          totalMinor: true,
+          paidMinor: true,
           counterparty: { select: { name: true } },
         },
         take: 500,
@@ -94,6 +102,24 @@ export class DebtReminderService {
             null,
           );
         }
+      }
+
+      // ── MIJOZGA TELEGRAM ESLATMASI (2026-07-13) ──────────────────────────
+      // Ketma-ket yuboriladi (Telegram tezlik chegarasi bor). Bittasi
+      // yiqilsa qolganlari davom etadi — eslatma cron'i to'xtamasin.
+      for (const d of due) {
+        const remaining = d.totalMinor - d.paidMinor;
+        if (remaining <= 0n) continue;
+        await this.telegram
+          .notifyCounterparty(
+            d.accountId,
+            d.counterpartyId,
+            reminderMessage({ name: d.counterparty.name, remainingMinor: remaining }),
+            'reminder',
+          )
+          .catch(() => {
+            /* chat bo'lmasa yoki Telegram javob bermasa — jim o'tamiz */
+          });
       }
 
       await this.prisma.client.debt.updateMany({
