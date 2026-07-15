@@ -750,18 +750,20 @@
     "last": "Oxirgi sahifa"
   },
   "auth": {
-    "login_title": "Tizimga kirish",
-    "login_subtitle": "Sherset ERP tizimi",
     "email_label": "Email",
     "email_placeholder": "siz@example.com",
+    "error_invalid": "Login yoki parol noto'g'ri",
     "login_label": "Login",
     "login_placeholder": "login",
+    "login_subtitle": "Sherset ERP tizimi",
+    "login_title": "Tizimga kirish",
+    "logout": "Chiqish",
+    "password_hide": "Parolni yashirish",
     "password_label": "Parol",
     "password_placeholder": "••••••••",
+    "password_show": "Parolni ko'rsatish",
     "submit": "Kirish",
-    "submitting": "Kirilmoqda...",
-    "error_invalid": "Login yoki parol noto'g'ri",
-    "logout": "Chiqish"
+    "submitting": "Kirilmoqda..."
   },
   "nav": {
     "homepage": "Ko'rsatkichlar",

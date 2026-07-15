@@ -2,6 +2,7 @@
 
 import { login } from '@/lib/auth-store';
 import { Alert, Button, Container, FormField, Input, ShersetLogo } from '@moysklad/ui';
+import { Eye, EyeOff } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { type FormEvent, useState } from 'react';
@@ -15,6 +16,10 @@ export default function LoginPage() {
   // yozilgan edi — istalgan odam saytga kirib o'qib olishi mumkin edi.
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  // Parolni ko'rish/yashirish (2026-07-15). Standart holat — YASHIRIN: kimdir
+  // yelkangdan qarab tursa parol ochiq turmasin. Foydalanuvchi o'zi ko'z
+  // tugmasini bosib tekshirishi mumkin (uzun parolda terish xatosini topish).
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -62,7 +67,7 @@ export default function LoginPage() {
             <FormField id="password" label={t('password_label')} required>
               <Input
                 id="password"
-                type="password"
+                type={showPassword ? 'text' : 'password'}
                 autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -70,6 +75,22 @@ export default function LoginPage() {
                 data-test-id="login-password"
                 required
                 invalid={!!error}
+                trailing={
+                  <button
+                    type="button"
+                    // Ko'z tugmasi — parolni ochib/yashirib turadi. `tabIndex={-1}`:
+                    // Tab bilan input → tugma → submit oqimi buzilmasin (klaviatura
+                    // bilan kiruvchi Enter'ni bosib qo'ymasin).
+                    tabIndex={-1}
+                    onClick={() => setShowPassword((v) => !v)}
+                    className="pointer-events-auto flex h-5 w-5 items-center justify-center text-[var(--ms-text-muted)] transition-colors hover:text-[var(--ms-text-primary)]"
+                    aria-label={showPassword ? t('password_hide') : t('password_show')}
+                    aria-pressed={showPassword}
+                    data-test-id="login-password-toggle"
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                }
               />
             </FormField>
 

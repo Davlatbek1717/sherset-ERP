@@ -750,18 +750,20 @@
     "last": "Последняя страница"
   },
   "auth": {
-    "login_title": "Вход в систему",
-    "login_subtitle": "Sherset ERP",
     "email_label": "Email",
     "email_placeholder": "you@example.com",
+    "error_invalid": "Неверный логин или пароль",
     "login_label": "Логин",
     "login_placeholder": "логин",
+    "login_subtitle": "Sherset ERP",
+    "login_title": "Вход в систему",
+    "logout": "Выйти",
+    "password_hide": "Скрыть пароль",
     "password_label": "Пароль",
     "password_placeholder": "••••••••",
+    "password_show": "Показать пароль",
     "submit": "Войти",
-    "submitting": "Вход...",
-    "error_invalid": "Неверный логин или пароль",
-    "logout": "Выйти"
+    "submitting": "Вход..."
   },
   "nav": {
     "homepage": "Показатели",
