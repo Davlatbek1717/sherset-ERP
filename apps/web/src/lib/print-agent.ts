@@ -37,6 +37,11 @@ interface ElectronBridge {
     lines: Array<{ productId: string; name: string; quantity: number; priceMinor: string }>;
     discountPct: number;
   }) => void;
+  // v1.0.5+: mijoz ekranini och/yop (Sotuv panelidagi tugma; F9 ham shu ish).
+  // Tashqi ekran topilmasa { open:false, error } qaytadi.
+  toggleCustomerDisplay?: () => Promise<{ open: boolean; error?: string }>;
+  // Mijoz ekrani hozir ochiqmi (tugma holatini ko'rsatish uchun).
+  customerDisplayStatus?: () => Promise<{ open: boolean }>;
 }
 declare global {
   interface Window {

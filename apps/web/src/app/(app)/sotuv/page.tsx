@@ -524,6 +524,31 @@ function SalesScreen({ session }: { session: CurrentSession }) {
   const [discountPct, setDiscountPct] = useState(0);
   const [discountEditing, setDiscountEditing] = useState(false);
 
+  // MIJOZ-EKRAN (televizor) tugmasi — faqat Sherset dasturi ichida ko'rinadi
+  // (window.electronAPI mavjud bo'lsa). Kassir o'zi boshqaradi: bosса ochiladi,
+  // yana bosса yopiladi (avtomat EMAS). F9 ham xuddi shu ishni qiladi.
+  const [cfd, setCfd] = useState<{ available: boolean; open: boolean }>({
+    available: false,
+    open: false,
+  });
+  useEffect(() => {
+    const api = window.electronAPI;
+    if (!api?.toggleCustomerDisplay) return; // brauzer yoki eski .exe — tugma chiqmaydi
+    api
+      .customerDisplayStatus?.()
+      .then((s) => setCfd({ available: true, open: !!s?.open }))
+      .catch(() => setCfd({ available: true, open: false }));
+  }, []);
+  const toggleCfd = useCallback(async () => {
+    try {
+      const r = await window.electronAPI?.toggleCustomerDisplay?.();
+      if (r?.error) toast.error(r.error);
+      setCfd((p) => ({ ...p, open: !!r?.open }));
+    } catch {
+      /* IPC xatosi — jim, kassa ishi to'xtamasin */
+    }
+  }, [toast]);
+
   // Smena tab — drawer + close shift
   const tillCurrency = isCurrencyCode(session.cashDesk?.currency)
     ? session.cashDesk!.currency
@@ -922,6 +947,25 @@ function SalesScreen({ session }: { session: CurrentSession }) {
 
       {/* Right — cart (Savat) + Cheklar tabs */}
       <div className="flex w-[600px] shrink-0 flex-col overflow-hidden border-[var(--ms-border)] border-l bg-[var(--ms-bg-surface)]">
+        {/* Mijoz-ekran (televizor) boshqaruvi — faqat Sherset dasturida */}
+        {cfd.available && (
+          <div className="flex shrink-0 items-center justify-between border-[var(--ms-border)] border-b px-3 py-1.5">
+            <span className="text-[var(--ms-text-muted)] text-xs">
+              Mijoz ekrani (televizor) · F9
+            </span>
+            <button
+              type="button"
+              onClick={toggleCfd}
+              className={`rounded-lg border px-3 py-1 font-medium text-xs transition-colors ${
+                cfd.open
+                  ? 'border-green-600 bg-green-50 text-green-700 hover:bg-green-100'
+                  : 'border-[var(--ms-border)] text-[var(--ms-text-muted)] hover:bg-[var(--ms-bg-hover)]'
+              }`}
+            >
+              {cfd.open ? "🟢 Yoniq — o'chirish" : "⚪ O'chiq — yoqish"}
+            </button>
+          </div>
+        )}
         {/* Tab bar */}
         <div className="flex border-[var(--ms-border)] border-b">
           <button
