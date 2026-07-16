@@ -28,6 +28,7 @@ import { ProductSelectModal } from '@/components/products/product-select-modal';
 import { useDocumentEditorLabels } from '@/hooks/use-document-editor-labels';
 import { api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-store';
+import { pinDefaultCustomer } from '@/lib/pin-default-customer';
 import { resolveDefaultSalePriceOrZero, usePriceTypeIds } from '@/lib/sale-price';
 import { computePositionTotal } from '@moysklad/money';
 import {
@@ -508,6 +509,16 @@ export default function NewCustomerOrderPage() {
   });
   const agentBalanceMinor =
     agentBalanceData?.items.find((b) => b.currency === currency)?.balanceMinor ?? '0';
+  // moysklad: the «Баланс» caption gets a «(нам должны)/(мы должны)» qualifier and
+  // turns red when the picked counterparty carries a debt — so an operator sees
+  // an outstanding balance the moment the customer is selected (parity with [id]).
+  const agentBalanceNum = Number(agentBalanceMinor || '0');
+  const agentBalanceQualifier =
+    agentBalanceNum > 0
+      ? tDetailHeader('owed_to_us')
+      : agentBalanceNum < 0
+        ? tDetailHeader('we_owe')
+        : '';
 
   // VAT toggles (totals panel)
   const [vatEnabled, setVatEnabled] = useState(true);
@@ -769,11 +780,19 @@ export default function NewCustomerOrderPage() {
     }>(`/counterparties?search=${encodeURIComponent(s)}&limit=50`);
     // moysklad shows phone (fallback legalTitle) as the second line of each
     // counterparty suggestion row.
-    return d.items.map((c) => ({
+    const items = d.items.map((c) => ({
       id: c.id,
       primary: c.name,
       secondary: c.phone ?? c.legalTitle ?? undefined,
     }));
+    // Pin the account's default customer («Покупатель») to the top — it takes the
+    // bulk of the sales, so the operator picks it in one click instead of searching.
+    return pinDefaultCustomer(
+      items,
+      userSettingsQuery.data?.defaultCustomer,
+      s,
+      tForm('pinned_default'),
+    );
   };
   const productFetcher = async (s: string): Promise<PickerItem[]> => {
     const d = await api.get<{ items: ProductItem[] }>(
@@ -986,8 +1005,17 @@ export default function NewCustomerOrderPage() {
               startRow
               helper={
                 agentId ? (
-                  <span data-test-id="agent-balance" className="text-[var(--ms-text-primary)]">
-                    {tDetailHeader('balance')} : {formatMoney(agentBalanceMinor, currency)}
+                  <span
+                    data-test-id="agent-balance"
+                    className={
+                      agentBalanceNum !== 0
+                        ? 'text-[var(--ms-action-destructive)]'
+                        : 'text-[var(--ms-text-primary)]'
+                    }
+                  >
+                    {tDetailHeader('balance')}
+                    {agentBalanceQualifier ? ` ${agentBalanceQualifier}` : ''} :{' '}
+                    {formatMoney(Math.abs(agentBalanceNum).toString(), currency)}
                   </span>
                 ) : undefined
               }

@@ -33,6 +33,7 @@ import { usePresence } from '@/hooks/use-presence';
 import { useSaveMutation } from '@/hooks/use-save-mutation';
 import { useUnsavedGuard } from '@/hooks/use-unsaved-guard';
 import { api } from '@/lib/api-client';
+import { pinDefaultCustomer } from '@/lib/pin-default-customer';
 import { resolveDefaultSalePriceOrZero, usePriceTypeIds } from '@/lib/sale-price';
 import { computePositionTotal } from '@moysklad/money';
 import {
@@ -558,6 +559,15 @@ export default function CustomerOrderDetailPage() {
     enabled: !!form?.agentId,
   });
 
+  // «Значения по умолчанию» → default customer, pinned to the top of the
+  // Контрагент picker (see agentFetcher). Mirrors the /new page.
+  const { data: userSettingsData } = useQuery<{
+    defaultCustomer: { id: string; name: string } | null;
+  }>({
+    queryKey: ['user-settings'],
+    queryFn: () => api.get('/user-settings'),
+  });
+
   // moysklad parity: «1 {cur} = N UZS» helper under «Валюта» with a «✎» that opens
   // the rate modal (CurrencyRateModal). `rateOverride` (null ⇒ reference rate) is
   // view-only local state; the override is sent in the PATCH payload as rateValue.
@@ -910,11 +920,13 @@ export default function CustomerOrderDetailPage() {
     const d = await api.get<{
       items: Array<{ id: string; name: string; legalTitle: string | null }>;
     }>(`/counterparties?search=${encodeURIComponent(s)}&limit=50`);
-    return d.items.map((c) => ({
+    const items = d.items.map((c) => ({
       id: c.id,
       primary: c.name,
       secondary: c.legalTitle ?? undefined,
     }));
+    // Pin the account's default customer («Покупатель») to the top — parity with /new.
+    return pinDefaultCustomer(items, userSettingsData?.defaultCustomer, s, tForm('pinned_default'));
   };
   const orgFetcher = async (s: string): Promise<PickerItem[]> => {
     const d = await api.get<{

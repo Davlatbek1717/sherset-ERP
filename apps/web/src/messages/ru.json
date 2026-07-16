@@ -6423,6 +6423,7 @@
     "select_product": "Выберите товар",
     "select_supplier": "Выберите поставщика",
     "select_customer": "Выберите покупателя",
+    "pinned_default": "по умолчанию",
     "select_counterparty": "Выберите контрагента",
     "select_organization": "Выберите организацию",
     "select_store": "Выберите склад",

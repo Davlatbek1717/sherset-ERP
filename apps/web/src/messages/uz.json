@@ -6423,6 +6423,7 @@
     "select_product": "Tovar tanlang",
     "select_supplier": "Ta'minlovchi tanlang",
     "select_customer": "Xaridor tanlang",
+    "pinned_default": "standart",
     "select_counterparty": "Kontragent tanlang",
     "select_organization": "Tashkilot tanlang",
     "select_store": "Ombor tanlang",
