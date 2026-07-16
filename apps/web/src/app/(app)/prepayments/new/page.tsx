@@ -161,11 +161,10 @@ export default function NewPrepaymentPage() {
         setOrganizationLabel(orgsData.items[0].name);
       }
     }
-    if (!agentId && us?.defaultCustomer) {
-      setAgentId(us.defaultCustomer.id);
-      setAgentLabel(us.defaultCustomer.name);
-    }
-  }, [orgsData, userDefaults.data, userDefaults.isLoading, organizationId, agentId, fromOrderId]);
+    // Sherset (2026-07-16, owner decision): defaultCustomer is NOT auto-filled into
+    // new documents anymore — it only powers the pinned top row of the Контрагент
+    // picker in customer orders (lib/pin-default-customer.ts).
+  }, [orgsData, userDefaults.data, userDefaults.isLoading, organizationId, fromOrderId]);
 
   // Pre-fill from the source customer order (?fromOrder) once it has loaded.
   // Applied once via a ref guard. Sets org/agent + the prepayment amount

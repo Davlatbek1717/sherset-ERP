@@ -274,10 +274,9 @@ export default function NewSalesReturnPage() {
         setStoreLabel(storesData.items[0].name);
       }
     }
-    if (!agentId && us?.defaultCustomer) {
-      setAgentId(us.defaultCustomer.id);
-      setAgentLabel(us.defaultCustomer.name);
-    }
+    // Sherset (2026-07-16, owner decision): defaultCustomer is NOT auto-filled into
+    // new documents anymore — it only powers the pinned top row of the Контрагент
+    // picker in customer orders (lib/pin-default-customer.ts).
     if (!projectId && us?.defaultProject) {
       setProjectId(us.defaultProject.id);
       setProjectLabel(us.defaultProject.name);
@@ -289,7 +288,6 @@ export default function NewSalesReturnPage() {
     userDefaults.isLoading,
     organizationId,
     storeId,
-    agentId,
     projectId,
     fromDemandId,
   ]);

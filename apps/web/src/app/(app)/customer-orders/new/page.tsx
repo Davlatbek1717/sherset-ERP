@@ -590,10 +590,9 @@ export default function NewCustomerOrderPage() {
         setStoreLabel(storesData.items[0].name);
       }
     }
-    if (!agentId && us?.defaultCustomer) {
-      setAgentId(us.defaultCustomer.id);
-      setAgentLabel(us.defaultCustomer.name);
-    }
+    // Sherset (2026-07-16, owner decision): defaultCustomer is NOT auto-filled into
+    // new documents anymore — it only powers the pinned top row of the Контрагент
+    // picker (agentFetcher → lib/pin-default-customer.ts).
     if (!projectId && us?.defaultProject) {
       setProjectId(us.defaultProject.id);
       setProjectLabel(us.defaultProject.name);
@@ -605,7 +604,6 @@ export default function NewCustomerOrderPage() {
     userSettingsQuery.isLoading,
     organizationId,
     storeId,
-    agentId,
     projectId,
   ]);
   // moysklad parity: a new order opens with the first status preselected

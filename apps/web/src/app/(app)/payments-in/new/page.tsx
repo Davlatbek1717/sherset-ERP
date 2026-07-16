@@ -217,11 +217,10 @@ export default function NewPaymentInPage() {
         setOrganizationLabel(orgsData.items[0].name);
       }
     }
-    if (!agentId && us?.defaultCustomer) {
-      setAgentId(us.defaultCustomer.id);
-      setAgentLabel(us.defaultCustomer.name);
-    }
-  }, [orgsData, userDefaults.data, userDefaults.isLoading, organizationId, agentId, fromOrderId]);
+    // Sherset (2026-07-16, owner decision): defaultCustomer is NOT auto-filled into
+    // new documents anymore — it only powers the pinned top row of the Контрагент
+    // picker in customer orders (lib/pin-default-customer.ts).
+  }, [orgsData, userDefaults.data, userDefaults.isLoading, organizationId, fromOrderId]);
 
   // Apply the source customer order once loaded — set Контрагент / Организация
   // and the amount to the order's OUTSTANDING balance (sum − paid), defaulting
