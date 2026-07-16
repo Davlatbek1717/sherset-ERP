@@ -62,7 +62,12 @@ export class StoreService {
   }
 
   async findById(accountId: string, id: string) {
-    const row = await this.prisma.client.store.findFirst({ where: { id, accountId } });
+    // owner include — ombor kartochkasining o'ng-yuqori «Владелец / Изменения»
+    // klasteri uchun (create() bilan bir xil shakl).
+    const row = await this.prisma.client.store.findFirst({
+      where: { id, accountId },
+      include: { owner: { select: { id: true, name: true } } },
+    });
     if (!row) throw new NotFoundException(`Store ${id} not found`);
     return row;
   }

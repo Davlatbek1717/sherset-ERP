@@ -704,6 +704,8 @@ model Store {
   stocks                        Stock[]
   workOrders                    WorkOrder[]
   cashierSessions               CashierSession[]
+  // Adresli saqlash — shu omborning yacheykalar registri (StoreCell).
+  cells                         StoreCell[]         @relation("StoreCells")
 
   @@unique([accountId, code])
   @@index([accountId, archived])
@@ -4726,6 +4728,34 @@ model Product {
   @@index([accountId, groupId])
   @@index([accountId, modifiedById])
   @@map("products")
+}
+
+// Adresli saqlash (moysklad «Адресное хранение товаров» analogi, Sherset
+// uslubida) — ombor yacheykalari REGISTRI. Har qator = ombor kartochkasida
+// yaratilgan bitta yacheyka: kanonik «NN-NN-NN-NN» kod + ixtiyoriy «polka»
+// yorlig'i (moysklad'dagi zona o'rnida — 2026-07-16 talab: zona → polka).
+// Band/bo'shlik registrda SAQLANMAYDI — Product.loc* (asosiy) ∪
+// ProductLocation (qo'shimcha) manzillariga kod bo'yicha mos kelishdan
+// hisoblanadi (bitta haqiqat manbai, sinxron buzilmaydi).
+model StoreCell {
+  id        String   @id @default(uuid()) @db.Uuid
+  accountId String   @map("account_id") @db.Uuid
+  storeId   String   @map("store_id") @db.Uuid
+  // Kanonik padded kod «NN-NN-NN-NN» (sklad-polka-qavat-o'rin), label/scan
+  // oqimlari bilan bir xil format (cell-code.util formatCellCode).
+  code      String   @db.VarChar(11)
+  // «Polka» yorlig'i — yacheyka qaysi polkaga tegishli (masalan «032»).
+  // Yacheykalar jadvalining «Polka» ustuni + polka-svodka jadvali shundan.
+  shelf     String?  @db.VarChar(50)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  store Store @relation("StoreCells", fields: [storeId], references: [id], onDelete: Cascade)
+
+  // Bir omborda bitta kod faqat bir marta.
+  @@unique([accountId, storeId, code])
+  @@index([accountId, storeId])
+  @@map("store_cells")
 }
 
 // Multi-bin: ADDITIONAL warehouse shelf locations for a product beyond its

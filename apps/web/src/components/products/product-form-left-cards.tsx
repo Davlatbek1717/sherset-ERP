@@ -13,6 +13,7 @@
  */
 
 import { ProductFormCard } from '@/components/product-form-layout';
+import { CellPickerField } from '@/components/products/cell-picker-field';
 import {
   BARCODE_TYPES,
   type ProductFormApi,
@@ -39,6 +40,7 @@ export function ProductFormLeftCards({
   pf,
   imagesSlot,
   extraLocationsSlot,
+  productId,
 }: {
   pf: ProductFormApi;
   /**
@@ -53,6 +55,11 @@ export function ProductFormLeftCards({
    * form omits it (add extra bins after the product exists).
    */
   extraLocationsSlot?: ReactNode;
+  /**
+   * Edit-formada joriy tovar id'si — yacheyka-dropdown band-tekshiruvida o'zi
+   * o'tirgan yacheyka «band» deb ogohlantirmasligi uchun. Create'da yo'q.
+   */
+  productId?: string;
 }) {
   const router = useRouter();
   const {
@@ -485,6 +492,24 @@ export function ProductFormLeftCards({
         return-to-warehouse restock flow. All optional. */}
       <ProductFormCard title={t('section_location')} testId="card-location">
         <p className="mb-2 text-[var(--ms-text-muted)] text-xs">{t('loc_hint')}</p>
+        {/* Qidiruvli yacheyka-dropdown (2026-07-16 §10) — registrdagi barcha
+          yacheykalar ichidan tanlash; tanlanganda 4 segment avtomatik
+          to'ldiriladi. Band bo'lsa ogohlantiradi, lekin bloklamaydi. */}
+        <div className="mb-3 flex flex-col gap-1">
+          <label htmlFor="field-cell-picker" className="text-[var(--ms-text-secondary)] text-xs">
+            {t('loc_cell_picker_label')}
+          </label>
+          <CellPickerField
+            excludeProductId={productId}
+            onSelect={(code) => {
+              const segs = code.split('-');
+              form.setValue('locSklad', String(Number(segs[0] ?? '0')), { shouldDirty: true });
+              form.setValue('locPolka', String(Number(segs[1] ?? '0')), { shouldDirty: true });
+              form.setValue('locQavat', String(Number(segs[2] ?? '0')), { shouldDirty: true });
+              form.setValue('locYacheyka', String(Number(segs[3] ?? '0')), { shouldDirty: true });
+            }}
+          />
+        </div>
         <div className="grid grid-cols-4 gap-2">
           {(
             [

@@ -77,3 +77,53 @@ export const StoreFilterSchema = z.object({
   sortDir: z.enum(['asc', 'desc']).default('asc'),
 });
 export type StoreFilterInput = z.infer<typeof StoreFilterSchema>;
+
+// =========================================================================
+// Adresli saqlash — yacheykalar registri (StoreCell)
+// =========================================================================
+
+// «NN-NN-NN» — generatsiya prefiksi (sklad-polka-qator), har segment 0–99
+// (label CODE128C shtrix formati 2 xonali segment talab qiladi).
+const CELL_PREFIX_RE = /^\d{1,2}-\d{1,2}-\d{1,2}$/;
+// To'liq yacheyka kodi «NN-NN-NN-NN» (unpadded segmentlar ham qabul qilinadi,
+// service kanonik padded ko'rinishga keltiradi).
+const CELL_CODE_RE = /^\d{1,2}(-\d{1,2}){3}$/;
+
+/**
+ * «Polka qo'shish» — 3 input (2026-07-16 talab, barchasi MAJBURIY):
+ *   1) shelf  — polka kodi (yacheyka qatorida «Polka» ustunida ko'rinadi)
+ *   2) prefix — yacheyka kodining dastlabki 3 segmenti (masalan «04-03-01»)
+ *   3) count  — shu qatordagi o'rinlar soni; Enter → prefix-01…prefix-NN
+ *      ketma-ket yacheykalar avtomatik yaratiladi (oxirgi segment 2 xona,
+ *      shuning uchun maksimum 99).
+ */
+export const GenerateCellsSchema = z.object({
+  shelf: z.string().trim().min(1, 'Polka kodi majburiy').max(50),
+  prefix: z
+    .string()
+    .trim()
+    .regex(CELL_PREFIX_RE, "Yacheyka kodi «NN-NN-NN» ko'rinishida bo'lsin (masalan 04-03-01)"),
+  count: z.coerce.number().int().min(1, 'Miqdor majburiy').max(99, 'Maksimum 99 ta o‘rin'),
+});
+export type GenerateCellsInput = z.infer<typeof GenerateCellsSchema>;
+
+/** «+ Yacheyka» — bitta yacheykani to'liq kod bilan qo'lda qo'shish. */
+export const CreateCellSchema = z.object({
+  code: z.string().trim().regex(CELL_CODE_RE, "Yacheyka kodi «NN-NN-NN-NN» ko'rinishida bo'lsin"),
+  shelf: optionalEmpty(50),
+});
+export type CreateCellInput = z.infer<typeof CreateCellSchema>;
+
+/** Yacheykaga tovar biriktirish («+» amal — tanlangan tovarlarning asosiy
+ *  loc* manzili shu yacheyka kodiga o'rnatiladi). */
+export const AssignCellSchema = z.object({
+  productIds: z.array(uuid).min(1).max(100),
+});
+export type AssignCellInput = z.infer<typeof AssignCellSchema>;
+
+/** Butun akkaunt bo'ylab yacheyka qidiruvi (tovar kartochkasidagi dropdown). */
+export const CellSearchSchema = z.object({
+  search: z.string().max(50).optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+});
+export type CellSearchInput = z.infer<typeof CellSearchSchema>;

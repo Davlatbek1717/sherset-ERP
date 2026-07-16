@@ -74,22 +74,27 @@ export default function CellLabelsPage() {
   );
 }
 
+/** `?<param>=NN` bo'lsa from=to=NN prefill (ombor kartochkasidagi yacheyka
+ * 🖨 tugmasi barcha 4 segmentni yuboradi — bitta yacheyka labeli). */
+function rangeFromParam(searchParams: URLSearchParams, key: string): Range {
+  const p = searchParams.get(key);
+  if (p && /^\d{1,2}$/.test(p.trim())) {
+    const v = pad2(Number(p.trim()));
+    return { from: v, to: v };
+  }
+  return emptyRange();
+}
+
 function CellLabelsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const storeName = searchParams.get('store');
-  const [sklad, setSklad] = useState<Range>(() => {
-    // Ombor qatoridan kelganda sklad segmenti ombor kodi bilan to'ldiriladi
-    const p = searchParams.get('sklad');
-    if (p && /^\d{1,2}$/.test(p.trim())) {
-      const v = pad2(Number(p.trim()));
-      return { from: v, to: v };
-    }
-    return emptyRange();
-  });
-  const [polka, setPolka] = useState<Range>(emptyRange());
-  const [qavat, setQavat] = useState<Range>(emptyRange());
-  const [yacheyka, setYacheyka] = useState<Range>(emptyRange());
+  // Ombor qatoridan kelganda sklad segmenti ombor kodi bilan to'ldiriladi;
+  // yacheyka 🖨 tugmasidan kelganda qolgan segmentlar ham.
+  const [sklad, setSklad] = useState<Range>(() => rangeFromParam(searchParams, 'sklad'));
+  const [polka, setPolka] = useState<Range>(() => rangeFromParam(searchParams, 'polka'));
+  const [qavat, setQavat] = useState<Range>(() => rangeFromParam(searchParams, 'qavat'));
+  const [yacheyka, setYacheyka] = useState<Range>(() => rangeFromParam(searchParams, 'yacheyka'));
   const [labelW, setLabelW] = useState('');
   const [labelH, setLabelH] = useState('');
   const [rendered, setRendered] = useState<{ codes: string[]; w: number; h: number } | null>(null);

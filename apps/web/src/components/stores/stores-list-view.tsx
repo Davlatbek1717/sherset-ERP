@@ -36,8 +36,20 @@ const LIMIT = 25;
  * differ ONLY in which top-nav module is active (derived from the URL in the
  * app layout), so the list itself is one component. Create/edit reuse the
  * existing form pages under `formBasePath`.
+ *
+ * `detailBasePath` — qator BOSILGANDA ochiladigan kartochka yo'li. Sklad
+ * bo'limi (`/stores`) uni `/stores`ga o'rnatadi: ombor tanlansa Sozlamalar
+ * formasi EMAS, moysklad-1:1 ombor kartochkasi (adresli saqlash/yacheykalar)
+ * ochiladi (2026-07-16 talab). Default — formBasePath (sozlamalar xulqi
+ * o'zgarmaydi).
  */
-export function StoresListView({ formBasePath = '/settings/stores' }: { formBasePath?: string }) {
+export function StoresListView({
+  formBasePath = '/settings/stores',
+  detailBasePath,
+}: {
+  formBasePath?: string;
+  detailBasePath?: string;
+}) {
   const t = useTranslations('pages.stores');
   const tCommon = useTranslations('common');
   const tFields = useTranslations('fields');
@@ -92,7 +104,7 @@ export function StoresListView({ formBasePath = '/settings/stores' }: { formBase
       sortField: 'name',
       cell: (row) => (
         <a
-          href={`${formBasePath}/${row.id}`}
+          href={`${detailBasePath ?? formBasePath}/${row.id}`}
           className="font-medium text-[var(--ms-text-primary)] underline-offset-2 hover:text-[var(--ms-text-brand)] hover:underline"
         >
           {row.name}

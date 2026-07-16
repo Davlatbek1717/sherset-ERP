@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  AssignCellSchema,
+  CellSearchSchema,
+  CreateCellSchema,
   CreateStoreSchema,
+  GenerateCellsSchema,
   StoreAddressFullSchema,
   StoreFilterSchema,
   UpdateStoreSchema,
@@ -88,6 +92,87 @@ describe('StoreAddressFullSchema', () => {
 
   it('rejects too-long street', () => {
     expect(StoreAddressFullSchema.safeParse({ street: 'x'.repeat(256) }).success).toBe(false);
+  });
+});
+
+describe("GenerateCellsSchema («Polka qo'shish» — 3 input, barchasi majburiy)", () => {
+  it('accepts shelf + NN-NN-NN prefix + count', () => {
+    const r = GenerateCellsSchema.safeParse({ shelf: '032', prefix: '04-03-01', count: 20 });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.count).toBe(20);
+  });
+
+  it('accepts unpadded prefix segments (4-3-1) — service kanoniklashtiradi', () => {
+    expect(GenerateCellsSchema.safeParse({ shelf: 'A', prefix: '4-3-1', count: 1 }).success).toBe(
+      true,
+    );
+  });
+
+  it('coerces count from string input', () => {
+    const r = GenerateCellsSchema.safeParse({ shelf: '032', prefix: '04-03-01', count: '7' });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.count).toBe(7);
+  });
+
+  it('rejects when any of the 3 inputs is missing/empty (hammasi majburiy)', () => {
+    expect(GenerateCellsSchema.safeParse({ prefix: '04-03-01', count: 5 }).success).toBe(false);
+    expect(GenerateCellsSchema.safeParse({ shelf: '', prefix: '04-03-01', count: 5 }).success).toBe(
+      false,
+    );
+    expect(GenerateCellsSchema.safeParse({ shelf: '032', count: 5 }).success).toBe(false);
+    expect(GenerateCellsSchema.safeParse({ shelf: '032', prefix: '04-03-01' }).success).toBe(false);
+  });
+
+  it("rejects 4-segment prefix (to'liq kod emas, faqat dastlabki 3 qism)", () => {
+    expect(
+      GenerateCellsSchema.safeParse({ shelf: '032', prefix: '04-03-01-01', count: 5 }).success,
+    ).toBe(false);
+  });
+
+  it('rejects count outside 1..99 (oxirgi segment 2 xona)', () => {
+    expect(
+      GenerateCellsSchema.safeParse({ shelf: 'A', prefix: '04-03-01', count: 0 }).success,
+    ).toBe(false);
+    expect(
+      GenerateCellsSchema.safeParse({ shelf: 'A', prefix: '04-03-01', count: 100 }).success,
+    ).toBe(false);
+  });
+});
+
+describe('CreateCellSchema («+ Yacheyka»)', () => {
+  it('accepts a full NN-NN-NN-NN code, shelf optional', () => {
+    expect(CreateCellSchema.safeParse({ code: '04-03-01-05' }).success).toBe(true);
+    const r = CreateCellSchema.safeParse({ code: '4-3-1-5', shelf: '' });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.shelf).toBeNull();
+  });
+
+  it('rejects 3-segment code', () => {
+    expect(CreateCellSchema.safeParse({ code: '04-03-01' }).success).toBe(false);
+  });
+});
+
+describe('AssignCellSchema', () => {
+  it('requires at least one product id', () => {
+    expect(AssignCellSchema.safeParse({ productIds: [] }).success).toBe(false);
+    expect(
+      AssignCellSchema.safeParse({ productIds: ['00000000-0000-0000-0000-000000000001'] }).success,
+    ).toBe(true);
+  });
+
+  it('rejects non-UUID ids', () => {
+    expect(AssignCellSchema.safeParse({ productIds: ['abc'] }).success).toBe(false);
+  });
+});
+
+describe('CellSearchSchema', () => {
+  it('defaults limit to 50 and coerces from string', () => {
+    const r = CellSearchSchema.safeParse({});
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.limit).toBe(50);
+    const r2 = CellSearchSchema.safeParse({ limit: '10', search: '04-03' });
+    expect(r2.success).toBe(true);
+    if (r2.success) expect(r2.data.limit).toBe(10);
   });
 });
 

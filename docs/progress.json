@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-16T20:48:47.439Z",
+  "generatedAt": "2026-07-17T04:49:19.140Z",
   "list_pages": {
     "total_target": 56,
     "actual_routes_in_app": 71,
@@ -26,10 +26,10 @@
     ]
   },
   "detail_pages": {
-    "total_target": 70,
-    "actual_in_app": 70,
+    "total_target": 71,
+    "actual_in_app": 71,
     "audited": 63,
-    "audited_pct": 90,
+    "audited_pct": 89,
     "files": [
       "analitika-buyurtmalar-detail.audit.md",
       "analitika-kontragentlar-detail.audit.md",

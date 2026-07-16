@@ -341,6 +341,7 @@ export default function ProductDetailPage() {
           left={
             <ProductFormLeftCards
               pf={pf}
+              productId={data.id}
               imagesSlot={<ImageGallery productId={data.id} />}
               extraLocationsSlot={
                 <div className="flex flex-col gap-3">

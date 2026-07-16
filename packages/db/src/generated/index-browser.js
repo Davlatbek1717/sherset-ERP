@@ -2148,6 +2148,16 @@ exports.Prisma.ProductScalarFieldEnum = {
   deletedAt: 'deletedAt'
 };
 
+exports.Prisma.StoreCellScalarFieldEnum = {
+  id: 'id',
+  accountId: 'accountId',
+  storeId: 'storeId',
+  code: 'code',
+  shelf: 'shelf',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
 exports.Prisma.ProductLocationScalarFieldEnum = {
   id: 'id',
   accountId: 'accountId',
@@ -4224,6 +4234,7 @@ exports.Prisma.ModelName = {
   MarkingCodeOrder: 'MarkingCodeOrder',
   RetireOrder: 'RetireOrder',
   Product: 'Product',
+  StoreCell: 'StoreCell',
   ProductLocation: 'ProductLocation',
   ProductAnalog: 'ProductAnalog',
   ProductPack: 'ProductPack',
