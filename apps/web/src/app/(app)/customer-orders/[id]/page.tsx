@@ -1175,8 +1175,7 @@ export default function CustomerOrderDetailPage() {
       label: tDetailTitles('picking_wave'),
       // Sherset custom — open the per-sklad picking sheets (creates the omborchi
       // picking tasks + notifies them; idempotent).
-      onSelect: () =>
-        window.open(`/print/picking/${id}?auto=1`, '_blank', 'width=900,height=1100'),
+      onSelect: () => window.open(`/print/picking/${id}?auto=1`, '_blank', 'width=900,height=1100'),
       disabled: false,
     },
     {
@@ -1884,7 +1883,7 @@ export default function CustomerOrderDetailPage() {
                                     quantity: '1',
                                     priceMinor: defaultPrice,
                                     discount: '0',
-                                    vat: raw?.vat != null ? String(raw.vat) : '12',
+                                    vat: raw?.vat != null ? String(raw.vat) : '0',
                                     vatEnabled: s.vatEnabled,
                                     stock: raw?.stock?.onHand,
                                     reserve: '0',
@@ -2082,7 +2081,7 @@ export default function CustomerOrderDetailPage() {
             quantity: '1',
             priceMinor: resolveDefaultSalePriceOrZero(raw?.salePrices),
             discount: '0',
-            vat: raw?.vat != null ? String(raw.vat) : '12',
+            vat: raw?.vat != null ? String(raw.vat) : '0',
             vatEnabled: form.vatEnabled,
             stock: raw?.stock?.onHand,
             reserve: '0',
@@ -2114,7 +2113,7 @@ export default function CustomerOrderDetailPage() {
             productArticle: raw?.article ?? undefined,
             productUom: raw?.uom ?? null,
             priceMinor: resolveDefaultSalePriceOrZero(raw?.salePrices),
-            vat: raw?.vat != null ? String(raw.vat) : '12',
+            vat: raw?.vat != null ? String(raw.vat) : '0',
             stock: raw?.stock?.onHand,
             reserve: '0',
             available: raw?.stock?.available,

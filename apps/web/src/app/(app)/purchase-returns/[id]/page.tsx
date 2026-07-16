@@ -691,7 +691,7 @@ export default function PurchaseReturnDetailPage() {
                   productFetcher={productFetcher}
                   onPickProduct={(raw) => ({
                     priceMinor: raw?.buyPrice ?? '0',
-                    vat: raw?.vat != null ? String(raw.vat) : '12',
+                    vat: raw?.vat != null ? String(raw.vat) : '0',
                     productUom: raw?.uom ?? null,
                   })}
                   readOnly={!editable}
@@ -839,7 +839,7 @@ export default function PurchaseReturnDetailPage() {
             quantity: '1',
             priceMinor: raw?.buyPrice ?? '0',
             discount: '0',
-            vat: raw?.vat != null ? String(raw.vat) : '12',
+            vat: raw?.vat != null ? String(raw.vat) : '0',
             vatEnabled: form.vatEnabled,
           };
           setForm((s) => s && { ...s, positions: [...s.positions, newPos] });

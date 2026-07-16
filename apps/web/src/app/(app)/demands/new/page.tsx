@@ -306,7 +306,7 @@ export default function NewDemandPage() {
         quantity: '1',
         priceMinor: '0',
         discount: '0',
-        vat: '12',
+        vat: '0',
         vatEnabled: true,
       },
     ]);
@@ -783,7 +783,7 @@ export default function NewDemandPage() {
                       quantity: '1',
                       priceMinor: defaultPrice,
                       discount: '0',
-                      vat: raw?.vat != null ? String(raw.vat) : '12',
+                      vat: raw?.vat != null ? String(raw.vat) : '0',
                       vatEnabled: true,
                     },
                   ]);
@@ -814,7 +814,7 @@ export default function NewDemandPage() {
                         quantity: Number(quantity) > 0 ? quantity : '1',
                         priceMinor: defaultPrice,
                         discount: '0',
-                        vat: raw?.vat != null ? String(raw.vat) : '12',
+                        vat: raw?.vat != null ? String(raw.vat) : '0',
                         vatEnabled: true,
                       };
                     }),
@@ -1201,7 +1201,7 @@ export default function NewDemandPage() {
             productLabel: String(item.primary),
             productUom: raw?.uom ?? null,
             priceMinor: defaultPrice,
-            vat: raw?.vat != null ? String(raw.vat) : '12',
+            vat: raw?.vat != null ? String(raw.vat) : '0',
           });
         }}
       />

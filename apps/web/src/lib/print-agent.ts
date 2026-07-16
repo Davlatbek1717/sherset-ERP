@@ -31,6 +31,12 @@ interface ElectronBridge {
     // qo'shimcha argumentni bilmaydi — jim e'tiborsiz qoldiradi (80mm legacy).
     pageSizeMicrons?: { width: number; height: number },
   ) => Promise<{ ok: boolean; error?: string }>;
+  // v1.0.4+: kassir savati → mijoz-ekran (orqadagi 2-monitor). Savat har
+  // o'zgarganda chaqiriladi; eski exe'lar bu funksiyani bilmaydi (optional).
+  pushCart?: (payload: {
+    lines: Array<{ productId: string; name: string; quantity: number; priceMinor: string }>;
+    discountPct: number;
+  }) => void;
 }
 declare global {
   interface Window {

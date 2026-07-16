@@ -318,7 +318,7 @@ export default function NewSalesReturnPage() {
         quantity: p.quantity,
         priceMinor: p.priceMinor,
         discount: p.discount,
-        vat: p.vat != null ? String(p.vat) : '12',
+        vat: p.vat != null ? String(p.vat) : '0',
         vatEnabled: p.vatEnabled,
       })),
     );
@@ -336,7 +336,7 @@ export default function NewSalesReturnPage() {
         quantity: '1',
         priceMinor: '0',
         discount: '0',
-        vat: '12',
+        vat: '0',
         vatEnabled: true,
         gtdSumMinor: '',
         countryId: null,
@@ -825,7 +825,7 @@ export default function NewSalesReturnPage() {
                       quantity: '1',
                       priceMinor: defaultPrice,
                       discount: '0',
-                      vat: raw?.vat != null ? String(raw.vat) : '12',
+                      vat: raw?.vat != null ? String(raw.vat) : '0',
                       vatEnabled: true,
                     },
                   ]);
@@ -857,7 +857,7 @@ export default function NewSalesReturnPage() {
                         quantity: Number(quantity) > 0 ? quantity : '1',
                         priceMinor: defaultPrice,
                         discount: '0',
-                        vat: raw?.vat != null ? String(raw.vat) : '12',
+                        vat: raw?.vat != null ? String(raw.vat) : '0',
                         vatEnabled: true,
                       };
                     }),
@@ -1089,7 +1089,7 @@ export default function NewSalesReturnPage() {
             productLabel: String(item.primary),
             productUom: raw?.uom ?? null,
             priceMinor: defaultPrice,
-            vat: raw?.vat != null ? String(raw.vat) : '12',
+            vat: raw?.vat != null ? String(raw.vat) : '0',
           });
         }}
       />

@@ -273,7 +273,7 @@ export default function NewSupplyPage() {
         quantity: '1',
         priceMinor: '0',
         discount: '0',
-        vat: '12',
+        vat: '0',
         vatEnabled: true,
         gtdNumber: '',
         gtdSumMinor: '',
@@ -749,7 +749,7 @@ export default function NewSupplyPage() {
                       quantity: '1',
                       priceMinor: raw?.buyPriceMinor ?? '0',
                       discount: '0',
-                      vat: raw?.vat != null ? String(raw.vat) : '12',
+                      vat: raw?.vat != null ? String(raw.vat) : '0',
                       vatEnabled: true,
                     },
                   ]);
@@ -779,7 +779,7 @@ export default function NewSupplyPage() {
                         quantity: Number(quantity) > 0 ? quantity : '1',
                         priceMinor: raw?.buyPriceMinor ?? '0',
                         discount: '0',
-                        vat: raw?.vat != null ? String(raw.vat) : '12',
+                        vat: raw?.vat != null ? String(raw.vat) : '0',
                         vatEnabled: true,
                       };
                     }),
@@ -984,7 +984,7 @@ export default function NewSupplyPage() {
             productLabel: String(item.primary),
             productUom: raw?.uom ?? null,
             priceMinor: raw?.buyPriceMinor ?? '0',
-            vat: raw?.vat != null ? String(raw.vat) : '12',
+            vat: raw?.vat != null ? String(raw.vat) : '0',
           });
         }}
       />

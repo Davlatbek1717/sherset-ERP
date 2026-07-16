@@ -11,7 +11,7 @@ import { Badge, Button, Input, formatMoney, useToast } from '@moysklad/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle, Clock, Receipt, Search, Settings, ShoppingCart, User } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -622,6 +622,22 @@ function SalesScreen({ session }: { session: CurrentSession }) {
       ];
     });
   }, []);
+
+  // MIJOZ-EKRAN (Customer-Facing Display) — kassaning orqasidagi 2-monitor.
+  // Electron qobig'i ichida ishlаётgan bo'lsak (window.electronAPI.pushCart),
+  // savat har o'zgarganda mijoz oynasiga uzatiladi. Oddiy brauzerda — no-op.
+  // bigint IPC'da uzatilmaydi, shu sabab priceMinor'ni string qilamiz.
+  useEffect(() => {
+    window.electronAPI?.pushCart?.({
+      lines: cart.map((l) => ({
+        productId: l.productId,
+        name: l.productName,
+        quantity: l.quantity,
+        priceMinor: String(l.priceMinor),
+      })),
+      discountPct,
+    });
+  }, [cart, discountPct]);
 
   const updateQty = useCallback((productId: string, delta: number) => {
     setCart((prev) =>

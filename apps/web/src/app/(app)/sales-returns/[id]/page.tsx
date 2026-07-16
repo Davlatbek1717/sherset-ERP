@@ -808,7 +808,7 @@ export default function SalesReturnDetailPage() {
                   productFetcher={productFetcher}
                   onPickProduct={(raw) => ({
                     priceMinor: resolveDefaultSalePriceOrZero(raw?.salePrices),
-                    vat: raw?.vat != null ? String(raw.vat) : '12',
+                    vat: raw?.vat != null ? String(raw.vat) : '0',
                     productUom: raw?.uom ?? null,
                   })}
                   customs={{
@@ -973,7 +973,7 @@ export default function SalesReturnDetailPage() {
             quantity: '1',
             priceMinor: resolveDefaultSalePriceOrZero(raw?.salePrices),
             discount: '0',
-            vat: raw?.vat != null ? String(raw.vat) : '12',
+            vat: raw?.vat != null ? String(raw.vat) : '0',
             vatEnabled: form.vatEnabled,
           };
           setForm((s) => s && { ...s, positions: [...s.positions, newPos] });

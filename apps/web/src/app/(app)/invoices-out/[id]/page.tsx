@@ -824,7 +824,7 @@ export default function InvoiceOutDetailPage() {
                   productFetcher={productFetcher}
                   onPickProduct={(raw) => ({
                     priceMinor: resolveDefaultSalePriceOrZero(raw?.salePrices),
-                    vat: raw?.vat != null ? String(raw.vat) : '12',
+                    vat: raw?.vat != null ? String(raw.vat) : '0',
                     productUom: raw?.uom ?? null,
                   })}
                   readOnly={!editable}
@@ -983,7 +983,7 @@ export default function InvoiceOutDetailPage() {
             quantity: '1',
             priceMinor: resolveDefaultSalePriceOrZero(raw?.salePrices),
             discount: '0',
-            vat: raw?.vat != null ? String(raw.vat) : '12',
+            vat: raw?.vat != null ? String(raw.vat) : '0',
             vatEnabled: form.vatEnabled,
           };
           setForm((s) => s && { ...s, positions: [...s.positions, newPos] });

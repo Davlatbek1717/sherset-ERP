@@ -369,7 +369,7 @@ export default function NewPurchaseOrderPage() {
         quantity: String(p.quantity ?? 1),
         priceMinor: '0',
         discount: '0',
-        vat: '12',
+        vat: '0',
         vatEnabled: true,
       })),
     );
@@ -408,7 +408,7 @@ export default function NewPurchaseOrderPage() {
         quantity: '1',
         priceMinor: '0',
         discount: '0',
-        vat: '12',
+        vat: '0',
         vatEnabled: true,
       },
     ]);
@@ -1051,7 +1051,7 @@ export default function NewPurchaseOrderPage() {
                       quantity: '1',
                       priceMinor: raw?.buyPrice ?? '0',
                       discount: '0',
-                      vat: raw?.vat != null ? String(raw.vat) : '12',
+                      vat: raw?.vat != null ? String(raw.vat) : '0',
                       vatEnabled: true,
                       // moysklad «Доступно»/«Остаток» cluster — read-only stock at
                       // the store; «Принято» stays blank until linked receipts post.
@@ -1100,7 +1100,7 @@ export default function NewPurchaseOrderPage() {
                         quantity: Number(quantity) > 0 ? quantity : '1',
                         priceMinor: raw?.buyPrice ?? '0',
                         discount: '0',
-                        vat: raw?.vat != null ? String(raw.vat) : '12',
+                        vat: raw?.vat != null ? String(raw.vat) : '0',
                         vatEnabled: true,
                         available: raw?.stock?.available,
                         stock: raw?.stock?.onHand,
@@ -1345,7 +1345,7 @@ export default function NewPurchaseOrderPage() {
             productCode: raw?.code ?? undefined,
             productUom: raw?.uom ?? null,
             priceMinor: raw?.buyPrice ?? '0',
-            vat: raw?.vat != null ? String(raw.vat) : '12',
+            vat: raw?.vat != null ? String(raw.vat) : '0',
             available: raw?.stock?.available,
             stock: raw?.stock?.onHand,
             reserve: raw?.stock?.reserved,
