@@ -13,9 +13,16 @@ import { CounterpartyBalanceService } from '../counterparty-balance/counterparty
 import { HtmlPdfService } from '../print-template/html-pdf.service.js';
 import { TASHKENT_OFFSET_MS, tashkentRangeBounds } from '../report/report-date-bounds.util.js';
 import { TelegramService } from '../telegram/telegram.service.js';
-import { debtClosedMessage, debtIssuedMessage, paymentMessage } from './debt-telegram.util.js';
+import {
+  debtClosedMessage,
+  debtIssuedMessage,
+  paymentMessage,
+  paymentReversedMessage,
+} from './debt-telegram.util.js';
 import {
   CASHIER_METHODS,
+  type CancelCallNoteInput,
+  CancelCallNoteSchema,
   type CashierReportFilterInput,
   CashierReportFilterSchema,
   type CreateCardPaymentInput,
@@ -36,6 +43,8 @@ import {
   type DebtStatus,
   type MarkCallInput,
   MarkCallSchema,
+  type ReversePaymentInput,
+  ReversePaymentSchema,
   type SetProblemInput,
   SetProblemSchema,
 } from './debt.schema.js';
@@ -166,8 +175,10 @@ export class DebtService {
     debtId: string,
     nextContactAt: Date | null | undefined,
   ) {
+    // QAYTARILGAN (reversedAt != null) to'lovlar yig'indiga KIRMAYDI (2026-07-16
+    // storno) — shu bitta filtr orqali status/qoldiq/balans o'z-o'zidan tuzaladi.
     const agg = await tx.debtPayment.aggregate({
-      where: { accountId, debtId },
+      where: { accountId, debtId, reversedAt: null },
       _sum: { amountMinor: true },
     });
     const paid = agg._sum.amountMinor ?? 0n;
@@ -491,13 +502,17 @@ export class DebtService {
         orderBy: { createdAt: 'desc' },
         include: {
           receivedBy: { select: { id: true, name: true } },
+          reversedBy: { select: { id: true, name: true } },
           cashDesk: { select: { id: true, name: true } },
         },
       }),
       this.prisma.client.debtNote.findMany({
         where: { accountId, debtId: id },
         orderBy: { createdAt: 'desc' },
-        include: { author: { select: { id: true, name: true } } },
+        include: {
+          author: { select: { id: true, name: true } },
+          canceledBy: { select: { id: true, name: true } },
+        },
       }),
     ]);
 
@@ -519,6 +534,11 @@ export class DebtService {
         comment: p.comment,
         receivedByName: p.receivedBy?.name ?? null,
         receivedByRole: p.receivedByRole,
+        // STORNO (2026-07-16): qaytarilgan to'lov ro'yxatda qoladi — kim,
+        // qachon, nega qaytargani bilan (FE «qaytarilgan» belgisini shundan chizadi).
+        reversedAt: p.reversedAt,
+        reversedByName: p.reversedBy?.name ?? null,
+        reverseReason: p.reverseReason,
         createdAt: p.createdAt,
       })),
       notes: notes.map((n) => ({
@@ -528,6 +548,13 @@ export class DebtService {
         authorName: n.author?.name ?? null,
         authorRole: n.authorRole,
         kind: n.kind,
+        // NATIJANI BEKOR QILISH (2026-07-16): FE «↩︎ Bekor qilish» tugmasini
+        // faqat jonli natija-yozuvida ko'rsatadi; bekor qilinganida — belgi.
+        outcome: n.outcome,
+        paymentId: n.paymentId,
+        canceledAt: n.canceledAt,
+        canceledByName: n.canceledBy?.name ?? null,
+        cancelReason: n.cancelReason,
         createdAt: n.createdAt,
       })),
     };
@@ -671,22 +698,12 @@ export class DebtService {
           : "Naqd — qo'ng'iroqda";
 
     const result = await this.prisma.client.$transaction(async (tx) => {
-      await tx.debtNote.create({
-        data: {
-          accountId,
-          debtId,
-          text: noteText,
-          nextContactAt: input.nextContactAt ?? null,
-          outcome: input.outcome,
-          authorId: userId,
-          authorRole: role,
-          kind: 'call' satisfies DebtNoteKind,
-        },
-      });
-
       // To'lov bo'lgan bo'lsa — HAQIQIY to'lov yozuvi (2026-07-13). Ilgari
       // «to'ladi» faqat statusni o'zgartirardi va to'lov na lentada, na
       // hisobotda ko'rinardi. Endi paidMinor recalc orqali yopiladi.
+      // To'lov YOZUVDAN OLDIN yaratiladi (2026-07-16): qo'ng'iroq-yozuvi
+      // to'lovga `paymentId` bilan bog'lanadi — natija bekor qilinganda
+      // to'lov ham storno bo'lishi (va aksincha) shu bog'lamga tayanadi.
       let paymentId: string | null = null;
       if (isPayment && paidSomMinor > 0n) {
         const created = await tx.debtPayment.create({
@@ -706,6 +723,20 @@ export class DebtService {
         });
         paymentId = created.id;
       }
+
+      await tx.debtNote.create({
+        data: {
+          accountId,
+          debtId,
+          text: noteText,
+          nextContactAt: input.nextContactAt ?? null,
+          outcome: input.outcome,
+          paymentId,
+          authorId: userId,
+          authorRole: role,
+          kind: 'call' satisfies DebtNoteKind,
+        },
+      });
 
       // recalc: paidMinor = Σ to'lovlar → status/closedAt + kontragent balansi.
       const updated = await this.recalc(
@@ -975,6 +1006,288 @@ export class DebtService {
     return buf;
   }
 
+  // ─────────────────────────────── TO'LOVNI QAYTARISH — storno (2026-07-16) ──
+
+  /**
+   * Xato kiritilgan to'lovni QAYTARISH (storno).
+   *
+   * Printsiplar:
+   *  1. To'lov JISMONAN O'CHIRILMAYDI — `reversedAt/By/Reason` belgilanadi.
+   *     Tarix dalil bo'lib qoladi (§3.7 nizolarda ochib ko'riladi), hisob esa
+   *     recalc invarianti (paidMinor = Σ jonli to'lovlar) orqali o'zi tuzaladi:
+   *     status paid → partial/unpaid qaytadi, closedAt tozalanadi, kontragent
+   *     balansi delta bilan tiklanadi.
+   *  2. KIM qaytara oladi: to'lovni KIRITGAN xodimning o'zi (o'z xatosini
+   *     darhol tuzatsin) yoki RAHBAR (admin — ikkala to'lov huquqi bor).
+   *     Boshqa xodimning to'lovini oddiy operator/kassir qaytara olmaydi.
+   *  3. SABAB majburiy (schema) va muloqot tarixiga yozuv tushadi — «bu pul
+   *     qayoqqa ketdi?» degan savol hech qachon javobsiz qolmaydi.
+   *  4. Qarz to'liq yopiq bo'lib qayta ochilsa — `nextContactAt` berilgan
+   *     bo'lsa qo'ng'iroq jadvaliga qaytadi (callRemindedAt ham tozalanadi).
+   */
+  async reversePayment(
+    accountId: string,
+    userId: string,
+    role: ActorRole,
+    debtId: string,
+    paymentId: string,
+    raw: unknown,
+  ) {
+    const input: ReversePaymentInput = ReversePaymentSchema.parse(raw);
+    await this.mustFind(accountId, debtId);
+
+    const payment = await this.prisma.client.debtPayment.findFirst({
+      where: { id: paymentId, accountId, debtId },
+      include: { receivedBy: { select: { name: true } } },
+    });
+    if (!payment) throw new NotFoundException('To’lov topilmadi');
+    if (payment.reversedAt) {
+      throw new BadRequestException('Bu to’lov allaqachon qaytarilgan');
+    }
+    if (role !== 'admin' && payment.receivedById !== userId) {
+      throw new ForbiddenException(
+        'Faqat to’lovni kiritgan xodim yoki rahbar to’lovni qaytara oladi',
+      );
+    }
+
+    const fmtSom = (minor: bigint): string =>
+      (minor / 100n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+
+    const updated = await this.prisma.client.$transaction(async (tx) => {
+      await tx.debtPayment.update({
+        where: { id: payment.id },
+        data: {
+          reversedAt: new Date(),
+          reversedById: userId,
+          reverseReason: input.reason,
+        },
+      });
+
+      // Bu to'lov QO'NG'IROQ NATIJASIDAN tug'ilgan bo'lsa («to'ladi»/«qisman»),
+      // o'sha natija-yozuvi ham bekor qilinadi (2026-07-16): aks holda
+      // «Qo'ng'iroq qilinganlar» ro'yxatida mijoz haligacha «to'ladi» deb
+      // ko'rinib qolaverardi, holbuki pul qaytarilgan.
+      await tx.debtNote.updateMany({
+        where: { accountId, debtId, paymentId: payment.id, canceledAt: null },
+        data: {
+          canceledAt: new Date(),
+          canceledById: userId,
+          cancelReason: input.reason,
+        },
+      });
+
+      // Muloqot tarixiga iz: summa + manba + kim kiritgan edi + sabab.
+      await tx.debtNote.create({
+        data: {
+          accountId,
+          debtId,
+          text: `↩️ TO'LOV QAYTARILDI: ${fmtSom(payment.amountMinor)} so'm (${
+            payment.sourceName ?? payment.method
+          }${payment.receivedBy?.name ? `, kiritgan: ${payment.receivedBy.name}` : ''}). Sabab: ${input.reason}`,
+          nextContactAt: input.nextContactAt ?? null,
+          authorId: userId,
+          authorRole: role,
+          kind: 'payment' satisfies DebtNoteKind,
+        },
+      });
+
+      // recalc: paidMinor = Σ jonli to'lovlar → status/closedAt + balans delta.
+      const debtRow = await this.recalc(tx, accountId, debtId, input.nextContactAt ?? undefined);
+
+      // lastCallAt/lastCallOutcome — qolgan JONLI natija-yozuvlaridan qayta
+      // hisoblanadi (bekor qilingan «to'ladi» belgisi ro'yxatlarda qolmasin).
+      await this.recomputeLastCall(tx, accountId, debtId);
+
+      // Yangi aloqa sanasi berilgan bo'lsa — eslatma cheklovi ham qayta ochiladi
+      // (boshqa joylardagi nextContactAt yangilanishlari bilan bir intizom).
+      if (input.nextContactAt && debtRow.status !== 'paid') {
+        return tx.debt.update({
+          where: { id: debtId },
+          data: { callRemindedAt: null },
+        });
+      }
+      return tx.debt.findFirstOrThrow({ where: { id: debtId, accountId } });
+    });
+
+    // Mijoz avval «to'lov qabul qilindi» xabarini olgan — tuzatish ham ketsin
+    // (fire-and-forget: xabar ketmasa ham storno saqlangan).
+    this.notifyPaymentReversed(accountId, debtId, payment.amountMinor);
+
+    return updated;
+  }
+
+  /** Storno haqida mijozga xabar — qoldiq qayta hisoblangan holda. */
+  private notifyPaymentReversed(accountId: string, debtId: string, amountMinor: bigint): void {
+    void (async () => {
+      const debt = await this.prisma.client.debt.findFirst({
+        where: { id: debtId, accountId },
+        select: {
+          totalMinor: true,
+          paidMinor: true,
+          counterpartyId: true,
+          counterparty: { select: { name: true } },
+        },
+      });
+      if (!debt) return;
+      const remaining = debt.totalMinor - debt.paidMinor;
+      await this.telegram.notifyCounterparty(
+        accountId,
+        debt.counterpartyId,
+        paymentReversedMessage({
+          name: debt.counterparty?.name ?? 'mijoz',
+          amountMinor,
+          remainingMinor: remaining > 0n ? remaining : 0n,
+        }),
+        'payment',
+      );
+    })().catch(() => {
+      /* Telegram ishlamasa ham storno saqlangan — jim o'tamiz (servis loglaydi) */
+    });
+  }
+
+  /**
+   * lastCallAt/lastCallOutcome — JONLI (bekor qilinmagan) natija-yozuvlaridan
+   * qayta hisoblash. Yagona haqiqat manbai — debt_notes: natija bekor
+   * qilinganda yoki bog'liq to'lov storno bo'lganda denormalizatsiya shu yerdan
+   * o'zi tuzaladi (paidMinor↔debt_payments bilan bir xil intizom).
+   */
+  private async recomputeLastCall(tx: Prisma.TransactionClient, accountId: string, debtId: string) {
+    const latest = await tx.debtNote.findFirst({
+      where: { accountId, debtId, kind: 'call', outcome: { not: null }, canceledAt: null },
+      orderBy: { createdAt: 'desc' },
+      select: { createdAt: true, outcome: true },
+    });
+    return tx.debt.update({
+      where: { id: debtId },
+      data: {
+        lastCallAt: latest?.createdAt ?? null,
+        lastCallOutcome: latest?.outcome ?? null,
+      },
+    });
+  }
+
+  // ─────────────── QO'NG'IROQ NATIJASINI BEKOR QILISH (2026-07-16 talab) ──────
+
+  /**
+   * Operator qo'ng'iroqda xato natija qo'ygan bo'lsa («to'ladi / qisman /
+   * to'lamadi / qayta qo'ng'iroq») — o'sha amalni QAYTARADI.
+   *
+   * Printsiplar (to'lov stornosi bilan bir intizom):
+   *  1. Yozuv O'CHMAYDI — `canceledAt/By/Reason` belgilanadi, tarixda
+   *     «bekor qilingan» ko'rinishida qoladi (§3.4 append-only buzilmaydi).
+   *  2. Natija TO'LOV YARATGAN bo'lsa (paid_full/paid_partial) — bog'langan
+   *     to'lov ham BITTA tranzaksiyada storno bo'ladi: qoldiq/status/balans
+   *     recalc orqali tiklanadi, mijozga Telegram xabari ketadi.
+   *  3. lastCallAt/lastCallOutcome qolgan jonli yozuvlardan qayta hisoblanadi —
+   *     «Qo'ng'iroq qilinganlar» ro'yxati hech qachon yolg'on ko'rsatmaydi.
+   *  4. KIM bekor qila oladi: yozuvni KIRITGAN xodim yoki RAHBAR (admin).
+   *  5. SABAB majburiy (schema) va tarixga alohida yozuv tushadi.
+   */
+  async cancelCallNote(
+    accountId: string,
+    userId: string,
+    role: ActorRole,
+    debtId: string,
+    noteId: string,
+    raw: unknown,
+  ) {
+    const input: CancelCallNoteInput = CancelCallNoteSchema.parse(raw);
+    await this.mustFind(accountId, debtId);
+
+    const note = await this.prisma.client.debtNote.findFirst({
+      where: { id: noteId, accountId, debtId },
+      include: { payment: true },
+    });
+    if (!note) throw new NotFoundException('Yozuv topilmadi');
+    if (note.kind !== 'call' || !note.outcome) {
+      throw new BadRequestException('Faqat qo’ng’iroq natijasi yozuvini bekor qilish mumkin');
+    }
+    if (note.canceledAt) {
+      throw new BadRequestException('Bu yozuv allaqachon bekor qilingan');
+    }
+    if (role !== 'admin' && note.authorId !== userId) {
+      throw new ForbiddenException(
+        'Faqat yozuvni kiritgan xodim yoki rahbar natijani bekor qila oladi',
+      );
+    }
+
+    // Guard'dan keyin outcome null emas; closure ichida narrowing yo'qolmasin.
+    const outcome = note.outcome;
+
+    // Bog'langan JONLI to'lov — natija bilan birga storno bo'ladi.
+    const payment = note.payment && !note.payment.reversedAt ? note.payment : null;
+
+    const fmtSom = (minor: bigint): string =>
+      (minor / 100n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+
+    const OUTCOME_LABEL: Record<string, string> = {
+      paid_full: "to'ladi",
+      paid_partial: "qisman to'ladi",
+      not_paid: "to'lamadi",
+      callback: "qayta qo'ng'iroq",
+    };
+
+    const updated = await this.prisma.client.$transaction(async (tx) => {
+      await tx.debtNote.update({
+        where: { id: note.id },
+        data: {
+          canceledAt: new Date(),
+          canceledById: userId,
+          cancelReason: input.reason,
+        },
+      });
+
+      if (payment) {
+        await tx.debtPayment.update({
+          where: { id: payment.id },
+          data: {
+            reversedAt: new Date(),
+            reversedById: userId,
+            reverseReason: input.reason,
+          },
+        });
+      }
+
+      // Tarixga iz: qaysi natija bekor qilindi, pul qaytdimi, nega.
+      await tx.debtNote.create({
+        data: {
+          accountId,
+          debtId,
+          text: `↩️ QO'NG'IROQ NATIJASI BEKOR QILINDI: «${OUTCOME_LABEL[outcome] ?? outcome}»${
+            payment ? ` — ${fmtSom(payment.amountMinor)} so'm to'lov ham qaytarildi` : ''
+          }. Sabab: ${input.reason}`,
+          nextContactAt: input.nextContactAt ?? null,
+          authorId: userId,
+          authorRole: role,
+          kind: 'call' satisfies DebtNoteKind,
+        },
+      });
+
+      // recalc: to'lov storno bo'lgan bo'lsa qoldiq/status/balans tiklanadi
+      // (to'lov bo'lmasa — zararsiz, paidDelta = 0).
+      const debtRow = await this.recalc(tx, accountId, debtId, input.nextContactAt ?? undefined);
+
+      // lastCallAt/lastCallOutcome — qolgan jonli yozuvlardan.
+      await this.recomputeLastCall(tx, accountId, debtId);
+
+      // Yangi aloqa sanasi berilgan bo'lsa — qo'ng'iroq jadvaliga qaytadi.
+      if (input.nextContactAt && debtRow.status !== 'paid') {
+        return tx.debt.update({
+          where: { id: debtId },
+          data: { nextContactAt: input.nextContactAt, callRemindedAt: null },
+        });
+      }
+      return tx.debt.findFirstOrThrow({ where: { id: debtId, accountId } });
+    });
+
+    // Pul qaytgan bo'lsa — mijoz ham bilsin (fire-and-forget).
+    if (payment) {
+      this.notifyPaymentReversed(accountId, debtId, payment.amountMinor);
+    }
+
+    return updated;
+  }
+
   // ──────────────────────────────────────────────── §3.5 bugungi qo'ng'iroqlar ──
 
   /**
@@ -1032,6 +1345,8 @@ export class DebtService {
           createdAt: { gte: day.gte, lt: day.lt },
           // §3.9 — screenshot to'lovlari kassir hisobotiga kirmaydi.
           method: { in: [...CASHIER_METHODS] },
+          // Qaytarilgan (storno) to'lov kassir kunlik yig'indisiga kirmaydi.
+          reversedAt: null,
         },
         _sum: { amountMinor: true },
         _count: { _all: true },
@@ -1118,7 +1433,8 @@ export class DebtService {
       }),
       this.prisma.client.debtPayment.groupBy({
         by: ['receivedById'],
-        where: { accountId, method: 'card_screenshot', createdAt: window },
+        // reversedAt: null — qaytarilgan to'lov operator ko'rsatkichiga kirmaydi.
+        where: { accountId, method: 'card_screenshot', createdAt: window, reversedAt: null },
         _sum: { amountMinor: true },
         _count: { _all: true },
       }),
@@ -1163,6 +1479,8 @@ export class DebtService {
         accountId,
         ...(bounds.gte || bounds.lt ? { createdAt: bounds } : {}),
         ...(f.method ? { method: f.method } : {}),
+        // Qaytarilgan (storno) to'lov davr hisobotiga kirmaydi.
+        reversedAt: null,
       },
       _sum: { amountMinor: true },
       _count: { _all: true },
@@ -1218,6 +1536,7 @@ export class DebtService {
         skip: f.offset,
         include: {
           receivedBy: { select: { name: true } },
+          reversedBy: { select: { name: true } },
           cashDesk: { select: { name: true } },
           debt: {
             select: {
@@ -1232,7 +1551,12 @@ export class DebtService {
         },
       }),
       this.prisma.client.debtPayment.count({ where }),
-      this.prisma.client.debtPayment.aggregate({ where, _sum: { amountMinor: true } }),
+      // Yig'indi QAYTARILGANLARSIZ — «tanlangan davrda tushgan» real pulni
+      // ko'rsatsin. Qatorlar esa storno bilan ham ko'rinadi (lenta = tarix).
+      this.prisma.client.debtPayment.aggregate({
+        where: { ...where, reversedAt: null },
+        _sum: { amountMinor: true },
+      }),
     ]);
 
     return {
@@ -1255,6 +1579,10 @@ export class DebtService {
           exchangeRate: p.exchangeRate?.toString() ?? null,
           receivedByName: p.receivedBy?.name ?? null,
           receivedByRole: p.receivedByRole,
+          /** STORNO (2026-07-16) — lentada «qaytarilgan» belgisi shu yerdan. */
+          reversedAt: p.reversedAt,
+          reversedByName: p.reversedBy?.name ?? null,
+          reverseReason: p.reverseReason,
           /** To'lovdan keyin qarzning JORIY holati — «to'liq yopildi» belgisi shu yerdan. */
           debtStatus: p.debt.status,
           remainingMinor: (remaining > 0n ? remaining : 0n).toString(),

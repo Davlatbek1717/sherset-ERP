@@ -4037,6 +4037,7 @@ exports.Prisma.DebtScalarFieldEnum = {
   lastCallAt: 'lastCallAt',
   lastCallOutcome: 'lastCallOutcome',
   callRemindedAt: 'callRemindedAt',
+  lastTgReminderAt: 'lastTgReminderAt',
   problem: 'problem',
   problemReason: 'problemReason',
   problemAt: 'problemAt',
@@ -4065,6 +4066,9 @@ exports.Prisma.DebtPaymentScalarFieldEnum = {
   comment: 'comment',
   receivedById: 'receivedById',
   receivedByRole: 'receivedByRole',
+  reversedAt: 'reversedAt',
+  reversedById: 'reversedById',
+  reverseReason: 'reverseReason',
   createdAt: 'createdAt'
 };
 
@@ -4075,6 +4079,10 @@ exports.Prisma.DebtNoteScalarFieldEnum = {
   text: 'text',
   nextContactAt: 'nextContactAt',
   outcome: 'outcome',
+  paymentId: 'paymentId',
+  canceledAt: 'canceledAt',
+  canceledById: 'canceledById',
+  cancelReason: 'cancelReason',
   authorId: 'authorId',
   authorRole: 'authorRole',
   kind: 'kind',

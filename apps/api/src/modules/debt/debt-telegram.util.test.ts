@@ -4,6 +4,7 @@ import {
   debtIssuedMessage,
   fmtSom,
   paymentMessage,
+  paymentReversedMessage,
   reminderMessage,
 } from './debt-telegram.util.js';
 
@@ -58,6 +59,19 @@ describe('debt-telegram xabarlari', () => {
   it('eslatma: qoldiq summa bor', () => {
     const m = reminderMessage({ name: 'Feruz', remainingMinor: 30_000_000n });
     expect(m).toContain('300 000');
+  });
+
+  // STORNO (2026-07-16): mijoz avval «qabul qilindi» xabarini olgan —
+  // bekor qilinganini ham aniq summa va yangi qoldiq bilan bilishi kerak.
+  it('to‘lov qaytarildi: bekor qilingan summa VA joriy qoldiq ko‘rsatiladi', () => {
+    const m = paymentReversedMessage({
+      name: 'Feruz',
+      amountMinor: 50_000_000n, // 500 000
+      remainingMinor: 125_000_000n, // 1 250 000
+    });
+    expect(m).toContain('500 000');
+    expect(m).toContain('1 250 000');
+    expect(m).toContain('bekor qilindi');
   });
 
   // XAVFSIZLIK: mijoz nomi HTML'ni buzmasin (parse_mode='HTML').

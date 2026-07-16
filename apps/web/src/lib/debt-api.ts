@@ -90,6 +90,13 @@ export interface DebtPaymentRow {
   comment: string | null;
   receivedByName: string | null;
   receivedByRole: DebtAuthorRole;
+  /**
+   * STORNO (2026-07-16): to'lov qaytarilgan bo'lsa — qachon/kim/nega.
+   * Qaytarilgan to'lov yig'indiga kirmaydi, lekin ro'yxatda belgi bilan qoladi.
+   */
+  reversedAt: string | null;
+  reversedByName: string | null;
+  reverseReason: string | null;
   createdAt: string;
 }
 
@@ -100,6 +107,15 @@ export interface DebtNoteRow {
   authorName: string | null;
   authorRole: DebtAuthorRole;
   kind: DebtNoteKind;
+  /**
+   * NATIJANI BEKOR QILISH (2026-07-16): jonli natija-yozuvida «↩︎ Bekor
+   * qilish» tugmasi chiqadi; bekor qilinganida — kim/qachon/nega belgisi.
+   */
+  outcome: CallOutcome | null;
+  paymentId: string | null;
+  canceledAt: string | null;
+  canceledByName: string | null;
+  cancelReason: string | null;
   createdAt: string;
 }
 
@@ -194,6 +210,10 @@ export interface DebtPaymentFeedRow {
   exchangeRate: string | null;
   receivedByName: string | null;
   receivedByRole: DebtAuthorRole;
+  /** STORNO (2026-07-16) — lentada «qaytarilgan» belgisi shu maydonlardan. */
+  reversedAt: string | null;
+  reversedByName: string | null;
+  reverseReason: string | null;
   /** To'lovdan keyingi qarz holati — 'paid' bo'lsa «TO'LIQ YOPILDI». */
   debtStatus: DebtStatus;
   remainingMinor: string;
@@ -308,6 +328,28 @@ export const debtApi = {
       nextContactAt?: string | null;
     },
   ) => api.post<DebtPaymentRow>(`/debts/${id}/card-payments`, body),
+
+  /**
+   * TO'LOVNI QAYTARISH — storno (2026-07-16). Sabab MAJBURIY. Server faqat
+   * to'lovni kiritgan xodim yoki rahbarga ruxsat beradi; qarz qayta ochilsa
+   * `nextContactAt` bilan qo'ng'iroq jadvaliga qaytariladi.
+   */
+  reversePayment: (
+    debtId: string,
+    paymentId: string,
+    body: { reason: string; nextContactAt?: string | null },
+  ) => api.post<DebtRow>(`/debts/${debtId}/payments/${paymentId}/reverse`, body),
+
+  /**
+   * QO'NG'IROQ NATIJASINI BEKOR QILISH (2026-07-16). Sabab MAJBURIY.
+   * Natija to'lov yaratgan bo'lsa («to'ladi»/«qisman»), to'lov ham bitta
+   * tranzaksiyada storno bo'ladi; lastCallOutcome qayta hisoblanadi.
+   */
+  cancelCallNote: (
+    debtId: string,
+    noteId: string,
+    body: { reason: string; nextContactAt?: string | null },
+  ) => api.post<DebtRow>(`/debts/${debtId}/notes/${noteId}/cancel`, body),
 
   cashierReport: (date?: string) =>
     api.get<CashierReport>(`/debts/reports/cashiers${qs({ date })}`),

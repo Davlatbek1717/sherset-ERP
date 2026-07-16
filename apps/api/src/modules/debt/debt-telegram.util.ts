@@ -76,6 +76,26 @@ export function debtClosedMessage(args: { name: string; amountMinor: bigint }): 
   ].join('\n');
 }
 
+/**
+ * To'lov yozuvi QAYTARILDI (storno, 2026-07-16). Mijoz avval «qabul qilindi»
+ * xabarini olgan — tuzatishni ham bilishi kerak, aks holda uning hisob-kitobi
+ * biznikidan ajralib qoladi. Ohang: ayblovsiz, «xatolik tuzatildi».
+ */
+export function paymentReversedMessage(args: {
+  name: string;
+  amountMinor: bigint;
+  remainingMinor: bigint;
+}): string {
+  return [
+    `Hurmatli ${esc(args.name)}!`,
+    '',
+    `<b>${fmtSom(args.amountMinor)} so'm</b> to'lov yozuvi xatolik tufayli bekor qilindi.`,
+    `Joriy qarz: <b>${fmtSom(args.remainingMinor)} so'm</b>`,
+    '',
+    "Savolingiz bo'lsa shu yerga yozing.",
+  ].join('\n');
+}
+
 /** To'lov muddati keldi — eslatma. */
 export function reminderMessage(args: { name: string; remainingMinor: bigint }): string {
   return [

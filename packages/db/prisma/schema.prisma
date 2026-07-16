@@ -397,8 +397,10 @@ model Employee {
   // Qarz undirish (debt-collection) module
   ownedDebts       Debt[]        @relation("DebtOwner")
   issuedDebts      Debt[]        @relation("DebtIssuer")
-  debtPaymentsTook DebtPayment[] @relation("DebtPaymentReceiver")
-  debtNotesWritten DebtNote[]    @relation("DebtNoteAuthor")
+  debtPaymentsTook     DebtPayment[] @relation("DebtPaymentReceiver")
+  debtPaymentsReversed DebtPayment[] @relation("DebtPaymentReverser")
+  debtNotesWritten     DebtNote[]    @relation("DebtNoteAuthor")
+  debtNotesCanceled    DebtNote[]    @relation("DebtNoteCanceler")
 
   @@unique([accountId, email])
   // ── PARTIAL unique index (Prisma representation gap — READ before "fixing" any diff) ──
@@ -9064,6 +9066,13 @@ model Debt {
   /// uchun eslatma qayta ishlaydi.
   callRemindedAt DateTime? @map("call_reminded_at") @db.Timestamptz()
 
+  /// 15-KUNLIK MIJOZGA TAKROR TELEGRAM ESLATMASI (2026-07-16 talab) dedup belgisi:
+  /// mijozning O'ZIGA «qarzingiz bor» avtomatik eslatmasi oxirgi yuborilgan payt.
+  /// Operatorning qo'ng'iroq jadvalidan (nextContactAt/callRemindedAt) ALOHIDA —
+  /// bunga tegmaydi. null ⇒ hali yuborilmagan (birinchi eslatma createdAt'dan
+  /// N kun o'tgach ketadi). Cron: har kuni, qarz qolgan bo'lsa har N kunda takror.
+  lastTgReminderAt DateTime? @map("last_tg_reminder_at") @db.Timestamptz()
+
   /// MUAMMOLI MIJOZ (2026-07-14 talab). Operator qo'ng'iroq natijasini
   /// belgilaganda mijozni «muammoli» deb ajratib qo'yishi mumkin: telefonni
   /// ko'tarmaydi, va'da berib bermaydi, janjal qiladi va h.k.
@@ -9152,12 +9161,24 @@ model DebtPayment {
   /// 'cashier' | 'operator' — kim kiritgani (hisobotlarni ajratish uchun).
   receivedByRole String  @default("cashier") @map("received_by_role") @db.VarChar(20)
 
+  /// TO'LOVNI QAYTARISH — storno (2026-07-16). Xato kiritilgan to'lov
+  /// JISMONAN O'CHIRILMAYDI (tarix — dalil): reversed_at belgilanadi.
+  /// reversed_at != NULL bo'lgan to'lov paidMinor yig'indisiga, kontragent
+  /// balansiga va hisobotlarga KIRMAYDI, lekin ro'yxatlarda «qaytarilgan»
+  /// belgisi bilan ko'rinadi — kim, qachon, nega qaytargani bilan.
+  reversedAt    DateTime? @map("reversed_at") @db.Timestamptz()
+  reversedById  String?   @map("reversed_by_id") @db.Uuid
+  reverseReason String?   @map("reverse_reason")
+
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
 
   account    Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
   debt       Debt      @relation(fields: [debtId], references: [id], onDelete: Cascade)
   cashDesk   CashDesk? @relation(fields: [cashDeskId], references: [id], onDelete: SetNull)
   receivedBy Employee? @relation("DebtPaymentReceiver", fields: [receivedById], references: [id], onDelete: SetNull)
+  reversedBy Employee? @relation("DebtPaymentReverser", fields: [reversedById], references: [id], onDelete: SetNull)
+  /// Shu to'lovni yaratgan qo'ng'iroq-yozuv(lar)i (2026-07-16 — natija↔to'lov bog'lami).
+  notes      DebtNote[] @relation("DebtNotePayment")
 
   @@index([accountId, debtId, createdAt(sort: Desc)])
   /// §3.9 kunlik kassir hisoboti — (kassir, kun) kesimi.
@@ -9181,6 +9202,19 @@ model DebtNote {
   /// 'paid_full' | 'paid_partial' | 'not_paid' | 'callback' | null (oddiy izoh).
   outcome String? @db.VarChar(20)
 
+  /// Shu qo'ng'iroqda YARATILGAN to'lov (2026-07-16 — natijani BEKOR QILISH).
+  /// paid_full/paid_partial natija to'lov yozuvi ochadi; bog'lam orqali natija
+  /// bekor qilinganda to'lov ham storno bo'ladi (va aksincha), lastCallOutcome
+  /// esa qolgan JONLI yozuvlardan deterministik qayta hisoblanadi.
+  paymentId String? @map("payment_id") @db.Uuid
+
+  /// NATIJANI BEKOR QILISH (2026-07-16): yozuv O'CHMAYDI — belgilanadi.
+  /// canceled_at != NULL yozuv lastCallOutcome hisobiga KIRMAYDI, tarixda
+  /// «bekor qilingan» ko'rinishida qoladi (kim, qachon, nega).
+  canceledAt   DateTime? @map("canceled_at") @db.Timestamptz()
+  canceledById String?   @map("canceled_by_id") @db.Uuid
+  cancelReason String?   @map("cancel_reason")
+
   authorId   String? @map("author_id") @db.Uuid
   /// 'operator' | 'cashier' | 'admin' — §3.4: yozuvda rol ko'rsatiladi.
   authorRole String  @default("operator") @map("author_role") @db.VarChar(20)
@@ -9189,9 +9223,11 @@ model DebtNote {
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
 
-  account Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  debt    Debt      @relation(fields: [debtId], references: [id], onDelete: Cascade)
-  author  Employee? @relation("DebtNoteAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  account    Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  debt       Debt         @relation(fields: [debtId], references: [id], onDelete: Cascade)
+  author     Employee?    @relation("DebtNoteAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  payment    DebtPayment? @relation("DebtNotePayment", fields: [paymentId], references: [id], onDelete: SetNull)
+  canceledBy Employee?    @relation("DebtNoteCanceler", fields: [canceledById], references: [id], onDelete: SetNull)
 
   @@index([accountId, debtId, createdAt(sort: Desc)])
   @@index([accountId, authorId, createdAt])

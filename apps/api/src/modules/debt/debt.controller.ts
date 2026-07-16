@@ -255,6 +255,43 @@ export class DebtController {
     return this.service.addCardPayment(user.accountId, user.sub, id, body);
   }
 
+  // ── TO'LOVNI QAYTARISH — storno (2026-07-16) ──────────────────────────────
+  //
+  // Marshrut darajasida `debt.update` yetadi (operator ham, kassir ham kiradi);
+  // ASOSIY himoya servis ichida: faqat to'lovni KIRITGAN xodim yoki RAHBAR
+  // (ikkala to'lov huquqi bor = admin) qaytara oladi. Sabab majburiy — schema.
+
+  @Post(':id/payments/:paymentId/reverse')
+  @RequirePermission({ entity: 'debt', action: 'update' })
+  async reversePayment(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Param('paymentId') paymentId: string,
+    @Body() body: unknown,
+  ) {
+    const role = await this.actorRole(user.sub);
+    return this.service.reversePayment(user.accountId, user.sub, role, id, paymentId, body);
+  }
+
+  // ── QO'NG'IROQ NATIJASINI BEKOR QILISH (2026-07-16) ───────────────────────
+  //
+  // Xato qo'yilgan natija («to'ladi/qisman/to'lamadi/qayta qo'ng'iroq»)
+  // qaytariladi; natija to'lov yaratgan bo'lsa, to'lov ham bitta tranzaksiyada
+  // storno bo'ladi. Himoya storno bilan bir xil: marshrutda `debt.update`,
+  // servisda «faqat yozuv muallifi yoki rahbar» tekshiruvi. Sabab majburiy.
+
+  @Post(':id/notes/:noteId/cancel')
+  @RequirePermission({ entity: 'debt', action: 'update' })
+  async cancelCallNote(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Param('noteId') noteId: string,
+    @Body() body: unknown,
+  ) {
+    const role = await this.actorRole(user.sub);
+    return this.service.cancelCallNote(user.accountId, user.sub, role, id, noteId, body);
+  }
+
   // ── soft-delete ───────────────────────────────────────────────────────────
 
   @Delete(':id')

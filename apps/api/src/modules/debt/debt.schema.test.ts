@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   CASHIER_METHODS,
+  CancelCallNoteSchema,
   CreateCardPaymentSchema,
   CreateCashPaymentSchema,
   CreateDebtNoteSchema,
@@ -8,6 +9,7 @@ import {
   DebtFilterSchema,
   DebtPaymentsFeedFilterSchema,
   MarkCallSchema,
+  ReversePaymentSchema,
   SetProblemSchema,
 } from './debt.schema.js';
 
@@ -384,5 +386,66 @@ describe('Muammoli mijoz', () => {
   it('SetProblemSchema: YECHISHDA sabab ham, sana ham shart emas', () => {
     const v = SetProblemSchema.parse({ problem: false });
     expect(v.problem).toBe(false);
+  });
+});
+
+/**
+ * TO'LOVNI QAYTARISH — storno (2026-07-16).
+ * Sabab MAJBURIY: sababsiz storno «bu pul qayoqqa ketdi?» savolini
+ * javobsiz qoldiradi. Keyingi aloqa sanasi esa ixtiyoriy.
+ */
+describe('ReversePaymentSchema — to‘lovni qaytarish (storno)', () => {
+  it('sabab bilan qabul qiladi (sana ixtiyoriy)', () => {
+    const r = ReversePaymentSchema.parse({ reason: 'Summa xato kiritildi' });
+    expect(r.reason).toBe('Summa xato kiritildi');
+    expect(r.nextContactAt ?? null).toBeNull();
+  });
+
+  it('keyingi aloqa sanasi berilsa — Date bo‘lib keladi', () => {
+    const r = ReversePaymentSchema.parse({
+      reason: 'x',
+      nextContactAt: '2026-07-20T09:00:00.000Z',
+    });
+    expect(r.nextContactAt).toBeInstanceOf(Date);
+  });
+
+  it('sababsiz RAD ETADI (bo‘sh, faqat probel yoki umuman yo‘q)', () => {
+    expect(() => ReversePaymentSchema.parse({})).toThrow();
+    expect(() => ReversePaymentSchema.parse({ reason: '' })).toThrow();
+    expect(() => ReversePaymentSchema.parse({ reason: '   ' })).toThrow();
+  });
+
+  it('juda uzun sababni RAD ETADI (2000 belgi chegarasi)', () => {
+    expect(() => ReversePaymentSchema.parse({ reason: 'a'.repeat(2001) })).toThrow();
+  });
+});
+
+/**
+ * QO'NG'IROQ NATIJASINI BEKOR QILISH (2026-07-16).
+ * Storno bilan bir intizom: SABAB majburiy, keyingi aloqa sanasi ixtiyoriy.
+ */
+describe('CancelCallNoteSchema — qo‘ng‘iroq natijasini bekor qilish', () => {
+  it('sabab bilan qabul qiladi (sana ixtiyoriy)', () => {
+    const r = CancelCallNoteSchema.parse({ reason: 'Natija adashib qo‘yildi' });
+    expect(r.reason).toBe('Natija adashib qo‘yildi');
+    expect(r.nextContactAt ?? null).toBeNull();
+  });
+
+  it('keyingi aloqa sanasi berilsa — Date bo‘lib keladi', () => {
+    const r = CancelCallNoteSchema.parse({
+      reason: 'x',
+      nextContactAt: '2026-07-20T09:00:00.000Z',
+    });
+    expect(r.nextContactAt).toBeInstanceOf(Date);
+  });
+
+  it('sababsiz RAD ETADI (bo‘sh, faqat probel yoki umuman yo‘q)', () => {
+    expect(() => CancelCallNoteSchema.parse({})).toThrow();
+    expect(() => CancelCallNoteSchema.parse({ reason: '' })).toThrow();
+    expect(() => CancelCallNoteSchema.parse({ reason: '   ' })).toThrow();
+  });
+
+  it('juda uzun sababni RAD ETADI (2000 belgi chegarasi)', () => {
+    expect(() => CancelCallNoteSchema.parse({ reason: 'a'.repeat(2001) })).toThrow();
   });
 });

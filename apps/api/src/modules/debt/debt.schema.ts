@@ -240,6 +240,38 @@ export const MarkCallSchema = z
 export type MarkCallInput = z.infer<typeof MarkCallSchema>;
 
 /**
+ * TO'LOVNI QAYTARISH — storno (2026-07-16 talab).
+ *
+ * Kassir/operator xato summa kiritgan bo'lsa, to'lov O'CHIRILMAYDI —
+ * «qaytarilgan» deb belgilanadi (tarix dalil bo'lib qoladi). SABAB majburiy:
+ * sababsiz storno keyin «bu pul qayoqqa ketdi?» degan savolga javobsiz
+ * qoldiradi. Qarz qayta ochilsa (paid → partial/unpaid) keyingi qo'ng'iroq
+ * sanasi ixtiyoriy beriladi — mijoz ro'yxatda «osilib» qolmasin.
+ */
+export const ReversePaymentSchema = z.object({
+  reason: z.string().trim().min(1, 'Qaytarish sababi majburiy').max(2000),
+  /** Qarz qayta ochilganda keyingi aloqa sanasi (ixtiyoriy, tavsiya etiladi). */
+  nextContactAt: z.coerce.date().nullish(),
+});
+export type ReversePaymentInput = z.infer<typeof ReversePaymentSchema>;
+
+/**
+ * QO'NG'IROQ NATIJASINI BEKOR QILISH (2026-07-16 talab).
+ *
+ * Operator xato natija qo'ygan bo'lsa («to'ladi / qisman / to'lamadi / qayta
+ * qo'ng'iroq»), o'sha amal QAYTARILADI: yozuv o'chmaydi — «bekor qilingan»
+ * belgilanadi, bog'liq to'lov bo'lsa u ham storno bo'ladi, lastCallOutcome
+ * qolgan jonli yozuvlardan qayta hisoblanadi. SABAB majburiy — to'lov
+ * stornosidagi bilan bir intizom: sababsiz bekor keyin javobsiz savol qoldiradi.
+ */
+export const CancelCallNoteSchema = z.object({
+  reason: z.string().trim().min(1, 'Bekor qilish sababi majburiy').max(2000),
+  /** Qarz qayta ochilganda / jadval buzilganda keyingi aloqa sanasi (ixtiyoriy). */
+  nextContactAt: z.coerce.date().nullish(),
+});
+export type CancelCallNoteInput = z.infer<typeof CancelCallNoteSchema>;
+
+/**
  * MUAMMOLI MIJOZ belgisini qo'yish/yechish (2026-07-14) — «Muammoli qarzdorlar»
  * sahifasidan, qo'ng'iroq modalidan tashqari.
  *

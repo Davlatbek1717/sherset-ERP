@@ -13,6 +13,7 @@
  */
 
 import { ReceiptViewer } from '@/components/debts/receipt-viewer';
+import { ReversePaymentModal } from '@/components/debts/reverse-payment-modal';
 import { StatusLegend } from '@/components/debts/status-legend';
 import { useBackspaceBack } from '@/hooks/use-keyboard-nav';
 import {
@@ -36,7 +37,7 @@ import {
   downloadCsv,
   formatMoney,
 } from '@moysklad/ui';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useState } from 'react';
@@ -51,9 +52,12 @@ export default function DebtPaymentsFeedPage() {
   // Backspace → orqaga («Ro'yxatga qaytish» bosmasdan; matn maydonlarida ishlamaydi).
   useBackspaceBack();
 
+  const qc = useQueryClient();
   const [from, setFrom] = useState('');
   // Ochilgan chek (2026-07-14) — null bo'lsa modal yopiq.
   const [receiptId, setReceiptId] = useState<string | null>(null);
+  // QAYTARILAYOTGAN to'lov (storno, 2026-07-16) — null bo'lsa modal yopiq.
+  const [reversing, setReversing] = useState<DebtPaymentFeedRow | null>(null);
   const [to, setTo] = useState('');
   const [method, setMethod] = useState<DebtPaymentMethod | ''>('');
   const [search, setSearch] = useState('');
@@ -126,12 +130,16 @@ export default function DebtPaymentsFeedPage() {
         },
         {
           header: t('col_status'),
+          // Storno qatori Excel'da ham «qaytarilgan» deb chiqadi — buxgalteriya
+          // yig'indini qo'lda solishtirsa adashmasin.
           cellText: (r) =>
-            r.debtStatus === 'paid'
-              ? t('paid_full')
-              : r.debtStatus === 'partial'
-                ? t('status_partial')
-                : t('status_unpaid'),
+            r.reversedAt
+              ? t('reversed_badge')
+              : r.debtStatus === 'paid'
+                ? t('paid_full')
+                : r.debtStatus === 'partial'
+                  ? t('status_partial')
+                  : t('status_unpaid'),
         },
       ],
       all,
@@ -237,6 +245,8 @@ export default function DebtPaymentsFeedPage() {
                 <th className="px-3 py-2.5">{t('col_received_by')}</th>
                 <th className="px-3 py-2.5">{t('receipt_title')}</th>
                 <th className="px-3 py-2.5 text-right">{t('col_remaining')}</th>
+                {/* STORNO ustuni (2026-07-16) — xato to'lov shu yerdan qaytariladi */}
+                <th className="px-3 py-2.5" aria-label={t('reverse_payment')} />
               </tr>
             </thead>
             <tbody>
@@ -249,11 +259,14 @@ export default function DebtPaymentsFeedPage() {
                     // HOLAT RANGI (2026-07-13): ilgari hamma qator oq edi va
                     // bir-biriga qo'shilib ketardi. Endi:
                     //   to'liq to'landi → YASHIL · qisman to'ladi → SARIQ
+                    //   QAYTARILGAN (storno) → XIRA QIZIL chiziq (2026-07-16)
                     // Rangga qo'shimcha CHAP CHIZIQ ham bor — rang ko'rmaydigan
                     // foydalanuvchi ham ajratadi (faqat rangga tayanmaymiz).
-                    r.debtStatus === 'paid'
-                      ? 'border-l-[3px] border-l-[var(--ms-row-paid-accent)] bg-[var(--ms-row-paid-bg)]'
-                      : 'border-l-[3px] border-l-[var(--ms-row-partial-accent)] bg-[var(--ms-row-partial-bg)]',
+                    r.reversedAt
+                      ? 'border-l-[3px] border-l-[var(--ms-destructive-300)] opacity-60'
+                      : r.debtStatus === 'paid'
+                        ? 'border-l-[3px] border-l-[var(--ms-row-paid-accent)] bg-[var(--ms-row-paid-bg)]'
+                        : 'border-l-[3px] border-l-[var(--ms-row-partial-accent)] bg-[var(--ms-row-partial-bg)]',
                     'hover:brightness-[0.97]',
                   ].join(' ')}
                 >
@@ -280,7 +293,9 @@ export default function DebtPaymentsFeedPage() {
                     {r.debtName}
                   </td>
                   <td className="whitespace-nowrap px-3 py-2.5 text-right font-semibold tabular-nums">
-                    {formatMoney(r.amountMinor)}
+                    <span className={r.reversedAt ? 'line-through' : undefined}>
+                      {formatMoney(r.amountMinor)}
+                    </span>
                   </td>
                   <td className="whitespace-nowrap px-3 py-2.5">{methodLabel(r.method)}</td>
                   <td className="px-3 py-2.5">{r.sourceName ?? '—'}</td>
@@ -306,6 +321,25 @@ export default function DebtPaymentsFeedPage() {
                       <Badge tone="success">{t('paid_full')}</Badge>
                     ) : (
                       formatMoney(r.remainingMinor)
+                    )}
+                  </td>
+                  {/* STORNO (2026-07-16): qaytarilgan — belgi (sabab title'da),
+                      jonli to'lov — «Qaytarish» tugmasi. Server baribir faqat
+                      kiritgan xodim yoki rahbarni o'tkazadi. */}
+                  <td className="whitespace-nowrap px-3 py-2.5">
+                    {r.reversedAt ? (
+                      <span title={r.reverseReason ?? undefined}>
+                        <Badge tone="destructive">{t('reversed_badge')}</Badge>
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setReversing(r)}
+                        className="text-[var(--ms-text-destructive)] hover:underline"
+                        data-test-id={`feed-reverse-${r.id}`}
+                      >
+                        ↩︎ {t('reverse_payment')}
+                      </button>
                     )}
                   </td>
                 </tr>
@@ -339,6 +373,14 @@ export default function DebtPaymentsFeedPage() {
         title={rows.find((r) => r.attachmentId === receiptId)?.counterpartyName}
         open={receiptId !== null}
         onClose={() => setReceiptId(null)}
+      />
+      {/* TO'LOVNI QAYTARISH — storno (2026-07-16): sabab majburiy, tarixda qoladi */}
+      <ReversePaymentModal
+        debtId={reversing?.debtId ?? ''}
+        payment={reversing}
+        open={reversing !== null}
+        onClose={() => setReversing(null)}
+        onReversed={() => void qc.invalidateQueries({ queryKey: ['debts'] })}
       />
     </Container>
   );

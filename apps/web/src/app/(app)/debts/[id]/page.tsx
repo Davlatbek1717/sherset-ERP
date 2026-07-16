@@ -1,7 +1,9 @@
 'use client';
 import { TelegramChatCard } from '@/components/counterparties/telegram-chat-card';
 import { CallOutcomeForm } from '@/components/debts/call-outcome-modal';
+import { CancelCallModal } from '@/components/debts/cancel-call-modal';
 import { ReceiptViewer } from '@/components/debts/receipt-viewer';
+import { ReversePaymentModal } from '@/components/debts/reverse-payment-modal';
 import { useBackspaceBack } from '@/hooks/use-keyboard-nav';
 import {
   DEBT_POLL_MS,
@@ -69,6 +71,7 @@ function PaymentLines({
   emptyLabel,
   testPrefix,
   onOpenReceipt,
+  onReverse,
 }: {
   payments: DebtPaymentRow[];
   currency: string;
@@ -76,6 +79,8 @@ function PaymentLines({
   testPrefix: string;
   /** Chekni modal oynada ochadi (havola 401 berardi — token yuborilmasdi). */
   onOpenReceipt: (attachmentId: string) => void;
+  /** STORNO (2026-07-16) — «Qaytarish» modalini ochadi. */
+  onReverse: (payment: DebtPaymentRow) => void;
 }) {
   const t = useTranslations('pages.debts');
 
@@ -100,10 +105,18 @@ function PaymentLines({
         <div
           key={p.id}
           data-test-id={`${testPrefix}-payment-${p.id}`}
-          className="rounded-[var(--ms-radius-sm)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-muted)] px-2.5 py-2 text-xs"
+          className={`rounded-[var(--ms-radius-sm)] border px-2.5 py-2 text-xs ${
+            p.reversedAt
+              ? // QAYTARILGAN to'lov — xira va qizil hoshiyali: hisobga kirmasligi
+                // bir qarashda ko'rinsin, lekin tarixdan yo'qolmasin.
+                'border-[var(--ms-destructive-300)] bg-[var(--ms-bg-muted)] opacity-75'
+              : 'border-[var(--ms-border-default)] bg-[var(--ms-bg-muted)]'
+          }`}
         >
           <div className="flex flex-wrap items-baseline gap-x-2">
-            <span className="font-semibold text-sm tabular-nums">
+            <span
+              className={`font-semibold text-sm tabular-nums ${p.reversedAt ? 'line-through' : ''}`}
+            >
               {formatMoney(p.amountMinor, currency)}
             </span>
             <span className="text-[var(--ms-text-secondary)] tabular-nums">
@@ -117,7 +130,35 @@ function PaymentLines({
             {p.receivedByName && (
               <span className="text-[var(--ms-text-secondary)]">· {p.receivedByName}</span>
             )}
+            {p.reversedAt ? (
+              <Badge tone="destructive">{t('reversed_badge')}</Badge>
+            ) : (
+              // STORNO tugmasi — kichik va chetda: asosiy oqimga xalaqit bermaydi,
+              // lekin xato summa kiritilganda darhol qo'l ostida.
+              <button
+                type="button"
+                onClick={() => onReverse(p)}
+                className="ml-auto text-[var(--ms-text-destructive)] hover:underline"
+                data-test-id={`${testPrefix}-reverse-${p.id}`}
+              >
+                ↩︎ {t('reverse_payment')}
+              </button>
+            )}
           </div>
+
+          {/* Kim, qachon va NEGA qaytargani — nizoda birinchi savol shu */}
+          {p.reversedAt && (
+            <div className="mt-0.5 text-[var(--ms-text-destructive)]">
+              {t('reversed_badge')}: {p.reversedByName ?? '—'} ·{' '}
+              {new Date(p.reversedAt).toLocaleString('ru-RU', {
+                day: '2-digit',
+                month: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+              })}
+              {p.reverseReason && <> · {p.reverseReason}</>}
+            </div>
+          )}
 
           {/* DOLLARDA berilgan naqd — asl summa va kurs (so'm qayerdan chiqqani) */}
           {p.currency === 'USD' && p.amountOriginalMinor && (
@@ -173,6 +214,10 @@ export default function DebtProfilePage() {
   const [noteNext, setNoteNext] = useState(todayAt9InputValue());
   // Ochilgan chek (2026-07-14) — null bo'lsa modal yopiq.
   const [receiptId, setReceiptId] = useState<string | null>(null);
+  // QAYTARILAYOTGAN to'lov (storno, 2026-07-16) — null bo'lsa modal yopiq.
+  const [reversing, setReversing] = useState<DebtPaymentRow | null>(null);
+  // BEKOR QILINAYOTGAN qo'ng'iroq natijasi (2026-07-16) — null bo'lsa modal yopiq.
+  const [cancelingNote, setCancelingNote] = useState<DebtNoteRow | null>(null);
   // «Qo'ng'iroq qilindi» natija modali (2026-07-12).
   const [noteErr, setNoteErr] = useState<string | null>(null);
 
@@ -339,6 +384,7 @@ export default function DebtProfilePage() {
                 emptyLabel={t('payments_empty')}
                 testPrefix="cash"
                 onOpenReceipt={setReceiptId}
+                onReverse={setReversing}
               />
             </div>
             <div>
@@ -351,6 +397,7 @@ export default function DebtProfilePage() {
                 emptyLabel={t('payments_empty')}
                 testPrefix="card"
                 onOpenReceipt={setReceiptId}
+                onReverse={setReversing}
               />
             </div>
           </div>
@@ -376,7 +423,13 @@ export default function DebtProfilePage() {
               <div
                 key={n.id}
                 data-test-id={`note-${n.id}`}
-                className="rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] p-3"
+                className={`rounded-[var(--ms-radius-default)] border p-3 ${
+                  n.canceledAt
+                    ? // BEKOR QILINGAN natija — xira va qizil hoshiyali: hisobga
+                      // kirmasligi bir qarashda ko'rinsin, lekin tarixdan yo'qolmasin.
+                      'border-[var(--ms-destructive-300)] bg-[var(--ms-bg-muted)] opacity-75'
+                    : 'border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)]'
+                }`}
               >
                 <div className="mb-1 flex flex-wrap items-center gap-2 text-[var(--ms-text-secondary)] text-xs">
                   <Badge tone="neutral">{kindLabel(n.kind)}</Badge>
@@ -389,8 +442,38 @@ export default function DebtProfilePage() {
                       · {t('field_next_contact')}: {when(n.nextContactAt)}
                     </span>
                   )}
+                  {n.canceledAt ? (
+                    <Badge tone="destructive">{t('note_canceled_badge')}</Badge>
+                  ) : (
+                    n.kind === 'call' &&
+                    n.outcome && (
+                      // NATIJANI BEKOR QILISH (2026-07-16) — kichik va chetda:
+                      // asosiy oqimga xalaqit bermaydi, xato natijada qo'l ostida.
+                      <button
+                        type="button"
+                        onClick={() => setCancelingNote(n)}
+                        className="ml-auto text-[var(--ms-text-destructive)] hover:underline"
+                        data-test-id={`note-cancel-${n.id}`}
+                      >
+                        ↩︎ {t('cancel_call_action')}
+                      </button>
+                    )
+                  )}
                 </div>
-                <div className="text-sm">{n.text}</div>
+                <div className={`text-sm ${n.canceledAt ? 'line-through' : ''}`}>{n.text}</div>
+                {/* Kim, qachon va NEGA bekor qilgani — nizoda birinchi savol shu */}
+                {n.canceledAt && (
+                  <div className="mt-0.5 text-[var(--ms-text-destructive)] text-xs">
+                    {t('note_canceled_badge')}: {n.canceledByName ?? '—'} ·{' '}
+                    {new Date(n.canceledAt).toLocaleString('ru-RU', {
+                      day: '2-digit',
+                      month: '2-digit',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                    {n.cancelReason && <> · {n.cancelReason}</>}
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -404,6 +487,24 @@ export default function DebtProfilePage() {
         title={d?.counterpartyName ?? undefined}
         open={receiptId !== null}
         onClose={() => setReceiptId(null)}
+      />
+      {/* TO'LOVNI QAYTARISH — storno (2026-07-16): sabab majburiy, tarixda qoladi */}
+      <ReversePaymentModal
+        debtId={id}
+        payment={reversing}
+        open={reversing !== null}
+        onClose={() => setReversing(null)}
+        onReversed={invalidate}
+      />
+      {/* QO'NG'IROQ NATIJASINI BEKOR QILISH (2026-07-16): to'ladi/qisman/
+          to'lamadi/qayta qo'ng'iroq — xato belgi shu yerdan qaytariladi;
+          natija to'lov yaratgan bo'lsa, to'lov ham birga storno bo'ladi */}
+      <CancelCallModal
+        debtId={id}
+        note={cancelingNote}
+        open={cancelingNote !== null}
+        onClose={() => setCancelingNote(null)}
+        onCanceled={invalidate}
       />
     </Container>
   );
