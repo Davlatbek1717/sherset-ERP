@@ -248,6 +248,40 @@ describe("MarkCallSchema — «qo'ng'iroq qilindi» natijasi (2026-07-12)", () =
     ).toThrow();
   });
 
+  // HISOB RAQAM (2026-07-17): bank o'tkazmasi — chek IXTIYORIY, faqat so'mda.
+  it("hisob raqam to'lovi cheksiz ham qabul qilinadi (chek ixtiyoriy)", () => {
+    const r = MarkCallSchema.parse({
+      outcome: 'paid_full',
+      paymentKind: 'account',
+      amountOriginalMinor: '100000',
+    });
+    expect(r.paymentKind).toBe('account');
+    expect(r.screenshotBase64 ?? null).toBeNull();
+  });
+
+  it("hisob raqam to'loviga chek rasmi qo'shish ham mumkin", () => {
+    const r = MarkCallSchema.parse({
+      outcome: 'paid_partial',
+      paymentKind: 'account',
+      amountOriginalMinor: '50000',
+      nextContactAt: '2026-07-20T09:00:00.000Z',
+      screenshotBase64: 'data:image/jpeg;base64,iVBORw0KGgo=',
+    });
+    expect(r.screenshotBase64).toContain('base64');
+  });
+
+  it("hisob raqam faqat so'mda bo'ladi (dollar rad etiladi)", () => {
+    expect(() =>
+      MarkCallSchema.parse({
+        outcome: 'paid_full',
+        paymentKind: 'account',
+        currency: 'USD',
+        exchangeRate: '128000000',
+        amountOriginalMinor: '10000',
+      }),
+    ).toThrow();
+  });
+
   it("dollar naqdda KURS majburiy (so'mga o'girish uchun)", () => {
     expect(() =>
       MarkCallSchema.parse({

@@ -20,6 +20,7 @@
  * bitta komponentni ishlatadi (bir xil xulq).
  */
 
+import { type ReceiptShot, ReceiptShotPicker } from '@/components/debts/receipt-shot-picker';
 import {
   type CallOutcome,
   type CallPaymentKind,
@@ -31,7 +32,7 @@ import {
 import { Button, Input, Modal, MoneyInput, Textarea, formatMoney, useToast } from '@moysklad/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 
 const OUTCOMES: Array<{ value: CallOutcome; tone: string }> = [
   { value: 'paid_full', tone: 'bg-[var(--ms-success-100)] border-[var(--ms-success-300)]' },
@@ -39,9 +40,6 @@ const OUTCOMES: Array<{ value: CallOutcome; tone: string }> = [
   { value: 'not_paid', tone: 'bg-[var(--ms-destructive-100)] border-[var(--ms-destructive-300)]' },
   { value: 'callback', tone: 'bg-[var(--ms-bg-muted)] border-[var(--ms-border-strong)]' },
 ];
-
-/** Chek rasmi uchun chegara — katta fayl API'ni bo'g'masin. */
-const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
 export function outcomeLabelKey(o: CallOutcome): string {
   return `outcome_${o}`;
@@ -92,7 +90,6 @@ export function CallOutcomeForm({
   const t = useTranslations('pages.debts');
   const qc = useQueryClient();
   const { toast } = useToast();
-  const fileRef = useRef<HTMLInputElement>(null);
 
   const [outcome, setOutcome] = useState<CallOutcome | null>(null);
   const [text, setText] = useState('');
@@ -108,8 +105,8 @@ export function CallOutcomeForm({
   const [usdText, setUsdText] = useState('');
   /** Kurs — foydalanuvchi yozgan matn ("12 800"). */
   const [rateText, setRateText] = useState('');
-  /** Chek rasmi — data-URI. */
-  const [shot, setShot] = useState<{ dataUri: string; name: string; mime: string } | null>(null);
+  /** Chek rasmi — data-URI (fayl / kamera / paste — ReceiptShotPicker). */
+  const [shot, setShot] = useState<ReceiptShot | null>(null);
 
   // MUAMMOLI MIJOZ (2026-07-14). Natijadan MUSTAQIL: mijoz «qisman to'ladi»
   // bo'lib ham muammoli bo'lishi mumkin (har safar va'da berib, kam to'laydi).
@@ -156,20 +153,6 @@ export function CallOutcomeForm({
     if (o === 'paid_full' && remainingMinor) setSomMinor(remainingMinor);
   }
 
-  function onPickFile(file: File | undefined) {
-    if (!file) return;
-    if (file.size > MAX_IMAGE_BYTES) {
-      setError(t('screenshot_too_big'));
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => {
-      setShot({ dataUri: String(reader.result), name: file.name, mime: file.type || 'image/png' });
-      setError(null);
-    };
-    reader.readAsDataURL(file);
-  }
-
   const save = useMutation({
     mutationFn: () => {
       // Click — doim so'mda; naqd — tanlangan valyutada.
@@ -197,7 +180,8 @@ export function CallOutcomeForm({
               amountOriginalMinor: originalMinor ?? undefined,
               // Kurs so'm to'lovda ham yuboriladi (ixtiyoriy ma'lumot).
               exchangeRate: rateMinor ?? undefined,
-              ...(kind === 'click' && shot
+              // Click'da chek majburiy; hisob raqamda ixtiyoriy — bor bo'lsa ketadi.
+              ...((kind === 'click' || kind === 'account') && shot
                 ? { screenshotBase64: shot.dataUri, filename: shot.name, mime: shot.mime }
                 : {}),
             }
@@ -281,15 +265,15 @@ export function CallOutcomeForm({
             </span>
           </div>
 
-          <div className="grid grid-cols-2 gap-2">
-            {(['cash', 'click'] as const).map((k) => (
+          <div className="grid grid-cols-3 gap-2">
+            {(['cash', 'click', 'account'] as const).map((k) => (
               <button
                 key={k}
                 type="button"
                 onClick={() => {
                   setKind(k);
-                  // Click — faqat so'mda bo'ladi (bank o'tkazmasi).
-                  if (k === 'click') setCurrency('UZS');
+                  // Click va hisob raqam — faqat so'mda bo'ladi (bank o'tkazmasi).
+                  if (k !== 'cash') setCurrency('UZS');
                   setError(null);
                 }}
                 className={[
@@ -300,7 +284,7 @@ export function CallOutcomeForm({
                 ].join(' ')}
                 data-test-id={`call-kind-${k}`}
               >
-                {k === 'cash' ? t('pay_cash') : t('pay_click')}
+                {k === 'cash' ? t('pay_cash') : k === 'click' ? t('pay_click') : t('pay_account')}
               </button>
             ))}
           </div>
@@ -403,8 +387,11 @@ export function CallOutcomeForm({
             </div>
           )}
 
-          {/* ── CLICK formasi: summa + chek rasmi ── */}
-          {kind === 'click' && (
+          {/* ── CLICK / HISOB RAQAM formasi: summa + chek rasmi ──
+              Click'da chek MAJBURIY (karta o'tkazmasida hamisha chek bor),
+              hisob raqamda (2026-07-17) IXTIYORIY — bank o'tkazmasida chek
+              hamisha bo'lavermaydi. Rasm uch yo'l bilan: fayl / kamera / paste. */}
+          {(kind === 'click' || kind === 'account') && (
             <div className="mt-3 flex flex-col gap-3">
               <div>
                 <div className="mb-1 text-[var(--ms-text-muted)] text-xs">
@@ -414,49 +401,17 @@ export function CallOutcomeForm({
                 <MoneyInput
                   valueMinor={somMinor}
                   onChangeMinor={setSomMinor}
-                  data-test-id="call-amount-click"
+                  data-test-id={kind === 'click' ? 'call-amount-click' : 'call-amount-account'}
                 />
               </div>
 
-              <div>
-                <div className="mb-1 text-[var(--ms-text-muted)] text-xs">
-                  {t('screenshot_label')}
-                  <span className="ml-1 text-[var(--ms-destructive-500)]">*</span>
-                </div>
-                <input
-                  ref={fileRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(e) => onPickFile(e.target.files?.[0])}
-                  data-test-id="call-shot-input"
-                />
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => fileRef.current?.click()}
-                  data-test-id="call-shot-pick"
-                >
-                  {shot ? t('screenshot_change') : t('screenshot_pick')}
-                </Button>
-
-                {shot ? (
-                  <div className="mt-2">
-                    {/* next/image emas: bu data-URI (brauzerda tanlangan fayl),
-                          optimizatsiya qilinmaydi va serverga bormaydi. */}
-                    <img
-                      src={shot.dataUri}
-                      alt={shot.name}
-                      className="max-h-40 rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)]"
-                    />
-                    <div className="mt-1 text-[var(--ms-text-muted)] text-xs">{shot.name}</div>
-                  </div>
-                ) : (
-                  <div className="mt-1 text-[var(--ms-text-muted)] text-xs">
-                    {t('screenshot_required')}
-                  </div>
-                )}
-              </div>
+              <ReceiptShotPicker
+                shot={shot}
+                onShot={setShot}
+                onError={setError}
+                required={kind === 'click'}
+                testPrefix={kind === 'click' ? 'call' : 'call-account'}
+              />
             </div>
           )}
         </div>

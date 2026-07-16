@@ -664,7 +664,12 @@ export class DebtService {
     }
 
     // Tarix matni: natija + (to'lovda SUMMA va KANAL) + operator izohi.
-    const KIND_LABEL = input.paymentKind === 'click' ? 'Click' : 'naqd';
+    const KIND_LABEL =
+      input.paymentKind === 'click'
+        ? 'Click'
+        : input.paymentKind === 'account'
+          ? 'hisob raqam'
+          : 'naqd';
     const origLabel =
       input.currency === 'USD' && originalMinor != null
         ? ` (${(Number(originalMinor) / 100).toFixed(2)} $ × ${
@@ -688,14 +693,22 @@ export class DebtService {
 
     // Kanal → daftar metodi. Click = karta o'tkazmasi (chek rasmi bor), shuning
     // uchun mavjud 'card_screenshot' turiga tushadi va mijoz kartochkasining
-    // KARTA bo'limida ko'rinadi. Naqd — 'cash', NAQD bo'limida ko'rinadi.
-    const method: DebtPaymentMethod = input.paymentKind === 'click' ? 'card_screenshot' : 'cash';
+    // KARTA bo'limida ko'rinadi. Hisob raqam (2026-07-17) — alohida 'account'
+    // turi, kartochkaning HISOB RAQAM bo'limida. Naqd — 'cash', NAQD bo'limida.
+    const method: DebtPaymentMethod =
+      input.paymentKind === 'click'
+        ? 'card_screenshot'
+        : input.paymentKind === 'account'
+          ? 'account'
+          : 'cash';
     const sourceName =
       input.paymentKind === 'click'
         ? "Click — qo'ng'iroqda"
-        : input.currency === 'USD'
-          ? "Naqd (dollar) — qo'ng'iroqda"
-          : "Naqd — qo'ng'iroqda";
+        : input.paymentKind === 'account'
+          ? "Hisob raqam — qo'ng'iroqda"
+          : input.currency === 'USD'
+            ? "Naqd (dollar) — qo'ng'iroqda"
+            : "Naqd — qo'ng'iroqda";
 
     const result = await this.prisma.client.$transaction(async (tx) => {
       // To'lov bo'lgan bo'lsa — HAQIQIY to'lov yozuvi (2026-07-13). Ilgari
@@ -810,8 +823,13 @@ export class DebtService {
     });
 
     // Chek rasmi — tranzaksiyadan TASHQARIDA (blob yozish pul tranzaksiyasini
-    // ushlab turmasin; §3.7 dagi bilan bir xil intizom).
-    if (result.paymentId && input.paymentKind === 'click' && input.screenshotBase64) {
+    // ushlab turmasin; §3.7 dagi bilan bir xil intizom). Click'da majburiy,
+    // hisob raqamda (2026-07-17) ixtiyoriy — yuborilgan bo'lsa biriktiriladi.
+    if (
+      result.paymentId &&
+      (input.paymentKind === 'click' || input.paymentKind === 'account') &&
+      input.screenshotBase64
+    ) {
       const buffer = this.decodeImage(input.screenshotBase64);
       const attachment = await this.attachments.createFromBuffer(accountId, userId, {
         entity: 'DebtPayment',
@@ -1434,7 +1452,14 @@ export class DebtService {
       this.prisma.client.debtPayment.groupBy({
         by: ['receivedById'],
         // reversedAt: null — qaytarilgan to'lov operator ko'rsatkichiga kirmaydi.
-        where: { accountId, method: 'card_screenshot', createdAt: window, reversedAt: null },
+        // 2026-07-17: hisob raqam ('account') ham operator masofadan qabul
+        // qilgan to'lov — Click bilan bir qatorda hisoblanadi.
+        where: {
+          accountId,
+          method: { in: ['card_screenshot', 'account'] },
+          createdAt: window,
+          reversedAt: null,
+        },
         _sum: { amountMinor: true },
         _count: { _all: true },
       }),

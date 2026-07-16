@@ -42,7 +42,13 @@ import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useState } from 'react';
 
-const METHODS: Array<DebtPaymentMethod | ''> = ['', 'cash', 'terminal', 'card_screenshot'];
+const METHODS: Array<DebtPaymentMethod | ''> = [
+  '',
+  'cash',
+  'terminal',
+  'card_screenshot',
+  'account',
+];
 
 /** Bir sahifadagi to'lovlar soni — qarzdorlar ro'yxati bilan bir xil. */
 const PAGE_SIZE = 100;
@@ -94,7 +100,9 @@ export default function DebtPaymentsFeedPage() {
         ? t('method_terminal')
         : m === 'manual_close'
           ? t('method_manual_close')
-          : t('method_card_screenshot');
+          : m === 'account'
+            ? t('method_account')
+            : t('method_card_screenshot');
 
   /**
    * Excel eksport — MIJOZ ISMI bilan, joriy filtrlar bo'yicha HAMMA to'lov

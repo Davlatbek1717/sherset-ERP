@@ -17,7 +17,12 @@ import { api } from './api-client';
 export const DEBT_POLL_MS = 10_000;
 
 export type DebtStatus = 'unpaid' | 'partial' | 'paid';
-export type DebtPaymentMethod = 'cash' | 'terminal' | 'card_screenshot' | 'manual_close';
+export type DebtPaymentMethod =
+  | 'cash'
+  | 'terminal'
+  | 'card_screenshot'
+  | 'account'
+  | 'manual_close';
 export type DebtNoteKind = 'call' | 'debt_issue' | 'payment';
 export type DebtAuthorRole = 'operator' | 'cashier' | 'admin';
 /**
@@ -32,9 +37,10 @@ export type CallOutcome = 'paid_full' | 'paid_partial' | 'not_paid' | 'callback'
  * Qo'ng'iroqda qabul qilingan to'lov KANALI (2026-07-13):
  *   cash  — naqd (so'm yoki dollar; dollarda kurs majburiy)
  *   click — Click/karta o'tkazmasi (chek rasmi majburiy)
- * Serverda click → method='card_screenshot' bo'lib yoziladi.
+ * Serverda click → method='card_screenshot', account → method='account'
+ * bo'lib yoziladi (2026-07-17: hisob raqam o'tkazmasi qo'shildi).
  */
-export type CallPaymentKind = 'cash' | 'click';
+export type CallPaymentKind = 'cash' | 'click' | 'account';
 
 /** To'lov valyutasi — naqd so'mda ham, dollarda ham bo'lishi mumkin. */
 export type PaymentCurrency = 'UZS' | 'USD';

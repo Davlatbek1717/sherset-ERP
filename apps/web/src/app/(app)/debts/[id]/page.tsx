@@ -251,8 +251,12 @@ export default function DebtProfilePage() {
   //     (manual_close — eski «qo'ng'iroqda yopildi» yozuvlari; ular ham naqd
   //      tarafda turadi, chunki Click emas va cheki yo'q)
   //   card_screenshot                → CLICK/KARTA bo'limi
-  const cashPayments = (d?.payments ?? []).filter((p) => p.method !== 'card_screenshot');
+  //   account (2026-07-17)           → HISOB RAQAM bo'limi (bank o'tkazmasi)
+  const cashPayments = (d?.payments ?? []).filter(
+    (p) => p.method !== 'card_screenshot' && p.method !== 'account',
+  );
   const cardPayments = (d?.payments ?? []).filter((p) => p.method === 'card_screenshot');
+  const accountPayments = (d?.payments ?? []).filter((p) => p.method === 'account');
 
   const roleLabel = (r: DebtNoteRow['authorRole']) =>
     r === 'cashier'
@@ -400,6 +404,23 @@ export default function DebtProfilePage() {
                 onReverse={setReversing}
               />
             </div>
+            {/* HISOB RAQAM (2026-07-17) — bank o'tkazmalari alohida ko'rinadi.
+                Bo'lim faqat shunday to'lov BOR bo'lsa chiqadi — bo'sh joy egallamaydi. */}
+            {accountPayments.length > 0 && (
+              <div>
+                <div className="mb-1 font-medium text-[var(--ms-text-muted)] text-xs">
+                  {t('section_account')}
+                </div>
+                <PaymentLines
+                  payments={accountPayments}
+                  currency={d?.currency ?? 'UZS'}
+                  emptyLabel={t('payments_empty')}
+                  testPrefix="account"
+                  onOpenReceipt={setReceiptId}
+                  onReverse={setReversing}
+                />
+              </div>
+            )}
           </div>
         </Section>
       </div>

@@ -18,6 +18,10 @@ export type DebtStatus = z.infer<typeof DebtStatusSchema>;
  * TZ §3.6 + §3.7 — to'lov kanali.
  *   cash / terminal  — kassada, KASSIR kiritadi
  *   card_screenshot  — mijoz kartadan o'tkazdi, chek rasmi, OPERATOR kiritadi
+ *   account          — HISOB RAQAMDAN o'tkazma (2026-07-17): mijoz bank
+ *                      hisob raqamiga to'ladi, OPERATOR qo'ng'iroqda kiritadi.
+ *                      Chek rasmi IXTIYORIY (bank o'tkazmasida hamisha chek
+ *                      bo'lavermaydi). Kassir hisobotiga KIRMAYDI.
  *   manual_close     — «To'ladi» deb belgilangan (2026-07-13): qo'ng'iroqda
  *                      to'liq to'lov tasdiqlandi, qoldiq to'lov sifatida
  *                      yoziladi. To'lovlar lentasi va davr-hisobotida
@@ -29,6 +33,7 @@ export const DebtPaymentMethodSchema = z.enum([
   'cash',
   'terminal',
   'card_screenshot',
+  'account',
   'manual_close',
 ]);
 export type DebtPaymentMethod = z.infer<typeof DebtPaymentMethodSchema>;
@@ -136,11 +141,13 @@ export type CallOutcome = z.infer<typeof CallOutcomeSchema>;
 
 /**
  * Qo'ng'iroqda qabul qilingan to'lov kanali (2026-07-13):
- *   cash  — NAQD (so'm yoki dollar; dollarda kurs majburiy)
- *   click — CLICK/karta o'tkazmasi (chek rasmi majburiy)
- * DB'da click → method='card_screenshot' (mavjud tur, tarix buzilmaydi).
+ *   cash    — NAQD (so'm yoki dollar; dollarda kurs majburiy)
+ *   click   — CLICK/karta o'tkazmasi (chek rasmi majburiy)
+ *   account — HISOB RAQAM o'tkazmasi (2026-07-17): so'mda; chek rasmi
+ *             IXTIYORIY (fayl, kamera yoki screenshot orqali qo'shiladi)
+ * DB'da click → method='card_screenshot', account → method='account'.
  */
-export const CallPaymentKindSchema = z.enum(['cash', 'click']);
+export const CallPaymentKindSchema = z.enum(['cash', 'click', 'account']);
 export type CallPaymentKind = z.infer<typeof CallPaymentKindSchema>;
 
 /** To'lov valyutasi — naqd so'mda ham, dollarda ham bo'lishi mumkin. */
@@ -210,6 +217,11 @@ export const MarkCallSchema = z
   // Click — bank/karta o'tkazmasi, u DOIM so'mda keladi (dollar Click yo'q).
   .refine((v) => v.paymentKind !== 'click' || v.currency === 'UZS', {
     message: 'Click to‘lovi faqat so‘mda bo‘ladi',
+    path: ['currency'],
+  })
+  // Hisob raqam o'tkazmasi ham faqat so'mda (2026-07-17) — bank hisobi so'mda.
+  .refine((v) => v.paymentKind !== 'account' || v.currency === 'UZS', {
+    message: 'Hisob raqam to‘lovi faqat so‘mda bo‘ladi',
     path: ['currency'],
   })
   // Qisman to'lovda summa majburiy — yangi (amountOriginalMinor) yoki eski
