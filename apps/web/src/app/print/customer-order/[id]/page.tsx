@@ -13,7 +13,7 @@
 import { ThermalShell } from '@/components/print/thermal-shell';
 import { type ChekPosition, TovarChek } from '@/components/print/tovar-chek';
 import { api } from '@/lib/api-client';
-import { computePositionTotal } from '@moysklad/money';
+import { computePositionTotal, scaleMinorByQty } from '@moysklad/money';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useParams, useSearchParams } from 'next/navigation';
@@ -69,8 +69,12 @@ export default function PrintCustomerOrderPage() {
   if (!data) return <div style={{ padding: 24 }}>Not found</div>;
 
   // Qator jami — chegirma/QQS hisobga olingan (hujjatdagi bilan bir xil hisob).
+  // Chegirmasiz yalpi (narx × miqdor) alohida yig'iladi — chekda «Chegirma»
+  // qatori JAMI ustida ko'rinadi (2026-07-17 talab).
+  let grossMinor = 0n;
   const positions: ChekPosition[] = data.positions.map((p) => {
     const c = computePositionTotal(p, data.vatEnabled, data.vatIncluded);
+    grossMinor += scaleMinorByQty(BigInt(p.priceMinor), p.quantity);
     return {
       position: p.position,
       name: p.product?.name ?? '—',
@@ -96,6 +100,7 @@ export default function PrintCustomerOrderPage() {
         comment={data.description}
         positions={positions}
         totalMinor={data.sumMinor}
+        subtotalMinor={grossMinor.toString()}
         widthMm={widthMm}
       />
     </ThermalShell>

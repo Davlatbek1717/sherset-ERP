@@ -9,7 +9,7 @@
 import { ThermalShell } from '@/components/print/thermal-shell';
 import { type ChekPosition, TovarChek } from '@/components/print/tovar-chek';
 import { api } from '@/lib/api-client';
-import { computePositionTotal } from '@moysklad/money';
+import { computePositionTotal, scaleMinorByQty } from '@moysklad/money';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useParams, useSearchParams } from 'next/navigation';
@@ -66,8 +66,11 @@ export default function PrintSalesReturnPage() {
   if (isLoading) return <div style={{ padding: 24 }}>Loading...</div>;
   if (!data) return <div style={{ padding: 24 }}>Not found</div>;
 
+  // Chegirmasiz yalpi (narx × miqdor) — chekdagi «Chegirma» qatori uchun.
+  let grossMinor = 0n;
   const positions: ChekPosition[] = data.positions.map((p) => {
     const c = computePositionTotal(p, data.vatEnabled, data.vatIncluded);
+    grossMinor += scaleMinorByQty(BigInt(p.priceMinor), p.quantity);
     return {
       position: p.position,
       name: p.product?.name ?? '—',
@@ -100,6 +103,7 @@ export default function PrintSalesReturnPage() {
         reference={reference}
         positions={positions}
         totalMinor={data.sumMinor}
+        subtotalMinor={grossMinor.toString()}
         widthMm={widthMm}
       />
     </ThermalShell>

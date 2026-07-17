@@ -3128,6 +3128,7 @@
       "chek_col_price": "Цена",
       "chek_col_sum": "Сумма",
       "chek_discount": "Скидка",
+      "chek_subtotal": "Сумма (без скидки)",
       "chek_total": "ИТОГО",
       "date": "Дата",
       "product": "Товар",

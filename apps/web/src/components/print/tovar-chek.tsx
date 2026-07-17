@@ -196,13 +196,26 @@ export function TovarChek({
           ))}
         </tbody>
         <tfoot>
-          {hasDiscount && discountMinor && (
-            <tr>
-              <td colSpan={5} style={{ ...num, fontWeight: 600 }}>
-                {t('chek_discount')}
-              </td>
-              <td style={{ ...num, fontWeight: 600 }}>-{fmtSom(discountMinor)}</td>
-            </tr>
+          {/* Chegirma bo'lsa: chegirmasiz summa → chegirma → JAMI (2026-07-17
+              talab: «qancha skidka qilindi ko'rinsin»). Chegirmasiz chekda
+              faqat JAMI qatori — namunadagidek ixcham qoladi. */}
+          {hasDiscount && discountMinor && subtotalMinor && (
+            <>
+              <tr>
+                <td colSpan={5} style={{ ...num, fontWeight: 600 }}>
+                  {t('chek_subtotal')}:
+                </td>
+                <td style={{ ...num, fontWeight: 600 }}>{fmtSom(subtotalMinor)}</td>
+              </tr>
+              <tr>
+                <td colSpan={5} style={{ ...num, fontWeight: 600 }}>
+                  {t('chek_discount')}:
+                </td>
+                <td style={{ ...num, fontWeight: 600 }} data-test-id="chek-discount">
+                  -{fmtSom(discountMinor)}
+                </td>
+              </tr>
+            </>
           )}
           <tr style={{ fontWeight: 700, fontSize: fs + 2 }}>
             <td colSpan={5} style={num}>
