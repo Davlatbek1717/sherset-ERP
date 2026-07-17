@@ -11,7 +11,7 @@ import { Badge, Button, Input, formatMoney, useToast } from '@moysklad/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle, Clock, Receipt, Search, Settings, ShoppingCart, User } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -524,28 +524,87 @@ function SalesScreen({ session }: { session: CurrentSession }) {
   const [discountPct, setDiscountPct] = useState(0);
   const [discountEditing, setDiscountEditing] = useState(false);
 
-  // MIJOZ-EKRAN (televizor) tugmasi — faqat Sherset dasturi ichida ko'rinadi
-  // (window.electronAPI mavjud bo'lsa). Kassir o'zi boshqaradi: bosса ochiladi,
-  // yana bosса yopiladi (avtomat EMAS). F9 ham xuddi shu ishni qiladi.
-  const [cfd, setCfd] = useState<{ available: boolean; open: boolean }>({
-    available: false,
-    open: false,
-  });
+  // ── MIJOZ-EKRAN (televizor) ────────────────────────────────────────────────
+  // Kassir O'ZI boshqaradi (avtomat EMAS): tugma yoki F9.
+  //  • Sherset dasturi (Electron) — native 2-oyna, HDMI ekranда fullscreen (IPC).
+  //  • Oddiy brauzer (Chrome) — yangi brauzer oynasi (window.open); uni televizorga
+  //    sudrab F11 bilan fullscreen qilinadi. Savat BroadcastChannel bilan sinxron.
+  const [cfdOpen, setCfdOpen] = useState(false);
+
+  // Mijoz-ekranga yuboriladigan savat (bigint IPC/postMessage'da uzatilmaydi → string).
+  const cfdPayload = useMemo(
+    () => ({
+      lines: cart.map((l) => ({
+        productId: l.productId,
+        name: l.productName,
+        quantity: l.quantity,
+        priceMinor: String(l.priceMinor),
+      })),
+      discountPct,
+    }),
+    [cart, discountPct],
+  );
+  const cfdPayloadRef = useRef(cfdPayload);
+  cfdPayloadRef.current = cfdPayload;
+
+  // Brauzer mijoz-oynasi bilan aloqa kanali (bir marta). Mijoz-oyna ochilganda
+  // «cfd-ready» yuboradi — biz joriy savatni qaytaramiz (dastlabki holat uchun).
+  const cfdChannelRef = useRef<BroadcastChannel | null>(null);
+  const cfdWindowRef = useRef<Window | null>(null);
   useEffect(() => {
-    const api = window.electronAPI;
-    if (!api?.toggleCustomerDisplay) return; // brauzer yoki eski .exe — tugma chiqmaydi
-    api
-      .customerDisplayStatus?.()
-      .then((s) => setCfd({ available: true, open: !!s?.open }))
-      .catch(() => setCfd({ available: true, open: false }));
+    if (typeof window === 'undefined' || typeof BroadcastChannel === 'undefined') return;
+    const ch = new BroadcastChannel('sherset-cart');
+    ch.onmessage = (e) => {
+      if (e.data?.type === 'cfd-ready')
+        ch.postMessage({ type: 'cart', payload: cfdPayloadRef.current });
+    };
+    cfdChannelRef.current = ch;
+    return () => {
+      ch.close();
+      cfdChannelRef.current = null;
+    };
   }, []);
+
+  // Dastur ichида bo'lsak — mijoz-oyna allaqachon ochiqmi (holatni tikla).
+  useEffect(() => {
+    window.electronAPI
+      ?.customerDisplayStatus?.()
+      .then((s) => setCfdOpen(!!s?.open))
+      .catch(() => {});
+  }, []);
+
   const toggleCfd = useCallback(async () => {
-    try {
-      const r = await window.electronAPI?.toggleCustomerDisplay?.();
-      if (r?.error) toast.error(r.error);
-      setCfd((p) => ({ ...p, open: !!r?.open }));
-    } catch {
-      /* IPC xatosi — jim, kassa ishi to'xtamasin */
+    // (a) Sherset dasturi — native 2-oyna.
+    if (window.electronAPI?.toggleCustomerDisplay) {
+      try {
+        const r = await window.electronAPI.toggleCustomerDisplay();
+        if (r?.error) toast.error(r.error);
+        setCfdOpen(!!r?.open);
+      } catch {
+        /* IPC xatosi — jim, kassa ishi to'xtamasin */
+      }
+      return;
+    }
+    // (b) Brauzer — yangi oyna. Ochiq bo'lsa — yopamiz.
+    if (cfdWindowRef.current && !cfdWindowRef.current.closed) {
+      cfdWindowRef.current.close();
+      cfdWindowRef.current = null;
+      setCfdOpen(false);
+      return;
+    }
+    const w = window.open('/customer-display', 'sherset-cfd', 'width=1280,height=720');
+    if (!w) {
+      toast.error("Oyna ochilmadi — brauzer popup'ni bloklagan. Ruxsat bering va qayta urining.");
+      return;
+    }
+    cfdWindowRef.current = w;
+    setCfdOpen(true);
+    // Oyna yuklanguncha joriy savatni bir necha marta yuboramiz (handshake zaxirasi).
+    for (const ms of [400, 900, 1600]) {
+      setTimeout(
+        () => cfdChannelRef.current?.postMessage({ type: 'cart', payload: cfdPayloadRef.current }),
+        ms,
+      );
     }
   }, [toast]);
 
@@ -648,21 +707,13 @@ function SalesScreen({ session }: { session: CurrentSession }) {
     });
   }, []);
 
-  // MIJOZ-EKRAN (Customer-Facing Display) — kassaning orqasidagi 2-monitor.
-  // Electron qobig'i ichida ishlаётgan bo'lsak (window.electronAPI.pushCart),
-  // savat har o'zgarganda mijoz oynasiga uzatiladi. Oddiy brauzerda — no-op.
-  // bigint IPC'da uzatilmaydi, shu sabab priceMinor'ni string qilamiz.
+  // Savat har o'zgarganda mijoz-ekranga uzatamiz — ikkala yo'l bilan:
+  //  • Electron IPC (pushCart) — dastur ichidagi native 2-oyna,
+  //  • BroadcastChannel — brauzerdagi mijoz-oyna (window.open).
   useEffect(() => {
-    window.electronAPI?.pushCart?.({
-      lines: cart.map((l) => ({
-        productId: l.productId,
-        name: l.productName,
-        quantity: l.quantity,
-        priceMinor: String(l.priceMinor),
-      })),
-      discountPct,
-    });
-  }, [cart, discountPct]);
+    window.electronAPI?.pushCart?.(cfdPayload);
+    cfdChannelRef.current?.postMessage({ type: 'cart', payload: cfdPayload });
+  }, [cfdPayload]);
 
   const updateQty = useCallback((productId: string, delta: number) => {
     setCart((prev) =>
@@ -950,25 +1001,21 @@ function SalesScreen({ session }: { session: CurrentSession }) {
 
       {/* Right — cart (Savat) + Cheklar tabs */}
       <div className="flex w-[600px] shrink-0 flex-col overflow-hidden border-[var(--ms-border)] border-l bg-[var(--ms-bg-surface)]">
-        {/* Mijoz-ekran (televizor) boshqaruvi — faqat Sherset dasturida */}
-        {cfd.available && (
-          <div className="flex shrink-0 items-center justify-between border-[var(--ms-border)] border-b px-3 py-1.5">
-            <span className="text-[var(--ms-text-muted)] text-xs">
-              Mijoz ekrani (televizor) · F9
-            </span>
-            <button
-              type="button"
-              onClick={toggleCfd}
-              className={`rounded-lg border px-3 py-1 font-medium text-xs transition-colors ${
-                cfd.open
-                  ? 'border-green-600 bg-green-50 text-green-700 hover:bg-green-100'
-                  : 'border-[var(--ms-border)] text-[var(--ms-text-muted)] hover:bg-[var(--ms-bg-hover)]'
-              }`}
-            >
-              {cfd.open ? "🟢 Yoniq — o'chirish" : "⚪ O'chiq — yoqish"}
-            </button>
-          </div>
-        )}
+        {/* Mijoz-ekran (televizor) boshqaruvi — dasturda ham, brauzerda ham */}
+        <div className="flex shrink-0 items-center justify-between border-[var(--ms-border)] border-b px-3 py-1.5">
+          <span className="text-[var(--ms-text-muted)] text-xs">🖥 Mijoz ekrani (televizor)</span>
+          <button
+            type="button"
+            onClick={toggleCfd}
+            className={`rounded-lg border px-3 py-1 font-medium text-xs transition-colors ${
+              cfdOpen
+                ? 'border-green-600 bg-green-50 text-green-700 hover:bg-green-100'
+                : 'border-[var(--ms-border)] text-[var(--ms-text-muted)] hover:bg-[var(--ms-bg-hover)]'
+            }`}
+          >
+            {cfdOpen ? "🟢 Yoniq — o'chirish" : '📺 Ekranni yoqish'}
+          </button>
+        </div>
         {/* Tab bar */}
         <div className="flex border-[var(--ms-border)] border-b">
           <button

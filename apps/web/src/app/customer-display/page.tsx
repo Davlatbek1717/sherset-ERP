@@ -101,15 +101,27 @@ export default function CustomerDisplayPage() {
     };
   }, [demo]);
 
-  // ── 2. Savat manbasi — Electron IPC yoki demo ─────────────────────────────
+  // ── 2. Savat manbasi — demo / Electron IPC / brauzer BroadcastChannel ──────
   useEffect(() => {
     if (demo) {
       setPayload(DEMO_PAYLOAD);
       return;
     }
+    // (a) Sherset dasturi — Electron IPC.
     if (typeof window !== 'undefined' && window.customerDisplay) {
       window.customerDisplay.onCart((p) => setPayload(p));
+      return;
     }
+    // (b) Brauzer oynasi (window.open) — kassa sahifasi bilan BroadcastChannel.
+    if (typeof window !== 'undefined' && typeof BroadcastChannel !== 'undefined') {
+      const ch = new BroadcastChannel('sherset-cart');
+      ch.onmessage = (e) => {
+        if (e.data?.type === 'cart' && e.data.payload) setPayload(e.data.payload as CartPayload);
+      };
+      ch.postMessage({ type: 'cfd-ready' }); // kassa sahifasidan joriy savatni so'rash
+      return () => ch.close();
+    }
+    return undefined; // manba topilmadi (SSR / BroadcastChannel yo'q)
   }, [demo]);
 
   const lines = payload.lines;
