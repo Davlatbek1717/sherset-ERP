@@ -1,7 +1,13 @@
 'use client';
 
-import { PrintDoc, type PrintDocPosition } from '@/components/print/print-doc';
-import { PrintShell } from '@/components/print/print-shell';
+/**
+ * Xaridordan qaytarish cheki — TOR «TOVAR CHEKI» formatida (2026-07-17 talab).
+ * Eski A4 `PrintDoc` almashtirildi — buyurtma/jo'natma bilan bir xil format,
+ * sarlavha «Qaytarish cheki», asos qatorida jo'natma/buyurtma raqami.
+ */
+
+import { ThermalShell } from '@/components/print/thermal-shell';
+import { type ChekPosition, TovarChek } from '@/components/print/tovar-chek';
 import { api } from '@/lib/api-client';
 import { computePositionTotal } from '@moysklad/money';
 import { useQuery } from '@tanstack/react-query';
@@ -30,15 +36,15 @@ interface SalesReturnDetail {
     id: string;
     name: string;
     legalTitle: string | null;
-    legalAddress?: string | null;
-    uzRequisites?: { inn?: string } | null;
+    phone: string | null;
   };
   organization: {
     id: string;
     name: string;
     legalTitle: string | null;
-    legalAddress?: string | null;
+    phone: string | null;
   };
+  owner: { id: string; name: string } | null;
   demand: { id: string; name: string } | null;
   customerOrder: { id: string; name: string } | null;
   positions: PositionDetail[];
@@ -48,6 +54,8 @@ export default function PrintSalesReturnPage() {
   const { id } = useParams<{ id: string }>();
   const searchParams = useSearchParams();
   const auto = searchParams.get('auto') === '1';
+  // Chek eni — 80mm default (Xprinter), `?w=58` tor lenta uchun.
+  const widthMm = searchParams.get('w') === '58' ? 58 : 80;
   const t = useTranslations('pages.print');
 
   const { data, isLoading } = useQuery<SalesReturnDetail>({
@@ -58,23 +66,16 @@ export default function PrintSalesReturnPage() {
   if (isLoading) return <div style={{ padding: 24 }}>Loading...</div>;
   if (!data) return <div style={{ padding: 24 }}>Not found</div>;
 
-  let subtotalMinor = 0n;
-  let vatTotalMinor = 0n;
-  const positions: PrintDocPosition[] = data.positions.map((p) => {
+  const positions: ChekPosition[] = data.positions.map((p) => {
     const c = computePositionTotal(p, data.vatEnabled, data.vatIncluded);
-    subtotalMinor += c.baseMinor;
-    vatTotalMinor += c.vatAmountMinor;
     return {
       position: p.position,
-      productName: p.product?.name ?? '—',
-      productCode: p.product?.code ?? null,
+      name: p.product?.name ?? '—',
+      code: p.product?.code ?? null,
       uom: p.product?.uom ?? null,
       quantity: p.quantity,
       priceMinor: p.priceMinor,
-      totalMinor: c.totalMinor.toString(),
-      discount: p.discount,
-      vat: p.vat,
-      vatAmountMinor: c.vatAmountMinor.toString(),
+      sumMinor: c.totalMinor.toString(),
     };
   });
 
@@ -85,39 +86,22 @@ export default function PrintSalesReturnPage() {
       : null;
 
   return (
-    <PrintShell autoPrint={auto}>
-      <PrintDoc
-        docTitle={t('doc_title.sales_return')}
+    <ThermalShell widthMm={widthMm} autoPrint={auto}>
+      <TovarChek
+        title={t('chek_title_return')}
         docNumber={data.name}
         docDate={data.moment}
-        organization={{
-          label: t('party.organization'),
-          name: data.organization.legalTitle ?? data.organization.name,
-          details: data.organization.legalAddress ?? null,
-        }}
-        agent={{
-          label: t('party.agent'),
-          name: data.agent.legalTitle ?? data.agent.name,
-          details:
-            [
-              data.agent.legalAddress,
-              data.agent.uzRequisites?.inn ? `STIR: ${data.agent.uzRequisites.inn}` : null,
-            ]
-              .filter(Boolean)
-              .join('\n') || null,
-        }}
+        orgName={data.organization.legalTitle ?? data.organization.name}
+        orgPhone={data.organization.phone}
+        sellerName={data.owner?.name ?? null}
+        buyerName={data.agent.legalTitle ?? data.agent.name}
+        buyerPhone={data.agent.phone}
+        comment={data.description}
         reference={reference}
         positions={positions}
-        currency="UZS"
-        subtotalMinor={subtotalMinor.toString()}
-        vatTotalMinor={vatTotalMinor.toString()}
-        grandTotalMinor={data.sumMinor}
-        description={data.description}
-        signatures={[
-          { label: t('signature.issued_by'), name: data.organization.name },
-          { label: t('signature.received_by'), name: data.agent.name },
-        ]}
+        totalMinor={data.sumMinor}
+        widthMm={widthMm}
       />
-    </PrintShell>
+    </ThermalShell>
   );
 }
