@@ -687,12 +687,15 @@ function SalesScreen({ session }: { session: CurrentSession }) {
     );
   }, []);
 
+  // Savat darajasidagi chegirma (`discountPct`) har bir pozitsiyaga foiz sifatida
+  // yoziladi — shunda backend chegirmali `sumMinor`'ni saqlaydi va chek «Chegirma»
+  // qatorini ko'rsata oladi (aks holda chegirma faqat ekranda qolib, yo'qolardi).
   const positions = () =>
     cart.map((l) => ({
       productId: l.productId,
       quantity: String(l.quantity),
       priceMinor: l.priceMinor.toString(),
-      discount: '0',
+      discount: discountPct > 0 ? String(discountPct) : '0',
     }));
 
   const onSold = (saleId: string) => {

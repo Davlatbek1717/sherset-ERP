@@ -2,6 +2,7 @@
 
 import { ThermalShell } from '@/components/print/thermal-shell';
 import { api } from '@/lib/api-client';
+import { scaleMinorByQty } from '@moysklad/money';
 import { formatMoney } from '@moysklad/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useParams, useSearchParams } from 'next/navigation';
@@ -72,6 +73,16 @@ export default function PrintRetailSalePage() {
   const terminalAmount = BigInt(data.terminalAmountMinor ?? '0');
   const debtAmount = BigInt(data.advancePaymentSumMinor ?? '0');
   const change = BigInt(data.changeMinor);
+  // Chegirma: chegirmasiz yalpi (narx × miqdor) bilan yakuniy summa farqi.
+  // Musbat bo'lsagina «Chegirma» qatori chiqadi (narx qo'lda tushirilganda
+  // farq bo'lmaydi — bu chegirma emas, boshqa narx). scaleMinorByQty backend
+  // (compute-positions) bilan bir xil yaxlitlashni ishlatadi.
+  const grossMinor = data.positions.reduce(
+    (sum, p) => sum + scaleMinorByQty(BigInt(p.priceMinor), p.quantity),
+    0n,
+  );
+  const discountMinor = grossMinor - BigInt(data.sumMinor);
+  const hasDiscount = discountMinor > 0n;
   // Body font scales down a touch on the 58mm strip.
   const fs = widthMm === 58 ? 10 : 12;
 
@@ -122,6 +133,18 @@ export default function PrintRetailSalePage() {
         ))}
 
         <div style={dash} />
+        {hasDiscount && (
+          <>
+            <div style={row}>
+              <span>Summa</span>
+              <span>{formatMoney(grossMinor, cur)}</span>
+            </div>
+            <div style={{ ...row, color: '#c00' }}>
+              <span>Chegirma</span>
+              <span>−{formatMoney(discountMinor, cur)}</span>
+            </div>
+          </>
+        )}
         <div style={{ ...row, fontWeight: 700, fontSize: fs + 3 }}>
           <span>JAMI</span>
           <span>{formatMoney(BigInt(data.sumMinor), cur)}</span>
