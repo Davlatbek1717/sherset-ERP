@@ -4,6 +4,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { AttachmentService } from '../attachment/attachment.service.js';
 import { decryptPassword, encryptPassword } from '../email/crypto.js';
+import { normalizeTelegramPhone } from '../hr/hr-shared/phone-normalize.util.js';
 import { parseBusinessUpdate } from './telegram-business.util.js';
 import {
   TelegramApiError,
@@ -438,6 +439,39 @@ export class TelegramService {
     text: string,
     autoKind: 'debt_issued' | 'payment' | 'debt_closed' | 'reminder',
   ): Promise<{ sent: boolean; reason?: string }> {
+    // Userbot (shaxsiy raqam) faol bo'lsa — xabar egangizning RAQAMIDAN ketadi:
+    // tayyor matnni HrTelegramOutbox'ga qo'yamiz, mavjud MTProto worker yetkazadi
+    // (bog'langan TelegramChat SHART EMAS — kontragent telefoni yetarli). Faol
+    // userbot yo'q bo'lsa — quyidagi Bot API / Business yo'li (backward-compat).
+    const userbot = await this.prisma.client.hrTelegramAccount.findFirst({
+      where: { accountId, isActive: true, sessionEncrypted: { not: null } },
+      select: { id: true },
+    });
+    if (userbot) {
+      const cp = await this.prisma.client.counterparty.findFirst({
+        where: { id: counterpartyId, accountId },
+        select: { phone: true },
+      });
+      let toPhone: string | null = null;
+      try {
+        toPhone = normalizeTelegramPhone(cp?.phone ?? null);
+      } catch {
+        toPhone = null;
+      }
+      if (!toPhone) return { sent: false, reason: 'no_phone' };
+      await this.prisma.client.hrTelegramOutbox.create({
+        data: {
+          accountId,
+          counterpartyId,
+          toPhone,
+          messageText: text,
+          status: 'pending',
+          sourceEventType: `debt.${autoKind}`.slice(0, 50),
+        },
+      });
+      return { sent: true, reason: 'queued_userbot' };
+    }
+
     const cfg = await this.prisma.client.telegramConfig.findUnique({ where: { accountId } });
     if (!cfg?.enabled) return { sent: false, reason: 'telegram_off' };
 
@@ -483,6 +517,137 @@ export class TelegramService {
       this.logger.warn(`Telegram xabar yuborilmadi (${autoKind}): ${msg}`);
       return { sent: false, reason: msg.slice(0, 200) };
     }
+  }
+
+  // ── UMUMIY CHAT (buyurtma/kontragent kartochkasi paneli, 2026-07-17) ──────
+  //
+  // Wappi-uslubidagi panel shu ikki metodga tayanadi. Kontragent-ruxsati bilan
+  // ishlaydi (sotuvchida HR-ruxsat bo'lmaydi). Yuborish — MTProto userbot
+  // (shaxsiy raqam) navbati orqali (notifyCounterparty bilan bir xil yo'l);
+  // faol userbot bo'lmasa aniq xato. O'qish — MTProto chiquvchi (HrTelegramOutbox)
+  // ∪ Business ikki-tomonlama (TelegramChatMessage) xabarlari birlashtiriladi,
+  // eng eskisidan yangisiga.
+
+  /** Panelning yuborish tugmasi — kontragentga shaxsiy raqamdan xabar navbati. */
+  async sendChatToCounterparty(accountId: string, counterpartyId: string, rawText: unknown) {
+    const text = typeof rawText === 'string' ? rawText.trim() : '';
+    if (!text || text.length > 4096) {
+      throw new BadRequestException('Xabar matni majburiy (1-4096 belgi)');
+    }
+    const cp = await this.prisma.client.counterparty.findFirst({
+      where: { id: counterpartyId, accountId },
+      select: { id: true, phone: true, name: true },
+    });
+    if (!cp) throw new NotFoundException('Kontragent topilmadi');
+
+    const userbot = await this.prisma.client.hrTelegramAccount.findFirst({
+      where: { accountId, isActive: true, sessionEncrypted: { not: null } },
+      select: { id: true },
+    });
+    if (!userbot) {
+      throw new BadRequestException(
+        "Telegram raqami ulanmagan — avval Sozlamalar → Telegram profillari'da raqamni ulang",
+      );
+    }
+    let toPhone: string | null = null;
+    try {
+      toPhone = normalizeTelegramPhone(cp.phone);
+    } catch {
+      toPhone = null;
+    }
+    if (!toPhone) {
+      throw new BadRequestException("Kontragentda to'g'ri telefon raqami yo'q");
+    }
+    const row = await this.prisma.client.hrTelegramOutbox.create({
+      data: {
+        accountId,
+        counterpartyId,
+        toPhone,
+        messageText: text,
+        status: 'pending',
+        sourceEventType: 'manual_chat',
+      },
+    });
+    return { id: row.id, status: 'pending' as const, direction: 'out' as const };
+  }
+
+  /** Panel xabar oqimi — MTProto chiquvchi ∪ Business (in/out), eski→yangi. */
+  async counterpartyThread(
+    accountId: string,
+    counterpartyId: string,
+    raw: Record<string, unknown>,
+  ) {
+    const limit = Math.min(Number(raw.limit) || 50, 200);
+    const cp = await this.prisma.client.counterparty.findFirst({
+      where: { id: counterpartyId, accountId },
+      select: { id: true, name: true, phone: true },
+    });
+    if (!cp) throw new NotFoundException('Kontragent topilmadi');
+
+    // MTProto chiquvchi (shaxsiy raqamdan yuborilgan — hodisa + qo'lda).
+    const outbox = await this.prisma.client.hrTelegramOutbox.findMany({
+      where: { accountId, counterpartyId },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+    });
+    // Business ikki-tomonlama (bog'langan chat bo'lsa — kelayotgan xabar shu yerda).
+    const businessChat = await this.prisma.client.telegramChat.findFirst({
+      where: { accountId, counterpartyId },
+      orderBy: { lastMessageAt: 'desc' },
+      select: { id: true },
+    });
+    const businessMsgs = businessChat
+      ? await this.prisma.client.telegramChatMessage.findMany({
+          where: { accountId, chatRefId: businessChat.id },
+          orderBy: { createdAt: 'desc' },
+          take: limit,
+        })
+      : [];
+
+    type ThreadItem = {
+      id: string;
+      direction: 'in' | 'out';
+      text: string;
+      status: string | null;
+      kind: string;
+      autoKind: string | null;
+      createdAt: Date;
+    };
+    const merged: ThreadItem[] = [
+      ...outbox.map((m) => ({
+        id: `ob-${m.id}`,
+        direction: 'out' as const,
+        text: m.messageText,
+        status: m.status,
+        kind: 'text',
+        autoKind: m.sourceEventType === 'manual_chat' ? null : (m.sourceEventType ?? null),
+        createdAt: m.createdAt,
+      })),
+      ...businessMsgs.map((m) => ({
+        id: `tg-${m.id}`,
+        direction: m.direction as 'in' | 'out',
+        text: m.text ?? '',
+        status: null,
+        kind: m.kind ?? 'text',
+        autoKind: m.autoKind,
+        createdAt: m.createdAt,
+      })),
+    ]
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+      .slice(-limit);
+
+    // Ulanish holati — panel «Ulanmagan» ogohlantirishini ko'rsatishi uchun.
+    const userbot = await this.prisma.client.hrTelegramAccount.findFirst({
+      where: { accountId, isActive: true, sessionEncrypted: { not: null } },
+      select: { phoneNumber: true },
+    });
+
+    return {
+      counterparty: { id: cp.id, name: cp.name, phone: cp.phone },
+      connected: !!userbot,
+      fromNumber: userbot?.phoneNumber ?? null,
+      items: merged,
+    };
   }
 
   // --- Telegram Business (owner-account) chats ---------------------------

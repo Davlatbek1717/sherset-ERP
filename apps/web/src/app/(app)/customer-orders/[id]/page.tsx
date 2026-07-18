@@ -24,6 +24,7 @@ import { PositionPriceMenu } from '@/components/documents/position-price-menu';
 import { PositionReserveMenu } from '@/components/documents/position-reserve-menu';
 import { PresenceIndicator } from '@/components/documents/presence-indicator';
 import { SendEmailDialog } from '@/components/send-email-dialog';
+import { OrderTelegramPanel } from '@/components/telegram/order-telegram-panel';
 import { useApiMutation } from '@/hooks/use-api-mutation';
 import { useConflictReload } from '@/hooks/use-conflict-reload';
 import { useDestructiveMutation } from '@/hooks/use-destructive-mutation';
@@ -1987,6 +1988,15 @@ export default function CustomerOrderDetailPage() {
             </div>
           </DetailContentTabs>
         </div>
+
+        {/* Telegram chat-paneli (Wappi/MoySklad uslubi, 2026-07-17) — kontragent
+            tanlangan (saqlangan) buyurtmada shu odamning Telegram kontakti +
+            xabar oqimi + yozish oynasi. Shaxsiy raqamdan (MTProto) yuboriladi. */}
+        {data.agent.id && (
+          <div className="mt-6 max-w-md">
+            <OrderTelegramPanel counterpartyId={data.agent.id} counterpartyName={data.agent.name} />
+          </div>
+        )}
 
         {/* Задачи / Файлы / Изменения render as inline bottom sections INSIDE
             DetailContentTabs (moysklad-grounded layout) — see tasksSlot/filesSlot. */}

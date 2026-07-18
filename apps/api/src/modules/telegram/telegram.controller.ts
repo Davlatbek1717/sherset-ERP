@@ -127,6 +127,30 @@ export class TelegramController {
     return this.svc.sendBusinessMessage(user.accountId, id, body);
   }
 
+  // --- Umumiy chat (buyurtma/kontragent kartochkasi paneli, 2026-07-17) ----
+  // Kontragent-ruxsati bilan (sotuvchida HR-ruxsat bo'lmaydi). Yuborish MTProto
+  // userbot (shaxsiy raqam) orqali; o'qish MTProto ∪ Business birlashmasi.
+
+  @Get('counterparty/:id/thread')
+  @RequirePermission({ entity: 'counterparty', action: 'view' })
+  async counterpartyThread(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Query() query: Record<string, unknown>,
+  ) {
+    return this.svc.counterpartyThread(user.accountId, id, query);
+  }
+
+  @Post('counterparty/:id/send')
+  @RequirePermission({ entity: 'counterparty', action: 'update' })
+  async sendToCounterparty(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: { text?: unknown },
+  ) {
+    return this.svc.sendChatToCounterparty(user.accountId, id, body?.text);
+  }
+
   // Inbound webhook lives on TelegramWebhookController (no JWT) —
   // Telegram doesn't carry our auth token.
 }
