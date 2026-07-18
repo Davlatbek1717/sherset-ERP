@@ -4953,9 +4953,6 @@
       "scan_step_product": "2. Штрихкод товара",
       "scan_cell_placeholder": "Отсканируйте этикетку ячейки…",
       "scan_product_placeholder": "Отсканируйте штрихкод товара…",
-      "scan_pick_cell": "Выберите ячейку из списка",
-      "scan_or": "или",
-      "scan_picker_products": "товаров",
       "scan_cell_hint": "Отсканируйте этикетку ячейки или введите код вручную",
       "scan_product_hint": "Отсканируйте оригинальный штрихкод товара — он привяжется автоматически",
       "scan_camera_on": "Камера",
@@ -5903,6 +5900,7 @@
     "hrTelegram": {
       "title": "Профили Telegram",
       "subtitle": "Подключите свой номер Telegram через MTProto (apiId/apiHash с my.telegram.org)",
+      "subtitle_single": "Подключите один номер Telegram — с него будут уходить сообщения клиентам. Введите только номер телефона.",
       "add_account": "Добавить профиль",
       "col_slot": "Профиль",
       "col_phone": "Телефон",

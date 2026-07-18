@@ -22,6 +22,20 @@ export const SetActiveHrTelegramAccountSchema = z.object({
 });
 export type SetActiveHrTelegramAccountInput = z.infer<typeof SetActiveHrTelegramAccountSchema>;
 
+/**
+ * Soddalashtirilgan «faqat bitta telefon raqam» ulash (2026-07-17 talab).
+ * apiId/apiHash — ILOVA kaliti (foydalanuvchiniki emas), serverda env'da
+ * (TELEGRAM_API_ID / TELEGRAM_API_HASH); foydalanuvchi FAQAT telefonini
+ * kiritadi. Har doim slot 1 (yagona raqam).
+ */
+export const ConnectHrTelegramSchema = z.object({
+  phoneNumber: z
+    .string()
+    .min(9, 'Telefon raqami kamida 9 raqam')
+    .max(20, 'Telefon raqami 20 belgidan oshmasin'),
+});
+export type ConnectHrTelegramInput = z.infer<typeof ConnectHrTelegramSchema>;
+
 /** Login wizard step 1: phone → server sends OTP. */
 export const StartLoginSchema = z.object({
   accountId: z.string().uuid(),

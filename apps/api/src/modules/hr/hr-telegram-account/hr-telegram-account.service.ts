@@ -103,6 +103,66 @@ export class HrTelegramAccountService {
     return toDto(row);
   }
 
+  /**
+   * Soddalashtirilgan ulash — foydalanuvchi FAQAT telefonini beradi; apiId/
+   * apiHash serverning env'idan (ilova kaliti). Har doim slot 1 (yagona
+   * raqam). Mavjud bo'lsa telefonni yangilaydi (raqam o'zgarsa sessiya
+   * bekor bo'ladi — boshqa raqamning sessiyasi ishlamaydi). So'ng chaqiruvchi
+   * odatiy login/start → code oqimini yuritadi.
+   */
+  async connectSingle(accountId: string, phoneNumber: string): Promise<HrTelegramAccountDto> {
+    const apiIdRaw = process.env.TELEGRAM_API_ID;
+    const apiHash = process.env.TELEGRAM_API_HASH;
+    const apiId = Number(apiIdRaw);
+    if (!apiIdRaw || !apiHash || !Number.isInteger(apiId) || apiId <= 0 || apiHash.length < 20) {
+      throw new BadRequestException(
+        'Server Telegram sozlanmagan (TELEGRAM_API_ID / TELEGRAM_API_HASH) — administrator sozlashi kerak',
+      );
+    }
+
+    let normalizedPhone: string;
+    try {
+      const p = normalizeTelegramPhone(phoneNumber);
+      if (!p) throw new Error("Bo'sh telefon raqami");
+      normalizedPhone = p;
+    } catch (e) {
+      throw new BadRequestException((e as Error).message);
+    }
+
+    const apiHashEncrypted = encryptHrSession(apiHash);
+    const existing = await this.prisma.client.hrTelegramAccount.findFirst({
+      where: { accountId, slot: 1 },
+    });
+
+    if (existing) {
+      const phoneChanged = existing.phoneNumber !== normalizedPhone;
+      const updated = await this.prisma.client.hrTelegramAccount.update({
+        where: { id: existing.id },
+        data: {
+          phoneNumber: normalizedPhone,
+          apiId,
+          apiHashEncrypted,
+          // Raqam o'zgargan bo'lsa eski sessiya endi mos emas — tozalaymiz.
+          ...(phoneChanged ? { sessionEncrypted: null, isActive: false } : {}),
+        },
+      });
+      return toDto(updated);
+    }
+
+    const row = await this.prisma.client.hrTelegramAccount.create({
+      data: {
+        accountId,
+        slot: 1,
+        phoneNumber: normalizedPhone,
+        apiId,
+        apiHashEncrypted,
+        sessionEncrypted: null,
+        isActive: false,
+      },
+    });
+    return toDto(row);
+  }
+
   async setActive(accountId: string, id: string, isActive: boolean): Promise<HrTelegramAccountDto> {
     const row = await this.findInternal(accountId, id);
     if (isActive && !row.sessionEncrypted) {

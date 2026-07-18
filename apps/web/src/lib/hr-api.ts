@@ -664,6 +664,9 @@ export const hrTelegramAccountApi = {
   list: () => api.get<HrTelegramAccountRow[]>('/hr/telegram-accounts'),
   create: (data: CreateHrTelegramAccountInput) =>
     api.post<HrTelegramAccountRow>('/hr/telegram-accounts', data),
+  /** Soddalashtirilgan ulash — faqat telefon (apiId/apiHash serverda). */
+  connect: (phoneNumber: string) =>
+    api.post<HrTelegramAccountRow>('/hr/telegram-accounts/connect', { phoneNumber }),
   setActive: (id: string, isActive: boolean) =>
     api.patch<HrTelegramAccountRow>(`/hr/telegram-accounts/${id}/active`, { isActive }),
   remove: (id: string) => api.delete<{ ok: true }>(`/hr/telegram-accounts/${id}`),

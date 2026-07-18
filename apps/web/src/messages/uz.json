@@ -4953,9 +4953,6 @@
       "scan_step_product": "2. Mahsulot shtrix-kodi",
       "scan_cell_placeholder": "Yacheyka labelini skanerlang…",
       "scan_product_placeholder": "Mahsulot shtrix-kodini skanerlang…",
-      "scan_pick_cell": "Yacheykani ro'yxatdan tanlang",
-      "scan_or": "yoki",
-      "scan_picker_products": "mahsulot",
       "scan_cell_hint": "Yacheyka labelini skanerlang yoki kodni qo'lda kiriting",
       "scan_product_hint": "Mahsulotning asl shtrix-kodini skanerlang — u avtomatik biriktiriladi",
       "scan_camera_on": "Kamera",
@@ -5903,6 +5900,7 @@
     "hrTelegram": {
       "title": "Telegram profillari",
       "subtitle": "Shaxsiy Telegram raqamingizni MTProto orqali ulang (apiId/apiHash — my.telegram.org'dan)",
+      "subtitle_single": "Bitta Telegram raqamini ulang — mijozlarga xabar shu raqamdan ketadi. Faqat telefon raqamini kiriting.",
       "add_account": "Profil qo'shish",
       "col_slot": "Profil",
       "col_phone": "Telefon",
