@@ -680,6 +680,11 @@ export const hrTelegramAccountApi = {
     }),
   loginCancel: (loginSessionId: string) =>
     api.post<{ ok: true }>('/hr/telegram-accounts/login/cancel', { loginSessionId }),
+  /** «Kod kelmadi» — kodni qayta yuborish (Telegram keyingi kanal, odatда SMS). */
+  loginResend: (loginSessionId: string) =>
+    api.post<{ ok: boolean; codeSent: boolean }>('/hr/telegram-accounts/login/resend', {
+      loginSessionId,
+    }),
 };
 
 export type { HrAccessLevel, HrPermissionRow };

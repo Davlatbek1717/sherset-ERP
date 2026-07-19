@@ -98,6 +98,19 @@ export default function HrTelegramSettingsPage() {
     onError: (e: Error) => setError(e.message),
   });
 
+  // «Kod kelmadimi?» — kodni qayta yuborish (Telegram keyingi kanal, odatда SMS).
+  const resendMut = useMutation({
+    mutationFn: () => {
+      if (!sessionId) throw new Error(t('err_start_first'));
+      return hrTelegramAccountApi.loginResend(sessionId);
+    },
+    onSuccess: () => {
+      setError(null);
+      toast.success(t('otp_resent'));
+    },
+    onError: (e: Error) => setError(e.message),
+  });
+
   // ── Ulangan raqam ustidagi amallar ─────────────────────────────────────
   const setActiveMut = useMutation({
     mutationFn: (isActive: boolean) => hrTelegramAccountApi.setActive(acc?.id ?? '', isActive),
@@ -222,14 +235,27 @@ export default function HrTelegramSettingsPage() {
                   {error}
                 </div>
               )}
-              <Button
-                onClick={() => codeMut.mutate()}
-                disabled={codeMut.isPending}
-                data-test-id="hr-tg-otp-submit"
-              >
-                <Check className="h-4 w-4" />
-                {t('otp_submit')}
-              </Button>
+              <div className="flex items-center gap-3">
+                <Button
+                  onClick={() => codeMut.mutate()}
+                  disabled={codeMut.isPending}
+                  data-test-id="hr-tg-otp-submit"
+                >
+                  <Check className="h-4 w-4" />
+                  {t('otp_submit')}
+                </Button>
+                {step === 'code' && (
+                  <button
+                    type="button"
+                    onClick={() => resendMut.mutate()}
+                    disabled={resendMut.isPending}
+                    className="text-[var(--ms-text-brand)] text-sm hover:underline disabled:opacity-50"
+                    data-test-id="hr-tg-otp-resend"
+                  >
+                    {t('otp_resend')}
+                  </button>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -275,7 +301,7 @@ export default function HrTelegramSettingsPage() {
                 setPassword={setPassword}
                 t={t}
               />
-              <div className="flex gap-2">
+              <div className="flex flex-wrap items-center gap-3">
                 <Button
                   onClick={() => codeMut.mutate()}
                   disabled={codeMut.isPending}
@@ -287,6 +313,17 @@ export default function HrTelegramSettingsPage() {
                 <Button variant="secondary" onClick={resetFlow}>
                   {tCommon('cancel')}
                 </Button>
+                {step === 'code' && (
+                  <button
+                    type="button"
+                    onClick={() => resendMut.mutate()}
+                    disabled={resendMut.isPending}
+                    className="text-[var(--ms-text-brand)] text-sm hover:underline disabled:opacity-50"
+                    data-test-id="hr-tg-otp-resend"
+                  >
+                    {t('otp_resend')}
+                  </button>
+                )}
               </div>
             </div>
           )}

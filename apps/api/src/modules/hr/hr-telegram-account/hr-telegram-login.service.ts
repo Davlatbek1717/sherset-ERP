@@ -186,6 +186,38 @@ export class HrTelegramLoginService {
     }
   }
 
+  /**
+   * Kodni QAYTA yuborish — «kod kelmadi» holatida. Telegram «keyingi kanal»
+   * bilan jo'natadi (birinchi kod ilovaga ketgan bo'lsa, resend odatда SMS).
+   * Mavjud login sessiyasidan foydalanadi (yangi client ochmaydi).
+   */
+  async resend(loginSessionId: string): Promise<{ ok: boolean; codeSent: boolean }> {
+    this.gc();
+    const state = this.sessions.get(loginSessionId);
+    if (!state) {
+      throw new UnauthorizedException(
+        "Login sessiyasi topilmadi yoki muddati o'tdi — boshidan qayta boshlang",
+      );
+    }
+    if (!state.client.resendCode) {
+      throw new BadRequestException("Qayta yuborish qo'llab-quvvatlanmaydi");
+    }
+    try {
+      const { phoneCodeHash } = await state.client.resendCode();
+      if (phoneCodeHash) state.phoneCodeHash = phoneCodeHash;
+      // Muddatni yangilaymiz — foydalanuvchi yangi kodni kiritishga ulgursin.
+      state.expiresAt = new Date(Date.now() + HrTelegramLoginService.TTL_MS);
+      return { ok: true, codeSent: phoneCodeHash.length > 0 };
+    } catch (e) {
+      if (isGramjsFloodError(e)) {
+        throw new BadRequestException(
+          `Telegram FLOOD_WAIT ${e.seconds}s — biroz kutib qayta urinib ko'ring`,
+        );
+      }
+      throw new BadRequestException(`Telegram: ${(e as Error).message}`.slice(0, 200));
+    }
+  }
+
   /** Admin cancels the in-progress login (e.g. closed the modal). */
   async cancel(loginSessionId: string): Promise<{ ok: true }> {
     this.discard(loginSessionId);

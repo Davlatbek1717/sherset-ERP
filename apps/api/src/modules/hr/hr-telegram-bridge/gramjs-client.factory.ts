@@ -101,6 +101,27 @@ class GramjsClientHandle implements TelegramClientHandle {
     return { phoneCodeHash: hash };
   }
 
+  /**
+   * Kodni QAYTA yuborish — Telegram «keyingi kanal» bilan jo'natadi (birinchi
+   * SendCode ilovaga ketgan bo'lsa, resend odatда SMS bilan keladi). Kod
+   * kelmaganда «SMS orqali qayta yuborish» tugmasi shuni chaqiradi.
+   */
+  async resendCode(): Promise<{ phoneCodeHash: string }> {
+    if (!this.phoneNumberForLogin || !this.phoneCodeHash) {
+      throw new Error('resendCode: avval sendCode chaqirilishi kerak');
+    }
+    const result = await this.client.invoke(
+      new Api.auth.ResendCode({
+        phoneNumber: this.phoneNumberForLogin,
+        phoneCodeHash: this.phoneCodeHash,
+      }),
+    );
+    const hash =
+      (result as unknown as { phoneCodeHash?: string }).phoneCodeHash ?? this.phoneCodeHash;
+    this.phoneCodeHash = hash;
+    return { phoneCodeHash: hash };
+  }
+
   async signIn(opts: {
     phoneNumber: string;
     phoneCodeHash: string;
