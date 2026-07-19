@@ -28,7 +28,8 @@ function makeService(opts: {
     },
   };
   const attachments = {};
-  const service = new TelegramService(prisma as never, attachments as never);
+  const lookup = { lookup: vi.fn(async () => ({ available: false, found: false })) };
+  const service = new TelegramService(prisma as never, attachments as never, lookup as never);
   return { service, prisma, outboxCreate };
 }
 

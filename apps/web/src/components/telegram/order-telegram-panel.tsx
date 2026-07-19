@@ -38,6 +38,16 @@ interface ThreadResponse {
   items: ThreadItem[];
 }
 
+interface TelegramProfile {
+  counterparty: { id: string; name: string; phone: string | null };
+  /** Ulangan raqam bormi (yo'q bo'lsa lookup imkonsiz). */
+  available: boolean;
+  /** Kontragent telefoni Telegram'da topildimi. */
+  found: boolean;
+  name?: string;
+  username?: string;
+}
+
 /** Avtomatik (hodisa) xabar belgisi — operator qo'lda yozganidan ajralsin. */
 const AUTO_BADGE: Record<string, string> = {
   'debt.debt_issued': '🧾',
@@ -66,6 +76,18 @@ export function OrderTelegramPanel({
     // Jonli-ga yaqin — kiruvchi/statuslar yangilanib tursin.
     refetchInterval: 10_000,
   });
+
+  // Kontragent Telegram profilini AVTOMATIK topish (bir marta, panel ochilganda).
+  // Jonli MTProto getEntity — polling QILINMAYDI (FLOOD_WAIT'dan saqlanish).
+  const profileQuery = useQuery<TelegramProfile>({
+    queryKey: ['tg-counterparty-profile', counterpartyId],
+    queryFn: () =>
+      api.get<TelegramProfile>(`/telegram/counterparty/${counterpartyId}/telegram-profile`),
+    enabled: !!counterpartyId,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  const profile = profileQuery.data;
 
   const sendMut = useMutation({
     mutationFn: (text: string) =>
@@ -97,20 +119,33 @@ export function OrderTelegramPanel({
       className="flex h-[440px] flex-col overflow-hidden rounded-[var(--ms-radius-lg)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)]"
       data-test-id="order-telegram-panel"
     >
-      {/* Sarlavha — Wappi uslubi: avatar + Telegram belgisi + nom */}
+      {/* Sarlavha — Wappi uslubi: avatar + Telegram belgisi + AVTO-topilgan profil */}
       <div className="flex items-center gap-2.5 border-[var(--ms-border-default)] border-b px-4 py-2.5">
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#e8f3fc] text-[#2ca5e0]">
           <Send className="-rotate-45 h-4 w-4" />
         </div>
         <div className="min-w-0 flex-1">
           <div className="truncate font-medium text-[var(--ms-text-primary)] text-sm">
-            {name || t('title')}
+            {/* Telegram'da topilgan ism ustun; bo'lmasa kontragent nomi. */}
+            {profile?.found && profile.name ? profile.name : name || t('title')}
           </div>
-          {data?.fromNumber && (
-            <div className="truncate text-[var(--ms-text-muted)] text-xs">
-              {t('from_number', { phone: data.fromNumber })}
-            </div>
-          )}
+          <div className="truncate text-[var(--ms-text-muted)] text-xs">
+            {profileQuery.isLoading ? (
+              t('profile_checking')
+            ) : profile?.available && profile.found ? (
+              // Topildi — @username (bo'lsa)
+              profile.username ? (
+                <span className="text-[#2ca5e0]">@{profile.username}</span>
+              ) : (
+                t('profile_found')
+              )
+            ) : profile?.available && !profile.found ? (
+              // «Контакт не найден в Telegram» (Wappi holati)
+              <span className="italic">{t('profile_not_found')}</span>
+            ) : data?.fromNumber ? (
+              t('from_number', { phone: data.fromNumber })
+            ) : null}
+          </div>
         </div>
       </div>
 

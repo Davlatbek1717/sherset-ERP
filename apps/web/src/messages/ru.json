@@ -6878,6 +6878,9 @@
   },
   "telegram_panel": {
     "title": "Telegram",
+    "profile_checking": "Поиск в Telegram…",
+    "profile_found": "Контакт найден в Telegram",
+    "profile_not_found": "Контакт не найден в Telegram",
     "from_number": "С номера {phone}",
     "not_connected": "Номер Telegram не подключён.",
     "connect_link": "Подключить",

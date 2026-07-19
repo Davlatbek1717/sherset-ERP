@@ -6,6 +6,7 @@ import { AttachmentService } from '../attachment/attachment.service.js';
 import { decryptPassword, encryptPassword } from '../email/crypto.js';
 import { normalizeTelegramPhone } from '../hr/hr-shared/phone-normalize.util.js';
 import { parseBusinessUpdate } from './telegram-business.util.js';
+import { TelegramLookupService } from './telegram-lookup.service.js';
 import {
   TelegramApiError,
   tgDeleteWebhook,
@@ -57,7 +58,22 @@ export class TelegramService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(AttachmentService) private readonly attachments: AttachmentService,
+    @Inject(TelegramLookupService) private readonly lookup: TelegramLookupService,
   ) {}
+
+  /**
+   * Kontragent Telegram profilini AVTOMATIK topish (panel sarlavhasi) —
+   * kontragent telefonini ulangan raqam orqali MTProto'da qidiradi.
+   */
+  async counterpartyTelegramProfile(accountId: string, counterpartyId: string) {
+    const cp = await this.prisma.client.counterparty.findFirst({
+      where: { id: counterpartyId, accountId },
+      select: { id: true, name: true, phone: true },
+    });
+    if (!cp) throw new NotFoundException('Kontragent topilmadi');
+    const profile = await this.lookup.lookup(accountId, cp.phone);
+    return { counterparty: { id: cp.id, name: cp.name, phone: cp.phone }, ...profile };
+  }
 
   // --- config ----------------------------------------------------------
 

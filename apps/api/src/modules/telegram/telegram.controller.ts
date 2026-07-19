@@ -151,6 +151,16 @@ export class TelegramController {
     return this.svc.sendChatToCounterparty(user.accountId, id, body?.text);
   }
 
+  /** Kontragent Telegram profilini avtomatik topish (panel sarlavhasi). */
+  @Get('counterparty/:id/telegram-profile')
+  @RequirePermission({ entity: 'counterparty', action: 'view' })
+  async counterpartyTelegramProfile(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+  ) {
+    return this.svc.counterpartyTelegramProfile(user.accountId, id);
+  }
+
   // Inbound webhook lives on TelegramWebhookController (no JWT) —
   // Telegram doesn't carry our auth token.
 }

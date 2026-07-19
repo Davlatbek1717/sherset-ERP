@@ -6879,6 +6879,9 @@
   },
   "telegram_panel": {
     "title": "Telegram",
+    "profile_checking": "Telegram'da qidirilmoqda…",
+    "profile_found": "Kontakt Telegram'da topildi",
+    "profile_not_found": "Kontakt Telegram'da topilmadi",
     "from_number": "{phone} raqamidan",
     "not_connected": "Telegram raqami ulanmagan.",
     "connect_link": "Ulash",
