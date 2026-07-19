@@ -18,6 +18,7 @@ import {
   debtIssuedMessage,
   paymentMessage,
   paymentReversedMessage,
+  reminderMessage,
 } from './debt-telegram.util.js';
 import {
   CASHIER_METHODS,
@@ -249,6 +250,43 @@ export class DebtService {
     })().catch(() => {
       /* Telegram ishlamasa ham to'lov saqlangan — jim o'tamiz (servis loglaydi) */
     });
+  }
+
+  /**
+   * QO'LDA Telegram qarz-eslatmasi (2026-07-19 talab) — qarzdorlar ro'yxatidagi
+   * har mijoz qatoridagi «Telegram eslatma» tugmasi shuni chaqiradi. Avtomatik
+   * cron eslatmasi (debt-reminder.service) bilan bir xil MATN, lekin operator
+   * xohlagan paytda yuboradi. Natijani KUTAMIZ (fire-and-forget emas) — tugma
+   * «yuborildi / yuborilmadi (sabab)» deb halol javob bersin.
+   */
+  async sendTelegramReminder(
+    accountId: string,
+    debtId: string,
+  ): Promise<{ sent: boolean; reason?: string }> {
+    const debt = await this.prisma.client.debt.findFirst({
+      where: { id: debtId, accountId },
+      select: {
+        totalMinor: true,
+        paidMinor: true,
+        counterpartyId: true,
+        counterparty: { select: { name: true } },
+      },
+    });
+    if (!debt) throw new NotFoundException('Qarz topilmadi');
+    if (!debt.counterpartyId) return { sent: false, reason: 'no_counterparty' };
+
+    const remaining = debt.totalMinor - debt.paidMinor;
+    // Qarz yopilgan/qolmagan bo'lsa — eslatma yubormaymiz (mijozga «qarzingiz
+    // bor» deb noto'g'ri xabar ketmasin).
+    if (remaining <= 0n) return { sent: false, reason: 'no_debt' };
+
+    const name = debt.counterparty?.name ?? 'mijoz';
+    return this.telegram.notifyCounterparty(
+      accountId,
+      debt.counterpartyId,
+      reminderMessage({ name, remainingMinor: remaining }),
+      'reminder',
+    );
   }
 
   /** Yangi qarz berilganda mijozga xabar. */

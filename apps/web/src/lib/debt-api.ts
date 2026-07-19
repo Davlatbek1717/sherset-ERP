@@ -310,6 +310,10 @@ export const debtApi = {
     body: { problem: boolean; problemReason?: string; nextContactAt?: string | null },
   ) => api.post<DebtRow>(`/debts/${id}/problem`, body),
 
+  /** QO'LDA Telegram qarz-eslatmasi — qatordan yuboriladi. */
+  telegramReminder: (id: string) =>
+    api.post<{ sent: boolean; reason?: string }>(`/debts/${id}/telegram-reminder`, {}),
+
   /** §3.6 — kassada naqd/terminal to'lov (FAQAT KASSIR). */
   addCashPayment: (
     id: string,

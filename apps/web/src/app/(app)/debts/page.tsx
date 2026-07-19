@@ -36,8 +36,10 @@ import {
   Pagination,
   StatCard,
   formatMoney,
+  useToast,
 } from '@moysklad/ui';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { Send } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -280,6 +282,26 @@ export default function DebtsPage() {
     });
   }
 
+  // QO'LDA Telegram qarz-eslatmasi (qatordan). Natijani KUTAMIZ — operatorga
+  // «yuborildi / yuborilmadi (sabab)» deb halol javob beramiz.
+  const { toast } = useToast();
+  const reminderMut = useMutation({
+    mutationFn: (id: string) => debtApi.telegramReminder(id),
+    onSuccess: (res) => {
+      if (res.sent) {
+        toast.success(t('tg_reminder_sent'));
+      } else {
+        const known = ['no_phone', 'no_debt', 'no_counterparty', 'telegram_off', 'no_chat'];
+        const reason =
+          res.reason && known.includes(res.reason)
+            ? t(`tg_reason_${res.reason}` as 'tg_reason_no_phone')
+            : (res.reason ?? '');
+        toast.error(t('tg_reminder_failed'), { description: reason });
+      }
+    },
+    onError: (e: Error) => toast.error(t('tg_reminder_failed'), { description: e.message }),
+  });
+
   const columns: DataTableColumn<DebtRow>[] = [
     {
       key: 'select',
@@ -400,6 +422,40 @@ export default function DebtsPage() {
     // Xuddi shu tugma MIJOZ SAHIFASIDA ham turadi — bitta amal uchun ikkita
     // tugma chalkashtirardi. Ro'yxatdagisi olib tashlandi: operator mijozga
     // kirib, o'sha yerdan natijani belgilaydi.
+    {
+      // Telegram qarz-eslatma tugmasi (2026-07-19) — qarzi bor mijozga bir bosishda
+      // tartibli eslatma ketadi. Qarz qolmagan qatorda tugma ko'rsatilmaydi.
+      key: 'tgReminder',
+      header: '',
+      width: '48px',
+      align: 'center',
+      cell: (r) => {
+        let hasDebt = false;
+        try {
+          hasDebt = BigInt(r.remainingMinor || '0') > 0n;
+        } catch {
+          hasDebt = false;
+        }
+        if (!hasDebt) return null;
+        return (
+          // biome-ignore lint/a11y/useKeyWithClickEvents: button o'zi klaviaturaga ega; wrapper faqat qator-klik navigatsiyasini to'xtatadi
+          <span onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              title={t('tg_reminder_title')}
+              aria-label={t('tg_reminder_title')}
+              disabled={reminderMut.isPending}
+              onClick={() => reminderMut.mutate(r.id)}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-full text-[#2ca5e0] hover:bg-[#e8f3fc] disabled:opacity-50"
+              data-test-id={`debt-tg-remind-${r.id}`}
+            >
+              <Send className="-rotate-45 h-4 w-4" />
+            </button>
+          </span>
+        );
+      },
+      cellText: () => '',
+    },
   ];
 
   return (

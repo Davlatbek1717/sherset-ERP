@@ -215,6 +215,16 @@ export class DebtController {
     return this.service.markCall(user.accountId, user.sub, role, id, body);
   }
 
+  /**
+   * QO'LDA Telegram qarz-eslatmasi — qarzdorlar ro'yxatidagi qatordan yuboriladi.
+   * Qarzi bor mijozga tartibli eslatma xabari ketadi (yopiq qarzga yuborilmaydi).
+   */
+  @Post(':id/telegram-reminder')
+  @RequirePermission({ entity: 'debt', action: 'update' })
+  async sendTelegramReminder(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.service.sendTelegramReminder(user.accountId, id);
+  }
+
   // ── MUAMMOLI MIJOZ belgisini qo'yish/yechish (2026-07-14) ─────────────────
   //
   // Qo'ng'iroq modalidan tashqari alohida yo'l: «Muammoli qarzdorlar»
