@@ -25,7 +25,11 @@ async function bootstrap(): Promise<void> {
 
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
-    new FastifyAdapter({ logger: false }),
+    // bodyLimit 16MB — chek/skrinshot rasmlari base64 sifatida JSON tanasida
+    // keladi (qarz «Click/hisob» to'lovi). Fastify standarti 1MB edi → paste
+    // qilingan katta PNG screenshot 413 bilan rad etilardi («saqlanmadi»).
+    // FE limiti 8MB rasm ≈ 11MB base64; 16MB zaxira bilan qoplaydi (nginx 50MB).
+    new FastifyAdapter({ logger: false, bodyLimit: 16 * 1024 * 1024 }),
     // Hide the bootstrap noise; nestjs-pino takes over once the module loads.
     { bufferLogs: true },
   );

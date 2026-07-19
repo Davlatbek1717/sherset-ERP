@@ -159,30 +159,51 @@ export function ReceiptShotPicker({
   const fileRef = useRef<HTMLInputElement>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
 
-  function acceptFile(file: File | undefined | null) {
-    if (!file) return;
-    if (file.size > MAX_IMAGE_BYTES) {
-      onError(t('screenshot_too_big'));
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => {
-      onShot({ dataUri: String(reader.result), name: file.name, mime: file.type || 'image/png' });
-      onError(null);
-    };
-    reader.readAsDataURL(file);
-  }
+  const acceptFile = useCallback(
+    (file: File | undefined | null) => {
+      if (!file) return;
+      if (file.size > MAX_IMAGE_BYTES) {
+        onError(t('screenshot_too_big'));
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        onShot({
+          dataUri: String(reader.result),
+          // Paste qilingan rasmda fayl nomi ko'pincha bo'sh bo'ladi — server
+          // uchun tayinli nom beramiz (bo'sh nom rad etilmasin).
+          name:
+            file.name || `chek-${new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-')}.png`,
+          mime: file.type || 'image/png',
+        });
+        onError(null);
+      };
+      reader.readAsDataURL(file);
+    },
+    [onShot, onError, t],
+  );
 
-  /** Ctrl+V — clipboard'dagi rasmni to'g'ridan-to'g'ri qabul qilamiz. */
-  function onPaste(e: React.ClipboardEvent) {
-    const item = Array.from(e.clipboardData.items).find((i) => i.type.startsWith('image/'));
-    if (!item) return;
-    e.preventDefault();
-    acceptFile(item.getAsFile());
-  }
+  /**
+   * Ctrl+V — clipboard'dagi rasmni qabul qilamiz. Listener DOCUMENT darajasida:
+   * foydalanuvchi fokus qayerda bo'lishidan qat'i nazar (summa input, modal
+   * bo'sh joyi v.h.) ishlaydi. FAQAT rasm bo'lgan paste'ni ushlaymiz — oddiy
+   * matn-paste (izoh maydoniga) tegilmaydi.
+   */
+  useEffect(() => {
+    function handlePaste(e: ClipboardEvent) {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      const item = Array.from(items).find((i) => i.type.startsWith('image/'));
+      if (!item) return;
+      e.preventDefault();
+      acceptFile(item.getAsFile());
+    }
+    document.addEventListener('paste', handlePaste);
+    return () => document.removeEventListener('paste', handlePaste);
+  }, [acceptFile]);
 
   return (
-    <div onPaste={onPaste}>
+    <div>
       <div className="mb-1 text-[var(--ms-text-muted)] text-xs">
         {t('screenshot_label')}
         {required ? (
