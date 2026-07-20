@@ -305,6 +305,32 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🟢📱 2026-07-20h (OMBOR RESPONSIVE — 1-BOSQICH + YIG'ISH-VARAQA QR OLIB TASHLASH — ✅ DEPLOYED, browser-smoke YO'Q)**
+> **Ish:** (1) **App-shell mobil navigatsiya** — `AppShell.tsx` <lg (1024px) da hamburger + `<Drawer>` (asosiy
+> modul-tab'lar vertikal), `SubNav.tsx` <lg da "joriy sahifa ▾" `<DropdownMenu>` (13+ kichik-tab o'rniga). Mavjud
+> Drawer/DropdownMenu qayta ishlatildi, yangi primitiv YO'Q; ≥lg desktop o'zgarmadi. (2) **Omborlar (Stores) sahifalari
+> responsive:** yacheyka jadvallariga `overflow-x-auto`, sarlavha/toolbar `flex-wrap`, tugmalar 36px touch-target,
+> owner/sana truncate, address katak `title`. (3) **Yig'ish varaqasi** (`print/picking/[orderId]`): per-qatorli QR
+> olib tashlandi, yacheyka kodi (NN-NN-NN-NN) endi eng ko'zga tashlanadigan element (foydalanuvchi talabi).
+> **Deploy:** 2 commit (`d6fc105` responsive, `a4f8044` picking) → bundle `ef54914..HEAD` → VPS ff-merge (7 fayl VPS'da
+> toza edi) → `pnpm --filter @moysklad/web build` → `pm2 restart sherset-web`. Gate: web tc0 · ds tc0 · biome0 · web
+> Vitest regressiya YO'Q (baseline 17-failed/55 → 16/54, SubNav testi getByRole bilan tuzatildi — mobil dropdown
+> `<button>` "A" bilan `getByText` ambiguity qildi). ⚠️ **Browser-smoke YO'Q** — lokal Postgres (`postgresql-x64-18`)
+> to'xtagan, admin huquqi yo'q → Playwright 375/768/1280 tekshiruvi qilinmadi (foydalanuvchi "vizual tekshiruvsiz
+> deploy qil" dedi). Keyingi safar real qurilmada/brauzerda ko'rish tavsiya etiladi.
+> **⚠️ PARALLEL SESSIYA (barcode-skaner feature):** `cell-labels/page.tsx`, `product-select-modal.tsx` (+ untracked
+> `cell-scan-modal.tsx`, `use-barcode-scanner.ts`, `barcode.util.ts`, `scan/`, va `store-cell.controller.ts`/
+> `store.schema.ts`/`product.*`/`hr-telegram*`/`supply.*`/`telegram-lookup.ts` modified) — bu parallel sessiyaning
+> commit qilinmagan ishi (VPS'da jonli, git'da yo'q). MENING responsive tuzatishlarim shu 2 web-faylga ham kerak edi,
+> LEKIN protokol bo'yicha (faqat o'z fayllarim commit) ularni deploy'ga KIRITMADIM. **Backlog:** parallel sessiya bu
+> fayllarni commit qilgach, `cell-labels` header-wrap va `product-select-modal` folder-tree mobil-collapse'ni qo'shish
+> kerak (kod lokal working-tree'da tayyor, faqat commit-base kutmoqda). ⚠️ **ef54914 latent build-issue:** 01dab9e
+> `address-storage-section`ni `headerExtra`+`CellScanModal`ga ishora bilan commit qilgan, lekin ular untracked —
+> repo faqat working-tree fayllar bilan build bo'ladi (fresh-clone CI buziladi). Bu parallel feature yakunlanganda hal bo'ladi.
+> **Ombor responsive BACKLOG (foydalanuvchi "keyin qolganlarini bitta-bitta" dedi — 12 sahifa qoldi):** Kirimlar,
+> Hisobdan chiqarishlar, Ko'chirishlar, Inventarizatsiya, Terish to'lqinlari, Ichki buyurtmalar, Joylashtirish,
+> Omborchi, Yacheyka skaneri (/cell), To'ldirish kerak, Aylanma, O'quv. Har biri alohida sessiyada.
+
 > **🟢💻 2026-07-20 (MASHINA KO'CHIRISH + QARZ-ESLATMA JONLI-CHAT FIX — ✅ DEPLOYED + jonli tasdiqlangan)**
 > **DEPLOY (2026-07-20, shu yangi mashinadan birinchi marta):** GitHub o'lik → `git bundle` (a2cc529..HEAD,
 > ~9.5KB, inline base64-over-exec) → VPS'da `git fetch <bundle> HEAD:refs/heads/incoming-deploy` + `merge
