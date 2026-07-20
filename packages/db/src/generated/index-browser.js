@@ -3625,7 +3625,10 @@ exports.Prisma.TelegramChatScalarFieldEnum = {
   source: 'source',
   lastMessageAt: 'lastMessageAt',
   createdAt: 'createdAt',
-  updatedAt: 'updatedAt'
+  updatedAt: 'updatedAt',
+  historyOldestId: 'historyOldestId',
+  historyComplete: 'historyComplete',
+  syncNewestId: 'syncNewestId'
 };
 
 exports.Prisma.TelegramChatMessageScalarFieldEnum = {
@@ -3643,7 +3646,25 @@ exports.Prisma.TelegramChatMessageScalarFieldEnum = {
   attachmentId: 'attachmentId',
   autoKind: 'autoKind',
   fwdFromName: 'fwdFromName',
+  replyToTgMessageId: 'replyToTgMessageId',
+  editedAt: 'editedAt',
+  readByPeerAt: 'readByPeerAt',
+  outboxRefId: 'outboxRefId',
   createdAt: 'createdAt'
+};
+
+exports.Prisma.TelegramBackfillJobScalarFieldEnum = {
+  id: 'id',
+  accountId: 'accountId',
+  counterpartyId: 'counterpartyId',
+  phone: 'phone',
+  status: 'status',
+  requestedAt: 'requestedAt',
+  startedAt: 'startedAt',
+  finishedAt: 'finishedAt',
+  messagesImported: 'messagesImported',
+  cursorOffsetId: 'cursorOffsetId',
+  failReason: 'failReason'
 };
 
 exports.Prisma.TelegramOutboxScalarFieldEnum = {
@@ -4303,6 +4324,7 @@ exports.Prisma.ModelName = {
   TelegramConfig: 'TelegramConfig',
   TelegramChat: 'TelegramChat',
   TelegramChatMessage: 'TelegramChatMessage',
+  TelegramBackfillJob: 'TelegramBackfillJob',
   TelegramOutbox: 'TelegramOutbox',
   PaymentGatewayConfig: 'PaymentGatewayConfig',
   PaymentGatewayTx: 'PaymentGatewayTx',

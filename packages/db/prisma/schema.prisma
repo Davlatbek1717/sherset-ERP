@@ -159,6 +159,7 @@ model Account {
   onboardingProgress             OnboardingProgress[]
   smsConfig                      SmsConfig?
   smsLogs                        SmsLog[]
+  smsTemplates                   SmsTemplate[]
   edoConfig                      EdoConfig?
   edoSubmissions                 EdoSubmission[]
   markingConfig                  MarkingConfig?
@@ -167,6 +168,7 @@ model Account {
   telegramOutbox                 TelegramOutbox[]
   telegramChats                  TelegramChat[]
   telegramChatMessages           TelegramChatMessage[]
+  telegramBackfillJobs           TelegramBackfillJob[]
   paymentGatewayConfigs          PaymentGatewayConfig[]
   paymentGatewayTxs              PaymentGatewayTx[]
   bankApiConfigs                 BankApiConfig[]
@@ -395,8 +397,8 @@ model Employee {
   hrActivities        HrActivityLog[]        @relation("HrActivityActor")
 
   // Qarz undirish (debt-collection) module
-  ownedDebts       Debt[]        @relation("DebtOwner")
-  issuedDebts      Debt[]        @relation("DebtIssuer")
+  ownedDebts           Debt[]        @relation("DebtOwner")
+  issuedDebts          Debt[]        @relation("DebtIssuer")
   debtPaymentsTook     DebtPayment[] @relation("DebtPaymentReceiver")
   debtPaymentsReversed DebtPayment[] @relation("DebtPaymentReverser")
   debtNotesWritten     DebtNote[]    @relation("DebtNoteAuthor")
@@ -1796,7 +1798,8 @@ model Counterparty {
   hrChatHistories HrChatHistory[]    @relation("HrChatHistoryCp")
   hrOutboxEntries HrTelegramOutbox[] @relation("HrOutboxCp")
 
-  telegramChats TelegramChat[]
+  telegramChats        TelegramChat[]
+  telegramBackfillJobs TelegramBackfillJob[] @relation("TgBackfillCp")
 
   debts Debt[]
 
@@ -2405,6 +2408,11 @@ model CompanySettings {
   /// to via the local print-agent — the receipt counterpart of
   /// SkladKeeper.printerName. Null ⇒ falls back to the browser popup print.
   receiptPrinterName       String?  @map("receipt_printer_name") @db.VarChar(255)
+  /// Customer-facing contact shown in reminder messages (SMS + Telegram).
+  /// Null ⇒ code falls back to the built-in Sherset defaults.
+  messagingPhone           String?  @map("messaging_phone") @db.VarChar(30)
+  messagingCard            String?  @map("messaging_card") @db.VarChar(40)
+  messagingCardOwner       String?  @map("messaging_card_owner") @db.VarChar(120)
   createdAt                DateTime @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt                DateTime @updatedAt @map("updated_at") @db.Timestamptz()
 
@@ -8027,6 +8035,25 @@ model SmsLog {
   @@map("sms_logs")
 }
 
+/// Editable per-account SMS templates (multi-purpose, keyed by `key`).
+/// Rendered via Eta ({{= ... }}). Seeded with `debt_reminder`; other keys
+/// are wired by feature code as needed.
+model SmsTemplate {
+  id        String   @id @default(uuid()) @db.Uuid
+  accountId String   @map("account_id") @db.Uuid
+  key       String   @db.VarChar(50)
+  name      String   @db.VarChar(120)
+  body      String   @db.Text
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, key])
+  @@map("sms_templates")
+}
+
 // =========================================================================
 // Sprint 27 — Soliq.uz EDO (E-Hujjat / Faktura)
 // =========================================================================
@@ -8289,11 +8316,23 @@ model TelegramChat {
   createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
 
+  /// Backfill/sync kursorlari (2026-07-20 to'liq-tarix). historyOldestId —
+  /// backfill'da yetilgan eng eski tgMessageId (orqaga sahifalash offsetId'si);
+  /// historyComplete — dialog boshiga yetildi; syncNewestId — catch-up uchun
+  /// eng yangi ma'lum tgMessageId (minId).
+  historyOldestId BigInt? @map("history_oldest_id")
+  historyComplete Boolean @default(false) @map("history_complete")
+  syncNewestId    BigInt? @map("sync_newest_id")
+
   account      Account               @relation(fields: [accountId], references: [id], onDelete: Cascade)
   counterparty Counterparty?         @relation(fields: [counterpartyId], references: [id], onDelete: SetNull)
   messages     TelegramChatMessage[]
 
   @@unique([accountId, chatId])
+  /// Bir kontragentga yagona bog'langan chat — backfill/thread counterparty
+  /// bo'yicha yagona chatni kutadi (counterpartyId NULL bo'lsa Postgres
+  /// bir nechta NULL'ga ruxsat beradi, bog'lanmagan chatlar to'qnashmaydi).
+  @@unique([accountId, counterpartyId])
   @@index([accountId, counterpartyId])
   @@index([accountId, lastMessageAt(sort: Desc)])
   @@map("telegram_chats")
@@ -8333,13 +8372,52 @@ model TelegramChatMessage {
   /// chiqadi. null = forward emas, oddiy xabar.
   fwdFromName String? @map("fwd_from_name") @db.VarChar(128)
 
+  /// To'liq-tarix (2026-07-20). replyToTgMessageId — javob berilgan xabar
+  /// (Faza-2 reply/quote uchun oldindan); editedAt — Telegram'da tahrirlangan
+  /// vaqti; readByPeerAt — mijoz o'qigan vaqti (Faza-3 read-receipt uchun
+  /// oldindan, nullable); outboxRefId — yetkazilgan HrTelegramOutbox qatoriga
+  /// bog' (chiquvchi dedup).
+  replyToTgMessageId BigInt?   @map("reply_to_tg_message_id")
+  editedAt           DateTime? @map("edited_at") @db.Timestamptz()
+  readByPeerAt       DateTime? @map("read_by_peer_at") @db.Timestamptz()
+  outboxRefId        String?   @map("outbox_ref_id") @db.Uuid
+
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
 
   account Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
   chat    TelegramChat @relation(fields: [chatRefId], references: [id], onDelete: Cascade)
 
+  /// Bir chatda bitta tgMessageId — backfill/catch-up idempotent upsert kaliti
+  /// (dublikat xabar yozilmaydi). tgMessageId NULL qatorlar (eski Bot API)
+  /// Postgres multi-NULL bilan to'qnashmaydi.
+  @@unique([chatRefId, tgMessageId])
   @@index([accountId, chatRefId, createdAt(sort: Desc)])
   @@map("telegram_chat_messages")
+}
+
+/// Talab-bo'yicha to'liq-tarix backfill navbati (2026-07-20). Panel birinchi
+/// ochilganda upsert qilinadi (queued); TelegramBackfillWorker bitta-bitta
+/// drenaj qiladi (dialog tarixini sahifalab TelegramChatMessage'ga yozadi).
+model TelegramBackfillJob {
+  id               String    @id @default(uuid()) @db.Uuid
+  accountId        String    @map("account_id") @db.Uuid
+  counterpartyId   String    @map("counterparty_id") @db.Uuid
+  phone            String    @db.VarChar(32)
+  status           String    @default("queued") @db.VarChar(10) // queued|running|done|error
+  requestedAt      DateTime  @default(now()) @map("requested_at") @db.Timestamptz()
+  startedAt        DateTime? @map("started_at") @db.Timestamptz()
+  finishedAt       DateTime? @map("finished_at") @db.Timestamptz()
+  messagesImported Int       @default(0) @map("messages_imported")
+  /// Keyingi (eskiroq) sahifa uchun offsetId — 0/NULL = eng yangidan.
+  cursorOffsetId   BigInt?   @map("cursor_offset_id")
+  failReason       String?   @map("fail_reason") @db.VarChar(500)
+
+  account      Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  counterparty Counterparty @relation("TgBackfillCp", fields: [counterpartyId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, counterpartyId])
+  @@index([status, requestedAt])
+  @@map("telegram_backfill_job")
 }
 
 /// Outbound Telegram messages — same retry queue pattern as SMS/email.
@@ -9102,7 +9180,7 @@ model Debt {
   /// Eslatma-cron dedup belgisi: nextContactAt uchun bildirishnoma yuborilgan
   /// payt. Yangi nextContactAt qo'yilganda NULL'ga tushadi — keyingi muddat
   /// uchun eslatma qayta ishlaydi.
-  callRemindedAt DateTime? @map("call_reminded_at") @db.Timestamptz()
+  callRemindedAt  DateTime? @map("call_reminded_at") @db.Timestamptz()
 
   /// 15-KUNLIK MIJOZGA TAKROR TELEGRAM ESLATMASI (2026-07-16 talab) dedup belgisi:
   /// mijozning O'ZIGA «qarzingiz bor» avtomatik eslatmasi oxirgi yuborilgan payt.
@@ -9128,7 +9206,7 @@ model Debt {
   problemById   String?   @map("problem_by_id") @db.Uuid
 
   /// Mas'ul xodim (call-markaz operatori) — ro'yxat filtri.
-  ownerId String? @map("owner_id") @db.Uuid
+  ownerId    String? @map("owner_id") @db.Uuid
   /// Qarzni bergan kassir — §3.9 kunlik kassir hisoboti shu ustundan yig'iladi.
   issuedById String? @map("issued_by_id") @db.Uuid
 
@@ -9210,11 +9288,11 @@ model DebtPayment {
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
 
-  account    Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  debt       Debt      @relation(fields: [debtId], references: [id], onDelete: Cascade)
-  cashDesk   CashDesk? @relation(fields: [cashDeskId], references: [id], onDelete: SetNull)
-  receivedBy Employee? @relation("DebtPaymentReceiver", fields: [receivedById], references: [id], onDelete: SetNull)
-  reversedBy Employee? @relation("DebtPaymentReverser", fields: [reversedById], references: [id], onDelete: SetNull)
+  account    Account    @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  debt       Debt       @relation(fields: [debtId], references: [id], onDelete: Cascade)
+  cashDesk   CashDesk?  @relation(fields: [cashDeskId], references: [id], onDelete: SetNull)
+  receivedBy Employee?  @relation("DebtPaymentReceiver", fields: [receivedById], references: [id], onDelete: SetNull)
+  reversedBy Employee?  @relation("DebtPaymentReverser", fields: [reversedById], references: [id], onDelete: SetNull)
   /// Shu to'lovni yaratgan qo'ng'iroq-yozuv(lar)i (2026-07-16 — natija↔to'lov bog'lami).
   notes      DebtNote[] @relation("DebtNotePayment")
 

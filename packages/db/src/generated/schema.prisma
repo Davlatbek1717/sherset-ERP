@@ -167,6 +167,7 @@ model Account {
   telegramOutbox                 TelegramOutbox[]
   telegramChats                  TelegramChat[]
   telegramChatMessages           TelegramChatMessage[]
+  telegramBackfillJobs           TelegramBackfillJob[]
   paymentGatewayConfigs          PaymentGatewayConfig[]
   paymentGatewayTxs              PaymentGatewayTx[]
   bankApiConfigs                 BankApiConfig[]
@@ -1796,7 +1797,8 @@ model Counterparty {
   hrChatHistories HrChatHistory[]    @relation("HrChatHistoryCp")
   hrOutboxEntries HrTelegramOutbox[] @relation("HrOutboxCp")
 
-  telegramChats TelegramChat[]
+  telegramChats        TelegramChat[]
+  telegramBackfillJobs TelegramBackfillJob[] @relation("TgBackfillCp")
 
   debts Debt[]
 
@@ -8289,11 +8291,23 @@ model TelegramChat {
   createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
 
+  /// Backfill/sync kursorlari (2026-07-20 to'liq-tarix). historyOldestId —
+  /// backfill'da yetilgan eng eski tgMessageId (orqaga sahifalash offsetId'si);
+  /// historyComplete — dialog boshiga yetildi; syncNewestId — catch-up uchun
+  /// eng yangi ma'lum tgMessageId (minId).
+  historyOldestId BigInt? @map("history_oldest_id")
+  historyComplete Boolean @default(false) @map("history_complete")
+  syncNewestId    BigInt? @map("sync_newest_id")
+
   account      Account               @relation(fields: [accountId], references: [id], onDelete: Cascade)
   counterparty Counterparty?         @relation(fields: [counterpartyId], references: [id], onDelete: SetNull)
   messages     TelegramChatMessage[]
 
   @@unique([accountId, chatId])
+  /// Bir kontragentga yagona bog'langan chat — backfill/thread counterparty
+  /// bo'yicha yagona chatni kutadi (counterpartyId NULL bo'lsa Postgres
+  /// bir nechta NULL'ga ruxsat beradi, bog'lanmagan chatlar to'qnashmaydi).
+  @@unique([accountId, counterpartyId])
   @@index([accountId, counterpartyId])
   @@index([accountId, lastMessageAt(sort: Desc)])
   @@map("telegram_chats")
@@ -8333,13 +8347,52 @@ model TelegramChatMessage {
   /// chiqadi. null = forward emas, oddiy xabar.
   fwdFromName String? @map("fwd_from_name") @db.VarChar(128)
 
+  /// To'liq-tarix (2026-07-20). replyToTgMessageId — javob berilgan xabar
+  /// (Faza-2 reply/quote uchun oldindan); editedAt — Telegram'da tahrirlangan
+  /// vaqti; readByPeerAt — mijoz o'qigan vaqti (Faza-3 read-receipt uchun
+  /// oldindan, nullable); outboxRefId — yetkazilgan HrTelegramOutbox qatoriga
+  /// bog' (chiquvchi dedup).
+  replyToTgMessageId BigInt?   @map("reply_to_tg_message_id")
+  editedAt           DateTime? @map("edited_at") @db.Timestamptz()
+  readByPeerAt       DateTime? @map("read_by_peer_at") @db.Timestamptz()
+  outboxRefId        String?   @map("outbox_ref_id") @db.Uuid
+
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
 
   account Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
   chat    TelegramChat @relation(fields: [chatRefId], references: [id], onDelete: Cascade)
 
+  /// Bir chatda bitta tgMessageId — backfill/catch-up idempotent upsert kaliti
+  /// (dublikat xabar yozilmaydi). tgMessageId NULL qatorlar (eski Bot API)
+  /// Postgres multi-NULL bilan to'qnashmaydi.
+  @@unique([chatRefId, tgMessageId])
   @@index([accountId, chatRefId, createdAt(sort: Desc)])
   @@map("telegram_chat_messages")
+}
+
+/// Talab-bo'yicha to'liq-tarix backfill navbati (2026-07-20). Panel birinchi
+/// ochilganda upsert qilinadi (queued); TelegramBackfillWorker bitta-bitta
+/// drenaj qiladi (dialog tarixini sahifalab TelegramChatMessage'ga yozadi).
+model TelegramBackfillJob {
+  id               String    @id @default(uuid()) @db.Uuid
+  accountId        String    @map("account_id") @db.Uuid
+  counterpartyId   String    @map("counterparty_id") @db.Uuid
+  phone            String    @db.VarChar(32)
+  status           String    @default("queued") @db.VarChar(10) // queued|running|done|error
+  requestedAt      DateTime  @default(now()) @map("requested_at") @db.Timestamptz()
+  startedAt        DateTime? @map("started_at") @db.Timestamptz()
+  finishedAt       DateTime? @map("finished_at") @db.Timestamptz()
+  messagesImported Int       @default(0) @map("messages_imported")
+  /// Keyingi (eskiroq) sahifa uchun offsetId — 0/NULL = eng yangidan.
+  cursorOffsetId   BigInt?   @map("cursor_offset_id")
+  failReason       String?   @map("fail_reason") @db.VarChar(500)
+
+  account      Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  counterparty Counterparty @relation("TgBackfillCp", fields: [counterpartyId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, counterpartyId])
+  @@index([status, requestedAt])
+  @@map("telegram_backfill_job")
 }
 
 /// Outbound Telegram messages — same retry queue pattern as SMS/email.
