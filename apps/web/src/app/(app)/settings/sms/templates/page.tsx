@@ -1,6 +1,6 @@
 'use client';
 
-import { type SmsTemplate, smsApi } from '@/lib/sms-api';
+import { type MessageTemplate, type TemplateChannel, messageTemplateApi } from '@/lib/sms-api';
 import { smsSegments } from '@/lib/sms-segments';
 import {
   Badge,
@@ -10,6 +10,7 @@ import {
   FormField,
   Input,
   PageHeader,
+  SegmentedControl,
   useToast,
 } from '@moysklad/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -42,30 +43,55 @@ export default function SmsTemplatesPage() {
   const qc = useQueryClient();
   const t = useTranslations('pages.sms_templates');
   const { toast } = useToast();
-  const { data } = useQuery<SmsTemplate[]>({
-    queryKey: ['sms-templates'],
-    queryFn: () => smsApi.listTemplates(),
+
+  const [channel, setChannel] = useState<TemplateChannel>('sms');
+  const { data } = useQuery<MessageTemplate[]>({
+    queryKey: ['message-templates', channel],
+    queryFn: () => messageTemplateApi.list(channel),
   });
 
+  const [activeId, setActiveId] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [body, setBody] = useState('');
   const [enabled, setEnabled] = useState(true);
-  const [activeKey, setActiveKey] = useState<string>('debt_reminder');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  // Kanal o'zgarganda yoki ro'yxat yangilanganda — default (yoki birinchi) shablonni tanla.
   useEffect(() => {
-    const tpl = data?.find((x) => x.key === activeKey) ?? data?.[0];
+    if (!data || data.length === 0) {
+      setActiveId(null);
+      return;
+    }
+    const current = data.find((x) => x.id === activeId);
+    const tpl = current ?? data.find((x) => x.isDefault) ?? data[0];
     if (!tpl) return;
-    setActiveKey(tpl.key);
+    setActiveId(tpl.id);
     setName(tpl.name);
     setBody(tpl.body);
     setEnabled(tpl.enabled);
-  }, [data, activeKey]);
+  }, [data, activeId]);
+
+  const active = data?.find((x) => x.id === activeId) ?? null;
 
   const saveMut = useMutation({
-    mutationFn: () => smsApi.saveTemplate(activeKey, { name, body, enabled }),
+    mutationFn: () => {
+      if (!activeId) throw new Error(t('none'));
+      return messageTemplateApi.update(activeId, { name, body, enabled });
+    },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['sms-templates'] });
+      qc.invalidateQueries({ queryKey: ['message-templates'] });
+      toast.success(t('saved'));
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const setDefaultMut = useMutation({
+    mutationFn: () => {
+      if (!activeId) throw new Error(t('none'));
+      return messageTemplateApi.setDefault(activeId);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['message-templates'] });
       toast.success(t('saved'));
     },
     onError: (e: Error) => toast.error(e.message),
@@ -88,57 +114,110 @@ export default function SmsTemplatesPage() {
   return (
     <div className="p-6">
       <PageHeader title={t('title')} subtitle={t('description')} />
-      <Card className="max-w-2xl space-y-4 p-4">
-        <FormField id="tpl-name" label={t('name')}>
-          <Input value={name} onChange={(e) => setName(e.target.value)} />
-        </FormField>
 
-        <div className="flex flex-wrap gap-1">
-          {VARS.map((v) => (
+      <div className="mb-4 max-w-2xl">
+        <SegmentedControl<TemplateChannel>
+          value={channel}
+          onChange={(v) => {
+            setChannel(v);
+            setActiveId(null);
+          }}
+          options={[
+            { value: 'sms', label: t('channel_sms') },
+            { value: 'telegram', label: t('channel_telegram') },
+          ]}
+        />
+      </div>
+
+      {data && data.length > 1 && (
+        <div className="mb-3 flex max-w-2xl flex-wrap gap-1">
+          {data.map((tpl) => (
             <Button
-              key={v}
+              key={tpl.id}
               type="button"
-              variant="secondary"
+              variant={tpl.id === activeId ? 'primary' : 'secondary'}
               size="sm"
-              onClick={() => insertVar(v)}
+              onClick={() => setActiveId(tpl.id)}
             >
-              {`{{ ${v} }}`}
+              {tpl.name}
+              {tpl.isDefault ? ' ★' : ''}
             </Button>
           ))}
         </div>
+      )}
 
-        <FormField id="tpl-body" label={t('body')}>
-          <textarea
-            ref={textareaRef}
-            className="min-h-[120px] w-full rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] p-3 text-sm"
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
-          />
-        </FormField>
+      {!active ? (
+        <Card className="max-w-2xl p-4 text-[var(--ms-text-muted)] text-sm">{t('none')}</Card>
+      ) : (
+        <Card className="max-w-2xl space-y-4 p-4">
+          <div className="flex items-center gap-2">
+            <FormField id="tpl-name" label={t('name')} className="flex-1">
+              <Input value={name} onChange={(e) => setName(e.target.value)} />
+            </FormField>
+            {active.isDefault ? (
+              <Badge tone="success">{t('is_default')}</Badge>
+            ) : (
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => setDefaultMut.mutate()}
+                loading={setDefaultMut.isPending}
+              >
+                {t('set_default')}
+              </Button>
+            )}
+          </div>
 
-        <div className="flex items-center gap-2 text-[var(--ms-text-muted)] text-xs">
-          <Badge tone={seg.segments > 1 ? 'warning' : 'neutral'}>
-            {seg.chars} {t('chars')} · {seg.segments} {t('segments')}
-          </Badge>
-          {seg.encoding === 'unicode' && <span>unicode (70/SMS)</span>}
-        </div>
+          <div className="flex flex-wrap gap-1">
+            {VARS.map((v) => (
+              <Button
+                key={v}
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => insertVar(v)}
+              >
+                {`{{ ${v} }}`}
+              </Button>
+            ))}
+          </div>
 
-        <div className="rounded-[var(--ms-radius-default)] bg-[var(--ms-bg-muted)] p-3 text-sm">
-          <div className="mb-1 text-[var(--ms-text-muted)] text-xs">{t('preview')}</div>
-          {preview(body)}
-        </div>
+          <FormField id="tpl-body" label={t('body')}>
+            <textarea
+              ref={textareaRef}
+              className="min-h-[120px] w-full rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] p-3 text-sm"
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+            />
+          </FormField>
 
-        <label className="inline-flex cursor-pointer items-center gap-2 text-sm">
-          <Checkbox checked={enabled} onCheckedChange={(v) => setEnabled(!!v)} />
-          <span>{t('enabled')}</span>
-        </label>
+          {channel === 'sms' && (
+            <div className="flex items-center gap-2 text-[var(--ms-text-muted)] text-xs">
+              <Badge tone={seg.segments > 1 ? 'warning' : 'neutral'}>
+                {seg.chars} {t('chars')} · {seg.segments} {t('segments')}
+              </Badge>
+              {seg.encoding === 'unicode' && <span>unicode (70/SMS)</span>}
+            </div>
+          )}
 
-        <div>
-          <Button type="button" onClick={() => saveMut.mutate()} loading={saveMut.isPending}>
-            {t('save')}
-          </Button>
-        </div>
-      </Card>
+          <div className="rounded-[var(--ms-radius-default)] bg-[var(--ms-bg-muted)] p-3 text-sm">
+            <div className="mb-1 text-[var(--ms-text-muted)] text-xs">{t('preview')}</div>
+            <div className="whitespace-pre-wrap">{preview(body)}</div>
+          </div>
+
+          <label className="inline-flex cursor-pointer items-center gap-2 text-sm">
+            <Checkbox checked={enabled} onCheckedChange={(v) => setEnabled(!!v)} />
+            <span>{t('enabled')}</span>
+          </label>
+
+          <div>
+            <Button type="button" onClick={() => saveMut.mutate()} loading={saveMut.isPending}>
+              {t('save')}
+            </Button>
+          </div>
+        </Card>
+      )}
     </div>
   );
 }

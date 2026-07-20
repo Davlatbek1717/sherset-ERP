@@ -3119,7 +3119,12 @@
       "chars": "симв.",
       "segments": "SMS",
       "save": "Сохранить",
-      "saved": "Сохранено"
+      "saved": "Сохранено",
+      "channel_sms": "SMS",
+      "channel_telegram": "Telegram",
+      "none": "Шаблон не найден",
+      "is_default": "По умолчанию",
+      "set_default": "Сделать по умолчанию"
     },
     "debt_reminders": {
       "send_button": "Отправить сообщение",

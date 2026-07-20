@@ -3119,7 +3119,12 @@
       "chars": "belgi",
       "segments": "SMS",
       "save": "Saqlash",
-      "saved": "Saqlandi"
+      "saved": "Saqlandi",
+      "channel_sms": "SMS",
+      "channel_telegram": "Telegram",
+      "none": "Shablon topilmadi",
+      "is_default": "Standart",
+      "set_default": "Standart qilish"
     },
     "debt_reminders": {
       "send_button": "Xabar yuborish",

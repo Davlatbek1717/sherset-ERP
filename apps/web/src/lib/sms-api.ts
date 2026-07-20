@@ -18,12 +18,17 @@ export interface SmsContacts {
   cardOwner: string | null;
 }
 
-export interface SmsTemplate {
+export type TemplateChannel = 'sms' | 'telegram';
+
+/** Kanal-aware xabar shabloni (MessageTemplate kutubxonasi, 2026-07-20 refaktor). */
+export interface MessageTemplate {
   id: string;
-  key: string;
+  channel: TemplateChannel;
+  key: string | null;
   name: string;
   body: string;
   enabled: boolean;
+  isDefault: boolean;
 }
 
 export const smsApi = {
@@ -34,7 +39,23 @@ export const smsApi = {
   testConfig: () => api.post<{ ok: boolean; message: string }>('/sms/config/test', {}),
   getContacts: () => api.get<SmsContacts>('/sms/contacts'),
   saveContacts: (body: SmsContacts) => api.put<SmsContacts>('/sms/contacts', body),
-  listTemplates: () => api.get<SmsTemplate[]>('/sms/templates'),
-  saveTemplate: (key: string, body: { name: string; body: string; enabled: boolean }) =>
-    api.put<SmsTemplate>(`/sms/templates/${key}`, body),
+};
+
+/** Xabar shablonlari CRUD (`/message-templates`). */
+export const messageTemplateApi = {
+  list: (channel?: TemplateChannel) =>
+    api.get<MessageTemplate[]>(`/message-templates${channel ? `?channel=${channel}` : ''}`),
+  create: (body: {
+    channel: TemplateChannel;
+    name: string;
+    body: string;
+    enabled: boolean;
+    isDefault: boolean;
+  }) => api.post<MessageTemplate>('/message-templates', body),
+  update: (
+    id: string,
+    body: { name?: string; body?: string; enabled?: boolean; isDefault?: boolean },
+  ) => api.put<MessageTemplate>(`/message-templates/${id}`, body),
+  setDefault: (id: string) => api.put<MessageTemplate>(`/message-templates/${id}/default`, {}),
+  remove: (id: string) => api.delete<{ ok: true }>(`/message-templates/${id}`),
 };
