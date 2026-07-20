@@ -14,9 +14,9 @@
  */
 
 import { api } from '@/lib/api-client';
-import { Button, Input } from '@moysklad/ui';
+import { Button, Input, cn } from '@moysklad/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 interface InitialLoc {
   sklad: number;
@@ -65,6 +65,19 @@ export function ProductExtraLocations({
   );
   const [error, setError] = useState<string | null>(null);
 
+  // Yangi qo'shilgan qatorni AJRATIB ko'rsatish (2026-07-20i): «+ Yacheyka
+  // qo'shish» bo'sh qator qo'shadi, lekin ekranда allaqachon bo'sh qator bo'lsa
+  // yangisi bir xil ko'rinib «hech narsa o'zgarmadi» tuyg'usini beradi. Yangi
+  // qatorning 1-maydoniga fokus + qisqa fon-belgi bilan uni ko'zга tashlaymiz.
+  const firstInputRefs = useRef<Map<string, HTMLInputElement | null>>(new Map());
+  const [justAddedUid, setJustAddedUid] = useState<string | null>(null);
+  useEffect(() => {
+    if (!justAddedUid) return;
+    firstInputRefs.current.get(justAddedUid)?.focus();
+    const t = setTimeout(() => setJustAddedUid(null), 1600);
+    return () => clearTimeout(t);
+  }, [justAddedUid]);
+
   const saveMut = useMutation({
     mutationFn: () => {
       const locations = rows
@@ -88,11 +101,14 @@ export function ProductExtraLocations({
 
   const update = (uid: string, field: keyof Row, value: string) =>
     setRows((prev) => prev.map((r) => (r.uid === uid ? { ...r, [field]: value } : r)));
-  const addRow = () =>
+  const addRow = () => {
+    const uid = nextUid();
     setRows((prev) => [
       ...prev,
-      { uid: nextUid(), sklad: '', polka: '', qavat: '', yacheyka: '', qty: '', note: '' },
+      { uid, sklad: '', polka: '', qavat: '', yacheyka: '', qty: '', note: '' },
     ]);
+    setJustAddedUid(uid);
+  };
   const removeRow = (uid: string) => setRows((prev) => prev.filter((r) => r.uid !== uid));
 
   return (
@@ -125,10 +141,24 @@ export function ProductExtraLocations({
       ) : (
         <div className="flex flex-col gap-2">
           {rows.map((r) => (
-            <div key={r.uid} className="flex items-center gap-1.5">
-              {SEGMENTS.map((f) => (
+            <div
+              key={r.uid}
+              className={cn(
+                '-mx-1 flex items-center gap-1.5 rounded-[var(--ms-radius-sm)] px-1 py-0.5 transition-colors',
+                r.uid === justAddedUid && 'bg-[var(--ms-bg-selected)]',
+              )}
+            >
+              {SEGMENTS.map((f, idx) => (
                 <Input
                   key={f}
+                  ref={
+                    idx === 0
+                      ? (el) => {
+                          if (el) firstInputRefs.current.set(r.uid, el);
+                          else firstInputRefs.current.delete(r.uid);
+                        }
+                      : undefined
+                  }
                   value={r[f]}
                   onChange={(e) => update(r.uid, f, e.target.value)}
                   inputMode="numeric"
