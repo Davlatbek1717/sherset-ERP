@@ -2,7 +2,6 @@ import { Injectable, Logger } from '@nestjs/common';
 import bigInt from 'big-integer';
 import { Api, TelegramClient } from 'telegram';
 import { computeCheck } from 'telegram/Password.js';
-import { MarkdownV2Parser } from 'telegram/extensions/markdownv2.js';
 import { StringSession } from 'telegram/sessions/index.js';
 import type {
   TelegramClientFactory,
@@ -132,19 +131,10 @@ class GramjsClientHandle implements TelegramClientHandle {
     });
   }
 
-  async sendMessage(
-    entity: unknown,
-    text: string,
-    opts?: { format?: 'default' | 'markdown-v2' },
-  ): Promise<{ messageId: string }> {
+  async sendMessage(entity: unknown, text: string): Promise<{ messageId: string }> {
     // gramjs `sendMessage` accepts an entity-like and returns a Message
-    // with numeric `.id` — string-coerced for the worker. `parseMode` is
-    // omitted for the default dialect so the client's own default parser
-    // (`**bold**`) keeps handling every non-debt caller exactly as before.
-    const msg = await this.client.sendMessage(entity as never, {
-      message: text,
-      ...(opts?.format === 'markdown-v2' ? { parseMode: MarkdownV2Parser } : {}),
-    });
+    // with numeric `.id` — string-coerced for the worker.
+    const msg = await this.client.sendMessage(entity as never, { message: text });
     const id = (msg as { id?: number | bigint }).id;
     if (id === undefined) {
       throw new Error('gramjs sendMessage returned no id');

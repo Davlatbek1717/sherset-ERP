@@ -91,7 +91,7 @@ describe('debt-telegram xabarlari', () => {
   // ishlatishi kerak — foydalanuvchi debtIssuedMessage bu blokdan mahrum
   // ekanini (reminderMessage bilan solishtirib) skrinshot bilan ko'rsatdi.
   describe('barcha xabarlarda bir xil 📞💳👨‍💻 aloqa bloki', () => {
-    const CONTACT_LINES = ['📞 *Savollar uchun:*', '💳 *Karta raqam:*', '👨‍💻 *Karta egasi:*'];
+    const CONTACT_LINES = ['📞 Savollar uchun:', '💳 Karta raqam:', '👨‍💻 Karta egasi:'];
 
     it('qarz berildi (debtIssuedMessage)', () => {
       const m = debtIssuedMessage({ name: 'Feruz', totalMinor: 100n, nextContactAt: null });
@@ -115,52 +115,43 @@ describe('debt-telegram xabarlari', () => {
     });
   });
 
-  // 2026-07-20b: foydalanuvchi so'radi — summa BOLD emas, UNDERLINE bo'lishi
-  // kerak; aloqa-blok label'lari esa BOLD. HTML <b>/<u> ISHLAMAYDI (MTProto
-  // userbot parse_mode'ni qo'llamaydi), shuning uchun GramJS'ning
-  // MarkdownV2Parser dialekti ishlatiladi (mtproto-worker.service.ts
-  // `sourceEventType` `debt.` bo'lsa shu dialektni tanlaydi) — bu dialektda
-  // qalinlik BITTA `*x*` (ikkita EMAS), tagliq `__x__`.
-  describe("summa __tagliq__ (underline), aloqa-blok label'lari *qalin*", () => {
-    it('eslatma: qoldiq summa __tagliq__', () => {
+  // 2026-07-20: foydalanuvchi rasm bilan ko'rsatdi — muhim summalar **qalin**
+  // bo'lishi kerak edi. HTML <b> ISHLAMAYDI (MTProto userbot parse_mode'ni
+  // qo'llamaydi — aynan shu sababdan avvalgi xabarlar tegsiz chiqqan edi),
+  // lekin GramJS TelegramClient DEFOLT ravishda o'z Markdown parserini
+  // ishlatadi (telegram/extensions/markdown.js: '**' → MessageEntityBold),
+  // shuning uchun **...** to'g'ri qalin bo'lib ko'rinadi.
+  describe('muhim summalar **qalin** Markdown bilan belgilangan', () => {
+    it('eslatma: qoldiq summa **qalin**', () => {
       const m = reminderMessage({ name: 'Feruz', remainingMinor: 30_000_000n });
-      expect(m).toContain("__300 000 so'm__");
+      expect(m).toContain("**300 000 so'm**");
     });
 
-    it('qarz berildi: summa __tagliq__, muddat *qalin*', () => {
-      const m = debtIssuedMessage({
-        name: 'Feruz',
-        totalMinor: 100n,
-        nextContactAt: new Date('2026-07-20T04:00:00.000Z'),
-      });
-      expect(m).toContain("__1 so'm__");
-      expect(m).toContain('*20.07.2026, 09:00*');
+    it('qarz berildi: summa VA karta raqami **qalin**', () => {
+      const m = debtIssuedMessage({ name: 'Feruz', totalMinor: 100n, nextContactAt: null });
+      expect(m).toContain("**1 so'm**");
+      expect(m).toContain('**9860 1201 2532 1642**');
     });
 
-    it("to'lov qabul qilindi: ikkala summa ham __tagliq__", () => {
+    it("to'lov qabul qilindi: ikkala summa ham **qalin**", () => {
       const m = paymentMessage({ name: 'Feruz', amountMinor: 100n, remainingMinor: 200n });
-      expect(m).toContain("__1 so'm__");
-      expect(m).toContain("__2 so'm__");
-    });
-
-    it("aloqa-blok label'lari *qalin*, karta raqami ham *qalin*", () => {
-      const m = reminderMessage({ name: 'Feruz', remainingMinor: 100n });
-      expect(m).toContain('*Savollar uchun:*');
-      expect(m).toContain('*Karta raqam:*');
-      expect(m).toContain('*9860 1201 2532 1642*');
-      expect(m).toContain('*Karta egasi:*');
+      expect(m).toContain("**1 so'm**");
+      expect(m).toContain("**2 so'm**");
     });
   });
 
-  // XAVFSIZLIK (2026-07-20, 2026-07-20b yangilandi): mijoz nomida Markdown
-  // belgilovchisi bo'lsa, u tasodifan qalin/tagliq/kursiv'ni ochib, undan
-  // keyingi BUTUN xabar formatini buzmasligi kerak (masalan "*Hacker* ...
-  // *1 so'm*" — ismdagi ochilgan "*" summadagi yopilish "*" bilan noto'g'ri
-  // qo'shilib, orasidagi hammasi bitta katta qalin blok bo'lib qolardi).
+  // XAVFSIZLIK (2026-07-20): mijoz nomida Markdown belgilovchisi (masalan
+  // "**") bo'lsa, u tasodifan bold/italic'ni ochib, undan keyingi BUTUN
+  // xabar formatini buzmasligi kerak (masalan "**Hacker** ... **1 so'm**"
+  // — ismdagi ochilgan "**" summadagi yopilish "**" bilan noto'g'ri
+  // qo'shilib, orasidagi hammasi bitta katta bold blok bo'lib qolardi).
   describe('mdSafe — mijoz nomidagi Markdown belgilovchilarini zararsizlantiradi', () => {
     it('qo‘shni maxsus belgilar orasiga ko‘rinmas belgi qo‘yadi', () => {
       const safe = mdSafe('**Hacker**');
+      // Natijada "**" ketma-ketligi ENDI yo'q (orasida U+200B bor) —
+      // GramJS parseri buni delimiter deb topa olmaydi.
       expect(safe).not.toContain('**');
+      // Lekin ism hali ham o'qiladi (faqat ko'rinmas belgilar qo'shilgan).
       expect(safe.replace(/[​]/g, '')).toBe('**Hacker**');
     });
 
@@ -168,19 +159,13 @@ describe('debt-telegram xabarlari', () => {
       expect(mdSafe('Feruz aka')).toBe('Feruz aka');
     });
 
-    it('kursiv (-) va spoyler (|) belgilari ham zararsizlantiriladi', () => {
-      const safe = mdSafe('Anvar-Botir|X');
-      expect(safe.replace(/[​]/g, '')).toBe('Anvar-Botir|X');
-      expect(safe).not.toBe('Anvar-Botir|X'); // ZWS qo'shilgan bo'lishi kerak
-    });
-
-    it('xabarda mijoz ismidagi "*" summaning tagliq belgisi bilan qo‘shilib ketmaydi', () => {
-      const m = reminderMessage({ name: '*Hacker*', remainingMinor: 100n });
-      // Ism → summa oralig'ida "yopilmagan" bitta katta qalin blok YO'Q —
-      // to'g'ri holatda faqat summaning o'zi ("__1 so'm__") tagliq bo'lishi
+    it('xabarda mijoz ismidagi "**" summaning qalin belgisi bilan qo‘shilib ketmaydi', () => {
+      const m = reminderMessage({ name: '**Hacker**', remainingMinor: 100n });
+      // Ism → summa oralig'ida "yopilmagan" bitta katta bold blok YO'Q —
+      // to'g'ri holatda faqat summaning o'zi ("**1 so'm**") qalin bo'lishi
       // kerak, ism bilan summa orasidagi butun matn emas.
-      expect(m).not.toMatch(/\*Hacker\*[\s\S]*__1 so'm__/);
-      expect(m).toContain("__1 so'm__");
+      expect(m).not.toMatch(/\*\*Hacker\*\*[\s\S]*\*\*1 so'm\*\*/);
+      expect(m).toContain("**1 so'm**");
     });
   });
 });

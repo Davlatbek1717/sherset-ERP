@@ -86,14 +86,7 @@ export class MtprotoWorkerService implements MtprotoAdapter {
         if (!client) continue; // no account / no session in this slot
 
         const entity = await this.resolveEntity(client, opts.accountId, slot, opts.toPhone);
-        // debt-telegram.util.ts messages (sourceEventType `debt.*`) opt into
-        // MarkdownV2Parser for underline support; every other notification
-        // family keeps the client's default `**bold**` parser untouched.
-        const format = opts.sourceEventType?.startsWith('debt.') ? 'markdown-v2' : 'default';
-        const result = await withTimeout(
-          client.sendMessage(entity, opts.text, { format }),
-          'sendMessage',
-        );
+        const result = await withTimeout(client.sendMessage(entity, opts.text), 'sendMessage');
         return { slot, messageId: result.messageId };
       } catch (e) {
         if (isGramjsFloodError(e)) {
