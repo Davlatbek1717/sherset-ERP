@@ -305,6 +305,27 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🟡📩 2026-07-20i (QARZDORLARGA OMMAVIY SMS + TAHRIRLANADIGAN SHABLON — Phase-1, DEPLOY QILINMAGAN, browser-smoke YO'Q)**
+> **Ish (12 task, brainstorm→spec→plan→ijro):** Mavjud Telegram xabar yoniga SMS (Eskiz) kanali qo'shildi. Foydalanuvchi
+> talabi: sozlamada SMS hisobi, qarzdorlarni checkbox bilan tanlab bittada yuborish, shablon sozlamadan tahrirlanadi.
+> **MUHIM kashfiyot:** SMS backend infratuzilmasi ALLAQACHON bor edi (`modules/sms`: config, Eskiz client, SmsLog navbat,
+> retry-worker @30s) — noldan qurilmadi, ustiga ulandi. **Qo'shilganlar:** (1) DB — `SmsTemplate` (accountId,key unique,
+> ko'p-maqsadli, `debt_reminder` seed) + `CompanySettings.messaging{Phone,Card,CardOwner}` (migration `20260720170000`,
+> QO'LDA yozilgan — lokal Postgres o'chiq edi; **prod'da `migrate deploy` QILINMAGAN**). (2) Backend — izolyatsiyalangan
+> `sms-render.util` (Eta; HR `template-render.util`ga TEGILMADI — parallel sessiyada), `SmsTemplateService` CRUD, aloqa
+> endpointlari, `DebtService.sendBulkReminders(ids, channel)` (skip-sabablar: no_phone/no_debt/sms_not_configured/
+> template_disabled/no_telegram_chat), `POST /debts/reminders/bulk`, Telegram `reminderMessage` aloqa-bloki endi
+> CompanySettings'dan (fallback konstanta). (3) Frontend — `settings/sms` (config+aloqa), `settings/sms/templates`
+> (o'zgaruvchi-inject + jonli segment hisoblagich + preview), qarzdorlar toolbar'iga "Xabar yuborish" tugma + kanal-modal
+> (SMS/Telegram). **Gate:** api sms+debt 120 test ✅ · web sms-segments+i18n-key-existence ✅ · db/web typecheck 0 · api
+> typecheck 0 (o'z fayllarim; parallel sessiyaning untracked `hr-telegram-bridge/backfill-plan.util.ts` TS-xatosi meniki
+> EMAS). i18n-no-hardcoded'dagi eski losses/labels buzilishlari — pre-existing baseline (NEXT.md 07-11a'da qayd etilgan),
+> mening sahifalarim ro'yxatda yo'q. **⚠️ Browser-smoke YO'Q** (lokal Postgres o'chiq). Spec/plan:
+> `docs/superpowers/{specs,plans}/2026-07-20-sms-debt-reminders*`. **⏭️ NEXT:** (a) `/deploy` — **`migrate deploy` SHART**
+> (SmsTemplate jadval + CompanySettings ustunlar), keyin jonli smoke: sozlamada Eskiz hisobi + shablon → qarzdorni tanlab
+> SMS → SmsLog `sent` bo'lishini tekshirish; (b) haqiqiy Eskiz hisobi bilan jonli SMS yetkazish testi; (c) settings/sms +
+> qarzdor-modal browser-QA (Phase-2).
+>
 > **🟢📱 2026-07-20h (OMBOR RESPONSIVE — 1-BOSQICH + YIG'ISH-VARAQA QR OLIB TASHLASH — ✅ DEPLOYED, browser-smoke YO'Q)**
 > **Ish:** (1) **App-shell mobil navigatsiya** — `AppShell.tsx` <lg (1024px) da hamburger + `<Drawer>` (asosiy
 > modul-tab'lar vertikal), `SubNav.tsx` <lg da "joriy sahifa ▾" `<DropdownMenu>` (13+ kichik-tab o'rniga). Mavjud
