@@ -4752,8 +4752,11 @@ model StoreCell {
 
   store Store @relation("StoreCells", fields: [storeId], references: [id], onDelete: Cascade)
 
-  // Bir omborda bitta kod faqat bir marta.
-  @@unique([accountId, storeId, code])
+  // 2026-07-20 tuzatish: kod BUTUN AKKAUNT bo'yicha yagona, ombor ichida
+  // emas — Product.loc*/ProductLocation manzili storeId'ga bog'lanmagan,
+  // shuning uchun ikki xil ombor bir xil kodni ishlatsa, ular bitta jismoniy
+  // manzilni "bo'lishib" qolar edi (occupancy/tarkib noto'g'ri chiqardi).
+  @@unique([accountId, code])
   @@index([accountId, storeId])
   @@map("store_cells")
 }

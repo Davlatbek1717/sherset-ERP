@@ -24,14 +24,23 @@ import {
   ProductSelectModal,
   type ProductSelectRow,
 } from '@/components/products/product-select-modal';
+import { CellScanModal } from '@/components/stores/cell-scan-modal';
 import { useDestructiveMutation } from '@/hooks/use-destructive-mutation';
 import { api } from '@/lib/api-client';
-import { Button, Input, cn } from '@moysklad/ui';
+import { Button, Input, cn, useToast } from '@moysklad/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { HelpCircle, Plus, Printer, Trash2 } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronRight,
+  HelpCircle,
+  Plus,
+  Printer,
+  ScanLine,
+  Trash2,
+} from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 
 interface CellRow {
   id: string;
@@ -64,6 +73,7 @@ export function AddressStorageSection({
   const router = useRouter();
   const qc = useQueryClient();
   const { runDestructive } = useDestructiveMutation();
+  const { toast } = useToast();
 
   const { data, isLoading } = useQuery<CellsResponse>({
     queryKey: ['store-cells', storeId],
@@ -81,6 +91,15 @@ export function AddressStorageSection({
     const busy = rows.filter((r) => r.productCount > 0).length;
     return { total: rows.length, busy, free: rows.length - busy };
   };
+  // Ochilgan polkalar — bosilganда ichidagi yacheyka KODLARI ko'rinadi (2026-07-19
+  // talab: «har polkani dropdown qilib ichidagi yacheykalarni ko'rish»).
+  const [openPolkas, setOpenPolkas] = useState<Set<string>>(new Set());
+  const togglePolka = (key: string) =>
+    setOpenPolkas((prev) => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
 
   // ── «Polka qo'shish» — 3 input (barchasi majburiy) ──
   const [polkaFormOpen, setPolkaFormOpen] = useState(false);
@@ -158,6 +177,11 @@ export function AddressStorageSection({
     createCellMut.mutate({ code: cellCode.trim(), shelf: cellShelf.trim() || null });
   };
 
+  // ── Skan orqali biriktirish («Mahsulot qo'shish» oynasidagi «Skan» tugmasi
+  //    + bo'lim yuqorisidagi mustaqil «Skan» tugmasi) ──
+  const [scanCell, setScanCell] = useState<CellRow | null>(null);
+  const [scanOpen, setScanOpen] = useState(false);
+
   // ── Amallar: ➕ tovar biriktirish · 🖨 chop etish · 🗑 o'chirish ──
   const [assignCell, setAssignCell] = useState<CellRow | null>(null);
   const assignMut = useMutation({
@@ -166,6 +190,12 @@ export function AddressStorageSection({
         productIds,
       }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['store-cells', storeId] }),
+    // 2026-07-20 tuzatish: ProductSelectModal tanlovni tasdiqlagach o'zi
+    // (mutatsiya natijasini kutmasdan) yopiladi — xato bo'lsa foydalanuvchi
+    // "biriktirildi" deb o'ylab qoladi, hech qanday xabar ko'rmasdan. Toast
+    // shu bo'shliqni yopadi (boshqa mutatsiyalar kabi inline xato emas,
+    // chunki oyna allaqachon yopilgan — inline joy qolmaydi).
+    onError: (e: Error) => toast.error(t('assign_failed'), { description: e.message }),
   });
 
   const deleteMut = useMutation({
@@ -173,16 +203,26 @@ export function AddressStorageSection({
     onSuccess: () => qc.invalidateQueries({ queryKey: ['store-cells', storeId] }),
   });
 
-  /** 🖨 — label sahifasi, barcha 4 segment shu yacheyka bilan to'ldirilgan. */
+  /** 🖨 — label sahifasi, barcha 4 segment shu yacheyka bilan to'ldirilgan.
+   *  storeId ham uzatiladi — sahifada «shu ombordan yana yacheyka tanlash»
+   *  paneli ochilib, qo'shimcha labellar tanlab chop etilishi mumkin. */
   const printCell = (cell: CellRow) => {
     const [sklad = '', polka = '', qavat = '', yacheyka = ''] = cell.code.split('-');
     const params = new URLSearchParams({
       store: storeName,
+      storeId,
       sklad,
       polka,
       qavat,
       yacheyka,
     });
+    router.push(`/stores/cell-labels?${params.toString()}`);
+  };
+
+  /** «Labellar» — label sahifasini TANLASH rejimida ochadi (segment prefill'siz):
+   *  foydalanuvchi shu ombordagi yacheykalarni qidirib-belgilab chop etadi. */
+  const openLabelPicker = () => {
+    const params = new URLSearchParams({ store: storeName, storeId });
     router.push(`/stores/cell-labels?${params.toString()}`);
   };
 
@@ -197,6 +237,29 @@ export function AddressStorageSection({
       <div className="flex items-center gap-2">
         <HelpCircle className="h-4 w-4 text-[var(--ms-text-brand)]" aria-hidden />
         <h2 className="font-medium text-[#e8630a] text-base">{t('address_storage_title')}</h2>
+        <div className="ml-auto flex items-center gap-2">
+          {/* «Labellar» — yacheykalarni qidirib-belgilab ko'plab chop etish. */}
+          <button
+            type="button"
+            onClick={openLabelPicker}
+            className="inline-flex items-center gap-1.5 rounded-[var(--ms-radius-default)] border border-[var(--ms-border-strong)] px-3 py-1 font-medium text-[var(--ms-text-primary)] text-sm hover:bg-[var(--ms-bg-hover)]"
+            data-test-id="address-storage-labels"
+          >
+            <Printer className="h-4 w-4" />
+            {t('cell_labels')}
+          </button>
+          {/* Mustaqil skan — yacheykani skan aniqlaydi, shuning uchun qatorsiz ham
+              ishlaydi (tez «skan-skan» ombor oqimi uchun). */}
+          <button
+            type="button"
+            onClick={() => setScanOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-[var(--ms-radius-default)] border border-[var(--ms-border-focus)] bg-[var(--ms-bg-selected)] px-3 py-1 font-medium text-[var(--ms-text-brand)] text-sm hover:brightness-95"
+            data-test-id="address-storage-scan"
+          >
+            <ScanLine className="h-4 w-4" />
+            {t('scan_button')}
+          </button>
+        </div>
       </div>
 
       {/* ── Polka-svodka jadvali (moysklad zona jadvali o'rnida) ── */}
@@ -210,30 +273,84 @@ export function AddressStorageSection({
           </tr>
         </thead>
         <tbody>
-          {(() => {
-            const s = summaryRow(noShelf);
+          {[
+            { key: '__none__', label: t('no_zone_row'), rows: noShelf, none: true },
+            ...shelfNames.map((name) => ({
+              key: name,
+              label: name,
+              rows: cells.filter((c) => c.shelf === name),
+              none: false,
+            })),
+          ].map(({ key, label, rows, none }) => {
+            const s = summaryRow(rows);
+            const open = openPolkas.has(key);
+            const expandable = rows.length > 0;
             return (
-              <tr className="border-[#2b6c99] border-b" data-test-id="polka-row-none">
-                <td className={cn(TD, 'text-[var(--ms-text-muted)] italic')}>{t('no_zone_row')}</td>
-                <td className={cn(TD, 'text-center tabular-nums')}>{s.total}</td>
-                <td className={cn(TD, 'text-center tabular-nums')}>{s.free}</td>
-                <td className={cn(TD, 'text-center tabular-nums')}>{s.busy}</td>
-              </tr>
-            );
-          })()}
-          {shelfNames.map((name) => {
-            const s = summaryRow(cells.filter((c) => c.shelf === name));
-            return (
-              <tr
-                key={name}
-                className="border-[var(--ms-border-default)] border-b"
-                data-test-id={`polka-row-${name}`}
-              >
-                <td className={TD}>{name}</td>
-                <td className={cn(TD, 'text-center tabular-nums')}>{s.total}</td>
-                <td className={cn(TD, 'text-center tabular-nums')}>{s.free}</td>
-                <td className={cn(TD, 'text-center tabular-nums')}>{s.busy}</td>
-              </tr>
+              <Fragment key={key}>
+                {/* biome-ignore lint/a11y/useKeyWithClickEvents: qator butun-satr toggle; klaviatura uchun ichki chevron tugmasi bor emas — sodda ombor jadvali, o'qi/enter shart emas */}
+                <tr
+                  className={cn(
+                    none ? 'border-[#2b6c99]' : 'border-[var(--ms-border-default)]',
+                    'border-b',
+                    expandable && 'cursor-pointer hover:bg-[var(--ms-bg-hover)]',
+                  )}
+                  onClick={() => expandable && togglePolka(key)}
+                  data-test-id={none ? 'polka-row-none' : `polka-row-${label}`}
+                >
+                  <td className={cn(TD, none && 'text-[var(--ms-text-muted)] italic')}>
+                    <span className="inline-flex items-center gap-1.5">
+                      {expandable ? (
+                        open ? (
+                          <ChevronDown className="h-4 w-4 text-[var(--ms-text-muted)]" />
+                        ) : (
+                          <ChevronRight className="h-4 w-4 text-[var(--ms-text-muted)]" />
+                        )
+                      ) : (
+                        <span className="inline-block w-4" />
+                      )}
+                      <span>{label}</span>
+                      {expandable && (
+                        <span className="text-[var(--ms-text-muted)] text-xs">({rows.length})</span>
+                      )}
+                    </span>
+                  </td>
+                  <td className={cn(TD, 'text-center tabular-nums')}>{s.total}</td>
+                  <td className={cn(TD, 'text-center tabular-nums')}>{s.free}</td>
+                  <td className={cn(TD, 'text-center tabular-nums')}>{s.busy}</td>
+                </tr>
+                {/* Ochilganда — shu polkadagi yacheyka KODLARI (band = to'q sariq, bo'sh = ko'k). */}
+                {open && expandable && (
+                  <tr
+                    className="border-[var(--ms-border-default)] border-b bg-[var(--ms-bg-muted)]"
+                    data-test-id={`polka-cells-${none ? 'none' : label}`}
+                  >
+                    <td colSpan={4} className="px-4 py-2.5">
+                      <div className="flex flex-wrap gap-1.5">
+                        {[...rows]
+                          .sort((a, b) => a.code.localeCompare(b.code))
+                          .map((c) => {
+                            const busy = c.productCount > 0;
+                            return (
+                              <span
+                                key={c.id}
+                                title={busy ? t('col_cells_busy') : t('col_cells_free')}
+                                className={cn(
+                                  'rounded-[var(--ms-radius-sm)] border px-2 py-0.5 font-mono text-xs tabular-nums',
+                                  busy
+                                    ? 'border-[#f0c9a0] bg-[#fdf2e6] text-[#b5651d]'
+                                    : 'border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] text-[var(--ms-text-secondary)]',
+                                )}
+                                data-test-id={`polka-cell-${c.code}`}
+                              >
+                                {c.code}
+                              </span>
+                            );
+                          })}
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
             );
           })}
         </tbody>
@@ -393,6 +510,16 @@ export function AddressStorageSection({
                       onClick={() =>
                         runDestructive({
                           title: tCommon('delete_confirm', { name: cell.code }),
+                          // 2026-07-20 tuzatish: registr yozuvi o'chsa ham
+                          // tovarning loc* manzili o'zgarmaydi (band/bo'shlik
+                          // Product.loc*dan hisoblanadi, StoreCell'dan emas)
+                          // — band yacheykani ko'rmasdan o'chirib qo'yish
+                          // "ko'rinmas" band manzil qoldiradi. Band bo'lsa
+                          // ogohlantiramiz.
+                          description:
+                            cell.productCount > 0
+                              ? t('cell_delete_occupied_warning', { count: cell.productCount })
+                              : undefined,
                           run: () => deleteMut.mutateAsync(cell.id),
                         })
                       }
@@ -493,6 +620,23 @@ export function AddressStorageSection({
         onClose={() => setAssignCell(null)}
         currency="UZS"
         selectionMode
+        headerExtra={
+          <button
+            type="button"
+            onClick={() => {
+              // «Mahsulot qo'shish» oynasidan skan oqimiga o'tish — biriktirilgan
+              // yacheyka boshlang'ich yo'nalish sifatida uzatiladi (skan uni
+              // qat'iy aniqlaydi).
+              setScanCell(assignCell);
+              setAssignCell(null);
+            }}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--ms-radius-default)] border border-[var(--ms-border-focus)] bg-[var(--ms-bg-selected)] px-3 py-1 font-medium text-[12px] text-[var(--ms-text-brand)] hover:brightness-95"
+            data-test-id="product-select-scan"
+          >
+            <ScanLine className="h-4 w-4" />
+            {t('scan_button')}
+          </button>
+        }
         onConfirm={() => undefined}
         onConfirmSelection={(products: ProductSelectRow[]) => {
           if (!assignCell) return;
@@ -531,6 +675,22 @@ export function AddressStorageSection({
           empty: tProductSelect('empty'),
           loading: tProductSelect('loading'),
         }}
+      />
+
+      {/* Skan orqali biriktirish oynasi — «Mahsulot qo'shish»dagi «Skan»dan yoki
+          bo'lim yuqorisidagi «Skan» tugmasidan ochiladi. */}
+      <CellScanModal
+        open={!!scanCell || scanOpen}
+        onClose={() => {
+          setScanCell(null);
+          setScanOpen(false);
+        }}
+        storeId={storeId}
+        storeName={storeName}
+        expectedCell={
+          scanCell ? { id: scanCell.id, code: scanCell.code, shelf: scanCell.shelf } : null
+        }
+        onLinked={() => qc.invalidateQueries({ queryKey: ['store-cells', storeId] })}
       />
     </div>
   );

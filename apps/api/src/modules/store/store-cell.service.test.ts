@@ -41,12 +41,18 @@ function makePrisma(overrides: Record<string, Record<string, unknown>> = {}) {
     },
     product: {
       findMany: vi.fn().mockResolvedValue([]),
+      findFirst: vi.fn().mockResolvedValue(null),
       updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+      update: vi.fn().mockResolvedValue({}),
       ...(overrides.product ?? {}),
     },
     productLocation: {
       findMany: vi.fn().mockResolvedValue([]),
       ...(overrides.productLocation ?? {}),
+    },
+    stock: {
+      findMany: vi.fn().mockResolvedValue([]),
+      ...(overrides.stock ?? {}),
     },
   };
   return { client } as never;
@@ -143,14 +149,73 @@ describe('StoreCellService.createOne («+ Yacheyka»)', () => {
     expect(res.shelf).toBe('032');
   });
 
-  it('dublikat kod — BadRequest', async () => {
+  it('dublikat kod — SHU omborda — BadRequest, xabar «allaqachon mavjud»', async () => {
     const prisma = makePrisma({
-      storeCell: { findFirst: vi.fn().mockResolvedValue({ id: CELL }) },
+      storeCell: {
+        findFirst: vi
+          .fn()
+          .mockResolvedValue({ id: CELL, storeId: STORE, store: { name: 'Щит цех' } }),
+      },
     });
     const svc = new StoreCellService(prisma);
     await expect(svc.createOne(ACC, STORE, { code: '04-03-01-05' })).rejects.toThrow(
       BadRequestException,
     );
+    await expect(svc.createOne(ACC, STORE, { code: '04-03-01-05' })).rejects.toThrow(
+      /allaqachon mavjud/,
+    );
+  });
+
+  // 2026-07-20 tuzatish: kod BUTUN AKKAUNT bo'yicha yagona (@@unique([accountId,
+  // code])) — boshqa omborda ishlatilgan kod ham rad etiladi, va xabar aynan
+  // qaysi omborda band ekanini aytadi (chalkashlik bo'lmasin: bu omborda
+  // ko'rinmasa ham, kod band).
+  it('dublikat kod — BOSHQA omborda — BadRequest, xabar ombor nomini aytadi', async () => {
+    const OTHER_STORE = '99999999-9999-9999-9999-999999999999';
+    const findFirst = vi
+      .fn()
+      .mockResolvedValue({ id: 'other-cell', storeId: OTHER_STORE, store: { name: 'Filial-2' } });
+    const prisma = makePrisma({ storeCell: { findFirst } });
+    const svc = new StoreCellService(prisma);
+    await expect(svc.createOne(ACC, STORE, { code: '04-03-01-05' })).rejects.toThrow(/Filial-2/);
+    // Dublikat tekshiruvi storeId'siz, akkaunt bo'yicha (Bug fix — avval
+    // faqat shu ombor ichida tekshirilardi).
+    expect(findFirst.mock.calls[0]?.[0]?.where).toEqual({ accountId: ACC, code: '04-03-01-05' });
+  });
+
+  it('notanish ombor — 404 (tenant guard)', async () => {
+    const prisma = makePrisma({ store: { findFirst: vi.fn().mockResolvedValue(null) } });
+    const svc = new StoreCellService(prisma);
+    await expect(svc.createOne(ACC, STORE, { code: '04-03-01-05' })).rejects.toThrow(
+      NotFoundException,
+    );
+  });
+});
+
+describe('StoreCellService.delete (🗑 amali)', () => {
+  it("mavjud yacheykani o'chiradi (shu ombor + akkaunt bo'yicha scoped)", async () => {
+    const findFirst = vi.fn().mockResolvedValue({ id: CELL });
+    const del = vi.fn().mockResolvedValue({});
+    const prisma = makePrisma({ storeCell: { findFirst, delete: del } });
+    const svc = new StoreCellService(prisma);
+    const res = await svc.delete(ACC, STORE, CELL);
+    expect(res).toEqual({ ok: true });
+    expect(findFirst.mock.calls[0]?.[0]?.where).toEqual({
+      id: CELL,
+      accountId: ACC,
+      storeId: STORE,
+    });
+    expect(del).toHaveBeenCalledWith({ where: { id: CELL } });
+  });
+
+  it('notanish/begona yacheyka — 404, delete chaqirilmaydi', async () => {
+    const del = vi.fn();
+    const prisma = makePrisma({
+      storeCell: { findFirst: vi.fn().mockResolvedValue(null), delete: del },
+    });
+    const svc = new StoreCellService(prisma);
+    await expect(svc.delete(ACC, STORE, CELL)).rejects.toThrow(NotFoundException);
+    expect(del).not.toHaveBeenCalled();
   });
 });
 
@@ -201,6 +266,24 @@ describe("StoreCellService.list (§6–7 — ro'yxat + band/bo'sh hisob)", () =>
     const res = await svc.list(ACC, STORE);
     expect(res.items[0]?.productCount).toBe(1);
   });
+
+  // 2026-07-20 unumdorlik tuzatishi: hali yacheyka yaratilmagan (bo'sh)
+  // omborda butun-akkaunt Product/ProductLocation skaneri BEKORCHI —
+  // occupancyMap umuman chaqirilmasligi kerak.
+  it("bo'sh omborda (yacheyka yo'q) occupancy skaneri chaqirilmaydi", async () => {
+    const productFindMany = vi.fn().mockResolvedValue([]);
+    const locationFindMany = vi.fn().mockResolvedValue([]);
+    const prisma = makePrisma({
+      storeCell: { findMany: vi.fn().mockResolvedValue([]) },
+      product: { findMany: productFindMany, updateMany: vi.fn() },
+      productLocation: { findMany: locationFindMany },
+    });
+    const svc = new StoreCellService(prisma);
+    const res = await svc.list(ACC, STORE);
+    expect(res.items).toEqual([]);
+    expect(productFindMany).not.toHaveBeenCalled();
+    expect(locationFindMany).not.toHaveBeenCalled();
+  });
 });
 
 describe('StoreCellService.assign (§8 — «+» tovar biriktirish)', () => {
@@ -243,6 +326,167 @@ describe('StoreCellService.assign (§8 — «+» tovar biriktirish)', () => {
   });
 });
 
+describe('StoreCellService.resolveByCode (Skan 1-bosqich — yacheyka)', () => {
+  it('tireli kodni kanoniklashtirib shu ombordagi yacheykani qaytaradi', async () => {
+    const findFirst = vi.fn().mockResolvedValue({ id: CELL, code: '04-03-01-05', shelf: '032' });
+    const prisma = makePrisma({ storeCell: { findFirst } });
+    const svc = new StoreCellService(prisma);
+    const res = await svc.resolveByCode(ACC, STORE, { code: '4-3-1-5' });
+    expect(res).toEqual({ id: CELL, code: '04-03-01-05', shelf: '032' });
+    // Qidiruv kanonik padded kod bilan boradi.
+    expect(findFirst.mock.calls[0]?.[0]?.where).toEqual({
+      accountId: ACC,
+      storeId: STORE,
+      code: '04-03-01-05',
+    });
+  });
+
+  it('8-raqamli label barcode (02170215) ham parse bo`ladi', async () => {
+    const findFirst = vi.fn().mockResolvedValue({ id: CELL, code: '02-17-02-15', shelf: null });
+    const prisma = makePrisma({ storeCell: { findFirst } });
+    const svc = new StoreCellService(prisma);
+    await svc.resolveByCode(ACC, STORE, { code: '02170215' });
+    expect(findFirst.mock.calls[0]?.[0]?.where.code).toBe('02-17-02-15');
+  });
+
+  it('buzuq kod — BadRequest', async () => {
+    const svc = new StoreCellService(makePrisma());
+    await expect(svc.resolveByCode(ACC, STORE, { code: 'salom' })).rejects.toThrow(
+      BadRequestException,
+    );
+  });
+
+  it("bo'sh kod — BadRequest", async () => {
+    const svc = new StoreCellService(makePrisma());
+    await expect(svc.resolveByCode(ACC, STORE, { code: '   ' })).rejects.toThrow(
+      BadRequestException,
+    );
+  });
+
+  it('shu omborda bunday yacheyka yo`q — 404', async () => {
+    const prisma = makePrisma({ storeCell: { findFirst: vi.fn().mockResolvedValue(null) } });
+    const svc = new StoreCellService(prisma);
+    await expect(svc.resolveByCode(ACC, STORE, { code: '04-03-01-99' })).rejects.toThrow(
+      NotFoundException,
+    );
+  });
+});
+
+describe('StoreCellService.scanLink (Skan 2-bosqich — mahsulot biriktirish)', () => {
+  const cellFound = {
+    storeCell: { findFirst: vi.fn().mockResolvedValue({ code: '04-03-01-07' }) },
+  };
+
+  it("shtrix-kod bo'yicha mahsulotni topib asosiy loc* ni yacheykaga o'rnatadi", async () => {
+    const update = vi.fn().mockResolvedValue({});
+    const findFirst = vi.fn().mockResolvedValue({
+      id: P1,
+      name: 'Bolt M6',
+      code: '00123',
+      article: 'B-6',
+      uom: 'dona',
+      barcodes: ['4780000000001'],
+      salePrices: [{ priceTypeId: 'default', value: '4500' }],
+      locSklad: null,
+      locPolka: null,
+      locQavat: null,
+      locYacheyka: null,
+    });
+    const prisma = makePrisma({
+      ...cellFound,
+      product: { findFirst, update, findMany: vi.fn(), updateMany: vi.fn() },
+      stock: {
+        findMany: vi.fn().mockResolvedValue([{ qty: { toFixed: () => '3.000000' } }]),
+      },
+    });
+    const svc = new StoreCellService(prisma);
+    const res = await svc.scanLink(ACC, STORE, CELL, { barcode: '4780000000001' });
+    expect(res.ok).toBe(true);
+    expect(res.alreadyLinked).toBe(false);
+    // Sotuv narxi + jami qoldiq bor; TAN NARX (buyPrice) javobda YO'Q.
+    expect(res.product).toEqual({
+      id: P1,
+      name: 'Bolt M6',
+      code: '00123',
+      article: 'B-6',
+      uom: 'dona',
+      barcode: '4780000000001',
+      salePrice: '4500',
+      totalQty: 3,
+    });
+    expect(res.product).not.toHaveProperty('buyPrice');
+    expect(res.cell).toEqual({ code: '04-03-01-07' });
+    // barcodes[] aniq token bo'yicha qidiruv.
+    expect(findFirst.mock.calls[0]?.[0]?.where).toMatchObject({
+      accountId: ACC,
+      deletedAt: null,
+      barcodes: { has: '4780000000001' },
+    });
+    expect(update).toHaveBeenCalledWith({
+      where: { id: P1 },
+      data: {
+        locSklad: 4,
+        locPolka: 3,
+        locQavat: 1,
+        locYacheyka: 7,
+        version: { increment: 1 },
+      },
+    });
+  });
+
+  it('mahsulot allaqachon shu yacheykada — alreadyLinked, qayta yozuv YO`Q', async () => {
+    const update = vi.fn();
+    const findFirst = vi.fn().mockResolvedValue({
+      id: P1,
+      name: 'Bolt M6',
+      code: '00123',
+      article: null,
+      uom: 'dona',
+      barcodes: ['4780000000001'],
+      salePrices: [{ priceTypeId: 'default', value: '4500' }],
+      locSklad: 4,
+      locPolka: 3,
+      locQavat: 1,
+      locYacheyka: 7,
+    });
+    const prisma = makePrisma({
+      ...cellFound,
+      product: { findFirst, update, findMany: vi.fn(), updateMany: vi.fn() },
+    });
+    const svc = new StoreCellService(prisma);
+    const res = await svc.scanLink(ACC, STORE, CELL, { barcode: '4780000000001' });
+    expect(res.alreadyLinked).toBe(true);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('shtrix-kod topilmadi — 404', async () => {
+    const prisma = makePrisma({
+      ...cellFound,
+      product: { findFirst: vi.fn().mockResolvedValue(null), update: vi.fn() },
+    });
+    const svc = new StoreCellService(prisma);
+    await expect(svc.scanLink(ACC, STORE, CELL, { barcode: '0000000000000' })).rejects.toThrow(
+      NotFoundException,
+    );
+  });
+
+  it('notanish yacheyka — 404', async () => {
+    const prisma = makePrisma({ storeCell: { findFirst: vi.fn().mockResolvedValue(null) } });
+    const svc = new StoreCellService(prisma);
+    await expect(svc.scanLink(ACC, STORE, CELL, { barcode: '4780000000001' })).rejects.toThrow(
+      NotFoundException,
+    );
+  });
+
+  it("bo'sh barcode — BadRequest", async () => {
+    const prisma = makePrisma(cellFound);
+    const svc = new StoreCellService(prisma);
+    await expect(svc.scanLink(ACC, STORE, CELL, { barcode: '  ' })).rejects.toThrow(
+      BadRequestException,
+    );
+  });
+});
+
 describe('StoreCellService.searchAll (§10 — dropdown qidiruvi)', () => {
   it("kod bo'yicha qidiradi va ombor nomini qo'shib qaytaradi", async () => {
     const findMany = vi.fn().mockResolvedValue([
@@ -265,5 +509,15 @@ describe('StoreCellService.searchAll (§10 — dropdown qidiruvi)', () => {
       { code: { contains: '04-03', mode: 'insensitive' } },
       { shelf: { contains: '04-03', mode: 'insensitive' } },
     ]);
+  });
+
+  it("search bo'sh bo'lsa — barcha yacheykalarni ko'rsatadi, OR filtrsiz", async () => {
+    const findMany = vi.fn().mockResolvedValue([]);
+    const prisma = makePrisma({ storeCell: { findMany } });
+    const svc = new StoreCellService(prisma);
+    await svc.searchAll(ACC, {});
+    const where = findMany.mock.calls[0]?.[0]?.where;
+    expect(where).toEqual({ accountId: ACC });
+    expect(where.OR).toBeUndefined();
   });
 });
