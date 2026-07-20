@@ -36,6 +36,22 @@ async function main(): Promise<void> {
   });
   console.log('  ✓ Account:', account.name);
 
+  // SMS shabloni — «debt_reminder» (lotin, qisqa; sozlamadan tahrirlanadi).
+  await prisma.smsTemplate.upsert({
+    where: { accountId_key: { accountId: account.id, key: 'debt_reminder' } },
+    update: {},
+    create: {
+      accountId: account.id,
+      key: 'debt_reminder',
+      name: 'Qarz eslatmasi',
+      body:
+        'Assalomu alaykum {{= counterparty.name }}! Sizda {{= debt.remainingFormatted }} som ' +
+        "to'lanmagan qarz bor. To'lov: {{= company.card }} ({{= company.cardOwner }}). " +
+        'Savol: {{= company.phone }}. Sherset',
+      enabled: true,
+    },
+  });
+
   const admin = await prisma.employee.upsert({
     where: { accountId_email: { accountId: account.id, email: 'admin@demo.local' } },
     // hrRoles:['admin'] → HR module's own guard (HrPermissionGuard) grants full

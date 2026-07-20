@@ -1029,6 +1029,9 @@ exports.Prisma.CompanySettingsScalarFieldEnum = {
   discountStrategy: 'discountStrategy',
   priceTypesJson: 'priceTypesJson',
   receiptPrinterName: 'receiptPrinterName',
+  messagingPhone: 'messagingPhone',
+  messagingCard: 'messagingCard',
+  messagingCardOwner: 'messagingCardOwner',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 };
@@ -3518,6 +3521,17 @@ exports.Prisma.SmsLogScalarFieldEnum = {
   createdAt: 'createdAt'
 };
 
+exports.Prisma.SmsTemplateScalarFieldEnum = {
+  id: 'id',
+  accountId: 'accountId',
+  key: 'key',
+  name: 'name',
+  body: 'body',
+  enabled: 'enabled',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
 exports.Prisma.EdoConfigScalarFieldEnum = {
   id: 'id',
   accountId: 'accountId',
@@ -4317,6 +4331,7 @@ exports.Prisma.ModelName = {
   OnboardingProgress: 'OnboardingProgress',
   SmsConfig: 'SmsConfig',
   SmsLog: 'SmsLog',
+  SmsTemplate: 'SmsTemplate',
   EdoConfig: 'EdoConfig',
   EdoSubmission: 'EdoSubmission',
   MarkingConfig: 'MarkingConfig',
