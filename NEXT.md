@@ -305,7 +305,19 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
-> **🟡📩 2026-07-20i (QARZDORLARGA OMMAVIY SMS + TAHRIRLANADIGAN SHABLON — Phase-1, DEPLOY QILINMAGAN, browser-smoke YO'Q)**
+> **🟢📩 2026-07-20i (QARZDORLARGA OMMAVIY SMS + TAHRIRLANADIGAN SHABLON — Phase-2 BROWSER-VERIFIED, DEPLOY QILINMAGAN)**
+> **✅ PHASE-2 BROWSER-SMOKE (2026-07-20, Playwright + user-space Postgres, `8e8f1bf`):** admin huquqisiz lokal DB ko'tarildi
+> (`initdb` + `pg_ctl` port 5432, xizmat emas) → `migrate deploy` (168 migratsiya, mening `20260720170000` ham) → seed →
+> `pnpm dev` (api:4000, web:3100). **Jonli tekshirildi:** (1) `settings/sms` — Eskiz config + aloqa maydonlari saqlandi
+> (DB: `sms_configs` + `company_settings.messaging_*` tasdiqlandi); (2) `settings/sms/templates` — segment hisoblagich
+> «149 belgi · 1 SMS», preview render, o'zgaruvchi-tugmalar; **buzuq shablon guard (review #2) BROWSER-VERIFIED** —
+> `{{= custamer.name }}` → xato toast «Shablon xato: noto'g'ri o'zgaruvchi...» + DB body O'ZGARMADI; (3) **BULK SMS
+> end-to-end:** 2 qarzdor (ABC telefonli / XYZ telefonsiz) tanlab → «Xabar yuborish» modal → SMS → **SmsLog navbat qatori**
+> yaratildi (`to_phone`, `status=pending`, body=«Assalomu alaykum ABC MCHJ! Sizda 2 000 000 som...» — shablon+formatSomMinor
+> to'g'ri), XYZ `no_phone` bilan skip; (4) **delivery worker jonli** — SmsLog `attempt=3`, xato «Eskiz login HTTP 401» (FAKE
+> cred, aynan kutilgan). **YAGONA qolgan: haqiqiy Eskiz hisobi bilan real SMS yetkazish** (kod+wiring 100% ishlaydi).
+> **🐞 BROWSER-CAUGHT FIX (`8e8f1bf`):** `sms_templates.description`'dagi `{{= }}` next-intl ICU parserini buzib xom kalit
+> ko'rsatardi → tokenlarsiz matn; + shablon saqlash success/error toast (guard endi ko'rinadi). tc0 · i18n parity ✅.
 > **Ish (12 task, brainstorm→spec→plan→ijro):** Mavjud Telegram xabar yoniga SMS (Eskiz) kanali qo'shildi. Foydalanuvchi
 > talabi: sozlamada SMS hisobi, qarzdorlarni checkbox bilan tanlab bittada yuborish, shablon sozlamadan tahrirlanadi.
 > **MUHIM kashfiyot:** SMS backend infratuzilmasi ALLAQACHON bor edi (`modules/sms`: config, Eskiz client, SmsLog navbat,
