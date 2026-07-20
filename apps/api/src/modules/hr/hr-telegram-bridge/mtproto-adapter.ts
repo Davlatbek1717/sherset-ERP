@@ -1,4 +1,5 @@
 import { Logger } from '@nestjs/common';
+import type { HistoryMtprotoMessage } from './telegram-client-factory.js';
 
 /**
  * MTProto delivery contract. Decouples the queue worker from any specific
@@ -39,6 +40,19 @@ export interface MtprotoAdapter {
    * are expected to manage their own connection pool / failover.
    */
   sendMessage(opts: MtprotoSendOptions): Promise<MtprotoSendResult>;
+
+  /**
+   * Dialog tarixidan bitta sahifa oladi (talab-bo'yicha backfill + catch-up,
+   * 2026-07-20). FLOOD_WAIT'da `MtprotoFloodError`, boshqa xatoда plain Error.
+   * Implementatsiya o'z pool/failover'ini boshqaradi (sendMessage kabi).
+   */
+  fetchHistory(opts: {
+    accountId: string;
+    phone: string;
+    limit: number;
+    offsetId?: number;
+    minId?: number;
+  }): Promise<{ slot: number; messages: HistoryMtprotoMessage[] }>;
 }
 
 /**
@@ -75,5 +89,10 @@ export class NoopMtprotoAdapter implements MtprotoAdapter {
       `NoopMtprotoAdapter — Telegram delivery NOT configured. Pretending to fail send for account=${opts.accountId} to=${opts.toPhone} (${opts.text.length} chars). Configure HR_TELEGRAM_CREDENTIALS in production.`,
     );
     throw new Error('mtproto_adapter_not_configured');
+  }
+
+  async fetchHistory(): Promise<{ slot: number; messages: HistoryMtprotoMessage[] }> {
+    // Telegram sozlanmaган — bo'sh sahifa (backfill job'ni bloklamaydi).
+    return { slot: 0, messages: [] };
   }
 }
