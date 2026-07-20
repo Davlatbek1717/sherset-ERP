@@ -14,7 +14,12 @@ const debtRow = (over: Record<string, unknown> = {}) => ({
 
 function makeDeps(
   debts: Record<string, unknown>[],
-  opts: { smsEnabled?: boolean; smsDefault?: unknown; tgSent?: boolean } = {},
+  opts: {
+    smsEnabled?: boolean;
+    smsDefault?: unknown;
+    tgDefault?: unknown;
+    tgSent?: boolean;
+  } = {},
 ) {
   const prisma = {
     client: { debt: { findMany: vi.fn().mockResolvedValue(debts) } },
@@ -27,19 +32,33 @@ function makeDeps(
     send: vi.fn().mockResolvedValue({ id: 'log1', status: 'pending' }),
   };
   // findDefault kanalning enabled+default shabloni yoki null qaytaradi (real xulq).
+  const smsTpl =
+    opts.smsDefault === undefined
+      ? {
+          id: 't1',
+          channel: 'sms',
+          key: 'debt_reminder',
+          name: 'Q',
+          body: 'Qarz {{= debt.remainingFormatted }}',
+          enabled: true,
+          isDefault: true,
+        }
+      : opts.smsDefault;
+  const tgTpl =
+    opts.tgDefault === undefined
+      ? {
+          id: 'tg1',
+          channel: 'telegram',
+          key: 'debt_reminder',
+          name: 'D',
+          body: 'Qarz {{= debt.remainingFormatted }} som',
+          enabled: true,
+          isDefault: true,
+        }
+      : opts.tgDefault;
   const msgTemplates = {
-    findDefault: vi.fn().mockResolvedValue(
-      opts.smsDefault === undefined
-        ? {
-            id: 't1',
-            channel: 'sms',
-            key: 'debt_reminder',
-            name: 'Q',
-            body: 'Qarz {{= debt.remainingFormatted }}',
-            enabled: true,
-            isDefault: true,
-          }
-        : opts.smsDefault,
+    findDefault: vi.fn(async (_acc: string, channel: string) =>
+      channel === 'telegram' ? tgTpl : smsTpl,
     ),
     findOne: vi.fn().mockResolvedValue(null),
   };
@@ -98,6 +117,21 @@ describe('sendBulkReminders', () => {
     const { svc } = makeDeps([debtRow()], { tgSent: true });
     const r = await svc.sendBulkReminders('acc', 'u1', { ids: [DEBT_ID], channel: 'telegram' });
     expect(r.queued).toBe(1);
+  });
+
+  it('Telegram — default shablon RENDER qilinadi (rendered matn yuboriladi)', async () => {
+    const { svc, telegram } = makeDeps([debtRow()]); // remaining = 200000000 minor = 2 000 000
+    await svc.sendBulkReminders('acc', 'u1', { ids: [DEBT_ID], channel: 'telegram' });
+    const text = (telegram.notifyCounterparty as ReturnType<typeof vi.fn>).mock.calls[0][2];
+    expect(text).toBe('Qarz 2 000 000 som'); // 'Qarz {{= debt.remainingFormatted }} som'
+  });
+
+  it("Telegram — default shablon yo'q: FALLBACK (hardcoded reminderMessage)", async () => {
+    const { svc, telegram } = makeDeps([debtRow()], { tgDefault: null });
+    await svc.sendBulkReminders('acc', 'u1', { ids: [DEBT_ID], channel: 'telegram' });
+    const text = (telegram.notifyCounterparty as ReturnType<typeof vi.fn>).mock.calls[0][2];
+    expect(text).toContain('Assalomu alaykum'); // fallback matn
+    expect(text).toContain('SHERSET jamoasi!');
   });
 
   it("SMS — sms.send yiqilsa: send_error skip, partiya to'xtamaydi", async () => {

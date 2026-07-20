@@ -50,6 +50,9 @@ describe('DebtReminderService.remindDueCalls', () => {
       makeTelegram() as any,
       // biome-ignore lint/suspicious/noExplicitAny: test wiring
       makeSms() as any,
+      // msgTemplates: default yo'q → renderReminderText fallback (hardcoded) ishlatadi
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      { findDefault: vi.fn().mockResolvedValue(null) } as any,
     );
 
     await service.remindDueCalls();
@@ -87,6 +90,8 @@ describe('DebtReminderService.remindDueCalls', () => {
       telegram as any,
       // biome-ignore lint/suspicious/noExplicitAny: test wiring
       makeSms() as any,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      { findDefault: vi.fn().mockResolvedValue(null) } as any,
     );
 
     await service.remindDueCalls();

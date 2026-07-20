@@ -16,7 +16,6 @@ import { formatSomMinor, renderSmsTemplate } from '../sms/sms-render.util.js';
 import { MessageTemplateService } from '../sms/sms-template.service.js';
 import { SmsService } from '../sms/sms.service.js';
 import { TelegramService } from '../telegram/telegram.service.js';
-import { reminderMessage } from './debt-telegram.util.js';
 import {
   BulkRemindersSchema,
   CASHIER_METHODS,
@@ -47,6 +46,7 @@ import {
   type SetProblemInput,
   SetProblemSchema,
 } from './debt.schema.js';
+import { renderReminderText } from './telegram-template-render.util.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -255,12 +255,15 @@ export class DebtService {
 
     const name = debt.counterparty?.name ?? 'mijoz';
     const contact = await this.sms.getContacts(accountId);
-    return this.telegram.notifyCounterparty(
-      accountId,
-      debt.counterpartyId,
-      reminderMessage({ name, remainingMinor: remaining, contact }),
-      'reminder',
-    );
+    // Kanalning default Telegram shabloni (yo'q/o'chirilgan → fallback hardcoded).
+    const tpl = await this.msgTemplates.findDefault(accountId, 'telegram');
+    const text = renderReminderText(tpl, {
+      name,
+      remainingMinor: remaining,
+      totalMinor: debt.totalMinor,
+      contact,
+    });
+    return this.telegram.notifyCounterparty(accountId, debt.counterpartyId, text, 'reminder');
   }
 
   /**
@@ -270,7 +273,7 @@ export class DebtService {
    * xulosa: nechta navbatga qo'yildi + o'tkazib yuborilganlar sabab bilan.
    */
   async sendBulkReminders(accountId: string, userId: string, raw: unknown) {
-    const { ids, channel } = BulkRemindersSchema.parse(raw);
+    const { ids, channel, templateId } = BulkRemindersSchema.parse(raw);
     const debts = await this.prisma.client.debt.findMany({
       where: {
         id: { in: ids },
@@ -346,6 +349,11 @@ export class DebtService {
 
     // channel === 'telegram'
     const contact = await this.sms.getContacts(accountId);
+    // Tanlangan shablon (templateId) yoki kanalning default'i; ikkovi yo'q →
+    // renderReminderText fallback (hardcoded reminderMessage) ishlatadi.
+    const tpl = templateId
+      ? await this.msgTemplates.findOne(accountId, templateId).catch(() => null)
+      : await this.msgTemplates.findDefault(accountId, 'telegram');
     for (const d of debts) {
       const name = d.counterparty?.name ?? 'mijoz';
       const remaining = d.totalMinor - d.paidMinor;
@@ -353,15 +361,16 @@ export class DebtService {
         skipped.push({ id: d.id, name, reason: 'no_debt' });
         continue;
       }
+      const text = renderReminderText(tpl, {
+        name,
+        remainingMinor: remaining,
+        totalMinor: d.totalMinor,
+        contact,
+      });
       // notifyCounterparty hech qachon throw qilmaydi — { sent, reason } qaytaradi;
       // reason (no_phone/no_chat/telegram_off/...) o'zi bilan uzatiladi.
       const res = await this.telegram
-        .notifyCounterparty(
-          accountId,
-          d.counterpartyId,
-          reminderMessage({ name, remainingMinor: remaining, contact }),
-          'reminder',
-        )
+        .notifyCounterparty(accountId, d.counterpartyId, text, 'reminder')
         .catch(() => ({ sent: false, reason: 'send_error' }) as { sent: boolean; reason?: string });
       if (res.sent) queued += 1;
       else skipped.push({ id: d.id, name, reason: res.reason ?? 'no_telegram_chat' });

@@ -2,9 +2,10 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { NotificationService } from '../notification/notification.service.js';
+import { MessageTemplateService } from '../sms/sms-template.service.js';
 import { SmsService } from '../sms/sms.service.js';
 import { TelegramService } from '../telegram/telegram.service.js';
-import { reminderMessage } from './debt-telegram.util.js';
+import { renderReminderText } from './telegram-template-render.util.js';
 
 /**
  * QO'NG'IROQ ESLATMASI (2026-07-12 talab): «vaqt kelganda notification bilan
@@ -34,6 +35,8 @@ export class DebtReminderService {
     @Inject(TelegramService) private readonly telegram: TelegramService,
     // Xabar aloqa-bloki uchun kompaniya aloqa ma'lumotlari (CompanySettings).
     @Inject(SmsService) private readonly sms: SmsService,
+    // Tahrirlanadigan Telegram qarz-shabloni (default; yo'q bo'lsa fallback).
+    @Inject(MessageTemplateService) private readonly msgTemplates: MessageTemplateService,
   ) {}
 
   @Cron('0 * * * * *') // har daqiqa, 0-soniyada
@@ -122,6 +125,9 @@ export class DebtReminderService {
         string,
         { phone: string; card: string; cardOwner: string }
       >();
+      // Default Telegram shabloni ham account bo'yicha bir marta olinadi (yo'q →
+      // renderReminderText fallback hardcoded matnni ishlatadi).
+      const tplByAccount = new Map<string, { body: string; enabled: boolean } | null>();
       for (const d of due) {
         const remaining = d.totalMinor - d.paidMinor;
         if (remaining <= 0n) continue;
@@ -130,11 +136,21 @@ export class DebtReminderService {
           contact = await this.sms.getContacts(d.accountId);
           contactByAccount.set(d.accountId, contact);
         }
+        let tpl = tplByAccount.get(d.accountId);
+        if (tpl === undefined) {
+          tpl = await this.msgTemplates.findDefault(d.accountId, 'telegram');
+          tplByAccount.set(d.accountId, tpl);
+        }
         await this.telegram
           .notifyCounterparty(
             d.accountId,
             d.counterpartyId,
-            reminderMessage({ name: d.counterparty.name, remainingMinor: remaining, contact }),
+            renderReminderText(tpl, {
+              name: d.counterparty.name,
+              remainingMinor: remaining,
+              totalMinor: d.totalMinor,
+              contact,
+            }),
             'reminder',
           )
           .catch(() => {

@@ -16,6 +16,8 @@
  */
 
 import { Eta } from 'eta';
+import { formatSomMinor } from '../sms/sms-render.util.js';
+import { reminderMessage } from './debt-telegram.util.js';
 
 const ZERO_WIDTH_SPACE = '​';
 
@@ -62,4 +64,36 @@ export function renderTelegramTemplate(body: string, ctx: TelegramTemplateContex
   const out = eta.renderString(body, safe as unknown as Record<string, unknown>);
   if (typeof out !== 'string') throw new Error('renderTelegramTemplate: Eta returned non-string');
   return out;
+}
+
+/**
+ * Qarz-eslatma Telegram matni: tanlangan/default shablonni render qiladi;
+ * shablon YO'Q yoki o'chirilgan bo'lsa — eski hardcoded `reminderMessage`
+ * (fallback, backward-compatible). Bulk + cron + bitta-yuborish shu YAGONA
+ * yo'ldan foydalanadi (DRY), shuning uchun uchala joyda xulq bir xil.
+ */
+export function renderReminderText(
+  tpl: { body: string; enabled: boolean } | null,
+  args: {
+    name: string;
+    remainingMinor: bigint;
+    totalMinor: bigint;
+    contact: { phone: string; card: string; cardOwner: string };
+  },
+): string {
+  if (tpl?.enabled) {
+    return renderTelegramTemplate(tpl.body, {
+      counterparty: { name: args.name },
+      debt: {
+        remainingFormatted: formatSomMinor(args.remainingMinor),
+        totalFormatted: formatSomMinor(args.totalMinor),
+      },
+      company: args.contact,
+    });
+  }
+  return reminderMessage({
+    name: args.name,
+    remainingMinor: args.remainingMinor,
+    contact: args.contact,
+  });
 }

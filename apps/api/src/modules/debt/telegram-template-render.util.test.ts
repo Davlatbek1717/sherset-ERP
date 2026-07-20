@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { renderTelegramTemplate } from './telegram-template-render.util.js';
+import { renderReminderText, renderTelegramTemplate } from './telegram-template-render.util.js';
 
 const ctx = {
   counterparty: { name: 'Akmal aka' },
@@ -43,5 +43,29 @@ describe('renderTelegramTemplate', () => {
 
   it("buzuq o'zgaruvchi Eta throw qiladi (service saqlashdan oldin tutadi)", () => {
     expect(() => renderTelegramTemplate('{{= custamer.name }}', ctx)).toThrow();
+  });
+});
+
+describe('renderReminderText — shablon yoki fallback', () => {
+  const contact = { phone: '+998900000000', card: '0000', cardOwner: 'Egasi' };
+  const args = { name: 'Akmal', remainingMinor: 125000000n, totalMinor: 200000000n, contact };
+
+  it('enabled shablon → render qilinadi', () => {
+    const out = renderReminderText(
+      { body: 'Qarz {{= debt.remainingFormatted }} som', enabled: true },
+      args,
+    );
+    expect(out).toBe('Qarz 1 250 000 som');
+  });
+
+  it('shablon null → fallback (hardcoded reminderMessage)', () => {
+    const out = renderReminderText(null, args);
+    expect(out).toContain('Assalomu alaykum');
+    expect(out).toContain('SHERSET jamoasi!');
+  });
+
+  it("shablon o'chirilgan (enabled:false) → fallback", () => {
+    const out = renderReminderText({ body: 'x', enabled: false }, args);
+    expect(out).toContain('Assalomu alaykum');
   });
 });

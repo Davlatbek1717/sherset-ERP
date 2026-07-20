@@ -406,5 +406,7 @@ export type DebtPaymentsFeedFilterInput = z.infer<typeof DebtPaymentsFeedFilterS
 export const BulkRemindersSchema = z.object({
   ids: z.array(z.string().uuid()).min(1).max(500),
   channel: z.enum(['sms', 'telegram']),
+  /** Telegram uchun tanlangan shablon (berilmasa kanalning default'i; ikkovi yo'q → fallback). */
+  templateId: z.string().uuid().optional(),
 });
 export type BulkRemindersInput = z.infer<typeof BulkRemindersSchema>;
