@@ -36,6 +36,14 @@ export type SendSmsInput = z.infer<typeof SendSmsSchema>;
 export const SmsLogStatusSchema = z.enum(['pending', 'sent', 'dead', 'failed']);
 export type SmsLogStatus = z.infer<typeof SmsLogStatusSchema>;
 
+/** Mijozga ko'rsatiladigan kompaniya aloqa ma'lumotlari (CompanySettings). */
+export const SaveContactsSchema = z.object({
+  phone: optionalEmpty(30),
+  card: optionalEmpty(40),
+  cardOwner: optionalEmpty(120),
+});
+export type SaveContactsInput = z.infer<typeof SaveContactsSchema>;
+
 export const ListSmsLogsSchema = z.object({
   status: SmsLogStatusSchema.optional(),
   toPhone: z.string().optional(),

@@ -8,8 +8,10 @@ import {
   eskizLogin,
   eskizSend,
 } from './eskiz.client.js';
+import { DEFAULT_MESSAGING_CONTACT } from './sms-render.util.js';
 import {
   ListSmsLogsSchema,
+  SaveContactsSchema,
   type SaveSmsConfigInput,
   SaveSmsConfigSchema,
   type SendSmsInput,
@@ -130,6 +132,54 @@ export class SmsService {
       data: { lastTestedAt: new Date(), lastTestOk: ok, lastTestMsg: message.slice(0, 500) },
     });
     return { ok, message };
+  }
+
+  // --- messaging contacts (CompanySettings) -----------------------------
+
+  /** Sozlama formasi uchun — REAL qiymatlar (bo'sh = null). */
+  async getRawContacts(accountId: string) {
+    const s = await this.prisma.client.companySettings.findUnique({
+      where: { accountId },
+      select: { messagingPhone: true, messagingCard: true, messagingCardOwner: true },
+    });
+    return {
+      phone: s?.messagingPhone ?? null,
+      card: s?.messagingCard ?? null,
+      cardOwner: s?.messagingCardOwner ?? null,
+    };
+  }
+
+  /** Render uchun — bo'sh maydonlar Sherset default bilan to'ldiriladi. */
+  async getContacts(accountId: string) {
+    const r = await this.getRawContacts(accountId);
+    return {
+      phone: r.phone || DEFAULT_MESSAGING_CONTACT.phone,
+      card: r.card || DEFAULT_MESSAGING_CONTACT.card,
+      cardOwner: r.cardOwner || DEFAULT_MESSAGING_CONTACT.cardOwner,
+    };
+  }
+
+  async saveContacts(accountId: string, raw: unknown) {
+    const p = SaveContactsSchema.safeParse(raw);
+    if (!p.success) {
+      throw new BadRequestException(p.error.issues.map((i) => i.message).join(', '));
+    }
+    const { phone, card, cardOwner } = p.data;
+    await this.prisma.client.companySettings.upsert({
+      where: { accountId },
+      create: {
+        accountId,
+        messagingPhone: phone ?? null,
+        messagingCard: card ?? null,
+        messagingCardOwner: cardOwner ?? null,
+      },
+      update: {
+        messagingPhone: phone ?? null,
+        messagingCard: card ?? null,
+        messagingCardOwner: cardOwner ?? null,
+      },
+    });
+    return this.getRawContacts(accountId);
   }
 
   // --- send / queue -----------------------------------------------------
