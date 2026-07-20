@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import bigInt from 'big-integer';
 import { Api, TelegramClient } from 'telegram';
 import { computeCheck } from 'telegram/Password.js';
 import { StringSession } from 'telegram/sessions/index.js';
@@ -66,6 +67,36 @@ class GramjsClientHandle implements TelegramClientHandle {
 
   async getEntity(phone: string): Promise<unknown> {
     return this.client.getEntity(phone);
+  }
+
+  /**
+   * `contacts.ImportContacts` — resolves a phone number to a User even if
+   * it's never been contacted before (unlike `getEntity`, which only works
+   * for numbers already resolvable from gramjs's own session cache). This
+   * is exactly what Telegram's own "add contact by phone" flow does under
+   * the hood; the imported entry is kept (matches the account's own contact
+   * list showing customers — harmless, and lets a later cache-miss reuse it
+   * via plain `getEntity` too).
+   */
+  async resolvePhone(phone: string): Promise<unknown> {
+    const result = await this.client.invoke(
+      new Api.contacts.ImportContacts({
+        contacts: [
+          new Api.InputPhoneContact({
+            clientId: bigInt(Date.now()),
+            phone,
+            firstName: phone,
+            lastName: '',
+          }),
+        ],
+      }),
+    );
+    const users = (result as unknown as { users?: unknown[] }).users ?? [];
+    const user = users[0];
+    if (!user) {
+      throw new Error(`resolvePhone: "${phone}" Telegram'da topilmadi (raqam ro'yxatdan o'tmagan)`);
+    }
+    return user;
   }
 
   async sendMessage(entity: unknown, text: string): Promise<{ messageId: string }> {

@@ -26,6 +26,39 @@ import {
  * Tests inject a `TelegramClientFactory` stub; production wires the real
  * gramjs binding via `GramjsTelegramClientFactory`.
  */
+/**
+ * Hard ceiling for any single gramjs call (connect/auth-check/getEntity/
+ * sendMessage). 2026-07-20 incident: this VPS's network path to Telegram had
+ * intermittent connectivity trouble (recurring `_updateLoop` TIMEOUT errors
+ * in the logs) — a gramjs call that never settles has NO built-in timeout of
+ * its own, so it hung forever. Since every call sat behind `await` with no
+ * race, `HrTelegramOutboxWorker`'s `running` guard never reset to false,
+ * permanently wedging the ENTIRE outbound queue — confirmed reproducible
+ * even immediately after a fresh `pm2 restart` (stuck again within ~20s,
+ * same tick). This wrapper turns a hang into an ordinary thrown Error, which
+ * the existing retry-backoff path (retry-backoff.util.ts) already handles
+ * correctly — no other behavior change.
+ */
+const MTPROTO_CALL_TIMEOUT_MS = 25_000;
+
+function withTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`mtproto_timeout: ${label} exceeded ${MTPROTO_CALL_TIMEOUT_MS}ms`));
+    }, MTPROTO_CALL_TIMEOUT_MS);
+    promise.then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(timer);
+        reject(e);
+      },
+    );
+  });
+}
+
 @Injectable()
 export class MtprotoWorkerService implements MtprotoAdapter {
   private readonly logger = new Logger(MtprotoWorkerService.name);
@@ -53,7 +86,7 @@ export class MtprotoWorkerService implements MtprotoAdapter {
         if (!client) continue; // no account / no session in this slot
 
         const entity = await this.resolveEntity(client, opts.accountId, slot, opts.toPhone);
-        const result = await client.sendMessage(entity, opts.text);
+        const result = await withTimeout(client.sendMessage(entity, opts.text), 'sendMessage');
         return { slot, messageId: result.messageId };
       } catch (e) {
         if (isGramjsFloodError(e)) {
@@ -122,8 +155,8 @@ export class MtprotoWorkerService implements MtprotoAdapter {
       apiHash,
       sessionString,
     });
-    await client.connect();
-    if (!(await client.isUserAuthorized())) {
+    await withTimeout(client.connect(), 'connect');
+    if (!(await withTimeout(client.isUserAuthorized(), 'isUserAuthorized'))) {
       this.logger.warn(
         `Slot ${slot} acc=${accountId}: session not authorized — admin must re-login`,
       );
@@ -136,8 +169,18 @@ export class MtprotoWorkerService implements MtprotoAdapter {
 
   /**
    * Entity resolution with persistent cache. Cache hit returns immediately;
-   * miss falls through to `client.getEntity(phone)` and persists the result.
-   * Stored value is opaque JSON from gramjs (`entity.toJSON?.()` or itself).
+   * miss falls through to `client.resolvePhone(phone)` and persists the
+   * result. Stored value is opaque JSON from gramjs (`entity.toJSON?.()` or
+   * itself).
+   *
+   * 2026-07-20: was `client.getEntity(phone)`, which ONLY resolves numbers
+   * gramjs already has cached (existing contacts / prior chats) — a
+   * brand-new customer's phone threw "Cannot find any entity", so their
+   * FIRST reminder never went out at all (confirmed live: debt.debt_issued
+   * failed with exactly that error before this fix). `resolvePhone` uses
+   * `contacts.ImportContacts`, which resolves ANY number that's on
+   * Telegram, contact or not — matching what tapping "new contact by phone"
+   * does in a normal Telegram client.
    */
   private async resolveEntity(
     client: TelegramClientHandle,
@@ -147,7 +190,7 @@ export class MtprotoWorkerService implements MtprotoAdapter {
   ): Promise<unknown> {
     const cached = await this.entityCache.get(accountId, slot, phone);
     if (cached) return cached;
-    const fresh = await client.getEntity(phone);
+    const fresh = await withTimeout(client.resolvePhone(phone), 'resolvePhone');
     const serialized = serializeEntityForCache(fresh);
     if (serialized !== null) {
       // JSON.parse(JSON.stringify(...)) round-trip guarantees Prisma-JSON-safe.

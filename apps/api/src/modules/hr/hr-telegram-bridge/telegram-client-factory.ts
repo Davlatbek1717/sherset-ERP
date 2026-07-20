@@ -23,6 +23,17 @@ export interface TelegramClientHandle {
   disconnect(): Promise<void>;
   isUserAuthorized(): Promise<boolean>;
   getEntity(phone: string): Promise<unknown>;
+  /**
+   * Resolve a phone number to a sendable peer WITHOUT requiring it to
+   * already be a saved contact (2026-07-20 fix — `getEntity(phone)` only
+   * resolves numbers gramjs already has cached/contacted; for a brand-new
+   * customer phone it throws "Cannot find any entity", so reminders to
+   * first-time customers never went out). Uses `contacts.ImportContacts`,
+   * the same mechanism a normal Telegram client uses when you add someone
+   * by phone number — works for any number that's on Telegram, contact or
+   * not. Throws if the number isn't on Telegram at all.
+   */
+  resolvePhone(phone: string): Promise<unknown>;
   sendMessage(entity: unknown, text: string): Promise<{ messageId: string }>;
 
   /** Login step 1 — server sends OTP via SMS/Telegram. */

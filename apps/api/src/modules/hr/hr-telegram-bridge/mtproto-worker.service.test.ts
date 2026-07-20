@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { encryptHrSession } from '../hr-shared/crypto.util.js';
 import { MtprotoFloodError } from './mtproto-adapter.js';
 import { MtprotoWorkerService } from './mtproto-worker.service.js';
@@ -16,6 +16,7 @@ function makeClient(overrides: Partial<TelegramClientHandle> = {}): TelegramClie
     disconnect: vi.fn().mockResolvedValue(undefined),
     isUserAuthorized: vi.fn().mockResolvedValue(true),
     getEntity: vi.fn().mockResolvedValue({ id: 'entity-1' }),
+    resolvePhone: vi.fn().mockResolvedValue({ id: 'entity-1' }),
     sendMessage: vi.fn().mockResolvedValue({ messageId: 'm-1' }),
     sendCode: vi.fn().mockResolvedValue({ phoneCodeHash: 'hash' }),
     signIn: vi.fn().mockResolvedValue(undefined),
@@ -119,12 +120,12 @@ describe('MtprotoWorkerService', () => {
     });
 
     expect(result).toEqual({ slot: 1, messageId: 'm-1' });
-    expect(client1.getEntity).toHaveBeenCalledWith('+998901234567');
+    expect(client1.resolvePhone).toHaveBeenCalledWith('+998901234567');
     expect(client1.sendMessage).toHaveBeenCalledWith({ id: 'entity-1' }, 'salom');
     expect(cache.set).toHaveBeenCalledWith('acc1', 1, '+998901234567', expect.anything());
   });
 
-  it('entity cache HIT skips getEntity (no network round-trip)', async () => {
+  it('entity cache HIT skips resolvePhone (no network round-trip)', async () => {
     const client1 = makeClient();
     handles.set('100', client1);
     cache.get.mockResolvedValue({ id: 'cached-entity' });
@@ -141,9 +142,68 @@ describe('MtprotoWorkerService', () => {
 
     await adapter.sendMessage({ accountId: 'acc1', toPhone: '+998901234567', text: 'x' });
 
-    expect(client1.getEntity).not.toHaveBeenCalled();
+    expect(client1.resolvePhone).not.toHaveBeenCalled();
     expect(client1.sendMessage).toHaveBeenCalledWith({ id: 'cached-entity' }, 'x');
     expect(cache.set).not.toHaveBeenCalled();
+  });
+
+  // 2026-07-20 bug: `getEntity(phone)` only resolves numbers gramjs already
+  // knows (existing contacts/chats) — a brand-new customer phone threw
+  // "Cannot find any entity", so their first-ever reminder never sent.
+  // `resolvePhone` (contacts.ImportContacts) must be used instead, and it
+  // must work for a number NOT already a contact.
+  it('resolves and sends to a phone that is NOT an existing contact', async () => {
+    const client1 = makeClient({
+      resolvePhone: vi.fn().mockResolvedValue({ id: 'new-customer-entity' }),
+    });
+    handles.set('100', client1);
+    const accounts = makeAccountsSvc({
+      active: { 1: { apiId: 100, apiHashEncrypted, sessionEncrypted } },
+    });
+    const adapter = new MtprotoWorkerService(
+      factory,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      accounts as any,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      cache as any,
+    );
+
+    const result = await adapter.sendMessage({
+      accountId: 'acc1',
+      toPhone: '+998914460528',
+      text: 'Sizga 1 000 so‘m miqdorida qarz rasmiylashtirildi.',
+    });
+
+    expect(result).toEqual({ slot: 1, messageId: 'm-1' });
+    expect(client1.resolvePhone).toHaveBeenCalledWith('+998914460528');
+    expect(client1.sendMessage).toHaveBeenCalledWith(
+      { id: 'new-customer-entity' },
+      'Sizga 1 000 so‘m miqdorida qarz rasmiylashtirildi.',
+    );
+  });
+
+  it('phone genuinely not on Telegram → clear error, not a silent hang', async () => {
+    const client1 = makeClient({
+      resolvePhone: vi
+        .fn()
+        .mockRejectedValue(new Error('resolvePhone: "+998900000001" Telegram\'da topilmadi')),
+    });
+    handles.set('100', client1);
+    const accounts = makeAccountsSvc({
+      active: { 1: { apiId: 100, apiHashEncrypted, sessionEncrypted } },
+    });
+    const adapter = new MtprotoWorkerService(
+      factory,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      accounts as any,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      cache as any,
+    );
+
+    await expect(
+      adapter.sendMessage({ accountId: 'acc1', toPhone: '+998900000001', text: 'x' }),
+    ).rejects.toThrow(/topilmadi/);
+    expect(client1.sendMessage).not.toHaveBeenCalled();
   });
 
   it('2-slot failover: slot 1 FloodWaitError → slot 2 delivers', async () => {
@@ -183,7 +243,7 @@ describe('MtprotoWorkerService', () => {
 
   it('already-flooded slot is skipped silently (no client creation)', async () => {
     const client2 = makeClient({ sendMessage: vi.fn().mockResolvedValue({ messageId: 'm-2' }) });
-    const factorySpy = vi.fn(() => client2);
+    const factorySpy = vi.fn((_args: TelegramClientFactoryArgs) => client2);
     const accounts = makeAccountsSvc({
       active: {
         1: { apiId: 100, apiHashEncrypted, sessionEncrypted },
@@ -326,5 +386,79 @@ describe('MtprotoWorkerService', () => {
     await adapter.sendMessage({ accountId: 'acc1', toPhone: '+998901234567', text: 'a' });
     adapter.releaseClient('acc1', 1);
     expect(client1.disconnect).toHaveBeenCalled();
+  });
+
+  // 2026-07-20 incident: a gramjs call that never settles (VPS network trouble
+  // to Telegram) has no built-in timeout — it hung `sendMessage` forever,
+  // which left HrTelegramOutboxWorker's `running` guard stuck `true` and
+  // permanently wedged the whole outbound queue (reproduced even right after
+  // a fresh `pm2 restart`). A 25s ceiling around each gramjs call turns a
+  // hang into an ordinary rejected Error the existing retry logic can handle.
+  describe('hung gramjs call does not wedge the worker forever', () => {
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
+
+    it('sendMessage that never resolves times out and fails over to slot 2', async () => {
+      const client1 = makeClient({
+        // Simulates the observed hang: the promise never settles.
+        sendMessage: vi.fn(() => new Promise<{ messageId: string }>(() => {})),
+      });
+      const client2 = makeClient({ sendMessage: vi.fn().mockResolvedValue({ messageId: 'm-2' }) });
+      handles.set('100', client1);
+      handles.set('200', client2);
+
+      const accounts = makeAccountsSvc({
+        active: {
+          1: { apiId: 100, apiHashEncrypted, sessionEncrypted },
+          2: { apiId: 200, apiHashEncrypted, sessionEncrypted },
+        },
+      });
+      const adapter = new MtprotoWorkerService(
+        factory,
+        // biome-ignore lint/suspicious/noExplicitAny: test wiring
+        accounts as any,
+        // biome-ignore lint/suspicious/noExplicitAny: test wiring
+        cache as any,
+      );
+
+      const resultPromise = adapter.sendMessage({
+        accountId: 'acc1',
+        toPhone: '+998901234567',
+        text: 'salom',
+      });
+      // Flush the 25s timeout on slot 1 so the adapter can move on to slot 2.
+      await vi.advanceTimersByTimeAsync(26_000);
+      const result = await resultPromise;
+
+      expect(result).toEqual({ slot: 2, messageId: 'm-2' });
+    });
+
+    it('all slots hung → rejects instead of hanging the caller forever', async () => {
+      const client1 = makeClient({
+        sendMessage: vi.fn(() => new Promise<{ messageId: string }>(() => {})),
+      });
+      handles.set('100', client1);
+      const accounts = makeAccountsSvc({
+        active: { 1: { apiId: 100, apiHashEncrypted, sessionEncrypted } },
+      });
+      const adapter = new MtprotoWorkerService(
+        factory,
+        // biome-ignore lint/suspicious/noExplicitAny: test wiring
+        accounts as any,
+        // biome-ignore lint/suspicious/noExplicitAny: test wiring
+        cache as any,
+      );
+
+      const resultPromise = adapter.sendMessage({
+        accountId: 'acc1',
+        toPhone: '+998901234567',
+        text: 'salom',
+      });
+      const assertion = expect(resultPromise).rejects.toThrow(
+        /mtproto_timeout|mtproto_all_slots_failed/,
+      );
+      await vi.advanceTimersByTimeAsync(26_000);
+      await assertion;
+    });
   });
 });
