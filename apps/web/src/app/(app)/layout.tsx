@@ -583,13 +583,21 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               mounted as a hidden cmd+k overlay so power users can still
               jump between modules without surfacing a navbar trigger. */}
           <CommandPalette hideTrigger />
-          <FontSizeToggle />
-          <ChatButton />
+          {/* <sm (phone): only the notification bell stays on the top bar —
+              the rest overflow the narrow viewport. Font-size/chat/help show
+              from `sm` up; language moves into the hamburger drawer below. */}
+          <div className="hidden items-center gap-1 sm:flex">
+            <FontSizeToggle />
+            <ChatButton />
+          </div>
           <NotificationBell />
-          <HelpButton />
-          <LocaleSwitcher />
+          <div className="hidden items-center gap-1 sm:flex">
+            <HelpButton />
+            <LocaleSwitcher />
+          </div>
         </div>
       }
+      drawerExtras={<LocaleSwitcher variant="plain" />}
       user={{
         name: auth.user.name,
         email: auth.user.email,

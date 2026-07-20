@@ -11,8 +11,12 @@ import { useTransition } from 'react';
  * Compact locale picker. Calls the `setLocale` server action which sets the
  * NEXT_LOCALE cookie and revalidates the layout, then refreshes the router so
  * the page re-renders with the new messages without a full reload.
+ *
+ * `variant`: 'navbar' (default) — white text/border for the blue top bar;
+ * 'plain' — dark text/border for light surfaces (e.g. the mobile nav Drawer,
+ * where the navbar-white styling would be invisible). 2026-07-20j.
  */
-export function LocaleSwitcher() {
+export function LocaleSwitcher({ variant = 'navbar' }: { variant?: 'navbar' | 'plain' }) {
   const current = useLocale() as Locale;
   const t = useTranslations('locale');
   const [pending, start] = useTransition();
@@ -28,7 +32,11 @@ export function LocaleSwitcher() {
 
   return (
     <label
-      className="inline-flex items-center gap-1 text-sm text-white/80"
+      className={
+        variant === 'plain'
+          ? 'inline-flex items-center gap-1 text-[var(--ms-text-secondary)] text-sm'
+          : 'inline-flex items-center gap-1 text-sm text-white/80'
+      }
       data-test-id="locale-switcher"
     >
       <span className="sr-only">{t('switcher_label')}</span>
@@ -39,8 +47,13 @@ export function LocaleSwitcher() {
         // Style the SELECT (not the wrapper) — a border in `className` would sit on
         // the wrapper while the select keeps its own border, giving the double line
         // the user flagged. selectClassName overrides the select's resting border to
-        // white for the blue navbar (single, crisp border).
-        selectClassName="h-7 border-white/40 bg-transparent px-2 text-white text-xs focus:border-white/70 disabled:opacity-60"
+        // white for the blue navbar (single, crisp border). The 'plain' variant uses
+        // the default dark-on-light input styling for light surfaces (Drawer).
+        selectClassName={
+          variant === 'plain'
+            ? 'h-8 px-2 text-sm'
+            : 'h-7 border-white/40 bg-transparent px-2 text-white text-xs focus:border-white/70 disabled:opacity-60'
+        }
       >
         {locales.map((l) => (
           <option key={l} value={l} className="text-[var(--ms-text-primary)]">

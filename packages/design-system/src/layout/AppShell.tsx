@@ -35,6 +35,13 @@ export interface AppShellProps {
    * block — designed for compact controls like a locale switcher.
    */
   topRightExtras?: React.ReactNode;
+  /**
+   * Controls surfaced at the BOTTOM of the mobile nav Drawer (<lg). On phones
+   * the top bar has no room for the full top-right cluster, so essentials that
+   * still matter on mobile (e.g. language switch) are passed here and rendered
+   * inside the drawer. Style them for a LIGHT surface (the drawer bg is light).
+   */
+  drawerExtras?: React.ReactNode;
   topBanner?: React.ReactNode;
   children: React.ReactNode;
   className?: string;
@@ -53,6 +60,7 @@ export function AppShell({
   primaryNav,
   user,
   topRightExtras,
+  drawerExtras,
   topBanner,
   children,
   className,
@@ -223,9 +231,11 @@ export function AppShell({
               trigger={
                 <button
                   type="button"
-                  className="shrink-0 flex items-center gap-2.5 pl-4 border-l border-white/15 ml-3 cursor-pointer hover:opacity-80 transition-opacity bg-transparent"
+                  className="ml-1 flex shrink-0 cursor-pointer items-center gap-2.5 border-white/15 bg-transparent transition-opacity hover:opacity-80 sm:ml-3 sm:border-l sm:pl-4"
                 >
-                  <div className="text-right text-[11px] leading-tight">
+                  {/* <sm: name/email text hidden — the mobile top bar has no room
+                      (else the whole cluster overflows the viewport). Avatar only. */}
+                  <div className="hidden text-right text-[11px] leading-tight sm:block">
                     <div className="font-medium text-white">{user.name}</div>
                     {user.email && <div className="text-white/65 text-[10px]">{user.email}</div>}
                   </div>
@@ -289,6 +299,13 @@ export function AppShell({
             </a>
           ))}
         </nav>
+        {/* Bottom controls (language, etc.) — moved off the cramped mobile top
+            bar into the drawer so they stay reachable on phones. */}
+        {drawerExtras && (
+          <div className="mt-2 flex flex-wrap items-center gap-2 border-[var(--ms-border-default)] border-t p-3">
+            {drawerExtras}
+          </div>
+        )}
       </Drawer>
     </div>
   );
