@@ -1,6 +1,13 @@
 /**
  * MIJOZGA KETADIGAN TELEGRAM XABARLARI (2026-07-13).
  *
+ * 2026-07-20e: qarz yaratilganda/to'lov qabul qilinganda/storno bo'lganda
+ * AVTOMATIK yuboriladigan xabarlar (debtIssuedMessage/paymentMessage/
+ * debtClosedMessage/paymentReversedMessage) olib tashlandi — foydalanuvchi
+ * buni so'ramagan edi, faqat QO'LDA bosiladigan «Xabar yuborish» tugmasi
+ * (reminderMessage, debt.service.ts#sendTelegramReminder) xabar yuborishi
+ * kerak edi. Endi shu faylda faqat reminderMessage qoladi.
+ *
  * Bu matnlarni MIJOZ o'qiydi — xodim emas. Shuning uchun:
  *   • hurmat bilan, ayblovsiz ohangda (mijoz — hamkor, qarzdor emas)
  *   • summalar bo'sh joy bilan ajratilgan: 1 250 000 so'm (o'qish oson)
@@ -51,18 +58,6 @@ export function fmtSom(minor: bigint): string {
   return (minor / 100n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
 }
 
-/** ISO sana → «20.07.2026, 09:00» (Toshkent vaqti). */
-export function fmtWhen(d: Date): string {
-  return d.toLocaleString('ru-RU', {
-    timeZone: 'Asia/Tashkent',
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
-
 // Barcha matnlar HTML TEGSIZ, lekin GramJS MarkdownV2 bilan bir xil
 // professional tuzilishда: salomlashuv + «hurmatli {nom}» → mazmun (summa
 // raqami *qalin* HAM __tagliq__) → 📞💳👨‍💻 aloqa/karta bloki (label'lar
@@ -85,84 +80,6 @@ function contactBlock(): string[] {
     `💳 *Karta raqam:* ${SHERSET_CARD}`,
     `👨‍💻 *Karta egasi:* ${SHERSET_CARD_OWNER}`,
   ];
-}
-
-/** Yangi qarz berildi (2026-07-20: reminderMessage bilan bir xil vizual uslub). */
-export function debtIssuedMessage(args: {
-  name: string;
-  totalMinor: bigint;
-  nextContactAt: Date | null;
-}): string {
-  const lines = [
-    `Assalomu alaykum, hurmatli ${mdSafe(args.name)}!`,
-    '',
-    `🧾 Sizga *__${fmtSom(args.totalMinor)}__* so'm miqdorida qarz rasmiylashtirildi.`,
-  ];
-  if (args.nextContactAt) {
-    lines.push(`To'lov muddati: *${fmtWhen(args.nextContactAt)}*`);
-  }
-  lines.push('', ...contactBlock(), '');
-  lines.push(
-    "To'lovni amalga oshirgach, chekni shu yerga yuborishingiz mumkin.",
-    'Hamkorligingiz uchun rahmat!',
-    'SHERSET jamoasi!',
-  );
-  return lines.join('\n');
-}
-
-/** To'lov qabul qilindi, qoldiq bor (2026-07-20: bir xil vizual uslub). */
-export function paymentMessage(args: {
-  name: string;
-  amountMinor: bigint;
-  remainingMinor: bigint;
-}): string {
-  return [
-    `Assalomu alaykum, hurmatli ${mdSafe(args.name)}!`,
-    '',
-    `💵 *__${fmtSom(args.amountMinor)}__* so'm to'lovingiz qabul qilindi, rahmat!`,
-    `Qolgan qarzingiz: *__${fmtSom(args.remainingMinor)}__* so'm.`,
-    '',
-    ...contactBlock(),
-    '',
-    'SHERSET jamoasi!',
-  ].join('\n');
-}
-
-/** Qarz to'liq yopildi (2026-07-20: bir xil vizual uslub). */
-export function debtClosedMessage(args: { name: string; amountMinor: bigint }): string {
-  return [
-    `Assalomu alaykum, hurmatli ${mdSafe(args.name)}!`,
-    '',
-    `✅ *__${fmtSom(args.amountMinor)}__* so'm to'lovingiz qabul qilindi. Qarzingiz to'liq yopildi!`,
-    '',
-    "Hamkorligingiz uchun katta rahmat! Savollar bo'lsa, biz bilan bog'laning:",
-    `📞 ${SHERSET_CONTACT_PHONE}`,
-    '',
-    'SHERSET jamoasi!',
-  ].join('\n');
-}
-
-/**
- * To'lov yozuvi QAYTARILDI (storno, 2026-07-16). Mijoz avval «qabul qilindi»
- * xabarini olgan — tuzatishni ham bilishi kerak, aks holda uning hisob-kitobi
- * biznikidan ajralib qoladi. Ohang: ayblovsiz, «xatolik tuzatildi».
- * (2026-07-20: bir xil vizual uslub.)
- */
-export function paymentReversedMessage(args: {
-  name: string;
-  amountMinor: bigint;
-  remainingMinor: bigint;
-}): string {
-  return [
-    `Assalomu alaykum, hurmatli ${mdSafe(args.name)}!`,
-    '',
-    `⚠️ *__${fmtSom(args.amountMinor)}__* so'm to'lov yozuvi texnik xatolik tufayli bekor qilindi.`,
-    `Joriy qarzingiz: *__${fmtSom(args.remainingMinor)}__* so'm.`,
-    '',
-    ...contactBlock(),
-    '',
-    'SHERSET jamoasi!',
-  ].join('\n');
 }
 
 /**
