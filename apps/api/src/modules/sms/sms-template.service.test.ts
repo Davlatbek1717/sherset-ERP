@@ -42,4 +42,25 @@ describe('SmsTemplateService', () => {
       svc.upsert('acc', 'debt_reminder', { name: 'Q', body: '', enabled: true }),
     ).rejects.toThrow();
   });
+
+  it("upsert — noto'g'ri o'zgaruvchili shablon rad etiladi (test-render)", async () => {
+    const svc = new SmsTemplateService(makePrisma());
+    await expect(
+      svc.upsert('acc', 'debt_reminder', {
+        name: 'Q',
+        body: 'Salom {{= custamer.name }}', // typo: custamer (yo'q o'zgaruvchi)
+        enabled: true,
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("upsert — to'g'ri o'zgaruvchili shablon saqlanadi", async () => {
+    const svc = new SmsTemplateService(makePrisma());
+    const r = await svc.upsert('acc', 'debt_reminder', {
+      name: 'Q',
+      body: 'Salom {{= counterparty.name }}, {{= debt.remainingFormatted }}',
+      enabled: true,
+    });
+    expect(r.body).toContain('counterparty.name');
+  });
 });

@@ -27,18 +27,16 @@ function makeDeps(
     send: vi.fn().mockResolvedValue({ id: 'log1', status: 'pending' }),
   };
   const smsTemplates = {
-    findByKey: vi
-      .fn()
-      .mockResolvedValue(
-        opts.template === undefined
-          ? {
-              key: 'debt_reminder',
-              name: 'Q',
-              body: 'Qarz {{= debt.remainingFormatted }}',
-              enabled: true,
-            }
-          : opts.template,
-      ),
+    findByKey: vi.fn().mockResolvedValue(
+      opts.template === undefined
+        ? {
+            key: 'debt_reminder',
+            name: 'Q',
+            body: 'Qarz {{= debt.remainingFormatted }}',
+            enabled: true,
+          }
+        : opts.template,
+    ),
   };
   const telegram = { notifyCounterparty: vi.fn().mockResolvedValue({ sent: opts.tgSent ?? true }) };
   // Konstruktor tartibi: prisma, attachments, htmlPdf, balances, telegram, sms, smsTemplates.
@@ -96,5 +94,31 @@ describe('sendBulkReminders', () => {
     const { svc } = makeDeps([debtRow()], { tgSent: true });
     const r = await svc.sendBulkReminders('acc', 'u1', { ids: [DEBT_ID], channel: 'telegram' });
     expect(r.queued).toBe(1);
+  });
+
+  it("SMS — sms.send yiqilsa: send_error skip, partiya to'xtamaydi", async () => {
+    const idA = '11111111-1111-1111-1111-111111111111';
+    const idB = '22222222-2222-2222-2222-222222222222';
+    const { svc, sms } = makeDeps([
+      debtRow({ id: idA }),
+      debtRow({ id: idB, counterparty: { name: 'Bek', phone: '+998907654321' } }),
+    ]);
+    // Birinchi qarzdorda send yiqiladi, ikkinchisi muvaffaqiyatli.
+    (sms.send as ReturnType<typeof vi.fn>)
+      .mockRejectedValueOnce(new Error('body too long'))
+      .mockResolvedValueOnce({ id: 'log2', status: 'pending' });
+    const r = await svc.sendBulkReminders('acc', 'u1', { ids: [idA, idB], channel: 'sms' });
+    expect(r.queued).toBe(1);
+    expect(r.skipped.find((s) => s.id === idA)?.reason).toBe('send_error');
+  });
+
+  it("Telegram — notifyCounterparty reason o'z-o'zicha uzatiladi", async () => {
+    const { svc, telegram } = makeDeps([debtRow()]);
+    (telegram.notifyCounterparty as ReturnType<typeof vi.fn>).mockResolvedValue({
+      sent: false,
+      reason: 'telegram_off',
+    });
+    const r = await svc.sendBulkReminders('acc', 'u1', { ids: [DEBT_ID], channel: 'telegram' });
+    expect(r.skipped[0]?.reason).toBe('telegram_off');
   });
 });

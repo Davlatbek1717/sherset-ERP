@@ -315,21 +315,29 @@ export class DebtService {
           skipped.push({ id: d.id, name, reason: 'no_phone' });
           continue;
         }
-        const body = renderSmsTemplate(template.body, {
-          counterparty: { name },
-          debt: {
-            remainingFormatted: formatSomMinor(remaining),
-            totalFormatted: formatSomMinor(d.totalMinor),
-          },
-          company: contact,
-        });
-        await this.sms.send(accountId, userId, {
-          toPhone: phone,
-          body,
-          entity: 'Debt',
-          entityId: d.id,
-        });
-        queued += 1;
+        // Bitta qarzdorda render/enqueue yiqilsa (masalan render xatosi yoki
+        // matn 1600 belgidan oshsa) — butun partiya to'xtamasin, aks holda
+        // allaqachon navbatga qo'yilganlar qolib, operator qayta bosib DUBLIKAT
+        // SMS yuborishi mumkin edi. Shu qarzdor `send_error` bilan o'tkaziladi.
+        try {
+          const body = renderSmsTemplate(template.body, {
+            counterparty: { name },
+            debt: {
+              remainingFormatted: formatSomMinor(remaining),
+              totalFormatted: formatSomMinor(d.totalMinor),
+            },
+            company: contact,
+          });
+          await this.sms.send(accountId, userId, {
+            toPhone: phone,
+            body,
+            entity: 'Debt',
+            entityId: d.id,
+          });
+          queued += 1;
+        } catch {
+          skipped.push({ id: d.id, name, reason: 'send_error' });
+        }
       }
       return { queued, skipped };
     }
@@ -343,10 +351,8 @@ export class DebtService {
         skipped.push({ id: d.id, name, reason: 'no_debt' });
         continue;
       }
-      if (!d.counterpartyId) {
-        skipped.push({ id: d.id, name, reason: 'no_telegram_chat' });
-        continue;
-      }
+      // notifyCounterparty hech qachon throw qilmaydi — { sent, reason } qaytaradi;
+      // reason (no_phone/no_chat/telegram_off/...) o'zi bilan uzatiladi.
       const res = await this.telegram
         .notifyCounterparty(
           accountId,
@@ -354,9 +360,9 @@ export class DebtService {
           reminderMessage({ name, remainingMinor: remaining, contact }),
           'reminder',
         )
-        .catch(() => ({ sent: false }) as { sent: boolean });
+        .catch(() => ({ sent: false, reason: 'send_error' }) as { sent: boolean; reason?: string });
       if (res.sent) queued += 1;
-      else skipped.push({ id: d.id, name, reason: 'no_telegram_chat' });
+      else skipped.push({ id: d.id, name, reason: res.reason ?? 'no_telegram_chat' });
     }
     return { queued, skipped };
   }

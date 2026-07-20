@@ -3134,7 +3134,8 @@
       "reason_no_debt": "нет долга",
       "reason_sms_not_configured": "SMS не настроен",
       "reason_template_disabled": "шаблон отключён",
-      "reason_no_telegram_chat": "нет Telegram чата"
+      "reason_no_telegram_chat": "нет Telegram чата",
+      "reason_send_error": "ошибка отправки"
     },
     "send_email": {
       "title": "Отправить по email",

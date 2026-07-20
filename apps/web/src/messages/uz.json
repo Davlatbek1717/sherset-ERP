@@ -3134,7 +3134,8 @@
       "reason_no_debt": "qarz yo'q",
       "reason_sms_not_configured": "SMS sozlanmagan",
       "reason_template_disabled": "shablon o'chirilgan",
-      "reason_no_telegram_chat": "Telegram chat yo'q"
+      "reason_no_telegram_chat": "Telegram chat yo'q",
+      "reason_send_error": "yuborishda xato"
     },
     "send_email": {
       "title": "Emailga yuborish",
