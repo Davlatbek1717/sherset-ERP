@@ -13,17 +13,21 @@
  * sent straight to ITS printer as raw text — all sklads print CONCURRENTLY on
  * their own printers. Sklads with no assigned printer (and the unassigned-
  * location bucket) fall back to a normal browser `window.print`. If the agent
- * isn't running at all, everything falls back to browser print (with QR codes).
+ * isn't running at all, everything falls back to browser print.
+ *
+ * 2026-07-20g: per-line QR code (linked to /scan/{productId}) removed —
+ * the omborchi picks by bin LOCATION CODE (NN-NN-NN-NN), not by scanning a
+ * per-line QR before even finding the product; the location code is now the
+ * most prominent element on each line instead of competing with a QR image.
  */
 
 import { ThermalShell } from '@/components/print/thermal-shell';
 import { api } from '@/lib/api-client';
-import { agentPrint, checkPrintAgent, type PrintResult } from '@/lib/print-agent';
+import { type PrintResult, agentPrint, checkPrintAgent } from '@/lib/print-agent';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useParams, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { QRCodeSVG } from 'qrcode.react';
 
 interface SheetLine {
   productId: string | null;
@@ -58,8 +62,8 @@ function fmtSklad(n: number | null): string {
 
 /**
  * Plain-text strip for the ESC/POS print-agent (the agent adds init + cut).
- * QR codes are omitted in agent mode (raw text) — the bin location + product
- * name carry the pick info; browser-print mode still renders the QR.
+ * The bin location code + product name carry the pick info (no QR — removed
+ * from browser mode too, 2026-07-20g).
  */
 function sheetToText(
   sheet: PickingSheet,
@@ -170,7 +174,15 @@ export default function PrintPickingPage() {
           <h2 style={{ fontWeight: 700, fontSize: 16, marginBottom: 10 }}>
             Printerlarga yuborildi
           </h2>
-          <ul style={{ display: 'flex', flexDirection: 'column', gap: 6, listStyle: 'none', padding: 0 }}>
+          <ul
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 6,
+              listStyle: 'none',
+              padding: 0,
+            }}
+          >
             {results.map((r) => (
               <li
                 key={`${r.skladNo}-${r.printer}`}
@@ -195,8 +207,8 @@ export default function PrintPickingPage() {
           </ul>
           {sheets.some((s) => !s.printerName) && (
             <p style={{ marginTop: 12, color: '#b45309', fontSize: 13 }}>
-              ⚠ Ba'zi skladlarga printer belgilanmagan — ular brauzer orqali chiqadi.
-              «Sozlamalar → Sklad → Omborchi» da printer tanlang.
+              ⚠ Ba'zi skladlarga printer belgilanmagan — ular brauzer orqali chiqadi. «Sozlamalar →
+              Sklad → Omborchi» da printer tanlang.
             </p>
           )}
         </div>
@@ -235,46 +247,37 @@ export default function PrintPickingPage() {
               </div>
               <div style={dash} />
 
-              {/* Lines: product name, qr code, [yacheyka] · qty · ☐ */}
+              {/* Lines: product name · [yacheyka kodi] · qty · ☐
+                  2026-07-20g: QR olib tashlandi — yacheyka kodi (NN-NN-NN-NN)
+                  endi eng ko'zga tashlanadigan element, chunki omborchi
+                  mahsulotni SHU kod bo'yicha topadi (skanerlash emas). */}
               {sheet.lines.map((line, i) => (
                 <div key={`${line.productName}-${i}`} style={{ marginBottom: 7 }}>
-                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
-                    {line.productId && (
-                      <QRCodeSVG
-                        value={`${process.env.NEXT_PUBLIC_APP_URL ?? (typeof window !== 'undefined' ? window.location.origin : '')}/scan/${line.productId}`}
-                        size={widthMm === 58 ? 44 : 52}
-                        level="M"
-                        style={{ flexShrink: 0 }}
-                      />
-                    )}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 600 }}>
-                        {i + 1}. {line.productName}
-                      </div>
-                      <div
-                        style={{
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
-                          gap: 6,
-                          marginTop: 2,
-                        }}
-                      >
-                        <span style={{ fontWeight: 700, letterSpacing: '0.05em' }}>
-                          {line.binLocation ?? '—'}
-                        </span>
-                        <span>
-                          {Number(line.quantity)} {t('pcs')}
-                        </span>
-                        <span style={{ fontSize: fs + 4 }}>☐</span>
-                      </div>
-                      {line.extraBins && line.extraBins.length > 0 && (
-                        <div style={{ fontSize: fs - 1, color: '#555', marginTop: 1 }}>
-                          yana: {line.extraBins.join(' · ')}
-                        </div>
-                      )}
-                    </div>
+                  <div style={{ fontWeight: 600 }}>
+                    {i + 1}. {line.productName}
                   </div>
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      gap: 6,
+                      marginTop: 2,
+                    }}
+                  >
+                    <span style={{ fontWeight: 700, fontSize: fs + 3, letterSpacing: '0.05em' }}>
+                      {line.binLocation ?? '—'}
+                    </span>
+                    <span>
+                      {Number(line.quantity)} {t('pcs')}
+                    </span>
+                    <span style={{ fontSize: fs + 4 }}>☐</span>
+                  </div>
+                  {line.extraBins && line.extraBins.length > 0 && (
+                    <div style={{ fontSize: fs - 1, color: '#555', marginTop: 1 }}>
+                      yana: {line.extraBins.join(' · ')}
+                    </div>
+                  )}
                 </div>
               ))}
 
