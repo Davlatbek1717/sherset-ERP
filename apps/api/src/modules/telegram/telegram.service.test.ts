@@ -121,3 +121,69 @@ describe('TelegramService.sendChatToCounterparty — panel yuborish', () => {
     expect(outboxCreate).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * counterpartyThread — MTProto chiquvchi (HrTelegramOutbox) ∪ Business
+ * ikki-tomonlama (TelegramChatMessage) birlashmasi. 2026-07-20: Business
+ * xabaridagi CHEK RASMI (attachmentId/fileName/mimeType) endi thread'ga ham
+ * o'tishi kerak — aks holda OrderTelegramPanel'da chek ko'rinmaydi (debts/[id]
+ * sahifasida TelegramChatCard o'rniga shu panel ishlatiladigan bo'ldi).
+ */
+describe('TelegramService.counterpartyThread — attachment passthrough', () => {
+  it('Business xabaridagi chek rasmi thread itemga o‘tadi, outbox xabarida null', async () => {
+    const prisma = {
+      client: {
+        counterparty: {
+          findFirst: vi.fn(async () => ({
+            id: 'cp1',
+            name: 'Konserva zavod',
+            phone: '+998901234567',
+          })),
+        },
+        hrTelegramOutbox: {
+          findMany: vi.fn(async () => [
+            {
+              id: 'ob1',
+              messageText: 'Eslatma matni',
+              status: 'sent',
+              sourceEventType: 'debt.reminder',
+              createdAt: new Date('2026-07-19T09:00:00Z'),
+            },
+          ]),
+        },
+        telegramChat: { findFirst: vi.fn(async () => ({ id: 'chat1' })) },
+        telegramChatMessage: {
+          findMany: vi.fn(async () => [
+            {
+              id: 'msg1',
+              direction: 'in',
+              text: '',
+              kind: 'photo',
+              autoKind: null,
+              attachmentId: 'att1',
+              fileName: 'chek.jpg',
+              mimeType: 'image/jpeg',
+              createdAt: new Date('2026-07-19T09:05:00Z'),
+            },
+          ]),
+        },
+        hrTelegramAccount: { findFirst: vi.fn(async () => ({ phoneNumber: '+998901111111' })) },
+      },
+    };
+    const attachments = {};
+    const lookup = { lookup: vi.fn(async () => ({ available: false, found: false })) };
+    const service = new TelegramService(prisma as never, attachments as never, lookup as never);
+
+    const res = await service.counterpartyThread('acc', 'cp1', {});
+
+    expect(res.items).toHaveLength(2);
+    const outboxItem = res.items.find((i) => i.id === 'ob-ob1');
+    expect(outboxItem).toMatchObject({ attachmentId: null, fileName: null, mimeType: null });
+    const businessItem = res.items.find((i) => i.id === 'tg-msg1');
+    expect(businessItem).toMatchObject({
+      attachmentId: 'att1',
+      fileName: 'chek.jpg',
+      mimeType: 'image/jpeg',
+    });
+  });
+});

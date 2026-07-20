@@ -6901,7 +6901,8 @@
     "send": "Yuborish",
     "status_pending": "yuborilmoqda…",
     "status_retry": "qayta…",
-    "status_failed": "yuborilmadi"
+    "status_failed": "yuborilmadi",
+    "open_file": "Faylni ochish"
   },
   "telegram_chat": {
     "bind": "Bog'lash",

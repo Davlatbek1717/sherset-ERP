@@ -627,6 +627,11 @@ export class TelegramService {
       status: string | null;
       kind: string;
       autoKind: string | null;
+      // Mijoz yuborgan CHEK RASMI (2026-07-20) — faqat Business kanalidan keladi
+      // (outbox — bizning chiquvchi xabarimiz, unda biriktirma bo'lmaydi).
+      attachmentId: string | null;
+      fileName: string | null;
+      mimeType: string | null;
       createdAt: Date;
     };
     const merged: ThreadItem[] = [
@@ -637,6 +642,9 @@ export class TelegramService {
         status: m.status,
         kind: 'text',
         autoKind: m.sourceEventType === 'manual_chat' ? null : (m.sourceEventType ?? null),
+        attachmentId: null,
+        fileName: null,
+        mimeType: null,
         createdAt: m.createdAt,
       })),
       ...businessMsgs.map((m) => ({
@@ -646,6 +654,9 @@ export class TelegramService {
         status: null,
         kind: m.kind ?? 'text',
         autoKind: m.autoKind,
+        attachmentId: m.attachmentId,
+        fileName: m.fileName,
+        mimeType: m.mimeType,
         createdAt: m.createdAt,
       })),
     ]

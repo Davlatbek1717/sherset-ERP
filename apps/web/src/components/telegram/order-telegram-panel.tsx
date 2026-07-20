@@ -12,8 +12,15 @@
  * ∪ Business ikki-tomonlama). Raqam ulanmagan bo'lsa panel «Ulanmagan» deb
  * ogohlantiradi va Sozlamalarga havola beradi. Kiruvchi jonli xabar — keyingi
  * bosqich (MTProto inbound); hozir chiquvchi + mavjud tarix ko'rinadi.
+ *
+ * CHEK RASMI (2026-07-20): Business kanalida mijoz yuborgan rasm/hujjat
+ * `attachmentId` bilan keladi (outbox — bizning chiquvchimiz, unda hech qachon
+ * biriktirma bo'lmaydi). debts/[id] sahifasi eski TelegramChatCard o'rniga shu
+ * panelni ishlatadi — chek ko'rinishi shart, shuning uchun ReceiptViewer shu
+ * yerga ham ko'chirildi (telegram-chat-card.tsx bilan bir xil uslub).
  */
 
+import { ReceiptViewer } from '@/components/debts/receipt-viewer';
 import { api } from '@/lib/api-client';
 import { Button } from '@moysklad/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -28,6 +35,9 @@ interface ThreadItem {
   status: string | null;
   kind: string;
   autoKind: string | null;
+  attachmentId: string | null;
+  fileName: string | null;
+  mimeType: string | null;
   createdAt: string;
 }
 
@@ -67,6 +77,8 @@ export function OrderTelegramPanel({
   const qc = useQueryClient();
   const [draft, setDraft] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
+  // Ochilgan chek/rasm (telegram-chat-card.tsx bilan bir xil uslub).
+  const [receiptId, setReceiptId] = useState<string | null>(null);
 
   const QKEY = ['tg-counterparty-thread', counterpartyId];
   const { data, isLoading } = useQuery<ThreadResponse>({
@@ -186,6 +198,18 @@ export function OrderTelegramPanel({
                   }`}
                 >
                   {auto && <span className="mr-1">{auto}</span>}
+                  {m.attachmentId && m.kind !== 'text' && (
+                    <button
+                      type="button"
+                      onClick={() => setReceiptId(m.attachmentId as string)}
+                      className="mb-1 block text-[var(--ms-text-brand)] underline"
+                      data-test-id={`order-tg-file-${m.id}`}
+                    >
+                      {m.kind === 'photo'
+                        ? `🧾 ${m.fileName ?? 'chek'}`
+                        : (m.fileName ?? t('open_file'))}
+                    </button>
+                  )}
                   {m.text}
                   {m.direction === 'out' && m.status && m.status !== 'sent' && (
                     <span className="ml-1.5 text-[10px] text-[var(--ms-text-muted)]">
@@ -226,6 +250,14 @@ export function OrderTelegramPanel({
           <Send className="h-4 w-4" />
         </Button>
       </div>
+
+      {/* Mijoz yuborgan chek/rasm — modal oynada (token bilan yuklanadi) */}
+      <ReceiptViewer
+        attachmentId={receiptId}
+        title={name || undefined}
+        open={receiptId !== null}
+        onClose={() => setReceiptId(null)}
+      />
     </div>
   );
 }

@@ -283,13 +283,17 @@ export default function DebtsPage() {
   }
 
   // QO'LDA Telegram qarz-eslatmasi (qatordan). Natijani KUTAMIZ — operatorga
-  // «yuborildi / yuborilmadi (sabab)» deb halol javob beramiz.
+  // «yuborildi / yuborilmadi (sabab)» deb halol javob beramiz. Muvaffaqiyatli
+  // yuborilsa (2026-07-20) shu mijozning sahifasiga o'tkazamiz — operator
+  // xabar HAQIQATAN ketganini OrderTelegramPanel'dagi jonli threaddan
+  // (⏰ eslatma belgisi + yuborilish holati) darhol ko'radi.
   const { toast } = useToast();
   const reminderMut = useMutation({
     mutationFn: (id: string) => debtApi.telegramReminder(id),
-    onSuccess: (res) => {
+    onSuccess: (res, id) => {
       if (res.sent) {
         toast.success(t('tg_reminder_sent'));
+        router.push(`/debts/${id}`);
       } else {
         const known = ['no_phone', 'no_debt', 'no_counterparty', 'telegram_off', 'no_chat'];
         const reason =

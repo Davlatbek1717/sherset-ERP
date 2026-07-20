@@ -6900,7 +6900,8 @@
     "send": "Отправить",
     "status_pending": "отправляется…",
     "status_retry": "повтор…",
-    "status_failed": "не отправлено"
+    "status_failed": "не отправлено",
+    "open_file": "Открыть файл"
   },
   "telegram_chat": {
     "bind": "Привязать",

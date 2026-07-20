@@ -1,9 +1,9 @@
 'use client';
-import { TelegramChatCard } from '@/components/counterparties/telegram-chat-card';
 import { CallOutcomeForm } from '@/components/debts/call-outcome-modal';
 import { CancelCallModal } from '@/components/debts/cancel-call-modal';
 import { ReceiptViewer } from '@/components/debts/receipt-viewer';
 import { ReversePaymentModal } from '@/components/debts/reverse-payment-modal';
+import { OrderTelegramPanel } from '@/components/telegram/order-telegram-panel';
 import { useBackspaceBack } from '@/hooks/use-keyboard-nav';
 import {
   DEBT_POLL_MS,
@@ -426,12 +426,23 @@ export default function DebtProfilePage() {
       </div>
 
       {/* ─── TELEGRAM CHAT ────────────────────────────────────────────────
-          Operator qo'ng'iroq qilayotganda mijoz bilan Telegram'da nima
-          yozilganini SHU YERDA ko'radi: yuborilgan xabarlar, mijoz javobi va
-          u yuborgan CHEK RASMI. Alohida sahifaga o'tish shart emas. */}
+          Operator qo'ng'iroq qilayotganda / qatordan «Telegram eslatma»
+          tugmasi bosilib shu sahifaga o'tgandan keyin mijoz bilan Telegram'da
+          nima yozilganini SHU YERDA ko'radi: yuborilgan xabarlar (shu jumladan
+          avtomatik qarz-eslatma, ⏰ belgisi bilan — yuborilish holati ham
+          ko'rinadi), mijoz javobi va u yuborgan CHEK RASMI. Alohida sahifaga
+          o'tish shart emas.
+          2026-07-20: eski TelegramChatCard (faqat Business API kanalini
+          ko'rardi) OrderTelegramPanel'ga almashtirildi — qarz-eslatmalar endi
+          shaxsiy-raqam (MTProto userbot) orqali ketadi va eski karta buni
+          UMUMAN ko'rsatmasdi (butunlay boshqa jadval). Yangi panel ikkala
+          kanalni ("/telegram/counterparty/:id/thread") birlashtirib ko'rsatadi. */}
       {d?.counterpartyId && (
         <section className="mt-6">
-          <TelegramChatCard counterpartyId={d.counterpartyId} />
+          <OrderTelegramPanel
+            counterpartyId={d.counterpartyId}
+            counterpartyName={d.counterpartyName}
+          />
         </section>
       )}
 
