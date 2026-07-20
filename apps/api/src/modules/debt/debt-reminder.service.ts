@@ -43,6 +43,13 @@ export class DebtReminderService {
           status: { in: ['unpaid', 'partial'] },
           nextContactAt: { lte: now },
           callRemindedAt: null,
+          // 2026-07-20: "muammoli" (problem: true) qarzlar avtomatik
+          // eslatmadan chiqarib tashlanadi — operator uni allaqachon ko'rib
+          // chiqmoqda, mijozga avtomatik xabar ketavermasligi kerak. Qo'lda
+          // "xabar yuborish" tugmasi (debt.service.ts sendTelegramReminder,
+          // POST /debts/:id/telegram-reminder) bu flagni tekshirmaydi —
+          // operator xohlasa muammoli mijozga ham qo'lda yubora oladi.
+          problem: false,
         },
         select: {
           id: true,
