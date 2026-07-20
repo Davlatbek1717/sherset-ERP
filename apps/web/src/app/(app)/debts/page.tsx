@@ -12,6 +12,7 @@
  * qabul qilingan to'lov call-markaz ekranida sahifani yangilamasdan ko'rinadi.
  */
 
+import { SendReminderModal } from '@/components/debts/send-reminder-modal';
 import { StatusLegend } from '@/components/debts/status-legend';
 import { useEnterOnHover } from '@/hooks/use-keyboard-nav';
 import { useListState, useReturnToRow } from '@/hooks/use-list-memory';
@@ -105,6 +106,7 @@ function rowTone(r: DebtRow, highlightId: string | null): string | undefined {
 
 export default function DebtsPage() {
   const t = useTranslations('pages.debts');
+  const tReminders = useTranslations('pages.debt_reminders');
   const router = useRouter();
 
   // 2026-07-13: ro'yxat holati (tab/filtr/saralash/sahifa) sessionStorage'da —
@@ -136,6 +138,8 @@ export default function DebtsPage() {
   // «Qo'ng'iroq qilindi» modali ochiq turgan qarzdor.
   // CHECKBOX bilan belgilangan qarzlar (2026-07-12) — «aynan shularni PDF qil».
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  // Ommaviy «Xabar yuborish» modali (SMS/Telegram, 2026-07-20).
+  const [reminderOpen, setReminderOpen] = useState(false);
   // SAHIFALASH (2026-07-13): 591 qarzdor bir sahifaga sig'maydi — server
   // limit/offset bilan sahifalaydi, «1-100 / 591» ko'rsatkichi bilan.
   const page = ls.page;
@@ -498,6 +502,15 @@ export default function DebtsPage() {
                 ✕ {selected.size}
               </Button>
             )}
+            {selected.size > 0 && (
+              <Button
+                variant="secondary"
+                onClick={() => setReminderOpen(true)}
+                data-test-id="debt-send-reminder"
+              >
+                {`${tReminders('send_button')} (${selected.size})`}
+              </Button>
+            )}
             <Button variant="secondary" onClick={() => void exportPdf()} data-test-id="debt-pdf">
               {selected.size > 0
                 ? `${t('export_pdf_selected')} (${selected.size})`
@@ -668,6 +681,13 @@ export default function DebtsPage() {
       )}
 
       {/* «Qo'ng'iroq qilindi» — natija modali (umumiy komponent) */}
+
+      {/* Ommaviy «Xabar yuborish» modali (SMS/Telegram) */}
+      <SendReminderModal
+        ids={[...selected]}
+        open={reminderOpen}
+        onClose={() => setReminderOpen(false)}
+      />
     </Container>
   );
 }
