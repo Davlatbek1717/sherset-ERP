@@ -296,8 +296,11 @@ export class DebtService {
     if (channel === 'sms') {
       const cfg = await this.sms.getConfig(accountId);
       const configured = !!cfg && cfg.enabled;
-      // Kanalning default+enabled shabloni (kutubxona) — yo'q bo'lsa null.
-      const template = await this.msgTemplates.findDefault(accountId, 'sms');
+      // Tanlangan (templateId) yoki kanalning default+enabled shabloni. findOne
+      // o'chirilganini ham qaytaradi → quyida `enabled` tekshiriladi.
+      const template = templateId
+        ? await this.msgTemplates.findOne(accountId, templateId).catch(() => null)
+        : await this.msgTemplates.findDefault(accountId, 'sms');
       const contact = await this.sms.getContacts(accountId);
       for (const d of debts) {
         const name = d.counterparty?.name ?? 'mijoz';
@@ -310,8 +313,8 @@ export class DebtService {
           skipped.push({ id: d.id, name, reason: 'sms_not_configured' });
           continue;
         }
-        if (!template) {
-          // findDefault allaqachon enabled bo'yicha filtrlaydi — null = default yo'q.
+        if (!template || !template.enabled) {
+          // default yo'q, yoki tanlangan shablon o'chirilgan.
           skipped.push({ id: d.id, name, reason: 'template_disabled' });
           continue;
         }

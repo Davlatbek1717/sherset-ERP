@@ -18,6 +18,7 @@ function makeDeps(
     smsEnabled?: boolean;
     smsDefault?: unknown;
     tgDefault?: unknown;
+    pickedTemplate?: unknown;
     tgSent?: boolean;
   } = {},
 ) {
@@ -60,7 +61,7 @@ function makeDeps(
     findDefault: vi.fn(async (_acc: string, channel: string) =>
       channel === 'telegram' ? tgTpl : smsTpl,
     ),
-    findOne: vi.fn().mockResolvedValue(null),
+    findOne: vi.fn().mockResolvedValue(opts.pickedTemplate ?? null),
   };
   const telegram = { notifyCounterparty: vi.fn().mockResolvedValue({ sent: opts.tgSent ?? true }) };
   // Konstruktor tartibi: prisma, attachments, htmlPdf, balances, telegram, sms, msgTemplates.
@@ -97,6 +98,26 @@ describe('sendBulkReminders', () => {
     const r = await svc.sendBulkReminders('acc', 'u1', { ids: [DEBT_ID], channel: 'sms' });
     expect(r.queued).toBe(0);
     expect(r.skipped[0]?.reason).toBe('sms_not_configured');
+  });
+
+  it('SMS — templateId berilsa findOne bilan tanlangan shablon ishlatiladi', async () => {
+    const { svc, sms } = makeDeps([debtRow()], {
+      pickedTemplate: {
+        id: 'p1',
+        channel: 'sms',
+        name: 'Tanlangan',
+        body: 'Salom {{= counterparty.name }}',
+        enabled: true,
+        isDefault: false,
+      },
+    });
+    const r = await svc.sendBulkReminders('acc', 'u1', {
+      ids: [DEBT_ID],
+      channel: 'sms',
+      templateId: '33333333-3333-3333-3333-333333333333',
+    });
+    expect(r.queued).toBe(1);
+    expect((sms.send as ReturnType<typeof vi.fn>).mock.calls[0][2].body).toBe('Salom Akmal');
   });
 
   it("SMS — default shablon yo'q/o'chirilgan: template_disabled", async () => {

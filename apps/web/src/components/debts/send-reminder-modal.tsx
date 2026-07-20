@@ -1,10 +1,11 @@
 'use client';
 
 import { debtApi } from '@/lib/debt-api';
+import { messageTemplateApi } from '@/lib/sms-api';
 import { Button, Modal, useToast } from '@moysklad/ui';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 export function SendReminderModal({
   ids,
@@ -19,9 +20,24 @@ export function SendReminderModal({
   const tCommon = useTranslations('common');
   const { toast } = useToast();
   const [channel, setChannel] = useState<'sms' | 'telegram'>('sms');
+  const [templateId, setTemplateId] = useState<string | undefined>();
+
+  // Tanlangan kanal shablonlari (kutubxona). Modal ochiq bo'lgandagina yuklanadi.
+  const { data: templates = [] } = useQuery({
+    queryKey: ['message-templates', channel],
+    queryFn: () => messageTemplateApi.list(channel),
+    enabled: open,
+  });
+  const usable = templates.filter((x) => x.enabled);
+
+  // Kanal o'zgarganда yoki ro'yxat kelganда — default (yoki birinchi) shablonni tanlab qo'yamiz.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset on channel/list change
+  useEffect(() => {
+    setTemplateId(usable.find((x) => x.isDefault)?.id ?? usable[0]?.id);
+  }, [channel, templates]);
 
   const mut = useMutation({
-    mutationFn: () => debtApi.bulkReminders(ids, channel),
+    mutationFn: () => debtApi.bulkReminders(ids, channel, templateId),
     onSuccess: (r) => {
       const parts = [t('result_queued', { count: r.queued })];
       if (r.skipped.length > 0) parts.push(t('result_skipped', { count: r.skipped.length }));
@@ -60,6 +76,34 @@ export function SendReminderModal({
             {t('channel_telegram')}
           </label>
         </fieldset>
+
+        {/* Shablon tanlagich — tanlangan kanalда shablon bo'lsa. Bo'sh bo'lsa
+            (shablon yo'q) backend default/fallback ishlatadi. */}
+        {usable.length > 0 && (
+          <div className="space-y-1">
+            <label
+              htmlFor="reminder-template"
+              className="block font-medium text-[var(--ms-text-secondary)] text-sm"
+            >
+              {t('template')}
+            </label>
+            <select
+              id="reminder-template"
+              value={templateId ?? ''}
+              onChange={(e) => setTemplateId(e.target.value || undefined)}
+              className="h-9 w-full rounded-[var(--ms-radius)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] px-2 text-sm focus:outline-none focus:ring-1 focus:ring-[var(--ms-border-focus)]"
+              data-test-id="reminder-template-select"
+            >
+              {usable.map((tpl) => (
+                <option key={tpl.id} value={tpl.id}>
+                  {tpl.name}
+                  {tpl.isDefault ? ` · ${t('template_default')}` : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
         <div className="flex justify-end gap-2">
           <Button variant="secondary" onClick={onClose}>
             {tCommon('cancel')}

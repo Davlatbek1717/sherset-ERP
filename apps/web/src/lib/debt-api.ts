@@ -372,10 +372,10 @@ export const debtApi = {
     api.get<DebtPaymentsFeed>(`/debts/payments/feed${qs({ ...p })}`),
 
   /** Tanlangan qarzdorlarga ommaviy eslatma — SMS yoki Telegram (2026-07-20). */
-  bulkReminders: (ids: string[], channel: 'sms' | 'telegram') =>
+  bulkReminders: (ids: string[], channel: 'sms' | 'telegram', templateId?: string) =>
     api.post<{ queued: number; skipped: Array<{ id: string; name: string; reason: string }> }>(
       '/debts/reminders/bulk',
-      { ids, channel },
+      { ids, channel, ...(templateId ? { templateId } : {}) },
     ),
 
   /**
