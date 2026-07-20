@@ -46,7 +46,7 @@ runtime QA Phase-2 🟡 (qisman, production-ready EMAS) · **vizual pixel-1:1 �
 Foydalanuvchi `davom et` deganda men:
 0. **`node scripts/preflight.mjs`** — GO bo'lsa darhol ishga; ANOMALIYA bo'lsagina session-start-audit workflow.
 1. Shu `NEXT.md` faylni o'qiyman + loyiha `CLAUDE.md` (§0 ish rejimi + Phase-1/2 + cohort-flow qoidasi auto-loaded)
-2. `C:\Users\user\.claude\projects\d--projects-moysklad\memory\MEMORY.md` allaqachon auto-loaded
+2. Loyihaning `~/.claude/projects/<shu-mashina-yo'li>/memory/MEMORY.md` allaqachon auto-loaded (aniq yo'l mashina/papkaga qarab o'zgaradi — 2026-07-20'da qattiq yozilgan yo'l ikkinchi marta eskirgani uchun endi bu yerda ham hardcode qilinmaydi; `scripts/preflight.mjs`dagi `findMemoryPath()` avtomat topadi)
 3. Eng oxirgi `session-*.md` faylni o'qiyman
 4. **🚜 COHORT-FLOW (asosiy audit usuli)**: pastdagi «Cohort audit navbati»dan **keyingi cohort**ni olaman va
    **cohort-dvigatel** (`scripts/wf-cohort-detail-audit.js`) bilan ishlayman: premise (ref auto-correct + bias
@@ -304,6 +304,48 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 ---
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
+
+> **🟢💻 2026-07-20 (MASHINA KO'CHIRISH + QARZ-ESLATMA JONLI-CHAT FIX — Phase-1, runtime-tasdiqlanmagan)**
+> **(1) MASHINA KO'CHIRISH.** Loyiha VPS (`13.140.157.10`)dan yangi kompyuterga to'liq ko'chirildi: SSH ishonchsiz
+> (doimiy fon bot-skanerlash — botlar `root`ga tinimsiz login urinmoqda, MAQSADLI EMAS, hech biri muvaffaqiyatli
+> bo'lmagan; SFTP ayniqsa tez-tez uzilardi) → `paramiko` + `base64`-over-exec (qayta-ulanish+hajm-tekshiruv bilan)
+> transport ishlatildi. `main` — **143 commit, HEAD `a2cc529`, 27 ta commit qilinmagan o'zgarish** (aynan shu holatda
+> ko'chirildi, `.env` fayllar bilan). ⚠️ **VPS repo `.git/shallow`li ekan** — tarix `49d9a595` (2026-07-02, birinchi
+> deploy commit)dan boshlanadi, undan OLDINGI tarix VPS'ning o'zida ham yo'q edi (bizning ishimiz emas — manba
+> cheklovi). Shu sababli **eski (2026-06-02 va undan oldingi) commit-hash'larga ishora qiluvchi NEXT.md yozuvlari
+> endi tekshirib bo'lmaydigan hash'larga ega** (`4f9f7805`/`eb82668e`/`70d01ce0`/`fa4973af` — preflight shularni
+> «yo'q» deb belgilaydi, bu KONFABULYATSIYA EMAS, faqat shallow-chegaradan oldingi tarix). 26 ta remote-tracking
+> branch (`bal`/`bundle`/`kb`/`cld`/…, hammasi avvalgi ko'chirish urinishlaridan qolgan, `main`dan farqli tarix)
+> foydalanuvchi tanlovi bilan SAQLANMADI (faqat `main` kerak edi). `sherset-servis`/`sherset-akademiya`/eski nusxa —
+> foydalanuvchi tanlovi bilan TEGILMADI (alohida mahsulotlar). DB: faqat `sherset` (asosiy) pg_dump qilindi, 18MB,
+> `D:\projects\Sherset-ERP-vps-backup\`da (repo TASHQARISIDA — .git ichiga tushmasin uchun). **Electron desktop
+> qobiq manba kodi VPS'da UMUMAN topilmadi** (faqat tayyor `.exe` bor `sherset-updates`da) — kerak bo'lsa boshqa
+> joydan qidirilsin. VPS'da vaqtinchalik fayllar tozalandi, hech narsa o'zgartirilmadi/o'chirilmadi.
+> **(2) QARZ-ESLATMA JONLI-CHAT FIX.** User: Telegram qarz-eslatma tugmasi bosilgach debtor sahifasida xabar
+> ko'rinmasdi. **Tub sabab**: ism/summa avtomatik to'ldirish TO'G'RI ishlagan (bug yo'q edi) — muammo shundaki
+> eslatmalar YANGI yo'l (`HrTelegramOutbox`, MTProto userbot) orqali ketadi, lekin debtor sahifasidagi
+> `TelegramChatCard` ESKI yo'ldan (`TelegramChatMessage`, Bot API/Business) o'qirdi — ikkala jadval BUTUNLAY
+> uzilgan. Loyihada bu muammoni allaqachon to'g'ri hal qiladigan, lekin ISHLATILMAYOTGAN komponent bor edi:
+> `OrderTelegramPanel` (`/telegram/counterparty/:id/thread`, ikkala kanalni birlashtiradi, 10s poll). **Fix**:
+> `debts/[id]` sahifasida `TelegramChatCard`→`OrderTelegramPanel` almashtirildi; panelga CHEK-RASM ko'rish
+> qo'shildi (eski kartada bor edi, yangisida yo'q edi — `counterpartyThread` backend + panel ikkalasi ham
+> `attachmentId/fileName/mimeType`ni endi uzatadi); `debts/page.tsx` ro'yxatida eslatma muvaffaqiyatli yuborilgach
+> endi avtomatik `/debts/:id`ga o'tkazadi. Gate: `telegram.service.test.ts` 8/8 (+1 yangi, chek-rasm o'tishini
+> tekshiradi) · biome 0 (o'z fayllarida) · i18n `telegram_panel.open_file` ru+uz qo'shildi. ⚠️ **Browser-smoke YO'Q**
+> — bu mashinada hali lokal Postgres/dev-server sozlanmagan (yangi ko'chirilgan, `pnpm dev` uchun DB kerak).
+> **(3) PREFLIGHT GIGIYENASI.** `scripts/preflight.mjs`dagi MEMORY.md yo'li IKKINCHI marta mashina ko'chganda
+> buzildi (07-04'da bir marta, endi yana) — endi qattiq yozilgan yo'l o'rniga `~/.claude/projects/*`dan avtomat
+> topadigan `findMemoryPath()`ga almashtirildi (kelasi ko'chishda yana buzilmasin).
+> ⏭️ **NEXT (keyingi sessiya, tartib bo'yicha emas — kerakli birini tanlang):**
+> - **Lokal dev-stack sozlash** (Postgres 5433 + `pnpm db:seed` + `pnpm dev`) — Phase-2 QA va browser-smoke uchun
+>   SHART, bu mashinada hali qilinmagan.
+> - **NEXT.md arxiv** (628>600 qator, preflight anomaliyasi) — pastdagi eski (2026-07-04 va undan oldingi) entry'larni
+>   `docs/audits/_ARCHIVE-NEXT-2026-07-20.md`ga VERBATIM ko'chirish; bu safar `4f9f7805`/`eb82668e`/`70d01ce0`/
+>   `fa4973af` ishora qiluvchi eski entry'lar ham arxivga tushadi (ular allaqachon tarix, faol ish emas).
+> - **07-07 MULTI-BIN Phase-2 deploy** (pastda) — `migrate deploy` + jonli smoke, HALI QILINMAGAN, foydalanuvchi
+>   tasdiqlashi kerak (prod migratsiya).
+> - **07-11a QARZ UNDIRISH**: QarzOperatori/QarzKassiri rollarini real xodimlarga biriktirish + Phase-2 QA (real
+>   brauzer) — ko'chirishdan oldin ham kutayotgan edi.
 
 > **🟡🔢 2026-07-07 (MULTI-BIN PHASE 2: yacheykaga SON bog'lash, qo'lda — Phase-1 strukturaviy, DEPLOY QILINMAGAN)**
 > User: «A tovar 30 dona 1-ombor 1-polka 1-qavat 10-yacheykada, 70 donasi 2-ombor…9-yacheykada — qanday qilaman?»
