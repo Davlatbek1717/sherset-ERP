@@ -47,14 +47,14 @@ export class HrTelegramAccountController {
 
   /**
    * Soddalashtirilgan ulash — foydalanuvchi FAQAT telefonini beradi (apiId/
-   * apiHash serverning env'idan). Slot 1 yaratiladi/yangilanadi; keyin odatiy
-   * `:id/login/start` → `login/code` oqimi.
+   * apiHash serverning env'idan). `slot` (1=asosiy, 2=zaxira) yaratiladi/
+   * yangilanadi; keyin odatiy `:id/login/start` → `login/code` oqimi.
    */
   @Post('connect')
   @RequireHrPermission('settings', 'full')
   async connect(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
     const input = ConnectHrTelegramSchema.parse(body);
-    return this.svc.connectSingle(user.accountId, input.phoneNumber);
+    return this.svc.connectSlot(user.accountId, input.slot, input.phoneNumber);
   }
 
   @Patch(':id/active')

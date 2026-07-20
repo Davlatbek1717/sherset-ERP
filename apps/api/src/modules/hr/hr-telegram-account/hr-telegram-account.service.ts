@@ -105,12 +105,25 @@ export class HrTelegramAccountService {
 
   /**
    * Soddalashtirilgan ulash — foydalanuvchi FAQAT telefonini beradi; apiId/
-   * apiHash serverning env'idan (ilova kaliti). Har doim slot 1 (yagona
-   * raqam). Mavjud bo'lsa telefonni yangilaydi (raqam o'zgarsa sessiya
-   * bekor bo'ladi — boshqa raqamning sessiyasi ishlamaydi). So'ng chaqiruvchi
-   * odatiy login/start → code oqimini yuritadi.
+   * apiHash serverning env'idan (ikkala slot ham BIR XIL ilova kalitini
+   * ishlatadi — faqat telefon raqami farq qiladi). `slot` 1 (asosiy) yoki 2
+   * (zaxira — worker'ning failover mantig'i shuni kutadi, mtproto-worker.
+   * service.ts:SLOTS = [1,2]). Mavjud bo'lsa telefonni yangilaydi (raqam
+   * o'zgarsa sessiya bekor bo'ladi — boshqa raqamning sessiyasi ishlamaydi).
+   * So'ng chaqiruvchi odatiy login/start → code oqimini yuritadi.
+   *
+   * 2026-07-20: ilgari FAQAT slot 1'ga cheklangan edi (soddalashtirish uchun,
+   * "profil qo'shish shart bo'lmasin" talabiga ko'ra) — lekin bitta raqam
+   * Telegram flood-wait'ga uchraganda (contacts.GetContacts, ko'p yangi
+   * mijozga qisqa vaqtda yozganda 1-2+ soatga bloklanadi) hech qanday zaxira
+   * bo'lmagani aniqlandi. Endi ikkinchi (zaxira) raqamni ham shu oddiy oqim
+   * bilan ulash mumkin.
    */
-  async connectSingle(accountId: string, phoneNumber: string): Promise<HrTelegramAccountDto> {
+  async connectSlot(
+    accountId: string,
+    slot: 1 | 2,
+    phoneNumber: string,
+  ): Promise<HrTelegramAccountDto> {
     const apiIdRaw = process.env.TELEGRAM_API_ID;
     const apiHash = process.env.TELEGRAM_API_HASH;
     const apiId = Number(apiIdRaw);
@@ -131,7 +144,7 @@ export class HrTelegramAccountService {
 
     const apiHashEncrypted = encryptHrSession(apiHash);
     const existing = await this.prisma.client.hrTelegramAccount.findFirst({
-      where: { accountId, slot: 1 },
+      where: { accountId, slot },
     });
 
     if (existing) {
@@ -152,7 +165,7 @@ export class HrTelegramAccountService {
     const row = await this.prisma.client.hrTelegramAccount.create({
       data: {
         accountId,
-        slot: 1,
+        slot,
         phoneNumber: normalizedPhone,
         apiId,
         apiHashEncrypted,

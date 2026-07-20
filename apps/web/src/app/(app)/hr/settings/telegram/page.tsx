@@ -1,16 +1,22 @@
 'use client';
 
 /**
- * Telegram raqamini ulash — SODDALASHTIRILGAN «bitta raqam» oqimi (2026-07-17
- * talab: «profil qo'shish shart bo'lmasin, faqat bitta telefon raqam ulanadi»).
+ * Telegram raqamlarini ulash — SODDALASHTIRILGAN oqim (2026-07-17 talab:
+ * «profil qo'shish shart bo'lmasin, faqat telefon raqam ulanadi»), 2026-07-20
+ * ikkinchi (zaxira) raqam qo'llab-quvvatlashi bilan kengaytirildi.
  *
- * Foydalanuvchi FAQAT telefonini kiritadi (apiId/apiHash serverning env'ida —
- * ilova kaliti). Oqim: telefon → «Kod yuborish» → Telegram'ga kelgan kod →
- * (kerak bo'lsa) 2FA parol → «Ulandi». Ulangach: raqam + holat + Uzish/O'chirish.
+ * SABAB (2026-07-20): bitta raqam Telegram flood-wait'ga uchraganda
+ * (contacts.GetContacts — qisqa vaqtda ko'p YANGI mijoz raqamiga yozilganda
+ * ishga tushadi, 1-2+ soatga bloklaydi) hamma xabar to'xtab qolardi — worker
+ * (mtproto-worker.service.ts) ikkinchi slotga avtomatik o'tishga tayyor edi,
+ * lekin bu sahifa faqat slot-1'ni ulash imkonini berardi. Endi ikkala slot
+ * ham shu yerda, mustaqil ravishda ulanadi: 1-raqam bloklansa, worker
+ * avtomatik 2-raqamga o'tadi.
  *
- * Xabar shu RAQAMDAN mijozlarga ketadi (buyurtma kartochkasidagi chat-panel).
- * Backend O'ZGARMAGAN mantiq — mavjud login/start → code oqimi; yangi faqat
- * `connect` (telefon → slot-1 akkaunt, env kaliti bilan).
+ * Foydalanuvchi har bir slot uchun FAQAT telefonini kiritadi (apiId/apiHash
+ * serverning env'ida — ilova kaliti, ikkala slot ham bir xilini ishlatadi).
+ * Oqim: telefon → «Kod yuborish» → Telegram'ga kelgan kod → (kerak bo'lsa)
+ * 2FA parol → «Ulandi».
  */
 
 import { type HrTelegramAccountRow, hrTelegramAccountApi } from '@/lib/hr-api';
@@ -23,24 +29,56 @@ import { useState } from 'react';
 
 const TZ = 'Asia/Tashkent';
 const QKEY = ['hr-telegram-accounts'];
+const SLOTS = [1, 2] as const;
 
 export default function HrTelegramSettingsPage() {
   const t = useTranslations('pages.hrTelegram');
-  const tCommon = useTranslations('common');
-  const qc = useQueryClient();
-  const { toast } = useToast();
-  const { confirm } = useConfirm();
 
   const query = useQuery<HrTelegramAccountRow[]>({
     queryKey: QKEY,
     queryFn: () => hrTelegramAccountApi.list(),
   });
 
-  // Yagona raqam = slot 1 (yoki birinchi qator).
-  const acc = (query.data ?? []).find((a) => a.slot === 1) ?? query.data?.[0] ?? null;
+  return (
+    <div className="mx-auto max-w-lg space-y-5">
+      <div>
+        <h1 className="font-semibold text-2xl text-[var(--ms-text-strong)]">{t('title')}</h1>
+        <p className="mt-0.5 text-[var(--ms-text-muted)] text-sm">{t('subtitle_dual')}</p>
+      </div>
+
+      {query.isLoading ? (
+        <Skeleton className="h-40" />
+      ) : (
+        <div className="space-y-6">
+          {SLOTS.map((slot) => (
+            <SlotSection
+              key={slot}
+              slot={slot}
+              account={(query.data ?? []).find((a) => a.slot === slot) ?? null}
+              t={t}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SlotSection({
+  slot,
+  account: acc,
+  t,
+}: {
+  slot: 1 | 2;
+  account: HrTelegramAccountRow | null;
+  t: (k: string, vars?: Record<string, string | number>) => string;
+}) {
+  const tCommon = useTranslations('common');
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const { confirm } = useConfirm();
   const connected = !!acc?.hasSession;
 
-  // ── Ulash oqimi (telefon → kod → 2FA) ──────────────────────────────────
   type Step = 'phone' | 'code' | 'password';
   const [step, setStep] = useState<Step>('phone');
   const [phone, setPhone] = useState('');
@@ -58,11 +96,10 @@ export default function HrTelegramSettingsPage() {
     setError(null);
   };
 
-  // «Kod yuborish» — connect(telefon) → loginStart → kod bosqichi.
   const startMut = useMutation({
     mutationFn: async () => {
       if (!phone.trim()) throw new Error(t('err_phone'));
-      const created = await hrTelegramAccountApi.connect(phone.trim());
+      const created = await hrTelegramAccountApi.connect(phone.trim(), slot);
       return hrTelegramAccountApi.loginStart(created.id);
     },
     onSuccess: (r) => {
@@ -98,7 +135,6 @@ export default function HrTelegramSettingsPage() {
     onError: (e: Error) => setError(e.message),
   });
 
-  // «Kod kelmadimi?» — kodni qayta yuborish (Telegram keyingi kanal, odatда SMS).
   const resendMut = useMutation({
     mutationFn: () => {
       if (!sessionId) throw new Error(t('err_start_first'));
@@ -111,7 +147,6 @@ export default function HrTelegramSettingsPage() {
     onError: (e: Error) => setError(e.message),
   });
 
-  // ── Ulangan raqam ustidagi amallar ─────────────────────────────────────
   const setActiveMut = useMutation({
     mutationFn: (isActive: boolean) => hrTelegramAccountApi.setActive(acc?.id ?? '', isActive),
     onSuccess: () => qc.invalidateQueries({ queryKey: QKEY }),
@@ -134,18 +169,17 @@ export default function HrTelegramSettingsPage() {
       : step === 'code'
         ? t('otp_step_code')
         : t('otp_step_password');
+  const slotLabel = slot === 1 ? t('profile_primary') : t('profile_additional');
+  const slotHint = slot === 1 ? t('slot1_hint') : t('slot2_hint');
 
   return (
-    <div className="mx-auto max-w-lg space-y-5">
-      <div>
-        <h1 className="font-semibold text-2xl text-[var(--ms-text-strong)]">{t('title')}</h1>
-        <p className="mt-0.5 text-[var(--ms-text-muted)] text-sm">{t('subtitle_single')}</p>
+    <div data-test-id={`hr-tg-slot-${slot}`}>
+      <div className="mb-2">
+        <span className="font-medium text-[var(--ms-text-primary)] text-sm">{slotLabel}</span>
+        <p className="text-[var(--ms-text-muted)] text-xs">{slotHint}</p>
       </div>
 
-      {query.isLoading ? (
-        <Skeleton className="h-40" />
-      ) : connected ? (
-        // ── ULANGAN: raqam kartochkasi + amallar ──
+      {connected ? (
         <div
           className="rounded-[var(--ms-radius-lg)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] p-5"
           data-test-id="hr-tg-connected"
@@ -192,7 +226,6 @@ export default function HrTelegramSettingsPage() {
               variant="tertiary"
               size="sm"
               onClick={() => {
-                // «Qayta ulash» — mavjud raqamdan kod so'raymiz.
                 setPhone(acc?.phoneNumber ?? '');
                 startMut.mutate();
               }}
@@ -219,7 +252,6 @@ export default function HrTelegramSettingsPage() {
             </Button>
           </div>
 
-          {/* Qayta-ulash paytida kod/parol maydonlari shu yerda ochiladi */}
           {step !== 'phone' && (
             <div className="mt-4 space-y-3 border-[var(--ms-border-default)] border-t pt-4">
               <CodeFields
@@ -260,7 +292,6 @@ export default function HrTelegramSettingsPage() {
           )}
         </div>
       ) : (
-        // ── ULANMAGAN: bitta telefon ulash oqimi ──
         <div
           className="space-y-4 rounded-[var(--ms-radius-lg)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] p-5"
           data-test-id="hr-tg-connect"

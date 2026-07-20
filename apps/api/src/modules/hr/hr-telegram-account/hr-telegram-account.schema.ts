@@ -33,6 +33,8 @@ export const ConnectHrTelegramSchema = z.object({
     .string()
     .min(9, 'Telefon raqami kamida 9 raqam')
     .max(20, 'Telefon raqami 20 belgidan oshmasin'),
+  /** 1 = asosiy raqam, 2 = zaxira (flood-wait failover). Berilmasa — 1. */
+  slot: z.union([z.literal(1), z.literal(2)]).default(1),
 });
 export type ConnectHrTelegramInput = z.infer<typeof ConnectHrTelegramSchema>;
 
