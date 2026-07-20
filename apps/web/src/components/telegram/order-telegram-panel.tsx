@@ -51,6 +51,12 @@ interface ThreadResponse {
   connected: boolean;
   fromNumber: string | null;
   items: ThreadItem[];
+  /** To'liq-tarix backfill holati (2026-07-20) — panel banner ko'rsatishi uchun. */
+  backfill: { status: string; messagesImported: number } | null;
+  /** Eskiroq xabarlar bormi (scroll-back). */
+  hasMore: boolean;
+  /** Joriy sahifadagi eng eski xabar vaqti (before-kursor). */
+  oldestCursor: string | null;
 }
 
 interface TelegramProfile {
@@ -85,14 +91,31 @@ export function OrderTelegramPanel({
   // Ochilgan chek/rasm (telegram-chat-card.tsx bilan bir xil uslub).
   const [receiptId, setReceiptId] = useState<string | null>(null);
 
-  const QKEY = ['tg-counterparty-thread', counterpartyId];
+  // Ko'rsatiladigan xabar soni — «eski xabarlarni yuklash» oshiradi (eng yangi N,
+  // eskiga qarab o'sadi). Backend 200'da cheklaydi (undan uzun tarix uchun cap).
+  const [limit, setLimit] = useState(50);
+  const QKEY = ['tg-counterparty-thread', counterpartyId, limit];
   const { data, isLoading } = useQuery<ThreadResponse>({
     queryKey: QKEY,
-    queryFn: () => api.get<ThreadResponse>(`/telegram/counterparty/${counterpartyId}/thread`),
+    queryFn: () =>
+      api.get<ThreadResponse>(`/telegram/counterparty/${counterpartyId}/thread?limit=${limit}`),
     enabled: !!counterpartyId,
     // Jonli-ga yaqin — kiruvchi/statuslar yangilanib tursin.
     refetchInterval: 10_000,
   });
+
+  // Panel birinchi ochilganda backfill hali so'ralmagan bo'lsa — to'liq tarixni
+  // navbatga qo'yamiz (ulangan userbot bo'lsa). Bir marta (backfill null→bor bo'lgach to'xtaydi).
+  const syncMut = useMutation({
+    mutationFn: () => api.post(`/telegram/counterparty/${counterpartyId}/sync`, {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['tg-counterparty-thread', counterpartyId] }),
+  });
+  // biome-ignore lint/correctness/useExhaustiveDependencies: trigger once when backfill missing
+  useEffect(() => {
+    if (data && data.backfill === null && data.connected && !syncMut.isPending) {
+      syncMut.mutate();
+    }
+  }, [data?.backfill, data?.connected]);
 
   // Kontragent Telegram profilini AVTOMATIK topish (bir marta, panel ochilganda).
   // Jonli MTProto getEntity — polling QILINMAYDI (FLOOD_WAIT'dan saqlanish).
@@ -181,6 +204,28 @@ export function OrderTelegramPanel({
         ref={scrollRef}
         className="flex-1 space-y-2 overflow-y-auto bg-[var(--ms-bg-app)] px-3 py-3"
       >
+        {/* To'liq-tarix backfill holati (2026-07-20) */}
+        {data?.backfill && data.backfill.status !== 'done' && (
+          <div
+            className="mx-auto w-fit rounded-full bg-[var(--ms-bg-surface)] px-3 py-1 text-center text-[var(--ms-text-muted)] text-xs"
+            data-test-id="tg-backfill-banner"
+          >
+            {data.backfill.status === 'error'
+              ? t('backfill_error')
+              : t('backfill_loading', { count: data.backfill.messagesImported })}
+          </div>
+        )}
+        {/* Eski xabarlarni yuklash (scroll-back; backend 200'da cheklaydi) */}
+        {data?.hasMore && limit < 200 && (
+          <button
+            type="button"
+            onClick={() => setLimit((l) => Math.min(l + 50, 200))}
+            className="mx-auto block text-[var(--ms-text-brand)] text-xs underline"
+            data-test-id="tg-load-older"
+          >
+            {t('load_older')}
+          </button>
+        )}
         {isLoading ? (
           <div className="py-8 text-center text-[var(--ms-text-muted)] text-sm">{t('loading')}</div>
         ) : items.length === 0 ? (

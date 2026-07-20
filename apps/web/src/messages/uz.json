@@ -6968,7 +6968,10 @@
     "status_retry": "qayta…",
     "status_failed": "yuborilmadi",
     "open_file": "Faylni ochish",
-    "forwarded_from": "{name} dan forward qilingan"
+    "forwarded_from": "{name} dan forward qilingan",
+    "backfill_loading": "Tarix yuklanmoqda… ({count} ta xabar)",
+    "backfill_error": "Tarixni yuklab bo'lmadi",
+    "load_older": "Eski xabarlarni yuklash"
   },
   "telegram_chat": {
     "bind": "Bog'lash",

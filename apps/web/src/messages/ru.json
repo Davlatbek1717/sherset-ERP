@@ -6967,7 +6967,10 @@
     "status_retry": "повтор…",
     "status_failed": "не отправлено",
     "open_file": "Открыть файл",
-    "forwarded_from": "Переслано от {name}"
+    "forwarded_from": "Переслано от {name}",
+    "backfill_loading": "История загружается… ({count} сообщений)",
+    "backfill_error": "Не удалось загрузить историю",
+    "load_older": "Загрузить старые сообщения"
   },
   "telegram_chat": {
     "bind": "Привязать",
