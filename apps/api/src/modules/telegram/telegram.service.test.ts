@@ -364,3 +364,42 @@ describe('TelegramService.handleIncoming — MTProto customer reply capture', ()
     });
   });
 });
+
+describe('TelegramService.requestCounterpartySync — backfill trigger', () => {
+  it('telefonli kontragent → TelegramBackfillJob queued', async () => {
+    const upsert = vi.fn(async () => ({ status: 'queued' }));
+    const prisma = {
+      client: {
+        counterparty: { findFirst: vi.fn(async () => ({ id: 'cp1', phone: '901234567' })) },
+        telegramBackfillJob: { upsert },
+      },
+    };
+    const svc = new TelegramService(prisma as never, {} as never, {} as never);
+    const res = await svc.requestCounterpartySync('acc', 'cp1');
+    expect(res).toEqual({ status: 'queued' });
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { accountId_counterpartyId: { accountId: 'acc', counterpartyId: 'cp1' } },
+        create: expect.objectContaining({
+          accountId: 'acc',
+          counterpartyId: 'cp1',
+          phone: '+998901234567',
+          status: 'queued',
+        }),
+      }),
+    );
+  });
+
+  it("telefon YO'Q → no_phone, job qo'yilmaydi", async () => {
+    const upsert = vi.fn();
+    const prisma = {
+      client: {
+        counterparty: { findFirst: vi.fn(async () => ({ id: 'cp1', phone: null })) },
+        telegramBackfillJob: { upsert },
+      },
+    };
+    const svc = new TelegramService(prisma as never, {} as never, {} as never);
+    expect(await svc.requestCounterpartySync('acc', 'cp1')).toEqual({ status: 'no_phone' });
+    expect(upsert).not.toHaveBeenCalled();
+  });
+});

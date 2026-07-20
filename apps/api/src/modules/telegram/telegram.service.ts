@@ -696,6 +696,38 @@ export class TelegramService implements MtprotoInboundHandler {
     return { id: row.id, status: 'pending' as const, direction: 'out' as const };
   }
 
+  /**
+   * Panel birinchi ochilganda — kontragentning to'liq Telegram tarixini
+   * backfill navbatiga qo'yadi (2026-07-20). Idempotent: mavjud job bo'lsa
+   * o'zgartirmaydi (queued/running/done/error holatida qoladi). Telefon
+   * yo'q bo'lsa `no_phone` (userbot topolmaydi).
+   */
+  async requestCounterpartySync(
+    accountId: string,
+    counterpartyId: string,
+  ): Promise<{ status: string }> {
+    const cp = await this.prisma.client.counterparty.findFirst({
+      where: { id: counterpartyId, accountId },
+      select: { id: true, phone: true },
+    });
+    if (!cp) throw new NotFoundException('Kontragent topilmadi');
+    let phone: string | null = null;
+    try {
+      phone = normalizeTelegramPhone(cp.phone);
+    } catch {
+      phone = null;
+    }
+    if (!phone) return { status: 'no_phone' };
+
+    const job = await this.prisma.client.telegramBackfillJob.upsert({
+      where: { accountId_counterpartyId: { accountId, counterpartyId } },
+      update: {},
+      create: { accountId, counterpartyId, phone, status: 'queued' },
+      select: { status: true },
+    });
+    return { status: job.status };
+  }
+
   /** Panel xabar oqimi — MTProto chiquvchi ∪ Business (in/out), eski→yangi. */
   async counterpartyThread(
     accountId: string,

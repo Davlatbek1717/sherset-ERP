@@ -161,6 +161,13 @@ export class TelegramController {
     return this.svc.counterpartyTelegramProfile(user.accountId, id);
   }
 
+  /** Panel birinchi ochilganda to'liq tarix backfill'ini boshlaydi (2026-07-20). */
+  @Post('counterparty/:id/sync')
+  @RequirePermission({ entity: 'counterparty', action: 'view' })
+  async syncCounterparty(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.svc.requestCounterpartySync(user.accountId, id);
+  }
+
   // Inbound webhook lives on TelegramWebhookController (no JWT) —
   // Telegram doesn't carry our auth token.
 }
