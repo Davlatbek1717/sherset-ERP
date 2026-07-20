@@ -4,11 +4,18 @@
  * Bu matnlarni MIJOZ o'qiydi — xodim emas. Shuning uchun:
  *   • hurmat bilan, ayblovsiz ohangda (mijoz — hamkor, qarzdor emas)
  *   • summalar bo'sh joy bilan ajratilgan: 1 250 000 so'm (o'qish oson)
- *   • qisqa: Telegram bildirishnomasida birinchi qator ko'rinadi
- *   • HTML (<b>) — Telegram parse_mode='HTML'
+ *   • ODDIY MATN (HTML tegsiz) — xabar shaxsiy raqamdan (MTProto userbot) ketadi,
+ *     u parse_mode'ni QO'LLAMAYDI (aks holда <b> teglar literal ko'rinardi)
+ *   • bir xil tuzilish: «hurmatli {nom}» → mazmun → aloqa/karta → «Sherset jamoasi»
  *
  * Sof funksiyalar: DB/tarmoqqa tegmaydi ⇒ testda o'lchash oson.
  */
+
+// Sherset aloqa/to'lov ma'lumotlari — qarz-eslatma xabarida mijozga ko'rsatiladi.
+// O'zgartirish kerak bo'lsa FAQAT shu 3 qatorni tahrirlang.
+const SHERSET_CONTACT_PHONE = '+998915748800';
+const SHERSET_CARD = '9860 1201 2532 1642';
+const SHERSET_CARD_OWNER = 'Ilhom Ziyaviddinov';
 
 /** 125000000 (tiyin) → «1 250 000». */
 export function fmtSom(minor: bigint): string {
@@ -27,52 +34,78 @@ export function fmtWhen(d: Date): string {
   });
 }
 
-/** HTML in'yeksiyasini oldini olish — mijoz nomi <b> ni buzmasin. */
-function esc(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+// Barcha matnlar ODDIY MATN (HTML tegsiz) va bir xil professional tuzilishда:
+// salomlashuv + «hurmatli {nom}» → mazmun → 📞💳👨‍💻 aloqa/karta bloki →
+// «SHERSET jamoasi!» imzosi. HTML yo'q — xabar shaxsiy raqamdan (MTProto
+// userbot) ketadi, u parse_mode'ni QO'LLAMAYDI (aks holда teglar literal
+// ko'rinardi).
+
+/**
+ * Aloqa/karta bloki (2026-07-20) — barcha xabarlarda BIR XIL ko'rinish.
+ * Ilgari har funksiya o'zicha bitta qatorli "Karta raqam: X" / "Savollar
+ * bo'lsa: Y" yozardi — vizual notekis edi (masalan reminderMessage'da emoji
+ * bilan, boshqalarida yo'q). Endi hammasi shu 3 qatorni ishlatadi.
+ */
+function contactBlock(): string[] {
+  return [
+    `📞 Savollar uchun: ${SHERSET_CONTACT_PHONE}`,
+    `💳 Karta raqam: ${SHERSET_CARD}`,
+    `👨‍💻 Karta egasi: ${SHERSET_CARD_OWNER}`,
+  ];
 }
 
-/** Yangi qarz yozildi. */
+/** Yangi qarz berildi (2026-07-20: reminderMessage bilan bir xil vizual uslub). */
 export function debtIssuedMessage(args: {
   name: string;
   totalMinor: bigint;
   nextContactAt: Date | null;
 }): string {
   const lines = [
-    `Assalomu alaykum, ${esc(args.name)}!`,
+    `Assalomu alaykum, hurmatli ${args.name}!`,
     '',
-    `Sizga <b>${fmtSom(args.totalMinor)} so'm</b> qarz yozildi.`,
+    `🧾 Sizga ${fmtSom(args.totalMinor)} so'm miqdorida qarz rasmiylashtirildi.`,
   ];
   if (args.nextContactAt) {
-    lines.push(`To'lov muddati: <b>${fmtWhen(args.nextContactAt)}</b>`);
+    lines.push(`To'lov muddati: ${fmtWhen(args.nextContactAt)}`);
   }
-  lines.push('', "To'lov qilganingizdan so'ng chekni shu yerga yuborsangiz bo'ladi.");
+  lines.push('', ...contactBlock(), '');
+  lines.push(
+    "To'lovni amalga oshirgach, chekni shu yerga yuborishingiz mumkin.",
+    'Hamkorligingiz uchun rahmat!',
+    'SHERSET jamoasi!',
+  );
   return lines.join('\n');
 }
 
-/** To'lov qabul qilindi (qoldiq bor). */
+/** To'lov qabul qilindi, qoldiq bor (2026-07-20: bir xil vizual uslub). */
 export function paymentMessage(args: {
   name: string;
   amountMinor: bigint;
   remainingMinor: bigint;
 }): string {
   return [
-    `Rahmat, ${esc(args.name)}!`,
+    `Assalomu alaykum, hurmatli ${args.name}!`,
     '',
-    `<b>${fmtSom(args.amountMinor)} so'm</b> to'lovingiz qabul qilindi.`,
-    `Qolgan qarz: <b>${fmtSom(args.remainingMinor)} so'm</b>`,
+    `💵 ${fmtSom(args.amountMinor)} so'm to'lovingiz qabul qilindi, rahmat!`,
+    `Qolgan qarzingiz: ${fmtSom(args.remainingMinor)} so'm.`,
+    '',
+    ...contactBlock(),
+    '',
+    'SHERSET jamoasi!',
   ].join('\n');
 }
 
-/** Qarz to'liq yopildi. */
+/** Qarz to'liq yopildi (2026-07-20: bir xil vizual uslub). */
 export function debtClosedMessage(args: { name: string; amountMinor: bigint }): string {
   return [
-    `Rahmat, ${esc(args.name)}!`,
+    `Assalomu alaykum, hurmatli ${args.name}!`,
     '',
-    `<b>${fmtSom(args.amountMinor)} so'm</b> to'lovingiz qabul qilindi.`,
-    '✅ Qarzingiz <b>to‘liq yopildi</b>.',
+    `✅ ${fmtSom(args.amountMinor)} so'm to'lovingiz qabul qilindi. Qarzingiz to'liq yopildi!`,
     '',
-    'Hamkorligingiz uchun rahmat!',
+    "Hamkorligingiz uchun katta rahmat! Savollar bo'lsa, biz bilan bog'laning:",
+    `📞 ${SHERSET_CONTACT_PHONE}`,
+    '',
+    'SHERSET jamoasi!',
   ].join('\n');
 }
 
@@ -80,6 +113,7 @@ export function debtClosedMessage(args: { name: string; amountMinor: bigint }): 
  * To'lov yozuvi QAYTARILDI (storno, 2026-07-16). Mijoz avval «qabul qilindi»
  * xabarini olgan — tuzatishni ham bilishi kerak, aks holda uning hisob-kitobi
  * biznikidan ajralib qoladi. Ohang: ayblovsiz, «xatolik tuzatildi».
+ * (2026-07-20: bir xil vizual uslub.)
  */
 export function paymentReversedMessage(args: {
   name: string;
@@ -87,22 +121,33 @@ export function paymentReversedMessage(args: {
   remainingMinor: bigint;
 }): string {
   return [
-    `Hurmatli ${esc(args.name)}!`,
+    `Assalomu alaykum, hurmatli ${args.name}!`,
     '',
-    `<b>${fmtSom(args.amountMinor)} so'm</b> to'lov yozuvi xatolik tufayli bekor qilindi.`,
-    `Joriy qarz: <b>${fmtSom(args.remainingMinor)} so'm</b>`,
+    `⚠️ ${fmtSom(args.amountMinor)} so'm to'lov yozuvi texnik xatolik tufayli bekor qilindi.`,
+    `Joriy qarzingiz: ${fmtSom(args.remainingMinor)} so'm.`,
     '',
-    "Savolingiz bo'lsa shu yerga yozing.",
+    ...contactBlock(),
+    '',
+    'SHERSET jamoasi!',
   ].join('\n');
 }
 
-/** To'lov muddati keldi — eslatma. */
+/**
+ * To'lov muddati keldi — eslatma (2026-07-19 talab: yangi tartibli format).
+ *
+ * ODDIY MATN (HTML tegsiz) — chunki xabar shaxsiy raqamdan (MTProto userbot)
+ * ketadi, u parse_mode='HTML' ni QO'LLAMAYDI (aks holда <b> literal ko'rinardi).
+ * Summa bo'sh joy bilan guruhlangan, musbat (mijozga «qarzdorlik mavjud» aniq).
+ */
 export function reminderMessage(args: { name: string; remainingMinor: bigint }): string {
   return [
-    `Assalomu alaykum, ${esc(args.name)}!`,
+    `Assalomu alaykum, hurmatli ${args.name}!`,
     '',
-    `Eslatma: <b>${fmtSom(args.remainingMinor)} so'm</b> qarzingiz to'lov muddati keldi.`,
+    `✅ Eslatib o'tamiz, Sizning ${fmtSom(args.remainingMinor)} so'm miqdorida to'lanmagan qarzingiz mavjud. Iltimos, kelishilgan muddatda qarzdorlikni yopishingizni so'raymiz.`,
     '',
-    "Iltimos, imkoniyat bo'lganda to'lovni amalga oshiring. Savolingiz bo'lsa shu yerga yozing.",
+    ...contactBlock(),
+    '',
+    "Qarz - bu omonat, omonatga xiyonat bo'lmasin!",
+    'SHERSET jamoasi!',
   ].join('\n');
 }

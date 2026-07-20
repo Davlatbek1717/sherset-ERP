@@ -52,7 +52,7 @@ describe('debt-telegram xabarlari', () => {
   it('qarz yopildi: qoldiq ko‘rsatilmaydi, tabrik bor', () => {
     const m = debtClosedMessage({ name: 'Feruz', amountMinor: 50_000_000n });
     expect(m).toContain('500 000');
-    expect(m).toContain('to‘liq yopildi');
+    expect(m).toContain("to'liq yopildi");
     expect(m).not.toContain('Qolgan qarz');
   });
 
@@ -74,15 +74,43 @@ describe('debt-telegram xabarlari', () => {
     expect(m).toContain('bekor qilindi');
   });
 
-  // XAVFSIZLIK: mijoz nomi HTML'ni buzmasin (parse_mode='HTML').
-  it('mijoz nomidagi < > & belgilari xavfsizlantiriladi', () => {
+  // ODDIY MATN (2026-07-20): xabarlar HTML ishlatmaydi (MTProto userbot
+  // parse_mode'ni qo'llamaydi), shuning uchun mijoz nomi ESCAPE qilinmaydi —
+  // qanday kiritilgan bo'lsa, shundayligicha ko'rinadi.
+  it('mijoz nomi HTML escape qilinmasdan, aynan qanday kiritilgan bo‘lsa shunday ko‘rinadi', () => {
     const m = paymentMessage({
-      name: '<b>hacker</b> & co',
+      name: "O'ktam & Co",
       amountMinor: 100n,
       remainingMinor: 100n,
     });
-    expect(m).toContain('&lt;b&gt;hacker&lt;/b&gt; &amp; co');
-    // Bizning <b> teglarimiz esa saqlanadi (summa qalin ko'rinsin)
-    expect(m).toContain("<b>1 so'm</b>");
+    expect(m).toContain("O'ktam & Co");
+  });
+
+  // 2026-07-20: barcha mijoz-xabarlari BIR XIL 📞💳👨‍💻 aloqa blokini
+  // ishlatishi kerak — foydalanuvchi debtIssuedMessage bu blokdan mahrum
+  // ekanini (reminderMessage bilan solishtirib) skrinshot bilan ko'rsatdi.
+  describe('barcha xabarlarda bir xil 📞💳👨‍💻 aloqa bloki', () => {
+    const CONTACT_LINES = ['📞 Savollar uchun:', '💳 Karta raqam:', '👨‍💻 Karta egasi:'];
+
+    it('qarz berildi (debtIssuedMessage)', () => {
+      const m = debtIssuedMessage({ name: 'Feruz', totalMinor: 100n, nextContactAt: null });
+      for (const line of CONTACT_LINES) expect(m).toContain(line);
+      expect(m).toContain('SHERSET jamoasi!');
+    });
+
+    it("to'lov qabul qilindi (paymentMessage)", () => {
+      const m = paymentMessage({ name: 'Feruz', amountMinor: 100n, remainingMinor: 100n });
+      for (const line of CONTACT_LINES) expect(m).toContain(line);
+    });
+
+    it("to'lov qaytarildi (paymentReversedMessage)", () => {
+      const m = paymentReversedMessage({ name: 'Feruz', amountMinor: 100n, remainingMinor: 100n });
+      for (const line of CONTACT_LINES) expect(m).toContain(line);
+    });
+
+    it('eslatma (reminderMessage)', () => {
+      const m = reminderMessage({ name: 'Feruz', remainingMinor: 100n });
+      for (const line of CONTACT_LINES) expect(m).toContain(line);
+    });
   });
 });
