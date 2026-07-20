@@ -86,7 +86,14 @@ export class MtprotoWorkerService implements MtprotoAdapter {
         if (!client) continue; // no account / no session in this slot
 
         const entity = await this.resolveEntity(client, opts.accountId, slot, opts.toPhone);
-        const result = await withTimeout(client.sendMessage(entity, opts.text), 'sendMessage');
+        // debt-telegram.util.ts messages (sourceEventType `debt.*`) opt into
+        // MarkdownV2Parser for underline support; every other notification
+        // family keeps the client's default `**bold**` parser untouched.
+        const format = opts.sourceEventType?.startsWith('debt.') ? 'markdown-v2' : 'default';
+        const result = await withTimeout(
+          client.sendMessage(entity, opts.text, { format }),
+          'sendMessage',
+        );
         return { slot, messageId: result.messageId };
       } catch (e) {
         if (isGramjsFloodError(e)) {
@@ -168,19 +175,27 @@ export class MtprotoWorkerService implements MtprotoAdapter {
   }
 
   /**
-   * Entity resolution with persistent cache. Cache hit returns immediately;
-   * miss falls through to `client.resolvePhone(phone)` and persists the
-   * result. Stored value is opaque JSON from gramjs (`entity.toJSON?.()` or
-   * itself).
+   * Entity resolution with persistent cache. Cache hit → `hydrateEntity`
+   * reconstructs a real peer from the stored descriptor. Miss →
+   * `client.resolvePhone(phone)`, cache the (plain, JSON-safe) result, then
+   * ALSO `hydrateEntity` it before returning — both paths must produce a
+   * real, class-intact object; only `hydrateEntity`'s output is ever handed
+   * to `sendMessage`.
    *
-   * 2026-07-20: was `client.getEntity(phone)`, which ONLY resolves numbers
-   * gramjs already has cached (existing contacts / prior chats) — a
-   * brand-new customer's phone threw "Cannot find any entity", so their
-   * FIRST reminder never went out at all (confirmed live: debt.debt_issued
-   * failed with exactly that error before this fix). `resolvePhone` uses
-   * `contacts.ImportContacts`, which resolves ANY number that's on
-   * Telegram, contact or not — matching what tapping "new contact by phone"
-   * does in a normal Telegram client.
+   * 2026-07-20 (two separate fixes, in order):
+   *  1. Was `client.getEntity(phone)`, which ONLY resolves numbers gramjs
+   *     already has cached (existing contacts/prior chats) — a brand-new
+   *     customer's phone threw "Cannot find any entity", so their FIRST
+   *     reminder never went out (confirmed live: debt.debt_issued failed
+   *     with exactly that error). Switched to `resolvePhone`
+   *     (`contacts.ImportContacts` — resolves ANY Telegram number, contact
+   *     or not).
+   *  2. Then: returning the raw cached JSON blob on a cache HIT failed
+   *     EVERY time with "Cannot cast User to any kind of peer" — JSON
+   *     round-tripping strips gramjs's class identity. Confirmed live: the
+   *     first send to a phone (cache miss, fresh object) went through; the
+   *     next send to the SAME phone (cache hit) failed with that error.
+   *     `hydrateEntity` reconstructs a real `Api.InputPeerUser` every time.
    */
   private async resolveEntity(
     client: TelegramClientHandle,
@@ -189,7 +204,11 @@ export class MtprotoWorkerService implements MtprotoAdapter {
     phone: string,
   ): Promise<unknown> {
     const cached = await this.entityCache.get(accountId, slot, phone);
-    if (cached) return cached;
+    // Both branches go through hydrateEntity — cache hit AND miss must end
+    // up with a real, class-intact peer object, never the raw JSON blob
+    // (see hydrateEntity's doc comment for the live-confirmed bug this
+    // prevents: cache hit → "Cannot cast User to any kind of peer").
+    if (cached) return client.hydrateEntity(cached);
     const fresh = await withTimeout(client.resolvePhone(phone), 'resolvePhone');
     const serialized = serializeEntityForCache(fresh);
     if (serialized !== null) {
@@ -198,7 +217,7 @@ export class MtprotoWorkerService implements MtprotoAdapter {
         .set(accountId, slot, phone, serialized as Prisma.InputJsonValue)
         .catch((e) => this.logger.warn(`entity cache set failed: ${(e as Error).message}`));
     }
-    return fresh;
+    return client.hydrateEntity(fresh);
   }
 
   /** Drop a connected client (e.g. on auth invalidation by HR ops). */

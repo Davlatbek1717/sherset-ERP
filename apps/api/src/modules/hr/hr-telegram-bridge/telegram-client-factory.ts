@@ -34,12 +34,45 @@ export interface TelegramClientHandle {
    * not. Throws if the number isn't on Telegram at all.
    */
   resolvePhone(phone: string): Promise<unknown>;
-  sendMessage(entity: unknown, text: string): Promise<{ messageId: string }>;
+  /**
+   * Turn a value returned by `resolvePhone` (possibly round-tripped through
+   * JSON — the persistent entity cache stores it as Prisma Json) back into
+   * something gramjs can actually send to. 2026-07-20 incident: caching the
+   * raw gramjs peer object and handing the JSON-deserialized copy straight
+   * to `sendMessage` on a cache HIT failed every time with "Cannot cast User
+   * to any kind of peer" — JSON round-tripping strips the class identity
+   * (`SUBCLASS_OF_ID`) gramjs's `getInputPeer()` requires. Confirmed live:
+   * the FIRST send to a phone (cache miss, fresh real object) went through;
+   * every later send to the SAME phone (cache hit) failed with that exact
+   * error. `resolvePhone` now returns/caches a plain `{userId, accessHash}`
+   * descriptor; `hydrateEntity` reconstructs a real `Api.InputPeerUser` from
+   * it every time, cache hit or miss — so the class-identity loss can never
+   * bite again.
+   */
+  hydrateEntity(cached: unknown): unknown;
+  /**
+   * `format` selects the GramJS markdown dialect for THIS message only —
+   * omitted/`'default'` keeps the client's normal `**bold**`/`__italic__`
+   * parser untouched (every existing caller: HR/supply/task notifications).
+   * `'markdown-v2'` switches to GramJS's `MarkdownV2Parser` for this call,
+   * which is the ONLY dialect that supports underline (`__x__`); its bold
+   * syntax is a single `*x*`, not `**x**`. 2026-07-20: added so debt-reminder
+   * messages (`debt-telegram.util.ts`) can underline the amount while
+   * leaving every other notification's formatting untouched.
+   */
+  sendMessage(
+    entity: unknown,
+    text: string,
+    opts?: { format?: 'default' | 'markdown-v2' },
+  ): Promise<{ messageId: string }>;
 
   /** Login step 1 — server sends OTP via SMS/Telegram. */
   sendCode(opts: { apiId: number; apiHash: string; phoneNumber: string }): Promise<{
     phoneCodeHash: string;
   }>;
+
+  /** Kod kelmasa — «keyingi kanal»da (odatda SMS) qayta yuborish. */
+  resendCode(): Promise<{ phoneCodeHash: string }>;
 
   /** Login step 2a — submit OTP. May throw SESSION_PASSWORD_NEEDED on 2FA. */
   signIn(opts: {

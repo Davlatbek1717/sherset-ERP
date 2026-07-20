@@ -17,6 +17,9 @@ function makeClient(overrides: Partial<TelegramClientHandle> = {}): TelegramClie
     isUserAuthorized: vi.fn().mockResolvedValue(true),
     getEntity: vi.fn().mockResolvedValue({ id: 'entity-1' }),
     resolvePhone: vi.fn().mockResolvedValue({ id: 'entity-1' }),
+    // Identity by default (tests below override to prove the worker ACTUALLY
+    // calls this on both cache hit and miss, rather than bypassing it).
+    hydrateEntity: vi.fn((cached: unknown) => cached),
     sendMessage: vi.fn().mockResolvedValue({ messageId: 'm-1' }),
     sendCode: vi.fn().mockResolvedValue({ phoneCodeHash: 'hash' }),
     signIn: vi.fn().mockResolvedValue(undefined),
@@ -121,8 +124,54 @@ describe('MtprotoWorkerService', () => {
 
     expect(result).toEqual({ slot: 1, messageId: 'm-1' });
     expect(client1.resolvePhone).toHaveBeenCalledWith('+998901234567');
-    expect(client1.sendMessage).toHaveBeenCalledWith({ id: 'entity-1' }, 'salom');
+    expect(client1.sendMessage).toHaveBeenCalledWith({ id: 'entity-1' }, 'salom', {
+      format: 'default',
+    });
     expect(cache.set).toHaveBeenCalledWith('acc1', 1, '+998901234567', expect.anything());
+  });
+
+  // 2026-07-20b: debt-telegram.util.ts messages need MarkdownV2 (underline
+  // support) — the worker opts in ONLY when sourceEventType starts with
+  // `debt.`, so every other HR/supply/task notification's formatting stays
+  // untouched (see the doc comment on the format decision in the service).
+  it("sourceEventType 'debt.*' selects markdown-v2; everything else stays 'default'", async () => {
+    const client1 = makeClient();
+    handles.set('100', client1);
+    const accounts = makeAccountsSvc({
+      active: { 1: { apiId: 100, apiHashEncrypted, sessionEncrypted } },
+    });
+    const adapter = new MtprotoWorkerService(
+      factory,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      accounts as any,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      cache as any,
+    );
+
+    await adapter.sendMessage({
+      accountId: 'acc1',
+      toPhone: '+998901234567',
+      text: 'x',
+      sourceEventType: 'debt.reminder',
+    });
+    expect(client1.sendMessage).toHaveBeenLastCalledWith(expect.anything(), 'x', {
+      format: 'markdown-v2',
+    });
+
+    await adapter.sendMessage({
+      accountId: 'acc1',
+      toPhone: '+998901234567',
+      text: 'y',
+      sourceEventType: 'supply.posted',
+    });
+    expect(client1.sendMessage).toHaveBeenLastCalledWith(expect.anything(), 'y', {
+      format: 'default',
+    });
+
+    await adapter.sendMessage({ accountId: 'acc1', toPhone: '+998901234567', text: 'z' });
+    expect(client1.sendMessage).toHaveBeenLastCalledWith(expect.anything(), 'z', {
+      format: 'default',
+    });
   });
 
   it('entity cache HIT skips resolvePhone (no network round-trip)', async () => {
@@ -143,8 +192,83 @@ describe('MtprotoWorkerService', () => {
     await adapter.sendMessage({ accountId: 'acc1', toPhone: '+998901234567', text: 'x' });
 
     expect(client1.resolvePhone).not.toHaveBeenCalled();
-    expect(client1.sendMessage).toHaveBeenCalledWith({ id: 'cached-entity' }, 'x');
+    expect(client1.sendMessage).toHaveBeenCalledWith({ id: 'cached-entity' }, 'x', {
+      format: 'default',
+    });
+    // 2026-07-20: the cached descriptor must ALSO be hydrated (see below for
+    // the live-confirmed bug this proves is fixed: "Cannot cast User to any
+    // kind of peer" on every cache-hit send before hydrateEntity existed).
+    expect(client1.hydrateEntity).toHaveBeenCalledWith({ id: 'cached-entity' });
     expect(cache.set).not.toHaveBeenCalled();
+  });
+
+  // 2026-07-20 bug, confirmed live: sending a JSON-round-tripped cached
+  // entity straight to gramjs's sendMessage (skipping hydration) failed
+  // EVERY time with "Cannot cast User to any kind of peer" — the first send
+  // to a phone (cache miss, real object) worked; the very next send to the
+  // SAME phone (cache hit) failed. hydrateEntity's OUTPUT — not the raw
+  // cached/resolved descriptor — must be what actually reaches sendMessage,
+  // on BOTH paths.
+  describe('hydrateEntity output (not the raw descriptor) reaches sendMessage', () => {
+    it('cache HIT', async () => {
+      const client1 = makeClient({
+        hydrateEntity: vi.fn((cached) => ({ hydrated: true, from: cached })),
+      });
+      handles.set('100', client1);
+      cache.get.mockResolvedValue({ userId: '123', accessHash: '456' });
+      const accounts = makeAccountsSvc({
+        active: { 1: { apiId: 100, apiHashEncrypted, sessionEncrypted } },
+      });
+      const adapter = new MtprotoWorkerService(
+        factory,
+        // biome-ignore lint/suspicious/noExplicitAny: test wiring
+        accounts as any,
+        // biome-ignore lint/suspicious/noExplicitAny: test wiring
+        cache as any,
+      );
+
+      await adapter.sendMessage({ accountId: 'acc1', toPhone: '+998901234567', text: 'x' });
+
+      expect(client1.sendMessage).toHaveBeenCalledWith(
+        { hydrated: true, from: { userId: '123', accessHash: '456' } },
+        'x',
+        { format: 'default' },
+      );
+    });
+
+    it('cache MISS (fresh resolvePhone result)', async () => {
+      const client1 = makeClient({
+        resolvePhone: vi.fn().mockResolvedValue({ userId: '789', accessHash: '000' }),
+        hydrateEntity: vi.fn((raw) => ({ hydrated: true, from: raw })),
+      });
+      handles.set('100', client1);
+      const accounts = makeAccountsSvc({
+        active: { 1: { apiId: 100, apiHashEncrypted, sessionEncrypted } },
+      });
+      const adapter = new MtprotoWorkerService(
+        factory,
+        // biome-ignore lint/suspicious/noExplicitAny: test wiring
+        accounts as any,
+        // biome-ignore lint/suspicious/noExplicitAny: test wiring
+        cache as any,
+      );
+
+      await adapter.sendMessage({ accountId: 'acc1', toPhone: '+998901234567', text: 'x' });
+
+      expect(client1.sendMessage).toHaveBeenCalledWith(
+        { hydrated: true, from: { userId: '789', accessHash: '000' } },
+        'x',
+        { format: 'default' },
+      );
+      // The RAW (un-hydrated) descriptor is what's persisted — hydration
+      // happens on read, every time, not once at write time.
+      expect(cache.set).toHaveBeenCalledWith(
+        'acc1',
+        1,
+        '+998901234567',
+        expect.objectContaining({ userId: '789', accessHash: '000' }),
+      );
+    });
   });
 
   // 2026-07-20 bug: `getEntity(phone)` only resolves numbers gramjs already
@@ -179,6 +303,7 @@ describe('MtprotoWorkerService', () => {
     expect(client1.sendMessage).toHaveBeenCalledWith(
       { id: 'new-customer-entity' },
       'Sizga 1 000 so‘m miqdorida qarz rasmiylashtirildi.',
+      { format: 'default' },
     );
   });
 

@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import bigInt from 'big-integer';
 import { Api, TelegramClient } from 'telegram';
 import { computeCheck } from 'telegram/Password.js';
+import { MarkdownV2Parser } from 'telegram/extensions/markdownv2.js';
 import { StringSession } from 'telegram/sessions/index.js';
 import type {
   TelegramClientFactory,
@@ -77,6 +78,13 @@ class GramjsClientHandle implements TelegramClientHandle {
    * the hood; the imported entry is kept (matches the account's own contact
    * list showing customers — harmless, and lets a later cache-miss reuse it
    * via plain `getEntity` too).
+   *
+   * Returns a PLAIN `{userId, accessHash}` descriptor (strings), not the raw
+   * gramjs `Api.User` — the persistent entity cache stores whatever this
+   * returns as Prisma Json, and a real gramjs class instance does NOT
+   * survive that JSON round-trip (loses `SUBCLASS_OF_ID`, see
+   * `hydrateEntity`'s doc comment for the live-confirmed failure mode this
+   * avoids). Reconstruct the actual sendable peer via `hydrateEntity`.
    */
   async resolvePhone(phone: string): Promise<unknown> {
     const result = await this.client.invoke(
@@ -92,17 +100,51 @@ class GramjsClientHandle implements TelegramClientHandle {
       }),
     );
     const users = (result as unknown as { users?: unknown[] }).users ?? [];
-    const user = users[0];
-    if (!user) {
+    const user = users[0] as { id?: unknown; accessHash?: unknown } | undefined;
+    if (!user || user.id === undefined) {
       throw new Error(`resolvePhone: "${phone}" Telegram'da topilmadi (raqam ro'yxatdan o'tmagan)`);
     }
-    return user;
+    return {
+      userId: String(user.id),
+      accessHash: String(user.accessHash ?? '0'),
+    };
   }
 
-  async sendMessage(entity: unknown, text: string): Promise<{ messageId: string }> {
+  /**
+   * Reconstruct a real, sendable `Api.InputPeerUser` from a `{userId,
+   * accessHash}` descriptor (fresh from `resolvePhone`, or round-tripped
+   * through the JSON entity cache — same shape either way, so this always
+   * works). 2026-07-20 incident: without this, a cache HIT handed the
+   * JSON-deserialized (class-identity-stripped) object straight to
+   * `sendMessage`, which failed with "Cannot cast User to any kind of peer"
+   * on gramjs's internal `getInputPeer()` — confirmed live: first send to a
+   * phone (cache miss) worked, every later send to the SAME phone (cache
+   * hit) failed with exactly that error.
+   */
+  hydrateEntity(cached: unknown): unknown {
+    const c = cached as { userId?: string; accessHash?: string } | undefined;
+    if (!c || typeof c.userId !== 'string') {
+      throw new Error('hydrateEntity: invalid cached entity shape');
+    }
+    return new Api.InputPeerUser({
+      userId: bigInt(c.userId),
+      accessHash: bigInt(c.accessHash ?? '0'),
+    });
+  }
+
+  async sendMessage(
+    entity: unknown,
+    text: string,
+    opts?: { format?: 'default' | 'markdown-v2' },
+  ): Promise<{ messageId: string }> {
     // gramjs `sendMessage` accepts an entity-like and returns a Message
-    // with numeric `.id` — string-coerced for the worker.
-    const msg = await this.client.sendMessage(entity as never, { message: text });
+    // with numeric `.id` — string-coerced for the worker. `parseMode` is
+    // omitted for the default dialect so the client's own default parser
+    // (`**bold**`) keeps handling every non-debt caller exactly as before.
+    const msg = await this.client.sendMessage(entity as never, {
+      message: text,
+      ...(opts?.format === 'markdown-v2' ? { parseMode: MarkdownV2Parser } : {}),
+    });
     const id = (msg as { id?: number | bigint }).id;
     if (id === undefined) {
       throw new Error('gramjs sendMessage returned no id');

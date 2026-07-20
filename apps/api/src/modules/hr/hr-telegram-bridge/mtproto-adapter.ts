@@ -15,6 +15,14 @@ export interface MtprotoSendOptions {
   accountId: string;
   toPhone: string;
   text: string;
+  /**
+   * `HrTelegramOutbox.sourceEventType` (e.g. `debt.reminder`), passed
+   * through so the adapter can opt specific message families into a
+   * different GramJS markdown dialect (2026-07-20: `debt.*` messages use
+   * `MarkdownV2Parser` for underline support) without affecting any other
+   * notification family's formatting.
+   */
+  sourceEventType?: string | null;
 }
 
 export interface MtprotoSendResult {
