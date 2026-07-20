@@ -12,6 +12,7 @@ import type {
   TelegramClientFactory,
   TelegramClientFactoryArgs,
   TelegramClientHandle,
+  TgVideoRef,
 } from './telegram-client-factory.js';
 
 /**
@@ -154,6 +155,66 @@ class GramjsClientHandle implements TelegramClientHandle {
       throw new Error('gramjs sendMessage returned no id');
     }
     return { messageId: String(id) };
+  }
+
+  /**
+   * Videoni «Saved Messages»ga (`'me'`) yuklaydi va hujjat-referensini oladi.
+   * `supportsStreaming: true` — video oqim sifatida ko'rinadi (fayl emas).
+   * Qaytgan Message.media.document'dan {id, accessHash, fileReference} olinadi;
+   * fileReference bytes → base64 (JSON-xavfsiz saqlash uchun).
+   */
+  async uploadVideoToSelf(filePath: string): Promise<TgVideoRef> {
+    const msg = await this.client.sendFile('me', {
+      file: filePath,
+      forceDocument: false,
+      supportsStreaming: true,
+    });
+    const media = (msg as Api.Message).media;
+    if (
+      !media ||
+      media.className !== 'MessageMediaDocument' ||
+      !media.document ||
+      media.document.className !== 'Document'
+    ) {
+      throw new Error('uploadVideoToSelf: yuklangan xabarda hujjat topilmadi');
+    }
+    const doc = media.document;
+    return {
+      id: String(doc.id),
+      accessHash: String(doc.accessHash),
+      fileReference: Buffer.from(doc.fileReference).toString('base64'),
+    };
+  }
+
+  /**
+   * Yuklangan video-referensni `entity`ga yuboradi. `file`ga qayta-qurilgan
+   * `Api.InputMediaDocument` beriladi (gramjs uni QAYTA yuklamaydi — referensni
+   * ishlatadi). `formattingEntities` — bold oraliqlar to'g'ridan-to'g'ri
+   * Api.MessageEntityBold'ga aylanadi (markdown/escape yo'q).
+   */
+  async sendVideoByRef(
+    entity: unknown,
+    ref: TgVideoRef,
+    caption: string,
+    boldRanges: { offset: number; length: number }[],
+  ): Promise<{ messageId: string }> {
+    const media = new Api.InputMediaDocument({
+      id: new Api.InputDocument({
+        id: bigInt(ref.id),
+        accessHash: bigInt(ref.accessHash),
+        fileReference: Buffer.from(ref.fileReference, 'base64'),
+      }),
+    });
+    const entities = boldRanges.map(
+      (r) => new Api.MessageEntityBold({ offset: r.offset, length: r.length }),
+    );
+    const msg = await this.client.sendFile(entity as never, {
+      file: media,
+      caption,
+      ...(entities.length ? { formattingEntities: entities } : {}),
+    });
+    const id = (msg as { id?: number | bigint }).id;
+    return { messageId: id === undefined ? '' : String(id) };
   }
 
   async sendCode(opts: {

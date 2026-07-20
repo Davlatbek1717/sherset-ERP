@@ -15,6 +15,7 @@ import {
   TELEGRAM_CLIENT_FACTORY,
   type TelegramClientFactory,
   type TelegramClientHandle,
+  type TgVideoRef,
   isGramjsFloodError,
 } from './telegram-client-factory.js';
 
@@ -218,6 +219,98 @@ export class MtprotoWorkerService implements MtprotoAdapter, OnModuleInit {
       errors.length === 0
         ? 'mtproto_no_active_slot'
         : `mtproto_history_failed: ${errors.map((e) => e.message).join(' | ')}`.slice(0, 500),
+    );
+  }
+
+  /**
+   * Videoni «Saved Messages»ga BIR MARTA yuklaydi va referensni qaytaradi
+   * (video-tarqatma, 2026-07-20). sendMessage bilan bir xil slot-loop +
+   * flood-failover + withTimeout. Entity resolutsiyasi SHART EMAS — 'me'ga
+   * yuklanadi.
+   */
+  async uploadBroadcastVideo(opts: { accountId: string; filePath: string }): Promise<{
+    slot: number;
+    ref: TgVideoRef;
+  }> {
+    const errors: Error[] = [];
+    for (const slot of MtprotoWorkerService.SLOTS) {
+      if (await this.accounts.isFlooded(opts.accountId, slot)) continue;
+      try {
+        const client = await this.ensureClient(opts.accountId, slot);
+        if (!client) continue;
+        // Video yuklash sekundlar oladi — matn-call timeout (25s)dan uzunroq
+        // bo'lishi mumkin, shuning uchun withTimeout O'RALMAYDI (gramjs o'z
+        // connectionRetries bilan boshqaradi; hang bo'lsa broadcast-worker
+        // keyingi urinishda qayta ishlaydi).
+        const ref = await client.uploadVideoToSelf(opts.filePath);
+        return { slot, ref };
+      } catch (e) {
+        if (isGramjsFloodError(e)) {
+          const until = new Date(Date.now() + e.seconds * 1000);
+          await this.accounts.setFloodWaitUntil(opts.accountId, slot, until).catch(() => {});
+          errors.push(new MtprotoFloodError(slot, e.seconds));
+          continue;
+        }
+        errors.push(e as Error);
+        this.logger.warn(
+          `uploadVideo failed slot=${slot} acc=${opts.accountId}: ${(e as Error).message}`,
+        );
+      }
+    }
+    const flood = errors.find((e): e is MtprotoFloodError => e instanceof MtprotoFloodError);
+    if (flood) throw flood;
+    throw new Error(
+      errors.length === 0
+        ? 'mtproto_no_active_slot'
+        : `mtproto_upload_failed: ${errors.map((e) => e.message).join(' | ')}`.slice(0, 500),
+    );
+  }
+
+  /**
+   * Yuklangan video-referensni bitta mijozga (toPhone) yuboradi — sendMessage
+   * bilan bir xil slot-loop + resolveEntity (telefon→peer, keshli) + flood.
+   */
+  async sendVideoByRef(opts: {
+    accountId: string;
+    toPhone: string;
+    ref: TgVideoRef;
+    caption: string;
+    boldRanges: { offset: number; length: number }[];
+  }): Promise<MtprotoSendResult> {
+    const errors: Error[] = [];
+    for (const slot of MtprotoWorkerService.SLOTS) {
+      if (await this.accounts.isFlooded(opts.accountId, slot)) continue;
+      try {
+        const client = await this.ensureClient(opts.accountId, slot);
+        if (!client) continue;
+        const { entity } = await this.resolveEntity(client, opts.accountId, slot, opts.toPhone);
+        const result = await withTimeout(
+          client.sendVideoByRef(entity, opts.ref, opts.caption, opts.boldRanges),
+          'sendVideoByRef',
+        );
+        return { slot, messageId: result.messageId };
+      } catch (e) {
+        if (isGramjsFloodError(e)) {
+          const until = new Date(Date.now() + e.seconds * 1000);
+          await this.accounts.setFloodWaitUntil(opts.accountId, slot, until).catch(() => {});
+          this.logger.warn(
+            `FLOOD_WAIT (video) slot=${slot} acc=${opts.accountId} ${e.seconds}s → failover`,
+          );
+          errors.push(new MtprotoFloodError(slot, e.seconds));
+          continue;
+        }
+        errors.push(e as Error);
+        this.logger.warn(
+          `sendVideo failed slot=${slot} acc=${opts.accountId}: ${(e as Error).message}`,
+        );
+      }
+    }
+    const flood = errors.find((e): e is MtprotoFloodError => e instanceof MtprotoFloodError);
+    if (flood) throw flood;
+    throw new Error(
+      errors.length === 0
+        ? 'mtproto_no_active_slot'
+        : `mtproto_video_failed: ${errors.map((e) => e.message).join(' | ')}`.slice(0, 500),
     );
   }
 

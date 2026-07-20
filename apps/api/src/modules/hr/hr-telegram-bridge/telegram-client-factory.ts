@@ -66,6 +66,27 @@ export interface TelegramClientHandle {
     opts?: { format?: 'default' | 'markdown-v2' },
   ): Promise<{ messageId: string }>;
 
+  /**
+   * Videoni Telegram'ga BIR MARTA yuklaydi (o'zining «Saved Messages»iga) va
+   * qayta ishlatiladigan hujjat-referensini qaytaradi (2026-07-20 video-tarqatma).
+   * Broadcast har mijozga videoni QAYTA yuklamaydi — bir marta yuklab, shu
+   * referensni `sendVideoByRef` bilan hammaga qayta-yuboradi (tez + trafik tejaydi).
+   */
+  uploadVideoToSelf(filePath: string): Promise<TgVideoRef>;
+
+  /**
+   * `uploadVideoToSelf` bergan referens bo'yicha videoni `entity`ga yuboradi,
+   * caption + ANIQ bold-entity'lar bilan. Markdown ISHLATILMAYDI (offset/length
+   * bold oraliqlar to'g'ridan-to'g'ri Api.MessageEntityBold'ga aylanadi) —
+   * emoji/tinish-belgili caption'da escape xatosi bo'lmaydi.
+   */
+  sendVideoByRef(
+    entity: unknown,
+    ref: TgVideoRef,
+    caption: string,
+    boldRanges: { offset: number; length: number }[],
+  ): Promise<{ messageId: string }>;
+
   /** Login step 1 — server sends OTP via SMS/Telegram. */
   sendCode(opts: { apiId: number; apiHash: string; phoneNumber: string }): Promise<{
     phoneCodeHash: string;
@@ -160,6 +181,20 @@ export interface HistoryMtprotoMessage {
   fileName: string | null;
   /** Present only when `kind !== 'text'` — call to fetch the raw file bytes. */
   downloadMedia: (() => Promise<Buffer>) | null;
+}
+
+/**
+ * Telegram'ga bir marta yuklangan videoning qayta ishlatiladigan referensi.
+ * JSON-xavfsiz (string) — broadcast row'da saqlanadi va har mijozga
+ * `sendVideoByRef` bilan qayta-ishlatiladi (Api.InputDocument qayta quriladi).
+ */
+export interface TgVideoRef {
+  /** Api.Document.id (bigint → string). */
+  id: string;
+  /** Api.Document.accessHash (bigint → string). */
+  accessHash: string;
+  /** Api.Document.fileReference (bytes → base64). Eskirsa qayta yuklanadi. */
+  fileReference: string;
 }
 
 export interface TelegramClientFactoryArgs {

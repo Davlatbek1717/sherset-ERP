@@ -113,6 +113,7 @@ import { SupplyModule } from './modules/supply/supply.module.js';
 import { TaskTypeModule } from './modules/task-type/task-type.module.js';
 import { TaskModule } from './modules/task/task.module.js';
 import { TaxRateModule } from './modules/tax-rate/tax-rate.module.js';
+import { TelegramBroadcastModule } from './modules/telegram-broadcast/telegram-broadcast.module.js';
 import { TelegramModule } from './modules/telegram/telegram.module.js';
 import { TrackingCodeModule } from './modules/tracking-code/tracking-code.module.js';
 import { UomModule } from './modules/uom/uom.module.js';
@@ -247,6 +248,7 @@ import { PrismaModule } from './prisma/prisma.module.js';
     LoyaltyModule,
     MarkingModule,
     TelegramModule,
+    TelegramBroadcastModule,
     PaymentGatewayModule,
     BankIntegrationModule,
     OneCSyncModule,
