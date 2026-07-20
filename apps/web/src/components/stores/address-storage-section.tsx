@@ -228,21 +228,28 @@ export function AddressStorageSection({
 
   const linkCls =
     'inline-flex items-center gap-1 text-[var(--ms-text-brand)] text-sm hover:underline';
+  // 2026-07-20f (responsive pass): 28px → 36px, closer to the ~44px touch-
+  // target guideline — these sit 3-in-a-row (➕/🖨/🗑) in a narrow action
+  // column and were mis-tap-prone on phones.
   const iconBtnCls =
-    'flex h-7 w-7 items-center justify-center rounded-[var(--ms-radius-sm)] border border-[var(--ms-border-default)] text-[var(--ms-text-muted)] hover:bg-[var(--ms-bg-hover)] hover:text-[var(--ms-text-primary)]';
+    'flex h-9 w-9 items-center justify-center rounded-[var(--ms-radius-sm)] border border-[var(--ms-border-default)] text-[var(--ms-text-muted)] hover:bg-[var(--ms-bg-hover)] hover:text-[var(--ms-text-primary)]';
 
   return (
     <div data-test-id="address-storage-section">
-      {/* Sarlavha — moysklad: (?) + to'q sariq «Адресное хранение товаров» */}
-      <div className="flex items-center gap-2">
-        <HelpCircle className="h-4 w-4 text-[var(--ms-text-brand)]" aria-hidden />
-        <h2 className="font-medium text-[#e8630a] text-base">{t('address_storage_title')}</h2>
+      {/* Sarlavha — moysklad: (?) + to'q sariq «Адресное хранение товаров».
+          flex-wrap (2026-07-20f): Labellar/Skan tugmalari tor ekranda
+          sarlavha ostiga tushadi, kesilmaydi/toshib ketmaydi. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <HelpCircle className="h-4 w-4 shrink-0 text-[var(--ms-text-brand)]" aria-hidden />
+        <h2 className="min-w-0 truncate font-medium text-[#e8630a] text-base">
+          {t('address_storage_title')}
+        </h2>
         <div className="ml-auto flex items-center gap-2">
           {/* «Labellar» — yacheykalarni qidirib-belgilab ko'plab chop etish. */}
           <button
             type="button"
             onClick={openLabelPicker}
-            className="inline-flex items-center gap-1.5 rounded-[var(--ms-radius-default)] border border-[var(--ms-border-strong)] px-3 py-1 font-medium text-[var(--ms-text-primary)] text-sm hover:bg-[var(--ms-bg-hover)]"
+            className="inline-flex items-center gap-1.5 rounded-[var(--ms-radius-default)] border border-[var(--ms-border-strong)] px-3 py-1.5 font-medium text-[var(--ms-text-primary)] text-sm hover:bg-[var(--ms-bg-hover)]"
             data-test-id="address-storage-labels"
           >
             <Printer className="h-4 w-4" />
@@ -253,7 +260,7 @@ export function AddressStorageSection({
           <button
             type="button"
             onClick={() => setScanOpen(true)}
-            className="inline-flex items-center gap-1.5 rounded-[var(--ms-radius-default)] border border-[var(--ms-border-focus)] bg-[var(--ms-bg-selected)] px-3 py-1 font-medium text-[var(--ms-text-brand)] text-sm hover:brightness-95"
+            className="inline-flex items-center gap-1.5 rounded-[var(--ms-radius-default)] border border-[var(--ms-border-focus)] bg-[var(--ms-bg-selected)] px-3 py-1.5 font-medium text-[var(--ms-text-brand)] text-sm hover:brightness-95"
             data-test-id="address-storage-scan"
           >
             <ScanLine className="h-4 w-4" />
@@ -262,99 +269,105 @@ export function AddressStorageSection({
         </div>
       </div>
 
-      {/* ── Polka-svodka jadvali (moysklad zona jadvali o'rnida) ── */}
-      <table className="mt-4 w-full max-w-[780px] border-collapse" data-test-id="polka-summary">
-        <thead>
-          <tr className="border-[#2b6c99] border-b">
-            <th className={TH}>{t('col_polka')}</th>
-            <th className={cn(TH, 'w-28 text-center')}>{t('col_cells_total')}</th>
-            <th className={cn(TH, 'w-28 text-center')}>{t('col_cells_free')}</th>
-            <th className={cn(TH, 'w-28 text-center')}>{t('col_cells_busy')}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {[
-            { key: '__none__', label: t('no_zone_row'), rows: noShelf, none: true },
-            ...shelfNames.map((name) => ({
-              key: name,
-              label: name,
-              rows: cells.filter((c) => c.shelf === name),
-              none: false,
-            })),
-          ].map(({ key, label, rows, none }) => {
-            const s = summaryRow(rows);
-            const open = openPolkas.has(key);
-            const expandable = rows.length > 0;
-            return (
-              <Fragment key={key}>
-                {/* biome-ignore lint/a11y/useKeyWithClickEvents: qator butun-satr toggle; klaviatura uchun ichki chevron tugmasi bor emas — sodda ombor jadvali, o'qi/enter shart emas */}
-                <tr
-                  className={cn(
-                    none ? 'border-[#2b6c99]' : 'border-[var(--ms-border-default)]',
-                    'border-b',
-                    expandable && 'cursor-pointer hover:bg-[var(--ms-bg-hover)]',
-                  )}
-                  onClick={() => expandable && togglePolka(key)}
-                  data-test-id={none ? 'polka-row-none' : `polka-row-${label}`}
-                >
-                  <td className={cn(TD, none && 'text-[var(--ms-text-muted)] italic')}>
-                    <span className="inline-flex items-center gap-1.5">
-                      {expandable ? (
-                        open ? (
-                          <ChevronDown className="h-4 w-4 text-[var(--ms-text-muted)]" />
-                        ) : (
-                          <ChevronRight className="h-4 w-4 text-[var(--ms-text-muted)]" />
-                        )
-                      ) : (
-                        <span className="inline-block w-4" />
-                      )}
-                      <span>{label}</span>
-                      {expandable && (
-                        <span className="text-[var(--ms-text-muted)] text-xs">({rows.length})</span>
-                      )}
-                    </span>
-                  </td>
-                  <td className={cn(TD, 'text-center tabular-nums')}>{s.total}</td>
-                  <td className={cn(TD, 'text-center tabular-nums')}>{s.free}</td>
-                  <td className={cn(TD, 'text-center tabular-nums')}>{s.busy}</td>
-                </tr>
-                {/* Ochilganда — shu polkadagi yacheyka KODLARI (band = to'q sariq, bo'sh = ko'k). */}
-                {open && expandable && (
+      {/* ── Polka-svodka jadvali (moysklad zona jadvali o'rnida) ──
+          overflow-x-auto (2026-07-20f): DataTable konvensiyasi bilan bir xil —
+          tor ekranda jadval sahifani yormasdan gorizontal skroll qiladi. */}
+      <div className="mt-4 max-w-[780px] overflow-x-auto">
+        <table className="w-full border-collapse" data-test-id="polka-summary">
+          <thead>
+            <tr className="border-[#2b6c99] border-b">
+              <th className={TH}>{t('col_polka')}</th>
+              <th className={cn(TH, 'w-28 text-center')}>{t('col_cells_total')}</th>
+              <th className={cn(TH, 'w-28 text-center')}>{t('col_cells_free')}</th>
+              <th className={cn(TH, 'w-28 text-center')}>{t('col_cells_busy')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {[
+              { key: '__none__', label: t('no_zone_row'), rows: noShelf, none: true },
+              ...shelfNames.map((name) => ({
+                key: name,
+                label: name,
+                rows: cells.filter((c) => c.shelf === name),
+                none: false,
+              })),
+            ].map(({ key, label, rows, none }) => {
+              const s = summaryRow(rows);
+              const open = openPolkas.has(key);
+              const expandable = rows.length > 0;
+              return (
+                <Fragment key={key}>
+                  {/* biome-ignore lint/a11y/useKeyWithClickEvents: qator butun-satr toggle; klaviatura uchun ichki chevron tugmasi bor emas — sodda ombor jadvali, o'qi/enter shart emas */}
                   <tr
-                    className="border-[var(--ms-border-default)] border-b bg-[var(--ms-bg-muted)]"
-                    data-test-id={`polka-cells-${none ? 'none' : label}`}
+                    className={cn(
+                      none ? 'border-[#2b6c99]' : 'border-[var(--ms-border-default)]',
+                      'border-b',
+                      expandable && 'cursor-pointer hover:bg-[var(--ms-bg-hover)]',
+                    )}
+                    onClick={() => expandable && togglePolka(key)}
+                    data-test-id={none ? 'polka-row-none' : `polka-row-${label}`}
                   >
-                    <td colSpan={4} className="px-4 py-2.5">
-                      <div className="flex flex-wrap gap-1.5">
-                        {[...rows]
-                          .sort((a, b) => a.code.localeCompare(b.code))
-                          .map((c) => {
-                            const busy = c.productCount > 0;
-                            return (
-                              <span
-                                key={c.id}
-                                title={busy ? t('col_cells_busy') : t('col_cells_free')}
-                                className={cn(
-                                  'rounded-[var(--ms-radius-sm)] border px-2 py-0.5 font-mono text-xs tabular-nums',
-                                  busy
-                                    ? 'border-[#f0c9a0] bg-[#fdf2e6] text-[#b5651d]'
-                                    : 'border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] text-[var(--ms-text-secondary)]',
-                                )}
-                                data-test-id={`polka-cell-${c.code}`}
-                              >
-                                {c.code}
-                              </span>
-                            );
-                          })}
-                      </div>
+                    <td className={cn(TD, none && 'text-[var(--ms-text-muted)] italic')}>
+                      <span className="inline-flex items-center gap-1.5">
+                        {expandable ? (
+                          open ? (
+                            <ChevronDown className="h-4 w-4 text-[var(--ms-text-muted)]" />
+                          ) : (
+                            <ChevronRight className="h-4 w-4 text-[var(--ms-text-muted)]" />
+                          )
+                        ) : (
+                          <span className="inline-block w-4" />
+                        )}
+                        <span>{label}</span>
+                        {expandable && (
+                          <span className="text-[var(--ms-text-muted)] text-xs">
+                            ({rows.length})
+                          </span>
+                        )}
+                      </span>
                     </td>
+                    <td className={cn(TD, 'text-center tabular-nums')}>{s.total}</td>
+                    <td className={cn(TD, 'text-center tabular-nums')}>{s.free}</td>
+                    <td className={cn(TD, 'text-center tabular-nums')}>{s.busy}</td>
                   </tr>
-                )}
-              </Fragment>
-            );
-          })}
-        </tbody>
-      </table>
+                  {/* Ochilganда — shu polkadagi yacheyka KODLARI (band = to'q sariq, bo'sh = ko'k). */}
+                  {open && expandable && (
+                    <tr
+                      className="border-[var(--ms-border-default)] border-b bg-[var(--ms-bg-muted)]"
+                      data-test-id={`polka-cells-${none ? 'none' : label}`}
+                    >
+                      <td colSpan={4} className="px-4 py-2.5">
+                        <div className="flex flex-wrap gap-1.5">
+                          {[...rows]
+                            .sort((a, b) => a.code.localeCompare(b.code))
+                            .map((c) => {
+                              const busy = c.productCount > 0;
+                              return (
+                                <span
+                                  key={c.id}
+                                  title={busy ? t('col_cells_busy') : t('col_cells_free')}
+                                  className={cn(
+                                    'rounded-[var(--ms-radius-sm)] border px-2 py-0.5 font-mono text-xs tabular-nums',
+                                    busy
+                                      ? 'border-[#f0c9a0] bg-[#fdf2e6] text-[#b5651d]'
+                                      : 'border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] text-[var(--ms-text-secondary)]',
+                                  )}
+                                  data-test-id={`polka-cell-${c.code}`}
+                                >
+                                  {c.code}
+                                </span>
+                              );
+                            })}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
 
       {/* ── «Polka qo'shish» (moysklad «+ Зона» o'rnida — 2026-07-16 rename) ── */}
       <div className="mt-3">
@@ -442,98 +455,102 @@ export function AddressStorageSection({
         )}
       </div>
 
-      {/* ── Yacheykalar jadvali: Ячейка | Полка | amallar (Status/Shtrix YO'Q) ── */}
-      <table className="mt-6 w-full max-w-[900px] border-collapse" data-test-id="cells-table">
-        <thead>
-          <tr className="border-[#2b6c99] border-b">
-            <th className={TH}>{t('col_cell')}</th>
-            <th className={TH}>{t('col_polka')}</th>
-            <th className={cn(TH, 'w-32')} aria-label={t('col_actions')} />
-          </tr>
-        </thead>
-        <tbody>
-          {isLoading ? (
-            <tr>
-              <td className={cn(TD, 'text-[var(--ms-text-muted)]')} colSpan={3}>
-                {tCommon('loading')}
-              </td>
+      {/* ── Yacheykalar jadvali: Ячейка | Полка | amallar (Status/Shtrix YO'Q) ──
+          overflow-x-auto (2026-07-20f): tor ekranda gorizontal skroll, sahifa
+          o'zi yormaydi (DataTable konvensiyasi). */}
+      <div className="mt-6 max-w-[900px] overflow-x-auto">
+        <table className="w-full border-collapse" data-test-id="cells-table">
+          <thead>
+            <tr className="border-[#2b6c99] border-b">
+              <th className={TH}>{t('col_cell')}</th>
+              <th className={TH}>{t('col_polka')}</th>
+              <th className={cn(TH, 'w-32')} aria-label={t('col_actions')} />
             </tr>
-          ) : cells.length === 0 ? (
-            <tr>
-              <td
-                className={cn(TD, 'text-[var(--ms-text-muted)]')}
-                colSpan={3}
-                data-test-id="cells-empty"
-              >
-                {t('cells_empty')}
-              </td>
-            </tr>
-          ) : (
-            cells.map((cell) => (
-              <tr
-                key={cell.id}
-                className="border-[var(--ms-border-default)] border-b hover:bg-[var(--ms-bg-hover)]"
-                data-test-id={`cell-row-${cell.code}`}
-              >
-                <td className={cn(TD, 'font-mono tabular-nums tracking-wider')}>{cell.code}</td>
-                <td className={TD}>{cell.shelf ?? ''}</td>
-                <td className={cn(TD, 'text-right')}>
-                  <div className="flex items-center justify-end gap-1">
-                    {/* ➕ tovar biriktirish */}
-                    <button
-                      type="button"
-                      className={iconBtnCls}
-                      title={t('cell_add_product')}
-                      aria-label={t('cell_add_product')}
-                      onClick={() => setAssignCell(cell)}
-                      data-test-id={`cell-assign-${cell.code}`}
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                    </button>
-                    {/* 🖨 chop etish */}
-                    <button
-                      type="button"
-                      className={iconBtnCls}
-                      title={t('cell_print')}
-                      aria-label={t('cell_print')}
-                      onClick={() => printCell(cell)}
-                      data-test-id={`cell-print-${cell.code}`}
-                    >
-                      <Printer className="h-3.5 w-3.5" />
-                    </button>
-                    {/* 🗑 o'chirish */}
-                    <button
-                      type="button"
-                      className={cn(iconBtnCls, 'hover:text-red-600')}
-                      title={t('cell_delete')}
-                      aria-label={t('cell_delete')}
-                      onClick={() =>
-                        runDestructive({
-                          title: tCommon('delete_confirm', { name: cell.code }),
-                          // 2026-07-20 tuzatish: registr yozuvi o'chsa ham
-                          // tovarning loc* manzili o'zgarmaydi (band/bo'shlik
-                          // Product.loc*dan hisoblanadi, StoreCell'dan emas)
-                          // — band yacheykani ko'rmasdan o'chirib qo'yish
-                          // "ko'rinmas" band manzil qoldiradi. Band bo'lsa
-                          // ogohlantiramiz.
-                          description:
-                            cell.productCount > 0
-                              ? t('cell_delete_occupied_warning', { count: cell.productCount })
-                              : undefined,
-                          run: () => deleteMut.mutateAsync(cell.id),
-                        })
-                      }
-                      data-test-id={`cell-delete-${cell.code}`}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
+          </thead>
+          <tbody>
+            {isLoading ? (
+              <tr>
+                <td className={cn(TD, 'text-[var(--ms-text-muted)]')} colSpan={3}>
+                  {tCommon('loading')}
                 </td>
               </tr>
-            ))
-          )}
-        </tbody>
-      </table>
+            ) : cells.length === 0 ? (
+              <tr>
+                <td
+                  className={cn(TD, 'text-[var(--ms-text-muted)]')}
+                  colSpan={3}
+                  data-test-id="cells-empty"
+                >
+                  {t('cells_empty')}
+                </td>
+              </tr>
+            ) : (
+              cells.map((cell) => (
+                <tr
+                  key={cell.id}
+                  className="border-[var(--ms-border-default)] border-b hover:bg-[var(--ms-bg-hover)]"
+                  data-test-id={`cell-row-${cell.code}`}
+                >
+                  <td className={cn(TD, 'font-mono tabular-nums tracking-wider')}>{cell.code}</td>
+                  <td className={TD}>{cell.shelf ?? ''}</td>
+                  <td className={cn(TD, 'text-right')}>
+                    <div className="flex items-center justify-end gap-1">
+                      {/* ➕ tovar biriktirish */}
+                      <button
+                        type="button"
+                        className={iconBtnCls}
+                        title={t('cell_add_product')}
+                        aria-label={t('cell_add_product')}
+                        onClick={() => setAssignCell(cell)}
+                        data-test-id={`cell-assign-${cell.code}`}
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                      </button>
+                      {/* 🖨 chop etish */}
+                      <button
+                        type="button"
+                        className={iconBtnCls}
+                        title={t('cell_print')}
+                        aria-label={t('cell_print')}
+                        onClick={() => printCell(cell)}
+                        data-test-id={`cell-print-${cell.code}`}
+                      >
+                        <Printer className="h-3.5 w-3.5" />
+                      </button>
+                      {/* 🗑 o'chirish */}
+                      <button
+                        type="button"
+                        className={cn(iconBtnCls, 'hover:text-red-600')}
+                        title={t('cell_delete')}
+                        aria-label={t('cell_delete')}
+                        onClick={() =>
+                          runDestructive({
+                            title: tCommon('delete_confirm', { name: cell.code }),
+                            // 2026-07-20 tuzatish: registr yozuvi o'chsa ham
+                            // tovarning loc* manzili o'zgarmaydi (band/bo'shlik
+                            // Product.loc*dan hisoblanadi, StoreCell'dan emas)
+                            // — band yacheykani ko'rmasdan o'chirib qo'yish
+                            // "ko'rinmas" band manzil qoldiradi. Band bo'lsa
+                            // ogohlantiramiz.
+                            description:
+                              cell.productCount > 0
+                                ? t('cell_delete_occupied_warning', { count: cell.productCount })
+                                : undefined,
+                            run: () => deleteMut.mutateAsync(cell.id),
+                          })
+                        }
+                        data-test-id={`cell-delete-${cell.code}`}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
 
       {/* ── «+ Yacheyka» (moysklad link — bitta yacheyka qo'lda) ── */}
       <div className="mt-3">

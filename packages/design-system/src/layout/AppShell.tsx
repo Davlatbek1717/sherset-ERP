@@ -1,8 +1,10 @@
 'use client';
 
+import { Menu } from 'lucide-react';
 import * as React from 'react';
-import { DropdownMenu } from '../primitives/DropdownMenu.tsx';
+import { Drawer } from '../feedback/Drawer.tsx';
 import { cn } from '../lib/cn.ts';
+import { DropdownMenu } from '../primitives/DropdownMenu.tsx';
 
 export interface NavItem {
   key: string;
@@ -57,6 +59,12 @@ export function AppShell({
   onLogout,
   onSettings,
 }: AppShellProps) {
+  // <lg (1024px, matches the lg:flex-row breakpoint already used e.g. in
+  // stores/[id]/page.tsx): the horizontal tab strip below has no room for
+  // 12+ module tabs, so it collapses behind a hamburger + slide-in <Drawer>
+  // instead (2026-07-20f — the whole app shell had no mobile nav at all).
+  const [mobileNavOpen, setMobileNavOpen] = React.useState(false);
+
   return (
     <div
       className={cn(
@@ -91,6 +99,21 @@ export function AppShell({
         <div className="flex items-center px-4 h-[58px] gap-1">
           {brand && <div className="shrink-0 mr-4 flex items-center">{brand}</div>}
 
+          {/* <lg: hamburger opens the mobile nav <Drawer> below. The
+              horizontal tab strip (with 12+ modules) has no room to be
+              usable at phone/tablet widths. */}
+          <button
+            type="button"
+            onClick={() => setMobileNavOpen(true)}
+            className="lg:hidden flex shrink-0 items-center justify-center h-9 w-9 rounded-[var(--ms-radius-default)] text-white/85 hover:bg-white/10 hover:text-white"
+            aria-label="Menyu"
+          >
+            <Menu className="h-5 w-5" aria-hidden />
+          </button>
+          {/* Mobile-only spacer: the hidden <nav> below normally carries
+              flex-1 to push topRightExtras/user block to the right edge. */}
+          <div className="flex-1 lg:hidden" aria-hidden />
+
           <nav
             className={cn(
               // `overflow-y-hidden` is REQUIRED, not cosmetic: setting
@@ -100,7 +123,9 @@ export function AppShell({
               // a tab's content was a hair taller than the bar. Pinning
               // overflow-y to hidden kills that track — tab content now
               // fits the bar, so nothing is clipped.
-              'flex items-center gap-0 flex-1 overflow-x-auto overflow-y-hidden',
+              // <lg (2026-07-20f): hidden — 12+ tabs have no usable room at
+              // phone/tablet widths, replaced by the hamburger+Drawer above.
+              'hidden lg:flex items-center gap-0 flex-1 overflow-x-auto overflow-y-hidden',
               // Hide the horizontal scrollbar that overflow-x-auto
               // surfaces — moysklad's navbar never shows a scroll
               // track even when tabs overflow, so we mirror that and
@@ -231,6 +256,40 @@ export function AppShell({
           DataTable `fillHeight` fill this exactly (no double scroll); taller
           form/detail pages scroll here normally. */}
       <main className="flex flex-col">{children}</main>
+
+      {/* Mobile module nav (2026-07-20f) — same primaryNav list as the
+          desktop tab strip above, rendered vertically. */}
+      <Drawer open={mobileNavOpen} onOpenChange={setMobileNavOpen} title={brand ?? 'Menyu'}>
+        <nav className="flex flex-col gap-0.5 p-2">
+          {primaryNav.map((item) => (
+            <a
+              key={item.key}
+              href={item.href}
+              onClick={() => setMobileNavOpen(false)}
+              className={cn(
+                'flex items-center gap-3 rounded-[var(--ms-radius-default)] px-3 py-2.5 font-medium text-sm transition-colors',
+                item.active
+                  ? 'bg-[var(--ms-bg-selected)] text-[var(--ms-text-brand)]'
+                  : 'text-[var(--ms-text-primary)] hover:bg-[var(--ms-bg-hover)]',
+              )}
+            >
+              {item.icon && (
+                <span
+                  className={cn(
+                    'relative text-base leading-none',
+                    !item.active && item.iconColorClass,
+                  )}
+                  aria-hidden
+                >
+                  {item.icon}
+                </span>
+              )}
+              <span className="flex-1">{item.label}</span>
+              {item.badge}
+            </a>
+          ))}
+        </nav>
+      </Drawer>
     </div>
   );
 }

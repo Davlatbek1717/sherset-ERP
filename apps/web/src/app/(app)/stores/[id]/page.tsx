@@ -184,34 +184,40 @@ export default function StoreCardPage() {
   return (
     <div data-test-id="store-card-page">
       {/* ── Toolbar (moysklad 1:1): Сохранить · Закрыть · (?) · Поместить в
-          архив · Изменить ▾ · o'ng: Владелец / Изменения ── */}
-      <div className="sticky top-0 z-[var(--ms-z-sticky)] flex flex-wrap items-center gap-2 border-[var(--ms-border-default)] border-b bg-[var(--ms-bg-surface)] px-4 py-2">
-        <Button
-          type="button"
-          variant="success"
-          size="sm"
-          onClick={() => {
-            setError(null);
-            saveMut.mutate();
-          }}
-          loading={saveMut.isPending}
-          disabled={!isDirty || saveMut.isPending}
-          data-test-id="store-card-save"
-        >
-          {tCommon('save')}
-        </Button>
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          onClick={() => router.push('/stores')}
-          data-test-id="store-card-close"
-        >
-          {tCommon('close')}
-        </Button>
+          архив · Изменить ▾ · o'ng: Владелец / Изменения ──
+          2026-07-20f (responsive): <sm bo'yicha vertikal stack (flex-col) —
+          eski `mx-auto` markazlash faqat sm:flex-row bir qatorli holatda
+          ishlaydi; flex-wrap bilan aralashib nomutanosib markazlashuvga olib
+          kelardi (audit topilmasi). */}
+      <div className="sticky top-0 z-[var(--ms-z-sticky)] flex flex-col gap-2 border-[var(--ms-border-default)] border-b bg-[var(--ms-bg-surface)] px-4 py-2 sm:flex-row sm:flex-wrap sm:items-center">
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="success"
+            size="sm"
+            onClick={() => {
+              setError(null);
+              saveMut.mutate();
+            }}
+            loading={saveMut.isPending}
+            disabled={!isDirty || saveMut.isPending}
+            data-test-id="store-card-save"
+          >
+            {tCommon('save')}
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={() => router.push('/stores')}
+            data-test-id="store-card-close"
+          >
+            {tCommon('close')}
+          </Button>
+        </div>
 
-        <div className="mx-auto flex items-center gap-2">
-          <HelpCircle className="h-4 w-4 text-[var(--ms-text-muted)]" aria-hidden />
+        <div className="flex items-center gap-2 sm:mx-auto">
+          <HelpCircle className="h-4 w-4 shrink-0 text-[var(--ms-text-muted)]" aria-hidden />
           <Button
             type="button"
             variant="secondary"
@@ -246,11 +252,13 @@ export default function StoreCardPage() {
         </div>
 
         {/* O'ng klaster — Владелец · Изменения (moysklad toolbar o'ng cheti). */}
-        <div className="flex items-center gap-4 text-sm">
+        <div className="flex min-w-0 items-center gap-4 text-sm">
           {data.owner && (
-            <span className="font-medium text-[var(--ms-text-primary)]">{data.owner.name}</span>
+            <span className="min-w-0 truncate font-medium text-[var(--ms-text-primary)]">
+              {data.owner.name}
+            </span>
           )}
-          <span className="text-[var(--ms-text-muted)]">
+          <span className="shrink-0 text-[var(--ms-text-muted)]">
             {tHeader('changed')}: {formatDate(data.updatedAt)}
           </span>
         </div>

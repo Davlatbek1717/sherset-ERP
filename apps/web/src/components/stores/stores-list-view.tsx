@@ -127,7 +127,10 @@ export function StoresListView({
       key: 'address',
       header: t('address'),
       cell: (row) => (
-        <span className="block max-w-[280px] truncate text-[var(--ms-text-muted)] text-sm">
+        <span
+          className="block max-w-[280px] truncate text-[var(--ms-text-muted)] text-sm"
+          title={row.address ?? undefined}
+        >
           {row.address ?? '—'}
         </span>
       ),
