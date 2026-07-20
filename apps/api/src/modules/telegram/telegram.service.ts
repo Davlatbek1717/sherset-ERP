@@ -728,38 +728,57 @@ export class TelegramService implements MtprotoInboundHandler {
     return { status: job.status };
   }
 
-  /** Panel xabar oqimi — MTProto chiquvchi ∪ Business (in/out), eski→yangi. */
+  /**
+   * Panel xabar oqimi (2026-07-20 to'liq-tarix). KANONIK transkript =
+   * `TelegramChatMessage` (backfill + jonli, ikki-tomonlama) + faqat
+   * YETKAZILMAGAN `HrTelegramOutbox` overlay (yetkazilgani kanonikda bor,
+   * dubl bo'lmaydi). `?before=<ISO>` bilan orqaga sahifalash (uzun tarix).
+   */
   async counterpartyThread(
     accountId: string,
     counterpartyId: string,
     raw: Record<string, unknown>,
   ) {
     const limit = Math.min(Number(raw.limit) || 50, 200);
+    const before = typeof raw.before === 'string' ? new Date(raw.before) : null;
     const cp = await this.prisma.client.counterparty.findFirst({
       where: { id: counterpartyId, accountId },
       select: { id: true, name: true, phone: true },
     });
     if (!cp) throw new NotFoundException('Kontragent topilmadi');
 
-    // MTProto chiquvchi (shaxsiy raqamdan yuborilgan — hodisa + qo'lda).
-    const outbox = await this.prisma.client.hrTelegramOutbox.findMany({
-      where: { accountId, counterpartyId },
-      orderBy: { createdAt: 'desc' },
-      take: limit,
-    });
-    // Business ikki-tomonlama (bog'langan chat bo'lsa — kelayotgan xabar shu yerda).
-    const businessChat = await this.prisma.client.telegramChat.findFirst({
+    // Kontragentga bog'langan chat (peer-id bo'yicha yagona — backfill+jonli birlashgan).
+    const chat = await this.prisma.client.telegramChat.findFirst({
       where: { accountId, counterpartyId },
       orderBy: { lastMessageAt: 'desc' },
       select: { id: true },
     });
-    const businessMsgs = businessChat
+    // Kanonik: TelegramChatMessage (backfilled + jonli, ikki-tomonlama).
+    const canonical = chat
       ? await this.prisma.client.telegramChatMessage.findMany({
-          where: { accountId, chatRefId: businessChat.id },
+          where: {
+            accountId,
+            chatRefId: chat.id,
+            ...(before ? { createdAt: { lt: before } } : {}),
+          },
           orderBy: { createdAt: 'desc' },
           take: limit,
         })
       : [];
+    // Yetkazilgan tgMessageId'lar — mos outbox qatorini overlay'dan chiqarish uchun.
+    const deliveredIds = new Set(
+      canonical.filter((m) => m.tgMessageId != null).map((m) => String(m.tgMessageId)),
+    );
+
+    // Overlay: faqat YETKAZILMAGAN (yoki hali kanonikda yo'q) chiquvchi outbox.
+    const outbox = await this.prisma.client.hrTelegramOutbox.findMany({
+      where: { accountId, counterpartyId, ...(before ? { createdAt: { lt: before } } : {}) },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+    });
+    const overlay = outbox.filter(
+      (m) => m.telegramMessageId == null || !deliveredIds.has(String(m.telegramMessageId)),
+    );
 
     type ThreadItem = {
       id: string;
@@ -768,31 +787,14 @@ export class TelegramService implements MtprotoInboundHandler {
       status: string | null;
       kind: string;
       autoKind: string | null;
-      // Mijoz yuborgan CHEK RASMI (2026-07-20) — faqat Business kanalidan keladi
-      // (outbox — bizning chiquvchi xabarimiz, unda biriktirma bo'lmaydi).
       attachmentId: string | null;
       fileName: string | null;
       mimeType: string | null;
-      /** Forward qilingan xabar bo'lsa — asl jo'natuvchi nomi (2026-07-20, Phase 2). */
       fwdFromName: string | null;
       createdAt: Date;
     };
     const merged: ThreadItem[] = [
-      ...outbox.map((m) => ({
-        id: `ob-${m.id}`,
-        direction: 'out' as const,
-        text: m.messageText,
-        status: m.status,
-        kind: 'text',
-        autoKind: m.sourceEventType === 'manual_chat' ? null : (m.sourceEventType ?? null),
-        attachmentId: null,
-        fileName: null,
-        mimeType: null,
-        // Biz hech qachon forward YUBORMAYMIZ — bu faqat bizning chiquvchi xabarimiz.
-        fwdFromName: null,
-        createdAt: m.createdAt,
-      })),
-      ...businessMsgs.map((m) => ({
+      ...canonical.map((m) => ({
         id: `tg-${m.id}`,
         direction: m.direction as 'in' | 'out',
         text: m.text ?? '',
@@ -805,21 +807,44 @@ export class TelegramService implements MtprotoInboundHandler {
         fwdFromName: m.fwdFromName,
         createdAt: m.createdAt,
       })),
-    ]
-      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
-      .slice(-limit);
+      ...overlay.map((m) => ({
+        id: `ob-${m.id}`,
+        direction: 'out' as const,
+        text: m.messageText,
+        status: m.status,
+        kind: 'text',
+        autoKind: m.sourceEventType === 'manual_chat' ? null : (m.sourceEventType ?? null),
+        attachmentId: null,
+        fileName: null,
+        mimeType: null,
+        fwdFromName: null,
+        createdAt: m.createdAt,
+      })),
+    ].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+
+    const page = merged.slice(-limit);
+    const hasMore = merged.length > page.length || canonical.length === limit;
+    const oldest = page[0];
 
     // Ulanish holati — panel «Ulanmagan» ogohlantirishini ko'rsatishi uchun.
     const userbot = await this.prisma.client.hrTelegramAccount.findFirst({
       where: { accountId, isActive: true, sessionEncrypted: { not: null } },
       select: { phoneNumber: true },
     });
+    // Backfill holati — panel «Tarix yuklanmoqda…»/«xato» bannerini ko'rsatishi uchun.
+    const job = await this.prisma.client.telegramBackfillJob.findFirst({
+      where: { accountId, counterpartyId },
+      select: { status: true, messagesImported: true },
+    });
 
     return {
       counterparty: { id: cp.id, name: cp.name, phone: cp.phone },
       connected: !!userbot,
       fromNumber: userbot?.phoneNumber ?? null,
-      items: merged,
+      items: page,
+      backfill: job ? { status: job.status, messagesImported: job.messagesImported } : null,
+      hasMore,
+      oldestCursor: oldest ? oldest.createdAt.toISOString() : null,
     };
   }
 

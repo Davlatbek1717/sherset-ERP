@@ -169,6 +169,7 @@ describe('TelegramService.counterpartyThread — attachment passthrough', () => 
           ]),
         },
         hrTelegramAccount: { findFirst: vi.fn(async () => ({ phoneNumber: '+998901111111' })) },
+        telegramBackfillJob: { findFirst: vi.fn(async () => null) },
       },
     };
     const attachments = {};
