@@ -8329,10 +8329,6 @@ model TelegramChat {
   messages     TelegramChatMessage[]
 
   @@unique([accountId, chatId])
-  /// Bir kontragentga yagona bog'langan chat — backfill/thread counterparty
-  /// bo'yicha yagona chatni kutadi (counterpartyId NULL bo'lsa Postgres
-  /// bir nechta NULL'ga ruxsat beradi, bog'lanmagan chatlar to'qnashmaydi).
-  @@unique([accountId, counterpartyId])
   @@index([accountId, counterpartyId])
   @@index([accountId, lastMessageAt(sort: Desc)])
   @@map("telegram_chats")

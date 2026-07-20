@@ -2,14 +2,10 @@
 -- OFFLINE authored (`prisma migrate diff`, lokal Postgres o'chiq edi) —
 -- deploy'da `prisma migrate deploy` bilan qo'llaniladi.
 --
--- ⚠️ DEPLOY-VAQT XAVFI (unique index): quyidagi
---   telegram_chats_account_id_counterparty_id_key
--- mavjud DB'da bir kontragentga 2+ bog'langan telegram_chats qatori bo'lsa
--- BUZILADI. Deploy'dan oldin tekshir:
---   SELECT account_id, counterparty_id, COUNT(*) FROM telegram_chats
---   WHERE counterparty_id IS NOT NULL GROUP BY 1,2 HAVING COUNT(*) > 1;
--- Natija bo'lsa — dublikatlarni birlashtir/tozala, keyin migrate deploy.
--- (counterparty_id IS NULL qatorlar Postgres multi-NULL bilan xavfsiz.)
+-- Chat identifikatsiyasi peer'ning Telegram user-id'si (chatId) bo'yicha —
+-- backfill va jonli kiruvchi (handleIncoming) BIR XIL chat qatoriga
+-- birlashadi (@@unique([account_id, chat_id]) orqali). counterparty bo'yicha
+-- alohida unique QO'YILMAYDI (keraksiz + mavjud data'da xavf tug'dirardi).
 
 -- AlterTable
 ALTER TABLE "telegram_chats" ADD COLUMN     "history_complete" BOOLEAN NOT NULL DEFAULT false,
@@ -44,9 +40,6 @@ CREATE INDEX "telegram_backfill_job_status_requested_at_idx" ON "telegram_backfi
 
 -- CreateIndex
 CREATE UNIQUE INDEX "telegram_backfill_job_account_id_counterparty_id_key" ON "telegram_backfill_job"("account_id", "counterparty_id");
-
--- CreateIndex
-CREATE UNIQUE INDEX "telegram_chats_account_id_counterparty_id_key" ON "telegram_chats"("account_id", "counterparty_id");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "telegram_chat_messages_chat_ref_id_tg_message_id_key" ON "telegram_chat_messages"("chat_ref_id", "tg_message_id");

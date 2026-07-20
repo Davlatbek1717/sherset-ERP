@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ScheduleModule } from '@nestjs/schedule';
 import { PrismaModule } from '../../../prisma/prisma.module.js';
+import { AttachmentModule } from '../../attachment/attachment.module.js';
 import { TelegramModule } from '../../telegram/telegram.module.js';
 import { TelegramService } from '../../telegram/telegram.service.js';
 import { HrNotificationTemplateModule } from '../hr-notification-template/hr-notification-template.module.js';
@@ -18,6 +19,7 @@ import { HrSupplyListener } from './listeners/supply.listener.js';
 import { MTPROTO_ADAPTER, type MtprotoAdapter, NoopMtprotoAdapter } from './mtproto-adapter.js';
 import { MTPROTO_INBOUND_HANDLER } from './mtproto-inbound-handler.js';
 import { MtprotoWorkerService } from './mtproto-worker.service.js';
+import { TelegramBackfillWorkerService } from './telegram-backfill-worker.service.js';
 
 /**
  * Bridge module. Switches between the real gramjs adapter and a no-op
@@ -51,6 +53,9 @@ function isTelegramDisabled(): boolean {
     // cycle: TelegramModule's own imports (Auth/Attachment/HrTelegramClient/
     // HrTelegramAccount) never import HrTelegramBridgeModule back.
     TelegramModule,
+    // AttachmentModule — backfill worker media'ni (chek/rasm) Attachment'ga
+    // yuklab oladi (TelegramModule AttachmentService'ni re-export qilmaydi).
+    AttachmentModule,
   ],
   providers: [
     HrTelegramEntityCacheService,
@@ -64,6 +69,7 @@ function isTelegramDisabled(): boolean {
     },
     { provide: MTPROTO_INBOUND_HANDLER, useExisting: TelegramService },
     HrTelegramOutboxWorker,
+    TelegramBackfillWorkerService,
     HrAdminNotifier,
     HrNotificationDispatcher,
     HrDemandListener,

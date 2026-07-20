@@ -40,6 +40,8 @@ describe('MtprotoWorkerService.fetchHistory', () => {
     const { svc, handle } = makeWorker(page);
     const res = await svc.fetchHistory({ accountId: 'acc', phone: '+998901234567', limit: 100 });
     expect(res.slot).toBe(1);
+    // peerId = resolvePhone descriptor'idagi userId (chatId birlashishi uchun)
+    expect(res.peerId).toBe('42');
     expect(res.messages).toEqual(page);
     // resolveEntity: cache miss → resolvePhone → hydrateEntity → getHistory
     expect(handle.getHistory).toHaveBeenCalledWith(

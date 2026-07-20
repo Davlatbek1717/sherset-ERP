@@ -88,7 +88,7 @@ export class MtprotoWorkerService implements MtprotoAdapter {
         const client = await this.ensureClient(opts.accountId, slot);
         if (!client) continue; // no account / no session in this slot
 
-        const entity = await this.resolveEntity(client, opts.accountId, slot, opts.toPhone);
+        const { entity } = await this.resolveEntity(client, opts.accountId, slot, opts.toPhone);
         // debt-telegram.util.ts messages (sourceEventType `debt.*`) opt into
         // MarkdownV2Parser for underline support; every other notification
         // family keeps the client's default `**bold**` parser untouched.
@@ -140,14 +140,19 @@ export class MtprotoWorkerService implements MtprotoAdapter {
     limit: number;
     offsetId?: number;
     minId?: number;
-  }): Promise<{ slot: number; messages: HistoryMtprotoMessage[] }> {
+  }): Promise<{ slot: number; peerId: string | null; messages: HistoryMtprotoMessage[] }> {
     const errors: Error[] = [];
     for (const slot of MtprotoWorkerService.SLOTS) {
       if (await this.accounts.isFlooded(opts.accountId, slot)) continue;
       try {
         const client = await this.ensureClient(opts.accountId, slot);
         if (!client) continue; // no account / no session in this slot
-        const entity = await this.resolveEntity(client, opts.accountId, slot, opts.phone);
+        const { entity, userId } = await this.resolveEntity(
+          client,
+          opts.accountId,
+          slot,
+          opts.phone,
+        );
         const messages = await withTimeout(
           client.getHistory(entity, {
             limit: opts.limit,
@@ -156,7 +161,9 @@ export class MtprotoWorkerService implements MtprotoAdapter {
           }),
           'getHistory',
         );
-        return { slot, messages };
+        // peerId = peer'ning Telegram user-id'si — backfill chat'ni handleIncoming
+        // bilan bir xil (accountId, chatId) bo'yicha birlashtiradi (dublikat yo'q).
+        return { slot, peerId: userId, messages };
       } catch (e) {
         if (isGramjsFloodError(e)) {
           const until = new Date(Date.now() + e.seconds * 1000);
@@ -278,15 +285,18 @@ export class MtprotoWorkerService implements MtprotoAdapter {
     accountId: string,
     slot: number,
     phone: string,
-  ): Promise<unknown> {
+  ): Promise<{ entity: unknown; userId: string | null }> {
     const cached = await this.entityCache.get(accountId, slot, phone);
     // Both branches go through hydrateEntity — cache hit AND miss must end
     // up with a real, class-intact peer object, never the raw JSON blob
     // (see hydrateEntity's doc comment for the live-confirmed bug this
     // prevents: cache hit → "Cannot cast User to any kind of peer").
+    // `userId` — descriptor'dagi peer user-id: backfill chat'ni jonli
+    // kiruvchi bilan bir xil chatId bo'yicha birlashtirish uchun (send yo'liga
+    // ta'sir qilmaydi — u faqat `entity`ni ishlatadi).
     if (cached) {
       try {
-        return client.hydrateEntity(cached);
+        return { entity: client.hydrateEntity(cached), userId: peerUserId(cached) };
       } catch (e) {
         this.logger.warn(
           `stale/incompatible cached entity for acc=${accountId} slot=${slot} — refetching: ${(e as Error).message}`,
@@ -301,7 +311,7 @@ export class MtprotoWorkerService implements MtprotoAdapter {
         .set(accountId, slot, phone, serialized as Prisma.InputJsonValue)
         .catch((e) => this.logger.warn(`entity cache set failed: ${(e as Error).message}`));
     }
-    return client.hydrateEntity(fresh);
+    return { entity: client.hydrateEntity(fresh), userId: peerUserId(fresh) };
   }
 
   /** Drop a connected client (e.g. on auth invalidation by HR ops). */
@@ -313,6 +323,21 @@ export class MtprotoWorkerService implements MtprotoAdapter {
       this.clients.delete(key);
     }
   }
+}
+
+/**
+ * `{userId, accessHash}` descriptor'dan (resolvePhone natijasi yoki keshdan)
+ * peer'ning Telegram user-id'sini string sifatida ajratadi. Backfill shu
+ * id'ni `TelegramChat.chatId` qiladi — `handleIncoming` ham xuddi shu
+ * (senderId) ni ishlatadi, shuning uchun ikkovi bir chatga birlashadi.
+ */
+function peerUserId(desc: unknown): string | null {
+  if (desc && typeof desc === 'object') {
+    const u = (desc as { userId?: unknown }).userId;
+    if (typeof u === 'string') return u;
+    if (typeof u === 'number' || typeof u === 'bigint') return String(u);
+  }
+  return null;
 }
 
 /** Best-effort serialization — preserves what gramjs accepts on the wire. */

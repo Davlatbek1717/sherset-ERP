@@ -52,7 +52,7 @@ export interface MtprotoAdapter {
     limit: number;
     offsetId?: number;
     minId?: number;
-  }): Promise<{ slot: number; messages: HistoryMtprotoMessage[] }>;
+  }): Promise<{ slot: number; peerId: string | null; messages: HistoryMtprotoMessage[] }>;
 }
 
 /**
@@ -91,8 +91,12 @@ export class NoopMtprotoAdapter implements MtprotoAdapter {
     throw new Error('mtproto_adapter_not_configured');
   }
 
-  async fetchHistory(): Promise<{ slot: number; messages: HistoryMtprotoMessage[] }> {
+  async fetchHistory(): Promise<{
+    slot: number;
+    peerId: string | null;
+    messages: HistoryMtprotoMessage[];
+  }> {
     // Telegram sozlanmaган — bo'sh sahifa (backfill job'ni bloklamaydi).
-    return { slot: 0, messages: [] };
+    return { slot: 0, peerId: null, messages: [] };
   }
 }
