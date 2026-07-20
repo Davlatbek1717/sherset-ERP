@@ -463,7 +463,12 @@ export default function DebtsPage() {
   ];
 
   return (
-    <Container>
+    // size="full" (2026-07-20) — bo'sh bo'lgan Container default'i (max-w-7xl,
+    // 1280px) katta monitorlarda ekranning yarmigacha bo'sh joy qoldirardi;
+    // qarz jadvali ustunlari ko'p (F.I.Sh, telefon, summa, sana, mas'ul, holat)
+    // — to'liq kenglikka muhtoj (products/customer-orders kabi ListView'li
+    // sahifalar ham Container'siz, ya'ni cheklovsiz kenglikda ishlaydi).
+    <Container size="full">
       <PageHeader
         title={t('title')}
         subtitle={t('subtitle')}

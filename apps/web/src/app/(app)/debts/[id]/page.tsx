@@ -282,7 +282,10 @@ export default function DebtProfilePage() {
     });
 
   return (
-    <Container>
+    // size="full" — ro'yxat sahifasi bilan bir xil sabab (2026-07-20): keng
+    // ekranlarda bo'sh joy qolmasin, to'lovlar/eslatmalar/Telegram panel kabi
+    // ko'p ustunli bo'limlar to'liq kenglikdan foydalansin.
+    <Container size="full">
       <PageHeader
         title={d?.counterpartyName ?? t('title')}
         subtitle={d ? `${d.name} · ${d.phone ?? '—'}` : undefined}
