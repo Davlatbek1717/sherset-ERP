@@ -95,6 +95,8 @@ const GROUPS: SidebarGroup[] = [
     links: [
       { href: '/settings/email', labelKey: 'email', icon: Icons.email },
       { href: '/settings/email/log', labelKey: 'email_log', icon: Icons.email },
+      { href: '/settings/sms', labelKey: 'sms', icon: Icons.email },
+      { href: '/settings/sms/templates', labelKey: 'sms_templates', icon: Icons.email },
       { href: '/settings/webhooks', labelKey: 'webhooks', icon: Icons.webhooks },
       {
         href: '/settings/publications',
