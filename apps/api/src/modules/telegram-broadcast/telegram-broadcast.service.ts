@@ -61,6 +61,7 @@ export class TelegramBroadcastService {
       ref,
       caption: KECHKI_SMENA_CAPTION.text,
       boldRanges: KECHKI_SMENA_CAPTION.bold,
+      quoteRanges: KECHKI_SMENA_CAPTION.quote,
     });
     this.logger.log(`Video-tarqatma TEST yuborildi → ${phone} (slot=${res.slot})`);
     return { ok: true, slot: res.slot, messageId: res.messageId, to: phone };

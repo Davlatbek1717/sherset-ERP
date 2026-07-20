@@ -74,6 +74,7 @@ export interface MtprotoAdapter {
     ref: TgVideoRef;
     caption: string;
     boldRanges: { offset: number; length: number }[];
+    quoteRanges?: { offset: number; length: number }[];
   }): Promise<MtprotoSendResult>;
 }
 

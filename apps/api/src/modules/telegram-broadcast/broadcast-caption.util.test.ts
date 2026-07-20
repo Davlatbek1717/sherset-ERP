@@ -30,11 +30,36 @@ describe('broadcast caption builder', () => {
     expect(KECHKI_SMENA_CAPTION.bold[0]?.offset).toBe(3);
   });
 
+  it('blockquote oraliqlar TO`G`RI bloklarni qoplaydi (sarlavha + ro`yxat)', () => {
+    const { text, quote } = KECHKI_SMENA_CAPTION;
+    expect(quote).toHaveLength(2);
+    const q1 = text.slice(quote[0]!.offset, quote[0]!.offset + quote[0]!.length);
+    const q2 = text.slice(quote[1]!.offset, quote[1]!.offset + quote[1]!.length);
+    // Quti 1 — sarlavha (emoji bilan). Quti 2 — 5 qatorli checkmark ro'yxati.
+    expect(q1).toBe('🌙 SHERSETDA KATTA YANGILIK!');
+    expect(q2.startsWith('☑️ Kabel va simlar — SHERSET KABEL, Uzkabel, AAK')).toBe(true);
+    expect(q2.endsWith('☑️ Metiz va elektromontaj mollari')).toBe(true);
+    // Ro'yxat qutisi barcha 5 qatorni o'z ichiga oladi.
+    for (const line of ['Rozetka', 'Avtomatlar', 'Lyustra', 'Metiz']) {
+      expect(q2).toContain(line);
+    }
+    // Quti «💡 Barcha turdagi»gacha CHO'ZILMAYDI (ro'yxatdan keyingi matn tashqarida).
+    expect(q2).not.toContain('Barcha turdagi');
+  });
+
   it('buildCaption bo`sh/oddiy holatlar', () => {
     expect(buildCaption([]).text).toBe('');
     expect(buildCaption([{ t: 'a' }, { t: 'b', b: true }])).toEqual({
       text: 'ab',
       bold: [{ offset: 1, length: 1 }],
+      quote: [],
     });
+  });
+
+  it('buildCaption — qo`shni q-guruh segmentlari bitta blockquote`ga birlashadi', () => {
+    const r = buildCaption([{ t: 'x' }, { t: 'A', q: 1 }, { t: 'B', b: true, q: 1 }, { t: 'y' }]);
+    expect(r.text).toBe('xABy');
+    expect(r.quote).toEqual([{ offset: 1, length: 2 }]); // "AB"
+    expect(r.bold).toEqual([{ offset: 2, length: 1 }]); // "B"
   });
 });

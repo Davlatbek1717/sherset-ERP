@@ -276,6 +276,7 @@ export class MtprotoWorkerService implements MtprotoAdapter, OnModuleInit {
     ref: TgVideoRef;
     caption: string;
     boldRanges: { offset: number; length: number }[];
+    quoteRanges?: { offset: number; length: number }[];
   }): Promise<MtprotoSendResult> {
     const errors: Error[] = [];
     for (const slot of MtprotoWorkerService.SLOTS) {
@@ -285,7 +286,7 @@ export class MtprotoWorkerService implements MtprotoAdapter, OnModuleInit {
         if (!client) continue;
         const { entity } = await this.resolveEntity(client, opts.accountId, slot, opts.toPhone);
         const result = await withTimeout(
-          client.sendVideoByRef(entity, opts.ref, opts.caption, opts.boldRanges),
+          client.sendVideoByRef(entity, opts.ref, opts.caption, opts.boldRanges, opts.quoteRanges),
           'sendVideoByRef',
         );
         return { slot, messageId: result.messageId };

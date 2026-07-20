@@ -197,6 +197,7 @@ class GramjsClientHandle implements TelegramClientHandle {
     ref: TgVideoRef,
     caption: string,
     boldRanges: { offset: number; length: number }[],
+    quoteRanges?: { offset: number; length: number }[],
   ): Promise<{ messageId: string }> {
     const media = new Api.InputMediaDocument({
       id: new Api.InputDocument({
@@ -205,9 +206,15 @@ class GramjsClientHandle implements TelegramClientHandle {
         fileReference: Buffer.from(ref.fileReference, 'base64'),
       }),
     });
-    const entities = boldRanges.map(
-      (r) => new Api.MessageEntityBold({ offset: r.offset, length: r.length }),
-    );
+    // Blockquote (kulrang quti) + bold — ANIQ entity'lar (markdown/escape yo'q).
+    // Blockquote'ni oldin qo'yamiz (Telegram entity tartibiga sezgir emas, lekin
+    // izchillik uchun); ikkalasi bir oraliqda ustma-ust kelishi mumkin (title).
+    const entities = [
+      ...(quoteRanges ?? []).map(
+        (r) => new Api.MessageEntityBlockquote({ offset: r.offset, length: r.length }),
+      ),
+      ...boldRanges.map((r) => new Api.MessageEntityBold({ offset: r.offset, length: r.length })),
+    ];
     const msg = await this.client.sendFile(entity as never, {
       file: media,
       caption,

@@ -85,6 +85,7 @@ export interface TelegramClientHandle {
     ref: TgVideoRef,
     caption: string,
     boldRanges: { offset: number; length: number }[],
+    quoteRanges?: { offset: number; length: number }[],
   ): Promise<{ messageId: string }>;
 
   /** Login step 1 — server sends OTP via SMS/Telegram. */
