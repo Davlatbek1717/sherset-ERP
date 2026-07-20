@@ -41,6 +41,22 @@ interface TgDocument {
   file_size?: number;
 }
 
+/**
+ * Bot API 7.0+ shape (replaces the older `forward_from`/`forward_from_chat`
+ * pair). Only the variants that carry a human-readable name are modeled —
+ * `type: 'channel'` messages carry `chat.title`, `type: 'chat'` carry
+ * `sender_chat.title`, `type: 'user'` carry `sender_user`, and
+ * `type: 'hidden_user'` is Telegram's stand-in for a forward-privacy-locked
+ * original author (name-only, no resolvable peer).
+ */
+interface TgForwardOrigin {
+  type?: string;
+  sender_user?: TgUser;
+  sender_user_name?: string;
+  sender_chat?: { title?: string };
+  chat?: { title?: string };
+}
+
 interface TgMessage {
   message_id?: number;
   chat?: { id?: number; first_name?: string; last_name?: string; username?: string };
@@ -52,6 +68,7 @@ interface TgMessage {
   voice?: { file_id: string; mime_type?: string };
   video?: { file_id: string; mime_type?: string; file_name?: string };
   contact?: { phone_number?: string; user_id?: number; first_name?: string };
+  forward_origin?: TgForwardOrigin;
 }
 
 /** Chat xabarining turi — DB'dagi `kind` ustuni bilan bir xil. */
@@ -83,6 +100,11 @@ export interface ParsedBusinessMessage {
   mimeType: string | null;
   /** Mijoz «Kontaktni ulashish» bosgan bo'lsa — telefon raqami. */
   contactPhone: string | null;
+  /**
+   * Forward qilingan xabaning asl jo'natuvchisi/kanal nomi (2026-07-20,
+   * Phase 2) — Telegram'ning o'zidagi "Переслано от: X" ko'rsatkichi.
+   */
+  fwdFromName: string | null;
 }
 
 export interface ParsedOther {
@@ -94,6 +116,16 @@ export type ParsedUpdate = ParsedBusinessConnection | ParsedBusinessMessage | Pa
 function fullName(u: TgUser | undefined | null): string {
   if (!u) return '';
   return [u.first_name, u.last_name].filter(Boolean).join(' ');
+}
+
+/** `forward_origin` → asl jo'natuvchi nomi, yoki forward emas bo'lsa null. */
+function fwdFromName(origin: TgForwardOrigin | undefined): string | null {
+  if (!origin) return null;
+  if (origin.sender_user) return fullName(origin.sender_user).slice(0, 128) || null;
+  if (origin.sender_user_name) return origin.sender_user_name.slice(0, 128);
+  if (origin.sender_chat?.title) return origin.sender_chat.title.slice(0, 128);
+  if (origin.chat?.title) return origin.chat.title.slice(0, 128);
+  return null;
 }
 
 /** Rasm bir necha o'lchamda keladi — ENG KATTASI olinadi (chek o'qilarli bo'lsin). */
@@ -198,6 +230,7 @@ function parseMessage(m: TgMessage, source: 'business' | 'bot'): ParsedUpdate {
     fromName: m.from ? fullName(m.from).slice(0, 128) || null : null,
     text: text.slice(0, 4096),
     tgMessageId: m.message_id ?? null,
+    fwdFromName: fwdFromName(m.forward_origin),
     ...media,
   };
 }

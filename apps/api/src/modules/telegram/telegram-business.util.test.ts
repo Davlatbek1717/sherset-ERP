@@ -57,6 +57,7 @@ describe('parseBusinessUpdate', () => {
       fileName: null,
       mimeType: null,
       contactPhone: null,
+      fwdFromName: null,
     });
   });
 
@@ -143,6 +144,71 @@ describe('parseBusinessUpdate', () => {
     const r = parseBusinessUpdate({ message: { chat: { id: 1 }, text: 'hi' } });
     expect(r.kind).toBe('business_message');
     if (r.kind === 'business_message') expect(r.source).toBe('bot');
+  });
+
+  // ── 2026-07-20 Phase 2: FORWARD KO'RSATKICHI ────────────────────────────
+  // Telegram'ning o'zidagi "Переслано от: X" — Bot API 7.0+ `forward_origin`
+  // to'rtta shakldan biri bilan keladi, hammasi ismga/nomga tushishi kerak.
+  describe('forward_origin — "Переслано от: X" ko\'rsatkichi', () => {
+    it('oddiy foydalanuvchidan forward (type=user)', () => {
+      const r = parseBusinessUpdate({
+        business_message: {
+          message_id: 20,
+          chat: { id: 9 },
+          text: 'qarang',
+          forward_origin: { type: 'user', sender_user: { id: 1, first_name: 'Anvar' } },
+        },
+      });
+      if (r.kind !== 'business_message') throw new Error('business_message kutilgandi');
+      expect(r.fwdFromName).toBe('Anvar');
+    });
+
+    it('forward-maxfiylik yoqilgan (type=hidden_user) — ism satrdan olinadi', () => {
+      const r = parseBusinessUpdate({
+        business_message: {
+          message_id: 21,
+          chat: { id: 9 },
+          text: 'qarang',
+          forward_origin: { type: 'hidden_user', sender_user_name: 'ABDIXAMIDOVICH' },
+        },
+      });
+      if (r.kind !== 'business_message') throw new Error('business_message kutilgandi');
+      expect(r.fwdFromName).toBe('ABDIXAMIDOVICH');
+    });
+
+    it('guruh/chat kanalidan forward (type=chat)', () => {
+      const r = parseBusinessUpdate({
+        business_message: {
+          message_id: 22,
+          chat: { id: 9 },
+          text: 'qarang',
+          forward_origin: { type: 'chat', sender_chat: { title: 'Sotuv guruhi' } },
+        },
+      });
+      if (r.kind !== 'business_message') throw new Error('business_message kutilgandi');
+      expect(r.fwdFromName).toBe('Sotuv guruhi');
+    });
+
+    it('kanaldan forward (type=channel)', () => {
+      const r = parseBusinessUpdate({
+        business_message: {
+          message_id: 23,
+          chat: { id: 9 },
+          text: 'qarang',
+          forward_origin: { type: 'channel', chat: { title: 'Yangiliklar' } },
+        },
+      });
+      if (r.kind !== 'business_message') throw new Error('business_message kutilgandi');
+      expect(r.fwdFromName).toBe('Yangiliklar');
+    });
+
+    it("oddiy (forward bo'lmagan) xabarda fwdFromName null", () => {
+      const r = parseBusinessUpdate({
+        business_message: { message_id: 24, chat: { id: 9 }, text: 'oddiy xabar' },
+      });
+      if (r.kind !== 'business_message') throw new Error('business_message kutilgandi');
+      expect(r.fwdFromName).toBeNull();
+    });
   });
 
   it('stiker kabi bosh xabar saqlanmaydi', () => {

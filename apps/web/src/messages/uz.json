@@ -6905,7 +6905,8 @@
     "status_pending": "yuborilmoqda…",
     "status_retry": "qayta…",
     "status_failed": "yuborilmadi",
-    "open_file": "Faylni ochish"
+    "open_file": "Faylni ochish",
+    "forwarded_from": "{name} dan forward qilingan"
   },
   "telegram_chat": {
     "bind": "Bog'lash",

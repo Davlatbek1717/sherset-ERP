@@ -113,6 +113,12 @@ export interface IncomingMtprotoMessage {
   senderName: string | null;
   text: string;
   tgMessageId: number;
+  /**
+   * Original sender's display name (or channel/chat title) if this message
+   * was forwarded from elsewhere — 2026-07-20 Phase 2, mirrors Telegram's
+   * own "Переслано от: X" indicator. `null` for an ordinary message.
+   */
+  fwdFromName: string | null;
   kind: 'text' | 'photo' | 'document' | 'voice' | 'video';
   mimeType: string | null;
   fileName: string | null;

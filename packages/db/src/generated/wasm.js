@@ -3642,6 +3642,7 @@ exports.Prisma.TelegramChatMessageScalarFieldEnum = {
   mimeType: 'mimeType',
   attachmentId: 'attachmentId',
   autoKind: 'autoKind',
+  fwdFromName: 'fwdFromName',
   createdAt: 'createdAt'
 };
 

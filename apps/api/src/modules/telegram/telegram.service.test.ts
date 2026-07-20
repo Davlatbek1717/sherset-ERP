@@ -243,6 +243,7 @@ describe('TelegramService.handleIncoming — MTProto customer reply capture', ()
     senderName: 'Anvar Mijoz',
     text: 'qachon yetkazasiz?',
     tgMessageId: 42,
+    fwdFromName: null,
     kind: 'text',
     mimeType: null,
     fileName: null,
@@ -275,7 +276,23 @@ describe('TelegramService.handleIncoming — MTProto customer reply capture', ()
         tgMessageId: 42n,
         senderName: 'Anvar Mijoz',
         kind: 'text',
+        fwdFromName: null,
       }),
+    });
+  });
+
+  // 2026-07-20 Phase 2: mijoz chatimizga boshqa joydan forward qilingan
+  // xabar yuborsa — Telegram'ning o'zidagi "Переслано от: X" kabi asl
+  // jo'natuvchi nomi saqlanishi kerak (gramjs-client.factory.ts'da
+  // hisoblanadi, handleIncoming faqat o'tkazadi).
+  it("forward qilingan xabarda fwdFromName TelegramChatMessage'ga yoziladi", async () => {
+    const { service, messageCreate } = makeInboundHarness();
+    const forwarded: IncomingMtprotoMessage = { ...textMsg, fwdFromName: 'Sardor Aliyev' };
+
+    await service.handleIncoming('acc1', 1, forwarded);
+
+    expect(messageCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({ fwdFromName: 'Sardor Aliyev' }),
     });
   });
 

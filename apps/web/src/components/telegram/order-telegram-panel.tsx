@@ -9,15 +9,18 @@
  *
  * Yuborish — shaxsiy raqamdan (MTProto userbot) `POST /telegram/counterparty/
  * :id/send`; o'qish — `GET /telegram/counterparty/:id/thread` (MTProto chiquvchi
- * ∪ Business ikki-tomonlama). Raqam ulanmagan bo'lsa panel «Ulanmagan» deb
- * ogohlantiradi va Sozlamalarga havola beradi. Kiruvchi jonli xabar — keyingi
- * bosqich (MTProto inbound); hozir chiquvchi + mavjud tarix ko'rinadi.
+ * ∪ ikki-tomonlama — Business HAM, MTProto kiruvchi HAM, 2026-07-20 Phase 1).
+ * Raqam ulanmagan bo'lsa panel «Ulanmagan» deb ogohlantiradi va Sozlamalarga
+ * havola beradi. 10s'da polling — mijoz javobi jonli ko'rinishga yaqin keladi.
  *
- * CHEK RASMI (2026-07-20): Business kanalida mijoz yuborgan rasm/hujjat
- * `attachmentId` bilan keladi (outbox — bizning chiquvchimiz, unda hech qachon
- * biriktirma bo'lmaydi). debts/[id] sahifasi eski TelegramChatCard o'rniga shu
- * panelni ishlatadi — chek ko'rinishi shart, shuning uchun ReceiptViewer shu
- * yerga ham ko'chirildi (telegram-chat-card.tsx bilan bir xil uslub).
+ * CHEK RASMI (2026-07-20): mijoz yuborgan rasm/hujjat/ovoz `attachmentId`
+ * bilan keladi (outbox — bizning chiquvchimiz, unda hech qachon biriktirma
+ * bo'lmaydi). debts/[id] sahifasi eski TelegramChatCard o'rniga shu panelni
+ * ishlatadi — chek ko'rinishi shart, shuning uchun ReceiptViewer shu yerga
+ * ham ko'chirildi (telegram-chat-card.tsx bilan bir xil uslub).
+ *
+ * FORWARD KO'RSATKICHI (2026-07-20, Phase 2): `fwdFromName` bo'lsa — Telegram
+ * o'zidagi "Переслано от: X" uslubida balonning ustiga chiqadi.
  */
 
 import { ReceiptViewer } from '@/components/debts/receipt-viewer';
@@ -38,6 +41,8 @@ interface ThreadItem {
   attachmentId: string | null;
   fileName: string | null;
   mimeType: string | null;
+  /** Forward qilingan xabar bo'lsa — asl jo'natuvchi nomi (2026-07-20, Phase 2). */
+  fwdFromName: string | null;
   createdAt: string;
 }
 
@@ -197,6 +202,14 @@ export function OrderTelegramPanel({
                       : 'rounded-bl-sm bg-[var(--ms-bg-surface)] text-[var(--ms-text-primary)] shadow-sm'
                   }`}
                 >
+                  {m.fwdFromName && (
+                    <div
+                      className="mb-0.5 truncate font-medium text-[11px] text-[var(--ms-text-brand)] italic"
+                      data-test-id={`order-tg-fwd-${m.id}`}
+                    >
+                      {t('forwarded_from', { name: m.fwdFromName })}
+                    </div>
+                  )}
                   {auto && <span className="mr-1">{auto}</span>}
                   {m.attachmentId && m.kind !== 'text' && (
                     <button

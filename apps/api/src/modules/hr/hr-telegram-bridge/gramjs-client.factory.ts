@@ -239,6 +239,7 @@ class GramjsClientHandle implements TelegramClientHandle {
           if (!event.isPrivate) return;
           const msg = event.message;
           const sender = (await msg.getSender().catch(() => undefined)) as Api.User | undefined;
+          const fwdFromName = extractFwdFromName(msg);
 
           let kind: IncomingMtprotoMessage['kind'] = 'text';
           let mimeType: string | null = null;
@@ -269,6 +270,7 @@ class GramjsClientHandle implements TelegramClientHandle {
             senderName: [sender?.firstName, sender?.lastName].filter(Boolean).join(' ') || null,
             text: msg.text ?? '',
             tgMessageId: msg.id,
+            fwdFromName,
             kind,
             mimeType,
             fileName,
@@ -290,4 +292,27 @@ class GramjsClientHandle implements TelegramClientHandle {
       new NewMessage({ incoming: true }),
     );
   }
+}
+
+/**
+ * `message.forward.sender` is resolved SYNCHRONOUSLY from the entities map
+ * that ships with the update (no extra round-trip) — preferred over the raw
+ * `fwdFrom.fromId` peer reference. Falls back to `fwdFrom.fromName`, which is
+ * what Telegram sends instead of a resolvable sender when the ORIGINAL
+ * author has forward-privacy turned on (shows as a plain name string, not a
+ * peer — matches the "Переслано от: ABDIXAMIDOVICH" style seen live).
+ */
+function extractFwdFromName(msg: Api.Message): string | null {
+  const fwd = msg.fwdFrom;
+  if (!fwd) return null;
+  const sender = msg.forward?.sender;
+  if (sender) {
+    if (sender.className === 'User') {
+      const name = [sender.firstName, sender.lastName].filter(Boolean).join(' ');
+      if (name) return name;
+    } else if ('title' in sender && sender.title) {
+      return sender.title;
+    }
+  }
+  return fwd.fromName ?? null;
 }

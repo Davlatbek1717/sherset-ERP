@@ -6904,7 +6904,8 @@
     "status_pending": "отправляется…",
     "status_retry": "повтор…",
     "status_failed": "не отправлено",
-    "open_file": "Открыть файл"
+    "open_file": "Открыть файл",
+    "forwarded_from": "Переслано от {name}"
   },
   "telegram_chat": {
     "bind": "Привязать",

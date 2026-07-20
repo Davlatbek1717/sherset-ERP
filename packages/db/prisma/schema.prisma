@@ -8325,6 +8325,11 @@ model TelegramChatMessage {
   /// | 'reminder'). Qo'lda yozilgan xabarda null. Chatda belgisi ko'rinadi.
   autoKind String? @map("auto_kind") @db.VarChar(20)
 
+  /// Forward qilingan xabaning asl jo'natuvchisi/kanal nomi (2026-07-20,
+  /// Phase 2) — Telegram'dagi "Переслано от: X" ko'rsatkichi shu yerdan
+  /// chiqadi. null = forward emas, oddiy xabar.
+  fwdFromName String? @map("fwd_from_name") @db.VarChar(128)
+
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
 
   account Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)

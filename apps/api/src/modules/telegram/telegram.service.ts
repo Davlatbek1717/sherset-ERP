@@ -300,6 +300,7 @@ export class TelegramService implements MtprotoInboundHandler {
           fileId: parsed.fileId,
           fileName: parsed.fileName,
           mimeType: parsed.mimeType,
+          fwdFromName: parsed.fwdFromName,
         },
       });
 
@@ -385,6 +386,7 @@ export class TelegramService implements MtprotoInboundHandler {
         kind: msg.kind,
         mimeType: msg.mimeType,
         fileName: msg.fileName,
+        fwdFromName: msg.fwdFromName,
       },
     });
     this.logger.debug(`MTProto kiruvchi xabar (acc=${accountId} slot=${slot}): ${created.id}`);
@@ -726,6 +728,8 @@ export class TelegramService implements MtprotoInboundHandler {
       attachmentId: string | null;
       fileName: string | null;
       mimeType: string | null;
+      /** Forward qilingan xabar bo'lsa — asl jo'natuvchi nomi (2026-07-20, Phase 2). */
+      fwdFromName: string | null;
       createdAt: Date;
     };
     const merged: ThreadItem[] = [
@@ -739,6 +743,8 @@ export class TelegramService implements MtprotoInboundHandler {
         attachmentId: null,
         fileName: null,
         mimeType: null,
+        // Biz hech qachon forward YUBORMAYMIZ — bu faqat bizning chiquvchi xabarimiz.
+        fwdFromName: null,
         createdAt: m.createdAt,
       })),
       ...businessMsgs.map((m) => ({
@@ -751,6 +757,7 @@ export class TelegramService implements MtprotoInboundHandler {
         attachmentId: m.attachmentId,
         fileName: m.fileName,
         mimeType: m.mimeType,
+        fwdFromName: m.fwdFromName,
         createdAt: m.createdAt,
       })),
     ]
@@ -850,6 +857,8 @@ export class TelegramService implements MtprotoInboundHandler {
         mimeType: m.mimeType,
         /** Avtomatik xabar bo'lsa sababi (qarz berildi / to'lov / ...). */
         autoKind: m.autoKind,
+        /** Forward qilingan xabar bo'lsa — asl jo'natuvchi nomi (2026-07-20, Phase 2). */
+        fwdFromName: m.fwdFromName,
         createdAt: m.createdAt,
       })),
     };
