@@ -305,7 +305,27 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
-> **🟢💻 2026-07-20 (MASHINA KO'CHIRISH + QARZ-ESLATMA JONLI-CHAT FIX — Phase-1, runtime-tasdiqlanmagan)**
+> **🟢💻 2026-07-20 (MASHINA KO'CHIRISH + QARZ-ESLATMA JONLI-CHAT FIX — ✅ DEPLOYED + jonli tasdiqlangan)**
+> **DEPLOY (2026-07-20, shu yangi mashinadan birinchi marta):** GitHub o'lik → `git bundle` (a2cc529..HEAD,
+> ~9.5KB, inline base64-over-exec) → VPS'da `git fetch <bundle> HEAD:refs/heads/incoming-deploy` + `merge
+> --ff-only` (bundle "main" emas "HEAD" nomi bilan yozilishini unutma — refspec shunga moslansin). `pnpm
+> install` (3.5s, o'zgarish yo'q) → `@moysklad/money` build → `pnpm build:web` **BIRINCHI URINISH
+> MUVAFFAQIYATSIZ**: `OrderTelegramPanel counterpartyName` propiga `string|null` uzatilgan edi (prop
+> `string|undefined` kutadi) — lokal muhitda `@moysklad/money` resolve muammosi tufayli to'liq web
+> typecheck oldindan ishlamagan, shu bug shu sababli o'tib ketgan edi (VPS'ning haqiqiy `next build`
+> typecheck bosqichi tutdi). `?? undefined` bilan tuzatildi, qayta bundle+merge+build → **muvaffaqiyatli**
+> (`✓ Compiled successfully in 3.2min`). ⚠️ **paramiko nohup-hang gotcha YANA tasdiqlandi** (07-04j'dagi eski
+> yozuvga mos): `nohup cmd & disown` chan.read()'ni hali ham osiltiradi — ishonchli yechim: `setsid bash -c
+> {cmd} </dev/null >/dev/null 2>&1 &` yuborib, chan'ni O'QIMASDAN yopish, keyin alohida exec'da
+> `while pgrep -f 'next build'; do sleep 5; done` bilan poll qilish. `prisma migrate deploy`: pending yo'q.
+> `pm2 restart sherset-api sherset-web` (FAQAT shular — boshqa 6 ta ijarachi pm2 app tegilmadi, uptime
+> tasdiqlandi). **Jonli verify**: `sherset.biznesjon.uz` 200 · debts/[id] 200 · api/debts 401-korrekt ·
+> `.next` build ichida `order-telegram-panel`/`tg-counterparty-thread` aynan `debts/[id]` chunkida topildi
+> (yangi kod haqiqatan deploy qilingani tasdiqlandi, grep bilan). Foydalanuvchi savoli — «qarz xabari
+> yuborilganda ism/summa avtomatikmi» — **HA, tasdiqlangan** (backend `counterparty.name` + hisoblangan
+> qoldiqni ishlatadi, bug yo'q edi; asl muammo faqat jonli-chat ko'rinmasligi edi, shu deploy bilan hal
+> bo'ldi). ⚠️ Browser-UI smoke (haqiqiy operator debts/[id]ga kirib chatni ko'rishi) hali qilinmagan —
+> keyingi safar Telegram orqali eslatma yuborib, saytda tekshirish tavsiya etiladi.
 > **(1) MASHINA KO'CHIRISH.** Loyiha VPS (`13.140.157.10`)dan yangi kompyuterga to'liq ko'chirildi: SSH ishonchsiz
 > (doimiy fon bot-skanerlash — botlar `root`ga tinimsiz login urinmoqda, MAQSADLI EMAS, hech biri muvaffaqiyatli
 > bo'lmagan; SFTP ayniqsa tez-tez uzilardi) → `paramiko` + `base64`-over-exec (qayta-ulanish+hajm-tekshiruv bilan)
