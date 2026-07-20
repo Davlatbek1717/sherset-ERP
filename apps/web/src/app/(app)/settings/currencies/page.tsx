@@ -130,7 +130,7 @@ export default function CurrenciesPage() {
   );
 
   return (
-    <Container size="lg" className="py-4">
+    <Container size="full" className="py-4">
       <PageHeader title={t('title')} subtitle={t('subtitle')} />
 
       <div className="mb-3 flex items-center gap-3">

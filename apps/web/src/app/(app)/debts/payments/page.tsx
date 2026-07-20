@@ -156,7 +156,7 @@ export default function DebtPaymentsFeedPage() {
   }
 
   return (
-    <Container>
+    <Container size="full">
       <PageHeader
         title={t('tab_payments')}
         subtitle={t('payments_subtitle')}

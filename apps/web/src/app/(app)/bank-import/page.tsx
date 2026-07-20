@@ -174,7 +174,7 @@ export default function BankImportPage() {
   }
 
   return (
-    <Container className="space-y-4 py-4" data-test-id="bank-import-page">
+    <Container size="full" className="space-y-4 py-4" data-test-id="bank-import-page">
       <PageHeader title={t('title')} />
 
       {error && <Alert tone="destructive">{error}</Alert>}

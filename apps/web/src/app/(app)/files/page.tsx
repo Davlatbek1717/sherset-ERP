@@ -167,7 +167,7 @@ export default function FilesPage() {
   const liveCursor = extraItems.length > 0 ? extraCursor : (data?.nextCursor ?? null);
 
   return (
-    <Container size="lg" className="space-y-6 py-4">
+    <Container size="full" className="space-y-6 py-4">
       {/* Page-level tab strip (Показатели / … / Файлы) */}
       <HomepageTabs activeKey="files" />
 

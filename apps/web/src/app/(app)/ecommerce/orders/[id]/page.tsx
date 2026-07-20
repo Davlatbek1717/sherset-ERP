@@ -68,7 +68,7 @@ export default function OnlineOrderDetailPage() {
 
   if (isLoading) {
     return (
-      <Container size="md" className="py-4">
+      <Container size="full" className="py-4">
         <div className="text-[var(--ms-text-muted)] text-sm">{tCommon('loading')}</div>
       </Container>
     );
@@ -76,7 +76,7 @@ export default function OnlineOrderDetailPage() {
 
   if (!data) {
     return (
-      <Container size="md" className="py-4">
+      <Container size="full" className="py-4">
         <div className="text-[var(--ms-text-muted)] text-sm">{tCommon('not_found')}</div>
       </Container>
     );
@@ -85,7 +85,7 @@ export default function OnlineOrderDetailPage() {
   const state = data.state as OrderState;
 
   return (
-    <Container size="md" className="py-4">
+    <Container size="full" className="py-4">
       <div className="mb-4 flex items-center gap-2 text-[var(--ms-text-muted)] text-sm">
         <a href="/ecommerce/orders" className="hover:underline">
           {t('title')}

@@ -101,7 +101,7 @@ export default function AbcAnalysisReport() {
   const formattedRows = useMemo(() => data?.rows ?? [], [data]);
 
   return (
-    <Container size="md" className="py-4">
+    <Container size="full" className="py-4">
       <Breadcrumb
         items={[{ label: tCommon('reports'), href: '/reports' }, { label: t('title') }]}
       />

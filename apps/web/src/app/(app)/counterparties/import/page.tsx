@@ -437,7 +437,7 @@ export default function CounterpartyImportPage() {
   const nextLabel = step === 2 ? `${t('import_button')} (${validCount})` : tCommon('next');
 
   return (
-    <Container size="md" className="py-4">
+    <Container size="full" className="py-4">
       <PageHeader title={t('title')} subtitle={t('subtitle')} />
       <Wizard
         steps={steps}

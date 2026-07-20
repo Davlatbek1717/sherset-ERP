@@ -112,7 +112,7 @@ export default function PnlReportPage() {
   };
 
   return (
-    <Container size="md" className="py-4">
+    <Container size="full" className="py-4">
       <PageHeader
         title={t('title')}
         breadcrumbs={

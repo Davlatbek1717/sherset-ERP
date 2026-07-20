@@ -223,7 +223,7 @@ export default function PurchaseManagementReportPage() {
   };
 
   return (
-    <Container size="lg" className="py-4">
+    <Container size="full" className="py-4">
       <Breadcrumb
         items={[{ label: t('breadcrumb_reports'), href: '/reports' }, { label: t('title') }]}
       />

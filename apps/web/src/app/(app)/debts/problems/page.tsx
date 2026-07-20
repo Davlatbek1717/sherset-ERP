@@ -80,7 +80,7 @@ export default function DebtProblemsPage() {
     });
 
   return (
-    <Container>
+    <Container size="full">
       <PageHeader
         title={t('problems_title')}
         subtitle={t('problems_subtitle')}

@@ -284,7 +284,7 @@ export default function DebtReportsPage() {
   const totals = cashiers.data?.totals;
 
   return (
-    <Container>
+    <Container size="full">
       <PageHeader
         title={t('tab_reports')}
         subtitle={t('subtitle')}

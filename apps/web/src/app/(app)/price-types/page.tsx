@@ -104,7 +104,7 @@ export default function PriceTypesPage() {
   };
 
   return (
-    <Container className="space-y-4 py-4" data-test-id="price-types-page">
+    <Container size="full" className="space-y-4 py-4" data-test-id="price-types-page">
       <PageHeader
         title={t('title')}
         subtitle={

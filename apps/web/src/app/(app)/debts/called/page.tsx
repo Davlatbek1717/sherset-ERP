@@ -88,7 +88,7 @@ export default function DebtCalledPage() {
           : t('outcome_callback');
 
   return (
-    <Container>
+    <Container size="full">
       <PageHeader
         title={t('tab_called')}
         subtitle={t('called_subtitle')}

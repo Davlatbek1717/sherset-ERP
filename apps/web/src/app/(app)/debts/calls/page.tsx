@@ -87,7 +87,7 @@ export default function DebtCallsPage() {
   );
 
   return (
-    <Container>
+    <Container size="full">
       <PageHeader
         title={t('tab_calls')}
         subtitle={t('subtitle')}
