@@ -4406,6 +4406,8 @@
       "users_card_description": "Xodimlar, rollar va kirish huquqlari",
       "email_card_title": "Pochta sozlamalari",
       "email_card_description": "SMTP server orqali emaillar yuborish",
+      "sms_card_title": "SMS sozlamalari",
+      "sms_card_description": "Eskiz orqali SMS va shablonlar",
       "exchange_rates_card_title": "Valyuta kurslari",
       "exchange_rates_card_description": "Markaziy bank rasmiy kurslari (cbu.uz)",
       "mxik_card_title": "MXIK katalog",

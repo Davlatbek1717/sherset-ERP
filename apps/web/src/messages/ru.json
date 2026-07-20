@@ -4406,6 +4406,8 @@
       "users_card_description": "Сотрудники, роли и права доступа",
       "email_card_title": "Настройки почты",
       "email_card_description": "Отправка писем через SMTP-сервер",
+      "sms_card_title": "Настройки SMS",
+      "sms_card_description": "SMS через Eskiz и шаблоны",
       "exchange_rates_card_title": "Курсы валют",
       "exchange_rates_card_description": "Официальные курсы Центрального Банка (cbu.uz)",
       "mxik_card_title": "Каталог МХИК",

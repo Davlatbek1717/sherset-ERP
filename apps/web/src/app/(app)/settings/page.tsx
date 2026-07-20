@@ -70,6 +70,12 @@ const SETTINGS_CARDS: SettingsCard[] = [
     icon: Icons.email,
   },
   {
+    href: '/settings/sms',
+    titleKey: 'sms_card_title',
+    descriptionKey: 'sms_card_description',
+    icon: Icons.email,
+  },
+  {
     href: '/settings/exchange-rates',
     titleKey: 'exchange_rates_card_title',
     descriptionKey: 'exchange_rates_card_description',
