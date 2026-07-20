@@ -4,13 +4,20 @@
  * Bu matnlarni MIJOZ o'qiydi — xodim emas. Shuning uchun:
  *   • hurmat bilan, ayblovsiz ohangda (mijoz — hamkor, qarzdor emas)
  *   • summalar bo'sh joy bilan ajratilgan: 1 250 000 so'm (o'qish oson)
- *   • HTML TEGSIZ, lekin **qalin** GramJS Markdown bilan ishlaydi (2026-07-20) —
- *     xabar shaxsiy raqamdan (MTProto userbot) ketadi, u Bot API'ning
+ *   • HTML TEGSIZ, lekin GramJS Markdown bilan ishlaydi (2026-07-20) — xabar
+ *     shaxsiy raqamdan (MTProto userbot) ketadi, u Bot API'ning
  *     parse_mode='HTML' ni QO'LLAMAYDI (aks holда <b> teglar literal ko'rinardi
- *     — aynan shu bug bor edi). GramJS TelegramClient esa DEFOLT ravishda
- *     o'z Markdown parserini ishlatadi (telegram/extensions/markdown.js,
- *     DEFAULT_DELIMITERS: '**'→Bold, '__'→Italic, '~~'→Strike, '`'→Code) —
- *     shuning uchun muhim summa/karta raqami **shu tarzda** belgilanadi.
+ *     — aynan shu bug bor edi).
+ *   • **MUHIM: bu fayl GramJS'ning MarkdownV2Parser dialektida yoziladi**,
+ *     DEFOLT parser (`**bold**`) EMAS — `mtproto-worker.service.ts`
+ *     `sourceEventType`'i `debt.` bilan boshlansa `format: 'markdown-v2'`ni
+ *     tanlaydi (faqat shu xabar oilasi uchun, boshqa HR/supply bildirishnoma
+ *     matnlariga tegmaydi). MarkdownV2 belgilagichlari DEFOLTdan FARQLI:
+ *     bitta `*qalin*` (ikkita EMAS), `__tagliq__` (underline). 2026-07-20b
+ *     talab (foydalanuvchi aniq spetsifikatsiya berdi): summa RAQAMINING
+ *     o'zi __tagliq__ ("so'm" so'zisiz), aloqa-blok label'lari ("Savollar
+ *     uchun:", "Karta raqam:", "Karta egasi:") *qalin*, LEKIN karta raqami
+ *     va boshqa qiymatlar oddiy (qalin EMAS).
  *   • bir xil tuzilish: «hurmatli {nom}» → mazmun → aloqa/karta → «Sherset jamoasi»
  *
  * Sof funksiyalar: DB/tarmoqqa tegmaydi ⇒ testda o'lchash oson.
@@ -28,11 +35,14 @@ const SHERSET_CARD_OWNER = 'Ilhom Ziyaviddinov';
  * (masalan nomda `*` yoki `_` bo'lsa). Har bir maxsus belgidan keyin
  * ko'zga ko'rinmaydigan bo'sh-kenglik belgisi (U+200B) qo'yamiz — GramJS
  * parseri endi ularni bir-biriga qo'shni delimiter deb o'qiy olmaydi,
- * odam esa hech qanday farqni sezmaydi.
+ * odam esa hech qanday farqni sezmaydi. MarkdownV2Parser belgilagichlari
+ * DEFOLTdan ko'p (`*_~\`|-`) — `-` (kursiv) va `|` (spoyler, `||`) ham shu
+ * ro'yxatga kiradi, aks holda ismdagi chiziqcha/vertikal chiziq tasodifiy
+ * formatlash hosil qilishi mumkin.
  */
 const ZERO_WIDTH_SPACE = '​';
 export function mdSafe(s: string): string {
-  return s.replace(/[*_~`]/g, (c) => c + ZERO_WIDTH_SPACE);
+  return s.replace(/[*_~`|-]/g, (c) => c + ZERO_WIDTH_SPACE);
 }
 
 /** 125000000 (tiyin) → «1 250 000». */
@@ -52,24 +62,27 @@ export function fmtWhen(d: Date): string {
   });
 }
 
-// Barcha matnlar HTML TEGSIZ, lekin GramJS Markdown (**qalin**) bilan bir xil
-// professional tuzilishда: salomlashuv + «hurmatli {nom}» → mazmun (muhim
-// summa **qalin**) → 📞💳👨‍💻 aloqa/karta bloki (karta raqami **qalin**) →
-// «SHERSET jamoasi!» imzosi. HTML yo'q — xabar shaxsiy raqamdan (MTProto
-// userbot) ketadi, u Bot API'ning parse_mode'ni QO'LLAMAYDI (aks holда <b>
-// teglar literal ko'rinardi — aynan shu bug bor edi, 2026-07-20 tuzatildi).
+// Barcha matnlar HTML TEGSIZ, lekin GramJS MarkdownV2 bilan bir xil
+// professional tuzilishда: salomlashuv + «hurmatli {nom}» → mazmun (summa
+// raqami __tagliq__) → 📞💳👨‍💻 aloqa/karta bloki (label'lar *qalin*, qiymatlar
+// oddiy) → «SHERSET jamoasi!» imzosi. HTML yo'q — xabar shaxsiy raqamdan
+// (MTProto userbot) ketadi, u Bot API'ning parse_mode'ni QO'LLAMAYDI (aks
+// holда <b> teglar literal ko'rinardi — aynan shu bug bor edi, 2026-07-20
+// tuzatildi).
 
 /**
  * Aloqa/karta bloki (2026-07-20) — barcha xabarlarda BIR XIL ko'rinish.
  * Ilgari har funksiya o'zicha bitta qatorli "Karta raqam: X" / "Savollar
  * bo'lsa: Y" yozardi — vizual notekis edi (masalan reminderMessage'da emoji
  * bilan, boshqalarida yo'q). Endi hammasi shu 3 qatorni ishlatadi.
+ * (2026-07-20b: label'lar *qalin*, qiymatlar — jumladan karta raqami ham —
+ * oddiy qoldiriladi, foydalanuvchi aniq spetsifikatsiyasi bo'yicha.)
  */
 function contactBlock(): string[] {
   return [
-    `📞 Savollar uchun: ${SHERSET_CONTACT_PHONE}`,
-    `💳 Karta raqam: **${SHERSET_CARD}**`,
-    `👨‍💻 Karta egasi: ${SHERSET_CARD_OWNER}`,
+    `📞 *Savollar uchun:* ${SHERSET_CONTACT_PHONE}`,
+    `💳 *Karta raqam:* ${SHERSET_CARD}`,
+    `👨‍💻 *Karta egasi:* ${SHERSET_CARD_OWNER}`,
   ];
 }
 
@@ -82,10 +95,10 @@ export function debtIssuedMessage(args: {
   const lines = [
     `Assalomu alaykum, hurmatli ${mdSafe(args.name)}!`,
     '',
-    `🧾 Sizga **${fmtSom(args.totalMinor)} so'm** miqdorida qarz rasmiylashtirildi.`,
+    `🧾 Sizga __${fmtSom(args.totalMinor)}__ so'm miqdorida qarz rasmiylashtirildi.`,
   ];
   if (args.nextContactAt) {
-    lines.push(`To'lov muddati: **${fmtWhen(args.nextContactAt)}**`);
+    lines.push(`To'lov muddati: *${fmtWhen(args.nextContactAt)}*`);
   }
   lines.push('', ...contactBlock(), '');
   lines.push(
@@ -105,8 +118,8 @@ export function paymentMessage(args: {
   return [
     `Assalomu alaykum, hurmatli ${mdSafe(args.name)}!`,
     '',
-    `💵 **${fmtSom(args.amountMinor)} so'm** to'lovingiz qabul qilindi, rahmat!`,
-    `Qolgan qarzingiz: **${fmtSom(args.remainingMinor)} so'm**.`,
+    `💵 __${fmtSom(args.amountMinor)}__ so'm to'lovingiz qabul qilindi, rahmat!`,
+    `Qolgan qarzingiz: __${fmtSom(args.remainingMinor)}__ so'm.`,
     '',
     ...contactBlock(),
     '',
@@ -119,7 +132,7 @@ export function debtClosedMessage(args: { name: string; amountMinor: bigint }): 
   return [
     `Assalomu alaykum, hurmatli ${mdSafe(args.name)}!`,
     '',
-    `✅ **${fmtSom(args.amountMinor)} so'm** to'lovingiz qabul qilindi. Qarzingiz to'liq yopildi!`,
+    `✅ __${fmtSom(args.amountMinor)}__ so'm to'lovingiz qabul qilindi. Qarzingiz to'liq yopildi!`,
     '',
     "Hamkorligingiz uchun katta rahmat! Savollar bo'lsa, biz bilan bog'laning:",
     `📞 ${SHERSET_CONTACT_PHONE}`,
@@ -142,8 +155,8 @@ export function paymentReversedMessage(args: {
   return [
     `Assalomu alaykum, hurmatli ${mdSafe(args.name)}!`,
     '',
-    `⚠️ **${fmtSom(args.amountMinor)} so'm** to'lov yozuvi texnik xatolik tufayli bekor qilindi.`,
-    `Joriy qarzingiz: **${fmtSom(args.remainingMinor)} so'm**.`,
+    `⚠️ __${fmtSom(args.amountMinor)}__ so'm to'lov yozuvi texnik xatolik tufayli bekor qilindi.`,
+    `Joriy qarzingiz: __${fmtSom(args.remainingMinor)}__ so'm.`,
     '',
     ...contactBlock(),
     '',
@@ -156,15 +169,15 @@ export function paymentReversedMessage(args: {
  *
  * HTML TEGSIZ — chunki xabar shaxsiy raqamdan (MTProto userbot) ketadi, u
  * Bot API'ning parse_mode='HTML' ni QO'LLAMAYDI (aks holда <b> literal
- * ko'rinardi). Qalinlik uchun GramJS'ning DEFOLT Markdown parseri ishlatiladi
- * (**...**) — fayl boshidagi izohga qarang. Summa bo'sh joy bilan
- * guruhlangan, musbat (mijozga «qarzdorlik mavjud» aniq).
+ * ko'rinardi). Summa raqami __tagliq__ (underline) qilinadi — GramJS'ning
+ * MarkdownV2Parser dialekti orqali (fayl boshidagi izohga qarang). Summa
+ * bo'sh joy bilan guruhlangan, musbat (mijozga «qarzdorlik mavjud» aniq).
  */
 export function reminderMessage(args: { name: string; remainingMinor: bigint }): string {
   return [
     `Assalomu alaykum, hurmatli ${mdSafe(args.name)}!`,
     '',
-    `✅ Eslatib o'tamiz, Sizning **${fmtSom(args.remainingMinor)} so'm** miqdorida to'lanmagan qarzingiz mavjud. Iltimos, kelishilgan muddatda qarzdorlikni yopishingizni so'raymiz.`,
+    `✅ Eslatib o'tamiz, Sizning __${fmtSom(args.remainingMinor)}__ so'm miqdorida to'lanmagan qarzingiz mavjud. Iltimos, kelishilgan muddatda qarzdorlikni yopishingizni so'raymiz.`,
     '',
     ...contactBlock(),
     '',

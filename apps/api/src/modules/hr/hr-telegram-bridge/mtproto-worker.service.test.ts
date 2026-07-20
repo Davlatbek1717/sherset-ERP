@@ -124,8 +124,54 @@ describe('MtprotoWorkerService', () => {
 
     expect(result).toEqual({ slot: 1, messageId: 'm-1' });
     expect(client1.resolvePhone).toHaveBeenCalledWith('+998901234567');
-    expect(client1.sendMessage).toHaveBeenCalledWith({ id: 'entity-1' }, 'salom');
+    expect(client1.sendMessage).toHaveBeenCalledWith({ id: 'entity-1' }, 'salom', {
+      format: 'default',
+    });
     expect(cache.set).toHaveBeenCalledWith('acc1', 1, '+998901234567', expect.anything());
+  });
+
+  // 2026-07-20b: debt-telegram.util.ts messages need MarkdownV2 (underline
+  // support) — the worker opts in ONLY when sourceEventType starts with
+  // `debt.`, so every other HR/supply/task notification's formatting stays
+  // untouched (see the doc comment on the format decision in the service).
+  it("sourceEventType 'debt.*' selects markdown-v2; everything else stays 'default'", async () => {
+    const client1 = makeClient();
+    handles.set('100', client1);
+    const accounts = makeAccountsSvc({
+      active: { 1: { apiId: 100, apiHashEncrypted, sessionEncrypted } },
+    });
+    const adapter = new MtprotoWorkerService(
+      factory,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      accounts as any,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      cache as any,
+    );
+
+    await adapter.sendMessage({
+      accountId: 'acc1',
+      toPhone: '+998901234567',
+      text: 'x',
+      sourceEventType: 'debt.reminder',
+    });
+    expect(client1.sendMessage).toHaveBeenLastCalledWith(expect.anything(), 'x', {
+      format: 'markdown-v2',
+    });
+
+    await adapter.sendMessage({
+      accountId: 'acc1',
+      toPhone: '+998901234567',
+      text: 'y',
+      sourceEventType: 'supply.posted',
+    });
+    expect(client1.sendMessage).toHaveBeenLastCalledWith(expect.anything(), 'y', {
+      format: 'default',
+    });
+
+    await adapter.sendMessage({ accountId: 'acc1', toPhone: '+998901234567', text: 'z' });
+    expect(client1.sendMessage).toHaveBeenLastCalledWith(expect.anything(), 'z', {
+      format: 'default',
+    });
   });
 
   it('entity cache HIT skips resolvePhone (no network round-trip)', async () => {
@@ -146,7 +192,9 @@ describe('MtprotoWorkerService', () => {
     await adapter.sendMessage({ accountId: 'acc1', toPhone: '+998901234567', text: 'x' });
 
     expect(client1.resolvePhone).not.toHaveBeenCalled();
-    expect(client1.sendMessage).toHaveBeenCalledWith({ id: 'cached-entity' }, 'x');
+    expect(client1.sendMessage).toHaveBeenCalledWith({ id: 'cached-entity' }, 'x', {
+      format: 'default',
+    });
     // 2026-07-20: the cached descriptor must ALSO be hydrated (see below for
     // the live-confirmed bug this proves is fixed: "Cannot cast User to any
     // kind of peer" on every cache-hit send before hydrateEntity existed).
@@ -189,7 +237,9 @@ describe('MtprotoWorkerService', () => {
 
     expect(result).toEqual({ slot: 1, messageId: 'm-1' });
     expect(client1.resolvePhone).toHaveBeenCalledWith('+998901234567');
-    expect(client1.sendMessage).toHaveBeenCalledWith({ hydrated: true }, 'x');
+    expect(client1.sendMessage).toHaveBeenCalledWith({ hydrated: true }, 'x', {
+      format: 'default',
+    });
     // Stale row gets overwritten with the fresh, correctly-shaped descriptor.
     expect(cache.set).toHaveBeenCalledWith(
       'acc1',
@@ -229,6 +279,7 @@ describe('MtprotoWorkerService', () => {
       expect(client1.sendMessage).toHaveBeenCalledWith(
         { hydrated: true, from: { userId: '123', accessHash: '456' } },
         'x',
+        { format: 'default' },
       );
     });
 
@@ -254,6 +305,7 @@ describe('MtprotoWorkerService', () => {
       expect(client1.sendMessage).toHaveBeenCalledWith(
         { hydrated: true, from: { userId: '789', accessHash: '000' } },
         'x',
+        { format: 'default' },
       );
       // The RAW (un-hydrated) descriptor is what's persisted — hydration
       // happens on read, every time, not once at write time.
@@ -298,6 +350,7 @@ describe('MtprotoWorkerService', () => {
     expect(client1.sendMessage).toHaveBeenCalledWith(
       { id: 'new-customer-entity' },
       'Sizga 1 000 so‘m miqdorida qarz rasmiylashtirildi.',
+      { format: 'default' },
     );
   });
 

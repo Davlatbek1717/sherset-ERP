@@ -77,6 +77,7 @@ export class HrTelegramOutboxWorker {
           accountId: row.accountId,
           toPhone: row.toPhone,
           text: row.messageText,
+          sourceEventType: row.sourceEventType,
         });
         await this.prisma.client.hrTelegramOutbox.update({
           where: { id: row.id },
