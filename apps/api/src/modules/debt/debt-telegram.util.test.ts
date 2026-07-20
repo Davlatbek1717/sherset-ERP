@@ -3,6 +3,7 @@ import {
   debtClosedMessage,
   debtIssuedMessage,
   fmtSom,
+  mdSafe,
   paymentMessage,
   paymentReversedMessage,
   reminderMessage,
@@ -111,6 +112,60 @@ describe('debt-telegram xabarlari', () => {
     it('eslatma (reminderMessage)', () => {
       const m = reminderMessage({ name: 'Feruz', remainingMinor: 100n });
       for (const line of CONTACT_LINES) expect(m).toContain(line);
+    });
+  });
+
+  // 2026-07-20: foydalanuvchi rasm bilan ko'rsatdi — muhim summalar **qalin**
+  // bo'lishi kerak edi. HTML <b> ISHLAMAYDI (MTProto userbot parse_mode'ni
+  // qo'llamaydi — aynan shu sababdan avvalgi xabarlar tegsiz chiqqan edi),
+  // lekin GramJS TelegramClient DEFOLT ravishda o'z Markdown parserini
+  // ishlatadi (telegram/extensions/markdown.js: '**' → MessageEntityBold),
+  // shuning uchun **...** to'g'ri qalin bo'lib ko'rinadi.
+  describe('muhim summalar **qalin** Markdown bilan belgilangan', () => {
+    it('eslatma: qoldiq summa **qalin**', () => {
+      const m = reminderMessage({ name: 'Feruz', remainingMinor: 30_000_000n });
+      expect(m).toContain("**300 000 so'm**");
+    });
+
+    it('qarz berildi: summa VA karta raqami **qalin**', () => {
+      const m = debtIssuedMessage({ name: 'Feruz', totalMinor: 100n, nextContactAt: null });
+      expect(m).toContain("**1 so'm**");
+      expect(m).toContain('**9860 1201 2532 1642**');
+    });
+
+    it("to'lov qabul qilindi: ikkala summa ham **qalin**", () => {
+      const m = paymentMessage({ name: 'Feruz', amountMinor: 100n, remainingMinor: 200n });
+      expect(m).toContain("**1 so'm**");
+      expect(m).toContain("**2 so'm**");
+    });
+  });
+
+  // XAVFSIZLIK (2026-07-20): mijoz nomida Markdown belgilovchisi (masalan
+  // "**") bo'lsa, u tasodifan bold/italic'ni ochib, undan keyingi BUTUN
+  // xabar formatini buzmasligi kerak (masalan "**Hacker** ... **1 so'm**"
+  // — ismdagi ochilgan "**" summadagi yopilish "**" bilan noto'g'ri
+  // qo'shilib, orasidagi hammasi bitta katta bold blok bo'lib qolardi).
+  describe('mdSafe — mijoz nomidagi Markdown belgilovchilarini zararsizlantiradi', () => {
+    it('qo‘shni maxsus belgilar orasiga ko‘rinmas belgi qo‘yadi', () => {
+      const safe = mdSafe('**Hacker**');
+      // Natijada "**" ketma-ketligi ENDI yo'q (orasida U+200B bor) —
+      // GramJS parseri buni delimiter deb topa olmaydi.
+      expect(safe).not.toContain('**');
+      // Lekin ism hali ham o'qiladi (faqat ko'rinmas belgilar qo'shilgan).
+      expect(safe.replace(/[​]/g, '')).toBe('**Hacker**');
+    });
+
+    it('oddiy ism (maxsus belgisiz) o‘zgarishsiz qoladi', () => {
+      expect(mdSafe('Feruz aka')).toBe('Feruz aka');
+    });
+
+    it('xabarda mijoz ismidagi "**" summaning qalin belgisi bilan qo‘shilib ketmaydi', () => {
+      const m = reminderMessage({ name: '**Hacker**', remainingMinor: 100n });
+      // Ism → summa oralig'ida "yopilmagan" bitta katta bold blok YO'Q —
+      // to'g'ri holatda faqat summaning o'zi ("**1 so'm**") qalin bo'lishi
+      // kerak, ism bilan summa orasidagi butun matn emas.
+      expect(m).not.toMatch(/\*\*Hacker\*\*[\s\S]*\*\*1 so'm\*\*/);
+      expect(m).toContain("**1 so'm**");
     });
   });
 });

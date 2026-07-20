@@ -4,8 +4,13 @@
  * Bu matnlarni MIJOZ o'qiydi — xodim emas. Shuning uchun:
  *   • hurmat bilan, ayblovsiz ohangda (mijoz — hamkor, qarzdor emas)
  *   • summalar bo'sh joy bilan ajratilgan: 1 250 000 so'm (o'qish oson)
- *   • ODDIY MATN (HTML tegsiz) — xabar shaxsiy raqamdan (MTProto userbot) ketadi,
- *     u parse_mode'ni QO'LLAMAYDI (aks holда <b> teglar literal ko'rinardi)
+ *   • HTML TEGSIZ, lekin **qalin** GramJS Markdown bilan ishlaydi (2026-07-20) —
+ *     xabar shaxsiy raqamdan (MTProto userbot) ketadi, u Bot API'ning
+ *     parse_mode='HTML' ni QO'LLAMAYDI (aks holда <b> teglar literal ko'rinardi
+ *     — aynan shu bug bor edi). GramJS TelegramClient esa DEFOLT ravishda
+ *     o'z Markdown parserini ishlatadi (telegram/extensions/markdown.js,
+ *     DEFAULT_DELIMITERS: '**'→Bold, '__'→Italic, '~~'→Strike, '`'→Code) —
+ *     shuning uchun muhim summalar/karta raqami **shu tarzda** belgilanadi.
  *   • bir xil tuzilish: «hurmatli {nom}» → mazmun → aloqa/karta → «Sherset jamoasi»
  *
  * Sof funksiyalar: DB/tarmoqqa tegmaydi ⇒ testda o'lchash oson.
@@ -16,6 +21,19 @@
 const SHERSET_CONTACT_PHONE = '+998915748800';
 const SHERSET_CARD = '9860 1201 2532 1642';
 const SHERSET_CARD_OWNER = 'Ilhom Ziyaviddinov';
+
+/**
+ * Erkin matn (mijoz nomi) GramJS Markdown belgilovchilarini tasodifan hosil
+ * qilib, undan keyingi butun xabarni noto'g'ri qalin/kursiv qilib qo'ymasin
+ * (masalan nomda `*` yoki `_` bo'lsa). Har bir maxsus belgidan keyin
+ * ko'zga ko'rinmaydigan bo'sh-kenglik belgisi (U+200B) qo'yamiz — GramJS
+ * parseri endi ularni bir-biriga qo'shni delimiter deb o'qiy olmaydi,
+ * odam esa hech qanday farqni sezmaydi.
+ */
+const ZERO_WIDTH_SPACE = '​';
+export function mdSafe(s: string): string {
+  return s.replace(/[*_~`]/g, (c) => c + ZERO_WIDTH_SPACE);
+}
 
 /** 125000000 (tiyin) → «1 250 000». */
 export function fmtSom(minor: bigint): string {
@@ -34,11 +52,12 @@ export function fmtWhen(d: Date): string {
   });
 }
 
-// Barcha matnlar ODDIY MATN (HTML tegsiz) va bir xil professional tuzilishда:
-// salomlashuv + «hurmatli {nom}» → mazmun → 📞💳👨‍💻 aloqa/karta bloki →
+// Barcha matnlar HTML TEGSIZ, lekin GramJS Markdown (**qalin**) bilan bir xil
+// professional tuzilishда: salomlashuv + «hurmatli {nom}» → mazmun (muhim
+// summa **qalin**) → 📞💳👨‍💻 aloqa/karta bloki (karta raqami **qalin**) →
 // «SHERSET jamoasi!» imzosi. HTML yo'q — xabar shaxsiy raqamdan (MTProto
-// userbot) ketadi, u parse_mode'ni QO'LLAMAYDI (aks holда teglar literal
-// ko'rinardi).
+// userbot) ketadi, u Bot API'ning parse_mode'ni QO'LLAMAYDI (aks holда <b>
+// teglar literal ko'rinardi — aynan shu bug bor edi, 2026-07-20 tuzatildi).
 
 /**
  * Aloqa/karta bloki (2026-07-20) — barcha xabarlarda BIR XIL ko'rinish.
@@ -49,7 +68,7 @@ export function fmtWhen(d: Date): string {
 function contactBlock(): string[] {
   return [
     `📞 Savollar uchun: ${SHERSET_CONTACT_PHONE}`,
-    `💳 Karta raqam: ${SHERSET_CARD}`,
+    `💳 Karta raqam: **${SHERSET_CARD}**`,
     `👨‍💻 Karta egasi: ${SHERSET_CARD_OWNER}`,
   ];
 }
@@ -61,12 +80,12 @@ export function debtIssuedMessage(args: {
   nextContactAt: Date | null;
 }): string {
   const lines = [
-    `Assalomu alaykum, hurmatli ${args.name}!`,
+    `Assalomu alaykum, hurmatli ${mdSafe(args.name)}!`,
     '',
-    `🧾 Sizga ${fmtSom(args.totalMinor)} so'm miqdorida qarz rasmiylashtirildi.`,
+    `🧾 Sizga **${fmtSom(args.totalMinor)} so'm** miqdorida qarz rasmiylashtirildi.`,
   ];
   if (args.nextContactAt) {
-    lines.push(`To'lov muddati: ${fmtWhen(args.nextContactAt)}`);
+    lines.push(`To'lov muddati: **${fmtWhen(args.nextContactAt)}**`);
   }
   lines.push('', ...contactBlock(), '');
   lines.push(
@@ -84,10 +103,10 @@ export function paymentMessage(args: {
   remainingMinor: bigint;
 }): string {
   return [
-    `Assalomu alaykum, hurmatli ${args.name}!`,
+    `Assalomu alaykum, hurmatli ${mdSafe(args.name)}!`,
     '',
-    `💵 ${fmtSom(args.amountMinor)} so'm to'lovingiz qabul qilindi, rahmat!`,
-    `Qolgan qarzingiz: ${fmtSom(args.remainingMinor)} so'm.`,
+    `💵 **${fmtSom(args.amountMinor)} so'm** to'lovingiz qabul qilindi, rahmat!`,
+    `Qolgan qarzingiz: **${fmtSom(args.remainingMinor)} so'm**.`,
     '',
     ...contactBlock(),
     '',
@@ -98,9 +117,9 @@ export function paymentMessage(args: {
 /** Qarz to'liq yopildi (2026-07-20: bir xil vizual uslub). */
 export function debtClosedMessage(args: { name: string; amountMinor: bigint }): string {
   return [
-    `Assalomu alaykum, hurmatli ${args.name}!`,
+    `Assalomu alaykum, hurmatli ${mdSafe(args.name)}!`,
     '',
-    `✅ ${fmtSom(args.amountMinor)} so'm to'lovingiz qabul qilindi. Qarzingiz to'liq yopildi!`,
+    `✅ **${fmtSom(args.amountMinor)} so'm** to'lovingiz qabul qilindi. Qarzingiz to'liq yopildi!`,
     '',
     "Hamkorligingiz uchun katta rahmat! Savollar bo'lsa, biz bilan bog'laning:",
     `📞 ${SHERSET_CONTACT_PHONE}`,
@@ -121,10 +140,10 @@ export function paymentReversedMessage(args: {
   remainingMinor: bigint;
 }): string {
   return [
-    `Assalomu alaykum, hurmatli ${args.name}!`,
+    `Assalomu alaykum, hurmatli ${mdSafe(args.name)}!`,
     '',
-    `⚠️ ${fmtSom(args.amountMinor)} so'm to'lov yozuvi texnik xatolik tufayli bekor qilindi.`,
-    `Joriy qarzingiz: ${fmtSom(args.remainingMinor)} so'm.`,
+    `⚠️ **${fmtSom(args.amountMinor)} so'm** to'lov yozuvi texnik xatolik tufayli bekor qilindi.`,
+    `Joriy qarzingiz: **${fmtSom(args.remainingMinor)} so'm**.`,
     '',
     ...contactBlock(),
     '',
@@ -135,15 +154,17 @@ export function paymentReversedMessage(args: {
 /**
  * To'lov muddati keldi — eslatma (2026-07-19 talab: yangi tartibli format).
  *
- * ODDIY MATN (HTML tegsiz) — chunki xabar shaxsiy raqamdan (MTProto userbot)
- * ketadi, u parse_mode='HTML' ni QO'LLAMAYDI (aks holда <b> literal ko'rinardi).
- * Summa bo'sh joy bilan guruhlangan, musbat (mijozga «qarzdorlik mavjud» aniq).
+ * HTML TEGSIZ — chunki xabar shaxsiy raqamdan (MTProto userbot) ketadi, u
+ * Bot API'ning parse_mode='HTML' ni QO'LLAMAYDI (aks holда <b> literal
+ * ko'rinardi). Qalinlik uchun GramJS'ning DEFOLT Markdown parseri ishlatiladi
+ * (**...**) — fayl boshidagi izohga qarang. Summa bo'sh joy bilan
+ * guruhlangan, musbat (mijozga «qarzdorlik mavjud» aniq).
  */
 export function reminderMessage(args: { name: string; remainingMinor: bigint }): string {
   return [
-    `Assalomu alaykum, hurmatli ${args.name}!`,
+    `Assalomu alaykum, hurmatli ${mdSafe(args.name)}!`,
     '',
-    `✅ Eslatib o'tamiz, Sizning ${fmtSom(args.remainingMinor)} so'm miqdorida to'lanmagan qarzingiz mavjud. Iltimos, kelishilgan muddatda qarzdorlikni yopishingizni so'raymiz.`,
+    `✅ Eslatib o'tamiz, Sizning **${fmtSom(args.remainingMinor)} so'm** miqdorida to'lanmagan qarzingiz mavjud. Iltimos, kelishilgan muddatda qarzdorlikni yopishingizni so'raymiz.`,
     '',
     ...contactBlock(),
     '',
