@@ -3110,7 +3110,7 @@
     },
     "sms_templates": {
       "title": "Шаблоны SMS",
-      "description": "Отредактируйте текст сообщения. Переменные: {{= counterparty.name }}, {{= debt.remainingFormatted }}, {{= company.phone }}, {{= company.card }}, {{= company.cardOwner }}",
+      "description": "Отредактируйте текст сообщения. Переменные добавляются кнопками ниже.",
       "name": "Название",
       "body": "Текст",
       "enabled": "Активен",
@@ -3118,7 +3118,8 @@
       "preview": "Предпросмотр",
       "chars": "симв.",
       "segments": "SMS",
-      "save": "Сохранить"
+      "save": "Сохранить",
+      "saved": "Сохранено"
     },
     "debt_reminders": {
       "send_button": "Отправить сообщение",

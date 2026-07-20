@@ -3110,7 +3110,7 @@
     },
     "sms_templates": {
       "title": "SMS shablonlari",
-      "description": "Xabar matnini tahrirlang. O'zgaruvchilar: {{= counterparty.name }}, {{= debt.remainingFormatted }}, {{= company.phone }}, {{= company.card }}, {{= company.cardOwner }}",
+      "description": "Xabar matnini tahrirlang. O'zgaruvchilarni pastdagi tugmalar orqali qo'shing.",
       "name": "Nomi",
       "body": "Matn",
       "enabled": "Faol",
@@ -3118,7 +3118,8 @@
       "preview": "Ko'rinishi",
       "chars": "belgi",
       "segments": "SMS",
-      "save": "Saqlash"
+      "save": "Saqlash",
+      "saved": "Saqlandi"
     },
     "debt_reminders": {
       "send_button": "Xabar yuborish",

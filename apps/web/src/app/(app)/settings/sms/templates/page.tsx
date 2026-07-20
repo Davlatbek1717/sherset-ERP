@@ -2,7 +2,16 @@
 
 import { type SmsTemplate, smsApi } from '@/lib/sms-api';
 import { smsSegments } from '@/lib/sms-segments';
-import { Badge, Button, Card, Checkbox, FormField, Input, PageHeader } from '@moysklad/ui';
+import {
+  Badge,
+  Button,
+  Card,
+  Checkbox,
+  FormField,
+  Input,
+  PageHeader,
+  useToast,
+} from '@moysklad/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useEffect, useRef, useState } from 'react';
@@ -32,6 +41,7 @@ function preview(body: string): string {
 export default function SmsTemplatesPage() {
   const qc = useQueryClient();
   const t = useTranslations('pages.sms_templates');
+  const { toast } = useToast();
   const { data } = useQuery<SmsTemplate[]>({
     queryKey: ['sms-templates'],
     queryFn: () => smsApi.listTemplates(),
@@ -54,7 +64,11 @@ export default function SmsTemplatesPage() {
 
   const saveMut = useMutation({
     mutationFn: () => smsApi.saveTemplate(activeKey, { name, body, enabled }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['sms-templates'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['sms-templates'] });
+      toast.success(t('saved'));
+    },
+    onError: (e: Error) => toast.error(e.message),
   });
 
   const insertVar = (v: string) => {
