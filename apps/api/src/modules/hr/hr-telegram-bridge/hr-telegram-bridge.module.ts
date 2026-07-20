@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { ScheduleModule } from '@nestjs/schedule';
 import { PrismaModule } from '../../../prisma/prisma.module.js';
+import { TelegramModule } from '../../telegram/telegram.module.js';
+import { TelegramService } from '../../telegram/telegram.service.js';
 import { HrNotificationTemplateModule } from '../hr-notification-template/hr-notification-template.module.js';
 import { HrTelegramAccountModule } from '../hr-telegram-account/hr-telegram-account.module.js';
 import { HrTelegramEntityCacheService } from './entity-cache.service.js';
@@ -14,6 +16,7 @@ import { HrPaymentInListener } from './listeners/payment-in.listener.js';
 import { HrSalesReturnListener } from './listeners/sales-return.listener.js';
 import { HrSupplyListener } from './listeners/supply.listener.js';
 import { MTPROTO_ADAPTER, type MtprotoAdapter, NoopMtprotoAdapter } from './mtproto-adapter.js';
+import { MTPROTO_INBOUND_HANDLER } from './mtproto-inbound-handler.js';
 import { MtprotoWorkerService } from './mtproto-worker.service.js';
 
 /**
@@ -44,6 +47,10 @@ function isTelegramDisabled(): boolean {
     HrTelegramClientModule,
     HrTelegramAccountModule,
     HrNotificationTemplateModule,
+    // MTPROTO_INBOUND_HANDLER binds to TelegramService.handleIncoming — no
+    // cycle: TelegramModule's own imports (Auth/Attachment/HrTelegramClient/
+    // HrTelegramAccount) never import HrTelegramBridgeModule back.
+    TelegramModule,
   ],
   providers: [
     HrTelegramEntityCacheService,
@@ -55,6 +62,7 @@ function isTelegramDisabled(): boolean {
         isTelegramDisabled() ? noop : gramjs,
       inject: [MtprotoWorkerService, NoopMtprotoAdapter],
     },
+    { provide: MTPROTO_INBOUND_HANDLER, useExisting: TelegramService },
     HrTelegramOutboxWorker,
     HrAdminNotifier,
     HrNotificationDispatcher,

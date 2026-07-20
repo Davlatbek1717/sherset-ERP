@@ -2,9 +2,11 @@ import { Injectable, Logger } from '@nestjs/common';
 import bigInt from 'big-integer';
 import { Api, TelegramClient } from 'telegram';
 import { computeCheck } from 'telegram/Password.js';
+import { NewMessage, type NewMessageEvent } from 'telegram/events/index.js';
 import { MarkdownV2Parser } from 'telegram/extensions/markdownv2.js';
 import { StringSession } from 'telegram/sessions/index.js';
 import type {
+  IncomingMtprotoMessage,
   TelegramClientFactory,
   TelegramClientFactoryArgs,
   TelegramClientHandle,
@@ -218,5 +220,74 @@ class GramjsClientHandle implements TelegramClientHandle {
   saveSession(): string {
     const sess = this.client.session as StringSession;
     return sess.save();
+  }
+
+  /**
+   * `NewMessage({ incoming: true })` — gramjs's own filter excludes
+   * everything WE sent (no echo loop back into `handler`). `event.isPrivate`
+   * additionally drops group/channel chatter — only 1:1 customer DMs matter
+   * here. Media kind is resolved via gramjs's own `Message` getters (`.photo`
+   * / `.voice` / `.video` / `.videoNote` / `.document`, checked in that order
+   * since a voice note IS a document under the hood — the specific getter
+   * must win over the generic one). One handler failure must never kill the
+   * client's update loop, hence the outer try/catch.
+   */
+  onIncomingMessage(handler: (msg: IncomingMtprotoMessage) => void): void {
+    this.client.addEventHandler(
+      async (event: NewMessageEvent) => {
+        try {
+          if (!event.isPrivate) return;
+          const msg = event.message;
+          const sender = (await msg.getSender().catch(() => undefined)) as Api.User | undefined;
+
+          let kind: IncomingMtprotoMessage['kind'] = 'text';
+          let mimeType: string | null = null;
+          let fileName: string | null = null;
+          if (msg.photo) {
+            kind = 'photo';
+            mimeType = 'image/jpeg';
+          } else if (msg.voice) {
+            kind = 'voice';
+            mimeType = msg.voice.mimeType ?? 'audio/ogg';
+          } else if (msg.videoNote || msg.video) {
+            const doc = msg.video ?? msg.videoNote;
+            kind = 'video';
+            mimeType = doc?.mimeType ?? 'video/mp4';
+          } else if (msg.document) {
+            kind = 'document';
+            mimeType = msg.document.mimeType ?? 'application/octet-stream';
+            const nameAttr = msg.document.attributes.find(
+              (a): a is Api.DocumentAttributeFilename =>
+                a.className === 'DocumentAttributeFilename',
+            );
+            fileName = nameAttr?.fileName ?? null;
+          }
+
+          handler({
+            senderId: String(msg.senderId ?? ''),
+            senderPhone: sender?.phone ?? null,
+            senderName: [sender?.firstName, sender?.lastName].filter(Boolean).join(' ') || null,
+            text: msg.text ?? '',
+            tgMessageId: msg.id,
+            kind,
+            mimeType,
+            fileName,
+            downloadMedia:
+              kind === 'text'
+                ? null
+                : async () => {
+                    const data = await msg.downloadMedia();
+                    if (!Buffer.isBuffer(data)) {
+                      throw new Error('downloadMedia: Buffer kutilgan edi');
+                    }
+                    return data;
+                  },
+          });
+        } catch (e) {
+          this.logger.warn(`Kiruvchi xabarni o'qishda xato: ${(e as Error).message}`);
+        }
+      },
+      new NewMessage({ incoming: true }),
+    );
   }
 }

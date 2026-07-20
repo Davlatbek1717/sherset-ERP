@@ -5,6 +5,8 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 import { AttachmentService } from '../attachment/attachment.service.js';
 import { decryptPassword, encryptPassword } from '../email/crypto.js';
 import { normalizeTelegramPhone } from '../hr/hr-shared/phone-normalize.util.js';
+import type { MtprotoInboundHandler } from '../hr/hr-telegram-bridge/mtproto-inbound-handler.js';
+import type { IncomingMtprotoMessage } from '../hr/hr-telegram-bridge/telegram-client-factory.js';
 import { parseBusinessUpdate } from './telegram-business.util.js';
 import { TelegramLookupService } from './telegram-lookup.service.js';
 import {
@@ -51,7 +53,7 @@ interface PublicTelegramConfig {
  * for inspection; routing to commands is a future enhancement.
  */
 @Injectable()
-export class TelegramService {
+export class TelegramService implements MtprotoInboundHandler {
   private readonly logger = new Logger(TelegramService.name);
   private isRunning = false;
 
@@ -328,6 +330,98 @@ export class TelegramService {
 
     this.logger.log(`Telegram inbound for ${accountId}: ${JSON.stringify(update).slice(0, 500)}`);
     return { ok: true };
+  }
+
+  // ── MTPROTO KIRUVCHI XABAR (2026-07-20) ──────────────────────────────────
+  //
+  // Mijoz javobi endi userbot orqali HAM ko'rinadi — ilgari faqat Telegram
+  // Business kanali (yuqoridagi handleInbound) ikki-tomonlama edi, userbot
+  // esa faqat yuborardi. MtprotoWorkerService har ulangan klientga bitta
+  // marta shu metodni chaqiradigan listener biriktiradi (ensureClient()).
+  // BIR XIL TelegramChat/TelegramChatMessage jadvaliga yoziladi —
+  // counterpartyThread()/OrderTelegramPanel o'zgarishsiz ko'rsatadi.
+
+  /** `MtprotoInboundHandler` — MtprotoWorkerService.ensureClient() chaqiradi. */
+  async handleIncoming(
+    accountId: string,
+    slot: number,
+    msg: IncomingMtprotoMessage,
+  ): Promise<void> {
+    // MTProto shaxsiy chat uchun "chat id" — jo'natuvchining o'z raqami
+    // (Telegram Bot API'da ham shaxsiy chatning chat.id xuddi shu — semantika
+    // ikkala kanalda bir xil qoladi, @@unique([accountId, chatId]) buziladi).
+    const chatId = BigInt(msg.senderId);
+    let phone: string | null = null;
+    try {
+      phone = normalizeTelegramPhone(msg.senderPhone);
+    } catch {
+      phone = null;
+    }
+
+    const chat = await this.prisma.client.telegramChat.upsert({
+      where: { accountId_chatId: { accountId, chatId } },
+      update: {
+        lastMessageAt: new Date(),
+        ...(phone ? { phone } : {}),
+      },
+      create: {
+        accountId,
+        chatId,
+        firstName: msg.senderName,
+        phone,
+        source: 'mtproto',
+        lastMessageAt: new Date(),
+      },
+    });
+
+    const created = await this.prisma.client.telegramChatMessage.create({
+      data: {
+        accountId,
+        chatRefId: chat.id,
+        direction: 'in',
+        text: msg.text.slice(0, 4096),
+        tgMessageId: BigInt(msg.tgMessageId),
+        senderName: msg.senderName,
+        kind: msg.kind,
+        mimeType: msg.mimeType,
+        fileName: msg.fileName,
+      },
+    });
+    this.logger.debug(`MTProto kiruvchi xabar (acc=${accountId} slot=${slot}): ${created.id}`);
+
+    if (msg.downloadMedia) {
+      void this.storeIncomingMtprotoFile(accountId, created.id, msg).catch((e: Error) =>
+        this.logger.warn(`MTProto fayl saqlanmadi (xabar saqlandi): ${e.message}`),
+      );
+    }
+
+    if (!chat.counterpartyId) {
+      void this.autoBind(accountId, chat.id).catch((e: Error) =>
+        this.logger.warn(`MTProto avtomatik bog'lash: ${e.message}`),
+      );
+    }
+  }
+
+  /** Bot API'dagi `storeIncomingFile` bilan bir xil maqsad — faqat MTProto o'z fayl-yuklab-olish yo'liga ega (`downloadMedia`), bot token'ga muhtoj emas. */
+  private async storeIncomingMtprotoFile(
+    accountId: string,
+    messageId: string,
+    msg: IncomingMtprotoMessage,
+  ): Promise<void> {
+    if (!msg.downloadMedia) return;
+    const buffer = await msg.downloadMedia();
+    const attachment = await this.attachments.createFromBuffer(accountId, null, {
+      entity: 'TelegramChatMessage',
+      entityId: messageId,
+      filename: msg.fileName ?? 'telegram-file',
+      mime: msg.mimeType ?? 'application/octet-stream',
+      buffer,
+      description: 'Telegram chat — mijoz yuborgan fayl (MTProto)',
+    });
+    await this.prisma.client.telegramChatMessage.update({
+      where: { id: messageId },
+      data: { attachmentId: attachment.id },
+    });
   }
 
   // ── MEDIA + AVTOMATIK BOG'LASH (2026-07-13) ──────────────────────────────

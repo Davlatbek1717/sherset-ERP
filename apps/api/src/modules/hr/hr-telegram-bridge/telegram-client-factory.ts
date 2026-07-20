@@ -86,6 +86,38 @@ export interface TelegramClientHandle {
 
   /** Serialize the active session to a StringSession blob (encrypted by caller). */
   saveSession(): string;
+
+  /**
+   * Register a listener for incoming (customer→us) PRIVATE-chat messages on
+   * this connected client. 2026-07-20: added because the userbot connection
+   * previously only ever SENT — a customer's reply vanished into nothing,
+   * so `OrderTelegramPanel` never showed it. Group/channel messages and our
+   * OWN outgoing messages are filtered out before `handler` is called.
+   * Call ONCE per client (`MtprotoWorkerService.ensureClient()` does this
+   * right after creating a fresh connection) — the handler lives for the
+   * client's lifetime.
+   */
+  onIncomingMessage(handler: (msg: IncomingMtprotoMessage) => void): void;
+}
+
+/**
+ * Normalized incoming-message shape handed to `onIncomingMessage` — no raw
+ * gramjs `Api.*` types leak past `gramjs-client.factory.ts` (same boundary
+ * discipline as `resolvePhone`'s plain `{userId, accessHash}` descriptor).
+ */
+export interface IncomingMtprotoMessage {
+  /** Gramjs numeric sender id, stringified. */
+  senderId: string;
+  /** Raw digit phone (e.g. "998901234567", no `+`) — null if unresolvable. */
+  senderPhone: string | null;
+  senderName: string | null;
+  text: string;
+  tgMessageId: number;
+  kind: 'text' | 'photo' | 'document' | 'voice' | 'video';
+  mimeType: string | null;
+  fileName: string | null;
+  /** Present only when `kind !== 'text'` — call to fetch the raw file bytes. */
+  downloadMedia: (() => Promise<Buffer>) | null;
 }
 
 export interface TelegramClientFactoryArgs {

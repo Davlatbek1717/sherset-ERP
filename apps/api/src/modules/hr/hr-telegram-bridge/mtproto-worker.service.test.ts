@@ -4,6 +4,7 @@ import { encryptHrSession } from '../hr-shared/crypto.util.js';
 import { MtprotoFloodError } from './mtproto-adapter.js';
 import { MtprotoWorkerService } from './mtproto-worker.service.js';
 import type {
+  IncomingMtprotoMessage,
   TelegramClientFactory,
   TelegramClientFactoryArgs,
   TelegramClientHandle,
@@ -22,9 +23,11 @@ function makeClient(overrides: Partial<TelegramClientHandle> = {}): TelegramClie
     hydrateEntity: vi.fn((cached: unknown) => cached),
     sendMessage: vi.fn().mockResolvedValue({ messageId: 'm-1' }),
     sendCode: vi.fn().mockResolvedValue({ phoneCodeHash: 'hash' }),
+    resendCode: vi.fn().mockResolvedValue({ phoneCodeHash: 'hash' }),
     signIn: vi.fn().mockResolvedValue(undefined),
     checkPassword: vi.fn().mockResolvedValue(undefined),
     saveSession: vi.fn().mockReturnValue('session-str'),
+    onIncomingMessage: vi.fn(),
     ...overrides,
   };
 }
@@ -80,6 +83,10 @@ function makeEntityCache() {
   };
 }
 
+function makeInboundHandler() {
+  return { handleIncoming: vi.fn().mockResolvedValue(undefined) };
+}
+
 describe('MtprotoWorkerService', () => {
   let apiHashEncrypted: string;
   let sessionEncrypted: string;
@@ -95,11 +102,13 @@ describe('MtprotoWorkerService', () => {
   let handles: Map<string, TelegramClientHandle>;
   let factory: TelegramClientFactory;
   let cache: ReturnType<typeof makeEntityCache>;
+  let inbound: ReturnType<typeof makeInboundHandler>;
 
   beforeEach(() => {
     handles = new Map();
     factory = makeFactory(handles);
     cache = makeEntityCache();
+    inbound = makeInboundHandler();
   });
 
   it('happy path: routes through slot 1, persists entity in cache on miss', async () => {
@@ -114,6 +123,8 @@ describe('MtprotoWorkerService', () => {
       accounts as any,
       // biome-ignore lint/suspicious/noExplicitAny: test wiring
       cache as any,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      inbound as any,
     );
 
     const result = await adapter.sendMessage({
@@ -146,6 +157,8 @@ describe('MtprotoWorkerService', () => {
       accounts as any,
       // biome-ignore lint/suspicious/noExplicitAny: test wiring
       cache as any,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      inbound as any,
     );
 
     await adapter.sendMessage({
@@ -187,6 +200,8 @@ describe('MtprotoWorkerService', () => {
       accounts as any,
       // biome-ignore lint/suspicious/noExplicitAny: test wiring
       cache as any,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      inbound as any,
     );
 
     await adapter.sendMessage({ accountId: 'acc1', toPhone: '+998901234567', text: 'x' });
@@ -227,6 +242,8 @@ describe('MtprotoWorkerService', () => {
       accounts as any,
       // biome-ignore lint/suspicious/noExplicitAny: test wiring
       cache as any,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      inbound as any,
     );
 
     const result = await adapter.sendMessage({
@@ -272,6 +289,8 @@ describe('MtprotoWorkerService', () => {
         accounts as any,
         // biome-ignore lint/suspicious/noExplicitAny: test wiring
         cache as any,
+        // biome-ignore lint/suspicious/noExplicitAny: test wiring
+        inbound as any,
       );
 
       await adapter.sendMessage({ accountId: 'acc1', toPhone: '+998901234567', text: 'x' });
@@ -298,6 +317,8 @@ describe('MtprotoWorkerService', () => {
         accounts as any,
         // biome-ignore lint/suspicious/noExplicitAny: test wiring
         cache as any,
+        // biome-ignore lint/suspicious/noExplicitAny: test wiring
+        inbound as any,
       );
 
       await adapter.sendMessage({ accountId: 'acc1', toPhone: '+998901234567', text: 'x' });
@@ -337,6 +358,8 @@ describe('MtprotoWorkerService', () => {
       accounts as any,
       // biome-ignore lint/suspicious/noExplicitAny: test wiring
       cache as any,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      inbound as any,
     );
 
     const result = await adapter.sendMessage({
@@ -370,6 +393,8 @@ describe('MtprotoWorkerService', () => {
       accounts as any,
       // biome-ignore lint/suspicious/noExplicitAny: test wiring
       cache as any,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      inbound as any,
     );
 
     await expect(
@@ -400,6 +425,8 @@ describe('MtprotoWorkerService', () => {
       accounts as any,
       // biome-ignore lint/suspicious/noExplicitAny: test wiring
       cache as any,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      inbound as any,
     );
 
     const result = await adapter.sendMessage({
@@ -431,6 +458,8 @@ describe('MtprotoWorkerService', () => {
       accounts as any,
       // biome-ignore lint/suspicious/noExplicitAny: test wiring
       cache as any,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      inbound as any,
     );
 
     const result = await adapter.sendMessage({
@@ -469,6 +498,8 @@ describe('MtprotoWorkerService', () => {
       accounts as any,
       // biome-ignore lint/suspicious/noExplicitAny: test wiring
       cache as any,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      inbound as any,
     );
 
     await expect(
@@ -484,6 +515,8 @@ describe('MtprotoWorkerService', () => {
       accounts as any,
       // biome-ignore lint/suspicious/noExplicitAny: test wiring
       cache as any,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      inbound as any,
     );
 
     await expect(
@@ -508,6 +541,8 @@ describe('MtprotoWorkerService', () => {
       accounts as any,
       // biome-ignore lint/suspicious/noExplicitAny: test wiring
       cache as any,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      inbound as any,
     );
 
     const result = await adapter.sendMessage({
@@ -532,6 +567,8 @@ describe('MtprotoWorkerService', () => {
       accounts as any,
       // biome-ignore lint/suspicious/noExplicitAny: test wiring
       cache as any,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      inbound as any,
     );
 
     await adapter.sendMessage({ accountId: 'acc1', toPhone: '+998901234567', text: 'a' });
@@ -553,11 +590,128 @@ describe('MtprotoWorkerService', () => {
       accounts as any,
       // biome-ignore lint/suspicious/noExplicitAny: test wiring
       cache as any,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      inbound as any,
     );
 
     await adapter.sendMessage({ accountId: 'acc1', toPhone: '+998901234567', text: 'a' });
     adapter.releaseClient('acc1', 1);
     expect(client1.disconnect).toHaveBeenCalled();
+  });
+
+  // 2026-07-20d: the userbot connection previously only ever SENT — a
+  // customer's reply vanished into nothing (OrderTelegramPanel never showed
+  // it). Every FRESH client now gets a listener attached exactly once, right
+  // after connecting, that forwards normalized incoming messages to the
+  // injected MtprotoInboundHandler (production binding: TelegramService).
+  describe('incoming-message listener wiring', () => {
+    it('attaches onIncomingMessage exactly once per freshly created client', async () => {
+      const client1 = makeClient();
+      handles.set('100', client1);
+      const accounts = makeAccountsSvc({
+        active: { 1: { apiId: 100, apiHashEncrypted, sessionEncrypted } },
+      });
+      const adapter = new MtprotoWorkerService(
+        factory,
+        // biome-ignore lint/suspicious/noExplicitAny: test wiring
+        accounts as any,
+        // biome-ignore lint/suspicious/noExplicitAny: test wiring
+        cache as any,
+        // biome-ignore lint/suspicious/noExplicitAny: test wiring
+        inbound as any,
+      );
+
+      await adapter.sendMessage({ accountId: 'acc1', toPhone: '+998901234567', text: 'a' });
+      await adapter.sendMessage({ accountId: 'acc1', toPhone: '+998901234567', text: 'b' });
+
+      // Second send reuses the pooled client — listener must NOT be re-attached.
+      expect(client1.onIncomingMessage).toHaveBeenCalledTimes(1);
+    });
+
+    it('forwards a normalized incoming message to the injected handler with (accountId, slot)', async () => {
+      const client1 = makeClient();
+      handles.set('100', client1);
+      const accounts = makeAccountsSvc({
+        active: { 1: { apiId: 100, apiHashEncrypted, sessionEncrypted } },
+      });
+      const adapter = new MtprotoWorkerService(
+        factory,
+        // biome-ignore lint/suspicious/noExplicitAny: test wiring
+        accounts as any,
+        // biome-ignore lint/suspicious/noExplicitAny: test wiring
+        cache as any,
+        // biome-ignore lint/suspicious/noExplicitAny: test wiring
+        inbound as any,
+      );
+
+      await adapter.sendMessage({ accountId: 'acc1', toPhone: '+998901234567', text: 'a' });
+
+      const registeredHandler = (
+        client1.onIncomingMessage as unknown as {
+          mock: { calls: [(msg: IncomingMtprotoMessage) => void][] };
+        }
+      ).mock.calls[0]?.[0];
+      expect(registeredHandler).toBeInstanceOf(Function);
+
+      const incoming: IncomingMtprotoMessage = {
+        senderId: '555',
+        senderPhone: '998901234567',
+        senderName: 'Mijoz',
+        text: 'salom, qachon yetkazasiz?',
+        tgMessageId: 42,
+        kind: 'text',
+        mimeType: null,
+        fileName: null,
+        downloadMedia: null,
+      };
+      registeredHandler?.(incoming);
+      // Fire-and-forget inside the worker — flush the microtask queue.
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(inbound.handleIncoming).toHaveBeenCalledWith('acc1', 1, incoming);
+    });
+
+    it('a handler failure is caught and logged, never thrown at the caller', async () => {
+      const client1 = makeClient();
+      handles.set('100', client1);
+      const accounts = makeAccountsSvc({
+        active: { 1: { apiId: 100, apiHashEncrypted, sessionEncrypted } },
+      });
+      inbound.handleIncoming.mockRejectedValue(new Error('db down'));
+      const adapter = new MtprotoWorkerService(
+        factory,
+        // biome-ignore lint/suspicious/noExplicitAny: test wiring
+        accounts as any,
+        // biome-ignore lint/suspicious/noExplicitAny: test wiring
+        cache as any,
+        // biome-ignore lint/suspicious/noExplicitAny: test wiring
+        inbound as any,
+      );
+
+      await adapter.sendMessage({ accountId: 'acc1', toPhone: '+998901234567', text: 'a' });
+      const registeredHandler = (
+        client1.onIncomingMessage as unknown as {
+          mock: { calls: [(msg: IncomingMtprotoMessage) => void][] };
+        }
+      ).mock.calls[0]?.[0];
+
+      expect(() =>
+        registeredHandler?.({
+          senderId: '555',
+          senderPhone: null,
+          senderName: null,
+          text: 'x',
+          tgMessageId: 1,
+          kind: 'text',
+          mimeType: null,
+          fileName: null,
+          downloadMedia: null,
+        }),
+      ).not.toThrow();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
   });
 
   // 2026-07-20 incident: a gramjs call that never settles (VPS network trouble
@@ -591,6 +745,8 @@ describe('MtprotoWorkerService', () => {
         accounts as any,
         // biome-ignore lint/suspicious/noExplicitAny: test wiring
         cache as any,
+        // biome-ignore lint/suspicious/noExplicitAny: test wiring
+        inbound as any,
       );
 
       const resultPromise = adapter.sendMessage({
@@ -619,6 +775,8 @@ describe('MtprotoWorkerService', () => {
         accounts as any,
         // biome-ignore lint/suspicious/noExplicitAny: test wiring
         cache as any,
+        // biome-ignore lint/suspicious/noExplicitAny: test wiring
+        inbound as any,
       );
 
       const resultPromise = adapter.sendMessage({

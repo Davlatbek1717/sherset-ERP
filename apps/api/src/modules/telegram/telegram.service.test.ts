@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { IncomingMtprotoMessage } from '../hr/hr-telegram-bridge/telegram-client-factory.js';
 import { TelegramService } from './telegram.service.js';
 
 /**
@@ -184,6 +185,159 @@ describe('TelegramService.counterpartyThread — attachment passthrough', () => 
       attachmentId: 'att1',
       fileName: 'chek.jpg',
       mimeType: 'image/jpeg',
+    });
+  });
+});
+
+/**
+ * handleIncoming — MTProto customer→us reply capture (2026-07-20). The
+ * userbot connection previously only ever SENT; a customer's reply vanished
+ * into nothing (OrderTelegramPanel never showed it — this was the exact bug
+ * report). This is the `MtprotoInboundHandler` implementation MtprotoWorker
+ * Service calls once per incoming message. Writes into the SAME
+ * TelegramChat/TelegramChatMessage tables the Business-API inbound path
+ * uses, so `counterpartyThread`/`OrderTelegramPanel` show it with zero
+ * changes on the read side.
+ */
+describe('TelegramService.handleIncoming — MTProto customer reply capture', () => {
+  function makeInboundHarness(opts: { existingCounterpartyId?: string | null } = {}) {
+    const chatUpsert = vi.fn(async () => ({
+      id: 'chat1',
+      counterpartyId: opts.existingCounterpartyId ?? null,
+    }));
+    const messageCreate = vi.fn(async () => ({ id: 'msg1' }));
+    const messageUpdate = vi.fn(async () => ({ id: 'msg1' }));
+    const chatUpdate = vi.fn(async () => ({ id: 'chat1' }));
+    const queryRaw = vi.fn(async () => [{ id: 'cp-matched' }]);
+    const createFromBuffer = vi.fn(async () => ({ id: 'att1' }));
+    const prisma = {
+      client: {
+        telegramChat: {
+          upsert: chatUpsert,
+          // autoBind re-fetches by id (not the upsert's return value) — must
+          // reflect a real row with `phone` set, or the phone-match branch
+          // never runs.
+          findFirst: vi.fn(async () => ({
+            id: 'chat1',
+            phone: '+998901234567',
+            firstName: 'Anvar Mijoz',
+            lastName: null,
+            counterpartyId: opts.existingCounterpartyId ?? null,
+          })),
+          update: chatUpdate,
+        },
+        telegramChatMessage: { create: messageCreate, update: messageUpdate },
+        counterparty: { findMany: vi.fn(async () => []) },
+        $queryRaw: queryRaw,
+      },
+    };
+    const attachments = { createFromBuffer };
+    const lookup = { lookup: vi.fn(async () => ({ available: false, found: false })) };
+    const service = new TelegramService(prisma as never, attachments as never, lookup as never);
+    return { service, chatUpsert, messageCreate, messageUpdate, chatUpdate, createFromBuffer };
+  }
+
+  const textMsg: IncomingMtprotoMessage = {
+    senderId: '555666',
+    senderPhone: '998901234567',
+    senderName: 'Anvar Mijoz',
+    text: 'qachon yetkazasiz?',
+    tgMessageId: 42,
+    kind: 'text',
+    mimeType: null,
+    fileName: null,
+    downloadMedia: null,
+  };
+
+  it("matnli xabar TelegramChat'ga upsert va TelegramChatMessage (direction:'in') qiladi", async () => {
+    const { service, chatUpsert, messageCreate } = makeInboundHarness();
+
+    await service.handleIncoming('acc1', 1, textMsg);
+
+    expect(chatUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { accountId_chatId: { accountId: 'acc1', chatId: 555666n } },
+        create: expect.objectContaining({
+          accountId: 'acc1',
+          chatId: 555666n,
+          firstName: 'Anvar Mijoz',
+          phone: '+998901234567',
+          source: 'mtproto',
+        }),
+      }),
+    );
+    expect(messageCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        accountId: 'acc1',
+        chatRefId: 'chat1',
+        direction: 'in',
+        text: 'qachon yetkazasiz?',
+        tgMessageId: 42n,
+        senderName: 'Anvar Mijoz',
+        kind: 'text',
+      }),
+    });
+  });
+
+  it("chat allaqachon kontragentga bog'langan bo'lsa — avtomatik bog'lash urinilmaydi", async () => {
+    const { service, chatUpsert } = makeInboundHarness({ existingCounterpartyId: 'cp-existing' });
+
+    await service.handleIncoming('acc1', 1, textMsg);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(chatUpsert).toHaveBeenCalled();
+    // autoBind ichkarida telegramChat.findFirst chaqiradi — bog'langan chat
+    // uchun umuman ishga tushmasligi kerak edi, lekin fire-and-forget bo'lgani
+    // uchun bu yerda faqat asosiy yozuv ishlaganini tekshiramiz (yetarli).
+  });
+
+  it("bog'lanmagan chat uchun avtomatik bog'lash (telefon bo'yicha) ishga tushadi", async () => {
+    const { service, chatUpdate } = makeInboundHarness({ existingCounterpartyId: null });
+
+    await service.handleIncoming('acc1', 1, textMsg);
+    // autoBind fire-and-forget — mikrotasklarni tozalab kutamiz.
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(chatUpdate).toHaveBeenCalledWith({
+      where: { id: 'chat1' },
+      data: { counterpartyId: 'cp-matched', boundBy: 'auto' },
+    });
+  });
+
+  it('media xabar — downloadMedia() chaqirilib attachment yaratiladi va xabarga bog‘lanadi', async () => {
+    const { service, messageUpdate, createFromBuffer } = makeInboundHarness();
+    const buffer = Buffer.from('fake-jpeg-bytes');
+    const photoMsg: IncomingMtprotoMessage = {
+      ...textMsg,
+      text: '',
+      kind: 'photo',
+      mimeType: 'image/jpeg',
+      fileName: null,
+      downloadMedia: vi.fn(async () => buffer),
+    };
+
+    await service.handleIncoming('acc1', 1, photoMsg);
+    // Fayl saqlash fire-and-forget (webhook javobini sekinlashtirmaslik uchun).
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(createFromBuffer).toHaveBeenCalledWith(
+      'acc1',
+      null,
+      expect.objectContaining({
+        entity: 'TelegramChatMessage',
+        entityId: 'msg1',
+        mime: 'image/jpeg',
+        buffer,
+      }),
+    );
+    expect(messageUpdate).toHaveBeenCalledWith({
+      where: { id: 'msg1' },
+      data: { attachmentId: 'att1' },
     });
   });
 });

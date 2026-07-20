@@ -9,6 +9,7 @@ import {
   type MtprotoSendOptions,
   type MtprotoSendResult,
 } from './mtproto-adapter.js';
+import { MTPROTO_INBOUND_HANDLER, type MtprotoInboundHandler } from './mtproto-inbound-handler.js';
 import {
   TELEGRAM_CLIENT_FACTORY,
   type TelegramClientFactory,
@@ -72,6 +73,7 @@ export class MtprotoWorkerService implements MtprotoAdapter {
     @Inject(HrTelegramAccountService) private readonly accounts: HrTelegramAccountService,
     @Inject(HrTelegramEntityCacheService)
     private readonly entityCache: HrTelegramEntityCacheService,
+    @Inject(MTPROTO_INBOUND_HANDLER) private readonly inbound: MtprotoInboundHandler,
   ) {}
 
   async sendMessage(opts: MtprotoSendOptions): Promise<MtprotoSendResult> {
@@ -170,6 +172,17 @@ export class MtprotoWorkerService implements MtprotoAdapter {
       await client.disconnect().catch(() => {});
       return null;
     }
+    // Attach ONCE, right after this fresh connection comes up — a customer's
+    // reply to ANY of our sends (not just the one that triggered this
+    // ensureClient call) must be captured, so the listener lives for the
+    // client's whole lifetime, not just this one send.
+    client.onIncomingMessage((msg) => {
+      void this.inbound.handleIncoming(accountId, slot, msg).catch((e: Error) => {
+        this.logger.warn(
+          `Kiruvchi xabarni saqlash xatosi (acc=${accountId} slot=${slot}): ${e.message}`,
+        );
+      });
+    });
     this.clients.set(this.clientKey(accountId, slot), client);
     return client;
   }
