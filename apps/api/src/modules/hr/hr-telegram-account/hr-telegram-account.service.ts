@@ -62,6 +62,19 @@ export class HrTelegramAccountService {
     });
   }
 
+  /**
+   * Boot-receiver'lar uchun — barcha faol, sessiyali (accountId, slot)
+   * juftliklari (tenant'lar bo'ylab). `MtprotoWorkerService` boot'da har biriga
+   * ulanib kiruvchi listener biriktiradi (send'ga bog'liq emas — «xabar
+   * saqlanmayapti» buggini tuzatadi).
+   */
+  async listActiveSlots(): Promise<{ accountId: string; slot: number }[]> {
+    return this.prisma.client.hrTelegramAccount.findMany({
+      where: { isActive: true, sessionEncrypted: { not: null } },
+      select: { accountId: true, slot: true },
+    });
+  }
+
   async create(
     accountId: string,
     input: CreateHrTelegramAccountInput,

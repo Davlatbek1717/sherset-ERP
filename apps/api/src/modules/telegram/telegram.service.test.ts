@@ -205,7 +205,7 @@ describe('TelegramService.handleIncoming — MTProto customer reply capture', ()
       id: 'chat1',
       counterpartyId: opts.existingCounterpartyId ?? null,
     }));
-    const messageCreate = vi.fn(async () => ({ id: 'msg1' }));
+    const messageUpsert = vi.fn(async () => ({ id: 'msg1', attachmentId: null }));
     const messageUpdate = vi.fn(async () => ({ id: 'msg1' }));
     const chatUpdate = vi.fn(async () => ({ id: 'chat1' }));
     const queryRaw = vi.fn(async () => [{ id: 'cp-matched' }]);
@@ -226,7 +226,7 @@ describe('TelegramService.handleIncoming — MTProto customer reply capture', ()
           })),
           update: chatUpdate,
         },
-        telegramChatMessage: { create: messageCreate, update: messageUpdate },
+        telegramChatMessage: { upsert: messageUpsert, update: messageUpdate },
         counterparty: { findMany: vi.fn(async () => []) },
         $queryRaw: queryRaw,
       },
@@ -234,7 +234,7 @@ describe('TelegramService.handleIncoming — MTProto customer reply capture', ()
     const attachments = { createFromBuffer };
     const lookup = { lookup: vi.fn(async () => ({ available: false, found: false })) };
     const service = new TelegramService(prisma as never, attachments as never, lookup as never);
-    return { service, chatUpsert, messageCreate, messageUpdate, chatUpdate, createFromBuffer };
+    return { service, chatUpsert, messageUpsert, messageUpdate, chatUpdate, createFromBuffer };
   }
 
   const textMsg: IncomingMtprotoMessage = {
@@ -251,7 +251,7 @@ describe('TelegramService.handleIncoming — MTProto customer reply capture', ()
   };
 
   it("matnli xabar TelegramChat'ga upsert va TelegramChatMessage (direction:'in') qiladi", async () => {
-    const { service, chatUpsert, messageCreate } = makeInboundHarness();
+    const { service, chatUpsert, messageUpsert } = makeInboundHarness();
 
     await service.handleIncoming('acc1', 1, textMsg);
 
@@ -267,18 +267,22 @@ describe('TelegramService.handleIncoming — MTProto customer reply capture', ()
         }),
       }),
     );
-    expect(messageCreate).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        accountId: 'acc1',
-        chatRefId: 'chat1',
-        direction: 'in',
-        text: 'qachon yetkazasiz?',
-        tgMessageId: 42n,
-        senderName: 'Anvar Mijoz',
-        kind: 'text',
-        fwdFromName: null,
+    // create emas — upsert (dedup `@@unique([chatRefId, tgMessageId])`).
+    expect(messageUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { chatRefId_tgMessageId: { chatRefId: 'chat1', tgMessageId: 42n } },
+        create: expect.objectContaining({
+          accountId: 'acc1',
+          chatRefId: 'chat1',
+          direction: 'in',
+          text: 'qachon yetkazasiz?',
+          tgMessageId: 42n,
+          senderName: 'Anvar Mijoz',
+          kind: 'text',
+          fwdFromName: null,
+        }),
       }),
-    });
+    );
   });
 
   // 2026-07-20 Phase 2: mijoz chatimizga boshqa joydan forward qilingan
@@ -286,14 +290,16 @@ describe('TelegramService.handleIncoming — MTProto customer reply capture', ()
   // jo'natuvchi nomi saqlanishi kerak (gramjs-client.factory.ts'da
   // hisoblanadi, handleIncoming faqat o'tkazadi).
   it("forward qilingan xabarda fwdFromName TelegramChatMessage'ga yoziladi", async () => {
-    const { service, messageCreate } = makeInboundHarness();
+    const { service, messageUpsert } = makeInboundHarness();
     const forwarded: IncomingMtprotoMessage = { ...textMsg, fwdFromName: 'Sardor Aliyev' };
 
     await service.handleIncoming('acc1', 1, forwarded);
 
-    expect(messageCreate).toHaveBeenCalledWith({
-      data: expect.objectContaining({ fwdFromName: 'Sardor Aliyev' }),
-    });
+    expect(messageUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({ fwdFromName: 'Sardor Aliyev' }),
+      }),
+    );
   });
 
   it("chat allaqachon kontragentga bog'langan bo'lsa — avtomatik bog'lash urinilmaydi", async () => {

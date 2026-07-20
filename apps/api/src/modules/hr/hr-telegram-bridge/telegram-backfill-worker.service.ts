@@ -78,33 +78,8 @@ export class TelegramBackfillWorkerService {
         }
         const chat = await this.ensureChat(job.accountId, job.counterpartyId, job.phone, peerId);
         for (const m of messages) {
-          const created = await this.prisma.client.telegramChatMessage.upsert({
-            where: {
-              chatRefId_tgMessageId: { chatRefId: chat.id, tgMessageId: BigInt(m.tgMessageId) },
-            },
-            update: {},
-            create: {
-              accountId: job.accountId,
-              chatRefId: chat.id,
-              direction: m.direction,
-              text: m.text.slice(0, 4096),
-              tgMessageId: BigInt(m.tgMessageId),
-              senderName: m.senderName,
-              kind: m.kind,
-              mimeType: m.mimeType,
-              fileName: m.fileName,
-              fwdFromName: m.fwdFromName,
-              replyToTgMessageId:
-                m.replyToTgMessageId != null ? BigInt(m.replyToTgMessageId) : null,
-              createdAt: new Date(m.date * 1000),
-            },
-          });
+          await this.persistMessage(job.accountId, chat.id, m);
           imported++;
-          if (m.downloadMedia) {
-            await this.storeMedia(job.accountId, created.id, m).catch((e: Error) =>
-              this.logger.warn(`backfill media saqlanmadi (xabar saqlandi): ${e.message}`),
-            );
-          }
         }
         const oldest = olderCursor(messages.map((m) => ({ tgMessageId: m.tgMessageId })));
         if (oldest != null) offsetId = oldest;
@@ -144,6 +119,86 @@ export class TelegramBackfillWorkerService {
         `Backfill job ${job.id} ${flood ? 'flood→requeue' : 'error'}: ${(e as Error).message}`,
       );
       return { imported, done: 0 };
+    }
+  }
+
+  /**
+   * Catch-up — doimiy listener uzilgan payt o'tkazib yuborilgan xabarlarni
+   * to'ldiradi (2026-07-20). `syncNewestId`li bog'langan chatlar uchun `minId`
+   * bilan yangi xabarlarni tortadi, kursorni ilgarilaydi. Past chastota +
+   * tick'ga cheklov (flood-xavfsiz).
+   */
+  @Cron('0 */5 * * * *') // har 5 daqiqa
+  async catchUpTick(): Promise<void> {
+    const chats = await this.prisma.client.telegramChat.findMany({
+      where: {
+        counterpartyId: { not: null },
+        syncNewestId: { not: null },
+        phone: { not: null },
+      },
+      orderBy: { lastMessageAt: 'desc' },
+      take: 20,
+      select: { id: true, accountId: true, phone: true, syncNewestId: true },
+    });
+    for (const chat of chats) {
+      if (!chat.phone || chat.syncNewestId == null) continue;
+      const from = Number(chat.syncNewestId);
+      try {
+        const { messages } = await this.adapter.fetchHistory({
+          accountId: chat.accountId,
+          phone: chat.phone,
+          limit: 50,
+          minId: from,
+        });
+        let newest = from;
+        for (const m of messages) {
+          await this.persistMessage(chat.accountId, chat.id, m);
+          if (m.tgMessageId > newest) newest = m.tgMessageId;
+        }
+        if (newest > from) {
+          await this.prisma.client.telegramChat.update({
+            where: { id: chat.id },
+            data: { syncNewestId: BigInt(newest) },
+          });
+        }
+      } catch (e) {
+        this.logger.warn(`catch-up chat=${chat.id}: ${(e as Error).message}`);
+      }
+    }
+  }
+
+  /**
+   * Bitta tarix/catch-up xabarini idempotent yozadi (`@@unique([chatRefId,
+   * tgMessageId])`) + media'ni (yangi bo'lsa) darhol `Attachment`ga yuklaydi.
+   * Backfill va catch-up shu yagona yo'ldan foydalanadi (DRY).
+   */
+  private async persistMessage(
+    accountId: string,
+    chatRefId: string,
+    m: HistoryMtprotoMessage,
+  ): Promise<void> {
+    const created = await this.prisma.client.telegramChatMessage.upsert({
+      where: { chatRefId_tgMessageId: { chatRefId, tgMessageId: BigInt(m.tgMessageId) } },
+      update: {},
+      create: {
+        accountId,
+        chatRefId,
+        direction: m.direction,
+        text: m.text.slice(0, 4096),
+        tgMessageId: BigInt(m.tgMessageId),
+        senderName: m.senderName,
+        kind: m.kind,
+        mimeType: m.mimeType,
+        fileName: m.fileName,
+        fwdFromName: m.fwdFromName,
+        replyToTgMessageId: m.replyToTgMessageId != null ? BigInt(m.replyToTgMessageId) : null,
+        createdAt: new Date(m.date * 1000),
+      },
+    });
+    if (m.downloadMedia && !created.attachmentId) {
+      await this.storeMedia(accountId, created.id, m).catch((e: Error) =>
+        this.logger.warn(`media saqlanmadi (xabar saqlandi): ${e.message}`),
+      );
     }
   }
 

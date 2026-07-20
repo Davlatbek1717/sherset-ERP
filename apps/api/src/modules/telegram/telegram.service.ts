@@ -375,8 +375,15 @@ export class TelegramService implements MtprotoInboundHandler {
       },
     });
 
-    const created = await this.prisma.client.telegramChatMessage.create({
-      data: {
+    // upsert (create emas) — `@@unique([chatRefId, tgMessageId])` (2026-07-20
+    // to'liq-tarix) bilan bir xil xabar ikki marta kelsa (listener redelivery
+    // yoki catch-up bilan poyga) throw QILMASIN, idempotent bo'lsin.
+    const created = await this.prisma.client.telegramChatMessage.upsert({
+      where: {
+        chatRefId_tgMessageId: { chatRefId: chat.id, tgMessageId: BigInt(msg.tgMessageId) },
+      },
+      update: {},
+      create: {
         accountId,
         chatRefId: chat.id,
         direction: 'in',
@@ -391,7 +398,13 @@ export class TelegramService implements MtprotoInboundHandler {
     });
     this.logger.debug(`MTProto kiruvchi xabar (acc=${accountId} slot=${slot}): ${created.id}`);
 
-    if (msg.downloadMedia) {
+    // Catch-up kursori — uzilganda o'tkazib yuborilgani `minId`dan tortiladi.
+    await this.prisma.client.telegramChat
+      .update({ where: { id: chat.id }, data: { syncNewestId: BigInt(msg.tgMessageId) } })
+      .catch(() => {});
+
+    // Fayl faqat YANGI xabarda yuklab olinadi (dublikatda allaqachon bor).
+    if (msg.downloadMedia && !created.attachmentId) {
       void this.storeIncomingMtprotoFile(accountId, created.id, msg).catch((e: Error) =>
         this.logger.warn(`MTProto fayl saqlanmadi (xabar saqlandi): ${e.message}`),
       );

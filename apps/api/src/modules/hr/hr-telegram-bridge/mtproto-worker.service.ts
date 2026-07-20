@@ -1,5 +1,5 @@
 import type { Prisma } from '@moysklad/db';
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 import { decryptHrSession } from '../hr-shared/crypto.util.js';
 import { HrTelegramAccountService } from '../hr-telegram-account/hr-telegram-account.service.js';
 import { HrTelegramEntityCacheService } from './entity-cache.service.js';
@@ -62,7 +62,7 @@ function withTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
 }
 
 @Injectable()
-export class MtprotoWorkerService implements MtprotoAdapter {
+export class MtprotoWorkerService implements MtprotoAdapter, OnModuleInit {
   private readonly logger = new Logger(MtprotoWorkerService.name);
   private static readonly SLOTS = [1, 2] as const;
 
@@ -76,6 +76,38 @@ export class MtprotoWorkerService implements MtprotoAdapter {
     private readonly entityCache: HrTelegramEntityCacheService,
     @Inject(MTPROTO_INBOUND_HANDLER) private readonly inbound: MtprotoInboundHandler,
   ) {}
+
+  /**
+   * Boot'da barcha faol userbotlarga ulanamiz + kiruvchi listener biriktiramiz
+   * — SEND'GA BOG'LIQ EMAS. Ilgari listener faqat birinchi send'da
+   * (`ensureClient`) ulanardi → hech qachon xabar yubormagan mijoz javobi
+   * TINGLANMAS edi (bug ildizi). Boot ulanishini bloklamaymiz (fire-and-forget).
+   */
+  async onModuleInit(): Promise<void> {
+    void this.startReceivers();
+  }
+
+  /** Har faol (accountId, slot)ga `ensureClient` — listener biriktiradi. */
+  async startReceivers(): Promise<void> {
+    let slots: { accountId: string; slot: number }[] = [];
+    try {
+      slots = await this.accounts.listActiveSlots();
+    } catch (e) {
+      this.logger.warn(`startReceivers: slot ro'yxati xato: ${(e as Error).message}`);
+      return;
+    }
+    for (const { accountId, slot } of slots) {
+      // Xato bitta akkauntni to'xtatmasin (flood/auth-loss/tarmoq).
+      try {
+        const c = await this.ensureClient(accountId, slot);
+        if (c) this.logger.log(`Telegram receiver tayyor acc=${accountId} slot=${slot}`);
+      } catch (e) {
+        this.logger.warn(
+          `receiver ulanmadi acc=${accountId} slot=${slot}: ${(e as Error).message}`,
+        );
+      }
+    }
+  }
 
   async sendMessage(opts: MtprotoSendOptions): Promise<MtprotoSendResult> {
     const errors: Error[] = [];
