@@ -318,6 +318,14 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > cred, aynan kutilgan). **YAGONA qolgan: haqiqiy Eskiz hisobi bilan real SMS yetkazish** (kod+wiring 100% ishlaydi).
 > **🐞 BROWSER-CAUGHT FIX (`8e8f1bf`):** `sms_templates.description`'dagi `{{= }}` next-intl ICU parserini buzib xom kalit
 > ko'rsatardi → tokenlarsiz matn; + shablon saqlash success/error toast (guard endi ko'rinadi). tc0 · i18n parity ✅.
+> **🔀 MESSAGE-TEMPLATE REFAKTORIGA MOSLASH (`5ba1471`):** parallel sessiya SMS shablonni kanal-aware `MessageTemplate`
+> kutubxonasiga refaktor qildi (`@@map("sms_templates")` + `channel`/`is_default`, controller `/message-templates`,
+> `debt.service` endi `findDefault(accountId,'sms')`). Frontend'ni yangi API'ga moslаdim (faqat FE fayllar — `sms-api`
+> `messageTemplateApi`, `settings/sms/templates` kanal-segment + default-badge). **Browser-smoke (lokal, `prisma db push`
+> + qo'lda 2 shablon seed):** sms shablon yuklandi, bulk SMS→SmsLog `findDefault` yo'li live, XYZ no_phone skip.
+> ⚠️ **KOMMIT NOMUVOFIQLIGI:** FE (`/message-templates`) commit qilingan, LEKIN backend refaktori HALI parallel
+> sessiyada **uncommitted** (faqat working tree) — parallel backend'ni commit qilgach muvofiqlik tiklanadi. ⚠️ Parallel
+> `seed.ts` bug: `id: ${account.id}-sms-debt` yaroqsiz UUID (seed yiqiladi) — parallel sessiya tuzatsin.
 > **Ish (12 task, brainstorm→spec→plan→ijro):** Mavjud Telegram xabar yoniga SMS (Eskiz) kanali qo'shildi. Foydalanuvchi
 > talabi: sozlamada SMS hisobi, qarzdorlarni checkbox bilan tanlab bittada yuborish, shablon sozlamadan tahrirlanadi.
 > **MUHIM kashfiyot:** SMS backend infratuzilmasi ALLAQACHON bor edi (`modules/sms`: config, Eskiz client, SmsLog navbat,
