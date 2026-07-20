@@ -3089,6 +3089,53 @@
         "custom": "Другой SMTP"
       }
     },
+    "sms_settings": {
+      "title": "Настройки SMS",
+      "description": "Аккаунт Eskiz для отправки SMS и шаблоны",
+      "provider": "Провайдер",
+      "email": "Email Eskiz",
+      "password": "Пароль Eskiz",
+      "password_hint": "Оставьте пустым, чтобы не менять",
+      "sender_id": "Имя отправителя (необязательно)",
+      "test_button": "Проверить подключение",
+      "test_ok": "Подключение OK",
+      "test_failed": "Ошибка подключения",
+      "delete_button": "Удалить",
+      "contacts_title": "Контакты для клиента",
+      "contact_phone": "Контактный телефон",
+      "contact_card": "Номер карты",
+      "contact_card_owner": "Владелец карты",
+      "templates_link": "Шаблоны SMS",
+      "log_link": "Журнал SMS"
+    },
+    "sms_templates": {
+      "title": "Шаблоны SMS",
+      "description": "Отредактируйте текст сообщения. Переменные: {{= counterparty.name }}, {{= debt.remainingFormatted }}, {{= company.phone }}, {{= company.card }}, {{= company.cardOwner }}",
+      "name": "Название",
+      "body": "Текст",
+      "enabled": "Активен",
+      "insert_var": "Вставить переменную",
+      "preview": "Предпросмотр",
+      "chars": "симв.",
+      "segments": "SMS",
+      "save": "Сохранить"
+    },
+    "debt_reminders": {
+      "send_button": "Отправить сообщение",
+      "modal_title": "Сообщение выбранным должникам",
+      "channel": "Канал",
+      "channel_sms": "SMS",
+      "channel_telegram": "Telegram",
+      "recipients": "Получатели",
+      "confirm": "Отправить",
+      "result_queued": "{count} поставлено в очередь",
+      "result_skipped": "{count} пропущено",
+      "reason_no_phone": "нет телефона",
+      "reason_no_debt": "нет долга",
+      "reason_sms_not_configured": "SMS не настроен",
+      "reason_template_disabled": "шаблон отключён",
+      "reason_no_telegram_chat": "нет Telegram чата"
+    },
     "send_email": {
       "title": "Отправить по email",
       "to": "Кому",

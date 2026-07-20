@@ -3089,6 +3089,53 @@
         "custom": "Boshqa SMTP"
       }
     },
+    "sms_settings": {
+      "title": "SMS sozlamalari",
+      "description": "Eskiz orqali SMS yuborish hisobi va shablonlar",
+      "provider": "Provayder",
+      "email": "Eskiz email",
+      "password": "Eskiz parol",
+      "password_hint": "O'zgartirmaslik uchun bo'sh qoldiring",
+      "sender_id": "Jo'natuvchi nomi (ixtiyoriy)",
+      "test_button": "Ulanishni tekshirish",
+      "test_ok": "Ulanish OK",
+      "test_failed": "Ulanish xatosi",
+      "delete_button": "O'chirish",
+      "contacts_title": "Mijozga ko'rsatiladigan aloqa",
+      "contact_phone": "Aloqa telefoni",
+      "contact_card": "Karta raqami",
+      "contact_card_owner": "Karta egasi",
+      "templates_link": "SMS shablonlari",
+      "log_link": "SMS jurnali"
+    },
+    "sms_templates": {
+      "title": "SMS shablonlari",
+      "description": "Xabar matnini tahrirlang. O'zgaruvchilar: {{= counterparty.name }}, {{= debt.remainingFormatted }}, {{= company.phone }}, {{= company.card }}, {{= company.cardOwner }}",
+      "name": "Nomi",
+      "body": "Matn",
+      "enabled": "Faol",
+      "insert_var": "O'zgaruvchi qo'shish",
+      "preview": "Ko'rinishi",
+      "chars": "belgi",
+      "segments": "SMS",
+      "save": "Saqlash"
+    },
+    "debt_reminders": {
+      "send_button": "Xabar yuborish",
+      "modal_title": "Tanlangan qarzdorlarga xabar",
+      "channel": "Kanal",
+      "channel_sms": "SMS",
+      "channel_telegram": "Telegram",
+      "recipients": "Qabul qiluvchilar",
+      "confirm": "Yuborish",
+      "result_queued": "{count} navbatga qo'yildi",
+      "result_skipped": "{count} o'tkazib yuborildi",
+      "reason_no_phone": "telefon yo'q",
+      "reason_no_debt": "qarz yo'q",
+      "reason_sms_not_configured": "SMS sozlanmagan",
+      "reason_template_disabled": "shablon o'chirilgan",
+      "reason_no_telegram_chat": "Telegram chat yo'q"
+    },
     "send_email": {
       "title": "Emailga yuborish",
       "to": "Kimga",

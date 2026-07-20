@@ -371,6 +371,13 @@ export const debtApi = {
   paymentsFeed: (p: DebtPaymentsFeedParams = {}) =>
     api.get<DebtPaymentsFeed>(`/debts/payments/feed${qs({ ...p })}`),
 
+  /** Tanlangan qarzdorlarga ommaviy eslatma — SMS yoki Telegram (2026-07-20). */
+  bulkReminders: (ids: string[], channel: 'sms' | 'telegram') =>
+    api.post<{ queued: number; skipped: Array<{ id: string; name: string; reason: string }> }>(
+      '/debts/reminders/bulk',
+      { ids, channel },
+    ),
+
   /**
    * CHECKBOX bilan belgilangan qarzlar PDF'i (2026-07-12) — aynan tanlangan
    * yozuvlar, filtr holatidan qat'i nazar.
