@@ -202,6 +202,53 @@ describe('MtprotoWorkerService', () => {
     expect(cache.set).not.toHaveBeenCalled();
   });
 
+  // 2026-07-20c bug, confirmed live: a phone cached by an OLDER build (a
+  // different descriptor shape than the current `{userId, accessHash}`)
+  // makes hydrateEntity throw "invalid cached entity shape" — this used to
+  // hard-fail the send outright. A malformed cache row is just a cache MISS
+  // in disguise: fall through to a fresh resolvePhone instead of failing.
+  it('hydrateEntity throwing on a stale/incompatible cache entry falls back to resolvePhone', async () => {
+    const client1 = makeClient({
+      hydrateEntity: vi.fn((cached: unknown) => {
+        const c = cached as { userId?: string };
+        if (c.userId !== '999') throw new Error('hydrateEntity: invalid cached entity shape');
+        return { hydrated: true };
+      }),
+      resolvePhone: vi.fn().mockResolvedValue({ userId: '999', accessHash: '111' }),
+    });
+    handles.set('100', client1);
+    cache.get.mockResolvedValue({ someOldShape: 'legacy-blob' });
+    const accounts = makeAccountsSvc({
+      active: { 1: { apiId: 100, apiHashEncrypted, sessionEncrypted } },
+    });
+    const adapter = new MtprotoWorkerService(
+      factory,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      accounts as any,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      cache as any,
+    );
+
+    const result = await adapter.sendMessage({
+      accountId: 'acc1',
+      toPhone: '+998901234567',
+      text: 'x',
+    });
+
+    expect(result).toEqual({ slot: 1, messageId: 'm-1' });
+    expect(client1.resolvePhone).toHaveBeenCalledWith('+998901234567');
+    expect(client1.sendMessage).toHaveBeenCalledWith({ hydrated: true }, 'x', {
+      format: 'default',
+    });
+    // Stale row gets overwritten with the fresh, correctly-shaped descriptor.
+    expect(cache.set).toHaveBeenCalledWith(
+      'acc1',
+      1,
+      '+998901234567',
+      expect.objectContaining({ userId: '999', accessHash: '111' }),
+    );
+  });
+
   // 2026-07-20 bug, confirmed live: sending a JSON-round-tripped cached
   // entity straight to gramjs's sendMessage (skipping hydration) failed
   // EVERY time with "Cannot cast User to any kind of peer" — the first send

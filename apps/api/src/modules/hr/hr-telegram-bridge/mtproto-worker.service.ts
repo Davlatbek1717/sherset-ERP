@@ -196,6 +196,14 @@ export class MtprotoWorkerService implements MtprotoAdapter {
    *     first send to a phone (cache miss, fresh object) went through; the
    *     next send to the SAME phone (cache hit) failed with that error.
    *     `hydrateEntity` reconstructs a real `Api.InputPeerUser` every time.
+   *  3. Then: rows cached by an OLDER build (before fix #2 shipped) store a
+   *     different descriptor shape — `hydrateEntity` correctly throws
+   *     `hydrateEntity: invalid cached entity shape` on those, which used to
+   *     hard-fail the whole send. Confirmed live: a phone cached before this
+   *     deploy failed every retry with exactly that error. A malformed cache
+   *     entry is just a cache MISS in disguise — fall through to a fresh
+   *     `resolvePhone` (which also overwrites the stale row) instead of
+   *     failing the send.
    */
   private async resolveEntity(
     client: TelegramClientHandle,
@@ -208,7 +216,15 @@ export class MtprotoWorkerService implements MtprotoAdapter {
     // up with a real, class-intact peer object, never the raw JSON blob
     // (see hydrateEntity's doc comment for the live-confirmed bug this
     // prevents: cache hit → "Cannot cast User to any kind of peer").
-    if (cached) return client.hydrateEntity(cached);
+    if (cached) {
+      try {
+        return client.hydrateEntity(cached);
+      } catch (e) {
+        this.logger.warn(
+          `stale/incompatible cached entity for acc=${accountId} slot=${slot} — refetching: ${(e as Error).message}`,
+        );
+      }
+    }
     const fresh = await withTimeout(client.resolvePhone(phone), 'resolvePhone');
     const serialized = serializeEntityForCache(fresh);
     if (serialized !== null) {
