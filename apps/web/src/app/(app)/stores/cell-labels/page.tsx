@@ -23,10 +23,8 @@
  * qaytaradi → NN·NN·NN·NN deb parse qilinadi.
  */
 
-import { api } from '@/lib/api-client';
 import { fetchAgentPrinters, hasNativePrinting, printHtmlNative } from '@/lib/print-agent';
 import { Button, Icons, Input } from '@moysklad/ui';
-import { useQuery } from '@tanstack/react-query';
 import JsBarcode from 'jsbarcode';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
@@ -87,20 +85,10 @@ function rangeFromParam(searchParams: URLSearchParams, key: string): Range {
   return emptyRange();
 }
 
-interface StoreCellRow {
-  id: string;
-  code: string;
-  shelf: string | null;
-  productCount: number;
-}
-
 function CellLabelsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const storeName = searchParams.get('store');
-  // Ombor id (URL'da bo'lsa) — «shu ombordan yacheyka tanlab chop etish» paneli
-  // shu bo'yicha yacheykalarni yuklaydi. Bo'lmasa faqat diapazon-forma ishlaydi.
-  const storeId = searchParams.get('storeId');
   // Ombor qatoridan kelganda sklad segmenti ombor kodi bilan to'ldiriladi;
   // yacheyka 🖨 tugmasidan kelganda qolgan segmentlar ham.
   const [sklad, setSklad] = useState<Range>(() => rangeFromParam(searchParams, 'sklad'));
@@ -111,68 +99,6 @@ function CellLabelsContent() {
   const [labelH, setLabelH] = useState('');
   const [rendered, setRendered] = useState<{ codes: string[]; w: number; h: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  // ── «Shu ombordan yacheyka tanlash» — qidiruv + checkbox bilan ko'p tanlash ──
-  const cellsQuery = useQuery<{ items: StoreCellRow[] }>({
-    queryKey: ['store-cells', storeId],
-    queryFn: () => api.get<{ items: StoreCellRow[] }>(`/admin/stores/${storeId}/cells`),
-    enabled: !!storeId,
-  });
-  const allCells = cellsQuery.data?.items ?? [];
-  const [cellSearch, setCellSearch] = useState('');
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-
-  const filteredCells = useMemo(() => {
-    const q = cellSearch.trim().toLowerCase();
-    if (!q) return allCells;
-    return allCells.filter(
-      (c) => c.code.toLowerCase().includes(q) || (c.shelf ?? '').toLowerCase().includes(q),
-    );
-  }, [allCells, cellSearch]);
-
-  const toggleCell = (code: string) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(code)) next.delete(code);
-      else next.add(code);
-      return next;
-    });
-  };
-  const selectAllFiltered = () =>
-    setSelected((prev) => {
-      const next = new Set(prev);
-      for (const c of filteredCells) next.add(c.code);
-      return next;
-    });
-  const clearSelection = () => setSelected(new Set());
-
-  /** Label o'lchamini validatsiyalab {w,h} qaytaradi; xato bo'lsa null + error. */
-  const resolveSize = (): { w: number; h: number } | null => {
-    const w = parseSizeMm(labelW, DEFAULT_LABEL_W);
-    const h = parseSizeMm(labelH, DEFAULT_LABEL_H);
-    if (w == null || h == null) {
-      setError(`Label o'lchami noto'g'ri — ${SIZE_MIN}–${SIZE_MAX} mm oralig'ida bo'lsin`);
-      return null;
-    }
-    return { w, h };
-  };
-
-  /** Tanlangan yacheykalar labellarini ko'rish/chop etish (kanonik kod tartibida). */
-  const printSelected = () => {
-    setError(null);
-    if (selected.size === 0) {
-      setError('Kamida 1 ta yacheyka belgilang');
-      return;
-    }
-    if (selected.size > MAX_LABELS) {
-      setError(`Juda ko'p: ${selected.size} ta (maksimum ${MAX_LABELS}). Kamroq belgilang.`);
-      return;
-    }
-    const size = resolveSize();
-    if (!size) return;
-    const codes = [...selected].sort();
-    setRendered({ codes, w: size.w, h: size.h });
-  };
 
   const codes = useMemo(() => {
     const s = expand(sklad);
@@ -202,10 +128,14 @@ function CellLabelsContent() {
       setError(`Juda ko'p: ${codes.total} ta (maksimum ${MAX_LABELS}). Diapazonni toraytiring.`);
       return;
     }
-    const size = resolveSize();
-    if (!size) return;
+    const w = parseSizeMm(labelW, DEFAULT_LABEL_W);
+    const h = parseSizeMm(labelH, DEFAULT_LABEL_H);
+    if (w == null || h == null) {
+      setError(`Label o'lchami noto'g'ri — ${SIZE_MIN}–${SIZE_MAX} mm oralig'ida bo'lsin`);
+      return;
+    }
     setError(null);
-    setRendered({ codes: codes.list, w: size.w, h: size.h });
+    setRendered({ codes: codes.list, w, h });
   };
 
   if (rendered) {
@@ -259,131 +189,6 @@ function CellLabelsContent() {
           data-test-id="cell-labels-error"
         >
           {error}
-        </div>
-      )}
-
-      {/* ── «Shu ombordan yacheyka tanlash» — qidiruv + checkbox bilan ko'p tanlab
-             chop etish (storeId URL'da bo'lsagina). ── */}
-      {storeId && (
-        <div
-          className="space-y-3 rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] p-4"
-          data-test-id="cell-select-panel"
-        >
-          <div className="flex items-center justify-between">
-            <h2 className="font-medium text-[var(--ms-text-primary)] text-base">
-              Shu ombordan yacheyka tanlash
-            </h2>
-            <span className="text-[var(--ms-text-muted)] text-sm" data-test-id="cell-select-count">
-              {selected.size} ta belgilandi
-            </span>
-          </div>
-
-          <Input
-            placeholder="Kod yoki polka bo'yicha qidirish…"
-            value={cellSearch}
-            onChange={(e) => setCellSearch(e.target.value)}
-            data-test-id="cell-select-search"
-          />
-
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-            <button
-              type="button"
-              className="text-[var(--ms-text-brand)] hover:underline disabled:opacity-40"
-              onClick={selectAllFiltered}
-              disabled={filteredCells.length === 0}
-              data-test-id="cell-select-all"
-            >
-              Ko'rinayotganlarni belgilash ({filteredCells.length})
-            </button>
-            <button
-              type="button"
-              className="text-[var(--ms-text-brand)] hover:underline disabled:opacity-40"
-              onClick={clearSelection}
-              disabled={selected.size === 0}
-              data-test-id="cell-select-clear"
-            >
-              Tozalash
-            </button>
-          </div>
-
-          <div className="max-h-72 divide-y divide-[var(--ms-border-default)] overflow-y-auto rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)]">
-            {cellsQuery.isLoading ? (
-              <div className="px-3 py-3 text-[var(--ms-text-muted)] text-sm">Yuklanmoqda…</div>
-            ) : filteredCells.length === 0 ? (
-              <div
-                className="px-3 py-3 text-[var(--ms-text-muted)] text-sm"
-                data-test-id="cell-select-empty"
-              >
-                {allCells.length === 0
-                  ? 'Bu omborda yacheyka yo‘q'
-                  : 'Qidiruvga mos yacheyka topilmadi'}
-              </div>
-            ) : (
-              filteredCells.map((c) => (
-                <label
-                  key={c.id}
-                  className="flex cursor-pointer items-center gap-3 px-3 py-2 text-sm hover:bg-[var(--ms-bg-hover)]"
-                  data-test-id={`cell-select-row-${c.code}`}
-                >
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 accent-[var(--ms-text-brand)]"
-                    checked={selected.has(c.code)}
-                    onChange={() => toggleCell(c.code)}
-                  />
-                  <span className="font-mono tracking-wider">{c.code}</span>
-                  {c.shelf && (
-                    <span className="text-[var(--ms-text-muted)]">· Polka {c.shelf}</span>
-                  )}
-                  {c.productCount > 0 && (
-                    <span className="ml-auto text-[var(--ms-text-muted)] text-xs">
-                      {c.productCount} mahsulot
-                    </span>
-                  )}
-                </label>
-              ))
-            )}
-          </div>
-
-          <div className="flex flex-wrap items-center justify-between gap-3 border-[var(--ms-border-default)] border-t pt-3">
-            <div className="flex items-center gap-2">
-              <span className="text-[var(--ms-text-muted)] text-sm">Qog'oz (mm):</span>
-              <Input
-                inputMode="numeric"
-                className="w-16 text-center tabular-nums"
-                placeholder={`${DEFAULT_LABEL_W}`}
-                value={labelW}
-                onChange={(e) => setLabelW(e.target.value)}
-                data-test-id="cell-select-width"
-              />
-              <span className="text-[var(--ms-text-muted)]">×</span>
-              <Input
-                inputMode="numeric"
-                className="w-16 text-center tabular-nums"
-                placeholder={`${DEFAULT_LABEL_H}`}
-                value={labelH}
-                onChange={(e) => setLabelH(e.target.value)}
-                data-test-id="cell-select-height"
-              />
-            </div>
-            <Button
-              variant="primary"
-              onClick={printSelected}
-              disabled={selected.size === 0}
-              data-test-id="cell-select-print"
-            >
-              <Icons.print className="h-4 w-4" />
-              Tanlanganlarni chop etish ({selected.size})
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {storeId && (
-        <div className="flex items-center gap-2 text-[var(--ms-text-muted)] text-xs">
-          <div className="h-px flex-1 bg-[var(--ms-border-default)]" />
-          yoki diapazon bo'yicha
-          <div className="h-px flex-1 bg-[var(--ms-border-default)]" />
         </div>
       )}
 
@@ -507,16 +312,14 @@ function RenderedCells({
    * inline-uslubli mustaqil HTML quradi — @page = label o'lchami. */
   const buildNativeHtml = (): string => {
     const svgs = Array.from(document.querySelectorAll('[data-test-id="cell-label-barcode"]'));
-    // YACHEYKA sarlavhasi olib tashlangach vertikal joy bo'shadi — kodni kattaroq
-    // va ko'zga tashlanadigan qilamiz (label enining ~90% ini egallaydi, cap 30px).
-    const codeFontPx = Math.min(30, Math.round((w * MM_PX * 0.9) / 11 / 0.62));
+    const codeFontPx = Math.min(24, Math.round((w * MM_PX * 0.82) / 11 / 0.62));
     const labels = codes
       .map((code, i) => {
         const svg = (svgs[i]?.outerHTML ?? '').replace(
           '<svg ',
           `<svg style="max-width:${w - 4}mm;max-height:${(h * 0.45).toFixed(1)}mm" `,
         );
-        return `<div class="lp"><div class="hd"><div class="c" style="font-size:${codeFontPx}px">${code}</div></div>${svg}</div>`;
+        return `<div class="lp"><div class="hd"><div class="t">YACHEYKA</div><div class="c" style="font-size:${codeFontPx}px">${code}</div></div>${svg}</div>`;
       })
       .join('');
     return `<!doctype html><html><head><meta charset="utf-8"><style>
@@ -525,7 +328,8 @@ html,body{margin:0;padding:0}
 .lp{width:${w}mm;height:${h}mm;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1mm;overflow:hidden;padding:1mm 2mm;page-break-after:always}
 .lp:last-child{page-break-after:auto}
 .hd{text-align:center}
-.c{font-family:ui-monospace,Consolas,monospace;font-weight:800;color:#000;line-height:1.15;letter-spacing:1px;-webkit-font-smoothing:none;font-smooth:never}
+.t{font-size:8px;color:#94a3b8;letter-spacing:2px}
+.c{font-family:ui-monospace,Consolas,monospace;font-weight:700;line-height:1.15;letter-spacing:1px}
 </style></head><body>${labels}</body></html>`;
   };
 
@@ -650,8 +454,8 @@ function CellLabel({ code, w, h }: { code: string; w: number; h: number }) {
   }, [code, h]);
 
   // Kod shrifti label eniga moslashadi: «NN-NN-NN-NN» = 11 belgi mono
-  // (belgi eni ≈ 0.62em), label enining ~90% ini egallasin (buildNativeHtml bilan mos).
-  const codeFontPx = Math.min(30, Math.round((w * MM_PX * 0.9) / 11 / 0.62));
+  // (belgi eni ≈ 0.62em), label enining ~82% ini egallasin.
+  const codeFontPx = Math.min(24, Math.round((w * MM_PX * 0.82) / 11 / 0.62));
 
   return (
     <div
@@ -662,8 +466,9 @@ function CellLabel({ code, w, h }: { code: string; w: number; h: number }) {
       style={{ width: `${w}mm`, height: `${h}mm` }}
     >
       <div className="flex min-h-0 flex-col items-center">
+        <div className="text-[8px] text-slate-400 uppercase tracking-widest">Yacheyka</div>
         <div
-          className="font-extrabold font-mono text-black tabular-nums tracking-wider"
+          className="font-bold font-mono text-slate-900 tabular-nums tracking-wider"
           style={{ fontSize: `${codeFontPx}px`, lineHeight: 1.15 }}
           data-test-id="cell-label-code"
         >
