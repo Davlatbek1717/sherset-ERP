@@ -13,11 +13,12 @@
  *     `sourceEventType`'i `debt.` bilan boshlansa `format: 'markdown-v2'`ni
  *     tanlaydi (faqat shu xabar oilasi uchun, boshqa HR/supply bildirishnoma
  *     matnlariga tegmaydi). MarkdownV2 belgilagichlari DEFOLTdan FARQLI:
- *     bitta `*qalin*` (ikkita EMAS), `__tagliq__` (underline). 2026-07-20b
- *     talab (foydalanuvchi aniq spetsifikatsiya berdi): summa RAQAMINING
- *     o'zi __tagliq__ ("so'm" so'zisiz), aloqa-blok label'lari ("Savollar
- *     uchun:", "Karta raqam:", "Karta egasi:") *qalin*, LEKIN karta raqami
- *     va boshqa qiymatlar oddiy (qalin EMAS).
+ *     bitta `*qalin*` (ikkita EMAS), `__tagliq__` (underline) — ikkalasi
+ *     birga: `*__x__*`. 2026-07-20b talab (foydalanuvchi aniq spetsifikatsiya
+ *     berdi): summa RAQAMINING o'zi HAM *qalin*, HAM __tagliq__ ("so'm"
+ *     so'zisiz), aloqa-blok label'lari ("Savollar uchun:", "Karta raqam:",
+ *     "Karta egasi:") *qalin*, LEKIN karta raqami va boshqa qiymatlar oddiy
+ *     (qalin EMAS).
  *   • bir xil tuzilish: «hurmatli {nom}» → mazmun → aloqa/karta → «Sherset jamoasi»
  *
  * Sof funksiyalar: DB/tarmoqqa tegmaydi ⇒ testda o'lchash oson.
@@ -64,11 +65,11 @@ export function fmtWhen(d: Date): string {
 
 // Barcha matnlar HTML TEGSIZ, lekin GramJS MarkdownV2 bilan bir xil
 // professional tuzilishда: salomlashuv + «hurmatli {nom}» → mazmun (summa
-// raqami __tagliq__) → 📞💳👨‍💻 aloqa/karta bloki (label'lar *qalin*, qiymatlar
-// oddiy) → «SHERSET jamoasi!» imzosi. HTML yo'q — xabar shaxsiy raqamdan
-// (MTProto userbot) ketadi, u Bot API'ning parse_mode'ni QO'LLAMAYDI (aks
-// holда <b> teglar literal ko'rinardi — aynan shu bug bor edi, 2026-07-20
-// tuzatildi).
+// raqami *qalin* HAM __tagliq__) → 📞💳👨‍💻 aloqa/karta bloki (label'lar
+// *qalin*, qiymatlar oddiy) → «SHERSET jamoasi!» imzosi. HTML yo'q — xabar
+// shaxsiy raqamdan (MTProto userbot) ketadi, u Bot API'ning parse_mode'ni
+// QO'LLAMAYDI (aks holда <b> teglar literal ko'rinardi — aynan shu bug bor
+// edi, 2026-07-20 tuzatildi).
 
 /**
  * Aloqa/karta bloki (2026-07-20) — barcha xabarlarda BIR XIL ko'rinish.
@@ -95,7 +96,7 @@ export function debtIssuedMessage(args: {
   const lines = [
     `Assalomu alaykum, hurmatli ${mdSafe(args.name)}!`,
     '',
-    `🧾 Sizga __${fmtSom(args.totalMinor)}__ so'm miqdorida qarz rasmiylashtirildi.`,
+    `🧾 Sizga *__${fmtSom(args.totalMinor)}__* so'm miqdorida qarz rasmiylashtirildi.`,
   ];
   if (args.nextContactAt) {
     lines.push(`To'lov muddati: *${fmtWhen(args.nextContactAt)}*`);
@@ -118,8 +119,8 @@ export function paymentMessage(args: {
   return [
     `Assalomu alaykum, hurmatli ${mdSafe(args.name)}!`,
     '',
-    `💵 __${fmtSom(args.amountMinor)}__ so'm to'lovingiz qabul qilindi, rahmat!`,
-    `Qolgan qarzingiz: __${fmtSom(args.remainingMinor)}__ so'm.`,
+    `💵 *__${fmtSom(args.amountMinor)}__* so'm to'lovingiz qabul qilindi, rahmat!`,
+    `Qolgan qarzingiz: *__${fmtSom(args.remainingMinor)}__* so'm.`,
     '',
     ...contactBlock(),
     '',
@@ -132,7 +133,7 @@ export function debtClosedMessage(args: { name: string; amountMinor: bigint }): 
   return [
     `Assalomu alaykum, hurmatli ${mdSafe(args.name)}!`,
     '',
-    `✅ __${fmtSom(args.amountMinor)}__ so'm to'lovingiz qabul qilindi. Qarzingiz to'liq yopildi!`,
+    `✅ *__${fmtSom(args.amountMinor)}__* so'm to'lovingiz qabul qilindi. Qarzingiz to'liq yopildi!`,
     '',
     "Hamkorligingiz uchun katta rahmat! Savollar bo'lsa, biz bilan bog'laning:",
     `📞 ${SHERSET_CONTACT_PHONE}`,
@@ -155,8 +156,8 @@ export function paymentReversedMessage(args: {
   return [
     `Assalomu alaykum, hurmatli ${mdSafe(args.name)}!`,
     '',
-    `⚠️ __${fmtSom(args.amountMinor)}__ so'm to'lov yozuvi texnik xatolik tufayli bekor qilindi.`,
-    `Joriy qarzingiz: __${fmtSom(args.remainingMinor)}__ so'm.`,
+    `⚠️ *__${fmtSom(args.amountMinor)}__* so'm to'lov yozuvi texnik xatolik tufayli bekor qilindi.`,
+    `Joriy qarzingiz: *__${fmtSom(args.remainingMinor)}__* so'm.`,
     '',
     ...contactBlock(),
     '',
@@ -169,15 +170,16 @@ export function paymentReversedMessage(args: {
  *
  * HTML TEGSIZ — chunki xabar shaxsiy raqamdan (MTProto userbot) ketadi, u
  * Bot API'ning parse_mode='HTML' ni QO'LLAMAYDI (aks holда <b> literal
- * ko'rinardi). Summa raqami __tagliq__ (underline) qilinadi — GramJS'ning
- * MarkdownV2Parser dialekti orqali (fayl boshidagi izohga qarang). Summa
- * bo'sh joy bilan guruhlangan, musbat (mijozga «qarzdorlik mavjud» aniq).
+ * ko'rinardi). Summa raqami *qalin* HAM __tagliq__ (bold+underline) qilinadi
+ * — GramJS'ning MarkdownV2Parser dialekti orqali (fayl boshidagi izohga
+ * qarang). Summa bo'sh joy bilan guruhlangan, musbat (mijozga «qarzdorlik
+ * mavjud» aniq).
  */
 export function reminderMessage(args: { name: string; remainingMinor: bigint }): string {
   return [
     `Assalomu alaykum, hurmatli ${mdSafe(args.name)}!`,
     '',
-    `✅ Eslatib o'tamiz, Sizning __${fmtSom(args.remainingMinor)}__ so'm miqdorida to'lanmagan qarzingiz mavjud. Iltimos, kelishilgan muddatda qarzdorlikni yopishingizni so'raymiz.`,
+    `✅ Eslatib o'tamiz, Sizning *__${fmtSom(args.remainingMinor)}__* so'm miqdorida to'lanmagan qarzingiz mavjud. Iltimos, kelishilgan muddatda qarzdorlikni yopishingizni so'raymiz.`,
     '',
     ...contactBlock(),
     '',

@@ -115,33 +115,35 @@ describe('debt-telegram xabarlari', () => {
     });
   });
 
-  // 2026-07-20b: foydalanuvchi aniq spetsifikatsiya berdi — summa RAQAMINING
-  // o'zi __tagliq__ ("so'm" so'zisiz), aloqa-blok label'lari *qalin*, LEKIN
-  // karta raqami va boshqa qiymatlar oddiy (qalin EMAS). HTML <b>/<u>
-  // ISHLAMAYDI (MTProto userbot parse_mode'ni qo'llamaydi), shuning uchun
-  // GramJS'ning MarkdownV2Parser dialekti ishlatiladi (mtproto-worker.service.ts
-  // `sourceEventType` `debt.` bo'lsa shu dialektni tanlaydi) — bu dialektda
-  // qalinlik BITTA `*x*` (ikkita EMAS), tagliq `__x__`.
-  describe('summa raqami __tagliq__ ("so\'m"siz), aloqa-blok label\'lari *qalin*, qiymatlar oddiy', () => {
-    it('eslatma: qoldiq summa raqami __tagliq__, "so\'m" oddiy', () => {
+  // 2026-07-20b/c: foydalanuvchi aniq spetsifikatsiya berdi — summa
+  // RAQAMINING o'zi HAM *qalin*, HAM __tagliq__ ("so'm" so'zisiz), aloqa-blok
+  // label'lari *qalin*, LEKIN karta raqami va boshqa qiymatlar oddiy (qalin
+  // EMAS). HTML <b>/<u> ISHLAMAYDI (MTProto userbot parse_mode'ni
+  // qo'llamaydi), shuning uchun GramJS'ning MarkdownV2Parser dialekti
+  // ishlatiladi (mtproto-worker.service.ts `sourceEventType` `debt.` bo'lsa
+  // shu dialektni tanlaydi) — bu dialektda qalinlik BITTA `*x*` (ikkita
+  // EMAS), tagliq `__x__`, ikkalasi birga `*__x__*` (real GramJS parser bilan
+  // tekshirilgan — ikkala entity ham to'g'ri hosil bo'ladi).
+  describe('summa raqami *qalin* HAM __tagliq__ ("so\'m"siz), aloqa-blok label\'lari *qalin*, qiymatlar oddiy', () => {
+    it('eslatma: qoldiq summa raqami *qalin*+__tagliq__, "so\'m" oddiy', () => {
       const m = reminderMessage({ name: 'Feruz', remainingMinor: 30_000_000n });
-      expect(m).toContain("__300 000__ so'm");
+      expect(m).toContain("*__300 000__* so'm");
     });
 
-    it('qarz berildi: summa raqami __tagliq__, muddat *qalin*', () => {
+    it('qarz berildi: summa raqami *qalin*+__tagliq__, muddat *qalin*', () => {
       const m = debtIssuedMessage({
         name: 'Feruz',
         totalMinor: 100n,
         nextContactAt: new Date('2026-07-20T04:00:00.000Z'),
       });
-      expect(m).toContain("__1__ so'm");
+      expect(m).toContain("*__1__* so'm");
       expect(m).toContain('*20.07.2026, 09:00*');
     });
 
-    it("to'lov qabul qilindi: ikkala summa raqami ham __tagliq__", () => {
+    it("to'lov qabul qilindi: ikkala summa raqami ham *qalin*+__tagliq__", () => {
       const m = paymentMessage({ name: 'Feruz', amountMinor: 100n, remainingMinor: 200n });
-      expect(m).toContain("__1__ so'm");
-      expect(m).toContain("__2__ so'm");
+      expect(m).toContain("*__1__* so'm");
+      expect(m).toContain("*__2__* so'm");
     });
 
     it("aloqa-blok label'lari *qalin*, karta raqami oddiy (qalin emas)", () => {
@@ -177,13 +179,13 @@ describe('debt-telegram xabarlari', () => {
       expect(safe).not.toBe('Anvar-Botir|X'); // ZWS qo'shilgan bo'lishi kerak
     });
 
-    it('xabarda mijoz ismidagi "*" summaning tagliq belgisi bilan qo‘shilib ketmaydi', () => {
+    it('xabarda mijoz ismidagi "*" summaning qalin/tagliq belgisi bilan qo‘shilib ketmaydi', () => {
       const m = reminderMessage({ name: '*Hacker*', remainingMinor: 100n });
       // Ism → summa oralig'ida "yopilmagan" bitta katta qalin blok YO'Q —
-      // to'g'ri holatda faqat summa raqamining o'zi ("__1__") tagliq bo'lishi
-      // kerak, ism bilan summa orasidagi butun matn emas.
+      // to'g'ri holatda faqat summa raqamining o'zi ("*__1__*") qalin+tagliq
+      // bo'lishi kerak, ism bilan summa orasidagi butun matn emas.
       expect(m).not.toMatch(/\*Hacker\*[\s\S]*__1__/);
-      expect(m).toContain('__1__');
+      expect(m).toContain('*__1__*');
     });
   });
 });
