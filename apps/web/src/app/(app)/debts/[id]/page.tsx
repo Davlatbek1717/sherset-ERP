@@ -441,7 +441,7 @@ export default function DebtProfilePage() {
         <section className="mt-6">
           <OrderTelegramPanel
             counterpartyId={d.counterpartyId}
-            counterpartyName={d.counterpartyName}
+            counterpartyName={d.counterpartyName ?? undefined}
           />
         </section>
       )}
