@@ -5,7 +5,9 @@ import { computeCheck } from 'telegram/Password.js';
 import { NewMessage, type NewMessageEvent } from 'telegram/events/index.js';
 import { MarkdownV2Parser } from 'telegram/extensions/markdownv2.js';
 import { StringSession } from 'telegram/sessions/index.js';
+import { mediaKindFromFlags } from './backfill-plan.util.js';
 import type {
+  HistoryMtprotoMessage,
   IncomingMtprotoMessage,
   TelegramClientFactory,
   TelegramClientFactoryArgs,
@@ -292,6 +294,94 @@ class GramjsClientHandle implements TelegramClientHandle {
       new NewMessage({ incoming: true }),
     );
   }
+
+  /**
+   * `getMessages(entity, {limit, offsetId, minId})` — dialog tarixini
+   * sahifalab beradi (yangi→eski). Bizning OWN chiquvchi xabarlarimiz ham
+   * qaytadi (`msg.out === true`), shuning uchun transkriptning ikkala tomoni
+   * quriladi. Xizmat-xabarlar (MessageService — matn ham media ham yo'q)
+   * o'tkaziladi. Media `resolveGramjsMedia` bilan aniqlanadi (kind
+   * `mediaKindFromFlags` sof mantiqidan, mime/fileName aniq gramjs'dan).
+   */
+  async getHistory(
+    entity: unknown,
+    opts: { limit: number; offsetId?: number; minId?: number },
+  ): Promise<HistoryMtprotoMessage[]> {
+    const msgs = await this.client.getMessages(entity as never, {
+      limit: opts.limit,
+      ...(opts.offsetId ? { offsetId: opts.offsetId } : {}),
+      ...(opts.minId ? { minId: opts.minId } : {}),
+    });
+    const out: HistoryMtprotoMessage[] = [];
+    for (const raw of msgs) {
+      const m = raw as Api.Message;
+      const media = resolveGramjsMedia(m);
+      const text = m.message ?? '';
+      // Xizmat-xabar / bo'sh — na matn, na media: transkriptga kirmaydi.
+      if (!text && media.kind === 'text') continue;
+      const sender = (await m.getSender().catch(() => undefined)) as Api.User | undefined;
+      out.push({
+        tgMessageId: m.id,
+        direction: m.out ? 'out' : 'in',
+        text,
+        date: m.date,
+        senderName: m.out
+          ? null
+          : [sender?.firstName, sender?.lastName].filter(Boolean).join(' ') || null,
+        fwdFromName: extractFwdFromName(m),
+        replyToTgMessageId: m.replyTo?.replyToMsgId ?? null,
+        kind: media.kind,
+        mimeType: media.mimeType,
+        fileName: media.fileName,
+        downloadMedia:
+          media.kind === 'text'
+            ? null
+            : async () => {
+                const data = await m.downloadMedia();
+                if (!Buffer.isBuffer(data)) throw new Error('downloadMedia: Buffer kutilgan edi');
+                return data;
+              },
+      });
+    }
+    return out;
+  }
+}
+
+/**
+ * gramjs `Message` → media kind/mime/fileName. Kind `mediaKindFromFlags` sof
+ * mantiqidan (unit-test qilingan); mime/fileName gramjs'ning aniq
+ * qiymatlaridan (`onIncomingMessage` bilan bir xil intizom). Voice aslida
+ * document ostida — aniqroq getter umumiy `document`dan ustun turadi.
+ */
+function resolveGramjsMedia(msg: Api.Message): {
+  kind: IncomingMtprotoMessage['kind'];
+  mimeType: string | null;
+  fileName: string | null;
+} {
+  const kind = mediaKindFromFlags({
+    photo: !!msg.photo,
+    voice: !!msg.voice,
+    video: !!(msg.video || msg.videoNote),
+    document: !!msg.document,
+  });
+  if (kind === 'photo') return { kind, mimeType: 'image/jpeg', fileName: null };
+  if (kind === 'voice')
+    return { kind, mimeType: msg.voice?.mimeType ?? 'audio/ogg', fileName: null };
+  if (kind === 'video') {
+    const doc = msg.video ?? msg.videoNote;
+    return { kind, mimeType: doc?.mimeType ?? 'video/mp4', fileName: null };
+  }
+  if (kind === 'document') {
+    const nameAttr = msg.document?.attributes.find(
+      (a): a is Api.DocumentAttributeFilename => a.className === 'DocumentAttributeFilename',
+    );
+    return {
+      kind,
+      mimeType: msg.document?.mimeType ?? 'application/octet-stream',
+      fileName: nameAttr?.fileName ?? null,
+    };
+  }
+  return { kind: 'text', mimeType: null, fileName: null };
 }
 
 /**

@@ -98,6 +98,20 @@ export interface TelegramClientHandle {
    * client's lifetime.
    */
   onIncomingMessage(handler: (msg: IncomingMtprotoMessage) => void): void;
+
+  /**
+   * Dialog tarixini sahifalab o'qiydi (yangi→eski) — to'liq-tarix backfill
+   * (2026-07-20). `entity` — `resolvePhone`→`hydrateEntity` natijasi.
+   * `offsetId` 0/undefined = eng yangidan; eskiroq sahifa uchun oldingi
+   * sahifaning eng kichik `tgMessageId`sini uzat. `minId` > 0 bo'lsa — faqat
+   * `minId`dan yangi xabarlar (catch-up). BIZNING chiquvchi xabarlarimiz ham
+   * qaytadi (`direction:'out'`) — `onIncomingMessage` faqat kiruvchini beradi,
+   * bu esa transkriptning ikkala tomonini quradi.
+   */
+  getHistory(
+    entity: unknown,
+    opts: { limit: number; offsetId?: number; minId?: number },
+  ): Promise<HistoryMtprotoMessage[]>;
 }
 
 /**
@@ -119,6 +133,28 @@ export interface IncomingMtprotoMessage {
    * own "Переслано от: X" indicator. `null` for an ordinary message.
    */
   fwdFromName: string | null;
+  kind: 'text' | 'photo' | 'document' | 'voice' | 'video';
+  mimeType: string | null;
+  fileName: string | null;
+  /** Present only when `kind !== 'text'` — call to fetch the raw file bytes. */
+  downloadMedia: (() => Promise<Buffer>) | null;
+}
+
+/**
+ * Backfill (dialog tarixi) uchun normalizatsiyalangan xabar — `IncomingMtprotoMessage`
+ * bilan bir xil media-yuklash intizomi, LEKIN `direction` bor (tarix ikkala
+ * yo'nalishni ham qaytaradi) va `date` (Telegram unix soniyasi — `createdAt`
+ * uchun) + `replyToTgMessageId` (Faza-2 reply/quote uchun oldindan).
+ */
+export interface HistoryMtprotoMessage {
+  tgMessageId: number;
+  direction: 'in' | 'out';
+  text: string;
+  /** Telegram unix vaqti (soniya) — TelegramChatMessage.createdAt uchun. */
+  date: number;
+  senderName: string | null;
+  fwdFromName: string | null;
+  replyToTgMessageId: number | null;
   kind: 'text' | 'photo' | 'document' | 'voice' | 'video';
   mimeType: string | null;
   fileName: string | null;
