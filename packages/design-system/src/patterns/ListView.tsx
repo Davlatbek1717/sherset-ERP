@@ -371,6 +371,12 @@ export function ListView<T extends object>({
   const CreateIcon = Icons.createCircle;
   const SearchIcon = Icons.search;
 
+  // <lg (2026-07-20k): the folder-tree `sidebar` (only /products passes one)
+  // eats ~half a phone screen if always shown beside the table. On mobile it
+  // collapses behind a «Papkalar» toggle that stacks it above the table;
+  // ≥lg it stays inline beside the table (unchanged).
+  const [sidebarOpenMobile, setSidebarOpenMobile] = React.useState(false);
+
   /**
    * Render one of the 4 standard moysklad toolbar dropdowns.
    * Returns null if the config is missing or has no items (and isn't
@@ -872,10 +878,33 @@ export function ListView<T extends object>({
         // remaining viewport height and the pagination footer pins.
         return sidebar ? (
           <div
-            className="flex min-h-0 flex-1 items-stretch gap-0"
+            className="flex min-h-0 flex-1 flex-col items-stretch gap-0 lg:flex-row"
             data-test-id="listview-body-with-sidebar"
           >
-            {sidebar}
+            {/* <lg: «Papkalar» toggle bar (the tree stacks below it, collapsed
+                by default). ≥lg: hidden — the tree is always beside the table. */}
+            <button
+              type="button"
+              onClick={() => setSidebarOpenMobile((v) => !v)}
+              aria-expanded={sidebarOpenMobile}
+              className="flex items-center justify-between border-[var(--ms-border-default)] border-b px-4 py-2 font-medium text-[var(--ms-text-brand)] text-sm lg:hidden"
+              data-test-id="listview-sidebar-toggle"
+            >
+              <span>Papkalar</span>
+              <Icons.down
+                className={cn('h-4 w-4 transition-transform', sidebarOpenMobile && 'rotate-180')}
+              />
+            </button>
+            <div
+              className={cn(
+                'lg:block lg:w-60 lg:shrink-0',
+                sidebarOpenMobile
+                  ? 'block max-h-[45vh] overflow-y-auto border-[var(--ms-border-default)] border-b'
+                  : 'hidden',
+              )}
+            >
+              {sidebar}
+            </div>
             <div className="flex min-h-0 min-w-0 flex-1 flex-col">{tableBody}</div>
           </div>
         ) : (
