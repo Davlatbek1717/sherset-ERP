@@ -23,6 +23,14 @@ function makeTelegram() {
   return { notifyCounterparty: vi.fn().mockResolvedValue(undefined) };
 }
 
+function makeSms() {
+  return {
+    getContacts: vi
+      .fn()
+      .mockResolvedValue({ phone: '+998900000000', card: '0000', cardOwner: 'X' }),
+  };
+}
+
 describe('DebtReminderService.remindDueCalls', () => {
   // 2026-07-20: "muammoli" (Debt.problem=true) qarzlar avtomatik eslatmadan
   // butunlay chiqarib tashlanishi kerak — foydalanuvchi bir mijozni muammoli
@@ -40,6 +48,8 @@ describe('DebtReminderService.remindDueCalls', () => {
       makeNotifications() as any,
       // biome-ignore lint/suspicious/noExplicitAny: test wiring
       makeTelegram() as any,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      makeSms() as any,
     );
 
     await service.remindDueCalls();
@@ -75,6 +85,8 @@ describe('DebtReminderService.remindDueCalls', () => {
       makeNotifications() as any,
       // biome-ignore lint/suspicious/noExplicitAny: test wiring
       telegram as any,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      makeSms() as any,
     );
 
     await service.remindDueCalls();
