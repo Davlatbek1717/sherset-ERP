@@ -12,9 +12,13 @@ import { AttachmentService } from '../attachment/attachment.service.js';
 import { CounterpartyBalanceService } from '../counterparty-balance/counterparty-balance.service.js';
 import { HtmlPdfService } from '../print-template/html-pdf.service.js';
 import { TASHKENT_OFFSET_MS, tashkentRangeBounds } from '../report/report-date-bounds.util.js';
+import { formatSomMinor, renderSmsTemplate } from '../sms/sms-render.util.js';
+import { SmsTemplateService } from '../sms/sms-template.service.js';
+import { SmsService } from '../sms/sms.service.js';
 import { TelegramService } from '../telegram/telegram.service.js';
 import { reminderMessage } from './debt-telegram.util.js';
 import {
+  BulkRemindersSchema,
   CASHIER_METHODS,
   type CancelCallNoteInput,
   CancelCallNoteSchema,
@@ -78,6 +82,9 @@ export class DebtService {
     // Mijozga Telegram xabari (2026-07-13). Xabar YUBORILMASA ham qarz oqimi
     // to'xtamaydi — chat bog'lanmagan bo'lishi mumkin (mijoz botga yozmagan).
     @Inject(TelegramService) private readonly telegram: TelegramService,
+    // Ommaviy SMS eslatmasi (2026-07-20): tanlangan qarzdorlarga SMS navbati.
+    @Inject(SmsService) private readonly sms: SmsService,
+    @Inject(SmsTemplateService) private readonly smsTemplates: SmsTemplateService,
   ) {}
 
   // ────────────────────────────────────────────────────────────── helpers ──
@@ -247,12 +254,111 @@ export class DebtService {
     if (remaining <= 0n) return { sent: false, reason: 'no_debt' };
 
     const name = debt.counterparty?.name ?? 'mijoz';
+    const contact = await this.sms.getContacts(accountId);
     return this.telegram.notifyCounterparty(
       accountId,
       debt.counterpartyId,
-      reminderMessage({ name, remainingMinor: remaining }),
+      reminderMessage({ name, remainingMinor: remaining, contact }),
       'reminder',
     );
+  }
+
+  /**
+   * OMMAVIY eslatma (2026-07-20) — checkbox bilan tanlangan qarzdorlarga
+   * bittada xabar. channel='sms' → shablon render → SmsLog navbati (worker
+   * yuboradi); channel='telegram' → mavjud notifyCounterparty yo'li. Halol
+   * xulosa: nechta navbatga qo'yildi + o'tkazib yuborilganlar sabab bilan.
+   */
+  async sendBulkReminders(accountId: string, userId: string, raw: unknown) {
+    const { ids, channel } = BulkRemindersSchema.parse(raw);
+    const debts = await this.prisma.client.debt.findMany({
+      where: {
+        id: { in: ids },
+        accountId,
+        deletedAt: null,
+        status: { in: ['unpaid', 'partial'] },
+      },
+      select: {
+        id: true,
+        totalMinor: true,
+        paidMinor: true,
+        counterpartyId: true,
+        counterparty: { select: { name: true, phone: true } },
+      },
+    });
+
+    const skipped: Array<{ id: string; name: string; reason: string }> = [];
+    let queued = 0;
+
+    if (channel === 'sms') {
+      const cfg = await this.sms.getConfig(accountId);
+      const configured = !!cfg && cfg.enabled;
+      const template = await this.smsTemplates.findByKey(accountId, 'debt_reminder');
+      const contact = await this.sms.getContacts(accountId);
+      for (const d of debts) {
+        const name = d.counterparty?.name ?? 'mijoz';
+        const remaining = d.totalMinor - d.paidMinor;
+        if (remaining <= 0n) {
+          skipped.push({ id: d.id, name, reason: 'no_debt' });
+          continue;
+        }
+        if (!configured) {
+          skipped.push({ id: d.id, name, reason: 'sms_not_configured' });
+          continue;
+        }
+        if (!template || !template.enabled) {
+          skipped.push({ id: d.id, name, reason: 'template_disabled' });
+          continue;
+        }
+        const phone = d.counterparty?.phone;
+        if (!phone) {
+          skipped.push({ id: d.id, name, reason: 'no_phone' });
+          continue;
+        }
+        const body = renderSmsTemplate(template.body, {
+          counterparty: { name },
+          debt: {
+            remainingFormatted: formatSomMinor(remaining),
+            totalFormatted: formatSomMinor(d.totalMinor),
+          },
+          company: contact,
+        });
+        await this.sms.send(accountId, userId, {
+          toPhone: phone,
+          body,
+          entity: 'Debt',
+          entityId: d.id,
+        });
+        queued += 1;
+      }
+      return { queued, skipped };
+    }
+
+    // channel === 'telegram'
+    const contact = await this.sms.getContacts(accountId);
+    for (const d of debts) {
+      const name = d.counterparty?.name ?? 'mijoz';
+      const remaining = d.totalMinor - d.paidMinor;
+      if (remaining <= 0n) {
+        skipped.push({ id: d.id, name, reason: 'no_debt' });
+        continue;
+      }
+      if (!d.counterpartyId) {
+        skipped.push({ id: d.id, name, reason: 'no_telegram_chat' });
+        continue;
+      }
+      const res = await this.telegram
+        .notifyCounterparty(
+          accountId,
+          d.counterpartyId,
+          reminderMessage({ name, remainingMinor: remaining, contact }),
+          'reminder',
+        )
+        .catch(() => ({ sent: false }) as { sent: boolean });
+      if (res.sent) queued += 1;
+      else skipped.push({ id: d.id, name, reason: 'no_telegram_chat' });
+    }
+    return { queued, skipped };
   }
 
   /** Qarzni oladi yoki 404. */

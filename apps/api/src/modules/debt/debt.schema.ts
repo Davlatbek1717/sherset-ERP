@@ -401,3 +401,10 @@ export const DebtPaymentsFeedFilterSchema = z.object({
   offset: z.coerce.number().int().min(0).default(0),
 });
 export type DebtPaymentsFeedFilterInput = z.infer<typeof DebtPaymentsFeedFilterSchema>;
+
+/** Ommaviy eslatma (2026-07-20) — tanlangan qarzdorlarga SMS yoki Telegram. */
+export const BulkRemindersSchema = z.object({
+  ids: z.array(z.string().uuid()).min(1).max(500),
+  channel: z.enum(['sms', 'telegram']),
+});
+export type BulkRemindersInput = z.infer<typeof BulkRemindersSchema>;

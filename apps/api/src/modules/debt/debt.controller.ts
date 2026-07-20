@@ -172,6 +172,17 @@ export class DebtController {
     reply.header('Content-Disposition', `attachment; filename="qarzdorlar-${date}.pdf"`).send(pdf);
   }
 
+  /**
+   * OMMAVIY eslatma — checkbox bilan tanlangan qarzdorlarga SMS yoki Telegram.
+   * Statik yo'l — `:id` dan OLDIN e'lon qilingan (aks holda Nest `reminders`ni
+   * `:id` deb yutadi).
+   */
+  @Post('reminders/bulk')
+  @RequirePermission({ entity: 'debt', action: 'update' })
+  async sendBulkReminders(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
+    return this.service.sendBulkReminders(user.accountId, user.sub, body);
+  }
+
   // ── §3.2 mijoz profili ────────────────────────────────────────────────────
 
   @Get(':id')

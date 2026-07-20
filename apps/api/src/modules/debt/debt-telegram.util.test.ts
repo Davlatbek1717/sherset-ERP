@@ -92,5 +92,20 @@ describe('debt-telegram xabarlari', () => {
       expect(m).not.toMatch(/\*Hacker\*[\s\S]*__1__/);
       expect(m).toContain('*__1__*');
     });
+
+    it('berilgan contact ishlatiladi', () => {
+      const msg = reminderMessage({
+        name: 'Akmal',
+        remainingMinor: 125_000_000n,
+        contact: { phone: '+998911112233', card: '1111', cardOwner: 'Yangi Egasi' },
+      });
+      expect(msg).toContain('+998911112233');
+      expect(msg).toContain('Yangi Egasi');
+    });
+
+    it("contact yo'q: default konstanta", () => {
+      const msg = reminderMessage({ name: 'Akmal', remainingMinor: 125_000_000n });
+      expect(msg).toContain('+998915748800');
+    });
   });
 });

@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { NotificationService } from '../notification/notification.service.js';
+import { SmsService } from '../sms/sms.service.js';
 import { TelegramService } from '../telegram/telegram.service.js';
 import { reminderMessage } from './debt-telegram.util.js';
 
@@ -31,6 +32,8 @@ export class DebtReminderService {
     // Mijozning O'ZIGA ham eslatma ketadi (2026-07-13) — operator qo'ng'iroq
     // qilishidan oldin mijoz allaqachon xabardor bo'ladi.
     @Inject(TelegramService) private readonly telegram: TelegramService,
+    // Xabar aloqa-bloki uchun kompaniya aloqa ma'lumotlari (CompanySettings).
+    @Inject(SmsService) private readonly sms: SmsService,
   ) {}
 
   @Cron('0 * * * * *') // har daqiqa, 0-soniyada
@@ -114,14 +117,24 @@ export class DebtReminderService {
       // ── MIJOZGA TELEGRAM ESLATMASI (2026-07-13) ──────────────────────────
       // Ketma-ket yuboriladi (Telegram tezlik chegarasi bor). Bittasi
       // yiqilsa qolganlari davom etadi — eslatma cron'i to'xtamasin.
+      // Aloqa-bloki (telefon/karta/egasi) account bo'yicha bir marta olinadi.
+      const contactByAccount = new Map<
+        string,
+        { phone: string; card: string; cardOwner: string }
+      >();
       for (const d of due) {
         const remaining = d.totalMinor - d.paidMinor;
         if (remaining <= 0n) continue;
+        let contact = contactByAccount.get(d.accountId);
+        if (!contact) {
+          contact = await this.sms.getContacts(d.accountId);
+          contactByAccount.set(d.accountId, contact);
+        }
         await this.telegram
           .notifyCounterparty(
             d.accountId,
             d.counterpartyId,
-            reminderMessage({ name: d.counterparty.name, remainingMinor: remaining }),
+            reminderMessage({ name: d.counterparty.name, remainingMinor: remaining, contact }),
             'reminder',
           )
           .catch(() => {

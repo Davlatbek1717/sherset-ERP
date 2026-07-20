@@ -5,6 +5,7 @@ import { CounterpartyBalanceModule } from '../counterparty-balance/counterparty-
 import { NotificationModule } from '../notification/notification.module.js';
 import { PermissionsModule } from '../permissions/permissions.module.js';
 import { PrintTemplateModule } from '../print-template/print-template.module.js';
+import { SmsModule } from '../sms/sms.module.js';
 import { TelegramModule } from '../telegram/telegram.module.js';
 import { DebtReminderService } from './debt-reminder.service.js';
 import { DebtController } from './debt.controller.js';
@@ -29,6 +30,8 @@ import { DebtService } from './debt.service.js';
     CounterpartyBalanceModule,
     // Mijozga Telegram xabari: qarz berildi / to'lov qabul qilindi / yopildi.
     TelegramModule,
+    // Ommaviy SMS eslatmasi (2026-07-20): SmsService + SmsTemplateService.
+    SmsModule,
   ],
   controllers: [DebtController],
   providers: [DebtService, DebtReminderService],

@@ -74,11 +74,14 @@ export function fmtSom(minor: bigint): string {
  * (2026-07-20b: label'lar *qalin*, qiymatlar — jumladan karta raqami ham —
  * oddiy qoldiriladi, foydalanuvchi aniq spetsifikatsiyasi bo'yicha.)
  */
-function contactBlock(): string[] {
+function contactBlock(c?: { phone: string; card: string; cardOwner: string }): string[] {
+  const phone = c?.phone ?? SHERSET_CONTACT_PHONE;
+  const card = c?.card ?? SHERSET_CARD;
+  const owner = c?.cardOwner ?? SHERSET_CARD_OWNER;
   return [
-    `📞 *Savollar uchun:* ${SHERSET_CONTACT_PHONE}`,
-    `💳 *Karta raqam:* ${SHERSET_CARD}`,
-    `👨‍💻 *Karta egasi:* ${SHERSET_CARD_OWNER}`,
+    `📞 *Savollar uchun:* ${phone}`,
+    `💳 *Karta raqam:* ${card}`,
+    `👨‍💻 *Karta egasi:* ${owner}`,
   ];
 }
 
@@ -92,13 +95,17 @@ function contactBlock(): string[] {
  * qarang). Summa bo'sh joy bilan guruhlangan, musbat (mijozga «qarzdorlik
  * mavjud» aniq).
  */
-export function reminderMessage(args: { name: string; remainingMinor: bigint }): string {
+export function reminderMessage(args: {
+  name: string;
+  remainingMinor: bigint;
+  contact?: { phone: string; card: string; cardOwner: string };
+}): string {
   return [
     `Assalomu alaykum, hurmatli ${mdSafe(args.name)}!`,
     '',
     `✅ Eslatib o'tamiz, Sizning *__${fmtSom(args.remainingMinor)}__* so'm miqdorida to'lanmagan qarzingiz mavjud. Iltimos, kelishilgan muddatda qarzdorlikni yopishingizni so'raymiz.`,
     '',
-    ...contactBlock(),
+    ...contactBlock(args.contact),
     '',
     "Qarz - bu omonat, omonatga xiyonat bo'lmasin!",
     'SHERSET jamoasi!',
