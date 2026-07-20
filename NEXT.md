@@ -325,6 +325,20 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > (SmsTemplate jadval + CompanySettings ustunlar), keyin jonli smoke: sozlamada Eskiz hisobi + shablon → qarzdorni tanlab
 > SMS → SmsLog `sent` bo'lishini tekshirish; (b) haqiqiy Eskiz hisobi bilan jonli SMS yetkazish testi; (c) settings/sms +
 > qarzdor-modal browser-QA (Phase-2).
+> **🔎 ADVERSARIAL REVIEW + TUZATISH (commit `7041162`):** feature-dev:code-reviewer 1 Critical + 2 Important + 1 Minor
+> topdi, HAMMASI tuzatildi (+4 test → **124 test**): (1) 🔴 SMS partiyasida per-qarzdor `try/catch` (`send_error`) — bitta
+> render/send xatosi butun batchni 500 qilib **dublikat-SMS** xavfi tug'dirardi; (2) 🟠 `SmsTemplate.upsert` saqlashdan
+> oldin haqiqiy Eta `test-render` (buzuq shablon → keyingi har yuborishda crash edi); (3) 🟠 Telegram `res.reason` uzatiladi
+> (hardcode emas); (4) 🔵 o'lik `!counterpartyId` shart olib tashlandi. + i18n `reason_send_error` (ru+uz).
+> **⚠️ MULTI-AGENT STASH-TANGLE (CLAUDE.md §6 hodisasi TAKRORLANDI):** review-fix commitim (6 fayl) parallel telegram
+> sessiyasi bilan bir vaqtda commit + ularning `git commit --amend`/rebase tufayli ORPHAN bo'ldi (kontent working-tree'ga
+> qaytdi, yo'qolmadi) → pathspec-commit (`git commit -- <fayllar>`) bilan qayta commit qilindi (`7041162`). **Zaxira:**
+> `scratchpad/review-backup/` (6 fayl). Kontent to'liq va to'g'ri (`send_error`×3 HEAD'da tasdiqlandi). Umumiy tarix
+> QAYTA YOZILMADI (protokol §6). **Saboq:** parallel commit oynasida `git restore --staged`/commit qilma — tangle keltiradi.
+> **⏭️ DEPLOY QARORI (foydalanuvchi, 2026-07-20i):** deploy KUTILADI — parallel telegram sessiyasi main'ni faol qayta
+> yozayotgan va o'z ishi tugallanmagan edi; main HEAD deploy'i mening SMS + ularning tekshirilmagan telegram ishini BIRGA
+> chiqarardi (aralash tarix — ajratib bo'lmaydi). Parallel barqarorlashgach ikkalasi birga deploy qilinadi (mening ishim
+> commit qilingan, xavfsiz). `migrate deploy` (SmsTemplate + CompanySettings) o'shanda SHART.
 >
 > **🟢📱 2026-07-20h (OMBOR RESPONSIVE — 1-BOSQICH + YIG'ISH-VARAQA QR OLIB TASHLASH — ✅ DEPLOYED, browser-smoke YO'Q)**
 > **Ish:** (1) **App-shell mobil navigatsiya** — `AppShell.tsx` <lg (1024px) da hamburger + `<Drawer>` (asosiy
