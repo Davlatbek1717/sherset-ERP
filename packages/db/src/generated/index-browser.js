@@ -3521,13 +3521,15 @@ exports.Prisma.SmsLogScalarFieldEnum = {
   createdAt: 'createdAt'
 };
 
-exports.Prisma.SmsTemplateScalarFieldEnum = {
+exports.Prisma.MessageTemplateScalarFieldEnum = {
   id: 'id',
   accountId: 'accountId',
+  channel: 'channel',
   key: 'key',
   name: 'name',
   body: 'body',
   enabled: 'enabled',
+  isDefault: 'isDefault',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 };
@@ -4331,7 +4333,7 @@ exports.Prisma.ModelName = {
   OnboardingProgress: 'OnboardingProgress',
   SmsConfig: 'SmsConfig',
   SmsLog: 'SmsLog',
-  SmsTemplate: 'SmsTemplate',
+  MessageTemplate: 'MessageTemplate',
   EdoConfig: 'EdoConfig',
   EdoSubmission: 'EdoSubmission',
   MarkingConfig: 'MarkingConfig',

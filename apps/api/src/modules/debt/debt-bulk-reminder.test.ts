@@ -14,7 +14,7 @@ const debtRow = (over: Record<string, unknown> = {}) => ({
 
 function makeDeps(
   debts: Record<string, unknown>[],
-  opts: { smsEnabled?: boolean; template?: unknown; tgSent?: boolean } = {},
+  opts: { smsEnabled?: boolean; smsDefault?: unknown; tgSent?: boolean } = {},
 ) {
   const prisma = {
     client: { debt: { findMany: vi.fn().mockResolvedValue(debts) } },
@@ -26,20 +26,25 @@ function makeDeps(
       .mockResolvedValue({ phone: '+998900000000', card: '0000', cardOwner: 'X' }),
     send: vi.fn().mockResolvedValue({ id: 'log1', status: 'pending' }),
   };
-  const smsTemplates = {
-    findByKey: vi.fn().mockResolvedValue(
-      opts.template === undefined
+  // findDefault kanalning enabled+default shabloni yoki null qaytaradi (real xulq).
+  const msgTemplates = {
+    findDefault: vi.fn().mockResolvedValue(
+      opts.smsDefault === undefined
         ? {
+            id: 't1',
+            channel: 'sms',
             key: 'debt_reminder',
             name: 'Q',
             body: 'Qarz {{= debt.remainingFormatted }}',
             enabled: true,
+            isDefault: true,
           }
-        : opts.template,
+        : opts.smsDefault,
     ),
+    findOne: vi.fn().mockResolvedValue(null),
   };
   const telegram = { notifyCounterparty: vi.fn().mockResolvedValue({ sent: opts.tgSent ?? true }) };
-  // Konstruktor tartibi: prisma, attachments, htmlPdf, balances, telegram, sms, smsTemplates.
+  // Konstruktor tartibi: prisma, attachments, htmlPdf, balances, telegram, sms, msgTemplates.
   const svc = new DebtService(
     prisma,
     undefined as never,
@@ -47,7 +52,7 @@ function makeDeps(
     undefined as never,
     telegram as never,
     sms as never,
-    smsTemplates as never,
+    msgTemplates as never,
   );
   return { svc, sms, telegram };
 }
@@ -75,10 +80,9 @@ describe('sendBulkReminders', () => {
     expect(r.skipped[0]?.reason).toBe('sms_not_configured');
   });
 
-  it("SMS — shablon o'chirilgan: template_disabled", async () => {
-    const { svc } = makeDeps([debtRow()], {
-      template: { key: 'debt_reminder', name: 'Q', body: 'x', enabled: false },
-    });
+  it("SMS — default shablon yo'q/o'chirilgan: template_disabled", async () => {
+    // findDefault enabled+default'ni qidiradi — yo'q bo'lsa null → template_disabled.
+    const { svc } = makeDeps([debtRow()], { smsDefault: null });
     const r = await svc.sendBulkReminders('acc', 'u1', { ids: [DEBT_ID], channel: 'sms' });
     expect(r.skipped[0]?.reason).toBe('template_disabled');
   });

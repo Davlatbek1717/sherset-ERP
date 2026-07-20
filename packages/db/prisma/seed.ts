@@ -36,19 +36,43 @@ async function main(): Promise<void> {
   });
   console.log('  ✓ Account:', account.name);
 
-  // SMS shabloni — «debt_reminder» (lotin, qisqa; sozlamadan tahrirlanadi).
-  await prisma.smsTemplate.upsert({
-    where: { accountId_key: { accountId: account.id, key: 'debt_reminder' } },
+  // Xabar shablonlari (kutubxona, kanal-aware) — SMS + Telegram «debt_reminder»
+  // standartlari. Deterministik id → seed idempotent (unique key olib tashlangan).
+  await prisma.messageTemplate.upsert({
+    where: { id: `${account.id}-sms-debt` },
     update: {},
     create: {
+      id: `${account.id}-sms-debt`,
       accountId: account.id,
+      channel: 'sms',
       key: 'debt_reminder',
-      name: 'Qarz eslatmasi',
+      name: 'Qarz eslatmasi (SMS)',
+      isDefault: true,
+      enabled: true,
       body:
         'Assalomu alaykum {{= counterparty.name }}! Sizda {{= debt.remainingFormatted }} som ' +
         "to'lanmagan qarz bor. To'lov: {{= company.card }} ({{= company.cardOwner }}). " +
         'Savol: {{= company.phone }}. Sherset',
+    },
+  });
+  // Telegram standart shabloni — GramJS MarkdownV2 (*qalin*/__tagliq__). Qiymatlar
+  // render vaqtida mdSafe-escape bo'ladi, shuning uchun bu yerda escape YO'Q.
+  await prisma.messageTemplate.upsert({
+    where: { id: `${account.id}-tg-debt` },
+    update: {},
+    create: {
+      id: `${account.id}-tg-debt`,
+      accountId: account.id,
+      channel: 'telegram',
+      key: 'debt_reminder',
+      name: 'Qarz eslatmasi (Telegram)',
+      isDefault: true,
       enabled: true,
+      body:
+        'Assalomu alaykum, hurmatli {{= counterparty.name }}!\n\n' +
+        "✅ Eslatib o'tamiz, Sizning *__{{= debt.remainingFormatted }}__* so'm miqdorida to'lanmagan qarzingiz mavjud. Iltimos, kelishilgan muddatda qarzdorlikni yopishingizni so'raymiz.\n\n" +
+        '📞 *Savollar uchun:* {{= company.phone }}\n💳 *Karta raqam:* {{= company.card }}\n👨‍💻 *Karta egasi:* {{= company.cardOwner }}\n\n' +
+        "Qarz - bu omonat, omonatga xiyonat bo'lmasin!\nSHERSET jamoasi!",
     },
   });
 

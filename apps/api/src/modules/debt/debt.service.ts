@@ -13,7 +13,7 @@ import { CounterpartyBalanceService } from '../counterparty-balance/counterparty
 import { HtmlPdfService } from '../print-template/html-pdf.service.js';
 import { TASHKENT_OFFSET_MS, tashkentRangeBounds } from '../report/report-date-bounds.util.js';
 import { formatSomMinor, renderSmsTemplate } from '../sms/sms-render.util.js';
-import { SmsTemplateService } from '../sms/sms-template.service.js';
+import { MessageTemplateService } from '../sms/sms-template.service.js';
 import { SmsService } from '../sms/sms.service.js';
 import { TelegramService } from '../telegram/telegram.service.js';
 import { reminderMessage } from './debt-telegram.util.js';
@@ -84,7 +84,7 @@ export class DebtService {
     @Inject(TelegramService) private readonly telegram: TelegramService,
     // Ommaviy SMS eslatmasi (2026-07-20): tanlangan qarzdorlarga SMS navbati.
     @Inject(SmsService) private readonly sms: SmsService,
-    @Inject(SmsTemplateService) private readonly smsTemplates: SmsTemplateService,
+    @Inject(MessageTemplateService) private readonly msgTemplates: MessageTemplateService,
   ) {}
 
   // ────────────────────────────────────────────────────────────── helpers ──
@@ -293,7 +293,8 @@ export class DebtService {
     if (channel === 'sms') {
       const cfg = await this.sms.getConfig(accountId);
       const configured = !!cfg && cfg.enabled;
-      const template = await this.smsTemplates.findByKey(accountId, 'debt_reminder');
+      // Kanalning default+enabled shabloni (kutubxona) — yo'q bo'lsa null.
+      const template = await this.msgTemplates.findDefault(accountId, 'sms');
       const contact = await this.sms.getContacts(accountId);
       for (const d of debts) {
         const name = d.counterparty?.name ?? 'mijoz';
@@ -306,7 +307,8 @@ export class DebtService {
           skipped.push({ id: d.id, name, reason: 'sms_not_configured' });
           continue;
         }
-        if (!template || !template.enabled) {
+        if (!template) {
+          // findDefault allaqachon enabled bo'yicha filtrlaydi — null = default yo'q.
           skipped.push({ id: d.id, name, reason: 'template_disabled' });
           continue;
         }
