@@ -52,6 +52,21 @@ export const SendSmsSchema = z.object({
 });
 export type SendSmsInput = z.infer<typeof SendSmsSchema>;
 
+/**
+ * Umumiy SMS-tarqatma (qarzdan alohida): tanlangan kontragentlar + qo'lda
+ * kiritilgan raqamlar, tayyor shablon bilan. Kamida bitta qabul qiluvchi shart.
+ */
+export const BroadcastSmsSchema = z
+  .object({
+    templateId: z.string().uuid(),
+    counterpartyIds: z.array(z.string().uuid()).max(5000).default([]),
+    phones: z.array(z.string().min(3).max(20)).max(5000).default([]),
+  })
+  .refine((v) => v.counterpartyIds.length + v.phones.length > 0, {
+    message: "Hech bo'lmasa bitta qabul qiluvchi tanlang",
+  });
+export type BroadcastSmsInput = z.infer<typeof BroadcastSmsSchema>;
+
 export const SmsLogStatusSchema = z.enum(['pending', 'sent', 'dead', 'failed']);
 export type SmsLogStatus = z.infer<typeof SmsLogStatusSchema>;
 

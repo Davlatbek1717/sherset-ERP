@@ -13,8 +13,10 @@ import {
   phoneGatewayCheck,
   phoneGatewaySend,
 } from './phone-gateway.client.js';
-import { DEFAULT_MESSAGING_CONTACT } from './sms-render.util.js';
+import { DEFAULT_MESSAGING_CONTACT, renderSmsTemplate } from './sms-render.util.js';
+import { MessageTemplateService } from './sms-template.service.js';
 import {
+  BroadcastSmsSchema,
   ListSmsLogsSchema,
   SaveContactsSchema,
   type SaveSmsConfigInput,
@@ -52,7 +54,10 @@ interface PublicSmsConfig {
 export class SmsService {
   private readonly logger = new Logger(SmsService.name);
 
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(MessageTemplateService) private readonly templates: MessageTemplateService,
+  ) {}
 
   // --- config -----------------------------------------------------------
 
@@ -225,6 +230,65 @@ export class SmsService {
       },
     });
     return { id: log.id, status: 'pending' };
+  }
+
+  /**
+   * Umumiy SMS-tarqatma (qarzdan alohida) — tanlangan kontragentlar + qo'lda
+   * kiritilgan raqamlarga tayyor shablon bilan. Har biri navbatga (SmsLog)
+   * qo'yiladi; halol xulosa qaytadi (queued + o'tkazib yuborilganlar sabab bilan).
+   * Debt o'zgaruvchilari bu yerda bo'sh ('—') — shablon umumiy bo'lishi kutiladi.
+   */
+  async broadcast(accountId: string, userId: string, raw: unknown) {
+    const { templateId, counterpartyIds, phones } = BroadcastSmsSchema.parse(raw);
+
+    const cfg = await this.prisma.client.smsConfig.findUnique({ where: { accountId } });
+    if (!cfg || !cfg.enabled) {
+      throw new BadRequestException(
+        "SMS sozlanmagan — Sozlamalar > SMS bo'limida provayderni qo'shing",
+      );
+    }
+    const template = await this.templates.findOne(accountId, templateId); // 404 + tenant guard
+    if (template.channel !== 'sms') {
+      throw new BadRequestException('Bu shablon SMS kanali uchun emas');
+    }
+    const contact = await this.getContacts(accountId);
+
+    const cps = counterpartyIds.length
+      ? await this.prisma.client.counterparty.findMany({
+          where: { id: { in: counterpartyIds }, accountId },
+          select: { id: true, name: true, phone: true },
+        })
+      : [];
+    const recipients: Array<{ name: string; phone: string | null }> = [
+      ...cps.map((c) => ({ name: c.name, phone: c.phone })),
+      ...phones.map((p) => ({ name: '', phone: p })),
+    ];
+
+    const skipped: Array<{ name: string; phone: string; reason: string }> = [];
+    const seen = new Set<string>();
+    let queued = 0;
+    for (const r of recipients) {
+      const trimmed = r.phone?.trim() ?? '';
+      const phone = trimmed.replace(/[^0-9+]/g, ''); // bo'sh joy/chiziqchani olib tashlash
+      if (!phone || phone.replace(/\D/g, '').length < 9) {
+        skipped.push({ name: r.name, phone: trimmed, reason: 'no_phone' });
+        continue;
+      }
+      if (seen.has(phone)) continue; // dublikat raqam bir marta
+      seen.add(phone);
+      const body = renderSmsTemplate(template.body, {
+        counterparty: { name: r.name || phone },
+        debt: { remainingFormatted: '—', totalFormatted: '—' },
+        company: contact,
+      });
+      try {
+        await this.send(accountId, userId, { toPhone: phone, body, entity: 'Broadcast' });
+        queued += 1;
+      } catch {
+        skipped.push({ name: r.name, phone, reason: 'send_error' });
+      }
+    }
+    return { queued, skipped };
   }
 
   /**

@@ -51,6 +51,13 @@ export class SmsController {
     return this.svc.send(user.accountId, user.sub, body);
   }
 
+  /** Umumiy SMS-tarqatma — tanlangan kontragentlar + qo'lda raqamlar, shablon bilan. */
+  @Post('broadcast')
+  @RequirePermission({ entity: 'counterparty', action: 'view' })
+  async broadcast(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
+    return this.svc.broadcast(user.accountId, user.sub, body);
+  }
+
   @Get('contacts')
   @RequirePermission({ entity: 'settings', action: 'view' })
   async getContacts(@CurrentUser() user: AuthenticatedUser) {
