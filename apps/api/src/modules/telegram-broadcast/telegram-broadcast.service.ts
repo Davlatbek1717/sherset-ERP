@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { promisify } from 'node:util';
 import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
@@ -121,21 +121,31 @@ export class TelegramBroadcastService {
     }
   }
 
+  /**
+   * Holatni o'qiydi. Fayl YO'Q → null (haqiqiy yangi run). Fayl BOR lekin buzuq
+   * (masalan yozish paytida SIGKILL bo'lgan) → THROW: null qaytarish nolдан
+   * qayta boshlashga (hammaga TAKROR yuborishga) olib kelardi — bu XAVFLI.
+   */
   private loadState(): BroadcastState | null {
     const p = this.statePath();
     if (!existsSync(p)) return null;
+    const raw = readFileSync(p, 'utf8');
     try {
-      return JSON.parse(readFileSync(p, 'utf8')) as BroadcastState;
+      return JSON.parse(raw) as BroadcastState;
     } catch (e) {
-      this.logger.warn(`Holat faylini o'qib bo'lmadi: ${(e as Error).message}`);
-      return null;
+      throw new Error(
+        `Tarqatma holat fayli buzuq (${p}) — nolдан qayta boshlash XAVFLI (hammaga takror ketardi). Qo'lда tekshiring: ${(e as Error).message}`,
+      );
     }
   }
 
+  /** ATOMIK yozish (tmp → rename): yarim-yozilgan buzuq fayl qolmasin. */
   private saveState(s: BroadcastState): void {
     s.updatedAt = new Date().toISOString();
+    const p = this.statePath();
     try {
-      writeFileSync(this.statePath(), JSON.stringify(s));
+      writeFileSync(`${p}.tmp`, JSON.stringify(s));
+      renameSync(`${p}.tmp`, p);
     } catch (e) {
       this.logger.error(`Holat faylini yozib bo'lmadi: ${(e as Error).message}`);
     }
@@ -201,23 +211,37 @@ export class TelegramBroadcastService {
   async startRun(
     accountId: string,
     limit: number,
+    force = false,
   ): Promise<{ started: boolean; reason?: string; status: BroadcastState | { status: string } }> {
     if (this.running) {
       return { started: false, reason: 'already_running', status: this.getStatus() };
     }
-    // Video/poster/o'lchamни OLDINDAN tekshiramiz (xato bo'lsa run boshlamaymiz).
-    const filePath = this.videoPath();
-    const thumbPath = this.thumbPath();
-    const videoMeta = await this.probeVideo(filePath);
-
+    // BUG-1 fix: `running`ни HAR QANDAY await'дан OLDIN egallaymiz — aks holda
+    // ikki parallel start (double-click / retry) ikkalasi ham running=false
+    // ko'rib, ikkita runLoop ishga tushirib, HAMMAGA IKKI MARTA yuborardi.
     this.running = true;
-    this.stopRequested = false;
-    // Fon'da — javobni kutmaymiz.
-    void this.runLoop(accountId, limit, filePath, thumbPath, videoMeta).catch((e: Error) => {
-      this.logger.error(`Tarqatma runLoop xatosi: ${e.message}`);
-      this.running = false;
-    });
-    return { started: true, status: this.getStatus() };
+    try {
+      const existing = this.loadState(); // buzuq bo'lsa throw (BUG-2)
+      // BUG-4 fix: spam-blok (halted) bo'lsa — `force` bo'lmasa qayta boshlamaymiz
+      // (akkauntni yana o'sha holatga qaytarmaslik uchun).
+      if (existing?.status === 'halted' && !force) {
+        this.running = false;
+        return { started: false, reason: 'halted_needs_force', status: existing };
+      }
+      const filePath = this.videoPath();
+      const thumbPath = this.thumbPath();
+      const videoMeta = await this.probeVideo(filePath);
+      this.stopRequested = false;
+      // Fon'da — javobni kutmaymiz.
+      void this.runLoop(accountId, limit, filePath, thumbPath, videoMeta).catch((e: Error) => {
+        this.logger.error(`Tarqatma runLoop xatosi: ${e.message}`);
+        this.running = false;
+      });
+      return { started: true, status: this.getStatus() };
+    } catch (e) {
+      this.running = false; // tekshiruv/validatsiya xatosida qulfни bo'shatamiz
+      throw e;
+    }
   }
 
   private async runLoop(
@@ -337,8 +361,16 @@ export class TelegramBroadcastService {
                 state.sent++;
                 state.lastSentAt = new Date().toISOString();
               } catch (e2) {
+                const m2 = (e2 as Error).message ?? String(e2);
                 state.failed++;
-                state.lastError = (e2 as Error).message?.slice(0, 300) ?? msg;
+                state.lastError = m2.slice(0, 300);
+                // BUG-3 fix: qayta-yuklash retryси HAM spam-blok bersa — to'xtaymiz
+                // (aks holda flood-cheklangan akkauntni urishда davom etardik).
+                if (/PEER_FLOOD|USER_DEACTIVATED|FROZEN|SPAM|USER_RESTRICTED/i.test(m2)) {
+                  this.logger.error(`SPAM-BLOK (retry) aniqlandi — tarqatma TO'XTATILDI`);
+                  state.status = 'halted';
+                  this.stopRequested = true;
+                }
               }
             } else if (/PEER_FLOOD|USER_DEACTIVATED|FROZEN|SPAM|USER_RESTRICTED/i.test(msg)) {
               // Telegram akkauntni spam deb chekladi — DARHOL to'xtaymiz (yomonlashmasin).

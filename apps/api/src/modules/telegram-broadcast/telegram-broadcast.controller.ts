@@ -30,9 +30,12 @@ export class TelegramBroadcastController {
    */
   @Post('start')
   @RequirePermission({ entity: 'settings', action: 'create' })
-  async start(@CurrentUser() user: AuthenticatedUser, @Body() body: { limit?: number }) {
+  async start(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: { limit?: number; force?: boolean },
+  ) {
     const limit = Math.max(1, Math.min(5000, Number(body?.limit) || 15));
-    return this.svc.startRun(user.accountId, limit);
+    return this.svc.startRun(user.accountId, limit, body?.force === true);
   }
 
   /** Jonli progress: total/sent/failed/skipped/status. */
