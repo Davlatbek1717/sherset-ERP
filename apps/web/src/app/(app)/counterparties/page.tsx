@@ -6,6 +6,7 @@ import { CounterpartyCreateTasksModal } from '@/components/counterparties/create
 import { CounterpartyGroupManagerModal } from '@/components/counterparties/group-manager-modal';
 import { CounterpartyMassEditModal } from '@/components/counterparties/mass-edit-modal';
 import { CounterpartyPrintDropdown } from '@/components/counterparties/print-dropdown';
+import { SendMessageModal } from '@/components/counterparties/send-message-modal';
 import { CounterpartyStatusDropdown } from '@/components/counterparties/status-dropdown';
 import { FilterToggleButton } from '@/components/filters/filter-toggle-button';
 import { SmsBroadcastModal } from '@/components/sms/sms-broadcast-modal';
@@ -37,6 +38,7 @@ import {
   useDebounce,
 } from '@moysklad/ui';
 import { useQuery } from '@tanstack/react-query';
+import { MessageSquare } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -236,6 +238,7 @@ function CounterpartyTransactionsView() {
 export default function CounterpartiesPage() {
   const t = useTranslations('pages.counterparties');
   const tCommon = useTranslations('common');
+  const tMsg = useTranslations('pages.counterparty_message');
   const tFields = useTranslations('fields');
   const tFilters = useTranslations('filters');
 
@@ -325,6 +328,9 @@ export default function CounterpartiesPage() {
   // (Ta'minotchilar, Mijozlar, …). The backend CRUD always existed; this exposes it.
   const [groupMgrOpen, setGroupMgrOpen] = useState(false);
   const [broadcastOpen, setBroadcastOpen] = useState(false);
+  const [msgCp, setMsgCp] = useState<{ id: string; name: string; phone: string | null } | null>(
+    null,
+  );
   // 2026-07-13: sichqoncha qator ustida turganda ENTER → mijoz sahifasi.
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   useEnterOnHover(
@@ -1071,7 +1077,24 @@ export default function CounterpartiesPage() {
           rows={data?.items ?? []}
           keyField="id"
           rowTestId={(cp) => `counterparty-row-${cp.id}`}
-          rowActions={(cp) => bulk.rowDelete(cp.id)}
+          rowActions={(cp) => (
+            <>
+              {/* Xabar yuborish (SMS/Telegram × shablon/erkin) — 2026-07-21. */}
+              <button
+                type="button"
+                aria-label={tMsg('button')}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setMsgCp({ id: cp.id, name: cp.name, phone: cp.phone ?? null });
+                }}
+                className="flex h-7 w-7 items-center justify-center rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] text-[var(--ms-text-muted)] hover:bg-[var(--ms-bg-muted)]"
+                data-test-id={`cp-row-send-${cp.id}`}
+              >
+                <MessageSquare className="h-3.5 w-3.5" />
+              </button>
+              {bulk.rowDelete(cp.id)}
+            </>
+          )}
           total={data?.total ?? 0}
           limit={pageSize}
           paginationOffset={(page - 1) * pageSize}
@@ -1574,6 +1597,15 @@ export default function CounterpartiesPage() {
         open={broadcastOpen}
         onClose={() => setBroadcastOpen(false)}
       />
+      {msgCp && (
+        <SendMessageModal
+          counterpartyId={msgCp.id}
+          counterpartyName={msgCp.name}
+          phone={msgCp.phone}
+          open={!!msgCp}
+          onClose={() => setMsgCp(null)}
+        />
+      )}
     </>
   );
 }

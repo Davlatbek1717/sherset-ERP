@@ -46,7 +46,30 @@ export const smsApi = {
       '/sms/broadcast',
       body,
     ),
+
+  /** Bitta erkin SMS (kontragent kartochkasi «Xabar yuborish» → erkin rejim). */
+  send: (body: { toPhone: string; body: string; entity?: string; entityId?: string }) =>
+    api.post<{ id: string; status: string }>('/sms/send', body),
+
+  /** SMS jurnali — kontragent bo'yicha tarix (entityId filtri, eng yangisi birinchi). */
+  logs: (params: { entityId?: string; toPhone?: string; limit?: number }) => {
+    const q = new URLSearchParams();
+    if (params.entityId) q.set('entityId', params.entityId);
+    if (params.toPhone) q.set('toPhone', params.toPhone);
+    q.set('limit', String(params.limit ?? 30));
+    return api.get<{ items: SmsLog[] }>(`/sms/logs?${q.toString()}`);
+  },
 };
+
+/** SMS jurnal yozuvi (kontragent tarixi uchun). */
+export interface SmsLog {
+  id: string;
+  toPhone: string;
+  body: string;
+  status: string; // pending | sending | sent | failed | ...
+  createdAt: string;
+  sentAt: string | null;
+}
 
 /** Xabar shablonlari CRUD (`/message-templates`). */
 export const messageTemplateApi = {

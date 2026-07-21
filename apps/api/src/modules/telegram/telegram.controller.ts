@@ -151,6 +151,17 @@ export class TelegramController {
     return this.svc.sendChatToCounterparty(user.accountId, id, body?.text);
   }
 
+  /** Kontragentga tayyor SHABLON bilan Telegram xabar (2026-07-21). */
+  @Post('counterparty/:id/send-template')
+  @RequirePermission({ entity: 'counterparty', action: 'update' })
+  async sendTemplateToCounterparty(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: { templateId?: unknown },
+  ) {
+    return this.svc.sendTemplateToCounterparty(user.accountId, id, body?.templateId);
+  }
+
   /** Kontragent Telegram profilini avtomatik topish (panel sarlavhasi). */
   @Get('counterparty/:id/telegram-profile')
   @RequirePermission({ entity: 'counterparty', action: 'view' })

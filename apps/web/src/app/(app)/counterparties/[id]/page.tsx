@@ -16,6 +16,7 @@
 
 import { BankAccountsSection } from '@/components/bank-accounts-section';
 import { ContactPersonsSection } from '@/components/contact-persons-section';
+import { SendMessageModal } from '@/components/counterparties/send-message-modal';
 import { TelegramChatCard } from '@/components/counterparties/telegram-chat-card';
 import { CounterpartyActivityWidget } from '@/components/counterparty-activity-widget';
 import {
@@ -55,6 +56,7 @@ import {
   formatDate,
 } from '@moysklad/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { MessageSquare } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -170,6 +172,8 @@ export default function CounterpartyDetailPage() {
   // Reuses the shared «Дополнительные поля» / «Контактные лица» titles.
   const tAttr = useTranslations('attributes');
   const tContacts = useTranslations('pages.contact_persons');
+  const tMsg = useTranslations('pages.counterparty_message');
+  const [msgOpen, setMsgOpen] = useState(false);
   const { id } = useParams<{ id: string }>();
   // Server-backed «N из ВСЕГО ‹ ›» (real total over the default list, shown even on a
   // direct-URL open — moysklad parity, mirrors CO/PO).
@@ -439,6 +443,16 @@ export default function CounterpartyDetailPage() {
               size="md"
               data-test-id="detail-header-author-avatar"
             />
+            {/* Kontragentga xabar (SMS/Telegram × shablon/erkin) — 2026-07-21. */}
+            <button
+              type="button"
+              onClick={() => setMsgOpen(true)}
+              className="flex h-7 items-center gap-1.5 rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] px-2.5 text-[var(--ms-text-primary)] text-sm hover:bg-[var(--ms-bg-muted)]"
+              data-test-id="cp-send-message"
+            >
+              <MessageSquare className="h-4 w-4" />
+              {tMsg('button')}
+            </button>
             {/* moysklad's «...» — far right, after the avatar. Delete + archive live here
                 (moysklad's counterparty card hides these behind the three-dot menu). */}
             <DropdownMenu
@@ -936,6 +950,13 @@ export default function CounterpartyDetailPage() {
           }
         />
       </main>
+      <SendMessageModal
+        counterpartyId={data.id}
+        counterpartyName={data.name}
+        phone={data.phone ?? null}
+        open={msgOpen}
+        onClose={() => setMsgOpen(false)}
+      />
     </form>
   );
 }

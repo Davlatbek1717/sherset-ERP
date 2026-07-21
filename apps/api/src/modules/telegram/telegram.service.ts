@@ -3,10 +3,12 @@ import { BadRequestException, Inject, Injectable, Logger, NotFoundException } fr
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { AttachmentService } from '../attachment/attachment.service.js';
+import { renderTelegramTemplate } from '../debt/telegram-template-render.util.js';
 import { decryptPassword, encryptPassword } from '../email/crypto.js';
 import { normalizeTelegramPhone } from '../hr/hr-shared/phone-normalize.util.js';
 import type { MtprotoInboundHandler } from '../hr/hr-telegram-bridge/mtproto-inbound-handler.js';
 import type { IncomingMtprotoMessage } from '../hr/hr-telegram-bridge/telegram-client-factory.js';
+import { DEFAULT_MESSAGING_CONTACT } from '../sms/sms-render.util.js';
 import { parseBusinessUpdate } from './telegram-business.util.js';
 import { TelegramLookupService } from './telegram-lookup.service.js';
 import {
@@ -694,6 +696,46 @@ export class TelegramService implements MtprotoInboundHandler {
       },
     });
     return { id: row.id, status: 'pending' as const, direction: 'out' as const };
+  }
+
+  /**
+   * Kontragentga TAYYOR SHABLON bilan Telegram xabar (2026-07-21 — kontragent
+   * «Xabar yuborish» oqimi). Telegram-kanal shablonini render qiladi (mijoz nomi
+   * + kompaniya rekvizitlari; qarz o'zgaruvchilari '—' — umumiy shablon uchun,
+   * SMS-tarqatma bilan bir intizom) va `sendChatToCounterparty` orqali yuboradi
+   * (shaxsiy raqam → userbot navbati). Ruxsat: `counterparty/update`.
+   */
+  async sendTemplateToCounterparty(
+    accountId: string,
+    counterpartyId: string,
+    rawTemplateId: unknown,
+  ) {
+    const templateId = typeof rawTemplateId === 'string' ? rawTemplateId.trim() : '';
+    if (!templateId) throw new BadRequestException('Shablon tanlanmagan');
+    const cp = await this.prisma.client.counterparty.findFirst({
+      where: { id: counterpartyId, accountId },
+      select: { name: true },
+    });
+    if (!cp) throw new NotFoundException('Kontragent topilmadi');
+    const tpl = await this.prisma.client.messageTemplate.findFirst({
+      where: { id: templateId, accountId, channel: 'telegram' },
+      select: { body: true },
+    });
+    if (!tpl) throw new NotFoundException('Telegram shabloni topilmadi');
+    const s = await this.prisma.client.companySettings.findUnique({
+      where: { accountId },
+      select: { messagingPhone: true, messagingCard: true, messagingCardOwner: true },
+    });
+    const text = renderTelegramTemplate(tpl.body, {
+      counterparty: { name: cp.name },
+      debt: { remainingFormatted: '—', totalFormatted: '—' },
+      company: {
+        phone: s?.messagingPhone || DEFAULT_MESSAGING_CONTACT.phone,
+        card: s?.messagingCard || DEFAULT_MESSAGING_CONTACT.card,
+        cardOwner: s?.messagingCardOwner || DEFAULT_MESSAGING_CONTACT.cardOwner,
+      },
+    });
+    return this.sendChatToCounterparty(accountId, counterpartyId, text);
   }
 
   /**

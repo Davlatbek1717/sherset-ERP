@@ -2108,6 +2108,25 @@
       "type_entrepreneur": "ИП",
       "type_individual": "Физическое лицо"
     },
+    "counterparty_message": {
+      "button": "Сообщение",
+      "title": "Отправить сообщение",
+      "channel": "Канал",
+      "mode": "Режим",
+      "mode_template": "Шаблон",
+      "mode_custom": "Свободно",
+      "template": "Шаблон",
+      "default": "по умолчанию",
+      "no_templates": "Нет шаблонов для этого канала — создайте в Настройки → Шаблоны",
+      "send": "Отправить",
+      "sent": "Сообщение отправлено",
+      "sms_queued": "SMS поставлено в очередь",
+      "sms_no_history": "Этому контрагенту SMS не отправлялись",
+      "sms_placeholder": "Введите текст SMS…",
+      "err_no_template": "Шаблон не выбран",
+      "err_no_phone": "У контрагента нет номера телефона",
+      "err_empty": "Введите текст сообщения"
+    },
     "counterparty_new": {
       "title": "Новый контрагент",
       "groups_label": "Группы",

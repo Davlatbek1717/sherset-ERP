@@ -2108,6 +2108,25 @@
       "type_entrepreneur": "IP",
       "type_individual": "Jismoniy shaxs"
     },
+    "counterparty_message": {
+      "button": "Xabar",
+      "title": "Xabar yuborish",
+      "channel": "Kanal",
+      "mode": "Rejim",
+      "mode_template": "Shablon",
+      "mode_custom": "Erkin",
+      "template": "Shablon",
+      "default": "asosiy",
+      "no_templates": "Bu kanal uchun shablon yo'q — Sozlamalar → Shablonlar'da yarating",
+      "send": "Yuborish",
+      "sent": "Xabar yuborildi",
+      "sms_queued": "SMS navbatga qo'yildi",
+      "sms_no_history": "Bu kontragentga SMS yuborilmagan",
+      "sms_placeholder": "SMS matnini yozing…",
+      "err_no_template": "Shablon tanlanmagan",
+      "err_no_phone": "Kontragentda telefon raqami yo'q",
+      "err_empty": "Xabar matnini yozing"
+    },
     "counterparty_new": {
       "title": "Yangi kontragent",
       "groups_label": "Guruhlar",
