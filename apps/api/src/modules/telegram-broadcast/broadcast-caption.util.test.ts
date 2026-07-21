@@ -9,12 +9,14 @@ describe('broadcast caption builder', () => {
     const covered = bold.map((b) => text.slice(b.offset, b.offset + b.length));
     expect(covered).toEqual([
       'SHERSETDA KATTA YANGILIK!',
+      'SHERSET',
       'Har kuni 19:00 – 23:00',
       'Bizda barchasi bir joyda:',
       'SHERSET KABEL, Uzkabel, AAK',
       'VIKO, Panasonic',
       'Schneider, CHINT, Delixi',
       'Akfa, Lucem',
+      '+998 91 925 87 00',
       'Kechqurun ham sizni Shersetda kutib qolamiz!',
     ]);
   });
