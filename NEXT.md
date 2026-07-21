@@ -305,6 +305,24 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🟢📲 2026-07-21 (SMS: O'Z SIM ORQALI BEPUL YUBORISH — telefon-gateway provayderi, Phase-2 lokal-verified, DEPLOY YO'Q)**
+> Foydalanuvchi: Eskiz'ga pul to'lamay, o'z SMS-paketli SIM orqali hammaga yuborish. **Yechim:** yangi `phone_gateway`
+> provayderi — Android «SMS Gateway» ilovasi (ochiq kodli `sms-gate.app`, bulut rejim) orqali. Sayt bulut API'ga POST →
+> bulut telefonga → telefon SIM orqali real SMS. **Qo'shildi:** (1) `phone-gateway.client.ts` — `POST
+> api.sms-gate.app/3rdparty/v1/messages` (Basic auth, `{textMessage:{text},phoneNumbers}`) + `phoneGatewayCheck` (`GET
+> /device` — login/parolni SMS yubormasdan tekshiradi, `/health`dan farqli auth talab qiladi) + `toE164`; (2) `sms.schema`
+> — `phone_gateway` provayder + email-validatsiya superRefine bilan yumshatildi (login email bo'lishi shart emas);
+> (3) `sms.service` — `sendQueuedNow`/`testConnection` provayder bo'yicha branch (`email`=login, `passwordCipher`=parol,
+> migratsiya YO'Q — mavjud ustunlar reuse); (4) frontend `settings/sms` — provayder tanlovi + shartli Login/Parol maydon +
+> bulut-ilova yordam matni + i18n(ru+uz). **Gate:** api sms 38 test · phone-gateway client 4 test · web tc0 · i18n parity.
+> **Lokal end-to-end LIVE-verified:** config saqlandi (`provider=phone_gateway`, non-email login) · test-connection soxta
+> cred → «Login yoki parol xato» (real /device 401) · bulk SMS → worker → `sendQueuedNow` phone_gateway branch → **real
+> sms-gate.app POST → HTTP 401** (fake cred, aynan kutilgan; real ilova login/paroli bilan SMS ketadi) · browser: provayder
+> dropdown + Login/Parol + yordam. **YAGONA qolgan:** foydalanuvchi telefonga ilova o'rnatib, bulut login/parolini kiritishi
+> → o'sha zahoti real SMS. Commit: `21e8482`(be) + `2474d37`(fe). ⚠️ DEPLOY YO'Q · migratsiya YO'Q (ustun reuse).
+> **Eslatma:** bitta SIM ~30–100 SMS/soat (spam-limit) — ilovada rate-limit sozlanadi; ko'p hajm uchun BE throttle keyingi ish.
+
+
 > **🟢📩 2026-07-20i (QARZDORLARGA OMMAVIY SMS + TAHRIRLANADIGAN SHABLON — Phase-2 BROWSER-VERIFIED, DEPLOY QILINMAGAN)**
 > **✅ PHASE-2 BROWSER-SMOKE (2026-07-20, Playwright + user-space Postgres, `8e8f1bf`):** admin huquqisiz lokal DB ko'tarildi
 > (`initdb` + `pg_ctl` port 5432, xizmat emas) → `migrate deploy` (168 migratsiya, mening `20260720170000` ham) → seed →
