@@ -44,6 +44,11 @@ export const CreatePurchaseOrderSchema = z.object({
   agentId: z.string().uuid(),
   organizationId: z.string().uuid(),
   storeId: z.string().uuid(),
+  // Editable document «№». Optional — auto-generated (nextOrderName) when blank.
+  // Was previously stripped by Zod, so the create-form «№» input did nothing and
+  // the order always got an auto number. Duplicates hit @@unique([accountId, name])
+  // → P2002 → 409 (global PrismaExceptionFilter). Mirrors CustomerOrder.
+  name: z.string().max(100).optional(),
   // moysklad parity (§14 live capture) — Договор / Проект (purchase doc: no
   // sales channel) + org/agent accounts + Внешний код. Cols exist in DB.
   contractId: z.string().uuid().nullish(),
@@ -62,8 +67,20 @@ export const CreatePurchaseOrderSchema = z.object({
   // (`waiting` Boolean); was only set via bulk-action, but moysklad
   // exposes it as a create-form checkbox too (§46 live capture).
   waiting: z.boolean().default(false),
+  // moysklad «Проведён» — create-form checkbox (default ON). When true the order
+  // is created already posted/confirmed (state=confirmed + postedAt), so «Создать
+  // документ» (Приёмка/Счёт/платёж) is available immediately. When false → draft.
+  // Absent (moysklad-compat / non-UI clients) → draft, preserving prior behaviour.
+  // Without this the pick was stripped by Zod and EVERY new PO landed draft, which
+  // silently disabled the whole «Создать документ» menu on the detail page.
+  applicable: z.boolean().optional(),
   positions: z.array(PurchaseOrderPositionInputSchema).min(1, 'at least one position required'),
   attributes: z.record(z.string(), z.unknown()).optional(),
+  // moysklad «Статус» — the account's custom status (State, entityType=purchaseorder),
+  // settable on the create form. Validated against the tenant's State table in the
+  // service (mirrors setStatus). Was stripped by Zod → the create-form status did
+  // nothing. NB: orthogonal to the FSM `state`/`applicable` («Проведён»).
+  statusId: z.string().uuid().nullish(),
   // «Владелец» (owner/access) — moysklad lets the clerk choose the owning employee
   // (ownerId), department (groupId) and «Общий доступ» (shared) on create. Without
   // these declared, Zod stripped the picks and the doc silently got owner=creator

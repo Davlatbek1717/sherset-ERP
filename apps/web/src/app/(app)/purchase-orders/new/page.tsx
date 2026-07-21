@@ -5,10 +5,11 @@
  *
  * Built on the document-editor framework (DocumentEditor + Toolbar +
  * Header + MetaPanel + PositionTable + TotalsPanel + DisclosurePanel
- * + Tabs). For a brand-new document many toolbar dropdowns are empty
- * by design — the framework auto-disables them so the layout stays
- * stable. After save, the user is redirected to /purchase-orders/[id]
- * which mounts the same shell with all toolbar entries populated.
+ * + Tabs). The toolbar dropdowns («Изменить» / «Создать документ» /
+ * «Печать» / «Отправить») act save-first: the item saves the order, then
+ * creates the chosen linked doc from it (or opens the print view) and
+ * routes there — mirrors customer-orders/new. After a plain save the
+ * user lands on /purchase-orders/[id], which mounts the same shell.
  */
 
 import { CounterpartyBalanceInline } from '@/components/counterparty-balance-inline';
@@ -160,21 +161,29 @@ export default function NewPurchaseOrderPage() {
   const tDetailForm = useTranslations('detail_form');
   const tDetailTabs = useTranslations('detail_tabs');
   const tDetailTitles = useTranslations('detail_titles');
-  const tStates = useTranslations('states.purchase_order');
   const tPos = useTranslations('position_editor');
   const tCols = useTranslations('position_cols');
   const tCommon = useTranslations('common');
+  const tBulk = useTranslations('bulk_actions');
+  const tPrint = useTranslations('print_menu');
   const docEditorLabels = useDocumentEditorLabels();
 
-  // moysklad purchase-order FSM surfaces 3 manually-settable states:
-  // draft / confirmed / cancelled (mirrors purchase-orders/[id]). The
-  // status field is decorative on /new (not sent on create — the API
-  // always creates a draft), so we surface the same three real states.
-  const STATUS_OPTIONS = [
-    { value: 'draft', label: tStates('draft'), color: '#e8eef5' },
-    { value: 'confirmed', label: tStates('confirmed'), color: '#cfe8d3' },
-    { value: 'cancelled', label: tStates('cancelled'), color: '#f4d4d4' },
-  ];
+  // moysklad «Статус» — the account's custom purchase-order statuses (NOT the FSM
+  // state: draft/confirmed is the «Проведено» flag's job — see `applicable`). Grey
+  // «Статус» when none. Applied on create via `statusId`. Mirrors the [id] page —
+  // was previously a decorative FSM dropdown that did nothing on create.
+  const { data: statusData } = useQuery<{
+    items: Array<{ id: string; name: string; color: string | null }>;
+  }>({
+    queryKey: ['states', 'purchaseorder'],
+    queryFn: () => api.get('/states?entityType=purchaseorder'),
+    staleTime: 60_000,
+  });
+  const STATUS_OPTIONS = (statusData?.items ?? []).map((s) => ({
+    value: s.id,
+    label: s.name,
+    color: s.color ?? undefined,
+  }));
 
   // Reference data — pre-fetched so the user picks open instantly.
   const { data: orgsData } = useQuery<{ items: RefItem[] }>({
@@ -344,6 +353,12 @@ export default function NewPurchaseOrderPage() {
         setStoreLabel(store.name);
       }
     }
+    // «Контрагент» — pre-fill the default supplier (a purchase doc → defaultSupplier).
+    // Mirrors invoices-in / supplies / cash-out / payments-out / purchase-returns /new.
+    if (!agentId && us?.defaultSupplier) {
+      setAgentId(us.defaultSupplier.id);
+      setAgentLabel(us.defaultSupplier.name);
+    }
   }, [
     orgsData,
     storesData,
@@ -351,6 +366,7 @@ export default function NewPurchaseOrderPage() {
     userDefaults.isLoading,
     organizationId,
     storeId,
+    agentId,
     fromOrderId,
   ]);
 
@@ -607,6 +623,13 @@ export default function NewPurchaseOrderPage() {
     selectedRowIds,
   ]);
 
+  // moysklad «Создать документ / Печать / Отправить» on /new act save-first: the
+  // toolbar item stamps an intent here, then createMut.onSuccess creates the linked
+  // document from the freshly-saved order (or opens the print view) and routes there.
+  const afterSaveRef = useRef<'view' | 'invoice' | 'supply' | 'payment' | 'cash-out' | 'print'>(
+    'view',
+  );
+
   const createMut = useMutation({
     mutationFn: async () => {
       if (!agentId) throw new Error(tForm('select_supplier'));
@@ -630,6 +653,7 @@ export default function NewPurchaseOrderPage() {
         ...(contractId ? { contractId } : {}),
         ...(projectId ? { projectId } : {}),
         ...(docNumber ? { name: docNumber } : {}),
+        ...(status ? { statusId: status } : {}),
         ...(deliveryDate ? { deliveryPlannedMoment: deliveryDate } : {}),
         moment: docDate ? new Date(docDate).toISOString() : undefined,
         applicable,
@@ -657,9 +681,64 @@ export default function NewPurchaseOrderPage() {
           vatEnabled: p.vatEnabled,
         })),
       };
-      return api.post<{ id: string }>('/purchase-orders', payload);
+      return api.post<{ id: string; sumMinor: string }>('/purchase-orders', payload);
     },
-    onSuccess: (created) => router.push(`/purchase-orders/${created.id}`),
+    // moysklad «Создать документ» from /new: the order is saved, then the chosen
+    // linked doc is created from it (server from-purchase-order endpoints) and we
+    // land on it. If linked-doc creation fails (e.g. the order was left a draft),
+    // the order is already saved — fall back to its detail so no work is lost.
+    onSuccess: async (created) => {
+      const intent = afterSaveRef.current;
+      afterSaveRef.current = 'view';
+      const detail = `/purchase-orders/${created.id}`;
+      try {
+        if (intent === 'invoice') {
+          const inv = await api.post<{ id: string }>(
+            `/invoices-in/from-purchase-order/${created.id}`,
+            {},
+          );
+          router.push(`/invoices-in/${inv.id}`);
+          return;
+        }
+        if (intent === 'supply') {
+          const sup = await api.post<{ id: string }>(
+            `/supplies/from-purchase-order/${created.id}`,
+            {},
+          );
+          router.push(`/supplies/${sup.id}`);
+          return;
+        }
+        if (intent === 'payment') {
+          const pay = await api.post<{ id: string }>(
+            `/payments-out/from-purchase-order/${created.id}`,
+            { sumMinor: created.sumMinor },
+          );
+          router.push(`/payments-out/${pay.id}`);
+          return;
+        }
+        if (intent === 'cash-out') {
+          const co = await api.post<{ id: string }>(
+            `/purchase-orders/${created.id}/create-cash-out`,
+            {},
+          );
+          router.push(`/cash-out/${co.id}`);
+          return;
+        }
+        if (intent === 'print') {
+          window.open(
+            `/print/purchase-order/${created.id}?auto=1`,
+            '_blank',
+            'width=820,height=1100',
+          );
+          router.push(detail);
+          return;
+        }
+      } catch {
+        router.push(detail);
+        return;
+      }
+      router.push(detail);
+    },
     onError: (err: Error) => setError(err.message),
   });
 
@@ -1271,6 +1350,8 @@ export default function NewPurchaseOrderPage() {
         status={status}
         statusOptions={STATUS_OPTIONS}
         onStatusChange={setStatus}
+        onConfigureStatuses={() => router.push('/settings/purchase-order-statuses')}
+        configureStatusesLabel={tForm('configure_statuses')}
         applicable={applicable}
         onApplicableChange={setApplicable}
         applicableHelp={t('applicable_help')}
@@ -1283,13 +1364,80 @@ export default function NewPurchaseOrderPage() {
         }}
         saving={createMut.isPending}
         onClose={() => router.push('/purchase-orders')}
-        // For a brand-new doc most dropdowns are intentionally empty —
-        // the framework auto-renders them disabled so the toolbar
-        // shape is identical to the post-save one (just greyed).
-        modifyMenu={[]}
-        createDocMenu={[]}
-        printMenu={[]}
-        sendMenu={[]}
+        // moysklad toolbar dropdowns act save-first on /new (mirror customer-orders):
+        // «Изменить» = Копировать (save→detail) / Удалить (discard→list); «Создать
+        // документ» saves then creates the linked doc from the order and lands on it;
+        // «Печать» saves then opens the print view; «Отправить» saves then lands on the
+        // detail (the email composer lives there). Each stamps afterSaveRef then saves.
+        modifyMenu={[
+          {
+            label: tBulk('copy'),
+            onClick: () => {
+              afterSaveRef.current = 'view';
+              setError(null);
+              createMut.mutate();
+            },
+          },
+          {
+            label: tBulk('delete'),
+            onClick: () => router.push('/purchase-orders'),
+            destructive: true,
+          },
+        ]}
+        createDocMenu={[
+          {
+            label: tDetailTitles('invoice_in'),
+            onClick: () => {
+              afterSaveRef.current = 'invoice';
+              setError(null);
+              createMut.mutate();
+            },
+          },
+          {
+            label: tDetailTitles('supply'),
+            onClick: () => {
+              afterSaveRef.current = 'supply';
+              setError(null);
+              createMut.mutate();
+            },
+          },
+          {
+            label: tDetailTitles('payment_out'),
+            onClick: () => {
+              afterSaveRef.current = 'payment';
+              setError(null);
+              createMut.mutate();
+            },
+          },
+          {
+            label: tDetailTitles('cash_out'),
+            onClick: () => {
+              afterSaveRef.current = 'cash-out';
+              setError(null);
+              createMut.mutate();
+            },
+          },
+        ]}
+        printMenu={[
+          {
+            label: tPrint('order_form'),
+            onClick: () => {
+              afterSaveRef.current = 'print';
+              setError(null);
+              createMut.mutate();
+            },
+          },
+        ]}
+        sendMenu={[
+          {
+            label: tPrint('order_form'),
+            onClick: () => {
+              afterSaveRef.current = 'view';
+              setError(null);
+              createMut.mutate();
+            },
+          },
+        ]}
         // moysklad-parity: right side of toolbar = «Владелец» (owner/access)
         // popover — click «Файзуллоев Ф. / Основной» to set Сотрудник (employee) /
         // Отдел (department) / «Общий доступ» (shared). Saved on create.
