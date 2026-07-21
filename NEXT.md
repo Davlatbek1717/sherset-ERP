@@ -305,6 +305,21 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🟢📢 2026-07-21b (UMUMIY SMS-TARQATMA — kontragent + qo'lda raqam, shablon bilan · Phase-2 browser-verified · DEPLOY YO'Q)**
+> Foydalanuvchi: qarzdorlardan tashqari ham SMS yuborish. **Yechim:** yangi `POST /sms/broadcast` — tanlangan
+> kontragentlar (ro'yxatdan checkbox) **+** qo'lda kiritilgan raqamlarga tayyor shablon bilan. **Backend:**
+> `SmsService.broadcast` (MessageTemplateService inject; kontragent nomi render, debt o'zgaruvchilari bo'sh '—'; raqam
+> tozalash + dedupe + no_phone/send_error skip) · `BroadcastSmsSchema` · controller (`counterparty.view` ruxsat) ·
+> `sms-broadcast.test.ts` 4 test. **Frontend:** `sms-broadcast-modal` (shablon-picker + qo'lda raqam textarea + qabul
+> qiluvchi soni) · kontragentlar sahifasiga «SMS tarqatma» tugma (ListView `selectable`/`bulk` allaqachon bor;
+> `bulk.selectedIds` → modal) · i18n(ru+uz). **Gate:** api sms 42 test · web tc0 · i18n parity. **BROWSER-VERIFIED
+> end-to-end:** kontragent (ABC) belgilash → «SMS tarqatma» → modal (2 shablon ko'rindi: Qarz eslatmasi★ + Umumiy xabar)
+> → Umumiy shablon + 2 qo'lda raqam → Yuborish → **3 SmsLog** (ABC nomi render + 2 qo'lda raqam, entity='Broadcast').
+> Commit: `cfed73e`(be) + `b777bf9`(fe). ⚠️ DEPLOY YO'Q. **Umumiy 'announcement' shablon lokalда qo'lда qo'yildi** —
+> prod uchun seed'ga qo'shilishi yoki UI'дан yaratilishi kerak (hozir template-editor faqat mavjudlarni tahrirlaydi,
+> «yangi shablon» tugmasi keyingi ish).
+
+
 > **🟢📲 2026-07-21 (SMS: O'Z SIM ORQALI BEPUL YUBORISH — telefon-gateway provayderi, Phase-2 lokal-verified, DEPLOY YO'Q)**
 > Foydalanuvchi: Eskiz'ga pul to'lamay, o'z SMS-paketli SIM orqali hammaga yuborish. **Yechim:** yangi `phone_gateway`
 > provayderi — Android «SMS Gateway» ilovasi (ochiq kodli `sms-gate.app`, bulut rejim) orqali. Sayt bulut API'ga POST →
