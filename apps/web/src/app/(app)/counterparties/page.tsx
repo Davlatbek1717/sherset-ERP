@@ -26,6 +26,7 @@ import {
   InlineFilterPanel,
   Input,
   ListView,
+  MultiCombobox,
   NativeSelect,
   PeriodInputs,
   PeriodShortcuts,
@@ -1279,32 +1280,21 @@ export default function CounterpartiesPage() {
               </InlineFilterPanel.Field>
               {/* «Группы» multi-select — CounterpartyGroup a'zoligi (OR: birortasи). */}
               <InlineFilterPanel.Field label={t('col_groups')} expandable>
-                <div
-                  className="flex max-h-40 flex-col gap-1 overflow-y-auto"
-                  data-test-id="filter-cp-groups"
-                >
-                  {(cpGroups?.items ?? []).length === 0 ? (
-                    <span className="text-[var(--ms-text-muted)] text-xs">
-                      {tFilters('no_options')}
-                    </span>
-                  ) : (
-                    (cpGroups?.items ?? []).map((g) => (
-                      <label key={g.id} className="flex cursor-pointer items-center gap-2 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={cpGroupIds.includes(g.id)}
-                          onChange={(e) => {
-                            setCpGroupIds((prev) =>
-                              e.target.checked ? [...prev, g.id] : prev.filter((x) => x !== g.id),
-                            );
-                            setPage(1);
-                          }}
-                        />
-                        {g.name}
-                      </label>
-                    ))
-                  )}
-                </div>
+                {/* Multi-select dropdown (MultiCombobox) — mahsulot ro'yxatidan
+                    tanlab, tanlanganlar chip sifatida ko'rinadi. Guruhlar to'liq
+                    keshda bo'lgani uchun local rejim (onSearch shart emas). */}
+                <MultiCombobox
+                  value={cpGroupIds}
+                  items={(cpGroups?.items ?? []).map((g) => ({ value: g.id, label: g.name }))}
+                  onChange={(next) => {
+                    setCpGroupIds(next);
+                    setPage(1);
+                  }}
+                  placeholder={t('col_groups')}
+                  emptyText={tFilters('no_options')}
+                  testId="filter-cp-groups"
+                  ariaLabel={t('col_groups')}
+                />
               </InlineFilterPanel.Field>
               {/* Баланс — base-currency (UZS) от/до range over CounterpartyBalance. */}
               <InlineFilterPanel.Field label={t('col_balance')} expandable>
