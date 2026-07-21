@@ -82,6 +82,8 @@ export default function SmsSettingsPage() {
   });
   const { runDestructive } = useDestructiveMutation();
 
+  const isPhone = provider === 'phone_gateway';
+
   if (isLoading)
     return <div className="p-6 text-[var(--ms-text-muted)] text-sm">{tCommon('loading')}</div>;
 
@@ -120,6 +122,11 @@ export default function SmsSettingsPage() {
       </div>
 
       <FormSection title={t('title')}>
+        {isPhone && (
+          <div className="rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-muted)] p-3 text-[var(--ms-text-secondary)] text-xs leading-relaxed">
+            {t('phone_help')}
+          </div>
+        )}
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <FormField id="provider" label={t('provider')}>
             <NativeSelect
@@ -128,29 +135,32 @@ export default function SmsSettingsPage() {
               onChange={(e) => setProvider(e.target.value)}
               className={SELECT_CLASS}
             >
+              <option value="phone_gateway">{t('provider_phone')}</option>
               <option value="eskiz">Eskiz</option>
               <option value="playmobile">Play Mobile</option>
               <option value="custom">Custom</option>
             </NativeSelect>
           </FormField>
-          <FormField id="senderId" label={t('sender_id')}>
+          {!isPhone && (
+            <FormField id="senderId" label={t('sender_id')}>
+              <Input
+                value={senderId}
+                onChange={(e) => setSenderId(e.target.value)}
+                placeholder="4546"
+              />
+            </FormField>
+          )}
+          <FormField id="email" label={isPhone ? t('gateway_login') : t('email')} required>
             <Input
-              value={senderId}
-              onChange={(e) => setSenderId(e.target.value)}
-              placeholder="4546"
-            />
-          </FormField>
-          <FormField id="email" label={t('email')} required>
-            <Input
-              type="email"
+              type={isPhone ? 'text' : 'email'}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@company.uz"
+              placeholder={isPhone ? t('gateway_login_ph') : 'you@company.uz'}
             />
           </FormField>
           <FormField
             id="password"
-            label={t('password')}
+            label={isPhone ? t('gateway_password') : t('password')}
             hint={data ? t('password_hint') : undefined}
           >
             <Input

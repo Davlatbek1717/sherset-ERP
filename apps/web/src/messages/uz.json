@@ -3106,7 +3106,12 @@
       "contact_card": "Karta raqami",
       "contact_card_owner": "Karta egasi",
       "templates_link": "SMS shablonlari",
-      "log_link": "SMS jurnali"
+      "log_link": "SMS jurnali",
+      "provider_phone": "Telefon (o'z SIM) — bepul",
+      "gateway_login": "Gateway login",
+      "gateway_login_ph": "ilovadagi login",
+      "gateway_password": "Gateway parol",
+      "phone_help": "Android telefonga «SMS Gateway» ilovasini o'rnating, bulut (Cloud) rejimini yoqing va ilova bergan login/parolni shu yerga kiriting. SMS-paketli SIM solingan telefon doim yoniq + internetda tursin — SMS'lar o'sha telefon orqali bepul yuboriladi."
     },
     "sms_templates": {
       "title": "SMS shablonlari",

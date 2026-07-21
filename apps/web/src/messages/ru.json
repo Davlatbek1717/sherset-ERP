@@ -3106,7 +3106,12 @@
       "contact_card": "Номер карты",
       "contact_card_owner": "Владелец карты",
       "templates_link": "Шаблоны SMS",
-      "log_link": "Журнал SMS"
+      "log_link": "Журнал SMS",
+      "provider_phone": "Телефон (своя SIM) — бесплатно",
+      "gateway_login": "Логин шлюза",
+      "gateway_login_ph": "логин из приложения",
+      "gateway_password": "Пароль шлюза",
+      "phone_help": "Установите приложение «SMS Gateway» на Android, включите облачный (Cloud) режим и введите здесь логин/пароль из приложения. Телефон с SIM (с SMS-пакетом) должен быть всегда включён и в интернете — SMS отправляются через этот телефон бесплатно."
     },
     "sms_templates": {
       "title": "Шаблоны SMS",
