@@ -62,6 +62,8 @@ export interface MtprotoAdapter {
   uploadBroadcastVideo(opts: {
     accountId: string;
     filePath: string;
+    /** Video POSTER (JPEG) yo'li — berilmasa Telegram qora poster ko'rsatadi. */
+    thumbPath?: string;
   }): Promise<{ slot: number; ref: TgVideoRef }>;
 
   /**

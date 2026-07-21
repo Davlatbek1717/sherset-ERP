@@ -36,6 +36,18 @@ export class TelegramBroadcastService {
   }
 
   /**
+   * POSTER (thumbnail) yo'li — `BROADCAST_THUMB_PATH`. Berilmasa/topilmasa
+   * `undefined` (video posterisz ketadi — QORA ko'rinishga qaytadi). JPEG,
+   * ffmpeg bilan videoning rangli kadridan olinadi (≤320px, ≤200KB).
+   */
+  private thumbPath(): string | undefined {
+    const p = process.env.BROADCAST_THUMB_PATH;
+    if (p && existsSync(p)) return p;
+    if (p) this.logger.warn(`BROADCAST_THUMB_PATH topilmadi: ${p} — poster'siz ketadi`);
+    return undefined;
+  }
+
+  /**
    * TEST: videoni yuklab, bitta raqamga (preview) yuboradi. Natijani KUTADI —
    * darhol «yuborildi / xato» qaytaradi (fon-navbat emas).
    */
@@ -50,9 +62,16 @@ export class TelegramBroadcastService {
   }> {
     const phone = this.normalizePhone(phoneRaw);
     const filePath = this.videoPath();
+    const thumbPath = this.thumbPath();
 
-    this.logger.log(`Video-tarqatma TEST: yuklanmoqda (acc=${accountId}, ${filePath})`);
-    const { ref, slot: upSlot } = await this.mtproto.uploadBroadcastVideo({ accountId, filePath });
+    this.logger.log(
+      `Video-tarqatma TEST: yuklanmoqda (acc=${accountId}, ${filePath}, poster=${thumbPath ?? 'yo`q'})`,
+    );
+    const { ref, slot: upSlot } = await this.mtproto.uploadBroadcastVideo({
+      accountId,
+      filePath,
+      thumbPath,
+    });
     this.logger.log(`Video yuklandi (slot=${upSlot}), TEST yuborilmoqda → ${phone}`);
 
     const res = await this.mtproto.sendVideoByRef({

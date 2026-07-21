@@ -160,14 +160,18 @@ class GramjsClientHandle implements TelegramClientHandle {
   /**
    * Videoni «Saved Messages»ga (`'me'`) yuklaydi va hujjat-referensini oladi.
    * `supportsStreaming: true` — video oqim sifatida ko'rinadi (fayl emas).
-   * Qaytgan Message.media.document'dan {id, accessHash, fileReference} olinadi;
+   * `thumbPath` berilsa — o'sha JPEG POSTER (oldindan ko'rinish) qilib
+   * biriktiriladi: aks holda userbot yuklashda Telegram avtomatik poster
+   * yasamaydi va video QORA ko'rinadi (2026-07-21 tuzatish). Qaytgan
+   * Message.media.document'dan {id, accessHash, fileReference} olinadi;
    * fileReference bytes → base64 (JSON-xavfsiz saqlash uchun).
    */
-  async uploadVideoToSelf(filePath: string): Promise<TgVideoRef> {
+  async uploadVideoToSelf(filePath: string, thumbPath?: string): Promise<TgVideoRef> {
     const msg = await this.client.sendFile('me', {
       file: filePath,
       forceDocument: false,
       supportsStreaming: true,
+      ...(thumbPath ? { thumb: thumbPath } : {}),
     });
     const media = (msg as Api.Message).media;
     if (
