@@ -24,6 +24,7 @@ import { useDocumentEditorLabels } from '@/hooks/use-document-editor-labels';
 import { useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-store';
+import { resolveDefaultSalePrice, usePriceTypeIds } from '@/lib/sale-price';
 import { computePositionTotal } from '@moysklad/money';
 import {
   Button,
@@ -190,6 +191,12 @@ export default function NewPurchaseOrderPage() {
     queryFn: () => api.get('/price-types'),
     staleTime: 60_000,
   });
+  // «Narx ▾» dropdown'да tanlangan SOTISH price-type — mahsulot tanlanганда narx
+  // shundan to'ldiriladi (default = account'ning default sotish narxi). Ilgari
+  // mahsulot doim buyPrice bilan qo'shilardi → sotish narxi kelmasdi (bug).
+  const { defaultId } = usePriceTypeIds();
+  const [priceTypeId, setPriceTypeId] = useState<string>('');
+  const activePriceTypeId = priceTypeId || defaultId || undefined;
 
   // Header state
   const [docNumber, setDocNumber] = useState('');
@@ -420,6 +427,15 @@ export default function NewPurchaseOrderPage() {
     setPositions((ps) => ps.filter((p) => p.id !== id));
   };
 
+  // Mahsulot tanlanганда qatorga qo'yiladigan narx: tanlangan/default SOTISH narxi
+  // (salePrices'dan) → sotish narxi yo'q bo'lsa buyPrice → u ham yo'q bo'lsa 0.
+  // (Ilgari doim buyPrice edi — foydalanuvchi so'ragan sotish narxi kelmasdi.)
+  const resolveFillPrice = useCallback(
+    (raw: ProductItem | undefined) =>
+      resolveDefaultSalePrice(raw?.salePrices, activePriceTypeId) ?? raw?.buyPrice ?? '0',
+    [activePriceTypeId],
+  );
+
   // «Цена ▾» → «Расценить» — re-price every row from the chosen price type (the
   // product's carried salePrices). moysklad lets you reprice PO lines from any type.
   const repricePositions = useCallback((priceTypeId: string) => {
@@ -430,25 +446,40 @@ export default function NewPurchaseOrderPage() {
       }),
     );
   }, []);
-  // «Цена ▾» → «Сохранить цены» — push each line's price back onto its product. On a
-  // PURCHASE order the line price is the BUY price, so save to Product.buyPrice (NOT
-  // salePrices — that's customer-orders). Fetch for the lock version, then PATCH.
+  // «Цена ▾» → «Сохранить цены» — push each line's price back onto its product.
+  // Qator endi SOTISH narxini ko'rsatgani uchun (foydalanuvchi talabi: mahsulot
+  // tanlanганда sotish narxi turadi) narx tanlangan/default SOTISH price-type'ining
+  // salePrices'iga saqlanadi (customer-order bilan izchil, NOT buyPrice). Fetch for
+  // the lock version, then PATCH.
   const saveProductPrices = useCallback(async () => {
+    const targetTypeId = activePriceTypeId ?? defaultId ?? 'default';
     const seen = new Set<string>();
     for (const p of positions) {
       if (!p.assortmentId || seen.has(p.assortmentId)) continue;
       seen.add(p.assortmentId);
       try {
-        const prod = await api.get<{ version: number }>(`/products/${p.assortmentId}`);
-        await api.patch(`/products/${p.assortmentId}`, {
-          version: prod.version,
-          buyPrice: p.priceMinor,
-        });
+        const prod = await api.get<{
+          version: number;
+          salePrices?: Array<{ priceTypeId: string; value: string }>;
+        }>(`/products/${p.assortmentId}`);
+        const existing = prod.salePrices ?? [];
+        // Tanlangan tier'ni o'rnida yangilaymiz (real id yoki legacy 'default'
+        // sentinel); mos kelmasa lekin narxlar bor bo'lsa — birinchi (resolver
+        // konvensiyasi bo'yicha default tier) yangilanadi, dublikat qator emas.
+        const matchIdx = existing.findIndex(
+          (x) => x.priceTypeId === targetTypeId || x.priceTypeId === 'default',
+        );
+        const idx = matchIdx < 0 && existing.length > 0 ? 0 : matchIdx;
+        const salePrices =
+          idx >= 0
+            ? existing.map((x, i) => (i === idx ? { ...x, value: p.priceMinor } : x))
+            : [{ priceTypeId: targetTypeId, value: p.priceMinor }];
+        await api.patch(`/products/${p.assortmentId}`, { version: prod.version, salePrices });
       } catch {
         // skip products that can't be updated (e.g. concurrent edit); others proceed
       }
     }
-  }, [positions]);
+  }, [positions, activePriceTypeId, defaultId]);
   // «Скидка ▾» → «Скидка/наценка» modal — a discount % sets each line's `discount`; a
   // markup % raises the unit price instead. Targets the selected rows, or ALL rows
   // when the selection is empty (moysklad parity).
@@ -508,7 +539,13 @@ export default function NewPurchaseOrderPage() {
           repriceLabel={tCols('reprice')}
           saveLabel={tCols('savePrices')}
           priceTypes={priceTypesData?.items ?? []}
-          onReprice={repricePositions}
+          onReprice={(id) => {
+            // Tanlangan price-type'ni ESLAB QOLAMIZ — endi yangi qo'shilган
+            // mahsulotlar ham shu narxdan to'ladi (ilgari faqat mavjud qatorlar
+            // qayta-narxlanardi, yangisi buyPrice bilan qolardi).
+            setPriceTypeId(id);
+            repricePositions(id);
+          }}
           onSavePrices={saveProductPrices}
         />
       ),
@@ -1049,7 +1086,7 @@ export default function NewPurchaseOrderPage() {
                       productCode: raw?.code ?? undefined,
                       productUom: raw?.uom ?? null,
                       quantity: '1',
-                      priceMinor: raw?.buyPrice ?? '0',
+                      priceMinor: resolveFillPrice(raw),
                       discount: '0',
                       vat: raw?.vat != null ? String(raw.vat) : '0',
                       vatEnabled: true,
@@ -1098,7 +1135,7 @@ export default function NewPurchaseOrderPage() {
                         productCode: raw?.code ?? undefined,
                         productUom: raw?.uom ?? null,
                         quantity: Number(quantity) > 0 ? quantity : '1',
-                        priceMinor: raw?.buyPrice ?? '0',
+                        priceMinor: resolveFillPrice(raw),
                         discount: '0',
                         vat: raw?.vat != null ? String(raw.vat) : '0',
                         vatEnabled: true,
