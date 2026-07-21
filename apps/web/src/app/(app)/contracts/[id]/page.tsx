@@ -4,8 +4,10 @@ import { useAuditLabels } from '@/hooks/use-audit-labels';
 import { useDestructiveMutation } from '@/hooks/use-destructive-mutation';
 import { useDocumentHistory } from '@/hooks/use-document-history';
 import { useEditFormLabels } from '@/hooks/use-edit-form-labels';
+import { useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
 import { archivedTone } from '@/lib/archived-tone';
+import { pinDefaultCustomer } from '@/lib/pin-default-customer';
 import {
   Badge,
   Button,
@@ -72,6 +74,7 @@ export default function EditContractPage() {
   const t = useTranslations('pages.contracts');
   const tCommon = useTranslations('common');
   const tForm = useTranslations('form');
+  const userDefaults = useUserDefaults();
   const tFields = useTranslations('fields');
   const tAudit = useTranslations('audit');
   const editFormLabels = useEditFormLabels();
@@ -177,11 +180,17 @@ export default function EditContractPage() {
     const d = await api.get<{
       items: Array<{ id: string; name: string; legalTitle?: string | null }>;
     }>(`/counterparties?search=${encodeURIComponent(s)}&limit=50`);
-    return d.items.map((c) => ({
+    const items = d.items.map((c) => ({
       id: c.id,
       primary: c.name,
       secondary: c.legalTitle ?? undefined,
     }));
+    return pinDefaultCustomer(
+      items,
+      userDefaults.data?.defaultCustomer,
+      s,
+      tForm('pinned_default'),
+    );
   };
 
   if (isLoading) {

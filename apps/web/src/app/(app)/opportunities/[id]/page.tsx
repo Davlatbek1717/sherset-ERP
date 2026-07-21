@@ -6,9 +6,11 @@ import { DocumentTabs } from '@/components/document-tabs';
 import { useApiMutation } from '@/hooks/use-api-mutation';
 import { useConflictReload } from '@/hooks/use-conflict-reload';
 import { useDestructiveMutation } from '@/hooks/use-destructive-mutation';
+import { useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
 import { opportunityStatusTone } from '@/lib/domain-status-tone';
 import { isOptimisticConflict } from '@/lib/optimistic-lock';
+import { pinDefaultCustomer } from '@/lib/pin-default-customer';
 import {
   Alert,
   Avatar,
@@ -105,6 +107,7 @@ export default function OpportunityDetailPage() {
   const t = useTranslations('pages.opportunities');
   const tCommon = useTranslations('common');
   const tForm = useTranslations('form');
+  const userDefaults = useUserDefaults();
   const tDetailHeader = useTranslations('detail_header');
 
   // ── FSM transition state ─────────────────────────────────────────────────
@@ -239,11 +242,17 @@ export default function OpportunityDetailPage() {
     const d = await api.get<{ items: CounterpartyRef[] }>(
       `/counterparties?search=${encodeURIComponent(s)}&limit=50`,
     );
-    return d.items.map((c) => ({
+    const items = d.items.map((c) => ({
       id: c.id,
       primary: c.name,
       secondary: c.legalTitle ?? undefined,
     }));
+    return pinDefaultCustomer(
+      items,
+      userDefaults.data?.defaultCustomer,
+      s,
+      tForm('pinned_default'),
+    );
   };
 
   const contactPersonFetcher = useMemo(

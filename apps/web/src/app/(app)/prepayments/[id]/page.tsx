@@ -20,9 +20,11 @@ import { useDestructiveMutation } from '@/hooks/use-destructive-mutation';
 import { useDetailNavigation } from '@/hooks/use-detail-navigation';
 import { useSaveMutation } from '@/hooks/use-save-mutation';
 import { useUnsavedGuard } from '@/hooks/use-unsaved-guard';
+import { useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
 import { documentStateTone } from '@/lib/document-state-tone';
 import { isOptimisticConflict } from '@/lib/optimistic-lock';
+import { pinDefaultCustomer } from '@/lib/pin-default-customer';
 import {
   Alert,
   Avatar,
@@ -144,6 +146,7 @@ export default function PrepaymentDetailPage() {
   const tCommon = useTranslations('common');
   const tFields = useTranslations('fields');
   const tForm = useTranslations('form');
+  const userDefaults = useUserDefaults();
   const tDetailTitles = useTranslations('detail_titles');
   const tDetailHeader = useTranslations('detail_header');
   const tStates = useTranslations('states.prepayment');
@@ -264,11 +267,17 @@ export default function PrepaymentDetailPage() {
     const d = await api.get<{
       items: Array<{ id: string; name: string; legalTitle: string | null }>;
     }>(`/counterparties?search=${encodeURIComponent(s)}&limit=50`);
-    return d.items.map((c) => ({
+    const items = d.items.map((c) => ({
       id: c.id,
       primary: c.name,
       secondary: c.legalTitle ?? undefined,
     }));
+    return pinDefaultCustomer(
+      items,
+      userDefaults.data?.defaultCustomer,
+      s,
+      tForm('pinned_default'),
+    );
   };
 
   const orgFetcher = async (s: string): Promise<PickerItem[]> => {

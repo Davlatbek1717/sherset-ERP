@@ -5,8 +5,10 @@ import { FilterToggleButton } from '@/components/filters/filter-toggle-button';
 import { useBulkDocumentActions } from '@/hooks/use-bulk-actions';
 import { useColumnVisibility } from '@/hooks/use-column-visibility';
 import { useColumnWidths } from '@/hooks/use-column-widths';
+import { useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
 import { archivedTone } from '@/lib/archived-tone';
+import { pinDefaultCustomer } from '@/lib/pin-default-customer';
 import {
   Badge,
   CatalogPicker,
@@ -46,6 +48,8 @@ export default function ContactPersonsPage() {
   const tCommon = useTranslations('common');
   const tFields = useTranslations('fields');
   const tFilters = useTranslations('filters');
+  const tForm = useTranslations('form');
+  const userDefaults = useUserDefaults();
 
   const [searchInput, setSearchInput] = useState('');
   const search = useDebounce(searchInput, 300);
@@ -334,7 +338,13 @@ export default function ContactPersonsPage() {
           const r = await api.get<{ items: { id: string; name: string }[] }>(
             `/counterparties?search=${encodeURIComponent(q)}&limit=20`,
           );
-          return r.items.map((x) => ({ id: x.id, primary: x.name }));
+          const items = r.items.map((x) => ({ id: x.id, primary: x.name }));
+          return pinDefaultCustomer(
+            items,
+            userDefaults.data?.defaultCustomer,
+            q,
+            tForm('pinned_default'),
+          );
         }}
         onSelect={(item) => {
           setAgentFilter({ id: item.id, label: String(item.primary) });

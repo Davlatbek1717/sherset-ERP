@@ -1,7 +1,9 @@
 'use client';
 
+import { useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
 import { bankImportStateTone, moneyFlowTone } from '@/lib/domain-status-tone';
+import { pinDefaultCustomer } from '@/lib/pin-default-customer';
 import {
   Alert,
   Badge,
@@ -66,6 +68,8 @@ export default function BankImportPage() {
   const qc = useQueryClient();
   const t = useTranslations('pages.bank_import');
   const tCommon = useTranslations('common');
+  const tForm = useTranslations('form');
+  const userDefaults = useUserDefaults();
 
   const [filename, setFilename] = useState('');
   const [csvText, setCsvText] = useState('');
@@ -146,11 +150,17 @@ export default function BankImportPage() {
     const d = await api.get<{
       items: Array<{ id: string; name: string; legalTitle: string | null }>;
     }>(`/counterparties?search=${encodeURIComponent(s)}&limit=50`);
-    return d.items.map((c) => ({
+    const items = d.items.map((c) => ({
       id: c.id,
       primary: c.name,
       secondary: c.legalTitle ?? undefined,
     }));
+    return pinDefaultCustomer(
+      items,
+      userDefaults.data?.defaultCustomer,
+      s,
+      tForm('pinned_default'),
+    );
   };
 
   const matchedCount = statement

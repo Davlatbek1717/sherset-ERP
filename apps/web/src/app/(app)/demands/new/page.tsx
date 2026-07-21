@@ -13,6 +13,7 @@ import { useDocumentEditorLabels } from '@/hooks/use-document-editor-labels';
 import { useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-store';
+import { pinDefaultCustomer } from '@/lib/pin-default-customer';
 import { resolveDefaultSalePriceOrZero } from '@/lib/sale-price';
 import { computePositionTotal } from '@moysklad/money';
 import {
@@ -402,11 +403,17 @@ export default function NewDemandPage() {
     const d = await api.get<{
       items: Array<{ id: string; name: string; legalTitle: string | null }>;
     }>(`/counterparties?search=${encodeURIComponent(s)}&limit=50`);
-    return d.items.map((c) => ({
+    const items = d.items.map((c) => ({
       id: c.id,
       primary: c.name,
       secondary: c.legalTitle ?? undefined,
     }));
+    return pinDefaultCustomer(
+      items,
+      userDefaults.data?.defaultCustomer,
+      s,
+      tForm('pinned_default'),
+    );
   };
   const productFetcher = async (s: string): Promise<PickerItem[]> => {
     const d = await api.get<{ items: ProductItem[] }>(
