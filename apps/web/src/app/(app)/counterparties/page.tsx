@@ -264,6 +264,13 @@ export default function CounterpartiesPage() {
   // CRM state (Статус) — tenant-defined State rows for entityType
   // 'counterparty'; backed by Counterparty.stateId.
   const [stateId, setStateId] = useState<string>('');
+  // «Группы» multi-select filtr (2026-07-21) — tanlangan CounterpartyGroup id'lari.
+  // Guruhlar /counterparty-groups'dan (group-manager-modal bilan bir kesh-kalit).
+  const [cpGroupIds, setCpGroupIds] = useState<string[]>([]);
+  const { data: cpGroups } = useQuery<{ items: { id: string; name: string }[] }>({
+    queryKey: ['counterparty-groups'],
+    queryFn: () => api.get('/counterparty-groups'),
+  });
   // Owner (Владелец-сотрудник) — Counterparty.ownerId → Employee, picked via
   // the /employees reference endpoint.
   const [ownerId, setOwnerId] = useState<string>('');
@@ -367,6 +374,7 @@ export default function CounterpartiesPage() {
     // Tri-state «Показывать»: 'all' → archived=all (schema maps to no predicate).
     archived: archived === 'all' ? 'all' : archived === 'archived' ? 'true' : 'false',
     ...(stateId ? { stateId } : {}),
+    ...(cpGroupIds.length ? { cpGroupIds: cpGroupIds.join(',') } : {}),
     ...(ownerId ? { ownerId } : {}),
     ...(role ? { role } : {}),
     ...(name.trim() ? { name: name.trim() } : {}),
@@ -391,6 +399,7 @@ export default function CounterpartiesPage() {
     search,
     archived,
     stateId,
+    cpGroupIds.join(','),
     ownerId,
     role ?? '',
     name,
@@ -964,6 +973,7 @@ export default function CounterpartiesPage() {
     !!search ||
     archived !== 'active' ||
     !!stateId ||
+    cpGroupIds.length > 0 ||
     !!ownerId ||
     !!name.trim() ||
     !!phone.trim() ||
@@ -1100,6 +1110,7 @@ export default function CounterpartiesPage() {
               onClear={() => {
                 setArchived('active');
                 setStateId('');
+                setCpGroupIds([]);
                 setOwnerId('');
                 setOwnerLabel('');
                 setNameInput('');
@@ -1242,6 +1253,35 @@ export default function CounterpartiesPage() {
                   <option value="archived">{tFilters('show_archived')}</option>
                   <option value="all">{tCommon('all')}</option>
                 </NativeSelect>
+              </InlineFilterPanel.Field>
+              {/* «Группы» multi-select — CounterpartyGroup a'zoligi (OR: birortasи). */}
+              <InlineFilterPanel.Field label={t('col_groups')} expandable>
+                <div
+                  className="flex max-h-40 flex-col gap-1 overflow-y-auto"
+                  data-test-id="filter-cp-groups"
+                >
+                  {(cpGroups?.items ?? []).length === 0 ? (
+                    <span className="text-[var(--ms-text-muted)] text-xs">
+                      {tFilters('no_options')}
+                    </span>
+                  ) : (
+                    (cpGroups?.items ?? []).map((g) => (
+                      <label key={g.id} className="flex cursor-pointer items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={cpGroupIds.includes(g.id)}
+                          onChange={(e) => {
+                            setCpGroupIds((prev) =>
+                              e.target.checked ? [...prev, g.id] : prev.filter((x) => x !== g.id),
+                            );
+                            setPage(1);
+                          }}
+                        />
+                        {g.name}
+                      </label>
+                    ))
+                  )}
+                </div>
               </InlineFilterPanel.Field>
               {/* Баланс — base-currency (UZS) от/до range over CounterpartyBalance. */}
               <InlineFilterPanel.Field label={t('col_balance')} expandable>

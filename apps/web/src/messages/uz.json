@@ -647,6 +647,7 @@
     "clear": "Tozalash",
     "period": "Davr",
     "period_from": "dan",
+    "no_options": "Variant yo'q",
     "period_to": "gacha",
     "period_yesterday": "kech",
     "period_today": "bug",
