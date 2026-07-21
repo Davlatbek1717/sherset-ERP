@@ -49,10 +49,14 @@ async function main(): Promise<void> {
       name: 'Qarz eslatmasi (SMS)',
       isDefault: true,
       enabled: true,
+      // Telegram bilan BIR XIL gaplar (2026-07-20 foydalanuvchi talabi) — lekin
+      // SMS oddiy matn: markdown (*qalin*/__tagliq__) va emoji YO'Q (emoji UCS-2
+      // kodlashga o'tkazib SMS sonini ~2x oshiradi; matn GSM-7'da ~3 SMS).
       body:
-        'Assalomu alaykum {{= counterparty.name }}! Sizda {{= debt.remainingFormatted }} som ' +
-        "to'lanmagan qarz bor. To'lov: {{= company.card }} ({{= company.cardOwner }}). " +
-        'Savol: {{= company.phone }}. Sherset',
+        'Assalomu alaykum, hurmatli {{= counterparty.name }}!\n\n' +
+        "Eslatib o'tamiz, Sizning {{= debt.remainingFormatted }} so'm miqdorida to'lanmagan qarzingiz mavjud. Iltimos, kelishilgan muddatda qarzdorlikni yopishingizni so'raymiz.\n\n" +
+        'Savollar uchun: {{= company.phone }}\nKarta raqam: {{= company.card }}\nKarta egasi: {{= company.cardOwner }}\n\n' +
+        "Qarz - bu omonat, omonatga xiyonat bo'lmasin!\nSHERSET jamoasi!",
     },
   });
   // Telegram standart shabloni — GramJS MarkdownV2 (*qalin*/__tagliq__). Qiymatlar
