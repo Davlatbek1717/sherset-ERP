@@ -8,6 +8,7 @@ import { CounterpartyMassEditModal } from '@/components/counterparties/mass-edit
 import { CounterpartyPrintDropdown } from '@/components/counterparties/print-dropdown';
 import { CounterpartyStatusDropdown } from '@/components/counterparties/status-dropdown';
 import { FilterToggleButton } from '@/components/filters/filter-toggle-button';
+import { SmsBroadcastModal } from '@/components/sms/sms-broadcast-modal';
 import { useBulkDocumentActions } from '@/hooks/use-bulk-actions';
 import { useColumnVisibility } from '@/hooks/use-column-visibility';
 import { useColumnWidths } from '@/hooks/use-column-widths';
@@ -316,6 +317,7 @@ export default function CounterpartiesPage() {
   // «Группы» self-service manager — create / rename / delete counterparty groups
   // (Ta'minotchilar, Mijozlar, …). The backend CRUD always existed; this exposes it.
   const [groupMgrOpen, setGroupMgrOpen] = useState(false);
+  const [broadcastOpen, setBroadcastOpen] = useState(false);
   // 2026-07-13: sichqoncha qator ustida turganda ENTER → mijoz sahifasi.
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   useEnterOnHover(
@@ -1419,6 +1421,16 @@ export default function CounterpartiesPage() {
               >
                 {t('create_tasks_button')}
               </Button>
+              {/* «SMS tarqatma» — tanlangan kontragentlarga (+ qo'lda raqamlar) shablon bilan SMS. */}
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setBroadcastOpen(true)}
+                disabled={bulk.selectedIds.size === 0}
+                data-test-id="counterparties-sms-broadcast"
+              >
+                {t('sms_broadcast_button')}
+              </Button>
               {/* «Группы» — self-service counterparty-group manager (create/rename/delete).
                 Always enabled (not selection-dependent); groups drive the «Группы» column/filter. */}
               <Button
@@ -1517,6 +1529,11 @@ export default function CounterpartiesPage() {
         }}
       />
       <CounterpartyGroupManagerModal open={groupMgrOpen} onClose={() => setGroupMgrOpen(false)} />
+      <SmsBroadcastModal
+        counterpartyIds={Array.from(bulk.selectedIds)}
+        open={broadcastOpen}
+        onClose={() => setBroadcastOpen(false)}
+      />
     </>
   );
 }

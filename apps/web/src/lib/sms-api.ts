@@ -39,6 +39,13 @@ export const smsApi = {
   testConfig: () => api.post<{ ok: boolean; message: string }>('/sms/config/test', {}),
   getContacts: () => api.get<SmsContacts>('/sms/contacts'),
   saveContacts: (body: SmsContacts) => api.put<SmsContacts>('/sms/contacts', body),
+
+  /** Umumiy SMS-tarqatma — tanlangan kontragentlar + qo'lda raqamlar, shablon bilan. */
+  broadcast: (body: { templateId: string; counterpartyIds: string[]; phones: string[] }) =>
+    api.post<{ queued: number; skipped: Array<{ name: string; phone: string; reason: string }> }>(
+      '/sms/broadcast',
+      body,
+    ),
 };
 
 /** Xabar shablonlari CRUD (`/message-templates`). */

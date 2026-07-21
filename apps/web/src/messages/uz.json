@@ -2089,6 +2089,7 @@
       "gender_male": "Erkak",
       "gender_female": "Ayol",
       "create_tasks_button": "Vazifa yaratish",
+      "sms_broadcast_button": "SMS tarqatma",
       "create_tasks_title": "Vazifalar yaratish",
       "create_tasks_hint": "Kiritilgan parametrlar barcha yaratilgan vazifalarga qo'llanadi",
       "create_tasks_description_label": "Vazifalar tavsifi",
@@ -3112,6 +3113,19 @@
       "gateway_login_ph": "ilovadagi login",
       "gateway_password": "Gateway parol",
       "phone_help": "Android telefonga «SMS Gateway» ilovasini o'rnating, bulut (Cloud) rejimini yoqing va ilova bergan login/parolni shu yerga kiriting. SMS-paketli SIM solingan telefon doim yoniq + internetda tursin — SMS'lar o'sha telefon orqali bepul yuboriladi."
+    },
+    "sms_broadcast": {
+      "title": "SMS tarqatma",
+      "selected_counterparties": "Tanlangan kontragentlar",
+      "template": "Shablon",
+      "no_template": "Shablon yo'q — Sozlamalar > SMS shablonlarida yarating",
+      "manual_numbers": "Qo'lda raqamlar (ixtiyoriy)",
+      "manual_placeholder": "+998901234567, +998912345678",
+      "manual_hint": "Bir nechta raqamni vergul yoki bo'sh joy bilan ajrating",
+      "total_recipients": "Jami qabul qiluvchilar",
+      "send": "Yuborish",
+      "result_queued": "{count} navbatga qo'yildi",
+      "result_skipped": "{count} o'tkazib yuborildi"
     },
     "sms_templates": {
       "title": "SMS shablonlari",

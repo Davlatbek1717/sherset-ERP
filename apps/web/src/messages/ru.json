@@ -2089,6 +2089,7 @@
       "gender_male": "Мужской",
       "gender_female": "Женский",
       "create_tasks_button": "Создать задачи",
+      "sms_broadcast_button": "SMS рассылка",
       "create_tasks_title": "Создание задач",
       "create_tasks_hint": "Заполненные параметры применятся ко всем созданным задачам",
       "create_tasks_description_label": "Описание задач",
@@ -3112,6 +3113,19 @@
       "gateway_login_ph": "логин из приложения",
       "gateway_password": "Пароль шлюза",
       "phone_help": "Установите приложение «SMS Gateway» на Android, включите облачный (Cloud) режим и введите здесь логин/пароль из приложения. Телефон с SIM (с SMS-пакетом) должен быть всегда включён и в интернете — SMS отправляются через этот телефон бесплатно."
+    },
+    "sms_broadcast": {
+      "title": "SMS рассылка",
+      "selected_counterparties": "Выбрано контрагентов",
+      "template": "Шаблон",
+      "no_template": "Нет шаблона — создайте в Настройки > Шаблоны SMS",
+      "manual_numbers": "Номера вручную (необязательно)",
+      "manual_placeholder": "+998901234567, +998912345678",
+      "manual_hint": "Несколько номеров разделяйте запятой или пробелом",
+      "total_recipients": "Всего получателей",
+      "send": "Отправить",
+      "result_queued": "{count} поставлено в очередь",
+      "result_skipped": "{count} пропущено"
     },
     "sms_templates": {
       "title": "Шаблоны SMS",
