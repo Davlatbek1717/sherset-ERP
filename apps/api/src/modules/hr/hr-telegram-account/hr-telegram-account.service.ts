@@ -234,6 +234,24 @@ export class HrTelegramAccountService {
     });
   }
 
+  /**
+   * Sessiya Telegram tomonidan BEKOR qilinganda (AUTH_KEY_UNREGISTERED / 401 —
+   * ko'pincha spam-blok yoki boshqa qurilmadan chiqib ketish) adapter chaqiradi.
+   * O'lik sessiyani tozalaymiz + slotni nofaol qilamiz (2026-07-21):
+   *  - UI endi yolg'on «Ulangan» ko'rsatmaydi — `hasSession=false` bo'lib
+   *    qayta-login formasi chiqadi (badge `is_active`ga qarab yolg'on yashil edi);
+   *  - worker bu slotni boshqa urinmaydi (`findActiveBySlot`/`listActiveSlots`
+   *    `is_active`ni talab qiladi) — behuda AUTH_KEY spam to'xtaydi;
+   *  - `setActive` sessiyasiz faollashtirishni rad qiladi → flip-flop bo'lmaydi.
+   * Faqat sessiya BOR bo'lganda yozadi (idempotent).
+   */
+  async markSessionLost(accountId: string, slot: number): Promise<void> {
+    await this.prisma.client.hrTelegramAccount.updateMany({
+      where: { accountId, slot, sessionEncrypted: { not: null } },
+      data: { sessionEncrypted: null, isActive: false },
+    });
+  }
+
   /** True iff the slot is currently inside a flood-wait window. */
   async isFlooded(accountId: string, slot: number, now: Date = new Date()): Promise<boolean> {
     const row = await this.prisma.client.hrTelegramAccount.findFirst({

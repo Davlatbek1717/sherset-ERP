@@ -71,6 +71,7 @@ function makeAccountsSvc(
       Promise.resolve(Boolean(opts.flooded?.[slot])),
     ),
     setFloodWaitUntil: vi.fn().mockResolvedValue(undefined),
+    markSessionLost: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -505,6 +506,38 @@ describe('MtprotoWorkerService', () => {
     await expect(
       adapter.sendMessage({ accountId: 'acc1', toPhone: '+998901234567', text: 'x' }),
     ).rejects.toBeInstanceOf(MtprotoFloodError);
+  });
+
+  // 2026-07-21: Telegram REVOKED the session (AUTH_KEY_UNREGISTERED — spam-block /
+  // logged-out elsewhere). Unlike FLOOD (temporary), this is terminal: mark the
+  // slot lost in the DB so the settings UI stops showing a false "Ulangan" badge
+  // and the worker stops hammering the dead session. The cached dead client must
+  // also be dropped (not reused).
+  it('AUTH_KEY_UNREGISTERED on send → markSessionLost + releases the dead client', async () => {
+    const authErr = new Error('401: AUTH_KEY_UNREGISTERED (caused by messages.SendMessage)');
+    const client1 = makeClient({ sendMessage: vi.fn().mockRejectedValue(authErr) });
+    handles.set('100', client1);
+    const accounts = makeAccountsSvc({
+      active: { 1: { apiId: 100, apiHashEncrypted, sessionEncrypted } },
+    });
+    const adapter = new MtprotoWorkerService(
+      factory,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      accounts as any,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      cache as any,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      inbound as any,
+    );
+
+    await expect(
+      adapter.sendMessage({ accountId: 'acc1', toPhone: '+998901234567', text: 'x' }),
+    ).rejects.toThrow(/all_slots_failed|AUTH_KEY/);
+    // DB row cleared → UI shows re-login form (not a false green "Ulangan").
+    expect(accounts.markSessionLost).toHaveBeenCalledWith('acc1', 1);
+    // Dead client dropped from the pool so a later send re-creates it (and
+    // re-checks authorization) instead of reusing the revoked one.
+    expect(client1.disconnect).toHaveBeenCalled();
   });
 
   it('no active slots → throws no_active_slot Error (NOT flood)', async () => {

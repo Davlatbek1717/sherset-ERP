@@ -62,6 +62,16 @@ function withTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
   });
 }
 
+/**
+ * Sessiya-O'LIMI signallari (2026-07-21): Telegram serveri sessiyani BEKOR
+ * qilgan — bu FLOOD emas (u vaqtinchalik), balki qat'iy: userbot boshqa
+ * qurilmadan chiqarilgan / spam uchun o'chirilgan / auth-key bekor qilingan.
+ * Bunда slotni «o'lik» deb belgilaymiz (DB tozalanadi) — behuda urinishни
+ * to'xtatadi va UI'да yolg'on «Ulangan» o'rniga qayta-login formasi chiqadi.
+ * FLOOD_WAIT bu yerга KIRMAYDI (u alohida, vaqtinchalik yo'l bilan boshqariladi).
+ */
+const AUTH_LOSS_RE = /AUTH_KEY_UNREGISTERED|AUTH_KEY_INVALID|SESSION_REVOKED|USER_DEACTIVATED/i;
+
 @Injectable()
 export class MtprotoWorkerService implements MtprotoAdapter, OnModuleInit {
   private readonly logger = new Logger(MtprotoWorkerService.name);
@@ -94,6 +104,24 @@ export class MtprotoWorkerService implements MtprotoAdapter, OnModuleInit {
     this.nextSendAt.set(accountId, at + gap);
     const wait = at - now;
     if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+  }
+
+  /**
+   * Xato sessiya-o'limi (AUTH_KEY_UNREGISTERED va o'xshash) bo'lsa: DB'да slotni
+   * o'lik deb belgilaymiz (`markSessionLost`) + keshdagi o'lik client'ni tashlaymiz
+   * (`releaseClient`). Aks holda keshli o'lik client qayta-qayta AUTH_KEY berardi
+   * va UI yolg'on «Ulangan» ko'rsatib turardi. FLOOD bunда emas (u alohida).
+   */
+  private async handleAuthLossIfAny(accountId: string, slot: number, e: unknown): Promise<void> {
+    const msg = (e as Error)?.message ?? String(e);
+    if (!AUTH_LOSS_RE.test(msg)) return;
+    this.logger.warn(
+      `Sessiya bekor qilingan (acc=${accountId} slot=${slot}) — DB tozalanmoqda, qayta-login kerak`,
+    );
+    await this.accounts.markSessionLost(accountId, slot).catch((err) => {
+      this.logger.warn(`markSessionLost xato: ${(err as Error).message}`);
+    });
+    this.releaseClient(accountId, slot);
   }
 
   constructor(
@@ -174,6 +202,7 @@ export class MtprotoWorkerService implements MtprotoAdapter, OnModuleInit {
         }
         errors.push(e as Error);
         this.logger.warn(`Send failed slot=${slot} acc=${opts.accountId}: ${(e as Error).message}`);
+        await this.handleAuthLossIfAny(opts.accountId, slot, e);
       }
     }
 
@@ -238,6 +267,7 @@ export class MtprotoWorkerService implements MtprotoAdapter, OnModuleInit {
         this.logger.warn(
           `fetchHistory failed slot=${slot} acc=${opts.accountId}: ${(e as Error).message}`,
         );
+        await this.handleAuthLossIfAny(opts.accountId, slot, e);
       }
     }
     const flood = errors.find((e): e is MtprotoFloodError => e instanceof MtprotoFloodError);
@@ -287,6 +317,7 @@ export class MtprotoWorkerService implements MtprotoAdapter, OnModuleInit {
         this.logger.warn(
           `uploadVideo failed slot=${slot} acc=${opts.accountId}: ${(e as Error).message}`,
         );
+        await this.handleAuthLossIfAny(opts.accountId, slot, e);
       }
     }
     const flood = errors.find((e): e is MtprotoFloodError => e instanceof MtprotoFloodError);
@@ -337,6 +368,7 @@ export class MtprotoWorkerService implements MtprotoAdapter, OnModuleInit {
         this.logger.warn(
           `sendVideo failed slot=${slot} acc=${opts.accountId}: ${(e as Error).message}`,
         );
+        await this.handleAuthLossIfAny(opts.accountId, slot, e);
       }
     }
     const flood = errors.find((e): e is MtprotoFloodError => e instanceof MtprotoFloodError);
@@ -391,6 +423,9 @@ export class MtprotoWorkerService implements MtprotoAdapter, OnModuleInit {
         `Slot ${slot} acc=${accountId}: session not authorized — admin must re-login`,
       );
       await client.disconnect().catch(() => {});
+      // Sessiya yaroqsiz — DB'да tozalaymiz (UI qayta-login formasini ko'rsatadi,
+      // yolg'on «Ulangan» emas; boot-receiver ham qayta urinmaydi).
+      await this.accounts.markSessionLost(accountId, slot).catch(() => {});
       return null;
     }
     // Attach ONCE, right after this fresh connection comes up — a customer's

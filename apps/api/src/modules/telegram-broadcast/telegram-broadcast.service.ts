@@ -42,7 +42,7 @@ interface BroadcastState {
  * bug'ning tuzatilishi (session o'lganда permanent-fail deb belgilanardi).
  */
 const BROADCAST_HALT_RE =
-  /PEER_FLOOD|FLOOD_WAIT|USER_DEACTIVATED|FROZEN|SPAM|USER_RESTRICTED|AUTH_KEY|UNAUTHORIZED|SESSION_REVOKED|\b401\b/i;
+  /PEER_FLOOD|FLOOD_WAIT|USER_DEACTIVATED|FROZEN|SPAM|USER_RESTRICTED|AUTH_KEY|UNAUTHORIZED|SESSION_REVOKED|no_active_slot|not_configured|\b401\b/i;
 
 /**
  * Telegram video-tarqatma (2026-07-20 test → 2026-07-21 ommaviy).

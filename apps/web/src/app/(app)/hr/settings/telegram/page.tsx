@@ -81,7 +81,9 @@ function SlotSection({
 
   type Step = 'phone' | 'code' | 'password';
   const [step, setStep] = useState<Step>('phone');
-  const [phone, setPhone] = useState('');
+  // Sessiya Telegram tomonidan bekor qilinsa (markSessionLost → hasSession=false)
+  // shu forma qayta chiqadi — raqamни oldindan to'ldiramiz (qayta-login bir bosishда).
+  const [phone, setPhone] = useState(acc?.phoneNumber ?? '');
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [code, setCode] = useState('');
   const [password, setPassword] = useState('');
