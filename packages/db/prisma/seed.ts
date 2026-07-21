@@ -37,48 +37,46 @@ async function main(): Promise<void> {
   console.log('  ✓ Account:', account.name);
 
   // Xabar shablonlari (kutubxona, kanal-aware) — SMS + Telegram «debt_reminder»
-  // standartlari. Deterministik id → seed idempotent (unique key olib tashlangan).
-  await prisma.messageTemplate.upsert({
-    where: { id: `${account.id}-sms-debt` },
-    update: {},
-    create: {
-      id: `${account.id}-sms-debt`,
-      accountId: account.id,
-      channel: 'sms',
-      key: 'debt_reminder',
-      name: 'Qarz eslatmasi (SMS)',
-      isDefault: true,
-      enabled: true,
-      // Telegram bilan BIR XIL gaplar (2026-07-20 foydalanuvchi talabi) — lekin
-      // SMS oddiy matn: markdown (*qalin*/__tagliq__) va emoji YO'Q (emoji UCS-2
-      // kodlashga o'tkazib SMS sonini ~2x oshiradi; matn GSM-7'da ~3 SMS).
-      body:
-        'Assalomu alaykum, hurmatli {{= counterparty.name }}!\n\n' +
-        "Eslatib o'tamiz, Sizning {{= debt.remainingFormatted }} so'm miqdorida to'lanmagan qarzingiz mavjud. Iltimos, kelishilgan muddatda qarzdorlikni yopishingizni so'raymiz.\n\n" +
-        'Savollar uchun: {{= company.phone }}\nKarta raqam: {{= company.card }}\nKarta egasi: {{= company.cardOwner }}\n\n' +
-        "Qarz - bu omonat, omonatga xiyonat bo'lmasin!\nSHERSET jamoasi!",
-    },
-  });
-  // Telegram standart shabloni — GramJS MarkdownV2 (*qalin*/__tagliq__). Qiymatlar
-  // render vaqtida mdSafe-escape bo'ladi, shuning uchun bu yerda escape YO'Q.
-  await prisma.messageTemplate.upsert({
-    where: { id: `${account.id}-tg-debt` },
-    update: {},
-    create: {
-      id: `${account.id}-tg-debt`,
-      accountId: account.id,
-      channel: 'telegram',
-      key: 'debt_reminder',
-      name: 'Qarz eslatmasi (Telegram)',
-      isDefault: true,
-      enabled: true,
-      body:
-        'Assalomu alaykum, hurmatli {{= counterparty.name }}!\n\n' +
-        "✅ Eslatib o'tamiz, Sizning *__{{= debt.remainingFormatted }}__* so'm miqdorida to'lanmagan qarzingiz mavjud. Iltimos, kelishilgan muddatda qarzdorlikni yopishingizni so'raymiz.\n\n" +
-        '📞 *Savollar uchun:* {{= company.phone }}\n💳 *Karta raqam:* {{= company.card }}\n👨‍💻 *Karta egasi:* {{= company.cardOwner }}\n\n' +
-        "Qarz - bu omonat, omonatga xiyonat bo'lmasin!\nSHERSET jamoasi!",
-    },
-  });
+  // standartlari. `id` UUID column bo'lgani uchun sintetik id ISHLATIB BO'LMAYDI
+  // (P2023) — (accountId, channel, key) bo'yicha findFirst+create bilan idempotent
+  // (auto-UUID). unique key kutubxona uchun olib tashlangan.
+  const seedTemplate = async (channel: string, name: string, body: string) => {
+    const existing = await prisma.messageTemplate.findFirst({
+      where: { accountId: account.id, channel, key: 'debt_reminder' },
+    });
+    if (existing) return;
+    await prisma.messageTemplate.create({
+      data: {
+        accountId: account.id,
+        channel,
+        key: 'debt_reminder',
+        name,
+        isDefault: true,
+        enabled: true,
+        body,
+      },
+    });
+  };
+  // SMS: Telegram bilan BIR XIL gaplar (2026-07-20 talabi), lekin oddiy matn —
+  // markdown (*qalin*/__tagliq__) va emoji YO'Q (emoji UCS-2 → SMS sonini ~2x oshiradi).
+  await seedTemplate(
+    'sms',
+    'Qarz eslatmasi (SMS)',
+    'Assalomu alaykum, hurmatli {{= counterparty.name }}!\n\n' +
+      "Eslatib o'tamiz, Sizning {{= debt.remainingFormatted }} so'm miqdorida to'lanmagan qarzingiz mavjud. Iltimos, kelishilgan muddatda qarzdorlikni yopishingizni so'raymiz.\n\n" +
+      'Savollar uchun: {{= company.phone }}\nKarta raqam: {{= company.card }}\nKarta egasi: {{= company.cardOwner }}\n\n' +
+      "Qarz - bu omonat, omonatga xiyonat bo'lmasin!\nSHERSET jamoasi!",
+  );
+  // Telegram: GramJS MarkdownV2 (*qalin*/__tagliq__). Qiymatlar render vaqtida
+  // mdSafe-escape bo'ladi, shuning uchun bu yerda escape YO'Q.
+  await seedTemplate(
+    'telegram',
+    'Qarz eslatmasi (Telegram)',
+    'Assalomu alaykum, hurmatli {{= counterparty.name }}!\n\n' +
+      "✅ Eslatib o'tamiz, Sizning *__{{= debt.remainingFormatted }}__* so'm miqdorida to'lanmagan qarzingiz mavjud. Iltimos, kelishilgan muddatda qarzdorlikni yopishingizni so'raymiz.\n\n" +
+      '📞 *Savollar uchun:* {{= company.phone }}\n💳 *Karta raqam:* {{= company.card }}\n👨‍💻 *Karta egasi:* {{= company.cardOwner }}\n\n' +
+      "Qarz - bu omonat, omonatga xiyonat bo'lmasin!\nSHERSET jamoasi!",
+  );
 
   const admin = await prisma.employee.upsert({
     where: { accountId_email: { accountId: account.id, email: 'admin@demo.local' } },
