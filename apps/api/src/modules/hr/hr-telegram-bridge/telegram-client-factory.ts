@@ -72,7 +72,11 @@ export interface TelegramClientHandle {
    * Broadcast har mijozga videoni QAYTA yuklamaydi — bir marta yuklab, shu
    * referensni `sendVideoByRef` bilan hammaga qayta-yuboradi (tez + trafik tejaydi).
    */
-  uploadVideoToSelf(filePath: string, thumbPath?: string): Promise<TgVideoRef>;
+  uploadVideoToSelf(
+    filePath: string,
+    thumbPath?: string,
+    videoMeta?: { width: number; height: number; durationSec: number },
+  ): Promise<TgVideoRef>;
 
   /**
    * `uploadVideoToSelf` bergan referens bo'yicha videoni `entity`ga yuboradi,

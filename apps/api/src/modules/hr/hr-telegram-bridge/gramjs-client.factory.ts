@@ -166,12 +166,32 @@ class GramjsClientHandle implements TelegramClientHandle {
    * Message.media.document'dan {id, accessHash, fileReference} olinadi;
    * fileReference bytes → base64 (JSON-xavfsiz saqlash uchun).
    */
-  async uploadVideoToSelf(filePath: string, thumbPath?: string): Promise<TgVideoRef> {
+  async uploadVideoToSelf(
+    filePath: string,
+    thumbPath?: string,
+    videoMeta?: { width: number; height: number; durationSec: number },
+  ): Promise<TgVideoRef> {
+    // Custom `thumb` berilganда GramJS videoning haqiqiy o'lchamini o'zi
+    // ANIQLAMAYDI → w/h belgilanmay Telegram videoni siqib/past ko'rsatadi
+    // (2026-07-21). Shuning uchun aniq `DocumentAttributeVideo` (w/h/duration +
+    // supportsStreaming) beramiz — video to'g'ri nisbatda (9:16) ko'rinadi.
+    const attributes =
+      videoMeta && videoMeta.width > 0 && videoMeta.height > 0
+        ? [
+            new Api.DocumentAttributeVideo({
+              w: videoMeta.width,
+              h: videoMeta.height,
+              duration: videoMeta.durationSec,
+              supportsStreaming: true,
+            }),
+          ]
+        : undefined;
     const msg = await this.client.sendFile('me', {
       file: filePath,
       forceDocument: false,
       supportsStreaming: true,
       ...(thumbPath ? { thumb: thumbPath } : {}),
+      ...(attributes ? { attributes } : {}),
     });
     const media = (msg as Api.Message).media;
     if (

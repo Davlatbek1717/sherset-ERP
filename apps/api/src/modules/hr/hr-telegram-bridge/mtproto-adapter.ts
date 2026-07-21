@@ -64,6 +64,8 @@ export interface MtprotoAdapter {
     filePath: string;
     /** Video POSTER (JPEG) yo'li — berilmasa Telegram qora poster ko'rsatadi. */
     thumbPath?: string;
+    /** Video o'lchami/davomiyligi — to'g'ri nisbat (9:16) uchun. */
+    videoMeta?: { width: number; height: number; durationSec: number };
   }): Promise<{ slot: number; ref: TgVideoRef }>;
 
   /**

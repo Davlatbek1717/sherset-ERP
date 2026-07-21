@@ -232,6 +232,7 @@ export class MtprotoWorkerService implements MtprotoAdapter, OnModuleInit {
     accountId: string;
     filePath: string;
     thumbPath?: string;
+    videoMeta?: { width: number; height: number; durationSec: number };
   }): Promise<{
     slot: number;
     ref: TgVideoRef;
@@ -246,7 +247,7 @@ export class MtprotoWorkerService implements MtprotoAdapter, OnModuleInit {
         // bo'lishi mumkin, shuning uchun withTimeout O'RALMAYDI (gramjs o'z
         // connectionRetries bilan boshqaradi; hang bo'lsa broadcast-worker
         // keyingi urinishda qayta ishlaydi).
-        const ref = await client.uploadVideoToSelf(opts.filePath, opts.thumbPath);
+        const ref = await client.uploadVideoToSelf(opts.filePath, opts.thumbPath, opts.videoMeta);
         return { slot, ref };
       } catch (e) {
         if (isGramjsFloodError(e)) {
