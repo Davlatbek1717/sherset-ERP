@@ -168,6 +168,24 @@ export const CounterpartyFilterSchema = z
     groupId: uuid.optional(),
     // «Группы» — m2m counterparty-group membership, distinct from groupId (=Отдел).
     cpGroupId: uuid.optional(),
+    // «Группы» multi-select (2026-07-21) — m2m guruh a'zoligi, OR-semantika
+    // (kontragent tanlangan guruhlarning BIRORTASида bo'lsa mos). Query-param
+    // vergul-ajratilgan uuid ro'yxati (`a,b,c`) → string[]. `cpGroupId` (single,
+    // UI'siz) saqlanadi; bu multi-select filtr uchun.
+    cpGroupIds: z
+      .string()
+      .optional()
+      .transform((s) =>
+        s
+          ? s
+              .split(',')
+              .map((x) => x.trim())
+              .filter((x) => x.length > 0)
+          : [],
+      )
+      .refine((arr) => arr.every((x) => uuid.safeParse(x).success), {
+        message: "cpGroupIds: har biri uuid bo'lishi kerak",
+      }),
     // Auto-detected role for the /counterparties tabs (usage-based, not manual):
     //   customer → has any sale (retailSale OR demand)
     //   supplier → has any supply (kirim)

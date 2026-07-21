@@ -148,6 +148,24 @@ describe('CounterpartyFilterSchema', () => {
     expect(r.data.sortDir).toBe('desc');
   });
 
+  it("cpGroupIds — vergul-ajratilgan uuid ro'yxatini massivga aylantiradi", () => {
+    const a = '11111111-1111-1111-1111-111111111111';
+    const b = '22222222-2222-2222-2222-222222222222';
+    const r = CounterpartyFilterSchema.safeParse({ cpGroupIds: `${a},${b}` });
+    if (!r.success) throw r.error;
+    expect(r.data.cpGroupIds).toEqual([a, b]);
+  });
+
+  it("cpGroupIds — yo'q bo'lsa bo'sh massiv (filtrsiz)", () => {
+    const r = CounterpartyFilterSchema.safeParse({});
+    if (!r.success) throw r.error;
+    expect(r.data.cpGroupIds ?? []).toEqual([]);
+  });
+
+  it("cpGroupIds — noto'g'ri uuid rad etiladi", () => {
+    expect(CounterpartyFilterSchema.safeParse({ cpGroupIds: 'not-a-uuid' }).success).toBe(false);
+  });
+
   it('coerces archived from the string "true"/"false"', () => {
     const a = CounterpartyFilterSchema.safeParse({ archived: 'true' });
     const b = CounterpartyFilterSchema.safeParse({ archived: 'false' });

@@ -147,6 +147,9 @@ export class CounterpartyService {
       ...(filter.groupId ? { groupId: filter.groupId } : {}),
       // m2m counterparty-group membership (manual groups).
       ...(filter.cpGroupId ? { groups: { some: { id: filter.cpGroupId } } } : {}),
+      // «Группы» multi-select (2026-07-21) — tanlangan guruhlarning birortасидаgi
+      // kontragentlar (OR). cpGroupId'dan KEYIN — bir vaqtда ikkovi bo'lsa multi ustun.
+      ...(filter.cpGroupIds?.length ? { groups: { some: { id: { in: filter.cpGroupIds } } } } : {}),
       // Auto-detected role tabs — customer = sold to (retailSale/demand),
       // supplier = bought from (supply). EXISTS subqueries, no manual tagging.
       ...(filter.role === 'customer'
