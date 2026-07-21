@@ -28,7 +28,21 @@ interface BroadcastState {
   lastSentAt: string | null;
   startedAt: string;
   updatedAt: string;
+  /** Kunlik-limit hisobi (ban-himoya, 2026-07-21). Eski state fayllarда yo'q → undefined. */
+  sentToday?: number;
+  sentTodayDate?: string; // YYYY-MM-DD (UTC)
 }
+
+/**
+ * Telegram TO'XTATISH signallari — akkaunt-darajali (spam-blok, flood, yoki
+ * SESSIYA O'LIMI: AUTH_KEY_UNREGISTERED / 401 / UNAUTHORIZED). Bularдан birortasi
+ * chiqsa tarqatma DARHOL to'xtaydi va joriy qabul-qiluvchini "yuborilgan" deb
+ * BELGILAMAYDI (qayta login'дан keyin davomда o'sha raqamdan boshlanadi).
+ * Bu — 2026-07-21 ommaviy-yuborishда ~90 raqam "urinildi" deb kuyib ketgan
+ * bug'ning tuzatilishi (session o'lganда permanent-fail deb belgilanardi).
+ */
+const BROADCAST_HALT_RE =
+  /PEER_FLOOD|FLOOD_WAIT|USER_DEACTIVATED|FROZEN|SPAM|USER_RESTRICTED|AUTH_KEY|UNAUTHORIZED|SESSION_REVOKED|\b401\b/i;
 
 /**
  * Telegram video-tarqatma (2026-07-20 test → 2026-07-21 ommaviy).
@@ -84,10 +98,45 @@ export class TelegramBroadcastService {
     return process.env.BROADCAST_STATE_PATH ?? '/root/broadcast_state.json';
   }
 
-  /** Throttle: base (env yoki 5000ms) + tasodifiy jitter (0–4000ms). */
+  /**
+   * Throttle: base (env `BROADCAST_THROTTLE_MS` yoki 15000ms) + tasodifiy jitter
+   * (0–10000ms) → ~15–25s. Ban-himoya (2026-07-21): notanish raqamlarga shaxsiy
+   * userbotdan yuborishда sekin tezlik SHART. mtproto-worker'ning per-send
+   * throttle'i (~3s) ustiga qo'shiladi.
+   */
   private throttleMs(): number {
-    const base = Number(process.env.BROADCAST_THROTTLE_MS) || 5000;
-    return base + Math.floor(Math.random() * 4000);
+    const base = Number(process.env.BROADCAST_THROTTLE_MS) || 15000;
+    return base + Math.floor(Math.random() * 10000);
+  }
+
+  /**
+   * Kunlik limit (ban-himoya, 2026-07-21): bir kunda ko'pi bilan shuncha REAL
+   * yuborish. `limit` bitta-run cheklovi bo'lsa, bu — SUTKALIK cheklov (kimdir
+   * limit=2000 chaqirsa ham). Default 30 (xavfsiz "kuniga bir necha o'nlab"),
+   * `BROADCAST_DAILY_CAP` bilan sozlanadi. XAVF: oshirsangiz ban ehtimoli ortadi.
+   */
+  private dailyCap(): number {
+    return Number(process.env.BROADCAST_DAILY_CAP) || 30;
+  }
+
+  private todayStr(): string {
+    return new Date().toISOString().slice(0, 10); // YYYY-MM-DD (UTC)
+  }
+
+  /** Bugun kunlik-limit to'lganmi? Yangi kun bo'lsa — yo'q (byudjet yangilanadi). */
+  private dailyCapReached(state: BroadcastState): boolean {
+    if (state.sentTodayDate !== this.todayStr()) return false;
+    return (state.sentToday ?? 0) >= this.dailyCap();
+  }
+
+  /** Muvaffaqiyatli yuborishдан keyin bugungi hisobni +1 (kun o'zgarsa reset). */
+  private bumpDaily(state: BroadcastState): void {
+    const today = this.todayStr();
+    if (state.sentTodayDate !== today) {
+      state.sentTodayDate = today;
+      state.sentToday = 0;
+    }
+    state.sentToday = (state.sentToday ?? 0) + 1;
   }
 
   private async probeVideo(
@@ -270,6 +319,8 @@ export class TelegramBroadcastService {
         lastSentAt: null,
         startedAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
+        sentToday: 0,
+        sentTodayDate: this.todayStr(),
       };
     }
     state.status = 'running';
@@ -290,14 +341,10 @@ export class TelegramBroadcastService {
 
     const sentSet = new Set(state.sentPhones);
     let attempts = 0; // REAL Telegram urinishlar (sent+failed) — limit shunga
+    let dailyCapHit = false;
 
     try {
-      while (attempts < limit) {
-        if (this.stopRequested) {
-          // 'halted' (spam-blok) ni saqlaymiz — u to'xtashдан ko'ra muhimroq signal.
-          if (state.status !== 'halted') state.status = 'stopped';
-          break;
-        }
+      while (attempts < limit && !this.stopRequested && !dailyCapHit) {
         // Keyingi sahifa (cursorдан keyin, telefonli, arxiv emas).
         const page = await this.prisma.client.counterparty.findMany({
           where: {
@@ -315,84 +362,62 @@ export class TelegramBroadcastService {
           break;
         }
         for (const cp of page) {
-          if (attempts >= limit || this.stopRequested) break;
-          state.cursorId = cp.id;
+          if (attempts >= limit || this.stopRequested || dailyCapHit) break;
           const phone = this.normalizePhoneSafe(cp.phone);
+          // Yaroqsiz / allaqachon yuborilgan — HAQIQIY skip: cursor oldinga suriladi.
           if (!phone || sentSet.has(phone)) {
+            state.cursorId = cp.id;
             state.skipped++;
             this.saveState(state);
             continue;
           }
-          try {
-            await this.mtproto.sendVideoByRef({
-              accountId,
-              toPhone: phone,
-              ref: state.ref as TgVideoRef,
-              caption: KECHKI_SMENA_CAPTION.text,
-              boldRanges: KECHKI_SMENA_CAPTION.bold,
-              quoteRanges: KECHKI_SMENA_CAPTION.quote,
-            });
-            sentSet.add(phone);
-            state.sent++;
-            state.lastSentAt = new Date().toISOString();
-          } catch (e) {
-            const msg = (e as Error).message ?? String(e);
-            state.lastError = msg.slice(0, 300);
-            // File-reference eskirgan bo'lsa — qayta yuklab, SHU raqamni qayta urinamiz.
-            if (/FILE_REFERENCE|file reference/i.test(msg)) {
-              this.logger.warn('File-reference eskirdi — video qayta yuklanmoqda…');
-              try {
-                const { ref } = await this.mtproto.uploadBroadcastVideo({
-                  accountId,
-                  filePath,
-                  thumbPath,
-                  videoMeta,
-                });
-                state.ref = ref;
-                await this.mtproto.sendVideoByRef({
-                  accountId,
-                  toPhone: phone,
-                  ref,
-                  caption: KECHKI_SMENA_CAPTION.text,
-                  boldRanges: KECHKI_SMENA_CAPTION.bold,
-                  quoteRanges: KECHKI_SMENA_CAPTION.quote,
-                });
-                sentSet.add(phone);
-                state.sent++;
-                state.lastSentAt = new Date().toISOString();
-              } catch (e2) {
-                const m2 = (e2 as Error).message ?? String(e2);
-                state.failed++;
-                state.lastError = m2.slice(0, 300);
-                // BUG-3 fix: qayta-yuklash retryси HAM spam-blok bersa — to'xtaymiz
-                // (aks holda flood-cheklangan akkauntni urishда davom etardik).
-                if (/PEER_FLOOD|USER_DEACTIVATED|FROZEN|SPAM|USER_RESTRICTED/i.test(m2)) {
-                  this.logger.error(`SPAM-BLOK (retry) aniqlandi — tarqatma TO'XTATILDI`);
-                  state.status = 'halted';
-                  this.stopRequested = true;
-                }
-              }
-            } else if (/PEER_FLOOD|USER_DEACTIVATED|FROZEN|SPAM|USER_RESTRICTED/i.test(msg)) {
-              // Telegram akkauntni spam deb chekladi — DARHOL to'xtaymiz (yomonlashmasin).
-              this.logger.error(`SPAM-BLOK aniqlandi (${msg}) — tarqatma TO'XTATILDI`);
-              state.failed++;
-              state.status = 'halted';
-              this.stopRequested = true;
-              this.saveState(state);
-              break;
-            } else {
-              // Oddiy xato (raqam Telegram'да yo'q / privacy) — o'tkazamiz.
-              state.failed++;
-            }
+          // Kunlik limit to'ldi — cursor'ni SURMAYMIZ (ertaga aynan shu raqamdan davom).
+          if (this.dailyCapReached(state)) {
+            dailyCapHit = true;
+            state.lastError = `DAILY_CAP_REACHED (${this.dailyCap()}/kun)`;
+            this.logger.warn(
+              `Kunlik limit (${this.dailyCap()}) to'ldi — bugungi tarqatma to'xtadi (ertaga davom etadi)`,
+            );
+            break;
           }
-          sentSet.add(phone); // qayta urinmaslik uchun (muvaffaqiyatsiz bo'lsa ham)
+          const outcome = await this.attemptSend(
+            accountId,
+            phone,
+            state,
+            filePath,
+            thumbPath,
+            videoMeta,
+          );
+          if (outcome === 'halt') {
+            // Akkaunt-blok / sessiya-o'lim: cursor'ni SURMAYMIZ, raqamni KUYDIRMAYMIZ →
+            // qayta login'дан keyin davomда aynan shu raqamdan boshlanadi (kuygan
+            // ~90 raqam bug'ining tuzatilishi).
+            this.logger.error(`TO'XTATISH signali — tarqatma TO'XTATILDI: ${state.lastError}`);
+            state.status = 'halted';
+            this.stopRequested = true;
+            this.saveState(state);
+            break;
+          }
+          // Terminal natija (sent | permfail): cursor oldinga, raqamni belgilaymiz.
+          state.cursorId = cp.id;
+          sentSet.add(phone);
           state.sentPhones = [...sentSet];
+          if (outcome === 'sent') {
+            state.sent++;
+            this.bumpDaily(state);
+            state.lastSentAt = new Date().toISOString();
+          } else {
+            state.failed++;
+          }
           attempts++;
           this.saveState(state);
           await this.sleep(this.throttleMs());
         }
       }
-      if (state.status === 'running') state.status = 'idle';
+      // Yakuniy status (halted/done allaqachon o'rnatilgan bo'lsa — tegilmaydi).
+      if (state.status === 'running') {
+        state.status = this.stopRequested ? 'stopped' : 'idle';
+      }
     } finally {
       this.saveState(state);
       this.running = false;
@@ -400,5 +425,61 @@ export class TelegramBroadcastService {
     this.logger.log(
       `Tarqatma run tugadi: status=${state.status} sent=${state.sent} failed=${state.failed} skipped=${state.skipped}`,
     );
+  }
+
+  /**
+   * Bitta raqamga video-referensni yuboradi. Natija:
+   *  - `sent`     — muvaffaqiyat
+   *  - `permfail` — shu RAQAM Telegram'да yo'q / privacy → qayta urinilmaydi (kuydiriladi)
+   *  - `halt`     — AKKAUNT-darajali blok (spam/flood/sessiya-o'lim) → tarqatma to'xtaydi,
+   *                 raqam KUYDIRILMAYDI (qayta login'дан keyin davom etadi)
+   * FILE_REFERENCE eskirса — videoni bir marta qayta yuklab, o'sha raqamni qayta urinadi.
+   * `state.ref`/`state.lastError` mutatsiya qilinadi.
+   */
+  private async attemptSend(
+    accountId: string,
+    phone: string,
+    state: BroadcastState,
+    filePath: string,
+    thumbPath: string | undefined,
+    videoMeta: { width: number; height: number; durationSec: number } | undefined,
+  ): Promise<'sent' | 'permfail' | 'halt'> {
+    const send = (ref: TgVideoRef) =>
+      this.mtproto.sendVideoByRef({
+        accountId,
+        toPhone: phone,
+        ref,
+        caption: KECHKI_SMENA_CAPTION.text,
+        boldRanges: KECHKI_SMENA_CAPTION.bold,
+        quoteRanges: KECHKI_SMENA_CAPTION.quote,
+      });
+    try {
+      await send(state.ref as TgVideoRef);
+      return 'sent';
+    } catch (e) {
+      const msg = (e as Error).message ?? String(e);
+      state.lastError = msg.slice(0, 300);
+      if (/FILE_REFERENCE|file reference/i.test(msg)) {
+        // Referens eskirdi — videoni qayta yuklab, SHU raqamni qayta urinamiz.
+        this.logger.warn('File-reference eskirdi — video qayta yuklanmoqda…');
+        try {
+          const { ref } = await this.mtproto.uploadBroadcastVideo({
+            accountId,
+            filePath,
+            thumbPath,
+            videoMeta,
+          });
+          state.ref = ref;
+          this.saveState(state);
+          await send(ref);
+          return 'sent';
+        } catch (e2) {
+          const m2 = (e2 as Error).message ?? String(e2);
+          state.lastError = m2.slice(0, 300);
+          return BROADCAST_HALT_RE.test(m2) ? 'halt' : 'permfail';
+        }
+      }
+      return BROADCAST_HALT_RE.test(msg) ? 'halt' : 'permfail';
+    }
   }
 }

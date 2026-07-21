@@ -70,6 +70,32 @@ export class MtprotoWorkerService implements MtprotoAdapter, OnModuleInit {
   /** key: `${accountId}:${slot}` → ready-to-send client. */
   private readonly clients = new Map<string, TelegramClientHandle>();
 
+  /**
+   * Ban-himoya throttle (2026-07-21): har AKKAUNT uchun ketma-ket yuborishlar
+   * orasidagi MINIMAL bo'shliq (default 3s, `TELEGRAM_SEND_GAP_MS` bilan
+   * sozlanadi). Bu MARKAZIY qatlam — HAM qarz-eslatma (outbox), HAM video-tarqatma
+   * shu `sendMessage`/`sendVideoByRef` orqali o'tadi, shuning uchun bitta bu
+   * yerdagi bo'shliq ikkalasini ham cheklaydi. `nextSendAt` — akkaunt bo'yicha
+   * "keyingi ruxsat etilgan yuborish vaqti" (token-bucket: parallel chaqiruvlar
+   * ham navbatlanadi). VITEST'da 0 — ko'p-yuborishli testlar sekinlashmasin.
+   */
+  private readonly nextSendAt = new Map<string, number>();
+
+  private sendGapMs(): number {
+    if (process.env.VITEST) return 0;
+    return Number(process.env.TELEGRAM_SEND_GAP_MS) || 3000;
+  }
+
+  private async pace(accountId: string): Promise<void> {
+    const gap = this.sendGapMs();
+    if (gap <= 0) return;
+    const now = Date.now();
+    const at = Math.max(now, this.nextSendAt.get(accountId) ?? 0);
+    this.nextSendAt.set(accountId, at + gap);
+    const wait = at - now;
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+  }
+
   constructor(
     @Inject(TELEGRAM_CLIENT_FACTORY) private readonly factory: TelegramClientFactory,
     @Inject(HrTelegramAccountService) private readonly accounts: HrTelegramAccountService,
@@ -111,6 +137,7 @@ export class MtprotoWorkerService implements MtprotoAdapter, OnModuleInit {
   }
 
   async sendMessage(opts: MtprotoSendOptions): Promise<MtprotoSendResult> {
+    await this.pace(opts.accountId); // ban-himoya: yuborishlar orasi min bo'shliq
     const errors: Error[] = [];
     for (const slot of MtprotoWorkerService.SLOTS) {
       if (await this.accounts.isFlooded(opts.accountId, slot)) {
@@ -283,6 +310,7 @@ export class MtprotoWorkerService implements MtprotoAdapter, OnModuleInit {
     boldRanges: { offset: number; length: number }[];
     quoteRanges?: { offset: number; length: number }[];
   }): Promise<MtprotoSendResult> {
+    await this.pace(opts.accountId); // ban-himoya: yuborishlar orasi min bo'shliq
     const errors: Error[] = [];
     for (const slot of MtprotoWorkerService.SLOTS) {
       if (await this.accounts.isFlooded(opts.accountId, slot)) continue;

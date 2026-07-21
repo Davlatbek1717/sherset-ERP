@@ -33,6 +33,14 @@ export class GramjsTelegramClientFactory implements TelegramClientFactory {
       connectionRetries: 5,
       autoReconnect: true,
       useWSS: true,
+      // FLOOD_WAIT intizomi (2026-07-21 ban-himoya): GramJS standart qiymati 60s —
+      // ya'ni 60s gacha floodlarni O'ZI (yashirin) uxlab kutadi. Buni 20s ga
+      // tushiramiz — mtproto-worker'ning har-call 25s timeout'idan (MTPROTO_CALL_TIMEOUT_MS)
+      // PAST, shuning uchun ≤20s trivial floodlar call ichida to'g'ri kutiladi
+      // (timeout kesib yubormaydi), UNDAN uzun floodlar esa FloodWaitError bo'lib
+      // yuqoriga chiqadi — o'sha yerда bizning DOIMIY flood-wait (setFloodWaitUntil,
+      // restartda saqlanadi) + slot-failover + retry-backoff ishlaydi.
+      floodSleepThreshold: 20,
     });
     return new GramjsClientHandle(client, args.phoneNumber ?? undefined, this.logger);
   }
