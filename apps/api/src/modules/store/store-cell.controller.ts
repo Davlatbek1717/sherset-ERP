@@ -77,6 +77,32 @@ export class StoreCellController {
     return this.svc.assign(user.accountId, id, cellId, body);
   }
 
+  // Skan orqali biriktirish — 1-bosqich: skanerlangan yacheyka shtrix-kodini
+  // shu ombordagi yacheykaga aylantirish (mavjudligini tekshiradi). Faqat o'qish
+  // amali, shuning uchun store:view yetarli.
+  @Post('stores/:id/cells/resolve')
+  @RequirePermission({ entity: 'store', action: 'view' })
+  async resolve(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    return this.svc.resolveByCode(user.accountId, id, body);
+  }
+
+  // Skan orqali biriktirish — 2-bosqich: skanerlangan mahsulot shtrix-kodini
+  // yacheykaga biriktirish (tovarning asosiy loc* manzilini yozadi → product:update).
+  @Post('stores/:id/cells/:cellId/scan-link')
+  @RequirePermission({ entity: 'product', action: 'update' })
+  async scanLink(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Param('cellId') cellId: string,
+    @Body() body: unknown,
+  ) {
+    return this.svc.scanLink(user.accountId, id, cellId, body);
+  }
+
   // Tovar kartochkasidagi qidiruvli dropdown — barcha yacheykalar.
   @Get('store-cells')
   @RequirePermission({ entity: 'store', action: 'view' })

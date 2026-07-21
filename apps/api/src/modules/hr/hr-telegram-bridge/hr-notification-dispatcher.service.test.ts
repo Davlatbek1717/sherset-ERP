@@ -293,12 +293,12 @@ describe('per-document listeners route to the right docType/context', () => {
     expect(args.data.messageText).toBe('Order 750');
   });
 
-  it('supply.posted → renders {{= supply.totalFormatted }}', async () => {
+  it('supply.posted → confirmation message + itemized «qabul cheki»', async () => {
     templates.findActive.mockResolvedValue({
       ...baseTemplate,
       docType: 'supply',
       eventType: 'posted',
-      templateText: 'Supply {{= supply.totalFormatted }}',
+      templateText: 'Supply {{= supply.totalFormatted }} № {{= supply.number }}',
     });
 
     await supply.onSupplyPosted({
@@ -307,12 +307,34 @@ describe('per-document listeners route to the right docType/context', () => {
       counterpartyId: 'cp-1',
       totalMinor: 10_000_00n,
       postedAt: new Date(),
+      supplyNumber: '00772',
+      items: [
+        {
+          name: 'Sement M400',
+          quantity: '50',
+          uom: 'шт',
+          priceMinor: 200_00n,
+          lineSumMinor: 10_000_00n,
+        },
+      ],
     });
 
-    const args = prisma.client.hrTelegramOutbox.create.mock.calls[0]?.[0] as {
-      data: { messageText: string };
+    // Message 1 — the admin-template confirmation (with the new supply.number).
+    const first = prisma.client.hrTelegramOutbox.create.mock.calls[0]?.[0] as {
+      data: { messageText: string; toPhone: string };
     };
-    expect(args.data.messageText).toBe('Supply 10 000');
+    expect(first.data.messageText).toBe('Supply 10 000 № 00772');
+
+    // Message 2 — the code-generated receipt, enqueued to the same phone.
+    expect(prisma.client.hrTelegramOutbox.create).toHaveBeenCalledTimes(2);
+    const second = prisma.client.hrTelegramOutbox.create.mock.calls[1]?.[0] as {
+      data: { messageText: string; toPhone: string; sourceEventType: string };
+    };
+    expect(second.data.messageText).toContain('🧾 QABUL CHEKI');
+    expect(second.data.messageText).toContain("50 шт × 200 = 10 000 so'm");
+    expect(second.data.messageText).toContain("Jami: 10 000 so'm");
+    expect(second.data.toPhone).toBe(first.data.toPhone);
+    expect(second.data.sourceEventType).toBe('supply.posted');
   });
 
   it('sales_return.posted → renders {{= returnDoc.totalFormatted }}', async () => {

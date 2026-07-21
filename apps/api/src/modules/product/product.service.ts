@@ -10,6 +10,7 @@ import { allocateDocumentNumber } from '../../prisma/document-number.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { resolveCreatorGroupId } from '../shared/group-stamp.js';
 import { mapVersionedUpdateError } from '../shared/optimistic-lock.js';
+import { makeEan13 } from './barcode.util.js';
 import { formatCellCode, parseCellCode, segmentWhere } from './cell-code.util.js';
 import {
   type BulkUpdatePatch,
@@ -22,6 +23,18 @@ import {
   ProductFilterSchema,
   UpdateProductSchema,
 } from './product.schema.js';
+
+/**
+ * Product.salePrices (JSON `[{ priceTypeId, value }]`) dan asosiy sotuv narxini
+ * (minor) ajratadi. TAN NARX (buyPrice) bu yerda ISHLATILMAYDI.
+ */
+function resolveDefaultSalePrice(salePrices: unknown): string | null {
+  if (!Array.isArray(salePrices)) return null;
+  const rows = salePrices as Array<{ priceTypeId?: string; value?: string | number }>;
+  const def = rows.find((p) => p?.priceTypeId === 'default') ?? rows[0];
+  if (!def || def.value == null) return null;
+  return String(def.value);
+}
 
 @Injectable()
 export class ProductService {
@@ -46,6 +59,70 @@ export class ProductService {
       throw new NotFoundException(`Product ${id} not found`);
     }
     return product;
+  }
+
+  /**
+   * POS skaner — shtrix-kod bo'yicha aynan bitta tovar (savatga solish uchun).
+   * `findById` naqshi: topilmasa 404. Bo'sh/probelli kod → 400.
+   */
+  async scanByCode(accountId: string, rawCode: string) {
+    const code = (rawCode ?? '').trim();
+    if (!code) {
+      throw new BadRequestException('Shtrix-kod bo`sh');
+    }
+    const found = await this.repo.findByScanCode(accountId, code);
+    if (!found) {
+      throw new NotFoundException(`Shtrix-kod topilmadi: ${code}`);
+    }
+    return found;
+  }
+
+  /**
+   * Bitta yangi, akkaunt ichida BAND BO'LMAGAN EAN-13 ajratadi. Atomik hisoblagich
+   * (`product_barcode`) ketma-ket seq beradi; agar (masalan qo'lda kiritilgan) kod
+   * bilan to'qnashsa — keyingi seq'ga o'tadi (bir necha urinish).
+   */
+  private async allocateUniqueBarcode(accountId: string): Promise<string | null> {
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const seq = await allocateDocumentNumber(
+        this.prisma.client,
+        accountId,
+        'product_barcode',
+        () => Promise.resolve(0),
+      );
+      const ean = makeEan13(seq);
+      const clash = await this.prisma.client.product.findFirst({
+        where: { accountId, barcodes: { has: ean } },
+        select: { id: true },
+      });
+      if (!clash) return ean;
+    }
+    return null;
+  }
+
+  /**
+   * «Barcode yaratish» — shtrix-kodi YO'Q barcha mahsulotlarga professional
+   * EAN-13 beradi (skaner orqali topiladigan bo'lsin). Legacy bitta `barcode`
+   * maydoni to'lgan-u `barcodes[]` bo'sh bo'lsa — o'shani `barcodes[]`ga
+   * ko'chiradi (yangi kod sarflamaydi). Natijada nechta mahsulotga kod
+   * berilgani qaytadi. Idempotent: qayta ishga tushirilsa faqat qolganlarга beradi.
+   */
+  async generateMissingBarcodes(accountId: string): Promise<{ generated: number; total: number }> {
+    const products = await this.prisma.client.product.findMany({
+      where: { accountId, deletedAt: null, barcodes: { isEmpty: true } },
+      select: { id: true },
+    });
+    let generated = 0;
+    for (const p of products) {
+      const code = await this.allocateUniqueBarcode(accountId);
+      if (!code) continue;
+      await this.prisma.client.product.update({
+        where: { id: p.id },
+        data: { barcodes: [code], version: { increment: 1 } },
+      });
+      generated++;
+    }
+    return { generated, total: products.length };
   }
 
   /** Multi-bin: list a product's additional shelf locations. */
@@ -73,7 +150,17 @@ export class ProductService {
 
   /** Scan page: product detail + stock balance per store. */
   async getScanInfo(accountId: string, id: string) {
-    const product = await this.findById(accountId, id);
+    const full = await this.findById(accountId, id);
+    // TAN NARX skan sahifasida ko'rsatilmaydi (omborchi ko'rmasligi kerak) —
+    // buyPrice/minPrice/buyPriceCurrency javobdan olib tashlanadi.
+    const { buyPrice, minPrice, buyPriceCurrency, ...product } = full as typeof full & {
+      buyPrice?: unknown;
+      minPrice?: unknown;
+      buyPriceCurrency?: unknown;
+    };
+    void buyPrice;
+    void minPrice;
+    void buyPriceCurrency;
     const stocks = await this.prisma.client.stock.findMany({
       where: { accountId, assortmentId: id, assortmentKind: 'product' },
       include: { store: { select: { name: true } } },
@@ -108,6 +195,9 @@ export class ProductService {
       article: true,
       uom: true,
       archived: true,
+      // Sotuv narxi ko'rsatiladi; TAN NARX (buyPrice) QASDDAN TANLANMAYDI —
+      // omborchi tan narxni ko'rmaydi (talab).
+      salePrices: true,
       // Per-cell qty of the PRIMARY home bin (Phase 2) — shown when the
       // scanned cell IS the product's primary address.
       locQty: true,
@@ -201,12 +291,15 @@ export class ProductService {
       cell: { code: formatCellCode(addr), ...addr, store: store ?? null },
       items: [...byId.values()].map(({ product, source, note, cellQty }) => {
         const rows = stocksByProduct.get(product.id) ?? [];
-        // locQty is an internal fetch detail (feeds cellQty) — not part of the response.
-        const { locQty: _locQty, ...productFields } = product;
+        // locQty — ichki tafsilot (cellQty'ni to'ldiradi); salePrices — xom JSON
+        // (o'rniga hisoblangan `salePrice` qaytadi). TAN NARX javobda umuman yo'q.
+        const { locQty: _locQty, salePrices, ...productFields } = product;
         return {
           ...productFields,
           source,
           note,
+          // Sotuv narxi (minor) — omborchiga ko'rsatiladi (tan narx emas).
+          salePrice: resolveDefaultSalePrice(salePrices),
           // SHU yacheykada nechta dona turishi (Phase 2, qo'lda yuritiladi).
           cellQty: cellQty != null ? cellQty.toString() : null,
           totalQty: rows.reduce((sum, s) => sum + Number(s.qty.toFixed(6)), 0),
@@ -251,6 +344,18 @@ export class ProductService {
         this.maxProductCode(accountId),
       );
       parsed.code = String(n).padStart(5, '0');
+    }
+    // Shtrix-kod berilmagan bo'lsa — professional EAN-13 avtomatik beriladi
+    // (yangi mahsulot ham skaner orqali topiladigan bo'lsin). Qo'lda kiritilgan
+    // shtrix-kod(lar) tegilmaydi. BEST-EFFORT: barcode ajratishdagi nosozlik
+    // mahsulot yaratilishini BLOKLAMAYDI (keyin bulk-generate to'ldiradi).
+    if (!parsed.barcodes || parsed.barcodes.length === 0) {
+      try {
+        const ean = await this.allocateUniqueBarcode(accountId);
+        if (ean) parsed.barcodes = [ean];
+      } catch {
+        /* barcode berilmadi — create davom etadi */
+      }
     }
     try {
       const created = await this.repo.create(accountId, userId, parsed);

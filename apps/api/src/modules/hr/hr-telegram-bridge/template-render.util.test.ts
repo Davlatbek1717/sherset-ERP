@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { formatMinor, renderNotificationTemplate } from './template-render.util.js';
+import {
+  type NotificationRenderContext,
+  buildSupplyReceipt,
+  formatMinor,
+  renderNotificationTemplate,
+} from './template-render.util.js';
 
 describe('renderNotificationTemplate', () => {
   it('interpolates simple top-level field via {{= … }} syntax', () => {
@@ -104,5 +109,74 @@ describe('formatMinor', () => {
 
   it('returns "—" for unparseable input (no throw)', () => {
     expect(formatMinor('not-a-number')).toBe('—');
+  });
+});
+
+describe('buildSupplyReceipt', () => {
+  const baseCtx = (): NotificationRenderContext => ({
+    counterparty: { name: 'OOO Ta’minot' },
+    supply: {
+      number: '00772',
+      totalFormatted: '3 150 000',
+      dateFormatted: '19.07.2026',
+      items: [
+        {
+          name: 'Sement M400',
+          quantity: '50',
+          uom: 'шт',
+          priceFormatted: '45 000',
+          sumFormatted: '2 250 000',
+        },
+        {
+          name: "G'isht",
+          quantity: '1000',
+          uom: 'шт',
+          priceFormatted: '900',
+          sumFormatted: '900 000',
+        },
+      ],
+    },
+  });
+
+  it('renders a full itemized receipt (header, lines, footer)', () => {
+    const out = buildSupplyReceipt(baseCtx());
+    expect(out).toContain('🧾 QABUL CHEKI');
+    expect(out).toContain('Hujjat: № 00772');
+    expect(out).toContain('Sana: 19.07.2026');
+    expect(out).toContain('Yetkazib beruvchi: OOO Ta’minot');
+    expect(out).toContain("1. Sement M400\n   50 шт × 45 000 = 2 250 000 so'm");
+    expect(out).toContain("2. G'isht\n   1000 шт × 900 = 900 000 so'm");
+    expect(out).toContain("Jami: 3 150 000 so'm");
+    expect(out).toContain('Hamkorligingiz uchun rahmat! 🤝');
+  });
+
+  it('omits the unit when uom is null', () => {
+    const ctx = baseCtx();
+    // biome-ignore lint/style/noNonNullAssertion: fixture always has items
+    ctx.supply!.items![0]!.uom = null;
+    const out = buildSupplyReceipt(ctx);
+    expect(out).toContain("1. Sement M400\n   50 × 45 000 = 2 250 000 so'm");
+  });
+
+  it('drops optional header rows (number / date) when absent', () => {
+    const ctx = baseCtx();
+    // biome-ignore lint/style/noNonNullAssertion: fixture always has supply
+    ctx.supply!.number = null;
+    // biome-ignore lint/style/noNonNullAssertion: fixture always has supply
+    ctx.supply!.dateFormatted = null;
+    const out = buildSupplyReceipt(ctx);
+    expect(out).not.toContain('Hujjat: №');
+    expect(out).not.toContain('Sana:');
+    expect(out).toContain('Yetkazib beruvchi: OOO Ta’minot');
+  });
+
+  it('returns "" when there are no items (dispatcher skips blank enqueue)', () => {
+    expect(buildSupplyReceipt({ counterparty: { name: 'X' } })).toBe('');
+    expect(
+      buildSupplyReceipt({
+        counterparty: { name: 'X' },
+        supply: { totalFormatted: '0', items: [] },
+      }),
+    ).toBe('');
   });
 });

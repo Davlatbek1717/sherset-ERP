@@ -5,8 +5,6 @@ import { HrTelegramAccountService } from '../hr/hr-telegram-account/hr-telegram-
 import {
   TELEGRAM_CLIENT_FACTORY,
   type TelegramClientFactory,
-  isGramjsFloodError,
-  isUnresolvablePeerError,
 } from '../hr/hr-telegram-bridge/telegram-client-factory.js';
 
 /**
@@ -81,16 +79,12 @@ export class TelegramLookupService {
       const entity = await client.getEntity(phone);
       result = { available: true, found: true, ...extractProfile(entity) };
     } catch (e) {
-      if (isUnresolvablePeerError(e)) {
-        // Telefon Telegram'da yo'q / maxfiylik — «Kontakt topilmadi».
-        result = { available: true, found: false };
-      } else if (isGramjsFloodError(e)) {
-        this.logger.warn(`Telegram lookup FLOOD_WAIT ${e.seconds}s acc=${accountId}`);
-        result = { available: true, found: false };
-      } else {
-        this.logger.warn(`Telegram lookup xato acc=${accountId}: ${(e as Error).message}`);
-        result = { available: true, found: false };
-      }
+      // Har qanday getEntity xatosi (telefon Telegram'da yo'q / maxfiylik /
+      // FLOOD_WAIT) → «Kontakt topilmadi». Xato-klassifikatsiyani ICHIDA
+      // qilamiz — parallel sessiya tahrirlayotgan telegram-client-factory
+      // eksportlariga BOG'LANMAYMIZ (prod boot-crash oldini olish).
+      this.logger.warn(`Telegram lookup xato acc=${accountId}: ${(e as Error).message}`);
+      result = { available: true, found: false };
     } finally {
       await client.disconnect().catch(() => {});
     }

@@ -48,7 +48,7 @@ import {
 } from '@moysklad/ui';
 import * as Dialog from '@radix-ui/react-dialog';
 import { useQuery } from '@tanstack/react-query';
-import { ChevronDown, ChevronUp, Image as ImageIcon, RefreshCw, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, Folder, Image as ImageIcon, RefreshCw, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { PositionColumnCustomizer } from '../documents/position-column-customizer';
 import { ProductFolderTree } from './product-folder-tree';
@@ -202,6 +202,12 @@ export interface ProductSelectModalProps {
   onConfirmSelection?: (products: ProductSelectRow[]) => void;
   /** Ids already linked — rendered checked + disabled so they can't be re-added. */
   disabledIds?: string[];
+  /**
+   * Optional element rendered in the header toolbar (after the title). Used by
+   * the store cell «Mahsulot qo'shish» flow to surface a «Skan» button; omitted
+   * everywhere else so the shared modal is unchanged for other callers.
+   */
+  headerExtra?: React.ReactNode;
 }
 
 type SortCol = 'name' | 'code';
@@ -237,6 +243,7 @@ export function ProductSelectModal({
   selectionMode,
   onConfirmSelection,
   disabledIds,
+  headerExtra,
 }: ProductSelectModalProps) {
   const [search, setSearch] = useState('');
   const [folderId, setFolderId] = useState<string | null>(null);
@@ -272,6 +279,9 @@ export function ProductSelectModal({
   // «Фильтр» panel state (moysklad parity) — the product filter (kind / show /
   // barcode / below-minimum), wired into the same /products query.
   const [showFilter, setShowFilter] = useState(false);
+  // 2026-07-20f (responsive): folder tree eats ~65% of a phone-width modal
+  // if always shown — hidden by default <lg, opt-in via the toolbar toggle.
+  const [showFoldersMobile, setShowFoldersMobile] = useState(false);
   const [kind, setKind] = useState('');
   const [archived, setArchived] = useState('active');
   const [barcode, setBarcode] = useState('');
@@ -704,8 +714,28 @@ export function ProductSelectModal({
           data-test-id="product-select-modal"
           className="-translate-x-1/2 -translate-y-1/2 fixed top-1/2 left-1/2 z-[400] flex h-[92vh] w-[min(1480px,98vw)] flex-col rounded-[var(--ms-radius-md)] bg-[var(--ms-bg-surface)] shadow-[var(--ms-shadow-lg)]"
         >
-          <header className="flex items-center gap-2 border-[var(--ms-border-default)] border-b px-4 py-2.5">
+          <header className="flex flex-wrap items-center gap-2 border-[var(--ms-border-default)] border-b px-4 py-2.5">
             <Dialog.Title className="shrink-0 font-semibold text-base">{labels.title}</Dialog.Title>
+            {/* Optional caller-supplied header action (store cell «Skan» button). */}
+            {headerExtra}
+            {/* <lg: folder-tree papka daraxti default yopiq (pastda), shu
+                tugma bilan ochiladi — 2026-07-20f responsive. */}
+            <button
+              type="button"
+              onClick={() => setShowFoldersMobile((v) => !v)}
+              aria-pressed={showFoldersMobile}
+              className={cn(
+                'flex h-7 w-7 shrink-0 items-center justify-center rounded-[var(--ms-radius-default)] lg:hidden',
+                showFoldersMobile
+                  ? 'bg-[var(--ms-bg-selected)] text-[var(--ms-text-brand)]'
+                  : 'text-[var(--ms-text-muted)] hover:bg-[var(--ms-bg-hover)] hover:text-[var(--ms-text-primary)]',
+              )}
+              aria-label="Papkalar"
+              title="Papkalar"
+              data-test-id="product-select-folders-toggle"
+            >
+              <Folder className="h-4 w-4" />
+            </button>
             {/* moysklad modal toolbar order: 🔄 · Создать · Фильтр · search · ✕ */}
             <button
               type="button"
@@ -745,7 +775,7 @@ export function ProductSelectModal({
                 {labels.filter.toggle}
               </button>
             )}
-            <div className="ml-1 max-w-md flex-1">
+            <div className="ml-1 min-w-[160px] max-w-md flex-1">
               <Input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
@@ -1110,7 +1140,12 @@ export function ProductSelectModal({
           )}
 
           <div className="flex min-h-0 flex-1">
-            <ProductFolderTree selectedId={folderId} onSelect={(id) => setFolderId(id)} />
+            {/* <lg: default yopiq (audit: 240px doim ko'rinsa 375px modal
+                enining ~65%ini yeydi) — yuqoridagi 📁 tugma bilan ochiladi.
+                ≥lg: har doim ko'rinadi (o'zgarmagan desktop xulq-atvor). */}
+            <div className={cn(showFoldersMobile ? 'block' : 'hidden', 'lg:block')}>
+              <ProductFolderTree selectedId={folderId} onSelect={(id) => setFolderId(id)} />
+            </div>
 
             {selectionMode ? (
               // Selection mode = the full Tovary list grid via the shared DataTable
@@ -1463,7 +1498,7 @@ export function ProductSelectModal({
             )}
           </div>
 
-          <footer className="flex items-center gap-2 border-[var(--ms-border-default)] border-t px-4 py-2.5">
+          <footer className="flex flex-wrap items-center gap-2 border-[var(--ms-border-default)] border-t px-4 py-2.5">
             <Button type="button" onClick={confirm} data-test-id="product-select-confirm">
               {labels.select}
             </Button>

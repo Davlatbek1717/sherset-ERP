@@ -479,6 +479,34 @@ export class ProductRepository {
     });
   }
 
+  /**
+   * POS skaner — shtrix-kod bo'yicha AYNAN BITTA tovar. `Product.barcodes[]`
+   * (String[]) ustidan `has` = aniq token mosligi (nom/kod `contains` aralashuvi
+   * yo'q, shuning uchun list-qidiruvdagi noaniqlik bu yerda bo'lmaydi). Product
+   * barcode'lari @@unique EMAS, shuning uchun bir nechta mos kelsa `createdAt`
+   * bo'yicha determinik birinchisi olinadi. Javob `list` element shakli bilan
+   * bir xil (attachStock) — POS `addToCart` uni to'g'ridan-to'g'ri qo'llaydi.
+   */
+  async findByScanCode(accountId: string, code: string) {
+    const p = await this.prisma.client.product.findFirst({
+      where: { accountId, deletedAt: null, barcodes: { has: code } },
+      select: {
+        id: true,
+        name: true,
+        code: true,
+        buyPrice: true,
+        salePrices: true,
+        barcodes: true,
+        weighed: true,
+        uom: true,
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (!p) return null;
+    const [withStock] = await this.attachStock(accountId, [p]);
+    return withStock;
+  }
+
   /** Multi-bin: list a product's ADDITIONAL shelf locations (primary loc* aside). */
   async listLocations(accountId: string, productId: string) {
     return this.prisma.client.productLocation.findMany({

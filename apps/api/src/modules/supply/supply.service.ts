@@ -978,13 +978,37 @@ export class SupplyService {
     );
 
     // Post-commit: HR Telegram bridge listener queues a "yetkazib beruvchi
-    // sizdan tovar qabul qilindi" notification for the supplier counterparty.
+    // sizdan tovar qabul qilindi" tasdiq + itemized «qabul cheki» notification
+    // for the supplier counterparty. Line totals are single-rounded through the
+    // shared helper with the SAME (vatEnabled, vatIncluded) flags as the header
+    // total, so Σ lineSumMinor === posted.sumMinor (the receipt foots exactly).
+    const items = existing.positions.map((p) => {
+      const { totalMinor } = computePositionTotal(
+        {
+          quantity: String(p.quantity),
+          priceMinor: String(p.priceMinor),
+          discount: String(p.discount),
+          vat: p.vat,
+        },
+        existing.vatEnabled && p.vatEnabled,
+        existing.vatIncluded,
+      );
+      return {
+        name: p.product?.name ?? 'Tovar',
+        quantity: String(p.quantity),
+        uom: p.product?.uom ?? null,
+        priceMinor: p.priceMinor,
+        lineSumMinor: totalMinor,
+      };
+    });
     const payload: SupplyPostedEvent = {
       accountId,
       supplyId: posted.id,
       counterpartyId: posted.agentId,
       totalMinor: posted.sumMinor,
       postedAt: posted.postedAt ?? new Date(),
+      supplyNumber: posted.name,
+      items,
     };
     this.events.emit(HR_EVENT.SUPPLY_POSTED, payload);
 

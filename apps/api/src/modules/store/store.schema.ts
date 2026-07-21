@@ -127,3 +127,26 @@ export const CellSearchSchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50),
 });
 export type CellSearchInput = z.infer<typeof CellSearchSchema>;
+
+/**
+ * Skan orqali biriktirish — 1-bosqich: skanerlangan yacheyka shtrix-kodini
+ * shu ombordagi mavjud yacheykaga aylantirish. Kod tireli («NN-NN-NN-NN») yoki
+ * label CODE128C 8-raqamli («02170215») shakl bo'lishi mumkin — service
+ * parseCellCode bilan kanoniklashtiradi, shuning uchun bu yerda faqat bo'sh
+ * emasligini tekshiramiz (aniq format xatosi service'da 400 bo'ladi).
+ */
+export const ResolveCellSchema = z.object({
+  code: z.string().trim().min(1, 'Yacheyka shtrix-kodi bo`sh'),
+});
+export type ResolveCellInput = z.infer<typeof ResolveCellSchema>;
+
+/**
+ * Skan orqali biriktirish — 2-bosqich: skanerlangan mahsulot shtrix-kodini shu
+ * yacheykaga biriktirish (mahsulotning asosiy loc* manzili yacheyka kodiga
+ * o'rnatiladi — «+» qo'lda biriktirish bilan bir xil semantika). `barcode` —
+ * mahsulotning asl (ishlab chiqaruvchi) shtrix-kodi.
+ */
+export const ScanLinkSchema = z.object({
+  barcode: z.string().trim().min(1, 'Mahsulot shtrix-kodi bo`sh').max(50),
+});
+export type ScanLinkInput = z.infer<typeof ScanLinkSchema>;

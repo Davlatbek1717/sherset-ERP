@@ -7,6 +7,7 @@ function makeService() {
   const repo = {
     list: vi.fn(),
     findById: vi.fn(),
+    findByScanCode: vi.fn(),
     create: vi.fn(),
     update: vi.fn(),
     archive: vi.fn(),
@@ -31,7 +32,9 @@ function makeService() {
         createMany: vi.fn(async () => ({ count: 1 })),
         update: vi.fn(async () => ({ value: 1 })),
       },
+      // maxProductCode «Код» auto-allocation reads both product + variant codes.
       product: { findMany: vi.fn(async () => []) },
+      variant: { findMany: vi.fn(async () => []) },
     },
   };
 
@@ -94,6 +97,34 @@ describe('ProductService', () => {
         action: 'create',
       }),
     });
+  });
+
+  // POS skaner — shtrix-kod bo'yicha aynan bitta tovar (savatga solish).
+  it('scanByCode returns the matched product', async () => {
+    const { service, repo } = makeService();
+    const row = { id: 'p1', name: 'Kabel', stock: { onHand: '5' } };
+    (repo.findByScanCode as ReturnType<typeof vi.fn>).mockResolvedValue(row);
+    await expect(service.scanByCode('acc', '2000000026701')).resolves.toBe(row);
+    expect(repo.findByScanCode).toHaveBeenCalledWith('acc', '2000000026701');
+  });
+
+  it('scanByCode trims the code before lookup', async () => {
+    const { service, repo } = makeService();
+    (repo.findByScanCode as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 'p1' });
+    await service.scanByCode('acc', '  2000000026701  ');
+    expect(repo.findByScanCode).toHaveBeenCalledWith('acc', '2000000026701');
+  });
+
+  it('scanByCode throws NotFoundException when no product matches', async () => {
+    const { service, repo } = makeService();
+    (repo.findByScanCode as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+    await expect(service.scanByCode('acc', '0000000000000')).rejects.toThrow(NotFoundException);
+  });
+
+  it('scanByCode throws BadRequestException on an empty code (no repo hit)', async () => {
+    const { service, repo } = makeService();
+    await expect(service.scanByCode('acc', '   ')).rejects.toThrow(BadRequestException);
+    expect(repo.findByScanCode).not.toHaveBeenCalled();
   });
 });
 

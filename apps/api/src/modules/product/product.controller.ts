@@ -65,6 +65,15 @@ export class ProductController {
     return this.service.getScanInfo(user.accountId, id);
   }
 
+  // POS skaner — shtrix-kod bo'yicha aynan bitta tovar. Literal 'scan' segmenti
+  // `:id` route'idan OLDIN turishi shart (aks holda 'scan' id deb qabul qilinadi).
+  // Bu `:id/scan` (yuqorida, id bo'yicha) dan farqli — bu ?code= bo'yicha qidiradi.
+  @Get('scan')
+  @RequirePermission({ entity: 'product', action: 'view' })
+  async scanByCode(@CurrentUser() user: AuthenticatedUser, @Query('code') code: string) {
+    return this.service.scanByCode(user.accountId, code);
+  }
+
   @Get(':id')
   @RequirePermission({ entity: 'product', action: 'view' })
   async getOne(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
@@ -83,6 +92,14 @@ export class ProductController {
   @RequirePermission({ entity: 'product', action: 'create' })
   async allocateCode(@CurrentUser() user: AuthenticatedUser) {
     return { code: await this.service.allocateCode(user.accountId) };
+  }
+
+  // «Barcode yaratish» — shtrix-kodi yo'q barcha mahsulotlarga EAN-13 beradi
+  // (skaner orqali topiladigan bo'lsin). Mahsulotlarni o'zgartiradi → update.
+  @Post('generate-barcodes')
+  @RequirePermission({ entity: 'product', action: 'update' })
+  async generateBarcodes(@CurrentUser() user: AuthenticatedUser) {
+    return this.service.generateMissingBarcodes(user.accountId);
   }
 
   @Patch(':id')

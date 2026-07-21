@@ -41,12 +41,30 @@ export interface CustomerOrderCreatedEvent {
   createdAt: Date;
 }
 
+/** One received line on a posted Supply — carried for the supplier «qabul cheki». */
+export interface SupplyPostedItem {
+  /** Product (or assortment) display name. */
+  name: string;
+  /** Received quantity as a decimal string (e.g. "50", "12.5"). */
+  quantity: string;
+  /** Unit of measurement label ("шт", "кг"), or null when unset. */
+  uom: string | null;
+  /** Unit price in tiyin (minor units). */
+  priceMinor: bigint;
+  /** Line total in tiyin — sums (with the others) to Supply.sumMinor. */
+  lineSumMinor: bigint;
+}
+
 export interface SupplyPostedEvent {
   accountId: string;
   supplyId: string;
   counterpartyId: string;
   totalMinor: bigint;
   postedAt: Date;
+  /** Supply document number («00772») — shown on the confirmation + receipt. */
+  supplyNumber: string;
+  /** Received lines, in document order — drives the supplier «qabul cheki». */
+  items: SupplyPostedItem[];
 }
 
 export interface SalesReturnPostedEvent {
