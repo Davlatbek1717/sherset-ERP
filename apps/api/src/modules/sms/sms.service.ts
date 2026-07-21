@@ -8,6 +8,11 @@ import {
   eskizLogin,
   eskizSend,
 } from './eskiz.client.js';
+import {
+  type PhoneGatewayCredentials,
+  phoneGatewayCheck,
+  phoneGatewaySend,
+} from './phone-gateway.client.js';
 import { DEFAULT_MESSAGING_CONTACT } from './sms-render.util.js';
 import {
   ListSmsLogsSchema,
@@ -110,18 +115,25 @@ export class SmsService {
     let ok = false;
     let message = '';
     try {
-      const token = await eskizLogin(this.eskizCreds(cfg));
-      const verify = await eskizGetUser(token);
-      if (verify.ok) {
-        ok = true;
-        message = `Ulanish OK${verify.balance != null ? ` · balans: ${verify.balance}` : ''}`;
-        // Cache the fresh token so the worker doesn't re-login.
-        await this.prisma.client.smsConfig.update({
-          where: { accountId },
-          data: { token, tokenIssuedAt: new Date() },
-        });
+      if (cfg.provider === 'phone_gateway') {
+        // Telefon-gateway: login/parolni SMS yubormasdan tekshiradi.
+        const verdict = await phoneGatewayCheck(this.phoneGatewayCreds(cfg));
+        ok = verdict.ok;
+        message = verdict.message;
       } else {
-        message = 'Token olindi, lekin /auth/user javob bermadi';
+        const token = await eskizLogin(this.eskizCreds(cfg));
+        const verify = await eskizGetUser(token);
+        if (verify.ok) {
+          ok = true;
+          message = `Ulanish OK${verify.balance != null ? ` · balans: ${verify.balance}` : ''}`;
+          // Cache the fresh token so the worker doesn't re-login.
+          await this.prisma.client.smsConfig.update({
+            where: { accountId },
+            data: { token, tokenIssuedAt: new Date() },
+          });
+        } else {
+          message = 'Token olindi, lekin /auth/user javob bermadi';
+        }
       }
     } catch (err) {
       message = (err as Error).message ?? 'Ulanish xatosi';
@@ -229,6 +241,15 @@ export class SmsService {
     });
     if (!cfg) throw new Error('SMS config missing');
 
+    // Telefon-gateway (o'z SIM) — Eskiz token oqimi kerak emas, to'g'ridan-to'g'ri POST.
+    if (cfg.provider === 'phone_gateway') {
+      const result = await phoneGatewaySend(this.phoneGatewayCreds(cfg), {
+        phone: log.toPhone,
+        text: log.body,
+      });
+      return { providerMessageId: result.id };
+    }
+
     let token = cfg.token;
     if (!token) {
       token = await eskizLogin(this.eskizCreds(cfg));
@@ -313,6 +334,17 @@ export class SmsService {
   private eskizCreds(cfg: { email: string; passwordCipher: string }): EskizCredentials {
     return {
       email: cfg.email,
+      password: decryptPassword(cfg.passwordCipher),
+    };
+  }
+
+  /** Telefon-gateway: `email` = login, `passwordCipher` = parol (deshifrlangan). */
+  private phoneGatewayCreds(cfg: {
+    email: string;
+    passwordCipher: string;
+  }): PhoneGatewayCredentials {
+    return {
+      username: cfg.email,
       password: decryptPassword(cfg.passwordCipher),
     };
   }
