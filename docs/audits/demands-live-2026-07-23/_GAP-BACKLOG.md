@@ -14,8 +14,8 @@ gap'lar aniq va boshqariladigan to'plam. Aksari — mayda wiring yoki vizual gur
 ## Cross-cutting (pozitsiya jadvali — detail + create ikkalasiga tegadi)
 | # | Gap | Holat | Izoh / qaror |
 |---|-----|-------|--------------|
-| C1 | **«Ячейка» (bin) kolonka** | DS qo'llab-quvvatlaydi (`customs.cell`), demand'ga wire QILINMAGAN | Ombor-shipping uchun qimmatli. Wire qilish arzon. Bu biznesda bin ishlatiladimi? → **user qaror** |
-| C2 | **«Маркировка» kolonka** | DS'da umuman YO'Q (yangi komponent kerak) | Katta ish. Marking/labeling kodlari — biznesda kerakmi? → **user qaror (DEFER ehtimoli)** |
+| C1 | **«Ячейка» (bin) kolonka** | DS qo'llab-quvvatlaydi (`customs.cell`), demand'ga wire QILINMAGAN | ✅ **QURILADI** (user 2026-07-23). Wire qilish arzon |
+| C2 | **«Маркировка» kolonka** | DS'da umuman YO'Q (yangi komponent kerak) | ✅ **QURILADI** (user 2026-07-23). KATTA ish → ehtimol alohida sub-project |
 | C3 | **«Прибыль» (profit) qatori** | Nomuvofiq: create'da YO'Q; detail'da faqat posted (`costSumMinor>0`) | moysklad doim ko'rsatadi. Create'da COGS noma'lum → draft'da '—' ko'rsatish mumkin |
 | C4 | **«Вес» / «Объём» totals** | YO'Q (ikkala sahifada) | Tovar weight/volume yig'indisi. O'rta ish |
 
@@ -24,8 +24,8 @@ gap'lar aniq va boshqariladigan to'plam. Aksari — mayda wiring yoki vizual gur
 |---|-----|-------|------|
 | D1 | **«Связанные документы» tab doim bo'sh** | tab bor, `relatedGroups={[]}` hardcoded | related-doc grafi qurilmaydi. O'rta ish (BE `/related`?) |
 | D2 | **«Отправить (N)» count-badge** | «Отправить» bor, N badge YO'Q | Mayda: yuborilgan-soni badge qo'shish |
-| D3 | **«Решения» menyu** | YO'Q | moysklad-ga xos «Decisions». Niche → **user qaror (DEFER ehtimoli)** |
-| D4 | **Archive / «Восстановить»** | YO'Q (list+detail) | demand'da archive lifecycle yo'q. BE+FE ish |
+| D3 | **«Решения» menyu** | YO'Q | ✅ **QURILADI** (user 2026-07-23). moysklad «Decisions» |
+| D4 | **Archive / «Восстановить»** | YO'Q (list+detail) | ✅ **QURILADI** (user 2026-07-23). BE+FE ish |
 | D5 | **Shipping bloki «Грузоотправитель» sarlavhasi ostida guruhlanmagan** | 10 maydon bor, lekin guruhsiz | Vizual/strukturaviy guruhlash |
 | D6 | **«Изменения» = collapsible seksiya, bottom-tab EMAS** | mavjud, lekin joylashuvi farq | Mayda strukturaviy |
 
