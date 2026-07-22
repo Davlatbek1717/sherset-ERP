@@ -1,0 +1,3 @@
+# Demand live captures — contain real customer PII, do not commit HTML/PNG
+*.html
+*.png
