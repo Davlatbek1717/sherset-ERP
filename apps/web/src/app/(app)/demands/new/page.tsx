@@ -14,6 +14,7 @@
  * name-cell renderer.
  */
 
+import { AttributesEditor } from '@/components/attributes-editor';
 import { useDocumentEditorLabels } from '@/hooks/use-document-editor-labels';
 import { useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
@@ -189,6 +190,11 @@ export default function NewDemandPage() {
   const [bankAccountLabel, setBankAccountLabel] = useState('');
   const [description, setDescription] = useState('');
   const [externalCode, setExternalCode] = useState('');
+  // Account custom fields (moysklad доп. поля). Keyed by attribute code; the
+  // backend validates any required ones on create (validateAndNormalize), so no
+  // client-side required check — an empty required field surfaces as a 400 in
+  // the error banner. Sent even when {} for that server-side enforcement.
+  const [customAttrs, setCustomAttrs] = useState<Record<string, unknown>>({});
   // «Накладные расходы» (Отгрузка) — sale-side expense lowering «Прибыль».
   // Major units in the input; sent as tiyin. Default «по цене» (PRICE).
   const [overheadMajor, setOverheadMajor] = useState('');
@@ -421,6 +427,9 @@ export default function NewDemandPage() {
             ? '100000000'
             : BigInt(Math.round(Number(effectiveRate) * 100000000)).toString(),
         description: description || undefined,
+        // Custom-field values (доп. поля). Sent even when {} so the backend's
+        // validateAndNormalize enforces any required custom fields server-side.
+        attributes: customAttrs,
         vatEnabled,
         vatIncluded,
         positions: positions.map((p) => ({
@@ -1071,6 +1080,17 @@ export default function NewDemandPage() {
               profitMinor={0n}
             />
           </div>
+
+          {/* Account custom fields (доп. поля) — moysklad keeps these inline
+              below the position/totals area, outside the tab strip (mirrors the
+              demand [id] detail so create ↔ detail stay consistent). Renders
+              nothing when the account defines no custom fields. */}
+          <AttributesEditor
+            entity="Demand"
+            values={customAttrs}
+            onChange={setCustomAttrs}
+            testIdPrefix="demand"
+          />
 
           <DocumentDisclosurePanel
             title={tForm('tasks_section')}
