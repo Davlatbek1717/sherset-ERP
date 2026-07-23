@@ -305,6 +305,26 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🔬✅ 2026-07-23g (SALES-RETURNS «Возвраты покупателей» — QISM 1 Task 1: /new pozitsiya-qator 1:1 (N4-N7))**
+> *(Parallel demand sessiyasi 2026-07-23f custom-attrs qildi; mening diff'im path-cheklangan — faqat
+> `sales-returns/new/page.tsx` + salesreturn reja doc. Commit `123025b`. Dev-stack demand sessiyaniki bo'lishi mumkin — TEGMADIM.)*
+> **(1) Understand-workflow (5 parallel Opus reader, wf_8ed11ec2):** Остаток pattern (demand /new reuse) · DS ustun-tizimi
+> (stock/costPerUnit/rnpt kalitlari ALLAQACHON bor) · BE stock/cost (buyPrice strip, cost DEFER) · detail-2A (PositionEditor,
+> shared emas) · Перечисление (net-yangi, paymentType yo'q). *(2 agent stub-natija qaytardi — o'zim aniq-qidiruv bilan tikladim.)*
+> **(2) Jonli grounding:** «Перечисление» combo Организация ostida ochildi — bu org (elektro_sentr) uchun **yagona opsiya
+> «Перечисление»** (to'lov-forma/hisob-turi, org-hisoblariga bog'liq). **(3) IMPL — Task 1:** `/new` POSITION_COLUMNS'ga
+> **«Остаток» jonli ustun** qo'shildi (GET /stocks → rowsWithStock merge, demand pattern; DS 'stock' kaliti bor, i18n
+> position_cols.stock ru+uz) · **goodPack/vatAmount/discount OLIB TASHLANDI** (moysklad create default-ko'rinishida yo'q).
+> **DEFER (Phase-1, demand bilan mos):** Себест.единицы (costPerUnit=sale-price, return-COGS emas) + РНПТ (BE marking maydoni yo'q, QISM 4).
+> **Gate:** web tc0 · biome0 · i18n key-existence ru+uz PASS · Vitest 4 fail = **pre-existing** (stash-baseline bilan bir xil —
+> raw-element/header registry-drift migrated-mashinada, sales-returns/new ro'yxatда YO'Q, **regress 0**).
+> **HALOL:** Phase-1 strukturaviy — **browser-cert YO'Q** (DB down + parallel dev-stack; QISM 5 QA'da).
+> **⏭️ KEYINGI = QISM 1 Task 2 + 3** (reja: `docs/superpowers/plans/2026-07-23-salesreturn-new-1to1.md`):
+> **Task 2** meta-grid moysklad tartibiga (Организация/Склад → Контрагент/Договор → Проект/Канал → Валюта yakka; extra fieldlar
+> «Другие поля» disclosure'ga — demand `da20554` pattern; N8 «Причина» disclosure'ga) · **Task 3** «Перечисление» (1B) —
+> avval jonli opsiya-capture + persistence qarori (yangi paymentType ustun vs organizationAccountId vs attributes), keyin wire.
+> **⚠️ NEXT.md 35 entry / 920+ qator** — arxivlash kerak (parallel sessiya faol bo'lgani uchun bu sessiya QILMADI; koordinatsiya kerak).
+
 > **🟢✅ 2026-07-23f (DEMAND «Отгрузки» — QISM 1B: custom-attrs create-parity E2E-verified + Task-2 premise-fix)**
 > *(Parallel sessiya 2026-07-23e sales-returns qildi; mening diff'im path-cheklangan — `demands/new/page.tsx`
 > + demand audit doc; har commit oldidan staged-set guard bilan tekshirildi.)*
