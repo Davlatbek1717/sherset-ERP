@@ -305,6 +305,28 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🔬✅ 2026-07-23e (SALES-RETURNS «Возвраты покупателей» — QISM 1 GROUNDING: /new capture + roadmap co-locate)**
+> *(Parallel demand sessiyasi shu payt 2026-07-23c/d demand ishini qildi; mening diff'im path-cheklangan —
+> `scripts/capture-moysklad-references.ts` + `.gitignore` + 2 salesreturn doc. Commit `96bb93e`.)*
+> **(1) Roadmap review + co-locate restructure** (`...-salesreturn-section-1to1-ROADMAP.md`): eski monolit «QISM 4 —
+> BE» tarqatildi — har BE enabler uni ishlatadigan QISM ichida (`[BE:…]` teg); 3 cross-cutting enabler ajratildi;
+> «QISM = milestone, sessiya = sub-item» aniqlandi. **(2) Capture tooling:** `capture-moysklad --create` rejimi
+> qo'shildi (mavjud qatorlar bo'lsa ham bo'sh «+ Создать»/new formasini oladi) + openCreateForm bareLabel bug-fix
+> («+» ikonka, matn «Возврат»). **Jonli olindi:** salesreturn /new create-form (viaCreateForm:true).
+> **(3) Grounding N1-N8** (`_GAP-BACKLOG.md` → NEW bo'limi, DOM-rol+screenshot): «Перечисление» combo Организация
+> ostida (`<input value="Перечисление">`; **opsiyalar DEFER — QISM1 impl'da click-capture, §4 taxmin YO'Q**) ·
+> meta-grid tartibi · pozitsiya-ustunlar (Остаток/Себест.единицы/РНПТ moysklad'da ko'rinadi; bizda Скидка/Сумма НДС/
+> Ед. ORTIQCHA) · «Причина» delta · Создать-menu {Исходящий платеж/Расходный ордер/Списание} create'da ham grounded.
+> **⚠️ RE-SEQUENCING topilma:** Остаток/Себест.единицы/РНПТ ustunlari /new(1A) VA detail(2A) — **ikkalasida** default
+> → umumiy prerekvizit, **birinchi quriladi** (roadmap detail-only capture'da 2A'ga qo'ygan edi). **(4) PII fix:**
+> `.gitignore` `**/new/*.png` + salesreturn `**/*.html` (real akkount elektro_sentr DOM = PII); moysklad-reference
+> commit'ga KIRMAYDI. **Gate:** biome0 (skript). **HALOL:** Phase-1 grounding — /new vizual-parity IMPL YO'Q, browser-cert YO'Q.
+> **⏭️ KEYINGI = QISM 1 IMPL sessiya:** (a) umumiy pozitsiya-ustun enabler (Остаток/Себест.единицы/РНПТ — BE data +
+> DS ustun; РНПТ demand-marking bilan umumiymi tekshir) → (b) `2026-07-23-salesreturn-new-1to1.md` reja yoz →
+> (c) 1A meta-grid + N5/6/7 default-yashir → (d) 1B «Перечисление» opsiya click-capture + BE persist. Reja:
+> ROADMAP QISM 1. Reference: `docs/moysklad-reference/salesreturn/new/` (gitignored, lokal).
+> **⚙️ DEV:** capture `.env.local` cred + `.auth/moysklad.json` sessiya bor (auto-login ishlaydi). `--create` re-run OK.
+
 > **🟢✅ 2026-07-23d (DEMAND «Отгрузки» — QISM 1B QISMAN (2/5) · `/new` position-economics browser-verified)**
 > `/new` pozitsiya/totals moysklad'га yaqinlashtirildi (`8a07440`, yagona fayl `demands/new/page.tsx`):
 > **(1) «Прибыль» qatori** — `DocumentTotalsPanel profitMinor={0n}` (yangi otgruzka DOIM qoralama → COGS
