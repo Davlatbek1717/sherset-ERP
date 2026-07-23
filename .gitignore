@@ -166,3 +166,12 @@ scripts/measure-moysklad-*.cjs
 
 # superpowers plugin cache (regenerated)
 .superpowers/
+
+# Local data/backups + reference material — kept on disk, never tracked or deployed
+moysklad_backup/
+docs/moysklad-reference/
+*.mp4
+
+# Prisma generated client — WHOLE dir (the *.tmp* line above only caught tmp files,
+# which is why it got committed). Regenerated on deploy; never track.
+packages/db/src/generated/
