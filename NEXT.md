@@ -308,9 +308,10 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > **🌐 2026-07-23l (YANGI YO'NALISH — VPS «moysklad» fork → Sherset Продажи port · recon+analiz+reja · `1e4b46a`)**
 > Foydalanuvchi yangi vazifa berdi: VPS `/var/www/moysklad` (climartgroup.uz, root 45.67.216.61) — bu **Sherset bilan
 > bir loyiha oilasi (moysklad-clone), alohida diverged fork** (`Biznesjon-Official/moysklad`, faol). Foydalanuvchi qarori
-> **KENGAYTIRILDI:** endi 3 bo'lim emas — **BUTUN kod climart bilan bir xil** (upstream-adoption). Keep = **counterparties
-> + debts** (Sherset'niki); DROP = sotuv/omborchi/restock-tasks/replenishment/cell; DB = **yangi dev-DB** (climart datasi
-> KERAK EMAS); rejim = **lokal-avval-tekshir**, prod ALOHIDA. **⚠️ Bu salesreturn 1:1 + Продажи-per-page rejalarni SUPERSEDES qiladi.**
+> **KENGAYTIRILDI:** endi 3 bo'lim emas — **BUTUN kod climart bilan bir xil** (upstream-adoption). Keep = «konteragent
+> ekotizimi» = **counterparties + debts + sms + telegram** (Sherset'niki; foydalanuvchi 2026-07-23: «bularning hammasi
+> konteragent bo'limiga kiradi»); DROP = sotuv/omborchi/restock-tasks/replenishment/cell; DB = **yangi dev-DB**; rejim =
+> **lokal-avval-tekshir**, prod ALOHIDA. **⚠️ salesreturn 1:1 + Продажи-per-page rejalarni SUPERSEDES qiladi.**
 > **SSH kirish O'RNATILDI:** `ssh climart` (kalit `~/.ssh/climart_vps` root@45.67.216.61'da, `~/.ssh/config`'da; parolsiz).
 > **Server FAQAT o'qiladi** (git archive bilan kod olish; DB/boshqa loyihalarga TEGMA). VPS full archive ~3GB → maqsadli yo'llar.
 > **Farq-tahlil:** HAR Продажи FE fayli farq qiladi; VPS TO'LIQROQ (demands 1775>1445, sales-returns/new 1732>1151,
@@ -321,11 +322,12 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > add(bulk-edit/specialoffers/subscription). `pnpm install` ✅ · money build ✅ · prisma generate ✅. **Main daxlsiz.**
 > **B2 ✅ + B3-partial ✅ (commit `2e3b35c`): typecheck 186 → 75.** B2 = Sherset Debt-modellar + back-relation'lar
 > climart sxemasiga (API 119→34). B3-partial = PermissionEntity/NotificationKind/AttachmentEntity +debt (API 34→8).
-> **⏭️ KEYINGI = qolgan 75 (8 API + 67 web) = keep-list transitiv-tail** (debts/counterparties → Sherset sms/telegram/
-> UI-infra). Yo'l (plan §6): leaf-fayllarni tikla (sms-render.util/sms-template.service/use-keyboard-nav/debt-api/
-> sms-broadcast-modal/telegram-panel) + climart SmsService/TelegramService'ga metod-patch + counterparties ListView'ni
-> climart'ga ADAPT → typecheck 0 → B4 build → B5 dev-DB → B6 verify.
-> **Har sessiya boshida:** worktree'da `pnpm --filter @moysklad/money build`. **HALOL:** hali BUILD BO'LMAYDI.
+> **⏭️ KEYINGI = kengaygan closure-reconcile** (checkpoint `2e3b35c`, API 8 / jami 75). Yo'nalish: Sherset sms/telegram
+> ALMASHTIRILMAYDI — qoladi. **O'lchangan CHUQUR CLOSURE:** telegram → `hr/hr-telegram-bridge` (MTProto) + schema
+> `TelegramChat`/`TelegramChatMessage`/`TelegramConfig.businessUserId`; sms → sms-template/phone-gateway. Round-by-round
+> (plan §6): schema qo'sh (Debt kabi) → sms/telegram/hr-bridge modul tikla → FE kom(sms/telegram/use-keyboard-nav/debt-api)
+> tikla → counterparties ListView climart'ga adapt → app.module wiring → typecheck 0 → build → dev-DB → verify.
+> **⚠️ Katta ko'p-sessiyalik** (kaskad). **Har sessiya boshida:** worktree'da money build. **HALOL:** hali BUILD BO'LMAYDI.
 
 > **🟢 2026-07-23k (DEMAND list QISM 3 — Грузополучатель ustun+filtr + Товар/группа filtr · Phase-1 · `b2fe49f`)**
 > Ro'yxatni moysklad `demand-01-list` tomon: **L1** «Грузополучатель» ustuni (list `include`ga `consignee`;

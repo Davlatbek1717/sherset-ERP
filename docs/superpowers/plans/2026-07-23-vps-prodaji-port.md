@@ -8,7 +8,8 @@
 ## 0. Yakuniy ko'lam (foydalanuvchi qarori, 3 savol bilan tasdiqlangan)
 
 - **Butun kod climart bilan bir xil bo'lsin** (barcha apps/packages/routes climart versiyasiga).
-- **SAQLANADI (Sherset'niki qoladi):** `counterparties` (konteragentlar) + `debts` (qarzlar) — FE + API + komponent + sxema-modellari.
+- **SAQLANADI (Sherset'niki qoladi) — «konteragent ekotizimi»:** `counterparties` + `debts` + **`sms` + `telegram`** (2026-07-23 foydalanuvchi aniqlashtirdi: «bularning hammasi konteragent bo'limiga kiradi, Sherset'dagi sms/telegram bilan qolaveradi»). FE + API + komponent + sxema-modellari.
+  > ⚠️ **CHUQUR TRANSITIV CLOSURE (o'lchandi):** bu ekotizim yana quyidagilarni tortadi — `telegram` → **`hr/hr-telegram-bridge`** (MTProto: mtproto-inbound-handler, telegram-client-factory) + schema `TelegramChat`/`TelegramChatMessage` modellari + `TelegramConfig.businessUserId` maydoni; `sms` → sms-template/phone-gateway/sms-contacts; `debts` → sms+telegram. Ya'ni Sherset backend'ining **katta bog'langan bo'lagi** — ko'p-sessiyalik port.
 - **TUSHIB QOLADI** (Sherset-only, foydalanuvchi saqlashni tanlamadi): `sotuv` (maxsus POS), `omborchi`, `restock-tasks`, `replenishment`, `cell`. ⚠️ `sotuv` — butun maxsus kassa; yo'qoladi.
 - **QO'SHILADI** (climartda bor, Sherset'da yo'q — climart tree bilan avtomat keladi): `bulk-edit`, `specialoffers`, `subscription`.
 - **Rejim:** **LOKAL — avval to'liq tayyorla+tekshir.** Production (`sherset.biznesjon.uz`) deploy = ALOHIDA, keyingi ehtiyotkor qadam.
@@ -67,10 +68,17 @@ Izolyatsiyalangan **worktree/branch**'da (parallel sessiya main'da — halaqit b
   - **API 8:** debt.service Sherset sms/telegram'ni chaqiradi: `../sms/sms-render.util` + `../sms/sms-template.service` fayllari climart'da yo'q · `SmsService.getContacts` + `TelegramService.notifyCounterparty` metodlari climart servislarida yo'q.
   - **WEB 67:** counterparties/debts sahifalari Sherset-only import qiladi: `@/components/sms/sms-broadcast-modal` · `@/hooks/use-keyboard-nav` · `@/lib/debt-api` · `@/components/telegram/order-telegram-panel` + Sherset `ListView` props (climart ListView boshqacha — TYPE mismatch, faqat missing-module emas).
 
-### Qolgan yo'l (B3-davomi → B4-B6)
-1. **Transitiv leaf-fayllarni tikla** (Sherset'dan, konflikt yo'qlarni): sms-render.util, sms-template.service, use-keyboard-nav, debt-api, sms-broadcast-modal, telegram order-panel. Har birini tiklab re-typecheck (yangi transitiv-dep chiqishi mumkin — takrorla).
-2. **Metod-patch:** climart `SmsService`ga `getContacts`, `TelegramService`ga `notifyCounterparty` (Sherset implementatsiyasidan) qo'sh — YOKI Sherset sms/telegram modullarini butun tikla (⚠️ climart ham ishlatadi — konflikt tekshir).
-3. **ListView type-mismatch (counterparties):** climart ListView API'siga moslash (adapt) — bu ADAPT (tiklab bo'lmaydi, climart List'ni hamma ishlatadi).
-4. `typecheck 0` → B4 biome+i18n+build → B5 yangi dev-DB+migrate+seed+smoke → B6 verify.
+### Qolgan yo'l (B3-davomi → B4-B6) — KENGAYGAN keep-list bo'yicha
 
-**Har sessiya boshida:** worktree'da `pnpm --filter @moysklad/money build`. Reference: `ssh climart` · branch `climart-adoption` · worktree `d:/projects/sherset-climart-adoption`.
+**Yo'nalish (foydalanuvchi aniqlashtirdi):** Sherset sms/telegram'ni climart'nikiga ALMASHTIRMA — Sherset'niki qoladi. Ya'ni kengaygan ekotizimni climart-bazaga moslashtir (climart'ning sms/telegram ishlatishi Sherset versiyaga moslashadi yoki Sherset versiyasi superset qilinadi).
+
+**Tizimli closure-reconcile (round-by-round, har round re-typecheck):**
+1. **Schema:** Sherset'dan `TelegramChat` + `TelegramChatMessage` modellari + `TelegramConfig.businessUserId` (+ boshqa telegram/sms maydonlari) climart sxemasiga qo'sh (Debt kabi, back-relation'lar bilan). `prisma generate`.
+2. **API modullar:** Sherset `sms` + `telegram` + **`hr/hr-telegram-bridge`** (telegram MTProto tortadi) modullarini tikla (`git checkout main -- …`). Ular tortgan yangi Sherset-dep'larni round-by-round tikla/qo'sh (kaskad tugagunча).
+3. **FE:** counterparties/debts komponent-deps tikla: `components/sms/*`, `components/telegram/*`, `hooks/use-keyboard-nav`, `lib/debt-api`. **ListView:** counterparties Sherset ListView'ga tayanadi — climart ListView bilan to'qnashsa, counterparties'ni climart ListView'ga ADAPT (climart savdo-sahifalari climart ListView ishlatadi — u g'olib).
+4. **app.module/nav wiring:** kept modullarni climart `app.module`'ga ro'yxatga ol; nav'da counterparties/debts havolalari.
+5. `typecheck 0` → B4 biome+i18n+build → B5 yangi dev-DB+migrate+seed+smoke → B6 verify.
+
+> ⚠️ **Realizm:** closure katta va kaskadli (telegram→hr-bridge→mtproto→schema). Har round yangi dep ochadi. Bu — **ko'p-sessiyalik**; har sessiya bir-ikki round + re-typecheck + commit. Error-count trend (75→…→0) progress o'lchovi.
+
+**Har sessiya boshida:** worktree'da `pnpm --filter @moysklad/money build`. Reference: `ssh climart` · branch `climart-adoption` · worktree `d:/projects/sherset-climart-adoption` · checkpoint `2e3b35c` (API 8, jami 75).
