@@ -36,6 +36,8 @@ export const ATTACHMENT_ENTITIES = [
   'CommissionReportIn',
   // Debt payment screenshot (Sherset KEEP — B3).
   'DebtPayment',
+  // Telegram chat media (Sherset KEEP — B3).
+  'TelegramChatMessage',
 ] as const;
 
 const Entity = z.enum(ATTACHMENT_ENTITIES);

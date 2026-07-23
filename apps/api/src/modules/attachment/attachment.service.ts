@@ -113,7 +113,7 @@ export class AttachmentService {
    */
   async createFromBuffer(
     accountId: string,
-    userId: string,
+    userId: string | null,
     params: {
       entity: AttachmentEntity;
       entityId: string;

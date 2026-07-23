@@ -32,7 +32,7 @@ export class HrSupplyListener {
 
   @OnEvent(HR_EVENT.SUPPLY_POSTED, { async: true, promisify: true })
   async onSupplyPosted(payload: SupplyPostedEvent): Promise<void> {
-    const items = payload.items.map((it) => ({
+    const items = (payload.items ?? []).map((it) => ({
       name: it.name,
       quantity: it.quantity,
       uom: it.uom,
@@ -49,7 +49,7 @@ export class HrSupplyListener {
       buildContext: (ctx) => ({
         ...ctx,
         supply: {
-          number: payload.supplyNumber,
+          number: payload.supplyNumber ?? '',
           totalFormatted: formatMinor(payload.totalMinor),
           dateFormatted: formatLocalDate(payload.postedAt),
           items,

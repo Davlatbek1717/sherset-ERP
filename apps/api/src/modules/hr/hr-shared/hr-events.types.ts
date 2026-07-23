@@ -47,6 +47,16 @@ export interface SupplyPostedEvent {
   counterpartyId: string;
   totalMinor: bigint;
   postedAt: Date;
+  // Sherset KEEP (hr-telegram-bridge supply notification) — B3. Optional: climart's
+  // supply.service does not populate these yet; the listener degrades gracefully.
+  supplyNumber?: string;
+  items?: Array<{
+    name: string;
+    quantity: string;
+    uom: string | null;
+    priceMinor: bigint;
+    lineSumMinor: bigint;
+  }>;
 }
 
 export interface SalesReturnPostedEvent {
