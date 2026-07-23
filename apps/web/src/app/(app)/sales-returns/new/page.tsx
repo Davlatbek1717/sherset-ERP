@@ -103,6 +103,7 @@ export default function NewSalesReturnPage() {
   const tDetailTitles = useTranslations('detail_titles');
   const tDetailHeader = useTranslations('detail_header');
   const tStates = useTranslations('states.sales_return');
+  const tCols = useTranslations('position_cols');
   const docEditorLabels = useDocumentEditorLabels();
   const { user } = useAuth();
 
@@ -114,6 +115,13 @@ export default function NewSalesReturnPage() {
     { value: 'cancelled', label: tStates('cancelled'), color: '#f4d4d4' },
   ];
 
+  // moysklad create-form default-visible column set (grounded 2026-07-23, gap-backlog
+  // N4-N7): Наименование · Кол-во · Остаток · Цена · НДС · Сумма · Себестоимость ГТД ·
+  // Страна. NO «Скидка» (N5 — absent in moysklad DOM), NO «Сумма НДС» (N6 — hidden by
+  // default), NO «Ед.»/goodPack (N7 — hidden). DEFER (Phase-1, sibling-consistent with
+  // demand /new): «Себест. единицы» (costPerUnit — no valid draft cost basis: a return's
+  // COGS is the original outbound cost, not the sale price the DS column would show) and
+  // «РНПТ» (no BE marking field on SalesReturnPositionInput — QISM 4).
   const POSITION_COLUMNS: PositionTableColumnConfig[] = [
     { key: 'dragarea' },
     { key: 'select' },
@@ -121,14 +129,10 @@ export default function NewSalesReturnPage() {
     { key: 'image' },
     { key: 'name' },
     { key: 'quantity' },
-    { key: 'goodPack' },
+    { key: 'stock', label: tCols('stock') }, // «Остаток» — live store balance (read-only)
     { key: 'price' },
     { key: 'vat' },
-    { key: 'vatAmount' },
-    { key: 'discount' },
     { key: 'amount' },
-    // moysklad «Возврат покупателя» customs block (§45): Себестоимость ГТД
-    // + Страна only (no «Номер ГТД» column — outbound-origin return).
     { key: 'gtdSumMinor', label: tFields('gtd_cost') },
     { key: 'country' },
     { key: 'menu' },
@@ -245,6 +249,35 @@ export default function NewSalesReturnPage() {
   });
   const adminRate = (currenciesData?.items ?? []).find((c) => c.isoCode === currency)?.rate;
   const effectiveRate = rateOverride ?? adminRate ?? '1';
+
+  // Live «Остаток» (store balance per position), mirroring demand /new. GET /stocks is
+  // store-scoped; the derived rowsWithStock spreads stock onto each row WITHOUT mutating
+  // position state (so onUpdate/onRemove still target the `positions` setters by row.id).
+  const assortmentIds = useMemo(
+    () => positions.map((p) => p.assortmentId).filter((id): id is string => !!id),
+    [positions],
+  );
+  const { data: stockData } = useQuery<{ items: Array<{ assortmentId: string; qty: string }> }>({
+    queryKey: ['stocks', storeId, assortmentIds.join(',')],
+    queryFn: () =>
+      api.get(
+        `/stocks?storeId=${storeId}&assortmentIds=${encodeURIComponent(assortmentIds.join(','))}`,
+      ),
+    enabled: !!storeId && assortmentIds.length > 0,
+  });
+  const stockMap = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const r of stockData?.items ?? []) m.set(r.assortmentId, r.qty);
+    return m;
+  }, [stockData]);
+  const rowsWithStock = useMemo(
+    () =>
+      positions.map((p) => ({
+        ...p,
+        stock: p.assortmentId ? stockMap.get(p.assortmentId) : undefined,
+      })),
+    [positions, stockMap],
+  );
 
   // Auto-fill from the user's «Значения по умолчанию» (moysklad applies the user
   // defaults to every new document). Sales doc — Организация/Склад=default with a
@@ -782,7 +815,7 @@ export default function NewSalesReturnPage() {
 
           <PositionTable
             columns={POSITION_COLUMNS}
-            rows={positions}
+            rows={rowsWithStock}
             onUpdate={(id, patch) => updatePosition(id, patch as Partial<NewPositionRow>)}
             onRemove={removePosition}
             onDuplicate={(id) => {
