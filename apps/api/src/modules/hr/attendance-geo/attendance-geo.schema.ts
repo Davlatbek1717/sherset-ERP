@@ -1,0 +1,51 @@
+import { z } from 'zod';
+
+const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+export const PingSchema = z.object({
+  lat: z.number().min(-90).max(90),
+  lng: z.number().min(-180).max(180),
+  accuracy: z.number().min(0).max(100_000),
+});
+
+export const OptInSchema = z.object({ optIn: z.boolean() });
+
+export const WorkLocationSchema = z.object({
+  name: z.string().trim().min(1).max(150),
+  lat: z.number().min(-90).max(90),
+  lng: z.number().min(-180).max(180),
+  radiusMeters: z.number().int().min(10).max(5000).default(150),
+});
+
+const DaySchema = z
+  .object({
+    weekday: z.number().int().min(0).max(6),
+    startTime: z.string().regex(TIME),
+    endTime: z.string().regex(TIME),
+    isDayOff: z.boolean(),
+  })
+  .refine((d) => d.isDayOff || d.startTime < d.endTime, {
+    message: "Boshlanish tugashdan oldin bo'lishi kerak",
+  });
+
+export const ScheduleWeekSchema = z
+  .object({ days: z.array(DaySchema).max(7) })
+  .refine((o) => new Set(o.days.map((d) => d.weekday)).size === o.days.length, {
+    message: 'weekday takrorlangan',
+  });
+
+export const AttendanceConfigSchema = z.object({
+  workLocationId: z.string().uuid().nullable(),
+  attendanceOptIn: z.boolean(),
+});
+
+export const MonthlyReportFilterSchema = z.object({
+  yearMonth: z.string().regex(/^\d{4}-\d{2}$/),
+  employeeId: z.string().uuid().optional(),
+});
+
+export type PingInput = z.infer<typeof PingSchema>;
+export type WorkLocationInput = z.infer<typeof WorkLocationSchema>;
+export type ScheduleWeekInput = z.infer<typeof ScheduleWeekSchema>;
+export type AttendanceConfigInput = z.infer<typeof AttendanceConfigSchema>;
+export type MonthlyReportFilter = z.infer<typeof MonthlyReportFilterSchema>;
