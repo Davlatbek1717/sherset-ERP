@@ -549,12 +549,15 @@ export default function DemandsPage() {
         visibleColumnKeys={cols.visibleKeys}
         headerSlot={
           /* Inline filter panel — moysklad «Отгрузки» parity (~18 fields),
-             ordered to match the demand filter reference (01-default.html):
-             Период · Контрагент · Группа контрагента · Договор ·
-             Организация · Счёт организации · Склад · Проект · Статус ·
-             Заказ покупателя · Проведено · Напечатано · Отправлено · Оплата ·
-             Канал продаж · Владелец-сотрудник · Владелец-отдел · Сумма ·
-             Когда изменен. */
+             ordered to match the moysklad «Отгрузки» filter sequence
+             (docs/audits/demands-live-2026-07-23/demand-01-list); the
+             not-yet-built filters (Грузополучатель · Товар или группа · Тип
+             возврата · Владелец контрагента · Адрес доставки · Комментарий к
+             адресу · Общий доступ · Кто изменил) are skipped:
+             Период · Оплата · Склад · Проект · Контрагент ·
+             Группа контрагента · Счёт контрагента · Договор · Организация ·
+             Счёт организации · Статус · Проведено · Напечатано · Отправлено ·
+             Канал продаж · Владелец-сотрудник · Владелец-отдел · Когда изменен. */
           <InlineFilterPanel
             hidden={!filterOpen}
             applyLabel={tFilters('find')}
@@ -605,7 +608,71 @@ export default function DemandsPage() {
                 testId="filter-period"
               />
             </InlineFilterPanel.Field>
-            {/* 2. Контрагент */}
+            {/* 2. Оплата — payment progress (payedSumMinor vs sumMinor). */}
+            <InlineFilterPanel.Field label={tFilters('payment_status')} expandable>
+              <NativeSelect
+                value={extFilter.paymentStatus ?? ''}
+                onChange={(e) => {
+                  setExtFilter({
+                    ...extFilter,
+                    paymentStatus: (e.target.value || undefined) as
+                      | 'unpaid'
+                      | 'partial'
+                      | 'paid'
+                      | undefined,
+                  });
+                  setCursor(undefined);
+                }}
+                data-test-id="filter-payment-status"
+              >
+                <option value="" />
+                {/* moysklad order: Оплачено → Частично оплачено → Не оплачено. */}
+                <option value="paid">{tFilters('payment_paid')}</option>
+                <option value="partial">{tFilters('payment_partial')}</option>
+                <option value="unpaid">{tFilters('payment_unpaid')}</option>
+              </NativeSelect>
+            </InlineFilterPanel.Field>
+            {/* 3. Склад */}
+            <InlineFilterPanel.Field label={tFilters('store')} expandable>
+              <CatalogPickerField
+                value={
+                  filterValues.storeId
+                    ? {
+                        id: filterValues.storeId,
+                        label: filterValues.storeLabel ?? filterValues.storeId,
+                      }
+                    : null
+                }
+                placeholder=""
+                onPick={() => setPickerOpen('store')}
+                onClear={() => {
+                  setFilterValues({ ...filterValues, storeId: undefined, storeLabel: undefined });
+                  setCursor(undefined);
+                }}
+                testId="filter-store"
+              />
+            </InlineFilterPanel.Field>
+            {/* 4. Проект */}
+            <InlineFilterPanel.Field label={tFilters('project')} expandable>
+              <CatalogPickerField
+                value={
+                  extFilter.projectId
+                    ? {
+                        id: extFilter.projectId,
+                        label: extFilter.projectLabel ?? extFilter.projectId,
+                      }
+                    : null
+                }
+                placeholder=""
+                onPick={() => setPickerOpen('project')}
+                onClear={() => {
+                  setExtFilter({ ...extFilter, projectId: undefined, projectLabel: undefined });
+                  setCursor(undefined);
+                }}
+                testId="filter-project"
+              />
+            </InlineFilterPanel.Field>
+            {/* 5. Контрагент */}
             <InlineFilterPanel.Field label={tFilters('agent')} expandable>
               <CatalogPickerField
                 value={
@@ -625,7 +692,7 @@ export default function DemandsPage() {
                 testId="filter-agent"
               />
             </InlineFilterPanel.Field>
-            {/* 3. Группа контрагента */}
+            {/* 6. Группа контрагента */}
             <InlineFilterPanel.Field label={tFilters('agent_group')} expandable>
               <CatalogPickerField
                 value={
@@ -649,7 +716,7 @@ export default function DemandsPage() {
                 testId="filter-agent-group"
               />
             </InlineFilterPanel.Field>
-            {/* Счёт контрагента — the picker/state/param were already wired; the
+            {/* 7. Счёт контрагента — the picker/state/param were already wired; the
                 panel field itself was missing (moysklad has this filter). */}
             <InlineFilterPanel.Field label={tFilters('agent_account')} expandable>
               <CatalogPickerField
@@ -674,7 +741,7 @@ export default function DemandsPage() {
                 testId="filter-agent-account"
               />
             </InlineFilterPanel.Field>
-            {/* 4. Договор */}
+            {/* 8. Договор */}
             <InlineFilterPanel.Field label={tFilters('contract')} expandable>
               <CatalogPickerField
                 value={
@@ -694,7 +761,7 @@ export default function DemandsPage() {
                 testId="filter-contract"
               />
             </InlineFilterPanel.Field>
-            {/* 5. Организация */}
+            {/* 9. Организация */}
             <InlineFilterPanel.Field label={tFilters('organization')} expandable>
               <CatalogPickerField
                 value={
@@ -718,7 +785,7 @@ export default function DemandsPage() {
                 testId="filter-org"
               />
             </InlineFilterPanel.Field>
-            {/* 6. Счёт организации — disabled until organization picked. */}
+            {/* 10. Счёт организации — disabled until organization picked. */}
             <InlineFilterPanel.Field label={tFilters('organization_account')} expandable>
               <CatalogPickerField
                 value={
@@ -745,47 +812,7 @@ export default function DemandsPage() {
                 testId="filter-org-account"
               />
             </InlineFilterPanel.Field>
-            {/* 7. Склад */}
-            <InlineFilterPanel.Field label={tFilters('store')} expandable>
-              <CatalogPickerField
-                value={
-                  filterValues.storeId
-                    ? {
-                        id: filterValues.storeId,
-                        label: filterValues.storeLabel ?? filterValues.storeId,
-                      }
-                    : null
-                }
-                placeholder=""
-                onPick={() => setPickerOpen('store')}
-                onClear={() => {
-                  setFilterValues({ ...filterValues, storeId: undefined, storeLabel: undefined });
-                  setCursor(undefined);
-                }}
-                testId="filter-store"
-              />
-            </InlineFilterPanel.Field>
-            {/* 8. Проект */}
-            <InlineFilterPanel.Field label={tFilters('project')} expandable>
-              <CatalogPickerField
-                value={
-                  extFilter.projectId
-                    ? {
-                        id: extFilter.projectId,
-                        label: extFilter.projectLabel ?? extFilter.projectId,
-                      }
-                    : null
-                }
-                placeholder=""
-                onPick={() => setPickerOpen('project')}
-                onClear={() => {
-                  setExtFilter({ ...extFilter, projectId: undefined, projectLabel: undefined });
-                  setCursor(undefined);
-                }}
-                testId="filter-project"
-              />
-            </InlineFilterPanel.Field>
-            {/* 9. Статус — FSM state filter. */}
+            {/* 11. Статус — FSM state filter. */}
             <InlineFilterPanel.Field label={tFilters('state')} expandable>
               <NativeSelect
                 value={extFilter.state ?? ''}
@@ -806,7 +833,7 @@ export default function DemandsPage() {
             {/* «Заказ покупателя» filter removed — moysklad's demand list has no
                 such filter (strict 1:1, user 2026-07-23h). The «Заказ покупателя»
                 grid column stays (it's data, not a filter). */}
-            {/* 11. Проведено */}
+            {/* 12. Проведено */}
             <InlineFilterPanel.Field label={tFilters('applicable')} expandable>
               <YesNoSelect
                 value={extFilter.applicable}
@@ -817,7 +844,7 @@ export default function DemandsPage() {
                 testId="filter-applicable"
               />
             </InlineFilterPanel.Field>
-            {/* 12. Напечатано */}
+            {/* 13. Напечатано */}
             <InlineFilterPanel.Field label={tFilters('printed')} expandable>
               <YesNoSelect
                 value={extFilter.printed}
@@ -828,7 +855,7 @@ export default function DemandsPage() {
                 testId="filter-printed"
               />
             </InlineFilterPanel.Field>
-            {/* 13. Отправлено */}
+            {/* 14. Отправлено */}
             <InlineFilterPanel.Field label={tFilters('published')} expandable>
               <YesNoSelect
                 value={extFilter.published}
@@ -838,30 +865,6 @@ export default function DemandsPage() {
                 }}
                 testId="filter-published"
               />
-            </InlineFilterPanel.Field>
-            {/* 14. Оплата — payment progress (payedSumMinor vs sumMinor). */}
-            <InlineFilterPanel.Field label={tFilters('payment_status')} expandable>
-              <NativeSelect
-                value={extFilter.paymentStatus ?? ''}
-                onChange={(e) => {
-                  setExtFilter({
-                    ...extFilter,
-                    paymentStatus: (e.target.value || undefined) as
-                      | 'unpaid'
-                      | 'partial'
-                      | 'paid'
-                      | undefined,
-                  });
-                  setCursor(undefined);
-                }}
-                data-test-id="filter-payment-status"
-              >
-                <option value="" />
-                {/* moysklad order: Оплачено → Частично оплачено → Не оплачено. */}
-                <option value="paid">{tFilters('payment_paid')}</option>
-                <option value="partial">{tFilters('payment_partial')}</option>
-                <option value="unpaid">{tFilters('payment_unpaid')}</option>
-              </NativeSelect>
             </InlineFilterPanel.Field>
             {/* 15. Канал продаж */}
             <InlineFilterPanel.Field label={tFilters('sales_channel')} expandable>
@@ -930,7 +933,7 @@ export default function DemandsPage() {
             {/* «Сумма от/до» filter removed — moysklad's demand list has no
                 sum-range filter (strict 1:1, user 2026-07-23h). The «Сумма»
                 grid column + footer total stay. */}
-            {/* 19. Когда изменен — updatedAt range. */}
+            {/* 18. Когда изменен — updatedAt range. */}
             <InlineFilterPanel.Field
               label={tFilters('updated_period')}
               inlineSuffix={

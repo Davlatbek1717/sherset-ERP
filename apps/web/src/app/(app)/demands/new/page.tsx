@@ -15,6 +15,10 @@
  */
 
 import { AttributesEditor } from '@/components/attributes-editor';
+import {
+  type DeliveryAddressFull,
+  DeliveryAddressGroup,
+} from '@/components/customer-orders/delivery-address-group';
 import { useDocumentEditorLabels } from '@/hooks/use-document-editor-labels';
 import { useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
@@ -77,6 +81,19 @@ interface NewPositionRow extends DocPositionRow {
 
 function uid(): string {
   return Math.random().toString(36).slice(2);
+}
+
+/** Compose the denormalised single-line address from the structured parts. */
+function composeAddress(a: DeliveryAddressFull): string | null {
+  const parts: string[] = [];
+  if (a.country) parts.push(a.country);
+  if (a.index) parts.push(a.index);
+  if (a.city) parts.push(a.city);
+  if (a.street || a.building) parts.push([a.street, a.building].filter(Boolean).join(' '));
+  if (a.apartment) parts.push(a.apartment);
+  if (a.other) parts.push(a.other);
+  const composed = parts.filter(Boolean).join(', ').trim();
+  return composed || null;
 }
 
 function computeLineTotal(
@@ -183,7 +200,11 @@ export default function NewDemandPage() {
   const [projectLabel, setProjectLabel] = useState('');
   const [salesChannelId, setSalesChannelId] = useState<string | null>(null);
   const [salesChannelLabel, setSalesChannelLabel] = useState('');
-  const [shipmentAddress, setShipmentAddress] = useState('');
+  // «Адрес доставки» — structured parts + the free-form textarea (moysklad's
+  // main input, recomposed from the structured helper). The denormalised
+  // single-line string is composed from these on save (`shipmentAddress`).
+  const [deliveryAddressFull, setDeliveryAddressFull] = useState<DeliveryAddressFull>({});
+  const [deliveryAddressText, setDeliveryAddressText] = useState('');
   const [consignorId, setConsignorId] = useState<string | null>(null);
   const [consignorLabel, setConsignorLabel] = useState('');
   const [consigneeId, setConsigneeId] = useState<string | null>(null);
@@ -207,6 +228,9 @@ export default function NewDemandPage() {
   const [bankAccountLabel, setBankAccountLabel] = useState('');
   const [description, setDescription] = useState('');
   const [externalCode, setExternalCode] = useState('');
+  // moysklad «Внешний код» — a collapsed brand-blue link at the bottom-left that
+  // expands to an input when clicked (rarely-used optional field).
+  const [showExternalCode, setShowExternalCode] = useState(false);
   // Account custom fields (moysklad доп. поля). Keyed by attribute code; the
   // backend validates any required ones on create (validateAndNormalize), so no
   // client-side required check — an empty required field surfaces as a 400 in
@@ -430,7 +454,12 @@ export default function NewDemandPage() {
         ...(contractId ? { contractId } : {}),
         ...(projectId ? { projectId } : {}),
         ...(salesChannelId ? { salesChannelId } : {}),
-        ...(shipmentAddress ? { shipmentAddress } : {}),
+        // Free-form textarea wins; fall back to the structured compose. The demand
+        // create schema takes only the denormalised `shipmentAddress` (there is no
+        // `shipmentAddressFull` field), so only the composed string is sent.
+        ...(deliveryAddressText.trim() || composeAddress(deliveryAddressFull)
+          ? { shipmentAddress: deliveryAddressText.trim() || composeAddress(deliveryAddressFull) }
+          : {}),
         ...(consignorId ? { consignorId } : {}),
         ...(consigneeId ? { consigneeId } : {}),
         ...(carrierId ? { carrierId } : {}),
@@ -800,13 +829,11 @@ export default function NewDemandPage() {
         {/* RIGHT — Адрес доставки + Комментарий (wide column, top-aligned). */}
         <div className="grid grid-cols-[auto_minmax(0,280px)] content-start items-start gap-x-2.5 gap-y-2.5">
           <DocumentMetaField label={tFields('delivery_address')}>
-            <Textarea
-              rows={2}
-              value={shipmentAddress}
-              onChange={(e) => setShipmentAddress(e.target.value)}
-              aria-label={tFields('delivery_address')}
-              className="min-h-[34px] text-[12px]"
-              data-test-id="field-shipment-address"
+            <DeliveryAddressGroup
+              value={deliveryAddressFull}
+              onChange={setDeliveryAddressFull}
+              text={deliveryAddressText}
+              onTextChange={setDeliveryAddressText}
             />
           </DocumentMetaField>
           <DocumentMetaField label={tFields('description')}>
@@ -948,45 +975,6 @@ export default function NewDemandPage() {
               data-test-id="field-state-contract-id"
             />
           </DocumentMetaField>
-          <DocumentMetaField label={tDetailForm('external_code')}>
-            <Input
-              value={externalCode}
-              onChange={(e) => setExternalCode(e.target.value)}
-              data-test-id="field-external-code"
-            />
-          </DocumentMetaField>
-        </DocumentMetaRow>
-
-        <DocumentMetaRow>
-          <DocumentMetaField label={tDetailForm('overhead_sum')}>
-            <Input
-              type="number"
-              min="0"
-              step="0.01"
-              inputMode="decimal"
-              value={overheadMajor}
-              placeholder="0"
-              onChange={(e) => setOverheadMajor(e.target.value)}
-              data-test-id="field-overhead-sum"
-            />
-          </DocumentMetaField>
-          <DocumentMetaField label={tDetailForm('overhead_distribution')}>
-            <NativeSelect
-              value={overheadDistribution}
-              onChange={(e) =>
-                setOverheadDistribution(
-                  e.target.value as 'WEIGHT' | 'PRICE' | 'VOLUME' | 'QUANTITY',
-                )
-              }
-              data-test-id="field-overhead-distribution"
-              disabled={!(Number(overheadMajor) > 0)}
-            >
-              <option value="PRICE">{tDetailForm('overhead_by_price')}</option>
-              <option value="WEIGHT">{tDetailForm('overhead_by_weight')}</option>
-              <option value="VOLUME">{tDetailForm('overhead_by_volume')}</option>
-              <option value="QUANTITY">{tDetailForm('overhead_by_quantity')}</option>
-            </NativeSelect>
-          </DocumentMetaField>
         </DocumentMetaRow>
 
         <DocumentMetaRow>
@@ -1103,26 +1091,93 @@ export default function NewDemandPage() {
           />
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_auto]">
-            <Textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder={tFields('description')}
-              rows={3}
-              data-test-id="field-description"
-            />
-            <DocumentTotalsPanel
-              subtotalMinor={totals.net}
-              vatMinor={totals.vat}
-              totalMinor={totals.gross}
-              currency={currency}
-              vatEnabled={vatEnabled}
-              onVatEnabledChange={setVatEnabled}
-              vatIncluded={vatIncluded}
-              onVatIncludedChange={setVatIncluded}
-              // moysklad shows «Прибыль» (not «Кол-во») in the sales totals — the
-              // expected profit from the product cost (net revenue − Σ buyPrice×qty).
-              profitMinor={profitMinor}
-            />
+            {/* Left: document Комментарий + the «Внешний код» collapsed toggle-link
+                beneath it (moysklad shows external-code as a brand-blue link at the
+                bottom-left that expands to an input on click). */}
+            <div className="flex flex-col gap-3 text-sm">
+              <Textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder={tFields('description')}
+                rows={3}
+                data-test-id="field-description"
+              />
+              {showExternalCode ? (
+                <label className="flex flex-col gap-1">
+                  <span className="text-[var(--ms-text-muted)]">{tFields('external_code')}</span>
+                  <input
+                    type="text"
+                    value={externalCode}
+                    onChange={(e) => setExternalCode(e.target.value)}
+                    className="h-[var(--ms-control-h)] w-56 rounded-[var(--ms-radius-sm)] border border-[var(--ms-border-default)] px-2 text-[12px] focus:outline-none focus:ring-2 focus:ring-[var(--ms-text-brand)]"
+                    data-test-id="field-external-code"
+                  />
+                </label>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setShowExternalCode(true)}
+                  className="self-start text-[var(--ms-text-brand)] hover:underline"
+                  data-test-id="external-code-toggle"
+                >
+                  {tFields('external_code')}
+                </button>
+              )}
+            </div>
+            {/* Right: totals panel + the «Накладные расходы» compact row directly
+                below it (moysklad places overhead under the totals, not in «Другие
+                поля»). */}
+            <div className="flex flex-col gap-2">
+              <DocumentTotalsPanel
+                subtotalMinor={totals.net}
+                vatMinor={totals.vat}
+                totalMinor={totals.gross}
+                currency={currency}
+                vatEnabled={vatEnabled}
+                onVatEnabledChange={setVatEnabled}
+                vatIncluded={vatIncluded}
+                onVatIncludedChange={setVatIncluded}
+                // moysklad shows «Прибыль» (not «Кол-во») in the sales totals — the
+                // expected profit from the product cost (net revenue − Σ buyPrice×qty).
+                profitMinor={profitMinor}
+              />
+              <div
+                className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1 text-[12px]"
+                data-test-id="overhead-row"
+              >
+                <span className="text-[var(--ms-text-muted)]">{tDetailForm('overhead_sum')}</span>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  inputMode="decimal"
+                  value={overheadMajor}
+                  placeholder="0"
+                  onChange={(e) => setOverheadMajor(e.target.value)}
+                  className="w-28 text-right"
+                  data-test-id="field-overhead-sum"
+                />
+                <span className="text-[var(--ms-text-muted)]">
+                  {tDetailForm('overhead_distribution')}
+                </span>
+                <NativeSelect
+                  value={overheadDistribution}
+                  onChange={(e) =>
+                    setOverheadDistribution(
+                      e.target.value as 'WEIGHT' | 'PRICE' | 'VOLUME' | 'QUANTITY',
+                    )
+                  }
+                  data-test-id="field-overhead-distribution"
+                  disabled={!(Number(overheadMajor) > 0)}
+                  className="w-40"
+                >
+                  <option value="PRICE">{tDetailForm('overhead_by_price')}</option>
+                  <option value="WEIGHT">{tDetailForm('overhead_by_weight')}</option>
+                  <option value="VOLUME">{tDetailForm('overhead_by_volume')}</option>
+                  <option value="QUANTITY">{tDetailForm('overhead_by_quantity')}</option>
+                </NativeSelect>
+              </div>
+            </div>
           </div>
 
           {/* Account custom fields (доп. поля) — moysklad keeps these inline

@@ -32,6 +32,7 @@ import {
   Button,
   CatalogPicker,
   CatalogPickerField,
+  DocumentDisclosurePanel,
   DocumentMetaField,
   DocumentMetaPanel,
   DocumentMetaRow,
@@ -926,172 +927,184 @@ export default function DemandDetailPage() {
                 data-test-id="field-description"
               />
             </DocumentMetaField>
-            <DocumentMetaField label={tDetailForm('external_code')}>
-              <Input
-                value={form.externalCode}
-                onChange={(e) => setForm((s) => s && { ...s, externalCode: e.target.value })}
-                disabled={!editable}
-                placeholder="—"
-                data-test-id="field-external-code"
-              />
-            </DocumentMetaField>
-          </DocumentMetaRow>
-          <DocumentMetaRow>
-            <DocumentMetaField label={tDetailForm('overhead_sum')}>
-              <Input
-                type="number"
-                min="0"
-                step="0.01"
-                inputMode="decimal"
-                value={form.overheadMajor}
-                placeholder="0"
-                onChange={(e) => setForm((s) => s && { ...s, overheadMajor: e.target.value })}
-                disabled={!editable}
-                data-test-id="field-overhead-sum"
-              />
-            </DocumentMetaField>
-            <DocumentMetaField label={tDetailForm('overhead_distribution')}>
-              <NativeSelect
-                value={form.overheadDistribution}
-                onChange={(e) =>
-                  setForm(
-                    (s) =>
-                      s && {
-                        ...s,
-                        overheadDistribution: e.target.value as FormState['overheadDistribution'],
-                      },
-                  )
-                }
-                data-test-id="field-overhead-distribution"
-                disabled={!editable || !(Number(form.overheadMajor) > 0)}
-              >
-                <option value="PRICE">{tDetailForm('overhead_by_price')}</option>
-                <option value="WEIGHT">{tDetailForm('overhead_by_weight')}</option>
-                <option value="VOLUME">{tDetailForm('overhead_by_volume')}</option>
-                <option value="QUANTITY">{tDetailForm('overhead_by_quantity')}</option>
-              </NativeSelect>
-            </DocumentMetaField>
-          </DocumentMetaRow>
-          <DocumentMetaRow>
-            <DocumentMetaField label={tFields('consignor')}>
-              <CatalogPickerField
-                value={
-                  form.consignorId ? { id: form.consignorId, label: form.consignorLabel } : null
-                }
-                placeholder={tFields('consignor')}
-                onPick={() => editable && setOpenPicker('consignor')}
-                onClear={() =>
-                  editable && setForm((s) => s && { ...s, consignorId: null, consignorLabel: '' })
-                }
-                disabled={!editable}
-                testId="field-consignor"
-              />
-            </DocumentMetaField>
-            <DocumentMetaField label={tFields('consignee')}>
-              <CatalogPickerField
-                value={
-                  form.consigneeId ? { id: form.consigneeId, label: form.consigneeLabel } : null
-                }
-                placeholder={tFields('consignee')}
-                onPick={() => editable && setOpenPicker('consignee')}
-                onClear={() =>
-                  editable && setForm((s) => s && { ...s, consigneeId: null, consigneeLabel: '' })
-                }
-                disabled={!editable}
-                testId="field-consignee"
-              />
-            </DocumentMetaField>
-          </DocumentMetaRow>
-          <DocumentMetaRow>
-            <DocumentMetaField label={tFields('carrier')}>
-              <CatalogPickerField
-                value={form.carrierId ? { id: form.carrierId, label: form.carrierLabel } : null}
-                placeholder={tFields('carrier')}
-                onPick={() => editable && setOpenPicker('carrier')}
-                onClear={() =>
-                  editable && setForm((s) => s && { ...s, carrierId: null, carrierLabel: '' })
-                }
-                disabled={!editable}
-                testId="field-carrier"
-              />
-            </DocumentMetaField>
-            <DocumentMetaField label={tFields('cargo_name')}>
-              <Input
-                value={form.cargoName}
-                onChange={(e) => setForm((s) => s && { ...s, cargoName: e.target.value })}
-                disabled={!editable}
-                data-test-id="field-cargo-name"
-              />
-            </DocumentMetaField>
-          </DocumentMetaRow>
-          <DocumentMetaRow>
-            <DocumentMetaField label={tFields('transport_facility')}>
-              <Input
-                value={form.transportFacility}
-                onChange={(e) => setForm((s) => s && { ...s, transportFacility: e.target.value })}
-                disabled={!editable}
-                data-test-id="field-transport-facility"
-              />
-            </DocumentMetaField>
-            <DocumentMetaField label={tFields('car_number')}>
-              <Input
-                value={form.carNumber}
-                onChange={(e) => setForm((s) => s && { ...s, carNumber: e.target.value })}
-                disabled={!editable}
-                data-test-id="field-car-number"
-              />
-            </DocumentMetaField>
-          </DocumentMetaRow>
-          <DocumentMetaRow>
-            <DocumentMetaField label={tFields('places_count')}>
-              <Input
-                type="number"
-                min="0"
-                value={form.placesCount}
-                onChange={(e) => setForm((s) => s && { ...s, placesCount: e.target.value })}
-                disabled={!editable}
-                data-test-id="field-places-count"
-              />
-            </DocumentMetaField>
-            <DocumentMetaField label={tFields('shipping_doc_no')}>
-              <Input
-                value={form.shippingDocNo}
-                onChange={(e) => setForm((s) => s && { ...s, shippingDocNo: e.target.value })}
-                disabled={!editable}
-                data-test-id="field-shipping-doc-no"
-              />
-            </DocumentMetaField>
-          </DocumentMetaRow>
-          <DocumentMetaRow>
-            <DocumentMetaField label={tFields('shipping_doc_date')}>
-              <Input
-                type="date"
-                value={form.shippingDocDate}
-                onChange={(e) => setForm((s) => s && { ...s, shippingDocDate: e.target.value })}
-                disabled={!editable}
-                data-test-id="field-shipping-doc-date"
-              />
-            </DocumentMetaField>
-            <DocumentMetaField label={tFields('state_contract_id')}>
-              <Input
-                value={form.stateContractId}
-                onChange={(e) => setForm((s) => s && { ...s, stateContractId: e.target.value })}
-                disabled={!editable}
-                data-test-id="field-state-contract-id"
-              />
-            </DocumentMetaField>
-          </DocumentMetaRow>
-          <DocumentMetaRow>
-            <DocumentMetaField label={tFields('shipper_instructions')} fullWidth>
-              <Input
-                value={form.shipperInstructions}
-                onChange={(e) => setForm((s) => s && { ...s, shipperInstructions: e.target.value })}
-                disabled={!editable}
-                data-test-id="field-shipper-instructions"
-              />
-            </DocumentMetaField>
           </DocumentMetaRow>
         </DocumentMetaPanel>
+
+        {/* «Другие поля» — moysklad groups the secondary shipping/overhead meta
+            under an orange collapsible disclosure (mirrors /demands/new). The
+            CORE header refs stay in the always-visible grid above; these
+            secondary fields collapse by default. Every field keeps its exact
+            value/onChange/disabled wiring — only the grouping changed. */}
+        <DocumentDisclosurePanel title={tForm('other_fields')} defaultOpen={false}>
+          <DocumentMetaPanel>
+            <DocumentMetaRow>
+              <DocumentMetaField label={tDetailForm('overhead_sum')}>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  inputMode="decimal"
+                  value={form.overheadMajor}
+                  placeholder="0"
+                  onChange={(e) => setForm((s) => s && { ...s, overheadMajor: e.target.value })}
+                  disabled={!editable}
+                  data-test-id="field-overhead-sum"
+                />
+              </DocumentMetaField>
+              <DocumentMetaField label={tDetailForm('overhead_distribution')}>
+                <NativeSelect
+                  value={form.overheadDistribution}
+                  onChange={(e) =>
+                    setForm(
+                      (s) =>
+                        s && {
+                          ...s,
+                          overheadDistribution: e.target.value as FormState['overheadDistribution'],
+                        },
+                    )
+                  }
+                  data-test-id="field-overhead-distribution"
+                  disabled={!editable || !(Number(form.overheadMajor) > 0)}
+                >
+                  <option value="PRICE">{tDetailForm('overhead_by_price')}</option>
+                  <option value="WEIGHT">{tDetailForm('overhead_by_weight')}</option>
+                  <option value="VOLUME">{tDetailForm('overhead_by_volume')}</option>
+                  <option value="QUANTITY">{tDetailForm('overhead_by_quantity')}</option>
+                </NativeSelect>
+              </DocumentMetaField>
+            </DocumentMetaRow>
+            <DocumentMetaRow>
+              <DocumentMetaField label={tFields('consignor')}>
+                <CatalogPickerField
+                  value={
+                    form.consignorId ? { id: form.consignorId, label: form.consignorLabel } : null
+                  }
+                  placeholder={tFields('consignor')}
+                  onPick={() => editable && setOpenPicker('consignor')}
+                  onClear={() =>
+                    editable && setForm((s) => s && { ...s, consignorId: null, consignorLabel: '' })
+                  }
+                  disabled={!editable}
+                  testId="field-consignor"
+                />
+              </DocumentMetaField>
+              <DocumentMetaField label={tFields('consignee')}>
+                <CatalogPickerField
+                  value={
+                    form.consigneeId ? { id: form.consigneeId, label: form.consigneeLabel } : null
+                  }
+                  placeholder={tFields('consignee')}
+                  onPick={() => editable && setOpenPicker('consignee')}
+                  onClear={() =>
+                    editable && setForm((s) => s && { ...s, consigneeId: null, consigneeLabel: '' })
+                  }
+                  disabled={!editable}
+                  testId="field-consignee"
+                />
+              </DocumentMetaField>
+            </DocumentMetaRow>
+            <DocumentMetaRow>
+              <DocumentMetaField label={tFields('carrier')}>
+                <CatalogPickerField
+                  value={form.carrierId ? { id: form.carrierId, label: form.carrierLabel } : null}
+                  placeholder={tFields('carrier')}
+                  onPick={() => editable && setOpenPicker('carrier')}
+                  onClear={() =>
+                    editable && setForm((s) => s && { ...s, carrierId: null, carrierLabel: '' })
+                  }
+                  disabled={!editable}
+                  testId="field-carrier"
+                />
+              </DocumentMetaField>
+              <DocumentMetaField label={tFields('cargo_name')}>
+                <Input
+                  value={form.cargoName}
+                  onChange={(e) => setForm((s) => s && { ...s, cargoName: e.target.value })}
+                  disabled={!editable}
+                  data-test-id="field-cargo-name"
+                />
+              </DocumentMetaField>
+            </DocumentMetaRow>
+            <DocumentMetaRow>
+              <DocumentMetaField label={tFields('transport_facility')}>
+                <Input
+                  value={form.transportFacility}
+                  onChange={(e) => setForm((s) => s && { ...s, transportFacility: e.target.value })}
+                  disabled={!editable}
+                  data-test-id="field-transport-facility"
+                />
+              </DocumentMetaField>
+              <DocumentMetaField label={tFields('car_number')}>
+                <Input
+                  value={form.carNumber}
+                  onChange={(e) => setForm((s) => s && { ...s, carNumber: e.target.value })}
+                  disabled={!editable}
+                  data-test-id="field-car-number"
+                />
+              </DocumentMetaField>
+            </DocumentMetaRow>
+            <DocumentMetaRow>
+              <DocumentMetaField label={tFields('places_count')}>
+                <Input
+                  type="number"
+                  min="0"
+                  value={form.placesCount}
+                  onChange={(e) => setForm((s) => s && { ...s, placesCount: e.target.value })}
+                  disabled={!editable}
+                  data-test-id="field-places-count"
+                />
+              </DocumentMetaField>
+              <DocumentMetaField label={tFields('shipping_doc_no')}>
+                <Input
+                  value={form.shippingDocNo}
+                  onChange={(e) => setForm((s) => s && { ...s, shippingDocNo: e.target.value })}
+                  disabled={!editable}
+                  data-test-id="field-shipping-doc-no"
+                />
+              </DocumentMetaField>
+            </DocumentMetaRow>
+            <DocumentMetaRow>
+              <DocumentMetaField label={tFields('shipping_doc_date')}>
+                <Input
+                  type="date"
+                  value={form.shippingDocDate}
+                  onChange={(e) => setForm((s) => s && { ...s, shippingDocDate: e.target.value })}
+                  disabled={!editable}
+                  data-test-id="field-shipping-doc-date"
+                />
+              </DocumentMetaField>
+              <DocumentMetaField label={tFields('state_contract_id')}>
+                <Input
+                  value={form.stateContractId}
+                  onChange={(e) => setForm((s) => s && { ...s, stateContractId: e.target.value })}
+                  disabled={!editable}
+                  data-test-id="field-state-contract-id"
+                />
+              </DocumentMetaField>
+              <DocumentMetaField label={tDetailForm('external_code')}>
+                <Input
+                  value={form.externalCode}
+                  onChange={(e) => setForm((s) => s && { ...s, externalCode: e.target.value })}
+                  disabled={!editable}
+                  placeholder="—"
+                  data-test-id="field-external-code"
+                />
+              </DocumentMetaField>
+            </DocumentMetaRow>
+            <DocumentMetaRow>
+              <DocumentMetaField label={tFields('shipper_instructions')} fullWidth>
+                <Input
+                  value={form.shipperInstructions}
+                  onChange={(e) =>
+                    setForm((s) => s && { ...s, shipperInstructions: e.target.value })
+                  }
+                  disabled={!editable}
+                  data-test-id="field-shipper-instructions"
+                />
+              </DocumentMetaField>
+            </DocumentMetaRow>
+          </DocumentMetaPanel>
+        </DocumentDisclosurePanel>
 
         {/* Tab strip + content swap (Pozitsiyalar / Bog'liq / Fayllar / Tarix). */}
         <div className="mt-4">
