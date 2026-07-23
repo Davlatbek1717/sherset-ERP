@@ -1,9 +1,10 @@
 import { randomBytes } from 'node:crypto';
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { encryptHrSession } from '../hr-shared/crypto.util.js';
 import { MtprotoFloodError } from './mtproto-adapter.js';
 import { MtprotoWorkerService } from './mtproto-worker.service.js';
 import type {
+  IncomingMtprotoMessage,
   TelegramClientFactory,
   TelegramClientFactoryArgs,
   TelegramClientHandle,
@@ -16,11 +17,17 @@ function makeClient(overrides: Partial<TelegramClientHandle> = {}): TelegramClie
     disconnect: vi.fn().mockResolvedValue(undefined),
     isUserAuthorized: vi.fn().mockResolvedValue(true),
     getEntity: vi.fn().mockResolvedValue({ id: 'entity-1' }),
+    resolvePhone: vi.fn().mockResolvedValue({ id: 'entity-1' }),
+    // Identity by default (tests below override to prove the worker ACTUALLY
+    // calls this on both cache hit and miss, rather than bypassing it).
+    hydrateEntity: vi.fn((cached: unknown) => cached),
     sendMessage: vi.fn().mockResolvedValue({ messageId: 'm-1' }),
     sendCode: vi.fn().mockResolvedValue({ phoneCodeHash: 'hash' }),
+    resendCode: vi.fn().mockResolvedValue({ phoneCodeHash: 'hash' }),
     signIn: vi.fn().mockResolvedValue(undefined),
     checkPassword: vi.fn().mockResolvedValue(undefined),
     saveSession: vi.fn().mockReturnValue('session-str'),
+    onIncomingMessage: vi.fn(),
     ...overrides,
   };
 }
@@ -64,6 +71,7 @@ function makeAccountsSvc(
       Promise.resolve(Boolean(opts.flooded?.[slot])),
     ),
     setFloodWaitUntil: vi.fn().mockResolvedValue(undefined),
+    markSessionLost: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -74,6 +82,10 @@ function makeEntityCache() {
     invalidate: vi.fn().mockResolvedValue(undefined),
     clear: vi.fn().mockResolvedValue(undefined),
   };
+}
+
+function makeInboundHandler() {
+  return { handleIncoming: vi.fn().mockResolvedValue(undefined) };
 }
 
 describe('MtprotoWorkerService', () => {
@@ -91,11 +103,13 @@ describe('MtprotoWorkerService', () => {
   let handles: Map<string, TelegramClientHandle>;
   let factory: TelegramClientFactory;
   let cache: ReturnType<typeof makeEntityCache>;
+  let inbound: ReturnType<typeof makeInboundHandler>;
 
   beforeEach(() => {
     handles = new Map();
     factory = makeFactory(handles);
     cache = makeEntityCache();
+    inbound = makeInboundHandler();
   });
 
   it('happy path: routes through slot 1, persists entity in cache on miss', async () => {
@@ -110,6 +124,8 @@ describe('MtprotoWorkerService', () => {
       accounts as any,
       // biome-ignore lint/suspicious/noExplicitAny: test wiring
       cache as any,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      inbound as any,
     );
 
     const result = await adapter.sendMessage({
@@ -119,12 +135,60 @@ describe('MtprotoWorkerService', () => {
     });
 
     expect(result).toEqual({ slot: 1, messageId: 'm-1' });
-    expect(client1.getEntity).toHaveBeenCalledWith('+998901234567');
-    expect(client1.sendMessage).toHaveBeenCalledWith({ id: 'entity-1' }, 'salom');
+    expect(client1.resolvePhone).toHaveBeenCalledWith('+998901234567');
+    expect(client1.sendMessage).toHaveBeenCalledWith({ id: 'entity-1' }, 'salom', {
+      format: 'default',
+    });
     expect(cache.set).toHaveBeenCalledWith('acc1', 1, '+998901234567', expect.anything());
   });
 
-  it('entity cache HIT skips getEntity (no network round-trip)', async () => {
+  // 2026-07-20b: debt-telegram.util.ts messages need MarkdownV2 (underline
+  // support) — the worker opts in ONLY when sourceEventType starts with
+  // `debt.`, so every other HR/supply/task notification's formatting stays
+  // untouched (see the doc comment on the format decision in the service).
+  it("sourceEventType 'debt.*' selects markdown-v2; everything else stays 'default'", async () => {
+    const client1 = makeClient();
+    handles.set('100', client1);
+    const accounts = makeAccountsSvc({
+      active: { 1: { apiId: 100, apiHashEncrypted, sessionEncrypted } },
+    });
+    const adapter = new MtprotoWorkerService(
+      factory,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      accounts as any,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      cache as any,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      inbound as any,
+    );
+
+    await adapter.sendMessage({
+      accountId: 'acc1',
+      toPhone: '+998901234567',
+      text: 'x',
+      sourceEventType: 'debt.reminder',
+    });
+    expect(client1.sendMessage).toHaveBeenLastCalledWith(expect.anything(), 'x', {
+      format: 'markdown-v2',
+    });
+
+    await adapter.sendMessage({
+      accountId: 'acc1',
+      toPhone: '+998901234567',
+      text: 'y',
+      sourceEventType: 'supply.posted',
+    });
+    expect(client1.sendMessage).toHaveBeenLastCalledWith(expect.anything(), 'y', {
+      format: 'default',
+    });
+
+    await adapter.sendMessage({ accountId: 'acc1', toPhone: '+998901234567', text: 'z' });
+    expect(client1.sendMessage).toHaveBeenLastCalledWith(expect.anything(), 'z', {
+      format: 'default',
+    });
+  });
+
+  it('entity cache HIT skips resolvePhone (no network round-trip)', async () => {
     const client1 = makeClient();
     handles.set('100', client1);
     cache.get.mockResolvedValue({ id: 'cached-entity' });
@@ -137,13 +201,207 @@ describe('MtprotoWorkerService', () => {
       accounts as any,
       // biome-ignore lint/suspicious/noExplicitAny: test wiring
       cache as any,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      inbound as any,
     );
 
     await adapter.sendMessage({ accountId: 'acc1', toPhone: '+998901234567', text: 'x' });
 
-    expect(client1.getEntity).not.toHaveBeenCalled();
-    expect(client1.sendMessage).toHaveBeenCalledWith({ id: 'cached-entity' }, 'x');
+    expect(client1.resolvePhone).not.toHaveBeenCalled();
+    expect(client1.sendMessage).toHaveBeenCalledWith({ id: 'cached-entity' }, 'x', {
+      format: 'default',
+    });
+    // 2026-07-20: the cached descriptor must ALSO be hydrated (see below for
+    // the live-confirmed bug this proves is fixed: "Cannot cast User to any
+    // kind of peer" on every cache-hit send before hydrateEntity existed).
+    expect(client1.hydrateEntity).toHaveBeenCalledWith({ id: 'cached-entity' });
     expect(cache.set).not.toHaveBeenCalled();
+  });
+
+  // 2026-07-20c bug, confirmed live: a phone cached by an OLDER build (a
+  // different descriptor shape than the current `{userId, accessHash}`)
+  // makes hydrateEntity throw "invalid cached entity shape" — this used to
+  // hard-fail the send outright. A malformed cache row is just a cache MISS
+  // in disguise: fall through to a fresh resolvePhone instead of failing.
+  it('hydrateEntity throwing on a stale/incompatible cache entry falls back to resolvePhone', async () => {
+    const client1 = makeClient({
+      hydrateEntity: vi.fn((cached: unknown) => {
+        const c = cached as { userId?: string };
+        if (c.userId !== '999') throw new Error('hydrateEntity: invalid cached entity shape');
+        return { hydrated: true };
+      }),
+      resolvePhone: vi.fn().mockResolvedValue({ userId: '999', accessHash: '111' }),
+    });
+    handles.set('100', client1);
+    cache.get.mockResolvedValue({ someOldShape: 'legacy-blob' });
+    const accounts = makeAccountsSvc({
+      active: { 1: { apiId: 100, apiHashEncrypted, sessionEncrypted } },
+    });
+    const adapter = new MtprotoWorkerService(
+      factory,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      accounts as any,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      cache as any,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      inbound as any,
+    );
+
+    const result = await adapter.sendMessage({
+      accountId: 'acc1',
+      toPhone: '+998901234567',
+      text: 'x',
+    });
+
+    expect(result).toEqual({ slot: 1, messageId: 'm-1' });
+    expect(client1.resolvePhone).toHaveBeenCalledWith('+998901234567');
+    expect(client1.sendMessage).toHaveBeenCalledWith({ hydrated: true }, 'x', {
+      format: 'default',
+    });
+    // Stale row gets overwritten with the fresh, correctly-shaped descriptor.
+    expect(cache.set).toHaveBeenCalledWith(
+      'acc1',
+      1,
+      '+998901234567',
+      expect.objectContaining({ userId: '999', accessHash: '111' }),
+    );
+  });
+
+  // 2026-07-20 bug, confirmed live: sending a JSON-round-tripped cached
+  // entity straight to gramjs's sendMessage (skipping hydration) failed
+  // EVERY time with "Cannot cast User to any kind of peer" — the first send
+  // to a phone (cache miss, real object) worked; the very next send to the
+  // SAME phone (cache hit) failed. hydrateEntity's OUTPUT — not the raw
+  // cached/resolved descriptor — must be what actually reaches sendMessage,
+  // on BOTH paths.
+  describe('hydrateEntity output (not the raw descriptor) reaches sendMessage', () => {
+    it('cache HIT', async () => {
+      const client1 = makeClient({
+        hydrateEntity: vi.fn((cached) => ({ hydrated: true, from: cached })),
+      });
+      handles.set('100', client1);
+      cache.get.mockResolvedValue({ userId: '123', accessHash: '456' });
+      const accounts = makeAccountsSvc({
+        active: { 1: { apiId: 100, apiHashEncrypted, sessionEncrypted } },
+      });
+      const adapter = new MtprotoWorkerService(
+        factory,
+        // biome-ignore lint/suspicious/noExplicitAny: test wiring
+        accounts as any,
+        // biome-ignore lint/suspicious/noExplicitAny: test wiring
+        cache as any,
+        // biome-ignore lint/suspicious/noExplicitAny: test wiring
+        inbound as any,
+      );
+
+      await adapter.sendMessage({ accountId: 'acc1', toPhone: '+998901234567', text: 'x' });
+
+      expect(client1.sendMessage).toHaveBeenCalledWith(
+        { hydrated: true, from: { userId: '123', accessHash: '456' } },
+        'x',
+        { format: 'default' },
+      );
+    });
+
+    it('cache MISS (fresh resolvePhone result)', async () => {
+      const client1 = makeClient({
+        resolvePhone: vi.fn().mockResolvedValue({ userId: '789', accessHash: '000' }),
+        hydrateEntity: vi.fn((raw) => ({ hydrated: true, from: raw })),
+      });
+      handles.set('100', client1);
+      const accounts = makeAccountsSvc({
+        active: { 1: { apiId: 100, apiHashEncrypted, sessionEncrypted } },
+      });
+      const adapter = new MtprotoWorkerService(
+        factory,
+        // biome-ignore lint/suspicious/noExplicitAny: test wiring
+        accounts as any,
+        // biome-ignore lint/suspicious/noExplicitAny: test wiring
+        cache as any,
+        // biome-ignore lint/suspicious/noExplicitAny: test wiring
+        inbound as any,
+      );
+
+      await adapter.sendMessage({ accountId: 'acc1', toPhone: '+998901234567', text: 'x' });
+
+      expect(client1.sendMessage).toHaveBeenCalledWith(
+        { hydrated: true, from: { userId: '789', accessHash: '000' } },
+        'x',
+        { format: 'default' },
+      );
+      // The RAW (un-hydrated) descriptor is what's persisted — hydration
+      // happens on read, every time, not once at write time.
+      expect(cache.set).toHaveBeenCalledWith(
+        'acc1',
+        1,
+        '+998901234567',
+        expect.objectContaining({ userId: '789', accessHash: '000' }),
+      );
+    });
+  });
+
+  // 2026-07-20 bug: `getEntity(phone)` only resolves numbers gramjs already
+  // knows (existing contacts/chats) — a brand-new customer phone threw
+  // "Cannot find any entity", so their first-ever reminder never sent.
+  // `resolvePhone` (contacts.ImportContacts) must be used instead, and it
+  // must work for a number NOT already a contact.
+  it('resolves and sends to a phone that is NOT an existing contact', async () => {
+    const client1 = makeClient({
+      resolvePhone: vi.fn().mockResolvedValue({ id: 'new-customer-entity' }),
+    });
+    handles.set('100', client1);
+    const accounts = makeAccountsSvc({
+      active: { 1: { apiId: 100, apiHashEncrypted, sessionEncrypted } },
+    });
+    const adapter = new MtprotoWorkerService(
+      factory,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      accounts as any,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      cache as any,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      inbound as any,
+    );
+
+    const result = await adapter.sendMessage({
+      accountId: 'acc1',
+      toPhone: '+998914460528',
+      text: 'Sizga 1 000 so‘m miqdorida qarz rasmiylashtirildi.',
+    });
+
+    expect(result).toEqual({ slot: 1, messageId: 'm-1' });
+    expect(client1.resolvePhone).toHaveBeenCalledWith('+998914460528');
+    expect(client1.sendMessage).toHaveBeenCalledWith(
+      { id: 'new-customer-entity' },
+      'Sizga 1 000 so‘m miqdorida qarz rasmiylashtirildi.',
+      { format: 'default' },
+    );
+  });
+
+  it('phone genuinely not on Telegram → clear error, not a silent hang', async () => {
+    const client1 = makeClient({
+      resolvePhone: vi
+        .fn()
+        .mockRejectedValue(new Error('resolvePhone: "+998900000001" Telegram\'da topilmadi')),
+    });
+    handles.set('100', client1);
+    const accounts = makeAccountsSvc({
+      active: { 1: { apiId: 100, apiHashEncrypted, sessionEncrypted } },
+    });
+    const adapter = new MtprotoWorkerService(
+      factory,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      accounts as any,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      cache as any,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      inbound as any,
+    );
+
+    await expect(
+      adapter.sendMessage({ accountId: 'acc1', toPhone: '+998900000001', text: 'x' }),
+    ).rejects.toThrow(/topilmadi/);
+    expect(client1.sendMessage).not.toHaveBeenCalled();
   });
 
   it('2-slot failover: slot 1 FloodWaitError → slot 2 delivers', async () => {
@@ -168,6 +426,8 @@ describe('MtprotoWorkerService', () => {
       accounts as any,
       // biome-ignore lint/suspicious/noExplicitAny: test wiring
       cache as any,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      inbound as any,
     );
 
     const result = await adapter.sendMessage({
@@ -183,7 +443,7 @@ describe('MtprotoWorkerService', () => {
 
   it('already-flooded slot is skipped silently (no client creation)', async () => {
     const client2 = makeClient({ sendMessage: vi.fn().mockResolvedValue({ messageId: 'm-2' }) });
-    const factorySpy = vi.fn(() => client2);
+    const factorySpy = vi.fn((_args: TelegramClientFactoryArgs) => client2);
     const accounts = makeAccountsSvc({
       active: {
         1: { apiId: 100, apiHashEncrypted, sessionEncrypted },
@@ -199,6 +459,8 @@ describe('MtprotoWorkerService', () => {
       accounts as any,
       // biome-ignore lint/suspicious/noExplicitAny: test wiring
       cache as any,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      inbound as any,
     );
 
     const result = await adapter.sendMessage({
@@ -237,11 +499,45 @@ describe('MtprotoWorkerService', () => {
       accounts as any,
       // biome-ignore lint/suspicious/noExplicitAny: test wiring
       cache as any,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      inbound as any,
     );
 
     await expect(
       adapter.sendMessage({ accountId: 'acc1', toPhone: '+998901234567', text: 'x' }),
     ).rejects.toBeInstanceOf(MtprotoFloodError);
+  });
+
+  // 2026-07-21: Telegram REVOKED the session (AUTH_KEY_UNREGISTERED — spam-block /
+  // logged-out elsewhere). Unlike FLOOD (temporary), this is terminal: mark the
+  // slot lost in the DB so the settings UI stops showing a false "Ulangan" badge
+  // and the worker stops hammering the dead session. The cached dead client must
+  // also be dropped (not reused).
+  it('AUTH_KEY_UNREGISTERED on send → markSessionLost + releases the dead client', async () => {
+    const authErr = new Error('401: AUTH_KEY_UNREGISTERED (caused by messages.SendMessage)');
+    const client1 = makeClient({ sendMessage: vi.fn().mockRejectedValue(authErr) });
+    handles.set('100', client1);
+    const accounts = makeAccountsSvc({
+      active: { 1: { apiId: 100, apiHashEncrypted, sessionEncrypted } },
+    });
+    const adapter = new MtprotoWorkerService(
+      factory,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      accounts as any,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      cache as any,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      inbound as any,
+    );
+
+    await expect(
+      adapter.sendMessage({ accountId: 'acc1', toPhone: '+998901234567', text: 'x' }),
+    ).rejects.toThrow(/all_slots_failed|AUTH_KEY/);
+    // DB row cleared → UI shows re-login form (not a false green "Ulangan").
+    expect(accounts.markSessionLost).toHaveBeenCalledWith('acc1', 1);
+    // Dead client dropped from the pool so a later send re-creates it (and
+    // re-checks authorization) instead of reusing the revoked one.
+    expect(client1.disconnect).toHaveBeenCalled();
   });
 
   it('no active slots → throws no_active_slot Error (NOT flood)', async () => {
@@ -252,6 +548,8 @@ describe('MtprotoWorkerService', () => {
       accounts as any,
       // biome-ignore lint/suspicious/noExplicitAny: test wiring
       cache as any,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      inbound as any,
     );
 
     await expect(
@@ -276,6 +574,8 @@ describe('MtprotoWorkerService', () => {
       accounts as any,
       // biome-ignore lint/suspicious/noExplicitAny: test wiring
       cache as any,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      inbound as any,
     );
 
     const result = await adapter.sendMessage({
@@ -300,6 +600,8 @@ describe('MtprotoWorkerService', () => {
       accounts as any,
       // biome-ignore lint/suspicious/noExplicitAny: test wiring
       cache as any,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      inbound as any,
     );
 
     await adapter.sendMessage({ accountId: 'acc1', toPhone: '+998901234567', text: 'a' });
@@ -321,10 +623,205 @@ describe('MtprotoWorkerService', () => {
       accounts as any,
       // biome-ignore lint/suspicious/noExplicitAny: test wiring
       cache as any,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      inbound as any,
     );
 
     await adapter.sendMessage({ accountId: 'acc1', toPhone: '+998901234567', text: 'a' });
     adapter.releaseClient('acc1', 1);
     expect(client1.disconnect).toHaveBeenCalled();
+  });
+
+  // 2026-07-20d: the userbot connection previously only ever SENT — a
+  // customer's reply vanished into nothing (OrderTelegramPanel never showed
+  // it). Every FRESH client now gets a listener attached exactly once, right
+  // after connecting, that forwards normalized incoming messages to the
+  // injected MtprotoInboundHandler (production binding: TelegramService).
+  describe('incoming-message listener wiring', () => {
+    it('attaches onIncomingMessage exactly once per freshly created client', async () => {
+      const client1 = makeClient();
+      handles.set('100', client1);
+      const accounts = makeAccountsSvc({
+        active: { 1: { apiId: 100, apiHashEncrypted, sessionEncrypted } },
+      });
+      const adapter = new MtprotoWorkerService(
+        factory,
+        // biome-ignore lint/suspicious/noExplicitAny: test wiring
+        accounts as any,
+        // biome-ignore lint/suspicious/noExplicitAny: test wiring
+        cache as any,
+        // biome-ignore lint/suspicious/noExplicitAny: test wiring
+        inbound as any,
+      );
+
+      await adapter.sendMessage({ accountId: 'acc1', toPhone: '+998901234567', text: 'a' });
+      await adapter.sendMessage({ accountId: 'acc1', toPhone: '+998901234567', text: 'b' });
+
+      // Second send reuses the pooled client — listener must NOT be re-attached.
+      expect(client1.onIncomingMessage).toHaveBeenCalledTimes(1);
+    });
+
+    it('forwards a normalized incoming message to the injected handler with (accountId, slot)', async () => {
+      const client1 = makeClient();
+      handles.set('100', client1);
+      const accounts = makeAccountsSvc({
+        active: { 1: { apiId: 100, apiHashEncrypted, sessionEncrypted } },
+      });
+      const adapter = new MtprotoWorkerService(
+        factory,
+        // biome-ignore lint/suspicious/noExplicitAny: test wiring
+        accounts as any,
+        // biome-ignore lint/suspicious/noExplicitAny: test wiring
+        cache as any,
+        // biome-ignore lint/suspicious/noExplicitAny: test wiring
+        inbound as any,
+      );
+
+      await adapter.sendMessage({ accountId: 'acc1', toPhone: '+998901234567', text: 'a' });
+
+      const registeredHandler = (
+        client1.onIncomingMessage as unknown as {
+          mock: { calls: [(msg: IncomingMtprotoMessage) => void][] };
+        }
+      ).mock.calls[0]?.[0];
+      expect(registeredHandler).toBeInstanceOf(Function);
+
+      const incoming: IncomingMtprotoMessage = {
+        senderId: '555',
+        senderPhone: '998901234567',
+        senderName: 'Mijoz',
+        text: 'salom, qachon yetkazasiz?',
+        tgMessageId: 42,
+        kind: 'text',
+        mimeType: null,
+        fileName: null,
+        downloadMedia: null,
+      };
+      registeredHandler?.(incoming);
+      // Fire-and-forget inside the worker — flush the microtask queue.
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(inbound.handleIncoming).toHaveBeenCalledWith('acc1', 1, incoming);
+    });
+
+    it('a handler failure is caught and logged, never thrown at the caller', async () => {
+      const client1 = makeClient();
+      handles.set('100', client1);
+      const accounts = makeAccountsSvc({
+        active: { 1: { apiId: 100, apiHashEncrypted, sessionEncrypted } },
+      });
+      inbound.handleIncoming.mockRejectedValue(new Error('db down'));
+      const adapter = new MtprotoWorkerService(
+        factory,
+        // biome-ignore lint/suspicious/noExplicitAny: test wiring
+        accounts as any,
+        // biome-ignore lint/suspicious/noExplicitAny: test wiring
+        cache as any,
+        // biome-ignore lint/suspicious/noExplicitAny: test wiring
+        inbound as any,
+      );
+
+      await adapter.sendMessage({ accountId: 'acc1', toPhone: '+998901234567', text: 'a' });
+      const registeredHandler = (
+        client1.onIncomingMessage as unknown as {
+          mock: { calls: [(msg: IncomingMtprotoMessage) => void][] };
+        }
+      ).mock.calls[0]?.[0];
+
+      expect(() =>
+        registeredHandler?.({
+          senderId: '555',
+          senderPhone: null,
+          senderName: null,
+          text: 'x',
+          tgMessageId: 1,
+          kind: 'text',
+          mimeType: null,
+          fileName: null,
+          downloadMedia: null,
+        }),
+      ).not.toThrow();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+  });
+
+  // 2026-07-20 incident: a gramjs call that never settles (VPS network trouble
+  // to Telegram) has no built-in timeout — it hung `sendMessage` forever,
+  // which left HrTelegramOutboxWorker's `running` guard stuck `true` and
+  // permanently wedged the whole outbound queue (reproduced even right after
+  // a fresh `pm2 restart`). A 25s ceiling around each gramjs call turns a
+  // hang into an ordinary rejected Error the existing retry logic can handle.
+  describe('hung gramjs call does not wedge the worker forever', () => {
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
+
+    it('sendMessage that never resolves times out and fails over to slot 2', async () => {
+      const client1 = makeClient({
+        // Simulates the observed hang: the promise never settles.
+        sendMessage: vi.fn(() => new Promise<{ messageId: string }>(() => {})),
+      });
+      const client2 = makeClient({ sendMessage: vi.fn().mockResolvedValue({ messageId: 'm-2' }) });
+      handles.set('100', client1);
+      handles.set('200', client2);
+
+      const accounts = makeAccountsSvc({
+        active: {
+          1: { apiId: 100, apiHashEncrypted, sessionEncrypted },
+          2: { apiId: 200, apiHashEncrypted, sessionEncrypted },
+        },
+      });
+      const adapter = new MtprotoWorkerService(
+        factory,
+        // biome-ignore lint/suspicious/noExplicitAny: test wiring
+        accounts as any,
+        // biome-ignore lint/suspicious/noExplicitAny: test wiring
+        cache as any,
+        // biome-ignore lint/suspicious/noExplicitAny: test wiring
+        inbound as any,
+      );
+
+      const resultPromise = adapter.sendMessage({
+        accountId: 'acc1',
+        toPhone: '+998901234567',
+        text: 'salom',
+      });
+      // Flush the 25s timeout on slot 1 so the adapter can move on to slot 2.
+      await vi.advanceTimersByTimeAsync(26_000);
+      const result = await resultPromise;
+
+      expect(result).toEqual({ slot: 2, messageId: 'm-2' });
+    });
+
+    it('all slots hung → rejects instead of hanging the caller forever', async () => {
+      const client1 = makeClient({
+        sendMessage: vi.fn(() => new Promise<{ messageId: string }>(() => {})),
+      });
+      handles.set('100', client1);
+      const accounts = makeAccountsSvc({
+        active: { 1: { apiId: 100, apiHashEncrypted, sessionEncrypted } },
+      });
+      const adapter = new MtprotoWorkerService(
+        factory,
+        // biome-ignore lint/suspicious/noExplicitAny: test wiring
+        accounts as any,
+        // biome-ignore lint/suspicious/noExplicitAny: test wiring
+        cache as any,
+        // biome-ignore lint/suspicious/noExplicitAny: test wiring
+        inbound as any,
+      );
+
+      const resultPromise = adapter.sendMessage({
+        accountId: 'acc1',
+        toPhone: '+998901234567',
+        text: 'salom',
+      });
+      const assertion = expect(resultPromise).rejects.toThrow(
+        /mtproto_timeout|mtproto_all_slots_failed/,
+      );
+      await vi.advanceTimersByTimeAsync(26_000);
+      await assertion;
+    });
   });
 });

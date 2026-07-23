@@ -42,6 +42,15 @@ export class HrNotificationDispatcher {
     eventType: HrNotificationEventType;
     sourceDocId: string;
     buildContext: (base: NotificationRenderContext) => NotificationRenderContext;
+    /**
+     * Optional follow-up messages enqueued to the SAME phone right after the
+     * main (template-rendered) message — used by the Supply listener to append
+     * the itemized «qabul cheki». Runs with the fully-resolved context (so it
+     * can read counterparty.name + supply.items). Additive: listeners that omit
+     * it keep the exact single-message behaviour. Each returned string is
+     * enqueued as its own outbox row; empty/blank strings are skipped.
+     */
+    buildExtraMessages?: (ctx: NotificationRenderContext) => string[];
   }): Promise<void> {
     try {
       const template = await this.templates.findActive(
@@ -97,6 +106,34 @@ export class HrNotificationDispatcher {
           sourceDocId: args.sourceDocId,
         },
       });
+
+      // Follow-up messages (e.g. the Supply «qabul cheki») — enqueued after the
+      // main message so they arrive second. A throwing builder must NOT undo the
+      // main message that already enqueued, so it's wrapped independently.
+      if (args.buildExtraMessages) {
+        let extras: string[] = [];
+        try {
+          extras = args.buildExtraMessages(ctx);
+        } catch (e) {
+          this.logger.error(
+            `Extra-message build failed (${args.docType}.${args.eventType}): ${(e as Error).message}`,
+          );
+        }
+        for (const text of extras) {
+          if (!text || text.trim() === '') continue;
+          await this.prisma.client.hrTelegramOutbox.create({
+            data: {
+              accountId: args.accountId,
+              counterpartyId: counterparty.id,
+              toPhone: normalizedPhone,
+              messageText: text,
+              status: 'pending',
+              sourceEventType: `${args.docType}.${args.eventType}`,
+              sourceDocId: args.sourceDocId,
+            },
+          });
+        }
+      }
     } catch (e) {
       // Final safety net — listener errors must never propagate to the
       // upstream service (the doc post operation has already succeeded).

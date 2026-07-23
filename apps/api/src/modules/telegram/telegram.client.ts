@@ -56,6 +56,8 @@ export interface TelegramSendMessageArgs {
   /** 'HTML' | 'MarkdownV2' | undefined (plain). */
   parseMode?: 'HTML' | 'MarkdownV2';
   disableWebPagePreview?: boolean;
+  /** Telegram Business: send ON BEHALF OF the connected Premium account. */
+  businessConnectionId?: string;
 }
 
 export interface TelegramSendMessageResult {
@@ -74,6 +76,7 @@ export async function tgSendMessage(
     text: args.text,
     parse_mode: args.parseMode,
     disable_web_page_preview: args.disableWebPagePreview ?? true,
+    ...(args.businessConnectionId ? { business_connection_id: args.businessConnectionId } : {}),
   });
 }
 
@@ -98,7 +101,14 @@ export async function tgSetWebhook(
   await call<true>(token, 'setWebhook', {
     url,
     secret_token: secretToken,
-    allowed_updates: ['message', 'callback_query', 'inline_query'],
+    // business_* updates power the Telegram Business (owner-account) chats.
+    allowed_updates: [
+      'message',
+      'callback_query',
+      'inline_query',
+      'business_connection',
+      'business_message',
+    ],
   });
   return true;
 }
@@ -106,4 +116,44 @@ export async function tgSetWebhook(
 export async function tgDeleteWebhook(token: string): Promise<true> {
   await call<true>(token, 'deleteWebhook', { drop_pending_updates: false });
   return true;
+}
+
+// ── FAYL YUKLAB OLISH (2026-07-13) ──────────────────────────────────────────
+// Mijoz chek rasmini yuborganda Telegram bizga faqat `file_id` beradi. Rasmni
+// olish ikki qadam: getFile → file_path, keyin file/bot<TOKEN>/<path> dan yuklab
+// olish. MUHIM: `file_id` VAQTINCHA (Telegram uni o'chirib yuborishi mumkin) —
+// shuning uchun nusxasini o'z `attachments` jadvalimizga saqlaymiz.
+
+/** Chek rasmi uchun chegara — katta fayl serverni bo'g'masin. */
+const MAX_FILE_BYTES = 20 * 1024 * 1024;
+
+interface TelegramFile {
+  file_id: string;
+  file_path?: string;
+  file_size?: number;
+}
+
+export async function tgGetFile(token: string, fileId: string): Promise<TelegramFile> {
+  return call<TelegramFile>(token, 'getFile', { file_id: fileId });
+}
+
+/**
+ * `file_id` → Buffer. Fayl topilmasa yoki juda katta bo'lsa — xato.
+ * Chaqiruvchi buni ushlab, xabarni rasmsiz saqlashi mumkin (xabar yo'qolmasin).
+ */
+export async function tgDownloadFile(token: string, fileId: string): Promise<Buffer> {
+  const file = await tgGetFile(token, fileId);
+  if (!file.file_path) {
+    throw new TelegramApiError(404, 'Telegram getFile: file_path yo‘q');
+  }
+  if ((file.file_size ?? 0) > MAX_FILE_BYTES) {
+    throw new TelegramApiError(413, `Telegram fayl juda katta: ${file.file_size} bayt`);
+  }
+  const res = await fetch(`https://api.telegram.org/file/bot${token}/${file.file_path}`, {
+    signal: AbortSignal.timeout(60_000),
+  });
+  if (!res.ok) {
+    throw new TelegramApiError(res.status, `Telegram fayl yuklab olinmadi: HTTP ${res.status}`);
+  }
+  return Buffer.from(await res.arrayBuffer());
 }

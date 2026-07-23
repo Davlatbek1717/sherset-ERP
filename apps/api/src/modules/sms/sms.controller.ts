@@ -51,6 +51,25 @@ export class SmsController {
     return this.svc.send(user.accountId, user.sub, body);
   }
 
+  /** Umumiy SMS-tarqatma — tanlangan kontragentlar + qo'lda raqamlar, shablon bilan. */
+  @Post('broadcast')
+  @RequirePermission({ entity: 'counterparty', action: 'view' })
+  async broadcast(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
+    return this.svc.broadcast(user.accountId, user.sub, body);
+  }
+
+  @Get('contacts')
+  @RequirePermission({ entity: 'settings', action: 'view' })
+  async getContacts(@CurrentUser() user: AuthenticatedUser) {
+    return this.svc.getRawContacts(user.accountId);
+  }
+
+  @Put('contacts')
+  @RequirePermission({ entity: 'settings', action: 'update' })
+  async saveContacts(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
+    return this.svc.saveContacts(user.accountId, body);
+  }
+
   @Get('logs')
   @RequirePermission({ entity: 'settings', action: 'view' })
   async logs(@CurrentUser() user: AuthenticatedUser, @Query() query: Record<string, unknown>) {

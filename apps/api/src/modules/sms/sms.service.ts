@@ -9,7 +9,16 @@ import {
   eskizSend,
 } from './eskiz.client.js';
 import {
+  type PhoneGatewayCredentials,
+  phoneGatewayCheck,
+  phoneGatewaySend,
+} from './phone-gateway.client.js';
+import { DEFAULT_MESSAGING_CONTACT, renderSmsTemplate } from './sms-render.util.js';
+import { MessageTemplateService } from './sms-template.service.js';
+import {
+  BroadcastSmsSchema,
   ListSmsLogsSchema,
+  SaveContactsSchema,
   type SaveSmsConfigInput,
   SaveSmsConfigSchema,
   type SendSmsInput,
@@ -45,7 +54,10 @@ interface PublicSmsConfig {
 export class SmsService {
   private readonly logger = new Logger(SmsService.name);
 
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(MessageTemplateService) private readonly templates: MessageTemplateService,
+  ) {}
 
   // --- config -----------------------------------------------------------
 
@@ -108,18 +120,25 @@ export class SmsService {
     let ok = false;
     let message = '';
     try {
-      const token = await eskizLogin(this.eskizCreds(cfg));
-      const verify = await eskizGetUser(token);
-      if (verify.ok) {
-        ok = true;
-        message = `Ulanish OK${verify.balance != null ? ` · balans: ${verify.balance}` : ''}`;
-        // Cache the fresh token so the worker doesn't re-login.
-        await this.prisma.client.smsConfig.update({
-          where: { accountId },
-          data: { token, tokenIssuedAt: new Date() },
-        });
+      if (cfg.provider === 'phone_gateway') {
+        // Telefon-gateway: login/parolni SMS yubormasdan tekshiradi.
+        const verdict = await phoneGatewayCheck(this.phoneGatewayCreds(cfg));
+        ok = verdict.ok;
+        message = verdict.message;
       } else {
-        message = 'Token olindi, lekin /auth/user javob bermadi';
+        const token = await eskizLogin(this.eskizCreds(cfg));
+        const verify = await eskizGetUser(token);
+        if (verify.ok) {
+          ok = true;
+          message = `Ulanish OK${verify.balance != null ? ` · balans: ${verify.balance}` : ''}`;
+          // Cache the fresh token so the worker doesn't re-login.
+          await this.prisma.client.smsConfig.update({
+            where: { accountId },
+            data: { token, tokenIssuedAt: new Date() },
+          });
+        } else {
+          message = 'Token olindi, lekin /auth/user javob bermadi';
+        }
       }
     } catch (err) {
       message = (err as Error).message ?? 'Ulanish xatosi';
@@ -130,6 +149,54 @@ export class SmsService {
       data: { lastTestedAt: new Date(), lastTestOk: ok, lastTestMsg: message.slice(0, 500) },
     });
     return { ok, message };
+  }
+
+  // --- messaging contacts (CompanySettings) -----------------------------
+
+  /** Sozlama formasi uchun — REAL qiymatlar (bo'sh = null). */
+  async getRawContacts(accountId: string) {
+    const s = await this.prisma.client.companySettings.findUnique({
+      where: { accountId },
+      select: { messagingPhone: true, messagingCard: true, messagingCardOwner: true },
+    });
+    return {
+      phone: s?.messagingPhone ?? null,
+      card: s?.messagingCard ?? null,
+      cardOwner: s?.messagingCardOwner ?? null,
+    };
+  }
+
+  /** Render uchun — bo'sh maydonlar Sherset default bilan to'ldiriladi. */
+  async getContacts(accountId: string) {
+    const r = await this.getRawContacts(accountId);
+    return {
+      phone: r.phone || DEFAULT_MESSAGING_CONTACT.phone,
+      card: r.card || DEFAULT_MESSAGING_CONTACT.card,
+      cardOwner: r.cardOwner || DEFAULT_MESSAGING_CONTACT.cardOwner,
+    };
+  }
+
+  async saveContacts(accountId: string, raw: unknown) {
+    const p = SaveContactsSchema.safeParse(raw);
+    if (!p.success) {
+      throw new BadRequestException(p.error.issues.map((i) => i.message).join(', '));
+    }
+    const { phone, card, cardOwner } = p.data;
+    await this.prisma.client.companySettings.upsert({
+      where: { accountId },
+      create: {
+        accountId,
+        messagingPhone: phone ?? null,
+        messagingCard: card ?? null,
+        messagingCardOwner: cardOwner ?? null,
+      },
+      update: {
+        messagingPhone: phone ?? null,
+        messagingCard: card ?? null,
+        messagingCardOwner: cardOwner ?? null,
+      },
+    });
+    return this.getRawContacts(accountId);
   }
 
   // --- send / queue -----------------------------------------------------
@@ -166,6 +233,65 @@ export class SmsService {
   }
 
   /**
+   * Umumiy SMS-tarqatma (qarzdan alohida) — tanlangan kontragentlar + qo'lda
+   * kiritilgan raqamlarga tayyor shablon bilan. Har biri navbatga (SmsLog)
+   * qo'yiladi; halol xulosa qaytadi (queued + o'tkazib yuborilganlar sabab bilan).
+   * Debt o'zgaruvchilari bu yerda bo'sh ('—') — shablon umumiy bo'lishi kutiladi.
+   */
+  async broadcast(accountId: string, userId: string, raw: unknown) {
+    const { templateId, counterpartyIds, phones } = BroadcastSmsSchema.parse(raw);
+
+    const cfg = await this.prisma.client.smsConfig.findUnique({ where: { accountId } });
+    if (!cfg || !cfg.enabled) {
+      throw new BadRequestException(
+        "SMS sozlanmagan — Sozlamalar > SMS bo'limida provayderni qo'shing",
+      );
+    }
+    const template = await this.templates.findOne(accountId, templateId); // 404 + tenant guard
+    if (template.channel !== 'sms') {
+      throw new BadRequestException('Bu shablon SMS kanali uchun emas');
+    }
+    const contact = await this.getContacts(accountId);
+
+    const cps = counterpartyIds.length
+      ? await this.prisma.client.counterparty.findMany({
+          where: { id: { in: counterpartyIds }, accountId },
+          select: { id: true, name: true, phone: true },
+        })
+      : [];
+    const recipients: Array<{ name: string; phone: string | null }> = [
+      ...cps.map((c) => ({ name: c.name, phone: c.phone })),
+      ...phones.map((p) => ({ name: '', phone: p })),
+    ];
+
+    const skipped: Array<{ name: string; phone: string; reason: string }> = [];
+    const seen = new Set<string>();
+    let queued = 0;
+    for (const r of recipients) {
+      const trimmed = r.phone?.trim() ?? '';
+      const phone = trimmed.replace(/[^0-9+]/g, ''); // bo'sh joy/chiziqchani olib tashlash
+      if (!phone || phone.replace(/\D/g, '').length < 9) {
+        skipped.push({ name: r.name, phone: trimmed, reason: 'no_phone' });
+        continue;
+      }
+      if (seen.has(phone)) continue; // dublikat raqam bir marta
+      seen.add(phone);
+      const body = renderSmsTemplate(template.body, {
+        counterparty: { name: r.name || phone },
+        debt: { remainingFormatted: '—', totalFormatted: '—' },
+        company: contact,
+      });
+      try {
+        await this.send(accountId, userId, { toPhone: phone, body, entity: 'Broadcast' });
+        queued += 1;
+      } catch {
+        skipped.push({ name: r.name, phone, reason: 'send_error' });
+      }
+    }
+    return { queued, skipped };
+  }
+
+  /**
    * Worker entry point — sends a single queued SMS. Re-auths Eskiz on
    * 401 and retries once before giving up. Throws on failure so the
    * worker can decide retry vs dead.
@@ -178,6 +304,15 @@ export class SmsService {
       where: { accountId: log.accountId },
     });
     if (!cfg) throw new Error('SMS config missing');
+
+    // Telefon-gateway (o'z SIM) — Eskiz token oqimi kerak emas, to'g'ridan-to'g'ri POST.
+    if (cfg.provider === 'phone_gateway') {
+      const result = await phoneGatewaySend(this.phoneGatewayCreds(cfg), {
+        phone: log.toPhone,
+        text: log.body,
+      });
+      return { providerMessageId: result.id };
+    }
 
     let token = cfg.token;
     if (!token) {
@@ -263,6 +398,17 @@ export class SmsService {
   private eskizCreds(cfg: { email: string; passwordCipher: string }): EskizCredentials {
     return {
       email: cfg.email,
+      password: decryptPassword(cfg.passwordCipher),
+    };
+  }
+
+  /** Telefon-gateway: `email` = login, `passwordCipher` = parol (deshifrlangan). */
+  private phoneGatewayCreds(cfg: {
+    email: string;
+    passwordCipher: string;
+  }): PhoneGatewayCredentials {
+    return {
+      username: cfg.email,
       password: decryptPassword(cfg.passwordCipher),
     };
   }

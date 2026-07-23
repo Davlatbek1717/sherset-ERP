@@ -31,6 +31,10 @@ model Account {
   debts        Debt[]
   debtPayments DebtPayment[]
   debtNotes    DebtNote[]
+  // Sherset KEEP (telegram) back-relations — B3
+  telegramChats        TelegramChat[]
+  telegramChatMessages TelegramChatMessage[]
+  telegramBackfillJobs TelegramBackfillJob[]
   id        String   @id @default(uuid()) @db.Uuid
   name      String   @db.VarChar(255)
   country   String   @default("UZ") @db.VarChar(2)
@@ -1612,6 +1616,9 @@ model ProductFolder {
 model Counterparty {
   // Sherset KEEP (debts) back-relation — B2
   debts Debt[]
+  // Sherset KEEP (telegram) back-relations — B3
+  telegramChats        TelegramChat[]
+  telegramBackfillJobs TelegramBackfillJob[] @relation("TgBackfillCp")
   id                 String   @id @default(uuid()) @db.Uuid
   accountId          String   @map("account_id") @db.Uuid
   ownerId            String?  @map("owner_id") @db.Uuid
@@ -8177,6 +8184,11 @@ model TelegramConfig {
   id        String @id @default(uuid()) @db.Uuid
   accountId String @unique @map("account_id") @db.Uuid
 
+  // Sherset KEEP (telegram business) — B3
+  businessConnectionId String? @map("business_connection_id") @db.VarChar(64)
+  businessUserId       BigInt? @map("business_user_id")
+  businessUserName     String? @map("business_user_name") @db.VarChar(128)
+
   /// Bot token from BotFather (AES-encrypted).
   botTokenCipher String  @map("bot_token_cipher") @db.VarChar(500)
   /// Bot username — '@MyShopBot' (without @, as Telegram returns it).
@@ -9155,4 +9167,136 @@ model DebtNote {
   @@index([accountId, debtId, createdAt(sort: Desc)])
   @@index([accountId, authorId, createdAt])
   @@map("debt_notes")
+}
+
+// ===== Sherset KEEP: Telegram chat/backfill models (B3 closure) =====
+model TelegramChat {
+  id        String @id @default(uuid()) @db.Uuid
+  accountId String @map("account_id") @db.Uuid
+
+  /// Telegram chat id (client's private chat with the owner).
+  chatId    BigInt  @map("chat_id")
+  firstName String? @map("first_name") @db.VarChar(128)
+  lastName  String? @map("last_name") @db.VarChar(128)
+  username  String? @db.VarChar(64)
+
+  /// Mijoz botga kontaktini ulashsa — telefon shu yerga tushadi va kontragent
+  /// AVTOMATIK topiladi. Telegram Business xabarlarida telefon kelmaydi,
+  /// shuning uchun u yerda ISM bo'yicha avtomatik taklif qilinadi.
+  phone String? @db.VarChar(32)
+
+  counterpartyId String? @map("counterparty_id") @db.Uuid
+  /// Kontragent avtomatik topildimi (ism/telefon bo'yicha) yoki qo'lda bog'landimi.
+  boundBy        String? @map("bound_by") @db.VarChar(10) // 'auto' | 'manual'
+
+  /// Chat qayerdan keldi — xabar YUBORISH usuli shunga bog'liq:
+  ///   'business' — egasining shaxsiy Telegram'i orqali (business_connection_id
+  ///                bilan yuboriladi, mijoz egasining NOMIDAN xabar oladi)
+  ///   'bot'      — mijoz botga o'zi yozgan (oddiy sendMessage)
+  /// Noto'g'ri usul bilan yuborilsa Telegram xato qaytaradi, shuning uchun
+  /// buni saqlab qo'yamiz.
+  source String @default("business") @db.VarChar(10)
+
+  lastMessageAt DateTime? @map("last_message_at") @db.Timestamptz()
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
+
+  /// Backfill/sync kursorlari (2026-07-20 to'liq-tarix). historyOldestId —
+  /// backfill'da yetilgan eng eski tgMessageId (orqaga sahifalash offsetId'si);
+  /// historyComplete — dialog boshiga yetildi; syncNewestId — catch-up uchun
+  /// eng yangi ma'lum tgMessageId (minId).
+  historyOldestId BigInt? @map("history_oldest_id")
+  historyComplete Boolean @default(false) @map("history_complete")
+  syncNewestId    BigInt? @map("sync_newest_id")
+
+  account      Account               @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  counterparty Counterparty?         @relation(fields: [counterpartyId], references: [id], onDelete: SetNull)
+  messages     TelegramChatMessage[]
+
+  @@unique([accountId, chatId])
+  @@index([accountId, counterpartyId])
+  @@index([accountId, lastMessageAt(sort: Desc)])
+  @@map("telegram_chats")
+}
+
+/// One message in a Telegram Business chat (both directions).
+model TelegramChatMessage {
+  id        String @id @default(uuid()) @db.Uuid
+  accountId String @map("account_id") @db.Uuid
+  chatRefId String @map("chat_ref_id") @db.Uuid
+
+  /// 'in' = client wrote us; 'out' = sent from the owner's name.
+  direction   String  @db.VarChar(3)
+  text        String  @db.VarChar(4096)
+  tgMessageId BigInt? @map("tg_message_id")
+  senderName  String? @map("sender_name") @db.VarChar(128)
+
+  /// MEDIA (2026-07-13): mijoz CHEK rasmini yuborganda ko'rinishi shart.
+  /// Ilgari media'li xabar butunlay tashlab yuborilardi ("skip in V1") — chek
+  /// yo'qolardi. Endi fayl Telegram'dan yuklab olinib, mavjud `attachments`
+  /// jadvaliga yoziladi va chatda rasm bo'lib chiqadi.
+  ///   kind       — 'text' | 'photo' | 'document' | 'voice' | 'video' | 'other'
+  ///   fileId     — Telegram file_id (qayta yuklab olish uchun)
+  ///   attachment — bizdagi nusxasi (yo'qolmasin: Telegram file_id muddatli)
+  kind         String  @default("text") @db.VarChar(16)
+  fileId       String? @map("file_id") @db.VarChar(200)
+  fileName     String? @map("file_name") @db.VarChar(255)
+  mimeType     String? @map("mime_type") @db.VarChar(100)
+  attachmentId String? @map("attachment_id") @db.Uuid
+
+  /// Avtomatik xabar bo'lsa — sababi ('debt_issued' | 'payment' | 'debt_closed'
+  /// | 'reminder'). Qo'lda yozilgan xabarda null. Chatda belgisi ko'rinadi.
+  autoKind String? @map("auto_kind") @db.VarChar(20)
+
+  /// Forward qilingan xabaning asl jo'natuvchisi/kanal nomi (2026-07-20,
+  /// Phase 2) — Telegram'dagi "Переслано от: X" ko'rsatkichi shu yerdan
+  /// chiqadi. null = forward emas, oddiy xabar.
+  fwdFromName String? @map("fwd_from_name") @db.VarChar(128)
+
+  /// To'liq-tarix (2026-07-20). replyToTgMessageId — javob berilgan xabar
+  /// (Faza-2 reply/quote uchun oldindan); editedAt — Telegram'da tahrirlangan
+  /// vaqti; readByPeerAt — mijoz o'qigan vaqti (Faza-3 read-receipt uchun
+  /// oldindan, nullable); outboxRefId — yetkazilgan HrTelegramOutbox qatoriga
+  /// bog' (chiquvchi dedup).
+  replyToTgMessageId BigInt?   @map("reply_to_tg_message_id")
+  editedAt           DateTime? @map("edited_at") @db.Timestamptz()
+  readByPeerAt       DateTime? @map("read_by_peer_at") @db.Timestamptz()
+  outboxRefId        String?   @map("outbox_ref_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  account Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  chat    TelegramChat @relation(fields: [chatRefId], references: [id], onDelete: Cascade)
+
+  /// Bir chatda bitta tgMessageId — backfill/catch-up idempotent upsert kaliti
+  /// (dublikat xabar yozilmaydi). tgMessageId NULL qatorlar (eski Bot API)
+  /// Postgres multi-NULL bilan to'qnashmaydi.
+  @@unique([chatRefId, tgMessageId])
+  @@index([accountId, chatRefId, createdAt(sort: Desc)])
+  @@map("telegram_chat_messages")
+}
+
+/// Talab-bo'yicha to'liq-tarix backfill navbati (2026-07-20). Panel birinchi
+/// ochilganda upsert qilinadi (queued); TelegramBackfillWorker bitta-bitta
+/// drenaj qiladi (dialog tarixini sahifalab TelegramChatMessage'ga yozadi).
+model TelegramBackfillJob {
+  id               String    @id @default(uuid()) @db.Uuid
+  accountId        String    @map("account_id") @db.Uuid
+  counterpartyId   String    @map("counterparty_id") @db.Uuid
+  phone            String    @db.VarChar(32)
+  status           String    @default("queued") @db.VarChar(10) // queued|running|done|error
+  requestedAt      DateTime  @default(now()) @map("requested_at") @db.Timestamptz()
+  startedAt        DateTime? @map("started_at") @db.Timestamptz()
+  finishedAt       DateTime? @map("finished_at") @db.Timestamptz()
+  messagesImported Int       @default(0) @map("messages_imported")
+  /// Keyingi (eskiroq) sahifa uchun offsetId — 0/NULL = eng yangidan.
+  cursorOffsetId   BigInt?   @map("cursor_offset_id")
+  failReason       String?   @map("fail_reason") @db.VarChar(500)
+
+  account      Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  counterparty Counterparty @relation("TgBackfillCp", fields: [counterpartyId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, counterpartyId])
+  @@index([status, requestedAt])
+  @@map("telegram_backfill_job")
 }
