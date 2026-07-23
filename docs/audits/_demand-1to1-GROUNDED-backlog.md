@@ -1,0 +1,272 @@
+# «Отгрузки» (demand) — toʼliq 1:1 GROUNDED backlog (workflow-audit 2026-07-23)
+
+> Manba: `demand-1to1-audit` workflow (72 agent, har gap adversarial grounding-verified). 61 grounded, 6 rad.
+> Har fix commitʼda **«Phase-1: strukturaviy, runtime-unverified»** — QISM 5 QA browser-certʼgacha «100%» YOʼQ.
+
+## Synth xulosa
+45 grounded remaining-work items after deduping the `cross` entries into their /new and /detail homes (Ячейка, Маркировка, Себест., Решения, Восстановить, Связанные документы were double-listed). Ordered so each surface reaches FE parity as a unit: 21 FE-now tasks (7 /new, 9 detail, 5 list) ship today with no schema change; 23 BE-needed tasks (ranks 22-44) require migrations/endpoints — position-data plumbing (Ячейка/Резерв/Вес-Объём/image/packaging, several sharing ONE detail-projection change), 12 list filters, a custom-document-states subsystem (feeds both the Статус filter and the Статус toolbar button), related-docs aggregation, archive/restore, and the task/files side panel; the Маркировка column (rank 45) is a late QISM-4 sub-project (new DS column type + tracking-code BE). Realistically ~24-28 focused sessions: ~6-7 to close all FE-now parity surface-by-surface, ~14-16 for the BE backlog (dominated by the list filters + custom-states work + related-docs + task/files panel), ~3 for Маркировка. Two things gate the user: (a) ONE fresh live moysklad capture resolves 6 items (org «Перечисление» sub-selector, «…» overflow menu, «Отправить (N)» semantics, the two План.-дата fields, the list gear column-chooser, and the positions per-column ▾ submenu); (b) 3 product decisions — expose buyPrice for the draft «Себест. единицы» column, un-suppress «Импорт», and keep-vs-remove the two extra list filters. Per project rule, all fixes land as «Phase-1: structural, runtime-unverified» until a Phase-2 QA cohort browser-verifies them."
+
+## QISM 1 — /new (yaratish) (13)
+
+- **[FE-now/S] «Проведено» checkbox must default CHECKED on /new**
+  - Gap: moysklad opens the new-shipment form with «Проведено» already ticked (a save immediately posts the shipment). Our form defaults it unchecked, so every new demand saves as a draft — the opposite default.
+  - Hozir: apps/web/src/app/(app)/demands/new/page.tsx:154 `const [applicable, setApplicable] = useState(false)` — default false. Prisma Demand.applicable also `@default(false)`.
+  - Grounding: html: `<input type="checkbox" value="on" id="gwt-uid-15" tabindex="0" style="" checked=""><label for="gwt-uid-15">Проведено</label>` + screenshot shows a filled/checked «☑ Проведено».
+- **[FE-now/M] Header toolbar missing Изменить / Создать документ / Печать / Отправить buttons**
+  - Gap: moysklad's /new header shows the full document button row: Сохранить, Закрыть, «Изменить ▾», «Создать документ ▾», «Печать ▾», «Отправить ▾». We render only Сохранить + Закрыть (the four dropdown menus are passed empty, so they don't render). NOTE: _GAP-BACKLOG line 38 claimed «moysklad create ham minimal → PARITY OK» — the screenshot disproves that; the buttons are present on /new.
+  - Hozir: page.tsx:1158-1161 pass `modifyMenu={[]}` `createDocMenu={[]}` `printMenu={[]}` `sendMenu={[]}` → DocumentEditor hides those buttons on /new.
+  - Grounding: html: `<span class="text">Изменить</span>`, `<span class="text">Создать документ</span>`, `<span class="text">Печать</span>`, `<span class="text">Отправить</span>` (all as b-popup-button with arrow) + screenshot toolbar 
+- **[FE-now/M] «Накладные расходы … Распределить по цене» belongs in the totals footer, not «Другие поля»**
+  - Gap: moysklad renders the overhead input + distribution link inline in the totals footer, right-aligned below «Итого»/«Прибыль» («Накладные расходы [0] Распределить по цене»). We render the overhead sum + distribution select inside the «Другие поля» disclosure instead, so it is not visible where moysklad shows it.
+  - Hozir: page.tsx:919-949 overhead sum Input + overhead_distribution NativeSelect live inside the «Другие поля» (DocumentDisclosurePanel), not in DocumentTotalsPanel.
+  - Grounding: html: `<div class="overhead-panel"><span class="b-help-icon"></span><span class="gwt-InlineLabel">Накладные расходы</span><input … value="0" disabled …><span class="gwt-InlineLabel">Распределить</span>…<span class="link-
+- **[FE-now/M] «Адрес доставки» should be a structured-address popup (▾), not a plain textarea**
+  - Gap: moysklad's «Адрес доставки» is a legend field with a ▾ that opens a structured address editor (Индекс, Страна, Город, Улица, Дом, Кв. или офис, Другое). Ours is a plain free-text Textarea. The BE already has a `shipmentAddressFull Json?` column to store the structured form.
+  - Hozir: page.tsx:761-770 `Адрес доставки` is a `<Textarea>` bound to `shipmentAddress` (VarChar) only; `shipmentAddressFull` Json column is unused by /new.
+  - Grounding: html gwt-Label sequence inside the address popup: `Индекс` `Страна` `Город` `Улица` `Дом` `Кв. или офис` `Другое`; the «Адрес доставки» legend + screenshot shows the box with a ▾ dropdown affordance.
+- **[FE-now/S] Inline-add placeholder is a hardcoded Uzbek string, not moysklad's RU text**
+  - Gap: moysklad's inline add-position input placeholder is «Добавить позицию — введите наименование, код, штрихкод или артикул». Our DS default placeholder is a hardcoded Uzbek transliteration and /new does not pass a localized `placeholder`, so the RU/parity string never appears (and it bypasses i18n).
+  - Hozir: PositionInlineAdd.tsx:142 `DEFAULT_PLACEHOLDER = "Pozitsiya qo'shish — nom, kod, shtrix-kod yoki artikul kiriting"`; page.tsx footerToolbar (993-1055) passes no `placeholder` prop.
+  - Grounding: html: `placeholder="Добавить позицию — введите наименование, код, штрихкод или артикул"`.
+- **[FE-now/S] «Другие поля» field order/pairing differs from moysklad**
+  - Gap: moysklad's «Другие поля» field sequence is: Грузоотправитель, Перевозочный документ № (+ от date), Грузополучатель, Транспортное средство, Перевозчик, Номер автомобиля, Наименование груза, Всего мест, Указания грузоотправителя, ИД гос. контракта. Our block uses a different order/pairing (dates first, then consignor/consignee, carrier/cargo, transport/car, places/docNo, docDate/stateId/extCode, overhead, instructions). Field SET matches (all pickers/inputs present and RU labels are correct); only the layout order differs.
+  - Hozir: page.tsx:792-960 renders the shipping fields in a different DocumentMetaRow order and 2-per-row pairing.
+  - Grounding: html gwt-Label sequence: `Грузоотправитель`(picker) → `Перевозочный документ №`(2 inputs) → `Грузополучатель`(picker) → `Транспортное средство`(text) → `Перевозчик`(picker) → `Номер автомобиля`(text) → `Наименование груз
+- **[FE-now/S] «Внешний код» is a hidden toggle-link, not an always-visible field**
+  - Gap: In moysklad «Внешний код» is an inline link near the footer (hidden until toggled) rather than a permanent input inside «Другие поля». We render it as an always-visible Input in «Другие поля». Minor placement/affordance difference.
+  - Hozir: page.tsx:910-916 renders `external_code` as a permanent `<Input>` inside the «Другие поля» panel.
+  - Grounding: html: `<a class="external-code-link" href="javascript:;" aria-hidden="true" tabindex="2002" style="display: none;">Внешний код</a>` (a display:none link in the footer/comment area).
+- **[needs-live-capture/S] Org sub-selector not auto-filled («Перечисление») + semantics unverified**
+  - Gap: moysklad pre-fills the second selector under Организация — the screenshot shows it defaulting to «Перечисление». Our bank-account picker (organizationAccountId) starts empty with a placeholder and is not auto-selected. It is also unclear from the static capture whether moysklad's field is the org bank-account (whose name here happens to be «Перечисление») or a payment-form dropdown; the word «Перечисление» does NOT appear in the static DOM (the selectorPair's 2nd search-selector is empty in the capture), so semantics need a live check.
+  - Hozir: page.tsx:597-609 renders the org sub-field as a bank-account CatalogPickerField; bankAccountId starts null (no auto-select of the org's default account).
+  - Grounding: html: Организация widget is a `selectorPair-wrapper` with a 2nd `<div class="search-selector" style="margin-top: 5px;">` (empty value in capture); the word «Перечисление» is NOT in the DOM (0 hits) — only visible in the 
+- **[BE-needed/L] Position grid missing default-visible «Себест. единицы» column (⚙)**
+  - Gap: moysklad shows «Себест. единицы» as the right-most DEFAULT-VISIBLE position column (with the ⚙ column-config gear on it). We omit it because /products strips buyPrice and demand COGS is only known via FIFO at post; on a draft moysklad still shows the product's unit cost here.
+  - Hozir: page.tsx:221-235 positionColumns has no `cost` column; page.tsx comment (215-219) documents it as deferred because the /products API strips buyPrice.
+  - Grounding: html: `<td class="cell numeric cost"><div class="gwt-Label header">Себест. единицы</div></td>` + screenshot shows «Себест. единицы ⚙» as the last column header.
+- **[BE-needed/M] «Ячейка» (bin) position column not wired (gear-configurable, BE column missing)**
+  - Gap: moysklad supports a «Ячейка» position column (present in the grid header as a configurable popup column; it is gear-hidden by default so NOT in the default-visible set, but the account can enable it). We don't offer it, and DemandPosition has no `cell` column so it can't be persisted without a migration. (User decided 2026-07-23 to build C1.)
+  - Hozir: page.tsx positionColumns has no `cell` key. Prisma DemandPosition (schema.prisma:5899-5937) has no bin/cell column. DS PositionTable does support a `cell` column type.
+  - Grounding: html: `<td class="cell slot-outgoing">…<span class="text">Ячейка</span><span class="arrow"></span>` (NOT in screenshot's visible column row → gear-hidden by default).
+- **[BE-needed/L] Per-column ▾ config dropdowns + ⚙ gear (and the extra gear-hidden columns behind them)**
+  - Gap: moysklad column headers are configurable: Наименование/Цена/Скидка/Маркировка/Ячейка are ▾ popup-buttons and «Себест. единицы» carries a ⚙ column-settings gear that toggles additional columns. Those additional (gear-hidden, NOT default-visible) columns exist in the grid: Резерв, Вес, Объём, Сумма НДС, Кол-во б. ед., Упаковка (goodPack), product image, Себестоимость. Our PositionTable has a fixed column set and its menu column has no column-configuration popup.
+  - Hozir: page.tsx:221-235 fixed positionColumns; the `menu` column offers row actions only, no add/remove-column config UI.
+  - Grounding: html header cells: `<div class="gwt-Label header">Резерв</div>`, `Вес`, `Объем`, `<div class="gwt-Label header">Сумма НДС</div>`, `title="Количество базовых единиц">Кол-во б. ед.`, `<td class="cell goodPack">`, `<td clas
+- **[BE-needed/S] Positions toolbar «Импорт ▾» dropdown not rendered**
+  - Gap: moysklad's positions toolbar shows «Импорт ▾» (Excel/CSV import dropdown, right-aligned). Our toolbar shows «Добавить из справочника» + «Проверить комплектацию» but the «Импорт» button was deliberately suppressed (DS PositionInlineAdd, user decision 2026-06-24) — so this is a known intentional divergence, listed for completeness.
+  - Hozir: PositionInlineAdd.tsx:101,132 — «Импорт CSV» button no longer renders (importItems empty). /new passes `onImportPositions` but no `importItems`, so no button appears.
+  - Grounding: html: `<div role="button" class="b-popup-button … button-import" … style="float: right;">…<span class="text">Импорт</span><span class="arrow"></span>` + screenshot «Импорт ▾» at the right of the toolbar.
+- **[marking-qism4/L] Position grid missing default-visible «Маркировка» column**
+  - Gap: moysklad shows «Маркировка ▾» as a default-visible position column (2nd, right after Наименование). We have no marking column — requires a new design-system column type (QISM 4).
+  - Hozir: page.tsx:221-235 positionColumns has no marking/trackingCodes column.
+  - Grounding: html: `<td class="cell trackingCodes">…<span class="text">Маркировка</span><span class="arrow"></span>` + screenshot «Маркировка ▾» between Наименование and Кол-во.
+
+## QISM 2 — /[id] (detal) (21)
+
+- **[FE-now/M] Positions «Себест. единицы» + «Себестоимость» cost columns missing**
+  - Gap: moysklad's positions table shows two cost columns — unit cost («Себест. единицы») and line COGS («Себестоимость»). Our detail PositionEditor (full mode) renders no cost columns at all.
+  - Hozir: PositionEditor.tsx full-mode header renders №/product/qty/price/discount/vat/lineTotal only (lines 275-282); no cost cells. Demand detail passes no cost display.
+  - Grounding: <div class=\"gwt-Label header\">Себест. единицы</div></td><td class=\"cell numeric costAmount\"><div class=\"gwt-Label header\">Себестоимость</div></td>
+- **[FE-now/M] Positions «Остаток» (live stock) column missing on DETAIL**
+  - Gap: moysklad shows a per-row «Остаток» (current store balance) column. The detail page's shared PositionEditor has no stock column — even though the /new page already renders a live «Остаток» column via the /stocks query. Detail is a parity regression vs /new.
+  - Hozir: demands/[id]/page.tsx uses <PositionEditor> (no stock col). demands/new/page.tsx line 227 has {key:'stock'} column merged from /stocks (line 318-330). Detail lacks it.
+  - Grounding: class=\"cell numeric stock\"><div class=\"gwt-Label header\">Остаток</div>
+- **[FE-now/S] Positions «Сумма НДС» (per-line VAT amount) column missing**
+  - Gap: moysklad shows a per-row «Сумма НДС» column (VAT amount for the line), separate from the «НДС» rate column and the «Сумма» gross column. We render НДС% and gross Сумма but not the per-line VAT amount.
+  - Hozir: PositionEditor full mode has vat (%) and lineTotal (gross) columns; computeLineTotal already returns vat amount but no column renders it.
+  - Grounding: class=\"cell numeric vatAmount\"><div class=\"gwt-Label header\">Сумма НДС</div>
+- **[FE-now/M] Positions drag-to-reorder handle missing**
+  - Gap: moysklad rows carry a drag-area cell to reorder positions by dragging. Our editor only offers a delete (X) action; rows cannot be reordered.
+  - Hozir: PositionEditor renders only a remove-row button (lines 407-417); no drag handle / reorder.
+  - Grounding: class=\"cell dragarea\"
+- **[FE-now/L] Positions per-column config menu (show/hide/sort, price-type) missing**
+  - Gap: moysklad column headers (Наименование/Цена/Скидка/Ячейка/Маркировка) are clickable dropdowns (text+arrow) driving a column-config / sort / price-type menu; there is a trailing menu-col. Our headers are static text with no per-column menu.
+  - Hozir: PositionEditor headers are plain <div> labels; no arrow dropdown / column menu / price-type selector.
+  - Grounding: class=\"cell menu-col menu\" ... <td><span class=\"text\">Цена</span></td><td><span class=\"arrow\"></span></td>
+- **[FE-now/M] «Другие поля» collapsible (orange-title) section grouping absent**
+  - Gap: moysklad groups additional/custom fields under a collapsible «Другие поля» orange-title section header. Our detail renders all shipping/logistics fields always-expanded inline in the DocumentMetaPanel, and the custom-attributes editor is a separate untitled/AttributesEditor block — no matching «Другие поля» collapsible on detail. (NOTE: the «Грузоотправитель» SECTION-HEADING claim in the backlog is a fabrication — «Грузоотправитель» appears exactly once as a field label, so it is NOT a heading and is not reported.)
+  - Hozir: demands/[id]/page.tsx renders 10+ shipping fields inline in DocumentMetaPanel (lines 962-1080) always visible; AttributesEditor is separate. No «Другие поля» collapsible group on detail.
+  - Grounding: <div class=\"header-text orange-title\">Другие поля</div>
+- **[FE-now/M] «Валюта документа» field not shown/selectable on detail**
+  - Gap: moysklad demand shows a document-currency field. Our detail uses data.currency only for money formatting; there is no visible/selectable «Валюта» field in the meta grid (the editable rate lives on /new only).
+  - Hozir: page.tsx has no currency field in DocumentMetaPanel; currency is read-only via data.currency for formatMoney.
+  - Grounding: extract.json headerFields: "Валюта документа (UZS)"
+- **[BE-needed/M] Positions «Резерв» column missing**
+  - Gap: moysklad shows a per-row «Резерв» (reserved quantity) column next to «Остаток». Not rendered by our detail; the detail API response has no per-position reserve field.
+  - Hozir: PositionDetail interface (page.tsx lines 51-64) has no reserve field; PositionEditor has no reserve column.
+  - Grounding: class=\"cell numeric reserve\"><div class=\"gwt-Label header\">Резерв</div>
+- **[BE-needed/M] Positions «Вес» + «Объём» columns missing**
+  - Gap: moysklad shows per-row «Вес» (weight) and «Объем» (volume) columns. Product has weightG/volumeML in schema, but the demand detail response's product object returns only {id,name,code,uom}, so the FE has no data to render them.
+  - Hozir: PositionEditor has no weight/volume columns; PositionDetail.product lacks weightG/volumeML (schema has them at prisma lines 1245-1246 / 4599-4600).
+  - Grounding: <td class=\"cell numeric weight\"><div class=\"gwt-Label header\">Вес</div></td><td class=\"cell numeric volume\"><div class=\"gwt-Label header\">Объем</div></td>
+- **[BE-needed/M] Positions «Ячейка» (warehouse bin) column missing on DETAIL**
+  - Gap: moysklad shows a per-row «Ячейка» (outgoing bin/slot) column. PositionEditor supports an opt-in customs.cell column, but the demand detail does not pass `customs`, and DemandPosition has no `cell` DB column to persist it.
+  - Hozir: PositionEditor customs.cell exists (lines 399-406) but detail page never passes `customs`; DemandPosition prisma model (lines 5899-5936) has no cell column — needs migration.
+  - Grounding: class=\"cell slot-outgoing\"> ... <td><span class=\"text\">Ячейка</span></td>
+- **[BE-needed/M] Positions product-image thumbnail column missing**
+  - Gap: moysklad's positions table has a leading product-image thumbnail column between the row-number and the name.
+  - Hozir: PositionEditor renders rownum then CatalogPickerField (name) directly — no image cell.
+  - Grounding: class=\"cell image\"
+- **[BE-needed/L] Positions «Кол-во в упаковках» + «Упаковка» columns missing**
+  - Gap: moysklad shows packaging columns: quantity-in-packs and the packaging unit («Упаковка»). Niche / packaging-config dependent.
+  - Hozir: No packaging model wired to demand positions; PositionEditor has no packs columns.
+  - Grounding: class=\"cell numeric quantityInPacks\" ... class=\"cell goodPack\"
+- **[BE-needed/M] Positions toolbar «Проверить комплектацию» button missing**
+  - Gap: moysklad's positions toolbar has «Проверить комплектацию» (check kit/bundle completeness). Our detail positions area has only «Добавить из справочника» (+ the inline add-row).
+  - Hozir: demands/[id]/page.tsx lines 1109-1120 render only one button (add-from-catalog).
+  - Grounding: <td><span class=\"text\">Проверить комплектацию</span></td>
+- **[BE-needed/M] Positions toolbar «Импорт» button missing**
+  - Gap: moysklad's positions toolbar has an «Импорт» dropdown (import positions from file/other source). Absent from our detail.
+  - Hozir: No import control on the demand detail positions toolbar.
+  - Grounding: <span class=\"text\">Импорт</span></td><td><span class=\"arrow\"></span></td>
+- **[BE-needed/M] Positions toolbar «Привязать документ» button missing**
+  - Gap: moysklad's positions toolbar has «Привязать документ» (link an existing document, e.g. a customer order, to pull positions). Absent from our detail.
+  - Hozir: No link-document control on the demand detail.
+  - Grounding: <td><span class=\"text\">Привязать документ</span></td>
+- **[BE-needed/S] Header «Отправить (N)» count badge missing**
+  - Gap: moysklad's send button shows a count of how many times/forms sent, e.g. «Отправить (1)». Our «Отправить» dropdown shows no count.
+  - Hozir: DetailToolbar send trigger renders tSend('trigger') with no count (detail-toolbar.tsx lines 411-443).
+  - Grounding: <td><span class=\"text\">Отправить (1)</span></td>
+- **[BE-needed/L] Header «Решения» menu missing**
+  - Gap: moysklad's document toolbar has a top-level «Решения» (scenarios/automation decisions) menu. We have no equivalent.
+  - Hozir: DetailToolbar has Изменить/Создать документ/Печать/Отправить only; no Решения.
+  - Grounding: <span title=\"Решения\" class=\"lognex-SpanHyperlink my-style topMenuItem-text\" ... <a><span class=\"text\">Решения</span></a>
+- **[BE-needed/M] Header «Восстановить» (restore/un-archive) action missing**
+  - Gap: moysklad exposes a «Восстановить» action on the document toolbar. Our DetailToolbar supports onArchive/onRestore inside the «Изменить» menu, but the demand detail page never wires them, and there is no archive/restore BE for demands.
+  - Hozir: demand page passes no onArchive/onRestore to DetailToolbar; DetailToolbar archive item only renders when a handler is supplied (lines 235-243).
+  - Grounding: <td><span class=\"text\">Восстановить</span></td>
+- **[BE-needed/L] «Связанные документы» tab is always empty**
+  - Gap: The «Связанные документы» tab exists but the demand page hardcodes relatedGroups={[]}, so the related-documents graph (payments, returns, source order, etc.) is never populated.
+  - Hozir: demands/[id]/page.tsx line 1089 passes relatedGroups={[]}; no /related graph is built.
+  - Grounding: <div style=\"white-space: nowrap;\">Связанные документы</div>
+- **[BE-needed/M] Totals sidebar «Вес» / «Объём» rows missing**
+  - Gap: moysklad's totals footer includes «Вес» and «Объём» rows (rendered but hidden when 0 in this capture). Our DetailTotalsSidebar shows subtotal/НДС/Итого/Прибыль/Кол-во only — no weight/volume totals.
+  - Hozir: detail-totals-sidebar.tsx renders subtotal, vat, total, profit, qty (no weight/volume rows).
+  - Grounding: <span class=\"halfWidth\" aria-hidden=\"true\" style=\"display: none;\">Вес: 0</span><span class=\"gwt-InlineLabel\" aria-hidden=\"true\" style=\"display: none;\">Объем: 0</span>
+- **[marking-qism4/L] Positions «Маркировка» (tracking codes) column missing**
+  - Gap: moysklad shows a per-row «Маркировка» column (goods marking / tracking codes) between name and quantity.
+  - Hozir: PositionEditor has no marking column; no design-system marking column type exists yet.
+  - Grounding: class=\"cell trackingCodes\"> ... <td><span class=\"text\">Маркировка</span></td>
+
+## QISM 3 — roʼyxat (19)
+
+- **[FE-now/S] «Валюта» column not shown by default**
+  - Gap: moysklad shows «Валюта» as a default grid column (right after «Сумма»). Our currency column is defined but is not in the default-visible set, so it is hidden until the user enables it via the gear.
+  - Hozir: page.tsx: currency column defined (lines 437-446) but the useColumnVisibility default-visible array (lines 294-309) omits 'currency' — so it is not shown by default.
+  - Grounding: extract.json gridColumns includes "Валюта"; html DOM: header-content ... title="Валюта">Валюта
+- **[FE-now/S] «Счёт контрагента» filter field never rendered (picker/state/param exist but no panel field)**
+  - Gap: moysklad has a «Счёт контрагента» filter. Our code has the picker, extFilter state and query param all wired — but the InlineFilterPanel.Field for it was never added, so the user can never open it. Dead code path.
+  - Hozir: page.tsx: pickerOpen 'agentAccount' CatalogPicker mounted (1177-1211), extFilter.agentAccountId defined, and paramsRecord.agentAccountId set (line 197) — but there is NO <InlineFilterPanel.Field> for agent-account in the panel (587-993). BE schema already supports agentAccountId (demand.schema.ts:142).
+  - Grounding: html filter panel: filter-item labelled "Счет контрагента" (10th item)
+- **[FE-now/M] Filter panel order/composition differs from moysklad's 26-item sequence**
+  - Gap: moysklad's demand filter order is Период, Грузополучатель, Оплата, Товар или группа, Тип возврата, Склад, Проект, Контрагент, Группа контрагента, Счёт контрагента, Договор, Владелец контрагента, Организация, Счёт организации, Статус, Проведено, Напечатано, Отправлено, Канал продаж, Адрес доставки, Комментарий к адресу доставки, Владелец-сотрудник, Владелец-отдел, Общий доступ, Когда изменен, Кто изменил. Our 19-field order is different (built from an older reference).
+  - Hozir: page.tsx panel comment (558-564) documents a different order: Период · Контрагент · Группа контрагента · Договор · Организация · Счёт организации · Склад · Проект · Статус · Заказ покупателя · Проведено · Напечатано · Отправлено · Оплата · Канал продаж · Владелец-сотрудник · Владелец-отдел · Сумма · Когда изменен.
+  - Grounding: html: full sequence of 26 filter-items in the above DOM order
+- **[FE-now/S] «Оплата» filter option labels wrong + order reversed**
+  - Gap: moysklad payment options are «Оплачено» / «Частично оплачено» / «Не оплачено» in that order (paid, partlyPaid, unpaid). Our labels drop the trailing «о» («Не оплачен», «Частично оплачен») and use «Полностью оплачен» instead of «Оплачено», in reversed order.
+  - Hozir: ru.json: filters.payment_unpaid="Не оплачен", payment_partial="Частично оплачен", payment_paid="Полностью оплачен"; page.tsx (862-865) renders them in unpaid→partial→paid order (reversed vs moysklad).
+  - Grounding: html: <option value="paid">Оплачено</option><option value="partlyPaid">Частично оплачено</option><option value="unpaid">Не оплачено</option>
+- **[FE-now/S] We have «Сумма от/до» and «Заказ покупателя» filters that moysklad's demand list lacks**
+  - Gap: For strict 1:1 parity, our panel adds a sum-range filter and a customer-order filter that do not exist in moysklad's demand filter panel (deviation, not a missing feature). Backlog decision was to keep extras.
+  - Hozir: page.tsx renders «Сумма от/до» fields (933-964) and «Заказ покупателя» field (789-811) plus a customer_order column — none of these appear in moysklad's demand list.
+  - Grounding: NOT IN CAPTURE (strings "Сумма от" and "Заказ покупателя" return zero matches anywhere in the list capture)
+- **[FE-now/S] Create button label «Отгрузку» vs moysklad «Отгрузка»**
+  - Gap: moysklad's list create button reads «Отгрузка» (nominative). Ours reads «Отгрузку» (accusative). Minor label mismatch; may be an intentional «добавить Отгрузку» styling.
+  - Hozir: page.tsx createLabel={t('create_button')}; ru.json pages.demands.create_button="Отгрузку".
+  - Grounding: html list toolbar create button: <span class="text">Отгрузка</span>
+- **[needs-live-capture/S] «…» misc/overflow toolbar menu missing**
+  - Gap: moysklad's list toolbar ends with a «…» misc/overflow icon-button (menu) — typically holding import/export/settings. Its menu contents are not captured, so the exact items are unknown. (Note: «Импорт», «Отправить», «Добавить из справочника», «Проверить комплектацию», «Задача», «Файл» seen in the capture all sit in the embedded DETAIL-form region, offsets 73k–118k, BEFORE the list search at 139974 — they are NOT list-toolbar items.)
+  - Hozir: page.tsx toolbar has a ColumnSettings gear (headerEndSlot, 1026-1033) but no misc/overflow menu equivalent.
+  - Grounding: html list toolbar: a trailing icon-only button `class="b-popup-button … misc"` with background icon offset -245px -156px (menu contents NOT IN CAPTURE)
+- **[BE-needed/M] «Грузополучатель» (consignee) default grid column missing**
+  - Gap: moysklad's demand list has a default column «Грузополучатель» positioned between «Контрагент» and «Организация». Our list has no consignee column at all — it is neither defined in the columns array nor selected by the list service.
+  - Hozir: apps/web/src/app/(app)/demands/page.tsx columns array (lines 317-491) defines no consignee column; DemandRow interface (45-65) has no consignee; demand.service.ts list() include (lines 102-109) selects agent/organization/store/owner/customerOrder but NOT consignee. Prisma Demand.consigneeId + consignee relation already exist (schema.prisma).
+  - Grounding: extract.json gridColumns: [... "Контрагент", "Грузополучатель", "Организация", ...]; html DOM: header-content left" title="Грузополучатель">Грузополучатель (confirmed as a grid column header, 7 total occurrences incl. co
+- **[BE-needed/S] Filter «Грузополучатель» missing**
+  - Gap: moysklad's demand filter panel has a «Грузополучатель» (consignee) picker filter (2nd item). We only have «Контрагент». No consignee filter exists.
+  - Hozir: page.tsx InlineFilterPanel (587-993) has no consignee field; demand.schema.ts DemandFilterSchema (136-194) has no consigneeId param. Demand.consigneeId column exists so wiring is cheap.
+  - Grounding: html filter panel: filter-item with <div class="gwt-Label" title="Грузополучатель">Грузополучатель</div> (2nd of 26 filter-items)
+- **[BE-needed/M] Filter «Товар или группа» missing**
+  - Gap: moysklad filters demands by whether their positions contain a given product or product group. We have no such filter.
+  - Hozir: No product/group filter in page.tsx panel or DemandFilterSchema. Requires a positions→product/group join.
+  - Grounding: html filter panel: filter-item labelled "Товар или группа" (also summarized in extract.json filters as "Товар или группа")
+- **[BE-needed/L] Filter «Тип возврата» missing (Частично возвращено / Без возвратов / Полностью возвращено)**
+  - Gap: moysklad has a return-type filter classifying each demand by how much of it was returned. We have none.
+  - Hozir: No return-type filter. Demand.salesReturns (SalesReturn[]) relation exists so aggregation is feasible, but non-trivial (needs returned-qty computation).
+  - Grounding: html: filter-item title="Тип возврата" with <option value="mixed">Частично возвращено</option><option value="noReturn">Без возвратов</option><option value="return">Полностью возвращено</option>
+- **[BE-needed/M] Filter «Владелец контрагента» missing**
+  - Gap: moysklad filters demands by the OWNER of the counterparty (agent). We have «Владелец-сотрудник» (demand owner) but not the counterparty's owner.
+  - Hozir: No such filter in page.tsx or DemandFilterSchema. Would filter via the agent (Counterparty) relation's ownerId.
+  - Grounding: html filter panel: filter-item labelled "Владелец контрагента" (12th item)
+- **[BE-needed/S] Filter «Адрес доставки» missing**
+  - Gap: moysklad has a delivery-address filter. We have none.
+  - Hozir: No delivery-address filter. Demand.shipmentAddress (VarChar 500) column exists so wiring is cheap.
+  - Grounding: html filter panel: filter-item labelled "Адрес доставки" (20th item)
+- **[BE-needed/M] Filter «Комментарий к адресу доставки» missing**
+  - Gap: moysklad has a separate filter for the delivery-address comment. We have none.
+  - Hozir: No such filter. Demand has shipmentAddressFull (Json) which may hold the comment; needs a JSON-path filter.
+  - Grounding: html filter panel: filter-item labelled "Комментарий к адресу доставки" (21st item)
+- **[BE-needed/S] Filter «Общий доступ» (shared) missing**
+  - Gap: moysklad has a Да/Нет «Общий доступ» filter. We have none.
+  - Hozir: No shared filter. Demand.shared (Boolean) column exists so wiring is cheap.
+  - Grounding: html filter panel: filter-item title="Общий доступ" with <option value="false">Нет</option><option value="true">Да</option>
+- **[BE-needed/M] Filter «Кто изменил» (modified-by) missing**
+  - Gap: moysklad has a «Кто изменил» employee filter (last filter). We deliberately skipped it because Demand has no modifier column.
+  - Hozir: demand.schema.ts:182-184 explicit NOTE: skipped — Demand has no updatedById/modifiedById column. Requires adding an audit column first.
+  - Grounding: html filter panel: filter-item labelled "Кто изменил" (26th/last item)
+- **[BE-needed/L] «Статус» filter is a custom-state multi-selector in moysklad, not a draft/posted/cancelled select**
+  - Gap: moysklad's «Статус» filter is a multi-select picker of user-defined custom document states. Our «Статус» filter is a plain NativeSelect of draft/posted/cancelled (our internal FSM). Conceptually different control and data.
+  - Hozir: page.tsx:771-787 renders a NativeSelect of draft/posted/cancelled bound to extFilter.state. No custom-state model exists (Demand.state is a plain VarChar; no stateId relation).
+  - Grounding: html: <div class="gwt-Label" title="Статус">Статус</div><div class="search-selector multi-selector filter-selector field">… (a multi-select tag picker, not a <select> of fixed states)
+- **[BE-needed/M] Dedicated «Статус» ▾ toolbar button (bulk custom-state) missing**
+  - Gap: moysklad's list toolbar has a dedicated «Статус» dropdown (bulk-assign a custom document state to selected rows), separate from «Изменить». We fold post/unpost into «Изменить» and have no «Статус» button.
+  - Hozir: page.tsx extraActions (1006-1025) renders only DemandBulkActionsDropdown («Изменить»), DemandCreateRelatedDropdown («Создать»), DemandPrintDropdown («Печать»). No «Статус» button. Requires a custom-states model (Demand.state is a fixed draft/posted/cancelled string).
+  - Grounding: html list toolbar (after search «Номер или комментарий», offset 141108): top-level buttons render as «Изменить | Статус | Создать | Печать», with «Статус» a btn-enabled btn-gray dropdown (<span class="text">Статус</span>
+- **[BE-needed/L] Right-side «Задача»/«Файлы» panel missing on the list**
+  - Gap: moysklad's demand list carries a right-hand side panel with a Task grid (Наименование/Тип задачи/Срок/Сотрудник) and a Files grid (Наименование/Размер, МБ/Дата добавления). We have no such side panel on the list. Cross-cutting (task/files feature).
+  - Hozir: page.tsx renders only the main ListView; no task/file side panel exists on /demands.
+  - Grounding: html header cells title="Тип задачи", title="Срок", title="Размер, МБ", title="Дата добавления"; and gwt-Label header-text">Файлы (excluded from main grid per extract.json note but present as a side panel)
+
+## Cross-cutting (8)
+
+- **[FE-now/M] «Себестоимость» (line total COGS) positions column missing on detail**
+  - Gap: A posted moysklad Отгрузка shows a «Себестоимость» positions column = the line's total self-cost (per-unit cost × qty). Ours shows no cost column. Contrary to the general «/products strips buyPrice» blocker (which applies to DRAFTS where FIFO cost is unknown), on a POSTED demand the FIFO cost is already computed and stored: DemandPosition.costMinor is set at post and returned by the detail API, so this column is FE-feasible for posted docs (design-system PositionEditor needs a cost column added).
+  - Hozir: detail PositionEditor (\[id]/page.tsx:1094-1108) renders no cost column though PositionDetail already carries `costMinor` (\[id]/page.tsx:61). costMinor is set at post (demand.service.ts:975 `data:{costMinor:perUnit}`) and returned via the detail positions include (demand.service.ts:173-180).
+  - Grounding: detail html: `<div class=\"gwt-Label header\">Себестоимость</div></td><td class=\"cell menu-col menu\">` + per-row `<td class=\"cell numeric costAmount\">`
+- **[FE-now/S] «Себест. единицы» (per-unit COGS) positions column missing on detail**
+  - Gap: Alongside «Себестоимость» the posted moysklad demand grid has a «Себест. единицы» column = per-unit self-cost. Ours lacks it. Same feasibility as the total-COGS column: DemandPosition.costMinor is stored per unit at post and returned, so it is FE-derivable for posted documents.
+  - Hozir: No per-unit cost column in detail PositionEditor (\[id]/page.tsx:1094-1108); costMinor comment in schema.prisma:5924 says «Cost (per unit, tiyin). Populated by FIFO at post time» — the value exists but is not surfaced.
+  - Grounding: detail html: `<div class=\"gwt-Label header\">Себест. единицы</div>` + per-row `<td class=\"cell numeric cost\">`
+- **[FE-now/S] «Решения» toolbar menu absent**
+  - Gap: moysklad's demand detail toolbar has a «Решения» top-menu item (an embedded-apps / solutions / automation-scenarios launcher). Our detail toolbar has no such control. A functional equivalent (app marketplace / scenario engine) has no analog in this codebase, so any parity build would be a label/menu-shell placeholder (disabled), consistent with the project's label-parity placeholder convention.
+  - Hozir: DetailToolbar (\[id]/page.tsx:613-639) renders Save/Close/pager + Изменить/Создать документ/Печать/Отправить only — no «Решения»; /new passes empty modifyMenu/createDocMenu/sendMenu (new/page.tsx:1158-1161).
+  - Grounding: detail html: `<span title=\"Решения\" class=\"lognex-SpanHyperlink my-style topMenuItem-text\"><a><span class=\"text\">Решения</span>` with `images/menu/embed-apps.svg` icon
+- **[FE-now/S] «Изменения» is a header author-link in moysklad, not a bottom collapsible**
+  - Gap: moysklad surfaces the change-log as a top-right header row «Изменения: <author>» where the author is a link into the change history. Our demand detail instead renders «Изменения» as a bottom inline collapsible section AND shows a separate static «Изменен: <name> <date>» text (non-clickable) in the author slot. Placement/interaction differs (also overlaps the detail-header surface). Minor structural gap (backlog D6).
+  - Hozir: detail uses DetailContentTabs with default historyInline=true → «Изменения» renders as a bottom collapsible (\[id]/page.tsx:1085-1091; detail-content-tabs.tsx:120-140); authorSlot shows static `{tDetailHeader('changed')}: {owner} {date}` (\[id]/page.tsx:681-683) not a link into the change-log.
+  - Grounding: detail html: `<div class=\"row\"><div class=\"label\">Изменения</div><div class=\"link\">Sherzod</div>`
+- **[BE-needed/M] «Ячейка» (warehouse bin/cell) positions column missing**
+  - Gap: moysklad's demand positions grid carries a «Ячейка» (bin) column (visible/toggleable on both /new and detail). Ours has no bin column at all. Per _GAP-BACKLOG C1 the design-system PositionTable already supports a `customs.cell` column type, but DemandPosition has no place to persist it — so full parity needs a BE migration (mirror LossPosition.cell / EnterPosition.cell free-text VarChar(255)), the write schema (DemandPositionInputSchema) to accept `cell`, and the column wired into both grids.
+  - Hozir: No bin column: /new positionColumns (new/page.tsx:221-235) lists only name·quantity·stock·price·vat·discount·amount; detail PositionEditor (\[id]/page.tsx:1094-1108) uses fixed positionLabels. DemandPosition prisma model (schema.prisma:5899-5937) has no `cell` field; DemandPositionInputSchema (demand.schema.ts:36-49) has no `cell`.
+  - Grounding: detail html: `<td class=\"cell slot\">` per position row + column-chooser `<tbody><tr><td></td><td><span class=\"text\">Ячейка</span></td><td><span class=\"arrow\"></span></td></tr>`; new html has the same `cell slot`/Яч
+- **[BE-needed/M] «Связанные документы» tab is permanently empty (no linked-doc graph)**
+  - Gap: moysklad's demand detail has a «Связанные документы» tab that renders the linked-document graph (the source Заказ покупателя, PaymentIn cascade, Возврат покупателя, invoices/factures, etc.). Our tab exists but is hardcoded empty — no related documents are ever computed or shown. Needs a BE endpoint/aggregation to gather the linked docs for a demand, then feed RelatedDocsPanel.
+  - Hozir: detail passes `relatedGroups={[]}` to DetailContentTabs (\[id]/page.tsx:1089); DetailContentTabs (detail-content-tabs.tsx:96-100) renders RelatedDocsPanel with that empty array → always the empty-label. /new tab shows a static empty placeholder (new/page.tsx:1123-1131).
+  - Grounding: detail html: `<div class=\"...abName\" style=\"white-space: nowrap;\">Связанные документы</div>` (a bottom tab)
+- **[BE-needed/M] Archive / «Восстановить» (restore) not implemented (detail + list)**
+  - Gap: moysklad exposes «Восстановить» on both the demand detail (a conditional gray header button, shown when the doc is deleted/archived) and the list (row/bulk action) to restore soft-deleted documents; the list also offers a deleted/trash view to reach them. We soft-delete (deletedAt) but have no restore path: no BE restore endpoint, the DetailToolbar's onArchive/onRestore hooks are never passed, and the list has no «Показать удалённые»/trash view to surface deleted rows for restoring.
+  - Hozir: demand.service.ts soft-deletes (lines 557-563 `data:{deletedAt:new Date()}`) with NO restore method; detail passes only onDelete, never onArchive/onRestore (\[id]/page.tsx:623-632) though DetailToolbar supports them (detail-toolbar.tsx:60-62,235-243); list page.tsx has no includeDeleted toggle or restore action (only rowDelete, page.tsx:518).
+  - Grounding: detail html: `<div ... b-popup-button-enabled b-popup-button-gray\" aria-hidden=\"true\" ... style=\"display: none;\"><table class=\"b-popup-button-table\">...<span class=\"text\">Восстановить</span>`; list html: `<span 
+- **[marking-qism4/L] «Маркировка» (tracking-code/marking) positions column missing**
+  - Gap: moysklad's demand positions grid has a «Маркировка» column for per-line marking/tracking codes (Честный Знак / ASL Belgisi). Ours has none. Per _GAP-BACKLOG C2 the design system has NO component for this at all — it's a new column type = QISM 4 (already scoped as a separate sub-project). Marking codes on Demand are also a whole BE subsystem (TrackingCode/RetireOrder generated after a fiscal Demand), so this is a large multi-part effort, not simple wiring.
+  - Hozir: No marking column anywhere; /new comment (new/page.tsx:214-220) explicitly defers «Маркировка = QISM 4 [new DS column type]». DemandPosition has no trackingCodes relation (schema.prisma:5899-5937).
+  - Grounding: detail html: `<td class=\"cell trackingCodes\">` per row + column-chooser `<td><span class=\"text\">Маркировка</span></td><td><span class=\"arrow\"></span></td>`; new html has the same `cell trackingCodes`
+
+## Rad etilgan (premise-error / grounding yoʼq) — 6
+
+- ~~«План. дата отгрузки» + «План. дата оплаты» in our «Другие поля» are not in this capture~~ — Both fields are genuinely ABSENT from demand-03-new. demand-03-new.html: «Другие поля» occurs exactly ONCE (offset 95670), immediately followed in DOM order by «Грузоотправитель», «Перевозочный докуме
+- ~~Do NOT add a «Грузоотправитель» section-heading grouping (premise error)~~ — VERIFIED PREMISE ERROR — the «Грузоотправитель» section-heading grouping is NOT a real moysklad element. In demand-03-new.html «Грузоотправитель» appears EXACTLY ONCE (grep count=1), and that occurren
+- ~~Column-chooser offers far fewer optional columns than moysklad~~ — The column-chooser/gear popup contents are genuinely ABSENT from the static capture. Verified in demand-01-list.html: all column-settings markers are zero — 'столбц'=0, 'Настроить'=0, 'настройк'=0, 'О
+- ~~Per-row context actions differ (only delete vs moysklad Изменить/Восстановить/Закрыть)~~ — REFUTED — the extract.json field `rowContextActions: ["Изменить","Восстановить","Закрыть"]` (demand-01-list.extract.json line 45) is a misattribution, not a grounded list row-context menu. DOM evidenc
+- ~~«Отправить» control missing the (N) count badge~~ — The count-badge ELEMENT is genuinely in the capture: demand-02-detail.html contains the exact claimed DOM `<td><span class=\"text\">Отправить (1)</span></td><td><span class=\"arrow\"></span></td>` — a
+- ~~Positions grid has no per-column show/hide chooser~~ — The cited "column-chooser popup rows" are a MISREAD of column HEADERS, not a chooser menu (the «Грузоотправитель» premise-error pattern: a DOM element recast as something it isn't). Exact DOM: `<td cl
