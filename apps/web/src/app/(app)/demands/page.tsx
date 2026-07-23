@@ -25,7 +25,6 @@ import {
   ListView,
   type ListViewFilter,
   MassEditModal,
-  MoneyInput,
   NativeSelect,
   PeriodInputs,
   PeriodShortcuts,
@@ -132,7 +131,6 @@ export default function DemandsPage() {
     | 'orgAccount'
     | 'salesChannel'
     | 'group'
-    | 'customerOrder'
     | 'massEditOwner'
     | 'massEditProject'
   >(null);
@@ -165,8 +163,6 @@ export default function DemandsPage() {
     salesChannelLabel?: string;
     groupId?: string;
     groupLabel?: string;
-    customerOrderId?: string;
-    customerOrderLabel?: string;
     // tri-state flag filters ('true' | 'false')
     applicable?: 'true' | 'false';
     printed?: 'true' | 'false';
@@ -181,10 +177,6 @@ export default function DemandsPage() {
   if (cursor) paramsRecord.cursor = cursor;
   if (filterValues.momentFrom) paramsRecord.momentFrom = filterValues.momentFrom;
   if (filterValues.momentTo) paramsRecord.momentTo = filterValues.momentTo;
-  if (filterValues.sumMinorFrom !== undefined)
-    paramsRecord.sumMinorFrom = String(filterValues.sumMinorFrom);
-  if (filterValues.sumMinorTo !== undefined)
-    paramsRecord.sumMinorTo = String(filterValues.sumMinorTo);
   if (filterValues.agentId) paramsRecord.agentId = filterValues.agentId;
   if (filterValues.organizationId) paramsRecord.organizationId = filterValues.organizationId;
   if (filterValues.storeId) paramsRecord.storeId = filterValues.storeId;
@@ -197,7 +189,6 @@ export default function DemandsPage() {
   if (extFilter.agentAccountId) paramsRecord.agentAccountId = extFilter.agentAccountId;
   if (extFilter.salesChannelId) paramsRecord.salesChannelId = extFilter.salesChannelId;
   if (extFilter.groupId) paramsRecord.groupId = extFilter.groupId;
-  if (extFilter.customerOrderId) paramsRecord.customerOrderId = extFilter.customerOrderId;
   if (extFilter.organizationAccountId)
     paramsRecord.organizationAccountId = extFilter.organizationAccountId;
   if (extFilter.applicable) paramsRecord.applicable = extFilter.applicable;
@@ -785,30 +776,9 @@ export default function DemandsPage() {
                 ))}
               </NativeSelect>
             </InlineFilterPanel.Field>
-            {/* 10. Заказ покупателя */}
-            <InlineFilterPanel.Field label={tFields('linked_order')} expandable>
-              <CatalogPickerField
-                value={
-                  extFilter.customerOrderId
-                    ? {
-                        id: extFilter.customerOrderId,
-                        label: extFilter.customerOrderLabel ?? extFilter.customerOrderId,
-                      }
-                    : null
-                }
-                placeholder=""
-                onPick={() => setPickerOpen('customerOrder')}
-                onClear={() => {
-                  setExtFilter({
-                    ...extFilter,
-                    customerOrderId: undefined,
-                    customerOrderLabel: undefined,
-                  });
-                  setCursor(undefined);
-                }}
-                testId="filter-customer-order"
-              />
-            </InlineFilterPanel.Field>
+            {/* «Заказ покупателя» filter removed — moysklad's demand list has no
+                such filter (strict 1:1, user 2026-07-23h). The «Заказ покупателя»
+                grid column stays (it's data, not a filter). */}
             {/* 11. Проведено */}
             <InlineFilterPanel.Field label={tFilters('applicable')} expandable>
               <YesNoSelect
@@ -929,39 +899,9 @@ export default function DemandsPage() {
                 testId="filter-group"
               />
             </InlineFilterPanel.Field>
-            {/* 18. Сумма — from / to bounds. */}
-            <InlineFilterPanel.Field label={tFilters('sum_from')} expandable>
-              <MoneyInput
-                allowEmpty
-                valueMinor={
-                  filterValues.sumMinorFrom !== undefined ? String(filterValues.sumMinorFrom) : ''
-                }
-                onChangeMinor={(minor) => {
-                  setFilterValues({
-                    ...filterValues,
-                    sumMinorFrom: minor === '' ? undefined : Number(minor),
-                  });
-                  setCursor(undefined);
-                }}
-                data-test-id="filter-sum-from"
-              />
-            </InlineFilterPanel.Field>
-            <InlineFilterPanel.Field label={tFilters('sum_to')} expandable>
-              <MoneyInput
-                allowEmpty
-                valueMinor={
-                  filterValues.sumMinorTo !== undefined ? String(filterValues.sumMinorTo) : ''
-                }
-                onChangeMinor={(minor) => {
-                  setFilterValues({
-                    ...filterValues,
-                    sumMinorTo: minor === '' ? undefined : Number(minor),
-                  });
-                  setCursor(undefined);
-                }}
-                data-test-id="filter-sum-to"
-              />
-            </InlineFilterPanel.Field>
+            {/* «Сумма от/до» filter removed — moysklad's demand list has no
+                sum-range filter (strict 1:1, user 2026-07-23h). The «Сумма»
+                grid column + footer total stay. */}
             {/* 19. Когда изменен — updatedAt range. */}
             <InlineFilterPanel.Field
               label={tFilters('updated_period')}
@@ -1278,25 +1218,6 @@ export default function DemandsPage() {
             ...extFilter,
             groupId: item.id,
             groupLabel: String(item.primary),
-          });
-          setCursor(undefined);
-        }}
-      />
-      <CatalogPicker
-        open={pickerOpen === 'customerOrder'}
-        onClose={() => setPickerOpen(null)}
-        title={tFields('linked_order')}
-        fetcher={async (q): Promise<PickerItem[]> => {
-          const r = await api.get<{ items: { id: string; name: string }[] }>(
-            `/customer-orders?search=${encodeURIComponent(q)}&limit=20`,
-          );
-          return r.items.map((x) => ({ id: x.id, primary: x.name }));
-        }}
-        onSelect={(item) => {
-          setExtFilter({
-            ...extFilter,
-            customerOrderId: item.id,
-            customerOrderLabel: String(item.primary),
           });
           setCursor(undefined);
         }}
