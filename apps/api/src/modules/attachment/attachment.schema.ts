@@ -34,6 +34,8 @@ export const ATTACHMENT_ENTITIES = [
   // «Отчёт комиссионера» «Файлы» tabs (commission-reports/new + new-in staged upload).
   'CommissionReportOut',
   'CommissionReportIn',
+  // Debt payment screenshot (Sherset KEEP — B3).
+  'DebtPayment',
 ] as const;
 
 const Entity = z.enum(ATTACHMENT_ENTITIES);

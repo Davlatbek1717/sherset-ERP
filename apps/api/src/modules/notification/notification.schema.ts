@@ -15,6 +15,8 @@ export const NotificationKind = z.enum([
   // F2 (user feature 2026-07-03): cashier pressed «Отправил кладовщику» on a
   // POS refund receipt — the warehouse keeper must accept the returned goods.
   'return_to_warehouse',
+  // Debts (Sherset KEEP — B3): operator call-due reminder.
+  'debt_call_due',
 ]);
 export type NotificationKindValue = z.infer<typeof NotificationKind>;
 

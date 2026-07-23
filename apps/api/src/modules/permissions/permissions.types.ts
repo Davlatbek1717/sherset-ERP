@@ -110,7 +110,12 @@ export type PermissionEntity =
   | 'label'
   | 'settings'
   // Analitika module
-  | 'analitika';
+  | 'analitika'
+  // Debts (Sherset KEEP — B3)
+  | 'debt'
+  | 'debtpayment'
+  | 'debtcardpayment'
+  | 'debtreport';
 
 export type PermissionAction =
   | 'view'

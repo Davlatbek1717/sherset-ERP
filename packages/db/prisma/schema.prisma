@@ -27,6 +27,10 @@ datasource db {
 
 // Tenant. Everything else scopes to this.
 model Account {
+  // Sherset KEEP (debts) back-relations — B2
+  debts        Debt[]
+  debtPayments DebtPayment[]
+  debtNotes    DebtNote[]
   id        String   @id @default(uuid()) @db.Uuid
   name      String   @db.VarChar(255)
   country   String   @default("UZ") @db.VarChar(2)
@@ -224,6 +228,13 @@ model DocumentSequence {
 
 // User / Employee of a tenant.
 model Employee {
+  // Sherset KEEP (debts) back-relations — B2
+  ownedDebts           Debt[]        @relation("DebtOwner")
+  issuedDebts          Debt[]        @relation("DebtIssuer")
+  debtPaymentsTook     DebtPayment[] @relation("DebtPaymentReceiver")
+  debtPaymentsReversed DebtPayment[] @relation("DebtPaymentReverser")
+  debtNotesWritten     DebtNote[]    @relation("DebtNoteAuthor")
+  debtNotesCanceled    DebtNote[]    @relation("DebtNoteCanceler")
   id                  String    @id @default(uuid()) @db.Uuid
   accountId           String    @map("account_id") @db.Uuid
   ownerId             String?   @map("owner_id") @db.Uuid
@@ -820,6 +831,8 @@ model OrganizationAccount {
 // cash desks are organization-independent but currency-scoped (a single
 // cash box holds only one currency).
 model CashDesk {
+  // Sherset KEEP (debts) back-relation — B2
+  debtPayments DebtPayment[]
   id           String   @id @default(uuid()) @db.Uuid
   accountId    String   @map("account_id") @db.Uuid
   name         String   @db.VarChar(255)
@@ -1597,6 +1610,8 @@ model ProductFolder {
 
 // Counterparty (mijoz / ta'minlovchi / ikkisi).
 model Counterparty {
+  // Sherset KEEP (debts) back-relation — B2
+  debts Debt[]
   id                 String   @id @default(uuid()) @db.Uuid
   accountId          String   @map("account_id") @db.Uuid
   ownerId            String?  @map("owner_id") @db.Uuid
@@ -8936,4 +8951,208 @@ model DocumentLink {
   @@index([accountId, sourceType, sourceId])
   @@index([accountId, targetType, targetId])
   @@map("document_links")
+}
+
+// ===== Sherset KEEP: Debt models (climart sxemasida yo'q — qo'shildi B2) =====
+/// Mijozga berilgan qarz. `paidMinor` — barcha to'lovlar yig'indisi
+/// (denormalizatsiya: ro'yxat/saralash tez ishlashi uchun; yagona haqiqat
+/// manbai `debt_payments` — DebtService har yozuvdan keyin qayta hisoblaydi).
+model Debt {
+  id             String @id @default(uuid()) @db.Uuid
+  accountId      String @map("account_id") @db.Uuid
+  counterpartyId String @map("counterparty_id") @db.Uuid
+
+  /// Avto-raqam: QRZ-YYYY-NNNNN (document_sequences orqali, race-safe).
+  name String @db.VarChar(50)
+
+  /// Umumiy qarz summasi (tiyin).
+  totalMinor BigInt @map("total_minor")
+  /// To'langan summa (tiyin) — payments yig'indisi.
+  paidMinor  BigInt @default(0) @map("paid_minor")
+  currency   String @default("UZS") @db.VarChar(3)
+
+  /// TZ §4: 'unpaid' | 'partial' | 'paid'. `paid` ⇒ qarzdorlar ro'yxatidan chiqadi.
+  status String @default("unpaid") @db.VarChar(20)
+
+  /// TZ §3.3 — qarz berishda MAJBURIY: keyingi qo'ng'iroq/to'lov vaqti.
+  /// Qarz to'liq yopilganda (§3.6) endi kerak emas ⇒ null'ga tushadi.
+  nextContactAt DateTime? @map("next_contact_at") @db.Timestamptz()
+
+  /// Oxirgi qo'ng'iroq belgisi (2026-07-12 talab): operator «qo'ng'iroq qilindi»
+  /// deb saqlaganda to'ladi. Outcome — suhbat natijasi:
+  /// 'paid_full' | 'paid_partial' | 'not_paid' | 'callback'.
+  /// «Qo'ng'iroq qilinganlar» bo'limi shu maydonlardan filtrlanadi.
+  lastCallAt      DateTime? @map("last_call_at") @db.Timestamptz()
+  lastCallOutcome String?   @map("last_call_outcome") @db.VarChar(20)
+  /// Eslatma-cron dedup belgisi: nextContactAt uchun bildirishnoma yuborilgan
+  /// payt. Yangi nextContactAt qo'yilganda NULL'ga tushadi — keyingi muddat
+  /// uchun eslatma qayta ishlaydi.
+  callRemindedAt  DateTime? @map("call_reminded_at") @db.Timestamptz()
+
+  /// 15-KUNLIK MIJOZGA TAKROR TELEGRAM ESLATMASI (2026-07-16 talab) dedup belgisi:
+  /// mijozning O'ZIGA «qarzingiz bor» avtomatik eslatmasi oxirgi yuborilgan payt.
+  /// Operatorning qo'ng'iroq jadvalidan (nextContactAt/callRemindedAt) ALOHIDA —
+  /// bunga tegmaydi. null ⇒ hali yuborilmagan (birinchi eslatma createdAt'dan
+  /// N kun o'tgach ketadi). Cron: har kuni, qarz qolgan bo'lsa har N kunda takror.
+  lastTgReminderAt DateTime? @map("last_tg_reminder_at") @db.Timestamptz()
+
+  /// MUAMMOLI MIJOZ (2026-07-14 talab). Operator qo'ng'iroq natijasini
+  /// belgilaganda mijozni «muammoli» deb ajratib qo'yishi mumkin: telefonni
+  /// ko'tarmaydi, va'da berib bermaydi, janjal qiladi va h.k.
+  ///
+  /// Bu `lastCallOutcome` dan ALOHIDA o'q: mijoz «qisman to'ladi» bo'lib ham,
+  /// ayni paytda muammoli bo'lishi mumkin. Shuning uchun alohida bayroq.
+  ///   problem       — «Muammoli qarzdorlar» bo'limi shundan filtrlanadi
+  ///   problemReason — NIMA muammo (majburiy: sababsiz belgi foydasiz)
+  ///   problemAt / problemById — qachon va kim belgilagan
+  /// Muammo hal bo'lsa `problem=false` bo'ladi, lekin sabab MULOQOT TARIXIDA
+  /// qoladi — kim, qachon, nega degani yo'qolmasin.
+  problem       Boolean   @default(false)
+  problemReason String?   @map("problem_reason")
+  problemAt     DateTime? @map("problem_at") @db.Timestamptz()
+  problemById   String?   @map("problem_by_id") @db.Uuid
+
+  /// Mas'ul xodim (call-markaz operatori) — ro'yxat filtri.
+  ownerId    String? @map("owner_id") @db.Uuid
+  /// Qarzni bergan kassir — §3.9 kunlik kassir hisoboti shu ustundan yig'iladi.
+  issuedById String? @map("issued_by_id") @db.Uuid
+
+  comment String?
+
+  closedAt  DateTime? @map("closed_at") @db.Timestamptz()
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
+  /// Soft-delete — korzina parity (hech qachon jismonan o'chmaydi).
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz()
+
+  account      Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  counterparty Counterparty  @relation(fields: [counterpartyId], references: [id], onDelete: Restrict)
+  owner        Employee?     @relation("DebtOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  issuedBy     Employee?     @relation("DebtIssuer", fields: [issuedById], references: [id], onDelete: SetNull)
+  payments     DebtPayment[]
+  notes        DebtNote[]
+
+  @@unique([accountId, name])
+  /// «Qarzdorlar ro'yxati» (§3.1) — status bo'yicha faol qarzlar.
+  @@index([accountId, status, nextContactAt])
+  /// «Bugungi qo'ng'iroqlar» (§3.5) — sana bo'yicha tanlash.
+  @@index([accountId, nextContactAt])
+  /// «Qo'ng'iroq qilinganlar» — kun kesimida tez tanlash.
+  @@index([accountId, lastCallAt])
+  @@index([accountId, counterpartyId])
+  @@index([accountId, ownerId])
+  @@index([accountId, issuedById, createdAt])
+  @@map("debts")
+}
+
+/// Qarz bo'yicha to'lov. Uch kanal (TZ §3.6 + §3.7):
+///   'cash'            — kassada naqd            (kassir)
+///   'terminal'        — kassada terminal/karta  (kassir)
+///   'card_screenshot' — mijoz kartadan o'tkazdi, chek rasmi (operator)
+/// §3.9: kassir hisobotiga faqat cash+terminal kiradi; card_screenshot
+/// operator hisobotida ko'rinadi — shuning uchun `method` ustuni ajratuvchi.
+model DebtPayment {
+  id        String @id @default(uuid()) @db.Uuid
+  accountId String @map("account_id") @db.Uuid
+  debtId    String @map("debt_id") @db.Uuid
+
+  amountMinor BigInt @map("amount_minor")
+  method      String @db.VarChar(20)
+
+  /// §3.8 — «qayerdan qabul qilingani»: kassa nomi yoki «Karta — screenshot».
+  sourceName String? @map("source_name") @db.VarChar(120)
+  cashDeskId String? @map("cash_desk_id") @db.Uuid
+
+  /// §3.7 — chek rasmi. `attachments.id` (entity='debtpayment'). FK EMAS:
+  /// attachment polimorf jadval, Prisma relation'i yo'q — id sifatida saqlanadi.
+  attachmentId String? @map("attachment_id") @db.Uuid
+
+  /// To'lov VALYUTASI (2026-07-13): mijoz naqdni so'mda ham, dollarda ham
+  /// berishi mumkin. `amountMinor` HAR DOIM qarz valyutasida (so'm/tiyin) —
+  /// qarz hisobi shundan yuritiladi. Quyidagi uchlik esa ASL to'lovni saqlaydi:
+  ///   currency            — 'UZS' | 'USD'
+  ///   amountOriginalMinor — asl valyutadagi summa (USD → sent)
+  ///   exchangeRate        — kurs ×10000 (masalan 12 800,50 so'm → 128005000)
+  /// UZS to'lovda: currency='UZS', original=amountMinor, rate=null.
+  currency            String  @default("UZS") @db.VarChar(3)
+  amountOriginalMinor BigInt? @map("amount_original_minor")
+  exchangeRate        BigInt? @map("exchange_rate")
+
+  comment String?
+
+  receivedById   String? @map("received_by_id") @db.Uuid
+  /// 'cashier' | 'operator' — kim kiritgani (hisobotlarni ajratish uchun).
+  receivedByRole String  @default("cashier") @map("received_by_role") @db.VarChar(20)
+
+  /// TO'LOVNI QAYTARISH — storno (2026-07-16). Xato kiritilgan to'lov
+  /// JISMONAN O'CHIRILMAYDI (tarix — dalil): reversed_at belgilanadi.
+  /// reversed_at != NULL bo'lgan to'lov paidMinor yig'indisiga, kontragent
+  /// balansiga va hisobotlarga KIRMAYDI, lekin ro'yxatlarda «qaytarilgan»
+  /// belgisi bilan ko'rinadi — kim, qachon, nega qaytargani bilan.
+  reversedAt    DateTime? @map("reversed_at") @db.Timestamptz()
+  reversedById  String?   @map("reversed_by_id") @db.Uuid
+  reverseReason String?   @map("reverse_reason")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  account    Account    @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  debt       Debt       @relation(fields: [debtId], references: [id], onDelete: Cascade)
+  cashDesk   CashDesk?  @relation(fields: [cashDeskId], references: [id], onDelete: SetNull)
+  receivedBy Employee?  @relation("DebtPaymentReceiver", fields: [receivedById], references: [id], onDelete: SetNull)
+  reversedBy Employee?  @relation("DebtPaymentReverser", fields: [reversedById], references: [id], onDelete: SetNull)
+  /// Shu to'lovni yaratgan qo'ng'iroq-yozuv(lar)i (2026-07-16 — natija↔to'lov bog'lami).
+  notes      DebtNote[] @relation("DebtNotePayment")
+
+  @@index([accountId, debtId, createdAt(sort: Desc)])
+  /// §3.9 kunlik kassir hisoboti — (kassir, kun) kesimi.
+  @@index([accountId, receivedById, createdAt])
+  @@index([accountId, method, createdAt])
+  @@map("debt_payments")
+}
+
+/// Mijoz bilan muloqot tarixi (TZ §3.4). Hech qachon o'chirilmaydi/ustidan
+/// yozilmaydi — append-only. `nextContactAt` shu yozuvda kelishilgan keyingi
+/// aloqa vaqti; DebtService uni Debt.nextContactAt'ga ko'chiradi (oxirgisi kuchda).
+model DebtNote {
+  id        String @id @default(uuid()) @db.Uuid
+  accountId String @map("account_id") @db.Uuid
+  debtId    String @map("debt_id") @db.Uuid
+
+  text          String
+  nextContactAt DateTime? @map("next_contact_at") @db.Timestamptz()
+
+  /// Qo'ng'iroq NATIJASI (kind='call' yozuvlarda, 2026-07-12):
+  /// 'paid_full' | 'paid_partial' | 'not_paid' | 'callback' | null (oddiy izoh).
+  outcome String? @db.VarChar(20)
+
+  /// Shu qo'ng'iroqda YARATILGAN to'lov (2026-07-16 — natijani BEKOR QILISH).
+  /// paid_full/paid_partial natija to'lov yozuvi ochadi; bog'lam orqali natija
+  /// bekor qilinganda to'lov ham storno bo'ladi (va aksincha), lastCallOutcome
+  /// esa qolgan JONLI yozuvlardan deterministik qayta hisoblanadi.
+  paymentId String? @map("payment_id") @db.Uuid
+
+  /// NATIJANI BEKOR QILISH (2026-07-16): yozuv O'CHMAYDI — belgilanadi.
+  /// canceled_at != NULL yozuv lastCallOutcome hisobiga KIRMAYDI, tarixda
+  /// «bekor qilingan» ko'rinishida qoladi (kim, qachon, nega).
+  canceledAt   DateTime? @map("canceled_at") @db.Timestamptz()
+  canceledById String?   @map("canceled_by_id") @db.Uuid
+  cancelReason String?   @map("cancel_reason")
+
+  authorId   String? @map("author_id") @db.Uuid
+  /// 'operator' | 'cashier' | 'admin' — §3.4: yozuvda rol ko'rsatiladi.
+  authorRole String  @default("operator") @map("author_role") @db.VarChar(20)
+  /// Manba: 'call' (operator suhbati) | 'debt_issue' (§3.3) | 'payment' (§3.6 qisman).
+  kind       String  @default("call") @db.VarChar(20)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  account    Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  debt       Debt         @relation(fields: [debtId], references: [id], onDelete: Cascade)
+  author     Employee?    @relation("DebtNoteAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  payment    DebtPayment? @relation("DebtNotePayment", fields: [paymentId], references: [id], onDelete: SetNull)
+  canceledBy Employee?    @relation("DebtNoteCanceler", fields: [canceledById], references: [id], onDelete: SetNull)
+
+  @@index([accountId, debtId, createdAt(sort: Desc)])
+  @@index([accountId, authorId, createdAt])
+  @@map("debt_notes")
 }
