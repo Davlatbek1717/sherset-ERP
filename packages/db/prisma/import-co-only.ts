@@ -114,9 +114,7 @@ async function main(): Promise<void> {
         name: r.name.slice(0, 100),
         description: r.description ?? null,
         moment: r.moment ? new Date(r.moment) : new Date(),
-        deliveryPlannedMoment: r.deliveryPlannedMoment
-          ? new Date(r.deliveryPlannedMoment)
-          : null,
+        deliveryPlannedMoment: r.deliveryPlannedMoment ? new Date(r.deliveryPlannedMoment) : null,
         applicable: r.applicable ?? false,
         state: r.applicable ? 'fully_shipped' : 'draft',
         sumMinor: BigInt(Math.round(r.sum ?? 0)),

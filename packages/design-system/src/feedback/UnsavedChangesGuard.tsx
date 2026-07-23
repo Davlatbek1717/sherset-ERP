@@ -87,7 +87,7 @@ export function useUnsavedChangesGuard({
           "Sahifadan chiqsangiz kiritgan ma'lumotlar yo'qoladi. Avval saqlashni xohlaysizmi?",
         confirmLabel: 'Saqlash',
         cancelLabel: 'Bekor qilish',
-        discardLabel: "Saqlamaslik",
+        discardLabel: 'Saqlamaslik',
         tone: 'warning',
       });
 

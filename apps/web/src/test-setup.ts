@@ -6,8 +6,8 @@
  * via `setupFiles`.
  */
 import '@testing-library/jest-dom/vitest';
-import { afterEach } from 'vitest';
 import { cleanup, configure } from '@testing-library/react';
+import { afterEach } from 'vitest';
 
 // Codebase convention is `data-test-id` (with hyphen between test and
 // id, matching moysklad's GWT app + design-system primitives), not

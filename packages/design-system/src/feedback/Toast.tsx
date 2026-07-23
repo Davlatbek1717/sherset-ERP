@@ -68,8 +68,7 @@ const ICON: Record<ToastTone, typeof CheckCircle2> = {
 const TONE_STYLES: Record<ToastTone, string> = {
   success:
     'border-[var(--ms-success-100)] bg-white text-[var(--ms-text-primary)] [&_svg]:text-[var(--ms-text-success)]',
-  info:
-    'border-[var(--ms-info-100)] bg-white text-[var(--ms-text-primary)] [&_svg]:text-[var(--ms-text-brand)]',
+  info: 'border-[var(--ms-info-100)] bg-white text-[var(--ms-text-primary)] [&_svg]:text-[var(--ms-text-brand)]',
   warning:
     'border-[var(--ms-warning-100)] bg-white text-[var(--ms-text-primary)] [&_svg]:text-[var(--ms-text-warning)]',
   destructive:

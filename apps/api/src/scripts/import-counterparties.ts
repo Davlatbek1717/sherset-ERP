@@ -56,10 +56,7 @@ interface LegacyRow {
 
 async function main(): Promise<void> {
   const accountId = process.env.IMPORT_ACCOUNT_ID ?? DEFAULT_ACCOUNT_ID;
-  const jsonPath = resolve(
-    process.cwd(),
-    process.argv[2] ?? '../../tools/old-counterparties.json',
-  );
+  const jsonPath = resolve(process.cwd(), process.argv[2] ?? '../../tools/old-counterparties.json');
 
   console.log('=== counterparty import ===');
   console.log('  Account:    ', accountId);
@@ -106,9 +103,7 @@ async function main(): Promise<void> {
     // pool reuse. `(accountId, externalCode)` is the natural unique key
     // here even though the schema's @@unique covers `[accountId, name]`,
     // so we route updates by externalCode lookup first.
-    const results = await Promise.allSettled(
-      batch.map((r) => upsertOne(prisma, accountId, r)),
-    );
+    const results = await Promise.allSettled(batch.map((r) => upsertOne(prisma, accountId, r)));
     for (const res of results) {
       if (res.status === 'fulfilled') {
         if (res.value === 'inserted') inserted++;

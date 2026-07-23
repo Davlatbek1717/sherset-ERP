@@ -5,7 +5,7 @@ import {
   type CounterpartyBalanceFilterInput,
   CounterpartyBalanceFilterSchema,
 } from './counterparty-balance.schema.js';
-import { consolidateToBase, loadRateContext, type RateContext } from './report-rate-ctx.util.js';
+import { type RateContext, consolidateToBase, loadRateContext } from './report-rate-ctx.util.js';
 
 export interface CounterpartyBalanceRow {
   counterpartyId: string;

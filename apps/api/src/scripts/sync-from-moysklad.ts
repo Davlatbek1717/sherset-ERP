@@ -56,9 +56,7 @@ const DRY_RUN = process.env.SYNC_DRY_RUN === '1';
 const BASE = process.env.MOYSKLAD_BASE_URL;
 const TOKEN = process.env.MOYSKLAD_TOKEN;
 if (!BASE || !TOKEN) {
-  console.error(
-    '!! MOYSKLAD_BASE_URL and MOYSKLAD_TOKEN must be set in env (see .env).',
-  );
+  console.error('!! MOYSKLAD_BASE_URL and MOYSKLAD_TOKEN must be set in env (see .env).');
   process.exit(1);
 }
 
@@ -76,9 +74,7 @@ interface Pageable<T> {
 /** Extract UUID from a moysklad meta href like .../entity/store/<uuid> */
 function uuidFromHref(href: string | undefined): string | null {
   if (!href) return null;
-  const m = href.match(
-    /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i,
-  );
+  const m = href.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
   return m ? m[1]! : null;
 }
 
@@ -102,9 +98,7 @@ async function* paginate<T>(path: string): AsyncGenerator<T> {
         attempt++;
         if (attempt >= 3) throw err;
         const wait = 500 * 2 ** (attempt - 1);
-        console.warn(
-          `  fetch retry ${attempt}/3 in ${wait}ms (${(err as Error).message})`,
-        );
+        console.warn(`  fetch retry ${attempt}/3 in ${wait}ms (${(err as Error).message})`);
         await new Promise((r) => setTimeout(r, wait));
       }
     }
@@ -171,9 +165,7 @@ const orgSync: SyncEntity = {
     for await (const row of paginate<Record<string, unknown>>('/entity/organization')) {
       stats.fetched++;
       try {
-        const externalCode = uuidFromHref(
-          (row.meta as MetaRef | undefined)?.href,
-        );
+        const externalCode = uuidFromHref((row.meta as MetaRef | undefined)?.href);
         if (!externalCode) {
           stats.skipped++;
           continue;
@@ -318,23 +310,21 @@ const productSync: SyncEntity = {
           await prisma.product.update({ where: { id: existing.id }, data });
           stats.updated++;
         } else {
-          await prisma.product
-            .create({ data })
-            .catch(async (err: unknown) => {
-              // Duplicate name? Suffix and retry once.
-              if (
-                err instanceof Error &&
-                err.message.includes('Unique constraint') &&
-                err.message.includes('name')
-              ) {
-                const suffix = ` (${externalCode.slice(0, 8)})`;
-                await prisma.product.create({
-                  data: { ...data, name: `${baseName.slice(0, 255 - suffix.length)}${suffix}` },
-                });
-              } else {
-                throw err;
-              }
-            });
+          await prisma.product.create({ data }).catch(async (err: unknown) => {
+            // Duplicate name? Suffix and retry once.
+            if (
+              err instanceof Error &&
+              err.message.includes('Unique constraint') &&
+              err.message.includes('name')
+            ) {
+              const suffix = ` (${externalCode.slice(0, 8)})`;
+              await prisma.product.create({
+                data: { ...data, name: `${baseName.slice(0, 255 - suffix.length)}${suffix}` },
+              });
+            } else {
+              throw err;
+            }
+          });
           stats.inserted++;
         }
       } catch (err) {

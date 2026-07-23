@@ -1,21 +1,4 @@
 'use client';
-
-/**
- * Money cell with a thin progress bar underneath.
- *
- * Source: docs/moysklad-reference/visual-captures/03-module/
- *   customerorder/screenshots/i-default.png — every money column
- *   in the Заказы покупателей list is rendered as the formatted
- *   amount on top of a tiny coloured progress bar that visualises
- *   the ratio against the row's total. Green when the value
- *   reaches the total, amber while in flight, no bar when 0.
- *
- * The bar widths are computed from the `value / total` ratio
- * (clamped 0-1). Pass `total` = sumMinor to show progress; pass
- * total = 0 to render only the value (no bar).
- */
-
-import * as React from 'react';
 import { formatMoney } from '../lib/format.ts';
 
 export interface MoneyProgressProps {
@@ -46,10 +29,7 @@ export function MoneyProgress({
 }: MoneyProgressProps) {
   const value = safeBigInt(valueMinor);
   const total = safeBigInt(totalMinor);
-  const ratio =
-    total > 0n
-      ? Number((value * 1000n) / total) / 1000
-      : 0;
+  const ratio = total > 0n ? Number((value * 1000n) / total) / 1000 : 0;
   const clampedRatio = Math.min(1, Math.max(0, ratio));
   const widthPct = `${(clampedRatio * 100).toFixed(1)}%`;
 
@@ -71,10 +51,7 @@ export function MoneyProgress({
           className="block h-[2px] w-16 rounded-full bg-[var(--ms-bg-muted)] overflow-hidden"
           aria-hidden
         >
-          <span
-            className={`block h-full ${TONE_BAR[effectiveTone]}`}
-            style={{ width: widthPct }}
-          />
+          <span className={`block h-full ${TONE_BAR[effectiveTone]}`} style={{ width: widthPct }} />
         </span>
       )}
     </div>

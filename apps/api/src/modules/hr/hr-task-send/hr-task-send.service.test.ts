@@ -330,10 +330,7 @@ describe('HrTaskSendService.recordAnswer (FSM)', () => {
       HR_EVENT.HR_TASK_PENDING_REVIEW,
       expect.objectContaining({ checkerId: 'checker-1' }),
     );
-    expect(events.emit).not.toHaveBeenCalledWith(
-      HR_EVENT.HR_TASK_LOG_FINALIZED,
-      expect.anything(),
-    );
+    expect(events.emit).not.toHaveBeenCalledWith(HR_EVENT.HR_TASK_LOG_FINALIZED, expect.anything());
   });
 
   it('no answer + no checker → status=answered_no, fine log created', async () => {

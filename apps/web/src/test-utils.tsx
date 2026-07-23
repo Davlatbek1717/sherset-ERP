@@ -30,12 +30,15 @@ function AllProviders({ children, messages, queryClient }: AllProvidersProps) {
     queryClient ??
     new QueryClient({
       defaultOptions: {
-        queries: { retry: false, staleTime: Infinity },
+        queries: { retry: false, staleTime: Number.POSITIVE_INFINITY },
         mutations: { retry: false },
       },
     });
   return (
-    <NextIntlClientProvider locale="uz" messages={messages ?? (uzMessages as Record<string, unknown>)}>
+    <NextIntlClientProvider
+      locale="uz"
+      messages={messages ?? (uzMessages as Record<string, unknown>)}
+    >
       <QueryClientProvider client={qc}>
         <ToastProvider>
           <ConfirmProvider>{children}</ConfirmProvider>

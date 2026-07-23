@@ -16,8 +16,8 @@
  * never end up in logs or Sentry breadcrumbs.
  */
 
-import { LoggerModule } from 'nestjs-pino';
 import * as Sentry from '@sentry/node';
+import { LoggerModule } from 'nestjs-pino';
 
 const REDACT_PATHS = [
   'req.headers.authorization',
