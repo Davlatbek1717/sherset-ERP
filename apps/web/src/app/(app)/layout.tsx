@@ -450,7 +450,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           pathname.startsWith('/loyalty-operations') ||
           pathname.startsWith('/opportunities') ||
           pathname.startsWith('/pipelines') ||
-          pathname.startsWith('/discounts')
+          pathname.startsWith('/discounts') ||
+          // Sherset «Kontragentlar» (merged CRM+Money) — sub-nav faol qolishi uchun:
+          // /debts (Qarz undirish) va /reports/counterparty-balance (O'zaro hisob-kitoblar)
+          // aks holda bo'limga kirganda sub-nav yopilib qolardi.
+          pathname.startsWith('/debts') ||
+          pathname.startsWith('/reports/counterparty-balance')
         ? 'crm'
         : pathname.startsWith('/customer-orders') ||
             pathname.startsWith('/invoices-out') ||
