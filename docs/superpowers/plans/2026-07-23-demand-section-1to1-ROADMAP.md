@@ -34,7 +34,7 @@ Har qism `[ ]` = tugallanmagan. Sessiya oxirida browser-cert bo'lgan bosqich `[x
 
 ### 2A — Vizual+struktura  →  **TAYYOR when:** ochilgan otgruzka moysklad detali bilan ko'rinadigan farqsiz
 - [ ] Maydon-grid + «Грузоотправитель» blok + «Другие поля» joylashuvi (1A bilan izchil)
-- [ ] «Изменения» bottom-tab sifatida (hozir collapsible seksiya)
+- [ ] «Изменения» bottom-tab sifatida (hozir inline bottom-seksiya). **⚠️ CROSS-DOC QAROR KERAK:** `DetailContentTabs` ATAYLAB Изменения'ni inline-seksiya qiladi (Файлы/Задачи bilan birga), test-lock bilan (`detail-content-tabs.test.tsx:38-39`). moysklad = 3-tab. O'zgartirish BARCHA hujjat-detallariga ta'sir qiladi → demand-only emas, userdan so'ralsin. DEFER.
 - [ ] Pozitsiya kolonka to'plami + i18n (1B bilan izchil)
 
 ### 2B — Funksional mos  →  **TAYYOR when:** detal amallari 1:1, browser-cert
@@ -49,11 +49,11 @@ Har qism `[ ]` = tugallanmagan. Sessiya oxirida browser-cert bo'lgan bosqich `[x
 
 ---
 
-## QISM 3 — RO'YXAT sahifasi  →  **TAYYOR when:** ro'yxat moysklad `demand-01-list` bilan ko'rinadigan farqsiz + funksional
-- [ ] «Грузополучатель» kolonka (consignee list query + ustun)
-- [ ] Filtr «Тип возврата» (return-type)
-- [ ] Filtr «Товар или группа» (product/group)
-- [ ] Filtr «Грузополучатель»
+## QISM 3 — RO'YXAT sahifasi  →  **TAYYOR when:** ro'yxat moysklad `demand-01-list` bilan ko'rinadigan farqsiz + funksional · **QISMAN (3/6, `b2fe49f`)**
+- [x] «Грузополучатель» kolonka (consignee list `include` + ustun, Контрагент↔Организация orasida, default-visible) — migration YO'Q (relatsiya+indeks avval bor). Phase-1.
+- [x] Filtr «Грузополучатель» (`consigneeId` param + buildListWhere + InlineFilterPanel maydoni + CatalogPicker modal). Phase-1.
+- [x] Filtr «Товар или группа» (`productId` → `positions.some.productId`, CO/invoice-out namunasi) — **product bo'yicha**; guruh (folder subgroup rekursiyasi) DEFER (CO ham hozir faqat product). Phase-1.
+- [ ] Filtr «Тип возврата» (return-type) — MEDIUM: `SalesReturn.demandId`/`SalesReturnPosition.demandPositionId` linkage bor, ammo qty-aggregation kerak («Без возвратов» = CLEAN `salesReturns: { none }`; Частично/Полностью = 2-bosqichli query yoki denormalizatsiya). Keyingi sessiya.
 - [ ] Bulk «Статус» alohida menyu (hozir «Изменить» ichida)
 - [ ] Toolbar parity (Печать/Создать документ/Импорт tekshir)
 

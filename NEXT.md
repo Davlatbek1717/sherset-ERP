@@ -305,6 +305,22 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🟢 2026-07-23k (DEMAND list QISM 3 — Грузополучатель ustun+filtr + Товар/группа filtr · Phase-1 · `b2fe49f`)**
+> Ro'yxatni moysklad `demand-01-list` tomon: **L1** «Грузополучатель» ustuni (list `include`ga `consignee`;
+> Контрагент↔Организация orasida, default-visible) · **L4** «Грузополучатель» filtri (`consigneeId` param +
+> buildListWhere + InlineFilterPanel maydoni + CatalogPicker modal) · **L3** «Товар или группа» filtri
+> (`productId`→`positions.some.productId`, CO/invoice-out namunasi; product bo'yicha — guruh subgroup-rekursiyasi DEFER,
+> CO ham hozir shunday). Migration YO'Q (consignee relatsiya+indeks avval bor). i18n `filters.consignee` ru+uz qo'shildi.
+> Gate: web+api tc 0 · biome 0 · demand.schema 33/33 · i18n key-existence pass. **Phase-1, browser-smoke YO'Q.**
+> ⚠️ Pre-existing debt (meniki EMAS, o'zgargan fayllarimda YO'Q): i18n no-hardcoded losses/labels 7 ta · raw-element-conv
+> retail/page.tsx — keyingi tegishli sessiyada tozalansin.
+> **+ shu sessiya mayda:** retail POS «SAVDO CHEKI» — «Qaytim» qatori olib tashlandi + 80mm layout ixcham (`293958a`).
+> **⏭️ KEYINGI (demand):** QISM 3 qoldig'i — **L2 «Тип возврата»** (MEDIUM: SalesReturn↔Demand linkage bor, qty-aggregation
+> kerak; «Без возвратов»=CLEAN `salesReturns:{none}`) + bulk «Статус» menyu. Keyin **QISM 2 detail** (D1 Связанные документы
+> bo'sh→BE related-graph · D2 Отправить badge · D3 Решения · D4 archive/restore — aksari BE). **D6 «Изменения» tab: DEFER —
+> `DetailContentTabs` ATAYLAB inline-seksiya (test-lock), 3-tabga o'tkazish BARCHA hujjatlarga ta'sir → cross-doc qaror kerak.**
+> Маркировка = QISM 4 (katta). «100%» faqat QISM 5 QA'dan keyin.
+>
 > **🟢✅ 2026-07-23j (DEMAND — parallel-workflow FE-parity batch: 5 item, 3 sahifa, browser-verified)**
 > `demand-fe-parallel` workflow (3 agent, worktree-izolyatsiya) → markazда integ + gate + browser-cert (`015e41b`):
 > **/new:** Адрес доставки = structured DeliveryAddressGroup popup (▼) · Внешний код = pastki-chap toggle-havola ·
