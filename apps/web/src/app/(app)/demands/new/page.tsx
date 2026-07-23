@@ -112,6 +112,8 @@ export default function NewDemandPage() {
   // i18n label (RU values identical → RU parity unchanged).
   const tCols = useTranslations('position_cols');
   const tPos = useTranslations('position_editor');
+  const tCreate = useTranslations('create_related');
+  const tBulk = useTranslations('bulk_actions');
   const docEditorLabels = useDocumentEditorLabels();
 
   // moysklad «Статус» = account-defined custom statuses (State rows,
@@ -151,7 +153,13 @@ export default function NewDemandPage() {
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   });
   const [statusId, setStatusId] = useState<string | null>(null);
-  const [applicable, setApplicable] = useState(false);
+  // moysklad opens a NEW отгрузка with «Проведено» ticked (capture demand-03-new:
+  // the gwt-CheckBox input carries `checked=""`) — a save posts the shipment
+  // immediately (stock deducted), which is moysklad's default for a new shipment.
+  const [applicable, setApplicable] = useState(true);
+  // Toolbar «Печать»/«Отправить»/«Изменить» on /new are post-save actions: the
+  // demand is created first, then the intent runs (mirrors customer-orders/new).
+  const afterSaveRef = useRef<'view' | 'print'>('view');
 
   // Meta state
   const [agentId, setAgentId] = useState<string | null>(null);
@@ -445,7 +453,14 @@ export default function NewDemandPage() {
       };
       return api.post<{ id: string }>('/demands', payload);
     },
-    onSuccess: (created) => router.push(`/demands/${created.id}`),
+    onSuccess: (created) => {
+      const intent = afterSaveRef.current;
+      afterSaveRef.current = 'view';
+      if (intent === 'print') {
+        window.open(`/print/demand/${created.id}?auto=1`, '_blank', 'width=820,height=1100');
+      }
+      router.push(`/demands/${created.id}`);
+    },
     onError: (err: Error) => setError(err.message),
   });
 
@@ -991,6 +1006,9 @@ export default function NewDemandPage() {
             onSelectionChange={setSelectedRowIds}
             footerToolbar={
               <PositionInlineAdd
+                placeholder={tPos('addPositionPlaceholder')}
+                addFromCatalogLabel={tPos('addFromCatalog')}
+                checkCompletenessLabel={tPos('checkCompleteness')}
                 onSearch={async (q) => {
                   const r = await api.get<{ items: ProductItem[] }>(
                     `/products?search=${encodeURIComponent(q)}&limit=20`,
@@ -1155,10 +1173,59 @@ export default function NewDemandPage() {
         }}
         saving={createMut.isPending}
         onClose={() => router.push('/demands')}
-        modifyMenu={[]}
-        createDocMenu={[]}
-        printMenu={[]}
-        sendMenu={[]}
+        modifyMenu={[
+          // moysklad «Изменить» = [Копировать, Удалить]. On /new: Копировать saves
+          // then lands on the created demand's detail (clone lives there); Удалить
+          // discards back to the list.
+          {
+            label: tBulk('copy'),
+            onClick: () => {
+              afterSaveRef.current = 'view';
+              setError(null);
+              createMut.mutate();
+            },
+          },
+          {
+            label: tBulk('delete'),
+            onClick: () => router.push('/demands'),
+            destructive: true,
+          },
+        ]}
+        createDocMenu={[
+          // moysklad «Создать документ» for a demand lists these 6 downstream docs
+          // (same order/labels as the detail). From /new they need a saved demand +
+          // from-demand endpoints that don't exist yet, so they render as visible
+          // placeholders (parity: the button + list appear).
+          { label: tDetailTitles('move'), disabled: true },
+          { label: tDetailTitles('invoice_out'), disabled: true },
+          { label: tCreate('facture_out'), disabled: true },
+          { label: tDetailTitles('payment_in'), disabled: true },
+          { label: tDetailTitles('cash_in'), disabled: true },
+          { label: tCreate('sales_return'), disabled: true },
+        ]}
+        printMenu={[
+          // «Печать» on /new saves first, then opens the standalone print view.
+          {
+            label: tDetailTitles('demand'),
+            onClick: () => {
+              afterSaveRef.current = 'print';
+              setError(null);
+              createMut.mutate();
+            },
+          },
+        ]}
+        sendMenu={[
+          // «Отправить» saves first, then lands on the detail (the email composer
+          // lives there).
+          {
+            label: tDetailTitles('demand'),
+            onClick: () => {
+              afterSaveRef.current = 'view';
+              setError(null);
+              createMut.mutate();
+            },
+          },
+        ]}
         rightSlot={
           user ? (
             <div className="text-right text-xs leading-tight">
