@@ -305,6 +305,36 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🟢🚀 2026-07-23h (DEMAND «Отгрузки» TO'LIQ 1:1 — WORKFLOW-AUDIT + /new header batch + 3 QAROR olindi)**
+> Foydalanuvchi: «shu bo'lim 100% moysklad bo'lmaguncha to'xtamay workflow bilan ishla; keyin jonli moyskladga
+> kirib har bir funksiya/dropdown'ni tekshirib bajarasan». **Halol chegara:** jonli moysklad'ga men kira olmayman
+> (real akkaunt) → static capture'lar grounding; capture'da yo'q xulqlar («needs-live-capture») foydalanuvchidan
+> yangi capture kutadi. «100%» faqat QISM 5 QA'dan keyin.
+> **🔬 GROUNDED AUDIT (`demand-1to1-audit` workflow, 72 agent, 3.2M tok):** 61 grounded gap (har biri adversarial
+> grounding-verified), 6 rad. To'liq: **`docs/audits/_demand-1to1-GROUNDED-backlog.md`** (`e346aa9`). Taqsimot:
+> **24 FE-now · 32 BE-needed · 2 needs-live-capture · 3 marking(QISM4) · 0 blocked.** ⚠️ Audit `_GAP-BACKLOG`dagi
+> «create minimal PARITY OK»ni RAD etdi (moysklad /new header'да 4 dropdown bor).
+> **✅ BAJARILDI (`039ba17`, /new header batch, live smoke):** (1) «Проведено» default CHECKED (capture
+> `checked=""` — save darhol POST qiladi, moysklad default; ⚠️ xulq o'zgarishi) · (2) header 4 dropdown
+> (Изменить/Создать документ/Печать/Отправить) endi populated+enabled (avval bo'sh→disabled); Печать save→print
+> (afterSaveRef) · (3) pozitsiya inline-add placeholder/label i18n (RU-leak → position_editor). Gate tc0·biome0.
+> **📋 FOYDALANUVCHI 3 QAROR (2026-07-23h — MAJBURIY, keyingi ish shularga tayanadi):**
+>   1. **Себест/buyPrice = OCHIB BER (to'liq 1:1).** BE: `/products` buyPrice-strip'ni bekor qil (product.service.ts:155)
+>      → pozitsiya buyPrice tashiydi → real «Себест. единицы»+«Себестоимость» ustunlar + real «Прибыль» (draft'да ham).
+>      ⚠️ Tannarx endi ko'rinadi (xavfsizlik implikatsiyasi — foydalanuvchi qabul qildi). §wiring: markaziy BE commit alohida.
+>   2. **Ortiqcha 2 list filtr = OLIB TASHLA** (qat'iy 1:1): «Сумма от/до» + «Заказ покупателя» (`demands/page.tsx`).
+>   3. **«Импорт» = TO'LIQ ISHLAYDIGAN** (placeholder emas): BE import endpoint bor-yo'qligini tekshir; yo'q bo'lsa BE ham yoz.
+> **⏭️ KEYINGI IJRO TARTIBI (feasible, decided):** (a) **buyPrice expose (BE)** → Себест/Прибыль ustunlar (/new+detail) ·
+> (b) 2 filtr olib tashlash (list) · (c) Импорт wire · (d) qolgan /new FE (Накладные расходы totals-footer'ga · Адрес
+> structured popup · Внешний код toggle · Другие поля order) · (e) **detail 9 FE** (cost/Остаток/Сумма НДС ustun ·
+> drag-reorder · Другие поля grouping · valyuta field · column-config menu) · (f) **list 5 FE** (Валюта ustun · Оплата
+> filtr label/order · Счёт filtr field · filter-panel order) · (g) BE-needed 32 (list filtrlar · custom-states subsystem ·
+> related-docs graph · archive/restore · task/files panel · pozitsiya-data plumbing) · (h) Маркировка = QISM 4.
+> **🔴 needs-live-capture (2, foydalanuvchidan):** org «Перечисление» sub-selector semantikasi · «…» overflow menyu.
+> **⚡ PERF WORKFLOW (`demand-perf-audit`, woe70o25i) hali ishlayapti** — o'lchandi: dev cold-TTFB ~1250ms = `next dev`
+> route-kompilyatsiya (prod'да yo'q; warm ~210ms), API <55ms (backend tez), JS dev-inflated. Tugagach real kod-perf
+> fix'lar backlog'i keladi → qo'llanadi. **⚠️ NEXT.md ~910 qator — arxivlash kerak.**
+
 > **🔬✅ 2026-07-23g (SALES-RETURNS «Возвраты покупателей» — QISM 1 Task 1: /new pozitsiya-qator 1:1 (N4-N7))**
 > *(Parallel demand sessiyasi 2026-07-23f custom-attrs qildi; mening diff'im path-cheklangan — faqat
 > `sales-returns/new/page.tsx` + salesreturn reja doc. Commit `123025b`. Dev-stack demand sessiyaniki bo'lishi mumkin — TEGMADIM.)*
