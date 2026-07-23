@@ -322,13 +322,14 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > add(bulk-edit/specialoffers/subscription). `pnpm install` ✅ · money build ✅ · prisma generate ✅. **Main daxlsiz.**
 > **B2 ✅ + B3-partial ✅ (commit `2e3b35c`): typecheck 186 → 75.** B2 = Sherset Debt-modellar + back-relation'lar
 > climart sxemasiga (API 119→34). B3-partial = PermissionEntity/NotificationKind/AttachmentEntity +debt (API 34→8).
-> **⏭️ KEYINGI = closure-reconcile davomi** (checkpoint `b8ee1cc`, API 30 · web 67). Yo'nalish: Sherset sms/telegram
-> ALMASHTIRILMAYDI. **Round1 ✅:** telegram schema (TelegramChat/ChatMessage/BackfillJob + business*) + sms/telegram/
-> hr-bridge modul tiklandi → API 64→30. **Keyingi kaskad qatlami:** `big-integer` npm-dep (package.json) + `MessageTemplate`
-> schema-model (Debt kabi) + `HrTelegramAccountService` metodlari (markSessionLost/listActiveSlots — yana HR-tg infra) +
-> `supply.listener`↔climart `SupplyPostedEvent` coupling. Keyin FE keep-deps (sms/telegram komponent, use-keyboard-nav,
-> debt-api) tikla + counterparties ListView climart'ga adapt → typecheck 0 → build → dev-DB → verify.
-> **⚠️ Katta kaskadli ko'p-sessiyalik.** Har round re-typecheck+commit (trend: 97→…→0). **Har sessiya boshida:** money build.
+> **⏭️ KEYINGI = closure-reconcile davomi** (checkpoint `ade1ec9`, **API 6 · web 67**). Keep = «konteragent ekotizimi» =
+> counterparties + debts + sms + telegram + **xabar/CHEK shablonlari** (foydalanuvchi: shablonlar saqlansin, o'zgartirilmasin).
+> **Round1-2 ✅:** telegram/MessageTemplate/CompanySettings.messaging* schema + big-integer dep + sms/telegram/hr-bridge/
+> hr-telegram-account modul → **API 64→6**. **Qolgan API 6:** `createFromBuffer` userId `string|null` qil (2) + supply.listener
+> climart `SupplyPostedEvent` adapt (3) + backfill null (1). **Keyin WEB 67:** FE keep-deps (components/sms+telegram,
+> use-keyboard-nav, debt-api) tikla + counterparties **ListView** climart'ga adapt + CHEK-shablon (retail/print) keep-item
+> tekshir (drop qilingan retail bilan bog'liqmi) → typecheck 0 → build → dev-DB → verify.
+> **⚠️ Ko'p-sessiyalik kaskad.** Har round re-typecheck+commit. **Har sessiya boshida:** worktree'da money build.
 > **CLIMART SERVERGA YOZMA — faqat `git archive` read.** **HALOL:** hali BUILD BO'LMAYDI.
 
 > **🟢 2026-07-23k (DEMAND list QISM 3 — Грузополучатель ustun+filtr + Товар/группа filtr · Phase-1 · `b2fe49f`)**
