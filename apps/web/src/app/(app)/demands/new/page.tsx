@@ -206,16 +206,19 @@ export default function NewDemandPage() {
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
 
   // moysklad position grid (live-grounded against demand-03-new): Наименование ·
-  // Кол-во · Цена · НДС · Скидка · Сумма. (Маркировка / Остаток / Себест.
-  // единицы are subsequent sub-project tasks — DS column-type + position-state
-  // work — so they are intentionally NOT in this visual pass.) Explicit labels
-  // stop the RU DEFAULT_LABELS leaking into the UZ locale.
+  // Кол-во · Остаток · Цена · НДС · Скидка · Сумма. «Остаток» is the live store
+  // balance per row (merged from the stock query below), placed after «Кол-во»
+  // like moysklad. (Маркировка = QISM 4 [new DS column type]; Себест. единицы
+  // is DEFERRED — the /products API deliberately strips buyPrice and demand
+  // COGS is only known at post via FIFO, so a draft has no unit cost to show.)
+  // Explicit labels stop the RU DEFAULT_LABELS leaking into the UZ locale.
   const positionColumns = useMemo<PositionTableColumnConfig[]>(
     () => [
       { key: 'dragarea' },
       { key: 'select' },
       { key: 'name', label: tCols('name') },
       { key: 'quantity', label: tPos('quantity') },
+      { key: 'stock', label: tCols('stock') },
       { key: 'price', label: tCols('price') },
       { key: 'vat', label: tCols('vat') },
       { key: 'discount', label: tCols('discount') },
@@ -319,6 +322,18 @@ export default function NewDemandPage() {
     for (const r of stockData?.items ?? []) m.set(r.assortmentId, r.qty);
     return m;
   }, [stockData]);
+
+  // moysklad «Остаток» column = the LIVE store balance per row. Merge the stock
+  // query onto each row for render (derived, not stored — keeps the balance live
+  // as the store/positions change without mutating position state).
+  const rowsWithStock = useMemo(
+    () =>
+      positions.map((p) => ({
+        ...p,
+        stock: p.assortmentId ? stockMap.get(p.assortmentId) : undefined,
+      })),
+    [positions, stockMap],
+  );
 
   const addPosition = () => {
     setPositions((ps) => [
@@ -532,35 +547,24 @@ export default function NewDemandPage() {
       }));
   };
 
-  // Position name-cell with stock hint
+  // Position name-cell = product picker only (moysklad parity). The store
+  // balance is now its own «Остаток» column (rowsWithStock), not a hint under
+  // the product name.
   const renderPositionNameCell = (row: DocPositionRow) => {
     const p = row as NewPositionRow;
-    const stockQty = p.assortmentId ? stockMap.get(p.assortmentId) : undefined;
-    const wantQty = Number(p.quantity || '0');
-    const stockNum = stockQty !== undefined ? Number(stockQty) : undefined;
-    const isInsufficient = stockNum !== undefined && wantQty > stockNum;
     return (
-      <div className="flex flex-col gap-0.5">
-        <CatalogPickerField
-          value={p.assortmentId ? { id: p.assortmentId, label: p.productLabel } : null}
-          placeholder={tForm('select_product')}
-          onPick={() => setOpenPicker({ kind: 'product', rowUid: p.id })}
-          onClear={() =>
-            updatePosition(p.id, {
-              assortmentId: null,
-              productLabel: '',
-              productUom: null,
-            })
-          }
-        />
-        {stockQty !== undefined && (
-          <span
-            className={`text-xs tabular-nums ${isInsufficient ? 'font-medium text-[var(--ms-text-destructive)]' : 'text-[var(--ms-text-muted)]'}`}
-          >
-            {t('stock_available', { qty: stockNum ?? '', uom: p.productUom ?? '' })}
-          </span>
-        )}
-      </div>
+      <CatalogPickerField
+        value={p.assortmentId ? { id: p.assortmentId, label: p.productLabel } : null}
+        placeholder={tForm('select_product')}
+        onPick={() => setOpenPicker({ kind: 'product', rowUid: p.id })}
+        onClear={() =>
+          updatePosition(p.id, {
+            assortmentId: null,
+            productLabel: '',
+            productUom: null,
+          })
+        }
+      />
     );
   };
 
@@ -956,7 +960,7 @@ export default function NewDemandPage() {
         <div className="space-y-4">
           <PositionTable
             columns={positionColumns}
-            rows={positions}
+            rows={rowsWithStock}
             onUpdate={(id, patch) => updatePosition(id, patch as Partial<NewPositionRow>)}
             onRemove={removePosition}
             onDuplicate={(id) => {
@@ -1060,7 +1064,11 @@ export default function NewDemandPage() {
               onVatEnabledChange={setVatEnabled}
               vatIncluded={vatIncluded}
               onVatIncludedChange={setVatIncluded}
-              quantity={positions.reduce((acc, p) => acc + Number(p.quantity || '0'), 0)}
+              // moysklad shows «Прибыль» (not «Кол-во») in the sales totals. On a
+              // NEW отгрузка the document is always a draft: COGS is unknown until
+              // it is posted (consumed FIFO at shipment), so profit is 0,00 —
+              // exactly what moysklad's create form shows (capture demand-03-new).
+              profitMinor={0n}
             />
           </div>
 
