@@ -77,6 +77,11 @@ export interface DocPositionRow {
   discount: string;
   vat: string;
   vatEnabled: boolean;
+  /** Per-unit COST in minor units (tiyin). On a sales doc (Отгрузка) this is the
+   *  product's buyPrice, which drives «Себест. единицы» / «Себестоимость» and the
+   *  real «Прибыль». Left unset on an Enter (Оприходование), where the cost IS the
+   *  entered price — those cells fall back to `priceMinor`. */
+  buyPriceMinor?: string;
   /** Optional read-only fields shown for procurement/inventory contexts. */
   shipped?: string;
   available?: string;
@@ -1027,14 +1032,25 @@ function renderCell({
         />
       );
     case 'costPerUnit':
-      // «Себест. единицы» — read-only unit cost (= price for an Enter).
+      // «Себест. единицы» — read-only unit cost. On a sales doc this is the
+      // product's buyPrice (`buyPriceMinor`); on an Enter it is the entered price.
       return (
-        <span className="block tabular-nums">{formatMinor(BigInt(row.priceMinor || '0'))}</span>
+        <span className="block tabular-nums">
+          {formatMinor(BigInt(row.buyPriceMinor ?? row.priceMinor ?? '0'))}
+        </span>
       );
     case 'costTotal': {
-      // «Себестоимость» — read-only total cost (price × qty; no VAT/discount on Enter).
-      const { gross } = computeLineTotal(row, !!vatIncluded);
-      return <span className="block tabular-nums">{gross > 0n ? formatMinor(gross) : '—'}</span>;
+      // «Себестоимость» — read-only total cost = unit cost × qty. On a sales doc
+      // the unit cost is buyPrice (no VAT/discount); on an Enter it is price × qty.
+      const costTotalMinor =
+        row.buyPriceMinor != null
+          ? BigInt(Math.round(Number(row.buyPriceMinor) * Number(row.quantity || '0')))
+          : computeLineTotal(row, !!vatIncluded).gross;
+      return (
+        <span className="block tabular-nums">
+          {costTotalMinor > 0n ? formatMinor(costTotalMinor) : '—'}
+        </span>
+      );
     }
     case 'menu':
       return readOnly ? null : (

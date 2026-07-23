@@ -60,6 +60,15 @@ interface ProductItem {
   uom: string | null;
   salePrices: Array<{ priceTypeId: string; value: string }> | null;
   vat: number | null;
+  // Per-unit cost (buyPrice) in minor units (tiyin). The /products response
+  // already carries it; we surface it as «Себест. единицы» + real «Прибыль».
+  buyPrice: string | null;
+}
+
+/** buyPrice → position `buyPriceMinor` string (the API may serialise the BigInt
+ *  as a string or number). */
+function buyPriceMinorOf(p?: ProductItem): string | undefined {
+  return p?.buyPrice != null ? String(p.buyPrice) : undefined;
 }
 
 interface NewPositionRow extends DocPositionRow {
@@ -237,6 +246,8 @@ export default function NewDemandPage() {
       { key: 'vat', label: tCols('vat') },
       { key: 'discount', label: tCols('discount') },
       { key: 'amount', label: tCols('amount') },
+      { key: 'costPerUnit', label: tCols('costPerUnit') },
+      { key: 'costTotal', label: tCols('costTotal') },
       { key: 'menu' },
     ],
     [tCols, tPos],
@@ -384,6 +395,21 @@ export default function NewDemandPage() {
       ),
     [positions, vatIncluded],
   );
+
+  // «Себестоимость» = Σ(buyPrice × qty) over the lines — the COGS the sale sits
+  // against. «Прибыль» = net revenue − COGS (mirrors the [id] detail's
+  // sumMinor − costSumMinor). On a draft this now shows real expected profit
+  // from the product cost, instead of a flat 0,00.
+  const costSum = useMemo(
+    () =>
+      positions.reduce(
+        (acc, p) =>
+          acc + BigInt(Math.round(Number(p.buyPriceMinor || '0') * Number(p.quantity || '0'))),
+        0n,
+      ),
+    [positions],
+  );
+  const profitMinor = totals.net - costSum;
 
   const createMut = useMutation({
     mutationFn: async () => {
@@ -1035,6 +1061,7 @@ export default function NewDemandPage() {
                       discount: '0',
                       vat: raw?.vat != null ? String(raw.vat) : '0',
                       vatEnabled: true,
+                      buyPriceMinor: buyPriceMinorOf(raw),
                     },
                   ]);
                 }}
@@ -1066,6 +1093,7 @@ export default function NewDemandPage() {
                         discount: '0',
                         vat: raw?.vat != null ? String(raw.vat) : '0',
                         vatEnabled: true,
+                        buyPriceMinor: buyPriceMinorOf(raw),
                       };
                     }),
                   ]);
@@ -1091,11 +1119,9 @@ export default function NewDemandPage() {
               onVatEnabledChange={setVatEnabled}
               vatIncluded={vatIncluded}
               onVatIncludedChange={setVatIncluded}
-              // moysklad shows «Прибыль» (not «Кол-во») in the sales totals. On a
-              // NEW отгрузка the document is always a draft: COGS is unknown until
-              // it is posted (consumed FIFO at shipment), so profit is 0,00 —
-              // exactly what moysklad's create form shows (capture demand-03-new).
-              profitMinor={0n}
+              // moysklad shows «Прибыль» (not «Кол-во») in the sales totals — the
+              // expected profit from the product cost (net revenue − Σ buyPrice×qty).
+              profitMinor={profitMinor}
             />
           </div>
 
@@ -1368,6 +1394,7 @@ export default function NewDemandPage() {
             productUom: raw?.uom ?? null,
             priceMinor: defaultPrice,
             vat: raw?.vat != null ? String(raw.vat) : '0',
+            buyPriceMinor: buyPriceMinorOf(raw),
           });
         }}
       />
