@@ -3,10 +3,15 @@
 /**
  * /demands/new — moysklad-parity «Отгрузка» editor.
  *
- * Built on the document-editor framework. Mirrors purchase-orders/new
- * with sales-side labels. Preserves the live-stock sidebar (stock
- * check per assortmentId) in the position name-cell renderer.
- * Status includes 'shipped' in addition to the standard 3.
+ * Built on the document-editor framework. Mirrors customer-orders/new
+ * (the fully-realised sales-side reference): the meta grid is a compact
+ * 3-column block (Организация/Контрагент/Проект/Валюта ‖ Склад/Договор/
+ * Канал продаж ‖ Адрес доставки + Комментарий) rendered ABOVE the
+ * «Главная / Связанные документы» tabs, a small «▶ Другие поля» inline
+ * disclosure sits under it, and the header carries the «Не оплачено»
+ * payment pill + the account «Статус» colour-chip popup. Preserves the
+ * live-stock sidebar (stock check per assortmentId) in the position
+ * name-cell renderer.
  */
 
 import { useDocumentEditorLabels } from '@/hooks/use-document-editor-labels';
@@ -90,22 +95,6 @@ function computeLineTotal(
   }
 }
 
-const POSITION_COLUMNS: PositionTableColumnConfig[] = [
-  { key: 'dragarea' },
-  { key: 'select' },
-  { key: 'index' },
-  { key: 'image' },
-  { key: 'name' },
-  { key: 'quantity' },
-  { key: 'goodPack' },
-  { key: 'price' },
-  { key: 'vat' },
-  { key: 'vatAmount' },
-  { key: 'discount' },
-  { key: 'amount' },
-  { key: 'menu' },
-];
-
 export default function NewDemandPage() {
   const router = useRouter();
   const { user } = useAuth();
@@ -116,17 +105,33 @@ export default function NewDemandPage() {
   const tDetailTabs = useTranslations('detail_tabs');
   const tDetailTitles = useTranslations('detail_titles');
   const tDetailHeader = useTranslations('detail_header');
-  const tStates = useTranslations('states.demand');
+  // position_cols / position_editor: the shared PositionTable defaults to its
+  // Russian DEFAULT_LABELS when a column carries no `label` — that leaked
+  // Russian headers into the UZ locale. Every column below carries an explicit
+  // i18n label (RU values identical → RU parity unchanged).
+  const tCols = useTranslations('position_cols');
+  const tPos = useTranslations('position_editor');
   const docEditorLabels = useDocumentEditorLabels();
 
-  // moysklad demand FSM = draft / posted / cancelled (mirrors demands/[id]).
-  // The status field is decorative on /new (not sent on create — the API
-  // always creates a draft), so we surface the same three real states.
-  const STATUS_OPTIONS = [
-    { value: 'draft', label: tStates('draft'), color: '#e8eef5' },
-    { value: 'posted', label: tStates('posted'), color: '#cfe8d3' },
-    { value: 'cancelled', label: tStates('cancelled'), color: '#f4d4d4' },
-  ];
+  // moysklad «Статус» = account-defined custom statuses (State rows,
+  // entityType="demand") with colours — NOT the internal draft/posted/cancelled
+  // FSM. With no account statuses defined the shared StatusPill shows a grey
+  // «Статус» trigger (moysklad parity). The FSM lives on «Проведено»
+  // (applicable) and the «Не оплачено» payment pill, both header-separate.
+  // Status is decorative on /new: the create schema takes no statusId (the API
+  // always creates a draft), so the choice is not sent.
+  const { data: statusData } = useQuery<{
+    items: Array<{ id: string; name: string; color: string | null }>;
+  }>({
+    queryKey: ['states', 'demand'],
+    queryFn: () => api.get('/states?entityType=demand'),
+    staleTime: 60_000,
+  });
+  const statusOptions = (statusData?.items ?? []).map((s) => ({
+    value: s.id,
+    label: s.name,
+    color: s.color ?? undefined,
+  }));
 
   const { data: orgsData } = useQuery<{ items: RefItem[] }>({
     queryKey: ['organizations'],
@@ -144,7 +149,7 @@ export default function NewDemandPage() {
     const pad = (n: number) => n.toString().padStart(2, '0');
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   });
-  const [status, setStatus] = useState<string>('draft');
+  const [statusId, setStatusId] = useState<string | null>(null);
   const [applicable, setApplicable] = useState(false);
 
   // Meta state
@@ -191,13 +196,34 @@ export default function NewDemandPage() {
     'WEIGHT' | 'PRICE' | 'VOLUME' | 'QUANTITY'
   >('PRICE');
 
-  // VAT toggles
+  // VAT toggles. moysklad's «Отгрузка» defaults «Цена включает НДС» = CHECKED
+  // (live capture demand-03-new: both «НДС» and «Цена включает НДС» ticked).
   const [vatEnabled, setVatEnabled] = useState(true);
-  const [vatIncluded, setVatIncluded] = useState(false);
+  const [vatIncluded, setVatIncluded] = useState(true);
 
   // Positions
   const [positions, setPositions] = useState<NewPositionRow[]>([]);
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
+
+  // moysklad position grid (live-grounded against demand-03-new): Наименование ·
+  // Кол-во · Цена · НДС · Скидка · Сумма. (Маркировка / Остаток / Себест.
+  // единицы are subsequent sub-project tasks — DS column-type + position-state
+  // work — so they are intentionally NOT in this visual pass.) Explicit labels
+  // stop the RU DEFAULT_LABELS leaking into the UZ locale.
+  const positionColumns = useMemo<PositionTableColumnConfig[]>(
+    () => [
+      { key: 'dragarea' },
+      { key: 'select' },
+      { key: 'name', label: tCols('name') },
+      { key: 'quantity', label: tPos('quantity') },
+      { key: 'price', label: tCols('price') },
+      { key: 'vat', label: tCols('vat') },
+      { key: 'discount', label: tCols('discount') },
+      { key: 'amount', label: tCols('amount') },
+      { key: 'menu' },
+    ],
+    [tCols, tPos],
+  );
 
   // Pickers + error
   const [openPicker, setOpenPicker] = useState<
@@ -538,210 +564,398 @@ export default function NewDemandPage() {
     );
   };
 
+  // moysklad b-operation-form-top — the meta grid sits ABOVE the «Главная /
+  // Связанные документы» tabs and stays visible (the tabs switch only the
+  // positions/related content below). ROW-ALIGNED (customer-order parity):
+  // «Организация‖Склад», «Контрагент‖Договор», «Проект‖Канал продаж» line up
+  // per row; the LEFT field's sub-row (the Перечисление / org-account picker)
+  // extends DOWN inside its own row via `startRow`. The wide Адрес доставки +
+  // Комментарий column flows beside the pair, top-aligned.
+  const metaPanel = (
+    <div className="bg-[var(--ms-bg-surface)] px-4 py-3" data-test-id="doc-meta-panel">
+      <div className="flex flex-col gap-x-12 gap-y-4 lg:flex-row lg:items-start">
+        {/* LEFT + MIDDLE field columns, paired per row */}
+        <div className="grid grid-cols-[auto_minmax(0,190px)_auto_minmax(0,190px)] items-baseline gap-x-2.5 gap-y-2.5">
+          {/* Row 1 — Организация ‖ Склад */}
+          <DocumentMetaField
+            label={tFields('organization')}
+            required
+            startRow
+            subRow={
+              organizationId ? (
+                <CatalogPickerField
+                  value={bankAccountId ? { id: bankAccountId, label: bankAccountLabel } : null}
+                  placeholder={tForm('select_bank_account', { currency })}
+                  onPick={() => setOpenPicker('bankAccount')}
+                  onClear={() => {
+                    setBankAccountId(null);
+                    setBankAccountLabel('');
+                  }}
+                />
+              ) : undefined
+            }
+          >
+            <CatalogPickerField
+              value={organizationId ? { id: organizationId, label: organizationLabel } : null}
+              placeholder={tFields('organization')}
+              onPick={() => setOpenPicker('org')}
+              onClear={() => {
+                setOrganizationId(null);
+                setOrganizationLabel('');
+                setBankAccountId(null);
+                setBankAccountLabel('');
+              }}
+            />
+          </DocumentMetaField>
+          <DocumentMetaField label={tFields('store')} className="pl-8">
+            <CatalogPickerField
+              value={storeId ? { id: storeId, label: storeLabel } : null}
+              placeholder={tFields('store')}
+              onPick={() => setOpenPicker('store')}
+              onClear={() => {
+                setStoreId(null);
+                setStoreLabel('');
+              }}
+            />
+          </DocumentMetaField>
+
+          {/* Row 2 — Контрагент ‖ Договор */}
+          <DocumentMetaField label={tFields('agent')} required startRow>
+            <CatalogPickerField
+              value={agentId ? { id: agentId, label: agentLabel } : null}
+              placeholder={tFields('agent')}
+              onPick={() => setOpenPicker('agent')}
+              onClear={() => {
+                setAgentId(null);
+                setAgentLabel('');
+                setContractId(null);
+                setContractLabel('');
+              }}
+              onCreate={() => router.push('/counterparties/new')}
+              createLabel={tForm('create_new_counterparty')}
+            />
+          </DocumentMetaField>
+          <DocumentMetaField label={tFields('contract')} className="pl-8">
+            <CatalogPickerField
+              value={contractId ? { id: contractId, label: contractLabel } : null}
+              placeholder={agentId ? tFields('contract') : tForm('select_customer_first')}
+              onPick={() => agentId && setOpenPicker('contract')}
+              onClear={() => {
+                setContractId(null);
+                setContractLabel('');
+              }}
+            />
+          </DocumentMetaField>
+
+          {/* Row 3 — Проект ‖ Канал продаж */}
+          <DocumentMetaField label={tFields('project')} startRow>
+            <CatalogPickerField
+              value={projectId ? { id: projectId, label: projectLabel } : null}
+              placeholder={tFields('project')}
+              onPick={() => setOpenPicker('project')}
+              onClear={() => {
+                setProjectId(null);
+                setProjectLabel('');
+              }}
+              onCreate={() => router.push('/projects/new')}
+              createLabel={tForm('create_new_project')}
+            />
+          </DocumentMetaField>
+          <DocumentMetaField label={tFields('sales_channel')} className="pl-8">
+            <CatalogPickerField
+              value={salesChannelId ? { id: salesChannelId, label: salesChannelLabel } : null}
+              placeholder={tFields('sales_channel')}
+              onPick={() => setOpenPicker('salesChannel')}
+              onClear={() => {
+                setSalesChannelId(null);
+                setSalesChannelLabel('');
+              }}
+            />
+          </DocumentMetaField>
+
+          {/* Row 4 — Валюта документа (alone on the left) */}
+          <DocumentMetaField
+            label={tDetailForm('currency')}
+            required
+            startRow
+            helper={
+              currency !== 'UZS' ? (
+                <span className="inline-flex items-center gap-2">
+                  <span>1 {currency} =</span>
+                  {rateEditing ? (
+                    <>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={rateOverride ?? effectiveRate}
+                        onChange={(e) => setRateOverride(e.target.value)}
+                        onBlur={() => setRateEditing(false)}
+                        className="h-6 w-24 rounded-[var(--ms-radius-sm)] border border-[var(--ms-border-default)] px-1 text-right text-xs tabular-nums focus:outline-none focus:ring-1 focus:ring-[var(--ms-text-brand)]"
+                        data-test-id="rate-input"
+                      />
+                      <span>UZS</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="font-medium tabular-nums">
+                        {Number(effectiveRate).toLocaleString('ru-RU')}
+                      </span>
+                      <span>UZS</span>
+                      <Button
+                        type="button"
+                        variant="link"
+                        onClick={() => setRateEditing(true)}
+                        className="h-auto px-0 font-normal text-xs"
+                        aria-label={tForm('rate_edit')}
+                      >
+                        ✎
+                      </Button>
+                      {rateOverride && (
+                        <Button
+                          type="button"
+                          variant="link"
+                          onClick={() => setRateOverride(null)}
+                          className="h-auto px-0 font-normal text-[var(--ms-text-muted)] text-xs"
+                          title={tForm('rate_auto_reset')}
+                        >
+                          ↺
+                        </Button>
+                      )}
+                    </>
+                  )}
+                </span>
+              ) : undefined
+            }
+          >
+            <NativeSelect
+              value={currency}
+              onChange={(e) => {
+                setCurrency(e.target.value);
+                setRateOverride(null);
+              }}
+              data-test-id="field-currency"
+            >
+              <option value="UZS">{tForm('currency_uzs')}</option>
+              <option value="USD">{tForm('currency_usd')}</option>
+              <option value="EUR">{tForm('currency_eur')}</option>
+              <option value="RUB">{tForm('currency_rub')}</option>
+            </NativeSelect>
+          </DocumentMetaField>
+        </div>
+
+        {/* RIGHT — Адрес доставки + Комментарий (wide column, top-aligned). */}
+        <div className="grid grid-cols-[auto_minmax(0,280px)] content-start items-start gap-x-2.5 gap-y-2.5">
+          <DocumentMetaField label={tFields('delivery_address')}>
+            <Textarea
+              rows={2}
+              value={shipmentAddress}
+              onChange={(e) => setShipmentAddress(e.target.value)}
+              aria-label={tFields('delivery_address')}
+              className="min-h-[34px] text-[12px]"
+              data-test-id="field-shipment-address"
+            />
+          </DocumentMetaField>
+          <DocumentMetaField label={tFields('description')}>
+            <Textarea
+              rows={2}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              aria-label={tFields('description')}
+              className="min-h-[34px] text-[12px]"
+              data-test-id="field-description-meta"
+            />
+          </DocumentMetaField>
+        </div>
+      </div>
+    </div>
+  );
+
+  // «▶ Другие поля» — a small inline disclosure directly under the meta grid
+  // (moysklad places it below Валюта документа, above the tabs). Holds the
+  // shipping fields + planned dates + overhead + external code. The
+  // «Грузоотправитель» sub-block grouping is a subsequent functional task.
+  const otherFields = (
+    <DocumentDisclosurePanel title={tForm('other_fields')} defaultOpen={false}>
+      <DocumentMetaPanel>
+        <DocumentMetaRow>
+          <DocumentMetaField label={t('delivery_date')}>
+            <Input
+              type="date"
+              value={deliveryDate}
+              onChange={(e) => setDeliveryDate(e.target.value)}
+              data-test-id="field-delivery-date"
+            />
+          </DocumentMetaField>
+          <DocumentMetaField label={tFields('payment_planned')}>
+            <Input
+              type="date"
+              value={paymentPlannedMoment}
+              onChange={(e) => setPaymentPlannedMoment(e.target.value)}
+              data-test-id="field-payment-planned"
+            />
+          </DocumentMetaField>
+        </DocumentMetaRow>
+
+        <DocumentMetaRow>
+          <DocumentMetaField label={tFields('consignor')}>
+            <CatalogPickerField
+              value={consignorId ? { id: consignorId, label: consignorLabel } : null}
+              placeholder={tFields('consignor')}
+              onPick={() => setOpenPicker('consignor')}
+              onClear={() => {
+                setConsignorId(null);
+                setConsignorLabel('');
+              }}
+            />
+          </DocumentMetaField>
+          <DocumentMetaField label={tFields('consignee')}>
+            <CatalogPickerField
+              value={consigneeId ? { id: consigneeId, label: consigneeLabel } : null}
+              placeholder={tFields('consignee')}
+              onPick={() => setOpenPicker('consignee')}
+              onClear={() => {
+                setConsigneeId(null);
+                setConsigneeLabel('');
+              }}
+            />
+          </DocumentMetaField>
+        </DocumentMetaRow>
+
+        <DocumentMetaRow>
+          <DocumentMetaField label={tFields('carrier')}>
+            <CatalogPickerField
+              value={carrierId ? { id: carrierId, label: carrierLabel } : null}
+              placeholder={tFields('carrier')}
+              onPick={() => setOpenPicker('carrier')}
+              onClear={() => {
+                setCarrierId(null);
+                setCarrierLabel('');
+              }}
+            />
+          </DocumentMetaField>
+          <DocumentMetaField label={tFields('cargo_name')}>
+            <Input
+              value={cargoName}
+              onChange={(e) => setCargoName(e.target.value)}
+              data-test-id="field-cargo-name"
+            />
+          </DocumentMetaField>
+        </DocumentMetaRow>
+
+        <DocumentMetaRow>
+          <DocumentMetaField label={tFields('transport_facility')}>
+            <Input
+              value={transportFacility}
+              onChange={(e) => setTransportFacility(e.target.value)}
+              data-test-id="field-transport-facility"
+            />
+          </DocumentMetaField>
+          <DocumentMetaField label={tFields('car_number')}>
+            <Input
+              value={carNumber}
+              onChange={(e) => setCarNumber(e.target.value)}
+              data-test-id="field-car-number"
+            />
+          </DocumentMetaField>
+        </DocumentMetaRow>
+
+        <DocumentMetaRow>
+          <DocumentMetaField label={tFields('places_count')}>
+            <Input
+              type="number"
+              min="0"
+              value={placesCount}
+              onChange={(e) => setPlacesCount(e.target.value)}
+              data-test-id="field-places-count"
+            />
+          </DocumentMetaField>
+          <DocumentMetaField label={tFields('shipping_doc_no')}>
+            <Input
+              value={shippingDocNo}
+              onChange={(e) => setShippingDocNo(e.target.value)}
+              data-test-id="field-shipping-doc-no"
+            />
+          </DocumentMetaField>
+        </DocumentMetaRow>
+
+        <DocumentMetaRow>
+          <DocumentMetaField label={tFields('shipping_doc_date')}>
+            <Input
+              type="date"
+              value={shippingDocDate}
+              onChange={(e) => setShippingDocDate(e.target.value)}
+              data-test-id="field-shipping-doc-date"
+            />
+          </DocumentMetaField>
+          <DocumentMetaField label={tFields('state_contract_id')}>
+            <Input
+              value={stateContractId}
+              onChange={(e) => setStateContractId(e.target.value)}
+              data-test-id="field-state-contract-id"
+            />
+          </DocumentMetaField>
+          <DocumentMetaField label={tDetailForm('external_code')}>
+            <Input
+              value={externalCode}
+              onChange={(e) => setExternalCode(e.target.value)}
+              data-test-id="field-external-code"
+            />
+          </DocumentMetaField>
+        </DocumentMetaRow>
+
+        <DocumentMetaRow>
+          <DocumentMetaField label={tDetailForm('overhead_sum')}>
+            <Input
+              type="number"
+              min="0"
+              step="0.01"
+              inputMode="decimal"
+              value={overheadMajor}
+              placeholder="0"
+              onChange={(e) => setOverheadMajor(e.target.value)}
+              data-test-id="field-overhead-sum"
+            />
+          </DocumentMetaField>
+          <DocumentMetaField label={tDetailForm('overhead_distribution')}>
+            <NativeSelect
+              value={overheadDistribution}
+              onChange={(e) =>
+                setOverheadDistribution(
+                  e.target.value as 'WEIGHT' | 'PRICE' | 'VOLUME' | 'QUANTITY',
+                )
+              }
+              data-test-id="field-overhead-distribution"
+              disabled={!(Number(overheadMajor) > 0)}
+            >
+              <option value="PRICE">{tDetailForm('overhead_by_price')}</option>
+              <option value="WEIGHT">{tDetailForm('overhead_by_weight')}</option>
+              <option value="VOLUME">{tDetailForm('overhead_by_volume')}</option>
+              <option value="QUANTITY">{tDetailForm('overhead_by_quantity')}</option>
+            </NativeSelect>
+          </DocumentMetaField>
+        </DocumentMetaRow>
+
+        <DocumentMetaRow>
+          <DocumentMetaField label={tFields('shipper_instructions')} fullWidth>
+            <Input
+              value={shipperInstructions}
+              onChange={(e) => setShipperInstructions(e.target.value)}
+              data-test-id="field-shipper-instructions"
+            />
+          </DocumentMetaField>
+        </DocumentMetaRow>
+      </DocumentMetaPanel>
+    </DocumentDisclosurePanel>
+  );
+
   const tabs = [
     {
       key: 'main',
       label: tDetailTabs('main'),
       content: (
         <div className="space-y-4">
-          <DocumentMetaPanel>
-            <DocumentMetaRow>
-              <DocumentMetaField label={tFields('agent')} required>
-                <CatalogPickerField
-                  value={agentId ? { id: agentId, label: agentLabel } : null}
-                  placeholder={tFields('agent')}
-                  onPick={() => setOpenPicker('agent')}
-                  onClear={() => {
-                    setAgentId(null);
-                    setAgentLabel('');
-                    setContractId(null);
-                    setContractLabel('');
-                  }}
-                  onCreate={() => router.push('/counterparties/new')}
-                  createLabel={tForm('create_new_counterparty')}
-                />
-              </DocumentMetaField>
-              <DocumentMetaField label={tFields('store')}>
-                <CatalogPickerField
-                  value={storeId ? { id: storeId, label: storeLabel } : null}
-                  placeholder={tFields('store')}
-                  onPick={() => setOpenPicker('store')}
-                  onClear={() => {
-                    setStoreId(null);
-                    setStoreLabel('');
-                  }}
-                />
-              </DocumentMetaField>
-            </DocumentMetaRow>
-
-            <DocumentMetaRow>
-              <DocumentMetaField
-                label={tFields('organization')}
-                required
-                helper={
-                  organizationId ? (
-                    <CatalogPickerField
-                      value={bankAccountId ? { id: bankAccountId, label: bankAccountLabel } : null}
-                      placeholder={tForm('select_bank_account', { currency })}
-                      onPick={() => setOpenPicker('bankAccount')}
-                      onClear={() => {
-                        setBankAccountId(null);
-                        setBankAccountLabel('');
-                      }}
-                    />
-                  ) : undefined
-                }
-              >
-                <CatalogPickerField
-                  value={organizationId ? { id: organizationId, label: organizationLabel } : null}
-                  placeholder={tFields('organization')}
-                  onPick={() => setOpenPicker('org')}
-                  onClear={() => {
-                    setOrganizationId(null);
-                    setOrganizationLabel('');
-                    setBankAccountId(null);
-                    setBankAccountLabel('');
-                  }}
-                />
-              </DocumentMetaField>
-              <DocumentMetaField label={tFields('contract')}>
-                <CatalogPickerField
-                  value={contractId ? { id: contractId, label: contractLabel } : null}
-                  placeholder={agentId ? tFields('contract') : tForm('select_customer_first')}
-                  onPick={() => agentId && setOpenPicker('contract')}
-                  onClear={() => {
-                    setContractId(null);
-                    setContractLabel('');
-                  }}
-                />
-              </DocumentMetaField>
-            </DocumentMetaRow>
-
-            <DocumentMetaRow>
-              <DocumentMetaField label={tFields('project')}>
-                <CatalogPickerField
-                  value={projectId ? { id: projectId, label: projectLabel } : null}
-                  placeholder={tFields('project')}
-                  onPick={() => setOpenPicker('project')}
-                  onClear={() => {
-                    setProjectId(null);
-                    setProjectLabel('');
-                  }}
-                  onCreate={() => router.push('/projects/new')}
-                  createLabel={tForm('create_new_project')}
-                />
-              </DocumentMetaField>
-              <DocumentMetaField label={t('delivery_date')}>
-                <Input
-                  type="date"
-                  value={deliveryDate}
-                  onChange={(e) => setDeliveryDate(e.target.value)}
-                  data-test-id="field-delivery-date"
-                />
-              </DocumentMetaField>
-              <DocumentMetaField label={tFields('payment_planned')}>
-                <Input
-                  type="date"
-                  value={paymentPlannedMoment}
-                  onChange={(e) => setPaymentPlannedMoment(e.target.value)}
-                  data-test-id="field-payment-planned"
-                />
-              </DocumentMetaField>
-            </DocumentMetaRow>
-
-            <DocumentMetaRow>
-              <DocumentMetaField label={tFields('sales_channel')}>
-                <CatalogPickerField
-                  value={salesChannelId ? { id: salesChannelId, label: salesChannelLabel } : null}
-                  placeholder={tFields('sales_channel')}
-                  onPick={() => setOpenPicker('salesChannel')}
-                  onClear={() => {
-                    setSalesChannelId(null);
-                    setSalesChannelLabel('');
-                  }}
-                />
-              </DocumentMetaField>
-              <DocumentMetaField label={tFields('delivery_address')}>
-                <Input
-                  value={shipmentAddress}
-                  onChange={(e) => setShipmentAddress(e.target.value)}
-                  data-test-id="field-shipment-address"
-                />
-              </DocumentMetaField>
-            </DocumentMetaRow>
-
-            <DocumentMetaRow>
-              <DocumentMetaField
-                label={tDetailForm('currency')}
-                required
-                helper={
-                  currency !== 'UZS' ? (
-                    <span className="inline-flex items-center gap-2">
-                      <span>1 {currency} =</span>
-                      {rateEditing ? (
-                        <>
-                          <input
-                            type="text"
-                            inputMode="decimal"
-                            value={rateOverride ?? effectiveRate}
-                            onChange={(e) => setRateOverride(e.target.value)}
-                            onBlur={() => setRateEditing(false)}
-                            className="h-6 w-24 rounded-[var(--ms-radius-sm)] border border-[var(--ms-border-default)] px-1 text-right text-xs tabular-nums focus:outline-none focus:ring-1 focus:ring-[var(--ms-text-brand)]"
-                            data-test-id="rate-input"
-                          />
-                          <span>UZS</span>
-                        </>
-                      ) : (
-                        <>
-                          <span className="font-medium tabular-nums">
-                            {Number(effectiveRate).toLocaleString('ru-RU')}
-                          </span>
-                          <span>UZS</span>
-                          <Button
-                            type="button"
-                            variant="link"
-                            onClick={() => setRateEditing(true)}
-                            className="h-auto px-0 font-normal text-xs"
-                            aria-label={tForm('rate_edit')}
-                          >
-                            ✎
-                          </Button>
-                          {rateOverride && (
-                            <Button
-                              type="button"
-                              variant="link"
-                              onClick={() => setRateOverride(null)}
-                              className="h-auto px-0 font-normal text-[var(--ms-text-muted)] text-xs"
-                              title={tForm('rate_auto_reset')}
-                            >
-                              ↺
-                            </Button>
-                          )}
-                        </>
-                      )}
-                    </span>
-                  ) : undefined
-                }
-              >
-                <NativeSelect
-                  value={currency}
-                  onChange={(e) => {
-                    setCurrency(e.target.value);
-                    setRateOverride(null);
-                  }}
-                  data-test-id="field-currency"
-                >
-                  <option value="UZS">{tForm('currency_uzs')}</option>
-                  <option value="USD">{tForm('currency_usd')}</option>
-                  <option value="EUR">{tForm('currency_eur')}</option>
-                  <option value="RUB">{tForm('currency_rub')}</option>
-                </NativeSelect>
-              </DocumentMetaField>
-            </DocumentMetaRow>
-          </DocumentMetaPanel>
-
           <PositionTable
-            columns={POSITION_COLUMNS}
+            columns={positionColumns}
             rows={positions}
             onUpdate={(id, patch) => updatePosition(id, patch as Partial<NewPositionRow>)}
             onRemove={removePosition}
@@ -875,159 +1089,6 @@ export default function NewDemandPage() {
           >
             <p className="text-[var(--ms-text-muted)] text-sm">{tForm('files_after_save_hint')}</p>
           </DocumentDisclosurePanel>
-
-          <DocumentDisclosurePanel title={tForm('other_fields')} defaultOpen={false}>
-            <DocumentMetaPanel>
-              <DocumentMetaRow>
-                <DocumentMetaField label={tFields('consignor')}>
-                  <CatalogPickerField
-                    value={consignorId ? { id: consignorId, label: consignorLabel } : null}
-                    placeholder={tFields('consignor')}
-                    onPick={() => setOpenPicker('consignor')}
-                    onClear={() => {
-                      setConsignorId(null);
-                      setConsignorLabel('');
-                    }}
-                  />
-                </DocumentMetaField>
-                <DocumentMetaField label={tFields('consignee')}>
-                  <CatalogPickerField
-                    value={consigneeId ? { id: consigneeId, label: consigneeLabel } : null}
-                    placeholder={tFields('consignee')}
-                    onPick={() => setOpenPicker('consignee')}
-                    onClear={() => {
-                      setConsigneeId(null);
-                      setConsigneeLabel('');
-                    }}
-                  />
-                </DocumentMetaField>
-              </DocumentMetaRow>
-
-              <DocumentMetaRow>
-                <DocumentMetaField label={tFields('carrier')}>
-                  <CatalogPickerField
-                    value={carrierId ? { id: carrierId, label: carrierLabel } : null}
-                    placeholder={tFields('carrier')}
-                    onPick={() => setOpenPicker('carrier')}
-                    onClear={() => {
-                      setCarrierId(null);
-                      setCarrierLabel('');
-                    }}
-                  />
-                </DocumentMetaField>
-                <DocumentMetaField label={tFields('cargo_name')}>
-                  <Input
-                    value={cargoName}
-                    onChange={(e) => setCargoName(e.target.value)}
-                    data-test-id="field-cargo-name"
-                  />
-                </DocumentMetaField>
-              </DocumentMetaRow>
-
-              <DocumentMetaRow>
-                <DocumentMetaField label={tFields('transport_facility')}>
-                  <Input
-                    value={transportFacility}
-                    onChange={(e) => setTransportFacility(e.target.value)}
-                    data-test-id="field-transport-facility"
-                  />
-                </DocumentMetaField>
-                <DocumentMetaField label={tFields('car_number')}>
-                  <Input
-                    value={carNumber}
-                    onChange={(e) => setCarNumber(e.target.value)}
-                    data-test-id="field-car-number"
-                  />
-                </DocumentMetaField>
-              </DocumentMetaRow>
-
-              <DocumentMetaRow>
-                <DocumentMetaField label={tFields('places_count')}>
-                  <Input
-                    type="number"
-                    min="0"
-                    value={placesCount}
-                    onChange={(e) => setPlacesCount(e.target.value)}
-                    data-test-id="field-places-count"
-                  />
-                </DocumentMetaField>
-                <DocumentMetaField label={tFields('shipping_doc_no')}>
-                  <Input
-                    value={shippingDocNo}
-                    onChange={(e) => setShippingDocNo(e.target.value)}
-                    data-test-id="field-shipping-doc-no"
-                  />
-                </DocumentMetaField>
-              </DocumentMetaRow>
-
-              <DocumentMetaRow>
-                <DocumentMetaField label={tFields('shipping_doc_date')}>
-                  <Input
-                    type="date"
-                    value={shippingDocDate}
-                    onChange={(e) => setShippingDocDate(e.target.value)}
-                    data-test-id="field-shipping-doc-date"
-                  />
-                </DocumentMetaField>
-                <DocumentMetaField label={tFields('state_contract_id')}>
-                  <Input
-                    value={stateContractId}
-                    onChange={(e) => setStateContractId(e.target.value)}
-                    data-test-id="field-state-contract-id"
-                  />
-                </DocumentMetaField>
-                <DocumentMetaField label={tDetailForm('external_code')}>
-                  <Input
-                    value={externalCode}
-                    onChange={(e) => setExternalCode(e.target.value)}
-                    data-test-id="field-external-code"
-                  />
-                </DocumentMetaField>
-              </DocumentMetaRow>
-
-              <DocumentMetaRow>
-                <DocumentMetaField label={tDetailForm('overhead_sum')}>
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    inputMode="decimal"
-                    value={overheadMajor}
-                    placeholder="0"
-                    onChange={(e) => setOverheadMajor(e.target.value)}
-                    data-test-id="field-overhead-sum"
-                  />
-                </DocumentMetaField>
-                <DocumentMetaField label={tDetailForm('overhead_distribution')}>
-                  <NativeSelect
-                    value={overheadDistribution}
-                    onChange={(e) =>
-                      setOverheadDistribution(
-                        e.target.value as 'WEIGHT' | 'PRICE' | 'VOLUME' | 'QUANTITY',
-                      )
-                    }
-                    data-test-id="field-overhead-distribution"
-                    disabled={!(Number(overheadMajor) > 0)}
-                  >
-                    <option value="PRICE">{tDetailForm('overhead_by_price')}</option>
-                    <option value="WEIGHT">{tDetailForm('overhead_by_weight')}</option>
-                    <option value="VOLUME">{tDetailForm('overhead_by_volume')}</option>
-                    <option value="QUANTITY">{tDetailForm('overhead_by_quantity')}</option>
-                  </NativeSelect>
-                </DocumentMetaField>
-              </DocumentMetaRow>
-
-              <DocumentMetaRow>
-                <DocumentMetaField label={tFields('shipper_instructions')} fullWidth>
-                  <Input
-                    value={shipperInstructions}
-                    onChange={(e) => setShipperInstructions(e.target.value)}
-                    data-test-id="field-shipper-instructions"
-                  />
-                </DocumentMetaField>
-              </DocumentMetaRow>
-            </DocumentMetaPanel>
-          </DocumentDisclosurePanel>
         </div>
       ),
     },
@@ -1052,9 +1113,10 @@ export default function NewDemandPage() {
         onNumberChange={setDocNumber}
         date={docDate}
         onDateChange={setDocDate}
-        status={status}
-        statusOptions={STATUS_OPTIONS}
-        onStatusChange={setStatus}
+        status={statusId ?? ''}
+        statusOptions={statusOptions}
+        onStatusChange={setStatusId}
+        paymentLabel={tDetailHeader('not_paid')}
         applicable={applicable}
         onApplicableChange={setApplicable}
         applicableHelp={t('applicable_help')}
@@ -1085,7 +1147,11 @@ export default function NewDemandPage() {
           createMut.mutate();
         }}
       >
-        <DocumentTabs tabs={tabs} defaultActiveKey="main" />
+        <>
+          {metaPanel}
+          {otherFields}
+          <DocumentTabs tabs={tabs} defaultActiveKey="main" />
+        </>
       </DocumentEditor>
 
       <CatalogPicker

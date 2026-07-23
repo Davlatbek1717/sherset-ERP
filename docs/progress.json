@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-23T01:09:41.935Z",
+  "generatedAt": "2026-07-23T01:26:37.813Z",
   "list_pages": {
     "total_target": 56,
     "actual_routes_in_app": 71,
@@ -177,9 +177,11 @@
     "smoke_log_hint": "Run `pnpm smoke:all` and parse the tail for live-smoke + adversarial counts"
   },
   "moysklad_reference": {
-    "captured_modules": 0,
-    "detail_captured_modules": 0,
-    "modules": []
+    "captured_modules": 1,
+    "detail_captured_modules": 1,
+    "modules": [
+      "salesreturn"
+    ]
   },
   "phase2": {
     "cohorts_total": 7,
