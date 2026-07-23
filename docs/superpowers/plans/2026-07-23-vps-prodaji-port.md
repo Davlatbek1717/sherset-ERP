@@ -1,62 +1,50 @@
-# VPS «moysklad» fork → Sherset: Продажи bo'limini port qilish — REJA + FARQ-TAHLILI
+# climart «moysklad» fork → Sherset: BUTUN-REPO adoption — REJA
 
-> **Maqsad:** VPS `/var/www/moysklad` (Biznesjon-Official/moysklad fork) ning **Продажи** bo'limi funksiyasini
-> Sherset'ga olib kirish (foydalanuvchi qarori 2026-07-23: **VPS versiyasi almashtirsin**, backend+DB bilan).
-> **Status:** QISM 0 — recon + farq-tahlil ✅ (bu sessiya). Port = keyingi sessiyalar (worktree-izolyatsiya).
+> **Maqsad (2026-07-23, foydalanuvchi kengaytirdi):** Sherset kodini butunlay **climart bilan bir xil** qilish
+> (VPS `/var/www/moysklad` = `Biznesjon-Official/moysklad` fork) — Sherset ← climart upstream-adoption.
+> **Status:** recon + farq-tahlil + qaror ✅ (bu sessiya). Adoption = keyingi sessiyalar (worktree-izolyatsiya).
+> **⚠️ Bu oldingi «Продажи per-page port» ni HAM, salesreturn 1:1 QISM ishini ham SUPERSEDES qiladi.**
 
-## 0. Kontekst (grounded)
+## 0. Yakuniy ko'lam (foydalanuvchi qarori, 3 savol bilan tasdiqlangan)
 
-- VPS `/var/www/moysklad` va lokal `Sherset` — **bir loyihaning (moysklad-clone) ikki ajralib ketgan (diverged) fork'i**, alohida git-repo (`Biznesjon-Official/moysklad` vs Sherset'da remote yo'q). VPS bugun ham faol (763c9d90, 2026-07-23 12:39).
-- **SSH kirish o'rnatildi:** `ssh climart` (kalit `~/.ssh/climart_v.pub` root@45.67.216.61'da; `~/.ssh/config`'da `Host climart`). Parolsiz. **Server FAQAT o'qiladi** (kod olish; DB/boshqa loyihalarga tegilmaydi). VPS `git archive` = **~3 GB** (katta committed fayllar) → to'liq emas, **maqsadli yo'llar** bilan olinadi.
-- Foydalanuvchi qarori: **(1)** VPS wholesale almashtirsin · **(2)** Продажи'dan boshlab · **(3)** kerak bo'lsa backend+DB ham.
+- **Butun kod climart bilan bir xil bo'lsin** (barcha apps/packages/routes climart versiyasiga).
+- **SAQLANADI (Sherset'niki qoladi):** `counterparties` (konteragentlar) + `debts` (qarzlar) — FE + API + komponent + sxema-modellari.
+- **TUSHIB QOLADI** (Sherset-only, foydalanuvchi saqlashni tanlamadi): `sotuv` (maxsus POS), `omborchi`, `restock-tasks`, `replenishment`, `cell`. ⚠️ `sotuv` — butun maxsus kassa; yo'qoladi.
+- **QO'SHILADI** (climartda bor, Sherset'da yo'q — climart tree bilan avtomat keladi): `bulk-edit`, `specialoffers`, `subscription`.
+- **Rejim:** **LOKAL — avval to'liq tayyorla+tekshir.** Production (`sherset.biznesjon.uz`) deploy = ALOHIDA, keyingi ehtiyotkor qadam.
+- **DB:** lokal — **yangi dev-DB** (climart sxemasi + counterparties/debts modellari + seed). **climart datasi KO'CHIRILMAYDI.** Prod-DB migratsiyasi = deploy qadamiga defer.
 
-## 1. Farq-tahlil (Продажи FE — VPS vs Sherset)
+## 1. Kontekst (grounded)
 
-Har fayl VPS'dan `git archive HEAD -- <path>` bilan olindi (scratchpad), `diff` bilan solishtirildi.
+- climart va Sherset — **bir loyiha oilasi** (`moysklad-clone`), alohida diverged fork. **Monorepo strukturasi bir xil** (apps: api/marketing/web · packages: config/db/design-system/money/workflows).
+- climart umuman **to'liqroq**; shared-infra ikkalasida ham divergent (Sherset ba'zi joyda kattaroq: api-client 247>177, schema 9356>8939) — «bir xil» = climart versiyasi g'olib (counterparties/debts bundan mustasno).
+- **SSH:** `ssh climart` (root@45.67.216.61, kalit `~/.ssh/climart_vps`, parolsiz). Server FAQAT o'qiladi.
+- **climart repo ~3GB, lekin ~keraksiz:** `docs/` 2.8G (committed Claude transcript'lar + captures) · generated Prisma client (index.d.ts 36M, query-engine'lar) · node_modules. **Haqiqiy manba kichik** → adoption'da faqat manba olinadi (apps/*/src, packages/*/src [generated'siz], scripts, config, prisma/schema, i18n).
 
-| Sahifa | VPS qator | Sherset qator | Farq qator | Baho |
-|---|---|---|---|---|
-| customer-orders/page | 2297 | 2248 | ~355 | ~85% umumiy — **yaqin** |
-| customer-orders/[id] | 2390 | 2210 | ~324 | yaqin |
-| customer-orders/new | 2005 | 1788 | ~371 | yaqin |
-| demands/page | 1775 | 1445 | 1798 | **deyarli to'liq qayta yozilgan**, VPS kattaroq |
-| sales-returns/new | 1732 | 1151 | 1451 | VPS ancha kattaroq |
-| retail/page | 704 | **5** (stub) | 703 | VPS to'liq · Sherset stub (sotuv/ ga ko'chirilgan?) |
+## 2. Mexanizm (butun-tree overlay, NE fayl-bo'yicha)
 
-**Umumiy naqsh:** **VPS Продажи to'liqroq** (demands/sales-returns/retail'da ancha kattaroq; commission-reports'da VPS-only `new`+`new-in` sahifalar). Bu foydalanuvchi tanlovini tasdiqlaydi. **HAR bir Продажи FE fayli farq qiladi** (struktura bir xil, kontent divergent).
+Izolyatsiyalangan **worktree/branch**'da (parallel sessiya main'da — halaqit bermaslik):
+1. **climart toza manbani ol** — maqsadli `git archive HEAD -- <source-paths>` (docs/audit/scratch/generated CHIQARIB). Kerak: `apps/{api,web,marketing}/src`, `apps/*/{package.json,tsconfig,next.config,…}`, `packages/*` (generated'siz), `scripts`, root config (turbo/biome/pnpm-workspace/tsconfig.base), `packages/db/prisma`, i18n.
+2. **Sherset tree'ni climart bilan almashtir** — keep-yo'llar bundan mustasno.
+3. **Keep-yo'llarni tikla (Sherset'niki):** `apps/web/src/app/(app)/{counterparties,debts}`, `apps/api/src/modules/{counterparty*,debt*}`, tegishli komponentlar, va sxemadagi counterparties/debts modellari.
+4. **Sherset repo-ident + deploy'ni saqla:** `.git`, `deploy/` (sherset.biznesjon.uz conf/ecosystem/DEPLOY-sherset.md), `.env` namunalari, ports (4002/4000) — climart'niki bilan ALMASHTIRILMAYDI.
+5. **Drop-yo'llarni olib tashla:** sotuv/omborchi/restock-tasks/replenishment/cell (FE+API+sxema).
 
-**Shared-infra ham divergent (VPS'nikiga almashtirilmaydi — boshqa bo'limlar tayanadi):**
-- `apps/web/src/lib/api-client.ts` — VPS 177 / **Sherset 247** qator (Sherset kattaroq). → VPS sahifalari Sherset api-client'iga **moslashtiriladi**.
-- `apps/api/src/modules/customer-order` — modul strukturasi **bir xil** (controller/service/schema/schema.test/module). → fayl-bo'yicha reconcile.
-- DB sxema: VPS `schema.prisma` 8939 / **Sherset 9356** qator (Sherset kattaroq). → sxema **wholesale almashtirilMAYDI**; Продажи-modellariga kerakli maydonlar **qo'shiladi/reconcile** qilinadi.
+## 3. Bosqichli bajarish (har biri gate bilan; ko'p-sessiya)
 
-## 2. Muhandislik strategiyasi (nega fayl-nusxa emas)
-
-VPS sahifasi o'z bog'liqliklariga (api-client metodlari, design-system komponentlari, i18n kalitlari, Prisma modellari, lib helperlari) tayanadi. Sherset'da bular **boshqacha va kattaroq**. Shuning uchun har sahifa uchun:
-1. VPS FE + API modulini olib kel (maqsadli `git archive`).
-2. Sherset shared-infra'siga **moslashtir** (import/chaqiruvlarni Sherset ekvivalentlariga, tiplarni reconcile).
-3. Kerakli API endpoint / Prisma maydonlarини **qo'sh** (Sherset qo'shimchalarини **o'chirmasdan**).
-4. **Gate:** `pnpm typecheck` 0 · `biome` 0 · i18n key-existence ru+uz · web build — **har klasterda**.
-
-**Izolyatsiya (MAJBURIY, §6.5):** port **worktree'da** qilinadi — parallel sessiya `main`'da (demand ustida) ishlayapti; Продажи ularning yo'llari bilan kesishadi. Worktree buzilgan build'ni izolyatsiyalaydi; tayyor bo'lganda branch orqali merge.
-
-## 3. Klaster tartibi (eng yaqindan eng og'irga — har biri 1 sessiya)
-
-Har klaster = FE (page + [id] + new) + API modul + kerakli sxema + gate + worktree-branch.
-
-1. **customer-orders** (eng yaqin, ~355/fayl) — port-protsedurasini o'rnatadi, eng past risk. **Birinchi.**
-2. **invoices-out** (yaqin) + **factures-out**.
-3. **commission-reports** (+ VPS-only `new`/`new-in`) + **consignments**.
-4. **demands** (deyarli qayta yozilgan; ⚠️ parallel sessiya faol shu ustida — koordinatsiya/keyinga).
-5. **sales-returns** (VPS kattaroq; ⚠️ Sherset bu sessiyada 1:1 qildi — VPS almashtiradi, foydalanuvchi tasdiqladi).
-6. **retail** (retail/ · retail/sales · retail/sessions · retail/z-report; Sherset stub → to'liq VPS; sotuv/ bilan reconcile).
-
-> **HALOL yorliq:** har klaster «Phase-1: portlangan + typecheck/build o'tdi» — **runtime browser-cert alohida** (VPS yonida solishtirish).
+- **B1 — Manba + overlay:** worktree; climart manbani ol; tree'ni almashtir (keep/drop qoidasi bilan). `pnpm install` o'tsin.
+- **B2 — Sxema reconcile:** `packages/db/prisma/schema.prisma` = climart sxemasi **+** counterparties/debts modellari (Sherset'dan). `prisma validate` + `prisma generate`.
+- **B3 — Keep-list moslashtir:** counterparties/debts sahifa/modullari climart shared-infra'siga (api-client, komponent, i18n, tiplar) moslashsin. **typecheck 0.**
+- **B4 — Build + i18n:** `biome` 0 · i18n key-existence ru+uz · `pnpm build:web`.
+- **B5 — DB + runtime:** yangi dev-DB (moysklad_dev reset) → `prisma migrate` → `db:seed` → `pnpm dev` smoke (login + bir nechta sahifa).
+- **B6 — Verify + hujjat:** climart yonida solishtir; drop/keep'ni tasdiqla. Branch tayyor.
+- **(keyin, ALOHIDA) — Prod deploy:** sherset.biznesjon.uz — prod-DB backup + ehtiyotkor migratsiya/qayta-seed (foydalanuvchi bilan).
 
 ## 4. Xavflar
-- **DB sxema to'qnashuvi** — Продажи modellari (CustomerOrder, Demand, SalesReturn, RetailSale…) VPS'da boshqa maydonlarga ega bo'lishi mumkin; migration Sherset'ning mavjud migratsiyalari bilan mos kelishi shart (yangi migration, drop EMAS).
-- **Shared-komponent divergensiyasi** — VPS sahifasi Sherset'da yo'q design-system komponentini chaqirsa → komponent ham port yoki Sherset ekvivalentiga moslash.
-- **Parallel sessiya** — demands/sales-returns'da faol; klaster 4/5 koordinatsiya talab qiladi.
+- **Keep-list bog'liqligi:** counterparties/debts Sherset shared-infra/sxemasiga tayanadi → climart bazasiga moslashtirish kerak (B3). Agar toza saqlanmasa — foydalanuvchi bilan hal.
+- **Sxema-drift:** climart modellarida Sherset'da bo'lmagan maydonlar → dev-DB yangi bo'lgani uchun lokal muammosiz; prod = alohida.
+- **Deploy-config yo'qolishi:** climart tree Sherset `deploy/`ni bosib ketmasin (keep-ro'yxatda).
+- **Dropped features:** sotuv/omborchi/… yo'qoladi — foydalanuvchi tasdiqladi, lekin B6'da eslatiladi.
 
 ## 5. Keyingi qadam
-Klaster 1 (**customer-orders**) — worktree ochib, VPS FE+API modulини olib, Sherset'ga moslashtir, typecheck 0 gacha, branch'ga commit. Reference: VPS kodi `git archive HEAD -- 'apps/.../customer-orders' 'apps/api/src/modules/customer-order'` (scratchpad'da namunalar bor).
+B1 — yangi toza sessiyada worktree ochib, climart manbani olib, overlay. Reference: bu reja + `ssh climart`.
