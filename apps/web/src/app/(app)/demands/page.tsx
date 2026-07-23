@@ -293,6 +293,8 @@ export default function DemandsPage() {
     'agent',
     'organization',
     'sum',
+    // moysklad shows «Валюта» as a default grid column (right after «Сумма»).
+    'currency',
     'payedSum',
     'published',
     'printed',
@@ -647,6 +649,31 @@ export default function DemandsPage() {
                 testId="filter-agent-group"
               />
             </InlineFilterPanel.Field>
+            {/* Счёт контрагента — the picker/state/param were already wired; the
+                panel field itself was missing (moysklad has this filter). */}
+            <InlineFilterPanel.Field label={tFilters('agent_account')} expandable>
+              <CatalogPickerField
+                value={
+                  extFilter.agentAccountId
+                    ? {
+                        id: extFilter.agentAccountId,
+                        label: extFilter.agentAccountLabel ?? extFilter.agentAccountId,
+                      }
+                    : null
+                }
+                placeholder=""
+                onPick={() => setPickerOpen('agentAccount')}
+                onClear={() => {
+                  setExtFilter({
+                    ...extFilter,
+                    agentAccountId: undefined,
+                    agentAccountLabel: undefined,
+                  });
+                  setCursor(undefined);
+                }}
+                testId="filter-agent-account"
+              />
+            </InlineFilterPanel.Field>
             {/* 4. Договор */}
             <InlineFilterPanel.Field label={tFilters('contract')} expandable>
               <CatalogPickerField
@@ -830,9 +857,10 @@ export default function DemandsPage() {
                 data-test-id="filter-payment-status"
               >
                 <option value="" />
-                <option value="unpaid">{tFilters('payment_unpaid')}</option>
-                <option value="partial">{tFilters('payment_partial')}</option>
+                {/* moysklad order: Оплачено → Частично оплачено → Не оплачено. */}
                 <option value="paid">{tFilters('payment_paid')}</option>
+                <option value="partial">{tFilters('payment_partial')}</option>
+                <option value="unpaid">{tFilters('payment_unpaid')}</option>
               </NativeSelect>
             </InlineFilterPanel.Field>
             {/* 15. Канал продаж */}
