@@ -113,10 +113,10 @@ export default function PrintRetailSalePage() {
   const cardAmount = BigInt(data.cardAmountMinor);
   const terminalAmount = BigInt(data.terminalAmountMinor ?? '0');
   const debtAmount = BigInt(data.advancePaymentSumMinor ?? '0');
-  const change = BigInt(data.changeMinor);
 
-  // 58mm tor lentada bir pog'ona kichikroq shrift.
-  const fs = widthMm === 58 ? 9 : 12;
+  // 58mm tor lentada bir pog'ona kichikroq shrift; 80mm'da ham ixcham (11) —
+  // uzun tovar nomlariga «Nomi» ustunida ko'proq joy qoladi.
+  const fs = widthMm === 58 ? 9 : 11;
   const orgName = data.session.organization.legalTitle ?? data.session.organization.name;
 
   const cell: React.CSSProperties = {
@@ -164,12 +164,12 @@ export default function PrintRetailSalePage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 8, fontSize: fs }}>
           <thead>
             <tr style={{ fontWeight: 700, textAlign: 'center' }}>
-              <td style={{ ...cell, width: 18, textAlign: 'center' }}>№</td>
+              <td style={{ ...cell, width: 16, textAlign: 'center' }}>№</td>
               <td style={cell}>Nomi</td>
-              <td style={{ ...cell, width: 34, textAlign: 'center' }}>O'lch. birligi</td>
-              <td style={{ ...cell, width: 34, textAlign: 'center' }}>Soni</td>
-              <td style={{ ...num, width: 54 }}>Narxi</td>
-              <td style={{ ...num, width: 60 }}>Summa</td>
+              <td style={{ ...cell, width: 28, textAlign: 'center' }}>O'lch. birligi</td>
+              <td style={{ ...cell, width: 26, textAlign: 'center' }}>Soni</td>
+              <td style={{ ...num, width: 48 }}>Narxi</td>
+              <td style={{ ...num, width: 54 }}>Summa</td>
             </tr>
           </thead>
           <tbody>
@@ -216,12 +216,8 @@ export default function PrintRetailSalePage() {
           Raqam bilan: <b>{somInWords(total)}</b>
         </div>
 
-        {/* ── To'lov taqsimoti (POS — qaytim ko'rinsin) ── */}
-        {(cashAmount > 0n ||
-          cardAmount > 0n ||
-          terminalAmount > 0n ||
-          debtAmount > 0n ||
-          change > 0n) && (
+        {/* ── To'lov taqsimoti (POS) — qaytim ko'rsatilmaydi (foydalanuvchi qarori) ── */}
+        {(cashAmount > 0n || cardAmount > 0n || terminalAmount > 0n || debtAmount > 0n) && (
           <div style={{ marginTop: 8 }}>
             {cashAmount > 0n && (
               <div style={payRow}>
@@ -245,12 +241,6 @@ export default function PrintRetailSalePage() {
               <div style={{ ...payRow, fontWeight: 700 }}>
                 <span>Qarz:</span>
                 <span>{fmtSom(debtAmount)}</span>
-              </div>
-            )}
-            {change > 0n && (
-              <div style={{ ...payRow, fontWeight: 700 }}>
-                <span>Qaytim:</span>
-                <span>{fmtSom(change)}</span>
               </div>
             )}
           </div>
