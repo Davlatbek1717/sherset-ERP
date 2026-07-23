@@ -95,6 +95,9 @@ export interface ListViewProps<T> {
   rows: T[];
   keyField: keyof T;
   onRowClick?: (row: T) => void;
+  // Sherset KEEP (counterparties row-hover) — B3
+  onRowMouseEnter?: (row: T) => void;
+  onRowMouseLeave?: () => void;
   rowTestId?: (row: T) => string | undefined;
   /** Per-row hover actions (⋮ menu) rendered in the trailing cell. Forwarded to DataTable. */
   rowActions?: (row: T) => React.ReactNode;
@@ -318,6 +321,8 @@ export function ListView<T extends object>({
   rows,
   keyField,
   onRowClick,
+  onRowMouseEnter,
+  onRowMouseLeave,
   rowTestId,
   rowActions,
   rowClassName,
@@ -758,6 +763,8 @@ export function ListView<T extends object>({
               rows={rows}
               keyField={keyField}
               onRowClick={onRowClick}
+              onRowMouseEnter={onRowMouseEnter}
+              onRowMouseLeave={onRowMouseLeave}
               // moysklad parity: every list row opens its document on click anywhere
               // in the row (not just the № link). ListView is the list-page pattern,
               // so this is always on; DataTable falls back to the row's primary <a>

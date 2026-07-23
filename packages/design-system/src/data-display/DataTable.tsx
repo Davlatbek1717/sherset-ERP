@@ -36,6 +36,10 @@ export interface DataTableProps<T> {
   rows: T[];
   keyField: keyof T;
   onRowClick?: (row: T) => void;
+  // Sherset KEEP (counterparties/debts) — B3
+  onRowMouseEnter?: (row: T) => void;
+  onRowMouseLeave?: () => void;
+  headerTone?: 'default' | 'brand';
   /**
    * moysklad parity: clicking ANYWHERE on the row (not just the № link) opens the
    * document. When true and no `onRowClick` is set, a click on the row body
@@ -151,6 +155,9 @@ export function DataTable<T extends object>({
   rows,
   keyField,
   onRowClick,
+  onRowMouseEnter,
+  onRowMouseLeave,
+  headerTone = 'default',
   rowClickOpensPrimaryLink,
   rowTestId,
   rowActions,
@@ -333,7 +340,10 @@ export function DataTable<T extends object>({
         >
           <thead
             className={cn(
-              'bg-[var(--ms-bg-muted)]',
+              // Sherset KEEP (debts headerTone) — B3
+              headerTone === 'brand'
+                ? 'border-[var(--ms-thead-border)] border-b-2 bg-[var(--ms-thead-bg)] font-semibold text-[var(--ms-thead-text)]'
+                : 'bg-[var(--ms-bg-muted)]',
               // fill mode: pin the header to the top of the internal scroll box
               // so column titles stay visible while the rows scroll (moysklad
               // grid parity).
@@ -539,6 +549,8 @@ export function DataTable<T extends object>({
                     key={rowKey}
                     data-test-id={rowTestId?.(row)}
                     data-selected={isSelected || undefined}
+                    onMouseEnter={onRowMouseEnter ? () => onRowMouseEnter(row) : undefined}
+                    onMouseLeave={onRowMouseLeave}
                     onClick={
                       rowNavigable
                         ? (e) => {
