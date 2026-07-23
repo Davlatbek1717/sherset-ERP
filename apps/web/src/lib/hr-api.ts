@@ -170,6 +170,10 @@ export interface HrAttendanceRow {
   editedAt: string | null;
   notes: string | null;
   createdAt: string;
+  // GPS-davomat columns (present on all rows via defaults)
+  lateMinutes?: number;
+  source?: string; // 'auto_gps' | 'manual'
+  autoClosed?: boolean;
 }
 
 export interface HrAttendanceReportFilter {
@@ -685,6 +689,152 @@ export const hrTelegramAccountApi = {
     api.post<{ ok: boolean; codeSent: boolean }>('/hr/telegram-accounts/login/resend', {
       loginSessionId,
     }),
+};
+
+// ─── Davomat (GPS attendance) API ──────────────────────────────────────
+
+export type DavomatStatus = 'not_arrived' | 'at_work' | 'left';
+export type AttendanceDayStatus = 'present' | 'late' | 'absent' | 'dayoff';
+
+export interface DavomatPingInput {
+  lat: number;
+  lng: number;
+  accuracy: number;
+}
+export interface DavomatPingResult {
+  accepted: boolean;
+  reason: 'accuracy' | 'jump' | 'not_opted_in' | 'no_location' | null;
+  inside: boolean;
+  status: DavomatStatus;
+  decision: 'KELDI' | 'KETDI' | 'NONE';
+  attendance: { checkInTime: string; checkOutTime: string | null; lateMinutes: number } | null;
+}
+export interface DavomatWorkLocationLite {
+  id: string;
+  name: string;
+  lat: number;
+  lng: number;
+  radiusMeters: number;
+}
+export interface DavomatDaySchedule {
+  startTime: string;
+  endTime: string;
+  isDayOff: boolean;
+}
+export interface DavomatMyToday {
+  optIn: boolean;
+  workLocation: DavomatWorkLocationLite | null;
+  schedule: DavomatDaySchedule | null;
+  today: {
+    checkInTime: string;
+    checkOutTime: string | null;
+    lateMinutes: number;
+    source: string;
+    autoClosed: boolean;
+  } | null;
+  status: DavomatStatus;
+}
+
+export const hrDavomatApi = {
+  ping: (data: DavomatPingInput) => api.post<DavomatPingResult>('/hr/attendance/ping', data),
+  myToday: () => api.get<DavomatMyToday>('/hr/attendance/my/today'),
+  optIn: (optIn: boolean) => api.post<{ optIn: boolean }>('/hr/attendance/my/opt-in', { optIn }),
+};
+
+// ─── Work-location (filial) admin API ──────────────────────────────────
+
+export interface HrWorkLocation {
+  id: string;
+  name: string;
+  lat: number;
+  lng: number;
+  radiusMeters: number;
+  archived: boolean;
+  employeeCount: number;
+}
+export interface HrWorkLocationInput {
+  name: string;
+  lat: number;
+  lng: number;
+  radiusMeters: number;
+}
+
+export const hrWorkLocationApi = {
+  list: () => api.get<HrWorkLocation[]>('/hr/work-locations'),
+  create: (data: HrWorkLocationInput) => api.post<HrWorkLocation>('/hr/work-locations', data),
+  update: (id: string, data: Partial<HrWorkLocationInput>) =>
+    api.put<HrWorkLocation>(`/hr/work-locations/${id}`, data),
+  remove: (id: string) => api.delete<{ ok: true }>(`/hr/work-locations/${id}`),
+};
+
+// ─── Employee schedule + attendance-config API ─────────────────────────
+
+export interface HrWeekDay {
+  weekday: number; // 0=Sun..6=Sat
+  startTime: string;
+  endTime: string;
+  isDayOff: boolean;
+}
+export interface HrAttendanceConfigInput {
+  workLocationId: string | null;
+  attendanceOptIn: boolean;
+}
+
+export const hrScheduleApi = {
+  getWeek: (employeeId: string) => api.get<HrWeekDay[]>(`/hr/employees/${employeeId}/schedule`),
+  replaceWeek: (employeeId: string, days: HrWeekDay[]) =>
+    api.put<{ count: number }>(`/hr/employees/${employeeId}/schedule`, { days }),
+  setConfig: (employeeId: string, cfg: HrAttendanceConfigInput) =>
+    api.patch<HrAttendanceConfigInput>(`/hr/employees/${employeeId}/attendance-config`, cfg),
+};
+
+// ─── Davomat report API (HR-facing) ────────────────────────────────────
+
+export interface DavomatMonthlyRow {
+  date: string;
+  checkIn: string | null;
+  checkOut: string | null;
+  lateMinutes: number;
+  status: AttendanceDayStatus;
+}
+export interface DavomatMonthlyEmployee {
+  employeeId: string;
+  name: string;
+  rows: DavomatMonthlyRow[];
+  presentDays: number;
+  lateDays: number;
+  absentDays: number;
+  dayOffDays: number;
+  lateMinutesTotal: number;
+}
+export interface DavomatMonthlyReport {
+  yearMonth: string;
+  employees: DavomatMonthlyEmployee[];
+}
+export interface DavomatLivePresent {
+  id: string;
+  employeeId: string;
+  name: string;
+  checkInTime: string;
+  checkOutTime: string | null;
+  lateMinutes: number;
+  source: string;
+  autoClosed: boolean;
+  status: 'at_work' | 'left';
+}
+export interface DavomatLiveBoard {
+  present: DavomatLivePresent[];
+  absent: Array<{ employeeId: string; name: string }>;
+}
+
+export const hrDavomatReportApi = {
+  monthly: (filter: { yearMonth: string; employeeId?: string }) =>
+    api.get<DavomatMonthlyReport>(
+      `/hr/attendance/report/monthly${toQueryString(filter as Record<string, unknown>)}`,
+    ),
+  live: () => api.get<DavomatLiveBoard>('/hr/attendance/live'),
+  monthlyXlsxUrl: (filter: { yearMonth: string; employeeId?: string }) =>
+    `/hr/attendance/report/monthly.xlsx${toQueryString(filter as Record<string, unknown>)}`,
 };
 
 export type { HrAccessLevel, HrPermissionRow };
