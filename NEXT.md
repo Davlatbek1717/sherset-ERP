@@ -331,9 +331,14 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > filtr label/order · Счёт filtr field · filter-panel order) · (g) BE-needed 32 (list filtrlar · custom-states subsystem ·
 > related-docs graph · archive/restore · task/files panel · pozitsiya-data plumbing) · (h) Маркировка = QISM 4.
 > **🔴 needs-live-capture (2, foydalanuvchidan):** org «Перечисление» sub-selector semantikasi · «…» overflow menyu.
-> **⚡ PERF WORKFLOW (`demand-perf-audit`, woe70o25i) hali ishlayapti** — o'lchandi: dev cold-TTFB ~1250ms = `next dev`
-> route-kompilyatsiya (prod'да yo'q; warm ~210ms), API <55ms (backend tez), JS dev-inflated. Tugagach real kod-perf
-> fix'lar backlog'i keladi → qo'llanadi. **⚠️ NEXT.md ~910 qator — arxivlash kerak.**
+> **⚡ PERF WORKFLOW (`demand-perf-audit`, woe70o25i) TUGADI** (46 agent): 33 prod-confirmed (aksari volume-conditional —
+> seed'да sezilmas, yuzlab-minglab qatорда kuchayadi), 1 dev-only, 3 rad. **Halol:** sezilgan lag'ning kattasi `next dev`
+> route-kompilyatsiya (cold TTFB ~1250ms, prod'да YO'Q; warm ~210ms), API <55ms. Backlog: **`docs/audits/_ERP-perf-backlog.md`**
+> (`2ef2f1b`). **✅ #1 quick-win QO'LLANDI (`f7161ee`):** `keepPreviousData` global query-client'да → ~90 list sahifада
+> pagination/sort/filtr/qidiruvда skeleton-flash + row-remount YO'Q. **⏭️ Qolgan perf quick-win:** BS-1 (`sideEffects:false` +
+> `optimizePackageImports`, prod-build verify) · DB-1/2 (Product/Counterparty `[accountId,createdAt]` index — migration,
+> parallel-sessiya tugagach) · BE-1 (counterparty list Promise.all de-waterfall) · RR-1 (PositionTable row-memo, med-risk) ·
+> list-row memo · FK/organizationId indexlar. **⚠️ NEXT.md ~920 qator — arxivlash kerak.**
 
 > **🔬✅ 2026-07-23g (SALES-RETURNS «Возвраты покупателей» — QISM 1 Task 1: /new pozitsiya-qator 1:1 (N4-N7))**
 > *(Parallel demand sessiyasi 2026-07-23f custom-attrs qildi; mening diff'im path-cheklangan — faqat
