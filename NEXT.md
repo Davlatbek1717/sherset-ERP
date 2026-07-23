@@ -305,6 +305,26 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🟢✅ 2026-07-23i (DEMAND — 3 QARORDAN 2 tasi BAJARILDI + perf #1, hammasi browser-verified)**
+> 2026-07-23h qarorlarini ijro etish (davomi):
+> **✅ #1 buyPrice → Себест.единицы + Себестоимость + real Прибыль (`74e8e58`):** MUHIM — **BE o'zgarishi SHART EMAS
+> edi**: `/products` buyPrice'ni allaqachon qaytaradi (strip faqat omborchi-skan endpoint'larда — `getScanInfo`/
+> `getCellContents`), FE fetcher tashlab yuborardi. `DocPositionRow.buyPriceMinor` (optional) qo'shildi; shared
+> PositionTable cost-cell'lari uni afzal ko'radi, yo'q bo'lsa `priceMinor`ga tushadi → **Enter (Оприходование) xulqi
+> BAYT-BIR XIL**. demand/new pozitsiyaga buyPrice tashiydi, 2 cost-ustun (Сумма'dan keyin) + real Прибыль = net −
+> Σ(buyPrice×qty). **Live smoke:** iPhone (buy 12M, sale 15M) → Себест 12M, Прибыль 1 392 857.14 ✅. Tannarx endi
+> /products o'quvchilarга ko'rinadi (user qabul qildi).
+> **✅ #2 list'dan «Сумма от/до» + «Заказ покупателя» FILTRlari olib tashlandi (`b6f3dd4`)** (strict 1:1) — grid ustun +
+> footer saqlandi. Live smoke: filtrlar yo'q, ro'yxat ishlaydi ✅.
+> **🔴 #3 «Импорт» — JONLI CAPTURE KUTMOQDA (user qarori 2026-07-23i):** static capture'да faqat yopiq «Импорт ▾»
+> tugma; u ochadigan dialog/oqim (format/ustun-mapping) suratда YO'Q + 2026-06-24 «moysklad'да CSV import yo'q»
+> qaroriga zid. Working `importItems` hech qайси sahifада yo'q (2026-06-24'да olib tashlangan). User moysklad Импорт
+> dialogини suratга oladi → o'shанда 1:1 quriladi. (`onImportPositions` handler demand/new'да bor, faqat UI yo'q.)
+> **⏭️ KEYINGI (qaror kerak emas):** /new qolgan FE (Адрес structured popup · Накладные расходы totals-footer'ga ·
+> Внешний код toggle · Другие поля order) · **detail 9 FE** · **list 5 FE** · perf quick-win'lar (DB index/tree-shake/
+> de-waterfall/PositionTable-memo) · keyin 32 BE · Маркировка(QISM4) · QISM 5 QA. Backlog: `_demand-1to1-GROUNDED-backlog.md`.
+> ⚠️ **NEXT.md ~940 qator — ARXIVLASH shart** (keyingi sessiya `docs/audits/_ARCHIVE-NEXT-*.md`ga eski entry'larni ko'chirsin).
+
 > **🟢🚀 2026-07-23h (DEMAND «Отгрузки» TO'LIQ 1:1 — WORKFLOW-AUDIT + /new header batch + 3 QAROR olindi)**
 > Foydalanuvchi: «shu bo'lim 100% moysklad bo'lmaguncha to'xtamay workflow bilan ishla; keyin jonli moyskladga
 > kirib har bir funksiya/dropdown'ni tekshirib bajarasan». **Halol chegara:** jonli moysklad'ga men kira olmayman
