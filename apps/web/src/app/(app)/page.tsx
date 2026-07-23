@@ -5,18 +5,19 @@ import { api } from '@/lib/api-client';
 import { Button, Container, StickyHScroll, formatMoney } from '@moysklad/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useLocale, useTranslations } from 'next-intl';
+import dynamic from 'next/dynamic';
 import { useState } from 'react';
-import {
-  Bar,
-  CartesianGrid,
-  ComposedChart,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
+
+// recharts (~150-200 kB) dynamically imported → off the dashboard's initial
+// bundle; the charts stream in client-side with a skeleton. Perf audit 2026-07-23.
+const SalesLineChart = dynamic(() => import('./_dashboard-charts').then((m) => m.SalesLineChart), {
+  ssr: false,
+  loading: () => <Skeleton className="h-full w-full" />,
+});
+const CashComposedChart = dynamic(
+  () => import('./_dashboard-charts').then((m) => m.CashComposedChart),
+  { ssr: false, loading: () => <Skeleton className="h-full w-full" /> },
+);
 
 // ---------------------------------------------------------------------------
 // Types — mirror DashboardResult from apps/api/src/modules/report/dashboard.schema.ts
@@ -421,57 +422,7 @@ function SalesSection({
           <SalesSubBlock heading={periodHeading} block={data?.sales.period} loading={loading} />
         </div>
         <div className="h-[200px] w-full">
-          {loading ? (
-            <Skeleton className="h-full w-full" />
-          ) : (
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData} margin={{ top: 10, right: 10, bottom: 0, left: 0 }}>
-                <CartesianGrid
-                  strokeDasharray="3 3"
-                  stroke="var(--ms-border-default)"
-                  vertical={false}
-                />
-                <XAxis
-                  dataKey="label"
-                  tick={{ fontSize: 11, fill: 'var(--ms-text-muted)' }}
-                  axisLine={{ stroke: 'var(--ms-border-default)' }}
-                  tickLine={false}
-                />
-                <YAxis
-                  tick={{ fontSize: 11, fill: 'var(--ms-text-muted)' }}
-                  axisLine={{ stroke: 'var(--ms-border-default)' }}
-                  tickLine={false}
-                  width={40}
-                />
-                <Tooltip
-                  formatter={(value) => {
-                    // recharts types `value` as ValueType (number | string |
-                    // (number|string)[] | undefined). On our line charts
-                    // it's always a single number, so narrow defensively.
-                    const n = typeof value === 'number' ? value : 0;
-                    return [`${n.toLocaleString('uz-UZ')} сум`, ''];
-                  }}
-                  contentStyle={{
-                    background: 'var(--ms-bg-surface)',
-                    border: '1px solid var(--ms-border-default)',
-                    fontSize: '12px',
-                  }}
-                />
-                <Line
-                  // moysklad parity: their sales chart uses straight
-                  // line segments (chord, not monotone Bézier) and the
-                  // teal stroke #3e9f9f. The smoother curve hid daily
-                  // spikes that matter for the comparison view.
-                  type="linear"
-                  dataKey="sum"
-                  stroke="#3e9f9f"
-                  strokeWidth={2}
-                  dot={false}
-                  activeDot={{ r: 4 }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          )}
+          {loading ? <Skeleton className="h-full w-full" /> : <SalesLineChart data={chartData} />}
         </div>
       </div>
     </section>
@@ -655,52 +606,7 @@ function MoneySection({
             {loading ? (
               <Skeleton className="h-full w-full" />
             ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                {/* Money chart — moysklad parity (exact same render):
-                    - Приход: pastel-green BARS (fill #daf3c0, stroke #9fcf6a)
-                    - Расход: pastel-red BARS  (fill #ffabab, stroke #d04a49)
-                    - Остаток: medium-blue LINE (#6ab0cf)
-                    Bars + line on the same axis via ComposedChart. */}
-                <ComposedChart data={chartData} margin={{ top: 10, right: 10, bottom: 0, left: 0 }}>
-                  <CartesianGrid
-                    strokeDasharray="3 3"
-                    stroke="var(--ms-border-default)"
-                    vertical={false}
-                  />
-                  <XAxis
-                    dataKey="label"
-                    tick={{ fontSize: 11, fill: 'var(--ms-text-muted)' }}
-                    axisLine={{ stroke: 'var(--ms-border-default)' }}
-                    tickLine={false}
-                  />
-                  <YAxis
-                    tick={{ fontSize: 11, fill: 'var(--ms-text-muted)' }}
-                    axisLine={{ stroke: 'var(--ms-border-default)' }}
-                    tickLine={false}
-                    width={40}
-                  />
-                  <Tooltip
-                    formatter={(value) => {
-                      const n = typeof value === 'number' ? value : 0;
-                      return [`${n.toLocaleString('uz-UZ')} сум`, ''];
-                    }}
-                    contentStyle={{
-                      background: 'var(--ms-bg-surface)',
-                      border: '1px solid var(--ms-border-default)',
-                      fontSize: '12px',
-                    }}
-                  />
-                  <Bar dataKey="inflow" fill="#daf3c0" stroke="#9fcf6a" />
-                  <Bar dataKey="outflow" fill="#ffabab" stroke="#d04a49" />
-                  <Line
-                    type="linear"
-                    dataKey="balance"
-                    stroke="#6ab0cf"
-                    strokeWidth={2}
-                    dot={false}
-                  />
-                </ComposedChart>
-              </ResponsiveContainer>
+              <CashComposedChart data={chartData} />
             )}
           </div>
           {/* Inline legend — recharts' built-in <Legend> wraps awkwardly,
