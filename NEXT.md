@@ -305,6 +305,21 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🌐 2026-07-23l (YANGI YO'NALISH — VPS «moysklad» fork → Sherset Продажи port · recon+analiz+reja · `1e4b46a`)**
+> Foydalanuvchi yangi vazifa berdi: VPS `/var/www/moysklad` (climartgroup.uz, root 45.67.216.61) — bu **Sherset bilan
+> bir loyiha oilasi (moysklad-clone), alohida diverged fork** (`Biznesjon-Official/moysklad`, faol). Foydalanuvchi qarori
+> (3 savol bilan tasdiqlandi): **VPS Продажи bo'limi Sherset'ni wholesale almashtirsin, backend+DB bilan** — Sherset'ning
+> o'z 1:1 ishlari (sales-returns/demands) ustidan ham. **⚠️ Bu salesreturn 1:1 QISM ishini (2026-07-23e/g) SUPERSEDES qiladi.**
+> **SSH kirish O'RNATILDI:** `ssh climart` (kalit `~/.ssh/climart_vps` root@45.67.216.61'da, `~/.ssh/config`'da; parolsiz).
+> **Server FAQAT o'qiladi** (git archive bilan kod olish; DB/boshqa loyihalarga TEGMA). VPS full archive ~3GB → maqsadli yo'llar.
+> **Farq-tahlil:** HAR Продажи FE fayli farq qiladi; VPS TO'LIQROQ (demands 1775>1445, sales-returns/new 1732>1151,
+> retail 704>>5-stub; commission-reports VPS-only new/new-in). Shared-infra ham divergent LEKIN Sherset kattaroq
+> (api-client 247>177, schema 9356>8939) → VPS'nikiga almashtirilMAYDI; VPS sahifalari **Sherset infra'siga moslashtiriladi**.
+> **⏭️ KEYINGI = QISM 1 (customer-orders klasteri)** — reja: `docs/superpowers/plans/2026-07-23-vps-prodaji-port.md`.
+> **Worktree-izolyatsiya MAJBURIY** (parallel sessiya main'da demand ustida — yo'l kesishmasi). Har klaster = FE(page+[id]+new)
+> + API modul + kerakli sxema + gate(tc0/biome0/i18n) + branch. Tartib: customer-orders → invoices/factures →
+> commission/consignments → demands → sales-returns → retail. **HALOL:** kod hali portlanmagan — faqat recon+reja.
+
 > **🟢 2026-07-23k (DEMAND list QISM 3 — Грузополучатель ustun+filtr + Товар/группа filtr · Phase-1 · `b2fe49f`)**
 > Ro'yxatni moysklad `demand-01-list` tomon: **L1** «Грузополучатель» ustuni (list `include`ga `consignee`;
 > Контрагент↔Организация orasida, default-visible) · **L4** «Грузополучатель» filtri (`consigneeId` param +
