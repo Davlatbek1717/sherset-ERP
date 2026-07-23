@@ -580,6 +580,7 @@
     "payment_status": "Оплата",
     "shipped_status": "Отгружено",
     "product_or_group": "Товар или группа",
+    "consignee": "Грузополучатель",
     "store": "Склад",
     "project": "Проект",
     "agent": "Контрагент",

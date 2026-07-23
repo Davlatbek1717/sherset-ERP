@@ -56,6 +56,8 @@ interface DemandRow {
   description: string | null;
   moment: string;
   agent: { id: string; name: string; legalTitle: string | null };
+  // moysklad «Грузополучатель» list column — consignee counterparty.
+  consignee: { id: string; name: string } | null;
   organization: { id: string; name: string };
   store: { id: string; name: string };
   owner: { id: string; name: string } | null;
@@ -131,6 +133,8 @@ export default function DemandsPage() {
     | 'orgAccount'
     | 'salesChannel'
     | 'group'
+    | 'consignee'
+    | 'product'
     | 'massEditOwner'
     | 'massEditProject'
   >(null);
@@ -163,6 +167,12 @@ export default function DemandsPage() {
     salesChannelLabel?: string;
     groupId?: string;
     groupLabel?: string;
+    // «Грузополучатель» (consignee) + «Товар или группа» (product) — moysklad
+    // filter parity (list capture demand-01-list).
+    consigneeId?: string;
+    consigneeLabel?: string;
+    productId?: string;
+    productLabel?: string;
     // tri-state flag filters ('true' | 'false')
     applicable?: 'true' | 'false';
     printed?: 'true' | 'false';
@@ -189,6 +199,8 @@ export default function DemandsPage() {
   if (extFilter.agentAccountId) paramsRecord.agentAccountId = extFilter.agentAccountId;
   if (extFilter.salesChannelId) paramsRecord.salesChannelId = extFilter.salesChannelId;
   if (extFilter.groupId) paramsRecord.groupId = extFilter.groupId;
+  if (extFilter.consigneeId) paramsRecord.consigneeId = extFilter.consigneeId;
+  if (extFilter.productId) paramsRecord.productId = extFilter.productId;
   if (extFilter.organizationAccountId)
     paramsRecord.organizationAccountId = extFilter.organizationAccountId;
   if (extFilter.applicable) paramsRecord.applicable = extFilter.applicable;
@@ -291,6 +303,7 @@ export default function DemandsPage() {
     'moment',
     'store',
     'agent',
+    'consignee',
     'organization',
     'sum',
     // moysklad shows «Валюта» as a default grid column (right after «Сумма»).
@@ -360,6 +373,17 @@ export default function DemandsPage() {
       ),
       cellText: (r: DemandRow) =>
         r.agent?.legalTitle ? `${r.agent.name} (${r.agent.legalTitle})` : (r.agent?.name ?? ''),
+    },
+    {
+      // moysklad parity: «Грузополучатель» column, shown between Контрагент
+      // and Организация on /demand (list capture demand-01-list).
+      key: 'consignee',
+      header: tFields('consignee'),
+      width: '200px',
+      cell: (d) => (
+        <span className="max-w-[200px] truncate text-sm">{d.consignee?.name ?? '—'}</span>
+      ),
+      cellText: (r: DemandRow) => r.consignee?.name ?? '',
     },
     {
       // moysklad parity: «Организация» column on /demand. Already in
@@ -690,6 +714,68 @@ export default function DemandsPage() {
                   setCursor(undefined);
                 }}
                 testId="filter-agent"
+              />
+            </InlineFilterPanel.Field>
+            {/* 5b. Грузополучатель — consignee counterparty (moysklad parity). */}
+            <InlineFilterPanel.Field label={tFilters('consignee')} expandable>
+              <CatalogPickerField
+                value={
+                  extFilter.consigneeId
+                    ? {
+                        id: extFilter.consigneeId,
+                        label: extFilter.consigneeLabel ?? extFilter.consigneeId,
+                      }
+                    : null
+                }
+                placeholder=""
+                onPick={() => setPickerOpen('consignee')}
+                onClear={() => {
+                  setExtFilter({
+                    ...extFilter,
+                    consigneeId: undefined,
+                    consigneeLabel: undefined,
+                  });
+                  setCursor(undefined);
+                }}
+                testId="filter-consignee"
+              />
+            </InlineFilterPanel.Field>
+            {/* 5c. Товар или группа — narrows to demands containing this product. */}
+            <InlineFilterPanel.Field label={tFilters('product_or_group')} expandable>
+              <CatalogPickerField
+                value={
+                  extFilter.productId
+                    ? {
+                        id: extFilter.productId,
+                        label: extFilter.productLabel ?? extFilter.productId,
+                      }
+                    : null
+                }
+                placeholder=""
+                onPick={() => setPickerOpen('product')}
+                inlineFetcher={async (q): Promise<PickerItem[]> => {
+                  const r = await api.get<{
+                    items: { id: string; name: string; code: string | null }[];
+                  }>(`/products?search=${encodeURIComponent(q)}&limit=20`);
+                  return r.items.map((x) => ({
+                    id: x.id,
+                    primary: x.name,
+                    secondary: x.code ?? undefined,
+                  }));
+                }}
+                onInlineSelect={(item) => {
+                  setExtFilter({
+                    ...extFilter,
+                    productId: item.id,
+                    productLabel: String(item.primary),
+                  });
+                  setCursor(undefined);
+                }}
+                onClear={() => {
+                  setExtFilter({ ...extFilter, productId: undefined, productLabel: undefined });
+                  setCursor(undefined);
+                }}
+                testId="filter-product"
               />
             </InlineFilterPanel.Field>
             {/* 6. Группа контрагента */}
@@ -1249,6 +1335,50 @@ export default function DemandsPage() {
             ...extFilter,
             groupId: item.id,
             groupLabel: String(item.primary),
+          });
+          setCursor(undefined);
+        }}
+      />
+      {/* «Грузополучатель» filter picker — consignee counterparty. */}
+      <CatalogPicker
+        open={pickerOpen === 'consignee'}
+        onClose={() => setPickerOpen(null)}
+        title={tFields('consignee')}
+        fetcher={async (q): Promise<PickerItem[]> => {
+          const r = await api.get<{ items: { id: string; name: string }[] }>(
+            `/counterparties?search=${encodeURIComponent(q)}&limit=20`,
+          );
+          return r.items.map((x) => ({ id: x.id, primary: x.name }));
+        }}
+        onSelect={(item) => {
+          setExtFilter({
+            ...extFilter,
+            consigneeId: item.id,
+            consigneeLabel: String(item.primary),
+          });
+          setCursor(undefined);
+        }}
+      />
+      {/* «Товар или группа» filter picker — product browse modal. */}
+      <CatalogPicker
+        open={pickerOpen === 'product'}
+        onClose={() => setPickerOpen(null)}
+        title={tFilters('product_or_group')}
+        fetcher={async (q): Promise<PickerItem[]> => {
+          const r = await api.get<{ items: { id: string; name: string; code: string | null }[] }>(
+            `/products?search=${encodeURIComponent(q)}&limit=20`,
+          );
+          return r.items.map((x) => ({
+            id: x.id,
+            primary: x.name,
+            secondary: x.code ?? undefined,
+          }));
+        }}
+        onSelect={(item) => {
+          setExtFilter({
+            ...extFilter,
+            productId: item.id,
+            productLabel: String(item.primary),
           });
           setCursor(undefined);
         }}

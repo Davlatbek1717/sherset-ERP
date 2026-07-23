@@ -101,6 +101,8 @@ export class DemandService {
       ...(filter.cursor ? { cursor: { id: filter.cursor }, skip: 1 } : {}),
       include: {
         agent: { select: { id: true, name: true, legalTitle: true } },
+        // moysklad «Грузополучатель» list column — consignee counterparty.
+        consignee: { select: { id: true, name: true } },
         organization: { select: { id: true, name: true, legalTitle: true } },
         store: { select: { id: true, name: true } },
         owner: { select: { id: true, name: true } },
@@ -1325,6 +1327,10 @@ export class DemandService {
         : {}),
       ...(filter.storeId ? { storeId: filter.storeId } : {}),
       ...(filter.customerOrderId ? { customerOrderId: filter.customerOrderId } : {}),
+      // «Грузополучатель» — consignee counterparty (moysklad filter parity).
+      ...(filter.consigneeId ? { consigneeId: filter.consigneeId } : {}),
+      // «Товар или группа» — narrows to demands whose positions carry this product.
+      ...(filter.productId ? { positions: { some: { productId: filter.productId } } } : {}),
       ...(filter.projectId ? { projectId: filter.projectId } : {}),
       ...(filter.contractId ? { contractId: filter.contractId } : {}),
       ...(filter.salesChannelId ? { salesChannelId: filter.salesChannelId } : {}),

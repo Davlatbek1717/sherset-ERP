@@ -658,6 +658,7 @@
     "payment_status": "To'lov",
     "shipped_status": "Yuk berildi",
     "product_or_group": "Mahsulot yoki guruh",
+    "consignee": "Yuk qabul qiluvchi",
     "store": "Ombor",
     "project": "Loyiha",
     "agent": "Kontragent",

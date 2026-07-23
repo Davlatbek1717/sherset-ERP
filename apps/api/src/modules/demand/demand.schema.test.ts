@@ -227,8 +227,16 @@ describe('DemandFilterSchema', () => {
     expect(parsed.customerOrderId).toBe(UUID);
   });
 
+  it('accepts «Грузополучатель» (consigneeId) + «Товар или группа» (productId) filters', () => {
+    const parsed = DemandFilterSchema.parse({ consigneeId: UUID, productId: UUID });
+    expect(parsed.consigneeId).toBe(UUID);
+    expect(parsed.productId).toBe(UUID);
+  });
+
   it('rejects a non-uuid FK picker value', () => {
     expect(() => DemandFilterSchema.parse({ projectId: 'not-a-uuid' })).toThrow();
+    expect(() => DemandFilterSchema.parse({ consigneeId: 'nope' })).toThrow();
+    expect(() => DemandFilterSchema.parse({ productId: 'nope' })).toThrow();
   });
 
   it('accepts «Оплата» paymentStatus enum', () => {

@@ -145,6 +145,10 @@ export const DemandFilterSchema = z.object({
   organizationAccountId: z.string().uuid().optional(),
   storeId: z.string().uuid().optional(),
   customerOrderId: z.string().uuid().optional(),
+  /** «Грузополучатель» — Demand.consigneeId (consignee counterparty). */
+  consigneeId: z.string().uuid().optional(),
+  /** «Товар или группа» — narrows to demands whose positions contain this product. */
+  productId: z.string().uuid().optional(),
   /** «Проект» — Demand.projectId. */
   projectId: z.string().uuid().optional(),
   /** «Договор» — Demand.contractId. */
