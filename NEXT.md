@@ -310,8 +310,10 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > (vizual+funksional), 3 sahifa (ro'yxat/detal/yaratish)**. Brainstorming → sahifama-sahifa, capture-birinchi yondashuv.
 > **Bajarilgan (commit):** spec `4972867` · 3 moysklad capture+gap-backlog `e5b9928` · /new reja `9ecd782` · **/new
 > vizual delta+feasibility `8dc8bc0`**. Hujjatlar: `docs/superpowers/specs/2026-07-23-demand-section-1to1-design.md` ·
-> `docs/superpowers/plans/2026-07-23-demand-new-1to1.md` · `docs/audits/demands-live-2026-07-23/` (capture-extract'lar +
-> `_GAP-BACKLOG.md` + `_new-visual-delta.md`; HTML/PNG gitignore'da — real mijoz PII).
+> **`docs/superpowers/plans/2026-07-23-demand-section-1to1-ROADMAP.md` (QISMLARGA BO'LINGAN — har qism = tayyor bosqich,
+> tartib 1A→1B→2A→2B→3→4→5, «100%» faqat QISM 5 QA'dan keyin)** · `docs/superpowers/plans/2026-07-23-demand-new-1to1.md`
+> (QISM 1 detali) · `docs/audits/demands-live-2026-07-23/` (capture-extract'lar + `_GAP-BACKLOG.md` + `_new-visual-delta.md`;
+> HTML/PNG gitignore'da — real mijoz PII).
 > **⚙️ DEV-MUHIT ISSIQ QOLDIRILDI (keyingi sessiya arzon davom etsin):** postgres **5432** (`D:\pgdata-sherset` — yangi
 > user-space klaster, toza reset; Windows service `postgresql-x64-18` DISABLED, admin kerak → user-space ishlatildi;
 > pg_hba = trust localhost) · migrate deploy 170 · seed · `pnpm dev` (web `:3100` + api `:4000`) · login
