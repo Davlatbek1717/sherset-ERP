@@ -305,6 +305,22 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🟢✅ 2026-07-23d (DEMAND «Отгрузки» — QISM 1B QISMAN (2/5) · `/new` position-economics browser-verified)**
+> `/new` pozitsiya/totals moysklad'га yaqinlashtirildi (`8a07440`, yagona fayl `demands/new/page.tsx`):
+> **(1) «Прибыль» qatori** — `DocumentTotalsPanel profitMinor={0n}` (yangi otgruzka DOIM qoralama → COGS
+> o'tkazishда FIFO bilan ma'lum → foyda 0,00 = moysklad create parity), «Кол-во» olib tashlandi.
+> **(2) «Остаток» (Qoldiq) jonli kolonka** — mavjud stock-query `rowsWithStock` orqali har qatorga merge
+> (derived, jonli), Кол-во'dan keyin; nom-katak soddalashtirildi. **Live smoke** (`:3100`): bo'sh totals
+> «Прибыль: 0,00» (Кол-во YO'Q) · UzKabel VVG 2x2.5 → «Qoldiq: 140» (real ombor qoldig'i). Gate: web tc0 ·
+> biome0 · i18n `position_cols.stock` ru+uz · demand testlar 15/15. Audit: `docs/audits/_demand-new-1B.audit.md`.
+> **⏭️ KEYINGI = 1B qolgan 3 band:** «Грузоотправитель» blok-sarlavha (FE) · custom-attrs editor create'да (FE) ·
+> **«Ячейка» (bin)** — ⚠️ `DemandPosition`'да `cell` ustun YO'Q → BE schema+migration kerak (§wiring protokoli,
+> markaziy commit alohida). **DEFER:** «Себест. единицы» — /products `buyPrice`'ni QASDDAN strip qiladi +
+> qoralamада FIFO-cost yo'q (blocked). **Marking = QISM 4.** Reja: `2026-07-23-demand-new-1to1.md` (Task 2/3/5).
+> **⚙️ DEV ISSIQ:** postgres 5432 (`D:\pgdata-sherset`, bu sessiya `postgres.exe -D` bilan qayta ishga tushirdi) ·
+> web :3100 + api :4000 · login `admin@demo.local`/`admin123`. Playwright chrome bu sessiyada ishlatildi.
+> ⚠️ **NEXT.md 890+ qator** — keyingi sessiya eski entry'larni `docs/audits/_ARCHIVE-NEXT-*.md`ga ko'chirsin.
+
 > **🟢✅ 2026-07-23c (DEMAND «Отгрузки» — QISM 1A VIZUAL MOS TUGADI · `/new` browser-verified · KEYINGI = 1B)**
 > *(Parallel sessiya shu payt 2026-07-23b sales-returns ishini qildi; mening diff'im path-cheklangan — faqat
 > `apps/web/src/app/(app)/demands/new/page.tsx` + demand audit doc.)*
