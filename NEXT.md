@@ -305,6 +305,25 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🟢🎯 2026-07-23 (DEMAND «Отгрузки» TO'LIQ 1:1 — DASTUR BOSHLANDI · Session-0 recon + Task 1 discovery TUGADI · KOD-FIX HALI YO'Q)**
+> Foydalanuvchi: «shu bo'limdagi barcha funksiyalar/hamma narsa moysklad bilan bir xil bo'lsin» — **to'liq 1:1
+> (vizual+funksional), 3 sahifa (ro'yxat/detal/yaratish)**. Brainstorming → sahifama-sahifa, capture-birinchi yondashuv.
+> **Bajarilgan (commit):** spec `4972867` · 3 moysklad capture+gap-backlog `e5b9928` · /new reja `9ecd782` · **/new
+> vizual delta+feasibility `8dc8bc0`**. Hujjatlar: `docs/superpowers/specs/2026-07-23-demand-section-1to1-design.md` ·
+> `docs/superpowers/plans/2026-07-23-demand-new-1to1.md` · `docs/audits/demands-live-2026-07-23/` (capture-extract'lar +
+> `_GAP-BACKLOG.md` + `_new-visual-delta.md`; HTML/PNG gitignore'da — real mijoz PII).
+> **⚙️ DEV-MUHIT ISSIQ QOLDIRILDI (keyingi sessiya arzon davom etsin):** postgres **5432** (`D:\pgdata-sherset` — yangi
+> user-space klaster, toza reset; Windows service `postgresql-x64-18` DISABLED, admin kerak → user-space ishlatildi;
+> pg_hba = trust localhost) · migrate deploy 170 · seed · `pnpm dev` (web `:3100` + api `:4000`) · login
+> **`admin@demo.local`/`admin123`**. Agar o'lgan bo'lsa: `& 'C:\Program Files\PostgreSQL\18\bin\postgres.exe' -D D:\pgdata-sherset -p 5432`
+> (Start-Process detached — pg_ctl PowerShell'da pipe-hang qiladi), keyin `pnpm dev`. Playwright profil-lock osilsa:
+> `mcp-chrome-ca8aa68` chrome-tree kill.
+> **KEYINGI = /new tuzatishlarni bajarish** (`2026-07-23-demand-new-1to1.md` reja, subagent-driven). Task-mapping
+> `_new-visual-delta.md` §C'da yangilangan. Eng arzon+qimmatli: pozitsiya i18n RU-leak (uz-locale'da ruscha sarlavha) ·
+> bin `{key:'cell'}` (DS qo'llaydi) · field-grid 3-ustun · «Прибыль» qatori (state buyPrice bilan kengaytir) ·
+> «Не оплачено» pill. **Marking (Маркировка) = ALOHIDA katta sub-project** (DS'da ustun yo'q). Keyin detal, keyin ro'yxat.
+> **HALOL:** hech qanday fix hali qilinmagan — bu faqat recon+discovery. Browser-cert bo'lgunча «done» YO'Q.
+
 > **🟢📢 2026-07-21b (UMUMIY SMS-TARQATMA — kontragent + qo'lda raqam, shablon bilan · Phase-2 browser-verified · DEPLOY YO'Q)**
 > Foydalanuvchi: qarzdorlardan tashqari ham SMS yuborish. **Yechim:** yangi `POST /sms/broadcast` — tanlangan
 > kontragentlar (ro'yxatdan checkbox) **+** qo'lda kiritilgan raqamlarga tayyor shablon bilan. **Backend:**
