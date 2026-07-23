@@ -21,15 +21,29 @@
 # Usage:  bash /var/www/sherset/deploy/deploy-smart.sh
 set -euo pipefail
 
+# Self-copy guard: this script lives in the repo it resets, and the
+# `git reset --hard` below rewrites tracked files (including THIS file) mid-run.
+# Re-exec from a temp copy so the running instance is immune to the reset.
+if [ "${DS_REEXEC:-}" != "1" ]; then
+  cp "$0" /tmp/sherset-deploy-run.sh
+  exec env DS_REEXEC=1 bash /tmp/sherset-deploy-run.sh "$@"
+fi
+
 APP_DIR=/var/www/sherset
 cd "$APP_DIR"
 
 step() { printf '\n\033[1;36m▶ %s\033[0m\n' "$*"; }
 
 BEFORE=$(git rev-parse HEAD)
-step "git pull (was $BEFORE)"
-# Merge (not --ff-only): the VPS may carry a live hotfix commit ahead of origin.
-git pull --no-edit
+step "fetch + reset --hard origin/main (was $BEFORE)"
+# The local repo is a SHALLOW clone (deep history not portable — 2026-07-20
+# migration), so each push to origin (Davlatbek1717/wareflow-erp) is a fresh
+# snapshot with UNRELATED history — `git pull` (merge) cannot fast-forward across
+# that. fetch + reset --hard moves the working tree to the new snapshot instead.
+# `git diff BEFORE AFTER` below still works: it compares TREES, not ancestry, so
+# the file-diff (and the build-skip decision) stays correct.
+git fetch origin main
+git reset --hard FETCH_HEAD
 AFTER=$(git rev-parse HEAD)
 
 if [ "$BEFORE" = "$AFTER" ]; then
