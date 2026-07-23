@@ -305,6 +305,25 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🟢✅ 2026-07-23c (DEMAND «Отгрузки» — QISM 1A VIZUAL MOS TUGADI · `/new` browser-verified · KEYINGI = 1B)**
+> *(Parallel sessiya shu payt 2026-07-23b sales-returns ishini qildi; mening diff'im path-cheklangan — faqat
+> `apps/web/src/app/(app)/demands/new/page.tsx` + demand audit doc.)*
+> `/new` (Отгрузка yaratish) moysklad `demand-03-new.png` bilan **vizual mos** qilindi (`da20554`).
+> customer-order/new namunasiga keltirildi: **3-ustunli meta-grid** (tab'lar ustida) · **«Не оплачено» pill +
+> kulrang «Статус» popup** (`/states?entityType=demand` bo'sh) · Адрес доставки+Комментарий o'ng-tepа Textarea ·
+> **«Другие поля» tepа inline-havola** (план-sanalar shu yerga) · **pozitsiya sarlavha RU-leak tuzatildi**
+> (uz kolonka label'lar; ortiqcha #/image/Уп./Сумма НДС olib tashlandi) · **«Цена включает НДС» default checked**.
+> **Live browser smoke** (`:3100` uz-locale) `demand-03-new.png` yoniga → core layout ko'rinadigan farqsiz.
+> Gate: web tc0 · biome0 · i18n key ru+uz · demand testlar 111/111. Audit: `docs/audits/_demand-new-1A.audit.md`.
+> **HALOL:** «100% 1:1» YO'Q — u faqat QISM 5 QA'dan keyin.
+> **⚙️ DEV ISSIQ:** postgres 5432 (`D:\pgdata-sherset`) · `pnpm dev` (web :3100 + api :4000) · login
+> `admin@demo.local`/`admin123` — ishlab turibdi. Playwright chrome-lock `mcp-chrome-ca8aa68` bu sessiyada reclaim qilindi.
+> **⏭️ KEYINGI = QISM 1B (funksional mos)** — ROADMAP `2026-07-23-demand-section-1to1-ROADMAP.md` §1B:
+> «Грузоотправитель» blok-sarlavha · custom-attributes editor (create parity) · **«Прибыль» qatori** (pozitsiya
+> state'ni `buyPrice` bilan kengaytir → totals «Кол-во»→«Прибыль») · **«Ячейка» (bin) kolonka** (`{key:'cell'}`+BE) ·
+> pozitsiya **«Остаток»/«Себест. единицы»**. Reja: `docs/superpowers/plans/2026-07-23-demand-new-1to1.md` (Task 2–5).
+> **Marking (Маркировка) = QISM 4.** ⚠️ **NEXT.md 825+ qator > 600** — keyingi sessiya eski entry'larni arxivlasin.
+
 > **🔬✅ 2026-07-23b (SALES-RETURNS «Возвраты покупателей» — Phase-2 JONLI RE-VERIFY (yangi mashina) + 1 leak FIX)**
 > Foydalanuvchi moysklad `/salesreturn` list-capture'ini berdi: «shu sahifa bilan bir xil ko'rinishi/funksiyalari
 > bo'lsin, kerakli funksiyalarni chuqur o'ylab to'g'irla». Sahifa allaqachon juda to'liq (list 18-filtr + detail +

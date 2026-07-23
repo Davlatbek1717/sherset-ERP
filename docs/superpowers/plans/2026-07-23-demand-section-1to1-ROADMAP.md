@@ -11,13 +11,13 @@ Har qism `[ ]` = tugallanmagan. Sessiya oxirida browser-cert bo'lgan bosqich `[x
 
 ## QISM 1 — YARATISH sahifasi (`/new`)  ·  reja: `2026-07-23-demand-new-1to1.md`
 
-### 1A — Vizual mos  →  **TAYYOR when:** `/new` moysklad `demand-03-new.png` bilan ko'rinadigan farqsiz (browser-cert screenshot)
-- [ ] Maydon-grid moysklad 3-ustunli ixcham tartibga (chap/o'rta/o'ng)
-- [ ] «Адрес доставки» + «Комментарий» o'ng-tepа ustunga
-- [ ] Header'ga «Не оплачено» to'lov-pill; status «Статус» rangli-kvadrat popup (shared komponent)
-- [ ] «Другие поля» tepа inline-havola (pastdagi katta panel emas)
-- [ ] Pozitsiya sarlavha **i18n RU-leak** tuzatish (uz-locale'da uzbekcha)
-- [ ] «Цена включает НДС» default = checked (grounding); totals «Кол-во» ortiqcha holatini moslashtir
+### 1A — Vizual mos  →  ✅ **TAYYOR 2026-07-23** (`da20554`, live browser smoke `:3100` vs `demand-03-new.png`; audit `docs/audits/_demand-new-1A.audit.md`)
+- [x] Maydon-grid moysklad 3-ustunli ixcham tartibga (chap/o'rta/o'ng) — customer-order metaPanel namunasi, tab'lar USTIDA
+- [x] «Адрес доставки» + «Комментарий» o'ng-tepа ustunga (Textarea)
+- [x] Header'ga «Не оплачено» to'lov-pill; status «Статус» rangli-kvadrat popup (`/states?entityType=demand`, bo'sh→kulrang)
+- [x] «Другие поля» tepа inline-havola (metaPanel'dan keyin, tab'lar oldida) — план-sanalar shu yerga ko'chdi
+- [x] Pozitsiya sarlavha **i18n RU-leak** tuzatish (har kolonkaga tCols/tPos label) + ortiqcha #/image/Уп./Сумма НДС olib tashlandi
+- [x] «Цена включает НДС» default = checked (vatIncluded=true, grounding). *(totals «Кол-во»→«Прибыль» swap = QISM 1B, chunki Прибыль create-COGS state kerak)*
 
 ### 1B — Funksional mos  →  **TAYYOR when:** `/new` save round-trip 1:1 (marking'dan tashqari), browser-cert
 - [ ] Shipping 10 maydon «Грузоотправитель» sarlavhali blok
