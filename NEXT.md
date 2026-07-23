@@ -305,6 +305,33 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🔬✅ 2026-07-23b (SALES-RETURNS «Возвраты покупателей» — Phase-2 JONLI RE-VERIFY (yangi mashina) + 1 leak FIX)**
+> Foydalanuvchi moysklad `/salesreturn` list-capture'ini berdi: «shu sahifa bilan bir xil ko'rinishi/funksiyalari
+> bo'lsin, kerakli funksiyalarni chuqur o'ylab to'g'irla». Sahifa allaqachon juda to'liq (list 18-filtr + detail +
+> /new; 06-10c da Phase-2 verified edi, lekin bu MIGRATSIYA-QILINGAN mashinada jonli tekshirilmagan edi). **Jonli
+> Playwright QA (web:3100/api:4000, admin/admin123):** (1) list render TOZA — chrome/18-filtr/ustunlar/empty-state;
+> (2) **/new → create E2E** — kontragent+tovar (UzKabel VVG, 770k, QQS 12%=92.4k, Jami 862.4k — matematika to'g'ri) →
+> Saqlash → detail redirect ✓; (3) **post (O'tkazilgan) → stock 140→141** (+1, COST-basis cost_delta 550k — to'g'ri
+> yo'nalish+baho) + forma qulflandi ✓; (4) **un-post → stock 141→140** (teskari op, data-integrity ✓); (5) print
+> `/print/sales-return/:id` → **200** (tarixiy 404 yopiq); (6) «Omborchiga yubordim» restock-modal ochiladi ✓.
+> **🐞 FIX — bitta real leak:** detail pozitsiya-jadvalида «Страна» ustun-sarlavhasi + picker-placeholder UZ rejimда
+> RUS chiqarardi (qolgan sarlavhalar Tovar/Miqdor/Narx/… uzbekcha) — `PositionEditor`da hardcode, override yo'q edi.
+> **Tuzatildi:** `PositionCustomsConfig.countryLabel?` qo'shildi (`?? 'Страна'` default saqlandi) → header+placeholder
+> shundan o'qiydi; detail sahifa `countryLabel: tFields('country')` uzatadi. **Browser 2-locale verify:** UZ=«Davlat» ·
+> RU=«Страна» (parity saqlandi; RU heading «Возврат покупателя № 00001» + nav «Возвраты покупателей» = referens bilan
+> aynan mos). **Gate:** typecheck 9/9 ✓ · biome 0 ✓ · i18n-key-existence ✓. *(Pre-existing RED, MENIKI EMAS: label-grounding
+> GROUNDING-LOCK 25 fail = `docs/moysklad-reference/visual-captures/` fixture'lari bu mashinaga migratsiya qilinmagan [ENOENT];
+> i18n-no-hardcoded 1 fail = `losses/`+`labels/print/` committed hardcode — ikkalasi ham mening 2 faylimga tegishli EMAS,
+> REGRESSION-LOCK 96 pass ✓.)* **Fayllar:** faqat `sales-returns/[id]/page.tsx` + `PositionEditor.tsx` (parallel demand
+> ishiga tegmadim). ⚠️ `packages/db/src/generated/schema.prisma` `prisma generate`dan MessageTemplate'ga yangilandi —
+> u DEMAND/parallel sessiyaning sxemasi, **stage QILINMADI** (o'sha ish bilan commit bo'lsin).
+> **⚙️ DEV-ENV TUZATISH (past 2026-07-23 entry'dagi «seed» endi to'g'ri emas):** `D:\pgdata-sherset` klasteri bu sessiya
+> boshida BO'SH edi (sherset roli YO'Q) — VPS dump'idan tiklandi: `D:\projects\Sherset-ERP-vps-backup\sherset-db-20260719-164251.sql.gz`
+> → role+db yaratildi → restore (202 jadval, 43962 demand, 4864 tovar) → `prisma migrate deploy` (5 pending) → admin
+> paroli `admin123`ga reset (argon2, prod-hash mos emas edi). Klaster `host` pg_hba = **scram** (trust EMAS). Start:
+> `Start-Process 'C:\Program Files\PostgreSQL\18\bin\pg_ctl.exe' -Args '-D','"D:\pgdata-sherset"','-l','<log>','start' -WindowStyle Hidden`
+> (pg_ctl `-w` PowerShell'da pipe-hang qiladi — Start-Process detached ishlat).
+
 > **🟢🎯 2026-07-23 (DEMAND «Отгрузки» TO'LIQ 1:1 — DASTUR BOSHLANDI · Session-0 recon + Task 1 discovery TUGADI · KOD-FIX HALI YO'Q)**
 > Foydalanuvchi: «shu bo'limdagi barcha funksiyalar/hamma narsa moysklad bilan bir xil bo'lsin» — **to'liq 1:1
 > (vizual+funksional), 3 sahifa (ro'yxat/detal/yaratish)**. Brainstorming → sahifama-sahifa, capture-birinchi yondashuv.

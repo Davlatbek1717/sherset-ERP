@@ -825,6 +825,7 @@ export default function SalesReturnDetailPage() {
                     gtdSum: true,
                     gtdSumLabel: tFields('gtd_cost'),
                     country: true,
+                    countryLabel: tFields('country'),
                     countryFetcher,
                   }}
                   readOnly={!editable}

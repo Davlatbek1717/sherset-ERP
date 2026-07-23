@@ -60,6 +60,10 @@ export interface PositionCustomsConfig {
   cell?: boolean;
   /** «Сумма ГТД» (Приёмка) vs «Себестоимость ГТД» (Возврат). */
   gtdSumLabel?: string;
+  /** «Страна» column header + picker placeholder override. Pages pass the
+   *  locale-resolved label (e.g. tFields('country')) so the customs country
+   *  column matches the rest of the localized editor; defaults to «Страна». */
+  countryLabel?: string;
   /** Country («Страна») picker fetcher — required when `country` is on. */
   countryFetcher?: (search: string) => Promise<PickerItem[]>;
 }
@@ -278,7 +282,7 @@ export function PositionEditor<T = unknown>({
             )}
             {cust.gtdNumber && <div>Номер ГТД</div>}
             {cust.gtdSum && <div className="text-right">{customs?.gtdSumLabel ?? 'Сумма ГТД'}</div>}
-            {cust.country && <div>Страна</div>}
+            {cust.country && <div>{customs?.countryLabel ?? 'Страна'}</div>}
             {cust.rnpt && <div>РНПТ</div>}
             {cust.cell && <div>Ячейка</div>}
             <div />
@@ -376,7 +380,7 @@ export function PositionEditor<T = unknown>({
                 {cust.country && (
                   <CatalogPickerField
                     value={p.countryId ? { id: p.countryId, label: p.countryLabel ?? '' } : null}
-                    placeholder="Страна"
+                    placeholder={customs?.countryLabel ?? 'Страна'}
                     onPick={() => !readOnly && setCountryPickerRowUid(p._uid)}
                     onClear={() =>
                       !readOnly && updateRow(p._uid, { countryId: null, countryLabel: '' })
