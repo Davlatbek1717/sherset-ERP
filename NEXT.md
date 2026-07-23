@@ -305,6 +305,23 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🟢✅ 2026-07-23f (DEMAND «Отгрузки» — QISM 1B: custom-attrs create-parity E2E-verified + Task-2 premise-fix)**
+> *(Parallel sessiya 2026-07-23e sales-returns qildi; mening diff'im path-cheklangan — `demands/new/page.tsx`
+> + demand audit doc; har commit oldidan staged-set guard bilan tekshirildi.)*
+> **Custom-attributes editor create'да** (`bc54662`): funksional gap N1 — доп.поля detailда bor edi, create'да
+> yo'q. demand create-schema allaqachon `attributes` qabul qiladi (BE o'zgarishsiz) → detailдаги aynan
+> `AttributesEditor entity="Demand"` /new'ga ko'chirildi (inline totals ostida, payload `attributes: customAttrs`
+> always-send). **Runtime E2E (Playwright + jonli DB, cleanup):** test доп.поле kiritildi → /new'да «Qo'shimcha
+> maydonlar / Test Usta Field» render → to'ldirib saqlash → **DB `demands.attributes = {"test_usta_1a":
+> "QA-1B-attr-persist"}`** → detailда re-render. Audit: `docs/audits/_demand-new-1B-attrs.audit.md`.
+> **🛑 Task-2 «Грузоотправитель» blok RAD ETILDI (premise-error, §4):** capture'да «Грузоотправитель» = field
+> labeli (1×), seksiya-sarlavha EMAS → moysklad shipping'ni bunday guruhlamaydi. GAP-BACKLOG D5/N3 xato.
+> **⏭️ KEYINGI = 1B qolgan (BE):** **«Ячейка» (bin)** — `DemandPosition`'да `cell` ustun YO'Q → schema+migration+BE
+> (§wiring: markaziy schema commit alohida). *(A4: Ячейка moysklad'да optional gear-ustun, default emas → past-prioritet.)*
+> **DEFER:** «Себест. единицы» (buyPrice strip). **«Маркировка» = QISM 4.** Shundan keyin QISM 1 ~tugaydi → **QISM 2 (detal)**.
+> **⚙️ DEV ISSIQ:** postgres 5432 (`D:\pgdata-sherset`, bu sessiya qayta ishga tushirdi) · web :3100 + api :4000 ·
+> `admin@demo.local`/`admin123`. ⚠️ **NEXT.md 900+ qator** — keyingi sessiya eski entry'larni arxivlasin.
+
 > **🔬✅ 2026-07-23e (SALES-RETURNS «Возвраты покупателей» — QISM 1 GROUNDING: /new capture + roadmap co-locate)**
 > *(Parallel demand sessiyasi shu payt 2026-07-23c/d demand ishini qildi; mening diff'im path-cheklangan —
 > `scripts/capture-moysklad-references.ts` + `.gitignore` + 2 salesreturn doc. Commit `96bb93e`.)*

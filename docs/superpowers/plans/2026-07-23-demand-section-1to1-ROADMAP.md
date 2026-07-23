@@ -19,9 +19,9 @@ Har qism `[ ]` = tugallanmagan. Sessiya oxirida browser-cert bo'lgan bosqich `[x
 - [x] Pozitsiya sarlavha **i18n RU-leak** tuzatish (har kolonkaga tCols/tPos label) + ortiqcha #/image/Уп./Сумма НДС olib tashlandi
 - [x] «Цена включает НДС» default = checked (vatIncluded=true, grounding). *(totals «Кол-во»→«Прибыль» swap = QISM 1B, chunki Прибыль create-COGS state kerak)*
 
-### 1B — Funksional mos  →  **TAYYOR when:** `/new` save round-trip 1:1 (marking'dan tashqari), browser-cert · **QISMAN (2/5, `8a07440`)**
-- [ ] Shipping 10 maydon «Грузоотправитель» sarlavhali blok — *(keyingi sessiya, FE)*
-- [ ] Custom-attributes editor create'da (detail parity) — *(keyingi sessiya, FE)*
+### 1B — Funksional mos  →  **TAYYOR when:** `/new` save round-trip 1:1 (marking'dan tashqari), browser-cert · **QISMAN (3/5 + 1 rad, `bc54662`)**
+- [x] ~~Shipping 10 maydon «Грузоотправитель» sarlavhali blok~~ **RAD ETILDI (premise-error, §4):** capture'да «Грузоотправитель» = field labeli, seksiya-sarlavha EMAS → moysklad bunday blok qilmaydi. GAP D5/N3 xato.
+- [x] Custom-attributes editor create'da (detail parity) — `AttributesEditor entity="Demand"` (detail bilan bir xil, inline totals ostida) + payload `attributes`. **E2E DB round-trip verified** (`_demand-new-1B-attrs.audit.md`) ✅
 - [x] «Прибыль» qatori — `DocumentTotalsPanel profitMinor={0n}` (qoralama COGS FIFO-at-post → 0,00, moysklad create parity) + «Кол-во» olib tashlandi. Live smoke ✅
 - [ ] «Ячейка» (bin) kolonka — *(keyingi sessiya: `DemandPosition`'да `cell` ustun YO'Q → BE schema+migration, §wiring protokoli)*
 - [x] Pozitsiya **«Остаток»** (jonli qoldiq) — `rowsWithStock` merge + `{key:'stock'}`, Кол-во'dan keyin, live smoke «Qoldiq: 140» ✅. *(«Себест. единицы» = DEFER: /products buyPrice'ni QASDDAN strip qiladi + qoralamada FIFO-cost yo'q)*
