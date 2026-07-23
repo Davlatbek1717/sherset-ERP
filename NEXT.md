@@ -316,11 +316,14 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > **Farq-tahlil:** HAR Продажи FE fayli farq qiladi; VPS TO'LIQROQ (demands 1775>1445, sales-returns/new 1732>1151,
 > retail 704>>5-stub; commission-reports VPS-only new/new-in). Shared-infra ham divergent LEKIN Sherset kattaroq
 > (api-client 247>177, schema 9356>8939) → VPS'nikiga almashtirilMAYDI; VPS sahifalari **Sherset infra'siga moslashtiriladi**.
-> **⏭️ KEYINGI = B1 (manba+overlay)** — reja: `docs/superpowers/plans/2026-07-23-vps-prodaji-port.md` (butun-repo adoption).
-> **Worktree MAJBURIY** (parallel sessiya main'da). Bosqichlar: B1 climart manba(`git archive`, docs/generated junk chiqarib)+tree
-> overlay → B2 sxema reconcile(climart + counterparties/debts) → B3 keep-list moslash(tc0) → B4 build+i18n → B5 yangi
-> dev-DB+seed+smoke → B6 verify. Deploy-config (`deploy/`, sherset.biznesjon.uz) climart'niki bilan almashtirilMASIN.
-> **HALOL:** kod hali adopt qilinmagan — faqat recon+reja. Prod deploy = alohida ehtiyotkor qadam.
+> **B1 ✅ BAJARILDI:** worktree `d:/projects/sherset-climart-adoption` (branch `climart-adoption`, commit `a52c3c7`).
+> climart tree overlay + keep(counterparties/debts/deploy/docs) + drop(sotuv/omborchi/cell/replenishment/restock-tasks) +
+> add(bulk-edit/specialoffers/subscription). `pnpm install` ✅ · money build ✅ · prisma generate ✅. **Main daxlsiz.**
+> **⏭️ KEYINGI = B2/B3 reconcile** (worktree'da). **O'lchangan: 186 typecheck xato = 119 API + 67 web.**
+> API: `Debt` model climart sxemasida yo'q (Sherset'dan qo'sh) + debt type-kengaytma (PermissionEntity/notification).
+> WEB: kept counterparties/debts Sherset-only infra'ni import qiladi (sms-broadcast-modal/use-keyboard-nav/debt-api/
+> telegram-panel/Sherset ListView) → keep-list transitiv kengaytir YOKI climart'ga moslash (A/B qaror, plan §5).
+> **Har sessiya boshida:** worktree'da `pnpm --filter @moysklad/money build`. **HALOL:** tree adopt bo'ldi, lekin hali BUILD BO'LMAYDI.
 
 > **🟢 2026-07-23k (DEMAND list QISM 3 — Грузополучатель ustun+filtr + Товар/группа filtr · Phase-1 · `b2fe49f`)**
 > Ro'yxatni moysklad `demand-01-list` tomon: **L1** «Грузополучатель» ustuni (list `include`ga `consignee`;

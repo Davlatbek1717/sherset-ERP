@@ -46,5 +46,18 @@ Izolyatsiyalangan **worktree/branch**'da (parallel sessiya main'da — halaqit b
 - **Deploy-config yo'qolishi:** climart tree Sherset `deploy/`ni bosib ketmasin (keep-ro'yxatda).
 - **Dropped features:** sotuv/omborchi/… yo'qoladi — foydalanuvchi tasdiqladi, lekin B6'da eslatiladi.
 
-## 5. Keyingi qadam
-B1 — yangi toza sessiyada worktree ochib, climart manbani olib, overlay. Reference: bu reja + `ssh climart`.
+## 5. B1 BAJARILDI (2026-07-23) + o'lchangan reconcile-surface
+
+**B1 ✅ (tree adopted):** worktree `d:/projects/sherset-climart-adoption`, branch `climart-adoption`, commit `a52c3c7`.
+- climart manba overlay (101MB toza archive) · keep = counterparties+debts+deploy/docs/CLAUDE/NEXT/.gitignore · drop = sotuv/omborchi/cell/replenishment/restock-tasks · add = bulk-edit/specialoffers/subscription.
+- `pnpm install --frozen-lockfile` ✅ (49s) · `@moysklad/money` build ✅ · `prisma generate` (climart sxema) ✅.
+- **Main daxlsiz** (`2ffbc24`).
+
+**O'lchangan reconcile-surface (typecheck): 186 xato = 119 API + 67 web.**
+- **API (119):** (a) **`Debt` model climart sxemasida YO'Q** → kept debt-modul `prisma.debt` topolmaydi (B2: Sherset'dan Debt+DebtPayment+DebtNote + Counterparty/Employee back-relation'larni qo'sh). (b) debt-modul **type-kengaytmalari** climart'da yo'q: `PermissionEntity` (`debtpayment`/`debt`/`debtreport`…), notification-type (`debt_call_due`) — Sherset qo'shgan enum'lar; climart type'lariga qo'shish/moslash.
+- **WEB (67):** kept counterparties/debts sahifalari **Sherset-only shared-infra**'ni import qiladi (climart'nikiga almashgan): `@/components/sms/sms-broadcast-modal` · `@/hooks/use-keyboard-nav` · `@/lib/debt-api` · `@/components/telegram/order-telegram-panel` · Sherset `ListView` props (climart ListView boshqacha).
+
+**Refined B2/B3 yondashuv (kerak bo'lgan tanlov):** keep-list **transitiv** — counterparties/debts o'z Sherset-only bog'liqliklariga tayanadi. Ikki yo'l: **(A) keep-list'ni transitiv kengaytir** (sms-broadcast-modal, use-keyboard-nav, debt-api, telegram-panel, Sherset ListView… ni ham saqla — lekin bular climart infra bilan to'qnashishi mumkin, masalan ListView) **YOKI (B) kept counterparties/debts kodini climart infra'siga moslashtir** (climart komponent/hook/lib ekvivalentlariga). Har sahifa uchun (A/B) qaror + iteratsiya. Bu — asosiy qolgan ish.
+
+## 6. Keyingi qadam (B2/B3 reconcile)
+Worktree'da: `pnpm --filter @moysklad/money build` (har sessiya boshida) → B2 sxemaga Debt-modellar + type-kengaytmalar → B3 web keep-list bog'liqliklarini (A/B) hal qil → `typecheck 0` → B4 build → B5 dev-DB+seed+smoke → B6 verify. Reference: bu reja + `ssh climart` + branch `climart-adoption`.
