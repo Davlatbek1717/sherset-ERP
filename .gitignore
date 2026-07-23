@@ -163,3 +163,6 @@ ms-*.png
 *.playwright-cert-profile/
 scripts/cert-*.cjs
 scripts/measure-moysklad-*.cjs
+
+# superpowers plugin cache (regenerated)
+.superpowers/

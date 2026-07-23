@@ -65,6 +65,17 @@ if has '(^|/)pnpm-lock\.yaml$'; then
   pnpm install --frozen-lockfile
 fi
 
+# 1.5 Prisma client — it is gitignored (NOT shipped: saves ~35MB of generated
+# code + binary engines per deploy). It survives `git reset` (untracked), so
+# regenerate only when the DB package changed OR the client is missing (first
+# deploy after untracking). MUST run before the web build and the API restart —
+# both import @moysklad/db. `prisma generate` produces the correct Linux engine
+# here (the old committed Windows engine was dead weight on this box).
+if has '^packages/db/' || [ ! -f packages/db/src/generated/index.js ]; then
+  step "Regenerate Prisma client (gitignored → generated on deploy)"
+  pnpm --filter @moysklad/db generate
+fi
+
 # 2. DB — only when a migration was added.
 if has '^packages/db/prisma/migrations/'; then
   step "New migration → prisma migrate deploy"
