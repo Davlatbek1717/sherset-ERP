@@ -249,7 +249,8 @@ export class RetailSaleService {
             cashDesk: { select: { id: true, name: true, currency: true } },
             cashier: { select: { id: true, name: true } },
             store: { select: { id: true, name: true } },
-            organization: { select: { id: true, name: true, legalTitle: true } },
+            // `phone` surfaces on the printed «Savdo cheki» header (org contact).
+            organization: { select: { id: true, name: true, legalTitle: true, phone: true } },
           },
         },
         agent: { select: { id: true, name: true, legalTitle: true } },
