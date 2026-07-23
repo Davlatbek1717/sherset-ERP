@@ -35,6 +35,8 @@ model Account {
   telegramChats        TelegramChat[]
   telegramChatMessages TelegramChatMessage[]
   telegramBackfillJobs TelegramBackfillJob[]
+  // Sherset KEEP (message templates) back-relation — B3
+  messageTemplates MessageTemplate[]
   id        String   @id @default(uuid()) @db.Uuid
   name      String   @db.VarChar(255)
   country   String   @default("UZ") @db.VarChar(2)
@@ -2305,6 +2307,10 @@ model Contract {
 model CompanySettings {
   id                       String   @id @default(uuid()) @db.Uuid
   accountId                String   @unique @map("account_id") @db.Uuid
+  // Sherset KEEP (debts messaging) — B3
+  messagingPhone           String?  @map("messaging_phone") @db.VarChar(30)
+  messagingCard            String?  @map("messaging_card") @db.VarChar(40)
+  messagingCardOwner       String?  @map("messaging_card_owner") @db.VarChar(120)
   /// Two-letter country code for the account. Drives format defaults
   /// (date / number / phone). UZ for our clone.
   accountCountry           String   @default("UZ") @map("account_country") @db.VarChar(2)
@@ -9299,4 +9305,23 @@ model TelegramBackfillJob {
   @@unique([accountId, counterpartyId])
   @@index([status, requestedAt])
   @@map("telegram_backfill_job")
+}
+
+// ===== Sherset KEEP: MessageTemplate (sms/telegram shablon) — B3 =====
+model MessageTemplate {
+  id        String   @id @default(uuid()) @db.Uuid
+  accountId String   @map("account_id") @db.Uuid
+  channel   String   @default("sms") @db.VarChar(16) // 'sms' | 'telegram'
+  key       String?  @db.VarChar(50)
+  name      String   @db.VarChar(120)
+  body      String   @db.Text
+  enabled   Boolean  @default(true)
+  isDefault Boolean  @default(false) @map("is_default")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId, channel])
+  @@map("sms_templates")
 }

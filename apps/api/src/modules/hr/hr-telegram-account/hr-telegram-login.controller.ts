@@ -27,6 +27,19 @@ export class HrTelegramLoginController {
     return this.svc.submitCode(input);
   }
 
+  /** «Kod kelmadi» — kodni qayta yuborish (Telegram keyingi kanal, odatда SMS). */
+  @Post('login/resend')
+  @RequireHrPermission('settings', 'full')
+  async resend(@Body() body: unknown) {
+    const { loginSessionId } = SubmitLoginCodeSchema.partial().parse(body) as {
+      loginSessionId?: string;
+    };
+    if (!loginSessionId) {
+      return { ok: false, codeSent: false };
+    }
+    return this.svc.resend(loginSessionId);
+  }
+
   /** Admin cancels (e.g. closed modal). Disconnects the underlying client. */
   @Post('login/cancel')
   @RequireHrPermission('settings', 'full')

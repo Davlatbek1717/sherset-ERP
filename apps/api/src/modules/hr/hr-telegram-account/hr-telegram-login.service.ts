@@ -109,7 +109,7 @@ export class HrTelegramLoginService {
           `Telegram FLOOD_WAIT ${e.seconds}s — biroz kutib qayta urinib ko'ring`,
         );
       }
-      throw new BadRequestException(`Telegram: ${(e as Error).message}`.slice(0, 200));
+      throw new BadRequestException(HrTelegramLoginService.friendlyError(e));
     }
   }
 
@@ -182,7 +182,39 @@ export class HrTelegramLoginService {
           `Telegram FLOOD_WAIT ${e.seconds}s — biroz kutib qayta urinib ko'ring`,
         );
       }
-      throw new BadRequestException(`Telegram: ${(e as Error).message}`.slice(0, 200));
+      throw new BadRequestException(HrTelegramLoginService.friendlyError(e));
+    }
+  }
+
+  /**
+   * Kodni QAYTA yuborish — «kod kelmadi» holatida. Telegram «keyingi kanal»
+   * bilan jo'natadi (birinchi kod ilovaga ketgan bo'lsa, resend odatда SMS).
+   * Mavjud login sessiyasidan foydalanadi (yangi client ochmaydi).
+   */
+  async resend(loginSessionId: string): Promise<{ ok: boolean; codeSent: boolean }> {
+    this.gc();
+    const state = this.sessions.get(loginSessionId);
+    if (!state) {
+      throw new UnauthorizedException(
+        "Login sessiyasi topilmadi yoki muddati o'tdi — boshidan qayta boshlang",
+      );
+    }
+    if (!state.client.resendCode) {
+      throw new BadRequestException("Qayta yuborish qo'llab-quvvatlanmaydi");
+    }
+    try {
+      const { phoneCodeHash } = await state.client.resendCode();
+      if (phoneCodeHash) state.phoneCodeHash = phoneCodeHash;
+      // Muddatni yangilaymiz — foydalanuvchi yangi kodni kiritishga ulgursin.
+      state.expiresAt = new Date(Date.now() + HrTelegramLoginService.TTL_MS);
+      return { ok: true, codeSent: phoneCodeHash.length > 0 };
+    } catch (e) {
+      if (isGramjsFloodError(e)) {
+        throw new BadRequestException(
+          `Telegram FLOOD_WAIT ${e.seconds}s — biroz kutib qayta urinib ko'ring`,
+        );
+      }
+      throw new BadRequestException(HrTelegramLoginService.friendlyError(e));
     }
   }
 
@@ -190,6 +222,33 @@ export class HrTelegramLoginService {
   async cancel(loginSessionId: string): Promise<{ ok: true }> {
     this.discard(loginSessionId);
     return { ok: true };
+  }
+
+  /**
+   * Telegram xom xatolarini (PHONE_CODE_EXPIRED, ...) TUSHUNARLI o'zbekcha
+   * xabarga aylantiradi — operator nima qilishни bilsin.
+   */
+  private static friendlyError(e: unknown): string {
+    const raw = (e as Error)?.message ?? String(e);
+    if (raw.includes('PHONE_CODE_EXPIRED')) {
+      return "Kod muddati o'tdi — «Qayta yuborish» bilan YANGI kod oling va 1 daqiqa ichида kiriting";
+    }
+    if (raw.includes('PHONE_CODE_INVALID') || raw.includes('PHONE_CODE_EMPTY')) {
+      return "Kod noto'g'ri — Telegram'дан kelgan kodni tekshirib qayta kiriting";
+    }
+    if (raw.includes('PASSWORD_HASH_INVALID')) {
+      return "2FA parol noto'g'ri — qaytadan kiriting";
+    }
+    if (raw.includes('PHONE_NUMBER_INVALID')) {
+      return "Telefon raqami noto'g'ri";
+    }
+    if (raw.includes('PHONE_NUMBER_BANNED')) {
+      return "Bu raqam Telegram'да bloklangan";
+    }
+    if (raw.includes('PHONE_NUMBER_UNOCCUPIED')) {
+      return "Bu raqam Telegram'да ro'yxatdan o'tmagan";
+    }
+    return `Telegram: ${raw}`.slice(0, 200);
   }
 
   private discard(loginSessionId: string): void {
