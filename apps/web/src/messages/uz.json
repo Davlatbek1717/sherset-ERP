@@ -964,7 +964,8 @@
       "pipelines": "Voronkalar",
       "discounts": "Skidkalar va bonus dasturlar",
       "contracts": "Shartnomalar",
-      "bonus_operations": "Ballar operatsiyalari"
+      "bonus_operations": "Ballar operatsiyalari",
+      "debts": "Qarz undirish"
     },
     "products": {
       "list": "Tovar va xizmatlar",

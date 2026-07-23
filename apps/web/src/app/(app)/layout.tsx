@@ -217,11 +217,23 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   // (Сделки/Канбан/Воронки) are moysklad's tariff-gated advanced CRM — not surfaced
   // here; Контактные лица live inside the counterparty card; «Скидки» is not a CRM
   // section in moysklad. Those routes still exist but are no longer linked in the strip.
+  // Sherset «Kontragentlar» bo'limi — CRM+Pul birlashtirilgan boy sub-nav (foydalanuvchi
+  // qarori: eski Sherset bo'limidagi barcha narsalar qaytarildi).
   const crmSubNav: SubNavItem[] = [
     { key: 'counterparties', label: tCrm('counterparties'), href: '/counterparties' },
+    { key: 'payments', label: tMoney('payments'), href: '/payments' },
+    {
+      key: 'mutualsettlements',
+      label: tMoney('mutual_settlements'),
+      href: '/reports/counterparty-balance',
+    },
+    { key: 'debts', label: tCrm('debts'), href: '/debts' },
+    { key: 'prepayments', label: tMoney('prepayments'), href: '/prepayments' },
     { key: 'contracts', label: tCrm('contracts'), href: '/contracts' },
-    { key: 'calls', label: tCrm('calls'), href: '/calls' },
+    { key: 'discounts', label: tCrm('discounts'), href: '/discounts' },
     { key: 'bonus_operations', label: tCrm('bonus_operations'), href: '/loyalty-operations' },
+    { key: 'corrections', label: tMoney('corrections'), href: '/counterparty-adjustments' },
+    { key: 'bank_import', label: tMoney('bank_import'), href: '/bank-import' },
   ];
 
   // Order matches moysklad's "Закупки" sub-nav strip exactly:

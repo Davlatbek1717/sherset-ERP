@@ -964,7 +964,8 @@
       "pipelines": "Воронки",
       "discounts": "Скидки и бонусы",
       "contracts": "Договоры",
-      "bonus_operations": "Операции с баллами"
+      "bonus_operations": "Операции с баллами",
+      "debts": "Взыскание долгов"
     },
     "products": {
       "list": "Товары и услуги",
