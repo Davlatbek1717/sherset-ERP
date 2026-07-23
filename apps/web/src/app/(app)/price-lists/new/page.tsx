@@ -25,6 +25,7 @@ import {
   Icons,
   Input,
   type PickerItem,
+  StickyHScroll,
 } from '@moysklad/ui';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
@@ -150,8 +151,8 @@ function PriceMatrixEditor({
   }
 
   return (
-    <div
-      className="overflow-x-auto rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)]"
+    <StickyHScroll
+      className="rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)]"
       data-test-id="price-matrix"
     >
       <table className="w-full text-sm">
@@ -265,7 +266,7 @@ function PriceMatrixEditor({
           </Button>
         </div>
       )}
-    </div>
+    </StickyHScroll>
   );
 }
 
@@ -340,7 +341,7 @@ export default function NewPriceListPage() {
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   });
   const [status, setStatus] = useState<string>('draft');
-  const [applicable, setApplicable] = useState(false);
+  const [applicable, setApplicable] = useState(true);
 
   // ---- Meta fields ----
   const [docName, setDocName] = useState('');
@@ -436,7 +437,7 @@ export default function NewPriceListPage() {
       label: tTabs('main'),
       content: (
         <div className="space-y-4">
-          <DocumentMetaPanel>
+          <DocumentMetaPanel compact>
             <DocumentMetaRow>
               <DocumentMetaField label={tFields('name')} required>
                 <Input

@@ -1,16 +1,16 @@
 'use client';
 
+import { SavedFiltersPills } from '@/components/customer-orders/saved-filters-pills';
 import { FilterToggleButton } from '@/components/filters/filter-toggle-button';
+import { useColumnVisibility } from '@/hooks/use-column-visibility';
 import { api } from '@/lib/api-client';
 import {
-  CatalogPicker,
-  CatalogPickerField,
   type DataTableColumn,
   InlineFilterPanel,
   ListView,
+  MultiCombobox,
   PeriodInputs,
   PeriodShortcuts,
-  type PickerItem,
   formatDate,
 } from '@moysklad/ui';
 import { useTranslations } from 'next-intl';
@@ -56,9 +56,35 @@ export default function PickingWavesPage() {
   const [deliveryTo, setDeliveryTo] = useState<string | undefined>();
   const [updatedFrom, setUpdatedFrom] = useState<string | undefined>();
   const [updatedTo, setUpdatedTo] = useState<string | undefined>();
-  const [storeId, setStoreId] = useState<string | undefined>();
-  const [storeLabel, setStoreLabel] = useState<string | undefined>();
-  const [storePickerOpen, setStorePickerOpen] = useState(false);
+  // «Склад» — moysklad is a checkbox DROPDOWN (multi-select), not a modal
+  // (owner 2026-07-12, «Волны отбора» ground). Same MultiCombobox as losses.
+  const [stores, setStores] = useState<Array<{ id: string; label: string }>>([]);
+  // Bookmark («Закладки») + ⚙ field-visibility — moysklad's two round buttons
+  // next to «Очистить» (both were dead placeholders before).
+  const [saveFilterOpen, setSaveFilterOpen] = useState(false);
+  const filterHidden = useColumnVisibility('picking-waves-filter-hidden', []);
+  const savedFilterQuery = [
+    momentFrom ? `momentFrom=${momentFrom}` : '',
+    momentTo ? `momentTo=${momentTo}` : '',
+    deliveryFrom ? `deliveryFrom=${deliveryFrom}` : '',
+    deliveryTo ? `deliveryTo=${deliveryTo}` : '',
+    updatedFrom ? `updatedFrom=${updatedFrom}` : '',
+    updatedTo ? `updatedTo=${updatedTo}` : '',
+    stores.length ? `storeIds=${stores.map((s) => s.id).join(',')}` : '',
+  ]
+    .filter(Boolean)
+    .join('&');
+  const applySavedFilter = (qs: string) => {
+    const p = new URLSearchParams(qs);
+    setMomentFrom(p.get('momentFrom') ?? undefined);
+    setMomentTo(p.get('momentTo') ?? undefined);
+    setDeliveryFrom(p.get('deliveryFrom') ?? undefined);
+    setDeliveryTo(p.get('deliveryTo') ?? undefined);
+    setUpdatedFrom(p.get('updatedFrom') ?? undefined);
+    setUpdatedTo(p.get('updatedTo') ?? undefined);
+    const ids = (p.get('storeIds') ?? '').split(',').filter(Boolean);
+    setStores(ids.map((id) => ({ id, label: id })));
+  };
 
   // No backend yet — a picking wave is a document still to be built. The list is
   // genuinely empty (matches the live account's «Все 0»); filters render 1:1 and
@@ -123,7 +149,7 @@ export default function PickingWavesPage() {
       key: 'description',
       header: t('col_comment'),
       cell: (r) => (
-        <span className="max-w-[240px] truncate text-[var(--ms-text-muted)] text-xs">
+        <span className="max-w-[240px] truncate text-[var(--ms-text-muted)] text-[11px]">
           {r.description ?? ''}
         </span>
       ),
@@ -143,15 +169,35 @@ export default function PickingWavesPage() {
         setDeliveryTo(undefined);
         setUpdatedFrom(undefined);
         setUpdatedTo(undefined);
-        setStoreId(undefined);
-        setStoreLabel(undefined);
+        setStores([]);
       }}
+      onBookmarkClick={() => setSaveFilterOpen(true)}
+      fieldVisibility={{
+        hidden: filterHidden.visibleKeys,
+        onToggle: (k) => {
+          const next = new Set(filterHidden.visibleKeys);
+          if (next.has(k)) next.delete(k);
+          else next.add(k);
+          filterHidden.setVisibleKeys(next);
+        },
+      }}
+      pills={
+        <SavedFiltersPills
+          entity="pickingwave"
+          currentQueryString={savedFilterQuery}
+          onApply={applySavedFilter}
+          adding={saveFilterOpen}
+          onAddingChange={setSaveFilterOpen}
+        />
+      }
       testId="picking-waves-inline-filter"
     >
       {/* 1. Период */}
       <InlineFilterPanel.Field
         label={`${tFilters('period')}:`}
         expandable
+        fieldKey="period"
+        active={!!(momentFrom && momentTo)}
         inlineSuffix={
           <PeriodShortcuts
             onChange={({ from, to }) => {
@@ -177,15 +223,33 @@ export default function PickingWavesPage() {
           testId="filter-period"
         />
       </InlineFilterPanel.Field>
-      {/* 2. Склад */}
-      <InlineFilterPanel.Field label={t('col_store')} expandable>
-        <CatalogPickerField
-          value={storeId ? { id: storeId, label: storeLabel ?? storeId } : null}
-          onPick={() => setStorePickerOpen(true)}
-          onClear={() => {
-            setStoreId(undefined);
-            setStoreLabel(undefined);
+      {/* 2. Склад — moysklad checkbox dropdown (multi), not a modal. */}
+      <InlineFilterPanel.Field
+        label={t('col_store')}
+        expandable
+        fieldKey="store"
+        active={stores.length > 0}
+      >
+        <MultiCombobox
+          value={stores.map((x) => x.id)}
+          items={stores.map((x) => ({ value: x.id, label: x.label }))}
+          onSearch={async (q) => {
+            const r = await api.get<{ items: { id: string; name: string }[] }>(
+              `/stores?search=${encodeURIComponent(q)}&limit=20`,
+            );
+            return r.items.map((x) => ({ value: x.id, label: x.name }));
           }}
+          onChange={(nextIds, toggled) => {
+            setStores((prev) =>
+              nextIds.map((id) => {
+                const ex = prev.find((s) => s.id === id);
+                if (ex) return ex;
+                if (toggled?.value === id) return { id, label: String(toggled.label) };
+                return { id, label: id };
+              }),
+            );
+          }}
+          placeholder=""
           testId="filter-store"
         />
       </InlineFilterPanel.Field>
@@ -193,6 +257,8 @@ export default function PickingWavesPage() {
       <InlineFilterPanel.Field
         label={`${t('col_delivery_date')}:`}
         expandable
+        fieldKey="delivery"
+        active={!!(deliveryFrom && deliveryTo)}
         inlineSuffix={
           <PeriodShortcuts
             onChange={({ from, to }) => {
@@ -222,6 +288,8 @@ export default function PickingWavesPage() {
       <InlineFilterPanel.Field
         label={`${t('col_updated')}:`}
         expandable
+        fieldKey="updated"
+        active={!!(updatedFrom && updatedTo)}
         inlineSuffix={
           <PeriodShortcuts
             onChange={({ from, to }) => {
@@ -283,23 +351,7 @@ export default function PickingWavesPage() {
             label={tFilters('trigger')}
           />
         }
-      />
-
-      <CatalogPicker
-        open={storePickerOpen}
-        onClose={() => setStorePickerOpen(false)}
-        title={t('col_store')}
-        fetcher={async (q): Promise<PickerItem[]> => {
-          const r = await api.get<{ items: { id: string; name: string }[] }>(
-            `/stores?search=${encodeURIComponent(q)}&limit=20`,
-          );
-          return r.items.map((x) => ({ id: x.id, primary: x.name }));
-        }}
-        onSelect={(item) => {
-          setStoreId(item.id);
-          setStoreLabel(String(item.primary));
-        }}
-      />
+      />{' '}
     </>
   );
 }

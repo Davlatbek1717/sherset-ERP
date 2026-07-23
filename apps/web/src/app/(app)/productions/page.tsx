@@ -4,10 +4,8 @@ import { SavedFiltersPills } from '@/components/customer-orders/saved-filters-pi
 import { FilterToggleButton } from '@/components/filters/filter-toggle-button';
 import { useBulkDocumentActions } from '@/hooks/use-bulk-actions';
 import { api } from '@/lib/api-client';
-import { documentStateTone } from '@/lib/document-state-tone';
 import { filterFromQueryString } from '@/lib/filter-from-query';
 import {
-  Badge,
   CatalogPicker,
   CatalogPickerField,
   type DataTableColumn,
@@ -15,6 +13,7 @@ import {
   InlineFilterPanel,
   ListView,
   MoneyInput,
+  MultiCombobox,
   NativeSelect,
   PeriodInputs,
   PeriodShortcuts,
@@ -52,6 +51,9 @@ interface ListResponse {
 
 const LIMIT = 50;
 
+/** Multi-select reference field — moysklad checkbox-dropdown holds {id,label}[]. */
+type RefMulti = { id: string; label: string };
+
 export default function ProductionsListPage() {
   const t = useTranslations('pages.productions');
   const tCommon = useTranslations('common');
@@ -67,7 +69,11 @@ export default function ProductionsListPage() {
   );
   const [filterOpen, setFilterOpen] = useState(true);
   const [cursor, setCursor] = useState<string | undefined>();
-  const [pickerOpen, setPickerOpen] = useState<null | 'org' | 'store' | 'owner'>(null);
+  const [pickerOpen, setPickerOpen] = useState<null | 'store' | 'owner'>(null);
+  // «Организация» — moysklad-parity inline multi-select checkbox dropdown
+  // (MultiCombobox), was a single-select modal. Holds the picked {id,label}
+  // pairs; on the wire they go out as `organizationIds` CSV.
+  const [organizations, setOrganizations] = useState<RefMulti[]>([]);
 
   const onResetCursor = () => setCursor(undefined);
 
@@ -83,10 +89,54 @@ export default function ProductionsListPage() {
     params.set('sumMinorFrom', String(filterValues.sumMinorFrom));
   if (filterValues.sumMinorTo !== undefined)
     params.set('sumMinorTo', String(filterValues.sumMinorTo));
-  if (filterValues.organizationId) params.set('organizationId', filterValues.organizationId);
+  if (organizations.length) params.set('organizationIds', organizations.map((x) => x.id).join(','));
   if (filterValues.storeId) params.set('storeId', filterValues.storeId);
   if (filterValues.ownerId) params.set('ownerId', filterValues.ownerId);
   if (filterValues.applicable) params.set('applicable', filterValues.applicable);
+
+  // Saved-filter round-trip — serialise filterValues + the «Организация» multi-
+  // select array as JSON so a re-applied bookmark restores every field INCLUDING
+  // the org chip labels (a params-only encoding would drop labels → raw UUIDs).
+  // Legacy saves (raw params, no `fv`) still restore via filterFromQueryString.
+  const savedFilterQuery = (() => {
+    const p = new URLSearchParams();
+    p.set('fv', JSON.stringify(filterValues));
+    if (organizations.length) p.set('organizations', JSON.stringify(organizations));
+    return p.toString();
+  })();
+
+  const applySavedFilter = (qs: string) => {
+    const p = qs.startsWith('?') ? new URLSearchParams(qs.slice(1)) : new URLSearchParams(qs);
+    const fvRaw = p.get('fv');
+    if (fvRaw) {
+      try {
+        setFilterValues(JSON.parse(fvRaw) as typeof filterValues);
+      } catch {
+        setFilterValues(filterFromQueryString(qs));
+      }
+    } else {
+      setFilterValues(filterFromQueryString(qs));
+    }
+    const parseList = (key: string): RefMulti[] => {
+      try {
+        const raw = p.get(key);
+        if (!raw) return [];
+        const arr: unknown = JSON.parse(raw);
+        return Array.isArray(arr)
+          ? arr
+              .filter(
+                (x): x is { id: string; label?: unknown } =>
+                  !!x && typeof (x as { id?: unknown }).id === 'string',
+              )
+              .map((x) => ({ id: x.id, label: String(x.label ?? x.id) }))
+          : [];
+      } catch {
+        return [];
+      }
+    };
+    setOrganizations(parseList('organizations'));
+    onResetCursor();
+  };
 
   const listQueryKey = [
     'productions',
@@ -96,6 +146,7 @@ export default function ProductionsListPage() {
     sortDir,
     cursor,
     filterValues,
+    organizations,
   ] as const;
 
   const { data, isLoading, error, refetch } = useQuery<ListResponse>({
@@ -114,7 +165,10 @@ export default function ProductionsListPage() {
   // GWT list chrome). Status + period/organization/store/sum filtering
   // is the inline filter panel below, backed by ProductionFilterSchema.
   const hasActiveFilter =
-    !!debouncedSearch || !!stateFilter || Object.keys(filterValues).length > 0;
+    !!debouncedSearch ||
+    !!stateFilter ||
+    organizations.length > 0 ||
+    Object.keys(filterValues).length > 0;
 
   const columns: DataTableColumn<ProductionRow>[] = [
     {
@@ -132,13 +186,10 @@ export default function ProductionsListPage() {
       ),
       cellText: (r) => r.name,
     },
-    {
-      key: 'state',
-      header: t('col_state'),
-      width: '120px',
-      cell: (r) => <Badge tone={documentStateTone(r.state)}>{t(`state_${r.state}`)}</Badge>,
-      cellText: (r) => r.state,
-    },
+    // moysklad #productiontask list has NO «Статус» column (LIVE-grounded
+    // 2026-06-29: default grid = №·Время·Организация·Начало производства·
+    // Завершение производства·Запланировано·Произведено·Отправлено·Напечатано·
+    // Комментарий). FSM state lives only in the «Статус» filter.
     {
       key: 'organization',
       header: t('col_organization'),
@@ -250,16 +301,14 @@ export default function ProductionsListPage() {
             onClear={() => {
               setFilterValues({});
               setStateFilter(null);
+              setOrganizations([]);
               onResetCursor();
             }}
             pills={
               <SavedFiltersPills
                 entity="production"
-                currentQueryString={params.toString()}
-                onApply={(qs) => {
-                  setFilterValues(filterFromQueryString(qs));
-                  onResetCursor();
-                }}
+                currentQueryString={savedFilterQuery}
+                onApply={applySavedFilter}
               />
             }
             testId="productions-inline-filter"
@@ -290,25 +339,31 @@ export default function ProductionsListPage() {
                 testId="filter-period"
               />
             </InlineFilterPanel.Field>
+            {/* Организация — moysklad-parity inline multi-select checkbox
+              dropdown (was a single-select modal): type a name, results appear
+              inline, tick as many organizations as needed. */}
             <InlineFilterPanel.Field label={tFilters('organization')} expandable>
-              <CatalogPickerField
-                value={
-                  filterValues.organizationId
-                    ? {
-                        id: filterValues.organizationId,
-                        label: filterValues.organizationLabel ?? filterValues.organizationId,
-                      }
-                    : null
-                }
-                placeholder=""
-                onPick={() => setPickerOpen('org')}
-                onClear={() => {
-                  setFilterValues({
-                    ...filterValues,
-                    organizationId: undefined,
-                    organizationLabel: undefined,
-                  });
+              <MultiCombobox
+                value={organizations.map((x) => x.id)}
+                items={organizations.map((x) => ({ value: x.id, label: x.label }))}
+                onSearch={async (q) => {
+                  const r = await api.get<{ items: { id: string; name: string }[] }>(
+                    `/organizations?search=${encodeURIComponent(q)}&limit=20`,
+                  );
+                  return r.items.map((x) => ({ value: x.id, label: x.name }));
                 }}
+                onChange={(nextIds, toggled) => {
+                  setOrganizations((prev) =>
+                    nextIds.map((id) => {
+                      const ex = prev.find((s) => s.id === id);
+                      if (ex) return ex;
+                      if (toggled?.value === id) return { id, label: String(toggled.label) };
+                      return { id, label: id };
+                    }),
+                  );
+                  onResetCursor();
+                }}
+                placeholder=""
                 testId="filter-org"
               />
             </InlineFilterPanel.Field>
@@ -427,24 +482,6 @@ export default function ProductionsListPage() {
             label={tFilters('trigger')}
           />
         }
-      />
-      <CatalogPicker
-        open={pickerOpen === 'org'}
-        onClose={() => setPickerOpen(null)}
-        title={tFilters('organization')}
-        fetcher={async (q): Promise<PickerItem[]> => {
-          const r = await api.get<{ items: { id: string; name: string }[] }>(
-            `/organizations?search=${encodeURIComponent(q)}&limit=20`,
-          );
-          return r.items.map((x) => ({ id: x.id, primary: x.name }));
-        }}
-        onSelect={(item) => {
-          setFilterValues({
-            ...filterValues,
-            organizationId: item.id,
-            organizationLabel: String(item.primary),
-          });
-        }}
       />
       <CatalogPicker
         open={pickerOpen === 'store'}

@@ -74,7 +74,7 @@ export function BrandIcon({ name, className }: { name: IconName; className?: str
       strokeLinecap="round"
       strokeLinejoin="round"
       className={className}
-      aria-hidden="true"
+      aria-hidden
     >
       {path}
     </svg>

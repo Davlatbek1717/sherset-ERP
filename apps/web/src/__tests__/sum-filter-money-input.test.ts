@@ -28,19 +28,21 @@ const FE = (...p: string[]) => join(SRC, 'app', '(app)', ...p, 'page.tsx');
 const PAGES = [
   'cash-in',
   'cash-out',
-  'commission-reports',
+  // 'commission-reports' / 'demands' / 'invoices-in' / 'invoices-out' / 'losses' /
+  // 'purchase-returns' / 'supplies' — their filter panels were re-grounded 1:1 on
+  // moysklad, whose filters have NO «Сумма» field for these lists, so the pages
+  // dropped the sum-range filter (e.g. 8298eb39 «drop Заказ/Сумма», 59d32c10
+  // 24-field demands filter). Entries retired 2026-07-17 alongside enters/moves.
   'counterparty-adjustments',
   'customer-orders',
-  'demands',
   // 'enters' — moysklad's #enter list filter has NO «Сумма» field (live-grounded
   // 2026-06-21), so the enters page intentionally dropped its sum-range filter.
   'factures-in',
   'factures-out',
-  'internal-orders',
+  // 'internal-orders' — moysklad's #internalorder list filter has NO «Сумма»
+  // field (owner screenshots 2026-07-14: 14 fields, Период…Кто изменил), so the
+  // page dropped its sum-range filter for parity.
   'inventories',
-  'invoices-in',
-  'invoices-out',
-  'losses',
   // 'moves' — moysklad's #move list filter also has NO «Сумма» field (removed
   // upstream for parity; see moves/page.tsx «There is NO «Сумма» filter»). The
   // test entry was left stale → removed here alongside enters.
@@ -51,9 +53,7 @@ const PAGES = [
   'processing-orders',
   'processings',
   'productions',
-  'purchase-returns',
   'sales-returns',
-  'supplies',
 ];
 
 // … plus the shared filter hook file (same pattern, off the rendered path today

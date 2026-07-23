@@ -17,7 +17,8 @@
     "studio": "prisma studio",
     "seed": "tsx prisma/seed.ts",
     "seed:hr": "tsx prisma/seed-hr.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "db:sync-statuses": "node sync-doc-statuses.cjs"
   },
   "dependencies": {
     "@moysklad/money": "workspace:*",

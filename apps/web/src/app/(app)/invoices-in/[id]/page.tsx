@@ -27,8 +27,10 @@ import {
   DetailTotalsSidebar,
   DocumentHistoryLink,
 } from '@/components/document-detail';
+import { CurrencyRateModal } from '@/components/document-detail/currency-rate-modal';
 import { DocumentTasksSection } from '@/components/document-tasks-section';
 import { OwnerAccessPopover } from '@/components/documents/owner-access-popover';
+import { PositionAgreementButton } from '@/components/documents/position-agreement-modal';
 import { PositionColumnCustomizer } from '@/components/documents/position-column-customizer';
 import { PositionDiscountMenu } from '@/components/documents/position-discount-menu';
 import { PositionPriceMenu } from '@/components/documents/position-price-menu';
@@ -42,6 +44,7 @@ import { useUnsavedGuard } from '@/hooks/use-unsaved-guard';
 import { api } from '@/lib/api-client';
 import { docTotals } from '@/lib/doc-totals';
 import { isOptimisticConflict } from '@/lib/optimistic-lock';
+import { distributeAgreementDelta } from '@/lib/position-agreement';
 import {
   Alert,
   CatalogPicker,
@@ -56,6 +59,7 @@ import {
   type PickerItem,
   type PositionColumnKey,
   PositionInlineAdd,
+  PositionNameCell,
   PositionTable,
   type PositionTableColumnConfig,
   Textarea,
@@ -334,7 +338,7 @@ export default function InvoiceInDetailPage() {
   // «Валюта документа» FX — moysklad shows «1 USD = N UZS» INLINE with the picker + a ✎ to
   // override the rate for THIS document (else the account currency rate is used).
   const [rateOverride, setRateOverride] = useState<string | null>(null);
-  const [rateEditing, setRateEditing] = useState(false);
+  const [rateModalOpen, setRateModalOpen] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const onConflict = useConflictReload(['invoice-in', id], () => setForm(null));
 
@@ -375,6 +379,21 @@ export default function InvoiceInDetailPage() {
       const [moved] = next.splice(from, 1);
       if (moved) next.splice(to, 0, moved);
       return { ...s, positions: next };
+    });
+  }, []);
+  // «Kelishuv» — spread the negotiated delta across the lines (owner 2026-07-17).
+  const applyAgreement = useCallback((deltaMinor: bigint) => {
+    setForm((s) => {
+      if (!s) return s;
+      const patch = distributeAgreementDelta(s.positions, deltaMinor, s.vatIncluded);
+      if (patch.size === 0) return s;
+      return {
+        ...s,
+        positions: s.positions.map((p) => {
+          const next = patch.get(p.id);
+          return next != null ? { ...p, priceMinor: next } : p;
+        }),
+      };
     });
   }, []);
   const repricePositions = useCallback((priceTypeId: string) => {
@@ -738,38 +757,22 @@ export default function InvoiceInDetailPage() {
     return false;
   })();
 
-  const applyProductToRow = (rowId: string, item: PickerItem) => {
-    const raw = (item as { raw?: ProductItem }).raw;
-    updatePosition(rowId, {
-      assortmentId: item.id,
-      productLabel: String(item.primary),
-      productCode: raw?.code ?? undefined,
-      productUom: raw?.uom ?? null,
-      priceMinor: raw?.buyPrice ?? '0',
-      vat: raw?.vat != null ? String(raw.vat) : '0',
-      available: raw?.stock?.available,
-      stock: raw?.stock?.onHand,
-      reserve: raw?.stock?.reserved,
-      salePrices: raw?.salePrices ?? null,
-    });
-  };
   const renderPositionNameCell = (row: DocPositionRow) => {
     const p = row as DetailPositionRow;
+    // moysklad parity: a picked product's name LINKS to its product card (where the
+    // «Аналоги» tab lives). Swapping moves to the row ⋮ «Заменить» (onReplace below).
+    const href = p.assortmentId ? `/products/${p.assortmentId}` : undefined;
     return (
-      <CatalogPickerField
-        value={p.assortmentId ? { id: p.assortmentId, label: p.productLabel } : null}
+      <PositionNameCell
+        imageUrl={p.imageUrl}
+        code={p.productCode}
+        label={p.productLabel}
         placeholder={tForm('select_product')}
-        // moysklad parity: the position name is an INLINE type-to-search (NOT a modal) —
-        // the chevron + typing open the anchored product dropdown. onPick stays as the
-        // legacy fallback (not triggered now that the inline variant is active).
-        inlineFetcher={editable ? productFetcher : undefined}
-        onInlineSelect={editable ? (item) => applyProductToRow(p.id, item) : undefined}
         onPick={() => editable && setProductRowId(p.id)}
-        onClear={() =>
-          editable &&
-          updatePosition(p.id, { assortmentId: null, productLabel: '', productUom: null })
-        }
+        productHref={href}
+        onNavigate={href ? () => router.push(href) : undefined}
         disabled={!editable}
+        testId={`pos-${p.id}-name`}
       />
     );
   };
@@ -1097,7 +1100,7 @@ export default function InvoiceInDetailPage() {
                   onClear={() =>
                     editable && setForm((s) => s && { ...s, projectId: null, projectLabel: '' })
                   }
-                  onCreate={editable ? () => router.push('/projects/new') : undefined}
+                  onCreate={editable ? () => router.push('/settings/projects/new') : undefined}
                   createLabel={tForm('create_new_project')}
                   disabled={!editable}
                   testId="field-project"
@@ -1108,7 +1111,7 @@ export default function InvoiceInDetailPage() {
             {/* «Входящий номер» [____] «от» [📅____] — left-only row. */}
             <DocumentMetaRow>
               <DocumentMetaField label={t('col_incoming_number')}>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 max-md:flex-wrap">
                   <Input
                     value={form.incomingNumber}
                     onChange={(e) => setForm((s) => s && { ...s, incomingNumber: e.target.value })}
@@ -1170,45 +1173,23 @@ export default function InvoiceInDetailPage() {
                     ✎
                   </button>
                   {!isBaseCurrency && selectedCurrency && (
-                    <span className="ml-1 inline-flex items-center gap-1 text-[var(--ms-text-muted)] text-xs tabular-nums">
-                      <span>1 {form.currency} =</span>
-                      {rateEditing ? (
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          value={rateOverride ?? effectiveRate}
-                          onChange={(e) => setRateOverride(e.target.value)}
-                          onBlur={() => setRateEditing(false)}
-                          disabled={!editable}
-                          className="h-6 w-24 rounded-[var(--ms-radius-sm)] border border-[var(--ms-border-default)] px-1 text-right text-xs tabular-nums focus:outline-none focus:ring-1 focus:ring-[var(--ms-text-brand)]"
-                          data-test-id="rate-input"
-                        />
-                      ) : (
-                        <span className="font-medium">
-                          {Number(effectiveRate).toLocaleString('ru-RU')}
-                        </span>
-                      )}
-                      <span>UZS</span>
-                      {editable && !rateEditing && (
+                    <span className="ml-1 inline-flex items-center gap-1 text-[var(--ms-text-muted)] text-[12px] tabular-nums">
+                      <span>
+                        1 {form.currency} ={' '}
+                        {Number(effectiveRate).toLocaleString('ru-RU', {
+                          maximumFractionDigits: 4,
+                        })}{' '}
+                        UZS
+                      </span>
+                      {editable && (
                         <button
                           type="button"
-                          onClick={() => setRateEditing(true)}
-                          className="px-0.5 text-[var(--ms-text-muted)] hover:text-[var(--ms-text-primary)]"
+                          onClick={() => setRateModalOpen(true)}
+                          className="px-0.5 text-[var(--ms-text-brand)] hover:opacity-80"
                           aria-label={tCommon('edit')}
                           data-test-id="rate-edit"
                         >
                           ✎
-                        </button>
-                      )}
-                      {editable && rateOverride && !rateEditing && (
-                        <button
-                          type="button"
-                          onClick={() => setRateOverride(null)}
-                          className="px-0.5 text-[var(--ms-text-muted)] hover:text-[var(--ms-text-primary)]"
-                          title={tForm('rate_auto_reset')}
-                          data-test-id="rate-reset"
-                        >
-                          ↺
                         </button>
                       )}
                     </span>
@@ -1216,6 +1197,17 @@ export default function InvoiceInDetailPage() {
                 </div>
               </DocumentMetaField>
             </DocumentMetaRow>
+            {!isBaseCurrency && selectedCurrency && (
+              <CurrencyRateModal
+                open={rateModalOpen}
+                onOpenChange={setRateModalOpen}
+                currency={form.currency}
+                referenceRate={selectedCurrency.rate ?? '1'}
+                currentOverride={rateOverride}
+                onApply={setRateOverride}
+                disabled={!editable}
+              />
+            )}
           </div>
 
           <div className="mt-4">
@@ -1223,7 +1215,7 @@ export default function InvoiceInDetailPage() {
               auditEntity="InvoiceIn"
               entityId={data.id}
               relatedGroups={[]}
-              positionsLabel={tDetailTabs('main')}
+              positionsLabel={tDetailTabs('positions')}
               filesSlot={<AttachmentsSection entity="InvoiceIn" entityId={data.id} />}
               tasksSlot={<DocumentTasksSection entity="InvoiceIn" entityId={data.id} />}
               historyInline={false}
@@ -1237,11 +1229,38 @@ export default function InvoiceInDetailPage() {
                     sumMinor: data.sumMinor,
                     kind: 'invoice-in',
                   }}
+                  // «Привязать документ» — the tab owns the «Привязка документа»
+                  // modal (pre-scoped to this invoice's refs) + manual links +
+                  // unlink + the «?link=new» auto-open hand-off.
+                  linkable={{
+                    entityType: 'InvoiceIn',
+                    agent: data.agent,
+                    organization: data.organization,
+                    storeTo: data.store,
+                  }}
                 />
               }
             >
               <div>
                 <div className="min-w-0">
+                  {/* Owner 2026-07-23: «Договорная цена» — blue, at the table's OUTER
+                      top-right corner (same spot in every section). */}
+                  <div className="-mb-2.5 flex justify-end">
+                    <PositionAgreementButton
+                      totalMinor={total}
+                      currency={form.currency}
+                      labels={{
+                        button: tPos('agreement_button'),
+                        total: tPos('agreement_total'),
+                        amount: tPos('agreement_amount'),
+                        add: tPos('agreement_add'),
+                        subtract: tPos('agreement_subtract'),
+                        save: tPos('pick_modal_save'),
+                        cancel: tPos('pick_modal_cancel'),
+                      }}
+                      onApply={applyAgreement}
+                    />
+                  </div>
                   <PositionTable
                     columns={positionColumns}
                     emptyText={tPos('empty')}
@@ -1278,6 +1297,7 @@ export default function InvoiceInDetailPage() {
                     sortByNameLabel={tPos('sort_by_name')}
                     sortByCodeLabel={tPos('sort_by_code')}
                     renderNameCell={renderPositionNameCell}
+                    onReplace={(id) => editable && setProductRowId(id)}
                     vatIncluded={form.vatIncluded}
                     selectedIds={selectedRowIds}
                     onSelectionChange={setSelectedRowIds}
@@ -1300,6 +1320,10 @@ export default function InvoiceInDetailPage() {
                                 code: p.code ?? undefined,
                                 available:
                                   p.stock?.available != null ? Number(p.stock.available) : 0,
+                                // Pick modal (owner 2026-07-18): reference «Цена» = the same
+                                // default the row would get (buy price on purchase docs).
+                                priceMinor: p.buyPrice ?? '0',
+                                uomLabel: p.uom ?? undefined,
                                 raw: p,
                               })),
                               total: r.total ?? r.items.length,
@@ -1309,8 +1333,26 @@ export default function InvoiceInDetailPage() {
                           moreItemsLabel={(n) => tPos('moreItems', { count: n })}
                           createProductLabel={(qq) => tPos('createProductNamed', { query: qq })}
                           onCreateProduct={() => router.push('/products/new')}
-                          onPick={(item) => {
+                          // owner 2026-07-18: qty/price modal on EVERY product-add search
+                          // (was sales-only). No price-scope checkboxes here — writing a
+                          // permanent SALE price from a purchase price would be wrong.
+                          pickModal={{
+                            currency: form.currency,
+                            permanentPriceOption: false,
+                            labels: {
+                              stock: tPos('pick_modal_stock'),
+                              price: tPos('pick_modal_price'),
+                              quantity: tPos('pick_modal_quantity'),
+                              salePrice: tPos('pick_modal_sale_price'),
+                              priceThisSale: tPos('pick_modal_price_this_sale'),
+                              pricePermanent: tPos('pick_modal_price_permanent'),
+                              save: tPos('pick_modal_save'),
+                              cancel: tPos('pick_modal_cancel'),
+                            },
+                          }}
+                          onPick={(item, entry) => {
                             const raw = item.raw as ProductItem | undefined;
+                            const newId = uid();
                             setForm((s) =>
                               s
                                 ? {
@@ -1318,15 +1360,15 @@ export default function InvoiceInDetailPage() {
                                     positions: [
                                       ...s.positions,
                                       {
-                                        id: uid(),
+                                        id: newId,
                                         assortmentId: item.id,
                                         productLabel: item.primary,
                                         productCode: raw?.code ?? undefined,
                                         productUom: raw?.uom ?? null,
-                                        quantity: '1',
-                                        priceMinor: raw?.buyPrice ?? '0',
+                                        quantity: entry?.quantity ?? '1',
+                                        priceMinor: entry?.priceMinor ?? raw?.buyPrice ?? '0',
                                         discount: '0',
-                                        vat: raw?.vat != null ? String(raw.vat) : '0',
+                                        vat: raw?.vat != null ? String(raw.vat) : '12',
                                         vatEnabled: s.vatEnabled,
                                         available: raw?.stock?.available,
                                         stock: raw?.stock?.onHand,
@@ -1337,6 +1379,9 @@ export default function InvoiceInDetailPage() {
                                   }
                                 : s,
                             );
+                            // owner 2026-07-18: returning the id hands focus to the new
+                            // row's «Кол-во» (modal → table entry chain).
+                            return newId;
                           }}
                           onAddFromCatalog={() => setOpenCatalogPicker(true)}
                           onCheckCompleteness={() => {}}
@@ -1358,7 +1403,7 @@ export default function InvoiceInDetailPage() {
                                           quantity: Number(quantity) > 0 ? quantity : '1',
                                           priceMinor: raw?.buyPrice ?? '0',
                                           discount: '0',
-                                          vat: raw?.vat != null ? String(raw.vat) : '0',
+                                          vat: raw?.vat != null ? String(raw.vat) : '12',
                                           vatEnabled: s.vatEnabled,
                                           available: raw?.stock?.available,
                                           stock: raw?.stock?.onHand,
@@ -1510,7 +1555,7 @@ export default function InvoiceInDetailPage() {
             quantity: '1',
             priceMinor: raw?.buyPrice ?? '0',
             discount: '0',
-            vat: raw?.vat != null ? String(raw.vat) : '0',
+            vat: raw?.vat != null ? String(raw.vat) : '12',
             vatEnabled: form.vatEnabled,
             available: raw?.stock?.available,
             stock: raw?.stock?.onHand,
@@ -1535,7 +1580,7 @@ export default function InvoiceInDetailPage() {
             productCode: raw?.code ?? undefined,
             productUom: raw?.uom ?? null,
             priceMinor: raw?.buyPrice ?? '0',
-            vat: raw?.vat != null ? String(raw.vat) : '0',
+            vat: raw?.vat != null ? String(raw.vat) : '12',
             available: raw?.stock?.available,
             stock: raw?.stock?.onHand,
             reserve: raw?.stock?.reserved,

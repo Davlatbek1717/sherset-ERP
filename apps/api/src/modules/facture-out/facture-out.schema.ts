@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { csvUuid } from '../shared/csv.js';
 
 /**
  * FactureOut (Счёт-фактура выданный / Berilgan schyot-faktura) — the
@@ -54,9 +55,11 @@ const boolFromString = z
 export const FactureOutFilterSchema = z.object({
   state: FactureOutStateSchema.optional(),
   agentId: z.string().uuid().optional(),
+  agentIds: csvUuid.optional(),
   /** «Группа контрагента» — filters via the agent (Counterparty) relation's groupId. */
   agentGroupId: z.string().uuid().optional(),
   organizationId: z.string().uuid().optional(),
+  organizationIds: csvUuid.optional(),
   /** «Владелец-сотрудник» — FactureOut.ownerId. */
   ownerId: z.string().uuid().optional(),
   /** «Владелец-отдел» — FactureOut.groupId (owner department). */

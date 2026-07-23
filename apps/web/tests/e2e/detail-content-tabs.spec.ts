@@ -17,13 +17,15 @@ import { expect, test } from '@playwright/test';
 test.describe('DetailContentTabs — moysklad-parity tab swap', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/login');
-    await page.fill('[data-test-id="login-username"]', 'admin@demo.local');
+    await page.fill('[data-test-id="login-email"]', 'admin@demo.local');
     await page.fill('[data-test-id="login-password"]', 'admin123');
     await page.click('[data-test-id="login-submit"]');
     await page.waitForURL('/');
   });
 
-  test('demands detail page renders all 4 tabs and swaps content on click', async ({ page }) => {
+  test('demands detail page renders all 4 tabs and swaps content on click', async ({
+    page,
+  }) => {
     // Land on demands list and pick the first row.
     await page.goto('/demands');
     await expect(page.getByTestId('demands-page')).toBeVisible();
@@ -87,13 +89,18 @@ test.describe('DetailContentTabs — moysklad-parity tab swap', () => {
     await expect(page.getByTestId('tab-related')).toHaveAttribute('data-state', 'active');
   });
 
-  test('payments-in detail uses "Taqsimlanish" instead of "Pozitsiyalar"', async ({ page }) => {
+  test('payments-in detail uses "Taqsimlanish" instead of "Pozitsiyalar"', async ({
+    page,
+  }) => {
     await page.goto('/payments-in');
     await expect(page.getByTestId('payments-in-page')).toBeVisible();
 
     const firstRow = page.locator('[data-test-id^="payment-in-row-"] a').first();
     const exists = await firstRow.count();
-    test.skip(exists === 0, 'no seeded payment-in rows available — skip rather than flake');
+    test.skip(
+      exists === 0,
+      'no seeded payment-in rows available — skip rather than flake',
+    );
     await firstRow.click();
 
     await expect(page.getByTestId('payment-in-detail-page')).toBeVisible();

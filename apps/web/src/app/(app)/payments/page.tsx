@@ -72,6 +72,19 @@ interface PaymentRow {
   sent: null;
   printed: boolean;
   state: string;
+  // extra column-settings fields (moysklad ⚙); default-hidden columns
+  contractName: string | null;
+  projectName: string | null;
+  salesChannelName: string | null;
+  ownerName: string | null;
+  groupName: string | null;
+  expenseItem: string | null;
+  shared: boolean;
+  incomingNumber: string | null;
+  incomingDate: string | null;
+  linkedMinor: string;
+  notLinkedMinor: string;
+  updatedAt: string;
 }
 
 interface ListResponse {
@@ -528,7 +541,7 @@ export default function PaymentsPage() {
       header: tFields('organization_account'),
       width: '120px',
       cell: (p) => (
-        <span className="block max-w-[120px] truncate text-[var(--ms-text-muted)] text-xs">
+        <span className="block max-w-[120px] truncate text-[var(--ms-text-muted)] text-[11px]">
           {p.organizationAccountName ?? ''}
         </span>
       ),
@@ -548,7 +561,7 @@ export default function PaymentsPage() {
       header: tFields('agent_account'),
       width: '120px',
       cell: (p) => (
-        <span className="block max-w-[120px] truncate text-[var(--ms-text-muted)] text-xs">
+        <span className="block max-w-[120px] truncate text-[var(--ms-text-muted)] text-[11px]">
           {p.agentAccountName ?? ''}
         </span>
       ),
@@ -596,14 +609,132 @@ export default function PaymentsPage() {
       cellText: (p) => p.currency,
     },
     {
+      // «Дата начисления» — no backing column yet; display-only placeholder so the ⚙
+      // list matches moysklad. Renders empty until an accrual_date field is added.
+      key: 'accrualDate',
+      header: t('flt_accrual_date'),
+      width: '130px',
+      cell: () => <span title={t('flt_not_wired')} />,
+      cellText: () => '',
+    },
+    {
+      key: 'linked',
+      header: t('col_linked'),
+      align: 'right',
+      width: '120px',
+      cell: (p) => (
+        <span className="text-[var(--ms-text-muted)] text-[12px] tabular-nums">
+          {moneyCell(p.linkedMinor, p.currency)}
+        </span>
+      ),
+      cellText: (p) => moneyCell(p.linkedMinor, p.currency),
+    },
+    {
+      key: 'notLinked',
+      header: t('col_not_linked'),
+      align: 'right',
+      width: '120px',
+      cell: (p) => (
+        <span className="text-[var(--ms-text-muted)] text-[12px] tabular-nums">
+          {moneyCell(p.notLinkedMinor, p.currency)}
+        </span>
+      ),
+      cellText: (p) => moneyCell(p.notLinkedMinor, p.currency),
+    },
+    {
       key: 'paymentPurpose',
       header: tFields('payment_purpose'),
       cell: (p) => (
-        <span className="block max-w-[240px] truncate text-[var(--ms-text-muted)] text-xs">
+        <span className="block max-w-[240px] truncate text-[var(--ms-text-muted)] text-[11px]">
           {p.paymentPurpose ?? ''}
         </span>
       ),
       cellText: (p) => p.paymentPurpose ?? '',
+    },
+    {
+      key: 'expenseItem',
+      header: tFields('expense_item'),
+      width: '150px',
+      cell: (p) => (
+        <span className="block max-w-[150px] truncate text-[var(--ms-text-muted)] text-[11px]">
+          {p.expenseItem ?? ''}
+        </span>
+      ),
+      cellText: (p) => p.expenseItem ?? '',
+    },
+    {
+      key: 'incomingNumber',
+      header: t('col_incoming_number'),
+      width: '120px',
+      cell: (p) => (
+        <span className="text-[var(--ms-text-muted)] text-xs">{p.incomingNumber ?? ''}</span>
+      ),
+      cellText: (p) => p.incomingNumber ?? '',
+    },
+    {
+      key: 'incomingDate',
+      header: tFields('incoming_date'),
+      width: '120px',
+      cell: (p) => (
+        <span className="text-[var(--ms-text-muted)] text-xs">
+          {p.incomingDate ? formatDate(p.incomingDate) : ''}
+        </span>
+      ),
+      cellText: (p) => (p.incomingDate ? formatDate(p.incomingDate) : ''),
+    },
+    {
+      key: 'project',
+      header: tFields('project'),
+      width: '140px',
+      cell: (p) => (
+        <span className="block max-w-[140px] truncate text-sm">{p.projectName ?? ''}</span>
+      ),
+      cellText: (p) => p.projectName ?? '',
+    },
+    {
+      key: 'contract',
+      header: tFields('contract'),
+      width: '140px',
+      cell: (p) => (
+        <span className="block max-w-[140px] truncate text-sm">{p.contractName ?? ''}</span>
+      ),
+      cellText: (p) => p.contractName ?? '',
+    },
+    {
+      key: 'salesChannel',
+      header: tFields('sales_channel'),
+      width: '140px',
+      cell: (p) => (
+        <span className="block max-w-[140px] truncate text-sm">{p.salesChannelName ?? ''}</span>
+      ),
+      cellText: (p) => p.salesChannelName ?? '',
+    },
+    {
+      key: 'shared',
+      header: t('flt_shared'),
+      width: '110px',
+      cell: (p) => (p.shared ? <span className="text-[#3aa757]">✓</span> : null),
+      cellText: (p) => (p.shared ? '✓' : ''),
+    },
+    {
+      key: 'ownerGroup',
+      header: t('flt_group'),
+      width: '140px',
+      cell: (p) => (
+        <span className="block max-w-[140px] truncate text-[var(--ms-text-muted)] text-[11px]">
+          {p.groupName ?? ''}
+        </span>
+      ),
+      cellText: (p) => p.groupName ?? '',
+    },
+    {
+      key: 'ownerEmployee',
+      header: t('flt_owner'),
+      width: '160px',
+      cell: (p) => (
+        <span className="block max-w-[160px] truncate text-sm">{p.ownerName ?? ''}</span>
+      ),
+      cellText: (p) => p.ownerName ?? '',
     },
     {
       key: 'state',
@@ -623,23 +754,47 @@ export default function PaymentsPage() {
       key: 'printed',
       header: tFields('printed'),
       width: '110px',
-      cell: (p) => (
-        <span className="text-[var(--ms-text-muted)] text-xs">
-          {p.printed ? tCommon('yes') : ''}
-        </span>
-      ),
-      cellText: (p) => (p.printed ? tCommon('yes') : ''),
+      // moysklad parity: cyan (#00bfe6) filled pill «Напечатан» when printed, EMPTY
+      // otherwise (NOT «Да»). Live-grounded rgb(0,191,230); mirror CO/demands.
+      cell: (p) =>
+        p.printed ? (
+          <span
+            className="inline-flex items-center whitespace-nowrap rounded-[3px] bg-[#00bfe6] px-2 py-0.5 font-medium text-white text-xs"
+            data-test-id="printed-badge"
+          >
+            {tFields('printed_badge')}
+          </span>
+        ) : null,
+      cellText: (p) => (p.printed ? tFields('printed_badge') : ''),
     },
     {
       key: 'comment',
       header: tFields('comment'),
       width: '180px',
       cell: (p) => (
-        <span className="block max-w-[200px] truncate text-[var(--ms-text-muted)] text-xs">
+        <span className="block max-w-[200px] truncate text-[var(--ms-text-muted)] text-[11px]">
           {p.comment ?? ''}
         </span>
       ),
       cellText: (p) => p.comment ?? '',
+    },
+    {
+      key: 'updatedWhen',
+      header: t('flt_updated'),
+      width: '130px',
+      cell: (p) => (
+        <span className="text-[var(--ms-text-muted)] text-xs">{formatDate(p.updatedAt)}</span>
+      ),
+      cellText: (p) => formatDate(p.updatedAt),
+    },
+    {
+      // «Кто изменил» — no updatedById column on the money models yet; display-only
+      // placeholder so the ⚙ list matches moysklad (empty until audit-author tracked).
+      key: 'modifiedBy',
+      header: t('flt_modified_by'),
+      width: '160px',
+      cell: () => <span title={t('flt_not_wired')} />,
+      cellText: () => '',
     },
   ];
 

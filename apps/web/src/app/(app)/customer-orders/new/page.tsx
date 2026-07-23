@@ -1,34 +1,28 @@
 'use client';
-
-/**
- * /customer-orders/new — moysklad-parity «Заказ покупателя» editor.
- *
- * Built on the document-editor framework (DocumentEditor + Toolbar +
- * Header + MetaPanel + PositionTable + TotalsPanel + DisclosurePanel
- * + Tabs). Mirrors purchase-orders/new/page.tsx — just swaps entity
- * labels to «Покупатель» and points mutations to /customer-orders.
- */
-
 import { AttributeInput, type AttributeMetaRow } from '@/components/attributes-editor';
 import {
   type DeliveryAddressFull,
   DeliveryAddressGroup,
 } from '@/components/customer-orders/delivery-address-group';
 import { CurrencyRateModal } from '@/components/document-detail/currency-rate-modal';
+import { NewDocRelatedTab } from '@/components/documents/new-doc-related-tab';
 import {
   OwnerAccessPopover,
   type OwnerAccessValue,
 } from '@/components/documents/owner-access-popover';
+import { PositionAgreementButton } from '@/components/documents/position-agreement-modal';
 import { PositionColumnCustomizer } from '@/components/documents/position-column-customizer';
 import { PositionDiscountMenu } from '@/components/documents/position-discount-menu';
 import { PositionPriceMenu } from '@/components/documents/position-price-menu';
 import { PositionReserveMenu } from '@/components/documents/position-reserve-menu';
+import { useNewDocStaging } from '@/components/documents/use-new-doc-staging';
 import { usePrintTemplatesManager } from '@/components/print/print-templates-provider';
 import { ProductSelectModal } from '@/components/products/product-select-modal';
 import { useDocumentEditorLabels } from '@/hooks/use-document-editor-labels';
 import { api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-store';
-import { pinDefaultCustomer } from '@/lib/pin-default-customer';
+import { imageRawUrl } from '@/lib/image-url';
+import { distributeAgreementDelta } from '@/lib/position-agreement';
 import { resolveDefaultSalePriceOrZero, usePriceTypeIds } from '@/lib/sale-price';
 import { computePositionTotal } from '@moysklad/money';
 import {
@@ -52,6 +46,7 @@ import {
   type PositionTableColumnConfig,
   Textarea,
   formatMoney,
+  isRowOversold,
   useToast,
 } from '@moysklad/ui';
 import { useMutation, useQuery } from '@tanstack/react-query';
@@ -106,6 +101,10 @@ interface NewPositionRow extends DocPositionRow {
 function uid(): string {
   return Math.random().toString(36).slice(2);
 }
+
+// «События» on the CREATE form — hidden 2026-07-09 (moysklad's old-design /new has
+// no События tab). Flip to true to re-enable; the tab's code is kept below.
+const SHOW_NEW_EVENTS_TAB = false;
 
 /** Compose the denormalised single-line address from the structured parts. */
 function composeAddress(a: DeliveryAddressFull): string | null {
@@ -258,7 +257,7 @@ export default function NewCustomerOrderPage() {
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   });
   const [statusId, setStatusId] = useState<string | null>(null);
-  const [applicable, setApplicable] = useState(false);
+  const [applicable, setApplicable] = useState(true);
 
   // Meta state
   const [agentId, setAgentId] = useState<string | null>(null);
@@ -489,12 +488,17 @@ export default function NewCustomerOrderPage() {
   // NOT a live CB feed: that drifts from the admin rate (e.g. 11 990 vs 12 200),
   // so USD docs were stored at the wrong base-currency value. One source of
   // truth → GET /currencies (mirror enters / losses / payments-in).
-  const { data: currenciesData } = useQuery<{ items: Array<{ isoCode: string; rate: string }> }>({
+  const { data: currenciesData } = useQuery<{
+    items: Array<{ id: string; isoCode: string; name: string; rate: string }>;
+  }>({
     queryKey: ['currencies'],
     queryFn: () => api.get('/currencies'),
     staleTime: 60_000,
   });
-  const adminRate = (currenciesData?.items ?? []).find((c) => c.isoCode === currency)?.rate;
+  // «Валюта документа» options — the account's REAL currencies (Настройки → Валюты),
+  // never a hardcoded list (a phantom EUR/RUB the account doesn't have must not appear).
+  const currencies = currenciesData?.items ?? [];
+  const adminRate = currencies.find((c) => c.isoCode === currency)?.rate;
   const effectiveRate = rateOverride ?? adminRate ?? '1';
 
   // moysklad parity: «Баланс : <amount>» caption under Контрагент — the
@@ -509,20 +513,24 @@ export default function NewCustomerOrderPage() {
   });
   const agentBalanceMinor =
     agentBalanceData?.items.find((b) => b.currency === currency)?.balanceMinor ?? '0';
-  // moysklad: the «Баланс» caption gets a «(нам должны)/(мы должны)» qualifier and
-  // turns red when the picked counterparty carries a debt — so an operator sees
-  // an outstanding balance the moment the customer is selected (parity with [id]).
-  const agentBalanceNum = Number(agentBalanceMinor || '0');
-  const agentBalanceQualifier =
-    agentBalanceNum > 0
-      ? tDetailHeader('owed_to_us')
-      : agentBalanceNum < 0
-        ? tDetailHeader('we_owe')
-        : '';
 
   // VAT toggles (totals panel)
   const [vatEnabled, setVatEnabled] = useState(true);
   const [vatIncluded, setVatIncluded] = useState(false);
+  // «Kelishuv» — spread the negotiated delta across the lines (owner 2026-07-17).
+  const applyAgreement = useCallback(
+    (deltaMinor: bigint) => {
+      setPositions((ps) => {
+        const patch = distributeAgreementDelta(ps, deltaMinor, vatIncluded);
+        if (patch.size === 0) return ps;
+        return ps.map((p) => {
+          const next = patch.get(p.id);
+          return next != null ? { ...p, priceMinor: next } : p;
+        });
+      });
+    },
+    [vatIncluded],
+  );
 
   // Pickers
   const [openPicker, setOpenPicker] = useState<
@@ -559,6 +567,33 @@ export default function NewCustomerOrderPage() {
     | 'purchase-order'
     | 'po-available'
   >('view');
+  // «＋ Задача» saves the order as a draft (skips the post rule).
+  const draftSaveRef = useRef(false);
+  // moysklad marks a required-but-empty «Контрагент» RED on a failed «＋ Задача».
+  const [agentInvalid, setAgentInvalid] = useState(false);
+  // moysklad-style short save-error line (under the toolbar) — owner 2026-07-11.
+  const [saveError, setSaveError] = useState<string | null>(null);
+  // «Печать» — which form the save-first print should open once the order exists:
+  // {view} = the standalone print page (new tab), {form,templateId} = an account
+  // custom form PDF (rendered by /customer-orders/bulk-print, opened in a new tab).
+  const printTargetRef = useRef<{ kind: 'view' | 'form'; templateId?: string }>({
+    kind: 'view',
+  });
+  // The account's own custom «Заказ покупателя» print forms (moysklad «Печать»
+  // lists them ABOVE the standard form + pins each as its own toolbar button).
+  // Empty on accounts with none configured.
+  // Doc-scoped endpoint (/customer-orders/print-forms) — gated on the DOC view permission, not
+  // settings, so a cashier sees the pinned check buttons too (the shared
+  // /print-templates listing is admin-only). Bare array, PO/new shape.
+  const { data: printFormsData } = useQuery<Array<{ id: string; name: string }>>({
+    queryKey: ['customerorder-print-forms'],
+    queryFn: () => api.get('/customer-orders/print-forms'),
+    staleTime: 60_000,
+  });
+  const printForms = printFormsData ?? [];
+  // «Связанные документы» tab — staged links / tasks / files (moysklad's create
+  // form works fully in place; everything persists in flush() right after save).
+  const staging = useNewDocStaging({ entityType: 'CustomerOrder', route: 'customer-orders' });
 
   // Pre-fill from the user's «Значения по умолчанию» once the reference lists
   // AND the settings have settled (runs once). Organization/Склад fall back to
@@ -590,9 +625,10 @@ export default function NewCustomerOrderPage() {
         setStoreLabel(storesData.items[0].name);
       }
     }
-    // Sherset (2026-07-16, owner decision): defaultCustomer is NOT auto-filled into
-    // new documents anymore — it only powers the pinned top row of the Контрагент
-    // picker (agentFetcher → lib/pin-default-customer.ts).
+    if (!agentId && us?.defaultCustomer) {
+      setAgentId(us.defaultCustomer.id);
+      setAgentLabel(us.defaultCustomer.name);
+    }
     if (!projectId && us?.defaultProject) {
       setProjectId(us.defaultProject.id);
       setProjectLabel(us.defaultProject.name);
@@ -604,6 +640,7 @@ export default function NewCustomerOrderPage() {
     userSettingsQuery.isLoading,
     organizationId,
     storeId,
+    agentId,
     projectId,
   ]);
   // moysklad parity: a new order opens with the first status preselected
@@ -651,8 +688,19 @@ export default function NewCustomerOrderPage() {
     [positions, vatIncluded],
   );
 
+  // moysklad hard-block (owner rule 2026-07-07): a line ordering MORE than the
+  // stock shown in «Остаток» must not be saveable. Mirrors the red-row test.
+  const hasOversold = useMemo(
+    () => positions.some((p) => isRowOversold(p, positionColumns)),
+    [positions, positionColumns],
+  );
+
   const createMut = useMutation({
     mutationFn: async () => {
+      // «＋ Задача» saves the order as a DRAFT so a task can attach to it.
+      const asDraft = draftSaveRef.current;
+      draftSaveRef.current = false;
+      const effApplicable = asDraft ? false : applicable;
       if (!agentId) throw new Error(tForm('select_counterparty'));
       if (!organizationId) throw new Error(tForm('select_organization'));
       if (!storeId) throw new Error(tForm('select_store'));
@@ -686,7 +734,7 @@ export default function NewCustomerOrderPage() {
         ...(docNumber ? { name: docNumber } : {}),
         ...(deliveryDate ? { deliveryPlannedMoment: deliveryDate } : {}),
         moment: docDate ? new Date(docDate).toISOString() : undefined,
-        applicable,
+        applicable: effApplicable,
         currency,
         rateValue:
           currency === 'UZS'
@@ -722,6 +770,9 @@ export default function NewCustomerOrderPage() {
     onSuccess: async (created) => {
       const intent = afterSaveRef.current;
       afterSaveRef.current = 'view';
+      // Staged files / links / tasks (the related tab works in place before save) —
+      // persist them all onto the freshly-created order.
+      await staging.flush(created.id);
       try {
         if (intent === 'demand') {
           const d = await api.post<{ id: string }>(
@@ -740,13 +791,25 @@ export default function NewCustomerOrderPage() {
           return;
         }
         if (intent === 'print') {
-          // moysklad «Печать → Заказ»: open the standalone print view for the
-          // freshly-saved order, then land on its detail page.
-          window.open(
-            `/print/customer-order/${created.id}?auto=1`,
-            '_blank',
-            'width=820,height=1100',
-          );
+          const target = printTargetRef.current;
+          printTargetRef.current = { kind: 'view' };
+          if (target.kind === 'form' && target.templateId) {
+            // An account custom form → render its PDF and OPEN IT IN A NEW TAB
+            // (moysklad «Открыть в браузере» — the user presses «Печать» there;
+            // NOT a save-to-disk download).
+            void api.postOpenInBrowser('/customer-orders/bulk-print', {
+              ids: [created.id],
+              templateId: target.templateId,
+            });
+          } else {
+            // moysklad «Печать → Заказ»: open the standalone print view for the
+            // freshly-saved order, then land on its detail page.
+            window.open(
+              `/print/customer-order/${created.id}?auto=1`,
+              '_blank',
+              'width=820,height=1100',
+            );
+          }
           router.push(`/customer-orders/${created.id}`);
           return;
         }
@@ -778,19 +841,11 @@ export default function NewCustomerOrderPage() {
     }>(`/counterparties?search=${encodeURIComponent(s)}&limit=50`);
     // moysklad shows phone (fallback legalTitle) as the second line of each
     // counterparty suggestion row.
-    const items = d.items.map((c) => ({
+    return d.items.map((c) => ({
       id: c.id,
       primary: c.name,
       secondary: c.phone ?? c.legalTitle ?? undefined,
     }));
-    // Pin the account's default customer («Покупатель») to the top — it takes the
-    // bulk of the sales, so the operator picks it in one click instead of searching.
-    return pinDefaultCustomer(
-      items,
-      userSettingsQuery.data?.defaultCustomer,
-      s,
-      tForm('pinned_default'),
-    );
   };
   const productFetcher = async (s: string): Promise<PickerItem[]> => {
     const d = await api.get<{ items: ProductItem[] }>(
@@ -855,6 +910,9 @@ export default function NewCustomerOrderPage() {
 
   const renderPositionNameCell = (row: DocPositionRow) => {
     const p = row as NewPositionRow;
+    // moysklad parity: a picked product's name LINKS to its product card (where the
+    // «Аналоги» tab lives). Swapping moves to the row ⋮ «Заменить» (onReplace below).
+    const href = p.assortmentId ? `/products/${p.assortmentId}` : undefined;
     return (
       <PositionNameCell
         imageUrl={p.imageUrl}
@@ -862,6 +920,8 @@ export default function NewCustomerOrderPage() {
         label={p.productLabel}
         placeholder={tForm('select_product')}
         onPick={() => setOpenPicker({ kind: 'product', rowUid: p.id })}
+        productHref={href}
+        onNavigate={href ? () => router.push(href) : undefined}
         testId={`pos-${p.id}-name`}
       />
     );
@@ -925,7 +985,9 @@ export default function NewCustomerOrderPage() {
       <div className="bg-[var(--ms-bg-surface)] px-4 py-3" data-test-id="doc-meta-panel">
         <div className="flex flex-col gap-x-12 gap-y-4 lg:flex-row lg:items-start">
           {/* LEFT + MIDDLE field columns, paired per row */}
-          <div className="grid grid-cols-[auto_minmax(0,190px)_auto_minmax(0,190px)] items-baseline gap-x-2.5 gap-y-2.5">
+          {/* Mobile: the fixed 4-col pair grid (~405px) drove page overflow —
+              phones get the 2-col [label][field] stack, desktop unchanged. */}
+          <div className="grid grid-cols-[auto_minmax(0,1fr)] md:grid-cols-[auto_minmax(0,190px)_auto_minmax(0,190px)] items-baseline gap-x-2.5 gap-y-2.5">
             {/* Row 1 — Организация ‖ Склад */}
             <DocumentMetaField
               label={tFields('organization')}
@@ -1001,19 +1063,11 @@ export default function NewCustomerOrderPage() {
               label={tFields('agent')}
               required
               startRow
+              error={agentInvalid ? tCommon('must_fill') : undefined}
               helper={
                 agentId ? (
-                  <span
-                    data-test-id="agent-balance"
-                    className={
-                      agentBalanceNum !== 0
-                        ? 'text-[var(--ms-action-destructive)]'
-                        : 'text-[var(--ms-text-primary)]'
-                    }
-                  >
-                    {tDetailHeader('balance')}
-                    {agentBalanceQualifier ? ` ${agentBalanceQualifier}` : ''} :{' '}
-                    {formatMoney(Math.abs(agentBalanceNum).toString(), currency)}
+                  <span data-test-id="agent-balance" className="text-[var(--ms-text-primary)]">
+                    {tDetailHeader('balance')} : {formatMoney(agentBalanceMinor, currency)}
                   </span>
                 ) : undefined
               }
@@ -1021,6 +1075,7 @@ export default function NewCustomerOrderPage() {
               <CatalogPickerField
                 value={agentId ? { id: agentId, label: agentLabel } : null}
                 placeholder={tForm('select_customer')}
+                invalid={agentInvalid}
                 onPick={() => setOpenPicker('agent')}
                 inlineFetcher={agentFetcher}
                 onInlineSelect={(item) => {
@@ -1083,7 +1138,7 @@ export default function NewCustomerOrderPage() {
                   setProjectId(null);
                   setProjectLabel('');
                 }}
-                onCreate={() => router.push('/projects/new')}
+                onCreate={() => router.push('/settings/projects/new')}
                 createLabel={tForm('create_new_project')}
               />
             </DocumentMetaField>
@@ -1143,10 +1198,12 @@ export default function NewCustomerOrderPage() {
                 }}
                 data-test-id="field-currency"
               >
-                <option value="UZS">{tForm('currency_uzs')}</option>
-                <option value="USD">{tForm('currency_usd')}</option>
-                <option value="EUR">{tForm('currency_eur')}</option>
-                <option value="RUB">{tForm('currency_rub')}</option>
+                {currencies.length === 0 && <option value={currency}>{currency}</option>}
+                {currencies.map((c) => (
+                  <option key={c.id} value={c.isoCode}>
+                    {c.name} ({c.isoCode})
+                  </option>
+                ))}
               </NativeSelect>
             </DocumentMetaField>
 
@@ -1185,13 +1242,34 @@ export default function NewCustomerOrderPage() {
   const tabs = [
     {
       key: 'main',
+      // moysklad old-design create form: the first tab is «Главная» (2026-07-09).
       label: tDetailTabs('main'),
       content: (
         <div className="space-y-4">
+          {/* Owner 2026-07-23: «Договорная цена» — blue, at the table's OUTER
+              top-right corner (same spot in every section). */}
+          <div className="-mb-2.5 flex justify-end">
+            <PositionAgreementButton
+              totalMinor={totals.gross}
+              currency={currency}
+              labels={{
+                button: tPos('agreement_button'),
+                total: tPos('agreement_total'),
+                amount: tPos('agreement_amount'),
+                add: tPos('agreement_add'),
+                subtract: tPos('agreement_subtract'),
+                save: tPos('pick_modal_save'),
+                cancel: tPos('pick_modal_cancel'),
+              }}
+              onApply={applyAgreement}
+            />
+          </div>
           <PositionTable
             columns={positionColumns}
             autoFocusRowId={lastAddedId}
             editableReserve
+            // moysklad sales-grid parity: «Остаток»/«Доступно» ≤ 0 shows red.
+            warnStock
             // moysklad parity (user 2026-06-20 «Нет позиций kerak emas»): no empty
             // placeholder row — the add-line sits directly under the header.
             emptyText=""
@@ -1232,6 +1310,9 @@ export default function NewCustomerOrderPage() {
             onWithGroupsChange={setWithGroups}
             withGroupsLabel={tPos('sort_with_groups')}
             renderNameCell={renderPositionNameCell}
+            // moysklad row ⋮ «Заменить» — swap the line's product (the name is now a
+            // card link, so swapping moves here). Opens the per-row product picker.
+            onReplace={(id) => setOpenPicker({ kind: 'product', rowUid: id })}
             vatIncluded={vatIncluded}
             selectedIds={selectedRowIds}
             onSelectionChange={setSelectedRowIds}
@@ -1250,6 +1331,8 @@ export default function NewCustomerOrderPage() {
                       primary: p.name,
                       code: p.code ?? undefined,
                       available: p.stock?.available != null ? Number(p.stock.available) : 0,
+                      priceMinor: resolveDefaultSalePriceOrZero(p.salePrices),
+                      uomLabel: p.uom ?? undefined,
                       raw: p,
                     })),
                     total: r.total ?? r.items.length,
@@ -1259,7 +1342,27 @@ export default function NewCustomerOrderPage() {
                 moreItemsLabel={(n) => tPos('moreItems', { count: n })}
                 createProductLabel={(qq) => tPos('createProductNamed', { query: qq })}
                 onCreateProduct={() => router.push('/products/new')}
-                onPick={(item) => {
+                pickModal={{
+                  currency,
+                  labels: {
+                    stock: tPos('pick_modal_stock'),
+                    price: tPos('pick_modal_price'),
+                    quantity: tPos('pick_modal_quantity'),
+                    salePrice: tPos('pick_modal_sale_price'),
+                    priceThisSale: tPos('pick_modal_price_this_sale'),
+                    pricePermanent: tPos('pick_modal_price_permanent'),
+                    save: tPos('pick_modal_save'),
+                    cancel: tPos('pick_modal_cancel'),
+                  },
+                }}
+                onPick={(item, entry) => {
+                  if (entry?.permanent) {
+                    // «Doimiy narx» — persist to the product card (owner 2026-07-17).
+                    api
+                      .post(`/products/${item.id}/sale-price`, { priceMinor: entry.priceMinor })
+                      .then(() => toast.success(tPos('pick_modal_price_saved')))
+                      .catch(() => toast.error(tPos('pick_modal_price_save_failed')));
+                  }
                   const raw = item.raw as ProductItem | undefined;
                   const defaultPrice = resolveDefaultSalePriceOrZero(raw?.salePrices);
                   const newId = uid();
@@ -1272,10 +1375,10 @@ export default function NewCustomerOrderPage() {
                       productCode: raw?.code ?? undefined,
                       productArticle: raw?.article ?? undefined,
                       productUom: raw?.uom ?? null,
-                      quantity: '1',
-                      priceMinor: defaultPrice,
+                      quantity: entry?.quantity ?? '1',
+                      priceMinor: entry?.priceMinor ?? defaultPrice,
                       discount: '0',
-                      vat: raw?.vat != null ? String(raw.vat) : '0',
+                      vat: raw?.vat != null ? String(raw.vat) : '12',
                       vatEnabled: true,
                       stock: raw?.stock?.onHand,
                       reserve: '0',
@@ -1283,15 +1386,16 @@ export default function NewCustomerOrderPage() {
                       waiting: raw?.stock?.inTransit,
                       weightG: raw?.weightG ?? undefined,
                       volumeML: raw?.volumeML ?? undefined,
-                      imageUrl: raw?.mainImageId
-                        ? `/api/v1/images/${raw.mainImageId}/raw`
-                        : undefined,
+                      imageUrl: raw?.mainImageId ? imageRawUrl(raw.mainImageId) : undefined,
                       salePrices: raw?.salePrices ?? null,
                       folderPath: raw?.productFolder?.pathName ?? undefined,
                     },
                   ]);
                   // moysklad parity: focus the new line's «Кол-во» right away.
                   setLastAddedId(newId);
+                  // owner 2026-07-18: returning the id hands focus to the new
+                  // row's «Кол-во» (modal → table entry chain).
+                  return newId;
                 }}
                 onAddFromCatalog={() => setProductModalOpen(true)}
                 onCheckCompleteness={() => {
@@ -1388,12 +1492,75 @@ export default function NewCustomerOrderPage() {
     {
       key: 'related',
       label: tDetailTabs('related'),
+      // moysklad OLD-design create form (re-grounded 2026-07-09, user screenshots):
+      // /new has TWO tabs only — Главная + «Связанные документы»; Задачи and Файлы
+      // are bottom sections INSIDE this tab. Everything works IN PLACE (no save,
+      // no navigation) — picks are staged and persisted by staging.flush() after save.
       content: (
-        <p className="rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] p-6 text-center text-[var(--ms-text-muted)] text-sm">
-          {t('related_empty')}
-        </p>
+        <NewDocRelatedTab
+          current={{
+            id: 'new',
+            name: docNumber,
+            moment: docDate ? new Date(docDate).toISOString() : new Date().toISOString(),
+            sumMinor: String(totals.gross),
+            state: applicable ? 'posted' : 'draft',
+            kind: 'customer-order',
+          }}
+          entityType="CustomerOrder"
+          staging={staging}
+          linkDefaults={{
+            agent: agentId ? { id: agentId, name: agentLabel } : null,
+            organization: organizationId ? { id: organizationId, name: organizationLabel } : null,
+            storeTo: storeId ? { id: storeId, name: storeLabel } : null,
+          }}
+        />
       ),
     },
+    // «Файлы»/«Задачи» moved INTO the related tab (moysklad old-design, 2026-07-09).
+    // «События» HIDDEN behind SHOW_NEW_EVENTS_TAB — code kept for re-enabling.
+    ...(SHOW_NEW_EVENTS_TAB
+      ? [
+          {
+            key: 'events',
+            label: tDetailTabs('events'),
+            content: (
+              <div className="space-y-3 bg-[var(--ms-bg-surface)] px-4 py-3">
+                <div className="flex items-center gap-3">
+                  <span className="font-semibold text-[var(--ms-text-primary)] text-base">
+                    {tDetailTabs('events_title')}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    disabled
+                    data-test-id="events-watch-button"
+                  >
+                    <Icons.visible className="h-4 w-4" />
+                    {tDetailTabs('events_watch')}
+                  </Button>
+                </div>
+                <Textarea
+                  value=""
+                  readOnly
+                  disabled
+                  rows={3}
+                  placeholder={tDetailTabs('events_comment_placeholder')}
+                  data-test-id="events-comment-input"
+                />
+                <div className="flex items-center gap-2">
+                  <Button type="button" variant="primary" size="sm" disabled>
+                    {tDetailTabs('events_post')}
+                  </Button>
+                  <Button type="button" variant="secondary" size="sm" disabled>
+                    {tDetailTabs('events_cancel')}
+                  </Button>
+                </div>
+              </div>
+            ),
+          },
+        ]
+      : []),
   ];
 
   return (
@@ -1412,6 +1579,7 @@ export default function NewCustomerOrderPage() {
         paymentLabel={tDetailHeader('not_paid')}
         requestPaymentLabel={tDetailHeader('request_payment')}
         onRequestPayment={() => {
+          if (hasOversold) return;
           afterSaveRef.current = 'payment';
           createMut.mutate();
         }}
@@ -1420,10 +1588,24 @@ export default function NewCustomerOrderPage() {
         applicableHelp={t('applicable_help')}
         waiting={undefined}
         onSave={() => {
+          if (hasOversold) return;
+          if (!agentId) {
+            setAgentInvalid(true);
+            setSaveError(tCommon('must_fill'));
+            return;
+          }
+          setSaveError(null);
           afterSaveRef.current = 'view';
           createMut.mutate();
         }}
+        error={saveError}
         saving={createMut.isPending}
+        saveDisabled={hasOversold}
+        // Oversold feedback is the RED ROW in the position grid only (owner
+        // request 2026-07-07): the big top banner was too loud — moysklad just
+        // tints the offending line. Save stays disabled (saveDisabled) and the
+        // row highlight (isRowOversold) marks exactly where; genuine API/validation
+        // errors still surface via the top-right toast (createMut.onError).
         onClose={() => router.push('/customer-orders')}
         modifyMenu={[
           // moysklad «Изменить» on the order = [Удалить, Копировать]. On /new
@@ -1513,9 +1695,21 @@ export default function NewCustomerOrderPage() {
           // moysklad «Печать» = [Заказ, Комплект…, Настроить…]. «Заказ» saves
           // then opens the standalone print view; «Настроить…» opens the
           // right-side «Настройка шаблонов» slide-over (no settings page).
+          // The account's own custom forms come FIRST (above the standard form) —
+          // each saves the order (it can't print before it exists), then renders
+          // that form's PDF via bulk-print.
+          ...printForms.map((f) => ({
+            label: f.name,
+            onClick: () => {
+              printTargetRef.current = { kind: 'form' as const, templateId: f.id };
+              afterSaveRef.current = 'print' as const;
+              createMut.mutate();
+            },
+          })),
           {
             label: tPrint('order_form'),
             onClick: () => {
+              printTargetRef.current = { kind: 'view' };
               afterSaveRef.current = 'print';
               createMut.mutate();
             },
@@ -1538,6 +1732,29 @@ export default function NewCustomerOrderPage() {
             },
           },
         ]}
+        // moysklad pins each configured print form as its OWN button right after
+        // «Отправить». Each saves the order first, then renders that form's PDF.
+        trailingSlot={printForms.map((f) => (
+          <Button
+            key={f.id}
+            type="button"
+            variant="secondary"
+            size="sm"
+            // «Past ko'k» — check-print type buttons stand out in a soft blue
+            // (brand-100 fill · brand-600 text · brand-300 border), matching
+            // purchase-orders/new + supplies/new. Owner request 2026-07-15/16.
+            className="border-[var(--ms-brand-300)] bg-[var(--ms-brand-100)] text-[var(--ms-brand-600)] hover:bg-[var(--ms-brand-200)] hover:text-[var(--ms-brand-700)]"
+            onClick={() => {
+              printTargetRef.current = { kind: 'form', templateId: f.id };
+              afterSaveRef.current = 'print';
+              createMut.mutate();
+            }}
+            data-test-id={`toolbar-print-form-${f.id}`}
+          >
+            <Icons.print className="h-4 w-4" />
+            {f.name}
+          </Button>
+        ))}
         rightSlot={<OwnerAccessPopover value={ownerAccess} onChange={setOwnerAccess} />}
       >
         <>
@@ -1552,6 +1769,8 @@ export default function NewCustomerOrderPage() {
         title={tForm('customer_picker_title')}
         fetcher={agentFetcher}
         onSelect={(item) => {
+          setAgentInvalid(false);
+          setSaveError(null);
           setAgentId(item.id);
           setAgentLabel(String(item.primary));
         }}
@@ -1636,14 +1855,14 @@ export default function NewCustomerOrderPage() {
             productArticle: raw?.article ?? undefined,
             productUom: raw?.uom ?? null,
             priceMinor: defaultPrice,
-            vat: raw?.vat != null ? String(raw.vat) : '0',
+            vat: raw?.vat != null ? String(raw.vat) : '12',
             stock: raw?.stock?.onHand,
             reserve: '0',
             available: raw?.stock?.available,
             waiting: raw?.stock?.inTransit,
             weightG: raw?.weightG ?? undefined,
             volumeML: raw?.volumeML ?? undefined,
-            imageUrl: raw?.mainImageId ? `/api/v1/images/${raw.mainImageId}/raw` : undefined,
+            imageUrl: raw?.mainImageId ? imageRawUrl(raw.mainImageId) : undefined,
             salePrices: raw?.salePrices ?? null,
             folderPath: raw?.productFolder?.pathName ?? undefined,
           });
@@ -1760,7 +1979,7 @@ export default function NewCustomerOrderPage() {
               quantity: Number(quantity) > 0 ? quantity : '1',
               priceMinor: resolveDefaultSalePriceOrZero(product.salePrices),
               discount: '0',
-              vat: product.vat != null ? String(product.vat) : '0',
+              vat: product.vat != null ? String(product.vat) : '12',
               vatEnabled: true,
               stock: product.stock?.onHand,
               reserve: '0',
@@ -1768,9 +1987,7 @@ export default function NewCustomerOrderPage() {
               waiting: product.stock?.inTransit,
               weightG: (product as { weightG?: number | null }).weightG ?? undefined,
               volumeML: (product as { volumeML?: number | null }).volumeML ?? undefined,
-              imageUrl: product.mainImageId
-                ? `/api/v1/images/${product.mainImageId}/raw`
-                : undefined,
+              imageUrl: product.mainImageId ? imageRawUrl(product.mainImageId) : undefined,
               salePrices: product.salePrices ?? null,
               folderPath:
                 (product as { productFolder?: { pathName?: string | null } }).productFolder

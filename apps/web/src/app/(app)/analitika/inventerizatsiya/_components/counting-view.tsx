@@ -1,7 +1,7 @@
 'use client';
 
 import { api } from '@/lib/api-client';
-import { Input, useDebounce } from '@moysklad/ui';
+import { Input, StickyHScroll, useDebounce } from '@moysklad/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useState } from 'react';
@@ -43,7 +43,7 @@ export function CountingView() {
       )}
 
       {storeId !== null && (
-        <div className="overflow-x-auto rounded-lg border border-[var(--ms-border)]">
+        <StickyHScroll className="rounded-lg border border-[var(--ms-border)]">
           <table className="w-full text-sm">
             <thead className="bg-[var(--ms-bg-subtle)] text-[var(--ms-text-muted)] text-xs">
               <tr>
@@ -69,7 +69,7 @@ export function CountingView() {
               )}
             </tbody>
           </table>
-        </div>
+        </StickyHScroll>
       )}
     </div>
   );

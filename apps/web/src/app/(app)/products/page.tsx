@@ -5,14 +5,15 @@ import { AssortmentPrintDropdown } from '@/components/assortment/print-dropdown'
 import { ColumnSettings } from '@/components/column-settings';
 import { SavedFiltersPills } from '@/components/customer-orders/saved-filters-pills';
 import { FilterToggleButton } from '@/components/filters/filter-toggle-button';
+import { ThumbWithHoverPreview } from '@/components/image-hover-preview';
 import { ProductFolderTree } from '@/components/products/product-folder-tree';
-import { ProductLocationsModal } from '@/components/products/product-locations-popover';
 import { useBulkDocumentActions } from '@/hooks/use-bulk-actions';
 import { useColumnVisibility } from '@/hooks/use-column-visibility';
 import { useColumnWidths } from '@/hooks/use-column-widths';
 import { api } from '@/lib/api-client';
-import { formatBinLocation } from '@/lib/bin-location';
+import { imageRawUrl } from '@/lib/image-url';
 import { usePriceTypeIds } from '@/lib/sale-price';
+import { normalizeScanInput } from '@/lib/scan';
 import {
   CatalogPicker,
   CatalogPickerField,
@@ -33,6 +34,12 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useState } from 'react';
+
+/** Manual «Полка» from the product card (attributes.__polka); '' when unset. */
+function manualPolka(p: { attributes: Record<string, unknown> | null }): string {
+  const v = p.attributes?.__polka;
+  return typeof v === 'string' ? v : '';
+}
 
 interface Product {
   id: string;
@@ -59,11 +66,6 @@ interface Product {
   country: string | null;
   weightG: number | null;
   volumeML: number | null;
-  // Warehouse home location (Sherset custom) — composed into «NN-NN-NN-NN».
-  locSklad: number | null;
-  locPolka: number | null;
-  locQavat: number | null;
-  locYacheyka: number | null;
   mxikCode: string | null;
   description: string | null;
   shared: boolean;
@@ -71,6 +73,13 @@ interface Product {
   minimumBalanceMinor: string | null;
   variantCount: number;
   packTasnif: string | null;
+  // «Полка» / «Ячейка» (USER-DIRECTED 2026-07-04): where the product physically
+  // sits — cell codes + their polkas from the live per-cell stock (StockByCell),
+  // entered via the warehouses section. Empty until the product is placed.
+  storageCells: string[];
+  storagePolkas: string[];
+  // Free-form JSON bag; `__polka` = the MANUAL shelf number from the card.
+  attributes: Record<string, unknown> | null;
   // moysklad «Изображение» column (default-on, first): the list API flattens the
   // main ProductImage into a `mainImageId` scalar; the thumbnail is fetched via
   // GET /api/v1/images/:id/raw (no binary in the list payload).
@@ -238,8 +247,6 @@ export default function ProductsPage() {
   // (live-grounded 2026-06-18 — a fresh login shows just the toolbar + grid; the
   // panel opens only when «Фильтр» is clicked). Was open-by-default.
   const [filterOpen, setFilterOpen] = useState(false);
-  // Joylashuvlar modali (2026-07-12): qator-klik HAM, 📍 belgisi HAM ochadi.
-  const [locTarget, setLocTarget] = useState<Product | null>(null);
   // moysklad's filter 🔖 (bookmark) icon opens the «save current filter» input —
   // shared open-state between the InlineFilterPanel icon and the SavedFiltersPills.
   const [saveFilterOpen, setSaveFilterOpen] = useState(false);
@@ -305,7 +312,9 @@ export default function ProductsPage() {
   const charFilterActive = Object.values(charFilters).some((v) => v.length > 0);
 
   const params = new URLSearchParams({
-    ...(search ? { search } : {}),
+    // normalizeScanInput: a scanner reading a printed QR types the /scan?c=…
+    // deep-link into the search box — peel the raw code out first.
+    ...(search ? { search: normalizeScanInput(search) } : {}),
     // Tri-state «Показывать»: 'all' → archived=all (schema maps to no predicate).
     archived: archived === 'all' ? 'all' : archived === 'archived' ? 'true' : 'false',
     limit: String(pageSize),
@@ -404,11 +413,15 @@ export default function ProductsPage() {
     'image',
     'kind',
     'name',
+    // «Полка» before «Код» (USER-DIRECTED 2026-07-04 — deliberate divergence
+    // from moysklad's 26-set): the shelf read off the per-cell stock (or the
+    // code's 2nd segment when the user keeps the cell code in «Код»),
+    // default-visible, toggleable in the ⚙ like the rest. NB: no separate
+    // «Ячейка» column — the user keeps the CELL code in the «Код» column itself.
+    'polka',
     'code',
     'article',
     'uom',
-    // Sherset custom — warehouse home location «NN-NN-NN-NN» (gear-toggleable).
-    'yacheyka',
     'country',
     'weightG',
     'description',
@@ -548,12 +561,9 @@ export default function ProductsPage() {
       align: 'center',
       cell: (p) =>
         p.mainImageId ? (
-          // eslint-disable-next-line @next/next/no-img-element -- raw API byte stream, not a static asset (next/image can't proxy it)
-          <img
-            src={`/api/v1/images/${p.mainImageId}/raw`}
-            alt=""
-            loading="lazy"
-            className="mx-auto h-7 w-7 rounded object-cover"
+          <ThumbWithHoverPreview
+            src={imageRawUrl(p.mainImageId)}
+            className="mx-auto h-7 w-7 cursor-pointer rounded object-cover"
           />
         ) : (
           <span className="text-[var(--ms-text-muted)] text-xs" aria-hidden>
@@ -584,14 +594,27 @@ export default function ProductsPage() {
       cell: (p) => (
         <a
           href={`/products/${p.id}`}
-          // Nom bosilganda KARTOCHKAGA o'tiladi — qator-klik modalini ochmasin.
-          onClick={(e) => e.stopPropagation()}
           className="font-medium text-[var(--ms-text-primary)] underline-offset-2 hover:text-[var(--ms-text-brand)] hover:underline"
         >
           {p.name}
         </a>
       ),
       cellText: (r: Product) => r.name,
+    },
+    // «Полка» (user 2026-07-04, v2 — MANUAL): the hand-entered shelf number
+    // from the product card (attributes.__polka). Fallback = live per-cell
+    // stock placement; the code-2nd-segment auto-guess is GONE (the user
+    // explicitly rejected auto-assigned polka values).
+    {
+      key: 'polka',
+      header: t('col_polka'),
+      width: '90px',
+      cell: (p) => (
+        <span className="text-xs tabular-nums">
+          {manualPolka(p) || (p.storagePolkas ?? []).join(', ') || '—'}
+        </span>
+      ),
+      cellText: (r: Product) => manualPolka(r) || (r.storagePolkas ?? []).join(', ') || '',
     },
     {
       key: 'code',
@@ -618,22 +641,6 @@ export default function ProductsPage() {
       align: 'center',
       cell: (p) => <span className="text-[var(--ms-text-muted)] text-xs">{p.uom ?? '—'}</span>,
       cellText: (r: Product) => r.uom ?? '',
-    },
-    {
-      // Sherset custom — warehouse home location «NN-NN-NN-NN».
-      key: 'yacheyka',
-      header: t('col_yacheyka'),
-      width: '120px',
-      align: 'center',
-      // 2026-07-12: kod endi bosiladigan 📍 popover — kartochkaga kirmasdan
-      // BARCHA joylar (asosiy + qo'shimcha polkalar) sonlari bilan ochiladi.
-      cell: (p) => (
-        <span className="inline-flex items-center gap-1 font-mono text-[var(--ms-text-secondary)] text-xs tabular-nums tracking-wider">
-          {formatBinLocation(p) || '—'}
-          <span aria-hidden>📍</span>
-        </span>
-      ),
-      cellText: (r: Product) => formatBinLocation(r),
     },
     // moysklad ⚙ column-customizer — extra (non-default) columns in moysklad's
     // exact order. NO folder/createdAt/status columns (moysklad has none of those
@@ -873,9 +880,6 @@ export default function ProductsPage() {
         columns={columns}
         rows={data?.items ?? []}
         keyField="id"
-        // 2026-07-12: qatorning ISTALGAN joyi bosilganda joylashuvlar modali
-        // ochiladi (kartochkaga o'tish — nom havolasi yoki modal tugmasi orqali).
-        onRowClick={(p) => setLocTarget(p)}
         rowTestId={(p) => `product-row-${p.id}`}
         rowActions={(p) => bulk.rowDelete(p.id)}
         total={data?.total ?? 0}
@@ -1349,7 +1353,7 @@ export default function ProductsPage() {
           // a gap between them — NOT a joined segmented bar. (A prior "measured
           // gap=0, joined" read was WRONG; the user's moysklad shows distinct,
           // individually-rounded buttons spaced apart.)
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 max-md:flex-wrap">
             {/* moysklad «Товары и услуги» 4 create buttons (live 2026-06-16):
                   Товар (green) → product · Услуга (amber) → service · Комплект
                   (blue) → bundle · Группа (blue) → folder management. White button
@@ -1414,7 +1418,7 @@ export default function ProductsPage() {
               triggerClassName="-ml-px h-9 rounded-none border-[#cccccc]"
             />
             <AssortmentPrintDropdown
-              selectedIds={[...bulk.selectedIds]}
+              selectedIds={bulk.selectedIds}
               triggerClassName="-ml-px h-9 rounded-l-none rounded-r-[var(--ms-radius-default)] border-[#cccccc]"
             />
           </div>
@@ -1491,19 +1495,6 @@ export default function ProductsPage() {
           setPage(1);
         }}
       />
-
-      {/* Joylashuvlar modali — qator-klik/📍 dan ochiladi */}
-      {locTarget && (
-        <ProductLocationsModal
-          productId={locTarget.id}
-          productName={locTarget.name}
-          open={locTarget !== null}
-          onOpenChange={(o) => !o && setLocTarget(null)}
-          onOpenCard={() => {
-            window.location.href = `/products/${locTarget.id}`;
-          }}
-        />
-      )}
     </>
   );
 }

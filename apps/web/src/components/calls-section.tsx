@@ -7,6 +7,7 @@ import { callDirectionTone, callStatusTone } from '@/lib/domain-status-tone';
 import { Badge, Button, FormSection, Icons } from '@moysklad/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
+import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
 interface Call {
@@ -51,6 +52,7 @@ function formatDateTime(iso: string): string {
  * "+" button that jumps to the new-call form pre-filled with this counterparty.
  */
 export function CallsSection({ counterpartyId }: CallsSectionProps) {
+  const router = useRouter();
   const qc = useQueryClient();
   const t = useTranslations('pages.calls');
   const tCommon = useTranslations('common');
@@ -94,7 +96,7 @@ export function CallsSection({ counterpartyId }: CallsSectionProps) {
           variant="secondary"
           size="sm"
           onClick={() => {
-            window.location.href = `/calls/new?counterpartyId=${counterpartyId}`;
+            router.push(`/calls/new?counterpartyId=${counterpartyId}`);
           }}
           data-test-id="add-call"
         >
@@ -173,7 +175,7 @@ export function CallsSection({ counterpartyId }: CallsSectionProps) {
                       <span className="text-[var(--ms-text-muted)] text-xs">—</span>
                     )}
                     {c.summary && (
-                      <span className="block max-w-[280px] truncate text-[var(--ms-text-muted)] text-xs">
+                      <span className="block max-w-[280px] truncate text-[var(--ms-text-muted)] text-[11px]">
                         {c.summary}
                       </span>
                     )}

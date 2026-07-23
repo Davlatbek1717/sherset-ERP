@@ -16,7 +16,9 @@ export const LossPositionInputSchema = z.object({
   // moysklad «Причина списания» — per-position free-text reason (NOT the
   // doc-level enum). Mirror EnterPosition.reason.
   reason: z.string().max(255).nullish(),
-  // moysklad «Ячейка» — warehouse bin/cell reference, free-text (mirror EnterPosition.cell).
+  // moysklad «Ячейка» — address-storage bin. `cellId` = picked StoreCell (validated,
+  // drives per-cell stock on post); `cell` = denormalized «Зона / Ячейка» label (display).
+  cellId: z.string().uuid().nullish(),
   cell: z.string().max(255).nullish(),
   // moysklad «Цена» — the EDITABLE себестоимость the line is written off at (tiyin).
   // Default = the product buyPrice; the user may override. LossService.post books
@@ -49,7 +51,14 @@ export const CreateLossSchema = z.object({
   description: z.string().max(4000).nullish(),
   // moysklad parity (§17) — universal «Внешний код» (col exists, no migration).
   externalCode: z.string().max(50).nullish(),
-  positions: z.array(LossPositionInputSchema).min(1, 'at least one position required'),
+  // «Проведено» on save — moysklad parity: ticking «Проведено» + Сохранить
+  // creates AND posts the write-off (stock removed) in one action. When true,
+  // create() runs the SAME verified transition('post') path the detail
+  // «Провести» uses. Was silently dropped before (FE sent it, schema omitted it).
+  // `.optional()` (not `.default`) so createFromX shortcuts' `satisfies
+  // CreateLossInput` object need not pass it.
+  applicable: z.boolean().optional(),
+  positions: z.array(LossPositionInputSchema),
   attributes: z.record(z.string(), z.unknown()).optional(),
 });
 export type CreateLossInput = z.infer<typeof CreateLossSchema>;

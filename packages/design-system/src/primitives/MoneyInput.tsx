@@ -39,11 +39,14 @@ export interface MoneyInputProps
    */
   allowEmpty?: boolean;
   /**
-   * When true, the field shows the fully-formatted amount («9 990,00» — comma
-   * decimals, thin-space thousands) at REST *and keeps the thousands grouping LIVE
-   * while editing* (re-grouping on each keystroke, caret preserved) so it never
-   * jumps to a plain «9990» on focus. moysklad's price cells behave this way; the
-   * default (false) keeps the plain «890» display the other 46 call sites use.
+   * Shows the fully-formatted amount («9 990,00» — comma decimals, thin-space
+   * thousands) at REST *and keeps the thousands grouping LIVE while editing*
+   * (re-grouping on each keystroke, caret preserved) so it never jumps to a plain
+   * «9990» on focus. moysklad formats EVERY money field this way, so this defaults
+   * to `true` (small-fn parity audit 2026-07-06, gap 2.5 — money «Сумма» fields
+   * were showing plain «3000000» instead of «3 000 000,00»). Pass `false` only for
+   * the rare field that must display an ungrouped integer. Display-only: the
+   * emitted minor value is `majorToMinorInput(raw)` regardless of this flag.
    */
   displayFormatted?: boolean;
 }
@@ -67,7 +70,7 @@ export interface MoneyInputProps
  * re-syncs to the canonical form ("300000." → "300000" / «300 000,00»).
  */
 export const MoneyInput = React.forwardRef<HTMLInputElement, MoneyInputProps>(
-  ({ valueMinor, onChangeMinor, allowEmpty = false, displayFormatted = false, ...rest }, ref) => {
+  ({ valueMinor, onChangeMinor, allowEmpty = false, displayFormatted = true, ...rest }, ref) => {
     // Canonical at-rest text: «9 990,00» for a formatted money cell, else plain «9990».
     const canonical = React.useCallback(
       (v: string) =>

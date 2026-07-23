@@ -102,7 +102,7 @@ export default function AttributesAdminPage() {
       sortable: true,
       sortField: 'position',
       cell: (r) => (
-        <span className="text-[var(--ms-text-muted)] text-xs tabular-nums">{r.position}</span>
+        <span className="text-[var(--ms-text-muted)] text-[12px] tabular-nums">{r.position}</span>
       ),
       cellText: (r) => String(r.position),
     },

@@ -161,7 +161,12 @@ export class ProjectService {
   async massEditApply(
     accountId: string,
     id: string,
-    patch: { ownerId?: string | null; description?: string | null },
+    patch: {
+      ownerId?: string | null;
+      description?: string | null;
+      groupId?: string | null;
+      shared?: boolean;
+    },
   ) {
     await this.findById(accountId, id);
     // Scalar FK assignment (mirrors price-list.service massEditApply) —
@@ -170,6 +175,8 @@ export class ProjectService {
     const data: Record<string, unknown> = {};
     if ('ownerId' in patch) data.ownerId = patch.ownerId;
     if ('description' in patch) data.description = patch.description;
+    if ('groupId' in patch) data.groupId = patch.groupId;
+    if ('shared' in patch && patch.shared !== undefined) data.shared = patch.shared;
     return this.prisma.client.project.update({ where: { id, accountId }, data });
   }
 

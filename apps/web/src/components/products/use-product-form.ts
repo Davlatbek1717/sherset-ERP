@@ -59,6 +59,13 @@ export const makeProductFormSchema = (t: (key: string) => string) =>
     code: z.string().max(50).optional(),
     externalCode: z.string().max(50).optional(),
     article: z.string().max(50).optional(),
+    // «Полка» + «Ячейка» (user 2026-07-05): picked from the warehouse's real
+    // zones/cells via two searchable dropdowns on the product card (was a plain
+    // text «Полка» input before). Both hold the picked NAME (polka = zone name,
+    // yacheyka = cell code e.g. «01-02-03-04»). Persisted in
+    // Product.attributes.__polka / __yacheyka (JSON — no migration).
+    polka: z.string().max(50).optional(),
+    yacheyka: z.string().max(50).optional(),
     description: z.string().optional(),
     country: z
       .string()
@@ -73,16 +80,6 @@ export const makeProductFormSchema = (t: (key: string) => string) =>
     uom: z.string().max(20),
     weightG: z.string().regex(/^\d*$/, t('number_invalid')).optional(),
     volumeML: z.string().regex(/^\d*$/, t('number_invalid')).optional(),
-    // Warehouse home location (Sherset custom) — 4 numeric bin segments.
-    locSklad: z.string().regex(/^\d*$/, t('number_invalid')).optional(),
-    locPolka: z.string().regex(/^\d*$/, t('number_invalid')).optional(),
-    locQavat: z.string().regex(/^\d*$/, t('number_invalid')).optional(),
-    locYacheyka: z.string().regex(/^\d*$/, t('number_invalid')).optional(),
-    // Per-cell qty at the primary bin (Phase 2) — fractional allowed (kg/m).
-    locQty: z
-      .string()
-      .regex(/^\d*(\.\d{1,6})?$/, t('number_invalid'))
-      .optional(),
     minimumBalance: z
       .string()
       .regex(/^\d*(\.\d{1,3})?$/, t('min_balance_invalid'))
@@ -134,18 +131,15 @@ export interface ProductHydrateInput {
   uom: string | null;
   weightG: number | null;
   volumeML: number | null;
-  locSklad: number | null;
-  locPolka: number | null;
-  locQavat: number | null;
-  locYacheyka: number | null;
-  // Decimal column — the API serializes it as a string (e.g. "30").
-  locQty?: string | number | null;
   mxikCode: string | null;
   trackingType: string | null;
   gtin?: string | null;
   paymentItemType: string | null;
   minimumBalanceMinor: string;
   shared?: boolean | null;
+  /** Free-form JSON bag (`__polka` = picked zone name, `__yacheyka` = picked
+   *  cell code — user 2026-07-05). */
+  attributes?: Record<string, unknown> | null;
   productFolder: { id: string; name: string; pathName: string | null } | null;
   owner: { id: string; name: string } | null;
   group: { id: string; name: string } | null;
@@ -195,7 +189,7 @@ export function useProductForm() {
   const schema = useMemo(() => makeProductFormSchema(t), [t]);
   const form = useForm<ProductFormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { name: '', uom: 'шт', productFolderId: null },
+    defaultValues: { name: '', uom: 'шт', productFolderId: null, polka: '', yacheyka: '' },
   });
 
   // «Страна» — searchable combo over ISO 3166-1; stores the alpha-2 code.
@@ -343,8 +337,8 @@ export function useProductForm() {
   const [stagedImages, setStagedImages] = useState<
     { name: string; mime: string; dataUrl: string }[]
   >([]);
-  const onPickImages = async (files: FileList | null) => {
-    if (!files?.length) return;
+  const onPickImages = async (files: FileList | File[] | null) => {
+    if (!files || Array.from(files).length === 0) return;
     const read = (file: File) =>
       new Promise<{ name: string; mime: string; dataUrl: string }>((resolve, reject) => {
         const r = new FileReader();
@@ -364,6 +358,9 @@ export function useProductForm() {
   // each as an EDITABLE inline row (type ▾ + value input + ⋯ menu); «➕ Штрихкод»
   // appends a row with an auto-generated internal EAN13 you can then edit/scan.
   const [barcodes, setBarcodes] = useState<string[]>([]);
+  // Loaded Product.attributes JSON (edit) — preserved on save so writing
+  // `__polka` never wipes other keys living in the same bag.
+  const [baseAttributes, setBaseAttributes] = useState<Record<string, unknown>>({});
   const [barcodeTypes, setBarcodeTypes] = useState<string[]>([]);
   // Edits to barcodes live outside RHF — track a dirty flag so the edit page's
   // Save button lights up on a barcode-only change.
@@ -441,12 +438,6 @@ export function useProductForm() {
       uom: v.uom || 'шт',
       weightG: v.weightG ? Number(v.weightG) : blank,
       volumeML: v.volumeML ? Number(v.volumeML) : blank,
-      // Warehouse home location (Sherset custom) — empty segment clears (null on edit).
-      locSklad: v.locSklad ? Number(v.locSklad) : blank,
-      locPolka: v.locPolka ? Number(v.locPolka) : blank,
-      locQavat: v.locQavat ? Number(v.locQavat) : blank,
-      locYacheyka: v.locYacheyka ? Number(v.locYacheyka) : blank,
-      locQty: v.locQty ? Number(v.locQty) : blank,
       // NON-nullable column (`bigIntString.optional()` — rejects null) → OMIT when
       // empty (both modes), mirroring the proven create/edit forms. (Emptying the
       // field therefore leaves the stored threshold unchanged, not cleared to 0.)
@@ -459,6 +450,19 @@ export function useProductForm() {
       ownerId: v.ownerId || blank,
       groupId: v.groupId || blank,
       shared: v.shared ?? false,
+      // «Полка» + «Ячейка» — picked from the warehouse's real zones/cells
+      // (user 2026-07-05), stored in the attributes JSON bag (no column).
+      // Other keys in the bag are preserved; clearing a field removes its key.
+      attributes: (() => {
+        const { __polka: _p, __yacheyka: _y, ...rest } = baseAttributes;
+        const polka = (v.polka ?? '').trim();
+        const yacheyka = (v.yacheyka ?? '').trim();
+        const attrs: Record<string, unknown> = { ...rest };
+        if (polka) attrs.__polka = polka;
+        if (yacheyka) attrs.__yacheyka = yacheyka;
+        if (Object.keys(attrs).length === 0) return mode === 'create' ? undefined : {};
+        return attrs;
+      })(),
     };
   };
 
@@ -484,6 +488,8 @@ export function useProductForm() {
       code: data.code ?? '',
       externalCode: data.externalCode ?? '',
       article: data.article ?? '',
+      polka: typeof data.attributes?.__polka === 'string' ? data.attributes.__polka : '',
+      yacheyka: typeof data.attributes?.__yacheyka === 'string' ? data.attributes.__yacheyka : '',
       description: data.description ?? '',
       country: data.country ?? '',
       productFolderId: data.productFolder?.id ?? null,
@@ -495,11 +501,6 @@ export function useProductForm() {
       uom: data.uom ?? 'шт',
       weightG: data.weightG != null ? String(data.weightG) : '',
       volumeML: data.volumeML != null ? String(data.volumeML) : '',
-      locSklad: data.locSklad != null ? String(data.locSklad) : '',
-      locPolka: data.locPolka != null ? String(data.locPolka) : '',
-      locQavat: data.locQavat != null ? String(data.locQavat) : '',
-      locYacheyka: data.locYacheyka != null ? String(data.locYacheyka) : '',
-      locQty: data.locQty != null ? String(data.locQty) : '',
       minimumBalance: minorToDecimal(data.minimumBalanceMinor),
       mxikCode: data.mxikCode ?? '',
       gtin: data.gtin ?? '',
@@ -516,6 +517,9 @@ export function useProductForm() {
     setSupplierLabel(data.supplier?.name ?? null);
     setOwnerLabel(data.owner?.name ?? null);
     setGroupLabel(data.group?.name ?? null);
+    setBaseAttributes(
+      data.attributes && typeof data.attributes === 'object' ? { ...data.attributes } : {},
+    );
     setBarcodes(data.barcodes ?? []);
     // Per-type fallback to EAN13 when the stored array is shorter/missing.
     setBarcodeTypes((data.barcodes ?? []).map((_, i) => data.barcodeTypes?.[i] ?? 'ean13'));

@@ -19,19 +19,18 @@ import { useDocEditMenuItems } from '@/components/money/document-toolbar-menus';
 import { useBulkDocumentActions } from '@/hooks/use-bulk-actions';
 import { useColumnVisibility } from '@/hooks/use-column-visibility';
 import { useColumnWidths } from '@/hooks/use-column-widths';
-import { useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
-import { filterFromQueryString } from '@/lib/filter-from-query';
-import { pinDefaultCustomer } from '@/lib/pin-default-customer';
+import { stashBulkEdit } from '@/lib/bulk-edit-nav';
+import { filterFromQueryString, queryFromFilter } from '@/lib/filter-from-query';
 import {
   CatalogPicker,
-  CatalogPickerField,
   type DataTableColumn,
   type FilterDrawerValues,
   InlineFilterPanel,
   ListView,
   MassEditModal,
   MoneyInput,
+  MultiCombobox,
   PeriodInputs,
   PeriodShortcuts,
   type PickerItem,
@@ -41,6 +40,7 @@ import {
 } from '@moysklad/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
+import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
 interface PrepaymentReturnRow {
@@ -65,6 +65,9 @@ interface ListResponse {
   total: number;
 }
 
+/** Multi-select reference field — moysklad checkbox-dropdown holds {id,label}[]. */
+type RefMulti = { id: string; label: string };
+
 // Moysklad parity — 100 rows per page.
 const LIMIT = 100;
 
@@ -74,8 +77,6 @@ export default function PrepaymentReturnListPage() {
   const tCommon = useTranslations('common');
   const tFields = useTranslations('fields');
   const tFilters = useTranslations('filters');
-  const tForm = useTranslations('form');
-  const userDefaults = useUserDefaults();
   const tPrintMenu = useTranslations('print_menu');
 
   const [searchInput, setSearchInput] = useState('');
@@ -84,13 +85,31 @@ export default function PrepaymentReturnListPage() {
   const [sortKey, setSortKey] = useState<string>('moment');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [filterValues, setFilterValues] = useState<FilterDrawerValues>({});
+  // «Контрагент» / «Организация» — moysklad-parity inline multi-select checkbox
+  // dropdowns (MultiCombobox), replacing the single-select CatalogPicker modals.
+  // Each holds the picked {id,label} pairs; on the wire they go out as
+  // `agentIds` / `organizationIds` CSV (BE committed fa8d319b).
+  const [agents, setAgents] = useState<RefMulti[]>([]);
+  const [organizations, setOrganizations] = useState<RefMulti[]>([]);
   const [filterOpen, setFilterOpen] = useState(false);
-  const [pickerOpen, setPickerOpen] = useState<
-    null | 'agent' | 'org' | 'massEditOwner' | 'massEditProject'
-  >(null);
+  const [pickerOpen, setPickerOpen] = useState<null | 'massEditOwner' | 'massEditProject'>(null);
+
+  const router = useRouter();
 
   const [massEditOpen, setMassEditOpen] = useState(false);
-  const [massEditIds, setMassEditIds] = useState<string[]>([]);
+
+  // «Владелец-отдел» options for the mass-edit wizard — mirrors losses/cash-in.
+
+  const { data: massGroupsData } = useQuery<{ items: Array<{ id: string; name: string }> }>({
+    queryKey: ['groups', 'mass-edit'],
+
+    queryFn: () => api.get('/groups?limit=100'),
+
+    enabled: massEditOpen,
+
+    staleTime: 5 * 60 * 1000,
+  });
+  const [massEditIds] = useState<string[]>([]);
   const [massEditOwner, setMassEditOwner] = useState<{ id: string; label: string } | null>(null);
   const [massEditProject, setMassEditProject] = useState<{ id: string; label: string } | null>(
     null,
@@ -104,8 +123,8 @@ export default function PrepaymentReturnListPage() {
     ...(cursor ? { cursor } : {}),
     ...(filterValues.momentFrom ? { momentFrom: filterValues.momentFrom } : {}),
     ...(filterValues.momentTo ? { momentTo: filterValues.momentTo } : {}),
-    ...(filterValues.agentId ? { agentId: filterValues.agentId } : {}),
-    ...(filterValues.organizationId ? { organizationId: filterValues.organizationId } : {}),
+    ...(agents.length ? { agentIds: agents.map((x) => x.id).join(',') } : {}),
+    ...(organizations.length ? { organizationIds: organizations.map((x) => x.id).join(',') } : {}),
     ...(filterValues.sumMinorFrom !== undefined
       ? { sumMinorFrom: String(filterValues.sumMinorFrom) }
       : {}),
@@ -121,6 +140,8 @@ export default function PrepaymentReturnListPage() {
     sortKey,
     sortDir,
     filterValues,
+    agents,
+    organizations,
   ] as const;
 
   const { data, isLoading, error, refetch } = useQuery<ListResponse>({
@@ -129,10 +150,8 @@ export default function PrepaymentReturnListPage() {
   });
 
   const openMassEdit = (ids: string[]) => {
-    setMassEditIds(ids);
-    setMassEditOwner(null);
-    setMassEditProject(null);
-    setMassEditOpen(true);
+    stashBulkEdit({ entity: 'prepayment-returns', ids, from: '/prepayment-returns' });
+    router.push('/bulk-edit');
   };
   const bulk = useBulkDocumentActions('prepayment-returns', listQueryKey, {
     hasFSM: true,
@@ -153,7 +172,48 @@ export default function PrepaymentReturnListPage() {
   ]);
   const colWidths = useColumnWidths('prepayment-returns');
   const hasActiveFilter =
-    !!search || Object.values(filterValues).some((v) => v !== undefined && v !== '');
+    !!search ||
+    agents.length > 0 ||
+    organizations.length > 0 ||
+    Object.values(filterValues).some((v) => v !== undefined && v !== '');
+
+  // Saved-filter serialize — the shared `queryFromFilter` round-trips the
+  // canonical FilterDrawerValues (period + sum range); the multi-select agent /
+  // organization filters are appended as JSON ({id,label}[]) so a re-applied
+  // pill restores the checkbox chips, not bare ids.
+  const savedFilterQuery = (() => {
+    const p = new URLSearchParams(queryFromFilter(filterValues));
+    if (agents.length) p.set('agents', JSON.stringify(agents));
+    if (organizations.length) p.set('organizations', JSON.stringify(organizations));
+    return p.toString();
+  })();
+
+  // Saved-filter restore — rehydrate the canonical filterValues via the shared
+  // decoder, then parse each multi-select JSON param back into its state array.
+  const applySavedFilter = (qs: string) => {
+    const p = qs.startsWith('?') ? new URLSearchParams(qs.slice(1)) : new URLSearchParams(qs);
+    setFilterValues(filterFromQueryString(qs));
+    const parseList = (key: string): RefMulti[] => {
+      try {
+        const raw = p.get(key);
+        if (!raw) return [];
+        const arr: unknown = JSON.parse(raw);
+        return Array.isArray(arr)
+          ? arr
+              .filter(
+                (x): x is { id: string; label?: unknown } =>
+                  !!x && typeof (x as { id?: unknown }).id === 'string',
+              )
+              .map((x) => ({ id: x.id, label: String(x.label ?? x.id) }))
+          : [];
+      } catch {
+        return [];
+      }
+    };
+    setAgents(parseList('agents'));
+    setOrganizations(parseList('organizations'));
+    setCursor(undefined);
+  };
 
   const columns: DataTableColumn<PrepaymentReturnRow>[] = [
     {
@@ -199,7 +259,7 @@ export default function PrepaymentReturnListPage() {
         <div>
           <div className="max-w-[240px] truncate font-medium">{r.agent.name}</div>
           {r.agent.legalTitle && (
-            <div className="max-w-[240px] truncate text-[var(--ms-text-muted)] text-xs">
+            <div className="max-w-[240px] truncate text-[var(--ms-text-muted)] text-[11px]">
               {r.agent.legalTitle}
             </div>
           )}
@@ -245,7 +305,7 @@ export default function PrepaymentReturnListPage() {
       key: 'description',
       header: tFields('description'),
       cell: (r) => (
-        <span className="block max-w-[220px] truncate text-[var(--ms-text-muted)] text-xs">
+        <span className="block max-w-[220px] truncate text-[var(--ms-text-muted)] text-[11px]">
           {r.description ?? tCommon('none')}
         </span>
       ),
@@ -258,7 +318,7 @@ export default function PrepaymentReturnListPage() {
       width: '140px',
       sortable: true,
       cell: (r) => (
-        <span className="text-[var(--ms-text-muted)] text-xs tabular-nums">
+        <span className="text-[var(--ms-text-muted)] text-[12px] tabular-nums">
           {formatDate(r.updatedAt)}
         </span>
       ),
@@ -279,6 +339,7 @@ export default function PrepaymentReturnListPage() {
 
   const editMenuItems = useDocEditMenuItems({
     selectedIds: bulk.selectedIds,
+    allRowIds: (data?.items ?? []).map((r) => r.id),
     onBulkDelete: (ids) => bulk.bulkDelete.mutate(ids),
     deletePending: bulk.bulkDelete.isPending,
     onMassEdit: openMassEdit,
@@ -286,25 +347,6 @@ export default function PrepaymentReturnListPage() {
   const printMenuItems = [
     { id: 'print', label: tPrintMenu('document_blank'), onSelect: () => window.print() },
   ];
-
-  const agentFetcher = async (q: string): Promise<PickerItem[]> => {
-    const r = await api.get<{ items: { id: string; name: string }[] }>(
-      `/counterparties?search=${encodeURIComponent(q)}&limit=20`,
-    );
-    const items = r.items.map((x) => ({ id: x.id, primary: x.name }));
-    return pinDefaultCustomer(
-      items,
-      userDefaults.data?.defaultCustomer,
-      q,
-      tForm('pinned_default'),
-    );
-  };
-  const orgFetcher = async (q: string): Promise<PickerItem[]> => {
-    const r = await api.get<{ items: { id: string; name: string }[] }>(
-      `/organizations?search=${encodeURIComponent(q)}&limit=20`,
-    );
-    return r.items.map((x) => ({ id: x.id, primary: x.name }));
-  };
 
   return (
     <>
@@ -378,16 +420,15 @@ export default function PrepaymentReturnListPage() {
             clearLabel={tFilters('clear')}
             onClear={() => {
               setFilterValues({});
+              setAgents([]);
+              setOrganizations([]);
               setCursor(undefined);
             }}
             pills={
               <SavedFiltersPills
                 entity="prepaymentreturn"
-                currentQueryString={params.toString()}
-                onApply={(qs) => {
-                  setFilterValues(filterFromQueryString(qs));
-                  setCursor(undefined);
-                }}
+                currentQueryString={savedFilterQuery}
+                onApply={applySavedFilter}
               />
             }
             testId="prepayment-return-inline-filter"
@@ -420,49 +461,63 @@ export default function PrepaymentReturnListPage() {
                 testId="filter-period"
               />
             </InlineFilterPanel.Field>
+            {/* Контрагент — moysklad-parity inline multi-select checkbox dropdown:
+                type a name OR phone, results appear inline (each row shows the
+                phone as a sublabel), tick as many as needed. Was a single-select
+                modal. */}
             <InlineFilterPanel.Field label={tFilters('agent')} expandable>
-              <CatalogPickerField
-                value={
-                  filterValues.agentId
-                    ? {
-                        id: filterValues.agentId,
-                        label: filterValues.agentLabel ?? filterValues.agentId,
-                      }
-                    : null
-                }
-                placeholder=""
-                onPick={() => setPickerOpen('agent')}
-                onClear={() => {
-                  setFilterValues({
-                    ...filterValues,
-                    agentId: undefined,
-                    agentLabel: undefined,
-                  });
+              <MultiCombobox
+                value={agents.map((x) => x.id)}
+                items={agents.map((x) => ({ value: x.id, label: x.label }))}
+                onSearch={async (q) => {
+                  const r = await api.get<{
+                    items: { id: string; name: string; phone?: string | null }[];
+                  }>(`/counterparties?search=${encodeURIComponent(q)}&limit=20`);
+                  return r.items.map((x) => ({
+                    value: x.id,
+                    label: x.name,
+                    sublabel: x.phone || undefined,
+                  }));
+                }}
+                onChange={(nextIds, toggled) => {
+                  setAgents((prev) =>
+                    nextIds.map((id) => {
+                      const ex = prev.find((s) => s.id === id);
+                      if (ex) return ex;
+                      if (toggled?.value === id) return { id, label: String(toggled.label) };
+                      return { id, label: id };
+                    }),
+                  );
                   setCursor(undefined);
                 }}
+                placeholder=""
                 testId="filter-agent"
               />
             </InlineFilterPanel.Field>
+            {/* Организация — moysklad-parity inline multi-select checkbox dropdown
+                (was a single-select modal). */}
             <InlineFilterPanel.Field label={tFilters('organization')} expandable>
-              <CatalogPickerField
-                value={
-                  filterValues.organizationId
-                    ? {
-                        id: filterValues.organizationId,
-                        label: filterValues.organizationLabel ?? filterValues.organizationId,
-                      }
-                    : null
-                }
-                placeholder=""
-                onPick={() => setPickerOpen('org')}
-                onClear={() => {
-                  setFilterValues({
-                    ...filterValues,
-                    organizationId: undefined,
-                    organizationLabel: undefined,
-                  });
+              <MultiCombobox
+                value={organizations.map((x) => x.id)}
+                items={organizations.map((x) => ({ value: x.id, label: x.label }))}
+                onSearch={async (q) => {
+                  const r = await api.get<{ items: { id: string; name: string }[] }>(
+                    `/organizations?search=${encodeURIComponent(q)}&limit=20`,
+                  );
+                  return r.items.map((x) => ({ value: x.id, label: x.name }));
+                }}
+                onChange={(nextIds, toggled) => {
+                  setOrganizations((prev) =>
+                    nextIds.map((id) => {
+                      const ex = prev.find((s) => s.id === id);
+                      if (ex) return ex;
+                      if (toggled?.value === id) return { id, label: String(toggled.label) };
+                      return { id, label: id };
+                    }),
+                  );
                   setCursor(undefined);
                 }}
+                placeholder=""
                 testId="filter-org"
               />
             </InlineFilterPanel.Field>
@@ -501,35 +556,6 @@ export default function PrepaymentReturnListPage() {
           </InlineFilterPanel>
         }
       />
-      <CatalogPicker
-        open={pickerOpen === 'agent'}
-        onClose={() => setPickerOpen(null)}
-        title={tFilters('agent')}
-        fetcher={agentFetcher}
-        onSelect={(item) => {
-          setFilterValues({
-            ...filterValues,
-            agentId: item.id,
-            agentLabel: String(item.primary),
-          });
-          setCursor(undefined);
-        }}
-      />
-      <CatalogPicker
-        open={pickerOpen === 'org'}
-        onClose={() => setPickerOpen(null)}
-        title={tFilters('organization')}
-        fetcher={orgFetcher}
-        onSelect={(item) => {
-          setFilterValues({
-            ...filterValues,
-            organizationId: item.id,
-            organizationLabel: String(item.primary),
-          });
-          setCursor(undefined);
-        }}
-      />
-
       <CatalogPicker
         open={pickerOpen === 'massEditOwner'}
         onClose={() => setPickerOpen(null)}
@@ -572,6 +598,8 @@ export default function PrepaymentReturnListPage() {
         projectValue={massEditProject}
         onProjectPick={() => setPickerOpen('massEditProject')}
         onProjectClear={() => setMassEditProject(null)}
+        groupOptions={(massGroupsData?.items ?? []).map((g) => ({ value: g.id, label: g.name }))}
+        showShared
         labels={{
           title: t('mass_edit_title'),
           ownerLabel: tFilters('owner_employee'),

@@ -664,9 +664,6 @@ export const hrTelegramAccountApi = {
   list: () => api.get<HrTelegramAccountRow[]>('/hr/telegram-accounts'),
   create: (data: CreateHrTelegramAccountInput) =>
     api.post<HrTelegramAccountRow>('/hr/telegram-accounts', data),
-  /** Soddalashtirilgan ulash — faqat telefon (apiId/apiHash serverda). slot: 1=asosiy, 2=zaxira. */
-  connect: (phoneNumber: string, slot: 1 | 2 = 1) =>
-    api.post<HrTelegramAccountRow>('/hr/telegram-accounts/connect', { phoneNumber, slot }),
   setActive: (id: string, isActive: boolean) =>
     api.patch<HrTelegramAccountRow>(`/hr/telegram-accounts/${id}/active`, { isActive }),
   remove: (id: string) => api.delete<{ ok: true }>(`/hr/telegram-accounts/${id}`),
@@ -680,11 +677,6 @@ export const hrTelegramAccountApi = {
     }),
   loginCancel: (loginSessionId: string) =>
     api.post<{ ok: true }>('/hr/telegram-accounts/login/cancel', { loginSessionId }),
-  /** «Kod kelmadi» — kodni qayta yuborish (Telegram keyingi kanal, odatда SMS). */
-  loginResend: (loginSessionId: string) =>
-    api.post<{ ok: boolean; codeSent: boolean }>('/hr/telegram-accounts/login/resend', {
-      loginSessionId,
-    }),
 };
 
 export type { HrAccessLevel, HrPermissionRow };

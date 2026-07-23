@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { csvUuid } from '../shared/csv.js';
 
 /**
  * InternalOrder (Внутренний заказ) — internal stock-transfer request.
@@ -55,6 +56,12 @@ export const CreateInternalOrderSchema = z.object({
   storeId: z.string().uuid(),
   // moysklad parity — Проект (internal stock doc: no counterparty → no Договор).
   projectId: z.string().uuid().nullish(),
+  // «Владелец» header popover — owner / department / «Общий доступ» (mirrors loss).
+  ownerId: z.string().uuid().optional(),
+  groupId: z.string().uuid().optional(),
+  shared: z.boolean().optional(),
+  // moysklad-parity custom document number (the «№» header input).
+  name: z.string().max(100).optional(),
   moment: z.string().optional(),
   deliveryPlannedMoment: z.string().optional(),
   vatEnabled: z.boolean().default(true),
@@ -64,7 +71,7 @@ export const CreateInternalOrderSchema = z.object({
   description: z.string().max(4096).optional(),
   externalCode: z.string().max(255).optional(),
   applicable: z.boolean().optional(),
-  positions: z.array(InternalOrderPositionInputSchema).min(1, 'Kamida 1 ta pozitsiya'),
+  positions: z.array(InternalOrderPositionInputSchema),
 });
 export type CreateInternalOrderInput = z.infer<typeof CreateInternalOrderSchema>;
 
@@ -90,13 +97,28 @@ export const UpdateInternalOrderSchema = z
 export const InternalOrderFilterSchema = z.object({
   state: InternalOrderStateSchema.optional(),
   organizationId: z.string().uuid().optional(),
+  organizationIds: csvUuid.optional(),
   storeId: z.string().uuid().optional(),
+  /** «Склад» — multi (moysklad checkbox-dropdown; mirrors loss.storeIds). */
+  storeIds: csvUuid.optional(),
   /** «Проект» — InternalOrder.projectId. */
   projectId: z.string().uuid().optional(),
+  /** «Проект» — multi. */
+  projectIds: csvUuid.optional(),
   /** «Владелец-сотрудник» — InternalOrder.ownerId. */
   ownerId: z.string().uuid().optional(),
+  /** «Владелец-сотрудник» — multi. */
+  ownerIds: csvUuid.optional(),
   /** «Владелец-отдел» — InternalOrder.groupId. */
   groupId: z.string().uuid().optional(),
+  /** «Владелец-отдел» — multi. */
+  groupIds: csvUuid.optional(),
+  /** «Товар или группа» — positions.some(productId in …); mirrors loss.productIds. */
+  productIds: csvUuid.optional(),
+  /** «Кто изменил» — auditLog-approximated (InternalOrder has no modifiedById column). */
+  modifiedByIds: csvUuid.optional(),
+  /** «Общий доступ» — InternalOrder.shared flag. */
+  shared: boolFromString.optional(),
   /** «Проведено» — InternalOrder.applicable flag. */
   applicable: boolFromString.optional(),
   /** «Напечатано» — InternalOrder.printed flag. */
@@ -118,11 +140,10 @@ export const InternalOrderFilterSchema = z.object({
   sumMinorFrom: z.coerce.number().int().nonnegative().optional(),
   sumMinorTo: z.coerce.number().int().nonnegative().optional(),
   currency: z.string().length(3).optional(),
-  // NOTE: «Кто изменил» (modifiedById) is SKIPPED — the InternalOrder
-  // model has no `updatedById` column (only `ownerId` / `groupId`), so
-  // there is no backed way to filter "last modified by". Surfacing it
-  // would require a schema migration outside this panel-parity task.
-  // InternalOrder also has NO agentId / contractId / agentAccountId /
+  // NOTE: «Кто изменил» (modifiedByIds) is auditLog-approximated — the
+  // InternalOrder model has no `updatedById` column, so the service
+  // pre-queries auditLog for the matched entityIds (mirror loss).
+  // InternalOrder has NO agentId / contractId / agentAccountId /
   // organizationAccountId / salesChannelId — internal stock-transfer
   // request (no counterparty), so those filters are intentionally absent.
   limit: z.coerce.number().int().min(1).max(500).default(50),

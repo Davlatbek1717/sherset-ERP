@@ -174,7 +174,9 @@ export default function VariantsPage() {
       header: t('barcode'),
       width: '140px',
       cell: (v) => (
-        <span className="text-[var(--ms-text-muted)] text-xs tabular-nums">{v.barcode ?? '—'}</span>
+        <span className="text-[var(--ms-text-muted)] text-[12px] tabular-nums">
+          {v.barcode ?? '—'}
+        </span>
       ),
       cellText: (v) => v.barcode ?? '',
     },

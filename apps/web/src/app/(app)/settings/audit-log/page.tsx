@@ -12,6 +12,7 @@ import {
   Input,
   NativeSelect,
   PageHeader,
+  StickyHScroll,
   buildCsv,
   csvTimestamp,
   downloadCsv,
@@ -156,7 +157,7 @@ export default function AuditLogPage() {
   };
 
   return (
-    <Container size="full" className="py-4">
+    <Container size="md" className="py-4">
       <PageHeader
         title={t('title')}
         subtitle={t('description')}
@@ -286,7 +287,7 @@ export default function AuditLogPage() {
       )}
 
       {data && (
-        <div className="mt-4 overflow-x-auto rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)]">
+        <StickyHScroll className="mt-4 rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)]">
           <table className="w-full text-sm">
             <thead className="bg-[var(--ms-bg-muted)]">
               <tr>
@@ -328,7 +329,7 @@ export default function AuditLogPage() {
                         className="border-[var(--ms-border-default)] border-t hover:bg-[var(--ms-bg-muted)]"
                         data-test-id={`audit-row-${row.id}`}
                       >
-                        <td className="px-3 py-2 text-[var(--ms-text-muted)] text-xs tabular-nums">
+                        <td className="px-3 py-2 text-[var(--ms-text-muted)] text-[12px] tabular-nums">
                           {formatDateTime(row.at)}
                         </td>
                         <td className="px-3 py-2 font-medium">{row.entity}</td>
@@ -337,7 +338,7 @@ export default function AuditLogPage() {
                             {translateAction(row.action)}
                           </Badge>
                           {row.entityId && (
-                            <span className="ml-2 text-[var(--ms-text-muted)] text-xs tabular-nums">
+                            <span className="ml-2 text-[var(--ms-text-muted)] text-[12px] tabular-nums">
                               {row.entityId.slice(0, 8)}…
                             </span>
                           )}
@@ -427,7 +428,7 @@ export default function AuditLogPage() {
                                 </pre>
                               </div>
                             )}
-                            <div className="mt-2 text-[var(--ms-text-muted)] text-xs tabular-nums">
+                            <div className="mt-2 text-[var(--ms-text-muted)] text-[12px] tabular-nums">
                               {t('entity_id')}: {row.entityId}
                             </div>
                           </td>
@@ -439,7 +440,7 @@ export default function AuditLogPage() {
               )}
             </tbody>
           </table>
-        </div>
+        </StickyHScroll>
       )}
 
       {data && data.total > 0 && (

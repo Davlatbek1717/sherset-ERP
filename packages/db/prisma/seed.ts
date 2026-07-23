@@ -9,11 +9,9 @@
  *  - 2 sample Counterparties
  */
 
-import { randomUUID } from 'node:crypto';
 import * as argon2 from 'argon2';
 import { PrismaClient } from '../src/generated/index.js';
 import { seedCountries } from './country-seed.js';
-import { CATALOG_50 } from './delixi-uzkabel-data.js';
 import { seedHelpArticles } from './help-seed.js';
 
 const prisma = new PrismaClient();
@@ -36,60 +34,13 @@ async function main(): Promise<void> {
   });
   console.log('  ✓ Account:', account.name);
 
-  // Xabar shablonlari (kutubxona, kanal-aware) — SMS + Telegram «debt_reminder»
-  // standartlari. `id` UUID column bo'lgani uchun sintetik id ISHLATIB BO'LMAYDI
-  // (P2023) — (accountId, channel, key) bo'yicha findFirst+create bilan idempotent
-  // (auto-UUID). unique key kutubxona uchun olib tashlangan.
-  const seedTemplate = async (channel: string, name: string, body: string) => {
-    const existing = await prisma.messageTemplate.findFirst({
-      where: { accountId: account.id, channel, key: 'debt_reminder' },
-    });
-    if (existing) return;
-    await prisma.messageTemplate.create({
-      data: {
-        accountId: account.id,
-        channel,
-        key: 'debt_reminder',
-        name,
-        isDefault: true,
-        enabled: true,
-        body,
-      },
-    });
-  };
-  // SMS: Telegram bilan BIR XIL gaplar (2026-07-20 talabi), lekin oddiy matn —
-  // markdown (*qalin*/__tagliq__) va emoji YO'Q (emoji UCS-2 → SMS sonini ~2x oshiradi).
-  await seedTemplate(
-    'sms',
-    'Qarz eslatmasi (SMS)',
-    'Assalomu alaykum, hurmatli {{= counterparty.name }}!\n\n' +
-      "Eslatib o'tamiz, Sizning {{= debt.remainingFormatted }} so'm miqdorida to'lanmagan qarzingiz mavjud. Iltimos, kelishilgan muddatda qarzdorlikni yopishingizni so'raymiz.\n\n" +
-      'Savollar uchun: {{= company.phone }}\nKarta raqam: {{= company.card }}\nKarta egasi: {{= company.cardOwner }}\n\n' +
-      "Qarz - bu omonat, omonatga xiyonat bo'lmasin!\nSHERSET jamoasi!",
-  );
-  // Telegram: GramJS MarkdownV2 (*qalin*/__tagliq__). Qiymatlar render vaqtida
-  // mdSafe-escape bo'ladi, shuning uchun bu yerda escape YO'Q.
-  await seedTemplate(
-    'telegram',
-    'Qarz eslatmasi (Telegram)',
-    'Assalomu alaykum, hurmatli {{= counterparty.name }}!\n\n' +
-      "✅ Eslatib o'tamiz, Sizning *__{{= debt.remainingFormatted }}__* so'm miqdorida to'lanmagan qarzingiz mavjud. Iltimos, kelishilgan muddatda qarzdorlikni yopishingizni so'raymiz.\n\n" +
-      '📞 *Savollar uchun:* {{= company.phone }}\n💳 *Karta raqam:* {{= company.card }}\n👨‍💻 *Karta egasi:* {{= company.cardOwner }}\n\n' +
-      "Qarz - bu omonat, omonatga xiyonat bo'lmasin!\nSHERSET jamoasi!",
-  );
-
   const admin = await prisma.employee.upsert({
     where: { accountId_email: { accountId: account.id, email: 'admin@demo.local' } },
-    // hrRoles:['admin'] → HR module's own guard (HrPermissionGuard) grants full
-    // access to hr/employees, hr/roles, etc. Without it even the owner gets 403
-    // on the HR pages (main RBAC roles do NOT cover the HR permission system).
-    update: { passwordHash: devPasswordHash, username: 'admin', hrRoles: ['admin'] },
+    update: { passwordHash: devPasswordHash },
     create: {
       accountId: account.id,
       email: 'admin@demo.local',
-      username: 'admin',
       passwordHash: devPasswordHash,
-      hrRoles: ['admin'],
       name: 'Admin User',
       firstName: 'Admin',
       lastName: 'User',
@@ -182,16 +133,11 @@ async function main(): Promise<void> {
     // Cross-cutting
     'attachment',
     'auditlog',
-    'analitika',
     'report',
+    'analitika',
     'publication',
     'label',
     'settings',
-    // «Qarz undirish» (TZ v2) — debt-collection moduli (permissions.types.ts bilan mos)
-    'debt',
-    'debtpayment',
-    'debtcardpayment',
-    'debtreport',
   ];
   const actions = ['view', 'create', 'update', 'delete', 'approve', 'print'];
   const systemRoles = [
@@ -243,43 +189,6 @@ async function main(): Promise<void> {
         print: 'ALL',
       },
     },
-    // «Qarz undirish» rollari (TZ §6) — API'dagi SYSTEM_ROLE_TEMPLATES bilan mos.
-    // Operator kassa to'lovini kirita OLMAYDI; kassir screenshot to'lovini kirita
-    // olmaydi; kassir kunlik hisobotni KO'RMAYDI (call-markaz rahbariyati uchun).
-    {
-      name: 'QarzOperatori',
-      desc: "Call-markaz operatori — qo'ng'iroq, izoh, karta (screenshot) to'lovi",
-      defaults: {
-        view: 'ALL',
-        create: 'NO',
-        update: 'NO',
-        delete: 'NO',
-        approve: 'NO',
-        print: 'ALL',
-      },
-      overrides: {
-        debt: { view: 'ALL', update: 'ALL' },
-        debtcardpayment: { create: 'ALL' },
-        debtreport: { view: 'ALL' },
-      },
-    },
-    {
-      name: 'QarzKassiri',
-      desc: "Kassir — qarz berish, naqd/terminal to'lov qabul qilish",
-      defaults: {
-        view: 'ALL',
-        create: 'NO',
-        update: 'NO',
-        delete: 'NO',
-        approve: 'NO',
-        print: 'ALL',
-      },
-      overrides: {
-        debt: { view: 'ALL', create: 'ALL', update: 'ALL' },
-        debtpayment: { create: 'ALL' },
-        debtreport: { view: 'NO' },
-      },
-    },
   ];
   for (const r of systemRoles) {
     const role = await prisma.role.upsert({
@@ -289,10 +198,7 @@ async function main(): Promise<void> {
     });
     for (const entity of entities) {
       for (const action of actions) {
-        // Per-entity override (qarz rollari) -> defaults -> 'NO'.
-        const overrides = (r as { overrides?: Record<string, Record<string, string>> }).overrides;
-        const scope =
-          overrides?.[entity]?.[action] ?? (r.defaults as Record<string, string>)[action] ?? 'NO';
+        const scope = (r.defaults as Record<string, string>)[action] ?? 'NO';
         await prisma.rolePermission.upsert({
           where: { roleId_entity_action: { roleId: role.id, entity, action } },
           update: { scope },
@@ -308,157 +214,6 @@ async function main(): Promise<void> {
       });
     }
     console.log('  ✓ Role:', r.name);
-  }
-
-  // --- Specialized business roles (Kassir, Skladchi) + demo employees ---
-  // Unlike the uniform system roles above, these grant PER-ENTITY access so a
-  // cashier sees only POS/money screens and a warehouse worker only stock
-  // screens. isSystem:false → freely editable/removable in Settings → Rollar.
-  type Act = 'view' | 'create' | 'update' | 'delete' | 'approve' | 'print';
-  const specializedRoles: Array<{
-    name: string;
-    desc: string;
-    password: string;
-    perms: Record<string, Act[]>;
-    demo: { email: string; username: string; name: string; position: string };
-  }> = [
-    {
-      name: 'Kassir',
-      desc: 'Kassir — chakana savdo va kassa',
-      password: 'kassir123',
-      perms: {
-        // approve = take payment (POST /retail-sales/:id/post) + refund.
-        retailsale: ['view', 'create', 'update', 'approve', 'print'],
-        cashiersession: ['view', 'create', 'update', 'approve'],
-        cashin: ['view', 'create'],
-        cashout: ['view', 'create'],
-        paymentin: ['view', 'create'],
-        product: ['view'],
-        counterparty: ['view', 'create'],
-        store: ['view'],
-        cashdesk: ['view'],
-        organization: ['view'],
-        report: ['view'],
-      },
-      demo: {
-        email: 'kassir@demo.local',
-        username: 'kassir',
-        name: 'Kassir Demo',
-        position: 'Kassir',
-      },
-    },
-    {
-      name: 'Skladchi',
-      desc: 'Skladchi — ombor operatsiyalari',
-      password: 'skladchi123',
-      perms: {
-        store: ['view'],
-        product: ['view'],
-        productfolder: ['view'],
-        move: ['view', 'create', 'update'],
-        enter: ['view', 'create', 'update'],
-        loss: ['view', 'create', 'update'],
-        inventory: ['view', 'create', 'update'],
-        internalorder: ['view', 'create'],
-        supply: ['view', 'update'],
-        demand: ['view'],
-        // Picking flow: the omborchi reads retail sales sent to picking and
-        // marks them ready → needs retailsale view + update (NOT create/sell).
-        retailsale: ['view', 'update'],
-        report: ['view'],
-      },
-      demo: {
-        email: 'skladchi@demo.local',
-        username: 'skladchi',
-        name: 'Skladchi Demo',
-        position: 'Omborchi',
-      },
-    },
-  ];
-  for (const sr of specializedRoles) {
-    const role = await prisma.role.upsert({
-      where: { accountId_name: { accountId: account.id, name: sr.name } },
-      update: { description: sr.desc, isSystem: false },
-      create: { accountId: account.id, name: sr.name, description: sr.desc, isSystem: false },
-    });
-    for (const entity of entities) {
-      for (const action of actions) {
-        const scope = sr.perms[entity]?.includes(action as Act) ? 'ALL' : 'NO';
-        await prisma.rolePermission.upsert({
-          where: { roleId_entity_action: { roleId: role.id, entity, action } },
-          update: { scope },
-          create: { roleId: role.id, entity, action, scope },
-        });
-      }
-    }
-    console.log(`  ✓ Role: ${sr.name}`);
-  }
-
-  // Named staff accounts — 2 kassir + 2 omborchi, all password '123456'.
-  const kassirRole = await prisma.role.findFirst({
-    where: { accountId: account.id, name: 'Kassir' },
-    select: { id: true },
-  });
-  const skladchiRole = await prisma.role.findFirst({
-    where: { accountId: account.id, name: 'Skladchi' },
-    select: { id: true },
-  });
-  const staffHash = await argon2.hash('123456', { type: argon2.argon2id });
-  const staffAccounts = [
-    { username: 'kassir1', name: 'Kassir 1', position: 'Kassir', roleId: kassirRole?.id },
-    { username: 'kassir2', name: 'Kassir 2', position: 'Kassir', roleId: kassirRole?.id },
-    { username: 'omborchi1', name: 'Omborchi 1', position: 'Omborchi', roleId: skladchiRole?.id },
-    { username: 'omborchi2', name: 'Omborchi 2', position: 'Omborchi', roleId: skladchiRole?.id },
-  ];
-  const empByUsername = new Map<string, string>();
-  for (const s of staffAccounts) {
-    const parts = s.name.split(' ');
-    const emp = await prisma.employee.upsert({
-      where: { accountId_email: { accountId: account.id, email: `${s.username}@demo.local` } },
-      update: { passwordHash: staffHash, username: s.username },
-      create: {
-        accountId: account.id,
-        email: `${s.username}@demo.local`,
-        username: s.username,
-        passwordHash: staffHash,
-        name: s.name,
-        firstName: parts[0] ?? s.username,
-        lastName: parts[1] ?? '',
-        position: s.position,
-      },
-    });
-    empByUsername.set(s.username, emp.id);
-    if (s.roleId) {
-      await prisma.employeeRole.upsert({
-        where: { employeeId_roleId: { employeeId: emp.id, roleId: s.roleId } },
-        update: {},
-        create: { employeeId: emp.id, roleId: s.roleId },
-      });
-    }
-    console.log(`  ✓ Xodim: ${s.username} / 123456 (${s.position})`);
-  }
-
-  // Sklad-keepers (ombor mas'uli) — every product sits in sklad 1 or 2 (see the
-  // catalog locSklad below), so a picking sale is auto-assigned to the keeper of
-  // its product's sklad. Without a keeper the picking task has no assignee and
-  // never reaches an omborchi. Map: sklad 1 → omborchi1, sklad 2 → omborchi2.
-  for (const k of [
-    { skladNo: 1, username: 'omborchi1', name: 'Omborchi 1' },
-    { skladNo: 2, username: 'omborchi2', name: 'Omborchi 2' },
-  ]) {
-    const empId = empByUsername.get(k.username);
-    if (!empId) continue;
-    await prisma.skladKeeper.upsert({
-      where: { accountId_skladNo: { accountId: account.id, skladNo: k.skladNo } },
-      update: { employeeId: empId, employeeName: k.name },
-      create: {
-        accountId: account.id,
-        skladNo: k.skladNo,
-        employeeId: empId,
-        employeeName: k.name,
-      },
-    });
-    console.log(`  ✓ Sklad-keeper: sklad ${k.skladNo} → ${k.username}`);
   }
 
   const org = await prisma.organization.upsert({
@@ -536,43 +291,15 @@ async function main(): Promise<void> {
 
   const store = await prisma.store.upsert({
     where: { accountId_code: { accountId: account.id, code: 'MAIN' } },
-    update: { isForward: true },
-    create: {
-      accountId: account.id,
-      name: 'Ombor 1',
-      code: 'MAIN',
-      address: 'Toshkent, Chilonzor tumani',
-      isForward: true, // forward (fast-pick) warehouse
-    },
-  });
-  console.log('  ✓ Store:', store.name, '(forward)');
-
-  // Exactly two warehouses (ombor): «Ombor 1» (main) + «Ombor 2».
-  const warehouseIds: string[] = [store.id];
-  for (const s of [{ name: 'Ombor 2', code: 'WH02', address: 'Toshkent, Yunusobod tumani' }]) {
-    const st = await prisma.store.upsert({
-      where: { accountId_code: { accountId: account.id, code: s.code } },
-      update: {},
-      create: { accountId: account.id, name: s.name, code: s.code, address: s.address },
-    });
-    warehouseIds.push(st.id);
-    console.log('  ✓ Store:', st.name);
-  }
-
-  // Asosiy kassa (cash desk) — required to open a POS session and take/refund
-  // cash. Without it the cashier can't open a proper session and cash refunds
-  // fail ("Session has no cash desk").
-  const cashDesk = await prisma.cashDesk.upsert({
-    where: { id: '00000000-0000-0000-0000-000000000020' },
     update: {},
     create: {
-      id: '00000000-0000-0000-0000-000000000020',
       accountId: account.id,
-      name: 'Asosiy kassa',
-      currency: 'UZS',
+      name: 'Asosiy ombor',
+      code: 'MAIN',
+      address: "Tashkent, Amir Temur ko'chasi, 10",
     },
   });
-  console.log('  ✓ CashDesk:', cashDesk.name);
+  console.log('  ✓ Store:', store.name);
 
   const folder = await prisma.productFolder.upsert({
     where: { accountId_code: { accountId: account.id, code: 'PHONES' } },
@@ -657,127 +384,6 @@ async function main(): Promise<void> {
     productByCode.set(p.code, prod.id);
     console.log('  ✓ Product:', prod.name);
   }
-
-  // ── Delixi & UzKabel catalog: 50 products (30 Delixi + 20 UzKabel), each with
-  //    full attributes (barcode, article, weight, shelf location, buy/sale price)
-  //    under a per-brand folder. Idempotent by code. ──
-  const delixiFolder = await prisma.productFolder.upsert({
-    where: { accountId_code: { accountId: account.id, code: 'DELIXI' } },
-    update: {},
-    create: {
-      accountId: account.id,
-      name: 'Delixi',
-      code: 'DELIXI',
-      pathName: 'Delixi',
-      vat: 12,
-      vatEnabled: true,
-    },
-  });
-  const uzkabelFolder = await prisma.productFolder.upsert({
-    where: { accountId_code: { accountId: account.id, code: 'UZKABEL' } },
-    update: {},
-    create: {
-      accountId: account.id,
-      name: 'UzKabel',
-      code: 'UZKABEL',
-      pathName: 'UzKabel',
-      vat: 12,
-      vatEnabled: true,
-    },
-  });
-
-  const bulkStock: Array<{ id: string; buyPrice: bigint }> = [];
-  let catIdx = 0;
-  for (const p of CATALOG_50) {
-    catIdx++;
-    const isUz = p.code.startsWith('UK-');
-    const attrs = {
-      name: p.name,
-      kind: 'product',
-      buyPrice: BigInt(p.buy * 100), // so'm → tiyin
-      salePrices: [{ priceTypeId: retailType.id, value: String(p.sale * 100) }],
-      vat: 12,
-      vatEnabled: true,
-      useParentVat: false,
-      uom: p.uom,
-      barcodes: [`200${String(catIdx).padStart(10, '0')}`],
-      article: p.code,
-      weightG: 100 + catIdx * 5,
-      // sklad 1 or 2 only — matches the two seeded sklad-keepers so every
-      // picking sale is assignable to omborchi1 (sklad 1) or omborchi2 (sklad 2).
-      locSklad: ((catIdx - 1) % 2) + 1,
-      locPolka: ((catIdx - 1) % 12) + 1,
-      locQavat: ((catIdx - 1) % 4) + 1,
-      locYacheyka: catIdx,
-      forwardMax: 40, // keep up to 40 units in the forward (fast-pick) store
-    };
-    const prod = await prisma.product.upsert({
-      where: { accountId_code: { accountId: account.id, code: p.code } },
-      update: attrs,
-      create: {
-        accountId: account.id,
-        ownerId: admin.id,
-        productFolderId: isUz ? uzkabelFolder.id : delixiFolder.id,
-        code: p.code,
-        ...attrs,
-      },
-    });
-    productByCode.set(p.code, prod.id);
-    bulkStock.push({ id: prod.id, buyPrice: attrs.buyPrice });
-  }
-  console.log(
-    `  ✓ Delixi/UzKabel products (barcode/article/weight/location/price): ${CATALOG_50.length}`,
-  );
-
-  // Initial stock (kirim) for the 50 bulk products — random 20-200 units per
-  // product spread across the 3 warehouses. Writes both the balance (stocks)
-  // and a ledger entry (stock_operations, docType 'enter'). Idempotent: a
-  // product that already has any stock row is skipped.
-  const enterDocIds = warehouseIds.map(() => randomUUID());
-  let stockSeeded = 0;
-  for (const s of bulkStock) {
-    const already = await prisma.stock.findFirst({
-      where: { accountId: account.id, assortmentId: s.id },
-      select: { assortmentId: true },
-    });
-    if (already) continue;
-    // Every product is stocked in EACH warehouse with an independent 20-200 qty.
-    for (let w = 0; w < warehouseIds.length; w++) {
-      const storeId = warehouseIds[w];
-      const docId = enterDocIds[w];
-      const qty = 20 + Math.floor(Math.random() * 181);
-      if (!storeId || !docId || qty <= 0) continue;
-      const cost = BigInt(qty) * s.buyPrice;
-      await prisma.stock.create({
-        data: {
-          accountId: account.id,
-          storeId,
-          assortmentKind: 'product',
-          assortmentId: s.id,
-          qty: qty.toString(),
-          costBalanceMinor: cost,
-        },
-      });
-      await prisma.stockOperation.create({
-        data: {
-          accountId: account.id,
-          storeId,
-          assortmentKind: 'product',
-          assortmentId: s.id,
-          qtyDelta: qty.toString(),
-          costDeltaMinor: cost,
-          docType: 'enter',
-          docId,
-          reason: 'post',
-          createdById: admin.id,
-        },
-      });
-    }
-    stockSeeded++;
-  }
-  console.log(
-    `  ✓ Initial stock seeded for ${stockSeeded} products across ${warehouseIds.length} warehouses`,
-  );
 
   const cps = [
     {

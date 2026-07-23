@@ -5,10 +5,8 @@ import { FilterToggleButton } from '@/components/filters/filter-toggle-button';
 import { useBulkDocumentActions } from '@/hooks/use-bulk-actions';
 import { useColumnVisibility } from '@/hooks/use-column-visibility';
 import { useColumnWidths } from '@/hooks/use-column-widths';
-import { useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
 import { taskStatusTone } from '@/lib/domain-status-tone';
-import { pinDefaultCustomer } from '@/lib/pin-default-customer';
 import {
   Badge,
   CatalogPicker,
@@ -17,6 +15,7 @@ import {
   InlineFilterPanel,
   ListView,
   type ListViewFilter,
+  MultiCombobox,
   PeriodInputs,
   PeriodShortcuts,
   type PickerItem,
@@ -31,6 +30,9 @@ import { useState } from 'react';
 type TaskStatus = 'open' | 'in_progress' | 'done' | 'cancelled';
 type TaskPriority = 'low' | 'normal' | 'high' | 'urgent';
 type Ownership = 'mine' | 'team' | 'all';
+
+/** Multi-select reference field — moysklad checkbox-dropdown holds {id,label}[]. */
+type RefMulti = { id: string; label: string };
 
 interface Task {
   id: string;
@@ -59,8 +61,6 @@ export default function TasksPage() {
   const tFields = useTranslations('fields');
   const tFilters = useTranslations('filters');
   const tTaskCreate = useTranslations('task_create');
-  const tForm = useTranslations('form');
-  const userDefaults = useUserDefaults();
 
   const [searchInput, setSearchInput] = useState('');
   const search = useDebounce(searchInput, 300);
@@ -72,9 +72,12 @@ export default function TasksPage() {
   const [sortKey, setSortKey] = useState<string>('createdAt');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [filterOpen, setFilterOpen] = useState(true);
-  const [pickerOpen, setPickerOpen] = useState<null | 'assignee' | 'agent' | 'type'>(null);
+  const [pickerOpen, setPickerOpen] = useState<null | 'assignee' | 'type'>(null);
   const [assigneeFilter, setAssigneeFilter] = useState<{ id?: string; label?: string }>({});
-  const [agentFilter, setAgentFilter] = useState<{ id?: string; label?: string }>({});
+  // «Контрагент» — moysklad-parity inline multi-select checkbox dropdown
+  // (MultiCombobox), was a single-select modal. Shows the phone as a sublabel
+  // and searches by name OR phone (BE /counterparties?search= matches both).
+  const [agents, setAgents] = useState<RefMulti[]>([]);
   const [typeFilter, setTypeFilter] = useState<{ id?: string; label?: string }>({});
   const [dateFrom, setDateFrom] = useState<string | undefined>();
   const [dateTo, setDateTo] = useState<string | undefined>();
@@ -89,7 +92,7 @@ export default function TasksPage() {
     ...(ownership !== 'all' ? { ownership } : {}),
     ...(statusFilter ? { status: statusFilter } : {}),
     ...(assigneeFilter.id ? { assigneeId: assigneeFilter.id } : {}),
-    ...(agentFilter.id ? { agentId: agentFilter.id } : {}),
+    ...(agents.length ? { agentIds: agents.map((x) => x.id).join(',') } : {}),
     ...(typeFilter.id ? { stateId: typeFilter.id } : {}),
     ...(dateFrom ? { dateFrom } : {}),
     ...(dateTo ? { dateTo } : {}),
@@ -110,7 +113,7 @@ export default function TasksPage() {
     ownership,
     statusFilter,
     assigneeFilter.id,
-    agentFilter.id,
+    agents.map((x) => x.id).join(','),
     typeFilter.id,
     dateFrom,
     dateTo,
@@ -339,7 +342,7 @@ export default function TasksPage() {
     ownership !== 'all' ||
     !!statusFilter ||
     !!assigneeFilter.id ||
-    !!agentFilter.id ||
+    agents.length > 0 ||
     !!typeFilter.id ||
     !!dateFrom ||
     !!dateTo ||
@@ -404,7 +407,7 @@ export default function TasksPage() {
             clearLabel={tFilters('clear')}
             onClear={() => {
               setAssigneeFilter({});
-              setAgentFilter({});
+              setAgents([]);
               setTypeFilter({});
               setDateFrom(undefined);
               setDateTo(undefined);
@@ -494,20 +497,36 @@ export default function TasksPage() {
                 testId="filter-assignee"
               />
             </InlineFilterPanel.Field>
-            {/* 5. Контрагент (Task.agentId) */}
+            {/* 5. Контрагент (Task.agentId) — moysklad-parity inline multi-select
+                checkbox dropdown: type a name OR phone, results appear inline
+                (each row shows the phone as a sublabel), tick as many as needed.
+                Was a single-select modal. */}
             <InlineFilterPanel.Field label={tFields('agent')} expandable>
-              <CatalogPickerField
-                value={
-                  agentFilter.id
-                    ? { id: agentFilter.id, label: agentFilter.label ?? agentFilter.id }
-                    : null
-                }
-                placeholder=""
-                onPick={() => setPickerOpen('agent')}
-                onClear={() => {
-                  setAgentFilter({});
+              <MultiCombobox
+                value={agents.map((x) => x.id)}
+                items={agents.map((x) => ({ value: x.id, label: x.label }))}
+                onSearch={async (q) => {
+                  const r = await api.get<{
+                    items: { id: string; name: string; phone?: string | null }[];
+                  }>(`/counterparties?search=${encodeURIComponent(q)}&limit=20`);
+                  return r.items.map((x) => ({
+                    value: x.id,
+                    label: x.name,
+                    sublabel: x.phone || undefined,
+                  }));
+                }}
+                onChange={(nextIds, toggled) => {
+                  setAgents((prev) =>
+                    nextIds.map((id) => {
+                      const ex = prev.find((s) => s.id === id);
+                      if (ex) return ex;
+                      if (toggled?.value === id) return { id, label: String(toggled.label) };
+                      return { id, label: id };
+                    }),
+                  );
                   setCursor(undefined);
                 }}
+                placeholder=""
                 testId="filter-agent"
               />
             </InlineFilterPanel.Field>
@@ -578,27 +597,6 @@ export default function TasksPage() {
         }}
         onSelect={(item) => {
           setAssigneeFilter({ id: item.id, label: String(item.primary) });
-          setCursor(undefined);
-        }}
-      />
-      <CatalogPicker
-        open={pickerOpen === 'agent'}
-        onClose={() => setPickerOpen(null)}
-        title={tFields('agent')}
-        fetcher={async (q): Promise<PickerItem[]> => {
-          const r = await api.get<{ items: { id: string; name: string }[] }>(
-            `/counterparties?search=${encodeURIComponent(q)}&limit=20`,
-          );
-          const items = r.items.map((x) => ({ id: x.id, primary: x.name }));
-          return pinDefaultCustomer(
-            items,
-            userDefaults.data?.defaultCustomer,
-            q,
-            tForm('pinned_default'),
-          );
-        }}
-        onSelect={(item) => {
-          setAgentFilter({ id: item.id, label: String(item.primary) });
           setCursor(undefined);
         }}
       />

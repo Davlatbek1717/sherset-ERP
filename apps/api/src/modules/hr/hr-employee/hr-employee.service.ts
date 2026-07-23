@@ -1,3 +1,4 @@
+import type { Prisma } from '@moysklad/db';
 import {
   BadRequestException,
   ConflictException,
@@ -13,6 +14,7 @@ import { normalizeTelegramPhone } from '../hr-shared/phone-normalize.util.js';
 import type {
   CreateHrEmployeeInput,
   HrEmployeeFilter,
+  SetEmployeeImageInput,
   SetPasswordInput,
   UpdateHrEmployeeInput,
 } from './hr-employee.schema.js';
@@ -24,6 +26,63 @@ function safeNormalizePhone(raw: string | null | undefined): string | null | und
   } catch (e) {
     throw new BadRequestException((e as Error).message);
   }
+}
+
+/**
+ * Reserved key inside Employee.attributes for the moysklad employee-card
+ * extras that have no dedicated column (no schema migration on this box):
+ * `{ loginAllowed, allowedIps, allowedNetworks, notifications }`.
+ * The HR module never touches other attribute keys, and custom-field code
+ * must skip keys with the `__` prefix.
+ */
+export const EMPLOYEE_SYSTEM_KEY = '__employee_system';
+
+export interface EmployeeSystemAttrs {
+  loginAllowed?: boolean;
+  allowedIps?: string[];
+  allowedNetworks?: string[];
+  notifications?: Record<
+    string,
+    { enabled?: boolean; web?: boolean; email?: boolean; phone?: boolean }
+  >;
+  /** Original filename of the card «Изображение» (bytes live in imageContent). */
+  imageName?: string;
+}
+
+export function readEmployeeSystemAttrs(attributes: unknown): EmployeeSystemAttrs {
+  if (attributes && typeof attributes === 'object' && !Array.isArray(attributes)) {
+    const raw = (attributes as Record<string, unknown>)[EMPLOYEE_SYSTEM_KEY];
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) return raw as EmployeeSystemAttrs;
+  }
+  return {};
+}
+
+/** Merge card extras into the attributes JSON without clobbering other keys. */
+function mergeEmployeeSystemAttrs(
+  currentAttributes: unknown,
+  patch: Partial<EmployeeSystemAttrs>,
+): Record<string, unknown> {
+  const base =
+    currentAttributes && typeof currentAttributes === 'object' && !Array.isArray(currentAttributes)
+      ? { ...(currentAttributes as Record<string, unknown>) }
+      : {};
+  base[EMPLOYEE_SYSTEM_KEY] = { ...readEmployeeSystemAttrs(base), ...patch };
+  return base;
+}
+
+/** Pick the card-extra fields out of a create/update payload (undefined = untouched). */
+function systemAttrsPatch(input: {
+  loginAllowed?: boolean;
+  allowedIps?: string[];
+  allowedNetworks?: string[];
+  notifications?: EmployeeSystemAttrs['notifications'];
+}): Partial<EmployeeSystemAttrs> {
+  const patch: Partial<EmployeeSystemAttrs> = {};
+  if (input.loginAllowed !== undefined) patch.loginAllowed = input.loginAllowed;
+  if (input.allowedIps !== undefined) patch.allowedIps = input.allowedIps;
+  if (input.allowedNetworks !== undefined) patch.allowedNetworks = input.allowedNetworks;
+  if (input.notifications !== undefined) patch.notifications = input.notifications;
+  return patch;
 }
 
 @Injectable()
@@ -81,17 +140,38 @@ export class HrEmployeeService {
           // the HR dashboard projection.
           lastLoginAt: true,
           position: true,
+          // moysklad Настройки → Сотрудники list columns: Фамилия/Имя/Отчество,
+          // Описание, Роль, Вход (loginAllowed lives in attributes JSON).
+          firstName: true,
+          lastName: true,
+          middleName: true,
+          description: true,
+          attributes: true,
+          // avatar thumbnail flag (bytes NEVER ride the list payload)
+          imageMime: true,
+          roles: { select: { role: { select: { id: true, name: true, isSystem: true } } } },
         },
       }),
       this.prisma.client.employee.count({ where }),
     ]);
 
-    return { rows, total, page: filter.page, limit: filter.limit };
+    return {
+      rows: rows.map(({ attributes, imageMime, ...row }) => ({
+        ...row,
+        loginAllowed: readEmployeeSystemAttrs(attributes).loginAllowed !== false,
+        hasImage: imageMime != null,
+      })),
+      total,
+      page: filter.page,
+      limit: filter.limit,
+    };
   }
 
-  async findOne(accountId: string, id: string) {
+  async findOne(accountId: string, id: string, opts?: { includeArchived?: boolean }) {
     const emp = await this.prisma.client.employee.findFirst({
-      where: { id, accountId, archived: false },
+      // The moysklad employee card must open archived rows too («Извлечь из
+      // архива» lives on the card) — list default stays active-only.
+      where: { id, accountId, ...(opts?.includeArchived ? {} : { archived: false }) },
       select: {
         id: true,
         name: true,
@@ -108,28 +188,76 @@ export class HrEmployeeService {
         lastLoginAt: true,
         // Optimistic-lock token for the detail-page edit modal.
         version: true,
+        // moysklad employee card (Настройки → Сотрудники → карточка).
+        firstName: true,
+        lastName: true,
+        middleName: true,
+        position: true,
+        salaryMinor: true,
+        inn: true,
+        description: true,
+        archived: true,
+        updatedAt: true,
+        imageMime: true,
+        // NOTE: Employee has no `group` RELATION (only the scalar groupId used
+        // by OWN_GROUP scope) — the card resolves the department name from the
+        // /groups catalog it already loads.
+        groupId: true,
+        attributes: true,
+        roles: { select: { role: { select: { id: true, name: true, isSystem: true } } } },
       },
     });
     if (!emp) throw new NotFoundException('Xodim topilmadi');
-    return emp;
+    const { attributes, imageMime, ...rest } = emp;
+    const sys = readEmployeeSystemAttrs(attributes);
+    return {
+      ...rest,
+      loginAllowed: sys.loginAllowed !== false,
+      allowedIps: sys.allowedIps ?? [],
+      allowedNetworks: sys.allowedNetworks ?? [],
+      notifications: sys.notifications ?? {},
+      hasImage: imageMime != null,
+      imageName: sys.imageName ?? null,
+    };
   }
 
-  async create(accountId: string, input: CreateHrEmployeeInput) {
-    const telegramPhone = safeNormalizePhone(input.telegramPhone);
-
-    if (input.username) {
-      const dup = await this.prisma.client.employee.findFirst({
-        where: { accountId, username: input.username },
-        select: { id: true },
-      });
-      if (dup) throw new ConflictException('Bu username allaqachon ishlatilgan');
-    }
-
-    const passwordHash =
-      input.username && input.password ? await argon2.hash(input.password) : undefined;
-
+  /**
+   * moysklad employee «История изменений»: every mutation on the employee
+   * card writes an audit row (entity='employee') so the card's history panel
+   * shows changes made TO the employee alongside actions made BY them.
+   * Non-fatal: an audit failure must never roll back the actual change.
+   */
+  private async writeAudit(
+    accountId: string,
+    entityId: string,
+    action: string,
+    actorId?: string,
+    fieldChanges?: Record<string, { before?: unknown; after?: unknown }>,
+  ) {
     try {
-      return await this.prisma.client.employee.create({
+      await this.prisma.client.auditLog.create({
+        data: {
+          accountId,
+          userId: actorId ?? null,
+          entity: 'employee',
+          entityId,
+          action,
+          fieldChanges:
+            fieldChanges && Object.keys(fieldChanges).length > 0
+              ? (fieldChanges as Prisma.InputJsonValue)
+              : undefined,
+        },
+      });
+    } catch {
+      // best-effort — the mutation itself already succeeded
+    }
+  }
+
+  async create(accountId: string, input: CreateHrEmployeeInput, actorId?: string) {
+    const telegramPhone = safeNormalizePhone(input.telegramPhone);
+    const sysPatch = systemAttrsPatch(input);
+    try {
+      const created = await this.prisma.client.employee.create({
         data: {
           accountId,
           name: input.name,
@@ -141,10 +269,24 @@ export class HrEmployeeService {
           hrRoles: input.hrRoles,
           isChecker: input.isChecker,
           moyskladAgentId: input.moyskladAgentId ?? undefined,
-          ...(input.username && { username: input.username }),
-          ...(passwordHash && { passwordHash }),
+          // moysklad employee card fields (all columns already existed).
+          firstName: input.firstName ?? undefined,
+          lastName: input.lastName ?? undefined,
+          middleName: input.middleName ?? undefined,
+          position: input.position ?? undefined,
+          salaryMinor: input.salaryMinor != null ? BigInt(input.salaryMinor) : undefined,
+          inn: input.inn ?? undefined,
+          description: input.description ?? undefined,
+          groupId: input.groupId ?? undefined,
+          ...(Object.keys(sysPatch).length > 0 && {
+            attributes: mergeEmployeeSystemAttrs(undefined, sysPatch) as object,
+          }),
         },
+        // Never echo passwordHash/imageContent back; reuse the card shape.
+        select: { id: true, version: true },
       });
+      await this.writeAudit(accountId, created.id, 'create', actorId);
+      return this.findOne(accountId, created.id, { includeArchived: true });
     } catch (e) {
       // No app pre-check here, so a duplicate email (the DB enforces
       // @@unique([accountId, email])) arrives as a raw P2002 → map to 409.
@@ -153,15 +295,88 @@ export class HrEmployeeService {
     }
   }
 
-  async update(accountId: string, id: string, input: UpdateHrEmployeeInput) {
-    // findOne proves existence (and tenant ownership) BEFORE the versioned
-    // update, so a P2025 from the update below can only be a version mismatch
-    // (a concurrent write bumped the version) — i.e. an optimistic-lock
-    // conflict, not a missing row.
-    await this.findOne(accountId, id);
+  async update(accountId: string, id: string, input: UpdateHrEmployeeInput, actorId?: string) {
+    // Existence + tenant check BEFORE the versioned update, so a P2025 from
+    // the update below can only be a version mismatch (a concurrent write
+    // bumped the version) — i.e. an optimistic-lock conflict, not a missing
+    // row. Raw row (not findOne): the card edits archived employees too, and
+    // the attributes JSON is needed for the __employee_system merge.
+    const current = await this.prisma.client.employee.findFirst({
+      where: { id, accountId },
+      select: {
+        id: true,
+        attributes: true,
+        // Diff base for the «История изменений» fieldChanges (Поле/Было/Стало).
+        name: true,
+        email: true,
+        phone: true,
+        department: true,
+        firstName: true,
+        lastName: true,
+        middleName: true,
+        position: true,
+        salaryMinor: true,
+        inn: true,
+        description: true,
+        groupId: true,
+      },
+    });
+    if (!current) throw new NotFoundException('Xodim topilmadi');
     const telegramPhone = safeNormalizePhone(input.telegramPhone);
+    const sysPatch = systemAttrsPatch(input);
+
+    // moysklad-style audit diff: only fields present in the payload AND
+    // actually different. Salary compares/records via the string wire format.
+    const fieldChanges: Record<string, { before?: unknown; after?: unknown }> = {};
+    const diffScalar = (field: keyof typeof current, next: unknown) => {
+      const before = current[field];
+      const beforeCmp = typeof before === 'bigint' ? before.toString() : (before ?? null);
+      const nextCmp = next ?? null;
+      if (beforeCmp !== nextCmp)
+        fieldChanges[field as string] = { before: beforeCmp, after: nextCmp };
+    };
+    if (input.name !== undefined) diffScalar('name', input.name);
+    if (input.email !== undefined) diffScalar('email', input.email);
+    if (input.phone !== undefined) diffScalar('phone', input.phone);
+    if (input.department !== undefined) diffScalar('department', input.department);
+    if (input.firstName !== undefined) diffScalar('firstName', input.firstName);
+    if (input.lastName !== undefined) diffScalar('lastName', input.lastName);
+    if (input.middleName !== undefined) diffScalar('middleName', input.middleName);
+    if (input.position !== undefined) diffScalar('position', input.position);
+    if (input.salaryMinor !== undefined) diffScalar('salaryMinor', input.salaryMinor);
+    if (input.inn !== undefined) diffScalar('inn', input.inn);
+    if (input.description !== undefined) diffScalar('description', input.description);
+    if (input.groupId !== undefined) diffScalar('groupId', input.groupId);
+    const sysBefore = readEmployeeSystemAttrs(current.attributes);
+    if (
+      input.loginAllowed !== undefined &&
+      (sysBefore.loginAllowed !== false) !== input.loginAllowed
+    ) {
+      fieldChanges.loginAllowed = {
+        before: sysBefore.loginAllowed !== false,
+        after: input.loginAllowed,
+      };
+    }
+    if (
+      input.allowedIps !== undefined &&
+      JSON.stringify(sysBefore.allowedIps ?? []) !== JSON.stringify(input.allowedIps)
+    ) {
+      fieldChanges.allowedIps = {
+        before: (sysBefore.allowedIps ?? []).join(', '),
+        after: input.allowedIps.join(', '),
+      };
+    }
+    if (
+      input.allowedNetworks !== undefined &&
+      JSON.stringify(sysBefore.allowedNetworks ?? []) !== JSON.stringify(input.allowedNetworks)
+    ) {
+      fieldChanges.allowedNetworks = {
+        before: (sysBefore.allowedNetworks ?? []).join(', '),
+        after: input.allowedNetworks.join(', '),
+      };
+    }
     try {
-      return await this.prisma.client.employee.update({
+      await this.prisma.client.employee.update({
         // Optimistic lock: WHERE id = ? AND version = ?  → 0 rows (P2025) if a
         // concurrent edit (HR form, /analitika/staff or /auth/me) already moved
         // the version on. version: { increment } bumps it so other open forms
@@ -176,9 +391,25 @@ export class HrEmployeeService {
           ...(input.hrRoles !== undefined && { hrRoles: input.hrRoles }),
           ...(input.isChecker !== undefined && { isChecker: input.isChecker }),
           ...(input.moyskladAgentId !== undefined && { moyskladAgentId: input.moyskladAgentId }),
+          ...(input.firstName !== undefined && { firstName: input.firstName }),
+          ...(input.lastName !== undefined && { lastName: input.lastName }),
+          ...(input.middleName !== undefined && { middleName: input.middleName }),
+          ...(input.position !== undefined && { position: input.position }),
+          ...(input.salaryMinor !== undefined && {
+            salaryMinor: input.salaryMinor != null ? BigInt(input.salaryMinor) : null,
+          }),
+          ...(input.inn !== undefined && { inn: input.inn }),
+          ...(input.description !== undefined && { description: input.description }),
+          ...(input.groupId !== undefined && { groupId: input.groupId }),
+          ...(Object.keys(sysPatch).length > 0 && {
+            attributes: mergeEmployeeSystemAttrs(current.attributes, sysPatch) as object,
+          }),
           version: { increment: 1 },
         },
+        select: { id: true },
       });
+      await this.writeAudit(accountId, id, 'update', actorId, fieldChanges);
+      return this.findOne(accountId, id, { includeArchived: true });
     } catch (e) {
       mapVersionedUpdateError(e, 'Employee');
       // No app pre-check here either; a changed-to-duplicate email arrives as a
@@ -217,6 +448,7 @@ export class HrEmployeeService {
       // 409s on a stale save instead of silently resurrecting this row.
       data: { archived: true, version: { increment: 1 } },
     });
+    await this.writeAudit(accountId, id, 'archive', currentUserId);
     return { ok: true };
   }
 
@@ -236,6 +468,7 @@ export class HrEmployeeService {
       // Bump version (see softDelete) — keeps the staff/HR edit-form lock sound.
       data: { archived, version: { increment: 1 } },
     });
+    await this.writeAudit(accountId, id, archived ? 'archive' : 'restore', currentUserId);
     return { ok: true };
   }
 
@@ -269,8 +502,12 @@ export class HrEmployeeService {
     return { ok: true };
   }
 
-  async setPassword(accountId: string, id: string, input: SetPasswordInput) {
-    await this.findOne(accountId, id);
+  async setPassword(accountId: string, id: string, input: SetPasswordInput, actorId?: string) {
+    const before = await this.prisma.client.employee.findFirst({
+      where: { id, accountId },
+      select: { id: true, username: true },
+    });
+    if (!before) throw new NotFoundException('Xodim topilmadi');
 
     const existing = await this.prisma.client.employee.findFirst({
       where: { accountId, username: input.username, NOT: { id } },
@@ -296,6 +533,103 @@ export class HrEmployeeService {
       throwIfEmployeeUniqueViolation(e);
       throw e;
     }
+    // Audit the login change + password reset — NEVER the password itself.
+    await this.writeAudit(accountId, id, 'password-reset', actorId, {
+      username: { before: before.username, after: input.username },
+    });
+    return { ok: true };
+  }
+
+  // ── moysklad employee card «Изображение» ──────────────────────────────────
+
+  /** Raw bytes for <img src> / download. 404 when the employee has no photo. */
+  async getImageRaw(accountId: string, id: string) {
+    const emp = await this.prisma.client.employee.findFirst({
+      where: { id, accountId },
+      select: { imageContent: true, imageMime: true, attributes: true },
+    });
+    if (!emp) throw new NotFoundException('Xodim topilmadi');
+    if (!emp.imageContent || !emp.imageMime) throw new NotFoundException('Rasm yuklanmagan');
+    return {
+      buffer: Buffer.from(emp.imageContent),
+      mime: emp.imageMime,
+      filename: readEmployeeSystemAttrs(emp.attributes).imageName ?? 'photo',
+    };
+  }
+
+  /**
+   * Upload/replace the card photo. Deliberately does NOT bump `version`:
+   * the photo is uploaded immediately (outside the card's Сохранить flow),
+   * so bumping would 409 the form's later save for no data reason.
+   */
+  async setImage(accountId: string, id: string, input: SetEmployeeImageInput, actorId?: string) {
+    const current = await this.prisma.client.employee.findFirst({
+      where: { id, accountId },
+      select: { id: true, attributes: true },
+    });
+    if (!current) throw new NotFoundException('Xodim topilmadi');
+
+    // data:image/png;base64,xxx URL yoki yalang'och base64 — ikkalasi ham.
+    const b64 = input.dataBase64.includes(',')
+      ? input.dataBase64.slice(input.dataBase64.indexOf(',') + 1)
+      : input.dataBase64;
+    const buffer = Buffer.from(b64, 'base64');
+    if (buffer.length === 0) throw new BadRequestException("Bo'sh fayl yuklab bo'lmaydi");
+    const MAX_BYTES = 4_000_000;
+    if (buffer.length > MAX_BYTES) {
+      throw new BadRequestException(
+        `Rasm hajmi ${(buffer.length / 1_000_000).toFixed(1)} MB — chegara 4 MB`,
+      );
+    }
+
+    const beforeName = readEmployeeSystemAttrs(current.attributes).imageName ?? null;
+    await this.prisma.client.employee.update({
+      where: { id },
+      data: {
+        imageContent: buffer,
+        imageMime: input.mime,
+        attributes: mergeEmployeeSystemAttrs(current.attributes, {
+          imageName: input.filename,
+        }) as object,
+      },
+      select: { id: true },
+    });
+    await this.writeAudit(accountId, id, 'update', actorId, {
+      image: { before: beforeName, after: input.filename },
+    });
+    return { ok: true };
+  }
+
+  /** Remove the card photo (moysklad ⊗). No version bump — see setImage. */
+  async removeImage(accountId: string, id: string, actorId?: string) {
+    const current = await this.prisma.client.employee.findFirst({
+      where: { id, accountId },
+      select: { id: true, attributes: true, imageMime: true },
+    });
+    if (!current) throw new NotFoundException('Xodim topilmadi');
+    if (!current.imageMime) return { ok: true }; // idempotent
+
+    const beforeName = readEmployeeSystemAttrs(current.attributes).imageName ?? null;
+    // Drop the key explicitly — an `undefined` property inside a Prisma Json
+    // payload is not a reliable delete (and biome bans the delete operator).
+    const nextAttrs = mergeEmployeeSystemAttrs(current.attributes, {});
+    const { imageName: _dropped, ...sysRest } = nextAttrs[EMPLOYEE_SYSTEM_KEY] as Record<
+      string,
+      unknown
+    >;
+    nextAttrs[EMPLOYEE_SYSTEM_KEY] = sysRest;
+    await this.prisma.client.employee.update({
+      where: { id },
+      data: {
+        imageContent: null,
+        imageMime: null,
+        attributes: nextAttrs as object,
+      },
+      select: { id: true },
+    });
+    await this.writeAudit(accountId, id, 'update', actorId, {
+      image: { before: beforeName, after: null },
+    });
     return { ok: true };
   }
 

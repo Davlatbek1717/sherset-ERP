@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { csvUuid } from '../shared/csv.js';
 
 /**
  * CashOut (расходный кассовый ордер, РКО) — cash paid out of a CashDesk.
@@ -27,6 +28,9 @@ export const CreateCashOutSchema = z.object({
   // moysklad parity — Договор / Проект (money doc has counterparty).
   contractId: z.string().uuid().nullish(),
   projectId: z.string().uuid().nullish(),
+  // «Канал продаж» — column exists on the model (no migration); surfaced in the
+  // editor like the bank-payment / cash-in docs. Optional, like contract/project.
+  salesChannelId: z.string().uuid().nullish(),
   moment: z.coerce.date().optional(),
   paymentPurpose: z.string().max(500).nullish(),
   /**
@@ -46,6 +50,19 @@ export const CreateCashOutSchema = z.object({
   description: z.string().max(4000).nullish(),
   // moysklad parity (§17) — universal «Внешний код» (col exists, no migration).
   externalCode: z.string().max(50).nullish(),
+  // «Включая НДС» — VAT amount included in the sum (col vat_sum_minor exists).
+  vatSumMinor: z.coerce
+    .string()
+    .regex(/^\d+$/, 'vatSumMinor must be a non-negative integer')
+    .default('0'),
+  // «Без закрывающих документов» — РКО paid in advance with no closing doc yet
+  // (col no_closing_docs exists). Surfaced as a header checkbox like «Проведено».
+  noClosingDocs: z.boolean().optional(),
+  // «Владелец»/«Владелец-отдел»/«Общий доступ» from the header owner popover
+  // (tenant-validated in create(); falls back to creator + their dept).
+  ownerId: z.string().uuid().nullish(),
+  groupId: z.string().uuid().nullish(),
+  shared: z.boolean().optional(),
   currency: z.string().length(3).default('UZS'),
   rateValue: z.coerce.string().regex(/^\d+$/).default('100000000'),
   sumMinor: z.coerce.string().regex(/^\d+$/, 'sumMinor must be a non-negative integer'),
@@ -68,6 +85,7 @@ const boolFromString = z
 export const CashOutFilterSchema = z.object({
   state: CashOutStateSchema.optional(),
   agentId: z.string().uuid().optional(),
+  agentIds: csvUuid.optional(),
   /** «Группа контрагента» — filters via the agent (Counterparty) relation's groupId. */
   agentGroupId: z.string().uuid().optional(),
   /**
@@ -81,6 +99,7 @@ export const CashOutFilterSchema = z.object({
    */
   agentOwnerId: z.string().uuid().optional(),
   organizationId: z.string().uuid().optional(),
+  organizationIds: csvUuid.optional(),
   /** «Касса» — CashOut.cashDeskId (cash docs use a cash desk, not a bank account). */
   cashDeskId: z.string().uuid().optional(),
   invoiceInId: z.string().uuid().optional(),

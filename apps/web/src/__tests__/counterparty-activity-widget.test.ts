@@ -66,6 +66,19 @@ describe('counterparty/[id] CRM activity widget (B6 S17)', () => {
     expect(page).not.toMatch(/<AttachmentsSection/);
   });
 
+  it('Показатели create-actions are inline forms, not floating modals', () => {
+    // moysklad opens «Создать корректировку»/«акт сверки» IN PLACE inside the panel — the
+    // form replaces the toolbar while «Баланс»/«Продажи»/«Возвраты» stay visible. Lock that
+    // shape so it can't regress back to the old centered-dialog modals.
+    expect(widget).toMatch(/AdjustmentCreateForm/);
+    expect(widget).toMatch(/ReconciliationActForm/);
+    expect(widget).toMatch(/counterparties\/metrics-create-forms/);
+    expect(widget).not.toMatch(/AdjustmentCreateModal|ReconciliationActModal/);
+    // One inline form at a time, toggled from the toolbar buttons.
+    expect(widget).toMatch(/setMetricForm\('adjustment'\)/);
+    expect(widget).toMatch(/setMetricForm\('reconciliation'\)/);
+  });
+
   it('the counterparty_activity i18n namespace is complete ru+uz', () => {
     const keys = [
       'tab_events',

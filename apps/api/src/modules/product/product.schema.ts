@@ -129,16 +129,6 @@ export const CreateProductSchema = z.object({
   weighed: z.boolean().default(false),
   uom: z.string().max(20).nullish(),
 
-  // Warehouse home location (Sherset custom) — 4 numeric segments composed into
-  // the «NN-NN-NN-NN» code. All optional (0..99999), null clears.
-  locSklad: z.number().int().min(0).max(99999).nullish(),
-  locPolka: z.number().int().min(0).max(99999).nullish(),
-  locQavat: z.number().int().min(0).max(99999).nullish(),
-  locYacheyka: z.number().int().min(0).max(99999).nullish(),
-  // Per-cell qty (multi-bin Phase 2) — units in the PRIMARY home bin above.
-  // Fractional allowed (weighed/metered goods); null clears (= not tracked).
-  locQty: z.number().min(0).max(1e12).nullish(),
-
   vat: z.number().int().min(0).max(100).nullable().optional(),
   vatEnabled: z.boolean().default(true),
   useParentVat: z.boolean().default(true),
@@ -304,9 +294,6 @@ export const ProductFilterSchema = z.object({
   // moysklad sorts on every column header. These are the scalar Product fields
   // Prisma can orderBy directly (the dynamic price columns aren't sortable — they
   // come from the salePrices relation). Each maps 1:1 to a grid column.
-  // Bin location zone filter — used by the omborchi panel to show only products
-  // stored in a specific warehouse zone (locSklad segment of the bin code).
-  locSklad: z.coerce.number().int().min(1).max(99999).optional(),
   sortBy: z
     .enum([
       'name',
@@ -336,43 +323,6 @@ export const BulkMoveSchema = z.object({
   productFolderId: uuid.nullable(),
 });
 export type BulkMoveInput = z.infer<typeof BulkMoveSchema>;
-
-// Multi-bin: replace-all of a product's ADDITIONAL shelf locations. Each is a
-// «NN-NN-NN-NN» address; `sklad` is required, the finer segments optional. The
-// segments coerce undefined→null so the repository always gets `number | null`.
-const seg = z
-  .number()
-  .int()
-  .min(0)
-  .max(99999)
-  .nullish()
-  .transform((v) => v ?? null);
-export const SetProductLocationsSchema = z.object({
-  locations: z
-    .array(
-      z.object({
-        sklad: z.number().int().min(0).max(99999),
-        polka: seg,
-        qavat: seg,
-        yacheyka: seg,
-        // Per-cell qty (Phase 2) — units in this bin. Fractional allowed
-        // (weighed/metered goods); null = not tracked.
-        qty: z
-          .number()
-          .min(0)
-          .max(1e12)
-          .nullish()
-          .transform((v) => v ?? null),
-        note: z
-          .string()
-          .max(255)
-          .nullish()
-          .transform((v) => v ?? null),
-      }),
-    )
-    .max(50),
-});
-export type SetProductLocationsInput = z.infer<typeof SetProductLocationsSchema>;
 
 // «Изменить цены» — moysklad's bulk price-change drawer. Sets ONE target price
 // type on the selected products by one of three modes, with an optional ±
@@ -407,6 +357,28 @@ export const BulkSetPricesSchema = z
     message: 'basePriceTypeId is required for the other-price mode',
   });
 export type BulkSetPricesInput = z.infer<typeof BulkSetPricesSchema>;
+
+// «Сохранить цены» — write a document grid's per-line prices to the products' DEFAULT
+// sale price type (moysklad position-grid «Цена ▾ → Сохранить цены»). Each item is a
+// {productId, priceMinor}; the server resolves the default PriceType and merges.
+export const SaveLinePricesSchema = z.object({
+  items: z
+    .array(z.object({ productId: uuid, priceMinor: z.string().regex(/^\d+$/) }))
+    .min(1)
+    .max(1000),
+});
+export type SaveLinePricesInput = z.infer<typeof SaveLinePricesSchema>;
+
+// Pick-modal «Doimiy narx» — set ONE product's default sale price (the negotiated
+// price becomes permanent). Body of POST /products/:id/sale-price. Capped at 15
+// digits (≈ 10 trillion som in tiyin) so a runaway value can never overflow the
+// int8 math of later document saves that read this price.
+export const SetSalePriceSchema = z.object({
+  priceMinor: z.string().regex(/^\d{1,15}$/),
+});
+export type SetSalePriceInput = z.infer<typeof SetSalePriceSchema>;
+/** Route-param guard for /products/:id/sale-price (400 on non-uuid, not P2023 500). */
+export const ProductIdSchema = z.string().uuid();
 
 // «Массовое редактирование» — bulk-edit common assortment fields on the selection.
 // Mirrors moysklad's «Настройка параметров» field set (grounded live 2026-06-17):

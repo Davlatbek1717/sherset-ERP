@@ -1,7 +1,16 @@
 'use client';
 
+import { createContext, useContext } from 'react';
 import type * as React from 'react';
 import { cn } from '../lib/cn.ts';
+
+/**
+ * Compact-layout signal for a meta panel. When a {@link DocumentMetaPanel} is
+ * rendered `compact`, it publishes `true` here so every nested
+ * {@link DocumentMetaRow} defaults to the fixed-width (left-grouped ~15rem)
+ * field layout — without each page having to tag every row `fixedWidth`.
+ */
+const MetaCompactContext = createContext(false);
 
 /**
  * Meta-data panel — 2-column field grid that sits between the document
@@ -46,21 +55,36 @@ export function DocumentMetaPanel({
   children,
   className,
   testId,
+  compact,
 }: {
   children: React.ReactNode;
   className?: string;
   testId?: string;
+  /**
+   * moysklad-parity compact layout (user 2026-07-08 — «inputlar tartibsiz»): cap
+   * the panel at ~860px and drop the card border so the meta reads as one
+   * continuous white area, while left-grouping each row's field widgets at a
+   * fixed ~15rem width (published via {@link MetaCompactContext} → every nested
+   * {@link DocumentMetaRow}) instead of stretching them across the viewport.
+   * Opt-in so the existing wide `1fr` callers (detail pages) are unchanged.
+   */
+  compact?: boolean;
 }) {
   return (
-    <div
-      className={cn(
-        'rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] px-4 py-3',
-        className,
-      )}
-      data-test-id={testId ?? 'doc-meta-panel'}
-    >
-      <div className="space-y-2.5">{children}</div>
-    </div>
+    <MetaCompactContext.Provider value={!!compact}>
+      <div
+        className={cn(
+          'bg-[var(--ms-bg-surface)] px-4 py-3',
+          compact
+            ? 'max-w-[860px]'
+            : 'rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)]',
+          className,
+        )}
+        data-test-id={testId ?? 'doc-meta-panel'}
+      >
+        <div className="space-y-2.5">{children}</div>
+      </div>
+    </MetaCompactContext.Provider>
   );
 }
 
@@ -84,10 +108,16 @@ export function DocumentMetaRow({
    */
   fixedWidth?: boolean;
 }) {
-  // Always 4-col — moysklad's b-operation-form-top uses a fixed-width
+  // A `compact` DocumentMetaPanel ancestor makes fixed-width the DEFAULT (so the
+  // page doesn't tag every row); an explicit `fixedWidth` prop still wins.
+  const compact = useContext(MetaCompactContext);
+  const isFixed = fixedWidth ?? compact;
+  // 4-col on md+ — moysklad's b-operation-form-top uses a fixed-width
   // `<table>` regardless of viewport (it's a desktop-first ERP, no
-  // mobile breakpoint). Going to single-column on narrow screens
-  // breaks the visual parity that's the whole point of this shell.
+  // mobile breakpoint), so desktop keeps the exact parity layout.
+  // Phones (≤767px, owner mobile-TZ 2026-07-18) drop to a 2-col
+  // `[label][field]` grid — the 4-col squeeze left each control ~90px
+  // («inputs floating mid-screen»); fields now take the full row width.
   return (
     <div
       className={cn(
@@ -96,8 +126,8 @@ export function DocumentMetaRow({
         // 50/50 split but CAPS each field widget at ~15rem (left-aligned in its half)
         // so the inputs don't stretch to fill the viewport — `[&>div]` targets the
         // DocumentMetaField content cells (the labels are <label>, untouched).
-        'grid grid-cols-[auto_1fr_auto_1fr] items-baseline gap-x-3 gap-y-2',
-        fixedWidth && '[&>div]:max-w-[15rem]',
+        'grid grid-cols-[auto_1fr] md:grid-cols-[auto_1fr_auto_1fr] items-baseline gap-x-3 gap-y-2',
+        isFixed && 'md:[&>div]:max-w-[15rem]',
       )}
     >
       {children}
@@ -125,6 +155,13 @@ export interface DocumentMetaFieldProps {
    * which is what made «Договор» creep up across from «Организация». No-op
    * outside a multi-column grid. */
   startRow?: boolean;
+  /**
+   * Field-level validation error (moysklad parity, owner 2026-07-11): the
+   * control gets a THICK red outline and this short message renders in red
+   * right under it («Поле должно быть заполнено»). Pages set it on a failed
+   * save attempt instead of raising a page-wide banner.
+   */
+  error?: React.ReactNode;
   children: React.ReactNode;
   className?: string;
   testId?: string;
@@ -217,6 +254,7 @@ export function DocumentMetaField({
   subRow,
   fullWidth,
   startRow,
+  error,
   children,
   className,
   testId,
@@ -245,8 +283,26 @@ export function DocumentMetaField({
         {required && <span className="mr-0.5 text-[var(--ms-text-destructive)]">*</span>}
         {label}
       </label>
-      <div className={cn('min-w-0', fullWidth && 'col-span-3')} data-test-id={testId}>
-        {children}
+      <div className={cn('min-w-0', fullWidth && 'col-span-1 md:col-span-3')} data-test-id={testId}>
+        {/* Thick, unmistakable red outline on the control when invalid — the
+            owner explicitly rejected a thin border («shunchaki ingichka
+            chegara emas»). ring-2 + ring-offset keeps the control's own
+            border/radius intact underneath. */}
+        <div
+          className={cn(
+            error && 'rounded-[var(--ms-radius-default)] ring-2 ring-[var(--ms-text-destructive)]',
+          )}
+        >
+          {children}
+        </div>
+        {error && (
+          <div
+            className="mt-1 font-medium text-[12px] text-[var(--ms-text-destructive)]"
+            data-test-id={testId ? `${testId}-error` : 'meta-field-error'}
+          >
+            {error}
+          </div>
+        )}
         {subRow && <div className="mt-1.5">{subRow}</div>}
         {helper && <div className="mt-1 text-[var(--ms-text-muted)] text-xs">{helper}</div>}
       </div>

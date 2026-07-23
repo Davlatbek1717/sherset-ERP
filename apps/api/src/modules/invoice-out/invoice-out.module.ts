@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AttachmentModule } from '../attachment/attachment.module.js';
 import { AttributeMetadataModule } from '../attribute-metadata/attribute-metadata.module.js';
 import { AuthModule } from '../auth/auth.module.js';
 import { CounterpartyBalanceModule } from '../counterparty-balance/counterparty-balance.module.js';
@@ -10,6 +11,7 @@ import { InvoiceOutController } from './invoice-out.controller.js';
 import { InvoiceOutService } from './invoice-out.service.js';
 
 @Module({
+  // AttachmentModule backs :id/print-attachment («Отправить» composer PDFs).
   imports: [
     AuthModule,
     AttributeMetadataModule,
@@ -17,6 +19,7 @@ import { InvoiceOutService } from './invoice-out.service.js';
     CounterpartyBalanceModule,
     WebhookModule,
     PrintTemplateModule,
+    AttachmentModule,
   ],
   controllers: [InvoiceOutController],
   providers: [InvoiceOutService, InvoiceOutOverdueService],

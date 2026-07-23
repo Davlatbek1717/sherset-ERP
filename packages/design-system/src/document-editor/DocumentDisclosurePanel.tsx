@@ -43,26 +43,42 @@ export function DocumentDisclosurePanel({
       )}
       data-test-id={testId}
     >
-      <header className="flex items-center gap-2 border-l-4 border-l-[var(--ms-warning-300,#f5a623)] px-3 py-2">
-        <button
-          type="button"
-          className="flex flex-1 cursor-pointer select-none items-center gap-2 text-left"
-          onClick={() => setOpen((v) => !v)}
-          aria-expanded={open}
-        >
-          <Icons.down
-            className={cn(
-              'h-4 w-4 text-[var(--ms-text-muted)] transition-transform',
-              !open && '-rotate-90',
-            )}
-          />
-          <span className="font-medium text-[var(--ms-text-primary)] text-sm">{title}</span>
-        </button>
-        {headerAction && <span className="ml-auto">{headerAction}</span>}
+      <header
+        className="flex cursor-pointer select-none items-center gap-2 border-l-4 border-l-[var(--ms-warning-300,#f5a623)] px-3 py-2"
+        onClick={() => setOpen((v) => !v)}
+        // biome-ignore lint/a11y/useSemanticElements: the toggle header hosts a nested interactive headerAction (its own <Button>); a native <button> can't contain another button, so role=button + Enter/Space handlers is the correct ARIA here
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            setOpen((v) => !v);
+          }
+        }}
+        aria-expanded={open}
+      >
+        <Icons.down
+          className={cn(
+            'h-4 w-4 text-[var(--ms-text-muted)] transition-transform',
+            !open && '-rotate-90',
+          )}
+        />
+        <span className="font-medium text-[var(--ms-text-primary)] text-sm">{title}</span>
+        {/* moysklad parity: the section button sits right NEXT to the title
+            («Задачи» header-text cell followed by the button cell in one inner
+            GWT table) — a left-aligned cluster, not pushed to the far right. */}
+        {headerAction && (
+          <span
+            className="ml-2"
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+            role="presentation"
+          >
+            {headerAction}
+          </span>
+        )}
       </header>
-      {open && (
-        <div className="border-[var(--ms-border-default)] border-t p-3">{children}</div>
-      )}
+      {open && <div className="border-[var(--ms-border-default)] border-t p-3">{children}</div>}
     </section>
   );
 }

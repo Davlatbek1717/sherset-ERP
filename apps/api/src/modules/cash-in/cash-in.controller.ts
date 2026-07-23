@@ -41,6 +41,30 @@ export class CashInController {
     return this.svc.create(user.accountId, user.sub, body);
   }
 
+  /**
+   * moysklad «Создать документ → Приходный ордер» from a customer invoice —
+   * a draft ПКО for the remaining balance, linked via operations.
+   */
+  @Post('from-invoice-out/:invoiceOutId')
+  @RequirePermission({ entity: 'cashin', action: 'create' })
+  async createFromInvoiceOut(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('invoiceOutId') invoiceOutId: string,
+  ) {
+    return this.svc.createFromInvoiceOut(user.accountId, user.sub, invoiceOutId);
+  }
+
+  /**
+   * moysklad invoiceout-list «Создать → Приходные ордера» — one draft ПКО per
+   * selected invoice (mirror of invoices-in bulk-create-cash-out, sales side).
+   */
+  @Post('bulk-create-from-invoice-out')
+  @RequirePermission({ entity: 'cashin', action: 'create' })
+  async bulkCreateFromInvoiceOut(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
+    const { ids } = BulkIdsSchema.parse(body);
+    return runBulk(ids, (id) => this.svc.createFromInvoiceOut(user.accountId, user.sub, id));
+  }
+
   @Patch(':id')
   @RequirePermission({ entity: 'cashin', action: 'update' })
   async update(
@@ -91,7 +115,13 @@ export class CashInController {
   @RequirePermission({ entity: 'cashin', action: 'update' })
   async massEdit(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
     const { ids, ...patch } = MassEditBaseSchema.parse(body);
-    assertPatchHasAtLeastOneField(patch, ['ownerId', 'projectId', 'description']);
+    assertPatchHasAtLeastOneField(patch, [
+      'ownerId',
+      'projectId',
+      'description',
+      'groupId',
+      'shared',
+    ]);
     return runBulk(ids, (id) => this.svc.massEditApply(user.accountId, user.sub, id, patch));
   }
 }

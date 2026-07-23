@@ -26,7 +26,7 @@ const INDUSTRIES: Industry[] = [
     title: 'Aptekalar',
     hook: 'Soliq.uz markirovkasi · Dori serial muddatini avto-tekshirish · MXIK kodlari · POS chek',
     features: [
-      "ASL Belgisi DataMatrix qo'llab-quvvatlash",
+      'ASL Belgisi DataMatrix qo\'llab-quvvatlash',
       'Dori muddati FIFO + ekspirasiya alert',
       'Soliq.uz EHF avtomat yuborish',
       'Multi-aptekachi sotuv tarixi (MA / FA)',
@@ -46,8 +46,8 @@ const INDUSTRIES: Industry[] = [
     primaryModule: 'retail',
   },
   {
-    slug: "do'kon",
-    title: "Do'konlar va supermarketlar",
+    slug: 'do\'kon',
+    title: 'Do\'konlar va supermarketlar',
     hook: 'Barkod skanerlash · Multi-kassir · Loyalti dasturi · Aksiyalar',
     features: [
       'EAN/UPC barkod tezkor sotuv',
@@ -74,9 +74,9 @@ const INDUSTRIES: Industry[] = [
     title: 'Ishlab chiqarish',
     hook: 'BOM (recipe) · Multi-stage operatsiyalar · Tex karta · Norma',
     features: [
-      "Bill of Materials bilan komplekt yig'ish",
+      'Bill of Materials bilan komplekt yig\'ish',
       'Production order FSM',
-      "Tex karta (ProcessingPlan) ko'p bosqichli",
+      'Tex karta (ProcessingPlan) ko\'p bosqichli',
       'Komponent FIFO consumption',
     ],
     primaryModule: 'production',
@@ -89,18 +89,18 @@ const INDUSTRIES: Industry[] = [
       'Service Desk (Sprint 20)',
       'Tasks + Calendar',
       'Pipeline / Kanban',
-      "Mijoz qo'ng'iroq jurnali",
+      'Mijoz qo\'ng\'iroq jurnali',
     ],
     primaryModule: 'crm',
   },
   {
     slug: 'avtomashina',
     title: 'Avtomobil zapchastlari',
-    hook: "VIN qidiruv · O'zaro almashtirish · Ko'p brand katalogi · MXIK",
+    hook: 'VIN qidiruv · O\'zaro almashtirish · Ko\'p brand katalogi · MXIK',
     features: [
       'Variants matrix (modifikatsiya)',
       'Bundle (komplekt) sotuvi',
-      "Ta'minlovchi orderlar batch",
+      'Ta\'minlovchi orderlar batch',
       'Shtrix-kod printer',
     ],
     primaryModule: 'goods',
@@ -108,7 +108,7 @@ const INDUSTRIES: Industry[] = [
   {
     slug: 'qurilish',
     title: 'Qurilish materiallari',
-    hook: "Bo'lim/zona ombor · Yetkazib berish rejasi · M3 / M2 / kg birliklar · Chala summa",
+    hook: 'Bo\'lim/zona ombor · Yetkazib berish rejasi · M3 / M2 / kg birliklar · Chala summa',
     features: [
       'Multi-zone warehouse',
       'Loss + Enter cost basis',
@@ -119,8 +119,8 @@ const INDUSTRIES: Industry[] = [
   },
   {
     slug: 'tikuvchilik',
-    title: "Tikuvchilik / kiyim do'koni",
-    hook: "O'lchov × rang matritsa · Sezon · Ranglar palitrasi · Sotuv chegirmasi",
+    title: 'Tikuvchilik / kiyim do\'koni',
+    hook: 'O\'lchov × rang matritsa · Sezon · Ranglar palitrasi · Sotuv chegirmasi',
     features: [
       'Variant (size/color) matrix',
       'Lot / partiya tracking',
@@ -159,7 +159,7 @@ const INDUSTRIES: Industry[] = [
     hook: 'Muddat (best-before) · Trafik / mavsumiy talab · Soliq EHF · MXIK',
     features: [
       'Expiry FIFO + alert',
-      "Avtopilot to'lov rejasi",
+      'Avtopilot to\'lov rejasi',
       'EHF tax flow (Sprint 27)',
       'Bank statement import',
     ],
@@ -172,8 +172,8 @@ export default function IndustriesPage() {
     <main className="mx-auto max-w-6xl px-4 py-12">
       <h1 className="mb-3 font-bold text-3xl">Soha bo&apos;yicha yechimlar</h1>
       <p className="mb-8 max-w-2xl text-zinc-600">
-        Har soha uchun moslashtirilgan ish jarayoni va modul to&apos;plami. Yagona platforma ustida
-        quriladi — barcha boshqaruv funksiyalari bir tizimda.
+        Har soha uchun moslashtirilgan ish jarayoni va modul to&apos;plami. moysklad.uz
+        platformasi ustida quriladi — barcha boshqaruv funksiyalari bir tizimda.
       </p>
 
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
@@ -203,12 +203,10 @@ export default function IndustriesPage() {
       </div>
 
       <section className="mt-16 rounded-lg bg-zinc-50 p-8 text-center">
-        <h2 className="mb-3 font-semibold text-2xl">
-          Sizning sohangiz ro&apos;yxatda yo&apos;qmi?
-        </h2>
+        <h2 className="mb-3 font-semibold text-2xl">Sizning sohangiz ro&apos;yxatda yo&apos;qmi?</h2>
         <p className="mb-6 text-zinc-600">
-          Sherset har soha uchun moslashtirilishi mumkin. Bizga aytib bering — alohida yechim taklif
-          qilamiz.
+          Moysklad clone har soha uchun moslashtirilishi mumkin. Bizga aytib bering — alohida
+          yechim taklif qilamiz.
         </p>
         <Link
           href="/contact"

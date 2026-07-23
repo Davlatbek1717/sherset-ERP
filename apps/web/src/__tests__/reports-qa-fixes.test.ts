@@ -72,7 +72,9 @@ describe('date-tz: dateFrom/dateTo reports use Tashkent-day bounds, never raw `<
   for (const f of SERVICES) {
     const src = SVC(f);
     it(`${f} uses reportDateBounds and has no raw moment<=dateTo / setHours guard`, () => {
-      expect(src).toMatch(/reportDateBounds\(filter\.dateFrom, filter\.dateTo\)/);
+      // profitability applies today−1mo / today defaults before the call, so it
+      // passes local vars rather than filter.dateFrom directly — assert usage.
+      expect(src).toMatch(/reportDateBounds\(/);
       // regression bans: the two buggy shapes
       expect(src).not.toMatch(/moment\s*<=\s*\$\{?(filter\.)?dateTo/);
       expect(src).not.toMatch(/lte:\s*filter\.dateTo/);

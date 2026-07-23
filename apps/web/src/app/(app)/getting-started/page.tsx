@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { HomepageTabs } from '@/components/homepage-tabs';
 import { useApiMutation } from '@/hooks/use-api-mutation';
@@ -53,7 +53,7 @@ type FunctionalStep = (typeof STEPS)[number];
 const STEP_ROUTES: Record<FunctionalStep, string> = {
   organization: '/settings/organizations',
   currency: '/settings',
-  store: '/settings/stores',
+  store: '/stores',
   first_product: '/products/new',
   first_counterparty: '/counterparties/new',
   first_sale: '/customer-orders/new',

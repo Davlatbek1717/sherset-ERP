@@ -33,6 +33,7 @@ import {
   Icons,
   Input,
   type PickerItem,
+  StickyHScroll,
   formatDate,
 } from '@moysklad/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -261,8 +262,8 @@ function PriceMatrixEditor({
   }
 
   return (
-    <div
-      className="overflow-x-auto rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)]"
+    <StickyHScroll
+      className="rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)]"
       data-test-id="price-matrix"
     >
       <table className="w-full text-sm">
@@ -365,7 +366,7 @@ function PriceMatrixEditor({
           </Button>
         </div>
       )}
-    </div>
+    </StickyHScroll>
   );
 }
 

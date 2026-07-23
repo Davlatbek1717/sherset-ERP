@@ -17,6 +17,7 @@ import { ProjectBulkActionsDropdown } from '@/components/projects/bulk-actions-d
 import { useBulkDocumentActions } from '@/hooks/use-bulk-actions';
 import { api } from '@/lib/api-client';
 import { archivedTone } from '@/lib/archived-tone';
+import { stashBulkEdit } from '@/lib/bulk-edit-nav';
 import {
   Badge,
   CatalogPicker,
@@ -30,6 +31,7 @@ import {
 } from '@moysklad/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
+import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
 interface ProjectRow {
@@ -62,8 +64,22 @@ export default function ProjectsPage() {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [filterOpen, setFilterOpen] = useState(true);
 
+  const router = useRouter();
+
   const [massEditOpen, setMassEditOpen] = useState(false);
-  const [massEditIds, setMassEditIds] = useState<string[]>([]);
+
+  // «Владелец-отдел» options for the mass-edit wizard — mirrors losses/cash-in.
+
+  const { data: massGroupsData } = useQuery<{ items: Array<{ id: string; name: string }> }>({
+    queryKey: ['groups', 'mass-edit'],
+
+    queryFn: () => api.get('/groups?limit=100'),
+
+    enabled: massEditOpen,
+
+    staleTime: 5 * 60 * 1000,
+  });
+  const [massEditIds] = useState<string[]>([]);
   const [massEditOwner, setMassEditOwner] = useState<{ id: string; label: string } | null>(null);
   const [ownerPickerOpen, setOwnerPickerOpen] = useState(false);
 
@@ -85,9 +101,8 @@ export default function ProjectsPage() {
   });
 
   const openMassEdit = (ids: string[]) => {
-    setMassEditIds(ids);
-    setMassEditOwner(null);
-    setMassEditOpen(true);
+    stashBulkEdit({ entity: 'projects', ids, from: '/settings/projects' });
+    router.push('/bulk-edit');
   };
 
   const bulk = useBulkDocumentActions('projects', listQueryKey, {
@@ -227,7 +242,13 @@ export default function ProjectsPage() {
             selectedIds={bulk.selectedIds}
             listQueryKey={listQueryKey}
             onClearSelection={bulk.clearSelection}
-            onMassEdit={() => openMassEdit(Array.from(bulk.selectedIds))}
+            onMassEdit={() =>
+              openMassEdit(
+                bulk.selectedIds.size > 0
+                  ? Array.from(bulk.selectedIds)
+                  : (data?.items ?? []).map((r) => r.id),
+              )
+            }
           />
         }
       />
@@ -260,6 +281,8 @@ export default function ProjectsPage() {
         projectValue={null}
         onProjectPick={() => undefined}
         onProjectClear={() => undefined}
+        groupOptions={(massGroupsData?.items ?? []).map((g) => ({ value: g.id, label: g.name }))}
+        showShared
         labels={{
           title: t('mass_edit_title'),
           ownerLabel: tFilters('owner_employee'),

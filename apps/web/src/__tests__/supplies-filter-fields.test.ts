@@ -3,29 +3,23 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 /**
- * Supplies list — moysklad «Приёмки» Фильтр-panel parity (frontend wiring lock,
- * 2026-06-12). Sibling of the cash-in/cash-out filter conveyor, but a PURCHASE
- * document. Closes the one genuinely-live gap vs the purchase-orders gold
- * standard:
- *   - «Владелец контрагента» (agentOwnerId → agent.ownerId) — the owner
- *     EMPLOYEE of the counterparty, distinct from «Владелец-сотрудник»
- *     (ownerId, the supply's own owner). New BE clause, merged with agentGroupId.
+ * Supplies list — moysklad «Приёмки» Фильтр-panel parity (frontend wiring lock).
  *
- * §4 grounding: 02-module/supply/dom/00-clean-default.html renders the filter
- * labels as `<div class="gwt-Label">` (Договор → Владелец контрагента →
- * Организация).
+ * 2026-06-28 rewrite: every REFERENCE filter field is now an INLINE
+ * multi-select checkbox-dropdown (MultiCombobox via the module-level
+ * `MultiRefField`), mirroring the demands filter — NOT a modal CatalogPicker.
+ * The user requirement was "HAR BIR input shunday bo'lishi kerak modal oyna
+ * emas" (every reference input is an in-place dropdown, not a modal). The
+ * request forwards the picks as CSV `*Ids` params (storeIds, agentIds, …).
  *
- * DELIBERATE ABSENCES (a "just mirror the gold standard" edit must NOT add them
- * — both would be dead 11h controls):
- *   - «Кто изменил» (modifiedById) — Supply has no `updatedById` column.
- *   - «Общий доступ» (shared) — the `Supply.shared` column EXISTS but is never
- *     written (absent from CreateSupplySchema + mass-edit) → always DEFAULT
- *     false, so a filter on it would be vacuous.
- *
- * A control that renders but is never read into the request params, or one wired
- * to a never-written column, is a dead filter. typecheck/lint can't see a
- * missing forwarding line, so this is a source-scan guard. Companion BE guards:
- * supply.schema.test.ts (parse) +
+ * This guard locks: (1) every reference control still renders (its testId);
+ * (2) the inline pattern — no modal CatalogPickerField in the filter, and the
+ * `*Ids` CSV params are forwarded into the request; (3) the live-grounded
+ * (2026-06-27) field SET — «Кто изменил», «Общий доступ», «Тип возврата»,
+ * «Товар или группа» ARE present (they were re-grounded as real moysklad
+ * #supply fields), and the deprecated «Заказ поставщику» / «Сумма» range are
+ * NOT. typecheck/lint can't see a missing forwarding line, so this is a
+ * source-scan guard. Companion BE guards: supply.schema.test.ts (parse) +
  * tools/scripts/verify-supply-filter-smoke.mjs (live narrowing + merge proof).
  */
 
@@ -37,74 +31,102 @@ const strip = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$
 
 const listPage = strip(read('apps/web/src/app/(app)/supplies/page.tsx'));
 
-describe('supplies filter — new moysklad Фильтр field renders', () => {
-  it('renders the Владелец контрагента control (data-test-id="filter-agent-owner")', () => {
-    expect(listPage).toContain('"filter-agent-owner"');
-  });
-
-  it('uses the i18n key for the new label (no hardcoded Cyrillic leak)', () => {
-    expect(listPage).toContain("tFilters('agent_owner')");
-  });
-
-  it('does NOT surface «Кто изменил» — Supply has no updatedById column', () => {
-    expect(listPage).not.toContain('"filter-modified-by"');
-    expect(listPage).not.toContain('updatedById');
-    expect(listPage).not.toContain("tFilters('modified_by')");
-  });
-
-  it('does NOT surface «Общий доступ» — Supply.shared is never written (dead column)', () => {
-    expect(listPage).not.toContain('"filter-shared"');
-    expect(listPage).not.toContain("tFilters('shared')");
-    // The `shared` column is never assigned anywhere on this page.
-    expect(listPage).not.toMatch(/\bshared\b/);
-  });
-
-  it('keeps the pre-existing filter controls (no regression)', () => {
+describe('supplies filter — every reference field renders (live-grounded SET)', () => {
+  it('renders all moysklad #supply reference controls (data-test-id)', () => {
     for (const testId of [
       'filter-period',
+      'filter-incoming-number',
+      'filter-incoming-date',
+      'filter-payment-status',
+      'filter-product',
+      'filter-return-type',
+      'filter-store',
+      'filter-project',
       'filter-agent',
       'filter-agent-group',
       'filter-agent-account',
       'filter-contract',
+      'filter-agent-owner',
       'filter-org',
       'filter-org-account',
-      'filter-store',
-      'filter-project',
       'filter-state',
-      'filter-purchase-order',
       'filter-applicable',
       'filter-printed',
       'filter-published',
       'filter-owner',
       'filter-group',
-      'filter-sum-from',
-      'filter-sum-to',
+      'filter-shared',
       'filter-updated',
+      'filter-modified-by',
     ]) {
       expect(listPage).toContain(`"${testId}"`);
     }
   });
+
+  it('uses the i18n key for «Владелец контрагента» (no hardcoded Cyrillic leak)', () => {
+    expect(listPage).toContain("tFilters('agent_owner')");
+  });
+
+  it('does NOT surface the deprecated «Заказ поставщику» / «Сумма» range (not #supply fields)', () => {
+    expect(listPage).not.toContain('"filter-purchase-order"');
+    expect(listPage).not.toContain('"filter-sum-from"');
+    expect(listPage).not.toContain('"filter-sum-to"');
+  });
 });
 
-describe('supplies filter — the new field is forwarded to the API query', () => {
+describe('supplies filter — reference fields are INLINE dropdowns, not modals', () => {
+  it('uses the module-level MultiRefField wrapper (inline checkbox-dropdown)', () => {
+    expect(listPage).toContain('function MultiRefField');
+    expect(listPage).toContain('<MultiCombobox');
+  });
+
+  it('does NOT use a modal CatalogPickerField for any reference filter field', () => {
+    // The only modal CatalogPicker left is the mass-edit owner/project picker;
+    // the in-filter reference fields must NOT be modal pickers.
+    expect(listPage).not.toContain('CatalogPickerField');
+    expect(listPage).not.toMatch(/pickerOpen === '(agent|store|org|product|contract|group)'/);
+  });
+
+  it('the reference fields feed MultiRefField with the right fetcher', () => {
+    expect(listPage).toMatch(/onSearch=\{fetchCounterparties\}/);
+    expect(listPage).toMatch(/onSearch=\{fetchStores\}/);
+    expect(listPage).toMatch(/onSearch=\{fetchProducts\}/);
+    expect(listPage).toMatch(/onSearch=\{fetchEmployees\}/);
+  });
+});
+
+describe('supplies filter — the picks are forwarded to the API as CSV *Ids', () => {
   // Anchored on the params SPREAD that actually forwards the value
-  // (`...(filterValues.agentOwnerId ? { agentOwnerId: filterValues.agentOwnerId } : {})`),
-  // NOT a bare token — the JSX `value={filterValues.agentOwnerId ? { id: … }}`
-  // reads the same field but builds a `{ id: … }` object, never a
-  // `{ agentOwnerId: … }` param. Deleting the forwarding spread (turning the
-  // control into a dead «accepted-but-unapplied» filter) fails the regex.
-  it('puts agentOwnerId into the request params (spread form, non-vacuous)', () => {
-    expect(listPage).toMatch(
-      /filterValues\.agentOwnerId\s*\?\s*\{\s*agentOwnerId:\s*filterValues\.agentOwnerId\s*\}/,
-    );
+  // (`...(agents.length ? { agentIds: csvIds(agents) } : {})`). Deleting the
+  // forwarding spread (turning a control into a dead «picked-but-unapplied»
+  // filter) fails the regex.
+  it('forwards the multi-select reference fields as CSV *Ids params', () => {
+    for (const [state, param] of [
+      ['agents', 'agentIds'],
+      ['stores', 'storeIds'],
+      ['organizations', 'organizationIds'],
+      ['projects', 'projectIds'],
+      ['contracts', 'contractIds'],
+      ['agentGroups', 'agentGroupIds'],
+      ['agentOwners', 'agentOwnerIds'],
+      ['agentAccounts', 'agentAccountIds'],
+      ['orgAccounts', 'organizationAccountIds'],
+      ['owners', 'ownerIds'],
+      ['groups', 'groupIds'],
+      ['products', 'productIds'],
+      ['modifiedBys', 'modifiedByIds'],
+    ] as const) {
+      expect(listPage).toMatch(
+        new RegExp(`${state}\\.length\\s*\\?\\s*\\{\\s*${param}:\\s*csvIds\\(${state}\\)`),
+      );
+    }
   });
 
   it('includes the filter params in the react-query key (so changing a filter refetches)', () => {
     expect(listPage).toMatch(/listQueryKey\s*=\s*\[[\s\S]*?params\.toString\(\)[\s\S]*?\]/);
   });
 
-  it('the Владелец контрагента picker fetches the /employees reference', () => {
-    expect(listPage).toMatch(/pickerOpen === 'agentOwner'/);
-    expect(listPage).toContain('/employees?search=');
+  it('the Владелец контрагента field fetches the /employees reference', () => {
+    expect(listPage).toContain("refFetcher('/employees')");
   });
 });

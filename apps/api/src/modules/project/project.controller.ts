@@ -105,7 +105,7 @@ export class ProjectController {
     const parsed = MassEditBaseSchema.parse(body);
     const { ids, ...patch } = parsed;
     // Project has owner + description but no projectId — restrict the patch.
-    assertPatchHasAtLeastOneField(patch, ['ownerId', 'description']);
+    assertPatchHasAtLeastOneField(patch, ['ownerId', 'description', 'groupId', 'shared']);
     return runBulk(ids, (id) => this.svc.massEditApply(user.accountId, id, patch));
   }
 }

@@ -13,6 +13,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import type { FastifyReply } from 'fastify';
+import { z } from 'zod';
 import type { AuthenticatedUser } from '../auth/auth.schema.js';
 import { CurrentUser } from '../auth/current-user.decorator.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
@@ -20,6 +21,7 @@ import { RequirePermission } from '../permissions/require-permission.decorator.j
 import { DocPdfService } from '../print-template/doc-pdf.service.js';
 import type { RawDocInput } from '../print-template/print-render.util.js';
 import { computeLineSumMinor } from '../print-template/print-render.util.js';
+import { PrintTemplateService } from '../print-template/print-template.service.js';
 import { BulkIdsSchema, BulkPrintSchema, BulkTransitionSchema, runBulk } from '../shared/bulk.js';
 import { MassEditBaseSchema, assertPatchHasAtLeastOneField } from '../shared/mass-edit.js';
 import { BulkMarkPrintedSchema } from '../shared/mass-print.js';
@@ -31,7 +33,20 @@ export class DemandController {
   constructor(
     @Inject(DemandService) private readonly demand: DemandService,
     @Inject(DocPdfService) private readonly docPdf: DocPdfService,
+    @Inject(PrintTemplateService) private readonly printTemplates: PrintTemplateService,
   ) {}
+
+  /**
+   * Doc-scoped list of the account's printable templates for this entity —
+   * gated on demand:view (NOT settings) so a cashier who can open the page
+   * also sees the pinned check-print buttons; the settings-gated
+   * /print-templates CRUD stays admin-only. Mirrors purchase-order.
+   */
+  @Get('print-forms')
+  @RequirePermission({ entity: 'demand', action: 'view' })
+  async printForms(@CurrentUser() user: AuthenticatedUser) {
+    return this.printTemplates.listPrintable(user.accountId, 'demand', 'pdf');
+  }
 
   @Get()
   @RequirePermission({ entity: 'demand', action: 'view' })
@@ -50,6 +65,17 @@ export class DemandController {
   @RequirePermission({ entity: 'demand', action: 'view' })
   async findById(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     return this.demand.findByIdScoped(user.accountId, user.sub, id);
+  }
+
+  /**
+   * «Связанные документы» — docs linked to this shipment: the upstream Заказ
+   * покупателя it was created from, plus downstream Возвраты покупателей /
+   * Счета-фактуры выданные / Перемещения. Mirrors customer-order `/related`.
+   */
+  @Get(':id/related')
+  @RequirePermission({ entity: 'demand', action: 'view' })
+  async related(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.demand.findRelated(user.accountId, id);
   }
 
   @Post()
@@ -76,6 +102,21 @@ export class DemandController {
     @Body() body: unknown,
   ) {
     return this.demand.update(user.accountId, user.sub, id, body);
+  }
+
+  /**
+   * «Статус» — set (or clear, `statusId: null`) the shipment's account-defined
+   * custom status. Applied immediately (moysklad parity). Mirror of supply.
+   */
+  @Patch(':id/status')
+  @RequirePermission({ entity: 'demand', action: 'update' })
+  async setStatus(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    const { statusId } = z.object({ statusId: z.string().uuid().nullable() }).parse(body);
+    return this.demand.setStatus(user.accountId, user.sub, id, statusId);
   }
 
   @Post(':id/transitions/:target')
@@ -114,12 +155,30 @@ export class DemandController {
     return runBulk(ids, (id) => this.demand.transition(user.accountId, user.sub, id, target));
   }
 
+  // «Статус ▾» toolbar menu — bulk-set (or clear) the custom status on the
+  // selected shipments. Mirror of supply.bulkSetStatus.
+  @Post('bulk-set-status')
+  @RequirePermission({ entity: 'demand', action: 'update' })
+  async bulkSetStatus(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
+    const { ids, statusId } = BulkIdsSchema.extend({
+      statusId: z.string().uuid().nullable(),
+    }).parse(body);
+    return this.demand.bulkSetStatus(user.accountId, user.sub, ids, statusId);
+  }
+
   @Post('mass-edit')
   @RequirePermission({ entity: 'demand', action: 'update' })
   async massEdit(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
     const parsed = MassEditBaseSchema.parse(body);
     const { ids, ...patch } = parsed;
-    assertPatchHasAtLeastOneField(patch, ['ownerId', 'projectId', 'description']);
+    assertPatchHasAtLeastOneField(patch, [
+      'ownerId',
+      'projectId',
+      'description',
+      'groupId',
+      'shared',
+      'stateId',
+    ]);
     return runBulk(ids, (id) => this.demand.massEditApply(user.accountId, user.sub, id, patch));
   }
 

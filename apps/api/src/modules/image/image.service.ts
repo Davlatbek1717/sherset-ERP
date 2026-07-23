@@ -7,6 +7,10 @@ import {
   UploadImageSchema,
 } from './image.schema.js';
 
+/** Max images per product — mirrors the web MAX_IMAGES (user 2026-07-07). The
+ *  server is the source of truth: a bypassed client still can't exceed this. */
+const MAX_PRODUCT_IMAGES = 5;
+
 interface ImageDescriptor {
   id: string;
   filename: string;
@@ -85,6 +89,12 @@ export class ImageService {
 
       // First image of a product is auto-main even if caller didn't ask.
       const existingCount = await tx.productImage.count({ where: { accountId, productId } });
+      // Enforce the per-product image cap inside the tx (server source of truth).
+      if (existingCount >= MAX_PRODUCT_IMAGES) {
+        throw new BadRequestException(
+          `Bitta mahsulotga ko’pi bilan ${MAX_PRODUCT_IMAGES} ta rasm yuklash mumkin`,
+        );
+      }
       const isMain = parsed.isMain || existingCount === 0;
 
       const created = await tx.productImage.create({

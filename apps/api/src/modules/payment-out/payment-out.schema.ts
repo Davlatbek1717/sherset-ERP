@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { csvUuid } from '../shared/csv.js';
 
 /**
  * PaymentOut (Исходящий платёж) — outbound payment to supplier.
@@ -53,6 +54,8 @@ export const CreatePaymentOutSchema = z.object({
   // moysklad parity — Договор / Проект (money doc has counterparty).
   contractId: z.string().uuid().nullish(),
   projectId: z.string().uuid().nullish(),
+  // «Канал продаж» — moysklad surfaces this on the bank-payment editor too.
+  salesChannelId: z.string().uuid().nullish(),
   // moysklad parity (§18 live archetype) — Счёт организации / Счёт
   // контрагента (bank-payment doc) + Внешний код. Cols exist (no migration).
   organizationAccountId: z.string().uuid().nullish(),
@@ -60,6 +63,14 @@ export const CreatePaymentOutSchema = z.object({
   externalCode: z.string().max(50).nullish(),
   moment: z.coerce.date().optional(),
   paymentPurpose: z.string().max(500).nullish(),
+  // «Включая НДС» — the VAT portion of the payment sum (vat_sum_minor col).
+  vatSumMinor: z.coerce.string().regex(/^\d+$/).default('0'),
+  // «Владелец»/«Владелец-отдел»/«Общий доступ» from the owner popover.
+  ownerId: z.string().uuid().nullish(),
+  groupId: z.string().uuid().nullish(),
+  shared: z.boolean().optional(),
+  // «Без закрывающих документов» — the no_closing_docs header checkbox.
+  noClosingDocs: z.boolean().optional(),
   /**
    * «Статья расходов» — the expense item this outgoing payment is booked
    * against (moysklad parity). Stored as the free-form name string matching
@@ -106,6 +117,7 @@ const boolFromString = z
 export const PaymentOutFilterSchema = z.object({
   state: PaymentOutStateSchema.optional(),
   agentId: z.string().uuid().optional(),
+  agentIds: csvUuid.optional(),
   /** «Группа контрагента» — filters via the agent (Counterparty) relation's groupId. */
   agentGroupId: z.string().uuid().optional(),
   /**
@@ -120,6 +132,7 @@ export const PaymentOutFilterSchema = z.object({
   /** «Счёт контрагента» — PaymentOut.agentAccountId. */
   agentAccountId: z.string().uuid().optional(),
   organizationId: z.string().uuid().optional(),
+  organizationIds: csvUuid.optional(),
   /** «Счёт организации» — PaymentOut.organizationAccountId. */
   organizationAccountId: z.string().uuid().optional(),
   invoiceInId: z.string().uuid().optional(),

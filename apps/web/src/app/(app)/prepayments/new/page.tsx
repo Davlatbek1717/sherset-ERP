@@ -15,7 +15,6 @@ import { useDocumentEditorLabels } from '@/hooks/use-document-editor-labels';
 import { useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-store';
-import { pinDefaultCustomer } from '@/lib/pin-default-customer';
 import {
   Button,
   CatalogPicker,
@@ -104,7 +103,7 @@ export default function NewPrepaymentPage() {
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   });
   const [status, setStatus] = useState<string>('draft');
-  const [applicable, setApplicable] = useState(false);
+  const [applicable, setApplicable] = useState(true);
 
   // Meta
   const [agentId, setAgentId] = useState<string | null>(null);
@@ -162,10 +161,11 @@ export default function NewPrepaymentPage() {
         setOrganizationLabel(orgsData.items[0].name);
       }
     }
-    // Sherset (2026-07-16, owner decision): defaultCustomer is NOT auto-filled into
-    // new documents anymore — it only powers the pinned top row of the Контрагент
-    // picker in customer orders (lib/pin-default-customer.ts).
-  }, [orgsData, userDefaults.data, userDefaults.isLoading, organizationId, fromOrderId]);
+    if (!agentId && us?.defaultCustomer) {
+      setAgentId(us.defaultCustomer.id);
+      setAgentLabel(us.defaultCustomer.name);
+    }
+  }, [orgsData, userDefaults.data, userDefaults.isLoading, organizationId, agentId, fromOrderId]);
 
   // Pre-fill from the source customer order (?fromOrder) once it has loaded.
   // Applied once via a ref guard. Sets org/agent + the prepayment amount
@@ -224,17 +224,11 @@ export default function NewPrepaymentPage() {
     const d = await api.get<{
       items: Array<{ id: string; name: string; legalTitle: string | null }>;
     }>(`/counterparties?search=${encodeURIComponent(s)}&limit=50`);
-    const items = d.items.map((c) => ({
+    return d.items.map((c) => ({
       id: c.id,
       primary: c.name,
       secondary: c.legalTitle ?? undefined,
     }));
-    return pinDefaultCustomer(
-      items,
-      userDefaults.data?.defaultCustomer,
-      s,
-      tForm('pinned_default'),
-    );
   };
 
   const orgFetcher = async (s: string): Promise<PickerItem[]> => {
@@ -312,7 +306,7 @@ export default function NewPrepaymentPage() {
       label: tDetailTabs('main'),
       content: (
         <div className="space-y-4">
-          <DocumentMetaPanel>
+          <DocumentMetaPanel compact>
             <DocumentMetaRow>
               <DocumentMetaField label={tFields('agent')} required>
                 <CatalogPickerField

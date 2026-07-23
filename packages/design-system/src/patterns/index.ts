@@ -44,6 +44,8 @@ export {
   MassEditModal,
   type MassEditModalProps,
   type MassEditPatch,
+  type MassEditPickerValue,
+  type MassEditSelectOption,
 } from './MassEditModal.tsx';
 export { Wizard, type WizardProps, type WizardStep } from './Wizard.tsx';
 export {

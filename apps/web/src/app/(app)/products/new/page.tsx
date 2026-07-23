@@ -219,7 +219,11 @@ export default function NewProductPage() {
             left={<ProductFormLeftCards pf={pf} />}
             right={
               <Tabs defaultValue="prices" data-test-id="product-new-tabs">
-                <TabsList>
+                {/* moysklad product-card tabs = equal-width grey segmented pills,
+                  active filled brand-blue (the DS `boxed` variant) — must match the
+                  /[id] ProductDetailWidget tabs (which use variant="boxed"); without
+                  it /new fell back to the underline style = a parity gap. */}
+                <TabsList variant="boxed">
                   <TabsTrigger value="prices" data-test-id="tab-prices">
                     {tw('tab_prices')}
                   </TabsTrigger>

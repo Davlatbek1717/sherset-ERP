@@ -49,7 +49,13 @@ export const CreateStoreSchema = z.object({
   allowNegativeStock: z.coerce.boolean().default(false),
   shared: z.coerce.boolean().default(false),
   parentId: uuid.nullish(),
+  // «Владелец-сотрудник» / «Владелец-отдел» (moysklad card owner cluster).
   ownerId: uuid.nullish(),
+  groupId: uuid.nullish(),
+  // «Проводить инвентаризацию по ячейкам» (Адресное хранение). Persisted inside
+  // the attributes JSON under a reserved key (no schema migration on this box);
+  // the service lifts it back to a top-level field on reads.
+  cellInventory: z.coerce.boolean().optional(),
   zones: z.array(z.string().min(1).max(100)).max(50).default([]),
   slots: z.array(z.string().min(1).max(100)).max(100).default([]),
   attributes: z.record(z.string(), z.unknown()).optional(),
@@ -69,84 +75,46 @@ const boolFromString = z
 
 export const StoreFilterSchema = z.object({
   archived: boolFromString.optional(),
+  // moysklad «Показывать»: 'active' (Только обычные, default) | 'all' (Все).
+  // Wins over `archived` when both are sent.
+  show: z.enum(['active', 'all']).optional(),
   search: z.string().max(100).optional(),
-  parentId: uuid.optional(),
+  // moysklad filter-panel fields (all contains/insensitive for texts).
+  name: z.string().max(255).optional(),
+  code: z.string().max(50).optional(),
+  address: z.string().max(255).optional(),
+  ownerId: uuid.optional(),
+  groupId: uuid.optional(),
+  shared: boolFromString.optional(),
+  // Tree node filter: uuid = children of that store; 'root' = top-level only.
+  parentId: z.union([uuid, z.literal('root')]).optional(),
   limit: z.coerce.number().int().min(1).max(500).default(50),
   cursor: uuid.optional(),
-  sortBy: z.enum(['name', 'code', 'createdAt', 'updatedAt']).default('name'),
+  sortBy: z.enum(['name', 'code', 'address', 'createdAt', 'updatedAt']).default('name'),
   sortDir: z.enum(['asc', 'desc']).default('asc'),
 });
 export type StoreFilterInput = z.infer<typeof StoreFilterSchema>;
 
-// =========================================================================
-// Adresli saqlash — yacheykalar registri (StoreCell)
-// =========================================================================
-
-// «NN-NN-NN» — generatsiya prefiksi (sklad-polka-qator), har segment 0–99
-// (label CODE128C shtrix formati 2 xonali segment talab qiladi).
-const CELL_PREFIX_RE = /^\d{1,2}-\d{1,2}-\d{1,2}$/;
-// To'liq yacheyka kodi «NN-NN-NN-NN» (unpadded segmentlar ham qabul qilinadi,
-// service kanonik padded ko'rinishga keltiradi).
-const CELL_CODE_RE = /^\d{1,2}(-\d{1,2}){3}$/;
+/** «Переместить» — bulk re-parent (list Изменить ▾ menu). parentId null = to root. */
+export const BulkMoveSchema = z.object({
+  ids: z.array(uuid).min(1).max(500),
+  parentId: uuid.nullable(),
+});
+export type BulkMoveInput = z.infer<typeof BulkMoveSchema>;
 
 /**
- * «Polka qo'shish» — 3 input (2026-07-16 talab, barchasi MAJBURIY):
- *   1) shelf  — polka kodi (yacheyka qatorida «Polka» ustunida ko'rinadi)
- *   2) prefix — yacheyka kodining dastlabki 3 segmenti (masalan «04-03-01»)
- *   3) count  — shu qatordagi o'rinlar soni; Enter → prefix-01…prefix-NN
- *      ketma-ket yacheykalar avtomatik yaratiladi (oxirgi segment 2 xona,
- *      shuning uchun maksimum 99).
+ * «Массовое редактирование» — opt-in field patch applied to every selected store.
+ * Only the keys present are touched; explicit null clears (group/owner).
  */
-export const GenerateCellsSchema = z.object({
-  shelf: z.string().trim().min(1, 'Polka kodi majburiy').max(50),
-  prefix: z
-    .string()
-    .trim()
-    .regex(CELL_PREFIX_RE, "Yacheyka kodi «NN-NN-NN» ko'rinishida bo'lsin (masalan 04-03-01)"),
-  count: z.coerce.number().int().min(1, 'Miqdor majburiy').max(99, 'Maksimum 99 ta o‘rin'),
+export const BulkUpdateSchema = z.object({
+  ids: z.array(uuid).min(1).max(500),
+  set: z
+    .object({
+      archived: z.boolean().optional(),
+      groupId: uuid.nullable().optional(),
+      ownerId: uuid.nullable().optional(),
+      shared: z.boolean().optional(),
+    })
+    .refine((v) => Object.keys(v).length > 0, { message: 'set must not be empty' }),
 });
-export type GenerateCellsInput = z.infer<typeof GenerateCellsSchema>;
-
-/** «+ Yacheyka» — bitta yacheykani to'liq kod bilan qo'lda qo'shish. */
-export const CreateCellSchema = z.object({
-  code: z.string().trim().regex(CELL_CODE_RE, "Yacheyka kodi «NN-NN-NN-NN» ko'rinishida bo'lsin"),
-  shelf: optionalEmpty(50),
-});
-export type CreateCellInput = z.infer<typeof CreateCellSchema>;
-
-/** Yacheykaga tovar biriktirish («+» amal — tanlangan tovarlarning asosiy
- *  loc* manzili shu yacheyka kodiga o'rnatiladi). */
-export const AssignCellSchema = z.object({
-  productIds: z.array(uuid).min(1).max(100),
-});
-export type AssignCellInput = z.infer<typeof AssignCellSchema>;
-
-/** Butun akkaunt bo'ylab yacheyka qidiruvi (tovar kartochkasidagi dropdown). */
-export const CellSearchSchema = z.object({
-  search: z.string().max(50).optional(),
-  limit: z.coerce.number().int().min(1).max(200).default(50),
-});
-export type CellSearchInput = z.infer<typeof CellSearchSchema>;
-
-/**
- * Skan orqali biriktirish — 1-bosqich: skanerlangan yacheyka shtrix-kodini
- * shu ombordagi mavjud yacheykaga aylantirish. Kod tireli («NN-NN-NN-NN») yoki
- * label CODE128C 8-raqamli («02170215») shakl bo'lishi mumkin — service
- * parseCellCode bilan kanoniklashtiradi, shuning uchun bu yerda faqat bo'sh
- * emasligini tekshiramiz (aniq format xatosi service'da 400 bo'ladi).
- */
-export const ResolveCellSchema = z.object({
-  code: z.string().trim().min(1, 'Yacheyka shtrix-kodi bo`sh'),
-});
-export type ResolveCellInput = z.infer<typeof ResolveCellSchema>;
-
-/**
- * Skan orqali biriktirish — 2-bosqich: skanerlangan mahsulot shtrix-kodini shu
- * yacheykaga biriktirish (mahsulotning asosiy loc* manzili yacheyka kodiga
- * o'rnatiladi — «+» qo'lda biriktirish bilan bir xil semantika). `barcode` —
- * mahsulotning asl (ishlab chiqaruvchi) shtrix-kodi.
- */
-export const ScanLinkSchema = z.object({
-  barcode: z.string().trim().min(1, 'Mahsulot shtrix-kodi bo`sh').max(50),
-});
-export type ScanLinkInput = z.infer<typeof ScanLinkSchema>;
+export type BulkUpdateInput = z.infer<typeof BulkUpdateSchema>;

@@ -68,24 +68,6 @@ export default function NewLabelTemplatePage() {
     }
   };
 
-  // Xprinter / thermal label presets — one click snaps the template to a common
-  // Xprinter size: custom page dims, one label per feed (1×1), QR (senik). The
-  // senik print already injects the matching `@page` mm, so this just fills dims.
-  const applyXprinterPreset = (p: { w: number; h: number; lw: number; lh: number; m: number }) => {
-    setPageSize('custom');
-    setPageWidthMm(p.w);
-    setPageHeightMm(p.h);
-    setCols(1);
-    setRows(1);
-    setLabelWidthMm(p.lw);
-    setLabelHeightMm(p.lh);
-    setMarginTopMm(p.m);
-    setMarginLeftMm(p.m);
-    setColumnGapMm(0);
-    setRowGapMm(0);
-    setBarcodeFormat('QR');
-  };
-
   const createMut = useMutation({
     mutationFn: async () => {
       if (!name.trim()) throw new Error(t('name_required'));
@@ -162,34 +144,6 @@ export default function NewLabelTemplatePage() {
                   label: size === 'custom' ? t('custom_size') : size,
                 }))}
               />
-            </Field>
-            <Field label={t('xprinter_presets')}>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => applyXprinterPreset({ w: 80, h: 50, lw: 76, lh: 46, m: 2 })}
-                >
-                  {t('preset_80')}
-                </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => applyXprinterPreset({ w: 58, h: 40, lw: 54, lh: 36, m: 2 })}
-                >
-                  {t('preset_58')}
-                </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => applyXprinterPreset({ w: 40, h: 30, lw: 38, lh: 28, m: 1 })}
-                >
-                  {t('preset_label')}
-                </Button>
-              </div>
             </Field>
             {pageSize === 'custom' && (
               <div className="grid grid-cols-2 gap-3">

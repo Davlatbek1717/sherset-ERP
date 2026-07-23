@@ -92,7 +92,7 @@ export default function NewProcessingOrderPage() {
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   });
   const [status, setStatus] = useState<string>('draft');
-  const [applicable, setApplicable] = useState(false);
+  const [applicable, setApplicable] = useState(true);
 
   // Meta state
   const [organizationId, setOrganizationId] = useState<string | null>(null);
@@ -278,7 +278,7 @@ export default function NewProcessingOrderPage() {
         }}
       >
         <div className="space-y-4">
-          <DocumentMetaPanel>
+          <DocumentMetaPanel compact>
             <DocumentMetaRow>
               <DocumentMetaField label={tFields('organization')} required>
                 <CatalogPickerField

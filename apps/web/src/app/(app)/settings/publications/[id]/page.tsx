@@ -14,7 +14,16 @@
 import { useConflictReload } from '@/hooks/use-conflict-reload';
 import { api } from '@/lib/api-client';
 import { isOptimisticConflict } from '@/lib/optimistic-lock';
-import { Alert, Badge, Button, Icons, Input, formatDate, useConfirm } from '@moysklad/ui';
+import {
+  Alert,
+  Badge,
+  Button,
+  Icons,
+  Input,
+  PasswordInput,
+  formatDate,
+  useConfirm,
+} from '@moysklad/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useParams, useRouter } from 'next/navigation';
@@ -326,18 +335,20 @@ export default function PublicationDetailPage() {
             </label>
           </div>
           <div className="col-span-2">
-            <label className="block">
+            <label className="block" htmlFor="publication-password">
               <span className="mb-1 block text-[var(--ms-text-muted)] text-xs">
                 {data.passwordProtected ? t('password_label_set') : t('password_label_new')}
               </span>
-              <Input
-                type="password"
+              <PasswordInput
+                id="publication-password"
                 value={password}
                 onChange={(e) => {
                   setPassword(e.target.value);
                   setEdited(true);
                 }}
                 placeholder="••••••••"
+                showLabel={tCommon('show_password')}
+                hideLabel={tCommon('hide_password')}
               />
             </label>
           </div>

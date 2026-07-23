@@ -1,5 +1,4 @@
 import { Logger } from '@nestjs/common';
-import type { HistoryMtprotoMessage, TgVideoRef } from './telegram-client-factory.js';
 
 /**
  * MTProto delivery contract. Decouples the queue worker from any specific
@@ -16,14 +15,6 @@ export interface MtprotoSendOptions {
   accountId: string;
   toPhone: string;
   text: string;
-  /**
-   * `HrTelegramOutbox.sourceEventType` (e.g. `debt.reminder`), passed
-   * through so the adapter can opt specific message families into a
-   * different GramJS markdown dialect (2026-07-20: `debt.*` messages use
-   * `MarkdownV2Parser` for underline support) without affecting any other
-   * notification family's formatting.
-   */
-  sourceEventType?: string | null;
 }
 
 export interface MtprotoSendResult {
@@ -40,46 +31,6 @@ export interface MtprotoAdapter {
    * are expected to manage their own connection pool / failover.
    */
   sendMessage(opts: MtprotoSendOptions): Promise<MtprotoSendResult>;
-
-  /**
-   * Dialog tarixidan bitta sahifa oladi (talab-bo'yicha backfill + catch-up,
-   * 2026-07-20). FLOOD_WAIT'da `MtprotoFloodError`, boshqa xatoда plain Error.
-   * Implementatsiya o'z pool/failover'ini boshqaradi (sendMessage kabi).
-   */
-  fetchHistory(opts: {
-    accountId: string;
-    phone: string;
-    limit: number;
-    offsetId?: number;
-    minId?: number;
-  }): Promise<{ slot: number; peerId: string | null; messages: HistoryMtprotoMessage[] }>;
-
-  /**
-   * Videoni Telegram'ga BIR MARTA yuklaydi (video-tarqatma, 2026-07-20) va
-   * qayta ishlatiladigan referensni qaytaradi. sendMessage kabi slot-loop +
-   * flood-failover: FLOOD_WAIT'da `MtprotoFloodError`, boshqa xatoда plain Error.
-   */
-  uploadBroadcastVideo(opts: {
-    accountId: string;
-    filePath: string;
-    /** Video POSTER (JPEG) yo'li — berilmasa Telegram qora poster ko'rsatadi. */
-    thumbPath?: string;
-    /** Video o'lchami/davomiyligi — to'g'ri nisbat (9:16) uchun. */
-    videoMeta?: { width: number; height: number; durationSec: number };
-  }): Promise<{ slot: number; ref: TgVideoRef }>;
-
-  /**
-   * Yuklangan video-referensni bitta mijozga (toPhone) caption + bold-entity
-   * bilan yuboradi. sendMessage bilan bir xil slot-loop/flood intizomi.
-   */
-  sendVideoByRef(opts: {
-    accountId: string;
-    toPhone: string;
-    ref: TgVideoRef;
-    caption: string;
-    boldRanges: { offset: number; length: number }[];
-    quoteRanges?: { offset: number; length: number }[];
-  }): Promise<MtprotoSendResult>;
 }
 
 /**
@@ -115,28 +66,6 @@ export class NoopMtprotoAdapter implements MtprotoAdapter {
     this.logger.warn(
       `NoopMtprotoAdapter — Telegram delivery NOT configured. Pretending to fail send for account=${opts.accountId} to=${opts.toPhone} (${opts.text.length} chars). Configure HR_TELEGRAM_CREDENTIALS in production.`,
     );
-    throw new Error('mtproto_adapter_not_configured');
-  }
-
-  async fetchHistory(): Promise<{
-    slot: number;
-    peerId: string | null;
-    messages: HistoryMtprotoMessage[];
-  }> {
-    // Telegram sozlanmaган — bo'sh sahifa (backfill job'ni bloklamaydi).
-    return { slot: 0, peerId: null, messages: [] };
-  }
-
-  async uploadBroadcastVideo(opts: { accountId: string }): Promise<{
-    slot: number;
-    ref: TgVideoRef;
-  }> {
-    this.logger.warn(`NoopMtprotoAdapter — video yuklash NOT configured (acc=${opts.accountId}).`);
-    throw new Error('mtproto_adapter_not_configured');
-  }
-
-  async sendVideoByRef(opts: { accountId: string }): Promise<MtprotoSendResult> {
-    this.logger.warn(`NoopMtprotoAdapter — video yuborish NOT configured (acc=${opts.accountId}).`);
     throw new Error('mtproto_adapter_not_configured');
   }
 }

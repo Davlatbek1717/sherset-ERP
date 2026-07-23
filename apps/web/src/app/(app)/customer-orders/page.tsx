@@ -3,6 +3,7 @@
 import { ColumnSettings } from '@/components/column-settings';
 import { BulkActionsDropdown } from '@/components/customer-orders/bulk-actions-dropdown';
 import { CreateRelatedDropdown } from '@/components/customer-orders/create-related-dropdown';
+import { CustomerOrderKanban } from '@/components/customer-orders/kanban-board';
 import { PrintDropdown } from '@/components/customer-orders/print-dropdown';
 import { SavedFiltersPills } from '@/components/customer-orders/saved-filters-pills';
 import { StatusChangeDropdown } from '@/components/customer-orders/status-change-dropdown';
@@ -10,10 +11,9 @@ import { FilterToggleButton } from '@/components/filters/filter-toggle-button';
 import { useBulkDocumentActions } from '@/hooks/use-bulk-actions';
 import { useColumnVisibility } from '@/hooks/use-column-visibility';
 import { useColumnWidths } from '@/hooks/use-column-widths';
-import { useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
+import { stashBulkEdit } from '@/lib/bulk-edit-nav';
 import { filterFromQueryString } from '@/lib/filter-from-query';
-import { pinDefaultCustomer } from '@/lib/pin-default-customer';
 import {
   CatalogPicker,
   CatalogPickerField,
@@ -27,6 +27,7 @@ import {
   MassEditModal,
   MoneyInput,
   MoneyProgress,
+  MultiCombobox,
   NativeSelect,
   PeriodInputs,
   PeriodShortcuts,
@@ -42,6 +43,7 @@ import {
 } from '@moysklad/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
+import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 
 interface CustomerOrderRow {
@@ -99,6 +101,9 @@ interface AttrFilterValue {
   to?: string;
 }
 
+/** Multi-select reference field — moysklad checkbox-dropdown holds {id,label}[]. */
+type RefMulti = { id: string; label: string };
+
 /** Searchable reference entities → list endpoint, so a reference custom-attr
  *  (e.g. «Уста» → Контрагент) filters via an inline typeahead instead of a raw
  *  UUID text box. referenceEntity values come from AttributeMetadata (Prisma
@@ -151,8 +156,7 @@ export default function CustomerOrdersPage() {
   const tCommon = useTranslations('common');
   const tFields = useTranslations('fields');
   const tFilters = useTranslations('filters');
-  const tForm = useTranslations('form');
-  const userDefaults = useUserDefaults();
+  const tMass = useTranslations('mass_edit_modal');
   // tStates feeds the inline filter's FSM-state dropdown (shown only for
   // accounts that define no custom order statuses).
   const tStates = useTranslations('states.customer_order');
@@ -160,10 +164,11 @@ export default function CustomerOrdersPage() {
   const [searchInput, setSearchInput] = useState('');
   const search = useDebounce(searchInput, 300);
   const [filterOpen, setFilterOpen] = useState(true);
+  // moysklad «Список | Столбцы» view toggle — 'columns' renders the custom-status
+  // kanban board («новый дизайн реестров документов») in place of the flat table.
+  const [view, setView] = useState<'list' | 'columns'>('list');
   const [pickerOpen, setPickerOpen] = useState<
     | null
-    | 'agent'
-    | 'org'
     | 'store'
     | 'owner'
     | 'project'
@@ -181,7 +186,15 @@ export default function CustomerOrdersPage() {
   // Mass-edit state — opens an opt-in modal with owner / project /
   // description rows. Each row's value is held here so the picker
   // callbacks can populate them before the user clicks Apply.
+  const router = useRouter();
   const [massEditOpen, setMassEditOpen] = useState(false);
+  // «Владелец-отдел» (groupId) options for the mass-edit wizard — mirrors losses.
+  const { data: massGroupsData } = useQuery<{ items: Array<{ id: string; name: string }> }>({
+    queryKey: ['groups', 'mass-edit'],
+    queryFn: () => api.get('/groups?limit=100'),
+    enabled: massEditOpen,
+    staleTime: 5 * 60 * 1000,
+  });
   const [massEditIds, setMassEditIds] = useState<string[]>([]);
   const [massEditOwner, setMassEditOwner] = useState<{ id: string; label: string } | null>(null);
   const [massEditProject, setMassEditProject] = useState<{ id: string; label: string } | null>(
@@ -203,6 +216,14 @@ export default function CustomerOrdersPage() {
   const [sortKey, setSortKey] = useState<string>('moment');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [filterValues, setFilterValues] = useState<FilterDrawerValues>({});
+  // «Контрагент» / «Организация» — moysklad-parity inline multi-select checkbox
+  // dropdowns (MultiCombobox), replacing the old single-select modals. Each holds
+  // the picked {id,label} pairs; on the wire they go out as `<field>Ids` CSV. The
+  // «Контрагент» dropdown shows the phone as a sublabel and searches by name OR
+  // phone (BE /counterparties?search= already matches both). The dependent
+  // «Счёт…» account pickers scope to the FIRST selected agent/org (agents[0]).
+  const [agents, setAgents] = useState<RefMulti[]>([]);
+  const [organizations, setOrganizations] = useState<RefMulti[]>([]);
   // Extended filter state — fields beyond what FilterDrawerValues
   // covers (moysklad parity: Оплата / Отгружено / Проект / Счёт
   // организации / Статус FSM / Товар).
@@ -288,8 +309,8 @@ export default function CustomerOrdersPage() {
     paramsRecord.sumMinorFrom = String(filterValues.sumMinorFrom);
   if (filterValues.sumMinorTo !== undefined)
     paramsRecord.sumMinorTo = String(filterValues.sumMinorTo);
-  if (filterValues.agentId) paramsRecord.agentId = filterValues.agentId;
-  if (filterValues.organizationId) paramsRecord.organizationId = filterValues.organizationId;
+  if (agents.length) paramsRecord.agentIds = agents.map((x) => x.id).join(',');
+  if (organizations.length) paramsRecord.organizationIds = organizations.map((x) => x.id).join(',');
   if (filterValues.storeId) paramsRecord.storeId = filterValues.storeId;
   if (filterValues.ownerId) paramsRecord.ownerId = filterValues.ownerId;
   if (extFilter.paymentStatus) paramsRecord.paymentStatus = extFilter.paymentStatus;
@@ -331,6 +352,17 @@ export default function CustomerOrdersPage() {
   if (attrClauses.length > 0) paramsRecord.attrs = JSON.stringify(attrClauses);
   const params = new URLSearchParams(paramsRecord);
 
+  // Saved-filter query string — the live `params` already carry the agentIds /
+  // organizationIds CSV, but a bare CSV loses the picked labels. Append the
+  // picked {id,label}[] as JSON so a re-applied pill restores the checkbox chips
+  // with their names (not bare UUIDs); every other field round-trips via params.
+  const savedFilterQuery = (() => {
+    const p = new URLSearchParams(params);
+    if (agents.length) p.set('agents', JSON.stringify(agents));
+    if (organizations.length) p.set('organizations', JSON.stringify(organizations));
+    return p.toString();
+  })();
+
   const listQueryKey = [
     'customer-orders',
     search,
@@ -338,6 +370,8 @@ export default function CustomerOrdersPage() {
     sortKey,
     sortDir,
     filterValues,
+    agents,
+    organizations,
     extFilter,
     attrFilters,
   ] as const;
@@ -487,7 +521,7 @@ export default function CustomerOrdersPage() {
       width: '140px',
       sortable: true,
       cell: (o) => (
-        <span className="text-[var(--ms-text-muted)] text-xs tabular-nums">
+        <span className="text-[var(--ms-text-muted)] text-[12px] tabular-nums">
           {formatDate(o.moment)}
         </span>
       ),
@@ -694,7 +728,7 @@ export default function CustomerOrdersPage() {
       key: 'description',
       header: tFields('description'),
       cell: (o) => (
-        <span className="max-w-[200px] truncate text-[var(--ms-text-muted)] text-xs">
+        <span className="max-w-[200px] truncate text-[var(--ms-text-muted)] text-[11px]">
           {o.description ?? ''}
         </span>
       ),
@@ -782,6 +816,12 @@ export default function CustomerOrdersPage() {
         rowActions={(o) => bulk.rowDelete(o.id)}
         total={data?.total ?? 0}
         limit={LIMIT}
+        body={
+          // moysklad «Столбцы» kanban replaces the table when the «Список |
+          // Столбцы» toggle is on 'columns'; reuses the SAME filter query as the
+          // list so the board respects Период/Контрагент/search/etc.
+          view === 'columns' ? <CustomerOrderKanban filterQuery={params.toString()} /> : undefined
+        }
         headerSlot={
           /* Inline filter panel — moysklad parity (i-default.png).
            Renders below the toolbar; collapsible via the Фильтр
@@ -793,6 +833,8 @@ export default function CustomerOrdersPage() {
             clearLabel={tFilters('clear')}
             onClear={() => {
               setFilterValues({});
+              setAgents([]);
+              setOrganizations([]);
               setExtFilter({});
               setAttrFilters({});
               setCursor(undefined);
@@ -810,7 +852,7 @@ export default function CustomerOrdersPage() {
             pills={
               <SavedFiltersPills
                 entity="customerorder"
-                currentQueryString={params.toString()}
+                currentQueryString={savedFilterQuery}
                 onApply={(qs) => {
                   // Fully rehydrate BOTH filter states from the saved query
                   // so applying a pill restores the exact filter set it
@@ -824,6 +866,47 @@ export default function CustomerOrdersPage() {
                   // gets labels + ownerId); advanced fields are decoded here.
                   const usp = new URLSearchParams(qs);
                   setFilterValues(filterFromQueryString(qs));
+                  // Restore the multi-select «Контрагент» / «Организация» dropdowns:
+                  // prefer the JSON label arrays (chips keep their names), else the
+                  // *Ids CSV, else a legacy single *Id param (ids only).
+                  const parseRefList = (key: string): RefMulti[] => {
+                    try {
+                      const raw = usp.get(key);
+                      if (!raw) return [];
+                      const arr: unknown = JSON.parse(raw);
+                      return Array.isArray(arr)
+                        ? arr
+                            .filter(
+                              (x): x is { id: string; label?: unknown } =>
+                                !!x && typeof (x as { id?: unknown }).id === 'string',
+                            )
+                            .map((x) => ({ id: x.id, label: String(x.label ?? x.id) }))
+                        : [];
+                    } catch {
+                      return [];
+                    }
+                  };
+                  const restoreRefs = (
+                    jsonKey: string,
+                    csvKey: string,
+                    singleKey: string,
+                  ): RefMulti[] => {
+                    const j = parseRefList(jsonKey);
+                    if (j.length) return j;
+                    const csv = usp.get(csvKey);
+                    if (csv)
+                      return csv
+                        .split(',')
+                        .filter(Boolean)
+                        .map((id) => ({ id, label: id }));
+                    const single = usp.get(singleKey);
+                    if (single) return [{ id: single, label: single }];
+                    return [];
+                  };
+                  setAgents(restoreRefs('agents', 'agentIds', 'agentId'));
+                  setOrganizations(
+                    restoreRefs('organizations', 'organizationIds', 'organizationId'),
+                  );
                   const pickStr = <T extends string>(k: string): T | undefined =>
                     (usp.get(k) as T | null) ?? undefined;
                   setExtFilter({
@@ -1109,51 +1192,36 @@ export default function CustomerOrdersPage() {
                 <option value="full">{tFilters('reserve_full')}</option>
               </NativeSelect>
             </InlineFilterPanel.Field>
-            {/* 5. Контрагент */}
+            {/* 5. Контрагент — moysklad-parity inline multi-select checkbox
+                dropdown: type a name OR phone, results appear inline (each row
+                shows the phone as a sublabel), tick as many as needed. Was a
+                single-select modal. */}
             <InlineFilterPanel.Field fieldKey="agent" label={tFilters('agent')} expandable>
-              <CatalogPickerField
-                value={
-                  filterValues.agentId
-                    ? {
-                        id: filterValues.agentId,
-                        label: filterValues.agentLabel ?? filterValues.agentId,
-                      }
-                    : null
-                }
-                placeholder=""
-                onPick={() => setPickerOpen('agent')}
-                inlineFetcher={async (q): Promise<PickerItem[]> => {
+              <MultiCombobox
+                value={agents.map((x) => x.id)}
+                items={agents.map((x) => ({ value: x.id, label: x.label }))}
+                onSearch={async (q) => {
                   const r = await api.get<{
-                    items: { id: string; name: string; phone?: string }[];
+                    items: { id: string; name: string; phone?: string | null }[];
                   }>(`/counterparties?search=${encodeURIComponent(q)}&limit=20`);
-                  const items = r.items.map((x) => ({
-                    id: x.id,
-                    primary: x.name,
-                    secondary: x.phone ?? undefined,
+                  return r.items.map((x) => ({
+                    value: x.id,
+                    label: x.name,
+                    sublabel: x.phone || undefined,
                   }));
-                  return pinDefaultCustomer(
-                    items,
-                    userDefaults.data?.defaultCustomer,
-                    q,
-                    tForm('pinned_default'),
+                }}
+                onChange={(nextIds, toggled) => {
+                  setAgents((prev) =>
+                    nextIds.map((id) => {
+                      const ex = prev.find((s) => s.id === id);
+                      if (ex) return ex;
+                      if (toggled?.value === id) return { id, label: String(toggled.label) };
+                      return { id, label: id };
+                    }),
                   );
-                }}
-                onInlineSelect={(item) => {
-                  setFilterValues({
-                    ...filterValues,
-                    agentId: item.id,
-                    agentLabel: String(item.primary),
-                  });
                   setCursor(undefined);
                 }}
-                onClear={() => {
-                  setFilterValues({
-                    ...filterValues,
-                    agentId: undefined,
-                    agentLabel: undefined,
-                  });
-                  setCursor(undefined);
-                }}
+                placeholder=""
                 testId="filter-agent"
               />
             </InlineFilterPanel.Field>
@@ -1215,15 +1283,16 @@ export default function CustomerOrdersPage() {
                     : null
                 }
                 placeholder=""
-                onPick={() => filterValues.agentId && setPickerOpen('agentAccount')}
+                onPick={() => agents[0]?.id && setPickerOpen('agentAccount')}
                 inlineFetcher={async (q): Promise<PickerItem[]> => {
-                  if (!filterValues.agentId) return [];
+                  const agentId = agents[0]?.id;
+                  if (!agentId) return [];
                   // moysklad parity: counterparty bank accounts have only the nested
                   // /counterparties/:id/bank-accounts route (raw array, no search param) —
                   // mirror the detail-form agentAccountFetcher and client-filter by search.
                   const d = await api.get<
                     Array<{ id: string; accountNumber: string; bankName: string | null }>
-                  >(`/counterparties/${filterValues.agentId}/bank-accounts`);
+                  >(`/counterparties/${agentId}/bank-accounts`);
                   const k = q.trim().toLowerCase();
                   return d
                     .filter(
@@ -1254,7 +1323,7 @@ export default function CustomerOrdersPage() {
                   });
                   setCursor(undefined);
                 }}
-                disabled={!filterValues.agentId}
+                disabled={!agents[0]?.id}
                 disabledHint={tFilters('agent_account_disabled_hint')}
                 testId="filter-agent-account"
               />
@@ -1293,45 +1362,34 @@ export default function CustomerOrdersPage() {
                 testId="filter-contract"
               />
             </InlineFilterPanel.Field>
-            {/* 9. Организация */}
+            {/* 9. Организация — moysklad-parity inline multi-select checkbox
+                dropdown (was a single-select modal). */}
             <InlineFilterPanel.Field
               fieldKey="organization"
               label={tFilters('organization')}
               expandable
             >
-              <CatalogPickerField
-                value={
-                  filterValues.organizationId
-                    ? {
-                        id: filterValues.organizationId,
-                        label: filterValues.organizationLabel ?? filterValues.organizationId,
-                      }
-                    : null
-                }
-                placeholder=""
-                onPick={() => setPickerOpen('org')}
-                inlineFetcher={async (q): Promise<PickerItem[]> => {
+              <MultiCombobox
+                value={organizations.map((x) => x.id)}
+                items={organizations.map((x) => ({ value: x.id, label: x.label }))}
+                onSearch={async (q) => {
                   const r = await api.get<{ items: { id: string; name: string }[] }>(
                     `/organizations?search=${encodeURIComponent(q)}&limit=20`,
                   );
-                  return r.items.map((x) => ({ id: x.id, primary: x.name }));
+                  return r.items.map((x) => ({ value: x.id, label: x.name }));
                 }}
-                onInlineSelect={(item) => {
-                  setFilterValues({
-                    ...filterValues,
-                    organizationId: item.id,
-                    organizationLabel: String(item.primary),
-                  });
+                onChange={(nextIds, toggled) => {
+                  setOrganizations((prev) =>
+                    nextIds.map((id) => {
+                      const ex = prev.find((s) => s.id === id);
+                      if (ex) return ex;
+                      if (toggled?.value === id) return { id, label: String(toggled.label) };
+                      return { id, label: id };
+                    }),
+                  );
                   setCursor(undefined);
                 }}
-                onClear={() => {
-                  setFilterValues({
-                    ...filterValues,
-                    organizationId: undefined,
-                    organizationLabel: undefined,
-                  });
-                  setCursor(undefined);
-                }}
+                placeholder=""
                 testId="filter-organization"
               />
             </InlineFilterPanel.Field>
@@ -1352,15 +1410,16 @@ export default function CustomerOrdersPage() {
                     : null
                 }
                 placeholder=""
-                onPick={() => filterValues.organizationId && setPickerOpen('orgAccount')}
+                onPick={() => organizations[0]?.id && setPickerOpen('orgAccount')}
                 inlineFetcher={async (q): Promise<PickerItem[]> => {
-                  if (!filterValues.organizationId) return [];
+                  const organizationId = organizations[0]?.id;
+                  if (!organizationId) return [];
                   // moysklad parity: organization accounts come from the flat
                   // /organization-accounts?organizationId= route (mirror the detail-form
                   // organizationAccountFetcher). Default accounts have accountNumber=null,
                   // so fall back to the account name for the headline.
                   const orgAcctParams = new URLSearchParams({ search: q, limit: '50' });
-                  orgAcctParams.set('organizationId', filterValues.organizationId);
+                  orgAcctParams.set('organizationId', organizationId);
                   const r = await api.get<{
                     items: {
                       id: string;
@@ -1391,7 +1450,7 @@ export default function CustomerOrdersPage() {
                   });
                   setCursor(undefined);
                 }}
-                disabled={!filterValues.organizationId}
+                disabled={!organizations[0]?.id}
                 disabledHint={tFilters('org_account_disabled_hint')}
                 testId="filter-org-account"
               />
@@ -1854,11 +1913,37 @@ export default function CustomerOrdersPage() {
           /* Filter-toggle goes BEFORE the inline search per moysklad's
            i-default.png ordering. ListView places search + 0 counter
            after this slot, then renders the bulk-action dropdowns. */
-          <FilterToggleButton
-            open={filterOpen}
-            onToggle={() => setFilterOpen((v) => !v)}
-            label={tFilters('trigger')}
-          />
+          <>
+            <FilterToggleButton
+              open={filterOpen}
+              onToggle={() => setFilterOpen((v) => !v)}
+              label={tFilters('trigger')}
+            />
+            {/* moysklad «Список | Столбцы» segmented view toggle (new-design
+                реестров) — «Столбцы» swaps the flat table for the status
+                kanban; «Список» is the default table. Sits right after Фильтр. */}
+            <div
+              className="inline-flex items-center gap-0.5 rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] p-0.5"
+              data-test-id="co-view-toggle"
+            >
+              <button
+                type="button"
+                onClick={() => setView('list')}
+                className={`rounded-[var(--ms-radius-default)] px-3 py-1 text-sm transition-colors ${view === 'list' ? 'bg-[var(--ms-bg-surface)] font-medium text-[var(--ms-text-primary)] shadow-sm' : 'text-[var(--ms-text-muted)] hover:text-[var(--ms-text-primary)]'}`}
+                data-test-id="co-view-list"
+              >
+                {t('view_list')}
+              </button>
+              <button
+                type="button"
+                onClick={() => setView('columns')}
+                className={`rounded-[var(--ms-radius-default)] px-3 py-1 text-sm transition-colors ${view === 'columns' ? 'bg-[var(--ms-bg-surface)] font-medium text-[var(--ms-text-primary)] shadow-sm' : 'text-[var(--ms-text-muted)] hover:text-[var(--ms-text-primary)]'}`}
+                data-test-id="co-view-columns"
+              >
+                {t('columns_button')}
+              </button>
+            </div>
+          </>
         }
         extraActions={
           // moysklad parity: dropdowns only in the toolbar — no
@@ -1872,10 +1957,15 @@ export default function CustomerOrdersPage() {
               onClearSelection={bulk.clearSelection}
               confirmedCount={confirmedCount}
               onMassEdit={() => {
-                setMassEditIds(Array.from(bulk.selectedIds));
-                setMassEditOwner(null);
-                setMassEditProject(null);
-                setMassEditOpen(true);
+                stashBulkEdit({
+                  entity: 'customer-orders',
+                  ids:
+                    bulk.selectedIds.size > 0
+                      ? Array.from(bulk.selectedIds)
+                      : (data?.items ?? []).map((r) => r.id),
+                  from: '/customer-orders',
+                });
+                router.push('/bulk-edit');
               }}
             />
             <StatusChangeDropdown
@@ -1891,16 +1981,10 @@ export default function CustomerOrdersPage() {
               onPrintOrder={() => bulk.bulkPrint.mutateAsync(Array.from(bulk.selectedIds))}
               selectedIds={bulk.selectedIds}
             />
-            {/* moysklad-parity «Столбцы» toolbar button (after Печать) — the
-                visible column control. Shares the same column-visibility state
-                as the table-header gear. */}
-            <ColumnSettings
-              label={t('columns_button')}
-              columns={columns.map((c) => ({ key: c.key, label: c.header }))}
-              visibleKeys={cols.visibleKeys}
-              onChange={cols.setVisibleKeys}
-              onReset={cols.reset}
-            />
+            {/* The old toolbar «Столбцы» column-visibility button is gone: that
+                slot is now the «Список | Столбцы» VIEW toggle (extraActionsLeft,
+                moysklad new-design реестров). Column visibility now lives solely
+                on the table-header gear below (headerEndSlot). */}
           </>
         }
         headerEndSlot={
@@ -1915,51 +1999,8 @@ export default function CustomerOrdersPage() {
         onColumnResize={colWidths.set}
       />
 
-      {/* Filter pickers — opened from <InlineFilterPanel.Field>. */}
-      <CatalogPicker
-        open={pickerOpen === 'agent'}
-        onClose={() => setPickerOpen(null)}
-        title={tFilters('agent')}
-        fetcher={async (q): Promise<PickerItem[]> => {
-          const r = await api.get<{ items: { id: string; name: string }[] }>(
-            `/counterparties?search=${encodeURIComponent(q)}&limit=20`,
-          );
-          const items = r.items.map((x) => ({ id: x.id, primary: x.name }));
-          return pinDefaultCustomer(
-            items,
-            userDefaults.data?.defaultCustomer,
-            q,
-            tForm('pinned_default'),
-          );
-        }}
-        onSelect={(item) => {
-          setFilterValues({
-            ...filterValues,
-            agentId: item.id,
-            agentLabel: String(item.primary),
-          });
-          setCursor(undefined);
-        }}
-      />
-      <CatalogPicker
-        open={pickerOpen === 'org'}
-        onClose={() => setPickerOpen(null)}
-        title={tFilters('organization')}
-        fetcher={async (q): Promise<PickerItem[]> => {
-          const r = await api.get<{ items: { id: string; name: string }[] }>(
-            `/organizations?search=${encodeURIComponent(q)}&limit=20`,
-          );
-          return r.items.map((x) => ({ id: x.id, primary: x.name }));
-        }}
-        onSelect={(item) => {
-          setFilterValues({
-            ...filterValues,
-            organizationId: item.id,
-            organizationLabel: String(item.primary),
-          });
-          setCursor(undefined);
-        }}
-      />
+      {/* Filter pickers — opened from <InlineFilterPanel.Field>. «Контрагент» and
+          «Организация» are now inline MultiCombobox dropdowns (no modal). */}
       <CatalogPicker
         open={pickerOpen === 'store'}
         onClose={() => setPickerOpen(null)}
@@ -2060,13 +2101,14 @@ export default function CustomerOrdersPage() {
         onClose={() => setPickerOpen(null)}
         title={tFilters('agent_account')}
         fetcher={async (q): Promise<PickerItem[]> => {
-          if (!filterValues.agentId) return [];
+          const agentId = agents[0]?.id;
+          if (!agentId) return [];
           // moysklad parity: counterparty bank accounts have only the nested
           // /counterparties/:id/bank-accounts route (raw array, no search param) —
           // mirror the detail-form agentAccountFetcher and client-filter by search.
           const d = await api.get<
             Array<{ id: string; accountNumber: string; bankName: string | null }>
-          >(`/counterparties/${filterValues.agentId}/bank-accounts`);
+          >(`/counterparties/${agentId}/bank-accounts`);
           const k = q.trim().toLowerCase();
           return d
             .filter(
@@ -2095,13 +2137,14 @@ export default function CustomerOrdersPage() {
         onClose={() => setPickerOpen(null)}
         title={tFilters('organization_account')}
         fetcher={async (q): Promise<PickerItem[]> => {
-          if (!filterValues.organizationId) return [];
+          const organizationId = organizations[0]?.id;
+          if (!organizationId) return [];
           // moysklad parity: organization accounts come from the flat
           // /organization-accounts?organizationId= route (mirror the detail-form
           // organizationAccountFetcher). Default accounts have accountNumber=null,
           // so fall back to the account name for the headline.
           const params = new URLSearchParams({ search: q, limit: '50' });
-          params.set('organizationId', filterValues.organizationId);
+          params.set('organizationId', organizationId);
           const r = await api.get<{
             items: {
               id: string;
@@ -2229,6 +2272,8 @@ export default function CustomerOrdersPage() {
         projectValue={massEditProject}
         onProjectPick={() => setPickerOpen('massEditProject')}
         onProjectClear={() => setMassEditProject(null)}
+        groupOptions={(massGroupsData?.items ?? []).map((g) => ({ value: g.id, label: g.name }))}
+        showShared
         labels={{
           title: t('mass_edit_title'),
           ownerLabel: tFilters('owner_employee'),
@@ -2237,6 +2282,10 @@ export default function CustomerOrdersPage() {
           apply: t('mass_edit_apply'),
           cancel: t('mass_edit_cancel'),
           hint: t('mass_edit_hint', { count: massEditIds.length }),
+          groupLabel: tMass('group_label'),
+          sharedLabel: tMass('shared_label'),
+          sharedYes: tMass('shared_yes'),
+          sharedNo: tMass('shared_no'),
         }}
         onSubmit={async (patch) => {
           await bulk.massEdit.mutateAsync({ ids: massEditIds, ...patch });

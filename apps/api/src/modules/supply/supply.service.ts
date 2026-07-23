@@ -5,7 +5,6 @@ import {
   ConflictException,
   Inject,
   Injectable,
-  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
@@ -14,13 +13,17 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 import { AttributeMetadataService } from '../attribute-metadata/attribute-metadata.service.js';
 import { type CurrencyRate, toBaseMinor } from '../currency/currency-convert.js';
 import { HR_EVENT, type SupplyPostedEvent } from '../hr/hr-shared/hr-events.types.js';
-import { NotificationService } from '../notification/notification.service.js';
+import { PaymentOutService } from '../payment-out/payment-out.service.js';
 import { PurchaseOrderService } from '../purchase-order/purchase-order.service.js';
+import { PurchaseReturnService } from '../purchase-return/purchase-return.service.js';
 import { tashkentRangeBounds } from '../report/report-date-bounds.util.js';
+import { runBulk } from '../shared/bulk.js';
 import { resolveCreatorGroupId } from '../shared/group-stamp.js';
-import { assertMassEditRefsInTenant } from '../shared/mass-edit.js';
+import { assertMassEditRefsInTenant, assertStateInTenant } from '../shared/mass-edit.js';
+import { combineMergePositions } from '../shared/merge-positions.util.js';
 import { mapVersionedUpdateError } from '../shared/optimistic-lock.js';
 import { assertOrgAccountMatchesOrg } from '../shared/org-account.js';
+import { searchTokenGroups } from '../shared/search-tokens.js';
 import { type StockDelta, StockService } from '../stock/stock.service.js';
 import { WebhookFireService } from '../webhook/webhook-fire.service.js';
 import { type OverheadLineInput, distributeOverhead } from './overhead-distribution.js';
@@ -59,21 +62,22 @@ interface ComputedTotals {
  */
 @Injectable()
 export class SupplyService {
-  private readonly logger = new Logger(SupplyService.name);
-
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(StockService) private readonly stock: StockService,
     @Inject(PurchaseOrderService) private readonly po: PurchaseOrderService,
+    @Inject(PaymentOutService) private readonly paymentOut: PaymentOutService,
+    @Inject(PurchaseReturnService) private readonly purchaseReturns: PurchaseReturnService,
     @Inject(AttributeMetadataService) private readonly attrs: AttributeMetadataService,
     @Inject(WebhookFireService) private readonly webhookFire: WebhookFireService,
     @Inject(EventEmitter2) private readonly events: EventEmitter2,
-    @Inject(NotificationService) private readonly notifications: NotificationService,
   ) {}
 
   async list(accountId: string, rawFilter: unknown) {
     const filter = SupplyFilterSchema.parse(rawFilter);
-    const where = this.buildListWhere(accountId, filter);
+    const returnClause = await this.resolveReturnStatusClause(accountId, filter.returnStatus);
+    const extraIdFilter = await this.resolveModifiedByIdFilter(accountId, filter);
+    const where = this.buildListWhere(accountId, filter, returnClause, extraIdFilter);
 
     // moysklad parity: relational sort for agent/organization/store.
     const orderBy =
@@ -95,6 +99,8 @@ export class SupplyService {
         store: { select: { id: true, name: true } },
         owner: { select: { id: true, name: true } },
         purchaseOrder: { select: { id: true, name: true } },
+        // «Статус» — account-defined custom status pill (moysklad #supply column).
+        status: { select: { id: true, name: true, color: true } },
         _count: { select: { positions: true } },
       },
     });
@@ -106,13 +112,227 @@ export class SupplyService {
   }
 
   /**
+   * Aggregate totals over the SAME WHERE the list uses, across ALL matching
+   * rows (not just the page) — for the pinned «Итого» footer (Сумма + Оплачено,
+   * moysklad #supply). Live-grounded 2026-06-27: moysklad's footer RAW-SUMS
+   * sumMinor / payedSumMinor across the filtered set and shows a number even
+   * when the set mixes доллар + сум (NOT «—»). We mirror that exactly — the
+   * footer is formatted without a currency symbol on the FE.
+   */
+  async aggregateTotals(accountId: string, rawFilter: unknown) {
+    const filter = SupplyFilterSchema.parse(rawFilter);
+    const returnClause = await this.resolveReturnStatusClause(accountId, filter.returnStatus);
+    const extraIdFilter = await this.resolveModifiedByIdFilter(accountId, filter);
+    const where = this.buildListWhere(accountId, filter, returnClause, extraIdFilter);
+    const agg = await this.prisma.client.supply.aggregate({
+      where,
+      _sum: { sumMinor: true, payedSumMinor: true },
+      _count: { _all: true },
+    });
+    return {
+      count: agg._count._all,
+      sumMinor: (agg._sum.sumMinor ?? 0n).toString(),
+      payedSumMinor: (agg._sum.payedSumMinor ?? 0n).toString(),
+    };
+  }
+
+  /**
+   * «Объединить» — merge N draft receipts into a fresh draft (moysklad parity,
+   * mirrors purchase-order.merge). Positions are combined via
+   * {@link combineMergePositions} (identical lines summed, others kept separate);
+   * totals are RECOMPUTED from the combined set. The primary (earliest) source's
+   * header is carried; the source receipts are left UNTOUCHED (the user lands on
+   * the editable merged draft). Money-integrity guards: all sources must share
+   * currency + VAT mode. Per-line import/cell fields (gtdNumber/cellId/…) are NOT
+   * carried (combineMergePositions keeps only the price-bearing fields); they are
+   * usually empty on a draft and re-entered on the editable merged draft.
+   */
+  async merge(accountId: string, userId: string, ids: string[]): Promise<{ id: string }> {
+    const uniqueIds = [...new Set(ids)];
+    if (uniqueIds.length < 2) {
+      throw new BadRequestException('Birlashtirish uchun kamida 2 ta приёмка tanlang');
+    }
+    const sources = await this.prisma.client.supply.findMany({
+      where: { id: { in: uniqueIds }, accountId, deletedAt: null },
+      include: { positions: { orderBy: { position: 'asc' } } },
+    });
+    if (sources.length !== uniqueIds.length) {
+      throw new BadRequestException(
+        "Tanlangan приёмкаlarning ba'zilari topilmadi yoki o'chirilgan",
+      );
+    }
+    if (new Set(sources.map((s) => s.currency)).size > 1) {
+      throw new BadRequestException("Turli valyutadagi приёмкаlarni birlashtirib bo'lmaydi");
+    }
+    if (new Set(sources.map((s) => `${s.vatEnabled}|${s.vatIncluded}`)).size > 1) {
+      throw new BadRequestException(
+        "Turli QQS sozlamalaridagi приёмкаlarni birlashtirib bo'lmaydi",
+      );
+    }
+
+    // Primary = earliest receipt (id-tiebroken) — carry its whole header.
+    const primary = sources.reduce((earliest, s) => {
+      const d = s.moment.getTime() - earliest.moment.getTime();
+      if (d < 0) return s;
+      if (d === 0 && s.id < earliest.id) return s;
+      return earliest;
+    });
+    const combined = combineMergePositions(sources);
+    const totals = this.computeTotals(combined, primary.vatEnabled, primary.vatIncluded);
+
+    try {
+      const name = await this.nextSupplyName(accountId);
+      const creatorGroupId = await resolveCreatorGroupId(this.prisma.client, accountId, userId);
+      const created = await this.prisma.client.supply.create({
+        data: {
+          accountId,
+          ownerId: userId,
+          groupId: creatorGroupId,
+          name,
+          agentId: primary.agentId,
+          organizationId: primary.organizationId,
+          storeId: primary.storeId,
+          purchaseOrderId: null,
+          contractId: primary.contractId,
+          projectId: primary.projectId,
+          organizationAccountId: primary.organizationAccountId,
+          agentAccountId: primary.agentAccountId,
+          externalCode: null,
+          moment: new Date(),
+          incomingDate: null,
+          incomingNumber: null,
+          description: primary.description,
+          attributes: (primary.attributes ?? {}) as Prisma.InputJsonValue,
+          currency: primary.currency,
+          rateValue: primary.rateValue,
+          overheadSumMinor: 0n,
+          overheadDistribution: primary.overheadDistribution,
+          overheadCurrency: primary.overheadCurrency,
+          vatEnabled: primary.vatEnabled,
+          vatIncluded: primary.vatIncluded,
+          state: 'draft',
+          applicable: false,
+          sumMinor: totals.sumMinor,
+          vatSumMinor: totals.vatSumMinor,
+          costSumMinor: totals.costSumMinor,
+          positions: {
+            create: combined.map((p, idx) => ({
+              accountId,
+              position: idx + 1,
+              assortmentKind: p.assortmentKind,
+              assortmentId: p.assortmentId,
+              productId: p.productId,
+              quantity: p.quantity,
+              remainingQty: '0',
+              priceMinor: p.priceMinor,
+              discount: p.discount,
+              vat: p.vat,
+              vatEnabled: p.vatEnabled,
+            })),
+          },
+        },
+      });
+      await this.logAudit(accountId, userId, 'merge', created.id, { sourceIds: uniqueIds });
+      this.webhookFire.fireForEvent(accountId, 'supply', 'CREATE', created.id);
+      return { id: created.id };
+    } catch (e) {
+      this.handlePrisma(e);
+    }
+  }
+
+  /**
+   * «Статус» — assign an account-defined custom status (State row,
+   * entityType="supply") to a single receipt, or clear it (`statusId: null`).
+   * The status is applied IMMEDIATELY (moysklad parity — the pill is a live
+   * mutation, not a save-on-edit field). Mirror of purchase-order.setStatus.
+   */
+  async setStatus(accountId: string, userId: string, id: string, statusId: string | null) {
+    if (statusId) {
+      const status = await this.prisma.client.state.findFirst({
+        where: { id: statusId, accountId, entityType: 'supply', archived: false },
+        select: { id: true },
+      });
+      if (!status) throw new BadRequestException(`Unknown status: ${statusId}`);
+    }
+    const supply = await this.prisma.client.supply.findFirst({
+      where: { id, accountId, deletedAt: null },
+      select: { statusId: true },
+    });
+    if (!supply) throw new NotFoundException(`Supply ${id} not found`);
+    await this.prisma.client.supply.update({
+      where: { id, accountId },
+      data: { status: statusId ? { connect: { id: statusId } } : { disconnect: true } },
+    });
+    await this.logAudit(accountId, userId, 'set-status', id, {
+      status: { before: supply.statusId, after: statusId },
+    });
+    this.webhookFire.fireForEvent(accountId, 'supply', 'UPDATE', id, ['statusId']);
+    return this.findById(accountId, id);
+  }
+
+  /**
+   * «Статус ▾» toolbar menu — set (or clear) the custom status on N selected
+   * receipts at once. Validates the target State ONCE before fanning out so an
+   * invalid id is a single 400, not a per-row 500 (mirror customer-order).
+   */
+  async bulkSetStatus(accountId: string, userId: string, ids: string[], statusId: string | null) {
+    if (statusId) {
+      const status = await this.prisma.client.state.findFirst({
+        where: { id: statusId, accountId, entityType: 'supply', archived: false },
+        select: { id: true },
+      });
+      if (!status) throw new BadRequestException(`Unknown status: ${statusId}`);
+    }
+    return runBulk(ids, async (id) => {
+      const supply = await this.prisma.client.supply.findFirst({
+        where: { id, accountId, deletedAt: null },
+        select: { statusId: true },
+      });
+      if (!supply) throw new NotFoundException(`Supply ${id} not found`);
+      await this.prisma.client.supply.update({
+        where: { id, accountId },
+        data: { status: statusId ? { connect: { id: statusId } } : { disconnect: true } },
+      });
+      await this.logAudit(accountId, userId, 'set-status', id, {
+        status: { before: supply.statusId, after: statusId },
+      });
+      this.webhookFire.fireForEvent(accountId, 'supply', 'UPDATE', id, ['statusId']);
+      return id;
+    });
+  }
+
+  /**
    * Shared WHERE builder for `list` (and any future aggregate that reuses
    * the active filter set). Extracted to mirror payment-in.service so the
    * Supply filter panel reaches moysklad «Приёмки» parity (~16 backed
    * fields) without two-place drift. Keeps the accountId tenant guard +
    * deletedAt/includeDeleted soft-delete handling.
    */
-  private buildListWhere(accountId: string, filter: SupplyFilterInput): Prisma.SupplyWhereInput {
+  private buildListWhere(
+    accountId: string,
+    filter: SupplyFilterInput,
+    returnClause: Prisma.SupplyWhereInput | null = null,
+    extraIdFilter?: string[],
+  ): Prisma.SupplyWhereInput {
+    // «Тип возврата» (returnClause) and «Кто изменил» (extraIdFilter) can BOTH
+    // constrain `id` — keep them in an AND[] so neither overwrites the other's
+    // `id` key (object last-key-wins would silently drop one). Mirror demand.
+    const and: Prisma.SupplyWhereInput[] = [];
+    // moysklad «содержит»: tokenized multi-word search merged INTO the AND array
+    // (each word may match a different field), composing with the other AND clauses
+    // instead of a colliding second top-level `AND` key.
+    if (filter.search) {
+      and.push(
+        ...searchTokenGroups(filter.search, (tok): Prisma.SupplyWhereInput[] => [
+          { name: { contains: tok, mode: 'insensitive' as const } },
+          { description: { contains: tok, mode: 'insensitive' as const } },
+          { incomingNumber: { contains: tok, mode: 'insensitive' as const } },
+          { agent: { name: { contains: tok, mode: 'insensitive' as const } } },
+        ]),
+      );
+    }
+    if (returnClause) and.push(returnClause);
+    if (extraIdFilter) and.push({ id: { in: extraIdFilter } });
     const momentRange =
       filter.momentFrom || filter.momentTo
         ? {
@@ -134,56 +354,173 @@ export class SupplyService {
             },
           }
         : {};
-
-    // «Группа контрагента» (agent.groupId) + «Владелец контрагента»
-    // (agent.ownerId) both narrow the SAME `agent` relation. Merge them into a
-    // single `agent:{}` clause — two separate `...(x ? { agent: {…} } : {})`
-    // spreads would collide on the `agent` key (object-literal last-key-wins),
-    // silently dropping one predicate. Mirrors the cash-in/cash-out fix.
-    const agentRelation =
-      filter.agentGroupId || filter.agentOwnerId
+    // «Входящая дата» — Supply.incomingDate range (mirror momentRange).
+    const incomingDateRange =
+      filter.incomingDateFrom || filter.incomingDateTo
         ? {
-            agent: {
-              ...(filter.agentGroupId ? { groupId: filter.agentGroupId } : {}),
-              ...(filter.agentOwnerId ? { ownerId: filter.agentOwnerId } : {}),
-            },
+            incomingDate: tashkentRangeBounds(filter.incomingDateFrom, filter.incomingDateTo),
           }
         : {};
+
+    // «Оплата» — payment progress (payedSumMinor vs sumMinor), mirrors
+    // customer-order. Prisma field references give the cross-column compare.
+    const fields = this.prisma.client.supply.fields;
+    const paymentClause: Prisma.SupplyWhereInput | null = (() => {
+      switch (filter.paymentStatus) {
+        case 'unpaid':
+          return { payedSumMinor: 0n };
+        case 'partial':
+          return { sumMinor: { gt: 0n }, payedSumMinor: { gt: 0n, lt: fields.sumMinor } };
+        case 'paid':
+          return { sumMinor: { gt: 0n }, payedSumMinor: { gte: fields.sumMinor } };
+        default:
+          return null;
+      }
+    })();
+
+    // «Группа контрагента» (agent.groupId) + «Владелец контрагента»
+    // (agent.ownerId), single OR multi, both narrow the SAME `agent` relation —
+    // merge into one sub-object so a second `agent` key can't clobber the first
+    // (last-key-wins). Mirror demand's agentSub.
+    const agentSub: Prisma.CounterpartyWhereInput = {
+      ...(filter.agentGroupIds
+        ? { groupId: { in: filter.agentGroupIds } }
+        : filter.agentGroupId
+          ? { groupId: filter.agentGroupId }
+          : {}),
+      ...(filter.agentOwnerIds
+        ? { ownerId: { in: filter.agentOwnerIds } }
+        : filter.agentOwnerId
+          ? { ownerId: filter.agentOwnerId }
+          : {}),
+    };
+
+    // Each reference field accepts a single `*Id` OR a multi `*Ids` (CSV→array,
+    // moysklad inline checkbox-dropdown). Collected into the same `AND[]` as the
+    // returnClause / extraIdFilter (typed clauses, not inline spreads — the
+    // multi `{ in }` forms would otherwise collide on the scalar key with the
+    // single form). Mirror demand.service.
+    if (filter.agentIds) and.push({ agentId: { in: filter.agentIds } });
+    else if (filter.agentId) and.push({ agentId: filter.agentId });
+    if (Object.keys(agentSub).length) and.push({ agent: agentSub });
+    if (filter.agentAccountIds) and.push({ agentAccountId: { in: filter.agentAccountIds } });
+    else if (filter.agentAccountId) and.push({ agentAccountId: filter.agentAccountId });
+    if (filter.organizationIds) and.push({ organizationId: { in: filter.organizationIds } });
+    else if (filter.organizationId) and.push({ organizationId: filter.organizationId });
+    if (filter.organizationAccountIds)
+      and.push({ organizationAccountId: { in: filter.organizationAccountIds } });
+    else if (filter.organizationAccountId)
+      and.push({ organizationAccountId: filter.organizationAccountId });
+    if (filter.storeIds) and.push({ storeId: { in: filter.storeIds } });
+    else if (filter.storeId) and.push({ storeId: filter.storeId });
+    if (filter.projectIds) and.push({ projectId: { in: filter.projectIds } });
+    else if (filter.projectId) and.push({ projectId: filter.projectId });
+    if (filter.contractIds) and.push({ contractId: { in: filter.contractIds } });
+    else if (filter.contractId) and.push({ contractId: filter.contractId });
+    if (filter.groupIds) and.push({ groupId: { in: filter.groupIds } });
+    else if (filter.groupId) and.push({ groupId: filter.groupId });
+    if (filter.ownerIds) and.push({ ownerId: { in: filter.ownerIds } });
+    else if (filter.ownerId) and.push({ ownerId: filter.ownerId });
+    if (filter.productIds)
+      and.push({ positions: { some: { assortmentId: { in: filter.productIds } } } });
+    else if (filter.productId)
+      and.push({ positions: { some: { assortmentId: filter.productId } } });
 
     return {
       accountId,
       ...(filter.includeDeleted ? {} : { deletedAt: null }),
       ...(filter.state ? { state: filter.state } : {}),
-      ...(filter.agentId ? { agentId: filter.agentId } : {}),
-      ...agentRelation,
-      ...(filter.agentAccountId ? { agentAccountId: filter.agentAccountId } : {}),
-      ...(filter.organizationId ? { organizationId: filter.organizationId } : {}),
-      ...(filter.organizationAccountId
-        ? { organizationAccountId: filter.organizationAccountId }
-        : {}),
-      ...(filter.storeId ? { storeId: filter.storeId } : {}),
       ...(filter.purchaseOrderId ? { purchaseOrderId: filter.purchaseOrderId } : {}),
-      ...(filter.contractId ? { contractId: filter.contractId } : {}),
-      ...(filter.projectId ? { projectId: filter.projectId } : {}),
-      ...(filter.groupId ? { groupId: filter.groupId } : {}),
-      ...(filter.ownerId ? { ownerId: filter.ownerId } : {}),
+      ...(paymentClause ?? {}),
+      ...(and.length ? { AND: and } : {}),
       ...(filter.applicable !== undefined ? { applicable: filter.applicable } : {}),
       ...(filter.printed !== undefined ? { printed: filter.printed } : {}),
       ...(filter.published !== undefined ? { published: filter.published } : {}),
+      ...(filter.shared !== undefined ? { shared: filter.shared } : {}),
+      ...(filter.incomingNumber
+        ? { incomingNumber: { contains: filter.incomingNumber, mode: 'insensitive' as const } }
+        : {}),
       ...momentRange,
       ...updatedRange,
+      ...incomingDateRange,
       ...sumRange,
-      ...(filter.search
-        ? {
-            OR: [
-              { name: { contains: filter.search, mode: 'insensitive' } },
-              { description: { contains: filter.search, mode: 'insensitive' } },
-              { incomingNumber: { contains: filter.search, mode: 'insensitive' } },
-              { agent: { name: { contains: filter.search, mode: 'insensitive' } } },
-            ],
-          }
-        : {}),
+      // «содержит» search is pushed into the `and` accumulator above so it composes
+      // with the other AND clauses (no colliding top-level `AND` key).
     };
+  }
+
+  /**
+   * «Тип возврата» — return progress of a receipt, computed from linked Возврат
+   * поставщику (PurchaseReturn.supplyId) docs (active = applicable & not deleted)
+   * summed vs the receipt sum. moysklad shows none/partial/full. Returns a Prisma
+   * WHERE clause: `none` via a relation `none` filter (no active returns);
+   * `partial`/`full` via a pre-query that sums active returns per receipt and
+   * compares to that receipt's sum, yielding the matching ids. `null` = not
+   * requested. An empty match yields `{ id: { in: [] } }` (empty set, not all).
+   * Mirror of demand.resolveReturnStatusClause (SalesReturn → demandId).
+   */
+  private async resolveReturnStatusClause(
+    accountId: string,
+    returnStatus: 'none' | 'partial' | 'full' | undefined,
+  ): Promise<Prisma.SupplyWhereInput | null> {
+    if (!returnStatus) return null;
+    if (returnStatus === 'none') {
+      return { purchaseReturns: { none: { applicable: true, deletedAt: null } } };
+    }
+    // partial | full → sum active returns per receipt, compare to each receipt's sum.
+    const grouped = await this.prisma.client.purchaseReturn.groupBy({
+      by: ['supplyId'],
+      where: { accountId, applicable: true, deletedAt: null, supplyId: { not: null } },
+      _sum: { sumMinor: true },
+    });
+    if (grouped.length === 0) return { id: { in: [] } };
+    const ids = grouped.map((g) => g.supplyId).filter((x): x is string => x !== null);
+    const supplies = await this.prisma.client.supply.findMany({
+      where: { accountId, id: { in: ids } },
+      select: { id: true, sumMinor: true },
+    });
+    const sumById = new Map(supplies.map((s) => [s.id, s.sumMinor]));
+    const matched: string[] = [];
+    for (const g of grouped) {
+      if (!g.supplyId) continue;
+      const returned = g._sum.sumMinor ?? 0n;
+      const supplySum = sumById.get(g.supplyId) ?? 0n;
+      if (returned <= 0n) continue;
+      if (returnStatus === 'full') {
+        if (supplySum > 0n && returned >= supplySum) matched.push(g.supplyId);
+      } else if (returned < supplySum) {
+        matched.push(g.supplyId);
+      }
+    }
+    return { id: { in: matched } };
+  }
+
+  /**
+   * «Кто изменил» (modifiedById / modifiedByIds) — Supply has no modifiedById
+   * column, so we approximate via the auditLog: the DISTINCT entityIds this
+   * account's Supply rows were `update`d on by the requested user(s). Returns
+   * `undefined` when none requested (no narrowing) or `[]` when requested but no
+   * audit row matches (forces an EMPTY result, not match-all). Accepts the
+   * single `modifiedById` OR the multi `modifiedByIds` (moysklad inline
+   * checkbox-dropdown). Mirror demand / invoice-out / loss.
+   */
+  private async resolveModifiedByIdFilter(
+    accountId: string,
+    filter: SupplyFilterInput,
+  ): Promise<string[] | undefined> {
+    if (!filter.modifiedById && !filter.modifiedByIds?.length) return undefined;
+    const userIds = filter.modifiedByIds ?? (filter.modifiedById ? [filter.modifiedById] : []);
+    const rows = await this.prisma.client.auditLog.findMany({
+      where: {
+        accountId,
+        entity: 'Supply',
+        userId: { in: userIds },
+        action: { contains: 'update' },
+      },
+      select: { entityId: true },
+      distinct: ['entityId'],
+    });
+    return rows.map((r) => r.entityId);
   }
 
   async findById(accountId: string, id: string) {
@@ -199,6 +536,8 @@ export class SupplyService {
         project: { select: { id: true, name: true } },
         organizationAccount: { select: { id: true, name: true, accountNumber: true } },
         agentAccount: { select: { id: true, accountNumber: true } },
+        // «Статус» — account-defined custom status pill (moysklad parity).
+        status: { select: { id: true, name: true, color: true } },
         positions: {
           include: {
             // weightG / volumeML drive the «Накладные расходы» WEIGHT / VOLUME
@@ -309,6 +648,12 @@ export class SupplyService {
       parsed.organizationId,
       parsed.organizationAccountId,
     );
+    // «Ячейка» cross-store guard — every picked cell must belong to this store.
+    await this.stock.assertCellsInStore(
+      accountId,
+      parsed.storeId,
+      parsed.positions.map((p) => p.cellId),
+    );
 
     const name = await this.nextSupplyName(accountId);
 
@@ -320,12 +665,40 @@ export class SupplyService {
 
     const creatorGroupId = await resolveCreatorGroupId(this.prisma.client, accountId, userId);
 
+    // «Статус» — validate the account custom status belongs to this tenant and
+    // the supply entityType BEFORE create (mirror purchase-return.create) —
+    // never trust the client-sent id to FK-connect a foreign-tenant state.
+    if (parsed.statusId) {
+      const status = await this.prisma.client.state.findFirst({
+        where: { id: parsed.statusId, accountId, entityType: 'supply', archived: false },
+        select: { id: true },
+      });
+      if (!status) throw new BadRequestException(`Unknown status: ${parsed.statusId}`);
+    }
+
+    // «Владелец»/«Владелец-отдел»/«Общий доступ» from the owner popover — the
+    // schema accepted these but create() silently dropped them (owner popover
+    // was decorative on /supplies/new). Tenant-validate then honor, else the
+    // creator + their department (mirror purchase-return / payment-out.create).
+    if (parsed.ownerId) {
+      await assertMassEditRefsInTenant(this.prisma, accountId, { ownerId: parsed.ownerId });
+    }
+    if (parsed.groupId) {
+      const grp = await this.prisma.client.group.findFirst({
+        where: { id: parsed.groupId, accountId },
+        select: { id: true },
+      });
+      if (!grp) throw new BadRequestException("Bo'lim topilmadi");
+    }
+
     try {
       const created = await this.prisma.client.supply.create({
         data: {
           accountId,
-          ownerId: userId,
-          groupId: creatorGroupId,
+          ownerId: parsed.ownerId ?? userId,
+          groupId: parsed.groupId ?? creatorGroupId,
+          shared: parsed.shared ?? false,
+          statusId: parsed.statusId ?? null,
           name,
           agentId: parsed.agentId,
           organizationId: parsed.organizationId,
@@ -366,6 +739,8 @@ export class SupplyService {
               gtdNumber: p.gtdNumber ?? null,
               gtdSumMinor: p.gtdSumMinor != null ? BigInt(p.gtdSumMinor) : null,
               countryId: p.countryId ?? null,
+              cellId: p.cellId ?? null,
+              cell: p.cell ?? null,
             })),
           },
         },
@@ -380,6 +755,13 @@ export class SupplyService {
 
       await this.logAudit(accountId, userId, 'create', created.id, null);
       this.webhookFire.fireForEvent(accountId, 'supply', 'CREATE', created.id);
+      // «Проведено» on save — run the SAME verified posting path the detail
+      // «Провести» uses (stock/cost booking + guards, Serializable tx). The
+      // draft is already committed; a post failure surfaces its error with the
+      // draft saved (moysklad parity — the doc is kept, not lost).
+      if (parsed.applicable) {
+        return await this.transition(accountId, userId, created.id, 'post');
+      }
       return saved;
     } catch (e) {
       this.handlePrisma(e);
@@ -569,6 +951,8 @@ export class SupplyService {
           gtdNumber: p.gtdNumber ?? null,
           gtdSumMinor: p.gtdSumMinor != null ? BigInt(p.gtdSumMinor) : null,
           countryId: p.countryId ?? null,
+          cellId: p.cellId ?? null,
+          cell: p.cell ?? null,
         })),
       };
     }
@@ -584,6 +968,14 @@ export class SupplyService {
       effectiveOrgId,
       effectiveAccountId,
     );
+    // «Ячейка» cross-store guard — only when positions are being replaced.
+    if (parsed.positions !== undefined) {
+      await this.stock.assertCellsInStore(
+        accountId,
+        parsed.storeId ?? existing.storeId,
+        parsed.positions.map((p) => p.cellId),
+      );
+    }
 
     try {
       // Class A: child-row replacement (deleteMany) + the version-guarded
@@ -666,7 +1058,14 @@ export class SupplyService {
     accountId: string,
     userId: string,
     id: string,
-    patch: { ownerId?: string | null; projectId?: string | null; description?: string | null },
+    patch: {
+      ownerId?: string | null;
+      projectId?: string | null;
+      description?: string | null;
+      groupId?: string | null;
+      shared?: boolean;
+      stateId?: string | null;
+    },
   ) {
     await this.findById(accountId, id);
     await assertMassEditRefsInTenant(this.prisma, accountId, patch);
@@ -674,6 +1073,12 @@ export class SupplyService {
     if ('ownerId' in patch) data.ownerId = patch.ownerId;
     if ('projectId' in patch) data.projectId = patch.projectId;
     if ('description' in patch) data.description = patch.description;
+    if ('groupId' in patch) data.groupId = patch.groupId;
+    if ('shared' in patch && patch.shared !== undefined) data.shared = patch.shared;
+    if ('stateId' in patch) {
+      if (patch.stateId) await assertStateInTenant(this.prisma, accountId, patch.stateId, 'supply');
+      data.statusId = patch.stateId;
+    }
     const updated = await this.prisma.client.supply.update({
       where: { id, accountId },
       data,
@@ -755,6 +1160,9 @@ export class SupplyService {
             gtdNumber: p.gtdNumber,
             gtdSumMinor: p.gtdSumMinor,
             countryId: p.countryId,
+            // moysklad «Скопировать» preserves the «Ячейка» (bin) too.
+            cellId: p.cellId,
+            cell: p.cell,
           })),
         },
       },
@@ -777,9 +1185,8 @@ export class SupplyService {
     if (existing.state !== 'draft') {
       throw new BadRequestException(`O'tkazilmaydi: ${existing.state} → posted. Faqat draft'dan`);
     }
-    if (existing.positions.length === 0) {
-      throw new BadRequestException("Pozitsiyalar yo'q — provedeno qilib bo'lmaydi");
-    }
+    // Owner 2026-07-08: «Проведено» toggles freely — an empty doc may be posted
+    // (0 positions ⇒ 0 stock delta; moysklad allows it). No position precondition.
 
     const posted = await this.prisma.client.$transaction(
       async (tx) => {
@@ -869,6 +1276,7 @@ export class SupplyService {
           storeId: existing.storeId,
           assortmentKind: p.assortmentKind,
           assortmentId: p.assortmentId,
+          cellId: p.cellId ?? null,
           qtyDelta: String(p.quantity),
           costDeltaMinor: costByPos.get(p.id)?.line ?? 0n,
           docType: 'supply',
@@ -978,161 +1386,16 @@ export class SupplyService {
     );
 
     // Post-commit: HR Telegram bridge listener queues a "yetkazib beruvchi
-    // sizdan tovar qabul qilindi" tasdiq + itemized «qabul cheki» notification
-    // for the supplier counterparty. Line totals are single-rounded through the
-    // shared helper with the SAME (vatEnabled, vatIncluded) flags as the header
-    // total, so Σ lineSumMinor === posted.sumMinor (the receipt foots exactly).
-    const items = existing.positions.map((p) => {
-      const { totalMinor } = computePositionTotal(
-        {
-          quantity: String(p.quantity),
-          priceMinor: String(p.priceMinor),
-          discount: String(p.discount),
-          vat: p.vat,
-        },
-        existing.vatEnabled && p.vatEnabled,
-        existing.vatIncluded,
-      );
-      return {
-        name: p.product?.name ?? 'Tovar',
-        quantity: String(p.quantity),
-        uom: p.product?.uom ?? null,
-        priceMinor: p.priceMinor,
-        lineSumMinor: totalMinor,
-      };
-    });
+    // sizdan tovar qabul qilindi" notification for the supplier counterparty.
     const payload: SupplyPostedEvent = {
       accountId,
       supplyId: posted.id,
       counterpartyId: posted.agentId,
       totalMinor: posted.sumMinor,
       postedAt: posted.postedAt ?? new Date(),
-      supplyNumber: posted.name,
-      items,
     };
     this.events.emit(HR_EVENT.SUPPLY_POSTED, payload);
-
-    // Fire the omborchi «joylashtirish» (putaway) tasks — one per sklad — so a
-    // warehouse-keeper shelves the newly-received goods. Best-effort and post-
-    // commit: it must never block or roll back a successful Приёмка posting.
-    this.createPlacementTasksForSupply(accountId, posted.id, userId).catch((e) => {
-      this.logger.warn(
-        `createPlacementTasksForSupply failed for supply ${posted.id}: ${
-          e instanceof Error ? e.message : e
-        }`,
-      );
-    });
-
     return posted;
-  }
-
-  /**
-   * After a Приёмка (supply) is posted, create «joylashtirish» (placement)
-   * RestockTasks so a warehouse-keeper shelves the newly-received goods —
-   * one task per sklad, assigned to that sklad's keeper, each line snapshotting
-   * its product's home bin location. Mirrors retail-sale's
-   * createPlacementTasksForRefund (the inbound counterpart of the same putaway
-   * queue). No keepers configured ⇒ no tasks (self-scoping, like printer
-   * routing), so a single-shop setup is untouched.
-   */
-  private async createPlacementTasksForSupply(
-    accountId: string,
-    supplyId: string,
-    userId: string,
-  ): Promise<void> {
-    const supply = await this.prisma.client.supply.findFirst({
-      where: { id: supplyId, accountId },
-      select: {
-        name: true,
-        storeId: true,
-        store: { select: { name: true } },
-        positions: {
-          // Only stockable product lines have a shelf; skip services/other kinds.
-          where: { assortmentKind: 'product' },
-          include: {
-            product: {
-              select: {
-                id: true,
-                name: true,
-                locSklad: true,
-                locPolka: true,
-                locQavat: true,
-                locYacheyka: true,
-              },
-            },
-          },
-          orderBy: { position: 'asc' },
-        },
-      },
-    });
-    if (!supply || supply.positions.length === 0) return;
-
-    const keepers = await this.prisma.client.skladKeeper.findMany({ where: { accountId } });
-    if (keepers.length === 0) return;
-    const keeperBySklad = new Map(keepers.map((k) => [k.skladNo, k]));
-
-    const NULL_SKLAD = -1;
-    type Pos = (typeof supply.positions)[number];
-    const groups = new Map<number, Pos[]>();
-    for (const pos of supply.positions) {
-      const sklad = pos.product?.locSklad ?? NULL_SKLAD;
-      const bucket = groups.get(sklad);
-      if (bucket) bucket.push(pos);
-      else groups.set(sklad, [pos]);
-    }
-
-    const storeId = supply.storeId ?? null;
-    const storeName = supply.store?.name ?? null;
-    const fallbackKeeper = keepers[0];
-    const pad = (n: number | null) => String(n ?? 0).padStart(2, '0');
-    const formatBin = (s: number | null, p: number | null, q: number | null, y: number | null) =>
-      s == null && p == null && q == null && y == null ? '' : [s, p, q, y].map(pad).join('-');
-
-    for (const [skladNo, entries] of groups) {
-      const keeper = skladNo === NULL_SKLAD ? fallbackKeeper : keeperBySklad.get(skladNo);
-      if (!keeper) continue;
-      const task = await this.prisma.client.restockTask.create({
-        data: {
-          accountId,
-          type: 'restock',
-          skladNo,
-          sourceType: 'supply',
-          sourceId: supplyId,
-          sourceName: supply.name,
-          storeId,
-          storeName,
-          assigneeId: keeper.employeeId,
-          assigneeName: keeper.employeeName,
-          createdById: userId,
-          status: 'pending',
-          lines: {
-            create: entries.map((pos, i) => {
-              const p = pos.product;
-              const bin = p ? formatBin(p.locSklad, p.locPolka, p.locQavat, p.locYacheyka) : '';
-              return {
-                accountId,
-                productId: pos.productId ?? null,
-                productName: p?.name ?? '—',
-                quantity: pos.quantity,
-                binLocation: bin || null,
-                position: i,
-              };
-            }),
-          },
-        },
-      });
-      await this.notifications
-        .emit(
-          accountId,
-          keeper.employeeId,
-          'restock_assigned',
-          'Joylashtirish vazifasi',
-          `${entries.length} ta yangi kelgan mahsulot${supply.name ? ` — ${supply.name}` : ''}`,
-          'RestockTask',
-          task.id,
-        )
-        .catch(() => {});
-    }
   }
 
   private async unpost(
@@ -1178,6 +1441,7 @@ export class SupplyService {
             storeId: existing.storeId,
             assortmentKind: p.assortmentKind,
             assortmentId: p.assortmentId,
+            cellId: p.cellId ?? null,
             qtyDelta: `-${String(p.quantity)}`,
             costDeltaMinor: -scaleMinorByQty(costPerUnit, String(p.quantity)),
             docType: 'supply_unpost',
@@ -1295,6 +1559,7 @@ export class SupplyService {
             storeId: existing.storeId,
             assortmentKind: p.assortmentKind,
             assortmentId: p.assortmentId,
+            cellId: p.cellId ?? null,
             qtyDelta: `-${String(p.quantity)}`,
             costDeltaMinor: -scaleMinorByQty(costPerUnit, String(p.quantity)),
             docType: 'supply_cancel',
@@ -1462,6 +1727,134 @@ export class SupplyService {
       costSumMinor += baseMinor;
     }
     return { sumMinor, vatSumMinor, costSumMinor };
+  }
+
+  /**
+   * moysklad-parity «Создать → Исходящие платежи» — for a single supply,
+   * creates one PaymentOut draft covering the remaining unpaid balance.
+   * PaymentOutOperation has no supply target yet (only invoicein /
+   * purchaseorder), so the draft is created WITHOUT a linking operation —
+   * posting it won't auto-increment Supply.payedSumMinor; the audit entry
+   * flags the missing linkage (same deferred-linkage contract as
+   * PurchaseOrderService.createCashOutFor).
+   */
+  async createPaymentOutFor(accountId: string, userId: string, supplyId: string) {
+    const supply = await this.prisma.client.supply.findFirst({
+      where: { id: supplyId, accountId, deletedAt: null },
+      select: {
+        id: true,
+        name: true,
+        sumMinor: true,
+        payedSumMinor: true,
+        agentId: true,
+        organizationId: true,
+        currency: true,
+        rateValue: true,
+      },
+    });
+    if (!supply) throw new NotFoundException(`Supply ${supplyId} not found`);
+    const remaining = supply.sumMinor - supply.payedSumMinor;
+    if (remaining <= 0n) {
+      throw new BadRequestException(
+        "Приёмка to'liq to'langan — yangi PaymentOut yaratib bo'lmaydi",
+      );
+    }
+    const created = await this.paymentOut.create(accountId, userId, {
+      agentId: supply.agentId,
+      organizationId: supply.organizationId,
+      sumMinor: remaining.toString(),
+      currency: supply.currency,
+      rateValue: supply.rateValue.toString(),
+      paymentPurpose: `Оплата приемки ${supply.name}`,
+    });
+    await this.logAudit(accountId, userId, 'create:paymentout', created.id, {
+      sourceSupplyId: supplyId,
+      sumMinor: remaining.toString(),
+      missingOperationLink: true,
+    });
+    return created;
+  }
+
+  /**
+   * moysklad-parity «Создать → Расходные ордера» — for a single supply,
+   * creates one CashOut draft covering the remaining unpaid balance. Mirror
+   * of PurchaseOrderService.createCashOutFor: no CashOutOperation linkage
+   * back to the supply yet (schema has no supply target), so posting won't
+   * auto-increment Supply.payedSumMinor — flagged in the audit entry.
+   */
+  async createCashOutFor(accountId: string, userId: string, supplyId: string) {
+    const supply = await this.prisma.client.supply.findFirst({
+      where: { id: supplyId, accountId, deletedAt: null },
+      select: {
+        id: true,
+        name: true,
+        sumMinor: true,
+        payedSumMinor: true,
+        agentId: true,
+        organizationId: true,
+      },
+    });
+    if (!supply) throw new NotFoundException(`Supply ${supplyId} not found`);
+    const remaining = supply.sumMinor - supply.payedSumMinor;
+    if (remaining <= 0n) {
+      throw new BadRequestException("Приёмка to'liq to'langan — yangi CashOut yaratib bo'lmaydi");
+    }
+
+    // Default CashDesk heuristic — first cash desk on the account (mirror
+    // PurchaseOrderService.createCashOutFor / money-import).
+    const cashDesk = await this.prisma.client.cashDesk.findFirst({
+      where: { accountId },
+      select: { id: true },
+    });
+    if (!cashDesk) {
+      throw new BadRequestException('Hech qanday Kassa topilmadi — avval Kassa yarating');
+    }
+
+    const n = await allocateDocumentNumber(this.prisma.client, accountId, 'cashout', async () => {
+      const rows = await this.prisma.client.cashOut.findMany({
+        where: { accountId },
+        select: { name: true },
+      });
+      let max = 0;
+      for (const r of rows) {
+        const m = r.name.match(/\d+$/);
+        if (m) max = Math.max(max, Number.parseInt(m[0], 10) || 0);
+      }
+      return max;
+    });
+    const name = String(n).padStart(5, '0');
+
+    const cashOut = await this.prisma.client.cashOut.create({
+      data: {
+        accountId,
+        ownerId: userId,
+        name,
+        agentId: supply.agentId,
+        organizationId: supply.organizationId,
+        cashDeskId: cashDesk.id,
+        sumMinor: remaining,
+        moment: new Date(),
+        state: 'draft',
+        applicable: false,
+        paymentPurpose: `Оплата приемки ${supply.name}`,
+      },
+    });
+    await this.logAudit(accountId, userId, 'create:cashout', cashOut.id, {
+      sourceSupplyId: supplyId,
+      sumMinor: remaining.toString(),
+      missingOperationLink: true,
+    });
+    return cashOut;
+  }
+
+  /**
+   * moysklad-parity «Создать → Возвраты поставщикам» — one PurchaseReturn
+   * draft per supply with every position's still-returnable quantity.
+   * Delegates to PurchaseReturnService.createFromSupply, which enforces the
+   * posted-only rule and the cumulative return cap per supply line.
+   */
+  async createPurchaseReturnFor(accountId: string, userId: string, supplyId: string) {
+    return this.purchaseReturns.createFromSupply(accountId, userId, supplyId, {});
   }
 
   private diff(

@@ -3,42 +3,69 @@
 /**
  * /purchase-returns/new — moysklad-parity «Возврат поставщику» editor.
  *
- * Built on the document-editor framework. Procurement doc: has Поставщик,
- * Склад, Ожидание checkbox, VAT totals panel. Supports fromSupply query
- * param to pre-fill from an existing Приёмка.
+ * Live-grounded 2026-06-29 against the real moysklad return editor
+ * (`#purchasereturn/edit`, `docs/audits/purchase-return-new-2026-06-29/`).
+ * The form is the PO/CO document-editor shell adapted to the return's field
+ * set (which the capture shows = PO minus «План. дата приёмки»):
+ *
+ *   Row 1  Организация (+ «Сум» account sub-row) · Склад
+ *   Row 2  Контрагент (+ «Баланс» sub-line) · Договор
+ *   Row 3  Проект
+ *   Row 4  Валюта документа (+ rate)
+ *
+ * The grounded editor has NO «Причина», NO «Приёмка» picker (a return is born
+ * FROM a Приёмка via its «Создать → Возврат», pre-filled — never picked here),
+ * NO «Счёт контрагента» field, NO «Внешний код» field, NO «Ожидание». Those were
+ * removed. The `fromSupply` pre-fill flow stays. «Владелец» owner popover + the
+ * account custom «Статус» pill mirror the grounded toolbar/header.
  */
 
+import { CounterpartyBalanceInline } from '@/components/counterparty-balance-inline';
+import { CurrencyRateModal } from '@/components/document-detail/currency-rate-modal';
+import { CellPickerField } from '@/components/documents/cell-picker-field';
+import { NewDocRelatedTab } from '@/components/documents/new-doc-related-tab';
+import {
+  OwnerAccessPopover,
+  type OwnerAccessValue,
+} from '@/components/documents/owner-access-popover';
+import { PositionAgreementButton } from '@/components/documents/position-agreement-modal';
+import { PositionColumnCustomizer } from '@/components/documents/position-column-customizer';
+import { PositionDiscountMenu } from '@/components/documents/position-discount-menu';
+import { useNewDocStaging } from '@/components/documents/use-new-doc-staging';
+import { usePrintTemplatesManager } from '@/components/print/print-templates-provider';
+import { type KitPrintForm, KitPrintModal } from '@/components/purchase-orders/kit-print-modal';
+import { SendEmailDialog } from '@/components/send-email-dialog';
 import { useDocumentEditorLabels } from '@/hooks/use-document-editor-labels';
 import { useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-store';
+import { distributeAgreementDelta } from '@/lib/position-agreement';
 import { computePositionTotal } from '@moysklad/money';
 import {
   Button,
   CatalogPicker,
   CatalogPickerField,
   type DocPositionRow,
-  DocumentDisclosurePanel,
   DocumentEditor,
   DocumentMetaField,
-  DocumentMetaPanel,
   DocumentMetaRow,
   DocumentTabs,
   DocumentTotalsPanel,
   Icons,
-  Input,
   NativeSelect,
   type PickerItem,
+  type PositionColumnKey,
   PositionInlineAdd,
+  PositionNameCell,
   PositionTable,
   type PositionTableColumnConfig,
   Textarea,
-  formatMoney,
 } from '@moysklad/ui';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+
 interface RefItem {
   id: string;
   name: string;
@@ -50,18 +77,28 @@ interface ProductItem {
   name: string;
   code: string | null;
   uom: string | null;
+  // Buy price in minor units — the field /products returns is `buyPrice` (NOT
+  // `buyPriceMinor`), so reading the wrong name pre-fills every line as 0.
   buyPrice: string | null;
   vat: number | null;
+  // moysklad shows the product's live stock «Остаток» per return line.
+  stock?: { onHand: string; reserved: string; inTransit: string; available: string } | null;
+  productFolder?: { id: string; name: string; pathName: string } | null;
 }
 
 interface NewPositionRow extends DocPositionRow {
   assortmentId: string | null;
   supplyPositionId: string | null;
+  folderPath?: string;
 }
 
 function uid(): string {
   return Math.random().toString(36).slice(2);
 }
+
+// «События» on the CREATE form — hidden 2026-07-09 (moysklad's old-design /new has
+// no События tab). Flip to true to re-enable; the tab's code is kept below.
+const SHOW_NEW_EVENTS_TAB = false;
 
 function computeLineTotal(
   p: NewPositionRow,
@@ -69,9 +106,7 @@ function computeLineTotal(
 ): { net: bigint; vat: bigint; gross: bigint } {
   // Delegates to the shared `computePositionTotal` — the SAME single-round,
   // micro-tiyin discipline the API posts with — so the «Итого» footer agrees
-  // with the per-row «Сумма» cells (PositionTable) and the stored document
-  // total exactly (no FE↔BE rounding drift; a fractional «НДС» like 7.5 no
-  // longer throws a BigInt RangeError mid-edit).
+  // with the per-row «Сумма» cells and the stored document total exactly.
   try {
     const { totalMinor, vatAmountMinor, baseMinor } = computePositionTotal(
       {
@@ -89,21 +124,21 @@ function computeLineTotal(
   }
 }
 
-const POSITION_COLUMNS: PositionTableColumnConfig[] = [
-  { key: 'dragarea' },
-  { key: 'select' },
-  { key: 'index' },
-  { key: 'image' },
-  { key: 'name' },
-  { key: 'quantity' },
-  { key: 'goodPack' },
-  { key: 'price' },
-  { key: 'vat' },
-  { key: 'vatAmount' },
-  { key: 'discount' },
-  { key: 'amount' },
-  { key: 'menu' },
+// moysklad «Возврат поставщику» position columns (live-grounded 2026-06-29):
+// always-on = Наименование · Кол-во · Остаток · Цена · НДС · Сумма. The ⚙ on
+// «Сумма» toggles the rest. Unlike the PO editor, «Цена» is a PLAIN header (no
+// «Расценить» reprice menu) and «Скидка» is gear-toggle-off by default — the
+// grounded return shows neither. «Ячейка» (address-storage) + «Маркировка» are
+// deferred (need per-row cell/marking wiring the create form doesn't pull yet).
+const OPTIONAL_POSITION_COLUMNS: { key: PositionColumnKey; labelKey: string; on: boolean }[] = [
+  { key: 'image', labelKey: 'image', on: false },
+  { key: 'unit', labelKey: 'unit', on: false },
+  { key: 'discount', labelKey: 'discount', on: false },
+  { key: 'vatAmount', labelKey: 'vatAmount', on: false },
 ];
+const DEFAULT_COL_VISIBLE: Record<string, boolean> = Object.fromEntries(
+  OPTIONAL_POSITION_COLUMNS.map((c) => [c.key, c.on]),
+);
 
 export default function NewPurchaseReturnPage() {
   const router = useRouter();
@@ -115,21 +150,34 @@ export default function NewPurchaseReturnPage() {
   const tDetailForm = useTranslations('detail_form');
   const tDetailTabs = useTranslations('detail_tabs');
   const tDetailTitles = useTranslations('detail_titles');
-  const tDetailHeader = useTranslations('detail_header');
-  const tStates = useTranslations('states.purchase_return');
+  const tPos = useTranslations('position_editor');
+  const tCols = useTranslations('position_cols');
+  const tCommon = useTranslations('common');
+  const tPrint = useTranslations('print_menu');
+  const tBulk = useTranslations('bulk_actions');
+  const tCreate = useTranslations('create_related');
   const docEditorLabels = useDocumentEditorLabels();
-
-  // moysklad purchase-return FSM = draft / posted / cancelled (mirrors
-  // purchase-returns/[id]). The status field is decorative on /new (not sent
-  // on create — the API always creates a draft), so we surface the same three
-  // real states.
-  const STATUS_OPTIONS = [
-    { value: 'draft', label: tStates('draft'), color: '#e8eef5' },
-    { value: 'posted', label: tStates('posted'), color: '#cfe8d3' },
-    { value: 'cancelled', label: tStates('cancelled'), color: '#f4d4d4' },
-  ];
+  const { openTemplates } = usePrintTemplatesManager();
 
   const fromSupplyId = searchParams.get('fromSupply');
+
+  // «Статус» — the account's own return statuses (State rows, entityType="purchasereturn").
+  // moysklad shows a grey «Статус» pill until the admin defines some via «Настроить...»
+  // → /settings/purchase-return-statuses. This is the account custom status (NOT the FSM
+  // draft/posted state, which is decorative on /new — the API always creates a draft).
+  const { data: statusData } = useQuery<{
+    items: Array<{ id: string; name: string; color: string | null }>;
+  }>({
+    queryKey: ['states', 'purchasereturn'],
+    queryFn: () => api.get('/states?entityType=purchasereturn&archived=false&limit=250'),
+    staleTime: 60_000,
+  });
+  const statusOptions = (statusData?.items ?? []).map((s) => ({
+    value: s.id,
+    label: s.name,
+    color: s.color ?? undefined,
+  }));
+  const [statusId, setStatusId] = useState<string>('');
 
   const { data: orgsData } = useQuery<{ items: RefItem[] }>({
     queryKey: ['organizations'],
@@ -171,9 +219,9 @@ export default function NewPurchaseReturnPage() {
     const pad = (n: number) => n.toString().padStart(2, '0');
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   });
-  const [status, setStatus] = useState<string>('draft');
-  const [applicable, setApplicable] = useState(false);
-  const [waiting, setWaiting] = useState(false);
+  // moysklad «Проведено» defaults CHECKED on a new return (the doc commits to stock
+  // on save) — mirrors the procurement sibling (purchase-order /new).
+  const [applicable, setApplicable] = useState(true);
 
   // Meta state
   const [agentId, setAgentId] = useState<string | null>(null);
@@ -183,29 +231,68 @@ export default function NewPurchaseReturnPage() {
   const [storeId, setStoreId] = useState<string | null>(null);
   const [storeLabel, setStoreLabel] = useState<string>('');
   const [supplyId, setSupplyId] = useState<string | null>(null);
-  const [supplyLabel, setSupplyLabel] = useState<string>('');
   const [contractId, setContractId] = useState<string | null>(null);
   const [contractLabel, setContractLabel] = useState('');
   const [projectId, setProjectId] = useState<string | null>(null);
   const [projectLabel, setProjectLabel] = useState('');
   const [currency, setCurrency] = useState<string>('UZS');
   const [rateOverride, setRateOverride] = useState<string | null>(null);
-  const [rateEditing, setRateEditing] = useState(false);
+  const [rateModalOpen, setRateModalOpen] = useState(false);
   const [bankAccountId, setBankAccountId] = useState<string | null>(null);
   const [bankAccountLabel, setBankAccountLabel] = useState('');
-  const [agentAccountId, setAgentAccountId] = useState<string | null>(null);
-  const [agentAccountLabel, setAgentAccountLabel] = useState('');
-  const [externalCode, setExternalCode] = useState('');
-  const [reason, setReason] = useState('');
   const [description, setDescription] = useState('');
 
-  // VAT toggles
+  // VAT toggles — both default CHECKED on a new return (grounded: «☑ НДС»,
+  // «☑ Цена включает НДС»).
   const [vatEnabled, setVatEnabled] = useState(true);
-  const [vatIncluded, setVatIncluded] = useState(false);
+  const [vatIncluded, setVatIncluded] = useState(true);
+
+  // «Владелец» — owner/access. A new doc defaults to the current user; department
+  // (groupId) + «Общий доступ» (shared) editable via the toolbar owner popover.
+  const [ownerAccess, setOwnerAccess] = useState<OwnerAccessValue>(() => ({
+    ownerId: user?.id ?? null,
+    ownerLabel: user?.name ?? '',
+    groupId: null,
+    groupLabel: '',
+    shared: false,
+  }));
 
   // Positions
   const [positions, setPositions] = useState<NewPositionRow[]>([]);
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
+  // «Скидка» header bulk discount/markup (moysklad parity) — apply % to selected
+  // rows (or all when none selected). Discount sets each line's `discount`; markup
+  // raises `priceMinor` (our model has no negative discount).
+  const applyDiscountMarkup = useCallback(
+    (mode: 'discount' | 'markup', percent: number) => {
+      setPositions((ps) =>
+        ps.map((p) => {
+          if (selectedRowIds.size > 0 && !selectedRowIds.has(p.id)) return p;
+          if (mode === 'discount') return { ...p, discount: String(percent) };
+          const base = Number(p.priceMinor || '0');
+          if (!Number.isFinite(base)) return p;
+          return { ...p, priceMinor: String(Math.round(base * (1 + percent / 100))) };
+        }),
+      );
+    },
+    [selectedRowIds],
+  );
+  // «Kelishuv» — spread the negotiated delta across the lines (owner 2026-07-17).
+  const applyAgreement = useCallback(
+    (deltaMinor: bigint) => {
+      setPositions((ps) => {
+        const patch = distributeAgreementDelta(ps, deltaMinor, vatIncluded);
+        if (patch.size === 0) return ps;
+        return ps.map((p) => {
+          const next = patch.get(p.id);
+          return next != null ? { ...p, priceMinor: next } : p;
+        });
+      });
+    },
+    [vatIncluded],
+  );
+  const [colVisible, setColVisible] = useState<Record<string, boolean>>(DEFAULT_COL_VISIBLE);
+  const [withGroups, setWithGroups] = useState(false);
 
   // Pickers + error
   const [openPicker, setOpenPicker] = useState<
@@ -213,54 +300,80 @@ export default function NewPurchaseReturnPage() {
     | 'agent'
     | 'org'
     | 'store'
-    | 'supply'
     | 'contract'
     | 'project'
     | 'bankAccount'
-    | 'agentAccount'
-    | { kind: 'product'; rowUid: string }
+    | {
+        kind: 'product';
+        rowUid: string;
+      }
   >(null);
   const [error, setError] = useState<string | null>(null);
+  // moysklad marks a required-but-empty «Контрагент» RED on a failed «Сохранить»
+  // (owner rule 2026-07-11): red field border + short «Поле должно быть заполнено»
+  // under the field — never a page-wide banner. Mirrors purchase-orders/new.
+  const [agentInvalid, setAgentInvalid] = useState(false);
 
-  // «Курс валюты документа» — rate from the account currency-справочник (Настройки
-  // → Валюты), the admin-set value moysklad books documents at — NOT a live CB
-  // feed (drifts e.g. 11 990 vs 12 200, storing USD docs at the wrong base value).
-  // One source of truth → GET /currencies (mirror enters / losses / payments-in).
-  const { data: currenciesData } = useQuery<{ items: Array<{ isoCode: string; rate: string }> }>({
+  // moysklad «Печать» / «Отправить» — the account's own «Возврат поставщику» PDF print
+  // forms by name (mirror the [id] detail page). moysklad also pins each form as its
+  // OWN toolbar button right after «Отправить» (trailingSlot below, mirror PO/new).
+  // A brand-new return isn't saved yet, so every toolbar action that needs a persisted
+  // document first creates the return (submitCreate) and then acts on the returned
+  // id — matching moysklad's edit?new, where the draft already exists server-side.
+  const { data: printForms } = useQuery<Array<{ id: string; name: string }>>({
+    queryKey: ['purchase-return-print-forms'],
+    queryFn: () => api.get<Array<{ id: string; name: string }>>('/purchase-returns/print-forms'),
+    staleTime: 60_000,
+  });
+  // Toolbar action state (save-then-act): the id of the just-saved return (for the email
+  // composer), the «Комплект…» + «Отправить» dialogs, and a busy flag so double-clicks
+  // don't create two returns.
+  const [savedId, setSavedId] = useState<string | null>(null);
+  const [kitPrintOpen, setKitPrintOpen] = useState(false);
+  const [emailOpen, setEmailOpen] = useState(false);
+  const [emailAttachments, setEmailAttachments] = useState<{ id: string; filename: string }[]>([]);
+  const [toolbarBusy, setToolbarBusy] = useState(false);
+
+  // «Курс валюты документа» — the account's currency-справочник rate (Настройки →
+  // Валюты), the admin-set value moysklad books documents at — NOT a live CB feed.
+  const { data: currenciesData } = useQuery<{
+    items: Array<{ id: string; isoCode: string; name: string; rate: string }>;
+  }>({
     queryKey: ['currencies'],
     queryFn: () => api.get('/currencies'),
     staleTime: 60_000,
   });
-  const adminRate = (currenciesData?.items ?? []).find((c) => c.isoCode === currency)?.rate;
+  const currencies = currenciesData?.items ?? [];
+  const adminRate = currencies.find((c) => c.isoCode === currency)?.rate;
   const effectiveRate = rateOverride ?? adminRate ?? '1';
 
-  // Auto-fill from the user's «Значения по умолчанию» (moysklad applies the user
-  // defaults to every new document). Procurement doc — Организация/Склад=default
-  // with a first-item fallback, Поставщик=defaultSupplier, Проект=defaultProject.
-  // Skipped when pre-filling from a supply — the supply's own values win.
+  // Auto-fill from «Значения по умолчанию» (skipped when pre-filling from a supply —
+  // the supply's own values win). Procurement doc — Организация/Склад=default with a
+  // first-item fallback, Поставщик=defaultSupplier, Проект=defaultProject.
   const userDefaults = useUserDefaults();
   const defaultsAppliedRef = useRef(false);
+  const afterSaveRef = useRef<'view'>('view');
+  const draftSaveRef = useRef(false);
+  // «Связанные документы» tab — staged links / tasks / files (moysklad's create
+  // form works fully in place; everything persists in flush() right after save).
+  const staging = useNewDocStaging({ entityType: 'PurchaseReturn', route: 'purchase-returns' });
   useEffect(() => {
     if (defaultsAppliedRef.current || fromSupplyId) return;
     if (!orgsData || !storesData || userDefaults.isLoading) return;
     defaultsAppliedRef.current = true;
     const us = userDefaults.data;
     if (!organizationId) {
-      if (us?.defaultCompany) {
-        setOrganizationId(us.defaultCompany.id);
-        setOrganizationLabel(us.defaultCompany.name);
-      } else if (orgsData.items[0]) {
-        setOrganizationId(orgsData.items[0].id);
-        setOrganizationLabel(orgsData.items[0].name);
+      const org = us?.defaultCompany ?? orgsData.items[0];
+      if (org) {
+        setOrganizationId(org.id);
+        setOrganizationLabel(org.name);
       }
     }
     if (!storeId) {
-      if (us?.defaultStore) {
-        setStoreId(us.defaultStore.id);
-        setStoreLabel(us.defaultStore.name);
-      } else if (storesData.items[0]) {
-        setStoreId(storesData.items[0].id);
-        setStoreLabel(storesData.items[0].name);
+      const store = us?.defaultStore ?? storesData.items[0];
+      if (store) {
+        setStoreId(store.id);
+        setStoreLabel(store.name);
       }
     }
     if (!agentId && us?.defaultSupplier) {
@@ -283,6 +396,8 @@ export default function NewPurchaseReturnPage() {
     fromSupplyId,
   ]);
 
+  // Apply the source supply once loaded — header + one return row per supply line
+  // (the supplyPositionId back-link caps the return qty + traces the source).
   useEffect(() => {
     if (!fromSupply) return;
     setAgentId(fromSupply.agent.id);
@@ -292,7 +407,6 @@ export default function NewPurchaseReturnPage() {
     setStoreId(fromSupply.store.id);
     setStoreLabel(fromSupply.store.name);
     setSupplyId(fromSupply.id);
-    setSupplyLabel(fromSupply.name);
     setVatEnabled(fromSupply.vatEnabled);
     setVatIncluded(fromSupply.vatIncluded);
     setPositions(
@@ -305,11 +419,30 @@ export default function NewPurchaseReturnPage() {
         quantity: p.quantity,
         priceMinor: p.priceMinor,
         discount: p.discount,
-        vat: p.vat != null ? String(p.vat) : '0',
+        vat: p.vat != null ? String(p.vat) : '12',
         vatEnabled: p.vatEnabled,
       })),
     );
   }, [fromSupply]);
+
+  // Choosing/changing the organization auto-fills its default account for the
+  // document currency — the «Сум» sub-line under Организация (grounded: «Доллар»).
+  useEffect(() => {
+    if (!organizationId) return;
+    let cancelled = false;
+    void (async () => {
+      const d = await api.get<{
+        items: Array<{ id: string; name: string; accountNumber: string | null; currency: string }>;
+      }>(`/bank-accounts?organizationId=${organizationId}`);
+      if (cancelled) return;
+      const acct = d.items.find((a) => a.currency === currency) ?? d.items[0];
+      setBankAccountId(acct?.id ?? null);
+      setBankAccountLabel(acct ? acct.name || acct.accountNumber || acct.currency : '');
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [organizationId, currency]);
 
   const addPosition = () => {
     setPositions((ps) => [
@@ -323,7 +456,7 @@ export default function NewPurchaseReturnPage() {
         quantity: '1',
         priceMinor: '0',
         discount: '0',
-        vat: '0',
+        vat: '12',
         vatEnabled: true,
       },
     ]);
@@ -347,58 +480,220 @@ export default function NewPurchaseReturnPage() {
     [positions, vatIncluded],
   );
 
+  // moysklad «Возврат поставщику» columns, built dynamically from the customizer.
+  // Always-on: Наименование · Кол-во · Остаток · Цена · НДС · Сумма (gear).
+  const positionColumns = useMemo<PositionTableColumnConfig[]>(() => {
+    const cols: PositionTableColumnConfig[] = [{ key: 'dragarea' }, { key: 'select' }];
+    if (colVisible.image) cols.push({ key: 'image' });
+    cols.push({ key: 'name', label: tCols('name') });
+    cols.push({ key: 'quantity', label: tPos('quantity') });
+    if (colVisible.unit) cols.push({ key: 'unit', label: tCols('unit') });
+    // «Ячейка» — address-storage bin (PositionTable supplies the «Ячейка» header).
+    cols.push({ key: 'cell' });
+    // «Остаток» — the line product's live stock at the store (grounded default-on).
+    cols.push({ key: 'stock', label: tCols('stock') });
+    cols.push({ key: 'price', label: tCols('price') });
+    if (vatEnabled) {
+      cols.push({ key: 'vat', label: tCols('vat') });
+      if (colVisible.vatAmount) cols.push({ key: 'vatAmount', label: tCols('vatAmount') });
+    }
+    if (colVisible.discount)
+      cols.push({
+        key: 'discount',
+        label: (
+          <PositionDiscountMenu
+            label={tCols('discount')}
+            title={tCols('discountMarkupTitle')}
+            selectedText={tCols('selectedPositions', { count: selectedRowIds.size })}
+            discountLabel={tCols('discount')}
+            markupLabel={tCols('markup')}
+            applyDiscountLabel={tCols('applyDiscount')}
+            applyMarkupLabel={tCols('applyMarkup')}
+            cancelLabel={tCols('cancel')}
+            onApply={applyDiscountMarkup}
+          />
+        ),
+      });
+    cols.push(
+      {
+        key: 'amount',
+        label: (
+          <span className="inline-flex items-center gap-1">
+            {tCols('amount')}
+            <PositionColumnCustomizer
+              options={OPTIONAL_POSITION_COLUMNS.map((c) => ({
+                key: c.key,
+                label: tCols(c.labelKey),
+              }))}
+              visible={colVisible}
+              onToggle={(key, next) => setColVisible((v) => ({ ...v, [key]: next }))}
+              ariaLabel={tCols('configure')}
+            />
+          </span>
+        ),
+      },
+      { key: 'menu' },
+    );
+    return cols;
+  }, [colVisible, vatEnabled, tCols, tPos, applyDiscountMarkup, selectedRowIds.size]);
+
+  // Build the create payload (validated) — shared by «Сохранить» and every save-then-act
+  // toolbar action. Throws a localized message on the first invalid field.
+  const buildCreatePayload = () => {
+    // «⊕ Задача» saves a DRAFT: skip the positions rule + force applicable=false so
+    // an empty-but-valid return can persist enough to attach a task (moysklad parity).
+    const asDraft = draftSaveRef.current;
+    if (!agentId) throw new Error(tForm('select_supplier'));
+    if (!organizationId) throw new Error(tForm('select_organization'));
+    if (!storeId) throw new Error(tForm('select_store'));
+    // Owner 2026-07-08: «Проведено» has NO position precondition — an empty document may be saved/posted (BE allows it: 0 positions ⇒ 0 stock delta).
+    for (const [i, p] of positions.entries()) {
+      if (!p.assortmentId) throw new Error(tForm('position_select_product', { n: i + 1 }));
+      if (Number(p.quantity) <= 0)
+        throw new Error(tForm('position_quantity_positive', { n: i + 1 }));
+    }
+    return {
+      agentId,
+      organizationId,
+      storeId,
+      ...(bankAccountId ? { organizationAccountId: bankAccountId } : {}),
+      // «Владелец» — owner employee / department / shared (else BE stamps creator).
+      ...(ownerAccess.ownerId ? { ownerId: ownerAccess.ownerId } : {}),
+      ...(ownerAccess.groupId ? { groupId: ownerAccess.groupId } : {}),
+      ...(ownerAccess.shared ? { shared: true } : {}),
+      ...(statusId ? { statusId } : {}),
+      supplyId: supplyId ?? undefined,
+      ...(contractId ? { contractId } : {}),
+      ...(projectId ? { projectId } : {}),
+      description: description || undefined,
+      ...(docNumber ? { name: docNumber } : {}),
+      moment: docDate ? new Date(docDate).toISOString() : undefined,
+      applicable: asDraft ? false : applicable,
+      currency,
+      rateValue:
+        currency === 'UZS'
+          ? '100000000'
+          : BigInt(Math.round(Number(effectiveRate) * 100000000)).toString(),
+      vatEnabled,
+      vatIncluded,
+      positions: positions.map((p) => ({
+        assortmentKind: 'product',
+        // biome-ignore lint/style/noNonNullAssertion: validated non-null in the loop above before payload build
+        assortmentId: p.assortmentId!,
+        supplyPositionId: p.supplyPositionId ?? undefined,
+        quantity: p.quantity,
+        priceMinor: p.priceMinor,
+        discount: p.discount || '0',
+        vat: p.vat ? Number(p.vat) : undefined,
+        vatEnabled: p.vatEnabled,
+        ...(p.cellId ? { cellId: p.cellId } : {}),
+        ...(p.cell ? { cell: p.cell } : {}),
+      })),
+    };
+  };
+  const submitCreate = () => api.post<{ id: string }>('/purchase-returns', buildCreatePayload());
+
   const createMut = useMutation({
-    mutationFn: async () => {
-      if (!agentId) throw new Error(tForm('select_supplier'));
-      if (!organizationId) throw new Error(tForm('select_organization'));
-      if (!storeId) throw new Error(tForm('select_store'));
-      if (positions.length === 0) throw new Error(tForm('add_at_least_one_position'));
-      for (const [i, p] of positions.entries()) {
-        if (!p.assortmentId) throw new Error(tForm('position_select_product', { n: i + 1 }));
-        if (Number(p.quantity) <= 0)
-          throw new Error(tForm('position_quantity_positive', { n: i + 1 }));
-      }
-      const payload = {
-        agentId,
-        organizationId,
-        storeId,
-        ...(bankAccountId ? { organizationAccountId: bankAccountId } : {}),
-        ...(agentAccountId ? { agentAccountId } : {}),
-        ...(externalCode ? { externalCode } : {}),
-        supplyId: supplyId ?? undefined,
-        ...(contractId ? { contractId } : {}),
-        ...(projectId ? { projectId } : {}),
-        reason: reason || undefined,
-        description: description || undefined,
-        ...(docNumber ? { name: docNumber } : {}),
-        moment: docDate ? new Date(docDate).toISOString() : undefined,
-        applicable,
-        waiting,
-        currency,
-        rateValue:
-          currency === 'UZS'
-            ? '100000000'
-            : BigInt(Math.round(Number(effectiveRate) * 100000000)).toString(),
-        vatEnabled,
-        vatIncluded,
-        positions: positions.map((p) => ({
-          assortmentKind: 'product',
-          // biome-ignore lint/style/noNonNullAssertion: validated non-null in the loop above before payload build
-          assortmentId: p.assortmentId!,
-          supplyPositionId: p.supplyPositionId ?? undefined,
-          quantity: p.quantity,
-          priceMinor: p.priceMinor,
-          discount: p.discount || '0',
-          vat: p.vat ? Number(p.vat) : undefined,
-          vatEnabled: p.vatEnabled,
-        })),
-      };
-      return api.post<{ id: string }>('/purchase-returns', payload);
+    mutationFn: submitCreate,
+    onSuccess: async (created) => {
+      afterSaveRef.current = 'view';
+      draftSaveRef.current = false;
+      // Staged files / links / tasks (the related tab works in place before save) —
+      // persist them all onto the freshly-created return.
+      await staging.flush(created.id);
+      router.push(`/purchase-returns/${created.id}`);
     },
-    onSuccess: (created) => router.push(`/purchase-returns/${created.id}`),
-    onError: (err: Error) => setError(err.message),
+    onError: (err: Error) => {
+      afterSaveRef.current = 'view';
+      draftSaveRef.current = false;
+      setError(err.message);
+    },
   });
 
+  // ── Toolbar «save-then-act» helpers ────────────────────────────────────────────
+  // A new return has no id until it's saved, so each toolbar action first creates it
+  // (validating the form via submitCreate) and then runs `action(id)`. `savedId` is
+  // remembered so the email composer can attach to the freshly-created document. The
+  // busy flag prevents a double-click creating two returns.
+  const withSave = async (action: (id: string) => Promise<void> | void) => {
+    if (toolbarBusy) return;
+    setError(null);
+    setToolbarBusy(true);
+    try {
+      const created = await submitCreate();
+      setSavedId(created.id);
+      await action(created.id);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setToolbarBusy(false);
+    }
+  };
+  const printSaved = (id: string, templateId?: string) => {
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    return api.postDownload(
+      '/purchase-returns/bulk-print',
+      { ids: [id], ...(templateId ? { templateId } : {}) },
+      `purchase-return-${stamp}.pdf`,
+    );
+  };
+  // «Печать» — save then render THIS return (account templateId) to PDF (download).
+  const saveThenPrint = (templateId?: string) => withSave((id) => printSaved(id, templateId));
+  // «Печать → Возврат поставщику» (built-in) — moysklad opens the check in a NEW TAB
+  // (HTML print view) so the user can preview it and press «Печать» there — NOT a
+  // silent PDF download. Mirrors purchase-order/supply.
+  const saveThenPrintView = () =>
+    withSave((id) => {
+      window.open(`/print/purchase-return/${id}`, '_blank');
+    });
+  // Pinned «Печать» form buttons (trailingSlot) — save then render THIS return's
+  // account form via /bulk-print and OPEN IT IN A NEW TAB (moysklad «Открыть в
+  // браузере» — the user presses «Печать» there; NOT the dropdown items' silent
+  // PDF download), then land on the saved return's detail. Mirror PO/new.
+  const saveThenPrintFormTab = (templateId: string) =>
+    withSave(async (id) => {
+      // Staged links / tasks / files persist onto the created return before we
+      // leave /new (the same flush the «Сохранить» path runs in createMut.onSuccess).
+      await staging.flush(id);
+      await api.postOpenInBrowser('/purchase-returns/bulk-print', { ids: [id], templateId });
+      router.push(`/purchase-returns/${id}`);
+    });
+  // «Печать ▸ Комплект…» — save then bundle several forms into one PDF.
+  const saveThenKitPrint = (templateIds: Array<string | null>) =>
+    withSave((id) => {
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      return api.postDownload(
+        '/purchase-returns/kit-print',
+        { ids: [id], templateIds },
+        `purchase-return-kit-${stamp}.pdf`,
+      );
+    });
+  // «Отправить» — save, render the chosen form, attach the PDF and open the composer.
+  const saveThenSend = (templateId?: string) =>
+    withSave(async (id) => {
+      const att = await api.post<{ attachmentId: string; filename: string }>(
+        `/purchase-returns/${id}/print-attachment`,
+        templateId ? { templateId } : {},
+      );
+      setEmailAttachments([{ id: att.attachmentId, filename: att.filename }]);
+      setEmailOpen(true);
+    });
+  // «Создать документ → Счёт-фактура выданный» (§66 — backend from-purchase-return).
+  const saveThenCreateFacture = () =>
+    withSave(async (id) => {
+      const f = await api.post<{ id: string }>('/factures-out/generate/from-purchase-return', {
+        purchaseReturnId: id,
+      });
+      router.push(`/factures-out/${f.id}`);
+    });
+
+  // «Печать ▸ Комплект…» form list — the built-in «Возврат поставщику» + account forms.
+  const kitForms: KitPrintForm[] = [
+    { id: null, name: tDetailTitles('purchase_return') },
+    ...(printForms ?? []).map((f) => ({ id: f.id, name: f.name })),
+  ];
+
+  // Catalog picker fetchers
   const agentFetcher = async (s: string): Promise<PickerItem[]> => {
     const d = await api.get<{
       items: Array<{ id: string; name: string; legalTitle: string | null }>;
@@ -433,42 +728,25 @@ export default function NewPurchaseReturnPage() {
     const d = await api.get<{ items: RefItem[] }>(`/stores?search=${encodeURIComponent(s)}`);
     return d.items.map((st) => ({ id: st.id, primary: st.name, secondary: st.code ?? undefined }));
   };
-  const supplyFetcher = async (s: string): Promise<PickerItem[]> => {
-    const filters = new URLSearchParams();
-    filters.set('limit', '50');
-    if (s) filters.set('search', s);
-    if (agentId) filters.set('agentId', agentId);
-    filters.set('state', 'posted');
-    const d = await api.get<{
-      items: Array<{ id: string; name: string; agent: { name: string }; sumMinor: string }>;
-    }>(`/supplies?${filters.toString()}`);
-    return d.items.map((r) => ({
-      id: r.id,
-      primary: r.name,
-      secondary: r.agent.name,
-      meta: formatMoney(r.sumMinor),
-    }));
-  };
   const contractFetcher = async (s: string): Promise<PickerItem[]> => {
-    const d = await api.get<{ items: Array<{ id: string; name: string }> }>(
-      `/contracts?search=${encodeURIComponent(s)}&limit=50`,
+    if (!agentId) return [];
+    const d = await api.get<{ items: RefItem[] }>(
+      `/contracts?counterpartyId=${agentId}&search=${encodeURIComponent(s)}`,
     );
-    return d.items.map((x) => ({ id: x.id, primary: x.name }));
+    return d.items.map((c) => ({ id: c.id, primary: c.name }));
   };
   const projectFetcher = async (s: string): Promise<PickerItem[]> => {
-    const d = await api.get<{ items: Array<{ id: string; name: string }> }>(
-      `/projects?search=${encodeURIComponent(s)}&limit=50`,
-    );
-    return d.items.map((x) => ({ id: x.id, primary: x.name }));
+    const d = await api.get<{ items: RefItem[] }>(`/projects?search=${encodeURIComponent(s)}`);
+    return d.items.map((p) => ({ id: p.id, primary: p.name }));
   };
-
   const bankAccountFetcher = async (s: string): Promise<PickerItem[]> => {
     if (!organizationId) return [];
     const d = await api.get<{
       items: Array<{
         id: string;
+        name: string;
         bankName: string | null;
-        accountNumber: string;
+        accountNumber: string | null;
         currency: string;
       }>;
     }>(`/bank-accounts?organizationId=${organizationId}&search=${encodeURIComponent(s)}`);
@@ -476,262 +754,271 @@ export default function NewPurchaseReturnPage() {
       .filter((a) => a.currency === currency)
       .map((a) => ({
         id: a.id,
-        primary: a.accountNumber,
-        secondary: a.bankName ?? undefined,
+        primary: a.name || a.accountNumber || a.currency,
+        secondary: a.bankName ?? a.accountNumber ?? undefined,
       }));
   };
 
-  // moysklad parity — counterparty bank accounts have no flat list endpoint;
-  // the only route is the nested /counterparties/:id/bank-accounts (same as
-  // the contract picker is gated on the chosen agent). Client-filter by
-  // search since the nested endpoint takes no search param.
-  const agentAccountFetcher = async (s: string): Promise<PickerItem[]> => {
-    if (!agentId) return [];
-    const d = await api.get<Array<{ id: string; accountNumber: string; bankName: string | null }>>(
-      `/counterparties/${agentId}/bank-accounts`,
-    );
-    const q = s.trim().toLowerCase();
-    return d
-      .filter(
-        (a) =>
-          !q ||
-          a.accountNumber.toLowerCase().includes(q) ||
-          (a.bankName ?? '').toLowerCase().includes(q),
-      )
-      .map((a) => ({ id: a.id, primary: a.accountNumber, secondary: a.bankName ?? undefined }));
-  };
-
+  // Position name-cell — a picked product's name LINKS to its product card; the row
+  // ⋮ «Заменить» swaps the line's product.
   const renderPositionNameCell = (row: DocPositionRow) => {
     const p = row as NewPositionRow;
+    const href = p.assortmentId ? `/products/${p.assortmentId}` : undefined;
     return (
-      <CatalogPickerField
-        value={p.assortmentId ? { id: p.assortmentId, label: p.productLabel } : null}
+      <PositionNameCell
+        imageUrl={p.imageUrl}
+        code={p.productCode}
+        label={p.productLabel}
         placeholder={tForm('select_product')}
         onPick={() => setOpenPicker({ kind: 'product', rowUid: p.id })}
-        onClear={() =>
-          updatePosition(p.id, {
-            assortmentId: null,
-            productLabel: '',
-            productUom: null,
-            supplyPositionId: null,
-          })
-        }
+        productHref={href}
+        onNavigate={href ? () => router.push(href) : undefined}
+        testId={`pos-${p.id}-name`}
       />
     );
   };
 
+  // «Ячейка» — address-storage cell picker. The closure carries storeId + the row's
+  // product so the picker can filter «С этим товаром» (mirror supplies/new).
+  const renderPositionCellCell = (row: DocPositionRow) => {
+    const p = row as NewPositionRow;
+    return (
+      <CellPickerField
+        storeId={storeId}
+        assortmentId={p.assortmentId}
+        label={p.cell}
+        onSelect={(cellId, label) => updatePosition(row.id, { cellId, cell: label })}
+        onClear={() => updatePosition(row.id, { cellId: null, cell: '' })}
+      />
+    );
+  };
+
+  // moysklad b-operation-form-top — a ROW-PAIRED table. The org's «Сум» account is a
+  // subRow UNDER Организация (right slot stays EMPTY so Договор lines up with
+  // Контрагент). Fixed-width fields grouped from the left.
+  const metaPanel = (
+    <div className="max-w-[860px] space-y-2 bg-[var(--ms-bg-surface)] px-4 py-3">
+      <DocumentMetaRow fixedWidth>
+        <DocumentMetaField
+          label={tFields('organization')}
+          required
+          subRow={
+            organizationId ? (
+              <CatalogPickerField
+                value={bankAccountId ? { id: bankAccountId, label: bankAccountLabel } : null}
+                placeholder=""
+                onPick={() => setOpenPicker('bankAccount')}
+                inlineFetcher={bankAccountFetcher}
+                onInlineSelect={(item) => {
+                  setBankAccountId(item.id);
+                  setBankAccountLabel(String(item.primary));
+                }}
+                onClear={() => {
+                  setBankAccountId(null);
+                  setBankAccountLabel('');
+                }}
+              />
+            ) : undefined
+          }
+        >
+          <CatalogPickerField
+            value={organizationId ? { id: organizationId, label: organizationLabel } : null}
+            placeholder=""
+            onPick={() => setOpenPicker('org')}
+            inlineFetcher={orgFetcher}
+            onInlineSelect={(item) => {
+              setOrganizationId(item.id);
+              setOrganizationLabel(String(item.primary));
+            }}
+            onEdit={
+              organizationId
+                ? () => window.open(`/organizations/${organizationId}`, '_blank', 'noopener')
+                : undefined
+            }
+            editLabel={tCommon('edit')}
+            onClear={() => {
+              setOrganizationId(null);
+              setOrganizationLabel('');
+              setBankAccountId(null);
+              setBankAccountLabel('');
+            }}
+          />
+        </DocumentMetaField>
+        <DocumentMetaField label={tFields('store')} required>
+          <CatalogPickerField
+            value={storeId ? { id: storeId, label: storeLabel } : null}
+            placeholder=""
+            onPick={() => setOpenPicker('store')}
+            inlineFetcher={storeFetcher}
+            onInlineSelect={(item) => {
+              setStoreId(item.id);
+              setStoreLabel(String(item.primary));
+            }}
+            onEdit={
+              storeId ? () => window.open(`/stores/${storeId}`, '_blank', 'noopener') : undefined
+            }
+            editLabel={tCommon('edit')}
+            onClear={() => {
+              setStoreId(null);
+              setStoreLabel('');
+            }}
+          />
+        </DocumentMetaField>
+      </DocumentMetaRow>
+
+      <DocumentMetaRow fixedWidth>
+        <DocumentMetaField
+          label={tFields('agent')}
+          required
+          error={agentInvalid ? tCommon('must_fill') : undefined}
+        >
+          <CatalogPickerField
+            value={agentId ? { id: agentId, label: agentLabel } : null}
+            placeholder=""
+            invalid={agentInvalid}
+            onPick={() => setOpenPicker('agent')}
+            inlineFetcher={agentFetcher}
+            onInlineSelect={(item) => {
+              setAgentId(item.id);
+              setAgentLabel(String(item.primary));
+              // Picking an agent resolves the moysklad-style field error.
+              setAgentInvalid(false);
+              setError(null);
+            }}
+            onEdit={
+              agentId
+                ? () => window.open(`/counterparties/${agentId}`, '_blank', 'noopener')
+                : undefined
+            }
+            editLabel={tCommon('edit')}
+            onClear={() => {
+              setAgentId(null);
+              setAgentLabel('');
+              setContractId(null);
+              setContractLabel('');
+              setSupplyId(null);
+            }}
+            onCreate={() => router.push('/counterparties/new')}
+            createLabel={tForm('create_new_counterparty')}
+          />
+          <CounterpartyBalanceInline counterpartyId={agentId} />
+        </DocumentMetaField>
+        <DocumentMetaField label={tFields('contract')}>
+          <CatalogPickerField
+            value={contractId ? { id: contractId, label: contractLabel } : null}
+            placeholder=""
+            onPick={() => agentId && setOpenPicker('contract')}
+            inlineFetcher={contractFetcher}
+            onInlineSelect={(item) => {
+              setContractId(item.id);
+              setContractLabel(String(item.primary));
+            }}
+            disabled={!agentId}
+            disabledHint={tForm('select_supplier_first')}
+            onClear={() => {
+              setContractId(null);
+              setContractLabel('');
+            }}
+            onCreate={() => router.push('/contracts/new')}
+            createLabel={tForm('create_new_contract')}
+          />
+        </DocumentMetaField>
+      </DocumentMetaRow>
+
+      <DocumentMetaRow fixedWidth>
+        <DocumentMetaField label={tFields('project')}>
+          <CatalogPickerField
+            value={projectId ? { id: projectId, label: projectLabel } : null}
+            placeholder=""
+            onPick={() => setOpenPicker('project')}
+            inlineFetcher={projectFetcher}
+            onInlineSelect={(item) => {
+              setProjectId(item.id);
+              setProjectLabel(String(item.primary));
+            }}
+            onClear={() => {
+              setProjectId(null);
+              setProjectLabel('');
+            }}
+            onCreate={() => router.push('/settings/projects/new')}
+            createLabel={tForm('create_new_project')}
+          />
+        </DocumentMetaField>
+      </DocumentMetaRow>
+
+      <DocumentMetaRow fixedWidth>
+        <DocumentMetaField
+          label={tDetailForm('currency')}
+          required
+          helper={
+            currency !== 'UZS' ? (
+              <span className="inline-flex items-center gap-2">
+                <span className="tabular-nums">
+                  1 {currency} ={' '}
+                  {Number(effectiveRate).toLocaleString('ru-RU', { maximumFractionDigits: 4 })} UZS
+                </span>
+                <Button
+                  type="button"
+                  variant="link"
+                  onClick={() => setRateModalOpen(true)}
+                  className="h-auto px-0 font-normal text-xs"
+                  aria-label={tForm('rate_edit')}
+                  data-test-id="rate-edit"
+                >
+                  ✎
+                </Button>
+              </span>
+            ) : undefined
+          }
+        >
+          <NativeSelect
+            value={currency}
+            onChange={(e) => {
+              setCurrency(e.target.value);
+              setRateOverride(null);
+            }}
+            data-test-id="field-currency"
+          >
+            {currencies.length === 0 && <option value={currency}>{currency}</option>}
+            {currencies.map((c) => (
+              <option key={c.id} value={c.isoCode}>
+                {c.name} ({c.isoCode})
+              </option>
+            ))}
+          </NativeSelect>
+        </DocumentMetaField>
+      </DocumentMetaRow>
+    </div>
+  );
+
   const tabs = [
     {
-      key: 'main',
+      key: 'positions',
+      // moysklad old-design create form: the first tab is «Главная» (2026-07-09).
       label: tDetailTabs('main'),
       content: (
         <div className="space-y-4">
-          <DocumentMetaPanel>
-            <DocumentMetaRow>
-              <DocumentMetaField
-                label={tFields('organization')}
-                required
-                helper={
-                  organizationId ? (
-                    <CatalogPickerField
-                      value={bankAccountId ? { id: bankAccountId, label: bankAccountLabel } : null}
-                      placeholder={tForm('select_bank_account', { currency })}
-                      onPick={() => setOpenPicker('bankAccount')}
-                      onClear={() => {
-                        setBankAccountId(null);
-                        setBankAccountLabel('');
-                      }}
-                    />
-                  ) : undefined
-                }
-              >
-                <CatalogPickerField
-                  value={organizationId ? { id: organizationId, label: organizationLabel } : null}
-                  placeholder={tForm('select_organization')}
-                  onPick={() => setOpenPicker('org')}
-                  onClear={() => {
-                    setOrganizationId(null);
-                    setOrganizationLabel('');
-                    setBankAccountId(null);
-                    setBankAccountLabel('');
-                  }}
-                />
-              </DocumentMetaField>
-              <DocumentMetaField label={tFields('store')} required>
-                <CatalogPickerField
-                  value={storeId ? { id: storeId, label: storeLabel } : null}
-                  placeholder={tForm('select_store')}
-                  onPick={() => setOpenPicker('store')}
-                  onClear={() => {
-                    setStoreId(null);
-                    setStoreLabel('');
-                  }}
-                />
-              </DocumentMetaField>
-            </DocumentMetaRow>
-
-            <DocumentMetaRow>
-              <DocumentMetaField label={tFields('agent')} required>
-                <CatalogPickerField
-                  value={agentId ? { id: agentId, label: agentLabel } : null}
-                  placeholder={tForm('select_supplier')}
-                  onPick={() => setOpenPicker('agent')}
-                  onClear={() => {
-                    setAgentId(null);
-                    setAgentLabel('');
-                    setSupplyId(null);
-                    setSupplyLabel('');
-                  }}
-                  onCreate={() => router.push('/counterparties/new')}
-                  createLabel={tForm('create_new_counterparty')}
-                />
-              </DocumentMetaField>
-              <DocumentMetaField label={tFields('linked_supply')}>
-                <CatalogPickerField
-                  value={supplyId ? { id: supplyId, label: supplyLabel } : null}
-                  placeholder={agentId ? tForm('select_supply') : tForm('select_supplier_first')}
-                  onPick={() => agentId && setOpenPicker('supply')}
-                  onClear={() => {
-                    setSupplyId(null);
-                    setSupplyLabel('');
-                  }}
-                  disabled={!agentId}
-                />
-              </DocumentMetaField>
-            </DocumentMetaRow>
-
-            <DocumentMetaRow>
-              <DocumentMetaField label={tFields('contract')}>
-                <CatalogPickerField
-                  value={contractId ? { id: contractId, label: contractLabel } : null}
-                  placeholder={tForm('select_contract')}
-                  onPick={() => setOpenPicker('contract')}
-                  onClear={() => {
-                    setContractId(null);
-                    setContractLabel('');
-                  }}
-                />
-              </DocumentMetaField>
-              <DocumentMetaField label={tFields('project')}>
-                <CatalogPickerField
-                  value={projectId ? { id: projectId, label: projectLabel } : null}
-                  placeholder={tForm('select_project')}
-                  onPick={() => setOpenPicker('project')}
-                  onClear={() => {
-                    setProjectId(null);
-                    setProjectLabel('');
-                  }}
-                />
-              </DocumentMetaField>
-            </DocumentMetaRow>
-
-            <DocumentMetaRow>
-              <DocumentMetaField label={tFields('reason')}>
-                <Input
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
-                  placeholder={t('reason_placeholder')}
-                  data-test-id="field-reason"
-                />
-              </DocumentMetaField>
-            </DocumentMetaRow>
-
-            <DocumentMetaRow>
-              <DocumentMetaField label={tFields('agent_account')}>
-                <CatalogPickerField
-                  value={agentAccountId ? { id: agentAccountId, label: agentAccountLabel } : null}
-                  placeholder={
-                    agentId ? tForm('select_agent_account') : tForm('select_supplier_first')
-                  }
-                  onPick={() => agentId && setOpenPicker('agentAccount')}
-                  onClear={() => {
-                    setAgentAccountId(null);
-                    setAgentAccountLabel('');
-                  }}
-                  disabled={!agentId}
-                />
-              </DocumentMetaField>
-              <DocumentMetaField label={tDetailForm('external_code')}>
-                <Input
-                  value={externalCode}
-                  onChange={(e) => setExternalCode(e.target.value)}
-                  data-test-id="field-external-code"
-                />
-              </DocumentMetaField>
-            </DocumentMetaRow>
-
-            <DocumentMetaRow>
-              <DocumentMetaField
-                label={tDetailForm('currency')}
-                required
-                helper={
-                  currency !== 'UZS' ? (
-                    <span className="inline-flex items-center gap-2">
-                      <span>1 {currency} =</span>
-                      {rateEditing ? (
-                        <>
-                          <input
-                            type="text"
-                            inputMode="decimal"
-                            value={rateOverride ?? effectiveRate}
-                            onChange={(e) => setRateOverride(e.target.value)}
-                            onBlur={() => setRateEditing(false)}
-                            className="h-6 w-24 rounded-[var(--ms-radius-sm)] border border-[var(--ms-border-default)] px-1 text-right text-xs tabular-nums focus:outline-none focus:ring-1 focus:ring-[var(--ms-text-brand)]"
-                            data-test-id="rate-input"
-                          />
-                          <span>UZS</span>
-                        </>
-                      ) : (
-                        <>
-                          <span className="font-medium tabular-nums">
-                            {Number(effectiveRate).toLocaleString('ru-RU')}
-                          </span>
-                          <span>UZS</span>
-                          <Button
-                            type="button"
-                            variant="link"
-                            onClick={() => setRateEditing(true)}
-                            className="h-auto px-0 font-normal text-xs"
-                            aria-label={tForm('rate_edit')}
-                          >
-                            ✎
-                          </Button>
-                          {rateOverride && (
-                            <Button
-                              type="button"
-                              variant="link"
-                              onClick={() => setRateOverride(null)}
-                              className="h-auto px-0 font-normal text-[var(--ms-text-muted)] text-xs"
-                              title={tForm('rate_auto_reset')}
-                            >
-                              ↺
-                            </Button>
-                          )}
-                        </>
-                      )}
-                    </span>
-                  ) : undefined
-                }
-              >
-                <NativeSelect
-                  value={currency}
-                  onChange={(e) => {
-                    setCurrency(e.target.value);
-                    setRateOverride(null);
-                  }}
-                  data-test-id="field-currency"
-                >
-                  <option value="UZS">{tForm('currency_uzs')}</option>
-                  <option value="USD">{tForm('currency_usd')}</option>
-                  <option value="EUR">{tForm('currency_eur')}</option>
-                  <option value="RUB">{tForm('currency_rub')}</option>
-                </NativeSelect>
-              </DocumentMetaField>
-            </DocumentMetaRow>
-          </DocumentMetaPanel>
-
+          {/* Owner 2026-07-23: «Договорная цена» — blue, at the table's OUTER
+              top-right corner (same spot in every section). */}
+          <div className="-mb-2.5 flex justify-end">
+            <PositionAgreementButton
+              totalMinor={totals.gross}
+              currency={currency}
+              labels={{
+                button: tPos('agreement_button'),
+                total: tPos('agreement_total'),
+                amount: tPos('agreement_amount'),
+                add: tPos('agreement_add'),
+                subtract: tPos('agreement_subtract'),
+                save: tPos('pick_modal_save'),
+                cancel: tPos('pick_modal_cancel'),
+              }}
+              onApply={applyAgreement}
+            />
+          </div>
           <PositionTable
-            columns={POSITION_COLUMNS}
+            columns={positionColumns}
+            emptyText=""
             rows={positions}
             onUpdate={(id, patch) => updatePosition(id, patch as Partial<NewPositionRow>)}
             onRemove={removePosition}
@@ -748,40 +1035,102 @@ export default function NewPurchaseReturnPage() {
                 return next;
               });
             }}
+            onSortPositions={(by) =>
+              setPositions((ps) => {
+                const key = (p: NewPositionRow) =>
+                  by === 'name' ? (p.productLabel ?? '') : (p.productCode ?? '');
+                return [...ps].sort((a, b) => {
+                  if (withGroups) {
+                    const g = (a.folderPath ?? '').localeCompare(b.folderPath ?? '', 'ru');
+                    if (g !== 0) return g;
+                  }
+                  return key(a).localeCompare(key(b), 'ru');
+                });
+              })
+            }
+            sortByNameLabel={tPos('sort_by_name')}
+            sortByCodeLabel={tPos('sort_by_code')}
+            withGroups={withGroups}
+            onWithGroupsChange={setWithGroups}
+            withGroupsLabel={tPos('sort_with_groups')}
             renderNameCell={renderPositionNameCell}
+            renderCellCell={renderPositionCellCell}
+            onReplace={(id) => setOpenPicker({ kind: 'product', rowUid: id })}
             vatIncluded={vatIncluded}
             selectedIds={selectedRowIds}
             onSelectionChange={setSelectedRowIds}
             footerToolbar={
               <PositionInlineAdd
+                placeholder={tPos('addPositionPlaceholder')}
+                addFromCatalogLabel={tPos('addFromCatalog')}
+                checkCompletenessLabel={tPos('checkCompleteness')}
+                importCsvLabel={tPos('importCsv')}
                 onSearch={async (q) => {
-                  const r = await api.get<{ items: ProductItem[] }>(
+                  const r = await api.get<{ items: ProductItem[]; total: number }>(
                     `/products?search=${encodeURIComponent(q)}&limit=20`,
                   );
-                  return r.items.map((p) => ({
-                    id: p.id,
-                    primary: p.name,
-                    secondary: p.code ?? undefined,
-                    raw: p,
-                  }));
+                  return {
+                    items: r.items.map((p) => ({
+                      id: p.id,
+                      primary: p.name,
+                      code: p.code ?? undefined,
+                      available: p.stock?.available != null ? Number(p.stock.available) : 0,
+                      // Pick modal (owner 2026-07-18): reference «Цена» = the same
+                      // default the row would get (buy price on purchase docs).
+                      priceMinor: p.buyPrice ?? '0',
+                      uomLabel: p.uom ?? undefined,
+                      raw: p,
+                    })),
+                    total: r.total ?? r.items.length,
+                  };
                 }}
-                onPick={(item) => {
+                sortAvailableLabel={tPos('sortByAvailable')}
+                moreItemsLabel={(n) => tPos('moreItems', { count: n })}
+                createProductLabel={(qq) => tPos('createProductNamed', { query: qq })}
+                onCreateProduct={() => router.push('/products/new')}
+                // owner 2026-07-18: qty/price modal on EVERY product-add search
+                // (was sales-only). No price-scope checkboxes here — writing a
+                // permanent SALE price from a purchase price would be wrong.
+                pickModal={{
+                  currency,
+                  permanentPriceOption: false,
+                  labels: {
+                    stock: tPos('pick_modal_stock'),
+                    price: tPos('pick_modal_price'),
+                    quantity: tPos('pick_modal_quantity'),
+                    salePrice: tPos('pick_modal_sale_price'),
+                    priceThisSale: tPos('pick_modal_price_this_sale'),
+                    pricePermanent: tPos('pick_modal_price_permanent'),
+                    save: tPos('pick_modal_save'),
+                    cancel: tPos('pick_modal_cancel'),
+                  },
+                }}
+                onPick={(item, entry) => {
                   const raw = item.raw as ProductItem | undefined;
+                  const newId = uid();
                   setPositions((ps) => [
                     ...ps,
                     {
-                      id: uid(),
+                      id: newId,
                       assortmentId: item.id,
                       productLabel: item.primary,
+                      productCode: raw?.code ?? undefined,
                       productUom: raw?.uom ?? null,
                       supplyPositionId: null,
-                      quantity: '1',
-                      priceMinor: raw?.buyPrice ?? '0',
+                      quantity: entry?.quantity ?? '1',
+                      priceMinor: entry?.priceMinor ?? raw?.buyPrice ?? '0',
                       discount: '0',
-                      vat: raw?.vat != null ? String(raw.vat) : '0',
+                      vat: raw?.vat != null ? String(raw.vat) : '12',
                       vatEnabled: true,
+                      // «Остаток» — read-only stock cluster at the store.
+                      stock: raw?.stock?.onHand,
+                      available: raw?.stock?.available,
+                      folderPath: raw?.productFolder?.pathName ?? undefined,
                     },
                   ]);
+                  // owner 2026-07-18: returning the id hands focus to the new
+                  // row's «Кол-во» (modal → table entry chain).
+                  return newId;
                 }}
                 onAddFromCatalog={addPosition}
                 onCheckCompleteness={() => {
@@ -804,13 +1153,17 @@ export default function NewPurchaseReturnPage() {
                         id: uid(),
                         assortmentId: item.id,
                         productLabel: item.primary,
+                        productCode: raw?.code ?? undefined,
                         productUom: raw?.uom ?? null,
                         supplyPositionId: null,
                         quantity: Number(quantity) > 0 ? quantity : '1',
                         priceMinor: raw?.buyPrice ?? '0',
                         discount: '0',
-                        vat: raw?.vat != null ? String(raw.vat) : '0',
+                        vat: raw?.vat != null ? String(raw.vat) : '12',
                         vatEnabled: true,
+                        stock: raw?.stock?.onHand,
+                        available: raw?.stock?.available,
+                        folderPath: raw?.productFolder?.pathName ?? undefined,
                       };
                     }),
                   ]);
@@ -839,43 +1192,104 @@ export default function NewPurchaseReturnPage() {
               quantity={positions.reduce((acc, p) => acc + Number(p.quantity || '0'), 0)}
             />
           </div>
-
-          <DocumentDisclosurePanel
-            title={tForm('tasks_section')}
-            headerAction={
-              <Button type="button" variant="secondary" disabled>
-                <Icons.create className="h-4 w-4" />
-                {tForm('add_task')}
-              </Button>
-            }
-            defaultOpen={false}
-          >
-            <p className="text-[var(--ms-text-muted)] text-sm">{tForm('tasks_after_save_hint')}</p>
-          </DocumentDisclosurePanel>
-
-          <DocumentDisclosurePanel
-            title={tForm('files_section')}
-            headerAction={
-              <Button type="button" variant="secondary" disabled>
-                <Icons.create className="h-4 w-4" />
-                {tForm('add_file')}
-              </Button>
-            }
-            defaultOpen={false}
-          >
-            <p className="text-[var(--ms-text-muted)] text-sm">{tForm('files_after_save_hint')}</p>
-          </DocumentDisclosurePanel>
         </div>
       ),
     },
     {
       key: 'related',
       label: tDetailTabs('related'),
+      // moysklad OLD-design create form (re-grounded 2026-07-09, user screenshots):
+      // /new has TWO tabs only — Главная + «Связанные документы»; Задачи and Файлы
+      // are bottom sections INSIDE this tab. Everything works IN PLACE (no save,
+      // no navigation) — picks are staged and persisted by staging.flush() after save.
       content: (
-        <p className="rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] p-6 text-center text-[var(--ms-text-muted)] text-sm">
-          {t('related_empty')}
-        </p>
+        <NewDocRelatedTab
+          current={{
+            id: 'new',
+            name: docNumber,
+            moment: docDate ? new Date(docDate).toISOString() : new Date().toISOString(),
+            sumMinor: String(totals.gross),
+            state: applicable ? 'posted' : 'draft',
+            kind: 'purchase-return',
+          }}
+          entityType="PurchaseReturn"
+          staging={staging}
+          linkDefaults={{
+            agent: agentId ? { id: agentId, name: agentLabel } : null,
+            organization: organizationId ? { id: organizationId, name: organizationLabel } : null,
+            storeTo: storeId ? { id: storeId, name: storeLabel } : null,
+          }}
+        />
       ),
+    },
+    // «Файлы»/«Задачи» moved INTO the related tab (moysklad old-design, 2026-07-09).
+    // «События» HIDDEN behind SHOW_NEW_EVENTS_TAB — code kept for re-enabling.
+    ...(SHOW_NEW_EVENTS_TAB
+      ? [
+          {
+            key: 'events',
+            label: tDetailTabs('events'),
+            content: (
+              <div className="bg-[var(--ms-bg-surface)] px-4 py-6">
+                <p className="text-[var(--ms-text-muted)] text-sm">{tDetailTabs('save_first')}</p>
+              </div>
+            ),
+          },
+        ]
+      : []),
+  ];
+
+  // ── Toolbar dropdown menus (moysklad «Возврат поставщику» edit?new parity) ──────
+  // moysklad shows all four dropdowns populated on a brand-new return (its draft exists
+  // server-side). Ours save-then-act (submitCreate) so the same items work here.
+  // «Изменить» → «Удалить», greyed on an unsaved document (nothing to delete yet).
+  const modifyMenu = [
+    { label: tBulk('delete'), disabled: true, destructive: true, testId: 'pr-new-modify-delete' },
+  ];
+  // «Создать документ» → Счёт-фактура выданный (wired, §66 backend) · Входящий платёж ·
+  // Приходный ордер (label-parity placeholders — the money-from-return flows aren't
+  // built yet, greyed like demands/[id] does for its unbuilt downstream docs).
+  const createDocMenu = [
+    {
+      label: tCreate('facture_out'),
+      onClick: saveThenCreateFacture,
+      testId: 'pr-new-create-facture-out',
+    },
+    { label: tCreate('payment_in_single'), disabled: true, testId: 'pr-new-create-payment-in' },
+    { label: tCreate('cash_in_single'), disabled: true, testId: 'pr-new-create-cash-in' },
+  ];
+  // «Печать» → the account's own forms + the built-in «Возврат поставщику» form +
+  // «Комплект…» + «Настроить…». Each print item saves the return first, then downloads.
+  const printMenu = [
+    ...(printForms ?? []).map((f) => ({
+      label: f.name,
+      onClick: () => saveThenPrint(f.id),
+      testId: `pr-new-print-${f.id}`,
+    })),
+    {
+      label: tDetailTitles('purchase_return'),
+      onClick: () => saveThenPrintView(),
+      testId: 'pr-new-print-standard',
+    },
+    { label: tPrint('set'), onClick: () => setKitPrintOpen(true), testId: 'pr-new-print-kit' },
+    { divider: true },
+    {
+      label: tPrint('configure'),
+      onClick: () => openTemplates('purchasereturn'),
+      testId: 'pr-new-print-configure',
+    },
+  ];
+  // «Отправить» → the same forms, each rendered + attached + opened in the email composer.
+  const sendMenu = [
+    ...(printForms ?? []).map((f) => ({
+      label: f.name,
+      onClick: () => saveThenSend(f.id),
+      testId: `pr-new-send-${f.id}`,
+    })),
+    {
+      label: tDetailTitles('purchase_return'),
+      onClick: () => saveThenSend(),
+      testId: 'pr-new-send-standard',
     },
   ];
 
@@ -889,42 +1303,61 @@ export default function NewPurchaseReturnPage() {
         onNumberChange={setDocNumber}
         date={docDate}
         onDateChange={setDocDate}
-        status={status}
-        statusOptions={STATUS_OPTIONS}
-        onStatusChange={setStatus}
+        status={statusId}
+        statusOptions={statusOptions}
+        onStatusChange={setStatusId}
+        onConfigureStatuses={() => router.push('/settings/purchase-return-statuses')}
+        configureStatusesLabel={tForm('configure_statuses')}
         applicable={applicable}
         onApplicableChange={setApplicable}
         applicableHelp={t('applicable_help')}
-        waiting={waiting}
-        onWaitingChange={setWaiting}
-        waitingHelp={t('waiting_help')}
         onSave={() => {
+          // moysklad-style validation (owner 2026-07-11): mark the missing
+          // FIELD red + short text under it, echo the same short message
+          // under the toolbar — never a page-wide banner.
+          if (!agentId) {
+            setAgentInvalid(true);
+            setError(tCommon('must_fill'));
+            return;
+          }
           setError(null);
           createMut.mutate();
         }}
-        saving={createMut.isPending}
+        saving={createMut.isPending || toolbarBusy}
         onClose={() => router.push('/purchase-returns')}
-        modifyMenu={[]}
-        createDocMenu={[]}
-        printMenu={[]}
-        sendMenu={[]}
-        rightSlot={
-          user ? (
-            <div className="text-right text-xs leading-tight">
-              <div className="font-medium text-[var(--ms-text-primary)]">{user.name}</div>
-              <div className="text-[var(--ms-text-muted)]">
-                {user.position ?? tDetailHeader('role_primary')}
-              </div>
-            </div>
-          ) : null
-        }
+        modifyMenu={modifyMenu}
+        createDocMenu={createDocMenu}
+        printMenu={printMenu}
+        sendMenu={sendMenu}
+        // moysklad pins each configured print form as its OWN button right after
+        // «Отправить». Each saves the return first, then renders that form's PDF
+        // into a new tab. Mirror PO/new + supplies/new.
+        trailingSlot={(printForms ?? []).map((f) => (
+          <Button
+            key={f.id}
+            type="button"
+            variant="secondary"
+            size="sm"
+            // «Past ko'k» — check-print type buttons stand out in a soft blue
+            // (brand-100 fill · brand-600 text · brand-300 border), matching
+            // supplies/new + PO/new. Owner request 2026-07-15/16.
+            className="border-[var(--ms-brand-300)] bg-[var(--ms-brand-100)] text-[var(--ms-brand-600)] hover:bg-[var(--ms-brand-200)] hover:text-[var(--ms-brand-700)]"
+            onClick={() => saveThenPrintFormTab(f.id)}
+            data-test-id={`toolbar-print-form-${f.id}`}
+          >
+            <Icons.print className="h-4 w-4" />
+            {f.name}
+          </Button>
+        ))}
+        rightSlot={<OwnerAccessPopover value={ownerAccess} onChange={setOwnerAccess} />}
         error={error}
         onErrorRetry={() => {
           setError(null);
           createMut.mutate();
         }}
       >
-        <DocumentTabs tabs={tabs} defaultActiveKey="main" />
+        {metaPanel}
+        <DocumentTabs tabs={tabs} defaultActiveKey="positions" />
       </DocumentEditor>
 
       <CatalogPicker
@@ -933,6 +1366,9 @@ export default function NewPurchaseReturnPage() {
         title={tForm('supplier_picker_title')}
         fetcher={agentFetcher}
         onSelect={(item) => {
+          // Picking an agent resolves the moysklad-style field error.
+          setAgentInvalid(false);
+          setError(null);
           setAgentId(item.id);
           setAgentLabel(String(item.primary));
         }}
@@ -957,16 +1393,6 @@ export default function NewPurchaseReturnPage() {
         onSelect={(item) => {
           setStoreId(item.id);
           setStoreLabel(String(item.primary));
-        }}
-      />
-      <CatalogPicker
-        open={openPicker === 'supply'}
-        onClose={() => setOpenPicker(null)}
-        title={tForm('supply_picker_title')}
-        fetcher={supplyFetcher}
-        onSelect={(item) => {
-          setSupplyId(item.id);
-          setSupplyLabel(String(item.primary));
         }}
       />
       <CatalogPicker
@@ -1000,16 +1426,6 @@ export default function NewPurchaseReturnPage() {
         }}
       />
       <CatalogPicker
-        open={openPicker === 'agentAccount'}
-        onClose={() => setOpenPicker(null)}
-        title={tForm('agent_account_picker_title')}
-        fetcher={agentAccountFetcher}
-        onSelect={(item) => {
-          setAgentAccountId(item.id);
-          setAgentAccountLabel(String(item.primary));
-        }}
-      />
-      <CatalogPicker
         open={
           typeof openPicker === 'object' && openPicker !== null && openPicker.kind === 'product'
         }
@@ -1022,12 +1438,57 @@ export default function NewPurchaseReturnPage() {
           updatePosition(openPicker.rowUid, {
             assortmentId: item.id,
             productLabel: String(item.primary),
+            productCode: raw?.code ?? undefined,
             productUom: raw?.uom ?? null,
             priceMinor: raw?.buyPrice ?? '0',
-            vat: raw?.vat != null ? String(raw.vat) : '0',
+            vat: raw?.vat != null ? String(raw.vat) : '12',
+            stock: raw?.stock?.onHand,
+            available: raw?.stock?.available,
+            folderPath: raw?.productFolder?.pathName ?? undefined,
           });
         }}
       />
+      {currency !== 'UZS' && (
+        <CurrencyRateModal
+          open={rateModalOpen}
+          onOpenChange={setRateModalOpen}
+          currency={currency}
+          referenceRate={adminRate ?? '1'}
+          currentOverride={rateOverride}
+          onApply={setRateOverride}
+        />
+      )}
+
+      {/* «Печать ▸ Комплект…» — pick forms, then save the return + download one PDF. */}
+      <KitPrintModal
+        open={kitPrintOpen}
+        onOpenChange={setKitPrintOpen}
+        forms={kitForms}
+        selectedCount={1}
+        labels={{
+          title: tPrint('set'),
+          confirm: tPrint('kit_confirm'),
+          cancel: tPrint('kit_cancel'),
+        }}
+        onConfirm={saveThenKitPrint}
+      />
+
+      {/* «Отправить» — email this return with the chosen print form pre-attached (the
+          return is saved first, so `savedId` is set before the composer opens). */}
+      {savedId && (
+        <SendEmailDialog
+          open={emailOpen}
+          onClose={() => {
+            setEmailOpen(false);
+            setEmailAttachments([]);
+          }}
+          entity="PurchaseReturn"
+          entityId={savedId}
+          defaultSubject={`${tDetailTitles('purchase_return')} ${docNumber}`.trim()}
+          defaultBodyHtml={`<p>${tDetailTitles('purchase_return')} ${docNumber}</p>`}
+          initialAttachments={emailAttachments}
+        />
+      )}
     </>
   );
 }

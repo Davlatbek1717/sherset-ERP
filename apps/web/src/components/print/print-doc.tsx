@@ -35,6 +35,9 @@ export interface PrintDocProps {
   docDate: string;
   organization: PrintParty;
   agent: PrintParty;
+  /** Extra party cards after `agent` — a Move prints THREE blocks
+   *  (Организация · Со склада · На склад), so the third+ go here. */
+  extraParties?: PrintParty[];
   /** Optional ?counterparty / contract / order reference line */
   reference?: string | null;
   positions: PrintDocPosition[];
@@ -78,6 +81,7 @@ export function PrintDoc({
   docDate,
   organization,
   agent,
+  extraParties,
   reference,
   positions,
   currency,
@@ -104,6 +108,9 @@ export function PrintDoc({
       <div className="org-block">
         <PartyCard party={organization} />
         <PartyCard party={agent} />
+        {(extraParties ?? []).map((p) => (
+          <PartyCard key={p.label} party={p} />
+        ))}
       </div>
 
       <table className="positions">
@@ -180,8 +187,8 @@ export function PrintDoc({
       )}
 
       <div className="signatures">
-        {signatures.map((s, i) => (
-          <div key={i}>
+        {signatures.map((s) => (
+          <div key={`${s.label}:${s.name}`}>
             <div className="sig-name">{s.name}</div>
             <div className="sig-line">{s.label}</div>
           </div>

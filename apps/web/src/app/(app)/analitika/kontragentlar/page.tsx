@@ -2,7 +2,7 @@
 
 import { api } from '@/lib/api-client';
 import { legalStatusTone } from '@/lib/domain-status-tone';
-import { Badge, Input, NativeSelect, Switch, useDebounce } from '@moysklad/ui';
+import { Badge, Input, NativeSelect, StickyHScroll, Switch, useDebounce } from '@moysklad/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
@@ -165,7 +165,7 @@ export default function AnalitikaCounterpartiesPage() {
       </div>
 
       {/* Desktop table */}
-      <div className="hidden overflow-x-auto rounded-lg border border-[var(--ms-border)] bg-white lg:block">
+      <StickyHScroll className="hidden rounded-lg border border-[var(--ms-border)] bg-white lg:block">
         <table className="w-full text-sm">
           <thead className="bg-[var(--ms-bg-subtle)] text-[var(--ms-text-muted)] text-xs uppercase">
             <tr>
@@ -229,7 +229,7 @@ export default function AnalitikaCounterpartiesPage() {
             )}
           </tbody>
         </table>
-      </div>
+      </StickyHScroll>
 
       {/* Pagination */}
       {pg && pg.totalPages > 1 && (

@@ -128,45 +128,50 @@ async function fetchMoyskladPaged<T>(path: string): Promise<T[]> {
     // Up-to-5 retry loop with exponential backoff on 429s. Moysklad's
     // rate limit is 5 req/sec per token + 45 simultaneous; with paged
     // fetches this is plenty if we sleep ~250ms between batches.
-    let res: Response;
+    // Resilient page fetch — retry the SAME page on transient network drops
+    // ("terminated" from the proxy) + 429, so paging resumes instead of losing
+    // the batch; return partial on persistent failure (a re-run upserts the rest).
+    let body: { rows?: T[]; meta?: { size?: number } } | null = null;
     let attempt = 0;
     for (;;) {
-      // Retry on BOTH transient network failures (ECONNRESET / connect
-      // timeout — the VPS↔moysklad link blips intermittently) and 429s.
-      // A single unretried fetch reject would otherwise abort the whole
-      // multi-minute import.
       try {
-        res = await fetch(url, {
-          headers: {
-            Authorization: `Bearer ${MOYSKLAD_TOKEN}`,
-            'Accept-Encoding': 'gzip',
-          },
+        const res = await fetch(url, {
+          headers: { Authorization: `Bearer ${MOYSKLAD_TOKEN}`, 'Accept-Encoding': 'gzip' },
         });
-      } catch (err) {
+        if (res.status === 429) {
+          attempt++;
+          if (attempt > 8) throw new Error('rate-limited 8×');
+          const wait = 1000 * 2 ** Math.min(attempt, 5);
+          console.log(`    ⚠ 429 rate-limited, retry ${attempt}/8 after ${wait}ms`);
+          await new Promise((r) => setTimeout(r, wait));
+          continue;
+        }
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status} — ${await res.text().catch(() => '')}`);
+        }
+        body = (await res.json()) as { rows?: T[]; meta?: { size?: number } };
+        break;
+      } catch (e) {
         attempt++;
-        if (attempt > 8) throw err;
-        const wait = 1000 * 2 ** Math.min(attempt, 5); // cap backoff at 32s
+        const msg = e instanceof Error ? e.message : String(e);
+        const transient =
+          /terminated|fetch failed|ECONNRESET|ETIMEDOUT|socket|network|aborted|EAI_AGAIN|rate-limited/i.test(
+            msg,
+          );
+        if (!transient || attempt > 8) {
+          console.warn(
+            `    ! ${path}: page@${offset} failed after ${attempt} tries (${msg.slice(0, 80)}) — keeping ${out.length} partial`,
+          );
+          return out;
+        }
+        const wait = Math.min(30000, 1000 * 2 ** attempt);
         console.log(
-          `    ⚠ network error (${err instanceof Error ? err.message : err}), retry ${attempt}/8 after ${wait}ms`,
+          `    ⚠ ${path} page@${offset} transient (${msg.slice(0, 40)}), retry ${attempt}/8 in ${wait}ms`,
         );
         await new Promise((r) => setTimeout(r, wait));
-        continue;
       }
-      if (res.status !== 429) break;
-      attempt++;
-      if (attempt > 8) {
-        throw new Error(`moysklad ${path}: rate-limited`);
-      }
-      const wait = 1000 * 2 ** Math.min(attempt, 5); // 2s..32s
-      console.log(`    ⚠ 429 rate-limited, retry ${attempt}/8 after ${wait}ms`);
-      await new Promise((r) => setTimeout(r, wait));
     }
-
-    if (!res.ok) {
-      throw new Error(`moysklad ${path}: HTTP ${res.status} — ${await res.text().catch(() => '')}`);
-    }
-    const body = (await res.json()) as { rows?: T[]; meta?: { size?: number } };
-    const rows = body.rows ?? [];
+    const rows = body?.rows ?? [];
     out.push(...rows);
     if (rows.length < limit) break;
     offset += limit;
@@ -175,6 +180,211 @@ async function fetchMoyskladPaged<T>(path: string): Promise<T[]> {
     await new Promise((r) => setTimeout(r, 250));
   }
   return out;
+}
+
+/**
+ * Same retry/backoff/pacing loop as fetchMoyskladPaged, but expands a nested
+ * collection (e.g. `positions`). moysklad caps the page `limit` at 100 when an
+ * `expand` is present, so the default pageLimit is 100 and paging stops as soon
+ * as a page returns fewer than pageLimit rows.
+ */
+async function fetchMoyskladPagedExpanded<T>(
+  path: string,
+  expand: string,
+  pageLimit = 100,
+): Promise<T[]> {
+  const out: T[] = [];
+  let offset = 0;
+  for (;;) {
+    const url = `${MOYSKLAD_BASE_URL}${path}?expand=${expand}&limit=${pageLimit}&offset=${offset}`;
+    // Resilient single-page fetch. The Cloudflare-worker proxy drops long fetch
+    // sessions mid-stream ("terminated"); retry the SAME page (offset unchanged)
+    // on transient network errors + 429 so the paging RESUMES instead of losing
+    // the whole batch. On persistent failure, return the partial `out` (a re-run
+    // upserts the rest) rather than throwing everything away.
+    let body: { rows?: T[] } | null = null;
+    let attempt = 0;
+    for (;;) {
+      try {
+        const res = await fetch(url, {
+          headers: { Authorization: `Bearer ${MOYSKLAD_TOKEN}`, 'Accept-Encoding': 'gzip' },
+        });
+        if (res.status === 429) {
+          attempt++;
+          if (attempt > 8) throw new Error('rate-limited 8×');
+          const wait = 1000 * 2 ** Math.min(attempt, 5);
+          console.log(`    ⚠ 429 rate-limited, retry ${attempt}/8 after ${wait}ms`);
+          await new Promise((r) => setTimeout(r, wait));
+          continue;
+        }
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status} — ${await res.text().catch(() => '')}`);
+        }
+        body = (await res.json()) as { rows?: T[] };
+        break;
+      } catch (e) {
+        attempt++;
+        const msg = e instanceof Error ? e.message : String(e);
+        const transient =
+          /terminated|fetch failed|ECONNRESET|ETIMEDOUT|socket|network|aborted|EAI_AGAIN|rate-limited/i.test(
+            msg,
+          );
+        if (!transient || attempt > 8) {
+          console.warn(
+            `    ! ${path}: page@${offset} failed after ${attempt} tries (${msg.slice(0, 80)}) — keeping ${out.length} partial`,
+          );
+          return out;
+        }
+        const wait = Math.min(30000, 1000 * 2 ** attempt);
+        console.log(
+          `    ⚠ ${path} page@${offset} transient (${msg.slice(0, 40)}), retry ${attempt}/8 in ${wait}ms`,
+        );
+        await new Promise((r) => setTimeout(r, wait));
+      }
+    }
+    const rows = body?.rows ?? [];
+    out.push(...rows);
+    if (rows.length < pageLimit) break;
+    offset += pageLimit;
+    console.log(`    … fetched ${out.length} from ${path} (expanded)`);
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  return out;
+}
+
+// ──────────────────────────────────────────────────────────────
+// Position import primitives (shared by every doc importer)
+// ──────────────────────────────────────────────────────────────
+
+/** A single position row as moysklad returns it with `expand=positions`. */
+interface MsPosition {
+  quantity?: number;
+  price?: number;
+  discount?: number;
+  vat?: number | null;
+  // Inventory positions carry the expected (system) count here.
+  calculatedQuantity?: number;
+  assortment?: { meta?: { href?: string; type?: string } };
+}
+
+/** Resolved assortment reference, or null when the uuid maps to nothing local. */
+interface ResolvedAssortment {
+  assortmentId: string;
+  productId: string | null;
+  assortmentKind: string;
+}
+
+type AssortmentResolver = (msId: string | null, type?: string) => ResolvedAssortment | null;
+
+/**
+ * Build a resolver that maps a moysklad assortment uuid (+ its meta `type`) to
+ * a local assortment reference. Products, services and bundles all live in the
+ * `product` table (externalCode `ms:<uuid>`) → kind 'product'. Variants live in
+ * the `variant` table (externalCode `ms:<uuid>` if importLiveVariants set it).
+ * Unknown uuid → null (caller SKIPs the position — never fabricate an id).
+ */
+async function buildAssortmentResolver(): Promise<AssortmentResolver> {
+  const products = await prisma.product.findMany({
+    where: { accountId: ACCOUNT_ID, externalCode: { startsWith: 'ms:' } },
+    select: { id: true, externalCode: true },
+  });
+  const productByMs = new Map(
+    products.map((p) => [(p.externalCode ?? '').replace(/^ms:/, ''), p.id]),
+  );
+  const variants = await prisma.variant.findMany({
+    where: { accountId: ACCOUNT_ID, externalCode: { startsWith: 'ms:' } },
+    select: { id: true, externalCode: true },
+  });
+  const variantByMs = new Map(
+    variants.map((v) => [(v.externalCode ?? '').replace(/^ms:/, ''), v.id]),
+  );
+
+  return (msId: string | null, type?: string): ResolvedAssortment | null => {
+    if (!msId) return null;
+    // Prefer the meta type when present, but fall back to a table lookup so a
+    // missing/unknown type still resolves.
+    if (type === 'variant') {
+      const vid = variantByMs.get(msId);
+      return vid ? { assortmentId: vid, productId: null, assortmentKind: 'variant' } : null;
+    }
+    const pid = productByMs.get(msId);
+    if (pid) return { assortmentId: pid, productId: pid, assortmentKind: 'product' };
+    const vid = variantByMs.get(msId);
+    if (vid) return { assortmentId: vid, productId: null, assortmentKind: 'variant' };
+    return null;
+  };
+}
+
+/** Clamp a discount percent into the 0–100 range the schema's Decimal(5,2) allows. */
+function clampDiscount(v: number | undefined): number {
+  if (v === undefined || Number.isNaN(v)) return 0;
+  return Math.min(100, Math.max(0, v));
+}
+
+/**
+ * Map moysklad position rows → the sales/purchase position create shape shared
+ * by CustomerOrderPosition / DemandPosition / SupplyPosition / SalesReturnPosition
+ * / PurchaseOrderPosition / PurchaseReturnPosition / InvoiceInPosition /
+ * InvoiceOutPosition. Unresolved assortments are skipped; `position` is 1-based.
+ */
+interface SalesPositionCreate {
+  accountId: string;
+  position: number;
+  assortmentKind: string;
+  assortmentId: string;
+  productId: string | null;
+  quantity: string;
+  priceMinor: bigint;
+  discount: string;
+  vat: number | null;
+}
+
+function buildSalesPositions(
+  msPositions: MsPosition[] | undefined,
+  resolve: AssortmentResolver,
+): SalesPositionCreate[] {
+  const out: SalesPositionCreate[] = [];
+  let pos = 0;
+  for (const p of msPositions ?? []) {
+    const ref = resolve(extractMsId(p.assortment?.meta?.href), p.assortment?.meta?.type);
+    if (!ref) continue;
+    pos++;
+    out.push({
+      accountId: ACCOUNT_ID,
+      position: pos,
+      assortmentKind: ref.assortmentKind,
+      assortmentId: ref.assortmentId,
+      productId: ref.productId,
+      quantity: String(p.quantity ?? 0),
+      priceMinor: BigInt(Math.round(p.price ?? 0)),
+      discount: String(clampDiscount(p.discount)),
+      vat: p.vat ?? null,
+    });
+  }
+  return out;
+}
+
+/**
+ * Create a document, falling back to a disambiguated name on the
+ * `@@unique([accountId, name])` collision that moysklad's duplicate document
+ * numbers trigger (e.g. seven orders all named "00007"). The FIRST occurrence
+ * keeps the exact moysklad name; later duplicates get a ` (<msId8>)` suffix so
+ * no rows are lost. `msId` is the moysklad uuid (the row's `id`). Returns the
+ * created record, or rethrows any non-name unique error.
+ */
+// biome-ignore lint/suspicious/noExplicitAny: generic prisma model + data
+async function createDocWithNameFallback(model: any, data: any, msId: string): Promise<unknown> {
+  try {
+    return await model.create({ data });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (/Unique constraint/i.test(msg) && /\bname\b/i.test(msg) && typeof data?.name === 'string') {
+      const suffix = ` (${msId.slice(0, 8)})`;
+      const name = `${data.name.slice(0, 100 - suffix.length)}${suffix}`;
+      return await model.create({ data: { ...data, name } });
+    }
+    throw e;
+  }
 }
 
 interface MsCounterparty {
@@ -205,20 +415,14 @@ async function importLiveCounterparties(): Promise<number> {
         where: { accountId: ACCOUNT_ID, externalCode },
         select: { id: true },
       });
-      // Truncate to column limits — moysklad phone can hold several numbers
-      // (>20 chars) and names/titles can exceed 255, which the DB rejects.
-      const name = r.name.slice(0, 255);
-      const phone = r.phone ? r.phone.slice(0, 20) : null;
-      const email = r.email ? r.email.slice(0, 255) : null;
-      const legalTitle = r.legalTitle ? r.legalTitle.slice(0, 255) : null;
       if (existing) {
         await prisma.counterparty.update({
           where: { id: existing.id },
           data: {
-            name,
-            phone,
-            email,
-            legalTitle,
+            name: r.name,
+            phone: r.phone ?? null,
+            email: r.email ?? null,
+            legalTitle: r.legalTitle ?? null,
             description: r.description ?? null,
             archived: r.archived ?? false,
             uzRequisites: r.inn ? { inn: r.inn } : undefined,
@@ -229,10 +433,10 @@ async function importLiveCounterparties(): Promise<number> {
           data: {
             accountId: ACCOUNT_ID,
             externalCode,
-            name,
-            phone,
-            email,
-            legalTitle,
+            name: r.name,
+            phone: r.phone ?? null,
+            email: r.email ?? null,
+            legalTitle: r.legalTitle ?? null,
             description: r.description ?? null,
             archived: r.archived ?? false,
             companyType: r.legalTitle ? 'legal' : 'individual',
@@ -284,8 +488,8 @@ async function importLiveOrganizations(): Promise<number> {
         name: r.name.slice(0, 255),
         legalTitle: r.legalTitle?.slice(0, 255) ?? null,
         legalAddress: r.legalAddress ?? null,
-        phone: r.phone?.slice(0, 20) ?? null,
-        email: r.email?.slice(0, 255) ?? null,
+        phone: r.phone ?? null,
+        email: r.email ?? null,
         archived: r.archived ?? false,
         uzRequisites: r.inn ? { inn: r.inn } : undefined,
       };
@@ -363,11 +567,6 @@ async function importLiveStores(): Promise<number> {
 // Products
 // ──────────────────────────────────────────────────────────────
 
-interface MsSalePrice {
-  value: number;
-  priceType?: { id?: string; name?: string; externalCode?: string };
-}
-
 interface MsProduct {
   id: string;
   name: string;
@@ -377,7 +576,7 @@ interface MsProduct {
   archived?: boolean;
   buyPrice?: { value: number };
   minPrice?: { value: number };
-  salePrices?: MsSalePrice[];
+  salePrices?: Array<{ value: number; priceType?: { name: string } }>;
 }
 
 /** Resolve the account's default PriceType id for stamping salePrices; falls
@@ -388,72 +587,6 @@ async function resolveSeedDefaultPriceTypeId(): Promise<string> {
     select: { id: true },
   });
   return pt?.id ?? 'default';
-}
-
-// ──────────────────────────────────────────────────────────────
-// Price-type resolution.
-//
-// moysklad's dedicated price-type endpoint (/context/companysettings/
-// pricetype) returns [] for this account, but every product's salePrices
-// carry the full priceType meta ({ id, name, externalCode }). So we derive
-// the real price types (e.g. «Розночная цена», «Оптовая цена») from the
-// products themselves — upserting each by externalCode `ms:<id>` and caching
-// the msId → our-PriceType-id mapping so each salePrice keeps its own type
-// instead of collapsing them all onto the single «default» type.
-// ──────────────────────────────────────────────────────────────
-const priceTypeCache = new Map<string, string>();
-
-async function resolvePriceTypeId(
-  pt: MsSalePrice['priceType'],
-  fallback: string,
-): Promise<string> {
-  const msId = pt?.id;
-  if (!msId) return fallback;
-  const cached = priceTypeCache.get(msId);
-  if (cached) return cached;
-  const externalCode = `ms:${msId}`;
-  const name = (pt?.name ?? 'Price').slice(0, 100);
-  // Match by externalCode OR name — PriceType has a unique (accountId, name)
-  // constraint and the base seed may already own a same-named type (e.g.
-  // «Оптовая цена»), so we must reuse it instead of creating a duplicate.
-  const existing = await prisma.priceType.findFirst({
-    where: { accountId: ACCOUNT_ID, OR: [{ externalCode }, { name }] },
-    select: { id: true },
-  });
-  let id: string;
-  if (existing) {
-    id = existing.id;
-  } else {
-    const created = await prisma.priceType.create({
-      data: { accountId: ACCOUNT_ID, name, externalCode },
-      select: { id: true },
-    });
-    id = created.id;
-    console.log(`    + price type «${name}» created`);
-  }
-  priceTypeCache.set(msId, id);
-  return id;
-}
-
-/** moysklad ships money in MINOR units (tiyin/kopeck) — the SAME unit our
- * schema stores. So the conversion is 1:1, not ×100. (The legacy ×100 here
- * inflated every price 100×; the document importers already use 1:1.) */
-function priceToMinor(v: number | undefined): bigint | null {
-  return v === undefined ? null : BigInt(Math.round(v));
-}
-
-/** Build salePrices JSON preserving each entry's real price type. */
-async function buildSalePrices(
-  sps: MsSalePrice[] | undefined,
-  fallbackTypeId: string,
-): Promise<Array<{ priceTypeId: string; value: string }>> {
-  if (!sps?.length) return [];
-  const out: Array<{ priceTypeId: string; value: string }> = [];
-  for (const p of sps) {
-    const priceTypeId = await resolvePriceTypeId(p.priceType, fallbackTypeId);
-    out.push({ priceTypeId, value: String(Math.round(p.value)) });
-  }
-  return out;
 }
 
 async function importLiveProducts(): Promise<number> {
@@ -470,15 +603,24 @@ async function importLiveProducts(): Promise<number> {
         where: { accountId: ACCOUNT_ID, externalCode },
         select: { id: true },
       });
+      // moysklad ships prices ALREADY in MINOR units (×100, e.g. 1000000 = 10000
+      // som). Our schema stores BigInt minor 1:1 — NO extra ×100. Round to guard
+      // against any fractional minor value before the BigInt cast.
+      const toMinor = (v: number | undefined): bigint | null =>
+        v === undefined ? null : BigInt(Math.round(v));
       const data = {
         name: r.name.slice(0, 255),
         code: r.code?.slice(0, 50) ?? null,
         article: r.article?.slice(0, 100) ?? null,
         description: r.description ?? null,
         archived: r.archived ?? false,
-        buyPrice: priceToMinor(r.buyPrice?.value),
-        minPrice: priceToMinor(r.minPrice?.value),
-        salePrices: await buildSalePrices(r.salePrices, defaultPtId),
+        buyPrice: toMinor(r.buyPrice?.value),
+        minPrice: toMinor(r.minPrice?.value),
+        salePrices:
+          r.salePrices?.map((p) => ({
+            priceTypeId: defaultPtId,
+            value: String(Math.round(p.value)),
+          })) ?? [],
       };
       if (existing) {
         await prisma.product.update({ where: { id: existing.id }, data });
@@ -807,6 +949,9 @@ interface MsCustomerOrder {
   description?: string;
   moment?: string;
   applicable?: boolean;
+  // moysklad «Напечатано» / «Отправлено» per-document flags.
+  printed?: boolean;
+  published?: boolean;
   state?: { meta: { href: string } };
   agent?: { meta: { href: string } };
   organization?: { meta: { href: string } };
@@ -817,6 +962,7 @@ interface MsCustomerOrder {
   shippedSum?: number;
   invoicedSum?: number;
   deliveryPlannedMoment?: string;
+  positions?: { rows?: MsPosition[] };
 }
 
 function extractMsId(href?: string): string | null {
@@ -828,7 +974,11 @@ function extractMsId(href?: string): string | null {
 async function importLiveCustomerOrders(): Promise<number> {
   if (!MOYSKLAD_TOKEN) return 0;
   console.log('  ↳ fetching customer orders …');
-  const rows = await fetchMoyskladPaged<MsCustomerOrder>('/entity/customerorder');
+  const rows = await fetchMoyskladPagedExpanded<MsCustomerOrder>(
+    '/entity/customerorder',
+    'positions',
+  );
+  const resolve = await buildAssortmentResolver();
   // Pre-load lookup maps so we can resolve agent/org/store FKs without
   // hitting Prisma per-row.
   const cps = await prisma.counterparty.findMany({
@@ -884,6 +1034,9 @@ async function importLiveCustomerOrders(): Promise<number> {
         deliveryPlannedMoment: r.deliveryPlannedMoment ? new Date(r.deliveryPlannedMoment) : null,
         applicable: r.applicable ?? false,
         state: r.applicable ? 'fully_shipped' : 'draft',
+        // «Отправлено» / «Напечатано» columns — moysklad's real per-doc flags.
+        published: r.published ?? false,
+        printed: r.printed ?? false,
         sumMinor: BigInt(Math.round(r.sum ?? 0)),
         vatSumMinor: BigInt(Math.round(r.vatSum ?? 0)),
         payedSumMinor: BigInt(Math.round(r.payedSum ?? 0)),
@@ -893,9 +1046,19 @@ async function importLiveCustomerOrders(): Promise<number> {
       if (existing) {
         await prisma.customerOrder.update({ where: { id: existing.id }, data });
       } else {
-        await prisma.customerOrder.create({
-          data: { ...data, accountId: ACCOUNT_ID, externalCode, agentId, organizationId, storeId },
-        });
+        await createDocWithNameFallback(
+          prisma.customerOrder,
+          {
+            ...data,
+            accountId: ACCOUNT_ID,
+            externalCode,
+            agentId,
+            organizationId,
+            storeId,
+            positions: { create: buildSalesPositions(r.positions?.rows, resolve) },
+          },
+          r.id,
+        );
       }
       inserted++;
       if (inserted % 250 === 0) console.log(`    … customer orders ${inserted}/${rows.length}`);
@@ -924,12 +1087,17 @@ interface MsDocument {
   description?: string;
   moment?: string;
   applicable?: boolean;
+  // moysklad's «Напечатано» / «Отправлено» per-document flags (every moysklad
+  // document carries them) — imported so the list columns reflect real status.
+  printed?: boolean;
+  published?: boolean;
   agent?: { meta: { href: string } };
   organization?: { meta: { href: string } };
   store?: { meta: { href: string } };
   sum?: number;
   vatSum?: number;
   payedSum?: number;
+  positions?: { rows?: MsPosition[] };
 }
 
 interface DocImportSpec {
@@ -957,12 +1125,13 @@ async function importLiveDocuments(spec: DocImportSpec): Promise<number> {
   console.log(`  ↳ fetching ${spec.label} …`);
   let rows: MsDocument[] = [];
   try {
-    rows = await fetchMoyskladPaged<MsDocument>(spec.endpoint);
+    rows = await fetchMoyskladPagedExpanded<MsDocument>(spec.endpoint, 'positions');
   } catch (e) {
     console.warn(`    ! ${spec.label} fetch failed: ${e instanceof Error ? e.message : e}`);
     return 0;
   }
 
+  const resolve = await buildAssortmentResolver();
   const cps = await prisma.counterparty.findMany({
     where: { accountId: ACCOUNT_ID, externalCode: { startsWith: 'ms:' } },
     select: { id: true, externalCode: true },
@@ -1027,22 +1196,28 @@ async function importLiveDocuments(spec: DocImportSpec): Promise<number> {
         moment: r.moment ? new Date(r.moment) : new Date(),
         applicable: r.applicable ?? false,
         state: r.applicable ? 'posted' : 'draft',
+        // «Отправлено» / «Напечатано» columns — carry moysklad's real per-doc flags.
+        published: r.published ?? false,
+        printed: r.printed ?? false,
         sumMinor: BigInt(Math.round(r.sum ?? 0)),
         vatSumMinor: BigInt(Math.round(r.vatSum ?? 0)),
       };
       if (existing) {
         await model.update({ where: { id: existing.id }, data });
       } else {
-        await model.create({
-          data: {
+        await createDocWithNameFallback(
+          model,
+          {
             ...data,
             accountId: ACCOUNT_ID,
             externalCode,
             agentId,
             organizationId,
             ...(storeId ? { storeId } : {}),
+            positions: { create: buildSalesPositions(r.positions?.rows, resolve) },
           },
-        });
+          r.id,
+        );
       }
       inserted++;
       if (inserted % 500 === 0) console.log(`    … ${spec.label} ${inserted}/${rows.length}`);
@@ -1137,6 +1312,9 @@ async function importLiveProductsByKind(
   } catch {
     return 0;
   }
+  // moysklad money is ALREADY minor (×100) — store 1:1, NO extra ×100.
+  const toMinor = (v: number | undefined): bigint | null =>
+    v === undefined ? null : BigInt(Math.round(v));
   const defaultPtId = await resolveSeedDefaultPriceTypeId();
   let inserted = 0;
   for (const r of rows) {
@@ -1153,9 +1331,13 @@ async function importLiveProductsByKind(
         article: r.article?.slice(0, 100) ?? null,
         description: r.description ?? null,
         archived: r.archived ?? false,
-        buyPrice: priceToMinor(r.buyPrice?.value),
-        minPrice: priceToMinor(r.minPrice?.value),
-        salePrices: await buildSalePrices(r.salePrices, defaultPtId),
+        buyPrice: toMinor(r.buyPrice?.value),
+        minPrice: toMinor(r.minPrice?.value),
+        salePrices:
+          r.salePrices?.map((p) => ({
+            priceTypeId: defaultPtId,
+            value: String(Math.round(p.value)),
+          })) ?? [],
         kind, // override on existing rows too — moysklad source-of-truth
       };
       if (existing) {
@@ -1265,8 +1447,9 @@ async function importLiveMoneyDocs(
       if (existing) {
         await model.update({ where: { id: existing.id }, data });
       } else {
-        await model.create({
-          data: {
+        await createDocWithNameFallback(
+          model,
+          {
             ...data,
             accountId: ACCOUNT_ID,
             externalCode,
@@ -1274,7 +1457,8 @@ async function importLiveMoneyDocs(
             organizationId,
             ...(isCash ? { cashDeskId: cashDesk?.id } : { organizationAccountId: orgAccount?.id }),
           },
-        });
+          r.id,
+        );
       }
       inserted++;
       if (inserted % 500 === 0) console.log(`    … ${label} ${inserted}/${rows.length}`);
@@ -1286,20 +1470,415 @@ async function importLiveMoneyDocs(
   return inserted;
 }
 
-// MASTER_ONLY=1 imports only real-MoySklad master data (catalog +
-// counterparties + orgs/stores/currencies/price-types + contacts + variants
-// + bundles/services). It skips the legacy non-MoySklad JSON and ALL
-// documents (orders, demands, supplies, money docs, tasks). Used for the
-// production "clean + reseed from real MoySklad" flow.
-const MASTER_ONLY = process.env.MASTER_ONLY === '1';
+// ──────────────────────────────────────────────────────────────
+// Default money accounts — ensure ONE CashDesk + ONE OrganizationAccount
+// exist so the money importers don't skip cash/payment docs wholesale.
+// ──────────────────────────────────────────────────────────────
+
+async function ensureDefaultMoneyAccounts(): Promise<void> {
+  if (!MOYSKLAD_TOKEN) return;
+  const firstOrg = await prisma.organization.findFirst({
+    where: { accountId: ACCOUNT_ID },
+    select: { id: true },
+  });
+  if (!firstOrg) {
+    console.warn('    ! ensureDefaultMoneyAccounts: no organization imported, skipping');
+    return;
+  }
+  const cashDesk = await prisma.cashDesk.findFirst({
+    where: { accountId: ACCOUNT_ID },
+    select: { id: true },
+  });
+  if (!cashDesk) {
+    await prisma.cashDesk.create({
+      data: { accountId: ACCOUNT_ID, name: 'Основная касса', currency: 'UZS' },
+    });
+    console.log('    ↳ created default CashDesk «Основная касса»');
+  }
+  const orgAccount = await prisma.organizationAccount.findFirst({
+    where: { accountId: ACCOUNT_ID },
+    select: { id: true },
+  });
+  if (!orgAccount) {
+    await prisma.organizationAccount.create({
+      data: {
+        accountId: ACCOUNT_ID,
+        organizationId: firstOrg.id,
+        name: 'Основной счёт',
+        isDefault: true,
+        currency: 'UZS',
+      },
+    });
+    console.log('    ↳ created default OrganizationAccount «Основной счёт»');
+  }
+}
+
+// ──────────────────────────────────────────────────────────────
+// Warehouse documents — Move / Loss / Enter / Inventory.
+// Internal stock docs (NO agent). Each carries positions; the position
+// shape differs per doc type (see the schema models).
+// ──────────────────────────────────────────────────────────────
+
+/** moysklad warehouse-doc header shape (only the fields we map). */
+interface MsWarehouseDoc {
+  id: string;
+  name: string;
+  description?: string;
+  moment?: string;
+  applicable?: boolean;
+  printed?: boolean;
+  published?: boolean;
+  organization?: { meta: { href: string } };
+  store?: { meta: { href: string } };
+  sourceStore?: { meta: { href: string } };
+  targetStore?: { meta: { href: string } };
+  sum?: number;
+  positions?: { rows?: MsPosition[] };
+}
+
+/** Common org/store lookup maps + fallbacks shared by the warehouse importers. */
+async function loadWarehouseRefs(): Promise<{
+  orgByMs: Map<string, string>;
+  storeByMs: Map<string, string>;
+  fbOrg?: string;
+  fbStore?: string;
+}> {
+  const orgs = await prisma.organization.findMany({
+    where: { accountId: ACCOUNT_ID, externalCode: { startsWith: 'ms:' } },
+    select: { id: true, externalCode: true },
+  });
+  const orgByMs = new Map(orgs.map((o) => [(o.externalCode ?? '').replace(/^ms:/, ''), o.id]));
+  const stores = await prisma.store.findMany({
+    where: { accountId: ACCOUNT_ID, externalCode: { startsWith: 'ms:' } },
+    select: { id: true, externalCode: true },
+  });
+  const storeByMs = new Map(stores.map((s) => [(s.externalCode ?? '').replace(/^ms:/, ''), s.id]));
+  return { orgByMs, storeByMs, fbOrg: orgs[0]?.id, fbStore: stores[0]?.id };
+}
+
+async function importLiveMove(): Promise<number> {
+  if (!MOYSKLAD_TOKEN) return 0;
+  console.log('  ↳ fetching moves …');
+  let rows: MsWarehouseDoc[] = [];
+  try {
+    rows = await fetchMoyskladPagedExpanded<MsWarehouseDoc>('/entity/move', 'positions');
+  } catch (e) {
+    console.warn(`    ! moves fetch failed: ${e instanceof Error ? e.message : e}`);
+    return 0;
+  }
+  const resolve = await buildAssortmentResolver();
+  const { orgByMs, storeByMs, fbOrg, fbStore } = await loadWarehouseRefs();
+  if (!fbOrg || !fbStore) {
+    console.warn('    ! moves: missing fallback org/store refs, skipping');
+    return 0;
+  }
+  let inserted = 0;
+  let skipped = 0;
+  for (const r of rows) {
+    if (!r.id || !r.name) continue;
+    try {
+      const externalCode = `ms:${r.id}`;
+      const existing = await prisma.move.findFirst({
+        where: { accountId: ACCOUNT_ID, externalCode },
+        select: { id: true },
+      });
+      const organizationId = orgByMs.get(extractMsId(r.organization?.meta.href) ?? '') ?? fbOrg;
+      const sourceStoreId = storeByMs.get(extractMsId(r.sourceStore?.meta.href) ?? '') ?? fbStore;
+      const destinationStoreId =
+        storeByMs.get(extractMsId(r.targetStore?.meta.href) ?? '') ?? fbStore;
+      const data = {
+        name: r.name.slice(0, 100),
+        description: r.description ?? null,
+        moment: r.moment ? new Date(r.moment) : new Date(),
+        applicable: r.applicable ?? false,
+        state: r.applicable ? 'posted' : 'draft',
+        published: r.published ?? false,
+        printed: r.printed ?? false,
+        sumMinor: BigInt(Math.round(r.sum ?? 0)),
+      };
+      const positionCreate = buildSalesPositions(r.positions?.rows, resolve).map((p) => ({
+        accountId: ACCOUNT_ID,
+        position: p.position,
+        assortmentKind: p.assortmentKind,
+        assortmentId: p.assortmentId,
+        productId: p.productId,
+        quantity: p.quantity,
+        costMinor: null,
+      }));
+      if (existing) {
+        await prisma.move.update({ where: { id: existing.id }, data });
+      } else {
+        await createDocWithNameFallback(
+          prisma.move,
+          {
+            ...data,
+            accountId: ACCOUNT_ID,
+            externalCode,
+            organizationId,
+            sourceStoreId,
+            destinationStoreId,
+            positions: { create: positionCreate },
+          },
+          r.id,
+        );
+      }
+      inserted++;
+      if (inserted % 500 === 0) console.log(`    … moves ${inserted}/${rows.length}`);
+    } catch {
+      skipped++;
+    }
+  }
+  console.log(`  ↳ moves: ${inserted} upserted (${skipped} skipped of ${rows.length})`);
+  return inserted;
+}
+
+async function importLiveLoss(): Promise<number> {
+  if (!MOYSKLAD_TOKEN) return 0;
+  console.log('  ↳ fetching losses …');
+  let rows: MsWarehouseDoc[] = [];
+  try {
+    rows = await fetchMoyskladPagedExpanded<MsWarehouseDoc>('/entity/loss', 'positions');
+  } catch (e) {
+    console.warn(`    ! losses fetch failed: ${e instanceof Error ? e.message : e}`);
+    return 0;
+  }
+  const resolve = await buildAssortmentResolver();
+  const { orgByMs, storeByMs, fbOrg, fbStore } = await loadWarehouseRefs();
+  if (!fbOrg || !fbStore) {
+    console.warn('    ! losses: missing fallback org/store refs, skipping');
+    return 0;
+  }
+  let inserted = 0;
+  let skipped = 0;
+  for (const r of rows) {
+    if (!r.id || !r.name) continue;
+    try {
+      const externalCode = `ms:${r.id}`;
+      const existing = await prisma.loss.findFirst({
+        where: { accountId: ACCOUNT_ID, externalCode },
+        select: { id: true },
+      });
+      const organizationId = orgByMs.get(extractMsId(r.organization?.meta.href) ?? '') ?? fbOrg;
+      const storeId = storeByMs.get(extractMsId(r.store?.meta.href) ?? '') ?? fbStore;
+      const data = {
+        name: r.name.slice(0, 100),
+        description: r.description ?? null,
+        moment: r.moment ? new Date(r.moment) : new Date(),
+        applicable: r.applicable ?? false,
+        state: r.applicable ? 'posted' : 'draft',
+        published: r.published ?? false,
+        printed: r.printed ?? false,
+        sumMinor: BigInt(Math.round(r.sum ?? 0)),
+      };
+      const positionCreate = buildSalesPositions(r.positions?.rows, resolve).map((p) => ({
+        accountId: ACCOUNT_ID,
+        position: p.position,
+        assortmentKind: p.assortmentKind,
+        assortmentId: p.assortmentId,
+        productId: p.productId,
+        quantity: p.quantity,
+        costMinor: null,
+        reason: null,
+      }));
+      if (existing) {
+        await prisma.loss.update({ where: { id: existing.id }, data });
+      } else {
+        await createDocWithNameFallback(
+          prisma.loss,
+          {
+            ...data,
+            accountId: ACCOUNT_ID,
+            externalCode,
+            organizationId,
+            storeId,
+            positions: { create: positionCreate },
+          },
+          r.id,
+        );
+      }
+      inserted++;
+      if (inserted % 500 === 0) console.log(`    … losses ${inserted}/${rows.length}`);
+    } catch {
+      skipped++;
+    }
+  }
+  console.log(`  ↳ losses: ${inserted} upserted (${skipped} skipped of ${rows.length})`);
+  return inserted;
+}
+
+async function importLiveEnter(): Promise<number> {
+  if (!MOYSKLAD_TOKEN) return 0;
+  console.log('  ↳ fetching enters …');
+  let rows: MsWarehouseDoc[] = [];
+  try {
+    rows = await fetchMoyskladPagedExpanded<MsWarehouseDoc>('/entity/enter', 'positions');
+  } catch (e) {
+    console.warn(`    ! enters fetch failed: ${e instanceof Error ? e.message : e}`);
+    return 0;
+  }
+  const resolve = await buildAssortmentResolver();
+  const { orgByMs, storeByMs, fbOrg, fbStore } = await loadWarehouseRefs();
+  if (!fbOrg || !fbStore) {
+    console.warn('    ! enters: missing fallback org/store refs, skipping');
+    return 0;
+  }
+  let inserted = 0;
+  let skipped = 0;
+  for (const r of rows) {
+    if (!r.id || !r.name) continue;
+    try {
+      const externalCode = `ms:${r.id}`;
+      const existing = await prisma.enter.findFirst({
+        where: { accountId: ACCOUNT_ID, externalCode },
+        select: { id: true },
+      });
+      const organizationId = orgByMs.get(extractMsId(r.organization?.meta.href) ?? '') ?? fbOrg;
+      const storeId = storeByMs.get(extractMsId(r.store?.meta.href) ?? '') ?? fbStore;
+      const data = {
+        name: r.name.slice(0, 100),
+        description: r.description ?? null,
+        moment: r.moment ? new Date(r.moment) : new Date(),
+        applicable: r.applicable ?? false,
+        state: r.applicable ? 'posted' : 'draft',
+        published: r.published ?? false,
+        printed: r.printed ?? false,
+        sumMinor: BigInt(Math.round(r.sum ?? 0)),
+      };
+      // EnterPosition.costMinor is REQUIRED (non-null) — use the moysklad price.
+      const positionCreate = (r.positions?.rows ?? [])
+        .map((p) => {
+          const ref = resolve(extractMsId(p.assortment?.meta?.href), p.assortment?.meta?.type);
+          return ref ? { p, ref } : null;
+        })
+        .filter((x): x is { p: MsPosition; ref: ResolvedAssortment } => x !== null)
+        .map(({ p, ref }, i) => ({
+          accountId: ACCOUNT_ID,
+          position: i + 1,
+          assortmentKind: ref.assortmentKind,
+          assortmentId: ref.assortmentId,
+          productId: ref.productId,
+          quantity: String(p.quantity ?? 0),
+          costMinor: BigInt(Math.round(p.price ?? 0)),
+        }));
+      if (existing) {
+        await prisma.enter.update({ where: { id: existing.id }, data });
+      } else {
+        await createDocWithNameFallback(
+          prisma.enter,
+          {
+            ...data,
+            accountId: ACCOUNT_ID,
+            externalCode,
+            organizationId,
+            storeId,
+            positions: { create: positionCreate },
+          },
+          r.id,
+        );
+      }
+      inserted++;
+      if (inserted % 500 === 0) console.log(`    … enters ${inserted}/${rows.length}`);
+    } catch {
+      skipped++;
+    }
+  }
+  console.log(`  ↳ enters: ${inserted} upserted (${skipped} skipped of ${rows.length})`);
+  return inserted;
+}
+
+async function importLiveInventory(): Promise<number> {
+  if (!MOYSKLAD_TOKEN) return 0;
+  console.log('  ↳ fetching inventories …');
+  let rows: MsWarehouseDoc[] = [];
+  try {
+    rows = await fetchMoyskladPagedExpanded<MsWarehouseDoc>('/entity/inventory', 'positions');
+  } catch (e) {
+    console.warn(`    ! inventories fetch failed: ${e instanceof Error ? e.message : e}`);
+    return 0;
+  }
+  const resolve = await buildAssortmentResolver();
+  const { orgByMs, storeByMs, fbOrg, fbStore } = await loadWarehouseRefs();
+  if (!fbOrg || !fbStore) {
+    console.warn('    ! inventories: missing fallback org/store refs, skipping');
+    return 0;
+  }
+  let inserted = 0;
+  let skipped = 0;
+  for (const r of rows) {
+    if (!r.id || !r.name) continue;
+    try {
+      const externalCode = `ms:${r.id}`;
+      const existing = await prisma.inventory.findFirst({
+        where: { accountId: ACCOUNT_ID, externalCode },
+        select: { id: true },
+      });
+      const organizationId = orgByMs.get(extractMsId(r.organization?.meta.href) ?? '') ?? fbOrg;
+      const storeId = storeByMs.get(extractMsId(r.store?.meta.href) ?? '') ?? fbStore;
+      const data = {
+        name: r.name.slice(0, 100),
+        description: r.description ?? null,
+        moment: r.moment ? new Date(r.moment) : new Date(),
+        applicable: r.applicable ?? false,
+        state: r.applicable ? 'posted' : 'draft',
+        published: r.published ?? false,
+        printed: r.printed ?? false,
+        sumMinor: BigInt(Math.round(r.sum ?? 0)),
+      };
+      // InventoryPosition has NO quantity field — it needs expected/actual/variance.
+      // moysklad: quantity = counted (actual), calculatedQuantity = system (expected).
+      const positionCreate = (r.positions?.rows ?? [])
+        .map((p) => {
+          const ref = resolve(extractMsId(p.assortment?.meta?.href), p.assortment?.meta?.type);
+          return ref ? { p, ref } : null;
+        })
+        .filter((x): x is { p: MsPosition; ref: ResolvedAssortment } => x !== null)
+        .map(({ p, ref }, i) => {
+          const actual = p.quantity ?? 0;
+          const expected = p.calculatedQuantity ?? p.quantity ?? 0;
+          return {
+            accountId: ACCOUNT_ID,
+            position: i + 1,
+            assortmentKind: ref.assortmentKind,
+            assortmentId: ref.assortmentId,
+            productId: ref.productId,
+            actualQty: String(actual),
+            expectedQty: String(expected),
+            varianceQty: String(actual - (p.calculatedQuantity ?? 0)),
+            costMinor: null,
+          };
+        });
+      if (existing) {
+        await prisma.inventory.update({ where: { id: existing.id }, data });
+      } else {
+        await createDocWithNameFallback(
+          prisma.inventory,
+          {
+            ...data,
+            accountId: ACCOUNT_ID,
+            externalCode,
+            organizationId,
+            storeId,
+            positions: { create: positionCreate },
+          },
+          r.id,
+        );
+      }
+      inserted++;
+      if (inserted % 500 === 0) console.log(`    … inventories ${inserted}/${rows.length}`);
+    } catch {
+      skipped++;
+    }
+  }
+  console.log(`  ↳ inventories: ${inserted} upserted (${skipped} skipped of ${rows.length})`);
+  return inserted;
+}
 
 async function main(): Promise<void> {
   console.log('🌱 Real-data import starting…');
   console.log(`  Target account: ${ACCOUNT_ID}`);
   console.log(`  Token configured: ${MOYSKLAD_TOKEN ? 'yes' : 'no (legacy JSON only)'}`);
-  console.log(`  Mode: ${MASTER_ONLY ? 'MASTER_ONLY (real MoySklad master data)' : 'FULL'}`);
 
-  const legacyCount = MASTER_ONLY ? 0 : await importLegacyCounterparties();
+  const legacyCount = await importLegacyCounterparties();
   const liveCounterparties = await importLiveCounterparties();
   const liveOrgs = await importLiveOrganizations();
   const liveStores = await importLiveStores();
@@ -1310,36 +1889,41 @@ async function main(): Promise<void> {
   const liveCurrencies = await importLiveCurrencies();
   const liveFolders = await importLiveProductFolders();
   const liveContacts = await importLiveContactPersons();
-  const liveTasks = MASTER_ONLY ? 0 : await importLiveTasks();
-  const liveCustomerOrders = MASTER_ONLY ? 0 : await importLiveCustomerOrders();
+  const liveTasks = await importLiveTasks();
+  const liveCustomerOrders = await importLiveCustomerOrders();
 
   const docTotals: Record<string, number> = {};
-  if (!MASTER_ONLY) {
-    for (const spec of DOC_SPECS) {
-      docTotals[spec.label] = await importLiveDocuments(spec);
-    }
+  for (const spec of DOC_SPECS) {
+    docTotals[spec.label] = await importLiveDocuments(spec);
   }
 
-  // Sub-types of Product (kind discriminator) — master data, always imported.
+  // Sub-types of Product (kind discriminator)
   docTotals.bundles = await importLiveProductsByKind('/entity/bundle', 'bundle', 'bundles');
   docTotals.services = await importLiveProductsByKind('/entity/service', 'service', 'services');
   docTotals.variants = await importLiveVariants();
 
-  // Money documents (cash + bank) — skipped in MASTER_ONLY mode.
-  if (!MASTER_ONLY) {
-    docTotals['cash-in'] = await importLiveMoneyDocs('/entity/cashin', 'cashIn', 'cash-in');
-    docTotals['cash-out'] = await importLiveMoneyDocs('/entity/cashout', 'cashOut', 'cash-out');
-    docTotals['payments-in'] = await importLiveMoneyDocs(
-      '/entity/paymentin',
-      'paymentIn',
-      'payments-in',
-    );
-    docTotals['payments-out'] = await importLiveMoneyDocs(
-      '/entity/paymentout',
-      'paymentOut',
-      'payments-out',
-    );
-  }
+  // Warehouse documents (internal stock — no agent)
+  docTotals.moves = await importLiveMove();
+  docTotals.losses = await importLiveLoss();
+  docTotals.enters = await importLiveEnter();
+  docTotals.inventories = await importLiveInventory();
+
+  // Ensure a CashDesk + OrganizationAccount exist so cash/payment docs import.
+  await ensureDefaultMoneyAccounts();
+
+  // Money documents (cash + bank)
+  docTotals['cash-in'] = await importLiveMoneyDocs('/entity/cashin', 'cashIn', 'cash-in');
+  docTotals['cash-out'] = await importLiveMoneyDocs('/entity/cashout', 'cashOut', 'cash-out');
+  docTotals['payments-in'] = await importLiveMoneyDocs(
+    '/entity/paymentin',
+    'paymentIn',
+    'payments-in',
+  );
+  docTotals['payments-out'] = await importLiveMoneyDocs(
+    '/entity/paymentout',
+    'paymentOut',
+    'payments-out',
+  );
 
   const totals = {
     counterparties: await prisma.counterparty.count({ where: { accountId: ACCOUNT_ID } }),

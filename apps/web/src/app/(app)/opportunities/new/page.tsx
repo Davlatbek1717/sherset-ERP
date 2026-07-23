@@ -1,9 +1,7 @@
 'use client';
 
 import { DetailHeader, DetailToolbar } from '@/components/document-detail';
-import { useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
-import { pinDefaultCustomer } from '@/lib/pin-default-customer';
 import {
   CatalogPicker,
   CatalogPickerField,
@@ -54,7 +52,6 @@ export default function NewOpportunityPage() {
   const t = useTranslations('pages.opportunities');
   const tCommon = useTranslations('common');
   const tForm = useTranslations('form');
-  const userDefaults = useUserDefaults();
 
   const fromCounterpartyId = searchParams.get('counterpartyId');
 
@@ -79,6 +76,15 @@ export default function NewOpportunityPage() {
     queryKey: ['pipelines-active'],
     queryFn: () => api.get<{ items: PipelineRef[] }>('/pipelines?archived=false&limit=50'),
   });
+  // «Валюта» options — the account's REAL currencies (Настройки → Валюты), never a
+  // hardcoded list (a phantom EUR/RUB the account doesn't have must not appear).
+  const { data: currenciesData } = useQuery<{
+    items: Array<{ id: string; isoCode: string; name: string; rate: string }>;
+  }>({
+    queryKey: ['currencies'],
+    queryFn: () => api.get('/currencies'),
+  });
+  const currencies = currenciesData?.items ?? [];
 
   // Pick default pipeline + first open stage on first load
   useEffect(() => {
@@ -120,17 +126,11 @@ export default function NewOpportunityPage() {
     const d = await api.get<{ items: CounterpartyRef[] }>(
       `/counterparties?search=${encodeURIComponent(s)}&limit=50`,
     );
-    const items = d.items.map((c) => ({
+    return d.items.map((c) => ({
       id: c.id,
       primary: c.name,
       secondary: c.legalTitle ?? undefined,
     }));
-    return pinDefaultCustomer(
-      items,
-      userDefaults.data?.defaultCustomer,
-      s,
-      tForm('pinned_default'),
-    );
   };
 
   const contactPersonFetcher = useMemo(
@@ -288,10 +288,12 @@ export default function NewOpportunityPage() {
                   className={SELECT_CLASS}
                   data-test-id="field-currency"
                 >
-                  <option value="UZS">UZS</option>
-                  <option value="USD">USD</option>
-                  <option value="EUR">EUR</option>
-                  <option value="RUB">RUB</option>
+                  {currencies.length === 0 && <option value={currency}>{currency}</option>}
+                  {currencies.map((c) => (
+                    <option key={c.id} value={c.isoCode}>
+                      {c.name} ({c.isoCode})
+                    </option>
+                  ))}
                 </NativeSelect>
               </FormField>
               <FormField id="probability" label={t('probability')}>

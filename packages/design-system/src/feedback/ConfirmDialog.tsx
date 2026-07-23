@@ -186,7 +186,7 @@ function ConfirmDialog({
         className="absolute inset-0 bg-black/40"
       />
       {/* Panel */}
-      <div className="relative w-[400px] max-w-[calc(100vw-2rem)] rounded-[var(--ms-radius-md)] bg-[var(--ms-bg-surface-elevated)] p-5 shadow-[var(--ms-shadow-lg)]">
+      <div className="relative w-[400px] max-w-[calc(100vw-2rem)] rounded-[var(--ms-radius-md)] bg-white p-5 shadow-[var(--ms-shadow-lg)]">
         <div className="flex items-start gap-3">
           {tone === 'destructive' || tone === 'warning' ? (
             <AlertCircle

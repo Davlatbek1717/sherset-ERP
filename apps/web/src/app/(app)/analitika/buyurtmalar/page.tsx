@@ -2,7 +2,7 @@
 
 import { api } from '@/lib/api-client';
 import { documentStateTone } from '@/lib/document-state-tone';
-import { Input, NativeSelect, useDebounce } from '@moysklad/ui';
+import { Input, NativeSelect, StickyHScroll, useDebounce } from '@moysklad/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
@@ -163,7 +163,7 @@ export default function AnalitikaOrdersPage() {
 
       {/* Desktop table */}
       {filtered.length > 0 && (
-        <div className="hidden overflow-x-auto rounded-lg border border-[var(--ms-border)] bg-white lg:block">
+        <StickyHScroll className="hidden rounded-lg border border-[var(--ms-border)] bg-white lg:block">
           <table className="w-full text-sm">
             <thead className="bg-[var(--ms-bg-subtle)] text-[var(--ms-text-muted)] text-xs uppercase">
               <tr>
@@ -211,7 +211,7 @@ export default function AnalitikaOrdersPage() {
               ))}
             </tbody>
           </table>
-        </div>
+        </StickyHScroll>
       )}
     </div>
   );

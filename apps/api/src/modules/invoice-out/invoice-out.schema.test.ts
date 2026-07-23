@@ -52,10 +52,8 @@ describe('CreateInvoiceOutSchema', () => {
     expect(parsed.vatIncluded).toBe(false);
   });
 
-  it('requires at least one position', () => {
-    expect(() => CreateInvoiceOutSchema.parse({ ...valid, positions: [] })).toThrow(
-      /at least one position/i,
-    );
+  it('allows empty positions — owner 2026-07-08, no Provedeno precondition', () => {
+    expect(() => CreateInvoiceOutSchema.parse({ ...valid, positions: [] })).not.toThrow();
   });
 
   it('accepts customerOrderId', () => {

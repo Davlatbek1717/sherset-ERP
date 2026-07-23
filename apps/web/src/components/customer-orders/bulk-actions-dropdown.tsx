@@ -236,7 +236,7 @@ export function BulkActionsDropdown({
       </DropdownMenu.Item>
       <DropdownMenu.Item
         onSelect={onMassEdit}
-        disabled={!hasSelection || isPending || !onMassEdit}
+        disabled={isPending || !onMassEdit}
         testId="bulk-action-mass-edit"
       >
         {t('mass_edit')}

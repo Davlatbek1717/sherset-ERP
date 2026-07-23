@@ -5,10 +5,8 @@ import { FilterToggleButton } from '@/components/filters/filter-toggle-button';
 import { useBulkDocumentActions } from '@/hooks/use-bulk-actions';
 import { useColumnVisibility } from '@/hooks/use-column-visibility';
 import { useColumnWidths } from '@/hooks/use-column-widths';
-import { useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
 import { callDirectionTone, callStatusTone } from '@/lib/domain-status-tone';
-import { pinDefaultCustomer } from '@/lib/pin-default-customer';
 import {
   Badge,
   CatalogPicker,
@@ -16,6 +14,7 @@ import {
   type DataTableColumn,
   InlineFilterPanel,
   ListView,
+  MultiCombobox,
   NativeSelect,
   PeriodInputs,
   PeriodShortcuts,
@@ -47,6 +46,9 @@ interface ListResponse {
   total: number;
 }
 
+/** Multi-select reference field — moysklad checkbox-dropdown holds {id,label}[]. */
+type RefMulti = { id: string; label: string };
+
 const LIMIT = 25;
 
 function formatDuration(sec: number | null): string {
@@ -73,8 +75,6 @@ export default function CallsPage() {
   const tCommon = useTranslations('common');
   const tFields = useTranslations('fields');
   const tFilters = useTranslations('filters');
-  const tForm = useTranslations('form');
-  const userDefaults = useUserDefaults();
 
   const [searchInput, setSearchInput] = useState('');
   const search = useDebounce(searchInput, 300);
@@ -87,8 +87,12 @@ export default function CallsPage() {
   const [sortKey, setSortKey] = useState<string>('startedAt');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [filterOpen, setFilterOpen] = useState(true);
-  const [pickerOpen, setPickerOpen] = useState<null | 'agent' | 'owner'>(null);
-  const [agentFilter, setAgentFilter] = useState<{ id?: string; label?: string }>({});
+  const [pickerOpen, setPickerOpen] = useState<null | 'owner'>(null);
+  // «Контрагент» — moysklad-parity inline multi-select checkbox dropdown (was a
+  // single-select modal). Shows the phone as a sublabel; searches by name OR
+  // phone (BE /counterparties?search= already matches both). Sent as
+  // `counterpartyIds` CSV.
+  const [counterparties, setCounterparties] = useState<RefMulti[]>([]);
   const [ownerFilter, setOwnerFilter] = useState<{ id?: string; label?: string }>({});
   const [dateFrom, setDateFrom] = useState<string | undefined>();
   const [dateTo, setDateTo] = useState<string | undefined>();
@@ -101,7 +105,9 @@ export default function CallsPage() {
     ...(directionFilter ? { direction: directionFilter } : {}),
     ...(channelFilter ? { channel: channelFilter } : {}),
     ...(statusFilter ? { status: statusFilter } : {}),
-    ...(agentFilter.id ? { counterpartyId: agentFilter.id } : {}),
+    ...(counterparties.length
+      ? { counterpartyIds: counterparties.map((x) => x.id).join(',') }
+      : {}),
     ...(ownerFilter.id ? { ownerId: ownerFilter.id } : {}),
     ...(dateFrom ? { dateFrom } : {}),
     ...(dateTo ? { dateTo } : {}),
@@ -120,7 +126,7 @@ export default function CallsPage() {
     directionFilter,
     channelFilter,
     statusFilter,
-    agentFilter.id,
+    counterparties.map((x) => x.id).join(','),
     ownerFilter.id,
     dateFrom,
     dateTo,
@@ -271,7 +277,7 @@ export default function CallsPage() {
     !!directionFilter ||
     !!channelFilter ||
     !!statusFilter ||
-    !!agentFilter.id ||
+    counterparties.length > 0 ||
     !!ownerFilter.id ||
     !!dateFrom ||
     !!dateTo ||
@@ -332,7 +338,7 @@ export default function CallsPage() {
               setDirectionFilter('');
               setChannelFilter('');
               setStatusFilter('');
-              setAgentFilter({});
+              setCounterparties([]);
               setOwnerFilter({});
               setDateFrom(undefined);
               setDateTo(undefined);
@@ -409,20 +415,36 @@ export default function CallsPage() {
                 ))}
               </NativeSelect>
             </InlineFilterPanel.Field>
-            {/* 4. Kontragent */}
+            {/* 4. Kontragent — moysklad-parity inline multi-select checkbox
+                dropdown: type a name OR phone, results appear inline (each row
+                shows the phone as a sublabel), tick as many as needed. Was a
+                single-select modal. */}
             <InlineFilterPanel.Field label={tFields('agent')} expandable>
-              <CatalogPickerField
-                value={
-                  agentFilter.id
-                    ? { id: agentFilter.id, label: agentFilter.label ?? agentFilter.id }
-                    : null
-                }
-                placeholder=""
-                onPick={() => setPickerOpen('agent')}
-                onClear={() => {
-                  setAgentFilter({});
+              <MultiCombobox
+                value={counterparties.map((x) => x.id)}
+                items={counterparties.map((x) => ({ value: x.id, label: x.label }))}
+                onSearch={async (q) => {
+                  const r = await api.get<{
+                    items: { id: string; name: string; phone?: string | null }[];
+                  }>(`/counterparties?search=${encodeURIComponent(q)}&limit=20`);
+                  return r.items.map((x) => ({
+                    value: x.id,
+                    label: x.name,
+                    sublabel: x.phone || undefined,
+                  }));
+                }}
+                onChange={(nextIds, toggled) => {
+                  setCounterparties((prev) =>
+                    nextIds.map((id) => {
+                      const ex = prev.find((s) => s.id === id);
+                      if (ex) return ex;
+                      if (toggled?.value === id) return { id, label: String(toggled.label) };
+                      return { id, label: id };
+                    }),
+                  );
                   setCursor(undefined);
                 }}
+                placeholder=""
                 testId="filter-agent"
               />
             </InlineFilterPanel.Field>
@@ -529,27 +551,6 @@ export default function CallsPage() {
         }
         columnWidths={colWidths.values}
         onColumnResize={colWidths.set}
-      />
-      <CatalogPicker
-        open={pickerOpen === 'agent'}
-        onClose={() => setPickerOpen(null)}
-        title={tFields('agent')}
-        fetcher={async (q): Promise<PickerItem[]> => {
-          const r = await api.get<{ items: { id: string; name: string }[] }>(
-            `/counterparties?search=${encodeURIComponent(q)}&limit=20`,
-          );
-          const items = r.items.map((x) => ({ id: x.id, primary: x.name }));
-          return pinDefaultCustomer(
-            items,
-            userDefaults.data?.defaultCustomer,
-            q,
-            tForm('pinned_default'),
-          );
-        }}
-        onSelect={(item) => {
-          setAgentFilter({ id: item.id, label: String(item.primary) });
-          setCursor(undefined);
-        }}
       />
       <CatalogPicker
         open={pickerOpen === 'owner'}

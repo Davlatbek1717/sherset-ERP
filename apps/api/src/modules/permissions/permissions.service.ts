@@ -11,7 +11,6 @@ import {
   canAccessRecord,
   isAtLeast,
   maxScope,
-  scopeFromTemplate,
 } from './permissions.types.js';
 
 /**
@@ -233,11 +232,13 @@ export class PermissionsService {
    * to the first employee. Idempotent — checks existence first.
    */
   async seedSystemRoles(accountId: string, adminEmployeeId: string): Promise<void> {
-    // The full entity universe — every controller that declares
-    // `@RequirePermission` must reference an entity in this list. Adding a
-    // new entity here triggers a top-up on the next seed run for every
-    // account, so existing tenants automatically gain the new rows when
-    // they log in (via the seed call wired into auth).
+    // ⚠️ NOT WIRED to any runtime path (no caller as of 2026-07-03) — the live
+    // seeding of role permissions happens in packages/db/prisma/seed.ts, whose
+    // `entities` list MUST stay in sync with this one (and both with
+    // PermissionEntity in permissions.types.ts). When an entity exists in a
+    // controller's @RequirePermission but not in the seed list, every seeded
+    // tenant 403s on that module (2026-07-03: 'currency' was missing → the
+    // «Валюта документа» picker on 9 doc editors got 403 on fresh DBs).
     const entities: PermissionEntity[] = [
       'product',
       'productfolder',
@@ -314,11 +315,7 @@ export class PermissionsService {
       'auditlog',
       'report',
       'analitika',
-      // «Qarz undirish» (TZ §6) — kassir/operator ajratmasi shu to'rtlikda yashaydi.
-      'debt',
-      'debtpayment',
-      'debtcardpayment',
-      'debtreport',
+      'settings',
     ];
     const actions: PermissionAction[] = ['view', 'create', 'update', 'delete', 'approve', 'print'];
 
@@ -342,10 +339,7 @@ export class PermissionsService {
       const perms: Prisma.RolePermissionCreateManyInput[] = [];
       for (const entity of entities) {
         for (const action of actions) {
-          // Per-entity override (qarz rollari) → defaults → 'NO'. Shu funksiya
-          // tufayli «kassir naqd qabul qiladi, lekin screenshot kirita olmaydi»
-          // qoidasi seed'da mexanik ravishda yoziladi (TZ §6).
-          const scope = scopeFromTemplate(tpl, entity, action);
+          const scope = (tpl.defaults as Record<string, string>)[action] ?? 'NO';
           perms.push({
             roleId: role.id,
             entity,

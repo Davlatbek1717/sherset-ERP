@@ -21,9 +21,8 @@ interface SessionRow {
   openedAt: string;
   closedAt: string | null;
   cashier: { id: string; name: string };
-  // cashDesk/store are SetNull relations — null after the desk/store is deleted.
-  cashDesk: { id: string; name: string; currency: string } | null;
-  store: { id: string; name: string } | null;
+  cashDesk: { id: string; name: string; currency: string };
+  store: { id: string; name: string };
   organization: { id: string; name: string };
   salesCount: number;
   salesSumMinor: string;
@@ -115,16 +114,16 @@ export default function SessionsPage() {
     {
       key: 'cash_desk',
       header: t('cash_desk'),
-      cell: (row) => <span className="text-sm">{row.cashDesk?.name ?? '—'}</span>,
-      cellText: (r: SessionRow) => r.cashDesk?.name ?? '—',
+      cell: (row) => <span className="text-sm">{row.cashDesk.name}</span>,
+      cellText: (r: SessionRow) => r.cashDesk.name,
     },
     // «Склад» + «Организация» — moysklad «Смены» grid columns; the BE list()
     // already fetches both (store + organization), they were just never rendered.
     {
       key: 'store',
       header: tFields('store'),
-      cell: (row) => <span className="text-sm">{row.store?.name ?? '—'}</span>,
-      cellText: (r: SessionRow) => r.store?.name ?? '—',
+      cell: (row) => <span className="text-sm">{row.store.name}</span>,
+      cellText: (r: SessionRow) => r.store.name,
     },
     {
       key: 'organization',
@@ -176,11 +175,11 @@ export default function SessionsPage() {
       cell: (row) => (
         <span className="text-sm tabular-nums">
           {row.salesCount} (
-          {formatMoney(row.salesSumMinor, row.cashDesk?.currency ?? 'UZS', { displayAs: 'none' })})
+          {formatMoney(row.salesSumMinor, row.cashDesk.currency, { displayAs: 'none' })})
         </span>
       ),
       cellText: (r: SessionRow) =>
-        `${r.salesCount} (${formatMoney(r.salesSumMinor, r.cashDesk?.currency ?? 'UZS', { displayAs: 'none' })})`,
+        `${r.salesCount} (${formatMoney(r.salesSumMinor, r.cashDesk.currency, { displayAs: 'none' })})`,
     },
     {
       key: 'discrepancy',
@@ -198,14 +197,14 @@ export default function SessionsPage() {
             }`}
           >
             {d >= 0n ? '+' : ''}
-            {formatMoney(d, row.cashDesk?.currency ?? 'UZS', { displayAs: 'none' })}
+            {formatMoney(d, row.cashDesk.currency, { displayAs: 'none' })}
           </span>
         );
       },
       cellText: (r: SessionRow) =>
         r.discrepancyMinor === null
           ? '—'
-          : formatMoney(r.discrepancyMinor, r.cashDesk?.currency ?? 'UZS', { displayAs: 'none' }),
+          : formatMoney(r.discrepancyMinor, r.cashDesk.currency, { displayAs: 'none' }),
     },
   ];
 

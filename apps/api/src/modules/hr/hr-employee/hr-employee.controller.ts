@@ -3,13 +3,17 @@ import {
   Controller,
   Delete,
   Get,
+  Header,
   Inject,
   Param,
   Post,
   Put,
   Query,
+  Res,
+  StreamableFile,
   UseGuards,
 } from '@nestjs/common';
+import type { FastifyReply } from 'fastify';
 import type { AuthenticatedUser } from '../../auth/auth.schema.js';
 import { CurrentUser } from '../../auth/current-user.decorator.js';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard.js';
@@ -19,6 +23,7 @@ import { RequireHrPermission } from '../hr-auth/require-hr-permission.decorator.
 import {
   CreateHrEmployeeSchema,
   HrEmployeeFilterSchema,
+  SetEmployeeImageSchema,
   SetPasswordSchema,
   UpdateHrEmployeeSchema,
 } from './hr-employee.schema.js';
@@ -45,14 +50,16 @@ export class HrEmployeeController {
   @Get(':id')
   @RequireHrPermission('employees', 'read')
   async findOne(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
-    return this.svc.findOne(user.accountId, id);
+    // includeArchived: the moysklad employee card opens archived rows too —
+    // «Извлечь из архива» is only reachable from the card itself.
+    return this.svc.findOne(user.accountId, id, { includeArchived: true });
   }
 
   @Post()
   @RequireHrPermission('employees', 'full')
   async create(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
     const input = CreateHrEmployeeSchema.parse(body);
-    return this.svc.create(user.accountId, input);
+    return this.svc.create(user.accountId, input, user.sub);
   }
 
   @Put(':id')
@@ -63,7 +70,7 @@ export class HrEmployeeController {
     @Body() body: unknown,
   ) {
     const input = UpdateHrEmployeeSchema.parse(body);
-    return this.svc.update(user.accountId, id, input);
+    return this.svc.update(user.accountId, id, input, user.sub);
   }
 
   @Delete(':id')
@@ -102,6 +109,42 @@ export class HrEmployeeController {
     return runBulk(ids, (id) => this.svc.hardDelete(user.accountId, id, user.sub));
   }
 
+  // ─── moysklad card «Изображение» ─────────────────────────────────────────
+
+  /** Raw photo bytes for <img src> (auth via ?access_token=, like /images). */
+  @Get(':id/image/raw')
+  @RequireHrPermission('employees', 'read')
+  @Header('Cache-Control', 'private, max-age=60')
+  async imageRaw(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Res({ passthrough: true }) res: FastifyReply,
+  ): Promise<StreamableFile> {
+    const { buffer, mime, filename } = await this.svc.getImageRaw(user.accountId, id);
+    res.header('Content-Type', mime);
+    res.header('Content-Disposition', `inline; filename="${encodeURIComponent(filename)}"`);
+    return new StreamableFile(buffer);
+  }
+
+  /** Upload/replace the photo — JSON { filename, mime, dataBase64 }. */
+  @Put(':id/image')
+  @RequireHrPermission('employees', 'full')
+  async setImage(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    const input = SetEmployeeImageSchema.parse(body);
+    return this.svc.setImage(user.accountId, id, input, user.sub);
+  }
+
+  /** moysklad ⊗ — remove the photo. */
+  @Delete(':id/image')
+  @RequireHrPermission('employees', 'full')
+  async removeImage(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.svc.removeImage(user.accountId, id, user.sub);
+  }
+
   @Post(':id/set-password')
   @RequireHrPermission('employees', 'full')
   async setPassword(
@@ -110,6 +153,6 @@ export class HrEmployeeController {
     @Body() body: unknown,
   ) {
     const input = SetPasswordSchema.parse(body);
-    return this.svc.setPassword(user.accountId, id, input);
+    return this.svc.setPassword(user.accountId, id, input, user.sub);
   }
 }

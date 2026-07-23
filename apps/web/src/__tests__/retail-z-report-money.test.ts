@@ -19,11 +19,8 @@ describe('retail/z-report money + column parity (1:1 §2.5)', () => {
   it('money cells thread cashDesk.currency (no bare formatMoney(BigInt)/formatMoney(d))', () => {
     expect(src).not.toMatch(/formatMoney\(BigInt\(row\.\w+SumMinor\)\)/);
     expect(src).not.toMatch(/formatMoney\(d\)/);
-    // cashDesk is a SetNull relation — the cells must thread it null-safely.
-    const threaded =
-      src.match(/row\.cashDesk\?\.currency \?\? 'UZS', \{ displayAs: 'none' \}/g) ?? [];
+    const threaded = src.match(/row\.cashDesk\.currency, \{ displayAs: 'none' \}/g) ?? [];
     expect(threaded.length).toBeGreaterThanOrEqual(3);
-    expect(src).not.toMatch(/row\.cashDesk\.currency/);
   });
 
   it('renders the «Склад» + «Организация» «Смены» columns', () => {

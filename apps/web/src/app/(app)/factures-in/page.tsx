@@ -25,6 +25,7 @@ import {
   InlineFilterPanel,
   ListView,
   MoneyInput,
+  MultiCombobox,
   NativeSelect,
   PeriodInputs,
   PeriodShortcuts,
@@ -137,6 +138,9 @@ type ExtraFilterFields = {
   updatedTo?: string;
 };
 
+/** Multi-select reference field — moysklad checkbox-dropdown holds {id,label}[]. */
+type RefMulti = { id: string; label: string };
+
 export default function FacturesInPage() {
   const t = useTranslations('pages.factures_in');
   const tCommon = useTranslations('common');
@@ -152,9 +156,16 @@ export default function FacturesInPage() {
   const [sortKey, setSortKey] = useState<string>('moment');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [filterValues, setFilterValues] = useState<FilterDrawerValues & ExtraFilterFields>({});
+  // «Контрагент» / «Организация» — moysklad-parity inline multi-select checkbox
+  // dropdowns (MultiCombobox), replacing the old single-select modals. Each holds
+  // the picked {id,label} pairs; on the wire they go out as `<field>Ids` CSV. The
+  // «Контрагент» dropdown shows the phone as a sublabel and searches by name OR
+  // phone (BE /counterparties?search= already matches both).
+  const [agents, setAgents] = useState<RefMulti[]>([]);
+  const [organizations, setOrganizations] = useState<RefMulti[]>([]);
   const [filterOpen, setFilterOpen] = useState(true);
   const [pickerOpen, setPickerOpen] = useState<
-    null | 'agent' | 'org' | 'generate' | 'agentGroup' | 'owner' | 'group' | 'supply'
+    null | 'generate' | 'agentGroup' | 'owner' | 'group' | 'supply'
   >(null);
 
   // moysklad parity (C5 audit, 2026-05-21): /facturein defaults are
@@ -189,9 +200,9 @@ export default function FacturesInPage() {
     ...(filterValues.sumMinorTo !== undefined
       ? { sumMinorTo: String(filterValues.sumMinorTo) }
       : {}),
-    ...(filterValues.agentId ? { agentId: filterValues.agentId } : {}),
+    ...(agents.length ? { agentIds: agents.map((x) => x.id).join(',') } : {}),
     ...(filterValues.agentGroupId ? { agentGroupId: filterValues.agentGroupId } : {}),
-    ...(filterValues.organizationId ? { organizationId: filterValues.organizationId } : {}),
+    ...(organizations.length ? { organizationIds: organizations.map((x) => x.id).join(',') } : {}),
     ...(filterValues.ownerId ? { ownerId: filterValues.ownerId } : {}),
     ...(filterValues.groupId ? { groupId: filterValues.groupId } : {}),
     ...(filterValues.supplyId ? { supplyId: filterValues.supplyId } : {}),
@@ -211,7 +222,7 @@ export default function FacturesInPage() {
     cursor,
     sortKey,
     sortDir,
-    filterValues,
+    params.toString(),
   ] as const;
   const { data, isLoading, error, refetch } = useQuery<ListResponse>({
     queryKey: listQueryKey,
@@ -257,7 +268,7 @@ export default function FacturesInPage() {
       width: '140px',
       sortable: true,
       cell: (o) => (
-        <span className="text-[var(--ms-text-muted)] text-xs tabular-nums">
+        <span className="text-[var(--ms-text-muted)] text-[12px] tabular-nums">
           {formatDate(o.moment)}
         </span>
       ),
@@ -271,7 +282,7 @@ export default function FacturesInPage() {
         <div className="text-sm">
           <div className="font-medium">{o.incomingNumber ?? '—'}</div>
           {o.incomingDate && (
-            <div className="text-[var(--ms-text-muted)] text-xs tabular-nums">
+            <div className="text-[var(--ms-text-muted)] text-[12px] tabular-nums">
               {formatDate(o.incomingDate)}
             </div>
           )}
@@ -291,7 +302,7 @@ export default function FacturesInPage() {
         <div>
           <div className="max-w-[260px] truncate font-medium">{o.agent.name}</div>
           {o.agent.legalTitle && (
-            <div className="max-w-[260px] truncate text-[var(--ms-text-muted)] text-xs">
+            <div className="max-w-[260px] truncate text-[var(--ms-text-muted)] text-[11px]">
               {o.agent.legalTitle}
             </div>
           )}
@@ -409,7 +420,12 @@ export default function FacturesInPage() {
     };
   })();
 
-  const hasFilter = !!search || !!stateFilter || Object.keys(filterValues).length > 0;
+  const hasFilter =
+    !!search ||
+    !!stateFilter ||
+    agents.length > 0 ||
+    organizations.length > 0 ||
+    Object.keys(filterValues).length > 0;
 
   return (
     <>
@@ -458,6 +474,8 @@ export default function FacturesInPage() {
             clearLabel={tFilters('clear')}
             onClear={() => {
               setFilterValues({});
+              setAgents([]);
+              setOrganizations([]);
               setStateFilter(null);
               setCursor(undefined);
             }}
@@ -467,6 +485,11 @@ export default function FacturesInPage() {
                 currentQueryString={params.toString()}
                 onApply={(qs) => {
                   setFilterValues(filterFromQueryString(qs));
+                  // Multi-select reference filters aren't round-tripped by the
+                  // shared decoder — reset them so the applied pill reflects
+                  // exactly what's displayed (no stale agent/org chips).
+                  setAgents([]);
+                  setOrganizations([]);
                   setCursor(undefined);
                 }}
               />
@@ -510,23 +533,36 @@ export default function FacturesInPage() {
                 testId="filter-period"
               />
             </InlineFilterPanel.Field>
-            {/* 2. Контрагент */}
+            {/* 2. Контрагент — moysklad-parity inline multi-select checkbox
+              dropdown: type a name OR phone, results appear inline (each row
+              shows the phone as a sublabel), tick as many as needed. Was a
+              single-select modal. */}
             <InlineFilterPanel.Field label={tFilters('agent')} expandable>
-              <CatalogPickerField
-                value={
-                  filterValues.agentId
-                    ? {
-                        id: filterValues.agentId,
-                        label: filterValues.agentLabel ?? filterValues.agentId,
-                      }
-                    : null
-                }
-                placeholder=""
-                onPick={() => setPickerOpen('agent')}
-                onClear={() => {
-                  setFilterValues({ ...filterValues, agentId: undefined, agentLabel: undefined });
+              <MultiCombobox
+                value={agents.map((x) => x.id)}
+                items={agents.map((x) => ({ value: x.id, label: x.label }))}
+                onSearch={async (q) => {
+                  const r = await api.get<{
+                    items: { id: string; name: string; phone?: string | null }[];
+                  }>(`/counterparties?search=${encodeURIComponent(q)}&limit=20`);
+                  return r.items.map((x) => ({
+                    value: x.id,
+                    label: x.name,
+                    sublabel: x.phone || undefined,
+                  }));
+                }}
+                onChange={(nextIds, toggled) => {
+                  setAgents((prev) =>
+                    nextIds.map((id) => {
+                      const ex = prev.find((s) => s.id === id);
+                      if (ex) return ex;
+                      if (toggled?.value === id) return { id, label: String(toggled.label) };
+                      return { id, label: id };
+                    }),
+                  );
                   setCursor(undefined);
                 }}
+                placeholder=""
                 testId="filter-agent"
               />
             </InlineFilterPanel.Field>
@@ -554,27 +590,30 @@ export default function FacturesInPage() {
                 testId="filter-agent-group"
               />
             </InlineFilterPanel.Field>
-            {/* 4. Организация */}
+            {/* 4. Организация — moysklad-parity inline multi-select checkbox
+              dropdown (was a single-select modal). */}
             <InlineFilterPanel.Field label={tFilters('organization')} expandable>
-              <CatalogPickerField
-                value={
-                  filterValues.organizationId
-                    ? {
-                        id: filterValues.organizationId,
-                        label: filterValues.organizationLabel ?? filterValues.organizationId,
-                      }
-                    : null
-                }
-                placeholder=""
-                onPick={() => setPickerOpen('org')}
-                onClear={() => {
-                  setFilterValues({
-                    ...filterValues,
-                    organizationId: undefined,
-                    organizationLabel: undefined,
-                  });
+              <MultiCombobox
+                value={organizations.map((x) => x.id)}
+                items={organizations.map((x) => ({ value: x.id, label: x.label }))}
+                onSearch={async (q) => {
+                  const r = await api.get<{ items: { id: string; name: string }[] }>(
+                    `/organizations?search=${encodeURIComponent(q)}&limit=20`,
+                  );
+                  return r.items.map((x) => ({ value: x.id, label: x.name }));
+                }}
+                onChange={(nextIds, toggled) => {
+                  setOrganizations((prev) =>
+                    nextIds.map((id) => {
+                      const ex = prev.find((s) => s.id === id);
+                      if (ex) return ex;
+                      if (toggled?.value === id) return { id, label: String(toggled.label) };
+                      return { id, label: id };
+                    }),
+                  );
                   setCursor(undefined);
                 }}
+                placeholder=""
                 testId="filter-org"
               />
             </InlineFilterPanel.Field>
@@ -820,44 +859,6 @@ export default function FacturesInPage() {
         }
         columnWidths={colWidths.values}
         onColumnResize={colWidths.set}
-      />
-      <CatalogPicker
-        open={pickerOpen === 'agent'}
-        onClose={() => setPickerOpen(null)}
-        title={tFilters('agent')}
-        fetcher={async (q): Promise<PickerItem[]> => {
-          const r = await api.get<{ items: { id: string; name: string }[] }>(
-            `/counterparties?search=${encodeURIComponent(q)}&limit=20`,
-          );
-          return r.items.map((x) => ({ id: x.id, primary: x.name }));
-        }}
-        onSelect={(item) => {
-          setFilterValues({
-            ...filterValues,
-            agentId: item.id,
-            agentLabel: String(item.primary),
-          });
-          setCursor(undefined);
-        }}
-      />
-      <CatalogPicker
-        open={pickerOpen === 'org'}
-        onClose={() => setPickerOpen(null)}
-        title={tFilters('organization')}
-        fetcher={async (q): Promise<PickerItem[]> => {
-          const r = await api.get<{ items: { id: string; name: string }[] }>(
-            `/organizations?search=${encodeURIComponent(q)}&limit=20`,
-          );
-          return r.items.map((x) => ({ id: x.id, primary: x.name }));
-        }}
-        onSelect={(item) => {
-          setFilterValues({
-            ...filterValues,
-            organizationId: item.id,
-            organizationLabel: String(item.primary),
-          });
-          setCursor(undefined);
-        }}
       />
       <CatalogPicker
         open={pickerOpen === 'agentGroup'}

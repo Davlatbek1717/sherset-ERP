@@ -66,8 +66,13 @@ export function Drawer({
         />
         <Dialog.Content
           data-testid={testId}
+          // Opt out of Radix's describedby warning when no <Dialog.Description>.
+          {...(description ? {} : { 'aria-describedby': undefined })}
           className={cn(
-            'fixed top-0 right-0 z-[var(--ms-z-modal)] flex h-screen flex-col',
+            // h-dvh, not h-screen: on phones the URL bar overlaps the bottom of
+            // a 100vh panel — the footer buttons became unreachable. dvh tracks
+            // the real visible viewport; identical to vh on desktop.
+            'fixed top-0 right-0 z-[var(--ms-z-modal)] flex h-dvh flex-col',
             widthClass,
             'max-w-[100vw] bg-[var(--ms-bg-surface)] shadow-[var(--ms-shadow-lg)]',
             'border-[var(--ms-border-default)] border-l',

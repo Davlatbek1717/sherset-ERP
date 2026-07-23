@@ -1,9 +1,7 @@
 'use client';
 
-import { useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
 import { bankImportStateTone, moneyFlowTone } from '@/lib/domain-status-tone';
-import { pinDefaultCustomer } from '@/lib/pin-default-customer';
 import {
   Alert,
   Badge,
@@ -17,6 +15,7 @@ import {
   Input,
   PageHeader,
   type PickerItem,
+  StickyHScroll,
   Textarea,
   formatDate,
   formatMoney,
@@ -68,8 +67,6 @@ export default function BankImportPage() {
   const qc = useQueryClient();
   const t = useTranslations('pages.bank_import');
   const tCommon = useTranslations('common');
-  const tForm = useTranslations('form');
-  const userDefaults = useUserDefaults();
 
   const [filename, setFilename] = useState('');
   const [csvText, setCsvText] = useState('');
@@ -150,17 +147,11 @@ export default function BankImportPage() {
     const d = await api.get<{
       items: Array<{ id: string; name: string; legalTitle: string | null }>;
     }>(`/counterparties?search=${encodeURIComponent(s)}&limit=50`);
-    const items = d.items.map((c) => ({
+    return d.items.map((c) => ({
       id: c.id,
       primary: c.name,
       secondary: c.legalTitle ?? undefined,
     }));
-    return pinDefaultCustomer(
-      items,
-      userDefaults.data?.defaultCustomer,
-      s,
-      tForm('pinned_default'),
-    );
   };
 
   const matchedCount = statement
@@ -184,7 +175,7 @@ export default function BankImportPage() {
   }
 
   return (
-    <Container size="full" className="space-y-4 py-4" data-test-id="bank-import-page">
+    <Container className="space-y-4 py-4" data-test-id="bank-import-page">
       <PageHeader title={t('title')} />
 
       {error && <Alert tone="destructive">{error}</Alert>}
@@ -262,7 +253,7 @@ export default function BankImportPage() {
             </span>
           }
         >
-          <div className="overflow-x-auto rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)]">
+          <StickyHScroll className="rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)]">
             <table className="w-full text-sm">
               <thead className="bg-[var(--ms-bg-muted)]">
                 <tr>
@@ -362,7 +353,7 @@ export default function BankImportPage() {
                 })}
               </tbody>
             </table>
-          </div>
+          </StickyHScroll>
 
           <Button
             onClick={() => {

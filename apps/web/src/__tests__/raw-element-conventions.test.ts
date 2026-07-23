@@ -70,18 +70,19 @@ const EXEMPT_RADIO = [
 ];
 const EXEMPT_INPUT_TEXTNUM = [
   'customer-orders/new/page.tsx',
-  'demands/new/page.tsx',
-  'invoices-in/new/page.tsx',
-  'invoices-out/new/page.tsx',
-  'purchase-orders/new/page.tsx',
-  'purchase-returns/new/page.tsx',
-  'sales-returns/new/page.tsx',
-  'supplies/new/page.tsx',
+  // demands/invoices-in/invoices-out/purchase-orders/purchase-returns/
+  // sales-returns/supplies '/new' pages — their rate micro-inputs moved onto the
+  // shared DS path during the 2026-07 sales-doc reworks (scan() finds no raw
+  // text/number input in them any more); exemptions retired 2026-07-17.
   'components/customer-orders/saved-filters-pills.tsx',
   // moysklad «Выбор товара» modal: per-row h-6 w-20 quantity micro-input in a
   // dense product table (one per row) — same dense-numeric rationale as the
   // doc /new rate micro-input; a full DS Input row would break the table density.
   'components/products/product-select-modal.tsx',
+  // moysklad «Проверить комплектацию» window: per-row h-6 w-24 «Количество по
+  // факту» micro-input in the dense check table + the barcode-scan capture line
+  // — same dense-numeric rationale as product-select-modal.
+  'components/documents/completeness-check-modal.tsx',
   'retail/page.tsx',
 ];
 // Types every site of which is migrated — banned outright, no exemptions.

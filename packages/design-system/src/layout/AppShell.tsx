@@ -1,10 +1,7 @@
 'use client';
 
-import { Menu } from 'lucide-react';
-import * as React from 'react';
-import { Drawer } from '../feedback/Drawer.tsx';
+import type * as React from 'react';
 import { cn } from '../lib/cn.ts';
-import { DropdownMenu } from '../primitives/DropdownMenu.tsx';
 
 export interface NavItem {
   key: string;
@@ -31,23 +28,27 @@ export interface AppShellProps {
     avatar?: string;
   };
   /**
+   * Interactive user-block slot — when provided it REPLACES the static
+   * `user` block entirely (the app renders its own trigger + account
+   * dropdown, e.g. the moysklad-parity UserMenu). `user` stays as the
+   * static fallback for callers without a menu.
+   */
+  userSlot?: React.ReactNode;
+  /**
    * Optional slot rendered in the top-right between the nav and the user
    * block — designed for compact controls like a locale switcher.
    */
   topRightExtras?: React.ReactNode;
   /**
-   * Controls surfaced at the BOTTOM of the mobile nav Drawer (<lg). On phones
-   * the top bar has no room for the full top-right cluster, so essentials that
-   * still matter on mobile (e.g. language switch) are passed here and rendered
-   * inside the drawer. Style them for a LIGHT surface (the drawer bg is light).
+   * Mobile (≤767px) burger + nav sheet slot (typically `<MobileNavSheet>`).
+   * Rendered FIRST in the navbar row inside a `md:hidden` wrapper; when
+   * provided, the desktop module tab strip is hidden below `md` (the sheet
+   * replaces it). Desktop rendering is untouched.
    */
-  drawerExtras?: React.ReactNode;
+  mobileMenu?: React.ReactNode;
   topBanner?: React.ReactNode;
   children: React.ReactNode;
   className?: string;
-  onLogout?: () => void;
-  /** Opens the settings hub — rendered as a "Sozlamalar" item in the account menu. */
-  onSettings?: () => void;
 }
 
 /**
@@ -59,20 +60,13 @@ export function AppShell({
   brand,
   primaryNav,
   user,
+  userSlot,
   topRightExtras,
-  drawerExtras,
+  mobileMenu,
   topBanner,
   children,
   className,
-  onLogout,
-  onSettings,
 }: AppShellProps) {
-  // <lg (1024px, matches the lg:flex-row breakpoint already used e.g. in
-  // stores/[id]/page.tsx): the horizontal tab strip below has no room for
-  // 12+ module tabs, so it collapses behind a hamburger + slide-in <Drawer>
-  // instead (2026-07-20f — the whole app shell had no mobile nav at all).
-  const [mobileNavOpen, setMobileNavOpen] = React.useState(false);
-
   return (
     <div
       className={cn(
@@ -104,26 +98,20 @@ export function AppShell({
             the app root font is 12px, so a rem-based h-14 shrinks to 42px —
             exactly the «bizniki past/cho'zilgan» gap the user flagged (ours
             read flat & stretched vs moysklad's taller, denser bar). */}
-        <div className="flex items-center px-4 h-[58px] gap-1">
-          {brand && <div className="shrink-0 mr-4 flex items-center">{brand}</div>}
-
-          {/* <lg: hamburger opens the mobile nav <Drawer> below. The
-              horizontal tab strip (with 12+ modules) has no room to be
-              usable at phone/tablet widths. */}
-          <button
-            type="button"
-            onClick={() => setMobileNavOpen(true)}
-            className="lg:hidden flex shrink-0 items-center justify-center h-9 w-9 rounded-[var(--ms-radius-default)] text-white/85 hover:bg-white/10 hover:text-white"
-            aria-label="Menyu"
-          >
-            <Menu className="h-5 w-5" aria-hidden />
-          </button>
-          {/* Mobile-only spacer: the hidden <nav> below normally carries
-              flex-1 to push topRightExtras/user block to the right edge. */}
-          <div className="flex-1 lg:hidden" aria-hidden />
+        {/* Large monitors (≥1600px, owner 2026-07-19): the chrome row is capped
+            at the laptop-proven 1440px and centred — full-bleed 2560px read as
+            stretched/unprofessional. The bar's navy background still spans the
+            whole viewport (this inner row is what centres). <1600px unchanged. */}
+        <div className="flex items-center px-4 max-md:px-2 h-[58px] gap-1 min-[1600px]:mx-auto min-[1600px]:w-full min-[1600px]:max-w-[1440px]">
+          {/* Mobile burger — replaces the module tab strip below `md`. */}
+          {mobileMenu && <div className="md:hidden shrink-0 flex items-center">{mobileMenu}</div>}
+          {brand && <div className="shrink-0 mr-4 max-md:mr-2 flex items-center">{brand}</div>}
 
           <nav
             className={cn(
+              // Below `md` the tab strip yields to the burger sheet (when the
+              // app provides one) — 14 module tabs never fit a phone bar.
+              mobileMenu && 'max-md:hidden',
               // `overflow-y-hidden` is REQUIRED, not cosmetic: setting
               // overflow-x to auto makes the spec compute overflow-y to
               // `auto` too, so the navbar (42px at the app's 12px root
@@ -131,9 +119,7 @@ export function AppShell({
               // a tab's content was a hair taller than the bar. Pinning
               // overflow-y to hidden kills that track — tab content now
               // fits the bar, so nothing is clipped.
-              // <lg (2026-07-20f): hidden — 12+ tabs have no usable room at
-              // phone/tablet widths, replaced by the hamburger+Drawer above.
-              'hidden lg:flex items-center gap-0 flex-1 overflow-x-auto overflow-y-hidden',
+              'flex items-center gap-0 flex-1 overflow-x-auto overflow-y-hidden',
               // Hide the horizontal scrollbar that overflow-x-auto
               // surfaces — moysklad's navbar never shows a scroll
               // track even when tabs overflow, so we mirror that and
@@ -141,79 +127,86 @@ export function AppShell({
               '[&::-webkit-scrollbar]:hidden [scrollbar-width:none]',
             )}
           >
-            {primaryNav.map((item, idx) => {
-              // A thin vertical separator sits BETWEEN each tab pair (not before
-              // the first, and not flush against the active white pill which already
-              // separates itself). USER REQUEST (2026-06-23): the lines must be
-              // clearly visible — moysklad's own `topMenu-new-separator` cells are
-              // 0-width/transparent in this account (grounded: invisible), but the
-              // user wants visible dividers, so we render white/30 (not the old
-              // white/15 that washed out on the medium-blue bar).
-              const showSeparator = idx > 0 && !item.active && !primaryNav[idx - 1]?.active;
+            {primaryNav.map((item) => {
+              // moysklad parity (user 2026-07-06 «bo'limlar orasidagi chiziqlarni
+              // ham olib tashla»): NO dividers between module tabs. moysklad's own
+              // `topMenu-new-separator` cells are 0-width/transparent (grounded
+              // invisible), so the tabs sit flush — the uniform min-w-[68px] cell
+              // width (not a divider) is what keeps the icons evenly spaced.
               return (
-                <React.Fragment key={item.key}>
-                  {showSeparator && (
-                    <span aria-hidden className="self-center h-[34px] w-px bg-white/30 mx-0.5" />
+                <a
+                  key={item.key}
+                  href={item.href}
+                  className={cn(
+                    // moysklad parity: active tab is a SOFT WHITE TAB with
+                    // BRAND-BLUE label + icon (not just dark gray) — matches
+                    // moysklad's exact two-tone treatment, and its square
+                    // bottom edge connects down to the sub-nav strip.
+                    // Inactive tabs render as a subtle ghost on the medium-
+                    // blue navbar.
+                    // moysklad-MEASURED cell (2026-06-23): 24px icon at top:15,
+                    // 11px label directly below, cell ~75px wide. We mirror it
+                    // with pt-[13px] + gap-0.5 in a 58px-tall cell, and px-2.5
+                    // so the 14 tabs pack TIGHT («kichik joyni egalagan») instead
+                    // of the stretched px-4 cells the user flagged. The active
+                    // tab fills the full 58px so its white pill squares down onto
+                    // the sub-nav strip (moysklad's connected-tab look).
+                    // min-w-[68px] gives every module cell a UNIFORM width
+                    // (moysklad parity: their module cells are a fixed ~68px —
+                    // separators MEASURED at even 68px deltas 133→201→269→337,
+                    // scripts/ground-navbar-measure.mjs). Without a min-width our
+                    // cells were label-width, so icon-center gaps ranged a jagged
+                    // 47–76px (short «CRM/HR/Склад» collapsed, long «Производство»
+                    // bulged) — the «icons not evenly spaced» the user flagged.
+                    // Now every icon sits on a uniform 68px pitch, matching
+                    // moysklad. Long labels (Производство/Показатели) still grow
+                    // past the min, exactly as they do in moysklad too.
+                    'relative flex flex-col items-center justify-start min-w-[68px] px-2.5 pt-[13px] h-[58px] text-[11px] font-medium gap-0.5',
+                    'transition-colors duration-[var(--ms-duration-fast)]',
+                    'whitespace-nowrap rounded-t-md',
+                    item.active
+                      ? 'bg-white text-[var(--ms-text-brand)]'
+                      : 'text-white/85 hover:bg-white/10 hover:text-white',
                   )}
-                  <a
-                    href={item.href}
-                    className={cn(
-                      // moysklad parity: active tab is a SOFT WHITE TAB with
-                      // BRAND-BLUE label + icon (not just dark gray) — matches
-                      // moysklad's exact two-tone treatment, and its square
-                      // bottom edge connects down to the sub-nav strip.
-                      // Inactive tabs render as a subtle ghost on the medium-
-                      // blue navbar.
-                      // moysklad-MEASURED cell (2026-06-23): 24px icon at top:15,
-                      // 11px label directly below, cell ~75px wide. We mirror it
-                      // with pt-[13px] + gap-0.5 in a 58px-tall cell, and px-2.5
-                      // so the 14 tabs pack TIGHT («kichik joyni egalagan») instead
-                      // of the stretched px-4 cells the user flagged. The active
-                      // tab fills the full 58px so its white pill squares down onto
-                      // the sub-nav strip (moysklad's connected-tab look).
-                      'relative flex flex-col items-center justify-start px-2.5 pt-[13px] h-[58px] text-[11px] font-medium gap-0.5',
-                      'transition-colors duration-[var(--ms-duration-fast)]',
-                      'whitespace-nowrap rounded-t-md',
-                      item.active
-                        ? 'bg-white text-[var(--ms-text-brand)]'
-                        : 'text-white/85 hover:bg-white/10 hover:text-white',
-                    )}
-                  >
-                    {item.icon && (
-                      <span
-                        className={cn(
-                          'relative text-base leading-none',
-                          // Per-module brand icon colour for INACTIVE tabs only
-                          // (matches moysklad's muted brand accents on the lighter
-                          // navbar). Active tab inherits the dark text colour so
-                          // the icon sits on the white pill cleanly.
-                          !item.active && item.iconColorClass,
-                        )}
-                        aria-hidden
-                      >
-                        {item.icon}
-                        {/* moysklad-style overdue/active count badge anchored to
+                >
+                  {item.icon && (
+                    <span
+                      className={cn(
+                        'relative text-base leading-none',
+                        // Per-module brand icon colour for INACTIVE tabs only
+                        // (matches moysklad's muted brand accents on the lighter
+                        // navbar). Active tab inherits the dark text colour so
+                        // the icon sits on the white pill cleanly.
+                        !item.active && item.iconColorClass,
+                      )}
+                      aria-hidden
+                    >
+                      {item.icon}
+                      {/* moysklad-style overdue/active count badge anchored to
                         the icon's top-right corner, NOT inline with the label
                         (matches the screenshot of the live moysklad navbar). */}
-                        {item.badge && (
-                          <span className="-top-1 -right-2 absolute pointer-events-none">
-                            {item.badge}
-                          </span>
-                        )}
-                      </span>
-                    )}
-                    <span>{item.label}</span>
-                  </a>
-                </React.Fragment>
+                      {item.badge && (
+                        <span className="-top-1 -right-2 absolute pointer-events-none">
+                          {item.badge}
+                        </span>
+                      )}
+                    </span>
+                  )}
+                  <span>{item.label}</span>
+                </a>
               );
             })}
           </nav>
+
+          {/* With the tab strip hidden on mobile its flex-1 is gone too — this
+              spacer keeps the icon cluster + user block pinned right. */}
+          {mobileMenu && <div aria-hidden className="md:hidden flex-1" />}
 
           {/* Right-side icon cluster — chats, bell, help, locale.
               Spacing widened to ~12 px (gap-3) to match moysklad's
               breathing room between the threads/bell/help triplet. */}
           {topRightExtras && (
-            <div className="shrink-0 flex items-center gap-3 pl-4 text-white/85">
+            <div className="shrink-0 flex items-center gap-3 pl-4 max-md:gap-1 max-md:pl-1 text-white/85">
               {topRightExtras}
             </div>
           )}
@@ -225,39 +218,21 @@ export function AppShell({
                 the account menu opens here
               · own left-border separator with extra padding for visual
                 weight (matches moysklad's user-panel-new) */}
-          {user && (
-            <DropdownMenu
-              align="end"
-              trigger={
-                <button
-                  type="button"
-                  className="ml-1 flex shrink-0 cursor-pointer items-center gap-2.5 border-white/15 bg-transparent transition-opacity hover:opacity-80 sm:ml-3 sm:border-l sm:pl-4"
-                >
-                  {/* <sm: name/email text hidden — the mobile top bar has no room
-                      (else the whole cluster overflows the viewport). Avatar only. */}
-                  <div className="hidden text-right text-[11px] leading-tight sm:block">
-                    <div className="font-medium text-white">{user.name}</div>
-                    {user.email && <div className="text-white/65 text-[10px]">{user.email}</div>}
-                  </div>
-                  <div className="w-8 h-8 rounded-full bg-white/15 text-white flex items-center justify-center text-xs font-semibold">
-                    {user.avatar ?? user.name[0]?.toUpperCase()}
-                  </div>
-                  <span aria-hidden className="text-white/65 text-[10px] leading-none">
-                    ▾
-                  </span>
-                </button>
-              }
-            >
-              {onSettings && (
-                <DropdownMenu.Item onSelect={onSettings}>Sozlamalar</DropdownMenu.Item>
-              )}
-              {onLogout && (
-                <DropdownMenu.Item onSelect={onLogout} destructive>
-                  Chiqish
-                </DropdownMenu.Item>
-              )}
-            </DropdownMenu>
-          )}
+          {userSlot ??
+            (user && (
+              <div className="shrink-0 flex items-center gap-2.5 pl-4 border-l border-white/15 ml-3">
+                <div className="text-right text-[11px] leading-tight">
+                  <div className="font-medium text-white">{user.name}</div>
+                  {user.email && <div className="text-white/65 text-[10px]">{user.email}</div>}
+                </div>
+                <div className="w-8 h-8 rounded-full bg-white/15 text-white flex items-center justify-center text-xs font-semibold">
+                  {user.avatar ?? user.name[0]?.toUpperCase()}
+                </div>
+                <span aria-hidden className="text-white/65 text-[10px] leading-none">
+                  ▾
+                </span>
+              </div>
+            ))}
         </div>
       </header>
 
@@ -265,48 +240,13 @@ export function AppShell({
           navbar and scrolls its own content. List pages that opt into
           DataTable `fillHeight` fill this exactly (no double scroll); taller
           form/detail pages scroll here normally. */}
-      <main className="flex flex-col">{children}</main>
-
-      {/* Mobile module nav (2026-07-20f) — same primaryNav list as the
-          desktop tab strip above, rendered vertically. */}
-      <Drawer open={mobileNavOpen} onOpenChange={setMobileNavOpen} title={brand ?? 'Menyu'}>
-        <nav className="flex flex-col gap-0.5 p-2">
-          {primaryNav.map((item) => (
-            <a
-              key={item.key}
-              href={item.href}
-              onClick={() => setMobileNavOpen(false)}
-              className={cn(
-                'flex items-center gap-3 rounded-[var(--ms-radius-default)] px-3 py-2.5 font-medium text-sm transition-colors',
-                item.active
-                  ? 'bg-[var(--ms-bg-selected)] text-[var(--ms-text-brand)]'
-                  : 'text-[var(--ms-text-primary)] hover:bg-[var(--ms-bg-hover)]',
-              )}
-            >
-              {item.icon && (
-                <span
-                  className={cn(
-                    'relative text-base leading-none',
-                    !item.active && item.iconColorClass,
-                  )}
-                  aria-hidden
-                >
-                  {item.icon}
-                </span>
-              )}
-              <span className="flex-1">{item.label}</span>
-              {item.badge}
-            </a>
-          ))}
-        </nav>
-        {/* Bottom controls (language, etc.) — moved off the cramped mobile top
-            bar into the drawer so they stay reachable on phones. */}
-        {drawerExtras && (
-          <div className="mt-2 flex flex-wrap items-center gap-2 border-[var(--ms-border-default)] border-t p-3">
-            {drawerExtras}
-          </div>
-        )}
-      </Drawer>
+      <main className="flex flex-col">
+        {/* Large monitors: page content centres at the same 1440px cap as the
+            navbar row; the app-grey backdrop fills the sides evenly. */}
+        <div className="flex w-full flex-col min-[1600px]:mx-auto min-[1600px]:max-w-[1440px]">
+          {children}
+        </div>
+      </main>
     </div>
   );
 }

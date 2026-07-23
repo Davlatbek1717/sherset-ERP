@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { BulkIdsSchema } from '../shared/bulk.js';
+import { csvUuid } from '../shared/csv.js';
 
 const uuid = z.string().uuid();
 const bigIntString = z
@@ -30,6 +31,11 @@ export const BulkSetStatusSchema = BulkIdsSchema.extend({
 export type BulkSetStatusInput = z.infer<typeof BulkSetStatusSchema>;
 
 export const CustomerOrderPositionInput = z.object({
+  // Persisted position id — sent by the detail form for EXISTING lines so an
+  // update edits the row IN PLACE (diff-upsert) instead of delete+recreate:
+  // identity preservation keeps shippedQty and DemandPosition links alive.
+  // Absent on /new payloads and on freshly added lines.
+  id: uuid.optional(),
   assortmentKind: z.enum(['product', 'service', 'bundle', 'variant']).default('product'),
   assortmentId: uuid,
   quantity: z
@@ -125,6 +131,11 @@ export const CreateCustomerOrderSchema = z.object({
   description: z.string().nullish(),
   vatEnabled: z.boolean().default(true),
   vatIncluded: z.boolean().default(false),
+  // «Проведено» on save — moysklad parity: ticking «Проведено» + Сохранить
+  // creates AND confirms the order (state→confirmed, reserves the requested
+  // lines) in one action. When true, create() runs the verified
+  // transition('confirmed') path. Was silently dropped (FE sent it, schema omitted).
+  applicable: z.boolean().optional(),
   positions: z.array(CustomerOrderPositionInput).default([]),
   attributes: z.record(z.string(), z.unknown()).optional(),
 });
@@ -161,11 +172,13 @@ export const CustomerOrderFilterSchema = z.object({
   /** moysklad «Статус» list filter — by the account's custom order status. */
   statusId: uuid.optional(),
   agentId: uuid.optional(),
+  agentIds: csvUuid.optional(),
   /** "Группа контрагента" — filters via the agent (Counterparty) relation's groupId. */
   agentGroupId: uuid.optional(),
   /** "Счёт контрагента" — CustomerOrder.agentAccountId. */
   agentAccountId: uuid.optional(),
   organizationId: uuid.optional(),
+  organizationIds: csvUuid.optional(),
   organizationAccountId: uuid.optional(),
   storeId: uuid.optional(),
   /** Project FK — moysklad's "Проект" filter. */

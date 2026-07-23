@@ -1,6 +1,8 @@
 import { BadRequestException, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import * as argon2 from 'argon2';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { readEmployeeSystemAttrs } from '../hr/hr-employee/hr-employee.service.js';
+import { isIpAllowed } from '../shared/ip-match.js';
 import {
   type AuthenticatedUser,
   type LoginInput,
@@ -9,8 +11,8 @@ import {
 } from './auth.schema.js';
 import { TokenService } from './token.service.js';
 
-const MAX_FAILED_ATTEMPTS = 100;
-const LOCKOUT_MS = 10 * 60 * 1000;
+const MAX_FAILED_ATTEMPTS = 5;
+const LOCKOUT_MS = 15 * 60 * 1000;
 
 @Injectable()
 export class AuthService {
@@ -26,11 +28,14 @@ export class AuthService {
   ): Promise<{ accessToken: string; refreshToken: string; user: LoginResponse['user'] }> {
     const parsed = this.parseLogin(raw);
 
-    const isEmail = parsed.identifier.includes('@');
+    // The identifier may be an email OR a username. moysklad-style usernames
+    // are «prefix@account» (owner 2026-07-19), so an «@» no longer means
+    // email-only — match either field. A bare username can never collide with
+    // an email (emails always carry @), so one OR-lookup covers both shapes.
     const employee = await this.prisma.client.employee.findFirst({
       where: {
         archived: false,
-        ...(isEmail ? { email: parsed.identifier.toLowerCase() } : { username: parsed.identifier }),
+        OR: [{ email: parsed.identifier.toLowerCase() }, { username: parsed.identifier }],
       },
       include: {
         account: { select: { plan: true } },
@@ -49,6 +54,18 @@ export class AuthService {
     if (employee.lockedUntil && employee.lockedUntil > new Date()) {
       const remaining = Math.ceil((employee.lockedUntil.getTime() - Date.now()) / 60_000);
       throw new UnauthorizedException(`Hisob vaqtincha bloklangan (${remaining} daqiqa qoldi)`);
+    }
+
+    // moysklad employee card guards: «Разрешить вход в систему» unchecked →
+    // no login at all; «Сеть» allowlists (IPs/CIDR nets) → only from there.
+    // Both live in attributes.__employee_system (no dedicated columns).
+    const sysAttrs = readEmployeeSystemAttrs(employee.attributes);
+    if (sysAttrs.loginAllowed === false) {
+      // Same generic message as bad credentials — do not leak account state.
+      throw new UnauthorizedException("Email yoki parol noto'g'ri");
+    }
+    if (!isIpAllowed(meta.ipAddress, sysAttrs.allowedIps, sysAttrs.allowedNetworks)) {
+      throw new UnauthorizedException('Bu IP-manzildan kirish taqiqlangan');
     }
 
     const valid = employee.passwordHash
@@ -129,6 +146,17 @@ export class AuthService {
     });
     if (!employee || employee.archived) {
       throw new UnauthorizedException('Hisob mavjud emas');
+    }
+
+    // Same employee-card guards as login(): a session must die on refresh
+    // once «Разрешить вход» is unchecked or the IP leaves the allowlist —
+    // otherwise a live refresh token outlives the admin's restriction.
+    const sysAttrs = readEmployeeSystemAttrs(employee.attributes);
+    if (sysAttrs.loginAllowed === false) {
+      throw new UnauthorizedException('Hisob mavjud emas');
+    }
+    if (!isIpAllowed(meta.ipAddress, sysAttrs.allowedIps, sysAttrs.allowedNetworks)) {
+      throw new UnauthorizedException('Bu IP-manzildan kirish taqiqlangan');
     }
 
     const authUser: AuthenticatedUser = {

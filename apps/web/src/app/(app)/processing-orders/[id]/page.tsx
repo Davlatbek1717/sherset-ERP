@@ -527,7 +527,7 @@ export default function ProcessingOrderDetailPage() {
             auditEntity="ProcessingOrder"
             entityId={data.id}
             relatedGroups={[]}
-            positionsLabel={tDetailTabs('main')}
+            positionsLabel={tDetailTabs('positions')}
             filesSlot={<AttachmentsSection entity="ProcessingOrder" entityId={data.id} />}
           >
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
@@ -803,7 +803,7 @@ function ProcessingOpsList({ orderId }: { orderId: string }) {
                     {p.name}
                   </a>
                 </td>
-                <td className="px-3 py-2 text-[var(--ms-text-muted)] text-xs tabular-nums">
+                <td className="px-3 py-2 text-[var(--ms-text-muted)] text-[12px] tabular-nums">
                   {formatDate(p.moment)}
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums">

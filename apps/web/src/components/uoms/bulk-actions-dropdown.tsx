@@ -72,7 +72,7 @@ export function UomBulkActionsDropdown({
   return (
     <DropdownMenu
       trigger={
-        <Button variant="secondary" disabled={!hasSelection || bulkDelete.isPending}>
+        <Button variant="secondary" disabled={bulkDelete.isPending}>
           {t('trigger')}
           <Icons.down className="h-4 w-4" />
         </Button>

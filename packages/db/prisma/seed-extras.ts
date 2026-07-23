@@ -175,6 +175,10 @@ async function main(): Promise<void> {
         state: i === 1 ? 'posted' : 'draft',
         postedAt: i === 1 ? new Date() : null,
         reason: i === 1 ? 'damaged' : 'expired',
+        // moysklad «Общий доступ» green ✓ — demo docs are shared so the
+        // list column renders the checkmark (parity with the user's account,
+        // where every doc is shared). Loss.shared defaults to false otherwise.
+        shared: true,
         description: 'Demo seed',
       },
     });

@@ -55,14 +55,39 @@ describe('HrEmployeeService', () => {
     await expect(service.findOne('acc1', 'e1')).rejects.toThrow(NotFoundException);
   });
 
-  it('findOne returns employee when found', async () => {
-    const emp = { id: 'e1', name: 'X', email: 'x@y' };
+  it('findOne returns employee merged with __employee_system attrs', async () => {
+    const emp = {
+      id: 'e1',
+      name: 'X',
+      email: 'x@y',
+      attributes: {
+        __employee_system: { loginAllowed: false, allowedIps: ['1.2.3.4'] },
+      },
+    };
     prisma.client.employee.findFirst.mockResolvedValue(emp as never);
-    await expect(service.findOne('acc1', 'e1')).resolves.toEqual(emp);
+    await expect(service.findOne('acc1', 'e1')).resolves.toEqual({
+      id: 'e1',
+      name: 'X',
+      email: 'x@y',
+      loginAllowed: false,
+      allowedIps: ['1.2.3.4'],
+      allowedNetworks: [],
+      notifications: {},
+      hasImage: false,
+      imageName: null,
+    });
   });
 
-  it('create with all fields', async () => {
+  it('findOne defaults loginAllowed=true when attributes are empty', async () => {
+    prisma.client.employee.findFirst.mockResolvedValue({ id: 'e1', attributes: null } as never);
+    const res = await service.findOne('acc1', 'e1');
+    expect(res.loginAllowed).toBe(true);
+  });
+
+  it('create with all fields re-reads the card shape after insert', async () => {
     prisma.client.employee.create.mockResolvedValue({ id: 'new' } as never);
+    // create() chains into findOne('new') → give the re-read something to return.
+    prisma.client.employee.findFirst.mockResolvedValue({ id: 'new', attributes: null } as never);
     await service.create('acc1', {
       name: 'Yangi',
       email: 'y@y.uz',
@@ -74,6 +99,31 @@ describe('HrEmployeeService', () => {
       moyskladAgentId: null,
     });
     expect(prisma.client.employee.create).toHaveBeenCalled();
+    const call = prisma.client.employee.create.mock.calls[0]?.[0] as {
+      data: Record<string, unknown>;
+    };
+    // No card extras in the payload → attributes stays untouched.
+    expect(call.data.attributes).toBeUndefined();
+  });
+
+  it('create writes card extras into attributes.__employee_system', async () => {
+    prisma.client.employee.create.mockResolvedValue({ id: 'new' } as never);
+    prisma.client.employee.findFirst.mockResolvedValue({ id: 'new', attributes: null } as never);
+    await service.create('acc1', {
+      name: 'Yangi',
+      hrRoles: [],
+      isChecker: false,
+      loginAllowed: false,
+      allowedIps: ['192.168.1.10'],
+      salaryMinor: '250000',
+    });
+    const call = prisma.client.employee.create.mock.calls[0]?.[0] as {
+      data: Record<string, unknown>;
+    };
+    expect(call.data.salaryMinor).toBe(250000n);
+    expect(call.data.attributes).toEqual({
+      __employee_system: { loginAllowed: false, allowedIps: ['192.168.1.10'] },
+    });
   });
 
   it('update passes only provided fields', async () => {
@@ -84,6 +134,22 @@ describe('HrEmployeeService', () => {
     expect(call).toBeDefined();
     expect((call as { data: { name?: string } }).data.name).toBe('Yangi nom');
     expect((call as { data: Record<string, unknown> }).data.email).toBeUndefined();
+  });
+
+  it('update merges __employee_system without clobbering other attribute keys', async () => {
+    prisma.client.employee.findFirst.mockResolvedValue({
+      id: 'e1',
+      attributes: { customField: 'keep', __employee_system: { allowedIps: ['9.9.9.9'] } },
+    } as never);
+    prisma.client.employee.update.mockResolvedValue({ id: 'e1' } as never);
+    await service.update('acc1', 'e1', { version: 3, loginAllowed: false });
+    const call = prisma.client.employee.update.mock.calls[0]?.[0] as {
+      data: { attributes?: Record<string, unknown> };
+    };
+    expect(call.data.attributes).toEqual({
+      customField: 'keep',
+      __employee_system: { allowedIps: ['9.9.9.9'], loginAllowed: false },
+    });
   });
 
   it('setPassword fails on duplicate username', async () => {
@@ -159,6 +225,8 @@ describe('HrEmployeeService', () => {
 
   it('create: normalizes Uzbek 9-digit mobile to canonical +998…', async () => {
     prisma.client.employee.create.mockResolvedValue({ id: 'new' } as never);
+    // create() re-reads the card shape via findOne after insert.
+    prisma.client.employee.findFirst.mockResolvedValue({ id: 'new', attributes: null } as never);
     await service.create('acc1', {
       name: 'Anvar',
       telegramPhone: '901234567',
@@ -173,6 +241,8 @@ describe('HrEmployeeService', () => {
 
   it('create: strips separators in telegramPhone (+998 (90) 123-45-67)', async () => {
     prisma.client.employee.create.mockResolvedValue({ id: 'new' } as never);
+    // create() re-reads the card shape via findOne after insert.
+    prisma.client.employee.findFirst.mockResolvedValue({ id: 'new', attributes: null } as never);
     await service.create('acc1', {
       name: 'Anvar',
       telegramPhone: '+998 (90) 123-45-67',

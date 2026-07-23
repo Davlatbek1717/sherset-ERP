@@ -48,7 +48,7 @@ const LIMIT = 100;
 
 export default function KorzinaPage() {
   const t = useTranslations('pages.korzina');
-  const tEntity = useTranslations('korzina_entity');
+  const tEntity = useTranslations('pages.korzina_entity');
   const qc = useQueryClient();
   const { runDestructive } = useDestructiveMutation();
   const [activeGroup, setActiveGroup] = useState('all');
@@ -113,7 +113,7 @@ export default function KorzinaPage() {
         <div className="min-w-0">
           <div className="truncate font-medium text-[var(--ms-text-primary)] text-sm">{r.name}</div>
           {r.secondary && (
-            <div className="truncate text-[var(--ms-text-muted)] text-xs">{r.secondary}</div>
+            <div className="truncate text-[var(--ms-text-muted)] text-[11px]">{r.secondary}</div>
           )}
         </div>
       ),

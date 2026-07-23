@@ -108,12 +108,6 @@ const REPORT_CARDS: ReportCard[] = [
     descriptionKey: 'unit_economics_card_description',
     icon: Icons.chart,
   },
-  {
-    href: '/reports/warehouse-ops',
-    titleKey: 'warehouse_ops_card_title',
-    descriptionKey: 'warehouse_ops_card_description',
-    icon: Icons.reportStockBalance,
-  },
 ];
 
 export default function ReportsLandingPage() {

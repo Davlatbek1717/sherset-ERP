@@ -45,6 +45,7 @@ export class ContactPersonService {
     return {
       accountId,
       ...(filter.counterpartyId ? { counterpartyId: filter.counterpartyId } : {}),
+      ...(filter.counterpartyIds ? { counterpartyId: { in: filter.counterpartyIds } } : {}),
       ...(filter.archived !== undefined ? { archived: filter.archived } : { archived: false }),
       ...(filter.ownerId ? { ownerId: filter.ownerId } : {}),
       ...(filter.search

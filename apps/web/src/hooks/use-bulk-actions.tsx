@@ -139,6 +139,11 @@ export function useBulkDocumentActions(
       ownerId?: string | null;
       projectId?: string | null;
       description?: string | null;
+      // moysklad #bulkEdit extras (owner 2026-07-09): Владелец-отдел /
+      // Общий доступ / Статья расходов — whitelisted per entity on the BE.
+      groupId?: string | null;
+      shared?: boolean;
+      expenseItem?: string | null;
     }) => api.post<BulkResult>(`/${entity}/mass-edit`, input),
     onSuccess: invalidate,
   });

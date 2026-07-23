@@ -15,7 +15,7 @@
  */
 
 import { api } from '@/lib/api-client';
-import { Button, useConfirm } from '@moysklad/ui';
+import { Button, Input, Modal, useConfirm } from '@moysklad/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useState } from 'react';
@@ -44,6 +44,12 @@ export interface SavedFiltersPillsProps {
    *  input. When omitted, the «+» pill manages it internally. */
   adding?: boolean;
   onAddingChange?: (open: boolean) => void;
+  /** Whether to show the «+ Сохранить фильтр» add affordance. moysklad only
+   *  surfaces it inside the OPEN filter panel — when the panel is collapsed it
+   *  shows the saved pills alone (and nothing at all if there are none). Pass
+   *  `filterOpen` so a collapsed list doesn't render a stray add button.
+   *  Default true (backward-compatible for callers that always show it). */
+  showAdd?: boolean;
 }
 
 export function SavedFiltersPills({
@@ -53,6 +59,7 @@ export function SavedFiltersPills({
   activeId,
   adding: addingProp,
   onAddingChange,
+  showAdd = true,
 }: SavedFiltersPillsProps) {
   const t = useTranslations('saved_filters');
   const { confirm } = useConfirm();
@@ -220,58 +227,83 @@ export function SavedFiltersPills({
           </span>
         );
       })}
-      {adding ? (
+      {/* moysklad parity: saving a filter opens a CENTRED «Закладки» modal
+          (Название input + green «Сохранить закладку» + «Отменить»), NOT an
+          inline input under the filter panel — observed live on
+          online.moysklad.uz #supply (2026-07 handoff, supplies-pixel-parity). */}
+      <Modal
+        open={adding}
+        onOpenChange={(open) => {
+          setAdding(open);
+          if (!open) setName('');
+        }}
+        title={t('modal_title')}
+        testId="saved-filter-save-modal"
+        footer={
+          <>
+            <Button
+              type="submit"
+              form="saved-filter-save-form"
+              variant="success"
+              size="sm"
+              disabled={!name.trim() || create.isPending}
+              data-test-id="saved-filter-save-submit"
+            >
+              {t('save_bookmark')}
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                setAdding(false);
+                setName('');
+              }}
+            >
+              {t('modal_cancel')}
+            </Button>
+          </>
+        }
+      >
         <form
+          id="saved-filter-save-form"
           onSubmit={(e) => {
             e.preventDefault();
             if (!name.trim()) return;
             create.mutate({ name: name.trim(), queryString: currentQueryString });
           }}
-          className="flex items-center gap-1"
+          className="flex flex-col gap-1.5 px-4 py-3"
         >
-          <input
+          <label
+            htmlFor="saved-filter-name-input"
+            className="text-[12px] text-[var(--ms-text-primary)]"
+          >
+            {t('name_label')}
+          </label>
+          <Input
+            id="saved-filter-name-input"
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder={t('name_placeholder')}
-            className="h-7 rounded-full border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] px-3 text-xs"
-            // biome-ignore lint/a11y/noAutofocus: explicit user action
             autoFocus
             data-test-id="saved-filter-name-input"
           />
-          <Button
-            type="submit"
-            variant="primary"
-            size="sm"
-            disabled={!name.trim() || create.isPending}
-          >
-            {t('save')}
-          </Button>
-          <Button
-            type="button"
-            variant="tertiary"
-            size="sm"
-            onClick={() => {
-              setAdding(false);
-              setName('');
-            }}
-          >
-            {t('cancel')}
-          </Button>
         </form>
-      ) : (
+      </Modal>
+      {showAdd ? (
         <button
           type="button"
           onClick={() => setAdding(true)}
           disabled={!currentQueryString}
           // moysklad parity: same rounded-md as the saved pills, but
           // dashed border + transparent bg to mark it as the "add" slot.
-          className="rounded-md border border-dashed border-[var(--ms-border-default)] bg-transparent px-3 py-1 text-[var(--ms-text-muted)] text-xs hover:border-[var(--ms-text-brand)] hover:text-[var(--ms-text-brand)] disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded-md border border-[var(--ms-border-default)] border-dashed bg-transparent px-3 py-1 text-[var(--ms-text-muted)] text-xs hover:border-[var(--ms-text-brand)] hover:text-[var(--ms-text-brand)] disabled:cursor-not-allowed disabled:opacity-50"
           data-test-id="saved-filter-add"
         >
           + {t('add')}
         </button>
-      )}
+      ) : null}
     </div>
   );
 }

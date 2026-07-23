@@ -1,7 +1,7 @@
 'use client';
 
 import { api } from '@/lib/api-client';
-import { Button, formatMoney } from '@moysklad/ui';
+import { Button, StickyHScroll, formatMoney } from '@moysklad/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useParams } from 'next/navigation';
@@ -108,7 +108,7 @@ export default function AnalitikaOrderDetailPage() {
             </div>
           </div>
 
-          <div className="mt-4 overflow-x-auto rounded-lg border border-[var(--ms-border)]">
+          <StickyHScroll className="mt-4 rounded-lg border border-[var(--ms-border)]">
             <table className="w-full text-sm">
               <thead className="bg-[var(--ms-bg-subtle)] text-[var(--ms-text-muted)] text-xs">
                 <tr>
@@ -135,7 +135,7 @@ export default function AnalitikaOrderDetailPage() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </StickyHScroll>
         </>
       )}
     </div>

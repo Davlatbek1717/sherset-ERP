@@ -58,8 +58,8 @@ describe('CreateLossSchema', () => {
     expect(p.reason).toBe('damaged');
   });
 
-  it('requires ≥1 position', () => {
-    expect(() => CreateLossSchema.parse({ ...valid, positions: [] })).toThrow(/at least one/i);
+  it('allows empty positions — owner 2026-07-08, no Provedeno precondition', () => {
+    expect(() => CreateLossSchema.parse({ ...valid, positions: [] })).not.toThrow();
   });
 });
 

@@ -95,9 +95,6 @@ export interface ListViewProps<T> {
   rows: T[];
   keyField: keyof T;
   onRowClick?: (row: T) => void;
-  /** Sichqoncha qator ustiga kelganda (hover + Enter navigatsiyasi). */
-  onRowMouseEnter?: (row: T) => void;
-  onRowMouseLeave?: () => void;
   rowTestId?: (row: T) => string | undefined;
   /** Per-row hover actions (⋮ menu) rendered in the trailing cell. Forwarded to DataTable. */
   rowActions?: (row: T) => React.ReactNode;
@@ -178,6 +175,14 @@ export interface ListViewProps<T> {
    * whole view. When omitted, the table area renders full-width as before.
    */
   sidebar?: React.ReactNode;
+  /**
+   * When provided, REPLACES the table + pagination body region entirely with
+   * this node (e.g. a moysklad «Столбцы» kanban board). The toolbar, filter
+   * tabs and `headerSlot` still render above it; the caller owns the body's
+   * own loading / empty / error / scroll. Opt-in — when omitted the standard
+   * DataTable body renders as before.
+   */
+  body?: React.ReactNode;
   /**
    * Forwarded to DataTable: rendered as the last cell of the table
    * header row. Used for the moysklad-parity column-visibility gear
@@ -313,8 +318,6 @@ export function ListView<T extends object>({
   rows,
   keyField,
   onRowClick,
-  onRowMouseEnter,
-  onRowMouseLeave,
   rowTestId,
   rowActions,
   rowClassName,
@@ -341,6 +344,7 @@ export function ListView<T extends object>({
   selectionCount,
   headerSlot,
   sidebar,
+  body,
   headerEndSlot,
   columnWidths,
   onColumnResize,
@@ -370,12 +374,6 @@ export function ListView<T extends object>({
   // matching the sprite on moysklad's toolbar create buttons.
   const CreateIcon = Icons.createCircle;
   const SearchIcon = Icons.search;
-
-  // <lg (2026-07-20k): the folder-tree `sidebar` (only /products passes one)
-  // eats ~half a phone screen if always shown beside the table. On mobile it
-  // collapses behind a «Papkalar» toggle that stacks it above the table;
-  // ≥lg it stays inline beside the table (unchanged).
-  const [sidebarOpenMobile, setSidebarOpenMobile] = React.useState(false);
 
   /**
    * Render one of the 4 standard moysklad toolbar dropdowns.
@@ -494,21 +492,22 @@ export function ListView<T extends object>({
         <a
           href={createHref}
           data-test-id="entity-create"
-          // moysklad parity (CORRECTED 2026-06-16, measured live on
-          // online.moysklad.uz #purchaseorder): the list "+ Document" button
-          // is a GRAY-bordered WHITE button (b-popup-button-gray: transparent
-          // fill, ~1px #ccc border, #222 text) with only the leading "+" icon
-          // colored green. It is NOT a solid-green button — that earlier claim
-          // ("verified green") was a stale assumption; green is reserved for
-          // Save/Найти (apply) actions.
+          // moysklad parity (RE-GROUNDED 2026-06-28 — pixel-sampled the live
+          // captures of BOTH #purchaseorder AND #invoicein): the list "+ Document"
+          // button is a GRAY-bordered WHITE button (b-popup-button-gray:
+          // transparent fill, ~1px #ccc border, #222 text) with the leading "⊕"
+          // circle-plus icon coloured BLUE (sampled avg #428cc3 ≈ --ms-brand-400),
+          // NOT green. The earlier "green +icon" claim (2026-06-16) was a
+          // mis-grounding — moysklad's create ⊕ is the same sky-blue on every
+          // list; green stays reserved for Save/Найти (apply) actions only.
           className="inline-flex h-9 items-center justify-center gap-2 rounded-[var(--ms-radius-default)] border border-[#cccccc] bg-[var(--ms-bg-surface)] px-4 font-medium text-[var(--ms-text-primary)] text-sm transition-colors hover:bg-[var(--ms-bg-muted)]"
         >
-          <CreateIcon className="h-4 w-4 text-[var(--ms-text-success)]" />
+          <CreateIcon className="h-4 w-4 text-[var(--ms-brand-400)]" />
           {createLabel}
         </a>
       ) : (
         <Button onClick={onCreate} variant="secondary" data-test-id="entity-create">
-          <CreateIcon className="h-4 w-4 text-[var(--ms-text-success)]" />
+          <CreateIcon className="h-4 w-4 text-[var(--ms-brand-400)]" />
           {createLabel}
         </Button>
       )
@@ -592,7 +591,9 @@ export function ListView<T extends object>({
                   </button>
                 ) : undefined
               }
-              className="w-[206px]"
+              // Mobile: full-row search (its own wrapped line) — the fixed
+              // 206px box left an awkward stub next to wrapped toolbar items.
+              className="w-[206px] max-md:w-full max-md:min-w-0"
               data-test-id="search-input"
             />
           )}
@@ -727,6 +728,22 @@ export function ListView<T extends object>({
       )}
 
       {(() => {
+        // moysklad «Столбцы» kanban (or any caller-owned body) replaces the whole
+        // table + pagination region; the toolbar + filters above still render. A
+        // sidebar (folder tree) rail, if any, is preserved beside the body.
+        if (body !== undefined) {
+          return sidebar ? (
+            <div
+              className="flex min-h-0 flex-1 items-stretch gap-0 max-md:flex-col max-md:[&>*:first-child]:w-full"
+              data-test-id="listview-body-with-sidebar"
+            >
+              {sidebar}
+              <div className="flex min-h-0 min-w-0 flex-1 flex-col">{body}</div>
+            </div>
+          ) : (
+            body
+          );
+        }
         const tableBody = error ? (
           <ErrorState
             title="Ma'lumotni yuklashda xato"
@@ -741,8 +758,11 @@ export function ListView<T extends object>({
               rows={rows}
               keyField={keyField}
               onRowClick={onRowClick}
-              onRowMouseEnter={onRowMouseEnter}
-              onRowMouseLeave={onRowMouseLeave}
+              // moysklad parity: every list row opens its document on click anywhere
+              // in the row (not just the № link). ListView is the list-page pattern,
+              // so this is always on; DataTable falls back to the row's primary <a>
+              // when the page passes no explicit onRowClick (which is every page).
+              rowClickOpensPrimaryLink
               rowTestId={rowTestId}
               rowActions={rowActions}
               rowClassName={rowClassName}
@@ -834,7 +854,7 @@ export function ListView<T extends object>({
             />
 
             {((total > 0 && onPrevious && onNext) || footerToggle) && (
-              <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center justify-between gap-2 max-md:flex-wrap">
                 {total > 0 && onPrevious && onNext ? (
                   <Pagination
                     total={total}
@@ -878,33 +898,10 @@ export function ListView<T extends object>({
         // remaining viewport height and the pagination footer pins.
         return sidebar ? (
           <div
-            className="flex min-h-0 flex-1 flex-col items-stretch gap-0 lg:flex-row"
+            className="flex min-h-0 flex-1 items-stretch gap-0 max-md:flex-col max-md:[&>*:first-child]:w-full"
             data-test-id="listview-body-with-sidebar"
           >
-            {/* <lg: «Papkalar» toggle bar (the tree stacks below it, collapsed
-                by default). ≥lg: hidden — the tree is always beside the table. */}
-            <button
-              type="button"
-              onClick={() => setSidebarOpenMobile((v) => !v)}
-              aria-expanded={sidebarOpenMobile}
-              className="flex items-center justify-between border-[var(--ms-border-default)] border-b px-4 py-2 font-medium text-[var(--ms-text-brand)] text-sm lg:hidden"
-              data-test-id="listview-sidebar-toggle"
-            >
-              <span>Papkalar</span>
-              <Icons.down
-                className={cn('h-4 w-4 transition-transform', sidebarOpenMobile && 'rotate-180')}
-              />
-            </button>
-            <div
-              className={cn(
-                'lg:block lg:w-60 lg:shrink-0',
-                sidebarOpenMobile
-                  ? 'block max-h-[45vh] overflow-y-auto border-[var(--ms-border-default)] border-b'
-                  : 'hidden',
-              )}
-            >
-              {sidebar}
-            </div>
+            {sidebar}
             <div className="flex min-h-0 min-w-0 flex-1 flex-col">{tableBody}</div>
           </div>
         ) : (

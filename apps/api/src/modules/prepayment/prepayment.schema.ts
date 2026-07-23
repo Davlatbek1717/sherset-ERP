@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { csvUuid } from '../shared/csv.js';
 
 /**
  * Prepayment (Предоплата) — advance payment received from a customer.
@@ -126,10 +127,12 @@ export const PrepaymentFilterSchema = z.object({
   state: PrepaymentStateSchema.optional(),
   /** «Контрагент» — Prepayment.agentId. */
   agentId: z.string().uuid().optional(),
+  agentIds: csvUuid.optional(),
   /** «Группа контрагента» — filters via the agent (Counterparty) relation's groupId. */
   agentGroupId: z.string().uuid().optional(),
   /** «Организация» — Prepayment.organizationId. */
   organizationId: z.string().uuid().optional(),
+  organizationIds: csvUuid.optional(),
   customerOrderId: z.string().uuid().optional(),
   retailShiftId: z.string().uuid().optional(),
   /** «Владелец-сотрудник» — Prepayment.ownerId. */

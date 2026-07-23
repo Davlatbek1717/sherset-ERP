@@ -15,10 +15,15 @@ import { CustomerOrderService } from '../customer-order/customer-order.service.j
 import { computePerUnitCost } from '../demand/fifo-consumer.js';
 import { HR_EVENT, type SalesReturnPostedEvent } from '../hr/hr-shared/hr-events.types.js';
 import { tashkentRangeBounds } from '../report/report-date-bounds.util.js';
+import { runBulk } from '../shared/bulk.js';
 import { resolveCreatorGroupId } from '../shared/group-stamp.js';
-import { assertMassEditRefsInTenant } from '../shared/mass-edit.js';
+import { assertMassEditRefsInTenant, assertStateInTenant } from '../shared/mass-edit.js';
 import { mapVersionedUpdateError } from '../shared/optimistic-lock.js';
-import { assertOrgAccountMatchesOrg } from '../shared/org-account.js';
+import {
+  assertAgentAccountMatchesAgent,
+  assertOrgAccountMatchesOrg,
+} from '../shared/org-account.js';
+import { searchTokenGroups } from '../shared/search-tokens.js';
 import { type StockDelta, StockService } from '../stock/stock.service.js';
 import { WebhookFireService } from '../webhook/webhook-fire.service.js';
 import {
@@ -87,6 +92,8 @@ export class SalesReturnService {
         owner: { select: { id: true, name: true } },
         demand: { select: { id: true, name: true } },
         customerOrder: { select: { id: true, name: true } },
+        // «Статус» — account-defined custom status pill (moysklad #salesreturn).
+        status: { select: { id: true, name: true, color: true } },
         _count: { select: { positions: true } },
       },
     });
@@ -118,12 +125,30 @@ export class SalesReturnService {
       this.prisma.client.salesReturn.groupBy({ by: ['currency'], where }),
     ]);
     const toStr = (v: bigint | null) => (v ?? 0n).toString();
+
+    // Base-currency (UZS) total — only for mixed-currency sets (the dashed
+    // case). Prisma's aggregate can't multiply columns, so fetch (sum, rate)
+    // tuples and reduce in BigInt (no float drift). rateValue = doc→base ×1e8.
+    // Mirror purchase-return / invoice-in aggregateTotals.
+    const RATE_SCALE = 100000000n;
+    let baseSumMinor = '0';
+    if (currencyGroups.length > 1) {
+      const rows = await this.prisma.client.salesReturn.findMany({
+        where,
+        select: { sumMinor: true, rateValue: true },
+      });
+      let bs = 0n;
+      for (const r of rows) bs += (r.sumMinor * r.rateValue) / RATE_SCALE;
+      baseSumMinor = bs.toString();
+    }
+
     return {
       count: agg._count,
       sumMinor: toStr(agg._sum.sumMinor),
       vatSumMinor: toStr(agg._sum.vatSumMinor),
       payedSumMinor: toStr(agg._sum.payedSumMinor),
       currencies: currencyGroups.map((g) => g.currency),
+      baseSumMinor,
     };
   }
 
@@ -167,10 +192,13 @@ export class SalesReturnService {
       accountId,
       ...(filter.includeDeleted ? {} : { deletedAt: null }),
       ...(filter.state ? { state: filter.state } : {}),
+      ...(filter.statusIds ? { statusId: { in: filter.statusIds } } : {}),
       ...(filter.agentId ? { agentId: filter.agentId } : {}),
+      ...(filter.agentIds ? { agentId: { in: filter.agentIds } } : {}),
       ...(filter.agentGroupId ? { agent: { groupId: filter.agentGroupId } } : {}),
       ...(filter.agentAccountId ? { agentAccountId: filter.agentAccountId } : {}),
       ...(filter.organizationId ? { organizationId: filter.organizationId } : {}),
+      ...(filter.organizationIds ? { organizationId: { in: filter.organizationIds } } : {}),
       ...(filter.organizationAccountId
         ? { organizationAccountId: filter.organizationAccountId }
         : {}),
@@ -190,12 +218,14 @@ export class SalesReturnService {
       ...sumRange,
       ...(filter.search
         ? {
-            OR: [
-              { name: { contains: filter.search, mode: 'insensitive' } },
-              { reason: { contains: filter.search, mode: 'insensitive' } },
-              { description: { contains: filter.search, mode: 'insensitive' } },
-              { agent: { name: { contains: filter.search, mode: 'insensitive' } } },
-            ],
+            // moysklad «содержит»: split the query into words, AND-match each across
+            // the fields (words may match different fields). shared/search-tokens.
+            AND: searchTokenGroups(filter.search, (tok): Prisma.SalesReturnWhereInput[] => [
+              { name: { contains: tok, mode: 'insensitive' as const } },
+              { reason: { contains: tok, mode: 'insensitive' as const } },
+              { description: { contains: tok, mode: 'insensitive' as const } },
+              { agent: { name: { contains: tok, mode: 'insensitive' as const } } },
+            ]),
           }
         : {}),
     };
@@ -216,6 +246,8 @@ export class SalesReturnService {
         project: { select: { id: true, name: true } },
         organizationAccount: { select: { id: true, name: true, accountNumber: true } },
         agentAccount: { select: { id: true, accountNumber: true } },
+        // «Статус» — account custom status pill on the detail header.
+        status: { select: { id: true, name: true, color: true } },
         positions: {
           include: {
             product: { select: { id: true, name: true, code: true, uom: true } },
@@ -232,8 +264,12 @@ export class SalesReturnService {
 
   async create(accountId: string, userId: string, raw: unknown) {
     const parsed = this.parseCreate(raw);
+    // Empty positions are allowed ONLY for a DRAFT (moysklad «⊕ Задача»/«⊕ Файл» on a
+    // new return persists an empty draft). Posting an empty return is meaningless.
+    if (parsed.applicable && parsed.positions.length === 0) {
+      throw new BadRequestException('at least one position required');
+    }
     await this.ensureRefs(accountId, parsed.agentId, parsed.organizationId, parsed.storeId);
-    if (parsed.demandId) await this.ensureDemand(accountId, parsed.demandId);
     if (parsed.customerOrderId) await this.ensureCustomerOrder(accountId, parsed.customerOrderId);
     await assertOrgAccountMatchesOrg(
       this.prisma.client,
@@ -241,6 +277,56 @@ export class SalesReturnService {
       parsed.organizationId,
       parsed.organizationAccountId,
     );
+    // «Ячейка» — every picked bin must belong to the document's store (mirror supply).
+    await this.stock.assertCellsInStore(
+      accountId,
+      parsed.storeId,
+      parsed.positions.map((p) => p.cellId),
+    );
+    // «Счёт контрагента» must belong to THIS tenant + agent (else a crafted payload
+    // routes a refund to a foreign account). Mirror purchase-return / customer-order.
+    await assertAgentAccountMatchesAgent(
+      this.prisma.client,
+      accountId,
+      parsed.agentId,
+      parsed.agentAccountId ?? null,
+    );
+    // «Основание» (Отгрузка) integrity: a linked return must match the demand
+    // (контрагент / организация / валюта) and every demandPositionId must belong to
+    // THAT demand — else a crafted payload could revert an unrelated CustomerOrder line.
+    if (parsed.demandId) {
+      const demand = await this.prisma.client.demand.findFirst({
+        where: { id: parsed.demandId, accountId, deletedAt: null },
+        select: {
+          agentId: true,
+          organizationId: true,
+          currency: true,
+          positions: { select: { id: true } },
+        },
+      });
+      if (!demand) throw new BadRequestException('Отгрузка topilmadi');
+      if (
+        demand.agentId !== parsed.agentId ||
+        demand.organizationId !== parsed.organizationId ||
+        demand.currency !== parsed.currency
+      ) {
+        throw new BadRequestException(
+          'Возврат Отгрузка bilan mos kelmaydi (контрагент / организация / валюта)',
+        );
+      }
+      const demandPosIds = new Set(demand.positions.map((p) => p.id));
+      for (const p of parsed.positions) {
+        if (p.demandPositionId && !demandPosIds.has(p.demandPositionId)) {
+          throw new BadRequestException('Pozitsiya boshqa Отгрузка-ga tegishli');
+        }
+      }
+    } else {
+      for (const p of parsed.positions) {
+        if (p.demandPositionId) {
+          throw new BadRequestException('demandPositionId талаб қилади: demandId');
+        }
+      }
+    }
 
     const name = await this.nextName(accountId);
 
@@ -252,12 +338,26 @@ export class SalesReturnService {
 
     const creatorGroupId = await resolveCreatorGroupId(this.prisma.client, accountId, userId);
 
+    // «Статус» — validate the account custom status belongs to this tenant and the
+    // salesreturn entityType BEFORE create (mirror setStatus) — never trust a
+    // client-sent id to FK-connect a foreign-tenant / wrong-type state.
+    if (parsed.statusId) {
+      const status = await this.prisma.client.state.findFirst({
+        where: { id: parsed.statusId, accountId, entityType: 'salesreturn', archived: false },
+        select: { id: true },
+      });
+      if (!status) throw new BadRequestException(`Unknown status: ${parsed.statusId}`);
+    }
+
     try {
       const created = await this.prisma.client.salesReturn.create({
         data: {
           accountId,
-          ownerId: userId,
-          groupId: creatorGroupId,
+          // «Владелец» — owner override from the editor's owner popover, else the creator.
+          ownerId: parsed.ownerId ?? userId,
+          groupId: parsed.groupId ?? creatorGroupId,
+          shared: parsed.shared ?? false,
+          statusId: parsed.statusId ?? null,
           name,
           agentId: parsed.agentId,
           organizationId: parsed.organizationId,
@@ -295,6 +395,8 @@ export class SalesReturnService {
               gtdNumber: p.gtdNumber ?? null,
               gtdSumMinor: p.gtdSumMinor != null ? BigInt(p.gtdSumMinor) : null,
               countryId: p.countryId ?? null,
+              cellId: p.cellId ?? null,
+              cell: p.cell ?? null,
             })),
           },
         },
@@ -309,6 +411,13 @@ export class SalesReturnService {
 
       await this.logAudit(accountId, userId, 'create', created.id, null);
       this.webhookFire.fireForEvent(accountId, 'salesreturn', 'CREATE', created.id);
+      // «Проведено» on save — run the SAME verified posting path the detail
+      // «Провести» uses (deduction + sufficiency guard, Serializable tx). The
+      // draft is already committed; a post failure surfaces its error with the
+      // draft saved (moysklad parity — the doc is kept, not lost).
+      if (parsed.applicable) {
+        return await this.transition(accountId, userId, created.id, 'post');
+      }
       return saved;
     } catch (e) {
       this.handlePrisma(e);
@@ -339,14 +448,35 @@ export class SalesReturnService {
 
     const storeId = parsed.storeId ?? demand.storeId;
 
+    // Cumulative return cap (moysklad): a shipment line may be returned at most
+    // the SHIPPED qty across ALL active returns — NOT the original qty each
+    // time. Subtract qty already returned by other active returns (draft+posted
+    // both claim the remaining; the authoritative stock-affecting re-check is in
+    // post()). Mirror purchase-return.createFromSupply, direction-flipped.
+    const demandPosIds = demand.positions.map((dp) => dp.id);
+    const returnedAgg = await this.prisma.client.salesReturnPosition.groupBy({
+      by: ['demandPositionId'],
+      where: {
+        demandPositionId: { in: demandPosIds },
+        accountId,
+        salesReturn: { deletedAt: null, state: { not: 'cancelled' } },
+      },
+      _sum: { quantity: true },
+    });
+    const returnedByDp = new Map(
+      returnedAgg.map((g) => [g.demandPositionId, Number(g._sum.quantity ?? 0)]),
+    );
+
     const positions = demand.positions
       .map((dp) => {
-        const want = parsed.quantities?.[dp.id] ?? String(dp.quantity);
+        const alreadyReturned = returnedByDp.get(dp.id) ?? 0;
+        const remaining = Number(String(dp.quantity)) - alreadyReturned;
+        const want = parsed.quantities?.[dp.id] ?? String(remaining > 0 ? remaining : 0);
         const wantNum = Number(want);
         if (wantNum <= 0) return null;
-        if (wantNum > Number(String(dp.quantity))) {
+        if (wantNum > remaining + 1e-7) {
           throw new BadRequestException(
-            `Position ${dp.id}: original quantity ${String(dp.quantity)} dan ortiq qaytarish mumkin emas (${wantNum})`,
+            `Position ${dp.id}: qaytarish mumkin = ${remaining} (jo'natilgan ${String(dp.quantity)} − qaytarilgan ${alreadyReturned}), so'ralmoqda ${wantNum}`,
           );
         }
         return {
@@ -388,6 +518,26 @@ export class SalesReturnService {
     if (existing.applicable) {
       throw new BadRequestException(
         "Provedeno qaytarishni o'zgartirib bo'lmaydi — avval 'Snyat provedeno' qiling",
+      );
+    }
+
+    // «Счёт контрагента» tenant + agent guard on edit too (create-path parity).
+    const effectiveAgentId = parsed.agentId ?? existing.agentId;
+    const effectiveAgentAccountId =
+      parsed.agentAccountId !== undefined ? parsed.agentAccountId : existing.agentAccountId;
+    await assertAgentAccountMatchesAgent(
+      this.prisma.client,
+      accountId,
+      effectiveAgentId,
+      effectiveAgentAccountId,
+    );
+    // «Ячейка» — re-validate every picked bin against the (possibly changed) store
+    // when positions are replaced (else an edit could attach a foreign-store bin).
+    if (parsed.positions !== undefined) {
+      await this.stock.assertCellsInStore(
+        accountId,
+        parsed.storeId ?? existing.storeId,
+        parsed.positions.map((p) => p.cellId),
       );
     }
 
@@ -446,6 +596,31 @@ export class SalesReturnService {
         : { disconnect: true };
     }
     if (parsed.externalCode !== undefined) data.externalCode = parsed.externalCode;
+    // «Владелец» / «Владелец-отдел» / «Общий доступ» — the schema accepts them (a
+    // .partial of Create) but update() dropped them, so a changed owner / department /
+    // shared flag silently vanished (the rateValue bug-class). Mirror purchase-return:
+    // both refs tenant-validated before the connect / scalar set.
+    if (parsed.ownerId !== undefined) {
+      if (parsed.ownerId) {
+        await assertMassEditRefsInTenant(this.prisma, accountId, { ownerId: parsed.ownerId });
+        data.owner = { connect: { id: parsed.ownerId } };
+      } else {
+        data.owner = { disconnect: true };
+      }
+    }
+    if (parsed.groupId !== undefined) {
+      if (parsed.groupId) {
+        const grp = await this.prisma.client.group.findFirst({
+          where: { id: parsed.groupId, accountId },
+          select: { id: true },
+        });
+        if (!grp) throw new BadRequestException("Bo'lim topilmadi");
+      }
+      data.groupId = parsed.groupId ?? null;
+    }
+    if (parsed.shared !== undefined) {
+      data.shared = parsed.shared;
+    }
 
     const effectiveOrgId = parsed.organizationId ?? existing.organizationId;
     const effectiveAccountId =
@@ -479,6 +654,8 @@ export class SalesReturnService {
           gtdNumber: p.gtdNumber ?? null,
           gtdSumMinor: p.gtdSumMinor != null ? BigInt(p.gtdSumMinor) : null,
           countryId: p.countryId ?? null,
+          cellId: p.cellId ?? null,
+          cell: p.cell ?? null,
         })),
       };
     }
@@ -562,7 +739,14 @@ export class SalesReturnService {
     accountId: string,
     userId: string,
     id: string,
-    patch: { ownerId?: string | null; projectId?: string | null; description?: string | null },
+    patch: {
+      ownerId?: string | null;
+      projectId?: string | null;
+      description?: string | null;
+      groupId?: string | null;
+      shared?: boolean;
+      stateId?: string | null;
+    },
   ) {
     await this.findById(accountId, id);
     await assertMassEditRefsInTenant(this.prisma, accountId, patch);
@@ -570,6 +754,13 @@ export class SalesReturnService {
     if ('ownerId' in patch) data.ownerId = patch.ownerId;
     if ('projectId' in patch) data.projectId = patch.projectId;
     if ('description' in patch) data.description = patch.description;
+    if ('groupId' in patch) data.groupId = patch.groupId;
+    if ('shared' in patch && patch.shared !== undefined) data.shared = patch.shared;
+    if ('stateId' in patch) {
+      if (patch.stateId)
+        await assertStateInTenant(this.prisma, accountId, patch.stateId, 'salesreturn');
+      data.statusId = patch.stateId;
+    }
     const updated = await this.prisma.client.salesReturn.update({
       where: { id, accountId },
       data,
@@ -588,6 +779,67 @@ export class SalesReturnService {
     await this.logAudit(accountId, userId, printed ? 'mark-printed' : 'unmark-printed', id, null);
     this.webhookFire.fireForEvent(accountId, 'salesreturn', 'UPDATE', id, ['printed']);
     return updated;
+  }
+
+  /**
+   * «Статус» — assign an account-defined custom status (State row,
+   * entityType="salesreturn") to a single return, or clear it (`statusId: null`).
+   * Applied IMMEDIATELY (moysklad parity — the pill is a live mutation, not a
+   * save-on-edit field). Mirror of purchase-return / supply.setStatus.
+   */
+  async setStatus(accountId: string, userId: string, id: string, statusId: string | null) {
+    if (statusId) {
+      const status = await this.prisma.client.state.findFirst({
+        where: { id: statusId, accountId, entityType: 'salesreturn', archived: false },
+        select: { id: true },
+      });
+      if (!status) throw new BadRequestException(`Unknown status: ${statusId}`);
+    }
+    const sr = await this.prisma.client.salesReturn.findFirst({
+      where: { id, accountId, deletedAt: null },
+      select: { statusId: true },
+    });
+    if (!sr) throw new NotFoundException(`SalesReturn ${id} not found`);
+    await this.prisma.client.salesReturn.update({
+      where: { id, accountId },
+      data: { status: statusId ? { connect: { id: statusId } } : { disconnect: true } },
+    });
+    await this.logAudit(accountId, userId, 'set-status', id, {
+      status: { before: sr.statusId, after: statusId },
+    });
+    this.webhookFire.fireForEvent(accountId, 'salesreturn', 'UPDATE', id, ['statusId']);
+    return this.findById(accountId, id);
+  }
+
+  /**
+   * «Статус ▾» toolbar menu — set (or clear) the custom status on N selected
+   * returns at once. Validates the target State ONCE before fanning out so an
+   * invalid id is a single 400, not a per-row 500 (mirror purchase-return.bulkSetStatus).
+   */
+  async bulkSetStatus(accountId: string, userId: string, ids: string[], statusId: string | null) {
+    if (statusId) {
+      const status = await this.prisma.client.state.findFirst({
+        where: { id: statusId, accountId, entityType: 'salesreturn', archived: false },
+        select: { id: true },
+      });
+      if (!status) throw new BadRequestException(`Unknown status: ${statusId}`);
+    }
+    return runBulk(ids, async (id) => {
+      const sr = await this.prisma.client.salesReturn.findFirst({
+        where: { id, accountId, deletedAt: null },
+        select: { statusId: true },
+      });
+      if (!sr) throw new NotFoundException(`SalesReturn ${id} not found`);
+      await this.prisma.client.salesReturn.update({
+        where: { id, accountId },
+        data: { status: statusId ? { connect: { id: statusId } } : { disconnect: true } },
+      });
+      await this.logAudit(accountId, userId, 'set-status', id, {
+        status: { before: sr.statusId, after: statusId },
+      });
+      this.webhookFire.fireForEvent(accountId, 'salesreturn', 'UPDATE', id, ['statusId']);
+      return id;
+    });
   }
 
   /** Mirrors moysklad's "Скопировать". */
@@ -686,6 +938,57 @@ export class SalesReturnService {
           );
         }
 
+        // «Основание» (Отгрузка) qty integrity (authoritative, in-tx). Σ(POSTED
+        // returns for each linked shipment line, incl. this one) must not exceed
+        // the SHIPPED qty. Without this, two full-remaining drafts would both post
+        // → 2× stock added + CO shippedQty reverted 2× (can drive it negative).
+        // Serializable isolation makes the concurrent two-post race abort one of
+        // the pair. Mirror purchase-return.post, direction-flipped.
+        const linkedDpIds = [
+          ...new Set(
+            existing.positions.map((p) => p.demandPositionId).filter((x): x is string => x != null),
+          ),
+        ];
+        if (linkedDpIds.length > 0) {
+          const demandPositions = await tx.demandPosition.findMany({
+            where: { id: { in: linkedDpIds }, accountId },
+            select: { id: true, quantity: true },
+          });
+          const demandQtyById = new Map(
+            demandPositions.map((dp) => [dp.id, Number(String(dp.quantity))]),
+          );
+          const otherPosted = await tx.salesReturnPosition.groupBy({
+            by: ['demandPositionId'],
+            where: {
+              demandPositionId: { in: linkedDpIds },
+              accountId,
+              salesReturn: { applicable: true, deletedAt: null, id: { not: id } },
+            },
+            _sum: { quantity: true },
+          });
+          const otherById = new Map(
+            otherPosted.map((g) => [g.demandPositionId, Number(g._sum.quantity ?? 0)]),
+          );
+          const thisById = new Map<string, number>();
+          for (const p of existing.positions) {
+            if (p.demandPositionId) {
+              thisById.set(
+                p.demandPositionId,
+                (thisById.get(p.demandPositionId) ?? 0) + Number(String(p.quantity)),
+              );
+            }
+          }
+          for (const dpId of linkedDpIds) {
+            const cap = demandQtyById.get(dpId) ?? 0;
+            const total = (otherById.get(dpId) ?? 0) + (thisById.get(dpId) ?? 0);
+            if (total > cap + 1e-7) {
+              throw new ConflictException(
+                `Отгрузка позицияси: qaytarilgan jami (${total}) jo'natilgan (${cap}) dan oshib ketdi`,
+              );
+            }
+          }
+        }
+
         // Cost-of-goods basis for the customer return: goods RE-ENTER
         // inventory at the store's current WEIGHTED-AVERAGE unit cost
         // (Stock.costBalanceMinor ÷ qty-on-hand) — NOT the sale price. The old
@@ -723,6 +1026,7 @@ export class SalesReturnService {
             storeId: existing.storeId,
             assortmentKind: p.assortmentKind,
             assortmentId: p.assortmentId,
+            cellId: p.cellId ?? null,
             qtyDelta: String(p.quantity),
             costDeltaMinor: valueMinor,
             docType: 'salesreturn',
@@ -754,8 +1058,8 @@ export class SalesReturnService {
             .filter((p) => p.demandPositionId)
             .map(async (p) => {
               // Find the Demand position → its customerOrderPositionId
-              const dp = await tx.demandPosition.findUnique({
-                where: { id: p.demandPositionId as string },
+              const dp = await tx.demandPosition.findFirst({
+                where: { id: p.demandPositionId as string, accountId },
                 select: { customerOrderPositionId: true },
               });
               return dp?.customerOrderPositionId
@@ -766,6 +1070,17 @@ export class SalesReturnService {
             (d): d is { positionId: string; qtyDelta: string } => d != null,
           );
           if (resolved.length > 0) {
+            // Returned goods restore a POSTED order's stock hold (reservation
+            // invariant); runs BEFORE applyShipment — the hold math derives
+            // the post-change shippedQty itself from the stored value ± delta.
+            await this.co.adjustReservationForShipment(
+              tx,
+              accountId,
+              userId,
+              existing.customerOrderId,
+              resolved,
+              'revert',
+            );
             await this.co.applyShipment(
               tx,
               accountId,
@@ -842,6 +1157,7 @@ export class SalesReturnService {
             storeId: existing.storeId,
             assortmentKind: p.assortmentKind,
             assortmentId: p.assortmentId,
+            cellId: p.cellId ?? null,
             qtyDelta: `-${String(p.quantity)}`,
             costDeltaMinor: -valueMinor,
             docType: 'salesreturn_unpost',
@@ -864,8 +1180,8 @@ export class SalesReturnService {
           const coDeltas = existing.positions
             .filter((p) => p.demandPositionId)
             .map(async (p) => {
-              const dp = await tx.demandPosition.findUnique({
-                where: { id: p.demandPositionId as string },
+              const dp = await tx.demandPosition.findFirst({
+                where: { id: p.demandPositionId as string, accountId },
                 select: { customerOrderPositionId: true },
               });
               return dp?.customerOrderPositionId
@@ -876,6 +1192,17 @@ export class SalesReturnService {
             (d): d is { positionId: string; qtyDelta: string } => d != null,
           );
           if (resolved.length > 0) {
+            // Un-doing the return re-consumes the order's hold for the
+            // re-shipped goods; MUST precede applyShipment (hold math derives
+            // shippedAfter from the stored value ± delta).
+            await this.co.adjustReservationForShipment(
+              tx,
+              accountId,
+              userId,
+              existing.customerOrderId,
+              resolved,
+              'ship',
+            );
             await this.co.applyShipment(
               tx,
               accountId,
@@ -940,6 +1267,7 @@ export class SalesReturnService {
               storeId: existing.storeId,
               assortmentKind: p.assortmentKind,
               assortmentId: p.assortmentId,
+              cellId: p.cellId ?? null,
               qtyDelta: `-${String(p.quantity)}`,
               costDeltaMinor: -valueMinor,
               docType: 'salesreturn_cancel',
@@ -954,8 +1282,8 @@ export class SalesReturnService {
             const coDeltas = existing.positions
               .filter((p) => p.demandPositionId)
               .map(async (p) => {
-                const dp = await tx.demandPosition.findUnique({
-                  where: { id: p.demandPositionId as string },
+                const dp = await tx.demandPosition.findFirst({
+                  where: { id: p.demandPositionId as string, accountId },
                   select: { customerOrderPositionId: true },
                 });
                 return dp?.customerOrderPositionId
@@ -966,6 +1294,17 @@ export class SalesReturnService {
               (d): d is { positionId: string; qtyDelta: string } => d != null,
             );
             if (resolved.length > 0) {
+              // Un-doing the return re-consumes the order's hold for the
+              // re-shipped goods; MUST precede applyShipment (hold math
+              // derives shippedAfter from the stored value ± delta).
+              await this.co.adjustReservationForShipment(
+                tx,
+                accountId,
+                userId,
+                existing.customerOrderId,
+                resolved,
+                'ship',
+              );
               await this.co.applyShipment(
                 tx,
                 accountId,

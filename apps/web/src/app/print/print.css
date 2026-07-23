@@ -311,16 +311,9 @@
   }
   /* Receipt template flips to a thermal-strip page geometry — it
    * activates by adding `class="print-thermal"` to the print-page wrapper. */
-  @page :left {
+  @page :left, :right {
     @bottom-center {
-      content: counter(page) ' / ' counter(pages);
-      font-size: 9pt;
-      color: #6b7280;
-    }
-  }
-  @page :right {
-    @bottom-center {
-      content: counter(page) ' / ' counter(pages);
+      content: counter(page) " / " counter(pages);
       font-size: 9pt;
       color: #6b7280;
     }

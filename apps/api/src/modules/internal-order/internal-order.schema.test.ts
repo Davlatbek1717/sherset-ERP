@@ -42,10 +42,8 @@ describe('CreateInternalOrderSchema', () => {
     expect(p.currency).toBe('UZS');
   });
 
-  it('requires at least 1 position', () => {
-    expect(() => CreateInternalOrderSchema.parse({ ...valid, positions: [] })).toThrow(
-      /Kamida 1 ta pozitsiya/,
-    );
+  it('allows empty positions — owner 2026-07-08, no Provedeno precondition', () => {
+    expect(() => CreateInternalOrderSchema.parse({ ...valid, positions: [] })).not.toThrow();
   });
 });
 

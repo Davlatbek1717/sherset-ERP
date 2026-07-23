@@ -38,8 +38,6 @@ export const CreateLabelTemplateSchema = z
     includePrice: z.boolean().default(true),
     includeBarcode: z.boolean().default(true),
     includeArticle: z.boolean().default(true),
-    // Sherset custom — show the warehouse home location «NN-NN-NN-NN» on the senik.
-    includeLocation: z.boolean().default(true),
     headerText: z.string().max(255).optional(),
     barcodeFormat: BarcodeFormatSchema.default('EAN13'),
   })
@@ -75,7 +73,6 @@ export const UpdateLabelTemplateSchema = z
     includePrice: z.boolean().optional(),
     includeBarcode: z.boolean().optional(),
     includeArticle: z.boolean().optional(),
-    includeLocation: z.boolean().optional(),
     headerText: z.string().max(255).nullable().optional(),
     barcodeFormat: BarcodeFormatSchema.optional(),
     archived: z.boolean().optional(),

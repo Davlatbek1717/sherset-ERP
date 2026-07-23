@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { csvUuid } from '../shared/csv.js';
 import { discountPercent } from '../shared/discount.js';
 
 /**
@@ -40,6 +41,11 @@ export const SalesReturnPositionInputSchema = z.object({
     .regex(/^\d+$/, 'gtdSumMinor must be a non-negative integer')
     .nullish(),
   countryId: z.string().uuid().nullish(),
+  // moysklad «Ячейка» — address-storage bin the returned goods enter (validated
+  // against the document's store on create); `cell` = denormalized «Зона /
+  // Ячейка» label. Mirror purchase-return / supply.
+  cellId: z.string().uuid().nullish(),
+  cell: z.string().max(255).nullish(),
 });
 export type SalesReturnPositionInput = z.infer<typeof SalesReturnPositionInputSchema>;
 
@@ -57,6 +63,15 @@ export const CreateSalesReturnSchema = z.object({
   organizationAccountId: z.string().uuid().nullish(),
   agentAccountId: z.string().uuid().nullish(),
   externalCode: z.string().max(50).nullish(),
+  // «Владелец» — owner employee / department / «Общий доступ». Live-grounded on the
+  // moysklad return editor owner widget. When omitted the service stamps the creator
+  // as owner (the historical default). Mirror purchase-return.
+  ownerId: z.string().uuid().nullish(),
+  groupId: z.string().uuid().nullish(),
+  shared: z.boolean().optional(),
+  // «Статус» — account custom status (State, entityType="salesreturn"). The editor's
+  // grey «Статус» pill assigns one on create; validated against the tenant in create().
+  statusId: z.string().uuid().nullish(),
   moment: z.coerce.date().optional(),
   reason: z.string().max(4000).nullish(),
   description: z.string().max(4000).nullish(),
@@ -64,13 +79,20 @@ export const CreateSalesReturnSchema = z.object({
   rateValue: z.coerce.string().regex(/^\d+$/).default('100000000'),
   vatEnabled: z.boolean().default(true),
   vatIncluded: z.boolean().default(false),
-  positions: z.array(SalesReturnPositionInputSchema).min(1, 'at least one position required'),
+  // «Проведено» on save — moysklad parity: ticking «Проведено» + Сохранить
+  // creates AND posts the return (stock affected) in one action. When true,
+  // create() runs the SAME verified transition('post') path the detail
+  // «Провести» uses. Was silently dropped before (FE sent it, schema omitted it).
+  // `.optional()` (not `.default`) so createFromDemand's `satisfies
+  // CreateSalesReturnInput` object need not pass it.
+  applicable: z.boolean().optional(),
+  positions: z.array(SalesReturnPositionInputSchema),
   attributes: z.record(z.string(), z.unknown()).optional(),
 });
 export type CreateSalesReturnInput = z.infer<typeof CreateSalesReturnSchema>;
 
 export const UpdateSalesReturnSchema = CreateSalesReturnSchema.partial().extend({
-  positions: z.array(SalesReturnPositionInputSchema).min(1).optional(),
+  positions: z.array(SalesReturnPositionInputSchema).optional(),
   version: z.number().int().nonnegative(),
 });
 export type UpdateSalesReturnInput = z.infer<typeof UpdateSalesReturnSchema>;
@@ -100,16 +122,28 @@ const boolFromString = z
  * Канал продаж · Владелец-сотрудник · Владелец-отдел · Сумма · Когда изменен.
  */
 export const SalesReturnFilterSchema = z.object({
-  /** «Статус» — FSM state. */
+  /** «Статус» — FSM state (draft/posted/cancelled). Orthogonal to `statusIds`. */
   state: SalesReturnStateSchema.optional(),
+  /**
+   * «Статус» — account-defined custom statuses (State rows,
+   * entityType="salesreturn"). The moysklad list-filter «Статус» enumerates
+   * these; multi-select → comma-separated uuids (mirror demand.statusIds).
+   */
+  statusIds: z
+    .union([z.string(), z.array(z.string())])
+    .transform((v) => (Array.isArray(v) ? v : v.split(',')))
+    .pipe(z.array(z.string().uuid()).min(1))
+    .optional(),
   /** «Контрагент» — SalesReturn.agentId. */
   agentId: z.string().uuid().optional(),
+  agentIds: csvUuid.optional(),
   /** «Группа контрагента» — filters via the agent (Counterparty) relation's groupId. */
   agentGroupId: z.string().uuid().optional(),
   /** «Счёт контрагента» — SalesReturn.agentAccountId (backend-only, no own list field). */
   agentAccountId: z.string().uuid().optional(),
   /** «Организация» — SalesReturn.organizationId. */
   organizationId: z.string().uuid().optional(),
+  organizationIds: csvUuid.optional(),
   /** «Счёт организации» — SalesReturn.organizationAccountId (backend-only). */
   organizationAccountId: z.string().uuid().optional(),
   /** «Склад» — SalesReturn.storeId (receiving warehouse). */

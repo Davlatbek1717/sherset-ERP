@@ -13,7 +13,8 @@
  *   3. Массовое редактирование
  *   4. Провести        (disabled when all selected are already posted)
  *   5. Снять проведение (enabled when ≥1 is posted)
- *   6. Объединить      (disabled placeholder — no backend endpoint yet)
+ *   6. Объединить      (enabled at ≥2 selected → POST /supplies/merge → land on
+ *                       the editable merged draft; mirror purchase-order.merge)
  *
  * Supply's FSM uses verb-style transition slugs (`post` / `unpost`); see
  * apps/api/src/modules/supply/supply.schema.ts.
@@ -24,6 +25,7 @@ import { api } from '@/lib/api-client';
 import { Button, DropdownMenu, Icons, useConfirm } from '@moysklad/ui';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
+import { useRouter } from 'next/navigation';
 
 interface BulkResult {
   total: number;
@@ -53,6 +55,7 @@ export function SupplyBulkActionsDropdown({
   const tBulk = useTranslations('bulk');
   const { confirm } = useConfirm();
   const qc = useQueryClient();
+  const router = useRouter();
   const ids = Array.from(selectedIds);
   const hasSelection = ids.length > 0;
   const allPosted = hasSelection && postedCount === ids.length;
@@ -83,6 +86,17 @@ export function SupplyBulkActionsDropdown({
       await Promise.allSettled(rowIds.map((id) => api.post(`/supplies/${id}/clone`, {})));
     },
     onSuccess: invalidate,
+  });
+
+  // Объединить — merge ≥2 draft receipts into a fresh draft (mirror PO); land on
+  // the editable merged draft. BE recomputes totals from combined positions.
+  const bulkMerge = useApiMutation({
+    mutationFn: async (rowIds: string[]) =>
+      api.post<{ id: string }>('/supplies/merge', { ids: rowIds }),
+    onSuccess: (res) => {
+      invalidate();
+      router.push(`/supplies/${res.id}`);
+    },
   });
 
   const handleDelete = async () => {
@@ -125,12 +139,16 @@ export function SupplyBulkActionsDropdown({
     if (ok) bulkClone.mutate(ids);
   };
 
-  const isPending = bulkDelete.isPending || bulkTransition.isPending || bulkClone.isPending;
+  const isPending =
+    bulkDelete.isPending || bulkTransition.isPending || bulkClone.isPending || bulkMerge.isPending;
 
   return (
     <DropdownMenu
       trigger={
-        <Button variant="secondary" disabled={!hasSelection || isPending}>
+        // moysklad parity: «Изменить» OPENS at 0-selection (its items stay
+        // disabled), unlike «Статус»/«Создать» which are greyed out — mirror
+        // the customer-orders / moves fix. Only block while a bulk op is running.
+        <Button variant="secondary" disabled={isPending}>
           {t('trigger')}
           <Icons.down className="h-4 w-4" />
         </Button>
@@ -154,7 +172,7 @@ export function SupplyBulkActionsDropdown({
       </DropdownMenu.Item>
       <DropdownMenu.Item
         onSelect={onMassEdit}
-        disabled={!hasSelection || isPending || !onMassEdit}
+        disabled={isPending || !onMassEdit}
         testId="supply-bulk-action-mass-edit"
       >
         {t('mass_edit')}
@@ -173,7 +191,11 @@ export function SupplyBulkActionsDropdown({
       >
         {t('unconfirm')}
       </DropdownMenu.Item>
-      <DropdownMenu.Item disabled testId="supply-bulk-action-merge">
+      <DropdownMenu.Item
+        onSelect={() => bulkMerge.mutate(ids)}
+        disabled={ids.length < 2 || isPending}
+        testId="supply-bulk-action-merge"
+      >
         {t('merge')}
       </DropdownMenu.Item>
     </DropdownMenu>

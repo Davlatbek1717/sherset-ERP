@@ -38,9 +38,19 @@ export interface ProductFolderTreeProps {
   selectedId: string | null;
   /** Fires with the folder id + label, or (null, rootLabel) for the root. */
   onSelect(id: string | null, label: string | null): void;
+  /** Divider line under every row (owner 2026-07-20 — the product picker
+   *  sidebar; the products page keeps its divider-less moysklad look). */
+  dividers?: boolean;
+  /** Extra classes on the aside (mobile overlay positioning in the picker). */
+  className?: string;
 }
 
-export function ProductFolderTree({ selectedId, onSelect }: ProductFolderTreeProps) {
+export function ProductFolderTree({
+  selectedId,
+  onSelect,
+  dividers,
+  className,
+}: ProductFolderTreeProps) {
   const t = useTranslations('pages.products');
   const { data } = useQuery<TreeResponse>({
     queryKey: ['product-folders', 'tree'],
@@ -48,16 +58,18 @@ export function ProductFolderTree({ selectedId, onSelect }: ProductFolderTreePro
     staleTime: 60_000,
   });
 
+  const dividerCls = dividers ? 'border-[var(--ms-border-default)] border-b' : '';
+
   return (
     <aside
-      className="w-60 shrink-0 overflow-y-auto border-[var(--ms-border-default)] border-r bg-[var(--ms-bg-surface)] py-2"
+      className={`w-60 shrink-0 overflow-y-auto border-[var(--ms-border-default)] border-r bg-[var(--ms-bg-surface)] py-2 ${className ?? ''}`}
       data-test-id="product-folder-tree"
     >
       {/* Root «Товары и услуги» — clears the folder filter. */}
       <button
         type="button"
         onClick={() => onSelect(null, null)}
-        className={`flex w-full items-center gap-1 px-3 py-1.5 text-left text-sm hover:bg-[var(--ms-bg-muted)] ${
+        className={`flex w-full items-center gap-1 px-3 py-1.5 text-left text-sm hover:bg-[var(--ms-bg-muted)] ${dividerCls} ${
           selectedId === null
             ? 'bg-[var(--ms-bg-brand-soft)] font-medium text-[var(--ms-text-brand)]'
             : 'text-[var(--ms-text-primary)]'
@@ -73,6 +85,7 @@ export function ProductFolderTree({ selectedId, onSelect }: ProductFolderTreePro
           depth={0}
           selectedId={selectedId}
           onSelect={onSelect}
+          dividerCls={dividerCls}
         />
       ))}
     </aside>
@@ -84,11 +97,13 @@ function FolderRow({
   depth,
   selectedId,
   onSelect,
+  dividerCls = '',
 }: {
   node: FolderNode;
   depth: number;
   selectedId: string | null;
   onSelect(id: string | null, label: string | null): void;
+  dividerCls?: string;
 }) {
   const [expanded, setExpanded] = useState(false);
   const hasChildren = node.children.length > 0;
@@ -97,7 +112,7 @@ function FolderRow({
   return (
     <div>
       <div
-        className={`flex items-center gap-0.5 pr-2 text-sm hover:bg-[var(--ms-bg-muted)] ${
+        className={`flex items-center gap-0.5 pr-2 text-sm hover:bg-[var(--ms-bg-muted)] ${dividerCls} ${
           isSelected ? 'bg-[var(--ms-bg-brand-soft)]' : ''
         }`}
         style={{ paddingLeft: `${depth * 14 + 8}px` }}
@@ -127,7 +142,7 @@ function FolderRow({
         >
           <span className="truncate">{node.name}</span>
           {node.productCount > 0 && (
-            <span className="shrink-0 text-[var(--ms-text-muted)] text-xs tabular-nums">
+            <span className="shrink-0 text-[var(--ms-text-muted)] text-[12px] tabular-nums">
               {node.productCount}
             </span>
           )}
@@ -141,6 +156,7 @@ function FolderRow({
             depth={depth + 1}
             selectedId={selectedId}
             onSelect={onSelect}
+            dividerCls={dividerCls}
           />
         ))}
     </div>

@@ -4,13 +4,16 @@ import { ColumnSettings } from '@/components/column-settings';
 import { FilterToggleButton } from '@/components/filters/filter-toggle-button';
 import { PurchaseReturnBulkActionsDropdown } from '@/components/purchase-returns/bulk-actions-dropdown';
 import { PurchaseReturnPrintDropdown } from '@/components/purchase-returns/print-dropdown';
+import {
+  type PurchaseReturnCustomStatus,
+  PurchaseReturnStatusDropdown,
+} from '@/components/purchase-returns/purchase-return-status-dropdown';
 import { useBulkDocumentActions } from '@/hooks/use-bulk-actions';
 import { useColumnVisibility } from '@/hooks/use-column-visibility';
 import { useColumnWidths } from '@/hooks/use-column-widths';
 import { api } from '@/lib/api-client';
-import { documentStateTone } from '@/lib/document-state-tone';
+import { stashBulkEdit } from '@/lib/bulk-edit-nav';
 import {
-  Badge,
   CatalogPicker,
   CatalogPickerField,
   type DataTableColumn,
@@ -18,17 +21,19 @@ import {
   InlineFilterPanel,
   ListView,
   MassEditModal,
-  MoneyInput,
+  MultiCombobox,
   NativeSelect,
   PeriodInputs,
   PeriodShortcuts,
   type PickerItem,
+  footerMoneyCells,
   formatDate,
   formatMoney,
   useDebounce,
 } from '@moysklad/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
+import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 
 interface PurchaseReturnRow {
@@ -49,6 +54,9 @@ interface PurchaseReturnRow {
   store: { id: string; name: string };
   owner: { id: string; name: string } | null;
   supply: { id: string; name: string } | null;
+  // moysklad «Статус» column = account-defined CUSTOM workflow status (coloured
+  // pill), NOT the FSM `state`. The list() service already includes it.
+  status: { id: string; name: string; color: string | null } | null;
   _count: { positions: number };
 }
 
@@ -91,6 +99,43 @@ function YesNoSelect({
   );
 }
 
+/** Generic typed select for the moysklad-parity «Оплата» filter (copied from
+ *  the invoices-in LIST gold standard). The empty option is always unlabelled
+ *  so unselecting feels exactly like moysklad does. */
+function OptionSelect<T extends string>({
+  value,
+  options,
+  onChange,
+  testId,
+}: {
+  value: T | undefined;
+  options: ReadonlyArray<{ readonly value: T; readonly ru: string; readonly uz: string }>;
+  onChange: (v: T | undefined) => void;
+  testId: string;
+}) {
+  return (
+    <NativeSelect
+      value={value ?? ''}
+      onChange={(e) => onChange((e.target.value as T) || undefined)}
+      data-test-id={testId}
+    >
+      <option value="" />
+      {options.map((o) => (
+        <option key={o.value} value={o.value}>
+          {o.ru}
+        </option>
+      ))}
+    </NativeSelect>
+  );
+}
+
+/** «Оплата» — moysklad-parity tri-state select (copied from invoices-in LIST). */
+const PAYMENT_OPTIONS = [
+  { value: 'paid', ru: 'Оплачено', uz: "To'liq to'langan" },
+  { value: 'partlyPaid', ru: 'Частично оплачено', uz: 'Qisman to’langan' },
+  { value: 'unpaid', ru: 'Не оплачено', uz: "To'lanmagan" },
+] as const;
+
 /** «Статус» single-select — PurchaseReturn's FSM surfaces 3 states; moysklad
  *  renders it as a plain dropdown (no multi-tag picker, like supplies). */
 function StateSelect({
@@ -131,10 +176,16 @@ type ExtraFilterFields = {
   applicable?: 'true' | 'false';
   printed?: 'true' | 'false';
   published?: 'true' | 'false';
+  shared?: 'true' | 'false';
   ownerId?: string;
   ownerLabel?: string;
   updatedFrom?: string;
   updatedTo?: string;
+  // «Дата приемки» period.
+  receiptDateFrom?: string;
+  receiptDateTo?: string;
+  // Derived «Оплата» state filter.
+  paymentState?: 'paid' | 'partlyPaid' | 'unpaid';
   // FK pickers
   agentGroupId?: string;
   agentGroupLabel?: string;
@@ -148,15 +199,23 @@ type ExtraFilterFields = {
   projectLabel?: string;
   contractId?: string;
   contractLabel?: string;
-  supplyId?: string;
-  supplyLabel?: string;
+  productId?: string;
+  productLabel?: string;
+  agentOwnerId?: string;
+  agentOwnerLabel?: string;
+  modifiedById?: string;
+  modifiedByLabel?: string;
 };
+
+/** Multi-select reference field — moysklad checkbox-dropdown holds {id,label}[]. */
+type RefMulti = { id: string; label: string };
 
 export default function PurchaseReturnsPage() {
   const t = useTranslations('pages.purchase_returns');
   const tCommon = useTranslations('common');
   const tFields = useTranslations('fields');
   const tFilters = useTranslations('filters');
+  const tMass = useTranslations('mass_edit_modal');
   const tPo = useTranslations('pages.purchase_orders');
   const tStates = useTranslations('states.purchase_return');
 
@@ -165,11 +224,19 @@ export default function PurchaseReturnsPage() {
   const [stateFilter, setStateFilter] = useState<string | null>(null);
   const [cursor, setCursor] = useState<string | undefined>();
   const [filterValues, setFilterValues] = useState<FilterDrawerValues & ExtraFilterFields>({});
-  const [filterOpen, setFilterOpen] = useState(true);
+  // «Контрагент» / «Организация» — moysklad-parity inline multi-select checkbox
+  // dropdowns (were single-select modals). The «Контрагент» dropdown shows the
+  // phone as a sublabel and searches by name OR phone (BE /counterparties?search=
+  // already matches both). On the wire they go out as `agentIds` / `organizationIds`
+  // CSV. The dependent «Счёт…» account pickers scope to the FIRST selected
+  // agent/org (agents[0]) since a bank account belongs to one.
+  const [agents, setAgents] = useState<RefMulti[]>([]);
+  const [organizations, setOrganizations] = useState<RefMulti[]>([]);
+  // moysklad parity (#purchasereturn 01-default.png): the list loads with the
+  // filter panel COLLAPSED — only the «Фильтр» button shows until clicked.
+  const [filterOpen, setFilterOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState<
     | null
-    | 'agent'
-    | 'org'
     | 'store'
     | 'owner'
     | 'agentGroup'
@@ -178,12 +245,23 @@ export default function PurchaseReturnsPage() {
     | 'group'
     | 'project'
     | 'contract'
-    | 'supply'
+    | 'product'
+    | 'agentOwner'
+    | 'modifiedBy'
     | 'massEditOwner'
     | 'massEditProject'
   >(null);
 
+  const router = useRouter();
+
   const [massEditOpen, setMassEditOpen] = useState(false);
+  // «Владелец-отдел» (groupId) options for the mass-edit wizard — mirrors losses.
+  const { data: massGroupsData } = useQuery<{ items: Array<{ id: string; name: string }> }>({
+    queryKey: ['groups', 'mass-edit'],
+    queryFn: () => api.get('/groups?limit=100'),
+    enabled: massEditOpen,
+    staleTime: 5 * 60 * 1000,
+  });
   const [massEditIds, setMassEditIds] = useState<string[]>([]);
   const [massEditOwner, setMassEditOwner] = useState<{ id: string; label: string } | null>(null);
   const [massEditProject, setMassEditProject] = useState<{ id: string; label: string } | null>(
@@ -203,19 +281,17 @@ export default function PurchaseReturnsPage() {
     ...(cursor ? { cursor } : {}),
     ...(filterValues.momentFrom ? { momentFrom: filterValues.momentFrom } : {}),
     ...(filterValues.momentTo ? { momentTo: filterValues.momentTo } : {}),
-    ...(filterValues.sumMinorFrom !== undefined
-      ? { sumMinorFrom: String(filterValues.sumMinorFrom) }
-      : {}),
-    ...(filterValues.sumMinorTo !== undefined
-      ? { sumMinorTo: String(filterValues.sumMinorTo) }
-      : {}),
-    ...(filterValues.agentId ? { agentId: filterValues.agentId } : {}),
-    ...(filterValues.organizationId ? { organizationId: filterValues.organizationId } : {}),
+    ...(filterValues.receiptDateFrom ? { receiptDateFrom: filterValues.receiptDateFrom } : {}),
+    ...(filterValues.receiptDateTo ? { receiptDateTo: filterValues.receiptDateTo } : {}),
+    ...(filterValues.paymentState ? { paymentState: filterValues.paymentState } : {}),
+    ...(agents.length ? { agentIds: agents.map((x) => x.id).join(',') } : {}),
+    ...(organizations.length ? { organizationIds: organizations.map((x) => x.id).join(',') } : {}),
     ...(filterValues.storeId ? { storeId: filterValues.storeId } : {}),
     ...(filterValues.ownerId ? { ownerId: filterValues.ownerId } : {}),
     ...(filterValues.applicable ? { applicable: filterValues.applicable } : {}),
     ...(filterValues.printed ? { printed: filterValues.printed } : {}),
     ...(filterValues.published ? { published: filterValues.published } : {}),
+    ...(filterValues.shared ? { shared: filterValues.shared } : {}),
     ...(filterValues.updatedFrom ? { updatedFrom: filterValues.updatedFrom } : {}),
     ...(filterValues.updatedTo ? { updatedTo: filterValues.updatedTo } : {}),
     ...(filterValues.agentGroupId ? { agentGroupId: filterValues.agentGroupId } : {}),
@@ -226,7 +302,9 @@ export default function PurchaseReturnsPage() {
     ...(filterValues.groupId ? { groupId: filterValues.groupId } : {}),
     ...(filterValues.projectId ? { projectId: filterValues.projectId } : {}),
     ...(filterValues.contractId ? { contractId: filterValues.contractId } : {}),
-    ...(filterValues.supplyId ? { supplyId: filterValues.supplyId } : {}),
+    ...(filterValues.productId ? { productId: filterValues.productId } : {}),
+    ...(filterValues.agentOwnerId ? { agentOwnerId: filterValues.agentOwnerId } : {}),
+    ...(filterValues.modifiedById ? { modifiedById: filterValues.modifiedById } : {}),
   });
 
   const listQueryKey = [
@@ -242,6 +320,39 @@ export default function PurchaseReturnsPage() {
     queryKey: listQueryKey,
     queryFn: () => api.get<ListResponse>(`/purchase-returns?${params.toString()}`),
   });
+
+  // moysklad-parity pinned «Итого» footer — sums the «Сумма» column over ALL
+  // filtered records (the SAME filter params, minus pagination/sort). A mixed-
+  // currency set shows the base-UZS total (footerMoneyCells baseValuesMinor).
+  const totalsParams = new URLSearchParams(params);
+  totalsParams.delete('cursor');
+  totalsParams.delete('limit');
+  totalsParams.delete('sortBy');
+  totalsParams.delete('sortDir');
+  const totalsQs = totalsParams.toString();
+  const { data: totals } = useQuery<{
+    count: number;
+    sumMinor: string;
+    currencies: string[];
+    baseSumMinor: string;
+  }>({
+    queryKey: ['purchase-returns-totals', totalsQs],
+    queryFn: () => api.get(`/purchase-returns/aggregate/totals${totalsQs ? `?${totalsQs}` : ''}`),
+    staleTime: 30_000,
+  });
+
+  // moysklad «Статус» dropdown — the account's custom return statuses (State
+  // rows, entityType="purchasereturn"). archived=false: a retired status must
+  // not be OFFERED for assigning. The return FSM («Провести») stays in «Изменить».
+  const { data: statusData } = useQuery<{ items: PurchaseReturnCustomStatus[] }>({
+    queryKey: ['states', 'purchasereturn'],
+    queryFn: () =>
+      api.get<{ items: PurchaseReturnCustomStatus[] }>(
+        '/states?entityType=purchasereturn&archived=false&limit=250',
+      ),
+    staleTime: 60_000,
+  });
+  const purchaseReturnStatuses = statusData?.items ?? [];
 
   const bulk = useBulkDocumentActions('purchase-returns', listQueryKey, {
     hasFSM: true,
@@ -265,11 +376,10 @@ export default function PurchaseReturnsPage() {
     }
     return n;
   }, [data?.items, bulk.selectedIds]);
-  // moysklad parity (C4 audit, 2026-05-21): /purchasereturn default
-  // columns are № · Время · Со склада · Контрагент · Организация ·
-  // Сумма · Валюта · Отправлено · Напечатано · Комментарий. state +
-  // supply removed from defaults (available via gear). Backend scalar
-  // fields surfaced from Prisma defaults.
+  // moysklad parity (LIVE-GROUND 2026-06-28 #purchasereturn): /purchasereturn
+  // default columns are № · Время · Со склада · Организация · Контрагент ·
+  // Сумма · Отправлено · Напечатано · Комментарий (Организация BEFORE
+  // Контрагент). state + supply + currency stay available via the ⚙ gear.
   const cols = useColumnVisibility('purchase-returns', [
     'all',
     'draft',
@@ -278,8 +388,8 @@ export default function PurchaseReturnsPage() {
     'name',
     'moment',
     'store',
-    'agent',
     'organization',
+    'agent',
     'sum',
     'published',
     'printed',
@@ -327,25 +437,9 @@ export default function PurchaseReturnsPage() {
       cellText: (r: PurchaseReturnRow) => r.store?.name ?? '',
     },
     {
-      key: 'agent',
-      header: tFields('agent'),
-      width: '220px',
-      sortable: true,
-      cell: (r) => (
-        <div>
-          <div className="max-w-[300px] truncate font-medium">{r.agent.name}</div>
-          {r.agent.legalTitle && (
-            <div className="max-w-[300px] truncate text-[var(--ms-text-muted)] text-xs">
-              {r.agent.legalTitle}
-            </div>
-          )}
-        </div>
-      ),
-      cellText: (r: PurchaseReturnRow) =>
-        r.agent?.legalTitle ? `${r.agent.name} (${r.agent.legalTitle})` : (r.agent?.name ?? ''),
-    },
-    {
-      // moysklad parity: «Организация» on /purchasereturn (C4 audit).
+      // moysklad parity (LIVE-GROUND 2026-06-28 #purchasereturn): «Организация»
+      // comes BEFORE «Контрагент» in the default grid (…Со склада · Организация ·
+      // Контрагент · Сумма…). Earlier audit had them reversed.
       key: 'organization',
       header: tFields('organization'),
       width: '180px',
@@ -354,6 +448,24 @@ export default function PurchaseReturnsPage() {
         <span className="max-w-[180px] truncate text-sm">{r.organization?.name ?? '—'}</span>
       ),
       cellText: (r: PurchaseReturnRow) => r.organization?.name ?? '',
+    },
+    {
+      key: 'agent',
+      header: tFields('agent'),
+      width: '220px',
+      sortable: true,
+      cell: (r) => (
+        <div>
+          <div className="max-w-[300px] truncate font-medium">{r.agent.name}</div>
+          {r.agent.legalTitle && (
+            <div className="max-w-[300px] truncate text-[var(--ms-text-muted)] text-[11px]">
+              {r.agent.legalTitle}
+            </div>
+          )}
+        </div>
+      ),
+      cellText: (r: PurchaseReturnRow) =>
+        r.agent?.legalTitle ? `${r.agent.name} (${r.agent.legalTitle})` : (r.agent?.name ?? ''),
     },
     {
       key: 'supply',
@@ -372,15 +484,30 @@ export default function PurchaseReturnsPage() {
         ),
     },
     {
+      // moysklad parity: «Статус» column = the account-defined CUSTOM status
+      // (coloured pill), NOT the FSM state. Grey «Status» placeholder until one is
+      // assigned. Posting lives in «Проведено», not here. Mirror demands.
       key: 'state',
       header: tFields('state'),
       width: '150px',
-      cell: (r) => (
-        <Badge tone={documentStateTone(r.state)}>
-          {tStates(r.state as PurchaseReturnStateKey)}
-        </Badge>
-      ),
-      cellText: (r: PurchaseReturnRow) => r.state,
+      cell: (r) =>
+        r.status ? (
+          <span
+            className="inline-flex items-center whitespace-nowrap rounded-[3px] px-2 py-0.5 font-medium text-white text-xs"
+            style={{ backgroundColor: r.status.color ?? 'var(--ms-text-muted)' }}
+            data-test-id="pr-status-pill"
+          >
+            {r.status.name}
+          </span>
+        ) : (
+          <span
+            className="inline-flex items-center whitespace-nowrap rounded-[3px] bg-[var(--ms-bg-muted)] px-2 py-0.5 text-[var(--ms-text-muted)] text-xs"
+            data-test-id="pr-status-placeholder"
+          >
+            {tFields('custom_status_placeholder')}
+          </span>
+        ),
+      cellText: (r: PurchaseReturnRow) => r.status?.name ?? '',
     },
     {
       key: 'sum',
@@ -424,24 +551,40 @@ export default function PurchaseReturnsPage() {
       key: 'published',
       header: tFields('published'),
       width: '120px',
-      align: 'center',
-      cell: (r) => (r.published ? <Badge tone="info">{tCommon('yes')}</Badge> : <span>—</span>),
-      cellText: (r: PurchaseReturnRow) => (r.published ? 'yes' : ''),
+      // moysklad parity: cyan (#00bfe6) filled pill «Отправлен» when sent, EMPTY
+      // otherwise (NOT «Да»/«—»). Live-grounded rgb(0,191,230); mirror CO/demands.
+      cell: (r) =>
+        r.published ? (
+          <span
+            className="inline-flex items-center whitespace-nowrap rounded-[3px] bg-[#00bfe6] px-2 py-0.5 font-medium text-white text-xs"
+            data-test-id="published-badge"
+          >
+            {tFields('published_badge')}
+          </span>
+        ) : null,
+      cellText: (r: PurchaseReturnRow) => (r.published ? tFields('published_badge') : ''),
     },
     {
       key: 'printed',
       header: tFields('printed'),
       width: '120px',
-      align: 'center',
-      cell: (r) => (r.printed ? <Badge tone="info">{tCommon('yes')}</Badge> : <span>—</span>),
-      cellText: (r: PurchaseReturnRow) => (r.printed ? 'yes' : ''),
+      cell: (r) =>
+        r.printed ? (
+          <span
+            className="inline-flex items-center whitespace-nowrap rounded-[3px] bg-[#00bfe6] px-2 py-0.5 font-medium text-white text-xs"
+            data-test-id="printed-badge"
+          >
+            {tFields('printed_badge')}
+          </span>
+        ) : null,
+      cellText: (r: PurchaseReturnRow) => (r.printed ? tFields('printed_badge') : ''),
     },
     {
       key: 'description',
       header: tFields('description'),
       width: '220px',
       cell: (r) => (
-        <span className="block max-w-[220px] truncate text-[var(--ms-text-muted)] text-xs">
+        <span className="block max-w-[220px] truncate text-[var(--ms-text-muted)] text-[11px]">
           {r.description ?? ''}
         </span>
       ),
@@ -452,14 +595,19 @@ export default function PurchaseReturnsPage() {
   const hasFilter =
     !!search ||
     !!stateFilter ||
-    !!filterValues.agentId ||
-    !!filterValues.organizationId ||
+    agents.length > 0 ||
+    organizations.length > 0 ||
     !!filterValues.storeId ||
     !!filterValues.ownerId ||
+    !!filterValues.applicable ||
     !!filterValues.printed ||
     !!filterValues.published ||
+    !!filterValues.shared ||
     !!filterValues.momentFrom ||
     !!filterValues.momentTo ||
+    !!filterValues.receiptDateFrom ||
+    !!filterValues.receiptDateTo ||
+    !!filterValues.paymentState ||
     !!filterValues.updatedFrom ||
     !!filterValues.updatedTo ||
     !!filterValues.agentGroupId ||
@@ -468,21 +616,28 @@ export default function PurchaseReturnsPage() {
     !!filterValues.groupId ||
     !!filterValues.projectId ||
     !!filterValues.contractId ||
-    !!filterValues.supplyId ||
-    filterValues.sumMinorFrom !== undefined ||
-    filterValues.sumMinorTo !== undefined;
+    !!filterValues.productId ||
+    !!filterValues.agentOwnerId ||
+    !!filterValues.modifiedById;
 
-  // moysklad-parity inline filter panel — fields ordered exactly as the
-  // captured DOM at docs/moysklad-reference/visual-captures/02-module/
-  // purchasereturn/dom/01-default.html: Период · Контрагент ·
-  // Группа контрагента · Договор · Организация · Склад · Проект · Статус ·
-  // Приемка · Проведено · Напечатано · Отправлено · Владелец-сотрудник ·
-  // Владелец-отдел · Сумма · Когда изменен.
-  // «Кто изменил» is SKIPPED — PurchaseReturn has no updatedById column.
-  // «Приемка» → supplyId (the original Supply back-link; Supply picker).
-  // «Счёт контрагента» / «Счёт организации» mirror the gold standard
-  // (disabled until the parent FK is picked) — backed by the
-  // agentAccountId / organizationAccountId columns.
+  // Pinned «Итого» footer money cell (key 'sum' = the «Сумма» column): «…» while
+  // loading, the base-UZS sum for a mixed-currency set, else the single-currency
+  // total. moysklad shows exactly one money total on the purchasereturn list.
+  const footerRow = footerMoneyCells(
+    totals,
+    { sum: totals?.sumMinor ?? '0' },
+    { baseValuesMinor: { sum: totals?.baseSumMinor ?? '0' } },
+  );
+
+  // moysklad-parity inline filter panel — LIVE-GROUND 2026-06-28 #purchasereturn:
+  // the 22-field grid in order: Период · Дата приемки · Оплата · Товар или группа ·
+  // Склад · Проект · Контрагент · Группа контрагента · Счет контрагента · Договор ·
+  // Владелец контрагента · Организация · Счет организации · Статус · Проведено ·
+  // Напечатано · Отправлено · Владелец-сотрудник · Владелец-отдел · Общий доступ ·
+  // Когда изменен · Кто изменил.
+  // «Счёт контрагента» / «Счёт организации» mirror the gold standard (disabled
+  // until the parent FK is picked). Reference fields keep the CatalogPickerField
+  // modal-picker style (NOT MultiCombobox) — single-select per field.
   const filterPanel = (
     <InlineFilterPanel
       hidden={!filterOpen}
@@ -491,6 +646,8 @@ export default function PurchaseReturnsPage() {
       onClear={() => {
         setFilterValues({});
         setStateFilter(null);
+        setAgents([]);
+        setOrganizations([]);
         onResetCursor();
       }}
       testId="purchase-returns-inline-filter"
@@ -524,24 +681,137 @@ export default function PurchaseReturnsPage() {
           testId="filter-period"
         />
       </InlineFilterPanel.Field>
-      {/* 2. Контрагент */}
-      <InlineFilterPanel.Field label={tFields('agent')} expandable>
+      {/* 2. Дата приемки */}
+      <InlineFilterPanel.Field
+        label={`${tFields('receipt_date')}:`}
+        expandable
+        inlineSuffix={
+          <PeriodShortcuts
+            onChange={({ from, to }) => {
+              setFilterValues({ ...filterValues, receiptDateFrom: from, receiptDateTo: to });
+              onResetCursor();
+            }}
+            labels={{
+              yesterday: tFilters('period_yesterday'),
+              today: tFilters('period_today'),
+              week: tFilters('period_week'),
+              month: tFilters('period_month'),
+            }}
+          />
+        }
+      >
+        <PeriodInputs
+          from={filterValues.receiptDateFrom}
+          to={filterValues.receiptDateTo}
+          onChange={({ from, to }) => {
+            setFilterValues({ ...filterValues, receiptDateFrom: from, receiptDateTo: to });
+            onResetCursor();
+          }}
+          testId="filter-receipt-date"
+        />
+      </InlineFilterPanel.Field>
+      {/* 3. Оплата */}
+      <InlineFilterPanel.Field label={tPo('filter_payment_state')} expandable={false}>
+        <OptionSelect
+          value={filterValues.paymentState}
+          options={PAYMENT_OPTIONS}
+          onChange={(v) => {
+            setFilterValues({ ...filterValues, paymentState: v });
+            onResetCursor();
+          }}
+          testId="filter-payment-state"
+        />
+      </InlineFilterPanel.Field>
+      {/* 4. Товар или группа */}
+      <InlineFilterPanel.Field label={tPo('filter_product_or_group')} expandable>
         <CatalogPickerField
           value={
-            filterValues.agentId
-              ? { id: filterValues.agentId, label: filterValues.agentLabel ?? filterValues.agentId }
+            filterValues.productId
+              ? {
+                  id: filterValues.productId,
+                  label: filterValues.productLabel ?? filterValues.productId,
+                }
               : null
           }
           placeholder=""
-          onPick={() => setPickerOpen('agent')}
+          onPick={() => setPickerOpen('product')}
           onClear={() => {
-            setFilterValues({ ...filterValues, agentId: undefined, agentLabel: undefined });
+            setFilterValues({ ...filterValues, productId: undefined, productLabel: undefined });
             onResetCursor();
           }}
+          testId="filter-product"
+        />
+      </InlineFilterPanel.Field>
+      {/* 5. Склад */}
+      <InlineFilterPanel.Field label={tFields('store')} expandable>
+        <CatalogPickerField
+          value={
+            filterValues.storeId
+              ? { id: filterValues.storeId, label: filterValues.storeLabel ?? filterValues.storeId }
+              : null
+          }
+          placeholder=""
+          onPick={() => setPickerOpen('store')}
+          onClear={() => {
+            setFilterValues({ ...filterValues, storeId: undefined, storeLabel: undefined });
+            onResetCursor();
+          }}
+          testId="filter-store"
+        />
+      </InlineFilterPanel.Field>
+      {/* 6. Проект */}
+      <InlineFilterPanel.Field label={tPo('filter_project')} expandable>
+        <CatalogPickerField
+          value={
+            filterValues.projectId
+              ? {
+                  id: filterValues.projectId,
+                  label: filterValues.projectLabel ?? filterValues.projectId,
+                }
+              : null
+          }
+          placeholder=""
+          onPick={() => setPickerOpen('project')}
+          onClear={() => {
+            setFilterValues({ ...filterValues, projectId: undefined, projectLabel: undefined });
+            onResetCursor();
+          }}
+          testId="filter-project"
+        />
+      </InlineFilterPanel.Field>
+      {/* 7. Контрагент — moysklad-parity inline multi-select checkbox dropdown:
+          type a name OR phone, results appear inline (each row shows the phone
+          as a sublabel), tick as many as needed. Was a single-select modal. */}
+      <InlineFilterPanel.Field label={tFields('agent')} expandable>
+        <MultiCombobox
+          value={agents.map((x) => x.id)}
+          items={agents.map((x) => ({ value: x.id, label: x.label }))}
+          onSearch={async (q) => {
+            const r = await api.get<{
+              items: { id: string; name: string; phone?: string | null }[];
+            }>(`/counterparties?search=${encodeURIComponent(q)}&limit=20`);
+            return r.items.map((x) => ({
+              value: x.id,
+              label: x.name,
+              sublabel: x.phone || undefined,
+            }));
+          }}
+          onChange={(nextIds, toggled) => {
+            setAgents((prev) =>
+              nextIds.map((id) => {
+                const ex = prev.find((s) => s.id === id);
+                if (ex) return ex;
+                if (toggled?.value === id) return { id, label: String(toggled.label) };
+                return { id, label: id };
+              }),
+            );
+            onResetCursor();
+          }}
+          placeholder=""
           testId="filter-agent"
         />
       </InlineFilterPanel.Field>
-      {/* 3. Группа контрагента */}
+      {/* 8. Группа контрагента */}
       <InlineFilterPanel.Field label={tPo('filter_agent_group')} expandable>
         <CatalogPickerField
           value={
@@ -565,7 +835,7 @@ export default function PurchaseReturnsPage() {
           testId="filter-agent-group"
         />
       </InlineFilterPanel.Field>
-      {/* 4. Счёт контрагента — disabled until agent picked */}
+      {/* 9. Счёт контрагента — disabled until agent picked */}
       <InlineFilterPanel.Field label={tPo('filter_agent_account')} expandable>
         <CatalogPickerField
           value={
@@ -577,7 +847,7 @@ export default function PurchaseReturnsPage() {
               : null
           }
           placeholder=""
-          onPick={() => filterValues.agentId && setPickerOpen('agentAccount')}
+          onPick={() => agents[0]?.id && setPickerOpen('agentAccount')}
           onClear={() => {
             setFilterValues({
               ...filterValues,
@@ -586,12 +856,12 @@ export default function PurchaseReturnsPage() {
             });
             onResetCursor();
           }}
-          disabled={!filterValues.agentId}
+          disabled={!agents[0]?.id}
           disabledHint={tPo('filter_agent_account_disabled_hint')}
           testId="filter-agent-account"
         />
       </InlineFilterPanel.Field>
-      {/* 5. Договор */}
+      {/* 10. Договор */}
       <InlineFilterPanel.Field label={tPo('filter_contract')} expandable>
         <CatalogPickerField
           value={
@@ -615,31 +885,58 @@ export default function PurchaseReturnsPage() {
           testId="filter-contract"
         />
       </InlineFilterPanel.Field>
-      {/* 6. Организация */}
-      <InlineFilterPanel.Field label={tFields('organization')} expandable>
+      {/* 11. Владелец контрагента */}
+      <InlineFilterPanel.Field label={tPo('filter_agent_owner')} expandable>
         <CatalogPickerField
           value={
-            filterValues.organizationId
+            filterValues.agentOwnerId
               ? {
-                  id: filterValues.organizationId,
-                  label: filterValues.organizationLabel ?? filterValues.organizationId,
+                  id: filterValues.agentOwnerId,
+                  label: filterValues.agentOwnerLabel ?? filterValues.agentOwnerId,
                 }
               : null
           }
           placeholder=""
-          onPick={() => setPickerOpen('org')}
+          onPick={() => setPickerOpen('agentOwner')}
           onClear={() => {
             setFilterValues({
               ...filterValues,
-              organizationId: undefined,
-              organizationLabel: undefined,
+              agentOwnerId: undefined,
+              agentOwnerLabel: undefined,
             });
             onResetCursor();
           }}
+          testId="filter-agent-owner"
+        />
+      </InlineFilterPanel.Field>
+      {/* 12. Организация — moysklad-parity inline multi-select checkbox dropdown
+          (was a single-select modal). */}
+      <InlineFilterPanel.Field label={tFields('organization')} expandable>
+        <MultiCombobox
+          value={organizations.map((x) => x.id)}
+          items={organizations.map((x) => ({ value: x.id, label: x.label }))}
+          onSearch={async (q) => {
+            const r = await api.get<{ items: { id: string; name: string }[] }>(
+              `/organizations?search=${encodeURIComponent(q)}&limit=20`,
+            );
+            return r.items.map((x) => ({ value: x.id, label: x.name }));
+          }}
+          onChange={(nextIds, toggled) => {
+            setOrganizations((prev) =>
+              nextIds.map((id) => {
+                const ex = prev.find((s) => s.id === id);
+                if (ex) return ex;
+                if (toggled?.value === id) return { id, label: String(toggled.label) };
+                return { id, label: id };
+              }),
+            );
+            onResetCursor();
+          }}
+          placeholder=""
           testId="filter-org"
         />
       </InlineFilterPanel.Field>
-      {/* 7. Счёт организации — disabled until organization picked */}
+      {/* 13. Счёт организации — disabled until organization picked */}
       <InlineFilterPanel.Field label={tPo('filter_org_account')} expandable>
         <CatalogPickerField
           value={
@@ -652,7 +949,7 @@ export default function PurchaseReturnsPage() {
               : null
           }
           placeholder=""
-          onPick={() => filterValues.organizationId && setPickerOpen('orgAccount')}
+          onPick={() => organizations[0]?.id && setPickerOpen('orgAccount')}
           onClear={() => {
             setFilterValues({
               ...filterValues,
@@ -661,49 +958,12 @@ export default function PurchaseReturnsPage() {
             });
             onResetCursor();
           }}
-          disabled={!filterValues.organizationId}
+          disabled={!organizations[0]?.id}
           disabledHint={tPo('filter_org_account_disabled_hint')}
           testId="filter-org-account"
         />
       </InlineFilterPanel.Field>
-      {/* 8. Склад */}
-      <InlineFilterPanel.Field label={tFields('store')} expandable>
-        <CatalogPickerField
-          value={
-            filterValues.storeId
-              ? { id: filterValues.storeId, label: filterValues.storeLabel ?? filterValues.storeId }
-              : null
-          }
-          placeholder=""
-          onPick={() => setPickerOpen('store')}
-          onClear={() => {
-            setFilterValues({ ...filterValues, storeId: undefined, storeLabel: undefined });
-            onResetCursor();
-          }}
-          testId="filter-store"
-        />
-      </InlineFilterPanel.Field>
-      {/* 9. Проект */}
-      <InlineFilterPanel.Field label={tPo('filter_project')} expandable>
-        <CatalogPickerField
-          value={
-            filterValues.projectId
-              ? {
-                  id: filterValues.projectId,
-                  label: filterValues.projectLabel ?? filterValues.projectId,
-                }
-              : null
-          }
-          placeholder=""
-          onPick={() => setPickerOpen('project')}
-          onClear={() => {
-            setFilterValues({ ...filterValues, projectId: undefined, projectLabel: undefined });
-            onResetCursor();
-          }}
-          testId="filter-project"
-        />
-      </InlineFilterPanel.Field>
-      {/* 10. Статус */}
+      {/* 14. Статус */}
       <InlineFilterPanel.Field label={tPo('filter_status_multi')} expandable>
         <StateSelect
           value={stateFilter ?? undefined}
@@ -715,31 +975,7 @@ export default function PurchaseReturnsPage() {
           testId="filter-state"
         />
       </InlineFilterPanel.Field>
-      {/* 11. Приемка (supplyId) */}
-      <InlineFilterPanel.Field label={tFields('linked_supply')} expandable>
-        <CatalogPickerField
-          value={
-            filterValues.supplyId
-              ? {
-                  id: filterValues.supplyId,
-                  label: filterValues.supplyLabel ?? filterValues.supplyId,
-                }
-              : null
-          }
-          placeholder=""
-          onPick={() => setPickerOpen('supply')}
-          onClear={() => {
-            setFilterValues({
-              ...filterValues,
-              supplyId: undefined,
-              supplyLabel: undefined,
-            });
-            onResetCursor();
-          }}
-          testId="filter-supply"
-        />
-      </InlineFilterPanel.Field>
-      {/* 12. Проведено */}
+      {/* 15. Проведено */}
       <InlineFilterPanel.Field label={tFields('applicable')} expandable>
         <YesNoSelect
           value={filterValues.applicable}
@@ -750,7 +986,7 @@ export default function PurchaseReturnsPage() {
           testId="filter-applicable"
         />
       </InlineFilterPanel.Field>
-      {/* 13. Напечатано */}
+      {/* 16. Напечатано */}
       <InlineFilterPanel.Field label={tFields('printed')} expandable>
         <YesNoSelect
           value={filterValues.printed}
@@ -761,7 +997,7 @@ export default function PurchaseReturnsPage() {
           testId="filter-printed"
         />
       </InlineFilterPanel.Field>
-      {/* 14. Отправлено */}
+      {/* 17. Отправлено */}
       <InlineFilterPanel.Field label={tFields('published')} expandable>
         <YesNoSelect
           value={filterValues.published}
@@ -772,7 +1008,7 @@ export default function PurchaseReturnsPage() {
           testId="filter-published"
         />
       </InlineFilterPanel.Field>
-      {/* 15. Владелец-сотрудник */}
+      {/* 18. Владелец-сотрудник */}
       <InlineFilterPanel.Field label={tPo('filter_owner_employee')} expandable>
         <CatalogPickerField
           value={
@@ -789,7 +1025,7 @@ export default function PurchaseReturnsPage() {
           testId="filter-owner"
         />
       </InlineFilterPanel.Field>
-      {/* 16. Владелец-отдел */}
+      {/* 19. Владелец-отдел */}
       <InlineFilterPanel.Field label={tPo('filter_owner_group')} expandable>
         <CatalogPickerField
           value={
@@ -809,43 +1045,18 @@ export default function PurchaseReturnsPage() {
           testId="filter-group"
         />
       </InlineFilterPanel.Field>
-      {/* 17. Сумма (range) */}
-      <InlineFilterPanel.Field label={`${tFields('sum')}:`} expandable>
-        <div className="flex items-center gap-1">
-          <MoneyInput
-            allowEmpty
-            valueMinor={
-              filterValues.sumMinorFrom !== undefined ? String(filterValues.sumMinorFrom) : ''
-            }
-            onChangeMinor={(minor) => {
-              setFilterValues({
-                ...filterValues,
-                sumMinorFrom: minor === '' ? undefined : Number(minor),
-              });
-              onResetCursor();
-            }}
-            data-test-id="filter-sum-from"
-            className="h-7 w-full rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] px-2 text-[var(--ms-text-primary)] text-sm focus:border-[var(--ms-border-focus)] focus:outline-none"
-          />
-          <span className="text-[var(--ms-text-muted)]">—</span>
-          <MoneyInput
-            allowEmpty
-            valueMinor={
-              filterValues.sumMinorTo !== undefined ? String(filterValues.sumMinorTo) : ''
-            }
-            onChangeMinor={(minor) => {
-              setFilterValues({
-                ...filterValues,
-                sumMinorTo: minor === '' ? undefined : Number(minor),
-              });
-              onResetCursor();
-            }}
-            data-test-id="filter-sum-to"
-            className="h-7 w-full rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] px-2 text-[var(--ms-text-primary)] text-sm focus:border-[var(--ms-border-focus)] focus:outline-none"
-          />
-        </div>
+      {/* 20. Общий доступ */}
+      <InlineFilterPanel.Field label={tPo('filter_shared')} expandable={false}>
+        <YesNoSelect
+          value={filterValues.shared}
+          onChange={(v) => {
+            setFilterValues({ ...filterValues, shared: v });
+            onResetCursor();
+          }}
+          testId="filter-shared"
+        />
       </InlineFilterPanel.Field>
-      {/* 18. Когда изменен */}
+      {/* 21. Когда изменен */}
       <InlineFilterPanel.Field
         label={`${tPo('filter_updated_period')}:`}
         expandable
@@ -872,6 +1083,30 @@ export default function PurchaseReturnsPage() {
             onResetCursor();
           }}
           testId="filter-updated"
+        />
+      </InlineFilterPanel.Field>
+      {/* 22. Кто изменил */}
+      <InlineFilterPanel.Field label={tPo('filter_modified_by')} expandable>
+        <CatalogPickerField
+          value={
+            filterValues.modifiedById
+              ? {
+                  id: filterValues.modifiedById,
+                  label: filterValues.modifiedByLabel ?? filterValues.modifiedById,
+                }
+              : null
+          }
+          placeholder=""
+          onPick={() => setPickerOpen('modifiedBy')}
+          onClear={() => {
+            setFilterValues({
+              ...filterValues,
+              modifiedById: undefined,
+              modifiedByLabel: undefined,
+            });
+            onResetCursor();
+          }}
+          testId="filter-modified-by"
         />
       </InlineFilterPanel.Field>
     </InlineFilterPanel>
@@ -919,6 +1154,7 @@ export default function PurchaseReturnsPage() {
         onRetry={() => refetch()}
         emptyTitle={hasFilter ? tCommon('no_results') : t('empty_title')}
         hasActiveFilter={hasFilter}
+        footerRow={footerRow}
         sortKey={sortKey}
         sortDir={sortDir}
         onSortChange={(key, dir) => {
@@ -939,11 +1175,23 @@ export default function PurchaseReturnsPage() {
               onClearSelection={bulk.clearSelection}
               postedCount={postedCount}
               onMassEdit={() => {
-                setMassEditIds(Array.from(bulk.selectedIds));
-                setMassEditOwner(null);
-                setMassEditProject(null);
-                setMassEditOpen(true);
+                stashBulkEdit({
+                  entity: 'purchase-returns',
+                  ids:
+                    bulk.selectedIds.size > 0
+                      ? Array.from(bulk.selectedIds)
+                      : (data?.items ?? []).map((r) => r.id),
+                  from: '/purchase-returns',
+                });
+                router.push('/bulk-edit');
               }}
+            />
+            {/* moysklad toolbar order: Изменить · Статус · Печать */}
+            <PurchaseReturnStatusDropdown
+              selectedIds={bulk.selectedIds}
+              listQueryKey={listQueryKey}
+              onClearSelection={bulk.clearSelection}
+              customStatuses={purchaseReturnStatuses}
             />
             {/* no page-level CSV exporter yet — list_export stays disabled */}
             <PurchaseReturnPrintDropdown selectedIds={bulk.selectedIds} />
@@ -961,25 +1209,8 @@ export default function PurchaseReturnsPage() {
         onColumnResize={colWidths.set}
       />
 
-      <CatalogPicker
-        open={pickerOpen === 'agent'}
-        onClose={() => setPickerOpen(null)}
-        title={tFields('agent')}
-        fetcher={async (q): Promise<PickerItem[]> => {
-          const r = await api.get<{ items: { id: string; name: string }[] }>(
-            `/counterparties?search=${encodeURIComponent(q)}&limit=20`,
-          );
-          return r.items.map((x) => ({ id: x.id, primary: x.name }));
-        }}
-        onSelect={(item) => {
-          setFilterValues({
-            ...filterValues,
-            agentId: item.id,
-            agentLabel: String(item.primary),
-          });
-          onResetCursor();
-        }}
-      />
+      {/* «Контрагент» / «Организация» are now inline MultiCombobox dropdowns
+          (see the filter panel above) — their old single-select modals are gone. */}
       <CatalogPicker
         open={pickerOpen === 'agentGroup'}
         onClose={() => setPickerOpen(null)}
@@ -1004,13 +1235,14 @@ export default function PurchaseReturnsPage() {
         onClose={() => setPickerOpen(null)}
         title={tPo('filter_agent_account')}
         fetcher={async (q): Promise<PickerItem[]> => {
-          if (!filterValues.agentId) return [];
+          const scopedAgentId = agents[0]?.id;
+          if (!scopedAgentId) return [];
           // moysklad parity: counterparty bank accounts have only the nested
           // /counterparties/:id/bank-accounts route (raw array, no search param) —
           // mirror the detail-form agentAccountFetcher and client-filter by search.
           const d = await api.get<
             Array<{ id: string; accountNumber: string; bankName: string | null }>
-          >(`/counterparties/${filterValues.agentId}/bank-accounts`);
+          >(`/counterparties/${scopedAgentId}/bank-accounts`);
           const k = q.trim().toLowerCase();
           return d
             .filter(
@@ -1054,36 +1286,18 @@ export default function PurchaseReturnsPage() {
         }}
       />
       <CatalogPicker
-        open={pickerOpen === 'org'}
-        onClose={() => setPickerOpen(null)}
-        title={tFields('organization')}
-        fetcher={async (q): Promise<PickerItem[]> => {
-          const r = await api.get<{ items: { id: string; name: string }[] }>(
-            `/organizations?search=${encodeURIComponent(q)}&limit=20`,
-          );
-          return r.items.map((x) => ({ id: x.id, primary: x.name }));
-        }}
-        onSelect={(item) => {
-          setFilterValues({
-            ...filterValues,
-            organizationId: item.id,
-            organizationLabel: String(item.primary),
-          });
-          onResetCursor();
-        }}
-      />
-      <CatalogPicker
         open={pickerOpen === 'orgAccount'}
         onClose={() => setPickerOpen(null)}
         title={tPo('filter_org_account')}
         fetcher={async (q): Promise<PickerItem[]> => {
-          if (!filterValues.organizationId) return [];
+          const scopedOrgId = organizations[0]?.id;
+          if (!scopedOrgId) return [];
           // moysklad parity: organization accounts come from the flat
           // /organization-accounts?organizationId= route (mirror the detail-form
           // organizationAccountFetcher). Default accounts have accountNumber=null,
           // so fall back to the account name for the headline.
           const params = new URLSearchParams({ search: q, limit: '50' });
-          params.set('organizationId', filterValues.organizationId);
+          params.set('organizationId', scopedOrgId);
           const r = await api.get<{
             items: {
               id: string;
@@ -1146,20 +1360,20 @@ export default function PurchaseReturnsPage() {
         }}
       />
       <CatalogPicker
-        open={pickerOpen === 'supply'}
+        open={pickerOpen === 'product'}
         onClose={() => setPickerOpen(null)}
-        title={tFields('linked_supply')}
+        title={tPo('filter_product_or_group')}
         fetcher={async (q): Promise<PickerItem[]> => {
           const r = await api.get<{ items: { id: string; name: string }[] }>(
-            `/supplies?search=${encodeURIComponent(q)}&limit=20`,
+            `/products?search=${encodeURIComponent(q)}&limit=20`,
           );
           return r.items.map((x) => ({ id: x.id, primary: x.name }));
         }}
         onSelect={(item) => {
           setFilterValues({
             ...filterValues,
-            supplyId: item.id,
-            supplyLabel: String(item.primary),
+            productId: item.id,
+            productLabel: String(item.primary),
           });
           onResetCursor();
         }}
@@ -1198,6 +1412,44 @@ export default function PurchaseReturnsPage() {
             ...filterValues,
             groupId: item.id,
             groupLabel: String(item.primary),
+          });
+          onResetCursor();
+        }}
+      />
+      <CatalogPicker
+        open={pickerOpen === 'agentOwner'}
+        onClose={() => setPickerOpen(null)}
+        title={tPo('filter_agent_owner')}
+        fetcher={async (q): Promise<PickerItem[]> => {
+          const r = await api.get<{ items: { id: string; name: string }[] }>(
+            `/employees?search=${encodeURIComponent(q)}&limit=20`,
+          );
+          return r.items.map((x) => ({ id: x.id, primary: x.name }));
+        }}
+        onSelect={(item) => {
+          setFilterValues({
+            ...filterValues,
+            agentOwnerId: item.id,
+            agentOwnerLabel: String(item.primary),
+          });
+          onResetCursor();
+        }}
+      />
+      <CatalogPicker
+        open={pickerOpen === 'modifiedBy'}
+        onClose={() => setPickerOpen(null)}
+        title={tPo('filter_modified_by')}
+        fetcher={async (q): Promise<PickerItem[]> => {
+          const r = await api.get<{ items: { id: string; name: string }[] }>(
+            `/employees?search=${encodeURIComponent(q)}&limit=20`,
+          );
+          return r.items.map((x) => ({ id: x.id, primary: x.name }));
+        }}
+        onSelect={(item) => {
+          setFilterValues({
+            ...filterValues,
+            modifiedById: item.id,
+            modifiedByLabel: String(item.primary),
           });
           onResetCursor();
         }}
@@ -1245,6 +1497,8 @@ export default function PurchaseReturnsPage() {
         projectValue={massEditProject}
         onProjectPick={() => setPickerOpen('massEditProject')}
         onProjectClear={() => setMassEditProject(null)}
+        groupOptions={(massGroupsData?.items ?? []).map((g) => ({ value: g.id, label: g.name }))}
+        showShared
         labels={{
           title: t('mass_edit_title'),
           ownerLabel: tFilters('owner_employee'),
@@ -1253,6 +1507,10 @@ export default function PurchaseReturnsPage() {
           apply: t('mass_edit_apply'),
           cancel: t('mass_edit_cancel'),
           hint: t('mass_edit_hint', { count: massEditIds.length }),
+          groupLabel: tMass('group_label'),
+          sharedLabel: tMass('shared_label'),
+          sharedYes: tMass('shared_yes'),
+          sharedNo: tMass('shared_no'),
         }}
         onSubmit={async (patch) => {
           await bulk.massEdit.mutateAsync({ ids: massEditIds, ...patch });

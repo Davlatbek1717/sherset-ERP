@@ -44,7 +44,6 @@ export function Progress({
   const pct = (clamped / safeMax) * 100;
 
   return (
-    // biome-ignore lint/a11y/useFocusableInteractive: a progressbar is a read-only status role (WAI-ARIA range widget), not operable — it must NOT be in the tab order.
     <div
       role="progressbar"
       aria-label={ariaLabel}

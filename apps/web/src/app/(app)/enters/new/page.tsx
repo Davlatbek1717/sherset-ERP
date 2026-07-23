@@ -17,17 +17,22 @@
  */
 
 import { RelatedDocsTab } from '@/components/customer-orders/related-docs-tab';
+import { CurrencyRateModal } from '@/components/document-detail/currency-rate-modal';
+import { CellPickerField } from '@/components/documents/cell-picker-field';
 import {
   OwnerAccessPopover,
   type OwnerAccessValue,
 } from '@/components/documents/owner-access-popover';
+import { PositionAgreementButton } from '@/components/documents/position-agreement-modal';
 import { PositionColumnCustomizer } from '@/components/documents/position-column-customizer';
 import { PositionPriceMenu } from '@/components/documents/position-price-menu';
-import { PriceRateDialog } from '@/components/products/price-rate-dialog';
+import { usePrintTemplatesManager } from '@/components/print/print-templates-provider';
 import { useDocumentEditorLabels } from '@/hooks/use-document-editor-labels';
 import { useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-store';
+import { imageRawUrl } from '@/lib/image-url';
+import { distributeAgreementDelta } from '@/lib/position-agreement';
 import { scaleMinorByQty } from '@moysklad/money';
 import {
   Button,
@@ -146,7 +151,10 @@ export default function NewEnterPage() {
   const tCommon = useTranslations('common');
   const tPos = useTranslations('position_editor');
   const tCols = useTranslations('position_cols');
+  const tBulk = useTranslations('bulk_actions');
+  const tPrint = useTranslations('print_menu');
   const docEditorLabels = useDocumentEditorLabels();
+  const { openTemplates } = usePrintTemplatesManager();
 
   // moysklad enter FSM = draft / posted / cancelled (mirrors enters/[id]).
   // Status is decorative on /new (not sent on create — the API always creates a
@@ -195,7 +203,7 @@ export default function NewEnterPage() {
   const selectedCurrency = currencies.find((c) => c.isoCode === currency);
   const isBaseCurrency = selectedCurrency?.default ?? currency === 'UZS';
   // moysklad «1 USD = 12 200 UZS ✎» — the ✎ opens the «Курс валюты документа» modal
-  // (PriceRateDialog) to override the rate PER-DOCUMENT. The override (major units,
+  // (CurrencyRateModal) to override the rate PER-DOCUMENT. The override (major units,
   // e.g. «12200») defaults to the account rate and resets when the currency changes;
   // the document stores rateValue = rate × 1e8.
   const [rateOverride, setRateOverride] = useState<string | null>(null);
@@ -349,6 +357,19 @@ export default function NewEnterPage() {
     setPositions((ps) => ps.filter((p) => p.id !== id));
   };
 
+  // «Kelishuv» — spread the negotiated delta across the lines (owner 2026-07-17).
+  // An enter has no VAT, so the delta distributes over the plain line costs.
+  const applyAgreement = useCallback((deltaMinor: bigint) => {
+    setPositions((ps) => {
+      const patch = distributeAgreementDelta(ps, deltaMinor, false);
+      if (patch.size === 0) return ps;
+      return ps.map((p) => {
+        const next = patch.get(p.id);
+        return next != null ? { ...p, priceMinor: next } : p;
+      });
+    });
+  }, []);
+
   // «Цена ▾» → «Расценить» — re-price every row from the chosen price type (the
   // product's carried salePrices). moysklad lets you reprice enter lines from a type.
   const repricePositions = useCallback((priceTypeId: string) => {
@@ -442,11 +463,35 @@ export default function NewEnterPage() {
     return cols;
   }, [colVisible, tCols, tPos, priceTypesData, repricePositions, saveProductPrices]);
 
+  // The account's own custom «Оприходование» print forms (moysklad «Печать» lists
+  // them ABOVE the built-in form, and pins each as its OWN toolbar button after
+  // «Отправить»). Empty on accounts with none configured. Mirror PO/new.
+  // Doc-scoped endpoint (/enters/print-forms) — gated on the DOC view permission, not
+  // settings, so a cashier sees the pinned check buttons too (the shared
+  // /print-templates listing is admin-only). Bare array, PO/new shape.
+  const { data: printFormsData } = useQuery<Array<{ id: string; name: string }>>({
+    queryKey: ['enter-print-forms'],
+    queryFn: () => api.get('/enters/print-forms'),
+    staleTime: 60_000,
+  });
+  const printForms = printFormsData ?? [];
+
+  // moysklad «Печать» on a NEW enter: silently save, then open the print form in
+  // a NEW TAB — the flag lives on a ref so `createMut.onSuccess` knows whether
+  // the save came from «Печать» (mirrors supplies/new).
+  const afterSaveRef = useRef<'view' | 'print'>('view');
+  // Which form the save-first print should open once the enter exists: {view} =
+  // the standard /print/enter page (new tab), {form,templateId} = an account
+  // custom form PDF (rendered via /enters/bulk-print + opened in a new tab).
+  // Mirror PO/new.
+  const printTargetRef = useRef<{ kind: 'view' | 'form'; templateId?: string }>({
+    kind: 'view',
+  });
   const createMut = useMutation({
     mutationFn: async () => {
       if (!organizationId) throw new Error(tErrors('select_organization'));
       if (!storeId) throw new Error(tErrors('select_store'));
-      if (positions.length === 0) throw new Error(tErrors('at_least_one_position'));
+      // Owner 2026-07-08: «Проведено» has NO position precondition — an empty document may be saved/posted (BE allows it: 0 positions ⇒ 0 stock delta).
       for (const [i, p] of positions.entries()) {
         if (!p.assortmentId) throw new Error(tErrors('position_select_product', { n: i + 1 }));
         if (Number(p.quantity) <= 0)
@@ -492,13 +537,39 @@ export default function NewEnterPage() {
           ...(p.countryId ? { countryId: p.countryId } : {}),
           // «РНПТ» / «Ячейка» — free-text batch/bin reference.
           ...(p.rnpt ? { rnpt: p.rnpt } : {}),
+          ...(p.cellId ? { cellId: p.cellId } : {}),
           ...(p.cell ? { cell: p.cell } : {}),
         })),
       };
       return api.post<{ id: string }>('/enters', payload);
     },
-    onSuccess: (created) => router.push(`/enters/${created.id}`),
-    onError: (err: Error) => setError(err.message),
+    onSuccess: (created) => {
+      const intent = afterSaveRef.current;
+      afterSaveRef.current = 'view';
+      // «Печать»: open the chosen form of the freshly-saved enter in a NEW TAB
+      // (user presses «Печать» there — no auto-print), then land on the saved
+      // enter's detail page. Mirror PO/new.
+      if (intent === 'print') {
+        const target = printTargetRef.current;
+        printTargetRef.current = { kind: 'view' };
+        if (target.kind === 'form' && target.templateId) {
+          // An account custom form → render its PDF and OPEN IT IN A NEW TAB
+          // (moysklad «Открыть в браузере» — the user presses «Печать» there; NOT
+          // a save-to-disk download).
+          void api.postOpenInBrowser('/enters/bulk-print', {
+            ids: [created.id],
+            templateId: target.templateId,
+          });
+        } else {
+          window.open(`/print/enter/${created.id}`, '_blank');
+        }
+      }
+      router.push(`/enters/${created.id}`);
+    },
+    onError: (err: Error) => {
+      afterSaveRef.current = 'view';
+      setError(err.message);
+    },
   });
 
   const productFetcher = async (s: string): Promise<PickerItem[]> => {
@@ -550,7 +621,7 @@ export default function NewEnterPage() {
       weight: raw?.weightG != null ? String(raw.weightG) : undefined,
       volume: raw?.volumeML != null ? String(raw.volumeML) : undefined,
       // «Наименование» cell thumbnail (moysklad shows the product image inline).
-      imageUrl: raw?.mainImageId ? `/api/v1/images/${raw.mainImageId}/raw` : undefined,
+      imageUrl: raw?.mainImageId ? imageRawUrl(raw.mainImageId) : undefined,
     });
   };
 
@@ -573,9 +644,32 @@ export default function NewEnterPage() {
     />
   );
 
+  // «Ячейка» — address-storage cell picker (Phase 3). Closure has storeId (page
+  // state) + the row's product (assortmentId), so the picker can show «Все ячейки»
+  // and «С этим товаром». Stores cellId (drives per-cell stock) + the «Зона / Ячейка»
+  // label in `cell`.
+  const renderPositionCellCell = (row: DocPositionRow) => {
+    const p = row as NewPositionRow;
+    return (
+      <CellPickerField
+        storeId={storeId}
+        assortmentId={p.assortmentId}
+        label={p.cell}
+        // Оприходование stores goods: picking a cell for a cell-less product binds
+        // it as that product's home cell (never overwrites an existing binding).
+        bindProductCell
+        onSelect={(cellId, label) => updatePosition(row.id, { cellId, cell: label })}
+        onClear={() => updatePosition(row.id, { cellId: null, cell: '' })}
+      />
+    );
+  };
+
   const renderPositionNameCell = (row: DocPositionRow) => {
     const p = row as NewPositionRow;
     // moysklad-parity borderless [img] + bold code + name (mirror /[id] + CO).
+    // A picked product's name renders as a blue LINK to its product card (where
+    // the «Аналоги» tab lives); falls back to the picker button otherwise.
+    const href = p.assortmentId ? `/products/${p.assortmentId}` : undefined;
     return (
       <PositionNameCell
         imageUrl={p.imageUrl}
@@ -583,6 +677,8 @@ export default function NewEnterPage() {
         label={p.productLabel}
         placeholder={tForm('select_product')}
         onPick={() => setOpenPicker({ kind: 'product', rowUid: p.id })}
+        productHref={href}
+        onNavigate={href ? () => router.push(href) : undefined}
         testId={`pos-${p.id}-name`}
       />
     );
@@ -653,7 +749,7 @@ export default function NewEnterPage() {
               setProjectId(null);
               setProjectLabel('');
             }}
-            onCreate={() => router.push('/projects/new')}
+            onCreate={() => router.push('/settings/projects/new')}
             createLabel={tForm('create_new_project')}
           />
         </DocumentMetaField>
@@ -686,7 +782,7 @@ export default function NewEnterPage() {
               </NativeSelect>
             </div>
             {!isBaseCurrency && selectedCurrency && (
-              <span className="inline-flex items-center gap-1 whitespace-nowrap text-[var(--ms-text-muted)] text-xs tabular-nums">
+              <span className="inline-flex items-center gap-1 whitespace-nowrap text-[var(--ms-text-muted)] text-[12px] tabular-nums">
                 1 {currency} = {Number(effectiveRate).toLocaleString('ru-RU')} {baseCode}
                 {/* moysklad ✎ — opens «Курс валюты документа» to override the rate. */}
                 <button
@@ -712,6 +808,24 @@ export default function NewEnterPage() {
       label: tDetailTabs('main'),
       content: (
         <div className="space-y-4">
+          {/* Owner 2026-07-23: «Договорная цена» — blue, at the table's OUTER
+              top-right corner (same spot in every section). */}
+          <div className="-mb-2.5 flex justify-end">
+            <PositionAgreementButton
+              totalMinor={totals}
+              currency={currency}
+              labels={{
+                button: tPos('agreement_button'),
+                total: tPos('agreement_total'),
+                amount: tPos('agreement_amount'),
+                add: tPos('agreement_add'),
+                subtract: tPos('agreement_subtract'),
+                save: tPos('pick_modal_save'),
+                cancel: tPos('pick_modal_cancel'),
+              }}
+              onApply={applyAgreement}
+            />
+          </div>
           <PositionTable
             columns={positionColumns}
             emptyText=""
@@ -754,6 +868,9 @@ export default function NewEnterPage() {
             withGroupsLabel={tPos('sort_with_groups')}
             renderNameCell={renderPositionNameCell}
             renderCountryCell={renderPositionCountryCell}
+            renderCellCell={renderPositionCellCell}
+            // moysklad row ⋮ «Заменить» — reopen the per-row product picker.
+            onReplace={(id) => setOpenPicker({ kind: 'product', rowUid: id })}
             selectedIds={selectedRowIds}
             onSelectionChange={setSelectedRowIds}
             // moysklad-parity: inline «Добавить позицию» bar with typeahead — the
@@ -773,6 +890,10 @@ export default function NewEnterPage() {
                       primary: p.name,
                       code: p.code ?? undefined,
                       available: p.stock?.available != null ? Number(p.stock.available) : 0,
+                      // Pick modal (owner 2026-07-18): reference «Цена» = the same
+                      // default the row would get (buy price on purchase docs).
+                      priceMinor: p.buyPrice ?? '0',
+                      uomLabel: p.uom ?? undefined,
                       raw: p,
                     })),
                     total: r.total ?? r.items.length,
@@ -782,18 +903,36 @@ export default function NewEnterPage() {
                 moreItemsLabel={(n) => tPos('moreItems', { count: n })}
                 createProductLabel={(qq) => tPos('createProductNamed', { query: qq })}
                 onCreateProduct={() => router.push('/products/new')}
-                onPick={(item) => {
+                // owner 2026-07-18: qty/price modal on EVERY product-add search
+                // (was sales-only). No price-scope checkboxes here — writing a
+                // permanent SALE price from a purchase price would be wrong.
+                pickModal={{
+                  currency,
+                  permanentPriceOption: false,
+                  labels: {
+                    stock: tPos('pick_modal_stock'),
+                    price: tPos('pick_modal_price'),
+                    quantity: tPos('pick_modal_quantity'),
+                    salePrice: tPos('pick_modal_sale_price'),
+                    priceThisSale: tPos('pick_modal_price_this_sale'),
+                    pricePermanent: tPos('pick_modal_price_permanent'),
+                    save: tPos('pick_modal_save'),
+                    cancel: tPos('pick_modal_cancel'),
+                  },
+                }}
+                onPick={(item, entry) => {
                   const raw = item.raw as ProductItem | undefined;
+                  const newId = uid();
                   setPositions((ps) => [
                     ...ps,
                     {
-                      id: uid(),
+                      id: newId,
                       assortmentId: item.id,
                       productLabel: item.primary,
                       productCode: raw?.code ?? undefined,
                       productUom: raw?.uom ?? null,
-                      quantity: '1',
-                      priceMinor: raw?.buyPrice ?? '0',
+                      quantity: entry?.quantity ?? '1',
+                      priceMinor: entry?.priceMinor ?? raw?.buyPrice ?? '0',
                       discount: '0',
                       vat: '0',
                       vatEnabled: false,
@@ -804,11 +943,12 @@ export default function NewEnterPage() {
                       folderPath: raw?.productFolder?.pathName ?? undefined,
                       weight: raw?.weightG != null ? String(raw.weightG) : undefined,
                       volume: raw?.volumeML != null ? String(raw.volumeML) : undefined,
-                      imageUrl: raw?.mainImageId
-                        ? `/api/v1/images/${raw.mainImageId}/raw`
-                        : undefined,
+                      imageUrl: raw?.mainImageId ? imageRawUrl(raw.mainImageId) : undefined,
                     },
                   ]);
+                  // owner 2026-07-18: returning the id hands focus to the new
+                  // row's «Кол-во» (modal → table entry chain).
+                  return newId;
                 }}
                 onAddFromCatalog={addPosition}
               />
@@ -968,10 +1108,119 @@ export default function NewEnterPage() {
         }}
         saving={createMut.isPending}
         onClose={() => router.push('/enters')}
-        modifyMenu={[]}
-        createDocMenu={[]}
-        printMenu={[]}
-        sendMenu={[]}
+        // moysklad-parity: on a NEW «Оприходование» the toolbar dropdowns OPEN and
+        // list their items (were disabled/empty). A new doc has nothing to act on
+        // yet, so every actionable item SAVES the enter first, then lands on the
+        // detail page. Item sets ground-truthed live on #enter/edit?new (user
+        // screenshots, 2026-07-12). «Удалить» is greyed on a new doc.
+        modifyMenu={[
+          { label: tBulk('delete'), disabled: true, destructive: true },
+          {
+            label: tBulk('copy'),
+            onClick: () => {
+              setError(null);
+              createMut.mutate();
+            },
+          },
+        ]}
+        // moysklad has NO «Создать документ» on an Оприходование (internal stock-in,
+        // no downstream docs) — hide the slot entirely, matching enters/[id].
+        hideCreateDoc
+        // «Печать» — moysklad: Оприходование · Комплект… · Настроить… · «Запросить
+        // форму» promo footer (header + subtitle + «Как запросить» button).
+        printMenu={[
+          // The account's own custom «Оприходование» forms FIRST (moysklad lists
+          // them above the built-in form). Each saves the enter first (it can't
+          // render before it exists), then opens that form's PDF. Mirror PO/new.
+          ...printForms.map((f) => ({
+            label: f.name,
+            onClick: () => {
+              printTargetRef.current = { kind: 'form' as const, templateId: f.id };
+              afterSaveRef.current = 'print' as const;
+              setError(null);
+              createMut.mutate();
+            },
+          })),
+          {
+            // «Оприходование» — silently save, then open the print form in a NEW
+            // TAB (user presses «Печать» there; no auto-print).
+            label: tDetailTitles('enter'),
+            onClick: () => {
+              setError(null);
+              printTargetRef.current = { kind: 'view' };
+              afterSaveRef.current = 'print';
+              createMut.mutate();
+            },
+          },
+          {
+            label: tPrint('set'),
+            onClick: () => {
+              setError(null);
+              createMut.mutate();
+            },
+          },
+          {
+            // «Настроить…» — open the print-template manager slide-over (no save).
+            label: tPrint('configure'),
+            onClick: () => openTemplates('enter'),
+          },
+          {
+            // «Запросить форму» — moysklad's non-interactive promo footer (mirrors
+            // the list-page PrintDropdown block).
+            testId: 'print-request-form',
+            content: (
+              <div className="mt-1 border-[var(--ms-border-default)] border-t px-2 pt-2 pb-1">
+                <div className="font-semibold text-[13px] text-[var(--ms-text-primary)]">
+                  {tPrint('request_form')}
+                </div>
+                <p className="mt-0.5 max-w-[230px] text-[11px] text-[var(--ms-text-muted)] leading-snug">
+                  {tPrint('request_form_description')}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => window.open('/help/enters', '_blank')}
+                  className="mt-2 rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] px-3 py-1 text-[11px] text-[var(--ms-text-primary)] hover:bg-[var(--ms-bg-muted)]"
+                  data-test-id="print-request-form-btn"
+                >
+                  {tPrint('request_form_cta')}
+                </button>
+              </div>
+            ),
+          },
+        ]}
+        // «Отправить» — moysklad: Оприходование · Комплект…
+        sendMenu={[tDetailTitles('enter'), tPrint('set')].map((label) => ({
+          label,
+          onClick: () => {
+            setError(null);
+            createMut.mutate();
+          },
+        }))}
+        // moysklad pins each configured custom print form as its OWN button right
+        // after «Отправить». Each saves the enter first, then renders that form's
+        // PDF into a new tab. Mirror PO/new.
+        trailingSlot={printForms.map((f) => (
+          <Button
+            key={f.id}
+            type="button"
+            variant="secondary"
+            size="sm"
+            // «Past ko'k» — the check-print type buttons stand out in a soft blue
+            // (brand-100 fill · brand-600 text · brand-300 border), matching
+            // supplies/new + PO/new. Owner request 2026-07-15/16.
+            className="border-[var(--ms-brand-300)] bg-[var(--ms-brand-100)] text-[var(--ms-brand-600)] hover:bg-[var(--ms-brand-200)] hover:text-[var(--ms-brand-700)]"
+            onClick={() => {
+              printTargetRef.current = { kind: 'form', templateId: f.id };
+              afterSaveRef.current = 'print';
+              setError(null);
+              createMut.mutate();
+            }}
+            data-test-id={`toolbar-print-form-${f.id}`}
+          >
+            <Icons.print className="h-4 w-4" />
+            {f.name}
+          </Button>
+        ))}
         // moysklad-parity: right side of toolbar = «Владелец» (owner/access)
         // popover — click «Admin User / Основной» to set Сотрудник (employee) /
         // Отдел (department) / «Общий доступ» (shared). Saved on create.
@@ -1045,13 +1294,12 @@ export default function NewEnterPage() {
       />
 
       {/* «Курс валюты документа» — moysklad rate-override modal (the currency ✎). */}
-      <PriceRateDialog
+      <CurrencyRateModal
         open={rateDialogOpen}
-        onClose={() => setRateDialogOpen(false)}
-        currencyCode={currency}
-        baseCode={baseCode}
+        onOpenChange={setRateDialogOpen}
+        currency={currency}
         referenceRate={globalRate}
-        customRate={rateOverride}
+        currentOverride={rateOverride}
         onApply={setRateOverride}
       />
     </>

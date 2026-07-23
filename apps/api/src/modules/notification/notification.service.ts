@@ -1,6 +1,8 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { readEmployeeSystemAttrs } from '../hr/hr-employee/hr-employee.service.js';
+import { isEmailDeliveryAllowed, isWebDeliveryAllowed } from './notification-settings-filter.js';
 import { NotificationGateway } from './notification.gateway.js';
 import {
   type MarkReadInput,
@@ -18,14 +20,6 @@ export class NotificationService {
 
   async list(accountId: string, recipientId: string, rawFilter: unknown) {
     const filter = NotificationFilterSchema.parse(rawFilter);
-    const where = {
-      accountId,
-      recipientId,
-      ...(filter.unreadOnly ? { readAt: null } : {}),
-      ...(filter.kind ? { kind: filter.kind } : {}),
-      ...(filter.cursor ? { id: { lt: filter.cursor } } : {}),
-    };
-
     const rows = await this.prisma.client.notification.findMany({
       where: {
         accountId,
@@ -89,6 +83,29 @@ export class NotificationService {
     entityId?: string | null,
   ): Promise<void> {
     try {
+      // moysklad employee card «Уведомления»: honour the recipient's matrix.
+      // The channels are INDEPENDENT — Веб-интерфейс (this bell/SSE funnel)
+      // and Почта (EmailLog queue) each consult their own checkbox.
+      const recipient = await this.prisma.client.employee.findFirst({
+        where: { id: recipientId, accountId },
+        select: { attributes: true, email: true },
+      });
+      const sys = recipient ? readEmployeeSystemAttrs(recipient.attributes) : {};
+      const webAllowed = !recipient || isWebDeliveryAllowed(sys, kind);
+      const emailAllowed = !!recipient && isEmailDeliveryAllowed(sys, kind);
+
+      if (emailAllowed && recipient) {
+        await this.enqueueEmail(
+          accountId,
+          recipientId,
+          recipient.email,
+          title,
+          body,
+          entity,
+          entityId,
+        );
+      }
+      if (!webAllowed) return;
       const row = await this.prisma.client.notification.create({
         data: {
           accountId,
@@ -116,6 +133,55 @@ export class NotificationService {
       });
     } catch {
       // Notification failures must never break the caller's transaction
+    }
+  }
+
+  /**
+   * «Почта» channel: enqueue the notification onto the EmailLog queue (the
+   * 30s EmailDeliveryService cron performs the SMTP send + retries).
+   * Best-effort and quiet by design: no SMTP config or a placeholder e-mail
+   * (auto-generated @hr.local) simply skips — a notification e-mail must
+   * never break or delay the emitting flow. Direct emailLog.create instead
+   * of EmailService.send(): that path also flips the document «Отправлен»
+   * flag, which is wrong for a notification.
+   */
+  private async enqueueEmail(
+    accountId: string,
+    recipientId: string,
+    toEmail: string,
+    title: string,
+    body?: string | null,
+    entity?: string | null,
+    entityId?: string | null,
+  ): Promise<void> {
+    try {
+      if (!toEmail || toEmail.endsWith('@hr.local')) return;
+      const cfg = await this.prisma.client.emailConfig.findFirst({
+        where: { accountId },
+        select: { id: true },
+      });
+      if (!cfg) return;
+      const esc = (s: string) =>
+        s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      await this.prisma.client.emailLog.create({
+        data: {
+          accountId,
+          senderId: recipientId,
+          entity: entity ?? null,
+          entityId: entityId ?? null,
+          toAddresses: [toEmail],
+          ccAddresses: [],
+          subject: title,
+          bodyHtml: `<p>${esc(body ?? title)}</p>`,
+          attachmentIds: [],
+          status: 'pending',
+          attempt: 1,
+          maxAttempts: 4,
+          nextRetryAt: new Date(),
+        },
+      });
+    } catch {
+      // best-effort — the notification itself already went out (or will)
     }
   }
 

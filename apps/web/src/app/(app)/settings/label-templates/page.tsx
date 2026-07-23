@@ -109,7 +109,7 @@ export default function LabelTemplatesPage() {
       width: '120px',
       align: 'right',
       cell: (r) => (
-        <span className="text-[var(--ms-text-muted)] text-xs tabular-nums">
+        <span className="text-[var(--ms-text-muted)] text-[12px] tabular-nums">
           {r.labelWidthMm} × {r.labelHeightMm} mm
         </span>
       ),
@@ -138,7 +138,7 @@ export default function LabelTemplatesPage() {
       width: '120px',
       sortable: true,
       cell: (r) => (
-        <span className="text-[var(--ms-text-muted)] text-xs tabular-nums">
+        <span className="text-[var(--ms-text-muted)] text-[12px] tabular-nums">
           {formatDate(r.createdAt)}
         </span>
       ),

@@ -21,7 +21,9 @@ import { expect, test } from '@playwright/test';
  */
 test.describe.configure({ mode: 'serial' });
 
-const ROUTES_UNAUTHED = [{ name: 'login', path: '/login' }];
+const ROUTES_UNAUTHED = [
+  { name: 'login', path: '/login' },
+];
 
 const ROUTES_AUTHED = [
   { name: 'homepage', path: '/' },
@@ -59,7 +61,7 @@ test.describe('visual regression — authenticated', () => {
   // Sign in once for every authed test in this file.
   test.beforeEach(async ({ page }) => {
     await page.goto('/login');
-    await page.fill('[data-test-id="login-username"]', 'admin@demo.local');
+    await page.fill('[data-test-id="login-email"]', 'admin@demo.local');
     await page.fill('[data-test-id="login-password"]', 'admin123');
     await page.click('[data-test-id="login-submit"]');
     await page.waitForURL('/');

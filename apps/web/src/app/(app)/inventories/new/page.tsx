@@ -1,73 +1,73 @@
 'use client';
 
 /**
- * /inventories/new — moysklad-parity «Инвентаризация» editor.
+ * /inventories/new — moysklad-parity «Инвентаризация» editor (owner report
+ * 2026-07-14, user screenshots #inventoryaddresswarehouse/edit?new):
  *
- * No counterparty. Special position table: name | expected (computed) | actual (input) | surplus | shortage | menu.
- * Totals: surplus_count + shortage_count.
+ * - Opened from the list's «Выберите склад для инвентаризации» modal with
+ *   ?warehouseId=… — the «Склад» field arrives prefilled and LOCKED (an
+ *   inventory is fixed to its warehouse at creation, like moysklad).
+ * - Header meta = Организация + Склад only (no Проект/Внешний код/Комментарий
+ *   fields — moysklad's inventory editor doesn't show them; the Комментарий
+ *   textarea lives at the bottom of the positions block).
+ * - Positions block = InventoryPositionsPanel in 'new' mode: the
+ *   [Остатки по складу | Остатки по ячейке] toggle, Фильтр, search and the
+ *   empty grid — but NO add-position bar (moysklad shows it after first save).
+ * - Toolbar dropdowns are ALIVE (band 2.2): Изменить = Удалить (grey);
+ *   Создать документ = Списание · Оприходование (present in moysklad — user
+ *   screenshot №6 — each saves the inventory first, then creates + opens the
+ *   downstream doc); Печать = Инвентаризация · Комплект… · Настроить… ·
+ *   «Запросить форму» promo; Отправить = Инвентаризация · Комплект…
  */
 
+import { InventoryPositionsPanel } from '@/components/inventories/inventory-positions-panel';
+import { usePrintTemplatesManager } from '@/components/print/print-templates-provider';
 import { useDocumentEditorLabels } from '@/hooks/use-document-editor-labels';
 import { useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-store';
 import {
-  Button,
   CatalogPicker,
   CatalogPickerField,
-  DocumentDisclosurePanel,
   DocumentEditor,
   DocumentMetaField,
   DocumentMetaPanel,
   DocumentMetaRow,
   DocumentTabs,
-  Icons,
-  Input,
   type PickerItem,
 } from '@moysklad/ui';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
-import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useEffect, useRef, useState } from 'react';
+
 interface RefItem {
   id: string;
   name: string;
   legalTitle?: string | null;
   code?: string | null;
 }
-interface ProductItem {
-  id: string;
-  name: string;
-  code: string | null;
-  uom: string | null;
-}
-
-interface PositionRow {
-  _uid: string;
-  assortmentId: string | null;
-  productLabel: string;
-  productUom: string | null;
-  actualQty: string;
-}
-
-function uid() {
-  return Math.random().toString(36).slice(2);
-}
 
 export default function NewInventoryPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user } = useAuth();
   const t = useTranslations('pages.inventories');
   const tErrors = useTranslations('errors');
-  const tCommon = useTranslations('common');
   const tFields = useTranslations('fields');
   const tForm = useTranslations('form');
-  const tDetailForm = useTranslations('detail_form');
   const tDetailTabs = useTranslations('detail_tabs');
   const tDetailTitles = useTranslations('detail_titles');
   const tDetailHeader = useTranslations('detail_header');
   const tStates = useTranslations('states.inventory');
+  const tBulk = useTranslations('bulk_actions');
+  const tPrint = useTranslations('print_menu');
   const docEditorLabels = useDocumentEditorLabels();
+  const { openTemplates } = usePrintTemplatesManager();
+
+  // «Выберите склад для инвентаризации» modal passes the picked warehouse —
+  // the Склад field is then LOCKED (moysklad: the editor shows it greyed).
+  const warehouseParam = searchParams.get('warehouseId');
 
   // moysklad inventory FSM = draft / posted / cancelled (mirrors inventories/[id]).
   // Status is decorative on /new (not sent on create — API always creates a draft).
@@ -94,27 +94,21 @@ export default function NewInventoryPage() {
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   });
   const [status, setStatus] = useState<string>('draft');
-  const [applicable, setApplicable] = useState(false);
+  const [applicable, setApplicable] = useState(true);
 
   // Meta state
   const [organizationId, setOrganizationId] = useState<string | null>(null);
   const [organizationLabel, setOrganizationLabel] = useState<string>('');
   const [storeId, setStoreId] = useState<string | null>(null);
   const [storeLabel, setStoreLabel] = useState<string>('');
-  const [projectId, setProjectId] = useState<string | null>(null);
-  const [projectLabel, setProjectLabel] = useState('');
-  const [externalCode, setExternalCode] = useState('');
   const [description, setDescription] = useState('');
-  const [positions, setPositions] = useState<PositionRow[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [openPicker, setOpenPicker] = useState<null | 'org' | 'store'>(null);
 
-  const [openPicker, setOpenPicker] = useState<
-    null | 'org' | 'store' | 'project' | { kind: 'product'; rowUid: string }
-  >(null);
+  const storeLocked = !!warehouseParam;
 
-  // Auto-fill from the user's «Значения по умолчанию» (moysklad applies the user
-  // defaults to every new document). Inventory doc — Организация/Склад=default with
-  // a first-item fallback, Проект=defaultProject (no counterparty on this doc).
+  // Auto-fill: Организация from user defaults (first-item fallback); Склад from
+  // the ?warehouseId param (the list modal), else defaults/first store.
   const userDefaults = useUserDefaults();
   const defaultsAppliedRef = useRef(false);
   useEffect(() => {
@@ -132,17 +126,19 @@ export default function NewInventoryPage() {
       }
     }
     if (!storeId) {
-      if (us?.defaultStore) {
+      const fromParam = warehouseParam
+        ? storesData.items.find((s) => s.id === warehouseParam)
+        : undefined;
+      if (fromParam) {
+        setStoreId(fromParam.id);
+        setStoreLabel(fromParam.name);
+      } else if (us?.defaultStore) {
         setStoreId(us.defaultStore.id);
         setStoreLabel(us.defaultStore.name);
       } else if (storesData.items[0]) {
         setStoreId(storesData.items[0].id);
         setStoreLabel(storesData.items[0].name);
       }
-    }
-    if (!projectId && us?.defaultProject) {
-      setProjectId(us.defaultProject.id);
-      setProjectLabel(us.defaultProject.name);
     }
   }, [
     orgsData,
@@ -151,99 +147,61 @@ export default function NewInventoryPage() {
     userDefaults.isLoading,
     organizationId,
     storeId,
-    projectId,
+    warehouseParam,
   ]);
 
-  // Live expected qty from Stock
-  const assortmentIds = useMemo(
-    () => positions.map((p) => p.assortmentId).filter((id): id is string => !!id),
-    [positions],
-  );
-  const { data: stockData } = useQuery<{ items: Array<{ assortmentId: string; qty: string }> }>({
-    queryKey: ['stocks', storeId, assortmentIds.join(',')],
-    queryFn: () =>
-      api.get(
-        `/stocks?storeId=${storeId}&assortmentIds=${encodeURIComponent(assortmentIds.join(','))}`,
-      ),
-    enabled: !!storeId && assortmentIds.length > 0,
-  });
-  const stockMap = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const r of stockData?.items ?? []) m.set(r.assortmentId, r.qty);
-    return m;
-  }, [stockData]);
-
-  const addPosition = () => {
-    setPositions((ps) => [
-      ...ps,
-      { _uid: uid(), assortmentId: null, productLabel: '', productUom: null, actualQty: '0' },
-    ]);
-  };
-
-  const updatePosition = (rowUid: string, patch: Partial<PositionRow>) => {
-    setPositions((ps) => ps.map((p) => (p._uid === rowUid ? { ...p, ...patch } : p)));
-  };
-
-  const removePosition = (rowUid: string) => {
-    setPositions((ps) => ps.filter((p) => p._uid !== rowUid));
-  };
-
-  // Inventory totals: surplus (actual > expected) and shortage (actual < expected)
-  const { surplusCount, shortageCount } = useMemo(() => {
-    let surplus = 0;
-    let shortage = 0;
-    for (const p of positions) {
-      const expectedQty = p.assortmentId ? stockMap.get(p.assortmentId) : undefined;
-      const expectedNum = expectedQty !== undefined ? Number(expectedQty) : 0;
-      const actualNum = Number(p.actualQty || '0');
-      const diff = actualNum - expectedNum;
-      if (diff > 0) surplus++;
-      else if (diff < 0) shortage++;
-    }
-    return { surplusCount: surplus, shortageCount: shortage };
-  }, [positions, stockMap]);
-
+  // moysklad «Печать»/«Создать документ» on a NEW doc: silently save first,
+  // then act — the intent lives on a ref so createMut.onSuccess knows what
+  // triggered the save (mirrors enters/new 5fb75461 · moves b91610e1).
+  const afterSaveRef = useRef<'view' | 'print' | 'loss' | 'enter'>('view');
   const createMut = useMutation({
     mutationFn: async () => {
       if (!organizationId) throw new Error(tErrors('select_organization'));
       if (!storeId) throw new Error(tErrors('select_store'));
-      if (positions.length === 0) throw new Error(tErrors('at_least_one_position'));
-      for (const [i, p] of positions.entries()) {
-        if (!p.assortmentId) throw new Error(tErrors('position_select_product', { n: i + 1 }));
-        if (Number(p.actualQty) < 0)
-          throw new Error(tErrors('position_quantity_non_negative', { n: i + 1 }));
-      }
       const payload = {
         organizationId,
         storeId,
         moment: docDate ? new Date(docDate).toISOString() : undefined,
-        ...(projectId ? { projectId } : {}),
-        ...(externalCode ? { externalCode } : {}),
         description: description || undefined,
-        positions: positions.map((p) => ({
-          assortmentKind: 'product',
-          // biome-ignore lint/style/noNonNullAssertion: validated non-null in the loop above before payload build
-          assortmentId: p.assortmentId!,
-          actualQty: p.actualQty,
-        })),
+        // moysklad: positions are added on the SAVED editor (the /new grid has
+        // no add bar) — a new inventory is always created empty.
+        positions: [],
       };
       return api.post<{ id: string }>('/inventories', payload);
     },
-    onSuccess: (created) => router.push(`/inventories/${created.id}`),
-    onError: (err: Error) => setError(err.message),
+    onSuccess: async (created) => {
+      const intent = afterSaveRef.current;
+      afterSaveRef.current = 'view';
+      if (intent === 'print') {
+        window.open(`/print/inventory/${created.id}`, '_blank');
+      }
+      if (intent === 'loss' || intent === 'enter') {
+        // «Создать документ» → Списание / Оприходование: create the (empty)
+        // downstream doc for the same org+store and open ITS editor.
+        try {
+          const downstream = await api.post<{ id: string }>(
+            intent === 'loss' ? '/losses' : '/enters',
+            { organizationId, storeId, positions: [] },
+          );
+          router.push(intent === 'loss' ? `/losses/${downstream.id}` : `/enters/${downstream.id}`);
+          return;
+        } catch {
+          // Fall through to the inventory detail page — the inventory itself
+          // was saved; the user can retry from there.
+        }
+      }
+      router.push(`/inventories/${created.id}`);
+    },
+    onError: (err: Error) => {
+      afterSaveRef.current = 'view';
+      setError(err.message);
+    },
   });
 
-  const productFetcher = async (s: string): Promise<PickerItem[]> => {
-    const d = await api.get<{ items: ProductItem[] }>(
-      `/products?search=${encodeURIComponent(s)}&limit=50`,
-    );
-    return d.items.map((p) => ({
-      id: p.id,
-      primary: p.name,
-      secondary: p.code ?? undefined,
-      meta: p.uom ?? undefined,
-      raw: p,
-    }));
+  const saveWithIntent = (intent: 'view' | 'print' | 'loss' | 'enter') => {
+    setError(null);
+    afterSaveRef.current = intent;
+    createMut.mutate();
   };
 
   const orgFetcher = async (s: string): Promise<PickerItem[]> => {
@@ -259,137 +217,6 @@ export default function NewInventoryPage() {
     const d = await api.get<{ items: RefItem[] }>(`/stores?search=${encodeURIComponent(s)}`);
     return d.items.map((st) => ({ id: st.id, primary: st.name, secondary: st.code ?? undefined }));
   };
-  const projectFetcher = async (s: string): Promise<PickerItem[]> => {
-    const d = await api.get<{ items: Array<{ id: string; name: string }> }>(
-      `/projects?search=${encodeURIComponent(s)}&limit=50`,
-    );
-    return d.items.map((x) => ({ id: x.id, primary: x.name }));
-  };
-
-  // Inventory-specific position table (no PositionTable component — custom columns)
-  const positionTable = (
-    <div className="space-y-3">
-      {positions.length === 0 ? (
-        <div className="rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] border-dashed py-6 text-center text-[var(--ms-text-muted)] text-sm">
-          {tForm('positions_empty')}
-        </div>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-[var(--ms-border-default)] border-b font-medium text-[var(--ms-text-muted)] text-xs uppercase tracking-wide">
-                <th className="py-2 pl-2 text-left">{tFields('product')}</th>
-                <th className="px-2 py-2 text-right">{t('expected_qty')}</th>
-                <th className="px-2 py-2 text-right">{t('actual_qty')}</th>
-                <th className="px-2 py-2 text-right">{t('surplus_qty')}</th>
-                <th className="px-2 py-2 text-right">{t('shortage_qty')}</th>
-                <th className="w-10" />
-              </tr>
-            </thead>
-            <tbody>
-              {positions.map((p) => {
-                const expectedQty = p.assortmentId ? stockMap.get(p.assortmentId) : undefined;
-                const expectedNum = expectedQty !== undefined ? Number(expectedQty) : undefined;
-                const actualNum = Number(p.actualQty || '0');
-                const variance = expectedNum !== undefined ? actualNum - expectedNum : undefined;
-                const surplus = variance !== undefined && variance > 0 ? variance : undefined;
-                const shortage =
-                  variance !== undefined && variance < 0 ? Math.abs(variance) : undefined;
-                return (
-                  <tr
-                    key={p._uid}
-                    className="border-[var(--ms-border-default)] border-b last:border-0"
-                    data-test-id={`position-row-${p._uid}`}
-                  >
-                    <td className="py-2 pl-2">
-                      <CatalogPickerField
-                        value={
-                          p.assortmentId ? { id: p.assortmentId, label: p.productLabel } : null
-                        }
-                        placeholder={tForm('select_product')}
-                        onPick={() => setOpenPicker({ kind: 'product', rowUid: p._uid })}
-                        onClear={() =>
-                          updatePosition(p._uid, {
-                            assortmentId: null,
-                            productLabel: '',
-                            productUom: null,
-                          })
-                        }
-                      />
-                    </td>
-                    <td className="px-2 py-2 text-right text-[var(--ms-text-muted)] tabular-nums">
-                      {expectedNum !== undefined ? `${expectedNum} ${p.productUom ?? ''}` : '—'}
-                    </td>
-                    <td className="px-2 py-2">
-                      <Input
-                        type="text"
-                        inputMode="decimal"
-                        value={p.actualQty}
-                        onChange={(e) => updatePosition(p._uid, { actualQty: e.target.value })}
-                        className="text-right"
-                        data-test-id={`actual-${p._uid}`}
-                      />
-                    </td>
-                    <td className="px-2 py-2 text-right font-medium text-[var(--ms-text-success)] tabular-nums">
-                      {surplus !== undefined ? `+${surplus} ${p.productUom ?? ''}` : '—'}
-                    </td>
-                    <td className="px-2 py-2 text-right font-medium text-[var(--ms-text-destructive)] tabular-nums">
-                      {shortage !== undefined ? `-${shortage} ${p.productUom ?? ''}` : '—'}
-                    </td>
-                    <td className="py-2 pr-2">
-                      <Button
-                        type="button"
-                        size="icon-sm"
-                        variant="ghost"
-                        onClick={() => removePosition(p._uid)}
-                        aria-label={tCommon('delete')}
-                      >
-                        <Icons.close className="h-4 w-4" />
-                      </Button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-      <Button type="button" variant="secondary" onClick={addPosition} data-test-id="add-position">
-        <Icons.create className="h-4 w-4" />
-        {tForm('add_position')}
-      </Button>
-    </div>
-  );
-
-  // Inventory totals summary
-  const totalsSummary = positions.length > 0 && (
-    <div className="flex justify-end">
-      <div className="flex gap-6 rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] px-6 py-3 text-sm">
-        <div className="flex items-center gap-2">
-          <span className="text-[var(--ms-text-muted)]">{tFields('surplus_count')}:</span>
-          <span
-            className="font-semibold text-[var(--ms-text-success)]"
-            data-test-id="totals-surplus"
-          >
-            {surplusCount}
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-[var(--ms-text-muted)]">{tFields('shortage_count')}:</span>
-          <span
-            className="font-semibold text-[var(--ms-text-destructive)]"
-            data-test-id="totals-shortage"
-          >
-            {shortageCount}
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-[var(--ms-text-muted)]">{tForm('section_positions')}:</span>
-          <span className="font-semibold">{positions.length}</span>
-        </div>
-      </div>
-    </div>
-  );
 
   const tabs = [
     {
@@ -397,32 +224,7 @@ export default function NewInventoryPage() {
       label: tDetailTabs('main'),
       content: (
         <div className="space-y-4">
-          <DocumentMetaPanel>
-            <DocumentMetaRow>
-              <DocumentMetaField label={tFields('store')} required>
-                <CatalogPickerField
-                  value={storeId ? { id: storeId, label: storeLabel } : null}
-                  onPick={() => setOpenPicker('store')}
-                  inlineFetcher={storeFetcher}
-                  onInlineSelect={(item) => {
-                    setStoreId(item.id);
-                    setStoreLabel(String(item.primary));
-                  }}
-                  onClear={() => {
-                    setStoreId(null);
-                    setStoreLabel('');
-                  }}
-                />
-              </DocumentMetaField>
-              <DocumentMetaField label={tFields('description')}>
-                <Input
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  data-test-id="field-description"
-                />
-              </DocumentMetaField>
-            </DocumentMetaRow>
-
+          <DocumentMetaPanel compact>
             <DocumentMetaRow>
               <DocumentMetaField label={tFields('organization')} required>
                 <CatalogPickerField
@@ -437,64 +239,44 @@ export default function NewInventoryPage() {
                     setOrganizationId(null);
                     setOrganizationLabel('');
                   }}
+                  testId="field-organization"
                 />
               </DocumentMetaField>
-              <DocumentMetaField label={tFields('project')}>
+              <DocumentMetaField label={tFields('store')} required>
                 <CatalogPickerField
-                  value={projectId ? { id: projectId, label: projectLabel } : null}
-                  onPick={() => setOpenPicker('project')}
-                  inlineFetcher={projectFetcher}
+                  value={storeId ? { id: storeId, label: storeLabel } : null}
+                  onPick={() => !storeLocked && setOpenPicker('store')}
+                  inlineFetcher={storeLocked ? undefined : storeFetcher}
                   onInlineSelect={(item) => {
-                    setProjectId(item.id);
-                    setProjectLabel(String(item.primary));
+                    setStoreId(item.id);
+                    setStoreLabel(String(item.primary));
                   }}
-                  onClear={() => {
-                    setProjectId(null);
-                    setProjectLabel('');
-                  }}
-                />
-              </DocumentMetaField>
-            </DocumentMetaRow>
-
-            <DocumentMetaRow>
-              <DocumentMetaField label={tDetailForm('external_code')}>
-                <Input
-                  value={externalCode}
-                  onChange={(e) => setExternalCode(e.target.value)}
-                  data-test-id="field-external-code"
+                  onClear={
+                    storeLocked
+                      ? undefined
+                      : () => {
+                          setStoreId(null);
+                          setStoreLabel('');
+                        }
+                  }
+                  disabled={storeLocked}
+                  testId="field-store"
                 />
               </DocumentMetaField>
             </DocumentMetaRow>
           </DocumentMetaPanel>
 
-          {positionTable}
-          {totalsSummary}
-
-          <DocumentDisclosurePanel
-            title={tForm('tasks_section')}
-            headerAction={
-              <Button type="button" variant="secondary" disabled>
-                <Icons.create className="h-4 w-4" />
-                {tForm('add_task')}
-              </Button>
-            }
-            defaultOpen={false}
-          >
-            <p className="text-[var(--ms-text-muted)] text-sm">{tForm('tasks_after_save_hint')}</p>
-          </DocumentDisclosurePanel>
-
-          <DocumentDisclosurePanel
-            title={tForm('files_section')}
-            headerAction={
-              <Button type="button" variant="secondary" disabled>
-                <Icons.create className="h-4 w-4" />
-                {tForm('add_file')}
-              </Button>
-            }
-            defaultOpen={false}
-          >
-            <p className="text-[var(--ms-text-muted)] text-sm">{tForm('files_after_save_hint')}</p>
-          </DocumentDisclosurePanel>
+          {/* Band 3 — the moysklad positions block: [Остатки по складу | Остатки
+              по ячейке] toggle · Фильтр · search · grid · Комментарий · Итого.
+              'new' mode = no add bar (moysklad shows it only after save). */}
+          <InventoryPositionsPanel
+            mode="new"
+            storeId={storeId}
+            rows={[]}
+            description={description}
+            onDescriptionChange={setDescription}
+            testId="inventory-new-positions"
+          />
         </div>
       ),
     },
@@ -525,16 +307,64 @@ export default function NewInventoryPage() {
         applicable={applicable}
         onApplicableChange={setApplicable}
         applicableHelp={t('applicable_help')}
-        onSave={() => {
-          setError(null);
-          createMut.mutate();
-        }}
+        onSave={() => saveWithIntent('view')}
         saving={createMut.isPending}
         onClose={() => router.push('/inventories')}
-        modifyMenu={[]}
-        createDocMenu={[]}
-        printMenu={[]}
-        sendMenu={[]}
+        // moysklad-parity toolbar on a NEW «Инвентаризация» (owner screenshots
+        // 2026-07-14): every dropdown OPENS with its items; actionable items
+        // save the doc first. «Удалить» is greyed (nothing to delete yet).
+        modifyMenu={[{ label: tBulk('delete'), disabled: true, destructive: true }]}
+        // «Создать документ» = Списание · Оприходование (user screenshot №6 —
+        // moysklad DOES show it on the inventory editor; the owner report's
+        // band 2.3 asked to drop it, but the ground-truth screenshot wins).
+        createDocMenu={[
+          { label: tDetailTitles('loss'), onClick: () => saveWithIntent('loss') },
+          { label: tDetailTitles('enter'), onClick: () => saveWithIntent('enter') },
+        ]}
+        printMenu={[
+          {
+            // «Инвентаризация» — silently save, then open the print form in a
+            // NEW TAB (user presses «Печать» there; no auto-print).
+            label: tDetailTitles('inventory'),
+            onClick: () => saveWithIntent('print'),
+          },
+          {
+            label: tPrint('set'),
+            onClick: () => saveWithIntent('view'),
+          },
+          {
+            // «Настроить…» — open the print-template manager slide-over (no save).
+            label: tPrint('configure'),
+            onClick: () => openTemplates('inventory'),
+          },
+          {
+            // «Запросить форму» — moysklad's non-interactive promo footer.
+            testId: 'print-request-form',
+            content: (
+              <div className="mt-1 border-[var(--ms-border-default)] border-t px-2 pt-2 pb-1">
+                <div className="font-semibold text-[13px] text-[var(--ms-text-primary)]">
+                  {tPrint('request_form')}
+                </div>
+                <p className="mt-0.5 max-w-[230px] text-[11px] text-[var(--ms-text-muted)] leading-snug">
+                  {tPrint('request_form_description')}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => window.open('/help/inventories', '_blank')}
+                  className="mt-2 rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] px-3 py-1 text-[11px] text-[var(--ms-text-primary)] hover:bg-[var(--ms-bg-muted)]"
+                  data-test-id="print-request-form-btn"
+                >
+                  {tPrint('request_form_cta')}
+                </button>
+              </div>
+            ),
+          },
+        ]}
+        // «Отправить» = Инвентаризация · Комплект… (save → detail).
+        sendMenu={[tDetailTitles('inventory'), tPrint('set')].map((label) => ({
+          label,
+          onClick: () => saveWithIntent('view'),
+        }))}
         rightSlot={
           user ? (
             <div className="text-right text-xs leading-tight">
@@ -572,33 +402,6 @@ export default function NewInventoryPage() {
         onSelect={(item) => {
           setStoreId(item.id);
           setStoreLabel(String(item.primary));
-        }}
-      />
-      <CatalogPicker
-        open={openPicker === 'project'}
-        onClose={() => setOpenPicker(null)}
-        title={tForm('project_picker_title')}
-        fetcher={projectFetcher}
-        onSelect={(item) => {
-          setProjectId(item.id);
-          setProjectLabel(String(item.primary));
-        }}
-      />
-      <CatalogPicker
-        open={
-          typeof openPicker === 'object' && openPicker !== null && openPicker.kind === 'product'
-        }
-        onClose={() => setOpenPicker(null)}
-        title={tForm('product_picker_title')}
-        fetcher={productFetcher}
-        onSelect={(item) => {
-          if (typeof openPicker !== 'object' || openPicker === null) return;
-          const raw = (item as PickerItem & { raw?: ProductItem }).raw;
-          updatePosition(openPicker.rowUid, {
-            assortmentId: item.id,
-            productLabel: String(item.primary),
-            productUom: raw?.uom ?? null,
-          });
         }}
       />
     </>

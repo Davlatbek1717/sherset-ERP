@@ -29,11 +29,13 @@ import {
   DetailToolbar,
   DocumentHistoryLink,
 } from '@/components/document-detail';
+import { CurrencyRateModal } from '@/components/document-detail/currency-rate-modal';
 import { DocumentTasksSection } from '@/components/document-tasks-section';
+import { CellPickerField } from '@/components/documents/cell-picker-field';
 import { OwnerAccessPopover } from '@/components/documents/owner-access-popover';
+import { PositionAgreementButton } from '@/components/documents/position-agreement-modal';
 import { PositionColumnCustomizer } from '@/components/documents/position-column-customizer';
 import { PositionPriceMenu } from '@/components/documents/position-price-menu';
-import { PriceRateDialog } from '@/components/products/price-rate-dialog';
 import { useApiMutation } from '@/hooks/use-api-mutation';
 import { useConflictReload } from '@/hooks/use-conflict-reload';
 import { useDestructiveMutation } from '@/hooks/use-destructive-mutation';
@@ -43,6 +45,8 @@ import { useSaveMutation } from '@/hooks/use-save-mutation';
 import { useUnsavedGuard } from '@/hooks/use-unsaved-guard';
 import { api } from '@/lib/api-client';
 import { DOC_STATE_VERB } from '@/lib/doc-state-dropdown';
+import { imageRawUrl } from '@/lib/image-url';
+import { distributeAgreementDelta } from '@/lib/position-agreement';
 import { scaleMinorByQty } from '@moysklad/money';
 import {
   Alert,
@@ -81,8 +85,10 @@ interface PositionDetail {
   gtdNumber: string | null;
   gtdSumMinor: string | null;
   country: { id: string; name: string; code: string | null } | null;
-  // «РНПТ» / «Ячейка» — free-text batch/bin reference (set on /new; preserved here).
+  // «РНПТ» — free-text batch/bin reference (set on /new; preserved here).
   rnpt: string | null;
+  // «Ячейка» — address-storage bin: `cellId` (FK, drives the picker) + `cell` (label).
+  cellId: string | null;
   cell: string | null;
   // «Остаток» — current on-hand at the document's store (string «0» when none).
   stockOnHand?: string | null;
@@ -286,14 +292,13 @@ function formFromData(d: EnterDetail): FormState {
       countryId: p.country?.id ?? null,
       countryLabel: p.country?.name ?? undefined,
       rnpt: p.rnpt ?? undefined,
+      cellId: p.cellId ?? null,
       cell: p.cell ?? undefined,
       // «Вес» / «Объём» read-only line totals (per-unit grams / ml × Кол-во).
       weightG: p.product?.weightG ?? undefined,
       volumeML: p.product?.volumeML ?? undefined,
       // «Наименование» cell thumbnail (moysklad shows the product image inline).
-      imageUrl: p.product?.images?.[0]?.id
-        ? `/api/v1/images/${p.product.images[0].id}/raw`
-        : undefined,
+      imageUrl: p.product?.images?.[0]?.id ? imageRawUrl(p.product.images[0].id) : undefined,
       // «Остаток» — on-hand at the doc store (moysklad shows «0», not «—»).
       stock: p.stockOnHand ?? '0',
       salePrices: null,
@@ -430,6 +435,22 @@ export default function EnterDetailPage() {
       return { ...s, positions: next };
     });
   }, []);
+  // «Kelishuv» — spread the negotiated delta across the lines (owner 2026-07-17).
+  // An enter has no VAT, so the delta distributes over the bare line costs.
+  const applyAgreement = useCallback((deltaMinor: bigint) => {
+    setForm((s) => {
+      if (!s) return s;
+      const patch = distributeAgreementDelta(s.positions, deltaMinor, false);
+      if (patch.size === 0) return s;
+      return {
+        ...s,
+        positions: s.positions.map((p) => {
+          const next = patch.get(p.id);
+          return next != null ? { ...p, priceMinor: next } : p;
+        }),
+      };
+    });
+  }, []);
   // «Расценить» — re-price every row by the chosen price-type (from each product's
   // carried salePrices). Loaded rows have no salePrices until the product is
   // re-picked, so they keep their current price (same limitation as PO/[id]).
@@ -539,6 +560,7 @@ export default function EnterDetailPage() {
           ...(p.gtdSumMinor ? { gtdSumMinor: p.gtdSumMinor } : {}),
           ...(p.countryId ? { countryId: p.countryId } : {}),
           ...(p.rnpt ? { rnpt: p.rnpt } : {}),
+          ...(p.cellId ? { cellId: p.cellId } : {}),
           ...(p.cell ? { cell: p.cell } : {}),
         }));
       }
@@ -610,7 +632,7 @@ export default function EnterDetailPage() {
       folderPath: raw?.productFolder?.pathName ?? undefined,
       weightG: raw?.weightG ?? undefined,
       volumeML: raw?.volumeML ?? undefined,
-      imageUrl: raw?.mainImageId ? `/api/v1/images/${raw.mainImageId}/raw` : undefined,
+      imageUrl: raw?.mainImageId ? imageRawUrl(raw.mainImageId) : undefined,
     });
   };
 
@@ -700,7 +722,7 @@ export default function EnterDetailPage() {
   const selectedCurrency = currencies.find((c) => c.isoCode === form.currency);
   const isBaseCurrency = selectedCurrency?.default ?? form.currency === 'UZS';
   // moysklad «1 USD = N UZS ✎» — the rate is the DOCUMENT's own (form.rate); the ✎
-  // opens «Курс валюты документа» (PriceRateDialog) to override it.
+  // opens «Курс валюты документа» (CurrencyRateModal) to override it.
   const effectiveRate = form.rate;
   const baseCode = currencies.find((c) => c.default)?.isoCode ?? 'UZS';
   const docGlobalRate = selectedCurrency?.rate ?? '1';
@@ -723,6 +745,9 @@ export default function EnterDetailPage() {
   // picker. Read-only on a posted enter.
   const renderPositionNameCell = (row: DocPositionRow) => {
     const p = row as DetailPositionRow;
+    // moysklad parity: a PICKED product's name is a blue LINK to its product card
+    // (where the «Аналоги» tab lives); falls back to the picker when unset/read-only.
+    const href = p.assortmentId ? `/products/${p.assortmentId}` : undefined;
     return (
       <PositionNameCell
         imageUrl={p.imageUrl}
@@ -730,6 +755,8 @@ export default function EnterDetailPage() {
         label={p.productLabel}
         placeholder={tForm('select_product')}
         onPick={() => editableLines && setOpenPicker({ kind: 'product', rowUid: p.id })}
+        productHref={href}
+        onNavigate={href ? () => router.push(href) : undefined}
         disabled={!editableLines}
         testId={`pos-${p.id}-name`}
       />
@@ -746,6 +773,28 @@ export default function EnterDetailPage() {
       fieldClassName="h-7 border-transparent bg-transparent hover:border-[var(--ms-border-input)] hover:bg-[var(--ms-bg-surface)]"
     />
   );
+
+  // «Ячейка» — address-storage cell picker (mirror /new). Closure has form.storeId
+  // (page state) + the row's product (assortmentId), so the picker can show «Все
+  // ячейки» / «С этим товаром». Stores cellId (drives per-cell stock) + the «Зона /
+  // Ячейка» label in `cell`. Read-only when the doc is not editable (cancelled) —
+  // the picker then renders a plain label.
+  const renderPositionCellCell = (row: DocPositionRow) => {
+    const p = row as DetailPositionRow;
+    return (
+      <CellPickerField
+        storeId={form.storeId || null}
+        assortmentId={p.assortmentId}
+        label={p.cell}
+        readOnly={!editableLines}
+        // Оприходование stores goods: picking a cell for a cell-less product binds
+        // it as that product's home cell (never overwrites an existing binding).
+        bindProductCell
+        onSelect={(cellId, label) => updatePosition(row.id, { cellId, cell: label })}
+        onClear={() => updatePosition(row.id, { cellId: null, cell: '' })}
+      />
+    );
+  };
 
   return (
     <div
@@ -938,7 +987,7 @@ export default function EnterDetailPage() {
                     editableLines &&
                     setForm((s) => s && { ...s, projectId: null, projectLabel: '' })
                   }
-                  onCreate={editableLines ? () => router.push('/projects/new') : undefined}
+                  onCreate={editableLines ? () => router.push('/settings/projects/new') : undefined}
                   createLabel={tForm('create_new_project')}
                   disabled={!editableLines}
                   testId="field-project"
@@ -975,7 +1024,7 @@ export default function EnterDetailPage() {
                     </NativeSelect>
                   </div>
                   {!isBaseCurrency && selectedCurrency && (
-                    <span className="inline-flex items-center gap-1 whitespace-nowrap text-[var(--ms-text-muted)] text-xs tabular-nums">
+                    <span className="inline-flex items-center gap-1 whitespace-nowrap text-[var(--ms-text-muted)] text-[12px] tabular-nums">
                       1 {form.currency} = {Number(effectiveRate).toLocaleString('ru-RU')} {baseCode}
                       {editableLines && (
                         // moysklad ✎ — opens «Курс валюты документа» to override the rate.
@@ -1001,7 +1050,7 @@ export default function EnterDetailPage() {
               auditEntity="Enter"
               entityId={data.id}
               relatedGroups={[]}
-              positionsLabel={tDetailTabs('main')}
+              positionsLabel={tDetailTabs('positions')}
               filesSlot={<AttachmentsSection entity="Enter" entityId={data.id} />}
               tasksSlot={<DocumentTasksSection entity="Enter" entityId={data.id} />}
               historyInline={false}
@@ -1022,6 +1071,26 @@ export default function EnterDetailPage() {
                 {/* moysklad position table — full column set + ⚙ customizer + «Цена ▾»
                   menu + inline «Добавить позицию» bar. Posted docs are read-only. */}
                 <div className="min-w-0">
+                  {/* Owner 2026-07-23: «Договорная цена» — blue, at the table's OUTER
+                      top-right corner (same spot in every section). */}
+                  {editableLines && (
+                    <div className="-mb-2.5 flex justify-end">
+                      <PositionAgreementButton
+                        totalMinor={totals}
+                        currency={form.currency}
+                        labels={{
+                          button: tPos('agreement_button'),
+                          total: tPos('agreement_total'),
+                          amount: tPos('agreement_amount'),
+                          add: tPos('agreement_add'),
+                          subtract: tPos('agreement_subtract'),
+                          save: tPos('pick_modal_save'),
+                          cancel: tPos('pick_modal_cancel'),
+                        }}
+                        onApply={applyAgreement}
+                      />
+                    </div>
+                  )}
                   <PositionTable
                     columns={positionColumns}
                     emptyText={tPos('empty')}
@@ -1031,6 +1100,7 @@ export default function EnterDetailPage() {
                     }
                     onRemove={removePosition}
                     onDuplicate={duplicatePosition}
+                    onReplace={(id) => setOpenPicker({ kind: 'product', rowUid: id })}
                     onReorder={reorderPositions}
                     onSortPositions={
                       editableLines
@@ -1062,6 +1132,7 @@ export default function EnterDetailPage() {
                     withGroupsLabel={tPos('sort_with_groups')}
                     renderNameCell={renderPositionNameCell}
                     renderCountryCell={renderPositionCountryCell}
+                    renderCellCell={renderPositionCellCell}
                     selectedIds={selectedRowIds}
                     onSelectionChange={setSelectedRowIds}
                     readOnly={!editableLines}
@@ -1081,6 +1152,10 @@ export default function EnterDetailPage() {
                                 code: p.code ?? undefined,
                                 available:
                                   p.stock?.available != null ? Number(p.stock.available) : 0,
+                                // Pick modal (owner 2026-07-18): reference «Цена» = the same
+                                // default the row would get (buy price on purchase docs).
+                                priceMinor: p.buyPrice ?? '0',
+                                uomLabel: p.uom ?? undefined,
                                 raw: p,
                               })),
                               total: r.total ?? r.items.length,
@@ -1090,8 +1165,26 @@ export default function EnterDetailPage() {
                           moreItemsLabel={(n) => tPos('moreItems', { count: n })}
                           createProductLabel={(qq) => tPos('createProductNamed', { query: qq })}
                           onCreateProduct={() => router.push('/products/new')}
-                          onPick={(item) => {
+                          // owner 2026-07-18: qty/price modal on EVERY product-add search
+                          // (was sales-only). No price-scope checkboxes here — writing a
+                          // permanent SALE price from a purchase price would be wrong.
+                          pickModal={{
+                            currency: form.currency,
+                            permanentPriceOption: false,
+                            labels: {
+                              stock: tPos('pick_modal_stock'),
+                              price: tPos('pick_modal_price'),
+                              quantity: tPos('pick_modal_quantity'),
+                              salePrice: tPos('pick_modal_sale_price'),
+                              priceThisSale: tPos('pick_modal_price_this_sale'),
+                              pricePermanent: tPos('pick_modal_price_permanent'),
+                              save: tPos('pick_modal_save'),
+                              cancel: tPos('pick_modal_cancel'),
+                            },
+                          }}
+                          onPick={(item, entry) => {
                             const raw = item.raw as ProductItem | undefined;
+                            const newId = uid();
                             setForm((s) =>
                               s
                                 ? {
@@ -1099,13 +1192,13 @@ export default function EnterDetailPage() {
                                     positions: [
                                       ...s.positions,
                                       {
-                                        id: uid(),
+                                        id: newId,
                                         assortmentId: item.id,
                                         productLabel: item.primary,
                                         productCode: raw?.code ?? undefined,
                                         productUom: raw?.uom ?? null,
-                                        quantity: '1',
-                                        priceMinor: raw?.buyPrice ?? '0',
+                                        quantity: entry?.quantity ?? '1',
+                                        priceMinor: entry?.priceMinor ?? raw?.buyPrice ?? '0',
                                         discount: '0',
                                         vat: '',
                                         vatEnabled: false,
@@ -1116,13 +1209,16 @@ export default function EnterDetailPage() {
                                         weightG: raw?.weightG ?? undefined,
                                         volumeML: raw?.volumeML ?? undefined,
                                         imageUrl: raw?.mainImageId
-                                          ? `/api/v1/images/${raw.mainImageId}/raw`
+                                          ? imageRawUrl(raw.mainImageId)
                                           : undefined,
                                       },
                                     ],
                                   }
                                 : s,
                             );
+                            // owner 2026-07-18: returning the id hands focus to the new
+                            // row's «Кол-во» (modal → table entry chain).
+                            return newId;
                           }}
                           onAddFromCatalog={() =>
                             setForm((s) =>
@@ -1326,13 +1422,12 @@ export default function EnterDetailPage() {
       />
 
       {/* «Курс валюты документа» — moysklad rate-override modal (the currency ✎). */}
-      <PriceRateDialog
+      <CurrencyRateModal
         open={rateDialogOpen}
-        onClose={() => setRateDialogOpen(false)}
-        currencyCode={form.currency}
-        baseCode={baseCode}
+        onOpenChange={setRateDialogOpen}
+        currency={form.currency}
         referenceRate={docGlobalRate}
-        customRate={form.rate === docGlobalRate ? null : form.rate}
+        currentOverride={form.rate === docGlobalRate ? null : form.rate}
         onApply={(r) => setForm((s) => (s ? { ...s, rate: r ?? docGlobalRate } : s))}
       />
     </div>

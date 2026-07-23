@@ -50,8 +50,8 @@ describe('CreateMoveSchema', () => {
     );
   });
 
-  it('requires ≥1 position', () => {
-    expect(() => CreateMoveSchema.parse({ ...valid, positions: [] })).toThrow(/at least one/i);
+  it('allows empty positions — owner 2026-07-08, no Provedeno precondition', () => {
+    expect(() => CreateMoveSchema.parse({ ...valid, positions: [] })).not.toThrow();
   });
 
   it('rejects negative quantity', () => {

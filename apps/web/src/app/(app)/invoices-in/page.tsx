@@ -12,6 +12,7 @@ import { useBulkDocumentActions } from '@/hooks/use-bulk-actions';
 import { useColumnVisibility } from '@/hooks/use-column-visibility';
 import { useColumnWidths } from '@/hooks/use-column-widths';
 import { api } from '@/lib/api-client';
+import { stashBulkEdit } from '@/lib/bulk-edit-nav';
 import { INVOICE_STATE_TONE, documentStateTone } from '@/lib/document-state-tone';
 import { filterFromQueryString } from '@/lib/filter-from-query';
 import {
@@ -319,15 +320,24 @@ export default function InvoicesInPage() {
   // moysklad «Массовое редактирование» (Изменить dropdown) — owner / project /
   // description patch across selected rows. Backend: POST /invoices-in/mass-edit.
   const [massEditOpen, setMassEditOpen] = useState(false);
-  const [massEditIds, setMassEditIds] = useState<string[]>([]);
+  // «Владелец-отдел» (groupId) options for the mass-edit wizard — mirrors losses.
+  const { data: massGroupsData } = useQuery<{ items: Array<{ id: string; name: string }> }>({
+    queryKey: ['groups', 'mass-edit'],
+    queryFn: () => api.get('/groups?limit=100'),
+    enabled: massEditOpen,
+    staleTime: 5 * 60 * 1000,
+  });
+  const [massEditIds] = useState<string[]>([]);
   const [massEditOwner, setMassEditOwner] = useState<{ id: string; label: string } | null>(null);
   const [massEditProject, setMassEditProject] = useState<{ id: string; label: string } | null>(
     null,
   );
-  // moysklad-parity: the list defaults to «№» DESC — the sort arrow sits on the
-  // № column (newest first). The backend maps a 'name' sort to (moment, id) so
-  // mixed name formats («00001» / «СФ-2026-…») order cleanly newest-first.
-  const [sortKey, setSortKey] = useState<string>('name');
+  // moysklad-parity (LIVE-GROUND 2026-06-28, #invoicein list-01-default.png): the
+  // default sort arrow sits on the «Время» (moment) column DESC — newest first —
+  // NOT «№». Ground-truth proof: the capture's two rows are №00001/09.02.2026 then
+  // №00001/24.03.2025 (equal numbers, date-descending), so the active sort is moment.
+  // Matches the backend's own default (InvoiceInFilterSchema sortBy.default='moment').
+  const [sortKey, setSortKey] = useState<string>('moment');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
   const onResetCursor = () => setCursor(undefined);
@@ -401,8 +411,14 @@ export default function InvoicesInPage() {
     sumMinor: string;
     payedSumMinor: string;
     shippedSumMinor: string;
-    // Distinct document currencies in the filtered set; >1 → footer shows «—».
+    // Distinct document currencies in the filtered set; >1 → footer shows the
+    // base-converted sum below (moysklad parity), not a «—» dash.
     currencies: string[];
+    // Base-currency (UZS) converted totals — populated by the BE only for
+    // mixed-currency sets; the footer renders these when currencies.length > 1.
+    baseSumMinor: string;
+    basePayedSumMinor: string;
+    baseShippedSumMinor: string;
   }>({
     queryKey: ['invoices-in-totals', totalsQs],
     queryFn: () => api.get(`/invoices-in/aggregate/totals${totalsQs ? `?${totalsQs}` : ''}`),
@@ -417,13 +433,12 @@ export default function InvoicesInPage() {
   // /invoices-in/mass-edit endpoint yet). Печать is the 4-item supplier
   // invoice set (Список счетов · Счет поставщика · Комплект… · Настроить…).
   const openMassEdit = (ids: string[]) => {
-    setMassEditIds(ids);
-    setMassEditOwner(null);
-    setMassEditProject(null);
-    setMassEditOpen(true);
+    stashBulkEdit({ entity: 'invoices-in', ids, from: '/invoices-in' });
+    router.push('/bulk-edit');
   };
   const editMenuItems = useDocEditMenuItems({
     selectedIds: bulk.selectedIds,
+    allRowIds: (data?.items ?? []).map((r) => r.id),
     onBulkDelete: (ids) => bulk.bulkDelete.mutate(ids),
     deletePending: bulk.bulkDelete.isPending,
     onMassEdit: openMassEdit,
@@ -529,7 +544,7 @@ export default function InvoicesInPage() {
       width: '110px',
       sortable: true,
       cell: (i) => (
-        <span className="text-[var(--ms-text-muted)] text-xs tabular-nums">
+        <span className="text-[var(--ms-text-muted)] text-[12px] tabular-nums">
           {formatDate(i.moment)}
         </span>
       ),
@@ -549,7 +564,7 @@ export default function InvoicesInPage() {
             {i.agent.name}
           </a>
           {i.agent.legalTitle && (
-            <div className="max-w-[280px] truncate text-[var(--ms-text-muted)] text-xs">
+            <div className="max-w-[280px] truncate text-[var(--ms-text-muted)] text-[11px]">
               {i.agent.legalTitle}
             </div>
           )}
@@ -655,7 +670,7 @@ export default function InvoicesInPage() {
       header: tFields('payment_planned'),
       width: '120px',
       cell: (i) => (
-        <span className="text-[var(--ms-text-muted)] text-xs tabular-nums">
+        <span className="text-[var(--ms-text-muted)] text-[12px] tabular-nums">
           {i.paymentPlannedMoment ? formatDate(i.paymentPlannedMoment) : ''}
         </span>
       ),
@@ -679,7 +694,7 @@ export default function InvoicesInPage() {
       header: tFields('incoming_date'),
       width: '110px',
       cell: (i) => (
-        <span className="text-[var(--ms-text-muted)] text-xs tabular-nums">
+        <span className="text-[var(--ms-text-muted)] text-[12px] tabular-nums">
           {i.incomingDate ? formatDate(i.incomingDate) : ''}
         </span>
       ),
@@ -704,7 +719,7 @@ export default function InvoicesInPage() {
       header: tFields('description'),
       width: '160px',
       cell: (i) => (
-        <span className="block max-w-[220px] truncate text-[var(--ms-text-muted)] text-xs">
+        <span className="block max-w-[220px] truncate text-[var(--ms-text-muted)] text-[11px]">
           {i.description ?? ''}
         </span>
       ),
@@ -743,11 +758,23 @@ export default function InvoicesInPage() {
   // Pinned footer money cells — moysklad currency-guard: «…» while loading, «—»
   // on a mixed-currency set, else the exact single-currency total. Keys must
   // match the column keys (sum / paid / received). Mirror purchase-orders.
-  const footerRow: Record<string, React.ReactNode> = footerMoneyCells(totals, {
-    sum: totals?.sumMinor ?? '0',
-    paid: totals?.payedSumMinor ?? '0',
-    received: totals?.shippedSumMinor ?? '0',
-  });
+  const footerRow: Record<string, React.ReactNode> = footerMoneyCells(
+    totals,
+    {
+      sum: totals?.sumMinor ?? '0',
+      paid: totals?.payedSumMinor ?? '0',
+      received: totals?.shippedSumMinor ?? '0',
+    },
+    {
+      // moysklad parity: a mixed-currency footer shows the base-UZS converted
+      // sum (from the BE), not «—».
+      baseValuesMinor: {
+        sum: totals?.baseSumMinor ?? '0',
+        paid: totals?.basePayedSumMinor ?? '0',
+        received: totals?.baseShippedSumMinor ?? '0',
+      },
+    },
+  );
 
   const hasFilter =
     !!search ||
@@ -886,6 +913,10 @@ export default function InvoicesInPage() {
           onApply={applySavedFilter}
           adding={saveFilterOpen}
           onAddingChange={setSaveFilterOpen}
+          // moysklad parity: the «+ Сохранить фильтр» add affordance shows only
+          // while the filter panel is OPEN — a collapsed list shows saved pills
+          // alone (none here → nothing), not a stray dashed add button.
+          showAdd={filterOpen}
         />
       }
       applyLabel={tFilters('find')}
@@ -1623,6 +1654,8 @@ export default function InvoicesInPage() {
         projectValue={massEditProject}
         onProjectPick={() => setPickerOpen('massEditProject')}
         onProjectClear={() => setMassEditProject(null)}
+        groupOptions={(massGroupsData?.items ?? []).map((g) => ({ value: g.id, label: g.name }))}
+        showShared
         labels={{
           title: tMass('title'),
           ownerLabel: tFilters('owner_employee'),
@@ -1631,6 +1664,10 @@ export default function InvoicesInPage() {
           apply: tMass('apply'),
           cancel: tMass('cancel'),
           hint: tMass('hint', { count: massEditIds.length }),
+          groupLabel: tMass('group_label'),
+          sharedLabel: tMass('shared_label'),
+          sharedYes: tMass('shared_yes'),
+          sharedNo: tMass('shared_no'),
         }}
         onSubmit={async (patch) => {
           await bulk.massEdit.mutateAsync({ ids: massEditIds, ...patch });

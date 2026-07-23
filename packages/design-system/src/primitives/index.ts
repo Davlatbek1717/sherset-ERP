@@ -4,7 +4,10 @@ export { Button, type ButtonProps } from './Button.tsx';
 export { Checkbox } from './Checkbox.tsx';
 export { Combobox, type ComboboxProps, type ComboboxItem } from './Combobox.tsx';
 export { MultiCombobox, type MultiComboboxProps } from './MultiCombobox.tsx';
-export { DatePicker, type DatePickerProps } from './DatePicker.tsx';
+// formatIso/todayIso — the ONLY sanctioned Date→'YYYY-MM-DD' helpers. They use
+// LOCAL calendar fields; never `toISOString().slice(0,10)` on a local date —
+// in UTC+5 that lands one day behind (the 2026-07-11 «Сегодня» bug-class).
+export { DatePicker, type DatePickerProps, formatIso, todayIso } from './DatePicker.tsx';
 export {
   DropdownMenu,
   type DropdownMenuProps,
@@ -14,6 +17,7 @@ export { FileDrop, type FileDropProps } from './FileDrop.tsx';
 export { Input, type InputProps } from './Input.tsx';
 export { Label, type LabelProps } from './Label.tsx';
 export { MoneyInput, type MoneyInputProps } from './MoneyInput.tsx';
+export { PasswordInput, type PasswordInputProps } from './PasswordInput.tsx';
 export { NativeSelect, type NativeSelectProps } from './NativeSelect.tsx';
 export { NumberInput, type NumberInputProps } from './NumberInput.tsx';
 export { Progress, type ProgressProps } from './Progress.tsx';

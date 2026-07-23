@@ -1,6 +1,3 @@
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-import { fileURLToPath } from 'node:url';
 /**
  * Comprehensive parity-audit capture script.
  *
@@ -19,6 +16,9 @@ import { fileURLToPath } from 'node:url';
  * parallel page loads would saturate the dev server's auth route.
  */
 import { type Page, expect, test } from '@playwright/test';
+import * as path from 'node:path';
+import * as fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -89,8 +89,8 @@ fs.mkdirSync(DETAIL_DIR, { recursive: true });
 
 async function login(page: Page): Promise<void> {
   await page.goto('/login');
-  await page.waitForSelector('[data-test-id="login-username"]', { timeout: 15_000 });
-  await page.fill('[data-test-id="login-username"]', 'admin@demo.local');
+  await page.waitForSelector('[data-test-id="login-email"]', { timeout: 15_000 });
+  await page.fill('[data-test-id="login-email"]', 'admin@demo.local');
   await page.fill('[data-test-id="login-password"]', 'admin123');
   await page.click('[data-test-id="login-submit"]');
   await page.waitForURL('/', { timeout: 15_000 });

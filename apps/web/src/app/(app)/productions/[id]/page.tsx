@@ -626,7 +626,7 @@ export default function ProductionDetailPage() {
                           <td className="px-4 py-2 text-right tabular-nums">
                             {(Number(po.quantity) / 1_000).toString()}
                           </td>
-                          <td className="px-4 py-2 text-right text-[var(--ms-text-muted)] text-xs tabular-nums">
+                          <td className="px-4 py-2 text-right text-[var(--ms-text-muted)] text-[12px] tabular-nums">
                             {formatDate(po.moment)}
                           </td>
                         </tr>

@@ -85,7 +85,10 @@ export function Wizard({
       data-test-id={testId}
     >
       {/* Stepper */}
-      <ol className="flex items-center gap-2 border-b border-[var(--ms-border-default)] px-4 py-3 overflow-x-auto">
+      <ol
+        className="flex items-center gap-2 border-b border-[var(--ms-border-default)] px-4 py-3 overflow-x-auto"
+        role="list"
+      >
         {steps.map((step, i) => {
           const status: 'done' | 'active' | 'pending' =
             i < safeIndex ? 'done' : i === safeIndex ? 'active' : 'pending';

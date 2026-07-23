@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { csvUuid } from '../shared/csv.js';
 
 /**
  * ProcessingOrder (Заказ на переработку / Qayta ishlash buyurtmasi) —
@@ -83,6 +84,7 @@ export type UpdateProcessingOrderInput = z.infer<typeof UpdateProcessingOrderSch
 export const ProcessingOrderFilterSchema = z.object({
   state: ProcessingOrderStateSchema.optional(),
   organizationId: z.string().uuid().optional(),
+  organizationIds: csvUuid.optional(),
   storeId: z.string().uuid().optional(),
   /** «Тех. карта» — ProcessingOrder.processingPlanId (BOM FK). */
   processingPlanId: z.string().uuid().optional(),

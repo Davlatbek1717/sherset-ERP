@@ -5,16 +5,17 @@ import { SavedFiltersPills } from '@/components/customer-orders/saved-filters-pi
 import { FilterToggleButton } from '@/components/filters/filter-toggle-button';
 import { SalesReturnBulkActionsDropdown } from '@/components/sales-returns/bulk-actions-dropdown';
 import { SalesReturnPrintDropdown } from '@/components/sales-returns/print-dropdown';
+import {
+  type SalesReturnCustomStatus,
+  SalesReturnStatusDropdown,
+} from '@/components/sales-returns/sales-return-status-dropdown';
 import { useBulkDocumentActions } from '@/hooks/use-bulk-actions';
 import { useColumnVisibility } from '@/hooks/use-column-visibility';
 import { useColumnWidths } from '@/hooks/use-column-widths';
-import { useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
-import { documentStateTone } from '@/lib/document-state-tone';
+import { stashBulkEdit } from '@/lib/bulk-edit-nav';
 import { filterFromQueryString } from '@/lib/filter-from-query';
-import { pinDefaultCustomer } from '@/lib/pin-default-customer';
 import {
-  Badge,
   CatalogPicker,
   CatalogPickerField,
   type DataTableColumn,
@@ -23,6 +24,7 @@ import {
   ListView,
   MassEditModal,
   MoneyInput,
+  MultiCombobox,
   NativeSelect,
   PeriodInputs,
   PeriodShortcuts,
@@ -34,6 +36,7 @@ import {
 } from '@moysklad/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
+import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 
 interface SalesReturnRow {
@@ -57,6 +60,9 @@ interface SalesReturnRow {
   owner: { id: string; name: string } | null;
   demand: { id: string; name: string } | null;
   customerOrder: { id: string; name: string } | null;
+  // moysklad «Статус» column = account-defined CUSTOM workflow status (coloured
+  // pill), NOT the FSM `state`. The list() service already includes it.
+  status: { id: string; name: string; color: string | null } | null;
   _count: { positions: number };
 }
 
@@ -98,14 +104,16 @@ function YesNoSelect({
   );
 }
 
+/** Multi-select reference field — moysklad checkbox-dropdown holds {id,label}[]. */
+type RefMulti = { id: string; label: string };
+
 export default function SalesReturnsPage() {
   const t = useTranslations('pages.sales_returns');
   const tCommon = useTranslations('common');
   const tFields = useTranslations('fields');
   const tStates = useTranslations('states.sales_return');
   const tFilters = useTranslations('filters');
-  const tForm = useTranslations('form');
-  const userDefaults = useUserDefaults();
+  const tMass = useTranslations('mass_edit_modal');
 
   const [searchInput, setSearchInput] = useState('');
   const search = useDebounce(searchInput, 300);
@@ -114,11 +122,18 @@ export default function SalesReturnsPage() {
   const [sortKey, setSortKey] = useState<string>('moment');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [filterValues, setFilterValues] = useState<FilterDrawerValues>({});
-  const [filterOpen, setFilterOpen] = useState(true);
+  // moysklad-parity «Контрагент» / «Организация» inline multi-select checkbox
+  // dropdowns (MultiCombobox) — were single-select modals. Each holds the picked
+  // {id,label} pairs; on the wire they go out as agentIds / organizationIds CSV.
+  // The «Контрагент» dropdown shows the phone as a sublabel and searches by name
+  // OR phone (BE /counterparties?search= already matches both).
+  const [agents, setAgents] = useState<RefMulti[]>([]);
+  const [organizations, setOrganizations] = useState<RefMulti[]>([]);
+  // moysklad parity (#salesreturn default): the list loads with the filter panel
+  // COLLAPSED — only the «Фильтр» button shows until clicked (mirror purchasereturn).
+  const [filterOpen, setFilterOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState<
     | null
-    | 'agent'
-    | 'org'
     | 'store'
     | 'owner'
     | 'project'
@@ -132,7 +147,16 @@ export default function SalesReturnsPage() {
     | 'massEditProject'
   >(null);
 
+  const router = useRouter();
+
   const [massEditOpen, setMassEditOpen] = useState(false);
+  // «Владелец-отдел» (groupId) options for the mass-edit wizard — mirrors losses.
+  const { data: massGroupsData } = useQuery<{ items: Array<{ id: string; name: string }> }>({
+    queryKey: ['groups', 'mass-edit'],
+    queryFn: () => api.get('/groups?limit=100'),
+    enabled: massEditOpen,
+    staleTime: 5 * 60 * 1000,
+  });
   const [massEditIds, setMassEditIds] = useState<string[]>([]);
   const [massEditOwner, setMassEditOwner] = useState<{ id: string; label: string } | null>(null);
   const [massEditProject, setMassEditProject] = useState<{ id: string; label: string } | null>(
@@ -176,8 +200,8 @@ export default function SalesReturnsPage() {
     paramsRecord.sumMinorFrom = String(filterValues.sumMinorFrom);
   if (filterValues.sumMinorTo !== undefined)
     paramsRecord.sumMinorTo = String(filterValues.sumMinorTo);
-  if (filterValues.agentId) paramsRecord.agentId = filterValues.agentId;
-  if (filterValues.organizationId) paramsRecord.organizationId = filterValues.organizationId;
+  if (agents.length) paramsRecord.agentIds = agents.map((x) => x.id).join(',');
+  if (organizations.length) paramsRecord.organizationIds = organizations.map((x) => x.id).join(',');
   if (filterValues.storeId) paramsRecord.storeId = filterValues.storeId;
   if (filterValues.ownerId) paramsRecord.ownerId = filterValues.ownerId;
   if (extFilter.state) paramsRecord.state = extFilter.state;
@@ -204,14 +228,20 @@ export default function SalesReturnsPage() {
     count: number;
     sumMinor: string;
     currencies: string[];
+    baseSumMinor: string;
   }>({
     queryKey: ['sales-returns-totals', totalsQs],
     queryFn: () => api.get(`/sales-returns/aggregate/totals${totalsQs ? `?${totalsQs}` : ''}`),
     staleTime: 30_000,
   });
-  // Pinned footer money cell (key matches the «Сумма» column key);
-  // footerMoneyCells shows «—» when the filtered set mixes currencies.
-  const footerRow = footerMoneyCells(totals, { sum: totals?.sumMinor ?? '0' });
+  // Pinned footer money cell (key matches the «Сумма» column key): the single-
+  // currency total, or — for a mixed-currency filtered set — the base-UZS sum
+  // (baseValuesMinor) instead of «—». Mirror the purchasereturn list.
+  const footerRow = footerMoneyCells(
+    totals,
+    { sum: totals?.sumMinor ?? '0' },
+    { baseValuesMinor: { sum: totals?.baseSumMinor ?? '0' } },
+  );
 
   const listQueryKey = [
     'sales-returns',
@@ -226,6 +256,19 @@ export default function SalesReturnsPage() {
     queryKey: listQueryKey,
     queryFn: () => api.get<ListResponse>(`/sales-returns?${params.toString()}`),
   });
+
+  // moysklad «Статус» dropdown — the account's custom return statuses (State
+  // rows, entityType="salesreturn"). archived=false: a retired status must not
+  // be OFFERED for assigning. The return FSM («Провести») stays in «Изменить».
+  const { data: statusData } = useQuery<{ items: SalesReturnCustomStatus[] }>({
+    queryKey: ['states', 'salesreturn'],
+    queryFn: () =>
+      api.get<{ items: SalesReturnCustomStatus[] }>(
+        '/states?entityType=salesreturn&archived=false&limit=250',
+      ),
+    staleTime: 60_000,
+  });
+  const salesReturnStatuses = statusData?.items ?? [];
 
   const bulk = useBulkDocumentActions('sales-returns', listQueryKey, {
     hasFSM: true,
@@ -276,7 +319,7 @@ export default function SalesReturnsPage() {
   // invoiceout DOM capture). Status filtering is a "Статус" select in
   // the inline filter panel below, matching the customer-orders gold
   // standard.
-  const hasFilter = !!search || !!extFilter.state;
+  const hasFilter = !!search || !!extFilter.state || agents.length > 0 || organizations.length > 0;
 
   const columns: DataTableColumn<SalesReturnRow>[] = [
     {
@@ -327,7 +370,7 @@ export default function SalesReturnsPage() {
         <div>
           <div className="max-w-[300px] truncate font-medium">{r.agent.name}</div>
           {r.agent.legalTitle && (
-            <div className="max-w-[300px] truncate text-[var(--ms-text-muted)] text-xs">
+            <div className="max-w-[300px] truncate text-[var(--ms-text-muted)] text-[11px]">
               {r.agent.legalTitle}
             </div>
           )}
@@ -368,16 +411,31 @@ export default function SalesReturnsPage() {
       cellText: (r) => r.demand?.name ?? '',
     },
     {
+      // moysklad parity: «Статус» column = the account-defined CUSTOM status
+      // (coloured pill), NOT the FSM state. Grey «Status» placeholder until one is
+      // assigned. Posting lives in «Проведено», not here. Mirror purchase-return.
       key: 'state',
       header: tFields('state'),
       headerText: tFields('state'),
       width: '150px',
-      cell: (r) => (
-        <Badge tone={documentStateTone(r.state)}>
-          {tStates(r.state as 'draft' | 'posted' | 'cancelled')}
-        </Badge>
-      ),
-      cellText: (r) => tStates(r.state as 'draft' | 'posted' | 'cancelled'),
+      cell: (r) =>
+        r.status ? (
+          <span
+            className="inline-flex items-center whitespace-nowrap rounded-[3px] px-2 py-0.5 font-medium text-white text-xs"
+            style={{ backgroundColor: r.status.color ?? 'var(--ms-text-muted)' }}
+            data-test-id="sr-status-pill"
+          >
+            {r.status.name}
+          </span>
+        ) : (
+          <span
+            className="inline-flex items-center whitespace-nowrap rounded-[3px] bg-[var(--ms-bg-muted)] px-2 py-0.5 text-[var(--ms-text-muted)] text-xs"
+            data-test-id="sr-status-placeholder"
+          >
+            {tFields('custom_status_placeholder')}
+          </span>
+        ),
+      cellText: (r) => r.status?.name ?? '',
     },
     {
       key: 'sum',
@@ -425,18 +483,34 @@ export default function SalesReturnsPage() {
       header: tFields('published'),
       headerText: tFields('published'),
       width: '120px',
-      align: 'center',
-      cell: (r) => (r.published ? <Badge tone="info">{tCommon('yes')}</Badge> : <span>—</span>),
-      cellText: (r) => (r.published ? 'yes' : ''),
+      // moysklad parity: cyan (#00bfe6) filled pill «Отправлен» when sent, EMPTY
+      // otherwise (NOT «Да»/«—»). Live-grounded rgb(0,191,230); mirror CO/demands.
+      cell: (r) =>
+        r.published ? (
+          <span
+            className="inline-flex items-center whitespace-nowrap rounded-[3px] bg-[#00bfe6] px-2 py-0.5 font-medium text-white text-xs"
+            data-test-id="published-badge"
+          >
+            {tFields('published_badge')}
+          </span>
+        ) : null,
+      cellText: (r) => (r.published ? tFields('published_badge') : ''),
     },
     {
       key: 'printed',
       header: tFields('printed'),
       headerText: tFields('printed'),
       width: '120px',
-      align: 'center',
-      cell: (r) => (r.printed ? <Badge tone="info">{tCommon('yes')}</Badge> : <span>—</span>),
-      cellText: (r) => (r.printed ? 'yes' : ''),
+      cell: (r) =>
+        r.printed ? (
+          <span
+            className="inline-flex items-center whitespace-nowrap rounded-[3px] bg-[#00bfe6] px-2 py-0.5 font-medium text-white text-xs"
+            data-test-id="printed-badge"
+          >
+            {tFields('printed_badge')}
+          </span>
+        ) : null,
+      cellText: (r) => (r.printed ? tFields('printed_badge') : ''),
     },
     {
       key: 'description',
@@ -444,7 +518,7 @@ export default function SalesReturnsPage() {
       headerText: tFields('description'),
       width: '220px',
       cell: (r) => (
-        <span className="block max-w-[220px] truncate text-[var(--ms-text-muted)] text-xs">
+        <span className="block max-w-[220px] truncate text-[var(--ms-text-muted)] text-[11px]">
           {r.description ?? ''}
         </span>
       ),
@@ -511,6 +585,8 @@ export default function SalesReturnsPage() {
             onClear={() => {
               setFilterValues({});
               setExtFilter({});
+              setAgents([]);
+              setOrganizations([]);
               setCursor(undefined);
             }}
             pills={
@@ -519,6 +595,20 @@ export default function SalesReturnsPage() {
                 currentQueryString={params.toString()}
                 onApply={(qs) => {
                   setFilterValues(filterFromQueryString(qs));
+                  // Restore the multi-select «Контрагент» / «Организация» arrays from
+                  // the saved query string (agentIds / organizationIds CSV). This
+                  // simpler saved-filter mechanism stores ids only (no labels), so
+                  // chips fall back to the id until re-searched.
+                  const usp = qs.startsWith('?')
+                    ? new URLSearchParams(qs.slice(1))
+                    : new URLSearchParams(qs);
+                  const parseCsv = (key: string): RefMulti[] =>
+                    (usp.get(key) ?? '')
+                      .split(',')
+                      .filter(Boolean)
+                      .map((id) => ({ id, label: id }));
+                  setAgents(parseCsv('agentIds'));
+                  setOrganizations(parseCsv('organizationIds'));
                   setCursor(undefined);
                 }}
               />
@@ -554,23 +644,36 @@ export default function SalesReturnsPage() {
                 testId="filter-period"
               />
             </InlineFilterPanel.Field>
-            {/* 2. Контрагент */}
+            {/* 2. Контрагент — moysklad-parity inline multi-select checkbox dropdown
+                (was a single-select modal): type a name OR phone, results appear
+                inline (each row shows the phone as a sublabel), tick as many as
+                needed. On the wire → agentIds CSV. */}
             <InlineFilterPanel.Field label={tFilters('agent')} expandable>
-              <CatalogPickerField
-                value={
-                  filterValues.agentId
-                    ? {
-                        id: filterValues.agentId,
-                        label: filterValues.agentLabel ?? filterValues.agentId,
-                      }
-                    : null
-                }
-                placeholder=""
-                onPick={() => setPickerOpen('agent')}
-                onClear={() => {
-                  setFilterValues({ ...filterValues, agentId: undefined, agentLabel: undefined });
+              <MultiCombobox
+                value={agents.map((x) => x.id)}
+                items={agents.map((x) => ({ value: x.id, label: x.label }))}
+                onSearch={async (q) => {
+                  const r = await api.get<{
+                    items: { id: string; name: string; phone?: string | null }[];
+                  }>(`/counterparties?search=${encodeURIComponent(q)}&limit=20`);
+                  return r.items.map((x) => ({
+                    value: x.id,
+                    label: x.name,
+                    sublabel: x.phone || undefined,
+                  }));
+                }}
+                onChange={(nextIds, toggled) => {
+                  setAgents((prev) =>
+                    nextIds.map((id) => {
+                      const ex = prev.find((s) => s.id === id);
+                      if (ex) return ex;
+                      if (toggled?.value === id) return { id, label: String(toggled.label) };
+                      return { id, label: id };
+                    }),
+                  );
                   setCursor(undefined);
                 }}
+                placeholder=""
                 testId="filter-agent"
               />
             </InlineFilterPanel.Field>
@@ -618,27 +721,30 @@ export default function SalesReturnsPage() {
                 testId="filter-contract"
               />
             </InlineFilterPanel.Field>
-            {/* 5. Организация */}
+            {/* 5. Организация — moysklad-parity inline multi-select checkbox
+                dropdown (was a single-select modal). On the wire → organizationIds CSV. */}
             <InlineFilterPanel.Field label={tFilters('organization')} expandable>
-              <CatalogPickerField
-                value={
-                  filterValues.organizationId
-                    ? {
-                        id: filterValues.organizationId,
-                        label: filterValues.organizationLabel ?? filterValues.organizationId,
-                      }
-                    : null
-                }
-                placeholder=""
-                onPick={() => setPickerOpen('org')}
-                onClear={() => {
-                  setFilterValues({
-                    ...filterValues,
-                    organizationId: undefined,
-                    organizationLabel: undefined,
-                  });
+              <MultiCombobox
+                value={organizations.map((x) => x.id)}
+                items={organizations.map((x) => ({ value: x.id, label: x.label }))}
+                onSearch={async (q) => {
+                  const r = await api.get<{ items: { id: string; name: string }[] }>(
+                    `/organizations?search=${encodeURIComponent(q)}&limit=20`,
+                  );
+                  return r.items.map((x) => ({ value: x.id, label: x.name }));
+                }}
+                onChange={(nextIds, toggled) => {
+                  setOrganizations((prev) =>
+                    nextIds.map((id) => {
+                      const ex = prev.find((s) => s.id === id);
+                      if (ex) return ex;
+                      if (toggled?.value === id) return { id, label: String(toggled.label) };
+                      return { id, label: id };
+                    }),
+                  );
                   setCursor(undefined);
                 }}
+                placeholder=""
                 testId="filter-org"
               />
             </InlineFilterPanel.Field>
@@ -925,11 +1031,23 @@ export default function SalesReturnsPage() {
               onClearSelection={bulk.clearSelection}
               postedCount={postedCount}
               onMassEdit={() => {
-                setMassEditIds(Array.from(bulk.selectedIds));
-                setMassEditOwner(null);
-                setMassEditProject(null);
-                setMassEditOpen(true);
+                stashBulkEdit({
+                  entity: 'sales-returns',
+                  ids:
+                    bulk.selectedIds.size > 0
+                      ? Array.from(bulk.selectedIds)
+                      : (data?.items ?? []).map((r) => r.id),
+                  from: '/sales-returns',
+                });
+                router.push('/bulk-edit');
               }}
+            />
+            {/* moysklad toolbar order: Изменить · Статус · Печать */}
+            <SalesReturnStatusDropdown
+              selectedIds={bulk.selectedIds}
+              listQueryKey={listQueryKey}
+              onClearSelection={bulk.clearSelection}
+              customStatuses={salesReturnStatuses}
             />
             {/* no page-level CSV exporter yet — list_export stays disabled */}
             <SalesReturnPrintDropdown selectedIds={bulk.selectedIds} />
@@ -949,50 +1067,6 @@ export default function SalesReturnsPage() {
         }
         columnWidths={colWidths.values}
         onColumnResize={colWidths.set}
-      />
-      <CatalogPicker
-        open={pickerOpen === 'agent'}
-        onClose={() => setPickerOpen(null)}
-        title={tFilters('agent')}
-        fetcher={async (q): Promise<PickerItem[]> => {
-          const r = await api.get<{ items: { id: string; name: string }[] }>(
-            `/counterparties?search=${encodeURIComponent(q)}&limit=20`,
-          );
-          const items = r.items.map((x) => ({ id: x.id, primary: x.name }));
-          return pinDefaultCustomer(
-            items,
-            userDefaults.data?.defaultCustomer,
-            q,
-            tForm('pinned_default'),
-          );
-        }}
-        onSelect={(item) => {
-          setFilterValues({
-            ...filterValues,
-            agentId: item.id,
-            agentLabel: String(item.primary),
-          });
-          setCursor(undefined);
-        }}
-      />
-      <CatalogPicker
-        open={pickerOpen === 'org'}
-        onClose={() => setPickerOpen(null)}
-        title={tFilters('organization')}
-        fetcher={async (q): Promise<PickerItem[]> => {
-          const r = await api.get<{ items: { id: string; name: string }[] }>(
-            `/organizations?search=${encodeURIComponent(q)}&limit=20`,
-          );
-          return r.items.map((x) => ({ id: x.id, primary: x.name }));
-        }}
-        onSelect={(item) => {
-          setFilterValues({
-            ...filterValues,
-            organizationId: item.id,
-            organizationLabel: String(item.primary),
-          });
-          setCursor(undefined);
-        }}
       />
       <CatalogPicker
         open={pickerOpen === 'store'}
@@ -1208,6 +1282,8 @@ export default function SalesReturnsPage() {
         projectValue={massEditProject}
         onProjectPick={() => setPickerOpen('massEditProject')}
         onProjectClear={() => setMassEditProject(null)}
+        groupOptions={(massGroupsData?.items ?? []).map((g) => ({ value: g.id, label: g.name }))}
+        showShared
         labels={{
           title: t('mass_edit_title'),
           ownerLabel: tFilters('owner_employee'),
@@ -1216,6 +1292,10 @@ export default function SalesReturnsPage() {
           apply: t('mass_edit_apply'),
           cancel: t('mass_edit_cancel'),
           hint: t('mass_edit_hint', { count: massEditIds.length }),
+          groupLabel: tMass('group_label'),
+          sharedLabel: tMass('shared_label'),
+          sharedYes: tMass('shared_yes'),
+          sharedNo: tMass('shared_no'),
         }}
         onSubmit={async (patch) => {
           await bulk.massEdit.mutateAsync({ ids: massEditIds, ...patch });

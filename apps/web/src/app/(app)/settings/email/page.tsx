@@ -13,6 +13,7 @@ import {
   FormSection,
   Input,
   NativeSelect,
+  PasswordInput,
 } from '@moysklad/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
@@ -269,12 +270,13 @@ export default function EmailSettingsPage() {
             label={t('password')}
             hint={data ? t('password_hint') : undefined}
           >
-            <Input
-              type="password"
+            <PasswordInput
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
               data-test-id="field-password"
+              showLabel={tCommon('show_password')}
+              hideLabel={tCommon('hide_password')}
             />
           </FormField>
         </div>

@@ -127,7 +127,7 @@ describe('DocumentMoreMenu', () => {
       renderWithProviders(
         <DocumentMoreMenu
           onClone={vi.fn()}
-          prefix={<button type="button" data-test-id="custom-prefix">Custom</button>}
+          prefix={<button data-test-id="custom-prefix">Custom</button>}
         />,
       );
       await user.click(screen.getByRole('button', { name: 'More actions' }));

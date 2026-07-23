@@ -3,75 +3,198 @@ import { Inject, Injectable } from '@nestjs/common';
 import { z } from 'zod';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { reportDateBounds } from './report-date-bounds.util.js';
-import { consolidateToBase, loadRateContext } from './report-rate-ctx.util.js';
+import { type RateContext, consolidateToBase, loadRateContext } from './report-rate-ctx.util.js';
 
 /**
- * «Прибыльность» (Profitability) report — moysklad-parity per-SKU
- * margin breakdown for a given period.
+ * «Прибыльность» (Profitability) report — full moysklad-parity engine.
  *
- * For each product sold in the window:
- *   revenue   = SUM(qty × price × (1 − discount/100))    (after-discount)
- *   cogs      = SUM(qty × DemandPosition.costMinor)      (FIFO at post)
- *   margin    = revenue − cogs
- *   marginPct = margin / revenue × 100  (empty string when revenue=0)
+ * LIVE-grounded 2026-07-05 (online.moysklad.ru/app/#pnl). Four groupings
+ * («По товарам / По сотрудникам / По покупателям / По каналам продаж»), a
+ * 13-field filter panel, a time-bucketed chart series (+ optional comparison
+ * period) and a Продажи/Возвраты/Рентабельность column model.
  *
- * Read off `demand_positions` joined to `demands` (state='posted',
- * not soft-deleted, moment in range). Returns ordered by margin
- * descending so the most profitable SKUs are at the top by default;
- * the UI can re-sort.
+ * PROFIT & PROFITABILITY (verified exact against the live footer totals):
+ *   profit           = (salesSum − salesCost) − (returnSum − returnCost)
+ *   Рентабельность товара = profit / (salesCost − returnCost) × 100   (markup on net cost)
+ *   Рентабельность продаж = profit / (salesSum − returnSum) × 100      (margin on net revenue)
  *
- * Per-product only in this version. Future grouping (by counterparty
- * / employee / store) will land as additional `groupBy` enum values.
+ * DATA:
+ *   Продажи = posted Demands (Отгрузка) + optionally posted RetailSales (Продажа).
+ *   Возврат = posted SalesReturns.
+ *   Retail positions carry NO frozen per-line cost in our schema, so retail
+ *   contributes revenue/qty/documents only (cost 0). Демандs are FIFO-costed
+ *   and drive every verified number; «Отгрузка» is the fully-correct path.
  */
 export const ProfitabilityFilterSchema = z.object({
-  /** ISO date or datetime — inclusive lower bound on Demand.moment. */
-  dateFrom: z.coerce.date(),
-  /** Inclusive upper bound; the service applies end-of-day for date-only. */
-  dateTo: z.coerce.date(),
-  /** Optional store filter — restricts to demands from a single store. */
-  storeId: z.string().uuid().optional(),
-  /** Optional product filter — restricts to one SKU (drill-down). */
+  /** Which dimension to group rows by (the 4 tabs). */
+  groupBy: z.enum(['product', 'employee', 'counterparty', 'saleschannel']).default('product'),
+  /** Window lower bound (inclusive). Defaults to today − 1 month. */
+  dateFrom: z.coerce.date().optional(),
+  /** Window upper bound (inclusive; end-of-day for date-only). Defaults to today. */
+  dateTo: z.coerce.date().optional(),
+  /** «Учитывать» — assortment kinds included. */
+  accountedType: z.enum(['all', 'products', 'services', 'bundles']).default('all'),
+  /** «Товар или группа» — a single product (matches product or its variant lines). */
   productId: z.string().uuid().optional(),
-  /** Cap rows. Default 200, max 2000. */
-  limit: z.coerce.number().int().min(1).max(2000).default(200),
-  /** Hide products with zero revenue (rare but happens for free-with-purchase items). */
-  excludeZeroRevenue: z.coerce.boolean().default(true),
+  /** «Товар или группа» — a product folder (all products inside it). */
+  productFolderId: z.string().uuid().optional(),
+  /** «Склад» */
+  storeId: z.string().uuid().optional(),
+  /** «Точка продаж» — retail store (applies to retail «Продажа» docs). */
+  retailStoreId: z.string().uuid().optional(),
+  /** «Проект» */
+  projectId: z.string().uuid().optional(),
+  /** «Контрагент» */
+  counterpartyId: z.string().uuid().optional(),
+  /** «Группа контрагента» */
+  counterpartyGroupId: z.string().uuid().optional(),
+  /** «Договор» */
+  contractId: z.string().uuid().optional(),
+  /** «Поставщик» — products whose default supplier = X. */
+  supplierId: z.string().uuid().optional(),
+  /** «Организация» */
+  organizationId: z.string().uuid().optional(),
+  /** «Тип документа»: Все | Отгрузка (demands) | Продажа (retail). */
+  documentType: z.enum(['all', 'demand', 'retail']).default('all'),
+  /** «Канал продаж» */
+  salesChannelId: z.string().uuid().optional(),
+  /** «Разбить по модификациям» — split variant rows (product tab only). */
+  splitByVariants: z.coerce.boolean().default(false),
+  /** «Количество строк» — page size. */
+  limit: z.coerce.number().int().min(1).max(1000).default(100),
+  /** Pagination offset. */
+  offset: z.coerce.number().int().min(0).default(0),
+  /** Sort column. */
+  sortBy: z
+    .enum([
+      'name',
+      'salesDocuments',
+      'salesQuantity',
+      'salesSum',
+      'salesSumCost',
+      'returnSum',
+      'profit',
+      'profitGoodsPct',
+      'profitSalesPct',
+    ])
+    .default('profit'),
+  sortDir: z.enum(['asc', 'desc']).default('desc'),
+  /** Chart bucket granularity. */
+  granularity: z.enum(['hour', 'day', 'week', 'month']).default('day'),
+  /** «Сравнить»: none | previous period | same period last year | custom range. */
+  compare: z.enum(['none', 'prev', 'year', 'custom']).default('none'),
+  /** Explicit comparison-window bounds (moysklad «Настроить»); when present they
+   *  override the prev/year computation for the second chart line. */
+  compareFrom: z.coerce.date().optional(),
+  compareTo: z.coerce.date().optional(),
 });
 export type ProfitabilityFilter = z.infer<typeof ProfitabilityFilterSchema>;
 
 export interface ProfitabilityRow {
-  productId: string;
+  id: string;
   name: string;
   code: string | null;
+  article: string | null;
   uom: string | null;
-  /** Total qty sold in the window (Decimal as string). */
-  quantitySold: string;
-  /** Revenue in tiyin (BigInt as string). */
-  revenueMinor: string;
-  /** COGS in tiyin (BigInt as string). */
-  cogsMinor: string;
-  /** Gross margin in tiyin (BigInt as string) = revenue − COGS. */
-  marginMinor: string;
-  /** Margin percentage as a string with 2 decimals; empty when revenue=0. */
-  marginPercent: string;
+  /** По каналам продаж only — SalesChannel.type label. */
+  channelType?: string | null;
+  salesDocuments: number;
+  salesQuantity: string;
+  salesSumMinor: string;
+  salesSumCostMinor: string;
+  returnDocuments: number;
+  returnQuantity: string;
+  returnSumMinor: string;
+  returnSumCostMinor: string;
+  profitMinor: string;
+  /** Рентабельность товара, 2dp string; '' when net cost = 0. */
+  profitGoodsPct: string;
+  /** Рентабельность продаж, 2dp string; '' when net revenue = 0. */
+  profitSalesPct: string;
+}
+
+export interface ProfitabilityTotals {
+  salesDocuments: number;
+  salesQuantity: string;
+  salesSumMinor: string;
+  salesSumCostMinor: string;
+  returnDocuments: number;
+  returnQuantity: string;
+  returnSumMinor: string;
+  returnSumCostMinor: string;
+  profitMinor: string;
+  profitGoodsPct: string;
+  profitSalesPct: string;
+}
+
+export interface ProfitabilityChartBucket {
+  /** Bucket start, ISO (Tashkent-local calendar start). */
+  start: string;
+  salesDocuments: number;
+  salesQuantity: string;
+  salesSumMinor: string;
+  salesSumCostMinor: string;
+  returnDocuments: number;
+  returnQuantity: string;
+  returnSumMinor: string;
+  returnSumCostMinor: string;
+  profitMinor: string;
+  profitGoodsPct: string;
+  profitSalesPct: string;
+  avgCheckMinor: string;
 }
 
 export interface ProfitabilityReport {
-  filter: ProfitabilityFilter;
-  /** Window-wide totals across all matching positions. */
-  totals: {
-    quantitySold: string;
-    revenueMinor: string;
-    cogsMinor: string;
-    marginMinor: string;
-    marginPercent: string;
+  groupBy: ProfitabilityFilter['groupBy'];
+  filter: {
+    dateFrom: string;
+    dateTo: string;
+    granularity: ProfitabilityFilter['granularity'];
+    compare: ProfitabilityFilter['compare'];
+    documentType: ProfitabilityFilter['documentType'];
+    accountedType: ProfitabilityFilter['accountedType'];
   };
   rows: ProfitabilityRow[];
-  /** Account base (валюта учёта) — revenue consolidated; COGS already base. */
+  totals: ProfitabilityTotals;
+  /** Total group count (for pagination). */
+  count: number;
+  chart: {
+    granularity: ProfitabilityFilter['granularity'];
+    buckets: ProfitabilityChartBucket[];
+    compareBuckets: ProfitabilityChartBucket[] | null;
+  };
+  /** По каналам продаж — posted docs missing a channel (drive the yellow banner). */
+  channelBanner: { unsetDemands: number; unsetReturns: number } | null;
   currency: string;
-  /** True when source demands span >1 currency (revenue is converted). */
   mixedCurrency: boolean;
 }
+
+/** Aggregate per group key, split by currency (for base consolidation). */
+type SalesRow = {
+  gid: string | null;
+  currency: string;
+  documents: bigint;
+  qty: string;
+  sum: bigint;
+  cost: bigint;
+};
+type ReturnRow = SalesRow;
+
+type Agg = {
+  name: string | null;
+  code: string | null;
+  article: string | null;
+  uom: string | null;
+  channelType: string | null;
+  salesDocuments: number;
+  salesQty: number;
+  salesSum: bigint;
+  salesCost: bigint;
+  returnDocuments: number;
+  returnQty: number;
+  returnSum: bigint;
+  returnCost: bigint;
+};
 
 @Injectable()
 export class ProfitabilityService {
@@ -79,132 +202,772 @@ export class ProfitabilityService {
 
   async report(accountId: string, raw: unknown): Promise<ProfitabilityReport> {
     const filter = ProfitabilityFilterSchema.parse(raw);
-    // Date-only range → Asia/Tashkent calendar-day half-open UTC window.
-    const { gte, lt } = reportDateBounds(filter.dateFrom, filter.dateTo);
+    const now = new Date();
+    const dateTo = filter.dateTo ?? now;
+    const dateFrom =
+      filter.dateFrom ?? new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
+    const { gte, lt } = reportDateBounds(dateFrom, dateTo);
 
     const ctx = await loadRateContext(this.prisma.client, accountId);
     const seen = new Set<string>();
 
-    type Row = {
-      product_id: string;
-      currency: string;
-      name: string | null;
-      code: string | null;
-      uom: string | null;
-      quantity_sold: string;
-      revenue_minor: bigint;
-      cogs_minor: bigint;
+    // Resolve indirect filters (folder / supplier / counterparty-group) → id lists
+    // via the ORM so the raw SQL stays free of implicit-m2m table names.
+    const [folderProductIds, supplierProductIds, groupCounterpartyIds] = await Promise.all([
+      filter.productFolderId
+        ? this.prisma.client.product
+            .findMany({
+              where: { accountId, productFolderId: filter.productFolderId },
+              select: { id: true },
+            })
+            .then((r) => r.map((x) => x.id))
+        : Promise.resolve(null),
+      filter.supplierId
+        ? this.prisma.client.product
+            .findMany({
+              where: { accountId, supplierId: filter.supplierId },
+              select: { id: true },
+            })
+            .then((r) => r.map((x) => x.id))
+        : Promise.resolve(null),
+      filter.counterpartyGroupId
+        ? this.prisma.client.counterparty
+            .findMany({
+              where: { accountId, groups: { some: { id: filter.counterpartyGroupId } } },
+              select: { id: true },
+            })
+            .then((r) => r.map((x) => x.id))
+        : Promise.resolve(null),
+    ]);
+
+    const includeDemands = filter.documentType !== 'retail';
+    // Retail carries no per-line cost + no channel — only meaningful for the
+    // product/employee/counterparty tabs and never when a channel/contract/
+    // project/retail-store-incompatible filter is active. Kept honest & bounded.
+    const includeRetail =
+      filter.documentType !== 'demand' &&
+      filter.groupBy !== 'saleschannel' &&
+      !filter.salesChannelId &&
+      !filter.contractId &&
+      !filter.projectId;
+
+    // ---- WHERE builders -------------------------------------------------
+    const inUuid = (ids: string[]) =>
+      ids.length === 0 ? Prisma.sql`(NULL)` : Prisma.join(ids.map((id) => Prisma.sql`${id}::uuid`));
+
+    // Position-level predicate (accountedType + product scoping). `a` = position alias.
+    const posWhere = (a: string): Prisma.Sql => {
+      const parts: Prisma.Sql[] = [];
+      if (filter.accountedType === 'products')
+        parts.push(Prisma.sql`AND ${Prisma.raw(a)}.assortment_kind IN ('product','variant')`);
+      else if (filter.accountedType === 'services')
+        parts.push(Prisma.sql`AND ${Prisma.raw(a)}.assortment_kind = 'service'`);
+      else if (filter.accountedType === 'bundles')
+        parts.push(Prisma.sql`AND ${Prisma.raw(a)}.assortment_kind = 'bundle'`);
+      if (filter.productId)
+        parts.push(
+          Prisma.sql`AND (${Prisma.raw(a)}.product_id = ${filter.productId}::uuid OR ${Prisma.raw(a)}.assortment_id = ${filter.productId}::uuid)`,
+        );
+      if (folderProductIds)
+        parts.push(Prisma.sql`AND ${Prisma.raw(a)}.product_id IN (${inUuid(folderProductIds)})`);
+      if (supplierProductIds)
+        parts.push(Prisma.sql`AND ${Prisma.raw(a)}.product_id IN (${inUuid(supplierProductIds)})`);
+      return parts.length ? Prisma.join(parts, ' ') : Prisma.empty;
     };
 
-    // Group by (product, currency): revenue (price, demand currency) is
-    // base-consolidated per currency in TS; COGS (dp.cost_minor — FIFO cost,
-    // already base after supply-post normalization) is summed directly;
-    // margin/ranking/excludeZeroRevenue applied AFTER consolidation. SQL
-    // LIMIT/HAVING/ORDER dropped → JS does it on base figures.
-    const storeFilter = filter.storeId
-      ? Prisma.sql`AND d.store_id = ${filter.storeId}::uuid`
-      : Prisma.empty;
-    const productFilter = filter.productId
-      ? Prisma.sql`AND dp.product_id = ${filter.productId}::uuid`
-      : Prisma.empty;
-
-    const rows = await this.prisma.client.$queryRaw<Row[]>`
-      SELECT
-        dp.product_id::text                                          AS product_id,
-        d.currency                                                   AS currency,
-        p.name                                                       AS name,
-        p.code                                                       AS code,
-        p.uom                                                        AS uom,
-        SUM(dp.quantity)::text                                       AS quantity_sold,
-        SUM(
-          (dp.quantity * dp.price_minor * (100 - dp.discount) / 100)::numeric
-        )::bigint                                                    AS revenue_minor,
-        SUM(
-          (dp.quantity * COALESCE(dp.cost_minor, 0))::numeric
-        )::bigint                                                    AS cogs_minor
-      FROM demand_positions dp
-      INNER JOIN demands d
-        ON d.id = dp.demand_id
-       AND d.account_id = ${accountId}::uuid
-       AND d.state = 'posted'
-       AND d.deleted_at IS NULL
-       AND d.moment >= ${gte}::timestamptz
-       AND d.moment < ${lt}::timestamptz
-       ${storeFilter}
-      LEFT JOIN products p ON p.id = dp.product_id
-      WHERE dp.product_id IS NOT NULL
-        ${productFilter}
-      GROUP BY dp.product_id, d.currency, p.name, p.code, p.uom
-    `;
-
-    type Agg = {
-      name: string | null;
-      code: string | null;
-      uom: string | null;
-      qty: number;
-      revenue: bigint;
-      cogs: bigint;
+    // Document-level predicate on demands. `d` alias.
+    const demandWhere = (): Prisma.Sql => {
+      const parts: Prisma.Sql[] = [
+        Prisma.sql`d.account_id = ${accountId}::uuid`,
+        Prisma.sql`AND d.state = 'posted'`,
+        Prisma.sql`AND d.deleted_at IS NULL`,
+        Prisma.sql`AND d.moment >= ${gte} AND d.moment < ${lt}`,
+      ];
+      if (filter.storeId) parts.push(Prisma.sql`AND d.store_id = ${filter.storeId}::uuid`);
+      if (filter.projectId) parts.push(Prisma.sql`AND d.project_id = ${filter.projectId}::uuid`);
+      if (filter.contractId) parts.push(Prisma.sql`AND d.contract_id = ${filter.contractId}::uuid`);
+      if (filter.organizationId)
+        parts.push(Prisma.sql`AND d.organization_id = ${filter.organizationId}::uuid`);
+      if (filter.salesChannelId)
+        parts.push(Prisma.sql`AND d.sales_channel_id = ${filter.salesChannelId}::uuid`);
+      if (filter.counterpartyId)
+        parts.push(Prisma.sql`AND d.agent_id = ${filter.counterpartyId}::uuid`);
+      if (groupCounterpartyIds)
+        parts.push(Prisma.sql`AND d.agent_id IN (${inUuid(groupCounterpartyIds)})`);
+      return Prisma.join(parts, ' ');
     };
-    const byProduct = new Map<string, Agg>();
-    for (const r of rows) {
-      const acc = byProduct.get(r.product_id) ?? {
-        name: r.name,
-        code: r.code,
-        uom: r.uom,
-        qty: 0,
-        revenue: 0n,
-        cogs: 0n,
-      };
-      acc.qty += Number.parseFloat(r.quantity_sold);
-      acc.revenue += consolidateToBase(r.revenue_minor, r.currency, ctx, seen);
-      acc.cogs += r.cogs_minor; // already base
-      byProduct.set(r.product_id, acc);
+
+    // Document-level predicate on sales_returns. `sr` alias.
+    const returnWhere = (): Prisma.Sql => {
+      const parts: Prisma.Sql[] = [
+        Prisma.sql`sr.account_id = ${accountId}::uuid`,
+        Prisma.sql`AND sr.state = 'posted'`,
+        Prisma.sql`AND sr.deleted_at IS NULL`,
+        Prisma.sql`AND sr.moment >= ${gte} AND sr.moment < ${lt}`,
+      ];
+      if (filter.storeId) parts.push(Prisma.sql`AND sr.store_id = ${filter.storeId}::uuid`);
+      if (filter.projectId) parts.push(Prisma.sql`AND sr.project_id = ${filter.projectId}::uuid`);
+      if (filter.contractId)
+        parts.push(Prisma.sql`AND sr.contract_id = ${filter.contractId}::uuid`);
+      if (filter.organizationId)
+        parts.push(Prisma.sql`AND sr.organization_id = ${filter.organizationId}::uuid`);
+      if (filter.salesChannelId)
+        parts.push(Prisma.sql`AND sr.sales_channel_id = ${filter.salesChannelId}::uuid`);
+      if (filter.counterpartyId)
+        parts.push(Prisma.sql`AND sr.agent_id = ${filter.counterpartyId}::uuid`);
+      if (groupCounterpartyIds)
+        parts.push(Prisma.sql`AND sr.agent_id IN (${inUuid(groupCounterpartyIds)})`);
+      return Prisma.join(parts, ' ');
+    };
+
+    // ---- Group-key + label joins per tab --------------------------------
+    const isProduct = filter.groupBy === 'product';
+    // demand group key + returns group key + label select/join fragments.
+    let demandKey: Prisma.Sql;
+    let returnKey: Prisma.Sql;
+    let excludeNullKey = false;
+
+    if (isProduct) {
+      demandKey = filter.splitByVariants
+        ? Prisma.sql`dp.assortment_id`
+        : Prisma.sql`COALESCE(dp.product_id, dp.assortment_id)`;
+      returnKey = filter.splitByVariants
+        ? Prisma.sql`srp.assortment_id`
+        : Prisma.sql`COALESCE(srp.product_id, srp.assortment_id)`;
+    } else if (filter.groupBy === 'employee') {
+      demandKey = Prisma.sql`d.owner_id`;
+      returnKey = Prisma.sql`sr.owner_id`;
+      excludeNullKey = true;
+    } else if (filter.groupBy === 'counterparty') {
+      demandKey = Prisma.sql`d.agent_id`;
+      returnKey = Prisma.sql`sr.agent_id`;
+    } else {
+      // saleschannel
+      demandKey = Prisma.sql`d.sales_channel_id`;
+      returnKey = Prisma.sql`sr.sales_channel_id`;
+      excludeNullKey = true;
     }
 
-    let out: ProfitabilityRow[] = [...byProduct.entries()].map(([productId, a]) => {
-      const margin = a.revenue - a.cogs;
-      const pct = a.revenue === 0n ? '' : ((Number(margin) / Number(a.revenue)) * 100).toFixed(2);
+    // ---- Aggregate queries (key + currency only; labels resolved after) ---
+    const salesRows: SalesRow[] = includeDemands
+      ? await this.prisma.client.$queryRaw<SalesRow[]>`
+          SELECT
+            ${demandKey}::text AS gid,
+            d.currency AS currency,
+            COUNT(DISTINCT d.id)::bigint AS documents,
+            COALESCE(SUM(dp.quantity), 0)::text AS qty,
+            COALESCE(SUM((dp.quantity * dp.price_minor * (100 - dp.discount) / 100)::numeric), 0)::bigint AS sum,
+            COALESCE(SUM((dp.quantity * COALESCE(dp.cost_minor, 0))::numeric), 0)::bigint AS cost
+          FROM demand_positions dp
+          JOIN demands d ON d.id = dp.demand_id AND ${demandWhere()}
+          WHERE dp.assortment_id IS NOT NULL ${posWhere('dp')}
+          GROUP BY ${demandKey}, d.currency
+        `
+      : [];
+
+    const retailRows: SalesRow[] =
+      includeRetail && filter.groupBy !== 'saleschannel'
+        ? await this.queryRetailSales(accountId, filter, gte, lt)
+        : [];
+
+    const returnRows: ReturnRow[] = await this.prisma.client.$queryRaw<ReturnRow[]>`
+      SELECT
+        ${returnKey}::text AS gid,
+        sr.currency AS currency,
+        COUNT(DISTINCT sr.id)::bigint AS documents,
+        COALESCE(SUM(srp.quantity), 0)::text AS qty,
+        COALESCE(SUM((srp.quantity * srp.price_minor * (100 - srp.discount) / 100)::numeric), 0)::bigint AS sum,
+        COALESCE(SUM((srp.quantity * COALESCE(srp.cost_minor, 0))::numeric), 0)::bigint AS cost
+      FROM sales_return_positions srp
+      JOIN sales_returns sr ON sr.id = srp.sales_return_id AND ${returnWhere()}
+      WHERE srp.assortment_id IS NOT NULL ${posWhere('srp')}
+      GROUP BY ${returnKey}, sr.currency
+    `;
+
+    // ---- Merge into per-group aggregates --------------------------------
+    const byGroup = new Map<string, Agg>();
+    const ensure = (gid: string): Agg => {
+      let a = byGroup.get(gid);
+      if (!a) {
+        a = {
+          name: null,
+          code: null,
+          article: null,
+          uom: null,
+          channelType: null,
+          salesDocuments: 0,
+          salesQty: 0,
+          salesSum: 0n,
+          salesCost: 0n,
+          returnDocuments: 0,
+          returnQty: 0,
+          returnSum: 0n,
+          returnCost: 0n,
+        };
+        byGroup.set(gid, a);
+      }
+      return a;
+    };
+
+    for (const r of [...salesRows, ...retailRows]) {
+      if (r.gid == null && excludeNullKey) continue;
+      const gid = r.gid ?? '__none__';
+      const a = ensure(gid);
+      a.salesDocuments += Number(r.documents);
+      a.salesQty += Number(r.qty || '0');
+      a.salesSum += consolidateToBase(r.sum, r.currency, ctx, seen);
+      a.salesCost += r.cost; // already base
+    }
+    for (const r of returnRows) {
+      if (r.gid == null && excludeNullKey) continue;
+      const gid = r.gid ?? '__none__';
+      const a = ensure(gid);
+      a.returnDocuments += Number(r.documents);
+      a.returnQty += Number(r.qty || '0');
+      a.returnSum += consolidateToBase(r.sum, r.currency, ctx, seen);
+      a.returnCost += r.cost;
+    }
+
+    // ---- Resolve labels for the surviving group ids ---------------------
+    await this.resolveLabels(accountId, filter, byGroup);
+
+    // ---- Shape rows -----------------------------------------------------
+    let rows: ProfitabilityRow[] = [...byGroup.entries()].map(([gid, a]) => {
+      const netCost = a.salesCost - a.returnCost;
+      const netRev = a.salesSum - a.returnSum;
+      const profit = netRev - netCost;
       return {
-        productId,
+        id: gid,
         name: a.name ?? '—',
         code: a.code,
+        article: a.article,
         uom: a.uom,
-        quantitySold: a.qty.toString(),
-        revenueMinor: a.revenue.toString(),
-        cogsMinor: a.cogs.toString(),
-        marginMinor: margin.toString(),
-        marginPercent: pct,
+        channelType: a.channelType,
+        salesDocuments: a.salesDocuments,
+        salesQuantity: trimNum(a.salesQty),
+        salesSumMinor: a.salesSum.toString(),
+        salesSumCostMinor: a.salesCost.toString(),
+        returnDocuments: a.returnDocuments,
+        returnQuantity: trimNum(a.returnQty),
+        returnSumMinor: a.returnSum.toString(),
+        returnSumCostMinor: a.returnCost.toString(),
+        profitMinor: profit.toString(),
+        profitGoodsPct: pct(profit, netCost),
+        profitSalesPct: pct(profit, netRev),
       };
     });
-    if (filter.excludeZeroRevenue) out = out.filter((r) => BigInt(r.revenueMinor) > 0n);
-    out.sort((x, y) =>
-      BigInt(y.marginMinor) > BigInt(x.marginMinor)
-        ? 1
-        : BigInt(y.marginMinor) < BigInt(x.marginMinor)
-          ? -1
-          : 0,
-    );
-    out = out.slice(0, filter.limit);
 
-    const totalQty = out.reduce((acc, r) => acc + Number.parseFloat(r.quantitySold), 0);
-    const totalRevenue = out.reduce((acc, r) => acc + BigInt(r.revenueMinor), 0n);
-    const totalCogs = out.reduce((acc, r) => acc + BigInt(r.cogsMinor), 0n);
-    const totalMargin = totalRevenue - totalCogs;
-    const totalPct =
-      totalRevenue === 0n ? '' : ((Number(totalMargin) / Number(totalRevenue)) * 100).toFixed(2);
+    // ---- Sort + totals + paginate ---------------------------------------
+    rows.sort(rowComparator(filter.sortBy, filter.sortDir));
+    const count = rows.length;
+    const totals = computeTotals(rows);
+    rows = rows.slice(filter.offset, filter.offset + filter.limit);
+
+    // ---- Chart ----------------------------------------------------------
+    const buckets = await this.chartBuckets(accountId, filter, gte, lt, ctx, seen, {
+      posWhere,
+      includeDemands,
+    });
+    let compareBuckets: ProfitabilityChartBucket[] | null = null;
+    if (filter.compare !== 'none') {
+      let cGte: Date;
+      let cLt: Date;
+      if (filter.compareFrom && filter.compareTo) {
+        // «Настроить» — explicit comparison window from the FE.
+        ({ gte: cGte, lt: cLt } = reportDateBounds(filter.compareFrom, filter.compareTo));
+      } else if (filter.compare === 'year') {
+        cGte = new Date(gte);
+        cGte.setUTCFullYear(gte.getUTCFullYear() - 1);
+        cLt = new Date(lt);
+        cLt.setUTCFullYear(lt.getUTCFullYear() - 1);
+      } else {
+        // previous period of the same length, immediately before the window.
+        const span = lt.getTime() - gte.getTime();
+        cGte = new Date(gte.getTime() - span);
+        cLt = new Date(gte.getTime());
+      }
+      compareBuckets = await this.chartBuckets(accountId, filter, cGte, cLt, ctx, seen, {
+        posWhere,
+        includeDemands,
+      });
+    }
+
+    // ---- Channel banner -------------------------------------------------
+    let channelBanner: ProfitabilityReport['channelBanner'] = null;
+    if (filter.groupBy === 'saleschannel') {
+      const [d, r] = await Promise.all([
+        this.prisma.client.demand.count({
+          where: {
+            accountId,
+            state: 'posted',
+            deletedAt: null,
+            moment: { gte, lt },
+            salesChannelId: null,
+          },
+        }),
+        this.prisma.client.salesReturn.count({
+          where: {
+            accountId,
+            state: 'posted',
+            deletedAt: null,
+            moment: { gte, lt },
+            salesChannelId: null,
+          },
+        }),
+      ]);
+      channelBanner = { unsetDemands: d, unsetReturns: r };
+    }
 
     return {
-      filter,
-      totals: {
-        quantitySold: totalQty.toString(),
-        revenueMinor: totalRevenue.toString(),
-        cogsMinor: totalCogs.toString(),
-        marginMinor: totalMargin.toString(),
-        marginPercent: totalPct,
+      groupBy: filter.groupBy,
+      filter: {
+        dateFrom: dateFrom.toISOString(),
+        dateTo: dateTo.toISOString(),
+        granularity: filter.granularity,
+        compare: filter.compare,
+        documentType: filter.documentType,
+        accountedType: filter.accountedType,
       },
-      rows: out,
+      rows,
+      totals,
+      count,
+      chart: { granularity: filter.granularity, buckets, compareBuckets },
+      channelBanner,
       currency: ctx.baseCode,
       mixedCurrency: seen.size > 1,
     };
   }
+
+  /** Retail «Продажа» sales aggregate — revenue/qty/documents only (no cost). */
+  private async queryRetailSales(
+    accountId: string,
+    filter: ProfitabilityFilter,
+    gte: Date,
+    lt: Date,
+  ): Promise<SalesRow[]> {
+    // Retail positions have product_id but no assortment_kind/cost — treat as products.
+    if (filter.accountedType === 'services' || filter.accountedType === 'bundles') return [];
+    let key: Prisma.Sql;
+    if (filter.groupBy === 'product') key = Prisma.sql`rsp.product_id`;
+    else if (filter.groupBy === 'employee') key = Prisma.sql`rs.owner_id`;
+    else key = Prisma.sql`rs.agent_id`;
+
+    const rsParts: Prisma.Sql[] = [
+      Prisma.sql`rs.account_id = ${accountId}::uuid`,
+      Prisma.sql`AND rs.state = 'posted'`,
+      Prisma.sql`AND rs.moment >= ${gte} AND rs.moment < ${lt}`,
+    ];
+    if (filter.storeId) rsParts.push(Prisma.sql`AND rs.store_id = ${filter.storeId}::uuid`);
+    // «Точка продаж» — retail-only, filters retail receipts by their store.
+    if (filter.retailStoreId)
+      rsParts.push(Prisma.sql`AND rs.store_id = ${filter.retailStoreId}::uuid`);
+    if (filter.organizationId)
+      rsParts.push(Prisma.sql`AND rs.organization_id = ${filter.organizationId}::uuid`);
+    if (filter.counterpartyId)
+      rsParts.push(Prisma.sql`AND rs.agent_id = ${filter.counterpartyId}::uuid`);
+    const rspPos = filter.productId
+      ? Prisma.sql`AND rsp.product_id = ${filter.productId}::uuid`
+      : Prisma.empty;
+    const rows = await this.prisma.client.$queryRaw<SalesRow[]>`
+      SELECT
+        ${key}::text AS gid,
+        'UZS' AS currency,
+        COUNT(DISTINCT rs.id)::bigint AS documents,
+        COALESCE(SUM(rsp.quantity), 0)::text AS qty,
+        COALESCE(SUM(rsp.sum_minor), 0)::bigint AS sum,
+        0::bigint AS cost
+      FROM retail_sale_positions rsp
+      JOIN retail_sales rs ON rs.id = rsp.retail_sale_id AND ${Prisma.join(rsParts, ' ')}
+      WHERE rsp.product_id IS NOT NULL ${rspPos}
+      GROUP BY ${key}
+    `;
+    return filter.groupBy === 'product' ? rows : rows.filter((r) => r.gid != null);
+  }
+
+  /**
+   * Batch-resolve display labels for the surviving group ids (products +
+   * variants for the product tab, else employees / counterparties / channels).
+   * Kept out of the aggregate SQL so the GROUP BY never touches ambiguous
+   * table columns (both `demands` and `employees` have a `name` column).
+   */
+  private async resolveLabels(
+    accountId: string,
+    filter: ProfitabilityFilter,
+    byGroup: Map<string, Agg>,
+  ): Promise<void> {
+    const ids = [...byGroup.keys()].filter((k) => k !== '__none__');
+    if (ids.length === 0) return;
+
+    if (filter.groupBy === 'product') {
+      const [products, variants] = await Promise.all([
+        this.prisma.client.product.findMany({
+          where: { accountId, id: { in: ids } },
+          select: { id: true, name: true, code: true, article: true, uom: true },
+        }),
+        filter.splitByVariants
+          ? this.prisma.client.variant.findMany({
+              where: { accountId, id: { in: ids } },
+              select: {
+                id: true,
+                name: true,
+                code: true,
+                product: { select: { article: true, uom: true } },
+              },
+            })
+          : Promise.resolve([]),
+      ]);
+      for (const p of products) {
+        const a = byGroup.get(p.id);
+        if (a) {
+          a.name = p.name;
+          a.code = p.code;
+          a.article = p.article;
+          a.uom = p.uom;
+        }
+      }
+      for (const v of variants) {
+        const a = byGroup.get(v.id);
+        if (a) {
+          a.name = v.name;
+          a.code = v.code;
+          a.article = v.product?.article ?? null;
+          a.uom = v.product?.uom ?? null;
+        }
+      }
+    } else if (filter.groupBy === 'employee') {
+      const emps = await this.prisma.client.employee.findMany({
+        where: { accountId, id: { in: ids } },
+        select: { id: true, name: true, fullName: true },
+      });
+      for (const e of emps) {
+        const a = byGroup.get(e.id);
+        if (a) a.name = e.fullName || e.name;
+      }
+    } else if (filter.groupBy === 'counterparty') {
+      const cps = await this.prisma.client.counterparty.findMany({
+        where: { accountId, id: { in: ids } },
+        select: { id: true, name: true, code: true },
+      });
+      for (const c of cps) {
+        const a = byGroup.get(c.id);
+        if (a) {
+          a.name = c.name;
+          a.code = c.code;
+        }
+      }
+    } else {
+      const chs = await this.prisma.client.salesChannel.findMany({
+        where: { accountId, id: { in: ids } },
+        select: { id: true, name: true, code: true, type: true },
+      });
+      for (const c of chs) {
+        const a = byGroup.get(c.id);
+        if (a) {
+          a.name = c.name;
+          a.code = c.code;
+          a.channelType = c.type;
+        }
+      }
+    }
+  }
+
+  /** Compute time-bucketed chart series for [gte,lt) at the chosen granularity. */
+  private async chartBuckets(
+    accountId: string,
+    filter: ProfitabilityFilter,
+    gte: Date,
+    lt: Date,
+    ctx: RateContext,
+    seen: Set<string>,
+    q: {
+      posWhere: (a: string) => Prisma.Sql;
+      includeDemands: boolean;
+    },
+  ): Promise<ProfitabilityChartBucket[]> {
+    const gran = filter.granularity;
+    // Truncate in Tashkent-local time, then convert BACK to timestamptz so
+    // Prisma reads an unambiguous absolute instant (the true UTC moment of the
+    // Tashkent bucket start). A bare `date_trunc(... AT TIME ZONE ...)` returns
+    // a naive timestamp whose JS Date is TZ-of-process-dependent and would NOT
+    // line up with enumerateBuckets' keys (chart flat-lined at 0 otherwise).
+    const trunc = (col: string) =>
+      Prisma.sql`(date_trunc(${gran}, (${Prisma.raw(col)} AT TIME ZONE 'Asia/Tashkent')) AT TIME ZONE 'Asia/Tashkent')`;
+
+    type BucketRow = {
+      bucket: Date;
+      currency: string;
+      documents: bigint;
+      qty: string;
+      sum: bigint;
+      cost: bigint;
+    };
+    // The chart carries the SAME (non-date) filters but its own [gte,lt) — passed
+    // explicitly so the compare period reuses this method with shifted bounds.
+    const salesBuckets: BucketRow[] = q.includeDemands
+      ? await this.prisma.client.$queryRaw<BucketRow[]>`
+          SELECT ${trunc('d.moment')} AS bucket, d.currency AS currency,
+            COUNT(DISTINCT d.id)::bigint AS documents,
+            COALESCE(SUM(dp.quantity), 0)::text AS qty,
+            COALESCE(SUM((dp.quantity * dp.price_minor * (100 - dp.discount) / 100)::numeric), 0)::bigint AS sum,
+            COALESCE(SUM((dp.quantity * COALESCE(dp.cost_minor, 0))::numeric), 0)::bigint AS cost
+          FROM demand_positions dp
+          JOIN demands d ON d.id = dp.demand_id AND ${this.windowedDemandWhere(accountId, filter, gte, lt)}
+          WHERE dp.assortment_id IS NOT NULL ${q.posWhere('dp')}
+          GROUP BY 1, d.currency
+        `
+      : [];
+    const returnBuckets: BucketRow[] = await this.prisma.client.$queryRaw<BucketRow[]>`
+      SELECT ${trunc('sr.moment')} AS bucket, sr.currency AS currency,
+        COUNT(DISTINCT sr.id)::bigint AS documents,
+        COALESCE(SUM(srp.quantity), 0)::text AS qty,
+        COALESCE(SUM((srp.quantity * srp.price_minor * (100 - srp.discount) / 100)::numeric), 0)::bigint AS sum,
+        COALESCE(SUM((srp.quantity * COALESCE(srp.cost_minor, 0))::numeric), 0)::bigint AS cost
+      FROM sales_return_positions srp
+      JOIN sales_returns sr ON sr.id = srp.sales_return_id AND ${this.windowedReturnWhere(accountId, filter, gte, lt)}
+      WHERE srp.assortment_id IS NOT NULL ${q.posWhere('srp')}
+      GROUP BY 1, sr.currency
+    `;
+
+    const map = new Map<string, ProfitabilityChartBucket>();
+    const keyOf = (d: Date) => d.toISOString();
+    const ensure = (d: Date): ProfitabilityChartBucket => {
+      const k = keyOf(d);
+      let b = map.get(k);
+      if (!b) {
+        b = {
+          start: k,
+          salesDocuments: 0,
+          salesQuantity: '0',
+          salesSumMinor: '0',
+          salesSumCostMinor: '0',
+          returnDocuments: 0,
+          returnQuantity: '0',
+          returnSumMinor: '0',
+          returnSumCostMinor: '0',
+          profitMinor: '0',
+          profitGoodsPct: '',
+          profitSalesPct: '',
+          avgCheckMinor: '0',
+        };
+        map.set(k, b);
+      }
+      return b;
+    };
+    for (const r of salesBuckets) {
+      const b = ensure(r.bucket);
+      b.salesDocuments += Number(r.documents);
+      b.salesQuantity = trimNum(Number(b.salesQuantity) + Number(r.qty || '0'));
+      b.salesSumMinor = (
+        BigInt(b.salesSumMinor) + consolidateToBase(r.sum, r.currency, ctx, seen)
+      ).toString();
+      b.salesSumCostMinor = (BigInt(b.salesSumCostMinor) + r.cost).toString();
+    }
+    for (const r of returnBuckets) {
+      const b = ensure(r.bucket);
+      b.returnDocuments += Number(r.documents);
+      b.returnQuantity = trimNum(Number(b.returnQuantity) + Number(r.qty || '0'));
+      b.returnSumMinor = (
+        BigInt(b.returnSumMinor) + consolidateToBase(r.sum, r.currency, ctx, seen)
+      ).toString();
+      b.returnSumCostMinor = (BigInt(b.returnSumCostMinor) + r.cost).toString();
+    }
+    // Finalise derived series + fill empty buckets across the whole range.
+    const out: ProfitabilityChartBucket[] = [];
+    for (const start of enumerateBuckets(gte, lt, gran)) {
+      const b = map.get(start.toISOString()) ?? ensure(start);
+      const netCost = BigInt(b.salesSumCostMinor) - BigInt(b.returnSumCostMinor);
+      const netRev = BigInt(b.salesSumMinor) - BigInt(b.returnSumMinor);
+      const profit = netRev - netCost;
+      b.profitMinor = profit.toString();
+      b.profitGoodsPct = pct(profit, netCost);
+      b.profitSalesPct = pct(profit, netRev);
+      b.avgCheckMinor = (
+        b.salesDocuments > 0 ? BigInt(b.salesSumMinor) / BigInt(b.salesDocuments) : 0n
+      ).toString();
+      out.push(b);
+    }
+    return out;
+  }
+
+  private windowedDemandWhere(
+    accountId: string,
+    filter: ProfitabilityFilter,
+    gte: Date,
+    lt: Date,
+  ): Prisma.Sql {
+    const parts: Prisma.Sql[] = [
+      Prisma.sql`d.account_id = ${accountId}::uuid`,
+      Prisma.sql`AND d.state = 'posted'`,
+      Prisma.sql`AND d.deleted_at IS NULL`,
+      Prisma.sql`AND d.moment >= ${gte} AND d.moment < ${lt}`,
+    ];
+    if (filter.storeId) parts.push(Prisma.sql`AND d.store_id = ${filter.storeId}::uuid`);
+    if (filter.projectId) parts.push(Prisma.sql`AND d.project_id = ${filter.projectId}::uuid`);
+    if (filter.contractId) parts.push(Prisma.sql`AND d.contract_id = ${filter.contractId}::uuid`);
+    if (filter.organizationId)
+      parts.push(Prisma.sql`AND d.organization_id = ${filter.organizationId}::uuid`);
+    if (filter.salesChannelId)
+      parts.push(Prisma.sql`AND d.sales_channel_id = ${filter.salesChannelId}::uuid`);
+    if (filter.counterpartyId)
+      parts.push(Prisma.sql`AND d.agent_id = ${filter.counterpartyId}::uuid`);
+    return Prisma.join(parts, ' ');
+  }
+
+  private windowedReturnWhere(
+    accountId: string,
+    filter: ProfitabilityFilter,
+    gte: Date,
+    lt: Date,
+  ): Prisma.Sql {
+    const parts: Prisma.Sql[] = [
+      Prisma.sql`sr.account_id = ${accountId}::uuid`,
+      Prisma.sql`AND sr.state = 'posted'`,
+      Prisma.sql`AND sr.deleted_at IS NULL`,
+      Prisma.sql`AND sr.moment >= ${gte} AND sr.moment < ${lt}`,
+    ];
+    if (filter.storeId) parts.push(Prisma.sql`AND sr.store_id = ${filter.storeId}::uuid`);
+    if (filter.projectId) parts.push(Prisma.sql`AND sr.project_id = ${filter.projectId}::uuid`);
+    if (filter.contractId) parts.push(Prisma.sql`AND sr.contract_id = ${filter.contractId}::uuid`);
+    if (filter.organizationId)
+      parts.push(Prisma.sql`AND sr.organization_id = ${filter.organizationId}::uuid`);
+    if (filter.salesChannelId)
+      parts.push(Prisma.sql`AND sr.sales_channel_id = ${filter.salesChannelId}::uuid`);
+    if (filter.counterpartyId)
+      parts.push(Prisma.sql`AND sr.agent_id = ${filter.counterpartyId}::uuid`);
+    return Prisma.join(parts, ' ');
+  }
+}
+
+// ---- pure helpers -----------------------------------------------------
+function trimNum(n: number): string {
+  // Decimal-ish quantity → trimmed string (avoid "3.0000000000000004").
+  return Number.isInteger(n) ? String(n) : String(Math.round(n * 1e6) / 1e6);
+}
+
+function pct(numer: bigint, denom: bigint): string {
+  if (denom === 0n) return '';
+  return ((Number(numer) / Number(denom)) * 100).toFixed(2);
+}
+
+function computeTotals(rows: ProfitabilityRow[]): ProfitabilityTotals {
+  let salesDocuments = 0;
+  let salesQty = 0;
+  let salesSum = 0n;
+  let salesCost = 0n;
+  let returnDocuments = 0;
+  let returnQty = 0;
+  let returnSum = 0n;
+  let returnCost = 0n;
+  for (const r of rows) {
+    salesDocuments += r.salesDocuments;
+    salesQty += Number(r.salesQuantity);
+    salesSum += BigInt(r.salesSumMinor);
+    salesCost += BigInt(r.salesSumCostMinor);
+    returnDocuments += r.returnDocuments;
+    returnQty += Number(r.returnQuantity);
+    returnSum += BigInt(r.returnSumMinor);
+    returnCost += BigInt(r.returnSumCostMinor);
+  }
+  const netCost = salesCost - returnCost;
+  const netRev = salesSum - returnSum;
+  const profit = netRev - netCost;
+  return {
+    salesDocuments,
+    salesQuantity: trimNum(salesQty),
+    salesSumMinor: salesSum.toString(),
+    salesSumCostMinor: salesCost.toString(),
+    returnDocuments,
+    returnQuantity: trimNum(returnQty),
+    returnSumMinor: returnSum.toString(),
+    returnSumCostMinor: returnCost.toString(),
+    profitMinor: profit.toString(),
+    profitGoodsPct: pct(profit, netCost),
+    profitSalesPct: pct(profit, netRev),
+  };
+}
+
+function rowComparator(
+  sortBy: ProfitabilityFilter['sortBy'],
+  dir: ProfitabilityFilter['sortDir'],
+): (a: ProfitabilityRow, b: ProfitabilityRow) => number {
+  const s = dir === 'asc' ? 1 : -1;
+  const bi = (v: string) => BigInt(v || '0');
+  return (a, b) => {
+    switch (sortBy) {
+      case 'name':
+        return a.name.localeCompare(b.name) * s;
+      case 'salesDocuments':
+        return (a.salesDocuments - b.salesDocuments) * s;
+      case 'salesQuantity':
+        return (Number(a.salesQuantity) - Number(b.salesQuantity)) * s;
+      case 'salesSum':
+        return cmpBig(bi(a.salesSumMinor), bi(b.salesSumMinor)) * s;
+      case 'salesSumCost':
+        return cmpBig(bi(a.salesSumCostMinor), bi(b.salesSumCostMinor)) * s;
+      case 'returnSum':
+        return cmpBig(bi(a.returnSumMinor), bi(b.returnSumMinor)) * s;
+      case 'profitGoodsPct':
+        return (num(a.profitGoodsPct) - num(b.profitGoodsPct)) * s;
+      case 'profitSalesPct':
+        return (num(a.profitSalesPct) - num(b.profitSalesPct)) * s;
+      default:
+        return cmpBig(bi(a.profitMinor), bi(b.profitMinor)) * s;
+    }
+  };
+}
+
+function num(v: string): number {
+  return v === '' ? Number.NEGATIVE_INFINITY : Number.parseFloat(v);
+}
+function cmpBig(a: bigint, b: bigint): number {
+  return a > b ? 1 : a < b ? -1 : 0;
+}
+
+const HOUR_MS = 3600_000;
+const DAY_MS = 86_400_000;
+const TASHKENT_MS = 5 * HOUR_MS;
+
+/**
+ * Enumerate Tashkent-aligned bucket starts across [gte,lt). Buckets are
+ * emitted as UTC Dates whose ISO matches Postgres `date_trunc(gran, moment AT
+ * TIME ZONE 'Asia/Tashkent')` — i.e. Tashkent-local truncation re-expressed as
+ * UTC midnight of that local instant. We compute in Tashkent-local space then
+ * subtract the offset so the ISO keys line up with the SQL grouping.
+ */
+function enumerateBuckets(gte: Date, lt: Date, gran: ProfitabilityFilter['granularity']): Date[] {
+  const out: Date[] = [];
+  // Work in Tashkent-local ms (shift +5h), truncate, then shift back for the key.
+  const localStart = gte.getTime() + TASHKENT_MS;
+  const localEnd = lt.getTime() + TASHKENT_MS;
+  let cur = truncLocal(localStart, gran);
+  let guard = 0;
+  while (cur < localEnd && guard++ < 2000) {
+    // key = local truncated instant re-expressed as if UTC (subtract offset)
+    out.push(new Date(cur - TASHKENT_MS));
+    cur = advanceLocal(cur, gran);
+  }
+  return out;
+}
+
+function truncLocal(ms: number, gran: ProfitabilityFilter['granularity']): number {
+  const d = new Date(ms);
+  if (gran === 'hour')
+    return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), d.getUTCHours());
+  if (gran === 'month') return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1);
+  if (gran === 'week') {
+    // Postgres date_trunc('week') → Monday 00:00.
+    const day = d.getUTCDay(); // 0=Sun..6=Sat
+    const backToMon = (day + 6) % 7;
+    const mon = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - backToMon);
+    return mon;
+  }
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+}
+
+function advanceLocal(ms: number, gran: ProfitabilityFilter['granularity']): number {
+  const d = new Date(ms);
+  if (gran === 'hour') return ms + HOUR_MS;
+  if (gran === 'week') return ms + 7 * DAY_MS;
+  if (gran === 'month') return Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1);
+  return ms + DAY_MS;
 }

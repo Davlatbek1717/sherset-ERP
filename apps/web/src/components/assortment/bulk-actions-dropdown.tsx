@@ -581,7 +581,7 @@ export function AssortmentBulkActionsDropdown({
       >
         <div className="space-y-4 text-sm" data-test-id="bulk-prices-drawer">
           <p className="text-[var(--ms-text-muted)]">
-            <span className="text-[var(--ms-text-link,#0652ff)]">Обновленные цены</span> будут
+            <span className="text-[var(--ms-text-link,#186999)]">Обновленные цены</span> будут
             отображаться в карточках товаров.
           </p>
           <div className="inline-block rounded-[var(--ms-radius-sm)] bg-[var(--ms-bg-muted)] px-2 py-1 text-[var(--ms-text-primary)]">

@@ -16,9 +16,7 @@ import { DetailToolbar } from '@/components/document-detail';
 import { ImageGallery } from '@/components/image-gallery';
 import { type PackDraft, ProductDetailWidget } from '@/components/product-detail-widget';
 import { ProductFormShell } from '@/components/product-form-layout';
-import { ProductExtraLocations } from '@/components/products/product-extra-locations';
 import { ProductFormLeftCards } from '@/components/products/product-form-left-cards';
-import { ProductLocationSummary } from '@/components/products/product-location-summary';
 import { ProductPriceEditor } from '@/components/products/product-price-editor';
 import { type ProductHydrateInput, useProductForm } from '@/components/products/use-product-form';
 import { useApiMutation } from '@/hooks/use-api-mutation';
@@ -66,15 +64,6 @@ interface ProductDetail extends ProductHydrateInput {
   updatedAt: string;
   owner: { id: string; name: string; email: string } | null;
   packs: ProductPack[];
-  extraLocations?: Array<{
-    sklad: number;
-    polka: number | null;
-    qavat: number | null;
-    yacheyka: number | null;
-    // Per-cell qty (Phase 2) — Decimal column, serialized as a string.
-    qty: string | null;
-    note: string | null;
-  }>;
 }
 
 export default function ProductDetailPage() {
@@ -273,18 +262,7 @@ export default function ProductDetailPage() {
             successMessage: tCommon('saved'),
           })
         }
-        printMenuItems={[
-          {
-            id: 'senik',
-            label: t('print_senik'),
-            onSelect: () => router.push(`/labels/print?productId=${id}`),
-          },
-          {
-            id: 'configure',
-            label: t('print_configure'),
-            onSelect: () => router.push('/settings/label-templates'),
-          },
-        ]}
+        onPrintConfigure={() => router.push('/settings/label-templates')}
         // moysklad product editor has NO title band — the «Изменения: <name>
         // <datetime>» + author avatar live on the TOOLBAR's right edge (next to
         // Печать), not in a separate header row. (No «Владелец»/«Основной» here —
@@ -341,23 +319,8 @@ export default function ProductDetailPage() {
           left={
             <ProductFormLeftCards
               pf={pf}
-              productId={data.id}
               imagesSlot={<ImageGallery productId={data.id} />}
-              extraLocationsSlot={
-                <div className="flex flex-col gap-3">
-                  {/* «Qayerda qanchadan turibdi» — o'qish paneli (2026-07-12) */}
-                  <ProductLocationSummary
-                    productId={data.id}
-                    locSklad={data.locSklad}
-                    locPolka={data.locPolka}
-                    locQavat={data.locQavat}
-                    locYacheyka={data.locYacheyka}
-                    locQty={data.locQty ?? null}
-                    extraLocations={data.extraLocations ?? []}
-                  />
-                  <ProductExtraLocations productId={data.id} initial={data.extraLocations ?? []} />
-                </div>
-              }
+              productId={data.id}
             />
           }
           right={

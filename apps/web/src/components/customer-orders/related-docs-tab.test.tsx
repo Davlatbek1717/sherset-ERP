@@ -1,12 +1,19 @@
 import { renderWithProviders, userEvent } from '@/test-utils';
 import { screen } from '@testing-library/react';
 /**
- * RelatedDocsTab tests — verify the linked-docs diagram renders the
- * current doc card + each linked-doc card, and the "Привязать
- * документ" CTA fires its callback.
+ * RelatedDocsTab tests — moysklad old-design diagram (re-grounded 2026-07-09):
+ * BLACK current card · WHITE linked cards that NAVIGATE to the doc's page ·
+ * «Привязать документ» button ABOVE the diagram · no status badges (the ✓
+ * mark mirrors posted/draft instead).
  */
 import { describe, expect, it, vi } from 'vitest';
 import { RelatedDocsTab } from './related-docs-tab';
+
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  usePathname: () => '/customer-orders/co-1',
+  useSearchParams: () => new URLSearchParams(),
+}));
 
 describe('RelatedDocsTab', () => {
   const current = {
@@ -17,70 +24,6 @@ describe('RelatedDocsTab', () => {
     sumMinor: '6400000',
     kind: 'customer-order' as const,
   };
-
-  it('renders the current doc card with the brand ring', () => {
-    renderWithProviders(<RelatedDocsTab current={current} />);
-    const card = screen.getByTestId(`related-doc-card-customer-order-${current.id}`);
-    expect(card).toBeInTheDocument();
-    expect(card.className).toMatch(/ring-2/);
-  });
-
-  it('shows the empty-state message when no linked docs', () => {
-    renderWithProviders(<RelatedDocsTab current={current} />);
-    expect(screen.getByTestId('related-docs-empty')).toBeInTheDocument();
-  });
-
-  it('renders one card per linked demand', () => {
-    renderWithProviders(
-      <RelatedDocsTab
-        current={current}
-        linkedDemands={[
-          {
-            id: 'd-1',
-            name: '05671',
-            moment: '2025-06-04T09:43:00.000Z',
-            state: 'confirmed',
-            sumMinor: '6400000',
-            kind: 'demand' as const,
-          },
-          {
-            id: 'd-2',
-            name: '05672',
-            moment: '2025-06-05T10:00:00.000Z',
-            state: 'draft',
-            sumMinor: '1000000',
-            kind: 'demand' as const,
-          },
-        ]}
-      />,
-    );
-    expect(screen.getByTestId('related-doc-card-demand-d-1')).toBeInTheDocument();
-    expect(screen.getByTestId('related-doc-card-demand-d-2')).toBeInTheDocument();
-    expect(screen.queryByTestId('related-docs-empty')).toBeNull();
-  });
-
-  it('renders cards for invoices-out as well', () => {
-    renderWithProviders(
-      <RelatedDocsTab
-        current={current}
-        linkedInvoicesOut={[
-          {
-            id: 'i-1',
-            name: 'INV-100',
-            moment: '2025-06-04T10:00:00.000Z',
-            state: 'paid',
-            sumMinor: '6400000',
-            kind: 'invoice-out' as const,
-          },
-        ]}
-      />,
-    );
-    expect(screen.getByTestId('related-doc-card-invoice-out-i-1')).toBeInTheDocument();
-  });
-
-  // Conv-1 near-miss F: the state badge used to render the RAW state slug
-  // with a hardcoded `tone="neutral"`. It now localizes the slug per the
-  // doc's kind and colours via documentStateTone (with the invoice override).
   const linkedDemand = (state: string, id = 'd-1') => ({
     id,
     name: '05671',
@@ -89,58 +32,44 @@ describe('RelatedDocsTab', () => {
     sumMinor: '6400000',
     kind: 'demand' as const,
   });
-  const linkedInvoice = (state: string, id = 'i-1') => ({
-    id,
-    name: 'INV-100',
-    moment: '2025-06-04T10:00:00.000Z',
-    state,
-    sumMinor: '6400000',
-    kind: 'invoice-out' as const,
+
+  it('renders NO cards at all while nothing is linked (moysklad: the diagram appears only after «Привязать документ»)', () => {
+    renderWithProviders(<RelatedDocsTab current={current} />);
+    expect(
+      screen.queryByTestId(`related-doc-card-customer-order-${current.id}`),
+    ).not.toBeInTheDocument();
   });
 
-  it('renders the localized state label, not the raw slug', () => {
+  it('renders the current doc as the BLACK card once something is linked', () => {
     renderWithProviders(
       <RelatedDocsTab current={current} linkedDemands={[linkedDemand('posted')]} />,
     );
-    const badge = screen.getByTestId('related-doc-state-d-1');
-    expect(badge).toHaveTextContent("O'tkazilgan"); // uz states.demand.posted
-    expect(badge.textContent).not.toBe('posted');
+    const card = screen.getByTestId(`related-doc-card-customer-order-${current.id}`);
+    expect(card).toBeInTheDocument();
+    expect(card.className).toContain('bg-[#3b3b3b]');
   });
 
-  it('colours per-kind: demand posted = success, invoice-out posted = brand (override)', () => {
+  it('renders card content: №name (no space), sum with currency', () => {
+    renderWithProviders(
+      <RelatedDocsTab current={current} linkedDemands={[linkedDemand('posted')]} />,
+    );
+    const card = screen.getByTestId(`related-doc-card-customer-order-${current.id}`);
+    expect(card).toHaveTextContent('№04796');
+    expect(card).toHaveTextContent('64 000,00');
+  });
+
+  it('renders one WHITE card per linked doc, wrapped in a link to its page', () => {
     renderWithProviders(
       <RelatedDocsTab
         current={current}
-        linkedDemands={[linkedDemand('posted')]}
-        linkedInvoicesOut={[linkedInvoice('posted')]}
+        linkedDemands={[linkedDemand('posted'), linkedDemand('draft', 'd-2')]}
       />,
     );
-    // demand: canonical posted → success
-    expect(screen.getByTestId('related-doc-state-d-1').className).toContain(
-      'bg-[var(--ms-success-50)]',
-    );
-    // invoice-out: INVOICE_STATE_TONE override posted → brand (issued, awaiting payment)
-    expect(screen.getByTestId('related-doc-state-i-1').className).toContain(
-      'bg-[var(--ms-brand-50)]',
-    );
-  });
-
-  it('draft state → neutral tone', () => {
-    renderWithProviders(
-      <RelatedDocsTab current={current} linkedDemands={[linkedDemand('draft')]} />,
-    );
-    expect(screen.getByTestId('related-doc-state-d-1').className).toContain(
-      'bg-[var(--ms-bg-muted)]',
-    );
-  });
-
-  it('unknown state slug → neutral tone + raw-slug fallback (no crash)', () => {
-    renderWithProviders(
-      <RelatedDocsTab current={current} linkedDemands={[linkedDemand('weird_state')]} />,
-    );
-    const badge = screen.getByTestId('related-doc-state-d-1');
-    expect(badge).toHaveTextContent('weird_state');
-    expect(badge.className).toContain('bg-[var(--ms-bg-muted)]');
+    const card = screen.getByTestId('related-doc-card-demand-d-1');
+    expect(card.className).toContain('bg-white');
+    // band 4.3 — the white card navigates to the linked doc's own page.
+    expect(card.closest('a')).toHaveAttribute('href', '/demands/d-1');
+    expect(screen.getByTestId('related-doc-card-demand-d-2')).toBeInTheDocument();
   });
 
   it('shows the "Привязать документ" button enabled when callback provided', () => {
@@ -157,7 +86,7 @@ describe('RelatedDocsTab', () => {
     expect(onLink).toHaveBeenCalledTimes(1);
   });
 
-  it('disables the CTA when no callback is provided', () => {
+  it('disables the CTA when neither callback nor linkable is provided', () => {
     renderWithProviders(<RelatedDocsTab current={current} />);
     expect(screen.getByTestId('related-docs-link-button')).toBeDisabled();
   });

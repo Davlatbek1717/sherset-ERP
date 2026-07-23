@@ -1,9 +1,7 @@
 import * as React from 'react';
 import { cn } from '../lib/cn.ts';
 import { Checkbox } from '../primitives/Checkbox.tsx';
-
-/** Yuklanish paytidagi fantom qatorlar — barqaror kalitlar (index-key emas). */
-const SKELETON_KEYS = ['sk1', 'sk2', 'sk3', 'sk4', 'sk5', 'sk6', 'sk7', 'sk8'] as const;
+import { HIDE_NATIVE_X_SCROLLBAR, StickyXScrollbar } from './StickyHScroll.tsx';
 
 export interface DataTableColumn<T> {
   key: string;
@@ -38,10 +36,16 @@ export interface DataTableProps<T> {
   rows: T[];
   keyField: keyof T;
   onRowClick?: (row: T) => void;
-  /** Sichqoncha qator ustiga kelganda (hover + Enter navigatsiyasi uchun). */
-  onRowMouseEnter?: (row: T) => void;
-  /** Sichqoncha qatordan chiqqanda. */
-  onRowMouseLeave?: () => void;
+  /**
+   * moysklad parity: clicking ANYWHERE on the row (not just the № link) opens the
+   * document. When true and no `onRowClick` is set, a click on the row body
+   * activates the row's FIRST `<a href>` (the № cell link) — so every list page
+   * gets whole-row-click without per-page wiring. Clicks that land on an
+   * interactive child (link / button / checkbox / input) are left to that child.
+   * ListView turns this on for all list pages; raw DataTable callers (breakdown
+   * tables etc.) leave it off so their rows stay non-navigable.
+   */
+  rowClickOpensPrimaryLink?: boolean;
   rowTestId?: (row: T) => string | undefined;
   /**
    * moysklad parity: per-row actions rendered in the trailing cell (under the
@@ -55,13 +59,6 @@ export interface DataTableProps<T> {
    * undefined for the ~80 callers that don't need per-row styling.
    */
   rowClassName?: (row: T) => string | undefined;
-  /**
-   * Sarlavha ohangi (2026-07-13).
-   *   'default' — kulrang (odatiy, ~90 sahifa shunday qoladi)
-   *   'brand'   — KO'K sarlavha: qatorlari rangli jadvallarda (qarz undirish)
-   *               sarlavha qator ranglariga qo'shilib ketmasin, aniq ajralsin.
-   */
-  headerTone?: 'default' | 'brand';
   empty?: React.ReactNode;
   loading?: boolean;
   className?: string;
@@ -154,12 +151,10 @@ export function DataTable<T extends object>({
   rows,
   keyField,
   onRowClick,
-  onRowMouseEnter,
-  onRowMouseLeave,
+  rowClickOpensPrimaryLink,
   rowTestId,
   rowActions,
   rowClassName,
-  headerTone = 'default',
   empty,
   loading,
   className,
@@ -294,10 +289,19 @@ export function DataTable<T extends object>({
 
   const totalCols = columns.length + (selectable ? 1 : 0) + (headerEndSlot ? 1 : 0);
 
+  // Sticky x-scrollbar (user 2026-07-17): with natural document scroll the
+  // native scrollbar sits at the table's bottom — off-screen on long lists.
+  // Non-fill mode hides it and mirrors it into a sticky-bottom proxy strip.
+  const scrollerRef = React.useRef<HTMLDivElement>(null);
+
   return (
     <div
       className={cn(
-        'w-full overflow-hidden rounded-[var(--ms-radius-md)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)]',
+        // `overflow-clip` (NOT hidden): clips the square table corners to the
+        // rounded border without becoming a scroll container — an overflow-
+        // hidden ancestor would pin the sticky x-scrollbar proxy to this box
+        // instead of the viewport.
+        'w-full overflow-clip rounded-[var(--ms-radius-md)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)]',
         // fill mode: become a height-bounded flex column so the inner scroll
         // box can claim flex-1 and the sticky header/footer have somewhere to
         // pin against.
@@ -305,19 +309,20 @@ export function DataTable<T extends object>({
         className,
       )}
     >
-      <div className={cn(fillHeight ? 'min-h-0 flex-1 overflow-auto' : 'overflow-x-auto')}>
+      <div
+        ref={scrollerRef}
+        className={cn(
+          fillHeight
+            ? 'min-h-0 flex-1 overflow-auto'
+            : cn('overflow-x-auto', HIDE_NATIVE_X_SCROLLBAR),
+        )}
+      >
         <table
-          // moysklad parity: data cells render at 11px (ours was text-sm =
-          // 10.5px). Header + footer carry their own explicit text-[11px].
-          className={cn(
-            'w-full caption-bottom text-[11px]',
-            // MOBIL SCROLL (2026-07-13 UX auditi): jadval `w-full` bo'lgani uchun
-            // konteynerdan hech qachon kengaymasdi ⇒ `overflow-x-auto` ISHGA
-            // TUSHMASDI. 390px telefonda 10 ustunli jadval har ustunni ~30px ga
-            // siqib, hamma katakni «…» qilib qo'yardi. Endi ustun ko'p bo'lsa
-            // jadvalning minimal kengligi bor va ekran tor bo'lsa SURILADI.
-            columns.length >= 6 && 'min-w-[900px]',
-          )}
+          // OWNER-OVERRIDE 2026-07-17 (deliberate parity-deviation, like the
+          // 24px controls): grid text bumped 11px → 13px — the owner found the
+          // moysklad-parity 11px cells too small to read. Header + footer
+          // carry their own explicit text-[13px].
+          className="w-full caption-bottom text-[13px]"
           // moysklad parity: fixed table layout when ANY column has an
           // explicit / persisted width OR resize handles are enabled —
           // otherwise the browser's auto-layout overrides `width`, which
@@ -328,9 +333,7 @@ export function DataTable<T extends object>({
         >
           <thead
             className={cn(
-              headerTone === 'brand'
-                ? 'border-[var(--ms-thead-border)] border-b-2 bg-[var(--ms-thead-bg)] font-semibold text-[var(--ms-thead-text)]'
-                : 'bg-[var(--ms-bg-muted)]',
+              'bg-[var(--ms-bg-muted)]',
               // fill mode: pin the header to the top of the internal scroll box
               // so column titles stay visible while the rows scroll (moysklad
               // grid parity).
@@ -391,7 +394,8 @@ export function DataTable<T extends object>({
                       // column header renders in the link-blue, not a grey
                       // uppercased caption. See docs/audits/
                       // purchase-orders-list-PIXEL-DELTA.md (#1).
-                      'relative h-9 px-1 font-normal text-[11px] text-[var(--ms-text-brand)]',
+                      // (11px → 13px: OWNER-OVERRIDE 2026-07-17, see <table>.)
+                      'relative h-9 px-1 font-normal text-[13px] text-[var(--ms-text-brand)]',
                       // table-layout: fixed bilan birga: cell width
                       // resize handle orqali narrow bo'lganida header
                       // matni keyingi cell'ga oqib ketmasligi uchun
@@ -509,21 +513,14 @@ export function DataTable<T extends object>({
           </thead>
           <tbody>
             {loading ? (
-              /* YUKLANISH (2026-07-13 UX auditi): ilgari 96px balandlikdagi bitta
-                 katakda «Yuklanmoqda...» turardi — (a) matn QATTIQ o'zbekcha edi,
-                 ya'ni rus tilidagi interfeysga sizib chiqardi; (b) yuklangach 96px
-                 qutidan to'la jadvalga sakrardi — layout sakrashi, klik noto'g'ri
-                 joyga tushardi. Endi haqiqiy qatorlar o'lchamida skeleton chiqadi:
-                 matn yo'q (tilga bog'liq emas) va balandlik o'zgarmaydi. */
-              SKELETON_KEYS.map((rk) => (
-                <tr key={rk} className="border-[var(--ms-border-default)] border-b">
-                  {Array.from({ length: totalCols }, (_, c) => `${rk}-c${c}`).map((ck) => (
-                    <td key={ck} className="px-2 py-2">
-                      <div className="h-3 animate-pulse rounded bg-[var(--ms-bg-muted)]" />
-                    </td>
-                  ))}
-                </tr>
-              ))
+              <tr>
+                <td
+                  colSpan={totalCols}
+                  className="h-24 text-center text-[var(--ms-text-muted)] text-sm"
+                >
+                  Yuklanmoqda...
+                </td>
+              </tr>
             ) : rows.length === 0 ? (
               <tr>
                 <td colSpan={totalCols} className="p-0">
@@ -535,19 +532,43 @@ export function DataTable<T extends object>({
                 const rowKey = String(row[keyField]);
                 const rowSelectable = selectable && (canSelect ? canSelect(row) : true);
                 const isSelected = selectable && selectedIds?.has(rowKey) === true;
+                const rowNavigable = !!onRowClick || !!rowClickOpensPrimaryLink;
                 return (
                   // biome-ignore lint/a11y/useKeyWithClickEvents: optional row-click is a mouse affordance; primary navigation is the in-row link (keyboard-reachable)
                   <tr
                     key={rowKey}
                     data-test-id={rowTestId?.(row)}
                     data-selected={isSelected || undefined}
-                    onClick={onRowClick ? () => onRowClick(row) : undefined}
-                    onMouseEnter={onRowMouseEnter ? () => onRowMouseEnter(row) : undefined}
-                    onMouseLeave={onRowMouseLeave}
+                    onClick={
+                      rowNavigable
+                        ? (e) => {
+                            // Clicks that land on an interactive child (link, button,
+                            // checkbox, input, or an opted-out cell) are handled by
+                            // that child — never trigger row navigation as well.
+                            const el = e.target as HTMLElement;
+                            if (
+                              el.closest(
+                                'a,button,input,select,textarea,label,[role="checkbox"],[data-no-row-nav]',
+                              )
+                            )
+                              return;
+                            if (onRowClick) {
+                              onRowClick(row);
+                              return;
+                            }
+                            // moysklad parity: clicking anywhere on the row opens the
+                            // document — activate the row's primary link (the № cell
+                            // <a>), extending the click target to the whole row.
+                            (
+                              e.currentTarget.querySelector('a[href]') as HTMLAnchorElement | null
+                            )?.click();
+                          }
+                        : undefined
+                    }
                     className={cn(
                       'group border-[var(--ms-border-default)] border-t',
                       'transition-colors duration-[var(--ms-duration-fast)]',
-                      onRowClick && 'cursor-pointer',
+                      rowNavigable && 'cursor-pointer',
                       // Hover/selection priority — moysklad keeps the
                       // selected tint visibly DARKER than the hover tint
                       // so a selected row that the cursor passes over
@@ -629,9 +650,10 @@ export function DataTable<T extends object>({
                     key={col.key}
                     className={cn(
                       // moysklad parity: footer totals are regular weight
-                      // (w400), 11px, #222 — not bold. (Measured w400 + the
+                      // (w400), #222 — not bold. (Measured w400 + the
                       // #purchaseorder screenshot reads as regular weight.)
-                      'px-1 py-2 font-normal text-[11px] text-[var(--ms-text-primary)] tabular-nums',
+                      // (11px → 13px: OWNER-OVERRIDE 2026-07-17, see <table>.)
+                      'px-1 py-2 font-normal text-[13px] text-[var(--ms-text-primary)] tabular-nums',
                       alignMap[col.align ?? 'left'],
                     )}
                   >
@@ -644,6 +666,9 @@ export function DataTable<T extends object>({
           )}
         </table>
       </div>
+      {/* fill mode keeps its native scrollbar — the internal scroll box is
+          height-bounded, so the bar is already always visible at its bottom. */}
+      {!fillHeight && <StickyXScrollbar scrollerRef={scrollerRef} />}
     </div>
   );
 }

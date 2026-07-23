@@ -104,7 +104,13 @@ export class PrepaymentController {
   async massEdit(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
     const parsed = MassEditBaseSchema.parse(body);
     const { ids, ...patch } = parsed;
-    assertPatchHasAtLeastOneField(patch, ['ownerId', 'projectId', 'description']);
+    assertPatchHasAtLeastOneField(patch, [
+      'ownerId',
+      'projectId',
+      'description',
+      'groupId',
+      'shared',
+    ]);
     return runBulk(ids, (id) => this.service.massEditApply(user.accountId, user.sub, id, patch));
   }
 

@@ -95,13 +95,6 @@ export const MODULES: Record<string, ModuleConfig> = {
     createLabel: '+ Отгрузка',
     firstRowSelector: '.list-row:first-of-type input[type=checkbox]',
   },
-  // Возврат покупателя (customer-side return; pairs with demands). Route + create
-  // label added 2026-07-23 for the salesreturn 1:1 grounding capture (QISM 0).
-  salesreturn: {
-    route: '#salesreturn',
-    createLabel: '+ Возврат',
-    firstRowSelector: '.list-row:first-of-type input[type=checkbox]',
-  },
   supplies: {
     route: '#supply',
     createLabel: '+ Приёмка',

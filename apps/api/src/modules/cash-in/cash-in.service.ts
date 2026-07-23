@@ -118,6 +118,7 @@ export class CashInService {
       ...(filter.includeDeleted ? {} : { deletedAt: null }),
       ...(filter.state ? { state: filter.state } : {}),
       ...(filter.agentId ? { agentId: filter.agentId } : {}),
+      ...(filter.agentIds ? { agentId: { in: filter.agentIds } } : {}),
       // «Группа контрагента» + «Владелец контрагента» both narrow the SAME
       // agent (Counterparty) relation, so they MUST share one `agent: {}`
       // clause — two separate `agent` keys in this spread would overwrite each
@@ -131,6 +132,7 @@ export class CashInService {
           }
         : {}),
       ...(filter.organizationId ? { organizationId: filter.organizationId } : {}),
+      ...(filter.organizationIds ? { organizationId: { in: filter.organizationIds } } : {}),
       ...(filter.cashDeskId ? { cashDeskId: filter.cashDeskId } : {}),
       ...(filter.contractId ? { contractId: filter.contractId } : {}),
       ...(filter.projectId ? { projectId: filter.projectId } : {}),
@@ -182,6 +184,76 @@ export class CashInService {
     return row;
   }
 
+  /**
+   * moysklad «Создать → Приходный ордер» from a customer invoice — one draft
+   * CashIn covering the invoice's remaining unpaid balance, LINKED via an
+   * operation (targetKind=invoiceout) so posting it pays the invoice down.
+   * Mirrors payment-in.createFromInvoiceOut; the account's first CashDesk is
+   * the default till (same heuristic as invoice-in.createCashOutFor).
+   */
+  async createFromInvoiceOut(accountId: string, userId: string, invoiceOutId: string) {
+    const invoice = await this.prisma.client.invoiceOut.findFirst({
+      where: { id: invoiceOutId, accountId, deletedAt: null },
+      select: {
+        id: true,
+        agentId: true,
+        organizationId: true,
+        sumMinor: true,
+        payedSumMinor: true,
+        state: true,
+        name: true,
+        // The receipt MUST be booked in the invoice's currency (+ its rate) so a
+        // non-UZS invoice doesn't get a UZS-default ПКО that corrupts the
+        // per-currency balance bucket / marks a foreign invoice paid by a domestic
+        // receipt. Adversarial-review finding 2026-07-05.
+        currency: true,
+        rateValue: true,
+      },
+    });
+    if (!invoice) throw new NotFoundException('InvoiceOut topilmadi');
+
+    const applicableStates = ['posted', 'sent', 'partially_paid', 'overdue'];
+    if (!applicableStates.includes(invoice.state)) {
+      throw new BadRequestException(
+        `To'lov qabul qilib bo'lmaydi: invoice holati ${invoice.state}. Oldin provedeno qiling.`,
+      );
+    }
+    const remaining = invoice.sumMinor - invoice.payedSumMinor;
+    if (remaining <= 0n) {
+      throw new BadRequestException("Invoice allaqachon to'liq to'langan");
+    }
+
+    // Pick a CashDesk in the INVOICE's currency (ensureRefs rejects a mismatch);
+    // prefer an active till, deterministic by name. Graceful error if none.
+    const cashDesk = await this.prisma.client.cashDesk.findFirst({
+      where: { accountId, currency: invoice.currency, archived: false },
+      orderBy: { name: 'asc' },
+      select: { id: true },
+    });
+    if (!cashDesk) {
+      throw new BadRequestException(
+        `${invoice.currency} valyutasidagi Kassa topilmadi — avval shu valyutada Kassa yarating`,
+      );
+    }
+
+    return this.create(accountId, userId, {
+      agentId: invoice.agentId,
+      organizationId: invoice.organizationId,
+      cashDeskId: cashDesk.id,
+      currency: invoice.currency,
+      rateValue: invoice.rateValue.toString(),
+      sumMinor: remaining.toString(),
+      paymentPurpose: `Оплата по счету ${invoice.name}`,
+      operations: [
+        {
+          targetKind: 'invoiceout',
+          invoiceOutId,
+          amountMinor: remaining.toString(),
+        },
+      ],
+    });
+  }
+
   async create(accountId: string, userId: string, raw: unknown) {
     const parsed = this.parseCreate(raw);
     await this.ensureRefs(
@@ -210,18 +282,34 @@ export class CashInService {
 
     const creatorGroupId = await resolveCreatorGroupId(this.prisma.client, accountId, userId);
 
+    // «Владелец»/«Владелец-отдел» from the owner popover (else creator + their
+    // dept). Tenant-validate so a hand-crafted request can't point at another
+    // account (mirrors payment-in.create).
+    if (parsed.ownerId) {
+      await assertMassEditRefsInTenant(this.prisma, accountId, { ownerId: parsed.ownerId });
+    }
+    if (parsed.groupId) {
+      const grp = await this.prisma.client.group.findFirst({
+        where: { id: parsed.groupId, accountId },
+        select: { id: true },
+      });
+      if (!grp) throw new BadRequestException("Bo'lim topilmadi");
+    }
+
     try {
       const created = await this.prisma.client.cashIn.create({
         data: {
           accountId,
-          ownerId: userId,
-          groupId: creatorGroupId,
+          ownerId: parsed.ownerId ?? userId,
+          groupId: parsed.groupId ?? creatorGroupId,
+          shared: parsed.shared ?? false,
           name,
           agentId: parsed.agentId,
           organizationId: parsed.organizationId,
           cashDeskId: parsed.cashDeskId,
           contractId: parsed.contractId ?? null,
           projectId: parsed.projectId ?? null,
+          salesChannelId: parsed.salesChannelId ?? null,
           externalCode: parsed.externalCode ?? null,
           moment: parsed.moment ? new Date(parsed.moment) : new Date(),
           paymentPurpose: parsed.paymentPurpose ?? null,
@@ -229,6 +317,7 @@ export class CashInService {
           currency: parsed.currency,
           rateValue: BigInt(parsed.rateValue),
           sumMinor,
+          vatSumMinor: BigInt(parsed.vatSumMinor ?? '0'),
           attributes: attributes as Prisma.InputJsonValue,
           state: 'draft',
           operations: {
@@ -380,7 +469,13 @@ export class CashInService {
     accountId: string,
     userId: string,
     id: string,
-    patch: { ownerId?: string | null; projectId?: string | null; description?: string | null },
+    patch: {
+      ownerId?: string | null;
+      projectId?: string | null;
+      description?: string | null;
+      groupId?: string | null;
+      shared?: boolean;
+    },
   ) {
     await this.findById(accountId, id);
     await assertMassEditRefsInTenant(this.prisma, accountId, patch);
@@ -388,6 +483,8 @@ export class CashInService {
     if ('ownerId' in patch) data.ownerId = patch.ownerId;
     if ('projectId' in patch) data.projectId = patch.projectId;
     if ('description' in patch) data.description = patch.description;
+    if ('groupId' in patch) data.groupId = patch.groupId;
+    if ('shared' in patch && patch.shared !== undefined) data.shared = patch.shared;
     const updated = await this.prisma.client.cashIn.update({
       where: { id, accountId },
       data,

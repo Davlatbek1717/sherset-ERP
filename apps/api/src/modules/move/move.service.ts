@@ -173,6 +173,7 @@ export class MoveService {
       ...(filter.includeDeleted ? {} : { deletedAt: null }),
       ...(filter.state ? { state: filter.state } : {}),
       ...(filter.organizationId ? { organizationId: filter.organizationId } : {}),
+      ...(filter.organizationIds ? { organizationId: { in: filter.organizationIds } } : {}),
       ...(filter.sourceStoreId ? { sourceStoreId: filter.sourceStoreId } : {}),
       ...(filter.destinationStoreId ? { destinationStoreId: filter.destinationStoreId } : {}),
       ...(filter.projectId ? { projectId: filter.projectId } : {}),
@@ -206,12 +207,15 @@ export class MoveService {
           include: {
             // weightG / volumeML drive «Накладные расходы» WEIGHT / VOLUME
             // distribution at post time (§65, mirrors Supply/Enter).
+            // buyPrice seeds the editor's «Цена» on DRAFT lines (posted lines
+            // show the position.costMinor snapshot instead) — mirrors /new.
             product: {
               select: {
                 id: true,
                 name: true,
                 code: true,
                 uom: true,
+                buyPrice: true,
                 weightG: true,
                 volumeML: true,
               },
@@ -275,6 +279,13 @@ export class MoveService {
       });
       await this.logAudit(accountId, userId, 'create', created.id, null);
       this.webhookFire.fireForEvent(accountId, 'move', 'CREATE', created.id);
+      // «Проведено» on save — run the SAME verified posting path the detail
+      // «Провести» uses (inter-store transfer + guards, Serializable tx). The
+      // draft is already committed; a post failure surfaces its error with the
+      // draft saved (moysklad parity — the doc is kept, not lost).
+      if (parsed.applicable) {
+        return await this.transition(accountId, userId, created.id, 'post');
+      }
       return created;
     } catch (e) {
       this.handlePrisma(e);
@@ -369,7 +380,13 @@ export class MoveService {
     accountId: string,
     userId: string,
     id: string,
-    patch: { ownerId?: string | null; projectId?: string | null; description?: string | null },
+    patch: {
+      ownerId?: string | null;
+      projectId?: string | null;
+      description?: string | null;
+      groupId?: string | null;
+      shared?: boolean;
+    },
   ) {
     await this.findById(accountId, id);
     await assertMassEditRefsInTenant(this.prisma, accountId, patch);
@@ -377,6 +394,8 @@ export class MoveService {
     if ('ownerId' in patch) data.ownerId = patch.ownerId;
     if ('projectId' in patch) data.projectId = patch.projectId;
     if ('description' in patch) data.description = patch.description;
+    if ('groupId' in patch) data.groupId = patch.groupId;
+    if ('shared' in patch && patch.shared !== undefined) data.shared = patch.shared;
     const updated = await this.prisma.client.move.update({ where: { id, accountId }, data });
     await this.logAudit(accountId, userId, 'mass-edit', id, patch);
     this.webhookFire.fireForEvent(accountId, 'move', 'UPDATE', id, Object.keys(data));
@@ -545,9 +564,8 @@ export class MoveService {
     if (existing.state !== 'draft') {
       throw new BadRequestException(`Only draft → posted (current: ${existing.state})`);
     }
-    if (existing.positions.length === 0) {
-      throw new BadRequestException("Pozitsiyalar yo'q");
-    }
+    // Owner 2026-07-08: «Проведено» toggles freely — an empty doc may be posted
+    // (0 positions ⇒ 0 stock delta; moysklad allows it). No position precondition.
 
     const sourceStore = await this.prisma.client.store.findFirst({
       where: { id: existing.sourceStoreId, accountId },

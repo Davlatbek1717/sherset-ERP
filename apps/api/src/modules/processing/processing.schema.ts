@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { csvUuid } from '../shared/csv.js';
 
 /**
  * Processing (Техоперация / Texnik operatsiya) — shop-floor execution record.
@@ -188,6 +189,7 @@ export type UpdateProcessingInput = z.infer<typeof UpdateProcessingSchema>;
 export const ProcessingFilterSchema = z.object({
   state: ProcessingStateSchema.optional(),
   organizationId: z.string().uuid().optional(),
+  organizationIds: csvUuid.optional(),
   /** «Склад материалов» — Processing.materialsStoreId (consumption side). */
   materialsStoreId: z.string().uuid().optional(),
   /** «Склад продукции» — Processing.productsStoreId (output side). */

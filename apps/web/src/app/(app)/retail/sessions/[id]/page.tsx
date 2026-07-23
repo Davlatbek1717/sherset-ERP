@@ -29,8 +29,8 @@ interface SessionDetail {
   openedAt: string;
   closedAt: string | null;
   cashier: { id: string; name: string };
-  cashDesk: { id: string; name: string; currency: string } | null;
-  store: { id: string; name: string } | null;
+  cashDesk: { id: string; name: string; currency: string };
+  store: { id: string; name: string };
   organization: { id: string; name: string };
   salesCount: number;
   salesSumMinor: string;
@@ -131,7 +131,10 @@ export default function SessionDetailPage() {
   }
 
   const disc = session.discrepancyMinor ? BigInt(session.discrepancyMinor) : null;
-  const currency = session.cashDesk?.currency ?? 'UZS';
+  const currency = session.cashDesk.currency;
+  // Major-units drawer input → minor units via the currency-aware Money helper
+  // (string-decimal parse, no IEEE-754 *100 drift, correct scale per currency).
+  // Empty/<=0 disables the buttons. (2026-06-03h)
   const tillCurrency = isCurrencyCode(currency) ? currency : 'UZS';
   const drawerMinor =
     Number(drawerAmount) > 0
@@ -153,10 +156,8 @@ export default function SessionDetailPage() {
             {t(`statuses.${session.state}` as 'statuses.open' | 'statuses.closed')}
           </Badge>
           <span className="font-medium text-sm">{session.cashier.name}</span>
-          {session.cashDesk && <>
           <span className="text-[var(--ms-text-muted)] text-sm">·</span>
           <span className="text-[var(--ms-text-muted)] text-sm">{session.cashDesk.name}</span>
-          </>}
         </div>
         <div className="grid grid-cols-2 gap-3 text-sm">
           <div>
@@ -169,12 +170,10 @@ export default function SessionDetailPage() {
               <div>{formatDate(session.closedAt)}</div>
             </div>
           )}
-          {session.store && (
           <div>
             <div className="mb-0.5 text-[var(--ms-text-muted)] text-xs">{tFields('store')}</div>
             <div>{session.store.name}</div>
           </div>
-          )}
           <div>
             <div className="mb-0.5 text-[var(--ms-text-muted)] text-xs">
               {tFields('organization')}

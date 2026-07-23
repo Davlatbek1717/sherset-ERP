@@ -18,7 +18,7 @@ import { PermissionsService } from '../permissions/permissions.service.js';
 import { tashkentRangeBounds } from '../report/report-date-bounds.util.js';
 import { runBulk } from '../shared/bulk.js';
 import { resolveCreatorGroupId } from '../shared/group-stamp.js';
-import { assertMassEditRefsInTenant } from '../shared/mass-edit.js';
+import { assertMassEditRefsInTenant, assertStateInTenant } from '../shared/mass-edit.js';
 import { combineMergePositions } from '../shared/merge-positions.util.js';
 import { mapVersionedUpdateError } from '../shared/optimistic-lock.js';
 import {
@@ -112,6 +112,87 @@ export class CustomerOrderService {
     const nextCursor = hasMore ? items[items.length - 1]?.id : undefined;
     const total = await this.prisma.client.customerOrder.count({ where });
     return { items, nextCursor, total };
+  }
+
+  /**
+   * moysklad «Столбцы» (new-design kanban) — the customer-order list grouped
+   * into one column per account custom «Статус». Each column carries the status
+   * meta (id/name/color), the total order count in that status (respecting the
+   * SAME filter/search + record-scope as the flat list), and the first page of
+   * cards. Orders with no custom status are omitted — matching moysklad's
+   * status-grouped board, which only renders the defined statuses as columns.
+   *
+   * The WHERE is composed exactly like list() (buildListWhere + record-scope)
+   * so switching «Список ↔ Столбцы» never changes which orders are in scope;
+   * each column just ANDs `{ statusId }` on top. Cards select only what the
+   * board renders (№/date/Контрагент/Сумма/Валюта/owner + a positions count
+   * for the 📦 badge) — lighter than the full list include.
+   */
+  async kanban(accountId: string, userId: string, rawFilter: unknown) {
+    const filter = CustomerOrderFilterSchema.parse(rawFilter);
+    const attrTypes = await this.attrTypeMap(accountId, filter.attrs);
+    const baseWhere = this.buildListWhere(accountId, filter, attrTypes);
+    const scoped = await this.permissions.recordScopeWhere(
+      accountId,
+      userId,
+      'customerorder',
+      'view',
+    );
+    const where =
+      Object.keys(scoped).length > 0 ? { AND: [baseWhere, scoped as typeof baseWhere] } : baseWhere;
+
+    // Columns = the account's custom order statuses, ordered exactly like the
+    // board: by the status' own `position` (moysklad's status sort order), with
+    // createdAt as a stable tiebreaker for statuses left at the default
+    // position 0. NB: ordering by `id` would be random here — ids are UUIDs.
+    const statuses = await this.prisma.client.state.findMany({
+      where: { accountId, entityType: 'customerorder', archived: false },
+      select: { id: true, name: true, color: true },
+      orderBy: [{ position: 'asc' }, { createdAt: 'asc' }],
+    });
+
+    const CARDS_PER_COLUMN = 25;
+    const columns = await Promise.all(
+      statuses.map(async (status) => {
+        const columnWhere = { AND: [where, { statusId: status.id }] };
+        const [total, rows] = await Promise.all([
+          this.prisma.client.customerOrder.count({ where: columnWhere }),
+          this.prisma.client.customerOrder.findMany({
+            where: columnWhere,
+            // Newest-first, matching the board (05.07 17:23 above 05.07 16:56)
+            // and the flat list's default (moment, id) descending order.
+            orderBy: [{ moment: 'desc' }, { id: 'desc' }],
+            take: CARDS_PER_COLUMN,
+            select: {
+              id: true,
+              name: true,
+              moment: true,
+              sumMinor: true,
+              currency: true,
+              agent: { select: { id: true, name: true } },
+              owner: { select: { id: true, name: true } },
+              _count: { select: { positions: true } },
+            },
+          }),
+        ]);
+        return {
+          status,
+          total,
+          items: rows.map((r) => ({
+            id: r.id,
+            name: r.name,
+            moment: r.moment,
+            // BigInt → string for JSON (sumMinor is in the doc's OWN currency).
+            sumMinor: r.sumMinor.toString(),
+            currency: r.currency,
+            agent: r.agent ? { id: r.agent.id, name: r.agent.name } : null,
+            owner: r.owner ? { id: r.owner.id, name: r.owner.name } : null,
+            positionsCount: r._count.positions,
+          })),
+        };
+      }),
+    );
+    return { columns };
   }
 
   async findById(accountId: string, id: string) {
@@ -589,6 +670,13 @@ export class CustomerOrderService {
         createdAt: saved.createdAt ?? new Date(),
       };
       this.events.emit(HR_EVENT.CUSTOMER_ORDER_CREATED, payload);
+      // «Проведено» on save — confirm the order (state→confirmed, applicable=true)
+      // via the SAME verified transition path the detail «Провести» uses. The
+      // draft is already committed; a failed confirm surfaces its error with the
+      // draft saved (moysklad parity). Was a silent no-op before this.
+      if (parsed.applicable) {
+        return await this.transition(accountId, userId, created.id, 'confirmed');
+      }
       return saved;
     } catch (e) {
       this.handlePrisma(e);
@@ -721,24 +809,8 @@ export class CustomerOrderService {
       // Same tenant guard as create — a replaced position set must not smuggle in
       // a cross-tenant / nonexistent service/bundle/variant id (no FK on those).
       await this.ensureAssortmentsInTenant(accountId, parsed.positions);
-      // Replace positions wholesale. The destructive deleteMany is deferred
-      // into the $transaction below so an optimistic-lock conflict (409) rolls
-      // back the delete instead of leaving the positions destroyed (data
-      // corruption). Only the `create` payload is built here.
-      data.positions = {
-        create: parsed.positions.map((p, idx) => ({
-          accountId,
-          position: idx + 1,
-          assortmentKind: p.assortmentKind,
-          assortmentId: p.assortmentId,
-          productId: p.assortmentKind === 'product' ? p.assortmentId : null,
-          quantity: p.quantity,
-          priceMinor: p.priceMinor,
-          discount: p.discount,
-          vat: p.vat ?? null,
-          vatEnabled: p.vatEnabled,
-        })),
-      };
+      // Position writes happen as a DIFF-UPSERT inside the $transaction below
+      // (see there) — NOT a nested wholesale create here.
     }
 
     const effectiveOrgId = parsed.organizationId ?? existing.organizationId;
@@ -765,32 +837,190 @@ export class CustomerOrderService {
     );
 
     try {
-      // Class A: child-row replacement (deleteMany) + the version-guarded
-      // header update run in ONE transaction. If the optimistic-lock version
-      // filter misses (concurrent edit), update#1 touches zero rows → P2025 →
-      // the deleteMany rolls back, so the positions are NOT lost. Only update#1
-      // carries the version filter + increment; update#2 (totals) keys on
-      // { id, accountId } since update#1 already bumped the row to N+1 (a
-      // version filter there would always miss and false-409).
-      const saved = await this.prisma.client.$transaction(async (tx) => {
-        if (parsed.positions !== undefined) {
-          await tx.customerOrderPosition.deleteMany({ where: { customerOrderId: id, accountId } });
-        }
-        const updated = await tx.customerOrder.update({
-          where: { id, accountId, version: parsed.version },
-          data: { ...data, version: { increment: 1 } },
-          include: { positions: true },
-        });
-        const totals = this.computeTotals(
-          updated.positions,
-          parsed.vatEnabled ?? existing.vatEnabled,
-          parsed.vatIncluded ?? existing.vatIncluded,
+      // Class A: all child-row writes + the version-guarded header update run
+      // in ONE Serializable tx. Write order is POSITIONS FIRST, header LAST —
+      // the same order every other CO writer uses (applyShipment,
+      // runReservationSet, adjustReservationForShipment), so no AB-BA lock
+      // cycle against a concurrent Отгрузка post/unpost (adversarial review).
+      // An optimistic-lock miss on the final header update (P2025) rolls the
+      // whole tx back, so positions are never lost on a version conflict.
+      // Serializable read-check-write conflicts (P2034, incl. PG deadlocks)
+      // are retried like the reservation txs.
+      const runUpdateTx = () =>
+        this.prisma.client.$transaction(
+          async (tx) => {
+            if (parsed.positions !== undefined) {
+              // DIFF-UPSERT (adversarial review, pre-existing CRIT class): the
+              // old wholesale delete+recreate reset every line's shippedQty to
+              // 0 and dangled DemandPosition.customerOrderPositionId (onDelete
+              // SetNull) — after which a linked demand could never be un-posted
+              // and the reservation invariant over-held re-posted orders.
+              // Payload lines carrying `id` update their existing row IN PLACE
+              // (identity, shippedQty and doc links survive); id-less lines are
+              // created; existing rows absent from the payload are deleted.
+              // Guards: a line cannot be removed while ANY live Отгрузка/Счёт
+              // line still links to it (a draft link would SetNull-dangle and
+              // its posting would then ship with zero feedback to the order —
+              // silent double-ship); a shipped line cannot change product; and
+              // quantity cannot drop below shipped + posted-return qty (a
+              // posted возврат lowers shippedQty NON-monotonically — un-posting
+              // it re-adds the returned qty, so the floor must include it or
+              // shippedQty > quantity becomes reachable).
+              const existingPositions = await tx.customerOrderPosition.findMany({
+                where: { customerOrderId: id, accountId },
+              });
+              const existingById = new Map(existingPositions.map((p) => [p.id, p]));
+              const keptIds = new Set<string>();
+              for (const p of parsed.positions) {
+                if (!p.id) continue;
+                const ex = existingById.get(p.id);
+                if (!ex) {
+                  throw new BadRequestException(`Position ${p.id} not found on this order`);
+                }
+                if (keptIds.has(p.id)) {
+                  throw new BadRequestException(`Duplicate position id ${p.id}`);
+                }
+                keptIds.add(p.id);
+              }
+              // Posted-return quantity per kept line (floor component).
+              const returnedByPos = new Map<string, number>();
+              if (keptIds.size > 0) {
+                const srLines = await tx.salesReturnPosition.findMany({
+                  where: {
+                    accountId,
+                    demandPosition: { customerOrderPositionId: { in: [...keptIds] } },
+                    salesReturn: { applicable: true, deletedAt: null },
+                  },
+                  select: {
+                    quantity: true,
+                    demandPosition: { select: { customerOrderPositionId: true } },
+                  },
+                });
+                for (const sr of srLines) {
+                  const pid = sr.demandPosition?.customerOrderPositionId;
+                  if (pid) {
+                    returnedByPos.set(pid, (returnedByPos.get(pid) ?? 0) + Number(sr.quantity));
+                  }
+                }
+              }
+              for (const p of parsed.positions) {
+                if (!p.id) continue;
+                // biome-ignore lint/style/noNonNullAssertion: id membership validated above
+                const ex = existingById.get(p.id)!;
+                const shipped = Number(ex.shippedQty);
+                const returned = returnedByPos.get(p.id) ?? 0;
+                const floor = shipped + returned;
+                if (floor > 0) {
+                  if (
+                    ex.assortmentId !== p.assortmentId ||
+                    ex.assortmentKind !== p.assortmentKind
+                  ) {
+                    throw new BadRequestException(
+                      "Jo'natilgan qatorning tovarini o'zgartirib bo'lmaydi",
+                    );
+                  }
+                  if (p.quantity < floor) {
+                    throw new BadRequestException(
+                      returned > 0
+                        ? `Miqdor jo'natilgan + qaytarilgan miqdordan (${floor}) kam bo'lishi mumkin emas`
+                        : "Miqdor jo'natilgan miqdordan kam bo'lishi mumkin emas",
+                    );
+                  }
+                }
+              }
+              const removedIds = existingPositions
+                .filter((ex) => !keptIds.has(ex.id))
+                .map((ex) => ex.id);
+              if (removedIds.length > 0) {
+                for (const ex of existingPositions) {
+                  if (!keptIds.has(ex.id) && Number(ex.shippedQty) > 0) {
+                    throw new BadRequestException(
+                      "Jo'natilgan qatorni o'chirib bo'lmaydi — avval Otgruzkani bekor qiling",
+                    );
+                  }
+                }
+                const [linkedDemands, linkedInvoices] = await Promise.all([
+                  tx.demandPosition.count({
+                    where: {
+                      customerOrderPositionId: { in: removedIds },
+                      demand: { deletedAt: null },
+                    },
+                  }),
+                  tx.invoiceOutPosition.count({
+                    where: {
+                      customerOrderPositionId: { in: removedIds },
+                      invoiceOut: { deletedAt: null },
+                    },
+                  }),
+                ]);
+                if (linkedDemands + linkedInvoices > 0) {
+                  throw new BadRequestException(
+                    "Qator Otgruzka/Schyotga bog'langan — avval o'sha hujjatdagi qatorni oling",
+                  );
+                }
+                await tx.customerOrderPosition.deleteMany({
+                  where: { customerOrderId: id, accountId, id: { in: removedIds } },
+                });
+              }
+              for (const [idx, p] of parsed.positions.entries()) {
+                const rowData = {
+                  position: idx + 1,
+                  assortmentKind: p.assortmentKind,
+                  assortmentId: p.assortmentId,
+                  productId: p.assortmentKind === 'product' ? p.assortmentId : null,
+                  quantity: p.quantity,
+                  priceMinor: p.priceMinor,
+                  discount: p.discount,
+                  vat: p.vat ?? null,
+                  vatEnabled: p.vatEnabled,
+                };
+                if (p.id) {
+                  // id validated above to belong to THIS order (tenant-safe).
+                  await tx.customerOrderPosition.update({ where: { id: p.id }, data: rowData });
+                } else {
+                  await tx.customerOrderPosition.create({
+                    data: { ...rowData, accountId, customerOrderId: id },
+                  });
+                }
+              }
+            }
+
+            const freshPositions = await tx.customerOrderPosition.findMany({
+              where: { customerOrderId: id, accountId },
+              orderBy: { position: 'asc' },
+            });
+            const vatEnabledEff = parsed.vatEnabled ?? existing.vatEnabled;
+            const vatIncludedEff = parsed.vatIncluded ?? existing.vatIncluded;
+            const totals = this.computeTotals(freshPositions, vatEnabledEff, vatIncludedEff);
+            // An edit can change a shipped line's price/discount/VAT (qty ≥
+            // shipped+returned is guarded above) — keep the header «Отгружено»
+            // money in sync with the same per-line math applyShipment uses.
+            const shippedSumMinor = this.computeShippedSum(
+              freshPositions,
+              vatEnabledEff,
+              vatIncludedEff,
+            );
+            return tx.customerOrder.update({
+              where: { id, accountId, version: parsed.version },
+              data: { ...data, version: { increment: 1 }, ...totals, shippedSumMinor },
+            });
+          },
+          { isolationLevel: 'Serializable', timeout: 15000 },
         );
-        return tx.customerOrder.update({
-          where: { id, accountId },
-          data: totals,
-        });
-      });
+      let saved: Awaited<ReturnType<typeof runUpdateTx>>;
+      for (let attempt = 1; ; attempt++) {
+        try {
+          saved = await runUpdateTx();
+          break;
+        } catch (e) {
+          const code = (e as { code?: string })?.code;
+          if (code === 'P2034' && attempt < 5) {
+            await new Promise((r) => setTimeout(r, attempt * 25));
+            continue;
+          }
+          throw e;
+        }
+      }
       // Per-line «Зарезерв.» on edit: positions were just deleted + recreated, so
       // ALWAYS re-apply (always:true) — a now-0/removed line must release its prior
       // hold AND re-materialize reservedQty/reservedSumMinor, else the column would
@@ -831,6 +1061,22 @@ export class CustomerOrderService {
     await this.logAudit(accountId, userId, `transition:${newState}`, id, {
       from: { before: order.state, after: newState },
     });
+
+    // Owner-confirmed moysklad behaviour (2026-07-16): «Проведено» AUTO-fills
+    // «Зарезерв.» — posting an order holds every stocked line's unshipped
+    // remainder; un-posting (draft) or cancelling releases the whole hold.
+    // Runs AFTER the state commit (same doc-then-reserve ordering as
+    // create → reserveRequestedLines); a transient failure retries and a
+    // persistent one only logs — the hold can be re-applied via
+    // «Изменить ▸ Зарезервировать».
+    const wasApplicable = order.applicable;
+    const isApplicable = updated.applicable;
+    if (!wasApplicable && isApplicable) {
+      await this.applyReservationInvariant(accountId, userId, id, 'hold-remaining');
+    } else if (wasApplicable && !isApplicable) {
+      await this.applyReservationInvariant(accountId, userId, id, 'release');
+    }
+
     this.webhookFire.fireForEvent(accountId, 'customerorder', 'UPDATE', id, ['state']);
     return updated;
   }
@@ -882,14 +1128,88 @@ export class CustomerOrderService {
   }
 
   async delete(accountId: string, userId: string, id: string) {
-    const order = await this.findById(accountId, id);
+    const order = await this.findById(accountId, id); // fast 404 / applicable pre-check
     if (order.applicable) {
       throw new BadRequestException("Provedeno buyurtmani o'chirib bo'lmaydi");
     }
-    await this.prisma.client.customerOrder.update({
-      where: { id, accountId },
-      data: { deletedAt: new Date() },
-    });
+    // Atomic delete + hold release in ONE Serializable tx (adversarial review
+    // CRIT): the old two-step (release tx, then a separate soft-delete UPDATE)
+    // let a concurrent reserve()/auto-reserve commit a fresh hold in between —
+    // permanently leaking Stock.reservedQty, since every release path filters
+    // deletedAt:null. The claim write touches the same customerOrder row every
+    // reservation tx updates (reservedSumMinor), so under Serializable one of
+    // the two aborts instead of interleaving; the ledger-driven release below
+    // then clears whatever hold actually committed.
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await this.prisma.client.$transaction(
+          async (tx) => {
+            const claim = await tx.customerOrder.updateMany({
+              where: { id, accountId, deletedAt: null, applicable: false },
+              data: { deletedAt: new Date() },
+            });
+            if (claim.count === 0) {
+              // Distinguish a lost race: posted meanwhile vs already gone.
+              const now = await tx.customerOrder.findFirst({
+                where: { id, accountId },
+                select: { applicable: true, deletedAt: true },
+              });
+              if (now && !now.deletedAt && now.applicable) {
+                throw new BadRequestException("Provedeno buyurtmani o'chirib bo'lmaydi");
+              }
+              throw new NotFoundException(`CustomerOrder ${id} not found`);
+            }
+            const positions = await tx.customerOrderPosition.findMany({
+              where: { customerOrderId: id, accountId },
+            });
+            const stocked = positions.filter((p) =>
+              CustomerOrderService.RESERVABLE_KINDS.has(p.assortmentKind),
+            );
+            if (stocked.length > 0) {
+              const fresh = await tx.customerOrder.findFirst({
+                where: { id, accountId },
+                select: { storeId: true },
+              });
+              const assortments = [
+                ...new Map(
+                  stocked.map((p) => [
+                    `${p.assortmentKind}|${p.assortmentId}`,
+                    { kind: p.assortmentKind, id: p.assortmentId },
+                  ]),
+                ).values(),
+              ];
+              // biome-ignore lint/style/noNonNullAssertion: the claim above just updated this row
+              await this.stock.lockBalances(tx, accountId, fresh!.storeId, assortments);
+              await this.stock.releaseReservationByDoc(
+                tx,
+                accountId,
+                userId,
+                'customerorder',
+                id,
+                'release_manual',
+              );
+              await tx.customerOrderPosition.updateMany({
+                where: { customerOrderId: id, accountId },
+                data: { reservedQty: 0 },
+              });
+              await tx.customerOrder.update({
+                where: { id, accountId },
+                data: { reservedSumMinor: 0n },
+              });
+            }
+          },
+          { isolationLevel: 'Serializable', timeout: 15000 },
+        );
+        break;
+      } catch (e) {
+        const code = (e as { code?: string })?.code;
+        if ((code === 'P2034' || code === 'P2002') && attempt < 5) {
+          await new Promise((r) => setTimeout(r, attempt * 25));
+          continue;
+        }
+        throw e;
+      }
+    }
     await this.logAudit(accountId, userId, 'delete', id, null);
     this.webhookFire.fireForEvent(accountId, 'customerorder', 'DELETE', id);
     return { ok: true };
@@ -908,7 +1228,14 @@ export class CustomerOrderService {
     accountId: string,
     userId: string,
     id: string,
-    patch: { ownerId?: string | null; projectId?: string | null; description?: string | null },
+    patch: {
+      ownerId?: string | null;
+      projectId?: string | null;
+      description?: string | null;
+      groupId?: string | null;
+      shared?: boolean;
+      stateId?: string | null;
+    },
   ) {
     await this.findById(accountId, id);
     await assertMassEditRefsInTenant(this.prisma, accountId, patch);
@@ -916,6 +1243,13 @@ export class CustomerOrderService {
     if ('ownerId' in patch) data.ownerId = patch.ownerId;
     if ('projectId' in patch) data.projectId = patch.projectId;
     if ('description' in patch) data.description = patch.description;
+    if ('groupId' in patch) data.groupId = patch.groupId;
+    if ('shared' in patch && patch.shared !== undefined) data.shared = patch.shared;
+    if ('stateId' in patch) {
+      if (patch.stateId)
+        await assertStateInTenant(this.prisma, accountId, patch.stateId, 'customerorder');
+      data.statusId = patch.stateId;
+    }
     const updated = await this.prisma.client.customerOrder.update({
       where: { id, accountId },
       data,
@@ -1150,9 +1484,10 @@ export class CustomerOrderService {
       assortmentKind: string;
       quantity: Prisma.Decimal;
       reservedQty: Prisma.Decimal;
+      shippedQty: Prisma.Decimal;
       position: number;
     }) => number,
-    opts: { allowCancelled?: boolean } = {},
+    opts: { allowCancelled?: boolean; requireApplicable?: boolean } = {},
   ): Promise<void> {
     await this.prisma.client.$transaction(
       async (tx) => {
@@ -1163,6 +1498,15 @@ export class CustomerOrderService {
         if (!order) throw new NotFoundException(`CustomerOrder ${id} not found`);
         if (!opts.allowCancelled && order.state === 'cancelled') {
           throw new BadRequestException("Bekor qilingan buyurtmani rezerv qilib bo'lmaydi");
+        }
+        // Transition-driven invariant txs run AFTER their state commit, in a
+        // separate retried tx — a delayed retry can otherwise land after a
+        // SUBSEQUENT opposite transition and invert the hold (draft order left
+        // fully held / posted order left bare). Re-checking applicable INSIDE
+        // this tx pins the side-effect to the state it was dispatched for; on
+        // mismatch the newer transition's own invariant tx is authoritative.
+        if (opts.requireApplicable !== undefined && order.applicable !== opts.requireApplicable) {
+          return;
         }
 
         // Wanted reserve per line, clamped to [0, ordered qty]; non-stocked = 0.
@@ -1312,6 +1656,201 @@ export class CustomerOrderService {
         return;
       }
     }
+  }
+
+  /**
+   * Posting/un-posting the ORDER itself drives the reservation invariant
+   * (owner-confirmed moysklad behaviour, 2026-07-16): while an order is
+   * «Проведено», every stocked line auto-holds its unshipped remainder
+   * (quantity − shippedQty); leaving the posted state releases the whole
+   * hold. Retries transient serialization/unique conflicts exactly like
+   * reserveRequestedLines — the state change is already committed, so a
+   * persistent failure only logs (the hold is recoverable via
+   * «Изменить ▸ Зарезервировать»), never fails the transition.
+   */
+  private async applyReservationInvariant(
+    accountId: string,
+    userId: string,
+    id: string,
+    mode: 'hold-remaining' | 'release',
+  ): Promise<void> {
+    const desiredFor =
+      mode === 'release'
+        ? () => 0
+        : (p: { quantity: Prisma.Decimal; shippedQty: Prisma.Decimal }) =>
+            Math.max(0, Number(p.quantity) - Number(p.shippedQty));
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await this.runReservationSet(accountId, userId, id, desiredFor, {
+          allowCancelled: mode === 'release',
+          // Pin the side-effect to the state that dispatched it (see
+          // runReservationSet) — a delayed retry must not undo a newer
+          // opposite transition's hold state.
+          requireApplicable: mode === 'hold-remaining',
+        });
+        return;
+      } catch (e) {
+        const code = (e as { code?: string })?.code;
+        if ((code === 'P2034' || code === 'P2002') && attempt < 5) {
+          await new Promise((r) => setTimeout(r, attempt * 25));
+          continue;
+        }
+        this.logger.warn(
+          `reservation invariant (${mode}) failed for customer-order ${id} after ${attempt} attempt(s): ${
+            e instanceof Error ? e.message : e
+          }`,
+        );
+        return;
+      }
+    }
+  }
+
+  /**
+   * Shipment ⇄ reservation integration — called by DemandService INSIDE its
+   * posting/unposting transaction, and always BEFORE applyShipment mutates
+   * shippedQty (this method derives the post-shipment value itself from the
+   * CURRENT stored shippedQty ± qtyDelta).
+   *
+   * Why before the demand's sufficiency check on post: §2c counts
+   * Stock.reservedQty against availability, so a fully-reserved order would
+   * otherwise block its OWN Отгрузка. Consuming the hold for exactly the
+   * shipped lines first frees that stock for the shipment.
+   *
+   * Hold rule per affected stocked line (shippedAfter = shippedQty ± delta,
+   * remainingAfter = max(0, quantity − shippedAfter)):
+   *   ship:    hold = max(0, currentHold − shipQty)   — CONSUME-ONLY. Shipping
+   *            eats the line's reserve, it never grows one: a manual
+   *            «Очистить резерв» must survive a later shipment (adversarial
+   *            review) and this is moysklad's own semantics.
+   *   revert:  posted order:  hold = min(remainingAfter, currentHold + shipQty)
+   *            — the consumed hold returns with the goods, clamped to what is
+   *            still unshipped. Draft/cancelled: hold = min(currentHold,
+   *            remainingAfter) — a revert must never CREATE a hold on an
+   *            un-posted order (its holds are manual-only).
+   *
+   * Lines are AGGREGATED per positionId first — a raw-API demand may carry
+   * several lines pointing at the same CO position, and per-line math against
+   * the same stale snapshot would desync position.reservedQty from the summed
+   * stock deltas (adversarial review).
+   *
+   * Locks the ORDER-store balance rows (the hold lives at the order's store
+   * even when the demand ships from a different store). Returns the order's
+   * storeId + per-assortment hold delta AND the order's own post-adjust hold
+   * (ownHoldAfter) so the caller can patch its pre-fetched sufficiency
+   * snapshot: the order's OWN hold must not block its OWN shipment — §2c
+   * would otherwise reject a partial shipment of an over-reserved order.
+   */
+  async adjustReservationForShipment(
+    tx: Prisma.TransactionClient,
+    accountId: string,
+    userId: string,
+    customerOrderId: string,
+    lines: Array<{ positionId: string; qtyDelta: string }>,
+    direction: 'ship' | 'revert',
+  ): Promise<{
+    storeId: string;
+    holdDeltas: Map<string, number>;
+    ownHoldAfter: Map<string, number>;
+  }> {
+    const order = await tx.customerOrder.findFirst({
+      where: { id: customerOrderId, accountId, deletedAt: null },
+      include: { positions: true },
+    });
+    if (!order) throw new NotFoundException(`CustomerOrder ${customerOrderId} not found`);
+
+    const sign = direction === 'ship' ? 1 : -1;
+    // Aggregate shipped qty per CO position (dedup multi-line links).
+    const shipByPos = new Map<string, number>();
+    for (const line of lines) {
+      shipByPos.set(line.positionId, (shipByPos.get(line.positionId) ?? 0) + Number(line.qtyDelta));
+    }
+    const affected: Array<{
+      position: (typeof order.positions)[number];
+      desired: number;
+      delta: number;
+    }> = [];
+    for (const [positionId, shipQty] of shipByPos) {
+      const pos = order.positions.find((p) => p.id === positionId);
+      if (!pos || !CustomerOrderService.RESERVABLE_KINDS.has(pos.assortmentKind)) continue;
+      const shippedAfter = Number(pos.shippedQty) + sign * shipQty;
+      const remainingAfter = Math.max(0, Number(pos.quantity) - shippedAfter);
+      const currentHold = Number(pos.reservedQty);
+      const desired =
+        direction === 'ship'
+          ? Math.max(0, currentHold - shipQty)
+          : order.applicable
+            ? Math.min(remainingAfter, currentHold + shipQty)
+            : Math.min(currentHold, remainingAfter);
+      affected.push({ position: pos, desired, delta: desired - currentHold });
+    }
+    // Own post-adjust hold per DEMAND assortment — sum over ALL of the order's
+    // positions of that assortment (unlinked sibling lines still belong to
+    // this same order, and an order's hold never blocks its own shipment).
+    const desiredByIdAll = new Map(affected.map((c) => [c.position.id, c.desired]));
+    const ownHoldAfter = new Map<string, number>();
+    const demandAssortments = new Set(affected.map((c) => c.position.assortmentId));
+    for (const p of order.positions) {
+      if (!demandAssortments.has(p.assortmentId)) continue;
+      if (!CustomerOrderService.RESERVABLE_KINDS.has(p.assortmentKind)) continue;
+      const hold = desiredByIdAll.get(p.id) ?? Number(p.reservedQty);
+      ownHoldAfter.set(p.assortmentId, (ownHoldAfter.get(p.assortmentId) ?? 0) + hold);
+    }
+    const changes = affected.filter((c) => c.delta !== 0);
+    if (changes.length === 0) {
+      return { storeId: order.storeId, holdDeltas: new Map(), ownHoldAfter };
+    }
+
+    const assortments = [
+      ...new Map(
+        changes.map(({ position: p }) => [
+          `${p.assortmentKind}|${p.assortmentId}`,
+          { kind: p.assortmentKind, id: p.assortmentId },
+        ]),
+      ).values(),
+    ];
+    await this.stock.lockBalances(tx, accountId, order.storeId, assortments);
+    await this.stock.applyReservationDeltas(
+      tx,
+      accountId,
+      userId,
+      changes.map(({ position: p, delta }) => ({
+        storeId: order.storeId,
+        assortmentKind: p.assortmentKind,
+        assortmentId: p.assortmentId,
+        qtyDelta: String(delta),
+        docType: 'customerorder' as const,
+        docId: customerOrderId,
+        reason: delta < 0 ? ('release_consume' as const) : ('reserve' as const),
+      })),
+    );
+    for (const { position: p, desired } of changes) {
+      await tx.customerOrderPosition.update({
+        where: { id: p.id },
+        data: { reservedQty: desired },
+      });
+    }
+    // Re-materialize the header «Резерв» money sum from the post-change holds.
+    const { sumMinor: reservedSumMinor } = this.computeTotals(
+      order.positions.map((p) => ({
+        quantity: desiredByIdAll.get(p.id) ?? Number(p.reservedQty),
+        priceMinor: p.priceMinor,
+        discount: p.discount,
+        vat: p.vat,
+        vatEnabled: p.vatEnabled,
+      })),
+      order.vatEnabled,
+      order.vatIncluded,
+    );
+    await tx.customerOrder.update({
+      where: { id: customerOrderId, accountId },
+      data: { reservedSumMinor },
+    });
+
+    const holdDeltas = new Map<string, number>();
+    for (const { position: p, delta } of changes) {
+      holdDeltas.set(p.assortmentId, (holdDeltas.get(p.assortmentId) ?? 0) + delta);
+    }
+    return { storeId: order.storeId, holdDeltas, ownHoldAfter };
   }
 
   /**
@@ -1714,9 +2253,11 @@ export class CustomerOrderService {
       // already accepts statusId; the list column shows status.name).
       ...(filter.statusId ? { statusId: filter.statusId } : {}),
       ...(filter.agentId ? { agentId: filter.agentId } : {}),
+      ...(filter.agentIds ? { agentId: { in: filter.agentIds } } : {}),
       ...(filter.agentGroupId ? { agent: { groupId: filter.agentGroupId } } : {}),
       ...(filter.agentAccountId ? { agentAccountId: filter.agentAccountId } : {}),
       ...(filter.organizationId ? { organizationId: filter.organizationId } : {}),
+      ...(filter.organizationIds ? { organizationId: { in: filter.organizationIds } } : {}),
       ...(filter.organizationAccountId
         ? { organizationAccountId: filter.organizationAccountId }
         : {}),
@@ -2059,6 +2600,44 @@ export class CustomerOrderService {
     }
 
     return { sumMinor, vatSumMinor };
+  }
+
+  /**
+   * Money of the SHIPPED portion of every line — the header «Отгружено» sum.
+   * Same per-line rounding as applyShipment (single pass through
+   * computePositionTotal over shippedQty) so update()'s re-materialization
+   * lands on the identical value applyShipment would produce.
+   */
+  private computeShippedSum(
+    positions: Array<{
+      quantity: unknown; // Prisma Decimal
+      shippedQty: unknown; // Prisma Decimal
+      priceMinor: bigint;
+      discount: unknown; // Prisma Decimal
+      vat: number | null;
+      vatEnabled: boolean;
+    }>,
+    docVatEnabled: boolean,
+    vatIncluded: boolean,
+  ): bigint {
+    let shippedSumMinor = 0n;
+    for (const p of positions) {
+      const qty = Number(String(p.quantity));
+      const shipped = Number(String(p.shippedQty));
+      if (qty <= 0 || shipped <= 0) continue;
+      const { totalMinor } = computePositionTotal(
+        {
+          quantity: String(p.shippedQty),
+          priceMinor: String(p.priceMinor),
+          discount: String(p.discount ?? '0'),
+          vat: p.vat ?? null,
+        },
+        docVatEnabled && p.vatEnabled,
+        vatIncluded,
+      );
+      shippedSumMinor += totalMinor;
+    }
+    return shippedSumMinor;
   }
 
   /**

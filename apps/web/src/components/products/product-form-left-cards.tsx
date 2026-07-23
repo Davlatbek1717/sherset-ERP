@@ -2,9 +2,12 @@
 
 /**
  * ProductFormLeftCards — the LEFT column of moysklad's product form: the 7
- * collapsible cards (Контент · Изображения · Общие данные · Неснижаемый остаток ·
- * Особенности учёта · Штрихкоды · Доступ). Shared by /products/new and
- * /products/[id] so the create and edit forms are guaranteed identical.
+ * collapsible cards (Изображения · Общие данные · Неснижаемый остаток ·
+ * Место хранения · Особенности учёта · Штрихкоды · Доступ). Shared by
+ * /products/new and /products/[id] so the create and edit forms are guaranteed
+ * identical. Deliberate divergences from moysklad: the marketplace-AI «Контент»
+ * card is removed (user-directed 2026-07-04) and «Место хранения» is added
+ * (user-directed storage-cell pins).
  *
  * All state comes from `useProductForm` (the `pf` object). Persisted non-RHF
  * fields (marking, ТАСНИф codes, barcodes) call `pf.markAuxDirty()` so the edit
@@ -13,13 +16,23 @@
  */
 
 import { ProductFormCard } from '@/components/product-form-layout';
-import { CellPickerField } from '@/components/products/cell-picker-field';
+import { CellMoveModal, type CellMoveSource } from '@/components/products/cell-move-modal';
+import { ProductCutCard } from '@/components/products/product-cut-card';
 import {
   BARCODE_TYPES,
   type ProductFormApi,
   barcodeTypeLabel,
 } from '@/components/products/use-product-form';
-import { formatBinLocation } from '@/lib/bin-location';
+import { useImagePaste } from '@/hooks/use-image-paste';
+import { api } from '@/lib/api-client';
+import {
+  ACCEPTED_IMAGE_ATTR,
+  MAX_IMAGES,
+  MAX_IMAGE_BYTES,
+  capImagesToLimit,
+  classifyImageFile,
+  readClipboardImageFiles,
+} from '@/lib/product-image';
 import {
   Button,
   CatalogPicker,
@@ -32,14 +45,14 @@ import {
   NativeSelect,
   Textarea,
 } from '@moysklad/ui';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, useMemo, useState } from 'react';
 import { Controller } from 'react-hook-form';
 
 export function ProductFormLeftCards({
   pf,
   imagesSlot,
-  extraLocationsSlot,
   productId,
 }: {
   pf: ProductFormApi;
@@ -50,14 +63,8 @@ export function ProductFormLeftCards({
    */
   imagesSlot?: ReactNode;
   /**
-   * Multi-bin «Qo'shimcha yacheykalar» card — additional shelf locations beyond
-   * the primary loc* home. Edit-only (needs an existing product id); the create
-   * form omits it (add extra bins after the product exists).
-   */
-  extraLocationsSlot?: ReactNode;
-  /**
-   * Edit-formada joriy tovar id'si — yacheyka-dropdown band-tekshiruvida o'zi
-   * o'tirgan yacheyka «band» deb ogohlantirmasligi uchun. Create'da yo'q.
+   * The existing product's id (edit form only) — feeds the «Место хранения»
+   * per-cell stock table. Absent on /new (a new product has no stock yet).
    */
   productId?: string;
 }) {
@@ -122,47 +129,128 @@ export function ProductFormLeftCards({
   // «Штрихкоды товара» local UI: the dismissable GTIN banner + the open per-row ⋯ menu.
   const [barcodeBannerOpen, setBarcodeBannerOpen] = useState(true);
   const [barcodeMenu, setBarcodeMenu] = useState<number | null>(null);
-  // moysklad shows a dismissable blue info-banner inside «Контент» and «Неснижаемый остаток».
-  const [contentBannerOpen, setContentBannerOpen] = useState(true);
+  // moysklad shows a dismissable blue info-banner inside «Неснижаемый остаток».
   const [minBalanceBannerOpen, setMinBalanceBannerOpen] = useState(true);
   // «Страна» trailing «+» opens the country picker (our list is the full ISO reference).
   const [countryOpen, setCountryOpen] = useState(false);
+  // «Место хранения» — where the product sits. Two row kinds (LABEL model): REAL
+  // per-cell stock rows (`isBinding:false`, from the StockByCell engine, document-
+  // driven) + the assigned HOME-CELL binding row (`isBinding:true`, from the
+  // «Полка»/«Ячейка» pickers — a location label with the product's total on-hand).
+  interface CellStockRow {
+    storeId: string | null;
+    storeName: string | null;
+    cellId: string | null;
+    cellName: string;
+    zoneName: string | null;
+    qty: string;
+    isBinding?: boolean;
+  }
+  const cellStockQuery = useQuery<{ items: CellStockRow[] }>({
+    queryKey: ['product-cell-stock', productId],
+    queryFn: () => api.get<{ items: CellStockRow[] }>(`/products/${productId}/cell-stock`),
+    enabled: !!productId,
+  });
+  const cellStock = cellStockQuery.data?.items ?? [];
+  const cellStockTotal = cellStock.reduce((acc, r) => acc + (Number(r.qty) || 0), 0);
+  const fmtQty = (n: number) => (Number.isInteger(n) ? String(n) : String(Number(n.toFixed(3))));
+  // «Переместить» — the cell-stock row currently being moved to another cell.
+  const queryClient = useQueryClient();
+  const [moveSource, setMoveSource] = useState<CellMoveSource | null>(null);
+
+  // «Полка» + «Ячейка» pickers (user 2026-07-05): searchable dropdowns fed by
+  // EVERY warehouse's real zones/cells. Picking a полка narrows the ячейка list;
+  // picking a ячейка auto-fills its полка. The selected NAMES persist into
+  // Product.attributes.__polka / __yacheyka (see use-product-form buildPayload).
+  interface StorageCellOpt {
+    id: string;
+    name: string;
+    barcode: string | null;
+    zoneId: string | null;
+    zoneName: string | null;
+    storeId: string;
+    storeName: string;
+  }
+  interface StorageOptions {
+    polkas: Array<{ id: string; name: string; storeId: string; storeName: string }>;
+    cells: StorageCellOpt[];
+  }
+  const storageOptionsQuery = useQuery<StorageOptions>({
+    queryKey: ['product-storage-options'],
+    queryFn: () => api.get<StorageOptions>('/products/storage-options'),
+  });
+  const storageOptions = storageOptionsQuery.data;
+  const polkaValue = form.watch('polka');
+  const yacheykaValue = form.watch('yacheyka');
+  // «Полка» options — distinct zone names across warehouses. Seed the saved value
+  // even if the list hasn't loaded / the zone was deleted, so an edit form never
+  // renders a blank trigger for a real saved polka.
+  const polkaItems = useMemo(() => {
+    const names = new Set<string>();
+    for (const z of storageOptions?.polkas ?? []) names.add(z.name);
+    if (polkaValue) names.add(polkaValue);
+    return [...names].sort().map((n) => ({ value: n, label: n }));
+  }, [storageOptions, polkaValue]);
+  // «Ячейка» options — cells filtered to the chosen полка (cell.zoneName === polka)
+  // when set; the saved value is always kept selectable (see above).
+  const cellItems = useMemo(() => {
+    const all = storageOptions?.cells ?? [];
+    const filtered = polkaValue ? all.filter((c) => c.zoneName === polkaValue) : all;
+    const items = filtered.map((c) => ({ value: c.name, label: c.name }));
+    if (yacheykaValue && !items.some((i) => i.value === yacheykaValue)) {
+      items.unshift({ value: yacheykaValue, label: yacheykaValue });
+    }
+    return items;
+  }, [storageOptions, polkaValue, yacheykaValue]);
+
+  // «Изображения» create-side staging: file picker + clipboard paste share ONE
+  // gate (same size/format limits as the edit-side ImageGallery), user 2026-07-06.
+  const [imgError, setImgError] = useState<string | null>(null);
+  const addStagedFiles = (files: File[]) => {
+    if (files.length === 0) return;
+    setImgError(null);
+    const ok: File[] = [];
+    for (const f of files) {
+      const bad = classifyImageFile(f);
+      if (bad) {
+        setImgError(
+          bad === 'too_large'
+            ? tCommon('image_too_large', { size: (MAX_IMAGE_BYTES / 1_000_000).toFixed(0) })
+            : tCommon('image_bad_format'),
+        );
+        continue;
+      }
+      ok.push(f);
+    }
+    // Cap to MAX_IMAGES per product across what's already staged (user 2026-07-07).
+    const { accepted, overflow } = capImagesToLimit(stagedImages.length, ok);
+    if (overflow) setImgError(tCommon('image_max', { max: MAX_IMAGES }));
+    if (accepted.length > 0) onPickImages(accepted);
+  };
+  const pasteStagedFromClipboard = async () => {
+    setImgError(null);
+    try {
+      const files = await readClipboardImageFiles();
+      if (files.length === 0) {
+        setImgError(tCommon('image_no_clipboard'));
+        return;
+      }
+      addStagedFiles(files);
+    } catch {
+      setImgError(tCommon('image_no_clipboard'));
+    }
+  };
+  // Ctrl+V paste — only while the create-staging body is shown (on the edit page
+  // `imagesSlot` = ImageGallery owns its own paste, so this stays disabled to
+  // avoid a double-add from two document listeners).
+  useImagePaste(addStagedFiles, !imagesSlot);
 
   return (
     <>
-      {/* Контент для разных торговых площадок — moysklad's marketplace-AI banner
-        (structural-only, no marketplace integration): «?» title icon + a
-        dismissable blue info-banner, then the (enabled-looking) «Настроить». */}
-      <ProductFormCard
-        title={
-          <span className="inline-flex items-center gap-1.5">
-            {t('section_content')}
-            <Icons.help className="size-4 text-[var(--ms-text-brand)]" aria-hidden />
-          </span>
-        }
-        testId="card-content"
-      >
-        {contentBannerOpen && (
-          <div
-            className="relative mb-2 flex gap-2 rounded-[var(--ms-radius-default)] border border-[var(--ms-info-100)] bg-[var(--ms-info-50)] py-2 pr-7 pl-2.5 text-[var(--ms-info-700)] text-xs"
-            data-test-id="content-banner"
-          >
-            <Icons.info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-            <p>{t('content_hint')}</p>
-            <button
-              type="button"
-              onClick={() => setContentBannerOpen(false)}
-              aria-label={tCommon('close')}
-              className="absolute top-1.5 right-1.5 leading-none hover:opacity-70"
-            >
-              ✕
-            </button>
-          </div>
-        )}
-        <Button type="button" variant="secondary" size="md" data-test-id="content-configure">
-          {t('content_configure')}
-        </Button>
-      </ProductFormCard>
+      {/* «Контент для разных торговых площадок» (moysklad's marketplace-AI upsell
+        card) is deliberately NOT rendered — USER-DIRECTED removal 2026-07-04
+        («shuni olib tashla»): it was structural-only here (no marketplace
+        integration), pure noise on every product open. */}
 
       {/* Изображения — live gallery (edit) or client-side staging (create). */}
       <ProductFormCard title={t('section_images')} testId="card-images">
@@ -171,26 +259,46 @@ export function ProductFormLeftCards({
             <input
               ref={imageInputRef}
               type="file"
-              accept="image/*"
+              accept={ACCEPTED_IMAGE_ATTR}
               multiple
               hidden
               data-test-id="image-input"
               onChange={(e) => {
-                onPickImages(e.target.files);
+                addStagedFiles(Array.from(e.target.files ?? []));
                 e.target.value = '';
               }}
             />
-            <Button
-              type="button"
-              variant="secondary"
-              size="md"
-              onClick={() => imageInputRef.current?.click()}
-              className="inline-flex items-center gap-1.5"
-              data-test-id="image-add"
-            >
-              <Icons.createCircle className="size-4 text-[var(--ms-text-brand)]" aria-hidden />
-              {t('images_add')}
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                size="md"
+                onClick={() => imageInputRef.current?.click()}
+                className="inline-flex items-center gap-1.5"
+                data-test-id="image-add"
+              >
+                <Icons.createCircle className="size-4 text-[var(--ms-text-brand)]" aria-hidden />
+                {t('images_add')}
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                size="md"
+                onClick={pasteStagedFromClipboard}
+                className="inline-flex items-center gap-1.5"
+                data-test-id="image-paste"
+              >
+                {tCommon('image_paste')}
+              </Button>
+              <span className="text-[var(--ms-text-muted)] text-xs">
+                {tCommon('image_paste_hint')}
+              </span>
+            </div>
+            {imgError && (
+              <div className="text-[var(--ms-text-destructive)] text-xs" role="alert">
+                {imgError}
+              </div>
+            )}
             {stagedImages.length > 0 && (
               <div className="flex flex-wrap gap-2" data-test-id="image-previews">
                 {stagedImages.map((img, i) => (
@@ -279,8 +387,8 @@ export function ProductFormLeftCards({
             control={form.control}
             name="country"
             render={({ field }) => (
-              <div className="flex items-center gap-1.5">
-                <div className="flex-1">
+              <div className="flex min-w-0 items-center gap-1.5">
+                <div className="min-w-0 flex-1">
                   <Combobox
                     id="country"
                     testId="field-country"
@@ -317,8 +425,8 @@ export function ProductFormLeftCards({
               <>
                 {/* moysklad parity: a trailing blue «+» opens the supplier picker
                   (which offers search + «Создать»). */}
-                <div className="flex items-center gap-1.5">
-                  <div className="flex-1">
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <div className="min-w-0 flex-1">
                     <CatalogPickerField
                       value={
                         field.value ? { id: field.value, label: supplierLabel ?? '...' } : null
@@ -370,6 +478,63 @@ export function ProductFormLeftCards({
           <Input id="article" data-test-id="field-article" {...form.register('article')} />
         </FormField>
 
+        {/* «Полка» + «Ячейка» (user 2026-07-05, v3): two searchable dropdowns,
+          right above «Код», fed by the warehouses' real zones/cells. Picking a
+          полка filters the ячейка list; picking a ячейка auto-fills its полка.
+          Saved into Product.attributes.__polka / __yacheyka. */}
+        <Controller
+          control={form.control}
+          name="polka"
+          render={({ field }) => (
+            <FormField inline id="polka" label={t('storage_polka_label')}>
+              <Combobox
+                id="polka"
+                value={field.value || undefined}
+                onChange={(v) => {
+                  const next = v ?? '';
+                  field.onChange(next);
+                  // Drop the picked ячейка if it no longer belongs to the new полка.
+                  if (next) {
+                    const cur = form.getValues('yacheyka');
+                    const cell = storageOptions?.cells.find((c) => c.name === cur);
+                    if (cell && cell.zoneName !== next)
+                      form.setValue('yacheyka', '', { shouldDirty: true });
+                  }
+                }}
+                items={polkaItems}
+                placeholder={t('storage_polka_ph')}
+                searchPlaceholder={tCommon('search')}
+                emptyText={tCommon('no_results')}
+                testId="field-storage-polka"
+              />
+            </FormField>
+          )}
+        />
+        <Controller
+          control={form.control}
+          name="yacheyka"
+          render={({ field }) => (
+            <FormField inline id="yacheyka" label={t('storage_cell_label')}>
+              <Combobox
+                id="yacheyka"
+                value={field.value || undefined}
+                onChange={(v) => {
+                  const next = v ?? '';
+                  field.onChange(next);
+                  // Auto-fill полка from the picked ячейка's zone.
+                  const cell = storageOptions?.cells.find((c) => c.name === next);
+                  if (cell?.zoneName) form.setValue('polka', cell.zoneName, { shouldDirty: true });
+                }}
+                items={cellItems}
+                placeholder={t('storage_cell_ph')}
+                searchPlaceholder={tCommon('search')}
+                emptyText={tCommon('no_results')}
+                testId="field-storage-cell"
+              />
+            </FormField>
+          )}
+        />
+
         <FormField
           inline
           id="code"
@@ -390,7 +555,7 @@ export function ProductFormLeftCards({
         </FormField>
 
         <FormField inline id="uom" label={t('uom_label')}>
-          <div className="flex items-center gap-1.5">
+          <div className="flex min-w-0 items-center gap-1.5">
             <Controller
               control={form.control}
               name="uom"
@@ -487,94 +652,6 @@ export function ProductFormLeftCards({
         </FormField>
       </ProductFormCard>
 
-      {/* Joylashuv (ombor yacheykasi) — Sherset custom. 4 numeric segments compose
-        the «NN-NN-NN-NN» home-bin code, shown on the price tag (QR) + the
-        return-to-warehouse restock flow. All optional. */}
-      <ProductFormCard title={t('section_location')} testId="card-location">
-        <p className="mb-2 text-[var(--ms-text-muted)] text-xs">{t('loc_hint')}</p>
-        {/* Qidiruvli yacheyka-dropdown (2026-07-16 §10) — registrdagi barcha
-          yacheykalar ichidan tanlash; tanlanganda 4 segment avtomatik
-          to'ldiriladi. Band bo'lsa ogohlantiradi, lekin bloklamaydi. */}
-        <div className="mb-3 flex flex-col gap-1">
-          <label htmlFor="field-cell-picker" className="text-[var(--ms-text-secondary)] text-xs">
-            {t('loc_cell_picker_label')}
-          </label>
-          <CellPickerField
-            excludeProductId={productId}
-            onSelect={(code) => {
-              const segs = code.split('-');
-              form.setValue('locSklad', String(Number(segs[0] ?? '0')), { shouldDirty: true });
-              form.setValue('locPolka', String(Number(segs[1] ?? '0')), { shouldDirty: true });
-              form.setValue('locQavat', String(Number(segs[2] ?? '0')), { shouldDirty: true });
-              form.setValue('locYacheyka', String(Number(segs[3] ?? '0')), { shouldDirty: true });
-            }}
-          />
-        </div>
-        <div className="grid grid-cols-4 gap-2">
-          {(
-            [
-              ['locSklad', t('loc_sklad_label')],
-              ['locPolka', t('loc_polka_label')],
-              ['locQavat', t('loc_qavat_label')],
-              ['locYacheyka', t('loc_yacheyka_label')],
-            ] as const
-          ).map(([field, label]) => (
-            <div key={field} className="flex flex-col gap-1">
-              <label htmlFor={field} className="text-[var(--ms-text-secondary)] text-xs">
-                {label}
-              </label>
-              <Input
-                id={field}
-                data-test-id={`field-${field}`}
-                inputMode="numeric"
-                placeholder="00"
-                className="text-center tabular-nums"
-                {...form.register(field)}
-              />
-            </div>
-          ))}
-        </div>
-        {/* Per-cell qty (multi-bin Phase 2) — units sitting in the primary bin
-          above. Manually maintained; empty = not tracked. */}
-        <div className="mt-2 flex flex-col gap-1">
-          <label htmlFor="locQty" className="text-[var(--ms-text-secondary)] text-xs">
-            {t('loc_qty_label')}
-          </label>
-          <Input
-            id="locQty"
-            data-test-id="field-locQty"
-            inputMode="decimal"
-            placeholder="—"
-            className="w-28 text-center tabular-nums"
-            {...form.register('locQty')}
-          />
-        </div>
-        <div className="mt-2 flex items-center gap-2 text-sm">
-          <span className="text-[var(--ms-text-muted)]">{t('loc_code_label')}:</span>
-          {(() => {
-            const [s, p, q, y] = form.watch(['locSklad', 'locPolka', 'locQavat', 'locYacheyka']);
-            const num = (str?: string) => (str != null && str !== '' ? Number(str) : null);
-            const code = formatBinLocation({
-              locSklad: num(s),
-              locPolka: num(p),
-              locQavat: num(q),
-              locYacheyka: num(y),
-            });
-            return (
-              <span
-                className="font-mono font-semibold text-[var(--ms-text-primary)] tabular-nums tracking-wider"
-                data-test-id="loc-preview"
-              >
-                {code || '—'}
-              </span>
-            );
-          })()}
-        </div>
-      </ProductFormCard>
-
-      {/* Multi-bin: additional shelf locations (edit-only, own save). */}
-      {extraLocationsSlot}
-
       {/* Неснижаемый остаток — «?» title icon + dismissable blue info-banner, then
         the 3 modes (only «sum» maps to our field). moysklad puts the «sum» input
         on the SAME row as its radio, right-aligned with a «Не указан» placeholder. */}
@@ -653,6 +730,100 @@ export function ProductFormLeftCards({
           </label>
         </div>
       </ProductFormCard>
+
+      {/* Место хранения — USER-DIRECTED (2026-07-04, NOT moysklad parity;
+        final shape per the user's clarification: one product can sit in
+        SEVERAL cells with a quantity in each — e.g. 01-01-01-01 → 30,
+        02-03-04-17 → 70). A READ-ONLY table of the product's real per-cell
+        stock (GET /products/:id/cell-stock ← StockByCell); quantities enter
+        via receiving/move/return document rows with a «Ячейка», so this can
+        never drift from the actual balance. */}
+      <ProductFormCard title={t('section_storage_cells')} testId="card-storage-cells">
+        {cellStock.length === 0 ? (
+          <p className="text-[var(--ms-text-muted)] text-sm" data-test-id="storage-stock-empty">
+            {t('storage_stock_empty')}
+          </p>
+        ) : (
+          <table className="w-full border-collapse text-sm" data-test-id="storage-stock-table">
+            <thead>
+              <tr className="border-[var(--ms-text-brand)] border-b-2">
+                <th className="px-2 pb-1.5 text-left align-bottom font-normal text-[var(--ms-text-brand)] text-xs">
+                  {t('storage_col_cell')}
+                </th>
+                <th className="px-2 pb-1.5 text-left align-bottom font-normal text-[var(--ms-text-brand)] text-xs">
+                  {t('storage_col_store')}
+                </th>
+                <th className="px-2 pb-1.5 text-right align-bottom font-normal text-[var(--ms-text-brand)] text-xs">
+                  {t('storage_col_qty')}
+                </th>
+                <th className="px-2 pb-1.5" aria-label={t('cell_move_action')} />
+              </tr>
+            </thead>
+            <tbody>
+              {cellStock.map((r) => (
+                <tr
+                  key={`${r.storeId ?? 'bind'}-${r.cellId ?? r.cellName}`}
+                  className="border-[var(--ms-border-default)] border-b last:border-0"
+                  data-test-id="storage-stock-row"
+                >
+                  <td className="px-2 py-1.5">
+                    {r.zoneName ? `${r.zoneName} / ${r.cellName}` : r.cellName}
+                  </td>
+                  <td className="px-2 py-1.5 text-[var(--ms-text-muted)]">{r.storeName}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">
+                    {fmtQty(Number(r.qty) || 0)}
+                  </td>
+                  <td className="px-2 py-1.5 text-right">
+                    <button
+                      type="button"
+                      className="text-[var(--ms-text-brand)] text-xs hover:underline"
+                      onClick={() => setMoveSource(r)}
+                      data-test-id="storage-stock-move"
+                    >
+                      {t('cell_move_action')}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              <tr>
+                <td className="px-2 py-1.5" />
+                <td className="px-2 py-1.5" />
+                <td
+                  className="px-2 py-1.5 text-right font-semibold tabular-nums"
+                  data-test-id="storage-stock-total"
+                >
+                  {fmtQty(cellStockTotal)}
+                </td>
+                <td className="px-2 py-1.5" />
+              </tr>
+            </tbody>
+          </table>
+        )}
+      </ProductFormCard>
+
+      {/* «Переместить» — move a product between two cells of the same store
+        (pure per-cell redistribution; store total unchanged). Opens from the
+        «Место хранения» row action; refetches the cell-stock table on success. */}
+      {productId && moveSource && (
+        <CellMoveModal
+          productId={productId}
+          source={moveSource}
+          onClose={() => setMoveSource(null)}
+          onDone={() => {
+            setMoveSource(null);
+            void queryClient.invalidateQueries({ queryKey: ['product-cell-stock', productId] });
+            // A binding re-bind changes attributes.__polka/__yacheyka — refetch the
+            // product so the «Полка»/«Ячейка» pickers in «Общие данные» refresh too.
+            void queryClient.invalidateQueries({ queryKey: ['product', productId] });
+          }}
+        />
+      )}
+
+      {/* Отрезы — USER-DIRECTED meter-goods cutting (2026-07-04, NOT moysklad
+        parity): the product's remnant family («Труба 4м — отрез 2м», …) with
+        live stock, plus the «Раскрой…» action. Edit form only — a new product
+        has no stock to cut yet. */}
+      {productId && <ProductCutCard productId={productId} />}
 
       {/* Особенности учёта — Фасовка / Тип учёта (structural) · ИКПУ · ТАСНИф ·
         Маркировка → Тип продукции. */}

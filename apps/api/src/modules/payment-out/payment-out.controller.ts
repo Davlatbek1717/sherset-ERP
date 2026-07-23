@@ -116,7 +116,14 @@ export class PaymentOutController {
   @RequirePermission({ entity: 'paymentout', action: 'update' })
   async massEdit(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
     const { ids, ...patch } = MassEditBaseSchema.parse(body);
-    assertPatchHasAtLeastOneField(patch, ['ownerId', 'projectId', 'description']);
+    assertPatchHasAtLeastOneField(patch, [
+      'ownerId',
+      'projectId',
+      'description',
+      'groupId',
+      'shared',
+      'expenseItem',
+    ]);
     return runBulk(ids, (id) => this.payment.massEditApply(user.accountId, user.sub, id, patch));
   }
 }

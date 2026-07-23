@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AttachmentModule } from '../attachment/attachment.module.js';
 import { AttributeMetadataModule } from '../attribute-metadata/attribute-metadata.module.js';
 import { AuthModule } from '../auth/auth.module.js';
 import { CustomerOrderModule } from '../customer-order/customer-order.module.js';
@@ -16,6 +17,7 @@ import { SalesReturnService } from './sales-return.service.js';
     CustomerOrderModule,
     WebhookModule,
     PrintTemplateModule,
+    AttachmentModule,
   ],
   controllers: [SalesReturnController],
   providers: [SalesReturnService],

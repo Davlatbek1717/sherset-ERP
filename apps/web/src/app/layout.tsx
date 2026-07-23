@@ -7,18 +7,30 @@ import {
   ToastProvider,
   TooltipProvider,
 } from '@moysklad/ui';
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { NextIntlClientProvider } from 'next-intl';
 import { getLocale, getMessages, getTranslations } from 'next-intl/server';
 import './globals.css';
 import { PrintFormProvider } from '@/components/print/print-form-provider';
 import { PrintTemplatesProvider } from '@/components/print/print-templates-provider';
+import { SpaNavigation } from '@/components/spa-nav';
 import { UnsavedNavGuard } from '@/components/unsaved-nav-guard';
 import { QueryProvider } from '@/lib/query-client';
 
+// Owner 2026-07-19: the deployment is Climart-branded — the browser tab shows
+// the Climart bolt mark (src/app/icon.svg) + a Climart title. The real MoySklad
+// site carries its own branding; ours must not read as «MoySklad Clone».
 export const metadata: Metadata = {
-  title: 'Sherset — Biznes boshqaruv tizimi',
-  description: 'Bulutli ERP, buxgalteriya va savdo boshqaruvi',
+  title: 'Climart — Savdo va ombor boshqaruvi',
+  description: 'Climart — bulutli savdo, ombor va moliya boshqaruvi tizimi',
+};
+
+// Phone-scan flow (/scan): without a viewport meta phones render the desktop
+// canvas zoomed out; device-width keeps the scanner page (and everything else)
+// readable on mobile.
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
@@ -78,6 +90,11 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                         defaultLabels={{ confirm: tCommon('continue'), cancel: tCommon('cancel') }}
                       >
                         <UnsavedNavGuard />
+                        {/* Mounted AFTER the guard: capture listeners fire in
+                            registration order, so the dirty-form confirm gets
+                            the click first and SpaNavigation sees
+                            defaultPrevented. */}
+                        <SpaNavigation />
                         <PaginationLabelsProvider
                           labels={{
                             of: tPag('of'),

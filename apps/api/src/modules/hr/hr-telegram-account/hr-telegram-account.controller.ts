@@ -15,7 +15,6 @@ import { JwtAuthGuard } from '../../auth/jwt-auth.guard.js';
 import { HrPermissionGuard } from '../hr-auth/hr-permission.guard.js';
 import { RequireHrPermission } from '../hr-auth/require-hr-permission.decorator.js';
 import {
-  ConnectHrTelegramSchema,
   CreateHrTelegramAccountSchema,
   SetActiveHrTelegramAccountSchema,
 } from './hr-telegram-account.schema.js';
@@ -43,18 +42,6 @@ export class HrTelegramAccountController {
   async create(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
     const input = CreateHrTelegramAccountSchema.parse(body);
     return this.svc.create(user.accountId, input);
-  }
-
-  /**
-   * Soddalashtirilgan ulash — foydalanuvchi FAQAT telefonini beradi (apiId/
-   * apiHash serverning env'idan). `slot` (1=asosiy, 2=zaxira) yaratiladi/
-   * yangilanadi; keyin odatiy `:id/login/start` → `login/code` oqimi.
-   */
-  @Post('connect')
-  @RequireHrPermission('settings', 'full')
-  async connect(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
-    const input = ConnectHrTelegramSchema.parse(body);
-    return this.svc.connectSlot(user.accountId, input.slot, input.phoneNumber);
   }
 
   @Patch(':id/active')

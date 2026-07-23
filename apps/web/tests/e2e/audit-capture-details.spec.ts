@@ -1,6 +1,3 @@
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-import { fileURLToPath } from 'node:url';
 /**
  * Detail-page parity capture. Pairs with audit-capture-all.spec.ts —
  * that one captures lists; this one captures the FIRST detail row of
@@ -11,6 +8,9 @@ import { fileURLToPath } from 'node:url';
  * navigate to the detail page.
  */
 import { type Page, expect, test } from '@playwright/test';
+import * as path from 'node:path';
+import * as fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -24,116 +24,26 @@ interface DetailEntry {
 }
 
 const ENTRIES: DetailEntry[] = [
-  {
-    name: 'customer-orders',
-    listRoute: '/customer-orders',
-    detailRouteBase: '/customer-orders',
-    rowTestIdPrefix: 'customer-order-row-',
-  },
-  {
-    name: 'demands',
-    listRoute: '/demands',
-    detailRouteBase: '/demands',
-    rowTestIdPrefix: 'demand-row-',
-  },
-  {
-    name: 'invoices-out',
-    listRoute: '/invoices-out',
-    detailRouteBase: '/invoices-out',
-    rowTestIdPrefix: 'invoice-out-row-',
-  },
-  {
-    name: 'sales-returns',
-    listRoute: '/sales-returns',
-    detailRouteBase: '/sales-returns',
-    rowTestIdPrefix: 'sales-return-row-',
-  },
-  {
-    name: 'purchase-orders',
-    listRoute: '/purchase-orders',
-    detailRouteBase: '/purchase-orders',
-    rowTestIdPrefix: 'purchase-order-row-',
-  },
-  {
-    name: 'supplies',
-    listRoute: '/supplies',
-    detailRouteBase: '/supplies',
-    rowTestIdPrefix: 'supply-row-',
-  },
-  {
-    name: 'purchase-returns',
-    listRoute: '/purchase-returns',
-    detailRouteBase: '/purchase-returns',
-    rowTestIdPrefix: 'purchase-return-row-',
-  },
-  {
-    name: 'invoices-in',
-    listRoute: '/invoices-in',
-    detailRouteBase: '/invoices-in',
-    rowTestIdPrefix: 'invoice-in-row-',
-  },
-  {
-    name: 'enters',
-    listRoute: '/enters',
-    detailRouteBase: '/enters',
-    rowTestIdPrefix: 'enter-row-',
-  },
-  {
-    name: 'losses',
-    listRoute: '/losses',
-    detailRouteBase: '/losses',
-    rowTestIdPrefix: 'loss-row-',
-  },
+  { name: 'customer-orders', listRoute: '/customer-orders', detailRouteBase: '/customer-orders', rowTestIdPrefix: 'customer-order-row-' },
+  { name: 'demands', listRoute: '/demands', detailRouteBase: '/demands', rowTestIdPrefix: 'demand-row-' },
+  { name: 'invoices-out', listRoute: '/invoices-out', detailRouteBase: '/invoices-out', rowTestIdPrefix: 'invoice-out-row-' },
+  { name: 'sales-returns', listRoute: '/sales-returns', detailRouteBase: '/sales-returns', rowTestIdPrefix: 'sales-return-row-' },
+  { name: 'purchase-orders', listRoute: '/purchase-orders', detailRouteBase: '/purchase-orders', rowTestIdPrefix: 'purchase-order-row-' },
+  { name: 'supplies', listRoute: '/supplies', detailRouteBase: '/supplies', rowTestIdPrefix: 'supply-row-' },
+  { name: 'purchase-returns', listRoute: '/purchase-returns', detailRouteBase: '/purchase-returns', rowTestIdPrefix: 'purchase-return-row-' },
+  { name: 'invoices-in', listRoute: '/invoices-in', detailRouteBase: '/invoices-in', rowTestIdPrefix: 'invoice-in-row-' },
+  { name: 'enters', listRoute: '/enters', detailRouteBase: '/enters', rowTestIdPrefix: 'enter-row-' },
+  { name: 'losses', listRoute: '/losses', detailRouteBase: '/losses', rowTestIdPrefix: 'loss-row-' },
   { name: 'moves', listRoute: '/moves', detailRouteBase: '/moves', rowTestIdPrefix: 'move-row-' },
-  {
-    name: 'inventories',
-    listRoute: '/inventories',
-    detailRouteBase: '/inventories',
-    rowTestIdPrefix: 'inventory-row-',
-  },
-  {
-    name: 'cash-in',
-    listRoute: '/cash-in',
-    detailRouteBase: '/cash-in',
-    rowTestIdPrefix: 'cash-in-row-',
-  },
-  {
-    name: 'cash-out',
-    listRoute: '/cash-out',
-    detailRouteBase: '/cash-out',
-    rowTestIdPrefix: 'cash-out-row-',
-  },
-  {
-    name: 'payments-in',
-    listRoute: '/payments-in',
-    detailRouteBase: '/payments-in',
-    rowTestIdPrefix: 'payment-in-row-',
-  },
-  {
-    name: 'payments-out',
-    listRoute: '/payments-out',
-    detailRouteBase: '/payments-out',
-    rowTestIdPrefix: 'payment-out-row-',
-  },
-  {
-    name: 'counterparties',
-    listRoute: '/counterparties',
-    detailRouteBase: '/counterparties',
-    rowTestIdPrefix: 'counterparty-row-',
-  },
-  {
-    name: 'products',
-    listRoute: '/products',
-    detailRouteBase: '/products',
-    rowTestIdPrefix: 'product-row-',
-  },
+  { name: 'inventories', listRoute: '/inventories', detailRouteBase: '/inventories', rowTestIdPrefix: 'inventory-row-' },
+  { name: 'cash-in', listRoute: '/cash-in', detailRouteBase: '/cash-in', rowTestIdPrefix: 'cash-in-row-' },
+  { name: 'cash-out', listRoute: '/cash-out', detailRouteBase: '/cash-out', rowTestIdPrefix: 'cash-out-row-' },
+  { name: 'payments-in', listRoute: '/payments-in', detailRouteBase: '/payments-in', rowTestIdPrefix: 'payment-in-row-' },
+  { name: 'payments-out', listRoute: '/payments-out', detailRouteBase: '/payments-out', rowTestIdPrefix: 'payment-out-row-' },
+  { name: 'counterparties', listRoute: '/counterparties', detailRouteBase: '/counterparties', rowTestIdPrefix: 'counterparty-row-' },
+  { name: 'products', listRoute: '/products', detailRouteBase: '/products', rowTestIdPrefix: 'product-row-' },
   { name: 'tasks', listRoute: '/tasks', detailRouteBase: '/tasks', rowTestIdPrefix: 'task-row-' },
-  {
-    name: 'opportunities',
-    listRoute: '/opportunities',
-    detailRouteBase: '/opportunities',
-    rowTestIdPrefix: 'opportunity-row-',
-  },
+  { name: 'opportunities', listRoute: '/opportunities', detailRouteBase: '/opportunities', rowTestIdPrefix: 'opportunity-row-' },
 ];
 
 const VIEWPORT = { width: 1440, height: 900 };
@@ -142,8 +52,8 @@ fs.mkdirSync(DETAIL_DIR, { recursive: true });
 
 async function login(page: Page): Promise<void> {
   await page.goto('/login');
-  await page.waitForSelector('[data-test-id="login-username"]', { timeout: 15_000 });
-  await page.fill('[data-test-id="login-username"]', 'admin@demo.local');
+  await page.waitForSelector('[data-test-id="login-email"]', { timeout: 15_000 });
+  await page.fill('[data-test-id="login-email"]', 'admin@demo.local');
   await page.fill('[data-test-id="login-password"]', 'admin123');
   await page.click('[data-test-id="login-submit"]');
   await page.waitForURL('/', { timeout: 15_000 });

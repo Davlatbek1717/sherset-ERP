@@ -76,13 +76,13 @@ export const CreateInvoiceInSchema = z.object({
   rateValue: z.coerce.string().regex(/^\d+$/).default('100000000'),
   vatEnabled: z.boolean().default(true),
   vatIncluded: z.boolean().default(false),
-  positions: z.array(InvoiceInPositionInputSchema).min(1, 'at least one position required'),
+  positions: z.array(InvoiceInPositionInputSchema),
   attributes: z.record(z.string(), z.unknown()).optional(),
 });
 export type CreateInvoiceInInput = z.infer<typeof CreateInvoiceInSchema>;
 
 export const UpdateInvoiceInSchema = CreateInvoiceInSchema.partial().extend({
-  positions: z.array(InvoiceInPositionInputSchema).min(1).optional(),
+  positions: z.array(InvoiceInPositionInputSchema).optional(),
   version: z.number().int().nonnegative(),
 });
 export type UpdateInvoiceInInput = z.infer<typeof UpdateInvoiceInSchema>;

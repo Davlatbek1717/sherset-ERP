@@ -27,20 +27,20 @@ datasource db {
 
 // Tenant. Everything else scopes to this.
 model Account {
-  id                  String   @id @default(uuid()) @db.Uuid
-  name                String   @db.VarChar(255)
-  country             String   @default("UZ") @db.VarChar(2)
-  currency            String   @default("UZS") @db.VarChar(3)
-  locale              String   @default("uz-Latn") @db.VarChar(10)
-  timezone            String   @default("Asia/Tashkent") @db.VarChar(50)
-  plan                String   @default("trial") @db.VarChar(20)
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @db.VarChar(255)
+  country   String   @default("UZ") @db.VarChar(2)
+  currency  String   @default("UZS") @db.VarChar(3)
+  locale    String   @default("uz-Latn") @db.VarChar(10)
+  timezone  String   @default("Asia/Tashkent") @db.VarChar(50)
+  plan      String   @default("trial") @db.VarChar(20)
   // H4 record-scope (RFC _H4-OWN-GROUP-SCOPE-RFC.md, W4). Per-account opt-in for
   // OWN/OWN_GROUP per-record visibility enforcement. Default OFF — when false the
   // read-path adds no scope filter (today's behaviour). Flip per account only after
   // the cohort's groupId is backfilled + the manager-visibility test passes.
-  recordScopeEnforced Boolean  @default(false) @map("record_scope_enforced")
-  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt           DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+  recordScopeEnforced Boolean @default(false) @map("record_scope_enforced")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
 
   employees                      Employee[]
   organizations                  Organization[]
@@ -70,6 +70,7 @@ model Account {
   processingProcessPositions     ProcessingProcessPosition[]
   processingProcessPositionEdges ProcessingProcessPositionEdge[]
   stocks                         Stock[]
+  stockByCell                    StockByCell[]
   auditLog                       AuditLog[]
   organizationAccounts           OrganizationAccount[]
   cashDesks                      CashDesk[]
@@ -159,16 +160,12 @@ model Account {
   onboardingProgress             OnboardingProgress[]
   smsConfig                      SmsConfig?
   smsLogs                        SmsLog[]
-  messageTemplates               MessageTemplate[]
   edoConfig                      EdoConfig?
   edoSubmissions                 EdoSubmission[]
   markingConfig                  MarkingConfig?
   markingCodeRecords             MarkingCodeRecord[]
   telegramConfig                 TelegramConfig?
   telegramOutbox                 TelegramOutbox[]
-  telegramChats                  TelegramChat[]
-  telegramChatMessages           TelegramChatMessage[]
-  telegramBackfillJobs           TelegramBackfillJob[]
   paymentGatewayConfigs          PaymentGatewayConfig[]
   paymentGatewayTxs              PaymentGatewayTx[]
   bankApiConfigs                 BankApiConfig[]
@@ -196,11 +193,6 @@ model Account {
   hrNotificationTemplates HrNotificationTemplate[]
   hrActivityLogs          HrActivityLog[]
   documentSequences       DocumentSequence[]
-  shiftSchedules          ShiftSchedule[]
-  smenas                  Smena[]
-  debts                   Debt[]
-  debtPayments            DebtPayment[]
-  debtNotes               DebtNote[]
 
   @@map("accounts")
 }
@@ -330,7 +322,6 @@ model Employee {
   ownedWorkOrders            WorkOrder[]                @relation("WorkOrderOwner")
   cashierSessions            CashierSession[]           @relation("CashierSessionCashier")
   ownedCashierSessions       CashierSession[]           @relation("CashierSessionOwner")
-  smenaAssignments           SmenaEmployee[]            @relation("SmenaEmployees")
   ownedRetailSales           RetailSale[]               @relation("RetailSaleOwner")
   ownedOrganizations         Organization[]             @relation("OrganizationOwner")
   ownedStores                Store[]                    @relation("StoreOwner")
@@ -395,14 +386,6 @@ model Employee {
   hrKpiMonthly        HrKpiMonthlyScore[]    @relation("HrKpiMonthlyEmployee")
   hrOutboxEntries     HrTelegramOutbox[]     @relation("HrOutboxEmployee")
   hrActivities        HrActivityLog[]        @relation("HrActivityActor")
-
-  // Qarz undirish (debt-collection) module
-  ownedDebts           Debt[]        @relation("DebtOwner")
-  issuedDebts          Debt[]        @relation("DebtIssuer")
-  debtPaymentsTook     DebtPayment[] @relation("DebtPaymentReceiver")
-  debtPaymentsReversed DebtPayment[] @relation("DebtPaymentReverser")
-  debtNotesWritten     DebtNote[]    @relation("DebtNoteAuthor")
-  debtNotesCanceled    DebtNote[]    @relation("DebtNoteCanceler")
 
   @@unique([accountId, email])
   // ── PARTIAL unique index (Prisma representation gap — READ before "fixing" any diff) ──
@@ -605,7 +588,6 @@ model Organization {
   cashIns            CashIn[]
   cashOuts           CashOut[]
   cashierSessions    CashierSession[]
-  smenas             Smena[]                  @relation("SmenaOrganization")
   retailSales        RetailSale[]             @relation("RetailSaleOrg")
   contracts          Contract[]               @relation("ContractOwnAgent")
   bonusOps           BonusOperation[]         @relation("BonusOpOrg")
@@ -664,9 +646,6 @@ model Store {
   shared             Boolean  @default(false)
   attributes         Json?    @default("{}")
   allowNegativeStock Boolean  @default(false) @map("allow_negative_stock")
-  // Forward (fast-pick) warehouse — replenishment compares each product's
-  // forward-store balance against Product.forwardMax. Only one store is forward.
-  isForward          Boolean  @default(false) @map("is_forward")
   archived           Boolean  @default(false)
   createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamptz()
@@ -706,13 +685,81 @@ model Store {
   stocks                        Stock[]
   workOrders                    WorkOrder[]
   cashierSessions               CashierSession[]
-  // Adresli saqlash — shu omborning yacheykalar registri (StoreCell).
-  cells                         StoreCell[]         @relation("StoreCells")
+  // Address storage (Адресное хранение) — moysklad parity. The legacy
+  // `zones`/`slots` String[] above are the old free-text placeholder; these
+  // relations are the real per-warehouse Zone/Cell model (см. StoreZone/StoreCell).
+  addressZones                  StoreZone[]
+  cells                         StoreCell[]
+  stockByCell                   StockByCell[]
 
   @@unique([accountId, code])
   @@index([accountId, archived])
   @@index([accountId, parentId])
   @@map("stores")
+}
+
+// =========================================================================
+// Address storage (Адресное хранение товаров) — moysklad parity.
+// A warehouse organises stock into Zones (Зоны), each holding Cells (Ячейки);
+// a document position may reference a cell, and stock can be tracked per cell.
+// Managed in the warehouse card «Адресное хранение товаров». Tenancy is the
+// scalar `accountId` (mirrors LossPosition) — cascade flows through `store`.
+// =========================================================================
+
+// StoreZone (Зона) — a named grouping of cells inside one warehouse.
+// «Без зоны хранения» is the implicit null-zone bucket (a cell with zoneId=null),
+// not a row here.
+model StoreZone {
+  id        String   @id @default(uuid()) @db.Uuid
+  accountId String   @map("account_id") @db.Uuid
+  storeId   String   @map("store_id") @db.Uuid
+  name      String   @db.VarChar(255)
+  // Stable display order in the warehouse card (moysklad keeps insertion order).
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  store Store       @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  cells StoreCell[]
+
+  // Zone names are unique within a warehouse (moysklad rejects duplicates).
+  @@unique([storeId, name])
+  @@index([accountId, storeId])
+  @@map("store_zones")
+}
+
+// StoreCell (Ячейка) — a physical bin inside a warehouse, optionally assigned to
+// a Zone (zoneId=null ⇒ «Без зоны хранения»). Documents receive/write-off stock
+// against a cell. Status (Свободна/Занята) is COMPUTED from stock-by-cell (built
+// later, Phase 4); `barcode` (Штрихкод) supports scan-pick. Deleting a zone
+// SetNull-s its cells (they fall back to the null-zone bucket), never deletes them.
+model StoreCell {
+  id        String   @id @default(uuid()) @db.Uuid
+  accountId String   @map("account_id") @db.Uuid
+  storeId   String   @map("store_id") @db.Uuid
+  zoneId    String?  @map("zone_id") @db.Uuid
+  name      String   @db.VarChar(255)
+  barcode   String?  @db.VarChar(255)
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  store Store      @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  zone  StoreZone? @relation(fields: [zoneId], references: [id], onDelete: SetNull)
+  // Documents that reference this cell (the position keeps a denormalized `cell`
+  // label too); per-cell stock balances (Phase 4 «Свободна/Занята» + «С этим товаром»).
+  lossPositions           LossPosition[]           @relation("LossPositionCell")
+  enterPositions          EnterPosition[]          @relation("EnterPositionCell")
+  supplyPositions         SupplyPosition[]         @relation("SupplyPositionCell")
+  purchaseReturnPositions PurchaseReturnPosition[] @relation("PurchaseReturnPositionCell")
+  salesReturnPositions    SalesReturnPosition[]    @relation("SalesReturnPositionCell")
+  stockByCell     StockByCell[]
+
+  // Cell names are unique within a warehouse (the picker identifies a cell by name).
+  @@unique([storeId, name])
+  @@index([accountId, storeId])
+  @@index([zoneId])
+  @@map("store_cells")
 }
 
 // OrganizationAccount — our own bank account (payer side). One Organization
@@ -789,64 +836,9 @@ model CashDesk {
   cashIns         CashIn[]
   cashOuts        CashOut[]
   cashierSessions CashierSession[]
-  debtPayments    DebtPayment[]
 
   @@index([accountId, archived])
   @@map("cash_desks")
-}
-
-// ShiftSchedule — ish vaqti shabloni (sozlamalarda bir marta belgilanadi).
-// Misol: "1-smena" 08:00–16:00, "2-smena" 16:00–00:00.
-model ShiftSchedule {
-  id        String   @id @default(uuid()) @db.Uuid
-  accountId String   @map("account_id") @db.Uuid
-  name      String   @db.VarChar(100)
-  startTime String   @map("start_time") @db.VarChar(5) // "08:00"
-  endTime   String   @map("end_time") @db.VarChar(5) // "16:00"
-  archived  Boolean  @default(false)
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
-
-  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  smenas  Smena[]
-
-  @@index([accountId, archived])
-  @@map("shift_schedules")
-}
-
-// Smena — bir marta admin tomonidan yaratiladi.
-// Ish vaqti shabloni va xodimlar belgilanadi.
-// Bir nechta xodim biriktirilishi mumkin.
-model Smena {
-  id             String   @id @default(uuid()) @db.Uuid
-  accountId      String   @map("account_id") @db.Uuid
-  name           String   @db.VarChar(100)
-  scheduleId     String   @map("schedule_id") @db.Uuid
-  organizationId String   @map("organization_id") @db.Uuid
-  archived       Boolean  @default(false)
-  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz()
-
-  account      Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  schedule     ShiftSchedule    @relation(fields: [scheduleId], references: [id], onDelete: Restrict)
-  organization Organization     @relation("SmenaOrganization", fields: [organizationId], references: [id], onDelete: Restrict)
-  employees    SmenaEmployee[]
-  sessions     CashierSession[]
-
-  @@index([accountId, archived])
-  @@map("smenas")
-}
-
-// SmenaEmployee — kassir ↔ smena ko'p-ko'p bog'lanishi.
-model SmenaEmployee {
-  smenaId    String @map("smena_id") @db.Uuid
-  employeeId String @map("employee_id") @db.Uuid
-
-  smena    Smena    @relation(fields: [smenaId], references: [id], onDelete: Cascade)
-  employee Employee @relation("SmenaEmployees", fields: [employeeId], references: [id], onDelete: Cascade)
-
-  @@id([smenaId, employeeId])
-  @@map("smena_employees")
 }
 
 // MoneyOperation — append-only ledger mirroring StockOperation for money.
@@ -1503,100 +1495,6 @@ model Notification {
   @@map("notifications")
 }
 
-// RestockTask (Sherset custom) — «Joylashtirish vazifasi». When a cashier
-// returns goods (a SalesReturn), they send the returned items to a warehouse-
-// keeper (omborchi) to be put back on their home shelves. The task carries a
-// SNAPSHOT of each returned product + its bin location code, and the omborchi
-// confirms each line by scanning the product's senik QR (or a manual «placed»).
-// Scalar refs only (no Prisma relations to shared models) — display values are
-// snapshotted at send time, so the checklist is stable even if data later changes.
-model RestockTask {
-  id            String   @id @default(uuid()) @db.Uuid
-  accountId     String   @map("account_id") @db.Uuid
-  // Warehouse-task kind: 'restock' (inbound — put returned goods back) or
-  // 'picking' (outbound — collect a sold order's goods for shipment). Picking
-  // tasks are split per sklad (one task per warehouse zone / omborchi).
-  type          String   @default("restock") @db.VarChar(20)
-  // For picking tasks: the sklad (warehouse zone) number this task collects from
-  // (the 1st segment of the bin code). Null for restock tasks.
-  skladNo       Int?     @map("sklad_no")
-  // Source document the goods relate to ('salesreturn' for restock,
-  // 'customerorder' for picking).
-  sourceType    String   @default("salesreturn") @map("source_type") @db.VarChar(30)
-  sourceId      String   @map("source_id") @db.Uuid
-  sourceName    String?  @map("source_name") @db.VarChar(255)
-  storeId       String?  @map("store_id") @db.Uuid
-  storeName     String?  @map("store_name") @db.VarChar(255)
-  // The warehouse-keeper (omborchi) the task is assigned to. Nullable for
-  // picking groups whose sklad has no keeper configured yet (shows unassigned).
-  assigneeId    String?  @map("assignee_id") @db.Uuid
-  assigneeName  String?  @map("assignee_name") @db.VarChar(255)
-  // The cashier / employee who sent it.
-  createdById   String   @map("created_by_id") @db.Uuid
-  createdByName String?  @map("created_by_name") @db.VarChar(255)
-  // pending | in_progress | done
-  status        String   @default("pending") @db.VarChar(20)
-  note          String?
-  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz()
-  version       Int      @default(1)
-
-  lines RestockTaskLine[]
-
-  @@index([accountId, status, createdAt(sort: Desc)])
-  @@index([accountId, assigneeId, status])
-  @@index([accountId, sourceType, sourceId])
-  @@index([accountId, type])
-  @@map("restock_tasks")
-}
-
-// SkladKeeper (Sherset custom) — maps a warehouse zone number (the «sklad» 1st
-// segment of a product's bin code «NN-…») to the warehouse-keeper (omborchi)
-// responsible for it. When a customer order is sent to picking, its lines are
-// grouped by sklad and each group's task is assigned to that sklad's keeper.
-// employeeId is a denormalised scalar (no Prisma relation) + a name snapshot,
-// mirroring RestockTask.assigneeId.
-model SkladKeeper {
-  id           String   @id @default(uuid()) @db.Uuid
-  accountId    String   @map("account_id") @db.Uuid
-  skladNo      Int      @map("sklad_no")
-  employeeId   String   @map("employee_id") @db.Uuid
-  employeeName String?  @map("employee_name") @db.VarChar(255)
-  // Windows printer name this warehouse's picking sheet is routed to (via the
-  // local print-agent). Two sklads may share one printer (→ both receipts on it)
-  // or use separate printers (→ each on its own). Null ⇒ falls back on print.
-  printerName  String?  @map("printer_name") @db.VarChar(255)
-  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz()
-
-  @@unique([accountId, skladNo])
-  @@index([accountId])
-  @@map("sklad_keepers")
-}
-
-// One returned product to put back, with its home bin location snapshot and a
-// per-line placement confirmation (scan the senik QR or press «placed»).
-model RestockTaskLine {
-  id              String    @id @default(uuid()) @db.Uuid
-  accountId       String    @map("account_id") @db.Uuid
-  restockTaskId   String    @map("restock_task_id") @db.Uuid
-  productId       String?   @map("product_id") @db.Uuid
-  productName     String    @map("product_name") @db.VarChar(255)
-  quantity        Decimal   @db.Decimal(20, 6)
-  // Snapshot of the product's home location «NN-NN-NN-NN» at send time (null = unset).
-  binLocation     String?   @map("bin_location") @db.VarChar(20)
-  confirmedAt     DateTime? @map("confirmed_at") @db.Timestamptz()
-  confirmedById   String?   @map("confirmed_by_id") @db.Uuid
-  confirmedByName String?   @map("confirmed_by_name") @db.VarChar(255)
-  position        Int       @default(0)
-
-  restockTask RestockTask @relation(fields: [restockTaskId], references: [id], onDelete: Cascade)
-
-  @@index([restockTaskId, position])
-  @@index([accountId, productId])
-  @@map("restock_task_lines")
-}
-
 // ContactPerson — additional contact people belonging to a Counterparty.
 // Counterparty itself has top-level phone/email, but a single legal entity
 // usually has multiple humans (director, accountant, sales, ...). moysklad
@@ -1798,11 +1696,6 @@ model Counterparty {
   hrChatHistories HrChatHistory[]    @relation("HrChatHistoryCp")
   hrOutboxEntries HrTelegramOutbox[] @relation("HrOutboxCp")
 
-  telegramChats        TelegramChat[]
-  telegramBackfillJobs TelegramBackfillJob[] @relation("TgBackfillCp")
-
-  debts Debt[]
-
   @@index([accountId, archived])
   @@index([accountId, companyType])
   @@index([groupId])
@@ -1963,11 +1856,18 @@ model State {
   createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz()
 
-  account        Account         @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  account        Account        @relation(fields: [accountId], references: [id], onDelete: Cascade)
   counterparties Counterparty[]
   customerOrders CustomerOrder[] @relation("CustomerOrderStatus")
-  purchaseOrders PurchaseOrder[] @relation("PurchaseOrderStatus")
-  tasks          Task[]          @relation("TaskState")
+  purchaseOrders  PurchaseOrder[]  @relation("PurchaseOrderStatus")
+  supplies        Supply[]         @relation("SupplyStatus")
+  purchaseReturns PurchaseReturn[] @relation("PurchaseReturnStatus")
+  salesReturns    SalesReturn[]    @relation("SalesReturnStatus")
+  demands         Demand[]         @relation("DemandStatus")
+  tasks           Task[]           @relation("TaskState")
+  commissionReportsOut CommissionReportOut[] @relation("CommReportOutStatus")
+  commissionReportsIn  CommissionReportIn[]  @relation("CommReportInStatus")
+  invoicesOut          InvoiceOut[]          @relation("InvoiceOutStatus")
 
   @@unique([accountId, entityType, name])
   @@index([accountId, entityType, archived])
@@ -2401,18 +2301,16 @@ model CompanySettings {
   companyAddress           String?  @map("company_address") @db.VarChar(255)
   /// Discount stack policy: BY_PRIORITY | BY_SUM | BY_PRODUCT
   discountStrategy         String   @default("BY_PRIORITY") @map("discount_strategy") @db.VarChar(30)
+  /// moysklad «Обратный адрес в письмах»: EMPLOYEE (sender's address) | COMPANY.
+  emailReplyMode           String   @default("EMPLOYEE") @map("email_reply_mode") @db.VarChar(20)
+  /// moysklad «Использовать партии товаров».
+  useConsignments          Boolean  @default(false) @map("use_consignments")
+  /// moysklad «Включить отображение дополнительных полей товаров и услуг
+  /// в позициях документов».
+  showPositionAttributes   Boolean  @default(true) @map("show_position_attributes")
   /// Pre-defined sale price types referenced from products + price lists.
   /// JSON for moysklad parity (their schema exposes a list, not a relation).
   priceTypesJson           Json?    @map("price_types_json")
-  /// Windows printer name the customer sales receipt («mijoz cheki») is routed
-  /// to via the local print-agent — the receipt counterpart of
-  /// SkladKeeper.printerName. Null ⇒ falls back to the browser popup print.
-  receiptPrinterName       String?  @map("receipt_printer_name") @db.VarChar(255)
-  /// Customer-facing contact shown in reminder messages (SMS + Telegram).
-  /// Null ⇒ code falls back to the built-in Sherset defaults.
-  messagingPhone           String?  @map("messaging_phone") @db.VarChar(30)
-  messagingCard            String?  @map("messaging_card") @db.VarChar(40)
-  messagingCardOwner       String?  @map("messaging_card_owner") @db.VarChar(120)
   createdAt                DateTime @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt                DateTime @updatedAt @map("updated_at") @db.Timestamptz()
 
@@ -3960,14 +3858,12 @@ model LabelTemplate {
   labelHeightMm Int @default(30) @map("label_height_mm")
 
   /// Which product fields to print on each label.
-  includeName     Boolean @default(true) @map("include_name")
-  includePrice    Boolean @default(true) @map("include_price")
-  includeBarcode  Boolean @default(true) @map("include_barcode")
-  includeArticle  Boolean @default(true) @map("include_article")
-  /// Sherset custom — show the product's warehouse home location «NN-NN-NN-NN».
-  includeLocation Boolean @default(true) @map("include_location")
+  includeName    Boolean @default(true) @map("include_name")
+  includePrice   Boolean @default(true) @map("include_price")
+  includeBarcode Boolean @default(true) @map("include_barcode")
+  includeArticle Boolean @default(true) @map("include_article")
   /// Optional fixed header text (shop name, etc).
-  headerText      String? @map("header_text") @db.VarChar(255)
+  headerText     String? @map("header_text") @db.VarChar(255)
 
   /// Barcode format — 'EAN13' | 'CODE128' | 'QR'.
   barcodeFormat String @default("EAN13") @map("barcode_format") @db.VarChar(20)
@@ -4305,6 +4201,12 @@ model CommissionReportOut {
   organizationId String  @map("organization_id") @db.Uuid
   contractId     String? @map("contract_id") @db.Uuid
 
+  /// «Статус» — account-defined custom status (State row,
+  /// entityType="commissionreportout"), mirroring Supply.statusId. Orthogonal to
+  /// the FSM `state` + «Проведено»; onDelete: SetNull so deleting a status just
+  /// unlinks it.
+  statusId String? @map("status_id") @db.Uuid
+
   moment     DateTime  @default(now()) @db.Timestamptz()
   applicable Boolean   @default(false)
   state      String    @default("draft") @db.VarChar(30)
@@ -4315,6 +4217,10 @@ model CommissionReportOut {
   rewardSumMinor    BigInt @default(0) @map("reward_sum_minor")
   rewardVatSumMinor BigInt @default(0) @map("reward_vat_sum_minor")
   payedSumMinor     BigInt @default(0) @map("payed_sum_minor")
+  // «Сумма комитента» payable to the consigner; «Прочие услуги» = non-commission
+  // service positions. moysklad list columns; default 0 until the create/post sprint.
+  commitentSumMinor     BigInt @default(0) @map("commitent_sum_minor")
+  otherServicesSumMinor BigInt @default(0) @map("other_services_sum_minor")
 
   vatEnabled  Boolean @default(true) @map("vat_enabled")
   vatIncluded Boolean @default(false) @map("vat_included")
@@ -4338,6 +4244,7 @@ model CommissionReportOut {
   agent        Counterparty @relation("CommReportOutAgent", fields: [agentId], references: [id], onDelete: Restrict)
   organization Organization @relation("CommReportOutOrg", fields: [organizationId], references: [id], onDelete: Restrict)
   contract     Contract?    @relation("CommReportOutContract", fields: [contractId], references: [id], onDelete: SetNull)
+  status       State?       @relation("CommReportOutStatus", fields: [statusId], references: [id], onDelete: SetNull)
 
   @@unique([accountId, name])
   @@map("commission_reports_out")
@@ -4360,6 +4267,15 @@ model CommissionReportIn {
   organizationId String  @map("organization_id") @db.Uuid
   contractId     String? @map("contract_id") @db.Uuid
 
+  /// «Статус» — account-defined custom status (State row,
+  /// entityType="commissionreportin"), mirroring CommissionReportOut.statusId.
+  statusId String? @map("status_id") @db.Uuid
+
+  /// «Входящий номер» + «от» — the commissioner's own doc number/date on the
+  /// received report (moysklad in-editor header fields; OUT has no equivalent).
+  incomingNumber String?   @map("incoming_number") @db.VarChar(50)
+  incomingDate   DateTime? @map("incoming_date") @db.Timestamptz()
+
   moment     DateTime  @default(now()) @db.Timestamptz()
   applicable Boolean   @default(false)
   state      String    @default("draft") @db.VarChar(30)
@@ -4370,6 +4286,10 @@ model CommissionReportIn {
   rewardSumMinor    BigInt @default(0) @map("reward_sum_minor")
   rewardVatSumMinor BigInt @default(0) @map("reward_vat_sum_minor")
   payedSumMinor     BigInt @default(0) @map("payed_sum_minor")
+  // «Сумма комитента» payable to the consigner; «Прочие услуги» = non-commission
+  // service positions. moysklad list columns; default 0 until the create/post sprint.
+  commitentSumMinor     BigInt @default(0) @map("commitent_sum_minor")
+  otherServicesSumMinor BigInt @default(0) @map("other_services_sum_minor")
 
   vatEnabled  Boolean @default(true) @map("vat_enabled")
   vatIncluded Boolean @default(false) @map("vat_included")
@@ -4393,6 +4313,7 @@ model CommissionReportIn {
   agent        Counterparty @relation("CommReportInAgent", fields: [agentId], references: [id], onDelete: Restrict)
   organization Organization @relation("CommReportInOrg", fields: [organizationId], references: [id], onDelete: Restrict)
   contract     Contract?    @relation("CommReportInContract", fields: [contractId], references: [id], onDelete: SetNull)
+  status       State?       @relation("CommReportInStatus", fields: [statusId], references: [id], onDelete: SetNull)
 
   @@unique([accountId, name])
   @@map("commission_reports_in")
@@ -4582,8 +4503,8 @@ model Product {
   kind String @default("product") @db.VarChar(20)
 
   // Pricing (stored in minor units = tiyin; scale 100)
-  minPrice         BigInt? @map("min_price")
-  buyPrice         BigInt? @map("buy_price")
+  minPrice   BigInt? @map("min_price")
+  buyPrice   BigInt? @map("buy_price")
   // Per-price currency (ISO code) — moysklad parity: each price row picks its
   // own currency. NULL = the account base currency. NOTE: the stored amount is
   // the as-entered value in that currency; downstream cost/profit/document math
@@ -4593,32 +4514,13 @@ model Product {
   buyPriceCurrency String? @map("buy_price_currency") @db.VarChar(3)
   minPriceCurrency String? @map("min_price_currency") @db.VarChar(3)
   // Multi-tier prices: [{ priceTypeId, value, currencyCode }]
-  salePrices       Json?   @map("sale_prices")
+  salePrices Json?   @map("sale_prices")
 
   // Physical
   weightG  Int?    @map("weight_g") // weight in grams
   volumeML Int?    @map("volume_ml") // volume in ml
   weighed  Boolean @default(false) // weighed goods (kg, not pcs)
   uom      String? @db.VarChar(20) // unit of measurement (e.g., "шт", "кг")
-
-  // Warehouse PRIMARY home location (Sherset custom — NOT moysklad parity).
-  // The product's main bin, addressed as 4 numeric segments composed into the
-  // «NN-NN-NN-NN» code (sklad-polka-qavat-yacheyka). All optional; null = unset.
-  // Used by the price-tag/QR label and the return-to-warehouse restock flow.
-  // ADDITIONAL bins (multi-bin) live in the ProductLocation table (extraLocations).
-  locSklad    Int?     @map("loc_sklad") // склад (warehouse)
-  locPolka    Int?     @map("loc_polka") // полка (shelf)
-  locQavat    Int?     @map("loc_qavat") // этаж/ярус (level)
-  locYacheyka Int?     @map("loc_yacheyka") // ячейка (cell)
-  // Per-cell quantity (multi-bin Phase 2) — units sitting in the PRIMARY home
-  // bin above. Manually maintained; null = not tracked. Extra bins keep their
-  // own qty on ProductLocation.qty.
-  locQty      Decimal? @map("loc_qty") @db.Decimal(20, 6)
-  // Forward-pick replenishment target: keep up to `forwardMax` units in the
-  // forward (fast-pick) store. When the forward-store balance drops below this,
-  // the product surfaces in the «To'ldirish kerak» replenishment list. null = no
-  // forward policy.
-  forwardMax  Int?     @map("forward_max")
 
   // VAT
   vat          Int?
@@ -4664,17 +4566,17 @@ model Product {
   minimumBalanceMinor BigInt @default(0) @map("minimum_balance_minor")
 
   // Metadata
-  shared       Boolean  @default(false)
-  archived     Boolean  @default(false)
-  syncId       String?  @map("sync_id") @db.Uuid
-  barcodes     String[] @default([])
+  shared     Boolean  @default(false)
+  archived   Boolean  @default(false)
+  syncId     String?  @map("sync_id") @db.Uuid
+  barcodes   String[] @default([])
   // Per-barcode GTIN type (moysklad parity — moysklad stores barcodes typed:
   // `[{ean13: "…"}]`). Index-aligned PARALLEL array to `barcodes` (barcodeTypes[i]
   // is the type of barcodes[i]); empty/short ⇒ the FE defaults the row to "ean13".
   // Kept SEPARATE from `barcodes` on purpose so the list/search `has` filters over
   // raw barcode values stay unchanged. Additive, defaults [] (back-compat).
   barcodeTypes String[] @default([]) @map("barcode_types")
-  attributes   Json?
+  attributes Json?
 
   /// Optimistic concurrency version (moysklad parity). Incremented on every
   /// field-edit save; a stale value rejects the write with HTTP 409 so two
@@ -4721,9 +4623,6 @@ model Product {
   // shows), `analogOf` are rows where this product is someone else's analog.
   analogs                 ProductAnalog[]          @relation("ProductAnalogsOwner")
   analogOf                ProductAnalog[]          @relation("ProductAnalogsTarget")
-  // Multi-bin: ADDITIONAL shelf locations where this product also sits, beyond
-  // the primary loc* home above. Empty ⇒ single-location product.
-  extraLocations          ProductLocation[]        @relation("ProductExtraLocations")
 
   @@unique([accountId, code])
   @@unique([accountId, externalCode])
@@ -4736,69 +4635,6 @@ model Product {
   @@index([accountId, groupId])
   @@index([accountId, modifiedById])
   @@map("products")
-}
-
-// Adresli saqlash (moysklad «Адресное хранение товаров» analogi, Sherset
-// uslubida) — ombor yacheykalari REGISTRI. Har qator = ombor kartochkasida
-// yaratilgan bitta yacheyka: kanonik «NN-NN-NN-NN» kod + ixtiyoriy «polka»
-// yorlig'i (moysklad'dagi zona o'rnida — 2026-07-16 talab: zona → polka).
-// Band/bo'shlik registrda SAQLANMAYDI — Product.loc* (asosiy) ∪
-// ProductLocation (qo'shimcha) manzillariga kod bo'yicha mos kelishdan
-// hisoblanadi (bitta haqiqat manbai, sinxron buzilmaydi).
-model StoreCell {
-  id        String   @id @default(uuid()) @db.Uuid
-  accountId String   @map("account_id") @db.Uuid
-  storeId   String   @map("store_id") @db.Uuid
-  // Kanonik padded kod «NN-NN-NN-NN» (sklad-polka-qavat-o'rin), label/scan
-  // oqimlari bilan bir xil format (cell-code.util formatCellCode).
-  code      String   @db.VarChar(11)
-  // «Polka» yorlig'i — yacheyka qaysi polkaga tegishli (masalan «032»).
-  // Yacheykalar jadvalining «Polka» ustuni + polka-svodka jadvali shundan.
-  shelf     String?  @db.VarChar(50)
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
-
-  store Store @relation("StoreCells", fields: [storeId], references: [id], onDelete: Cascade)
-
-  // 2026-07-20 tuzatish: kod BUTUN AKKAUNT bo'yicha yagona, ombor ichida
-  // emas — Product.loc*/ProductLocation manzili storeId'ga bog'lanmagan,
-  // shuning uchun ikki xil ombor bir xil kodni ishlatsa, ular bitta jismoniy
-  // manzilni "bo'lishib" qolar edi (occupancy/tarkib noto'g'ri chiqardi).
-  @@unique([accountId, code])
-  @@index([accountId, storeId])
-  @@map("store_cells")
-}
-
-// Multi-bin: ADDITIONAL warehouse shelf locations for a product beyond its
-// primary loc* home (Sherset custom, NOT moysklad parity). One product → many
-// locations, each a «NN-NN-NN-NN» address. Phase 1 is address-only (no per-cell
-// quantity) — it tells pickers/putaway EVERY shelf a product can be found on;
-// stock is still tracked per-store, not per-cell. Segments mirror Product.loc*.
-model ProductLocation {
-  id        String @id @default(uuid()) @db.Uuid
-  accountId String @map("account_id") @db.Uuid
-  productId String @map("product_id") @db.Uuid
-
-  sklad    Int      @map("sklad") // склад (warehouse zone) — required key of the address
-  polka    Int?     @map("polka") // полка (shelf)
-  qavat    Int?     @map("qavat") // этаж/ярус (level)
-  yacheyka Int?     @map("yacheyka") // ячейка (cell)
-  // Per-cell quantity (multi-bin Phase 2) — units sitting in THIS cell.
-  // Manually maintained (no document posts to it yet); null = not tracked.
-  qty      Decimal? @db.Decimal(20, 6)
-  note     String?  @db.VarChar(255) // optional free note (e.g. «zaxira», «pastki»)
-
-  position  Int      @default(0) // display order on the product card
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
-
-  product Product @relation("ProductExtraLocations", fields: [productId], references: [id], onDelete: Cascade)
-
-  // The same product can't list one identical address twice.
-  @@unique([productId, sklad, polka, qavat, yacheyka])
-  @@index([accountId, productId])
-  @@index([accountId, sklad])
-  @@map("product_locations")
 }
 
 // «Аналоги» — substitute products for a product. Mirrors moysklad's analog
@@ -5070,6 +4906,10 @@ model InvoiceOut {
   /// Optional project tagging the invoice — moysklad's "Проект" field.
   projectId             String? @map("project_id") @db.Uuid
   customerOrderId       String? @map("customer_order_id") @db.Uuid
+  /// moysklad «Статус» — account-defined custom status (State row,
+  /// entityType="invoiceout"), mirroring Supply.statusId. Orthogonal to the
+  /// FSM `state` column + the «Проведено» flag.
+  statusId              String? @map("status_id") @db.Uuid
 
   // Moment + lifecycle
   moment               DateTime  @default(now()) @db.Timestamptz()
@@ -5119,6 +4959,8 @@ model InvoiceOut {
   contract            Contract?            @relation("InvoiceOutContract", fields: [contractId], references: [id], onDelete: SetNull)
   project             Project?             @relation("InvoiceOutProject", fields: [projectId], references: [id], onDelete: SetNull)
   customerOrder       CustomerOrder?       @relation(fields: [customerOrderId], references: [id], onDelete: SetNull)
+  // Custom «Статус» (State row) — SetNull so deleting a status just unlinks it.
+  status              State?               @relation("InvoiceOutStatus", fields: [statusId], references: [id], onDelete: SetNull)
   positions           InvoiceOutPosition[]
   paymentInOperations PaymentInOperation[]
   cashInOperations    CashInOperation[]
@@ -5245,6 +5087,11 @@ model Supply {
   contractId      String? @map("contract_id") @db.Uuid
   /// Optional project tagging the supply — moysklad's "Проект" field.
   projectId       String? @map("project_id") @db.Uuid
+  /// moysklad «Статус» — account-defined custom status (State row,
+  /// entityType="supply"), mirroring PurchaseOrder.statusId. Orthogonal to the
+  /// FSM `state` column + the «Проведено» flag; the toolbar «Статус» menu sets
+  /// it on the selected receipts. SetNull so deleting a status just unlinks.
+  statusId        String? @map("status_id") @db.Uuid
 
   account             Account              @relation(fields: [accountId], references: [id], onDelete: Cascade)
   owner               Employee?            @relation("SupplyOwner", fields: [ownerId], references: [id], onDelete: SetNull)
@@ -5256,6 +5103,7 @@ model Supply {
   purchaseOrder       PurchaseOrder?       @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
   contract            Contract?            @relation("SupplyContract", fields: [contractId], references: [id], onDelete: SetNull)
   project             Project?             @relation("SupplyProject", fields: [projectId], references: [id], onDelete: SetNull)
+  status              State?               @relation("SupplyStatus", fields: [statusId], references: [id], onDelete: SetNull)
   positions           SupplyPosition[]
   purchaseReturns     PurchaseReturn[]
   moves               Move[]               @relation("MoveSupply")
@@ -5312,16 +5160,23 @@ model SupplyPosition {
   gtdSumMinor BigInt? @map("gtd_sum_minor")
   countryId   String? @map("country_id") @db.Uuid
 
+  // moysklad «Ячейка» — address-storage bin (receive-into-cell). cellId drives
+  // per-cell stock (StockByCell) on post; `cell` = denormalized «Зона / Ячейка» label.
+  cellId String? @map("cell_id") @db.Uuid
+  cell   String? @db.VarChar(255)
+
   supply                  Supply                          @relation(fields: [supplyId], references: [id], onDelete: Cascade)
   product                 Product?                        @relation("ProductSupplyPositions", fields: [productId], references: [id], onDelete: Restrict)
   purchaseOrderPosition   PurchaseOrderPosition?          @relation("SupplyFromPurchaseOrderPosition", fields: [purchaseOrderPositionId], references: [id], onDelete: SetNull)
   purchaseReturnPositions PurchaseReturnPosition[]        @relation("PurchaseReturnFromSupplyPosition")
   demandConsumptions      DemandPositionCostConsumption[]
   country                 Country?                        @relation("SupplyPositionCountry", fields: [countryId], references: [id], onDelete: SetNull)
+  cellRef                 StoreCell?                      @relation("SupplyPositionCell", fields: [cellId], references: [id], onDelete: SetNull)
 
   @@index([supplyId, position])
   @@index([accountId, assortmentKind, assortmentId])
   @@index([accountId, purchaseOrderPositionId])
+  @@index([cellId])
   @@index([countryId])
   /// FIFO scan path: oldest non-empty supply lot first.
   @@index([accountId, assortmentKind, assortmentId, remainingQty])
@@ -5759,6 +5614,10 @@ model Demand {
   contractId            String?   @map("contract_id") @db.Uuid
   /// Optional project tagging the shipment — moysklad's "Проект" field.
   projectId             String?   @map("project_id") @db.Uuid
+  /// moysklad «Статус» — account-defined custom status (State row,
+  /// entityType="demand"), mirroring Supply.statusId. Orthogonal to the FSM
+  /// `state` (draft/posted/cancelled) + «Проведено»; onDelete SetNull unlinks.
+  statusId              String?   @map("status_id") @db.Uuid
   /// «План. дата отгрузки» — planned shipment date (moysklad demand field;
   /// mirrors InternalOrder/CustomerOrder.deliveryPlannedMoment).
   deliveryPlannedMoment DateTime? @map("delivery_planned_moment") @db.Timestamptz()
@@ -5836,6 +5695,7 @@ model Demand {
   salesChannel        SalesChannel?        @relation(fields: [salesChannelId], references: [id], onDelete: SetNull)
   contract            Contract?            @relation("DemandContract", fields: [contractId], references: [id], onDelete: SetNull)
   project             Project?             @relation("DemandProject", fields: [projectId], references: [id], onDelete: SetNull)
+  status              State?               @relation("DemandStatus", fields: [statusId], references: [id], onDelete: SetNull)
   consignor           Counterparty?        @relation("DemandConsignor", fields: [consignorId], references: [id], onDelete: SetNull)
   consignee           Counterparty?        @relation("DemandConsignee", fields: [consigneeId], references: [id], onDelete: SetNull)
   carrier             Counterparty?        @relation("DemandCarrier", fields: [carrierId], references: [id], onDelete: SetNull)
@@ -5983,6 +5843,12 @@ model SalesReturn {
   demandId              String? @map("demand_id") @db.Uuid // original shipment (optional)
   customerOrderId       String? @map("customer_order_id") @db.Uuid // original CO (optional)
 
+  /// moysklad «Статус» — account-defined custom status (State row,
+  /// entityType="salesreturn"), mirroring PurchaseReturn.statusId. Orthogonal
+  /// to the FSM `state` (draft/posted/cancelled) + «Проведено»; onDelete
+  /// SetNull so deleting a status just unlinks the returns that used it.
+  statusId              String? @map("status_id") @db.Uuid
+
   // Moment + lifecycle
   moment     DateTime  @default(now()) @db.Timestamptz()
   applicable Boolean   @default(false)
@@ -6028,6 +5894,7 @@ model SalesReturn {
   project             Project?              @relation("SalesReturnProject", fields: [projectId], references: [id], onDelete: SetNull)
   demand              Demand?               @relation(fields: [demandId], references: [id], onDelete: SetNull)
   customerOrder       CustomerOrder?        @relation(fields: [customerOrderId], references: [id], onDelete: SetNull)
+  status              State?                @relation("SalesReturnStatus", fields: [statusId], references: [id], onDelete: SetNull)
   positions           SalesReturnPosition[]
 
   @@unique([accountId, name])
@@ -6081,15 +5948,24 @@ model SalesReturnPosition {
   gtdSumMinor BigInt? @map("gtd_sum_minor")
   countryId   String? @map("country_id") @db.Uuid
 
+  // moysklad «Ячейка» — address-storage bin the returned goods are placed
+  // INTO. cellId drives per-cell stock (StockByCell) on post; `cell` =
+  // denormalized «Зона / Ячейка» label. Mirrors PurchaseReturnPosition /
+  // SupplyPosition (the inbound-doc siblings).
+  cellId String? @map("cell_id") @db.Uuid
+  cell   String? @db.VarChar(255)
+
   salesReturn    SalesReturn     @relation(fields: [salesReturnId], references: [id], onDelete: Cascade)
   product        Product?        @relation("ProductSalesReturnPositions", fields: [productId], references: [id], onDelete: Restrict)
   demandPosition DemandPosition? @relation("SalesReturnFromDemandPosition", fields: [demandPositionId], references: [id], onDelete: SetNull)
   country        Country?        @relation("SalesReturnPositionCountry", fields: [countryId], references: [id], onDelete: SetNull)
+  cellRef        StoreCell?      @relation("SalesReturnPositionCell", fields: [cellId], references: [id], onDelete: SetNull)
 
   @@index([salesReturnId, position])
   @@index([accountId, assortmentKind, assortmentId])
   @@index([accountId, demandPositionId])
   @@index([countryId])
+  @@index([cellId])
   @@map("sales_return_positions")
 }
 
@@ -6165,6 +6041,11 @@ model PurchaseReturn {
   deletedAt DateTime? @map("deleted_at") @db.Timestamptz()
   /// Optimistic concurrency version (moysklad parity). See Product.version.
   version   Int       @default(1)
+  /// moysklad «Статус» — account-defined custom status (State row,
+  /// entityType="purchasereturn"), mirroring Supply.statusId. Orthogonal to the
+  /// FSM `state` column + the «Проведено» flag; the toolbar «Статус» menu sets
+  /// it on the selected returns. SetNull so deleting a status just unlinks.
+  statusId  String?   @map("status_id") @db.Uuid
 
   account             Account                  @relation(fields: [accountId], references: [id], onDelete: Cascade)
   owner               Employee?                @relation("PurchaseReturnOwner", fields: [ownerId], references: [id], onDelete: SetNull)
@@ -6176,6 +6057,7 @@ model PurchaseReturn {
   supply              Supply?                  @relation(fields: [supplyId], references: [id], onDelete: SetNull)
   contract            Contract?                @relation("PurchaseReturnContract", fields: [contractId], references: [id], onDelete: SetNull)
   project             Project?                 @relation("PurchaseReturnProject", fields: [projectId], references: [id], onDelete: SetNull)
+  status              State?                   @relation("PurchaseReturnStatus", fields: [statusId], references: [id], onDelete: SetNull)
   positions           PurchaseReturnPosition[]
   facturesOut         FactureOut[]             @relation("FactureOutPurchaseReturn")
 
@@ -6220,13 +6102,21 @@ model PurchaseReturnPosition {
   // exact same value (cost zero-sum). NULL on a draft.
   costMinor BigInt? @map("cost_minor")
 
+  // moysklad «Ячейка» — address-storage bin the goods leave FROM. cellId drives
+  // per-cell stock (StockByCell) on post; `cell` = denormalized «Зона / Ячейка»
+  // label. Mirrors SupplyPosition (the Приёмка sibling).
+  cellId String? @map("cell_id") @db.Uuid
+  cell   String? @db.VarChar(255)
+
   purchaseReturn PurchaseReturn  @relation(fields: [purchaseReturnId], references: [id], onDelete: Cascade)
   product        Product?        @relation("ProductPurchaseReturnPositions", fields: [productId], references: [id], onDelete: Restrict)
   supplyPosition SupplyPosition? @relation("PurchaseReturnFromSupplyPosition", fields: [supplyPositionId], references: [id], onDelete: SetNull)
+  cellRef        StoreCell?      @relation("PurchaseReturnPositionCell", fields: [cellId], references: [id], onDelete: SetNull)
 
   @@index([purchaseReturnId, position])
   @@index([accountId, assortmentKind, assortmentId])
   @@index([accountId, supplyPositionId])
+  @@index([cellId])
   @@map("purchase_return_positions")
 }
 
@@ -6428,16 +6318,20 @@ model LossPosition {
   // (mirror EnterPosition.reason). The document-level Loss.reason enum is the
   // legacy single-reason; moysklad models the write-off reason PER LINE as text.
   reason String? @db.VarChar(255)
-  // moysklad «Ячейка» — warehouse bin/cell reference, free-text (mirror
-  // EnterPosition.cell; NOT a validated address-storage picker — that needs a
-  // warehouse-cell model). Shown on the #loss editor grid.
+  // moysklad «Ячейка» — warehouse bin (address storage). `cellId` is the picked
+  // StoreCell (validated); `cell` keeps a denormalized «Зона / Ячейка» label for
+  // display/list/print + legacy free-text rows. post() decrements per-cell stock
+  // (StockByCell) for the picked cell.
+  cellId String? @map("cell_id") @db.Uuid
   cell   String? @db.VarChar(255)
 
-  loss    Loss     @relation(fields: [lossId], references: [id], onDelete: Cascade)
-  product Product? @relation("ProductLossPositions", fields: [productId], references: [id], onDelete: Restrict)
+  loss    Loss       @relation(fields: [lossId], references: [id], onDelete: Cascade)
+  product Product?   @relation("ProductLossPositions", fields: [productId], references: [id], onDelete: Restrict)
+  cellRef StoreCell? @relation("LossPositionCell", fields: [cellId], references: [id], onDelete: SetNull)
 
   @@index([lossId, position])
   @@index([accountId, assortmentKind, assortmentId])
+  @@index([cellId])
   @@map("loss_positions")
 }
 
@@ -6446,10 +6340,10 @@ model LossPosition {
 ///      draft → (soft-deleted)
 /// Used for: initial stock, found goods, gifts, corrections.
 model Enter {
-  id           String  @id @default(uuid()) @db.Uuid
-  accountId    String  @map("account_id") @db.Uuid
-  ownerId      String? @map("owner_id") @db.Uuid
-  groupId      String? @map("group_id") @db.Uuid
+  id        String  @id @default(uuid()) @db.Uuid
+  accountId String  @map("account_id") @db.Uuid
+  ownerId   String? @map("owner_id") @db.Uuid
+  groupId   String? @map("group_id") @db.Uuid
   // moysklad-parity «Кто изменил» — author of last update. SetNull on user
   // deletion to preserve attribution. Mirrors Move.modifiedById.
   modifiedById String? @map("modified_by_id") @db.Uuid
@@ -6544,16 +6438,22 @@ model EnterPosition {
   // per-position fields on the #enter grid. РНПТ here is a plain text field (NOT
   // the full Честный Знак marking system); Ячейка is a free-text cell reference
   // (NOT the validated address-storage picker — that needs a warehouse cell model).
-  rnpt        String? @db.VarChar(255)
-  cell        String? @db.VarChar(255)
+  rnpt String? @db.VarChar(255)
+  // moysklad «Ячейка» — address-storage bin. `cellId` = picked StoreCell (validated);
+  // `cell` keeps the denormalized «Зона / Ячейка» label for display + legacy rows.
+  // post() increments per-cell stock (StockByCell) for the picked cell.
+  cellId String? @map("cell_id") @db.Uuid
+  cell   String? @db.VarChar(255)
 
-  enter   Enter    @relation(fields: [enterId], references: [id], onDelete: Cascade)
-  product Product? @relation("ProductEnterPositions", fields: [productId], references: [id], onDelete: Restrict)
-  country Country? @relation("EnterPositionCountry", fields: [countryId], references: [id], onDelete: SetNull)
+  enter   Enter      @relation(fields: [enterId], references: [id], onDelete: Cascade)
+  product Product?   @relation("ProductEnterPositions", fields: [productId], references: [id], onDelete: Restrict)
+  country Country?   @relation("EnterPositionCountry", fields: [countryId], references: [id], onDelete: SetNull)
+  cellRef StoreCell? @relation("EnterPositionCell", fields: [cellId], references: [id], onDelete: SetNull)
 
   @@index([enterId, position])
   @@index([accountId, assortmentKind, assortmentId])
   @@index([countryId])
+  @@index([cellId])
   @@map("enter_positions")
 }
 
@@ -6655,6 +6555,11 @@ model StockOperation {
   assortmentKind String @default("product") @map("assortment_kind") @db.VarChar(20)
   assortmentId   String @map("assortment_id") @db.Uuid
 
+  // moysklad «Ячейка» — the address-storage cell this movement applied to (null =
+  // store-level only). Informational on the ledger; the materialized per-cell
+  // balance lives in StockByCell. No relation (append-only ledger, like docPositionId).
+  cellId         String? @map("cell_id") @db.Uuid
+
   // Signed delta: positive = inflow (supply / unpost-reversal), negative = outflow (demand posting).
   qtyDelta       Decimal @map("qty_delta") @db.Decimal(20, 6)
   // Signed cost delta (tiyin). Null this sprint (FIFO deferred).
@@ -6750,6 +6655,43 @@ model Stock {
   @@id([accountId, storeId, assortmentKind, assortmentId])
   @@index([accountId, assortmentKind, assortmentId])
   @@map("stocks")
+}
+
+/// Per-cell stock balance (Адресное хранение, Phase 4). Materialized aggregate of
+/// the qty held in one (store, cell, assortment), dual-written with Stock inside the
+/// same transaction by StockService.applyDeltas whenever a delta carries a cellId.
+///
+/// FORWARD-LOOKING: a cell only appears here once a cell-tagged movement (enter/loss/…
+/// with a picked Ячейка) touches it. Stock received WITHOUT a cell is "uncelled", so
+/// Σ(StockByCell.qty) over a (store, assortment) is ≤ Stock.qty — the remainder is the
+/// implicit «Без ячейки» bucket. NO backfill of historical store-level stock.
+///
+/// Derived views (no status column, per StoreCell comment):
+///   «Занята»  = EXISTS row with cellId=X AND qty>0   ·  «Свободна» otherwise
+///   «С этим товаром» = rows with (store, assortment) AND qty>0 → their cells
+/// assortmentId stays FK-less (product|variant|bundle via assortmentKind) — mirrors Stock.
+model StockByCell {
+  accountId      String @map("account_id") @db.Uuid
+  storeId        String @map("store_id") @db.Uuid
+  cellId         String @map("cell_id") @db.Uuid
+  assortmentKind String @default("product") @map("assortment_kind") @db.VarChar(20)
+  assortmentId   String @map("assortment_id") @db.Uuid
+
+  qty       Decimal  @default(0) @db.Decimal(20, 6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  account Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  store   Store     @relation(fields: [storeId], references: [id], onDelete: Restrict)
+  // Restrict: a cell holding stock cannot be silently deleted (parity «нельзя удалить
+  // непустую ячейку»); the deleteCell service guard rejects with a friendly message first.
+  cell    StoreCell @relation(fields: [cellId], references: [id], onDelete: Restrict)
+
+  @@id([accountId, storeId, cellId, assortmentKind, assortmentId])
+  // «С этим товаром» — cells holding a product across the store.
+  @@index([accountId, storeId, assortmentKind, assortmentId])
+  // «Свободна/Занята» — any qty>0 row for a cell.
+  @@index([cellId])
+  @@map("stock_by_cell")
 }
 
 // =========================================================================
@@ -7265,8 +7207,8 @@ model CashierSession {
   ownerId               String? @map("owner_id") @db.Uuid
   groupId               String? @map("group_id") @db.Uuid
   cashierId             String  @map("cashier_id") @db.Uuid
-  cashDeskId            String? @map("cash_desk_id") @db.Uuid
-  storeId               String? @map("store_id") @db.Uuid
+  cashDeskId            String  @map("cash_desk_id") @db.Uuid
+  storeId               String  @map("store_id") @db.Uuid
   organizationId        String  @map("organization_id") @db.Uuid
   organizationAccountId String? @map("organization_account_id") @db.Uuid
 
@@ -7316,10 +7258,6 @@ model CashierSession {
   published   Boolean @default(false)
   attributes  Json?   @default("{}")
 
-  // Smena tizimi: qaysi smenaga tegishli va vaqtdan tashqari ochilgan bo'lsa sabab
-  smenaId          String? @map("smena_id") @db.Uuid
-  outOfShiftReason String? @map("out_of_shift_reason") @db.VarChar(500)
-
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
 
@@ -7327,11 +7265,10 @@ model CashierSession {
   owner               Employee?             @relation("CashierSessionOwner", fields: [ownerId], references: [id], onDelete: SetNull)
   group               Group?                @relation("CashierSessionGroup", fields: [groupId], references: [id], onDelete: SetNull)
   cashier             Employee              @relation("CashierSessionCashier", fields: [cashierId], references: [id], onDelete: Restrict)
-  cashDesk            CashDesk?             @relation(fields: [cashDeskId], references: [id], onDelete: SetNull)
-  store               Store?                @relation(fields: [storeId], references: [id], onDelete: SetNull)
+  cashDesk            CashDesk              @relation(fields: [cashDeskId], references: [id], onDelete: Restrict)
+  store               Store                 @relation(fields: [storeId], references: [id], onDelete: Restrict)
   organization        Organization          @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   organizationAccount OrganizationAccount?  @relation("CashierSessionOrgAccount", fields: [organizationAccountId], references: [id], onDelete: SetNull)
-  smena               Smena?                @relation(fields: [smenaId], references: [id], onDelete: SetNull)
   sales               RetailSale[]
   drawerCashIn        RetailDrawerCashIn[]  @relation("RetailDrawerInShift")
   drawerCashOut       RetailDrawerCashOut[] @relation("RetailDrawerOutShift")
@@ -7388,7 +7325,6 @@ model RetailSale {
   payedSumMinor            BigInt @default(0) @map("payed_sum_minor")
   cashAmountMinor          BigInt @default(0) @map("cash_amount_minor")
   cardAmountMinor          BigInt @default(0) @map("card_amount_minor")
-  terminalAmountMinor      BigInt @default(0) @map("terminal_amount_minor")
   noCashSumMinor           BigInt @default(0) @map("no_cash_sum_minor")
   qrSumMinor               BigInt @default(0) @map("qr_sum_minor")
   advancePaymentSumMinor   BigInt @default(0) @map("advance_payment_sum_minor")
@@ -8035,34 +7971,6 @@ model SmsLog {
   @@map("sms_logs")
 }
 
-/// Editable per-account SMS templates (multi-purpose, keyed by `key`).
-/// Rendered via Eta ({{= ... }}). Seeded with `debt_reminder`; other keys
-/// are wired by feature code as needed.
-/// Editable per-account message templates (2026-07-20 shablon-KUTUBXONASI,
-/// kanal-aware). SMS: oddiy matn. Telegram: GramJS MarkdownV2 (qalin/tagliq).
-/// Eta interpolatsiya bilan render. Har kanalда ko'pi bilan bitta `isDefault`
-/// (avtomatik-oqim [cron + bitta-yuborish] ishlatadi + modalда oldindan
-/// tanlanadi). Foydalanuvchi nomli shablonlarni yaratadi/tahrirlaydi; `key`
-/// faqat seed-standart qatorlar uchun (kutubxona qatorlarida null). @@map
-/// saqlanadi — jadval o'zgarmadi.
-model MessageTemplate {
-  id        String   @id @default(uuid()) @db.Uuid
-  accountId String   @map("account_id") @db.Uuid
-  channel   String   @default("sms") @db.VarChar(16) // 'sms' | 'telegram'
-  key       String?  @db.VarChar(50)
-  name      String   @db.VarChar(120)
-  body      String   @db.Text
-  enabled   Boolean  @default(true)
-  isDefault Boolean  @default(false) @map("is_default")
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
-
-  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
-
-  @@index([accountId, channel])
-  @@map("sms_templates")
-}
-
 // =========================================================================
 // Sprint 27 — Soliq.uz EDO (E-Hujjat / Faktura)
 // =========================================================================
@@ -8269,15 +8177,6 @@ model TelegramConfig {
   /// Default chat to send broadcast notifications (admin group, channel).
   defaultChatId String? @map("default_chat_id") @db.VarChar(40)
 
-  /// Telegram Business: when the owner (Premium account) connects this bot in
-  /// Settings → Telegram Business → Chatbots, Telegram pushes a
-  /// business_connection update — we store it here and can then send messages
-  /// ON BEHALF OF the owner (business_connection_id param). Null = not connected.
-  businessConnectionId String? @map("business_connection_id") @db.VarChar(64)
-  /// Telegram user id of the connected Premium account (message.from == this ⇒ outgoing).
-  businessUserId       BigInt? @map("business_user_id")
-  businessUserName     String? @map("business_user_name") @db.VarChar(128)
-
   lastTestedAt DateTime? @map("last_tested_at") @db.Timestamptz()
   lastTestOk   Boolean?  @map("last_test_ok")
   lastTestMsg  String?   @map("last_test_msg") @db.VarChar(500)
@@ -8289,140 +8188,6 @@ model TelegramConfig {
   account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
   @@map("telegram_configs")
-}
-
-/// Telegram Business chat with a client (Sherset custom). One row per client
-/// the connected Premium account talks to; optionally bound to a Counterparty
-/// so the chat shows on the counterparty card.
-model TelegramChat {
-  id        String @id @default(uuid()) @db.Uuid
-  accountId String @map("account_id") @db.Uuid
-
-  /// Telegram chat id (client's private chat with the owner).
-  chatId    BigInt  @map("chat_id")
-  firstName String? @map("first_name") @db.VarChar(128)
-  lastName  String? @map("last_name") @db.VarChar(128)
-  username  String? @db.VarChar(64)
-
-  /// Mijoz botga kontaktini ulashsa — telefon shu yerga tushadi va kontragent
-  /// AVTOMATIK topiladi. Telegram Business xabarlarida telefon kelmaydi,
-  /// shuning uchun u yerda ISM bo'yicha avtomatik taklif qilinadi.
-  phone String? @db.VarChar(32)
-
-  counterpartyId String? @map("counterparty_id") @db.Uuid
-  /// Kontragent avtomatik topildimi (ism/telefon bo'yicha) yoki qo'lda bog'landimi.
-  boundBy        String? @map("bound_by") @db.VarChar(10) // 'auto' | 'manual'
-
-  /// Chat qayerdan keldi — xabar YUBORISH usuli shunga bog'liq:
-  ///   'business' — egasining shaxsiy Telegram'i orqali (business_connection_id
-  ///                bilan yuboriladi, mijoz egasining NOMIDAN xabar oladi)
-  ///   'bot'      — mijoz botga o'zi yozgan (oddiy sendMessage)
-  /// Noto'g'ri usul bilan yuborilsa Telegram xato qaytaradi, shuning uchun
-  /// buni saqlab qo'yamiz.
-  source String @default("business") @db.VarChar(10)
-
-  lastMessageAt DateTime? @map("last_message_at") @db.Timestamptz()
-  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
-
-  /// Backfill/sync kursorlari (2026-07-20 to'liq-tarix). historyOldestId —
-  /// backfill'da yetilgan eng eski tgMessageId (orqaga sahifalash offsetId'si);
-  /// historyComplete — dialog boshiga yetildi; syncNewestId — catch-up uchun
-  /// eng yangi ma'lum tgMessageId (minId).
-  historyOldestId BigInt? @map("history_oldest_id")
-  historyComplete Boolean @default(false) @map("history_complete")
-  syncNewestId    BigInt? @map("sync_newest_id")
-
-  account      Account               @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  counterparty Counterparty?         @relation(fields: [counterpartyId], references: [id], onDelete: SetNull)
-  messages     TelegramChatMessage[]
-
-  @@unique([accountId, chatId])
-  @@index([accountId, counterpartyId])
-  @@index([accountId, lastMessageAt(sort: Desc)])
-  @@map("telegram_chats")
-}
-
-/// One message in a Telegram Business chat (both directions).
-model TelegramChatMessage {
-  id        String @id @default(uuid()) @db.Uuid
-  accountId String @map("account_id") @db.Uuid
-  chatRefId String @map("chat_ref_id") @db.Uuid
-
-  /// 'in' = client wrote us; 'out' = sent from the owner's name.
-  direction   String  @db.VarChar(3)
-  text        String  @db.VarChar(4096)
-  tgMessageId BigInt? @map("tg_message_id")
-  senderName  String? @map("sender_name") @db.VarChar(128)
-
-  /// MEDIA (2026-07-13): mijoz CHEK rasmini yuborganda ko'rinishi shart.
-  /// Ilgari media'li xabar butunlay tashlab yuborilardi ("skip in V1") — chek
-  /// yo'qolardi. Endi fayl Telegram'dan yuklab olinib, mavjud `attachments`
-  /// jadvaliga yoziladi va chatda rasm bo'lib chiqadi.
-  ///   kind       — 'text' | 'photo' | 'document' | 'voice' | 'video' | 'other'
-  ///   fileId     — Telegram file_id (qayta yuklab olish uchun)
-  ///   attachment — bizdagi nusxasi (yo'qolmasin: Telegram file_id muddatli)
-  kind         String  @default("text") @db.VarChar(16)
-  fileId       String? @map("file_id") @db.VarChar(200)
-  fileName     String? @map("file_name") @db.VarChar(255)
-  mimeType     String? @map("mime_type") @db.VarChar(100)
-  attachmentId String? @map("attachment_id") @db.Uuid
-
-  /// Avtomatik xabar bo'lsa — sababi ('debt_issued' | 'payment' | 'debt_closed'
-  /// | 'reminder'). Qo'lda yozilgan xabarda null. Chatda belgisi ko'rinadi.
-  autoKind String? @map("auto_kind") @db.VarChar(20)
-
-  /// Forward qilingan xabaning asl jo'natuvchisi/kanal nomi (2026-07-20,
-  /// Phase 2) — Telegram'dagi "Переслано от: X" ko'rsatkichi shu yerdan
-  /// chiqadi. null = forward emas, oddiy xabar.
-  fwdFromName String? @map("fwd_from_name") @db.VarChar(128)
-
-  /// To'liq-tarix (2026-07-20). replyToTgMessageId — javob berilgan xabar
-  /// (Faza-2 reply/quote uchun oldindan); editedAt — Telegram'da tahrirlangan
-  /// vaqti; readByPeerAt — mijoz o'qigan vaqti (Faza-3 read-receipt uchun
-  /// oldindan, nullable); outboxRefId — yetkazilgan HrTelegramOutbox qatoriga
-  /// bog' (chiquvchi dedup).
-  replyToTgMessageId BigInt?   @map("reply_to_tg_message_id")
-  editedAt           DateTime? @map("edited_at") @db.Timestamptz()
-  readByPeerAt       DateTime? @map("read_by_peer_at") @db.Timestamptz()
-  outboxRefId        String?   @map("outbox_ref_id") @db.Uuid
-
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
-
-  account Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  chat    TelegramChat @relation(fields: [chatRefId], references: [id], onDelete: Cascade)
-
-  /// Bir chatda bitta tgMessageId — backfill/catch-up idempotent upsert kaliti
-  /// (dublikat xabar yozilmaydi). tgMessageId NULL qatorlar (eski Bot API)
-  /// Postgres multi-NULL bilan to'qnashmaydi.
-  @@unique([chatRefId, tgMessageId])
-  @@index([accountId, chatRefId, createdAt(sort: Desc)])
-  @@map("telegram_chat_messages")
-}
-
-/// Talab-bo'yicha to'liq-tarix backfill navbati (2026-07-20). Panel birinchi
-/// ochilganda upsert qilinadi (queued); TelegramBackfillWorker bitta-bitta
-/// drenaj qiladi (dialog tarixini sahifalab TelegramChatMessage'ga yozadi).
-model TelegramBackfillJob {
-  id               String    @id @default(uuid()) @db.Uuid
-  accountId        String    @map("account_id") @db.Uuid
-  counterpartyId   String    @map("counterparty_id") @db.Uuid
-  phone            String    @db.VarChar(32)
-  status           String    @default("queued") @db.VarChar(10) // queued|running|done|error
-  requestedAt      DateTime  @default(now()) @map("requested_at") @db.Timestamptz()
-  startedAt        DateTime? @map("started_at") @db.Timestamptz()
-  finishedAt       DateTime? @map("finished_at") @db.Timestamptz()
-  messagesImported Int       @default(0) @map("messages_imported")
-  /// Keyingi (eskiroq) sahifa uchun offsetId — 0/NULL = eng yangidan.
-  cursorOffsetId   BigInt?   @map("cursor_offset_id")
-  failReason       String?   @map("fail_reason") @db.VarChar(500)
-
-  account      Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  counterparty Counterparty @relation("TgBackfillCp", fields: [counterpartyId], references: [id], onDelete: Cascade)
-
-  @@unique([accountId, counterpartyId])
-  @@index([status, requestedAt])
-  @@map("telegram_backfill_job")
 }
 
 /// Outbound Telegram messages — same retry queue pattern as SMS/email.
@@ -9141,216 +8906,34 @@ model AnalitikaOrderLine {
   @@map("analitika_order_lines")
 }
 
-// ============================================================================
-// QARZ UNDIRISH (debt collection) — TZ «Qarz undirish» v2
-// ============================================================================
-// Call-markaz + kassa uchun mustaqil qarz daftari. TZ §7 talabi bo'yicha
-// mavjud savdo/ombor oqimiga TEGMAYDI: CounterpartyBalance'ni siljitmaydi,
-// StockOperation yozmaydi. Bu — alohida, additive kichik-defter.
-//
-// Pul BigInt minor (tiyin) — ADR-0004. Screenshot mavjud `attachments`
-// jadvalida saqlanadi (entity='debtpayment', entityId=DebtPayment.id) —
-// yangi blob-store ochilmaydi.
+/// moysklad «Привязать документ» — a MANUAL association between two documents,
+/// shown in the «Связанные документы» tab (the auto-linked FK chain is computed
+/// separately per doc). Polymorphic: {source,target}Type is the PascalCase model
+/// name. Each row also snapshots both endpoints' display fields (name/date/sum/
+/// state) captured at link time, so the related panel renders each linked card
+/// without a cross-model resolution map. A link is bidirectional: querying by
+/// either endpoint returns the OTHER endpoint's snapshot.
+model DocumentLink {
+  id         String   @id @default(uuid()) @db.Uuid
+  accountId  String   @map("account_id") @db.Uuid
+  sourceType String   @map("source_type") @db.VarChar(64)
+  sourceId   String   @map("source_id") @db.Uuid
+  targetType String   @map("target_type") @db.VarChar(64)
+  targetId   String   @map("target_id") @db.Uuid
 
-/// Mijozga berilgan qarz. `paidMinor` — barcha to'lovlar yig'indisi
-/// (denormalizatsiya: ro'yxat/saralash tez ishlashi uchun; yagona haqiqat
-/// manbai `debt_payments` — DebtService har yozuvdan keyin qayta hisoblaydi).
-model Debt {
-  id             String @id @default(uuid()) @db.Uuid
-  accountId      String @map("account_id") @db.Uuid
-  counterpartyId String @map("counterparty_id") @db.Uuid
-
-  /// Avto-raqam: QRZ-YYYY-NNNNN (document_sequences orqali, race-safe).
-  name String @db.VarChar(50)
-
-  /// Umumiy qarz summasi (tiyin).
-  totalMinor BigInt @map("total_minor")
-  /// To'langan summa (tiyin) — payments yig'indisi.
-  paidMinor  BigInt @default(0) @map("paid_minor")
-  currency   String @default("UZS") @db.VarChar(3)
-
-  /// TZ §4: 'unpaid' | 'partial' | 'paid'. `paid` ⇒ qarzdorlar ro'yxatidan chiqadi.
-  status String @default("unpaid") @db.VarChar(20)
-
-  /// TZ §3.3 — qarz berishda MAJBURIY: keyingi qo'ng'iroq/to'lov vaqti.
-  /// Qarz to'liq yopilganda (§3.6) endi kerak emas ⇒ null'ga tushadi.
-  nextContactAt DateTime? @map("next_contact_at") @db.Timestamptz()
-
-  /// Oxirgi qo'ng'iroq belgisi (2026-07-12 talab): operator «qo'ng'iroq qilindi»
-  /// deb saqlaganda to'ladi. Outcome — suhbat natijasi:
-  /// 'paid_full' | 'paid_partial' | 'not_paid' | 'callback'.
-  /// «Qo'ng'iroq qilinganlar» bo'limi shu maydonlardan filtrlanadi.
-  lastCallAt      DateTime? @map("last_call_at") @db.Timestamptz()
-  lastCallOutcome String?   @map("last_call_outcome") @db.VarChar(20)
-  /// Eslatma-cron dedup belgisi: nextContactAt uchun bildirishnoma yuborilgan
-  /// payt. Yangi nextContactAt qo'yilganda NULL'ga tushadi — keyingi muddat
-  /// uchun eslatma qayta ishlaydi.
-  callRemindedAt  DateTime? @map("call_reminded_at") @db.Timestamptz()
-
-  /// 15-KUNLIK MIJOZGA TAKROR TELEGRAM ESLATMASI (2026-07-16 talab) dedup belgisi:
-  /// mijozning O'ZIGA «qarzingiz bor» avtomatik eslatmasi oxirgi yuborilgan payt.
-  /// Operatorning qo'ng'iroq jadvalidan (nextContactAt/callRemindedAt) ALOHIDA —
-  /// bunga tegmaydi. null ⇒ hali yuborilmagan (birinchi eslatma createdAt'dan
-  /// N kun o'tgach ketadi). Cron: har kuni, qarz qolgan bo'lsa har N kunda takror.
-  lastTgReminderAt DateTime? @map("last_tg_reminder_at") @db.Timestamptz()
-
-  /// MUAMMOLI MIJOZ (2026-07-14 talab). Operator qo'ng'iroq natijasini
-  /// belgilaganda mijozni «muammoli» deb ajratib qo'yishi mumkin: telefonni
-  /// ko'tarmaydi, va'da berib bermaydi, janjal qiladi va h.k.
-  ///
-  /// Bu `lastCallOutcome` dan ALOHIDA o'q: mijoz «qisman to'ladi» bo'lib ham,
-  /// ayni paytda muammoli bo'lishi mumkin. Shuning uchun alohida bayroq.
-  ///   problem       — «Muammoli qarzdorlar» bo'limi shundan filtrlanadi
-  ///   problemReason — NIMA muammo (majburiy: sababsiz belgi foydasiz)
-  ///   problemAt / problemById — qachon va kim belgilagan
-  /// Muammo hal bo'lsa `problem=false` bo'ladi, lekin sabab MULOQOT TARIXIDA
-  /// qoladi — kim, qachon, nega degani yo'qolmasin.
-  problem       Boolean   @default(false)
-  problemReason String?   @map("problem_reason")
-  problemAt     DateTime? @map("problem_at") @db.Timestamptz()
-  problemById   String?   @map("problem_by_id") @db.Uuid
-
-  /// Mas'ul xodim (call-markaz operatori) — ro'yxat filtri.
-  ownerId    String? @map("owner_id") @db.Uuid
-  /// Qarzni bergan kassir — §3.9 kunlik kassir hisoboti shu ustundan yig'iladi.
-  issuedById String? @map("issued_by_id") @db.Uuid
-
-  comment String?
-
-  closedAt  DateTime? @map("closed_at") @db.Timestamptz()
-  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
-  /// Soft-delete — korzina parity (hech qachon jismonan o'chmaydi).
-  deletedAt DateTime? @map("deleted_at") @db.Timestamptz()
-
-  account      Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  counterparty Counterparty  @relation(fields: [counterpartyId], references: [id], onDelete: Restrict)
-  owner        Employee?     @relation("DebtOwner", fields: [ownerId], references: [id], onDelete: SetNull)
-  issuedBy     Employee?     @relation("DebtIssuer", fields: [issuedById], references: [id], onDelete: SetNull)
-  payments     DebtPayment[]
-  notes        DebtNote[]
-
-  @@unique([accountId, name])
-  /// «Qarzdorlar ro'yxati» (§3.1) — status bo'yicha faol qarzlar.
-  @@index([accountId, status, nextContactAt])
-  /// «Bugungi qo'ng'iroqlar» (§3.5) — sana bo'yicha tanlash.
-  @@index([accountId, nextContactAt])
-  /// «Qo'ng'iroq qilinganlar» — kun kesimida tez tanlash.
-  @@index([accountId, lastCallAt])
-  @@index([accountId, counterpartyId])
-  @@index([accountId, ownerId])
-  @@index([accountId, issuedById, createdAt])
-  @@map("debts")
-}
-
-/// Qarz bo'yicha to'lov. Uch kanal (TZ §3.6 + §3.7):
-///   'cash'            — kassada naqd            (kassir)
-///   'terminal'        — kassada terminal/karta  (kassir)
-///   'card_screenshot' — mijoz kartadan o'tkazdi, chek rasmi (operator)
-/// §3.9: kassir hisobotiga faqat cash+terminal kiradi; card_screenshot
-/// operator hisobotida ko'rinadi — shuning uchun `method` ustuni ajratuvchi.
-model DebtPayment {
-  id        String @id @default(uuid()) @db.Uuid
-  accountId String @map("account_id") @db.Uuid
-  debtId    String @map("debt_id") @db.Uuid
-
-  amountMinor BigInt @map("amount_minor")
-  method      String @db.VarChar(20)
-
-  /// §3.8 — «qayerdan qabul qilingani»: kassa nomi yoki «Karta — screenshot».
-  sourceName String? @map("source_name") @db.VarChar(120)
-  cashDeskId String? @map("cash_desk_id") @db.Uuid
-
-  /// §3.7 — chek rasmi. `attachments.id` (entity='debtpayment'). FK EMAS:
-  /// attachment polimorf jadval, Prisma relation'i yo'q — id sifatida saqlanadi.
-  attachmentId String? @map("attachment_id") @db.Uuid
-
-  /// To'lov VALYUTASI (2026-07-13): mijoz naqdni so'mda ham, dollarda ham
-  /// berishi mumkin. `amountMinor` HAR DOIM qarz valyutasida (so'm/tiyin) —
-  /// qarz hisobi shundan yuritiladi. Quyidagi uchlik esa ASL to'lovni saqlaydi:
-  ///   currency            — 'UZS' | 'USD'
-  ///   amountOriginalMinor — asl valyutadagi summa (USD → sent)
-  ///   exchangeRate        — kurs ×10000 (masalan 12 800,50 so'm → 128005000)
-  /// UZS to'lovda: currency='UZS', original=amountMinor, rate=null.
-  currency            String  @default("UZS") @db.VarChar(3)
-  amountOriginalMinor BigInt? @map("amount_original_minor")
-  exchangeRate        BigInt? @map("exchange_rate")
-
-  comment String?
-
-  receivedById   String? @map("received_by_id") @db.Uuid
-  /// 'cashier' | 'operator' — kim kiritgani (hisobotlarni ajratish uchun).
-  receivedByRole String  @default("cashier") @map("received_by_role") @db.VarChar(20)
-
-  /// TO'LOVNI QAYTARISH — storno (2026-07-16). Xato kiritilgan to'lov
-  /// JISMONAN O'CHIRILMAYDI (tarix — dalil): reversed_at belgilanadi.
-  /// reversed_at != NULL bo'lgan to'lov paidMinor yig'indisiga, kontragent
-  /// balansiga va hisobotlarga KIRMAYDI, lekin ro'yxatlarda «qaytarilgan»
-  /// belgisi bilan ko'rinadi — kim, qachon, nega qaytargani bilan.
-  reversedAt    DateTime? @map("reversed_at") @db.Timestamptz()
-  reversedById  String?   @map("reversed_by_id") @db.Uuid
-  reverseReason String?   @map("reverse_reason")
+  sourceName     String   @map("source_name") @db.VarChar(255)
+  sourceMoment   DateTime @map("source_moment") @db.Timestamptz()
+  sourceSumMinor BigInt   @map("source_sum_minor")
+  sourceState    String   @default("draft") @map("source_state") @db.VarChar(32)
+  targetName     String   @map("target_name") @db.VarChar(255)
+  targetMoment   DateTime @map("target_moment") @db.Timestamptz()
+  targetSumMinor BigInt   @map("target_sum_minor")
+  targetState    String   @default("draft") @map("target_state") @db.VarChar(32)
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
 
-  account    Account    @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  debt       Debt       @relation(fields: [debtId], references: [id], onDelete: Cascade)
-  cashDesk   CashDesk?  @relation(fields: [cashDeskId], references: [id], onDelete: SetNull)
-  receivedBy Employee?  @relation("DebtPaymentReceiver", fields: [receivedById], references: [id], onDelete: SetNull)
-  reversedBy Employee?  @relation("DebtPaymentReverser", fields: [reversedById], references: [id], onDelete: SetNull)
-  /// Shu to'lovni yaratgan qo'ng'iroq-yozuv(lar)i (2026-07-16 — natija↔to'lov bog'lami).
-  notes      DebtNote[] @relation("DebtNotePayment")
-
-  @@index([accountId, debtId, createdAt(sort: Desc)])
-  /// §3.9 kunlik kassir hisoboti — (kassir, kun) kesimi.
-  @@index([accountId, receivedById, createdAt])
-  @@index([accountId, method, createdAt])
-  @@map("debt_payments")
-}
-
-/// Mijoz bilan muloqot tarixi (TZ §3.4). Hech qachon o'chirilmaydi/ustidan
-/// yozilmaydi — append-only. `nextContactAt` shu yozuvda kelishilgan keyingi
-/// aloqa vaqti; DebtService uni Debt.nextContactAt'ga ko'chiradi (oxirgisi kuchda).
-model DebtNote {
-  id        String @id @default(uuid()) @db.Uuid
-  accountId String @map("account_id") @db.Uuid
-  debtId    String @map("debt_id") @db.Uuid
-
-  text          String
-  nextContactAt DateTime? @map("next_contact_at") @db.Timestamptz()
-
-  /// Qo'ng'iroq NATIJASI (kind='call' yozuvlarda, 2026-07-12):
-  /// 'paid_full' | 'paid_partial' | 'not_paid' | 'callback' | null (oddiy izoh).
-  outcome String? @db.VarChar(20)
-
-  /// Shu qo'ng'iroqda YARATILGAN to'lov (2026-07-16 — natijani BEKOR QILISH).
-  /// paid_full/paid_partial natija to'lov yozuvi ochadi; bog'lam orqali natija
-  /// bekor qilinganda to'lov ham storno bo'ladi (va aksincha), lastCallOutcome
-  /// esa qolgan JONLI yozuvlardan deterministik qayta hisoblanadi.
-  paymentId String? @map("payment_id") @db.Uuid
-
-  /// NATIJANI BEKOR QILISH (2026-07-16): yozuv O'CHMAYDI — belgilanadi.
-  /// canceled_at != NULL yozuv lastCallOutcome hisobiga KIRMAYDI, tarixda
-  /// «bekor qilingan» ko'rinishida qoladi (kim, qachon, nega).
-  canceledAt   DateTime? @map("canceled_at") @db.Timestamptz()
-  canceledById String?   @map("canceled_by_id") @db.Uuid
-  cancelReason String?   @map("cancel_reason")
-
-  authorId   String? @map("author_id") @db.Uuid
-  /// 'operator' | 'cashier' | 'admin' — §3.4: yozuvda rol ko'rsatiladi.
-  authorRole String  @default("operator") @map("author_role") @db.VarChar(20)
-  /// Manba: 'call' (operator suhbati) | 'debt_issue' (§3.3) | 'payment' (§3.6 qisman).
-  kind       String  @default("call") @db.VarChar(20)
-
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
-
-  account    Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  debt       Debt         @relation(fields: [debtId], references: [id], onDelete: Cascade)
-  author     Employee?    @relation("DebtNoteAuthor", fields: [authorId], references: [id], onDelete: SetNull)
-  payment    DebtPayment? @relation("DebtNotePayment", fields: [paymentId], references: [id], onDelete: SetNull)
-  canceledBy Employee?    @relation("DebtNoteCanceler", fields: [canceledById], references: [id], onDelete: SetNull)
-
-  @@index([accountId, debtId, createdAt(sort: Desc)])
-  @@index([accountId, authorId, createdAt])
-  @@map("debt_notes")
+  @@unique([accountId, sourceType, sourceId, targetType, targetId], name: "document_links_unique")
+  @@index([accountId, sourceType, sourceId])
+  @@index([accountId, targetType, targetId])
+  @@map("document_links")
 }

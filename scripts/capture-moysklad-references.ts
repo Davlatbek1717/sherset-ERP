@@ -14,7 +14,6 @@
  *
  * Usage:
  *   pnpm capture-moysklad <module>             — bitta sahifa LIST holatlari (12 state → states/)
- *   pnpm capture-moysklad <module> --create    — bo'sh «+ Создать» (/new) formasi (→ new/), mavjud qatorlar bo'lsa ham
  *   pnpm capture-moysklad <module> --detail    — sahifaning EDIT/DETAIL formasi (10 state → detail/):
  *                                                edit-default + 4 toolbar dropdown + 5 tab. «Сохранение
  *                                                изменений» modal'ni har snapshot'dan oldin yopadi (eski
@@ -52,12 +51,6 @@ interface CaptureOptions {
   outDir: string;
   refresh: boolean;
   check: boolean;
-  // `--create`: force the blank «+ Создать» form even when the list has rows.
-  // Without it, captureDetail opens the first existing document (edit-default).
-  // salesreturn/QISM 1 needs the CREATE (/new) form, which differs from the
-  // edit form (e.g. «Валюта документа» selector present on create, absent on
-  // an already-saved return) — grounding the /new visual-parity work.
-  forceCreate?: boolean;
 }
 
 /**
@@ -384,15 +377,10 @@ async function openFirstRow(page: Page, cfg: ModuleConfig): Promise<boolean> {
  * label drifted. Returns true once a form opened (confirmed by «Закрыть»).
  */
 async function openCreateForm(page: Page, cfg: ModuleConfig): Promise<boolean> {
-  // The create button's «+» is an ICON, not text — its innerText is just the
-  // bare label (e.g. list «Возврат», not «+ Возврат»). Match on the stripped
-  // label so `hasText` (a substring/regex test on innerText) actually hits.
-  const bareLabel = cfg.createLabel.replace(/^\s*\+\s*/, '').trim();
   const candidates = [
-    page.locator('[role=button]:visible', { hasText: bareLabel }).first(),
     page.locator('[role=button]:visible', { hasText: cfg.createLabel }).first(),
     page.locator('[role=button]:visible', { hasText: /^\s*\+\s*\S/ }).first(),
-    page.getByText(bareLabel, { exact: false }).first(),
+    page.getByText(cfg.createLabel, { exact: false }).first(),
   ];
   for (const btn of candidates) {
     if ((await btn.count().catch(() => 0)) === 0) continue;
@@ -524,9 +512,7 @@ async function captureDetail(opts: CaptureOptions): Promise<void> {
 
   try {
     await navigateToModule(page, cfg);
-    // `--create`: skip the existing-row path entirely and open the blank create
-    // form (grounds the /new page). Otherwise open the first existing document.
-    let opened = opts.forceCreate ? false : await openFirstRow(page, cfg);
+    let opened = await openFirstRow(page, cfg);
     let viaCreate = false;
     if (!opened) {
       // Empty list → open the blank «+ Создать» form, which still renders every
@@ -768,7 +754,6 @@ async function main(): Promise<void> {
   const isAll = args.includes('--all');
   const isMissing = args.includes('--missing');
   const isDetail = args.includes('--detail');
-  const isCreate = args.includes('--create');
 
   const modules = isAll
     ? Object.keys(MODULES)
@@ -781,22 +766,6 @@ async function main(): Promise<void> {
         })();
 
   for (const m of modules) {
-    if (isCreate) {
-      // Blank «+ Создать» (/new) form — grounds the create page (distinct from
-      // the saved edit form). Writes to a `new/` sibling of `detail/`.
-      const outDir = join(process.cwd(), 'docs', 'moysklad-reference', m, 'new');
-      console.log(`Capturing CREATE (/new) form for ${m} → ${outDir}`);
-      await captureDetail({
-        module: m,
-        outDir,
-        refresh: isRefresh,
-        check: isCheck,
-        forceCreate: true,
-      });
-      console.log(`✓ ${m} (create/new)`);
-      continue;
-    }
-
     if (isDetail) {
       const outDir = join(process.cwd(), 'docs', 'moysklad-reference', m, 'detail');
       console.log(`Capturing DETAIL (edit-form) references for ${m} → ${outDir}`);

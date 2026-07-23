@@ -143,7 +143,7 @@ export default function WebhookDeliveriesPage() {
       header: t('col_created'),
       width: '160px',
       cell: (r) => (
-        <span className="text-[var(--ms-text-muted)] text-xs tabular-nums">
+        <span className="text-[var(--ms-text-muted)] text-[12px] tabular-nums">
           {formatDate(r.createdAt)}
         </span>
       ),
@@ -154,7 +154,7 @@ export default function WebhookDeliveriesPage() {
       header: t('col_attempted'),
       width: '160px',
       cell: (r) => (
-        <span className="text-[var(--ms-text-muted)] text-xs tabular-nums">
+        <span className="text-[var(--ms-text-muted)] text-[12px] tabular-nums">
           {formatDate(r.attemptedAt)}
         </span>
       ),
@@ -166,7 +166,7 @@ export default function WebhookDeliveriesPage() {
       width: '160px',
       cell: (r) =>
         r.status === 'pending' && r.attempt > 1 ? (
-          <span className="text-[var(--ms-text-muted)] text-xs tabular-nums">
+          <span className="text-[var(--ms-text-muted)] text-[12px] tabular-nums">
             {formatDate(r.nextRetryAt)}
           </span>
         ) : (

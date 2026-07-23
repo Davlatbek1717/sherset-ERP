@@ -15,6 +15,11 @@ export const ATTACHMENT_ENTITIES = [
   'InvoiceIn',
   'PaymentIn',
   'PaymentOut',
+  // Counterparty settlement money-docs — each /[id] page wires an AttachmentsSection
+  // (was missing here → its «Файлы» tab 400'd «Invalid entity»).
+  'CounterpartyAdjustment',
+  'Prepayment',
+  'PrepaymentReturn',
   'SalesReturn',
   'PurchaseReturn',
   'Move',
@@ -26,12 +31,9 @@ export const ATTACHMENT_ENTITIES = [
   'Opportunity',
   'Product',
   'Task',
-  // «Qarz undirish» §3.7 — karta to'lovining chek screenshot'i. Rasm shu
-  // polimorf jadvalda yashaydi; DebtPayment.attachmentId unga id-ishora.
-  'DebtPayment',
-  // Telegram chat (2026-07-13) — mijoz yuborgan chek rasmi / hujjat. Telegram
-  // `file_id` MUDDATLI, shuning uchun fayl nusxasi shu yerda saqlanadi.
-  'TelegramChatMessage',
+  // «Отчёт комиссионера» «Файлы» tabs (commission-reports/new + new-in staged upload).
+  'CommissionReportOut',
+  'CommissionReportIn',
 ] as const;
 
 const Entity = z.enum(ATTACHMENT_ENTITIES);

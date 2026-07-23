@@ -3,8 +3,8 @@ import type { Metadata } from 'next';
 export const metadata: Metadata = {
   title: 'Imkoniyatlar',
   description:
-    'Sherset ERP tizimining 14 ta moduli — savdo, ombor, pul, CRM, ' +
-    'hisobotlar, chakana savdo, ishlab chiqarish va boshqalar.',
+    "MoySklad ERP tizimining 14 ta moduli — savdo, ombor, pul, CRM, " +
+    "hisobotlar, chakana savdo, ishlab chiqarish va boshqalar.",
 };
 
 const SECTIONS = [
@@ -13,9 +13,9 @@ const SECTIONS = [
     items: [
       'Mijoz buyurtmalari (8 holat FSM)',
       'Otgazma va schyot-faktura',
-      "Ta'minotchi buyurtmalari",
+      'Ta\'minotchi buyurtmalari',
       'Qaytarishlar (sotuvchidan / mijozga)',
-      "To'liq E2E oqim: buyurtma → otgazma → schyot → to'lov",
+      'To\'liq E2E oqim: buyurtma → otgazma → schyot → to\'lov',
     ],
   },
   {
@@ -23,7 +23,7 @@ const SECTIONS = [
     items: [
       'Real vaqt qoldiqlari (materializatsiyalashgan)',
       'FIFO partiya hisobi',
-      "Ko'chirish, inventarizatsiya, daromad/chiqim",
+      'Ko\'chirish, inventarizatsiya, daromad/chiqim',
       'Salbiy stok ruxsati per-ombor sozlamasi',
       'Soliq-qabul ledgeri (audit-ready append-only)',
     ],
@@ -42,9 +42,9 @@ const SECTIONS = [
     title: 'CRM',
     items: [
       'Kontragentlar (UZ STIR validatsiya)',
-      "Kontakt shaxslar va qo'ng'iroqlar jurnali",
+      'Kontakt shaxslar va qo\'ng\'iroqlar jurnali',
       'Sotuvlar voronkasi (Pipeline + Stage)',
-      "Kanban ko'rinish (drag-and-drop)",
+      'Kanban ko\'rinish (drag-and-drop)',
       'Vazifalar (Tasks)',
     ],
   },
@@ -83,9 +83,9 @@ const SECTIONS = [
     title: 'Mahalliy integratsiyalar',
     items: [
       'CBRU valyuta kursi (LIVE)',
-      "MXIK katalog (qo'lda + CSV import)",
+      'MXIK katalog (qo\'lda + CSV import)',
       'Soliq EDO (kelajak)',
-      "Payme/Click/Uzum to'lovlari (kelajak)",
+      'Payme/Click/Uzum to\'lovlari (kelajak)',
       'Eskiz SMS (kelajak)',
       'VCR REGOS fiskal (kelajak)',
     ],
@@ -103,11 +103,17 @@ export default function FeaturesPage() {
       </div>
       <div className="mt-12 grid grid-cols-1 gap-6 md:grid-cols-2">
         {SECTIONS.map((s) => (
-          <article key={s.title} className="rounded-xl border border-slate-200 bg-white p-6">
+          <article
+            key={s.title}
+            className="rounded-xl border border-slate-200 bg-white p-6"
+          >
             <h2 className="font-semibold text-slate-900 text-xl">{s.title}</h2>
             <ul className="mt-4 space-y-2">
               {s.items.map((item) => (
-                <li key={item} className="flex items-start gap-2 text-slate-700 text-sm">
+                <li
+                  key={item}
+                  className="flex items-start gap-2 text-slate-700 text-sm"
+                >
                   <CheckIcon />
                   <span>{item}</span>
                 </li>
@@ -126,7 +132,7 @@ function CheckIcon() {
       viewBox="0 0 20 20"
       fill="currentColor"
       className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600"
-      aria-hidden="true"
+      aria-hidden
     >
       <path
         fillRule="evenodd"

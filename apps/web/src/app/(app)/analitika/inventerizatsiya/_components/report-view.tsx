@@ -1,7 +1,7 @@
 'use client';
 
 import { api } from '@/lib/api-client';
-import { Button, useConfirm } from '@moysklad/ui';
+import { Button, StickyHScroll, formatIso, useConfirm } from '@moysklad/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useState } from 'react';
@@ -47,21 +47,21 @@ export function ReportView() {
   const exportXlsx = async () => {
     await api.download(
       `/analitika/counts/report/export.xlsx?period=${period}`,
-      `inventerizatsiya_${new Date().toISOString().slice(0, 10)}.xlsx`,
+      `inventerizatsiya_${formatIso(new Date())}.xlsx`,
     );
   };
 
   const exportSnapshot = async () => {
     await api.download(
       '/analitika/counts/snapshot.xlsx',
-      `sanash_holati_${new Date().toISOString().slice(0, 10)}.xlsx`,
+      `sanash_holati_${formatIso(new Date())}.xlsx`,
     );
   };
 
   const exportPdf = async () => {
     await api.download(
       `/analitika/counts/report/export.pdf?period=${period}`,
-      `inventerizatsiya_${new Date().toISOString().slice(0, 10)}.pdf`,
+      `inventerizatsiya_${formatIso(new Date())}.pdf`,
     );
   };
 
@@ -189,7 +189,7 @@ export function ReportView() {
         ))}
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-[var(--ms-border)]">
+      <StickyHScroll className="rounded-lg border border-[var(--ms-border)]">
         {rtab === 'product' || rtab === 'top' ? (
           <table className="w-full text-sm">
             <thead className="bg-[var(--ms-bg-subtle)] text-[var(--ms-text-muted)] text-xs">
@@ -280,7 +280,7 @@ export function ReportView() {
             </tbody>
           </table>
         )}
-      </div>
+      </StickyHScroll>
     </div>
   );
 }

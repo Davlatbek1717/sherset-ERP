@@ -35,6 +35,36 @@ describe('footerMoneyCells', () => {
     ]);
   });
 
+  it('mixed set + base values → shows the BASE-UZS converted sum, NOT «—» (moysklad parity)', () => {
+    // LIVE-GROUND 2026-06-28 #invoicein: 1 150,80 USD @ rate 12 300 = 14 154 840,00
+    // + 327 000,00 сум = footer 14 481 840,00 (base tiyin = 1 448 184 000).
+    const row = footerMoneyCells(
+      { currencies: ['UZS', 'USD'] },
+      { sum: '0', paid: '0', received: '0' },
+      { baseValuesMinor: { sum: '1448184000', paid: '0', received: '135700000' } },
+    );
+    expect(row.sum).toBe(formatMoney('1448184000', 'UZS', { displayAs: 'none' }));
+    expect(row.received).toBe(formatMoney('135700000', 'UZS', { displayAs: 'none' }));
+    expect(row.sum).not.toBe('—');
+    // the grounded headline number renders intact (separator = any non-digit,
+    // formatMoney uses a non-breaking/narrow space for thousands grouping)
+    expect(row.sum).toMatch(/14\D?481\D?840/);
+  });
+
+  it('respects an explicit baseCurrency for the converted total', () => {
+    const row = footerMoneyCells(
+      { currencies: ['USD', 'EUR'] },
+      { sum: '0' },
+      { baseValuesMinor: { sum: '1000000' }, baseCurrency: 'USD' },
+    );
+    expect(row.sum).toBe(formatMoney('1000000', 'USD', { displayAs: 'none' }));
+  });
+
+  it('mixed set WITHOUT base values still shows «—» (backward-compatible guard)', () => {
+    const row = footerMoneyCells({ currencies: ['UZS', 'USD'] }, { sum: '5', paid: '5' });
+    expect(Object.values(row)).toEqual(['—', '—']);
+  });
+
   it('formats each cell in the single shared currency, with no trailing symbol', () => {
     const row = footerMoneyCells({ currencies: ['UZS'] }, COLS);
     // wiring: each key formatted via formatMoney in the resolved currency

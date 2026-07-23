@@ -10,6 +10,7 @@ import {
   Input,
   NativeSelect,
   PageHeader,
+  StickyHScroll,
   buildCsv,
   csvTimestamp,
   downloadCsv,
@@ -114,7 +115,7 @@ export default function StockBalanceReportPage() {
   };
 
   return (
-    <Container size="full" className="py-4">
+    <Container size="md" className="py-4">
       <PageHeader
         title={t('title')}
         breadcrumbs={
@@ -242,7 +243,7 @@ export default function StockBalanceReportPage() {
       )}
 
       {data && (
-        <div className="mt-4 overflow-x-auto rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)]">
+        <StickyHScroll className="mt-4 rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)]">
           <table className="w-full text-sm">
             <thead className="bg-[var(--ms-bg-muted)]">
               <tr>
@@ -304,7 +305,7 @@ export default function StockBalanceReportPage() {
                         {row.productName}
                       </a>
                     </td>
-                    <td className="px-3 py-2 text-[var(--ms-text-muted)] text-xs tabular-nums">
+                    <td className="px-3 py-2 text-[var(--ms-text-muted)] text-[12px] tabular-nums">
                       {row.productCode ?? '—'}
                     </td>
                     <td className="px-3 py-2 text-[var(--ms-text-muted)] text-xs">
@@ -325,7 +326,7 @@ export default function StockBalanceReportPage() {
               )}
             </tbody>
           </table>
-        </div>
+        </StickyHScroll>
       )}
     </Container>
   );

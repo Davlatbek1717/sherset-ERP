@@ -51,6 +51,7 @@ describe('DemandPrintDropdown', () => {
     await user.click(screen.getByTestId('demand-print-list-export'));
     expect(onExportList).toHaveBeenCalledTimes(1);
   });
+
   it('renders all 12 moysklad-parity menu items in the captured order', async () => {
     // Source-of-truth: docs/moysklad-reference/demands/states/metadata.json
     // (Phase 0 audit 2026-05-29) — moysklad shows 12 items in this exact

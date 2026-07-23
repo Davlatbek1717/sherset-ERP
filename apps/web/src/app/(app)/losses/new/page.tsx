@@ -22,16 +22,22 @@
  */
 
 import { RelatedDocsTab } from '@/components/customer-orders/related-docs-tab';
+import { CurrencyRateModal } from '@/components/document-detail/currency-rate-modal';
+import { CellPickerField } from '@/components/documents/cell-picker-field';
 import {
   OwnerAccessPopover,
   type OwnerAccessValue,
 } from '@/components/documents/owner-access-popover';
+import { PositionAgreementButton } from '@/components/documents/position-agreement-modal';
 import { PositionColumnCustomizer } from '@/components/documents/position-column-customizer';
-import { PriceRateDialog } from '@/components/products/price-rate-dialog';
+import { usePrintTemplatesManager } from '@/components/print/print-templates-provider';
 import { useDocumentEditorLabels } from '@/hooks/use-document-editor-labels';
 import { useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-store';
+import { DEFAULT_LOSS_EXPENSE_ITEM_NAME } from '@/lib/expense-items';
+import { imageRawUrl } from '@/lib/image-url';
+import { distributeAgreementDelta } from '@/lib/position-agreement';
 import { scaleMinorByQty } from '@moysklad/money';
 import {
   Button,
@@ -131,7 +137,11 @@ export default function NewLossPage() {
   const tCommon = useTranslations('common');
   const tPos = useTranslations('position_editor');
   const tCols = useTranslations('position_cols');
+  const tBulk = useTranslations('bulk_actions');
+  const tPrint = useTranslations('print_menu');
+  const tPrintLoss = useTranslations('print_menu_loss');
   const docEditorLabels = useDocumentEditorLabels();
+  const { openTemplates } = usePrintTemplatesManager();
 
   // moysklad loss FSM = draft / posted / cancelled. Status pill reads «Статус»
   // (none picked) on a new doc — the built-in FSM is decorative here.
@@ -171,7 +181,7 @@ export default function NewLossPage() {
   const isBaseCurrency = selectedCurrency?.default ?? currency === 'UZS';
   const baseCode = currencies.find((c) => c.default)?.isoCode ?? 'UZS';
   // moysklad «1 USD = 12 200 UZS ✎» — the ✎ opens the «Курс валюты документа» modal
-  // (PriceRateDialog) to override the rate PER-DOCUMENT. The override (major units)
+  // (CurrencyRateModal) to override the rate PER-DOCUMENT. The override (major units)
   // defaults to the account rate and resets when the currency changes.
   const [rateOverride, setRateOverride] = useState<string | null>(null);
   const [rateDialogOpen, setRateDialogOpen] = useState(false);
@@ -193,12 +203,14 @@ export default function NewLossPage() {
     staleTime: 60_000,
   });
   const [expenseItemId, setExpenseItemId] = useState<string | null>(null);
-  const [expenseItemLabel, setExpenseItemLabel] = useState<string>('Списания');
+  const [expenseItemLabel, setExpenseItemLabel] = useState<string>(DEFAULT_LOSS_EXPENSE_ITEM_NAME);
   const expenseDefaultRef = useRef(false);
   useEffect(() => {
     if (expenseDefaultRef.current || !expenseItemsData) return;
     expenseDefaultRef.current = true;
-    const spis = expenseItemsData.items.find((e) => e.name.toLowerCase() === 'списания');
+    const spis = expenseItemsData.items.find(
+      (e) => e.name.toLowerCase() === DEFAULT_LOSS_EXPENSE_ITEM_NAME.toLowerCase(),
+    );
     if (spis) {
       setExpenseItemId(spis.id);
       setExpenseItemLabel(spis.name);
@@ -369,6 +381,18 @@ export default function NewLossPage() {
       },
     ]);
   };
+  // «Kelishuv» — spread the negotiated delta across the lines (owner 2026-07-17).
+  // No VAT on a write-off, so the delta is distributed VAT-free.
+  const applyAgreement = (deltaMinor: bigint) => {
+    setPositions((ps) => {
+      const patch = distributeAgreementDelta(ps, deltaMinor, false);
+      if (patch.size === 0) return ps;
+      return ps.map((p) => {
+        const next = patch.get(p.id);
+        return next != null ? { ...p, priceMinor: next } : p;
+      });
+    });
+  };
 
   // moysklad #loss position columns. Order (live grounding): Наименование · Кол-во ·
   // Ячейка · Остаток · Цена · Сумма · Причина списания. «Цена»/«Сумма» are
@@ -435,6 +459,25 @@ export default function NewLossPage() {
     return cols;
   }, [colVisible, tCols, tPos, priceSortDir]);
 
+  // «Печать»/«Отправить» also list the account's own uploaded print forms for
+  // Списание (moysklad shows the user-created forms — e.g. «Climart Приход» —
+  // between МБ-8 and Комплект…). Same source as the list-page print dropdown.
+  // Doc-scoped endpoint (/losses/print-forms) — gated on the DOC view permission, not
+  // settings, so a cashier sees the pinned check buttons too (the shared
+  // /print-templates listing is admin-only). Bare array, PO/new shape.
+  const { data: printTemplatesData } = useQuery<Array<{ id: string; name: string }>>({
+    queryKey: ['losses/print-forms'],
+    queryFn: () => api.get('/losses/print-forms'),
+    staleTime: 60_000,
+  });
+  const accountTemplates = printTemplatesData ?? [];
+
+  // moysklad «Печать» on a NEW write-off: silently save, then open the print
+  // form in a NEW TAB — the intent lives on a ref so `createMut.onSuccess`
+  // knows whether the save came from «Печать» (mirrors enters/supplies/new).
+  // 'print' opens /print/loss/:id; {templateId} renders an account form PDF.
+  const afterSaveRef = useRef<'view' | 'print' | { templateId: string }>('view');
+
   // moysklad creates the write-off POSTED (Проведено checked). We create the draft
   // then post it via the transition. createdIdRef guards retries from making a
   // duplicate draft when posting fails (e.g. insufficient stock) — a retry posts
@@ -444,7 +487,7 @@ export default function NewLossPage() {
     mutationFn: async () => {
       if (!organizationId) throw new Error(tErrors('select_organization'));
       if (!storeId) throw new Error(tErrors('select_store'));
-      if (positions.length === 0) throw new Error(tErrors('at_least_one_position'));
+      // Owner 2026-07-08: «Проведено» has NO position precondition — an empty document may be saved/posted (BE allows it: 0 positions ⇒ 0 stock delta).
       for (const [i, p] of positions.entries()) {
         if (!p.assortmentId) throw new Error(tErrors('position_select_product', { n: i + 1 }));
         if (Number(p.quantity) <= 0)
@@ -474,6 +517,7 @@ export default function NewLossPage() {
             // «Цена» — the entered себестоимость the write-off books at.
             ...(p.priceMinor && p.priceMinor !== '0' ? { costMinor: p.priceMinor } : {}),
             ...(p.reason ? { reason: p.reason } : {}),
+            ...(p.cellId ? { cellId: p.cellId } : {}),
             ...(p.cell ? { cell: p.cell } : {}),
           })),
         };
@@ -487,9 +531,25 @@ export default function NewLossPage() {
     },
     onSuccess: ({ id }) => {
       createdIdRef.current = null;
+      const intent = afterSaveRef.current;
+      afterSaveRef.current = 'view';
+      if (intent === 'print') {
+        // Open the print form in a NEW TAB (user presses «Печать» there — no
+        // auto-print), then land on the saved write-off's detail page.
+        window.open(`/print/loss/${id}`, '_blank');
+      } else if (typeof intent === 'object') {
+        // Account print form — render through bulk-print and open the PDF.
+        void api.postOpenInBrowser('/losses/bulk-print', {
+          ids: [id],
+          templateId: intent.templateId,
+        });
+      }
       router.push(`/losses/${id}`);
     },
-    onError: (err: Error) => setError(err.message),
+    onError: (err: Error) => {
+      afterSaveRef.current = 'view';
+      setError(err.message);
+    },
   });
 
   const orgFetcher = async (s: string): Promise<PickerItem[]> => {
@@ -539,12 +599,31 @@ export default function NewLossPage() {
       // «Цена» = the product cost (себестоимость) by default — shown immediately,
       // independent of «Остаток»; replaced by the store avg only when stock>0.
       priceMinor: raw?.buyPrice ?? '0',
-      imageUrl: raw?.mainImageId ? `/api/v1/images/${raw.mainImageId}/raw` : undefined,
+      imageUrl: raw?.mainImageId ? imageRawUrl(raw.mainImageId) : undefined,
     });
+  };
+
+  // «Ячейка» — address-storage cell picker. Closure has storeId (page state) + the
+  // row's product (assortmentId), so the picker can show «Все ячейки» and «С этим
+  // товаром». Stores cellId (drives per-cell stock) + the «Зона / Ячейка» label in `cell`.
+  const renderPositionCellCell = (row: DocPositionRow) => {
+    const p = row as NewPositionRow;
+    return (
+      <CellPickerField
+        storeId={storeId}
+        assortmentId={p.assortmentId}
+        label={p.cell}
+        onSelect={(cellId, label) => updatePosition(row.id, { cellId, cell: label })}
+        onClear={() => updatePosition(row.id, { cellId: null, cell: '' })}
+      />
+    );
   };
 
   const renderPositionNameCell = (row: DocPositionRow) => {
     const p = row as NewPositionRow;
+    // A picked product's name is a blue LINK to its product card (the «Аналоги»
+    // tab lives there); falls back to the picker button when nothing is picked.
+    const href = p.assortmentId ? `/products/${p.assortmentId}` : undefined;
     return (
       <PositionNameCell
         imageUrl={p.imageUrl}
@@ -552,6 +631,8 @@ export default function NewLossPage() {
         label={p.productLabel}
         placeholder={tForm('select_product')}
         onPick={() => setOpenPicker({ kind: 'product', rowUid: p.id })}
+        productHref={href}
+        onNavigate={href ? () => router.push(href) : undefined}
         testId={`pos-${p.id}-name`}
       />
     );
@@ -612,7 +693,7 @@ export default function NewLossPage() {
               setProjectId(null);
               setProjectLabel('');
             }}
-            onCreate={() => router.push('/projects/new')}
+            onCreate={() => router.push('/settings/projects/new')}
             createLabel={tForm('create_new_project')}
           />
         </DocumentMetaField>
@@ -662,7 +743,7 @@ export default function NewLossPage() {
               </NativeSelect>
             </div>
             {!isBaseCurrency && selectedCurrency && (
-              <span className="inline-flex items-center gap-1 whitespace-nowrap text-[var(--ms-text-muted)] text-xs tabular-nums">
+              <span className="inline-flex items-center gap-1 whitespace-nowrap text-[var(--ms-text-muted)] text-[12px] tabular-nums">
                 1 {currency} = {Number(effectiveRate).toLocaleString('ru-RU')} {baseCode}
                 {/* moysklad ✎ — opens «Курс валюты документа» to override the rate. */}
                 <button
@@ -688,6 +769,24 @@ export default function NewLossPage() {
       label: tDetailTabs('main'),
       content: (
         <div className="space-y-4">
+          {/* Owner 2026-07-23: «Договорная цена» — blue, at the table's OUTER
+              top-right corner (same spot in every section). */}
+          <div className="-mb-2.5 flex justify-end">
+            <PositionAgreementButton
+              totalMinor={totals}
+              currency={currency}
+              labels={{
+                button: tPos('agreement_button'),
+                total: tPos('agreement_total'),
+                amount: tPos('agreement_amount'),
+                add: tPos('agreement_add'),
+                subtract: tPos('agreement_subtract'),
+                save: tPos('pick_modal_save'),
+                cancel: tPos('pick_modal_cancel'),
+              }}
+              onApply={applyAgreement}
+            />
+          </div>
           <PositionTable
             columns={positionColumns}
             emptyText=""
@@ -722,6 +821,8 @@ export default function NewLossPage() {
               });
             }}
             renderNameCell={renderPositionNameCell}
+            renderCellCell={renderPositionCellCell}
+            onReplace={(id) => setOpenPicker({ kind: 'product', rowUid: id })}
             selectedIds={selectedRowIds}
             onSelectionChange={setSelectedRowIds}
             footerToolbar={
@@ -737,6 +838,10 @@ export default function NewLossPage() {
                       id: p.id,
                       primary: p.name,
                       code: p.code ?? undefined,
+                      // Pick modal (owner 2026-07-18): reference «Цена» = the same
+                      // default the row would get (product cost / себестоимость here).
+                      priceMinor: p.buyPrice ?? '0',
+                      uomLabel: p.uom ?? undefined,
                       raw: p,
                     })),
                     total: r.total ?? r.items.length,
@@ -745,28 +850,47 @@ export default function NewLossPage() {
                 moreItemsLabel={(n) => tPos('moreItems', { count: n })}
                 createProductLabel={(qq) => tPos('createProductNamed', { query: qq })}
                 onCreateProduct={() => router.push('/products/new')}
-                onPick={(item) => {
+                // owner 2026-07-18: qty/price modal on EVERY product-add search
+                // (was sales-only). No price-scope checkboxes here — writing a
+                // permanent SALE price from a write-off cost would be wrong.
+                pickModal={{
+                  currency,
+                  permanentPriceOption: false,
+                  labels: {
+                    stock: tPos('pick_modal_stock'),
+                    price: tPos('pick_modal_price'),
+                    quantity: tPos('pick_modal_quantity'),
+                    salePrice: tPos('pick_modal_sale_price'),
+                    priceThisSale: tPos('pick_modal_price_this_sale'),
+                    pricePermanent: tPos('pick_modal_price_permanent'),
+                    save: tPos('pick_modal_save'),
+                    cancel: tPos('pick_modal_cancel'),
+                  },
+                }}
+                onPick={(item, entry) => {
                   const raw = item.raw as ProductItem | undefined;
+                  const newId = uid();
                   setPositions((ps) => [
                     ...ps,
                     {
-                      id: uid(),
+                      id: newId,
                       assortmentId: item.id,
                       productLabel: item.primary,
                       productCode: raw?.code ?? undefined,
                       productUom: raw?.uom ?? null,
-                      quantity: '1',
+                      quantity: entry?.quantity ?? '1',
                       // «Цена» = product cost (себестоимость) by default — independent
                       // of «Остаток»; the store avg overrides it only when stock>0.
-                      priceMinor: raw?.buyPrice ?? '0',
+                      priceMinor: entry?.priceMinor ?? raw?.buyPrice ?? '0',
                       discount: '0',
                       vat: '0',
                       vatEnabled: false,
-                      imageUrl: raw?.mainImageId
-                        ? `/api/v1/images/${raw.mainImageId}/raw`
-                        : undefined,
+                      imageUrl: raw?.mainImageId ? imageRawUrl(raw.mainImageId) : undefined,
                     },
                   ]);
+                  // owner 2026-07-18: returning the id hands focus to the new
+                  // row's «Кол-во» (modal → table entry chain).
+                  return newId;
                 }}
                 onAddFromCatalog={addEmptyPosition}
               />
@@ -895,10 +1019,125 @@ export default function NewLossPage() {
         }}
         saving={createMut.isPending}
         onClose={() => router.push('/losses')}
-        modifyMenu={[]}
-        createDocMenu={[]}
-        printMenu={[]}
-        sendMenu={[]}
+        // moysklad-parity: on a NEW «Списание» the toolbar dropdowns OPEN and list
+        // their items (were disabled/empty). A new doc has nothing to act on yet,
+        // so every actionable item SAVES the write-off first, then lands on the
+        // detail page. Item sets ground-truthed live on #loss/edit?new (user
+        // screenshots, 2026-07-14): «Изменить» = Копировать only (no Удалить).
+        modifyMenu={[
+          {
+            label: tBulk('copy'),
+            onClick: () => {
+              setError(null);
+              createMut.mutate();
+            },
+          },
+        ]}
+        // moysklad has NO «Создать документ» on a Списание (internal stock-out,
+        // no downstream docs) — hide the slot entirely.
+        hideCreateDoc
+        // «Печать» — moysklad: ТОРГ-16 · МБ-8 · [account forms] ⎯ Комплект… ⎯
+        // Настроить… · «Запросить форму» promo footer (header + subtitle +
+        // «Как запросить»). Both built-in forms open our loss print form.
+        printMenu={[
+          ...[tPrintLoss('torg16'), tPrintLoss('mb8')].map((label) => ({
+            label,
+            onClick: () => {
+              setError(null);
+              afterSaveRef.current = 'print';
+              createMut.mutate();
+            },
+          })),
+          ...accountTemplates.map((tpl) => ({
+            label: tpl.name,
+            onClick: () => {
+              setError(null);
+              afterSaveRef.current = { templateId: tpl.id };
+              createMut.mutate();
+            },
+          })),
+          { divider: true },
+          {
+            label: tPrint('set'),
+            onClick: () => {
+              setError(null);
+              createMut.mutate();
+            },
+          },
+          { divider: true },
+          {
+            // «Настроить…» — open the print-template manager slide-over (no save).
+            label: tPrint('configure'),
+            onClick: () => openTemplates('loss'),
+          },
+          {
+            // «Запросить форму» — moysklad's non-interactive promo footer.
+            testId: 'print-request-form',
+            content: (
+              <div className="mt-1 border-[var(--ms-border-default)] border-t px-2 pt-2 pb-1">
+                <div className="font-semibold text-[13px] text-[var(--ms-text-primary)]">
+                  {tPrint('request_form')}
+                </div>
+                <p className="mt-0.5 max-w-[230px] text-[11px] text-[var(--ms-text-muted)] leading-snug">
+                  {tPrint('request_form_description')}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => window.open('/help/losses', '_blank')}
+                  className="mt-2 rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] px-3 py-1 text-[11px] text-[var(--ms-text-primary)] hover:bg-[var(--ms-bg-muted)]"
+                  data-test-id="print-request-form-btn"
+                >
+                  {tPrint('request_form_cta')}
+                </button>
+              </div>
+            ),
+          },
+        ]}
+        // «Отправить» — moysklad: ТОРГ-16 · МБ-8 · [account forms] ⎯ Комплект…
+        sendMenu={[
+          ...[
+            tPrintLoss('torg16'),
+            tPrintLoss('mb8'),
+            ...accountTemplates.map((tpl) => tpl.name),
+          ].map((label) => ({
+            label,
+            onClick: () => {
+              setError(null);
+              createMut.mutate();
+            },
+          })),
+          { divider: true },
+          {
+            label: tPrint('set'),
+            onClick: () => {
+              setError(null);
+              createMut.mutate();
+            },
+          },
+        ]}
+        // moysklad pins each configured print form as its OWN button right after
+        // «Отправить». Each saves the write-off first, then renders that form's PDF.
+        trailingSlot={accountTemplates.map((f) => (
+          <Button
+            key={f.id}
+            type="button"
+            variant="secondary"
+            size="sm"
+            // «Past ko'k» — check-print type buttons stand out in a soft blue
+            // (brand-100 fill · brand-600 text · brand-300 border), matching
+            // purchase-orders/new. Owner request 2026-07-15/16.
+            className="border-[var(--ms-brand-300)] bg-[var(--ms-brand-100)] text-[var(--ms-brand-600)] hover:bg-[var(--ms-brand-200)] hover:text-[var(--ms-brand-700)]"
+            onClick={() => {
+              setError(null);
+              afterSaveRef.current = { templateId: f.id };
+              createMut.mutate();
+            }}
+            data-test-id={`toolbar-print-form-${f.id}`}
+          >
+            <Icons.print className="h-4 w-4" />
+            {f.name}
+          </Button>
+        ))}
         rightSlot={<OwnerAccessPopover value={ownerAccess} onChange={setOwnerAccess} />}
         error={error}
         onErrorRetry={() => {
@@ -964,13 +1203,12 @@ export default function NewLossPage() {
       />
 
       {/* «Курс валюты документа» — moysklad rate-override modal (the currency ✎). */}
-      <PriceRateDialog
+      <CurrencyRateModal
         open={rateDialogOpen}
-        onClose={() => setRateDialogOpen(false)}
-        currencyCode={currency}
-        baseCode={baseCode}
+        onOpenChange={setRateDialogOpen}
+        currency={currency}
         referenceRate={globalRate}
-        customRate={rateOverride}
+        currentOverride={rateOverride}
         onApply={setRateOverride}
       />
     </>

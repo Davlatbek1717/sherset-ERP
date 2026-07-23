@@ -43,7 +43,7 @@ export const NativeSelect = React.forwardRef<HTMLSelectElement, NativeSelectProp
         disabled={disabled}
         aria-invalid={invalid || undefined}
         className={cn(
-          'h-[var(--ms-control-h)] w-full appearance-none px-2 pr-7 text-[12px]',
+          'h-[var(--ms-control-h)] w-full appearance-none px-2 pr-7 text-[13px]',
           'bg-[var(--ms-bg-surface)] text-[var(--ms-text-primary)]',
           'border',
           'transition-colors duration-[var(--ms-duration-fast)]',

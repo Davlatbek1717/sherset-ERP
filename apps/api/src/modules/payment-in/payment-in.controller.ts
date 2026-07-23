@@ -61,6 +61,22 @@ export class PaymentInController {
     return this.payment.createFromInvoiceOut(user.accountId, user.sub, invoiceOutId, body);
   }
 
+  /**
+   * moysklad invoiceout-list «Создать → Входящие платежи» — one draft payment
+   * per selected invoice, pre-allocated against its unpaid remainder (mirror of
+   * invoices-in bulk-create-payment-out, sales side). Lives HERE (not on the
+   * invoice-out controller) because payment-in already imports invoice-out —
+   * the reverse import would be a module cycle.
+   */
+  @Post('bulk-create-from-invoice-out')
+  @RequirePermission({ entity: 'paymentin', action: 'create' })
+  async bulkCreateFromInvoiceOut(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
+    const { ids } = BulkIdsSchema.parse(body);
+    return runBulk(ids, (id) =>
+      this.payment.createFromInvoiceOut(user.accountId, user.sub, id, {}),
+    );
+  }
+
   @Patch(':id')
   @RequirePermission({ entity: 'paymentin', action: 'update' })
   async update(
@@ -111,7 +127,13 @@ export class PaymentInController {
   @RequirePermission({ entity: 'paymentin', action: 'update' })
   async massEdit(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
     const { ids, ...patch } = MassEditBaseSchema.parse(body);
-    assertPatchHasAtLeastOneField(patch, ['ownerId', 'projectId', 'description']);
+    assertPatchHasAtLeastOneField(patch, [
+      'ownerId',
+      'projectId',
+      'description',
+      'groupId',
+      'shared',
+    ]);
     return runBulk(ids, (id) => this.payment.massEditApply(user.accountId, user.sub, id, patch));
   }
 }

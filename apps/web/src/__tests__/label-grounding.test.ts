@@ -74,7 +74,10 @@ const GROUNDING: Array<{ capture: string; labels: string[]; file?: string }> = [
   { capture: '07-module/cashin', labels: ['Основание', 'Контрагент'] },
   { capture: '07-module/cashout', labels: ['Основание'] },
   { capture: '07-module/paymentout', labels: ['Контрагент'] },
-  { capture: '02-module/supply', labels: ['Контрагент'] },
+  // «Входящий номер» — supply editor meta-grid row-3 label cell (DOM-role confirmed
+  // 2026-07-03 on dom/45-edit-default.html: <td class="label"><div class="gwt-Label">
+  // Входящий номер</div>); the «Входящий №» abbreviation has 0 corpus hits.
+  { capture: '02-module/supply', labels: ['Контрагент', 'Входящий номер'] },
   { capture: '03-module/salesreturn', labels: ['Контрагент'] },
   { capture: '02-module/purchasereturn', labels: ['Контрагент'] },
   { capture: '03-module/customerorder', labels: ['Контрагент'] },
@@ -735,19 +738,30 @@ describe('label-grounding: L12 settings-org list wiring is locked', () => {
     );
   });
 
-  // users: the job-title column used tFields('state')=«Статус» (duplicating the
-  // real state column); it must use the dedicated «Должность» key. The page is
-  // now wired to the real employee catalog (GET /hr/employees) with a live
-  // debounced search (2026-06-06), so the inert no-op search handler must stay
-  // gone and the «Должность» column must remain.
-  it('settings/users labels the position column «Должность» and has no dead search box', () => {
+  // users → employees (2026-07-16 settings-1:1 rebuild): the old users list is
+  // superseded by the moysklad «Сотрудники» section. /settings/users must stay
+  // a redirect (old links keep working), and the employees list must carry the
+  // owner-screenshot column set (Фамилия · Имя · Отчество · Логин · Роль) via
+  // i18n keys — never hardcoded, never the old users-page mislabels.
+  it('settings/users redirects to the employees section (old list superseded)', () => {
     const src = pageSrc('settings/users');
-    expect(src, "position column must use t('col_position')=«Должность»").toContain(
-      "header: t('col_position')",
+    expect(src, 'users page must redirect to /settings/employees').toContain(
+      "redirect('/settings/employees')",
     );
-    expect(src, 'the mislabel tFields(state) on the position column must not return').not.toContain(
-      "header: tFields('state')",
-    );
+  });
+
+  it('settings/employees list carries the moysklad column keys (screenshot-grounded)', () => {
+    const src = pageSrc('settings/employees');
+    for (const key of [
+      'col_last_name',
+      'col_first_name',
+      'col_middle_name',
+      'col_login',
+      'col_role',
+      'col_login_flag',
+    ]) {
+      expect(src, `employees list must render t('${key}')`).toContain(`t('${key}')`);
+    }
     expect(src, 'the inert no-op search handler must not return').not.toContain(
       'onSearchChange={() => undefined}',
     );

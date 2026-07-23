@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { csvUuid } from '../shared/csv.js';
 
 export const InventoryStateSchema = z.enum(['draft', 'posted', 'cancelled']);
 export type InventoryState = z.infer<typeof InventoryStateSchema>;
@@ -26,13 +27,13 @@ export const CreateInventorySchema = z.object({
   description: z.string().max(4000).nullish(),
   // moysklad parity (§17) — universal «Внешний код» (col exists, no migration).
   externalCode: z.string().max(50).nullish(),
-  positions: z.array(InventoryPositionInputSchema).min(1, 'at least one position required'),
+  positions: z.array(InventoryPositionInputSchema),
   attributes: z.record(z.string(), z.unknown()).optional(),
 });
 export type CreateInventoryInput = z.infer<typeof CreateInventorySchema>;
 
 export const UpdateInventorySchema = CreateInventorySchema.partial().extend({
-  positions: z.array(InventoryPositionInputSchema).min(1).optional(),
+  positions: z.array(InventoryPositionInputSchema).optional(),
   version: z.number().int().nonnegative(),
 });
 export type UpdateInventoryInput = z.infer<typeof UpdateInventorySchema>;
@@ -41,9 +42,42 @@ const boolFromString = z
   .union([z.boolean(), z.string()])
   .transform((v) => (typeof v === 'boolean' ? v : v === 'true'));
 
+/**
+ * POST /inventories/position-meta — grid enrichment for the Инвентаризация
+ * editor (owner report 2026-07-14 band 3). Body (POST, not GET query) because
+ * a «Дополнить из номенклатуры» fill can push thousands of assortment ids —
+ * far past safe URL length. Returns per-product: catalog fields (drives the
+ * in-grid «Фильтр»), the store's «Расчетный остаток», per-unit cost («Цена»)
+ * and the StockByCell breakdown («Остатки по ячейке» tab).
+ */
+export const InventoryPositionMetaSchema = z.object({
+  storeId: z.string().uuid(),
+  assortmentIds: z.array(z.string().uuid()).max(5000),
+});
+export type InventoryPositionMetaInput = z.infer<typeof InventoryPositionMetaSchema>;
+
+/**
+ * GET /inventories/fill-candidates — id list for the two grid fill actions:
+ *   source=stock       → «Дополнить из остатков» (every product with a non-zero
+ *                        calculated balance at the store)
+ *   source=assortment  → «Дополнить из номенклатуры» (a product / a folder
+ *                        subtree / the ENTIRE catalog when neither id is given —
+ *                        moysklad: «будет добавлен весь справочник номенклатуры»)
+ * The fill itself is client-side grid state (moysklad appends rows to the
+ * unsaved grid; «Сохранить» persists) — this endpoint only supplies ids + qty.
+ */
+export const InventoryFillCandidatesSchema = z.object({
+  storeId: z.string().uuid(),
+  source: z.enum(['stock', 'assortment']),
+  productId: z.string().uuid().optional(),
+  folderId: z.string().uuid().optional(),
+});
+export type InventoryFillCandidatesInput = z.infer<typeof InventoryFillCandidatesSchema>;
+
 export const InventoryFilterSchema = z.object({
   state: InventoryStateSchema.optional(),
   organizationId: z.string().uuid().optional(),
+  organizationIds: csvUuid.optional(),
   /** «Склад» — Inventory.storeId. */
   storeId: z.string().uuid().optional(),
   /** «Проект» — Inventory.projectId. */

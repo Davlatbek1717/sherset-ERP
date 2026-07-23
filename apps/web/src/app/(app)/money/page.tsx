@@ -11,10 +11,8 @@
  */
 
 import { FilterToggleButton } from '@/components/filters/filter-toggle-button';
-import { useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
 import { moneyFlowTone } from '@/lib/domain-status-tone';
-import { pinDefaultCustomer } from '@/lib/pin-default-customer';
 import {
   Badge,
   Button,
@@ -97,8 +95,6 @@ export default function MoneyPage() {
   const tKind = useTranslations('pages.money.kinds');
   const tFlow = useTranslations('pages.money.flow');
   const tFilters = useTranslations('filters');
-  const tForm = useTranslations('form');
-  const userDefaults = useUserDefaults();
   const router = useRouter();
 
   const [searchInput, setSearchInput] = useState('');
@@ -422,13 +418,7 @@ export default function MoneyPage() {
           const r = await api.get<{ items: { id: string; name: string }[] }>(
             `/counterparties?search=${encodeURIComponent(q)}&limit=20`,
           );
-          const items = r.items.map((x) => ({ id: x.id, primary: x.name }));
-          return pinDefaultCustomer(
-            items,
-            userDefaults.data?.defaultCustomer,
-            q,
-            tForm('pinned_default'),
-          );
+          return r.items.map((x) => ({ id: x.id, primary: x.name }));
         }}
         onSelect={(item) => {
           setCounterparty({ id: item.id, label: String(item.primary) });

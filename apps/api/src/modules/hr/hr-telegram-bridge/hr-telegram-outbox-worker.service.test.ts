@@ -230,11 +230,11 @@ describe('HrTelegramOutboxWorker.runOnce', () => {
     expect(prisma.client.hrTelegramOutbox.update).toHaveBeenCalledTimes(3);
   });
 
-  it('respects MAX_PER_TICK cap in the findMany query (default 10)', async () => {
+  it('respects MAX_PER_TICK cap in the findMany query', async () => {
     prisma.client.hrTelegramOutbox.findMany.mockResolvedValue([]);
     await worker.runOnce();
     expect(prisma.client.hrTelegramOutbox.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ take: 10 }),
+      expect.objectContaining({ take: 50 }),
     );
   });
 });

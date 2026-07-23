@@ -43,5 +43,11 @@ export const SetEmployeeRolesSchema = z.object({
 });
 export type SetEmployeeRolesInput = z.infer<typeof SetEmployeeRolesSchema>;
 
+/** «Сделать владельцем» (moysklad employee card) — target of the hand-over. */
+export const TransferOwnerSchema = z.object({
+  employeeId: z.string().uuid(),
+});
+export type TransferOwnerInput = z.infer<typeof TransferOwnerSchema>;
+
 /** Re-export the scope order for the UI to sort dropdowns consistently. */
 export const SCOPE_KEYS = Object.keys(SCOPE_ORDER) as Array<keyof typeof SCOPE_ORDER>;

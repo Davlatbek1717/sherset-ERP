@@ -4,6 +4,7 @@ import * as React from 'react';
 import { Modal } from '../feedback/Modal.tsx';
 import { Button } from '../primitives/Button.tsx';
 import { Checkbox } from '../primitives/Checkbox.tsx';
+import { NativeSelect } from '../primitives/NativeSelect.tsx';
 import { Textarea } from '../primitives/Textarea.tsx';
 import { CatalogPickerField } from './CatalogPicker.tsx';
 
@@ -27,6 +28,16 @@ export interface MassEditPatch {
   ownerId?: string | null;
   projectId?: string | null;
   description?: string | null;
+  // moysklad #bulkEdit parity (owner 2026-07-09) — the wizard's extra rows:
+  // «Владелец-отдел» / «Общий доступ» / «Статья расходов» (item NAME).
+  groupId?: string | null;
+  shared?: boolean;
+  expenseItem?: string | null;
+}
+
+export interface MassEditSelectOption {
+  value: string;
+  label: string;
 }
 
 export interface MassEditModalProps {
@@ -47,6 +58,20 @@ export interface MassEditModalProps {
   onProjectPick: () => void;
   onProjectClear: () => void;
 
+  /**
+   * «Владелец-отдел» row — rendered only when the option list is supplied
+   * (moysklad #bulkEdit shows it on every document's wizard).
+   */
+  groupOptions?: MassEditSelectOption[];
+  /**
+   * «Статья расходов» row — expense-carrying documents only (Списание, РКО,
+   * исходящий платёж). The submitted value is the option's `value` (for Loss
+   * that's the expense item NAME — Loss.expenseItem semantics).
+   */
+  expenseItemOptions?: MassEditSelectOption[];
+  /** «Общий доступ» (Да/Нет) row — moysklad shows it on every wizard. */
+  showShared?: boolean;
+
   /** i18n strings — consuming page supplies them. */
   labels: {
     title: string;
@@ -60,6 +85,11 @@ export interface MassEditModalProps {
     apply: string;
     cancel: string;
     hint?: string;
+    groupLabel?: string;
+    expenseItemLabel?: string;
+    sharedLabel?: string;
+    sharedYes?: string;
+    sharedNo?: string;
   };
 
   /** Hide the project row entirely — used for entities whose backend
@@ -87,6 +117,9 @@ export function MassEditModal({
   projectValue,
   onProjectPick,
   onProjectClear,
+  groupOptions,
+  expenseItemOptions,
+  showShared = false,
   labels,
   testId = 'mass-edit-modal',
 }: MassEditModalProps) {
@@ -94,6 +127,12 @@ export function MassEditModal({
   const [editProject, setEditProject] = React.useState(false);
   const [editDescription, setEditDescription] = React.useState(false);
   const [description, setDescription] = React.useState('');
+  const [editGroup, setEditGroup] = React.useState(false);
+  const [groupId, setGroupId] = React.useState('');
+  const [editExpenseItem, setEditExpenseItem] = React.useState(false);
+  const [expenseItem, setExpenseItem] = React.useState('');
+  const [editShared, setEditShared] = React.useState(false);
+  const [sharedValue, setSharedValue] = React.useState(true);
 
   // Reset rows whenever the modal re-opens so a stale tick from a
   // previous open doesn't get silently re-submitted.
@@ -103,6 +142,12 @@ export function MassEditModal({
       setEditProject(false);
       setEditDescription(false);
       setDescription('');
+      setEditGroup(false);
+      setGroupId('');
+      setEditExpenseItem(false);
+      setExpenseItem('');
+      setEditShared(false);
+      setSharedValue(true);
     }
   }, [open]);
 
@@ -111,10 +156,15 @@ export function MassEditModal({
     if (editOwner) patch.ownerId = ownerValue?.id ?? null;
     if (editProject) patch.projectId = projectValue?.id ?? null;
     if (editDescription) patch.description = description.trim() === '' ? null : description;
+    if (editGroup) patch.groupId = groupId === '' ? null : groupId;
+    if (editExpenseItem) patch.expenseItem = expenseItem === '' ? null : expenseItem;
+    if (editShared) patch.shared = sharedValue;
     await onSubmit(patch);
   };
 
-  const canApply = (editOwner || editProject || editDescription) && !submitting;
+  const canApply =
+    (editOwner || editProject || editDescription || editGroup || editExpenseItem || editShared) &&
+    !submitting;
 
   return (
     <Modal
@@ -178,6 +228,86 @@ export function MassEditModal({
             />
           </MassEditRow>
         )}
+
+        {expenseItemOptions ? (
+          <MassEditRow
+            checked={editExpenseItem}
+            onCheckedChange={setEditExpenseItem}
+            label={labels.expenseItemLabel ?? 'Статья расходов'}
+            testId={`${testId}-row-expense-item`}
+          >
+            <NativeSelect
+              value={expenseItem}
+              onChange={(e) => setExpenseItem(e.target.value)}
+              disabled={!editExpenseItem}
+              data-test-id={`${testId}-expense-item-field`}
+            >
+              <option value="">—</option>
+              {expenseItemOptions.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </NativeSelect>
+          </MassEditRow>
+        ) : null}
+
+        {groupOptions ? (
+          <MassEditRow
+            checked={editGroup}
+            onCheckedChange={setEditGroup}
+            label={labels.groupLabel ?? 'Владелец-отдел'}
+            testId={`${testId}-row-group`}
+          >
+            <NativeSelect
+              value={groupId}
+              onChange={(e) => setGroupId(e.target.value)}
+              disabled={!editGroup}
+              data-test-id={`${testId}-group-field`}
+            >
+              <option value="">—</option>
+              {groupOptions.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </NativeSelect>
+          </MassEditRow>
+        ) : null}
+
+        {showShared ? (
+          <MassEditRow
+            checked={editShared}
+            onCheckedChange={setEditShared}
+            label={labels.sharedLabel ?? 'Общий доступ'}
+            testId={`${testId}-row-shared`}
+          >
+            <div className="flex items-center gap-4 text-sm">
+              <label className="inline-flex items-center gap-1.5">
+                <input
+                  type="radio"
+                  name={`${testId}-shared`}
+                  checked={sharedValue === true}
+                  onChange={() => setSharedValue(true)}
+                  disabled={!editShared}
+                  data-test-id={`${testId}-shared-yes`}
+                />
+                {labels.sharedYes ?? 'Да'}
+              </label>
+              <label className="inline-flex items-center gap-1.5">
+                <input
+                  type="radio"
+                  name={`${testId}-shared`}
+                  checked={sharedValue === false}
+                  onChange={() => setSharedValue(false)}
+                  disabled={!editShared}
+                  data-test-id={`${testId}-shared-no`}
+                />
+                {labels.sharedNo ?? 'Нет'}
+              </label>
+            </div>
+          </MassEditRow>
+        ) : null}
 
         <MassEditRow
           checked={editDescription}

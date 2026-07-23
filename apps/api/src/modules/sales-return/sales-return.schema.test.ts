@@ -48,10 +48,8 @@ describe('CreateSalesReturnSchema', () => {
     expect(parsed.vatEnabled).toBe(true);
   });
 
-  it('requires ≥1 position', () => {
-    expect(() => CreateSalesReturnSchema.parse({ ...valid, positions: [] })).toThrow(
-      /at least one/i,
-    );
+  it('allows empty positions — owner 2026-07-08, no Provedeno precondition', () => {
+    expect(() => CreateSalesReturnSchema.parse({ ...valid, positions: [] })).not.toThrow();
   });
 
   it('accepts demand + CO back-links', () => {
@@ -121,6 +119,50 @@ describe('CreateSalesReturnSchema', () => {
         positions: [{ ...valid.positions[0], countryId: 'RU' }],
       }),
     ).toThrow();
+  });
+
+  // «Ячейка» — address-storage bin on inbound return positions (mirror supply / PR).
+  it('accepts an optional «Ячейка» (cellId + cell) on a position', () => {
+    const parsed = CreateSalesReturnSchema.parse({
+      ...valid,
+      positions: [
+        {
+          ...valid.positions[0],
+          cellId: '00000000-0000-0000-0000-0000000000ce',
+          cell: 'A-01 / 03',
+        },
+      ],
+    });
+    expect(parsed.positions[0].cellId).toBe('00000000-0000-0000-0000-0000000000ce');
+    expect(parsed.positions[0].cell).toBe('A-01 / 03');
+  });
+
+  it('rejects a non-uuid cellId', () => {
+    expect(() =>
+      CreateSalesReturnSchema.parse({
+        ...valid,
+        positions: [{ ...valid.positions[0], cellId: 'A-01' }],
+      }),
+    ).toThrow();
+  });
+
+  // «Владелец» / «Общий доступ» / «Статус» — owner override + shared + custom status pill.
+  it('accepts owner / group / shared / statusId header fields', () => {
+    const parsed = CreateSalesReturnSchema.parse({
+      ...valid,
+      ownerId: '00000000-0000-0000-0000-0000000000a1',
+      groupId: '00000000-0000-0000-0000-0000000000a2',
+      shared: true,
+      statusId: '00000000-0000-0000-0000-0000000000a3',
+    });
+    expect(parsed.ownerId).toBe('00000000-0000-0000-0000-0000000000a1');
+    expect(parsed.groupId).toBe('00000000-0000-0000-0000-0000000000a2');
+    expect(parsed.shared).toBe(true);
+    expect(parsed.statusId).toBe('00000000-0000-0000-0000-0000000000a3');
+  });
+
+  it('rejects a non-uuid statusId', () => {
+    expect(() => CreateSalesReturnSchema.parse({ ...valid, statusId: 'draft' })).toThrow();
   });
 });
 
@@ -195,6 +237,21 @@ describe('SalesReturnFilterSchema', () => {
 
   it('rejects a non-uuid FK filter value', () => {
     expect(() => SalesReturnFilterSchema.parse({ contractId: 'not-a-uuid' })).toThrow();
+  });
+
+  // «Статус» custom-status filter (account State ids) — CSV or array (mirror demand).
+  it('parses statusIds from a comma-separated string', () => {
+    const p = SalesReturnFilterSchema.parse({
+      statusIds: `${UUID},00000000-0000-0000-0000-000000000002`,
+    });
+    expect(p.statusIds).toEqual([UUID, '00000000-0000-0000-0000-000000000002']);
+  });
+  it('parses statusIds from an array', () => {
+    const p = SalesReturnFilterSchema.parse({ statusIds: [UUID] });
+    expect(p.statusIds).toEqual([UUID]);
+  });
+  it('rejects a non-uuid inside statusIds', () => {
+    expect(() => SalesReturnFilterSchema.parse({ statusIds: 'draft' })).toThrow();
   });
 
   it('keeps the agent / organization / store relational sort keys', () => {

@@ -5,6 +5,7 @@ import { AbcAnalysisService } from './abc-analysis.service.js';
 import { AgingService } from './aging.service.js';
 import { AverageBasketService } from './average-basket.service.js';
 import { CashFlowService } from './cash-flow.service.js';
+import { CounterpartyActService } from './counterparty-act.service.js';
 import { CounterpartyBalanceService } from './counterparty-balance.service.js';
 import { DashboardService } from './dashboard.service.js';
 import { InventoryVarianceService } from './inventory-variance.service.js';
@@ -17,11 +18,9 @@ import { ReturnsRatioService } from './returns-ratio.service.js';
 import { SalesByChannelService } from './sales-by-channel.service.js';
 import { SalesByHourService } from './sales-by-hour.service.js';
 import { SlowMoversService } from './slow-movers.service.js';
-import { SotuvDashboardService } from './sotuv-dashboard.service.js';
 import { StockBalanceService } from './stock-balance.service.js';
 import { TurnoverService } from './turnover.service.js';
 import { UnitEconomicsService } from './unit-economics.service.js';
-import { WarehouseOpsService } from './warehouse-ops.service.js';
 
 @Module({
   imports: [AuthModule, StockModule],
@@ -32,6 +31,7 @@ import { WarehouseOpsService } from './warehouse-ops.service.js';
     StockBalanceService,
     TurnoverService,
     CounterpartyBalanceService,
+    CounterpartyActService,
     PnlService,
     DashboardService,
     AbcAnalysisService,
@@ -45,8 +45,6 @@ import { WarehouseOpsService } from './warehouse-ops.service.js';
     ProfitabilityService,
     PurchaseManagementService,
     UnitEconomicsService,
-    WarehouseOpsService,
-    SotuvDashboardService,
   ],
   exports: [
     ReportService,
@@ -67,8 +65,6 @@ import { WarehouseOpsService } from './warehouse-ops.service.js';
     ProfitabilityService,
     PurchaseManagementService,
     UnitEconomicsService,
-    WarehouseOpsService,
-    SotuvDashboardService,
   ],
 })
 export class ReportModule {}

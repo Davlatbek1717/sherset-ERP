@@ -1,6 +1,7 @@
 'use client';
 
 import { ColumnSettings } from '@/components/column-settings';
+import { SavedFiltersPills } from '@/components/customer-orders/saved-filters-pills';
 import { FilterToggleButton } from '@/components/filters/filter-toggle-button';
 import { InventoryBulkActionsDropdown } from '@/components/inventories/bulk-actions-dropdown';
 import { InventoryPrintDropdown } from '@/components/inventories/print-dropdown';
@@ -11,6 +12,7 @@ import { api } from '@/lib/api-client';
 import { documentStateTone } from '@/lib/document-state-tone';
 import {
   Badge,
+  Button,
   CatalogPicker,
   CatalogPickerField,
   type CsvColumn,
@@ -18,7 +20,9 @@ import {
   type FilterDrawerValues,
   InlineFilterPanel,
   ListView,
+  Modal,
   MoneyInput,
+  MultiCombobox,
   NativeSelect,
   PeriodInputs,
   PeriodShortcuts,
@@ -32,6 +36,7 @@ import {
 } from '@moysklad/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
+import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
 interface InventoryRow {
@@ -140,7 +145,11 @@ type ExtraFilterFields = {
   projectLabel?: string;
 };
 
+/** Multi-select reference field — moysklad checkbox-dropdown holds {id,label}[]. */
+type RefMulti = { id: string; label: string };
+
 export default function InventoriesPage() {
+  const router = useRouter();
   const t = useTranslations('pages.inventories');
   const tPO = useTranslations('pages.purchase_orders');
   const tCommon = useTranslations('common');
@@ -153,14 +162,99 @@ export default function InventoriesPage() {
   const [stateFilter, setStateFilter] = useState<string | null>(null);
   const [cursor, setCursor] = useState<string | undefined>();
   const [filterValues, setFilterValues] = useState<FilterDrawerValues & ExtraFilterFields>({});
+  // «Организация» — moysklad-parity inline multi-select checkbox dropdown
+  // (MultiCombobox), was a single-select modal. Holds the picked {id,label}
+  // pairs; on the wire it goes out as `organizationIds` CSV.
+  const [organizations, setOrganizations] = useState<RefMulti[]>([]);
   const [filterOpen, setFilterOpen] = useState(true);
-  const [pickerOpen, setPickerOpen] = useState<
-    null | 'store' | 'org' | 'owner' | 'group' | 'project'
-  >(null);
+  const [pickerOpen, setPickerOpen] = useState<null | 'store' | 'owner' | 'group' | 'project'>(
+    null,
+  );
   const [sortKey, setSortKey] = useState<string>('moment');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
   const onResetCursor = () => setCursor(undefined);
+
+  // 🔖 «Закладки» (saved filters) + ⚙ field-visibility — moysklad's two round
+  // buttons next to «Очистить» (both were dead placeholders; owner report
+  // 2026-07-14 band 1). Mirrors moves (b91610e1) / picking-waves (b2f7d774).
+  const [saveFilterOpen, setSaveFilterOpen] = useState(false);
+  // Semantics: the stored key set = HIDDEN filter fields (default empty ⇒ all shown).
+  const filterHidden = useColumnVisibility('inventories-filter-hidden', []);
+  // Serialize the ENTIRE current filter state (ids + labels, so a restored
+  // bookmark shows proper pill labels, not bare ids).
+  const savedFilterQuery = (() => {
+    const p = new URLSearchParams();
+    const put = (k: string, v: string | undefined) => {
+      if (v) p.set(k, v);
+    };
+    put('momentFrom', filterValues.momentFrom);
+    put('momentTo', filterValues.momentTo);
+    put('updatedFrom', filterValues.updatedFrom);
+    put('updatedTo', filterValues.updatedTo);
+    put('state', stateFilter ?? undefined);
+    put('applicable', filterValues.applicable);
+    put('printed', filterValues.printed);
+    put('published', filterValues.published);
+    if (filterValues.sumMinorFrom !== undefined)
+      p.set('sumMinorFrom', String(filterValues.sumMinorFrom));
+    if (filterValues.sumMinorTo !== undefined) p.set('sumMinorTo', String(filterValues.sumMinorTo));
+    for (const [idKey, labelKey] of [
+      ['storeId', 'storeLabel'],
+      ['projectId', 'projectLabel'],
+      ['ownerId', 'ownerLabel'],
+      ['groupId', 'groupLabel'],
+    ] as const) {
+      put(idKey, filterValues[idKey]);
+      put(labelKey, filterValues[labelKey]);
+    }
+    if (organizations.length) p.set('orgs', JSON.stringify(organizations));
+    return p.toString();
+  })();
+  const applySavedFilter = (qs: string) => {
+    const p = new URLSearchParams(qs);
+    const g = (k: string) => p.get(k) ?? undefined;
+    let orgs: RefMulti[] = [];
+    try {
+      const parsed: unknown = JSON.parse(p.get('orgs') ?? '[]');
+      if (Array.isArray(parsed)) orgs = parsed as RefMulti[];
+    } catch {
+      orgs = [];
+    }
+    setOrganizations(orgs);
+    setStateFilter(g('state') ?? null);
+    setFilterValues({
+      momentFrom: g('momentFrom'),
+      momentTo: g('momentTo'),
+      updatedFrom: g('updatedFrom'),
+      updatedTo: g('updatedTo'),
+      applicable: g('applicable') as ExtraFilterFields['applicable'],
+      printed: g('printed') as ExtraFilterFields['printed'],
+      published: g('published') as ExtraFilterFields['published'],
+      sumMinorFrom: g('sumMinorFrom') !== undefined ? Number(g('sumMinorFrom')) : undefined,
+      sumMinorTo: g('sumMinorTo') !== undefined ? Number(g('sumMinorTo')) : undefined,
+      storeId: g('storeId'),
+      storeLabel: g('storeLabel'),
+      projectId: g('projectId'),
+      projectLabel: g('projectLabel'),
+      ownerId: g('ownerId'),
+      ownerLabel: g('ownerLabel'),
+      groupId: g('groupId'),
+      groupLabel: g('groupLabel'),
+    });
+    onResetCursor();
+  };
+
+  // «+ Инвентаризация» → «Выберите склад для инвентаризации» modal (band 2.1,
+  // user screenshot №4): pick the warehouse FIRST, then the editor opens with
+  // «Склад» prefilled + locked (?warehouseId=…).
+  const [storeModalOpen, setStoreModalOpen] = useState(false);
+  const [storeModalPick, setStoreModalPick] = useState<string | null>(null);
+  const { data: storeModalData } = useQuery<{ items: Array<{ id: string; name: string }> }>({
+    queryKey: ['stores', 'inventory-create-modal'],
+    queryFn: () => api.get('/stores?limit=100'),
+    enabled: storeModalOpen,
+  });
 
   const params = new URLSearchParams({
     ...(search ? { search } : {}),
@@ -177,7 +271,7 @@ export default function InventoriesPage() {
     ...(filterValues.sumMinorTo !== undefined
       ? { sumMinorTo: String(filterValues.sumMinorTo) }
       : {}),
-    ...(filterValues.organizationId ? { organizationId: filterValues.organizationId } : {}),
+    ...(organizations.length ? { organizationIds: organizations.map((x) => x.id).join(',') } : {}),
     ...(filterValues.storeId ? { storeId: filterValues.storeId } : {}),
     ...(filterValues.ownerId ? { ownerId: filterValues.ownerId } : {}),
     ...(filterValues.groupId ? { groupId: filterValues.groupId } : {}),
@@ -325,7 +419,7 @@ export default function InventoriesPage() {
   const hasFilter =
     !!search ||
     !!stateFilter ||
-    !!filterValues.organizationId ||
+    organizations.length > 0 ||
     !!filterValues.storeId ||
     !!filterValues.ownerId ||
     !!filterValues.groupId ||
@@ -358,8 +452,28 @@ export default function InventoriesPage() {
       hidden={!filterOpen}
       applyLabel={tFilters('find')}
       clearLabel={tFilters('clear')}
+      onBookmarkClick={() => setSaveFilterOpen(true)}
+      fieldVisibility={{
+        hidden: filterHidden.visibleKeys,
+        onToggle: (k) => {
+          const next = new Set(filterHidden.visibleKeys);
+          if (next.has(k)) next.delete(k);
+          else next.add(k);
+          filterHidden.setVisibleKeys(next);
+        },
+      }}
+      pills={
+        <SavedFiltersPills
+          entity="inventory"
+          currentQueryString={savedFilterQuery}
+          onApply={applySavedFilter}
+          adding={saveFilterOpen}
+          onAddingChange={setSaveFilterOpen}
+        />
+      }
       onClear={() => {
         setFilterValues({});
+        setOrganizations([]);
         setStateFilter(null);
         onResetCursor();
       }}
@@ -368,6 +482,7 @@ export default function InventoriesPage() {
       {/* 1. Период */}
       <InlineFilterPanel.Field
         label={`${tFilters('period')}:`}
+        fieldKey="period"
         expandable
         inlineSuffix={
           <PeriodShortcuts
@@ -395,7 +510,7 @@ export default function InventoriesPage() {
         />
       </InlineFilterPanel.Field>
       {/* 2. Склад */}
-      <InlineFilterPanel.Field label={tFields('store')} expandable>
+      <InlineFilterPanel.Field label={tFields('store')} fieldKey="store" expandable>
         <CatalogPickerField
           value={
             filterValues.storeId
@@ -414,32 +529,35 @@ export default function InventoriesPage() {
           testId="filter-store"
         />
       </InlineFilterPanel.Field>
-      {/* 3. Организация */}
-      <InlineFilterPanel.Field label={tFields('organization')} expandable>
-        <CatalogPickerField
-          value={
-            filterValues.organizationId
-              ? {
-                  id: filterValues.organizationId,
-                  label: filterValues.organizationLabel ?? filterValues.organizationId,
-                }
-              : null
-          }
-          placeholder=""
-          onPick={() => setPickerOpen('org')}
-          onClear={() => {
-            setFilterValues({
-              ...filterValues,
-              organizationId: undefined,
-              organizationLabel: undefined,
-            });
+      {/* 3. Организация — moysklad-parity inline multi-select checkbox dropdown
+          (was a single-select modal). */}
+      <InlineFilterPanel.Field label={tFields('organization')} fieldKey="organization" expandable>
+        <MultiCombobox
+          value={organizations.map((x) => x.id)}
+          items={organizations.map((x) => ({ value: x.id, label: x.label }))}
+          onSearch={async (q) => {
+            const r = await api.get<{ items: { id: string; name: string }[] }>(
+              `/organizations?search=${encodeURIComponent(q)}&limit=20`,
+            );
+            return r.items.map((x) => ({ value: x.id, label: x.name }));
+          }}
+          onChange={(nextIds, toggled) => {
+            setOrganizations((prev) =>
+              nextIds.map((id) => {
+                const ex = prev.find((s) => s.id === id);
+                if (ex) return ex;
+                if (toggled?.value === id) return { id, label: String(toggled.label) };
+                return { id, label: id };
+              }),
+            );
             onResetCursor();
           }}
+          placeholder=""
           testId="filter-org"
         />
       </InlineFilterPanel.Field>
       {/* 4. Проект */}
-      <InlineFilterPanel.Field label={tPO('filter_project')} expandable>
+      <InlineFilterPanel.Field label={tPO('filter_project')} fieldKey="project" expandable>
         <CatalogPickerField
           value={
             filterValues.projectId
@@ -459,7 +577,7 @@ export default function InventoriesPage() {
         />
       </InlineFilterPanel.Field>
       {/* 5. Статус */}
-      <InlineFilterPanel.Field label={tPO('filter_status_multi')} expandable>
+      <InlineFilterPanel.Field label={tPO('filter_status_multi')} fieldKey="state" expandable>
         <StateSelect
           value={stateFilter ?? undefined}
           onChange={(v) => {
@@ -471,7 +589,7 @@ export default function InventoriesPage() {
         />
       </InlineFilterPanel.Field>
       {/* 6. Проведено */}
-      <InlineFilterPanel.Field label={tFields('applicable')} expandable>
+      <InlineFilterPanel.Field label={tFields('applicable')} fieldKey="applicable" expandable>
         <YesNoSelect
           value={filterValues.applicable}
           onChange={(v) => {
@@ -482,7 +600,7 @@ export default function InventoriesPage() {
         />
       </InlineFilterPanel.Field>
       {/* 7. Напечатано */}
-      <InlineFilterPanel.Field label={tFields('printed')} expandable>
+      <InlineFilterPanel.Field label={tFields('printed')} fieldKey="printed" expandable>
         <YesNoSelect
           value={filterValues.printed}
           onChange={(v) => {
@@ -493,7 +611,7 @@ export default function InventoriesPage() {
         />
       </InlineFilterPanel.Field>
       {/* 8. Отправлено */}
-      <InlineFilterPanel.Field label={tFields('published')} expandable>
+      <InlineFilterPanel.Field label={tFields('published')} fieldKey="published" expandable>
         <YesNoSelect
           value={filterValues.published}
           onChange={(v) => {
@@ -504,7 +622,7 @@ export default function InventoriesPage() {
         />
       </InlineFilterPanel.Field>
       {/* 9. Владелец-сотрудник */}
-      <InlineFilterPanel.Field label={tPO('filter_owner_employee')} expandable>
+      <InlineFilterPanel.Field label={tPO('filter_owner_employee')} fieldKey="owner" expandable>
         <CatalogPickerField
           value={
             filterValues.ownerId
@@ -521,7 +639,7 @@ export default function InventoriesPage() {
         />
       </InlineFilterPanel.Field>
       {/* 10. Владелец-отдел */}
-      <InlineFilterPanel.Field label={tPO('filter_owner_group')} expandable>
+      <InlineFilterPanel.Field label={tPO('filter_owner_group')} fieldKey="group" expandable>
         <CatalogPickerField
           value={
             filterValues.groupId
@@ -541,7 +659,7 @@ export default function InventoriesPage() {
         />
       </InlineFilterPanel.Field>
       {/* 11. Сумма (range) — backed by Inventory.sumMinor (schema.prisma:5913) */}
-      <InlineFilterPanel.Field label={`${tFields('sum')}:`} expandable>
+      <InlineFilterPanel.Field label={`${tFields('sum')}:`} fieldKey="sum" expandable>
         <div className="flex items-center gap-1">
           <MoneyInput
             allowEmpty
@@ -579,6 +697,7 @@ export default function InventoriesPage() {
       {/* 12. Когда изменен */}
       <InlineFilterPanel.Field
         label={`${tPO('filter_updated_period')}:`}
+        fieldKey="updated"
         expandable
         inlineSuffix={
           <PeriodShortcuts
@@ -625,7 +744,12 @@ export default function InventoriesPage() {
         onRefresh={() => refetch()}
         onHelp={() => window.open('/help/inventories', '_blank')}
         selectionCount={bulk.selectedIds.size}
-        createHref="/inventories/new"
+        // Band 2.1 (user screenshot №4): «+ Инвентаризация» opens the
+        // «Выберите склад для инвентаризации» modal instead of navigating.
+        onCreate={() => {
+          setStoreModalPick(null);
+          setStoreModalOpen(true);
+        }}
         createLabel={t('create_button')}
         createPosition="start"
         search={searchInput}
@@ -687,6 +811,71 @@ export default function InventoriesPage() {
         onColumnResize={colWidths.set}
       />
 
+      {/* «Выберите склад для инвентаризации» — band 2.1 (screenshot №4):
+          the warehouse list under a «Склады» root; «Выбрать» opens /new with
+          the picked warehouse prefilled + locked. */}
+      <Modal
+        open={storeModalOpen}
+        onOpenChange={(open) => {
+          setStoreModalOpen(open);
+          if (!open) setStoreModalPick(null);
+        }}
+        title={t('store_modal_title')}
+        testId="inventory-store-modal"
+        footer={
+          <>
+            <Button
+              type="button"
+              variant="success"
+              size="sm"
+              disabled={!storeModalPick}
+              onClick={() => {
+                if (!storeModalPick) return;
+                setStoreModalOpen(false);
+                router.push(`/inventories/new?warehouseId=${storeModalPick}`);
+              }}
+              data-test-id="inventory-store-modal-choose"
+            >
+              {t('store_modal_choose')}
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => setStoreModalOpen(false)}
+            >
+              {t('store_modal_cancel')}
+            </Button>
+          </>
+        }
+      >
+        <div className="min-h-[280px] px-4 py-3 text-sm">
+          <div className="mb-1 text-[var(--ms-text-primary)]">{t('store_modal_root')}</div>
+          <ul>
+            {(storeModalData?.items ?? []).map((s) => (
+              <li key={s.id}>
+                <button
+                  type="button"
+                  onClick={() => setStoreModalPick(s.id)}
+                  onDoubleClick={() => {
+                    setStoreModalOpen(false);
+                    router.push(`/inventories/new?warehouseId=${s.id}`);
+                  }}
+                  className={`w-full px-6 py-1.5 text-left ${
+                    storeModalPick === s.id
+                      ? 'bg-[#d5e8f5] text-[var(--ms-text-primary)]'
+                      : 'text-[var(--ms-text-brand)] hover:bg-[var(--ms-bg-hover)]'
+                  }`}
+                  data-test-id={`inventory-store-option-${s.id}`}
+                >
+                  {s.name}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </Modal>
+
       <CatalogPicker
         open={pickerOpen === 'store'}
         onClose={() => setPickerOpen(null)}
@@ -702,25 +891,6 @@ export default function InventoriesPage() {
             ...filterValues,
             storeId: item.id,
             storeLabel: String(item.primary),
-          });
-          onResetCursor();
-        }}
-      />
-      <CatalogPicker
-        open={pickerOpen === 'org'}
-        onClose={() => setPickerOpen(null)}
-        title={tFields('organization')}
-        fetcher={async (q): Promise<PickerItem[]> => {
-          const r = await api.get<{ items: { id: string; name: string }[] }>(
-            `/organizations?search=${encodeURIComponent(q)}&limit=20`,
-          );
-          return r.items.map((x) => ({ id: x.id, primary: x.name }));
-        }}
-        onSelect={(item) => {
-          setFilterValues({
-            ...filterValues,
-            organizationId: item.id,
-            organizationLabel: String(item.primary),
           });
           onResetCursor();
         }}

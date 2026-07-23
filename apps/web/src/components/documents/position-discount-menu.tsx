@@ -70,7 +70,7 @@ export function PositionDiscountMenu({
         className="h-3.5 w-3.5"
         data-test-id={`position-discount-mode-${value}`}
       />
-      <span className="w-20">{text}</span>
+      <span className="w-28">{text}</span>
       <input
         type="text"
         inputMode="decimal"
@@ -88,10 +88,12 @@ export function PositionDiscountMenu({
 
   return (
     <>
+      {/* Owner 2026-07-23: a real BUTTON, not a link — the header text read as
+          plain text and nobody knew it was clickable. */}
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="text-[var(--ms-text-brand)] hover:underline focus:outline-none"
+        className="inline-flex h-[22px] items-center rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] px-2 font-normal text-[12px] text-[var(--ms-text-primary)] hover:bg-[var(--ms-bg-muted)] focus:outline-none focus:ring-1 focus:ring-[var(--ms-text-brand)]"
         data-test-id="position-discount-menu"
       >
         {label}
@@ -100,7 +102,7 @@ export function PositionDiscountMenu({
         open={open}
         onOpenChange={setOpen}
         title={title}
-        widthClass="w-[420px]"
+        widthClass="w-[400px]"
         testId="position-discount-modal"
         footer={
           <>

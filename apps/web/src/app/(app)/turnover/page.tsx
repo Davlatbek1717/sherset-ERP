@@ -6,9 +6,11 @@ import {
   Icons,
   Input,
   NativeSelect,
+  StickyHScroll,
   buildCsv,
   csvTimestamp,
   downloadCsv,
+  formatIso,
 } from '@moysklad/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
@@ -70,10 +72,10 @@ function fmtMoney(minor: string): string {
 
 function firstOfMonthISO(): string {
   const now = new Date();
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString().slice(0, 10);
+  return formatIso(new Date(now.getFullYear(), now.getMonth(), 1));
 }
 function todayISO(): string {
-  return new Date().toISOString().slice(0, 10);
+  return formatIso(new Date());
 }
 
 export default function TurnoverReportPage() {
@@ -232,7 +234,7 @@ export default function TurnoverReportPage() {
       )}
 
       {data && (
-        <div className="mt-4 overflow-x-auto rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)]">
+        <StickyHScroll className="mt-4 rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)]">
           <table className="w-full text-sm">
             <thead className="bg-[var(--ms-bg-muted)]">
               <tr>
@@ -309,10 +311,10 @@ export default function TurnoverReportPage() {
                         {row.productName}
                       </a>
                     </td>
-                    <td className="px-3 py-2 text-[var(--ms-text-muted)] text-xs tabular-nums">
+                    <td className="px-3 py-2 text-[var(--ms-text-muted)] text-[12px] tabular-nums">
                       {row.productCode ?? '—'}
                     </td>
-                    <td className="px-3 py-2 text-[var(--ms-text-muted)] text-xs tabular-nums">
+                    <td className="px-3 py-2 text-[var(--ms-text-muted)] text-[12px] tabular-nums">
                       {row.productArticle ?? '—'}
                     </td>
                     <td className="px-3 py-2 text-[var(--ms-text-muted)] text-xs">
@@ -380,7 +382,7 @@ export default function TurnoverReportPage() {
               </tfoot>
             )}
           </table>
-        </div>
+        </StickyHScroll>
       )}
     </div>
   );

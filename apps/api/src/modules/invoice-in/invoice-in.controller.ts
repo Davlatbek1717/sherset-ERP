@@ -120,7 +120,13 @@ export class InvoiceInController {
   @RequirePermission({ entity: 'invoicein', action: 'update' })
   async massEdit(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
     const { ids, ...patch } = MassEditBaseSchema.parse(body);
-    assertPatchHasAtLeastOneField(patch, ['ownerId', 'projectId', 'description']);
+    assertPatchHasAtLeastOneField(patch, [
+      'ownerId',
+      'projectId',
+      'description',
+      'groupId',
+      'shared',
+    ]);
     return runBulk(ids, (id) => this.invoice.massEditApply(user.accountId, user.sub, id, patch));
   }
 

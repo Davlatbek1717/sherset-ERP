@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { csvUuid } from '../shared/csv.js';
 
 /**
  * PrepaymentReturn (Возврат предоплаты) — refund of a previously taken
@@ -104,7 +105,9 @@ export const UpdatePrepaymentReturnSchema = z
 export const PrepaymentReturnFilterSchema = z.object({
   state: PrepaymentReturnStateSchema.optional(),
   agentId: z.string().uuid().optional(),
+  agentIds: csvUuid.optional(),
   organizationId: z.string().uuid().optional(),
+  organizationIds: csvUuid.optional(),
   prepaymentId: z.string().uuid().optional(),
   retailShiftId: z.string().uuid().optional(),
   ownerId: z.string().uuid().optional(),

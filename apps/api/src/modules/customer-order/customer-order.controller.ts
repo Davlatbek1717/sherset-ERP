@@ -21,6 +21,7 @@ import { RequirePermission } from '../permissions/require-permission.decorator.j
 import { DocPdfService } from '../print-template/doc-pdf.service.js';
 import type { RawDocInput } from '../print-template/print-render.util.js';
 import { computeLineSumMinor } from '../print-template/print-render.util.js';
+import { PrintTemplateService } from '../print-template/print-template.service.js';
 import { BulkIdsSchema, BulkPrintSchema, BulkTransitionSchema, runBulk } from '../shared/bulk.js';
 import { MassEditBaseSchema, assertPatchHasAtLeastOneField } from '../shared/mass-edit.js';
 import { BulkMarkPrintedSchema } from '../shared/mass-print.js';
@@ -33,12 +34,37 @@ export class CustomerOrderController {
   constructor(
     @Inject(CustomerOrderService) private readonly service: CustomerOrderService,
     @Inject(DocPdfService) private readonly docPdf: DocPdfService,
+    @Inject(PrintTemplateService) private readonly printTemplates: PrintTemplateService,
   ) {}
+
+  /**
+   * Doc-scoped list of the account's printable templates for this entity —
+   * gated on customerorder:view (NOT settings) so a cashier who can open the page
+   * also sees the pinned check-print buttons; the settings-gated
+   * /print-templates CRUD stays admin-only. Mirrors purchase-order.
+   */
+  @Get('print-forms')
+  @RequirePermission({ entity: 'customerorder', action: 'view' })
+  async printForms(@CurrentUser() user: AuthenticatedUser) {
+    return this.printTemplates.listPrintable(user.accountId, 'customerorder', 'pdf');
+  }
 
   @Get()
   @RequirePermission({ entity: 'customerorder', action: 'view' })
   list(@CurrentUser() user: AuthenticatedUser, @Query() q: Record<string, unknown>) {
     return this.service.list(user.accountId, user.sub, q);
+  }
+
+  /**
+   * moysklad «Столбцы» — the kanban board grouping the list into one column per
+   * custom «Статус». Same filter/search query params as the flat list; returns
+   * `{ columns: [{ status, total, items }] }`. Declared BEFORE @Get(':id') so
+   * the static 'kanban' segment isn't captured by the :id route param.
+   */
+  @Get('kanban')
+  @RequirePermission({ entity: 'customerorder', action: 'view' })
+  kanban(@CurrentUser() user: AuthenticatedUser, @Query() q: Record<string, unknown>) {
+    return this.service.kanban(user.accountId, user.sub, q);
   }
 
   @Get(':id')
@@ -224,7 +250,14 @@ export class CustomerOrderController {
   async massEdit(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
     const parsed = MassEditBaseSchema.parse(body);
     const { ids, ...patch } = parsed;
-    assertPatchHasAtLeastOneField(patch, ['ownerId', 'projectId', 'description']);
+    assertPatchHasAtLeastOneField(patch, [
+      'ownerId',
+      'projectId',
+      'description',
+      'groupId',
+      'shared',
+      'stateId',
+    ]);
     return runBulk(ids, (id) => this.service.massEditApply(user.accountId, user.sub, id, patch));
   }
 

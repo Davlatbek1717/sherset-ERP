@@ -121,6 +121,7 @@ export class PaymentInService {
       ...(filter.includeDeleted ? {} : { deletedAt: null }),
       ...(filter.state ? { state: filter.state } : {}),
       ...(filter.agentId ? { agentId: filter.agentId } : {}),
+      ...(filter.agentIds ? { agentId: { in: filter.agentIds } } : {}),
       // «Группа контрагента» + «Владелец контрагента» both narrow the related
       // Counterparty, so they MUST share one `agent: {}` clause — two separate
       // `agent` keys in this object literal would silently overwrite each other
@@ -135,6 +136,7 @@ export class PaymentInService {
         : {}),
       ...(filter.agentAccountId ? { agentAccountId: filter.agentAccountId } : {}),
       ...(filter.organizationId ? { organizationId: filter.organizationId } : {}),
+      ...(filter.organizationIds ? { organizationId: { in: filter.organizationIds } } : {}),
       ...(filter.organizationAccountId
         ? { organizationAccountId: filter.organizationAccountId }
         : {}),
@@ -291,12 +293,27 @@ export class PaymentInService {
 
     const creatorGroupId = await resolveCreatorGroupId(this.prisma.client, accountId, userId);
 
+    // «Владелец»/«Владелец-отдел»/«Общий доступ» from the owner popover (else fall
+    // back to the creator + their dept). Tenant-validate the refs so a hand-crafted
+    // request can't point ownerId/groupId at another account (mirrors invoice-in).
+    if (parsed.ownerId) {
+      await assertMassEditRefsInTenant(this.prisma, accountId, { ownerId: parsed.ownerId });
+    }
+    if (parsed.groupId) {
+      const grp = await this.prisma.client.group.findFirst({
+        where: { id: parsed.groupId, accountId },
+        select: { id: true },
+      });
+      if (!grp) throw new BadRequestException("Bo'lim topilmadi");
+    }
+
     try {
       const created = await this.prisma.client.paymentIn.create({
         data: {
           accountId,
-          ownerId: userId,
-          groupId: creatorGroupId,
+          ownerId: parsed.ownerId ?? userId,
+          groupId: parsed.groupId ?? creatorGroupId,
+          shared: parsed.shared ?? false,
           name,
           agentId: parsed.agentId,
           organizationId: parsed.organizationId,
@@ -353,6 +370,11 @@ export class PaymentInService {
         sumMinor: true,
         payedSumMinor: true,
         state: true,
+        // Book the payment in the INVOICE's currency (+ its rate) so a non-UZS
+        // invoice isn't paid by a UZS-default payment that lands in the wrong
+        // per-currency balance bucket. Adversarial-review finding 2026-07-05.
+        currency: true,
+        rateValue: true,
       },
     });
     if (!invoice) throw new NotFoundException('InvoiceOut topilmadi');
@@ -378,6 +400,8 @@ export class PaymentInService {
     return this.create(accountId, userId, {
       agentId: invoice.agentId,
       organizationId: invoice.organizationId,
+      currency: invoice.currency,
+      rateValue: invoice.rateValue.toString(),
       sumMinor: amount.toString(),
       paymentPurpose: parsed.paymentPurpose ?? `To'lov schyot bo'yicha`,
       operations: [
@@ -906,7 +930,13 @@ export class PaymentInService {
     accountId: string,
     userId: string,
     id: string,
-    patch: { ownerId?: string | null; projectId?: string | null; description?: string | null },
+    patch: {
+      ownerId?: string | null;
+      projectId?: string | null;
+      description?: string | null;
+      groupId?: string | null;
+      shared?: boolean;
+    },
   ) {
     await this.findById(accountId, id);
     await assertMassEditRefsInTenant(this.prisma, accountId, patch);
@@ -914,6 +944,8 @@ export class PaymentInService {
     if ('ownerId' in patch) data.ownerId = patch.ownerId;
     if ('projectId' in patch) data.projectId = patch.projectId;
     if ('description' in patch) data.description = patch.description;
+    if ('groupId' in patch) data.groupId = patch.groupId;
+    if ('shared' in patch && patch.shared !== undefined) data.shared = patch.shared;
     const updated = await this.prisma.client.paymentIn.update({
       where: { id, accountId },
       data,

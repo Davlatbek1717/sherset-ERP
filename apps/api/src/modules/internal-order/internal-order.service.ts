@@ -36,7 +36,8 @@ export class InternalOrderService {
 
   async list(accountId: string, raw: unknown) {
     const filter = InternalOrderFilterSchema.parse(raw);
-    const where = this.buildListWhere(accountId, filter);
+    const extraIdFilter = await this.resolveModifiedByIdFilter(accountId, filter);
+    const where = this.buildListWhere(accountId, filter, extraIdFilter);
 
     // moysklad parity: relational sort for organization / store (the
     // list-view exposes these column headers as sortable). Mirror
@@ -81,6 +82,10 @@ export class InternalOrderService {
   private buildListWhere(
     accountId: string,
     filter: InternalOrderFilterInput,
+    // «Кто изменил» — InternalOrder has NO modifiedById column, so list()
+    // pre-queries the auditLog and passes the matched entityIds here.
+    // `[]` (requested but zero audit rows) forces an EMPTY result.
+    extraIdFilter?: string[],
   ): Prisma.InternalOrderWhereInput {
     const momentRange =
       filter.momentFrom || filter.momentTo
@@ -113,12 +118,22 @@ export class InternalOrderService {
     return {
       accountId,
       ...(filter.includeDeleted ? {} : { deletedAt: null }),
+      ...(extraIdFilter ? { id: { in: extraIdFilter } } : {}),
       ...(filter.state ? { state: filter.state } : {}),
       ...(filter.organizationId ? { organizationId: filter.organizationId } : {}),
+      ...(filter.organizationIds ? { organizationId: { in: filter.organizationIds } } : {}),
       ...(filter.storeId ? { storeId: filter.storeId } : {}),
+      ...(filter.storeIds ? { storeId: { in: filter.storeIds } } : {}),
       ...(filter.projectId ? { projectId: filter.projectId } : {}),
+      ...(filter.projectIds ? { projectId: { in: filter.projectIds } } : {}),
       ...(filter.ownerId ? { ownerId: filter.ownerId } : {}),
+      ...(filter.ownerIds ? { ownerId: { in: filter.ownerIds } } : {}),
       ...(filter.groupId ? { groupId: filter.groupId } : {}),
+      ...(filter.groupIds ? { groupId: { in: filter.groupIds } } : {}),
+      ...(filter.productIds
+        ? { positions: { some: { productId: { in: filter.productIds } } } }
+        : {}),
+      ...(filter.shared !== undefined ? { shared: filter.shared } : {}),
       ...(filter.applicable !== undefined ? { applicable: filter.applicable } : {}),
       ...(filter.printed !== undefined ? { printed: filter.printed } : {}),
       ...(filter.published !== undefined ? { published: filter.published } : {}),
@@ -135,6 +150,79 @@ export class InternalOrderService {
             ],
           }
         : {}),
+    };
+  }
+
+  /**
+   * «Кто изменил» (modifiedByIds) — InternalOrder has no modifiedById column,
+   * so we approximate via the auditLog: the DISTINCT entityIds this account's
+   * InternalOrder rows were `update`d on by the requested users. Returns
+   * `undefined` when none requested (no narrowing) or `[]` when requested but
+   * no audit rows match (forces an EMPTY result, not match-all). Mirror loss.
+   */
+  private async resolveModifiedByIdFilter(
+    accountId: string,
+    filter: InternalOrderFilterInput,
+  ): Promise<string[] | undefined> {
+    if (!filter.modifiedByIds?.length) return undefined;
+    const rows = await this.prisma.client.auditLog.findMany({
+      where: {
+        accountId,
+        entity: 'InternalOrder',
+        userId: { in: filter.modifiedByIds },
+        action: { contains: 'update' },
+      },
+      select: { entityId: true },
+      distinct: ['entityId'],
+    });
+    return rows.map((r) => r.entityId);
+  }
+
+  /**
+   * «Заказ поставщику с учётом доступно» — supply-shortfall basis for creating
+   * a purchase order from this internal order. For every PRODUCT position,
+   * compute what the order's (destination) store can't currently cover:
+   *   available = max(0, Stock.qty − Stock.reservedQty)   (in the order's store)
+   *   shortfall = orderedQty − available
+   * and return only the rows with shortfall > 0, their quantity set to the
+   * shortfall. Same {organization, store, positions} shape as the plain fetch
+   * so purchase-orders/new consumes either uniformly. Mirrors
+   * customer-order.service.getSupplyShortfall.
+   */
+  async getSupplyShortfall(accountId: string, id: string) {
+    const order = await this.findById(accountId, id);
+    const productPositions = order.positions.filter((p) => p.assortmentKind === 'product');
+    const availByProduct = new Map<string, number>();
+    if (productPositions.length > 0) {
+      const stocks = await this.prisma.client.stock.findMany({
+        where: {
+          accountId,
+          storeId: order.storeId,
+          assortmentKind: 'product',
+          assortmentId: { in: productPositions.map((p) => p.assortmentId) },
+        },
+        select: { assortmentId: true, qty: true, reservedQty: true },
+      });
+      for (const s of stocks) {
+        availByProduct.set(s.assortmentId, Math.max(0, Number(s.qty) - Number(s.reservedQty)));
+      }
+    }
+    const positions = productPositions
+      .map((p) => {
+        const available = availByProduct.get(p.assortmentId) ?? 0;
+        const shortfall = Number(p.quantity) - available;
+        return { p, shortfall };
+      })
+      .filter(({ shortfall }) => shortfall > 0)
+      .map(({ p, shortfall }) => ({
+        assortmentId: p.assortmentId,
+        quantity: shortfall,
+        product: p.product ? { name: p.product.name } : null,
+      }));
+    return {
+      organization: { id: order.organization.id, name: order.organization.name },
+      store: order.store ? { id: order.store.id, name: order.store.name } : null,
+      positions,
     };
   }
 
@@ -209,7 +297,8 @@ export class InternalOrderService {
         return max;
       },
     );
-    const name = String(n).padStart(5, '0');
+    // moysklad-parity: the «№» header input overrides the auto number.
+    const name = data.name?.trim() || String(n).padStart(5, '0');
 
     const moment = data.moment ? new Date(data.moment) : new Date();
     const deliveryPlannedMoment = data.deliveryPlannedMoment
@@ -220,13 +309,20 @@ export class InternalOrderService {
     const postedAt = applicable ? new Date() : null;
     const totals = this.computeTotals(data.positions);
 
+    // «Владелец» popover refs come from the client — tenant-validate before use.
+    await assertMassEditRefsInTenant(this.prisma, accountId, {
+      ...(data.ownerId ? { ownerId: data.ownerId } : {}),
+      ...(data.groupId ? { groupId: data.groupId } : {}),
+    });
+
     const created = await this.prisma.client.$transaction(async (tx) => {
       const creatorGroupId = await resolveCreatorGroupId(this.prisma.client, accountId, ownerId);
       const row = await tx.internalOrder.create({
         data: {
           accountId,
-          ownerId,
-          groupId: creatorGroupId,
+          ownerId: data.ownerId ?? ownerId,
+          groupId: data.groupId ?? creatorGroupId,
+          shared: data.shared ?? false,
           organizationId: data.organizationId,
           storeId: data.storeId,
           projectId: data.projectId ?? null,
@@ -358,7 +454,13 @@ export class InternalOrderService {
     accountId: string,
     userId: string,
     id: string,
-    patch: { ownerId?: string | null; projectId?: string | null; description?: string | null },
+    patch: {
+      ownerId?: string | null;
+      projectId?: string | null;
+      description?: string | null;
+      groupId?: string | null;
+      shared?: boolean;
+    },
   ) {
     await this.findById(accountId, id);
     await assertMassEditRefsInTenant(this.prisma, accountId, patch);
@@ -366,6 +468,8 @@ export class InternalOrderService {
     if ('ownerId' in patch) data.ownerId = patch.ownerId;
     if ('projectId' in patch) data.projectId = patch.projectId;
     if ('description' in patch) data.description = patch.description;
+    if ('groupId' in patch) data.groupId = patch.groupId;
+    if ('shared' in patch && patch.shared !== undefined) data.shared = patch.shared;
     const updated = await this.prisma.client.internalOrder.update({
       where: { id, accountId },
       data,

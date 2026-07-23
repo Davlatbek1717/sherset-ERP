@@ -126,6 +126,8 @@ export class HtmlPdfService implements OnModuleDestroy {
     html: string,
     opts?: {
       pageSize?: string;
+      /** Landscape page orientation — used by wide list reports. */
+      landscape?: boolean;
       marginTop?: number;
       marginRight?: number;
       marginBottom?: number;
@@ -147,7 +149,12 @@ export class HtmlPdfService implements OnModuleDestroy {
         bottom: `${opts?.marginBottom ?? 20}mm`,
         left: `${opts?.marginLeft ?? 15}mm`,
       };
-      const pdf = await page.pdf({ format, printBackground: true, margin });
+      const pdf = await page.pdf({
+        format,
+        landscape: opts?.landscape ?? false,
+        printBackground: true,
+        margin,
+      });
       return Buffer.from(pdf);
     } finally {
       // Always release the page even if rendering throws — a leaked page

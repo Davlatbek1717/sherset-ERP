@@ -1,30 +1,30 @@
 /**
- * Color tokens — Sherset brand.
+ * Color tokens — extracted from REAL Moysklad CSS
+ * (cdn-static.moysklad.ru/app/cdn/r1657/_common.css).
  *
- * Primary blue #0652FF is the Sherset brand colour (measured from the
- * Sherset logo wordmark). The scale below keeps moysklad's structural
- * layout/spacing untouched — only the accent hue is Sherset blue.
+ * Primary blue #186999 is used 145× in Moysklad's stylesheet — THE
+ * canonical brand color. All other tokens sampled from their palette.
  */
 
 export const palette = {
-  // Brand — Sherset blue (primary action, links, selected state)
+  // Brand — Moysklad blue (primary action, links, selected state)
   brand: {
-    50: '#edf3ff', // very light background tint
-    100: '#dce6ff', // light background
-    200: '#b4cbff', // soft surface
-    300: '#82a8ff', // light accent
-    400: '#447dff', // medium
-    500: '#0652ff', // PRIMARY — Sherset core brand blue
-    600: '#0546db', // hover / navbar
-    700: '#0439b2', // active
-    800: '#032b85', // darker
-    900: '#07194d', // DARK NAVY — app bar background
+    50: '#ecf8ff', // very light background tint
+    100: '#e4f1fa', // light background
+    200: '#dae7f5', // soft surface
+    300: '#76acd3', // light accent
+    400: '#4893c3', // medium
+    500: '#186999', // PRIMARY — Moysklad's core brand blue
+    600: '#1f75a8', // hover
+    700: '#2076a9', // active
+    800: '#0e4875', // darker
+    900: '#091739', // DARK NAVY — app bar background
   },
-  // Accent — bright Sherset blue (hyperlinks, call-to-action)
+  // Accent — bright cyan-blue (hyperlinks, call-to-action)
   accent: {
-    400: '#5c8dff',
-    500: '#2e6bff',
-    600: '#0652ff',
+    400: '#3ec5ff',
+    500: '#2f9bff',
+    600: '#036ce5',
   },
   // Neutral grays — Moysklad's gray scale
   neutral: {
@@ -67,10 +67,10 @@ export const palette = {
   },
   // Info — same as brand blue family
   info: {
-    50: '#dce6ff',
-    100: '#b4cbff',
-    500: '#0652ff',
-    700: '#0439b2',
+    50: '#e4f1fa',
+    100: '#dae7f5',
+    500: '#186999',
+    700: '#0e4875',
   },
 } as const;
 

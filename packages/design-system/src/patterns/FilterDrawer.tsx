@@ -134,6 +134,7 @@ export function FilterDrawer({
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 z-40 bg-black/20" />
           <Dialog.Content
+            aria-describedby={undefined}
             className={cn(
               'fixed right-0 top-0 z-50 h-full w-[360px] max-w-full',
               'bg-[var(--ms-bg-surface)] shadow-xl flex flex-col',
@@ -154,7 +155,6 @@ export function FilterDrawer({
                 </Button>
                 <Dialog.Close asChild>
                   <button
-                    type="button"
                     className="w-8 h-8 rounded-[var(--ms-radius-default)] hover:bg-[var(--ms-bg-hover)] flex items-center justify-center text-[var(--ms-text-muted)]"
                     aria-label="Yopish"
                   >
@@ -248,7 +248,9 @@ export function FilterDrawer({
                     }
                     placeholder="Tanlang..."
                     onPick={() => setPickerOpen('agent')}
-                    onClear={() => onChange({ ...values, agentId: undefined, agentLabel: undefined })}
+                    onClear={() =>
+                      onChange({ ...values, agentId: undefined, agentLabel: undefined })
+                    }
                     testId={testId ? `${testId}-agent` : 'filter-agent'}
                   />
                 </section>
@@ -363,7 +365,11 @@ export function FilterDrawer({
           title={organization}
           fetcher={orgFetcher}
           onSelect={(item) => {
-            onChange({ ...values, organizationId: item.id, organizationLabel: String(item.primary) });
+            onChange({
+              ...values,
+              organizationId: item.id,
+              organizationLabel: String(item.primary),
+            });
             setPickerOpen(null);
           }}
           clearable={!!values.organizationId}

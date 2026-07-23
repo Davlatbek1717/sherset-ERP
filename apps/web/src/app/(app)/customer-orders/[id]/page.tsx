@@ -19,12 +19,13 @@ import {
   OwnerAccessPopover,
   type OwnerAccessValue,
 } from '@/components/documents/owner-access-popover';
+import { PositionAgreementButton } from '@/components/documents/position-agreement-modal';
 import { PositionColumnCustomizer } from '@/components/documents/position-column-customizer';
+import { PositionDiscountMenu } from '@/components/documents/position-discount-menu';
 import { PositionPriceMenu } from '@/components/documents/position-price-menu';
 import { PositionReserveMenu } from '@/components/documents/position-reserve-menu';
 import { PresenceIndicator } from '@/components/documents/presence-indicator';
 import { SendEmailDialog } from '@/components/send-email-dialog';
-import { OrderTelegramPanel } from '@/components/telegram/order-telegram-panel';
 import { useApiMutation } from '@/hooks/use-api-mutation';
 import { useConflictReload } from '@/hooks/use-conflict-reload';
 import { useDestructiveMutation } from '@/hooks/use-destructive-mutation';
@@ -34,7 +35,8 @@ import { usePresence } from '@/hooks/use-presence';
 import { useSaveMutation } from '@/hooks/use-save-mutation';
 import { useUnsavedGuard } from '@/hooks/use-unsaved-guard';
 import { api } from '@/lib/api-client';
-import { pinDefaultCustomer } from '@/lib/pin-default-customer';
+import { imageRawUrl } from '@/lib/image-url';
+import { distributeAgreementDelta } from '@/lib/position-agreement';
 import { resolveDefaultSalePriceOrZero, usePriceTypeIds } from '@/lib/sale-price';
 import { computePositionTotal } from '@moysklad/money';
 import {
@@ -59,6 +61,7 @@ import {
   PositionTable,
   type PositionTableColumnConfig,
   Textarea,
+  isRowOversold,
   useToast,
 } from '@moysklad/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -166,6 +169,10 @@ interface DetailPositionRow extends DocPositionRow {
 function uid(): string {
   return Math.random().toString(36).slice(2);
 }
+
+// Distinguishes a PERSISTED position row (DB uuid — sent back as `id` so the
+// BE diff-upserts it in place) from a session-local row keyed by uid().
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Per-line total for the live «Итого» footer — delegates to the shared
 // `computePositionTotal` (the single source the BE + print use) so the editable
@@ -332,9 +339,7 @@ function formFromData(d: OrderDetail): FormState {
       // Per-unit weight/volume → «Вес»/«Объём» line total (× Кол-во).
       weightG: p.product?.weightG ?? undefined,
       volumeML: p.product?.volumeML ?? undefined,
-      imageUrl: p.product?.images?.[0]?.id
-        ? `/api/v1/images/${p.product.images[0].id}/raw`
-        : undefined,
+      imageUrl: p.product?.images?.[0]?.id ? imageRawUrl(p.product.images[0].id) : undefined,
       salePrices: null,
     })),
     attributes: (d as { attributes?: Record<string, unknown> }).attributes ?? {},
@@ -443,8 +448,6 @@ export default function CustomerOrderDetailPage() {
   const tPos = useTranslations('position_editor');
   const tCols = useTranslations('position_cols');
   const tPages = useTranslations('pages.customer_orders');
-  // Sherset custom — «Yig'ishga yuborish» (picking) labels.
-  const tPicking = useTranslations('picking');
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const qc = useQueryClient();
@@ -490,6 +493,43 @@ export default function CustomerOrderDetailPage() {
   const [colVisible, setColVisible] = useState<Record<string, boolean>>(DEFAULT_COL_VISIBLE);
   // Bulk-select set for the position table's leading checkbox column.
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
+  // «Kelishuv» — spread the negotiated delta across the lines (owner 2026-07-17).
+  const applyAgreement = useCallback((deltaMinor: bigint) => {
+    setForm((s) => {
+      if (!s) return s;
+      const patch = distributeAgreementDelta(s.positions, deltaMinor, s.vatIncluded);
+      if (patch.size === 0) return s;
+      return {
+        ...s,
+        positions: s.positions.map((p) => {
+          const next = patch.get(p.id);
+          return next != null ? { ...p, priceMinor: next } : p;
+        }),
+      };
+    });
+  }, []);
+  // «Скидка» header bulk discount/markup (moysklad parity) — apply % to selected
+  // rows (or all when none selected). Discount sets each line's `discount`; markup
+  // raises `priceMinor` (our model has no negative discount).
+  const applyDiscountMarkup = useCallback(
+    (mode: 'discount' | 'markup', percent: number) => {
+      setForm((s) =>
+        s
+          ? {
+              ...s,
+              positions: s.positions.map((p) => {
+                if (selectedRowIds.size > 0 && !selectedRowIds.has(p.id)) return p;
+                if (mode === 'discount') return { ...p, discount: String(percent) };
+                const base = Number(p.priceMinor || '0');
+                if (!Number.isFinite(base)) return p;
+                return { ...p, priceMinor: String(Math.round(base * (1 + percent / 100))) };
+              }),
+            }
+          : s,
+      );
+    },
+    [selectedRowIds],
+  );
   // moysklad parity: «Внешний код» is a collapsed LINK under the comment; clicking
   // expands the input (mirrors /new). Auto-expanded when a value already exists.
   const [showExternalCode, setShowExternalCode] = useState(false);
@@ -560,15 +600,6 @@ export default function CustomerOrderDetailPage() {
     enabled: !!form?.agentId,
   });
 
-  // «Значения по умолчанию» → default customer, pinned to the top of the
-  // Контрагент picker (see agentFetcher). Mirrors the /new page.
-  const { data: userSettingsData } = useQuery<{
-    defaultCustomer: { id: string; name: string } | null;
-  }>({
-    queryKey: ['user-settings'],
-    queryFn: () => api.get('/user-settings'),
-  });
-
   // moysklad parity: «1 {cur} = N UZS» helper under «Валюта» with a «✎» that opens
   // the rate modal (CurrencyRateModal). `rateOverride` (null ⇒ reference rate) is
   // view-only local state; the override is sent in the PATCH payload as rateValue.
@@ -580,12 +611,17 @@ export default function CustomerOrderDetailPage() {
   // → Валюты), the admin-set value moysklad books documents at — NOT a live CB
   // feed (drifts e.g. 11 990 vs 12 200, storing USD docs at the wrong base value).
   // One source of truth → GET /currencies (mirror enters / losses / payments-in).
-  const { data: currenciesData } = useQuery<{ items: Array<{ isoCode: string; rate: string }> }>({
+  const { data: currenciesData } = useQuery<{
+    items: Array<{ id: string; isoCode: string; name: string; rate: string }>;
+  }>({
     queryKey: ['currencies'],
     queryFn: () => api.get('/currencies'),
     staleTime: 60_000,
   });
-  const adminRate = (currenciesData?.items ?? []).find((c) => c.isoCode === form?.currency)?.rate;
+  // «Валюта документа» options — the account's REAL currencies (Настройки → Валюты),
+  // never a hardcoded list (a phantom EUR/RUB the account doesn't have must not appear).
+  const currencies = currenciesData?.items ?? [];
+  const adminRate = currencies.find((c) => c.isoCode === form?.currency)?.rate;
   const effectiveRate = rateOverride ?? adminRate ?? '1';
 
   useEffect(() => {
@@ -604,6 +640,43 @@ export default function CustomerOrderDetailPage() {
 
   const isDirty = useMemo(() => (form ? snapshot(form) !== original : false), [form, original]);
   useUnsavedGuard(isDirty);
+
+  // «Остаток» for LOADED lines — live stock at the order's store. Rows added
+  // via the typeahead carry the product's own stock cluster, but rows loaded
+  // from the API don't (the detail payload has no per-store stock), so the
+  // column read «—» after a reload. Mirrors the moves/[id] fix.
+  const stockAssortmentIds = useMemo(
+    () =>
+      (form?.positions ?? [])
+        .filter((p) => p.stock == null)
+        .map((p) => p.assortmentId)
+        .filter((x): x is string => !!x),
+    [form?.positions],
+  );
+  const { data: lineStockData } = useQuery<{
+    items: Array<{ assortmentId: string; qty: string }>;
+  }>({
+    queryKey: ['stocks', form?.storeId, stockAssortmentIds.join(',')],
+    queryFn: () =>
+      api.get(
+        `/stocks?storeId=${form?.storeId}&assortmentIds=${encodeURIComponent(stockAssortmentIds.join(','))}`,
+      ),
+    enabled: !!form?.storeId && stockAssortmentIds.length > 0,
+  });
+  const lineStockMap = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const r of lineStockData?.items ?? []) m.set(r.assortmentId, r.qty);
+    return m;
+  }, [lineStockData]);
+  const tableRows = useMemo(
+    () =>
+      (form?.positions ?? []).map((p) =>
+        p.stock == null && p.assortmentId && form?.storeId
+          ? { ...p, stock: lineStockMap.get(p.assortmentId) }
+          : p,
+      ),
+    [form?.positions, lineStockMap, form?.storeId],
+  );
 
   // ── Position table callbacks (mirror /new) — all mutate form.positions ──
   const updatePosition = useCallback((rowId: string, patch: Partial<DetailPositionRow>) => {
@@ -746,7 +819,22 @@ export default function CustomerOrderDetailPage() {
       { key: 'vat', label: tCols('vat') },
     );
     if (colVisible.vatAmount) cols.push({ key: 'vatAmount', label: tCols('vatAmount') });
-    cols.push({ key: 'discount', label: tCols('discount') });
+    cols.push({
+      key: 'discount',
+      label: (
+        <PositionDiscountMenu
+          label={tCols('discount')}
+          title={tCols('discountMarkupTitle')}
+          selectedText={tCols('selectedPositions', { count: selectedRowIds.size })}
+          discountLabel={tCols('discount')}
+          markupLabel={tCols('markup')}
+          applyDiscountLabel={tCols('applyDiscount')}
+          applyMarkupLabel={tCols('applyMarkup')}
+          cancelLabel={tCols('cancel')}
+          onApply={applyDiscountMarkup}
+        />
+      ),
+    });
     if (colVisible.weight) cols.push({ key: 'weight', label: tCols('weight') });
     if (colVisible.volume) cols.push({ key: 'volume', label: tCols('volume') });
     cols.push(
@@ -781,13 +869,24 @@ export default function CustomerOrderDetailPage() {
     saveProductPrices,
     setAllReserve,
     clearAllReserve,
+    applyDiscountMarkup,
+    selectedRowIds.size,
   ]);
 
   const onConflict = useConflictReload(['customer-order', id], () => setForm(null));
 
   const transitionMut = useApiMutation({
     mutationFn: (target: string) => api.post(`/customer-orders/${id}/transitions/${target}`, {}),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['customer-order', id] }),
+    onSuccess: async () => {
+      // Rebuild the form from the REFETCHED order (await the refetch — a
+      // sync setForm(null) would rebuild from the stale cache): posting/
+      // un-posting now drives the reservation invariant on the BE, so
+      // «Зарезерв.» values change server-side. Keeping the stale form would
+      // (a) hide the fresh auto-hold from the user and (b) re-apply
+      // just-released reserves on the next save (adversarial review).
+      await qc.invalidateQueries({ queryKey: ['customer-order', id] });
+      setForm(null);
+    },
   });
 
   const deleteMut = useApiMutation({
@@ -841,6 +940,16 @@ export default function CustomerOrderDetailPage() {
     },
   });
 
+  // moysklad hard-block (owner rule 2026-07-07): a line ordering MORE than the
+  // stock shown in «Остаток» must not be saveable. Mirrors the red-row test.
+  // Evaluated over tableRows (NOT form.positions) so loaded lines — whose
+  // stock arrives via the live /stocks query — block exactly when they tint
+  // red in the grid; form.positions has stock==null for loaded rows.
+  const hasOversold = useMemo(
+    () => tableRows.some((p) => isRowOversold(p, positionColumns)),
+    [tableRows, positionColumns],
+  );
+
   const saveMut = useSaveMutation({
     mutationFn: async () => {
       if (!form || !data) throw new Error('Form not ready');
@@ -884,6 +993,10 @@ export default function CustomerOrderDetailPage() {
         payload.externalCode = form.externalCode || null;
         payload.statusId = form.statusId || null;
         payload.positions = form.positions.map((p) => ({
+          // Persisted rows carry their DB id (uuid) so the BE diff-upserts the
+          // row IN PLACE — shippedQty and demand links survive the edit. Rows
+          // added in this session have a local uid() key (not a uuid) → omit.
+          ...(UUID_RE.test(p.id) ? { id: p.id } : {}),
           assortmentKind: 'product',
           // biome-ignore lint/style/noNonNullAssertion: position rows always have a product picked before save
           assortmentId: p.assortmentId!,
@@ -907,10 +1020,17 @@ export default function CustomerOrderDetailPage() {
       payload.shared = form.ownerAccess.shared;
       return api.patch(`/customer-orders/${id}`, payload);
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['customer-order', id] });
+    onSuccess: async () => {
       qc.invalidateQueries({ queryKey: ['customer-orders'] });
-      if (form) setOriginal(snapshot(form));
+      // Rebuild the form from the REFETCHED order (await, then reseed):
+      // rows added in this session carry a local uid() key — only the server
+      // response has their REAL position ids, and without re-syncing them the
+      // NEXT save would send those lines id-less, re-opening the
+      // delete+recreate identity churn the diff-upsert exists to prevent
+      // (adversarial review). The reseed effect also resets the dirty
+      // snapshot, so no separate setOriginal is needed.
+      await qc.invalidateQueries({ queryKey: ['customer-order', id] });
+      setForm(null);
     },
     // No caller onError: useSaveMutation already toasts non-conflict failures
     // (save_failed + message) and routes the optimistic-lock 409 to onConflict.
@@ -921,13 +1041,11 @@ export default function CustomerOrderDetailPage() {
     const d = await api.get<{
       items: Array<{ id: string; name: string; legalTitle: string | null }>;
     }>(`/counterparties?search=${encodeURIComponent(s)}&limit=50`);
-    const items = d.items.map((c) => ({
+    return d.items.map((c) => ({
       id: c.id,
       primary: c.name,
       secondary: c.legalTitle ?? undefined,
     }));
-    // Pin the account's default customer («Покупатель») to the top — parity with /new.
-    return pinDefaultCustomer(items, userSettingsData?.defaultCustomer, s, tForm('pinned_default'));
   };
   const orgFetcher = async (s: string): Promise<PickerItem[]> => {
     const d = await api.get<{
@@ -1065,6 +1183,9 @@ export default function CustomerOrderDetailPage() {
   // picker (productRowId modal below). On a posted order it's read-only text.
   const renderPositionNameCell = (row: DocPositionRow) => {
     const p = row as DetailPositionRow;
+    // moysklad parity: a picked product's name LINKS to its product card (where the
+    // «Аналоги» tab lives). Swapping moves to the row ⋮ «Заменить» (onReplace below).
+    const href = p.assortmentId ? `/products/${p.assortmentId}` : undefined;
     return (
       <PositionNameCell
         imageUrl={p.imageUrl}
@@ -1072,6 +1193,8 @@ export default function CustomerOrderDetailPage() {
         label={p.productLabel}
         placeholder={tForm('select_product')}
         onPick={() => editableLines && setProductRowId(p.id)}
+        productHref={href}
+        onNavigate={href ? () => router.push(href) : undefined}
         disabled={!editableLines}
         testId={`pos-${p.id}-name`}
       />
@@ -1121,11 +1244,25 @@ export default function CustomerOrderDetailPage() {
     );
   };
 
+  // moysklad parity (user 2026-07-06): «Создать документ → Отгрузка / Счёт
+  // покупателю» is enabled for ANY saved order, INCLUDING a not-«Проведён»
+  // (draft) one — moysklad only greys these out for a closed/cancelled order.
+  // We previously required a posted state, which wrongly disabled Отгрузка on an
+  // unposted draft (the user's report). The BE createFromCustomerOrder does NOT
+  // require a posted order — it caps positions at (qty − shippedQty) — so a draft
+  // (shippedQty=0) ships its full quantity. `draft` is now allowed.
   const canCreateDemand = (
-    ['confirmed', 'awaiting_payment', 'paid', 'partially_shipped'] as const
+    ['draft', 'confirmed', 'awaiting_payment', 'paid', 'partially_shipped'] as const
   ).includes(data.state as never);
   const canCreateInvoice = (
-    ['confirmed', 'awaiting_payment', 'paid', 'partially_shipped', 'fully_shipped'] as const
+    [
+      'draft',
+      'confirmed',
+      'awaiting_payment',
+      'paid',
+      'partially_shipped',
+      'fully_shipped',
+    ] as const
   ).includes(data.state as never);
 
   // Live document totals computed from the (editable) form positions — mirrors
@@ -1186,10 +1323,8 @@ export default function CustomerOrderDetailPage() {
     {
       id: 'picking-wave',
       label: tDetailTitles('picking_wave'),
-      // Sherset custom — open the per-sklad picking sheets (creates the omborchi
-      // picking tasks + notifies them; idempotent).
-      onSelect: () => window.open(`/print/picking/${id}?auto=1`, '_blank', 'width=900,height=1100'),
-      disabled: false,
+      onSelect: undefined,
+      disabled: true,
     },
     {
       id: 'demand',
@@ -1270,7 +1405,11 @@ export default function CustomerOrderDetailPage() {
       <DetailToolbar
         isDirty={isDirty}
         isSaving={saveMut.isPending}
-        onSave={() => saveMut.mutate()}
+        saveDisabled={hasOversold}
+        onSave={() => {
+          if (hasOversold) return;
+          saveMut.mutate();
+        }}
         onClose={() => router.push('/customer-orders')}
         position={detailNav.position}
         onPrev={detailNav.onPrev}
@@ -1303,19 +1442,6 @@ export default function CustomerOrderDetailPage() {
         // toolbar's `ml-auto` only kicks in WITHOUT a rightSlot), matching moysklad.
         rightSlot={
           <>
-            {/* Sherset custom — «Yig'ishga yuborish»: opens the per-sklad picking
-                sheets (creates the omborchi picking tasks + notifies). The 2nd of
-                the «2 xil chop etish»; the customer receipt is the toolbar Печать. */}
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() =>
-                window.open(`/print/picking/${id}?auto=1`, '_blank', 'width=900,height=1100')
-              }
-              data-test-id="send-to-picking"
-            >
-              {tPicking('send_to_picking')}
-            </Button>
             <OwnerAccessPopover
               value={form.ownerAccess}
               onChange={(v) => setForm((f) => (f ? { ...f, ownerAccess: v } : f))}
@@ -1628,10 +1754,12 @@ export default function CustomerOrderDetailPage() {
                 disabled={!editableLines}
                 data-test-id="field-currency"
               >
-                <option value="UZS">{tForm('currency_uzs')}</option>
-                <option value="USD">{tForm('currency_usd')}</option>
-                <option value="EUR">{tForm('currency_eur')}</option>
-                <option value="RUB">{tForm('currency_rub')}</option>
+                {currencies.length === 0 && <option value={form.currency}>{form.currency}</option>}
+                {currencies.map((c) => (
+                  <option key={c.id} value={c.isoCode}>
+                    {c.name} ({c.isoCode})
+                  </option>
+                ))}
               </NativeSelect>
             </DocumentMetaField>
           </DocumentMetaColumn>
@@ -1694,7 +1822,7 @@ export default function CustomerOrderDetailPage() {
                 onClear={() =>
                   editableLines && setForm((s) => s && { ...s, projectId: null, projectLabel: '' })
                 }
-                onCreate={editableLines ? () => router.push('/projects/new') : undefined}
+                onCreate={editableLines ? () => router.push('/settings/projects/new') : undefined}
                 createLabel={tForm('create_new_project')}
                 disabled={!editableLines}
                 testId="field-project"
@@ -1752,7 +1880,7 @@ export default function CustomerOrderDetailPage() {
           <DetailContentTabs
             auditEntity="CustomerOrder"
             entityId={data.id}
-            positionsLabel={tDetailTabs('main')}
+            positionsLabel={tDetailTabs('positions')}
             relatedGroups={[]}
             filesSlot={<AttachmentsSection entity="CustomerOrder" entityId={data.id} />}
             tasksSlot={<DocumentTasksSection entity="CustomerOrder" entityId={data.id} />}
@@ -1766,6 +1894,15 @@ export default function CustomerOrderDetailPage() {
                   state: data.state,
                   sumMinor: data.sumMinor,
                   kind: 'customer-order',
+                }}
+                // «Привязать документ» — the tab owns the «Привязка документа»
+                // modal (pre-scoped to this order's refs) + manual links +
+                // unlink + the «?link=new» auto-open hand-off.
+                linkable={{
+                  entityType: 'CustomerOrder',
+                  agent: data.agent,
+                  organization: data.organization,
+                  storeTo: data.store,
                 }}
                 linkedDemands={(related?.demands ?? []).map((d) => ({
                   id: d.id,
@@ -1810,11 +1947,32 @@ export default function CustomerOrderDetailPage() {
                     Converged onto /new's composition (PositionTable +
                     PositionInlineAdd). Posted orders are read-only: the table,
                     the inline-add bar, and the customizer are all disabled. */}
+              {/* Owner 2026-07-23: «Договорная цена» — blue, at the table's OUTER
+                  top-right corner (same spot in every section). */}
+              <div className="-mb-2.5 flex justify-end">
+                <PositionAgreementButton
+                  totalMinor={totals.gross}
+                  currency={form.currency}
+                  labels={{
+                    button: tPos('agreement_button'),
+                    total: tPos('agreement_total'),
+                    amount: tPos('agreement_amount'),
+                    add: tPos('agreement_add'),
+                    subtract: tPos('agreement_subtract'),
+                    save: tPos('pick_modal_save'),
+                    cancel: tPos('pick_modal_cancel'),
+                  }}
+                  onApply={applyAgreement}
+                />
+              </div>
               <PositionTable
                 columns={positionColumns}
                 editableReserve
+                // moysklad sales-grid parity: «Остаток»/«Доступно» ≤ 0 shows red
+                // (selling stock you don't have). Purchase grids leave this off.
+                warnStock
                 emptyText={tPos('empty')}
-                rows={form.positions}
+                rows={tableRows}
                 onUpdate={(rowId, patch) =>
                   updatePosition(rowId, patch as Partial<DetailPositionRow>)
                 }
@@ -1847,6 +2005,9 @@ export default function CustomerOrderDetailPage() {
                 sortByNameLabel={tPos('sort_by_name')}
                 sortByCodeLabel={tPos('sort_by_code')}
                 renderNameCell={renderPositionNameCell}
+                // moysklad row ⋮ «Заменить» — swap the line's product (the name is now a
+                // card link, so swapping moves here). Opens the per-row product picker.
+                onReplace={(id) => editableLines && setProductRowId(id)}
                 renderVatCell={renderVatCell}
                 vatIncluded={form.vatIncluded}
                 selectedIds={selectedRowIds}
@@ -1868,6 +2029,8 @@ export default function CustomerOrderDetailPage() {
                             primary: p.name,
                             code: p.code ?? undefined,
                             available: p.stock?.available != null ? Number(p.stock.available) : 0,
+                            priceMinor: resolveDefaultSalePriceOrZero(p.salePrices),
+                            uomLabel: p.uom ?? undefined,
                             raw: p,
                           })),
                           total: r.total ?? r.items.length,
@@ -1877,9 +2040,32 @@ export default function CustomerOrderDetailPage() {
                       moreItemsLabel={(n) => tPos('moreItems', { count: n })}
                       createProductLabel={(qq) => tPos('createProductNamed', { query: qq })}
                       onCreateProduct={() => router.push('/products/new')}
-                      onPick={(item) => {
+                      pickModal={{
+                        currency: form.currency,
+                        labels: {
+                          stock: tPos('pick_modal_stock'),
+                          price: tPos('pick_modal_price'),
+                          quantity: tPos('pick_modal_quantity'),
+                          salePrice: tPos('pick_modal_sale_price'),
+                          priceThisSale: tPos('pick_modal_price_this_sale'),
+                          pricePermanent: tPos('pick_modal_price_permanent'),
+                          save: tPos('pick_modal_save'),
+                          cancel: tPos('pick_modal_cancel'),
+                        },
+                      }}
+                      onPick={(item, entry) => {
+                        if (entry?.permanent) {
+                          // «Doimiy narx» — persist to the product card (owner 2026-07-17).
+                          api
+                            .post(`/products/${item.id}/sale-price`, {
+                              priceMinor: entry.priceMinor,
+                            })
+                            .then(() => toast.success(tPos('pick_modal_price_saved')))
+                            .catch(() => toast.error(tPos('pick_modal_price_save_failed')));
+                        }
                         const raw = item.raw as ProductItem | undefined;
                         const defaultPrice = resolveDefaultSalePriceOrZero(raw?.salePrices);
+                        const newId = uid();
                         setForm((s) =>
                           s
                             ? {
@@ -1887,16 +2073,16 @@ export default function CustomerOrderDetailPage() {
                                 positions: [
                                   ...s.positions,
                                   {
-                                    id: uid(),
+                                    id: newId,
                                     assortmentId: item.id,
                                     productLabel: item.primary,
                                     productCode: raw?.code ?? undefined,
                                     productArticle: raw?.article ?? undefined,
                                     productUom: raw?.uom ?? null,
-                                    quantity: '1',
-                                    priceMinor: defaultPrice,
+                                    quantity: entry?.quantity ?? '1',
+                                    priceMinor: entry?.priceMinor ?? defaultPrice,
                                     discount: '0',
-                                    vat: raw?.vat != null ? String(raw.vat) : '0',
+                                    vat: raw?.vat != null ? String(raw.vat) : '12',
                                     vatEnabled: s.vatEnabled,
                                     stock: raw?.stock?.onHand,
                                     reserve: '0',
@@ -1905,7 +2091,7 @@ export default function CustomerOrderDetailPage() {
                                     weightG: raw?.weightG ?? undefined,
                                     volumeML: raw?.volumeML ?? undefined,
                                     imageUrl: raw?.mainImageId
-                                      ? `/api/v1/images/${raw.mainImageId}/raw`
+                                      ? imageRawUrl(raw.mainImageId)
                                       : undefined,
                                     salePrices: raw?.salePrices ?? null,
                                   },
@@ -1913,6 +2099,9 @@ export default function CustomerOrderDetailPage() {
                               }
                             : s,
                         );
+                        // owner 2026-07-18: returning the id hands focus to the new
+                        // row's «Кол-во» (modal → table entry chain).
+                        return newId;
                       }}
                       onAddFromCatalog={() => setOpenCatalogPicker(true)}
                       onCheckCompleteness={() => {
@@ -1988,15 +2177,6 @@ export default function CustomerOrderDetailPage() {
             </div>
           </DetailContentTabs>
         </div>
-
-        {/* Telegram chat-paneli (Wappi/MoySklad uslubi, 2026-07-17) — kontragent
-            tanlangan (saqlangan) buyurtmada shu odamning Telegram kontakti +
-            xabar oqimi + yozish oynasi. Shaxsiy raqamdan (MTProto) yuboriladi. */}
-        {data.agent.id && (
-          <div className="mt-6 max-w-md">
-            <OrderTelegramPanel counterpartyId={data.agent.id} counterpartyName={data.agent.name} />
-          </div>
-        )}
 
         {/* Задачи / Файлы / Изменения render as inline bottom sections INSIDE
             DetailContentTabs (moysklad-grounded layout) — see tasksSlot/filesSlot. */}
@@ -2103,7 +2283,7 @@ export default function CustomerOrderDetailPage() {
             quantity: '1',
             priceMinor: resolveDefaultSalePriceOrZero(raw?.salePrices),
             discount: '0',
-            vat: raw?.vat != null ? String(raw.vat) : '0',
+            vat: raw?.vat != null ? String(raw.vat) : '12',
             vatEnabled: form.vatEnabled,
             stock: raw?.stock?.onHand,
             reserve: '0',
@@ -2111,7 +2291,7 @@ export default function CustomerOrderDetailPage() {
             waiting: raw?.stock?.inTransit,
             weightG: raw?.weightG ?? undefined,
             volumeML: raw?.volumeML ?? undefined,
-            imageUrl: raw?.mainImageId ? `/api/v1/images/${raw.mainImageId}/raw` : undefined,
+            imageUrl: raw?.mainImageId ? imageRawUrl(raw.mainImageId) : undefined,
             salePrices: raw?.salePrices ?? null,
           };
           setForm((s) => s && { ...s, positions: [...s.positions, newPos] });
@@ -2135,14 +2315,14 @@ export default function CustomerOrderDetailPage() {
             productArticle: raw?.article ?? undefined,
             productUom: raw?.uom ?? null,
             priceMinor: resolveDefaultSalePriceOrZero(raw?.salePrices),
-            vat: raw?.vat != null ? String(raw.vat) : '0',
+            vat: raw?.vat != null ? String(raw.vat) : '12',
             stock: raw?.stock?.onHand,
             reserve: '0',
             available: raw?.stock?.available,
             waiting: raw?.stock?.inTransit,
             weightG: raw?.weightG ?? undefined,
             volumeML: raw?.volumeML ?? undefined,
-            imageUrl: raw?.mainImageId ? `/api/v1/images/${raw.mainImageId}/raw` : undefined,
+            imageUrl: raw?.mainImageId ? imageRawUrl(raw.mainImageId) : undefined,
             salePrices: raw?.salePrices ?? null,
           });
         }}

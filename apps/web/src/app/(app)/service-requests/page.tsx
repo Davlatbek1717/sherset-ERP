@@ -16,6 +16,7 @@ import {
 } from '@moysklad/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
+import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
 interface ServiceRequestRow {
@@ -42,6 +43,7 @@ interface ListResponse {
 const LIMIT = 50;
 
 export default function ServiceRequestsListPage() {
+  const router = useRouter();
   const t = useTranslations('pages.service_requests');
   const tFilters = useTranslations('filters');
   const [search, setSearch] = useState('');
@@ -209,7 +211,7 @@ export default function ServiceRequestsListPage() {
         moyskladToolbar
         title={t('title')}
         onCreate={() => {
-          window.location.href = '/service-requests/new';
+          router.push('/service-requests/new');
         }}
         createLabel={t('create_button')}
         createPosition="start"

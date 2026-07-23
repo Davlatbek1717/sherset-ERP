@@ -14,9 +14,12 @@ import { DropdownMenu } from '../primitives/DropdownMenu.tsx';
  * 6 affordances appear on every document type — Сохранить, Закрыть,
  * Изменить ▾, Создать документ ▾, Печать ▾, Отправить ▾. Pages
  * customise the contents of each dropdown via the `*Menu` props but
- * cannot reorder or hide the buttons themselves; that's a deliberate
- * UX choice mirrored 1:1 from moysklad so users get a stable surface
- * across modules.
+ * cannot reorder the buttons themselves; that's a deliberate UX
+ * choice mirrored 1:1 from moysklad so users get a stable surface
+ * across modules. The one exception moysklad itself makes: document
+ * types with no downstream docs (Оприходование, Списание, …) show NO
+ * «Создать документ» slot at all — pages opt in via `hideCreateDoc`
+ * (ground: live #enter/edit?new toolbar, user screenshots 2026-07-12).
  *
  * Save / Close are always present. Each dropdown auto-disables when its
  * menu prop is empty, so a brand-new document with no transitions can
@@ -32,6 +35,13 @@ export interface ToolbarMenuItem {
   disabled?: boolean;
   destructive?: boolean;
   divider?: boolean;
+  /**
+   * Raw block rendered as-is INSTEAD of a menu item row — for moysklad's
+   * non-interactive dropdown footers (the «Запросить форму» promo block with
+   * its own header/subtitle/CTA button). Not keyboard-navigable, mirrors the
+   * list-page PrintDropdown promo footer.
+   */
+  content?: React.ReactNode;
   testId?: string;
 }
 
@@ -50,12 +60,20 @@ export interface DocumentToolbarProps {
   /** «Создать документ» dropdown — produces related downstream docs. */
   createDocMenu?: ToolbarMenuItem[];
   createDocLabel?: React.ReactNode;
+  /**
+   * Hide the «Создать документ» slot entirely (not just disable it) — moysklad
+   * omits it on document types with no downstream docs (e.g. Оприходование).
+   */
+  hideCreateDoc?: boolean;
   /** «Печать» dropdown — print template chooser. */
   printMenu?: ToolbarMenuItem[];
   printLabel?: React.ReactNode;
   /** «Отправить» dropdown — Email, Telegram, soliq.uz, etc. */
   sendMenu?: ToolbarMenuItem[];
   sendLabel?: React.ReactNode;
+  /** Buttons rendered right AFTER the «Отправить» dropdown, in the same button
+   *  row — moysklad pins each configured print form here as its own quick button. */
+  trailingSlot?: React.ReactNode;
   /** Right-aligned slot — typically the «Файзуллоев Ф. / Основной» user
    *  badge moysklad shows in the top-right of every editor. */
   rightSlot?: React.ReactNode;
@@ -109,6 +127,12 @@ function ToolbarDropdown({
         item.divider ? (
           // biome-ignore lint/suspicious/noArrayIndexKey: static toolbar dropdown — items don't reorder
           <DropdownMenu.Separator key={`sep-${i}`} />
+        ) : item.content ? (
+          // Raw block (promo footer etc.) — rendered as-is, not a menu row.
+          // biome-ignore lint/suspicious/noArrayIndexKey: static toolbar dropdown — items don't reorder
+          <div key={`content-${i}`} data-test-id={item.testId}>
+            {item.content}
+          </div>
         ) : (
           <DropdownMenu.Item
             key={`${i}-${typeof item.label === 'string' ? item.label : ''}`}
@@ -143,10 +167,12 @@ export function DocumentToolbar({
   modifyLabel,
   createDocMenu = [],
   createDocLabel,
+  hideCreateDoc,
   printMenu = [],
   printLabel,
   sendMenu = [],
   sendLabel,
+  trailingSlot,
   rightSlot,
   testId,
   className,
@@ -185,17 +211,22 @@ export function DocumentToolbar({
           dividers). `[&>*]` collapses each button's individual rounding; the
           group rounds only at its outer ends and `-ml-px` merges touching
           borders. `relative z-…` keeps a hovered button's border on top. */}
-      <div className="[&>*:not(:first-child)]:-ml-px inline-flex items-center [&>*:hover]:relative [&>*:hover]:z-10 [&>*:not(:first-child)]:rounded-l-none [&>*:not(:last-child)]:rounded-r-none">
+      {/* Mobile (≤767px): the joined ~490px bar cannot fit a phone row and was
+          THE document-page horizontal-overflow driver — the joining classes are
+          md:-scoped so phones get individually-rounded buttons that wrap. */}
+      <div className="inline-flex items-center max-md:flex-wrap max-md:gap-1 [&>*:hover]:relative [&>*:hover]:z-10 md:[&>*:not(:first-child)]:-ml-px md:[&>*:not(:first-child)]:rounded-l-none md:[&>*:not(:last-child)]:rounded-r-none">
         <ToolbarDropdown
           label={modifyLabel ?? "O'zgartirish"}
           items={modifyMenu}
           testId="doc-toolbar-modify"
         />
-        <ToolbarDropdown
-          label={createDocLabel ?? 'Hujjat yaratish'}
-          items={createDocMenu}
-          testId="doc-toolbar-create-doc"
-        />
+        {!hideCreateDoc && (
+          <ToolbarDropdown
+            label={createDocLabel ?? 'Hujjat yaratish'}
+            items={createDocMenu}
+            testId="doc-toolbar-create-doc"
+          />
+        )}
         <ToolbarDropdown
           label={printLabel ?? 'Chop etish'}
           items={printMenu}
@@ -209,6 +240,13 @@ export function DocumentToolbar({
           icon={<Icons.mail className="h-4 w-4" />}
         />
       </div>
+      {/* moysklad pins each configured print form as its own button right after
+          «Отправить» (data-driven — none when the account has no custom forms). */}
+      {trailingSlot && (
+        <div className="flex items-center gap-2" data-test-id="doc-toolbar-trailing">
+          {trailingSlot}
+        </div>
+      )}
       {rightSlot && (
         <>
           <div className="flex-1" />

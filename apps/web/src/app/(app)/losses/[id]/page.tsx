@@ -37,9 +37,12 @@ import {
   DetailToolbar,
   DocumentHistoryLink,
 } from '@/components/document-detail';
+import { CurrencyRateModal } from '@/components/document-detail/currency-rate-modal';
 import { DocumentTasksSection } from '@/components/document-tasks-section';
+import { CellPickerField } from '@/components/documents/cell-picker-field';
+import { PositionAgreementButton } from '@/components/documents/position-agreement-modal';
 import { PositionColumnCustomizer } from '@/components/documents/position-column-customizer';
-import { PriceRateDialog } from '@/components/products/price-rate-dialog';
+import { usePrintTemplatesManager } from '@/components/print/print-templates-provider';
 import { useApiMutation } from '@/hooks/use-api-mutation';
 import { useConflictReload } from '@/hooks/use-conflict-reload';
 import { useDestructiveMutation } from '@/hooks/use-destructive-mutation';
@@ -49,7 +52,10 @@ import { useSaveMutation } from '@/hooks/use-save-mutation';
 import { useUnsavedGuard } from '@/hooks/use-unsaved-guard';
 import { api } from '@/lib/api-client';
 import { DOC_STATE_VERB } from '@/lib/doc-state-dropdown';
+import { DEFAULT_LOSS_EXPENSE_ITEM_NAME } from '@/lib/expense-items';
+import { imageRawUrl } from '@/lib/image-url';
 import { isOptimisticConflict } from '@/lib/optimistic-lock';
+import { distributeAgreementDelta } from '@/lib/position-agreement';
 import { scaleMinorByQty } from '@moysklad/money';
 import {
   Alert,
@@ -91,6 +97,8 @@ interface PositionDetail {
   // moysklad «Причина списания» / «Ячейка» — per-line free text (round-tripped
   // so an edit-save doesn't wipe what /losses/new set).
   reason: string | null;
+  // «Ячейка» (address-storage cell) — the picked cell id + its «Зона / Ячейка» label.
+  cellId: string | null;
   cell: string | null;
   product: {
     id: string;
@@ -239,7 +247,7 @@ function formFromData(d: LossDetail): FormState {
     storeLabel: d.store.name,
     projectId: d.project?.id ?? null,
     projectLabel: d.project?.name ?? '',
-    expenseItem: d.expenseItem ?? 'Списания',
+    expenseItem: d.expenseItem ?? DEFAULT_LOSS_EXPENSE_ITEM_NAME,
     expenseItemId: null,
     externalCode: d.externalCode ?? '',
     description: d.description ?? '',
@@ -266,6 +274,8 @@ function formFromData(d: LossDetail): FormState {
       vat: '',
       vatEnabled: false,
       reason: p.reason ?? undefined,
+      // «Ячейка» — pre-fill a previously-picked cell so the picker round-trips.
+      cellId: p.cellId ?? null,
       cell: p.cell ?? undefined,
     })),
     attributes: (d as { attributes?: Record<string, unknown> }).attributes ?? {},
@@ -313,10 +323,21 @@ export default function LossDetailPage() {
   const tDetailHeader = useTranslations('detail_header');
   const tPos = useTranslations('position_editor');
   const tCols = useTranslations('position_cols');
+  const tPrint = useTranslations('print_menu');
+  const tPrintLoss = useTranslations('print_menu_loss');
 
   const { data, isLoading } = useQuery<LossDetail>({
     queryKey: ['loss', id],
     queryFn: () => api.get(`/losses/${id}`),
+  });
+
+  // «Печать» — account print forms for Списание (user-created via Настроить…),
+  // listed between МБ-8 and Комплект… (mirror the list dropdown + /new).
+  const { openTemplates } = usePrintTemplatesManager();
+  const { data: printTemplatesData } = useQuery<{ items: Array<{ id: string; name: string }> }>({
+    queryKey: ['print-templates-menu', 'loss'],
+    queryFn: () => api.get('/print-templates?entity=loss&enabled=true&limit=100'),
+    staleTime: 60_000,
   });
 
   // «Валюта документа» options + rates — the account's REAL currencies (GET
@@ -383,6 +404,21 @@ export default function LossDetailPage() {
   }, []);
   const removePosition = useCallback((rowId: string) => {
     setForm((s) => (s ? { ...s, positions: s.positions.filter((p) => p.id !== rowId) } : s));
+  }, []);
+  // «Договорная цена» — distribute the delta across line costs (no VAT here).
+  const applyAgreement = useCallback((deltaMinor: bigint) => {
+    setForm((s) => {
+      if (!s) return s;
+      const patch = distributeAgreementDelta(s.positions, deltaMinor, false);
+      if (patch.size === 0) return s;
+      return {
+        ...s,
+        positions: s.positions.map((p) => {
+          const next = patch.get(p.id);
+          return next != null ? { ...p, priceMinor: next } : p;
+        }),
+      };
+    });
   }, []);
   const duplicatePosition = useCallback((rowId: string) => {
     setForm((s) => {
@@ -520,6 +556,7 @@ export default function LossDetailPage() {
           // round-trip «Причина списания» / «Ячейка» — the BE delete+recreate
           // would otherwise wipe them on every edit-save.
           ...(p.reason ? { reason: p.reason } : {}),
+          ...(p.cellId ? { cellId: p.cellId } : {}),
           ...(p.cell ? { cell: p.cell } : {}),
         }));
       }
@@ -594,7 +631,7 @@ export default function LossDetailPage() {
       stock: raw?.stock?.onHand,
       available: raw?.stock?.available,
       folderPath: raw?.productFolder?.pathName ?? undefined,
-      imageUrl: raw?.mainImageId ? `/api/v1/images/${raw.mainImageId}/raw` : undefined,
+      imageUrl: raw?.mainImageId ? imageRawUrl(raw.mainImageId) : undefined,
     });
   };
 
@@ -714,11 +751,33 @@ export default function LossDetailPage() {
   // the handler + disable it when cancelled (a disabled input never fires onChange).
   const onApplicableChange = (next: boolean) => transitionMut.mutate(next ? 'post' : 'unpost');
 
+  // «Ячейка» — address-storage cell picker (mirror /losses/new + /enters/new).
+  // Closure has storeId (form state) + the row's product (assortmentId), so the
+  // picker can show «Все ячейки» and «С этим товаром». Stores cellId (per-cell
+  // stock) + the «Зона / Ячейка» label in `cell`. A posted/cancelled loss is
+  // read-only — the picker then shows a plain label (no picker button).
+  const renderPositionCellCell = (row: DocPositionRow) => {
+    const p = row as DetailPositionRow;
+    return (
+      <CellPickerField
+        storeId={storeId}
+        assortmentId={p.assortmentId}
+        label={p.cell}
+        readOnly={!editableLines}
+        onSelect={(cellId, label) => updatePosition(row.id, { cellId, cell: label })}
+        onClear={() => updatePosition(row.id, { cellId: null, cell: '' })}
+      />
+    );
+  };
+
   // Position «Наименование» cell — moysklad-parity borderless [img] + bold code +
   // name (PositionNameCell, mirror CO/[id]); clicking re-opens the per-row product
   // picker. Read-only on a posted loss.
   const renderPositionNameCell = (row: DocPositionRow) => {
     const p = row as DetailPositionRow;
+    // A PICKED product's name links to its product card (where «Аналоги» lives);
+    // an unpicked / read-only row falls back to the picker button (mirror CO/new).
+    const href = p.assortmentId ? `/products/${p.assortmentId}` : undefined;
     return (
       <PositionNameCell
         imageUrl={p.imageUrl}
@@ -726,6 +785,8 @@ export default function LossDetailPage() {
         label={p.productLabel}
         placeholder={tForm('select_product')}
         onPick={() => editableLines && setOpenPicker({ kind: 'product', rowUid: p.id })}
+        productHref={href}
+        onNavigate={href ? () => router.push(href) : undefined}
         disabled={!editableLines}
         testId={`pos-${p.id}-name`}
       />
@@ -760,7 +821,38 @@ export default function LossDetailPage() {
                   })
               : undefined
           }
-          printEntity="loss"
+          // moysklad «Печать» on a saved Списание: ТОРГ-16 · МБ-8 · [account
+          // forms] · Комплект… · Настроить… — the built-in forms open our loss
+          // print form in a new tab; account forms render through bulk-print
+          // (was the default dead «Бланк документа» item — no route existed).
+          printMenuItems={[
+            {
+              id: 'torg16',
+              label: tPrintLoss('torg16'),
+              onSelect: () => window.open(`/print/loss/${data.id}`, '_blank'),
+            },
+            {
+              id: 'mb8',
+              label: tPrintLoss('mb8'),
+              onSelect: () => window.open(`/print/loss/${data.id}`, '_blank'),
+            },
+            ...(printTemplatesData?.items ?? []).map((tpl) => ({
+              id: `tpl-${tpl.id}`,
+              label: tpl.name,
+              onSelect: () =>
+                void api.postOpenInBrowser('/losses/bulk-print', {
+                  ids: [data.id],
+                  templateId: tpl.id,
+                }),
+            })),
+            // «Комплект…» — disabled placeholder (mirror the list dropdown).
+            { id: 'set', label: tPrint('set') },
+            {
+              id: 'configure',
+              label: tPrint('configure'),
+              onSelect: () => openTemplates('loss'),
+            },
+          ]}
           rightSlot={
             // moysklad top-right cluster on the TOOLBAR row: «Владелец» (owner) +
             // «Изменения» (last-modified) link. The loss BE `update()` doesn't accept
@@ -919,7 +1011,7 @@ export default function LossDetailPage() {
                     editableLines &&
                     setForm((s) => s && { ...s, projectId: null, projectLabel: '' })
                   }
-                  onCreate={editableLines ? () => router.push('/projects/new') : undefined}
+                  onCreate={editableLines ? () => router.push('/settings/projects/new') : undefined}
                   createLabel={tForm('create_new_project')}
                   disabled={!editableLines}
                   testId="field-project"
@@ -984,7 +1076,7 @@ export default function LossDetailPage() {
                     </NativeSelect>
                   </div>
                   {!isBaseCurrency && selectedCurrency && (
-                    <span className="inline-flex items-center gap-1 whitespace-nowrap text-[var(--ms-text-muted)] text-xs tabular-nums">
+                    <span className="inline-flex items-center gap-1 whitespace-nowrap text-[var(--ms-text-muted)] text-[12px] tabular-nums">
                       1 {form.currency} = {Number(effectiveRate).toLocaleString('ru-RU')} {baseCode}
                       {editableLines && (
                         // moysklad ✎ — opens «Курс валюты документа» to override the rate.
@@ -1010,7 +1102,7 @@ export default function LossDetailPage() {
               auditEntity="Loss"
               entityId={data.id}
               relatedGroups={[]}
-              positionsLabel={tDetailTabs('main')}
+              positionsLabel={tDetailTabs('positions')}
               filesSlot={<AttachmentsSection entity="Loss" entityId={data.id} />}
               tasksSlot={<DocumentTasksSection entity="Loss" entityId={data.id} />}
               historyInline={false}
@@ -1031,6 +1123,26 @@ export default function LossDetailPage() {
                 {/* moysklad position table — full column set + ⚙ customizer + inline
                   «Добавить позицию» bar. Posted docs are read-only. */}
                 <div className="min-w-0">
+                  {/* Owner 2026-07-23: «Договорная цена» — blue, at the table's OUTER
+                      top-right corner (same spot in every section). */}
+                  {editableLines && (
+                    <div className="-mb-2.5 flex justify-end">
+                      <PositionAgreementButton
+                        totalMinor={totals}
+                        currency={form.currency}
+                        labels={{
+                          button: tPos('agreement_button'),
+                          total: tPos('agreement_total'),
+                          amount: tPos('agreement_amount'),
+                          add: tPos('agreement_add'),
+                          subtract: tPos('agreement_subtract'),
+                          save: tPos('pick_modal_save'),
+                          cancel: tPos('pick_modal_cancel'),
+                        }}
+                        onApply={applyAgreement}
+                      />
+                    </div>
+                  )}
                   <PositionTable
                     columns={positionColumns}
                     emptyText={tPos('empty')}
@@ -1040,6 +1152,7 @@ export default function LossDetailPage() {
                     }
                     onRemove={removePosition}
                     onDuplicate={duplicatePosition}
+                    onReplace={(id) => setOpenPicker({ kind: 'product', rowUid: id })}
                     onReorder={reorderPositions}
                     onSortPositions={
                       editableLines
@@ -1070,6 +1183,7 @@ export default function LossDetailPage() {
                     onWithGroupsChange={setWithGroups}
                     withGroupsLabel={tPos('sort_with_groups')}
                     renderNameCell={renderPositionNameCell}
+                    renderCellCell={renderPositionCellCell}
                     selectedIds={selectedRowIds}
                     onSelectionChange={setSelectedRowIds}
                     readOnly={!editableLines}
@@ -1089,6 +1203,10 @@ export default function LossDetailPage() {
                                 code: p.code ?? undefined,
                                 available:
                                   p.stock?.available != null ? Number(p.stock.available) : 0,
+                                // Pick modal (owner 2026-07-18): reference «Цена» = the same
+                                // default the row would get (product cost / buyPrice here).
+                                priceMinor: p.buyPrice ?? '0',
+                                uomLabel: p.uom ?? undefined,
                                 raw: p,
                               })),
                               total: r.total ?? r.items.length,
@@ -1098,8 +1216,26 @@ export default function LossDetailPage() {
                           moreItemsLabel={(n) => tPos('moreItems', { count: n })}
                           createProductLabel={(qq) => tPos('createProductNamed', { query: qq })}
                           onCreateProduct={() => router.push('/products/new')}
-                          onPick={(item) => {
+                          // owner 2026-07-18: qty/price modal on EVERY product-add search
+                          // (was sales-only). No price-scope checkboxes here — writing a
+                          // permanent SALE price from a write-off cost would be wrong.
+                          pickModal={{
+                            currency: form.currency,
+                            permanentPriceOption: false,
+                            labels: {
+                              stock: tPos('pick_modal_stock'),
+                              price: tPos('pick_modal_price'),
+                              quantity: tPos('pick_modal_quantity'),
+                              salePrice: tPos('pick_modal_sale_price'),
+                              priceThisSale: tPos('pick_modal_price_this_sale'),
+                              pricePermanent: tPos('pick_modal_price_permanent'),
+                              save: tPos('pick_modal_save'),
+                              cancel: tPos('pick_modal_cancel'),
+                            },
+                          }}
+                          onPick={(item, entry) => {
                             const raw = item.raw as ProductItem | undefined;
+                            const newId = uid();
                             setForm((s) =>
                               s
                                 ? {
@@ -1107,15 +1243,15 @@ export default function LossDetailPage() {
                                     positions: [
                                       ...s.positions,
                                       {
-                                        id: uid(),
+                                        id: newId,
                                         assortmentId: item.id,
                                         productLabel: item.primary,
                                         productCode: raw?.code ?? undefined,
                                         productUom: raw?.uom ?? null,
-                                        quantity: '1',
+                                        quantity: entry?.quantity ?? '1',
                                         // «Цена» = product cost (себестоимость) —
                                         // shown independent of «Остаток».
-                                        priceMinor: raw?.buyPrice ?? '0',
+                                        priceMinor: entry?.priceMinor ?? raw?.buyPrice ?? '0',
                                         discount: '0',
                                         vat: '',
                                         vatEnabled: false,
@@ -1123,13 +1259,16 @@ export default function LossDetailPage() {
                                         available: raw?.stock?.available,
                                         folderPath: raw?.productFolder?.pathName ?? undefined,
                                         imageUrl: raw?.mainImageId
-                                          ? `/api/v1/images/${raw.mainImageId}/raw`
+                                          ? imageRawUrl(raw.mainImageId)
                                           : undefined,
                                       },
                                     ],
                                   }
                                 : s,
                             );
+                            // owner 2026-07-18: returning the id hands focus to the new
+                            // row's «Кол-во» (modal → table entry chain).
+                            return newId;
                           }}
                           onAddFromCatalog={() =>
                             setForm((s) =>
@@ -1289,13 +1428,12 @@ export default function LossDetailPage() {
       />
 
       {/* «Курс валюты документа» — moysklad rate-override modal (the currency ✎). */}
-      <PriceRateDialog
+      <CurrencyRateModal
         open={rateDialogOpen}
-        onClose={() => setRateDialogOpen(false)}
-        currencyCode={form.currency}
-        baseCode={baseCode}
+        onOpenChange={setRateDialogOpen}
+        currency={form.currency}
         referenceRate={docGlobalRate}
-        customRate={form.rate === docGlobalRate ? null : form.rate}
+        currentOverride={form.rate === docGlobalRate ? null : form.rate}
         onApply={(r) => setForm((s) => (s ? { ...s, rate: r ?? docGlobalRate } : s))}
       />
     </div>

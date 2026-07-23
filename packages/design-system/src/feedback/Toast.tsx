@@ -67,12 +67,13 @@ const ICON: Record<ToastTone, typeof CheckCircle2> = {
 
 const TONE_STYLES: Record<ToastTone, string> = {
   success:
-    'border-[var(--ms-success-100)] bg-[var(--ms-bg-surface-elevated)] text-[var(--ms-text-primary)] [&_svg]:text-[var(--ms-text-success)]',
-  info: 'border-[var(--ms-info-100)] bg-[var(--ms-bg-surface-elevated)] text-[var(--ms-text-primary)] [&_svg]:text-[var(--ms-text-brand)]',
+    'border-[var(--ms-success-100)] bg-white text-[var(--ms-text-primary)] [&_svg]:text-[var(--ms-text-success)]',
+  info:
+    'border-[var(--ms-info-100)] bg-white text-[var(--ms-text-primary)] [&_svg]:text-[var(--ms-text-brand)]',
   warning:
-    'border-[var(--ms-warning-100)] bg-[var(--ms-bg-surface-elevated)] text-[var(--ms-text-primary)] [&_svg]:text-[var(--ms-text-warning)]',
+    'border-[var(--ms-warning-100)] bg-white text-[var(--ms-text-primary)] [&_svg]:text-[var(--ms-text-warning)]',
   destructive:
-    'border-[var(--ms-destructive-100)] bg-[var(--ms-bg-surface-elevated)] text-[var(--ms-text-primary)] [&_svg]:text-[var(--ms-text-destructive)]',
+    'border-[var(--ms-destructive-100)] bg-white text-[var(--ms-text-primary)] [&_svg]:text-[var(--ms-text-destructive)]',
 };
 
 const TONE_ARIA: Record<ToastTone, 'polite' | 'assertive'> = {
@@ -111,10 +112,7 @@ export function ToastProvider({
   const push = React.useCallback(
     (tone: ToastTone, input: ToastInput): string => {
       const id = input.id ?? genId();
-      // XATO TOAST'i O'ZI YOPILMAYDI (2026-07-13 UX):
-      // xatoning yagona tushuntirishi 5 soniyada g'oyib bo'lardi — foydalanuvchi
-      // o'qib ulgurmasdi, nusxa ko'chira olmasdi. Endi faqat X bosilganda yopiladi.
-      const duration = input.duration ?? (tone === 'destructive' ? 0 : 5000);
+      const duration = input.duration ?? 5000;
       const instance: ToastInstance = { ...input, id, tone, createdAt: Date.now() };
 
       setToasts((prev) => {
@@ -196,7 +194,6 @@ function ToastItem({
 }) {
   const Icon = ICON[toast.tone];
   return (
-    // biome-ignore lint/a11y/useSemanticElements: role="status" is the idiomatic ARIA live region for a toast; <output> implies form association that doesn't fit.
     <div
       role="status"
       aria-live={TONE_ARIA[toast.tone]}

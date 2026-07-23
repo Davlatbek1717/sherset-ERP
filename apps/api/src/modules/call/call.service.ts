@@ -45,6 +45,7 @@ export class CallService {
     return {
       accountId,
       ...(filter.counterpartyId ? { counterpartyId: filter.counterpartyId } : {}),
+      ...(filter.counterpartyIds ? { counterpartyId: { in: filter.counterpartyIds } } : {}),
       ...(filter.contactPersonId ? { contactPersonId: filter.contactPersonId } : {}),
       ...(filter.ownerId ? { ownerId: filter.ownerId } : {}),
       ...(filter.direction ? { direction: filter.direction } : {}),

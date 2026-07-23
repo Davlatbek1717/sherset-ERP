@@ -153,7 +153,11 @@ export function PackNameCell({
         title={createLabel}
         data-test-id="pack-name-create-unit"
       >
-        <Icons.createCircle className="size-4" aria-hidden />
+        {/* moysklad parity: the inline create-unit «+» is a PLAIN green plus
+            (same family as the Страна/Поставщик inline-create «+»), NOT the
+            circled ⊕ used by «+ Document»/«+ Упаковка» add-row toolbar buttons
+            (see icons/action-icons.ts: createCircle is toolbar-only). */}
+        <Icons.create className="size-4" aria-hidden />
       </button>
     </div>
   );

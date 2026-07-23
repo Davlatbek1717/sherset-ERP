@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { csvUuid } from '../shared/csv.js';
 import { discountPercent } from '../shared/discount.js';
 
 /**
@@ -30,6 +31,10 @@ export const PurchaseReturnPositionInputSchema = z.object({
   discount: discountPercent.optional(),
   vat: z.number().int().min(0).max(100).nullish(),
   vatEnabled: z.boolean().default(true),
+  // moysklad «Ячейка» — address-storage bin (validated against the store on
+  // create); `cell` = denormalized «Зона / Ячейка» label. Mirror supply.
+  cellId: z.string().uuid().nullish(),
+  cell: z.string().max(255).nullish(),
 });
 export type PurchaseReturnPositionInput = z.infer<typeof PurchaseReturnPositionInputSchema>;
 
@@ -45,6 +50,15 @@ export const CreatePurchaseReturnSchema = z.object({
   organizationAccountId: z.string().uuid().nullish(),
   agentAccountId: z.string().uuid().nullish(),
   externalCode: z.string().max(50).nullish(),
+  // «Владелец» — owner employee / department / «Общий доступ». Live-grounded on the
+  // moysklad return editor (the «Азизбек Н. / Основной» toolbar widget). When omitted
+  // the service stamps the creator as owner (the historical default).
+  ownerId: z.string().uuid().nullish(),
+  groupId: z.string().uuid().nullish(),
+  shared: z.boolean().optional(),
+  // «Статус» — account custom status (State, entityType="purchasereturn"). The editor's
+  // grey «Статус» pill assigns one on create; validated against the tenant in create().
+  statusId: z.string().uuid().nullish(),
   moment: z.coerce.date().optional(),
   reason: z.string().max(4000).nullish(),
   description: z.string().max(4000).nullish(),
@@ -52,13 +66,23 @@ export const CreatePurchaseReturnSchema = z.object({
   rateValue: z.coerce.string().regex(/^\d+$/).default('100000000'),
   vatEnabled: z.boolean().default(true),
   vatIncluded: z.boolean().default(false),
-  positions: z.array(PurchaseReturnPositionInputSchema).min(1, 'at least one position required'),
+  // «Проведено» on save — moysklad parity: ticking «Проведено» + Сохранить
+  // creates AND posts the return (stock removed) in one action. When true,
+  // create() runs the SAME verified transition('post') path the detail
+  // «Провести» uses. Was silently dropped before (FE sent it, schema omitted it).
+  // `.optional()` (not `.default`) so createFromSupply's `satisfies
+  // CreatePurchaseReturnInput` object need not pass it.
+  applicable: z.boolean().optional(),
+  // moysklad allows an empty DRAFT return (so «⊕ Задача»/«⊕ Файл» on a brand-new
+  // return can silently persist a draft to attach to). Posting (applicable=true) still
+  // requires ≥1 position — enforced in create() below, mirroring purchase-orders.
+  positions: z.array(PurchaseReturnPositionInputSchema),
   attributes: z.record(z.string(), z.unknown()).optional(),
 });
 export type CreatePurchaseReturnInput = z.infer<typeof CreatePurchaseReturnSchema>;
 
 export const UpdatePurchaseReturnSchema = CreatePurchaseReturnSchema.partial().extend({
-  positions: z.array(PurchaseReturnPositionInputSchema).min(1).optional(),
+  positions: z.array(PurchaseReturnPositionInputSchema).optional(),
   version: z.number().int().nonnegative(),
 });
 export type UpdatePurchaseReturnInput = z.infer<typeof UpdatePurchaseReturnSchema>;
@@ -77,17 +101,32 @@ const boolFromString = z
 export const PurchaseReturnFilterSchema = z.object({
   state: PurchaseReturnStateSchema.optional(),
   agentId: z.string().uuid().optional(),
+  agentIds: csvUuid.optional(),
   /** «Группа контрагента» — filters via the agent (Counterparty) relation's groupId. */
   agentGroupId: z.string().uuid().optional(),
+  /** «Владелец контрагента» — filters via the agent (Counterparty) relation's ownerId. */
+  agentOwnerId: z.string().uuid().optional(),
   /** «Счёт контрагента» — PurchaseReturn.agentAccountId. */
   agentAccountId: z.string().uuid().optional(),
   organizationId: z.string().uuid().optional(),
+  organizationIds: csvUuid.optional(),
   /** «Счёт организации» — PurchaseReturn.organizationAccountId. */
   organizationAccountId: z.string().uuid().optional(),
   /** «Склад» — PurchaseReturn.storeId (source warehouse). */
   storeId: z.string().uuid().optional(),
-  /** «Приемка» — PurchaseReturn.supplyId (back-link to the original Supply). */
+  /** «Приемка» — PurchaseReturn.supplyId (back-link to the original Supply).
+   *  Kept for the saved-filter / API surface; the moysklad filter panel uses
+   *  «Дата приемки» (a DATE range over the linked supply) instead, not this picker. */
   supplyId: z.string().uuid().optional(),
+  /** «Товар или группа» — narrows to returns that contain the product (any line). */
+  productId: z.string().uuid().optional(),
+  /** «Оплата» — derived payment state (payed vs sum cross-column compare). */
+  paymentState: z.enum(['paid', 'partlyPaid', 'unpaid']).optional(),
+  /** «Дата приемки» — date range over the LINKED supply's `moment` (receipt date). */
+  receiptDateFrom: z.string().optional(),
+  receiptDateTo: z.string().optional(),
+  /** «Общий доступ» — PurchaseReturn.shared flag. */
+  shared: boolFromString.optional(),
   /** «Договор» — PurchaseReturn.contractId. */
   contractId: z.string().uuid().optional(),
   /** «Проект» — PurchaseReturn.projectId. */
@@ -114,10 +153,10 @@ export const PurchaseReturnFilterSchema = z.object({
   updatedTo: z.string().optional(),
   sumMinorFrom: z.coerce.number().int().nonnegative().optional(),
   sumMinorTo: z.coerce.number().int().nonnegative().optional(),
-  // NOTE: «Кто изменил» (modifiedById) is SKIPPED — the PurchaseReturn model
-  // has no `updatedById` column (only `ownerId` / `groupId`), so there is no
-  // backed way to filter "last modified by". Surfacing it would require a
-  // schema migration outside this panel-parity task.
+  /** «Кто изменил» — PurchaseReturn has no `updatedById` column, so list()/
+   *  aggregateTotals() approximate it via the auditLog (DISTINCT entityIds this
+   *  user `update`d), mirror invoice-in / supply. */
+  modifiedById: z.string().uuid().optional(),
   limit: z.coerce.number().int().min(1).max(500).default(50),
   cursor: z.string().uuid().optional(),
   sortBy: z.enum(['moment', 'name', 'sumMinor', 'agent', 'organization']).default('moment'),

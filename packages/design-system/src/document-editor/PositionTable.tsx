@@ -2,6 +2,7 @@
 
 import { computePositionTotal } from '@moysklad/money';
 import * as React from 'react';
+import { HIDE_NATIVE_X_SCROLLBAR, StickyXScrollbar } from '../data-display/StickyHScroll.tsx';
 import { Icons } from '../icons/action-icons.ts';
 import { cn } from '../lib/cn.ts';
 import { Button } from '../primitives/Button.tsx';
@@ -51,6 +52,7 @@ export type PositionColumnKey =
   | 'vatAmount'
   | 'discount'
   | 'amount' // line total
+  | 'commission' // «Комиссия» — per-line commission/reward (commission report «Выданный»), editable money
   | 'gtdNumber' // «Номер ГТД» — customs declaration no. (import inbound, §41)
   | 'gtdSumMinor' // «Сумма ГТД» / «Себестоимость ГТД» — customs sum (tiyin)
   | 'rnpt' // «РНПТ» — registration number of goods batch, free-text (Enter import grid)
@@ -77,11 +79,6 @@ export interface DocPositionRow {
   discount: string;
   vat: string;
   vatEnabled: boolean;
-  /** Per-unit COST in minor units (tiyin). On a sales doc (Отгрузка) this is the
-   *  product's buyPrice, which drives «Себест. единицы» / «Себестоимость» and the
-   *  real «Прибыль». Left unset on an Enter (Оприходование), where the cost IS the
-   *  entered price — those cells fall back to `priceMinor`. */
-  buyPriceMinor?: string;
   /** Optional read-only fields shown for procurement/inventory contexts. */
   shipped?: string;
   available?: string;
@@ -105,8 +102,13 @@ export interface DocPositionRow {
   reason?: string;
   /** «РНПТ» — registration number of goods batch, free-text (Enter import grid). */
   rnpt?: string;
-  /** «Ячейка» — warehouse bin/cell reference, free-text (Enter grid). */
+  /** «Ячейка» — address-storage bin. `cellId` = picked StoreCell; `cell` = the
+   *  denormalized «Зона / Ячейка» label shown in the trigger / read-only span. */
+  cellId?: string | null;
   cell?: string;
+  /** «Комиссия» — per-line commission/reward amount (tiyin/minor), commission-report
+   *  «Выданный» positions only. Editable money column (mirrors «Цена»). */
+  commissionMinor?: string;
 }
 
 export interface PositionTableColumnConfig {
@@ -133,6 +135,13 @@ export interface PositionTableProps {
    * typically clone the row data and append a new entry below.
    */
   onDuplicate?: (id: string) => void;
+  /**
+   * Optional row product-SWAP handler. When provided, the per-row kebab menu
+   * adds a «Заменить» entry (moysklad order: Дублировать · Заменить · Удалить)
+   * that calls this — pages open the product picker for that row to replace its
+   * product. This is where swapping moves once the name becomes a card link.
+   */
+  onReplace?: (id: string) => void;
   /** Custom cell renderer for the «name» column — pages wire their own
    *  CatalogPicker / autocomplete here. */
   renderNameCell: (row: DocPositionRow) => React.ReactNode;
@@ -143,6 +152,10 @@ export interface PositionTableProps {
    *  their own Country CatalogPicker here (mirrors renderNameCell). When
    *  omitted, the column falls back to a read-only `countryLabel` span. */
   renderCountryCell?: (row: DocPositionRow) => React.ReactNode;
+  /** Optional custom cell renderer for the «Ячейка» column — pages wire their own
+   *  address-storage CellPickerField here (needs the doc store + row product). When
+   *  omitted, the column falls back to the free-text input. */
+  renderCellCell?: (row: DocPositionRow) => React.ReactNode;
   /** Read-only mode (posted documents). Inputs become spans. */
   readOnly?: boolean;
   /** Empty-state text shown when there are no rows (localize from the page). */
@@ -205,6 +218,43 @@ export interface PositionTableProps {
    * procurement/stock contexts use. Off by default — PO etc. keep it read-only.
    */
   editableReserve?: boolean;
+  /**
+   * moysklad parity (user 2026-07-06): in SALES grids (Заказ покупателя /
+   * Отгрузка / Счёт), the «Остаток» + «Доступно» cells turn RED when the value
+   * is ≤ 0 — a "you're selling stock you don't have" warning. Off by default so
+   * PURCHASE grids (supply / order-to-supplier), where 0 stock is normal, keep
+   * the neutral grey. Enable only on sales editors.
+   */
+  warnStock?: boolean;
+  /**
+   * moysklad «⚙» column-config gear (live-grounded 2026-06-29 — the commission-out
+   * grid). When supplied, the LAST header cell (the `menu` column) renders a gear
+   * dropdown listing these toggleable optional columns with a checkbox each; toggling
+   * calls `onColumnToggle`. The PAGE owns visibility — it adds/removes the column key
+   * from its `columns` prop in response. Opt-in: editors that don't pass it keep a
+   * plain (empty) last header cell. moysklad's set = Изображение / Единица измерения /
+   * Вес / Объем / Сумма НДС.
+   */
+  columnConfig?: { key: PositionColumnKey; label: React.ReactNode; checked: boolean }[];
+  onColumnToggle?: (key: PositionColumnKey, checked: boolean) => void;
+  columnConfigLabel?: React.ReactNode;
+  /**
+   * moysklad «Цена ▾» header menu (live-grounded — «Расценить» / «Сохранить цены»).
+   * When `onPriceAction` + both labels are supplied, the `price` column header becomes
+   * a ▾ dropdown. «reprice» re-fills every line's price from a chosen price type;
+   * «save» writes the grid's line prices back to the products. Opt-in.
+   */
+  onPriceAction?: (action: 'reprice' | 'save') => void;
+  repriceLabel?: string;
+  savePricesLabel?: string;
+  /**
+   * moysklad «Комиссия ▾» header menu (live-grounded — «Пересчитать»). When
+   * `onCommissionRecalc` + the label are supplied, the `commission` column header
+   * becomes a ▾ dropdown that recomputes every line's commission from the document's
+   * «Комиссия» mode/percent. Commission-report only (opt-in).
+   */
+  onCommissionRecalc?: () => void;
+  commissionRecalcLabel?: string;
   /** Custom test id. */
   testId?: string;
 }
@@ -233,6 +283,7 @@ const DEFAULT_LABELS: Record<PositionColumnKey, string> = {
   vatAmount: 'Сумма НДС',
   discount: 'Скидка',
   amount: 'Сумма',
+  commission: 'Комиссия',
   gtdNumber: 'Номер ГТД',
   gtdSumMinor: 'Сумма ГТД',
   rnpt: 'РНПТ',
@@ -274,6 +325,7 @@ const DEFAULT_WIDTHS: Record<PositionColumnKey, string> = {
   vatAmount: '110px',
   discount: '70px',
   amount: '120px',
+  commission: '110px',
   gtdNumber: '150px',
   gtdSumMinor: '120px',
   rnpt: '150px',
@@ -300,6 +352,7 @@ const RIGHT_ALIGNED: Set<PositionColumnKey> = new Set([
   'vatAmount',
   'discount',
   'amount',
+  'commission',
   'gtdSumMinor',
   'costPerUnit',
   'costTotal',
@@ -366,9 +419,11 @@ export function PositionTable({
   onRemove,
   onAdd,
   onDuplicate,
+  onReplace,
   renderNameCell,
   renderVatCell,
   renderCountryCell,
+  renderCellCell,
   readOnly,
   emptyText = "Hali pozitsiya yo'q",
   vatIncluded = false,
@@ -384,6 +439,15 @@ export function PositionTable({
   withGroupsLabel,
   autoFocusRowId,
   editableReserve,
+  warnStock,
+  columnConfig,
+  onColumnToggle,
+  columnConfigLabel,
+  onPriceAction,
+  repriceLabel,
+  savePricesLabel,
+  onCommissionRecalc,
+  commissionRecalcLabel,
   testId,
 }: PositionTableProps) {
   // moysklad parity (user 2026-06-24): «Единица измерения» is NOT a standalone
@@ -453,185 +517,327 @@ export function PositionTable({
     for (const id of selectedIds) onRemove(id);
     onSelectionChange?.(new Set());
   };
+  // Sticky x-scrollbar (user 2026-07-17): long position lists pushed the native
+  // horizontal scrollbar below the viewport; the scroller's bar is hidden and
+  // mirrored into a sticky-bottom proxy strip between the table and the footer.
+  const scrollerRef = React.useRef<HTMLDivElement>(null);
+  // In-table keyboard entry chain (owner 2026-07-18): Enter in «Кол-во» jumps
+  // to the same row's «Цена» (selected); Enter in «Цена» returns to the
+  // inline-add search input (footerToolbar) so the next product can be typed
+  // straight away. DOM-scoped to this table's root so multiple grids coexist.
+  const rootRef = React.useRef<HTMLDivElement>(null);
+  const focusWithin = (selector: string): boolean => {
+    const el = rootRef.current?.querySelector(selector);
+    if (el instanceof HTMLInputElement && !el.disabled && !el.readOnly) {
+      el.focus();
+      el.select();
+      return true;
+    }
+    return false;
+  };
+  const handlePriceEnter = () => {
+    // Suffix match: PositionInlineAdd emits `${testId}-input` and callers pass
+    // custom bases (move-position-add, io-position-add, inventory-position-add)
+    // besides the default position-inline-add — all end in «-add-input».
+    focusWithin('input[data-test-id$="-add-input"]');
+  };
+  const handleQtyEnter = (rowId: string) => {
+    if (focusWithin(`[data-test-id="pos-${rowId}-price"]`)) return;
+    // No editable price cell (price column hidden or read-only) — go straight
+    // back to the search input, same as the price → Enter hop.
+    handlePriceEnter();
+  };
   return (
     <div
+      ref={rootRef}
       // moysklad parity (user 2026-06-20): the table hugs its content (w-fit) and
       // caps at the available width (max-w-full → horizontal scroll when it can't
       // fit) instead of stretching edge-to-edge. The user controls per-column
       // widths via the column config (`width` override) on top of these defaults.
-      className="w-fit max-w-full overflow-x-auto rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)]"
+      // `overflow-clip` (not hidden/auto): clips corners without becoming a
+      // scroll container, so the proxy sticks to the VIEWPORT bottom.
+      className="w-fit max-w-full overflow-clip rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)]"
       data-test-id={testId ?? 'position-table'}
     >
-      {/* width:auto + table-fixed → the table is the SUM of the column widths
+      <div ref={scrollerRef} className={cn('overflow-x-auto', HIDE_NATIVE_X_SCROLLBAR)}>
+        {/* width:auto + table-fixed → the table is the SUM of the column widths
           (all fixed now), so it stays compact instead of filling w-full. */}
-      <table className="min-w-[990px] table-fixed border-collapse text-sm">
-        <colgroup>
-          {visibleCols.map((c) => (
-            <col key={c.key} style={{ width: c.width ?? DEFAULT_WIDTHS[c.key] }} />
-          ))}
-        </colgroup>
-        <thead>
-          <tr className="border-[var(--ms-border-default)] border-b text-[var(--ms-text-muted)]">
+        <table className="min-w-[990px] table-fixed border-collapse text-sm">
+          <colgroup>
             {visibleCols.map((c) => (
-              <th
-                key={c.key}
-                scope="col"
-                // moysklad grid header (blueprint table.headerCell + the
-                // customer-order edit-new screenshot): Tahoma 11px, weight 400,
-                // Title Case (NOT uppercase), brand-blue #186999 — moysklad's
-                // goods-table column headers are sortable links rendered in
-                // brand blue (rgb(24,105,153)), not neutral grey.
-                style={{ fontFamily: 'var(--ms-font-dense)' }}
-                className={cn(
-                  'h-[30px] px-2 font-normal text-[11px] text-[var(--ms-text-brand)]',
-                  RIGHT_ALIGNED.has(c.key) ? 'text-right' : 'text-left',
-                )}
-              >
-                {c.key === 'select' && selectedIds && onSelectionChange ? (
-                  <input
-                    type="checkbox"
-                    aria-label="Select all"
-                    checked={allSelected}
-                    ref={(el) => {
-                      if (el) el.indeterminate = someSelected;
-                    }}
-                    onChange={toggleAll}
-                    className="h-4 w-4 cursor-pointer"
-                    data-test-id="position-select-all"
-                  />
-                ) : c.key === 'name' && onSortPositions && sortByNameLabel && sortByCodeLabel ? (
-                  // moysklad «Наименование ▾» — sort the document's own lines by
-                  // name or code (live-grounded). The page reorders its state.
-                  <DropdownMenu
-                    align="start"
-                    testId="position-name-sort"
-                    trigger={
-                      <button
-                        type="button"
-                        className="inline-flex items-center gap-0.5 text-[var(--ms-text-brand)] hover:underline focus:outline-none"
-                        data-test-id="position-name-sort-trigger"
+              <col key={c.key} style={{ width: c.width ?? DEFAULT_WIDTHS[c.key] }} />
+            ))}
+          </colgroup>
+          <thead>
+            <tr className="border-[var(--ms-border-default)] border-b text-[var(--ms-text-muted)]">
+              {visibleCols.map((c) => (
+                <th
+                  key={c.key}
+                  scope="col"
+                  // moysklad grid header (blueprint table.headerCell + the
+                  // customer-order edit-new screenshot): Tahoma 11px, weight 400,
+                  // Title Case (NOT uppercase), brand-blue #186999 — moysklad's
+                  // goods-table column headers are sortable links rendered in
+                  // brand blue (rgb(24,105,153)), not neutral grey.
+                  style={{ fontFamily: 'var(--ms-font-dense)' }}
+                  className={cn(
+                    'h-[30px] px-2 font-normal text-[11px] text-[var(--ms-text-brand)]',
+                    RIGHT_ALIGNED.has(c.key) ? 'text-right' : 'text-left',
+                  )}
+                >
+                  {c.key === 'select' && selectedIds && onSelectionChange ? (
+                    <input
+                      type="checkbox"
+                      aria-label="Select all"
+                      checked={allSelected}
+                      ref={(el) => {
+                        if (el) el.indeterminate = someSelected;
+                      }}
+                      onChange={toggleAll}
+                      className="h-4 w-4 cursor-pointer"
+                      data-test-id="position-select-all"
+                    />
+                  ) : c.key === 'name' && onSortPositions && sortByNameLabel && sortByCodeLabel ? (
+                    // moysklad «Наименование ▾» — sort the document's own lines by
+                    // name or code (live-grounded). The page reorders its state.
+                    <DropdownMenu
+                      align="start"
+                      testId="position-name-sort"
+                      trigger={
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-0.5 text-[var(--ms-text-brand)] hover:underline focus:outline-none"
+                          data-test-id="position-name-sort-trigger"
+                        >
+                          {c.label ?? DEFAULT_LABELS[c.key]}
+                          <Icons.down className="h-3 w-3" aria-hidden />
+                        </button>
+                      }
+                    >
+                      <DropdownMenu.Item
+                        onSelect={() => onSortPositions('name')}
+                        testId="position-sort-by-name"
                       >
-                        {c.label ?? DEFAULT_LABELS[c.key]}
-                        <Icons.down className="h-3 w-3" aria-hidden />
-                      </button>
-                    }
-                  >
-                    <DropdownMenu.Item
-                      onSelect={() => onSortPositions('name')}
-                      testId="position-sort-by-name"
-                    >
-                      {sortByNameLabel}
-                    </DropdownMenu.Item>
-                    <DropdownMenu.Item
-                      onSelect={() => onSortPositions('code')}
-                      testId="position-sort-by-code"
-                    >
-                      {sortByCodeLabel}
-                    </DropdownMenu.Item>
-                    {onWithGroupsChange && withGroupsLabel && (
-                      <>
-                        <DropdownMenu.Separator />
-                        {/* moysklad «☐ С учётом групп» — toggle group-aware sort.
+                        {sortByNameLabel}
+                      </DropdownMenu.Item>
+                      <DropdownMenu.Item
+                        onSelect={() => onSortPositions('code')}
+                        testId="position-sort-by-code"
+                      >
+                        {sortByCodeLabel}
+                      </DropdownMenu.Item>
+                      {onWithGroupsChange && withGroupsLabel && (
+                        <>
+                          <DropdownMenu.Separator />
+                          {/* moysklad «☐ С учётом групп» — toggle group-aware sort.
                             DropdownMenu.Item closes on select (our menu exposes no
                             keep-open hook), so the user re-opens to sort; the check
                             icon reflects the current state. */}
+                          <DropdownMenu.Item
+                            onSelect={() => onWithGroupsChange(!withGroups)}
+                            icon={
+                              <Icons.check
+                                className={cn('h-3.5 w-3.5', !withGroups && 'opacity-0')}
+                                aria-hidden
+                              />
+                            }
+                            testId="position-sort-with-groups"
+                          >
+                            {withGroupsLabel}
+                          </DropdownMenu.Item>
+                        </>
+                      )}
+                    </DropdownMenu>
+                  ) : c.key === 'price' && onPriceAction && repriceLabel && savePricesLabel ? (
+                    // moysklad «Цена ▾» — Расценить (re-price from a price type) / Сохранить цены.
+                    <DropdownMenu
+                      align="start"
+                      testId="position-price-menu"
+                      trigger={
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-0.5 text-[var(--ms-text-brand)] hover:underline focus:outline-none"
+                          data-test-id="position-price-menu-trigger"
+                        >
+                          {c.label ?? DEFAULT_LABELS[c.key]}
+                          <Icons.down className="h-3 w-3" aria-hidden />
+                        </button>
+                      }
+                    >
+                      <DropdownMenu.Item
+                        onSelect={() => onPriceAction('reprice')}
+                        testId="position-price-reprice"
+                      >
+                        {repriceLabel}
+                      </DropdownMenu.Item>
+                      <DropdownMenu.Item
+                        onSelect={() => onPriceAction('save')}
+                        testId="position-price-save"
+                      >
+                        {savePricesLabel}
+                      </DropdownMenu.Item>
+                    </DropdownMenu>
+                  ) : c.key === 'commission' && onCommissionRecalc && commissionRecalcLabel ? (
+                    // moysklad «Комиссия ▾» — Пересчитать (recompute per-line commission).
+                    <DropdownMenu
+                      align="start"
+                      testId="position-commission-menu"
+                      trigger={
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-0.5 text-[var(--ms-text-brand)] hover:underline focus:outline-none"
+                          data-test-id="position-commission-menu-trigger"
+                        >
+                          {c.label ?? DEFAULT_LABELS[c.key]}
+                          <Icons.down className="h-3 w-3" aria-hidden />
+                        </button>
+                      }
+                    >
+                      <DropdownMenu.Item
+                        onSelect={() => onCommissionRecalc()}
+                        testId="position-commission-recalc"
+                      >
+                        {commissionRecalcLabel}
+                      </DropdownMenu.Item>
+                    </DropdownMenu>
+                  ) : c.key === 'menu' &&
+                    columnConfig &&
+                    columnConfig.length > 0 &&
+                    onColumnToggle ? (
+                    // moysklad «⚙» column-config gear — toggle the optional columns
+                    // (Изображение / Единица измерения / Вес / Объем / Сумма НДС). The
+                    // page owns visibility (adds/removes the key from `columns`).
+                    <DropdownMenu
+                      align="end"
+                      testId="position-column-config"
+                      trigger={
+                        <button
+                          type="button"
+                          className="inline-flex items-center text-[var(--ms-text-brand)] hover:opacity-70 focus:outline-none"
+                          aria-label={
+                            columnConfigLabel ? String(columnConfigLabel) : 'Настройка колонок'
+                          }
+                          data-test-id="position-column-config-trigger"
+                        >
+                          <Icons.settings className="h-4 w-4" aria-hidden />
+                          <Icons.down className="h-3 w-3" aria-hidden />
+                        </button>
+                      }
+                    >
+                      {columnConfig.map((col) => (
                         <DropdownMenu.Item
-                          onSelect={() => onWithGroupsChange(!withGroups)}
+                          key={col.key}
+                          onSelect={() => onColumnToggle(col.key, !col.checked)}
                           icon={
                             <Icons.check
-                              className={cn('h-3.5 w-3.5', !withGroups && 'opacity-0')}
+                              className={cn('h-3.5 w-3.5', !col.checked && 'opacity-0')}
                               aria-hidden
                             />
                           }
-                          testId="position-sort-with-groups"
+                          testId={`position-column-toggle-${col.key}`}
                         >
-                          {withGroupsLabel}
+                          {col.label}
                         </DropdownMenu.Item>
-                      </>
-                    )}
-                  </DropdownMenu>
-                ) : (
-                  (c.label ?? DEFAULT_LABELS[c.key])
-                )}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.length === 0 ? (
-            // moysklad shows no «empty» row — the add-line sits right under the
-            // header. Pass emptyText="" to suppress the placeholder row entirely.
-            emptyText ? (
-              <tr>
-                <td
-                  colSpan={visibleCols.length}
-                  className="px-2 py-8 text-center text-[var(--ms-text-muted)] text-sm"
-                >
-                  {emptyText}
-                </td>
-              </tr>
-            ) : null
-          ) : (
-            rows.map((row, index) => (
-              <tr
-                key={row.id}
-                draggable={!!onReorder && !readOnly}
-                onDragStart={(e) => handleDragStart(e, index)}
-                onDragOver={(e) => handleDragOver(e, index)}
-                onDrop={handleDrop}
-                onDragEnd={handleDragEnd}
-                className={cn(
-                  // moysklad parity: the goods grid highlights the row under the
-                  // cursor in a pale yellow (b-inlineeditor-table tr:hover). `group`
-                  // lets per-row hover affordances (e.g. the drag «⋮⋮») fade in.
-                  'group border-[var(--ms-border-default)] border-b transition-colors last:border-b-0 hover:bg-[var(--ms-row-hover)]',
-                  selectedIds?.has(row.id) && 'bg-[var(--ms-brand-50)]/30',
-                  dragFromIndex === index && 'opacity-40',
-                  // The drop indicator is rendered as a 2px top
-                  // border on the row at the target index. When
-                  // dropping at the very end (after last row), the
-                  // last row gets a bottom border instead.
-                  dropIndicator === index && 'border-t-2 border-t-[var(--ms-text-brand)]',
-                  dropIndicator === rows.length &&
-                    index === rows.length - 1 &&
-                    'border-b-2 border-b-[var(--ms-text-brand)]',
-                )}
-                data-test-id={`position-row-${row.id}`}
-              >
-                {visibleCols.map((c) => (
+                      ))}
+                    </DropdownMenu>
+                  ) : (
+                    (c.label ?? DEFAULT_LABELS[c.key])
+                  )}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length === 0 ? (
+              // moysklad shows no «empty» row — the add-line sits right under the
+              // header. Pass emptyText="" to suppress the placeholder row entirely.
+              emptyText ? (
+                <tr>
                   <td
-                    key={c.key}
-                    className={cn(
-                      'px-2 py-1.5 align-middle',
-                      RIGHT_ALIGNED.has(c.key) && 'text-right',
-                    )}
+                    colSpan={visibleCols.length}
+                    className="px-2 py-8 text-center text-[var(--ms-text-muted)] text-sm"
                   >
-                    {renderCell({
-                      column: c,
-                      row,
-                      index,
-                      onUpdate,
-                      onRemove,
-                      onDuplicate,
-                      renderNameCell,
-                      renderVatCell,
-                      renderCountryCell,
-                      readOnly,
-                      vatIncluded,
-                      isSelected: selectedIds?.has(row.id) ?? false,
-                      onSelect: () => toggleRow(row.id),
-                      canDrag: !!onReorder && !readOnly,
-                      autoFocusQty: !!autoFocusRowId && row.id === autoFocusRowId,
-                      editableReserve: !!editableReserve,
-                      showInlineUnit,
-                    })}
+                    {emptyText}
                   </td>
-                ))}
-              </tr>
-            ))
-          )}
-        </tbody>
-      </table>
+                </tr>
+              ) : null
+            ) : (
+              rows.map((row, index) => {
+                // moysklad: a line ordering MORE than the displayed stock tints red.
+                const isOversold = !!warnStock && isRowOversold(row, visibleCols);
+                return (
+                  <tr
+                    key={row.id}
+                    draggable={!!onReorder && !readOnly}
+                    onDragStart={(e) => handleDragStart(e, index)}
+                    onDragOver={(e) => handleDragOver(e, index)}
+                    onDrop={handleDrop}
+                    onDragEnd={handleDragEnd}
+                    className={cn(
+                      // moysklad parity: the goods grid highlights the row under the
+                      // cursor in a pale yellow (b-inlineeditor-table tr:hover). `group`
+                      // lets per-row hover affordances (e.g. the drag «⋮⋮») fade in.
+                      'group border-[var(--ms-border-default)] border-b transition-colors last:border-b-0',
+                      // moysklad sales-grid: Кол-во > displayed stock tints the WHOLE row
+                      // red («selling stock you don't have»); else the pale-yellow hover.
+                      isOversold
+                        ? 'bg-[color-mix(in_srgb,var(--ms-action-destructive)_12%,transparent)] hover:bg-[color-mix(in_srgb,var(--ms-action-destructive)_20%,transparent)]'
+                        : 'hover:bg-[var(--ms-row-hover)]',
+                      selectedIds?.has(row.id) && 'bg-[var(--ms-brand-50)]/30',
+                      dragFromIndex === index && 'opacity-40',
+                      // The drop indicator is rendered as a 2px top
+                      // border on the row at the target index. When
+                      // dropping at the very end (after last row), the
+                      // last row gets a bottom border instead.
+                      dropIndicator === index && 'border-t-2 border-t-[var(--ms-text-brand)]',
+                      dropIndicator === rows.length &&
+                        index === rows.length - 1 &&
+                        'border-b-2 border-b-[var(--ms-text-brand)]',
+                    )}
+                    data-test-id={`position-row-${row.id}`}
+                  >
+                    {visibleCols.map((c) => (
+                      <td
+                        key={c.key}
+                        className={cn(
+                          'px-2 py-1.5 align-middle',
+                          RIGHT_ALIGNED.has(c.key) && 'text-right',
+                        )}
+                      >
+                        {renderCell({
+                          column: c,
+                          row,
+                          index,
+                          onUpdate,
+                          onRemove,
+                          onDuplicate,
+                          onReplace,
+                          renderNameCell,
+                          renderVatCell,
+                          renderCountryCell,
+                          renderCellCell,
+                          readOnly,
+                          vatIncluded,
+                          isSelected: selectedIds?.has(row.id) ?? false,
+                          onSelect: () => toggleRow(row.id),
+                          canDrag: !!onReorder && !readOnly,
+                          autoFocusQty: !!autoFocusRowId && row.id === autoFocusRowId,
+                          editableReserve: !!editableReserve,
+                          warnStock: !!warnStock,
+                          showInlineUnit,
+                          onQtyEnter: handleQtyEnter,
+                          onPriceEnter: handlePriceEnter,
+                        })}
+                      </td>
+                    ))}
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+      <StickyXScrollbar scrollerRef={scrollerRef} />
       <div className="flex flex-wrap items-center gap-2 border-[var(--ms-border-default)] border-t bg-[var(--ms-bg-muted)] px-2 py-2">
         {bulkDeleteCount > 0 && !readOnly && (
           <Button
@@ -665,6 +871,7 @@ function NumberInput({
   testId,
   autoFocus,
   suffix,
+  onEnterKey,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -676,6 +883,9 @@ function NumberInput({
    *  the «Скидка» column). Read-only shows `value+suffix`; the editable input
    *  shows the suffix as a non-interactive trailing label. */
   suffix?: string;
+  /** Enter pressed in this cell — the «Кол-во» cell chains to «Цена» with it
+   *  (owner 2026-07-18 in-table entry flow). */
+  onEnterKey?: () => void;
 }) {
   const ref = React.useRef<HTMLInputElement>(null);
   // moysklad parity: the freshly-added line auto-focuses its «Кол-во» input and
@@ -700,6 +910,16 @@ function NumberInput({
       inputMode="decimal"
       value={value}
       onChange={(e) => onChange(e.target.value)}
+      onKeyDown={
+        onEnterKey
+          ? (e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                onEnterKey();
+              }
+            }
+          : undefined
+      }
       // moysklad parity: editable goods cells are BORDERLESS at rest (the value
       // reads as plain text on the row) — a white box with a grey border appears
       // on hover (affordance) and the border turns brand-blue on focus (editing).
@@ -722,8 +942,54 @@ function NumberInput({
   );
 }
 
-function ReadOnlyCell({ value }: { value: string | undefined }) {
-  return <span className="block text-[var(--ms-text-muted)] tabular-nums">{value ?? '—'}</span>;
+/** True when a stock/available string parses to a number ≤ 0 (empty/undefined ⇒
+ *  false, so a row with no stock info stays neutral, not red). Tolerates the
+ *  grouping spaces / decimal comma the values may carry. */
+function isNonPositive(value: string | undefined): boolean {
+  if (value == null || value === '') return false;
+  const n = Number(String(value).replace(/\s/g, '').replace(',', '.'));
+  return Number.isFinite(n) && n <= 0;
+}
+
+/** Parse a stock/qty display string («1 234,5» → 1234.5). null when blank/NaN. */
+function parseStockNum(value: string | undefined): number | null {
+  if (value == null || value === '') return null;
+  const n = Number(String(value).replace(/\s/g, '').replace(',', '.'));
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * moysklad sales-grid oversell test: is this line ordering MORE than the stock
+ * figure the grid DISPLAYS («Доступно» if that column is shown, else «Остаток»)?
+ * Кол-во > that figure means "selling stock you don't have", so the WHOLE row
+ * renders red. Returns false when no stock column is shown or the row carries no
+ * stock number (e.g. a fresh empty line, or a purchase grid where 0 stock is fine).
+ */
+export function isRowOversold(row: DocPositionRow, cols: { key: string }[]): boolean {
+  const stockKey = cols.some((c) => c.key === 'available')
+    ? 'available'
+    : cols.some((c) => c.key === 'stock')
+      ? 'stock'
+      : null;
+  if (!stockKey) return false;
+  const stock = parseStockNum(stockKey === 'available' ? row.available : row.stock);
+  if (stock == null) return false;
+  return (parseStockNum(row.quantity) ?? 0) > stock;
+}
+
+function ReadOnlyCell({ value, warn }: { value: string | undefined; warn?: boolean }) {
+  // moysklad sales-grid warning: «Остаток»/«Доступно» ≤ 0 renders in the
+  // destructive red (parent passes warn); otherwise the neutral muted grey.
+  return (
+    <span
+      className={cn(
+        'block tabular-nums',
+        warn ? 'text-[var(--ms-action-destructive)]' : 'text-[var(--ms-text-muted)]',
+      )}
+    >
+      {value ?? '—'}
+    </span>
+  );
 }
 
 /** Free-text cell (e.g. «Номер ГТД» — slash-bearing customs number). */
@@ -769,9 +1035,11 @@ function renderCell({
   onUpdate,
   onRemove,
   onDuplicate,
+  onReplace,
   renderNameCell,
   renderVatCell,
   renderCountryCell,
+  renderCellCell,
   readOnly,
   vatIncluded,
   isSelected,
@@ -779,7 +1047,10 @@ function renderCell({
   canDrag,
   autoFocusQty,
   editableReserve,
+  warnStock,
   showInlineUnit,
+  onQtyEnter,
+  onPriceEnter,
 }: {
   column: PositionTableColumnConfig;
   row: DocPositionRow;
@@ -787,9 +1058,11 @@ function renderCell({
   onUpdate: (id: string, patch: Partial<DocPositionRow>) => void;
   onRemove: (id: string) => void;
   onDuplicate?: (id: string) => void;
+  onReplace?: (id: string) => void;
   renderNameCell: (row: DocPositionRow) => React.ReactNode;
   renderVatCell?: (row: DocPositionRow) => React.ReactNode;
   renderCountryCell?: (row: DocPositionRow) => React.ReactNode;
+  renderCellCell?: (row: DocPositionRow) => React.ReactNode;
   readOnly?: boolean;
   vatIncluded?: boolean;
   isSelected?: boolean;
@@ -797,8 +1070,14 @@ function renderCell({
   canDrag?: boolean;
   autoFocusQty?: boolean;
   editableReserve?: boolean;
+  /** moysklad: colour «Остаток»/«Доступно» red when ≤ 0 (sales grids only). */
+  warnStock?: boolean;
   /** moysklad: render the unit («шт») inline after the «Кол-во» quantity. */
   showInlineUnit?: boolean;
+  /** In-table entry chain (owner 2026-07-18): Enter in «Кол-во» → row's «Цена». */
+  onQtyEnter?: (rowId: string) => void;
+  /** Enter in «Цена» → back to the inline-add search input. */
+  onPriceEnter?: () => void;
 }) {
   switch (column.key) {
     case 'dragarea':
@@ -866,6 +1145,7 @@ function renderCell({
           align="right"
           autoFocus={autoFocusQty}
           testId={`pos-${row.id}-qty`}
+          onEnterKey={onQtyEnter ? () => onQtyEnter(row.id) : undefined}
         />
       );
       if (!showInlineUnit) return qtyInput;
@@ -881,9 +1161,11 @@ function renderCell({
     case 'shipped':
       return <ReadOnlyCell value={row.shipped} />;
     case 'available':
-      return <ReadOnlyCell value={row.available} />;
+      return (
+        <ReadOnlyCell value={row.available} warn={warnStock && isNonPositive(row.available)} />
+      );
     case 'stock':
-      return <ReadOnlyCell value={row.stock} />;
+      return <ReadOnlyCell value={row.stock} warn={warnStock && isNonPositive(row.stock)} />;
     case 'reserve':
       // moysklad «Зарезерв.» is an editable per-line box on customer orders;
       // elsewhere (procurement/stock) it's the read-only «reserved by other docs».
@@ -917,6 +1199,16 @@ function renderCell({
           valueMinor={row.priceMinor}
           onChangeMinor={(v) => onUpdate(row.id, { priceMinor: v })}
           displayFormatted
+          onKeyDown={
+            onPriceEnter
+              ? (e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    onPriceEnter();
+                  }
+                }
+              : undefined
+          }
           // moysklad parity: «Цена» reads as plain text at rest — borderless +
           // transparent bg, the white box + grey border show on hover, brand-blue
           // on focus (overrides the Input primitive's always-on resting border).
@@ -965,6 +1257,21 @@ function renderCell({
         <span className="block font-medium tabular-nums">
           {gross > 0n ? formatMinor(gross) : '—'}
         </span>
+      );
+    }
+    case 'commission': {
+      // «Комиссия» — per-line commission/reward on a commission report «Выданный».
+      // Editable money: entered in MAJOR sum, formatted, stored as minor (mirrors
+      // «Цена»). The parent sums these into the «Комиссия» / «Сумма комитента» footer.
+      if (readOnly) return <ReadOnlyCell value={formatMinor(BigInt(row.commissionMinor || '0'))} />;
+      return (
+        <MoneyInput
+          valueMinor={row.commissionMinor ?? '0'}
+          onChangeMinor={(v) => onUpdate(row.id, { commissionMinor: v })}
+          displayFormatted
+          className="h-7 border-transparent bg-transparent text-right hover:border-[var(--ms-border-input)] hover:bg-[var(--ms-bg-surface)] focus:bg-[var(--ms-bg-surface)]"
+          data-test-id={`pos-${row.id}-commission`}
+        />
       );
     }
     case 'goodPack':
@@ -1020,9 +1327,13 @@ function renderCell({
         />
       );
     case 'cell':
-      // «Ячейка» — warehouse bin/cell reference, free-text (Enter grid). moysklad
+      // «Ячейка» — address-storage bin. Pages wire a CellPickerField via
+      // renderCellCell (needs the doc store + the row's product). When omitted (or
+      // read-only without a picker), fall back to the free-text input — moysklad
       // shows «Не указана» (col.placeholder) when empty.
-      return (
+      return renderCellCell ? (
+        renderCellCell(row)
+      ) : (
         <TextInput
           value={row.cell ?? ''}
           onChange={(v) => onUpdate(row.id, { cell: v })}
@@ -1032,25 +1343,14 @@ function renderCell({
         />
       );
     case 'costPerUnit':
-      // «Себест. единицы» — read-only unit cost. On a sales doc this is the
-      // product's buyPrice (`buyPriceMinor`); on an Enter it is the entered price.
+      // «Себест. единицы» — read-only unit cost (= price for an Enter).
       return (
-        <span className="block tabular-nums">
-          {formatMinor(BigInt(row.buyPriceMinor ?? row.priceMinor ?? '0'))}
-        </span>
+        <span className="block tabular-nums">{formatMinor(BigInt(row.priceMinor || '0'))}</span>
       );
     case 'costTotal': {
-      // «Себестоимость» — read-only total cost = unit cost × qty. On a sales doc
-      // the unit cost is buyPrice (no VAT/discount); on an Enter it is price × qty.
-      const costTotalMinor =
-        row.buyPriceMinor != null
-          ? BigInt(Math.round(Number(row.buyPriceMinor) * Number(row.quantity || '0')))
-          : computeLineTotal(row, !!vatIncluded).gross;
-      return (
-        <span className="block tabular-nums">
-          {costTotalMinor > 0n ? formatMinor(costTotalMinor) : '—'}
-        </span>
-      );
+      // «Себестоимость» — read-only total cost (price × qty; no VAT/discount on Enter).
+      const { gross } = computeLineTotal(row, !!vatIncluded);
+      return <span className="block tabular-nums">{gross > 0n ? formatMinor(gross) : '—'}</span>;
     }
     case 'menu':
       return readOnly ? null : (
@@ -1074,6 +1374,11 @@ function renderCell({
               testId={`pos-${row.id}-duplicate`}
             >
               Дублировать
+            </DropdownMenu.Item>
+          )}
+          {onReplace && (
+            <DropdownMenu.Item onSelect={() => onReplace(row.id)} testId={`pos-${row.id}-replace`}>
+              Заменить
             </DropdownMenu.Item>
           )}
           <DropdownMenu.Item

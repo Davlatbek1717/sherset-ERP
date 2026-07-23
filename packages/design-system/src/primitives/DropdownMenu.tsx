@@ -48,10 +48,15 @@ function DropdownMenuRoot({
           side={side}
           sideOffset={4}
           className={cn(
-            'z-50 min-w-[180px]',
+            // z-index must clear the sticky document toolbar (--ms-z-sticky:200)
+            // and modals (--ms-z-modal:400) — otherwise the toolbar bleeds THROUGH
+            // the open menu. Match every other portaled popover (--ms-z-popover:500).
+            'z-[var(--ms-z-popover)] min-w-[180px]',
             'rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)]',
             'bg-[var(--ms-bg-surface,white)] shadow-[var(--ms-shadow-elevated)]',
             'p-1 text-sm',
+            // Mobile (owner 2026-07-18): menus read bigger and roomier on phones.
+            'max-md:min-w-[220px] max-md:text-[15px]',
             'data-[state=open]:animate-in data-[state=open]:fade-in data-[state=open]:zoom-in-95',
             'data-[state=closed]:animate-out data-[state=closed]:fade-out data-[state=closed]:zoom-out-95',
             className,
@@ -91,6 +96,9 @@ function DropdownMenuItem({
         'cursor-pointer outline-none',
         'data-[highlighted]:bg-[var(--ms-bg-muted)]',
         'data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50',
+        // Mobile (owner 2026-07-18, user-menu screenshot): every row is a 44px
+        // tap target with a hairline divider under it (last row bare).
+        'max-md:min-h-[44px] max-md:rounded-none max-md:border-[var(--ms-border-default)] max-md:border-b max-md:last:border-b-0',
         destructive && 'text-[var(--ms-text-destructive)]',
       )}
       data-test-id={testId}
@@ -117,10 +125,7 @@ function DropdownMenuLabel({ children }: { children: React.ReactNode }) {
  * Convenience trigger: a Button with a chevron-down icon that opens the menu.
  * Use like: <DropdownButton variant="secondary">Печать</DropdownButton>
  */
-function DropdownButton({
-  children,
-  ...rest
-}: ButtonProps & { children: React.ReactNode }) {
+function DropdownButton({ children, ...rest }: ButtonProps & { children: React.ReactNode }) {
   return (
     <Button {...rest}>
       {children}

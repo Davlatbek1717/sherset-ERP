@@ -1,53 +1,81 @@
 'use client';
 
+/**
+ * /demands/[id] — moysklad-parity «Отгрузка» detail editor.
+ *
+ * Converged (2026-07-06) onto the SAME shell the certified customer-orders/[id]
+ * + supplies/[id] use: DetailToolbar + editable <DocumentHeader> (custom «Статус»
+ * pill via the immediate setStatus endpoint, «Проведено» FSM toggle, «Не оплачено»
+ * pill) + three-column <DocumentMetaColumns> + <PositionTable> (moysklad grid with
+ * «Остаток» reddened at ≤ 0, inline «Добавить позицию» search, «Цена ▾» menu,
+ * column ⚙) + <DocumentTotalsPanel>. Demand-only bits (Накладные расходы, cost,
+ * the transport block, the from-CustomerOrder cascade, the stock-shortage post
+ * error, «Возврат покупателя») are preserved; the transport/overhead/shipping
+ * fields move into a «Другие поля» disclosure exactly like /demands/new + moysklad.
+ *
+ * Deferred (honest — needs backend the account doesn't have yet):
+ *  - «Ячейка» per-position column: DemandPosition has no cellId column (adding it
+ *    needs a DB migration; supplies got it, demand did not). Not faked.
+ *  - «Маркировка» column: the marked-goods (Честный знак) subsystem is separate;
+ *    not wired to demand positions. Not faked.
+ */
+
 import { AttachmentsSection } from '@/components/attachments-section';
-import { AttributesEditor } from '@/components/attributes-editor';
+import { AttributeInput, type AttributeMetaRow } from '@/components/attributes-editor';
+import { RelatedDocsTab } from '@/components/customer-orders/related-docs-tab';
 import {
   type CreateMenuItem,
   DetailContentTabs,
-  DetailHeader,
   DetailToolbar,
-  DetailTotalsSidebar,
+  DocumentHistoryLink,
 } from '@/components/document-detail';
+import { CurrencyRateModal } from '@/components/document-detail/currency-rate-modal';
 import { DocumentTasksSection } from '@/components/document-tasks-section';
+import { PositionAgreementButton } from '@/components/documents/position-agreement-modal';
+import { PositionColumnCustomizer } from '@/components/documents/position-column-customizer';
+import { PositionDiscountMenu } from '@/components/documents/position-discount-menu';
+import { PositionPriceMenu } from '@/components/documents/position-price-menu';
 import { SendEmailDialog } from '@/components/send-email-dialog';
 import { useApiMutation } from '@/hooks/use-api-mutation';
 import { useConflictReload } from '@/hooks/use-conflict-reload';
 import { useDestructiveMutation } from '@/hooks/use-destructive-mutation';
 import { useDetailNavigation } from '@/hooks/use-detail-navigation';
-import { usePositionEditorLabels } from '@/hooks/use-position-editor-labels';
+import { useDocumentEditorLabels } from '@/hooks/use-document-editor-labels';
 import { useSaveMutation } from '@/hooks/use-save-mutation';
 import { useUnsavedGuard } from '@/hooks/use-unsaved-guard';
-import { useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
-import { docTotals } from '@/lib/doc-totals';
-import { documentStateTone } from '@/lib/document-state-tone';
-import { isOptimisticConflict } from '@/lib/optimistic-lock';
-import { pinDefaultCustomer } from '@/lib/pin-default-customer';
-import { resolveDefaultSalePriceOrZero } from '@/lib/sale-price';
+import { imageRawUrl } from '@/lib/image-url';
+import { distributeAgreementDelta } from '@/lib/position-agreement';
+import { resolveDefaultSalePriceOrZero, usePriceTypeIds } from '@/lib/sale-price';
+import { computePositionTotal } from '@moysklad/money';
 import {
   Alert,
-  Avatar,
-  Badge,
-  Button,
   CatalogPicker,
   CatalogPickerField,
+  DatePicker,
+  type DocPositionRow,
   DocumentDisclosurePanel,
+  DocumentHeader,
+  DocumentMetaColumn,
+  DocumentMetaColumns,
   DocumentMetaField,
-  DocumentMetaPanel,
-  DocumentMetaRow,
-  Icons,
+  DocumentTotalsPanel,
   Input,
   NativeSelect,
   type PickerItem,
-  PositionEditor,
-  type PositionRow,
+  type PositionColumnKey,
+  PositionInlineAdd,
+  PositionNameCell,
+  PositionTable,
+  type PositionTableColumnConfig,
+  Textarea,
   formatDate,
+  useToast,
 } from '@moysklad/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useParams, useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 interface PositionDetail {
   id: string;
@@ -61,7 +89,16 @@ interface PositionDetail {
   vatEnabled: boolean;
   costMinor: string | null;
   customerOrderPositionId: string | null;
-  product: { id: string; name: string; code: string | null; uom: string | null } | null;
+  product: {
+    id: string;
+    name: string;
+    code: string | null;
+    article: string | null;
+    uom: string | null;
+    weightG: number | null;
+    volumeML: number | null;
+    images?: { id: string }[];
+  } | null;
 }
 
 interface DemandDetail {
@@ -72,14 +109,16 @@ interface DemandDetail {
   overheadSumMinor: string;
   overheadDistribution: string;
   state: string;
+  /** Account-defined custom status (moysklad «Статус»). Null until one is chosen. */
+  status: { id: string; name: string; color: string | null } | null;
   applicable: boolean;
   moment: string;
   postedAt: string | null;
   description: string | null;
   sumMinor: string;
-  /** ISO currency of the document (e.g. USD), for money formatting. */
   currency: string;
-  // «Оплата» — populated by the PaymentIn cascade; drives the «Не оплачено» chip.
+  /** Per-document FX rate snapshot, 8-dp minor units. */
+  rateValue: string | null;
   payedSumMinor: string;
   vatSumMinor: string;
   costSumMinor: string;
@@ -117,26 +156,93 @@ interface ProductItem {
   id: string;
   name: string;
   code: string | null;
+  article: string | null;
   uom: string | null;
   salePrices: Array<{ priceTypeId: string; value: string }> | null;
   vat: number | null;
+  stock?: { onHand: string; reserved: string; inTransit: string; available: string } | null;
+  weightG?: number | null;
+  volumeML?: number | null;
+  mainImageId?: string | null;
 }
 
-// moysklad parity: inline state-change dropdown («Новый ▾») in the
-// detail title. Demand FSM transitions are verb-based (post/unpost/
-// cancel), so each target state maps to its transition verb.
+// Detail-page position row — the PositionTable row shape (keyed on `id`).
+interface DetailPositionRow extends DocPositionRow {
+  assortmentId: string | null;
+  salePrices?: Array<{ priceTypeId: string; value: string }> | null;
+}
+
+function uid(): string {
+  return Math.random().toString(36).slice(2);
+}
+
+/** Per-line total for the live «Итого» footer — the SAME `computePositionTotal`
+ *  the BE + print use, so the footer matches the API exactly. */
+function computeLineTotal(
+  p: DetailPositionRow,
+  vatIncluded: boolean,
+): { net: bigint; vat: bigint; gross: bigint } {
+  try {
+    const { totalMinor, vatAmountMinor, baseMinor } = computePositionTotal(
+      {
+        quantity: p.quantity || '0',
+        priceMinor: p.priceMinor || '0',
+        discount: p.discount || '0',
+        vat: p.vatEnabled && p.vat ? Number(p.vat) : null,
+      },
+      p.vatEnabled,
+      vatIncluded,
+    );
+    return { net: baseMinor, vat: vatAmountMinor, gross: totalMinor };
+  } catch {
+    return { net: 0n, vat: 0n, gross: 0n };
+  }
+}
+
+/** ISO moment (UTC) → local `YYYY-MM-DDTHH:MM` for the shared <DocumentHeader>. */
+function momentToLocalInput(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+// moysklad grid = fixed columns + optional ones toggled by the «Сумма ⚙»
+// customizer. Default-visible: stock + vatAmount (a shipment shows «Остаток»);
+// image / available / unit(inline) / weight / volume OFF by default.
+const OPTIONAL_POSITION_COLUMNS: { key: PositionColumnKey; on: boolean }[] = [
+  { key: 'image', on: false },
+  { key: 'unit', on: true },
+  { key: 'code', on: false },
+  { key: 'article', on: false },
+  { key: 'stock', on: true },
+  { key: 'available', on: false },
+  { key: 'weight', on: false },
+  { key: 'volume', on: false },
+  { key: 'vatAmount', on: true },
+];
+const DEFAULT_COL_VISIBLE: Record<string, boolean> = Object.fromEntries(
+  OPTIONAL_POSITION_COLUMNS.map((c) => [c.key, c.on]),
+);
+
+// moysklad inline state-change palette (demand FSM). The custom «Статус» pill
+// overrides this when the account defines statuses.
 const DEMAND_STATE_COLOR: Record<string, string> = {
   draft: '#9ca3af',
   posted: '#16a34a',
   cancelled: '#e92919',
 };
+// Demand FSM transitions are verb-based (post/unpost/cancel).
 const DEMAND_STATE_VERB: Record<string, string> = {
   draft: 'unpost',
   posted: 'post',
   cancelled: 'cancel',
 };
+const DEMAND_STATES = ['draft', 'posted', 'cancelled'] as const;
 
 interface FormState {
+  name: string;
+  moment: string;
   agentId: string;
   agentLabel: string;
   organizationId: string;
@@ -151,8 +257,9 @@ interface FormState {
   projectLabel: string;
   organizationAccountId: string | null;
   organizationAccountLabel: string;
-  deliveryPlannedMoment: string;
-  paymentPlannedMoment: string;
+  currency: string;
+  deliveryPlannedMoment: string | null;
+  paymentPlannedMoment: string | null;
   shipmentAddress: string;
   consignorId: string | null;
   consignorLabel: string;
@@ -174,12 +281,14 @@ interface FormState {
   description: string;
   vatEnabled: boolean;
   vatIncluded: boolean;
-  positions: PositionRow[];
+  positions: DetailPositionRow[];
   attributes: Record<string, unknown>;
 }
 
 function formFromData(d: DemandDetail): FormState {
   return {
+    name: d.name,
+    moment: momentToLocalInput(d.moment),
     agentId: d.agent.id,
     agentLabel: d.agent.name,
     organizationId: d.organization.id,
@@ -195,8 +304,9 @@ function formFromData(d: DemandDetail): FormState {
     organizationAccountId: d.organizationAccount?.id ?? null,
     organizationAccountLabel:
       d.organizationAccount?.accountNumber || d.organizationAccount?.name || '',
-    deliveryPlannedMoment: d.deliveryPlannedMoment ? d.deliveryPlannedMoment.slice(0, 10) : '',
-    paymentPlannedMoment: d.paymentPlannedMoment ? d.paymentPlannedMoment.slice(0, 10) : '',
+    currency: d.currency,
+    deliveryPlannedMoment: d.deliveryPlannedMoment ? d.deliveryPlannedMoment.slice(0, 10) : null,
+    paymentPlannedMoment: d.paymentPlannedMoment ? d.paymentPlannedMoment.slice(0, 10) : null,
     shipmentAddress: d.shipmentAddress ?? '',
     consignorId: d.consignor?.id ?? null,
     consignorLabel: d.consignor?.name ?? '',
@@ -226,15 +336,21 @@ function formFromData(d: DemandDetail): FormState {
     vatEnabled: d.vatEnabled,
     vatIncluded: d.vatIncluded,
     positions: d.positions.map((p) => ({
-      _uid: p.id,
+      id: p.id,
       assortmentId: p.assortmentId,
       productLabel: p.product?.name ?? '—',
+      productCode: p.product?.code ?? undefined,
+      productArticle: p.product?.article ?? undefined,
       productUom: p.product?.uom ?? null,
       quantity: p.quantity,
       priceMinor: p.priceMinor,
       discount: p.discount,
       vat: p.vat != null ? String(p.vat) : '',
       vatEnabled: p.vatEnabled,
+      weightG: p.product?.weightG ?? undefined,
+      volumeML: p.product?.volumeML ?? undefined,
+      imageUrl: p.product?.images?.[0]?.id ? imageRawUrl(p.product.images[0].id) : undefined,
+      salePrices: null,
     })),
     attributes: (d as { attributes?: Record<string, unknown> }).attributes ?? {},
   };
@@ -242,6 +358,8 @@ function formFromData(d: DemandDetail): FormState {
 
 function snapshot(s: FormState): string {
   return JSON.stringify({
+    name: s.name,
+    moment: s.moment,
     agentId: s.agentId,
     organizationId: s.organizationId,
     storeId: s.storeId,
@@ -249,6 +367,7 @@ function snapshot(s: FormState): string {
     contractId: s.contractId,
     projectId: s.projectId,
     organizationAccountId: s.organizationAccountId,
+    currency: s.currency,
     deliveryPlannedMoment: s.deliveryPlannedMoment,
     paymentPlannedMoment: s.paymentPlannedMoment,
     shipmentAddress: s.shipmentAddress,
@@ -284,25 +403,54 @@ function snapshot(s: FormState): string {
 export default function DemandDetailPage() {
   const tCommon = useTranslations('common');
   const tFields = useTranslations('fields');
-  const tDetailHeader = useTranslations('detail_header');
-  const tDetailTitles = useTranslations('detail_titles');
+  const tForm = useTranslations('form');
   const tDetailForm = useTranslations('detail_form');
+  const docEditorLabels = useDocumentEditorLabels();
+  const tDetailHeader = useTranslations('detail_header');
+  const tCurShort = useTranslations('currency_short');
+  const tDetailTitles = useTranslations('detail_titles');
   const tStates = useTranslations('states.demand');
-  const tCreate = useTranslations('create_related');
-  const tDemands = useTranslations('pages.demands');
   const tDetailTabs = useTranslations('detail_tabs');
   const tEmail = useTranslations('email_template');
-  const tForm = useTranslations('form');
-  const userDefaults = useUserDefaults();
+  const tPos = useTranslations('position_editor');
+  const tCols = useTranslations('position_cols');
+  const tCreate = useTranslations('create_related');
+  const tDemands = useTranslations('pages.demands');
   const { id } = useParams<{ id: string }>();
-  const detailNav = useDetailNavigation('demands', id);
-  const positionLabels = usePositionEditorLabels();
   const router = useRouter();
   const qc = useQueryClient();
+  const detailNav = useDetailNavigation('demands', id, { server: true });
+  const { toast } = useToast();
+  const { defaultId } = usePriceTypeIds();
+
+  const { data: priceTypesData } = useQuery<{ items: Array<{ id: string; name: string }> }>({
+    queryKey: ['price-types'],
+    queryFn: () => api.get('/price-types'),
+    staleTime: 60_000,
+  });
 
   const { data, isLoading } = useQuery<DemandDetail>({
     queryKey: ['demand', id],
     queryFn: () => api.get(`/demands/${id}`),
+  });
+
+  // «Связанные документы» — the real relation chain (upstream Заказ покупателя +
+  // downstream Возвраты / Счета-фактуры / Перемещения), fed to <RelatedDocsTab>.
+  interface RelatedDoc {
+    id: string;
+    name: string;
+    moment: string;
+    state: string;
+    sumMinor: string;
+  }
+  const { data: related } = useQuery<{
+    customerOrder: RelatedDoc | null;
+    salesReturns: RelatedDoc[];
+    moves: RelatedDoc[];
+  }>({
+    queryKey: ['demand-related', id],
+    queryFn: () => api.get(`/demands/${id}/related`),
+    enabled: !!id,
   });
 
   const [form, setForm] = useState<FormState | null>(null);
@@ -320,21 +468,193 @@ export default function DemandDetailPage() {
     | 'consignee'
     | 'carrier'
   >(null);
-  const [openCatalogPicker, setOpenCatalogPicker] = useState(false);
   const [emailOpen, setEmailOpen] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const onConflict = useConflictReload(['demand', id], () => setForm(null));
+  const [openCatalogPicker, setOpenCatalogPicker] = useState(false);
+  const [productRowId, setProductRowId] = useState<string | null>(null);
+  const [colVisible, setColVisible] = useState<Record<string, boolean>>(DEFAULT_COL_VISIBLE);
+  const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
+  // «Kelishuv» — spread the negotiated delta across the lines (owner 2026-07-17).
+  const applyAgreement = useCallback((deltaMinor: bigint) => {
+    setForm((s) => {
+      if (!s) return s;
+      const patch = distributeAgreementDelta(s.positions, deltaMinor, s.vatIncluded);
+      if (patch.size === 0) return s;
+      return {
+        ...s,
+        positions: s.positions.map((p) => {
+          const next = patch.get(p.id);
+          return next != null ? { ...p, priceMinor: next } : p;
+        }),
+      };
+    });
+  }, []);
+  // «Скидка» header bulk discount/markup (moysklad parity) — apply % to selected
+  // rows (or all when none selected). Discount sets each line's `discount`; markup
+  // raises `priceMinor` (our model has no negative discount).
+  const applyDiscountMarkup = useCallback(
+    (mode: 'discount' | 'markup', percent: number) => {
+      setForm((s) =>
+        s
+          ? {
+              ...s,
+              positions: s.positions.map((p) => {
+                if (selectedRowIds.size > 0 && !selectedRowIds.has(p.id)) return p;
+                if (mode === 'discount') return { ...p, discount: String(percent) };
+                const base = Number(p.priceMinor || '0');
+                if (!Number.isFinite(base)) return p;
+                return { ...p, priceMinor: String(Math.round(base * (1 + percent / 100))) };
+              }),
+            }
+          : s,
+      );
+    },
+    [selectedRowIds],
+  );
+  const [editingVatId, setEditingVatId] = useState<string | null>(null);
+  const [rateOverride, setRateOverride] = useState<string | null>(null);
+  const [rateModalOpen, setRateModalOpen] = useState(false);
+
+  // Account-defined custom statuses (moysklad «Статус») for the header pill.
+  const { data: statusData } = useQuery<{
+    items: Array<{ id: string; name: string; color: string | null }>;
+  }>({
+    queryKey: ['states', 'demand'],
+    queryFn: () => api.get('/states?entityType=demand'),
+    staleTime: 60_000,
+  });
+  const customStatuses = statusData?.items ?? [];
+
+  // Account custom fields (доп. поля, e.g. «Уста») — rendered inline in the meta grid.
+  const { data: attrMetaData } = useQuery<{ items: AttributeMetaRow[] }>({
+    queryKey: ['attribute-metadata-entity', 'Demand'],
+    queryFn: () => api.get('/attribute-metadata/entity/Demand'),
+    staleTime: 60_000,
+  });
+
+  // moysklad «Баланс» caption under Контрагент.
+  const { data: agentBalanceData } = useQuery<{
+    items: Array<{ currency: string; balanceMinor: string }>;
+  }>({
+    queryKey: ['counterparty-balance', form?.agentId],
+    queryFn: () => api.get(`/counterparty-balances/${form?.agentId}`),
+    enabled: !!form?.agentId,
+  });
+
+  // Account currencies (Настройки → Валюты) — the admin-set booking rate.
+  const { data: currenciesData } = useQuery<{
+    items: Array<{ id: string; isoCode: string; name: string; rate: string }>;
+  }>({
+    queryKey: ['currencies'],
+    queryFn: () => api.get('/currencies'),
+    staleTime: 60_000,
+  });
+  const currencies = currenciesData?.items ?? [];
+  const adminRate = currencies.find((c) => c.isoCode === form?.currency)?.rate;
+  const effectiveRate = rateOverride ?? adminRate ?? '1';
+
+  // Live «Остаток» per position — the store-scoped on-hand for each assortment
+  // (mirrors /demands/new). Injected onto the rows for the «Остаток» column so a
+  // shipment shows the stock it draws down (reddened at ≤ 0 by warnStock).
+  const assortmentIds = useMemo(
+    () => (form?.positions ?? []).map((p) => p.assortmentId).filter((x): x is string => !!x),
+    [form],
+  );
+  const { data: stockData } = useQuery<{ items: Array<{ assortmentId: string; qty: string }> }>({
+    queryKey: ['stocks', form?.storeId, assortmentIds.join(',')],
+    queryFn: () =>
+      api.get(
+        `/stocks?storeId=${form?.storeId}&assortmentIds=${encodeURIComponent(assortmentIds.join(','))}`,
+      ),
+    enabled: !!form?.storeId && assortmentIds.length > 0,
+  });
+  const stockMap = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const r of stockData?.items ?? []) m.set(r.assortmentId, r.qty);
+    return m;
+  }, [stockData]);
 
   useEffect(() => {
     if (data && !form) {
       const initial = formFromData(data);
       setForm(initial);
       setOriginal(snapshot(initial));
+      if (data.currency !== 'UZS' && data.rateValue && data.rateValue !== '0') {
+        setRateOverride((Number(data.rateValue) / 1e8).toString());
+      }
     }
   }, [data, form]);
 
   const isDirty = useMemo(() => (form ? snapshot(form) !== original : false), [form, original]);
   useUnsavedGuard(isDirty);
+
+  const updatePosition = useCallback((rowId: string, patch: Partial<DetailPositionRow>) => {
+    setForm((s) =>
+      s
+        ? { ...s, positions: s.positions.map((p) => (p.id === rowId ? { ...p, ...patch } : p)) }
+        : s,
+    );
+  }, []);
+  const removePosition = useCallback((rowId: string) => {
+    setForm((s) => (s ? { ...s, positions: s.positions.filter((p) => p.id !== rowId) } : s));
+  }, []);
+  const duplicatePosition = useCallback((rowId: string) => {
+    setForm((s) => {
+      if (!s) return s;
+      const source = s.positions.find((p) => p.id === rowId);
+      if (!source) return s;
+      return { ...s, positions: [...s.positions, { ...source, id: uid() }] };
+    });
+  }, []);
+  const reorderPositions = useCallback((from: number, to: number) => {
+    setForm((s) => {
+      if (!s) return s;
+      const next = s.positions.slice();
+      const [moved] = next.splice(from, 1);
+      if (moved) next.splice(to, 0, moved);
+      return { ...s, positions: next };
+    });
+  }, []);
+  const repricePositions = useCallback((priceTypeId: string) => {
+    setForm((s) =>
+      s
+        ? {
+            ...s,
+            positions: s.positions.map((p) => {
+              const sp = p.salePrices?.find((x) => x.priceTypeId === priceTypeId);
+              return sp ? { ...p, priceMinor: sp.value } : p;
+            }),
+          }
+        : s,
+    );
+  }, []);
+  const saveProductPrices = useCallback(async () => {
+    const positions = form?.positions ?? [];
+    const seen = new Set<string>();
+    for (const p of positions) {
+      if (!p.assortmentId || seen.has(p.assortmentId)) continue;
+      seen.add(p.assortmentId);
+      try {
+        const prod = await api.get<{
+          version: number;
+          salePrices?: Array<{ priceTypeId: string; value: string }>;
+        }>(`/products/${p.assortmentId}`);
+        const existing = prod.salePrices ?? [];
+        const matchIdx = existing.findIndex(
+          (x) => (defaultId && x.priceTypeId === defaultId) || x.priceTypeId === 'default',
+        );
+        const idx = matchIdx < 0 && existing.length > 0 ? 0 : matchIdx;
+        const salePrices =
+          idx >= 0
+            ? existing.map((x, i) => (i === idx ? { ...x, value: p.priceMinor } : x))
+            : [{ priceTypeId: defaultId ?? 'default', value: p.priceMinor }];
+        await api.patch(`/products/${p.assortmentId}`, { version: prod.version, salePrices });
+      } catch {
+        // skip products that can't be updated
+      }
+    }
+  }, [form, defaultId]);
+
+  const onConflict = useConflictReload(['demand', id], () => setForm(null));
 
   const transitionMut = useApiMutation({
     mutationFn: (target: string) => api.post(`/demands/${id}/transitions/${target}`, {}),
@@ -345,6 +665,15 @@ export default function DemandDetailPage() {
         qc.invalidateQueries({ queryKey: ['customer-order', data.customerOrder.id] });
         qc.invalidateQueries({ queryKey: ['customer-orders'] });
       }
+    },
+  });
+
+  // moysklad «Статус» — set the account custom status immediately (mirror supply).
+  const setStatusMut = useApiMutation({
+    mutationFn: (statusId: string) => api.patch(`/demands/${id}/status`, { statusId }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['demand', id] });
+      qc.invalidateQueries({ queryKey: ['demands'] });
     },
   });
 
@@ -374,8 +703,7 @@ export default function DemandDetailPage() {
         description: form.description || null,
         vatEnabled: form.vatEnabled,
         vatIncluded: form.vatIncluded,
-        // moysklad parity — header refs (Канал продаж / Договор / Проект)
-        // and Адрес доставки are document metadata, editable any time.
+        // Header refs + Адрес доставки are metadata, editable any time.
         salesChannelId: form.salesChannelId,
         contractId: form.contractId,
         projectId: form.projectId,
@@ -395,8 +723,6 @@ export default function DemandDetailPage() {
         shippingDocDate: form.shippingDocDate || null,
         stateContractId: form.stateContractId || null,
         externalCode: form.externalCode || null,
-        // «Накладные расходы» — '' → 0 (no-op at post). Distribution
-        // only meaningful when a positive overhead is set.
         overheadSumMinor:
           Number(form.overheadMajor) > 0
             ? String(BigInt(Math.round(Number(form.overheadMajor) * 100)))
@@ -404,12 +730,20 @@ export default function DemandDetailPage() {
         overheadDistribution: form.overheadDistribution,
       };
       if (!data.applicable) {
+        const trimmedName = form.name.trim();
+        if (trimmedName) payload.name = trimmedName;
+        if (form.moment) payload.moment = new Date(form.moment).toISOString();
         payload.agentId = form.agentId;
         payload.organizationId = form.organizationId;
         payload.storeId = form.storeId;
+        payload.currency = form.currency;
+        // Rate override (8-dp minor units) — only when the user changed it.
+        if (form.currency !== 'UZS' && rateOverride) {
+          payload.rateValue = BigInt(Math.round(Number(effectiveRate) * 100000000)).toString();
+        }
         payload.positions = form.positions.map((p) => ({
           assortmentKind: 'product',
-          // biome-ignore lint/style/noNonNullAssertion: PositionEditor guarantees assortmentId is set before save
+          // biome-ignore lint/style/noNonNullAssertion: rows always have a product before save
           assortmentId: p.assortmentId!,
           quantity: Number(p.quantity),
           priceMinor: p.priceMinor,
@@ -422,14 +756,9 @@ export default function DemandDetailPage() {
       return api.patch(`/demands/${id}`, payload);
     },
     onSuccess: () => {
-      setSaveError(null);
       qc.invalidateQueries({ queryKey: ['demand', id] });
       qc.invalidateQueries({ queryKey: ['demands'] });
       if (form) setOriginal(snapshot(form));
-    },
-    onError: (err: Error) => {
-      if (isOptimisticConflict(err)) return;
-      setSaveError(err.message);
     },
     onConflict,
   });
@@ -438,17 +767,11 @@ export default function DemandDetailPage() {
     const d = await api.get<{
       items: Array<{ id: string; name: string; legalTitle: string | null }>;
     }>(`/counterparties?search=${encodeURIComponent(s)}&limit=50`);
-    const items = d.items.map((c) => ({
+    return d.items.map((c) => ({
       id: c.id,
       primary: c.name,
       secondary: c.legalTitle ?? undefined,
     }));
-    return pinDefaultCustomer(
-      items,
-      userDefaults.data?.defaultCustomer,
-      s,
-      tForm('pinned_default'),
-    );
   };
   const orgFetcher = async (s: string): Promise<PickerItem[]> => {
     const d = await api.get<{
@@ -467,22 +790,24 @@ export default function DemandDetailPage() {
     return d.items.map((st) => ({ id: st.id, primary: st.name, secondary: st.code ?? undefined }));
   };
   const salesChannelFetcher = async (s: string): Promise<PickerItem[]> => {
-    const d = await api.get<{ items: Array<{ id: string; name: string }> }>(
+    const d = await api.get<{ items: Array<{ id: string; name: string; code?: string | null }> }>(
       `/sales-channels?search=${encodeURIComponent(s)}&limit=50`,
     );
-    return d.items.map((x) => ({ id: x.id, primary: x.name }));
+    return d.items.map((c) => ({ id: c.id, primary: c.name, secondary: c.code ?? undefined }));
   };
   const contractFetcher = async (s: string): Promise<PickerItem[]> => {
-    const d = await api.get<{ items: Array<{ id: string; name: string }> }>(
-      `/contracts?search=${encodeURIComponent(s)}&limit=50`,
+    const params = new URLSearchParams({ search: s });
+    if (form?.agentId) params.set('agentId', form.agentId);
+    const d = await api.get<{ items: Array<{ id: string; name: string; code: string | null }> }>(
+      `/contracts?${params.toString()}`,
     );
-    return d.items.map((x) => ({ id: x.id, primary: x.name }));
+    return d.items.map((c) => ({ id: c.id, primary: c.name, secondary: c.code ?? undefined }));
   };
   const projectFetcher = async (s: string): Promise<PickerItem[]> => {
-    const d = await api.get<{ items: Array<{ id: string; name: string }> }>(
-      `/projects?search=${encodeURIComponent(s)}&limit=50`,
+    const d = await api.get<{ items: Array<{ id: string; name: string; code: string | null }> }>(
+      `/projects?search=${encodeURIComponent(s)}`,
     );
-    return d.items.map((x) => ({ id: x.id, primary: x.name }));
+    return d.items.map((p) => ({ id: p.id, primary: p.name, secondary: p.code ?? undefined }));
   };
   const organizationAccountFetcher = async (s: string): Promise<PickerItem[]> => {
     const params = new URLSearchParams({ search: s, limit: '50' });
@@ -501,27 +826,7 @@ export default function DemandDetailPage() {
       secondary: x.bankName ?? undefined,
     }));
   };
-  const consignorFetcher = async (s: string): Promise<PickerItem[]> => {
-    const d = await api.get<{
-      items: Array<{ id: string; name: string; legalTitle: string | null }>;
-    }>(`/counterparties?search=${encodeURIComponent(s)}&limit=50`);
-    return d.items.map((c) => ({
-      id: c.id,
-      primary: c.name,
-      secondary: c.legalTitle ?? undefined,
-    }));
-  };
-  const consigneeFetcher = async (s: string): Promise<PickerItem[]> => {
-    const d = await api.get<{
-      items: Array<{ id: string; name: string; legalTitle: string | null }>;
-    }>(`/counterparties?search=${encodeURIComponent(s)}&limit=50`);
-    return d.items.map((c) => ({
-      id: c.id,
-      primary: c.name,
-      secondary: c.legalTitle ?? undefined,
-    }));
-  };
-  const carrierFetcher = async (s: string): Promise<PickerItem[]> => {
+  const counterpartyFetcher = async (s: string): Promise<PickerItem[]> => {
     const d = await api.get<{
       items: Array<{ id: string; name: string; legalTitle: string | null }>;
     }>(`/counterparties?search=${encodeURIComponent(s)}&limit=50`);
@@ -544,44 +849,222 @@ export default function DemandDetailPage() {
     }));
   };
 
+  // moysklad position columns (fixed + optional, customizer + «Цена ▾» menu).
+  const positionColumns = useMemo<PositionTableColumnConfig[]>(() => {
+    const cols: PositionTableColumnConfig[] = [
+      { key: 'dragarea' },
+      { key: 'select' },
+      { key: 'index', label: '' },
+    ];
+    if (colVisible.image) cols.push({ key: 'image' });
+    cols.push({ key: 'name', label: tCols('name') });
+    if (colVisible.unit) cols.push({ key: 'unit', label: tCols('unit') });
+    if (colVisible.code) cols.push({ key: 'code', label: tCols('code') });
+    if (colVisible.article) cols.push({ key: 'article', label: tCols('article') });
+    cols.push({ key: 'quantity', label: tPos('quantity') });
+    if (colVisible.stock) cols.push({ key: 'stock', label: tCols('stock') });
+    if (colVisible.available) cols.push({ key: 'available', label: tCols('available') });
+    cols.push(
+      {
+        key: 'price',
+        label: (
+          <PositionPriceMenu
+            label={tCols('price')}
+            repriceLabel={tCols('reprice')}
+            saveLabel={tCols('savePrices')}
+            priceTypes={priceTypesData?.items ?? []}
+            onReprice={repricePositions}
+            onSavePrices={saveProductPrices}
+          />
+        ),
+      },
+      { key: 'vat', label: tCols('vat') },
+    );
+    if (colVisible.vatAmount) cols.push({ key: 'vatAmount', label: tCols('vatAmount') });
+    cols.push({
+      key: 'discount',
+      label: (
+        <PositionDiscountMenu
+          label={tCols('discount')}
+          title={tCols('discountMarkupTitle')}
+          selectedText={tCols('selectedPositions', { count: selectedRowIds.size })}
+          discountLabel={tCols('discount')}
+          markupLabel={tCols('markup')}
+          applyDiscountLabel={tCols('applyDiscount')}
+          applyMarkupLabel={tCols('applyMarkup')}
+          cancelLabel={tCols('cancel')}
+          onApply={applyDiscountMarkup}
+        />
+      ),
+    });
+    if (colVisible.weight) cols.push({ key: 'weight', label: tCols('weight') });
+    if (colVisible.volume) cols.push({ key: 'volume', label: tCols('volume') });
+    cols.push(
+      {
+        key: 'amount',
+        label: (
+          <span className="inline-flex items-center gap-1">
+            {tCols('amount')}
+            <PositionColumnCustomizer
+              options={OPTIONAL_POSITION_COLUMNS.map((c) => ({ key: c.key, label: tCols(c.key) }))}
+              visible={colVisible}
+              onToggle={(key, next) => setColVisible((v) => ({ ...v, [key]: next }))}
+              ariaLabel={tCols('configure')}
+            />
+          </span>
+        ),
+      },
+      { key: 'menu' },
+    );
+    return cols;
+  }, [
+    colVisible,
+    tPos,
+    tCols,
+    priceTypesData,
+    repricePositions,
+    saveProductPrices,
+    applyDiscountMarkup,
+    selectedRowIds.size,
+  ]);
+
   if (isLoading || !form) {
     return <div className="p-8 text-[var(--ms-text-muted)] text-sm">{tCommon('loading')}</div>;
   }
   if (!data) return <div className="p-8 text-sm">{tCommon('not_found')}</div>;
 
+  // moysklad locks a posted («Проведён») shipment — you unpost to edit (the FIFO
+  // cost + stock cascade is booked at post). Draft stays fully editable.
   const editable = !data.applicable;
+  const editableLines = editable;
   const canCreateReturn = data.state === 'posted';
 
-  // Totals — same structure as customer-orders.
-  const sumBig = BigInt(data.sumMinor || '0');
-  const vatBig = BigInt(data.vatSumMinor || '0');
-  const { subtotal, total } = docTotals(sumBig, vatBig);
+  // «Баланс» caption — counterparty balance consolidated to base сум.
+  const balanceDocRate = Number(effectiveRate) || 1;
+  const agentBaseBalanceMinor = (agentBalanceData?.items ?? []).reduce((acc, b) => {
+    const m = Number(b.balanceMinor || '0');
+    if (b.currency === 'UZS') return acc + m;
+    if (b.currency === form.currency) return acc + m * balanceDocRate;
+    return acc;
+  }, 0);
+  const balanceAbsMajor = Math.abs(agentBaseBalanceMinor) / 100;
+  const balanceQualifier =
+    agentBaseBalanceMinor > 0
+      ? tDetailHeader('owed_to_us')
+      : agentBaseBalanceMinor < 0
+        ? tDetailHeader('we_owe')
+        : '';
+
+  // Custom fields (доп. поля) distributed round-robin across the 3 meta columns.
+  const customFields = [...(attrMetaData?.items ?? [])].sort((a, b) => a.position - b.position);
+  const attrColumns: AttributeMetaRow[][] = [[], [], []];
+  customFields.forEach((m, i) => attrColumns[i % 3]?.push(m));
+  const renderCustomField = (m: AttributeMetaRow) => (
+    <DocumentMetaField key={m.id} label={m.name} required={m.required}>
+      <AttributeInput
+        meta={m}
+        value={form.attributes[m.code]}
+        onChange={(v) =>
+          setForm((s) => {
+            if (!s) return s;
+            const next = { ...s.attributes };
+            if (v === '' || v == null) delete next[m.code];
+            else next[m.code] = v;
+            return { ...s, attributes: next };
+          })
+        }
+        disabled={!editableLines}
+        testId={`field-attr-${m.code}`}
+      />
+    </DocumentMetaField>
+  );
+
+  // Rows with the live «Остаток» merged in (display-only; edits still target
+  // form.positions by id through onUpdate).
+  const rows: DetailPositionRow[] = form.positions.map((p) => ({
+    ...p,
+    stock: p.assortmentId ? (stockMap.get(p.assortmentId) ?? p.stock) : p.stock,
+  }));
+
+  const renderPositionNameCell = (row: DocPositionRow) => {
+    const p = row as DetailPositionRow;
+    const href = p.assortmentId ? `/products/${p.assortmentId}` : undefined;
+    return (
+      <PositionNameCell
+        imageUrl={p.imageUrl}
+        code={p.productCode}
+        label={p.productLabel}
+        placeholder={tForm('select_product')}
+        onPick={() => editableLines && setProductRowId(p.id)}
+        productHref={href}
+        onNavigate={href ? () => router.push(href) : undefined}
+        disabled={!editableLines}
+        testId={`pos-${p.id}-name`}
+      />
+    );
+  };
+
+  const fmtVat = (v: string) => (v === '' ? tCols('vat_none') : `${v}%`);
+  const renderVatCell = (row: DocPositionRow) => {
+    const p = row as DetailPositionRow;
+    const vat = p.vat ?? '';
+    if (!editableLines || editingVatId !== p.id) {
+      return (
+        <button
+          type="button"
+          disabled={!editableLines}
+          onClick={() => editableLines && setEditingVatId(p.id)}
+          className="block w-full cursor-text text-right tabular-nums disabled:cursor-default"
+          data-test-id={`pos-${p.id}-vat`}
+        >
+          {fmtVat(vat)}
+        </button>
+      );
+    }
+    const opts = ['', '0', '12'].includes(vat) ? ['', '0', '12'] : ['', '0', '12', vat];
+    return (
+      <select
+        // biome-ignore lint/a11y/noAutofocus: click-to-edit cell focuses the picker the user just opened
+        autoFocus
+        value={vat}
+        onChange={(e) => updatePosition(p.id, { vat: e.target.value })}
+        onBlur={() => setEditingVatId(null)}
+        className="h-7 w-full rounded-[var(--ms-radius-sm)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] px-1 text-[12px] focus:border-[var(--ms-border-focus)] focus:outline-none"
+        data-test-id={`pos-${p.id}-vat-select`}
+      >
+        {opts.map((v) => (
+          <option key={v} value={v}>
+            {fmtVat(v)}
+          </option>
+        ))}
+      </select>
+    );
+  };
+
+  // Live totals from the (editable) form positions.
+  const totals = form.positions.reduce(
+    (acc, p) => {
+      const t = computeLineTotal(p, form.vatIncluded);
+      return { net: acc.net + t.net, vat: acc.vat + t.vat, gross: acc.gross + t.gross };
+    },
+    { net: 0n, vat: 0n, gross: 0n },
+  );
   const totalQty = form.positions.reduce((acc, p) => acc + Number(p.quantity || 0), 0);
 
-  // «Прибыль» — gross profit = sale total − COGS (costSumMinor, set at post via
-  // FIFO). Surfaced only once cost is known (posted); a draft's costSumMinor=0
-  // keeps it hidden rather than showing full revenue as profit (1:1 plan §1.5).
-  const costSumBig = BigInt(data.costSumMinor || '0');
-  const profitMinor = costSumBig > 0n ? (sumBig - costSumBig).toString() : undefined;
-
-  // «Не оплачено» payment chip — demand payment progress (payedSumMinor is
-  // populated by the PaymentIn cascade). moysklad also shows «Запросить оплату»,
-  // but the from-demand create-payment is a disabled placeholder here, so only
-  // the status badge is surfaced (1:1 plan §2.3, mirrors invoices-out).
+  // «Не оплачено» pill.
+  const savedSumBig = BigInt(data.sumMinor || '0');
   const paidBig = BigInt(data.payedSumMinor || '0');
-  const isPaid = sumBig > 0n && paidBig >= sumBig;
-  const pillsSlot = !isPaid ? (
-    <Badge tone="warning" data-test-id="detail-header-unpaid">
-      {tDetailHeader('not_paid')}
-    </Badge>
-  ) : null;
+  const fullyPaid = savedSumBig > 0n && paidBig >= savedSumBig;
+  const partiallyPaid = paidBig > 0n && paidBig < savedSumBig;
+  const paymentTone = fullyPaid ? 'paid' : partiallyPaid ? 'partial' : 'unpaid';
+  const paymentPillLabel = fullyPaid
+    ? tDetailHeader('paid')
+    : partiallyPaid
+      ? tDetailHeader('partially_paid')
+      : tDetailHeader('not_paid');
 
-  // moysklad «Создать документ» for a demand lists 6 downstream docs in this
-  // order (live capture demands/detail/edit-dropdown-sozdat). Only «Возврат
-  // покупателя» is wired (its from-demand backend exists); the other five are
-  // label-parity placeholders rendered disabled until their from-demand
-  // endpoints land — same convention as the assortment «Копировать» /
-  // currencies mass-edit placeholders.
+  // moysklad «Создать документ» for a shipment. Only «Возврат покупателя» is wired
+  // (its from-demand backend exists); the rest are label-parity placeholders.
   const createMenuItems: CreateMenuItem[] = [
     { id: 'move', label: tDetailTitles('move'), disabled: true },
     { id: 'invoice-out', label: tDetailTitles('invoice_out'), disabled: true },
@@ -598,13 +1081,34 @@ export default function DemandDetailPage() {
     },
   ];
 
-  // Map the Provedeno checkbox to the FSM. Demand transitions are
-  // "post" / "unpost" (verb-style). Cancelled is terminal so the
-  // checkbox is rendered disabled by the parent (no callback).
-  const onToggleApplicable =
+  // «Проведено» — post/unpost (cancelled is terminal → no toggle).
+  const onApplicableChange =
     data.state === 'cancelled'
       ? undefined
       : (next: boolean) => transitionMut.mutate(next ? 'post' : 'unpost');
+
+  // «Статус» header — custom statuses (immediate setStatus) when the account has
+  // any, else the FSM state dropdown (verb transitions). Mirrors CO/supply.
+  const hasCustomStatuses = customStatuses.length > 0;
+  const statusHeaderProps = hasCustomStatuses
+    ? {
+        status: data.status?.id ?? '',
+        statusOptions: customStatuses.map((s) => ({
+          value: s.id,
+          label: s.name,
+          color: s.color ?? undefined,
+        })),
+        onStatusChange: (sid: string) => setStatusMut.mutate(sid),
+      }
+    : {
+        status: data.state,
+        statusOptions: DEMAND_STATES.map((slug) => ({
+          value: slug,
+          label: tStates(slug),
+          color: DEMAND_STATE_COLOR[slug],
+        })),
+        onStatusChange: (slug: string) => transitionMut.mutate(DEMAND_STATE_VERB[slug] ?? slug),
+      };
 
   return (
     <div
@@ -619,7 +1123,6 @@ export default function DemandDetailPage() {
         position={detailNav.position}
         onPrev={detailNav.onPrev}
         onNext={detailNav.onNext}
-        apiData={data}
         onClone={() => cloneMut.mutate()}
         onDelete={
           !data.applicable
@@ -637,53 +1140,45 @@ export default function DemandDetailPage() {
         }
         printEntity="demand"
         onSendEmail={() => setEmailOpen(true)}
-      />
-      <DetailHeader
-        titlePrefix={tDetailTitles('demand')}
-        name={data.name}
-        moment={data.moment}
-        stateLabel={tStates(data.state as 'draft' | 'posted' | 'cancelled')}
-        stateTone={documentStateTone(data.state)}
-        stateSlug={data.state}
-        stateMenuItems={(['draft', 'posted', 'cancelled'] as const).map((s) => ({
-          slug: s,
-          label: tStates(s),
-          color: DEMAND_STATE_COLOR[s],
-        }))}
-        onStateChange={(slug) => transitionMut.mutate(DEMAND_STATE_VERB[slug] ?? slug)}
-        stateBusy={transitionMut.isPending}
-        applicable={data.applicable}
-        onToggleApplicable={onToggleApplicable}
-        applicableBusy={transitionMut.isPending}
-        pillsSlot={pillsSlot}
-        authorSlot={
-          <div className="flex flex-col items-end gap-1 text-xs">
-            <div className="flex items-center gap-2">
-              <Avatar
-                name={data.owner?.name ?? '—'}
-                size="md"
-                data-test-id="detail-header-author-avatar"
-              />
-              <div className="flex flex-col leading-tight">
-                <div
-                  className="font-medium text-[var(--ms-text-primary)]"
-                  data-test-id="detail-header-owner"
-                >
-                  {data.owner?.name ?? '—'}
-                </div>
-                <div
-                  className="text-[var(--ms-text-muted)]"
-                  data-test-id="detail-header-owner-role"
-                >
-                  {tDetailHeader('role_primary')}
-                </div>
-              </div>
+        apiData={data}
+        apiTitle={`API · ${data.name}`}
+        rightSlot={
+          <div className="flex items-start gap-4">
+            <div
+              className="flex flex-col items-end text-right text-xs leading-tight"
+              data-test-id="doc-owner-readonly"
+            >
+              <span className="font-medium text-[var(--ms-text-brand)]">
+                {data.owner?.name ?? '—'}
+              </span>
+              <span className="text-[var(--ms-text-muted)]">
+                {tDetailHeader('changed')}: {formatDate(data.updatedAt)}
+              </span>
             </div>
-            <div className="text-[var(--ms-text-muted)]" data-test-id="detail-header-updated">
-              {tDetailHeader('changed')}: {data.owner?.name ?? '—'} {formatDate(data.updatedAt)}
-            </div>
+            <DocumentHistoryLink auditEntity="Demand" entityId={data.id} />
           </div>
         }
+      />
+
+      <DocumentHeader
+        {...docEditorLabels}
+        documentTypeLabel={tDetailTitles('demand')}
+        number={form.name}
+        onNumberChange={editable ? (v) => setForm((f) => f && { ...f, name: v }) : undefined}
+        date={form.moment}
+        onDateChange={editable ? (v) => setForm((f) => f && { ...f, moment: v }) : undefined}
+        status={statusHeaderProps.status}
+        statusOptions={statusHeaderProps.statusOptions}
+        onStatusChange={statusHeaderProps.onStatusChange}
+        paymentLabel={paymentPillLabel}
+        paymentTone={paymentTone}
+        // «Запросить оплату» is intentionally NOT wired: /payments-in/new reads
+        // `fromOrder` (a customer order), not a demand, so pre-fill-from-shipment
+        // isn't supported yet — surfacing the button would dead-end to an empty
+        // form. The payment PILL still renders. (Keeps the prior honest behaviour.)
+        applicable={data.applicable}
+        onApplicableChange={onApplicableChange}
+        applicableHelp={tDemands('applicable_help')}
       />
 
       <main className="flex-1 px-4 py-4">
@@ -725,20 +1220,50 @@ export default function DemandDetailPage() {
             })()}
           </Alert>
         )}
-        {saveError && (
-          <Alert tone="destructive" className="mb-3">
-            {saveError}
-          </Alert>
-        )}
-        {data.applicable && (
-          <Alert tone="info" className="mb-3">
-            {tCommon('locked_when_posted')}
-          </Alert>
-        )}
 
-        <DocumentMetaPanel>
-          <DocumentMetaRow>
-            <DocumentMetaField label={tFields('organization')} required>
+        {/* moysklad three-column meta. LEFT: Организация(+account) · Контрагент
+            (+Баланс) · Проект · Валюта(+rate). MIDDLE: Склад · Договор · Канал
+            продаж · План. дата отгрузки · Срок оплаты. RIGHT: Адрес доставки ·
+            Комментарий. Custom fields (доп. поля) fill a second row. */}
+        <DocumentMetaColumns>
+          <DocumentMetaColumn>
+            <DocumentMetaField
+              label={tFields('organization')}
+              required
+              helper={
+                form.organizationId ? (
+                  <CatalogPickerField
+                    value={
+                      form.organizationAccountId
+                        ? { id: form.organizationAccountId, label: form.organizationAccountLabel }
+                        : null
+                    }
+                    placeholder={tFields('organization_account')}
+                    onPick={() => editable && setOpenPicker('organizationAccount')}
+                    inlineFetcher={organizationAccountFetcher}
+                    onInlineSelect={(item) =>
+                      setForm(
+                        (s) =>
+                          s && {
+                            ...s,
+                            organizationAccountId: item.id,
+                            organizationAccountLabel: String(item.primary),
+                          },
+                      )
+                    }
+                    onClear={() =>
+                      editable &&
+                      setForm(
+                        (s) =>
+                          s && { ...s, organizationAccountId: null, organizationAccountLabel: '' },
+                      )
+                    }
+                    disabled={!editable}
+                    testId="field-organization-account"
+                  />
+                ) : undefined
+              }
+            >
               <CatalogPickerField
                 value={
                   form.organizationId
@@ -747,19 +1272,180 @@ export default function DemandDetailPage() {
                 }
                 placeholder={tFields('organization')}
                 onPick={() => editable && setOpenPicker('org')}
+                inlineFetcher={orgFetcher}
+                onInlineSelect={(item) =>
+                  setForm(
+                    (s) =>
+                      s && {
+                        ...s,
+                        organizationId: item.id,
+                        organizationLabel: String(item.primary),
+                        organizationAccountId: null,
+                        organizationAccountLabel: '',
+                      },
+                  )
+                }
                 onClear={() =>
                   editable &&
-                  setForm((s) => s && { ...s, organizationId: '', organizationLabel: '' })
+                  setForm(
+                    (s) =>
+                      s && {
+                        ...s,
+                        organizationId: '',
+                        organizationLabel: '',
+                        organizationAccountId: null,
+                        organizationAccountLabel: '',
+                      },
+                  )
                 }
                 disabled={!editable}
                 testId="field-organization"
               />
             </DocumentMetaField>
+            <DocumentMetaField
+              label={tFields('agent')}
+              required
+              helper={
+                form.agentId ? (
+                  <span
+                    data-test-id="agent-balance"
+                    className={
+                      agentBaseBalanceMinor !== 0
+                        ? 'text-[var(--ms-action-destructive)]'
+                        : 'text-[var(--ms-text-muted)]'
+                    }
+                  >
+                    {tDetailHeader('balance')}
+                    {balanceQualifier ? ` ${balanceQualifier}` : ''}:{' '}
+                    {balanceAbsMajor.toLocaleString('ru-RU', {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}{' '}
+                    {tCurShort('uzs')}
+                  </span>
+                ) : undefined
+              }
+            >
+              <CatalogPickerField
+                value={form.agentId ? { id: form.agentId, label: form.agentLabel } : null}
+                placeholder={tFields('agent')}
+                onPick={() => editable && setOpenPicker('agent')}
+                inlineFetcher={agentFetcher}
+                onInlineSelect={(item) =>
+                  setForm(
+                    (s) =>
+                      s && {
+                        ...s,
+                        agentId: item.id,
+                        agentLabel: String(item.primary),
+                        contractId: null,
+                        contractLabel: '',
+                      },
+                  )
+                }
+                onEdit={
+                  form.agentId
+                    ? () => window.open(`/counterparties/${form.agentId}`, '_blank', 'noopener')
+                    : undefined
+                }
+                editLabel={tCommon('edit')}
+                onClear={() =>
+                  editable &&
+                  setForm(
+                    (s) =>
+                      s && {
+                        ...s,
+                        agentId: '',
+                        agentLabel: '',
+                        contractId: null,
+                        contractLabel: '',
+                      },
+                  )
+                }
+                disabled={!editable}
+                testId="field-agent"
+              />
+            </DocumentMetaField>
+            <DocumentMetaField label={tFields('project')}>
+              <CatalogPickerField
+                value={form.projectId ? { id: form.projectId, label: form.projectLabel } : null}
+                placeholder={tFields('project')}
+                onPick={() => editable && setOpenPicker('project')}
+                inlineFetcher={projectFetcher}
+                onInlineSelect={(item) =>
+                  setForm(
+                    (s) => s && { ...s, projectId: item.id, projectLabel: String(item.primary) },
+                  )
+                }
+                onClear={() =>
+                  editable && setForm((s) => s && { ...s, projectId: null, projectLabel: '' })
+                }
+                disabled={!editable}
+                testId="field-project"
+              />
+            </DocumentMetaField>
+            <DocumentMetaField
+              label={tDetailForm('currency')}
+              required
+              helper={
+                form.currency !== 'UZS' ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="tabular-nums">
+                      1 {form.currency} ={' '}
+                      {Number(effectiveRate).toLocaleString('ru-RU', { maximumFractionDigits: 4 })}{' '}
+                      UZS
+                    </span>
+                    {editable && (
+                      <button
+                        type="button"
+                        onClick={() => setRateModalOpen(true)}
+                        className="shrink-0 text-[var(--ms-text-brand)] text-xs"
+                        aria-label={tForm('rate_edit')}
+                        data-test-id="rate-edit"
+                      >
+                        ✎
+                      </button>
+                    )}
+                  </span>
+                ) : undefined
+              }
+            >
+              <NativeSelect
+                value={form.currency}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setRateOverride(null);
+                  setForm((s) => s && { ...s, currency: next });
+                }}
+                disabled={!editable}
+                data-test-id="field-currency"
+              >
+                {currencies.length === 0 && <option value={form.currency}>{form.currency}</option>}
+                {currencies.map((c) => (
+                  <option key={c.id} value={c.isoCode}>
+                    {c.name} ({c.isoCode})
+                  </option>
+                ))}
+              </NativeSelect>
+            </DocumentMetaField>
+          </DocumentMetaColumn>
+
+          <DocumentMetaColumn>
             <DocumentMetaField label={tFields('store')} required>
               <CatalogPickerField
                 value={form.storeId ? { id: form.storeId, label: form.storeLabel } : null}
                 placeholder={tFields('store')}
                 onPick={() => editable && setOpenPicker('store')}
+                inlineFetcher={storeFetcher}
+                onInlineSelect={(item) =>
+                  setForm((s) => s && { ...s, storeId: item.id, storeLabel: String(item.primary) })
+                }
+                onEdit={
+                  form.storeId
+                    ? () => window.open(`/stores/${form.storeId}`, '_blank', 'noopener')
+                    : undefined
+                }
+                editLabel={tCommon('edit')}
                 onClear={() =>
                   editable && setForm((s) => s && { ...s, storeId: '', storeLabel: '' })
                 }
@@ -767,60 +1453,24 @@ export default function DemandDetailPage() {
                 testId="field-store"
               />
             </DocumentMetaField>
-          </DocumentMetaRow>
-          <DocumentMetaRow>
-            <DocumentMetaField label={tFields('agent')} required>
+            <DocumentMetaField label={tFields('contract')}>
               <CatalogPickerField
-                value={form.agentId ? { id: form.agentId, label: form.agentLabel } : null}
-                placeholder={tFields('agent')}
-                onPick={() => editable && setOpenPicker('agent')}
-                onClear={() =>
-                  editable && setForm((s) => s && { ...s, agentId: '', agentLabel: '' })
+                value={form.contractId ? { id: form.contractId, label: form.contractLabel } : null}
+                placeholder={tFields('contract')}
+                onPick={() => editable && form.agentId && setOpenPicker('contract')}
+                inlineFetcher={contractFetcher}
+                onInlineSelect={(item) =>
+                  setForm(
+                    (s) => s && { ...s, contractId: item.id, contractLabel: String(item.primary) },
+                  )
                 }
-                disabled={!editable}
-                testId="field-agent"
+                onClear={() =>
+                  editable && setForm((s) => s && { ...s, contractId: null, contractLabel: '' })
+                }
+                disabled={!editable || !form.agentId}
+                testId="field-contract"
               />
             </DocumentMetaField>
-            <DocumentMetaField label={tFields('posted_at')}>
-              <Input
-                value={data.postedAt ? formatDate(data.postedAt) : ''}
-                disabled
-                placeholder="—"
-                data-test-id="field-posted-at"
-              />
-            </DocumentMetaField>
-          </DocumentMetaRow>
-          <DocumentMetaRow>
-            <DocumentMetaField label={tDetailForm('currency')} required>
-              {/* moysklad shows «Валюта документа» on the detail. Read-only here —
-                  changing an existing document's currency is a rate-recompute
-                  flow that isn't wired (the form doesn't track currency edits). */}
-              <NativeSelect value={data.currency} disabled data-test-id="field-currency">
-                <option value="UZS">{tForm('currency_uzs')}</option>
-                <option value="USD">{tForm('currency_usd')}</option>
-                <option value="EUR">{tForm('currency_eur')}</option>
-                <option value="RUB">{tForm('currency_rub')}</option>
-              </NativeSelect>
-            </DocumentMetaField>
-          </DocumentMetaRow>
-          <DocumentMetaRow>
-            <DocumentMetaField label={tDetailTitles('customer_order')} fullWidth>
-              <div className="flex h-9 items-center px-2 text-sm">
-                {data.customerOrder ? (
-                  <a
-                    href={`/customer-orders/${data.customerOrder.id}`}
-                    className="text-[var(--ms-text-brand)] underline-offset-2 hover:underline"
-                    data-test-id="field-customer-order"
-                  >
-                    {data.customerOrder.name}
-                  </a>
-                ) : (
-                  <span className="text-[var(--ms-text-muted)]">{tCommon('none')}</span>
-                )}
-              </div>
-            </DocumentMetaField>
-          </DocumentMetaRow>
-          <DocumentMetaRow>
             <DocumentMetaField label={tFields('sales_channel')}>
               <CatalogPickerField
                 value={
@@ -830,6 +1480,17 @@ export default function DemandDetailPage() {
                 }
                 placeholder={tFields('sales_channel')}
                 onPick={() => editable && setOpenPicker('salesChannel')}
+                inlineFetcher={salesChannelFetcher}
+                onInlineSelect={(item) =>
+                  setForm(
+                    (s) =>
+                      s && {
+                        ...s,
+                        salesChannelId: item.id,
+                        salesChannelLabel: String(item.primary),
+                      },
+                  )
+                }
                 onClear={() =>
                   editable &&
                   setForm((s) => s && { ...s, salesChannelId: null, salesChannelLabel: '' })
@@ -838,350 +1499,510 @@ export default function DemandDetailPage() {
                 testId="field-sales-channel"
               />
             </DocumentMetaField>
-            <DocumentMetaField label={tFields('contract')}>
-              <CatalogPickerField
-                value={form.contractId ? { id: form.contractId, label: form.contractLabel } : null}
-                placeholder={tFields('contract')}
-                onPick={() => editable && setOpenPicker('contract')}
-                onClear={() =>
-                  editable && setForm((s) => s && { ...s, contractId: null, contractLabel: '' })
-                }
+            <DocumentMetaField label={tDemands('delivery_date')}>
+              <DatePicker
+                value={form.deliveryPlannedMoment || null}
+                onChange={(d) => setForm((s) => s && { ...s, deliveryPlannedMoment: d })}
+                locale="ru-RU"
                 disabled={!editable}
-                testId="field-contract"
+                testId="field-delivery-planned"
               />
             </DocumentMetaField>
-          </DocumentMetaRow>
-          <DocumentMetaRow>
-            <DocumentMetaField label={tFields('project')}>
-              <CatalogPickerField
-                value={form.projectId ? { id: form.projectId, label: form.projectLabel } : null}
-                placeholder={tFields('project')}
-                onPick={() => editable && setOpenPicker('project')}
-                onClear={() =>
-                  editable && setForm((s) => s && { ...s, projectId: null, projectLabel: '' })
-                }
+            <DocumentMetaField label={tFields('payment_planned')}>
+              <DatePicker
+                value={form.paymentPlannedMoment || null}
+                onChange={(d) => setForm((s) => s && { ...s, paymentPlannedMoment: d })}
+                locale="ru-RU"
                 disabled={!editable}
-                testId="field-project"
+                testId="field-payment-planned"
               />
             </DocumentMetaField>
+          </DocumentMetaColumn>
+
+          <DocumentMetaColumn>
             <DocumentMetaField label={tFields('delivery_address')}>
-              <Input
+              <Textarea
+                rows={2}
                 value={form.shipmentAddress}
                 onChange={(e) => setForm((s) => s && { ...s, shipmentAddress: e.target.value })}
                 disabled={!editable}
                 data-test-id="field-shipment-address"
               />
             </DocumentMetaField>
-          </DocumentMetaRow>
-          <DocumentMetaRow>
-            <DocumentMetaField label={tFields('organization_account')}>
-              <CatalogPickerField
-                value={
-                  form.organizationAccountId
-                    ? { id: form.organizationAccountId, label: form.organizationAccountLabel }
-                    : null
-                }
-                placeholder={tFields('organization_account')}
-                onPick={() => editable && setOpenPicker('organizationAccount')}
-                onClear={() =>
-                  editable &&
-                  setForm(
-                    (s) => s && { ...s, organizationAccountId: null, organizationAccountLabel: '' },
-                  )
-                }
-                disabled={!editable}
-                testId="field-organization-account"
-              />
-            </DocumentMetaField>
-            <DocumentMetaField label={tDemands('delivery_date')}>
-              <Input
-                type="date"
-                value={form.deliveryPlannedMoment}
-                onChange={(e) =>
-                  setForm((s) => s && { ...s, deliveryPlannedMoment: e.target.value })
-                }
-                disabled={!editable}
-                data-test-id="field-delivery-planned"
-              />
-            </DocumentMetaField>
-          </DocumentMetaRow>
-          <DocumentMetaRow>
-            <DocumentMetaField label={tFields('payment_planned')}>
-              <Input
-                type="date"
-                value={form.paymentPlannedMoment}
-                onChange={(e) =>
-                  setForm((s) => s && { ...s, paymentPlannedMoment: e.target.value })
-                }
-                disabled={!editable}
-                data-test-id="field-payment-planned"
-              />
-            </DocumentMetaField>
-          </DocumentMetaRow>
-          <DocumentMetaRow>
             <DocumentMetaField label={tFields('description')}>
-              <Input
+              <Textarea
+                rows={2}
                 value={form.description}
                 onChange={(e) => setForm((s) => s && { ...s, description: e.target.value })}
+                placeholder={tFields('description')}
+                aria-label={tFields('description')}
                 disabled={!editable}
-                data-test-id="field-description"
+                data-test-id="field-description-meta"
               />
             </DocumentMetaField>
-          </DocumentMetaRow>
-        </DocumentMetaPanel>
+            {data.customerOrder && (
+              <DocumentMetaField label={tDetailTitles('customer_order')}>
+                <div className="flex h-9 items-center px-2 text-sm">
+                  <a
+                    href={`/customer-orders/${data.customerOrder.id}`}
+                    className="text-[var(--ms-text-brand)] underline-offset-2 hover:underline"
+                    data-test-id="field-customer-order"
+                  >
+                    {data.customerOrder.name}
+                  </a>
+                </div>
+              </DocumentMetaField>
+            )}
+          </DocumentMetaColumn>
+        </DocumentMetaColumns>
 
-        {/* «Другие поля» — moysklad groups the secondary shipping/overhead meta
-            under an orange collapsible disclosure (mirrors /demands/new). The
-            CORE header refs stay in the always-visible grid above; these
-            secondary fields collapse by default. Every field keeps its exact
-            value/onChange/disabled wiring — only the grouping changed. */}
-        <DocumentDisclosurePanel title={tForm('other_fields')} defaultOpen={false}>
-          <DocumentMetaPanel>
-            <DocumentMetaRow>
-              <DocumentMetaField label={tDetailForm('overhead_sum')}>
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  inputMode="decimal"
-                  value={form.overheadMajor}
-                  placeholder="0"
-                  onChange={(e) => setForm((s) => s && { ...s, overheadMajor: e.target.value })}
-                  disabled={!editable}
-                  data-test-id="field-overhead-sum"
-                />
-              </DocumentMetaField>
-              <DocumentMetaField label={tDetailForm('overhead_distribution')}>
-                <NativeSelect
-                  value={form.overheadDistribution}
-                  onChange={(e) =>
-                    setForm(
-                      (s) =>
-                        s && {
-                          ...s,
-                          overheadDistribution: e.target.value as FormState['overheadDistribution'],
-                        },
-                    )
-                  }
-                  data-test-id="field-overhead-distribution"
-                  disabled={!editable || !(Number(form.overheadMajor) > 0)}
-                >
-                  <option value="PRICE">{tDetailForm('overhead_by_price')}</option>
-                  <option value="WEIGHT">{tDetailForm('overhead_by_weight')}</option>
-                  <option value="VOLUME">{tDetailForm('overhead_by_volume')}</option>
-                  <option value="QUANTITY">{tDetailForm('overhead_by_quantity')}</option>
-                </NativeSelect>
-              </DocumentMetaField>
-            </DocumentMetaRow>
-            <DocumentMetaRow>
-              <DocumentMetaField label={tFields('consignor')}>
-                <CatalogPickerField
-                  value={
-                    form.consignorId ? { id: form.consignorId, label: form.consignorLabel } : null
-                  }
-                  placeholder={tFields('consignor')}
-                  onPick={() => editable && setOpenPicker('consignor')}
-                  onClear={() =>
-                    editable && setForm((s) => s && { ...s, consignorId: null, consignorLabel: '' })
-                  }
-                  disabled={!editable}
-                  testId="field-consignor"
-                />
-              </DocumentMetaField>
-              <DocumentMetaField label={tFields('consignee')}>
-                <CatalogPickerField
-                  value={
-                    form.consigneeId ? { id: form.consigneeId, label: form.consigneeLabel } : null
-                  }
-                  placeholder={tFields('consignee')}
-                  onPick={() => editable && setOpenPicker('consignee')}
-                  onClear={() =>
-                    editable && setForm((s) => s && { ...s, consigneeId: null, consigneeLabel: '' })
-                  }
-                  disabled={!editable}
-                  testId="field-consignee"
-                />
-              </DocumentMetaField>
-            </DocumentMetaRow>
-            <DocumentMetaRow>
-              <DocumentMetaField label={tFields('carrier')}>
-                <CatalogPickerField
-                  value={form.carrierId ? { id: form.carrierId, label: form.carrierLabel } : null}
-                  placeholder={tFields('carrier')}
-                  onPick={() => editable && setOpenPicker('carrier')}
-                  onClear={() =>
-                    editable && setForm((s) => s && { ...s, carrierId: null, carrierLabel: '' })
-                  }
-                  disabled={!editable}
-                  testId="field-carrier"
-                />
-              </DocumentMetaField>
-              <DocumentMetaField label={tFields('cargo_name')}>
-                <Input
-                  value={form.cargoName}
-                  onChange={(e) => setForm((s) => s && { ...s, cargoName: e.target.value })}
-                  disabled={!editable}
-                  data-test-id="field-cargo-name"
-                />
-              </DocumentMetaField>
-            </DocumentMetaRow>
-            <DocumentMetaRow>
-              <DocumentMetaField label={tFields('transport_facility')}>
-                <Input
-                  value={form.transportFacility}
-                  onChange={(e) => setForm((s) => s && { ...s, transportFacility: e.target.value })}
-                  disabled={!editable}
-                  data-test-id="field-transport-facility"
-                />
-              </DocumentMetaField>
-              <DocumentMetaField label={tFields('car_number')}>
-                <Input
-                  value={form.carNumber}
-                  onChange={(e) => setForm((s) => s && { ...s, carNumber: e.target.value })}
-                  disabled={!editable}
-                  data-test-id="field-car-number"
-                />
-              </DocumentMetaField>
-            </DocumentMetaRow>
-            <DocumentMetaRow>
-              <DocumentMetaField label={tFields('places_count')}>
-                <Input
-                  type="number"
-                  min="0"
-                  value={form.placesCount}
-                  onChange={(e) => setForm((s) => s && { ...s, placesCount: e.target.value })}
-                  disabled={!editable}
-                  data-test-id="field-places-count"
-                />
-              </DocumentMetaField>
-              <DocumentMetaField label={tFields('shipping_doc_no')}>
-                <Input
-                  value={form.shippingDocNo}
-                  onChange={(e) => setForm((s) => s && { ...s, shippingDocNo: e.target.value })}
-                  disabled={!editable}
-                  data-test-id="field-shipping-doc-no"
-                />
-              </DocumentMetaField>
-            </DocumentMetaRow>
-            <DocumentMetaRow>
-              <DocumentMetaField label={tFields('shipping_doc_date')}>
-                <Input
-                  type="date"
-                  value={form.shippingDocDate}
-                  onChange={(e) => setForm((s) => s && { ...s, shippingDocDate: e.target.value })}
-                  disabled={!editable}
-                  data-test-id="field-shipping-doc-date"
-                />
-              </DocumentMetaField>
-              <DocumentMetaField label={tFields('state_contract_id')}>
-                <Input
-                  value={form.stateContractId}
-                  onChange={(e) => setForm((s) => s && { ...s, stateContractId: e.target.value })}
-                  disabled={!editable}
-                  data-test-id="field-state-contract-id"
-                />
-              </DocumentMetaField>
-              <DocumentMetaField label={tDetailForm('external_code')}>
-                <Input
-                  value={form.externalCode}
-                  onChange={(e) => setForm((s) => s && { ...s, externalCode: e.target.value })}
-                  disabled={!editable}
-                  placeholder="—"
-                  data-test-id="field-external-code"
-                />
-              </DocumentMetaField>
-            </DocumentMetaRow>
-            <DocumentMetaRow>
-              <DocumentMetaField label={tFields('shipper_instructions')} fullWidth>
-                <Input
-                  value={form.shipperInstructions}
-                  onChange={(e) =>
-                    setForm((s) => s && { ...s, shipperInstructions: e.target.value })
-                  }
-                  disabled={!editable}
-                  data-test-id="field-shipper-instructions"
-                />
-              </DocumentMetaField>
-            </DocumentMetaRow>
-          </DocumentMetaPanel>
-        </DocumentDisclosurePanel>
+        {customFields.length > 0 && (
+          <DocumentMetaColumns>
+            <DocumentMetaColumn>{attrColumns[0]?.map(renderCustomField)}</DocumentMetaColumn>
+            <DocumentMetaColumn>{attrColumns[1]?.map(renderCustomField)}</DocumentMetaColumn>
+            <DocumentMetaColumn>{attrColumns[2]?.map(renderCustomField)}</DocumentMetaColumn>
+          </DocumentMetaColumns>
+        )}
 
-        {/* Tab strip + content swap (Pozitsiyalar / Bog'liq / Fayllar / Tarix). */}
-        <div className="mt-4">
+        <div className="mt-6">
           <DetailContentTabs
             auditEntity="Demand"
             entityId={data.id}
-            positionsLabel={tDetailTabs('main')}
+            positionsLabel={tDetailTabs('positions')}
             relatedGroups={[]}
+            relatedSlot={
+              <RelatedDocsTab
+                current={{
+                  id: data.id,
+                  name: data.name,
+                  moment: data.moment,
+                  state: data.state,
+                  sumMinor: data.sumMinor,
+                  kind: 'demand',
+                }}
+                // «Привязать документ» — the tab owns the «Привязка документа»
+                // modal (pre-scoped to this shipment's refs) + manual links +
+                // unlink + the «?link=new» auto-open hand-off.
+                linkable={{
+                  entityType: 'Demand',
+                  agent: data.agent,
+                  organization: data.organization,
+                  storeTo: data.store,
+                }}
+                linked={[
+                  ...(related?.customerOrder
+                    ? [{ ...related.customerOrder, kind: 'customer-order' as const }]
+                    : []),
+                  ...(related?.salesReturns ?? []).map((d) => ({
+                    ...d,
+                    kind: 'sales-return' as const,
+                  })),
+                  ...(related?.moves ?? []).map((d) => ({ ...d, kind: 'move' as const })),
+                ]}
+              />
+            }
             filesSlot={<AttachmentsSection entity="Demand" entityId={data.id} />}
+            tasksSlot={<DocumentTasksSection entity="Demand" entityId={data.id} />}
+            historyInline={false}
           >
-            <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
-              <div className="min-w-0">
-                <PositionEditor<ProductItem>
-                  labels={positionLabels}
-                  hideTotals
-                  positions={form.positions}
-                  onChange={(next) => setForm((s) => s && { ...s, positions: next })}
-                  vatEnabled={form.vatEnabled}
-                  vatIncluded={form.vatIncluded}
-                  productFetcher={productFetcher}
-                  onPickProduct={(raw) => ({
-                    priceMinor: resolveDefaultSalePriceOrZero(raw?.salePrices),
-                    vat: raw?.vat != null ? String(raw.vat) : '0',
-                    productUom: raw?.uom ?? null,
-                  })}
-                  readOnly={!editable}
-                />
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <Button
-                    variant="tertiary"
-                    size="sm"
-                    onClick={() => setOpenCatalogPicker(true)}
-                    disabled={!editable}
-                    data-test-id="position-add-from-catalog"
-                  >
-                    <Icons.create className="h-4 w-4" />
-                    {tDetailForm('add_from_catalog')}
-                  </Button>
+            <div className="space-y-4">
+              {/* Owner 2026-07-23: «Договорная цена» — blue, at the table's OUTER
+                  top-right corner (same spot in every section). */}
+              {editableLines && (
+                <div className="-mb-2.5 flex justify-end">
+                  <PositionAgreementButton
+                    totalMinor={totals.gross}
+                    currency={form.currency}
+                    labels={{
+                      button: tPos('agreement_button'),
+                      total: tPos('agreement_total'),
+                      amount: tPos('agreement_amount'),
+                      add: tPos('agreement_add'),
+                      subtract: tPos('agreement_subtract'),
+                      save: tPos('pick_modal_save'),
+                      cancel: tPos('pick_modal_cancel'),
+                    }}
+                    onApply={applyAgreement}
+                  />
                 </div>
+              )}
+              <PositionTable
+                columns={positionColumns}
+                // moysklad sales-grid: «Остаток»/«Доступно» ≤ 0 shows red.
+                warnStock
+                emptyText={tPos('empty')}
+                rows={rows}
+                onUpdate={(rowId, patch) =>
+                  updatePosition(rowId, patch as Partial<DetailPositionRow>)
+                }
+                onRemove={removePosition}
+                onDuplicate={duplicatePosition}
+                onReorder={reorderPositions}
+                onSortPositions={
+                  editableLines
+                    ? (by) =>
+                        setForm((f) =>
+                          f
+                            ? {
+                                ...f,
+                                positions: [...f.positions].sort((a, b) =>
+                                  (by === 'name'
+                                    ? (a.productLabel ?? '')
+                                    : (a.productCode ?? '')
+                                  ).localeCompare(
+                                    by === 'name' ? (b.productLabel ?? '') : (b.productCode ?? ''),
+                                    'ru',
+                                  ),
+                                ),
+                              }
+                            : f,
+                        )
+                    : undefined
+                }
+                sortByNameLabel={tPos('sort_by_name')}
+                sortByCodeLabel={tPos('sort_by_code')}
+                renderNameCell={renderPositionNameCell}
+                onReplace={(rowId) => editableLines && setProductRowId(rowId)}
+                renderVatCell={renderVatCell}
+                vatIncluded={form.vatIncluded}
+                selectedIds={selectedRowIds}
+                onSelectionChange={setSelectedRowIds}
+                readOnly={!editableLines}
+                footerToolbar={
+                  editableLines ? (
+                    <PositionInlineAdd
+                      placeholder={tPos('addPositionPlaceholder')}
+                      addFromCatalogLabel={tPos('addFromCatalog')}
+                      checkCompletenessLabel={tPos('checkCompleteness')}
+                      onSearch={async (q) => {
+                        const r = await api.get<{ items: ProductItem[]; total: number }>(
+                          `/products?search=${encodeURIComponent(q)}&limit=20`,
+                        );
+                        return {
+                          items: r.items.map((p) => ({
+                            id: p.id,
+                            primary: p.name,
+                            code: p.code ?? undefined,
+                            available: p.stock?.available != null ? Number(p.stock.available) : 0,
+                            priceMinor: resolveDefaultSalePriceOrZero(p.salePrices),
+                            uomLabel: p.uom ?? undefined,
+                            raw: p,
+                          })),
+                          total: r.total ?? r.items.length,
+                        };
+                      }}
+                      sortAvailableLabel={tPos('sortByAvailable')}
+                      moreItemsLabel={(n) => tPos('moreItems', { count: n })}
+                      createProductLabel={(qq) => tPos('createProductNamed', { query: qq })}
+                      onCreateProduct={() => router.push('/products/new')}
+                      pickModal={{
+                        currency: form.currency,
+                        labels: {
+                          stock: tPos('pick_modal_stock'),
+                          price: tPos('pick_modal_price'),
+                          quantity: tPos('pick_modal_quantity'),
+                          salePrice: tPos('pick_modal_sale_price'),
+                          priceThisSale: tPos('pick_modal_price_this_sale'),
+                          pricePermanent: tPos('pick_modal_price_permanent'),
+                          save: tPos('pick_modal_save'),
+                          cancel: tPos('pick_modal_cancel'),
+                        },
+                      }}
+                      onPick={(item, entry) => {
+                        if (entry?.permanent) {
+                          // «Doimiy narx» — persist to the product card (owner 2026-07-17).
+                          api
+                            .post(`/products/${item.id}/sale-price`, {
+                              priceMinor: entry.priceMinor,
+                            })
+                            .then(() => toast.success(tPos('pick_modal_price_saved')))
+                            .catch(() => toast.error(tPos('pick_modal_price_save_failed')));
+                        }
+                        const raw = item.raw as ProductItem | undefined;
+                        const defaultPrice = resolveDefaultSalePriceOrZero(raw?.salePrices);
+                        const newId = uid();
+                        setForm((s) =>
+                          s
+                            ? {
+                                ...s,
+                                positions: [
+                                  ...s.positions,
+                                  {
+                                    id: newId,
+                                    assortmentId: item.id,
+                                    productLabel: item.primary,
+                                    productCode: raw?.code ?? undefined,
+                                    productArticle: raw?.article ?? undefined,
+                                    productUom: raw?.uom ?? null,
+                                    quantity: entry?.quantity ?? '1',
+                                    priceMinor: entry?.priceMinor ?? defaultPrice,
+                                    discount: '0',
+                                    vat: raw?.vat != null ? String(raw.vat) : '12',
+                                    vatEnabled: s.vatEnabled,
+                                    stock: raw?.stock?.onHand,
+                                    available: raw?.stock?.available,
+                                    weightG: raw?.weightG ?? undefined,
+                                    volumeML: raw?.volumeML ?? undefined,
+                                    imageUrl: raw?.mainImageId
+                                      ? imageRawUrl(raw.mainImageId)
+                                      : undefined,
+                                    salePrices: raw?.salePrices ?? null,
+                                  },
+                                ],
+                              }
+                            : s,
+                        );
+                        // owner 2026-07-18: returning the id hands focus to the new
+                        // row's «Кол-во» (modal → table entry chain).
+                        return newId;
+                      }}
+                      onAddFromCatalog={() => setOpenCatalogPicker(true)}
+                      onCheckCompleteness={() => {
+                        if (!form.storeId) {
+                          toast.error(tDemands('select_store_first'));
+                          return;
+                        }
+                        if (form.positions.length === 0) {
+                          toast.error(tDemands('add_position_first'));
+                          return;
+                        }
+                      }}
+                    />
+                  ) : undefined
+                }
+              />
+
+              <div className="flex flex-col items-start justify-between gap-4 sm:flex-row">
+                <div className="flex w-full flex-col gap-3 text-sm sm:w-[520px] sm:max-w-full">
+                  <Textarea
+                    rows={3}
+                    value={form.description}
+                    onChange={(e) => setForm((s) => s && { ...s, description: e.target.value })}
+                    placeholder={tFields('description')}
+                    aria-label={tFields('description')}
+                    disabled={!editable}
+                    data-test-id="field-description"
+                  />
+                </div>
+                <DocumentTotalsPanel
+                  subtotalMinor={totals.net}
+                  vatMinor={totals.vat}
+                  totalMinor={totals.gross}
+                  currency={form.currency}
+                  vatEnabled={form.vatEnabled}
+                  onVatEnabledChange={
+                    editable ? (v) => setForm((s) => s && { ...s, vatEnabled: v }) : undefined
+                  }
+                  vatIncluded={form.vatIncluded}
+                  onVatIncludedChange={
+                    editable ? (v) => setForm((s) => s && { ...s, vatIncluded: v }) : undefined
+                  }
+                  quantity={totalQty}
+                />
               </div>
 
-              <DetailTotalsSidebar
-                subtotalMinor={subtotal.toString()}
-                currency={data.currency}
-                vatMinor={data.vatSumMinor}
-                vatEnabled={form.vatEnabled}
-                vatIncluded={form.vatIncluded}
-                totalMinor={total.toString()}
-                totalQty={totalQty}
-                readOnly={!editable}
-                profitMinor={profitMinor}
-                onToggleVatEnabled={(v) => setForm((s) => s && { ...s, vatEnabled: v })}
-                onToggleVatIncluded={(v) => setForm((s) => s && { ...s, vatIncluded: v })}
-              />
+              {/* «Другие поля» — transport block + Накладные расходы + Внешний код +
+                  Проведён, hidden by default exactly like moysklad + /demands/new. */}
+              <DocumentDisclosurePanel title={tForm('other_fields')} defaultOpen={false}>
+                <DocumentMetaColumns>
+                  <DocumentMetaColumn>
+                    <DocumentMetaField label={tFields('consignor')}>
+                      <CatalogPickerField
+                        value={
+                          form.consignorId
+                            ? { id: form.consignorId, label: form.consignorLabel }
+                            : null
+                        }
+                        placeholder={tFields('consignor')}
+                        onPick={() => editable && setOpenPicker('consignor')}
+                        onClear={() =>
+                          editable &&
+                          setForm((s) => s && { ...s, consignorId: null, consignorLabel: '' })
+                        }
+                        disabled={!editable}
+                        testId="field-consignor"
+                      />
+                    </DocumentMetaField>
+                    <DocumentMetaField label={tFields('consignee')}>
+                      <CatalogPickerField
+                        value={
+                          form.consigneeId
+                            ? { id: form.consigneeId, label: form.consigneeLabel }
+                            : null
+                        }
+                        placeholder={tFields('consignee')}
+                        onPick={() => editable && setOpenPicker('consignee')}
+                        onClear={() =>
+                          editable &&
+                          setForm((s) => s && { ...s, consigneeId: null, consigneeLabel: '' })
+                        }
+                        disabled={!editable}
+                        testId="field-consignee"
+                      />
+                    </DocumentMetaField>
+                    <DocumentMetaField label={tFields('carrier')}>
+                      <CatalogPickerField
+                        value={
+                          form.carrierId ? { id: form.carrierId, label: form.carrierLabel } : null
+                        }
+                        placeholder={tFields('carrier')}
+                        onPick={() => editable && setOpenPicker('carrier')}
+                        onClear={() =>
+                          editable &&
+                          setForm((s) => s && { ...s, carrierId: null, carrierLabel: '' })
+                        }
+                        disabled={!editable}
+                        testId="field-carrier"
+                      />
+                    </DocumentMetaField>
+                    <DocumentMetaField label={tDetailForm('overhead_sum')}>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        inputMode="decimal"
+                        value={form.overheadMajor}
+                        placeholder="0"
+                        onChange={(e) =>
+                          setForm((s) => s && { ...s, overheadMajor: e.target.value })
+                        }
+                        disabled={!editable}
+                        data-test-id="field-overhead-sum"
+                      />
+                    </DocumentMetaField>
+                    <DocumentMetaField label={tDetailForm('overhead_distribution')}>
+                      <NativeSelect
+                        value={form.overheadDistribution}
+                        onChange={(e) =>
+                          setForm(
+                            (s) =>
+                              s && {
+                                ...s,
+                                overheadDistribution: e.target
+                                  .value as FormState['overheadDistribution'],
+                              },
+                          )
+                        }
+                        data-test-id="field-overhead-distribution"
+                        disabled={!editable || !(Number(form.overheadMajor) > 0)}
+                      >
+                        <option value="PRICE">{tDetailForm('overhead_by_price')}</option>
+                        <option value="WEIGHT">{tDetailForm('overhead_by_weight')}</option>
+                        <option value="VOLUME">{tDetailForm('overhead_by_volume')}</option>
+                        <option value="QUANTITY">{tDetailForm('overhead_by_quantity')}</option>
+                      </NativeSelect>
+                    </DocumentMetaField>
+                  </DocumentMetaColumn>
+
+                  <DocumentMetaColumn>
+                    <DocumentMetaField label={tFields('cargo_name')}>
+                      <Input
+                        value={form.cargoName}
+                        onChange={(e) => setForm((s) => s && { ...s, cargoName: e.target.value })}
+                        disabled={!editable}
+                        data-test-id="field-cargo-name"
+                      />
+                    </DocumentMetaField>
+                    <DocumentMetaField label={tFields('transport_facility')}>
+                      <Input
+                        value={form.transportFacility}
+                        onChange={(e) =>
+                          setForm((s) => s && { ...s, transportFacility: e.target.value })
+                        }
+                        disabled={!editable}
+                        data-test-id="field-transport-facility"
+                      />
+                    </DocumentMetaField>
+                    <DocumentMetaField label={tFields('car_number')}>
+                      <Input
+                        value={form.carNumber}
+                        onChange={(e) => setForm((s) => s && { ...s, carNumber: e.target.value })}
+                        disabled={!editable}
+                        data-test-id="field-car-number"
+                      />
+                    </DocumentMetaField>
+                    <DocumentMetaField label={tFields('places_count')}>
+                      <Input
+                        type="number"
+                        min="0"
+                        value={form.placesCount}
+                        onChange={(e) => setForm((s) => s && { ...s, placesCount: e.target.value })}
+                        disabled={!editable}
+                        data-test-id="field-places-count"
+                      />
+                    </DocumentMetaField>
+                    <DocumentMetaField label={tFields('shipper_instructions')}>
+                      <Input
+                        value={form.shipperInstructions}
+                        onChange={(e) =>
+                          setForm((s) => s && { ...s, shipperInstructions: e.target.value })
+                        }
+                        disabled={!editable}
+                        data-test-id="field-shipper-instructions"
+                      />
+                    </DocumentMetaField>
+                  </DocumentMetaColumn>
+
+                  <DocumentMetaColumn>
+                    <DocumentMetaField label={tFields('shipping_doc_no')}>
+                      <Input
+                        value={form.shippingDocNo}
+                        onChange={(e) =>
+                          setForm((s) => s && { ...s, shippingDocNo: e.target.value })
+                        }
+                        disabled={!editable}
+                        data-test-id="field-shipping-doc-no"
+                      />
+                    </DocumentMetaField>
+                    <DocumentMetaField label={tFields('shipping_doc_date')}>
+                      <Input
+                        type="date"
+                        value={form.shippingDocDate}
+                        onChange={(e) =>
+                          setForm((s) => s && { ...s, shippingDocDate: e.target.value })
+                        }
+                        disabled={!editable}
+                        data-test-id="field-shipping-doc-date"
+                      />
+                    </DocumentMetaField>
+                    <DocumentMetaField label={tFields('state_contract_id')}>
+                      <Input
+                        value={form.stateContractId}
+                        onChange={(e) =>
+                          setForm((s) => s && { ...s, stateContractId: e.target.value })
+                        }
+                        disabled={!editable}
+                        data-test-id="field-state-contract-id"
+                      />
+                    </DocumentMetaField>
+                    <DocumentMetaField label={tDetailForm('external_code')}>
+                      <Input
+                        value={form.externalCode}
+                        onChange={(e) =>
+                          setForm((s) => s && { ...s, externalCode: e.target.value })
+                        }
+                        disabled={!editable}
+                        placeholder="—"
+                        data-test-id="field-external-code"
+                      />
+                    </DocumentMetaField>
+                    <DocumentMetaField label={tFields('posted_at')}>
+                      <Input
+                        value={data.postedAt ? formatDate(data.postedAt) : ''}
+                        disabled
+                        placeholder="—"
+                        data-test-id="field-posted-at"
+                      />
+                    </DocumentMetaField>
+                  </DocumentMetaColumn>
+                </DocumentMetaColumns>
+              </DocumentDisclosurePanel>
             </div>
           </DetailContentTabs>
         </div>
-
-        {/* Inline Задачи collapsible — moysklad parity (bottom of the
-            document body, outside the tab strip), mirroring customer-orders. */}
-        <div className="mt-6 flex flex-col gap-3">
-          <DocumentTasksSection entity="Demand" entityId={data.id} />
-        </div>
-
-        {/* Custom attributes — moysklad keeps these inline below the
-            position area, outside the tabbed surface. */}
-        <div className="mt-4">
-          <AttributesEditor
-            entity="Demand"
-            values={form.attributes}
-            onChange={(next) => setForm({ ...form, attributes: next })}
-            disabled={!editable}
-            testIdPrefix="demand"
-          />
-        </div>
       </main>
 
+      {/* Field pickers (modal fallback for the inline autocompletes) */}
       <CatalogPicker
         open={openPicker === 'agent'}
         onClose={() => setOpenPicker(null)}
@@ -1260,7 +2081,7 @@ export default function DemandDetailPage() {
         open={openPicker === 'consignor'}
         onClose={() => setOpenPicker(null)}
         title={tFields('consignor')}
-        fetcher={consignorFetcher}
+        fetcher={counterpartyFetcher}
         onSelect={(item) =>
           setForm((s) => s && { ...s, consignorId: item.id, consignorLabel: String(item.primary) })
         }
@@ -1269,7 +2090,7 @@ export default function DemandDetailPage() {
         open={openPicker === 'consignee'}
         onClose={() => setOpenPicker(null)}
         title={tFields('consignee')}
-        fetcher={consigneeFetcher}
+        fetcher={counterpartyFetcher}
         onSelect={(item) =>
           setForm((s) => s && { ...s, consigneeId: item.id, consigneeLabel: String(item.primary) })
         }
@@ -1278,33 +2099,81 @@ export default function DemandDetailPage() {
         open={openPicker === 'carrier'}
         onClose={() => setOpenPicker(null)}
         title={tFields('carrier')}
-        fetcher={carrierFetcher}
+        fetcher={counterpartyFetcher}
         onSelect={(item) =>
           setForm((s) => s && { ...s, carrierId: item.id, carrierLabel: String(item.primary) })
         }
       />
 
+      {/* Per-row product picker (name-cell click / ⋮ «Заменить») */}
       <CatalogPicker
-        open={openCatalogPicker}
-        onClose={() => setOpenCatalogPicker(false)}
+        open={openCatalogPicker || productRowId !== null}
+        onClose={() => {
+          setOpenCatalogPicker(false);
+          setProductRowId(null);
+        }}
         title={tDetailForm('add_from_catalog')}
         fetcher={productFetcher}
         onSelect={(item) => {
           const raw = (item as { raw?: ProductItem }).raw;
-          const newPos: PositionRow = {
-            _uid: `new-${Date.now()}`,
-            assortmentId: item.id,
-            productLabel: String(item.primary),
-            productUom: raw?.uom ?? null,
-            quantity: '1',
-            priceMinor: resolveDefaultSalePriceOrZero(raw?.salePrices),
-            discount: '0',
-            vat: raw?.vat != null ? String(raw.vat) : '0',
-            vatEnabled: form.vatEnabled,
-          };
-          setForm((s) => s && { ...s, positions: [...s.positions, newPos] });
+          const defaultPrice = resolveDefaultSalePriceOrZero(raw?.salePrices);
+          if (productRowId) {
+            // Swap the product on the clicked row.
+            updatePosition(productRowId, {
+              assortmentId: item.id,
+              productLabel: String(item.primary),
+              productCode: raw?.code ?? undefined,
+              productArticle: raw?.article ?? undefined,
+              productUom: raw?.uom ?? null,
+              priceMinor: defaultPrice,
+              vat: raw?.vat != null ? String(raw.vat) : '12',
+              stock: raw?.stock?.onHand,
+              available: raw?.stock?.available,
+              salePrices: raw?.salePrices ?? null,
+            });
+            setProductRowId(null);
+            return;
+          }
+          setForm((s) =>
+            s
+              ? {
+                  ...s,
+                  positions: [
+                    ...s.positions,
+                    {
+                      id: uid(),
+                      assortmentId: item.id,
+                      productLabel: String(item.primary),
+                      productCode: raw?.code ?? undefined,
+                      productArticle: raw?.article ?? undefined,
+                      productUom: raw?.uom ?? null,
+                      quantity: '1',
+                      priceMinor: defaultPrice,
+                      discount: '0',
+                      vat: raw?.vat != null ? String(raw.vat) : '12',
+                      vatEnabled: s.vatEnabled,
+                      stock: raw?.stock?.onHand,
+                      available: raw?.stock?.available,
+                      salePrices: raw?.salePrices ?? null,
+                    },
+                  ],
+                }
+              : s,
+          );
         }}
       />
+
+      {form.currency !== 'UZS' && (
+        <CurrencyRateModal
+          open={rateModalOpen}
+          onOpenChange={setRateModalOpen}
+          currency={form.currency}
+          referenceRate={adminRate ?? '1'}
+          currentOverride={rateOverride}
+          onApply={setRateOverride}
+          disabled={!editable}
+        />
+      )}
 
       <SendEmailDialog
         open={emailOpen}

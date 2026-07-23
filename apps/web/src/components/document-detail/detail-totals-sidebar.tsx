@@ -17,6 +17,7 @@
 
 import { Checkbox, formatMoney } from '@moysklad/ui';
 import { useTranslations } from 'next-intl';
+import type { ReactNode } from 'react';
 
 export interface DetailTotalsSidebarProps {
   /** Subtotal in minor units (BigInt-string). */
@@ -56,6 +57,13 @@ export interface DetailTotalsSidebarProps {
    * historical bordered card renders (unchanged).
    */
   bare?: boolean;
+  /**
+   * moysklad parity: supply («Приёмка») renders «Накладные расходы» as the LAST
+   * row INSIDE the totals column, under «Кол-во» — help icon + label + compact
+   * input + «Распределить» + mode select (grounded live 2026-07-06 on
+   * #supply/edit). Other docs omit it.
+   */
+  footerSlot?: ReactNode;
 }
 
 export function DetailTotalsSidebar({
@@ -71,6 +79,7 @@ export function DetailTotalsSidebar({
   onToggleVatIncluded,
   readOnly,
   bare,
+  footerSlot,
 }: DetailTotalsSidebarProps) {
   const t = useTranslations('detail_totals');
 
@@ -133,6 +142,9 @@ export function DetailTotalsSidebar({
         />
       )}
       <Row label={t('qty')} value={String(totalQty)} muted testId="totals-qty" />
+      {footerSlot && (
+        <div className="mt-2 border-[var(--ms-border-default)] border-t pt-2">{footerSlot}</div>
+      )}
     </aside>
   );
 }

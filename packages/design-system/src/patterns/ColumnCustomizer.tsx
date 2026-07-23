@@ -100,7 +100,7 @@ export function ColumnCustomizer({
           )}
           data-test-id="column-customizer-panel"
         >
-          <div className="max-h-80 overflow-y-auto">
+          <div className="max-h-[70vh] overflow-y-auto">
             {columns.map((col) => {
               const checked = visibleKeys.has(col.key);
               return (

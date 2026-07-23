@@ -7,16 +7,6 @@ import { getAccessToken, refresh } from './auth-store';
 
 const BASE = '/api/v1';
 
-/**
- * API xatosi. `isNetwork` — internet/proxy muammosi (server mantiqi emas):
- * UI buni «Internet yo'q» deb ko'rsatadi, «Saqlab bo'lmadi» deb emas.
- */
-export interface ApiError extends Error {
-  status?: number;
-  body?: unknown;
-  isNetwork?: boolean;
-}
-
 async function request<T>(path: string, init: RequestInit = {}, retry = true): Promise<T> {
   const token = getAccessToken();
   const headers: Record<string, string> = {
@@ -31,28 +21,11 @@ async function request<T>(path: string, init: RequestInit = {}, retry = true): P
   };
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  // TARMOQ XATOSI (2026-07-13 UX auditi): ilgari `fetch` try/catch'siz edi —
-  // do'kon Wi-Fi'si uzilsa yoki VPS javob bermasa, foydalanuvchi inglizcha
-  // «TypeError: Failed to fetch» ni ko'rardi va «dastur buzildi» deb qo'ng'iroq
-  // qilardi. Endi bu ANIQ tarmoq xatosi sifatida belgilanadi va UI unga mos
-  // tushunarli xabar ko'rsatadi.
-  let res: Response;
-  try {
-    res = await fetch(`${BASE}${path}`, {
-      ...init,
-      headers,
-      credentials: 'include',
-    });
-  } catch (cause) {
-    const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
-    const err = new Error(
-      offline ? 'Internet aloqasi yo‘q' : 'Serverga ulanib bo‘lmadi. Qayta urinib ko‘ring.',
-    ) as ApiError;
-    err.status = 0;
-    err.isNetwork = true;
-    err.cause = cause;
-    throw err;
-  }
+  const res = await fetch(`${BASE}${path}`, {
+    ...init,
+    headers,
+    credentials: 'include',
+  });
 
   if (res.status === 401 && retry && token) {
     // Try to refresh once and retry the original request
@@ -62,28 +35,15 @@ async function request<T>(path: string, init: RequestInit = {}, retry = true): P
 
   if (!res.ok) {
     const text = await res.text();
-    const isJson = (res.headers.get('content-type') ?? '').includes('json');
-    let parsed: unknown = null;
-    if (isJson) {
-      try {
-        parsed = JSON.parse(text);
-      } catch {
-        parsed = null;
-      }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      parsed = { message: text };
     }
-
-    // JSON emas (nginx 502/504 XOM HTML sahifasi) — uni foydalanuvchiga
-    // KO'RSATMAYMIZ. Ilgari toast ichida «<html><head><title>502…» chiqardi.
-    const message =
-      (parsed as { message?: string } | null)?.message ??
-      (res.status >= 500
-        ? 'Server javob bermadi. Bir ozdan keyin qayta urinib ko‘ring.'
-        : `Xatolik (HTTP ${res.status})`);
-
-    const err = new Error(message) as ApiError;
-    err.status = res.status;
-    err.body = parsed;
-    err.isNetwork = res.status >= 502 && res.status <= 504;
+    const err = new Error((parsed as { message?: string }).message ?? `HTTP ${res.status}`);
+    (err as Error & { status?: number; body?: unknown }).status = res.status;
+    (err as Error & { status?: number; body?: unknown }).body = parsed;
     throw err;
   }
 
@@ -202,35 +162,6 @@ async function postOpenInBrowser(path: string, body: unknown, retry = true): Pro
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
-/**
- * Rasm/faylni TOKEN bilan yuklab olib, brauzerda ko'rsatiladigan obyekt-URL
- * qaytaradi (2026-07-14).
- *
- * NEGA KERAK: `/attachments/:id/raw` JwtAuthGuard ostida. Oddiy `<img src>` yoki
- * `<a href>` `Authorization` sarlavhasini YUBORMAYDI — server 401 qaytaradi va
- * chek OCHILMAYDI. (Jonli tekshirildi: sarlavhasiz 401, token bilan 200.)
- * Shuning uchun rasmni fetch bilan olib, blob URL yasaymiz.
- *
- * Chaqiruvchi ishi tugagach `URL.revokeObjectURL(url)` qilishi SHART — aks holda
- * xotira sizadi (har chek ~1-5 MB).
- */
-async function blobUrl(path: string, retry = true): Promise<{ url: string; mime: string }> {
-  const token = getAccessToken();
-  const headers: Record<string, string> = {};
-  if (token) headers.Authorization = `Bearer ${token}`;
-
-  const res = await fetch(`${BASE}${path}`, { headers, credentials: 'include' });
-
-  if (res.status === 401 && retry && token) {
-    const refreshed = await refresh();
-    if (refreshed) return blobUrl(path, false);
-  }
-  if (!res.ok) throw new Error(`Faylni yuklab bo'lmadi: HTTP ${res.status}`);
-
-  const blob = await res.blob();
-  return { url: URL.createObjectURL(blob), mime: blob.type };
-}
-
 export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body: unknown) =>
@@ -243,5 +174,4 @@ export const api = {
   download,
   postDownload,
   postOpenInBrowser,
-  blobUrl,
 };

@@ -150,7 +150,7 @@ export default function ConsignmentsPage() {
             {o.product.name}
           </div>
           {o.product.code && (
-            <div className="max-w-[300px] truncate text-[var(--ms-text-muted)] text-xs">
+            <div className="max-w-[300px] truncate text-[var(--ms-text-muted)] text-[11px]">
               {o.product.code}
             </div>
           )}

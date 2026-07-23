@@ -174,7 +174,7 @@ describe('InlineFilterPanel', () => {
       renderWithProviders(
         <InlineFilterPanel
           onClear={vi.fn()}
-          rightRail={<button type="button" data-test-id="my-rail-content">Add Filter</button>}
+          rightRail={<button data-test-id="my-rail-content">Add Filter</button>}
         >
           <div />
         </InlineFilterPanel>,

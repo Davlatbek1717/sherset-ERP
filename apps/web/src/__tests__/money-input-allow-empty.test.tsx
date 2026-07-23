@@ -1,4 +1,4 @@
-import { MoneyInput } from '@moysklad/ui';
+import { MoneyInput, formatMoney } from '@moysklad/ui';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -16,9 +16,14 @@ import { describe, expect, it, vi } from 'vitest';
  * so save-time `sum > 0` validation rejects an emptied amount.
  */
 describe('MoneyInput allowEmpty', () => {
-  it('displays the major (som) amount for a minor value', () => {
+  it('displays the major (som) amount for a minor value, formatted by default («300 000,00»)', () => {
+    // moysklad parity (small-fn audit 2026-07-06, gap 2.5): MoneyInput now formats
+    // by default — thin-space thousands + comma decimals — so a money «Сумма» field
+    // shows «300 000,00», not a plain «300000».
     render(<MoneyInput valueMinor="30000000" onChangeMinor={() => {}} data-test-id="m" />);
-    expect((screen.getByTestId('m') as HTMLInputElement).value).toBe('300000');
+    const shown = (screen.getByTestId('m') as HTMLInputElement).value;
+    expect(shown).toBe(formatMoney('30000000', 'UZS', { displayAs: 'none' }));
+    expect(shown).toContain(','); // grouped/decimalised, not the old plain «300000»
   });
 
   it('emits the minor (tiyin) value for a typed major amount', () => {

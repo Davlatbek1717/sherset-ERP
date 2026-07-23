@@ -1,12 +1,10 @@
 import { renderWithProviders } from '@/test-utils';
 /**
- * SettingsSidebar tests — left rail with categorized settings tabs
- * (organizations, stores, users, audit-log, etc.). Visible on every
- * /settings/* page.
- *
- * Tests guard the active state for the current route, the sub-route
- * matching (e.g., /settings/users/123 highlights /settings/users),
- * the group structure, and the per-link testId for E2E.
+ * SettingsSidebar tests — moysklad 1:1 left rail (owner screenshots
+ * 2026-07-16): three moysklad groups (НАСТРОЙКИ · ОБМЕН ДАННЫМИ ·
+ * СПРАВОЧНИКИ [+ Справочник]) as flat icon-less text rows with a pale-blue
+ * active tint, plus our trailing ПРОЧЕЕ group (⛔ preserve-custom-features:
+ * МХИК, Кассы, Журнал аудита, … stay reachable).
  */
 import { describe, expect, it, vi } from 'vitest';
 
@@ -21,101 +19,103 @@ import { usePathname } from 'next/navigation';
 
 const usePathnameMock = usePathname as unknown as ReturnType<typeof vi.fn>;
 
-describe('SettingsSidebar', () => {
+describe('SettingsSidebar (moysklad 1:1, 2026-07-16)', () => {
   describe('basic rendering', () => {
     it('renders an <aside> with settings-sidebar testId', () => {
-      usePathnameMock.mockReturnValue('/settings');
+      usePathnameMock.mockReturnValue('/settings/company');
       const { container } = renderWithProviders(<SettingsSidebar />);
-      // testId uses data-testid (no dash) in the source
       expect(container.querySelector('[data-testid="settings-sidebar"]')).toBeInTheDocument();
       expect(container.querySelector('aside')).toBeInTheDocument();
     });
 
-    it('renders the Overview link to /settings at the top', () => {
-      usePathnameMock.mockReturnValue('/settings');
-      const { container } = renderWithProviders(<SettingsSidebar />);
-      const links = container.querySelectorAll('a');
-      const overview = Array.from(links).find((a) => a.getAttribute('href') === '/settings');
-      expect(overview).toBeInTheDocument();
-    });
-
-    it('renders one link per settings page (testId per link)', () => {
-      usePathnameMock.mockReturnValue('/settings');
-      const { container } = renderWithProviders(<SettingsSidebar />);
-      // 4 groups × variable links = 14 link testIds (organizations, stores, ...)
-      const links = container.querySelectorAll('[data-testid^="settings-link-"]');
-      // Don't pin to exact count (groups change); just verify > 10
-      expect(links.length).toBeGreaterThan(10);
-    });
-  });
-
-  describe('active state', () => {
-    it('highlights /settings/users when pathname is /settings/users', () => {
-      usePathnameMock.mockReturnValue('/settings/users');
-      const { container } = renderWithProviders(<SettingsSidebar />);
-      const usersLink = container.querySelector('[data-testid="settings-link-users"]');
-      expect(usersLink?.className).toContain('font-medium');
-      expect(usersLink?.className).toContain('text-[var(--ms-text-brand)]');
-      expect(usersLink?.className).toContain('border-l-2');
-    });
-
-    it('highlights /settings/users for sub-route /settings/users/abc-123', () => {
-      usePathnameMock.mockReturnValue('/settings/users/abc-123');
-      const { container } = renderWithProviders(<SettingsSidebar />);
-      const usersLink = container.querySelector('[data-testid="settings-link-users"]');
-      expect(usersLink?.className).toContain('text-[var(--ms-text-brand)]');
-    });
-
-    it('does NOT highlight /settings/stores when on /settings/users', () => {
-      usePathnameMock.mockReturnValue('/settings/users');
-      const { container } = renderWithProviders(<SettingsSidebar />);
-      const stores = container.querySelector('[data-testid="settings-link-stores"]');
-      expect(stores?.className).not.toContain('font-medium');
-      expect(stores?.className).not.toContain('text-[var(--ms-text-brand)]');
-    });
-
-    it('Overview link gets active styling when pathname is exactly /settings', () => {
-      usePathnameMock.mockReturnValue('/settings');
-      const { container } = renderWithProviders(<SettingsSidebar />);
-      const overview = container.querySelector('a[href="/settings"]');
-      expect(overview?.className).toContain('text-[var(--ms-text-brand)]');
-    });
-
-    it('Overview link is NOT active when pathname is /settings/users', () => {
-      usePathnameMock.mockReturnValue('/settings/users');
-      const { container } = renderWithProviders(<SettingsSidebar />);
-      const overview = container.querySelector('a[href="/settings"]');
-      expect(overview?.className).not.toContain('text-[var(--ms-text-brand)]');
-    });
-  });
-
-  describe('group categories', () => {
-    it('renders all 5 group titles', () => {
-      usePathnameMock.mockReturnValue('/settings');
+    it('renders exactly the 3 moysklad group headers (extras hidden) in heading color', () => {
+      usePathnameMock.mockReturnValue('/settings/company');
       const { container } = renderWithProviders(<SettingsSidebar />);
       const headers = container.querySelectorAll('h3');
-      // 5 group titles (group_user, group_company, group_team, group_references,
-      // group_integrations)
-      expect(headers).toHaveLength(5);
+      expect(headers).toHaveLength(3);
+      for (const h of headers) {
+        expect(h.className).toContain('uppercase');
+        expect(h.className).toContain('text-[var(--ms-settings-heading)]');
+      }
     });
 
-    it('group titles are uppercased + muted', () => {
-      usePathnameMock.mockReturnValue('/settings');
+    it('rows are flat text — no icons inside links (moysklad settings nav)', () => {
+      usePathnameMock.mockReturnValue('/settings/company');
       const { container } = renderWithProviders(<SettingsSidebar />);
-      const header = container.querySelector('h3');
-      expect(header?.className).toContain('uppercase');
-      expect(header?.className).toContain('text-[var(--ms-text-muted)]');
+      const links = container.querySelectorAll('[data-testid^="settings-link-"]');
+      // 3+3+8 moysklad rows + «Удалить аккаунт» (custom entities load async)
+      expect(links.length).toBeGreaterThanOrEqual(15);
+      for (const link of links) {
+        expect(link.querySelector('svg')).toBeNull();
+      }
+    });
+
+    it('ends with the standalone «Удалить аккаунт» row (moysklad bottom)', () => {
+      usePathnameMock.mockReturnValue('/settings/company');
+      const { container } = renderWithProviders(<SettingsSidebar />);
+      const del = container.querySelector('[data-testid="settings-link-delete_account"]');
+      expect(del).toBeInTheDocument();
+      expect(del?.getAttribute('href')).toBe('/settings/delete-account');
+    });
+
+    it('СПРАВОЧНИКИ carries the «+ Справочник» button → custom-entities/new', () => {
+      usePathnameMock.mockReturnValue('/settings/company');
+      const { container } = renderWithProviders(<SettingsSidebar />);
+      const btn = container.querySelector('[data-testid="settings-add-custom-entity"]');
+      expect(btn).toBeInTheDocument();
+      expect(btn?.getAttribute('href')).toBe('/settings/custom-entities/new');
+    });
+
+    it('moysklad reference rows exist: Юр. лица · Сотрудники · Каналы продаж · Страны', () => {
+      usePathnameMock.mockReturnValue('/settings/company');
+      const { container } = renderWithProviders(<SettingsSidebar />);
+      for (const key of ['organizations', 'employees', 'sales_channels', 'countries']) {
+        const link = container.querySelector(`[data-testid="settings-link-${key}"]`);
+        expect(link).toBeInTheDocument();
+      }
+      expect(
+        container.querySelector('[data-testid="settings-link-employees"]')?.getAttribute('href'),
+      ).toBe('/settings/employees');
     });
   });
 
-  describe('icon rendering', () => {
-    it('every link has an icon (svg)', () => {
-      usePathnameMock.mockReturnValue('/settings');
+  describe('active state (pale-blue row tint)', () => {
+    it('highlights /settings/employees when pathname is /settings/employees', () => {
+      usePathnameMock.mockReturnValue('/settings/employees');
       const { container } = renderWithProviders(<SettingsSidebar />);
-      const linkEls = container.querySelectorAll('[data-testid^="settings-link-"]');
-      for (const link of linkEls) {
-        expect(link.querySelector('svg')).toBeInTheDocument();
+      const link = container.querySelector('[data-testid="settings-link-employees"]');
+      expect(link?.className).toContain('bg-[var(--ms-bg-hover)]');
+    });
+
+    it('highlights /settings/employees for sub-route /settings/employees/abc-123', () => {
+      usePathnameMock.mockReturnValue('/settings/employees/abc-123');
+      const { container } = renderWithProviders(<SettingsSidebar />);
+      const link = container.querySelector('[data-testid="settings-link-employees"]');
+      expect(link?.className).toContain('bg-[var(--ms-bg-hover)]');
+    });
+
+    it('does NOT highlight organizations when on /settings/employees', () => {
+      usePathnameMock.mockReturnValue('/settings/employees');
+      const { container } = renderWithProviders(<SettingsSidebar />);
+      const orgs = container.querySelector('[data-testid="settings-link-organizations"]');
+      expect(orgs?.className).not.toContain('bg-[var(--ms-bg-hover)]');
+    });
+  });
+
+  describe('hidden extras (owner 2026-07-16: hide, do NOT delete — ⛔ preserve rule)', () => {
+    it('МХИК/Кассы/Журнал аудита links are hidden from the nav (code kept behind a flag)', () => {
+      usePathnameMock.mockReturnValue('/settings/company');
+      const { container } = renderWithProviders(<SettingsSidebar />);
+      for (const key of ['mxik', 'audit_log', 'cash_desks', 'exchange_rates', 'all_settings']) {
+        expect(container.querySelector(`[data-testid="settings-link-${key}"]`)).toBeNull();
       }
+    });
+
+    it('has NO «Склады» link — moysklad settings has no warehouses (live 2026-07-03)', () => {
+      usePathnameMock.mockReturnValue('/settings/company');
+      const { container } = renderWithProviders(<SettingsSidebar />);
+      expect(container.querySelector('[data-testid="settings-link-stores"]')).toBeNull();
+      expect(container.querySelector('a[href="/settings/stores"]')).toBeNull();
     });
   });
 });

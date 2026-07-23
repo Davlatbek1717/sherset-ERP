@@ -1,7 +1,15 @@
 'use client';
 
 import { api } from '@/lib/api-client';
-import { Button, Input, NativeSelect, Switch, useConfirm, useDebounce } from '@moysklad/ui';
+import {
+  Button,
+  Input,
+  NativeSelect,
+  StickyHScroll,
+  Switch,
+  useConfirm,
+  useDebounce,
+} from '@moysklad/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
@@ -309,7 +317,7 @@ export default function AnalitikaProductsPage() {
         </aside>
 
         {/* Items table */}
-        <div className="overflow-x-auto rounded-lg border border-[var(--ms-border)] bg-white">
+        <StickyHScroll className="rounded-lg border border-[var(--ms-border)] bg-white">
           <table className="w-full text-sm">
             <thead className="bg-[var(--ms-bg-subtle)] text-[var(--ms-text-muted)] text-xs uppercase">
               <tr>
@@ -383,7 +391,7 @@ export default function AnalitikaProductsPage() {
               )}
             </tbody>
           </table>
-        </div>
+        </StickyHScroll>
       </div>
 
       {/* Pagination */}

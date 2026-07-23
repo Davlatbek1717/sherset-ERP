@@ -11,12 +11,14 @@
 
 import { hrEmployeeApi } from '@/lib/hr-api';
 import type { HrEmployeeRow } from '@/lib/hr-api';
-import { Button, Input, Modal, useToast } from '@moysklad/ui';
+import { Button, Input, Modal, PasswordInput, useToast } from '@moysklad/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
 
-const USERNAME_REGEX = /^[a-zA-Z0-9_-]+$/;
+// Owner 2026-07-19 (second report): the login is FREE-FORM — no character
+// rules. Only non-empty + ≤50 (DB column size) stay, mirroring the server.
+const USERNAME_MAX = 50;
 
 export interface SetPasswordModalProps {
   open: boolean;
@@ -58,7 +60,7 @@ export function SetPasswordModal({ open, onOpenChange, employee }: SetPasswordMo
   const submit = () => {
     setError(null);
     const trimmedUsername = username.trim();
-    if (!USERNAME_REGEX.test(trimmedUsername) || trimmedUsername.length < 3) {
+    if (!trimmedUsername || trimmedUsername.length > USERNAME_MAX) {
       setError(t('set_password_username_hint'));
       return;
     }
@@ -129,13 +131,14 @@ export function SetPasswordModal({ open, onOpenChange, employee }: SetPasswordMo
             {t('set_password_password')}
             <span className="ml-1 text-[var(--ms-text-destructive)]">*</span>
           </label>
-          <Input
+          <PasswordInput
             id="hr-set-password-password"
-            type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             className="w-auto"
             data-test-id="hr-set-password-password"
+            showLabel={tCommon('show_password')}
+            hideLabel={tCommon('hide_password')}
           />
         </div>
 

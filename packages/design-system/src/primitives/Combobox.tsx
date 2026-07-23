@@ -169,7 +169,7 @@ export function Combobox<V extends string = string>({
           data-testid={testId}
           disabled={disabled}
           className={cn(
-            'inline-flex h-[var(--ms-control-h)] w-full items-center justify-between gap-2 px-2 text-[12px]',
+            'inline-flex h-[var(--ms-control-h)] w-full items-center justify-between gap-2 px-2 text-[13px]',
             'border bg-[var(--ms-bg-surface)] text-left text-[var(--ms-text-primary)]',
             'transition-colors duration-[var(--ms-duration-fast)]',
             'focus-visible:border-[var(--ms-border-focus)] focus-visible:outline-none',

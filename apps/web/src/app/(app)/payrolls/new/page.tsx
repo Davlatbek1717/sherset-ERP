@@ -31,6 +31,7 @@ import {
   NativeSelect,
   type PickerItem,
   Textarea,
+  formatIso,
 } from '@moysklad/ui';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
@@ -141,7 +142,7 @@ export default function NewPayrollPage() {
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   });
   const [status, setStatus] = useState<string>('draft');
-  const [applicable, setApplicable] = useState(false);
+  const [applicable, setApplicable] = useState(true);
 
   // Meta
   const [organizationId, setOrganizationId] = useState<string | null>(null);
@@ -152,7 +153,7 @@ export default function NewPayrollPage() {
   const today = new Date();
   const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
   const lastOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-  const isoDate = (d: Date) => d.toISOString().slice(0, 10);
+  const isoDate = (d: Date) => formatIso(d);
   const [periodStart, setPeriodStart] = useState(isoDate(firstOfMonth));
   const [periodEnd, setPeriodEnd] = useState(isoDate(lastOfMonth));
   const [description, setDescription] = useState('');
@@ -290,7 +291,7 @@ export default function NewPayrollPage() {
         }}
       >
         <div className="space-y-4">
-          <DocumentMetaPanel>
+          <DocumentMetaPanel compact>
             <DocumentMetaRow>
               <DocumentMetaField label={tFields('organization')} required>
                 <CatalogPickerField

@@ -119,7 +119,7 @@ export default function WorkOrderDetailPage() {
   const canCancel = state === 'draft' || state === 'in_progress' || state === 'completed';
 
   return (
-    <Container size="full" className="space-y-6 py-4">
+    <Container size="lg" className="space-y-6 py-4">
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>

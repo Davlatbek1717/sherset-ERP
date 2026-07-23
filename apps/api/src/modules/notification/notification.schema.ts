@@ -11,14 +11,10 @@ export const NotificationKind = z.enum([
   'invoice_paid',
   'invoice_overdue',
   'mention',
-  // Sherset custom — a cashier sent a return-to-warehouse restock task to an omborchi.
-  'restock_assigned',
-  // Sherset custom — a sold order's picking task was assigned to an omborchi.
-  'picking_assigned',
-  // Sherset custom (qarz undirish) — qo'ng'iroq vaqti kelgan qarzdorlar
-  // eslatmasi; bell'da «/debts/calls» ga yo'naltiradi.
-  'debt_call_due',
   'system',
+  // F2 (user feature 2026-07-03): cashier pressed «Отправил кладовщику» on a
+  // POS refund receipt — the warehouse keeper must accept the returned goods.
+  'return_to_warehouse',
 ]);
 export type NotificationKindValue = z.infer<typeof NotificationKind>;
 

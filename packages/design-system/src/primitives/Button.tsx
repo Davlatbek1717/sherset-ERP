@@ -12,6 +12,10 @@ const buttonStyles = cva(
     'transition-colors duration-[var(--ms-duration-fast)]',
     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ms-border-focus)] focus-visible:ring-offset-2',
     'disabled:opacity-50 disabled:pointer-events-none',
+    // Mobile (≤767px): every button reaches the ~40px tap-height floor. px, not
+    // rem — the mobile root font bump would otherwise undershoot the floor.
+    // The `link` variant opts back out below (inline text link, not a block).
+    'max-md:min-h-[40px]',
   ],
   {
     variants: {
@@ -54,8 +58,8 @@ const buttonStyles = cva(
         sm: 'h-8 px-3 rounded-[var(--ms-radius-default)]',
         md: 'h-9 px-4 rounded-[var(--ms-radius-default)]',
         lg: 'h-11 px-6 rounded-[var(--ms-radius-md)]',
-        icon: 'h-9 w-9 rounded-[var(--ms-radius-default)]',
-        'icon-sm': 'h-7 w-7 rounded-[var(--ms-radius-default)]',
+        icon: 'h-9 w-9 max-md:h-[40px] max-md:w-[40px] rounded-[var(--ms-radius-default)]',
+        'icon-sm': 'h-7 w-7 max-md:h-[36px] max-md:w-[36px] rounded-[var(--ms-radius-default)]',
       },
     },
     compoundVariants: [
@@ -66,7 +70,7 @@ const buttonStyles = cva(
       // variant's `px-0 h-auto` and a bare <Button variant="link"> rendered
       // as a 36px padded box (caught by the Convention-2 migration,
       // 2026-06-11; locked by apps/web button-conventions.test.tsx).
-      { variant: 'link', class: 'h-auto px-0' },
+      { variant: 'link', class: 'h-auto px-0 max-md:min-h-0' },
     ],
     defaultVariants: {
       variant: 'primary',

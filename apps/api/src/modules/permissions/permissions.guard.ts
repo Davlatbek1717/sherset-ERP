@@ -57,21 +57,6 @@ export class PermissionsGuard implements CanActivate {
       req.user = user;
     }
 
-    // «warehouse» HR roli (omborchi) — ruxsat bypass.
-    // view: barcha omborchi-kerakli entitylar.
-    // update: faqat retailsale (mark-ready tugmasi uchun).
-    if (user.hrRoles?.includes('warehouse')) {
-      const WAREHOUSE_VIEW = new Set([
-        'retailsale', 'product', 'settings', 'cashiersession', 'task',
-      ]);
-      if (required.action === 'view' && WAREHOUSE_VIEW.has(required.entity)) {
-        return true;
-      }
-      if (required.action === 'update' && required.entity === 'retailsale') {
-        return true;
-      }
-    }
-
     await this.permissions.require(
       user.sub,
       required.entity,

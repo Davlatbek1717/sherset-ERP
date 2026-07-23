@@ -6,11 +6,11 @@ export function Footer() {
     <footer className="mt-24 border-slate-200 border-t bg-slate-50">
       <div className="mx-auto grid max-w-7xl grid-cols-2 gap-8 px-6 py-12 md:grid-cols-4">
         <div>
-          <h3 className="font-semibold text-slate-900 text-sm">Sherset</h3>
+          <h3 className="font-semibold text-sm text-slate-900">MoySklad</h3>
           <p className="mt-2 text-slate-600 text-sm">O'zbekiston uchun bulutli ERP</p>
         </div>
         <div>
-          <h3 className="font-semibold text-slate-900 text-sm">Mahsulot</h3>
+          <h3 className="font-semibold text-sm text-slate-900">Mahsulot</h3>
           <ul className="mt-3 space-y-2 text-slate-600 text-sm">
             <li>
               <Link href="/features" className="hover:text-slate-900">
@@ -25,7 +25,7 @@ export function Footer() {
           </ul>
         </div>
         <div>
-          <h3 className="font-semibold text-slate-900 text-sm">Kompaniya</h3>
+          <h3 className="font-semibold text-sm text-slate-900">Kompaniya</h3>
           <ul className="mt-3 space-y-2 text-slate-600 text-sm">
             <li>
               <Link href="/about" className="hover:text-slate-900">
@@ -35,7 +35,7 @@ export function Footer() {
           </ul>
         </div>
         <div>
-          <h3 className="font-semibold text-slate-900 text-sm">Yuridik</h3>
+          <h3 className="font-semibold text-sm text-slate-900">Yuridik</h3>
           <ul className="mt-3 space-y-2 text-slate-600 text-sm">
             <li>
               <Link href="/legal/oferta" className="hover:text-slate-900">
@@ -52,7 +52,7 @@ export function Footer() {
       </div>
       <div className="border-slate-200 border-t">
         <div className="mx-auto max-w-7xl px-6 py-4 text-slate-500 text-xs">
-          © {year} Sherset. Barcha huquqlar himoyalangan.
+          © {year} MoySklad. Barcha huquqlar himoyalangan.
         </div>
       </div>
     </footer>

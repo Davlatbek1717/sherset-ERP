@@ -75,8 +75,8 @@ const MODULES: ModuleEntry[] = [
 
 async function login(page: Page): Promise<void> {
   await page.goto('/login');
-  await page.waitForSelector('[data-test-id="login-username"]', { timeout: 15_000 });
-  await page.fill('[data-test-id="login-username"]', 'admin@demo.local');
+  await page.waitForSelector('[data-test-id="login-email"]', { timeout: 15_000 });
+  await page.fill('[data-test-id="login-email"]', 'admin@demo.local');
   await page.fill('[data-test-id="login-password"]', 'admin123');
   await page.click('[data-test-id="login-submit"]');
   await page.waitForURL('/', { timeout: 15_000 });

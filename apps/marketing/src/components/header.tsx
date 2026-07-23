@@ -10,12 +10,9 @@ export function Header() {
   return (
     <header className="sticky top-0 z-50 border-slate-200 border-b bg-white/95 backdrop-blur">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
-        <Link href="/" className="flex items-center">
-          <img
-            src="/brand/sherset-wordmark.png"
-            alt="Sherset"
-            style={{ height: 28, width: 'auto' }}
-          />
+        <Link href="/" className="flex items-center gap-2 font-semibold text-lg">
+          <CloudIcon />
+          <span>MoySklad</span>
         </Link>
         <nav className="hidden items-center gap-7 md:flex">
           {NAV.map((item) => (
@@ -44,5 +41,22 @@ export function Header() {
         </div>
       </div>
     </header>
+  );
+}
+
+function CloudIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="h-7 w-7 text-[var(--brand-500)]"
+      aria-hidden
+    >
+      <path d="M17.5 19a4.5 4.5 0 1 0 0-9 5.5 5.5 0 1 0-10.5 2.5A3.5 3.5 0 0 0 7 19h10.5z" />
+    </svg>
   );
 }

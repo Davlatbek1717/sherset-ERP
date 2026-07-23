@@ -3,14 +3,15 @@
 import { ColumnSettings } from '@/components/column-settings';
 import { SavedFiltersPills } from '@/components/customer-orders/saved-filters-pills';
 import { FilterToggleButton } from '@/components/filters/filter-toggle-button';
-import {
-  useDocEditMenuItems,
-  useInvoiceOutPrintMenuItems,
-} from '@/components/money/document-toolbar-menus';
+import { useDocEditMenuItems } from '@/components/money/document-toolbar-menus';
+import { usePrintTemplatesManager } from '@/components/print/print-templates-provider';
+import { type KitPrintForm, KitPrintModal } from '@/components/purchase-orders/kit-print-modal';
+import { useApiMutation } from '@/hooks/use-api-mutation';
 import { useBulkDocumentActions } from '@/hooks/use-bulk-actions';
 import { useColumnVisibility } from '@/hooks/use-column-visibility';
 import { useColumnWidths } from '@/hooks/use-column-widths';
 import { api } from '@/lib/api-client';
+import { stashBulkEdit } from '@/lib/bulk-edit-nav';
 import { INVOICE_STATE_TONE, documentStateTone } from '@/lib/document-state-tone';
 import { filterFromQueryString } from '@/lib/filter-from-query';
 import {
@@ -18,7 +19,6 @@ import {
   CatalogPicker,
   type DataTableColumn,
   type FilterDrawerValues,
-  Icons,
   InlineFilterPanel,
   type ListToolbarMenuItem,
   ListView,
@@ -58,6 +58,8 @@ interface InvoiceRow {
   store: { id: string; name: string } | null;
   owner: { id: string; name: string } | null;
   customerOrder: { id: string; name: string } | null;
+  // «Статус» — account custom status (coloured pill), NOT the FSM `state`.
+  status: { id: string; name: string; color: string | null } | null;
   _count: { positions: number };
 }
 
@@ -174,8 +176,8 @@ export default function InvoicesOutPage() {
   const tFields = useTranslations('fields');
   const tStates = useTranslations('states.invoice_out');
   const tFilters = useTranslations('filters');
+  const tMass = useTranslations('mass_edit_modal');
   const tCreate = useTranslations('create_related');
-  const tDetailTitles = useTranslations('detail_titles');
   const router = useRouter();
 
   const [searchInput, setSearchInput] = useState('');
@@ -188,6 +190,17 @@ export default function InvoicesOutPage() {
   const [saveFilterOpen, setSaveFilterOpen] = useState(false);
   const filterHidden = useColumnVisibility('invoices-out-filter-hidden', []);
   const [pickerOpen, setPickerOpen] = useState<null | 'massEditOwner' | 'massEditProject'>(null);
+  const [kitPrintOpen, setKitPrintOpen] = useState(false);
+  const { openTemplates } = usePrintTemplatesManager();
+
+  // moysklad «Печать» — the account's own «Счёт покупателю» print forms (PDF),
+  // listed by name (mirror PO-list). View-permission read; empty for accounts
+  // with no custom templates.
+  const { data: printForms } = useQuery<Array<{ id: string; name: string }>>({
+    queryKey: ['invoice-out-print-forms'],
+    queryFn: () => api.get<Array<{ id: string; name: string }>>('/invoices-out/print-forms'),
+    staleTime: 60_000,
+  });
 
   // Multi-select inline filter state — moysklad checkbox-dropdowns (mirror
   // invoices-in). Each holds the picked {id,label} pairs; the request sends the
@@ -208,7 +221,14 @@ export default function InvoicesOutPage() {
   const [modifiedBys, setModifiedBys] = useState<RefMulti[]>([]);
 
   const [massEditOpen, setMassEditOpen] = useState(false);
-  const [massEditIds, setMassEditIds] = useState<string[]>([]);
+  // «Владелец-отдел» (groupId) options for the mass-edit wizard — mirrors losses.
+  const { data: massGroupsData } = useQuery<{ items: Array<{ id: string; name: string }> }>({
+    queryKey: ['groups', 'mass-edit'],
+    queryFn: () => api.get('/groups?limit=100'),
+    enabled: massEditOpen,
+    staleTime: 5 * 60 * 1000,
+  });
+  const [massEditIds] = useState<string[]>([]);
   const [massEditOwner, setMassEditOwner] = useState<{ id: string; label: string } | null>(null);
   const [massEditProject, setMassEditProject] = useState<{ id: string; label: string } | null>(
     null,
@@ -413,65 +433,145 @@ export default function InvoicesOutPage() {
   });
 
   const openMassEdit = (ids: string[]) => {
-    setMassEditIds(ids);
-    setMassEditOwner(null);
-    setMassEditProject(null);
-    setMassEditOpen(true);
+    stashBulkEdit({ entity: 'invoices-out', ids, from: '/invoices-out' });
+    router.push('/bulk-edit');
   };
   const bulk = useBulkDocumentActions('invoices-out', listQueryKey, {
     hasFSM: true,
     hasBulkPrint: true,
     onMassEditClick: openMassEdit,
   });
-  // moysklad «Изменить» / «Печать» parity — items, order and disabled
-  // state mirror docs/moysklad-reference/invoices-out/states/metadata.json
-  // (Phase 2 audit, 2026-05-30): Изменить has 6 items (+ Объединить) and
-  // Массовое редактирование is enabled (the /invoices-out/mass-edit
-  // endpoint exists); Печать lists Счёт покупателю forms (placeholders).
+  const selectedIdsArray = Array.from(bulk.selectedIds);
+  const selectedCount = bulk.selectedIds.size;
+
+  // «Копировать» — bulk clone the selected invoices (one draft each, mirror the
+  // detail «Скопировать»). Fans out `:id/clone`; opens nothing (list refreshes).
+  const bulkCopy = useApiMutation({
+    mutationFn: async (ids: string[]) => {
+      await Promise.all(ids.map((id) => api.post(`/invoices-out/${id}/clone`, {})));
+      return { ok: true } as const;
+    },
+    onSuccess: () => {
+      bulk.clearSelection();
+      refetch();
+    },
+  });
+  // «Объединить» — combine the selected invoices into ONE new draft and open it
+  // (BE `/invoices-out/merge`, mirror PO). Needs ≥2; same currency + VAT mode.
+  const bulkMerge = useApiMutation({
+    mutationFn: (ids: string[]) => api.post<{ id: string }>('/invoices-out/merge', { ids }),
+    onSuccess: (created) => {
+      bulk.clearSelection();
+      router.push(`/invoices-out/${created.id}`);
+    },
+  });
+
+  // moysklad «Изменить» — Удалить · Копировать · Массовое редактирование ·
+  // Провести · Снять проведение · Объединить (all wired now, `f07b95c9`-style
+  // metadata parity). FSM post/unpost fan out `/invoices-out/bulk-transition`.
   const editMenuItems = useDocEditMenuItems({
     selectedIds: bulk.selectedIds,
+    allRowIds: (data?.items ?? []).map((r) => r.id),
     onBulkDelete: (ids) => bulk.bulkDelete.mutate(ids),
     deletePending: bulk.bulkDelete.isPending,
     onMassEdit: openMassEdit,
     includeMerge: true,
+    onBulkCopy: (ids) => bulkCopy.mutate(ids),
+    copyPending: bulkCopy.isPending,
+    onBulkPost: (ids) => bulk.bulkTransition.mutate({ ids, target: 'post' }),
+    onBulkUnpost: (ids) => bulk.bulkTransition.mutate({ ids, target: 'unpost' }),
+    transitionPending: bulk.bulkTransition.isPending,
+    onMerge: (ids) => bulkMerge.mutate(ids),
+    mergePending: bulkMerge.isPending,
   });
-  const printMenuItems = useInvoiceOutPrintMenuItems();
 
-  // moysklad «Создать» (на основании) — create a related document from the
-  // selected invoice(s). Grounded LIVE #invoiceout (2026-06-26): the toolbar
-  // shows a «Создать ▾» dropdown between «Изменить» and «Печать», DISABLED when
-  // nothing is selected. Menu membership = the moysklad customer-invoice basis
-  // set (Отгрузка · Возврат покупателя · Счёт-фактура выданный · Входящий платёж
-  // · Приходный ордер). The live menu could not be opened to confirm exact
-  // order/wording (the grounding account has 0 invoices), so items navigate to
-  // the target /new forms (no server pre-fill yet) and the set is re-verified in
-  // Phase-2 with seeded data. «Счёт-фактура выданный» is disabled — no /new route.
-  const createIds = Array.from(bulk.selectedIds);
-  const createFromQs = createIds.length ? `?fromInvoice=${createIds.join(',')}` : '';
-  // Item labels reuse the existing `detail_titles` singular doc-type names
-  // (e.g. «Отгрузка», «Входящий платёж») so the menu matches moysklad's
-  // singular wording without adding new i18n keys.
+  // moysklad «Печать ▾» — Список счетов (browser print) · account forms ·
+  // standard «Счет покупателю» (bulk-print) · Комплект… (kit-print) · Настроить…
+  // (mirror PO-list dynamic menu). Selection-gated per-invoice items.
+  const printSelected = (templateId?: string) => {
+    if (selectedCount === 0) return;
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    void api
+      .postDownload(
+        '/invoices-out/bulk-print',
+        { ids: selectedIdsArray, ...(templateId ? { templateId } : {}) },
+        `invoices-out-${selectedIdsArray.length}-${stamp}.pdf`,
+      )
+      .then(() => refetch());
+  };
+  const kitPrint = (templateIds: Array<string | null>) => {
+    if (selectedCount === 0 || templateIds.length === 0) return;
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    void api
+      .postDownload(
+        '/invoices-out/kit-print',
+        { ids: selectedIdsArray, templateIds },
+        `invoices-out-kit-${selectedIdsArray.length}-${stamp}.pdf`,
+      )
+      .then(() => refetch());
+  };
+  const kitForms: KitPrintForm[] = [
+    { id: null, name: t('print_invoice_form') },
+    ...(printForms ?? []).map((f) => ({ id: f.id, name: f.name })),
+  ];
+  const printMenuItems: ListToolbarMenuItem[] = [
+    { id: 'invoices-list', label: t('print_invoices_list'), onSelect: () => window.print() },
+    ...(printForms ?? []).map((f) => ({
+      id: `form-${f.id}`,
+      label: f.name,
+      disabled: selectedCount === 0,
+      onSelect: () => printSelected(f.id),
+    })),
+    {
+      id: 'invoice-form',
+      label: t('print_invoice_form'),
+      disabled: selectedCount === 0,
+      onSelect: () => printSelected(),
+    },
+    {
+      id: 'set',
+      label: tPrintMenu('set'),
+      disabled: selectedCount === 0,
+      onSelect: () => setKitPrintOpen(true),
+    },
+    {
+      id: 'configure',
+      label: tPrintMenu('configure'),
+      onSelect: () => openTemplates('invoiceout'),
+    },
+  ];
+
+  // moysklad «Создать ▾» — LIVE-GROUNDED sibling (invoices-in list 2026-06-25,
+  // mirrored to the sales side): with rows selected moysklad offers exactly
+  // «Входящие платежи» + «Приходные ордера». Each creates one draft per selected
+  // invoice (BE bulk-create endpoints) then routes to that doc list. Disabled
+  // until ≥1 row is selected (matches the greyed «Создать» on empty selection).
+  const bulkCreatePaymentIn = useApiMutation({
+    mutationFn: (ids: string[]) => api.post('/payments-in/bulk-create-from-invoice-out', { ids }),
+    onSuccess: () => {
+      bulk.clearSelection();
+      router.push('/payments-in');
+    },
+  });
+  const bulkCreateCashIn = useApiMutation({
+    mutationFn: (ids: string[]) => api.post('/cash-in/bulk-create-from-invoice-out', { ids }),
+    onSuccess: () => {
+      bulk.clearSelection();
+      router.push('/cash-in');
+    },
+  });
   const createDocItems: ListToolbarMenuItem[] = [
     {
-      id: 'demand',
-      label: tDetailTitles('demand'),
-      onSelect: () => router.push(`/demands/new${createFromQs}`),
-    },
-    {
-      id: 'sales_return',
-      label: tDetailTitles('sales_return'),
-      onSelect: () => router.push(`/sales-returns/new${createFromQs}`),
-    },
-    { id: 'facture_out', label: tDetailTitles('facture_out'), disabled: true },
-    {
       id: 'payment_in',
-      label: tDetailTitles('payment_in'),
-      onSelect: () => router.push(`/payments-in/new${createFromQs}`),
+      label: t('bulk_create_payment_in'),
+      onSelect: () => bulkCreatePaymentIn.mutate(selectedIdsArray),
+      disabled: bulkCreatePaymentIn.isPending,
     },
     {
       id: 'cash_in',
-      label: tDetailTitles('cash_in'),
-      onSelect: () => router.push(`/cash-in/new${createFromQs}`),
+      label: t('bulk_create_cash_in'),
+      onSelect: () => bulkCreateCashIn.mutate(selectedIdsArray),
+      disabled: bulkCreateCashIn.isPending,
     },
   ];
 
@@ -538,7 +638,7 @@ export default function InvoicesOutPage() {
       width: '140px',
       sortable: true,
       cell: (i) => (
-        <span className="text-[var(--ms-text-muted)] text-xs tabular-nums">
+        <span className="text-[var(--ms-text-muted)] text-[12px] tabular-nums">
           {formatDate(i.moment)}
         </span>
       ),
@@ -553,7 +653,7 @@ export default function InvoicesOutPage() {
         <div>
           <div className="max-w-[300px] truncate font-medium">{i.agent.name}</div>
           {i.agent.legalTitle && (
-            <div className="max-w-[300px] truncate text-[var(--ms-text-muted)] text-xs">
+            <div className="max-w-[300px] truncate text-[var(--ms-text-muted)] text-[11px]">
               {i.agent.legalTitle}
             </div>
           )}
@@ -611,7 +711,7 @@ export default function InvoicesOutPage() {
       width: '150px',
       cell: (i) =>
         i.paymentPlannedMoment ? (
-          <span className="text-[var(--ms-text-muted)] text-xs tabular-nums">
+          <span className="text-[var(--ms-text-muted)] text-[12px] tabular-nums">
             {formatDate(i.paymentPlannedMoment)}
           </span>
         ) : (
@@ -667,36 +767,68 @@ export default function InvoicesOutPage() {
       cellText: (r: InvoiceRow) => r.state,
     },
     {
+      // moysklad «Статус» — account custom status (coloured pill), NOT the FSM
+      // `state`. Hidden by default (June ground: not in the 13 default cols),
+      // available via the ⚙ column customizer — mirror supply list's status col.
+      key: 'custom_status',
+      header: tFields('state'),
+      width: '150px',
+      cell: (i) =>
+        i.status ? (
+          <span
+            className="inline-flex items-center whitespace-nowrap rounded-[3px] px-2 py-0.5 font-medium text-white text-xs"
+            style={{ backgroundColor: i.status.color ?? 'var(--ms-text-muted)' }}
+            data-test-id="invoice-out-status-pill"
+          >
+            {i.status.name}
+          </span>
+        ) : (
+          <span
+            className="text-[var(--ms-text-muted)] text-xs"
+            data-test-id="invoice-out-status-placeholder"
+          >
+            {tFields('custom_status_placeholder')}
+          </span>
+        ),
+      cellText: (r: InvoiceRow) => r.status?.name ?? '',
+    },
+    {
       key: 'published',
       header: tFields('published'),
-      width: '90px',
-      align: 'center',
+      width: '110px',
+      // moysklad parity: cyan (#00bfe6) filled pill «Отправлен» when sent, EMPTY
+      // otherwise (NOT ✓/«—»). Live-grounded rgb(0,191,230); mirror CO/demands.
       cell: (i) =>
         i.published ? (
-          <Icons.check className="mx-auto h-4 w-4 text-[var(--ms-text-success)]" />
-        ) : (
-          <span className="text-[var(--ms-text-muted)]">—</span>
-        ),
-      cellText: (r: InvoiceRow) => (r.published ? '✓' : ''),
+          <span
+            className="inline-flex items-center whitespace-nowrap rounded-[3px] bg-[#00bfe6] px-2 py-0.5 font-medium text-white text-xs"
+            data-test-id="published-badge"
+          >
+            {tFields('published_badge')}
+          </span>
+        ) : null,
+      cellText: (r: InvoiceRow) => (r.published ? tFields('published_badge') : ''),
     },
     {
       key: 'printed',
       header: tFields('printed'),
-      width: '90px',
-      align: 'center',
+      width: '110px',
       cell: (i) =>
         i.printed ? (
-          <Icons.check className="mx-auto h-4 w-4 text-[var(--ms-text-success)]" />
-        ) : (
-          <span className="text-[var(--ms-text-muted)]">—</span>
-        ),
-      cellText: (r: InvoiceRow) => (r.printed ? '✓' : ''),
+          <span
+            className="inline-flex items-center whitespace-nowrap rounded-[3px] bg-[#00bfe6] px-2 py-0.5 font-medium text-white text-xs"
+            data-test-id="printed-badge"
+          >
+            {tFields('printed_badge')}
+          </span>
+        ) : null,
+      cellText: (r: InvoiceRow) => (r.printed ? tFields('printed_badge') : ''),
     },
     {
       key: 'description',
       header: tFields('description'),
       cell: (i) => (
-        <span className="max-w-[200px] truncate text-[var(--ms-text-muted)] text-xs">
+        <span className="max-w-[200px] truncate text-[var(--ms-text-muted)] text-[11px]">
           {i.description ?? ''}
         </span>
       ),
@@ -720,8 +852,17 @@ export default function InvoicesOutPage() {
     },
   ];
 
+  // Any active filter → show the «no results» empty state (not the rich «create
+  // your first invoice» one). Covers ALL controls: search, every non-reference
+  // filter (payment/shipped status, flags, period, plan-date, updated range) and
+  // every multi-select reference array (adversarial-review finding — was checking
+  // only search/state/refs, so a zero-match «Оплата»/period filter wrongly showed
+  // the empty account state).
   const hasFilter =
-    !!search || !!extFilter.state || Object.values(refArrays).some((a) => a.length > 0);
+    !!search ||
+    Object.values(filterValues).some((v) => v != null && v !== '') ||
+    Object.values(extFilter).some((v) => v != null && v !== '') ||
+    Object.values(refArrays).some((a) => a.length > 0);
 
   return (
     <>
@@ -1306,6 +1447,8 @@ export default function InvoicesOutPage() {
         projectValue={massEditProject}
         onProjectPick={() => setPickerOpen('massEditProject')}
         onProjectClear={() => setMassEditProject(null)}
+        groupOptions={(massGroupsData?.items ?? []).map((g) => ({ value: g.id, label: g.name }))}
+        showShared
         labels={{
           title: t('mass_edit_title'),
           ownerLabel: tFilters('owner_employee'),
@@ -1314,11 +1457,30 @@ export default function InvoicesOutPage() {
           apply: t('mass_edit_apply'),
           cancel: t('mass_edit_cancel'),
           hint: t('mass_edit_hint', { count: massEditIds.length }),
+          groupLabel: tMass('group_label'),
+          sharedLabel: tMass('shared_label'),
+          sharedYes: tMass('shared_yes'),
+          sharedNo: tMass('shared_no'),
         }}
         onSubmit={async (patch) => {
           await bulk.massEdit.mutateAsync({ ids: massEditIds, ...patch });
           setMassEditOpen(false);
         }}
+      />
+
+      {/* «Печать ▸ Комплект…» — bundle several forms into one PDF for the
+          selected invoices (mirror PO-list). */}
+      <KitPrintModal
+        open={kitPrintOpen}
+        onOpenChange={setKitPrintOpen}
+        forms={kitForms}
+        selectedCount={selectedCount}
+        labels={{
+          title: tPrintMenu('set'),
+          confirm: tPrintMenu('kit_confirm'),
+          cancel: tPrintMenu('kit_cancel'),
+        }}
+        onConfirm={kitPrint}
       />
     </>
   );

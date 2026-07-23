@@ -18,19 +18,17 @@
 import { SavedFiltersPills } from '@/components/customer-orders/saved-filters-pills';
 import { FilterToggleButton } from '@/components/filters/filter-toggle-button';
 import { useBulkDocumentActions } from '@/hooks/use-bulk-actions';
+import { useColumnVisibility } from '@/hooks/use-column-visibility';
 import { api } from '@/lib/api-client';
-import { documentStateTone } from '@/lib/document-state-tone';
-import { filterFromQueryString } from '@/lib/filter-from-query';
+import { stashBulkEdit } from '@/lib/bulk-edit-nav';
 import {
-  Badge,
   CatalogPicker,
-  CatalogPickerField,
   type DataTableColumn,
   type FilterDrawerValues,
   InlineFilterPanel,
   ListView,
   MassEditModal,
-  MoneyInput,
+  MultiCombobox,
   NativeSelect,
   PeriodInputs,
   PeriodShortcuts,
@@ -41,6 +39,7 @@ import {
 } from '@moysklad/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
+import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
 interface InternalOrderRow {
@@ -130,7 +129,7 @@ function StateSelect({
  * InternalOrder-specific extension fields stored alongside the shared
  * FilterDrawerValues shape. Local to this page (the shared
  * `useMoyskladDocFilter` hook is intentionally NOT used here —
- * InternalOrder mirrors the moves inline-field gold standard).
+ * InternalOrder mirrors the losses inline-field gold standard).
  *
  * NOTE: InternalOrder is an internal stock-transfer request — NO
  * agentId / agentAccountId / contractId / organizationAccountId /
@@ -140,13 +139,13 @@ type ExtraFilterFields = {
   applicable?: 'true' | 'false';
   printed?: 'true' | 'false';
   published?: 'true' | 'false';
+  shared?: 'true' | 'false';
   updatedFrom?: string;
   updatedTo?: string;
-  groupId?: string;
-  groupLabel?: string;
-  projectId?: string;
-  projectLabel?: string;
 };
+
+/** Multi-select reference field — moysklad checkbox-dropdown holds {id,label}[]. */
+type RefMulti = { id: string; label: string };
 
 export default function InternalOrdersPage() {
   const t = useTranslations('pages.internal_order');
@@ -155,6 +154,7 @@ export default function InternalOrdersPage() {
   const tFields = useTranslations('fields');
   const tStates = useTranslations('states.internal_order');
   const tFilters = useTranslations('filters');
+  const tMass = useTranslations('mass_edit_modal');
 
   const [searchInput, setSearchInput] = useState('');
   const search = useDebounce(searchInput, 300);
@@ -163,13 +163,34 @@ export default function InternalOrdersPage() {
   const [sortKey, setSortKey] = useState<string>('moment');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [filterValues, setFilterValues] = useState<FilterDrawerValues & ExtraFilterFields>({});
+  // moysklad-parity reference filters — inline multi-select checkbox dropdowns
+  // (MultiCombobox), each holding {id,label} pairs that go out as `*Ids` CSVs
+  // (mirror losses). «Кто изменил» is auditLog-approximated BE-side.
+  const [organizations, setOrganizations] = useState<RefMulti[]>([]);
+  const [products, setProducts] = useState<RefMulti[]>([]);
+  const [stores, setStores] = useState<RefMulti[]>([]);
+  const [projects, setProjects] = useState<RefMulti[]>([]);
+  const [owners, setOwners] = useState<RefMulti[]>([]);
+  const [groups, setGroups] = useState<RefMulti[]>([]);
+  const [modifiedBys, setModifiedBys] = useState<RefMulti[]>([]);
   const [filterOpen, setFilterOpen] = useState(true);
-  const [pickerOpen, setPickerOpen] = useState<
-    null | 'org' | 'store' | 'owner' | 'group' | 'project' | 'massEditOwner' | 'massEditProject'
-  >(null);
+  // moysklad 🔖 «Закладки» — controlled open-state for the save-filter modal.
+  const [saveFilterOpen, setSaveFilterOpen] = useState(false);
+  // moysklad ⚙ — persisted set of HIDDEN filter-field keys (default: none).
+  const filterHidden = useColumnVisibility('internal-orders-filter-hidden', []);
+  const [pickerOpen, setPickerOpen] = useState<null | 'massEditOwner' | 'massEditProject'>(null);
+
+  const router = useRouter();
 
   const [massEditOpen, setMassEditOpen] = useState(false);
-  const [massEditIds, setMassEditIds] = useState<string[]>([]);
+  // «Владелец-отдел» (groupId) options for the mass-edit wizard — mirrors losses.
+  const { data: massGroupsData } = useQuery<{ items: Array<{ id: string; name: string }> }>({
+    queryKey: ['groups', 'mass-edit'],
+    queryFn: () => api.get('/groups?limit=100'),
+    enabled: massEditOpen,
+    staleTime: 5 * 60 * 1000,
+  });
+  const [massEditIds] = useState<string[]>([]);
   const [massEditOwner, setMassEditOwner] = useState<{ id: string; label: string } | null>(null);
   const [massEditProject, setMassEditProject] = useState<{ id: string; label: string } | null>(
     null,
@@ -186,23 +207,59 @@ export default function InternalOrdersPage() {
     ...(cursor ? { cursor } : {}),
     ...(filterValues.momentFrom ? { momentFrom: filterValues.momentFrom } : {}),
     ...(filterValues.momentTo ? { momentTo: filterValues.momentTo } : {}),
-    ...(filterValues.sumMinorFrom !== undefined
-      ? { sumMinorFrom: String(filterValues.sumMinorFrom) }
-      : {}),
-    ...(filterValues.sumMinorTo !== undefined
-      ? { sumMinorTo: String(filterValues.sumMinorTo) }
-      : {}),
-    ...(filterValues.organizationId ? { organizationId: filterValues.organizationId } : {}),
-    ...(filterValues.storeId ? { storeId: filterValues.storeId } : {}),
-    ...(filterValues.projectId ? { projectId: filterValues.projectId } : {}),
-    ...(filterValues.ownerId ? { ownerId: filterValues.ownerId } : {}),
-    ...(filterValues.groupId ? { groupId: filterValues.groupId } : {}),
+    ...(products.length ? { productIds: products.map((x) => x.id).join(',') } : {}),
+    ...(stores.length ? { storeIds: stores.map((x) => x.id).join(',') } : {}),
+    ...(projects.length ? { projectIds: projects.map((x) => x.id).join(',') } : {}),
+    ...(organizations.length ? { organizationIds: organizations.map((x) => x.id).join(',') } : {}),
+    ...(owners.length ? { ownerIds: owners.map((x) => x.id).join(',') } : {}),
+    ...(groups.length ? { groupIds: groups.map((x) => x.id).join(',') } : {}),
+    ...(modifiedBys.length ? { modifiedByIds: modifiedBys.map((x) => x.id).join(',') } : {}),
     ...(filterValues.applicable ? { applicable: filterValues.applicable } : {}),
     ...(filterValues.printed ? { printed: filterValues.printed } : {}),
     ...(filterValues.published ? { published: filterValues.published } : {}),
+    ...(filterValues.shared ? { shared: filterValues.shared } : {}),
     ...(filterValues.updatedFrom ? { updatedFrom: filterValues.updatedFrom } : {}),
     ...(filterValues.updatedTo ? { updatedTo: filterValues.updatedTo } : {}),
   });
+
+  // «Закладки» — the saved-filter payload is the CURRENT filter set (everything
+  // in `params` except pagination/sort/search). Applying a bookmark parses it
+  // back into the page's filter state. Reference labels restore as their raw
+  // ids (the same accepted compromise as losses/picking-waves — the filter
+  // WORKS; the chip text resolves on the next manual pick).
+  const savedFilterQuery = (() => {
+    const p = new URLSearchParams(params);
+    for (const k of ['limit', 'sortBy', 'sortDir', 'cursor', 'search']) p.delete(k);
+    return p.toString();
+  })();
+  const applySavedFilter = (qs: string) => {
+    const p = new URLSearchParams(qs);
+    const multi = (key: string): RefMulti[] =>
+      (p.get(key) ?? '')
+        .split(',')
+        .filter(Boolean)
+        .map((id) => ({ id, label: id }));
+    setProducts(multi('productIds'));
+    setStores(multi('storeIds'));
+    setProjects(multi('projectIds'));
+    setOrganizations(multi('organizationIds'));
+    setOwners(multi('ownerIds'));
+    setGroups(multi('groupIds'));
+    setModifiedBys(multi('modifiedByIds'));
+    setStateFilter(p.get('state'));
+    const yn = (key: string) => (p.get(key) ?? undefined) as 'true' | 'false' | undefined;
+    setFilterValues({
+      momentFrom: p.get('momentFrom') ?? undefined,
+      momentTo: p.get('momentTo') ?? undefined,
+      updatedFrom: p.get('updatedFrom') ?? undefined,
+      updatedTo: p.get('updatedTo') ?? undefined,
+      applicable: yn('applicable'),
+      printed: yn('printed'),
+      published: yn('published'),
+      shared: yn('shared'),
+    });
+    onResetCursor();
+  };
 
   const listQueryKey = [
     'internal-orders',
@@ -223,10 +280,8 @@ export default function InternalOrdersPage() {
     hasFSM: true,
     hasBulkPrint: true,
     onMassEditClick: (ids) => {
-      setMassEditIds(ids);
-      setMassEditOwner(null);
-      setMassEditProject(null);
-      setMassEditOpen(true);
+      stashBulkEdit({ entity: 'internal-orders', ids, from: '/internal-orders' });
+      router.push('/bulk-edit');
     },
   });
 
@@ -258,7 +313,7 @@ export default function InternalOrdersPage() {
       width: '130px',
       sortable: true,
       cell: (r) => (
-        <span className="text-[var(--ms-text-muted)] text-xs tabular-nums">
+        <span className="text-[var(--ms-text-muted)] text-[12px] tabular-nums">
           {formatDate(r.moment)}
         </span>
       ),
@@ -271,7 +326,7 @@ export default function InternalOrdersPage() {
       width: '140px',
       sortable: true,
       cell: (r) => (
-        <span className="text-[var(--ms-text-muted)] text-xs tabular-nums">
+        <span className="text-[var(--ms-text-muted)] text-[12px] tabular-nums">
           {r.deliveryPlannedMoment ? formatDate(r.deliveryPlannedMoment) : '—'}
         </span>
       ),
@@ -293,15 +348,10 @@ export default function InternalOrdersPage() {
       cell: (r) => <span className="text-sm tabular-nums">{r._count.positions}</span>,
       cellText: (r) => String(r._count.positions),
     },
-    {
-      key: 'state',
-      header: tFields('state'),
-      width: '140px',
-      cell: (r) => (
-        <Badge tone={documentStateTone(r.state)}>{tStates(r.state as InternalOrderStateKey)}</Badge>
-      ),
-      cellText: (r) => r.state,
-    },
+    // moysklad #internalorder list has NO «Статус» column (LIVE-grounded
+    // 2026-06-29: default grid = №·Время·Организация·Сумма·Валюта·Отгружено·
+    // Отправлено·Напечатано·Комментарий). The FSM state lives only in the
+    // «Статус» filter + the «Проведено» flag, never as a column.
     {
       key: 'sum',
       sortField: 'sumMinor',
@@ -321,29 +371,31 @@ export default function InternalOrdersPage() {
   const hasFilter =
     !!search ||
     !!stateFilter ||
-    !!filterValues.organizationId ||
-    !!filterValues.storeId ||
-    !!filterValues.projectId ||
-    !!filterValues.ownerId ||
-    !!filterValues.groupId ||
+    organizations.length > 0 ||
+    products.length > 0 ||
+    stores.length > 0 ||
+    projects.length > 0 ||
+    owners.length > 0 ||
+    groups.length > 0 ||
+    modifiedBys.length > 0 ||
     !!filterValues.applicable ||
     !!filterValues.printed ||
     !!filterValues.published ||
+    !!filterValues.shared ||
     !!filterValues.momentFrom ||
     !!filterValues.momentTo ||
     !!filterValues.updatedFrom ||
-    !!filterValues.updatedTo ||
-    filterValues.sumMinorFrom !== undefined ||
-    filterValues.sumMinorTo !== undefined;
+    !!filterValues.updatedTo;
 
-  // moysklad-parity inline filter panel — fields ordered to mirror the
-  // Move gold-standard (apps/web/src/app/(app)/moves/page.tsx) without
-  // «Откуда»/«Куда» dual-store (InternalOrder has a single «Склад»).
-  // Order: Период · Склад · Организация · Проект · Статус · Проведено ·
-  // Напечатано · Отправлено · Владелец-сотрудник · Владелец-отдел ·
-  // Сумма · Когда изменен.
-  // «Кто изменил» SKIPPED — no updatedById column. No Контрагент /
-  // Договор / Канал продаж / Счёт * — internal doc, no counterparty.
+  // moysklad-parity inline filter panel — LIVE-GROUNDED against the user's
+  // #internalorder screenshots (2026-07-14): 14 fields in the grounded order
+  // Период · Товар или группа · Склад · Проект · Организация · Статус ·
+  // Проведено · Напечатано · Отправлено · Владелец-сотрудник · Владелец-отдел ·
+  // Общий доступ · Когда изменен · Кто изменил. Reference filters are
+  // MULTI-select inline MultiCombobox checkbox-dropdowns (mirror losses).
+  // «Кто изменил» is auditLog-approximated BE-side (no modifiedById column).
+  // moysklad has NO «Сумма» range on this panel — intentionally absent.
+  // No Контрагент / Договор / Канал продаж / Счёт * — internal doc.
   const filterPanel = (
     <InlineFilterPanel
       hidden={!filterOpen}
@@ -352,16 +404,36 @@ export default function InternalOrdersPage() {
       onClear={() => {
         setFilterValues({});
         setStateFilter(null);
+        setOrganizations([]);
+        setProducts([]);
+        setStores([]);
+        setProjects([]);
+        setOwners([]);
+        setGroups([]);
+        setModifiedBys([]);
         onResetCursor();
+      }}
+      // moysklad 🔖 — opens the «Закладки» save-current-filter modal.
+      onBookmarkClick={() => setSaveFilterOpen(true)}
+      // moysklad ⚙ — a checklist of every filter field (show/hide), keyed by
+      // fieldKey; the persisted set holds the HIDDEN keys (default: none).
+      fieldVisibility={{
+        hidden: filterHidden.visibleKeys,
+        onToggle: (k) => {
+          const next = new Set(filterHidden.visibleKeys);
+          if (next.has(k)) next.delete(k);
+          else next.add(k);
+          filterHidden.setVisibleKeys(next);
+        },
       }}
       pills={
         <SavedFiltersPills
           entity="internalorder"
-          currentQueryString={params.toString()}
-          onApply={(qs) => {
-            setFilterValues(filterFromQueryString(qs));
-            onResetCursor();
-          }}
+          currentQueryString={savedFilterQuery}
+          onApply={applySavedFilter}
+          adding={saveFilterOpen}
+          onAddingChange={setSaveFilterOpen}
+          showAdd={filterOpen}
         />
       }
       testId="internal-orders-inline-filter"
@@ -370,6 +442,7 @@ export default function InternalOrdersPage() {
       <InlineFilterPanel.Field
         label={`${tFilters('period')}:`}
         expandable
+        fieldKey="period"
         inlineSuffix={
           <PeriodShortcuts
             onChange={({ from, to }) => {
@@ -395,72 +468,116 @@ export default function InternalOrdersPage() {
           testId="filter-period"
         />
       </InlineFilterPanel.Field>
-      {/* 2. Склад */}
-      <InlineFilterPanel.Field label={tFilters('store')} expandable>
-        <CatalogPickerField
-          value={
-            filterValues.storeId
-              ? {
-                  id: filterValues.storeId,
-                  label: filterValues.storeLabel ?? filterValues.storeId,
-                }
-              : null
-          }
-          placeholder=""
-          onPick={() => setPickerOpen('store')}
-          onClear={() => {
-            setFilterValues({ ...filterValues, storeId: undefined, storeLabel: undefined });
+      {/* 2. Товар или группа — multi-select product dropdown. */}
+      <InlineFilterPanel.Field label={tPO('filter_product_or_group')} expandable fieldKey="product">
+        <MultiCombobox
+          value={products.map((x) => x.id)}
+          items={products.map((x) => ({ value: x.id, label: x.label }))}
+          onSearch={async (q) => {
+            const r = await api.get<{
+              items: { id: string; name: string; code: string | null }[];
+            }>(`/products?search=${encodeURIComponent(q)}&limit=20`);
+            return r.items.map((x) => ({
+              value: x.id,
+              label: x.name,
+              sublabel: x.code ?? undefined,
+            }));
+          }}
+          onChange={(nextIds, toggled) => {
+            setProducts((prev) =>
+              nextIds.map((id) => {
+                const ex = prev.find((s) => s.id === id);
+                if (ex) return ex;
+                if (toggled?.value === id) return { id, label: String(toggled.label) };
+                return { id, label: id };
+              }),
+            );
             onResetCursor();
           }}
+          placeholder=""
+          testId="filter-product"
+        />
+      </InlineFilterPanel.Field>
+      {/* 3. Склад — multi-select store dropdown. */}
+      <InlineFilterPanel.Field label={tFilters('store')} expandable fieldKey="store">
+        <MultiCombobox
+          value={stores.map((x) => x.id)}
+          items={stores.map((x) => ({ value: x.id, label: x.label }))}
+          onSearch={async (q) => {
+            const r = await api.get<{ items: { id: string; name: string }[] }>(
+              `/stores?search=${encodeURIComponent(q)}&limit=20`,
+            );
+            return r.items.map((x) => ({ value: x.id, label: x.name }));
+          }}
+          onChange={(nextIds, toggled) => {
+            setStores((prev) =>
+              nextIds.map((id) => {
+                const ex = prev.find((s) => s.id === id);
+                if (ex) return ex;
+                if (toggled?.value === id) return { id, label: String(toggled.label) };
+                return { id, label: id };
+              }),
+            );
+            onResetCursor();
+          }}
+          placeholder=""
           testId="filter-store"
         />
       </InlineFilterPanel.Field>
-      {/* 3. Организация */}
-      <InlineFilterPanel.Field label={tFilters('organization')} expandable>
-        <CatalogPickerField
-          value={
-            filterValues.organizationId
-              ? {
-                  id: filterValues.organizationId,
-                  label: filterValues.organizationLabel ?? filterValues.organizationId,
-                }
-              : null
-          }
-          placeholder=""
-          onPick={() => setPickerOpen('org')}
-          onClear={() => {
-            setFilterValues({
-              ...filterValues,
-              organizationId: undefined,
-              organizationLabel: undefined,
-            });
+      {/* 4. Проект — multi-select project dropdown. */}
+      <InlineFilterPanel.Field label={tPO('filter_project')} expandable fieldKey="project">
+        <MultiCombobox
+          value={projects.map((x) => x.id)}
+          items={projects.map((x) => ({ value: x.id, label: x.label }))}
+          onSearch={async (q) => {
+            const r = await api.get<{ items: { id: string; name: string }[] }>(
+              `/projects?search=${encodeURIComponent(q)}&limit=20`,
+            );
+            return r.items.map((x) => ({ value: x.id, label: x.name }));
+          }}
+          onChange={(nextIds, toggled) => {
+            setProjects((prev) =>
+              nextIds.map((id) => {
+                const ex = prev.find((s) => s.id === id);
+                if (ex) return ex;
+                if (toggled?.value === id) return { id, label: String(toggled.label) };
+                return { id, label: id };
+              }),
+            );
             onResetCursor();
           }}
-          testId="filter-org"
-        />
-      </InlineFilterPanel.Field>
-      {/* 4. Проект */}
-      <InlineFilterPanel.Field label={tPO('filter_project')} expandable>
-        <CatalogPickerField
-          value={
-            filterValues.projectId
-              ? {
-                  id: filterValues.projectId,
-                  label: filterValues.projectLabel ?? filterValues.projectId,
-                }
-              : null
-          }
           placeholder=""
-          onPick={() => setPickerOpen('project')}
-          onClear={() => {
-            setFilterValues({ ...filterValues, projectId: undefined, projectLabel: undefined });
-            onResetCursor();
-          }}
           testId="filter-project"
         />
       </InlineFilterPanel.Field>
-      {/* 5. Статус */}
-      <InlineFilterPanel.Field label={tPO('filter_status_multi')} expandable>
+      {/* 5. Организация — multi-select organization dropdown. */}
+      <InlineFilterPanel.Field label={tFilters('organization')} expandable fieldKey="organization">
+        <MultiCombobox
+          value={organizations.map((x) => x.id)}
+          items={organizations.map((x) => ({ value: x.id, label: x.label }))}
+          onSearch={async (q) => {
+            const r = await api.get<{ items: { id: string; name: string }[] }>(
+              `/organizations?search=${encodeURIComponent(q)}&limit=20`,
+            );
+            return r.items.map((x) => ({ value: x.id, label: x.name }));
+          }}
+          onChange={(nextIds, toggled) => {
+            setOrganizations((prev) =>
+              nextIds.map((id) => {
+                const ex = prev.find((s) => s.id === id);
+                if (ex) return ex;
+                if (toggled?.value === id) return { id, label: String(toggled.label) };
+                return { id, label: id };
+              }),
+            );
+            onResetCursor();
+          }}
+          placeholder=""
+          testId="filter-org"
+        />
+      </InlineFilterPanel.Field>
+      {/* 6. Статус */}
+      <InlineFilterPanel.Field label={tPO('filter_status_multi')} expandable fieldKey="status">
         <StateSelect
           value={stateFilter ?? undefined}
           onChange={(v) => {
@@ -471,8 +588,12 @@ export default function InternalOrdersPage() {
           testId="filter-state"
         />
       </InlineFilterPanel.Field>
-      {/* 6. Проведено */}
-      <InlineFilterPanel.Field label={tFields('applicable')} expandable>
+      {/* 7. Проведено */}
+      <InlineFilterPanel.Field
+        label={tFields('applicable')}
+        expandable={false}
+        fieldKey="applicable"
+      >
         <YesNoSelect
           value={filterValues.applicable}
           onChange={(v) => {
@@ -482,8 +603,8 @@ export default function InternalOrdersPage() {
           testId="filter-applicable"
         />
       </InlineFilterPanel.Field>
-      {/* 7. Напечатано */}
-      <InlineFilterPanel.Field label={tFields('printed')} expandable>
+      {/* 8. Напечатано */}
+      <InlineFilterPanel.Field label={tFields('printed')} expandable={false} fieldKey="printed">
         <YesNoSelect
           value={filterValues.printed}
           onChange={(v) => {
@@ -493,8 +614,8 @@ export default function InternalOrdersPage() {
           testId="filter-printed"
         />
       </InlineFilterPanel.Field>
-      {/* 8. Отправлено */}
-      <InlineFilterPanel.Field label={tFields('published')} expandable>
+      {/* 9. Отправлено */}
+      <InlineFilterPanel.Field label={tFields('published')} expandable={false} fieldKey="published">
         <YesNoSelect
           value={filterValues.published}
           onChange={(v) => {
@@ -504,83 +625,74 @@ export default function InternalOrdersPage() {
           testId="filter-published"
         />
       </InlineFilterPanel.Field>
-      {/* 9. Владелец-сотрудник */}
-      <InlineFilterPanel.Field label={tPO('filter_owner_employee')} expandable>
-        <CatalogPickerField
-          value={
-            filterValues.ownerId
-              ? { id: filterValues.ownerId, label: filterValues.ownerLabel ?? filterValues.ownerId }
-              : null
-          }
-          placeholder=""
-          onPick={() => setPickerOpen('owner')}
-          onClear={() => {
-            setFilterValues({ ...filterValues, ownerId: undefined, ownerLabel: undefined });
+      {/* 10. Владелец-сотрудник — multi-select employee dropdown. */}
+      <InlineFilterPanel.Field label={tPO('filter_owner_employee')} expandable fieldKey="owner">
+        <MultiCombobox
+          value={owners.map((x) => x.id)}
+          items={owners.map((x) => ({ value: x.id, label: x.label }))}
+          onSearch={async (q) => {
+            const r = await api.get<{ items: { id: string; name: string }[] }>(
+              `/employees?search=${encodeURIComponent(q)}&limit=20`,
+            );
+            return r.items.map((x) => ({ value: x.id, label: x.name }));
+          }}
+          onChange={(nextIds, toggled) => {
+            setOwners((prev) =>
+              nextIds.map((id) => {
+                const ex = prev.find((s) => s.id === id);
+                if (ex) return ex;
+                if (toggled?.value === id) return { id, label: String(toggled.label) };
+                return { id, label: id };
+              }),
+            );
             onResetCursor();
           }}
+          placeholder=""
           testId="filter-owner"
         />
       </InlineFilterPanel.Field>
-      {/* 10. Владелец-отдел */}
-      <InlineFilterPanel.Field label={tPO('filter_owner_group')} expandable>
-        <CatalogPickerField
-          value={
-            filterValues.groupId
-              ? {
-                  id: filterValues.groupId,
-                  label: filterValues.groupLabel ?? filterValues.groupId,
-                }
-              : null
-          }
-          placeholder=""
-          onPick={() => setPickerOpen('group')}
-          onClear={() => {
-            setFilterValues({ ...filterValues, groupId: undefined, groupLabel: undefined });
+      {/* 11. Владелец-отдел — multi-select department (group) dropdown. */}
+      <InlineFilterPanel.Field label={tPO('filter_owner_group')} expandable fieldKey="group">
+        <MultiCombobox
+          value={groups.map((x) => x.id)}
+          items={groups.map((x) => ({ value: x.id, label: x.label }))}
+          onSearch={async (q) => {
+            const r = await api.get<{ items: { id: string; name: string }[] }>(
+              `/groups?search=${encodeURIComponent(q)}&limit=20`,
+            );
+            return r.items.map((x) => ({ value: x.id, label: x.name }));
+          }}
+          onChange={(nextIds, toggled) => {
+            setGroups((prev) =>
+              nextIds.map((id) => {
+                const ex = prev.find((s) => s.id === id);
+                if (ex) return ex;
+                if (toggled?.value === id) return { id, label: String(toggled.label) };
+                return { id, label: id };
+              }),
+            );
             onResetCursor();
           }}
+          placeholder=""
           testId="filter-group"
         />
       </InlineFilterPanel.Field>
-      {/* 11. Сумма (range) */}
-      <InlineFilterPanel.Field label={`${tFields('sum')}:`} expandable>
-        <div className="flex items-center gap-1">
-          <MoneyInput
-            allowEmpty
-            valueMinor={
-              filterValues.sumMinorFrom !== undefined ? String(filterValues.sumMinorFrom) : ''
-            }
-            onChangeMinor={(minor) => {
-              setFilterValues({
-                ...filterValues,
-                sumMinorFrom: minor === '' ? undefined : Number(minor),
-              });
-              onResetCursor();
-            }}
-            data-test-id="filter-sum-from"
-            className="h-7 w-full rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] px-2 text-[var(--ms-text-primary)] text-sm focus:border-[var(--ms-border-focus)] focus:outline-none"
-          />
-          <span className="text-[var(--ms-text-muted)]">—</span>
-          <MoneyInput
-            allowEmpty
-            valueMinor={
-              filterValues.sumMinorTo !== undefined ? String(filterValues.sumMinorTo) : ''
-            }
-            onChangeMinor={(minor) => {
-              setFilterValues({
-                ...filterValues,
-                sumMinorTo: minor === '' ? undefined : Number(minor),
-              });
-              onResetCursor();
-            }}
-            data-test-id="filter-sum-to"
-            className="h-7 w-full rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] px-2 text-[var(--ms-text-primary)] text-sm focus:border-[var(--ms-border-focus)] focus:outline-none"
-          />
-        </div>
+      {/* 12. Общий доступ */}
+      <InlineFilterPanel.Field label={tPO('filter_shared')} expandable={false} fieldKey="shared">
+        <YesNoSelect
+          value={filterValues.shared}
+          onChange={(v) => {
+            setFilterValues({ ...filterValues, shared: v });
+            onResetCursor();
+          }}
+          testId="filter-shared"
+        />
       </InlineFilterPanel.Field>
-      {/* 12. Когда изменен */}
+      {/* 13. Когда изменен */}
       <InlineFilterPanel.Field
         label={`${tPO('filter_updated_period')}:`}
         expandable
+        fieldKey="updated"
         inlineSuffix={
           <PeriodShortcuts
             onChange={({ from, to }) => {
@@ -604,6 +716,32 @@ export default function InternalOrdersPage() {
             onResetCursor();
           }}
           testId="filter-updated"
+        />
+      </InlineFilterPanel.Field>
+      {/* 14. Кто изменил — multi-select employee dropdown (auditLog-approximated). */}
+      <InlineFilterPanel.Field label={tPO('filter_modified_by')} expandable fieldKey="modified_by">
+        <MultiCombobox
+          value={modifiedBys.map((x) => x.id)}
+          items={modifiedBys.map((x) => ({ value: x.id, label: x.label }))}
+          onSearch={async (q) => {
+            const r = await api.get<{ items: { id: string; name: string }[] }>(
+              `/employees?search=${encodeURIComponent(q)}&limit=20`,
+            );
+            return r.items.map((x) => ({ value: x.id, label: x.name }));
+          }}
+          onChange={(nextIds, toggled) => {
+            setModifiedBys((prev) =>
+              nextIds.map((id) => {
+                const ex = prev.find((s) => s.id === id);
+                if (ex) return ex;
+                if (toggled?.value === id) return { id, label: String(toggled.label) };
+                return { id, label: id };
+              }),
+            );
+            onResetCursor();
+          }}
+          placeholder=""
+          testId="filter-modified-by"
         />
       </InlineFilterPanel.Field>
     </InlineFilterPanel>
@@ -665,102 +803,6 @@ export default function InternalOrdersPage() {
         }
       />
       <CatalogPicker
-        open={pickerOpen === 'org'}
-        onClose={() => setPickerOpen(null)}
-        title={tFilters('organization')}
-        fetcher={async (q): Promise<PickerItem[]> => {
-          const r = await api.get<{ items: { id: string; name: string }[] }>(
-            `/organizations?search=${encodeURIComponent(q)}&limit=20`,
-          );
-          return r.items.map((x) => ({ id: x.id, primary: x.name }));
-        }}
-        onSelect={(item) => {
-          setFilterValues({
-            ...filterValues,
-            organizationId: item.id,
-            organizationLabel: String(item.primary),
-          });
-          onResetCursor();
-        }}
-      />
-      <CatalogPicker
-        open={pickerOpen === 'store'}
-        onClose={() => setPickerOpen(null)}
-        title={tFilters('store')}
-        fetcher={async (q): Promise<PickerItem[]> => {
-          const r = await api.get<{ items: { id: string; name: string }[] }>(
-            `/stores?search=${encodeURIComponent(q)}&limit=20`,
-          );
-          return r.items.map((x) => ({ id: x.id, primary: x.name }));
-        }}
-        onSelect={(item) => {
-          setFilterValues({
-            ...filterValues,
-            storeId: item.id,
-            storeLabel: String(item.primary),
-          });
-          onResetCursor();
-        }}
-      />
-      <CatalogPicker
-        open={pickerOpen === 'project'}
-        onClose={() => setPickerOpen(null)}
-        title={tPO('filter_project')}
-        fetcher={async (q): Promise<PickerItem[]> => {
-          const r = await api.get<{ items: { id: string; name: string }[] }>(
-            `/projects?search=${encodeURIComponent(q)}&limit=20`,
-          );
-          return r.items.map((x) => ({ id: x.id, primary: x.name }));
-        }}
-        onSelect={(item) => {
-          setFilterValues({
-            ...filterValues,
-            projectId: item.id,
-            projectLabel: String(item.primary),
-          });
-          onResetCursor();
-        }}
-      />
-      <CatalogPicker
-        open={pickerOpen === 'owner'}
-        onClose={() => setPickerOpen(null)}
-        title={tPO('filter_owner_employee')}
-        fetcher={async (q): Promise<PickerItem[]> => {
-          const r = await api.get<{ items: { id: string; name: string }[] }>(
-            `/employees?search=${encodeURIComponent(q)}&limit=20`,
-          );
-          return r.items.map((x) => ({ id: x.id, primary: x.name }));
-        }}
-        onSelect={(item) => {
-          setFilterValues({
-            ...filterValues,
-            ownerId: item.id,
-            ownerLabel: String(item.primary),
-          });
-          onResetCursor();
-        }}
-      />
-      <CatalogPicker
-        open={pickerOpen === 'group'}
-        onClose={() => setPickerOpen(null)}
-        title={tPO('filter_owner_group')}
-        fetcher={async (q): Promise<PickerItem[]> => {
-          const r = await api.get<{ items: { id: string; name: string }[] }>(
-            `/groups?search=${encodeURIComponent(q)}&limit=20`,
-          );
-          return r.items.map((x) => ({ id: x.id, primary: x.name }));
-        }}
-        onSelect={(item) => {
-          setFilterValues({
-            ...filterValues,
-            groupId: item.id,
-            groupLabel: String(item.primary),
-          });
-          onResetCursor();
-        }}
-      />
-
-      <CatalogPicker
         open={pickerOpen === 'massEditOwner'}
         onClose={() => setPickerOpen(null)}
         title={tFilters('owner_employee')}
@@ -802,6 +844,8 @@ export default function InternalOrdersPage() {
         projectValue={massEditProject}
         onProjectPick={() => setPickerOpen('massEditProject')}
         onProjectClear={() => setMassEditProject(null)}
+        groupOptions={(massGroupsData?.items ?? []).map((g) => ({ value: g.id, label: g.name }))}
+        showShared
         labels={{
           title: t('mass_edit_title'),
           ownerLabel: tFilters('owner_employee'),
@@ -810,6 +854,10 @@ export default function InternalOrdersPage() {
           apply: t('mass_edit_apply'),
           cancel: t('mass_edit_cancel'),
           hint: t('mass_edit_hint', { count: massEditIds.length }),
+          groupLabel: tMass('group_label'),
+          sharedLabel: tMass('shared_label'),
+          sharedYes: tMass('shared_yes'),
+          sharedNo: tMass('shared_no'),
         }}
         onSubmit={async (patch) => {
           await bulk.massEdit.mutateAsync({ ids: massEditIds, ...patch });

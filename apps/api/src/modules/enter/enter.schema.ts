@@ -36,6 +36,9 @@ export const EnterPositionInputSchema = z.object({
   countryId: z.string().uuid().nullish(),
   // «РНПТ» (goods-batch registration no.) + «Ячейка» (warehouse bin) — free text.
   rnpt: z.string().max(255).nullish(),
+  // moysklad «Ячейка» — address-storage bin. `cellId` = picked StoreCell (validated,
+  // drives per-cell stock on post); `cell` = denormalized «Зона / Ячейка» label (display).
+  cellId: z.string().uuid().nullish(),
   cell: z.string().max(255).nullish(),
 });
 export type EnterPositionInput = z.infer<typeof EnterPositionInputSchema>;
@@ -79,13 +82,13 @@ export const CreateEnterSchema = z.object({
     .default('0'),
   overheadDistribution: EnterOverheadDistributionSchema.default('WEIGHT'),
   overheadCurrency: z.string().length(3).default('UZS'),
-  positions: z.array(EnterPositionInputSchema).min(1, 'at least one position required'),
+  positions: z.array(EnterPositionInputSchema),
   attributes: z.record(z.string(), z.unknown()).optional(),
 });
 export type CreateEnterInput = z.infer<typeof CreateEnterSchema>;
 
 export const UpdateEnterSchema = CreateEnterSchema.partial().extend({
-  positions: z.array(EnterPositionInputSchema).min(1).optional(),
+  positions: z.array(EnterPositionInputSchema).optional(),
   version: z.number().int().nonnegative(),
 });
 export type UpdateEnterInput = z.infer<typeof UpdateEnterSchema>;
@@ -103,6 +106,7 @@ const csvUuid = z
 export const EnterFilterSchema = z.object({
   state: EnterStateSchema.optional(),
   organizationId: z.string().uuid().optional(),
+  organizationIds: csvUuid.optional(),
   /** «Склад» — Enter.storeId. */
   storeId: z.string().uuid().optional(),
   /** «Проект» — Enter.projectId. */

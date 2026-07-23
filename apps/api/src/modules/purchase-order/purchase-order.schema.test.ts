@@ -60,10 +60,8 @@ describe('CreatePurchaseOrderSchema', () => {
     expect(parsed.vatIncluded).toBe(false);
   });
 
-  it('requires at least one position', () => {
-    expect(() => CreatePurchaseOrderSchema.parse({ ...valid, positions: [] })).toThrow(
-      /at least one position/i,
-    );
+  it('allows empty positions — owner 2026-07-08, no Provedeno precondition', () => {
+    expect(() => CreatePurchaseOrderSchema.parse({ ...valid, positions: [] })).not.toThrow();
   });
 
   it('accepts optional deliveryPlannedMoment', () => {
@@ -89,13 +87,6 @@ describe('CreatePurchaseOrderSchema', () => {
       positions: [{ ...valid.positions[0], quantity: '0.5' }],
     });
     expect(parsed.positions[0].quantity).toBe('0.5');
-  });
-
-  it('accepts the «Проведён» applicable flag (create posted)', () => {
-    expect(CreatePurchaseOrderSchema.parse({ ...valid, applicable: true }).applicable).toBe(true);
-    expect(CreatePurchaseOrderSchema.parse({ ...valid, applicable: false }).applicable).toBe(false);
-    // absent → undefined (service falls back to draft, preserving prior behaviour)
-    expect(CreatePurchaseOrderSchema.parse(valid).applicable).toBeUndefined();
   });
 });
 

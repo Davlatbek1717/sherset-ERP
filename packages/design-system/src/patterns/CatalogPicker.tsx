@@ -215,6 +215,7 @@ export function CatalogPicker<T = unknown>({
         <Dialog.Overlay className="data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 z-[400] bg-black/40 data-[state=closed]:animate-out data-[state=open]:animate-in" />
         <Dialog.Content
           data-test-id={testId ?? 'catalog-picker'}
+          aria-describedby={undefined}
           className={cn(
             '-translate-x-1/2 -translate-y-1/2 fixed top-1/2 left-1/2 z-[400]',
             'w-full max-w-xl bg-[var(--ms-bg-surface)]',
@@ -450,7 +451,7 @@ function LegacyCatalogPickerField({
   return (
     <div
       className={cn(
-        'flex h-[var(--ms-control-h)] w-full items-center gap-1 pr-0.5 pl-2',
+        'flex h-[var(--ms-control-h)] w-full min-w-0 items-center gap-1 pr-0.5 pl-2',
         'border bg-[var(--ms-bg-surface)]',
         'transition-colors duration-[var(--ms-duration-fast)]',
         disabled
@@ -469,7 +470,7 @@ function LegacyCatalogPickerField({
         type="button"
         onClick={onPick}
         disabled={disabled}
-        className="min-w-0 flex-1 truncate text-left text-[12px] focus:outline-none"
+        className="min-w-0 flex-1 truncate text-left text-[13px] focus:outline-none"
         data-test-id={testId ? `${testId}-pick` : undefined}
       >
         {/* moysklad parity: empty reference field shows nothing (no placeholder). */}
@@ -628,7 +629,7 @@ function InlineCatalogPickerField({
       <Popover.Anchor asChild>
         <div
           className={cn(
-            'flex h-[var(--ms-control-h)] w-full items-center gap-1 pr-0.5 pl-2',
+            'flex h-[var(--ms-control-h)] w-full min-w-0 items-center gap-1 pr-0.5 pl-2',
             'border bg-[var(--ms-bg-surface)]',
             'transition-colors duration-[var(--ms-duration-fast)]',
             disabled
@@ -662,7 +663,7 @@ function InlineCatalogPickerField({
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={onKeyDown}
             className={cn(
-              'min-w-0 flex-1 truncate border-0 bg-transparent text-[12px] outline-none',
+              'min-w-0 flex-1 truncate border-0 bg-transparent text-[13px] outline-none',
               'placeholder:text-[var(--ms-text-placeholder)]',
               'disabled:cursor-not-allowed',
             )}
@@ -774,7 +775,7 @@ function InlineCatalogPickerField({
                   onMouseEnter={() => setHighlight(i)}
                   onClick={() => select(item)}
                   className={cn(
-                    'flex w-full flex-col gap-0.5 px-3 py-1.5 text-left text-[12px]',
+                    'flex w-full flex-col gap-0.5 px-3 py-1.5 text-left text-[13px]',
                     'transition-colors duration-[var(--ms-duration-fast)]',
                     item.disabled
                       ? 'cursor-not-allowed opacity-50'

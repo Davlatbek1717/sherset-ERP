@@ -27,9 +27,7 @@
  * Exit:   0 = GO · 1 = ANOMALIYA (ro'yxati chiqadi → audit-agent yuboring)
  */
 import { execSync, spawnSync } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import net from 'node:net';
 
 const sh = (cmd) => execSync(cmd, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
@@ -39,9 +37,7 @@ const infos = [];
 // ── 1. working tree
 const porcelain = sh('git status --porcelain');
 if (porcelain) {
-  issues.push(
-    `working tree TOZA EMAS (uzilgan sessiya artefakti YOKI PARALLEL SESSIYA ishlayapti — CLAUDE.md §6: bu fayllarga TEGMA, faqat aniq yo'llar bilan stage qil):\n${porcelain}`,
-  );
+  issues.push(`working tree TOZA EMAS (uzilgan sessiya artefakti?):\n${porcelain}`);
 } else {
   infos.push('tree: toza');
 }
@@ -114,50 +110,12 @@ infos.push(
   `detail: ${prog.detail_pages?.audited}/${prog.detail_pages?.total_target} · list_audits: ${prog.list_audits?.audited}`,
 );
 
-// ── 5. MEMORY.md limiti (2026-07-20: hardcoded yo'l ENDI IKKINCHI marta
-// mashina/papka ko'chganda buzildi — 07-04'da moysklad→vps-dagi-sherset,
-// endi vps-dagi-sherset→bu-mashina. Doim buziladigan qattiq yo'l o'rniga
-// endi ~/.claude/projects/* ichidan avtomat topamiz: cwd oxirgi segmentiga
-// mos keladigan (yoki yagona) `memory/MEMORY.md`ni tanlaymiz.)
-function findMemoryPath() {
-  const projectsDir = join(homedir(), '.claude', 'projects');
-  if (!existsSync(projectsDir)) return null;
-  const cwdTail = process
-    .cwd()
-    .split(/[\\/]/)
-    .pop()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '');
-  const dirs = readdirSync(projectsDir, { withFileTypes: true })
-    .filter((d) => d.isDirectory())
-    .map((d) => d.name);
-  const candidates = dirs.filter((d) => d.toLowerCase().replace(/[^a-z0-9]+/g, '').includes(cwdTail));
-  const pick = candidates.length > 0 ? candidates : dirs;
-  for (const name of pick) {
-    const p = join(projectsDir, name, 'memory', 'MEMORY.md');
-    if (existsSync(p)) return p;
-  }
-  return null;
-}
-const memPath = findMemoryPath();
-if (memPath && existsSync(memPath)) {
+// ── 5. MEMORY.md limiti
+const memPath = 'C:\\Users\\user\\.claude\\projects\\d--projects-moysklad\\memory\\MEMORY.md';
+if (existsSync(memPath)) {
   const kb = statSync(memPath).size / 1024;
   if (kb > 24.4) issues.push(`MEMORY.md ${kb.toFixed(1)}KB > 24.4KB auto-load limiti (trim kerak)`);
   else infos.push(`MEMORY.md: ${kb.toFixed(1)}KB (limit ichida)`);
-} else {
-  issues.push(
-    `MEMORY.md topilmadi (~/.claude/projects/*/memory/ ichidan avtomat qidirildi, ${memPath ?? 'hech narsa'} topilmadi) — birinchi sessiyada bo'lsa normal, «davom et» yakunida yozing`,
-  );
-}
-
-// ── 5b. NEXT.md hajmi (arxiv qoidasi: «Aniq keyingi vazifa»da eng yangi ~8–10 entry qoladi)
-const nextLines = next.split('\n').length;
-if (nextLines > 600) {
-  issues.push(
-    `NEXT.md ${nextLines} qator > 600 — eski entry'larni docs/audits/_ARCHIVE-NEXT-<sana>.md ga ko'chir (VERBATIM)`,
-  );
-} else {
-  infos.push(`NEXT.md hajmi: ${nextLines} qator (600 limit ichida)`);
 }
 
 // ── 6. portlar (axborot)

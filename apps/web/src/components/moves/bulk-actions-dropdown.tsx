@@ -151,7 +151,7 @@ export function MoveBulkActionsDropdown({
       </DropdownMenu.Item>
       <DropdownMenu.Item
         onSelect={onMassEdit}
-        disabled={!hasSelection || isPending || !onMassEdit}
+        disabled={isPending || !onMassEdit}
         testId="move-bulk-action-mass-edit"
       >
         {t('mass_edit')}

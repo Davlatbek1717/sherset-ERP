@@ -21,9 +21,11 @@ export const TabsList = React.forwardRef<
     <TabsPrimitive.List
       ref={ref}
       className={cn(
+        // Mobile: long tab strips (product card ~6 tabs) drove page overflow —
+        // below `md` the list becomes a swipeable single row, desktop untouched.
         variant === 'boxed'
-          ? 'flex items-stretch gap-1'
-          : 'inline-flex items-center gap-1 border-[var(--ms-border-default)] border-b',
+          ? 'flex items-stretch gap-1 max-md:flex-wrap'
+          : 'inline-flex items-center gap-1 border-[var(--ms-border-default)] border-b max-md:w-full max-md:max-w-full max-md:overflow-x-auto max-md:[&::-webkit-scrollbar]:hidden max-md:[scrollbar-width:none]',
         className,
       )}
       {...props}
@@ -47,10 +49,10 @@ export const TabsTrigger = React.forwardRef<
         variant === 'boxed'
           ? cn(
               'flex-1 rounded-[var(--ms-radius-default)] px-4 py-2 text-center',
-              // CRM-card tab colours: inactive neutral #e2e2e2, active = brand
-              // (Sherset blue via --ms-brand-600).
+              // moysklad CRM-card tab colours, pixel-sampled from the live capture
+              // (events-tab-2026-06-23/01-events-tab.png): inactive #e2e2e2, active #1f75a8.
               'bg-[#e2e2e2] text-[var(--ms-text-secondary)] hover:bg-[#d8d8d8]',
-              'data-[state=active]:bg-[var(--ms-brand-600)] data-[state=active]:text-white',
+              'data-[state=active]:bg-[#1f75a8] data-[state=active]:text-white',
             )
           : cn(
               '-mb-px border-transparent border-b-2 px-4 py-2 text-[var(--ms-text-secondary)]',

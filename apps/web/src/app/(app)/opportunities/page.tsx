@@ -5,10 +5,8 @@ import { FilterToggleButton } from '@/components/filters/filter-toggle-button';
 import { useBulkDocumentActions } from '@/hooks/use-bulk-actions';
 import { useColumnVisibility } from '@/hooks/use-column-visibility';
 import { useColumnWidths } from '@/hooks/use-column-widths';
-import { useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
 import { opportunityStatusTone } from '@/lib/domain-status-tone';
-import { pinDefaultCustomer } from '@/lib/pin-default-customer';
 import {
   Badge,
   CatalogPicker,
@@ -16,6 +14,7 @@ import {
   type DataTableColumn,
   InlineFilterPanel,
   ListView,
+  MultiCombobox,
   NativeSelect,
   PeriodInputs,
   PeriodShortcuts,
@@ -30,6 +29,9 @@ import { useTranslations } from 'next-intl';
 import { useState } from 'react';
 
 type StatusValue = 'open' | 'won' | 'lost';
+
+/** Multi-select reference field — moysklad checkbox-dropdown holds {id,label}[]. */
+type RefMulti = { id: string; label: string };
 
 interface Opportunity {
   id: string;
@@ -63,8 +65,6 @@ export default function OpportunitiesPage() {
   const tCommon = useTranslations('common');
   const tFields = useTranslations('fields');
   const tFilters = useTranslations('filters');
-  const tForm = useTranslations('form');
-  const userDefaults = useUserDefaults();
 
   const [searchInput, setSearchInput] = useState('');
   const search = useDebounce(searchInput, 300);
@@ -75,12 +75,13 @@ export default function OpportunitiesPage() {
   const [sortKey, setSortKey] = useState<string>('createdAt');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [filterOpen, setFilterOpen] = useState(true);
-  const [pickerOpen, setPickerOpen] = useState<null | 'pipeline' | 'agent' | 'owner' | 'stage'>(
-    null,
-  );
+  const [pickerOpen, setPickerOpen] = useState<null | 'pipeline' | 'owner' | 'stage'>(null);
   const [pipelineFilter, setPipelineFilter] = useState<{ id?: string; label?: string }>({});
   const [stageFilter, setStageFilter] = useState<{ id?: string; label?: string }>({});
-  const [agentFilter, setAgentFilter] = useState<{ id?: string; label?: string }>({});
+  // «Контрагент» — moysklad-parity inline multi-select checkbox dropdown (was a
+  // single-select modal). Shows the phone as a sublabel; searches /counterparties
+  // by name OR phone; on the wire goes out as `counterpartyIds` CSV.
+  const [counterparties, setCounterparties] = useState<RefMulti[]>([]);
   const [ownerFilter, setOwnerFilter] = useState<{ id?: string; label?: string }>({});
   const [dateFrom, setDateFrom] = useState<string | undefined>();
   const [dateTo, setDateTo] = useState<string | undefined>();
@@ -93,7 +94,9 @@ export default function OpportunitiesPage() {
     archived: archived === 'archived' ? 'true' : 'false',
     ...(pipelineFilter.id ? { pipelineId: pipelineFilter.id } : {}),
     ...(stageFilter.id ? { stageId: stageFilter.id } : {}),
-    ...(agentFilter.id ? { counterpartyId: agentFilter.id } : {}),
+    ...(counterparties.length
+      ? { counterpartyIds: counterparties.map((x) => x.id).join(',') }
+      : {}),
     ...(ownerFilter.id ? { ownerId: ownerFilter.id } : {}),
     ...(dateFrom ? { dateFrom } : {}),
     ...(dateTo ? { dateTo } : {}),
@@ -112,7 +115,7 @@ export default function OpportunitiesPage() {
     statusFilter,
     pipelineFilter.id,
     stageFilter.id,
-    agentFilter.id,
+    counterparties.map((x) => x.id).join(','),
     ownerFilter.id,
     dateFrom,
     dateTo,
@@ -282,7 +285,7 @@ export default function OpportunitiesPage() {
     !!statusFilter ||
     !!pipelineFilter.id ||
     !!stageFilter.id ||
-    !!agentFilter.id ||
+    counterparties.length > 0 ||
     !!ownerFilter.id ||
     !!dateFrom ||
     !!dateTo ||
@@ -347,7 +350,7 @@ export default function OpportunitiesPage() {
               setStatusFilter('');
               setPipelineFilter({});
               setStageFilter({});
-              setAgentFilter({});
+              setCounterparties([]);
               setOwnerFilter({});
               setDateFrom(undefined);
               setDateTo(undefined);
@@ -425,20 +428,36 @@ export default function OpportunitiesPage() {
                 testId="filter-stage"
               />
             </InlineFilterPanel.Field>
-            {/* 4. Контрагент (counterpartyId) */}
+            {/* 4. Контрагент (counterpartyIds) — moysklad-parity inline
+                multi-select checkbox dropdown: type a name OR phone, results
+                appear inline (each row shows the phone as a sublabel), tick as
+                many as needed. Was a single-select modal. */}
             <InlineFilterPanel.Field label={tFields('agent')} expandable>
-              <CatalogPickerField
-                value={
-                  agentFilter.id
-                    ? { id: agentFilter.id, label: agentFilter.label ?? agentFilter.id }
-                    : null
-                }
-                placeholder=""
-                onPick={() => setPickerOpen('agent')}
-                onClear={() => {
-                  setAgentFilter({});
+              <MultiCombobox
+                value={counterparties.map((x) => x.id)}
+                items={counterparties.map((x) => ({ value: x.id, label: x.label }))}
+                onSearch={async (q) => {
+                  const r = await api.get<{
+                    items: { id: string; name: string; phone?: string | null }[];
+                  }>(`/counterparties?search=${encodeURIComponent(q)}&limit=20`);
+                  return r.items.map((x) => ({
+                    value: x.id,
+                    label: x.name,
+                    sublabel: x.phone || undefined,
+                  }));
+                }}
+                onChange={(nextIds, toggled) => {
+                  setCounterparties((prev) =>
+                    nextIds.map((id) => {
+                      const ex = prev.find((s) => s.id === id);
+                      if (ex) return ex;
+                      if (toggled?.value === id) return { id, label: String(toggled.label) };
+                      return { id, label: id };
+                    }),
+                  );
                   setCursor(undefined);
                 }}
+                placeholder=""
                 testId="filter-agent"
               />
             </InlineFilterPanel.Field>
@@ -558,27 +577,6 @@ export default function OpportunitiesPage() {
         }}
         onSelect={(item) => {
           setPipelineFilter({ id: item.id, label: String(item.primary) });
-          setCursor(undefined);
-        }}
-      />
-      <CatalogPicker
-        open={pickerOpen === 'agent'}
-        onClose={() => setPickerOpen(null)}
-        title={tFields('agent')}
-        fetcher={async (q): Promise<PickerItem[]> => {
-          const r = await api.get<{ items: { id: string; name: string }[] }>(
-            `/counterparties?search=${encodeURIComponent(q)}&limit=20`,
-          );
-          const items = r.items.map((x) => ({ id: x.id, primary: x.name }));
-          return pinDefaultCustomer(
-            items,
-            userDefaults.data?.defaultCustomer,
-            q,
-            tForm('pinned_default'),
-          );
-        }}
-        onSelect={(item) => {
-          setAgentFilter({ id: item.id, label: String(item.primary) });
           setCursor(undefined);
         }}
       />

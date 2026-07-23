@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { csvUuid } from '../shared/csv.js';
 
 const uuid = z.string().uuid();
 
@@ -95,6 +96,7 @@ export const TaskFilterSchema = z.object({
   // moysklad «Контрагент» — task.agentId FK (which counterparty the task
   // is about). Distinct from the polymorphic entity link.
   agentId: uuid.optional(),
+  agentIds: csvUuid.optional(),
   status: TaskStatus.optional(),
   priority: TaskPriority.optional(),
   archived: boolFromString.optional(),

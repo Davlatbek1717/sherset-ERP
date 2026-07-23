@@ -21,8 +21,39 @@ export const MassEditBaseSchema = z.object({
   ownerId: uuid.nullable().optional(),
   projectId: uuid.nullable().optional(),
   description: z.string().max(4096).nullable().optional(),
+  // moysklad #bulkEdit parity (owner 2026-07-09): «Владелец-отдел» +
+  // «Общий доступ» are offered on every document's mass-edit wizard;
+  // «Статья расходов» on expense-carrying docs (Списание, РКО, исх. платёж —
+  // stored as the item NAME, mirroring Loss.expenseItem). Each controller
+  // still whitelists which of these its entity actually applies.
+  groupId: uuid.nullable().optional(),
+  shared: z.boolean().optional(),
+  expenseItem: z.string().max(100).nullable().optional(),
+  // «Статус» — custom-status entities only (customerorder, demand, invoiceout,
+  // purchaseorder, purchasereturn, salesreturn, supply). The service validates
+  // the state belongs to the account AND the entity type (assertStateInTenant).
+  stateId: uuid.nullable().optional(),
 });
 export type MassEditBaseInput = z.infer<typeof MassEditBaseSchema>;
+
+/**
+ * Assert a mass-edit «Статус» target state exists in this account for this
+ * entity type. Prevents a hand-crafted request pointing a CustomerOrder at a
+ * Supply state (or another account's state). Call from massEditApply before
+ * writing `statusId`.
+ */
+export async function assertStateInTenant(
+  prisma: PrismaService,
+  accountId: string,
+  stateId: string,
+  entityType: string,
+): Promise<void> {
+  const row = await prisma.client.state.findFirst({
+    where: { id: stateId, accountId, entityType },
+    select: { id: true },
+  });
+  if (!row) throw new BadRequestException('Status topilmadi');
+}
 
 /**
  * Per-entity helper to assert that at least one editable field is
@@ -59,6 +90,7 @@ export function assertPatchHasAtLeastOneField(
 export type MassEditTenantRefs = {
   ownerId?: string | null;
   projectId?: string | null;
+  groupId?: string | null;
 };
 
 /**
@@ -90,6 +122,15 @@ export async function assertMassEditRefsInTenant(
         .findFirst({ where: { id: refs.projectId, accountId }, select: { id: true } })
         .then((row) => {
           if (!row) throw new BadRequestException('Loyiha topilmadi');
+        }),
+    );
+  }
+  if (refs.groupId) {
+    checks.push(
+      prisma.client.group
+        .findFirst({ where: { id: refs.groupId, accountId }, select: { id: true } })
+        .then((row) => {
+          if (!row) throw new BadRequestException("Bo'lim topilmadi");
         }),
     );
   }

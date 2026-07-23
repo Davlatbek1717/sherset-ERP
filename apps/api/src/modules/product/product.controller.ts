@@ -7,7 +7,6 @@ import {
   Param,
   Patch,
   Post,
-  Put,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -18,11 +17,15 @@ import { RequirePermission } from '../permissions/require-permission.decorator.j
 import { BulkIdsSchema, runBulk } from '../shared/bulk.js';
 import { AddAnalogSchema } from './product-analog.schema.js';
 import { ProductAnalogService } from './product-analog.service.js';
+import { ProductCellMoveService } from './product-cell-move.service.js';
+import { ProductCutService } from './product-cut.service.js';
 import {
   BulkMoveSchema,
   BulkSetPricesSchema,
   BulkUpdateSchema,
-  SetProductLocationsSchema,
+  ProductIdSchema,
+  SaveLinePricesSchema,
+  SetSalePriceSchema,
 } from './product.schema.js';
 import { ProductService } from './product.service.js';
 
@@ -32,6 +35,8 @@ export class ProductController {
   constructor(
     @Inject(ProductService) private readonly service: ProductService,
     @Inject(ProductAnalogService) private readonly analogs: ProductAnalogService,
+    @Inject(ProductCutService) private readonly cutService: ProductCutService,
+    @Inject(ProductCellMoveService) private readonly cellMoveService: ProductCellMoveService,
   ) {}
 
   @Get()
@@ -48,36 +53,87 @@ export class ProductController {
     return this.service.characteristicValues(user.accountId);
   }
 
-  // Yacheyka scan — cell kod (NN-NN-NN-NN yoki 8 raqamli barcode) bo'yicha shu
-  // manzilga biriktirilgan tovarlar + qoldiqlar. Literal 'cell' segmenti `:id`
-  // route'idan OLDIN turishi shart (aks holda 'cell' id deb qabul qilinadi).
-  @Get('cell/:code')
+  // «Полка» + «Ячейка» pickers on the product card — all warehouses' zones/cells
+  // (literal path, declared before `:id` so it isn't captured as an id).
+  @Get('storage-options')
   @RequirePermission({ entity: 'product', action: 'view' })
-  async cellContents(@CurrentUser() user: AuthenticatedUser, @Param('code') code: string) {
-    return this.service.getCellContents(user.accountId, code);
-  }
-
-  // Scan page — product detail + per-store stock balances. Declared before `:id`
-  // so the literal segment 'scan' is not captured as an id parameter.
-  @Get(':id/scan')
-  @RequirePermission({ entity: 'product', action: 'view' })
-  async scanInfo(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
-    return this.service.getScanInfo(user.accountId, id);
-  }
-
-  // POS skaner — shtrix-kod bo'yicha aynan bitta tovar. Literal 'scan' segmenti
-  // `:id` route'idan OLDIN turishi shart (aks holda 'scan' id deb qabul qilinadi).
-  // Bu `:id/scan` (yuqorida, id bo'yicha) dan farqli — bu ?code= bo'yicha qidiradi.
-  @Get('scan')
-  @RequirePermission({ entity: 'product', action: 'view' })
-  async scanByCode(@CurrentUser() user: AuthenticatedUser, @Query('code') code: string) {
-    return this.service.scanByCode(user.accountId, code);
+  async storageOptions(@CurrentUser() user: AuthenticatedUser) {
+    return this.service.storageOptions(user.accountId);
   }
 
   @Get(':id')
   @RequirePermission({ entity: 'product', action: 'view' })
   async getOne(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     return this.service.findById(user.accountId, id);
+  }
+
+  // «Место хранения» — the product's real per-cell stock (StockByCell rows),
+  // shown as a read-only table on the product card.
+  @Get(':id/cell-stock')
+  @RequirePermission({ entity: 'product', action: 'view' })
+  async cellStock(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.service.cellStock(user.accountId, id);
+  }
+
+  // «Переместить» — move this product between two cells of the SAME store (pure
+  // per-cell redistribution; store-level stock unchanged). An address-storage
+  // mutation ⇒ `store.update`, consistent with every other cell operation.
+  @Post(':id/cell-move')
+  @RequirePermission({ entity: 'store', action: 'update' })
+  async cellMove(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    return this.cellMoveService.move(user.accountId, user.sub, id, body);
+  }
+
+  // «Переместить» on a HOME-CELL binding row — re-assign the product's home cell
+  // (attributes `__yacheyka`/`__polka`) to another cell. Edits the product card ⇒
+  // `product.update` (a pure label move, no stock touched).
+  @Post(':id/cell-rebind')
+  @RequirePermission({ entity: 'product', action: 'update' })
+  async cellRebind(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    return this.cellMoveService.rebind(user.accountId, user.sub, id, body);
+  }
+
+  // «Переместить» qty from the HOME-CELL remainder into a real target cell —
+  // allocate the product's unallocated on-hand into an address-storage bin
+  // (StockByCell only; store stock unchanged). Address-storage mutation ⇒
+  // `store.update`, consistent with `cell-move`.
+  @Post(':id/cell-place')
+  @RequirePermission({ entity: 'store', action: 'update' })
+  async cellPlace(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    return this.cellMoveService.place(user.accountId, user.sub, id, body);
+  }
+
+  // «Раскрой» — cut meter-good pieces into remnant pieces: POSTED Списание +
+  // Оприходование in ONE transaction (product-cut.service.ts). The decorator
+  // covers loss.create; the service additionally requires enter.create +
+  // product.create (a cut books an Enter and may create remnant products).
+  @Post(':id/cut')
+  @RequirePermission({ entity: 'loss', action: 'create' })
+  async cut(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    return this.cutService.cut(user.accountId, user.sub, id, body);
+  }
+
+  // «Отрезы» card — the product's remnant family with live stock totals.
+  @Get(':id/cuts')
+  @RequirePermission({ entity: 'product', action: 'view' })
+  async cuts(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.cutService.cuts(user.accountId, id);
   }
 
   @Post()
@@ -92,14 +148,6 @@ export class ProductController {
   @RequirePermission({ entity: 'product', action: 'create' })
   async allocateCode(@CurrentUser() user: AuthenticatedUser) {
     return { code: await this.service.allocateCode(user.accountId) };
-  }
-
-  // «Barcode yaratish» — shtrix-kodi yo'q barcha mahsulotlarga EAN-13 beradi
-  // (skaner orqali topiladigan bo'lsin). Mahsulotlarni o'zgartiradi → update.
-  @Post('generate-barcodes')
-  @RequirePermission({ entity: 'product', action: 'update' })
-  async generateBarcodes(@CurrentUser() user: AuthenticatedUser) {
-    return this.service.generateMissingBarcodes(user.accountId);
   }
 
   @Patch(':id')
@@ -166,24 +214,6 @@ export class ProductController {
     return this.analogs.remove(user.accountId, id, analogId);
   }
 
-  // ── Multi-bin: additional shelf locations (beyond the primary loc* home) ──
-  @Get(':id/locations')
-  @RequirePermission({ entity: 'product', action: 'view' })
-  async listLocations(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
-    return this.service.listLocations(user.accountId, id);
-  }
-
-  @Put(':id/locations')
-  @RequirePermission({ entity: 'product', action: 'update' })
-  async setLocations(
-    @CurrentUser() user: AuthenticatedUser,
-    @Param('id') id: string,
-    @Body() body: unknown,
-  ) {
-    const { locations } = SetProductLocationsSchema.parse(body);
-    return this.service.setLocations(user.accountId, id, locations);
-  }
-
   @Post('bulk-delete')
   @RequirePermission({ entity: 'product', action: 'delete' })
   async bulkDelete(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
@@ -237,5 +267,30 @@ export class ProductController {
   async bulkUpdate(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
     const { ids, ...patch } = BulkUpdateSchema.parse(body);
     return this.service.bulkUpdate(user.accountId, ids, patch);
+  }
+
+  // «Цена ▾ → Сохранить цены» — write a document grid's per-line prices to the
+  // products' default sale price type (moysklad position-grid action).
+  @Post('save-line-prices')
+  @RequirePermission({ entity: 'product', action: 'create' })
+  async saveLinePrices(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
+    const { items } = SaveLinePricesSchema.parse(body);
+    return this.service.saveLinePrices(user.accountId, items, user.sub);
+  }
+
+  // Pick-modal «Doimiy narx» — make a negotiated price the product's permanent
+  // default sale price. Deliberately JWT-only (NO product permission): owner
+  // decision 2026-07-17 — ANY cashier may do this from the sales pick modal.
+  @Post(':id/sale-price')
+  async setDefaultSalePrice(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    // A garbage :id would hit Prisma's @db.Uuid column as a P2023 (500) — parse
+    // it here so a malformed id is a clean 400 like every other Zod failure.
+    const productId = ProductIdSchema.parse(id);
+    const { priceMinor } = SetSalePriceSchema.parse(body);
+    return this.service.setDefaultSalePrice(user.accountId, user.sub, productId, priceMinor);
   }
 }

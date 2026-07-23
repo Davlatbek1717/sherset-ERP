@@ -22,9 +22,11 @@ import {
   Input,
   NativeSelect,
   PageHeader,
+  StickyHScroll,
   buildCsv,
   csvTimestamp,
   downloadCsv,
+  formatIso,
   formatMoney,
 } from '@moysklad/ui';
 import { useQuery } from '@tanstack/react-query';
@@ -82,10 +84,10 @@ const INPUT_CLASS =
 
 function defaultDateFrom(): string {
   const d = new Date();
-  return new Date(d.getFullYear(), 0, 1).toISOString().slice(0, 10);
+  return formatIso(new Date(d.getFullYear(), 0, 1));
 }
 function defaultDateTo(): string {
-  return new Date().toISOString().slice(0, 10);
+  return formatIso(new Date());
 }
 
 /**
@@ -223,7 +225,7 @@ export default function PurchaseManagementReportPage() {
   };
 
   return (
-    <Container size="full" className="py-4">
+    <Container size="lg" className="py-4">
       <Breadcrumb
         items={[{ label: t('breadcrumb_reports'), href: '/reports' }, { label: t('title') }]}
       />
@@ -356,7 +358,7 @@ export default function PurchaseManagementReportPage() {
       )}
 
       {data && (
-        <div className="mt-3 overflow-x-auto rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)]">
+        <StickyHScroll className="mt-3 rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)]">
           <table className="w-full text-sm">
             <thead className="border-[var(--ms-border-default)] border-b bg-[var(--ms-bg-muted)] text-[var(--ms-text-secondary)]">
               <tr>
@@ -585,7 +587,7 @@ export default function PurchaseManagementReportPage() {
               </tfoot>
             )}
           </table>
-        </div>
+        </StickyHScroll>
       )}
     </Container>
   );

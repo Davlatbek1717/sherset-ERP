@@ -13,6 +13,7 @@ import { AttributeMetadataService } from '../attribute-metadata/attribute-metada
 import { computePerUnitCost } from '../demand/fifo-consumer.js';
 import { tashkentRangeBounds } from '../report/report-date-bounds.util.js';
 import { resolveCreatorGroupId } from '../shared/group-stamp.js';
+import { assertMassEditRefsInTenant } from '../shared/mass-edit.js';
 import { mapVersionedUpdateError } from '../shared/optimistic-lock.js';
 import { type StockDelta, StockService } from '../stock/stock.service.js';
 import { WebhookFireService } from '../webhook/webhook-fire.service.js';
@@ -299,6 +300,11 @@ export class LossService {
   async create(accountId: string, userId: string, raw: unknown) {
     const parsed = this.parseCreate(raw);
     await this.ensureRefs(accountId, parsed.organizationId, parsed.storeId);
+    await this.stock.assertCellsInStore(
+      accountId,
+      parsed.storeId,
+      parsed.positions.map((p) => p.cellId),
+    );
 
     const name = await this.nextName(accountId);
     const attributes = await this.attrs.validateAndNormalize(accountId, 'Loss', parsed.attributes);
@@ -335,6 +341,7 @@ export class LossService {
               // «Причина списания» / «Ячейка» — per-line free text (the cost is
               // NOT entered; it is computed at post — 066d55fb valuation parity).
               reason: p.reason ?? null,
+              cellId: p.cellId ?? null,
               cell: p.cell ?? null,
               // «Цена» — the editable себестоимость (default buyPrice); post() books it.
               costMinor: p.costMinor ? BigInt(p.costMinor) : null,
@@ -344,6 +351,13 @@ export class LossService {
       });
       await this.logAudit(accountId, userId, 'create', created.id, null);
       this.webhookFire.fireForEvent(accountId, 'loss', 'CREATE', created.id);
+      // «Проведено» on save — run the SAME verified posting path the detail
+      // «Провести» uses (write-off deduction + valuation, Serializable tx). The
+      // draft is already committed; a post failure surfaces its error with the
+      // draft saved (moysklad parity — the doc is kept, not lost).
+      if (parsed.applicable) {
+        return await this.transition(accountId, userId, created.id, 'post');
+      }
       return created;
     } catch (e) {
       this.handlePrisma(e);
@@ -361,6 +375,13 @@ export class LossService {
     }
     if (existing.state === 'cancelled') {
       throw new BadRequestException("Bekor qilingan loss'ni o'zgartirib bo'lmaydi");
+    }
+    if (parsed.positions) {
+      await this.stock.assertCellsInStore(
+        accountId,
+        parsed.storeId ?? existing.storeId,
+        parsed.positions.map((p) => p.cellId),
+      );
     }
     const data: Prisma.LossUpdateInput = {};
     if (parsed.description !== undefined) data.description = parsed.description;
@@ -399,6 +420,7 @@ export class LossService {
           // Round-trip «Причина списания» / «Ячейка» — the destructive
           // delete+recreate would otherwise WIPE them on every edit.
           reason: p.reason ?? null,
+          cellId: p.cellId ?? null,
           cell: p.cell ?? null,
           costMinor: p.costMinor ? BigInt(p.costMinor) : null,
         })),
@@ -442,6 +464,41 @@ export class LossService {
           : await this.cancel(accountId, userId, id, existing);
     this.webhookFire.fireForEvent(accountId, 'loss', 'UPDATE', id, ['state']);
     return result;
+  }
+
+  /**
+   * moysklad «Массовое редактирование» — apply one patch to a single Loss
+   * (the controller fans runBulk over the ids). Mirrors
+   * invoice-out.service.massEditApply; Списание's wizard adds groupId
+   * («Владелец-отдел»), shared («Общий доступ») and expenseItem
+   * («Статья расходов», stored as the item NAME per Loss.expenseItem).
+   */
+  async massEditApply(
+    accountId: string,
+    userId: string,
+    id: string,
+    patch: {
+      ownerId?: string | null;
+      projectId?: string | null;
+      description?: string | null;
+      groupId?: string | null;
+      shared?: boolean;
+      expenseItem?: string | null;
+    },
+  ) {
+    await this.findById(accountId, id);
+    await assertMassEditRefsInTenant(this.prisma, accountId, patch);
+    const data: Record<string, unknown> = {};
+    if ('ownerId' in patch) data.ownerId = patch.ownerId;
+    if ('projectId' in patch) data.projectId = patch.projectId;
+    if ('description' in patch) data.description = patch.description;
+    if ('groupId' in patch) data.groupId = patch.groupId;
+    if ('shared' in patch && patch.shared !== undefined) data.shared = patch.shared;
+    if ('expenseItem' in patch) data.expenseItem = patch.expenseItem;
+    const updated = await this.prisma.client.loss.update({ where: { id, accountId }, data });
+    await this.logAudit(accountId, userId, 'mass-edit', id, patch);
+    this.webhookFire.fireForEvent(accountId, 'loss', 'UPDATE', id, Object.keys(data));
+    return updated;
   }
 
   async delete(accountId: string, userId: string, id: string) {
@@ -503,6 +560,7 @@ export class LossService {
             quantity: p.quantity,
             // preserve per-line «Причина списания» / «Ячейка» on copy.
             reason: p.reason,
+            cellId: p.cellId,
             cell: p.cell,
           })),
         },
@@ -523,7 +581,8 @@ export class LossService {
     if (existing.state !== 'draft') {
       throw new BadRequestException(`Only draft → posted (current: ${existing.state})`);
     }
-    if (existing.positions.length === 0) throw new BadRequestException("Pozitsiyalar yo'q");
+    // Owner 2026-07-08: «Проведено» toggles freely — an empty doc may be posted
+    // (0 positions ⇒ 0 stock delta; moysklad allows it). No position precondition.
 
     const store = await this.prisma.client.store.findFirst({
       where: { id: existing.storeId, accountId },
@@ -611,6 +670,7 @@ export class LossService {
             storeId: existing.storeId,
             assortmentKind: p.assortmentKind,
             assortmentId: p.assortmentId,
+            cellId: p.cellId ?? null,
             qtyDelta: `-${String(p.quantity)}`,
             costDeltaMinor: -valueMinor,
             docType: 'loss',
@@ -677,6 +737,7 @@ export class LossService {
             storeId: existing.storeId,
             assortmentKind: p.assortmentKind,
             assortmentId: p.assortmentId,
+            cellId: p.cellId ?? null,
             qtyDelta: String(p.quantity),
             costDeltaMinor: valueMinor,
             docType: 'loss_unpost',
@@ -724,6 +785,7 @@ export class LossService {
             storeId: existing.storeId,
             assortmentKind: p.assortmentKind,
             assortmentId: p.assortmentId,
+            cellId: p.cellId ?? null,
             qtyDelta: String(p.quantity),
             costDeltaMinor: valueMinor,
             docType: 'loss_cancel',

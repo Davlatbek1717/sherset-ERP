@@ -21,10 +21,9 @@ import { SavedFiltersPills } from '@/components/customer-orders/saved-filters-pi
 import { FilterToggleButton } from '@/components/filters/filter-toggle-button';
 import { useBulkDocumentActions } from '@/hooks/use-bulk-actions';
 import { api } from '@/lib/api-client';
-import { documentStateTone } from '@/lib/document-state-tone';
+import { stashBulkEdit } from '@/lib/bulk-edit-nav';
 import { filterFromQueryString } from '@/lib/filter-from-query';
 import {
-  Badge,
   CatalogPicker,
   CatalogPickerField,
   type DataTableColumn,
@@ -33,6 +32,7 @@ import {
   ListView,
   MassEditModal,
   MoneyInput,
+  MultiCombobox,
   NativeSelect,
   PeriodInputs,
   PeriodShortcuts,
@@ -43,6 +43,7 @@ import {
 } from '@moysklad/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
+import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
 interface ProcessingPlanRef {
@@ -183,6 +184,9 @@ type ExtraFilterFields = {
   productionLabel?: string;
 };
 
+/** Multi-select reference field — moysklad checkbox-dropdown holds {id,label}[]. */
+type RefMulti = { id: string; label: string };
+
 export default function ProcessingOrdersPage() {
   const t = useTranslations('pages.processing_order');
   const tPO = useTranslations('pages.purchase_orders');
@@ -199,10 +203,13 @@ export default function ProcessingOrdersPage() {
   const [sortKey, setSortKey] = useState<string>('moment');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [filterValues, setFilterValues] = useState<FilterDrawerValues & ExtraFilterFields>({});
+  // «Организация» — moysklad-parity inline multi-select checkbox dropdown
+  // (MultiCombobox), was a single-select modal. Holds the picked {id,label}
+  // pairs; on the wire it goes out as `organizationIds` CSV.
+  const [organizations, setOrganizations] = useState<RefMulti[]>([]);
   const [filterOpen, setFilterOpen] = useState(true);
   const [pickerOpen, setPickerOpen] = useState<
     | null
-    | 'org'
     | 'store'
     | 'owner'
     | 'group'
@@ -213,8 +220,22 @@ export default function ProcessingOrdersPage() {
     | 'massEditProject'
   >(null);
 
+  const router = useRouter();
+
   const [massEditOpen, setMassEditOpen] = useState(false);
-  const [massEditIds, setMassEditIds] = useState<string[]>([]);
+
+  // «Владелец-отдел» options for the mass-edit wizard — mirrors losses/cash-in.
+
+  const { data: massGroupsData } = useQuery<{ items: Array<{ id: string; name: string }> }>({
+    queryKey: ['groups', 'mass-edit'],
+
+    queryFn: () => api.get('/groups?limit=100'),
+
+    enabled: massEditOpen,
+
+    staleTime: 5 * 60 * 1000,
+  });
+  const [massEditIds] = useState<string[]>([]);
   const [massEditOwner, setMassEditOwner] = useState<{ id: string; label: string } | null>(null);
   const [massEditProject, setMassEditProject] = useState<{ id: string; label: string } | null>(
     null,
@@ -237,7 +258,7 @@ export default function ProcessingOrdersPage() {
     ...(filterValues.sumMinorTo !== undefined
       ? { sumMinorTo: String(filterValues.sumMinorTo) }
       : {}),
-    ...(filterValues.organizationId ? { organizationId: filterValues.organizationId } : {}),
+    ...(organizations.length ? { organizationIds: organizations.map((x) => x.id).join(',') } : {}),
     ...(filterValues.storeId ? { storeId: filterValues.storeId } : {}),
     ...(filterValues.projectId ? { projectId: filterValues.projectId } : {}),
     ...(filterValues.ownerId ? { ownerId: filterValues.ownerId } : {}),
@@ -270,10 +291,8 @@ export default function ProcessingOrdersPage() {
     hasFSM: true,
     hasBulkPrint: true,
     onMassEditClick: (ids) => {
-      setMassEditIds(ids);
-      setMassEditOwner(null);
-      setMassEditProject(null);
-      setMassEditOpen(true);
+      stashBulkEdit({ entity: 'processing-orders', ids, from: '/processing-orders' });
+      router.push('/bulk-edit');
     },
   });
 
@@ -305,7 +324,7 @@ export default function ProcessingOrdersPage() {
       width: '130px',
       sortable: true,
       cell: (r) => (
-        <span className="text-[var(--ms-text-muted)] text-xs tabular-nums">
+        <span className="text-[var(--ms-text-muted)] text-[12px] tabular-nums">
           {formatDate(r.moment)}
         </span>
       ),
@@ -318,7 +337,7 @@ export default function ProcessingOrdersPage() {
       width: '140px',
       sortable: true,
       cell: (r) => (
-        <span className="text-[var(--ms-text-muted)] text-xs tabular-nums">
+        <span className="text-[var(--ms-text-muted)] text-[12px] tabular-nums">
           {r.deliveryPlannedMoment ? formatDate(r.deliveryPlannedMoment) : '—'}
         </span>
       ),
@@ -361,17 +380,10 @@ export default function ProcessingOrdersPage() {
       cell: (r) => <span className="text-sm tabular-nums">{microqtyToWhole(r.quantity)}</span>,
       cellText: (r) => microqtyToWhole(r.quantity),
     },
-    {
-      key: 'state',
-      header: tFields('state'),
-      width: '140px',
-      cell: (r) => (
-        <Badge tone={documentStateTone(r.state)}>
-          {tStates(r.state as ProcessingOrderStateKey)}
-        </Badge>
-      ),
-      cellText: (r) => r.state,
-    },
+    // moysklad #processingorder list has NO «Статус» column (LIVE-grounded
+    // 2026-06-29: default grid = №·Время·Организация·Технологическая карта·
+    // Объём производства·Произведено·План. дата производства·Отправлено·
+    // Напечатано·Комментарий). FSM state lives only in the «Статус» filter.
     {
       key: 'sum',
       sortField: 'sumMinor',
@@ -391,7 +403,7 @@ export default function ProcessingOrdersPage() {
   const hasFilter =
     !!search ||
     !!stateFilter ||
-    !!filterValues.organizationId ||
+    organizations.length > 0 ||
     !!filterValues.storeId ||
     !!filterValues.projectId ||
     !!filterValues.ownerId ||
@@ -424,6 +436,7 @@ export default function ProcessingOrdersPage() {
       clearLabel={tFilters('clear')}
       onClear={() => {
         setFilterValues({});
+        setOrganizations([]);
         setStateFilter(null);
         onResetCursor();
       }}
@@ -488,27 +501,30 @@ export default function ProcessingOrdersPage() {
           testId="filter-store"
         />
       </InlineFilterPanel.Field>
-      {/* 3. Организация */}
+      {/* 3. Организация — moysklad-parity inline multi-select checkbox dropdown
+          (was a single-select modal). */}
       <InlineFilterPanel.Field label={tFilters('organization')} expandable>
-        <CatalogPickerField
-          value={
-            filterValues.organizationId
-              ? {
-                  id: filterValues.organizationId,
-                  label: filterValues.organizationLabel ?? filterValues.organizationId,
-                }
-              : null
-          }
-          placeholder=""
-          onPick={() => setPickerOpen('org')}
-          onClear={() => {
-            setFilterValues({
-              ...filterValues,
-              organizationId: undefined,
-              organizationLabel: undefined,
-            });
+        <MultiCombobox
+          value={organizations.map((x) => x.id)}
+          items={organizations.map((x) => ({ value: x.id, label: x.label }))}
+          onSearch={async (q) => {
+            const r = await api.get<{ items: { id: string; name: string }[] }>(
+              `/organizations?search=${encodeURIComponent(q)}&limit=20`,
+            );
+            return r.items.map((x) => ({ value: x.id, label: x.name }));
+          }}
+          onChange={(nextIds, toggled) => {
+            setOrganizations((prev) =>
+              nextIds.map((id) => {
+                const ex = prev.find((s) => s.id === id);
+                if (ex) return ex;
+                if (toggled?.value === id) return { id, label: String(toggled.label) };
+                return { id, label: id };
+              }),
+            );
             onResetCursor();
           }}
+          placeholder=""
           testId="filter-org"
         />
       </InlineFilterPanel.Field>
@@ -786,25 +802,6 @@ export default function ProcessingOrdersPage() {
         }
       />
       <CatalogPicker
-        open={pickerOpen === 'org'}
-        onClose={() => setPickerOpen(null)}
-        title={tFilters('organization')}
-        fetcher={async (q): Promise<PickerItem[]> => {
-          const r = await api.get<{ items: { id: string; name: string }[] }>(
-            `/organizations?search=${encodeURIComponent(q)}&limit=20`,
-          );
-          return r.items.map((x) => ({ id: x.id, primary: x.name }));
-        }}
-        onSelect={(item) => {
-          setFilterValues({
-            ...filterValues,
-            organizationId: item.id,
-            organizationLabel: String(item.primary),
-          });
-          onResetCursor();
-        }}
-      />
-      <CatalogPicker
         open={pickerOpen === 'store'}
         onClose={() => setPickerOpen(null)}
         title={tFilters('store')}
@@ -968,6 +965,8 @@ export default function ProcessingOrdersPage() {
         projectValue={massEditProject}
         onProjectPick={() => setPickerOpen('massEditProject')}
         onProjectClear={() => setMassEditProject(null)}
+        groupOptions={(massGroupsData?.items ?? []).map((g) => ({ value: g.id, label: g.name }))}
+        showShared
         labels={{
           title: t('mass_edit_title'),
           ownerLabel: tFilters('owner_employee'),

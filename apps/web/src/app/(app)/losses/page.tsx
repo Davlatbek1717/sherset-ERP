@@ -1,6 +1,7 @@
 'use client';
 
 import { ColumnSettings } from '@/components/column-settings';
+import { SavedFiltersPills } from '@/components/customer-orders/saved-filters-pills';
 import { FilterToggleButton } from '@/components/filters/filter-toggle-button';
 import { LossBulkActionsDropdown } from '@/components/losses/bulk-actions-dropdown';
 import { LossPrintDropdown } from '@/components/losses/print-dropdown';
@@ -8,18 +9,24 @@ import { useBulkDocumentActions } from '@/hooks/use-bulk-actions';
 import { useColumnVisibility } from '@/hooks/use-column-visibility';
 import { useColumnWidths } from '@/hooks/use-column-widths';
 import { api } from '@/lib/api-client';
+import { stashBulkEdit } from '@/lib/bulk-edit-nav';
 import { documentStateTone } from '@/lib/document-state-tone';
 import {
   Badge,
+  CatalogPicker,
   type CsvColumn,
   type DataTableColumn,
   type FilterDrawerValues,
+  Icons,
   InlineFilterPanel,
   ListView,
+  MassEditModal,
+  type MassEditPickerValue,
   MultiCombobox,
   NativeSelect,
   PeriodInputs,
   PeriodShortcuts,
+  type PickerItem,
   buildCsv,
   csvTimestamp,
   downloadCsv,
@@ -30,6 +37,7 @@ import {
 } from '@moysklad/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
+import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 
 interface LossRow {
@@ -39,8 +47,9 @@ interface LossRow {
   applicable: boolean;
   sumMinor: string;
   currency: string;
-  // moysklad list columns — Отправлено / Напечатано / Комментарий (Prisma
-  // scalars surfaced by list()'s `include`).
+  // moysklad list columns — Общий доступ / Отправлено / Напечатано /
+  // Комментарий (Prisma scalars surfaced by list()'s `include`).
+  shared: boolean;
   published: boolean;
   printed: boolean;
   description: string | null;
@@ -207,6 +216,10 @@ export default function LossesPage() {
   const [filterOpen, setFilterOpen] = useState(false);
   const [sortKey, setSortKey] = useState<string>('moment');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  // Bookmark («Закладки») + ⚙ field-visibility — moysklad's two round buttons
+  // next to «Очистить» (both were dead placeholders; mirror picking-waves).
+  const [saveFilterOpen, setSaveFilterOpen] = useState(false);
+  const filterHidden = useColumnVisibility('losses-filter-hidden', []);
 
   const onResetCursor = () => setCursor(undefined);
 
@@ -234,6 +247,46 @@ export default function LossesPage() {
     ...(filterValues.updatedFrom ? { updatedFrom: filterValues.updatedFrom } : {}),
     ...(filterValues.updatedTo ? { updatedTo: filterValues.updatedTo } : {}),
   });
+
+  // «Закладки» — the saved-filter payload is the CURRENT filter set (everything
+  // in `params` except pagination/sort/search). Applying a bookmark parses it
+  // back into the page's filter state. Reference labels restore as their raw
+  // ids (the same accepted compromise as picking-waves — the filter WORKS; the
+  // chip text resolves on the next manual pick).
+  const savedFilterQuery = (() => {
+    const p = new URLSearchParams(params);
+    for (const k of ['limit', 'sortBy', 'sortDir', 'cursor', 'search']) p.delete(k);
+    return p.toString();
+  })();
+  const applySavedFilter = (qs: string) => {
+    const p = new URLSearchParams(qs);
+    const multi = (key: string): RefMulti[] =>
+      (p.get(key) ?? '')
+        .split(',')
+        .filter(Boolean)
+        .map((id) => ({ id, label: id }));
+    setProducts(multi('productIds'));
+    setStores(multi('storeIds'));
+    setProjects(multi('projectIds'));
+    setOrganizations(multi('organizationIds'));
+    setOwners(multi('ownerIds'));
+    setGroups(multi('groupIds'));
+    setModifiedBys(multi('modifiedByIds'));
+    setExpenseItems(multi('expenseItemIds'));
+    setStateFilter(p.get('state'));
+    const yn = (key: string) => (p.get(key) ?? undefined) as 'true' | 'false' | undefined;
+    setFilterValues({
+      momentFrom: p.get('momentFrom') ?? undefined,
+      momentTo: p.get('momentTo') ?? undefined,
+      updatedFrom: p.get('updatedFrom') ?? undefined,
+      updatedTo: p.get('updatedTo') ?? undefined,
+      applicable: yn('applicable'),
+      printed: yn('printed'),
+      published: yn('published'),
+      shared: yn('shared'),
+    });
+    onResetCursor();
+  };
 
   const listQueryKey = [
     'losses',
@@ -265,6 +318,33 @@ export default function LossesPage() {
   });
 
   const bulk = useBulkDocumentActions('losses', listQueryKey, { hasFSM: true });
+
+  // «Массовое редактирование» — moysklad #bulkEdit wizard for Списания
+  // (owner 2026-07-09, matches the live screenshots): Проект · Статья
+  // расходов · Владелец-сотрудник · Владелец-отдел · Общий доступ + Комментарий.
+  const tMass = useTranslations('mass_edit_modal');
+  const router = useRouter();
+  const [massEditOpen, setMassEditOpen] = useState(false);
+  // Legacy modal state — the wizard now lives on /bulk-edit (setter unused;
+  // the dead modal below is removed in the follow-up cleanup sweep).
+  const [massEditIds] = useState<string[]>([]);
+  const [massEditOwner, setMassEditOwner] = useState<MassEditPickerValue>(null);
+  const [massEditProject, setMassEditProject] = useState<MassEditPickerValue>(null);
+  const [massEditPicker, setMassEditPicker] = useState<null | 'owner' | 'project'>(null);
+  // Select options for the wizard's dropdown rows. Small dictionaries — one
+  // fetch each, cached; «Статья расходов» submits the item NAME (Loss.expenseItem).
+  const { data: massGroupsData } = useQuery<{ items: Array<{ id: string; name: string }> }>({
+    queryKey: ['groups', 'mass-edit'],
+    queryFn: () => api.get('/groups?limit=100'),
+    enabled: massEditOpen,
+    staleTime: 5 * 60 * 1000,
+  });
+  const { data: massExpenseData } = useQuery<{ items: Array<{ id: string; name: string }> }>({
+    queryKey: ['expense-items', 'mass-edit'],
+    queryFn: () => api.get('/expense-items?limit=100'),
+    enabled: massEditOpen,
+    staleTime: 5 * 60 * 1000,
+  });
 
   const postedCount = useMemo(() => {
     if (!data?.items?.length) return 0;
@@ -304,6 +384,7 @@ export default function LossesPage() {
     'organization',
     'sum',
     'currency',
+    'shared',
     'published',
     'printed',
     'description',
@@ -341,7 +422,7 @@ export default function LossesPage() {
       width: '120px',
       sortable: true,
       cell: (r) => (
-        <span className="text-[var(--ms-text-muted)] text-xs tabular-nums">
+        <span className="text-[var(--ms-text-muted)] text-[12px] tabular-nums">
           {formatDate(r.moment)}
         </span>
       ),
@@ -394,6 +475,30 @@ export default function LossesPage() {
       ),
       cellText: (r: LossRow) => CURRENCY_LABEL[r.currency] ?? r.currency,
     },
+    // «Общий доступ» — moysklad shows a green ✓ when the document is shared
+    // with other employees, else an empty cell. Positioned between «Валюта»
+    // and «Отправлено», matching the user's live moysklad #loss grid
+    // (2026-06-28 side-by-side review). Default-VISIBLE per the user's explicit
+    // request to mirror their account's column layout; still toggleable via the
+    // ⚙ customizer. (moysklad's fresh-account default hides it — we surface it
+    // because this clone targets the user's configured view.)
+    {
+      key: 'shared',
+      // «Общий доступ» — reuse the existing pages.purchase_orders.filter_shared
+      // message (= «Общий доступ»), already used by this page's filter field, so
+      // no new key is needed in the shared messages/*.json (avoids cross-session
+      // i18n-file entanglement). `fields.shared` does NOT exist.
+      header: tPO('filter_shared'),
+      width: '110px',
+      cell: (r) =>
+        r.shared ? (
+          <Icons.check
+            className="h-4 w-4 text-[var(--ms-text-success)]"
+            aria-label={tPO('filter_shared')}
+          />
+        ) : null,
+      cellText: (r: LossRow) => (r.shared ? '✓' : ''),
+    },
     {
       key: 'published',
       header: tFields('published'),
@@ -413,7 +518,7 @@ export default function LossesPage() {
       header: tFields('description'),
       width: '180px',
       cell: (r) => (
-        <span className="block max-w-[240px] truncate text-[var(--ms-text-muted)] text-xs">
+        <span className="block max-w-[240px] truncate text-[var(--ms-text-muted)] text-[11px]">
           {r.description ?? ''}
         </span>
       ),
@@ -472,6 +577,11 @@ export default function LossesPage() {
   const filterPanel = (
     <InlineFilterPanel
       hidden={!filterOpen}
+      // moysklad parity — #loss filter is a 6-column grid (action cell + 5
+      // fields on row 1: Период·Товар·Склад·Проект·Организация; then 6 + 4),
+      // mirroring the already-fixed siblings (supplies/payments/demands/
+      // commission). The default 5-col layout shifted everything down a row.
+      columns={6}
       applyLabel={tFilters('find')}
       clearLabel={tFilters('clear')}
       onClear={() => {
@@ -487,12 +597,36 @@ export default function LossesPage() {
         setExpenseItems([]);
         onResetCursor();
       }}
+      // moysklad 🔖 — opens the «Закладки» save-current-filter flow.
+      onBookmarkClick={() => setSaveFilterOpen(true)}
+      // moysklad ⚙ — a checklist of every filter field (show/hide), keyed by
+      // fieldKey; the persisted set holds the HIDDEN keys (default: none).
+      fieldVisibility={{
+        hidden: filterHidden.visibleKeys,
+        onToggle: (k) => {
+          const next = new Set(filterHidden.visibleKeys);
+          if (next.has(k)) next.delete(k);
+          else next.add(k);
+          filterHidden.setVisibleKeys(next);
+        },
+      }}
+      pills={
+        <SavedFiltersPills
+          entity="loss"
+          currentQueryString={savedFilterQuery}
+          onApply={applySavedFilter}
+          adding={saveFilterOpen}
+          onAddingChange={setSaveFilterOpen}
+          showAdd={filterOpen}
+        />
+      }
       testId="losses-inline-filter"
     >
       {/* 1. Период */}
       <InlineFilterPanel.Field
         label={`${tFilters('period')}:`}
         expandable
+        fieldKey="period"
         inlineSuffix={
           <PeriodShortcuts
             onChange={({ from, to }) => {
@@ -519,7 +653,7 @@ export default function LossesPage() {
         />
       </InlineFilterPanel.Field>
       {/* 2. Товар или группа — multi-select product dropdown. */}
-      <InlineFilterPanel.Field label={tPO('filter_product_or_group')} expandable>
+      <InlineFilterPanel.Field label={tPO('filter_product_or_group')} expandable fieldKey="product">
         <MultiCombobox
           value={products.map((x) => x.id)}
           items={products.map((x) => ({ value: x.id, label: x.label }))}
@@ -549,7 +683,7 @@ export default function LossesPage() {
         />
       </InlineFilterPanel.Field>
       {/* 3. Склад — multi-select store dropdown. */}
-      <InlineFilterPanel.Field label={tFields('store')} expandable>
+      <InlineFilterPanel.Field label={tFields('store')} expandable fieldKey="store">
         <MultiCombobox
           value={stores.map((x) => x.id)}
           items={stores.map((x) => ({ value: x.id, label: x.label }))}
@@ -575,7 +709,7 @@ export default function LossesPage() {
         />
       </InlineFilterPanel.Field>
       {/* 4. Проект — multi-select project dropdown. */}
-      <InlineFilterPanel.Field label={tPO('filter_project')} expandable>
+      <InlineFilterPanel.Field label={tPO('filter_project')} expandable fieldKey="project">
         <MultiCombobox
           value={projects.map((x) => x.id)}
           items={projects.map((x) => ({ value: x.id, label: x.label }))}
@@ -601,7 +735,7 @@ export default function LossesPage() {
         />
       </InlineFilterPanel.Field>
       {/* 5. Организация — multi-select organization dropdown. */}
-      <InlineFilterPanel.Field label={tFields('organization')} expandable>
+      <InlineFilterPanel.Field label={tFields('organization')} expandable fieldKey="organization">
         <MultiCombobox
           value={organizations.map((x) => x.id)}
           items={organizations.map((x) => ({ value: x.id, label: x.label }))}
@@ -627,7 +761,7 @@ export default function LossesPage() {
         />
       </InlineFilterPanel.Field>
       {/* 6. Статус — single StateSelect (Loss FSM 3 states). */}
-      <InlineFilterPanel.Field label={tPO('filter_status_multi')} expandable>
+      <InlineFilterPanel.Field label={tPO('filter_status_multi')} expandable fieldKey="status">
         <StateSelect
           value={stateFilter ?? undefined}
           onChange={(v) => {
@@ -639,7 +773,11 @@ export default function LossesPage() {
         />
       </InlineFilterPanel.Field>
       {/* 7. Проведено */}
-      <InlineFilterPanel.Field label={tFields('applicable')} expandable={false}>
+      <InlineFilterPanel.Field
+        label={tFields('applicable')}
+        expandable={false}
+        fieldKey="applicable"
+      >
         <YesNoSelect
           value={filterValues.applicable}
           onChange={(v) => {
@@ -650,7 +788,7 @@ export default function LossesPage() {
         />
       </InlineFilterPanel.Field>
       {/* 8. Напечатано */}
-      <InlineFilterPanel.Field label={tFields('printed')} expandable={false}>
+      <InlineFilterPanel.Field label={tFields('printed')} expandable={false} fieldKey="printed">
         <YesNoSelect
           value={filterValues.printed}
           onChange={(v) => {
@@ -661,7 +799,7 @@ export default function LossesPage() {
         />
       </InlineFilterPanel.Field>
       {/* 9. Отправлено */}
-      <InlineFilterPanel.Field label={tFields('published')} expandable={false}>
+      <InlineFilterPanel.Field label={tFields('published')} expandable={false} fieldKey="published">
         <YesNoSelect
           value={filterValues.published}
           onChange={(v) => {
@@ -672,7 +810,7 @@ export default function LossesPage() {
         />
       </InlineFilterPanel.Field>
       {/* 10. Владелец-сотрудник — multi-select employee dropdown. */}
-      <InlineFilterPanel.Field label={tPO('filter_owner_employee')} expandable>
+      <InlineFilterPanel.Field label={tPO('filter_owner_employee')} expandable fieldKey="owner">
         <MultiCombobox
           value={owners.map((x) => x.id)}
           items={owners.map((x) => ({ value: x.id, label: x.label }))}
@@ -698,7 +836,7 @@ export default function LossesPage() {
         />
       </InlineFilterPanel.Field>
       {/* 11. Владелец-отдел — multi-select department (group) dropdown. */}
-      <InlineFilterPanel.Field label={tPO('filter_owner_group')} expandable>
+      <InlineFilterPanel.Field label={tPO('filter_owner_group')} expandable fieldKey="group">
         <MultiCombobox
           value={groups.map((x) => x.id)}
           items={groups.map((x) => ({ value: x.id, label: x.label }))}
@@ -724,7 +862,7 @@ export default function LossesPage() {
         />
       </InlineFilterPanel.Field>
       {/* 12. Общий доступ */}
-      <InlineFilterPanel.Field label={tPO('filter_shared')} expandable={false}>
+      <InlineFilterPanel.Field label={tPO('filter_shared')} expandable={false} fieldKey="shared">
         <YesNoSelect
           value={filterValues.shared}
           onChange={(v) => {
@@ -738,6 +876,7 @@ export default function LossesPage() {
       <InlineFilterPanel.Field
         label={`${tPO('filter_updated_period')}:`}
         expandable
+        fieldKey="updated"
         inlineSuffix={
           <PeriodShortcuts
             onChange={({ from, to }) => {
@@ -764,7 +903,7 @@ export default function LossesPage() {
         />
       </InlineFilterPanel.Field>
       {/* 14. Кто изменил — multi-select employee dropdown (auditLog-approximated). */}
-      <InlineFilterPanel.Field label={tPO('filter_modified_by')} expandable>
+      <InlineFilterPanel.Field label={tPO('filter_modified_by')} expandable fieldKey="modified_by">
         <MultiCombobox
           value={modifiedBys.map((x) => x.id)}
           items={modifiedBys.map((x) => ({ value: x.id, label: x.label }))}
@@ -790,7 +929,7 @@ export default function LossesPage() {
         />
       </InlineFilterPanel.Field>
       {/* 15. Статья расходов — multi-select expense-item dropdown. */}
-      <InlineFilterPanel.Field label={tFields('expense_item')} expandable>
+      <InlineFilterPanel.Field label={tFields('expense_item')} expandable fieldKey="expense_item">
         <MultiCombobox
           value={expenseItems.map((x) => x.id)}
           items={expenseItems.map((x) => ({ value: x.id, label: x.label }))}
@@ -880,6 +1019,17 @@ export default function LossesPage() {
               listQueryKey={listQueryKey}
               onClearSelection={bulk.clearSelection}
               postedCount={postedCount}
+              onMassEdit={() => {
+                stashBulkEdit({
+                  entity: 'losses',
+                  ids:
+                    bulk.selectedIds.size > 0
+                      ? Array.from(bulk.selectedIds)
+                      : (data?.items ?? []).map((r) => r.id),
+                  from: '/losses',
+                });
+                router.push('/bulk-edit');
+              }}
             />
             <LossPrintDropdown selectedIds={bulk.selectedIds} onExportList={handleListExport} />
           </>
@@ -894,6 +1044,76 @@ export default function LossesPage() {
         }
         columnWidths={colWidths.values}
         onColumnResize={colWidths.set}
+      />
+
+      {/* Mass-edit pickers (Владелец-сотрудник / Проект) — opened from the modal. */}
+      <CatalogPicker
+        open={massEditPicker === 'owner'}
+        onClose={() => setMassEditPicker(null)}
+        title={tMass('owner_label')}
+        fetcher={async (q): Promise<PickerItem[]> => {
+          const r = await api.get<{ items: { id: string; name: string }[] }>(
+            `/employees?search=${encodeURIComponent(q)}&limit=20`,
+          );
+          return r.items.map((x) => ({ id: x.id, primary: x.name }));
+        }}
+        onSelect={(item) => {
+          setMassEditOwner({ id: item.id, label: String(item.primary) });
+          setMassEditPicker(null);
+        }}
+      />
+      <CatalogPicker
+        open={massEditPicker === 'project'}
+        onClose={() => setMassEditPicker(null)}
+        title={tMass('project_label')}
+        fetcher={async (q): Promise<PickerItem[]> => {
+          const r = await api.get<{ items: { id: string; name: string }[] }>(
+            `/projects?search=${encodeURIComponent(q)}&limit=20`,
+          );
+          return r.items.map((x) => ({ id: x.id, primary: x.name }));
+        }}
+        onSelect={(item) => {
+          setMassEditProject({ id: item.id, label: String(item.primary) });
+          setMassEditPicker(null);
+        }}
+      />
+      <MassEditModal
+        open={massEditOpen}
+        onOpenChange={setMassEditOpen}
+        selectedCount={massEditIds.length}
+        submitting={bulk.massEdit.isPending}
+        ownerValue={massEditOwner}
+        onOwnerPick={() => setMassEditPicker('owner')}
+        onOwnerClear={() => setMassEditOwner(null)}
+        projectValue={massEditProject}
+        onProjectPick={() => setMassEditPicker('project')}
+        onProjectClear={() => setMassEditProject(null)}
+        groupOptions={(massGroupsData?.items ?? []).map((g) => ({ value: g.id, label: g.name }))}
+        expenseItemOptions={(massExpenseData?.items ?? []).map((e) => ({
+          // Loss.expenseItem stores the item NAME (list filter joins on it).
+          value: e.name,
+          label: e.name,
+        }))}
+        showShared
+        labels={{
+          title: tMass('title'),
+          ownerLabel: tMass('owner_label'),
+          projectLabel: tMass('project_label'),
+          descriptionLabel: tMass('description_label'),
+          apply: tMass('apply'),
+          cancel: tMass('cancel'),
+          hint: tMass('hint', { count: massEditIds.length }),
+          groupLabel: tMass('group_label'),
+          expenseItemLabel: tMass('expense_item_label'),
+          sharedLabel: tMass('shared_label'),
+          sharedYes: tMass('shared_yes'),
+          sharedNo: tMass('shared_no'),
+        }}
+        onSubmit={async (patch) => {
+          await bulk.massEdit.mutateAsync({ ids: massEditIds, ...patch });
+          setMassEditOpen(false);
+        }}
+        testId="loss-mass-edit-modal"
       />
     </>
   );

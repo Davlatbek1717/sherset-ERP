@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { csvUuid } from '../shared/csv.js';
 import { tryNormalizeUzPhone } from '../shared/phone.js';
 
 const uuid = z.string().uuid();
@@ -36,6 +37,7 @@ const boolFromString = z
 
 export const ContactPersonFilterSchema = z.object({
   counterpartyId: uuid.optional(),
+  counterpartyIds: csvUuid.optional(),
   archived: boolFromString.optional(),
   search: z.string().max(100).optional(),
   ownerId: uuid.optional(),

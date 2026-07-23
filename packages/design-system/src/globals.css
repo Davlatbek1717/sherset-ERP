@@ -3,22 +3,22 @@
  * (cdn-static.moysklad.ru/app/cdn/r1657/_common.css). */
 
 :root {
-  /* Brand — Sherset blue scale (primary #0652FF, measured from the logo) */
-  --ms-brand-50: #edf3ff;
-  --ms-brand-100: #dce6ff;
-  --ms-brand-200: #b4cbff;
-  --ms-brand-300: #82a8ff;
-  --ms-brand-400: #447dff;
-  --ms-brand-500: #0652ff; /* PRIMARY */
-  --ms-brand-600: #0546db;
-  --ms-brand-700: #0439b2;
-  --ms-brand-800: #032b85;
-  --ms-brand-900: #07194d; /* DARK NAVY — navbar */
+  /* Brand — Moysklad blue scale (primary #186999 used 145× in their CSS) */
+  --ms-brand-50: #ecf8ff;
+  --ms-brand-100: #e4f1fa;
+  --ms-brand-200: #dae7f5;
+  --ms-brand-300: #76acd3;
+  --ms-brand-400: #4893c3;
+  --ms-brand-500: #186999; /* PRIMARY */
+  --ms-brand-600: #1f75a8;
+  --ms-brand-700: #2076a9;
+  --ms-brand-800: #0e4875;
+  --ms-brand-900: #091739; /* DARK NAVY — navbar */
 
-  /* Accent — bright Sherset blue (hyperlinks) */
-  --ms-accent-400: #5c8dff;
-  --ms-accent-500: #2e6bff;
-  --ms-accent-600: #0652ff;
+  /* Accent — bright action blue (hyperlinks) */
+  --ms-accent-400: #3ec5ff;
+  --ms-accent-500: #2f9bff;
+  --ms-accent-600: #036ce5;
 
   /* Neutral grays — from Moysklad CSS */
   --ms-neutral-0: #ffffff;
@@ -56,10 +56,10 @@
   --ms-destructive-700: #a81313;
 
   /* Info = brand blue */
-  --ms-info-50: #dce6ff;
-  --ms-info-100: #b4cbff;
-  --ms-info-500: #0652ff;
-  --ms-info-700: #0439b2;
+  --ms-info-50: #e4f1fa;
+  --ms-info-100: #dae7f5;
+  --ms-info-500: #186999;
+  --ms-info-700: #0e4875;
 
   /* ===== Semantic (light mode) ===== */
   --ms-bg-app: var(--ms-neutral-50);
@@ -109,17 +109,30 @@
   --ms-text-success: var(--ms-success-700);
   --ms-text-warning: var(--ms-warning-700);
   --ms-text-destructive: var(--ms-destructive-500);
+  /* moysklad settings/employee-card section headings («НАСТРОЙКИ», «Вход в
+   * МойСклад», «Системные роли», «Сеть», «Уведомления») — burnt orange-red.
+   * Approximated from the owner's 2026-07-16 screenshots (live px-sample
+   * pending — re-ground in the next live moysklad session). */
+  --ms-settings-heading: #b04a17;
 
-  --ms-border-default: var(--ms-neutral-200);
-  --ms-border-strong: var(--ms-neutral-400);
+  /* OWNER OVERRIDE 2026-07-14 («chiziqlar orqa fonga qo'shilib ketyapti»):
+   * divider/table/modal/dropdown borders were neutral-200 (#e6e6e6) — near-
+   * invisible on the white surface. Darkened one ramp step each (default →
+   * neutral-400, strong → neutral-500) so every separator reads clearly on
+   * white, and the DEFAULT border width is 1.5px (tailwind.config.ts
+   * borderWidth + the thead rule below). Deliberate deviation from moysklad
+   * pixel-parity — do NOT "fix back" to the lighter hairlines. */
+  --ms-border-default: var(--ms-neutral-400);
+  --ms-border-strong: var(--ms-neutral-500);
   --ms-border-focus: var(--ms-brand-500);
-  /* Form-control border (user 2026-06-23: «input border qora bo'lishi kerak
-   * aniq»). The resting control border was #bfbfbf (border-strong) which read
-   * faded/grey on white; this near-black token makes every input/select/picker
-   * border crisp & dark. Used ONLY by form controls so table/card/divider
-   * borders keep their lighter neutral tone. moysklad inputs are 0-radius with
-   * a blue border on focus and NO outer ring — matched in the control classes. */
-  --ms-border-input: #333333;
+  /* Form-control border. History: resting controls were #bfbfbf → user
+   * 2026-06-23 asked for near-black (#333) → after the 2026-07-14 global
+   * 1.5px border-width bump the #333 boxes read TOO heavy («bular ham ko'p
+   * qora bo'lmasin») — settled on a medium-dark grey: clearly separated from
+   * the white bg, but not black. Used ONLY by form controls so table/card/
+   * divider borders keep their own tone. moysklad inputs are 0-radius with a
+   * blue border on focus and NO outer ring — matched in the control classes. */
+  --ms-border-input: #808080;
 
   --ms-action-primary: var(--ms-brand-500);
   --ms-action-primary-hover: var(--ms-brand-600);
@@ -137,13 +150,15 @@
    * color #222). This border token drives the `success` Button variant. */
   --ms-action-success-border: #a1b900;
 
-  /* Control sizing — moysklad form controls are short/dense. Blueprint
-   * (blueprint-customerorder-edit-new.json) measures picker/input/select
-   * boxes at 19.4px tall (vs our prior h-9 = 27px, which read as "chunky,
-   * not moysklad"). One token drives every DS control height (Input,
+  /* Control sizing — one token drives every DS control height (Input,
    * NativeSelect, CatalogPickerField, DatePicker) so density stays uniform
-   * app-wide and is tunable in one place. */
-  --ms-control-h: 19px;
+   * app-wide and is tunable in one place. moysklad's own controls measure
+   * 19.4px (blueprint-customerorder-edit-new.json) and we shipped 19px for
+   * pixel parity; OWNER OVERRIDE 2026-07-11: his cashiers find the dense
+   * controls hard to hit — bump to 24px (+13px font in the primitives), a
+   * deliberate ergonomic deviation from moysklad (owner rule beats
+   * pixel-parity here). The old 27px h-9 read as "chunky" — don't go back. */
+  --ms-control-h: 24px;
 
   /* Radii — Moysklad minimal */
   --ms-radius-sm: 2px;
@@ -182,31 +197,6 @@
   --ms-z-toast: 700;
   --ms-z-max: 9999;
 
-  /* ═══ HOLAT QATORLARI (2026-07-13) ═════════════════════════════════════════
-   * Jadval qatorining HOLATINI rang bilan ko'rsatish uchun. Muammo: qarz
-   * to'lovlari va qarzdorlar ro'yxatida hamma qator bir xil oq edi — ko'z
-   * ilg'amasdi, qatorlar bir-biriga qo'shilib ketardi.
-   *
-   * Har holat UCH belgi bilan beriladi (faqat rangga tayanmaymiz — rang
-   * ko'rmaydigan foydalanuvchi ham ajrata olsin):
-   *   1) yengil fon  (…-bg)
-   *   2) chapdagi rangli chiziq (…-accent) — 3px border-left
-   *   3) matnli belgi/badge (komponentda)
-   * Fon ATAYLAB och: matn kontrasti WCAG AA dan pastga tushmasin.
-   */
-  --ms-row-paid-bg: #e8f6e6; /* to'liq to'landi — yashil */
-  --ms-row-paid-accent: #369a1e;
-  --ms-row-partial-bg: #fff8d9; /* qisman to'ladi — sariq */
-  --ms-row-partial-accent: #e0a800;
-  --ms-row-unpaid-bg: #fdeceb; /* to'lamadi — qizil */
-  --ms-row-unpaid-accent: #ce1b1b;
-  --ms-row-callback-bg: #e7eeff; /* qayta qo'ng'iroq — ko'k */
-  --ms-row-callback-accent: #0652ff;
-  /* Jadval sarlavhasi — ko'k, ajralib tursin */
-  --ms-thead-bg: #e7eeff;
-  --ms-thead-text: #0439b2;
-  --ms-thead-border: #b4cbff;
-
   /* Font families (from Moysklad CSS) */
   --ms-font-sans: "Helvetica Neue", Helvetica, Arial, "Lucida Grande", sans-serif;
   --ms-font-dense: Tahoma, Geneva, sans-serif;
@@ -229,19 +219,8 @@
   --ms-text-disabled: #5b6a83;
   --ms-text-brand: var(--ms-brand-300);
   --ms-text-link: var(--ms-accent-400);
-
-  /* Holat qatorlari — qorong'i fonda to'yingan emas, chuqur ohangda */
-  --ms-row-paid-bg: #17331b;
-  --ms-row-paid-accent: #4caf50;
-  --ms-row-partial-bg: #3a3216;
-  --ms-row-partial-accent: #ffc107;
-  --ms-row-unpaid-bg: #3a1d1d;
-  --ms-row-unpaid-accent: #ef5350;
-  --ms-row-callback-bg: #1c2a4d;
-  --ms-row-callback-accent: #5b8dff;
-  --ms-thead-bg: #1c2a4d;
-  --ms-thead-text: #b4cbff;
-  --ms-thead-border: #3d527d;
+  /* Lighter burnt-orange so the settings headings read on dark surface. */
+  --ms-settings-heading: #e07a3f;
 
   --ms-border-default: #2a3d67;
   --ms-border-strong: #3d527d;
@@ -343,7 +322,34 @@ textarea::placeholder {
  * so body rows stay clean, matching moysklad's list grid. */
 @media screen {
   thead th:not(:last-child) {
-    border-right: 1px solid var(--ms-border-default);
+    /* 1.5px matches the tailwind DEFAULT borderWidth override (owner 2026-07-14). */
+    border-right: 1.5px solid var(--ms-border-default);
+  }
+}
+
+/* ===== Mobile ergonomics (≤767px — Tailwind `max-md`) =====================
+ * Desktop is moysklad pixel-parity + owner overrides and MUST NOT change:
+ * every rule here is scoped to phones only.
+ * · root font 12px→14px — rem-based spacing/heights scale up for touch;
+ * · --ms-control-h 24px→36px — one token bump gives every DS control a
+ *   comfortable tap height (owner 2026-07-18: 40px read as oversized; 36px is
+ *   the balanced middle — «juda katta ham, juda kichik ham emas»);
+ * · text controls ≥16px font — iOS Safari auto-zooms the page when a focused
+ *   control's font is <16px; 16px disables that zoom. !important is required
+ *   because the primitives set their font via Tailwind classes (a class
+ *   selector always beats these element selectors). */
+@media (max-width: 767px) {
+  html,
+  body {
+    font-size: 14px;
+  }
+  :root {
+    --ms-control-h: 36px;
+  }
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea {
+    font-size: 16px !important;
   }
 }
 

@@ -5,6 +5,7 @@ import { api } from '@/lib/api-client';
 import { Badge, Button, NativeSelect, formatMoney } from '@moysklad/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
+import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
 type StageType = 'open' | 'won' | 'lost';
@@ -65,6 +66,7 @@ function stageTotal(stage: BoardStage): { count: number; amount: bigint; currenc
 }
 
 export default function OpportunityBoardPage() {
+  const router = useRouter();
   const qc = useQueryClient();
   const t = useTranslations('pages.opportunities');
   const tCommon = useTranslations('common');
@@ -134,7 +136,7 @@ export default function OpportunityBoardPage() {
             variant="primary"
             size="sm"
             onClick={() => {
-              window.location.href = '/opportunities/new';
+              router.push('/opportunities/new');
             }}
           >
             {t('create_button')}
@@ -185,11 +187,11 @@ export default function OpportunityBoardPage() {
                   >
                     <div className="flex items-center justify-between gap-2">
                       <h2 className="truncate font-medium text-sm">{stage.name}</h2>
-                      <span className="text-[var(--ms-text-muted)] text-xs tabular-nums">
+                      <span className="text-[var(--ms-text-muted)] text-[12px] tabular-nums">
                         {totals.count}
                       </span>
                     </div>
-                    <div className="text-[var(--ms-text-muted)] text-xs tabular-nums">
+                    <div className="text-[var(--ms-text-muted)] text-[12px] tabular-nums">
                       {formatMoney(totals.amount, totals.currency)}
                     </div>
                   </div>
@@ -208,7 +210,7 @@ export default function OpportunityBoardPage() {
                         data-test-id={`board-card-${o.id}`}
                       >
                         <div className="flex items-start justify-between gap-2">
-                          <span className="text-[var(--ms-text-muted)] text-xs tabular-nums">
+                          <span className="text-[var(--ms-text-muted)] text-[12px] tabular-nums">
                             {o.number}
                           </span>
                           <span className="font-medium text-sm tabular-nums">
@@ -217,7 +219,7 @@ export default function OpportunityBoardPage() {
                         </div>
                         <h3 className="mt-1 line-clamp-2 font-medium text-sm">{o.name}</h3>
                         {o.counterparty && (
-                          <div className="mt-1 truncate text-[var(--ms-text-muted)] text-xs">
+                          <div className="mt-1 truncate text-[var(--ms-text-muted)] text-[11px]">
                             {o.counterparty.name}
                           </div>
                         )}

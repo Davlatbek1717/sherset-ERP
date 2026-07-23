@@ -203,7 +203,7 @@ export default function PublicationsPage() {
       width: '140px',
       sortable: true,
       cell: (r) => (
-        <span className="text-[var(--ms-text-muted)] text-xs tabular-nums">
+        <span className="text-[var(--ms-text-muted)] text-[12px] tabular-nums">
           {r.lastViewedAt ? formatDate(r.lastViewedAt) : '—'}
         </span>
       ),
@@ -214,7 +214,7 @@ export default function PublicationsPage() {
       header: t('col_expires'),
       width: '120px',
       cell: (r) => (
-        <span className="text-[var(--ms-text-muted)] text-xs tabular-nums">
+        <span className="text-[var(--ms-text-muted)] text-[12px] tabular-nums">
           {r.expiresAt ? formatDate(r.expiresAt) : t('no_expiry')}
         </span>
       ),
@@ -237,7 +237,7 @@ export default function PublicationsPage() {
       width: '120px',
       sortable: true,
       cell: (r) => (
-        <span className="text-[var(--ms-text-muted)] text-xs tabular-nums">
+        <span className="text-[var(--ms-text-muted)] text-[12px] tabular-nums">
           {formatDate(r.createdAt)}
         </span>
       ),

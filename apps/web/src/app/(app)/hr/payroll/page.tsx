@@ -862,7 +862,7 @@ function PayrollDetailModal({
                           {t(`source_${r.source}`)}
                         </span>
                         {r.reason && (
-                          <span className="ml-auto truncate text-[var(--ms-text-muted)] text-xs">
+                          <span className="ml-auto truncate text-[var(--ms-text-muted)] text-[11px]">
                             {r.reason}
                           </span>
                         )}

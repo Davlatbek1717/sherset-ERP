@@ -140,6 +140,7 @@ export class EnterService {
       ...(filter.includeDeleted ? {} : { deletedAt: null }),
       ...(filter.state ? { state: filter.state } : {}),
       ...(filter.organizationId ? { organizationId: filter.organizationId } : {}),
+      ...(filter.organizationIds ? { organizationId: { in: filter.organizationIds } } : {}),
       ...(filter.storeId ? { storeId: filter.storeId } : {}),
       ...(filter.projectId ? { projectId: filter.projectId } : {}),
       // «Товар или группа» (multi-select) — match Enters whose positions contain
@@ -286,6 +287,11 @@ export class EnterService {
   async create(accountId: string, userId: string, raw: unknown) {
     const parsed = this.parseCreate(raw);
     await this.ensureRefs(accountId, parsed.organizationId, parsed.storeId);
+    await this.stock.assertCellsInStore(
+      accountId,
+      parsed.storeId,
+      parsed.positions.map((p) => p.cellId),
+    );
 
     const name = await this.nextName(accountId);
     const attributes = await this.attrs.validateAndNormalize(accountId, 'Enter', parsed.attributes);
@@ -351,6 +357,7 @@ export class EnterService {
                   countryId: p.countryId ?? null,
                   // «РНПТ» / «Ячейка» — free-text batch/bin reference (#enter grid).
                   rnpt: p.rnpt ?? null,
+                  cellId: p.cellId ?? null,
                   cell: p.cell ?? null,
                 })),
               },
@@ -379,6 +386,7 @@ export class EnterService {
             storeId: created.storeId,
             assortmentKind: p.assortmentKind,
             assortmentId: p.assortmentId,
+            cellId: p.cellId ?? null,
             qtyDelta: String(p.quantity),
             costDeltaMinor: toBaseMinor(byPos.get(p.id) ?? 0n, docRate),
             docType: 'enter',
@@ -433,6 +441,13 @@ export class EnterService {
     }
     if (existing.applicable) {
       return this.updatePosted(accountId, userId, id, existing, parsed);
+    }
+    if (parsed.positions) {
+      await this.stock.assertCellsInStore(
+        accountId,
+        parsed.storeId ?? existing.storeId,
+        parsed.positions.map((p) => p.cellId),
+      );
     }
     const data: Prisma.EnterUpdateInput = {};
     // «Кто изменил» — stamp the current user as last editor on every update.
@@ -512,6 +527,7 @@ export class EnterService {
           gtdSumMinor: p.gtdSumMinor != null ? BigInt(p.gtdSumMinor) : null,
           countryId: p.countryId ?? null,
           rnpt: p.rnpt ?? null,
+          cellId: p.cellId ?? null,
           cell: p.cell ?? null,
         })),
       };
@@ -642,6 +658,13 @@ export class EnterService {
         parsed.storeId ?? existing.storeId,
       );
     }
+    if (parsed.positions) {
+      await this.stock.assertCellsInStore(
+        accountId,
+        parsed.storeId ?? existing.storeId,
+        parsed.positions.map((p) => p.cellId),
+      );
+    }
     const attributes =
       parsed.attributes !== undefined
         ? await this.attrs.validateAndNormalize(accountId, 'Enter', parsed.attributes)
@@ -674,6 +697,7 @@ export class EnterService {
               storeId: existing.storeId,
               assortmentKind: p.assortmentKind,
               assortmentId: p.assortmentId,
+              cellId: p.cellId ?? null,
               qtyDelta: `-${String(p.quantity)}`,
               costDeltaMinor: -toBaseMinor(oldByPos.get(p.id) ?? 0n, oldRate),
               docType: 'enter_unpost',
@@ -734,6 +758,7 @@ export class EnterService {
                 gtdSumMinor: p.gtdSumMinor != null ? BigInt(p.gtdSumMinor) : null,
                 countryId: p.countryId ?? null,
                 rnpt: p.rnpt ?? null,
+                cellId: p.cellId ?? null,
                 cell: p.cell ?? null,
               })),
             };
@@ -762,6 +787,7 @@ export class EnterService {
               storeId: reloaded.storeId,
               assortmentKind: p.assortmentKind,
               assortmentId: p.assortmentId,
+              cellId: p.cellId ?? null,
               qtyDelta: String(p.quantity),
               costDeltaMinor: toBaseMinor(newByPos.get(p.id) ?? 0n, newRate),
               docType: 'enter',
@@ -878,6 +904,7 @@ export class EnterService {
             gtdSumMinor: p.gtdSumMinor,
             countryId: p.countryId,
             rnpt: p.rnpt,
+            cellId: p.cellId,
             cell: p.cell,
           })),
         },
@@ -900,7 +927,13 @@ export class EnterService {
     accountId: string,
     userId: string,
     id: string,
-    patch: { ownerId?: string | null; projectId?: string | null; description?: string | null },
+    patch: {
+      ownerId?: string | null;
+      projectId?: string | null;
+      description?: string | null;
+      groupId?: string | null;
+      shared?: boolean;
+    },
   ) {
     await this.findById(accountId, id);
     await assertMassEditRefsInTenant(this.prisma, accountId, patch);
@@ -908,6 +941,8 @@ export class EnterService {
     if ('ownerId' in patch) data.ownerId = patch.ownerId;
     if ('projectId' in patch) data.projectId = patch.projectId;
     if ('description' in patch) data.description = patch.description;
+    if ('groupId' in patch) data.groupId = patch.groupId;
+    if ('shared' in patch && patch.shared !== undefined) data.shared = patch.shared;
     const updated = await this.prisma.client.enter.update({ where: { id, accountId }, data });
     await this.logAudit(accountId, userId, 'mass-edit', id, patch);
     this.webhookFire.fireForEvent(accountId, 'enter', 'UPDATE', id, Object.keys(data));
@@ -1028,7 +1063,8 @@ export class EnterService {
     if (existing.state !== 'draft') {
       throw new BadRequestException(`Only draft → posted (current: ${existing.state})`);
     }
-    if (existing.positions.length === 0) throw new BadRequestException("Pozitsiyalar yo'q");
+    // Owner 2026-07-08: «Проведено» toggles freely — an empty doc may be posted
+    // (0 positions ⇒ 0 stock delta; moysklad allows it). No position precondition.
 
     return this.prisma.client.$transaction(
       async (tx) => {
@@ -1052,6 +1088,7 @@ export class EnterService {
           storeId: existing.storeId,
           assortmentKind: p.assortmentKind,
           assortmentId: p.assortmentId,
+          cellId: p.cellId ?? null,
           qtyDelta: String(p.quantity),
           costDeltaMinor: byPos.get(p.id) ?? 0n,
           docType: 'enter',
@@ -1120,6 +1157,7 @@ export class EnterService {
           storeId: existing.storeId,
           assortmentKind: p.assortmentKind,
           assortmentId: p.assortmentId,
+          cellId: p.cellId ?? null,
           qtyDelta: `-${String(p.quantity)}`,
           costDeltaMinor: -(byPos.get(p.id) ?? 0n),
           docType: 'enter_unpost',
@@ -1176,6 +1214,7 @@ export class EnterService {
           storeId: existing.storeId,
           assortmentKind: p.assortmentKind,
           assortmentId: p.assortmentId,
+          cellId: p.cellId ?? null,
           qtyDelta: `-${String(p.quantity)}`,
           costDeltaMinor: -(byPos.get(p.id) ?? 0n),
           docType: 'enter_cancel',

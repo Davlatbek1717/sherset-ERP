@@ -101,7 +101,7 @@ export class PayrollController {
     const parsed = MassEditBaseSchema.parse(body);
     const { ids, ...patch } = parsed;
     // Payroll lacks projectId — restrict to ownerId + description.
-    assertPatchHasAtLeastOneField(patch, ['ownerId', 'description']);
+    assertPatchHasAtLeastOneField(patch, ['ownerId', 'description', 'groupId', 'shared']);
     return runBulk(ids, (id) => this.service.massEditApply(user.accountId, user.sub, id, patch));
   }
 

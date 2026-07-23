@@ -47,6 +47,9 @@ export interface InlineFilterPanelProps {
   /** Click handler for the bookmark icon (save-current-filter quick
    *  action). When omitted, the icon renders disabled with a tooltip. */
   onBookmarkClick?: () => void;
+  /** Hide the 🔖 bookmark icon entirely — moysklad's in-document position
+   *  filter panels (e.g. Инвентаризация grid «Фильтр») show only the ⚙ gear. */
+  hideBookmark?: boolean;
   /** Click handler for the gear icon (filter settings). When omitted,
    *  the icon renders disabled with a tooltip. */
   onSettingsClick?: () => void;
@@ -73,6 +76,7 @@ export function InlineFilterPanel({
   pills,
   hidden,
   onBookmarkClick,
+  hideBookmark,
   onSettingsClick,
   fieldVisibility,
   columns = 5,
@@ -107,7 +111,9 @@ export function InlineFilterPanel({
     const key = fieldKeyOf(c);
     if (key == null) return [];
     const label = (c as React.ReactElement<{ label?: React.ReactNode }>).props.label;
-    return [{ key, label: typeof label === 'string' ? label : key }];
+    // moysklad's ⚙ checklist shows the bare field name — strip the «Период:»
+    // date-label colon.
+    return [{ key, label: typeof label === 'string' ? label.replace(/:$/, '') : key }];
   });
   const renderedChildren = fieldVisibility
     ? childArr.filter((c) => {
@@ -148,10 +154,18 @@ export function InlineFilterPanel({
         <div className="flex flex-wrap items-center gap-1" data-test-id="inline-filter-actions">
           <button
             type="button"
-            onClick={onApply}
-            className="rounded-[var(--ms-radius-default)] bg-[var(--ms-text-success)] px-3 py-1 font-medium text-sm text-white hover:bg-[color-mix(in_srgb,var(--ms-text-success)_85%,black)] disabled:opacity-50"
+            // Filters are always-applied (reactive: field change → query key → refetch),
+            // so «Найти» is a moysklad-parity confirm, not the apply trigger. It must
+            // NEVER be disabled just because no explicit onApply is wired — that made
+            // the button look broken on ~every list (the reported bug). Enabled always;
+            // click blurs the focused field (commits any pending input) then calls
+            // onApply when a page provides one.
+            onClick={() => {
+              (document.activeElement as HTMLElement | null)?.blur();
+              onApply?.();
+            }}
+            className="rounded-[var(--ms-radius-default)] bg-[var(--ms-text-success)] px-3 py-1 font-medium text-sm text-white hover:bg-[color-mix(in_srgb,var(--ms-text-success)_85%,black)]"
             data-test-id="inline-filter-apply"
-            disabled={!onApply}
           >
             {applyLabel}
           </button>
@@ -163,27 +177,31 @@ export function InlineFilterPanel({
           >
             {clearLabel}
           </button>
-          <button
-            type="button"
-            aria-label="bookmark"
-            onClick={onBookmarkClick}
-            disabled={!onBookmarkClick}
-            className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] text-[var(--ms-text-muted)] hover:bg-[var(--ms-bg-muted)] disabled:cursor-not-allowed disabled:opacity-50"
-            data-test-id="inline-filter-bookmark"
-            title={onBookmarkClick ? 'Filterni saqlash' : 'Tez orada'}
-          >
-            <svg
-              role="img"
+          {/* Conditional render (NOT the `hidden` attr — the button's inline-flex
+              class would override the UA display:none and keep it visible). */}
+          {!hideBookmark && (
+            <button
+              type="button"
               aria-label="bookmark"
-              className="h-4 w-4"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
+              onClick={onBookmarkClick}
+              disabled={!onBookmarkClick}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] text-[var(--ms-text-muted)] hover:bg-[var(--ms-bg-muted)] disabled:cursor-not-allowed disabled:opacity-50"
+              data-test-id="inline-filter-bookmark"
+              title={onBookmarkClick ? 'Filterni saqlash' : 'Tez orada'}
             >
-              <path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z" />
-            </svg>
-          </button>
+              <svg
+                role="img"
+                aria-label="bookmark"
+                className="h-4 w-4"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z" />
+              </svg>
+            </button>
+          )}
           {(() => {
             const gearIcon = (
               <svg
@@ -220,7 +238,10 @@ export function InlineFilterPanel({
                     <Popover.Content
                       align="start"
                       sideOffset={4}
-                      className="z-[var(--ms-z-popover)] max-h-[320px] overflow-y-auto rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] py-1 shadow-[var(--ms-shadow-md)]"
+                      // moysklad parity: the ⚙ checklist shows EVERY field at once
+                      // (no fixed max-height / scroll). Radix's available-height var
+                      // still caps it at the viewport edge as a safety net.
+                      className="z-[var(--ms-z-popover)] max-h-[var(--radix-popover-content-available-height)] overflow-y-auto rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] py-1 shadow-[var(--ms-shadow-md)]"
                     >
                       {fieldList.map((f) => {
                         const checked = !fieldVisibility.hidden.has(f.key);
@@ -298,6 +319,10 @@ export interface InlineFilterFieldProps {
   /** Stable key for the ⚙ field-visibility checklist (and to hide the field
    *  when not visible). Fields without a fieldKey always render + aren't listed. */
   fieldKey?: string;
+  /** moysklad parity (owner 2026-07-12, «Волны отбора» ground): a filter cell
+   *  with an APPLIED value is tinted light blue — label, shortcuts and control
+   *  together. Pages pass `active` when the field currently filters the list. */
+  active?: boolean;
 }
 
 function Field({
@@ -306,11 +331,18 @@ function Field({
   expandable = true,
   inlineSuffix,
   tooltip,
+  active,
 }: InlineFilterFieldProps) {
   // <div> rather than <label> — the inner control is unknown at the
   // type level, so a bare <label> would fail noLabelWithoutControl.
   return (
-    <div className="flex flex-col gap-0.5 text-[11px]" data-test-id="inline-filter-field">
+    <div
+      className={cn(
+        'flex flex-col gap-0.5 text-[11px]',
+        active && '-mx-2 -my-1 rounded-[var(--ms-radius-sm)] bg-[#cfe8f8] px-2 py-1',
+      )}
+      data-test-id="inline-filter-field"
+    >
       <div className="flex items-baseline gap-2 leading-tight">
         {/* moysklad parity (measured live #purchaseorder): filter field labels
             are dark #222 (--ms-text-primary), 12px — NOT a light muted gray.

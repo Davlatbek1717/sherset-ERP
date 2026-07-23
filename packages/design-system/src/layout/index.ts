@@ -11,3 +11,8 @@ export { Stack, type StackProps } from './Stack.tsx';
 export { Divider, type DividerProps } from './Divider.tsx';
 export { AppShell, type AppShellProps, type NavItem } from './AppShell.tsx';
 export { SubNav, type SubNavProps, type SubNavItem } from './SubNav.tsx';
+export {
+  MobileNavSheet,
+  type MobileNavSheetProps,
+  type MobileNavSection,
+} from './MobileNavSheet.tsx';

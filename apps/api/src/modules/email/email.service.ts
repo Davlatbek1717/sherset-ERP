@@ -10,6 +10,24 @@ import {
   SendEmailSchema,
 } from './email.schema.js';
 
+// Emailable DOCUMENT entities (SendEmailSchema's EMAIL_ENTITIES minus the non-document
+// Counterparty / Opportunity) → their Prisma model delegate. Sending one by email sets
+// its `published` flag so the list «Отправлено» column shows the «Отправлен» pill.
+const ENTITY_PUBLISH_DELEGATE: Record<string, string> = {
+  CustomerOrder: 'customerOrder',
+  Demand: 'demand',
+  InvoiceOut: 'invoiceOut',
+  Supply: 'supply',
+  PurchaseOrder: 'purchaseOrder',
+  InvoiceIn: 'invoiceIn',
+  PaymentIn: 'paymentIn',
+  PaymentOut: 'paymentOut',
+  SalesReturn: 'salesReturn',
+  PurchaseReturn: 'purchaseReturn',
+  CashIn: 'cashIn',
+  CashOut: 'cashOut',
+};
+
 interface PublicEmailConfig {
   id: string;
   provider: string;
@@ -191,6 +209,39 @@ export class EmailService {
         nextRetryAt: new Date(),
       },
     });
+
+    // moysklad «Отправлено»: emailing a DOCUMENT marks it `published=true` (the list
+    // then shows the cyan «Отправлен» pill). Applied on enqueue — the «Отправить»
+    // action — across every emailable document type, so the column is no longer always
+    // empty. Best-effort: a doc-type without a `published` column (Counterparty /
+    // Opportunity) or an already-deleted row must NOT break the email send.
+    if (parsed.entity && parsed.entityId) {
+      const delegate = ENTITY_PUBLISH_DELEGATE[parsed.entity];
+      const model = delegate
+        ? (
+            this.prisma.client as unknown as Record<
+              string,
+              | {
+                  updateMany(args: {
+                    where: Record<string, unknown>;
+                    data: { published: boolean };
+                  }): Promise<unknown>;
+                }
+              | undefined
+            >
+          )[delegate]
+        : undefined;
+      if (model) {
+        try {
+          await model.updateMany({
+            where: { id: parsed.entityId, accountId, deletedAt: null },
+            data: { published: true },
+          });
+        } catch {
+          // entity lacks a `published` column or the row is gone — ignore.
+        }
+      }
+    }
 
     return { id: log.id, status: 'pending' };
   }

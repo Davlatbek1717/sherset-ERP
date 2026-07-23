@@ -14,6 +14,7 @@ import {
 import { Reflector } from '@nestjs/core';
 import type { FastifyRequest } from 'fastify';
 import type { AuthenticatedUser } from '../../auth/auth.schema.js';
+import { PermissionsService } from '../../permissions/permissions.service.js';
 import {
   HR_PERMISSION_METADATA_KEY,
   type HrAccessLevel,
@@ -32,9 +33,12 @@ function hasAccess(have: HrAccessLevel, need: HrAccessLevel): boolean {
 
 @Injectable()
 export class HrPermissionGuard implements CanActivate {
-  constructor(@Inject(Reflector) private readonly reflector: Reflector) {}
+  constructor(
+    @Inject(Reflector) private readonly reflector: Reflector,
+    @Inject(PermissionsService) private readonly permissions: PermissionsService,
+  ) {}
 
-  canActivate(ctx: ExecutionContext): boolean {
+  async canActivate(ctx: ExecutionContext): Promise<boolean> {
     const required = this.reflector.get<HrPermissionRequirement | undefined>(
       HR_PERMISSION_METADATA_KEY,
       ctx.getHandler(),
@@ -55,6 +59,19 @@ export class HrPermissionGuard implements CanActivate {
         (required.section ? p.section === required.section : p.section === null),
     );
     if (!perm) {
+      // Settings «Сотрудники» (moysklad 1:1, 2026-07-16): the employee catalog
+      // is ALSO the access-admin surface, so a core-RBAC administrator/owner
+      // (Role/RolePermission `employee` entity) must reach /hr/employees even
+      // with no HR page-keys — the two RBAC systems meet on this one page.
+      // Scoped to page 'employees' only: every other HR page stays HR-gated.
+      if (required.page === 'employees') {
+        const scope = await this.permissions.resolveScope(
+          user.sub,
+          'employee',
+          required.access === 'full' ? 'update' : 'view',
+        );
+        if (scope !== 'NO') return true;
+      }
       throw new ForbiddenException(
         `HR permission required: ${required.page}${required.section ? `:${required.section}` : ''}`,
       );

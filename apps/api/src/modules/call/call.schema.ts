@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { csvUuid } from '../shared/csv.js';
 
 const uuid = z.string().uuid();
 
@@ -31,6 +32,7 @@ const boolFromString = z
 
 export const CallFilterSchema = z.object({
   counterpartyId: uuid.optional(),
+  counterpartyIds: csvUuid.optional(),
   contactPersonId: uuid.optional(),
   ownerId: uuid.optional(),
   direction: Direction.optional(),

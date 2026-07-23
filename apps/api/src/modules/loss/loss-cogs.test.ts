@@ -42,11 +42,15 @@ describe('loss post() records real weighted-average COGS (not a hardcoded 0)', (
 
   it('post() derives the per-unit cost from the locked balance costBalanceMinor (weighted-average)', () => {
     // The cost basis is the store's current weighted-average unit cost, read from
-    // the balance row that post() already locks via lockBalances.
+    // the balance row that post() already locks via lockBalances. (The editable-«Цена»
+    // work added a user-override + a product buyPrice fallback in front of the
+    // weighted-average — the weighted-average path itself is unchanged and is what
+    // this guard protects.)
     expect(src).toMatch(/bal\?\.costBalanceMinor/);
     expect(src).toMatch(
-      /perUnitByPos\.set\(p\.id, costBal > 0n \? computePerUnitCost\(costBal, onHand\) : 0n\)/,
+      /costBal > 0n\s*\n?\s*\?\s*computePerUnitCost\(costBal, onHand\)\s*\n?\s*:\s*fallback/,
     );
+    expect(src).toMatch(/perUnitByPos\.set\(p\.id, perUnit\)/);
   });
 
   it('the stock-cost delta + the frozen position cost both come from the computed per-unit (not the null draft cost)', () => {

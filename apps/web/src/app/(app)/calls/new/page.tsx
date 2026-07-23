@@ -1,9 +1,7 @@
 'use client';
 
 import { DetailHeader, DetailToolbar } from '@/components/document-detail';
-import { useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
-import { pinDefaultCustomer } from '@/lib/pin-default-customer';
 import {
   CatalogPicker,
   CatalogPickerField,
@@ -52,7 +50,6 @@ export default function NewCallPage() {
   const t = useTranslations('pages.calls');
   const tCommon = useTranslations('common');
   const tForm = useTranslations('form');
-  const userDefaults = useUserDefaults();
 
   const fromCounterpartyId = searchParams.get('counterpartyId');
 
@@ -91,17 +88,11 @@ export default function NewCallPage() {
     const d = await api.get<{ items: CounterpartyRef[] }>(
       `/counterparties?search=${encodeURIComponent(s)}&limit=50`,
     );
-    const items = d.items.map((c) => ({
+    return d.items.map((c) => ({
       id: c.id,
       primary: c.name,
       secondary: c.legalTitle ?? undefined,
     }));
-    return pinDefaultCustomer(
-      items,
-      userDefaults.data?.defaultCustomer,
-      s,
-      tForm('pinned_default'),
-    );
   };
 
   const contactPersonFetcher = useMemo(

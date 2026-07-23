@@ -116,6 +116,7 @@ export class CashOutService {
       ...(filter.includeDeleted ? {} : { deletedAt: null }),
       ...(filter.state ? { state: filter.state } : {}),
       ...(filter.agentId ? { agentId: filter.agentId } : {}),
+      ...(filter.agentIds ? { agentId: { in: filter.agentIds } } : {}),
       // «Группа контрагента» + «Владелец контрагента» both narrow the related
       // Counterparty, so they MUST share one `agent: {}` clause — two separate
       // `agent` keys in this object literal would silently overwrite each other
@@ -129,6 +130,7 @@ export class CashOutService {
           }
         : {}),
       ...(filter.organizationId ? { organizationId: filter.organizationId } : {}),
+      ...(filter.organizationIds ? { organizationId: { in: filter.organizationIds } } : {}),
       ...(filter.cashDeskId ? { cashDeskId: filter.cashDeskId } : {}),
       ...(filter.contractId ? { contractId: filter.contractId } : {}),
       ...(filter.projectId ? { projectId: filter.projectId } : {}),
@@ -209,16 +211,32 @@ export class CashOutService {
 
     const creatorGroupId = await resolveCreatorGroupId(this.prisma.client, accountId, userId);
 
+    // «Владелец»/«Владелец-отдел» from the owner popover (else creator + their
+    // dept). Tenant-validate so a hand-crafted request can't point at another
+    // account (mirrors cash-in.create).
+    if (parsed.ownerId) {
+      await assertMassEditRefsInTenant(this.prisma, accountId, { ownerId: parsed.ownerId });
+    }
+    if (parsed.groupId) {
+      const grp = await this.prisma.client.group.findFirst({
+        where: { id: parsed.groupId, accountId },
+        select: { id: true },
+      });
+      if (!grp) throw new BadRequestException("Bo'lim topilmadi");
+    }
+
     try {
       const created = await this.prisma.client.cashOut.create({
         data: {
           accountId,
-          ownerId: userId,
-          groupId: creatorGroupId,
+          ownerId: parsed.ownerId ?? userId,
+          groupId: parsed.groupId ?? creatorGroupId,
+          shared: parsed.shared ?? false,
           name,
           agentId: parsed.agentId,
           organizationId: parsed.organizationId,
           cashDeskId: parsed.cashDeskId,
+          salesChannelId: parsed.salesChannelId ?? null,
           contractId: parsed.contractId ?? null,
           projectId: parsed.projectId ?? null,
           externalCode: parsed.externalCode ?? null,
@@ -227,10 +245,13 @@ export class CashOutService {
           // «Статья расходов» — now persisted (was never written before, which
           // left the list filter on this column dead). Cash-out-only.
           expenseItem: parsed.expenseItem ?? null,
+          // «Без закрывающих документов» — РКО header flag (default false).
+          noClosingDocs: parsed.noClosingDocs ?? false,
           description: parsed.description,
           currency: parsed.currency,
           rateValue: BigInt(parsed.rateValue),
           sumMinor,
+          vatSumMinor: BigInt(parsed.vatSumMinor ?? '0'),
           attributes: attributes as Prisma.InputJsonValue,
           state: 'draft',
           operations: {
@@ -728,7 +749,14 @@ export class CashOutService {
     accountId: string,
     userId: string,
     id: string,
-    patch: { ownerId?: string | null; projectId?: string | null; description?: string | null },
+    patch: {
+      ownerId?: string | null;
+      projectId?: string | null;
+      description?: string | null;
+      groupId?: string | null;
+      shared?: boolean;
+      expenseItem?: string | null;
+    },
   ) {
     await this.findById(accountId, id);
     await assertMassEditRefsInTenant(this.prisma, accountId, patch);
@@ -736,6 +764,9 @@ export class CashOutService {
     if ('ownerId' in patch) data.ownerId = patch.ownerId;
     if ('projectId' in patch) data.projectId = patch.projectId;
     if ('description' in patch) data.description = patch.description;
+    if ('groupId' in patch) data.groupId = patch.groupId;
+    if ('shared' in patch && patch.shared !== undefined) data.shared = patch.shared;
+    if ('expenseItem' in patch) data.expenseItem = patch.expenseItem;
     const updated = await this.prisma.client.cashOut.update({
       where: { id, accountId },
       data,

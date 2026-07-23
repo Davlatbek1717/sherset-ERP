@@ -21,10 +21,9 @@ import { useDocEditMenuItems } from '@/components/money/document-toolbar-menus';
 import { useBulkDocumentActions } from '@/hooks/use-bulk-actions';
 import { useColumnVisibility } from '@/hooks/use-column-visibility';
 import { useColumnWidths } from '@/hooks/use-column-widths';
-import { useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
+import { stashBulkEdit } from '@/lib/bulk-edit-nav';
 import { filterFromQueryString } from '@/lib/filter-from-query';
-import { pinDefaultCustomer } from '@/lib/pin-default-customer';
 import {
   CatalogPicker,
   CatalogPickerField,
@@ -34,6 +33,7 @@ import {
   ListView,
   MassEditModal,
   MoneyInput,
+  MultiCombobox,
   NativeSelect,
   PeriodInputs,
   PeriodShortcuts,
@@ -44,6 +44,7 @@ import {
 } from '@moysklad/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
+import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
 interface AdjustmentRow {
@@ -67,6 +68,9 @@ interface ListResponse {
   nextCursor?: string;
   total: number;
 }
+
+/** Multi-select reference field — moysklad checkbox-dropdown holds {id,label}[]. */
+type RefMulti = { id: string; label: string };
 
 // Moysklad parity — 100 rows per page.
 const LIMIT = 100;
@@ -108,8 +112,6 @@ export default function CounterpartyAdjustmentListPage() {
   const tFilters = useTranslations('filters');
   const tStates = useTranslations('states.counterparty_adjustment');
   const tPrintMenu = useTranslations('print_menu');
-  const tForm = useTranslations('form');
-  const userDefaults = useUserDefaults();
 
   const [searchInput, setSearchInput] = useState('');
   const search = useDebounce(searchInput, 300);
@@ -117,11 +119,16 @@ export default function CounterpartyAdjustmentListPage() {
   const [sortKey, setSortKey] = useState<string>('moment');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [filterValues, setFilterValues] = useState<FilterDrawerValues>({});
+  // «Контрагент» / «Организация» — moysklad-parity inline multi-select checkbox
+  // dropdowns (were single-select modals). The «Контрагент» dropdown shows the
+  // phone as a sublabel and searches by name OR phone (BE /counterparties?search=
+  // already matches both); on the wire they go out as `agentIds`/`organizationIds`
+  // CSV.
+  const [agents, setAgents] = useState<RefMulti[]>([]);
+  const [organizations, setOrganizations] = useState<RefMulti[]>([]);
   const [filterOpen, setFilterOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState<
     | null
-    | 'agent'
-    | 'org'
     | 'owner'
     | 'project'
     | 'contract'
@@ -131,8 +138,22 @@ export default function CounterpartyAdjustmentListPage() {
     | 'massEditProject'
   >(null);
 
+  const router = useRouter();
+
   const [massEditOpen, setMassEditOpen] = useState(false);
-  const [massEditIds, setMassEditIds] = useState<string[]>([]);
+
+  // «Владелец-отдел» options for the mass-edit wizard — mirrors losses/cash-in.
+
+  const { data: massGroupsData } = useQuery<{ items: Array<{ id: string; name: string }> }>({
+    queryKey: ['groups', 'mass-edit'],
+
+    queryFn: () => api.get('/groups?limit=100'),
+
+    enabled: massEditOpen,
+
+    staleTime: 5 * 60 * 1000,
+  });
+  const [massEditIds] = useState<string[]>([]);
   const [massEditOwner, setMassEditOwner] = useState<{ id: string; label: string } | null>(null);
   const [massEditProject, setMassEditProject] = useState<{ id: string; label: string } | null>(
     null,
@@ -163,8 +184,8 @@ export default function CounterpartyAdjustmentListPage() {
   if (cursor) paramsRecord.cursor = cursor;
   if (filterValues.momentFrom) paramsRecord.momentFrom = filterValues.momentFrom;
   if (filterValues.momentTo) paramsRecord.momentTo = filterValues.momentTo;
-  if (filterValues.agentId) paramsRecord.agentId = filterValues.agentId;
-  if (filterValues.organizationId) paramsRecord.organizationId = filterValues.organizationId;
+  if (agents.length) paramsRecord.agentIds = agents.map((x) => x.id).join(',');
+  if (organizations.length) paramsRecord.organizationIds = organizations.map((x) => x.id).join(',');
   if (filterValues.ownerId) paramsRecord.ownerId = filterValues.ownerId;
   if (filterValues.sumMinorFrom !== undefined)
     paramsRecord.sumMinorFrom = String(filterValues.sumMinorFrom);
@@ -188,6 +209,8 @@ export default function CounterpartyAdjustmentListPage() {
     sortDir,
     filterValues,
     extFilter,
+    agents,
+    organizations,
   ] as const;
   const { data, isLoading, error, refetch } = useQuery<ListResponse>({
     queryKey: listQueryKey,
@@ -195,10 +218,8 @@ export default function CounterpartyAdjustmentListPage() {
   });
 
   const openMassEdit = (ids: string[]) => {
-    setMassEditIds(ids);
-    setMassEditOwner(null);
-    setMassEditProject(null);
-    setMassEditOpen(true);
+    stashBulkEdit({ entity: 'counterparty-adjustments', ids, from: '/counterparty-adjustments' });
+    router.push('/bulk-edit');
   };
   const bulk = useBulkDocumentActions('counterparty-adjustments', listQueryKey, {
     hasFSM: true,
@@ -219,6 +240,8 @@ export default function CounterpartyAdjustmentListPage() {
   const colWidths = useColumnWidths('counterparty-adjustments');
   const hasActiveFilter =
     !!search ||
+    agents.length > 0 ||
+    organizations.length > 0 ||
     Object.values(filterValues).some((v) => v !== undefined && v !== '') ||
     Object.values(extFilter).some((v) => v !== undefined && v !== '');
 
@@ -267,7 +290,7 @@ export default function CounterpartyAdjustmentListPage() {
         <div>
           <div className="max-w-[280px] truncate font-medium">{r.agent.name}</div>
           {r.agent.legalTitle && (
-            <div className="max-w-[280px] truncate text-[var(--ms-text-muted)] text-xs">
+            <div className="max-w-[280px] truncate text-[var(--ms-text-muted)] text-[11px]">
               {r.agent.legalTitle}
             </div>
           )}
@@ -304,7 +327,7 @@ export default function CounterpartyAdjustmentListPage() {
       key: 'description',
       header: tFields('description'),
       cell: (r) => (
-        <span className="block max-w-[260px] truncate text-[var(--ms-text-muted)] text-xs">
+        <span className="block max-w-[260px] truncate text-[var(--ms-text-muted)] text-[11px]">
           {r.description ?? tCommon('none')}
         </span>
       ),
@@ -318,7 +341,7 @@ export default function CounterpartyAdjustmentListPage() {
       width: '140px',
       sortable: true,
       cell: (r) => (
-        <span className="text-[var(--ms-text-muted)] text-xs tabular-nums">
+        <span className="text-[var(--ms-text-muted)] text-[12px] tabular-nums">
           {formatDate(r.updatedAt)}
         </span>
       ),
@@ -347,6 +370,7 @@ export default function CounterpartyAdjustmentListPage() {
   // 4 cash/payment lists use) so labels stay localized in ru+uz.
   const editMenuItems = useDocEditMenuItems({
     selectedIds: bulk.selectedIds,
+    allRowIds: (data?.items ?? []).map((r) => r.id),
     onBulkDelete: (ids) => bulk.bulkDelete.mutate(ids),
     deletePending: bulk.bulkDelete.isPending,
     onMassEdit: openMassEdit,
@@ -354,25 +378,6 @@ export default function CounterpartyAdjustmentListPage() {
   const printMenuItems = [
     { id: 'print', label: tPrintMenu('document_blank'), onSelect: () => window.print() },
   ];
-
-  const agentFetcher = async (q: string): Promise<PickerItem[]> => {
-    const r = await api.get<{ items: { id: string; name: string }[] }>(
-      `/counterparties?search=${encodeURIComponent(q)}&limit=20`,
-    );
-    const items = r.items.map((x) => ({ id: x.id, primary: x.name }));
-    return pinDefaultCustomer(
-      items,
-      userDefaults.data?.defaultCustomer,
-      q,
-      tForm('pinned_default'),
-    );
-  };
-  const orgFetcher = async (q: string): Promise<PickerItem[]> => {
-    const r = await api.get<{ items: { id: string; name: string }[] }>(
-      `/organizations?search=${encodeURIComponent(q)}&limit=20`,
-    );
-    return r.items.map((x) => ({ id: x.id, primary: x.name }));
-  };
 
   return (
     <>
@@ -447,6 +452,8 @@ export default function CounterpartyAdjustmentListPage() {
             onClear={() => {
               setFilterValues({});
               setExtFilter({});
+              setAgents([]);
+              setOrganizations([]);
               setCursor(undefined);
             }}
             pills={
@@ -455,6 +462,20 @@ export default function CounterpartyAdjustmentListPage() {
                 currentQueryString={params.toString()}
                 onApply={(qs) => {
                   setFilterValues(filterFromQueryString(qs));
+                  // The multi-select reference filters ride the query string as
+                  // `agentIds`/`organizationIds` CSV (see paramsRecord); restore
+                  // them into their arrays. Labels aren't carried in the params,
+                  // so the id doubles as the label until the user re-searches.
+                  const usp = qs.startsWith('?')
+                    ? new URLSearchParams(qs.slice(1))
+                    : new URLSearchParams(qs);
+                  const csvToRefs = (key: string): RefMulti[] =>
+                    (usp.get(key) ?? '')
+                      .split(',')
+                      .filter(Boolean)
+                      .map((id) => ({ id, label: id }));
+                  setAgents(csvToRefs('agentIds'));
+                  setOrganizations(csvToRefs('organizationIds'));
                   setCursor(undefined);
                 }}
               />
@@ -500,27 +521,36 @@ export default function CounterpartyAdjustmentListPage() {
                 testId="filter-period"
               />
             </InlineFilterPanel.Field>
-            {/* 2. Контрагент */}
+            {/* 2. Контрагент — moysklad-parity inline multi-select checkbox
+               dropdown: type a name OR phone, results appear inline (each row
+               shows the phone as a sublabel), tick as many as needed. Was a
+               single-select modal. */}
             <InlineFilterPanel.Field label={tFilters('agent')} expandable>
-              <CatalogPickerField
-                value={
-                  filterValues.agentId
-                    ? {
-                        id: filterValues.agentId,
-                        label: filterValues.agentLabel ?? filterValues.agentId,
-                      }
-                    : null
-                }
-                placeholder=""
-                onPick={() => setPickerOpen('agent')}
-                onClear={() => {
-                  setFilterValues({
-                    ...filterValues,
-                    agentId: undefined,
-                    agentLabel: undefined,
-                  });
+              <MultiCombobox
+                value={agents.map((x) => x.id)}
+                items={agents.map((x) => ({ value: x.id, label: x.label }))}
+                onSearch={async (q) => {
+                  const r = await api.get<{
+                    items: { id: string; name: string; phone?: string | null }[];
+                  }>(`/counterparties?search=${encodeURIComponent(q)}&limit=20`);
+                  return r.items.map((x) => ({
+                    value: x.id,
+                    label: x.name,
+                    sublabel: x.phone || undefined,
+                  }));
+                }}
+                onChange={(nextIds, toggled) => {
+                  setAgents((prev) =>
+                    nextIds.map((id) => {
+                      const ex = prev.find((s) => s.id === id);
+                      if (ex) return ex;
+                      if (toggled?.value === id) return { id, label: String(toggled.label) };
+                      return { id, label: id };
+                    }),
+                  );
                   setCursor(undefined);
                 }}
+                placeholder=""
                 testId="filter-agent"
               />
             </InlineFilterPanel.Field>
@@ -568,27 +598,30 @@ export default function CounterpartyAdjustmentListPage() {
                 testId="filter-contract"
               />
             </InlineFilterPanel.Field>
-            {/* 5. Организация */}
+            {/* 5. Организация — moysklad-parity inline multi-select checkbox
+               dropdown (was a single-select modal). */}
             <InlineFilterPanel.Field label={tFilters('organization')} expandable>
-              <CatalogPickerField
-                value={
-                  filterValues.organizationId
-                    ? {
-                        id: filterValues.organizationId,
-                        label: filterValues.organizationLabel ?? filterValues.organizationId,
-                      }
-                    : null
-                }
-                placeholder=""
-                onPick={() => setPickerOpen('org')}
-                onClear={() => {
-                  setFilterValues({
-                    ...filterValues,
-                    organizationId: undefined,
-                    organizationLabel: undefined,
-                  });
+              <MultiCombobox
+                value={organizations.map((x) => x.id)}
+                items={organizations.map((x) => ({ value: x.id, label: x.label }))}
+                onSearch={async (q) => {
+                  const r = await api.get<{ items: { id: string; name: string }[] }>(
+                    `/organizations?search=${encodeURIComponent(q)}&limit=20`,
+                  );
+                  return r.items.map((x) => ({ value: x.id, label: x.name }));
+                }}
+                onChange={(nextIds, toggled) => {
+                  setOrganizations((prev) =>
+                    nextIds.map((id) => {
+                      const ex = prev.find((s) => s.id === id);
+                      if (ex) return ex;
+                      if (toggled?.value === id) return { id, label: String(toggled.label) };
+                      return { id, label: id };
+                    }),
+                  );
                   setCursor(undefined);
                 }}
+                placeholder=""
                 testId="filter-org"
               />
             </InlineFilterPanel.Field>
@@ -748,34 +781,6 @@ export default function CounterpartyAdjustmentListPage() {
         }
       />
       <CatalogPicker
-        open={pickerOpen === 'agent'}
-        onClose={() => setPickerOpen(null)}
-        title={tFilters('agent')}
-        fetcher={agentFetcher}
-        onSelect={(item) => {
-          setFilterValues({
-            ...filterValues,
-            agentId: item.id,
-            agentLabel: String(item.primary),
-          });
-          setCursor(undefined);
-        }}
-      />
-      <CatalogPicker
-        open={pickerOpen === 'org'}
-        onClose={() => setPickerOpen(null)}
-        title={tFilters('organization')}
-        fetcher={orgFetcher}
-        onSelect={(item) => {
-          setFilterValues({
-            ...filterValues,
-            organizationId: item.id,
-            organizationLabel: String(item.primary),
-          });
-          setCursor(undefined);
-        }}
-      />
-      <CatalogPicker
         open={pickerOpen === 'owner'}
         onClose={() => setPickerOpen(null)}
         title={tFilters('owner_employee')}
@@ -913,6 +918,8 @@ export default function CounterpartyAdjustmentListPage() {
         projectValue={massEditProject}
         onProjectPick={() => setPickerOpen('massEditProject')}
         onProjectClear={() => setMassEditProject(null)}
+        groupOptions={(massGroupsData?.items ?? []).map((g) => ({ value: g.id, label: g.name }))}
+        showShared
         labels={{
           title: t('mass_edit_title'),
           ownerLabel: tFilters('owner_employee'),

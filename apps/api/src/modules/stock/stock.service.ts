@@ -23,6 +23,13 @@ export interface StockDelta {
   docId: string;
   docPositionId?: string | null;
   reason: 'post' | 'unpost' | 'cancel';
+  /**
+   * Address-storage cell (Адресное хранение, Phase 4). When set, applyDeltas ALSO
+   * moves the materialized per-cell balance (StockByCell) by qtyDelta and records
+   * the cellId on the ledger row. Null/omitted ⇒ store-level only (the 99% case) —
+   * zero per-cell write, byte-identical to the pre-cell behaviour.
+   */
+  cellId?: string | null;
 }
 
 export interface StockBalance {
@@ -132,82 +139,6 @@ export function netOutstandingReservations(
 export class StockService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
-  /**
-   * Forward-pick replenishment list — products whose balance in the forward
-   * (fast-pick) store is below their `forwardMax` target, sorted by the biggest
-   * shortfall first. Powers the «To'ldirish kerak» screen so the omborchi tops
-   * the forward zone up from reserve.
-   */
-  async replenishmentList(accountId: string): Promise<{
-    forwardStore: { id: string; name: string } | null;
-    items: Array<{
-      productId: string;
-      name: string;
-      code: string | null;
-      binLocation: string | null;
-      forwardMax: number;
-      currentQty: number;
-      shortfall: number;
-    }>;
-  }> {
-    const forward = await this.prisma.client.store.findFirst({
-      where: { accountId, isForward: true, archived: false },
-      select: { id: true, name: true },
-    });
-    if (!forward) return { forwardStore: null, items: [] };
-
-    const products = await this.prisma.client.product.findMany({
-      where: { accountId, forwardMax: { not: null }, archived: false },
-      select: {
-        id: true,
-        name: true,
-        code: true,
-        forwardMax: true,
-        locSklad: true,
-        locPolka: true,
-        locQavat: true,
-        locYacheyka: true,
-      },
-    });
-    if (products.length === 0) return { forwardStore: forward, items: [] };
-
-    const stocks = await this.prisma.client.stock.findMany({
-      where: {
-        accountId,
-        storeId: forward.id,
-        assortmentKind: 'product',
-        assortmentId: { in: products.map((p) => p.id) },
-      },
-      select: { assortmentId: true, qty: true },
-    });
-    const qtyById = new Map(stocks.map((s) => [s.assortmentId, Number(s.qty)]));
-
-    const pad = (n: number | null) => String(n ?? 0).padStart(2, '0');
-    const bin = (p: { locSklad: number | null; locPolka: number | null; locQavat: number | null; locYacheyka: number | null }) =>
-      p.locSklad == null && p.locPolka == null && p.locQavat == null && p.locYacheyka == null
-        ? null
-        : `${pad(p.locSklad)}-${pad(p.locPolka)}-${pad(p.locQavat)}-${pad(p.locYacheyka)}`;
-
-    const items = products
-      .map((p) => {
-        const currentQty = qtyById.get(p.id) ?? 0;
-        const forwardMax = p.forwardMax ?? 0;
-        return {
-          productId: p.id,
-          name: p.name,
-          code: p.code,
-          binLocation: bin(p),
-          forwardMax,
-          currentQty,
-          shortfall: forwardMax - currentQty,
-        };
-      })
-      .filter((x) => x.shortfall > 0)
-      .sort((a, b) => b.shortfall - a.shortfall);
-
-    return { forwardStore: forward, items };
-  }
-
   /** Read balances for a set of (store × assortment) pairs. Returns a map keyed by assortmentId. */
   async getBalances(
     accountId: string,
@@ -266,6 +197,7 @@ export class StockService {
         storeId: d.storeId,
         assortmentKind: d.assortmentKind,
         assortmentId: d.assortmentId,
+        cellId: d.cellId ?? null,
         qtyDelta: d.qtyDelta as Prisma.Decimal,
         costDeltaMinor: d.costDeltaMinor ?? null,
         docType: d.docType,
@@ -308,6 +240,87 @@ export class StockService {
         },
       });
     }
+
+    // 3. Per-cell balance (Адресное хранение, Phase 4) — only for deltas that carry
+    //    a cellId. Mirrors the Stock upsert exactly, one extra key (cellId). Null-cell
+    //    deltas skip this entirely (store-level remains the source of truth; cost +
+    //    reservation stay store-level — StockByCell tracks qty only).
+    for (const d of deltas) {
+      if (!d.cellId) continue;
+      await tx.stockByCell.upsert({
+        where: {
+          accountId_storeId_cellId_assortmentKind_assortmentId: {
+            accountId,
+            storeId: d.storeId,
+            cellId: d.cellId,
+            assortmentKind: d.assortmentKind,
+            assortmentId: d.assortmentId,
+          },
+        },
+        create: {
+          accountId,
+          storeId: d.storeId,
+          cellId: d.cellId,
+          assortmentKind: d.assortmentKind,
+          assortmentId: d.assortmentId,
+          qty: d.qtyDelta as Prisma.Decimal,
+        },
+        update: {
+          qty: { increment: d.qtyDelta as Prisma.Decimal },
+        },
+      });
+    }
+  }
+
+  /**
+   * Guard: every non-null cellId must be a real StoreCell of THIS (account, store).
+   * The picker only offers in-store cells, but a buggy/malicious client could post a
+   * foreign cellId — that would credit/debit a cell in another warehouse. Reject it.
+   */
+  async assertCellsInStore(
+    accountId: string,
+    storeId: string,
+    cellIds: Array<string | null | undefined>,
+  ): Promise<void> {
+    const ids = [...new Set(cellIds.filter((c): c is string => !!c))];
+    if (ids.length === 0) return;
+    const found = await this.prisma.client.storeCell.count({
+      where: { id: { in: ids }, accountId, storeId },
+    });
+    if (found !== ids.length) {
+      throw new BadRequestException('Tanlangan yacheyka bu omborga tegishli emas');
+    }
+  }
+
+  /**
+   * «С этим товаром» — cells in this store that currently HOLD the given assortment
+   * (qty > 0). Backed by @@index([accountId, storeId, assortmentKind, assortmentId]).
+   */
+  async getCellsHoldingProduct(
+    accountId: string,
+    storeId: string,
+    assortmentKind: string,
+    assortmentId: string,
+  ): Promise<Array<{ cellId: string; qty: string }>> {
+    const rows = await this.prisma.client.stockByCell.findMany({
+      where: { accountId, storeId, assortmentKind, assortmentId, qty: { gt: 0 } },
+      select: { cellId: true, qty: true },
+    });
+    return rows.map((r) => ({ cellId: r.cellId, qty: r.qty.toString() }));
+  }
+
+  /**
+   * «Свободна/Занята» — the set of cellIds in this store that hold ANY stock
+   * (qty > 0 for some assortment). A cell NOT in the set is «Свободна».
+   * Backed by @@index([cellId]).
+   */
+  async getOccupiedCellIds(accountId: string, storeId: string): Promise<Set<string>> {
+    const rows = await this.prisma.client.stockByCell.findMany({
+      where: { accountId, storeId, qty: { gt: 0 } },
+      select: { cellId: true },
+      distinct: ['cellId'],
+    });
+    return new Set(rows.map((r) => r.cellId));
   }
 
   /**

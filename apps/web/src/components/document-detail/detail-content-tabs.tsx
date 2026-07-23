@@ -1,25 +1,27 @@
 'use client';
 
 /**
- * Moysklad-parity document-detail body. Live-grounded against the real
- * moysklad PO detail (2026-06-24): a saved document shows only TWO tabs in the
- * position area — «Главная» (the position editor + totals) and «Связанные
- * документы» (the related-docs diagram). «Задачи», «Файлы» and «Изменения» are
- * NOT tabs — they render as inline collapsible sections BELOW the tabs
- * («▼ Задачи», «▼ Файлы», «▼ Изменения»). This component owns that layout so
- * every detail page inherits it from one place.
+ * Moysklad-parity document-detail body. The NEW moysklad register design (the
+ * one the account runs — «Настройки пользователя → новый дизайн реестров»,
+ * grounded 2026-07-07 on the live #purchaseorder editor) shows FIVE tabs in the
+ * position area: «Позиции» · «Связанные документы» · «Файлы» · «Задачи» ·
+ * «События». This component owns that 5-tab layout so every detail page inherits
+ * it from one place.
  *
  * The host page wraps its position-editor + totals grid in `children` (the
- * «Главная» tab) and passes its task / files / history slots; the change
- * history is fetched eagerly (keyed by entity+id) and shown in the collapsed
- * «Изменения» section.
+ * «Позиции» tab) and passes its files / tasks slots (rendered in their tabs).
+ * «События» shows the document event timeline (the audit history — created /
+ * posted / edited events), fetched eagerly by entity+id. There is no separate
+ * comment feed yet, so «События» surfaces the real lifecycle events only.
  */
 
+import { type AttachmentEntity, AttachmentsSection } from '@/components/attachments-section';
+import { DocumentTasksSection } from '@/components/document-tasks-section';
 import { useAuditLabels } from '@/hooks/use-audit-labels';
 import { useDocumentHistory } from '@/hooks/use-document-history';
 import {
-  DocumentDisclosurePanel,
   HistoryTimeline,
+  Icons,
   type RelatedDocsGroup,
   RelatedDocsPanel,
   Tabs,
@@ -28,6 +30,7 @@ import {
   TabsTrigger,
 } from '@moysklad/ui';
 import { useTranslations } from 'next-intl';
+import { useSearchParams } from 'next/navigation';
 import type { ReactNode } from 'react';
 
 export interface DetailContentTabsProps {
@@ -68,7 +71,8 @@ export function DetailContentTabs({
   filesSlot,
   positionsLabel,
   relatedSlot,
-  historyInline = true,
+  // `historyInline` is accepted for caller compat but no longer used — history now
+  // lives in the «События» tab, not an inline collapsible.
 }: DetailContentTabsProps) {
   const tCommon = useTranslations('common');
   const tAudit = useTranslations('audit');
@@ -78,16 +82,53 @@ export function DetailContentTabs({
   const historyQuery = useDocumentHistory(auditEntity, entityId);
   const entries = historyQuery.data?.items ?? [];
 
+  // Arriving from a /new form's «⊕ Задача» (silent-save → «?task=new») opens on the
+  // «Задачи» tab so the create modal (mounted inside it) can auto-open. moysklad lands
+  // you on the saved doc with «Создание задачи» already showing. «?link=new» is the
+  // same hand-off for «Привязать документ» → the «Связанные документы» tab (the
+  // RelatedDocsTab inside it auto-opens the «Привязка документа» modal).
+  // useSearchParams() may be null outside a Next router context (jsdom tests,
+  // static prerender) — optional-chain so the tabs still render.
+  const searchParams = useSearchParams();
+  const initialTab =
+    searchParams?.get('task') === 'new'
+      ? 'tasks'
+      : searchParams?.get('link') === 'new'
+        ? 'related'
+        : 'positions';
+
   return (
     <div data-test-id="detail-content-tabs">
-      {/* moysklad position-area tabs — «Главная» + «Связанные документы» only. */}
-      <Tabs defaultValue="positions" className="w-full">
+      {/* moysklad new-design position-area tabs (5): Позиции · Связанные документы ·
+          Файлы · Задачи · События. */}
+      <Tabs defaultValue={initialTab} className="w-full">
         <TabsList>
+          {/* moysklad new-design tab icons (closest design-system glyphs). */}
           <TabsTrigger value="positions" data-test-id="tab-positions">
+            <Icons.grid className="mr-1.5 inline h-4 w-4 text-[var(--ms-text-muted)]" aria-hidden />
             {positionsLabel ?? tDetailTabs('positions')}
           </TabsTrigger>
           <TabsTrigger value="related" data-test-id="tab-related">
+            <Icons.document
+              className="mr-1.5 inline h-4 w-4 text-[var(--ms-text-muted)]"
+              aria-hidden
+            />
             {tDetailTabs('related')}
+          </TabsTrigger>
+          <TabsTrigger value="files" data-test-id="tab-files">
+            <Icons.file className="mr-1.5 inline h-4 w-4 text-[var(--ms-text-muted)]" aria-hidden />
+            {tDetailTabs('files')}
+          </TabsTrigger>
+          <TabsTrigger value="tasks" data-test-id="tab-tasks">
+            <Icons.tasks
+              className="mr-1.5 inline h-4 w-4 text-[var(--ms-text-muted)]"
+              aria-hidden
+            />
+            {tDetailTabs('tasks')}
+          </TabsTrigger>
+          <TabsTrigger value="events" data-test-id="tab-events">
+            <Icons.chat className="mr-1.5 inline h-4 w-4 text-[var(--ms-text-muted)]" aria-hidden />
+            {tDetailTabs('events')}
           </TabsTrigger>
         </TabsList>
 
@@ -98,32 +139,31 @@ export function DetailContentTabs({
             <RelatedDocsPanel groups={relatedGroups} emptyLabel={tAudit('related_empty')} />
           )}
         </TabsContent>
-      </Tabs>
 
-      {/* moysklad inline bottom sections (in grounded order): Задачи · Файлы ·
-          Изменения. Each is a «▼»-collapsible, NOT a tab. */}
-      {tasksSlot && (
-        <div className="mt-6" data-test-id="detail-tasks-section">
-          {tasksSlot}
-        </div>
-      )}
+        {/* «Файлы» — attach/list/delete via the generic /attachments API. Pages may
+            override with an explicit filesSlot; otherwise the shared section is used
+            (auditEntity is the PascalCase model name, which is also the attachments
+            entity key). */}
+        <TabsContent value="files">
+          <div data-test-id="detail-files-section">
+            {filesSlot ?? (
+              <AttachmentsSection entity={auditEntity as AttachmentEntity} entityId={entityId} />
+            )}
+          </div>
+        </TabsContent>
 
-      {filesSlot && (
-        <div className="mt-4" data-test-id="detail-files-section">
-          {filesSlot}
-        </div>
-      )}
+        {/* «Задачи» — «+ Задача» opens the create-task modal (POST /tasks, linked by
+            entity+entityId). Same override/default pattern as Файлы. */}
+        <TabsContent value="tasks">
+          <div data-test-id="detail-tasks-section">
+            {tasksSlot ?? <DocumentTasksSection entity={auditEntity} entityId={entityId} />}
+          </div>
+        </TabsContent>
 
-      {/* «Изменения» — inline collapsible by default; converged pages (PO/CO) pass
-          historyInline={false} and instead show it as a top-right header link
-          (moysklad parity) via <DocumentHistoryLink>. */}
-      {historyInline && (
-        <div className="mt-4">
-          <DocumentDisclosurePanel
-            title={tDetailTabs('history')}
-            defaultOpen={false}
-            testId="detail-history-section"
-          >
+        {/* «События» — the document event timeline (audit history: created /
+            posted / edited). No separate comment feed yet. */}
+        <TabsContent value="events">
+          <div data-test-id="detail-events-section">
             {historyQuery.isLoading ? (
               <div className="py-4 text-[var(--ms-text-muted)] text-sm">{tCommon('loading')}</div>
             ) : (
@@ -135,9 +175,9 @@ export function DetailContentTabs({
                 translateValue={translateValue}
               />
             )}
-          </DocumentDisclosurePanel>
-        </div>
-      )}
+          </div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

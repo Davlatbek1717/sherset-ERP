@@ -9,6 +9,7 @@ import { useBulkDocumentActions } from '@/hooks/use-bulk-actions';
 import { useColumnVisibility } from '@/hooks/use-column-visibility';
 import { useColumnWidths } from '@/hooks/use-column-widths';
 import { api } from '@/lib/api-client';
+import { stashBulkEdit } from '@/lib/bulk-edit-nav';
 import { documentStateTone } from '@/lib/document-state-tone';
 import {
   Badge,
@@ -35,6 +36,7 @@ import {
 } from '@moysklad/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
+import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 
 interface EnterRow {
@@ -165,6 +167,7 @@ export default function EntersPage() {
   const tCommon = useTranslations('common');
   const tFields = useTranslations('fields');
   const tFilters = useTranslations('filters');
+  const tMass = useTranslations('mass_edit_modal');
   const tStates = useTranslations('states.enter');
 
   const [searchInput, setSearchInput] = useState('');
@@ -176,7 +179,6 @@ export default function EntersPage() {
   const [pickerOpen, setPickerOpen] = useState<
     | null
     | 'store'
-    | 'org'
     | 'owner'
     | 'group'
     | 'project'
@@ -197,12 +199,24 @@ export default function EntersPage() {
   // «Товар или группа» — moysklad multi-select checkbox dropdown (mirror PO).
   // Holds the picked {id,label}; on the wire goes out as `productIds` CSV.
   const [products, setProducts] = useState<RefMulti[]>([]);
+  // «Организация» — moysklad-parity inline multi-select checkbox dropdown (was a
+  // single-select modal). Holds the picked {id,label}; goes out as `organizationIds`
+  // CSV. No sublabel (organizations have no phone). Mirrors the PO reference.
+  const [organizations, setOrganizations] = useState<RefMulti[]>([]);
 
   // «Массовое редактирование» (Ommaviy tahrirlash) modal state — mirrors moves.
   // The shared MassEditModal patches ownerId / projectId / description across the
   // selected enters via bulk.massEdit → POST /enters/mass-edit.
+  const router = useRouter();
   const [massEditOpen, setMassEditOpen] = useState(false);
-  const [massEditIds, setMassEditIds] = useState<string[]>([]);
+  // «Владелец-отдел» (groupId) options for the mass-edit wizard — mirrors losses.
+  const { data: massGroupsData } = useQuery<{ items: Array<{ id: string; name: string }> }>({
+    queryKey: ['groups', 'mass-edit'],
+    queryFn: () => api.get('/groups?limit=100'),
+    enabled: massEditOpen,
+    staleTime: 5 * 60 * 1000,
+  });
+  const [massEditIds] = useState<string[]>([]);
   const [massEditOwner, setMassEditOwner] = useState<{ id: string; label: string } | null>(null);
   const [massEditProject, setMassEditProject] = useState<{ id: string; label: string } | null>(
     null,
@@ -219,7 +233,7 @@ export default function EntersPage() {
     ...(cursor ? { cursor } : {}),
     ...(filterValues.momentFrom ? { momentFrom: filterValues.momentFrom } : {}),
     ...(filterValues.momentTo ? { momentTo: filterValues.momentTo } : {}),
-    ...(filterValues.organizationId ? { organizationId: filterValues.organizationId } : {}),
+    ...(organizations.length ? { organizationIds: organizations.map((x) => x.id).join(',') } : {}),
     ...(filterValues.storeId ? { storeId: filterValues.storeId } : {}),
     ...(products.length ? { productIds: products.map((x) => x.id).join(',') } : {}),
     ...(filterValues.ownerId ? { ownerId: filterValues.ownerId } : {}),
@@ -396,7 +410,7 @@ export default function EntersPage() {
       cell: (r) =>
         r.published ? (
           <span
-            className="inline-flex items-center whitespace-nowrap rounded-[3px] bg-[var(--ms-brand-500)] px-2 py-0.5 font-medium text-white text-xs"
+            className="inline-flex items-center whitespace-nowrap rounded-[3px] bg-[#186999] px-2 py-0.5 font-medium text-white text-xs"
             data-test-id="published-badge"
           >
             {tFields('published_badge')}
@@ -413,7 +427,7 @@ export default function EntersPage() {
       cell: (r) =>
         r.printed ? (
           <span
-            className="inline-flex items-center whitespace-nowrap rounded-[3px] bg-[var(--ms-brand-500)] px-2 py-0.5 font-medium text-white text-xs"
+            className="inline-flex items-center whitespace-nowrap rounded-[3px] bg-[#186999] px-2 py-0.5 font-medium text-white text-xs"
             data-test-id="printed-badge"
           >
             {tFields('printed_badge')}
@@ -425,7 +439,7 @@ export default function EntersPage() {
       key: 'description',
       header: tFields('description'),
       cell: (r) => (
-        <span className="max-w-[200px] truncate text-[var(--ms-text-muted)] text-xs">
+        <span className="max-w-[200px] truncate text-[var(--ms-text-muted)] text-[11px]">
           {r.description ?? ''}
         </span>
       ),
@@ -459,7 +473,7 @@ export default function EntersPage() {
   const hasFilter =
     !!search ||
     !!stateFilter ||
-    !!filterValues.organizationId ||
+    organizations.length > 0 ||
     !!filterValues.storeId ||
     products.length > 0 ||
     !!filterValues.ownerId ||
@@ -482,9 +496,10 @@ export default function EntersPage() {
   const savedFilterQuery = (() => {
     const p = new URLSearchParams();
     p.set('fv', JSON.stringify({ ...filterValues, __state: stateFilter ?? undefined }));
-    // «Товар или группа» is multi-select state (not in filterValues) → serialize
-    // it separately so a re-applied pill restores the product chips.
+    // «Товар или группа» / «Организация» are multi-select state (not in
+    // filterValues) → serialize separately so a re-applied pill restores the chips.
     if (products.length) p.set('products', JSON.stringify(products));
+    if (organizations.length) p.set('organizations', JSON.stringify(organizations));
     return p.toString();
   })();
   const applySavedFilter = (qs: string) => {
@@ -500,22 +515,24 @@ export default function EntersPage() {
         /* malformed saved query — ignore */
       }
     }
-    try {
-      const raw = p.get('products');
-      const arr: unknown = raw ? JSON.parse(raw) : [];
-      setProducts(
-        Array.isArray(arr)
+    const parseRefList = (key: string): RefMulti[] => {
+      try {
+        const raw = p.get(key);
+        const arr: unknown = raw ? JSON.parse(raw) : [];
+        return Array.isArray(arr)
           ? arr
               .filter(
                 (x): x is { id: string; label?: unknown } =>
                   !!x && typeof (x as { id?: unknown }).id === 'string',
               )
               .map((x) => ({ id: x.id, label: String(x.label ?? x.id) }))
-          : [],
-      );
-    } catch {
-      setProducts([]);
-    }
+          : [];
+      } catch {
+        return [];
+      }
+    };
+    setProducts(parseRefList('products'));
+    setOrganizations(parseRefList('organizations'));
     onResetCursor();
   };
 
@@ -539,12 +556,6 @@ export default function EntersPage() {
   const fetchProjects = async (q: string): Promise<PickerItem[]> => {
     const r = await api.get<{ items: { id: string; name: string }[] }>(
       `/projects?search=${encodeURIComponent(q)}&limit=20`,
-    );
-    return r.items.map((x) => ({ id: x.id, primary: x.name }));
-  };
-  const fetchOrganizations = async (q: string): Promise<PickerItem[]> => {
-    const r = await api.get<{ items: { id: string; name: string }[] }>(
-      `/organizations?search=${encodeURIComponent(q)}&limit=20`,
     );
     return r.items.map((x) => ({ id: x.id, primary: x.name }));
   };
@@ -589,6 +600,7 @@ export default function EntersPage() {
         setFilterValues({});
         setStateFilter(null);
         setProducts([]);
+        setOrganizations([]);
         onResetCursor();
       }}
       pills={
@@ -719,37 +731,33 @@ export default function EntersPage() {
           testId="filter-project"
         />
       </InlineFilterPanel.Field>
-      {/* 5. Организация */}
+      {/* 5. Организация — moysklad-parity inline multi-select checkbox dropdown
+          (was a single-select modal). Type to filter, tick several; selected
+          render as inline chips. Mirrors the PO reference. */}
       <InlineFilterPanel.Field label={tFields('organization')} expandable>
-        <CatalogPickerField
-          value={
-            filterValues.organizationId
-              ? {
-                  id: filterValues.organizationId,
-                  label: filterValues.organizationLabel ?? filterValues.organizationId,
-                }
-              : null
-          }
+        <MultiCombobox
+          value={organizations.map((x) => x.id)}
+          items={organizations.map((x) => ({ value: x.id, label: x.label }))}
+          onSearch={async (q) => {
+            const r = await api.get<{ items: { id: string; name: string }[] }>(
+              `/organizations?search=${encodeURIComponent(q)}&limit=20`,
+            );
+            return r.items.map((x) => ({ value: x.id, label: x.name }));
+          }}
+          onChange={(nextIds, toggled) => {
+            setOrganizations((prev) =>
+              nextIds.map((id) => {
+                const ex = prev.find((s) => s.id === id);
+                if (ex) return ex;
+                if (toggled?.value === id) return { id, label: String(toggled.label) };
+                return { id, label: id };
+              }),
+            );
+            onResetCursor();
+          }}
           placeholder=""
-          inlineFetcher={fetchOrganizations}
-          onInlineSelect={(item) => {
-            setFilterValues({
-              ...filterValues,
-              organizationId: item.id,
-              organizationLabel: String(item.primary),
-            });
-            onResetCursor();
-          }}
-          onPick={() => setPickerOpen('org')}
-          onClear={() => {
-            setFilterValues({
-              ...filterValues,
-              organizationId: undefined,
-              organizationLabel: undefined,
-            });
-            onResetCursor();
-          }}
           testId="filter-org"
+          ariaLabel={tFields('organization')}
         />
       </InlineFilterPanel.Field>
       {/* 6. Статус */}
@@ -991,10 +999,15 @@ export default function EntersPage() {
               onClearSelection={bulk.clearSelection}
               postedCount={postedCount}
               onMassEdit={() => {
-                setMassEditIds(Array.from(bulk.selectedIds));
-                setMassEditOwner(null);
-                setMassEditProject(null);
-                setMassEditOpen(true);
+                stashBulkEdit({
+                  entity: 'enters',
+                  ids:
+                    bulk.selectedIds.size > 0
+                      ? Array.from(bulk.selectedIds)
+                      : (data?.items ?? []).map((r) => r.id),
+                  from: '/enters',
+                });
+                router.push('/bulk-edit');
               }}
             />
             <EnterPrintDropdown
@@ -1028,20 +1041,6 @@ export default function EntersPage() {
             ...filterValues,
             storeId: item.id,
             storeLabel: String(item.primary),
-          });
-          onResetCursor();
-        }}
-      />
-      <CatalogPicker
-        open={pickerOpen === 'org'}
-        onClose={() => setPickerOpen(null)}
-        title={tFields('organization')}
-        fetcher={fetchOrganizations}
-        onSelect={(item) => {
-          setFilterValues({
-            ...filterValues,
-            organizationId: item.id,
-            organizationLabel: String(item.primary),
           });
           onResetCursor();
         }}
@@ -1128,6 +1127,8 @@ export default function EntersPage() {
         projectValue={massEditProject}
         onProjectPick={() => setPickerOpen('massEditProject')}
         onProjectClear={() => setMassEditProject(null)}
+        groupOptions={(massGroupsData?.items ?? []).map((g) => ({ value: g.id, label: g.name }))}
+        showShared
         labels={{
           title: t('mass_edit_title'),
           ownerLabel: tFilters('owner_employee'),
@@ -1136,6 +1137,10 @@ export default function EntersPage() {
           apply: t('mass_edit_apply'),
           cancel: t('mass_edit_cancel'),
           hint: t('mass_edit_hint', { count: massEditIds.length }),
+          groupLabel: tMass('group_label'),
+          sharedLabel: tMass('shared_label'),
+          sharedYes: tMass('shared_yes'),
+          sharedNo: tMass('shared_no'),
         }}
         onSubmit={async (patch) => {
           await bulk.massEdit.mutateAsync({ ids: massEditIds, ...patch });

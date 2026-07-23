@@ -29,8 +29,7 @@ interface SaleRow {
   session: {
     id: string;
     state: string;
-    // SetNull relation — null after the cash desk is deleted.
-    cashDesk: { id: string; name: string; currency: string } | null;
+    cashDesk: { id: string; name: string; currency: string };
   };
   _count: { positions: number };
 }
@@ -124,8 +123,8 @@ export default function RetailSalesListPage() {
     {
       key: 'cash_desk',
       header: t('cash_desk'),
-      cell: (row) => <span className="text-sm">{row.session.cashDesk?.name ?? '—'}</span>,
-      cellText: (r) => r.session.cashDesk?.name ?? '—',
+      cell: (row) => <span className="text-sm">{row.session.cashDesk.name}</span>,
+      cellText: (r) => r.session.cashDesk.name,
     },
     {
       key: 'sum',
@@ -136,12 +135,10 @@ export default function RetailSalesListPage() {
       sortable: true,
       cell: (row) => (
         <span className="font-semibold text-sm tabular-nums">
-          {formatMoney(row.sumMinor, row.session.cashDesk?.currency ?? 'UZS', {
-            displayAs: 'none',
-          })}
+          {formatMoney(row.sumMinor, row.session.cashDesk.currency, { displayAs: 'none' })}
         </span>
       ),
-      cellText: (r) => formatMoney(r.sumMinor, r.session.cashDesk?.currency ?? 'UZS'),
+      cellText: (r) => formatMoney(r.sumMinor, r.session.cashDesk.currency),
     },
     {
       key: 'state',

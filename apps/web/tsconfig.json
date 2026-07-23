@@ -1,11 +1,7 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "lib": [
-      "dom",
-      "dom.iterable",
-      "ES2022"
-    ],
+    "lib": ["dom", "dom.iterable", "ES2022"],
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "jsx": "preserve",
@@ -30,57 +26,21 @@
       }
     ],
     "paths": {
-      "@/*": [
-        "./src/*"
-      ],
-      "@moysklad/ui": [
-        "../../packages/design-system/src/index.ts"
-      ],
-      "@moysklad/ui/*": [
-        "../../packages/design-system/src/*"
-      ],
-      "@moysklad/money": [
-        "../../packages/money/dist/index.js"
-      ],
-      "@moysklad/money/*": [
-        "../../packages/money/dist/*"
-      ]
+      "@/*": ["./src/*"],
+      "@moysklad/ui": ["../../packages/design-system/src/index.ts"],
+      "@moysklad/ui/*": ["../../packages/design-system/src/*"],
+      "@moysklad/money": ["../../packages/money/dist/index.js"],
+      "@moysklad/money/*": ["../../packages/money/dist/*"]
     }
   },
   "include": [
     "**/*.ts",
     "**/*.tsx",
-    ".next-cert-focus/types/**/*.ts",
-    ".next-cert-hist/types/**/*.ts",
-    ".next-cert-leftcards/types/**/*.ts",
-    ".next-cert-pay/types/**/*.ts",
-    ".next-cert-pay2/types/**/*.ts",
-    ".next-cert-pay3/types/**/*.ts",
-    ".next-cert-pay4/types/**/*.ts",
-    ".next-cert-pay5/types/**/*.ts",
-    ".next-cert-pay6/types/**/*.ts",
-    ".next-cert-pi/types/**/*.ts",
-    ".next-cert-pi2/types/**/*.ts",
-    ".next-cert-suggest/types/**/*.ts",
-    ".next-cert/types/**/*.ts",
-    ".next-cert2/types/**/*.ts",
-    ".next-cpcard/types/**/*.ts",
-    ".next-cpnav/types/**/*.ts",
-    ".next-crm-cert/types/**/*.ts",
-    ".next-dev/types/**/*.ts",
-    ".next-loss-cert/types/**/*.ts",
-    ".next-loss-id-cert/types/**/*.ts",
-    ".next-loss-new-cert/types/**/*.ts",
-    ".next-lossbp/types/**/*.ts",
-    ".next-lossid-fresh/types/**/*.ts",
-    ".next-tasks-cert/types/**/*.ts",
+    ".next-linkcert/types/**/*.ts",
+    ".next-spot/types/**/*.ts",
     ".next/types/**/*.ts",
     "next-env.d.ts",
-    ".next-cpmetrics/types/**/*.ts"
+    ".next-provverify/types/**/*.ts"
   ],
-  "exclude": [
-    "node_modules",
-    ".next",
-    "dist"
-  ]
+  "exclude": ["node_modules", ".next", "dist"]
 }

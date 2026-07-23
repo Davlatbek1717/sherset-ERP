@@ -44,6 +44,18 @@ export class InternalOrderController {
     return this.service.findById(user.accountId, id);
   }
 
+  /**
+   * «Заказ поставщику с учётом доступно» basis — the order's product positions
+   * reduced to the per-store stock shortfall (ordered − available). Used by
+   * purchase-orders/new to pre-fill only what the store can't cover. Mirrors
+   * customer-orders/:id/supply-shortfall.
+   */
+  @Get(':id/supply-shortfall')
+  @RequirePermission({ entity: 'internalorder', action: 'view' })
+  async supplyShortfall(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.service.getSupplyShortfall(user.accountId, id);
+  }
+
   @Post()
   @RequirePermission({ entity: 'internalorder', action: 'create' })
   async create(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
@@ -103,7 +115,13 @@ export class InternalOrderController {
   async massEdit(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
     const parsed = MassEditBaseSchema.parse(body);
     const { ids, ...patch } = parsed;
-    assertPatchHasAtLeastOneField(patch, ['ownerId', 'projectId', 'description']);
+    assertPatchHasAtLeastOneField(patch, [
+      'ownerId',
+      'projectId',
+      'description',
+      'groupId',
+      'shared',
+    ]);
     return runBulk(ids, (id) => this.service.massEditApply(user.accountId, user.sub, id, patch));
   }
 

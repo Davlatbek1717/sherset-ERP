@@ -124,7 +124,7 @@ function HelpIcon({ tooltip }: { tooltip?: React.ReactNode }) {
   if (!tooltip) return null;
   return (
     <span
-      className="ml-1 inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full border border-current text-[10px] text-[var(--ms-text-muted)]"
+      className="ml-1 inline-flex h-[18px] w-[18px] cursor-help items-center justify-center rounded-full border border-current text-[11px] text-[var(--ms-text-muted)]"
       title={typeof tooltip === 'string' ? tooltip : undefined}
       aria-label={typeof tooltip === 'string' ? tooltip : undefined}
     >
@@ -189,7 +189,7 @@ function StatusPill({
         trigger={
           <button
             type="button"
-            className="inline-flex h-[var(--ms-control-h)] items-center gap-1 rounded-[var(--ms-radius-sm)] border border-[var(--ms-border-default)] px-2 font-medium text-[12px] focus:outline-none focus:ring-2 focus:ring-[var(--ms-text-brand)]"
+            className="inline-flex h-7 items-center gap-1 rounded-[var(--ms-radius-sm)] border border-[var(--ms-border-default)] px-2 font-medium text-[13px] focus:outline-none focus:ring-2 focus:ring-[var(--ms-text-brand)]"
             style={{ backgroundColor: bg, color: fg }}
             data-test-id="doc-header-status"
           >
@@ -275,7 +275,7 @@ export function DocumentHeader({
       )}
       data-test-id={testId ?? 'doc-header'}
     >
-      <span className="font-semibold text-[var(--ms-text-primary)] text-lg">
+      <span className="font-semibold text-[19px] text-[var(--ms-text-primary)]">
         {documentTypeLabel}
         <span className="ml-1 text-[var(--ms-text-muted)]">№</span>
       </span>
@@ -286,7 +286,7 @@ export function DocumentHeader({
           value={number}
           onChange={(e) => onNumberChange(e.target.value)}
           placeholder={numberPlaceholder ?? 'Авто'}
-          className="h-[var(--ms-control-h)] w-24 rounded-[var(--ms-radius-sm)] border border-[var(--ms-border-default)] px-2 text-[12px] tabular-nums focus:outline-none focus:ring-2 focus:ring-[var(--ms-text-brand)]"
+          className="h-7 max-md:h-[36px] w-24 rounded-[var(--ms-radius-sm)] border border-[var(--ms-border-default)] px-2 text-[13px] tabular-nums focus:outline-none focus:ring-2 focus:ring-[var(--ms-text-brand)]"
           data-test-id="doc-header-number"
           title={numberTooltip ?? "Avtomatik raqam o'rnatish uchun maydonni bo'sh qoldiring"}
         />
@@ -294,13 +294,13 @@ export function DocumentHeader({
         // Saved doc (detail): moysklad shows the assigned number as plain bold text
         // «00011» — not a bordered box.
         <span
-          className="font-semibold text-[15px] text-[var(--ms-text-primary)] tabular-nums"
+          className="font-semibold text-[17px] text-[var(--ms-text-primary)] tabular-nums"
           data-test-id="doc-header-number"
         >
           {number}
         </span>
       )}
-      <span className="text-[var(--ms-text-muted)] text-sm">от</span>
+      <span className="text-[var(--ms-text-muted)] text-base">от</span>
       {/* moysklad «от» = ONE bordered field "DD.MM.YYYY HH:MM" (24-hour) with a
           calendar icon on the LEFT. The icon+date is the calendar trigger; the
           time is an inline borderless field inside the same box. Recombined to
@@ -309,7 +309,7 @@ export function DocumentHeader({
           on en-US browsers, and split DatePicker+time read as two boxes — both
           parity breaks vs moysklad's single field.) */}
       <div
-        className="inline-flex h-[var(--ms-control-h)] items-center overflow-hidden rounded-[var(--ms-radius-sm)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] focus-within:ring-2 focus-within:ring-[var(--ms-text-brand)]"
+        className="inline-flex h-7 max-md:h-[36px] items-center overflow-hidden rounded-[var(--ms-radius-sm)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] focus-within:ring-2 focus-within:ring-[var(--ms-text-brand)]"
         data-test-id="doc-header-date"
       >
         <DatePicker
@@ -324,7 +324,7 @@ export function DocumentHeader({
               data-test-id="doc-header-date-picker"
               className="inline-flex h-full items-center pr-0.5 pl-2 text-[var(--ms-text-muted)] hover:text-[var(--ms-text-primary)] focus:outline-none"
             >
-              <Calendar className="h-3.5 w-3.5 shrink-0" />
+              <Calendar className="h-4 w-4 shrink-0" />
             </button>
           }
         />
@@ -340,7 +340,7 @@ export function DocumentHeader({
           onBlur={() => setDateText(isoDate ? formatDdMmYyyy(isoDate) : '')}
           placeholder="дд.мм.гггг"
           aria-label="Дата документа"
-          className="h-full w-[74px] border-0 bg-transparent px-0.5 text-[12px] tabular-nums focus:outline-none focus:ring-0"
+          className="h-full w-[84px] border-0 bg-transparent px-0.5 text-[13px] tabular-nums focus:outline-none focus:ring-0"
           data-test-id="doc-header-date-input"
         />
         <input
@@ -353,7 +353,7 @@ export function DocumentHeader({
           }}
           placeholder="чч:мм"
           aria-label="Время"
-          className="h-full w-12 border-0 bg-transparent px-1 text-center text-[12px] tabular-nums focus:outline-none focus:ring-0"
+          className="h-full w-14 border-0 bg-transparent px-1 text-center text-[13px] tabular-nums focus:outline-none focus:ring-0"
           data-test-id="doc-header-time"
         />
       </div>
@@ -390,7 +390,7 @@ export function DocumentHeader({
         <button
           type="button"
           onClick={onRequestPayment}
-          className="inline-flex h-[26px] items-center rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] px-2.5 text-[var(--ms-text-primary)] text-sm hover:bg-[var(--ms-bg-hover)]"
+          className="inline-flex h-[26px] max-md:h-[40px] items-center rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] px-2.5 text-[var(--ms-text-primary)] text-sm hover:bg-[var(--ms-bg-hover)]"
           data-test-id="doc-header-request-payment"
         >
           {requestPaymentLabel}
@@ -407,15 +407,15 @@ export function DocumentHeader({
       {onApplicableChange && (
         // moysklad parity: the help «?» sits BEFORE the checkbox («? ☑ Проведено»),
         // not after the label. Kept OUTSIDE the <label> so clicking it doesn't toggle.
-        <span className="ml-2 inline-flex items-center gap-1 text-sm">
+        <span className="ml-2 inline-flex items-center gap-1.5 text-base">
           <HelpIcon tooltip={applicableHelp} />
-          <label className="inline-flex items-center gap-1">
+          <label className="inline-flex items-center gap-1.5">
             <input
               type="checkbox"
               checked={!!applicable}
               onChange={(e) => onApplicableChange(e.target.checked)}
               disabled={applicableDisabled}
-              className="h-4 w-4"
+              className="h-[18px] w-[18px] accent-[var(--ms-action-success)]"
               data-test-id="doc-header-applicable"
             />
             {applicableLabel ?? 'Проведено'}
@@ -423,15 +423,15 @@ export function DocumentHeader({
         </span>
       )}
       {onWaitingChange && (
-        <span className="inline-flex items-center gap-1 text-sm">
+        <span className="inline-flex items-center gap-1.5 text-base">
           <HelpIcon tooltip={waitingHelp} />
-          <label className="inline-flex items-center gap-1">
+          <label className="inline-flex items-center gap-1.5">
             <input
               type="checkbox"
               checked={!!waiting}
               onChange={(e) => onWaitingChange(e.target.checked)}
               disabled={waitingDisabled}
-              className="h-4 w-4"
+              className="h-[18px] w-[18px] accent-[var(--ms-action-success)]"
               data-test-id="doc-header-waiting"
             />
             {waitingLabel ?? 'Ожидание'}

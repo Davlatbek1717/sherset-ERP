@@ -48,7 +48,16 @@ export function throwIfEmployeeUniqueViolation(e: unknown): void {
   if (target.includes('email')) {
     throw new ConflictException('Bu email allaqachon ishlatilgan');
   }
-  // P2002 on some other Employee unique constraint (e.g. name) — still a
-  // conflict, just without a field-specific message.
-  throw new ConflictException('Noyob qiymat xatosi');
+  // Owner-reported 2026-07-19: db-push-era databases carry the schema's
+  // @@unique([accountId, name]) — a duplicate ФИО surfaced as a bare «Noyob
+  // qiymat xatosi» toast with no hint WHICH field clashed. Name it.
+  if (target.includes('name')) {
+    throw new ConflictException('Bu familiya-ism bilan xodim allaqachon mavjud');
+  }
+  if (target.includes('phone')) {
+    throw new ConflictException('Bu telefon raqami allaqachon ishlatilgan');
+  }
+  // P2002 on some other Employee unique constraint — still a conflict; embed
+  // the clashing columns so the UI (and any bug report) self-diagnoses.
+  throw new ConflictException(`Noyob qiymat xatosi (${target || "noma'lum maydon"})`);
 }

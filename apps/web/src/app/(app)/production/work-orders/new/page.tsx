@@ -23,6 +23,7 @@ import {
   Icons,
   Input,
   type PickerItem,
+  StickyHScroll,
 } from '@moysklad/ui';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
@@ -73,7 +74,7 @@ export default function NewWorkOrderPage() {
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   });
   const [status, setStatus] = useState<string>('draft');
-  const [applicable, setApplicable] = useState(false);
+  const [applicable, setApplicable] = useState(true);
 
   // Meta state
   const [bomId, setBomId] = useState<string | null>(null);
@@ -133,7 +134,7 @@ export default function NewWorkOrderPage() {
     bomRaw?.materials && bomRaw.materials.length > 0 ? (
       <div className="space-y-2">
         <h3 className="font-medium text-sm">{t('materials_section')}</h3>
-        <div className="overflow-x-auto rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)]">
+        <StickyHScroll className="rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)]">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-[var(--ms-border-default)] border-b bg-[var(--ms-bg-muted)] font-medium text-[var(--ms-text-muted)] text-xs uppercase tracking-wide">
@@ -161,7 +162,7 @@ export default function NewWorkOrderPage() {
               })}
             </tbody>
           </table>
-        </div>
+        </StickyHScroll>
       </div>
     ) : bomId ? (
       <div className="rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] border-dashed py-4 text-center text-[var(--ms-text-muted)] text-sm">
@@ -172,7 +173,7 @@ export default function NewWorkOrderPage() {
   const outputTable = bomRaw ? (
     <div className="space-y-2">
       <h3 className="font-medium text-sm">{t('output_section')}</h3>
-      <div className="overflow-x-auto rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)]">
+      <StickyHScroll className="rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)]">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-[var(--ms-border-default)] border-b bg-[var(--ms-bg-muted)] font-medium text-[var(--ms-text-muted)] text-xs uppercase tracking-wide">
@@ -187,7 +188,7 @@ export default function NewWorkOrderPage() {
             </tr>
           </tbody>
         </table>
-      </div>
+      </StickyHScroll>
     </div>
   ) : null;
 
@@ -197,7 +198,7 @@ export default function NewWorkOrderPage() {
       label: tDetailTabs('main'),
       content: (
         <div className="space-y-4">
-          <DocumentMetaPanel>
+          <DocumentMetaPanel compact>
             <DocumentMetaRow>
               <DocumentMetaField label={t('bom')} required>
                 <CatalogPickerField

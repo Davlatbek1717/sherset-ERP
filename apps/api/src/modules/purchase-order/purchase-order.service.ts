@@ -14,10 +14,11 @@ import { AttributeMetadataService } from '../attribute-metadata/attribute-metada
 import { PaymentOutService } from '../payment-out/payment-out.service.js';
 import { tashkentRangeBounds } from '../report/report-date-bounds.util.js';
 import { resolveCreatorGroupId } from '../shared/group-stamp.js';
-import { assertMassEditRefsInTenant } from '../shared/mass-edit.js';
+import { assertMassEditRefsInTenant, assertStateInTenant } from '../shared/mass-edit.js';
 import { combineMergePositions } from '../shared/merge-positions.util.js';
 import { mapVersionedUpdateError } from '../shared/optimistic-lock.js';
 import { assertOrgAccountMatchesOrg } from '../shared/org-account.js';
+import { searchTokenGroups } from '../shared/search-tokens.js';
 import { WebhookFireService } from '../webhook/webhook-fire.service.js';
 import {
   type CreatePurchaseOrderInput,
@@ -100,6 +101,24 @@ export class PurchaseOrderService {
     const nextCursor = hasMore ? items[items.length - 1]?.id : undefined;
     const total = await this.prisma.client.purchaseOrder.count({ where });
     return { items, nextCursor, total };
+  }
+
+  /**
+   * Every row matching the list filter, with NO pagination — for the moysklad
+   * «Печать → Список заказов» PDF report. Loops {@link list} in 500-row pages
+   * (its cursor is stable) and stops at a 20k-row safety cap. Preserves the
+   * caller's filter + sort so the report matches what's on screen.
+   */
+  async listAllForReport(accountId: string, rawFilter: Record<string, unknown>) {
+    const first = await this.list(accountId, { ...rawFilter, limit: 500, cursor: undefined });
+    const all = [...first.items];
+    let cursor = first.nextCursor;
+    while (cursor && all.length < 20000) {
+      const page = await this.list(accountId, { ...rawFilter, limit: 500, cursor });
+      all.push(...page.items);
+      cursor = page.nextCursor;
+    }
+    return all;
   }
 
   /**
@@ -294,11 +313,13 @@ export class PurchaseOrderService {
       ...(returnClause ?? {}),
       ...(filter.search
         ? {
-            OR: [
-              { name: { contains: filter.search, mode: 'insensitive' } },
-              { description: { contains: filter.search, mode: 'insensitive' } },
-              { agent: { name: { contains: filter.search, mode: 'insensitive' } } },
-            ],
+            // moysklad «содержит»: split the query into words, AND-match each across
+            // the fields (words may match different fields). shared/search-tokens.
+            AND: searchTokenGroups(filter.search, (tok): Prisma.PurchaseOrderWhereInput[] => [
+              { name: { contains: tok, mode: 'insensitive' as const } },
+              { description: { contains: tok, mode: 'insensitive' as const } },
+              { agent: { name: { contains: tok, mode: 'insensitive' as const } } },
+            ]),
           }
         : {}),
       ...(filter.momentFrom || filter.momentTo
@@ -499,8 +520,7 @@ export class PurchaseOrderService {
       parsed.organizationAccountId ?? null,
     );
 
-    // Editable «№» from the create form — auto-generate only when left blank.
-    const name = parsed.name?.trim() || (await this.nextOrderName(accountId));
+    const name = await this.nextOrderName(accountId);
 
     const attributes = await this.attrs.validateAndNormalize(
       accountId,
@@ -523,21 +543,6 @@ export class PurchaseOrderService {
       });
       if (!grp) throw new BadRequestException("Bo'lim topilmadi");
     }
-    // «Статус» — tenant-validate the custom status (mirrors setStatus) so a bad id
-    // is a 400, not a silent miss. Orthogonal to the FSM state («Проведён»).
-    if (parsed.statusId) {
-      const status = await this.prisma.client.state.findFirst({
-        where: { id: parsed.statusId, accountId, entityType: 'purchaseorder', archived: false },
-        select: { id: true },
-      });
-      if (!status) throw new BadRequestException(`Unknown status: ${parsed.statusId}`);
-    }
-
-    // «Проведён» checkbox (default ON in the create form): create the order
-    // already posted so «Создать документ» is usable immediately. Confirming a PO
-    // has NO stock side-effects (only state/applicable/postedAt — mirrors confirm()),
-    // so it is safe to set directly on create. Positions are guaranteed ≥1 by schema.
-    const posted = parsed.applicable === true;
 
     try {
       const created = await this.prisma.client.purchaseOrder.create({
@@ -566,12 +571,7 @@ export class PurchaseOrderService {
           vatIncluded: parsed.vatIncluded,
           waiting: parsed.waiting,
           attributes: attributes as Prisma.InputJsonValue,
-          state: posted ? 'confirmed' : 'draft',
-          applicable: posted,
-          postedAt: posted ? new Date() : null,
-          // Scalar FK (unchecked create — mirrors accountId/agentId/ownerId above);
-          // the status is tenant-validated just above.
-          ...(parsed.statusId ? { statusId: parsed.statusId } : {}),
+          state: 'draft',
           positions: {
             create: parsed.positions.map((p, idx) => ({
               accountId,
@@ -662,13 +662,6 @@ export class PurchaseOrderService {
         : { disconnect: true };
     }
     if (parsed.externalCode !== undefined) data.externalCode = parsed.externalCode;
-    // Editable document «№» on the detail form. Apply only a non-empty value (the
-    // column is NOT nullable + autogenerated on create). A duplicate number hits
-    // @@unique([accountId, name]) → P2002 → 409 via the global PrismaExceptionFilter,
-    // so no pre-check is needed here (mirrors CustomerOrder.update).
-    if (typeof parsed.name === 'string' && parsed.name.trim() !== '') {
-      data.name = parsed.name.trim();
-    }
     // «Владелец» / «Владелец-отдел» / «Общий доступ» — editable on the detail form
     // too. The create path already persists them, but update() never wrote them even
     // though the (partial) schema accepts them — so a changed owner / department /
@@ -818,7 +811,14 @@ export class PurchaseOrderService {
     accountId: string,
     userId: string,
     id: string,
-    patch: { ownerId?: string | null; projectId?: string | null; description?: string | null },
+    patch: {
+      ownerId?: string | null;
+      projectId?: string | null;
+      description?: string | null;
+      groupId?: string | null;
+      shared?: boolean;
+      stateId?: string | null;
+    },
   ) {
     await this.findById(accountId, id);
     await assertMassEditRefsInTenant(this.prisma, accountId, patch);
@@ -826,6 +826,13 @@ export class PurchaseOrderService {
     if ('ownerId' in patch) data.ownerId = patch.ownerId;
     if ('projectId' in patch) data.projectId = patch.projectId;
     if ('description' in patch) data.description = patch.description;
+    if ('groupId' in patch) data.groupId = patch.groupId;
+    if ('shared' in patch && patch.shared !== undefined) data.shared = patch.shared;
+    if ('stateId' in patch) {
+      if (patch.stateId)
+        await assertStateInTenant(this.prisma, accountId, patch.stateId, 'purchaseorder');
+      data.statusId = patch.stateId;
+    }
     const updated = await this.prisma.client.purchaseOrder.update({
       where: { id, accountId },
       data,
@@ -1178,9 +1185,8 @@ export class PurchaseOrderService {
         `O'tkazilmaydi: ${existing.state} → confirmed. Faqat draft'dan`,
       );
     }
-    if (existing.positions.length === 0) {
-      throw new BadRequestException("Pozitsiyalar yo'q — provedeno qilib bo'lmaydi");
-    }
+    // Owner 2026-07-08: «Проведено» toggles freely — an empty order may be posted
+    // (0 positions ⇒ no stock/finance effect; moysklad allows it). No position precondition.
 
     const updated = await this.prisma.client.purchaseOrder.update({
       where: { id, accountId },

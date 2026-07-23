@@ -120,7 +120,7 @@ export function EnterBulkActionsDropdown({
   return (
     <DropdownMenu
       trigger={
-        <Button variant="secondary" disabled={!hasSelection || isPending}>
+        <Button variant="secondary" disabled={isPending}>
           {t('trigger')}
           <Icons.down className="h-4 w-4" />
         </Button>
@@ -144,7 +144,7 @@ export function EnterBulkActionsDropdown({
       </DropdownMenu.Item>
       <DropdownMenu.Item
         onSelect={onMassEdit}
-        disabled={!hasSelection || isPending || !onMassEdit}
+        disabled={isPending || !onMassEdit}
         testId="enter-bulk-action-mass-edit"
       >
         {t('mass_edit')}

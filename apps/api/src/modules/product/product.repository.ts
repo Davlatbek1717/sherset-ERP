@@ -2,6 +2,7 @@ import { Prisma } from '@moysklad/db';
 import { Inject, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { tashkentRangeBounds } from '../report/report-date-bounds.util.js';
+import { searchTokenGroups } from '../shared/search-tokens.js';
 import {
   StockInTransitService,
   inTransitAssortmentKey,
@@ -83,6 +84,48 @@ export class ProductRepository {
         : { productFolderId: filter.productFolderIdDeep };
     }
 
+    // moysklad «содержит» context search — split the query into words and require
+    // every word to match SOME field (words may match different fields), instead of
+    // the whole string sitting contiguously in one column. Merged into a single
+    // top-level AND together with the «Характеристики» groups so neither clobbers
+    // the other's `AND` key. See shared/search-tokens.ts + the parity audit.
+    const searchAndGroups: Prisma.ProductWhereInput[] = searchTokenGroups(
+      filter.search,
+      (tok): Prisma.ProductWhereInput[] => [
+        { name: { contains: tok, mode: 'insensitive' } },
+        // moysklad parity (owner 2026-07-11, grounded on his live «от 25 ват»
+        // side-by-side): code/article/externalCode match by PREFIX, not by
+        // substring. With `contains`, the token «25» matched INSIDE code
+        // «02504» and pulled unrelated products into the doc-editor picker;
+        // moysklad returns only the 3 rows whose NAME carries «25». Prefix
+        // keeps the common "type the start of a code" flow working.
+        { code: { startsWith: tok, mode: 'insensitive' } },
+        { article: { startsWith: tok, mode: 'insensitive' } },
+        { externalCode: { startsWith: tok, mode: 'insensitive' } },
+        { barcodes: { has: tok } },
+        // «TASNIF shtrix-kodi» — the pack's barcode is a REAL scannable EAN
+        // printed on the box (owner 2026-07-21: he entered the code there and
+        // the cell-scan window couldn't find the product). Exact match — a
+        // scanner always sends the full code, and prefix would pull noise.
+        { packs: { some: { barcode: tok } } },
+      ],
+    );
+    // «Характеристики» (moysklad Фильтр): for each chosen characteristic the product
+    // must have a VARIANT whose `characteristics` JSON contains {name, value} for one
+    // of the picked values — AND across names, OR within a name's values.
+    const charAndGroups: Prisma.ProductWhereInput[] = filter.charFilter
+      ? Object.entries(filter.charFilter).map(([name, values]) => ({
+          variants: {
+            some: {
+              OR: values.map((value) => ({
+                characteristics: { array_contains: [{ name, value }] },
+              })),
+            },
+          },
+        }))
+      : [];
+    const andGroups = [...searchAndGroups, ...charAndGroups];
+
     const where: Prisma.ProductWhereInput = {
       accountId,
       deletedAt: null,
@@ -125,35 +168,11 @@ export class ProductRepository {
       ...(filter.barcode ? { barcodes: { has: filter.barcode } } : {}),
       ...(filter.weighed !== undefined ? { weighed: filter.weighed } : {}),
       ...(filter.shared !== undefined ? { shared: filter.shared } : {}),
-      ...(filter.locSklad != null ? { locSklad: filter.locSklad } : {}),
       ...updatedRange,
-      ...(filter.search
-        ? {
-            OR: [
-              { name: { contains: filter.search, mode: 'insensitive' } },
-              { code: { contains: filter.search, mode: 'insensitive' } },
-              { article: { contains: filter.search, mode: 'insensitive' } },
-              { externalCode: { contains: filter.search, mode: 'insensitive' } },
-              { barcodes: { has: filter.search } },
-            ],
-          }
-        : {}),
-      // «Характеристики» (moysklad Фильтр): for each chosen characteristic the product
-      // must have a VARIANT whose `characteristics` JSON contains {name, value} for one
-      // of the picked values — AND across names, OR within a name's values.
-      ...(filter.charFilter
-        ? {
-            AND: Object.entries(filter.charFilter).map(([name, values]) => ({
-              variants: {
-                some: {
-                  OR: values.map((value) => ({
-                    characteristics: { array_contains: [{ name, value }] },
-                  })),
-                },
-              },
-            })),
-          }
-        : {}),
+      // Tokenized «содержит» search + «Характеристики» filter, merged above into one
+      // AND array (see searchAndGroups / charAndGroups) so a multi-word query and a
+      // characteristics filter can both apply without either overwriting `AND`.
+      ...(andGroups.length ? { AND: andGroups } : {}),
     };
 
     // Re-order suggestion view (tri-state «Ниже минимума»). Compares each
@@ -332,7 +351,7 @@ export class ProductRepository {
         // «Количество модификаций» column — variant count.
         _count: { select: { variants: true } },
         // «Код упаковки ТАСНИф» column — first pack's TASNIF code.
-        packs: { select: { tasnifCode: true }, orderBy: { position: 'asc' }, take: 1 },
+        packs: { select: { tasnifCode: true, barcode: true }, orderBy: { position: 'asc' } },
         // Main image id only (NOT the bytes) — lets the «Выбор товара» modal +
         // any list render a thumbnail via GET /images/:id/raw without shipping
         // the binary in the list payload. Main image first, else lowest position.
@@ -358,17 +377,63 @@ export class ProductRepository {
         : undefined;
 
     const withStock = await this.attachStock(accountId, pageRows);
+    const withCells = await this.attachStorageCells(accountId, withStock);
     // Flatten the single-element `images` relation into a `mainImageId` scalar
     // (drop the relation array from the payload to keep the list response clean).
-    const items = withStock.map(({ images, packs, _count, ...rest }) => ({
+    const items = withCells.map(({ images, packs, _count, ...rest }) => ({
       ...rest,
       mainImageId: images?.[0]?.id ?? null,
       // «Код упаковки ТАСНИф» (first pack) + «Количество модификаций».
       packTasnif: packs?.[0]?.tasnifCode ?? null,
+      // Every pack's TASNIF barcode — scan flows exact-match against these
+      // (the pack barcode is the physical EAN on the box).
+      packBarcodes: (packs ?? []).map((p) => p.barcode).filter((b): b is string => !!b),
       variantCount: _count?.variants ?? 0,
     }));
 
     return { items, nextCursor, total };
+  }
+
+  /**
+   * «Полка» / «Ячейка» list columns (USER-DIRECTED 2026-07-04): where the
+   * product physically sits — the address-storage cells currently holding it
+   * (StockByCell, qty > 0), plus the polka each cell belongs to (the zone row;
+   * legacy zone-less cells fall back to the code's 2nd segment). One query per
+   * page, covered by `@@index([accountId, storeId, assortmentKind, assortmentId])`.
+   */
+  private async attachStorageCells<T extends { id: string }>(accountId: string, page: T[]) {
+    if (page.length === 0)
+      return page.map((p) => ({
+        ...p,
+        storageCells: [] as string[],
+        storagePolkas: [] as string[],
+      }));
+    const rows = await this.prisma.client.stockByCell.findMany({
+      where: {
+        accountId,
+        assortmentKind: 'product',
+        assortmentId: { in: page.map((p) => p.id) },
+        qty: { gt: 0 },
+      },
+      select: {
+        assortmentId: true,
+        cell: { select: { name: true, zone: { select: { name: true } } } },
+      },
+      orderBy: [{ storeId: 'asc' }, { cellId: 'asc' }],
+    });
+    const byId = new Map<string, { cells: string[]; polkas: string[] }>();
+    for (const r of rows) {
+      const entry = byId.get(r.assortmentId) ?? { cells: [], polkas: [] };
+      entry.cells.push(r.cell.name);
+      const polka = r.cell.zone?.name ?? r.cell.name.split('-')[1] ?? null;
+      if (polka && !entry.polkas.includes(polka)) entry.polkas.push(polka);
+      byId.set(r.assortmentId, entry);
+    }
+    return page.map((p) => ({
+      ...p,
+      storageCells: byId.get(p.id)?.cells ?? [],
+      storagePolkas: byId.get(p.id)?.polkas ?? [],
+    }));
   }
 
   /**
@@ -473,86 +538,7 @@ export class ProductRepository {
         group: { select: { id: true, name: true } },
         supplier: { select: { id: true, name: true } },
         packs: { orderBy: [{ position: 'asc' }, { createdAt: 'asc' }] },
-        // Multi-bin: additional shelf locations beyond the primary loc* home.
-        extraLocations: { orderBy: [{ position: 'asc' }, { createdAt: 'asc' }] },
       },
-    });
-  }
-
-  /**
-   * POS skaner — shtrix-kod bo'yicha AYNAN BITTA tovar. `Product.barcodes[]`
-   * (String[]) ustidan `has` = aniq token mosligi (nom/kod `contains` aralashuvi
-   * yo'q, shuning uchun list-qidiruvdagi noaniqlik bu yerda bo'lmaydi). Product
-   * barcode'lari @@unique EMAS, shuning uchun bir nechta mos kelsa `createdAt`
-   * bo'yicha determinik birinchisi olinadi. Javob `list` element shakli bilan
-   * bir xil (attachStock) — POS `addToCart` uni to'g'ridan-to'g'ri qo'llaydi.
-   */
-  async findByScanCode(accountId: string, code: string) {
-    const p = await this.prisma.client.product.findFirst({
-      where: { accountId, deletedAt: null, barcodes: { has: code } },
-      select: {
-        id: true,
-        name: true,
-        code: true,
-        buyPrice: true,
-        salePrices: true,
-        barcodes: true,
-        weighed: true,
-        uom: true,
-      },
-      orderBy: { createdAt: 'asc' },
-    });
-    if (!p) return null;
-    const [withStock] = await this.attachStock(accountId, [p]);
-    return withStock;
-  }
-
-  /** Multi-bin: list a product's ADDITIONAL shelf locations (primary loc* aside). */
-  async listLocations(accountId: string, productId: string) {
-    return this.prisma.client.productLocation.findMany({
-      where: { accountId, productId },
-      orderBy: [{ position: 'asc' }, { createdAt: 'asc' }],
-    });
-  }
-
-  /**
-   * Replace-all a product's additional locations in one transaction: wipe the
-   * old set, insert the new. Simple + idempotent — the card always sends the
-   * full list. Duplicate identical addresses are rejected by the unique index.
-   */
-  async setLocations(
-    accountId: string,
-    productId: string,
-    locations: Array<{
-      sklad: number;
-      polka: number | null;
-      qavat: number | null;
-      yacheyka: number | null;
-      qty: number | null;
-      note: string | null;
-    }>,
-  ) {
-    return this.prisma.client.$transaction(async (tx) => {
-      await tx.productLocation.deleteMany({ where: { accountId, productId } });
-      if (locations.length > 0) {
-        await tx.productLocation.createMany({
-          data: locations.map((l, i) => ({
-            accountId,
-            productId,
-            sklad: l.sklad,
-            polka: l.polka,
-            qavat: l.qavat,
-            yacheyka: l.yacheyka,
-            qty: l.qty,
-            note: l.note,
-            position: i,
-          })),
-        });
-      }
-      return tx.productLocation.findMany({
-        where: { accountId, productId },
-        orderBy: [{ position: 'asc' }, { createdAt: 'asc' }],
-      });
     });
   }
 
@@ -588,12 +574,6 @@ export class ProductRepository {
         volumeML: input.volumeML,
         weighed: input.weighed,
         uom: input.uom,
-        // Warehouse home location (Sherset custom) — 4 numeric bin segments.
-        locSklad: input.locSklad,
-        locPolka: input.locPolka,
-        locQavat: input.locQavat,
-        locYacheyka: input.locYacheyka,
-        locQty: input.locQty,
         vat: input.vat ?? null,
         vatEnabled: input.vatEnabled,
         useParentVat: input.useParentVat,
@@ -680,12 +660,6 @@ export class ProductRepository {
     if (input.volumeML !== undefined) data.volumeML = input.volumeML;
     if (input.weighed !== undefined) data.weighed = input.weighed;
     if (input.uom !== undefined) data.uom = input.uom;
-    // Warehouse home location (Sherset custom) — null clears a segment.
-    if (input.locSklad !== undefined) data.locSklad = input.locSklad;
-    if (input.locPolka !== undefined) data.locPolka = input.locPolka;
-    if (input.locQavat !== undefined) data.locQavat = input.locQavat;
-    if (input.locYacheyka !== undefined) data.locYacheyka = input.locYacheyka;
-    if (input.locQty !== undefined) data.locQty = input.locQty;
     if (input.vat !== undefined) data.vat = input.vat;
     if (input.vatEnabled !== undefined) data.vatEnabled = input.vatEnabled;
     if (input.useParentVat !== undefined) data.useParentVat = input.useParentVat;
@@ -890,6 +864,60 @@ export class ProductRepository {
       data: { salePrices: [...byType.values()] as unknown as Prisma.InputJsonValue },
     });
     return updated;
+  }
+
+  /**
+   * «Сохранить цены» — write each {productId, priceMinor} to the product's DEFAULT
+   * sale price type (moysklad's grid «Цена ▾ → Сохранить цены»). Resolves the account
+   * default PriceType once (falling back to any), then MERGES the value into each
+   * product's salePrices array — the product's other price types are preserved.
+   * Tenant-scoped (productId + accountId); products not in the account are skipped.
+   */
+  async saveLinePrices(
+    accountId: string,
+    items: { productId: string; priceMinor: string }[],
+    /** When provided, the write stamps «Кто изменил» + bumps the optimistic-lock
+     *  version so an already-open product edit form 409s instead of silently
+     *  reverting the new price with its stale salePrices copy. */
+    actorId?: string,
+  ): Promise<{ written: number; priceTypeId: string | null }> {
+    const def =
+      (await this.prisma.client.priceType.findFirst({
+        where: { accountId, isDefault: true },
+        select: { id: true },
+      })) ??
+      (await this.prisma.client.priceType.findFirst({
+        where: { accountId },
+        select: { id: true },
+      }));
+    if (!def) return { written: 0, priceTypeId: null };
+    type SP = { priceTypeId: string; value: string; currencyCode?: string };
+    let written = 0;
+    for (const it of items) {
+      const product = await this.prisma.client.product.findFirst({
+        where: { id: it.productId, accountId, deletedAt: null },
+        select: { salePrices: true },
+      });
+      if (!product) continue;
+      const existing = (Array.isArray(product.salePrices)
+        ? product.salePrices
+        : []) as unknown as SP[];
+      const byType = new Map<string, SP>(existing.map((p) => [p.priceTypeId, p]));
+      byType.set(def.id, {
+        priceTypeId: def.id,
+        value: it.priceMinor,
+        currencyCode: byType.get(def.id)?.currencyCode ?? 'UZS',
+      });
+      await this.prisma.client.product.update({
+        where: { id: it.productId, accountId },
+        data: {
+          salePrices: [...byType.values()] as unknown as Prisma.InputJsonValue,
+          ...(actorId ? { modifiedById: actorId, version: { increment: 1 } } : {}),
+        },
+      });
+      written += 1;
+    }
+    return { written, priceTypeId: def.id };
   }
 
   /** Verify a counterparty (supplier) belongs to the account. */

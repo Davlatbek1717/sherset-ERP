@@ -9,6 +9,7 @@ import {
   Input,
   NativeSelect,
   PageHeader,
+  StickyHScroll,
   buildCsv,
   csvTimestamp,
   downloadCsv,
@@ -144,7 +145,7 @@ export default function SalesReportPage() {
   };
 
   return (
-    <Container size="full" className="py-4">
+    <Container size="md" className="py-4">
       <PageHeader
         title={t('title')}
         breadcrumbs={
@@ -243,7 +244,7 @@ export default function SalesReportPage() {
       )}
 
       {data && (
-        <div className="mt-4 overflow-x-auto rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)]">
+        <StickyHScroll className="mt-4 rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)]">
           <table className="w-full text-sm">
             <thead className="bg-[var(--ms-bg-muted)]">
               <tr>
@@ -352,7 +353,7 @@ export default function SalesReportPage() {
               )}
             </tbody>
           </table>
-        </div>
+        </StickyHScroll>
       )}
     </Container>
   );

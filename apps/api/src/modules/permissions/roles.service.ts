@@ -15,6 +15,15 @@ import {
   UpdateRoleSchema,
 } from './roles.schema.js';
 
+/**
+ * DB names of the two lazily-created system roles behind the moysklad
+ * employee-card «Системные роли» radios. English like the seeded four
+ * (Administrator/Manager/Employee/ReadOnly); the web app maps them to the
+ * moysklad labels («Владелец аккаунта», «Доступ только к точкам продаж»).
+ */
+export const OWNER_ROLE_NAME = 'AccountOwner';
+export const POS_ROLE_NAME = 'PointOfSale';
+
 export interface RoleListRow {
   id: string;
   name: string;
@@ -237,24 +246,43 @@ export class RolesService {
     accountId: string,
     employeeId: string,
     roleIds: string[],
+    actorId?: string,
   ): Promise<{ roleIds: string[] }> {
     const employee = await this.prisma.client.employee.findFirst({
       where: { id: employeeId, accountId },
-      select: { id: true },
+      select: {
+        id: true,
+        roles: { select: { role: { select: { name: true } } } },
+      },
     });
     if (!employee) throw new NotFoundException('Xodim topilmadi');
 
     const unique = [...new Set(roleIds)];
+    let nextNames: string[] = [];
     if (unique.length > 0) {
       const valid = await this.prisma.client.role.findMany({
         where: { id: { in: unique }, accountId },
-        select: { id: true },
+        select: { id: true, name: true },
       });
       if (valid.length !== unique.length) {
         throw new BadRequestException('Rol topilmadi');
       }
+      nextNames = valid.map((r) => r.name);
     }
 
+    const beforeNames = employee.roles.map((r) => r.role.name);
+    // Self-lockout guard (same philosophy as the self-archive block): an
+    // admin/owner may not strip their OWN admin access — they'd lose the
+    // settings section they are standing in. Another admin (or the owner
+    // via «Сделать владельцем») demotes them instead.
+    const ADMINISH = [OWNER_ROLE_NAME, 'Administrator'];
+    if (
+      actorId === employeeId &&
+      beforeNames.some((n) => ADMINISH.includes(n)) &&
+      !nextNames.some((n) => ADMINISH.includes(n))
+    ) {
+      throw new BadRequestException("O'zingizni administratorlikdan chiqara olmaysiz");
+    }
     await this.prisma.client.$transaction([
       this.prisma.client.employeeRole.deleteMany({ where: { employeeId } }),
       ...(unique.length > 0
@@ -265,8 +293,200 @@ export class RolesService {
             }),
           ]
         : []),
+      // moysklad employee «История изменений»: role/access changes are audited
+      // (entity='employee'), like every other card mutation.
+      ...(JSON.stringify(beforeNames) !== JSON.stringify(nextNames)
+        ? [
+            this.prisma.client.auditLog.create({
+              data: {
+                accountId,
+                userId: actorId ?? null,
+                entity: 'employee',
+                entityId: employeeId,
+                action: 'roles-change',
+                fieldChanges: {
+                  roles: { before: beforeNames.join(', '), after: nextNames.join(', ') },
+                },
+              },
+            }),
+          ]
+        : []),
     ]);
     return { roleIds: unique };
+  }
+
+  /**
+   * moysklad «Владелец аккаунта» — a singleton system role (full access,
+   * transferable via «Сделать владельцем»). Created lazily because existing
+   * accounts predate it. The entity×action universe is copied from the seeded
+   * Administrator role so it always matches the account's seed, then forced
+   * to ALL scope.
+   */
+  async ensureOwnerRole(accountId: string): Promise<string> {
+    const existing = await this.prisma.client.role.findFirst({
+      where: { accountId, name: OWNER_ROLE_NAME },
+      select: { id: true },
+    });
+    if (existing) return existing.id;
+
+    const admin = await this.prisma.client.role.findFirst({
+      where: { accountId, name: 'Administrator' },
+      select: { id: true },
+    });
+    const cells = admin
+      ? await this.prisma.client.rolePermission.findMany({
+          where: { roleId: admin.id },
+          select: { entity: true, action: true },
+        })
+      : [];
+    try {
+      const created = await this.prisma.client.role.create({
+        data: {
+          accountId,
+          name: OWNER_ROLE_NAME,
+          description: "Akkaunt egasi — to'liq kirish, egalikni o'tkaza oladi",
+          isSystem: true,
+          permissions: {
+            createMany: {
+              data: cells.map((c) => ({ ...c, scope: 'ALL' })),
+              skipDuplicates: true,
+            },
+          },
+        },
+        select: { id: true },
+      });
+      return created.id;
+    } catch (e) {
+      // P2002 = a concurrent ensure won the race — reuse its row.
+      if ((e as { code?: string }).code === 'P2002') {
+        const raced = await this.prisma.client.role.findFirst({
+          where: { accountId, name: OWNER_ROLE_NAME },
+          select: { id: true },
+        });
+        if (raced) return raced.id;
+      }
+      throw e;
+    }
+  }
+
+  /**
+   * moysklad «Доступ только к точкам продаж» — retail-only system role.
+   * Deliberately narrow: POS flows (retail sales, cashier sessions) plus the
+   * read access they need (products to sell, counterparties to sell to).
+   * Admins can widen it later in the matrix editor like any role.
+   */
+  async ensurePosRole(accountId: string): Promise<{ id: string; name: string }> {
+    const existing = await this.prisma.client.role.findFirst({
+      where: { accountId, name: POS_ROLE_NAME },
+      select: { id: true, name: true },
+    });
+    if (existing) return existing;
+    const cells: Array<{ entity: string; action: string; scope: string }> = [
+      { entity: 'retailsale', action: 'view', scope: 'ALL' },
+      { entity: 'retailsale', action: 'create', scope: 'ALL' },
+      { entity: 'retailsale', action: 'update', scope: 'ALL' },
+      { entity: 'retailsale', action: 'print', scope: 'ALL' },
+      { entity: 'cashiersession', action: 'view', scope: 'ALL' },
+      { entity: 'cashiersession', action: 'create', scope: 'ALL' },
+      { entity: 'cashiersession', action: 'update', scope: 'ALL' },
+      { entity: 'product', action: 'view', scope: 'ALL' },
+      { entity: 'counterparty', action: 'view', scope: 'ALL' },
+      { entity: 'counterparty', action: 'create', scope: 'ALL' },
+    ];
+    try {
+      return await this.prisma.client.role.create({
+        data: {
+          accountId,
+          name: POS_ROLE_NAME,
+          description: 'Faqat savdo nuqtalari (kassa) uchun kirish',
+          isSystem: true,
+          permissions: { createMany: { data: cells, skipDuplicates: true } },
+        },
+        select: { id: true, name: true },
+      });
+    } catch (e) {
+      if ((e as { code?: string }).code === 'P2002') {
+        const raced = await this.prisma.client.role.findFirst({
+          where: { accountId, name: POS_ROLE_NAME },
+          select: { id: true, name: true },
+        });
+        if (raced) return raced;
+      }
+      throw e;
+    }
+  }
+
+  /**
+   * moysklad «Сделать владельцем»: move the singleton owner role to
+   * `targetEmployeeId`. Only the CURRENT owner may transfer it (when an owner
+   * exists); on a legacy account with no owner yet, any caller who passed the
+   * controller's employee/update gate may claim it once. The previous owner
+   * keeps working as Администратор (moysklad behaviour). Audit rows are
+   * written for both employees so the card's «История изменений» shows the
+   * hand-over.
+   */
+  async transferOwner(
+    accountId: string,
+    targetEmployeeId: string,
+    actorEmployeeId: string,
+  ): Promise<{ ok: true; ownerRoleId: string }> {
+    const target = await this.prisma.client.employee.findFirst({
+      where: { id: targetEmployeeId, accountId },
+      select: { id: true, archived: true },
+    });
+    if (!target) throw new NotFoundException('Xodim topilmadi');
+    if (target.archived) {
+      throw new BadRequestException("Arxivlangan xodimni egasi qilib bo'lmaydi");
+    }
+
+    const ownerRoleId = await this.ensureOwnerRole(accountId);
+    const holders = await this.prisma.client.employeeRole.findMany({
+      where: { roleId: ownerRoleId, employee: { accountId } },
+      select: { employeeId: true },
+    });
+    if (holders.length > 0 && !holders.some((h) => h.employeeId === actorEmployeeId)) {
+      throw new ForbiddenException("Faqat joriy egasi egalikni o'tkaza oladi");
+    }
+    if (holders.length === 1 && holders[0]?.employeeId === targetEmployeeId) {
+      return { ok: true, ownerRoleId }; // idempotent — already the owner
+    }
+
+    const adminRole = await this.prisma.client.role.findFirst({
+      where: { accountId, name: 'Administrator' },
+      select: { id: true },
+    });
+
+    await this.prisma.client.$transaction(async (tx) => {
+      await tx.employeeRole.deleteMany({ where: { roleId: ownerRoleId } });
+      // Owner role REPLACES the target's other roles (matrix radio semantics).
+      await tx.employeeRole.deleteMany({ where: { employeeId: targetEmployeeId } });
+      await tx.employeeRole.create({
+        data: { employeeId: targetEmployeeId, roleId: ownerRoleId },
+      });
+      // Previous owner falls back to Администратор so they keep working.
+      for (const h of holders) {
+        if (h.employeeId === targetEmployeeId || !adminRole) continue;
+        await tx.employeeRole.createMany({
+          data: [{ employeeId: h.employeeId, roleId: adminRole.id }],
+          skipDuplicates: true,
+        });
+      }
+      await tx.auditLog.create({
+        data: {
+          accountId,
+          userId: actorEmployeeId,
+          entity: 'employee',
+          entityId: targetEmployeeId,
+          action: 'owner-transfer',
+          fieldChanges: {
+            role: { before: holders.map((h) => h.employeeId).join(','), after: 'owner' },
+          },
+        },
+      });
+    });
+    // Role→scope caches may hold the old owner's matrix for up to the TTL;
+    // acceptable, PermissionsGuard re-resolves on expiry.
+    return { ok: true, ownerRoleId };
   }
 
   /** Drop NO-scope cells (default) and dedupe by (entity, action). */

@@ -9,7 +9,7 @@
  */
 
 import { api } from '@/lib/api-client';
-import { Alert, Button, Icons, Input, NativeSelect } from '@moysklad/ui';
+import { Alert, Button, Icons, Input, NativeSelect, PasswordInput } from '@moysklad/ui';
 import { useMutation } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
@@ -135,11 +135,12 @@ export default function NewPublicationPage() {
             <span className="mb-1 block text-[var(--ms-text-muted)] text-xs uppercase tracking-wide">
               {t('password_optional')}
             </span>
-            <Input
-              type="password"
+            <PasswordInput
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder={t('password_empty_ph')}
+              showLabel={tCommon('show_password')}
+              hideLabel={tCommon('hide_password')}
             />
           </div>
         </div>

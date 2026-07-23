@@ -3,19 +3,17 @@
 import { AttachmentsSection } from '@/components/attachments-section';
 import { AttributesEditor } from '@/components/attributes-editor';
 import { DetailContentTabs, DetailHeader, DetailToolbar } from '@/components/document-detail';
+import { CurrencyRateModal } from '@/components/document-detail/currency-rate-modal';
 import { DocumentTasksSection } from '@/components/document-tasks-section';
-import { PriceRateDialog } from '@/components/products/price-rate-dialog';
 import { useApiMutation } from '@/hooks/use-api-mutation';
 import { useConflictReload } from '@/hooks/use-conflict-reload';
 import { useDestructiveMutation } from '@/hooks/use-destructive-mutation';
 import { useDetailNavigation } from '@/hooks/use-detail-navigation';
 import { useSaveMutation } from '@/hooks/use-save-mutation';
 import { useUnsavedGuard } from '@/hooks/use-unsaved-guard';
-import { useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
 import { documentStateTone } from '@/lib/document-state-tone';
 import { isOptimisticConflict } from '@/lib/optimistic-lock';
-import { pinDefaultCustomer } from '@/lib/pin-default-customer';
 import {
   Alert,
   Avatar,
@@ -30,6 +28,7 @@ import {
   MoneyInput,
   NativeSelect,
   type PickerItem,
+  StickyHScroll,
   formatDate,
   formatMoney,
 } from '@moysklad/ui';
@@ -248,8 +247,6 @@ export default function PaymentInDetailPage() {
   const tDetailForm = useTranslations('detail_form');
   const tStates = useTranslations('states.payment_in');
   const t = useTranslations('pages.payments_in');
-  const tForm = useTranslations('form');
-  const userDefaults = useUserDefaults();
   const { id } = useParams<{ id: string }>();
   const detailNav = useDetailNavigation('payments-in', id, { server: true });
   const router = useRouter();
@@ -407,17 +404,11 @@ export default function PaymentInDetailPage() {
     const d = await api.get<{
       items: Array<{ id: string; name: string; legalTitle: string | null }>;
     }>(`/counterparties?search=${encodeURIComponent(s)}&limit=50`);
-    const items = d.items.map((c) => ({
+    return d.items.map((c) => ({
       id: c.id,
       primary: c.name,
       secondary: c.legalTitle ?? undefined,
     }));
-    return pinDefaultCustomer(
-      items,
-      userDefaults.data?.defaultCustomer,
-      s,
-      tForm('pinned_default'),
-    );
   };
 
   const orgFetcher = async (s: string): Promise<PickerItem[]> => {
@@ -745,7 +736,7 @@ export default function PaymentInDetailPage() {
               />
               {form.agentId && (
                 <div
-                  className="mt-1 text-[var(--ms-text-muted)] text-xs tabular-nums"
+                  className="mt-1 text-[var(--ms-text-muted)] text-[12px] tabular-nums"
                   data-test-id="agent-balance"
                 >
                   {tFields('counterparty_balance')} : {formatMoney(balanceMinor)}
@@ -931,7 +922,7 @@ export default function PaymentInDetailPage() {
                   </NativeSelect>
                 </div>
                 {!isBaseCurrency && selectedCurrency && (
-                  <span className="inline-flex items-center gap-1 whitespace-nowrap text-[var(--ms-text-muted)] text-xs tabular-nums">
+                  <span className="inline-flex items-center gap-1 whitespace-nowrap text-[var(--ms-text-muted)] text-[12px] tabular-nums">
                     1 {form.currency} = {Number(effectiveRate).toLocaleString('ru-RU')} {baseCode}
                     {!locked && (
                       <button
@@ -990,7 +981,7 @@ export default function PaymentInDetailPage() {
                   </Button>
                 </div>
               )}
-              <div className="overflow-x-auto p-3">
+              <StickyHScroll className="p-3">
                 {form.operations.length === 0 ? (
                   <div className="rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] border-dashed py-6 text-center text-[var(--ms-text-muted)] text-sm">
                     {t('allocation_empty')}
@@ -1079,7 +1070,7 @@ export default function PaymentInDetailPage() {
                     <span className="font-medium tabular-nums">{formatMoney(remaining)}</span>
                   </div>
                 </div>
-              </div>
+              </StickyHScroll>
             </div>
           </DetailContentTabs>
         </div>
@@ -1211,13 +1202,12 @@ export default function PaymentInDetailPage() {
         }}
       />
       {/* «Курс валюты документа» — moysklad rate-override modal (the currency ✎). */}
-      <PriceRateDialog
+      <CurrencyRateModal
         open={rateDialogOpen}
-        onClose={() => setRateDialogOpen(false)}
-        currencyCode={form.currency}
-        baseCode={baseCode}
+        onOpenChange={setRateDialogOpen}
+        currency={form.currency}
         referenceRate={docGlobalRate}
-        customRate={form.rate === docGlobalRate ? null : form.rate}
+        currentOverride={form.rate === docGlobalRate ? null : form.rate}
         onApply={(r) => setForm({ ...form, rate: r ?? docGlobalRate })}
       />
     </div>

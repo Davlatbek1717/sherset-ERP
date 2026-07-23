@@ -3,10 +3,11 @@
 import { DocumentTabs } from '@/components/document-tabs';
 import { api } from '@/lib/api-client';
 import { documentStateTone } from '@/lib/document-state-tone';
-import { Badge, Button, Icons, formatDate, formatMoney } from '@moysklad/ui';
-import { useQuery } from '@tanstack/react-query';
+import { Badge, Button, Icons, formatDate, formatMoney, useConfirm } from '@moysklad/ui';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
-import { useParams, useSearchParams } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { useState } from 'react';
 
 interface PositionDetail {
   id: string;
@@ -32,13 +33,14 @@ interface RetailSaleDetail {
   externalCode: string | null;
   agent: { id: string; name: string } | null;
   refundedFrom: { id: string; name: string } | null;
+  /** F2: attributes bag carries the «отправлено кладовщику» flag. */
+  attributes?: { __sentToWarehouse?: { at: string; by: string } } | null;
   session: {
     id: string;
     state: string;
-    // cashDesk/store are SetNull relations — null after the desk/store is deleted.
-    cashDesk: { id: string; name: string; currency: string } | null;
+    cashDesk: { id: string; name: string; currency: string };
     cashier: { id: string; name: string };
-    store: { id: string; name: string } | null;
+    store: { id: string; name: string };
     organization: { id: string; name: string; legalTitle: string | null };
   };
   positions: PositionDetail[];
@@ -47,16 +49,55 @@ interface RetailSaleDetail {
 export default function RetailSaleDetailPage() {
   const { id } = useParams<{ id: string }>();
   const _searchParams = useSearchParams();
+  const router = useRouter();
+  const qc = useQueryClient();
+  const { confirm } = useConfirm();
   const tCommon = useTranslations('common');
   const t = useTranslations('pages.retail_sales');
   const tFields = useTranslations('fields');
   const tPay = useTranslations('pages.payment_dialog');
-  // Sherset custom — «Yig'ishga yuborish» (picking) labels.
-  const tPicking = useTranslations('picking');
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const { data: sale, isLoading } = useQuery<RetailSaleDetail>({
     queryKey: ['retail-sale', id],
     queryFn: () => api.get<RetailSaleDetail>(`/retail-sales/${id}`),
+  });
+
+  // F2 — «Возврат»: full refund of a posted receipt (all positions, the same
+  // cash/card split the customer paid with). The BE re-validates everything
+  // (subset, over-refund, session) — this button just fills the full payload.
+  const refundMut = useMutation({
+    mutationFn: () => {
+      if (!sale) throw new Error('not loaded');
+      return api.post<{ id: string }>(`/retail-sales/${sale.id}/refund`, {
+        positions: sale.positions
+          .filter((p) => p.product)
+          .map((p) => ({
+            productId: p.product?.id,
+            quantity: p.quantity,
+            priceMinor: p.priceMinor,
+            discount: p.discount,
+          })),
+        cashAmountMinor: sale.cashAmountMinor,
+        cardAmountMinor: sale.cardAmountMinor,
+      });
+    },
+    onSuccess: (refund) => {
+      qc.invalidateQueries({ queryKey: ['retail-sale'] });
+      qc.invalidateQueries({ queryKey: ['retail-sales'] });
+      router.push(`/retail/sales/${refund.id}`);
+    },
+    onError: (e: Error) => setActionError(e.message),
+  });
+
+  // F2 — «Отправил кладовщику»: flags the refund receipt + notifies the
+  // warehouse keeper (🔔 + sound via the SSE stream).
+  const sendMut = useMutation({
+    mutationFn: () => api.post<{ ok: boolean }>(`/retail-sales/${id}/send-to-warehouse`, {}),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['retail-sale', id] });
+    },
+    onError: (e: Error) => setActionError(e.message),
   });
 
   if (isLoading) {
@@ -71,7 +112,7 @@ export default function RetailSaleDetailPage() {
   const cardAmount = BigInt(sale.cardAmountMinor);
   const change = BigInt(sale.changeMinor);
   // Money on a receipt is in the till's currency, not the UZS default. (2026-06-03h)
-  const currency = sale.session.cashDesk?.currency ?? 'UZS';
+  const currency = sale.session.cashDesk.currency;
 
   return (
     <div className="max-w-2xl p-4">
@@ -105,7 +146,7 @@ export default function RetailSaleDetailPage() {
         </div>
         <div>
           <div className="mb-0.5 text-[var(--ms-text-muted)] text-xs">{t('cash_desk')}</div>
-          <div>{sale.session.cashDesk?.name ?? '—'}</div>
+          <div>{sale.session.cashDesk.name}</div>
         </div>
         <div>
           <div className="mb-0.5 text-[var(--ms-text-muted)] text-xs">{t('cashier')}</div>
@@ -207,8 +248,13 @@ export default function RetailSaleDetailPage() {
         )}
       </div>
 
-      {/* Actions — mijoz cheki (print) + Sherset «Yig'ishga yuborish» (picking,
-          posted sales only): per-sklad omborchi sheets + in-app tasks. */}
+      {actionError && (
+        <p className="mb-3 text-[var(--ms-text-error)] text-sm" data-test-id="sale-action-error">
+          {actionError}
+        </p>
+      )}
+
+      {/* Actions: print + F2 refund / send-to-warehouse */}
       <div className="flex flex-wrap items-center gap-2">
         <Button variant="secondary" size="sm" asChild>
           <a href={`/print/retail-sale/${sale.id}`} target="_blank" rel="noopener noreferrer">
@@ -216,22 +262,51 @@ export default function RetailSaleDetailPage() {
             {tCommon('print')}
           </a>
         </Button>
-        {sale.state === 'posted' && (
+
+        {/* «Возврат» — only on a POSTED sale that is not itself a refund. */}
+        {sale.state === 'posted' && !sale.refundedFrom && (
           <Button
             variant="secondary"
             size="sm"
-            onClick={() =>
-              window.open(
-                `/print/picking/${sale.id}?source=retailsale&auto=1`,
-                '_blank',
-                'width=900,height=1100',
-              )
-            }
-            data-test-id="retail-send-to-picking"
+            loading={refundMut.isPending}
+            onClick={async () => {
+              setActionError(null);
+              const ok = await confirm({
+                title: t('refund_confirm', { name: sale.name }),
+                confirmLabel: t('refund_button'),
+                cancelLabel: tCommon('cancel'),
+                tone: 'warning',
+              });
+              if (ok === true || ok === 'confirm') refundMut.mutate();
+            }}
+            data-test-id="sale-refund"
           >
-            {tPicking('send_to_picking')}
+            {t('refund_button')}
           </Button>
         )}
+
+        {/* «Отправил кладовщику» — only on a refund receipt; disabled once sent. */}
+        {sale.refundedFrom &&
+          (sale.attributes?.__sentToWarehouse ? (
+            <span
+              className="inline-flex items-center gap-1 text-[var(--ms-text-success)] text-sm"
+              data-test-id="sale-sent-to-warehouse"
+            >
+              ✓ {t('sent_to_warehouse', { date: formatDate(sale.attributes.__sentToWarehouse.at) })}
+            </span>
+          ) : (
+            <Button
+              size="sm"
+              loading={sendMut.isPending}
+              onClick={() => {
+                setActionError(null);
+                sendMut.mutate();
+              }}
+              data-test-id="sale-send-to-warehouse"
+            >
+              {t('send_to_warehouse_button')}
+            </Button>
+          ))}
       </div>
 
       <DocumentTabs auditEntity="retail_sale" entityId={sale.id} relatedGroups={[]} />

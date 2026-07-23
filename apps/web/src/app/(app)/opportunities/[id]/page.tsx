@@ -6,11 +6,9 @@ import { DocumentTabs } from '@/components/document-tabs';
 import { useApiMutation } from '@/hooks/use-api-mutation';
 import { useConflictReload } from '@/hooks/use-conflict-reload';
 import { useDestructiveMutation } from '@/hooks/use-destructive-mutation';
-import { useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
 import { opportunityStatusTone } from '@/lib/domain-status-tone';
 import { isOptimisticConflict } from '@/lib/optimistic-lock';
-import { pinDefaultCustomer } from '@/lib/pin-default-customer';
 import {
   Alert,
   Avatar,
@@ -24,6 +22,7 @@ import {
   type PickerItem,
   Textarea,
   formatDate,
+  formatIso,
 } from '@moysklad/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
@@ -107,7 +106,6 @@ export default function OpportunityDetailPage() {
   const t = useTranslations('pages.opportunities');
   const tCommon = useTranslations('common');
   const tForm = useTranslations('form');
-  const userDefaults = useUserDefaults();
   const tDetailHeader = useTranslations('detail_header');
 
   // ── FSM transition state ─────────────────────────────────────────────────
@@ -136,6 +134,15 @@ export default function OpportunityDetailPage() {
     queryFn: () => api.get<OpportunityDetail>(`/opportunities/${id}`),
     enabled: !!id,
   });
+  // «Валюта» options — the account's REAL currencies (Настройки → Валюты), never a
+  // hardcoded list (a phantom EUR/RUB the account doesn't have must not appear).
+  const { data: currenciesData } = useQuery<{
+    items: Array<{ id: string; isoCode: string; name: string; rate: string }>;
+  }>({
+    queryKey: ['currencies'],
+    queryFn: () => api.get('/currencies'),
+  });
+  const currencies = currenciesData?.items ?? [];
 
   // Hydrate form from server data; mark as pristine after load.
   useEffect(() => {
@@ -144,9 +151,7 @@ export default function OpportunityDetailPage() {
     setAmountSom(amountSomFromTiyin(data.amount));
     setCurrency(data.currency);
     setProbability(data.probability != null ? String(data.probability) : '');
-    setExpectedCloseDate(
-      data.expectedCloseDate ? new Date(data.expectedCloseDate).toISOString().slice(0, 10) : '',
-    );
+    setExpectedCloseDate(data.expectedCloseDate ? formatIso(new Date(data.expectedCloseDate)) : '');
     setSource(data.source ?? '');
     setDescription(data.description ?? '');
     setCounterpartyId(data.counterparty?.id ?? null);
@@ -242,17 +247,11 @@ export default function OpportunityDetailPage() {
     const d = await api.get<{ items: CounterpartyRef[] }>(
       `/counterparties?search=${encodeURIComponent(s)}&limit=50`,
     );
-    const items = d.items.map((c) => ({
+    return d.items.map((c) => ({
       id: c.id,
       primary: c.name,
       secondary: c.legalTitle ?? undefined,
     }));
-    return pinDefaultCustomer(
-      items,
-      userDefaults.data?.defaultCustomer,
-      s,
-      tForm('pinned_default'),
-    );
   };
 
   const contactPersonFetcher = useMemo(
@@ -541,10 +540,12 @@ export default function OpportunityDetailPage() {
                   className={SELECT_CLASS}
                   data-test-id="field-currency"
                 >
-                  <option value="UZS">UZS</option>
-                  <option value="USD">USD</option>
-                  <option value="EUR">EUR</option>
-                  <option value="RUB">RUB</option>
+                  {currencies.length === 0 && <option value={currency}>{currency}</option>}
+                  {currencies.map((c) => (
+                    <option key={c.id} value={c.isoCode}>
+                      {c.name} ({c.isoCode})
+                    </option>
+                  ))}
                 </NativeSelect>
               </FormField>
               <FormField id="probability" label={t('probability')}>

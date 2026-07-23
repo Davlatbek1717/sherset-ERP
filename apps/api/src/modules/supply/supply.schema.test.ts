@@ -47,10 +47,8 @@ describe('CreateSupplySchema', () => {
     expect(parsed.vatEnabled).toBe(true);
   });
 
-  it('requires ≥1 position', () => {
-    expect(() => CreateSupplySchema.parse({ ...valid, positions: [] })).toThrow(
-      /at least one position/i,
-    );
+  it('allows empty positions — owner 2026-07-08, no Provedeno precondition', () => {
+    expect(() => CreateSupplySchema.parse({ ...valid, positions: [] })).not.toThrow();
   });
 
   it('accepts incomingNumber + incomingDate (supplier invoice metadata)', () => {
@@ -223,6 +221,43 @@ describe('SupplyFilterSchema', () => {
     expect(() => SupplyFilterSchema.parse({ agentGroupId: 'not-a-uuid' })).toThrow();
     expect(() => SupplyFilterSchema.parse({ agentOwnerId: 'not-a-uuid' })).toThrow();
     expect(() => SupplyFilterSchema.parse({ contractId: 'nope' })).toThrow();
+  });
+
+  it('parses «Оплата» (paymentStatus) + «Товар или группа» (productId)', () => {
+    const p = SupplyFilterSchema.parse({ paymentStatus: 'partial', productId: uuid });
+    expect(p.paymentStatus).toBe('partial');
+    expect(p.productId).toBe(uuid);
+    expect(() => SupplyFilterSchema.parse({ paymentStatus: 'overpaid' })).toThrow();
+    expect(() => SupplyFilterSchema.parse({ productId: 'not-a-uuid' })).toThrow();
+  });
+
+  it('parses «Тип возврата» (returnStatus) and rejects an unknown value', () => {
+    for (const s of ['none', 'partial', 'full'] as const) {
+      expect(SupplyFilterSchema.parse({ returnStatus: s }).returnStatus).toBe(s);
+    }
+    expect(SupplyFilterSchema.parse({}).returnStatus).toBeUndefined();
+    expect(() => SupplyFilterSchema.parse({ returnStatus: 'returned' })).toThrow();
+  });
+
+  it('parses «Кто изменил» (modifiedById) as a uuid and rejects a non-uuid', () => {
+    expect(SupplyFilterSchema.parse({ modifiedById: uuid }).modifiedById).toBe(uuid);
+    expect(SupplyFilterSchema.parse({}).modifiedById).toBeUndefined();
+    expect(() => SupplyFilterSchema.parse({ modifiedById: 'nope' })).toThrow();
+  });
+
+  it('parses the multi-select inline filter ids (CSV string or array) and rejects bad uuids', () => {
+    const uuid2 = '00000000-0000-0000-0000-000000000002';
+    // CSV string → array of uuids (moysklad checkbox-dropdown forwards `id,id`).
+    const fromCsv = SupplyFilterSchema.parse({ storeIds: `${uuid},${uuid2}` });
+    expect(fromCsv.storeIds).toEqual([uuid, uuid2]);
+    // Actual array also accepted.
+    const fromArr = SupplyFilterSchema.parse({ agentIds: [uuid], productIds: [uuid2] });
+    expect(fromArr.agentIds).toEqual([uuid]);
+    expect(fromArr.productIds).toEqual([uuid2]);
+    expect(SupplyFilterSchema.parse({}).storeIds).toBeUndefined();
+    // A non-uuid member anywhere in the CSV is rejected (no silent drop).
+    expect(() => SupplyFilterSchema.parse({ storeIds: `${uuid},not-a-uuid` })).toThrow();
+    expect(() => SupplyFilterSchema.parse({ organizationIds: 'nope' })).toThrow();
   });
 });
 

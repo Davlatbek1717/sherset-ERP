@@ -25,11 +25,11 @@ async function bootstrap(): Promise<void> {
 
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
-    // bodyLimit 16MB — chek/skrinshot rasmlari base64 sifatida JSON tanasida
-    // keladi (qarz «Click/hisob» to'lovi). Fastify standarti 1MB edi → paste
-    // qilingan katta PNG screenshot 413 bilan rad etilardi («saqlanmadi»).
-    // FE limiti 8MB rasm ≈ 11MB base64; 16MB zaxira bilan qoplaydi (nginx 50MB).
-    new FastifyAdapter({ logger: false, bodyLimit: 16 * 1024 * 1024 }),
+    // bodyLimit 8 MB (Fastify default is 1 MB): product-image uploads send the
+    // photo as base64 JSON, and a 4 MB raw image (the FE limit) inflates to
+    // ≈5.34 MB encoded — the 1 MB default 413'd every real photo. The per-field
+    // Zod cap (dataBase64 ≤ 6 MB) remains the real image backstop.
+    new FastifyAdapter({ logger: false, bodyLimit: 8 * 1024 * 1024 }),
     // Hide the bootstrap noise; nestjs-pino takes over once the module loads.
     { bufferLogs: true },
   );

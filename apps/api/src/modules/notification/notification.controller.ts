@@ -17,6 +17,15 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { type NotificationEvent, NotificationGateway } from './notification.gateway.js';
 import { NotificationService } from './notification.service.js';
 
+/**
+ * Notifications are PERSONAL data — every endpoint is already hard-scoped to
+ * the caller (`user.sub` = recipientId), so a user can only ever read/mark/
+ * delete THEIR OWN. They therefore require ONLY authentication, NOT the
+ * `settings` permission: a limited employee (e.g. a warehouse keeper who gets
+ * the F2 «Возврат на склад» 🔔) has no settings access, and gating on it made
+ * their own bell 403 — verified live 2026-07-04. No cross-user data is
+ * reachable, so JwtAuthGuard is the correct and sufficient gate.
+ */
 @Controller('notifications')
 @UseGuards(JwtAuthGuard)
 export class NotificationController {

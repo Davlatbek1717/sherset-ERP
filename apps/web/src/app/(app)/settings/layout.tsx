@@ -8,7 +8,7 @@ import { SettingsSidebar } from '@/components/settings-sidebar';
  */
 export default function SettingsLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex h-full min-h-[calc(100vh-3rem)]">
+    <div className="flex h-full min-h-[calc(100vh-3rem)] max-md:flex-col">
       <SettingsSidebar />
       <div className="min-w-0 flex-1 overflow-x-hidden">{children}</div>
     </div>

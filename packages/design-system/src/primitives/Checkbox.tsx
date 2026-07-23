@@ -13,7 +13,9 @@ export const Checkbox = React.forwardRef<
     ref={ref}
     checked={checked}
     className={cn(
-      'h-4 w-4 rounded-[var(--ms-radius-sm)]',
+      // Mobile (≤767px): 20px visual box — the desktop 16px square is a hard
+      // touch target on phones. Callers passing their own size still win (cn).
+      'h-4 w-4 max-md:h-[20px] max-md:w-[20px] rounded-[var(--ms-radius-sm)]',
       'border border-[var(--ms-border-strong)] bg-[var(--ms-bg-surface)]',
       'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ms-border-focus)] focus-visible:ring-offset-1',
       'data-[state=checked]:bg-[var(--ms-action-primary)] data-[state=checked]:border-[var(--ms-action-primary)]',

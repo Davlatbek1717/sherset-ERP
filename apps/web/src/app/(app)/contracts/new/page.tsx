@@ -1,9 +1,7 @@
 'use client';
 
 import { useEditFormLabels } from '@/hooks/use-edit-form-labels';
-import { useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
-import { pinDefaultCustomer } from '@/lib/pin-default-customer';
 import {
   CatalogPicker,
   CatalogPickerField,
@@ -47,7 +45,6 @@ export default function NewContractPage() {
   const router = useRouter();
   const t = useTranslations('pages.contracts');
   const tForm = useTranslations('form');
-  const userDefaults = useUserDefaults();
   const tFields = useTranslations('fields');
   const editFormLabels = useEditFormLabels();
 
@@ -116,17 +113,11 @@ export default function NewContractPage() {
     const d = await api.get<{ items: RefItem[] }>(
       `/counterparties?search=${encodeURIComponent(s)}&limit=50`,
     );
-    const items = d.items.map((c) => ({
+    return d.items.map((c) => ({
       id: c.id,
       primary: c.name,
       secondary: c.legalTitle ?? undefined,
     }));
-    return pinDefaultCustomer(
-      items,
-      userDefaults.data?.defaultCustomer,
-      s,
-      tForm('pinned_default'),
-    );
   };
 
   return (

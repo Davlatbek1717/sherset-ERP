@@ -11,6 +11,7 @@ import {
   buildCsv,
   csvTimestamp,
   downloadCsv,
+  formatIso,
   formatMoney,
 } from '@moysklad/ui';
 import { useQuery } from '@tanstack/react-query';
@@ -71,7 +72,7 @@ export default function AgingReport() {
   const tCommon = useTranslations('common');
 
   const [side, setSide] = useState<Side>('receivables');
-  const [asOf, setAsOf] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [asOf, setAsOf] = useState<string>(() => formatIso(new Date()));
 
   const params = new URLSearchParams({ side, asOf });
 
@@ -105,7 +106,7 @@ export default function AgingReport() {
   };
 
   return (
-    <Container size="full" className="py-4">
+    <Container size="md" className="py-4">
       <Breadcrumb
         items={[{ label: tCommon('reports'), href: '/reports' }, { label: t('title') }]}
       />

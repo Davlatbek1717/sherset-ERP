@@ -29,29 +29,12 @@ const eta = new Eta({
   useWith: true, // lets templates read top-level keys directly
 });
 
-/** One pre-formatted line for the supplier «qabul cheki» (all money already
- * run through {@link formatMinor}, so no BigInt reaches the template engine). */
-export interface SupplyReceiptItem {
-  name: string;
-  quantity: string;
-  uom?: string | null;
-  priceFormatted: string;
-  sumFormatted: string;
-}
-
 export interface NotificationRenderContext {
   counterparty: { name: string; phone?: string | null };
   demand?: { number?: string | null; totalFormatted: string; link?: string };
   payment?: { number?: string | null; sumFormatted: string };
   order?: { number?: string | null; totalFormatted: string };
-  supply?: {
-    number?: string | null;
-    totalFormatted: string;
-    /** Local (Asia/Tashkent) date «DD.MM.YYYY» of the posting. */
-    dateFormatted?: string | null;
-    /** Received lines, in document order — drives the itemized receipt. */
-    items?: SupplyReceiptItem[];
-  };
+  supply?: { number?: string | null; totalFormatted: string };
   returnDoc?: { number?: string | null; totalFormatted: string };
   balance?: { formatted: string };
 }
@@ -101,44 +84,4 @@ export function formatMinor(v: bigint | string | number | null | undefined): str
   const som = abs / 100n; // truncate tiyin
   const grouped = som.toString().replace(/\B(?=(\d{3})+(?!\d))/g, GROUP_SEPARATOR);
   return negative ? `-${grouped}` : grouped;
-}
-
-const RECEIPT_RULE = '━━━━━━━━━━━━━━━━━━━━';
-
-/**
- * Build the supplier «qabul cheki» (goods-received receipt) — the itemized
- * second message sent after the short confirmation. Pure + deterministic so a
- * unit test pins the exact wording; all money is already pre-formatted by the
- * caller (listener), so this function never touches BigInt.
- *
- * Returns an empty string when there are no lines, so the dispatcher's
- * extra-message loop skips enqueuing a blank receipt (defensive — a posted
- * Supply always has ≥1 position, but the guard keeps a malformed payload from
- * sending an empty Telegram message).
- */
-export function buildSupplyReceipt(ctx: NotificationRenderContext): string {
-  const s = ctx.supply;
-  if (!s || !s.items || s.items.length === 0) return '';
-
-  const lines = s.items.map((it, i) => {
-    const qtyUnit = it.uom ? `${it.quantity} ${it.uom}` : it.quantity;
-    return `${i + 1}. ${it.name}\n   ${qtyUnit} × ${it.priceFormatted} = ${it.sumFormatted} so'm`;
-  });
-
-  const head = [
-    '🧾 QABUL CHEKI',
-    s.number ? `Hujjat: № ${s.number}` : null,
-    s.dateFormatted ? `Sana: ${s.dateFormatted}` : null,
-    `Yetkazib beruvchi: ${ctx.counterparty.name}`,
-  ].filter((l): l is string => l !== null);
-
-  return [
-    ...head,
-    RECEIPT_RULE,
-    lines.join('\n'),
-    RECEIPT_RULE,
-    `Jami: ${s.totalFormatted} so'm`,
-    '',
-    'Hamkorligingiz uchun rahmat! 🤝',
-  ].join('\n');
 }

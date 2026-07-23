@@ -103,6 +103,7 @@ export class TaskService {
       ...(filter.typeId ? { typeId: filter.typeId } : {}),
       ...(filter.stateId ? { stateId: filter.stateId } : {}),
       ...(filter.agentId ? { agentId: filter.agentId } : {}),
+      ...(filter.agentIds ? { agentId: { in: filter.agentIds } } : {}),
       ...(filter.status ? { status: filter.status } : {}),
       ...(filter.priority ? { priority: filter.priority } : {}),
       ...(filter.archived !== undefined ? { archived: filter.archived } : { archived: false }),

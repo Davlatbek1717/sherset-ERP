@@ -415,7 +415,7 @@ export default function MxikImportPage() {
   const nextLabel = step === 2 ? `${t('import_button_action')} (${validCount})` : tCommon('next');
 
   return (
-    <Container size="full" className="py-4">
+    <Container size="md" className="py-4">
       <PageHeader title={t('import_title')} subtitle={t('import_subtitle')} />
       <Wizard
         steps={steps}

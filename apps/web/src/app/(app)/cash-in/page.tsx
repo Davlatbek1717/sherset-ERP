@@ -10,10 +10,9 @@ import {
 import { useBulkDocumentActions } from '@/hooks/use-bulk-actions';
 import { useColumnVisibility } from '@/hooks/use-column-visibility';
 import { useColumnWidths } from '@/hooks/use-column-widths';
-import { useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
+import { stashBulkEdit } from '@/lib/bulk-edit-nav';
 import { filterFromQueryString } from '@/lib/filter-from-query';
-import { pinDefaultCustomer } from '@/lib/pin-default-customer';
 import {
   CatalogPicker,
   CatalogPickerField,
@@ -24,6 +23,7 @@ import {
   ListView,
   MassEditModal,
   MoneyInput,
+  MultiCombobox,
   NativeSelect,
   PeriodInputs,
   PeriodShortcuts,
@@ -34,6 +34,7 @@ import {
 } from '@moysklad/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
+import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
 interface CashInRow {
@@ -58,6 +59,9 @@ interface ListResponse {
   nextCursor?: string;
   total: number;
 }
+
+/** Multi-select reference field — moysklad checkbox-dropdown holds {id,label}[]. */
+type RefMulti = { id: string; label: string };
 
 // Moysklad parity — 100 rows per page.
 const LIMIT = 100;
@@ -98,8 +102,6 @@ export default function CashInListPage() {
   const tCommon = useTranslations('common');
   const tFields = useTranslations('fields');
   const tFilters = useTranslations('filters');
-  const tForm = useTranslations('form');
-  const userDefaults = useUserDefaults();
   const tStates = useTranslations('states.cash_in');
   const tMass = useTranslations('mass_edit_modal');
 
@@ -111,10 +113,16 @@ export default function CashInListPage() {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [filterValues, setFilterValues] = useState<FilterDrawerValues>({});
   const [filterOpen, setFilterOpen] = useState(false);
+  // «Контрагент» / «Организация» — moysklad-parity inline multi-select checkbox
+  // dropdowns (MultiCombobox), replacing the single-select modals. Each holds
+  // the picked {id,label} pairs; on the wire they go out as `agentIds` /
+  // `organizationIds` CSV. The «Контрагент» dropdown shows the phone as a
+  // sublabel and searches by name OR phone (BE /counterparties?search= matches
+  // both). Mirrors the purchase-orders reference.
+  const [agents, setAgents] = useState<RefMulti[]>([]);
+  const [organizations, setOrganizations] = useState<RefMulti[]>([]);
   const [pickerOpen, setPickerOpen] = useState<
     | null
-    | 'agent'
-    | 'org'
     | 'owner'
     | 'project'
     | 'contract'
@@ -127,8 +135,16 @@ export default function CashInListPage() {
   >(null);
   // moysklad «Массовое редактирование» (Изменить dropdown) — owner / project /
   // description patch across selected rows. Backend: POST /cash-in/mass-edit.
+  const router = useRouter();
   const [massEditOpen, setMassEditOpen] = useState(false);
-  const [massEditIds, setMassEditIds] = useState<string[]>([]);
+  // «Владелец-отдел» (groupId) options for the mass-edit wizard — mirrors losses.
+  const { data: massGroupsData } = useQuery<{ items: Array<{ id: string; name: string }> }>({
+    queryKey: ['groups', 'mass-edit'],
+    queryFn: () => api.get('/groups?limit=100'),
+    enabled: massEditOpen,
+    staleTime: 5 * 60 * 1000,
+  });
+  const [massEditIds] = useState<string[]>([]);
   const [massEditOwner, setMassEditOwner] = useState<{ id: string; label: string } | null>(null);
   const [massEditProject, setMassEditProject] = useState<{ id: string; label: string } | null>(
     null,
@@ -169,8 +185,8 @@ export default function CashInListPage() {
     paramsRecord.sumMinorFrom = String(filterValues.sumMinorFrom);
   if (filterValues.sumMinorTo !== undefined)
     paramsRecord.sumMinorTo = String(filterValues.sumMinorTo);
-  if (filterValues.agentId) paramsRecord.agentId = filterValues.agentId;
-  if (filterValues.organizationId) paramsRecord.organizationId = filterValues.organizationId;
+  if (agents.length) paramsRecord.agentIds = agents.map((x) => x.id).join(',');
+  if (organizations.length) paramsRecord.organizationIds = organizations.map((x) => x.id).join(',');
   if (filterValues.ownerId) paramsRecord.ownerId = filterValues.ownerId;
   if (extFilter.state) paramsRecord.state = extFilter.state;
   if (extFilter.projectId) paramsRecord.projectId = extFilter.projectId;
@@ -193,6 +209,8 @@ export default function CashInListPage() {
     sortDir,
     filterValues,
     extFilter,
+    agents,
+    organizations,
   ] as const;
   const { data, isLoading, error, refetch } = useQuery<ListResponse>({
     queryKey: listQueryKey,
@@ -215,6 +233,8 @@ export default function CashInListPage() {
   const colWidths = useColumnWidths('cash-in');
   const hasActiveFilter =
     !!search ||
+    agents.length > 0 ||
+    organizations.length > 0 ||
     Object.values(filterValues).some((v) => v !== undefined && v !== '') ||
     Object.values(extFilter).some((v) => v !== undefined && v !== '');
 
@@ -262,7 +282,7 @@ export default function CashInListPage() {
         <div>
           <div className="max-w-[280px] truncate font-medium">{r.agent.name}</div>
           {r.agent.legalTitle && (
-            <div className="max-w-[280px] truncate text-[var(--ms-text-muted)] text-xs">
+            <div className="max-w-[280px] truncate text-[var(--ms-text-muted)] text-[11px]">
               {r.agent.legalTitle}
             </div>
           )}
@@ -297,7 +317,7 @@ export default function CashInListPage() {
       key: 'purpose',
       header: tFields('payment_purpose'),
       cell: (r) => (
-        <span className="block max-w-[200px] truncate text-[var(--ms-text-muted)] text-xs">
+        <span className="block max-w-[200px] truncate text-[var(--ms-text-muted)] text-[11px]">
           {r.paymentPurpose ?? tCommon('none')}
         </span>
       ),
@@ -310,7 +330,7 @@ export default function CashInListPage() {
       width: '140px',
       sortable: true,
       cell: (r) => (
-        <span className="text-[var(--ms-text-muted)] text-xs tabular-nums">
+        <span className="text-[var(--ms-text-muted)] text-[12px] tabular-nums">
           {formatDate(r.updatedAt)}
         </span>
       ),
@@ -330,16 +350,15 @@ export default function CashInListPage() {
   ];
 
   const openMassEdit = (ids: string[]) => {
-    setMassEditIds(ids);
-    setMassEditOwner(null);
-    setMassEditProject(null);
-    setMassEditOpen(true);
+    stashBulkEdit({ entity: 'cash-in', ids, from: '/cash-in' });
+    router.push('/bulk-edit');
   };
   // moysklad «Изменить» / «Печать» parity — items, order and disabled
   // state mirror docs/moysklad-reference/cash-in/states/metadata.json
   // (Phase 2 audit, 2026-05-30). Shared with the other money documents.
   const editMenuItems = useDocEditMenuItems({
     selectedIds: bulk.selectedIds,
+    allRowIds: (data?.items ?? []).map((r) => r.id),
     onBulkDelete: (ids) => bulk.bulkDelete.mutate(ids),
     deletePending: bulk.bulkDelete.isPending,
     onMassEdit: openMassEdit,
@@ -400,6 +419,8 @@ export default function CashInListPage() {
             onClear={() => {
               setFilterValues({});
               setExtFilter({});
+              setAgents([]);
+              setOrganizations([]);
               setCursor(undefined);
             }}
             pills={
@@ -456,23 +477,36 @@ export default function CashInListPage() {
                 testId="filter-period"
               />
             </InlineFilterPanel.Field>
-            {/* 2. Контрагент */}
+            {/* 2. Контрагент — moysklad-parity inline multi-select checkbox
+               dropdown: type a name OR phone, results appear inline (each row
+               shows the phone as a sublabel), tick as many as needed. Was a
+               single-select modal. */}
             <InlineFilterPanel.Field label={tFilters('agent')} expandable>
-              <CatalogPickerField
-                value={
-                  filterValues.agentId
-                    ? {
-                        id: filterValues.agentId,
-                        label: filterValues.agentLabel ?? filterValues.agentId,
-                      }
-                    : null
-                }
-                placeholder=""
-                onPick={() => setPickerOpen('agent')}
-                onClear={() => {
-                  setFilterValues({ ...filterValues, agentId: undefined, agentLabel: undefined });
+              <MultiCombobox
+                value={agents.map((x) => x.id)}
+                items={agents.map((x) => ({ value: x.id, label: x.label }))}
+                onSearch={async (q) => {
+                  const r = await api.get<{
+                    items: { id: string; name: string; phone?: string | null }[];
+                  }>(`/counterparties?search=${encodeURIComponent(q)}&limit=20`);
+                  return r.items.map((x) => ({
+                    value: x.id,
+                    label: x.name,
+                    sublabel: x.phone || undefined,
+                  }));
+                }}
+                onChange={(nextIds, toggled) => {
+                  setAgents((prev) =>
+                    nextIds.map((id) => {
+                      const ex = prev.find((s) => s.id === id);
+                      if (ex) return ex;
+                      if (toggled?.value === id) return { id, label: String(toggled.label) };
+                      return { id, label: id };
+                    }),
+                  );
                   setCursor(undefined);
                 }}
+                placeholder=""
                 testId="filter-agent"
               />
             </InlineFilterPanel.Field>
@@ -552,27 +586,30 @@ export default function CashInListPage() {
                 testId="filter-agent-owner"
               />
             </InlineFilterPanel.Field>
-            {/* 5. Организация */}
+            {/* 5. Организация — moysklad-parity inline multi-select checkbox
+               dropdown (was a single-select modal). */}
             <InlineFilterPanel.Field label={tFilters('organization')} expandable>
-              <CatalogPickerField
-                value={
-                  filterValues.organizationId
-                    ? {
-                        id: filterValues.organizationId,
-                        label: filterValues.organizationLabel ?? filterValues.organizationId,
-                      }
-                    : null
-                }
-                placeholder=""
-                onPick={() => setPickerOpen('org')}
-                onClear={() => {
-                  setFilterValues({
-                    ...filterValues,
-                    organizationId: undefined,
-                    organizationLabel: undefined,
-                  });
+              <MultiCombobox
+                value={organizations.map((x) => x.id)}
+                items={organizations.map((x) => ({ value: x.id, label: x.label }))}
+                onSearch={async (q) => {
+                  const r = await api.get<{ items: { id: string; name: string }[] }>(
+                    `/organizations?search=${encodeURIComponent(q)}&limit=20`,
+                  );
+                  return r.items.map((x) => ({ value: x.id, label: x.name }));
+                }}
+                onChange={(nextIds, toggled) => {
+                  setOrganizations((prev) =>
+                    nextIds.map((id) => {
+                      const ex = prev.find((s) => s.id === id);
+                      if (ex) return ex;
+                      if (toggled?.value === id) return { id, label: String(toggled.label) };
+                      return { id, label: id };
+                    }),
+                  );
                   setCursor(undefined);
                 }}
+                placeholder=""
                 testId="filter-org"
               />
             </InlineFilterPanel.Field>
@@ -786,50 +823,6 @@ export default function CashInListPage() {
         onColumnResize={colWidths.set}
       />
       <CatalogPicker
-        open={pickerOpen === 'agent'}
-        onClose={() => setPickerOpen(null)}
-        title={tFilters('agent')}
-        fetcher={async (q): Promise<PickerItem[]> => {
-          const r = await api.get<{ items: { id: string; name: string }[] }>(
-            `/counterparties?search=${encodeURIComponent(q)}&limit=20`,
-          );
-          const items = r.items.map((x) => ({ id: x.id, primary: x.name }));
-          return pinDefaultCustomer(
-            items,
-            userDefaults.data?.defaultCustomer,
-            q,
-            tForm('pinned_default'),
-          );
-        }}
-        onSelect={(item) => {
-          setFilterValues({
-            ...filterValues,
-            agentId: item.id,
-            agentLabel: String(item.primary),
-          });
-          setCursor(undefined);
-        }}
-      />
-      <CatalogPicker
-        open={pickerOpen === 'org'}
-        onClose={() => setPickerOpen(null)}
-        title={tFilters('organization')}
-        fetcher={async (q): Promise<PickerItem[]> => {
-          const r = await api.get<{ items: { id: string; name: string }[] }>(
-            `/organizations?search=${encodeURIComponent(q)}&limit=20`,
-          );
-          return r.items.map((x) => ({ id: x.id, primary: x.name }));
-        }}
-        onSelect={(item) => {
-          setFilterValues({
-            ...filterValues,
-            organizationId: item.id,
-            organizationLabel: String(item.primary),
-          });
-          setCursor(undefined);
-        }}
-      />
-      <CatalogPicker
         open={pickerOpen === 'owner'}
         onClose={() => setPickerOpen(null)}
         title={tFilters('owner_employee')}
@@ -1004,6 +997,8 @@ export default function CashInListPage() {
         projectValue={massEditProject}
         onProjectPick={() => setPickerOpen('massEditProject')}
         onProjectClear={() => setMassEditProject(null)}
+        groupOptions={(massGroupsData?.items ?? []).map((g) => ({ value: g.id, label: g.name }))}
+        showShared
         labels={{
           title: tMass('title'),
           ownerLabel: tFilters('owner_employee'),
@@ -1012,6 +1007,10 @@ export default function CashInListPage() {
           apply: tMass('apply'),
           cancel: tMass('cancel'),
           hint: tMass('hint', { count: massEditIds.length }),
+          groupLabel: tMass('group_label'),
+          sharedLabel: tMass('shared_label'),
+          sharedYes: tMass('shared_yes'),
+          sharedNo: tMass('shared_no'),
         }}
         onSubmit={async (patch) => {
           await bulk.massEdit.mutateAsync({ ids: massEditIds, ...patch });

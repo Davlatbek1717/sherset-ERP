@@ -1,6 +1,6 @@
 'use client';
 
-import { Button } from '@moysklad/ui';
+import { Button, cn } from '@moysklad/ui';
 
 /**
  * The list-toolbar «Фильтр» toggle — Convention 2 canonical surface
@@ -8,8 +8,11 @@ import { Button } from '@moysklad/ui';
  * pages cannot drift; built on DS Button variant="secondary" size="sm".
  *
  * moysklad parity: the «Фильтр» button has NO chevron prefix — just plain
- * text. Active state is signaled by the open/closed filter panel below,
- * not a glyph in the button; aria-expanded carries it for screen readers.
+ * text. Closed = white like the sibling toolbar buttons; open = pressed
+ * grey (bg ≈ #e0e0e0, darker border) — grounded on
+ * docs/audits/commission-reports-list-2026-06-27/moysklad/10-filter-open.png
+ * vs 75-list-closed-filter.png. aria-expanded carries the state for
+ * screen readers.
  */
 export function FilterToggleButton({
   open,
@@ -33,7 +36,11 @@ export function FilterToggleButton({
       onClick={onToggle}
       aria-expanded={open}
       data-test-id="filter-toggle"
-      className={className}
+      className={cn(
+        open &&
+          'border-[var(--ms-neutral-500)] bg-[var(--ms-neutral-200)] shadow-[inset_0_1px_2px_rgba(0,0,0,0.10)] hover:bg-[var(--ms-neutral-200)]',
+        className,
+      )}
     >
       {label}
     </Button>

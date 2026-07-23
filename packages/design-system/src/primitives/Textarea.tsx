@@ -42,7 +42,7 @@ export const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
           resize();
         }}
         className={cn(
-          'block w-full px-3 py-2 text-[12px] leading-relaxed',
+          'block w-full px-3 py-2 text-[13px] leading-relaxed',
           'bg-[var(--ms-bg-surface)] text-[var(--ms-text-primary)]',
           'border',
           'placeholder:text-[var(--ms-text-placeholder)]',

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { csvUuid } from '../shared/csv.js';
 
 export const MoveStateSchema = z.enum(['draft', 'posted', 'cancelled']);
 export type MoveState = z.infer<typeof MoveStateSchema>;
@@ -46,7 +47,14 @@ export const CreateMoveSchema = z
       .default('0'),
     overheadDistribution: MoveOverheadDistributionSchema.default('WEIGHT'),
     overheadCurrency: z.string().length(3).default('UZS'),
-    positions: z.array(MovePositionInputSchema).min(1, 'at least one position required'),
+    // «Проведено» on save — moysklad parity: ticking «Проведено» + Сохранить
+    // creates AND posts the move (stock transferred) in one action. When true,
+    // create() runs the SAME verified transition('post') path the detail
+    // «Провести» uses. Was silently dropped before (FE sent it, schema omitted it).
+    // `.optional()` (not `.default`) so createFromX shortcuts' `satisfies
+    // CreateMoveInput` object need not pass it.
+    applicable: z.boolean().optional(),
+    positions: z.array(MovePositionInputSchema),
     attributes: z.record(z.string(), z.unknown()).optional(),
   })
   .refine((v) => v.sourceStoreId !== v.destinationStoreId, {
@@ -70,7 +78,7 @@ export const UpdateMoveSchema = z.object({
     .optional(),
   overheadDistribution: MoveOverheadDistributionSchema.optional(),
   overheadCurrency: z.string().length(3).optional(),
-  positions: z.array(MovePositionInputSchema).min(1).optional(),
+  positions: z.array(MovePositionInputSchema).optional(),
   attributes: z.record(z.string(), z.unknown()).optional(),
 });
 export type UpdateMoveInput = z.infer<typeof UpdateMoveSchema>;
@@ -82,6 +90,7 @@ const boolFromString = z
 export const MoveFilterSchema = z.object({
   state: MoveStateSchema.optional(),
   organizationId: z.string().uuid().optional(),
+  organizationIds: csvUuid.optional(),
   /** «Откуда» — Move.sourceStoreId. */
   sourceStoreId: z.string().uuid().optional(),
   /** «Куда» — Move.destinationStoreId. */

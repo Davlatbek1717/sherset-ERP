@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { csvUuid } from '../shared/csv.js';
 
 /**
  * PaymentIn (Входящий платёж) — inbound payment from customer.
@@ -43,6 +44,12 @@ export const CreatePaymentInSchema = z.object({
   organizationAccountId: z.string().uuid().nullish(),
   agentAccountId: z.string().uuid().nullish(),
   externalCode: z.string().max(50).nullish(),
+  // «Владелец» / «Владелец-отдел» / «Общий доступ» from the header owner popover
+  // (moysklad parity, mirrors invoice-in). Tenant-validated in create(); fall back
+  // to the creator + their dept when absent.
+  ownerId: z.string().uuid().nullish(),
+  groupId: z.string().uuid().nullish(),
+  shared: z.boolean().optional(),
   moment: z.coerce.date().optional(),
   incomingDate: z.coerce.date().nullish(),
   incomingNumber: z.string().max(50).nullish(),
@@ -85,6 +92,7 @@ const boolFromString = z
 export const PaymentInFilterSchema = z.object({
   state: PaymentInStateSchema.optional(),
   agentId: z.string().uuid().optional(),
+  agentIds: csvUuid.optional(),
   /** «Группа контрагента» — filters via the agent (Counterparty) relation's groupId. */
   agentGroupId: z.string().uuid().optional(),
   /**
@@ -99,6 +107,7 @@ export const PaymentInFilterSchema = z.object({
   /** «Счёт контрагента» — PaymentIn.agentAccountId. */
   agentAccountId: z.string().uuid().optional(),
   organizationId: z.string().uuid().optional(),
+  organizationIds: csvUuid.optional(),
   /** «Счёт организации» — PaymentIn.organizationAccountId. */
   organizationAccountId: z.string().uuid().optional(),
   invoiceOutId: z.string().uuid().optional(),

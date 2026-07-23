@@ -41,6 +41,8 @@ export interface DetailToolbarProps {
   /** Show a spinner on Save while in flight. */
   isSaving: boolean;
   onSave(): void;
+  /** Force-disable Save even when dirty — e.g. a position oversells stock. */
+  saveDisabled?: boolean;
   onClose(): void;
   /** Optional prev/next nav between docs in the list. */
   position?: { current: number; total: number };
@@ -148,6 +150,14 @@ export interface DetailToolbarProps {
    * historical `ml-auto` right alignment (behaviour unchanged).
    */
   rightSlot?: React.ReactNode;
+  /**
+   * Buttons pinned right AFTER the «Отправить» dropdown, in the same action row —
+   * moysklad pins each configured print form here as its own quick button (mirror
+   * of DocumentToolbar.trailingSlot on the /new editors). Renders between the
+   * action-menu group and the right-aligned owner cluster, so on a SAVED document
+   * the form buttons sit after «Отправить» exactly as on /new. Omitted → nothing
+   * (data-driven: only the account's own forms). */
+  trailingSlot?: React.ReactNode;
   /**
    * moysklad's PRODUCT card orders the right cluster «Изменения+avatar · Печать ·
    * «...»» — i.e. the rightSlot comes BEFORE the action menus, and the `dots`
@@ -286,7 +296,7 @@ export function DetailToolbar(props: DetailToolbarProps) {
         size="sm"
         onClick={props.onSave}
         loading={props.isSaving}
-        disabled={!props.isDirty || props.isSaving}
+        disabled={!props.isDirty || props.isSaving || props.saveDisabled}
         data-test-id="detail-toolbar-save"
       >
         {tCommon('save')}
@@ -445,6 +455,16 @@ export function DetailToolbar(props: DetailToolbarProps) {
         {/* `dots` overflow edit-menu sits LAST (after Печать) — moysklad product order. */}
         {props.editMenuStyle === 'dots' && editMenuEl}
       </div>
+
+      {/* moysklad pins each configured print form as its own button right after
+          «Отправить» (data-driven — none when the account has no custom forms).
+          Mirrors DocumentToolbar.trailingSlot on the /new editors so a SAVED
+          document shows the same form buttons after «Отправить». */}
+      {props.trailingSlot && (
+        <div className="flex items-center gap-2" data-test-id="detail-toolbar-trailing">
+          {props.trailingSlot}
+        </div>
+      )}
 
       {/* Default: rightSlot trails the menus (historical). rightSlotFirst already
         rendered it above. */}

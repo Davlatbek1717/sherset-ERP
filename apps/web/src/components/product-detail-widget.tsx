@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { AttachmentsSection } from '@/components/attachments-section';
 import { CreateModificationsModal } from '@/components/products/create-modifications-modal';
@@ -31,7 +31,14 @@ import {
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
-import { type DragEvent, type KeyboardEvent, type ReactNode, useEffect, useState } from 'react';
+import {
+  type DragEvent,
+  Fragment,
+  type KeyboardEvent,
+  type ReactNode,
+  useEffect,
+  useState,
+} from 'react';
 
 /**
  * products/[id] RIGHT tabbed widget (B5 S?) — moysklad parity.
@@ -467,6 +474,41 @@ export function ProductDetailWidget({
       api.get<{ items: StockRow[] }>(`/reports/stock-balance?productId=${productId}&groupBy=none`),
   });
   const stock = stockQuery.data?.items ?? [];
+
+  // «Показать по модификациям» — toggle the Остатки table to break each store's stock
+  // down by modification. Per-variant stock reuses the SAME report (the `productId`
+  // filter is really an assortmentId filter → productId=<variantId> returns that
+  // modification's per-store stock; no BE change). NB: the exact moysklad arrangement
+  // of this expanded view is pixel-verify-pending — the account has no product with
+  // BOTH modifications AND stock to capture it; built on the confirmed Остатки columns.
+  const [stockByVariants, setStockByVariants] = useState(false);
+  const variantStockQuery = useQuery<Array<{ variant: VariantRow; rows: StockRow[] }>>({
+    queryKey: ['product-variant-stock', productId, variants.map((v) => v.id).join(',')],
+    enabled: stockByVariants && variants.length > 0,
+    queryFn: () =>
+      Promise.all(
+        variants.map(async (v) => ({
+          variant: v,
+          rows: (
+            await api.get<{ items: StockRow[] }>(
+              `/reports/stock-balance?productId=${v.id}&groupBy=none`,
+            )
+          ).items,
+        })),
+      ),
+  });
+  // Each modification's stock IN a given store (0 when the modification has no row there).
+  const variantStockFor = (storeId: string | null) =>
+    (variantStockQuery.data ?? []).map((vs) => {
+      const r = vs.rows.find((row) => row.storeId === storeId);
+      return {
+        variant: vs.variant,
+        qty: r?.qty ?? '0',
+        reservedQty: r?.reservedQty ?? '0',
+        inTransitQty: r?.inTransitQty ?? '0',
+        available: r?.available ?? '0',
+      };
+    });
 
   // moysklad shows «Файлы (N)» on the tab — count via the SAME key AttachmentsSection
   // uses, so React Query dedupes (no extra fetch when the tab opens).
@@ -1218,17 +1260,65 @@ export function ProductDetailWidget({
                 </thead>
                 <tbody>
                   {stock.map((s) => (
-                    <tr
-                      key={s.storeId ?? 'no-store'}
-                      className="border-[var(--ms-border-default)] border-b last:border-0"
-                      data-test-id="stock-row"
-                    >
-                      <td className="px-2 py-1.5">{s.storeName ?? '—'}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">{s.qty}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">{s.reservedQty}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">{s.inTransitQty}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">{s.available}</td>
-                    </tr>
+                    <Fragment key={s.storeId ?? 'no-store'}>
+                      <tr
+                        className="border-[var(--ms-border-default)] border-b last:border-0"
+                        data-test-id="stock-row"
+                      >
+                        <td className="px-2 py-1.5">
+                          {/* moysklad: the store name is a blue link to the store card
+                            (the «Остатки» rows in the live capture are «Иподром Склад» /
+                            «Чуп База Склад» as underlined links) — mirror the История links. */}
+                          {s.storeId ? (
+                            <button
+                              type="button"
+                              className="text-[var(--ms-text-brand)] underline"
+                              onClick={() => router.push(`/stores/${s.storeId}`)}
+                            >
+                              {s.storeName ?? '—'}
+                            </button>
+                          ) : (
+                            (s.storeName ?? '—')
+                          )}
+                        </td>
+                        <td className="px-2 py-1.5 text-right tabular-nums">{s.qty}</td>
+                        <td className="px-2 py-1.5 text-right tabular-nums">{s.reservedQty}</td>
+                        <td className="px-2 py-1.5 text-right tabular-nums">{s.inTransitQty}</td>
+                        <td className="px-2 py-1.5 text-right tabular-nums">{s.available}</td>
+                      </tr>
+                      {/* «Показать по модификациям»: each modification's stock in this
+                        store, indented under the store row (modification name → variant). */}
+                      {stockByVariants &&
+                        variantStockFor(s.storeId).map((vm) => (
+                          <tr
+                            key={`${s.storeId ?? 'no-store'}-${vm.variant.id}`}
+                            className="border-[var(--ms-border-default)] border-b bg-[var(--ms-bg-muted)] last:border-0"
+                            data-test-id="stock-variant-row"
+                          >
+                            <td className="py-1.5 pr-2 pl-8">
+                              <button
+                                type="button"
+                                className="text-left text-[var(--ms-text-brand)] text-xs hover:underline"
+                                onClick={() => router.push(`/variants/${vm.variant.id}`)}
+                              >
+                                {vm.variant.name}
+                              </button>
+                            </td>
+                            <td className="px-2 py-1.5 text-right text-xs tabular-nums">
+                              {vm.qty}
+                            </td>
+                            <td className="px-2 py-1.5 text-right text-xs tabular-nums">
+                              {vm.reservedQty}
+                            </td>
+                            <td className="px-2 py-1.5 text-right text-xs tabular-nums">
+                              {vm.inTransitQty}
+                            </td>
+                            <td className="px-2 py-1.5 text-right text-xs tabular-nums">
+                              {vm.available}
+                            </td>
+                          </tr>
+                        ))}
+                    </Fragment>
                   ))}
                   {/* totals + inline pager (moysklad shows it on the same row) */}
                   <tr className="align-middle">
@@ -1272,10 +1362,11 @@ export function ProductDetailWidget({
               </table>
               <button
                 type="button"
+                onClick={() => setStockByVariants((v) => !v)}
                 className="mt-2 text-[var(--ms-text-brand)] text-sm hover:underline"
                 data-test-id="stock-show-by-variants"
               >
-                {t('stock_show_by_variants')}
+                {stockByVariants ? t('stock_hide_by_variants') : t('stock_show_by_variants')}
               </button>
             </div>
           )}

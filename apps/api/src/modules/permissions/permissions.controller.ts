@@ -5,53 +5,67 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { PermissionsService } from './permissions.service.js';
 import type { PermissionAction, PermissionEntity, PermissionScope } from './permissions.types.js';
 
-// Full nav-relevant entity set so Web can gate BOTH the UI actions and the
-// top-level navbar modules (a module is hidden when the user cannot view any
-// of its entities). Keep in sync with the module→entity map in the web layout.
+// The web app gates its top-nav MODULES on this matrix (settings → Сотрудники
+// «Настроить права»): a module hides when every mapped entity's view scope is
+// NO. So the exported universe must cover every module's document types, not
+// just the original 7 master-data entities. resolveScope() reads the cached
+// per-employee permission map (5-min TTL) — widening this list is in-memory
+// work per request, not extra queries.
 const ENTITIES: PermissionEntity[] = [
+  // master data
   'product',
   'productfolder',
-  'pricelist',
   'counterparty',
-  'contract',
-  'call',
+  'contactperson',
   'organization',
   'store',
   'employee',
   'role',
-  // purchases
-  'purchaseorder',
-  'invoicein',
-  'supply',
-  'purchasereturn',
-  'facturein',
   // sales
   'customerorder',
-  'invoiceout',
   'demand',
+  'invoiceout',
   'salesreturn',
   'factureout',
   'commissionreport',
-  // stock
-  'move',
-  'enter',
-  'loss',
-  'inventory',
-  'internalorder',
+  // purchases
+  'purchaseorder',
+  'supply',
+  'invoicein',
+  'purchasereturn',
+  'facturein',
   // money
   'paymentin',
   'paymentout',
   'cashin',
   'cashout',
+  'counterpartyadjustment',
   'prepayment',
-  // retail / production / crm / other
+  'prepaymentreturn',
+  // warehouse
+  'move',
+  'loss',
+  'enter',
+  'inventory',
+  'internalorder',
+  'pricelist',
+  // production
+  'bom',
+  'workorder',
+  'processingorder',
+  'processing',
+  // retail
   'retailsale',
   'cashiersession',
-  'processing',
-  'processingorder',
-  'bom',
+  // crm / tasks
+  'call',
+  'opportunity',
   'task',
+  // cross-cutting
+  'report',
   'analitika',
+  'settings',
+  'auditlog',
 ];
 const ACTIONS: PermissionAction[] = ['view', 'create', 'update', 'delete', 'approve', 'print'];
 

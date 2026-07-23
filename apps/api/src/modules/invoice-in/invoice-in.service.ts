@@ -131,6 +131,35 @@ export class InvoiceInService {
       this.prisma.client.invoiceIn.groupBy({ by: ['currency'], where }),
     ]);
 
+    // moysklad parity (LIVE-GROUND 2026-06-28 #invoicein): a MIXED-currency
+    // footer shows the BASE (UZS) sum — every doc converted via its stored
+    // rateValue (scale 1e8) then summed — NOT a «—» dash. Prisma's aggregate
+    // can't multiply two columns, so for the (rare) mixed set fetch the
+    // (sum, payed, shipped, rate) tuples and reduce with BigInt (no float drift,
+    // exact: 1 150,80 USD @12 300 + 327 000 сум = 14 481 840,00). Single-currency
+    // sets don't need this — the raw per-currency sum already equals the base.
+    const RATE_SCALE = 100000000n; // rateValue is the doc→base ratio × 1e8
+    let baseSumMinor = '0';
+    let basePayedSumMinor = '0';
+    let baseShippedSumMinor = '0';
+    if (currencyGroups.length > 1) {
+      const rows = await this.prisma.client.invoiceIn.findMany({
+        where,
+        select: { sumMinor: true, payedSumMinor: true, shippedSumMinor: true, rateValue: true },
+      });
+      let bs = 0n;
+      let bp = 0n;
+      let bsh = 0n;
+      for (const r of rows) {
+        bs += (r.sumMinor * r.rateValue) / RATE_SCALE;
+        bp += (r.payedSumMinor * r.rateValue) / RATE_SCALE;
+        bsh += (r.shippedSumMinor * r.rateValue) / RATE_SCALE;
+      }
+      baseSumMinor = bs.toString();
+      basePayedSumMinor = bp.toString();
+      baseShippedSumMinor = bsh.toString();
+    }
+
     const toStr = (v: bigint | null) => (v ?? 0n).toString();
     return {
       count: agg._count,
@@ -139,6 +168,11 @@ export class InvoiceInService {
       payedSumMinor: toStr(agg._sum.payedSumMinor),
       shippedSumMinor: toStr(agg._sum.shippedSumMinor),
       currencies: currencyGroups.map((g) => g.currency),
+      // Base-currency (UZS) converted totals — populated only for mixed sets;
+      // the FE footer shows these instead of «—» (footerMoneyCells baseValuesMinor).
+      baseSumMinor,
+      basePayedSumMinor,
+      baseShippedSumMinor,
     };
   }
 
@@ -1060,9 +1094,8 @@ export class InvoiceInService {
     if (existing.state !== 'draft') {
       throw new BadRequestException(`O'tkazilmaydi: ${existing.state} → posted. Faqat draft'dan`);
     }
-    if (existing.positions.length === 0) {
-      throw new BadRequestException("Pozitsiyalar yo'q — provedeno qilib bo'lmaydi");
-    }
+    // Owner 2026-07-08: «Проведено» toggles freely — an empty doc may be posted
+    // (0 positions ⇒ 0 stock delta; moysklad allows it). No position precondition.
 
     return this.prisma.client.$transaction(async (tx) => {
       const updated = await tx.invoiceIn.update({
@@ -1350,7 +1383,13 @@ export class InvoiceInService {
     accountId: string,
     userId: string,
     id: string,
-    patch: { ownerId?: string | null; projectId?: string | null; description?: string | null },
+    patch: {
+      ownerId?: string | null;
+      projectId?: string | null;
+      description?: string | null;
+      groupId?: string | null;
+      shared?: boolean;
+    },
   ) {
     await this.findById(accountId, id);
     await assertMassEditRefsInTenant(this.prisma, accountId, patch);
@@ -1358,6 +1397,8 @@ export class InvoiceInService {
     if ('ownerId' in patch) data.ownerId = patch.ownerId;
     if ('projectId' in patch) data.projectId = patch.projectId;
     if ('description' in patch) data.description = patch.description;
+    if ('groupId' in patch) data.groupId = patch.groupId;
+    if ('shared' in patch && patch.shared !== undefined) data.shared = patch.shared;
     const updated = await this.prisma.client.invoiceIn.update({
       where: { id, accountId },
       data,

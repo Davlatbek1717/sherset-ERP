@@ -5,8 +5,10 @@ import { z } from 'zod';
  * base64 payload. Decoded server-side to a Buffer and stored in the
  * `content` bytea column.
  *
- * 5 MB hard cap on encoded payload (≈ 3.7 MB binary) — sized for
- * product photos taken by staff phones, not full-quality scans.
+ * Encoded-payload cap sized so the client's 4 MB raw-file limit always fits:
+ * base64 inflates by ~4/3, so a 4 MB image encodes to ≈ 5.34 MB — the 6 MB cap
+ * clears that with margin (the FE `classifyImageFile` gate at 4 MB raw is the
+ * real user-facing limit; this is the matching server backstop).
  */
 
 const ALLOWED_MIME = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'] as const;
@@ -16,9 +18,9 @@ export const UploadImageSchema = z.object({
   mime: z.enum(ALLOWED_MIME),
   /**
    * Either a `data:image/png;base64,xxx` URL or just the base64 body.
-   * Validated as <= 5 MB encoded; decoded by the service.
+   * Validated as <= 6 MB encoded (≈ 4.5 MB binary); decoded by the service.
    */
-  dataBase64: z.string().min(1).max(5_242_880, 'Rasm hajmi 5 MB dan oshmasligi kerak'),
+  dataBase64: z.string().min(1).max(6_000_000, 'Rasm hajmi 4 MB dan oshmasligi kerak'),
   /** Mark this image as the new main one (replaces the previous main). */
   isMain: z.boolean().default(false),
   /** Display position; defaults to the next available index. */

@@ -25,7 +25,8 @@
  *   мес (month-to-date)     from = today-30, to = today
  */
 
-import { DatePicker } from '../primitives/DatePicker.tsx';
+import * as React from 'react';
+import { DatePicker, todayIso } from '../primitives/DatePicker.tsx';
 
 export interface PeriodPickerLabels {
   /** "вчера" abbreviated. */
@@ -45,11 +46,10 @@ const DEFAULT_LABELS: PeriodPickerLabels = {
   month: 'мес',
 };
 
-function todayIso(): string {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d.toISOString().slice(0, 10);
-}
+// Local calendar «today» — the old local-midnight → toISOString version was
+// ALWAYS one day behind in UTC+5 (owner bug 2026-07-11: «Сегодня» = yesterday
+// on every filter shortcut). shiftIso below stays UTC-internal: it does pure
+// string date arithmetic on an ISO day, which is timezone-free.
 
 function shiftIso(iso: string, days: number): string {
   const d = new Date(`${iso}T00:00:00Z`);
@@ -127,7 +127,68 @@ export interface PeriodInputsProps {
   testId?: string;
 }
 
+/** «12 июля» — ru long month renders the genitive moysklad shows. */
+function fmtDayLong(iso: string): string {
+  return new Intl.DateTimeFormat('ru', { day: 'numeric', month: 'long' }).format(
+    new Date(`${iso}T00:00:00`),
+  );
+}
+
 export function PeriodInputs({ from, to, onChange, testId }: PeriodInputsProps) {
+  // moysklad parity (owner 2026-07-12, grounded on his «Волны отбора»
+  // screenshots): once a period is APPLIED the two date inputs COLLAPSE into
+  // one display — «◀ Сегодня, 12 июля ▶» — whose arrows shift the whole range
+  // by one day. Clicking the text reopens the two inputs for editing; picking
+  // a date collapses again.
+  const [editing, setEditing] = React.useState(false);
+  const bothSet = !!(from && to);
+
+  if (bothSet && !editing) {
+    const label =
+      from === to
+        ? from === todayIso()
+          ? `Сегодня, ${fmtDayLong(from)}`
+          : from === shiftIso(todayIso(), -1)
+            ? `Вчера, ${fmtDayLong(from)}`
+            : fmtDayLong(from)
+        : `${fmtDayLong(from as string)} — ${fmtDayLong(to as string)}`;
+    const shiftBoth = (days: number) =>
+      onChange({ from: shiftIso(from as string, days), to: shiftIso(to as string, days) });
+    return (
+      <div
+        className="flex h-[24px] items-center justify-between gap-1 text-[13px]"
+        data-test-id={testId}
+      >
+        <button
+          type="button"
+          aria-label="prev day"
+          onClick={() => shiftBoth(-1)}
+          className="px-1 text-[15px] text-[var(--ms-text-brand)] leading-none hover:opacity-70"
+          data-test-id="period-shift-prev"
+        >
+          ◀
+        </button>
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          className="min-w-0 flex-1 truncate text-center text-[var(--ms-text-primary)] hover:underline"
+          data-test-id="period-collapsed-label"
+        >
+          {label}
+        </button>
+        <button
+          type="button"
+          aria-label="next day"
+          onClick={() => shiftBoth(1)}
+          className="px-1 text-[15px] text-[var(--ms-text-brand)] leading-none hover:opacity-70"
+          data-test-id="period-shift-next"
+        >
+          ▶
+        </button>
+      </div>
+    );
+  }
+
   // moysklad parity: the filter date fields are a CUSTOM widget that always
   // renders dd.MM.yyyy (with a calendar popover), NOT a native <input
   // type="date"> — the native control's display format follows the browser's
@@ -139,7 +200,10 @@ export function PeriodInputs({ from, to, onChange, testId }: PeriodInputsProps) 
       <div className="min-w-0 flex-1">
         <DatePicker
           value={from ?? null}
-          onChange={(v) => onChange({ from: v ?? undefined, to })}
+          onChange={(v) => {
+            onChange({ from: v ?? undefined, to });
+            if (v && to) setEditing(false);
+          }}
           clearable
           showToday={false}
           placeholder=""
@@ -153,7 +217,10 @@ export function PeriodInputs({ from, to, onChange, testId }: PeriodInputsProps) 
       <div className="min-w-0 flex-1">
         <DatePicker
           value={to ?? null}
-          onChange={(v) => onChange({ from, to: v ?? undefined })}
+          onChange={(v) => {
+            onChange({ from, to: v ?? undefined });
+            if (from && v) setEditing(false);
+          }}
           clearable
           showToday={false}
           placeholder=""

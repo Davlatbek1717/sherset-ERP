@@ -1,8 +1,21 @@
 'use client';
 
+import { ImageLightbox } from '@/components/image-lightbox';
 import { useApiMutation } from '@/hooks/use-api-mutation';
 import { useDestructiveMutation } from '@/hooks/use-destructive-mutation';
+import { useImagePaste } from '@/hooks/use-image-paste';
 import { api } from '@/lib/api-client';
+import { imageRawUrl } from '@/lib/image-url';
+import {
+  ACCEPTED_IMAGE_ATTR,
+  type ImageReject,
+  MAX_IMAGES,
+  MAX_IMAGE_BYTES,
+  capImagesToLimit,
+  classifyImageFile,
+  readClipboardImageFiles,
+  readImageAsDataUrl,
+} from '@/lib/product-image';
 import { Button, Icons } from '@moysklad/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
@@ -22,24 +35,6 @@ export interface ImageGalleryProps {
   productId: string;
 }
 
-const MAX_BYTES = 4_000_000;
-
-function readFileAsBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result;
-      if (typeof result !== 'string') {
-        reject(new Error('Read failed'));
-        return;
-      }
-      resolve(result);
-    };
-    reader.onerror = () => reject(reader.error ?? new Error('Read error'));
-    reader.readAsDataURL(file);
-  });
-}
-
 /**
  * ImageGallery — moysklad "Изображения" tab parity.
  *
@@ -56,6 +51,7 @@ export function ImageGallery({ productId }: ImageGalleryProps) {
   const { runDestructive } = useDestructiveMutation();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
+  const [lightbox, setLightbox] = useState<string | null>(null);
 
   const list = useQuery<{ items: ProductImage[] }>({
     queryKey: ['product-images', productId],
@@ -64,10 +60,7 @@ export function ImageGallery({ productId }: ImageGalleryProps) {
 
   const uploadMut = useMutation({
     mutationFn: async (file: File) => {
-      if (file.size > MAX_BYTES) {
-        throw new Error(t('error_too_large', { size: (MAX_BYTES / 1_000_000).toFixed(0) }));
-      }
-      const dataBase64 = await readFileAsBase64(file);
+      const dataBase64 = await readImageAsDataUrl(file);
       return api.post<ProductImage>(`/products/${productId}/images`, {
         filename: file.name,
         mime: file.type || 'image/png',
@@ -77,6 +70,54 @@ export function ImageGallery({ productId }: ImageGalleryProps) {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['product-images', productId] }),
     onError: (e: Error) => setError(e.message),
   });
+
+  const rejectMsg = (r: ImageReject) =>
+    r === 'too_large'
+      ? tCommon('image_too_large', { size: (MAX_IMAGE_BYTES / 1_000_000).toFixed(0) })
+      : tCommon('image_bad_format');
+
+  // Single entry point for BOTH the file picker and clipboard paste — same
+  // size/format gate, same base64 upload (user 2026-07-06). Validate first, then
+  // cap the batch to the MAX_IMAGES-per-product limit (user 2026-07-07) so a
+  // rejected file never wastes a slot and the «max reached» message is accurate.
+  const addFiles = async (files: File[]) => {
+    if (files.length === 0) return;
+    setError(null);
+    const valid: File[] = [];
+    for (const file of files) {
+      const bad = classifyImageFile(file);
+      if (bad) setError(rejectMsg(bad));
+      else valid.push(file);
+    }
+    const { accepted, overflow } = capImagesToLimit(list.data?.items?.length ?? 0, valid);
+    if (overflow) setError(tCommon('image_max', { max: MAX_IMAGES }));
+    for (const file of accepted) {
+      try {
+        await uploadMut.mutateAsync(file);
+      } catch {
+        // Error already surfaced via onError; continue with the next file.
+      }
+    }
+  };
+
+  // Ctrl+V anywhere on the edit page → paste the copied image.
+  useImagePaste(addFiles);
+
+  // Explicit «Вставить» button → read the clipboard on demand (gives the
+  // «no image in clipboard» message the passive paste can't).
+  const pasteFromClipboard = async () => {
+    setError(null);
+    try {
+      const files = await readClipboardImageFiles();
+      if (files.length === 0) {
+        setError(tCommon('image_no_clipboard'));
+        return;
+      }
+      await addFiles(files);
+    } catch {
+      setError(tCommon('image_no_clipboard'));
+    }
+  };
 
   const setMainMut = useApiMutation({
     mutationFn: (imageId: string) =>
@@ -95,18 +136,14 @@ export function ImageGallery({ productId }: ImageGalleryProps) {
   const handlePicked = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
-    setError(null);
-    for (const file of Array.from(files)) {
-      try {
-        await uploadMut.mutateAsync(file);
-      } catch {
-        // Error already surfaced via onError; continue with next file.
-      }
-    }
+    await addFiles(Array.from(files));
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const items = list.data?.items ?? [];
+  // moysklad-style small gallery: at most MAX_IMAGES per product — the add
+  // controls turn off once the limit is reached (user 2026-07-07).
+  const atMax = items.length >= MAX_IMAGES;
 
   return (
     <div className="space-y-3" data-test-id="image-gallery">
@@ -119,7 +156,7 @@ export function ImageGallery({ productId }: ImageGalleryProps) {
       {items.length > 0 && (
         <div className="flex flex-wrap gap-3">
           {items.map((img) => {
-            const url = `/api/v1/images/${img.id}/raw`;
+            const url = imageRawUrl(img.id);
             return (
               <div
                 key={img.id}
@@ -127,11 +164,13 @@ export function ImageGallery({ productId }: ImageGalleryProps) {
                 data-test-id={`image-${img.id}`}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
+                {/* biome-ignore lint/a11y/useKeyWithClickEvents: click-to-zoom thumbnail is a mouse convenience; the image opens a lightbox, not a control */}
                 <img
                   src={url}
                   alt={img.filename}
-                  className="h-full w-full object-cover"
+                  className="h-full w-full cursor-zoom-in object-cover"
                   loading="lazy"
+                  onClick={() => setLightbox(url)}
                 />
                 {img.isMain && (
                   <span
@@ -174,25 +213,41 @@ export function ImageGallery({ productId }: ImageGalleryProps) {
         </div>
       )}
 
-      {/* moysklad parity: the add control is a plain «⊕ Изображение» button
-        (no dashed drop-zone, no «Изображений нет» empty text). */}
-      <Button
-        type="button"
-        variant="secondary"
-        size="md"
-        onClick={triggerPicker}
-        disabled={uploadMut.isPending}
-        className="inline-flex items-center gap-1.5"
-        data-test-id="image-upload-button"
-      >
-        <Icons.createCircle className="size-4 text-[var(--ms-text-brand)]" aria-hidden />
-        {uploadMut.isPending ? tCommon('saving') : t('upload_button')}
-      </Button>
+      {/* Add controls: «⊕ Изображение» (file) + «Вставить» (clipboard). Both
+        feed the same upload; Ctrl+V works anywhere too. Minimal, no drop-zone. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          type="button"
+          variant="secondary"
+          size="md"
+          onClick={triggerPicker}
+          disabled={uploadMut.isPending || atMax}
+          className="inline-flex items-center gap-1.5"
+          data-test-id="image-upload-button"
+        >
+          <Icons.createCircle className="size-4 text-[var(--ms-text-brand)]" aria-hidden />
+          {uploadMut.isPending ? tCommon('saving') : t('upload_button')}
+        </Button>
+        <Button
+          type="button"
+          variant="secondary"
+          size="md"
+          onClick={pasteFromClipboard}
+          disabled={uploadMut.isPending || atMax}
+          className="inline-flex items-center gap-1.5"
+          data-test-id="image-paste-button"
+        >
+          {tCommon('image_paste')}
+        </Button>
+        <span className="text-[var(--ms-text-muted)] text-xs" data-test-id="image-limit-hint">
+          {atMax ? tCommon('image_max', { max: MAX_IMAGES }) : tCommon('image_paste_hint')}
+        </span>
+      </div>
 
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/png,image/jpeg,image/webp,image/gif"
+        accept={ACCEPTED_IMAGE_ATTR}
         multiple
         className="hidden"
         onChange={handlePicked}
@@ -205,6 +260,8 @@ export function ImageGallery({ productId }: ImageGalleryProps) {
           {tCommon('cancel')}
         </Button>
       )}
+
+      {lightbox && <ImageLightbox src={lightbox} onClose={() => setLightbox(null)} />}
     </div>
   );
 }

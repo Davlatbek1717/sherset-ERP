@@ -2,43 +2,27 @@
 
 import { ChatButton } from '@/components/chat-button';
 import { CommandPalette } from '@/components/command-palette';
-import { FontSizeToggle } from '@/components/font-size-toggle';
 import { HelpButton } from '@/components/help-button';
 import { LocaleSwitcher } from '@/components/locale-switcher';
 import { NotificationBell } from '@/components/notification-bell';
+import { UserMenu } from '@/components/user-menu';
 import { useNotificationStream } from '@/hooks/use-notification-stream';
+import { usePermissions } from '@/hooks/use-permissions';
 import { useTasksBadgeCount } from '@/hooks/use-tasks-badge-count';
-import { api } from '@/lib/api-client';
-import { hasAuthHint, logout, useAuth } from '@/lib/auth-store';
-import { AppShell, Icons, type NavItem, ShersetLogo, SubNav, type SubNavItem } from '@moysklad/ui';
-import { useQuery } from '@tanstack/react-query';
+import { hasAuthHint, useAuth } from '@/lib/auth-store';
+import {
+  AppShell,
+  Icons,
+  type MobileNavSection,
+  MobileNavSheet,
+  MoyskladLogo,
+  type NavItem,
+  SubNav,
+  type SubNavItem,
+} from '@moysklad/ui';
 import { useTranslations } from 'next-intl';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect } from 'react';
-
-// Each top-level navbar module → the entities that make it relevant. A module
-// is shown when the user can view ANY of them (empty = always visible). Keep in
-// sync with the ENTITIES list in permissions.controller.ts (backend).
-const MODULE_ENTITIES: Record<string, string[]> = {
-  homepage: [],
-  apps: [],
-  purchases: ['purchaseorder', 'invoicein', 'supply', 'purchasereturn', 'facturein'],
-  sales: ['customerorder', 'invoiceout', 'demand', 'salesreturn', 'factureout', 'commissionreport'],
-  goods: ['product', 'productfolder', 'pricelist'],
-  // «Kontragentlar» (merged CRM+Money, user decision 2026-07-04): counterparty
-  // work AND its money documents live in one module now.
-  crm: ['counterparty', 'contract', 'paymentin', 'paymentout', 'cashin', 'cashout', 'prepayment'],
-  // 'store' is a catalog/reference entity many roles need for dropdowns — it
-  // must NOT reveal the Stock (operations) module. Gate on stock DOCUMENTS only.
-  stock: ['move', 'enter', 'loss', 'inventory', 'internalorder'],
-  // Retail (POS) is gated on cashiersession only — a warehouse worker gets
-  // retailsale view/update for the picking flow but must NOT see the POS module.
-  retail: ['cashiersession'],
-  production: ['processing', 'processingorder', 'bom'],
-  tasks: ['task'],
-  hr: ['employee'],
-  analitika: ['analitika'],
-};
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -67,7 +51,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   // every HMR refresh briefly flashes the user to /login.
   useEffect(() => {
     if (auth.initialized && !auth.user && !hasAuthHint()) {
-      const redirect = encodeURIComponent(pathname);
+      // Keep the query string — the /scan?c=<code> deep-link from a printed QR
+      // must survive the login round-trip (usePathname drops search params).
+      const search = typeof window !== 'undefined' ? window.location.search : '';
+      const redirect = encodeURIComponent(pathname + search);
       router.replace(`/login?redirect=${redirect}`);
     }
   }, [auth.initialized, auth.user, pathname, router]);
@@ -82,22 +69,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   // user isn't yet authenticated.
   const tasksBadgeCount = useTasksBadgeCount();
 
-  // Effective permission matrix → drives which navbar modules are visible.
-  // Admin (HR 'admin') sees everything; otherwise a module shows only when the
-  // user can view at least one of its entities. While the matrix is still
-  // loading (permMine undefined) we show all items to avoid an empty-nav flash.
-  const isNavAdmin = auth.user?.hrRoles?.includes('admin') ?? false;
-  const { data: permMine } = useQuery<{ matrix: Record<string, Record<string, string>> }>({
-    queryKey: ['permissions-me'],
-    queryFn: () => api.get('/permissions/me'),
-    enabled: !!auth.user && !isNavAdmin,
-    staleTime: 5 * 60_000,
-  });
-  const canViewModule = (ents: string[]) =>
-    isNavAdmin ||
-    ents.length === 0 ||
-    !permMine ||
-    ents.some((e) => (permMine.matrix?.[e]?.view ?? 'NO') !== 'NO');
+  // Per-user permission matrix (GET /permissions/me) for module-bar gating.
+  const { canSeeModule, canSeeRoute } = usePermissions();
 
   if (!auth.initialized) {
     return (
@@ -181,6 +154,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       icon: <Icons.stock className={navIconClass} />,
     },
     {
+      key: 'money',
+      label: tNav('money'),
+      href: '/payments-in',
+      icon: <Icons.money className={navIconClass} />,
+    },
+    {
       key: 'retail',
       label: tNav('retail'),
       href: '/retail',
@@ -238,29 +217,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   // (Сделки/Канбан/Воронки) are moysklad's tariff-gated advanced CRM — not surfaced
   // here; Контактные лица live inside the counterparty card; «Скидки» is not a CRM
   // section in moysklad. Those routes still exist but are no longer linked in the strip.
-  // «Kontragentlar» — the merged CRM+Money strip (user decision 2026-07-04):
-  // everything counterparty-related on one page. Deals/Kanban/Funnels/Calls left
-  // the strip (routes still work by URL); payroll moved to HR; the cash-flow/PnL
-  // reports stay in «Hisobotlar».
   const crmSubNav: SubNavItem[] = [
     { key: 'counterparties', label: tCrm('counterparties'), href: '/counterparties' },
-    { key: 'payments', label: tMoney('payments'), href: '/payments' },
-    {
-      key: 'mutualsettlements',
-      label: tMoney('mutual_settlements'),
-      href: '/reports/counterparty-balance',
-    },
-    // «Qarz undirish» (TZ v2) — call-markaz + kassa moduli. Kontragent
-    // bo'limida turadi, chunki qarz har doim KONTRAGENTGA bog'langan; o'zaro
-    // hisob-kitobdan farqi — bu FAOL UNDIRISH jarayoni (qo'ng'iroq, izoh,
-    // keyingi aloqa sanasi), sof balans ko'rinishi emas.
-    { key: 'debts', label: tCrm('debts'), href: '/debts' },
-    { key: 'prepayments', label: tMoney('prepayments'), href: '/prepayments' },
     { key: 'contracts', label: tCrm('contracts'), href: '/contracts' },
-    { key: 'discounts', label: tCrm('discounts'), href: '/discounts' },
+    { key: 'calls', label: tCrm('calls'), href: '/calls' },
     { key: 'bonus_operations', label: tCrm('bonus_operations'), href: '/loyalty-operations' },
-    { key: 'corrections', label: tMoney('corrections'), href: '/counterparty-adjustments' },
-    { key: 'bank_import', label: tMoney('bank_import'), href: '/bank-import' },
   ];
 
   // Order matches moysklad's "Закупки" sub-nav strip exactly:
@@ -285,6 +246,32 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       key: 'education',
       label: tPurchases('education'),
       href: '/help/purchases',
+    },
+  ];
+
+  // Order + labels match moysklad's «Деньги» sub-nav exactly (live-grounded
+  // 2026-06-25, docs/audits/payments-in-audit-2026-06-25/create-menus-ground.json
+  // `dengiTabs` + 01-list-full.png): Платежи · Движение денежных средств ·
+  // Прибыли и убытки · Взаиморасчеты · Начисления зарплаты · Корректировки.
+  // The old by-document-type pages (/payments-in, /cash-in, /money, …) stay
+  // reachable by URL + the «Платежи» create-menus; they just leave the menu.
+  // The 3 report tabs point at the existing /reports/* pages (those pages live
+  // in the «Отчёты» module today, so landing there highlights Отчёты — the
+  // per-tab deep work will give them a Деньги-native home).
+  const moneySubNav: SubNavItem[] = [
+    { key: 'payments', label: tMoney('payments'), href: '/payments' },
+    { key: 'cashflow', label: tMoney('cash_flow'), href: '/reports/cash-flow' },
+    { key: 'pnl', label: tMoney('pnl'), href: '/reports/pnl' },
+    {
+      key: 'mutualsettlements',
+      label: tMoney('mutual_settlements'),
+      href: '/reports/counterparty-balance',
+    },
+    { key: 'payrolls', label: tMoney('payroll_accruals'), href: '/payrolls' },
+    {
+      key: 'corrections',
+      label: tMoney('corrections'),
+      href: '/counterparty-adjustments',
     },
   ];
 
@@ -342,16 +329,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     { key: 'inventories', label: tStock('inventories'), href: '/inventories' },
     { key: 'pickingwaves', label: tStock('picking_waves'), href: '/picking-waves' },
     { key: 'internalorders', label: tStock('internal_orders'), href: '/internal-orders' },
-    { key: 'restocktasks', label: tStock('restock'), href: '/restock-tasks' },
-    { key: 'omborchi', label: "Omborchi (yig'ish)", href: '/omborchi' },
-    { key: 'cellscanner', label: 'Yacheyka skaneri', href: '/cell' },
-    { key: 'replenishment', label: "To'ldirish kerak", href: '/replenishment' },
-    // «Остатки» (/stock-balance) removed — that route has no page (dead link);
-    // the working stock-balance lives under Hisobotlar → /reports/stock-balance.
+    { key: 'remains', label: tStock('remains'), href: '/stock-balance' },
     { key: 'turnover', label: tStock('turnover'), href: '/turnover' },
-    // «Склады» (/stores) 2026-07-04 user talabi bilan QAYTARILDI — yacheyka
-    // labellari kirish nuqtasi shu ro'yxatda (Sozlamalar → Склады bilan bir
-    // xil StoresListView, faqat Sklad-modul chrome'ida).
     { key: 'stores', label: tStock('stores'), href: '/stores' },
     { key: 'training', label: tStock('training'), href: '/stock-training' },
   ];
@@ -385,7 +364,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   ];
 
   const retailSubNav: SubNavItem[] = [
-    { key: 'sotuv', label: tRetail('sotuv'), href: '/sotuv' },
+    { key: 'pos', label: tRetail('pos'), href: '/retail' },
     { key: 'sessions', label: tRetail('sessions'), href: '/retail/sessions' },
     { key: 'sales', label: tRetail('sales'), href: '/retail/sales' },
     { key: 'z_report', label: tRetail('z_report'), href: '/retail/z-report' },
@@ -459,28 +438,19 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           pathname.startsWith('/loyalty-operations') ||
           pathname.startsWith('/opportunities') ||
           pathname.startsWith('/pipelines') ||
-          pathname.startsWith('/discounts') ||
-          // merged «Pul» routes (user decision 2026-07-04) — one module now
-          pathname === '/payments' ||
-          pathname.startsWith('/payments-in') ||
-          pathname.startsWith('/payments-out') ||
-          pathname.startsWith('/cash-in') ||
-          pathname.startsWith('/cash-out') ||
-          pathname.startsWith('/bank-import') ||
-          pathname.startsWith('/counterparty-adjustments') ||
-          pathname.startsWith('/prepayments') ||
-          pathname.startsWith('/prepayment-returns') ||
-          pathname.startsWith('/money') ||
-          // «Qarz undirish» (TZ v2) — call-markaz + kassa moduli
-          pathname.startsWith('/debts') ||
-          // the «O'zaro hisob-kitoblar» tab lives at /reports/* but belongs here
-          pathname.startsWith('/reports/counterparty-balance')
+          pathname.startsWith('/discounts')
         ? 'crm'
         : pathname.startsWith('/customer-orders') ||
             pathname.startsWith('/invoices-out') ||
             pathname.startsWith('/demands') ||
             pathname.startsWith('/sales-returns') ||
-            pathname.startsWith('/sales-funnel')
+            pathname.startsWith('/sales-funnel') ||
+            // moysklad shows «Прибыльность» + «Юнит-экономика» as tabs of the
+            // «Продажи» sub-nav (NOT a separate «Отчёты» section), so landing on
+            // them must keep the Продажи sub-nav + highlight «Продажи». Checked
+            // BEFORE the generic `/reports` → 'reports' branch below.
+            pathname.startsWith('/reports/profitability') ||
+            pathname.startsWith('/reports/unit-economics')
           ? 'sales'
           : pathname.startsWith('/purchases') ||
               pathname.startsWith('/purchase-orders') ||
@@ -488,46 +458,59 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               pathname.startsWith('/supplies') ||
               pathname.startsWith('/purchase-returns')
             ? 'purchases'
-            : pathname.startsWith('/moves') ||
-                pathname.startsWith('/internal-orders') ||
-                pathname.startsWith('/losses') ||
-                pathname.startsWith('/enters') ||
-                pathname.startsWith('/inventories') ||
-                pathname.startsWith('/picking-waves') ||
-                pathname.startsWith('/stores') ||
-                pathname.startsWith('/turnover') ||
-                pathname.startsWith('/stock-balance') ||
-                pathname.startsWith('/omborchi') ||
-                pathname.startsWith('/replenishment') ||
-                pathname.startsWith('/restock-tasks') ||
-                pathname.startsWith('/stock')
-              ? 'stock'
-              : pathname.startsWith('/reports')
-                ? 'reports'
-                : pathname.startsWith('/settings')
-                  ? 'settings'
-                  : pathname.startsWith('/production') ||
-                      pathname.startsWith('/processing-orders') ||
-                      pathname.startsWith('/processings')
-                    ? 'production'
-                    : pathname.startsWith('/retail') || pathname.startsWith('/sotuv')
-                      ? 'retail'
-                      : // e-commerce lives UNDER «Решения» (apps), not as its own
-                        // tab — /ecommerce highlights the Решения module.
-                        pathname.startsWith('/ecommerce')
-                        ? 'apps'
-                        : pathname.startsWith('/apps')
+            : pathname === '/payments' ||
+                pathname.startsWith('/payments-in') ||
+                pathname.startsWith('/payments-out') ||
+                pathname.startsWith('/cash-in') ||
+                pathname.startsWith('/cash-out') ||
+                pathname.startsWith('/bank-import') ||
+                pathname.startsWith('/counterparty-adjustments') ||
+                pathname.startsWith('/prepayments') ||
+                pathname.startsWith('/prepayment-returns') ||
+                pathname.startsWith('/payrolls') ||
+                pathname.startsWith('/money')
+              ? 'money'
+              : pathname.startsWith('/moves') ||
+                  pathname.startsWith('/internal-orders') ||
+                  pathname.startsWith('/losses') ||
+                  pathname.startsWith('/enters') ||
+                  pathname.startsWith('/inventories') ||
+                  pathname.startsWith('/picking-waves') ||
+                  pathname.startsWith('/stores') ||
+                  pathname.startsWith('/turnover') ||
+                  pathname.startsWith('/stock-balance') ||
+                  pathname.startsWith('/stock')
+                ? 'stock'
+                : pathname.startsWith('/reports')
+                  ? 'reports'
+                  : pathname.startsWith('/settings')
+                    ? 'settings'
+                    : pathname.startsWith('/production') ||
+                        pathname.startsWith('/processing-orders') ||
+                        pathname.startsWith('/processings')
+                      ? 'production'
+                      : pathname.startsWith('/retail')
+                        ? 'retail'
+                        : // e-commerce lives UNDER «Решения» (apps), not as its own
+                          // tab — /ecommerce highlights the Решения module.
+                          pathname.startsWith('/ecommerce')
                           ? 'apps'
-                          : pathname.startsWith('/hr') || pathname.startsWith('/payrolls')
-                            ? 'hr'
-                            : pathname.startsWith('/analitika')
-                              ? 'analitika'
-                              : pathname === '/'
-                                ? 'homepage'
-                                : null;
+                          : pathname.startsWith('/apps')
+                            ? 'apps'
+                            : pathname.startsWith('/hr')
+                              ? 'hr'
+                              : pathname.startsWith('/analitika')
+                                ? 'analitika'
+                                : pathname === '/'
+                                  ? 'homepage'
+                                  : null;
 
+  // moysklad employee rights (Настройки → Сотрудники → Настроить права):
+  // modules the user has NO view access to disappear from the bar entirely.
+  // Fail-open while the matrix loads so admins never see a flash-empty bar;
+  // the backend PermissionsGuard remains the real enforcement.
   const navWithActive = moduleNav
-    .filter((m) => canViewModule(MODULE_ENTITIES[m.key] ?? []))
+    .filter((m) => canSeeModule(m.key))
     .map((m) => ({ ...m, active: m.key === activeModule }));
 
   const matchActive = (items: SubNavItem[]): SubNavItem[] =>
@@ -542,25 +525,27 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           ? matchActive(salesSubNav)
           : activeModule === 'purchases'
             ? matchActive(purchasesSubNav)
-            : activeModule === 'stock'
-              ? matchActive(stockSubNav)
-              : activeModule === 'reports'
-                ? matchActive(reportsSubNav)
-                : activeModule === 'settings'
-                  ? null /* settings now uses left sidebar (SettingsSidebar) */
-                  : activeModule === 'production'
-                    ? matchActive(productionSubNav)
-                    : activeModule === 'retail'
-                      ? matchActive(retailSubNav)
-                      : // on /ecommerce the active module is «apps» (Решения), but we
-                        // still surface the e-commerce sub-nav (overview/channels/orders).
-                        pathname.startsWith('/ecommerce')
-                        ? matchActive(ecomSubNav)
-                        : activeModule === 'hr'
-                          ? matchActive(hrSubNav)
-                          : activeModule === 'analitika'
-                            ? matchActive(analitikaSubNav)
-                            : null;
+            : activeModule === 'money'
+              ? matchActive(moneySubNav)
+              : activeModule === 'stock'
+                ? matchActive(stockSubNav)
+                : activeModule === 'reports'
+                  ? matchActive(reportsSubNav)
+                  : activeModule === 'settings'
+                    ? null /* settings now uses left sidebar (SettingsSidebar) */
+                    : activeModule === 'production'
+                      ? matchActive(productionSubNav)
+                      : activeModule === 'retail'
+                        ? matchActive(retailSubNav)
+                        : // on /ecommerce the active module is «apps» (Решения), but we
+                          // still surface the e-commerce sub-nav (overview/channels/orders).
+                          pathname.startsWith('/ecommerce')
+                          ? matchActive(ecomSubNav)
+                          : activeModule === 'hr'
+                            ? matchActive(hrSubNav)
+                            : activeModule === 'analitika'
+                              ? matchActive(analitikaSubNav)
+                              : null;
 
   // Trial banner removed from the global layout — moysklad surfaces the
   // upgrade CTA in /settings/billing instead, and the orange strip across
@@ -568,14 +553,58 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   // <TrialBanner> component is kept in the codebase and re-rendered on
   // the billing page only when the account is on the trial plan.
 
+  // Mobile burger sheet (≤767px): every module + its sub-pages in one
+  // accordion list — the desktop tab strip and sub-nav are hidden below `md`.
+  // Same permission filters as the strips: modules via canSeeModule (already
+  // applied in navWithActive), sub-tabs via canSeeRoute. «Настройки» has no
+  // navbar tab (desktop reaches it via the user menu) — appended as a last
+  // row so phones reach it in one tap too.
+  const subNavByModule: Record<string, SubNavItem[] | undefined> = {
+    purchases: purchasesSubNav,
+    sales: salesSubNav,
+    goods: productSubNav,
+    crm: crmSubNav,
+    stock: stockSubNav,
+    money: moneySubNav,
+    retail: retailSubNav,
+    production: productionSubNav,
+    apps: ecomSubNav,
+    hr: hrSubNav,
+    analitika: analitikaSubNav,
+  };
+  const mobileSections: MobileNavSection[] = [
+    ...navWithActive.map((m) => {
+      const items = subNavByModule[m.key];
+      return {
+        ...m,
+        items: items ? matchActive(items).filter((i) => canSeeRoute(i.href)) : undefined,
+      };
+    }),
+    {
+      key: 'settings',
+      label: tNav('settings'),
+      href: '/settings',
+      icon: <Icons.settings className={navIconClass} />,
+      active: activeModule === 'settings',
+    },
+  ];
+
   return (
     <AppShell
       brand={
-        <a href="/" aria-label="Sherset — bosh sahifa" className="flex items-center">
-          <ShersetLogo variant="white" height={22} className="shrink-0" />
+        <a href="/" aria-label="Moysklad — bosh sahifa" className="flex items-center">
+          <MoyskladLogo size={28} className="shrink-0" />
         </a>
       }
       primaryNav={navWithActive}
+      mobileMenu={
+        <MobileNavSheet
+          sections={mobileSections}
+          title={tNav('menu')}
+          triggerLabel={tNav('menu')}
+          closeLabel={tCommon('close')}
+        />
+      }
       topRightExtras={
         <div className="flex items-center gap-1">
           {/* Moysklad parity: navbar has NO global search button — search
@@ -583,29 +612,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               mounted as a hidden cmd+k overlay so power users can still
               jump between modules without surfacing a navbar trigger. */}
           <CommandPalette hideTrigger />
-          {/* <sm (phone): only the notification bell stays on the top bar —
-              the rest overflow the narrow viewport. Font-size/chat/help show
-              from `sm` up; language moves into the hamburger drawer below. */}
-          <div className="hidden items-center gap-1 sm:flex">
-            <FontSizeToggle />
-            <ChatButton />
-          </div>
+          <ChatButton />
           <NotificationBell />
-          <div className="hidden items-center gap-1 sm:flex">
-            <HelpButton />
-            <LocaleSwitcher />
-          </div>
+          <HelpButton />
+          <LocaleSwitcher />
         </div>
       }
-      drawerExtras={<LocaleSwitcher variant="plain" />}
-      user={{
-        name: auth.user.name,
-        email: auth.user.email,
-      }}
-      onLogout={logout}
-      onSettings={() => router.push('/settings/profile')}
+      userSlot={<UserMenu name={auth.user.name} email={auth.user.email} />}
     >
-      {subNavItems && <SubNav items={subNavItems} />}
+      {/* moysklad «Настроить права»: individual sub-nav tabs the user cannot
+          view disappear too (not just whole modules). Fail-open while the
+          matrix loads; backend guards remain the real enforcement. */}
+      {subNavItems && <SubNav items={subNavItems.filter((i) => canSeeRoute(i.href))} />}
       {/* Natural document scroll — the app grows with its content and the
           document body scrolls (NO inner scroll boxes), per the user's
           «remove inner scrolls completely» request. Any list page that still

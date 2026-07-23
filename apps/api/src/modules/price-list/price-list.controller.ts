@@ -104,7 +104,7 @@ export class PriceListController {
     const parsed = MassEditBaseSchema.parse(body);
     const { ids, ...patch } = parsed;
     // PriceList lacks projectId — restrict to ownerId + description.
-    assertPatchHasAtLeastOneField(patch, ['ownerId', 'description']);
+    assertPatchHasAtLeastOneField(patch, ['ownerId', 'description', 'groupId', 'shared']);
     return runBulk(ids, (id) => this.service.massEditApply(user.accountId, user.sub, id, patch));
   }
 

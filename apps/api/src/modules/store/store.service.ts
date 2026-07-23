@@ -1,9 +1,14 @@
+import { randomBytes } from 'node:crypto';
 import { Prisma } from '@moysklad/db';
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { AttributeMetadataService } from '../attribute-metadata/attribute-metadata.service.js';
 import { mapVersionedUpdateError } from '../shared/optimistic-lock.js';
 import {
+  type BulkMoveInput,
+  BulkMoveSchema,
+  type BulkUpdateInput,
+  BulkUpdateSchema,
   type CreateStoreInput,
   CreateStoreSchema,
   StoreFilterSchema,
@@ -13,6 +18,35 @@ import {
 
 const PATH_SEP = ' / ';
 const MAX_DEPTH = 8;
+
+// «Проводить инвентаризацию по ячейкам» lives inside the attributes JSON under
+// this reserved key (adding a real column needs a migration — forbidden on this
+// box, see NEXT.md). validateAndNormalize() strips unknown codes, so the service
+// merges the flag back in after validation and lifts it on every read.
+const CELL_INVENTORY_KEY = '__cellInventory';
+
+/** moysklad autogenerates a random externalCode for every new store. */
+function generateExternalCode(): string {
+  // 22 url-safe chars — same shape as moysklad's generated codes.
+  return randomBytes(18).toString('base64url').slice(0, 22);
+}
+
+const OWNER_INCLUDE = {
+  owner: { select: { id: true, name: true } },
+  group: { select: { id: true, name: true } },
+  parent: { select: { id: true, name: true } },
+} satisfies Prisma.StoreInclude;
+
+type StoreRow =
+  | Prisma.StoreGetPayload<{ include: typeof OWNER_INCLUDE }>
+  | Prisma.StoreGetPayload<Record<string, never>>;
+
+/** Lift the reserved attributes key to a top-level `cellInventory` boolean. */
+function serializeStore<T extends StoreRow>(row: T) {
+  const attrs = (row.attributes ?? {}) as Record<string, unknown>;
+  const { [CELL_INVENTORY_KEY]: cellInventory, ...rest } = attrs;
+  return { ...row, attributes: rest, cellInventory: cellInventory === true };
+}
 
 /**
  * StoreService — admin CRUD + warehouse hierarchy.
@@ -35,10 +69,29 @@ export class StoreService {
 
   async list(accountId: string, rawFilter: unknown) {
     const filter = StoreFilterSchema.parse(rawFilter);
+    // «Показывать»: 'all' disables the archived filter entirely (moysklad shows
+    // active + archived mixed); default = active only. Legacy `archived` param
+    // (settings list / older callers) still honoured when `show` is absent.
+    const archivedWhere =
+      filter.show === 'all'
+        ? {}
+        : filter.show === 'active'
+          ? { archived: false }
+          : filter.archived !== undefined
+            ? { archived: filter.archived }
+            : { archived: false };
     const where: Prisma.StoreWhereInput = {
       accountId,
-      ...(filter.archived !== undefined ? { archived: filter.archived } : { archived: false }),
-      ...(filter.parentId !== undefined ? { parentId: filter.parentId } : {}),
+      ...archivedWhere,
+      ...(filter.parentId !== undefined
+        ? { parentId: filter.parentId === 'root' ? null : filter.parentId }
+        : {}),
+      ...(filter.name ? { name: { contains: filter.name, mode: 'insensitive' } } : {}),
+      ...(filter.code ? { code: { contains: filter.code, mode: 'insensitive' } } : {}),
+      ...(filter.address ? { address: { contains: filter.address, mode: 'insensitive' } } : {}),
+      ...(filter.ownerId ? { ownerId: filter.ownerId } : {}),
+      ...(filter.groupId ? { groupId: filter.groupId } : {}),
+      ...(filter.shared !== undefined ? { shared: filter.shared } : {}),
       ...(filter.search
         ? {
             OR: [
@@ -50,6 +103,7 @@ export class StoreService {
     };
     const rows = await this.prisma.client.store.findMany({
       where,
+      include: OWNER_INCLUDE,
       orderBy: { [filter.sortBy]: filter.sortDir },
       take: filter.limit + 1,
       ...(filter.cursor ? { cursor: { id: filter.cursor }, skip: 1 } : {}),
@@ -58,21 +112,19 @@ export class StoreService {
     const items = hasMore ? rows.slice(0, filter.limit) : rows;
     const nextCursor = hasMore ? items[items.length - 1]?.id : undefined;
     const total = await this.prisma.client.store.count({ where });
-    return { items, nextCursor, total };
+    return { items: items.map(serializeStore), nextCursor, total };
   }
 
   async findById(accountId: string, id: string) {
-    // owner include — ombor kartochkasining o'ng-yuqori «Владелец / Изменения»
-    // klasteri uchun (create() bilan bir xil shakl).
     const row = await this.prisma.client.store.findFirst({
       where: { id, accountId },
-      include: { owner: { select: { id: true, name: true } } },
+      include: OWNER_INCLUDE,
     });
     if (!row) throw new NotFoundException(`Store ${id} not found`);
-    return row;
+    return serializeStore(row);
   }
 
-  async create(accountId: string, raw: unknown) {
+  async create(accountId: string, raw: unknown, creatorEmployeeId?: string) {
     const parsed = this.parseCreate(raw);
     if (parsed.code) {
       const dup = await this.prisma.client.store.findFirst({
@@ -93,13 +145,17 @@ export class StoreService {
       'Store',
       parsed.attributes,
     );
+    if (parsed.cellInventory !== undefined) {
+      validatedAttrs[CELL_INVENTORY_KEY] = parsed.cellInventory;
+    }
 
-    return this.prisma.client.store.create({
+    const row = await this.prisma.client.store.create({
       data: {
         accountId,
         name: parsed.name,
         code: parsed.code ?? null,
-        externalCode: parsed.externalCode ?? null,
+        // moysklad always autogenerates an external code for a new store.
+        externalCode: parsed.externalCode ?? generateExternalCode(),
         description: parsed.description ?? null,
         address: parsed.address ?? null,
         addressFull:
@@ -108,15 +164,18 @@ export class StoreService {
             : (parsed.addressFull as Prisma.InputJsonValue),
         attributes: validatedAttrs as Prisma.InputJsonValue,
         parentId: parsed.parentId ?? null,
-        ownerId: parsed.ownerId ?? null,
+        // moysklad: owner defaults to the creating employee when not chosen.
+        ownerId: parsed.ownerId ?? creatorEmployeeId ?? null,
+        groupId: parsed.groupId ?? null,
         pathName,
         zones: parsed.zones,
         slots: parsed.slots,
         shared: parsed.shared,
         allowNegativeStock: parsed.allowNegativeStock,
       },
-      include: { owner: { select: { id: true, name: true } } },
+      include: OWNER_INCLUDE,
     });
+    return serializeStore(row);
   }
 
   async update(accountId: string, id: string, raw: unknown) {
@@ -152,13 +211,17 @@ export class StoreService {
           ? Prisma.JsonNull
           : (parsed.addressFull as Prisma.InputJsonValue);
     }
-    if (parsed.attributes !== undefined) {
-      const validated = await this.attrs.validateAndNormalize(
-        accountId,
-        'Store',
-        parsed.attributes,
-      );
-      data.attributes = validated as Prisma.InputJsonValue;
+    if (parsed.attributes !== undefined || parsed.cellInventory !== undefined) {
+      // Re-validate custom attrs when sent; otherwise start from the stored bag
+      // (minus the lifted flag) so a cellInventory-only PATCH can't wipe attrs.
+      const base =
+        parsed.attributes !== undefined
+          ? await this.attrs.validateAndNormalize(accountId, 'Store', parsed.attributes)
+          : { ...(existing.attributes as Record<string, unknown>) };
+      const cellInventory =
+        parsed.cellInventory !== undefined ? parsed.cellInventory : existing.cellInventory;
+      if (cellInventory !== undefined) base[CELL_INVENTORY_KEY] = cellInventory;
+      data.attributes = base as Prisma.InputJsonValue;
     }
     if (parsed.allowNegativeStock !== undefined)
       data.allowNegativeStock = parsed.allowNegativeStock;
@@ -172,6 +235,10 @@ export class StoreService {
     if (parsed.ownerId !== undefined) {
       data.owner =
         parsed.ownerId === null ? { disconnect: true } : { connect: { id: parsed.ownerId } };
+    }
+    if (parsed.groupId !== undefined) {
+      data.group =
+        parsed.groupId === null ? { disconnect: true } : { connect: { id: parsed.groupId } };
     }
 
     // Recompute pathName when name or parentId changed.
@@ -192,6 +259,7 @@ export class StoreService {
       const updated = await this.prisma.client.store.update({
         where: { id, accountId, version: parsed.version },
         data: { ...data, version: { increment: 1 } },
+        include: OWNER_INCLUDE,
       });
 
       // Cascade pathName refresh to descendants if the path changed.
@@ -199,11 +267,140 @@ export class StoreService {
         await this.refreshDescendantPaths(accountId, id);
       }
 
-      return updated;
+      return serializeStore(updated);
     } catch (e) {
       mapVersionedUpdateError(e, 'Store');
       throw e;
     }
+  }
+
+  /**
+   * «Копировать» — clone the card (fields + address-storage zones/cells).
+   * `code` is NOT copied (unique per account); externalCode is regenerated.
+   * Name gets a « (копия)» suffix. Not verified against live moysklad naming
+   * (no writes were made to the reference account) — see GROUND.md.
+   */
+  async clone(accountId: string, id: string) {
+    const src = await this.prisma.client.store.findFirst({
+      where: { id, accountId },
+      include: { addressZones: true, cells: true },
+    });
+    if (!src) throw new NotFoundException(`Store ${id} not found`);
+
+    return this.prisma.client.$transaction(async (tx) => {
+      const copy = await tx.store.create({
+        data: {
+          accountId,
+          name: `${src.name} (копия)`,
+          code: null,
+          externalCode: generateExternalCode(),
+          description: src.description,
+          address: src.address,
+          addressFull:
+            src.addressFull === null ? Prisma.JsonNull : (src.addressFull as Prisma.InputJsonValue),
+          attributes: (src.attributes ?? {}) as Prisma.InputJsonValue,
+          parentId: src.parentId,
+          ownerId: src.ownerId,
+          groupId: src.groupId,
+          pathName:
+            src.parentId && src.pathName
+              ? src.pathName.replace(/[^/]+$/, `${src.name} (копия)`)
+              : `${src.name} (копия)`,
+          zones: src.zones,
+          slots: src.slots,
+          shared: src.shared,
+          allowNegativeStock: src.allowNegativeStock,
+        },
+      });
+      // Address-storage structure: zones first (id remap), then cells.
+      const zoneMap = new Map<string, string>();
+      for (const z of src.addressZones) {
+        const nz = await tx.storeZone.create({
+          data: { accountId, storeId: copy.id, name: z.name, sortOrder: z.sortOrder },
+        });
+        zoneMap.set(z.id, nz.id);
+      }
+      for (const c of src.cells) {
+        await tx.storeCell.create({
+          data: {
+            accountId,
+            storeId: copy.id,
+            name: c.name,
+            barcode: c.barcode,
+            sortOrder: c.sortOrder,
+            zoneId: c.zoneId ? (zoneMap.get(c.zoneId) ?? null) : null,
+          },
+        });
+      }
+      return copy;
+    });
+  }
+
+  /** «Переместить» — bulk re-parent with cycle guard + pathName cascade. */
+  async bulkMove(accountId: string, raw: unknown) {
+    const parsed: BulkMoveInput = BulkMoveSchema.parse(raw);
+    const succeeded: string[] = [];
+    const failed: Array<{ id: string; error: string }> = [];
+    for (const id of parsed.ids) {
+      try {
+        const existing = await this.prisma.client.store.findFirst({ where: { id, accountId } });
+        if (!existing) throw new NotFoundException(`Store ${id} not found`);
+        if (parsed.parentId !== null) {
+          if (parsed.parentId === id) {
+            throw new BadRequestException("Ombor o'zining ota-ombori bo'la olmaydi");
+          }
+          await this.assertNotAncestor(accountId, id, parsed.parentId);
+        }
+        const pathName = parsed.parentId
+          ? await this.computePathName(accountId, parsed.parentId, existing.name)
+          : existing.name;
+        await this.prisma.client.store.update({
+          where: { id, accountId },
+          data: { parentId: parsed.parentId, pathName },
+        });
+        await this.refreshDescendantPaths(accountId, id);
+        succeeded.push(id);
+      } catch (e) {
+        failed.push({ id, error: e instanceof Error ? e.message : String(e) });
+      }
+    }
+    return { total: parsed.ids.length, succeeded, failed };
+  }
+
+  /** «Массовое редактирование» — apply the opt-in patch to every selected store. */
+  async bulkUpdate(accountId: string, raw: unknown) {
+    const parsed: BulkUpdateInput = BulkUpdateSchema.parse(raw);
+    const succeeded: string[] = [];
+    const failed: Array<{ id: string; error: string }> = [];
+    for (const id of parsed.ids) {
+      try {
+        const existing = await this.prisma.client.store.findFirst({
+          where: { id, accountId },
+          select: { id: true },
+        });
+        if (!existing) throw new NotFoundException(`Store ${id} not found`);
+        const data: Prisma.StoreUpdateInput = {};
+        if (parsed.set.archived !== undefined) data.archived = parsed.set.archived;
+        if (parsed.set.shared !== undefined) data.shared = parsed.set.shared;
+        if (parsed.set.ownerId !== undefined) {
+          data.owner =
+            parsed.set.ownerId === null
+              ? { disconnect: true }
+              : { connect: { id: parsed.set.ownerId } };
+        }
+        if (parsed.set.groupId !== undefined) {
+          data.group =
+            parsed.set.groupId === null
+              ? { disconnect: true }
+              : { connect: { id: parsed.set.groupId } };
+        }
+        await this.prisma.client.store.update({ where: { id, accountId }, data });
+        succeeded.push(id);
+      } catch (e) {
+        failed.push({ id, error: e instanceof Error ? e.message : String(e) });
+      }
+    }
+    return { total: parsed.ids.length, succeeded, failed };
   }
 
   async archive(accountId: string, id: string) {

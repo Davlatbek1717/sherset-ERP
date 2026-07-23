@@ -125,7 +125,7 @@ export function MultiCombobox<V extends string = string>({
           ref={boxRef}
           data-testid={testId}
           className={cn(
-            'flex min-h-[var(--ms-control-h)] w-full flex-wrap items-center gap-1 px-1.5 py-0.5 text-[12px]',
+            'flex min-h-[var(--ms-control-h)] w-full flex-wrap items-center gap-1 px-1.5 py-0.5 text-[13px]',
             'border bg-[var(--ms-bg-surface)] text-[var(--ms-text-primary)]',
             'cursor-text transition-colors duration-[var(--ms-duration-fast)]',
             'focus-within:outline-none focus-within:border-[var(--ms-border-focus)]',
@@ -182,7 +182,7 @@ export function MultiCombobox<V extends string = string>({
               }
             }}
             placeholder={value.length === 0 ? placeholder : ''}
-            className="min-w-[60px] flex-1 bg-transparent py-0.5 text-[12px] outline-none placeholder:text-[var(--ms-text-placeholder)] disabled:cursor-not-allowed"
+            className="min-w-[60px] flex-1 bg-transparent py-0.5 text-[13px] outline-none placeholder:text-[var(--ms-text-placeholder)] disabled:cursor-not-allowed"
           />
           {value.length > 0 && !disabled && (
             <button

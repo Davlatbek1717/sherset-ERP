@@ -11,20 +11,24 @@ import {
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { allocateDocumentNumber } from '../../prisma/document-number.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import type { AttributeType } from '../attribute-metadata/attribute-metadata.schema.js';
 import { AttributeMetadataService } from '../attribute-metadata/attribute-metadata.service.js';
 import { CustomerOrderService } from '../customer-order/customer-order.service.js';
 import { type DemandPostedEvent, HR_EVENT } from '../hr/hr-shared/hr-events.types.js';
 import { PermissionsService } from '../permissions/permissions.service.js';
 import { tashkentRangeBounds } from '../report/report-date-bounds.util.js';
+import { runBulk } from '../shared/bulk.js';
 import { resolveCreatorGroupId } from '../shared/group-stamp.js';
-import { assertMassEditRefsInTenant } from '../shared/mass-edit.js';
+import { assertMassEditRefsInTenant, assertStateInTenant } from '../shared/mass-edit.js';
 import { mapVersionedUpdateError } from '../shared/optimistic-lock.js';
+import { searchTokenGroups } from '../shared/search-tokens.js';
 import { type StockDelta, StockService } from '../stock/stock.service.js';
 import { WebhookFireService } from '../webhook/webhook-fire.service.js';
 // OUTBOUND «Накладные расходы» fold — pure, adversarially tested
 // (demand-overhead.test.ts). §12 helper-pattern, OUTBOUND semantics.
 import { demandOverheadCostSumMinor } from './demand-overhead.js';
 import {
+  type AttrFilterClause,
   type CreateDemandInput,
   CreateDemandSchema,
   CreateFromCustomerOrderSchema,
@@ -75,7 +79,16 @@ export class DemandService {
 
   async list(accountId: string, userId: string, rawFilter: unknown) {
     const filter = DemandFilterSchema.parse(rawFilter);
-    const baseWhere = this.buildListWhere(accountId, filter);
+    const extraIdFilter = await this.resolveModifiedByIdFilter(accountId, filter);
+    const attrTypes = await this.attrTypeMap(accountId, filter.attrs);
+    const returnClause = await this.resolveReturnStatusClause(accountId, filter.returnStatus);
+    const baseWhere = this.buildListWhere(
+      accountId,
+      filter,
+      extraIdFilter,
+      attrTypes,
+      returnClause,
+    );
     // H4 record-scope (RFC W4): AND the per-record visibility filter. No-op until
     // the account opts in — recordScopeWhere returns {} when the flag is off (or
     // the actor's scope is ALL), so today's behaviour is unchanged.
@@ -86,7 +99,7 @@ export class DemandService {
     // Relational sort: 'agent' / 'organization' / 'store' need
     // Prisma's nested `{ relation: { field } }` form. Other keys are
     // plain columns on the demand row.
-    const orderBy =
+    const primaryOrder =
       filter.sortBy === 'agent'
         ? { agent: { name: filter.sortDir } }
         : filter.sortBy === 'organization'
@@ -94,27 +107,52 @@ export class DemandService {
           : filter.sortBy === 'store'
             ? { store: { name: filter.sortDir } }
             : { [filter.sortBy]: filter.sortDir };
+    // Stable secondary sort by id — REQUIRED for correct offset pagination:
+    // without a unique tiebreaker, rows sharing a `moment` (or name/…) drift
+    // across page boundaries (skip/duplicate). Harmless for the cursor path too.
+    const orderBy = [primaryOrder, { id: filter.sortDir }];
+    // moysklad 1:1 pager: `page` present → offset (skip/take) for true
+    // previous/first/last jumps; else the legacy forward-cursor path (over-fetch
+    // by 1 + `skip: 1` past the cursor row).
+    const usePage = filter.page !== undefined;
+    const take = usePage ? filter.limit : filter.limit + 1;
+    const skip = usePage ? (filter.page ?? 0) * filter.limit : filter.cursor ? 1 : undefined;
     const rows = await this.prisma.client.demand.findMany({
       where,
       orderBy,
-      take: filter.limit + 1,
-      ...(filter.cursor ? { cursor: { id: filter.cursor }, skip: 1 } : {}),
+      take,
+      ...(skip !== undefined ? { skip } : {}),
+      ...(!usePage && filter.cursor ? { cursor: { id: filter.cursor } } : {}),
       include: {
         agent: { select: { id: true, name: true, legalTitle: true } },
-        // moysklad «Грузополучатель» list column — consignee counterparty.
-        consignee: { select: { id: true, name: true } },
         organization: { select: { id: true, name: true, legalTitle: true } },
         store: { select: { id: true, name: true } },
         owner: { select: { id: true, name: true } },
         customerOrder: { select: { id: true, name: true } },
+        // «Грузополучатель» — surfaced as the consignee list column (moysklad parity).
+        consignee: { select: { id: true, name: true } },
+        // moysklad gear columns (available-but-hidden by default): Счёт контрагента ·
+        // Счёт организации · Проект · Договор · Канал продаж.
+        agentAccount: { select: { id: true, accountNumber: true, bankName: true } },
+        organizationAccount: { select: { id: true, accountNumber: true, name: true } },
+        project: { select: { id: true, name: true } },
+        contract: { select: { id: true, name: true } },
+        salesChannel: { select: { id: true, name: true } },
+        // «Статус» — account-defined custom status pill (State row, entityType="demand").
+        status: { select: { id: true, name: true, color: true } },
         _count: { select: { positions: true } },
       },
     });
-    const hasMore = rows.length > filter.limit;
+    // Cursor mode over-fetches by 1 to detect a next page; offset mode takes
+    // exactly `limit` and derives hasNext from `total` on the client.
+    const hasMore = !usePage && rows.length > filter.limit;
     const items = hasMore ? rows.slice(0, filter.limit) : rows;
     const nextCursor = hasMore ? items[items.length - 1]?.id : undefined;
     const total = await this.prisma.client.demand.count({ where });
-    return { items, nextCursor, total };
+    // Enrich with moysklad gear-column values that aren't plain relations/scalars:
+    // «Сумма возвратов» · «Кто изменил» · «Владелец-отдел» · «Комментарий к адресу
+    // доставки» · custom-attribute display names (e.g. «Уста»). All BATCH (no N+1).
+    return { items: await this.enrichListRows(accountId, items), nextCursor, total };
   }
 
   /**
@@ -127,7 +165,16 @@ export class DemandService {
    */
   async aggregateTotals(accountId: string, userId: string, rawFilter: unknown) {
     const filter = DemandFilterSchema.parse(rawFilter);
-    const baseWhere = this.buildListWhere(accountId, filter);
+    const extraIdFilter = await this.resolveModifiedByIdFilter(accountId, filter);
+    const attrTypes = await this.attrTypeMap(accountId, filter.attrs);
+    const returnClause = await this.resolveReturnStatusClause(accountId, filter.returnStatus);
+    const baseWhere = this.buildListWhere(
+      accountId,
+      filter,
+      extraIdFilter,
+      attrTypes,
+      returnClause,
+    );
     const scoped = await this.permissions.recordScopeWhere(accountId, userId, 'demand', 'view');
     const where =
       Object.keys(scoped).length > 0 ? { AND: [baseWhere, scoped as typeof baseWhere] } : baseWhere;
@@ -168,6 +215,8 @@ export class DemandService {
         consignor: { select: { id: true, name: true } },
         consignee: { select: { id: true, name: true } },
         carrier: { select: { id: true, name: true } },
+        // «Статус» — account-defined custom status (State row, entityType="demand").
+        status: { select: { id: true, name: true, color: true } },
         // «Счёт организации» / «Счёт контрагента» — needed so the detail page
         // can DISPLAY the picked accounts (write-path landed in bb86188f).
         organizationAccount: { select: { id: true, name: true, accountNumber: true } },
@@ -182,6 +231,69 @@ export class DemandService {
     });
     if (!demand) throw new NotFoundException(`Demand ${id} not found`);
     return demand;
+  }
+
+  /**
+   * «Связанные документы» — the documents linked to this shipment. Upstream: the
+   * Заказ покупателя it converted from (customerOrderId). Downstream: Возвраты
+   * покупателей / Счета-фактуры выданные / Перемещения that reference it via
+   * their nullable `demandId` FK. Mirrors customer-order.findRelated (same DTO
+   * shape) so the shared <RelatedDocsTab> renders the linked-cards diagram.
+   */
+  async findRelated(accountId: string, id: string) {
+    // Existence + tenant guard so we don't leak related docs from another account.
+    const demand = await this.prisma.client.demand.findFirst({
+      where: { id, accountId, deletedAt: null },
+      select: { id: true, customerOrderId: true },
+    });
+    if (!demand) throw new NotFoundException(`Demand ${id} not found`);
+
+    const select = {
+      id: true,
+      name: true,
+      moment: true,
+      state: true,
+      sumMinor: true,
+    } as const;
+
+    const [customerOrder, salesReturns, moves] = await Promise.all([
+      demand.customerOrderId
+        ? this.prisma.client.customerOrder.findFirst({
+            where: { id: demand.customerOrderId, accountId, deletedAt: null },
+            select,
+          })
+        : Promise.resolve(null),
+      this.prisma.client.salesReturn.findMany({
+        where: { accountId, demandId: id, deletedAt: null },
+        select,
+        orderBy: { moment: 'asc' },
+      }),
+      this.prisma.client.move.findMany({
+        where: { accountId, demandId: id, deletedAt: null },
+        select,
+        orderBy: { moment: 'asc' },
+      }),
+    ]);
+
+    const toDto = (d: {
+      id: string;
+      name: string;
+      moment: Date;
+      state: string;
+      sumMinor: bigint;
+    }) => ({
+      id: d.id,
+      name: d.name,
+      moment: d.moment.toISOString(),
+      state: d.state,
+      sumMinor: d.sumMinor.toString(),
+    });
+
+    return {
+      customerOrder: customerOrder ? toDto(customerOrder) : null,
+      salesReturns: salesReturns.map(toDto),
+      moves: moves.map(toDto),
+    };
   }
 
   /**
@@ -294,6 +406,13 @@ export class DemandService {
 
       await this.logAudit(accountId, userId, 'create', created.id, null);
       this.webhookFire.fireForEvent(accountId, 'demand', 'CREATE', created.id);
+      // «Проведено» on save — run the SAME verified posting path the detail
+      // «Провести» uses (FIFO deduction + sufficiency guard, Serializable tx).
+      // The draft is already committed; a post failure surfaces its shortage
+      // error with the draft saved (moysklad parity — the doc is kept, not lost).
+      if (parsed.applicable) {
+        return await this.transition(accountId, userId, created.id, 'post');
+      }
       return saved;
     } catch (e) {
       this.handlePrisma(e);
@@ -579,7 +698,14 @@ export class DemandService {
     accountId: string,
     userId: string,
     id: string,
-    patch: { ownerId?: string | null; projectId?: string | null; description?: string | null },
+    patch: {
+      ownerId?: string | null;
+      projectId?: string | null;
+      description?: string | null;
+      groupId?: string | null;
+      shared?: boolean;
+      stateId?: string | null;
+    },
   ) {
     await this.findById(accountId, id);
     await assertMassEditRefsInTenant(this.prisma, accountId, patch);
@@ -587,6 +713,12 @@ export class DemandService {
     if ('ownerId' in patch) data.ownerId = patch.ownerId;
     if ('projectId' in patch) data.projectId = patch.projectId;
     if ('description' in patch) data.description = patch.description;
+    if ('groupId' in patch) data.groupId = patch.groupId;
+    if ('shared' in patch && patch.shared !== undefined) data.shared = patch.shared;
+    if ('stateId' in patch) {
+      if (patch.stateId) await assertStateInTenant(this.prisma, accountId, patch.stateId, 'demand');
+      data.statusId = patch.stateId;
+    }
     const updated = await this.prisma.client.demand.update({
       where: { id, accountId },
       data,
@@ -605,6 +737,68 @@ export class DemandService {
     await this.logAudit(accountId, userId, printed ? 'mark-printed' : 'unmark-printed', id, null);
     this.webhookFire.fireForEvent(accountId, 'demand', 'UPDATE', id, ['printed']);
     return updated;
+  }
+
+  /**
+   * «Статус» — assign an account-defined custom status (State row,
+   * entityType="demand") to a single shipment, or clear it (`statusId: null`).
+   * Applied IMMEDIATELY (moysklad parity — the «Статус» pill is a live mutation,
+   * not a save-on-edit field). Orthogonal to the FSM `state` + «Проведено».
+   * Mirror of supply.setStatus.
+   */
+  async setStatus(accountId: string, userId: string, id: string, statusId: string | null) {
+    if (statusId) {
+      const status = await this.prisma.client.state.findFirst({
+        where: { id: statusId, accountId, entityType: 'demand', archived: false },
+        select: { id: true },
+      });
+      if (!status) throw new BadRequestException(`Unknown status: ${statusId}`);
+    }
+    const demand = await this.prisma.client.demand.findFirst({
+      where: { id, accountId, deletedAt: null },
+      select: { statusId: true },
+    });
+    if (!demand) throw new NotFoundException(`Demand ${id} not found`);
+    await this.prisma.client.demand.update({
+      where: { id, accountId },
+      data: { status: statusId ? { connect: { id: statusId } } : { disconnect: true } },
+    });
+    await this.logAudit(accountId, userId, 'set-status', id, {
+      status: { before: demand.statusId, after: statusId },
+    });
+    this.webhookFire.fireForEvent(accountId, 'demand', 'UPDATE', id, ['statusId']);
+    return this.findById(accountId, id);
+  }
+
+  /**
+   * «Статус ▾» toolbar menu — set (or clear) the custom status on N selected
+   * shipments at once. Validates the target State ONCE before fanning out so an
+   * invalid id is a single 400, not a per-row 500 (mirror supply.bulkSetStatus).
+   */
+  async bulkSetStatus(accountId: string, userId: string, ids: string[], statusId: string | null) {
+    if (statusId) {
+      const status = await this.prisma.client.state.findFirst({
+        where: { id: statusId, accountId, entityType: 'demand', archived: false },
+        select: { id: true },
+      });
+      if (!status) throw new BadRequestException(`Unknown status: ${statusId}`);
+    }
+    return runBulk(ids, async (id) => {
+      const demand = await this.prisma.client.demand.findFirst({
+        where: { id, accountId, deletedAt: null },
+        select: { statusId: true },
+      });
+      if (!demand) throw new NotFoundException(`Demand ${id} not found`);
+      await this.prisma.client.demand.update({
+        where: { id, accountId },
+        data: { status: statusId ? { connect: { id: statusId } } : { disconnect: true } },
+      });
+      await this.logAudit(accountId, userId, 'set-status', id, {
+        status: { before: demand.statusId, after: statusId },
+      });
+      this.webhookFire.fireForEvent(accountId, 'demand', 'UPDATE', id, ['statusId']);
+      return id;
+    });
   }
 
   /** Mirrors moysklad's "Скопировать" — fresh draft + duplicated positions. */
@@ -880,15 +1074,25 @@ export class DemandService {
         `O'tkazilmaydi: ${existing.state} → posted. Faqat draft'dan o'tkaziladi`,
       );
     }
-    if (existing.positions.length === 0) {
-      throw new BadRequestException("Pozitsiyalar yo'q — provedeno qilib bo'lmaydi");
-    }
+    // Owner 2026-07-08: «Проведено» toggles freely — an empty doc may be posted
+    // (0 positions ⇒ 0 stock delta; moysklad allows it). No position precondition.
 
     const store = await this.prisma.client.store.findFirst({
       where: { id: existing.storeId, accountId },
       select: { id: true, name: true, allowNegativeStock: true },
     });
     if (!store) throw new NotFoundException('Ombor topilmadi');
+
+    // moysklad «Настройки компании → Запретить отгрузку товаров, которых нет
+    // на складе»: the account-level checkbox FORCES the sufficiency check even
+    // on stores that individually allow negative stock. Unchecked (or no
+    // settings row yet) keeps today's per-store behaviour.
+    const companySettings = await this.prisma.client.companySettings.findUnique({
+      where: { accountId },
+      select: { checkShippingStock: true },
+    });
+    const allowNegativeStock =
+      store.allowNegativeStock && !(companySettings?.checkShippingStock ?? false);
 
     const posted = await this.prisma.client.$transaction(
       async (tx) => {
@@ -918,9 +1122,49 @@ export class DemandService {
           assortments,
         );
 
-        // 2. Sufficiency check (unless store allows negative).
+        // 1b. Consume the linked order's stock hold for the lines THIS demand
+        //     ships — BEFORE the sufficiency check. A posted order auto-holds
+        //     its unshipped goods (owner-confirmed moysklad behaviour) and §2c
+        //     counts reservedQty, so without this release a fully-reserved
+        //     order would block its own Отгрузка. The snapshot patch applies
+        //     BOTH the hold delta (ledger truth) AND subtracts the order's own
+        //     remaining hold (ownHoldAfter) — an order's reserve exists FOR
+        //     its shipments, so it must never block its own partial shipment
+        //     (only OTHER documents' holds constrain it). Same-store only — a
+        //     hold at another store never participates in this check.
+        if (existing.customerOrderId) {
+          const coLines = existing.positions
+            .filter((p) => p.customerOrderPositionId)
+            .map((p) => ({
+              positionId: p.customerOrderPositionId as string,
+              qtyDelta: String(p.quantity),
+            }));
+          if (coLines.length > 0) {
+            const adj = await this.co.adjustReservationForShipment(
+              tx,
+              accountId,
+              userId,
+              existing.customerOrderId,
+              coLines,
+              'ship',
+            );
+            if (adj.storeId === existing.storeId) {
+              const assortmentIds = new Set([...adj.holdDeltas.keys(), ...adj.ownHoldAfter.keys()]);
+              for (const assortmentId of assortmentIds) {
+                const bal = balances.get(assortmentId);
+                if (!bal) continue;
+                const delta = adj.holdDeltas.get(assortmentId) ?? 0;
+                const own = adj.ownHoldAfter.get(assortmentId) ?? 0;
+                bal.reservedQty = String(Math.max(0, Number(bal.reservedQty) + delta - own));
+              }
+            }
+          }
+        }
+
+        // 2. Sufficiency check (unless store allows negative AND the account
+        //    setting doesn't force it — see allowNegativeStock above).
         this.stock.assertAvailable(
-          store.allowNegativeStock,
+          allowNegativeStock,
           existing.positions.map((p) => ({
             assortmentKind: p.assortmentKind,
             assortmentId: p.assortmentId,
@@ -1132,6 +1376,19 @@ export class DemandService {
               qtyDelta: String(p.quantity),
             }));
           if (coDeltas.length > 0) {
+            // Restore the order's stock hold for the un-shipped goods (they
+            // just returned to stock in this same tx; a posted order re-holds
+            // its unshipped remainder). MUST run before applyShipment — the
+            // hold math derives shippedAfter from the CURRENT stored
+            // shippedQty ± delta.
+            await this.co.adjustReservationForShipment(
+              tx,
+              accountId,
+              userId,
+              existing.customerOrderId,
+              coDeltas,
+              'revert',
+            );
             await this.co.applyShipment(
               tx,
               accountId,
@@ -1234,6 +1491,19 @@ export class DemandService {
               qtyDelta: String(p.quantity),
             }));
           if (coDeltas.length > 0) {
+            // Restore the order's stock hold for the un-shipped goods (they
+            // just returned to stock in this same tx; a posted order re-holds
+            // its unshipped remainder). MUST run before applyShipment — the
+            // hold math derives shippedAfter from the CURRENT stored
+            // shippedQty ± delta.
+            await this.co.adjustReservationForShipment(
+              tx,
+              accountId,
+              userId,
+              existing.customerOrderId,
+              coDeltas,
+              'revert',
+            );
             await this.co.applyShipment(
               tx,
               accountId,
@@ -1280,7 +1550,18 @@ export class DemandService {
    * `payedSumMinor` column (populated by the PaymentIn cascade), so the
    * cross-column compare is sound.
    */
-  private buildListWhere(accountId: string, filter: DemandFilterInput): Prisma.DemandWhereInput {
+  private buildListWhere(
+    accountId: string,
+    filter: DemandFilterInput,
+    // «Кто изменил» — Demand has no modifiedById column, so list()/aggregateTotals()
+    // pre-query the auditLog and pass the matched entityIds here (id IN). undefined
+    // = not requested (no narrowing); [] = requested-but-none (forces empty result).
+    extraIdFilter?: string[],
+    // Custom-attribute («Дополнительные поля») filter types, resolved by attrTypeMap.
+    attrTypes?: Map<string, AttributeType>,
+    // «Тип возврата» — resolved relation/id clause from resolveReturnStatusClause.
+    returnClause?: Prisma.DemandWhereInput | null,
+  ): Prisma.DemandWhereInput {
     const fields = this.prisma.client.demand.fields;
 
     // «Оплата» — payedSumMinor vs sumMinor cross-column compare.
@@ -1314,45 +1595,436 @@ export class DemandService {
           }
         : {};
 
+    // «Группа контрагента» (agent.groupId) + «Владелец контрагента» (agent.ownerId),
+    // single OR multi, both narrow the SAME `agent` relation — merge into one
+    // sub-object so a second `agent` key can't clobber the first (last-key-wins).
+    const agentSub: Prisma.CounterpartyWhereInput = {
+      ...(filter.agentGroupIds
+        ? { groupId: { in: filter.agentGroupIds } }
+        : filter.agentGroupId
+          ? { groupId: filter.agentGroupId }
+          : {}),
+      ...(filter.agentOwnerIds
+        ? { ownerId: { in: filter.agentOwnerIds } }
+        : filter.agentOwnerId
+          ? { ownerId: filter.agentOwnerId }
+          : {}),
+    };
+
+    // Each reference field accepts a single `*Id` OR a multi `*Ids` (CSV→array,
+    // moysklad inline checkbox-dropdown). Collected into an `AND[]` of typed
+    // clauses (not inline spreads — 14+ conditional ternaries make TS infer a
+    // union too complex to represent, TS2590). Mirrors invoice-out.service.
+    const and: Prisma.DemandWhereInput[] = [];
+    // moysklad «содержит»: tokenized multi-word search merged INTO the AND array
+    // (each word may match a different field), composing with the other AND clauses
+    // instead of a colliding second top-level `AND` key.
+    if (filter.search) {
+      and.push(
+        ...searchTokenGroups(filter.search, (tok): Prisma.DemandWhereInput[] => [
+          { name: { contains: tok, mode: 'insensitive' as const } },
+          { description: { contains: tok, mode: 'insensitive' as const } },
+          { agent: { name: { contains: tok, mode: 'insensitive' as const } } },
+        ]),
+      );
+    }
+    if (filter.agentIds) and.push({ agentId: { in: filter.agentIds } });
+    else if (filter.agentId) and.push({ agentId: filter.agentId });
+    if (Object.keys(agentSub).length) and.push({ agent: agentSub });
+    if (filter.agentAccountIds) and.push({ agentAccountId: { in: filter.agentAccountIds } });
+    else if (filter.agentAccountId) and.push({ agentAccountId: filter.agentAccountId });
+    if (filter.organizationIds) and.push({ organizationId: { in: filter.organizationIds } });
+    else if (filter.organizationId) and.push({ organizationId: filter.organizationId });
+    if (filter.organizationAccountIds)
+      and.push({ organizationAccountId: { in: filter.organizationAccountIds } });
+    else if (filter.organizationAccountId)
+      and.push({ organizationAccountId: filter.organizationAccountId });
+    if (filter.storeIds) and.push({ storeId: { in: filter.storeIds } });
+    else if (filter.storeId) and.push({ storeId: filter.storeId });
+    if (filter.consigneeIds) and.push({ consigneeId: { in: filter.consigneeIds } });
+    else if (filter.consigneeId) and.push({ consigneeId: filter.consigneeId });
+    // «Статус» — account-defined custom status (State row, entityType="demand").
+    if (filter.statusIds) and.push({ statusId: { in: filter.statusIds } });
+    if (filter.customerOrderId) and.push({ customerOrderId: filter.customerOrderId });
+    if (filter.projectIds) and.push({ projectId: { in: filter.projectIds } });
+    else if (filter.projectId) and.push({ projectId: filter.projectId });
+    if (filter.contractIds) and.push({ contractId: { in: filter.contractIds } });
+    else if (filter.contractId) and.push({ contractId: filter.contractId });
+    if (filter.salesChannelIds) and.push({ salesChannelId: { in: filter.salesChannelIds } });
+    else if (filter.salesChannelId) and.push({ salesChannelId: filter.salesChannelId });
+    if (filter.groupIds) and.push({ groupId: { in: filter.groupIds } });
+    else if (filter.groupId) and.push({ groupId: filter.groupId });
+    if (filter.ownerIds) and.push({ ownerId: { in: filter.ownerIds } });
+    else if (filter.ownerId) and.push({ ownerId: filter.ownerId });
+    if (filter.productIds)
+      and.push({ positions: { some: { productId: { in: filter.productIds } } } });
+    else if (filter.productId) and.push({ positions: { some: { productId: filter.productId } } });
+
+    // Custom-attribute («Дополнительные поля») filters — each clause → one typed
+    // JSON-path WHERE over Demand.attributes (e.g. the account's «Уста» field).
+    if (attrTypes) and.push(...this.buildAttrWhere(filter.attrs, attrTypes));
+
+    // «Тип возврата» — resolved relation/id clause (none/partial/full).
+    if (returnClause) and.push(returnClause);
+
     return {
       accountId,
       ...(filter.includeDeleted ? {} : { deletedAt: null }),
+      ...(extraIdFilter ? { id: { in: extraIdFilter } } : {}),
       ...(filter.state ? { state: filter.state } : {}),
-      ...(filter.agentId ? { agentId: filter.agentId } : {}),
-      ...(filter.agentGroupId ? { agent: { groupId: filter.agentGroupId } } : {}),
-      ...(filter.agentAccountId ? { agentAccountId: filter.agentAccountId } : {}),
-      ...(filter.organizationId ? { organizationId: filter.organizationId } : {}),
-      ...(filter.organizationAccountId
-        ? { organizationAccountId: filter.organizationAccountId }
-        : {}),
-      ...(filter.storeId ? { storeId: filter.storeId } : {}),
-      ...(filter.customerOrderId ? { customerOrderId: filter.customerOrderId } : {}),
-      // «Грузополучатель» — consignee counterparty (moysklad filter parity).
-      ...(filter.consigneeId ? { consigneeId: filter.consigneeId } : {}),
-      // «Товар или группа» — narrows to demands whose positions carry this product.
-      ...(filter.productId ? { positions: { some: { productId: filter.productId } } } : {}),
-      ...(filter.projectId ? { projectId: filter.projectId } : {}),
-      ...(filter.contractId ? { contractId: filter.contractId } : {}),
-      ...(filter.salesChannelId ? { salesChannelId: filter.salesChannelId } : {}),
-      ...(filter.groupId ? { groupId: filter.groupId } : {}),
-      ...(filter.ownerId ? { ownerId: filter.ownerId } : {}),
       ...(paymentClause ?? {}),
+      ...(filter.shared !== undefined ? { shared: filter.shared } : {}),
       ...(filter.applicable !== undefined ? { applicable: filter.applicable } : {}),
       ...(filter.printed !== undefined ? { printed: filter.printed } : {}),
       ...(filter.published !== undefined ? { published: filter.published } : {}),
+      ...(filter.shipmentAddress
+        ? { shipmentAddress: { contains: filter.shipmentAddress, mode: 'insensitive' } }
+        : {}),
+      ...(filter.shipmentAddressComment
+        ? {
+            shipmentAddressFull: {
+              path: ['comment'],
+              string_contains: filter.shipmentAddressComment,
+            },
+          }
+        : {}),
       ...momentRange,
       ...updatedRange,
       ...sumRange,
-      ...(filter.search
-        ? {
-            OR: [
-              { name: { contains: filter.search, mode: 'insensitive' } },
-              { description: { contains: filter.search, mode: 'insensitive' } },
-              { agent: { name: { contains: filter.search, mode: 'insensitive' } } },
-            ],
-          }
-        : {}),
+      ...(and.length ? { AND: and } : {}),
+      // «содержит» search is pushed into the `and` accumulator above so it composes
+      // with the other AND clauses (no colliding top-level `AND` key).
     };
+  }
+
+  /**
+   * Enrich a page of demand rows with the moysklad gear-column values that aren't
+   * plain relations/scalars on the row: «Сумма возвратов» (Σ active SalesReturn),
+   * «Кто изменил» (last auditLog actor), «Владелец-отдел» (Group name — Demand
+   * carries only groupId), «Комментарий к адресу доставки» (shipmentAddressFull JSON
+   * `comment`), and custom-attribute display names (reference attrs → the referenced
+   * entity's name, e.g. «Уста» → Контрагент). Every lookup is a BATCH over the page
+   * ids/refs — no per-row queries.
+   */
+  private async enrichListRows<
+    T extends {
+      id: string;
+      groupId: string | null;
+      shipmentAddressFull?: unknown;
+      attributes?: unknown;
+    },
+  >(accountId: string, rows: T[]) {
+    type Enriched = T & {
+      returnSumMinor: string;
+      modifiedByName: string | null;
+      group: { id: string; name: string } | null;
+      shipmentAddressComment: string | null;
+      attributeDisplay: Record<string, string>;
+    };
+    if (rows.length === 0) return [] as Enriched[];
+    const ids = rows.map((r) => r.id);
+
+    // «Сумма возвратов» — Σ active SalesReturn.sumMinor per demand.
+    const returnGroups = await this.prisma.client.salesReturn.groupBy({
+      by: ['demandId'],
+      where: { accountId, applicable: true, deletedAt: null, demandId: { in: ids } },
+      _sum: { sumMinor: true },
+    });
+    const returnMap = new Map(
+      returnGroups
+        .filter((g): g is typeof g & { demandId: string } => g.demandId !== null)
+        .map((g) => [g.demandId, (g._sum.sumMinor ?? 0n).toString()]),
+    );
+
+    // «Кто изменил» — most-recent auditLog actor per demand (update actions).
+    const audits = await this.prisma.client.auditLog.findMany({
+      where: { accountId, entity: 'Demand', entityId: { in: ids }, action: { contains: 'update' } },
+      orderBy: { at: 'desc' },
+      select: { entityId: true, user: { select: { name: true } } },
+    });
+    const modifiedMap = new Map<string, string>();
+    for (const a of audits) {
+      if (!modifiedMap.has(a.entityId) && a.user?.name) modifiedMap.set(a.entityId, a.user.name);
+    }
+
+    // «Владелец-отдел» — resolve Group names (Demand has only the groupId scalar).
+    const groupIds = [...new Set(rows.map((r) => r.groupId).filter((x): x is string => !!x))];
+    const groups = groupIds.length
+      ? await this.prisma.client.group.findMany({
+          where: { accountId, id: { in: groupIds } },
+          select: { id: true, name: true },
+        })
+      : [];
+    const groupMap = new Map(groups.map((g) => [g.id, g]));
+
+    // Custom-attribute display names (reference attrs → referenced entity name).
+    const attrDisplayByRow = await this.resolveAttrDisplays(accountId, rows);
+
+    return rows.map((r): Enriched => {
+      const full = r.shipmentAddressFull;
+      const comment =
+        full && typeof full === 'object' && !Array.isArray(full)
+          ? (full as Record<string, unknown>).comment
+          : undefined;
+      return {
+        ...r,
+        returnSumMinor: returnMap.get(r.id) ?? '0',
+        modifiedByName: modifiedMap.get(r.id) ?? null,
+        group: r.groupId ? (groupMap.get(r.groupId) ?? null) : null,
+        shipmentAddressComment: typeof comment === 'string' ? comment : null,
+        attributeDisplay: attrDisplayByRow.get(r.id) ?? {},
+      };
+    });
+  }
+
+  /**
+   * Resolve reference custom-attribute values (an id stored in `attributes`) to the
+   * referenced entity's display name, batched per referenceEntity over the page
+   * (e.g. «Уста» → Контрагент name). Non-reference attrs render FE-side from the raw
+   * `attributes` value, so only reference codes appear in the returned map.
+   */
+  private async resolveAttrDisplays(
+    accountId: string,
+    rows: Array<{ id: string; attributes?: unknown }>,
+  ): Promise<Map<string, Record<string, string>>> {
+    const out = new Map<string, Record<string, string>>();
+    const metas = await this.attrs.findForEntity(accountId, 'Demand');
+    const refMetas = metas.filter(
+      (m): m is typeof m & { referenceEntity: string } =>
+        !m.archived && m.type === 'reference' && !!m.referenceEntity,
+    );
+    if (refMetas.length === 0) return out;
+    const resolvers: Record<
+      string,
+      (ids: string[]) => Promise<Array<{ id: string; name: string }>>
+    > = {
+      Counterparty: (ids) =>
+        this.prisma.client.counterparty.findMany({
+          where: { accountId, id: { in: ids } },
+          select: { id: true, name: true },
+        }),
+      Employee: (ids) =>
+        this.prisma.client.employee.findMany({
+          where: { accountId, id: { in: ids } },
+          select: { id: true, name: true },
+        }),
+      Product: (ids) =>
+        this.prisma.client.product.findMany({
+          where: { accountId, id: { in: ids } },
+          select: { id: true, name: true },
+        }),
+      Organization: (ids) =>
+        this.prisma.client.organization.findMany({
+          where: { accountId, id: { in: ids } },
+          select: { id: true, name: true },
+        }),
+      Project: (ids) =>
+        this.prisma.client.project.findMany({
+          where: { accountId, id: { in: ids } },
+          select: { id: true, name: true },
+        }),
+      Store: (ids) =>
+        this.prisma.client.store.findMany({
+          where: { accountId, id: { in: ids } },
+          select: { id: true, name: true },
+        }),
+      Contract: (ids) =>
+        this.prisma.client.contract.findMany({
+          where: { accountId, id: { in: ids } },
+          select: { id: true, name: true },
+        }),
+    };
+    const attrVal = (r: { attributes?: unknown }, code: string): string | null => {
+      const a = r.attributes;
+      if (a && typeof a === 'object' && !Array.isArray(a)) {
+        const v = (a as Record<string, unknown>)[code];
+        return typeof v === 'string' && v ? v : null;
+      }
+      return null;
+    };
+    // Collect referenced ids per entity.
+    const idsByEntity = new Map<string, Set<string>>();
+    for (const r of rows) {
+      for (const m of refMetas) {
+        const v = attrVal(r, m.code);
+        if (v) {
+          if (!idsByEntity.has(m.referenceEntity)) idsByEntity.set(m.referenceEntity, new Set());
+          idsByEntity.get(m.referenceEntity)?.add(v);
+        }
+      }
+    }
+    // Batch-resolve names per entity.
+    const nameByEntity = new Map<string, Map<string, string>>();
+    for (const [entity, idset] of idsByEntity) {
+      const resolve = resolvers[entity];
+      if (!resolve) continue;
+      const recs = await resolve([...idset]);
+      nameByEntity.set(entity, new Map(recs.map((x) => [x.id, x.name])));
+    }
+    // Build per-row display map.
+    for (const r of rows) {
+      const disp: Record<string, string> = {};
+      for (const m of refMetas) {
+        const v = attrVal(r, m.code);
+        if (v) {
+          const name = nameByEntity.get(m.referenceEntity)?.get(v);
+          if (name) disp[m.code] = name;
+        }
+      }
+      if (Object.keys(disp).length) out.set(r.id, disp);
+    }
+    return out;
+  }
+
+  /**
+   * «Кто изменил» (modifiedById) — Demand has no modifiedById column, so we
+   * approximate via the auditLog: the DISTINCT entityIds this account's Demand
+   * rows were `update`d on by the requested user(s). Returns `undefined` when
+   * none requested (no narrowing) or `[]` when requested but no audit row
+   * matches (forces an EMPTY result, not match-all). Mirror invoice-out / loss.
+   */
+  private async resolveModifiedByIdFilter(
+    accountId: string,
+    filter: DemandFilterInput,
+  ): Promise<string[] | undefined> {
+    if (!filter.modifiedById && !filter.modifiedByIds?.length) return undefined;
+    const userIds = filter.modifiedByIds ?? (filter.modifiedById ? [filter.modifiedById] : []);
+    const rows = await this.prisma.client.auditLog.findMany({
+      where: {
+        accountId,
+        entity: 'Demand',
+        userId: { in: userIds },
+        action: { contains: 'update' },
+      },
+      select: { entityId: true },
+      distinct: ['entityId'],
+    });
+    return rows.map((r) => r.entityId);
+  }
+
+  /**
+   * «Тип возврата» — return progress of a shipment, computed from the linked
+   * SalesReturn («Возврат покупателя») docs (active = applicable & not deleted)
+   * summed vs the demand sum. moysklad shows none/partial/full. Returns a Prisma
+   * WHERE clause: `none` via a relation `none` filter (no active returns); `partial`/
+   * `full` via a pre-query that sums active returns per demand and compares to that
+   * demand's sum, yielding the matching ids (mirror resolveModifiedByIdFilter). `null`
+   * = not requested. An empty match yields `{ id: { in: [] } }` (empty result, not all).
+   */
+  private async resolveReturnStatusClause(
+    accountId: string,
+    returnStatus: 'none' | 'partial' | 'full' | undefined,
+  ): Promise<Prisma.DemandWhereInput | null> {
+    if (!returnStatus) return null;
+    if (returnStatus === 'none') {
+      return { salesReturns: { none: { applicable: true, deletedAt: null } } };
+    }
+    // partial | full → sum active returns per demand, compare to each demand's sum.
+    const grouped = await this.prisma.client.salesReturn.groupBy({
+      by: ['demandId'],
+      where: { accountId, applicable: true, deletedAt: null, demandId: { not: null } },
+      _sum: { sumMinor: true },
+    });
+    if (grouped.length === 0) return { id: { in: [] } };
+    const ids = grouped.map((g) => g.demandId).filter((x): x is string => x !== null);
+    const demands = await this.prisma.client.demand.findMany({
+      where: { accountId, id: { in: ids } },
+      select: { id: true, sumMinor: true },
+    });
+    const sumById = new Map(demands.map((d) => [d.id, d.sumMinor]));
+    const matched: string[] = [];
+    for (const g of grouped) {
+      if (!g.demandId) continue;
+      const returned = g._sum.sumMinor ?? 0n;
+      const demandSum = sumById.get(g.demandId) ?? 0n;
+      if (returned <= 0n) continue;
+      if (returnStatus === 'full') {
+        if (demandSum > 0n && returned >= demandSum) matched.push(g.demandId);
+      } else if (returned < demandSum) {
+        matched.push(g.demandId);
+      }
+    }
+    return { id: { in: matched } };
+  }
+
+  /**
+   * Resolve the live (non-archived) attribute TYPE for each code referenced by the
+   * custom-attr filters. Unknown/archived codes are omitted (their clause is then
+   * ignored in buildAttrWhere). Empty map when no attr filters active. Mirror CO.
+   */
+  private async attrTypeMap(
+    accountId: string,
+    attrs: AttrFilterClause[] | undefined,
+  ): Promise<Map<string, AttributeType>> {
+    if (!attrs || attrs.length === 0) return new Map();
+    const wanted = new Set(attrs.map((a) => a.code));
+    const metas = await this.attrs.findForEntity(accountId, 'Demand');
+    const map = new Map<string, AttributeType>();
+    for (const meta of metas) {
+      if (wanted.has(meta.code)) map.set(meta.code, meta.type as AttributeType);
+    }
+    return map;
+  }
+
+  /**
+   * Translate custom-attribute filter clauses into Prisma JSON-path WHERE over the
+   * `attributes` column, typed per attribute (string/text/link→contains; enum/
+   * reference/file→equals; boolean→bool; long/double→equals+range; date→range).
+   * Unknown codes dropped. Prisma parameterises `path` (no SQL-injection). Mirror CO.
+   */
+  private buildAttrWhere(
+    attrs: AttrFilterClause[] | undefined,
+    types: Map<string, AttributeType>,
+  ): Prisma.DemandWhereInput[] {
+    if (!attrs || attrs.length === 0) return [];
+    const out: Prisma.DemandWhereInput[] = [];
+    for (const a of attrs) {
+      const type = types.get(a.code);
+      if (!type) continue;
+      const path = [a.code];
+      switch (type) {
+        case 'string':
+        case 'text':
+        case 'link':
+          if (a.value) out.push({ attributes: { path, string_contains: a.value } });
+          break;
+        case 'enum':
+        case 'reference':
+        case 'file':
+          if (a.value) out.push({ attributes: { path, equals: a.value } });
+          break;
+        case 'boolean':
+          if (a.value === 'true' || a.value === 'false') {
+            out.push({ attributes: { path, equals: a.value === 'true' } });
+          }
+          break;
+        case 'long':
+        case 'double': {
+          if (a.value !== undefined && a.value !== '') {
+            const n = Number(a.value);
+            if (Number.isFinite(n)) out.push({ attributes: { path, equals: n } });
+          }
+          if (a.from !== undefined && a.from !== '') {
+            const n = Number(a.from);
+            if (Number.isFinite(n)) out.push({ attributes: { path, gte: n } });
+          }
+          if (a.to !== undefined && a.to !== '') {
+            const n = Number(a.to);
+            if (Number.isFinite(n)) out.push({ attributes: { path, lte: n } });
+          }
+          break;
+        }
+        case 'date': {
+          // Asia/Tashkent calendar-day bounds — same helper as moment/updatedAt so a
+          // доп.поля date filter agrees with the rest of the list (ISO sorts == chrono).
+          const bounds = tashkentRangeBounds(a.from, a.to);
+          if (bounds.gte) out.push({ attributes: { path, gte: bounds.gte.toISOString() } });
+          if (bounds.lt) out.push({ attributes: { path, lt: bounds.lt.toISOString() } });
+          break;
+        }
+      }
+    }
+    return out;
   }
 
   private parseCreate(raw: unknown): CreateDemandInput {

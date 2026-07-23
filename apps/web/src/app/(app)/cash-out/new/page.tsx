@@ -1,13 +1,34 @@
 'use client';
 
 /**
- * /cash-out/new — moysklad-parity «Расходный ордер» editor.
+ * /cash-out/new — moysklad-parity «Расходный ордер» editor («+ Расход» 2nd form).
  *
- * Money doc: no PositionTable, no waiting checkbox.
- * Контрагент + Организация | Касса + Назначение платежа | Сумма.
- * Optional allocations to invoices-in.
+ * Rebuilt 2026-06-26 onto the cash-in/new shell so the create form is pixel-1:1
+ * with live moysklad (ground: docs/audits/cash-money-forms-2026-06-26/moysklad —
+ * 32-cashout-editor-meta.png). This is the OUT twin of cash-in/new. ROW-PAIRED
+ * 2-col meta:
+ *   Организация* (+ Касса sub-select when >1) | Контрагент* (+ Баланс)
+ *   Договор                                   | Сумма*
+ *   Проект                                    | Включая НДС
+ *   Канал продаж                              | Статья расходов (free text)
+ *   Основание (textarea)                      |
+ *   Валюта документа* ✎  (left-only, inline rate) · Комментарий (bottom textarea)
+ * Header carries the extra «Без закрывающих документов» checkbox (РКО paid in
+ * advance). Cash doc: «Касса» (cashDeskId) replaces the bank account;
+ * «Основание»=paymentPurpose; «Комментарий»=description. No «Счёт организации» /
+ * «Входящий номер» / «Внешний код». INLINE type-to-search ref fields; owner
+ * popover; tabs = «Оплаченные документы» (allocation grid, invoices-IN only) |
+ * «Связанные документы». The allocation + operations payload are kept verbatim
+ * from the prior cash-out/new (targetKind 'invoicein').
  */
 
+import { CounterpartyBalanceInline } from '@/components/counterparty-balance-inline';
+import { RelatedDocsTab } from '@/components/customer-orders/related-docs-tab';
+import { CurrencyRateModal } from '@/components/document-detail/currency-rate-modal';
+import {
+  OwnerAccessPopover,
+  type OwnerAccessValue,
+} from '@/components/documents/owner-access-popover';
 import { useDocumentEditorLabels } from '@/hooks/use-document-editor-labels';
 import { useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
@@ -16,15 +37,14 @@ import {
   Button,
   CatalogPicker,
   CatalogPickerField,
-  DocumentDisclosurePanel,
   DocumentEditor,
   DocumentMetaField,
-  DocumentMetaPanel,
   DocumentMetaRow,
   DocumentTabs,
   Icons,
   Input,
   MoneyInput,
+  NativeSelect,
   type PickerItem,
   Textarea,
   formatMoney,
@@ -33,6 +53,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
+
 interface RefItem {
   id: string;
   name: string;
@@ -51,13 +72,21 @@ interface InvoiceInRef {
   sumMinor: string;
   payedSumMinor: string;
 }
-
 interface AllocationRow {
   _uid: string;
   invoiceInId: string | null;
   invoiceLabel: string;
   invoiceHint: string;
   amountMinor: string;
+}
+// Account currency (Настройки → Валюты) — isoCode/default/rate like cash-in.
+interface CurrencyItem {
+  id: string;
+  isoCode: string;
+  name: string;
+  default: boolean;
+  rateValue: string;
+  rate: string;
 }
 
 function uid() {
@@ -68,12 +97,12 @@ export default function NewCashOutPage() {
   const router = useRouter();
   const { user } = useAuth();
   const t = useTranslations('pages.cash_out');
+  const tPay = useTranslations('pages.payments_in'); // shared allocation-grid labels
+  const tCommon = useTranslations('common');
   const tFields = useTranslations('fields');
   const tForm = useTranslations('form');
-  const tDetailForm = useTranslations('detail_form');
   const tDetailTabs = useTranslations('detail_tabs');
   const tDetailTitles = useTranslations('detail_titles');
-  const tDetailHeader = useTranslations('detail_header');
   const tStates = useTranslations('states.cash_out');
   const docEditorLabels = useDocumentEditorLabels();
 
@@ -91,6 +120,12 @@ export default function NewCashOutPage() {
     queryKey: ['cash-desks'],
     queryFn: () => api.get('/cash-desks'),
   });
+  const cashDesks = cashDesksData?.items ?? [];
+  const { data: currenciesData } = useQuery<{ items: CurrencyItem[] }>({
+    queryKey: ['currencies'],
+    queryFn: () => api.get('/currencies'),
+  });
+  const currencies = currenciesData?.items ?? [];
 
   // Header state
   const [docNumber, setDocNumber] = useState('');
@@ -100,7 +135,17 @@ export default function NewCashOutPage() {
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   });
   const [status, setStatus] = useState<string>('draft');
-  const [applicable, setApplicable] = useState(false);
+  const [applicable, setApplicable] = useState(true);
+  // «Без закрывающих документов» — РКО-only header flag (cash-out twin extra).
+  const [noClosingDocs, setNoClosingDocs] = useState(false);
+
+  const [ownerAccess, setOwnerAccess] = useState<OwnerAccessValue>(() => ({
+    ownerId: null,
+    ownerLabel: '',
+    groupId: null,
+    groupLabel: '',
+    shared: false,
+  }));
 
   // Meta state
   const [agentId, setAgentId] = useState<string | null>(null);
@@ -113,18 +158,20 @@ export default function NewCashOutPage() {
   const [contractLabel, setContractLabel] = useState('');
   const [projectId, setProjectId] = useState<string | null>(null);
   const [projectLabel, setProjectLabel] = useState('');
-  const [currency, setCurrency] = useState('UZS');
+  const [salesChannelId, setSalesChannelId] = useState<string | null>(null);
+  const [salesChannelLabel, setSalesChannelLabel] = useState('');
   const [sumMinor, setSumMinor] = useState('0');
-  const [paymentPurpose, setPaymentPurpose] = useState('');
-  // «Статья расходов» — the expense item name (free-form string matching the
-  // ExpenseItem master list). Picked from /expense-items; persists to the
-  // CashOut.expenseItem column so the list filter is no longer dead.
+  const [vatSumMinor, setVatSumMinor] = useState('0');
+  const [currency, setCurrency] = useState('UZS');
+  const [rate, setRate] = useState('1');
+  const [rateDialogOpen, setRateDialogOpen] = useState(false);
+  const [paymentPurpose, setPaymentPurpose] = useState(''); // «Основание»
+  // «Статья расходов» — plain free-form text (matches the account ExpenseItem
+  // list); persists to the CashOut.expenseItem column so the list filter lives.
   const [expenseItem, setExpenseItem] = useState('');
-  const [externalCode, setExternalCode] = useState('');
-  const [description, setDescription] = useState('');
+  const [description, setDescription] = useState(''); // «Комментарий»
   const [allocations, setAllocations] = useState<AllocationRow[]>([]);
   const [error, setError] = useState<string | null>(null);
-
   const [openPicker, setOpenPicker] = useState<
     | null
     | 'agent'
@@ -132,13 +179,22 @@ export default function NewCashOutPage() {
     | 'cashDesk'
     | 'contract'
     | 'project'
-    | 'expenseItem'
+    | 'salesChannel'
     | { kind: 'invoicein'; rowUid: string }
   >(null);
 
-  // Pre-fill from the user's «Значения по умолчанию» (moysklad applies the user
-  // defaults to EVERY new document). Money doc — Организация=defaultCompany
-  // (first-item fallback) + Контрагент=defaultSupplier (outgoing money).
+  const selectedCurrency = currencies.find((c) => c.isoCode === currency);
+  const isBaseCurrency = selectedCurrency?.default ?? currency === 'UZS';
+  const baseCode = currencies.find((c) => c.default)?.isoCode ?? 'UZS';
+  const docGlobalRate = selectedCurrency?.rate ?? '1';
+
+  useEffect(() => {
+    if (user) {
+      setOwnerAccess((v) => (v.ownerLabel || v.ownerId ? v : { ...v, ownerLabel: user.name }));
+    }
+  }, [user]);
+
+  // Pre-fill org / agent from the user defaults (money-OUT → defaultSupplier).
   const userDefaults = useUserDefaults();
   const defaultsAppliedRef = useRef(false);
   useEffect(() => {
@@ -162,19 +218,21 @@ export default function NewCashOutPage() {
     }
   }, [orgsData, userDefaults.data, userDefaults.isLoading, organizationId, agentId]);
 
+  // Auto-select the first cash desk (moysklad: a cash order always has a касса;
+  // the selector only surfaces when the account has more than one).
   useEffect(() => {
-    if (cashDesksData?.items[0] && !cashDeskId) {
-      const d = cashDesksData.items[0];
-      setCashDeskId(d.id);
-      setCashDeskLabel(d.name);
-      setCurrency(d.currency);
+    if (cashDesks[0] && !cashDeskId) {
+      setCashDeskId(cashDesks[0].id);
+      setCashDeskLabel(cashDesks[0].name);
+      setCurrency(cashDesks[0].currency);
     }
-  }, [cashDesksData, cashDeskId]);
+  }, [cashDesks, cashDeskId]);
 
   const totalAllocated = useMemo(
     () => allocations.reduce((s, a) => s + BigInt(a.amountMinor || '0'), 0n),
     [allocations],
   );
+  const remaining = BigInt(sumMinor || '0') - totalAllocated;
 
   const addAllocation = () => {
     if (!agentId) {
@@ -192,11 +250,9 @@ export default function NewCashOutPage() {
       },
     ]);
   };
-
   const updateAllocation = (rowUid: string, patch: Partial<AllocationRow>) => {
     setAllocations((xs) => xs.map((a) => (a._uid === rowUid ? { ...a, ...patch } : a)));
   };
-
   const removeAllocation = (rowUid: string) => {
     setAllocations((xs) => xs.filter((a) => a._uid !== rowUid));
   };
@@ -219,10 +275,20 @@ export default function NewCashOutPage() {
         moment: docDate ? new Date(docDate).toISOString() : undefined,
         ...(contractId ? { contractId } : {}),
         ...(projectId ? { projectId } : {}),
-        ...(externalCode ? { externalCode } : {}),
+        ...(salesChannelId ? { salesChannelId } : {}),
         ...(expenseItem ? { expenseItem } : {}),
+        ...(ownerAccess.ownerId ? { ownerId: ownerAccess.ownerId } : {}),
+        ...(ownerAccess.groupId ? { groupId: ownerAccess.groupId } : {}),
+        ...(ownerAccess.shared ? { shared: true } : {}),
+        ...(noClosingDocs ? { noClosingDocs: true } : {}),
         sumMinor,
+        vatSumMinor,
         currency,
+        rateValue: isBaseCurrency
+          ? '100000000'
+          : Number(rate) > 0
+            ? String(BigInt(Math.round(Number(rate) * 1e8)))
+            : (selectedCurrency?.rateValue ?? '100000000'),
         paymentPurpose: paymentPurpose || undefined,
         description: description || undefined,
         operations: allocations.map((a) => ({
@@ -248,22 +314,13 @@ export default function NewCashOutPage() {
   };
   const orgFetcher = async (s: string): Promise<PickerItem[]> => {
     const d = await api.get<{ items: RefItem[] }>(`/organizations?search=${encodeURIComponent(s)}`);
-    return d.items.map((o) => ({
-      id: o.id,
-      primary: o.name,
-      secondary: o.legalTitle ?? undefined,
-    }));
+    return d.items.map((o) => ({ id: o.id, primary: o.name }));
   };
   const cashDeskFetcher = async (s: string): Promise<PickerItem[]> => {
     const d = await api.get<{ items: CashDeskRef[] }>(
       `/cash-desks?${s ? `search=${encodeURIComponent(s)}` : ''}`,
     );
-    return d.items.map((cd) => ({
-      id: cd.id,
-      primary: cd.name,
-      secondary: cd.currency,
-      meta: formatMoney(cd.balanceMinor),
-    }));
+    return d.items.map((cd) => ({ id: cd.id, primary: cd.name, secondary: cd.currency }));
   };
   const contractFetcher = async (s: string): Promise<PickerItem[]> => {
     const d = await api.get<{ items: Array<{ id: string; name: string }> }>(
@@ -277,31 +334,273 @@ export default function NewCashOutPage() {
     );
     return d.items.map((x) => ({ id: x.id, primary: x.name }));
   };
-  const expenseItemFetcher = async (s: string): Promise<PickerItem[]> => {
+  const salesChannelFetcher = async (s: string): Promise<PickerItem[]> => {
     const d = await api.get<{ items: Array<{ id: string; name: string }> }>(
-      `/expense-items?search=${encodeURIComponent(s)}&limit=50`,
+      `/sales-channels?search=${encodeURIComponent(s)}&limit=50`,
     );
     return d.items.map((x) => ({ id: x.id, primary: x.name }));
   };
+
+  // «Привязать платеж» — outgoing cash attaches to the supplier's unpaid Счета
+  // поставщика (cash-out BE links invoices-in only).
   const invoiceFetcher = async (s: string): Promise<PickerItem[]> => {
     const d = await api.get<{ items: InvoiceInRef[] }>(
       `/invoices-in?${agentId ? `agentId=${agentId}&` : ''}${s ? `search=${encodeURIComponent(s)}` : ''}`,
     );
     return d.items.map((r) => {
-      const remaining = BigInt(r.sumMinor) - BigInt(r.payedSumMinor);
+      const rem = BigInt(r.sumMinor) - BigInt(r.payedSumMinor);
       return {
         id: r.id,
         primary: r.name,
         secondary: r.state,
-        meta: `${formatMoney(remaining)} / ${formatMoney(r.sumMinor)}`,
+        meta: `${formatMoney(rem)} / ${formatMoney(r.sumMinor)}`,
         raw: r,
       };
     });
   };
 
+  const showCashDeskSub = !!organizationId && cashDesks.length > 1;
+
+  const metaPanel = (
+    <div className="max-w-[860px] space-y-2 bg-[var(--ms-bg-surface)] px-4 py-3">
+      <DocumentMetaRow fixedWidth>
+        <DocumentMetaField
+          label={tFields('organization')}
+          required
+          subRow={
+            showCashDeskSub ? (
+              <CatalogPickerField
+                value={cashDeskId ? { id: cashDeskId, label: cashDeskLabel } : null}
+                placeholder=""
+                testId="field-cash-desk"
+                onPick={() => setOpenPicker('cashDesk')}
+                inlineFetcher={cashDeskFetcher}
+                onInlineSelect={(item) => {
+                  setCashDeskId(item.id);
+                  setCashDeskLabel(String(item.primary));
+                  if (item.secondary) setCurrency(String(item.secondary));
+                }}
+              />
+            ) : undefined
+          }
+        >
+          <CatalogPickerField
+            value={organizationId ? { id: organizationId, label: organizationLabel } : null}
+            placeholder=""
+            testId="field-organization"
+            onPick={() => setOpenPicker('org')}
+            inlineFetcher={orgFetcher}
+            onInlineSelect={(item) => {
+              setOrganizationId(item.id);
+              setOrganizationLabel(String(item.primary));
+            }}
+            onEdit={
+              organizationId
+                ? () => window.open(`/organizations/${organizationId}`, '_blank', 'noopener')
+                : undefined
+            }
+            editLabel={tCommon('edit')}
+            onClear={() => {
+              setOrganizationId(null);
+              setOrganizationLabel('');
+            }}
+          />
+        </DocumentMetaField>
+        <DocumentMetaField label={tFields('agent')} required>
+          <CatalogPickerField
+            value={agentId ? { id: agentId, label: agentLabel } : null}
+            placeholder=""
+            testId="field-agent"
+            onPick={() => setOpenPicker('agent')}
+            inlineFetcher={agentFetcher}
+            onInlineSelect={(item) => {
+              setAgentId(item.id);
+              setAgentLabel(String(item.primary));
+            }}
+            onEdit={
+              agentId
+                ? () => window.open(`/counterparties/${agentId}`, '_blank', 'noopener')
+                : undefined
+            }
+            editLabel={tCommon('edit')}
+            onClear={() => {
+              setAgentId(null);
+              setAgentLabel('');
+              setContractId(null);
+              setContractLabel('');
+              setAllocations([]);
+            }}
+            onCreate={() => router.push('/counterparties/new')}
+            createLabel={tForm('create_new_counterparty')}
+          />
+          <CounterpartyBalanceInline counterpartyId={agentId} />
+        </DocumentMetaField>
+      </DocumentMetaRow>
+
+      <DocumentMetaRow fixedWidth>
+        <DocumentMetaField label={tFields('contract')}>
+          <CatalogPickerField
+            value={contractId ? { id: contractId, label: contractLabel } : null}
+            placeholder=""
+            testId="field-contract"
+            onPick={() => agentId && setOpenPicker('contract')}
+            inlineFetcher={contractFetcher}
+            onInlineSelect={(item) => {
+              setContractId(item.id);
+              setContractLabel(String(item.primary));
+            }}
+            disabled={!agentId}
+            disabledHint={t('select_payer_first')}
+            onClear={() => {
+              setContractId(null);
+              setContractLabel('');
+            }}
+            onCreate={() => router.push('/contracts/new')}
+            createLabel={tForm('create_new_contract')}
+          />
+        </DocumentMetaField>
+        <DocumentMetaField label={tFields('sum')} required>
+          <MoneyInput
+            valueMinor={sumMinor}
+            onChangeMinor={(v) => setSumMinor(v)}
+            className="text-right"
+            data-test-id="field-sum-minor"
+          />
+        </DocumentMetaField>
+      </DocumentMetaRow>
+
+      <DocumentMetaRow fixedWidth>
+        <DocumentMetaField label={tFields('project')}>
+          <CatalogPickerField
+            value={projectId ? { id: projectId, label: projectLabel } : null}
+            placeholder=""
+            testId="field-project"
+            onPick={() => setOpenPicker('project')}
+            inlineFetcher={projectFetcher}
+            onInlineSelect={(item) => {
+              setProjectId(item.id);
+              setProjectLabel(String(item.primary));
+            }}
+            onClear={() => {
+              setProjectId(null);
+              setProjectLabel('');
+            }}
+            onCreate={() => router.push('/settings/projects/new')}
+            createLabel={tForm('create_new_project')}
+          />
+        </DocumentMetaField>
+        <DocumentMetaField label={tFields('including_vat')}>
+          <MoneyInput
+            valueMinor={vatSumMinor}
+            onChangeMinor={(v) => setVatSumMinor(v)}
+            className="text-right"
+            data-test-id="field-vat-sum-minor"
+          />
+        </DocumentMetaField>
+      </DocumentMetaRow>
+
+      <DocumentMetaRow fixedWidth>
+        <DocumentMetaField label={tFields('sales_channel')}>
+          <CatalogPickerField
+            value={salesChannelId ? { id: salesChannelId, label: salesChannelLabel } : null}
+            placeholder=""
+            testId="field-sales-channel"
+            onPick={() => setOpenPicker('salesChannel')}
+            inlineFetcher={salesChannelFetcher}
+            onInlineSelect={(item) => {
+              setSalesChannelId(item.id);
+              setSalesChannelLabel(String(item.primary));
+            }}
+            onClear={() => {
+              setSalesChannelId(null);
+              setSalesChannelLabel('');
+            }}
+            onCreate={() => router.push('/sales-channels/new')}
+            createLabel={tForm('create_new')}
+          />
+        </DocumentMetaField>
+        {/* «Статья расходов» — cash-OUT distinguishing field (plain text Input). */}
+        <DocumentMetaField label={tFields('expense_item')}>
+          <Input
+            value={expenseItem}
+            onChange={(e) => setExpenseItem(e.target.value)}
+            data-test-id="field-expense-item"
+          />
+        </DocumentMetaField>
+      </DocumentMetaRow>
+
+      {/* «Основание» — multi-line textarea (LEFT-only row, mirrors moysklad). */}
+      <DocumentMetaRow>
+        <DocumentMetaField label={tFields('basis')}>
+          <Textarea
+            value={paymentPurpose}
+            onChange={(e) => setPaymentPurpose(e.target.value)}
+            rows={2}
+            data-test-id="field-purpose"
+          />
+        </DocumentMetaField>
+      </DocumentMetaRow>
+
+      {/* «Валюта документа» — select + inline «1 X = N base ✎» rate override. */}
+      <DocumentMetaRow>
+        <DocumentMetaField label={tFields('currency_document')} required>
+          <div className="flex items-center gap-2">
+            <div className="w-[180px] shrink-0">
+              <NativeSelect
+                value={currency}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  const gc = currencies.find((c) => c.isoCode === next);
+                  setCurrency(next);
+                  setRate(gc?.rate ?? '1');
+                  setRateDialogOpen(false);
+                }}
+                data-test-id="field-currency"
+              >
+                {currencies.length === 0 && <option value={currency}>{currency}</option>}
+                {currencies.map((c) => (
+                  <option key={c.id} value={c.isoCode}>
+                    {c.name} ({c.isoCode})
+                  </option>
+                ))}
+              </NativeSelect>
+            </div>
+            {!isBaseCurrency && selectedCurrency && (
+              <span className="inline-flex items-center gap-1 whitespace-nowrap text-[var(--ms-text-muted)] text-[12px] tabular-nums">
+                1 {currency} = {Number(rate).toLocaleString('ru-RU')} {baseCode}
+                <button
+                  type="button"
+                  onClick={() => setRateDialogOpen(true)}
+                  className="text-[var(--ms-text-muted)] hover:text-[var(--ms-text-primary)]"
+                  aria-label={tCommon('edit')}
+                  data-test-id="currency-rate-edit"
+                >
+                  ✎
+                </button>
+              </span>
+            )}
+          </div>
+        </DocumentMetaField>
+      </DocumentMetaRow>
+
+      {/* «Комментарий» — bottom textarea (moysklad). */}
+      <Textarea
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        placeholder={tFields('comment')}
+        rows={3}
+        className="max-w-[420px]"
+        data-test-id="field-description"
+      />
+    </div>
+  );
+
+  // «Оплаченные документы» — allocation to the supplier's Счета поставщика
+  // (invoices-IN). Section + operations payload kept verbatim from the prior
+  // cash-out/new (targetKind 'invoicein').
   const allocationSection = (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
+    <div className="bg-[var(--ms-bg-surface)] px-4 py-3">
+      <div className="mb-3 flex items-center justify-between">
         <span className="font-medium text-sm">
           {tForm('section_allocation')} — {allocations.length} · {formatMoney(totalAllocated)} /{' '}
           {formatMoney(sumMinor || '0')}
@@ -350,178 +649,52 @@ export default function NewCashOutPage() {
           ))}
         </div>
       )}
-      <Button
-        type="button"
-        variant="secondary"
-        onClick={addAllocation}
-        data-test-id="add-allocation"
-      >
-        <Icons.create className="h-4 w-4" />
-        {t('add_invoice')}
-      </Button>
+      <div className="mt-3">
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={addAllocation}
+          data-test-id="add-allocation"
+        >
+          <Icons.create className="h-4 w-4" />
+          {t('add_invoice')}
+        </Button>
+      </div>
+      {/* «Привязано» / «Не привязано» totals (moysklad, right-aligned) */}
+      <div className="mt-3 flex flex-col items-end gap-1 text-sm">
+        <div className="flex w-[280px] justify-between">
+          <span className="text-[var(--ms-text-muted)]">{tPay('linked_total')}</span>
+          <span className="font-medium tabular-nums">{formatMoney(totalAllocated)}</span>
+        </div>
+        <div className="flex w-[280px] justify-between">
+          <span className="text-[var(--ms-text-muted)]">{tPay('not_linked')}</span>
+          <span className="font-medium tabular-nums">{formatMoney(remaining)}</span>
+        </div>
+      </div>
     </div>
   );
 
   const tabs = [
     {
       key: 'main',
-      label: tDetailTabs('main'),
-      content: (
-        <div className="space-y-4">
-          <DocumentMetaPanel>
-            <DocumentMetaRow>
-              <DocumentMetaField label={tFields('agent')} required>
-                <CatalogPickerField
-                  value={agentId ? { id: agentId, label: agentLabel } : null}
-                  placeholder={tFields('agent')}
-                  onPick={() => setOpenPicker('agent')}
-                  onClear={() => {
-                    setAgentId(null);
-                    setAgentLabel('');
-                    setAllocations([]);
-                  }}
-                  onCreate={() => router.push('/counterparties/new')}
-                  createLabel={tForm('create_new_counterparty')}
-                />
-              </DocumentMetaField>
-              <DocumentMetaField label={tFields('organization')} required>
-                <CatalogPickerField
-                  value={organizationId ? { id: organizationId, label: organizationLabel } : null}
-                  placeholder={tFields('organization')}
-                  onPick={() => setOpenPicker('org')}
-                  onClear={() => {
-                    setOrganizationId(null);
-                    setOrganizationLabel('');
-                  }}
-                />
-              </DocumentMetaField>
-            </DocumentMetaRow>
-
-            <DocumentMetaRow>
-              <DocumentMetaField label={t('cash_desk')} required>
-                <CatalogPickerField
-                  value={cashDeskId ? { id: cashDeskId, label: cashDeskLabel } : null}
-                  placeholder={t('cash_desk')}
-                  onPick={() => setOpenPicker('cashDesk')}
-                  onClear={() => {
-                    setCashDeskId(null);
-                    setCashDeskLabel('');
-                  }}
-                />
-              </DocumentMetaField>
-              <DocumentMetaField label={tFields('basis')}>
-                <Input
-                  value={paymentPurpose}
-                  onChange={(e) => setPaymentPurpose(e.target.value)}
-                  data-test-id="field-purpose"
-                />
-              </DocumentMetaField>
-            </DocumentMetaRow>
-
-            <DocumentMetaRow>
-              <DocumentMetaField label={tFields('sum')} required>
-                <MoneyInput
-                  valueMinor={sumMinor}
-                  onChangeMinor={(v) => setSumMinor(v)}
-                  className="text-right"
-                  data-test-id="field-sum"
-                />
-              </DocumentMetaField>
-            </DocumentMetaRow>
-
-            <DocumentMetaRow>
-              <DocumentMetaField label={tFields('contract')}>
-                <CatalogPickerField
-                  value={contractId ? { id: contractId, label: contractLabel } : null}
-                  placeholder={tFields('contract')}
-                  onPick={() => setOpenPicker('contract')}
-                  onClear={() => {
-                    setContractId(null);
-                    setContractLabel('');
-                  }}
-                />
-              </DocumentMetaField>
-              <DocumentMetaField label={tFields('project')}>
-                <CatalogPickerField
-                  value={projectId ? { id: projectId, label: projectLabel } : null}
-                  placeholder={tFields('project')}
-                  onPick={() => setOpenPicker('project')}
-                  onClear={() => {
-                    setProjectId(null);
-                    setProjectLabel('');
-                  }}
-                />
-              </DocumentMetaField>
-            </DocumentMetaRow>
-
-            <DocumentMetaRow>
-              {/* «Статья расходов» — expense item (moysklad parity). Picked from
-                 the ExpenseItem master list; stored as the name string. Cash-out
-                 carries an expense item; cash-in does not. */}
-              <DocumentMetaField label={tFields('expense_item')}>
-                <CatalogPickerField
-                  value={expenseItem ? { id: expenseItem, label: expenseItem } : null}
-                  placeholder={tFields('expense_item')}
-                  onPick={() => setOpenPicker('expenseItem')}
-                  onClear={() => setExpenseItem('')}
-                  testId="field-expense-item"
-                />
-              </DocumentMetaField>
-              <DocumentMetaField label={tDetailForm('external_code')}>
-                <Input
-                  value={externalCode}
-                  onChange={(e) => setExternalCode(e.target.value)}
-                  data-test-id="field-external-code"
-                />
-              </DocumentMetaField>
-            </DocumentMetaRow>
-          </DocumentMetaPanel>
-
-          {allocationSection}
-
-          <Textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder={tFields('description')}
-            rows={3}
-            data-test-id="field-description"
-          />
-
-          <DocumentDisclosurePanel
-            title={tForm('tasks_section')}
-            headerAction={
-              <Button type="button" variant="secondary" disabled>
-                <Icons.create className="h-4 w-4" />
-                {tForm('add_task')}
-              </Button>
-            }
-            defaultOpen={false}
-          >
-            <p className="text-[var(--ms-text-muted)] text-sm">{tForm('tasks_after_save_hint')}</p>
-          </DocumentDisclosurePanel>
-
-          <DocumentDisclosurePanel
-            title={tForm('files_section')}
-            headerAction={
-              <Button type="button" variant="secondary" disabled>
-                <Icons.create className="h-4 w-4" />
-                {tForm('add_file')}
-              </Button>
-            }
-            defaultOpen={false}
-          >
-            <p className="text-[var(--ms-text-muted)] text-sm">{tForm('files_after_save_hint')}</p>
-          </DocumentDisclosurePanel>
-        </div>
-      ),
+      label: t('tab_paid_documents'),
+      content: allocationSection,
     },
     {
       key: 'related',
       label: tDetailTabs('related'),
       content: (
-        <p className="rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] p-6 text-center text-[var(--ms-text-muted)] text-sm">
-          {t('related_empty')}
-        </p>
+        <div className="bg-[var(--ms-bg-surface)] px-4 py-3">
+          <RelatedDocsTab
+            current={{
+              id: 'new',
+              name: docNumber,
+              moment: docDate ? new Date(docDate).toISOString() : new Date().toISOString(),
+              sumMinor: sumMinor || '0',
+              kind: 'cash-out',
+            }}
+          />
+        </div>
       ),
     },
   ];
@@ -542,6 +715,9 @@ export default function NewCashOutPage() {
         applicable={applicable}
         onApplicableChange={setApplicable}
         applicableHelp={t('applicable_help')}
+        waiting={noClosingDocs}
+        onWaitingChange={setNoClosingDocs}
+        waitingLabel={tFields('no_closing_docs')}
         onSave={() => {
           setError(null);
           createMut.mutate();
@@ -552,22 +728,14 @@ export default function NewCashOutPage() {
         createDocMenu={[]}
         printMenu={[]}
         sendMenu={[]}
-        rightSlot={
-          user ? (
-            <div className="text-right text-xs leading-tight">
-              <div className="font-medium text-[var(--ms-text-primary)]">{user.name}</div>
-              <div className="text-[var(--ms-text-muted)]">
-                {user.position ?? tDetailHeader('role_primary')}
-              </div>
-            </div>
-          ) : null
-        }
+        rightSlot={<OwnerAccessPopover value={ownerAccess} onChange={setOwnerAccess} />}
         error={error}
         onErrorRetry={() => {
           setError(null);
           createMut.mutate();
         }}
       >
+        {metaPanel}
         <DocumentTabs tabs={tabs} defaultActiveKey="main" />
       </DocumentEditor>
 
@@ -579,6 +747,7 @@ export default function NewCashOutPage() {
         onSelect={(item) => {
           setAgentId(item.id);
           setAgentLabel(String(item.primary));
+          setOpenPicker(null);
         }}
         createLabel={tForm('create_new_counterparty')}
         onCreate={() => router.push('/counterparties/new')}
@@ -591,6 +760,7 @@ export default function NewCashOutPage() {
         onSelect={(item) => {
           setOrganizationId(item.id);
           setOrganizationLabel(String(item.primary));
+          setOpenPicker(null);
         }}
       />
       <CatalogPicker
@@ -602,6 +772,7 @@ export default function NewCashOutPage() {
           setCashDeskId(item.id);
           setCashDeskLabel(String(item.primary));
           if (item.secondary) setCurrency(String(item.secondary));
+          setOpenPicker(null);
         }}
       />
       <CatalogPicker
@@ -612,6 +783,7 @@ export default function NewCashOutPage() {
         onSelect={(item) => {
           setContractId(item.id);
           setContractLabel(String(item.primary));
+          setOpenPicker(null);
         }}
       />
       <CatalogPicker
@@ -622,14 +794,19 @@ export default function NewCashOutPage() {
         onSelect={(item) => {
           setProjectId(item.id);
           setProjectLabel(String(item.primary));
+          setOpenPicker(null);
         }}
       />
       <CatalogPicker
-        open={openPicker === 'expenseItem'}
+        open={openPicker === 'salesChannel'}
         onClose={() => setOpenPicker(null)}
-        title={tFields('expense_item')}
-        fetcher={expenseItemFetcher}
-        onSelect={(item) => setExpenseItem(String(item.primary))}
+        title={tFields('sales_channel')}
+        fetcher={salesChannelFetcher}
+        onSelect={(item) => {
+          setSalesChannelId(item.id);
+          setSalesChannelLabel(String(item.primary));
+          setOpenPicker(null);
+        }}
       />
       <CatalogPicker
         open={
@@ -641,16 +818,23 @@ export default function NewCashOutPage() {
         onSelect={(item) => {
           if (typeof openPicker !== 'object' || openPicker === null) return;
           const raw = (item as PickerItem & { raw?: InvoiceInRef }).raw;
-          const remaining = raw
-            ? (BigInt(raw.sumMinor) - BigInt(raw.payedSumMinor)).toString()
-            : '0';
+          const rem = raw ? (BigInt(raw.sumMinor) - BigInt(raw.payedSumMinor)).toString() : '0';
           updateAllocation(openPicker.rowUid, {
             invoiceInId: item.id,
             invoiceLabel: String(item.primary),
             invoiceHint: String(item.secondary ?? ''),
-            amountMinor: remaining,
+            amountMinor: rem,
           });
+          setOpenPicker(null);
         }}
+      />
+      <CurrencyRateModal
+        open={rateDialogOpen}
+        onOpenChange={setRateDialogOpen}
+        currency={currency}
+        referenceRate={docGlobalRate}
+        currentOverride={rate === docGlobalRate ? null : rate}
+        onApply={(r) => setRate(r ?? docGlobalRate)}
       />
     </>
   );

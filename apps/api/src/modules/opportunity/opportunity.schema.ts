@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { csvUuid } from '../shared/csv.js';
 
 const uuid = z.string().uuid();
 const Status = z.enum(['open', 'won', 'lost']);
@@ -74,6 +75,7 @@ export const OpportunityFilterSchema = z.object({
   pipelineId: uuid.optional(),
   stageId: uuid.optional(),
   counterpartyId: uuid.optional(),
+  counterpartyIds: csvUuid.optional(),
   contactPersonId: uuid.optional(),
   ownerId: uuid.optional(),
   status: Status.optional(),

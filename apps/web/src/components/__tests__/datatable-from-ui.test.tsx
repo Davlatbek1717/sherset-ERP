@@ -188,30 +188,21 @@ describe('DataTable', () => {
   });
 
   describe('loading state', () => {
-    // 2026-07-13 UX: yuklanish endi «Yuklanmoqda...» MATNI bilan emas, SKELETON
-    // qatorlar bilan ko'rsatiladi. Sabab: (a) matn qattiq o'zbekcha edi va rus
-    // interfeysga sizib chiqardi; (b) 96px qutidan to'la jadvalga sakrash layout
-    // shift berardi. Testlar yangi xulqni qulflaydi.
-    it('yuklanishda skeleton qatorlar chiqadi (matnsiz, tilga bogliq emas)', () => {
+    it('renders "Yuklanmoqda..." text when loading=true', () => {
+      renderWithProviders(<DataTable columns={COLS} rows={[]} keyField="id" loading />);
+      expect(screen.getByText('Yuklanmoqda...')).toBeInTheDocument();
+    });
+
+    it('loading row spans all columns (colSpan)', () => {
       const { container } = renderWithProviders(
         <DataTable columns={COLS} rows={[]} keyField="id" loading />,
       );
-      const skeletons = container.querySelectorAll('tbody .animate-pulse');
-      expect(skeletons.length).toBeGreaterThan(0);
-      // Eski qattiq matn qaytib kelmasin
-      expect(screen.queryByText('Yuklanmoqda...')).toBeNull();
+      const cell = container.querySelector('tbody td');
+      expect(cell).toHaveAttribute('colspan', '2');
     });
 
-    it('skeleton har bir ustun uchun katak chiqaradi', () => {
-      const { container } = renderWithProviders(
-        <DataTable columns={COLS} rows={[]} keyField="id" loading />,
-      );
-      const firstRow = container.querySelector('tbody tr');
-      expect(firstRow?.querySelectorAll('td')).toHaveLength(COLS.length);
-    });
-
-    it('loading=true bosh-holat kontentini bosib ketadi (loading golib)', () => {
-      const { container } = renderWithProviders(
+    it('loading=true overrides empty content (loading wins)', () => {
+      renderWithProviders(
         <DataTable
           columns={COLS}
           rows={[]}
@@ -220,7 +211,7 @@ describe('DataTable', () => {
           empty={<div data-test-id="empty-state">Empty!</div>}
         />,
       );
-      expect(container.querySelectorAll('tbody .animate-pulse').length).toBeGreaterThan(0);
+      expect(screen.getByText('Yuklanmoqda...')).toBeInTheDocument();
       expect(screen.queryByTestId('empty-state')).toBeNull();
     });
   });

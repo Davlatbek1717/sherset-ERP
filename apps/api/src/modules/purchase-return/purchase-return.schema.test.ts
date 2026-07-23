@@ -44,10 +44,8 @@ describe('CreatePurchaseReturnSchema', () => {
     expect(parsed.currency).toBe('UZS');
   });
 
-  it('requires ≥1 position', () => {
-    expect(() => CreatePurchaseReturnSchema.parse({ ...valid, positions: [] })).toThrow(
-      /at least one/i,
-    );
+  it('allows empty positions — owner 2026-07-08, no Provedeno precondition', () => {
+    expect(() => CreatePurchaseReturnSchema.parse({ ...valid, positions: [] })).not.toThrow();
   });
 
   it('accepts supplyId back-link', () => {

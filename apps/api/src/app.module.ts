@@ -19,6 +19,7 @@ import { CashOutModule } from './modules/cash-out/cash-out.module.js';
 import { CashierSessionModule } from './modules/cashier-session/cashier-session.module.js';
 import { CharacteristicModule } from './modules/characteristic/characteristic.module.js';
 import { CommissionReportModule } from './modules/commission-report/commission-report.module.js';
+import { CompanySettingsModule } from './modules/company-settings/company-settings.module.js';
 import { ConsignmentModule } from './modules/consignment/consignment.module.js';
 import { ContactPersonModule } from './modules/contact-person/contact-person.module.js';
 import { ContractModule } from './modules/contract/contract.module.js';
@@ -31,9 +32,9 @@ import { CountryModule } from './modules/country/country.module.js';
 import { CurrencyModule } from './modules/currency/currency.module.js';
 import { CustomEntityModule } from './modules/custom-entity/custom-entity.module.js';
 import { CustomerOrderModule } from './modules/customer-order/customer-order.module.js';
-import { DebtModule } from './modules/debt/debt.module.js';
 import { DemandModule } from './modules/demand/demand.module.js';
 import { DiscountModule } from './modules/discount/discount.module.js';
+import { DocumentLinkModule } from './modules/document-link/document-link.module.js';
 import { EdoModule } from './modules/edo/edo.module.js';
 import { EmailModule } from './modules/email/email.module.js';
 import { EnterModule } from './modules/enter/enter.module.js';
@@ -60,7 +61,6 @@ import { MarkingModule } from './modules/marking/marking.module.js';
 import { MoneyModule } from './modules/money/money.module.js';
 import { MoveModule } from './modules/move/move.module.js';
 import { MoyskladCompatModule } from './modules/moysklad-compat/moysklad-compat.module.js';
-import { MoyskladSyncModule } from './modules/moysklad-sync/moysklad-sync.module.js';
 import { MxikModule } from './modules/mxik/mxik.module.js';
 import { NotificationModule } from './modules/notification/notification.module.js';
 import { OnboardingModule } from './modules/onboarding/onboarding.module.js';
@@ -95,16 +95,12 @@ import { PurchaseReturnModule } from './modules/purchase-return/purchase-return.
 import { ReferenceModule } from './modules/reference/reference.module.js';
 import { RegionModule } from './modules/region/region.module.js';
 import { ReportModule } from './modules/report/report.module.js';
-import { RestockTaskModule } from './modules/restock-task/restock-task.module.js';
 import { RetailSaleModule } from './modules/retail-sale/retail-sale.module.js';
 import { SalesChannelModule } from './modules/sales-channel/sales-channel.module.js';
 import { SalesReturnModule } from './modules/sales-return/sales-return.module.js';
 import { SavedFilterModule } from './modules/saved-filter/saved-filter.module.js';
 import { SerialNumberModule } from './modules/serial-number/serial-number.module.js';
 import { ServiceDeskModule } from './modules/service-desk/service-desk.module.js';
-import { ShiftScheduleModule } from './modules/shift-schedule/shift-schedule.module.js';
-import { SkladKeeperModule } from './modules/sklad-keeper/sklad-keeper.module.js';
-import { SmenaModule } from './modules/smena/smena.module.js';
 import { SmsModule } from './modules/sms/sms.module.js';
 import { StateModule } from './modules/state/state.module.js';
 import { StockModule } from './modules/stock/stock.module.js';
@@ -113,7 +109,6 @@ import { SupplyModule } from './modules/supply/supply.module.js';
 import { TaskTypeModule } from './modules/task-type/task-type.module.js';
 import { TaskModule } from './modules/task/task.module.js';
 import { TaxRateModule } from './modules/tax-rate/tax-rate.module.js';
-import { TelegramBroadcastModule } from './modules/telegram-broadcast/telegram-broadcast.module.js';
 import { TelegramModule } from './modules/telegram/telegram.module.js';
 import { TrackingCodeModule } from './modules/tracking-code/tracking-code.module.js';
 import { UomModule } from './modules/uom/uom.module.js';
@@ -145,7 +140,6 @@ import { PrismaModule } from './prisma/prisma.module.js';
     GroupModule,
     PresenceModule,
     CustomerOrderModule,
-    DebtModule,
     StockModule,
     DemandModule,
     InvoiceOutModule,
@@ -189,9 +183,6 @@ import { PrismaModule } from './prisma/prisma.module.js';
     OpportunityModule,
     TaskModule,
     TaskTypeModule,
-    RestockTaskModule,
-    MoyskladSyncModule,
-    SkladKeeperModule,
     NotificationModule,
     BomModule,
     WorkOrderModule,
@@ -209,6 +200,7 @@ import { PrismaModule } from './prisma/prisma.module.js';
     ProjectModule,
     ContractModule,
     CountryModule,
+    CompanySettingsModule,
     UomModule,
     TaxRateModule,
     ExpenseItemModule,
@@ -226,13 +218,12 @@ import { PrismaModule } from './prisma/prisma.module.js';
     MxikModule,
     MoyskladCompatModule,
     AttachmentModule,
+    DocumentLinkModule,
     AttributeMetadataModule,
     EmailModule,
     ReportModule,
     OrganizationModule,
     StoreAdminModule,
-    ShiftScheduleModule,
-    SmenaModule,
     CashDeskModule,
     OrganizationAccountModule,
     ReferenceModule,
@@ -248,7 +239,6 @@ import { PrismaModule } from './prisma/prisma.module.js';
     LoyaltyModule,
     MarkingModule,
     TelegramModule,
-    TelegramBroadcastModule,
     PaymentGatewayModule,
     BankIntegrationModule,
     OneCSyncModule,

@@ -13,6 +13,7 @@ import {
   Input,
   NativeSelect,
   PageHeader,
+  StickyHScroll,
   buildCsv,
   csvTimestamp,
   downloadCsv,
@@ -75,6 +76,13 @@ export default function CounterpartyBalanceReportPage() {
 
   const [search, setSearch] = useState('');
   const [currency, setCurrency] = useState<string>('');
+  // Currency filter options = the account's REAL currencies (Настройки → Валюты),
+  // not a hardcoded list (no phantom EUR/RUB the account doesn't have).
+  const { data: currenciesData } = useQuery<{ items: Array<{ isoCode: string }> }>({
+    queryKey: ['currencies'],
+    queryFn: () => api.get('/currencies'),
+  });
+  const currencyOptions = currenciesData?.items ?? [];
   const [signFilter, setSignFilter] = useState<SignFilter>('nonzero');
   const [includeArchived, setIncludeArchived] = useState(false);
   const [groupBy, setGroupBy] = useState<GroupBy>('none');
@@ -125,7 +133,7 @@ export default function CounterpartyBalanceReportPage() {
   };
 
   return (
-    <Container size="full" className="py-4">
+    <Container size="md" className="py-4">
       <PageHeader
         title={t('title')}
         breadcrumbs={
@@ -172,10 +180,11 @@ export default function CounterpartyBalanceReportPage() {
               data-test-id="filter-currency"
             >
               <option value="">{t('all_currencies')}</option>
-              <option value="UZS">UZS</option>
-              <option value="USD">USD</option>
-              <option value="EUR">EUR</option>
-              <option value="RUB">RUB</option>
+              {currencyOptions.map((c) => (
+                <option key={c.isoCode} value={c.isoCode}>
+                  {c.isoCode}
+                </option>
+              ))}
             </NativeSelect>
           </div>
           <div>
@@ -306,7 +315,7 @@ export default function CounterpartyBalanceReportPage() {
       )}
 
       {data && (
-        <div className="mt-4 overflow-x-auto rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)]">
+        <StickyHScroll className="mt-4 rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)]">
           <table className="w-full text-sm">
             <thead className="bg-[var(--ms-bg-muted)]">
               <tr>
@@ -372,7 +381,7 @@ export default function CounterpartyBalanceReportPage() {
                     <td className="px-3 py-2">
                       <Badge tone={balanceSideTone(row.side)}>{t(`sides.${row.side}`)}</Badge>
                     </td>
-                    <td className="px-3 py-2 text-[var(--ms-text-muted)] text-xs tabular-nums">
+                    <td className="px-3 py-2 text-[var(--ms-text-muted)] text-[12px] tabular-nums">
                       {formatDateOnly(row.updatedAt)}
                     </td>
                   </tr>
@@ -380,7 +389,7 @@ export default function CounterpartyBalanceReportPage() {
               )}
             </tbody>
           </table>
-        </div>
+        </StickyHScroll>
       )}
     </Container>
   );

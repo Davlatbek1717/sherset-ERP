@@ -23,6 +23,7 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useEffect, useRef, useState } from 'react';
+import { DOC_ROUTE } from './task-detail-panel';
 
 /** A task `state` row (moysklad's «Тип задачи» = State, entityType="task"). */
 interface TaskStateRow {
@@ -31,12 +32,32 @@ interface TaskStateRow {
   color: string | null;
 }
 
+/** A composed-but-not-yet-persisted task — /new forms stage these locally (the
+ *  document has no id yet) and POST them right after the document is saved,
+ *  mirroring the staged-files pattern. */
+export interface StagedTaskPayload {
+  title: string;
+  description?: string;
+  assigneeId?: string;
+  assigneeLabel?: string;
+  stateId?: string;
+  stateName?: string;
+  stateColor?: string | null;
+  dueAt?: string;
+  status: 'open' | 'done';
+  files: File[];
+}
+
 export interface TaskCreateModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** Polymorphic target — one of TASK_ENTITY_WHITELIST. */
   entity: string;
   entityId: string;
+  /** STAGED mode (unsaved /new forms): «Создать задачу» hands the composed task to
+   *  the caller instead of POSTing (the doc has no id yet) — no save, no navigation.
+   *  The page persists staged tasks right after the document itself is created. */
+  onStage?: (task: StagedTaskPayload) => void;
   /** moysklad «Контрагент» link (Task.agentId) — set when creating from a counterparty
    *  card so the card's «Задачи» tab (reads by ?agentId=) surfaces the new task. */
   agentId?: string;
@@ -44,6 +65,9 @@ export interface TaskCreateModalProps {
   agentLabel?: string;
   /** Invalidate this query key after a successful create. */
   invalidateKey?: readonly unknown[];
+  /** Called with the new task id after a successful create. moysklad opens the created
+   *  task's detail slide-over — the caller wires that (close this modal, open the panel). */
+  onCreated?: (taskId: string) => void;
 }
 
 /** Derive a 1–120-char title from the description's first non-empty line. */
@@ -82,13 +106,17 @@ export function TaskCreateModal({
   onOpenChange,
   entity,
   entityId,
+  onStage,
   agentId,
   agentLabel,
   invalidateKey,
+  onCreated,
 }: TaskCreateModalProps) {
   const t = useTranslations('task_create');
   const tFields = useTranslations('fields');
   const tAtt = useTranslations('pages.attachments');
+  const tTitles = useTranslations('detail_titles');
+  const tDetail = useTranslations('task_detail');
   const qc = useQueryClient();
   const { user } = useAuth();
   const [description, setDescription] = useState('');
@@ -100,6 +128,8 @@ export function TaskCreateModal({
   const [assigneeLabel, setAssigneeLabel] = useState('');
   // «Контрагент» starts pre-linked to the card's counterparty; the chip × clears it.
   const [agentCleared, setAgentCleared] = useState(false);
+  // «Документ» card × unlinks the task from its document before create (moysklad).
+  const [docCleared, setDocCleared] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // moysklad «📎» — files attached while composing. The task has no id yet, so they are
@@ -126,6 +156,16 @@ export function TaskCreateModal({
   const taskStates = typeData?.items ?? [];
   const selectedState = taskStates.find((s) => s.id === stateId) ?? null;
 
+  // moysklad «Документ» card — the linked doc («Заказ поставщику № 00988»). Fetch its
+  // number the same way task-detail-panel does (DOC_ROUTE → GET /<route>/<id>).
+  const docInfo = entity ? DOC_ROUTE[entity] : undefined;
+  const { data: docDoc } = useQuery<{ id: string; name: string }>({
+    queryKey: ['task-linked-doc', entity, entityId],
+    queryFn: () => api.get(`/${docInfo?.route}/${entityId}`),
+    enabled: open && !!docInfo && !!entityId,
+    staleTime: 60_000,
+  });
+
   const employeeFetcher = async (s: string): Promise<PickerItem[]> => {
     const d = await api.get<{ items: Array<{ id: string; name: string }> }>(
       `/employees?search=${encodeURIComponent(s)}&limit=50`,
@@ -138,8 +178,8 @@ export function TaskCreateModal({
       const task = await api.post<{ id: string }>('/tasks', {
         title: deriveTitle(description),
         description: description.trim() || undefined,
-        entity,
-        entityId,
+        entity: docCleared ? undefined : entity,
+        entityId: docCleared ? undefined : entityId,
         agentId: agentCleared ? undefined : agentId || undefined,
         assigneeId: assigneeId ?? undefined,
         stateId: stateId || undefined,
@@ -159,10 +199,14 @@ export function TaskCreateModal({
       }
       return task;
     },
-    onSuccess: () => {
+    onSuccess: (task) => {
       if (invalidateKey) qc.invalidateQueries({ queryKey: invalidateKey });
       reset();
-      onOpenChange(false);
+      // moysklad opens the created task's detail slide-over. When the caller wires
+      // `onCreated` it handles that (close this modal + open the panel); otherwise
+      // fall back to just closing.
+      if (onCreated) onCreated(task.id);
+      else onOpenChange(false);
     },
     onError: (e: Error) => setError(e.message),
   });
@@ -176,6 +220,7 @@ export function TaskCreateModal({
     setAssigneeId(null);
     setAssigneeLabel('');
     setAgentCleared(false);
+    setDocCleared(false);
     setStaged((prev) => {
       for (const s of prev) if (s.previewUrl) URL.revokeObjectURL(s.previewUrl);
       return [];
@@ -216,6 +261,25 @@ export function TaskCreateModal({
       setError(t('description_label'));
       return;
     }
+    // STAGED mode — hand the composed task to the /new form (no POST yet, the
+    // document has no id); the page persists it after the doc itself is saved.
+    if (onStage) {
+      onStage({
+        title: deriveTitle(description),
+        description: description.trim() || undefined,
+        assigneeId: assigneeId ?? undefined,
+        assigneeLabel: assigneeLabel || undefined,
+        stateId: stateId || undefined,
+        stateName: selectedState?.name,
+        stateColor: selectedState?.color ?? null,
+        dueAt: dueAt ? new Date(dueAt).toISOString() : undefined,
+        status: done ? 'done' : 'open',
+        files: staged.map((s) => s.file),
+      });
+      reset();
+      onOpenChange(false);
+      return;
+    }
     createMut.mutate();
   };
 
@@ -244,7 +308,7 @@ export function TaskCreateModal({
           />
           <Dialog.Content
             data-testid="task-create-modal"
-            className="data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right fixed top-0 right-0 z-[var(--ms-z-modal)] flex h-screen w-[min(940px,96vw)] max-w-[100vw] flex-col bg-[var(--ms-bg-app)] shadow-[var(--ms-shadow-lg)] focus:outline-none data-[state=closed]:animate-out data-[state=open]:animate-in"
+            className="data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right fixed top-0 right-0 z-[var(--ms-z-modal)] flex h-screen w-[min(620px,96vw)] max-w-[100vw] flex-col bg-[var(--ms-bg-app)] shadow-[var(--ms-shadow-lg)] focus:outline-none data-[state=closed]:animate-out data-[state=open]:animate-in"
             style={{ animationDuration: '200ms' }}
           >
             {/* Header — top-left × + 24px bold title (moysklad). */}
@@ -519,6 +583,34 @@ export function TaskCreateModal({
                     </span>
                   </button>
                 </div>
+
+                {/* Card — Документ: the linked doc chip («Заказ поставщику № 00988»),
+                    × unlinks it before create (moysklad). */}
+                {entity && entityId && !docCleared && (
+                  <div className={`${cardCls} space-y-1.5`}>
+                    <span className={labelCls}>{tDetail('doc')}</span>
+                    <div className="flex items-start gap-2 rounded-[var(--ms-radius-default)] bg-[var(--ms-bg-muted)] p-3">
+                      <Icons.file className="mt-0.5 h-4 w-4 shrink-0 text-[var(--ms-text-muted)]" />
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[var(--ms-text-muted)] text-xs">
+                          {docInfo ? tTitles(docInfo.titleKey as 'demand') : entity}
+                        </div>
+                        <span className="text-[var(--ms-text-brand)] text-sm">
+                          {docDoc?.name ? `№ ${docDoc.name}` : '…'}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setDocCleared(true)}
+                        aria-label={t('cancel')}
+                        className="shrink-0 rounded p-0.5 text-[var(--ms-text-muted)] hover:text-[var(--ms-text-destructive)]"
+                        data-test-id="task-create-doc-unlink"
+                      >
+                        <Icons.close className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {/* Card 3 — Контрагент: a picker-style field (like Исполнитель) + the picked
                     counterparty as a removable chip below (moysklad's exact two-row layout). */}

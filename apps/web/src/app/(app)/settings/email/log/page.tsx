@@ -130,7 +130,7 @@ export default function EmailLogPage() {
       sortable: true,
       sortField: 'createdAt',
       cell: (r) => (
-        <span className="text-[var(--ms-text-muted)] text-xs tabular-nums">
+        <span className="text-[var(--ms-text-muted)] text-[12px] tabular-nums">
           {formatDate(r.createdAt)}
         </span>
       ),
@@ -143,7 +143,7 @@ export default function EmailLogPage() {
       sortable: true,
       sortField: 'sentAt',
       cell: (r) => (
-        <span className="text-[var(--ms-text-muted)] text-xs tabular-nums">
+        <span className="text-[var(--ms-text-muted)] text-[12px] tabular-nums">
           {formatDate(r.sentAt)}
         </span>
       ),

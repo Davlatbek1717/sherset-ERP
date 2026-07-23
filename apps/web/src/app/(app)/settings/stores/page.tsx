@@ -1,7 +1,9 @@
-'use client';
+import { redirect } from 'next/navigation';
 
-import { StoresListView } from '@/components/stores/stores-list-view';
-
-export default function StoresPage() {
-  return <StoresListView />;
+/**
+ * moysklad parity (LIVE-verified 2026-07-03): warehouses do NOT exist in the
+ * settings area — they live only at Склад → Склады. Old bookmarks land there.
+ */
+export default function SettingsStoresRedirect() {
+  redirect('/stores');
 }

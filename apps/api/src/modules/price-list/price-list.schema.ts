@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { csvUuid } from '../shared/csv.js';
 
 /**
  * PriceList — dated snapshot of prices per product / variant / bundle.
@@ -84,6 +85,7 @@ export const UpdatePriceListSchema = z
 export const PriceListFilterSchema = z.object({
   state: PriceListStateSchema.optional(),
   organizationId: z.string().uuid().optional(),
+  organizationIds: csvUuid.optional(),
   /** «Тип цены» — PriceList.priceTypeId (default price type column). */
   priceTypeId: z.string().uuid().optional(),
   /** «Владелец-сотрудник» — PriceList.ownerId. */

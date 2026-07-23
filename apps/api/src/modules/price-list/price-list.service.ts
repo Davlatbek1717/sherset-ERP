@@ -87,6 +87,7 @@ export class PriceListService {
       ...(filter.includeDeleted ? {} : { deletedAt: null }),
       ...(filter.state ? { state: filter.state } : {}),
       ...(filter.organizationId ? { organizationId: filter.organizationId } : {}),
+      ...(filter.organizationIds ? { organizationId: { in: filter.organizationIds } } : {}),
       ...(filter.priceTypeId ? { priceTypeId: filter.priceTypeId } : {}),
       ...(filter.ownerId ? { ownerId: filter.ownerId } : {}),
       ...(filter.groupId ? { groupId: filter.groupId } : {}),
@@ -208,13 +209,20 @@ export class PriceListService {
     accountId: string,
     userId: string,
     id: string,
-    patch: { ownerId?: string | null; description?: string | null },
+    patch: {
+      ownerId?: string | null;
+      description?: string | null;
+      groupId?: string | null;
+      shared?: boolean;
+    },
   ) {
     await this.findById(accountId, id);
     await assertMassEditRefsInTenant(this.prisma, accountId, patch);
     const data: Record<string, unknown> = {};
     if ('ownerId' in patch) data.ownerId = patch.ownerId;
     if ('description' in patch) data.description = patch.description;
+    if ('groupId' in patch) data.groupId = patch.groupId;
+    if ('shared' in patch && patch.shared !== undefined) data.shared = patch.shared;
     const updated = await this.prisma.client.priceList.update({ where: { id, accountId }, data });
     await this.logAudit(accountId, userId, 'mass-edit', id, patch as Record<string, unknown>);
     return updated;

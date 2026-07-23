@@ -1,7 +1,7 @@
 'use client';
 
 import { api } from '@/lib/api-client';
-import { Input, useDebounce } from '@moysklad/ui';
+import { Input, StickyHScroll, useDebounce } from '@moysklad/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useState } from 'react';
@@ -89,7 +89,7 @@ export function AuditView() {
       </div>
 
       {/* Table */}
-      <div className="overflow-x-auto rounded-lg border border-[var(--ms-border)] bg-white">
+      <StickyHScroll className="rounded-lg border border-[var(--ms-border)] bg-white">
         <table className="w-full text-sm">
           <thead className="bg-[var(--ms-bg-subtle)] text-[var(--ms-text-muted)] text-xs uppercase">
             <tr>
@@ -126,7 +126,7 @@ export function AuditView() {
             )}
           </tbody>
         </table>
-      </div>
+      </StickyHScroll>
     </div>
   );
 }

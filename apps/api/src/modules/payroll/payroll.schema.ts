@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { csvUuid } from '../shared/csv.js';
 
 /**
  * Payroll (Ish haqi / Зарплата) — per-employee monthly payroll record.
@@ -95,6 +96,7 @@ export type UpdatePayrollInput = z.infer<typeof UpdatePayrollSchema>;
 export const PayrollFilterSchema = z.object({
   state: PayrollStateSchema.optional(),
   organizationId: uuid.optional(),
+  organizationIds: csvUuid.optional(),
   employeeId: uuid.optional(),
   ownerId: uuid.optional(),
   applicable: boolFromString.optional(),

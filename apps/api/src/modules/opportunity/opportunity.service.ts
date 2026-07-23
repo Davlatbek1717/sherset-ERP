@@ -65,6 +65,7 @@ export class OpportunityService {
       ...(filter.pipelineId ? { pipelineId: filter.pipelineId } : {}),
       ...(filter.stageId ? { stageId: filter.stageId } : {}),
       ...(filter.counterpartyId ? { counterpartyId: filter.counterpartyId } : {}),
+      ...(filter.counterpartyIds ? { counterpartyId: { in: filter.counterpartyIds } } : {}),
       ...(filter.contactPersonId ? { contactPersonId: filter.contactPersonId } : {}),
       ...(filter.ownerId ? { ownerId: filter.ownerId } : {}),
       ...(filter.status ? { status: filter.status } : {}),

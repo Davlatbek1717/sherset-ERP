@@ -20,6 +20,14 @@ import { CurrentUser } from '../auth/current-user.decorator.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { RequirePermission } from '../permissions/require-permission.decorator.js';
 import { DocPdfService } from '../print-template/doc-pdf.service.js';
+import { HtmlPdfService } from '../print-template/html-pdf.service.js';
+import {
+  type ListReportColumnDef,
+  REPORT_CURRENCY_LABEL,
+  buildListReportHtml,
+  reportDateTime,
+  reportMoney,
+} from '../print-template/list-report-html.util.js';
 import type { RawDocInput } from '../print-template/print-render.util.js';
 import { computeLineSumMinor } from '../print-template/print-render.util.js';
 import { PrintTemplateService } from '../print-template/print-template.service.js';
@@ -28,12 +36,41 @@ import { MassEditBaseSchema, assertPatchHasAtLeastOneField } from '../shared/mas
 import { BulkMarkPrintedSchema } from '../shared/mass-print.js';
 import { PurchaseOrderService } from './purchase-order.service.js';
 
+// ── «Печать → Список заказов» PDF report ────────────────────────────────────
+interface PoReportRow {
+  name: string;
+  applicable: boolean;
+  moment: Date;
+  sumMinor: bigint;
+  invoicedSumMinor: bigint;
+  payedSumMinor: bigint;
+  receivedSumMinor: bigint;
+  currency: string;
+  agent: { name: string } | null;
+  organization: { name: string } | null;
+}
+
+// Column set + order = moysklad's report-PurchaseOrder (live-grounded 2026-07-08).
+const PO_REPORT_COLUMNS: ListReportColumnDef<PoReportRow>[] = [
+  { header: '№', value: (r) => r.name },
+  { header: 'Пров.', value: (r) => (r.applicable ? 'Да' : '') },
+  { header: 'Время', value: (r) => reportDateTime(r.moment) },
+  { header: 'Контрагент', value: (r) => r.agent?.name ?? '' },
+  { header: 'Организация', value: (r) => r.organization?.name ?? '' },
+  { header: 'Сумма', numeric: true, value: (r) => reportMoney(r.sumMinor) },
+  { header: 'Валюта', value: (r) => REPORT_CURRENCY_LABEL[r.currency] ?? r.currency },
+  { header: 'Выставлено счетов', numeric: true, value: (r) => reportMoney(r.invoicedSumMinor) },
+  { header: 'Оплачено', numeric: true, value: (r) => reportMoney(r.payedSumMinor) },
+  { header: 'Принято', numeric: true, value: (r) => reportMoney(r.receivedSumMinor) },
+];
+
 @Controller('purchase-orders')
 @UseGuards(JwtAuthGuard)
 export class PurchaseOrderController {
   constructor(
     @Inject(PurchaseOrderService) private readonly service: PurchaseOrderService,
     @Inject(DocPdfService) private readonly docPdf: DocPdfService,
+    @Inject(HtmlPdfService) private readonly htmlPdf: HtmlPdfService,
     @Inject(PrintTemplateService) private readonly printTemplates: PrintTemplateService,
     @Inject(AttachmentService) private readonly attachments: AttachmentService,
   ) {}
@@ -66,6 +103,49 @@ export class PurchaseOrderController {
   @RequirePermission({ entity: 'purchaseorder', action: 'view' })
   aggregateTotals(@CurrentUser() user: AuthenticatedUser, @Query() q: Record<string, unknown>) {
     return this.service.aggregateTotals(user.accountId, q);
+  }
+
+  /**
+   * moysklad «Печать → Список заказов» — the WHOLE (filtered) list as a PDF
+   * report, served INLINE so the browser opens it in its native PDF viewer
+   * (page thumbnails + navigation + print/download), 1:1 with moysklad's
+   * report-PurchaseOrder.pdf. Declared before `:id` so the static path isn't
+   * shadowed. Auth via `?access_token=` (window.open sends no bearer header).
+   */
+  @Get('list-report')
+  @RequirePermission({ entity: 'purchaseorder', action: 'view' })
+  @Header('Content-Type', 'application/pdf')
+  async listReport(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() q: Record<string, unknown>,
+    @Res() reply: FastifyReply,
+  ) {
+    // `access_token` rides in the query (window.open sends no bearer) — strip it
+    // before it reaches the filter parser.
+    const { access_token: _at, ...filter } = q;
+    const rows = await this.service.listAllForReport(user.accountId, filter);
+    const now = new Date();
+    const html = buildListReportHtml<PoReportRow>({
+      title: 'Заказы поставщикам',
+      createdByLabel: 'Создал',
+      userName: user.name,
+      userEmail: user.email,
+      generatedAt: reportDateTime(now, true),
+      columns: PO_REPORT_COLUMNS,
+      rows: rows as unknown as PoReportRow[],
+    });
+    const pdf = await this.htmlPdf.renderHtmlToPdf(html, {
+      pageSize: 'A4',
+      landscape: true,
+      marginTop: 10,
+      marginRight: 10,
+      marginBottom: 12,
+      marginLeft: 10,
+    });
+    const stamp = reportDateTime(now, true).replace(/[.: ]/g, '-');
+    reply
+      .header('Content-Disposition', `inline; filename="report-PurchaseOrder-${stamp}.pdf"`)
+      .send(pdf);
   }
 
   @Get(':id')
@@ -180,7 +260,14 @@ export class PurchaseOrderController {
   async massEdit(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
     const parsed = MassEditBaseSchema.parse(body);
     const { ids, ...patch } = parsed;
-    assertPatchHasAtLeastOneField(patch, ['ownerId', 'projectId', 'description']);
+    assertPatchHasAtLeastOneField(patch, [
+      'ownerId',
+      'projectId',
+      'description',
+      'groupId',
+      'shared',
+      'stateId',
+    ]);
     return runBulk(ids, (id) => this.service.massEditApply(user.accountId, user.sub, id, patch));
   }
 

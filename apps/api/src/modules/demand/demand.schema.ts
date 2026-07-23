@@ -105,7 +105,14 @@ export const CreateDemandSchema = z.object({
   overheadCurrency: z.string().length(3).default('UZS'),
   vatEnabled: z.boolean().default(true),
   vatIncluded: z.boolean().default(false),
-  positions: z.array(DemandPositionInputSchema).min(1, 'at least one position required'),
+  // «Проведено» on save — moysklad parity: ticking «Проведено» + Сохранить
+  // creates AND posts the shipment (stock deducted) in one action. When true,
+  // create() runs the SAME verified transition('post') path the detail
+  // «Провести» uses. Was silently dropped before (FE sent it, schema omitted it).
+  // `.optional()` (not `.default`) so createFromCustomerOrder's `satisfies
+  // CreateDemandInput` object need not pass it.
+  applicable: z.boolean().optional(),
+  positions: z.array(DemandPositionInputSchema), // moysklad allows an empty DRAFT; post() still requires >=1 position
   attributes: z.record(z.string(), z.unknown()).optional(),
 });
 export type CreateDemandInput = z.infer<typeof CreateDemandSchema>;
@@ -113,7 +120,7 @@ export type CreateDemandInput = z.infer<typeof CreateDemandSchema>;
 // --- Update (draft only) ---
 
 export const UpdateDemandSchema = CreateDemandSchema.partial().extend({
-  positions: z.array(DemandPositionInputSchema).min(1).optional(),
+  positions: z.array(DemandPositionInputSchema).optional(),
   version: z.number().int().nonnegative(),
 });
 export type UpdateDemandInput = z.infer<typeof UpdateDemandSchema>;
@@ -133,6 +140,24 @@ const boolFromString = z
   .union([z.boolean(), z.string()])
   .transform((v) => (typeof v === 'boolean' ? v : v === 'true'));
 
+/** CSV-or-array of UUIDs (mirror invoice-out.schema `csvUuid`) — backs the
+ *  multi-select inline filter fields (agentIds, productIds, …). */
+const csvUuid = z
+  .union([z.string(), z.array(z.string())])
+  .transform((v) => (Array.isArray(v) ? v : v.split(',')))
+  .pipe(z.array(z.string().uuid()).min(1));
+
+/** One custom-attribute («Дополнительные поля») filter clause — mirror
+ *  customer-order.schema. `code` = the AttributeMetadata machine name (JSON key);
+ *  `value` for equals/contains, `from`/`to` for date|number ranges. */
+export const AttrFilterClauseSchema = z.object({
+  code: z.string().regex(/^[a-z][a-z0-9_]{1,49}$/),
+  value: z.string().optional(),
+  from: z.string().optional(),
+  to: z.string().optional(),
+});
+export type AttrFilterClause = z.infer<typeof AttrFilterClauseSchema>;
+
 export const DemandFilterSchema = z.object({
   state: DemandStateSchema.optional(),
   agentId: z.string().uuid().optional(),
@@ -145,10 +170,6 @@ export const DemandFilterSchema = z.object({
   organizationAccountId: z.string().uuid().optional(),
   storeId: z.string().uuid().optional(),
   customerOrderId: z.string().uuid().optional(),
-  /** «Грузополучатель» — Demand.consigneeId (consignee counterparty). */
-  consigneeId: z.string().uuid().optional(),
-  /** «Товар или группа» — narrows to demands whose positions contain this product. */
-  productId: z.string().uuid().optional(),
   /** «Проект» — Demand.projectId. */
   projectId: z.string().uuid().optional(),
   /** «Договор» — Demand.contractId. */
@@ -159,12 +180,73 @@ export const DemandFilterSchema = z.object({
   groupId: z.string().uuid().optional(),
   /** «Владелец-сотрудник» — Demand.ownerId. */
   ownerId: z.string().uuid().optional(),
+  /** «Грузополучатель» — Demand.consigneeId (single). */
+  consigneeId: z.string().uuid().optional(),
+  /** «Владелец контрагента» — Counterparty.ownerId (single). */
+  agentOwnerId: z.string().uuid().optional(),
+  /** «Товар или группа» — narrows to demands whose positions include a product. */
+  productId: z.string().uuid().optional(),
+  /** «Кто изменил» — auditLog userId → entityIds (Demand has no modifiedById column). */
+  modifiedById: z.string().uuid().optional(),
+  // --- Multi-select inline filter fields (moysklad checkbox-dropdowns). Each
+  //     `*Ids` is a CSV-or-array of UUIDs; buildListWhere prefers it over the
+  //     matching single `*Id`. Mirrors invoice-out.schema. ---
+  agentIds: csvUuid.optional(),
+  agentGroupIds: csvUuid.optional(),
+  agentOwnerIds: csvUuid.optional(),
+  agentAccountIds: csvUuid.optional(),
+  organizationIds: csvUuid.optional(),
+  organizationAccountIds: csvUuid.optional(),
+  storeIds: csvUuid.optional(),
+  projectIds: csvUuid.optional(),
+  contractIds: csvUuid.optional(),
+  salesChannelIds: csvUuid.optional(),
+  groupIds: csvUuid.optional(),
+  ownerIds: csvUuid.optional(),
+  productIds: csvUuid.optional(),
+  consigneeIds: csvUuid.optional(),
+  modifiedByIds: csvUuid.optional(),
+  /** «Статус» — account-defined custom status (State row, entityType="demand"). */
+  statusIds: csvUuid.optional(),
+  /** «Общий доступ» — Demand.shared flag. */
+  shared: boolFromString.optional(),
+  /** «Адрес доставки» — Demand.shipmentAddress contains-match (case-insensitive). */
+  shipmentAddress: z.string().max(500).optional(),
+  /** «Комментарий к адресу доставки» — Demand.shipmentAddressFull JSON `comment`
+   *  sub-field contains-match (the delivery address's comment). */
+  shipmentAddressComment: z.string().max(500).optional(),
+  /**
+   * Custom-attribute («Дополнительные поля») filters — JSON-encoded array of
+   * clauses sent by the inline filter as `?attrs=<json>` (e.g. the account's
+   * «Уста» field). Decoded + validated here → typed AttrFilterClause[]; buildAttrWhere
+   * maps each to a JSON-path WHERE over Demand.attributes. Mirror customer-order.
+   */
+  attrs: z
+    .string()
+    .optional()
+    .transform((s, ctx) => {
+      if (!s) return undefined;
+      try {
+        return z.array(AttrFilterClauseSchema).max(50).parse(JSON.parse(s));
+      } catch {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'attrs: invalid JSON' });
+        return z.NEVER;
+      }
+    }),
   /**
    * «Оплата» — payment progress computed against payedSumMinor / sumMinor
    * via Prisma 5 field references (no stored boolean). Demand carries the
    * `payedSumMinor` column, populated by the PaymentIn cascade.
    */
   paymentStatus: z.enum(['unpaid', 'partial', 'paid']).optional(),
+  /**
+   * «Тип возврата» — return progress computed against linked SalesReturn docs
+   * (active = applicable, not deleted) summed vs the demand sum. moysklad options:
+   *   none    «Без возвратов»        — no active returns reference this demand
+   *   partial «Частично возвращено»  — 0 < Σreturned < demand sum
+   *   full    «Полностью возвращено» — Σreturned ≥ demand sum (> 0)
+   */
+  returnStatus: z.enum(['none', 'partial', 'full']).optional(),
   /** «Проведено» — Demand.applicable flag. */
   applicable: boolFromString.optional(),
   /** «Напечатано» — Demand.printed flag. */
@@ -183,14 +265,19 @@ export const DemandFilterSchema = z.object({
   updatedTo: z.string().optional(),
   sumMinorFrom: z.coerce.number().int().nonnegative().optional(),
   sumMinorTo: z.coerce.number().int().nonnegative().optional(),
-  // NOTE: «Кто изменил» (modifiedById) is SKIPPED — the Demand model has
-  // no `updatedById` column (only `ownerId`). Add such a column before
-  // wiring this filter (mirrors the deferred customer-order field).
+  // NOTE: «Кто изменил» (modifiedById/modifiedByIds) is wired via the auditLog
+  // (Demand has no modifiedById column) — list() pre-queries the DISTINCT
+  // entityIds this account's Demand rows were `update`d on by the given user
+  // and narrows by id, mirroring invoice-out / loss.
   // NOTE: «Резерв» / «Отгрузка» (shipped progress) are NOT applicable to a
   // shipment doc — a Demand IS the shipment, so there is no shipped-vs-
   // ordered split (those belong to CustomerOrder). Skipped by design.
   limit: z.coerce.number().int().min(1).max(500).default(50),
   cursor: z.string().uuid().optional(),
+  // moysklad 1:1 pager — 0-based page index for offset («M-N из total»)
+  // pagination. When present the service uses skip/take instead of the cursor,
+  // enabling true previous/first/LAST jumps. Cursor stays for back-compat.
+  page: z.coerce.number().int().min(0).optional(),
   sortBy: z
     .enum(['moment', 'name', 'sumMinor', 'payedSumMinor', 'agent', 'organization', 'store'])
     .default('moment'),

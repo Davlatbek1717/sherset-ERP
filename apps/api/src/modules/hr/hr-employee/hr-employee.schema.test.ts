@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CreateHrEmployeeSchema,
   HrEmployeeFilterSchema,
+  SetEmployeeImageSchema,
   SetPasswordSchema,
   UpdateHrEmployeeSchema,
 } from './hr-employee.schema.js';
@@ -34,14 +35,132 @@ describe('HR Employee Zod schemas', () => {
     expect(() => SetPasswordSchema.parse({ username: 'ozod', password: '123' })).toThrow(/4 belgi/);
   });
 
-  it('SetPassword rejects special chars in username', () => {
-    expect(() => SetPasswordSchema.parse({ username: 'ozod@', password: 'abcd' })).toThrow(/lotin/);
+  // Owner 2026-07-19 (second report): the login is FREE-FORM — «xodim o'zi
+  // xohlagan loginni erkin kirita olishi kerak». Only the technical minimum
+  // remains: non-empty after trim, ≤50 chars (the DB column is VarChar(50);
+  // longer values would P2000 into a raw 500). Uniqueness is enforced by the
+  // partial DB index + mapped to a field-level 409.
+  it('SetPassword accepts free-form logins (moysklad-style @, cyrillic, dots, spaces inside)', () => {
+    for (const goodLogin of [
+      'omborchi01@climart_santex_group',
+      'ivan.petrov@climart_santex_group',
+      'омборчи',
+      'boymurod aka',
+      'x',
+      'Логин-2024',
+    ]) {
+      expect(SetPasswordSchema.parse({ username: goodLogin, password: 'abcd' }).username).toBe(
+        goodLogin,
+      );
+    }
+  });
+
+  it('SetPassword trims surrounding whitespace and rejects empty/too-long usernames', () => {
+    expect(SetPasswordSchema.parse({ username: '  ozod  ', password: 'abcd' }).username).toBe(
+      'ozod',
+    );
+    expect(() => SetPasswordSchema.parse({ username: '   ', password: 'abcd' })).toThrow();
+    expect(() => SetPasswordSchema.parse({ username: 'a'.repeat(51), password: 'abcd' })).toThrow(
+      /50/,
+    );
   });
 
   it('Filter coerces page/limit to numbers', () => {
     const parsed = HrEmployeeFilterSchema.parse({ page: '2', limit: '20' });
     expect(parsed.page).toBe(2);
     expect(parsed.limit).toBe(20);
+  });
+
+  // Owner-reported 2026-07-17: `?archived=false` showed the ARCHIVED list —
+  // z.coerce.boolean() runs Boolean('false') → true. Locked to a real parser.
+  it('Filter: archived="false" means ACTIVE list (not Boolean coercion)', () => {
+    expect(HrEmployeeFilterSchema.parse({ archived: 'false' }).archived).toBe(false);
+    expect(HrEmployeeFilterSchema.parse({ archived: 'true' }).archived).toBe(true);
+    expect(HrEmployeeFilterSchema.parse({}).archived).toBe(false);
+    expect(HrEmployeeFilterSchema.parse({ archived: true }).archived).toBe(true);
+  });
+
+  it('Filter: isChecker="false" parses to false too', () => {
+    expect(HrEmployeeFilterSchema.parse({ isChecker: 'false' }).isChecker).toBe(false);
+  });
+});
+
+describe('moysklad employee-card fields (Настройки → Сотрудники, 2026-07-16)', () => {
+  it('accepts the full card payload', () => {
+    const parsed = CreateHrEmployeeSchema.parse({
+      name: 'Бекзод Н',
+      lastName: 'Бекзод',
+      firstName: 'Н',
+      middleName: '',
+      position: 'Кассир',
+      salaryMinor: '150000000',
+      inn: '123456789',
+      description: 'test',
+      groupId: '8f7cb209-fd7b-41ef-8a80-05f40025cbe1',
+      loginAllowed: false,
+      allowedIps: ['192.168.1.10'],
+      allowedNetworks: ['10.0.0.0/8'],
+      notifications: { customer_orders: { enabled: true, web: true, phone: false } },
+    });
+    expect(parsed.lastName).toBe('Бекзод');
+    expect(parsed.salaryMinor).toBe('150000000');
+    expect(parsed.loginAllowed).toBe(false);
+    expect(parsed.allowedNetworks).toEqual(['10.0.0.0/8']);
+  });
+
+  it('salaryMinor coerces numbers to the string wire format', () => {
+    const parsed = CreateHrEmployeeSchema.parse({ name: 'X', salaryMinor: 5000 });
+    expect(parsed.salaryMinor).toBe('5000');
+  });
+
+  it('salaryMinor rejects negatives and non-integers', () => {
+    expect(CreateHrEmployeeSchema.safeParse({ name: 'X', salaryMinor: '-5' }).success).toBe(false);
+    expect(CreateHrEmployeeSchema.safeParse({ name: 'X', salaryMinor: '1.5' }).success).toBe(false);
+  });
+
+  it('allowedIps rejects a CIDR entry (that belongs in allowedNetworks)', () => {
+    expect(
+      CreateHrEmployeeSchema.safeParse({ name: 'X', allowedIps: ['10.0.0.0/8'] }).success,
+    ).toBe(false);
+  });
+
+  it('allowedNetworks rejects a bare IP (no /prefix)', () => {
+    expect(
+      CreateHrEmployeeSchema.safeParse({ name: 'X', allowedNetworks: ['10.0.0.1'] }).success,
+    ).toBe(false);
+  });
+
+  it('update stays partial: card fields optional, version still required', () => {
+    expect(UpdateHrEmployeeSchema.safeParse({ version: 2, loginAllowed: true }).success).toBe(true);
+    expect(UpdateHrEmployeeSchema.safeParse({ loginAllowed: true }).success).toBe(false);
+  });
+});
+
+describe('SetEmployeeImageSchema (карточка «Изображение», 2026-07-17)', () => {
+  it('accepts a data-url payload', () => {
+    const parsed = SetEmployeeImageSchema.parse({
+      filename: 'photo.png',
+      mime: 'image/png',
+      dataBase64: 'data:image/png;base64,iVBORw0KGgo=',
+    });
+    expect(parsed.mime).toBe('image/png');
+  });
+
+  it('rejects non-image mime and oversized payloads', () => {
+    expect(
+      SetEmployeeImageSchema.safeParse({
+        filename: 'x.pdf',
+        mime: 'application/pdf',
+        dataBase64: 'aaaa',
+      }).success,
+    ).toBe(false);
+    expect(
+      SetEmployeeImageSchema.safeParse({
+        filename: 'big.png',
+        mime: 'image/png',
+        dataBase64: 'a'.repeat(6_000_001),
+      }).success,
+    ).toBe(false);
   });
 });
 

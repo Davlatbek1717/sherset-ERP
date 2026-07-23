@@ -27,6 +27,23 @@ export class InventoryController {
   async list(@CurrentUser() user: AuthenticatedUser, @Query() query: Record<string, unknown>) {
     return this.svc.list(user.accountId, query);
   }
+  // Grid enrichment for the editor (band 3): catalog fields + store balance +
+  // per-unit cost + StockByCell rows. POST body — id lists exceed URL limits.
+  @Post('position-meta')
+  @RequirePermission({ entity: 'inventory', action: 'view' })
+  async positionMeta(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
+    return this.svc.positionMeta(user.accountId, body);
+  }
+  // «Дополнить из остатков» / «Дополнить из номенклатуры» candidate ids.
+  // Declared BEFORE @Get(':id') — Nest matches routes in declaration order.
+  @Get('fill-candidates')
+  @RequirePermission({ entity: 'inventory', action: 'view' })
+  async fillCandidates(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: Record<string, unknown>,
+  ) {
+    return this.svc.fillCandidates(user.accountId, query);
+  }
   @Get(':id')
   @RequirePermission({ entity: 'inventory', action: 'view' })
   async findById(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {

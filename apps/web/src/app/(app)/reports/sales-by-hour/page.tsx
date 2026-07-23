@@ -69,7 +69,7 @@ export default function SalesByHourReport() {
   };
 
   return (
-    <Container size="full" className="py-4">
+    <Container size="md" className="py-4">
       <Breadcrumb
         items={[{ label: tCommon('reports'), href: '/reports' }, { label: t('title') }]}
       />

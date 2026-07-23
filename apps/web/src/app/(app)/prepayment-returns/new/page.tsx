@@ -88,7 +88,7 @@ export default function NewPrepaymentReturnPage() {
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   });
   const [status, setStatus] = useState<string>('draft');
-  const [applicable, setApplicable] = useState(false);
+  const [applicable, setApplicable] = useState(true);
 
   // Source prepayment (required)
   const [prepaymentId, setPrepaymentId] = useState<string | null>(null);
@@ -238,7 +238,7 @@ export default function NewPrepaymentReturnPage() {
       label: tDetailTabs('main'),
       content: (
         <div className="space-y-4">
-          <DocumentMetaPanel>
+          <DocumentMetaPanel compact>
             {/* Row 1: Source prepayment picker (required) */}
             <DocumentMetaRow>
               <DocumentMetaField label={t('source_prepayment')} required>

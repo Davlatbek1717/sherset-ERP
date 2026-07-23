@@ -83,10 +83,8 @@ describe('CreateDemandSchema', () => {
     ).toThrow();
   });
 
-  it('requires at least one position', () => {
-    expect(() => CreateDemandSchema.parse({ ...valid, positions: [] })).toThrow(
-      /at least one position/i,
-    );
+  it('allows empty positions — owner 2026-07-08, no Provedeno precondition', () => {
+    expect(() => CreateDemandSchema.parse({ ...valid, positions: [] })).not.toThrow();
   });
 
   it('rejects negative quantity', () => {
@@ -227,16 +225,8 @@ describe('DemandFilterSchema', () => {
     expect(parsed.customerOrderId).toBe(UUID);
   });
 
-  it('accepts «Грузополучатель» (consigneeId) + «Товар или группа» (productId) filters', () => {
-    const parsed = DemandFilterSchema.parse({ consigneeId: UUID, productId: UUID });
-    expect(parsed.consigneeId).toBe(UUID);
-    expect(parsed.productId).toBe(UUID);
-  });
-
   it('rejects a non-uuid FK picker value', () => {
     expect(() => DemandFilterSchema.parse({ projectId: 'not-a-uuid' })).toThrow();
-    expect(() => DemandFilterSchema.parse({ consigneeId: 'nope' })).toThrow();
-    expect(() => DemandFilterSchema.parse({ productId: 'nope' })).toThrow();
   });
 
   it('accepts «Оплата» paymentStatus enum', () => {

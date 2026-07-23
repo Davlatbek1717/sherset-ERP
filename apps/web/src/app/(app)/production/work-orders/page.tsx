@@ -145,7 +145,7 @@ export default function WorkOrdersPage() {
       width: '140px',
       sortable: true,
       cell: (w) => (
-        <span className="text-[var(--ms-text-muted)] text-xs tabular-nums">
+        <span className="text-[var(--ms-text-muted)] text-[12px] tabular-nums">
           {formatDate(w.createdAt)}
         </span>
       ),

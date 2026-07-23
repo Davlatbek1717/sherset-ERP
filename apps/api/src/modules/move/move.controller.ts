@@ -21,6 +21,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { RequirePermission } from '../permissions/require-permission.decorator.js';
 import { DocPdfService } from '../print-template/doc-pdf.service.js';
 import type { RawDocInput } from '../print-template/print-render.util.js';
+import { PrintTemplateService } from '../print-template/print-template.service.js';
 import { BulkIdsSchema, BulkTransitionSchema, runBulk } from '../shared/bulk.js';
 import { MassEditBaseSchema, assertPatchHasAtLeastOneField } from '../shared/mass-edit.js';
 import { MoveService } from './move.service.js';
@@ -36,7 +37,20 @@ export class MoveController {
   constructor(
     @Inject(MoveService) private readonly svc: MoveService,
     @Inject(DocPdfService) private readonly docPdf: DocPdfService,
+    @Inject(PrintTemplateService) private readonly printTemplates: PrintTemplateService,
   ) {}
+
+  /**
+   * Doc-scoped list of the account's printable templates for this entity —
+   * gated on move:view (NOT settings) so a cashier who can open the page
+   * also sees the pinned check-print buttons; the settings-gated
+   * /print-templates CRUD stays admin-only. Mirrors purchase-order.
+   */
+  @Get('print-forms')
+  @RequirePermission({ entity: 'move', action: 'view' })
+  async printForms(@CurrentUser() user: AuthenticatedUser) {
+    return this.printTemplates.listPrintable(user.accountId, 'move', 'pdf');
+  }
 
   @Get()
   @RequirePermission({ entity: 'move', action: 'view' })
@@ -121,7 +135,13 @@ export class MoveController {
   async massEdit(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
     const parsed = MassEditBaseSchema.parse(body);
     const { ids, ...patch } = parsed;
-    assertPatchHasAtLeastOneField(patch, ['ownerId', 'projectId', 'description']);
+    assertPatchHasAtLeastOneField(patch, [
+      'ownerId',
+      'projectId',
+      'description',
+      'groupId',
+      'shared',
+    ]);
     return runBulk(ids, (id) => this.svc.massEditApply(user.accountId, user.sub, id, patch));
   }
 

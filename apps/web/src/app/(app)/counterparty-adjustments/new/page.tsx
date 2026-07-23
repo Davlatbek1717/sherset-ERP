@@ -13,7 +13,6 @@ import { useDocumentEditorLabels } from '@/hooks/use-document-editor-labels';
 import { useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-store';
-import { pinDefaultCustomer } from '@/lib/pin-default-customer';
 import {
   Button,
   CatalogPicker,
@@ -33,7 +32,7 @@ import {
 } from '@moysklad/ui';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 interface RefItem {
   id: string;
@@ -74,7 +73,7 @@ export default function NewCounterpartyAdjustmentPage() {
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   });
   const [status, setStatus] = useState<string>('draft');
-  const [applicable, setApplicable] = useState(false);
+  const [applicable, setApplicable] = useState(true);
 
   // Meta
   const [agentId, setAgentId] = useState<string | null>(null);
@@ -122,6 +121,29 @@ export default function NewCounterpartyAdjustmentPage() {
     }
   }, [orgsData, userDefaults.data, userDefaults.isLoading, organizationId, projectId]);
 
+  // Pre-fill from the «Создание корректировки» modal (counterparty card → Показатели):
+  // ?agentId / ?organizationId (+labels). When the URL names an org, mark the defaults as
+  // applied so the «по умолчанию» effect above does not override the user's explicit pick.
+  const searchParams = useSearchParams();
+  const prefillRef = useRef(false);
+  useEffect(() => {
+    if (prefillRef.current) return;
+    prefillRef.current = true;
+    const aId = searchParams.get('agentId');
+    const aLabel = searchParams.get('agentLabel');
+    const oId = searchParams.get('organizationId');
+    const oLabel = searchParams.get('organizationLabel');
+    if (aId) {
+      setAgentId(aId);
+      if (aLabel) setAgentLabel(aLabel);
+    }
+    if (oId) {
+      setOrganizationId(oId);
+      if (oLabel) setOrganizationLabel(oLabel);
+      defaultsAppliedRef.current = true;
+    }
+  }, [searchParams]);
+
   const createMut = useMutation({
     mutationFn: async () => {
       if (!agentId) throw new Error(t('err_agent_required'));
@@ -150,17 +172,11 @@ export default function NewCounterpartyAdjustmentPage() {
     const d = await api.get<{
       items: Array<{ id: string; name: string; legalTitle: string | null }>;
     }>(`/counterparties?search=${encodeURIComponent(s)}&limit=50`);
-    const items = d.items.map((c) => ({
+    return d.items.map((c) => ({
       id: c.id,
       primary: c.name,
       secondary: c.legalTitle ?? undefined,
     }));
-    return pinDefaultCustomer(
-      items,
-      userDefaults.data?.defaultCustomer,
-      s,
-      tForm('pinned_default'),
-    );
   };
   const orgFetcher = async (s: string): Promise<PickerItem[]> => {
     const d = await api.get<{ items: RefItem[] }>(`/organizations?search=${encodeURIComponent(s)}`);
@@ -192,7 +208,7 @@ export default function NewCounterpartyAdjustmentPage() {
       label: tDetailTabs('main'),
       content: (
         <div className="space-y-4">
-          <DocumentMetaPanel>
+          <DocumentMetaPanel compact>
             <DocumentMetaRow>
               <DocumentMetaField label={tFields('agent')} required>
                 <CatalogPickerField

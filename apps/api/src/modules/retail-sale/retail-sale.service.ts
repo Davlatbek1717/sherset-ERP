@@ -14,6 +14,7 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 // the loyalty module itself is NOT edited (DO NOT respected).
 import { LoyaltyService } from '../loyalty/loyalty.service.js';
 import { type MoneyDelta, MoneyService } from '../money/money.service.js';
+// F2: «Отправил кладовщику» — in-app 🔔 + SSE push to the warehouse keeper.
 import { NotificationService } from '../notification/notification.service.js';
 import { resolveCreatorGroupId } from '../shared/group-stamp.js';
 // Optimistic-lock (lost-update guard) for the draft field-edit update() path.
@@ -65,6 +66,77 @@ export class RetailSaleService {
     @Inject(LoyaltyService) private readonly loyalty: LoyaltyService,
     @Inject(NotificationService) private readonly notifications: NotificationService,
   ) {}
+
+  /**
+   * F2 (user feature 2026-07-03) — «Отправил кладовщику» on a REFUND receipt.
+   *
+   * Guards: the receipt must be a refund mirror (refundedFromId set) and not
+   * already sent (idempotent — the flag lives in attributes.__sentToWarehouse,
+   * no schema migration). Recipients: the store's «Владелец-сотрудник» when
+   * assigned; otherwise every other active employee of the account (the
+   * cashier who pressed the button is never notified about their own send).
+   * Notification fan-out is best-effort (NotificationService.emit swallows
+   * failures) — the flag write is the source of truth.
+   */
+  async sendToWarehouse(accountId: string, userId: string, id: string) {
+    const sale = await this.prisma.client.retailSale.findFirst({
+      where: { id, accountId },
+      include: {
+        session: { include: { store: { select: { id: true, name: true, ownerId: true } } } },
+        positions: { select: { quantity: true }, orderBy: { position: 'asc' } },
+      },
+    });
+    if (!sale) throw new NotFoundException(`RetailSale ${id} not found`);
+    if (!sale.refundedFromId) {
+      throw new BadRequestException(
+        'Bu chek vozvrat emas — omborga yuborish faqat vozvrat chekida',
+      );
+    }
+    const attrs = (sale.attributes ?? {}) as Record<string, unknown>;
+    if (attrs.__sentToWarehouse) {
+      throw new BadRequestException('Bu vozvrat allaqachon omborchiga yuborilgan');
+    }
+
+    // Flag FIRST (source of truth), then fan out the notifications.
+    const sentToWarehouse = { at: new Date().toISOString(), by: userId };
+    await this.prisma.client.retailSale.update({
+      where: { id, accountId },
+      data: { attributes: { ...attrs, __sentToWarehouse: sentToWarehouse } },
+    });
+
+    // Recipients: store keeper (Владелец-сотрудник) → fallback every other
+    // active employee. Never the sender themselves.
+    const store = sale.session.store;
+    let recipientIds: string[] = [];
+    if (store?.ownerId && store.ownerId !== userId) {
+      recipientIds = [store.ownerId];
+    } else {
+      const employees = await this.prisma.client.employee.findMany({
+        where: { accountId, archived: false, NOT: { id: userId } },
+        select: { id: true },
+      });
+      recipientIds = employees.map((e) => e.id);
+    }
+
+    const itemCount = sale.positions.length;
+    const title = `Возврат ${sale.name} — примите товар на склад`;
+    const body = `${store?.name ?? 'Склад'} · позиций: ${itemCount}`;
+    await Promise.all(
+      recipientIds.map((rid) =>
+        this.notifications.emit(
+          accountId,
+          rid,
+          'return_to_warehouse',
+          title,
+          body,
+          'RetailSale',
+          sale.id,
+        ),
+      ),
+    );
+
+    return { ok: true, sentToWarehouse, notified: recipientIds.length };
+  }
 
   /**
    * §109 — accrue loyalty points for a posted sale. A SIDE-LEDGER:
@@ -175,25 +247,8 @@ export class RetailSaleService {
 
   async list(accountId: string, rawFilter: unknown) {
     const filter = RetailSaleFilterSchema.parse(rawFilter);
-
-    // assigneeId filter: find sales that have a picking RestockTask assigned to this employee.
-    let assigneeIdFilter: Prisma.RetailSaleWhereInput = {};
-    if (filter.assigneeId) {
-      const tasks = await this.prisma.client.restockTask.findMany({
-        where: {
-          accountId,
-          type: 'picking',
-          assigneeId: filter.assigneeId,
-          status: { not: 'done' },
-        },
-        select: { sourceId: true },
-      });
-      assigneeIdFilter = { id: { in: tasks.map((t) => t.sourceId) } };
-    }
-
     const where: Prisma.RetailSaleWhereInput = {
       accountId,
-      ...assigneeIdFilter,
       ...(filter.sessionId ? { sessionId: filter.sessionId } : {}),
       ...(filter.state ? { state: filter.state } : {}),
       ...(filter.dateFrom || filter.dateTo
@@ -224,8 +279,9 @@ export class RetailSaleService {
           select: {
             id: true,
             state: true,
+            // currency drives the money-cell formatting on the list (the till
+            // may not be UZS) — fetched so the FE never hard-codes a suffix.
             cashDesk: { select: { id: true, name: true, currency: true } },
-            cashier: { select: { id: true, name: true } },
           },
         },
         agent: { select: { id: true, name: true } },
@@ -249,8 +305,7 @@ export class RetailSaleService {
             cashDesk: { select: { id: true, name: true, currency: true } },
             cashier: { select: { id: true, name: true } },
             store: { select: { id: true, name: true } },
-            // `phone` surfaces on the printed «Savdo cheki» header (org contact).
-            organization: { select: { id: true, name: true, legalTitle: true, phone: true } },
+            organization: { select: { id: true, name: true, legalTitle: true } },
           },
         },
         agent: { select: { id: true, name: true, legalTitle: true } },
@@ -413,364 +468,6 @@ export class RetailSaleService {
     }
   }
 
-  async sendToPicking(accountId: string, id: string, userId: string, userName: string) {
-    const sale = await this.prisma.client.retailSale.findFirst({
-      where: { id, accountId },
-      select: { id: true, state: true },
-    });
-    if (!sale) throw new NotFoundException(`RetailSale ${id} not found`);
-    if (sale.state !== 'draft') {
-      throw new BadRequestException(
-        `Only draft sales can be sent to picking (current: ${sale.state})`,
-      );
-    }
-    const result = await this.prisma.client.retailSale.updateMany({
-      where: { id, accountId, state: 'draft' },
-      data: { state: 'picking' },
-    });
-    if (result.count === 0) {
-      throw new ConflictException('Sale state changed; send-to-picking aborted');
-    }
-    // Create per-sklad picking tasks for each configured warehouse keeper.
-    // Best-effort: a failure here must not roll back the state change.
-    this.createPickingTasksForSale(accountId, id, userId, userName).catch((e) => {
-      this.logger.error(
-        `createPickingTasksForSale failed for retailsale ${id}: ${e instanceof Error ? e.message : e}`,
-      );
-    });
-    return this.prisma.client.retailSale.findUniqueOrThrow({
-      where: { id },
-      include: {
-        positions: {
-          include: { product: { select: { id: true, name: true, code: true } } },
-          orderBy: { position: 'asc' },
-        },
-      },
-    });
-  }
-
-  /**
-   * After a sale is sent to picking, group its positions by product.locSklad
-   * and create one RestockTask (type='picking') per sklad that has a configured
-   * keeper. Each keeper receives a bell notification. Products with no locSklad
-   * are skipped (no bin → no keeper to assign). Best-effort callers swallow errors.
-   */
-  private async createPickingTasksForSale(
-    accountId: string,
-    saleId: string,
-    userId: string,
-    userName: string,
-  ): Promise<void> {
-    const sale = await this.prisma.client.retailSale.findFirst({
-      where: { id: saleId, accountId },
-      select: {
-        name: true,
-        storeId: true,
-        store: { select: { name: true } },
-        positions: {
-          include: {
-            product: {
-              select: {
-                id: true,
-                name: true,
-                locSklad: true,
-                locPolka: true,
-                locQavat: true,
-                locYacheyka: true,
-              },
-            },
-          },
-          orderBy: { position: 'asc' },
-        },
-      },
-    });
-    if (!sale || sale.positions.length === 0) {
-      this.logger.warn(`createPickingTasks[${saleId}]: sale not found or no positions`);
-      return;
-    }
-
-    const keepers = await this.prisma.client.skladKeeper.findMany({ where: { accountId } });
-    if (keepers.length === 0) {
-      this.logger.warn(`createPickingTasks[${saleId}]: no skladKeeper mappings found`);
-      return;
-    }
-    const keeperBySklad = new Map(keepers.map((k) => [k.skladNo, k]));
-
-    // Group positions by locSklad. Products with no locSklad fall into a
-    // special NULL_SKLAD=-1 bucket that gets assigned to the first keeper.
-    const NULL_SKLAD = -1;
-    type Pos = (typeof sale.positions)[number];
-    const groups = new Map<number, Pos[]>();
-    for (const pos of sale.positions) {
-      const sklad = pos.product?.locSklad ?? NULL_SKLAD;
-      if (sklad === NULL_SKLAD) {
-        this.logger.warn(
-          `createPickingTasks[${saleId}]: product ${pos.productId} has no locSklad — fallback bucket`,
-        );
-      }
-      const bucket = groups.get(sklad);
-      if (bucket) bucket.push(pos);
-      else groups.set(sklad, [pos]);
-    }
-    this.logger.log(
-      `createPickingTasks[${saleId}]: grouped into sklads: ${[...groups.keys()].join(', ')}, keepers: ${[...keeperBySklad.keys()].join(', ')}`,
-    );
-
-    const storeId = sale.storeId ?? null;
-    const storeName = sale.store?.name ?? null;
-    // Fallback keeper for products with no locSklad: first configured keeper.
-    const fallbackKeeper = keepers[0];
-
-    const pad = (n: number | null) => String(n ?? 0).padStart(2, '0');
-    const formatBin = (s: number | null, p: number | null, q: number | null, y: number | null) => {
-      if (s == null && p == null && q == null && y == null) return '';
-      return [s, p, q, y].map(pad).join('-');
-    };
-
-    for (const [skladNo, entries] of groups) {
-      const keeper = skladNo === NULL_SKLAD ? fallbackKeeper : keeperBySklad.get(skladNo);
-      if (!keeper) continue;
-
-      const task = await this.prisma.client.restockTask.create({
-        data: {
-          accountId,
-          type: 'picking',
-          skladNo,
-          sourceType: 'retailsale',
-          sourceId: saleId,
-          sourceName: sale.name,
-          storeId,
-          storeName,
-          assigneeId: keeper.employeeId,
-          assigneeName: keeper.employeeName,
-          createdById: userId,
-          createdByName: userName,
-          status: 'pending',
-          lines: {
-            create: entries.map((pos, i) => {
-              const p = pos.product;
-              const bin = p ? formatBin(p.locSklad, p.locPolka, p.locQavat, p.locYacheyka) : '';
-              return {
-                accountId,
-                productId: pos.productId ?? null,
-                productName: p?.name ?? '—',
-                quantity: pos.quantity,
-                binLocation: bin || null,
-                position: i,
-              };
-            }),
-          },
-        },
-      });
-
-      await this.notifications
-        .emit(
-          accountId,
-          keeper.employeeId,
-          'picking_assigned',
-          "Yig'ish vazifasi",
-          `${entries.length} ta mahsulot${sale.name ? ` — ${sale.name}` : ''}`,
-          'RestockTask',
-          task.id,
-        )
-        .catch(() => {});
-    }
-  }
-
-  /**
-   * After a POS refund, create «joylashtirish» (placement) RestockTasks so a
-   * warehouse-keeper puts the returned goods back on their home shelves. Mirrors
-   * createPickingTasksForSale but type='restock' — grouped by product sklad,
-   * assigned to that sklad's keeper, snapshotting each line's bin location.
-   */
-  private async createPlacementTasksForRefund(
-    accountId: string,
-    refundSaleId: string,
-    userId: string,
-  ): Promise<void> {
-    const sale = await this.prisma.client.retailSale.findFirst({
-      where: { id: refundSaleId, accountId },
-      select: {
-        name: true,
-        storeId: true,
-        store: { select: { name: true } },
-        positions: {
-          include: {
-            product: {
-              select: {
-                id: true,
-                name: true,
-                locSklad: true,
-                locPolka: true,
-                locQavat: true,
-                locYacheyka: true,
-              },
-            },
-          },
-          orderBy: { position: 'asc' },
-        },
-      },
-    });
-    if (!sale || sale.positions.length === 0) return;
-
-    const keepers = await this.prisma.client.skladKeeper.findMany({ where: { accountId } });
-    if (keepers.length === 0) return;
-    const keeperBySklad = new Map(keepers.map((k) => [k.skladNo, k]));
-
-    const NULL_SKLAD = -1;
-    type Pos = (typeof sale.positions)[number];
-    const groups = new Map<number, Pos[]>();
-    for (const pos of sale.positions) {
-      const sklad = pos.product?.locSklad ?? NULL_SKLAD;
-      const bucket = groups.get(sklad);
-      if (bucket) bucket.push(pos);
-      else groups.set(sklad, [pos]);
-    }
-
-    const storeId = sale.storeId ?? null;
-    const storeName = sale.store?.name ?? null;
-    const fallbackKeeper = keepers[0];
-    const pad = (n: number | null) => String(n ?? 0).padStart(2, '0');
-    const formatBin = (s: number | null, p: number | null, q: number | null, y: number | null) =>
-      s == null && p == null && q == null && y == null ? '' : [s, p, q, y].map(pad).join('-');
-
-    for (const [skladNo, entries] of groups) {
-      const keeper = skladNo === NULL_SKLAD ? fallbackKeeper : keeperBySklad.get(skladNo);
-      if (!keeper) continue;
-      const task = await this.prisma.client.restockTask.create({
-        data: {
-          accountId,
-          type: 'restock',
-          skladNo,
-          sourceType: 'retailsale',
-          sourceId: refundSaleId,
-          sourceName: sale.name,
-          storeId,
-          storeName,
-          assigneeId: keeper.employeeId,
-          assigneeName: keeper.employeeName,
-          createdById: userId,
-          status: 'pending',
-          lines: {
-            create: entries.map((pos, i) => {
-              const p = pos.product;
-              const bin = p ? formatBin(p.locSklad, p.locPolka, p.locQavat, p.locYacheyka) : '';
-              return {
-                accountId,
-                productId: pos.productId ?? null,
-                productName: p?.name ?? '—',
-                // Refund positions carry the returned qty (may be negative on the
-                // mirror sale) — store the absolute amount to place back.
-                quantity: pos.quantity,
-                binLocation: bin || null,
-                position: i,
-              };
-            }),
-          },
-        },
-      });
-      await this.notifications
-        .emit(
-          accountId,
-          keeper.employeeId,
-          'restock_assigned',
-          'Joylashtirish vazifasi',
-          `${entries.length} ta qaytgan mahsulot${sale.name ? ` — ${sale.name}` : ''}`,
-          'RestockTask',
-          task.id,
-        )
-        .catch(() => {});
-    }
-  }
-
-  /**
-   * Omborchi «✓ Tayyor» — PER-WAREHOUSE. A sale that spans several sklads has one
-   * picking RestockTask per warehouse (createPickingTasksForSale). This marks ONLY
-   * the calling omborchi's own task(s) done, and flips the sale 'picking' → 'ready'
-   * ONLY once EVERY warehouse's picking task is done. Previously one keeper pressing
-   * «Tayyor» force-closed all tasks and readied the whole sale, so another warehouse's
-   * items were silently skipped — this fixes that multi-warehouse leak.
-   *
-   * Fallback: if the caller owns no picking task for this sale (e.g. a single-shop
-   * setup with no sklad-keepers, or a manual admin override), every picking task is
-   * marked done so the button still works.
-   */
-  async markReady(accountId: string, id: string, userId: string) {
-    const sale = await this.prisma.client.retailSale.findFirst({
-      where: { id, accountId },
-      select: { id: true, state: true },
-    });
-    if (!sale) throw new NotFoundException(`RetailSale ${id} not found`);
-    if (sale.state !== 'picking') {
-      throw new BadRequestException(
-        `Only picking sales can be marked ready (current: ${sale.state})`,
-      );
-    }
-
-    // Does THIS omborchi own a picking task for this sale?
-    const myTaskCount = await this.prisma.client.restockTask.count({
-      where: {
-        accountId,
-        sourceId: id,
-        sourceType: 'retailsale',
-        type: 'picking',
-        assigneeId: userId,
-      },
-    });
-
-    if (myTaskCount > 0) {
-      // Per-warehouse: close only the caller's own zone.
-      await this.prisma.client.restockTask.updateMany({
-        where: {
-          accountId,
-          sourceId: id,
-          sourceType: 'retailsale',
-          type: 'picking',
-          assigneeId: userId,
-          status: { not: 'done' },
-        },
-        data: { status: 'done' },
-      });
-    } else {
-      // No keeper-assigned task for this user → legacy behaviour: close everything.
-      await this.prisma.client.restockTask.updateMany({
-        where: {
-          accountId,
-          sourceId: id,
-          sourceType: 'retailsale',
-          type: 'picking',
-          status: { not: 'done' },
-        },
-        data: { status: 'done' },
-      });
-    }
-
-    // Any warehouse still outstanding? Then the sale stays 'picking' — this
-    // omborchi's zone is done, but another keeper hasn't collected theirs yet.
-    const remaining = await this.prisma.client.restockTask.count({
-      where: {
-        accountId,
-        sourceId: id,
-        sourceType: 'retailsale',
-        type: 'picking',
-        status: { not: 'done' },
-      },
-    });
-    if (remaining > 0) {
-      return this.prisma.client.retailSale.findUniqueOrThrow({ where: { id } });
-    }
-
-    // All warehouses done → flip to 'ready' (atomic guard against a racing post/cancel).
-    const result = await this.prisma.client.retailSale.updateMany({
-      where: { id, accountId, state: 'picking' },
-      data: { state: 'ready' },
-    });
-    if (result.count === 0) {
-      throw new ConflictException('Sale state changed; mark-ready aborted');
-    }
-    return this.prisma.client.retailSale.findUniqueOrThrow({ where: { id } });
-  }
-
   async post(accountId: string, userId: string, id: string, raw: unknown) {
     const parsed = PostRetailSaleSchema.parse(raw);
 
@@ -796,10 +493,8 @@ export class RetailSaleService {
       },
     });
     if (!sale) throw new NotFoundException(`RetailSale ${id} not found`);
-    if (sale.state !== 'draft' && sale.state !== 'ready') {
-      throw new BadRequestException(
-        `Only draft or ready sales can be posted (current: ${sale.state})`,
-      );
+    if (sale.state !== 'draft') {
+      throw new BadRequestException(`Only draft sales can be posted (current: ${sale.state})`);
     }
     if (sale.session.state !== 'open') {
       throw new BadRequestException(`Session is ${sale.session.state}. Cannot post sale.`);
@@ -807,19 +502,15 @@ export class RetailSaleService {
 
     const cashAmount = BigInt(parsed.cashAmountMinor);
     const cardAmount = BigInt(parsed.cardAmountMinor);
-    const terminalAmount = BigInt(parsed.terminalAmountMinor);
-    const debtAmount = BigInt(parsed.debtAmountMinor ?? '0');
     const total = sale.sumMinor;
 
-    // Debt is only allowed when an agent (counterparty) is identified.
-    if (debtAmount > 0n && !parsed.agentId && !sale.agentId) {
-      throw new BadRequestException('Qarzga sotish uchun mijoz tanlanishi shart');
-    }
-
+    // §107: mixed-payment money rule via the pure, adversarially-tested
+    // validator. Behaviour byte-identical to the prior inline block
+    // (same insufficient message, same change formula). 'negative-input'
+    // is defensive — the Zod schema already enforces `^\d+$` upstream.
     const pay = computeRetailPayment({
       cashMinor: cashAmount,
       cardMinor: cardAmount,
-      terminalMinor: terminalAmount + debtAmount,
       totalMinor: total,
     });
     if (!pay.ok) {
@@ -840,24 +531,22 @@ export class RetailSaleService {
       (p): p is typeof p & { productId: string } => p.productId !== null,
     );
     const storeId = sale.session.storeId;
-    const allowNegative = sale.session.store?.allowNegativeStock ?? false;
+    const allowNegative = sale.session.store.allowNegativeStock;
 
     const posted = await this.prisma.client.$transaction(async (tx) => {
-      // Atomic state guard: 'draft' or 'ready' → 'posted'. updateMany
-      // returns count=0 when the row state has already moved (concurrent post).
-      const effectiveAgentId = parsed.agentId ?? sale.agentId;
-
+      // Atomic state guard: only 'draft' → 'posted'. Two concurrent posts on the
+      // same draft would otherwise both succeed (both reads see 'draft', both
+      // updates flip 'posted' → 'posted' as no-op) — but the cash inflow,
+      // session aggregates, and stock decrement would fire twice. updateMany
+      // returns count=0 when the row state has already moved.
       const flipResult = await tx.retailSale.updateMany({
-        where: { id, accountId, state: { in: ['draft', 'ready'] } },
+        where: { id, accountId, state: 'draft' },
         data: {
           state: 'posted',
           postedAt: new Date(),
           cashAmountMinor: cashAmount,
           cardAmountMinor: cardAmount,
-          terminalAmountMinor: terminalAmount,
-          advancePaymentSumMinor: debtAmount,
           changeMinor: change,
-          ...(parsed.agentId !== undefined ? { agentId: parsed.agentId ?? null } : {}),
         },
       });
       if (flipResult.count === 0) {
@@ -867,7 +556,7 @@ export class RetailSaleService {
       }
 
       // Stock cascade — same lock-then-assert-then-apply pattern as DemandService.post.
-      if (stockPositions.length > 0 && storeId) {
+      if (stockPositions.length > 0) {
         const assortments = stockPositions.map((p) => ({
           kind: 'product' as const,
           id: p.productId,
@@ -902,7 +591,7 @@ export class RetailSaleService {
       // Card portion is intentionally NOT booked yet — V2 requires a
       // BankAccount routing decision (which account to credit per
       // POS terminal). For now card lives only in RetailSale.cardAmountMinor.
-      if (cashAmount > 0n && sale.session.cashDeskId && sale.session.cashDesk) {
+      if (cashAmount > 0n) {
         const moneyDeltas: MoneyDelta[] = [
           {
             sourceKind: 'cash_desk',
@@ -915,20 +604,6 @@ export class RetailSaleService {
           },
         ];
         await this.money.applyDeltas(tx, accountId, moneyDeltas);
-      }
-
-      // Debt: upsert CounterpartyBalance — positive = counterparty owes us.
-      if (debtAmount > 0n && effectiveAgentId) {
-        await tx.counterpartyBalance.upsert({
-          where: { counterpartyId_currency: { counterpartyId: effectiveAgentId, currency: 'UZS' } },
-          create: {
-            accountId,
-            counterpartyId: effectiveAgentId,
-            currency: 'UZS',
-            balanceMinor: debtAmount,
-          },
-          update: { balanceMinor: { increment: debtAmount } },
-        });
       }
 
       // Update session aggregates
@@ -958,15 +633,16 @@ export class RetailSaleService {
       select: { id: true, state: true },
     });
     if (!sale) throw new NotFoundException(`RetailSale ${id} not found`);
-    if (!['draft', 'picking', 'ready'].includes(sale.state)) {
-      throw new BadRequestException(
-        `Only draft/picking/ready sales can be cancelled (current: ${sale.state})`,
-      );
+    if (sale.state !== 'draft') {
+      throw new BadRequestException(`Only draft sales can be cancelled (current: ${sale.state})`);
     }
 
-    // Atomic state guard: 'draft'/'picking'/'ready' → 'cancelled'.
+    // Atomic state guard: 'draft' → 'cancelled'. Without this, a cancel that
+    // races with a post() would silently overwrite 'posted' to 'cancelled'
+    // while the cashDesk inflow and session aggregates remain — leaving money
+    // in the till against a cancelled receipt.
     const flipResult = await this.prisma.client.retailSale.updateMany({
-      where: { id, accountId, state: { in: ['draft', 'picking', 'ready'] } },
+      where: { id, accountId, state: 'draft' },
       data: { state: 'cancelled' },
     });
     if (flipResult.count === 0) {
@@ -1089,10 +765,7 @@ export class RetailSaleService {
       const refundStockRows = refundPositions.rows.filter(
         (p): p is typeof p & { productId: string } => Boolean(p.productId),
       );
-      // Stock only cascades when the session is bound to a store — mirrors
-      // post(), which skips the stock leg for store-less sessions.
-      const refundStoreId = original.session.storeId;
-      if (refundStockRows.length > 0 && refundStoreId) {
+      if (refundStockRows.length > 0) {
         // Re-fetch the refund sale's positions to learn their freshly-assigned
         // ids (needed for StockOperation.docPositionId provenance).
         const persistedPositions = await tx.retailSalePosition.findMany({
@@ -1103,7 +776,7 @@ export class RetailSaleService {
         const deltas: StockDelta[] = persistedPositions
           .filter((p): p is typeof p & { productId: string } => p.productId !== null)
           .map((p) => ({
-            storeId: refundStoreId,
+            storeId: original.session.storeId,
             assortmentKind: 'product',
             assortmentId: p.productId,
             qtyDelta: String(p.quantity), // positive — inflow back to stock
@@ -1122,9 +795,6 @@ export class RetailSaleService {
       // Cash outflow: route through MoneyService for the ledger entry
       // (negative deltaMinor) + balance update with overdraft guard.
       if (cashReturn > 0n) {
-        if (!original.session.cashDeskId || !original.session.cashDesk) {
-          throw new BadRequestException('Session has no cash desk — cannot process a cash refund.');
-        }
         const refundDeltas: MoneyDelta[] = [
           {
             sourceKind: 'cash_desk',
@@ -1154,18 +824,6 @@ export class RetailSaleService {
     // §109: claw back the original sale's earned points AFTER the
     // refund txn commits. Reverses the EXACT recorded value (§105).
     await this.reverseLoyalty(accountId, userId, original.id, refunded.id);
-
-    // Placement («joylashtirish») tasks — the returned goods must be put back
-    // on their home shelves. Group by product sklad, assign to that sklad's
-    // keeper. Best-effort: a placement-task hiccup must not void a committed
-    // refund (the stock is already restored inside the txn).
-    this.createPlacementTasksForRefund(accountId, refunded.id, userId).catch((e) => {
-      this.logger.warn(
-        `createPlacementTasksForRefund failed for refund ${refunded.id}: ${
-          e instanceof Error ? e.message : e
-        }`,
-      );
-    });
     return refunded;
   }
 
@@ -1193,7 +851,6 @@ export class RetailSaleService {
           sumMinor: true,
           cashAmountMinor: true,
           cardAmountMinor: true,
-          terminalAmountMinor: true,
         },
         _count: { id: true },
       }),
@@ -1208,7 +865,6 @@ export class RetailSaleService {
           sumMinor: true,
           cashAmountMinor: true,
           cardAmountMinor: true,
-          terminalAmountMinor: true,
         },
         _count: { id: true },
       }),
@@ -1233,12 +889,10 @@ export class RetailSaleService {
       salesSumMinor: (salesAgg._sum.sumMinor ?? 0n).toString(),
       cashSalesMinor: (salesAgg._sum.cashAmountMinor ?? 0n).toString(),
       cardSalesMinor: (salesAgg._sum.cardAmountMinor ?? 0n).toString(),
-      terminalSalesMinor: (salesAgg._sum.terminalAmountMinor ?? 0n).toString(),
       returnsCount: returnsAgg._count.id,
       returnsSumMinor: (returnsAgg._sum.sumMinor ?? 0n).toString(),
       cashReturnsMinor: (returnsAgg._sum.cashAmountMinor ?? 0n).toString(),
       cardReturnsMinor: (returnsAgg._sum.cardAmountMinor ?? 0n).toString(),
-      terminalReturnsMinor: (returnsAgg._sum.terminalAmountMinor ?? 0n).toString(),
       netSumMinor: ((salesAgg._sum.sumMinor ?? 0n) - (returnsAgg._sum.sumMinor ?? 0n)).toString(),
     };
   }

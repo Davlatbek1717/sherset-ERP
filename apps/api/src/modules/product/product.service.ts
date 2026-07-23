@@ -10,8 +10,6 @@ import { allocateDocumentNumber } from '../../prisma/document-number.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { resolveCreatorGroupId } from '../shared/group-stamp.js';
 import { mapVersionedUpdateError } from '../shared/optimistic-lock.js';
-import { makeEan13 } from './barcode.util.js';
-import { formatCellCode, parseCellCode, segmentWhere } from './cell-code.util.js';
 import {
   type BulkUpdatePatch,
   ProductRepository,
@@ -23,18 +21,6 @@ import {
   ProductFilterSchema,
   UpdateProductSchema,
 } from './product.schema.js';
-
-/**
- * Product.salePrices (JSON `[{ priceTypeId, value }]`) dan asosiy sotuv narxini
- * (minor) ajratadi. TAN NARX (buyPrice) bu yerda ISHLATILMAYDI.
- */
-function resolveDefaultSalePrice(salePrices: unknown): string | null {
-  if (!Array.isArray(salePrices)) return null;
-  const rows = salePrices as Array<{ priceTypeId?: string; value?: string | number }>;
-  const def = rows.find((p) => p?.priceTypeId === 'default') ?? rows[0];
-  if (!def || def.value == null) return null;
-  return String(def.value);
-}
 
 @Injectable()
 export class ProductService {
@@ -62,254 +48,168 @@ export class ProductService {
   }
 
   /**
-   * POS skaner — shtrix-kod bo'yicha aynan bitta tovar (savatga solish uchun).
-   * `findById` naqshi: topilmasa 404. Bo'sh/probelli kod → 400.
+   * «Место хранения» — where the product sits. Two kinds of row:
+   *   1. REAL per-cell stock (`isBinding:false`) — one row per address-storage
+   *      cell that already HOLDS this product (StockByCell, qty>0).
+   *   2. HOME-CELL binding (`isBinding:true`) — the cell the user assigned via the
+   *      «Полка»/«Ячейка» pickers (attributes `__polka`/`__yacheyka`), carrying the
+   *      product's UNALLOCATED on-hand in that cell's store (store stock − the sum
+   *      already placed in cells). This «remainder on the home shelf» is what the
+   *      user moves into specific cells (`cell-place`): moving N places N in a
+   *      target cell and the remainder drops by N — store total never changes.
+   *      When the home-cell label doesn't resolve to a real StoreCell, the row
+   *      falls back to the product's total on-hand with `cellId:null` (re-bind only).
    */
-  async scanByCode(accountId: string, rawCode: string) {
-    const code = (rawCode ?? '').trim();
-    if (!code) {
-      throw new BadRequestException('Shtrix-kod bo`sh');
-    }
-    const found = await this.repo.findByScanCode(accountId, code);
-    if (!found) {
-      throw new NotFoundException(`Shtrix-kod topilmadi: ${code}`);
-    }
-    return found;
-  }
-
-  /**
-   * Bitta yangi, akkaunt ichida BAND BO'LMAGAN EAN-13 ajratadi. Atomik hisoblagich
-   * (`product_barcode`) ketma-ket seq beradi; agar (masalan qo'lda kiritilgan) kod
-   * bilan to'qnashsa — keyingi seq'ga o'tadi (bir necha urinish).
-   */
-  private async allocateUniqueBarcode(accountId: string): Promise<string | null> {
-    for (let attempt = 0; attempt < 8; attempt++) {
-      const seq = await allocateDocumentNumber(
-        this.prisma.client,
-        accountId,
-        'product_barcode',
-        () => Promise.resolve(0),
-      );
-      const ean = makeEan13(seq);
-      const clash = await this.prisma.client.product.findFirst({
-        where: { accountId, barcodes: { has: ean } },
-        select: { id: true },
-      });
-      if (!clash) return ean;
-    }
-    return null;
-  }
-
-  /**
-   * «Barcode yaratish» — shtrix-kodi YO'Q barcha mahsulotlarga professional
-   * EAN-13 beradi (skaner orqali topiladigan bo'lsin). Legacy bitta `barcode`
-   * maydoni to'lgan-u `barcodes[]` bo'sh bo'lsa — o'shani `barcodes[]`ga
-   * ko'chiradi (yangi kod sarflamaydi). Natijada nechta mahsulotga kod
-   * berilgani qaytadi. Idempotent: qayta ishga tushirilsa faqat qolganlarга beradi.
-   */
-  async generateMissingBarcodes(accountId: string): Promise<{ generated: number; total: number }> {
-    const products = await this.prisma.client.product.findMany({
-      where: { accountId, deletedAt: null, barcodes: { isEmpty: true } },
-      select: { id: true },
+  async cellStock(accountId: string, id: string) {
+    const product = await this.findById(accountId, id); // tenant + existence → 404
+    const rows = await this.prisma.client.stockByCell.findMany({
+      where: { accountId, assortmentKind: 'product', assortmentId: id, qty: { gt: 0 } },
+      include: {
+        store: { select: { id: true, name: true } },
+        cell: { select: { id: true, name: true, zone: { select: { id: true, name: true } } } },
+      },
+      orderBy: [{ storeId: 'asc' }, { cellId: 'asc' }],
     });
-    let generated = 0;
-    for (const p of products) {
-      const code = await this.allocateUniqueBarcode(accountId);
-      if (!code) continue;
-      await this.prisma.client.product.update({
-        where: { id: p.id },
-        data: { barcodes: [code], version: { increment: 1 } },
-      });
-      generated++;
-    }
-    return { generated, total: products.length };
-  }
-
-  /** Multi-bin: list a product's additional shelf locations. */
-  async listLocations(accountId: string, id: string) {
-    await this.findById(accountId, id); // existence / tenant guard → 404
-    return this.repo.listLocations(accountId, id);
-  }
-
-  /** Multi-bin: replace a product's additional shelf locations (full list). */
-  async setLocations(
-    accountId: string,
-    id: string,
-    locations: Array<{
-      sklad: number;
-      polka: number | null;
-      qavat: number | null;
-      yacheyka: number | null;
-      qty: number | null;
-      note: string | null;
-    }>,
-  ) {
-    await this.findById(accountId, id); // existence / tenant guard → 404
-    return this.repo.setLocations(accountId, id, locations);
-  }
-
-  /** Scan page: product detail + stock balance per store. */
-  async getScanInfo(accountId: string, id: string) {
-    const full = await this.findById(accountId, id);
-    // TAN NARX skan sahifasida ko'rsatilmaydi (omborchi ko'rmasligi kerak) —
-    // buyPrice/minPrice/buyPriceCurrency javobdan olib tashlanadi.
-    const { buyPrice, minPrice, buyPriceCurrency, ...product } = full as typeof full & {
-      buyPrice?: unknown;
-      minPrice?: unknown;
-      buyPriceCurrency?: unknown;
-    };
-    void buyPrice;
-    void minPrice;
-    void buyPriceCurrency;
-    const stocks = await this.prisma.client.stock.findMany({
-      where: { accountId, assortmentId: id, assortmentKind: 'product' },
-      include: { store: { select: { name: true } } },
-    });
-    const balances = stocks.map((s) => ({
-      storeId: s.storeId,
-      storeName: s.store?.name ?? null,
-      qty: s.qty.toString(),
-      reservedQty: s.reservedQty.toString(),
+    const realItems = rows.map((r) => ({
+      storeId: r.storeId as string | null,
+      storeName: r.store.name as string | null,
+      cellId: r.cellId as string | null,
+      cellName: r.cell.name,
+      zoneName: r.cell.zone?.name ?? null,
+      qty: r.qty.toString(),
+      isBinding: false,
     }));
-    const totalQty = stocks.reduce((sum, s) => sum + Number(s.qty.toFixed(6)), 0);
-    return { product, balances, totalQty };
+
+    const attrs = (product.attributes ?? {}) as Record<string, unknown>;
+    const homeCellName = typeof attrs.__yacheyka === 'string' ? attrs.__yacheyka : null;
+    const homePolka = typeof attrs.__polka === 'string' ? attrs.__polka : null;
+    const bindingItems: typeof realItems = [];
+    if (homeCellName && !realItems.some((r) => r.cellName === homeCellName)) {
+      // Resolve the home-cell label to a real StoreCell (prefer the matching полка).
+      const homeCell = await this.prisma.client.storeCell.findFirst({
+        where: {
+          accountId,
+          name: homeCellName,
+          ...(homePolka ? { zone: { name: homePolka } } : {}),
+        },
+        select: {
+          id: true,
+          name: true,
+          storeId: true,
+          store: { select: { name: true } },
+          zone: { select: { name: true } },
+        },
+      });
+      if (homeCell) {
+        // Unallocated remainder in the home cell's store = store stock − already-placed.
+        const [storeStock, alloc] = await Promise.all([
+          this.prisma.client.stock.findUnique({
+            where: {
+              accountId_storeId_assortmentKind_assortmentId: {
+                accountId,
+                storeId: homeCell.storeId,
+                assortmentKind: 'product',
+                assortmentId: id,
+              },
+            },
+            select: { qty: true },
+          }),
+          this.prisma.client.stockByCell.aggregate({
+            where: {
+              accountId,
+              storeId: homeCell.storeId,
+              assortmentKind: 'product',
+              assortmentId: id,
+            },
+            _sum: { qty: true },
+          }),
+        ]);
+        const remainder = storeStock
+          ? alloc._sum.qty
+            ? storeStock.qty.minus(alloc._sum.qty)
+            : storeStock.qty
+          : null;
+        if (remainder?.greaterThan(0)) {
+          bindingItems.push({
+            storeId: homeCell.storeId,
+            storeName: homeCell.store.name,
+            cellId: homeCell.id,
+            cellName: homeCell.name,
+            zoneName: homeCell.zone?.name ?? homePolka,
+            qty: remainder.toString(),
+            isBinding: true,
+          });
+        }
+      } else {
+        // Unresolved label — show the product's total on-hand; re-bind only.
+        const agg = await this.prisma.client.stock.aggregate({
+          where: { accountId, assortmentKind: 'product', assortmentId: id },
+          _sum: { qty: true },
+        });
+        if (agg._sum.qty?.greaterThan(0)) {
+          bindingItems.push({
+            storeId: null,
+            storeName: null,
+            cellId: null,
+            cellName: homeCellName,
+            zoneName: homePolka,
+            qty: agg._sum.qty.toString(),
+            isBinding: true,
+          });
+        }
+      }
+    }
+
+    return { items: [...bindingItems, ...realItems] };
   }
 
   /**
-   * Yacheyka scan sahifasi — cell kod bo'yicha shu manzilga biriktirilgan
-   * tovarlar: asosiy manzil (Product.loc*) ∪ qo'shimcha yacheykalar
-   * (ProductLocation), har biriga ombor qoldiqlari bilan. Kodda 0-segment =
-   * «belgilanmagan» (label 00 deb bosadi) — NULL'ga ham mos keladi.
+   * «Полка» + «Ячейка» dropdown options for the product card (user 2026-07-05).
+   * Aggregates EVERY warehouse's zones (полки) and cells (ячейки) across the
+   * account into two flat searchable lists — a product isn't bound to one store,
+   * and the cell code's first segment already encodes which warehouse it lives
+   * in, so a single cross-store list is unambiguous. The FE filters the ячейка
+   * list by the chosen полка (cell.zoneName === polka) and auto-fills the полка
+   * from a picked ячейка. `product:view` gated (same as the card itself) so a
+   * product-editor without `store:view` can still populate the pickers.
    */
-  async getCellContents(accountId: string, rawCode: string) {
-    const addr = parseCellCode(rawCode);
-    if (!addr) {
-      throw new BadRequestException(
-        "Yacheyka kodi noto'g'ri — NN-NN-NN-NN yoki 8 raqamli barcode kutiladi",
-      );
-    }
-    const productSelect = {
-      id: true,
-      name: true,
-      code: true,
-      article: true,
-      uom: true,
-      archived: true,
-      // Sotuv narxi ko'rsatiladi; TAN NARX (buyPrice) QASDDAN TANLANMAYDI —
-      // omborchi tan narxni ko'rmaydi (talab).
-      salePrices: true,
-      // Per-cell qty of the PRIMARY home bin (Phase 2) — shown when the
-      // scanned cell IS the product's primary address.
-      locQty: true,
-    } satisfies Prisma.ProductSelect;
-
-    const [primary, extra, store] = await Promise.all([
-      this.prisma.client.product.findMany({
-        where: {
-          accountId,
-          deletedAt: null,
-          AND: [
-            segmentWhere('locSklad', addr.sklad),
-            segmentWhere('locPolka', addr.polka),
-            segmentWhere('locQavat', addr.qavat),
-            segmentWhere('locYacheyka', addr.yacheyka),
-          ] as Prisma.ProductWhereInput[],
-        },
-        select: productSelect,
-        orderBy: { name: 'asc' },
+  async storageOptions(accountId: string) {
+    const [zones, cells] = await Promise.all([
+      this.prisma.client.storeZone.findMany({
+        where: { accountId },
+        select: { id: true, name: true, storeId: true, store: { select: { name: true } } },
+        orderBy: [{ name: 'asc' }],
       }),
-      this.prisma.client.productLocation.findMany({
-        where: {
-          accountId,
-          sklad: addr.sklad,
-          AND: [
-            segmentWhere('polka', addr.polka),
-            segmentWhere('qavat', addr.qavat),
-            segmentWhere('yacheyka', addr.yacheyka),
-          ] as Prisma.ProductLocationWhereInput[],
-          product: { deletedAt: null },
+      this.prisma.client.storeCell.findMany({
+        where: { accountId },
+        select: {
+          id: true,
+          name: true,
+          barcode: true,
+          zoneId: true,
+          storeId: true,
+          zone: { select: { name: true } },
+          store: { select: { name: true } },
         },
-        include: { product: { select: productSelect } },
-      }),
-      // Yacheyka↔ombor bog'i (konvensiya: Store.code = sklad raqami, 0–99) —
-      // kartochkada «Ombor: <nom>» ko'rsatish uchun. Padded/unpadded ikkalasi.
-      this.prisma.client.store.findFirst({
-        where: {
-          accountId,
-          archived: false,
-          code: { in: [String(addr.sklad), String(addr.sklad).padStart(2, '0')] },
-        },
-        select: { id: true, name: true },
+        orderBy: [{ name: 'asc' }],
       }),
     ]);
-
-    // Bir tovar ham asosiy, ham qo'shimcha manzil bilan chiqishi mumkin —
-    // primary yorlig'i ustun, note/qty esa extra-yozuvdan to'ldiriladi.
-    const byId = new Map<
-      string,
-      {
-        product: (typeof primary)[number];
-        source: 'primary' | 'extra';
-        note: string | null;
-        // SHU yacheykadagi soni (Phase 2): primary → Product.locQty,
-        // extra → ProductLocation.qty. null = yuritilmaydi.
-        cellQty: Prisma.Decimal | null;
-      }
-    >();
-    for (const p of primary)
-      byId.set(p.id, { product: p, source: 'primary', note: null, cellQty: p.locQty });
-    for (const l of extra) {
-      const existing = byId.get(l.productId);
-      if (existing) {
-        existing.note = existing.note ?? l.note ?? null;
-        existing.cellQty = existing.cellQty ?? l.qty ?? null;
-      } else {
-        byId.set(l.productId, {
-          product: l.product,
-          source: 'extra',
-          note: l.note ?? null,
-          cellQty: l.qty ?? null,
-        });
-      }
-    }
-
-    const ids = [...byId.keys()];
-    const stocks = ids.length
-      ? await this.prisma.client.stock.findMany({
-          where: { accountId, assortmentKind: 'product', assortmentId: { in: ids } },
-          include: { store: { select: { name: true } } },
-        })
-      : [];
-    const stocksByProduct = new Map<string, typeof stocks>();
-    for (const s of stocks) {
-      const list = stocksByProduct.get(s.assortmentId) ?? [];
-      list.push(s);
-      stocksByProduct.set(s.assortmentId, list);
-    }
-
     return {
-      cell: { code: formatCellCode(addr), ...addr, store: store ?? null },
-      items: [...byId.values()].map(({ product, source, note, cellQty }) => {
-        const rows = stocksByProduct.get(product.id) ?? [];
-        // locQty — ichki tafsilot (cellQty'ni to'ldiradi); salePrices — xom JSON
-        // (o'rniga hisoblangan `salePrice` qaytadi). TAN NARX javobda umuman yo'q.
-        const { locQty: _locQty, salePrices, ...productFields } = product;
-        return {
-          ...productFields,
-          source,
-          note,
-          // Sotuv narxi (minor) — omborchiga ko'rsatiladi (tan narx emas).
-          salePrice: resolveDefaultSalePrice(salePrices),
-          // SHU yacheykada nechta dona turishi (Phase 2, qo'lda yuritiladi).
-          cellQty: cellQty != null ? cellQty.toString() : null,
-          totalQty: rows.reduce((sum, s) => sum + Number(s.qty.toFixed(6)), 0),
-          balances: rows.map((s) => ({
-            storeId: s.storeId,
-            storeName: s.store?.name ?? null,
-            qty: s.qty.toString(),
-          })),
-        };
-      }),
+      polkas: zones.map((z) => ({
+        id: z.id,
+        name: z.name,
+        storeId: z.storeId,
+        storeName: z.store.name,
+      })),
+      cells: cells.map((c) => ({
+        id: c.id,
+        name: c.name,
+        barcode: c.barcode,
+        zoneId: c.zoneId,
+        zoneName: c.zone?.name ?? null,
+        storeId: c.storeId,
+        storeName: c.store.name,
+      })),
     };
   }
 
@@ -344,18 +244,6 @@ export class ProductService {
         this.maxProductCode(accountId),
       );
       parsed.code = String(n).padStart(5, '0');
-    }
-    // Shtrix-kod berilmagan bo'lsa — professional EAN-13 avtomatik beriladi
-    // (yangi mahsulot ham skaner orqali topiladigan bo'lsin). Qo'lda kiritilgan
-    // shtrix-kod(lar) tegilmaydi. BEST-EFFORT: barcode ajratishdagi nosozlik
-    // mahsulot yaratilishini BLOKLAMAYDI (keyin bulk-generate to'ldiradi).
-    if (!parsed.barcodes || parsed.barcodes.length === 0) {
-      try {
-        const ean = await this.allocateUniqueBarcode(accountId);
-        if (ean) parsed.barcodes = [ean];
-      } catch {
-        /* barcode berilmadi — create davom etadi */
-      }
     }
     try {
       const created = await this.repo.create(accountId, userId, parsed);
@@ -462,6 +350,41 @@ export class ProductService {
     if (!updated) throw new NotFoundException(`Product ${id} not found`);
     await this.logAudit(accountId, userId, 'update', id, null);
     return updated;
+  }
+
+  /**
+   * «Сохранить цены» — persist a document grid's per-line prices onto the products'
+   * DEFAULT sale price type (moysklad position-grid «Цена ▾ → Сохранить цены»).
+   * Tenant-scoped; preserves each product's other price types. Returns the count
+   * written + the resolved price type (null ⇒ the account has no price types yet).
+   */
+  async saveLinePrices(
+    accountId: string,
+    items: { productId: string; priceMinor: string }[],
+    actorId?: string,
+  ) {
+    return this.repo.saveLinePrices(accountId, items, actorId);
+  }
+
+  /**
+   * Pick-modal «Doimiy narx» — persist ONE product's negotiated price as its
+   * default sale price. Same write path as «Сохранить цены» (saveLinePrices);
+   * 404 when the product is missing/deleted or the account has no price type.
+   * The write is audited + stamps modifiedById (the endpoint is deliberately
+   * permission-free, so the audit trail is the only accountability it has).
+   */
+  async setDefaultSalePrice(
+    accountId: string,
+    userId: string,
+    productId: string,
+    priceMinor: string,
+  ) {
+    const res = await this.repo.saveLinePrices(accountId, [{ productId, priceMinor }], userId);
+    if (res.written === 0) throw new NotFoundException(`Product ${productId} not found`);
+    await this.logAudit(accountId, userId, 'update', productId, {
+      salePrices: { before: undefined, after: { default: priceMinor } },
+    });
+    return res;
   }
 
   /** «Массовое редактирование» — bulk-edit common fields on the selection. */

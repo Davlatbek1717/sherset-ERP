@@ -2,7 +2,7 @@
 
 import { api } from '@/lib/api-client';
 import { abcClassTone, inventoryPriorityTone } from '@/lib/domain-status-tone';
-import { Badge } from '@moysklad/ui';
+import { Badge, StickyHScroll } from '@moysklad/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
@@ -97,7 +97,7 @@ export function CycleView() {
       )}
 
       {data && data.items.length > 0 && (
-        <div className="overflow-x-auto rounded-lg border border-[var(--ms-border)] bg-white">
+        <StickyHScroll className="rounded-lg border border-[var(--ms-border)] bg-white">
           <table className="w-full text-sm">
             <thead className="bg-[var(--ms-bg-subtle)] text-[var(--ms-text-muted)] text-xs uppercase">
               <tr>
@@ -168,7 +168,7 @@ export function CycleView() {
               ))}
             </tbody>
           </table>
-        </div>
+        </StickyHScroll>
       )}
     </div>
   );

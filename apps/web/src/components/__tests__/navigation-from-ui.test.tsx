@@ -44,10 +44,7 @@ describe('SubNav', () => {
 
     it('non-active items render as <a href> without active classes', () => {
       renderWithProviders(<SubNav items={[{ key: 'a', label: 'A', href: '/items' }]} />);
-      // getByRole('link') scopes to the desktop <a> — the 2026-07-20f mobile
-      // dropdown trigger is a <button> with the same visible label ("A" is
-      // also the current-page fallback text), so getByText would be ambiguous.
-      const a = screen.getByRole('link', { name: 'A' }) as HTMLAnchorElement;
+      const a = screen.getByText('A') as HTMLAnchorElement;
       expect(a.tagName).toBe('A');
       expect(a).toHaveAttribute('href', '/items');
       expect(a.className).not.toContain('font-medium');
@@ -57,7 +54,7 @@ describe('SubNav', () => {
   describe('active state', () => {
     it('active=true sets data-active="true"', () => {
       renderWithProviders(<SubNav items={[{ key: 'a', label: 'A', href: '/a', active: true }]} />);
-      const a = screen.getByRole('link', { name: 'A' }) as HTMLAnchorElement;
+      const a = screen.getByText('A') as HTMLAnchorElement;
       expect(a).toHaveAttribute('data-active', 'true');
     });
 
@@ -65,7 +62,7 @@ describe('SubNav', () => {
       // moysklad parity (2026-06-22): sub-nav links are all brand-blue now, so
       // the active one is distinguished by font-semibold + the brand underline.
       renderWithProviders(<SubNav items={[{ key: 'a', label: 'A', href: '/a', active: true }]} />);
-      const a = screen.getByRole('link', { name: 'A' });
+      const a = screen.getByText('A');
       expect(a.className).toContain('font-semibold');
       expect(a.className).toContain('text-[var(--ms-text-brand)]');
       expect(a.className).toContain('border-[var(--ms-brand-500)]');
@@ -73,7 +70,7 @@ describe('SubNav', () => {
 
     it('inactive items do NOT have data-active', () => {
       renderWithProviders(<SubNav items={[{ key: 'a', label: 'A', href: '/a' }]} />);
-      expect(screen.getByRole('link', { name: 'A' })).not.toHaveAttribute('data-active');
+      expect(screen.getByText('A')).not.toHaveAttribute('data-active');
     });
   });
 

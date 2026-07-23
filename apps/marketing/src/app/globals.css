@@ -1,12 +1,13 @@
 @import 'tailwindcss';
 
-/* Brand tokens shared with the app — Sherset blue scale (primary #0652FF). */
+/* Brand tokens shared with the app — exported here so marketing pages
+ * have the same colour scale moysklad.uz uses. */
 :root {
-  --brand-50: #edf3ff;
-  --brand-100: #dce6ff;
-  --brand-500: #0652ff;
-  --brand-700: #0439b2;
-  --brand-900: #07194d;
+  --brand-50: #ecf8ff;
+  --brand-100: #e4f1fa;
+  --brand-500: #186999;
+  --brand-700: #2076a9;
+  --brand-900: #091739;
 }
 
 * {

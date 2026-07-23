@@ -8,6 +8,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Bell, BellOff } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
 
 interface NotificationItem {
   id: string;
@@ -28,12 +29,8 @@ interface NotificationsResponse {
 }
 
 function entityHref(kind: string, entity: string | null, entityId: string | null): string | null {
-  // Qarz-eslatma (2026-07-12): «Qaysilar?» — Bugungi qo'ng'iroqlar sahifasiga.
-  // entityId'siz sahifa-havola, shuning uchun null-tekshiruvdan OLDIN.
-  if (kind === 'debt_call_due' || entity === 'DebtCalls') return '/debts/calls';
   if (!entityId) return null;
   if (kind.startsWith('task_') || entity === 'Task') return `/tasks/${entityId}`;
-  if (kind === 'restock_assigned' || entity === 'RestockTask') return `/restock-tasks/${entityId}`;
   if (kind.startsWith('opportunity_') || entity === 'Opportunity')
     return `/opportunities/${entityId}`;
   if (kind === 'invoice_paid' || kind === 'invoice_overdue' || entity === 'InvoiceOut')
@@ -54,10 +51,21 @@ function formatRelativeTime(
   return new Date(isoString).toLocaleDateString();
 }
 
+/** The user-menu «Новости» item opens the bell panel through this event. */
+export const OPEN_NOTIFICATIONS_EVENT = 'moysklad:open-notifications';
+
 export function NotificationBell() {
   const t = useTranslations('notifications');
   const router = useRouter();
   const qc = useQueryClient();
+  // Controlled open so the account dropdown's «Новости» can raise the panel
+  // (moysklad parity: that menu item opens the notifications sidepage).
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    const onOpen = () => setOpen(true);
+    window.addEventListener(OPEN_NOTIFICATIONS_EVENT, onOpen);
+    return () => window.removeEventListener(OPEN_NOTIFICATIONS_EVENT, onOpen);
+  }, []);
 
   const { data, isLoading } = useQuery<NotificationsResponse>({
     queryKey: ['notifications', 'unread'],
@@ -94,7 +102,7 @@ export function NotificationBell() {
   };
 
   return (
-    <Popover.Root>
+    <Popover.Root open={open} onOpenChange={setOpen}>
       <Popover.Trigger asChild>
         <button
           type="button"

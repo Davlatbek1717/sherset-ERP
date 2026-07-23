@@ -19,6 +19,7 @@ export {
 } from './DocumentMetaPanel.tsx';
 export {
   PositionTable,
+  isRowOversold,
   type PositionTableProps,
   type PositionTableColumnConfig,
   type PositionColumnKey,
@@ -28,6 +29,12 @@ export {
   PositionInlineAdd,
   type PositionInlineAddProps,
 } from './PositionInlineAdd.tsx';
+export {
+  ProductPickModal,
+  pickPriceToMinor,
+  type ProductPickModalLabels,
+  type ProductPickModalProps,
+} from './ProductPickModal.tsx';
 export { PositionNameCell, type PositionNameCellProps } from './PositionNameCell.tsx';
 export {
   DocumentTotalsPanel,

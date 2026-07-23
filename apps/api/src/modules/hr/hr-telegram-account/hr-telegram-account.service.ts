@@ -62,19 +62,6 @@ export class HrTelegramAccountService {
     });
   }
 
-  /**
-   * Boot-receiver'lar uchun — barcha faol, sessiyali (accountId, slot)
-   * juftliklari (tenant'lar bo'ylab). `MtprotoWorkerService` boot'da har biriga
-   * ulanib kiruvchi listener biriktiradi (send'ga bog'liq emas — «xabar
-   * saqlanmayapti» buggini tuzatadi).
-   */
-  async listActiveSlots(): Promise<{ accountId: string; slot: number }[]> {
-    return this.prisma.client.hrTelegramAccount.findMany({
-      where: { isActive: true, sessionEncrypted: { not: null } },
-      select: { accountId: true, slot: true },
-    });
-  }
-
   async create(
     accountId: string,
     input: CreateHrTelegramAccountInput,
@@ -111,79 +98,6 @@ export class HrTelegramAccountService {
         apiHashEncrypted,
         sessionEncrypted: null,
         isActive: false, // OTP login wizard activates after session persisted
-      },
-    });
-    return toDto(row);
-  }
-
-  /**
-   * Soddalashtirilgan ulash — foydalanuvchi FAQAT telefonini beradi; apiId/
-   * apiHash serverning env'idan (ikkala slot ham BIR XIL ilova kalitini
-   * ishlatadi — faqat telefon raqami farq qiladi). `slot` 1 (asosiy) yoki 2
-   * (zaxira — worker'ning failover mantig'i shuni kutadi, mtproto-worker.
-   * service.ts:SLOTS = [1,2]). Mavjud bo'lsa telefonni yangilaydi (raqam
-   * o'zgarsa sessiya bekor bo'ladi — boshqa raqamning sessiyasi ishlamaydi).
-   * So'ng chaqiruvchi odatiy login/start → code oqimini yuritadi.
-   *
-   * 2026-07-20: ilgari FAQAT slot 1'ga cheklangan edi (soddalashtirish uchun,
-   * "profil qo'shish shart bo'lmasin" talabiga ko'ra) — lekin bitta raqam
-   * Telegram flood-wait'ga uchraganda (contacts.GetContacts, ko'p yangi
-   * mijozga qisqa vaqtda yozganda 1-2+ soatga bloklanadi) hech qanday zaxira
-   * bo'lmagani aniqlandi. Endi ikkinchi (zaxira) raqamni ham shu oddiy oqim
-   * bilan ulash mumkin.
-   */
-  async connectSlot(
-    accountId: string,
-    slot: 1 | 2,
-    phoneNumber: string,
-  ): Promise<HrTelegramAccountDto> {
-    const apiIdRaw = process.env.TELEGRAM_API_ID;
-    const apiHash = process.env.TELEGRAM_API_HASH;
-    const apiId = Number(apiIdRaw);
-    if (!apiIdRaw || !apiHash || !Number.isInteger(apiId) || apiId <= 0 || apiHash.length < 20) {
-      throw new BadRequestException(
-        'Server Telegram sozlanmagan (TELEGRAM_API_ID / TELEGRAM_API_HASH) — administrator sozlashi kerak',
-      );
-    }
-
-    let normalizedPhone: string;
-    try {
-      const p = normalizeTelegramPhone(phoneNumber);
-      if (!p) throw new Error("Bo'sh telefon raqami");
-      normalizedPhone = p;
-    } catch (e) {
-      throw new BadRequestException((e as Error).message);
-    }
-
-    const apiHashEncrypted = encryptHrSession(apiHash);
-    const existing = await this.prisma.client.hrTelegramAccount.findFirst({
-      where: { accountId, slot },
-    });
-
-    if (existing) {
-      const phoneChanged = existing.phoneNumber !== normalizedPhone;
-      const updated = await this.prisma.client.hrTelegramAccount.update({
-        where: { id: existing.id },
-        data: {
-          phoneNumber: normalizedPhone,
-          apiId,
-          apiHashEncrypted,
-          // Raqam o'zgargan bo'lsa eski sessiya endi mos emas — tozalaymiz.
-          ...(phoneChanged ? { sessionEncrypted: null, isActive: false } : {}),
-        },
-      });
-      return toDto(updated);
-    }
-
-    const row = await this.prisma.client.hrTelegramAccount.create({
-      data: {
-        accountId,
-        slot,
-        phoneNumber: normalizedPhone,
-        apiId,
-        apiHashEncrypted,
-        sessionEncrypted: null,
-        isActive: false,
       },
     });
     return toDto(row);
@@ -231,24 +145,6 @@ export class HrTelegramAccountService {
     await this.prisma.client.hrTelegramAccount.updateMany({
       where: { accountId, slot },
       data: { floodWaitUntil: null },
-    });
-  }
-
-  /**
-   * Sessiya Telegram tomonidan BEKOR qilinganda (AUTH_KEY_UNREGISTERED / 401 —
-   * ko'pincha spam-blok yoki boshqa qurilmadan chiqib ketish) adapter chaqiradi.
-   * O'lik sessiyani tozalaymiz + slotni nofaol qilamiz (2026-07-21):
-   *  - UI endi yolg'on «Ulangan» ko'rsatmaydi — `hasSession=false` bo'lib
-   *    qayta-login formasi chiqadi (badge `is_active`ga qarab yolg'on yashil edi);
-   *  - worker bu slotni boshqa urinmaydi (`findActiveBySlot`/`listActiveSlots`
-   *    `is_active`ni talab qiladi) — behuda AUTH_KEY spam to'xtaydi;
-   *  - `setActive` sessiyasiz faollashtirishni rad qiladi → flip-flop bo'lmaydi.
-   * Faqat sessiya BOR bo'lganda yozadi (idempotent).
-   */
-  async markSessionLost(accountId: string, slot: number): Promise<void> {
-    await this.prisma.client.hrTelegramAccount.updateMany({
-      where: { accountId, slot, sessionEncrypted: { not: null } },
-      data: { sessionEncrypted: null, isActive: false },
     });
   }
 

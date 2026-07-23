@@ -1,7 +1,6 @@
 'use client';
 
 import type * as React from 'react';
-import { ErrorState } from '../feedback/ErrorState.tsx';
 import { cn } from '../lib/cn.ts';
 import { DocumentHeader, type DocumentHeaderProps } from './DocumentHeader.tsx';
 import { DocumentToolbar, type DocumentToolbarProps } from './DocumentToolbar.tsx';
@@ -68,10 +67,12 @@ export function DocumentEditor({
   modifyLabel,
   createDocMenu,
   createDocLabel,
+  hideCreateDoc,
   printMenu,
   printLabel,
   sendMenu,
   sendLabel,
+  trailingSlot,
   rightSlot,
   // Header props
   documentTypeLabel,
@@ -84,6 +85,8 @@ export function DocumentEditor({
   statusOptions,
   onStatusChange,
   statusLabel,
+  onConfigureStatuses,
+  configureStatusesLabel,
   paymentLabel,
   paymentTone,
   requestPaymentLabel,
@@ -101,9 +104,7 @@ export function DocumentEditor({
   children,
   noticeSlot,
   error,
-  errorTitle,
-  errorRetryLabel,
-  onErrorRetry,
+
   testId,
   className,
 }: DocumentEditorProps) {
@@ -127,10 +128,12 @@ export function DocumentEditor({
         modifyLabel={modifyLabel}
         createDocMenu={createDocMenu}
         createDocLabel={createDocLabel}
+        hideCreateDoc={hideCreateDoc}
         printMenu={printMenu}
         printLabel={printLabel}
         sendMenu={sendMenu}
         sendLabel={sendLabel}
+        trailingSlot={trailingSlot}
         rightSlot={rightSlot}
       />
       {noticeSlot}
@@ -145,6 +148,8 @@ export function DocumentEditor({
         statusOptions={statusOptions}
         onStatusChange={onStatusChange}
         statusLabel={statusLabel}
+        onConfigureStatuses={onConfigureStatuses}
+        configureStatusesLabel={configureStatusesLabel}
         paymentLabel={paymentLabel}
         paymentTone={paymentTone}
         requestPaymentLabel={requestPaymentLabel}
@@ -159,14 +164,24 @@ export function DocumentEditor({
         waitingHelp={waitingHelp}
         waitingDisabled={waitingDisabled}
       />
+      {/* moysklad parity (owner 2026-07-11, grounded on his live screenshot):
+          validation errors are a SMALL inline «✖ message» line under the toolbar
+          — never the old full-width banner («katta banner» complaint). The
+          field itself carries the thick red highlight (DocumentMetaField error
+          prop); this line is the compact global echo moysklad shows under
+          «Сохранить». errorTitle/onErrorRetry are intentionally ignored. */}
       {error && (
-        <div className="border-[var(--ms-destructive-100)] border-b bg-[var(--ms-destructive-50)] px-4 py-2">
-          <ErrorState
-            title={errorTitle ?? 'Saqlashda xato'}
-            description={error}
-            retryLabel={errorRetryLabel}
-            onRetry={onErrorRetry}
-          />
+        <div
+          className="flex items-center gap-1.5 px-4 pt-2 font-medium text-[13px] text-[var(--ms-text-destructive)]"
+          data-test-id="doc-editor-error"
+        >
+          <span
+            aria-hidden
+            className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[var(--ms-text-destructive)] font-bold text-[10px] text-white leading-none"
+          >
+            ✕
+          </span>
+          {error}
         </div>
       )}
       <div className="flex-1 px-4 py-3">{children}</div>

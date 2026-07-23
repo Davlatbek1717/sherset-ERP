@@ -1,714 +1,1540 @@
 'use client';
 
 /**
- * «Адресное хранение товаров» — ombor kartochkasining o'ng bo'limi
- * (moysklad store card 1:1, 2026-07-16 talab + 2 kelishilgan o'zgarish):
+ * «Адресное хранение товаров» — the warehouse-card address-storage manager.
  *
- *   1) moysklad'dagi «+ Зона» → «Polka qo'shish» deb NOMLANADI va bosilganda
- *      3 ta MAJBURIY input chiqadi: polka kodi · yacheyka kodi prefiksi
- *      («NN-NN-NN», masalan 04-03-01) · o'rinlar soni (masalan 20). Enter →
- *      tizim 04-03-01-01 … 04-03-01-20 ketma-ket yacheykalarni avtomatik
- *      yaratadi (server: POST /admin/stores/:id/cells/generate).
- *   2) Yacheykalar jadvalida moysklad'dagi «Статус»/«Штрихкод» ustunlari YO'Q
- *      (2026-07-16 talab) — «Ячейка | Полка» + har qatorda 3 amal:
- *      ➕ tovar biriktirish (Выбор товара modali) · 🖨 chop etish (label
- *      sahifasi, segmentlar oldindan to'ldirilgan) · 🗑 o'chirish.
+ * moysklad parity, re-grounded LIVE 2026-07-03
+ * (docs/audits/stores-1to1-2026-07-03/GROUND.md + ms-card-full.png):
+ *   · optional help paragraph + «Как работает адресное хранение» link when the
+ *     store has no zones/cells yet (edit mode)
+ *   · «Проводить инвентаризацию по ячейкам» checkbox (edit mode; saved with the
+ *     card's «Сохранить» via the parent form)
+ *   · Зоны table  — Зона(200) · Всего ячеек(100) · Свободно(100) · Занято(100);
+ *     «Без зоны хранения» gray bucket row; REAL occupancy from stock-by-cell
+ *   · Ячейки table — Ячейка(195) · Относится к зоне(195) · Статус(110) ·
+ *     Штрихкод(195); status «Свободна»/«Занята» from per-cell stock
+ *   · rows: 30px, display-mode labels; click a row → inline editors (save on
+ *     blur/Enter, Escape reverts); hover → yellow + ⊗ delete
+ *   · «+ Зона» / «+ Ячейка» blue add buttons under each table → append an
+ *     editing draft row
+ *   · header underline + table bottom border: 2px rgb(24,105,153); row
+ *     separators 1px #d5d5d5 (pixel-sampled from the live capture)
  *
- *   Polka-svodka jadvali (moysklad zona jadvali ko'rinishida): Polka |
- *   Всего ячеек | Свободно | Занято, birinchi qator — «Без зоны хранения»
- *   (polkasiz yacheykalar). Band/bo'shlik serverda Product.loc* ∪
- *   ProductLocation dan hisoblanadi.
+ * Two modes:
+ *   · storeId set  → server mode, zones/cells CRUD hits the API immediately
+ *     (independent of the card's «Сохранить») — moysklad behaves the same way
+ *   · storeId null → CREATE mode: rows buffer locally (drafts), the parent
+ *     flushes them to the API right after the store is created
+ *
+ * Known gap (documented): moysklad also drag-reorders zone/cell rows
+ * (drop-position-marker). Deferred — needs a sortOrder PATCH sweep.
  */
 
-import {
-  ProductSelectModal,
-  type ProductSelectRow,
-} from '@/components/products/product-select-modal';
-import { CellScanModal } from '@/components/stores/cell-scan-modal';
-import { useDestructiveMutation } from '@/hooks/use-destructive-mutation';
+import { ProductSelectModal } from '@/components/products/product-select-modal';
+import { genEan13 } from '@/components/products/use-product-form';
+import { CellContentsModal } from '@/components/stores/cell-contents-modal';
+import { CellCountModal } from '@/components/stores/cell-count-modal';
+import { CellLabelPrintOverlay } from '@/components/stores/cell-label-print';
+import { CellScanBindModal } from '@/components/stores/cell-scan-bind-modal';
 import { api } from '@/lib/api-client';
-import { Button, Input, cn, useToast } from '@moysklad/ui';
+import { Button, Checkbox, Icons, Input, NativeSelect } from '@moysklad/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  ChevronDown,
-  ChevronRight,
-  HelpCircle,
-  Plus,
-  Printer,
-  ScanLine,
-  Trash2,
-} from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { useRouter } from 'next/navigation';
-import { Fragment, useState } from 'react';
+import { type ReactNode, useRef, useState } from 'react';
 
-interface CellRow {
+interface Zone {
   id: string;
+  name: string;
+  sortOrder: number;
+  cellCount: number;
+  occupiedCount: number;
+  freeCount: number;
+}
+interface Cell {
+  id: string;
+  name: string;
+  zoneId: string | null;
+  zoneName: string | null;
+  barcode: string | null;
+  sortOrder: number;
+  occupied: boolean;
+}
+interface AddressStorage {
+  zones: Zone[];
+  cells: Cell[];
+}
+
+/** A cell row for display — server cell or a pending (unsaved) draft cell. */
+type CellView = Cell & { pending: boolean };
+/** A polka row for display — carries the server zone id (null if pending-only). */
+type ZoneView = Zone & { pending: boolean; serverId: string | null };
+
+/** CREATE-mode draft rows (flushed by the parent after the store is created). */
+export interface DraftZone {
+  key: string;
+  name: string;
+}
+export interface DraftCell {
+  key: string;
+  name: string;
+  /** Chosen polka number. `null`/absent ⇒ derive from the code's 3rd segment;
+   *  `''` ⇒ «Без полки» (explicitly no polka). Picked via the row's dropdown. */
+  polka?: string | null;
+  barcode: string | null;
+}
+export interface AddressStorageDrafts {
+  zones: DraftZone[];
+  cells: DraftCell[];
+}
+
+let draftSeq = 0;
+const nextKey = () => {
+  draftSeq += 1;
+  return `draft-${draftSeq}`;
+};
+
+// moysklad table chrome (pixel-sampled): blue 2px header underline + bottom
+// border, 1px #d5d5d5 row separators, 30px rows, 12px text.
+const TABLE_BLUE = 'border-[rgb(24,105,153)]';
+const HEAD_TH = 'h-[30px] px-2 text-left align-middle font-normal text-[12px] text-[#222222]';
+const CELL_TD = 'h-[30px] px-2 align-middle text-[12px] text-[#222222]';
+const ROW_SEP = 'border-b border-b-[#d5d5d5]';
+
+/** Blue «+ Зона» / «+ Ячейка» add button under a table. */
+function PlusAddButton({
+  label,
+  onClick,
+  testId,
+}: {
+  label: string;
+  onClick(): void;
+  testId: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="mt-2 flex items-center gap-1.5 text-[13px] text-[var(--ms-text-link)] hover:underline"
+      data-test-id={testId}
+    >
+      <Icons.create className="h-3.5 w-3.5" />
+      {label}
+    </button>
+  );
+}
+
+/**
+ * «Сгенерировать штрихкод» — auto-fill button beside the Штрихкод editor
+ * (user requirement 2026-07-03): click → internal EAN13 (same generator as the
+ * product card, «20…» prefix); the field itself stays EMPTY by default.
+ */
+function BarcodeGenButton({
+  onGenerate,
+  testId,
+}: { onGenerate(code: string): void; testId: string }) {
+  const t = useTranslations('pages.stores.address_storage');
+  return (
+    <button
+      type="button"
+      title={t('generate_barcode')}
+      aria-label={t('generate_barcode')}
+      onClick={(e) => {
+        e.stopPropagation();
+        onGenerate(genEan13());
+      }}
+      className="flex h-[24px] w-[26px] shrink-0 items-center justify-center rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] text-[var(--ms-text-muted)] hover:bg-[var(--ms-bg-muted)] hover:text-[var(--ms-text-primary)]"
+      data-test-id={testId}
+    >
+      <Icons.barcode className="h-3.5 w-3.5" />
+    </button>
+  );
+}
+
+/** Hover-revealed ⊗ delete button at the right edge of a row. */
+function RowDelete({ label, onClick, testId }: { label: string; onClick(): void; testId: string }) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      className="invisible text-[14px] text-[var(--ms-text-muted)] leading-none hover:text-[var(--ms-text-error)] group-hover:visible"
+      data-test-id={testId}
+    >
+      ✕
+    </button>
+  );
+}
+
+/** Commit-on-blur text editor used by the inline editing rows. */
+function InlineText({
+  value,
+  onCommit,
+  placeholder,
+  autoFocus,
+  widthClass,
+  testId,
+}: {
+  value: string;
+  onCommit(v: string): void;
+  placeholder?: string;
+  autoFocus?: boolean;
+  widthClass?: string;
+  testId?: string;
+}) {
+  return (
+    <Input
+      key={value}
+      defaultValue={value}
+      placeholder={placeholder}
+      autoFocus={autoFocus}
+      className={widthClass}
+      data-test-id={testId}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          e.currentTarget.blur();
+        }
+        if (e.key === 'Escape') {
+          e.currentTarget.value = value;
+          e.currentTarget.blur();
+        }
+      }}
+      onBlur={(e) => {
+        const v = e.target.value.trim();
+        if (v !== value) onCommit(v);
+      }}
+    />
+  );
+}
+
+/**
+ * The cell code's first two segments (Sklad-section): seg1 = the store's «Код»
+ * if it's a 1–2 digit number, else «01»; seg2 = «01». So a polka's
+ * auto-generated cells read «01-01-{polka}-{NN}» (user 2026-07-05). Kept fixed
+ * per store — NOT learned from existing cells (legacy/junk cells could carry a
+ * stray prefix and derail the sequence).
+ */
+export function cellPrefix(storeCode?: string): string {
+  const raw = storeCode?.trim() ?? '';
+  const s1 = /^\d{1,2}$/.test(raw) ? raw.padStart(2, '0') : '01';
+  return `${s1}-01`;
+}
+
+/** Polka = the cell code's THIRD segment (numeric), else null (polka-less). */
+export function polkaSeg3(name: string): string | null {
+  const seg = name.split('-')[2]?.trim();
+  return seg && /^\d+$/.test(seg) ? seg : null;
+}
+
+/**
+ * A draft cell's effective polka = ONLY the explicitly chosen `polka` (via the
+ * row dropdown). User 2026-07-06: the old «polka = the code's 3rd segment» auto-
+ * rule is REMOVED — a new cell has no polka by default («Без полки»), set later.
+ */
+export function draftPolka(c: DraftCell): string | null {
+  return c.polka ? c.polka : null;
+}
+
+/**
+ * Existing-polka edit row: clicking a polka row opens THREE inputs — polka
+ * number · «Код ячейки» (the polka's cell-code prefix, prefilled from its
+ * cells) · «Всего ячеек» count. Changing the count SETS the exact number of
+ * cells (adds or removes to match); changing the code re-prefixes them. All
+ * digit(+dash)-only. Commits on focus-out / Enter; Escape cancels. (user
+ * 2026-07-06: the code must show + be editable, and count must be adjustable.)
+ */
+function PolkaEditRow({
+  zone,
+  code: initialCode,
+  onCommit,
+  onCancel,
+  onDelete,
+}: {
+  zone: Zone;
   code: string;
-  shelf: string | null;
-  productCount: number;
+  onCommit(name: string, code: string, count: number): void;
+  onCancel(): void;
+  onDelete(): void;
+}) {
+  const [name, setName] = useState(zone.name);
+  const [code, setCode] = useState(initialCode);
+  const [count, setCount] = useState(String(zone.cellCount));
+  const commit = () =>
+    onCommit(
+      name.trim(),
+      code.trim().replace(/-+$/, ''),
+      Math.max(0, Math.min(999, Number.parseInt(count, 10) || 0)),
+    );
+  return (
+    <tr
+      className={`${ROW_SEP} bg-[rgb(255,251,140)]`}
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) commit();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') onCancel();
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          commit();
+        }
+      }}
+      data-test-id={`zone-row-${zone.id}`}
+    >
+      <td className={CELL_TD}>
+        <Input
+          value={name}
+          autoFocus
+          inputMode="numeric"
+          onChange={(e) => setName(e.target.value.replace(/\D/g, '').slice(0, 3))}
+          placeholder="01"
+          className="h-[24px] w-[60px] text-center tabular-nums"
+          data-test-id={`zone-name-${zone.id}`}
+        />
+      </td>
+      <td className={CELL_TD}>
+        {/* «Код ячейки» — the polka's cell-code prefix (digits + dashes). */}
+        <Input
+          value={code}
+          inputMode="numeric"
+          onChange={(e) => setCode(e.target.value.replace(/[^\d-]/g, '').slice(0, 12))}
+          placeholder="03-01-02"
+          className="h-[24px] w-[110px] text-center tabular-nums"
+          data-test-id={`zone-code-${zone.id}`}
+        />
+      </td>
+      <td className={CELL_TD}>
+        <Input
+          value={count}
+          inputMode="numeric"
+          onChange={(e) => setCount(e.target.value.replace(/\D/g, '').slice(0, 3))}
+          placeholder="0"
+          className="h-[24px] w-[70px] text-center tabular-nums"
+          data-test-id={`zone-count-${zone.id}`}
+        />
+      </td>
+      <td className={CELL_TD}>{zone.freeCount}</td>
+      <td className={CELL_TD}>{zone.occupiedCount}</td>
+      <td className={`${CELL_TD} text-center`}>
+        <button
+          type="button"
+          aria-label={`delete ${zone.name}`}
+          onMouseDown={(e) => {
+            e.preventDefault();
+            onDelete();
+          }}
+          className="text-[14px] text-[var(--ms-text-muted)] leading-none hover:text-[var(--ms-text-error)]"
+          data-test-id={`zone-del-${zone.id}`}
+        >
+          ✕
+        </button>
+      </td>
+    </tr>
+  );
 }
 
-interface CellsResponse {
-  items: CellRow[];
+/**
+ * NEW-cells row (user 2026-07-06, «the easiest way to create cells»): enter a
+ * THREE fields (user 2026-07-06): «Polka» (polka number, may be blank ⇒ «Без
+ * полки») · «Yacheyka kodi» (the cell-code prefix, first 3 segments e.g.
+ * «03-01-02») · count N. Generates N cells «{code}-01 … {code}-NN» (the 4th
+ * segment is the running number: 03-01-02-01, 03-01-02-02, …) into the entered
+ * polka. Commits on focus-out / Enter; Escape/✕ cancels.
+ */
+function NewPolkaRow({
+  onCommit,
+  onCancel,
+}: {
+  onCommit(polka: string, code: string, count: number): void;
+  onCancel(): void;
+}) {
+  const [polka, setPolka] = useState('');
+  const [code, setCode] = useState('');
+  const [count, setCount] = useState('');
+  const commit = () => {
+    const c = code.trim().replace(/-+$/, '');
+    if (!c) {
+      onCancel();
+      return;
+    }
+    onCommit(polka.trim(), c, Math.max(0, Math.min(999, Number.parseInt(count, 10) || 0)));
+  };
+  return (
+    <tr
+      className={`${ROW_SEP} bg-[rgb(255,251,140)]`}
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) commit();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') onCancel();
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          commit();
+        }
+      }}
+      data-test-id="new-zone-row"
+    >
+      <td className={CELL_TD}>
+        {/* «Polka» — the polka NUMBER (blank ⇒ «Без полки»); digits only. */}
+        <Input
+          value={polka}
+          onChange={(e) => setPolka(e.target.value.replace(/\D/g, '').slice(0, 3))}
+          placeholder="0"
+          autoFocus
+          inputMode="numeric"
+          className="h-[24px] w-[60px] text-center tabular-nums"
+          data-test-id="new-zone-name"
+        />
+      </td>
+      <td className={CELL_TD}>
+        {/* «Yacheyka kodi» — first 3 segments; digits + dashes only. */}
+        <Input
+          value={code}
+          onChange={(e) => setCode(e.target.value.replace(/[^\d-]/g, '').slice(0, 12))}
+          placeholder="03-01-02"
+          inputMode="numeric"
+          className="h-[24px] w-[110px] text-center tabular-nums"
+          data-test-id="new-zone-code"
+        />
+      </td>
+      <td className={CELL_TD}>
+        <Input
+          value={count}
+          onChange={(e) => setCount(e.target.value.replace(/\D/g, '').slice(0, 3))}
+          placeholder="0"
+          inputMode="numeric"
+          className="h-[24px] w-[70px] text-center tabular-nums"
+          data-test-id="new-zone-count"
+        />
+      </td>
+      <td className={CELL_TD}>0</td>
+      <td className={CELL_TD}>0</td>
+      <td className={`${CELL_TD} text-center`}>
+        <button
+          type="button"
+          aria-label="cancel"
+          onMouseDown={(e) => {
+            e.preventDefault();
+            onCancel();
+          }}
+          className="text-[14px] text-[var(--ms-text-muted)] leading-none hover:text-[var(--ms-text-error)]"
+        >
+          ✕
+        </button>
+      </td>
+    </tr>
+  );
 }
 
-const PREFIX_RE = /^\d{1,2}-\d{1,2}-\d{1,2}$/;
-const CODE_RE = /^\d{1,2}(-\d{1,2}){3}$/;
+/**
+ * NEW-cell editing row. The cell code is entered as FOUR two-digit segments
+ * (user structure 2026-07-04: «01-02-03-04» = Склад · Полка · Ярус · Ячейка —
+ * two digits each so codes never collide and staff can read the location
+ * straight off the code). Segments compose the stored name («1» pads to
+ * «01»); the first prefills from the store's «Код». The «Полка» column is NOT
+ * picked by hand — it mirrors the THIRD segment live (user 2026-07-05;
+ * commitNewCell auto-finds/creates the matching polka row). Commits when focus
+ * leaves the row (all four segments required), Escape/✕ cancels.
+ */
+const CELL_SEGMENTS = ['seg_store', 'seg_shelf', 'seg_level', 'seg_cell'] as const;
 
-/** moysklad jadval-katak uslubi (screenshot: yupqa pastki chiziq, tekis matn). */
-const TH = 'px-3 py-2 text-left font-normal text-[var(--ms-text-secondary)] text-sm';
-const TD = 'px-3 py-2 text-sm';
+function NewCellRow({
+  storeCode,
+  onCommit,
+  onCancel,
+}: {
+  storeCode?: string;
+  onCommit(name: string, barcode: string | null): void;
+  onCancel(): void;
+}) {
+  const t = useTranslations('pages.stores.address_storage');
+  const [segs, setSegs] = useState<string[]>(() => [
+    /^\d{1,2}$/.test(storeCode?.trim() ?? '') ? (storeCode as string).trim().padStart(2, '0') : '',
+    '',
+    '',
+    '',
+  ]);
+  const segRefs = useRef<Array<HTMLInputElement | null>>([]);
+  const [barcode, setBarcode] = useState('');
+  const commit = () => {
+    if (segs.every((s) => s.trim() !== '')) {
+      const name = segs.map((s) => s.trim().padStart(2, '0')).join('-');
+      onCommit(name, barcode.trim() || null);
+    } else {
+      onCancel();
+    }
+  };
+  const setSeg = (i: number, raw: string) => {
+    const v = raw.replace(/\D/g, '').slice(0, 2);
+    setSegs((prev) => prev.map((s, j) => (j === i ? v : s)));
+    if (v.length === 2 && i < 3) segRefs.current[i + 1]?.focus();
+  };
+  return (
+    <tr
+      className={`${ROW_SEP} bg-[rgb(255,251,140)]`}
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) commit();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') onCancel();
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          commit();
+        }
+      }}
+      data-test-id="new-cell-row"
+    >
+      <td className={CELL_TD}>
+        <div className="flex items-center gap-0.5">
+          {CELL_SEGMENTS.map((key, i) => (
+            <span key={key} className="flex items-center gap-0.5">
+              {i > 0 && <span className="text-[#999999]">-</span>}
+              <Input
+                ref={(el) => {
+                  segRefs.current[i] = el;
+                }}
+                value={segs[i]}
+                onChange={(e) => setSeg(i, e.target.value)}
+                placeholder={String(i + 1).padStart(2, '0')}
+                title={t(key)}
+                aria-label={t(key)}
+                autoFocus={i === 0}
+                inputMode="numeric"
+                className="h-[24px] w-[34px] px-1 text-center tabular-nums"
+                data-test-id={`new-cell-seg-${i}`}
+              />
+            </span>
+          ))}
+        </div>
+      </td>
+      <td className={CELL_TD}>
+        {/* «Полка» — NO polka by default (user 2026-07-06: removed the seg3 auto-
+            rule); assigned later via the saved cell's dropdown. */}
+        <span className="text-[12px] text-[var(--ms-text-muted)]" data-test-id="new-cell-polka">
+          0
+        </span>
+      </td>
+      <td className={CELL_TD}>{t('status_free')}</td>
+      <td className={CELL_TD}>
+        <div className="flex items-center gap-1">
+          <Input
+            value={barcode}
+            onChange={(e) => setBarcode(e.target.value)}
+            className="h-[24px] w-[160px]"
+            data-test-id="new-cell-barcode"
+          />
+          <BarcodeGenButton onGenerate={setBarcode} testId="new-cell-barcode-gen" />
+        </div>
+      </td>
+      <td className={`${CELL_TD} text-center`}>
+        <button
+          type="button"
+          aria-label="cancel"
+          onMouseDown={(e) => {
+            e.preventDefault();
+            onCancel();
+          }}
+          className="text-[14px] text-[var(--ms-text-muted)] leading-none hover:text-[var(--ms-text-error)]"
+        >
+          ✕
+        </button>
+      </td>
+    </tr>
+  );
+}
+
+function HelpBlock() {
+  const t = useTranslations('pages.stores.address_storage');
+  return (
+    <p className="max-w-[560px] text-[12px] text-[var(--ms-text-primary)] leading-relaxed">
+      {t('help')}{' '}
+      <a
+        href="https://support.moysklad.ru/hc/ru/articles/4404897834513"
+        target="_blank"
+        rel="noreferrer"
+        className="text-[var(--ms-text-link)] hover:underline"
+      >
+        {t('help_link')}
+      </a>
+    </p>
+  );
+}
+
+/** Shared zone-table shell (header + bucket row) for both modes. */
+function ZoneTable({ children, bucket }: { children: ReactNode; bucket: ReactNode }) {
+  const t = useTranslations('pages.stores.address_storage');
+  return (
+    // Mobile: the 615px fixed-col zone grid pans in its own scroll box.
+    <div className="max-md:overflow-x-auto">
+      <table
+        className={`w-full max-w-[660px] table-fixed border-collapse border-b-2 ${TABLE_BLUE}`}
+        data-test-id="zones-table"
+      >
+        <colgroup>
+          <col className="w-[140px]" />
+          <col className="w-[150px]" />
+          <col className="w-[105px]" />
+          <col className="w-[90px]" />
+          <col className="w-[90px]" />
+          <col className="w-[40px]" />
+        </colgroup>
+        <thead>
+          <tr className={`border-b-2 ${TABLE_BLUE}`}>
+            <th className={HEAD_TH}>{t('zone')}</th>
+            <th className={HEAD_TH}>{t('cell_code')}</th>
+            <th className={HEAD_TH}>{t('zone_total')}</th>
+            <th className={HEAD_TH}>{t('zone_free')}</th>
+            <th className={HEAD_TH}>{t('zone_occupied')}</th>
+            <th className={HEAD_TH} aria-hidden />
+          </tr>
+        </thead>
+        <tbody>
+          {bucket}
+          {children}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/**
+ * Section bar above each table (user 2026-07-05): a ▾ collapse toggle (click to
+ * open/close ONLY this section) + a search box scoped to this section alone
+ * (polka box searches polkas, cell box searches cells).
+ */
+function SectionBar({
+  open,
+  onToggle,
+  label,
+  query,
+  onQuery,
+  searchPlaceholder,
+  testPrefix,
+}: {
+  open: boolean;
+  onToggle(): void;
+  label: string;
+  query: string;
+  onQuery(v: string): void;
+  searchPlaceholder: string;
+  testPrefix: string;
+}) {
+  return (
+    <div className="mb-1.5 flex items-center gap-3 max-md:flex-wrap">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="flex items-center gap-1 font-medium text-[13px] text-[var(--ms-text-primary)]"
+        data-test-id={`${testPrefix}-toggle`}
+      >
+        <Icons.down className={`h-4 w-4 transition-transform ${open ? '' : '-rotate-90'}`} />
+        {label}
+      </button>
+      <div className="relative w-[220px] max-md:w-full max-md:min-w-0">
+        <Icons.search className="-translate-y-1/2 pointer-events-none absolute top-1/2 left-2 h-3.5 w-3.5 text-[var(--ms-text-muted)]" />
+        <Input
+          value={query}
+          onChange={(e) => onQuery(e.target.value)}
+          placeholder={searchPlaceholder}
+          className="h-[28px] w-full pl-7 text-[12px]"
+          data-test-id={`${testPrefix}-search`}
+        />
+      </div>
+    </div>
+  );
+}
+
+function CellTable({ children }: { children: ReactNode }) {
+  const t = useTranslations('pages.stores.address_storage');
+  return (
+    // Mobile: the 760px fixed-col cell grid pans in its own scroll box.
+    <div className="max-md:overflow-x-auto">
+      <table
+        className={`w-full max-w-[761px] table-fixed border-collapse border-b-2 ${TABLE_BLUE}`}
+        data-test-id="cells-table"
+      >
+        <colgroup>
+          <col className="w-[205px]" />
+          <col className="w-[205px]" />
+          <col className="w-[115px]" />
+          <col className="w-[195px]" />
+          <col className="w-[40px]" />
+        </colgroup>
+        <thead>
+          <tr className={`border-b-2 ${TABLE_BLUE}`}>
+            <th className={HEAD_TH}>{t('cell')}</th>
+            <th className={HEAD_TH}>{t('cell_zone')}</th>
+            <th className={HEAD_TH}>{t('cell_status')}</th>
+            <th className={HEAD_TH}>{t('cell_barcode')}</th>
+            <th className={HEAD_TH} aria-hidden />
+          </tr>
+        </thead>
+        <tbody>{children}</tbody>
+      </table>
+    </div>
+  );
+}
 
 export function AddressStorageSection({
   storeId,
-  storeName,
+  storeCode,
+  cellInventory,
+  onCellInventoryChange,
+  drafts,
+  onDraftsChange,
 }: {
-  storeId: string;
-  storeName: string;
+  /** null ⇒ CREATE mode: buffer rows locally via drafts/onDraftsChange. */
+  storeId: string | null;
+  /** The store's «Код» — prefills the first (Склад) segment of new cell codes. */
+  storeCode?: string;
+  /** «Проводить инвентаризацию по ячейкам» — rendered only when provided (edit mode). */
+  cellInventory?: boolean;
+  onCellInventoryChange?(v: boolean): void;
+  drafts?: AddressStorageDrafts;
+  onDraftsChange?(d: AddressStorageDrafts): void;
 }) {
-  const t = useTranslations('pages.stores');
+  const t = useTranslations('pages.stores.address_storage');
   const tProductSelect = useTranslations('product_select');
+  const tFilters = useTranslations('filters');
   const tCommon = useTranslations('common');
-  const router = useRouter();
   const qc = useQueryClient();
-  const { runDestructive } = useDestructiveMutation();
-  const { toast } = useToast();
-
-  const { data, isLoading } = useQuery<CellsResponse>({
-    queryKey: ['store-cells', storeId],
-    queryFn: () => api.get<CellsResponse>(`/admin/stores/${storeId}/cells`),
-    enabled: !!storeId,
-  });
-  const cells = data?.items ?? [];
-
-  // ── Polka-svodka (zona jadvali): «Без зоны хранения» + har polka bo'yicha ──
-  const noShelf = cells.filter((c) => !c.shelf);
-  const shelfNames = [
-    ...new Set(cells.filter((c) => c.shelf).map((c) => c.shelf as string)),
-  ].sort();
-  const summaryRow = (rows: CellRow[]) => {
-    const busy = rows.filter((r) => r.productCount > 0).length;
-    return { total: rows.length, busy, free: rows.length - busy };
-  };
-  // Ochilgan polkalar — bosilganда ichidagi yacheyka KODLARI ko'rinadi (2026-07-19
-  // talab: «har polkani dropdown qilib ichidagi yacheykalarni ko'rish»).
-  const [openPolkas, setOpenPolkas] = useState<Set<string>>(new Set());
-  const togglePolka = (key: string) =>
-    setOpenPolkas((prev) => {
-      const next = new Set(prev);
-      next.has(key) ? next.delete(key) : next.add(key);
-      return next;
-    });
-
-  // ── «Polka qo'shish» — 3 input (barchasi majburiy) ──
-  const [polkaFormOpen, setPolkaFormOpen] = useState(false);
-  const [shelf, setShelf] = useState('');
-  const [prefix, setPrefix] = useState('');
-  const [count, setCount] = useState('');
-  const [polkaError, setPolkaError] = useState<string | null>(null);
-  const [generatedInfo, setGeneratedInfo] = useState<string | null>(null);
-
-  const generateMut = useMutation({
-    mutationFn: (input: { shelf: string; prefix: string; count: number }) =>
-      api.post<{ created: number; skipped: number }>(
-        `/admin/stores/${storeId}/cells/generate`,
-        input,
-      ),
-    onSuccess: (res) => {
-      qc.invalidateQueries({ queryKey: ['store-cells', storeId] });
-      setShelf('');
-      setPrefix('');
-      setCount('');
-      setPolkaFormOpen(false);
-      setGeneratedInfo(
-        res.skipped > 0
-          ? t('cells_generated_skipped', { created: res.created, skipped: res.skipped })
-          : t('cells_generated', { created: res.created }),
-      );
-    },
-    onError: (e: Error) => setPolkaError(e.message),
-  });
-
-  const submitPolka = () => {
-    setPolkaError(null);
-    setGeneratedInfo(null);
-    // 3 input ham MAJBURIY (2026-07-16 talab — bo'sh qoldirib bo'lmaydi).
-    if (!shelf.trim() || !prefix.trim() || !count.trim()) {
-      setPolkaError(t('polka_inputs_required'));
-      return;
-    }
-    if (!PREFIX_RE.test(prefix.trim())) {
-      setPolkaError(t('polka_prefix_invalid'));
-      return;
-    }
-    const n = Number(count.trim());
-    if (!Number.isInteger(n) || n < 1 || n > 99) {
-      setPolkaError(t('polka_count_invalid'));
-      return;
-    }
-    generateMut.mutate({ shelf: shelf.trim(), prefix: prefix.trim(), count: n });
-  };
-
-  // ── «+ Yacheyka» — bitta yacheykani qo'lda qo'shish (moysklad'dagi link) ──
-  const [cellFormOpen, setCellFormOpen] = useState(false);
-  const [cellCode, setCellCode] = useState('');
-  const [cellShelf, setCellShelf] = useState('');
-  const [cellError, setCellError] = useState<string | null>(null);
-
-  const createCellMut = useMutation({
-    mutationFn: (input: { code: string; shelf: string | null }) =>
-      api.post<CellRow>(`/admin/stores/${storeId}/cells`, input),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['store-cells', storeId] });
-      setCellCode('');
-      setCellShelf('');
-      setCellFormOpen(false);
-    },
-    onError: (e: Error) => setCellError(e.message),
-  });
-
-  const submitCell = () => {
-    setCellError(null);
-    if (!CODE_RE.test(cellCode.trim())) {
-      setCellError(t('cell_code_invalid'));
-      return;
-    }
-    createCellMut.mutate({ code: cellCode.trim(), shelf: cellShelf.trim() || null });
-  };
-
-  // ── Skan orqali biriktirish («Mahsulot qo'shish» oynasidagi «Skan» tugmasi
-  //    + bo'lim yuqorisidagi mustaqil «Skan» tugmasi) ──
-  const [scanCell, setScanCell] = useState<CellRow | null>(null);
+  const queryKey = ['store-address', storeId] as const;
+  const [error, setError] = useState<string | null>(null);
+  // «Добавить товар в ячейку» — the cell whose + opened the product picker.
+  const [assignCell, setAssignCell] = useState<{ id: string; name: string } | null>(null);
+  // «Scan» (owner 2026-07-19): the two-step barcode bind modal, opened from the
+  // add-product-to-cell picker's header.
   const [scanOpen, setScanOpen] = useState(false);
+  const [countOpen, setCountOpen] = useState(false);
+  // Row currently in inline-edit mode ('zone-<id>' / 'cell-<id>' / 'new-zone' / 'new-cell').
+  const [editing, setEditing] = useState<string | null>(null);
+  // «🖨 Этикетка» print-preview target (server mode only — needs per-cell stock).
+  const [labelCell, setLabelCell] = useState<{
+    id: string;
+    name: string;
+    barcode: string | null;
+  } | null>(null);
+  // «Содержимое ячейки» — click the «Занята» status → per-product contents modal.
+  const [contentsCell, setContentsCell] = useState<{ id: string; name: string } | null>(null);
+  // Per-section search + collapse (user 2026-07-05): each table has its OWN
+  // search box (polka-only / cell-only) and its OWN ▾ collapse toggle.
+  const [polkaOpen, setPolkaOpen] = useState(true);
+  const [cellOpen, setCellOpen] = useState(true);
+  const [polkaQuery, setPolkaQuery] = useState('');
+  const [cellQuery, setCellQuery] = useState('');
 
-  // ── Amallar: ➕ tovar biriktirish · 🖨 chop etish · 🗑 o'chirish ──
-  const [assignCell, setAssignCell] = useState<CellRow | null>(null);
-  const assignMut = useMutation({
-    mutationFn: ({ cellId, productIds }: { cellId: string; productIds: string[] }) =>
-      api.post<{ updated: number }>(`/admin/stores/${storeId}/cells/${cellId}/assign`, {
-        productIds,
-      }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['store-cells', storeId] }),
-    // 2026-07-20 tuzatish: ProductSelectModal tanlovni tasdiqlagach o'zi
-    // (mutatsiya natijasini kutmasdan) yopiladi — xato bo'lsa foydalanuvchi
-    // "biriktirildi" deb o'ylab qoladi, hech qanday xabar ko'rmasdan. Toast
-    // shu bo'shliqni yopadi (boshqa mutatsiyalar kabi inline xato emas,
-    // chunki oyna allaqachon yopilgan — inline joy qolmaydi).
-    onError: (e: Error) => toast.error(t('assign_failed'), { description: e.message }),
+  const serverMode = !!storeId;
+  const { data } = useQuery<AddressStorage>({
+    queryKey,
+    queryFn: () => api.get<AddressStorage>(`/admin/stores/${storeId}/address-storage`),
+    enabled: serverMode,
   });
 
-  const deleteMut = useMutation({
-    mutationFn: (cellId: string) => api.delete<unknown>(`/admin/stores/${storeId}/cells/${cellId}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['store-cells', storeId] }),
+  const invalidate = () => qc.invalidateQueries({ queryKey });
+  const sharedOpts = {
+    onSuccess: () => {
+      setError(null);
+      invalidate();
+    },
+    onError: (e: Error) => setError(e.message),
+  };
+
+  const renameZone = useMutation({
+    mutationFn: (v: { id: string; name: string }) =>
+      api.patch(`/admin/stores/${storeId}/zones/${v.id}`, { name: v.name }),
+    ...sharedOpts,
+  });
+  const deleteZone = useMutation({
+    mutationFn: (id: string) => api.delete(`/admin/stores/${storeId}/zones/${id}`),
+    ...sharedOpts,
+  });
+  const patchCell = useMutation({
+    mutationFn: (v: {
+      id: string;
+      name?: string;
+      zoneId?: string | null;
+      barcode?: string | null;
+    }) => {
+      const { id, ...body } = v;
+      return api.patch(`/admin/stores/${storeId}/cells/${id}`, body);
+    },
+    ...sharedOpts,
+  });
+  const deleteCell = useMutation({
+    mutationFn: (id: string) => api.delete(`/admin/stores/${storeId}/cells/${id}`),
+    ...sharedOpts,
   });
 
-  /** 🖨 — label sahifasi, barcha 4 segment shu yacheyka bilan to'ldirilgan.
-   *  storeId ham uzatiladi — sahifada «shu ombordan yana yacheyka tanlash»
-   *  paneli ochilib, qo'shimcha labellar tanlab chop etilishi mumkin. */
-  const printCell = (cell: CellRow) => {
-    const [sklad = '', polka = '', qavat = '', yacheyka = ''] = cell.code.split('-');
-    const params = new URLSearchParams({
-      store: storeName,
-      storeId,
-      sklad,
-      polka,
-      qavat,
-      yacheyka,
+  // «Добавить товар в ячейку» — products currently assigned to the open cell
+  // (their home cell / __yacheyka is this cell). Drives the picker's checked-and-
+  // disabled rows so they can't be re-added, and is shown as the cell's contents.
+  const assignedProductsQuery = useQuery<{ items: Array<{ id: string }> }>({
+    queryKey: ['cell-products', storeId, assignCell?.id],
+    queryFn: () => api.get(`/admin/stores/${storeId}/cells/${assignCell?.id}/products`),
+    enabled: !!storeId && !!assignCell,
+  });
+  const assignedProductIds = assignedProductsQuery.data?.items.map((p) => p.id) ?? [];
+  const assignProducts = useMutation({
+    mutationFn: (productIds: string[]) =>
+      api.post(`/admin/stores/${storeId}/cells/${assignCell?.id}/products`, { productIds }),
+    onSuccess: () => {
+      setError(null);
+      qc.invalidateQueries({ queryKey: ['cell-products', storeId, assignCell?.id] });
+      // The product card reads its home cell from the same binding — refresh it.
+      qc.invalidateQueries({ queryKey: ['product-cell-stock'] });
+      qc.invalidateQueries({ queryKey: ['product-storage-options'] });
+      invalidate();
+    },
+    onError: (e: Error) => setError(e.message),
+  });
+
+  const setDrafts = (next: AddressStorageDrafts) => onDraftsChange?.(next);
+  const draftState: AddressStorageDrafts = drafts ?? { zones: [], cells: [] };
+
+  // ---- view model: SERVER rows + PENDING drafts, merged --------------------
+  // User 2026-07-05: a newly-added cell must NOT reach other users until the
+  // card's «Сохранить». So in edit mode new cells/polkas live in `drafts`
+  // (local, marked pending) and only flush to the server on save. The tables
+  // render the server snapshot + the pending drafts together.
+  const serverZones = serverMode ? (data?.zones ?? []) : [];
+  const serverCells = serverMode ? (data?.cells ?? []) : [];
+
+  // A persisted draft whose name is ALREADY on the server was saved (here or on
+  // another laptop) — drop it so it never shows as a phantom pending duplicate
+  // and never fails the save with a unique-name clash.
+  const serverCellNames = new Set(serverCells.map((c) => c.name));
+  const serverZoneNames = new Set(serverZones.map((z) => z.name));
+  const draftCells = draftState.cells.filter((c) => !serverCellNames.has(c.name));
+  const draftZones = draftState.zones.filter((z) => !serverZoneNames.has(z.name));
+
+  const cells: CellView[] = [
+    ...serverCells.map((c) => ({ ...c, pending: false })),
+    ...draftCells.map((c) => ({
+      id: c.key,
+      name: c.name,
+      zoneId: null,
+      zoneName: draftPolka(c),
+      barcode: c.barcode,
+      sortOrder: 0,
+      occupied: false,
+      pending: true,
+    })),
+  ];
+
+  // Polka rows = server zones ∪ explicit draft polkas ∪ polkas the pending cells
+  // are assigned to; counts add the pending cells for each polka.
+  const pendingByPolka = new Map<string, number>();
+  for (const c of draftCells) {
+    const pk = draftPolka(c);
+    if (pk) pendingByPolka.set(pk, (pendingByPolka.get(pk) ?? 0) + 1);
+  }
+  const polkaNames = new Set<string>([
+    ...serverZones.map((z) => z.name),
+    ...draftZones.map((z) => z.name),
+    ...pendingByPolka.keys(),
+  ]);
+  const zones: ZoneView[] = [...polkaNames]
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+    .map((nm) => {
+      const sz = serverZones.find((z) => z.name === nm);
+      const pend = pendingByPolka.get(nm) ?? 0;
+      return {
+        id: sz?.id ?? `pk-${nm}`,
+        name: nm,
+        sortOrder: sz?.sortOrder ?? 0,
+        cellCount: (sz?.cellCount ?? 0) + pend,
+        freeCount: (sz?.freeCount ?? 0) + pend,
+        occupiedCount: sz?.occupiedCount ?? 0,
+        serverId: sz?.id ?? null,
+        pending: !sz,
+      };
     });
-    router.push(`/stores/cell-labels?${params.toString()}`);
+
+  const zonelessTotal = cells.filter((c) => (c.pending ? !c.zoneName : !c.zoneId)).length;
+  const zonelessOccupied = cells.filter((c) => !c.pending && !c.zoneId && c.occupied).length;
+  const isEmpty = zones.length === 0 && cells.length === 0;
+
+  // Polka numbers offered in each cell's «Полка» dropdown (user 2026-07-05: pick
+  // the polka, don't only derive it). A pending cell may join any polka (server
+  // OR draft — both exist on save); a saved cell can only move to a SAVED zone.
+  const allPolkaOptions = zones.map((z) => z.name);
+  const serverPolkaOptions = zones.filter((z) => z.serverId).map((z) => z.name);
+
+  // Each polka's «Код ячейки» prefix (its cells' name minus the last segment),
+  // so PolkaEditRow can prefill + edit it (user 2026-07-06). First cell wins.
+  const polkaCodeByName = new Map<string, string>();
+  for (const c of cells) {
+    if (!c.zoneName || polkaCodeByName.has(c.zoneName)) continue;
+    const parts = c.name.split('-');
+    if (parts.length > 1) polkaCodeByName.set(c.zoneName, parts.slice(0, -1).join('-'));
+  }
+
+  // Per-section search filters (case-insensitive substring). Polka box matches
+  // ONLY polka numbers; cell box matches ONLY cell code/barcode.
+  const pq = polkaQuery.trim().toLowerCase();
+  const cq = cellQuery.trim().toLowerCase();
+  const zonesShown = pq ? zones.filter((z) => z.name.toLowerCase().includes(pq)) : zones;
+  const cellsShown = cq
+    ? cells.filter(
+        (c) => c.name.toLowerCase().includes(cq) || (c.barcode ?? '').toLowerCase().includes(cq),
+      )
+    : cells;
+
+  /**
+   * Edit an existing polka: RENAME its existing cells IN PLACE to «{code}-01 …
+   * {code}-NN» and resize to `count` (user 2026-07-06). It matches cells by
+   * POSITION (display order), so changing the code just re-prefixes the SAME
+   * cells (no new duplicate rows appear); changing the count adds the missing /
+   * removes the excess. Pending cells keep their identity + barcode; saved
+   * (server) cells are renamed via PATCH, and a free excess server cell is
+   * deleted. New rows are ONLY created here to reach a HIGHER count — editing
+   * never spawns a parallel set.
+   */
+  const setPolkaCells = (oldPolka: string, newPolka: string, code: string, count: number) => {
+    const prefix = code.trim().replace(/-+$/, '');
+    const targetPolka = newPolka.trim() || null;
+    if (!prefix) {
+      // No code → at most a polka re-label of this polka's pending cells.
+      if (targetPolka !== oldPolka) {
+        setDrafts({
+          ...draftState,
+          cells: draftState.cells.map((c) =>
+            draftPolka(c) === oldPolka ? { ...c, polka: targetPolka } : c,
+          ),
+        });
+      }
+      return;
+    }
+    // This polka's current cells in display order (server first, then pending).
+    const existing = cells.filter((c) => c.zoneName === oldPolka);
+    const draftByKey = new Map(
+      draftState.cells.filter((c) => draftPolka(c) === oldPolka).map((c) => [c.key, c]),
+    );
+    const others = draftState.cells.filter((c) => draftPolka(c) !== oldPolka);
+    const nextDrafts: DraftCell[] = [];
+    existing.forEach((c, i) => {
+      const pos = i + 1;
+      const name = `${prefix}-${String(pos).padStart(2, '0')}`;
+      if (pos > count) {
+        // Excess → drop. Pending: just omit; free server cell: delete on server.
+        if (!c.pending && !c.occupied) deleteCell.mutate(c.id);
+        return;
+      }
+      if (c.pending) {
+        const d = draftByKey.get(c.id); // pending cell id === its draft key
+        nextDrafts.push(
+          d
+            ? { ...d, name, polka: targetPolka }
+            : { key: nextKey(), name, polka: targetPolka, barcode: c.barcode },
+        );
+      } else if (c.name !== name) {
+        // Saved cell → rename in place (its zone follows the polka rename).
+        patchCell.mutate({ id: c.id, name });
+      }
+    });
+    // Only ADD when the new count exceeds what already exists (never on a mere edit).
+    for (let pos = existing.length + 1; pos <= count; pos++) {
+      const name = `${prefix}-${String(pos).padStart(2, '0')}`;
+      nextDrafts.push({ key: nextKey(), name, polka: targetPolka, barcode: null });
+    }
+    setDrafts({ ...draftState, cells: [...others, ...nextDrafts] });
   };
 
-  /** «Labellar» — label sahifasini TANLASH rejimida ochadi (segment prefill'siz):
-   *  foydalanuvchi shu ombordagi yacheykalarni qidirib-belgilab chop etadi. */
-  const openLabelPicker = () => {
-    const params = new URLSearchParams({ store: storeName, storeId });
-    router.push(`/stores/cell-labels?${params.toString()}`);
+  /**
+   * «Yacheyka kodi» + count → cells «{code}-01 … {code}-NN» (user 2026-07-06),
+   * assigned to the given polka number (blank ⇒ «Без полки», set later via the
+   * dropdown). The code is the first 3 segments as typed; the 4th is the running
+   * number. Skips names that already exist (server OR pending) so re-running dupes.
+   */
+  const genCellsFromCode = (code: string, targetCount: number, polka: string) => {
+    const prefix = code.trim().replace(/-+$/, '');
+    if (!prefix) return;
+    const pk = polka.trim() || null;
+    const existing = new Set(cells.map((c) => c.name));
+    const toCreate: DraftCell[] = [];
+    for (let i = 1; i <= targetCount; i++) {
+      const name = `${prefix}-${String(i).padStart(2, '0')}`;
+      if (!existing.has(name)) toCreate.push({ key: nextKey(), name, polka: pk, barcode: null });
+    }
+    setDrafts({ ...draftState, cells: [...draftState.cells, ...toCreate] });
   };
 
-  const linkCls =
-    'inline-flex items-center gap-1 text-[var(--ms-text-brand)] text-sm hover:underline';
-  // 2026-07-20f (responsive pass): 28px → 36px, closer to the ~44px touch-
-  // target guideline — these sit 3-in-a-row (➕/🖨/🗑) in a narrow action
-  // column and were mis-tap-prone on phones.
-  const iconBtnCls =
-    'flex h-9 w-9 items-center justify-center rounded-[var(--ms-radius-sm)] border border-[var(--ms-border-default)] text-[var(--ms-text-muted)] hover:bg-[var(--ms-bg-hover)] hover:text-[var(--ms-text-primary)]';
+  const commitNewCells = (polka: string, code: string, count: number) => {
+    setEditing(null);
+    const c = code.trim().replace(/-+$/, '');
+    if (!c) return;
+    genCellsFromCode(c, count, polka);
+  };
+  const commitZoneRename = (id: string, name: string) => {
+    setEditing(null);
+    if (!name) return;
+    // Only a real server zone can be renamed here (pending polkas are derived
+    // from their cells' codes). Server rename IS immediate — moysklad parity.
+    renameZone.mutate({ id, name });
+  };
+  const removeZone = (z: ZoneView) => {
+    if (z.serverId) {
+      deleteZone.mutate(z.serverId);
+      return;
+    }
+    // Pending-only polka → drop its pending cells + placeholder draft zone.
+    setDrafts({
+      zones: draftState.zones.filter((dz) => dz.name !== z.name),
+      cells: draftState.cells.filter((c) => draftPolka(c) !== z.name),
+    });
+  };
+  const commitNewCell = (name: string, barcode: string | null) => {
+    setEditing(null);
+    if (!name) return;
+    // Always buffer (user 2026-07-05). NO polka by default (user 2026-07-06 —
+    // removed the seg3 auto-rule); the row dropdown assigns it later.
+    setDrafts({
+      ...draftState,
+      cells: [...draftState.cells, { key: nextKey(), name, polka: null, barcode }],
+    });
+  };
+  const patchDraftCell = (id: string, patch: Partial<DraftCell>) => {
+    setDrafts({
+      ...draftState,
+      cells: draftState.cells.map((c) => (c.key === id ? { ...c, ...patch } : c)),
+    });
+  };
+  // Reassign a cell's polka from the row dropdown. Pending cell → its draft
+  // polka; saved cell → move to that SAVED zone («» ⇒ «Без полки»).
+  const setCellPolka = (cell: CellView, polka: string) => {
+    if (cell.pending) {
+      patchDraftCell(cell.id, { polka });
+      return;
+    }
+    const zone = zones.find((z) => z.name === polka);
+    patchCell.mutate({ id: cell.id, zoneId: polka && zone?.serverId ? zone.serverId : null });
+  };
+  const removeCell = (cell: CellView) => {
+    // Pending cell → drop from the buffer; saved cell → delete on the server.
+    if (cell.pending)
+      setDrafts({ ...draftState, cells: draftState.cells.filter((c) => c.key !== cell.id) });
+    else deleteCell.mutate(cell.id);
+  };
 
   return (
-    <div data-test-id="address-storage-section">
-      {/* Sarlavha — moysklad: (?) + to'q sariq «Адресное хранение товаров».
-          flex-wrap (2026-07-20f): Labellar/Skan tugmalari tor ekranda
-          sarlavha ostiga tushadi, kesilmaydi/toshib ketmaydi. */}
-      <div className="flex flex-wrap items-center gap-2">
-        <HelpCircle className="h-4 w-4 shrink-0 text-[var(--ms-text-brand)]" aria-hidden />
-        <h2 className="min-w-0 truncate font-medium text-[#e8630a] text-base">
-          {t('address_storage_title')}
-        </h2>
-        <div className="ml-auto flex items-center gap-2">
-          {/* «Labellar» — yacheykalarni qidirib-belgilab ko'plab chop etish. */}
-          <button
-            type="button"
-            onClick={openLabelPicker}
-            className="inline-flex items-center gap-1.5 rounded-[var(--ms-radius-default)] border border-[var(--ms-border-strong)] px-3 py-1.5 font-medium text-[var(--ms-text-primary)] text-sm hover:bg-[var(--ms-bg-hover)]"
-            data-test-id="address-storage-labels"
-          >
-            <Printer className="h-4 w-4" />
-            {t('cell_labels')}
-          </button>
-          {/* Mustaqil skan — yacheykani skan aniqlaydi, shuning uchun qatorsiz ham
-              ishlaydi (tez «skan-skan» ombor oqimi uchun). */}
-          <button
-            type="button"
-            onClick={() => setScanOpen(true)}
-            className="inline-flex items-center gap-1.5 rounded-[var(--ms-radius-default)] border border-[var(--ms-border-focus)] bg-[var(--ms-bg-selected)] px-3 py-1.5 font-medium text-[var(--ms-text-brand)] text-sm hover:brightness-95"
-            data-test-id="address-storage-scan"
-          >
-            <ScanLine className="h-4 w-4" />
-            {t('scan_button')}
-          </button>
+    <div data-test-id="address-storage">
+      {error && (
+        <p
+          className="mb-2 text-[12px] text-[var(--ms-text-error)]"
+          data-test-id="address-storage-error"
+        >
+          {error}
+        </p>
+      )}
+
+      {/* Onboarding help — moysklad shows it while the store has no zones/cells. */}
+      {isEmpty && serverMode && (
+        <div className="mb-4">
+          <HelpBlock />
         </div>
-      </div>
+      )}
 
-      {/* ── Polka-svodka jadvali (moysklad zona jadvali o'rnida) ──
-          overflow-x-auto (2026-07-20f): DataTable konvensiyasi bilan bir xil —
-          tor ekranda jadval sahifani yormasdan gorizontal skroll qiladi. */}
-      <div className="mt-4 max-w-[780px] overflow-x-auto">
-        <table className="w-full border-collapse" data-test-id="polka-summary">
-          <thead>
-            <tr className="border-[#2b6c99] border-b">
-              <th className={TH}>{t('col_polka')}</th>
-              <th className={cn(TH, 'w-28 text-center')}>{t('col_cells_total')}</th>
-              <th className={cn(TH, 'w-28 text-center')}>{t('col_cells_free')}</th>
-              <th className={cn(TH, 'w-28 text-center')}>{t('col_cells_busy')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {[
-              { key: '__none__', label: t('no_zone_row'), rows: noShelf, none: true },
-              ...shelfNames.map((name) => ({
-                key: name,
-                label: name,
-                rows: cells.filter((c) => c.shelf === name),
-                none: false,
-              })),
-            ].map(({ key, label, rows, none }) => {
-              const s = summaryRow(rows);
-              const open = openPolkas.has(key);
-              const expandable = rows.length > 0;
-              return (
-                <Fragment key={key}>
-                  {/* biome-ignore lint/a11y/useKeyWithClickEvents: qator butun-satr toggle; klaviatura uchun ichki chevron tugmasi bor emas — sodda ombor jadvali, o'qi/enter shart emas */}
-                  <tr
-                    className={cn(
-                      none ? 'border-[#2b6c99]' : 'border-[var(--ms-border-default)]',
-                      'border-b',
-                      expandable && 'cursor-pointer hover:bg-[var(--ms-bg-hover)]',
-                    )}
-                    onClick={() => expandable && togglePolka(key)}
-                    data-test-id={none ? 'polka-row-none' : `polka-row-${label}`}
-                  >
-                    <td className={cn(TD, none && 'text-[var(--ms-text-muted)] italic')}>
-                      <span className="inline-flex items-center gap-1.5">
-                        {expandable ? (
-                          open ? (
-                            <ChevronDown className="h-4 w-4 text-[var(--ms-text-muted)]" />
-                          ) : (
-                            <ChevronRight className="h-4 w-4 text-[var(--ms-text-muted)]" />
-                          )
-                        ) : (
-                          <span className="inline-block w-4" />
-                        )}
-                        <span>{label}</span>
-                        {expandable && (
-                          <span className="text-[var(--ms-text-muted)] text-xs">
-                            ({rows.length})
-                          </span>
-                        )}
-                      </span>
-                    </td>
-                    <td className={cn(TD, 'text-center tabular-nums')}>{s.total}</td>
-                    <td className={cn(TD, 'text-center tabular-nums')}>{s.free}</td>
-                    <td className={cn(TD, 'text-center tabular-nums')}>{s.busy}</td>
-                  </tr>
-                  {/* Ochilganда — shu polkadagi yacheyka KODLARI (band = to'q sariq, bo'sh = ko'k). */}
-                  {open && expandable && (
-                    <tr
-                      className="border-[var(--ms-border-default)] border-b bg-[var(--ms-bg-muted)]"
-                      data-test-id={`polka-cells-${none ? 'none' : label}`}
-                    >
-                      <td colSpan={4} className="px-4 py-2.5">
-                        <div className="flex flex-wrap gap-1.5">
-                          {[...rows]
-                            .sort((a, b) => a.code.localeCompare(b.code))
-                            .map((c) => {
-                              const busy = c.productCount > 0;
-                              return (
-                                <span
-                                  key={c.id}
-                                  title={busy ? t('col_cells_busy') : t('col_cells_free')}
-                                  className={cn(
-                                    'rounded-[var(--ms-radius-sm)] border px-2 py-0.5 font-mono text-xs tabular-nums',
-                                    busy
-                                      ? 'border-[#f0c9a0] bg-[#fdf2e6] text-[#b5651d]'
-                                      : 'border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] text-[var(--ms-text-secondary)]',
-                                  )}
-                                  data-test-id={`polka-cell-${c.code}`}
-                                >
-                                  {c.code}
-                                </span>
-                              );
-                            })}
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                </Fragment>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-
-      {/* ── «Polka qo'shish» (moysklad «+ Зона» o'rnida — 2026-07-16 rename) ── */}
-      <div className="mt-3">
-        {!polkaFormOpen ? (
-          <button
-            type="button"
-            className={linkCls}
-            onClick={() => {
-              setPolkaFormOpen(true);
-              setGeneratedInfo(null);
-            }}
-            data-test-id="add-polka-toggle"
-          >
-            <Plus className="h-4 w-4" aria-hidden />
-            {t('add_polka')}
-          </button>
-        ) : (
-          <div
-            className="max-w-[780px] rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-muted)] p-3"
-            data-test-id="add-polka-form"
-          >
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-              {(
-                [
-                  ['polka-shelf', t('polka_input_shelf'), shelf, setShelf, '032'],
-                  ['polka-prefix', t('polka_input_prefix'), prefix, setPrefix, '04-03-01'],
-                  ['polka-count', t('polka_input_count'), count, setCount, '20'],
-                ] as const
-              ).map(([id, label, value, set, ph]) => (
-                <div key={id} className="flex flex-col gap-1">
-                  <label htmlFor={id} className="text-[var(--ms-text-secondary)] text-xs">
-                    {label} <span className="text-red-500">*</span>
-                  </label>
-                  <Input
-                    id={id}
-                    value={value}
-                    placeholder={ph}
-                    onChange={(e) => set(e.target.value)}
-                    onKeyDown={(e) => {
-                      // Enter → generatsiya (2026-07-16 talab: Enter bosilganda
-                      // ketma-ket yacheykalar avtomatik yaratiladi).
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        submitPolka();
-                      }
-                    }}
-                    data-test-id={id}
-                  />
-                </div>
-              ))}
-            </div>
-            {polkaError && (
-              <div className="mt-2 text-red-600 text-sm" data-test-id="add-polka-error">
-                {polkaError}
-              </div>
-            )}
-            <div className="mt-3 flex items-center gap-2">
+      {/* Top row: «Проводить инвентаризацию по ячейкам» (edit mode) on the left,
+          the BIG «Scan» button top-right (owner 2026-07-21: moved OUT of the
+          per-cell product-add modal — the flow is cell-agnostic, any cell label
+          scanned inside the window picks the target, so it must not live inside
+          one cell's context). */}
+      {(onCellInventoryChange || (serverMode && storeId)) && (
+        <div className="mb-5 flex items-start justify-between gap-3">
+          {onCellInventoryChange ? (
+            <label className="flex w-fit cursor-pointer items-center gap-2 text-[#222222] text-[12px]">
+              <Checkbox
+                checked={!!cellInventory}
+                onCheckedChange={(v) => onCellInventoryChange(!!v)}
+                data-test-id="cell-inventory-checkbox"
+              />
+              {t('cell_inventory')}
+            </label>
+          ) : (
+            <span />
+          )}
+          {serverMode && storeId && (
+            <div className="flex shrink-0 items-center gap-2">
               <Button
                 type="button"
-                size="sm"
-                onClick={submitPolka}
-                loading={generateMut.isPending}
-                data-test-id="add-polka-submit"
-              >
-                {t('polka_generate')}
-              </Button>
-              <Button
-                type="button"
-                size="sm"
                 variant="secondary"
-                onClick={() => {
-                  setPolkaFormOpen(false);
-                  setPolkaError(null);
-                }}
+                size="lg"
+                onClick={() => setCountOpen(true)}
+                className="shrink-0 font-semibold text-[14px]"
+                style={{ height: 40 }}
+                data-test-id="cell-count-open"
               >
-                {tCommon('cancel')}
+                {t('count_button')}
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                size="lg"
+                onClick={() => setScanOpen(true)}
+                // Owner 2026-07-21: «kattaroq» — the section's primary hardware
+                // action, phone-tappable. Explicit height beats the global compact
+                // control override.
+                className="shrink-0 font-semibold text-[14px]"
+                style={{ height: 40 }}
+                data-test-id="cell-scan-open"
+              >
+                <Icons.barcode className="h-5 w-5" />
+                {t('scan_button')}
               </Button>
             </div>
-          </div>
-        )}
-        {generatedInfo && (
-          <div className="mt-2 text-emerald-700 text-sm" data-test-id="cells-generated-info">
-            {generatedInfo}
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
-      {/* ── Yacheykalar jadvali: Ячейка | Полка | amallar (Status/Shtrix YO'Q) ──
-          overflow-x-auto (2026-07-20f): tor ekranda gorizontal skroll, sahifa
-          o'zi yormaydi (DataTable konvensiyasi). */}
-      <div className="mt-6 max-w-[900px] overflow-x-auto">
-        <table className="w-full border-collapse" data-test-id="cells-table">
-          <thead>
-            <tr className="border-[#2b6c99] border-b">
-              <th className={TH}>{t('col_cell')}</th>
-              <th className={TH}>{t('col_polka')}</th>
-              <th className={cn(TH, 'w-32')} aria-label={t('col_actions')} />
-            </tr>
-          </thead>
-          <tbody>
-            {isLoading ? (
-              <tr>
-                <td className={cn(TD, 'text-[var(--ms-text-muted)]')} colSpan={3}>
-                  {tCommon('loading')}
-                </td>
-              </tr>
-            ) : cells.length === 0 ? (
-              <tr>
-                <td
-                  className={cn(TD, 'text-[var(--ms-text-muted)]')}
-                  colSpan={3}
-                  data-test-id="cells-empty"
-                >
-                  {t('cells_empty')}
-                </td>
-              </tr>
-            ) : (
-              cells.map((cell) => (
+      {/* ---- Полка (Зоны) ---- */}
+      <SectionBar
+        open={polkaOpen}
+        onToggle={() => setPolkaOpen((v) => !v)}
+        label={t('zone')}
+        query={polkaQuery}
+        onQuery={setPolkaQuery}
+        searchPlaceholder={t('search_polka')}
+        testPrefix="polka-section"
+      />
+      {polkaOpen && (
+        <>
+          <ZoneTable
+            bucket={
+              // Hide the «Без полки» bucket while a polka search is active.
+              pq ? null : (
+                <tr className={ROW_SEP}>
+                  <td className={`${CELL_TD} text-[rgb(153,153,153)]`}>{t('no_zone')}</td>
+                  <td className={CELL_TD} />
+                  <td className={CELL_TD}>{zonelessTotal}</td>
+                  <td className={CELL_TD}>{zonelessTotal - zonelessOccupied}</td>
+                  <td className={CELL_TD}>{zonelessOccupied}</td>
+                  <td className={CELL_TD} />
+                </tr>
+              )
+            }
+          >
+            {zonesShown.map((z) => {
+              // Click a polka row → the whole row edits: BOTH a polka-number input
+              // AND a «Всего ячеек» count input (user 2026-07-05). Typing a higher
+              // count auto-creates the missing «{prefix}-{polka}-{NN}» cells.
+              if (editing === `zone-${z.id}`) {
+                return (
+                  <PolkaEditRow
+                    key={z.id}
+                    zone={z}
+                    code={polkaCodeByName.get(z.name) ?? ''}
+                    onCommit={(name, code, count) => {
+                      setEditing(null);
+                      // Rename the server zone (pending polkas re-label via drafts).
+                      if (z.serverId && name && name !== z.name) commitZoneRename(z.serverId, name);
+                      // SET this polka's pending cells to exactly `count` of {code}-NN.
+                      setPolkaCells(z.name, name || z.name, code, count);
+                    }}
+                    onCancel={() => setEditing(null)}
+                    onDelete={() => removeZone(z)}
+                  />
+                );
+              }
+              return (
                 <tr
-                  key={cell.id}
-                  className="border-[var(--ms-border-default)] border-b hover:bg-[var(--ms-bg-hover)]"
-                  data-test-id={`cell-row-${cell.code}`}
+                  key={z.id}
+                  onClick={() => setEditing(`zone-${z.id}`)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') setEditing(`zone-${z.id}`);
+                  }}
+                  className={`group ${ROW_SEP} cursor-pointer hover:bg-[rgb(255,251,140)]`}
+                  data-test-id={`zone-row-${z.id}`}
                 >
-                  <td className={cn(TD, 'font-mono tabular-nums tracking-wider')}>{cell.code}</td>
-                  <td className={TD}>{cell.shelf ?? ''}</td>
-                  <td className={cn(TD, 'text-right')}>
-                    <div className="flex items-center justify-end gap-1">
-                      {/* ➕ tovar biriktirish */}
-                      <button
-                        type="button"
-                        className={iconBtnCls}
-                        title={t('cell_add_product')}
-                        aria-label={t('cell_add_product')}
-                        onClick={() => setAssignCell(cell)}
-                        data-test-id={`cell-assign-${cell.code}`}
-                      >
-                        <Plus className="h-3.5 w-3.5" />
-                      </button>
-                      {/* 🖨 chop etish */}
-                      <button
-                        type="button"
-                        className={iconBtnCls}
-                        title={t('cell_print')}
-                        aria-label={t('cell_print')}
-                        onClick={() => printCell(cell)}
-                        data-test-id={`cell-print-${cell.code}`}
-                      >
-                        <Printer className="h-3.5 w-3.5" />
-                      </button>
-                      {/* 🗑 o'chirish */}
-                      <button
-                        type="button"
-                        className={cn(iconBtnCls, 'hover:text-red-600')}
-                        title={t('cell_delete')}
-                        aria-label={t('cell_delete')}
-                        onClick={() =>
-                          runDestructive({
-                            title: tCommon('delete_confirm', { name: cell.code }),
-                            // 2026-07-20 tuzatish: registr yozuvi o'chsa ham
-                            // tovarning loc* manzili o'zgarmaydi (band/bo'shlik
-                            // Product.loc*dan hisoblanadi, StoreCell'dan emas)
-                            // — band yacheykani ko'rmasdan o'chirib qo'yish
-                            // "ko'rinmas" band manzil qoldiradi. Band bo'lsa
-                            // ogohlantiramiz.
-                            description:
-                              cell.productCount > 0
-                                ? t('cell_delete_occupied_warning', { count: cell.productCount })
-                                : undefined,
-                            run: () => deleteMut.mutateAsync(cell.id),
-                          })
-                        }
-                        data-test-id={`cell-delete-${cell.code}`}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
+                  <td className={CELL_TD}>
+                    <span
+                      className={`block truncate ${z.pending ? 'text-[var(--ms-text-brand)] italic' : ''}`}
+                      data-test-id={`zone-label-${z.id}`}
+                      title={z.pending ? t('unsaved_hint') : undefined}
+                    >
+                      {z.name}
+                      {z.pending && ' •'}
+                    </span>
+                  </td>
+                  {/* «Код ячейки» — always visible (user 2026-07-06), the polka's
+                      cell-code prefix. */}
+                  <td
+                    className={`${CELL_TD} tabular-nums`}
+                    data-test-id={`zone-code-label-${z.id}`}
+                  >
+                    {polkaCodeByName.get(z.name) ?? ''}
+                  </td>
+                  <td className={`${CELL_TD} tabular-nums`}>{z.cellCount}</td>
+                  <td className={CELL_TD}>{z.freeCount}</td>
+                  <td className={CELL_TD}>{z.occupiedCount}</td>
+                  <td className={`${CELL_TD} text-center`}>
+                    <RowDelete
+                      label={`delete ${z.name}`}
+                      onClick={() => removeZone(z)}
+                      testId={`zone-del-${z.id}`}
+                    />
                   </td>
                 </tr>
-              ))
+              );
+            })}
+            {editing === 'new-zone' && (
+              <NewPolkaRow onCommit={commitNewCells} onCancel={() => setEditing(null)} />
             )}
-          </tbody>
-        </table>
-      </div>
+          </ZoneTable>
+          <PlusAddButton
+            label={t('add_zone')}
+            onClick={() => setEditing('new-zone')}
+            testId="add-zone"
+          />
+        </>
+      )}
 
-      {/* ── «+ Yacheyka» (moysklad link — bitta yacheyka qo'lda) ── */}
-      <div className="mt-3">
-        {!cellFormOpen ? (
-          <button
-            type="button"
-            className={linkCls}
-            onClick={() => setCellFormOpen(true)}
-            data-test-id="add-cell-toggle"
-          >
-            <Plus className="h-4 w-4" aria-hidden />
-            {t('add_cell')}
-          </button>
-        ) : (
-          <div
-            className="flex max-w-[780px] flex-wrap items-end gap-3 rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-muted)] p-3"
-            data-test-id="add-cell-form"
-          >
-            <div className="flex flex-col gap-1">
-              <label htmlFor="cell-code" className="text-[var(--ms-text-secondary)] text-xs">
-                {t('cell_input_code')} <span className="text-red-500">*</span>
-              </label>
-              <Input
-                id="cell-code"
-                value={cellCode}
-                placeholder="04-03-01-01"
-                onChange={(e) => setCellCode(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    submitCell();
-                  }
-                }}
-                data-test-id="cell-code-input"
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label htmlFor="cell-shelf" className="text-[var(--ms-text-secondary)] text-xs">
-                {t('col_polka')}
-              </label>
-              <Input
-                id="cell-shelf"
-                value={cellShelf}
-                placeholder="032"
-                onChange={(e) => setCellShelf(e.target.value)}
-                data-test-id="cell-shelf-input"
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                size="sm"
-                onClick={submitCell}
-                loading={createCellMut.isPending}
-                data-test-id="add-cell-submit"
-              >
-                {tCommon('add')}
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="secondary"
-                onClick={() => {
-                  setCellFormOpen(false);
-                  setCellError(null);
-                }}
-              >
-                {tCommon('cancel')}
-              </Button>
-            </div>
-            {cellError && (
-              <div className="w-full text-red-600 text-sm" data-test-id="add-cell-error">
-                {cellError}
-              </div>
-            )}
-          </div>
+      {/* ---- Ячейка (Ячейки) ---- */}
+      <div className="mt-6">
+        <SectionBar
+          open={cellOpen}
+          onToggle={() => setCellOpen((v) => !v)}
+          label={t('cell')}
+          query={cellQuery}
+          onQuery={setCellQuery}
+          searchPlaceholder={t('search_cell')}
+          testPrefix="cell-section"
+        />
+        {cellOpen && (
+          <>
+            <CellTable>
+              {cellsShown.map((c) => {
+                const isEdit = editing === `cell-${c.id}`;
+                return (
+                  <tr
+                    key={c.id}
+                    // moysklad: ONE click anywhere on the row → ALL fields edit at
+                    // once (name + zone dropdown + barcode); closes on focus-out.
+                    onClick={() => {
+                      if (!isEdit) setEditing(`cell-${c.id}`);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !isEdit) setEditing(`cell-${c.id}`);
+                    }}
+                    onBlur={(e) => {
+                      if (isEdit && !e.currentTarget.contains(e.relatedTarget as Node | null))
+                        setEditing(null);
+                    }}
+                    className={`group ${ROW_SEP} cursor-pointer hover:bg-[rgb(255,251,140)] ${
+                      isEdit ? 'bg-[rgb(255,251,140)]' : ''
+                    }`}
+                    data-test-id={`cell-row-${c.id}`}
+                  >
+                    <td className={CELL_TD}>
+                      {isEdit ? (
+                        <InlineText
+                          value={c.name}
+                          onCommit={(name) => {
+                            if (!name || name === c.name) return;
+                            if (c.pending) patchDraftCell(c.id, { name });
+                            else patchCell.mutate({ id: c.id, name });
+                          }}
+                          placeholder={t('cell_placeholder')}
+                          autoFocus
+                          widthClass="h-[24px] w-[160px]"
+                          testId={`cell-name-${c.id}`}
+                        />
+                      ) : (
+                        <span
+                          className={`block truncate ${c.pending ? 'text-[var(--ms-text-brand)] italic' : ''}`}
+                          data-test-id={`cell-label-${c.id}`}
+                          title={c.pending ? t('unsaved_hint') : undefined}
+                        >
+                          {c.name}
+                          {c.pending && ' •'}
+                        </span>
+                      )}
+                    </td>
+                    <td className={CELL_TD}>
+                      {/* «Полка» — pick from the existing polka numbers (user
+                      2026-07-05). Defaults to the code's 3rd segment; a pending
+                      cell edits its draft polka, a saved cell moves zone. */}
+                      {isEdit ? (
+                        <NativeSelect
+                          value={c.zoneName ?? ''}
+                          className="h-[24px] w-[163px] text-[12px]"
+                          onChange={(e) => setCellPolka(c, e.target.value)}
+                          data-test-id={`cell-polka-${c.id}`}
+                        >
+                          <option value="">{t('no_zone')}</option>
+                          {(c.pending ? allPolkaOptions : serverPolkaOptions).map((nm) => (
+                            <option key={nm} value={nm}>
+                              {nm}
+                            </option>
+                          ))}
+                          {c.zoneName &&
+                            !(c.pending ? allPolkaOptions : serverPolkaOptions).includes(
+                              c.zoneName,
+                            ) && <option value={c.zoneName}>{c.zoneName}</option>}
+                        </NativeSelect>
+                      ) : (
+                        <span className="block truncate">{c.zoneName ?? ''}</span>
+                      )}
+                    </td>
+                    <td className={CELL_TD}>
+                      {c.occupied && serverMode && !c.pending ? (
+                        // Occupied → clickable: opens the per-product contents modal
+                        // (a cell can hold SEVERAL products, each with its own qty).
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setContentsCell({ id: c.id, name: c.name });
+                          }}
+                          className="text-[var(--ms-text-brand)] hover:underline"
+                          data-test-id={`cell-contents-${c.id}`}
+                        >
+                          {t('status_occupied')}
+                        </button>
+                      ) : c.occupied ? (
+                        t('status_occupied')
+                      ) : (
+                        t('status_free')
+                      )}
+                    </td>
+                    <td className={CELL_TD}>
+                      {isEdit ? (
+                        <div className="flex items-center gap-1">
+                          <InlineText
+                            value={c.barcode ?? ''}
+                            onCommit={(barcode) => {
+                              if (c.pending) patchDraftCell(c.id, { barcode: barcode || null });
+                              else patchCell.mutate({ id: c.id, barcode: barcode || null });
+                            }}
+                            widthClass="h-[24px] w-[160px]"
+                            testId={`cell-barcode-${c.id}`}
+                          />
+                          <BarcodeGenButton
+                            onGenerate={(code) => {
+                              if (c.pending) patchDraftCell(c.id, { barcode: code });
+                              else patchCell.mutate({ id: c.id, barcode: code });
+                            }}
+                            testId={`cell-barcode-gen-${c.id}`}
+                          />
+                        </div>
+                      ) : (
+                        <span className="block truncate">{c.barcode ?? ''}</span>
+                      )}
+                    </td>
+                    <td className={`${CELL_TD} text-center`}>
+                      <span className="flex items-center justify-center gap-2">
+                        {/* «＋ Добавить товар» — saved cells only: assign products to
+                            this cell (user 2026-07-06). Always visible so it reads as
+                            the row's primary action. */}
+                        {serverMode && !c.pending && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setContentsCell({ id: c.id, name: c.name });
+                            }}
+                            className="shrink-0 rounded-[var(--ms-radius-sm)] border border-[var(--ms-border-strong)] px-2 py-0.5 text-[12px] text-[var(--ms-text-link)] transition-colors hover:border-[var(--ms-border-focus)] hover:bg-[var(--ms-text-brand)] hover:text-white"
+                            data-test-id={`cell-view-${c.id}`}
+                          >
+                            {t('view_button')}
+                          </button>
+                        )}
+                        {serverMode && !c.pending && (
+                          // Owner 2026-07-20: bigger, phone-tappable (40px on
+                          // mobile) and unmistakable on hover (fills brand-blue).
+                          <button
+                            type="button"
+                            aria-label={t('add_product_to_cell')}
+                            title={t('add_product_to_cell')}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setAssignCell({ id: c.id, name: c.name });
+                            }}
+                            // px sizes, not rem: the mobile root font is 14px, so
+                            // h-10 (2.5rem) silently became 35px; shrink-0 stops
+                            // the cramped cell from squeezing the tap target.
+                            className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-[var(--ms-radius-sm)] border border-[var(--ms-border-strong)] text-[var(--ms-text-link)] transition-colors hover:border-[var(--ms-border-focus)] hover:bg-[var(--ms-text-brand)] hover:text-white max-md:h-[44px] max-md:w-[44px]"
+                            data-test-id={`cell-add-product-${c.id}`}
+                          >
+                            <Icons.create className="h-4 w-4 max-md:h-5 max-md:w-5" />
+                          </button>
+                        )}
+                        {/* «🖨 Этикетка» (F1) — saved cells only (needs a real cell id). */}
+                        {serverMode && !c.pending && (
+                          <button
+                            type="button"
+                            aria-label={t('print_label')}
+                            title={t('print_label')}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setLabelCell({ id: c.id, name: c.name, barcode: c.barcode });
+                            }}
+                            className="invisible text-[var(--ms-text-muted)] hover:text-[var(--ms-text-primary)] group-hover:visible"
+                            data-test-id={`cell-print-${c.id}`}
+                          >
+                            <Icons.print className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                        <RowDelete
+                          label={`delete ${c.name}`}
+                          onClick={() => removeCell(c)}
+                          testId={`cell-del-${c.id}`}
+                        />
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+              {editing === 'new-cell' && (
+                <NewCellRow
+                  storeCode={storeCode}
+                  onCommit={commitNewCell}
+                  onCancel={() => setEditing(null)}
+                />
+              )}
+            </CellTable>
+            <PlusAddButton
+              label={t('add_cell')}
+              onClick={() => setEditing('new-cell')}
+              testId="add-cell"
+            />
+          </>
         )}
       </div>
 
-      {/* ➕ — «Выбор товара» modali: tanlanganlar shu yacheykaga biriktiriladi
-          (asosiy loc* manzili yacheyka kodiga o'rnatiladi). */}
-      <ProductSelectModal
-        open={!!assignCell}
-        onClose={() => setAssignCell(null)}
-        currency="UZS"
-        selectionMode
-        headerExtra={
-          <button
-            type="button"
-            onClick={() => {
-              // «Mahsulot qo'shish» oynasidan skan oqimiga o'tish — biriktirilgan
-              // yacheyka boshlang'ich yo'nalish sifatida uzatiladi (skan uni
-              // qat'iy aniqlaydi).
-              setScanCell(assignCell);
-              setAssignCell(null);
-            }}
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--ms-radius-default)] border border-[var(--ms-border-focus)] bg-[var(--ms-bg-selected)] px-3 py-1 font-medium text-[12px] text-[var(--ms-text-brand)] hover:brightness-95"
-            data-test-id="product-select-scan"
-          >
-            <ScanLine className="h-4 w-4" />
-            {t('scan_button')}
-          </button>
-        }
-        onConfirm={() => undefined}
-        onConfirmSelection={(products: ProductSelectRow[]) => {
-          if (!assignCell) return;
-          assignMut.mutate({
-            cellId: assignCell.id,
-            productIds: products.map((p) => p.id),
-          });
-        }}
-        labels={{
-          title: assignCell
-            ? `${t('assign_picker_title')} — ${assignCell.code}`
-            : t('assign_picker_title'),
-          searchPlaceholder: tProductSelect('searchPlaceholder'),
-          refresh: tProductSelect('refresh'),
-          priceColumns: tProductSelect('priceColumns'),
-          colName: tProductSelect('colName'),
-          colQty: tProductSelect('colQty'),
-          colOnHand: tProductSelect('colOnHand'),
-          colReserved: tProductSelect('colReserved'),
-          colInTransit: tProductSelect('colInTransit'),
-          colAvailable: tProductSelect('colAvailable'),
-          colCode: tProductSelect('colCode'),
-          colArticle: tProductSelect('colArticle'),
-          colUom: tProductSelect('colUom'),
-          colCountry: tProductSelect('colCountry'),
-          colWeight: tProductSelect('colWeight'),
-          colImage: tProductSelect('colImage'),
-          colKind: tProductSelect('colKind'),
-          colDescription: tProductSelect('colDescription'),
-          colMinPrice: tProductSelect('colMinPrice'),
-          colRetailPrice: tProductSelect('colRetailPrice'),
-          colPrice: tProductSelect('colPrice'),
-          select: tProductSelect('select'),
-          cancel: tProductSelect('cancel'),
-          close: tProductSelect('close'),
-          empty: tProductSelect('empty'),
-          loading: tProductSelect('loading'),
-        }}
-      />
+      {serverMode && storeId && labelCell && (
+        <CellLabelPrintOverlay
+          cell={labelCell}
+          // Only saved cells are printable — pending drafts have no real id yet.
+          cells={cells
+            .filter((c) => !c.pending)
+            .map((c) => ({ id: c.id, name: c.name, barcode: c.barcode }))}
+          onClose={() => setLabelCell(null)}
+        />
+      )}
 
-      {/* Skan orqali biriktirish oynasi — «Mahsulot qo'shish»dagi «Skan»dan yoki
-          bo'lim yuqorisidagi «Skan» tugmasidan ochiladi. */}
-      <CellScanModal
-        open={!!scanCell || scanOpen}
-        onClose={() => {
-          setScanCell(null);
-          setScanOpen(false);
-        }}
-        storeId={storeId}
-        storeName={storeName}
-        expectedCell={
-          scanCell ? { id: scanCell.id, code: scanCell.code, shelf: scanCell.shelf } : null
-        }
-        onLinked={() => qc.invalidateQueries({ queryKey: ['store-cells', storeId] })}
-      />
+      {serverMode && storeId && contentsCell && (
+        <CellContentsModal
+          storeId={storeId}
+          cell={contentsCell}
+          cells={serverCells.map((c) => ({ id: c.id, name: c.name, barcode: c.barcode }))}
+          onClose={() => setContentsCell(null)}
+          onChanged={() => {
+            qc.invalidateQueries({ queryKey: ['product-cell-stock'] });
+            qc.invalidateQueries({ queryKey: ['product-storage-options'] });
+            invalidate();
+          }}
+        />
+      )}
+
+      {/* «Добавить товар в ячейку» — the moysklad product picker (search + filter
+          + folder tree), selection mode. Already-assigned products show checked +
+          disabled; picking new ones sets their home cell to this cell. */}
+      {serverMode && assignCell && (
+        <ProductSelectModal
+          open={!!assignCell}
+          onClose={() => setAssignCell(null)}
+          currency="UZS"
+          selectionMode
+          disabledIds={assignedProductIds}
+          onConfirm={() => undefined}
+          onConfirmSelection={(products) => {
+            assignProducts.mutate(products.map((p) => p.id));
+          }}
+          labels={{
+            title: `${t('add_product_to_cell')} · ${assignCell.name}`,
+            searchPlaceholder: tProductSelect('searchPlaceholder'),
+            refresh: tProductSelect('refresh'),
+            priceColumns: tProductSelect('priceColumns'),
+            colName: tProductSelect('colName'),
+            colQty: tProductSelect('colQty'),
+            colOnHand: tProductSelect('colOnHand'),
+            colReserved: tProductSelect('colReserved'),
+            colInTransit: tProductSelect('colInTransit'),
+            colAvailable: tProductSelect('colAvailable'),
+            colCode: tProductSelect('colCode'),
+            colArticle: tProductSelect('colArticle'),
+            colUom: tProductSelect('colUom'),
+            colCountry: tProductSelect('colCountry'),
+            colWeight: tProductSelect('colWeight'),
+            colImage: tProductSelect('colImage'),
+            colKind: tProductSelect('colKind'),
+            colDescription: tProductSelect('colDescription'),
+            colMinPrice: tProductSelect('colMinPrice'),
+            colRetailPrice: tProductSelect('colRetailPrice'),
+            colPrice: tProductSelect('colPrice'),
+            select: tProductSelect('select'),
+            cancel: tProductSelect('cancel'),
+            close: tProductSelect('close'),
+            empty: tProductSelect('empty'),
+            loading: tProductSelect('loading'),
+            filter: {
+              toggle: tFilters('trigger'),
+              kind: tFilters('product_kind'),
+              kindOptions: [
+                { value: '', label: tCommon('all') },
+                { value: 'product', label: tFilters('kind_product') },
+                { value: 'service', label: tFilters('kind_service') },
+                { value: 'bundle', label: tFilters('kind_bundle') },
+              ],
+              show: tFilters('show'),
+              showOptions: [
+                { value: 'active', label: tFilters('show_regular') },
+                { value: 'archived', label: tFilters('show_archived') },
+                { value: 'all', label: tCommon('all') },
+              ],
+              barcode: tFilters('barcode'),
+              belowMinimum: tFilters('below_minimum'),
+              belowMinimumOptions: [
+                { value: '', label: tCommon('all') },
+                { value: 'true', label: tCommon('yes') },
+                { value: 'false', label: tCommon('no') },
+              ],
+              reset: tCommon('clear'),
+              description: tFilters('description'),
+              article: tFilters('article'),
+              code: tFilters('code'),
+              externalCode: tFilters('external_code'),
+            },
+          }}
+        />
+      )}
+
+      {/* «Scan» — hands-free cell↔product barcode binding (owner 2026-07-19).
+          Saved cells only: a pending draft cell has no server id to bind to. */}
+      {serverMode && storeId && (
+        <CellCountModal
+          open={countOpen}
+          onOpenChange={setCountOpen}
+          storeId={storeId}
+          cells={serverCells.map((c) => ({ id: c.id, name: c.name, barcode: c.barcode }))}
+          onSaved={() => {
+            qc.invalidateQueries({ queryKey: ['cell-contents', storeId] });
+            qc.invalidateQueries({ queryKey: ['product-cell-stock'] });
+            invalidate();
+          }}
+        />
+      )}
+
+      {serverMode && storeId && (
+        <CellScanBindModal
+          open={scanOpen}
+          onOpenChange={setScanOpen}
+          storeId={storeId}
+          cells={serverCells.map((c) => ({ id: c.id, name: c.name, barcode: c.barcode }))}
+          // Owner 2026-07-20 spec: the flow ALWAYS starts at «№ 1 — scan the
+          // cell label» — no pre-selected cell, the shelf label is the truth.
+          initialCell={null}
+          onBound={() => {
+            qc.invalidateQueries({ queryKey: ['cell-products', storeId, assignCell?.id] });
+            qc.invalidateQueries({ queryKey: ['product-cell-stock'] });
+            qc.invalidateQueries({ queryKey: ['product-storage-options'] });
+            invalidate();
+          }}
+        />
+      )}
     </div>
   );
 }

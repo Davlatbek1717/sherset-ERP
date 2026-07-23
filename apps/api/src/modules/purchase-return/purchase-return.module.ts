@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AttachmentModule } from '../attachment/attachment.module.js';
 import { AttributeMetadataModule } from '../attribute-metadata/attribute-metadata.module.js';
 import { AuthModule } from '../auth/auth.module.js';
 import { PrintTemplateModule } from '../print-template/print-template.module.js';
@@ -16,6 +17,7 @@ import { PurchaseReturnService } from './purchase-return.service.js';
     PurchaseOrderModule,
     WebhookModule,
     PrintTemplateModule,
+    AttachmentModule,
   ],
   controllers: [PurchaseReturnController],
   providers: [PurchaseReturnService],

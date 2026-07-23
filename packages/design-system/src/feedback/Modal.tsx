@@ -35,6 +35,12 @@ export interface ModalProps {
   testId?: string;
   /** Allow content scroll when body exceeds viewport. Default true. */
   scrollableBody?: boolean;
+  /** Radix Dialog close-autofocus hook — fires when the dialog unmounts (after
+   *  the 150ms close animation) and Radix is about to restore focus to the
+   *  previously-focused element. Call `e.preventDefault()` and focus your own
+   *  target to hand focus somewhere else deterministically (e.g. the pick
+   *  modal's save → new-row «Кол-во» chain). */
+  onCloseAutoFocus?: (e: Event) => void;
 }
 
 /**
@@ -68,6 +74,7 @@ export function Modal({
   closeLabel,
   testId,
   scrollableBody = true,
+  onCloseAutoFocus,
 }: ModalProps) {
   // Resolve: explicit prop → app-root injected default → Uzbek hard fallback.
   const labelsCtx = React.useContext(ModalLabelsContext);
@@ -85,6 +92,10 @@ export function Modal({
         />
         <Dialog.Content
           data-testid={testId}
+          // No <Dialog.Description> is rendered unless `description` is set, so opt
+          // out of Radix's describedby a11y warning (dev console noise) when absent.
+          {...(description ? {} : { 'aria-describedby': undefined })}
+          onCloseAutoFocus={onCloseAutoFocus}
           onInteractOutside={(e) => {
             // A ConfirmDialog (useConfirm) layered ABOVE this modal — e.g. the
             // optimistic-lock conflict-reload prompt, or an in-modal delete
@@ -100,7 +111,10 @@ export function Modal({
             }
           }}
           className={cn(
-            'fixed top-1/2 left-1/2 z-[var(--ms-z-modal)] flex max-h-[85vh] flex-col',
+            // dvh, not vh: on phones the URL bar shrinks the visible viewport
+            // below 100vh — an 85vh modal could run under it. dvh === vh on
+            // desktop, so ≥768px rendering is unchanged.
+            'fixed top-1/2 left-1/2 z-[var(--ms-z-modal)] flex max-h-[85dvh] flex-col',
             '-translate-x-1/2 -translate-y-1/2',
             widthClass,
             'max-w-[calc(100vw-2rem)]',

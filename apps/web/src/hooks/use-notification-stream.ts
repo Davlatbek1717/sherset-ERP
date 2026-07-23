@@ -1,6 +1,11 @@
 'use client';
 
 import { getAccessToken, useAuth } from '@/lib/auth-store';
+import {
+  armNotificationSound,
+  playNotificationSound,
+  showBrowserNotification,
+} from '@/lib/notification-sound';
 import { useToast } from '@moysklad/ui';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
@@ -44,6 +49,11 @@ export function useNotificationStream() {
     if (!token) return;
     if (typeof EventSource === 'undefined') return;
 
+    // F2: unlock the audible signal (and the browser Notification permission)
+    // on the user's first gesture — after that the ding plays even when this
+    // tab sits in another window.
+    armNotificationSound();
+
     const url = `/api/v1/notifications/stream?access_token=${encodeURIComponent(token)}`;
     const es = new EventSource(url, { withCredentials: true });
 
@@ -52,10 +62,13 @@ export function useNotificationStream() {
         const data = JSON.parse(event.data) as StreamEvent;
         // Refresh the bell + drawer; cheap because we only invalidate.
         void qc.invalidateQueries({ queryKey: ['notifications'] });
-        // When a picking task is assigned, refresh the omborchi dashboard instantly.
-        if (data.kind === 'picking_assigned') {
-          void qc.invalidateQueries({ queryKey: ['omborchi-picking'] });
-          void qc.invalidateQueries({ queryKey: ['omborchi-ready'] });
+        // F2 «signal-xabar»: audible ding — works in background tabs too
+        // (AudioContext was unlocked by a prior gesture).
+        playNotificationSound();
+        // Other-window/minimized case: the in-app toast is invisible there —
+        // raise an OS-level notification instead.
+        if (document.hidden) {
+          showBrowserNotification(data.title, data.body ?? safeKind(data.kind, tKinds));
         }
         // Toast — title falls back to the kind label so the user always
         // sees something readable, even for kinds we haven't translated.

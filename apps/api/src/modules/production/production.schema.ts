@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { csvUuid } from '../shared/csv.js';
 
 const uuid = z.string().uuid();
 const optionalEmpty = (max: number) =>
@@ -97,6 +98,7 @@ const boolFromString = z
 export const ProductionFilterSchema = z.object({
   state: ProductionStateSchema.optional(),
   organizationId: uuid.optional(),
+  organizationIds: csvUuid.optional(),
   storeId: uuid.optional(),
   customerOrderId: uuid.optional(),
   ownerId: uuid.optional(),

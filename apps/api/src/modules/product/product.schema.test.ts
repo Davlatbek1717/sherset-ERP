@@ -3,7 +3,7 @@ import {
   BulkUpdateSchema,
   CreateProductSchema,
   ProductFilterSchema,
-  SetProductLocationsSchema,
+  SetSalePriceSchema,
   UpdateProductSchema,
 } from './product.schema.js';
 
@@ -277,42 +277,19 @@ describe('BulkUpdateSchema «Код упаковки ТАСНИФ» / «Штри
   });
 });
 
-/**
- * Multi-bin Phase 2 — per-cell quantity. The qty is manually maintained
- * (no document posts to it), fractional allowed (weighed/metered goods),
- * null = not tracked. Guards both entry points: the product form's primary-bin
- * locQty and the «Qo'shimcha yacheykalar» card's per-row qty.
- */
-describe('Per-cell qty (multi-bin Phase 2): locQty + SetProductLocationsSchema.qty', () => {
-  it('UPDATE accepts a fractional locQty and null to clear it', () => {
-    const r = UpdateProductSchema.parse({ name: 'P', version: 1, locQty: 12.5 });
-    expect(r.locQty).toBe(12.5);
-    const cleared = UpdateProductSchema.parse({ name: 'P', version: 1, locQty: null });
-    expect(cleared.locQty).toBeNull();
+describe('SetSalePriceSchema (pick-modal «Doimiy narx»)', () => {
+  it('accepts a plain minor-unit integer string', () => {
+    expect(SetSalePriceSchema.parse({ priceMinor: '11000000' }).priceMinor).toBe('11000000');
   });
 
-  it('rejects a negative locQty', () => {
-    expect(UpdateProductSchema.safeParse({ name: 'P', version: 1, locQty: -1 }).success).toBe(
-      false,
-    );
+  it('rejects negatives, decimals, empty and non-numeric strings', () => {
+    for (const bad of ['-100', '10.5', '', '1e6', '100 000', null, 100]) {
+      expect(SetSalePriceSchema.safeParse({ priceMinor: bad }).success).toBe(false);
+    }
   });
 
-  it('locations accept qty per row; omitted/null both normalize to null', () => {
-    const r = SetProductLocationsSchema.parse({
-      locations: [
-        { sklad: 2, polka: 2, qavat: 2, yacheyka: 9, qty: 70 },
-        { sklad: 3, polka: 1, qavat: 1, yacheyka: 4 },
-        { sklad: 4, polka: 1, qavat: 1, yacheyka: 5, qty: null },
-      ],
-    });
-    expect(r.locations[0]?.qty).toBe(70);
-    expect(r.locations[1]?.qty).toBeNull();
-    expect(r.locations[2]?.qty).toBeNull();
-  });
-
-  it('rejects a negative per-row qty', () => {
-    expect(
-      SetProductLocationsSchema.safeParse({ locations: [{ sklad: 1, qty: -5 }] }).success,
-    ).toBe(false);
+  it('rejects >15 digits (int8-overflow guard for downstream document math)', () => {
+    expect(SetSalePriceSchema.safeParse({ priceMinor: '9'.repeat(16) }).success).toBe(false);
+    expect(SetSalePriceSchema.safeParse({ priceMinor: '9'.repeat(15) }).success).toBe(true);
   });
 });

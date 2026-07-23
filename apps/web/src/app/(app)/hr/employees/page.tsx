@@ -325,7 +325,7 @@ export default function HrEmployeesPage() {
                             </Badge>
                           )}
                         </div>
-                        <div className="truncate text-[var(--ms-text-muted)] text-xs">
+                        <div className="truncate text-[var(--ms-text-muted)] text-[11px]">
                           {row.email || row.phone || '—'}
                         </div>
                       </div>

@@ -6,6 +6,7 @@ import { Icons } from '../icons/action-icons.ts';
 import { cn } from '../lib/cn.ts';
 import { Button } from '../primitives/Button.tsx';
 import { DropdownMenu } from '../primitives/DropdownMenu.tsx';
+import { ProductPickModal, type ProductPickModalLabels } from './ProductPickModal.tsx';
 
 /** A product matched from a CSV import line, ready for the parent to append
  *  as a position. `item` is the full catalog hit the parent's `onSearch`
@@ -40,6 +41,11 @@ export interface CatalogResult {
   available?: number;
   /** Optional thumbnail URL (moysklad shows a product image when one exists). */
   imageUrl?: string | null;
+  /** Default/original sale price in MINOR units — shown read-only in the
+   *  Band-1 pick modal as «Цена». Filled by the page's onSearch mapping. */
+  priceMinor?: string;
+  /** Unit label (e.g. «шт») — shown next to «Остаток» in the pick modal. */
+  uomLabel?: string;
   raw?: unknown;
 }
 
@@ -105,8 +111,34 @@ export interface PositionInlineAddProps {
    *  Return [] (or `{ items: [], total: 0 }`) to suppress the dropdown. */
   onSearch?: (query: string) => Promise<CatalogSearchResult>;
   /** Fired when the user selects a suggestion or presses Enter on a
-   *  unique match (e.g. a scanned barcode). */
-  onPick?: (item: { id: string; primary: string; raw?: unknown }) => void;
+   *  unique match (e.g. a scanned barcode). `entry` is present only when the
+   *  Band-1 pick modal is enabled (`pickModal`) — it carries the qty + sale
+   *  price the user entered. Without the modal, `onPick` fires with `item`
+   *  alone (all existing callers).
+   *
+   *  RETURN VALUE (owner 2026-07-18, modal → table chain): return the id of
+   *  the row the pick landed in (new or merged-into) and the bar hands focus
+   *  to that row's «Кол-во» cell (selected) so the in-table entry chain
+   *  continues (Кол-во → Enter → Цена → Enter → back to this search input).
+   *  Return nothing to keep the legacy behavior (focus returns to the search
+   *  input right away). */
+  onPick?: (
+    item: { id: string; primary: string; raw?: unknown },
+    entry?: { quantity: string; priceMinor: string; permanent?: boolean },
+    // biome-ignore lint/suspicious/noConfusingVoidType: the row id is an OPTIONAL return — `void` keeps legacy no-return handlers assignable while `string | undefined` alone would reject them.
+  ) => string | undefined | void;
+  /** Band 1 (sales docs): when provided, picking a product opens a small
+   *  qty/price modal instead of appending immediately. On save the page's
+   *  `onPick` fires with `(item, { quantity, priceMinor })`. `currency`
+   *  formats the read-only original price + converts the entered sale price.
+   *  `permanentPriceOption: false` hides the sale-only/permanent price scope
+   *  checkboxes (purchase/warehouse docs — writing a permanent SALE price from
+   *  a buy price would corrupt the product card). */
+  pickModal?: {
+    labels: ProductPickModalLabels;
+    currency: string;
+    permanentPriceOption?: boolean;
+  };
   /** moysklad rich product dropdown — «Создать новый товар «<query>»» footer
    *  link. When provided, the dropdown renders the rich product layout
    *  (thumbnail · code · highlighted name · «Доступно» badge · sort toggle ·
@@ -125,6 +157,10 @@ export interface PositionInlineAddProps {
   /** Click handler for «Проверить комплектацию» — runs stock check.
    *  Optional; hidden when undefined (most doc types don't need it). */
   onCheckCompleteness?: () => void;
+  /** Extra buttons rendered right after the catalog/completeness buttons —
+   *  document-specific bar actions (e.g. Инвентаризация's «Дополнить из
+   *  остатков» / «Дополнить из номенклатуры»). Callers own styling/handlers. */
+  extraActions?: React.ReactNode;
   /** Items for the «Импорт ▾» dropdown. Empty array hides the button.
    *  Each item: { label, onClick }. */
   importItems?: Array<{ label: React.ReactNode; onClick: () => void }>;
@@ -176,12 +212,14 @@ export function PositionInlineAdd({
   checkCompletenessLabel = 'Komplektni tekshirish',
   onSearch,
   onPick,
+  pickModal,
   onCreateProduct,
   sortAvailableLabel,
   moreItemsLabel,
   createProductLabel,
   onAddFromCatalog,
   onCheckCompleteness,
+  extraActions,
   importItems = [],
   disabled,
   testId,
@@ -196,8 +234,20 @@ export function PositionInlineAdd({
   const [total, setTotal] = React.useState(0);
   const [suggestions, setSuggestions] = React.useState<CatalogResult[]>([]);
   const [open, setOpen] = React.useState(false);
+  // Keyboard navigation over the DISPLAYED rows (moysklad parity, owner
+  // 2026-07-11): ↓/↑ move the highlight, Enter picks it. -1 = nothing chosen.
+  const [activeIdx, setActiveIdx] = React.useState(-1);
+  // Band 1: the product awaiting its qty/price in the pick modal (sales docs
+  // only — set from `pick` when `pickModal` is supplied). null = modal closed.
+  const [pendingPick, setPendingPick] = React.useState<CatalogResult | null>(null);
   const inputRef = React.useRef<HTMLInputElement>(null);
   const suppressOpenRef = React.useRef(false);
+  // moysklad parity (owner 2026-07-11): after a pick the query TEXT STAYS in
+  // the input, selected. The parent re-renders on every keystroke/pick and
+  // `onSearch` is usually an inline arrow (new identity each render), so the
+  // debounce effect re-fires with the SAME query — this ref pins the picked
+  // query so those re-fires don't reopen the dropdown until the text changes.
+  const pickedQueryRef = React.useRef<string | null>(null);
 
   // Debounced typeahead. 200ms keeps the input feeling instant on local
   // searches (counterparty list) but doesn't hammer the API for every
@@ -209,6 +259,12 @@ export function PositionInlineAdd({
       setOpen(false);
       return;
     }
+    // Post-pick freeze: the picked text intentionally stays in the input —
+    // don't re-search/reopen until the user actually edits it.
+    if (pickedQueryRef.current !== null) {
+      if (query === pickedQueryRef.current) return;
+      pickedQueryRef.current = null;
+    }
     if (suppressOpenRef.current) {
       suppressOpenRef.current = false;
       return;
@@ -219,6 +275,7 @@ export function PositionInlineAdd({
         const items = Array.isArray(res) ? res : res.items;
         setSuggestions(items);
         setTotal(Array.isArray(res) ? items.length : res.total);
+        setActiveIdx(-1);
         // Rich product mode keeps the panel open even with 0 hits so the
         // «Создать новый товар «<query>»» footer is always reachable.
         setOpen(items.length > 0 || richProduct);
@@ -247,25 +304,90 @@ export function PositionInlineAdd({
   const plainDisplayed = React.useMemo(() => suggestions.slice(0, DISPLAY_CAP), [suggestions]);
   const hiddenCount = total - (richProduct ? richDisplayed.length : plainDisplayed.length);
 
-  const pick = (item: { id: string; primary: string; raw?: unknown }) => {
-    onPick?.(item);
+  // Row id returned by the page's `onPick` during a MODAL save — consumed by
+  // the modal's onCloseAutoFocus (fires after the 150ms close animation, when
+  // Radix would otherwise restore focus to the search input) to hand focus to
+  // that row's «Кол-во» instead. null = cancel/plain close → focus the input.
+  const modalPickedRowIdRef = React.useRef<string | null>(null);
+
+  const focusSearchInput = () => {
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  };
+
+  /** Focus + select the picked row's «Кол-во» cell (owner 2026-07-18: after a
+   *  pick the entry continues IN THE TABLE — Кол-во → Enter → Цена → Enter →
+   *  back to the search input). Falls back to the search input when the row
+   *  isn't in the DOM (e.g. the page didn't append — validation toast). */
+  const focusRowQty = (rowId: string | null | undefined) => {
+    if (rowId) {
+      const qty = document.querySelector(`[data-test-id="pos-${rowId}-qty"]`);
+      if (qty instanceof HTMLInputElement && !qty.disabled && !qty.readOnly) {
+        qty.focus();
+        qty.select();
+        return;
+      }
+    }
+    focusSearchInput();
+  };
+
+  const finishPick = (
+    item: CatalogResult,
+    entry?: { quantity: string; priceMinor: string; permanent?: boolean },
+    via: 'direct' | 'modal' = 'direct',
+  ) => {
+    const returned = onPick?.(item, entry);
+    const rowId = typeof returned === 'string' ? returned : null;
     suppressOpenRef.current = true;
-    setQuery('');
+    // moysklad parity (owner 2026-07-11): the query text STAYS, selected —
+    // typing replaces it from scratch (native select-all overwrite), a click
+    // into the text places the caret to continue editing it.
+    pickedQueryRef.current = query;
     setSuggestions([]);
     setOpen(false);
-    inputRef.current?.focus();
+    setActiveIdx(-1);
+    if (via === 'modal') {
+      // The dialog is still unmounting (150ms close animation) — focusing now
+      // would be undone by Radix's own close-autofocus. Stash the target; the
+      // onCloseAutoFocus handler below runs at exactly the right moment.
+      modalPickedRowIdRef.current = rowId;
+      return;
+    }
+    requestAnimationFrame(() => focusRowQty(rowId));
+  };
+
+  const pick = (item: CatalogResult) => {
+    if (pickModal) {
+      // Band 1 (sales docs): defer the append — open the qty/price modal and
+      // let finishPick run on its save. The dropdown closes meanwhile.
+      setPendingPick(item);
+      setOpen(false);
+      setActiveIdx(-1);
+      return;
+    }
+    finishPick(item);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && suggestions.length === 1) {
-      e.preventDefault();
-      const only = suggestions[0];
-      if (only) pick(only);
+    const displayed = richProduct ? richDisplayed : plainDisplayed;
+    if (e.key === 'Enter') {
+      // Pick the highlighted row; with no highlight fall back to a single hit.
+      const chosen = open && activeIdx >= 0 ? displayed[activeIdx] : undefined;
+      const target = chosen ?? (suggestions.length === 1 ? suggestions[0] : undefined);
+      if (target) {
+        e.preventDefault();
+        pick(target);
+      }
     } else if (e.key === 'Escape') {
       setOpen(false);
-    } else if (e.key === 'ArrowDown' && suggestions.length > 0) {
+      setActiveIdx(-1);
+    } else if (e.key === 'ArrowDown' && displayed.length > 0) {
       e.preventDefault();
-      setOpen(true);
+      if (!open) setOpen(true);
+      setActiveIdx((i) => Math.min(i + 1, displayed.length - 1));
+    } else if (e.key === 'ArrowUp' && displayed.length > 0) {
+      e.preventDefault();
+      setActiveIdx((i) => Math.max(i - 1, 0));
     }
   };
 
@@ -301,7 +423,7 @@ export function PositionInlineAdd({
                 onBlur={() => setTimeout(() => setOpen(false), 150)}
                 placeholder={placeholder}
                 disabled={disabled}
-                className="h-9 w-full rounded-[var(--ms-radius-sm)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] px-3 text-sm placeholder:text-[var(--ms-text-placeholder)] focus:outline-none focus:ring-2 focus:ring-[var(--ms-text-brand)]"
+                className="h-9 max-md:h-[36px] w-full rounded-[var(--ms-radius-sm)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] px-3 text-sm placeholder:text-[var(--ms-text-placeholder)] focus:outline-none focus:ring-2 focus:ring-[var(--ms-text-brand)]"
                 data-test-id={testId ? `${testId}-input` : 'position-inline-add-input'}
               />
             </div>
@@ -357,7 +479,7 @@ export function PositionInlineAdd({
                     </label>
                   )}
                   <ul>
-                    {richDisplayed.map((item) => {
+                    {richDisplayed.map((item, idx) => {
                       const avail = item.available ?? 0;
                       return (
                         <li key={item.id}>
@@ -369,7 +491,16 @@ export function PositionInlineAdd({
                               e.preventDefault();
                               pick(item);
                             }}
-                            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px] hover:bg-[var(--ms-bg-muted)]"
+                            className={cn(
+                              'flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px]',
+                              // ↓/↑ keyboard highlight (moysklad parity): the BLUE
+                              // selected tint, never the grey hover tint — the two must
+                              // stay distinguishable, and a plain `bg-` loses to the
+                              // `hover:` rule on whichever row the pointer rests over.
+                              idx === activeIdx
+                                ? 'bg-[var(--ms-bg-selected)]'
+                                : 'hover:bg-[var(--ms-bg-muted)]',
+                            )}
                           >
                             {item.imageUrl ? (
                               <img
@@ -447,7 +578,7 @@ export function PositionInlineAdd({
                 </div>
               ) : (
                 <ul>
-                  {plainDisplayed.map((item) => (
+                  {plainDisplayed.map((item, idx) => (
                     <li key={item.id}>
                       <button
                         type="button"
@@ -457,7 +588,13 @@ export function PositionInlineAdd({
                           e.preventDefault();
                           pick(item);
                         }}
-                        className="flex w-full items-baseline gap-2 px-3 py-2 text-left text-sm hover:bg-[var(--ms-bg-muted)]"
+                        className={cn(
+                          'flex w-full items-baseline gap-2 px-3 py-2 text-left text-sm',
+                          // ↓/↑ keyboard highlight — see the rich list above.
+                          idx === activeIdx
+                            ? 'bg-[var(--ms-bg-selected)]'
+                            : 'hover:bg-[var(--ms-bg-muted)]',
+                        )}
                       >
                         <span className="flex-1 truncate font-medium">{item.primary}</span>
                         {item.secondary && (
@@ -496,6 +633,7 @@ export function PositionInlineAdd({
           {checkCompletenessLabel}
         </Button>
       )}
+      {extraActions}
       {importItems.length > 0 && (
         <DropdownMenu
           trigger={
@@ -519,6 +657,38 @@ export function PositionInlineAdd({
             </DropdownMenu.Item>
           ))}
         </DropdownMenu>
+      )}
+      {pickModal && (
+        // Band 1 (sales docs): the qty/price entry modal. `finishPick` on save
+        // appends the row with the entered qty + sale price; cancel/close drops
+        // the pending pick without adding anything.
+        <ProductPickModal
+          open={!!pendingPick}
+          onOpenChange={(o) => {
+            if (!o) setPendingPick(null);
+          }}
+          productName={pendingPick?.primary ?? ''}
+          available={pendingPick?.available}
+          uomLabel={pendingPick?.uomLabel}
+          originalPriceMinor={pendingPick?.priceMinor}
+          currency={pickModal.currency}
+          labels={pickModal.labels}
+          permanentPriceOption={pickModal.permanentPriceOption}
+          onSave={(entry) => {
+            const it = pendingPick;
+            setPendingPick(null);
+            if (it) finishPick(it, entry, 'modal');
+          }}
+          onCloseAutoFocus={(e) => {
+            // Radix restores focus AFTER the close animation — exactly when the
+            // appended row is in the DOM. Save → the new row's «Кол-во» (the
+            // in-table chain continues); cancel/Esc → back to the search input.
+            e.preventDefault();
+            const rowId = modalPickedRowIdRef.current;
+            modalPickedRowIdRef.current = null;
+            focusRowQty(rowId);
+          }}
+        />
       )}
     </div>
   );

@@ -30,10 +30,27 @@ describe('throwIfEmployeeUniqueViolation', () => {
     );
   });
 
-  it('maps a P2002 on an unknown Employee target to a generic ConflictException', () => {
+  // Owner-reported 2026-07-19: a bare «Noyob qiymat xatosi» toast gave no clue
+  // WHICH field clashed (prod hit the (account_id, name) unique that early
+  // db-push-era databases carry). Every known target now names its field, and
+  // the unknown fallback embeds the clashing columns so it self-diagnoses.
+  it('maps a P2002 on the name index to a message naming the full name', () => {
+    expect(() => throwIfEmployeeUniqueViolation(p2002(['account_id', 'name']))).toThrow(
+      /familiya-ism/i,
+    );
+  });
+
+  it('maps a P2002 on a phone index to a message naming the phone', () => {
     expect(() => throwIfEmployeeUniqueViolation(p2002(['account_id', 'phone']))).toThrow(
+      /telefon/i,
+    );
+  });
+
+  it('unknown Employee target still 409s and NAMES the clashing columns', () => {
+    expect(() => throwIfEmployeeUniqueViolation(p2002(['account_id', 'inn']))).toThrow(
       ConflictException,
     );
+    expect(() => throwIfEmployeeUniqueViolation(p2002(['account_id', 'inn']))).toThrow(/inn/);
   });
 
   it('does NOT carry the OPTIMISTIC_LOCK code (web client must show a plain conflict, not the reload dialog)', () => {

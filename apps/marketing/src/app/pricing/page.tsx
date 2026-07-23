@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
   title: 'Tariflar',
-  description: "Sherset ERP — turli o'lchamdagi bizneslar uchun moslashuvchan tariflar.",
+  description: 'MoySklad ERP — turli o\'lchamdagi bizneslar uchun moslashuvchan tariflar.',
 };
 
 const TIERS = [
@@ -24,8 +24,8 @@ const TIERS = [
   {
     name: 'Standart',
     price: '199 000',
-    period: "so'm / oyiga",
-    description: "O'sayotgan bizneslar uchun",
+    period: 'so\'m / oyiga',
+    description: 'O\'sayotgan bizneslar uchun',
     features: [
       '5 foydalanuvchi',
       '5 ombor',
@@ -41,18 +41,18 @@ const TIERS = [
   {
     name: 'Pro',
     price: '499 000',
-    period: "so'm / oyiga",
-    description: "Ko'p tarmoqli kompaniyalar uchun",
+    period: 'so\'m / oyiga',
+    description: 'Ko\'p tarmoqli kompaniyalar uchun',
     features: [
       '20 foydalanuvchi',
       'Cheklanmagan ombor',
       'Ishlab chiqarish moduli',
       'Onlayn savdo integratsiyasi',
       'API kirish',
-      "Prioritet qo'llab-quvvatlash",
+      'Prioritet qo\'llab-quvvatlash',
       'Maxsus integratsiyalar',
     ],
-    cta: "Bog'lanish",
+    cta: 'Bog\'lanish',
     highlighted: false,
   },
 ];
@@ -77,7 +77,7 @@ export default function PricingPage() {
             }
           >
             {t.highlighted && (
-              <div className="-top-3 -translate-x-1/2 absolute left-1/2 rounded-full bg-[var(--brand-500)] px-3 py-0.5 font-medium text-white text-xs">
+              <div className="-top-3 absolute left-1/2 -translate-x-1/2 rounded-full bg-[var(--brand-500)] px-3 py-0.5 font-medium text-white text-xs">
                 Mashhur
               </div>
             )}
@@ -99,7 +99,10 @@ export default function PricingPage() {
             </a>
             <ul className="mt-8 space-y-3 border-slate-200 border-t pt-6">
               {t.features.map((f) => (
-                <li key={f} className="flex items-start gap-2 text-slate-700 text-sm">
+                <li
+                  key={f}
+                  className="flex items-start gap-2 text-slate-700 text-sm"
+                >
                   <CheckIcon />
                   <span>{f}</span>
                 </li>
@@ -121,7 +124,7 @@ function CheckIcon() {
       viewBox="0 0 20 20"
       fill="currentColor"
       className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600"
-      aria-hidden="true"
+      aria-hidden
     >
       <path
         fillRule="evenodd"

@@ -13,10 +13,14 @@ import { AttributeMetadataService } from '../attribute-metadata/attribute-metada
 import { computePerUnitCost } from '../demand/fifo-consumer.js';
 import { PurchaseOrderService } from '../purchase-order/purchase-order.service.js';
 import { tashkentRangeBounds } from '../report/report-date-bounds.util.js';
+import { runBulk } from '../shared/bulk.js';
 import { resolveCreatorGroupId } from '../shared/group-stamp.js';
-import { assertMassEditRefsInTenant } from '../shared/mass-edit.js';
+import { assertMassEditRefsInTenant, assertStateInTenant } from '../shared/mass-edit.js';
 import { mapVersionedUpdateError } from '../shared/optimistic-lock.js';
-import { assertOrgAccountMatchesOrg } from '../shared/org-account.js';
+import {
+  assertAgentAccountMatchesAgent,
+  assertOrgAccountMatchesOrg,
+} from '../shared/org-account.js';
 import { type StockDelta, StockService } from '../stock/stock.service.js';
 import { WebhookFireService } from '../webhook/webhook-fire.service.js';
 import {
@@ -39,14 +43,14 @@ interface ComputedTotals {
 /**
  * PurchaseReturnService — outbound stock side (goods back to supplier).
  *
- * post() contract:
- *   1. Negative StockDeltas (goods leave inventory)
- *   2. StockService.applyDeltas inside Serializable tx (sufficiency check not
- *      strictly required since we originally received these goods, but guard
- *      against double-returns via original Supply position ref)
- *   3. If original Supply was linked to a PO → cascade
- *      PurchaseOrderService.applyReceipt(tx, ..., direction='revert')
- *   4. Audit event 'purchasereturn.posted'.
+ * post() contract (Serializable tx):
+ *   1. Cumulative-return cap — Σ(posted returns for each linked Приёмка line, incl.
+ *      this one) must not exceed the RECEIVED qty, else ConflictException. Prevents
+ *      returning a supply line N× (which would remove N× stock + revert the PO N×).
+ *   2. Sufficiency (lockBalances + assertAvailable), then NEGATIVE StockDeltas (goods
+ *      leave inventory) at the store's weighted-average unit cost (NOT the doc price).
+ *   3. If the linked Supply came from a PO → cascade applyReceipt(tx, ..., 'revert').
+ *   4. Audit event 'transition:posted'.
  */
 @Injectable()
 export class PurchaseReturnService {
@@ -60,7 +64,8 @@ export class PurchaseReturnService {
 
   async list(accountId: string, rawFilter: unknown) {
     const filter = PurchaseReturnFilterSchema.parse(rawFilter);
-    const where = this.buildListWhere(accountId, filter);
+    const extraIdFilter = await this.resolveModifiedByIdFilter(accountId, filter);
+    const where = this.buildListWhere(accountId, filter, extraIdFilter);
 
     // moysklad parity: relational sort for agent/organization.
     const orderBy =
@@ -81,6 +86,8 @@ export class PurchaseReturnService {
         store: { select: { id: true, name: true } },
         owner: { select: { id: true, name: true } },
         supply: { select: { id: true, name: true } },
+        // «Статус» — account-defined custom status pill (moysklad #purchasereturn).
+        status: { select: { id: true, name: true, color: true } },
         _count: { select: { positions: true } },
       },
     });
@@ -92,6 +99,111 @@ export class PurchaseReturnService {
   }
 
   /**
+   * moysklad-parity pinned «Итого» footer total — sums the «Сумма» column over
+   * ALL filtered records (the SAME WHERE the list uses). moysklad shows ONE money
+   * total here (purchasereturn list has no Оплачено/Принято columns). For a
+   * MIXED-currency set it shows the BASE (UZS) sum — each doc converted via its
+   * stored rateValue (scale 1e8) — not a «—» dash (mirror invoice-in.aggregateTotals).
+   */
+  async aggregateTotals(accountId: string, rawFilter: unknown) {
+    const filter = PurchaseReturnFilterSchema.parse(rawFilter);
+    const extraIdFilter = await this.resolveModifiedByIdFilter(accountId, filter);
+    const where = this.buildListWhere(accountId, filter, extraIdFilter);
+
+    const [agg, currencyGroups] = await Promise.all([
+      this.prisma.client.purchaseReturn.aggregate({
+        where,
+        _count: true,
+        _sum: { sumMinor: true },
+      }),
+      this.prisma.client.purchaseReturn.groupBy({ by: ['currency'], where }),
+    ]);
+
+    // Base-currency (UZS) total — only for mixed sets (the dashed case). Prisma's
+    // aggregate can't multiply columns, so fetch (sum, rate) tuples and reduce in
+    // BigInt (no float drift). rateValue is the doc->base ratio × 1e8.
+    const RATE_SCALE = 100000000n;
+    let baseSumMinor = '0';
+    if (currencyGroups.length > 1) {
+      const rows = await this.prisma.client.purchaseReturn.findMany({
+        where,
+        select: { sumMinor: true, rateValue: true },
+      });
+      let bs = 0n;
+      for (const r of rows) bs += (r.sumMinor * r.rateValue) / RATE_SCALE;
+      baseSumMinor = bs.toString();
+    }
+
+    return {
+      count: agg._count,
+      sumMinor: (agg._sum.sumMinor ?? 0n).toString(),
+      currencies: currencyGroups.map((g) => g.currency),
+      baseSumMinor,
+    };
+  }
+
+  /**
+   * «Статус» — assign an account-defined custom status (State row,
+   * entityType="purchasereturn") to a single return, or clear it
+   * (`statusId: null`). Applied IMMEDIATELY (moysklad parity — the pill is a live
+   * mutation, not a save-on-edit field). Mirror of supply / purchase-order.setStatus.
+   */
+  async setStatus(accountId: string, userId: string, id: string, statusId: string | null) {
+    if (statusId) {
+      const status = await this.prisma.client.state.findFirst({
+        where: { id: statusId, accountId, entityType: 'purchasereturn', archived: false },
+        select: { id: true },
+      });
+      if (!status) throw new BadRequestException(`Unknown status: ${statusId}`);
+    }
+    const pr = await this.prisma.client.purchaseReturn.findFirst({
+      where: { id, accountId, deletedAt: null },
+      select: { statusId: true },
+    });
+    if (!pr) throw new NotFoundException(`PurchaseReturn ${id} not found`);
+    await this.prisma.client.purchaseReturn.update({
+      where: { id, accountId },
+      data: { status: statusId ? { connect: { id: statusId } } : { disconnect: true } },
+    });
+    await this.logAudit(accountId, userId, 'set-status', id, {
+      status: { before: pr.statusId, after: statusId },
+    });
+    this.webhookFire.fireForEvent(accountId, 'purchasereturn', 'UPDATE', id, ['statusId']);
+    return this.findById(accountId, id);
+  }
+
+  /**
+   * «Статус ▾» toolbar menu — set (or clear) the custom status on N selected
+   * returns at once. Validates the target State ONCE before fanning out so an
+   * invalid id is a single 400, not a per-row 500 (mirror supply.bulkSetStatus).
+   */
+  async bulkSetStatus(accountId: string, userId: string, ids: string[], statusId: string | null) {
+    if (statusId) {
+      const status = await this.prisma.client.state.findFirst({
+        where: { id: statusId, accountId, entityType: 'purchasereturn', archived: false },
+        select: { id: true },
+      });
+      if (!status) throw new BadRequestException(`Unknown status: ${statusId}`);
+    }
+    return runBulk(ids, async (id) => {
+      const pr = await this.prisma.client.purchaseReturn.findFirst({
+        where: { id, accountId, deletedAt: null },
+        select: { statusId: true },
+      });
+      if (!pr) throw new NotFoundException(`PurchaseReturn ${id} not found`);
+      await this.prisma.client.purchaseReturn.update({
+        where: { id, accountId },
+        data: { status: statusId ? { connect: { id: statusId } } : { disconnect: true } },
+      });
+      await this.logAudit(accountId, userId, 'set-status', id, {
+        status: { before: pr.statusId, after: statusId },
+      });
+      this.webhookFire.fireForEvent(accountId, 'purchasereturn', 'UPDATE', id, ['statusId']);
+      return id;
+    });
+  }
+
+  /**
    * Shared WHERE builder for `list`. Extracted to mirror invoice-in.service so
    * the PurchaseReturn filter panel reaches moysklad «Возвраты поставщикам»
    * parity (~15 backed fields) without two-place drift. Keeps the accountId
@@ -100,6 +212,10 @@ export class PurchaseReturnService {
   private buildListWhere(
     accountId: string,
     filter: PurchaseReturnFilterInput,
+    // «Кто изменил» — PurchaseReturn has no modifiedById column, so list()/
+    // aggregateTotals() pre-query the auditLog and pass the matched entityIds
+    // here. undefined = no narrowing; [] = forced-empty (id IN [] = nothing).
+    extraIdFilter?: string[],
   ): Prisma.PurchaseReturnWhereInput {
     const momentRange =
       filter.momentFrom || filter.momentTo
@@ -122,20 +238,63 @@ export class PurchaseReturnService {
             },
           }
         : {};
+    // «Дата приемки» — date range over the LINKED supply's receipt date (moment).
+    const receiptDateRange =
+      filter.receiptDateFrom || filter.receiptDateTo
+        ? {
+            supply: {
+              moment: tashkentRangeBounds(filter.receiptDateFrom, filter.receiptDateTo),
+            },
+          }
+        : {};
+    // «Оплата» — cross-column payed vs sum (mirror supply / invoice-in). sumMinor>0
+    // so a zero-amount doc doesn't trivially match `paid`.
+    const fields = this.prisma.client.purchaseReturn.fields;
+    const paymentClause: Prisma.PurchaseReturnWhereInput | null = (() => {
+      if (!filter.paymentState) return null;
+      switch (filter.paymentState) {
+        case 'paid':
+          return { sumMinor: { gt: 0n }, payedSumMinor: { gte: fields.sumMinor } };
+        case 'partlyPaid':
+          return { sumMinor: { gt: 0n }, payedSumMinor: { gt: 0n, lt: fields.sumMinor } };
+        case 'unpaid':
+          return { payedSumMinor: 0n };
+      }
+    })();
+    // «Группа контрагента» + «Владелец контрагента» both narrow the SAME `agent`
+    // relation — merge into ONE clause so the object keys don't collide (last-wins
+    // would silently drop a predicate). Mirror invoice-in.buildListWhere.
+    const agentSub = {
+      ...(filter.agentGroupId ? { groupId: filter.agentGroupId } : {}),
+      ...(filter.agentOwnerId ? { ownerId: filter.agentOwnerId } : {}),
+    };
+    const agentRelation = Object.keys(agentSub).length ? { agent: agentSub } : {};
+
+    // «Оплата» and the «Сумма» range BOTH constrain `sumMinor`; spread side-by-side the
+    // later key would silently overwrite the earlier (e.g. paymentState='paid' sets
+    // `sumMinor:{gt:0}` and a sumMinor range would clobber it, or vice-versa). Combine
+    // them under AND so both predicates survive. (mirror the agentRelation merge above.)
+    const rangeAnd = [paymentClause, sumRange].filter(
+      (c): c is Prisma.PurchaseReturnWhereInput => !!c && Object.keys(c).length > 0,
+    );
 
     return {
       accountId,
       ...(filter.includeDeleted ? {} : { deletedAt: null }),
+      ...(extraIdFilter ? { id: { in: extraIdFilter } } : {}),
       ...(filter.state ? { state: filter.state } : {}),
       ...(filter.agentId ? { agentId: filter.agentId } : {}),
-      ...(filter.agentGroupId ? { agent: { groupId: filter.agentGroupId } } : {}),
+      ...(filter.agentIds ? { agentId: { in: filter.agentIds } } : {}),
+      ...agentRelation,
       ...(filter.agentAccountId ? { agentAccountId: filter.agentAccountId } : {}),
       ...(filter.organizationId ? { organizationId: filter.organizationId } : {}),
+      ...(filter.organizationIds ? { organizationId: { in: filter.organizationIds } } : {}),
       ...(filter.organizationAccountId
         ? { organizationAccountId: filter.organizationAccountId }
         : {}),
       ...(filter.storeId ? { storeId: filter.storeId } : {}),
       ...(filter.supplyId ? { supplyId: filter.supplyId } : {}),
+      ...(filter.productId ? { positions: { some: { assortmentId: filter.productId } } } : {}),
       ...(filter.contractId ? { contractId: filter.contractId } : {}),
       ...(filter.projectId ? { projectId: filter.projectId } : {}),
       ...(filter.groupId ? { groupId: filter.groupId } : {}),
@@ -143,9 +302,11 @@ export class PurchaseReturnService {
       ...(filter.applicable !== undefined ? { applicable: filter.applicable } : {}),
       ...(filter.printed !== undefined ? { printed: filter.printed } : {}),
       ...(filter.published !== undefined ? { published: filter.published } : {}),
+      ...(filter.shared !== undefined ? { shared: filter.shared } : {}),
       ...momentRange,
       ...updatedRange,
-      ...sumRange,
+      ...receiptDateRange,
+      ...(rangeAnd.length ? { AND: rangeAnd } : {}),
       ...(filter.search
         ? {
             OR: [
@@ -157,6 +318,32 @@ export class PurchaseReturnService {
           }
         : {}),
     };
+  }
+
+  /**
+   * «Кто изменил» (modifiedById) — PurchaseReturn has no modifiedById column, so
+   * approximate "modified by employee X" via the auditLog: the DISTINCT entityIds
+   * this account's returns were `update`d on by the requested user. Returns
+   * `undefined` when no modifiedById is requested (no narrowing), or `[]` when
+   * requested but no audit rows match (forces an EMPTY result, not match-all).
+   * Mirror of invoice-in / supply. Remove once a real modifiedById column lands.
+   */
+  private async resolveModifiedByIdFilter(
+    accountId: string,
+    filter: PurchaseReturnFilterInput,
+  ): Promise<string[] | undefined> {
+    if (!filter.modifiedById) return undefined;
+    const rows = await this.prisma.client.auditLog.findMany({
+      where: {
+        accountId,
+        entity: 'PurchaseReturn',
+        userId: filter.modifiedById,
+        action: { contains: 'update' },
+      },
+      select: { entityId: true },
+      distinct: ['entityId'],
+    });
+    return rows.map((r) => r.entityId);
   }
 
   async findById(accountId: string, id: string) {
@@ -172,6 +359,8 @@ export class PurchaseReturnService {
         project: { select: { id: true, name: true } },
         organizationAccount: { select: { id: true, name: true, accountNumber: true } },
         agentAccount: { select: { id: true, accountNumber: true } },
+        // «Статус» — account-defined custom status pill (moysklad parity).
+        status: { select: { id: true, name: true, color: true } },
         positions: {
           include: {
             product: { select: { id: true, name: true, code: true, uom: true } },
@@ -186,6 +375,9 @@ export class PurchaseReturnService {
 
   async create(accountId: string, userId: string, raw: unknown) {
     const parsed = this.parseCreate(raw);
+    // Owner 2026-07-08: «Проведено» toggles freely — an empty return may be
+    // created+posted (0 positions ⇒ 0 stock delta; moysklad allows it). No
+    // position precondition on the applicable flag.
     await this.ensureRefs(accountId, parsed.agentId, parsed.organizationId, parsed.storeId);
     if (parsed.supplyId) await this.ensureSupply(accountId, parsed.supplyId);
     await assertOrgAccountMatchesOrg(
@@ -194,6 +386,56 @@ export class PurchaseReturnService {
       parsed.organizationId,
       parsed.organizationAccountId ?? null,
     );
+    // «Ячейка» — every picked bin must belong to the document's store (mirror supply).
+    await this.stock.assertCellsInStore(
+      accountId,
+      parsed.storeId,
+      parsed.positions.map((p) => p.cellId),
+    );
+    // «Счёт контрагента» must belong to THIS tenant + agent (else a crafted payload
+    // routes money to a foreign account). Mirror customer-order / org-account guard.
+    await assertAgentAccountMatchesAgent(
+      this.prisma.client,
+      accountId,
+      parsed.agentId,
+      parsed.agentAccountId ?? null,
+    );
+    // «Основание» (Приёмка) integrity: a linked return must match the supply
+    // (контрагент / организация / валюта) and every supplyPositionId must belong to
+    // THAT supply — else a crafted payload could revert an unrelated PO / supply line.
+    if (parsed.supplyId) {
+      const supply = await this.prisma.client.supply.findFirst({
+        where: { id: parsed.supplyId, accountId, deletedAt: null },
+        select: {
+          agentId: true,
+          organizationId: true,
+          currency: true,
+          positions: { select: { id: true } },
+        },
+      });
+      if (!supply) throw new BadRequestException('Приёмка topilmadi');
+      if (
+        supply.agentId !== parsed.agentId ||
+        supply.organizationId !== parsed.organizationId ||
+        supply.currency !== parsed.currency
+      ) {
+        throw new BadRequestException(
+          'Возврат Приёмка bilan mos kelmaydi (контрагент / организация / валюта)',
+        );
+      }
+      const supplyPosIds = new Set(supply.positions.map((p) => p.id));
+      for (const p of parsed.positions) {
+        if (p.supplyPositionId && !supplyPosIds.has(p.supplyPositionId)) {
+          throw new BadRequestException('Pozitsiya boshqa Приёмка-ga tegishli');
+        }
+      }
+    } else {
+      for (const p of parsed.positions) {
+        if (p.supplyPositionId) {
+          throw new BadRequestException('supplyPositionId талаб қилади: supplyId');
+        }
+      }
+    }
 
     const name = await this.nextName(accountId);
 
@@ -205,12 +447,26 @@ export class PurchaseReturnService {
 
     const creatorGroupId = await resolveCreatorGroupId(this.prisma.client, accountId, userId);
 
+    // «Статус» — validate the account custom status belongs to this tenant and the
+    // purchasereturn entityType BEFORE create (mirror setStatus) — never trust the
+    // client-sent id to FK-connect a foreign-tenant / wrong-type state.
+    if (parsed.statusId) {
+      const status = await this.prisma.client.state.findFirst({
+        where: { id: parsed.statusId, accountId, entityType: 'purchasereturn', archived: false },
+        select: { id: true },
+      });
+      if (!status) throw new BadRequestException(`Unknown status: ${parsed.statusId}`);
+    }
+
     try {
       const created = await this.prisma.client.purchaseReturn.create({
         data: {
           accountId,
-          ownerId: userId,
-          groupId: creatorGroupId,
+          // «Владелец» — owner override from the editor's owner popover, else the creator.
+          ownerId: parsed.ownerId ?? userId,
+          groupId: parsed.groupId ?? creatorGroupId,
+          shared: parsed.shared ?? false,
+          statusId: parsed.statusId ?? null,
           name,
           agentId: parsed.agentId,
           organizationId: parsed.organizationId,
@@ -243,6 +499,8 @@ export class PurchaseReturnService {
               discount: p.discount ?? '0',
               vat: p.vat ?? null,
               vatEnabled: p.vatEnabled,
+              cellId: p.cellId ?? null,
+              cell: p.cell ?? null,
             })),
           },
         },
@@ -257,6 +515,13 @@ export class PurchaseReturnService {
 
       await this.logAudit(accountId, userId, 'create', created.id, null);
       this.webhookFire.fireForEvent(accountId, 'purchasereturn', 'CREATE', created.id);
+      // «Проведено» on save — run the SAME verified posting path the detail
+      // «Провести» uses (deduction + Supply/PO revert + guards, Serializable tx).
+      // The draft is already committed; a post failure surfaces its error with
+      // the draft saved (moysklad parity — the doc is kept, not lost).
+      if (parsed.applicable) {
+        return await this.transition(accountId, userId, created.id, 'post');
+      }
       return saved;
     } catch (e) {
       this.handlePrisma(e);
@@ -278,14 +543,34 @@ export class PurchaseReturnService {
 
     const storeId = parsed.storeId ?? supply.storeId;
 
+    // Cumulative return cap (moysklad `_purchase_return.md:583`): a supply line may be
+    // returned at most the RECEIVED qty across ALL returns — NOT the original qty each
+    // time. Subtract qty already returned by other active returns (draft+posted both
+    // claim the remaining; the authoritative stock-affecting re-check is in post()).
+    const supplyPosIds = supply.positions.map((sp) => sp.id);
+    const returnedAgg = await this.prisma.client.purchaseReturnPosition.groupBy({
+      by: ['supplyPositionId'],
+      where: {
+        supplyPositionId: { in: supplyPosIds },
+        accountId,
+        purchaseReturn: { deletedAt: null, state: { not: 'cancelled' } },
+      },
+      _sum: { quantity: true },
+    });
+    const returnedBySp = new Map(
+      returnedAgg.map((g) => [g.supplyPositionId, Number(g._sum.quantity ?? 0)]),
+    );
+
     const positions = supply.positions
       .map((sp) => {
-        const want = parsed.quantities?.[sp.id] ?? String(sp.quantity);
+        const alreadyReturned = returnedBySp.get(sp.id) ?? 0;
+        const remaining = Number(String(sp.quantity)) - alreadyReturned;
+        const want = parsed.quantities?.[sp.id] ?? String(remaining > 0 ? remaining : 0);
         const wantNum = Number(want);
         if (wantNum <= 0) return null;
-        if (wantNum > Number(String(sp.quantity))) {
+        if (wantNum > remaining + 1e-7) {
           throw new BadRequestException(
-            `Position ${sp.id}: original qty ${String(sp.quantity)} dan ortiq qaytarish mumkin emas`,
+            `Position ${sp.id}: qaytarish mumkin = ${remaining} (qabul ${String(sp.quantity)} − qaytarilgan ${alreadyReturned}), so'ralmoqda ${wantNum}`,
           );
         }
         return {
@@ -323,12 +608,39 @@ export class PurchaseReturnService {
     const parsed = this.parseUpdate(raw);
     const existing = await this.findById(accountId, id);
 
-    if (existing.applicable) {
-      throw new BadRequestException(
-        "Provedeno qaytarishni o'zgartirib bo'lmaydi — avval 'Snyat provedeno' qiling",
-      );
+    // moysklad parity: a POSTED «Возврат поставщику» stays fully editable (Контрагент /
+    // Склад / Валюта / позиции). Saving re-books stock — reverse the current posting,
+    // apply the edit, then re-post, REUSING the exact tested unpost → updateDraft → post
+    // transactions (no duplicated stock math, the working post/unpost engine untouched).
+    // Each step is its own Serializable tx; a mid-way failure (e.g. the edit oversells
+    // the store) leaves a valid DRAFT with stock fully restored — no corruption — which
+    // the user can fix and re-post. Concurrency is guarded by unpost's TOCTOU state-claim
+    // (a parallel unpost/cancel makes our unpost 409 before any stock moves).
+    if (existing.state === 'posted') {
+      await this.unpost(accountId, userId, id, existing);
+      const draft = await this.findById(accountId, id);
+      await this.updateDraft(accountId, userId, id, { ...parsed, version: draft.version }, draft);
+      const edited = await this.findById(accountId, id);
+      return this.post(accountId, userId, id, edited);
     }
+    if (existing.applicable) {
+      // applicable but not 'posted' = cancelled-from-posted → terminal, stays locked.
+      throw new BadRequestException("Bekor qilingan qaytarishni o'zgartirib bo'lmaydi");
+    }
+    return this.updateDraft(accountId, userId, id, parsed, existing);
+  }
 
+  /**
+   * The draft-only field/position update (the original `update` body). Called directly
+   * for a draft, and as the middle step of the posted re-post orchestration above.
+   */
+  private async updateDraft(
+    accountId: string,
+    userId: string,
+    id: string,
+    parsed: UpdatePurchaseReturnInput,
+    existing: Awaited<ReturnType<PurchaseReturnService['findById']>>,
+  ) {
     const effectiveOrgId = parsed.organizationId ?? existing.organizationId;
     const effectiveAccountId =
       parsed.organizationAccountId !== undefined
@@ -340,6 +652,25 @@ export class PurchaseReturnService {
       effectiveOrgId,
       effectiveAccountId,
     );
+    // «Счёт контрагента» tenant + agent guard on edit too (create-path parity).
+    const effectiveAgentId = parsed.agentId ?? existing.agentId;
+    const effectiveAgentAccountId =
+      parsed.agentAccountId !== undefined ? parsed.agentAccountId : existing.agentAccountId;
+    await assertAgentAccountMatchesAgent(
+      this.prisma.client,
+      accountId,
+      effectiveAgentId,
+      effectiveAgentAccountId,
+    );
+    // «Ячейка» — re-validate every picked bin against the (possibly changed) store
+    // when positions are replaced (else an edit could attach a foreign-store bin).
+    if (parsed.positions !== undefined) {
+      await this.stock.assertCellsInStore(
+        accountId,
+        parsed.storeId ?? existing.storeId,
+        parsed.positions.map((p) => p.cellId),
+      );
+    }
 
     const data: Prisma.PurchaseReturnUpdateInput = {};
     if (parsed.description !== undefined) data.description = parsed.description;
@@ -386,6 +717,31 @@ export class PurchaseReturnService {
         : { disconnect: true };
     }
     if (parsed.externalCode !== undefined) data.externalCode = parsed.externalCode;
+    // «Владелец» / «Владелец-отдел» / «Общий доступ» — the schema accepts them (a
+    // .partial of Create) but update() dropped them, so a changed owner / department /
+    // shared flag silently vanished (the rateValue bug-class). Mirror supply: both refs
+    // tenant-validated before the connect / scalar set.
+    if (parsed.ownerId !== undefined) {
+      if (parsed.ownerId) {
+        await assertMassEditRefsInTenant(this.prisma, accountId, { ownerId: parsed.ownerId });
+        data.owner = { connect: { id: parsed.ownerId } };
+      } else {
+        data.owner = { disconnect: true };
+      }
+    }
+    if (parsed.groupId !== undefined) {
+      if (parsed.groupId) {
+        const grp = await this.prisma.client.group.findFirst({
+          where: { id: parsed.groupId, accountId },
+          select: { id: true },
+        });
+        if (!grp) throw new BadRequestException("Bo'lim topilmadi");
+      }
+      data.groupId = parsed.groupId ?? null;
+    }
+    if (parsed.shared !== undefined) {
+      data.shared = parsed.shared;
+    }
 
     if (parsed.positions !== undefined) {
       // Read-only build here; the destructive deleteMany is deferred into the
@@ -404,6 +760,8 @@ export class PurchaseReturnService {
           discount: p.discount ?? '0',
           vat: p.vat ?? null,
           vatEnabled: p.vatEnabled,
+          cellId: p.cellId ?? null,
+          cell: p.cell ?? null,
         })),
       };
     }
@@ -487,7 +845,14 @@ export class PurchaseReturnService {
     accountId: string,
     userId: string,
     id: string,
-    patch: { ownerId?: string | null; projectId?: string | null; description?: string | null },
+    patch: {
+      ownerId?: string | null;
+      projectId?: string | null;
+      description?: string | null;
+      groupId?: string | null;
+      shared?: boolean;
+      stateId?: string | null;
+    },
   ) {
     await this.findById(accountId, id);
     await assertMassEditRefsInTenant(this.prisma, accountId, patch);
@@ -495,6 +860,13 @@ export class PurchaseReturnService {
     if ('ownerId' in patch) data.ownerId = patch.ownerId;
     if ('projectId' in patch) data.projectId = patch.projectId;
     if ('description' in patch) data.description = patch.description;
+    if ('groupId' in patch) data.groupId = patch.groupId;
+    if ('shared' in patch && patch.shared !== undefined) data.shared = patch.shared;
+    if ('stateId' in patch) {
+      if (patch.stateId)
+        await assertStateInTenant(this.prisma, accountId, patch.stateId, 'purchasereturn');
+      data.statusId = patch.stateId;
+    }
     const updated = await this.prisma.client.purchaseReturn.update({
       where: { id, accountId },
       data,
@@ -611,6 +983,57 @@ export class PurchaseReturnService {
           );
         }
 
+        // «Основание» qty integrity (authoritative, in-tx). Σ(POSTED returns for each
+        // linked Приёмка line, incl. this one) must not exceed the RECEIVED qty
+        // (moysklad `_purchase_return.md:583`). Without this, two full-remaining drafts
+        // would both post → 2× stock removed + PO reverted 2×. Serializable isolation
+        // makes the concurrent two-post race abort one of the pair (rw-conflict on the
+        // applicable=true predicate).
+        const linkedSpIds = [
+          ...new Set(
+            existing.positions.map((p) => p.supplyPositionId).filter((x): x is string => x != null),
+          ),
+        ];
+        if (linkedSpIds.length > 0) {
+          const supplyPositions = await tx.supplyPosition.findMany({
+            where: { id: { in: linkedSpIds }, accountId },
+            select: { id: true, quantity: true },
+          });
+          const supplyQtyById = new Map(
+            supplyPositions.map((sp) => [sp.id, Number(String(sp.quantity))]),
+          );
+          const otherPosted = await tx.purchaseReturnPosition.groupBy({
+            by: ['supplyPositionId'],
+            where: {
+              supplyPositionId: { in: linkedSpIds },
+              accountId,
+              purchaseReturn: { applicable: true, deletedAt: null, id: { not: id } },
+            },
+            _sum: { quantity: true },
+          });
+          const otherById = new Map(
+            otherPosted.map((g) => [g.supplyPositionId, Number(g._sum.quantity ?? 0)]),
+          );
+          const thisById = new Map<string, number>();
+          for (const p of existing.positions) {
+            if (p.supplyPositionId) {
+              thisById.set(
+                p.supplyPositionId,
+                (thisById.get(p.supplyPositionId) ?? 0) + Number(String(p.quantity)),
+              );
+            }
+          }
+          for (const spId of linkedSpIds) {
+            const cap = supplyQtyById.get(spId) ?? 0;
+            const total = (otherById.get(spId) ?? 0) + (thisById.get(spId) ?? 0);
+            if (total > cap + 1e-7) {
+              throw new ConflictException(
+                `Приёмка позицияси: qaytarilgan jami (${total}) qabul qilingan (${cap}) dan oshib ketdi`,
+              );
+            }
+          }
+        }
+
         // Lock + sufficiency check (same pattern as Demand post)
         const assortments = existing.positions.map((p) => ({
           kind: p.assortmentKind,
@@ -656,6 +1079,7 @@ export class PurchaseReturnService {
             storeId: existing.storeId,
             assortmentKind: p.assortmentKind,
             assortmentId: p.assortmentId,
+            cellId: p.cellId ?? null,
             qtyDelta: `-${String(p.quantity)}`,
             costDeltaMinor: -valueMinor,
             docType: 'purchasereturn',
@@ -748,6 +1172,7 @@ export class PurchaseReturnService {
             storeId: existing.storeId,
             assortmentKind: p.assortmentKind,
             assortmentId: p.assortmentId,
+            cellId: p.cellId ?? null,
             qtyDelta: String(p.quantity),
             costDeltaMinor: valueMinor,
             docType: 'purchasereturn_unpost',
@@ -831,6 +1256,7 @@ export class PurchaseReturnService {
               storeId: existing.storeId,
               assortmentKind: p.assortmentKind,
               assortmentId: p.assortmentId,
+              cellId: p.cellId ?? null,
               qtyDelta: String(p.quantity),
               costDeltaMinor: valueMinor,
               docType: 'purchasereturn_cancel',

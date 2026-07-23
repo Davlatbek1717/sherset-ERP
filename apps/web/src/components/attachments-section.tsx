@@ -4,12 +4,12 @@ import { useApiMutation } from '@/hooks/use-api-mutation';
 import { useDestructiveMutation } from '@/hooks/use-destructive-mutation';
 import { api } from '@/lib/api-client';
 import { getAccessToken, useAuth } from '@/lib/auth-store';
-import { Button, FormSection, Icons, Modal } from '@moysklad/ui';
+import { Button, FormSection, Icons, Modal, StickyHScroll } from '@moysklad/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useMemo, useRef, useState } from 'react';
 
-type AttachmentEntity =
+export type AttachmentEntity =
   | 'Counterparty'
   | 'CounterpartyAdjustment'
   | 'CustomerOrder'
@@ -38,7 +38,9 @@ type AttachmentEntity =
   | 'CashOut'
   | 'Opportunity'
   | 'Product'
-  | 'Task';
+  | 'Task'
+  | 'CommissionReportOut'
+  | 'CommissionReportIn';
 
 interface Attachment {
   id: string;
@@ -325,14 +327,14 @@ export function AttachmentsSection({
 
       {/* Drag-drop upload affordance (moysklad parity); the «+ Файл» button below is the
           keyboard-accessible upload path. */}
-      <div
+      <StickyHScroll
         onDragOver={(e) => {
           e.preventDefault();
           setIsDragging(true);
         }}
         onDragLeave={() => setIsDragging(false)}
         onDrop={handleDrop}
-        className={`overflow-x-auto border-[var(--ms-border-strong)] border-y transition-colors ${
+        className={`border-[var(--ms-border-strong)] border-y transition-colors ${
           isDragging
             ? 'bg-[var(--ms-bg-muted)] ring-2 ring-[var(--ms-border-focus)] ring-inset'
             : ''
@@ -428,7 +430,7 @@ export function AttachmentsSection({
             ))}
           </tbody>
         </table>
-      </div>
+      </StickyHScroll>
 
       {/* «N-M из Total» pager (moysklad shows «1-1 из 0» even when empty). */}
       <div className="mt-1 flex items-center gap-2 text-[var(--ms-text-muted)] text-xs">

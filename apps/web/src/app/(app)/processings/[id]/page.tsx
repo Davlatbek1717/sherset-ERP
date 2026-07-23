@@ -837,7 +837,7 @@ export default function ProcessingDetailPage() {
             auditEntity="Processing"
             entityId={data.id}
             relatedGroups={[]}
-            positionsLabel={tDetailTabs('main')}
+            positionsLabel={tDetailTabs('positions')}
             filesSlot={<AttachmentsSection entity="Processing" entityId={data.id} />}
           >
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">

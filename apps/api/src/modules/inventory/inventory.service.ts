@@ -17,8 +17,10 @@ import { WebhookFireService } from '../webhook/webhook-fire.service.js';
 import {
   type CreateInventoryInput,
   CreateInventorySchema,
+  InventoryFillCandidatesSchema,
   type InventoryFilterInput,
   InventoryFilterSchema,
+  InventoryPositionMetaSchema,
   InventoryTransitionSchema,
   type InventoryTransitionTarget,
   type UpdateInventoryInput,
@@ -128,6 +130,7 @@ export class InventoryService {
       ...(filter.includeDeleted ? {} : { deletedAt: null }),
       ...(filter.state ? { state: filter.state } : {}),
       ...(filter.organizationId ? { organizationId: filter.organizationId } : {}),
+      ...(filter.organizationIds ? { organizationId: { in: filter.organizationIds } } : {}),
       ...(filter.storeId ? { storeId: filter.storeId } : {}),
       ...(filter.projectId ? { projectId: filter.projectId } : {}),
       ...(filter.groupId ? { groupId: filter.groupId } : {}),
@@ -147,6 +150,201 @@ export class InventoryService {
           }
         : {}),
     };
+  }
+
+  /**
+   * Grid enrichment for the Инвентаризация editor (owner report 2026-07-14
+   * band 3): per-assortment catalog fields (in-grid «Фильтр»), the store's
+   * «Расчетный остаток» + per-unit cost («Цена»), and the StockByCell rows
+   * («Остатки по ячейке» tab). Per-unit cost = weighted-average basis
+   * (costBalanceMinor / qty) with a buyPrice fallback — the same source
+   * LossService books write-offs from.
+   */
+  async positionMeta(accountId: string, raw: unknown) {
+    const r = InventoryPositionMetaSchema.safeParse(raw);
+    if (!r.success) throw new BadRequestException(r.error.issues.map((i) => i.message).join(', '));
+    const { storeId, assortmentIds } = r.data;
+    await this.ensureStore(accountId, storeId);
+    if (assortmentIds.length === 0) return { items: [] };
+
+    const [products, stocks, cellStocks, cells] = await Promise.all([
+      this.prisma.client.product.findMany({
+        where: { accountId, id: { in: assortmentIds } },
+        select: {
+          id: true,
+          name: true,
+          code: true,
+          article: true,
+          description: true,
+          uom: true,
+          barcodes: true,
+          buyPrice: true,
+          supplierId: true,
+          productFolderId: true,
+          supplier: { select: { name: true } },
+          productFolder: { select: { name: true } },
+        },
+      }),
+      this.prisma.client.stock.findMany({
+        where: {
+          accountId,
+          storeId,
+          assortmentKind: 'product',
+          assortmentId: { in: assortmentIds },
+        },
+        select: { assortmentId: true, qty: true, costBalanceMinor: true },
+      }),
+      this.prisma.client.stockByCell.findMany({
+        where: {
+          accountId,
+          storeId,
+          assortmentKind: 'product',
+          assortmentId: { in: assortmentIds },
+          qty: { not: 0 },
+        },
+        select: { assortmentId: true, cellId: true, qty: true },
+      }),
+      this.prisma.client.storeCell.findMany({
+        where: { accountId, storeId },
+        select: { id: true, name: true },
+      }),
+    ]);
+
+    const stockByAssortment = new Map(stocks.map((s) => [s.assortmentId, s]));
+    const cellName = new Map(cells.map((c) => [c.id, c.name]));
+    const cellsByAssortment = new Map<
+      string,
+      Array<{ cellId: string; name: string; qty: string }>
+    >();
+    for (const row of cellStocks) {
+      const list = cellsByAssortment.get(row.assortmentId) ?? [];
+      list.push({
+        cellId: row.cellId,
+        name: cellName.get(row.cellId) ?? row.cellId,
+        qty: row.qty.toString(),
+      });
+      cellsByAssortment.set(row.assortmentId, list);
+    }
+
+    return {
+      items: products.map((p) => {
+        const stock = stockByAssortment.get(p.id);
+        const qtyNum = stock ? Number(stock.qty) : 0;
+        // Weighted-average per-unit cost (tiyin); buyPrice fallback when the
+        // store holds no qty (or no cost basis was ever booked).
+        const unitCostMinor =
+          stock && qtyNum > 0 && stock.costBalanceMinor > 0n
+            ? String(Math.round(Number(stock.costBalanceMinor) / qtyNum))
+            : p.buyPrice !== null
+              ? p.buyPrice.toString()
+              : null;
+        return {
+          assortmentId: p.id,
+          name: p.name,
+          code: p.code,
+          article: p.article,
+          description: p.description,
+          uom: p.uom,
+          barcodes: p.barcodes,
+          supplierId: p.supplierId,
+          supplierName: p.supplier?.name ?? null,
+          folderId: p.productFolderId,
+          folderName: p.productFolder?.name ?? null,
+          stockQty: stock ? stock.qty.toString() : '0',
+          unitCostMinor,
+          cells: cellsByAssortment.get(p.id) ?? [],
+        };
+      }),
+    };
+  }
+
+  /**
+   * Candidate id list for the grid fill actions («Дополнить из остатков» /
+   * «Дополнить из номенклатуры»). The append itself happens client-side in
+   * the unsaved grid (moysklad behaviour — «Сохранить» persists).
+   */
+  async fillCandidates(accountId: string, raw: unknown) {
+    const r = InventoryFillCandidatesSchema.safeParse(raw);
+    if (!r.success) throw new BadRequestException(r.error.issues.map((i) => i.message).join(', '));
+    const { storeId, source, productId, folderId } = r.data;
+    await this.ensureStore(accountId, storeId);
+
+    if (source === 'stock') {
+      const rows = await this.prisma.client.stock.findMany({
+        where: { accountId, storeId, assortmentKind: 'product', qty: { not: 0 } },
+        select: { assortmentId: true, qty: true },
+      });
+      if (rows.length === 0) return { items: [] };
+      // Drop rows whose product was soft-deleted (stale Stock rows survive).
+      const live = await this.prisma.client.product.findMany({
+        where: { accountId, id: { in: rows.map((x) => x.assortmentId) }, deletedAt: null },
+        select: { id: true },
+      });
+      const liveIds = new Set(live.map((p) => p.id));
+      return {
+        items: rows
+          .filter((x) => liveIds.has(x.assortmentId))
+          .map((x) => ({ assortmentId: x.assortmentId, qty: x.qty.toString() })),
+      };
+    }
+
+    // source === 'assortment' — a product / a folder SUBTREE / the entire catalog.
+    let folderIds: string[] | undefined;
+    if (folderId) {
+      const folders = await this.prisma.client.productFolder.findMany({
+        where: { accountId },
+        select: { id: true, parentId: true },
+      });
+      const children = new Map<string | null, string[]>();
+      for (const f of folders) {
+        const list = children.get(f.parentId) ?? [];
+        list.push(f.id);
+        children.set(f.parentId, list);
+      }
+      folderIds = [];
+      const queue = [folderId];
+      while (queue.length) {
+        const cur = queue.pop();
+        if (!cur || folderIds.includes(cur)) continue;
+        folderIds.push(cur);
+        queue.push(...(children.get(cur) ?? []));
+      }
+    }
+    const products = await this.prisma.client.product.findMany({
+      where: {
+        accountId,
+        deletedAt: null,
+        archived: false,
+        // Услуги/комплекты не инвентаризируются — товары only (positions'
+        // assortmentKind enum is ['product']).
+        kind: 'product',
+        ...(productId ? { id: productId } : {}),
+        ...(folderIds ? { productFolderId: { in: folderIds } } : {}),
+      },
+      select: { id: true },
+    });
+    if (products.length === 0) return { items: [] };
+    const stocks = await this.prisma.client.stock.findMany({
+      where: {
+        accountId,
+        storeId,
+        assortmentKind: 'product',
+        assortmentId: { in: products.map((p) => p.id) },
+      },
+      select: { assortmentId: true, qty: true },
+    });
+    const qtyById = new Map(stocks.map((s) => [s.assortmentId, s.qty.toString()]));
+    return {
+      items: products.map((p) => ({ assortmentId: p.id, qty: qtyById.get(p.id) ?? '0' })),
+    };
+  }
+
+  private async ensureStore(accountId: string, storeId: string): Promise<void> {
+    const store = await this.prisma.client.store.findFirst({
+      where: { id: storeId, accountId },
+      select: { id: true },
+    });
+    if (!store) throw new BadRequestException('Ombor topilmadi');
   }
 
   async findById(accountId: string, id: string) {
@@ -377,13 +575,29 @@ export class InventoryService {
     if (existing.state !== 'draft') {
       throw new BadRequestException(`Only draft → posted (current: ${existing.state})`);
     }
-    if (existing.positions.length === 0) throw new BadRequestException("Pozitsiyalar yo'q");
+    // Owner 2026-07-08: «Проведено» toggles freely — an empty doc may be posted
+    // (0 positions ⇒ 0 stock delta; moysklad allows it). No position precondition.
+
+    // buyPrice fallback for the per-unit cost snapshot (products with no
+    // stock/cost basis at the store) — one query outside the position loop.
+    const buyPriceById = new Map<string, bigint | null>(
+      (
+        await this.prisma.client.product.findMany({
+          where: {
+            accountId,
+            id: { in: existing.positions.map((p) => p.assortmentId) },
+          },
+          select: { id: true, buyPrice: true },
+        })
+      ).map((p) => [p.id, p.buyPrice]),
+    );
 
     return this.prisma.client.$transaction(
       async (tx) => {
         const deltas: StockDelta[] = [];
         let surplusCount = 0;
         let shortageCount = 0;
+        let sumMinor = 0n;
 
         for (const p of existing.positions) {
           // Snapshot expected qty from current Stock row
@@ -394,7 +608,7 @@ export class InventoryService {
               assortmentKind: p.assortmentKind,
               assortmentId: p.assortmentId,
             },
-            select: { qty: true },
+            select: { qty: true, costBalanceMinor: true },
           });
           const expectedQty = stockRow?.qty?.toString() ?? '0';
           const actualQty = String(p.actualQty);
@@ -403,12 +617,23 @@ export class InventoryService {
           const varianceNum = actualNum - expectedNum;
           const varianceStr = String(varianceNum);
 
+          // Per-unit cost snapshot («Цена» column + doc «Итого»/sumMinor):
+          // weighted-average basis (costBalanceMinor / qty) with a buyPrice
+          // fallback — mirrors the Loss editor's себестоимость preview.
+          const costBalance = stockRow?.costBalanceMinor ?? 0n;
+          const unitCostNum =
+            stockRow && expectedNum > 0 && costBalance > 0n
+              ? Math.round(Number(costBalance) / expectedNum)
+              : Number(buyPriceById.get(p.assortmentId) ?? 0n);
+          sumMinor += BigInt(Math.round(actualNum * unitCostNum));
+
           // Persist snapshot + variance on position
           await tx.inventoryPosition.update({
             where: { id: p.id },
             data: {
               expectedQty,
               varianceQty: varianceStr,
+              costMinor: unitCostNum > 0 ? BigInt(unitCostNum) : null,
             },
           });
 
@@ -448,7 +673,10 @@ export class InventoryService {
 
         const updated = await tx.inventory.update({
           where: { id, accountId },
-          data: { state: 'posted', applicable: true, postedAt: new Date() },
+          // sumMinor = Σ(actualQty × per-unit cost) — "Sum of (counted_qty ×
+          // cost)" per the column's schema contract; feeds the list «Сумма»
+          // column + the editor «Итого» after posting.
+          data: { state: 'posted', applicable: true, postedAt: new Date(), sumMinor },
         });
         await tx.auditLog.create({
           data: {

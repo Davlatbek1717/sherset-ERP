@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
-  AssignCellSchema,
-  CellSearchSchema,
-  CreateCellSchema,
+  BulkMoveSchema,
+  BulkUpdateSchema,
   CreateStoreSchema,
-  GenerateCellsSchema,
   StoreAddressFullSchema,
   StoreFilterSchema,
   UpdateStoreSchema,
 } from './store.schema.js';
+
+const UUID = '00000000-0000-0000-0000-000000000001';
 
 describe('CreateStoreSchema', () => {
   it('accepts a minimal store', () => {
@@ -95,87 +95,6 @@ describe('StoreAddressFullSchema', () => {
   });
 });
 
-describe("GenerateCellsSchema («Polka qo'shish» — 3 input, barchasi majburiy)", () => {
-  it('accepts shelf + NN-NN-NN prefix + count', () => {
-    const r = GenerateCellsSchema.safeParse({ shelf: '032', prefix: '04-03-01', count: 20 });
-    expect(r.success).toBe(true);
-    if (r.success) expect(r.data.count).toBe(20);
-  });
-
-  it('accepts unpadded prefix segments (4-3-1) — service kanoniklashtiradi', () => {
-    expect(GenerateCellsSchema.safeParse({ shelf: 'A', prefix: '4-3-1', count: 1 }).success).toBe(
-      true,
-    );
-  });
-
-  it('coerces count from string input', () => {
-    const r = GenerateCellsSchema.safeParse({ shelf: '032', prefix: '04-03-01', count: '7' });
-    expect(r.success).toBe(true);
-    if (r.success) expect(r.data.count).toBe(7);
-  });
-
-  it('rejects when any of the 3 inputs is missing/empty (hammasi majburiy)', () => {
-    expect(GenerateCellsSchema.safeParse({ prefix: '04-03-01', count: 5 }).success).toBe(false);
-    expect(GenerateCellsSchema.safeParse({ shelf: '', prefix: '04-03-01', count: 5 }).success).toBe(
-      false,
-    );
-    expect(GenerateCellsSchema.safeParse({ shelf: '032', count: 5 }).success).toBe(false);
-    expect(GenerateCellsSchema.safeParse({ shelf: '032', prefix: '04-03-01' }).success).toBe(false);
-  });
-
-  it("rejects 4-segment prefix (to'liq kod emas, faqat dastlabki 3 qism)", () => {
-    expect(
-      GenerateCellsSchema.safeParse({ shelf: '032', prefix: '04-03-01-01', count: 5 }).success,
-    ).toBe(false);
-  });
-
-  it('rejects count outside 1..99 (oxirgi segment 2 xona)', () => {
-    expect(
-      GenerateCellsSchema.safeParse({ shelf: 'A', prefix: '04-03-01', count: 0 }).success,
-    ).toBe(false);
-    expect(
-      GenerateCellsSchema.safeParse({ shelf: 'A', prefix: '04-03-01', count: 100 }).success,
-    ).toBe(false);
-  });
-});
-
-describe('CreateCellSchema («+ Yacheyka»)', () => {
-  it('accepts a full NN-NN-NN-NN code, shelf optional', () => {
-    expect(CreateCellSchema.safeParse({ code: '04-03-01-05' }).success).toBe(true);
-    const r = CreateCellSchema.safeParse({ code: '4-3-1-5', shelf: '' });
-    expect(r.success).toBe(true);
-    if (r.success) expect(r.data.shelf).toBeNull();
-  });
-
-  it('rejects 3-segment code', () => {
-    expect(CreateCellSchema.safeParse({ code: '04-03-01' }).success).toBe(false);
-  });
-});
-
-describe('AssignCellSchema', () => {
-  it('requires at least one product id', () => {
-    expect(AssignCellSchema.safeParse({ productIds: [] }).success).toBe(false);
-    expect(
-      AssignCellSchema.safeParse({ productIds: ['00000000-0000-0000-0000-000000000001'] }).success,
-    ).toBe(true);
-  });
-
-  it('rejects non-UUID ids', () => {
-    expect(AssignCellSchema.safeParse({ productIds: ['abc'] }).success).toBe(false);
-  });
-});
-
-describe('CellSearchSchema', () => {
-  it('defaults limit to 50 and coerces from string', () => {
-    const r = CellSearchSchema.safeParse({});
-    expect(r.success).toBe(true);
-    if (r.success) expect(r.data.limit).toBe(50);
-    const r2 = CellSearchSchema.safeParse({ limit: '10', search: '04-03' });
-    expect(r2.success).toBe(true);
-    if (r2.success) expect(r2.data.limit).toBe(10);
-  });
-});
-
 describe('StoreFilterSchema', () => {
   it('coerces archived from "true" string', () => {
     const r = StoreFilterSchema.safeParse({ archived: 'true' });
@@ -194,9 +113,76 @@ describe('StoreFilterSchema', () => {
   });
 
   it('accepts parentId filter', () => {
+    const r = StoreFilterSchema.safeParse({ parentId: UUID });
+    expect(r.success).toBe(true);
+  });
+
+  it('accepts the "root" sentinel for parentId (top-level only)', () => {
+    const r = StoreFilterSchema.safeParse({ parentId: 'root' });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.parentId).toBe('root');
+  });
+
+  it('accepts show enum + name/code/address text filters', () => {
     const r = StoreFilterSchema.safeParse({
-      parentId: '00000000-0000-0000-0000-000000000001',
+      show: 'all',
+      name: 'Иподром',
+      code: 'MAIN',
+      address: 'Tashkent',
     });
     expect(r.success).toBe(true);
+    if (r.success) expect(r.data.show).toBe('all');
+  });
+
+  it('coerces shared from "true" string', () => {
+    const r = StoreFilterSchema.safeParse({ shared: 'true' });
+    expect(r.success && r.data.shared).toBe(true);
+  });
+
+  it('allows sorting by address', () => {
+    const r = StoreFilterSchema.safeParse({ sortBy: 'address' });
+    expect(r.success).toBe(true);
+  });
+});
+
+describe('CreateStoreSchema — cellInventory + owner/group', () => {
+  it('coerces cellInventory from string and accepts owner/group uuids', () => {
+    const r = CreateStoreSchema.safeParse({
+      name: 'X',
+      cellInventory: 'true',
+      ownerId: UUID,
+      groupId: UUID,
+    });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.cellInventory).toBe(true);
+  });
+});
+
+describe('BulkMoveSchema', () => {
+  it('accepts ids + null parentId (move to root)', () => {
+    const r = BulkMoveSchema.safeParse({ ids: [UUID], parentId: null });
+    expect(r.success).toBe(true);
+  });
+
+  it('requires at least one id', () => {
+    expect(BulkMoveSchema.safeParse({ ids: [], parentId: null }).success).toBe(false);
+  });
+
+  it('rejects a "root" sentinel here (move target must be a real store or null)', () => {
+    expect(BulkMoveSchema.safeParse({ ids: [UUID], parentId: 'root' }).success).toBe(false);
+  });
+});
+
+describe('BulkUpdateSchema', () => {
+  it('accepts an opt-in patch (archived + groupId clear)', () => {
+    const r = BulkUpdateSchema.safeParse({
+      ids: [UUID],
+      set: { archived: true, groupId: null },
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it('rejects an empty set (nothing to apply)', () => {
+    expect(BulkUpdateSchema.safeParse({ ids: [UUID], set: {} }).success).toBe(false);
   });
 });

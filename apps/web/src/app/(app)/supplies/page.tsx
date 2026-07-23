@@ -4,24 +4,28 @@ import { ColumnSettings } from '@/components/column-settings';
 import { SavedFiltersPills } from '@/components/customer-orders/saved-filters-pills';
 import { FilterToggleButton } from '@/components/filters/filter-toggle-button';
 import { SupplyBulkActionsDropdown } from '@/components/supplies/bulk-actions-dropdown';
+import { SupplyCreateDocDropdown } from '@/components/supplies/create-doc-dropdown';
 import { SupplyPrintDropdown } from '@/components/supplies/print-dropdown';
+import {
+  type SupplyCustomStatus,
+  SupplyStatusDropdown,
+} from '@/components/supplies/supply-status-dropdown';
 import { useBulkDocumentActions } from '@/hooks/use-bulk-actions';
 import { useColumnVisibility } from '@/hooks/use-column-visibility';
 import { useColumnWidths } from '@/hooks/use-column-widths';
 import { api } from '@/lib/api-client';
-import { documentStateTone } from '@/lib/document-state-tone';
+import { stashBulkEdit } from '@/lib/bulk-edit-nav';
 import { filterFromQueryString } from '@/lib/filter-from-query';
 import {
-  Badge,
   CatalogPicker,
-  CatalogPickerField,
   type CsvColumn,
   type DataTableColumn,
   type FilterDrawerValues,
   InlineFilterPanel,
+  Input,
   ListView,
   MassEditModal,
-  MoneyInput,
+  MultiCombobox,
   NativeSelect,
   PeriodInputs,
   PeriodShortcuts,
@@ -35,6 +39,7 @@ import {
 } from '@moysklad/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
+import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 
 interface SupplyRow {
@@ -56,6 +61,9 @@ interface SupplyRow {
   organization: { id: string; name: string };
   store: { id: string; name: string };
   owner: { id: string; name: string } | null;
+  // moysklad «Статус» column = account-defined CUSTOM workflow status (coloured
+  // pill), NOT the FSM `state`. The list() service already includes it.
+  status: { id: string; name: string; color: string | null } | null;
   _count: { positions: number };
 }
 
@@ -67,6 +75,74 @@ interface ListResponse {
 
 // Moysklad parity — 100 rows per page.
 const LIMIT = 100;
+
+type RefMulti = { id: string; label: string };
+type ComboItem = { value: string; label: string; sublabel?: string };
+
+/**
+ * Multi-select inline reference filter field — moysklad checkbox-dropdown
+ * (click opens an in-place dropdown with a search box + checkboxes, pick
+ * several). Wraps MultiCombobox + the id↔label merge so each field is a
+ * one-liner. MUST be module-level: an inline component is a NEW type each
+ * render → React remounts it → the dropdown closes on every keystroke.
+ * Mirror demand's MultiRefField.
+ */
+function MultiRefField({
+  value,
+  onChange,
+  onSearch,
+  testId,
+}: {
+  value: RefMulti[];
+  onChange: (next: RefMulti[]) => void;
+  onSearch: (q: string) => Promise<ComboItem[]>;
+  testId: string;
+}) {
+  return (
+    <MultiCombobox
+      value={value.map((x) => x.id)}
+      items={value.map((x) => ({ value: x.id, label: x.label }))}
+      onSearch={onSearch}
+      onChange={(nextIds, toggled) => {
+        onChange(
+          nextIds.map((id) => {
+            const ex = value.find((p) => p.id === id);
+            if (ex) return ex;
+            if (toggled?.value === id) return { id, label: String(toggled.label) };
+            return { id, label: id };
+          }),
+        );
+      }}
+      placeholder=""
+      testId={testId}
+    />
+  );
+}
+
+// Module-level fetchers (API list → MultiCombobox items). `api` is module-scoped
+// so these live outside the component (stable identity, no remount churn).
+// Mirror demand.
+const refFetcher =
+  (path: string) =>
+  async (q: string): Promise<ComboItem[]> => {
+    const r = await api.get<{ items: { id: string; name: string }[] }>(
+      `${path}?search=${encodeURIComponent(q)}&limit=20`,
+    );
+    return r.items.map((x) => ({ value: x.id, label: x.name }));
+  };
+const fetchCounterparties = refFetcher('/counterparties');
+const fetchOrganizations = refFetcher('/organizations');
+const fetchStores = refFetcher('/stores');
+const fetchEmployees = refFetcher('/employees');
+const fetchProjects = refFetcher('/projects');
+const fetchContracts = refFetcher('/contracts');
+const fetchGroups = refFetcher('/groups');
+const fetchProducts = async (q: string): Promise<ComboItem[]> => {
+  const r = await api.get<{ items: { id: string; name: string; code?: string | null }[] }>(
+    `/products?search=${encodeURIComponent(q)}&limit=20`,
+  );
+  return r.items.map((x) => ({ value: x.id, label: x.name, sublabel: x.code ?? undefined }));
+};
 
 /** Tri-state Yes/No/All select for boolean filter fields — mirrors the
  *  purchase-orders gold-standard control (✓ / — / unset). */
@@ -127,39 +203,31 @@ function StateSelect({
 }
 
 /**
- * Supply-specific extension fields stored alongside the shared
- * FilterDrawerValues shape. Local to this page (the shared
- * `useMoyskladDocFilter` hook is intentionally NOT used here — supplies
- * mirrors the purchase-orders inline-field gold standard instead).
+ * Supply-specific NON-reference filter fields (selects / bools / date ranges /
+ * text) stored alongside the shared FilterDrawerValues shape (which still backs
+ * the Период momentFrom/To). The reference fields (agent, organization, store,
+ * product, …) moved to the RefMulti[] arrays inside the component as moysklad
+ * inline checkbox-dropdowns (mirror demand). Local to this page (the shared
+ * `useMoyskladDocFilter` hook is intentionally NOT used here).
  */
 type ExtraFilterFields = {
   applicable?: 'true' | 'false';
   printed?: 'true' | 'false';
   published?: 'true' | 'false';
-  ownerId?: string;
-  ownerLabel?: string;
+  // «Общий доступ» — Supply.shared. moysklad #supply filter field.
+  shared?: 'true' | 'false';
+  // «Входящий номер» — Supply.incomingNumber (contains). moysklad dedicated field.
+  incomingNumber?: string;
+  // «Входящая дата» — Supply.incomingDate range. moysklad #supply filter field.
+  incomingDateFrom?: string;
+  incomingDateTo?: string;
+  // «Когда изменен» — updatedAt range.
   updatedFrom?: string;
   updatedTo?: string;
-  // FK pickers
-  agentGroupId?: string;
-  agentGroupLabel?: string;
-  // «Владелец контрагента» — the agent (Counterparty)'s owner employee
-  // (agent.ownerId), distinct from «Владелец-сотрудник» (ownerId, the supply's
-  // own owner).
-  agentOwnerId?: string;
-  agentOwnerLabel?: string;
-  agentAccountId?: string;
-  agentAccountLabel?: string;
-  organizationAccountId?: string;
-  organizationAccountLabel?: string;
-  groupId?: string;
-  groupLabel?: string;
-  projectId?: string;
-  projectLabel?: string;
-  contractId?: string;
-  contractLabel?: string;
-  purchaseOrderId?: string;
-  purchaseOrderLabel?: string;
+  // «Оплата» — payment progress (moysklad #supply «Оплата» select).
+  paymentStatus?: 'unpaid' | 'partial' | 'paid';
+  // «Тип возврата» — return progress (none/partial/full) vs linked purchase-returns.
+  returnStatus?: 'none' | 'partial' | 'full';
 };
 
 export default function SuppliesPage() {
@@ -167,6 +235,7 @@ export default function SuppliesPage() {
   const tCommon = useTranslations('common');
   const tFields = useTranslations('fields');
   const tFilters = useTranslations('filters');
+  const tMass = useTranslations('mass_edit_modal');
   const tStates = useTranslations('states.supply');
 
   const [searchInput, setSearchInput] = useState('');
@@ -175,25 +244,43 @@ export default function SuppliesPage() {
   const [cursor, setCursor] = useState<string | undefined>();
   const [filterValues, setFilterValues] = useState<FilterDrawerValues & ExtraFilterFields>({});
   const [filterOpen, setFilterOpen] = useState(true);
-  const [pickerOpen, setPickerOpen] = useState<
-    | null
-    | 'agent'
-    | 'org'
-    | 'store'
-    | 'owner'
-    | 'agentGroup'
-    | 'agentOwner'
-    | 'agentAccount'
-    | 'orgAccount'
-    | 'group'
-    | 'project'
-    | 'contract'
-    | 'purchaseOrder'
-    | 'massEditOwner'
-    | 'massEditProject'
-  >(null);
+  // 🔖 «Сохранить фильтр» open-state (SavedFiltersPills «+») + ⚙ filter-field
+  // visibility — mirror the counterparties list so the bookmark + gear toolbar
+  // buttons work (they were disabled: no onBookmarkClick / fieldVisibility were
+  // passed to InlineFilterPanel). Distinct key from the column-gear `cols`.
+  const [saveFilterOpen, setSaveFilterOpen] = useState(false);
+  const filterHidden = useColumnVisibility('supplies-filter-hidden', []);
+  // Only the mass-edit pickers still use a modal CatalogPicker; the filter's
+  // reference fields are now inline checkbox-dropdowns (MultiRefField).
+  const [pickerOpen, setPickerOpen] = useState<null | 'massEditOwner' | 'massEditProject'>(null);
+
+  // Multi-select inline filter state — moysklad checkbox-dropdowns (mirror
+  // demand). Each holds the picked {id,label} pairs; the request sends the ids
+  // as `*Ids` (CSV). Replaces the old single-pick CatalogPicker modals.
+  const [agents, setAgents] = useState<RefMulti[]>([]);
+  const [stores, setStores] = useState<RefMulti[]>([]);
+  const [organizations, setOrganizations] = useState<RefMulti[]>([]);
+  const [projects, setProjects] = useState<RefMulti[]>([]);
+  const [contracts, setContracts] = useState<RefMulti[]>([]);
+  const [agentGroups, setAgentGroups] = useState<RefMulti[]>([]);
+  const [agentOwners, setAgentOwners] = useState<RefMulti[]>([]);
+  const [agentAccounts, setAgentAccounts] = useState<RefMulti[]>([]);
+  const [orgAccounts, setOrgAccounts] = useState<RefMulti[]>([]);
+  const [owners, setOwners] = useState<RefMulti[]>([]);
+  const [groups, setGroups] = useState<RefMulti[]>([]);
+  const [products, setProducts] = useState<RefMulti[]>([]);
+  const [modifiedBys, setModifiedBys] = useState<RefMulti[]>([]);
+
+  const router = useRouter();
 
   const [massEditOpen, setMassEditOpen] = useState(false);
+  // «Владелец-отдел» (groupId) options for the mass-edit wizard — mirrors losses.
+  const { data: massGroupsData } = useQuery<{ items: Array<{ id: string; name: string }> }>({
+    queryKey: ['groups', 'mass-edit'],
+    queryFn: () => api.get('/groups?limit=100'),
+    enabled: massEditOpen,
+    staleTime: 5 * 60 * 1000,
+  });
   const [massEditIds, setMassEditIds] = useState<string[]>([]);
   const [massEditOwner, setMassEditOwner] = useState<{ id: string; label: string } | null>(null);
   const [massEditProject, setMassEditProject] = useState<{ id: string; label: string } | null>(
@@ -204,6 +291,40 @@ export default function SuppliesPage() {
 
   const onResetCursor = () => setCursor(undefined);
 
+  // Multi-select reference fields → registry (params CSV build + clear + saved-
+  // filter round-trip). Mirror demand.
+  const refArrays: Record<string, RefMulti[]> = {
+    agents,
+    stores,
+    organizations,
+    projects,
+    contracts,
+    agentGroups,
+    agentOwners,
+    agentAccounts,
+    orgAccounts,
+    owners,
+    groups,
+    products,
+    modifiedBys,
+  };
+  const refSetters: Record<string, (v: RefMulti[]) => void> = {
+    agents: setAgents,
+    stores: setStores,
+    organizations: setOrganizations,
+    projects: setProjects,
+    contracts: setContracts,
+    agentGroups: setAgentGroups,
+    agentOwners: setAgentOwners,
+    agentAccounts: setAgentAccounts,
+    orgAccounts: setOrgAccounts,
+    owners: setOwners,
+    groups: setGroups,
+    products: setProducts,
+    modifiedBys: setModifiedBys,
+  };
+  const csvIds = (a: RefMulti[]) => a.map((x) => x.id).join(',');
+
   const params = new URLSearchParams({
     ...(search ? { search } : {}),
     ...(stateFilter ? { state: stateFilter } : {}),
@@ -213,32 +334,84 @@ export default function SuppliesPage() {
     ...(cursor ? { cursor } : {}),
     ...(filterValues.momentFrom ? { momentFrom: filterValues.momentFrom } : {}),
     ...(filterValues.momentTo ? { momentTo: filterValues.momentTo } : {}),
-    ...(filterValues.sumMinorFrom !== undefined
-      ? { sumMinorFrom: String(filterValues.sumMinorFrom) }
-      : {}),
-    ...(filterValues.sumMinorTo !== undefined
-      ? { sumMinorTo: String(filterValues.sumMinorTo) }
-      : {}),
-    ...(filterValues.agentId ? { agentId: filterValues.agentId } : {}),
-    ...(filterValues.organizationId ? { organizationId: filterValues.organizationId } : {}),
-    ...(filterValues.storeId ? { storeId: filterValues.storeId } : {}),
-    ...(filterValues.ownerId ? { ownerId: filterValues.ownerId } : {}),
+    ...(filterValues.paymentStatus ? { paymentStatus: filterValues.paymentStatus } : {}),
+    ...(filterValues.returnStatus ? { returnStatus: filterValues.returnStatus } : {}),
     ...(filterValues.applicable ? { applicable: filterValues.applicable } : {}),
     ...(filterValues.printed ? { printed: filterValues.printed } : {}),
     ...(filterValues.published ? { published: filterValues.published } : {}),
+    ...(filterValues.shared ? { shared: filterValues.shared } : {}),
+    ...(filterValues.incomingNumber ? { incomingNumber: filterValues.incomingNumber } : {}),
+    ...(filterValues.incomingDateFrom ? { incomingDateFrom: filterValues.incomingDateFrom } : {}),
+    ...(filterValues.incomingDateTo ? { incomingDateTo: filterValues.incomingDateTo } : {}),
     ...(filterValues.updatedFrom ? { updatedFrom: filterValues.updatedFrom } : {}),
     ...(filterValues.updatedTo ? { updatedTo: filterValues.updatedTo } : {}),
-    ...(filterValues.agentGroupId ? { agentGroupId: filterValues.agentGroupId } : {}),
-    ...(filterValues.agentOwnerId ? { agentOwnerId: filterValues.agentOwnerId } : {}),
-    ...(filterValues.agentAccountId ? { agentAccountId: filterValues.agentAccountId } : {}),
-    ...(filterValues.organizationAccountId
-      ? { organizationAccountId: filterValues.organizationAccountId }
-      : {}),
-    ...(filterValues.groupId ? { groupId: filterValues.groupId } : {}),
-    ...(filterValues.projectId ? { projectId: filterValues.projectId } : {}),
-    ...(filterValues.contractId ? { contractId: filterValues.contractId } : {}),
-    ...(filterValues.purchaseOrderId ? { purchaseOrderId: filterValues.purchaseOrderId } : {}),
+    // Multi-select reference fields → CSV `*Ids` (moysklad inline checkbox-dropdowns).
+    ...(agents.length ? { agentIds: csvIds(agents) } : {}),
+    ...(stores.length ? { storeIds: csvIds(stores) } : {}),
+    ...(organizations.length ? { organizationIds: csvIds(organizations) } : {}),
+    ...(projects.length ? { projectIds: csvIds(projects) } : {}),
+    ...(contracts.length ? { contractIds: csvIds(contracts) } : {}),
+    ...(agentGroups.length ? { agentGroupIds: csvIds(agentGroups) } : {}),
+    ...(agentOwners.length ? { agentOwnerIds: csvIds(agentOwners) } : {}),
+    ...(agentAccounts.length ? { agentAccountIds: csvIds(agentAccounts) } : {}),
+    ...(orgAccounts.length ? { organizationAccountIds: csvIds(orgAccounts) } : {}),
+    ...(owners.length ? { ownerIds: csvIds(owners) } : {}),
+    ...(groups.length ? { groupIds: csvIds(groups) } : {}),
+    ...(products.length ? { productIds: csvIds(products) } : {}),
+    ...(modifiedBys.length ? { modifiedByIds: csvIds(modifiedBys) } : {}),
   });
+
+  // Saved-filter round-trip — serialise the filter-state objects AND the
+  // multi-select reference arrays as JSON so a re-applied bookmark restores
+  // every field INCLUDING reference labels (a params-only encoding drops labels
+  // → chips show raw UUIDs). Empty when nothing is set (disables the «+» save
+  // pill). Mirror demand.
+  const savedFilterQuery = (() => {
+    const hasRefs = Object.values(refArrays).some((a) => a.length > 0);
+    const hasAny =
+      hasRefs || !!stateFilter || Object.values(filterValues).some((v) => v != null && v !== '');
+    if (!hasAny) return '';
+    const sp = new URLSearchParams();
+    sp.set('fv', JSON.stringify(filterValues));
+    sp.set('sf', stateFilter ?? '');
+    sp.set('refs', JSON.stringify(refArrays));
+    return sp.toString();
+  })();
+
+  const applySavedFilter = (qs: string) => {
+    const sp = qs.startsWith('?') ? new URLSearchParams(qs.slice(1)) : new URLSearchParams(qs);
+    const fvRaw = sp.get('fv');
+    if (fvRaw) {
+      try {
+        setFilterValues(JSON.parse(fvRaw) as FilterDrawerValues & ExtraFilterFields);
+      } catch {
+        setFilterValues(filterFromQueryString(qs));
+      }
+    } else {
+      setFilterValues(filterFromQueryString(qs));
+    }
+    setStateFilter(sp.get('sf') || null);
+    let refs: Record<string, RefMulti[]> = {};
+    const refsRaw = sp.get('refs');
+    if (refsRaw) {
+      try {
+        refs = JSON.parse(refsRaw) as Record<string, RefMulti[]>;
+      } catch {
+        refs = {};
+      }
+    }
+    for (const [k, setter] of Object.entries(refSetters)) {
+      const arr = refs[k];
+      setter(
+        Array.isArray(arr)
+          ? arr
+              .filter((x): x is RefMulti => !!x && typeof x.id === 'string')
+              .map((x) => ({ id: x.id, label: String(x.label ?? x.id) }))
+          : [],
+      );
+    }
+    onResetCursor();
+  };
 
   const listQueryKey = [
     'supplies',
@@ -253,6 +426,34 @@ export default function SuppliesPage() {
     queryKey: listQueryKey,
     queryFn: () => api.get<ListResponse>(`/supplies?${params.toString()}`),
   });
+
+  // moysklad pinned footer «Итого» — Сумма + Оплачено raw-summed across ALL
+  // filtered rows (not just the page), same filter as the list minus
+  // pagination/sort. Live-grounded: moysklad shows a number even on a mixed
+  // доллар/сум set (no «—»), so we raw-sum and format with no symbol.
+  const totalsParams = new URLSearchParams(params);
+  totalsParams.delete('cursor');
+  totalsParams.delete('limit');
+  totalsParams.delete('sortBy');
+  totalsParams.delete('sortDir');
+  const { data: totals } = useQuery<{ count: number; sumMinor: string; payedSumMinor: string }>({
+    queryKey: ['supplies-totals', totalsParams.toString()],
+    queryFn: () => api.get(`/supplies/aggregate/totals?${totalsParams.toString()}`),
+    staleTime: 30_000,
+  });
+
+  // moysklad «Статус» dropdown — the account's custom supply statuses (State
+  // rows, entityType="supply"). archived=false: a retired status must not be
+  // OFFERED for assigning. The supply FSM («Провести») stays in «Изменить».
+  const { data: statusData } = useQuery<{ items: SupplyCustomStatus[] }>({
+    queryKey: ['states', 'supply'],
+    queryFn: () =>
+      api.get<{ items: SupplyCustomStatus[] }>(
+        '/states?entityType=supply&archived=false&limit=250',
+      ),
+    staleTime: 60_000,
+  });
+  const supplyStatuses = statusData?.items ?? [];
 
   const bulk = useBulkDocumentActions('supplies', listQueryKey, {
     hasFSM: true,
@@ -310,6 +511,7 @@ export default function SuppliesPage() {
     'agent',
     'organization',
     'sum',
+    'currency',
     'paid',
     'incomingDate',
     'incomingNumber',
@@ -368,7 +570,7 @@ export default function SuppliesPage() {
         <div>
           <div className="max-w-[300px] truncate font-medium">{s.agent.name}</div>
           {s.agent.legalTitle && (
-            <div className="max-w-[300px] truncate text-[var(--ms-text-muted)] text-xs">
+            <div className="max-w-[300px] truncate text-[var(--ms-text-muted)] text-[11px]">
               {s.agent.legalTitle}
             </div>
           )}
@@ -388,23 +590,10 @@ export default function SuppliesPage() {
       ),
       cellText: (r: SupplyRow) => r.organization?.name ?? '',
     },
-    {
-      key: 'incomingNumber',
-      header: tFields('incoming_number'),
-      width: '140px',
-      cell: (s) => <span className="text-xs">{s.incomingNumber ?? '—'}</span>,
-    },
-    {
-      key: 'state',
-      header: tFields('state'),
-      width: '150px',
-      cell: (s) => (
-        <Badge tone={documentStateTone(s.state)}>
-          {tStates(s.state as 'draft' | 'posted' | 'cancelled')}
-        </Badge>
-      ),
-      cellText: (r: SupplyRow) => r.state,
-    },
+    // moysklad column order (#supply, live-grounded 2026-06-27): after
+    // «Организация» → Сумма · Валюта · Оплачено · Входящая дата · Входящий
+    // номер · Статус · Отправлено · Напечатано · Комментарий. Сумма (and
+    // Оплачено) format in the ROW's OWN currency — rows can be доллар or сум.
     {
       key: 'sum',
       sortField: 'sumMinor',
@@ -414,26 +603,11 @@ export default function SuppliesPage() {
       sortable: true,
       cell: (s) => (
         <span className="font-medium tabular-nums">
-          {formatMoney(s.sumMinor, 'UZS', { displayAs: 'none' })}
+          {formatMoney(s.sumMinor, s.currency, { displayAs: 'none' })}
         </span>
       ),
       cellText: (r: SupplyRow) => (r.sumMinor ? formatMoney(r.sumMinor) : ''),
     },
-    {
-      key: 'positions',
-      header: tFields('positions_count'),
-      width: '70px',
-      align: 'right',
-      cell: (s) => (
-        <span className="text-[var(--ms-text-muted)] text-sm tabular-nums">
-          {s._count.positions}
-        </span>
-      ),
-      cellText: (r: SupplyRow) => String(r._count?.positions ?? ''),
-    },
-    // moysklad parity (v2.2 audit): «Валюта» · «Оплачено» · «Входящая
-    // дата» · «Отправлено» · «Напечатано» · «Комментарий» — backend
-    // scalar fields surfaced from the Prisma model.
     {
       key: 'currency',
       header: tFields('currency'),
@@ -470,19 +644,83 @@ export default function SuppliesPage() {
       cellText: (r: SupplyRow) => (r.incomingDate ? formatDate(r.incomingDate) : ''),
     },
     {
+      key: 'incomingNumber',
+      header: tFields('incoming_number'),
+      width: '140px',
+      cell: (s) => <span className="text-xs">{s.incomingNumber ?? '—'}</span>,
+    },
+    {
+      // moysklad parity: «Статус» column = the account-defined CUSTOM status
+      // (coloured pill), NOT the FSM state. A grey «Status» placeholder shows
+      // until a status is assigned (live-grounded #supply: «Кирилди» orange pill).
+      // Posting state lives in the «Проведено» flag, not this column. Mirror demands.
+      key: 'state',
+      header: tFields('state'),
+      width: '150px',
+      cell: (s) =>
+        s.status ? (
+          <span
+            className="inline-flex items-center whitespace-nowrap rounded-[3px] px-2 py-0.5 font-medium text-white text-xs"
+            style={{ backgroundColor: s.status.color ?? 'var(--ms-text-muted)' }}
+            data-test-id="supply-status-pill"
+          >
+            {s.status.name}
+          </span>
+        ) : (
+          <span
+            className="inline-flex items-center whitespace-nowrap rounded-[3px] bg-[var(--ms-bg-muted)] px-2 py-0.5 text-[var(--ms-text-muted)] text-xs"
+            data-test-id="supply-status-placeholder"
+          >
+            {tFields('custom_status_placeholder')}
+          </span>
+        ),
+      cellText: (r: SupplyRow) => r.status?.name ?? '',
+    },
+    {
+      // gear-only: moysklad #supply has NO positions-count column — kept as an
+      // optional column, hidden by default (not in the visibleKeys default).
+      key: 'positions',
+      header: tFields('positions_count'),
+      width: '70px',
+      align: 'right',
+      cell: (s) => (
+        <span className="text-[var(--ms-text-muted)] text-sm tabular-nums">
+          {s._count.positions}
+        </span>
+      ),
+      cellText: (r: SupplyRow) => String(r._count?.positions ?? ''),
+    },
+    // moysklad parity: «Отправлено» renders a cyan (#00bfe6) filled pill
+    // «Отправлен» when sent, and an EMPTY cell otherwise (NOT «Да»/«—»). Colour +
+    // word-pill live-grounded on online.moysklad.ru #supply; mirror demand/CO list.
+    {
       key: 'published',
       header: tFields('published'),
       width: '120px',
-      align: 'center',
-      cell: (s) => (s.published ? <Badge tone="info">{tCommon('yes')}</Badge> : <span>—</span>),
+      cell: (s) =>
+        s.published ? (
+          <span
+            className="inline-flex items-center whitespace-nowrap rounded-[3px] bg-[#00bfe6] px-2 py-0.5 font-medium text-white text-xs"
+            data-test-id="published-badge"
+          >
+            {tFields('published_badge')}
+          </span>
+        ) : null,
       cellText: (r: SupplyRow) => (r.published ? 'yes' : ''),
     },
     {
       key: 'printed',
       header: tFields('printed'),
-      width: '160px',
-      align: 'center',
-      cell: (s) => (s.printed ? <Badge tone="info">{tCommon('yes')}</Badge> : <span>—</span>),
+      width: '120px',
+      cell: (s) =>
+        s.printed ? (
+          <span
+            className="inline-flex items-center whitespace-nowrap rounded-[3px] bg-[#00bfe6] px-2 py-0.5 font-medium text-white text-xs"
+            data-test-id="printed-badge"
+          >
+            {tFields('printed_badge')}
+          </span>
+        ) : null,
       cellText: (r: SupplyRow) => (r.printed ? 'yes' : ''),
     },
     {
@@ -490,7 +728,7 @@ export default function SuppliesPage() {
       header: tFields('description'),
       width: '220px',
       cell: (s) => (
-        <span className="block max-w-[220px] truncate text-[var(--ms-text-muted)] text-xs">
+        <span className="block max-w-[220px] truncate text-[var(--ms-text-muted)] text-[11px]">
           {s.description ?? ''}
         </span>
       ),
@@ -501,61 +739,63 @@ export default function SuppliesPage() {
   const hasFilter =
     !!search ||
     !!stateFilter ||
-    !!filterValues.agentId ||
-    !!filterValues.organizationId ||
-    !!filterValues.storeId ||
-    !!filterValues.ownerId ||
+    Object.values(refArrays).some((a) => a.length > 0) ||
     !!filterValues.applicable ||
     !!filterValues.printed ||
     !!filterValues.published ||
+    !!filterValues.shared ||
+    !!filterValues.incomingNumber ||
+    !!filterValues.incomingDateFrom ||
+    !!filterValues.incomingDateTo ||
     !!filterValues.momentFrom ||
     !!filterValues.momentTo ||
     !!filterValues.updatedFrom ||
     !!filterValues.updatedTo ||
-    !!filterValues.agentGroupId ||
-    !!filterValues.agentOwnerId ||
-    !!filterValues.agentAccountId ||
-    !!filterValues.organizationAccountId ||
-    !!filterValues.groupId ||
-    !!filterValues.projectId ||
-    !!filterValues.contractId ||
-    !!filterValues.purchaseOrderId ||
-    filterValues.sumMinorFrom !== undefined ||
-    filterValues.sumMinorTo !== undefined;
+    !!filterValues.paymentStatus ||
+    !!filterValues.returnStatus;
 
-  // moysklad-parity inline filter panel — fields ordered as the captured filter
-  // DOM at docs/moysklad-reference/visual-captures/02-module/supply/dom/
-  // 00-clean-default.html (each `<div class="gwt-Label">` a field label):
-  // Период · Контрагент · Группа контрагента · Счёт контрагента · Договор ·
-  // Владелец контрагента · Организация · Счёт организации · Склад · Проект ·
-  // Статус · Заказ поставщику · Проведено · Напечатано · Отправлено ·
-  // Владелец-сотрудник · Владелец-отдел · Сумма · Когда изменен.
-  // «Счёт контрагента» mirrors the purchase-orders gold standard (disabled
-  // until the agent is picked); the column exists on Supply.
-  // DELIBERATE ABSENCES (a "just mirror the gold standard" edit must NOT add
-  // them — both would be dead 11h controls):
-  //   - «Кто изменил» (modifiedById) — Supply has no `updatedById` column.
-  //   - «Общий доступ» (shared) — the `Supply.shared` column EXISTS but is
-  //     never written (absent from CreateSupplySchema + mass-edit), so it is
-  //     always DEFAULT false; filtering on it would match nothing meaningful.
+  // moysklad-parity inline filter panel — field SET + ORDER 1:1 with the real
+  // #supply (Приёмки) filter (2026-06-27, live-grounded):
+  //   Период · Входящий номер · Входящая дата · Оплата · Товар или группа ·
+  //   Тип возврата · Склад · Проект · Контрагент · Группа контрагента · Счёт контрагента ·
+  //   Договор · Владелец контрагента · Организация · Счёт организации ·
+  //   Статус · Проведено · Напечатано · Отправлено · Владелец-сотрудник ·
+  //   Владелец-отдел · Общий доступ · Когда изменен · Кто изменил.
+  // «Счёт контрагента» / «Счёт организации» mirror the purchase-orders gold
+  // standard (disabled until the parent agent/org is picked).
+  // NOT present in moysklad #supply (deliberately absent): «Заказ поставщику»
+  // and the «Сумма» range — neither is a #supply filter.
   const filterPanel = (
     <InlineFilterPanel
       hidden={!filterOpen}
+      columns={6}
       applyLabel={tFilters('find')}
       clearLabel={tFilters('clear')}
+      onApply={() => refetch()}
+      onBookmarkClick={() => setSaveFilterOpen(true)}
+      fieldVisibility={{
+        hidden: filterHidden.visibleKeys,
+        onToggle: (k) => {
+          const next = new Set(filterHidden.visibleKeys);
+          if (next.has(k)) next.delete(k);
+          else next.add(k);
+          filterHidden.setVisibleKeys(next);
+        },
+      }}
       onClear={() => {
         setFilterValues({});
         setStateFilter(null);
+        for (const setter of Object.values(refSetters)) setter([]);
         onResetCursor();
       }}
       pills={
         <SavedFiltersPills
           entity="supply"
-          currentQueryString={params.toString()}
-          onApply={(qs) => {
-            setFilterValues(filterFromQueryString(qs));
-            onResetCursor();
-          }}
+          currentQueryString={savedFilterQuery}
+          onApply={applySavedFilter}
+          adding={saveFilterOpen}
+          onAddingChange={setSaveFilterOpen}
+          showAdd={filterOpen}
         />
       }
       testId="supplies-inline-filter"
@@ -589,94 +829,189 @@ export default function SuppliesPage() {
           testId="filter-period"
         />
       </InlineFilterPanel.Field>
-      {/* 2. Контрагент */}
-      <InlineFilterPanel.Field label={tFields('agent')} expandable>
-        <CatalogPickerField
-          value={
-            filterValues.agentId
-              ? { id: filterValues.agentId, label: filterValues.agentLabel ?? filterValues.agentId }
-              : null
-          }
-          placeholder=""
-          onPick={() => setPickerOpen('agent')}
-          onClear={() => {
-            setFilterValues({ ...filterValues, agentId: undefined, agentLabel: undefined });
+      {/* «Входящий номер» — moysklad #supply filter field (also covered by search). */}
+      <InlineFilterPanel.Field label={tFields('incoming_number')} expandable>
+        <Input
+          value={filterValues.incomingNumber ?? ''}
+          onChange={(e) => {
+            setFilterValues({ ...filterValues, incomingNumber: e.target.value || undefined });
             onResetCursor();
           }}
+          data-test-id="filter-incoming-number"
+        />
+      </InlineFilterPanel.Field>
+      {/* «Входящая дата» — moysklad #supply filter field (incomingDate range). */}
+      <InlineFilterPanel.Field label={tFields('incoming_date')} expandable>
+        <PeriodInputs
+          from={filterValues.incomingDateFrom}
+          to={filterValues.incomingDateTo}
+          onChange={({ from, to }) => {
+            setFilterValues({ ...filterValues, incomingDateFrom: from, incomingDateTo: to });
+            onResetCursor();
+          }}
+          testId="filter-incoming-date"
+        />
+      </InlineFilterPanel.Field>
+      {/* 4. Оплата — payment progress (moysklad #supply «Оплата» select). */}
+      <InlineFilterPanel.Field label={tFilters('payment_status')} expandable={false}>
+        <NativeSelect
+          value={filterValues.paymentStatus ?? ''}
+          onChange={(e) => {
+            setFilterValues({
+              ...filterValues,
+              paymentStatus: (e.target.value || undefined) as
+                | 'unpaid'
+                | 'partial'
+                | 'paid'
+                | undefined,
+            });
+            onResetCursor();
+          }}
+          data-test-id="filter-payment-status"
+        >
+          <option value="" />
+          <option value="unpaid">{tFilters('payment_unpaid')}</option>
+          <option value="partial">{tFilters('payment_partial')}</option>
+          <option value="paid">{tFilters('payment_paid')}</option>
+        </NativeSelect>
+      </InlineFilterPanel.Field>
+      {/* 5. Товар или группа — narrows to supplies containing the product. */}
+      <InlineFilterPanel.Field label={tFilters('product_or_group')} expandable>
+        <MultiRefField
+          value={products}
+          onChange={(v) => {
+            setProducts(v);
+            onResetCursor();
+          }}
+          onSearch={fetchProducts}
+          testId="filter-product"
+        />
+      </InlineFilterPanel.Field>
+      {/* 5b. Тип возврата — return progress (none/partial/full) vs linked
+           Возврат поставщику. Option order + labels grounded LIVE from moysklad
+           #supply (mirror #demand). */}
+      <InlineFilterPanel.Field
+        fieldKey="return_type"
+        label={tFilters('return_type')}
+        expandable={false}
+      >
+        <NativeSelect
+          value={filterValues.returnStatus ?? ''}
+          onChange={(e) => {
+            setFilterValues({
+              ...filterValues,
+              returnStatus: (e.target.value || undefined) as
+                | 'none'
+                | 'partial'
+                | 'full'
+                | undefined,
+            });
+            onResetCursor();
+          }}
+          data-test-id="filter-return-type"
+        >
+          <option value="" />
+          <option value="partial">{tFilters('return_partial')}</option>
+          <option value="none">{tFilters('return_none')}</option>
+          <option value="full">{tFilters('return_full')}</option>
+        </NativeSelect>
+      </InlineFilterPanel.Field>
+      {/* 6. Склад */}
+      <InlineFilterPanel.Field label={tFields('store')} expandable>
+        <MultiRefField
+          value={stores}
+          onChange={(v) => {
+            setStores(v);
+            onResetCursor();
+          }}
+          onSearch={fetchStores}
+          testId="filter-store"
+        />
+      </InlineFilterPanel.Field>
+      {/* 7. Проект */}
+      <InlineFilterPanel.Field label={t('filter_project')} expandable>
+        <MultiRefField
+          value={projects}
+          onChange={(v) => {
+            setProjects(v);
+            onResetCursor();
+          }}
+          onSearch={fetchProjects}
+          testId="filter-project"
+        />
+      </InlineFilterPanel.Field>
+      {/* 8. Контрагент */}
+      <InlineFilterPanel.Field label={tFields('agent')} expandable>
+        <MultiRefField
+          value={agents}
+          onChange={(v) => {
+            setAgents(v);
+            onResetCursor();
+          }}
+          onSearch={fetchCounterparties}
           testId="filter-agent"
         />
       </InlineFilterPanel.Field>
       {/* 3. Группа контрагента */}
       <InlineFilterPanel.Field label={t('filter_agent_group')} expandable>
-        <CatalogPickerField
-          value={
-            filterValues.agentGroupId
-              ? {
-                  id: filterValues.agentGroupId,
-                  label: filterValues.agentGroupLabel ?? filterValues.agentGroupId,
-                }
-              : null
-          }
-          placeholder=""
-          onPick={() => setPickerOpen('agentGroup')}
-          onClear={() => {
-            setFilterValues({
-              ...filterValues,
-              agentGroupId: undefined,
-              agentGroupLabel: undefined,
-            });
+        <MultiRefField
+          value={agentGroups}
+          onChange={(v) => {
+            setAgentGroups(v);
             onResetCursor();
           }}
+          onSearch={fetchGroups}
           testId="filter-agent-group"
         />
       </InlineFilterPanel.Field>
-      {/* 4. Счёт контрагента — disabled until agent picked */}
-      <InlineFilterPanel.Field label={t('filter_agent_account')} expandable>
-        <CatalogPickerField
-          value={
-            filterValues.agentAccountId
-              ? {
-                  id: filterValues.agentAccountId,
-                  label: filterValues.agentAccountLabel ?? filterValues.agentAccountId,
-                }
-              : null
-          }
-          placeholder=""
-          onPick={() => filterValues.agentId && setPickerOpen('agentAccount')}
-          onClear={() => {
-            setFilterValues({
-              ...filterValues,
-              agentAccountId: undefined,
-              agentAccountLabel: undefined,
-            });
+      {/* 4. Счёт контрагента — accounts of ALL selected counterparties (mirror
+          demand: the dropdown lists the union of every picked agent's bank
+          accounts; empty until at least one Контрагент is chosen). */}
+      <InlineFilterPanel.Field label={t('filter_agent_account')} expandable={false}>
+        <MultiRefField
+          value={agentAccounts}
+          onChange={(v) => {
+            setAgentAccounts(v);
             onResetCursor();
           }}
-          disabled={!filterValues.agentId}
-          disabledHint={t('filter_agent_account_disabled_hint')}
+          onSearch={async (q) => {
+            if (!agents.length) return [];
+            const lists = await Promise.all(
+              agents.map((a) =>
+                api
+                  .get<Array<{ id: string; accountNumber: string; bankName: string | null }>>(
+                    `/counterparties/${a.id}/bank-accounts`,
+                  )
+                  .catch(() => []),
+              ),
+            );
+            const k = q.trim().toLowerCase();
+            return lists
+              .flat()
+              .filter(
+                (x) =>
+                  !k ||
+                  x.accountNumber.toLowerCase().includes(k) ||
+                  (x.bankName ?? '').toLowerCase().includes(k),
+              )
+              .map((x) => ({
+                value: x.id,
+                label: x.accountNumber,
+                sublabel: x.bankName ?? undefined,
+              }));
+          }}
           testId="filter-agent-account"
         />
       </InlineFilterPanel.Field>
       {/* 5. Договор */}
       <InlineFilterPanel.Field label={t('filter_contract')} expandable>
-        <CatalogPickerField
-          value={
-            filterValues.contractId
-              ? {
-                  id: filterValues.contractId,
-                  label: filterValues.contractLabel ?? filterValues.contractId,
-                }
-              : null
-          }
-          placeholder=""
-          onPick={() => setPickerOpen('contract')}
-          onClear={() => {
-            setFilterValues({
-              ...filterValues,
-              contractId: undefined,
-              contractLabel: undefined,
-            });
+        <MultiRefField
+          value={contracts}
+          onChange={(v) => {
+            setContracts(v);
             onResetCursor();
           }}
+          onSearch={fetchContracts}
           testId="filter-contract"
         />
       </InlineFilterPanel.Field>
@@ -687,117 +1022,70 @@ export default function SuppliesPage() {
          owner). Narrows the same `agent` relation as «Группа контрагента»,
          merged server-side into one clause. */}
       <InlineFilterPanel.Field label={tFilters('agent_owner')} expandable>
-        <CatalogPickerField
-          value={
-            filterValues.agentOwnerId
-              ? {
-                  id: filterValues.agentOwnerId,
-                  label: filterValues.agentOwnerLabel ?? filterValues.agentOwnerId,
-                }
-              : null
-          }
-          placeholder=""
-          onPick={() => setPickerOpen('agentOwner')}
-          onClear={() => {
-            setFilterValues({
-              ...filterValues,
-              agentOwnerId: undefined,
-              agentOwnerLabel: undefined,
-            });
+        <MultiRefField
+          value={agentOwners}
+          onChange={(v) => {
+            setAgentOwners(v);
             onResetCursor();
           }}
+          onSearch={fetchEmployees}
           testId="filter-agent-owner"
         />
       </InlineFilterPanel.Field>
       {/* 7. Организация */}
       <InlineFilterPanel.Field label={tFields('organization')} expandable>
-        <CatalogPickerField
-          value={
-            filterValues.organizationId
-              ? {
-                  id: filterValues.organizationId,
-                  label: filterValues.organizationLabel ?? filterValues.organizationId,
-                }
-              : null
-          }
-          placeholder=""
-          onPick={() => setPickerOpen('org')}
-          onClear={() => {
-            setFilterValues({
-              ...filterValues,
-              organizationId: undefined,
-              organizationLabel: undefined,
-            });
+        <MultiRefField
+          value={organizations}
+          onChange={(v) => {
+            setOrganizations(v);
             onResetCursor();
           }}
+          onSearch={fetchOrganizations}
           testId="filter-org"
         />
       </InlineFilterPanel.Field>
-      {/* 7. Счёт организации — disabled until organization picked */}
-      <InlineFilterPanel.Field label={t('filter_org_account')} expandable>
-        <CatalogPickerField
-          value={
-            filterValues.organizationAccountId
-              ? {
-                  id: filterValues.organizationAccountId,
-                  label:
-                    filterValues.organizationAccountLabel ?? filterValues.organizationAccountId,
-                }
-              : null
-          }
-          placeholder=""
-          onPick={() => filterValues.organizationId && setPickerOpen('orgAccount')}
-          onClear={() => {
-            setFilterValues({
-              ...filterValues,
-              organizationAccountId: undefined,
-              organizationAccountLabel: undefined,
-            });
+      {/* 7. Счёт организации — accounts of ALL selected organizations (mirror
+          demand: union of every picked Организация's accounts; empty until at
+          least one Организация is chosen). */}
+      <InlineFilterPanel.Field label={t('filter_org_account')} expandable={false}>
+        <MultiRefField
+          value={orgAccounts}
+          onChange={(v) => {
+            setOrgAccounts(v);
             onResetCursor();
           }}
-          disabled={!filterValues.organizationId}
-          disabledHint={t('filter_org_account_disabled_hint')}
+          onSearch={async (q) => {
+            if (!organizations.length) return [];
+            const lists = await Promise.all(
+              organizations.map((o) => {
+                const sp = new URLSearchParams({
+                  search: q,
+                  limit: '50',
+                  organizationId: o.id,
+                });
+                return api
+                  .get<{
+                    items: {
+                      id: string;
+                      name: string;
+                      accountNumber: string | null;
+                      bankName: string | null;
+                    }[];
+                  }>(`/organization-accounts?${sp.toString()}`)
+                  .then((r) => r.items)
+                  .catch(() => []);
+              }),
+            );
+            return lists.flat().map((x) => ({
+              value: x.id,
+              label: x.accountNumber || x.name,
+              sublabel: x.bankName ?? undefined,
+            }));
+          }}
           testId="filter-org-account"
         />
       </InlineFilterPanel.Field>
-      {/* 8. Склад */}
-      <InlineFilterPanel.Field label={tFields('store')} expandable>
-        <CatalogPickerField
-          value={
-            filterValues.storeId
-              ? { id: filterValues.storeId, label: filterValues.storeLabel ?? filterValues.storeId }
-              : null
-          }
-          placeholder=""
-          onPick={() => setPickerOpen('store')}
-          onClear={() => {
-            setFilterValues({ ...filterValues, storeId: undefined, storeLabel: undefined });
-            onResetCursor();
-          }}
-          testId="filter-store"
-        />
-      </InlineFilterPanel.Field>
-      {/* 9. Проект */}
-      <InlineFilterPanel.Field label={t('filter_project')} expandable>
-        <CatalogPickerField
-          value={
-            filterValues.projectId
-              ? {
-                  id: filterValues.projectId,
-                  label: filterValues.projectLabel ?? filterValues.projectId,
-                }
-              : null
-          }
-          placeholder=""
-          onPick={() => setPickerOpen('project')}
-          onClear={() => {
-            setFilterValues({ ...filterValues, projectId: undefined, projectLabel: undefined });
-            onResetCursor();
-          }}
-          testId="filter-project"
-        />
-      </InlineFilterPanel.Field>
-      {/* 10. Статус */}
+      {/* 15. Статус */}
       <InlineFilterPanel.Field label={t('filter_status_multi')} expandable>
         <StateSelect
           value={stateFilter ?? undefined}
@@ -813,31 +1101,7 @@ export default function SuppliesPage() {
           testId="filter-state"
         />
       </InlineFilterPanel.Field>
-      {/* 11. Заказ поставщику */}
-      <InlineFilterPanel.Field label={tFields('linked_purchase_order')} expandable>
-        <CatalogPickerField
-          value={
-            filterValues.purchaseOrderId
-              ? {
-                  id: filterValues.purchaseOrderId,
-                  label: filterValues.purchaseOrderLabel ?? filterValues.purchaseOrderId,
-                }
-              : null
-          }
-          placeholder=""
-          onPick={() => setPickerOpen('purchaseOrder')}
-          onClear={() => {
-            setFilterValues({
-              ...filterValues,
-              purchaseOrderId: undefined,
-              purchaseOrderLabel: undefined,
-            });
-            onResetCursor();
-          }}
-          testId="filter-purchase-order"
-        />
-      </InlineFilterPanel.Field>
-      {/* 12. Проведено */}
+      {/* 16. Проведено */}
       <InlineFilterPanel.Field label={tFields('applicable')} expandable>
         <YesNoSelect
           value={filterValues.applicable}
@@ -848,7 +1112,7 @@ export default function SuppliesPage() {
           testId="filter-applicable"
         />
       </InlineFilterPanel.Field>
-      {/* 13. Напечатано */}
+      {/* 17. Напечатано */}
       <InlineFilterPanel.Field label={tFields('printed')} expandable>
         <YesNoSelect
           value={filterValues.printed}
@@ -859,7 +1123,7 @@ export default function SuppliesPage() {
           testId="filter-printed"
         />
       </InlineFilterPanel.Field>
-      {/* 14. Отправлено */}
+      {/* 18. Отправлено */}
       <InlineFilterPanel.Field label={tFields('published')} expandable>
         <YesNoSelect
           value={filterValues.published}
@@ -870,80 +1134,42 @@ export default function SuppliesPage() {
           testId="filter-published"
         />
       </InlineFilterPanel.Field>
-      {/* 15. Владелец-сотрудник */}
+      {/* 19. Владелец-сотрудник */}
       <InlineFilterPanel.Field label={t('filter_owner_employee')} expandable>
-        <CatalogPickerField
-          value={
-            filterValues.ownerId
-              ? { id: filterValues.ownerId, label: filterValues.ownerLabel ?? filterValues.ownerId }
-              : null
-          }
-          placeholder=""
-          onPick={() => setPickerOpen('owner')}
-          onClear={() => {
-            setFilterValues({ ...filterValues, ownerId: undefined, ownerLabel: undefined });
+        <MultiRefField
+          value={owners}
+          onChange={(v) => {
+            setOwners(v);
             onResetCursor();
           }}
+          onSearch={fetchEmployees}
           testId="filter-owner"
         />
       </InlineFilterPanel.Field>
-      {/* 16. Владелец-отдел */}
+      {/* 20. Владелец-отдел */}
       <InlineFilterPanel.Field label={t('filter_owner_group')} expandable>
-        <CatalogPickerField
-          value={
-            filterValues.groupId
-              ? {
-                  id: filterValues.groupId,
-                  label: filterValues.groupLabel ?? filterValues.groupId,
-                }
-              : null
-          }
-          placeholder=""
-          onPick={() => setPickerOpen('group')}
-          onClear={() => {
-            setFilterValues({ ...filterValues, groupId: undefined, groupLabel: undefined });
+        <MultiRefField
+          value={groups}
+          onChange={(v) => {
+            setGroups(v);
             onResetCursor();
           }}
+          onSearch={fetchGroups}
           testId="filter-group"
         />
       </InlineFilterPanel.Field>
-      {/* 17. Сумма (range) */}
-      <InlineFilterPanel.Field label={`${tFields('sum')}:`} expandable>
-        <div className="flex items-center gap-1">
-          <MoneyInput
-            allowEmpty
-            valueMinor={
-              filterValues.sumMinorFrom !== undefined ? String(filterValues.sumMinorFrom) : ''
-            }
-            onChangeMinor={(minor) => {
-              setFilterValues({
-                ...filterValues,
-                sumMinorFrom: minor === '' ? undefined : Number(minor),
-              });
-              onResetCursor();
-            }}
-            data-test-id="filter-sum-from"
-            className="h-7 w-full rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] px-2 text-[var(--ms-text-primary)] text-sm focus:border-[var(--ms-border-focus)] focus:outline-none"
-          />
-          <span className="text-[var(--ms-text-muted)]">—</span>
-          <MoneyInput
-            allowEmpty
-            valueMinor={
-              filterValues.sumMinorTo !== undefined ? String(filterValues.sumMinorTo) : ''
-            }
-            onChangeMinor={(minor) => {
-              setFilterValues({
-                ...filterValues,
-                sumMinorTo: minor === '' ? undefined : Number(minor),
-              });
-              onResetCursor();
-            }}
-            data-test-id="filter-sum-to"
-            className="h-7 w-full rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] px-2 text-[var(--ms-text-primary)] text-sm focus:border-[var(--ms-border-focus)] focus:outline-none"
-          />
-        </div>
+      {/* 21. Общий доступ — moysklad #supply filter field (Supply.shared). */}
+      <InlineFilterPanel.Field label={t('filter_shared')} expandable>
+        <YesNoSelect
+          value={filterValues.shared}
+          onChange={(v) => {
+            setFilterValues({ ...filterValues, shared: v });
+            onResetCursor();
+          }}
+          testId="filter-shared"
+        />
       </InlineFilterPanel.Field>
-      {/* 18. Когда изменен */}
+      {/* 22. Когда изменен */}
       <InlineFilterPanel.Field
         label={`${t('filter_updated_period')}:`}
         expandable
@@ -972,6 +1198,18 @@ export default function SuppliesPage() {
           testId="filter-updated"
         />
       </InlineFilterPanel.Field>
+      {/* 23. Кто изменил — employee who last edited (auditLog userId → entityIds). */}
+      <InlineFilterPanel.Field label={tFilters('modified_by')} expandable>
+        <MultiRefField
+          value={modifiedBys}
+          onChange={(v) => {
+            setModifiedBys(v);
+            onResetCursor();
+          }}
+          onSearch={fetchEmployees}
+          testId="filter-modified-by"
+        />
+      </InlineFilterPanel.Field>
     </InlineFilterPanel>
   );
 
@@ -982,6 +1220,15 @@ export default function SuppliesPage() {
       label={tFilters('trigger')}
     />
   );
+
+  // «Итого» footer row (moysklad #supply): raw-summed Сумма + Оплачено under
+  // their own columns, formatted with no currency symbol. «…» until loaded.
+  const footerRow: Record<string, string> = totals
+    ? {
+        sum: formatMoney(totals.sumMinor, 'UZS', { displayAs: 'none' }),
+        paid: formatMoney(totals.payedSumMinor, 'UZS', { displayAs: 'none' }),
+      }
+    : { sum: '…', paid: '…' };
 
   return (
     <>
@@ -1002,6 +1249,7 @@ export default function SuppliesPage() {
         }}
         searchPlaceholder={t('search_placeholder')}
         columns={columns}
+        footerRow={footerRow}
         rows={data?.items ?? []}
         keyField="id"
         rowTestId={(s) => `supply-row-${s.id}`}
@@ -1038,11 +1286,28 @@ export default function SuppliesPage() {
               onClearSelection={bulk.clearSelection}
               postedCount={postedCount}
               onMassEdit={() => {
-                setMassEditIds(Array.from(bulk.selectedIds));
-                setMassEditOwner(null);
-                setMassEditProject(null);
-                setMassEditOpen(true);
+                stashBulkEdit({
+                  entity: 'supplies',
+                  ids:
+                    bulk.selectedIds.size > 0
+                      ? Array.from(bulk.selectedIds)
+                      : (data?.items ?? []).map((r) => r.id),
+                  from: '/supplies',
+                });
+                router.push('/bulk-edit');
               }}
+            />
+            <SupplyStatusDropdown
+              selectedIds={bulk.selectedIds}
+              listQueryKey={listQueryKey}
+              onClearSelection={bulk.clearSelection}
+              customStatuses={supplyStatuses}
+            />
+            {/* moysklad toolbar order: Изменить · Статус · Создать · Печать */}
+            <SupplyCreateDocDropdown
+              selectedIds={bulk.selectedIds}
+              listQueryKey={listQueryKey}
+              onClearSelection={bulk.clearSelection}
             />
             <SupplyPrintDropdown selectedIds={bulk.selectedIds} onExportList={handleListExport} />
           </>
@@ -1057,267 +1322,6 @@ export default function SuppliesPage() {
         }
         columnWidths={colWidths.values}
         onColumnResize={colWidths.set}
-      />
-
-      <CatalogPicker
-        open={pickerOpen === 'agent'}
-        onClose={() => setPickerOpen(null)}
-        title={tFields('agent')}
-        fetcher={async (q): Promise<PickerItem[]> => {
-          const r = await api.get<{ items: { id: string; name: string }[] }>(
-            `/counterparties?search=${encodeURIComponent(q)}&limit=20`,
-          );
-          return r.items.map((x) => ({ id: x.id, primary: x.name }));
-        }}
-        onSelect={(item) => {
-          setFilterValues({
-            ...filterValues,
-            agentId: item.id,
-            agentLabel: String(item.primary),
-          });
-          onResetCursor();
-        }}
-      />
-      <CatalogPicker
-        open={pickerOpen === 'agentGroup'}
-        onClose={() => setPickerOpen(null)}
-        title={t('filter_agent_group')}
-        fetcher={async (q): Promise<PickerItem[]> => {
-          const r = await api.get<{ items: { id: string; name: string }[] }>(
-            `/groups?search=${encodeURIComponent(q)}&limit=20`,
-          );
-          return r.items.map((x) => ({ id: x.id, primary: x.name }));
-        }}
-        onSelect={(item) => {
-          setFilterValues({
-            ...filterValues,
-            agentGroupId: item.id,
-            agentGroupLabel: String(item.primary),
-          });
-          onResetCursor();
-        }}
-      />
-      <CatalogPicker
-        open={pickerOpen === 'agentOwner'}
-        onClose={() => setPickerOpen(null)}
-        title={tFilters('agent_owner')}
-        fetcher={async (q): Promise<PickerItem[]> => {
-          const r = await api.get<{ items: { id: string; name: string }[] }>(
-            `/employees?search=${encodeURIComponent(q)}&limit=20`,
-          );
-          return r.items.map((x) => ({ id: x.id, primary: x.name }));
-        }}
-        onSelect={(item) => {
-          setFilterValues({
-            ...filterValues,
-            agentOwnerId: item.id,
-            agentOwnerLabel: String(item.primary),
-          });
-          onResetCursor();
-        }}
-      />
-      <CatalogPicker
-        open={pickerOpen === 'agentAccount'}
-        onClose={() => setPickerOpen(null)}
-        title={t('filter_agent_account')}
-        fetcher={async (q): Promise<PickerItem[]> => {
-          if (!filterValues.agentId) return [];
-          // moysklad parity: counterparty bank accounts have only the nested
-          // /counterparties/:id/bank-accounts route (raw array, no search param) —
-          // mirror the detail-form agentAccountFetcher and client-filter by search.
-          const d = await api.get<
-            Array<{ id: string; accountNumber: string; bankName: string | null }>
-          >(`/counterparties/${filterValues.agentId}/bank-accounts`);
-          const k = q.trim().toLowerCase();
-          return d
-            .filter(
-              (x) =>
-                !k ||
-                x.accountNumber.toLowerCase().includes(k) ||
-                (x.bankName ?? '').toLowerCase().includes(k),
-            )
-            .map((x) => ({
-              id: x.id,
-              primary: x.accountNumber,
-              secondary: x.bankName ?? undefined,
-            }));
-        }}
-        onSelect={(item) => {
-          setFilterValues({
-            ...filterValues,
-            agentAccountId: item.id,
-            agentAccountLabel: String(item.primary),
-          });
-          onResetCursor();
-        }}
-      />
-      <CatalogPicker
-        open={pickerOpen === 'contract'}
-        onClose={() => setPickerOpen(null)}
-        title={t('filter_contract')}
-        fetcher={async (q): Promise<PickerItem[]> => {
-          const r = await api.get<{ items: { id: string; name: string }[] }>(
-            `/contracts?search=${encodeURIComponent(q)}&limit=20`,
-          );
-          return r.items.map((x) => ({ id: x.id, primary: x.name }));
-        }}
-        onSelect={(item) => {
-          setFilterValues({
-            ...filterValues,
-            contractId: item.id,
-            contractLabel: String(item.primary),
-          });
-          onResetCursor();
-        }}
-      />
-      <CatalogPicker
-        open={pickerOpen === 'org'}
-        onClose={() => setPickerOpen(null)}
-        title={tFields('organization')}
-        fetcher={async (q): Promise<PickerItem[]> => {
-          const r = await api.get<{ items: { id: string; name: string }[] }>(
-            `/organizations?search=${encodeURIComponent(q)}&limit=20`,
-          );
-          return r.items.map((x) => ({ id: x.id, primary: x.name }));
-        }}
-        onSelect={(item) => {
-          setFilterValues({
-            ...filterValues,
-            organizationId: item.id,
-            organizationLabel: String(item.primary),
-          });
-          onResetCursor();
-        }}
-      />
-      <CatalogPicker
-        open={pickerOpen === 'orgAccount'}
-        onClose={() => setPickerOpen(null)}
-        title={t('filter_org_account')}
-        fetcher={async (q): Promise<PickerItem[]> => {
-          if (!filterValues.organizationId) return [];
-          // moysklad parity: organization accounts come from the flat
-          // /organization-accounts?organizationId= route (mirror the detail-form
-          // organizationAccountFetcher). Default accounts have accountNumber=null,
-          // so fall back to the account name for the headline.
-          const params = new URLSearchParams({ search: q, limit: '50' });
-          params.set('organizationId', filterValues.organizationId);
-          const r = await api.get<{
-            items: {
-              id: string;
-              name: string;
-              accountNumber: string | null;
-              bankName: string | null;
-            }[];
-          }>(`/organization-accounts?${params.toString()}`);
-          return r.items.map((x) => ({
-            id: x.id,
-            primary: x.accountNumber || x.name,
-            secondary: x.bankName ?? undefined,
-          }));
-        }}
-        onSelect={(item) => {
-          setFilterValues({
-            ...filterValues,
-            organizationAccountId: item.id,
-            organizationAccountLabel: String(item.primary),
-          });
-          onResetCursor();
-        }}
-      />
-      <CatalogPicker
-        open={pickerOpen === 'store'}
-        onClose={() => setPickerOpen(null)}
-        title={tFields('store')}
-        fetcher={async (q): Promise<PickerItem[]> => {
-          const r = await api.get<{ items: { id: string; name: string }[] }>(
-            `/stores?search=${encodeURIComponent(q)}&limit=20`,
-          );
-          return r.items.map((x) => ({ id: x.id, primary: x.name }));
-        }}
-        onSelect={(item) => {
-          setFilterValues({
-            ...filterValues,
-            storeId: item.id,
-            storeLabel: String(item.primary),
-          });
-          onResetCursor();
-        }}
-      />
-      <CatalogPicker
-        open={pickerOpen === 'project'}
-        onClose={() => setPickerOpen(null)}
-        title={t('filter_project')}
-        fetcher={async (q): Promise<PickerItem[]> => {
-          const r = await api.get<{ items: { id: string; name: string }[] }>(
-            `/projects?search=${encodeURIComponent(q)}&limit=20`,
-          );
-          return r.items.map((x) => ({ id: x.id, primary: x.name }));
-        }}
-        onSelect={(item) => {
-          setFilterValues({
-            ...filterValues,
-            projectId: item.id,
-            projectLabel: String(item.primary),
-          });
-          onResetCursor();
-        }}
-      />
-      <CatalogPicker
-        open={pickerOpen === 'purchaseOrder'}
-        onClose={() => setPickerOpen(null)}
-        title={tFields('linked_purchase_order')}
-        fetcher={async (q): Promise<PickerItem[]> => {
-          const r = await api.get<{ items: { id: string; name: string }[] }>(
-            `/purchase-orders?search=${encodeURIComponent(q)}&limit=20`,
-          );
-          return r.items.map((x) => ({ id: x.id, primary: x.name }));
-        }}
-        onSelect={(item) => {
-          setFilterValues({
-            ...filterValues,
-            purchaseOrderId: item.id,
-            purchaseOrderLabel: String(item.primary),
-          });
-          onResetCursor();
-        }}
-      />
-      <CatalogPicker
-        open={pickerOpen === 'owner'}
-        onClose={() => setPickerOpen(null)}
-        title={t('filter_owner_employee')}
-        fetcher={async (q): Promise<PickerItem[]> => {
-          const r = await api.get<{ items: { id: string; name: string }[] }>(
-            `/employees?search=${encodeURIComponent(q)}&limit=20`,
-          );
-          return r.items.map((x) => ({ id: x.id, primary: x.name }));
-        }}
-        onSelect={(item) => {
-          setFilterValues({
-            ...filterValues,
-            ownerId: item.id,
-            ownerLabel: String(item.primary),
-          });
-          onResetCursor();
-        }}
-      />
-      <CatalogPicker
-        open={pickerOpen === 'group'}
-        onClose={() => setPickerOpen(null)}
-        title={t('filter_owner_group')}
-        fetcher={async (q): Promise<PickerItem[]> => {
-          const r = await api.get<{ items: { id: string; name: string }[] }>(
-            `/groups?search=${encodeURIComponent(q)}&limit=20`,
-          );
-          return r.items.map((x) => ({ id: x.id, primary: x.name }));
-        }}
-        onSelect={(item) => {
-          setFilterValues({
-            ...filterValues,
-            groupId: item.id,
-            groupLabel: String(item.primary),
-          });
-          onResetCursor();
-        }}
       />
 
       <CatalogPicker
@@ -1362,6 +1366,8 @@ export default function SuppliesPage() {
         projectValue={massEditProject}
         onProjectPick={() => setPickerOpen('massEditProject')}
         onProjectClear={() => setMassEditProject(null)}
+        groupOptions={(massGroupsData?.items ?? []).map((g) => ({ value: g.id, label: g.name }))}
+        showShared
         labels={{
           title: t('mass_edit_title'),
           ownerLabel: tFilters('owner_employee'),
@@ -1370,6 +1376,10 @@ export default function SuppliesPage() {
           apply: t('mass_edit_apply'),
           cancel: t('mass_edit_cancel'),
           hint: t('mass_edit_hint', { count: massEditIds.length }),
+          groupLabel: tMass('group_label'),
+          sharedLabel: tMass('shared_label'),
+          sharedYes: tMass('shared_yes'),
+          sharedNo: tMass('shared_no'),
         }}
         onSubmit={async (patch) => {
           await bulk.massEdit.mutateAsync({ ids: massEditIds, ...patch });

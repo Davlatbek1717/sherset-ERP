@@ -12,6 +12,7 @@ import {
   buildCsv,
   csvTimestamp,
   downloadCsv,
+  formatIso,
   formatMoney,
 } from '@moysklad/ui';
 import { useQuery } from '@tanstack/react-query';
@@ -61,7 +62,7 @@ function defaultRange(): { from: string; to: string } {
   const today = new Date();
   const from = new Date(today);
   from.setDate(from.getDate() - 30);
-  const fmt = (d: Date) => d.toISOString().slice(0, 10);
+  const fmt = (d: Date) => formatIso(d);
   return { from: fmt(from), to: fmt(today) };
 }
 
@@ -101,7 +102,7 @@ export default function AbcAnalysisReport() {
   const formattedRows = useMemo(() => data?.rows ?? [], [data]);
 
   return (
-    <Container size="full" className="py-4">
+    <Container size="md" className="py-4">
       <Breadcrumb
         items={[{ label: tCommon('reports'), href: '/reports' }, { label: t('title') }]}
       />

@@ -58,6 +58,20 @@ export class AuditLogService {
       ...(filter.entity ? { entity: filter.entity } : {}),
       ...(filter.entityId ? { entityId: filter.entityId } : {}),
       ...(filter.userId ? { userId: filter.userId } : {}),
+      // Employee activity feed: acts-by OR done-to (see schema comment).
+      // Wrapped in AND so it can't collide with the `search` OR below.
+      ...(filter.aboutEmployee
+        ? {
+            AND: [
+              {
+                OR: [
+                  { userId: filter.aboutEmployee },
+                  { entity: 'employee', entityId: filter.aboutEmployee },
+                ],
+              },
+            ],
+          }
+        : {}),
       ...(filter.action ? { action: filter.action } : {}),
       ...(filter.dateFrom || filter.dateTo
         ? {

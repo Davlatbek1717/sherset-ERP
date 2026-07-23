@@ -12,12 +12,6 @@ import { StockService } from './stock.service.js';
 export class StockController {
   constructor(@Inject(StockService) private readonly stock: StockService) {}
 
-  /** Forward-pick replenishment list — products below their forwardMax target. */
-  @Get('replenishment')
-  async replenishment(@CurrentUser() user: AuthenticatedUser) {
-    return this.stock.replenishmentList(user.accountId);
-  }
-
   @Get()
   async balances(
     @CurrentUser() user: AuthenticatedUser,

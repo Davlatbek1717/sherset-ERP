@@ -126,6 +126,8 @@ describe('UploadAttachmentSchema', () => {
       'CashOut',
       'Opportunity',
       'Product',
+      'CommissionReportOut',
+      'CommissionReportIn',
     ];
     for (const entity of entities) {
       const r = UploadAttachmentSchema.safeParse({

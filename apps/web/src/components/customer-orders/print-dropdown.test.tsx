@@ -33,8 +33,9 @@ describe('PrintDropdown', () => {
     const user = userEvent.setup();
     renderWithProviders(<PrintDropdown onExportList={vi.fn()} />);
     await user.click(screen.getByRole('button', { name: /Chop etish/i }));
-    // Per 2026-05-29 audit (moysklad metadata.json source-of-truth) the
-    // menu has exactly 4 items in this order, no separators, no info card.
+    // The 4 built-in items render in moysklad order (account custom templates,
+    // when any, slot between «Комплект…» and «Настроить…»; a «Запросить форму»
+    // footer sits below — asserted separately).
     expect(screen.getByTestId('print-list-export')).toBeInTheDocument();
     expect(screen.getByTestId('print-order-form')).toBeInTheDocument();
     expect(screen.getByTestId('print-set')).toBeInTheDocument();
@@ -56,13 +57,16 @@ describe('PrintDropdown', () => {
     await user.click(screen.getByTestId('print-list-export'));
     expect(onExportList).toHaveBeenCalledTimes(1);
   });
-  it('renders no support link / info card (audit 2026-05-29: not in moysklad)', async () => {
+
+  it('renders the «Запросить форму» support footer (live #customerorder parity)', async () => {
     const user = userEvent.setup();
     renderWithProviders(<PrintDropdown />);
     await user.click(screen.getByRole('button', { name: /Chop etish/i }));
-    // The earlier "Запросить форму" info card was audit drift — moysklad's
-    // captured metadata.json shows no such item. Assert it is gone.
-    expect(screen.queryByText("Forma so'rash")).toBeNull();
-    expect(screen.queryByText("Qanday so'rash")).toBeNull();
+    // Re-added 2026-07-06: a live moysklad screenshot confirmed the «Запросить
+    // форму» promo footer is real (the 2026-05-29 removal read the wrong source
+    // — states/metadata.json is entity-state data, not the print menu).
+    expect(screen.getByTestId('print-request-form')).toBeInTheDocument();
+    expect(screen.getByText("Forma so'rash")).toBeInTheDocument();
+    expect(screen.getByTestId('print-request-form-btn')).toBeInTheDocument();
   });
 });

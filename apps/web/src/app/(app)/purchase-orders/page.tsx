@@ -10,10 +10,10 @@ import { useBulkDocumentActions } from '@/hooks/use-bulk-actions';
 import { useColumnVisibility } from '@/hooks/use-column-visibility';
 import { useColumnWidths } from '@/hooks/use-column-widths';
 import { api } from '@/lib/api-client';
-import { documentStateTone } from '@/lib/document-state-tone';
+import { getAccessToken } from '@/lib/auth-store';
+import { stashBulkEdit } from '@/lib/bulk-edit-nav';
 import { filterFromQueryString } from '@/lib/filter-from-query';
 import {
-  Badge,
   CatalogPicker,
   CatalogPickerField,
   type DataTableColumn,
@@ -60,6 +60,9 @@ interface PurchaseOrderRow {
   organization: { id: string; name: string; legalTitle: string | null };
   store: { id: string; name: string };
   owner: { id: string; name: string } | null;
+  // moysklad «Статус» column = account-defined CUSTOM workflow status (coloured
+  // pill), NOT the FSM `state`. The list() service already includes it.
+  status: { id: string; name: string; color: string | null } | null;
   _count: { positions: number };
 }
 
@@ -283,6 +286,7 @@ export default function PurchaseOrdersPage() {
   const tFields = useTranslations('fields');
   const tFilters = useTranslations('filters');
   const tStates = useTranslations('states.purchase_order');
+  const tMass = useTranslations('mass_edit_modal');
   const locale = useLocale();
 
   const [searchInput, setSearchInput] = useState('');
@@ -303,6 +307,13 @@ export default function PurchaseOrdersPage() {
   // moysklad-parity multi-select reference filters — checkbox dropdowns
   // (MultiCombobox), mirroring the products list. Each holds the picked
   // {id,label} pairs; on the wire they go out as `<field>Ids` CSV.
+  // «Контрагент» / «Организация» — moysklad-parity inline multi-select checkbox
+  // dropdowns (were single-select modals). The «Контрагент» dropdown shows the
+  // phone as a sublabel and searches by name OR phone (BE /counterparties?search=
+  // already matches both). The dependent «Счёт…» account pickers scope to the
+  // FIRST selected agent/org (agents[0]) since a bank account belongs to one.
+  const [agents, setAgents] = useState<RefMulti[]>([]);
+  const [organizations, setOrganizations] = useState<RefMulti[]>([]);
   const [agentGroups, setAgentGroups] = useState<RefMulti[]>([]);
   const [agentOwners, setAgentOwners] = useState<RefMulti[]>([]);
   const [stores, setStores] = useState<RefMulti[]>([]);
@@ -322,7 +333,7 @@ export default function PurchaseOrdersPage() {
   const showTotals = true;
   const [filterOpen, setFilterOpen] = useState(true);
   const [pickerOpen, setPickerOpen] = useState<
-    null | 'agent' | 'org' | 'agentAccount' | 'orgAccount' | 'massEditOwner' | 'massEditProject'
+    null | 'agentAccount' | 'orgAccount' | 'massEditOwner' | 'massEditProject'
   >(null);
 
   const [massEditOpen, setMassEditOpen] = useState(false);
@@ -333,6 +344,13 @@ export default function PurchaseOrdersPage() {
   const [massEditProject, setMassEditProject] = useState<{ id: string; label: string } | null>(
     null,
   );
+  // «Владелец-отдел» (groupId) options for the mass-edit wizard — mirrors losses.
+  const { data: massGroupsData } = useQuery<{ items: Array<{ id: string; name: string }> }>({
+    queryKey: ['groups', 'mass-edit'],
+    queryFn: () => api.get('/groups?limit=100'),
+    enabled: massEditOpen,
+    staleTime: 5 * 60 * 1000,
+  });
 
   const onResetCursor = () => setCursor(undefined);
 
@@ -351,8 +369,8 @@ export default function PurchaseOrdersPage() {
     ...(filterValues.sumMinorTo !== undefined
       ? { sumMinorTo: String(filterValues.sumMinorTo) }
       : {}),
-    ...(filterValues.agentId ? { agentId: filterValues.agentId } : {}),
-    ...(filterValues.organizationId ? { organizationId: filterValues.organizationId } : {}),
+    ...(agents.length ? { agentIds: agents.map((x) => x.id).join(',') } : {}),
+    ...(organizations.length ? { organizationIds: organizations.map((x) => x.id).join(',') } : {}),
     ...(stores.length ? { storeIds: stores.map((x) => x.id).join(',') } : {}),
     ...(owners.length ? { ownerIds: owners.map((x) => x.id).join(',') } : {}),
     ...(filterValues.applicable ? { applicable: filterValues.applicable } : {}),
@@ -564,7 +582,7 @@ export default function PurchaseOrdersPage() {
       width: '100px',
       sortable: true,
       cell: (o) => (
-        <span className="text-[var(--ms-text-muted)] text-xs tabular-nums">
+        <span className="text-[var(--ms-text-muted)] text-[12px] tabular-nums">
           {formatDate(o.moment)}
         </span>
       ),
@@ -590,7 +608,7 @@ export default function PurchaseOrdersPage() {
             {o.agent.name}
           </a>
           {o.agent.legalTitle && (
-            <div className="max-w-[280px] truncate text-[var(--ms-text-muted)] text-xs">
+            <div className="max-w-[280px] truncate text-[var(--ms-text-muted)] text-[11px]">
               {o.agent.legalTitle}
             </div>
           )}
@@ -766,25 +784,30 @@ export default function PurchaseOrdersPage() {
     // Status & positions — kept available in the column customizer for
     // power users who want them, but hidden by default to match moysklad.
     {
+      // moysklad parity: «Статус» column = the account-defined CUSTOM status
+      // (coloured pill), NOT the FSM state. Grey «Status» placeholder until one is
+      // assigned. Posting lives in «Проведено», not here. Mirror demands/CO.
       key: 'state',
       header: tFields('state'),
       width: '170px',
-      sortable: true,
-      cell: (o) => (
-        <Badge tone={documentStateTone(o.state)}>
-          {tStates(
-            o.state as
-              | 'draft'
-              | 'sent'
-              | 'confirmed'
-              | 'partially_received'
-              | 'fully_received'
-              | 'closed'
-              | 'cancelled',
-          )}
-        </Badge>
-      ),
-      cellText: (r) => r.state,
+      cell: (o) =>
+        o.status ? (
+          <span
+            className="inline-flex items-center whitespace-nowrap rounded-[3px] px-2 py-0.5 font-medium text-white text-xs"
+            style={{ backgroundColor: o.status.color ?? 'var(--ms-text-muted)' }}
+            data-test-id="po-status-pill"
+          >
+            {o.status.name}
+          </span>
+        ) : (
+          <span
+            className="inline-flex items-center whitespace-nowrap rounded-[3px] bg-[var(--ms-bg-muted)] px-2 py-0.5 text-[var(--ms-text-muted)] text-xs"
+            data-test-id="po-status-placeholder"
+          >
+            {tFields('custom_status_placeholder')}
+          </span>
+        ),
+      cellText: (r) => r.status?.name ?? '',
     },
     {
       key: 'positions',
@@ -818,8 +841,8 @@ export default function PurchaseOrdersPage() {
   const hasFilter =
     !!search ||
     !!stateFilter ||
-    !!filterValues.agentId ||
-    !!filterValues.organizationId ||
+    agents.length > 0 ||
+    organizations.length > 0 ||
     stores.length > 0 ||
     owners.length > 0 ||
     !!filterValues.applicable ||
@@ -861,6 +884,8 @@ export default function PurchaseOrdersPage() {
     // accounts / contract·project / delivery+updated dates — previously
     // EVERYTHING except the date was silently dropped on save.
     p.set('fv', JSON.stringify(filterValues));
+    if (agents.length) p.set('agents', JSON.stringify(agents));
+    if (organizations.length) p.set('organizations', JSON.stringify(organizations));
     if (agentGroups.length) p.set('agentGroups', JSON.stringify(agentGroups));
     if (agentOwners.length) p.set('agentOwners', JSON.stringify(agentOwners));
     if (stores.length) p.set('stores', JSON.stringify(stores));
@@ -907,6 +932,8 @@ export default function PurchaseOrdersPage() {
         return [];
       }
     };
+    setAgents(parseList('agents'));
+    setOrganizations(parseList('organizations'));
     setAgentGroups(parseList('agentGroups'));
     setAgentOwners(parseList('agentOwners'));
     setStores(parseList('stores'));
@@ -946,6 +973,8 @@ export default function PurchaseOrdersPage() {
       }}
       onClear={() => {
         setFilterValues({});
+        setAgents([]);
+        setOrganizations([]);
         setAgentGroups([]);
         setAgentOwners([]);
         setStores([]);
@@ -1144,20 +1173,35 @@ export default function PurchaseOrdersPage() {
           testId="filter-project"
         />
       </InlineFilterPanel.Field>
-      {/* 9. Контрагент */}
+      {/* 9. Контрагент — moysklad-parity inline multi-select checkbox dropdown:
+          type a name OR phone, results appear inline (each row shows the phone
+          as a sublabel), tick as many as needed. Was a single-select modal. */}
       <InlineFilterPanel.Field label={tFields('agent')} expandable>
-        <CatalogPickerField
-          value={
-            filterValues.agentId
-              ? { id: filterValues.agentId, label: filterValues.agentLabel ?? filterValues.agentId }
-              : null
-          }
-          placeholder=""
-          onPick={() => setPickerOpen('agent')}
-          onClear={() => {
-            setFilterValues({ ...filterValues, agentId: undefined, agentLabel: undefined });
+        <MultiCombobox
+          value={agents.map((x) => x.id)}
+          items={agents.map((x) => ({ value: x.id, label: x.label }))}
+          onSearch={async (q) => {
+            const r = await api.get<{
+              items: { id: string; name: string; phone?: string | null }[];
+            }>(`/counterparties?search=${encodeURIComponent(q)}&limit=20`);
+            return r.items.map((x) => ({
+              value: x.id,
+              label: x.name,
+              sublabel: x.phone || undefined,
+            }));
+          }}
+          onChange={(nextIds, toggled) => {
+            setAgents((prev) =>
+              nextIds.map((id) => {
+                const ex = prev.find((s) => s.id === id);
+                if (ex) return ex;
+                if (toggled?.value === id) return { id, label: String(toggled.label) };
+                return { id, label: id };
+              }),
+            );
             onResetCursor();
           }}
+          placeholder=""
           testId="filter-agent"
         />
       </InlineFilterPanel.Field>
@@ -1199,7 +1243,7 @@ export default function PurchaseOrdersPage() {
               : null
           }
           placeholder=""
-          onPick={() => filterValues.agentId && setPickerOpen('agentAccount')}
+          onPick={() => agents[0]?.id && setPickerOpen('agentAccount')}
           onClear={() => {
             setFilterValues({
               ...filterValues,
@@ -1208,7 +1252,7 @@ export default function PurchaseOrdersPage() {
             });
             onResetCursor();
           }}
-          disabled={!filterValues.agentId}
+          disabled={!agents[0]?.id}
           disabledHint={t('filter_agent_account_disabled_hint')}
           testId="filter-agent-account"
         />
@@ -1265,27 +1309,30 @@ export default function PurchaseOrdersPage() {
           testId="filter-agent-owner"
         />
       </InlineFilterPanel.Field>
-      {/* 14. Организация */}
+      {/* 14. Организация — moysklad-parity inline multi-select checkbox dropdown
+          (was a single-select modal). */}
       <InlineFilterPanel.Field label={tFields('organization')} expandable>
-        <CatalogPickerField
-          value={
-            filterValues.organizationId
-              ? {
-                  id: filterValues.organizationId,
-                  label: filterValues.organizationLabel ?? filterValues.organizationId,
-                }
-              : null
-          }
-          placeholder=""
-          onPick={() => setPickerOpen('org')}
-          onClear={() => {
-            setFilterValues({
-              ...filterValues,
-              organizationId: undefined,
-              organizationLabel: undefined,
-            });
+        <MultiCombobox
+          value={organizations.map((x) => x.id)}
+          items={organizations.map((x) => ({ value: x.id, label: x.label }))}
+          onSearch={async (q) => {
+            const r = await api.get<{ items: { id: string; name: string }[] }>(
+              `/organizations?search=${encodeURIComponent(q)}&limit=20`,
+            );
+            return r.items.map((x) => ({ value: x.id, label: x.name }));
+          }}
+          onChange={(nextIds, toggled) => {
+            setOrganizations((prev) =>
+              nextIds.map((id) => {
+                const ex = prev.find((s) => s.id === id);
+                if (ex) return ex;
+                if (toggled?.value === id) return { id, label: String(toggled.label) };
+                return { id, label: id };
+              }),
+            );
             onResetCursor();
           }}
+          placeholder=""
           testId="filter-org"
         />
       </InlineFilterPanel.Field>
@@ -1302,7 +1349,7 @@ export default function PurchaseOrdersPage() {
               : null
           }
           placeholder=""
-          onPick={() => filterValues.organizationId && setPickerOpen('orgAccount')}
+          onPick={() => organizations[0]?.id && setPickerOpen('orgAccount')}
           onClear={() => {
             setFilterValues({
               ...filterValues,
@@ -1311,7 +1358,7 @@ export default function PurchaseOrdersPage() {
             });
             onResetCursor();
           }}
-          disabled={!filterValues.organizationId}
+          disabled={!organizations[0]?.id}
           disabledHint={t('filter_org_account_disabled_hint')}
           testId="filter-org-account"
         />
@@ -1508,7 +1555,7 @@ export default function PurchaseOrdersPage() {
       key: 'delete',
       label: t('bulk_delete'),
       destructive: true,
-      disabled: bulkAnyPending,
+      disabled: bulkAnyPending || selectedCount === 0,
       onClick: async () => {
         const ok = await confirm({
           title: t('bulk_delete_confirm', { count: selectedCount }),
@@ -1521,25 +1568,31 @@ export default function PurchaseOrdersPage() {
     {
       key: 'clone',
       label: t('bulk_clone'),
-      disabled: bulkAnyPending,
+      disabled: bulkAnyPending || selectedCount === 0,
       onClick: () => bulkClone.mutate(selectedIdsArray),
     },
     {
       key: 'mass-edit',
       label: t('bulk_mass_edit'),
-      // Audit 2026-05-29: moysklad metadata.json marks Массовое редактирование
-      // as enabled when ≥1 row is selected — backend endpoint exists, the
-      // page already owns the MassEditModal (see bottom of JSX tree).
+      // moysklad parity (owner 2026-07-09): «Массовое редактирование» is ALWAYS
+      // enabled — with 0 rows ticked moysklad applies it to every document in
+      // the current filter. V1 falls back to the loaded page's rows (≤100 =
+      // the BE MassEditBaseSchema ids cap); full-filter sweep is follow-up.
       disabled: bulkAnyPending,
       onClick: () => {
-        setMassEditIds(selectedIdsArray);
-        setMassEditOpen(true);
+        stashBulkEdit({
+          entity: 'purchase-orders',
+          ids:
+            selectedIdsArray.length > 0 ? selectedIdsArray : (data?.items ?? []).map((o) => o.id),
+          from: '/purchase-orders',
+        });
+        router.push('/bulk-edit');
       },
     },
     {
       key: 'post',
       label: t('bulk_post'),
-      disabled: bulkAnyPending,
+      disabled: bulkAnyPending || selectedCount === 0,
       onClick: async () => {
         const ok = await confirm({
           title: t('bulk_post_confirm', { count: selectedCount }),
@@ -1551,7 +1604,7 @@ export default function PurchaseOrdersPage() {
     {
       key: 'unpost',
       label: t('bulk_unpost'),
-      disabled: bulkAnyPending,
+      disabled: bulkAnyPending || selectedCount === 0,
       onClick: async () => {
         const ok = await confirm({
           title: t('bulk_unpost_confirm', { count: selectedCount }),
@@ -1572,13 +1625,13 @@ export default function PurchaseOrdersPage() {
     {
       key: 'set-waiting',
       label: t('bulk_set_waiting'),
-      disabled: bulkAnyPending,
+      disabled: bulkAnyPending || selectedCount === 0,
       onClick: () => bulkSetWaiting.mutate({ ids: selectedIdsArray, waiting: true }),
     },
     {
       key: 'clear-waiting',
       label: t('bulk_clear_waiting'),
-      disabled: bulkAnyPending,
+      disabled: bulkAnyPending || selectedCount === 0,
       onClick: () => bulkSetWaiting.mutate({ ids: selectedIdsArray, waiting: false }),
     },
   ];
@@ -1636,7 +1689,19 @@ export default function PurchaseOrdersPage() {
     {
       id: 'orders-list',
       label: t('print_orders_list'),
-      onSelect: () => window.print(),
+      // moysklad «Список заказов» — open the whole (filtered) list as a real PDF
+      // in a NEW TAB. The server renders it (title + «Создал …» + bordered table)
+      // and serves it INLINE, so the browser's native PDF viewer shows it with
+      // page thumbnails, navigation and print/download — 1:1 with moysklad's
+      // report-*.pdf. `access_token` in the URL because a top-level navigation
+      // sends no bearer header (same pattern as authed <img> URLs). Forwards the
+      // current filter+sort; the report fetches every matching row.
+      onSelect: () => {
+        const token = getAccessToken();
+        const qs = new URLSearchParams(params);
+        if (token) qs.set('access_token', token);
+        window.open(`/api/v1/purchase-orders/list-report?${qs.toString()}`, '_blank');
+      },
     },
     // moysklad-parity: the account's own «Заказ поставщику» print forms,
     // isDefault first. Empty for accounts with no custom templates.
@@ -1721,7 +1786,10 @@ export default function PurchaseOrdersPage() {
   // is selected (bulk actions need a selection), matching moysklad.
   const editMenuConfig = {
     label: t('bulk_change'),
-    disabled: selectedCount === 0,
+    // moysklad parity (owner 2026-07-09): the «Изменить» trigger is ALWAYS
+    // enabled — selection-dependent ITEMS grey out individually instead
+    // (Массовое редактирование stays active even at 0 selected).
+    disabled: false,
     items: changeMenuItems.map((it) => ({
       id: it.key,
       label: it.label,
@@ -1822,56 +1890,21 @@ export default function PurchaseOrdersPage() {
         onColumnResize={colWidths.set}
       />
 
-      <CatalogPicker
-        open={pickerOpen === 'agent'}
-        onClose={() => setPickerOpen(null)}
-        title={tFields('supplier')}
-        fetcher={async (q): Promise<PickerItem[]> => {
-          const r = await api.get<{ items: { id: string; name: string }[] }>(
-            `/counterparties?search=${encodeURIComponent(q)}&limit=20`,
-          );
-          return r.items.map((x) => ({ id: x.id, primary: x.name }));
-        }}
-        onSelect={(item) => {
-          setFilterValues({
-            ...filterValues,
-            agentId: item.id,
-            agentLabel: String(item.primary),
-          });
-          onResetCursor();
-        }}
-      />
-      <CatalogPicker
-        open={pickerOpen === 'org'}
-        onClose={() => setPickerOpen(null)}
-        title={tFields('organization')}
-        fetcher={async (q): Promise<PickerItem[]> => {
-          const r = await api.get<{ items: { id: string; name: string }[] }>(
-            `/organizations?search=${encodeURIComponent(q)}&limit=20`,
-          );
-          return r.items.map((x) => ({ id: x.id, primary: x.name }));
-        }}
-        onSelect={(item) => {
-          setFilterValues({
-            ...filterValues,
-            organizationId: item.id,
-            organizationLabel: String(item.primary),
-          });
-          onResetCursor();
-        }}
-      />
+      {/* «Контрагент» / «Организация» are now inline MultiCombobox dropdowns
+          (see the filter panel above) — their old single-select modals are gone. */}
       <CatalogPicker
         open={pickerOpen === 'agentAccount'}
         onClose={() => setPickerOpen(null)}
         title={t('filter_agent_account')}
         fetcher={async (q): Promise<PickerItem[]> => {
-          if (!filterValues.agentId) return [];
+          const scopedAgentId = agents[0]?.id;
+          if (!scopedAgentId) return [];
           // moysklad parity: counterparty bank accounts have only the nested
           // /counterparties/:id/bank-accounts route (raw array, no search param) —
           // mirror the detail-form agentAccountFetcher and client-filter by search.
           const d = await api.get<
             Array<{ id: string; accountNumber: string; bankName: string | null }>
-          >(`/counterparties/${filterValues.agentId}/bank-accounts`);
+          >(`/counterparties/${scopedAgentId}/bank-accounts`);
           const k = q.trim().toLowerCase();
           return d
             .filter(
@@ -1900,13 +1933,14 @@ export default function PurchaseOrdersPage() {
         onClose={() => setPickerOpen(null)}
         title={t('filter_org_account')}
         fetcher={async (q): Promise<PickerItem[]> => {
-          if (!filterValues.organizationId) return [];
+          const scopedOrgId = organizations[0]?.id;
+          if (!scopedOrgId) return [];
           // moysklad parity: organization accounts come from the flat
           // /organization-accounts?organizationId= route (mirror the detail-form
           // organizationAccountFetcher). Default accounts have accountNumber=null,
           // so fall back to the account name for the headline.
           const params = new URLSearchParams({ search: q, limit: '50' });
-          params.set('organizationId', filterValues.organizationId);
+          params.set('organizationId', scopedOrgId);
           const r = await api.get<{
             items: {
               id: string;
@@ -1972,6 +2006,8 @@ export default function PurchaseOrdersPage() {
         projectValue={massEditProject}
         onProjectPick={() => setPickerOpen('massEditProject')}
         onProjectClear={() => setMassEditProject(null)}
+        groupOptions={(massGroupsData?.items ?? []).map((g) => ({ value: g.id, label: g.name }))}
+        showShared
         labels={{
           title: t('mass_edit_title'),
           ownerLabel: tFilters('owner_employee'),
@@ -1980,6 +2016,10 @@ export default function PurchaseOrdersPage() {
           apply: t('mass_edit_apply'),
           cancel: t('mass_edit_cancel'),
           hint: t('mass_edit_hint', { count: massEditIds.length }),
+          groupLabel: tMass('group_label'),
+          sharedLabel: tMass('shared_label'),
+          sharedYes: tMass('shared_yes'),
+          sharedNo: tMass('shared_no'),
         }}
         onSubmit={async (patch) => {
           await bulk.massEdit.mutateAsync({ ids: massEditIds, ...patch });

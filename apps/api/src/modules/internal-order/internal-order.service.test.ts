@@ -94,7 +94,10 @@ function makePrismaMock(state: { rows: Row[] }) {
     create,
     update,
     count: vi.fn(),
-    findMany: vi.fn(),
+    // allocateDocumentNumber's seed closure reads the current max via findMany
+    // (select {name}) — must return an iterable (was a bare vi.fn() → undefined
+    // → "rows is not iterable" in every create test).
+    findMany: vi.fn(async () => state.rows),
   };
   const internalOrderPosition = { createMany, deleteMany };
   const auditLog = { create: vi.fn() };
@@ -121,17 +124,21 @@ function makePrismaMock(state: { rows: Row[] }) {
 
 describe('InternalOrderService', () => {
   describe('create', () => {
-    it('rejects when positions array is empty', async () => {
+    // Owner 2026-07-08: «Проведено» has NO position precondition — an EMPTY
+    // document may be saved (0 positions ⇒ 0 sum). The old rejects-on-empty
+    // expectation only "passed" via an unrelated mock TypeError (findMany
+    // returned undefined inside the numbering seed) — fixed alongside the mock.
+    it('creates an empty document (0 positions ⇒ 0 sum)', async () => {
       const state = { rows: [] as Row[] };
       const prisma = makePrismaMock(state);
       const svc = new InternalOrderService({ client: prisma.client } as never);
-      await expect(
-        svc.create('acc-1', 'emp-1', {
-          organizationId: '00000000-0000-0000-0000-000000000010',
-          storeId: '00000000-0000-0000-0000-000000000020',
-          positions: [],
-        }),
-      ).rejects.toThrow();
+      await svc.create('acc-1', 'emp-1', {
+        organizationId: '00000000-0000-0000-0000-000000000010',
+        storeId: '00000000-0000-0000-0000-000000000020',
+        positions: [],
+      });
+      expect(state.rows[0]?.sumMinor).toBe(0n);
+      expect(state.rows[0]?.state).toBe('draft');
     });
 
     it('computes sum from positions (price × quantity)', async () => {

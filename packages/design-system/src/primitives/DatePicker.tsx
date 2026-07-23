@@ -161,7 +161,7 @@ export function DatePicker({
             data-testid={testId}
             disabled={disabled}
             className={cn(
-              'inline-flex h-[var(--ms-control-h)] w-full items-center justify-between gap-2 px-2 text-[12px]',
+              'inline-flex h-[var(--ms-control-h)] w-full items-center justify-between gap-2 px-2 text-[13px]',
               'border bg-[var(--ms-bg-surface)] text-left text-[var(--ms-text-primary)]',
               'transition-colors duration-[var(--ms-duration-fast)]',
               'focus-visible:outline-none focus-visible:border-[var(--ms-border-focus)]',
@@ -325,6 +325,16 @@ export function formatIso(d: Date): string {
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
+}
+
+/**
+ * Today's LOCAL calendar date as 'YYYY-MM-DD'. Never derive this via
+ * `toISOString().slice(0, 10)` — toISOString is UTC, so a local-midnight Date
+ * in UTC+5 serialises as 19:00 of the PREVIOUS day and «Сегодня» lands one
+ * day behind (owner bug report 2026-07-11).
+ */
+export function todayIso(): string {
+  return formatIso(new Date());
 }
 
 function formatPretty(d: Date, locale: string): string {

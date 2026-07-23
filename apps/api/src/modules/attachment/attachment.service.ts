@@ -111,14 +111,9 @@ export class AttachmentService {
    * the document through a print template and attaches it. Bypasses the base64
    * upload path but shares the same 10 MB cap + blob-in-DB storage as {@link upload}.
    */
-  /**
-   * userId `null` bo'lishi mumkin (2026-07-13): Telegram webhook'i orqali kelgan
-   * fayl HECH QANDAY xodim tomonidan yuklanmagan — uni mijozning o'zi yuborgan.
-   * DB'da `uploader_id` allaqachon nullable, shuning uchun bu xavfsiz.
-   */
   async createFromBuffer(
     accountId: string,
-    userId: string | null,
+    userId: string,
     params: {
       entity: AttachmentEntity;
       entityId: string;

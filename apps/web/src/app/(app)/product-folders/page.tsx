@@ -269,7 +269,7 @@ export default function ProductFoldersPage() {
   };
 
   return (
-    <Container size="full" className="space-y-4 py-4" data-test-id="product-folders-page">
+    <Container className="space-y-4 py-4" data-test-id="product-folders-page">
       <PageHeader
         title={t('title')}
         subtitle={data ? tCommon('records_count', { count: data.total }) : undefined}

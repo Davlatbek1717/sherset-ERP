@@ -167,7 +167,7 @@ export default function FilesPage() {
   const liveCursor = extraItems.length > 0 ? extraCursor : (data?.nextCursor ?? null);
 
   return (
-    <Container size="full" className="space-y-6 py-4">
+    <Container size="lg" className="space-y-6 py-4">
       {/* Page-level tab strip (Показатели / … / Файлы) */}
       <HomepageTabs activeKey="files" />
 
@@ -252,7 +252,7 @@ export default function FilesPage() {
                   </td>
                   <td className="px-3 py-2 text-[var(--ms-text-secondary)]">
                     <span>{t(`entities.${f.entity}`)}</span>
-                    <span className="ml-1 text-[var(--ms-text-muted)] text-xs tabular-nums">
+                    <span className="ml-1 text-[var(--ms-text-muted)] text-[12px] tabular-nums">
                       #{f.entityId.slice(0, 8)}
                     </span>
                   </td>
@@ -265,7 +265,7 @@ export default function FilesPage() {
                   <td className="max-w-[240px] truncate px-3 py-2 text-[var(--ms-text-muted)]">
                     {f.description ?? '—'}
                   </td>
-                  <td className="px-3 py-2 text-[var(--ms-text-muted)] text-xs tabular-nums">
+                  <td className="px-3 py-2 text-[var(--ms-text-muted)] text-[12px] tabular-nums">
                     {formatDateTime(f.createdAt)}
                   </td>
                   <td className="max-w-[160px] truncate px-3 py-2 text-[var(--ms-text-muted)]">

@@ -29,37 +29,36 @@ describe('DetailContentTabs', () => {
     vi.clearAllMocks();
   });
 
-  it('renders ONLY the positions + related tabs (files/history are not tabs)', () => {
+  it('renders the moysklad new-design FIVE tabs (files/tasks/events are tabs)', () => {
     renderWithProviders(
       <DetailContentTabs {...baseProps} filesSlot={<div data-test-id="files-body">Files</div>} />,
     );
     expect(screen.getByTestId('tab-positions')).toBeInTheDocument();
     expect(screen.getByTestId('tab-related')).toBeInTheDocument();
-    // moysklad: Файлы / Изменения are inline bottom sections, NOT tab triggers.
-    expect(screen.queryByTestId('tab-files')).toBeNull();
-    expect(screen.queryByTestId('tab-history')).toBeNull();
+    expect(screen.getByTestId('tab-files')).toBeInTheDocument();
+    expect(screen.getByTestId('tab-tasks')).toBeInTheDocument();
+    expect(screen.getByTestId('tab-events')).toBeInTheDocument();
   });
 
-  it('renders the filesSlot as an inline bottom section (no tab click needed)', () => {
+  it('renders the filesSlot inside the «Файлы» tab', async () => {
+    const user = userEvent.setup();
     renderWithProviders(
       <DetailContentTabs {...baseProps} filesSlot={<div data-test-id="files-body">Files</div>} />,
     );
+    await user.click(screen.getByTestId('tab-files'));
     expect(screen.getByTestId('detail-files-section')).toBeInTheDocument();
     expect(screen.getByTestId('files-body')).toBeInTheDocument();
   });
 
-  it('omits the files section when filesSlot is omitted; history section present by default', () => {
-    renderWithProviders(<DetailContentTabs {...baseProps} />);
-    expect(screen.queryByTestId('detail-files-section')).toBeNull();
-    expect(screen.getByTestId('detail-history-section')).toBeInTheDocument();
-  });
-
-  it('hides the inline history section when historyInline={false} (page shows it top-right)', () => {
+  it('accepts historyInline (compat) — history lives in the «События» tab now', async () => {
+    const user = userEvent.setup();
     renderWithProviders(<DetailContentTabs {...baseProps} historyInline={false} />);
-    expect(screen.queryByTestId('detail-history-section')).toBeNull();
+    await user.click(screen.getByTestId('tab-events'));
+    expect(screen.getByTestId('detail-events-section')).toBeInTheDocument();
   });
 
-  it('renders the tasksSlot as an inline bottom section above files', () => {
+  it('renders the tasksSlot inside the «Задачи» tab', async () => {
+    const user = userEvent.setup();
     renderWithProviders(
       <DetailContentTabs
         {...baseProps}
@@ -67,6 +66,7 @@ describe('DetailContentTabs', () => {
         filesSlot={<div data-test-id="files-body">Files</div>}
       />,
     );
+    await user.click(screen.getByTestId('tab-tasks'));
     expect(screen.getByTestId('detail-tasks-section')).toBeInTheDocument();
     expect(screen.getByTestId('tasks-body')).toBeInTheDocument();
   });

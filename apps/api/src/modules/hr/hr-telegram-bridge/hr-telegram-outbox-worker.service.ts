@@ -24,18 +24,8 @@ import { isExhausted, nextRetryAt } from './retry-backoff.util.js';
 @Injectable()
 export class HrTelegramOutboxWorker {
   private readonly logger = new Logger(HrTelegramOutboxWorker.name);
+  private static readonly MAX_PER_TICK = 50;
   private running = false;
-
-  /**
-   * Har tick'da ko'pi bilan shuncha qator olinadi (ban-himoya, 2026-07-21:
-   * partiyani cheklaydi). ASOSIY tezlik-chegara endi mtproto-worker'ning
-   * har-send `pace()` throttle'ida (akkaunt bo'yicha ~3s) — bu faqat bitta
-   * tick qancha qatorni "band qilishini" cheklaydi (qisqaroq tick = restartga
-   * chidamli). Default 10, `TELEGRAM_OUTBOX_MAX_PER_TICK` bilan sozlanadi.
-   */
-  private maxPerTick(): number {
-    return Number(process.env.TELEGRAM_OUTBOX_MAX_PER_TICK) || 10;
-  }
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -66,7 +56,7 @@ export class HrTelegramOutboxWorker {
         OR: [{ status: 'pending' }, { status: 'retry', nextRetryAt: { lte: now } }],
       },
       orderBy: { createdAt: 'asc' },
-      take: this.maxPerTick(),
+      take: HrTelegramOutboxWorker.MAX_PER_TICK,
     });
 
     let sent = 0;
@@ -87,7 +77,6 @@ export class HrTelegramOutboxWorker {
           accountId: row.accountId,
           toPhone: row.toPhone,
           text: row.messageText,
-          sourceEventType: row.sourceEventType,
         });
         await this.prisma.client.hrTelegramOutbox.update({
           where: { id: row.id },

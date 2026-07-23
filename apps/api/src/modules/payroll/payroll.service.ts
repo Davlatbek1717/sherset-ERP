@@ -54,6 +54,7 @@ export class PayrollService {
       ...(filter.includeDeleted ? {} : { deletedAt: null }),
       ...(filter.state ? { state: filter.state } : {}),
       ...(filter.organizationId ? { organizationId: filter.organizationId } : {}),
+      ...(filter.organizationIds ? { organizationId: { in: filter.organizationIds } } : {}),
       ...(filter.employeeId ? { employeeId: filter.employeeId } : {}),
       ...(filter.ownerId ? { ownerId: filter.ownerId } : {}),
       ...(filter.applicable !== undefined ? { applicable: filter.applicable } : {}),
@@ -317,13 +318,20 @@ export class PayrollService {
     accountId: string,
     userId: string,
     id: string,
-    patch: { ownerId?: string | null; description?: string | null },
+    patch: {
+      ownerId?: string | null;
+      description?: string | null;
+      groupId?: string | null;
+      shared?: boolean;
+    },
   ) {
     await this.findById(accountId, id);
     await assertMassEditRefsInTenant(this.prisma, accountId, patch);
     const data: Record<string, unknown> = {};
     if ('ownerId' in patch) data.ownerId = patch.ownerId;
     if ('description' in patch) data.description = patch.description;
+    if ('groupId' in patch) data.groupId = patch.groupId;
+    if ('shared' in patch && patch.shared !== undefined) data.shared = patch.shared;
     const updated = await this.prisma.client.payroll.update({ where: { id, accountId }, data });
     await this.prisma.client.auditLog.create({
       data: {

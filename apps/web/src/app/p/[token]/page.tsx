@@ -14,7 +14,7 @@
  * leakage of doc internals.
  */
 
-import { Input } from '@moysklad/ui';
+import { PasswordInput } from '@moysklad/ui';
 import { useParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
@@ -128,11 +128,11 @@ export default function PublicViewerPage() {
       <div className="mx-auto max-w-2xl px-4 py-12">
         <div className="mb-6 flex items-center justify-between">
           <div className="font-medium text-slate-700 text-sm">Public hujjat</div>
-          <div className="text-slate-400 text-xs">Sherset</div>
+          <div className="text-slate-400 text-xs">moysklad clone</div>
         </div>
 
         {state.kind === 'loading' && (
-          <div className="rounded-lg border border-slate-200 bg-white p-8 text-center text-slate-500">
+          <div className="rounded-lg border border-[var(--ms-border-default)] bg-white p-8 text-center text-slate-500">
             Yuklanmoqda…
           </div>
         )}
@@ -153,15 +153,16 @@ export default function PublicViewerPage() {
         {state.kind === 'password-prompt' && (
           <form
             onSubmit={submitPassword}
-            className="rounded-lg border border-slate-200 bg-white p-8"
+            className="rounded-lg border border-[var(--ms-border-default)] bg-white p-8"
           >
             <div className="mb-4 text-center">
               <div className="mx-auto mb-3 text-4xl">🔒</div>
               <h1 className="font-semibold text-lg text-slate-800">Parol bilan himoyalangan</h1>
               <p className="mt-1 text-slate-500 text-sm">Bu havolani ochish uchun parol kerak</p>
             </div>
-            <Input
-              type="password"
+            {/* Public page — no i18n bundle here; the PasswordInput eye-toggle
+                keeps its Uzbek defaults (page copy is Uzbek-hardcoded too). */}
+            <PasswordInput
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Parol"
@@ -179,8 +180,8 @@ export default function PublicViewerPage() {
         )}
 
         {state.kind === 'ready' && (
-          <div className="space-y-4 rounded-lg border border-slate-200 bg-white p-8">
-            <div className="border-slate-200 border-b pb-4">
+          <div className="space-y-4 rounded-lg border border-[var(--ms-border-default)] bg-white p-8">
+            <div className="border-[var(--ms-border-default)] border-b pb-4">
               <div className="text-slate-400 text-xs uppercase tracking-wide">
                 {TARGET_LABEL[state.meta.targetType] ?? state.meta.targetType}
               </div>
@@ -215,7 +216,9 @@ export default function PublicViewerPage() {
           </div>
         )}
 
-        <div className="mt-6 text-center text-slate-400 text-xs">Powered by Sherset · UZ</div>
+        <div className="mt-6 text-center text-slate-400 text-xs">
+          Powered by moysklad clone · UZ
+        </div>
       </div>
     </div>
   );

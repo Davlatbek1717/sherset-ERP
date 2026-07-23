@@ -25,6 +25,13 @@ export const AdminAuditLogFilterSchema = z.object({
   entity: z.string().max(100).optional(),
   entityId: z.string().uuid().optional(),
   userId: z.string().uuid().optional(),
+  /**
+   * moysklad employee-card «История изменений»: everything the employee DID
+   * (they are the acting userId — sales, returns, edits…) OR that was done
+   * TO their employee record (entity='employee' & entityId=them). OR-combined
+   * server-side; both branches are index-backed.
+   */
+  aboutEmployee: z.string().uuid().optional(),
   action: z.string().max(100).optional(),
   /** Free-text search across `entity` + `action`. */
   search: z.string().max(100).optional(),

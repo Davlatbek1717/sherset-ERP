@@ -1,2 +1,2 @@
 export { Icons, type IconName } from './action-icons.ts';
-export { ShersetLogo } from './ShersetLogo.tsx';
+export { MoyskladLogo } from './MoyskladLogo.tsx';

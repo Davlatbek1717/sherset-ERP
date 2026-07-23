@@ -32,36 +32,14 @@ try {
       await page.goto(`${BASE}/${slug}`, { waitUntil: 'domcontentloaded' });
       await page.locator('thead th').first().waitFor({ timeout: 60000 });
       await page.waitForTimeout(1200);
-      // ensure the filter panel is OPEN (most default-closed). Click «Фильтр»;
-      // if already open clicking once more is fine — we then scan ALL selects.
-      const filterBtn = page.getByRole('button', { name: 'Фильтр', exact: true }).first();
-      if (await filterBtn.isVisible().catch(() => false)) {
-        await filterBtn.click().catch(() => {});
-        await page.waitForTimeout(700);
-        // if a boolean select still isn't in the DOM, the click may have CLOSED
-        // an already-open panel — toggle back open.
-        const present = await page.evaluate(() =>
-          [...document.querySelectorAll('select')].some((s) =>
-            [...s.options].map((o) => (o.textContent || '').trim()).join('|').match(/Нет\|Да|—\|✓/),
-          ),
-        );
-        if (!present) {
-          await filterBtn.click().catch(() => {});
-          await page.waitForTimeout(700);
-        }
-      }
-      // scan EVERY select for the boolean yes/no pattern (testid-independent):
-      // PASS if a ["", "Нет", "Да"] select exists and NO ["", "—", "✓"] remains.
-      const scan = await page.evaluate(() => {
-        const sigs = [...document.querySelectorAll('select')].map((s) =>
-          [...s.options].map((o) => (o.textContent || '').trim()).join('|'),
-        );
-        return {
-          hasNetDa: sigs.some((x) => x === '|Нет|Да'),
-          hasDash: sigs.some((x) => x === '|—|✓'),
-        };
+      // open filter if there is a «Фильтр» toggle (some default-closed)
+      await page.getByRole('button', { name: 'Фильтр', exact: true }).first().click().catch(() => {});
+      await page.waitForTimeout(900);
+      const opts = await page.evaluate(() => {
+        const sel = document.querySelector('[data-test-id="filter-applicable"]');
+        return sel ? [...sel.options].map((o) => (o.textContent || '').trim()) : null;
       });
-      out.pages[slug] = scan.hasNetDa && !scan.hasDash ? ['', 'Нет', 'Да'] : scan;
+      out.pages[slug] = opts;
     } catch (e) {
       out.pages[slug] = `ERR ${String(e).slice(0, 80)}`;
     }

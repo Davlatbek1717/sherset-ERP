@@ -1,6 +1,7 @@
 'use client';
 
 import { ColumnSettings } from '@/components/column-settings';
+import { SavedFiltersPills } from '@/components/customer-orders/saved-filters-pills';
 import { FilterToggleButton } from '@/components/filters/filter-toggle-button';
 import { MoveBulkActionsDropdown } from '@/components/moves/bulk-actions-dropdown';
 import { MovePrintDropdown } from '@/components/moves/print-dropdown';
@@ -8,6 +9,7 @@ import { useBulkDocumentActions } from '@/hooks/use-bulk-actions';
 import { useColumnVisibility } from '@/hooks/use-column-visibility';
 import { useColumnWidths } from '@/hooks/use-column-widths';
 import { api } from '@/lib/api-client';
+import { stashBulkEdit } from '@/lib/bulk-edit-nav';
 import { documentStateTone } from '@/lib/document-state-tone';
 import {
   Badge,
@@ -19,6 +21,7 @@ import {
   InlineFilterPanel,
   ListView,
   MassEditModal,
+  MultiCombobox,
   NativeSelect,
   PeriodInputs,
   PeriodShortcuts,
@@ -33,6 +36,7 @@ import {
 } from '@moysklad/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
+import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 
 interface MoveRow {
@@ -167,12 +171,16 @@ type ExtraFilterFields = {
   modifiedByLabel?: string;
 };
 
+/** Multi-select reference field — moysklad checkbox-dropdown holds {id,label}[]. */
+type RefMulti = { id: string; label: string };
+
 export default function MovesPage() {
   const t = useTranslations('pages.moves');
   const tPO = useTranslations('pages.purchase_orders');
   const tCommon = useTranslations('common');
   const tFields = useTranslations('fields');
   const tFilters = useTranslations('filters');
+  const tMass = useTranslations('mass_edit_modal');
   const tStates = useTranslations('states.move');
 
   const [searchInput, setSearchInput] = useState('');
@@ -180,6 +188,10 @@ export default function MovesPage() {
   const [stateFilter, setStateFilter] = useState<string | null>(null);
   const [cursor, setCursor] = useState<string | undefined>();
   const [filterValues, setFilterValues] = useState<FilterDrawerValues & ExtraFilterFields>({});
+  // «Организация» — moysklad-parity inline multi-select checkbox dropdown
+  // (MultiCombobox), replacing the single-select catalog modal. Holds the
+  // picked {id,label} pairs; on the wire they go out as `organizationIds` CSV.
+  const [organizations, setOrganizations] = useState<RefMulti[]>([]);
   const [filterOpen, setFilterOpen] = useState(true);
   const [pickerOpen, setPickerOpen] = useState<
     | null
@@ -187,7 +199,6 @@ export default function MovesPage() {
     | 'destinationStore'
     | 'stockStore'
     | 'product'
-    | 'org'
     | 'owner'
     | 'group'
     | 'project'
@@ -198,11 +209,98 @@ export default function MovesPage() {
   const [sortKey, setSortKey] = useState<string>('moment');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
+  // 🔖 «Закладки» (saved filters) + ⚙ field-visibility — moysklad's two round
+  // buttons next to «Очистить» (both were dead placeholders; owner report
+  // 2026-07-14 band 1). Mirrors picking-waves (b2f7d774).
+  const [saveFilterOpen, setSaveFilterOpen] = useState(false);
+  // Semantics: the stored key set = HIDDEN filter fields (default empty ⇒ all shown).
+  const filterHidden = useColumnVisibility('moves-filter-hidden', []);
+  // Serialize the ENTIRE current filter state (ids + labels, so a restored
+  // bookmark shows proper pill labels, not bare ids).
+  const savedFilterQuery = (() => {
+    const p = new URLSearchParams();
+    const put = (k: string, v: string | undefined) => {
+      if (v) p.set(k, v);
+    };
+    put('momentFrom', filterValues.momentFrom);
+    put('momentTo', filterValues.momentTo);
+    put('updatedFrom', filterValues.updatedFrom);
+    put('updatedTo', filterValues.updatedTo);
+    put('state', stateFilter ?? undefined);
+    put('applicable', filterValues.applicable);
+    put('printed', filterValues.printed);
+    put('published', filterValues.published);
+    put('shared', filterValues.shared);
+    for (const [idKey, labelKey] of [
+      ['productId', 'productLabel'],
+      ['sourceStoreId', 'sourceStoreLabel'],
+      ['destinationStoreId', 'destinationStoreLabel'],
+      ['stockStoreId', 'stockStoreLabel'],
+      ['projectId', 'projectLabel'],
+      ['ownerId', 'ownerLabel'],
+      ['groupId', 'groupLabel'],
+      ['modifiedById', 'modifiedByLabel'],
+    ] as const) {
+      put(idKey, filterValues[idKey]);
+      put(labelKey, filterValues[labelKey]);
+    }
+    if (organizations.length) p.set('orgs', JSON.stringify(organizations));
+    return p.toString();
+  })();
+  const applySavedFilter = (qs: string) => {
+    const p = new URLSearchParams(qs);
+    const g = (k: string) => p.get(k) ?? undefined;
+    let orgs: RefMulti[] = [];
+    try {
+      const parsed: unknown = JSON.parse(p.get('orgs') ?? '[]');
+      if (Array.isArray(parsed)) orgs = parsed as RefMulti[];
+    } catch {
+      orgs = [];
+    }
+    setOrganizations(orgs);
+    setStateFilter(g('state') ?? null);
+    setFilterValues({
+      momentFrom: g('momentFrom'),
+      momentTo: g('momentTo'),
+      updatedFrom: g('updatedFrom'),
+      updatedTo: g('updatedTo'),
+      applicable: g('applicable') as ExtraFilterFields['applicable'],
+      printed: g('printed') as ExtraFilterFields['printed'],
+      published: g('published') as ExtraFilterFields['published'],
+      shared: g('shared') as ExtraFilterFields['shared'],
+      productId: g('productId'),
+      productLabel: g('productLabel'),
+      sourceStoreId: g('sourceStoreId'),
+      sourceStoreLabel: g('sourceStoreLabel'),
+      destinationStoreId: g('destinationStoreId'),
+      destinationStoreLabel: g('destinationStoreLabel'),
+      stockStoreId: g('stockStoreId'),
+      stockStoreLabel: g('stockStoreLabel'),
+      projectId: g('projectId'),
+      projectLabel: g('projectLabel'),
+      ownerId: g('ownerId'),
+      ownerLabel: g('ownerLabel'),
+      groupId: g('groupId'),
+      groupLabel: g('groupLabel'),
+      modifiedById: g('modifiedById'),
+      modifiedByLabel: g('modifiedByLabel'),
+    });
+    onResetCursor();
+  };
+
   // «Массовое редактирование» (Ommaviy tahrirlash) modal state — mirrors
   // supplies. The shared MassEditModal patches ownerId / projectId /
   // description across the selected moves via bulk.massEdit → POST /moves/mass-edit.
+  const router = useRouter();
   const [massEditOpen, setMassEditOpen] = useState(false);
-  const [massEditIds, setMassEditIds] = useState<string[]>([]);
+  // «Владелец-отдел» (groupId) options for the mass-edit wizard — mirrors losses.
+  const { data: massGroupsData } = useQuery<{ items: Array<{ id: string; name: string }> }>({
+    queryKey: ['groups', 'mass-edit'],
+    queryFn: () => api.get('/groups?limit=100'),
+    enabled: massEditOpen,
+    staleTime: 5 * 60 * 1000,
+  });
+  const [massEditIds] = useState<string[]>([]);
   const [massEditOwner, setMassEditOwner] = useState<{ id: string; label: string } | null>(null);
   const [massEditProject, setMassEditProject] = useState<{ id: string; label: string } | null>(
     null,
@@ -219,7 +317,7 @@ export default function MovesPage() {
     ...(cursor ? { cursor } : {}),
     ...(filterValues.momentFrom ? { momentFrom: filterValues.momentFrom } : {}),
     ...(filterValues.momentTo ? { momentTo: filterValues.momentTo } : {}),
-    ...(filterValues.organizationId ? { organizationId: filterValues.organizationId } : {}),
+    ...(organizations.length ? { organizationIds: organizations.map((x) => x.id).join(',') } : {}),
     ...(filterValues.productId ? { productId: filterValues.productId } : {}),
     ...(filterValues.sourceStoreId ? { sourceStoreId: filterValues.sourceStoreId } : {}),
     ...(filterValues.destinationStoreId
@@ -418,7 +516,7 @@ export default function MovesPage() {
       cell: (r) =>
         r.published ? (
           <span
-            className="inline-flex items-center whitespace-nowrap rounded-[3px] bg-[var(--ms-brand-500)] px-2 py-0.5 font-medium text-white text-xs"
+            className="inline-flex items-center whitespace-nowrap rounded-[3px] bg-[#186999] px-2 py-0.5 font-medium text-white text-xs"
             data-test-id="published-badge"
           >
             {tFields('published_badge')}
@@ -435,7 +533,7 @@ export default function MovesPage() {
       cell: (r) =>
         r.printed ? (
           <span
-            className="inline-flex items-center whitespace-nowrap rounded-[3px] bg-[var(--ms-brand-500)] px-2 py-0.5 font-medium text-white text-xs"
+            className="inline-flex items-center whitespace-nowrap rounded-[3px] bg-[#186999] px-2 py-0.5 font-medium text-white text-xs"
             data-test-id="printed-badge"
           >
             {tFields('printed_badge')}
@@ -447,7 +545,7 @@ export default function MovesPage() {
       key: 'description',
       header: tFields('description'),
       cell: (r) => (
-        <span className="max-w-[200px] truncate text-[var(--ms-text-muted)] text-xs">
+        <span className="max-w-[200px] truncate text-[var(--ms-text-muted)] text-[11px]">
           {r.description ?? ''}
         </span>
       ),
@@ -481,7 +579,7 @@ export default function MovesPage() {
   const hasFilter =
     !!search ||
     !!stateFilter ||
-    !!filterValues.organizationId ||
+    organizations.length > 0 ||
     !!filterValues.productId ||
     !!filterValues.sourceStoreId ||
     !!filterValues.destinationStoreId ||
@@ -514,14 +612,35 @@ export default function MovesPage() {
       clearLabel={tFilters('clear')}
       onClear={() => {
         setFilterValues({});
+        setOrganizations([]);
         setStateFilter(null);
         onResetCursor();
       }}
+      onBookmarkClick={() => setSaveFilterOpen(true)}
+      fieldVisibility={{
+        hidden: filterHidden.visibleKeys,
+        onToggle: (k) => {
+          const next = new Set(filterHidden.visibleKeys);
+          if (next.has(k)) next.delete(k);
+          else next.add(k);
+          filterHidden.setVisibleKeys(next);
+        },
+      }}
+      pills={
+        <SavedFiltersPills
+          entity="move"
+          currentQueryString={savedFilterQuery}
+          onApply={applySavedFilter}
+          adding={saveFilterOpen}
+          onAddingChange={setSaveFilterOpen}
+        />
+      }
       testId="moves-inline-filter"
     >
       {/* 1. Период */}
       <InlineFilterPanel.Field
         label={`${tFilters('period')}:`}
+        fieldKey="period"
         expandable
         inlineSuffix={
           <PeriodShortcuts
@@ -549,7 +668,7 @@ export default function MovesPage() {
         />
       </InlineFilterPanel.Field>
       {/* 2. Товар или группа */}
-      <InlineFilterPanel.Field label={tPO('filter_product')} expandable>
+      <InlineFilterPanel.Field label={tPO('filter_product')} fieldKey="product" expandable>
         <CatalogPickerField
           value={
             filterValues.productId
@@ -569,7 +688,7 @@ export default function MovesPage() {
         />
       </InlineFilterPanel.Field>
       {/* 3. Со склада (sourceStore) */}
-      <InlineFilterPanel.Field label={tFields('store_from')} expandable>
+      <InlineFilterPanel.Field label={tFields('store_from')} fieldKey="sourceStore" expandable>
         <CatalogPickerField
           value={
             filterValues.sourceStoreId
@@ -593,7 +712,7 @@ export default function MovesPage() {
         />
       </InlineFilterPanel.Field>
       {/* 4. На склад (destinationStore) */}
-      <InlineFilterPanel.Field label={tFields('store_to')} expandable>
+      <InlineFilterPanel.Field label={tFields('store_to')} fieldKey="destinationStore" expandable>
         <CatalogPickerField
           value={
             filterValues.destinationStoreId
@@ -617,7 +736,11 @@ export default function MovesPage() {
         />
       </InlineFilterPanel.Field>
       {/* 5. Движение по складу (source OR destination) */}
-      <InlineFilterPanel.Field label={tPO('filter_stock_movement')} expandable>
+      <InlineFilterPanel.Field
+        label={tPO('filter_stock_movement')}
+        fieldKey="stockStore"
+        expandable
+      >
         <CatalogPickerField
           value={
             filterValues.stockStoreId
@@ -641,7 +764,7 @@ export default function MovesPage() {
         />
       </InlineFilterPanel.Field>
       {/* 6. Проект */}
-      <InlineFilterPanel.Field label={tPO('filter_project')} expandable>
+      <InlineFilterPanel.Field label={tPO('filter_project')} fieldKey="project" expandable>
         <CatalogPickerField
           value={
             filterValues.projectId
@@ -660,32 +783,35 @@ export default function MovesPage() {
           testId="filter-project"
         />
       </InlineFilterPanel.Field>
-      {/* 7. Организация */}
-      <InlineFilterPanel.Field label={tFields('organization')} expandable>
-        <CatalogPickerField
-          value={
-            filterValues.organizationId
-              ? {
-                  id: filterValues.organizationId,
-                  label: filterValues.organizationLabel ?? filterValues.organizationId,
-                }
-              : null
-          }
-          placeholder=""
-          onPick={() => setPickerOpen('org')}
-          onClear={() => {
-            setFilterValues({
-              ...filterValues,
-              organizationId: undefined,
-              organizationLabel: undefined,
-            });
+      {/* 7. Организация — moysklad-parity inline multi-select checkbox dropdown
+          (was a single-select modal). */}
+      <InlineFilterPanel.Field label={tFields('organization')} fieldKey="organization" expandable>
+        <MultiCombobox
+          value={organizations.map((x) => x.id)}
+          items={organizations.map((x) => ({ value: x.id, label: x.label }))}
+          onSearch={async (q) => {
+            const r = await api.get<{ items: { id: string; name: string }[] }>(
+              `/organizations?search=${encodeURIComponent(q)}&limit=20`,
+            );
+            return r.items.map((x) => ({ value: x.id, label: x.name }));
+          }}
+          onChange={(nextIds, toggled) => {
+            setOrganizations((prev) =>
+              nextIds.map((id) => {
+                const ex = prev.find((s) => s.id === id);
+                if (ex) return ex;
+                if (toggled?.value === id) return { id, label: String(toggled.label) };
+                return { id, label: id };
+              }),
+            );
             onResetCursor();
           }}
+          placeholder=""
           testId="filter-org"
         />
       </InlineFilterPanel.Field>
       {/* 8. Статус */}
-      <InlineFilterPanel.Field label={tPO('filter_status_multi')} expandable>
+      <InlineFilterPanel.Field label={tPO('filter_status_multi')} fieldKey="state" expandable>
         <StateSelect
           value={stateFilter ?? undefined}
           onChange={(v) => {
@@ -697,7 +823,7 @@ export default function MovesPage() {
         />
       </InlineFilterPanel.Field>
       {/* 9. Проведено */}
-      <InlineFilterPanel.Field label={tFields('applicable')} expandable>
+      <InlineFilterPanel.Field label={tFields('applicable')} fieldKey="applicable" expandable>
         <YesNoSelect
           value={filterValues.applicable}
           onChange={(v) => {
@@ -708,7 +834,7 @@ export default function MovesPage() {
         />
       </InlineFilterPanel.Field>
       {/* 10. Напечатано */}
-      <InlineFilterPanel.Field label={tFields('printed')} expandable>
+      <InlineFilterPanel.Field label={tFields('printed')} fieldKey="printed" expandable>
         <YesNoSelect
           value={filterValues.printed}
           onChange={(v) => {
@@ -719,7 +845,7 @@ export default function MovesPage() {
         />
       </InlineFilterPanel.Field>
       {/* 11. Отправлено */}
-      <InlineFilterPanel.Field label={tFields('published')} expandable>
+      <InlineFilterPanel.Field label={tFields('published')} fieldKey="published" expandable>
         <YesNoSelect
           value={filterValues.published}
           onChange={(v) => {
@@ -730,7 +856,7 @@ export default function MovesPage() {
         />
       </InlineFilterPanel.Field>
       {/* 12. Владелец-сотрудник */}
-      <InlineFilterPanel.Field label={tPO('filter_owner_employee')} expandable>
+      <InlineFilterPanel.Field label={tPO('filter_owner_employee')} fieldKey="owner" expandable>
         <CatalogPickerField
           value={
             filterValues.ownerId
@@ -747,7 +873,7 @@ export default function MovesPage() {
         />
       </InlineFilterPanel.Field>
       {/* 13. Владелец-отдел */}
-      <InlineFilterPanel.Field label={tPO('filter_owner_group')} expandable>
+      <InlineFilterPanel.Field label={tPO('filter_owner_group')} fieldKey="group" expandable>
         <CatalogPickerField
           value={
             filterValues.groupId
@@ -767,7 +893,7 @@ export default function MovesPage() {
         />
       </InlineFilterPanel.Field>
       {/* 14. Общий доступ */}
-      <InlineFilterPanel.Field label={tPO('filter_shared')} expandable>
+      <InlineFilterPanel.Field label={tPO('filter_shared')} fieldKey="shared" expandable>
         <YesNoSelect
           value={filterValues.shared}
           onChange={(v) => {
@@ -780,6 +906,7 @@ export default function MovesPage() {
       {/* 15. Когда изменен */}
       <InlineFilterPanel.Field
         label={`${tPO('filter_updated_period')}:`}
+        fieldKey="updated"
         expandable
         inlineSuffix={
           <PeriodShortcuts
@@ -807,7 +934,7 @@ export default function MovesPage() {
         />
       </InlineFilterPanel.Field>
       {/* 16. Кто изменил */}
-      <InlineFilterPanel.Field label={tPO('filter_modified_by')} expandable>
+      <InlineFilterPanel.Field label={tPO('filter_modified_by')} fieldKey="modifiedBy" expandable>
         <CatalogPickerField
           value={
             filterValues.modifiedById
@@ -901,10 +1028,15 @@ export default function MovesPage() {
               onClearSelection={bulk.clearSelection}
               postedCount={postedCount}
               onMassEdit={() => {
-                setMassEditIds(Array.from(bulk.selectedIds));
-                setMassEditOwner(null);
-                setMassEditProject(null);
-                setMassEditOpen(true);
+                stashBulkEdit({
+                  entity: 'moves',
+                  ids:
+                    bulk.selectedIds.size > 0
+                      ? Array.from(bulk.selectedIds)
+                      : (data?.items ?? []).map((r) => r.id),
+                  from: '/moves',
+                });
+                router.push('/bulk-edit');
               }}
             />
             <MovePrintDropdown onExportList={handleListExport} selectedIds={bulk.selectedIds} />
@@ -995,25 +1127,6 @@ export default function MovesPage() {
             ...filterValues,
             stockStoreId: item.id,
             stockStoreLabel: String(item.primary),
-          });
-          onResetCursor();
-        }}
-      />
-      <CatalogPicker
-        open={pickerOpen === 'org'}
-        onClose={() => setPickerOpen(null)}
-        title={tFields('organization')}
-        fetcher={async (q): Promise<PickerItem[]> => {
-          const r = await api.get<{ items: { id: string; name: string }[] }>(
-            `/organizations?search=${encodeURIComponent(q)}&limit=20`,
-          );
-          return r.items.map((x) => ({ id: x.id, primary: x.name }));
-        }}
-        onSelect={(item) => {
-          setFilterValues({
-            ...filterValues,
-            organizationId: item.id,
-            organizationLabel: String(item.primary),
           });
           onResetCursor();
         }}
@@ -1130,6 +1243,8 @@ export default function MovesPage() {
         projectValue={massEditProject}
         onProjectPick={() => setPickerOpen('massEditProject')}
         onProjectClear={() => setMassEditProject(null)}
+        groupOptions={(massGroupsData?.items ?? []).map((g) => ({ value: g.id, label: g.name }))}
+        showShared
         labels={{
           title: t('mass_edit_title'),
           ownerLabel: tFilters('owner_employee'),
@@ -1138,6 +1253,10 @@ export default function MovesPage() {
           apply: t('mass_edit_apply'),
           cancel: t('mass_edit_cancel'),
           hint: t('mass_edit_hint', { count: massEditIds.length }),
+          groupLabel: tMass('group_label'),
+          sharedLabel: tMass('shared_label'),
+          sharedYes: tMass('shared_yes'),
+          sharedNo: tMass('shared_no'),
         }}
         onSubmit={async (patch) => {
           await bulk.massEdit.mutateAsync({ ids: massEditIds, ...patch });

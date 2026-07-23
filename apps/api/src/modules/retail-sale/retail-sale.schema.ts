@@ -15,7 +15,7 @@ import { discountPercent } from '../shared/discount.js';
  *   - One open session per cashier enforced in CashierSessionService
  */
 
-export const RetailSaleStateSchema = z.enum(['draft', 'picking', 'ready', 'posted', 'refunded', 'cancelled']);
+export const RetailSaleStateSchema = z.enum(['draft', 'posted', 'refunded', 'cancelled']);
 export type RetailSaleState = z.infer<typeof RetailSaleStateSchema>;
 
 // --- Position ---
@@ -67,21 +67,10 @@ export const PostRetailSaleSchema = z.object({
   cardAmountMinor: z.coerce
     .string()
     .regex(/^\d+$/, 'cardAmountMinor must be a non-negative integer'),
-  terminalAmountMinor: z.coerce
-    .string()
-    .regex(/^\d+$/, 'terminalAmountMinor must be a non-negative integer')
-    .default('0'),
-  /** Debt portion — only allowed when agentId is provided */
-  debtAmountMinor: z.coerce
-    .string()
-    .regex(/^\d+$/, 'debtAmountMinor must be a non-negative integer')
-    .default('0'),
   /** Client-side sanity check — server revalidates against DB sum */
   expectedSumMinor: z.coerce
     .string()
     .regex(/^\d+$/, 'expectedSumMinor must be a non-negative integer'),
-  /** Optional: set/update agent at payment time (loyalty, qarz tracking) */
-  agentId: z.string().uuid().nullish(),
 });
 export type PostRetailSaleInput = z.infer<typeof PostRetailSaleSchema>;
 
@@ -115,8 +104,6 @@ export const RetailSaleFilterSchema = z.object({
   dateFrom: z.coerce.date().optional(),
   dateTo: z.coerce.date().optional(),
   search: z.string().max(100).optional(),
-  // Omborchi panel: show only sales that have a picking RestockTask assigned to this employee.
-  assigneeId: z.string().uuid().optional(),
   limit: z.coerce.number().int().min(1).max(500).default(50),
   cursor: z.string().uuid().optional(),
   sortBy: z.enum(['moment', 'name', 'sumMinor']).default('moment'),

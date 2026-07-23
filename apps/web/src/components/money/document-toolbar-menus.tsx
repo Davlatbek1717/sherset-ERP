@@ -48,8 +48,37 @@ export interface DocEditMenuArgs {
    * renders as a disabled placeholder.
    */
   onMassEdit?: (ids: string[]) => void;
+  /**
+   * Visible row ids of the CURRENT list page. moysklad parity (owner
+   * 2026-07-09): «Массовое редактирование» stays enabled at 0 selection and
+   * then targets every row in the filter — v1 falls back to the loaded page
+   * (≤100 rows = the BE MassEditBaseSchema ids cap).
+   */
+  allRowIds?: string[];
   /** Append «Объединить» (invoices only). */
   includeMerge?: boolean;
+  /**
+   * «Копировать» — bulk clone the selected docs. Supply only when the entity
+   * has a working `/<entity>/:id/clone` the caller fans out over; without it
+   * the item stays the historical disabled placeholder.
+   */
+  onBulkCopy?: (ids: string[]) => void;
+  copyPending?: boolean;
+  /**
+   * «Провести» / «Снять проведение» — bulk FSM transition (the caller wires
+   * `/<entity>/bulk-transition`). The hook confirms first (destructive-ish:
+   * posting cascades balances/stock). Disabled placeholders when omitted.
+   */
+  onBulkPost?: (ids: string[]) => void;
+  onBulkUnpost?: (ids: string[]) => void;
+  transitionPending?: boolean;
+  /**
+   * «Объединить» — merge the selected docs into one new draft (needs ≥2).
+   * Only meaningful with `includeMerge`; without a handler the appended item
+   * stays the historical disabled placeholder.
+   */
+  onMerge?: (ids: string[]) => void;
+  mergePending?: boolean;
 }
 
 /**
@@ -62,7 +91,15 @@ export function useDocEditMenuItems({
   onBulkDelete,
   deletePending,
   onMassEdit,
+  allRowIds,
   includeMerge,
+  onBulkCopy,
+  copyPending,
+  onBulkPost,
+  onBulkUnpost,
+  transitionPending,
+  onMerge,
+  mergePending,
 }: DocEditMenuArgs): ListToolbarMenuItem[] {
   const t = useTranslations('money_docs_menu');
   const tCommon = useTranslations('common');
@@ -70,6 +107,18 @@ export function useDocEditMenuItems({
   const tBulkActions = useTranslations('bulk_actions');
   const { confirm } = useConfirm();
   const noSelection = selectedIds.size === 0;
+
+  // Confirm-then-run for the FSM transitions (posting cascades balances/stock,
+  // so a mis-click on N rows must not fire silently — mirror the delete guard).
+  const confirmTransition = (label: string, run: (ids: string[]) => void) => async () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    const ok = await confirm({
+      title: tBulk('transition_confirm', { count: ids.length, target: label }),
+      confirmLabel: label,
+    });
+    if (ok === true) run(ids);
+  };
 
   const items: ListToolbarMenuItem[] = [
     {
@@ -88,17 +137,48 @@ export function useDocEditMenuItems({
         if (ok === true) onBulkDelete(ids);
       },
     },
-    { id: 'copy', label: tBulkActions('copy'), disabled: true },
+    {
+      id: 'copy',
+      label: tBulkActions('copy'),
+      disabled: onBulkCopy === undefined || noSelection || copyPending === true,
+      onSelect: onBulkCopy ? () => onBulkCopy(Array.from(selectedIds)) : undefined,
+    },
     {
       id: 'mass-edit',
       label: tBulkActions('mass_edit'),
-      disabled: onMassEdit === undefined || noSelection,
-      onSelect: onMassEdit ? () => onMassEdit(Array.from(selectedIds)) : undefined,
+      // moysklad parity (owner 2026-07-09): enabled even at 0 selection —
+      // falls back to the visible page's rows (allRowIds), mirroring
+      // moysklad's "apply to every document in the filter".
+      disabled: onMassEdit === undefined,
+      onSelect: onMassEdit
+        ? () => {
+            const picked = Array.from(selectedIds);
+            onMassEdit(picked.length > 0 ? picked : (allRowIds ?? []));
+          }
+        : undefined,
     },
-    { id: 'post', label: t('post'), disabled: true },
-    { id: 'unpost', label: t('unpost'), disabled: true },
+    {
+      id: 'post',
+      label: t('post'),
+      disabled: onBulkPost === undefined || noSelection || transitionPending === true,
+      onSelect: onBulkPost ? confirmTransition(t('post'), onBulkPost) : undefined,
+    },
+    {
+      id: 'unpost',
+      label: t('unpost'),
+      disabled: onBulkUnpost === undefined || noSelection || transitionPending === true,
+      onSelect: onBulkUnpost ? confirmTransition(t('unpost'), onBulkUnpost) : undefined,
+    },
   ];
-  if (includeMerge) items.push({ id: 'merge', label: tBulkActions('merge'), disabled: true });
+  if (includeMerge) {
+    items.push({
+      id: 'merge',
+      label: tBulkActions('merge'),
+      // «Объединить» needs ≥2 docs to combine (moysklad one-click, no confirm).
+      disabled: onMerge === undefined || selectedIds.size < 2 || mergePending === true,
+      onSelect: onMerge ? () => onMerge(Array.from(selectedIds)) : undefined,
+    });
+  }
   return items;
 }
 

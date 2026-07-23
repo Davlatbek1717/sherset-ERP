@@ -1,7 +1,14 @@
 'use client';
 
 import { api } from '@/lib/api-client';
-import { Button, Input, formatDateOnly, formatMoney, useConfirm } from '@moysklad/ui';
+import {
+  Button,
+  Input,
+  StickyHScroll,
+  formatDateOnly,
+  formatMoney,
+  useConfirm,
+} from '@moysklad/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useParams, useRouter } from 'next/navigation';
@@ -360,7 +367,7 @@ function ProductsTable({
       </ul>
 
       {/* Desktop table */}
-      <div className="hidden overflow-x-auto lg:block">
+      <StickyHScroll className="hidden lg:block">
         <table className="w-full text-sm">
           <thead className="bg-[var(--ms-bg-subtle)] text-[10px] text-[var(--ms-text-muted)] uppercase">
             <tr>
@@ -409,7 +416,7 @@ function ProductsTable({
             })}
           </tbody>
         </table>
-      </div>
+      </StickyHScroll>
     </div>
   );
 }

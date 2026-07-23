@@ -16,18 +16,6 @@ import {
 } from './label.schema.js';
 
 /**
- * Compose the Sherset warehouse home location «NN-NN-NN-NN» from 4 numeric
- * segments (sklad-polka-qavat-yacheyka). '' when ALL segments are unset;
- * partial locations render with unset segments as «00». Mirrors the FE helper
- * `apps/web/src/lib/bin-location.ts` (kept in sync by eye — both trivial).
- */
-function formatBin(s: number | null, p: number | null, q: number | null, y: number | null): string {
-  if (s == null && p == null && q == null && y == null) return '';
-  const pad = (n: number | null) => String(n ?? 0).padStart(2, '0');
-  return [s, p, q, y].map(pad).join('-');
-}
-
-/**
  * LabelService — templates (CRUD) + print rendering.
  *
  * Templates are configs only (no balance/stock effect). Render endpoint
@@ -99,7 +87,6 @@ export class LabelService {
           includePrice: data.includePrice,
           includeBarcode: data.includeBarcode,
           includeArticle: data.includeArticle,
-          includeLocation: data.includeLocation,
           headerText: data.headerText,
           barcodeFormat: data.barcodeFormat,
         },
@@ -180,10 +167,6 @@ export class LabelService {
         article: true,
         barcodes: true,
         salePrices: true,
-        locSklad: true,
-        locPolka: true,
-        locQavat: true,
-        locYacheyka: true,
       },
     });
     const byId = new Map(products.map((p) => [p.id, p]));
@@ -214,8 +197,6 @@ export class LabelService {
         article: p.article ?? p.code ?? '',
         priceMinor: firstPrice,
         barcode,
-        // Sherset custom — warehouse home location «NN-NN-NN-NN» (empty when unset).
-        binLocation: formatBin(p.locSklad, p.locPolka, p.locQavat, p.locYacheyka),
       };
       return Array.from({ length: item.quantity }, () => labelData);
     });
@@ -267,7 +248,6 @@ export class LabelService {
         includePrice: template.includePrice,
         includeBarcode: template.includeBarcode,
         includeArticle: template.includeArticle,
-        includeLocation: template.includeLocation,
         headerText: template.headerText,
         barcodeFormat: template.barcodeFormat,
       },

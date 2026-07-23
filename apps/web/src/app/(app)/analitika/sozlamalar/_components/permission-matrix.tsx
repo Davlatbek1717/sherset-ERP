@@ -1,6 +1,6 @@
 'use client';
 
-import { Input, NativeSelect } from '@moysklad/ui';
+import { Input, NativeSelect, StickyHScroll } from '@moysklad/ui';
 import { useTranslations } from 'next-intl';
 import { useMemo, useState } from 'react';
 
@@ -138,7 +138,7 @@ export function PermissionMatrix({ meta, value, onChange, readOnly }: Props) {
       )}
 
       {/* Matrix table — category sections */}
-      <div className="overflow-x-auto rounded-lg border border-[var(--ms-border)] bg-white">
+      <StickyHScroll className="rounded-lg border border-[var(--ms-border)] bg-white">
         <table className="w-full text-sm">
           <thead className="sticky top-0 z-10 bg-[var(--ms-bg-subtle)] text-[var(--ms-text-muted)] text-xs uppercase">
             <tr>
@@ -177,7 +177,7 @@ export function PermissionMatrix({ meta, value, onChange, readOnly }: Props) {
             })}
           </tbody>
         </table>
-      </div>
+      </StickyHScroll>
     </div>
   );
 }

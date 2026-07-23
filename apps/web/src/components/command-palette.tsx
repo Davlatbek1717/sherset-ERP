@@ -111,7 +111,7 @@ const COMMANDS: Command[] = [
     labelKey: 'go_retail',
     icon: 'retail',
     iconColorClass: 'text-rose-500',
-    href: '/sotuv',
+    href: '/retail',
     group: 'modules',
     keywords: ['kassa', 'pos'],
   },

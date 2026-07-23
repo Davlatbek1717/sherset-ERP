@@ -19,7 +19,8 @@
       "packages/db/src/generated",
       "docs/moysklad-reference/visual-captures",
       ".claude/workflows",
-      "scripts/wf-*.js"
+      "scripts/wf-*.js",
+      "apps/web/src/lib/vendor"
     ]
   },
   "organizeImports": {

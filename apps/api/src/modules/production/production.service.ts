@@ -113,6 +113,7 @@ export class ProductionService {
       ...(filter.includeDeleted ? {} : { deletedAt: null }),
       ...(filter.state ? { state: filter.state } : {}),
       ...(filter.organizationId ? { organizationId: filter.organizationId } : {}),
+      ...(filter.organizationIds ? { organizationId: { in: filter.organizationIds } } : {}),
       ...(filter.storeId ? { storeId: filter.storeId } : {}),
       ...(filter.customerOrderId ? { customerOrderId: filter.customerOrderId } : {}),
       ...(filter.applicable !== undefined ? { applicable: filter.applicable } : {}),

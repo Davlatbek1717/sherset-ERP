@@ -70,6 +70,9 @@ export const CreateInvoiceOutSchema = z.object({
   ownerId: z.string().uuid().nullish(),
   groupId: z.string().uuid().nullish(),
   shared: z.boolean().default(false),
+  // «Статус» — account-defined custom status (State row, entityType="invoiceout"),
+  // orthogonal to the FSM `state`. Tenant-validated in the service.
+  statusId: z.string().uuid().nullish(),
   moment: z.coerce.date().optional(),
   paymentPlannedMoment: z.coerce.date().nullish(),
   description: z.string().max(4000).nullish(),
@@ -81,13 +84,13 @@ export const CreateInvoiceOutSchema = z.object({
   applicable: z.boolean().default(false),
   vatEnabled: z.boolean().default(true),
   vatIncluded: z.boolean().default(false),
-  positions: z.array(InvoiceOutPositionInputSchema).min(1, 'at least one position required'),
+  positions: z.array(InvoiceOutPositionInputSchema),
   attributes: z.record(z.string(), z.unknown()).optional(),
 });
 export type CreateInvoiceOutInput = z.infer<typeof CreateInvoiceOutSchema>;
 
 export const UpdateInvoiceOutSchema = CreateInvoiceOutSchema.partial().extend({
-  positions: z.array(InvoiceOutPositionInputSchema).min(1).optional(),
+  positions: z.array(InvoiceOutPositionInputSchema).optional(),
   version: z.number().int().nonnegative(),
 });
 export type UpdateInvoiceOutInput = z.infer<typeof UpdateInvoiceOutSchema>;

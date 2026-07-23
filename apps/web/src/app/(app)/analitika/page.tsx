@@ -1,6 +1,7 @@
 'use client';
 
 import { api } from '@/lib/api-client';
+import { StickyHScroll } from '@moysklad/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 
@@ -113,7 +114,7 @@ export default function AnalitikaDashboardPage() {
         {/* Recent orders */}
         <div className="lg:col-span-2">
           <h2 className="mb-2 font-medium text-[var(--ms-text-primary)]">{t('recent_orders')}</h2>
-          <div className="overflow-x-auto rounded-lg border border-[var(--ms-border)]">
+          <StickyHScroll className="rounded-lg border border-[var(--ms-border)]">
             <table className="w-full text-sm">
               <thead className="bg-[var(--ms-bg-subtle)] text-[var(--ms-text-muted)] text-xs">
                 <tr>
@@ -148,7 +149,7 @@ export default function AnalitikaDashboardPage() {
                 )}
               </tbody>
             </table>
-          </div>
+          </StickyHScroll>
         </div>
 
         {/* Counting status */}
@@ -169,7 +170,7 @@ export default function AnalitikaDashboardPage() {
       <div className="mt-6 grid grid-cols-1 gap-5 lg:grid-cols-3">
         <div className="lg:col-span-2">
           <h2 className="mb-2 font-medium text-[var(--ms-text-primary)]">{t('recent_counts')}</h2>
-          <div className="overflow-x-auto rounded-lg border border-[var(--ms-border)]">
+          <StickyHScroll className="rounded-lg border border-[var(--ms-border)]">
             <table className="w-full text-sm">
               <thead className="bg-[var(--ms-bg-subtle)] text-[var(--ms-text-muted)] text-xs">
                 <tr>
@@ -205,7 +206,7 @@ export default function AnalitikaDashboardPage() {
                 )}
               </tbody>
             </table>
-          </div>
+          </StickyHScroll>
         </div>
 
         <div>
@@ -217,7 +218,7 @@ export default function AnalitikaDashboardPage() {
               topCounters.map((b) => (
                 <div key={b.key} className="flex items-center justify-between">
                   <span className="truncate text-[var(--ms-text-primary)]">{b.label}</span>
-                  <span className="text-[var(--ms-text-muted)] text-xs tabular-nums">
+                  <span className="text-[var(--ms-text-muted)] text-[12px] tabular-nums">
                     {b.count} · {fmtMoney(b.moneyMinor)}
                   </span>
                 </div>

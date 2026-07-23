@@ -119,9 +119,15 @@ export function HistoryTimeline({
               </span>
             </div>
             {diffs.length > 0 && (
-              <table className="mt-2 w-full table-fixed text-sm" data-test-id="history-diff-table">
+              /* OWNER 2026-07-17: «jadval chiziqlari qalinroq, ajralib tursin»
+                 — 2px + border-strong separators (same philosophy as the
+                 2026-07-14 global darker-borders override). */
+              <table
+                className="mt-2 w-full table-fixed border-[var(--ms-border-strong)] border-t-2 text-sm"
+                data-test-id="history-diff-table"
+              >
                 <thead>
-                  <tr className="text-left text-[var(--ms-text-muted)] text-xs">
+                  <tr className="border-[var(--ms-border-strong)] border-b-2 text-left text-[var(--ms-text-muted)] text-xs">
                     <th className="w-[200px] py-1 pr-4 font-normal">{fieldHeader}</th>
                     <th className="py-1 pr-4 font-normal">{beforeHeader}</th>
                     <th className="py-1 font-normal">{afterHeader}</th>
@@ -136,7 +142,7 @@ export function HistoryTimeline({
                     return (
                       <tr
                         key={field}
-                        className="border-[var(--ms-border-default)] border-t align-top"
+                        className="border-[var(--ms-border-strong)] border-t-2 align-top"
                       >
                         <td className="break-words py-1.5 pr-4 text-[var(--ms-text-muted)]">
                           {translateField ? translateField(field) : field}

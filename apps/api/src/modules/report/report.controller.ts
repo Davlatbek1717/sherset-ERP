@@ -7,6 +7,7 @@ import { AbcAnalysisService } from './abc-analysis.service.js';
 import { AgingService } from './aging.service.js';
 import { AverageBasketService } from './average-basket.service.js';
 import { CashFlowService } from './cash-flow.service.js';
+import { CounterpartyActService } from './counterparty-act.service.js';
 import { CounterpartyBalanceService } from './counterparty-balance.service.js';
 import { DashboardService } from './dashboard.service.js';
 import { InventoryVarianceService } from './inventory-variance.service.js';
@@ -18,11 +19,9 @@ import { ReturnsRatioService } from './returns-ratio.service.js';
 import { SalesByChannelService } from './sales-by-channel.service.js';
 import { SalesByHourService } from './sales-by-hour.service.js';
 import { SlowMoversService } from './slow-movers.service.js';
-import { SotuvDashboardService } from './sotuv-dashboard.service.js';
 import { StockBalanceService } from './stock-balance.service.js';
 import { TurnoverService } from './turnover.service.js';
 import { UnitEconomicsService } from './unit-economics.service.js';
-import { WarehouseOpsService } from './warehouse-ops.service.js';
 
 @Controller('reports')
 @UseGuards(JwtAuthGuard)
@@ -33,6 +32,7 @@ export class ReportController {
     @Inject(StockBalanceService) private readonly stockBalance: StockBalanceService,
     @Inject(TurnoverService) private readonly turnover: TurnoverService,
     @Inject(CounterpartyBalanceService) private readonly cpBalance: CounterpartyBalanceService,
+    @Inject(CounterpartyActService) private readonly cpAct: CounterpartyActService,
     @Inject(PnlService) private readonly pnl: PnlService,
     @Inject(DashboardService) private readonly dashboard: DashboardService,
     @Inject(AbcAnalysisService) private readonly abc: AbcAnalysisService,
@@ -48,31 +48,7 @@ export class ReportController {
     private readonly purchaseMgmt: PurchaseManagementService,
     @Inject(UnitEconomicsService)
     private readonly unitEcon: UnitEconomicsService,
-    @Inject(WarehouseOpsService)
-    private readonly warehouseOps: WarehouseOpsService,
-    @Inject(SotuvDashboardService)
-    private readonly sotuvDashboard: SotuvDashboardService,
   ) {}
-
-  /** Sherset custom — daily kassa summary cards for the homepage dashboard. */
-  @Get('sotuv-dashboard')
-  @RequirePermission({ entity: 'report', action: 'view' })
-  async sotuvDashboardReport(
-    @CurrentUser() user: AuthenticatedUser,
-    @Query() query: Record<string, unknown>,
-  ) {
-    return this.sotuvDashboard.report(user.accountId, query);
-  }
-
-  /** Sherset custom — supply→putaway→picking chain dashboard. */
-  @Get('warehouse-ops')
-  @RequirePermission({ entity: 'report', action: 'view' })
-  async warehouseOpsReport(
-    @CurrentUser() user: AuthenticatedUser,
-    @Query() query: Record<string, unknown>,
-  ) {
-    return this.warehouseOps.report(user.accountId, query);
-  }
 
   @Get('unit-economics')
   @RequirePermission({ entity: 'report', action: 'view' })
@@ -155,6 +131,17 @@ export class ReportController {
     @Query() query: Record<string, unknown>,
   ) {
     return this.cpBalance.counterpartyBalanceReport(user.accountId, query);
+  }
+
+  /** «Акт сверки взаимных расчётов» — the printable reconciliation act for one
+   * organization × counterparty over a period (opening + movements + closing). */
+  @Get('counterparty-act')
+  @RequirePermission({ entity: 'report', action: 'view' })
+  async counterpartyAct(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: Record<string, unknown>,
+  ) {
+    return this.cpAct.counterpartyAct(user.accountId, query);
   }
 
   @Get('pnl')

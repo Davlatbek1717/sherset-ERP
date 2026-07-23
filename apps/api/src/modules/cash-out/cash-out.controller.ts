@@ -91,7 +91,14 @@ export class CashOutController {
   @RequirePermission({ entity: 'cashout', action: 'update' })
   async massEdit(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
     const { ids, ...patch } = MassEditBaseSchema.parse(body);
-    assertPatchHasAtLeastOneField(patch, ['ownerId', 'projectId', 'description']);
+    assertPatchHasAtLeastOneField(patch, [
+      'ownerId',
+      'projectId',
+      'description',
+      'groupId',
+      'shared',
+      'expenseItem',
+    ]);
     return runBulk(ids, (id) => this.svc.massEditApply(user.accountId, user.sub, id, patch));
   }
 }

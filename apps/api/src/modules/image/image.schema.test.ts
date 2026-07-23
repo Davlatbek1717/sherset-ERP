@@ -34,8 +34,8 @@ describe('UploadImageSchema', () => {
     ).toBe(false);
   });
 
-  it('rejects payload over 5 MB encoded', () => {
-    const huge = 'A'.repeat(5_242_881);
+  it('rejects payload over 6 MB encoded', () => {
+    const huge = 'A'.repeat(6_000_001);
     expect(
       UploadImageSchema.safeParse({
         filename: 'big.png',
@@ -43,6 +43,18 @@ describe('UploadImageSchema', () => {
         dataBase64: huge,
       }).success,
     ).toBe(false);
+  });
+
+  it('accepts a full 4 MB raw image (≈5.34 MB base64) — matches the FE limit', () => {
+    // base64 of a 4 MB file ≈ ceil(4_000_000/3)*4 = 5_333_336 chars.
+    const fourMbEncoded = 'A'.repeat(5_333_336);
+    expect(
+      UploadImageSchema.safeParse({
+        filename: 'photo.jpg',
+        mime: 'image/jpeg',
+        dataBase64: fourMbEncoded,
+      }).success,
+    ).toBe(true);
   });
 
   it('rejects empty filename', () => {

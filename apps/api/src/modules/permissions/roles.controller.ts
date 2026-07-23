@@ -15,7 +15,7 @@ import { CurrentUser } from '../auth/current-user.decorator.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { SCOPE_ORDER } from './permissions.types.js';
 import { RequirePermission } from './require-permission.decorator.js';
-import { SetEmployeeRolesSchema } from './roles.schema.js';
+import { SetEmployeeRolesSchema, TransferOwnerSchema } from './roles.schema.js';
 import { RolesService } from './roles.service.js';
 
 @Controller('roles')
@@ -71,7 +71,26 @@ export class RolesController {
     @Body() body: unknown,
   ) {
     const { roleIds } = SetEmployeeRolesSchema.parse(body);
-    return this.svc.setEmployeeRoles(user.accountId, employeeId, roleIds);
+    return this.svc.setEmployeeRoles(user.accountId, employeeId, roleIds, user.sub);
+  }
+
+  // ─── moysklad employee card «Системные роли» ──────────────────────────────
+
+  /** «Сделать владельцем» — move the singleton owner role (service enforces
+   *  that only the current owner can hand it over once one exists). */
+  @Post('owner/transfer')
+  @RequirePermission({ entity: 'employee', action: 'update' })
+  async transferOwner(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
+    const { employeeId } = TransferOwnerSchema.parse(body);
+    return this.svc.transferOwner(user.accountId, employeeId, user.sub);
+  }
+
+  /** «Доступ только к точкам продаж» — lazily create the retail-only system
+   *  role and return it so the card can assign it like any role. */
+  @Post('system/pos/ensure')
+  @RequirePermission({ entity: 'role', action: 'create' })
+  async ensurePosRole(@CurrentUser() user: AuthenticatedUser) {
+    return this.svc.ensurePosRole(user.accountId);
   }
 
   @Get(':id')

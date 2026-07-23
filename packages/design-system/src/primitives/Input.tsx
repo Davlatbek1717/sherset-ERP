@@ -15,7 +15,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
         disabled={disabled}
         aria-invalid={invalid || undefined}
         className={cn(
-          'h-[var(--ms-control-h)] w-full px-2 text-[12px]',
+          'h-[var(--ms-control-h)] w-full px-2 text-[13px]',
           'bg-[var(--ms-bg-surface)] text-[var(--ms-text-primary)]',
           'border',
           'placeholder:text-[var(--ms-text-placeholder)]',

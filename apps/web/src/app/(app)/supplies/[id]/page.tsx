@@ -12,10 +12,16 @@ import {
   DocumentHistoryLink,
 } from '@/components/document-detail';
 import { DocumentTasksSection } from '@/components/document-tasks-section';
+import { CellPickerField } from '@/components/documents/cell-picker-field';
+import { LinkDocumentModal } from '@/components/documents/link-document-modal';
 import { OwnerAccessPopover } from '@/components/documents/owner-access-popover';
+import { PositionAgreementButton } from '@/components/documents/position-agreement-modal';
 import { PositionColumnCustomizer } from '@/components/documents/position-column-customizer';
 import { PositionDiscountMenu } from '@/components/documents/position-discount-menu';
 import { PositionPriceMenu } from '@/components/documents/position-price-menu';
+import { usePrintTemplatesManager } from '@/components/print/print-templates-provider';
+import { type KitPrintForm, KitPrintModal } from '@/components/purchase-orders/kit-print-modal';
+import { SendEmailDialog } from '@/components/send-email-dialog';
 import { useApiMutation } from '@/hooks/use-api-mutation';
 import { useConflictReload } from '@/hooks/use-conflict-reload';
 import { useDestructiveMutation } from '@/hooks/use-destructive-mutation';
@@ -25,6 +31,7 @@ import { useSaveMutation } from '@/hooks/use-save-mutation';
 import { useUnsavedGuard } from '@/hooks/use-unsaved-guard';
 import { api } from '@/lib/api-client';
 import { docTotals } from '@/lib/doc-totals';
+import { distributeAgreementDelta } from '@/lib/position-agreement';
 import {
   Alert,
   CatalogPicker,
@@ -34,17 +41,17 @@ import {
   DocumentHeader,
   DocumentMetaField,
   DocumentMetaRow,
-  FormField,
   Input,
   NativeSelect,
   type PickerItem,
   type PositionColumnKey,
   PositionInlineAdd,
+  PositionNameCell,
   PositionTable,
   type PositionTableColumnConfig,
   Textarea,
 } from '@moysklad/ui';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useParams, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -66,6 +73,9 @@ interface PositionDetail {
   gtdSumMinor: string | null;
   countryId: string | null;
   country: { id: string; name: string; code: string | null } | null;
+  // «Ячейка» — address-storage bin: `cellId` (FK, drives the picker) + `cell` (label).
+  cellId: string | null;
+  cell: string | null;
 }
 
 interface SupplyDetail {
@@ -74,6 +84,9 @@ interface SupplyDetail {
   name: string;
   externalCode: string | null;
   state: string;
+  /** moysklad «Статус» — account-defined custom status (Supply.statusId), shown
+   *  as the header pill. Orthogonal to the FSM `state` + «Проведено». */
+  status: { id: string; name: string; color: string | null } | null;
   applicable: boolean;
   moment: string;
   incomingDate: string | null;
@@ -142,19 +155,6 @@ function momentToLocalInput(iso: string): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-// moysklad parity: inline state dropdown — supply FSM verbs + pill colours.
-const SUPPLY_STATE_COLOR: Record<string, string> = {
-  draft: '#9ca3af',
-  posted: '#16a34a',
-  cancelled: '#e92919',
-};
-const SUPPLY_STATE_VERB: Record<string, string> = {
-  draft: 'unpost',
-  posted: 'post',
-  cancelled: 'cancel',
-};
-const SUPPLY_MANUAL_STATES = ['draft', 'posted', 'cancelled'] as const;
-
 const OVERHEAD_METHODS = ['WEIGHT', 'PRICE', 'VOLUME', 'QUANTITY'] as const;
 
 // moysklad «Приёмка» position columns. Always-on: name · Кол-во · Остаток · Цена ·
@@ -164,9 +164,10 @@ const OVERHEAD_METHODS = ['WEIGHT', 'PRICE', 'VOLUME', 'QUANTITY'] as const;
 const OPTIONAL_POSITION_COLUMNS: { key: PositionColumnKey; labelKey: string; on: boolean }[] = [
   { key: 'image', labelKey: 'image', on: true },
   { key: 'unit', labelKey: 'unit', on: true },
-  { key: 'available', labelKey: 'available', on: true },
+  // «Остаток» ON; NO «Доступно»/«Зарезерв.» — moysklad's Приёмка grid has no
+  // available/reserve columns (those are order-doc columns; grounded live
+  // 2026-07-06 on #supply/edit — the grid shows only «Остаток»). Mirror /new.
   { key: 'stock', labelKey: 'stock', on: true },
-  { key: 'reserve', labelKey: 'reserve', on: false },
   { key: 'weight', labelKey: 'weight', on: false },
   { key: 'volume', labelKey: 'volume', on: false },
   { key: 'vatAmount', labelKey: 'vatAmount', on: false },
@@ -177,6 +178,20 @@ const OPTIONAL_POSITION_COLUMNS: { key: PositionColumnKey; labelKey: string; on:
 const DEFAULT_COL_VISIBLE: Record<string, boolean> = Object.fromEntries(
   OPTIONAL_POSITION_COLUMNS.map((c) => [c.key, c.on]),
 );
+
+// Manual-link entityType (PascalCase, from the API) → RelatedDocsTab `kind` (the
+// card's route + heading). Covers the linkable doc types.
+const LINK_TYPE_TO_KIND: Record<string, string> = {
+  Supply: 'supply',
+  PurchaseOrder: 'purchase-order',
+  PurchaseReturn: 'purchase-return',
+  InvoiceIn: 'invoice-in',
+  Demand: 'demand',
+  CustomerOrder: 'customer-order',
+  InvoiceOut: 'invoice-out',
+  SalesReturn: 'sales-return',
+  Move: 'move',
+};
 
 interface FormState {
   /** «от» — editable document moment, as the local `YYYY-MM-DDTHH:MM` string. */
@@ -274,6 +289,8 @@ function formFromData(d: SupplyDetail): FormState {
       gtdSumMinor: p.gtdSumMinor ?? '',
       countryId: p.countryId ?? null,
       countryLabel: p.country?.name ?? '',
+      cellId: p.cellId ?? null,
+      cell: p.cell ?? undefined,
       salePrices: null,
     })),
     attributes: (d as { attributes?: Record<string, unknown> }).attributes ?? {},
@@ -312,6 +329,7 @@ function snapshot(s: FormState): string {
       gtdNumber: p.gtdNumber ?? '',
       gtdSumMinor: p.gtdSumMinor ?? '',
       countryId: p.countryId ?? null,
+      cell: p.cell ?? null,
     })),
     attributes: s.attributes,
   });
@@ -329,12 +347,14 @@ export default function SupplyDetailPage() {
   const tDetailHeader = useTranslations('detail_header');
   const tDetailTitles = useTranslations('detail_titles');
   const tDetailForm = useTranslations('detail_form');
-  const tStates = useTranslations('states.supply');
   const tCreate = useTranslations('create_related');
   const tDetailTabs = useTranslations('detail_tabs');
   const tForm = useTranslations('form');
   const tPos = useTranslations('position_editor');
   const tCols = useTranslations('position_cols');
+  const tPrint = useTranslations('print_menu');
+  const tPrintSupply = useTranslations('print_menu_supply');
+  const tEmail = useTranslations('email_template');
 
   const { data, isLoading } = useQuery<SupplyDetail>({
     queryKey: ['supply', id],
@@ -360,12 +380,65 @@ export default function SupplyDetailPage() {
     queryFn: () => api.get(`/supplies/${id}/related`),
   });
 
+  // moysklad «Привязать документ» — manual links (bidirectional). Merged into the
+  // «Связанные документы» diagram alongside the auto-computed FK chain.
+  const manualLinksKey = ['document-links', 'Supply', id] as const;
+  const { data: manualLinks } = useQuery<{
+    items: Array<{
+      linkId: string;
+      type: string;
+      id: string;
+      name: string;
+      moment: string;
+      sumMinor: string;
+      state: string;
+    }>;
+  }>({
+    queryKey: manualLinksKey,
+    queryFn: () => api.get(`/document-links?entityType=Supply&entityId=${id}`),
+  });
+  const [linkModalOpen, setLinkModalOpen] = useState(false);
+  const unlinkMut = useMutation({
+    mutationFn: (linkId: string) => api.delete(`/document-links/${linkId}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: manualLinksKey }),
+  });
+
+  // moysklad «Статус» — the account's custom supply statuses (State rows,
+  // entityType="supply"); drives the header pill options. Mirror PO/[id].
+  const { data: statusData } = useQuery<{
+    items: Array<{ id: string; name: string; color: string | null }>;
+  }>({
+    queryKey: ['states', 'supply'],
+    queryFn: () => api.get('/states?entityType=supply'),
+    staleTime: 60_000,
+  });
+  const customStatuses = statusData?.items ?? [];
+
   // Price types for the «Цена ▾» → «Расценить» (re-price by type) menu.
   const { data: priceTypesData } = useQuery<{ items: Array<{ id: string; name: string }> }>({
     queryKey: ['price-types'],
     queryFn: () => api.get('/price-types'),
     staleTime: 60_000,
   });
+  // «Валюта документа» options — the account's REAL currencies (Настройки → Валюты),
+  // never a hardcoded list (a phantom EUR/RUB the account doesn't have must not appear).
+  const { data: currenciesData } = useQuery<{
+    items: Array<{ id: string; isoCode: string; name: string; rate: string }>;
+  }>({
+    queryKey: ['currencies'],
+    queryFn: () => api.get('/currencies'),
+  });
+  const currencies = currenciesData?.items ?? [];
+
+  // moysklad «Печать» / «Отправить» — the account's own «Приёмка» print forms
+  // (PDF), listed by name. Mirror PO/[id]. The settings-gated template CRUD lives
+  // behind «Настроить…»; this read is view-permission only.
+  const { data: printForms } = useQuery<Array<{ id: string; name: string }>>({
+    queryKey: ['supply-print-forms'],
+    queryFn: () => api.get<Array<{ id: string; name: string }>>('/supplies/print-forms'),
+    staleTime: 60_000,
+  });
+  const { openTemplates } = usePrintTemplatesManager();
 
   const [form, setForm] = useState<FormState | null>(null);
   const [original, setOriginal] = useState<string>('');
@@ -384,6 +457,10 @@ export default function SupplyDetailPage() {
   const [countryRowId, setCountryRowId] = useState<string | null>(null);
   const [colVisible, setColVisible] = useState<Record<string, boolean>>(DEFAULT_COL_VISIBLE);
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
+  // «Отправить» email composer + «Печать ▸ Комплект…» dialog (mirror PO/[id]).
+  const [emailOpen, setEmailOpen] = useState(false);
+  const [emailAttachments, setEmailAttachments] = useState<{ id: string; filename: string }[]>([]);
+  const [kitPrintOpen, setKitPrintOpen] = useState(false);
   const onConflict = useConflictReload(['supply', id], () => setForm(null));
 
   useEffect(() => {
@@ -481,9 +558,35 @@ export default function SupplyDetailPage() {
     },
     [selectedRowIds],
   );
+  // «Kelishuv» — spread the negotiated delta across the lines (owner 2026-07-17).
+  const applyAgreement = useCallback((deltaMinor: bigint) => {
+    setForm((s) => {
+      if (!s) return s;
+      const patch = distributeAgreementDelta(s.positions, deltaMinor, s.vatIncluded);
+      if (patch.size === 0) return s;
+      return {
+        ...s,
+        positions: s.positions.map((p) => {
+          const next = patch.get(p.id);
+          return next != null ? { ...p, priceMinor: next } : p;
+        }),
+      };
+    });
+  }, []);
 
   const transitionMut = useApiMutation({
     mutationFn: (target: string) => api.post(`/supplies/${id}/transitions/${target}`, {}),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['supply', id] });
+      qc.invalidateQueries({ queryKey: ['supplies'] });
+    },
+  });
+
+  // moysklad «Статус» — set the account custom status (Supply.statusId) on the
+  // header pill. Applied IMMEDIATELY via its own endpoint, so it stays editable
+  // even on a posted receipt (status is orthogonal to «Проведено»). Mirror PO.
+  const setStatusMut = useApiMutation({
+    mutationFn: (statusId: string) => api.patch(`/supplies/${id}/status`, { statusId }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['supply', id] });
       qc.invalidateQueries({ queryKey: ['supplies'] });
@@ -563,6 +666,9 @@ export default function SupplyDetailPage() {
           gtdNumber: p.gtdNumber || undefined,
           gtdSumMinor: p.gtdSumMinor || undefined,
           countryId: p.countryId || undefined,
+          // «Ячейка» — address-storage bin (cellId drives per-cell stock).
+          ...(p.cellId ? { cellId: p.cellId } : {}),
+          ...(p.cell ? { cell: p.cell } : {}),
         }));
       }
       payload.attributes = form.attributes;
@@ -680,11 +786,13 @@ export default function SupplyDetailPage() {
     const cols: PositionTableColumnConfig[] = [{ key: 'dragarea' }, { key: 'select' }];
     if (colVisible.image) cols.push({ key: 'image' });
     cols.push({ key: 'name', label: tCols('name') });
-    cols.push({ key: 'quantity', label: tPos('quantity') });
+    // moysklad «Приёмка» qty header is «Принято» (received), NOT «Кол-во» (grounded
+    // live 2026-07-06 on #supply/edit 00905). «Ячейка» sits right after the qty
+    // block, before «Остаток» (moysklad order: Принято · Ячейка · Остаток).
+    cols.push({ key: 'quantity', label: tCols('received') });
     if (colVisible.unit) cols.push({ key: 'unit', label: tCols('unit') });
+    cols.push({ key: 'cell', label: tCols('cell'), placeholder: tCols('cell_unset') });
     if (colVisible.stock) cols.push({ key: 'stock', label: tCols('stock') });
-    if (colVisible.reserve) cols.push({ key: 'reserve', label: tCols('reserve') });
-    if (colVisible.available) cols.push({ key: 'available', label: tCols('available') });
     cols.push(
       {
         key: 'price',
@@ -754,7 +862,6 @@ export default function SupplyDetailPage() {
     colVisible,
     editableCols,
     tCols,
-    tPos,
     priceTypesData,
     repricePositions,
     saveProductPrices,
@@ -767,12 +874,92 @@ export default function SupplyDetailPage() {
   if (!data) return <div className="p-8 text-sm">{tCommon('not_found')}</div>;
 
   const editableLines = !data.applicable;
+  // «Валюта документа» rate helper — moysklad shows «1 USD = N UZS» next to a
+  // non-base currency, sourced from the account's currency rate (mirror PO/[id]).
+  const selectedCurrency = currencies.find((c) => c.isoCode === form?.currency);
+  const isBaseCurrency = (form?.currency ?? 'UZS') === 'UZS';
+  const effectiveRate = selectedCurrency?.rate ?? '1';
   const sumBig = BigInt(data.sumMinor || '0');
   const vatBig = BigInt(data.vatSumMinor || '0');
   const { subtotal, total } = docTotals(sumBig, vatBig);
   const totalQty = form.positions.reduce((acc, p) => acc + Number(p.quantity || 0), 0);
 
   const canCreateReturn = data.state === 'posted';
+
+  // ----- «Печать» menu (moysklad parity, mirror PO/[id]) -------------------
+  // This detail page is a single record → every print acts on THIS receipt
+  // (ids = [data.id]). A custom form downloads via bulk-print(templateId); the
+  // built-in «Приходная накладная» opens the HTML print view. Each download
+  // flips the printed flag server-side, so we refetch after.
+  const printForm = (templateId?: string) => {
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    void api
+      .postDownload(
+        '/supplies/bulk-print',
+        { ids: [data.id], ...(templateId ? { templateId } : {}) },
+        `supply-${data.name}-${stamp}.pdf`,
+      )
+      .then(() => qc.invalidateQueries({ queryKey: ['supply', id] }));
+  };
+  const kitPrint = (templateIds: Array<string | null>) => {
+    if (templateIds.length === 0) return;
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    void api
+      .postDownload(
+        '/supplies/kit-print',
+        { ids: [data.id], templateIds },
+        `supply-${data.name}-kit-${stamp}.pdf`,
+      )
+      .then(() => qc.invalidateQueries({ queryKey: ['supply', id] }));
+  };
+  const kitForms: KitPrintForm[] = [
+    { id: null, name: tPrintSupply('prixodnaya') },
+    ...(printForms ?? []).map((f) => ({ id: f.id, name: f.name })),
+  ];
+  const printMenuItems: CreateMenuItem[] = [
+    // The account's own custom «Приёмка» forms (bulk-print via templateId).
+    ...(printForms ?? []).map((f) => ({
+      id: `form-${f.id}`,
+      label: f.name,
+      onSelect: () => printForm(f.id),
+    })),
+    // The standard built-in «Приходная накладная» form — opens the HTML print view.
+    {
+      id: 'standard',
+      label: tPrintSupply('prixodnaya'),
+      // moysklad: open the check in a NEW TAB, user presses «Печать» there (no auto-print).
+      onSelect: () => window.open(`/print/supply/${data.id}`, '_blank'),
+    },
+    // «Комплект…» — bundle several forms into one PDF.
+    { id: 'set', label: tPrint('set'), onSelect: () => setKitPrintOpen(true) },
+    // «Настроить…» — right-side «Настройка шаблонов» slide-over for supply.
+    { id: 'configure', label: tPrint('configure'), onSelect: () => openTemplates('supply') },
+  ];
+
+  // ----- «Отправить» menu (moysklad parity) --------------------------------
+  // Lists the SAME forms as «Печать» to email: clicking a form renders THIS
+  // receipt through it, stores the PDF as an attachment and opens the composer
+  // with it pre-attached (POST :id/print-attachment → {attachmentId}).
+  const sendForm = async (templateId?: string) => {
+    const att = await api.post<{ attachmentId: string; filename: string }>(
+      `/supplies/${data.id}/print-attachment`,
+      templateId ? { templateId } : {},
+    );
+    setEmailAttachments([{ id: att.attachmentId, filename: att.filename }]);
+    setEmailOpen(true);
+  };
+  const sendMenuItems: CreateMenuItem[] = [
+    ...(printForms ?? []).map((f) => ({
+      id: `form-${f.id}`,
+      label: f.name,
+      onSelect: () => void sendForm(f.id),
+    })),
+    {
+      id: 'standard',
+      label: tPrintSupply('prixodnaya'),
+      onSelect: () => void sendForm(),
+    },
+  ];
 
   // moysklad «Создать документ» for a Приёмка lists 7 downstream docs in this
   // order (live capture supplies/detail/edit-dropdown-sozdat). Two are wired
@@ -800,36 +987,36 @@ export default function SupplyDetailPage() {
     { id: 'move', label: tDetailTitles('move'), disabled: true },
   ];
 
-  // moysklad «Статус» pill — supply has no account-defined custom statuses, so the
-  // dropdown drives the FSM directly via the 3 verbs. The pill always DISPLAYS the
-  // real current state. «Проведено» stays separate (no «Ожидание» on a receipt).
-  const stateOptionSlugs = (SUPPLY_MANUAL_STATES as readonly string[]).includes(data.state)
-    ? [...SUPPLY_MANUAL_STATES]
-    : [data.state, ...SUPPLY_MANUAL_STATES];
-  const statusOptions = stateOptionSlugs.map((slug) => ({
-    value: slug,
-    label: tStates(slug as 'draft' | 'posted' | 'cancelled'),
-    color: SUPPLY_STATE_COLOR[slug],
+  // moysklad «Статус» pill — the account's custom supply statuses (grey «Статус»
+  // when none configured). FSM post/unpost lives on «Проведено» (orthogonal),
+  // exactly like PO/[id]. Applied immediately via setStatusMut.
+  const statusOptions = customStatuses.map((s) => ({
+    value: s.id,
+    label: s.name,
+    color: s.color ?? undefined,
   }));
   const onApplicableChange =
     data.state === 'cancelled'
       ? undefined
       : (next: boolean) => transitionMut.mutate(next ? 'post' : 'unpost');
 
-  // Position «Наименование» cell — opens the per-row product picker (reusing
-  // productFetcher). Read-only on a posted receipt. Mirrors PO/[id].
+  // Position «Наименование» cell — moysklad parity: a picked product's name is a
+  // BORDERLESS LINK to its product card (where the «Аналоги» tab lives); swapping
+  // the line's product moves to the row ⋮ «Заменить» (onReplace below). Empty rows
+  // fall back to the placeholder picker-trigger. Read-only on a posted receipt.
   const renderPositionNameCell = (row: DocPositionRow) => {
     const p = row as DetailPositionRow;
+    const href = p.assortmentId ? `/products/${p.assortmentId}` : undefined;
     return (
-      <CatalogPickerField
-        value={p.assortmentId ? { id: p.assortmentId, label: p.productLabel } : null}
+      <PositionNameCell
+        code={p.productCode}
+        label={p.productLabel}
         placeholder={tForm('select_product')}
         onPick={() => editableLines && setProductRowId(p.id)}
-        onClear={() =>
-          editableLines &&
-          updatePosition(p.id, { assortmentId: null, productLabel: '', productUom: null })
-        }
+        productHref={href}
+        onNavigate={href ? () => router.push(href) : undefined}
         disabled={!editableLines}
+        testId={`pos-${p.id}-name`}
       />
     );
   };
@@ -844,6 +1031,27 @@ export default function SupplyDetailPage() {
       disabled={!editableLines}
     />
   );
+
+  // «Ячейка» — address-storage cell picker (mirror /new + enters/losses). Closure has
+  // form.storeId (page state) + the row's product (assortmentId), so the picker can
+  // show «Все ячейки» / «С этим товаром». Stores cellId (drives per-cell stock) + the
+  // «Зона / Ячейка» label in `cell`. Read-only on a posted receipt (renders a label).
+  const renderPositionCellCell = (row: DocPositionRow) => {
+    const p = row as DetailPositionRow;
+    return (
+      <CellPickerField
+        storeId={form.storeId || null}
+        assortmentId={p.assortmentId}
+        label={p.cell}
+        readOnly={!editableLines}
+        // Приёмка stores goods: picking a cell for a cell-less product binds it
+        // as that product's home cell (never overwrites an existing binding).
+        bindProductCell
+        onSelect={(cellId, label) => updatePosition(row.id, { cellId, cell: label })}
+        onClear={() => updatePosition(row.id, { cellId: null, cell: '' })}
+      />
+    );
+  };
 
   return (
     <div
@@ -871,9 +1079,8 @@ export default function SupplyDetailPage() {
             : undefined
         }
         createMenuItems={createMenuItems}
-        onPrintList={() =>
-          window.open(`/print/supply/${data.id}?auto=1`, '_blank', 'width=820,height=1100')
-        }
+        printMenuItems={printMenuItems}
+        sendMenuItems={sendMenuItems}
         printEntity="supply"
       />
 
@@ -888,16 +1095,11 @@ export default function SupplyDetailPage() {
         number={data.name}
         date={form.moment}
         onDateChange={editableLines ? (v) => setForm((f) => f && { ...f, moment: v }) : undefined}
-        status={data.state}
+        status={data.status?.id ?? ''}
         statusOptions={statusOptions}
-        onStatusChange={
-          editableLines
-            ? (slug) => {
-                const verb = SUPPLY_STATE_VERB[slug];
-                if (verb) transitionMut.mutate(verb);
-              }
-            : undefined
-        }
+        onStatusChange={(sid) => setStatusMut.mutate(sid)}
+        onConfigureStatuses={() => router.push('/settings/supply-statuses')}
+        configureStatusesLabel={tForm('configure_statuses')}
         applicable={data.applicable}
         onApplicableChange={onApplicableChange}
         applicableHelp={t('applicable_help')}
@@ -1155,7 +1357,7 @@ export default function SupplyDetailPage() {
                 onClear={() =>
                   editableLines && setForm((s) => s && { ...s, projectId: null, projectLabel: '' })
                 }
-                onCreate={editableLines ? () => router.push('/projects/new') : undefined}
+                onCreate={editableLines ? () => router.push('/settings/projects/new') : undefined}
                 createLabel={tForm('create_new_project')}
                 disabled={!editableLines}
                 testId="field-project"
@@ -1189,18 +1391,47 @@ export default function SupplyDetailPage() {
           </DocumentMetaRow>
 
           <DocumentMetaRow fixedWidth>
-            <DocumentMetaField label={tDetailForm('currency')} required>
-              <NativeSelect
-                value={form.currency}
-                onChange={(e) => setForm((s) => s && { ...s, currency: e.target.value })}
-                disabled={!editableLines}
-                data-test-id="field-currency"
-              >
-                <option value="UZS">{tForm('currency_uzs')}</option>
-                <option value="USD">{tForm('currency_usd')}</option>
-                <option value="EUR">{tForm('currency_eur')}</option>
-                <option value="RUB">{tForm('currency_rub')}</option>
-              </NativeSelect>
+            <DocumentMetaField
+              label={tDetailForm('currency')}
+              required
+              helper={
+                !isBaseCurrency && selectedCurrency ? (
+                  <span className="inline-flex items-center gap-1 tabular-nums">
+                    1 {form.currency} = {Number(effectiveRate).toLocaleString('ru-RU')} UZS
+                  </span>
+                ) : undefined
+              }
+            >
+              <div className="flex items-center gap-1">
+                <div className="min-w-0 flex-1">
+                  <NativeSelect
+                    value={form.currency}
+                    onChange={(e) => setForm((s) => s && { ...s, currency: e.target.value })}
+                    disabled={!editableLines}
+                    data-test-id="field-currency"
+                  >
+                    {currencies.length === 0 && (
+                      <option value={form.currency}>{form.currency}</option>
+                    )}
+                    {currencies.map((c) => (
+                      <option key={c.id} value={c.isoCode}>
+                        {c.name} ({c.isoCode})
+                      </option>
+                    ))}
+                  </NativeSelect>
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    window.open('/settings/currencies', '_blank', 'noopener,noreferrer')
+                  }
+                  className="shrink-0 px-1 text-[var(--ms-text-muted)] text-sm hover:text-[var(--ms-text-primary)]"
+                  aria-label={tCommon('edit')}
+                  data-test-id="currency-settings"
+                >
+                  ✎
+                </button>
+              </div>
             </DocumentMetaField>
           </DocumentMetaRow>
         </div>
@@ -1210,7 +1441,7 @@ export default function SupplyDetailPage() {
             auditEntity="Supply"
             entityId={data.id}
             relatedGroups={[]}
-            positionsLabel={tDetailTabs('main')}
+            positionsLabel={tDetailTabs('positions')}
             filesSlot={<AttachmentsSection entity="Supply" entityId={data.id} />}
             tasksSlot={<DocumentTasksSection entity="Supply" entityId={data.id} />}
             historyInline={false}
@@ -1241,12 +1472,44 @@ export default function SupplyDetailPage() {
                     ...d,
                     kind: 'invoice-in' as const,
                   })),
+                  // Manual «Привязать документ» links (bidirectional).
+                  ...(manualLinks?.items ?? []).map((d) => ({
+                    id: d.id,
+                    name: d.name,
+                    moment: d.moment,
+                    state: d.state,
+                    sumMinor: d.sumMinor,
+                    linkId: d.linkId,
+                    kind: (LINK_TYPE_TO_KIND[d.type] ?? 'supply') as 'supply',
+                  })),
                 ]}
+                onLinkDocument={() => setLinkModalOpen(true)}
+                onUnlink={(linkId) => unlinkMut.mutate(linkId)}
               />
             }
           >
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
               <div className="min-w-0">
+                {/* Owner 2026-07-23: «Договорная цена» — blue, at the table's OUTER
+                    top-right corner (same spot in every section). */}
+                {editableLines && (
+                  <div className="-mb-2.5 flex justify-end">
+                    <PositionAgreementButton
+                      totalMinor={total}
+                      currency={form.currency}
+                      labels={{
+                        button: tPos('agreement_button'),
+                        total: tPos('agreement_total'),
+                        amount: tPos('agreement_amount'),
+                        add: tPos('agreement_add'),
+                        subtract: tPos('agreement_subtract'),
+                        save: tPos('pick_modal_save'),
+                        cancel: tPos('pick_modal_cancel'),
+                      }}
+                      onApply={applyAgreement}
+                    />
+                  </div>
+                )}
                 {/* moysklad position table = full column set + ⚙ customizer + «Цена ▾»
                     / «Скидка ▾» menus + inline «Добавить позицию» search bar. Posted
                     receipts are read-only (table, inline-add, customizer all disabled). */}
@@ -1286,7 +1549,11 @@ export default function SupplyDetailPage() {
                   sortByNameLabel={tPos('sort_by_name')}
                   sortByCodeLabel={tPos('sort_by_code')}
                   renderNameCell={renderPositionNameCell}
+                  // moysklad row ⋮ «Заменить» — swap the line's product (the name is now
+                  // a card link, so swapping moves here). Opens the per-row product picker.
+                  onReplace={(rowId) => editableLines && setProductRowId(rowId)}
                   renderCountryCell={renderPositionCountryCell}
+                  renderCellCell={renderPositionCellCell}
                   vatIncluded={form.vatIncluded}
                   selectedIds={selectedRowIds}
                   onSelectionChange={setSelectedRowIds}
@@ -1308,6 +1575,10 @@ export default function SupplyDetailPage() {
                               primary: p.name,
                               code: p.code ?? undefined,
                               available: p.stock?.available != null ? Number(p.stock.available) : 0,
+                              // Pick modal (owner 2026-07-18): reference «Цена» = the same
+                              // default the row would get (buy price on purchase docs).
+                              priceMinor: p.buyPrice ?? '0',
+                              uomLabel: p.uom ?? undefined,
                               raw: p,
                             })),
                             total: r.total ?? r.items.length,
@@ -1317,8 +1588,26 @@ export default function SupplyDetailPage() {
                         moreItemsLabel={(n) => tPos('moreItems', { count: n })}
                         createProductLabel={(qq) => tPos('createProductNamed', { query: qq })}
                         onCreateProduct={() => router.push('/products/new')}
-                        onPick={(item) => {
+                        // owner 2026-07-18: qty/price modal on EVERY product-add search
+                        // (was sales-only). No price-scope checkboxes here — writing a
+                        // permanent SALE price from a purchase price would be wrong.
+                        pickModal={{
+                          currency: form.currency,
+                          permanentPriceOption: false,
+                          labels: {
+                            stock: tPos('pick_modal_stock'),
+                            price: tPos('pick_modal_price'),
+                            quantity: tPos('pick_modal_quantity'),
+                            salePrice: tPos('pick_modal_sale_price'),
+                            priceThisSale: tPos('pick_modal_price_this_sale'),
+                            pricePermanent: tPos('pick_modal_price_permanent'),
+                            save: tPos('pick_modal_save'),
+                            cancel: tPos('pick_modal_cancel'),
+                          },
+                        }}
+                        onPick={(item, entry) => {
                           const raw = item.raw as ProductItem | undefined;
+                          const newId = uid();
                           setForm((s) =>
                             s
                               ? {
@@ -1326,15 +1615,15 @@ export default function SupplyDetailPage() {
                                   positions: [
                                     ...s.positions,
                                     {
-                                      id: uid(),
+                                      id: newId,
                                       assortmentId: item.id,
                                       productLabel: item.primary,
                                       productCode: raw?.code ?? undefined,
                                       productUom: raw?.uom ?? null,
-                                      quantity: '1',
-                                      priceMinor: raw?.buyPrice ?? '0',
+                                      quantity: entry?.quantity ?? '1',
+                                      priceMinor: entry?.priceMinor ?? raw?.buyPrice ?? '0',
                                       discount: '0',
-                                      vat: raw?.vat != null ? String(raw.vat) : '0',
+                                      vat: raw?.vat != null ? String(raw.vat) : '12',
                                       vatEnabled: s.vatEnabled,
                                       stock: raw?.stock?.onHand,
                                       reserve: raw?.stock?.reserved,
@@ -1349,6 +1638,9 @@ export default function SupplyDetailPage() {
                                 }
                               : s,
                           );
+                          // owner 2026-07-18: returning the id hands focus to the new
+                          // row's «Кол-во» (modal → table entry chain).
+                          return newId;
                         }}
                         onAddFromCatalog={() => setOpenCatalogPicker(true)}
                         onCheckCompleteness={() => {
@@ -1374,7 +1666,7 @@ export default function SupplyDetailPage() {
                                         quantity: Number(quantity) > 0 ? quantity : '1',
                                         priceMinor: raw?.buyPrice ?? '0',
                                         discount: '0',
-                                        vat: raw?.vat != null ? String(raw.vat) : '0',
+                                        vat: raw?.vat != null ? String(raw.vat) : '12',
                                         vatEnabled: s.vatEnabled,
                                         stock: raw?.stock?.onHand,
                                         reserve: raw?.stock?.reserved,
@@ -1396,52 +1688,10 @@ export default function SupplyDetailPage() {
                   }
                 />
 
-                {/* «Накладные расходы» + «Распределять по» — supply-specific cost
-                    block (preserved from the prior page; moved below the positions
-                    per moysklad's layout). */}
-                <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <FormField id="overhead-sum" label={tDetailForm('overhead_sum')}>
-                    <Input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      inputMode="decimal"
-                      value={form.overheadMajor}
-                      placeholder="0"
-                      onChange={(e) => setForm((s) => s && { ...s, overheadMajor: e.target.value })}
-                      disabled={!editableLines}
-                      data-test-id="field-overhead-sum"
-                    />
-                  </FormField>
-                  <FormField
-                    id="overhead-distribution"
-                    label={tDetailForm('overhead_distribution')}
-                  >
-                    <NativeSelect
-                      value={form.overheadDistribution}
-                      onChange={(e) =>
-                        setForm(
-                          (s) =>
-                            s && {
-                              ...s,
-                              overheadDistribution: e.target
-                                .value as FormState['overheadDistribution'],
-                            },
-                        )
-                      }
-                      disabled={!editableLines || !(Number(form.overheadMajor) > 0)}
-                      data-test-id="field-overhead-distribution"
-                    >
-                      <option value="WEIGHT">{tDetailForm('overhead_by_weight')}</option>
-                      <option value="PRICE">{tDetailForm('overhead_by_price')}</option>
-                      <option value="VOLUME">{tDetailForm('overhead_by_volume')}</option>
-                      <option value="QUANTITY">{tDetailForm('overhead_by_quantity')}</option>
-                    </NativeSelect>
-                  </FormField>
-                </div>
-
-                {/* «Комментарий» + «Внешний код» — moysklad places them below the
-                    positions (mirror PO/[id]). */}
+                {/* «Комментарий» — moysklad places it below the positions, left of
+                    the totals. «Внешний код» is NOT a visible field on the supply
+                    editor (moysklad keeps it as a hidden link; grounded live
+                    2026-07-06) — the value stays in state/payload only. */}
                 <div className="mt-3">
                   <Textarea
                     value={form.description}
@@ -1452,17 +1702,6 @@ export default function SupplyDetailPage() {
                     disabled={!editableLines}
                     data-test-id="field-description"
                   />
-                </div>
-                <div className="mt-3">
-                  <FormField id="external-code" label={tDetailForm('external_code')}>
-                    <Input
-                      value={form.externalCode}
-                      onChange={(e) => setForm((s) => s && { ...s, externalCode: e.target.value })}
-                      disabled={!editableLines}
-                      maxLength={50}
-                      data-test-id="field-external-code"
-                    />
-                  </FormField>
                 </div>
               </div>
 
@@ -1477,6 +1716,64 @@ export default function SupplyDetailPage() {
                 readOnly={!editableLines}
                 onToggleVatEnabled={(v) => setForm((s) => s && { ...s, vatEnabled: v })}
                 onToggleVatIncluded={(v) => setForm((s) => s && { ...s, vatIncluded: v })}
+                // moysklad «Приёмка»: «Накладные расходы» is the last row INSIDE the
+                // totals column, under «Кол-во» — «? Накладные расходы [input]
+                // Распределить [select]» (grounded live 2026-07-06). JSON API
+                // distribution enum = weight/volume/price (no «по количеству»).
+                footerSlot={
+                  <div
+                    className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px]"
+                    data-test-id="overhead-panel"
+                  >
+                    <span
+                      className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[var(--ms-bg-muted)] text-[10px] text-[var(--ms-text-muted)]"
+                      title={tDetailForm('overhead_sum')}
+                      aria-hidden
+                    >
+                      ?
+                    </span>
+                    <span className="text-[var(--ms-text-primary)]">
+                      {tDetailForm('overhead_sum')}
+                    </span>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      inputMode="decimal"
+                      value={form.overheadMajor}
+                      placeholder="0"
+                      onChange={(e) => setForm((s) => s && { ...s, overheadMajor: e.target.value })}
+                      disabled={!editableLines}
+                      className="h-7 w-20 text-right"
+                      aria-label={tDetailForm('overhead_sum')}
+                      data-test-id="field-overhead-sum"
+                    />
+                    <span className="text-[var(--ms-text-primary)]">
+                      {tDetailForm('overhead_distribute')}
+                    </span>
+                    <NativeSelect
+                      value={form.overheadDistribution}
+                      onChange={(e) =>
+                        setForm(
+                          (s) =>
+                            s && {
+                              ...s,
+                              overheadDistribution: e.target
+                                .value as FormState['overheadDistribution'],
+                            },
+                        )
+                      }
+                      disabled={!editableLines || !(Number(form.overheadMajor) > 0)}
+                      aria-label={tDetailForm('overhead_distribute')}
+                      className="h-7 w-auto"
+                      data-test-id="field-overhead-distribution"
+                    >
+                      <option value="WEIGHT">{tDetailForm('overhead_by_weight')}</option>
+                      <option value="PRICE">{tDetailForm('overhead_by_price')}</option>
+                      <option value="VOLUME">{tDetailForm('overhead_by_volume')}</option>
+                    </NativeSelect>
+                  </div>
+                }
               />
             </div>
           </DetailContentTabs>
@@ -1592,7 +1889,7 @@ export default function SupplyDetailPage() {
             quantity: '1',
             priceMinor: raw?.buyPrice ?? '0',
             discount: '0',
-            vat: raw?.vat != null ? String(raw.vat) : '0',
+            vat: raw?.vat != null ? String(raw.vat) : '12',
             vatEnabled: form.vatEnabled,
             stock: raw?.stock?.onHand,
             reserve: raw?.stock?.reserved,
@@ -1622,7 +1919,7 @@ export default function SupplyDetailPage() {
             productCode: raw?.code ?? undefined,
             productUom: raw?.uom ?? null,
             priceMinor: raw?.buyPrice ?? '0',
-            vat: raw?.vat != null ? String(raw.vat) : '0',
+            vat: raw?.vat != null ? String(raw.vat) : '12',
             stock: raw?.stock?.onHand,
             reserve: raw?.stock?.reserved,
             available: raw?.stock?.available,
@@ -1644,6 +1941,49 @@ export default function SupplyDetailPage() {
             countryLabel: String(item.primary),
           });
         }}
+      />
+
+      {/* «Отправить» — email this receipt with the chosen print form pre-attached. */}
+      <SendEmailDialog
+        open={emailOpen}
+        onClose={() => {
+          setEmailOpen(false);
+          setEmailAttachments([]);
+        }}
+        entity="Supply"
+        entityId={data.id}
+        defaultSubject={tEmail('subject_supply', { name: data.name })}
+        defaultBodyHtml={tEmail.raw('body_supply')}
+        initialAttachments={emailAttachments}
+      />
+
+      {/* «Печать ▸ Комплект…» — bundle several forms into one PDF for this receipt. */}
+      <KitPrintModal
+        open={kitPrintOpen}
+        onOpenChange={setKitPrintOpen}
+        forms={kitForms}
+        selectedCount={1}
+        labels={{
+          title: tPrint('set'),
+          confirm: tPrint('kit_confirm'),
+          cancel: tPrint('kit_cancel'),
+        }}
+        onConfirm={kitPrint}
+      />
+
+      {/* «Связанные документы ▸ Привязать документ» — manually link another doc. */}
+      <LinkDocumentModal
+        open={linkModalOpen}
+        onOpenChange={setLinkModalOpen}
+        current={{
+          entityType: 'Supply',
+          id: data.id,
+          name: data.name,
+          moment: data.moment,
+          sumMinor: data.sumMinor,
+          state: data.state,
+        }}
+        onLinked={() => qc.invalidateQueries({ queryKey: manualLinksKey })}
       />
     </div>
   );

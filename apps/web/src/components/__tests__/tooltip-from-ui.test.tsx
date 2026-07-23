@@ -20,7 +20,7 @@ describe('Tooltip', () => {
       renderWithProviders(
         withProvider(
           <Tooltip disabled content="hint">
-            <button type="button" data-test-id="t">btn</button>
+            <button data-test-id="t">btn</button>
           </Tooltip>,
         ),
       );
@@ -32,7 +32,7 @@ describe('Tooltip', () => {
       renderWithProviders(
         withProvider(
           <Tooltip content={null}>
-            <button type="button" data-test-id="t">btn</button>
+            <button data-test-id="t">btn</button>
           </Tooltip>,
         ),
       );
@@ -43,7 +43,7 @@ describe('Tooltip', () => {
       renderWithProviders(
         withProvider(
           <Tooltip content="">
-            <button type="button" data-test-id="t">btn</button>
+            <button data-test-id="t">btn</button>
           </Tooltip>,
         ),
       );
@@ -56,7 +56,7 @@ describe('Tooltip', () => {
       renderWithProviders(
         withProvider(
           <Tooltip content="My hint">
-            <button type="button" data-test-id="t">btn</button>
+            <button data-test-id="t">btn</button>
           </Tooltip>,
         ),
       );
@@ -68,7 +68,7 @@ describe('Tooltip', () => {
       renderWithProviders(
         withProvider(
           <Tooltip content="My hint">
-            <button type="button" data-test-id="t">btn</button>
+            <button data-test-id="t">btn</button>
           </Tooltip>,
         ),
       );
@@ -88,7 +88,7 @@ describe('Tooltip', () => {
       renderWithProviders(
         withProvider(
           <Tooltip content="Forced" open>
-            <button type="button" data-test-id="t">btn</button>
+            <button data-test-id="t">btn</button>
           </Tooltip>,
         ),
       );

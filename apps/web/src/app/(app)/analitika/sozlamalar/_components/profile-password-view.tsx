@@ -1,7 +1,7 @@
 'use client';
 
 import { api } from '@/lib/api-client';
-import { Button, Input } from '@moysklad/ui';
+import { Button, PasswordInput } from '@moysklad/ui';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useState } from 'react';
@@ -16,6 +16,7 @@ interface Me {
 
 export function ProfilePasswordView() {
   const t = useTranslations('pages.analitika_settings');
+  const tCommon = useTranslations('common');
   const me = useQuery<Me>({ queryKey: ['auth', 'me'], queryFn: () => api.get<Me>('/auth/me') });
 
   const [oldPw, setOldPw] = useState('');
@@ -69,34 +70,40 @@ export function ProfilePasswordView() {
         <h2 className="font-medium text-[var(--ms-text-primary)]">{t('password_title')}</h2>
         <p className="mt-1 text-[var(--ms-text-muted)] text-sm">{t('password_hint')}</p>
         <form className="mt-4 space-y-3" onSubmit={handleSubmit}>
-          <label className="block text-sm">
+          <label className="block text-sm" htmlFor="profile-old-password">
             <span className="block text-[var(--ms-text-muted)]">{t('old_password')}</span>
-            <Input
-              type="password"
+            <PasswordInput
+              id="profile-old-password"
               value={oldPw}
               onChange={(e) => setOldPw(e.target.value)}
               className="mt-1"
               autoComplete="current-password"
+              showLabel={tCommon('show_password')}
+              hideLabel={tCommon('hide_password')}
             />
           </label>
-          <label className="block text-sm">
+          <label className="block text-sm" htmlFor="profile-new-password">
             <span className="block text-[var(--ms-text-muted)]">{t('new_password')}</span>
-            <Input
-              type="password"
+            <PasswordInput
+              id="profile-new-password"
               value={newPw}
               onChange={(e) => setNewPw(e.target.value)}
               className="mt-1"
               autoComplete="new-password"
+              showLabel={tCommon('show_password')}
+              hideLabel={tCommon('hide_password')}
             />
           </label>
-          <label className="block text-sm">
+          <label className="block text-sm" htmlFor="profile-confirm-password">
             <span className="block text-[var(--ms-text-muted)]">{t('confirm_password')}</span>
-            <Input
-              type="password"
+            <PasswordInput
+              id="profile-confirm-password"
               value={confirmPw}
               onChange={(e) => setConfirmPw(e.target.value)}
               className="mt-1"
               autoComplete="new-password"
+              showLabel={tCommon('show_password')}
+              hideLabel={tCommon('hide_password')}
             />
           </label>
           <div className="flex items-center gap-3">

@@ -2,104 +2,142 @@ import { describe, expect, it, vi } from 'vitest';
 import { ProfitabilityService } from './profitability.service.js';
 
 /**
- * Unit coverage for the profitability multi-currency fold (commit 38622484).
+ * Unit coverage for the «Прибыльность» money math — the profit + profitability
+ * formulas VERIFIED to the kopeck against the live moysklad footer (2026-07-05):
+ *   profit           = (salesSum − salesCost) − (returnSum − returnCost)
+ *   Рентабельность товара = profit / (salesCost − returnCost) × 100
+ *   Рентабельность продаж = profit / (salesSum − returnSum) × 100
  *
- * Per (product, currency): revenue (price, demand currency) → base; COGS
- * (dp.cost_minor — FIFO cost, already base after §Tier-2 step A) summed
- * direct; margin/excludeZeroRevenue/rank/limit applied on base figures.
- *
- * Rate fixture: base UZS (1e8), USD @ 12 000 ⇒ USD minor → base ×12000.
+ * The service fires several distinct raw queries; the mock routes each by its
+ * SQL skeleton (demand vs return vs retail vs chart), and the ORM label lookups
+ * are stubbed. Multi-currency consolidation reuses the shared rate context.
  */
 
 const E8 = 100_000_000n;
 
-function currencyRows() {
-  return [
-    { code: 'UZS', default: true, rateValue: E8, multiplicity: 1, indirect: false },
-    { code: 'USD', default: false, rateValue: 12_000n * E8, multiplicity: 1, indirect: false },
-  ];
-}
-
-interface CannedRow {
-  product_id: string;
+type Raw = {
+  gid: string | null;
   currency: string;
-  name: string | null;
-  code: string | null;
-  uom: string | null;
-  quantity_sold: string;
-  revenue_minor: bigint;
-  cogs_minor: bigint;
-}
+  documents: bigint;
+  qty: string;
+  sum: bigint;
+  cost: bigint;
+};
 
-function makeService(queryRows: CannedRow[]) {
+function makeService(opts: {
+  sales?: Raw[];
+  returns?: Raw[];
+  currencies?: Array<{
+    code: string;
+    default: boolean;
+    rateValue: bigint;
+    multiplicity: number;
+    indirect: boolean;
+  }>;
+}) {
+  const sales = opts.sales ?? [];
+  const returns = opts.returns ?? [];
+  const currencies = opts.currencies ?? [
+    { code: 'UZS', default: true, rateValue: E8, multiplicity: 1, indirect: false },
+  ];
   const client = {
-    currency: { findMany: vi.fn(async () => currencyRows()) },
-    $queryRaw: vi.fn(async () => queryRows),
+    currency: { findMany: vi.fn(async () => currencies) },
+    product: {
+      findMany: vi.fn(async () => [
+        { id: 'p1', name: 'P1', code: '01928', article: null, uom: 'шт' },
+      ]),
+    },
+    variant: { findMany: vi.fn(async () => []) },
+    counterparty: { findMany: vi.fn(async () => []) },
+    employee: { findMany: vi.fn(async () => []) },
+    salesChannel: { findMany: vi.fn(async () => []) },
+    demand: { count: vi.fn(async () => 0) },
+    salesReturn: { count: vi.fn(async () => 0) },
+    // Route each raw query by its SQL skeleton.
+    $queryRaw: vi.fn(async (strings: TemplateStringsArray) => {
+      // Route by tokens present in the OUTER template literal (nested Prisma.sql
+      // values like date_trunc are NOT part of `strings`). Chart queries select
+      // `AS bucket`; the entity-aggregate queries select `AS gid`.
+      const sql = Array.from(strings).join(' ');
+      const isChart = sql.includes('AS bucket');
+      if (sql.includes('retail_sale_positions')) return [];
+      if (sql.includes('sales_return_positions')) return isChart ? [] : returns;
+      if (sql.includes('demand_positions')) return isChart ? [] : sales;
+      return [];
+    }),
   };
   return new ProfitabilityService({ client } as never);
 }
 
-const RANGE = { dateFrom: '2026-05-01', dateTo: '2026-05-31' };
+const BASE = { groupBy: 'product', dateFrom: '2026-06-01', dateTo: '2026-06-30' } as const;
 
-function row(p: Partial<CannedRow> & { currency: string }): CannedRow {
-  return {
-    product_id: 'p1',
-    name: 'P1',
-    code: null,
-    uom: null,
-    quantity_sold: '1',
-    revenue_minor: 0n,
-    cogs_minor: 0n,
-    ...p,
-  };
-}
-
-describe('ProfitabilityService — multi-currency fold', () => {
-  it('folds a product across currencies: revenue→base, COGS summed direct', async () => {
-    const svc = makeService([
-      row({ currency: 'UZS', quantity_sold: '2', revenue_minor: 20_000n, cogs_minor: 6_000n }),
-      row({ currency: 'USD', quantity_sold: '1', revenue_minor: 500n, cogs_minor: 40_000n }),
-    ]);
-    const r = await svc.report('acc', RANGE);
-    const p1 = r.rows.find((x) => x.productId === 'p1');
-    // revenue = 20_000 + 500*12000 (6_000_000) = 6_020_000
-    expect(p1?.revenueMinor).toBe('6020000');
-    // cogs = 6_000 + 40_000 (both base) = 46_000
-    expect(p1?.cogsMinor).toBe('46000');
-    // margin = 6_020_000 − 46_000 = 5_974_000
-    expect(p1?.marginMinor).toBe('5974000');
-    expect(r.totals.revenueMinor).toBe('6020000');
+describe('ProfitabilityService — profit & profitability math', () => {
+  it('nets returns out of profit and computes both profitability %', async () => {
+    // Mirrors live row 01928: sales 355 267 / cost 62 066, returns 10 000 / cost 1 852,50.
+    const svc = makeService({
+      sales: [
+        {
+          gid: 'p1',
+          currency: 'UZS',
+          documents: 11n,
+          qty: '38',
+          sum: 35_526_700n,
+          cost: 6_206_600n,
+        },
+      ],
+      returns: [
+        { gid: 'p1', currency: 'UZS', documents: 1n, qty: '1', sum: 1_000_000n, cost: 185_250n },
+      ],
+    });
+    const r = await svc.report('acc', BASE);
+    const row = r.rows.find((x) => x.id === 'p1');
+    expect(row?.profitMinor).toBe('28505350'); // (35 526 700−6 206 600)−(1 000 000−185 250)
+    expect(row?.profitGoodsPct).toBe('473.40'); // 28 505 350 / (6 206 600−185 250)
+    expect(row?.profitSalesPct).toBe('82.56'); // 28 505 350 / (35 526 700−1 000 000)
+    // totals mirror the single row
+    expect(r.totals.profitMinor).toBe('28505350');
+    expect(r.totals.profitSalesPct).toBe('82.56');
     expect(r.currency).toBe('UZS');
+  });
+
+  it('empty profitability % when denominator is zero', async () => {
+    const svc = makeService({
+      sales: [{ gid: 'p1', currency: 'UZS', documents: 1n, qty: '1', sum: 0n, cost: 0n }],
+    });
+    const r = await svc.report('acc', BASE);
+    const row = r.rows.find((x) => x.id === 'p1');
+    expect(row?.profitGoodsPct).toBe('');
+    expect(row?.profitSalesPct).toBe('');
+  });
+
+  it('consolidates multi-currency revenue into the account base', async () => {
+    const svc = makeService({
+      sales: [
+        { gid: 'p1', currency: 'UZS', documents: 1n, qty: '1', sum: 20_000n, cost: 6_000n },
+        { gid: 'p1', currency: 'USD', documents: 1n, qty: '1', sum: 500n, cost: 40_000n },
+      ],
+      currencies: [
+        { code: 'UZS', default: true, rateValue: E8, multiplicity: 1, indirect: false },
+        { code: 'USD', default: false, rateValue: 12_000n * E8, multiplicity: 1, indirect: false },
+      ],
+    });
+    const r = await svc.report('acc', BASE);
+    const row = r.rows.find((x) => x.id === 'p1');
+    // revenue = 20 000 + 500×12 000 = 6 020 000 ; cost = 6 000 + 40 000 = 46 000
+    expect(row?.salesSumMinor).toBe('6020000');
+    expect(row?.salesSumCostMinor).toBe('46000');
+    expect(row?.profitMinor).toBe('5974000');
     expect(r.mixedCurrency).toBe(true);
   });
 
-  it('excludeZeroRevenue drops a product whose base revenue is 0', async () => {
-    const svc = makeService([
-      row({ product_id: 'real', currency: 'UZS', revenue_minor: 10_000n, cogs_minor: 1_000n }),
-      row({ product_id: 'freebie', currency: 'UZS', revenue_minor: 0n, cogs_minor: 5_000n }),
-    ]);
-    const r = await svc.report('acc', { ...RANGE, excludeZeroRevenue: true });
-    expect(r.rows.find((x) => x.productId === 'real')).toBeDefined();
-    expect(r.rows.find((x) => x.productId === 'freebie')).toBeUndefined();
-  });
-
-  it('ranks by base margin desc; foreign-margin product can outrank a local one', async () => {
-    const svc = makeService([
-      row({ product_id: 'local', currency: 'UZS', revenue_minor: 50_000n, cogs_minor: 10_000n }),
-      // USD margin → base dwarfs the local one
-      row({ product_id: 'import', currency: 'USD', revenue_minor: 1_000n, cogs_minor: 100_000n }),
-    ]);
-    const r = await svc.report('acc', RANGE);
-    // import margin = 1_000*12000 − 100_000 = 11_900_000 ; local = 40_000
-    expect(r.rows[0]?.productId).toBe('import');
-  });
-
-  it('single-currency tenant: identity (no drift)', async () => {
-    const svc = makeService([
-      row({ currency: 'UZS', quantity_sold: '3', revenue_minor: 30_000n, cogs_minor: 9_000n }),
-    ]);
-    const r = await svc.report('acc', RANGE);
-    expect(r.rows.find((x) => x.productId === 'p1')?.revenueMinor).toBe('30000');
-    expect(r.mixedCurrency).toBe(false);
+  it('returns a chart with continuous daily buckets over the window', async () => {
+    const svc = makeService({
+      sales: [{ gid: 'p1', currency: 'UZS', documents: 1n, qty: '1', sum: 10_000n, cost: 4_000n }],
+    });
+    const r = await svc.report('acc', { ...BASE, granularity: 'day' });
+    expect(r.chart.granularity).toBe('day');
+    // June 1..30 inclusive → 30 daily buckets.
+    expect(r.chart.buckets.length).toBe(30);
+    expect(r.chart.compareBuckets).toBeNull();
   });
 });

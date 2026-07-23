@@ -20,6 +20,7 @@ import { SavedFiltersPills } from '@/components/customer-orders/saved-filters-pi
 import { FilterToggleButton } from '@/components/filters/filter-toggle-button';
 import { useBulkDocumentActions } from '@/hooks/use-bulk-actions';
 import { api } from '@/lib/api-client';
+import { stashBulkEdit } from '@/lib/bulk-edit-nav';
 import { documentStateTone } from '@/lib/document-state-tone';
 import { filterFromQueryString } from '@/lib/filter-from-query';
 import {
@@ -32,6 +33,7 @@ import {
   Input,
   ListView,
   MassEditModal,
+  MultiCombobox,
   NativeSelect,
   PeriodInputs,
   PeriodShortcuts,
@@ -41,6 +43,7 @@ import {
 } from '@moysklad/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
+import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
 interface PriceListRow {
@@ -141,6 +144,9 @@ type ExtraFilterFields = {
   currency?: string;
 };
 
+/** Multi-select reference field — moysklad checkbox-dropdown holds {id,label}[]. */
+type RefMulti = { id: string; label: string };
+
 export default function PriceListPage() {
   const t = useTranslations('pages.price_list');
   const tPO = useTranslations('pages.purchase_orders');
@@ -156,13 +162,31 @@ export default function PriceListPage() {
   const [sortKey, setSortKey] = useState<string>('moment');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [filterValues, setFilterValues] = useState<FilterDrawerValues & ExtraFilterFields>({});
+  // «Организация» — moysklad-parity inline multi-select checkbox dropdown
+  // (MultiCombobox), was a single-select modal. Holds the picked {id,label}
+  // pairs; on the wire it goes out as `organizationIds` CSV.
+  const [organizations, setOrganizations] = useState<RefMulti[]>([]);
   const [filterOpen, setFilterOpen] = useState(true);
   const [pickerOpen, setPickerOpen] = useState<
-    null | 'org' | 'priceType' | 'owner' | 'group' | 'massEditOwner'
+    null | 'priceType' | 'owner' | 'group' | 'massEditOwner'
   >(null);
 
+  const router = useRouter();
+
   const [massEditOpen, setMassEditOpen] = useState(false);
-  const [massEditIds, setMassEditIds] = useState<string[]>([]);
+
+  // «Владелец-отдел» options for the mass-edit wizard — mirrors losses/cash-in.
+
+  const { data: massGroupsData } = useQuery<{ items: Array<{ id: string; name: string }> }>({
+    queryKey: ['groups', 'mass-edit'],
+
+    queryFn: () => api.get('/groups?limit=100'),
+
+    enabled: massEditOpen,
+
+    staleTime: 5 * 60 * 1000,
+  });
+  const [massEditIds] = useState<string[]>([]);
   const [massEditOwner, setMassEditOwner] = useState<{ id: string; label: string } | null>(null);
 
   const onResetCursor = () => setCursor(undefined);
@@ -176,7 +200,7 @@ export default function PriceListPage() {
     ...(cursor ? { cursor } : {}),
     ...(filterValues.momentFrom ? { momentFrom: filterValues.momentFrom } : {}),
     ...(filterValues.momentTo ? { momentTo: filterValues.momentTo } : {}),
-    ...(filterValues.organizationId ? { organizationId: filterValues.organizationId } : {}),
+    ...(organizations.length ? { organizationIds: organizations.map((x) => x.id).join(',') } : {}),
     ...(filterValues.priceTypeId ? { priceTypeId: filterValues.priceTypeId } : {}),
     ...(filterValues.ownerId ? { ownerId: filterValues.ownerId } : {}),
     ...(filterValues.groupId ? { groupId: filterValues.groupId } : {}),
@@ -207,9 +231,8 @@ export default function PriceListPage() {
     hasFSM: true,
     hasBulkPrint: true,
     onMassEditClick: (ids) => {
-      setMassEditIds(ids);
-      setMassEditOwner(null);
-      setMassEditOpen(true);
+      stashBulkEdit({ entity: 'price-lists', ids, from: '/price-lists' });
+      router.push('/bulk-edit');
     },
   });
 
@@ -290,7 +313,7 @@ export default function PriceListPage() {
   const hasFilter =
     !!search ||
     !!stateFilter ||
-    !!filterValues.organizationId ||
+    organizations.length > 0 ||
     !!filterValues.priceTypeId ||
     !!filterValues.ownerId ||
     !!filterValues.groupId ||
@@ -318,6 +341,7 @@ export default function PriceListPage() {
       clearLabel={tFilters('clear')}
       onClear={() => {
         setFilterValues({});
+        setOrganizations([]);
         setStateFilter(null);
         onResetCursor();
       }}
@@ -327,6 +351,17 @@ export default function PriceListPage() {
           currentQueryString={params.toString()}
           onApply={(qs) => {
             setFilterValues(filterFromQueryString(qs));
+            // «Организация» is now a multi-select array (organizationIds CSV);
+            // restore it from the saved query string. Fall back to a legacy
+            // single `organizationId` param. Labels aren't in the server query
+            // string (never were), so chips show the id until re-searched.
+            const usp = qs.startsWith('?')
+              ? new URLSearchParams(qs.slice(1))
+              : new URLSearchParams(qs);
+            const orgIds = (usp.get('organizationIds') ?? usp.get('organizationId') ?? '')
+              .split(',')
+              .filter(Boolean);
+            setOrganizations(orgIds.map((id) => ({ id, label: id })));
             onResetCursor();
           }}
         />
@@ -362,27 +397,30 @@ export default function PriceListPage() {
           testId="filter-period"
         />
       </InlineFilterPanel.Field>
-      {/* 2. Организация */}
+      {/* 2. Организация — moysklad-parity inline multi-select checkbox dropdown
+          (was a single-select modal). */}
       <InlineFilterPanel.Field label={tFilters('organization')} expandable>
-        <CatalogPickerField
-          value={
-            filterValues.organizationId
-              ? {
-                  id: filterValues.organizationId,
-                  label: filterValues.organizationLabel ?? filterValues.organizationId,
-                }
-              : null
-          }
-          placeholder=""
-          onPick={() => setPickerOpen('org')}
-          onClear={() => {
-            setFilterValues({
-              ...filterValues,
-              organizationId: undefined,
-              organizationLabel: undefined,
-            });
+        <MultiCombobox
+          value={organizations.map((x) => x.id)}
+          items={organizations.map((x) => ({ value: x.id, label: x.label }))}
+          onSearch={async (q) => {
+            const r = await api.get<{ items: { id: string; name: string }[] }>(
+              `/organizations?search=${encodeURIComponent(q)}&limit=20`,
+            );
+            return r.items.map((x) => ({ value: x.id, label: x.name }));
+          }}
+          onChange={(nextIds, toggled) => {
+            setOrganizations((prev) =>
+              nextIds.map((id) => {
+                const ex = prev.find((s) => s.id === id);
+                if (ex) return ex;
+                if (toggled?.value === id) return { id, label: String(toggled.label) };
+                return { id, label: id };
+              }),
+            );
             onResetCursor();
           }}
+          placeholder=""
           testId="filter-org"
         />
       </InlineFilterPanel.Field>
@@ -591,25 +629,6 @@ export default function PriceListPage() {
         }
       />
       <CatalogPicker
-        open={pickerOpen === 'org'}
-        onClose={() => setPickerOpen(null)}
-        title={tFilters('organization')}
-        fetcher={async (q): Promise<PickerItem[]> => {
-          const r = await api.get<{ items: { id: string; name: string }[] }>(
-            `/organizations?search=${encodeURIComponent(q)}&limit=20`,
-          );
-          return r.items.map((x) => ({ id: x.id, primary: x.name }));
-        }}
-        onSelect={(item) => {
-          setFilterValues({
-            ...filterValues,
-            organizationId: item.id,
-            organizationLabel: String(item.primary),
-          });
-          onResetCursor();
-        }}
-      />
-      <CatalogPicker
         open={pickerOpen === 'priceType'}
         onClose={() => setPickerOpen(null)}
         title={t('default_price_type')}
@@ -695,6 +714,8 @@ export default function PriceListPage() {
         projectValue={null}
         onProjectPick={() => undefined}
         onProjectClear={() => undefined}
+        groupOptions={(massGroupsData?.items ?? []).map((g) => ({ value: g.id, label: g.name }))}
+        showShared
         labels={{
           title: t('mass_edit_title'),
           ownerLabel: tFilters('owner_employee'),

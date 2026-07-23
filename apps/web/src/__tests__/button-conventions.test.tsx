@@ -212,15 +212,14 @@ describe('Convention 2 — census drift-locks', () => {
 // ─── Shared-slot locks (enforced conventions in shared components) ──────────
 
 describe('Convention 2 — shared-slot locks', () => {
-  // 2026-07-03 relock: «Закрыть» was deliberately changed tertiary → secondary
-  // (bordered, moysklad-grounded — see the comment above the button in the
-  // component). The lock now pins the NEW state: 1 success save + ≥5 secondary
-  // (close + 4 menu triggers), and no tertiary drift-back.
-  it('DetailToolbar: save=success, close + menu triggers=secondary', () => {
+  it('DetailToolbar: save=success, close + 4 menu triggers=secondary', () => {
+    // 2026-07 parity pass made «Закрыть» a BORDERED secondary button (moysklad
+    // ground: bordered, not borderless tertiary — see the comment in the file),
+    // so the lock is now: 1 success save + ≥5 secondary (close + 4 dropdowns).
     const src = read('components/document-detail/detail-toolbar.tsx');
     expect(src).toContain('variant="success"');
-    expect(src.match(/variant="secondary"/g)?.length ?? 0).toBeGreaterThanOrEqual(5);
     expect(src).not.toContain('variant="tertiary"');
+    expect(src.match(/variant="secondary"/g)?.length ?? 0).toBeGreaterThanOrEqual(5);
   });
 
   it('ConfirmDialog confirm honours tone (destructive rule lives in the DS)', () => {
@@ -242,9 +241,8 @@ const MIGRATED: Array<[string, string[]]> = [
   // buttons dropped in the 2026-06-25 cp-card pixel-1:1 pass (moysklad's card has neither), so
   // /[id] no longer hosts a DS Button of its own — only /new keeps the surviving contact-add.
   ['app/(app)/counterparties/new/page.tsx', ['variant="secondary"', 'data-test-id="contact-add"']],
-  // 2026-07-03 relock: /customer-orders/new was rebuilt on the PO/invoice-in
-  // shell — link-variant buttons are gone; its surviving DS markers are the
-  // secondary buttons.
+  // link-variant sites left co/new in the 2026-07 shell refactors; the surviving
+  // DS Buttons are the secondary toolbar/tab set.
   ['app/(app)/customer-orders/new/page.tsx', ['variant="secondary"']],
   ['app/(app)/demands/new/page.tsx', ['variant="link"']],
   ['app/(app)/factures-in/page.tsx', ['variant="primary"', 'data-test-id="generate-facture-in"']],
@@ -261,10 +259,7 @@ const MIGRATED: Array<[string, string[]]> = [
     'app/(app)/opportunities/[id]/page.tsx',
     ['variant="destructive"', 'data-test-id="lost-confirm"'],
   ],
-  // 2026-07-04 relock: homepage is now the Sherset kassa dashboard only —
-  // the moysklad «Показатели» sections (and their ghost refresh Button) were
-  // removed; lock the KPI section + top time-filter wiring instead.
-  ['app/(app)/page.tsx', ['SotuvKpiSection', 'DateFilterBar', 'dateFrom']],
+  ['app/(app)/page.tsx', ['variant="ghost"']],
   ['app/(app)/price-lists/[id]/page.tsx', ['size="icon-sm"']],
   ['app/(app)/price-lists/new/page.tsx', ['size="icon-sm"']],
   ['app/(app)/processing-orders/new/page.tsx', ['variant="link"']],
@@ -279,14 +274,11 @@ const MIGRATED: Array<[string, string[]]> = [
     ['variant="secondary"', 'data-test-id="barcode-add"'],
   ],
   ['app/(app)/purchase-orders/new/page.tsx', ['variant="link"']],
-  // 2026-07-03 relock: the PO list's filter UI moved into shared components —
-  // the old inline multi-clear test-id is gone. Drift-lock the shared-component
-  // adoption instead (same style as products/[id]).
+  // filter-state-multi-clear died when PO filters moved into the shared
+  // FilterToggleButton/SavedFiltersPills components — lock the shared adoption.
   ['app/(app)/purchase-orders/page.tsx', ['FilterToggleButton', 'SavedFiltersPills']],
   ['app/(app)/purchase-returns/new/page.tsx', ['variant="link"']],
-  // 2026-07-03 relock: /retail is now a pure redirect to the custom /sotuv POS
-  // (no buttons at all) — lock the redirect so a silent revert is caught.
-  ['app/(app)/retail/page.tsx', ["redirect('/sotuv')"]],
+  ['app/(app)/retail/page.tsx', ['variant="link"', 'asChild']],
   ['components/command-palette.tsx', ['size="icon"']],
   ['components/customer-orders/show-totals-link.tsx', ['variant="link"']],
   ['components/help-drawer.tsx', ['size="icon-sm"']],

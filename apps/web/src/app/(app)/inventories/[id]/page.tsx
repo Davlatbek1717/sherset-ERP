@@ -4,11 +4,14 @@ import { AttachmentsSection } from '@/components/attachments-section';
 import { AttributesEditor } from '@/components/attributes-editor';
 import { DetailContentTabs, DetailHeader, DetailToolbar } from '@/components/document-detail';
 import { DocumentTasksSection } from '@/components/document-tasks-section';
+import {
+  type InventoryPanelRow,
+  InventoryPositionsPanel,
+} from '@/components/inventories/inventory-positions-panel';
 import { useApiMutation } from '@/hooks/use-api-mutation';
 import { useConflictReload } from '@/hooks/use-conflict-reload';
 import { useDestructiveMutation } from '@/hooks/use-destructive-mutation';
 import { useDetailNavigation } from '@/hooks/use-detail-navigation';
-import { usePositionEditorLabels } from '@/hooks/use-position-editor-labels';
 import { useSaveMutation } from '@/hooks/use-save-mutation';
 import { useUnsavedGuard } from '@/hooks/use-unsaved-guard';
 import { api } from '@/lib/api-client';
@@ -25,8 +28,6 @@ import {
   DocumentMetaRow,
   Input,
   type PickerItem,
-  PositionEditor,
-  type PositionRow,
   formatDate,
 } from '@moysklad/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -42,6 +43,7 @@ interface PositionDetail {
   expectedQty: string;
   actualQty: string;
   varianceQty: string;
+  costMinor: string | null;
   product: { id: string; name: string; code: string | null; uom: string | null } | null;
 }
 
@@ -64,13 +66,6 @@ interface InventoryDetail {
   updatedAt: string;
 }
 
-interface ProductItem {
-  id: string;
-  name: string;
-  code: string | null;
-  uom: string | null;
-}
-
 interface FormState {
   organizationId: string;
   organizationLabel: string;
@@ -80,8 +75,7 @@ interface FormState {
   projectLabel: string;
   externalCode: string;
   description: string;
-  /** Each row's `quantity` field carries the counter's actualQty. */
-  positions: PositionRow[];
+  positions: InventoryPanelRow[];
   attributes: Record<string, unknown>;
 }
 
@@ -96,15 +90,15 @@ function formFromData(d: InventoryDetail): FormState {
     externalCode: d.externalCode ?? '',
     description: d.description ?? '',
     positions: d.positions.map((p) => ({
-      _uid: p.id,
+      id: p.id,
       assortmentId: p.assortmentId,
       productLabel: p.product?.name ?? '—',
+      productCode: p.product?.code ?? undefined,
       productUom: p.product?.uom ?? null,
-      quantity: p.actualQty,
-      priceMinor: '0',
-      discount: '0',
-      vat: '',
-      vatEnabled: false,
+      actualQty: String(Number(p.actualQty)),
+      postedExpectedQty: p.expectedQty,
+      postedVarianceQty: p.varianceQty,
+      postedCostMinor: p.costMinor,
     })),
     attributes: (d as { attributes?: Record<string, unknown> }).attributes ?? {},
   };
@@ -119,7 +113,7 @@ function snapshot(s: FormState): string {
     description: s.description,
     positions: s.positions.map((p) => ({
       assortmentId: p.assortmentId,
-      actualQty: p.quantity,
+      actualQty: p.actualQty,
     })),
     attributes: s.attributes,
   });
@@ -127,11 +121,9 @@ function snapshot(s: FormState): string {
 
 export default function InventoryDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const positionLabels = usePositionEditorLabels();
   const detailNav = useDetailNavigation('inventories', id);
   const router = useRouter();
   const qc = useQueryClient();
-  const t = useTranslations('pages.inventories');
   const tCommon = useTranslations('common');
   const tFields = useTranslations('fields');
   const tDetailHeader = useTranslations('detail_header');
@@ -200,9 +192,8 @@ export default function InventoryDetailPage() {
         payload.storeId = form.storeId;
         payload.positions = form.positions.map((p) => ({
           assortmentKind: 'product',
-          // biome-ignore lint/style/noNonNullAssertion: PositionEditor guarantees assortmentId is set before save
-          assortmentId: p.assortmentId!,
-          actualQty: p.quantity,
+          assortmentId: p.assortmentId,
+          actualQty: p.actualQty || '0',
         }));
       }
       payload.attributes = form.attributes;
@@ -222,6 +213,59 @@ export default function InventoryDetailPage() {
   });
 
   const { runDestructive } = useDestructiveMutation();
+
+  // «Создать документ» → Списание (недостача) / Оприходование (излишек) —
+  // moysklad builds the downstream doc from the inventory's variance lines.
+  // Draft: variance = actual − live store balance (position-meta); posted:
+  // the persisted varianceQty/costMinor snapshots. Dirty grid saves first.
+  const [createDocBusy, setCreateDocBusy] = useState(false);
+  const createDownstream = async (kind: 'loss' | 'enter') => {
+    if (!form || !data || createDocBusy) return;
+    setCreateDocBusy(true);
+    try {
+      if (isDirty) await saveMut.mutateAsync();
+      const metaRes = await api.post<{
+        items: Array<{ assortmentId: string; stockQty: string; unitCostMinor: string | null }>;
+      }>('/inventories/position-meta', {
+        storeId: form.storeId,
+        assortmentIds: Array.from(new Set(form.positions.map((p) => p.assortmentId))),
+      });
+      const metaMap = new Map(metaRes.items.map((m) => [m.assortmentId, m]));
+      const fmt = (n: number) => String(Number(n.toFixed(6)));
+      const lines = form.positions
+        .map((p) => {
+          const m = metaMap.get(p.assortmentId);
+          const variance = data.applicable
+            ? Number(p.postedVarianceQty ?? '0')
+            : Number(p.actualQty || '0') - Number(m?.stockQty ?? '0');
+          const cost = (data.applicable ? p.postedCostMinor : null) ?? m?.unitCostMinor ?? '0';
+          return { p, variance, cost };
+        })
+        .filter((x) => (kind === 'loss' ? x.variance < 0 : x.variance > 0));
+      const created = await api.post<{ id: string }>(kind === 'loss' ? '/losses' : '/enters', {
+        organizationId: form.organizationId,
+        storeId: form.storeId,
+        positions: lines.map((x) =>
+          kind === 'loss'
+            ? {
+                assortmentId: x.p.assortmentId,
+                quantity: fmt(Math.abs(x.variance)),
+                costMinor: x.cost,
+              }
+            : {
+                assortmentId: x.p.assortmentId,
+                quantity: fmt(x.variance),
+                costMinor: x.cost,
+              },
+        ),
+      });
+      router.push(kind === 'loss' ? `/losses/${created.id}` : `/enters/${created.id}`);
+    } catch (err) {
+      setSaveError((err as Error).message);
+    } finally {
+      setCreateDocBusy(false);
+    }
+  };
 
   const orgFetcher = async (s: string): Promise<PickerItem[]> => {
     const d = await api.get<{
@@ -245,19 +289,6 @@ export default function InventoryDetailPage() {
     );
     return d.items.map((x) => ({ id: x.id, primary: x.name }));
   };
-  const productFetcher = async (s: string) => {
-    const d = await api.get<{ items: ProductItem[] }>(
-      `/products?search=${encodeURIComponent(s)}&limit=50`,
-    );
-    return d.items.map((p) => ({
-      id: p.id,
-      primary: p.name,
-      secondary: p.code ?? undefined,
-      meta: p.uom ?? undefined,
-      raw: p,
-    }));
-  };
-
   if (isLoading || !form)
     return <div className="p-8 text-[var(--ms-text-muted)] text-sm">{tCommon('loading')}</div>;
   if (!data) return <div className="p-8 text-sm">{tCommon('not_found')}</div>;
@@ -284,6 +315,22 @@ export default function InventoryDetailPage() {
         onNext={detailNav.onNext}
         apiData={data}
         onClone={() => cloneMut.mutate()}
+        // «Создать документ» = Списание · Оприходование (moysklad builds them
+        // from the inventory's shortage/surplus lines — user screenshots 2026-07-14).
+        createMenuItems={[
+          {
+            id: 'loss',
+            label: tDetailTitles('loss'),
+            onSelect: () => void createDownstream('loss'),
+            disabled: createDocBusy,
+          },
+          {
+            id: 'enter',
+            label: tDetailTitles('enter'),
+            onSelect: () => void createDownstream('enter'),
+            disabled: createDocBusy,
+          },
+        ]}
         onDelete={
           !data.applicable
             ? () =>
@@ -457,14 +504,6 @@ export default function InventoryDetailPage() {
                 data-test-id="field-shortage"
               />
             </DocumentMetaField>
-            <DocumentMetaField label={tFields('description')}>
-              <Input
-                value={form.description}
-                onChange={(e) => setForm((s) => s && { ...s, description: e.target.value })}
-                disabled={!editable}
-                data-test-id="field-description"
-              />
-            </DocumentMetaField>
           </DocumentMetaRow>
 
           <DocumentMetaRow>
@@ -484,87 +523,29 @@ export default function InventoryDetailPage() {
             auditEntity="Inventory"
             entityId={data.id}
             relatedGroups={[]}
-            positionsLabel={tDetailTabs('main')}
+            positionsLabel={tDetailTabs('positions')}
             filesSlot={<AttachmentsSection entity="Inventory" entityId={data.id} />}
           >
-            {data.state === 'draft' ? (
-              <PositionEditor<ProductItem>
-                positions={form.positions}
-                onChange={(next) => setForm((s) => s && { ...s, positions: next })}
-                vatEnabled={false}
-                vatIncluded={false}
-                productFetcher={productFetcher}
-                onPickProduct={(raw) => ({
-                  productUom: raw?.uom ?? null,
-                })}
-                readOnly={!editable}
-                mode="qty-only"
-                labels={{ ...positionLabels, quantity: t('actual_qty') }}
-              />
-            ) : (
-              <div className="overflow-hidden rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)]">
-                <table className="w-full text-sm">
-                  <thead className="bg-[var(--ms-bg-muted)]">
-                    <tr>
-                      <th className="h-8 w-12 px-3 text-left font-medium text-[var(--ms-text-muted)] text-xs uppercase tracking-wide">
-                        {tFields('position')}
-                      </th>
-                      <th className="h-8 px-3 text-left font-medium text-[var(--ms-text-muted)] text-xs uppercase tracking-wide">
-                        {tFields('product')}
-                      </th>
-                      <th className="h-8 w-32 px-3 text-right font-medium text-[var(--ms-text-muted)] text-xs uppercase tracking-wide">
-                        {t('expected_qty')}
-                      </th>
-                      <th className="h-8 w-32 px-3 text-right font-medium text-[var(--ms-text-muted)] text-xs uppercase tracking-wide">
-                        {t('actual_qty')}
-                      </th>
-                      <th className="h-8 w-32 px-3 text-right font-medium text-[var(--ms-text-muted)] text-xs uppercase tracking-wide">
-                        {t('variance_qty')}
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.positions.map((p) => {
-                      const variance = Number(p.varianceQty);
-                      const varianceColor =
-                        variance > 0
-                          ? 'text-[var(--ms-text-brand)]'
-                          : variance < 0
-                            ? 'text-[var(--ms-text-destructive)]'
-                            : 'text-[var(--ms-text-muted)]';
-                      const varianceSign = variance > 0 ? '+' : '';
-                      return (
-                        <tr key={p.id} className="border-[var(--ms-border-default)] border-t">
-                          <td className="px-3 py-2 text-[var(--ms-text-muted)] text-sm">
-                            {p.position}
-                          </td>
-                          <td className="px-3 py-2">
-                            <div className="font-medium">{p.product?.name ?? '—'}</div>
-                            {p.product?.code && (
-                              <div className="text-[var(--ms-text-muted)] text-xs">
-                                {p.product.code}
-                              </div>
-                            )}
-                          </td>
-                          <td className="px-3 py-2 text-right text-[var(--ms-text-muted)] tabular-nums">
-                            {Number(p.expectedQty)} {p.product?.uom ?? ''}
-                          </td>
-                          <td className="px-3 py-2 text-right font-medium tabular-nums">
-                            {Number(p.actualQty)} {p.product?.uom ?? ''}
-                          </td>
-                          <td
-                            className={`px-3 py-2 text-right font-medium tabular-nums ${varianceColor}`}
-                          >
-                            {varianceSign}
-                            {variance} {p.product?.uom ?? ''}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
+            {/* Band 3 — the moysklad positions block: [Остатки по складу |
+                Остатки по ячейке] toggle · Фильтр · search · grid with the
+                Расчетный/Фактический/Разница/Цена/Избыток-недостача columns ·
+                add bar (draft) with «Добавить из справочника» / «Дополнить из
+                остатков» / «Дополнить из номенклатуры» · Комментарий · Итого. */}
+            <InventoryPositionsPanel
+              mode="detail"
+              storeId={form.storeId}
+              rows={form.positions}
+              onRowsChange={
+                editable ? (next) => setForm((s) => s && { ...s, positions: next }) : undefined
+              }
+              readOnly={!editable}
+              description={form.description}
+              onDescriptionChange={
+                editable ? (v) => setForm((s) => s && { ...s, description: v }) : undefined
+              }
+              descriptionDisabled={!editable}
+              testId="inventory-detail-positions"
+            />
           </DetailContentTabs>
         </div>
 

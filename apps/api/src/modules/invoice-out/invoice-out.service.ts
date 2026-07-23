@@ -14,9 +14,11 @@ import { CounterpartyBalanceService } from '../counterparty-balance/counterparty
 import { CustomerOrderService } from '../customer-order/customer-order.service.js';
 import { tashkentRangeBounds } from '../report/report-date-bounds.util.js';
 import { resolveCreatorGroupId } from '../shared/group-stamp.js';
-import { assertMassEditRefsInTenant } from '../shared/mass-edit.js';
+import { assertMassEditRefsInTenant, assertStateInTenant } from '../shared/mass-edit.js';
+import { combineMergePositions } from '../shared/merge-positions.util.js';
 import { mapVersionedUpdateError } from '../shared/optimistic-lock.js';
 import { assertOrgAccountMatchesOrg } from '../shared/org-account.js';
+import { searchTokenGroups } from '../shared/search-tokens.js';
 import { WebhookFireService } from '../webhook/webhook-fire.service.js';
 import {
   CreateFromCustomerOrderSchema,
@@ -73,6 +75,8 @@ export class InvoiceOutService {
         store: { select: { id: true, name: true } },
         owner: { select: { id: true, name: true } },
         customerOrder: { select: { id: true, name: true } },
+        // «Статус» column — account custom status (coloured pill), mirror supply.
+        status: { select: { id: true, name: true, color: true } },
         _count: { select: { positions: true } },
       },
     });
@@ -226,6 +230,18 @@ export class InvoiceOutService {
     // literal make TS infer a union too complex to represent (TS2590); pushing
     // typed elements onto an annotated array sidesteps it.
     const and: Prisma.InvoiceOutWhereInput[] = [];
+    // moysklad «содержит»: tokenized multi-word search merged INTO the AND array
+    // (each word may match a different field), composing with the other AND clauses
+    // instead of a colliding second top-level `AND` key.
+    if (filter.search) {
+      and.push(
+        ...searchTokenGroups(filter.search, (tok): Prisma.InvoiceOutWhereInput[] => [
+          { name: { contains: tok, mode: 'insensitive' as const } },
+          { description: { contains: tok, mode: 'insensitive' as const } },
+          { agent: { name: { contains: tok, mode: 'insensitive' as const } } },
+        ]),
+      );
+    }
     if (filter.agentIds) and.push({ agentId: { in: filter.agentIds } });
     else if (filter.agentId) and.push({ agentId: filter.agentId });
     if (Object.keys(agentSub).length) and.push({ agent: agentSub });
@@ -270,15 +286,8 @@ export class InvoiceOutService {
       ...paymentPlannedRange,
       ...sumRange,
       ...(and.length ? { AND: and } : {}),
-      ...(filter.search
-        ? {
-            OR: [
-              { name: { contains: filter.search, mode: 'insensitive' } },
-              { description: { contains: filter.search, mode: 'insensitive' } },
-              { agent: { name: { contains: filter.search, mode: 'insensitive' } } },
-            ],
-          }
-        : {}),
+      // «содержит» search is pushed into the `and` accumulator above so it composes
+      // with the other AND clauses (no colliding top-level `AND` key).
     };
   }
 
@@ -322,6 +331,8 @@ export class InvoiceOutService {
         store: { select: { id: true, name: true } },
         organizationAccount: { select: { id: true, name: true, accountNumber: true } },
         agentAccount: { select: { id: true, accountNumber: true } },
+        // «Статус» pill — account custom status (State row), mirror supply.
+        status: { select: { id: true, name: true, color: true } },
         positions: {
           include: {
             product: { select: { id: true, name: true, code: true, uom: true } },
@@ -331,7 +342,54 @@ export class InvoiceOutService {
       },
     });
     if (!invoice) throw new NotFoundException(`InvoiceOut ${id} not found`);
-    return invoice;
+    // «Владелец-отдел» (groupId) has NO Prisma relation on InvoiceOut — only the
+    // scalar FK column — so the owner popover's department LABEL can't come from an
+    // `include`. Resolve its name here (tenant-scoped) and attach it as `group` so the
+    // detail page can pre-fill the «Отдел» picker (mirrors invoice-in.findById).
+    const group = invoice.groupId
+      ? await this.prisma.client.group.findFirst({
+          where: { id: invoice.groupId, accountId },
+          select: { id: true, name: true },
+        })
+      : null;
+    return { ...invoice, group };
+  }
+
+  /**
+   * moysklad header «N из ВСЕГО ‹ ›» record navigator — the invoice's 1-based
+   * position in the DEFAULT newest-first list (moment desc, id desc tiebreak) + its
+   * neighbour ids, so the detail toolbar shows the REAL total and the arrows walk the
+   * whole set even on a direct-URL visit (no list cache). Mirrors invoice-in.findPosition.
+   */
+  async findPosition(accountId: string, id: string) {
+    const current = await this.prisma.client.invoiceOut.findFirst({
+      where: { id, accountId, deletedAt: null },
+      select: { id: true, moment: true },
+    });
+    if (!current) throw new NotFoundException(`InvoiceOut ${id} not found`);
+
+    const where = this.buildListWhere(accountId, InvoiceOutFilterSchema.parse({}));
+    const aboveCurrent: Prisma.InvoiceOutWhereInput = {
+      OR: [{ moment: { gt: current.moment } }, { moment: current.moment, id: { gt: current.id } }],
+    };
+    const belowCurrent: Prisma.InvoiceOutWhereInput = {
+      OR: [{ moment: { lt: current.moment } }, { moment: current.moment, id: { lt: current.id } }],
+    };
+    const [total, above, prev, next] = await Promise.all([
+      this.prisma.client.invoiceOut.count({ where }),
+      this.prisma.client.invoiceOut.count({ where: { AND: [where, aboveCurrent] } }),
+      this.prisma.client.invoiceOut.findFirst({
+        where: { AND: [where, aboveCurrent] },
+        orderBy: [{ moment: 'asc' }, { id: 'asc' }],
+        select: { id: true },
+      }),
+      this.prisma.client.invoiceOut.findFirst({
+        where: { AND: [where, belowCurrent] },
+        orderBy: [{ moment: 'desc' }, { id: 'desc' }],
+        select: { id: true },
+      }),
+    ]);
+    return { current: above + 1, total, prevId: prev?.id ?? null, nextId: next?.id ?? null };
   }
 
   async create(accountId: string, userId: string, raw: unknown) {
@@ -371,6 +429,17 @@ export class InvoiceOutService {
       if (!grp) throw new BadRequestException("Bo'lim topilmadi");
     }
 
+    // «Статус» — tenant-validate the custom status against the invoiceout
+    // entityType BEFORE create (mirror supply.create) — never trust the
+    // client-sent id to FK-connect a foreign-tenant state.
+    if (parsed.statusId) {
+      const status = await this.prisma.client.state.findFirst({
+        where: { id: parsed.statusId, accountId, entityType: 'invoiceout', archived: false },
+        select: { id: true },
+      });
+      if (!status) throw new BadRequestException(`Unknown status: ${parsed.statusId}`);
+    }
+
     try {
       const created = await this.prisma.client.invoiceOut.create({
         data: {
@@ -378,6 +447,7 @@ export class InvoiceOutService {
           ownerId: parsed.ownerId ?? userId,
           groupId: parsed.groupId ?? creatorGroupId,
           shared: parsed.shared ?? false,
+          statusId: parsed.statusId ?? null,
           name,
           agentId: parsed.agentId,
           organizationId: parsed.organizationId,
@@ -494,10 +564,13 @@ export class InvoiceOutService {
     const parsed = this.parseUpdate(raw);
     const existing = await this.findById(accountId, id);
 
-    if (existing.applicable) {
-      throw new BadRequestException(
-        "Provedeno schyotni o'zgartirib bo'lmaydi — avval 'Snyat provedeno' qiling",
-      );
+    // moysklad keeps a POSTED («Проведено») customer invoice fully editable (it
+    // re-derives the mutual-settlement balance + CO invoiced-total on save). We do
+    // the same: no hard posted-lock — the $transaction below REVERSES the old posting
+    // side-effects and RE-APPLIES them with the new values (see the `existing.applicable`
+    // branches). A CANCELLED invoice is the only non-editable state (mirrors FE `editable`).
+    if (existing.state === 'cancelled') {
+      throw new BadRequestException("Bekor qilingan schyotni o'zgartirib bo'lmaydi");
     }
 
     const data: Prisma.InvoiceOutUpdateInput = {};
@@ -559,6 +632,43 @@ export class InvoiceOutService {
     }
     if (parsed.externalCode !== undefined) data.externalCode = parsed.externalCode;
 
+    // «Владелец» / «Владелец-отдел» / «Общий доступ» from the owner popover —
+    // tenant-validate the refs (mirror invoice-in.update + the create guard) so a
+    // hand-crafted request can't point ownerId/groupId at another account.
+    if (parsed.ownerId !== undefined) {
+      if (parsed.ownerId) {
+        await assertMassEditRefsInTenant(this.prisma, accountId, { ownerId: parsed.ownerId });
+        data.owner = { connect: { id: parsed.ownerId } };
+      } else {
+        data.owner = { disconnect: true };
+      }
+    }
+    if (parsed.groupId !== undefined) {
+      if (parsed.groupId) {
+        const grp = await this.prisma.client.group.findFirst({
+          where: { id: parsed.groupId, accountId },
+          select: { id: true },
+        });
+        if (!grp) throw new BadRequestException("Bo'lim topilmadi");
+      }
+      data.groupId = parsed.groupId ?? null;
+    }
+    if (parsed.shared !== undefined) data.shared = parsed.shared;
+    // «Статус» — custom status may also arrive via a full-form PATCH (the
+    // header pill uses the dedicated :id/status endpoint; this keeps API parity).
+    if (parsed.statusId !== undefined) {
+      if (parsed.statusId) {
+        const status = await this.prisma.client.state.findFirst({
+          where: { id: parsed.statusId, accountId, entityType: 'invoiceout', archived: false },
+          select: { id: true },
+        });
+        if (!status) throw new BadRequestException(`Unknown status: ${parsed.statusId}`);
+        data.status = { connect: { id: parsed.statusId } };
+      } else {
+        data.status = { disconnect: true };
+      }
+    }
+
     if (parsed.positions !== undefined) {
       // The destructive deleteMany is deferred into the $transaction below so a
       // version conflict (409) rolls back the delete instead of leaving the
@@ -602,6 +712,31 @@ export class InvoiceOutService {
       // already bumped the row to N+1 — a version filter there would always
       // miss and false-409.
       const saved = await this.prisma.client.$transaction(async (tx) => {
+        // moysklad keeps a POSTED invoice editable. Posting applied two side-effects:
+        // a counterparty balance delta (they owe us → +sum) and, if linked,
+        // +CO.invoicedSumMinor. REVERSE them with the OLD agent/currency/CO/sum so the
+        // recompute below can RE-APPLY the NEW ones — keeping the agent balance + CO
+        // invoiced-total exact for ANY change (sum, agent, currency, CO link). All inside
+        // the tx, so a version conflict (409) rolls the reversal back too.
+        if (existing.applicable) {
+          await this.balance.applyDelta(
+            tx,
+            accountId,
+            existing.agentId,
+            existing.currency,
+            -existing.sumMinor, // undo the "they owe us" delta (post() applied +sum)
+          );
+          if (existing.customerOrderId) {
+            await this.co.applyInvoice(
+              tx,
+              accountId,
+              existing.customerOrderId,
+              existing.sumMinor,
+              'revert',
+            );
+          }
+        }
+
         if (parsed.positions !== undefined) {
           await tx.invoiceOutPosition.deleteMany({ where: { invoiceOutId: id, accountId } });
         }
@@ -615,10 +750,32 @@ export class InvoiceOutService {
           parsed.vatEnabled ?? existing.vatEnabled,
           parsed.vatIncluded ?? existing.vatIncluded,
         );
-        return tx.invoiceOut.update({
-          where: { id, accountId },
-          data: totals,
-        });
+
+        const finalData: Prisma.InvoiceOutUpdateInput = { ...totals };
+        if (existing.applicable) {
+          const newAgentId = parsed.agentId ?? existing.agentId;
+          const newCurrency = parsed.currency ?? existing.currency;
+          const newCoId =
+            parsed.customerOrderId !== undefined
+              ? parsed.customerOrderId
+              : existing.customerOrderId;
+          await this.balance.applyDelta(tx, accountId, newAgentId, newCurrency, totals.sumMinor);
+          if (newCoId) {
+            await this.co.applyInvoice(tx, accountId, newCoId, totals.sumMinor, 'invoice');
+          }
+          // Re-derive the payment state from the unchanged payments vs the NEW sum
+          // (mirrors recordPayment): paid / partially_paid / sent|posted.
+          const payed = existing.payedSumMinor;
+          finalData.state =
+            payed >= totals.sumMinor && totals.sumMinor > 0n
+              ? 'paid'
+              : payed > 0n
+                ? 'partially_paid'
+                : existing.published
+                  ? 'sent'
+                  : 'posted';
+        }
+        return tx.invoiceOut.update({ where: { id, accountId }, data: finalData });
       });
       const diff = this.diff(existing, saved);
       if (Object.keys(diff).length) {
@@ -701,7 +858,14 @@ export class InvoiceOutService {
     accountId: string,
     userId: string,
     id: string,
-    patch: { ownerId?: string | null; projectId?: string | null; description?: string | null },
+    patch: {
+      ownerId?: string | null;
+      projectId?: string | null;
+      description?: string | null;
+      groupId?: string | null;
+      shared?: boolean;
+      stateId?: string | null;
+    },
   ) {
     await this.findById(accountId, id);
     await assertMassEditRefsInTenant(this.prisma, accountId, patch);
@@ -709,6 +873,13 @@ export class InvoiceOutService {
     if ('ownerId' in patch) data.ownerId = patch.ownerId;
     if ('projectId' in patch) data.projectId = patch.projectId;
     if ('description' in patch) data.description = patch.description;
+    if ('groupId' in patch) data.groupId = patch.groupId;
+    if ('shared' in patch && patch.shared !== undefined) data.shared = patch.shared;
+    if ('stateId' in patch) {
+      if (patch.stateId)
+        await assertStateInTenant(this.prisma, accountId, patch.stateId, 'invoiceout');
+      data.statusId = patch.stateId;
+    }
     const updated = await this.prisma.client.invoiceOut.update({
       where: { id, accountId },
       data,
@@ -727,6 +898,128 @@ export class InvoiceOutService {
     await this.logAudit(accountId, userId, printed ? 'mark-printed' : 'unmark-printed', id, null);
     this.webhookFire.fireForEvent(accountId, 'invoiceout', 'UPDATE', id, ['printed']);
     return updated;
+  }
+
+  /**
+   * «Статус» — assign an account-defined custom status (State row,
+   * entityType="invoiceout") to a single invoice, or clear it (`statusId: null`).
+   * Applied IMMEDIATELY (moysklad parity — the header pill is a live mutation,
+   * not a save-on-edit field). Mirror of supply.setStatus.
+   */
+  async setStatus(accountId: string, userId: string, id: string, statusId: string | null) {
+    if (statusId) {
+      const status = await this.prisma.client.state.findFirst({
+        where: { id: statusId, accountId, entityType: 'invoiceout', archived: false },
+        select: { id: true },
+      });
+      if (!status) throw new BadRequestException(`Unknown status: ${statusId}`);
+    }
+    const invoice = await this.prisma.client.invoiceOut.findFirst({
+      where: { id, accountId, deletedAt: null },
+      select: { statusId: true },
+    });
+    if (!invoice) throw new NotFoundException(`InvoiceOut ${id} not found`);
+    await this.prisma.client.invoiceOut.update({
+      where: { id, accountId },
+      data: { status: statusId ? { connect: { id: statusId } } : { disconnect: true } },
+    });
+    await this.logAudit(accountId, userId, 'set-status', id, {
+      status: { before: invoice.statusId, after: statusId },
+    });
+    this.webhookFire.fireForEvent(accountId, 'invoiceout', 'UPDATE', id, ['statusId']);
+    return this.findById(accountId, id);
+  }
+
+  /**
+   * «Объединить» — combine the selected invoices into ONE new draft and return
+   * its id (the list menu then opens it). Sources are untouched; identical lines
+   * are summed via the shared combineMergePositions (mirror purchase-order.merge).
+   * Guards: ≥2 unique ids · all found · single currency · single VAT mode.
+   */
+  async merge(accountId: string, userId: string, ids: string[]): Promise<{ id: string }> {
+    const uniqueIds = [...new Set(ids)];
+    if (uniqueIds.length < 2) {
+      throw new BadRequestException('Birlashtirish uchun kamida 2 ta schyot tanlang');
+    }
+    const sources = await this.prisma.client.invoiceOut.findMany({
+      where: { id: { in: uniqueIds }, accountId, deletedAt: null },
+      include: { positions: { orderBy: { position: 'asc' } } },
+    });
+    if (sources.length !== uniqueIds.length) {
+      throw new BadRequestException("Tanlangan schyotlarning ba'zilari topilmadi yoki o'chirilgan");
+    }
+    if (new Set(sources.map((s) => s.currency)).size > 1) {
+      throw new BadRequestException("Turli valyutadagi schyotlarni birlashtirib bo'lmaydi");
+    }
+    if (new Set(sources.map((s) => `${s.vatEnabled}|${s.vatIncluded}`)).size > 1) {
+      throw new BadRequestException("Turli QQS sozlamalaridagi schyotlarni birlashtirib bo'lmaydi");
+    }
+
+    // Primary = earliest invoice (deterministic, id-tiebroken); carry its header.
+    const primary = sources.reduce((earliest, s) => {
+      const d = s.moment.getTime() - earliest.moment.getTime();
+      if (d < 0) return s;
+      if (d === 0 && s.id < earliest.id) return s;
+      return earliest;
+    });
+    const combined = combineMergePositions(sources);
+    const totals = this.computeTotals(combined, primary.vatEnabled, primary.vatIncluded);
+
+    try {
+      const name = await this.nextInvoiceName(accountId);
+      const creatorGroupId = await resolveCreatorGroupId(this.prisma.client, accountId, userId);
+      const created = await this.prisma.client.invoiceOut.create({
+        data: {
+          accountId,
+          ownerId: userId,
+          groupId: creatorGroupId,
+          name,
+          agentId: primary.agentId,
+          organizationId: primary.organizationId,
+          storeId: primary.storeId,
+          contractId: primary.contractId,
+          projectId: primary.projectId,
+          salesChannelId: primary.salesChannelId,
+          organizationAccountId: primary.organizationAccountId,
+          agentAccountId: primary.agentAccountId,
+          externalCode: null,
+          moment: new Date(),
+          paymentPlannedMoment: null,
+          description: primary.description,
+          // Carry the primary invoice's custom attributes as-is (already
+          // validated on its own create; posting re-enforces required attrs).
+          attributes: (primary.attributes ?? {}) as Prisma.InputJsonValue,
+          currency: primary.currency,
+          rateValue: primary.rateValue,
+          vatEnabled: primary.vatEnabled,
+          vatIncluded: primary.vatIncluded,
+          state: 'draft',
+          applicable: false,
+          sumMinor: totals.sumMinor,
+          vatSumMinor: totals.vatSumMinor,
+          positions: {
+            create: combined.map((p, idx) => ({
+              accountId,
+              position: idx + 1,
+              assortmentKind: p.assortmentKind,
+              assortmentId: p.assortmentId,
+              productId: p.productId,
+              quantity: p.quantity,
+              priceMinor: p.priceMinor,
+              discount: p.discount,
+              vat: p.vat,
+              vatEnabled: p.vatEnabled,
+            })),
+          },
+        },
+        select: { id: true },
+      });
+      await this.logAudit(accountId, userId, 'merge', created.id, { sourceIds: uniqueIds });
+      this.webhookFire.fireForEvent(accountId, 'invoiceout', 'CREATE', created.id);
+      return { id: created.id };
+    } catch (e) {
+      this.handlePrisma(e);
+    }
   }
 
   /**
@@ -900,9 +1193,8 @@ export class InvoiceOutService {
     if (existing.state !== 'draft') {
       throw new BadRequestException(`O'tkazilmaydi: ${existing.state} → posted. Faqat draft'dan`);
     }
-    if (existing.positions.length === 0) {
-      throw new BadRequestException("Pozitsiyalar yo'q — provedeno qilib bo'lmaydi");
-    }
+    // Owner 2026-07-08: «Проведено» toggles freely — an empty doc may be posted
+    // (0 positions ⇒ 0 stock delta; moysklad allows it). No position precondition.
 
     return this.prisma.client.$transaction(async (tx) => {
       const updated = await tx.invoiceOut.update({
@@ -1104,17 +1396,30 @@ export class InvoiceOutService {
   }
 
   private async nextInvoiceName(accountId: string): Promise<string> {
-    const year = new Date().getFullYear();
-    const prefix = `СЧ-${year}-`;
-    const n = await allocateDocumentNumber(this.prisma.client, accountId, prefix, async () => {
-      const last = await this.prisma.client.invoiceOut.findFirst({
-        where: { accountId, name: { startsWith: prefix } },
-        orderBy: { name: 'desc' },
-        select: { name: true },
-      });
-      return last ? Number.parseInt(last.name.slice(prefix.length), 10) || 0 : 0;
-    });
-    return `${prefix}${String(n).padStart(5, '0')}`;
+    // moysklad-parity: documents carry a plain, continuous integer «Номер» — no
+    // «СЧ-YYYY-» prefix (app-wide decision `3b67f836`; invoice-out was the last
+    // prefixed generator standing). Year-less counter key so the sequence never
+    // resets annually; lazy seed continues from the highest TRAILING number
+    // across BOTH the plain format and legacy «СЧ-YYYY-NNNNN» names.
+    const n = await allocateDocumentNumber(
+      this.prisma.client,
+      accountId,
+      'invoiceout',
+      async () => {
+        const rows = await this.prisma.client.invoiceOut.findMany({
+          where: { accountId },
+          select: { name: true },
+        });
+        let max = 0;
+        for (const r of rows) {
+          const m = r.name.match(/\d+$/);
+          if (m) max = Math.max(max, Number.parseInt(m[0], 10) || 0);
+        }
+        return max;
+      },
+    );
+    // moysklad pads the «Номер» to 5 digits — «00001», «00877».
+    return String(n).padStart(5, '0');
   }
 
   private computeTotals(

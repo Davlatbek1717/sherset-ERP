@@ -27,6 +27,12 @@ export interface DocumentTotalsPanelProps {
   totalMinor: bigint | string | number;
   /** Optional profit row (Demand only — moysklad shows Прибыль for sales). */
   profitMinor?: bigint | string | number;
+  /** Optional «Комиссия» row (commission report «Выданный» — total per-line
+   *  commission/reward). Rendered under Итого. */
+  commissionMinor?: bigint | string | number;
+  /** Optional «Сумма комитента» row (commission report — Итого − Комиссия, the
+   *  amount payable to the consigner). Rendered under «Комиссия». */
+  commitentMinor?: bigint | string | number;
   /** Optional aggregate weight. */
   weight?: number | null;
   /** Optional aggregate volume. */
@@ -56,6 +62,8 @@ export function DocumentTotalsPanel({
   vatMinor,
   totalMinor,
   profitMinor,
+  commissionMinor,
+  commitentMinor,
   weight,
   volume,
   quantity,
@@ -76,9 +84,11 @@ export function DocumentTotalsPanel({
       data-test-id={testId ?? 'doc-totals'}
     >
       <dl className="min-w-[280px] space-y-1.5 text-sm">
-        <div className="flex justify-between">
+        {/* moysklad bolds «Промежуточный итог» (and «Итого» below) — the section
+            totals. The НДС / «Цена включает НДС» / Прибыль rows stay regular. */}
+        <div className="flex justify-between font-semibold">
           <dt className="text-[var(--ms-text-primary)]">Промежуточный итог:</dt>
-          <dd className="font-medium tabular-nums" data-test-id="totals-subtotal">
+          <dd className="tabular-nums" data-test-id="totals-subtotal">
             {fmt(subtotalMinor, currency)}
           </dd>
         </div>
@@ -126,6 +136,24 @@ export function DocumentTotalsPanel({
             <dt>Прибыль:</dt>
             <dd className="tabular-nums" data-test-id="totals-profit">
               {fmt(profitMinor, currency)}
+            </dd>
+          </div>
+        )}
+        {/* Commission report «Выданный» — moysklad shows «Комиссия» + «Сумма
+            комитента» under Итого (plain text, not bold). */}
+        {commissionMinor !== undefined && (
+          <div className="flex justify-between text-sm">
+            <dt className="text-[var(--ms-text-primary)]">Комиссия:</dt>
+            <dd className="tabular-nums" data-test-id="totals-commission">
+              {fmt(commissionMinor, currency)}
+            </dd>
+          </div>
+        )}
+        {commitentMinor !== undefined && (
+          <div className="flex justify-between text-sm">
+            <dt className="text-[var(--ms-text-primary)]">Сумма комитента:</dt>
+            <dd className="tabular-nums" data-test-id="totals-commitent">
+              {fmt(commitentMinor, currency)}
             </dd>
           </div>
         )}
