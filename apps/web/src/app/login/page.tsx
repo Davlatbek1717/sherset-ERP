@@ -36,7 +36,7 @@ export default function LoginPage() {
       <Container size="sm" className="py-10">
         <div className="overflow-hidden rounded-[var(--ms-radius-md)] bg-[var(--ms-bg-surface)] shadow-[var(--ms-shadow-lg)]">
           <div className="bg-[var(--ms-brand-500)] px-6 py-4 text-white">
-            <h1 className="font-semibold text-xl">МойСклад</h1>
+            <h1 className="font-semibold text-xl">SHERSET</h1>
             <p className="mt-0.5 text-white/80 text-xs">{t('login_title')}</p>
           </div>
 

@@ -21,8 +21,8 @@ import { QueryProvider } from '@/lib/query-client';
 // the Climart bolt mark (src/app/icon.svg) + a Climart title. The real MoySklad
 // site carries its own branding; ours must not read as «MoySklad Clone».
 export const metadata: Metadata = {
-  title: 'Climart — Savdo va ombor boshqaruvi',
-  description: 'Climart — bulutli savdo, ombor va moliya boshqaruvi tizimi',
+  title: 'Sherset — Biznes boshqaruv tizimi',
+  description: 'Bulutli ERP, buxgalteriya va savdo boshqaruvi',
 };
 
 // Phone-scan flow (/scan): without a viewport meta phones render the desktop

@@ -15,7 +15,7 @@ import {
   Icons,
   type MobileNavSection,
   MobileNavSheet,
-  MoyskladLogo,
+  ShersetLogo,
   type NavItem,
   SubNav,
   type SubNavItem,
@@ -593,7 +593,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     <AppShell
       brand={
         <a href="/" aria-label="Moysklad — bosh sahifa" className="flex items-center">
-          <MoyskladLogo size={28} className="shrink-0" />
+          <ShersetLogo variant="white" height={22} className="shrink-0" />
         </a>
       }
       primaryNav={navWithActive}
