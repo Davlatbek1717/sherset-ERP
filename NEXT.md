@@ -319,11 +319,13 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > **B1 ✅ BAJARILDI:** worktree `d:/projects/sherset-climart-adoption` (branch `climart-adoption`, commit `a52c3c7`).
 > climart tree overlay + keep(counterparties/debts/deploy/docs) + drop(sotuv/omborchi/cell/replenishment/restock-tasks) +
 > add(bulk-edit/specialoffers/subscription). `pnpm install` ✅ · money build ✅ · prisma generate ✅. **Main daxlsiz.**
-> **⏭️ KEYINGI = B2/B3 reconcile** (worktree'da). **O'lchangan: 186 typecheck xato = 119 API + 67 web.**
-> API: `Debt` model climart sxemasida yo'q (Sherset'dan qo'sh) + debt type-kengaytma (PermissionEntity/notification).
-> WEB: kept counterparties/debts Sherset-only infra'ni import qiladi (sms-broadcast-modal/use-keyboard-nav/debt-api/
-> telegram-panel/Sherset ListView) → keep-list transitiv kengaytir YOKI climart'ga moslash (A/B qaror, plan §5).
-> **Har sessiya boshida:** worktree'da `pnpm --filter @moysklad/money build`. **HALOL:** tree adopt bo'ldi, lekin hali BUILD BO'LMAYDI.
+> **B2 ✅ + B3-partial ✅ (commit `2e3b35c`): typecheck 186 → 75.** B2 = Sherset Debt-modellar + back-relation'lar
+> climart sxemasiga (API 119→34). B3-partial = PermissionEntity/NotificationKind/AttachmentEntity +debt (API 34→8).
+> **⏭️ KEYINGI = qolgan 75 (8 API + 67 web) = keep-list transitiv-tail** (debts/counterparties → Sherset sms/telegram/
+> UI-infra). Yo'l (plan §6): leaf-fayllarni tikla (sms-render.util/sms-template.service/use-keyboard-nav/debt-api/
+> sms-broadcast-modal/telegram-panel) + climart SmsService/TelegramService'ga metod-patch + counterparties ListView'ni
+> climart'ga ADAPT → typecheck 0 → B4 build → B5 dev-DB → B6 verify.
+> **Har sessiya boshida:** worktree'da `pnpm --filter @moysklad/money build`. **HALOL:** hali BUILD BO'LMAYDI.
 
 > **🟢 2026-07-23k (DEMAND list QISM 3 — Грузополучатель ustun+filtr + Товар/группа filtr · Phase-1 · `b2fe49f`)**
 > Ro'yxatni moysklad `demand-01-list` tomon: **L1** «Грузополучатель» ustuni (list `include`ga `consignee`;
