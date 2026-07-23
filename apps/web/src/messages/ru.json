@@ -5844,7 +5844,8 @@
       "detail_last_login": "Последний вход",
       "detail_never": "никогда",
       "detail_created_at": "Создан",
-      "salary_placeholder": "Будет реализовано в спринте P5 (HR-Зарплата + KPI)."
+      "salary_placeholder": "Будет реализовано в спринте P5 (HR-Зарплата + KPI).",
+      "tab_schedule": "График работы"
     },
     "hrAttendance": {
       "title": "Посещаемость",
@@ -5876,7 +5877,10 @@
       "empty_today_hint": "Нажмите «Отметить приход»",
       "empty_report": "За выбранный период записей нет",
       "delete_confirm": "Удалить запись посещаемости?",
-      "delete_confirm_desc": "Это действие нельзя отменить."
+      "delete_confirm_desc": "Это действие нельзя отменить.",
+      "late": "Опоздание",
+      "monthly_report": "Месячный отчёт",
+      "source_auto": "авто"
     },
     "hrTasks": {
       "title": "Задачи",
@@ -6603,6 +6607,71 @@
       "keep_open_body": "Чтобы посещаемость работала точно, держите этот экран открытым в рабочее время.",
       "last_update": "Обновлено: {time}",
       "waiting_signal": "Ожидание сигнала…"
+    },
+    "workLocations": {
+      "title": "Филиалы / Рабочие места",
+      "subtitle": "Рабочие места, радиус геозоны и графики сотрудников",
+      "create_button": "Добавить филиал",
+      "col_name": "Название",
+      "col_location": "Координаты (lat, lng)",
+      "col_radius": "Радиус",
+      "col_employees": "Сотрудники",
+      "col_actions": "Действия",
+      "empty": "Пока нет филиалов",
+      "delete_confirm": "Удалить филиал?",
+      "delete_blocked": "К филиалу привязаны сотрудники — удалить нельзя",
+      "meters": "м",
+      "create_title": "Новый филиал",
+      "edit_title": "Редактировать филиал",
+      "form_name": "Название",
+      "form_lat": "Широта (lat)",
+      "form_lng": "Долгота (lng)",
+      "form_radius": "Радиус (метр)",
+      "form_radius_hint": "Охватите здание и двор (по умолчанию 150)",
+      "use_my_location": "Моё местоположение",
+      "save": "Сохранить",
+      "cancel": "Отмена"
+    },
+    "employeeSchedule": {
+      "fill_workdays": "Одинаково для рабочих дней",
+      "col_day": "День",
+      "col_start": "Начало",
+      "col_end": "Конец",
+      "col_dayoff": "Выходной",
+      "day_1": "Понедельник",
+      "day_2": "Вторник",
+      "day_3": "Среда",
+      "day_4": "Четверг",
+      "day_5": "Пятница",
+      "day_6": "Суббота",
+      "day_0": "Воскресенье",
+      "branch_label": "Рабочее место (филиал)",
+      "branch_none": "Не назначено",
+      "optin_label": "GPS-учёт",
+      "optin_hint": "Разрешить отслеживание",
+      "save": "Сохранить"
+    },
+    "davomatReport": {
+      "title": "Месячный отчёт посещаемости",
+      "subtitle": "Приход/уход, опоздания и пропуски",
+      "month_label": "Месяц",
+      "employee_label": "Сотрудник",
+      "employee_all": "Все сотрудники",
+      "export_excel": "Excel",
+      "print": "Печать",
+      "kpi_late_total": "Всего опозданий",
+      "kpi_present": "Дней присутствия",
+      "kpi_absent": "Дней отсутствия",
+      "kpi_dayoff": "Выходные",
+      "kpi_employees": "Сотрудники",
+      "col_employee": "Сотрудник",
+      "col_date": "Дата",
+      "col_checkin": "Приход",
+      "col_checkout": "Уход",
+      "col_late": "Опоздание",
+      "col_status": "Статус",
+      "hours_minutes": "{h} ч {m} мин",
+      "empty": "Нет данных"
     }
   },
   "print_entity": {

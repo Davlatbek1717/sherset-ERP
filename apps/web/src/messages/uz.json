@@ -5844,7 +5844,8 @@
       "detail_last_login": "Oxirgi kirish",
       "detail_never": "hech qachon",
       "detail_created_at": "Yaratilgan",
-      "salary_placeholder": "P5 sprint (HR-Oylik + KPI) doirasida ishlab chiqiladi."
+      "salary_placeholder": "P5 sprint (HR-Oylik + KPI) doirasida ishlab chiqiladi.",
+      "tab_schedule": "Ish jadvali"
     },
     "hrAttendance": {
       "title": "Davomat",
@@ -5876,7 +5877,10 @@
       "empty_today_hint": "“Kelishni belgilash” tugmasini bosing",
       "empty_report": "Tanlangan davr uchun yozuvlar yo‘q",
       "delete_confirm": "Davomat yozuvini o‘chirishni xohlaysizmi?",
-      "delete_confirm_desc": "Bu amalni qaytarib bo‘lmaydi."
+      "delete_confirm_desc": "Bu amalni qaytarib bo‘lmaydi.",
+      "late": "Kechikish",
+      "monthly_report": "Oylik hisobot",
+      "source_auto": "avto"
     },
     "hrTasks": {
       "title": "Vazifalar",
@@ -6604,6 +6608,71 @@
       "keep_open_body": "Davomat aniq ishlashi uchun bu ekranni ish vaqtida ochiq qoldiring.",
       "last_update": "Oxirgi yangilanish: {time}",
       "waiting_signal": "Signal kutilmoqda…"
+    },
+    "workLocations": {
+      "title": "Filiallar / Ish joylari",
+      "subtitle": "Ish joylari, geofence radiusi va xodim jadvallari",
+      "create_button": "Filial qo'shish",
+      "col_name": "Nom",
+      "col_location": "Manzil (lat, lng)",
+      "col_radius": "Radius",
+      "col_employees": "Xodimlar",
+      "col_actions": "Amallar",
+      "empty": "Hali filial yo'q",
+      "delete_confirm": "Filialni o'chirasizmi?",
+      "delete_blocked": "Xodimlar biriktirilgan — o'chirib bo'lmaydi",
+      "meters": "m",
+      "create_title": "Yangi filial",
+      "edit_title": "Filialni tahrirlash",
+      "form_name": "Nom",
+      "form_lat": "Kenglik (lat)",
+      "form_lng": "Uzunlik (lng)",
+      "form_radius": "Radius (metr)",
+      "form_radius_hint": "Bino va hovlini qamrasin (default 150)",
+      "use_my_location": "Mening joylashuvim",
+      "save": "Saqlash",
+      "cancel": "Bekor qilish"
+    },
+    "employeeSchedule": {
+      "fill_workdays": "Ish kunlariga bir xil",
+      "col_day": "Kun",
+      "col_start": "Boshlanish",
+      "col_end": "Tugash",
+      "col_dayoff": "Dam",
+      "day_1": "Dushanba",
+      "day_2": "Seshanba",
+      "day_3": "Chorshanba",
+      "day_4": "Payshanba",
+      "day_5": "Juma",
+      "day_6": "Shanba",
+      "day_0": "Yakshanba",
+      "branch_label": "Ish joyi (filial)",
+      "branch_none": "Biriktirilmagan",
+      "optin_label": "GPS-davomat",
+      "optin_hint": "Kuzatuvga ruxsat",
+      "save": "Saqlash"
+    },
+    "davomatReport": {
+      "title": "Oylik davomat hisoboti",
+      "subtitle": "Kelish/ketish, kechikish va kelmagan kunlar",
+      "month_label": "Oy",
+      "employee_label": "Xodim",
+      "employee_all": "Barcha xodimlar",
+      "export_excel": "Excel",
+      "print": "Chop etish",
+      "kpi_late_total": "Jami kechikish",
+      "kpi_present": "Kelgan kunlar",
+      "kpi_absent": "Kelmagan kunlar",
+      "kpi_dayoff": "Dam olish",
+      "kpi_employees": "Xodimlar",
+      "col_employee": "Xodim",
+      "col_date": "Sana",
+      "col_checkin": "Keldi",
+      "col_checkout": "Ketdi",
+      "col_late": "Kechikish",
+      "col_status": "Holat",
+      "hours_minutes": "{h} soat {m} daqiqa",
+      "empty": "Ma'lumot yo'q"
     }
   },
   "print_entity": {

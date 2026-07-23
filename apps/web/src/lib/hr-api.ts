@@ -29,6 +29,9 @@ export interface HrEmployeeDetail extends HrEmployeeRow {
   salaryConfig: unknown;
   createdAt: string;
   lastLoginAt: string | null;
+  attendanceOptIn?: boolean;
+  workLocationId?: string | null;
+  workLocation?: { id: string; name: string } | null;
 }
 
 export interface HrEmployeeFilter {
