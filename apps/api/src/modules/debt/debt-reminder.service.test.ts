@@ -19,26 +19,9 @@ function makeNotifications() {
   return { emit: vi.fn().mockResolvedValue(undefined) };
 }
 
-function makeTelegram() {
-  return { notifyCounterparty: vi.fn().mockResolvedValue(undefined) };
-}
-
-function makeSms() {
-  return {
-    getContacts: vi
-      .fn()
-      .mockResolvedValue({ phone: '+998900000000', card: '0000', cardOwner: 'X' }),
-  };
-}
-
 describe('DebtReminderService.remindDueCalls', () => {
   // 2026-07-20: "muammoli" (Debt.problem=true) qarzlar avtomatik eslatmadan
-  // butunlay chiqarib tashlanishi kerak — foydalanuvchi bir mijozni muammoli
-  // deb belgilagandan keyin ham eslatma davom etib yuborilishini kuzatdi
-  // (chunki setProblem() `nextContactAt`ni majburiy qiladi va
-  // `callRemindedAt`ni tozalaydi — keyingi cron tikida qayta ushlanadi).
-  // Qo'lda "xabar yuborish" tugmasi (debt.service.ts sendTelegramReminder)
-  // bu flagdan mustaqil — operator xohlasa qo'lda baribir yubora oladi.
+  // butunlay chiqarib tashlanishi kerak (findMany where'da problem:false).
   it('debt.findMany where clause excludes problem debts', async () => {
     const prisma = makePrisma([]);
     const service = new DebtReminderService(
@@ -46,13 +29,6 @@ describe('DebtReminderService.remindDueCalls', () => {
       prisma as any,
       // biome-ignore lint/suspicious/noExplicitAny: test wiring
       makeNotifications() as any,
-      // biome-ignore lint/suspicious/noExplicitAny: test wiring
-      makeTelegram() as any,
-      // biome-ignore lint/suspicious/noExplicitAny: test wiring
-      makeSms() as any,
-      // msgTemplates: default yo'q → renderReminderText fallback (hardcoded) ishlatadi
-      // biome-ignore lint/suspicious/noExplicitAny: test wiring
-      { findDefault: vi.fn().mockResolvedValue(null) } as any,
     );
 
     await service.remindDueCalls();
@@ -64,45 +40,50 @@ describe('DebtReminderService.remindDueCalls', () => {
     );
   });
 
-  it("muammoli deb belgilangan qarzga Telegram eslatmasi yubormaydi (findMany natijasida yo'q bo'lgani uchun)", async () => {
-    // findMany o'zi problem:false filtrini qo'llaydi (Prisma tomonidan) —
-    // shu sabab mock natijasida "muammoli" qarz umuman qaytmaydi, va pastdagi
-    // loop (notifyCounterparty chaqiruvi) unga tegmaydi.
+  // 2026-07-23 (foydalanuvchi qarori): cron mijozga AVTOMATIK xabar YUBORMAYDI —
+  // faqat operatorga «qo'ng'iroq vaqti keldi» ichki bildirishnomasini yuboradi.
+  // (Mijozga eslatma endi FAQAT qo'lda: per-qarz «Xabar yuborish» / bulk tugma.)
+  // Servisda mijozga xabar yuboradigan telegram/sms bog'liqligi UMUMAN qolmagan.
+  it('notifies the OPERATOR (owner) only, never the customer, and marks callRemindedAt', async () => {
     const dueRows = [
       {
         id: 'd-1',
         accountId: 'acc1',
         ownerId: 'emp1',
-        counterpartyId: 'cp1',
-        totalMinor: 100n,
-        paidMinor: 0n,
         counterparty: { name: 'Oddiy mijoz' },
       },
     ];
     const prisma = makePrisma(dueRows);
-    const telegram = makeTelegram();
+    const notifications = makeNotifications();
     const service = new DebtReminderService(
       // biome-ignore lint/suspicious/noExplicitAny: test wiring
       prisma as any,
       // biome-ignore lint/suspicious/noExplicitAny: test wiring
-      makeNotifications() as any,
-      // biome-ignore lint/suspicious/noExplicitAny: test wiring
-      telegram as any,
-      // biome-ignore lint/suspicious/noExplicitAny: test wiring
-      makeSms() as any,
-      // biome-ignore lint/suspicious/noExplicitAny: test wiring
-      { findDefault: vi.fn().mockResolvedValue(null) } as any,
+      notifications as any,
     );
 
     await service.remindDueCalls();
 
-    // Faqat findMany qaytargan (ya'ni muammoli bo'lmagan) qarzga yuboriladi.
-    expect(telegram.notifyCounterparty).toHaveBeenCalledTimes(1);
-    expect(telegram.notifyCounterparty).toHaveBeenCalledWith(
+    // Operator (qarz egasi) «qo'ng'iroq vaqti keldi» ichki bildirishnomasini oladi.
+    expect(notifications.emit).toHaveBeenCalledTimes(1);
+    expect(notifications.emit).toHaveBeenCalledWith(
       'acc1',
-      'cp1',
+      'emp1',
+      'debt_call_due',
+      expect.stringContaining('1 mijozga'),
       expect.stringContaining('Oddiy mijoz'),
-      'reminder',
+      'DebtCalls',
+      null,
     );
+    // Dedup: qarz belgilanadi (keyingi tikда operator qayta ogohlantirilmasin).
+    expect(prisma.client.debt.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { callRemindedAt: expect.any(Date) } }),
+    );
+  });
+
+  // The constructor takes ONLY prisma + notifications — no telegram/sms/template
+  // service, so there is structurally no path for the cron to message a customer.
+  it('constructs with exactly 2 dependencies (no customer-messaging deps)', () => {
+    expect(DebtReminderService.length).toBe(2);
   });
 });
