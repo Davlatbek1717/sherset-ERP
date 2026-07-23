@@ -322,15 +322,16 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > add(bulk-edit/specialoffers/subscription). `pnpm install` ✅ · money build ✅ · prisma generate ✅. **Main daxlsiz.**
 > **B2 ✅ + B3-partial ✅ (commit `2e3b35c`): typecheck 186 → 75.** B2 = Sherset Debt-modellar + back-relation'lar
 > climart sxemasiga (API 119→34). B3-partial = PermissionEntity/NotificationKind/AttachmentEntity +debt (API 34→8).
-> **⏭️ KEYINGI = closure-reconcile davomi** (checkpoint `ade1ec9`, **API 6 · web 67**). Keep = «konteragent ekotizimi» =
-> counterparties + debts + sms + telegram + **xabar/CHEK shablonlari** (foydalanuvchi: shablonlar saqlansin, o'zgartirilmasin).
-> **Round1-2 ✅:** telegram/MessageTemplate/CompanySettings.messaging* schema + big-integer dep + sms/telegram/hr-bridge/
-> hr-telegram-account modul → **API 64→6**. **Qolgan API 6:** `createFromBuffer` userId `string|null` qil (2) + supply.listener
-> climart `SupplyPostedEvent` adapt (3) + backfill null (1). **Keyin WEB 67:** FE keep-deps (components/sms+telegram,
-> use-keyboard-nav, debt-api) tikla + counterparties **ListView** climart'ga adapt + CHEK-shablon (retail/print) keep-item
-> tekshir (drop qilingan retail bilan bog'liqmi) → typecheck 0 → build → dev-DB → verify.
-> **⚠️ Ko'p-sessiyalik kaskad.** Har round re-typecheck+commit. **Har sessiya boshida:** worktree'da money build.
-> **CLIMART SERVERGA YOZMA — faqat `git archive` read.** **HALOL:** hali BUILD BO'LMAYDI.
+> **⏭️ KEYINGI = oxirgi 4 web + gate** (checkpoint `71231a3`, **API 0 · web 4** — jami 253→4, ~98% reconcile). Keep =
+> «konteragent ekotizimi» = counterparties+debts+sms+telegram + **xabar/CHEK shablonlari** (saqlansin, o'zgartirilmasin).
+> **✅ API TYPECHECK 0** (backend to'liq): telegram/MessageTemplate/CompanySettings/attachment schema + big-integer +
+> sms/telegram/hr-bridge/hr-tg-account modul + createFromBuffer/SupplyPostedEvent/blobUrl fix. **✅ WEB 67→4:** FE keep-deps
+> (components/sms+telegram, hooks/use-keyboard-nav+use-list-memory, lib/debt-api+sms-api) tiklandi + api.blobUrl.
+> **QOLGAN 4:** counterparties **ListView** + debts **DataTable** — climart `@moysklad/ui` API'si Sherset'nikidan farq (43+
+> prop). **QAROR:** kept-sahifani climart ListView/DataTable API'siga ADAPT, YOKI Sherset komponentini alohida-nom bilan
+> `@moysklad/ui`'ga qo'shib coexist (climart 20+ sahifasi climart ListView ishlatadi — u g'olib). Keyin: **CHEK-shablon**
+> (retail/print) keep-item tekshir (drop retail bilan bog'liqmi) → **typecheck 0** → biome+i18n → build → dev-DB+seed+smoke → verify.
+> **Har sessiya boshida:** worktree'da `pnpm --filter @moysklad/money build`. **CLIMART: read-only.** **HALOL:** hali BUILD BO'LMAYDI (4 web + gate qoldi).
 
 > **🟢 2026-07-23k (DEMAND list QISM 3 — Грузополучатель ustun+filtr + Товар/группа filtr · Phase-1 · `b2fe49f`)**
 > Ro'yxatni moysklad `demand-01-list` tomon: **L1** «Грузополучатель» ustuni (list `include`ga `consignee`;
