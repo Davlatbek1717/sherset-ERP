@@ -322,7 +322,13 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > add(bulk-edit/specialoffers/subscription). `pnpm install` ✅ · money build ✅ · prisma generate ✅. **Main daxlsiz.**
 > **B2 ✅ + B3-partial ✅ (commit `2e3b35c`): typecheck 186 → 75.** B2 = Sherset Debt-modellar + back-relation'lar
 > climart sxemasiga (API 119→34). B3-partial = PermissionEntity/NotificationKind/AttachmentEntity +debt (API 34→8).
-> **⏭️ KEYINGI = oxirgi 4 web + gate** (checkpoint `71231a3`, **API 0 · web 4** — jami 253→4, ~98% reconcile). Keep =
+> **🏁 ADOPTION QURILADI (2026-07-23):** ✅ **typecheck 0** (API+web) · ✅ **i18n key-existence PASS** (+133 Sherset kalit
+> ru+uz) · ✅ **build:web SUCCESS** (barcha route). climart kodi + Sherset kept-ekotizim deployable bundle'ga kompilyatsiya
+> bo'ladi. **⏭️ KEYINGI = B5 runtime:** biome 43 lint (noConsoleLog/noNonNullAssertion — restored Sherset style, opsional
+> tozalash) → yangi dev-DB (`prisma migrate dev`/`db push` + `db:seed`) → `pnpm dev` + login + counterparties/debts/savdo
+> smoke → chek-shablon (retail/print) keep tekshir. Keyin PROD deploy (alohida ehtiyotkor). Checkpoint branch `climart-adoption`.
+> **⚠️ generated Prisma client git add -A bilan branch'ga tushdi (bloat, zararsiz — .gitignore'ga qo'shsa bo'ladi).**
+> ~~**⏭️ KEYINGI = oxirgi 4 web + gate** (checkpoint `71231a3`, **API 0 · web 4** — jami 253→4, ~98% reconcile). Keep =~~
 > «konteragent ekotizimi» = counterparties+debts+sms+telegram + **xabar/CHEK shablonlari** (saqlansin, o'zgartirilmasin).
 > **✅ API TYPECHECK 0** (backend to'liq): telegram/MessageTemplate/CompanySettings/attachment schema + big-integer +
 > sms/telegram/hr-bridge/hr-tg-account modul + createFromBuffer/SupplyPostedEvent/blobUrl fix. **✅ WEB 67→4:** FE keep-deps
