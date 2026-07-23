@@ -790,6 +790,19 @@ export default function DemandDetailPage() {
             </DocumentMetaField>
           </DocumentMetaRow>
           <DocumentMetaRow>
+            <DocumentMetaField label={tDetailForm('currency')} required>
+              {/* moysklad shows «Валюта документа» on the detail. Read-only here —
+                  changing an existing document's currency is a rate-recompute
+                  flow that isn't wired (the form doesn't track currency edits). */}
+              <NativeSelect value={data.currency} disabled data-test-id="field-currency">
+                <option value="UZS">{tForm('currency_uzs')}</option>
+                <option value="USD">{tForm('currency_usd')}</option>
+                <option value="EUR">{tForm('currency_eur')}</option>
+                <option value="RUB">{tForm('currency_rub')}</option>
+              </NativeSelect>
+            </DocumentMetaField>
+          </DocumentMetaRow>
+          <DocumentMetaRow>
             <DocumentMetaField label={tDetailTitles('customer_order')} fullWidth>
               <div className="flex h-9 items-center px-2 text-sm">
                 {data.customerOrder ? (
