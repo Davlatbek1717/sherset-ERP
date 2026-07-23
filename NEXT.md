@@ -305,6 +305,20 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🟢✅ 2026-07-23j (DEMAND — parallel-workflow FE-parity batch: 5 item, 3 sahifa, browser-verified)**
+> `demand-fe-parallel` workflow (3 agent, worktree-izolyatsiya) → markazда integ + gate + browser-cert (`015e41b`):
+> **/new:** Адрес доставки = structured DeliveryAddressGroup popup (▼) · Внешний код = pastki-chap toggle-havola ·
+> Накладные расходы = totals ostidagi ixcham qator (moysklad kabi). **detail:** ikkilamchi meta-maydonlar (consignor/
+> carrier/cargo/overhead/external-code…) collapsed «Другие поля» disclosure ostiga guruhlandi (core doim ko'rinadi;
+> PositionEditor'ga TEGILMADI). **list:** filtr-panel moysklad tartibiga (Оплата→#2, Счёт контрагента Группа'dan keyin…).
+> **Undan oldin (shu sessiya lineage):** detail «Валюта документа» field (`713bf0a`) · list Валюта ustun + Счёт filtr +
+> Оплата order (`10d2d9d`) · buyPrice→Себест/Прибыль (`74e8e58`, FE-only) · 2 filtr olib tashlash (`b6f3dd4`) · /new header
+> (`039ba17`). **Holat:** /new ~90% · detail ~68% · list ~80% · umumiy ~**62%**.
+> **⏭️ KEYINGI (qolgan — aksari BE yoki bloklangan):** detail cost/stock ustunlar (shared PositionEditor → parallel-sessiya
+> bilan koordinatsiya) · 32 BE-item (list filtrlar/ustun · custom-states · related-docs · archive/restore · task/files
+> panel — schema-koordinatsiya kerak) · Маркировка (QISM 4, katta) · Импорт (capture kutmoqda) · perf quick-win'lar ·
+> QISM 5 QA. **«100%» faqat QISM 5 QA'dan keyin** (Импорт-capture + Marking + QA foydalanuvchi/katta-ish blokerlari bor).
+
 > **🟢✅ 2026-07-23i (DEMAND — 3 QARORDAN 2 tasi BAJARILDI + perf #1, hammasi browser-verified)**
 > 2026-07-23h qarorlarini ijro etish (davomi):
 > **✅ #1 buyPrice → Себест.единицы + Себестоимость + real Прибыль (`74e8e58`):** MUHIM — **BE o'zgarishi SHART EMAS
