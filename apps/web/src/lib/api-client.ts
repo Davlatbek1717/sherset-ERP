@@ -162,6 +162,22 @@ async function postOpenInBrowser(path: string, body: unknown, retry = true): Pro
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
+// Sherset KEEP (debts receipt-viewer / telegram media) — B3. Fetches a protected
+// file as an object URL. Caller MUST URL.revokeObjectURL(url) when done.
+async function blobUrl(path: string, retry = true): Promise<{ url: string; mime: string }> {
+  const token = getAccessToken();
+  const headers: Record<string, string> = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const res = await fetch(`${BASE}${path}`, { headers, credentials: 'include' });
+  if (res.status === 401 && retry && token) {
+    const refreshed = await refresh();
+    if (refreshed) return blobUrl(path, false);
+  }
+  if (!res.ok) throw new Error(`Faylni yuklab bo'lmadi: HTTP ${res.status}`);
+  const blob = await res.blob();
+  return { url: URL.createObjectURL(blob), mime: blob.type };
+}
+
 export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body: unknown) =>
@@ -174,4 +190,5 @@ export const api = {
   download,
   postDownload,
   postOpenInBrowser,
+  blobUrl,
 };
