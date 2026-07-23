@@ -120,6 +120,12 @@ docs/moysklad-reference/**/states/*.png
 # Detail/edit-form captures (`--detail`): same policy — PNG'lar git'ga olinmaydi,
 # *.html DOM dump'lar + detail-metadata.json (dropdown items) commit qilinadi.
 docs/moysklad-reference/**/detail/*.png
+# Create/`--new` form captures (`--create`): same PNG policy as states/detail.
+docs/moysklad-reference/**/new/*.png
+# salesreturn was captured from a REAL client account (elektro_sentr, 1834 live
+# records) — unlike the demo-account default above, its DOM *.html dumps carry
+# customer PII (names, sums), so exclude ALL of its *.html (detail + new).
+docs/moysklad-reference/salesreturn/**/*.html
 !docs/moysklad-reference/**/metadata.json
 !docs/moysklad-reference/**/detail-metadata.json
 

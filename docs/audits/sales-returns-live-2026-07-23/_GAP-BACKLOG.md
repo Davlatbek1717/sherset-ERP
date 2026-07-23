@@ -52,6 +52,42 @@ Bizniki: `№ · Время · На склад · Контрагент · Орг
 
 ---
 
+## NEW — `/new` create-form grounding (2026-07-23, QISM 1 boshi)
+
+**Manba:** jonli capture `pnpm capture-moysklad salesreturn --create` (yangi `--create` rejimi qo'shildi) →
+`docs/moysklad-reference/salesreturn/new/` (`edit-default.png` + `.html`, dropdown/tab holatlar). `viaCreateForm: true`.
+Detail edit-formidan farqli — quyidagilar **faqat create-formda** ko'rildi va DOM-rol/piksel bilan grounded.
+
+**Meta-grid (create, aniq tartib — screenshot + DOM):**
+```
+* Организация [✎]              |  * Склад [✎]
+  «Перечисление» [combo]       |
+* Контрагент [+]               |  Договор
+  Проект [+]                   |  Канал продаж [+]
+* Валюта документа [✎]         |  (bo'sh)
+```
+
+| # | Delta (create-form) | moysklad `/new` | bizning `/new` | Qatlam |
+|---|---|---|---|---|
+| **N1** | «Перечисление» — label'siz combo Организация **ostida** (`<input class="text-box" value="Перечисление">`, GWT combo, тип-оплаты) | bor | YO'Q (helper-slot bank-account'ni tutadi) | BE (persist: yangi ustun **yoki** `attributes` — impl qaror) + FE. **Opsiya-ro'yxati DEFER** (coord-click toza ochilmadi; QISM 1 impl'da element-handle bilan click-capture, §4: taxmin YO'Q) |
+| **N2** | Meta-grid tartibi | Организация/Склад → Контрагент/Договор → Проект/Канал → Валюта(yakka) | bizda: Контрагент/Склад → Организация/Демандо → Проект/Валюта → Договор/Канал → Счёт/Внешний код | FE (1A reorder) |
+| **N3** | «Валюта документа» — yakka to'liq qator (chap-past), ✎ bilan | bor | bor, lekin Проект bilan juftlashgan | FE |
+| **N4** | Pozitsiya default-ko'rinadigan ustunlar | `Наименование · Кол-во · Остаток · Цена · НДС · Сумма · Себест. единицы · Себестоимость ГТД · РНПТ · Страна` | `… goodPack · vat · vatAmount · discount · amount · gtdSumMinor · country` | FE + **shared BE/DS** |
+| **N5** | «Скидка» ustuni create-form DOM'da **umuman yo'q** | yo'q | bizda `discount` ko'rinadi | FE (default-yashir/olib tashla — 1:1) |
+| **N6** | «Сумма НДС» (vatAmount) — DOM'da bor, lekin **default-yashirin** | yashirin | bizda ko'rinadi | FE (default-yashir) |
+| **N7** | «Ед.» (goodPack) — moysklad default-ko'rinishda yo'q | yo'q | bizda ko'rinadi | FE (default-yashir) |
+| **N8** | «Причина» (reason) alohida input | YO'Q (faqat «Комментарий» textarea) | bizda reason Input bor | FE (reconcile: olib tashla/Ещё) |
+| — | Toolbar «Создать документ» = {Исходящий платеж, Расходный ордер, Списание} | ✓ (D8/I7 create-formda ham GROUNDED) | — | — |
+| — | «Печать» (/new) = {Возврат покупателя, Комплект…, Настроить…, Запросить форму} — «Список возвратов» YO'Q (list-darajali) | — | — | print-shablon QISM |
+| — | «Отправить» (/new) = {Возврат покупателя, Комплект…} · «Изменить» = {Удалить(disabled)} | — | — | — |
+| — | Валюта selektori create-formda ✓ (D3: detalda yo'q, /new'da bor — tasdiqlandi) · Задачи/Файлы inline · tab {Главная, Связанные документы} ✓ | mos | — | — |
+
+**Full column set (DOM `gwt-Label header`, yashirinlar bilan):** Кол-во · Ячейка · Остаток · Вес · Объем · Цена · Цена · НДС · Сумма НДС · Сумма · Себест. единицы · Себестоимость ГТД · РНПТ · Страна.
+
+> ⚠️ **Re-sequencing topilma (grounded):** **Остаток (D5) · Себест. единицы (D6) · РНПТ (D7)** ustunlari `/new`(1A) **va** detail(2A) — **ikkalasida** default-ko'rinadi. Demak bu **umumiy pozitsiya-ustun enabler'i har ikki sahifaning vizual-parity'si uchun PREREKVIZIT** — birinchi qurilishi kerak (roadmap eski detail-only capture'da 2A'ga qo'ygan edi). РНПТ ustun-turi demand QISM-4 marking bilan umumiy bo'lishi mumkin.
+
+---
+
 ## Xulosa — 3 qatlam
 - **Funksional core** (create/post→stock/un-post/print/restock) — ✅ jonli tasdiqlangan (2026-07-23b, `329ed1b`).
 - **Vizual/struktura deltalar** — L1-L6, D2-D4, D9-D10 (asosan FE).
