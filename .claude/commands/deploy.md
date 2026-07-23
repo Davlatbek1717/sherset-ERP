@@ -8,12 +8,20 @@ Bu ko'p-ijarali box — **boshqa ilovalarga (biznesjon, global-erp, stars) TEGMA
 Tartib (memory: `sherset-vps-deploy.md`):
 
 1. **SSH**: `sshpass` yo'q — Python `paramiko` (scratchpad'da `ssh_run.py` uslubi) yoki SSH_ASKPASS. Parol memory faylida (`seed-real-moysklad-import.md`). Git Bash yo'l-buzilishiga `MSYS_NO_PATHCONV=1`.
-2. `cd /var/www/sherset && git pull` (deploy key sozlangan)
-3. `pnpm install` (corepack pnpm@10.33.0 avtomat)
-4. **AVVAL** `pnpm --filter @moysklad/money build` — web'dan OLDIN (bo'lmasa `next build`: "Can't resolve @moysklad/money")
-5. `pnpm build:web` — SSH ~580s timeout beradi: `nohup ... > /tmp/build.log 2>&1 &` + log-poll (`BUILD_OK` kutish)
-6. `npx prisma migrate deploy` (2026-07-02 `fc1a936` dan beri drift 0 — `db push` KERAK EMAS)
-7. `pm2 restart sherset-api sherset-web` (api port 4000, web 3010, nginx oldida)
+2. **SMART DEPLOY (MAJBURIY — sekin-deploy tuzatildi, 2026-07-23):** qo'lda `git pull`+`pnpm install`+`build`+`migrate`
+   ketma-ketligini YOZMA. Buning o'rniga bitta skript — u DIFF'ni ko'rib FAQAT kerakli qadamni bajaradi:
+   ```
+   nohup bash /var/www/sherset/deploy/deploy-smart.sh > /tmp/deploy.log 2>&1 &
+   ```
+   keyin `/tmp/deploy.log`ni poll qil (`git rev-parse HEAD` → `restart` → oxiri). Nega: `next build` ~580s SSH
+   timeout'dan uzun; skript git-diff'ga qarab **backend-only o'zgarishda BUILD'ni butunlay o'tkazib yuboradi**
+   (tsx → build yo'q → deploy soniyalarda), `pnpm install`ni faqat `pnpm-lock.yaml` o'zgarsa, `prisma migrate`ni
+   faqat yangi migration bo'lsa ishlatadi. FE o'zgarishda esa money→web incremental build (`.next/cache` saqlanadi).
+   *(Skript faqat `/var/www/sherset` + `sherset-api`/`sherset-web`ga tegadi — boshqa tenantga YO'Q.)*
+   - **VPS origin'dan pull qiladi** → lokal commitlar avval **GitHub'ga push** bo'lishi kerak (yoki bundle-fallback,
+     `scratchpad/`dagi `git bundle → sftp → git fetch`+`reset --hard` uslubi — remote yo'q/diverged holatda).
+   - Emergency bir-martalik build gotcha (agar qo'lda qilsang): money'ni web'dan OLDIN build qil
+     (`pnpm --filter @moysklad/money build`), aks holda `next build`: «Can't resolve @moysklad/money».
 8. **Jonli verify**: sahifa 200 + o'zgargan chunk ichida yangi kod haqiqatan borligini tekshir (grep chunk).
 9. NEXT.md top-entry'ga «✅ DEPLOYED» belgisini qo'y.
 
