@@ -201,6 +201,9 @@ model Account {
   debts                   Debt[]
   debtPayments            DebtPayment[]
   debtNotes               DebtNote[]
+  hrWorkLocations         HrWorkLocation[]
+  employeeWorkSchedules   EmployeeWorkSchedule[]
+  hrLocationPings         HrLocationPing[]
 
   @@map("accounts")
 }
@@ -293,6 +296,13 @@ model Employee {
   /// (per-account singleton). Shape: { fixWeight, kpiWeight, bonusWeight,
   /// monthlySalesTarget, monthlyKpiBudget, commissionPercent, kpiTiers[] }.
   salaryConfig    Json?    @map("salary_config")
+
+  // === HR GPS-davomat (attendance geofence) ===
+  // All nullable/defaulted — prod-safe, no backfill. Populated when an
+  // employee is assigned to a work-location and opts into GPS tracking.
+  workLocationId  String?         @map("work_location_id") @db.Uuid
+  workLocation    HrWorkLocation? @relation("EmployeeWorkLocation", fields: [workLocationId], references: [id], onDelete: SetNull)
+  attendanceOptIn Boolean         @default(false) @map("attendance_opt_in")
 
   account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
@@ -395,6 +405,7 @@ model Employee {
   hrKpiMonthly        HrKpiMonthlyScore[]    @relation("HrKpiMonthlyEmployee")
   hrOutboxEntries     HrTelegramOutbox[]     @relation("HrOutboxEmployee")
   hrActivities        HrActivityLog[]        @relation("HrActivityActor")
+  workSchedules       EmployeeWorkSchedule[] @relation("EmployeeSchedule")
 
   // Qarz undirish (debt-collection) module
   ownedDebts           Debt[]        @relation("DebtOwner")
@@ -8812,6 +8823,17 @@ model HrAttendance {
   notes        String?
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz()
 
+  // === HR GPS-davomat (auto keldi/ketdi) — all nullable/defaulted, prod-safe ===
+  checkInLat      Float?  @map("check_in_lat")
+  checkInLng      Float?  @map("check_in_lng")
+  checkInAccuracy Int?    @map("check_in_accuracy")
+  checkOutLat     Float?  @map("check_out_lat")
+  checkOutLng     Float?  @map("check_out_lng")
+  source          String  @default("auto_gps") @map("source") @db.VarChar(12) // 'auto_gps' | 'manual'
+  lateMinutes     Int     @default(0) @map("late_minutes")
+  workLocationId  String? @map("work_location_id") @db.Uuid // raw FK, no relation (mirror Employee.groupId)
+  autoClosed      Boolean @default(false) @map("auto_closed") // closed by nightly cron (departure not seen)
+
   account  Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
   employee Employee  @relation("HrAttendanceEmployee", fields: [employeeId], references: [id])
   editedBy Employee? @relation("HrAttendanceEditor", fields: [editedById], references: [id])
@@ -9025,6 +9047,66 @@ model HrRole {
 
   @@unique([accountId, value])
   @@map("hr_role")
+}
+
+// === HR GPS-davomat (avtomatik keldi/ketdi) ===
+// TZ: docs/superpowers/specs/2026-07-23-hr-gps-attendance-design.md
+
+/// A work-location geofence (filial). Employees are assigned to one; their
+/// browser PWA pings GPS and the backend auto-marks keldi/ketdi within radius.
+model HrWorkLocation {
+  id           String   @id @default(uuid()) @db.Uuid
+  accountId    String   @map("account_id") @db.Uuid
+  name         String   @db.VarChar(150)
+  lat          Float
+  lng          Float
+  radiusMeters Int      @default(150) @map("radius_meters")
+  archived     Boolean  @default(false)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  account   Account    @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  employees Employee[] @relation("EmployeeWorkLocation")
+
+  @@index([accountId, archived])
+  @@map("hr_work_locations")
+}
+
+/// Per-employee weekly work schedule (one row per weekday).
+/// weekday: 0=Sunday … 6=Saturday (JS getDay convention — LOCKED).
+model EmployeeWorkSchedule {
+  id         String  @id @default(uuid()) @db.Uuid
+  accountId  String  @map("account_id") @db.Uuid
+  employeeId String  @map("employee_id") @db.Uuid
+  weekday    Int
+  startTime  String  @map("start_time") @db.VarChar(5) // "09:00"
+  endTime    String  @map("end_time") @db.VarChar(5) // "18:00"
+  isDayOff   Boolean @default(false) @map("is_day_off")
+
+  account  Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  employee Employee @relation("EmployeeSchedule", fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, weekday])
+  @@index([accountId, employeeId])
+  @@map("employee_work_schedules")
+}
+
+/// GPS ping stream — audit + state-machine source. Retained 7 days, then a
+/// cron deletes them; only HrAttendance (keldi/ketdi) is permanent.
+model HrLocationPing {
+  id         String   @id @default(uuid()) @db.Uuid
+  accountId  String   @map("account_id") @db.Uuid
+  employeeId String   @map("employee_id") @db.Uuid
+  lat        Float
+  lng        Float
+  accuracy   Int
+  inside     Boolean
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId, employeeId, createdAt(sort: Desc)])
+  @@map("hr_location_pings")
 }
 
 model HrNotificationTemplate {
