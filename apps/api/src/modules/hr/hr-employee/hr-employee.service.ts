@@ -110,6 +110,9 @@ export class HrEmployeeService {
     if (filter.department) {
       where.department = filter.department;
     }
+    if (filter.position) {
+      where.position = filter.position;
+    }
     if (filter.isChecker !== undefined) {
       where.isChecker = filter.isChecker;
     }

@@ -15,8 +15,8 @@ import {
   Icons,
   type MobileNavSection,
   MobileNavSheet,
-  ShersetLogo,
   type NavItem,
+  ShersetLogo,
   SubNav,
   type SubNavItem,
 } from '@moysklad/ui';
@@ -407,6 +407,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const hrSubNav: SubNavItem[] = [
     { key: 'home', label: tHr('home'), href: '/hr' },
     { key: 'employees', label: tHr('employees'), href: '/hr/employees' },
+    { key: 'departments', label: tHr('departments'), href: '/hr/departments' },
+    { key: 'positions', label: tHr('positions'), href: '/hr/positions' },
     { key: 'attendance', label: tHr('attendance'), href: '/hr/attendance' },
     { key: 'tasks', label: tHr('tasks'), href: '/hr/tasks' },
     { key: 'review', label: tHr('review'), href: '/hr/review' },

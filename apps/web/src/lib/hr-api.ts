@@ -38,6 +38,7 @@ export interface HrEmployeeFilter {
   search?: string;
   role?: string;
   department?: string;
+  position?: string;
   isChecker?: boolean;
   /**
    * moysklad «Состояние» (active/archived) view. Backend coerces with
@@ -150,6 +151,40 @@ export const hrRoleApi = {
   create: (data: { value: string; label: string }) => api.post<HrRole>('/hr/roles', data),
   update: (id: string, data: { label: string }) => api.put<HrRole>(`/hr/roles/${id}`, data),
   remove: (id: string) => api.delete<{ ok: true }>(`/hr/roles/${id}`),
+};
+
+// ─── HrDepartment / HrPosition (name-catalog) API ──────────────────────
+
+/** Bo'lim (department) name-catalog row — pick-list for Employee.department. */
+export interface HrDepartment {
+  id: string;
+  name: string;
+  archived: boolean;
+  employeeCount?: number;
+}
+
+export const hrDepartmentApi = {
+  list: () => api.get<HrDepartment[]>('/hr/departments'),
+  create: (data: { name: string }) => api.post<HrDepartment>('/hr/departments', data),
+  update: (id: string, data: { name: string }) =>
+    api.put<HrDepartment>(`/hr/departments/${id}`, data),
+  remove: (id: string) => api.delete<{ ok: true }>(`/hr/departments/${id}`),
+};
+
+/** Lavozim (position) name-catalog row — pick-list for Employee.position. */
+export interface HrPosition {
+  id: string;
+  name: string;
+  archived: boolean;
+  employeeCount?: number;
+}
+
+export const hrPositionApi = {
+  list: () => api.get<HrPosition[]>('/hr/positions'),
+  findOne: (id: string) => api.get<HrPosition>(`/hr/positions/${id}`),
+  create: (data: { name: string }) => api.post<HrPosition>('/hr/positions', data),
+  update: (id: string, data: { name: string }) => api.put<HrPosition>(`/hr/positions/${id}`, data),
+  remove: (id: string) => api.delete<{ ok: true }>(`/hr/positions/${id}`),
 };
 
 // ─── HrEmployeePermission API ──────────────────────────────────────────

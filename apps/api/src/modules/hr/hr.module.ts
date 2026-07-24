@@ -5,12 +5,14 @@ import { HrAttendanceModule } from './attendance/attendance.module.js';
 import { HrAuthModule } from './hr-auth/hr-auth.module.js';
 import { HrBonusFineModule } from './hr-bonus-fine/hr-bonus-fine.module.js';
 import { HrDashboardModule } from './hr-dashboard/hr-dashboard.module.js';
+import { HrDepartmentModule } from './hr-department/hr-department.module.js';
 import { HrEmployeePermissionModule } from './hr-employee-permission/hr-employee-permission.module.js';
 import { HrEmployeeModule } from './hr-employee/hr-employee.module.js';
 import { HrEventsModule } from './hr-events/hr-events.module.js';
 import { HrKpiModule } from './hr-kpi/hr-kpi.module.js';
 import { HrMessagesModule } from './hr-messages/hr-messages.module.js';
 import { HrNotificationTemplateModule } from './hr-notification-template/hr-notification-template.module.js';
+import { HrPositionModule } from './hr-position/hr-position.module.js';
 import { HrReportsModule } from './hr-reports/hr-reports.module.js';
 import { HrRoleModule } from './hr-role/hr-role.module.js';
 import { HrSalaryModule } from './hr-salary/hr-salary.module.js';
@@ -52,6 +54,8 @@ import { HrWebsocketModule } from './hr-websocket/hr-websocket.module.js';
     HrEmployeeModule,
     HrEmployeePermissionModule,
     HrRoleModule,
+    HrDepartmentModule,
+    HrPositionModule,
     HrTaskTemplateModule,
     HrTaskReviewModule,
     HrTaskSendModule,

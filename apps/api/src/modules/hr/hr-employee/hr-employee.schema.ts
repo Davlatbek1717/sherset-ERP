@@ -103,6 +103,7 @@ export const HrEmployeeFilterSchema = z.object({
   search: z.string().optional(),
   role: z.string().optional(),
   department: z.string().optional(),
+  position: z.string().optional(),
   isChecker: queryBool.optional(),
   // moysklad «Состояние» (active/archived) toggle. Defaults to the active
   // list (archived=false); the «Извлечь из архива» bulk action is only

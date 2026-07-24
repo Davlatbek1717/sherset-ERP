@@ -1032,7 +1032,9 @@
       "payroll": "Зарплата",
       "messages": "Сообщения",
       "reports": "Отчёты",
-      "settings": "Настройки"
+      "settings": "Настройки",
+      "departments": "Отделы",
+      "positions": "Должности"
     }
   },
   "counterparty_activity": {
@@ -7533,6 +7535,40 @@
       "col_status": "Статус",
       "hours_minutes": "{h} ч {m} мин",
       "empty": "Нет данных"
+    },
+    "hrDepartments": {
+      "title": "Отделы",
+      "subtitle": "Отделы сотрудников",
+      "create_button": "Новый отдел",
+      "col_name": "Название отдела",
+      "col_employees": "Сотрудники",
+      "col_actions": "Действия",
+      "empty": "Отделов пока нет",
+      "create_title": "Новый отдел",
+      "edit_title": "Редактирование отдела",
+      "form_name": "Название",
+      "delete_confirm": "Удалить отдел?",
+      "save": "Сохранить",
+      "cancel": "Отмена"
+    },
+    "hrPositions": {
+      "title": "Должности",
+      "subtitle": "Должности сотрудников",
+      "create_button": "Новая должность",
+      "col_name": "Название должности",
+      "col_employees": "Сотрудники",
+      "col_actions": "Действия",
+      "empty": "Должностей пока нет",
+      "create_title": "Новая должность",
+      "edit_title": "Редактирование должности",
+      "form_name": "Название",
+      "delete_confirm": "Удалить должность?",
+      "drill_title": "Сотрудники: {name}",
+      "drill_back": "← Должности",
+      "drill_empty": "В этой должности нет сотрудников",
+      "not_found": "Должность не найдена",
+      "save": "Сохранить",
+      "cancel": "Отмена"
     }
   },
   "print_entity": {

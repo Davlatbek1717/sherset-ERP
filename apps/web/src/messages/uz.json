@@ -1032,7 +1032,9 @@
       "payroll": "Oylik",
       "messages": "Xabarlar",
       "reports": "Hisobotlar",
-      "settings": "Sozlamalar"
+      "settings": "Sozlamalar",
+      "departments": "Bo'limlar",
+      "positions": "Lavozimlar"
     }
   },
   "counterparty_activity": {
@@ -7534,6 +7536,40 @@
       "col_status": "Holat",
       "hours_minutes": "{h} soat {m} daqiqa",
       "empty": "Ma'lumot yo'q"
+    },
+    "hrDepartments": {
+      "title": "Bo'limlar",
+      "subtitle": "Xodim bo'limlari",
+      "create_button": "Yangi bo'lim",
+      "col_name": "Bo'lim nomi",
+      "col_employees": "Xodimlar",
+      "col_actions": "Amallar",
+      "empty": "Hozircha bo'lim yo'q",
+      "create_title": "Yangi bo'lim",
+      "edit_title": "Bo'limni tahrirlash",
+      "form_name": "Nomi",
+      "delete_confirm": "Bo'lim o'chirilsinmi?",
+      "save": "Saqlash",
+      "cancel": "Bekor qilish"
+    },
+    "hrPositions": {
+      "title": "Lavozimlar",
+      "subtitle": "Xodim lavozimlari",
+      "create_button": "Yangi lavozim",
+      "col_name": "Lavozim nomi",
+      "col_employees": "Xodimlar",
+      "col_actions": "Amallar",
+      "empty": "Hozircha lavozim yo'q",
+      "create_title": "Yangi lavozim",
+      "edit_title": "Lavozimni tahrirlash",
+      "form_name": "Nomi",
+      "delete_confirm": "Lavozim o'chirilsinmi?",
+      "drill_title": "Xodimlar: {name}",
+      "drill_back": "← Lavozimlar",
+      "drill_empty": "Bu lavozimda xodim yo'q",
+      "not_found": "Lavozim topilmadi",
+      "save": "Saqlash",
+      "cancel": "Bekor qilish"
     }
   },
   "print_entity": {
