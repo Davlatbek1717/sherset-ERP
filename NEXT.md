@@ -326,12 +326,22 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 >   active-name uniqueness, delete-block); FE `/hr/departments`+`/hr/positions`+`/hr/positions/[id]/employees` drill;
 >   hr-employee'ga `position` filtri; hr-api + subnav + i18n(ru+uz). Gate: +13 test · tc 0 · biome 0 · i18n key-existence PASS.
 >   Model qarori: catalog = pick-list (Employee free-text `department`/`position` string manba; FK ustunlar hozircha ishlatilmaydi).
+> - **Faza 3 — Jadvallar + resolveShift dvigatel** `0a20137`: **dvigatel** `attendance-geo/resolve-shift.util.ts` —
+>   sof `resolveShift(employee,date)` uch manbani birlashtiradi (flexible sikl / free / eski weekday fallback) +
+>   `computeLateMinutes/Overtime/TotalWorked` hosil-yordamchilari (sikl = UTC-anchor kalendar ayirmasi, DST-immun,
+>   manfiy-modul normalizatsiya; `scheduleId` null → weekday fallback → mavjud xulq bit-baravar). Backend `hr-schedule`
+>   modul (CRUD + pagination + nested-days transaction replace + soft-delete guard); AttendanceConfig'ga `scheduleId`
+>   biriktirish. FE `/hr/schedules` ro'yxat + create/edit/view modal (Moslashuvchan/Erkin, Sikl stepper, Kun 1..N).
+>   hr-api `hrScheduleTemplateApi` (mavjud `hrScheduleApi`=per-xodim haftalik bilan ajratildi). Gate: +31 test
+>   (resolveShift 24 + hr-schedule 7); attendance-geo 105 test green (regressiya yo'q); tc 0 · biome 0 · i18n PASS.
+>   ⚠️ **DEFER:** GPS consumer refactor (`ping-ingest`/`autocheckout-cron`/`monthly-report`) hali `resolveShift`ga
+>   ko'chirilmagan — dvigatel tayyor, lekin jonli GPS-davomat hozircha eski `EmployeeWorkSchedule`ni o'qiydi (regressiya
+>   xavfini oldini olish). Dashboard (Faza 5)/Kuzatish (Faza 6) yangi consumer sifatida `resolveShift`ni ishlatadi.
 >
-> **➡️ KEYINGI (Faza 3 — Jadvallar + resolveShift dvigatel · eng og'ir birlik):** spec §5.1 (`schedules-engine`).
-> Nomli jadval shablonlari (Moslashuvchan/Erkin, Sikl, Kun 1..N: ish-kuni toggle + smena + tanaffus) + **sof `resolveShift(employee,date)`
-> util** (cycle = `(date−startDate) mod cycleDays`, `scheduleId` yo'q → `EmployeeWorkSchedule` fallback; Asia/Tashkent). Bu
-> dvigatel Faza 5 (Dashboard KPI/kech/qo'shimcha) va Faza 6 (Kuzatish status)ni ta'minlaydi. Keyin Faza 4 (Xodimlar filtr+ustun+biriktirish).
-> Section fayllari: `spec-sections/*.md` scratchpad'da (dashboard/employees/monitoring/nav-i18n) yoki spec §5.
+> **➡️ KEYINGI (Faza 4 — Xodimlar sahifasini kengaytirish):** spec §5.4 (`employees` section, `spec-sections/employees.md`).
+> Filial/lavozim/bo'lim filtrlari + **Jadval ustuni** (schedule nomi + resolved days/hours) + employee-modal'ga
+> jadval/bo'lim/lavozim/filial biriktirish (`hrScheduleTemplateApi.list` + `AttendanceConfig.scheduleId` orqali). Mavjud
+> bulk/archive/version saqlanadi. Keyin Faza 5 (Dashboard: KPI + davomat jadvali, `resolveShift` bilan) · Faza 6 (Kuzatish).
 >
 > **🟡 Pre-existing debt (mening o'zgarishim EMAS):** `i18n-no-hardcoded` gate `labels/print/page.tsx` regex `/[a-zа-яё]/i`
 > ustida qizil (2026-07-23 commit'dan) — Faza scope'idan tashqari, alohida hal qilinadi.
