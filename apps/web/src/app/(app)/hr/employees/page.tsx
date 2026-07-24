@@ -15,8 +15,23 @@
  * (active/archived). Server pagination via `page` + `limit=50`.
  */
 
-import { hrEmployeeApi, hrRoleApi } from '@/lib/hr-api';
-import type { HrEmployeeListResult, HrEmployeeRow, HrRole } from '@/lib/hr-api';
+import {
+  hrDepartmentApi,
+  hrEmployeeApi,
+  hrPositionApi,
+  hrRoleApi,
+  hrScheduleTemplateApi,
+  hrWorkLocationApi,
+} from '@/lib/hr-api';
+import type {
+  HrDepartment,
+  HrEmployeeListResult,
+  HrEmployeeRow,
+  HrPosition,
+  HrRole,
+  HrScheduleListResult,
+  HrWorkLocation,
+} from '@/lib/hr-api';
 import {
   Avatar,
   Badge,
@@ -53,6 +68,11 @@ export default function HrEmployeesPage() {
   const [searchInput, setSearchInput] = useState('');
   const search = useDebounce(searchInput, 300);
   const [role, setRole] = useState<string>('');
+  // TimePay catalog filters.
+  const [positionId, setPositionId] = useState<string>('');
+  const [departmentId, setDepartmentId] = useState<string>('');
+  const [scheduleId, setScheduleId] = useState<string>('');
+  const [branchId, setBranchId] = useState<string>('');
   const [isChecker, setIsChecker] = useState(false);
   // moysklad «Состояние»: active list by default, archived view on demand.
   const [archived, setArchived] = useState(false);
@@ -66,13 +86,20 @@ export default function HrEmployeesPage() {
   const [editTarget, setEditTarget] = useState<HrEmployeeRow | null>(null);
   const [passwordTarget, setPasswordTarget] = useState<HrEmployeeRow | null>(null);
 
-  const queryKey = ['hr-employees', { search, role, isChecker, archived, page }] as const;
+  const queryKey = [
+    'hr-employees',
+    { search, role, positionId, departmentId, scheduleId, branchId, isChecker, archived, page },
+  ] as const;
   const { data, isLoading, error, refetch } = useQuery<HrEmployeeListResult>({
     queryKey,
     queryFn: () =>
       hrEmployeeApi.list({
         search: search || undefined,
         role: role || undefined,
+        positionId: positionId || undefined,
+        departmentId: departmentId || undefined,
+        scheduleId: scheduleId || undefined,
+        branchId: branchId || undefined,
         isChecker: isChecker || undefined,
         // Backend z.coerce.boolean turns "false" into TRUE — so only ever
         // send `true`; omit for the active view (see HrEmployeeFilter docs).
@@ -85,6 +112,23 @@ export default function HrEmployeesPage() {
   const { data: roles = [] } = useQuery<HrRole[]>({
     queryKey: ['hr-roles'],
     queryFn: () => hrRoleApi.list(),
+  });
+  const { data: positions = [] } = useQuery<HrPosition[]>({
+    queryKey: ['hr-positions'],
+    queryFn: () => hrPositionApi.list(),
+  });
+  const { data: departments = [] } = useQuery<HrDepartment[]>({
+    queryKey: ['hr-departments'],
+    queryFn: () => hrDepartmentApi.list(),
+  });
+  const { data: schedulesResult } = useQuery<HrScheduleListResult>({
+    queryKey: ['hr-schedules', { page: 1, limit: 100 }],
+    queryFn: () => hrScheduleTemplateApi.list({ page: 1, limit: 100 }),
+  });
+  const schedules = schedulesResult?.rows ?? [];
+  const { data: branches = [] } = useQuery<HrWorkLocation[]>({
+    queryKey: ['hr-work-locations'],
+    queryFn: () => hrWorkLocationApi.list(),
   });
 
   const deleteMut = useMutation({
@@ -131,7 +175,15 @@ export default function HrEmployeesPage() {
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / LIMIT));
   const rows = data?.rows ?? [];
-  const hasFilter = !!search || !!role || isChecker || archived;
+  const hasFilter =
+    !!search ||
+    !!role ||
+    !!positionId ||
+    !!departmentId ||
+    !!scheduleId ||
+    !!branchId ||
+    isChecker ||
+    archived;
 
   // Selection helpers — selection is scoped to the rows currently visible;
   // any filter/page/status change clears it so a bulk action never hits a
@@ -222,6 +274,67 @@ export default function HrEmployeesPage() {
           ))}
         </NativeSelect>
 
+        {/* TimePay catalog filters: filial / lavozim / bo'lim / jadval */}
+        <NativeSelect
+          value={branchId}
+          onChange={(e) => withReset(setBranchId)(e.target.value)}
+          className="w-auto"
+          data-test-id="hr-employees-branch-filter"
+          aria-label={t('filter_branch_all')}
+        >
+          <option value="">{t('filter_branch_all')}</option>
+          {branches.map((b) => (
+            <option key={b.id} value={b.id}>
+              {b.name}
+            </option>
+          ))}
+        </NativeSelect>
+
+        <NativeSelect
+          value={positionId}
+          onChange={(e) => withReset(setPositionId)(e.target.value)}
+          className="w-auto"
+          data-test-id="hr-employees-position-filter"
+          aria-label={t('filter_position_all')}
+        >
+          <option value="">{t('filter_position_all')}</option>
+          {positions.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </NativeSelect>
+
+        <NativeSelect
+          value={departmentId}
+          onChange={(e) => withReset(setDepartmentId)(e.target.value)}
+          className="w-auto"
+          data-test-id="hr-employees-department-filter"
+          aria-label={t('filter_department_all')}
+        >
+          <option value="">{t('filter_department_all')}</option>
+          {departments.map((d) => (
+            <option key={d.id} value={d.id}>
+              {d.name}
+            </option>
+          ))}
+        </NativeSelect>
+
+        <NativeSelect
+          value={scheduleId}
+          onChange={(e) => withReset(setScheduleId)(e.target.value)}
+          className="w-auto"
+          data-test-id="hr-employees-schedule-filter"
+          aria-label={t('filter_schedule_all')}
+        >
+          <option value="">{t('filter_schedule_all')}</option>
+          {schedules.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name}
+            </option>
+          ))}
+        </NativeSelect>
+
         {/* moysklad «Состояние» — active / archived view */}
         <NativeSelect
           value={archived ? 'archived' : 'active'}
@@ -280,8 +393,10 @@ export default function HrEmployeesPage() {
                   />
                 </th>
                 <th className="px-3 py-2 text-left font-medium">{t('col_name')}</th>
+                <th className="px-3 py-2 text-left font-medium">{t('col_position')}</th>
+                <th className="px-3 py-2 text-left font-medium">{t('col_branch')}</th>
+                <th className="px-3 py-2 text-left font-medium">{t('col_schedule')}</th>
                 <th className="px-3 py-2 text-left font-medium">{t('col_roles')}</th>
-                <th className="px-3 py-2 text-left font-medium">{t('col_telegram')}</th>
                 <th className="px-3 py-2 text-left font-medium">{t('col_department')}</th>
                 <th className="px-3 py-2 text-right font-medium">{t('col_actions')}</th>
               </tr>
@@ -331,6 +446,40 @@ export default function HrEmployeesPage() {
                       </div>
                     </div>
                   </td>
+                  {/* Lavozim */}
+                  <td className="px-3 py-2 text-[var(--ms-text-primary)] text-sm">
+                    {row.positionRef?.name || '—'}
+                  </td>
+                  {/* Filial */}
+                  <td className="px-3 py-2 text-[var(--ms-text-muted)] text-xs">
+                    {row.primaryBranch?.name || '—'}
+                  </td>
+                  {/* Jadval */}
+                  <td className="px-3 py-2">
+                    {row.scheduleRef ? (
+                      <div className="flex flex-col gap-0.5">
+                        <div className="flex items-center gap-1">
+                          <span className="text-[var(--ms-text-primary)] text-xs">
+                            {row.scheduleRef.name}
+                          </span>
+                          {row.scheduleRef.isFlexible && (
+                            <Badge tone="neutral">{t('schedule_flexible')}</Badge>
+                          )}
+                        </div>
+                        <span className="text-[var(--ms-text-muted)] text-[11px]">
+                          {t('schedule_days', {
+                            count: row.scheduleRef.workingDays,
+                            total: row.scheduleRef.totalDays,
+                          })}
+                          {row.scheduleRef.hoursLabel
+                            ? ` · ${row.scheduleRef.hoursLabel}`
+                            : ` · ${t('schedule_hours_mixed')}`}
+                        </span>
+                      </div>
+                    ) : (
+                      <span className="text-[var(--ms-text-muted)] text-xs">—</span>
+                    )}
+                  </td>
                   <td className="px-3 py-2">
                     <div className="flex flex-wrap gap-1">
                       {row.hrRoles.length === 0 && (
@@ -344,10 +493,7 @@ export default function HrEmployeesPage() {
                     </div>
                   </td>
                   <td className="px-3 py-2 text-[var(--ms-text-muted)] text-xs">
-                    {row.telegramPhone || '—'}
-                  </td>
-                  <td className="px-3 py-2 text-[var(--ms-text-muted)] text-xs">
-                    {row.department || '—'}
+                    {row.departmentRef?.name || row.department || '—'}
                   </td>
                   <td
                     className="px-3 py-2"

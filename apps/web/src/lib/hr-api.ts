@@ -9,6 +9,16 @@ import type { HrAccessLevel, HrPermissionRow } from './auth-store';
 
 // ─── Types ─────────────────────────────────────────────────────────────
 
+/** Compact schedule summary for the employee-list "Jadval" column. */
+export interface HrScheduleSummary {
+  id: string;
+  name: string;
+  isFlexible: boolean;
+  workingDays: number;
+  totalDays: number;
+  hoursLabel: string;
+}
+
 export interface HrEmployeeRow {
   id: string;
   name: string;
@@ -23,6 +33,11 @@ export interface HrEmployeeRow {
   archived: boolean;
   /** Optimistic-lock token — round-tripped on edit Save (PUT). */
   version: number;
+  // TimePay catalog projections (Lavozim / Bo'lim / Filial / Jadval columns).
+  positionRef?: { id: string; name: string } | null;
+  departmentRef?: { id: string; name: string } | null;
+  primaryBranch?: { id: string; name: string } | null;
+  scheduleRef?: HrScheduleSummary | null;
 }
 
 export interface HrEmployeeDetail extends HrEmployeeRow {
@@ -32,6 +47,10 @@ export interface HrEmployeeDetail extends HrEmployeeRow {
   attendanceOptIn?: boolean;
   workLocationId?: string | null;
   workLocation?: { id: string; name: string } | null;
+  // TimePay catalog assignment ids (for edit-modal pre-select).
+  positionId?: string | null;
+  departmentId?: string | null;
+  scheduleId?: string | null;
 }
 
 export interface HrEmployeeFilter {
@@ -39,6 +58,11 @@ export interface HrEmployeeFilter {
   role?: string;
   department?: string;
   position?: string;
+  // TimePay catalog filters (by FK id).
+  positionId?: string;
+  departmentId?: string;
+  scheduleId?: string;
+  branchId?: string;
   isChecker?: boolean;
   /**
    * moysklad «Состояние» (active/archived) view. Backend coerces with
@@ -74,6 +98,10 @@ export interface HrEmployeeCreateInput {
   hrRoles?: string[];
   isChecker?: boolean;
   moyskladAgentId?: string | null;
+  // TimePay catalog assignment (nullable FK ids).
+  positionId?: string | null;
+  departmentId?: string | null;
+  scheduleId?: string | null;
 }
 
 export interface HrEmployeeUpdateInput extends Partial<HrEmployeeCreateInput> {

@@ -23,11 +23,21 @@
 import { WeekScheduleGrid } from '@/components/hr/week-schedule-grid';
 import { useConflictReload } from '@/hooks/use-conflict-reload';
 import { api } from '@/lib/api-client';
-import { hrEmployeeApi, hrScheduleApi, hrWorkLocationApi } from '@/lib/hr-api';
+import {
+  hrDepartmentApi,
+  hrEmployeeApi,
+  hrPositionApi,
+  hrScheduleApi,
+  hrScheduleTemplateApi,
+  hrWorkLocationApi,
+} from '@/lib/hr-api';
 import type {
+  HrDepartment,
   HrEmployeeCreateInput,
   HrEmployeeDetail,
   HrEmployeeRow,
+  HrPosition,
+  HrScheduleListResult,
   HrWeekDay,
   HrWorkLocation,
 } from '@/lib/hr-api';
@@ -69,6 +79,10 @@ interface FormState {
   moyskladAgentId: string | null;
   username: string;
   password: string;
+  // TimePay catalog assignment ('' = biriktirilmagan).
+  positionId: string;
+  departmentId: string;
+  scheduleId: string;
   skladNo: string; // '' = biriktirilmagan
   workLocationId: string; // '' = biriktirilmagan
   attendanceOptIn: boolean;
@@ -87,6 +101,9 @@ function emptyForm(): FormState {
     moyskladAgentId: null,
     username: '',
     password: '',
+    positionId: '',
+    departmentId: '',
+    scheduleId: '',
     skladNo: '',
     workLocationId: '',
     attendanceOptIn: false,
@@ -107,6 +124,9 @@ function rowToForm(row: HrEmployeeRow | HrEmployeeDetail, skladNo?: number | nul
     moyskladAgentId: row.moyskladAgentId,
     username: '',
     password: '',
+    positionId: detail.positionId ?? '',
+    departmentId: detail.departmentId ?? '',
+    scheduleId: detail.scheduleId ?? '',
     skladNo: skladNo != null ? String(skladNo) : '',
     workLocationId: detail.workLocationId ?? '',
     attendanceOptIn: detail.attendanceOptIn ?? false,
@@ -144,6 +164,23 @@ export function EmployeeModal({
     queryFn: () => hrWorkLocationApi.list(),
     enabled: open,
   });
+  // TimePay catalogs for the assignment selects.
+  const { data: positions = [] } = useQuery<HrPosition[]>({
+    queryKey: ['hr-positions'],
+    queryFn: () => hrPositionApi.list(),
+    enabled: open,
+  });
+  const { data: departments = [] } = useQuery<HrDepartment[]>({
+    queryKey: ['hr-departments'],
+    queryFn: () => hrDepartmentApi.list(),
+    enabled: open,
+  });
+  const { data: schedulesResult } = useQuery<HrScheduleListResult>({
+    queryKey: ['hr-schedules', { page: 1, limit: 100 }],
+    queryFn: () => hrScheduleTemplateApi.list({ page: 1, limit: 100 }),
+    enabled: open,
+  });
+  const schedules = schedulesResult?.rows ?? [];
 
   // Reset / hydrate when opening
   useEffect(() => {
@@ -182,6 +219,10 @@ export function EmployeeModal({
     hrRoles: form.hrRoles,
     isChecker: form.isChecker,
     moyskladAgentId: form.moyskladAgentId,
+    // TimePay catalog assignment ('' → null).
+    positionId: form.positionId || null,
+    departmentId: form.departmentId || null,
+    scheduleId: form.scheduleId || null,
     ...(mode === 'create' && form.username.trim() && { username: form.username.trim() }),
     ...(mode === 'create' && form.password && { password: form.password }),
   });
@@ -362,6 +403,52 @@ export function EmployeeModal({
             onChange={(e) => update('department', e.target.value)}
             data-test-id="hr-employee-department"
           />
+        </Field>
+
+        {/* TimePay catalog assignment: lavozim / bo'lim / jadval */}
+        <Field label={t('form_position')}>
+          <NativeSelect
+            value={form.positionId}
+            onChange={(e) => update('positionId', e.target.value)}
+            data-test-id="hr-employee-position-select"
+          >
+            <option value="">{t('form_unassigned')}</option>
+            {positions.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </NativeSelect>
+        </Field>
+
+        <Field label={t('form_department_catalog')}>
+          <NativeSelect
+            value={form.departmentId}
+            onChange={(e) => update('departmentId', e.target.value)}
+            data-test-id="hr-employee-department-select"
+          >
+            <option value="">{t('form_unassigned')}</option>
+            {departments.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name}
+              </option>
+            ))}
+          </NativeSelect>
+        </Field>
+
+        <Field label={t('form_schedule')}>
+          <NativeSelect
+            value={form.scheduleId}
+            onChange={(e) => update('scheduleId', e.target.value)}
+            data-test-id="hr-employee-schedule-select"
+          >
+            <option value="">{t('form_unassigned')}</option>
+            {schedules.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </NativeSelect>
         </Field>
 
         <Field label={t('form_roles')} required>

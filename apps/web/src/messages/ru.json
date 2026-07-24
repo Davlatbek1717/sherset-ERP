@@ -6318,7 +6318,21 @@
       "davomat_branch": "Рабочее место (филиал)",
       "davomat_branch_none": "Не назначено",
       "davomat_optin": "GPS-учёт",
-      "davomat_optin_hint": "Отслеживание разрешено"
+      "davomat_optin_hint": "Отслеживание разрешено",
+      "filter_branch_all": "Все филиалы",
+      "filter_position_all": "Все должности",
+      "filter_department_all": "Все отделы",
+      "filter_schedule_all": "Все графики",
+      "col_position": "Должность",
+      "col_branch": "Филиал",
+      "col_schedule": "График",
+      "schedule_flexible": "Гибкий",
+      "schedule_days": "{count}/{total} дн.",
+      "schedule_hours_mixed": "Разное",
+      "form_position": "Должность",
+      "form_department_catalog": "Отдел",
+      "form_schedule": "График",
+      "form_unassigned": "Не назначено"
     },
     "hrAttendance": {
       "title": "Посещаемость",

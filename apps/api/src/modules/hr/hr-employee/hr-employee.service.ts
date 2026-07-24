@@ -18,6 +18,7 @@ import type {
   SetPasswordInput,
   UpdateHrEmployeeInput,
 } from './hr-employee.schema.js';
+import { summarizeSchedule } from './schedule-summary.util.js';
 
 function safeNormalizePhone(raw: string | null | undefined): string | null | undefined {
   if (raw === undefined) return undefined; // unchanged on update
@@ -113,6 +114,23 @@ export class HrEmployeeService {
     if (filter.position) {
       where.position = filter.position;
     }
+    // TimePay catalog filters (by FK id).
+    if (filter.positionId) where.positionId = filter.positionId;
+    if (filter.departmentId) where.departmentId = filter.departmentId;
+    if (filter.scheduleId) where.scheduleId = filter.scheduleId;
+    if (filter.branchId) {
+      // `search` may already own `where.OR`, so scope the branch match under a
+      // separate AND. Match the primary geofence (workLocationId) OR the
+      // many-to-many join, so pre-join single-branch employees still surface.
+      where.AND = [
+        {
+          OR: [
+            { workLocationId: filter.branchId },
+            { branches: { some: { workLocationId: filter.branchId } } },
+          ],
+        },
+      ];
+    }
     if (filter.isChecker !== undefined) {
       where.isChecker = filter.isChecker;
     }
@@ -153,17 +171,39 @@ export class HrEmployeeService {
           // avatar thumbnail flag (bytes NEVER ride the list payload)
           imageMime: true,
           roles: { select: { role: { select: { id: true, name: true, isSystem: true } } } },
+          // TimePay catalog projections (Lavozim / Bo'lim / Jadval / Filial columns).
+          positionId: true,
+          departmentId: true,
+          scheduleId: true,
+          position2: { select: { id: true, name: true } },
+          department2: { select: { id: true, name: true } },
+          workLocation: { select: { id: true, name: true } },
+          schedule: {
+            select: {
+              id: true,
+              name: true,
+              type: true,
+              cycleDays: true,
+              days: { select: { isWorkday: true, startTime: true, endTime: true } },
+            },
+          },
         },
       }),
       this.prisma.client.employee.count({ where }),
     ]);
 
     return {
-      rows: rows.map(({ attributes, imageMime, ...row }) => ({
-        ...row,
-        loginAllowed: readEmployeeSystemAttrs(attributes).loginAllowed !== false,
-        hasImage: imageMime != null,
-      })),
+      rows: rows.map(
+        ({ attributes, imageMime, position2, department2, workLocation, schedule, ...row }) => ({
+          ...row,
+          loginAllowed: readEmployeeSystemAttrs(attributes).loginAllowed !== false,
+          hasImage: imageMime != null,
+          positionRef: position2 ?? null,
+          departmentRef: department2 ?? null,
+          primaryBranch: workLocation ?? null,
+          scheduleRef: schedule ? summarizeSchedule(schedule) : null,
+        }),
+      ),
       total,
       page: filter.page,
       limit: filter.limit,
@@ -212,6 +252,10 @@ export class HrEmployeeService {
         groupId: true,
         attributes: true,
         roles: { select: { role: { select: { id: true, name: true, isSystem: true } } } },
+        // TimePay catalog assignment — so the edit modal can pre-select them.
+        positionId: true,
+        departmentId: true,
+        scheduleId: true,
       },
     });
     if (!emp) throw new NotFoundException('Xodim topilmadi');
@@ -260,9 +304,37 @@ export class HrEmployeeService {
     }
   }
 
+  /**
+   * When a catalog FK (positionId/departmentId) is set, resolve its name so the
+   * legacy free-text position/department strings stay in sync — the Faza-2
+   * position drill and HrTaskTemplate.department filter read those strings.
+   */
+  private async resolveCatalogMirror(
+    accountId: string,
+    input: { positionId?: string | null; departmentId?: string | null },
+  ): Promise<{ position?: string; department?: string }> {
+    const out: { position?: string; department?: string } = {};
+    if (input.positionId) {
+      const p = await this.prisma.client.hrPosition.findFirst({
+        where: { id: input.positionId, accountId },
+        select: { name: true },
+      });
+      if (p) out.position = p.name;
+    }
+    if (input.departmentId) {
+      const d = await this.prisma.client.hrDepartment.findFirst({
+        where: { id: input.departmentId, accountId },
+        select: { name: true },
+      });
+      if (d) out.department = d.name;
+    }
+    return out;
+  }
+
   async create(accountId: string, input: CreateHrEmployeeInput, actorId?: string) {
     const telegramPhone = safeNormalizePhone(input.telegramPhone);
     const sysPatch = systemAttrsPatch(input);
+    const mirror = await this.resolveCatalogMirror(accountId, input);
     try {
       const created = await this.prisma.client.employee.create({
         data: {
@@ -272,7 +344,7 @@ export class HrEmployeeService {
           email: input.email ?? `${Date.now()}@hr.local`,
           phone: input.phone ?? undefined,
           telegramPhone: telegramPhone ?? undefined,
-          department: input.department ?? undefined,
+          department: mirror.department ?? input.department ?? undefined,
           hrRoles: input.hrRoles,
           isChecker: input.isChecker,
           moyskladAgentId: input.moyskladAgentId ?? undefined,
@@ -280,7 +352,11 @@ export class HrEmployeeService {
           firstName: input.firstName ?? undefined,
           lastName: input.lastName ?? undefined,
           middleName: input.middleName ?? undefined,
-          position: input.position ?? undefined,
+          position: mirror.position ?? input.position ?? undefined,
+          // TimePay catalog FKs.
+          positionId: input.positionId ?? undefined,
+          departmentId: input.departmentId ?? undefined,
+          scheduleId: input.scheduleId ?? undefined,
           salaryMinor: input.salaryMinor != null ? BigInt(input.salaryMinor) : undefined,
           inn: input.inn ?? undefined,
           description: input.description ?? undefined,
@@ -331,6 +407,7 @@ export class HrEmployeeService {
     if (!current) throw new NotFoundException('Xodim topilmadi');
     const telegramPhone = safeNormalizePhone(input.telegramPhone);
     const sysPatch = systemAttrsPatch(input);
+    const mirror = await this.resolveCatalogMirror(accountId, input);
 
     // moysklad-style audit diff: only fields present in the payload AND
     // actually different. Salary compares/records via the string wire format.
@@ -394,20 +471,28 @@ export class HrEmployeeService {
           ...(input.email !== undefined && { email: input.email }),
           ...(input.phone !== undefined && { phone: input.phone }),
           ...(telegramPhone !== undefined && { telegramPhone }),
-          ...(input.department !== undefined && { department: input.department }),
+          ...(mirror.department !== undefined
+            ? { department: mirror.department }
+            : input.department !== undefined && { department: input.department }),
           ...(input.hrRoles !== undefined && { hrRoles: input.hrRoles }),
           ...(input.isChecker !== undefined && { isChecker: input.isChecker }),
           ...(input.moyskladAgentId !== undefined && { moyskladAgentId: input.moyskladAgentId }),
           ...(input.firstName !== undefined && { firstName: input.firstName }),
           ...(input.lastName !== undefined && { lastName: input.lastName }),
           ...(input.middleName !== undefined && { middleName: input.middleName }),
-          ...(input.position !== undefined && { position: input.position }),
+          ...(mirror.position !== undefined
+            ? { position: mirror.position }
+            : input.position !== undefined && { position: input.position }),
           ...(input.salaryMinor !== undefined && {
             salaryMinor: input.salaryMinor != null ? BigInt(input.salaryMinor) : null,
           }),
           ...(input.inn !== undefined && { inn: input.inn }),
           ...(input.description !== undefined && { description: input.description }),
           ...(input.groupId !== undefined && { groupId: input.groupId }),
+          // TimePay catalog FKs (plain scalars — ride the same optimistic-lock update).
+          ...(input.positionId !== undefined && { positionId: input.positionId }),
+          ...(input.departmentId !== undefined && { departmentId: input.departmentId }),
+          ...(input.scheduleId !== undefined && { scheduleId: input.scheduleId }),
           ...(Object.keys(sysPatch).length > 0 && {
             attributes: mergeEmployeeSystemAttrs(current.attributes, sysPatch) as object,
           }),

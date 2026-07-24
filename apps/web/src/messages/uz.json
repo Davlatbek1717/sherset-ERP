@@ -6318,7 +6318,21 @@
       "davomat_branch": "Ish joyi (filial)",
       "davomat_branch_none": "Biriktirilmagan",
       "davomat_optin": "GPS-davomat",
-      "davomat_optin_hint": "Kuzatuvga ruxsat berilgan"
+      "davomat_optin_hint": "Kuzatuvga ruxsat berilgan",
+      "filter_branch_all": "Barcha filiallar",
+      "filter_position_all": "Barcha lavozimlar",
+      "filter_department_all": "Barcha bo'limlar",
+      "filter_schedule_all": "Barcha jadvallar",
+      "col_position": "Lavozim",
+      "col_branch": "Filial",
+      "col_schedule": "Jadval",
+      "schedule_flexible": "Moslashuvchan",
+      "schedule_days": "{count}/{total} kun",
+      "schedule_hours_mixed": "Har xil",
+      "form_position": "Lavozim",
+      "form_department_catalog": "Bo'lim",
+      "form_schedule": "Jadval",
+      "form_unassigned": "Biriktirilmagan"
     },
     "hrAttendance": {
       "title": "Davomat",

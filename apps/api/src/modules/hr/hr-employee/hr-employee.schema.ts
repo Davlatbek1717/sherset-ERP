@@ -45,6 +45,11 @@ export const CreateHrEmployeeSchema = z.object({
   inn: z.string().max(20).optional().nullable(), // ИНН
   description: z.string().max(4096).optional().nullable(), // Описание
   groupId: z.string().uuid().optional().nullable(), // Отдел
+  // ── TimePay davomat catalog assignment (nullable FKs; the free-text
+  // position/department strings above are mirrored from the picked name). ──
+  positionId: z.string().uuid().optional().nullable(),
+  departmentId: z.string().uuid().optional().nullable(),
+  scheduleId: z.string().uuid().optional().nullable(),
   // «Разрешить вход в систему» — stored in attributes.__employee_system.
   loginAllowed: z.boolean().optional(),
   // «Сеть»: Доступ только с адресов / только из сети.
@@ -104,6 +109,11 @@ export const HrEmployeeFilterSchema = z.object({
   role: z.string().optional(),
   department: z.string().optional(),
   position: z.string().optional(),
+  // TimePay catalog filters (by FK id).
+  positionId: z.string().uuid().optional(),
+  departmentId: z.string().uuid().optional(),
+  scheduleId: z.string().uuid().optional(),
+  branchId: z.string().uuid().optional(),
   isChecker: queryBool.optional(),
   // moysklad «Состояние» (active/archived) toggle. Defaults to the active
   // list (archived=false); the «Извлечь из архива» bulk action is only
