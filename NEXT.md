@@ -337,11 +337,20 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 >   ⚠️ **DEFER:** GPS consumer refactor (`ping-ingest`/`autocheckout-cron`/`monthly-report`) hali `resolveShift`ga
 >   ko'chirilmagan — dvigatel tayyor, lekin jonli GPS-davomat hozircha eski `EmployeeWorkSchedule`ni o'qiydi (regressiya
 >   xavfini oldini olish). Dashboard (Faza 5)/Kuzatish (Faza 6) yangi consumer sifatida `resolveShift`ni ishlatadi.
+> - **Faza 4 — Xodimlar kengaytirish** `1323687`: hr-employee list'ga filial/lavozim/bo'lim/jadval filtrlari (FK id) +
+>   projeksiyalar (`positionRef`/`departmentRef`/`primaryBranch`/`scheduleRef`); create/update FK yozadi + katalog nomini
+>   legacy `position`/`department` string'ga mirror qiladi (Faza-2 drill buzilmasin). Sof `schedule-summary.util`
+>   (workingDays/totalDays/hoursLabel). FE: 4 filtr dropdown + Lavozim/Filial/Jadval ustunlari + employee-modal'ga 3 select
+>   biriktirish (findOne pre-fill, optimistic-lock oqimida). Gate: +4 test · hr-employee 67 green (regressiya yo'q) · tc 0 ·
+>   biome exit 0 · i18n PASS. ⚠️ **DEFER (spec §5.4):** multi-branch multi-select UI, foto yuklash, ism/familiya split,
+>   mamlakat-kodi, bonus quick-modal, attendance-stats ikonka (`/hr/monitoring/{id}` — Faza 6).
 >
-> **➡️ KEYINGI (Faza 4 — Xodimlar sahifasini kengaytirish):** spec §5.4 (`employees` section, `spec-sections/employees.md`).
-> Filial/lavozim/bo'lim filtrlari + **Jadval ustuni** (schedule nomi + resolved days/hours) + employee-modal'ga
-> jadval/bo'lim/lavozim/filial biriktirish (`hrScheduleTemplateApi.list` + `AttendanceConfig.scheduleId` orqali). Mavjud
-> bulk/archive/version saqlanadi. Keyin Faza 5 (Dashboard: KPI + davomat jadvali, `resolveShift` bilan) · Faza 6 (Kuzatish).
+> **➡️ KEYINGI (Faza 5 — Boshqaruv paneli / davomat dashboard):** spec §5.3 (`dashboard`, `spec-sections/dashboard.md`).
+> `/hr` bosh sahifasini Telegram-markazlidan **davomat-markazli**ga qayta ishlash: sana tanlash + 4 KPI karta
+> (Barchasi/Ishda/Kech/Ishda emas) + "Xodimlar davomati" jadvali (Kirish/Chiqish/Qo'shimcha/Jami/Filiallar) + "Qo'lda
+> davomat yaratish" modal. **`resolveShift` dvigatelini shu yerda birinchi marta jonli ishlatamiz** (kech/qo'shimcha/jami
+> hisoblash; `HrAttendance` + `resolveShift(employee,date)`). Eski Telegram-dashboard kontenti ikkilamchi/`/hr/messages`ga
+> ko'chadi. Keyin Faza 6 (Xodimlarni kuzatish — jonli status jadvali + detal). Bu MVP davomat-yadrosining oxirgi 2 fazasi.
 >
 > **🟡 Pre-existing debt (mening o'zgarishim EMAS):** `i18n-no-hardcoded` gate `labels/print/page.tsx` regex `/[a-zа-яё]/i`
 > ustida qizil (2026-07-23 commit'dan) — Faza scope'idan tashqari, alohida hal qilinadi.
