@@ -1062,4 +1062,51 @@ export const hrDavomatReportApi = {
     `/hr/attendance/report/monthly.xlsx${toQueryString(filter as Record<string, unknown>)}`,
 };
 
+// ─── Davomat → Telegram bildirishnoma (attendance-notify config) ───────
+
+/**
+ * Per-account davomat-notify config. `lateFineAmountMinor` is tiyin (BigInt on
+ * the backend) serialised as a string; the UI converts to/from so'm.
+ */
+export interface HrDavomatNotifyConfig {
+  enabled: boolean;
+  notifyCheckIn: boolean;
+  notifyCheckOut: boolean;
+  directorSlot: number | null;
+  lateFineEnabled: boolean;
+  lateThresholdMin: number;
+  lateFineAmountMinor: string;
+  lateFinePerMinute: boolean;
+}
+
+/** PUT upsert DTO — every field optional (partial patch). */
+export interface UpdateHrDavomatNotifyConfigInput {
+  enabled?: boolean;
+  notifyCheckIn?: boolean;
+  notifyCheckOut?: boolean;
+  directorSlot?: number | null;
+  lateFineEnabled?: boolean;
+  lateThresholdMin?: number;
+  /** tiyin (so'm × 100) as string — BigInt on the wire. */
+  lateFineAmountMinor?: string;
+  lateFinePerMinute?: boolean;
+}
+
+export interface HrDavomatNotifyTestResult {
+  ok: boolean;
+  reason?: string;
+}
+
+export function getDavomatNotifyConfig() {
+  return api.get<HrDavomatNotifyConfig>('/hr/attendance-notify/config');
+}
+
+export function updateDavomatNotifyConfig(dto: UpdateHrDavomatNotifyConfigInput) {
+  return api.put<HrDavomatNotifyConfig>('/hr/attendance-notify/config', dto);
+}
+
+export function sendDavomatNotifyTest() {
+  return api.post<HrDavomatNotifyTestResult>('/hr/attendance-notify/test', {});
+}
+
 export type { HrAccessLevel, HrPermissionRow };
