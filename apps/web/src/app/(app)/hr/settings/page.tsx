@@ -10,10 +10,16 @@ export default function HrSettingsPage() {
   const t = useTranslations('subnav.hr');
   const tRoles = useTranslations('pages.hrRoles');
   const tTelegram = useTranslations('pages.hrTelegram');
+  const tWorkLoc = useTranslations('pages.workLocations');
 
   const cards = [
     { href: '/hr/settings/roles', title: tRoles('title'), desc: tRoles('subtitle') },
     { href: '/hr/settings/telegram', title: tTelegram('title'), desc: tTelegram('subtitle') },
+    {
+      href: '/hr/settings/work-locations',
+      title: tWorkLoc('title'),
+      desc: tWorkLoc('subtitle'),
+    },
   ];
 
   return (

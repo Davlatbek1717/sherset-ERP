@@ -8,7 +8,7 @@
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 
-export type EmployeeTab = 'main' | 'permissions' | 'salary';
+export type EmployeeTab = 'main' | 'permissions' | 'salary' | 'schedule';
 
 export interface TabBarProps {
   employeeId: string;
@@ -25,6 +25,7 @@ export function TabBar({ employeeId, active }: TabBarProps) {
       label: t('tab_permissions'),
     },
     { key: 'salary', href: `/hr/employees/${employeeId}/salary`, label: t('tab_salary') },
+    { key: 'schedule', href: `/hr/employees/${employeeId}/schedule`, label: t('tab_schedule') },
   ];
   return (
     <nav className="flex gap-1 border-[var(--ms-border-default)] border-b">

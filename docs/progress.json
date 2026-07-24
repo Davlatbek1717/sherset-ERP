@@ -1,11 +1,11 @@
 {
-  "generatedAt": "2026-07-23T11:34:57.239Z",
+  "generatedAt": "2026-07-24T07:34:02.844Z",
   "list_pages": {
     "total_target": 56,
-    "actual_routes_in_app": 71,
-    "toolbar_components_built": 18,
-    "toolbar_components_pct": 32,
-    "dedicated_components": 14,
+    "actual_routes_in_app": 70,
+    "toolbar_components_built": 19,
+    "toolbar_components_pct": 34,
+    "dedicated_components": 15,
     "shared_assortment_reuse": 4,
     "inline_page_level": 0,
     "dedicated_list": [
@@ -21,15 +21,16 @@
       "projects",
       "purchase-returns",
       "sales-returns",
+      "stores",
       "supplies",
       "uoms"
     ]
   },
   "detail_pages": {
-    "total_target": 71,
-    "actual_in_app": 71,
+    "total_target": 69,
+    "actual_in_app": 69,
     "audited": 63,
-    "audited_pct": 89,
+    "audited_pct": 91,
     "files": [
       "analitika-buyurtmalar-detail.audit.md",
       "analitika-kontragentlar-detail.audit.md",
@@ -173,15 +174,13 @@
     ]
   },
   "mass_edit": {
-    "backend_endpoints": 25,
+    "backend_endpoints": 26,
     "smoke_log_hint": "Run `pnpm smoke:all` and parse the tail for live-smoke + adversarial counts"
   },
   "moysklad_reference": {
-    "captured_modules": 1,
-    "detail_captured_modules": 1,
-    "modules": [
-      "salesreturn"
-    ]
+    "captured_modules": 0,
+    "detail_captured_modules": 0,
+    "modules": []
   },
   "phase2": {
     "cohorts_total": 7,

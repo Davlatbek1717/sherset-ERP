@@ -31,6 +31,20 @@ bo'g'iz emas edi; bu tune — to'g'ri gigiyena + o'sish uchun zaxira, halokatli-
 
 ---
 
+## ✅ Bundle — optimizePackageImports + o'lik dep (2026-07-23, `9f2a5f7`)
+
+`next.config`: `experimental.optimizePackageImports = [recharts, date-fns, date-fns-tz, lucide-react]` — barrel importlar
+to'g'ridan-to'g'ri submodulega rewrite (bitta helper uchun butun paket tashilmaydi). `@tanstack/react-table` (0 import,
+o'lik) olib tashlandi. **Foyda:** kam client-JS → Germaniya→UZ masofada tez sovuq yuklash. Aniq bundle-hajm deploy-build'da
+o'lchanadi. Gate: web typecheck 0 · biome 0. Regressiya yo'q.
+
+## ✅ Trigram GIN indekslar — ILIKE qidiruv (2026-07-23, `77e3300`)
+
+Audit H2: 236 ta `ILIKE '%term%'` qidiruv, 0 trigram indeks → seq-scan. GIN + pg_trgm → index-scan.
+`demands(name, description)`, `products(name)`, `counterparties(name)`. `pg_trgm` extension JONLI DB'da yaratildi;
+indekslar migration (`20260723150000_trgm_search_indexes`) orqali **deploy'da** yaraladi (schema.prisma bilan sinxron →
+drift yo'q). **Foyda:** qidiruv sekinligi (asosan demands 44k). Jonli before/after deploy'dan keyin.
+
 ## 📣 P1 — Cloudflare edge — TEKSHIRILDI: sayt CF ORTIDA EMAS (sizning amalingiz kerak)
 
 **Topilma (o'lchangan):** `sherset.uz` → to'g'ridan-to'g'ri `13.140.157.10` (Germaniya origin), `Server: nginx/1.24.0`.

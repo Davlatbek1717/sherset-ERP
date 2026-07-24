@@ -16,6 +16,7 @@ import { Avatar, Badge, Button, EmptyState, Input, NativeSelect, Skeleton } from
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatInTimeZone } from 'date-fns-tz';
 import { useTranslations } from 'next-intl';
+import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { CheckInModal } from './_components/check-in-modal';
 import { EditAttendanceModal } from './_components/edit-attendance-modal';
@@ -100,11 +101,19 @@ export default function HrAttendancePage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="font-semibold text-2xl text-[var(--ms-text-strong)]">{t('title')}</h1>
-        {tab === 'today' && (
-          <Button onClick={() => setCheckInOpen(true)} data-test-id="hr-attendance-mark-check-in">
-            {t('mark_check_in')}
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          <Link
+            href="/hr/attendance/monthly"
+            className="rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] px-3 py-1.5 font-medium text-[var(--ms-text-primary)] text-sm hover:bg-[var(--ms-bg-app)]"
+          >
+            {t('monthly_report')}
+          </Link>
+          {tab === 'today' && (
+            <Button onClick={() => setCheckInOpen(true)} data-test-id="hr-attendance-mark-check-in">
+              {t('mark_check_in')}
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Tab bar */}
@@ -140,6 +149,7 @@ export default function HrAttendancePage() {
                 <tr>
                   <th className="px-3 py-2 text-left">{t('employee')}</th>
                   <th className="px-3 py-2 text-left">{t('check_in')}</th>
+                  <th className="px-3 py-2 text-right">{t('late')}</th>
                   <th className="px-3 py-2 text-left">{t('check_out')}</th>
                   <th className="px-3 py-2 text-left">{t('status')}</th>
                   <th className="px-3 py-2 text-right">{tCommon('actions')}</th>
@@ -157,8 +167,21 @@ export default function HrAttendancePage() {
                         <span>{row.employee.name}</span>
                       </div>
                     </td>
-                    <td className="px-3 py-2 font-mono text-[var(--ms-text-strong)]">
+                    <td
+                      className={`px-3 py-2 font-mono ${
+                        row.lateMinutes && row.lateMinutes > 0
+                          ? 'font-semibold text-[var(--ms-text-destructive)]'
+                          : 'text-[var(--ms-text-strong)]'
+                      }`}
+                    >
                       {fmtTime(row.checkInTime)}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      {row.lateMinutes && row.lateMinutes > 0 ? (
+                        <Badge tone="destructive">+{row.lateMinutes}</Badge>
+                      ) : (
+                        <span className="text-[var(--ms-text-muted)]">—</span>
+                      )}
                     </td>
                     <td className="px-3 py-2 font-mono">
                       {row.checkOutTime ? (
@@ -173,6 +196,11 @@ export default function HrAttendancePage() {
                       <Badge tone={activeTone(!row.checkOutTime)}>
                         {row.checkOutTime ? t('left') : t('working')}
                       </Badge>
+                      {row.source === 'auto_gps' && (
+                        <Badge tone="neutral" className="ml-1">
+                          {t('source_auto')}
+                        </Badge>
+                      )}
                     </td>
                     <td className="px-3 py-2 text-right">
                       <div className="flex justify-end gap-2">

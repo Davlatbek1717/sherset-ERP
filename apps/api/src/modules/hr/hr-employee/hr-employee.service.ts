@@ -186,6 +186,10 @@ export class HrEmployeeService {
         salaryConfig: true,
         createdAt: true,
         lastLoginAt: true,
+        // GPS-davomat config (schedule tab)
+        attendanceOptIn: true,
+        workLocationId: true,
+        workLocation: { select: { id: true, name: true } },
         // Optimistic-lock token for the detail-page edit modal.
         version: true,
         // moysklad employee card (Настройки → Сотрудники → карточка).

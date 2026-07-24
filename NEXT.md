@@ -308,19 +308,39 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > **🌐 2026-07-23l (YANGI YO'NALISH — VPS «moysklad» fork → Sherset Продажи port · recon+analiz+reja · `1e4b46a`)**
 > Foydalanuvchi yangi vazifa berdi: VPS `/var/www/moysklad` (climartgroup.uz, root 45.67.216.61) — bu **Sherset bilan
 > bir loyiha oilasi (moysklad-clone), alohida diverged fork** (`Biznesjon-Official/moysklad`, faol). Foydalanuvchi qarori
-> **KENGAYTIRILDI:** endi 3 bo'lim emas — **BUTUN kod climart bilan bir xil** (upstream-adoption). Keep = **counterparties
-> + debts** (Sherset'niki); DROP = sotuv/omborchi/restock-tasks/replenishment/cell; DB = **yangi dev-DB** (climart datasi
-> KERAK EMAS); rejim = **lokal-avval-tekshir**, prod ALOHIDA. **⚠️ Bu salesreturn 1:1 + Продажи-per-page rejalarni SUPERSEDES qiladi.**
+> **KENGAYTIRILDI:** endi 3 bo'lim emas — **BUTUN kod climart bilan bir xil** (upstream-adoption). Keep = «konteragent
+> ekotizimi» = **counterparties + debts + sms + telegram** (Sherset'niki; foydalanuvchi 2026-07-23: «bularning hammasi
+> konteragent bo'limiga kiradi»); DROP = sotuv/omborchi/restock-tasks/replenishment/cell; DB = **yangi dev-DB**; rejim =
+> **lokal-avval-tekshir**, prod ALOHIDA. **⚠️ salesreturn 1:1 + Продажи-per-page rejalarni SUPERSEDES qiladi.**
 > **SSH kirish O'RNATILDI:** `ssh climart` (kalit `~/.ssh/climart_vps` root@45.67.216.61'da, `~/.ssh/config`'da; parolsiz).
 > **Server FAQAT o'qiladi** (git archive bilan kod olish; DB/boshqa loyihalarga TEGMA). VPS full archive ~3GB → maqsadli yo'llar.
 > **Farq-tahlil:** HAR Продажи FE fayli farq qiladi; VPS TO'LIQROQ (demands 1775>1445, sales-returns/new 1732>1151,
 > retail 704>>5-stub; commission-reports VPS-only new/new-in). Shared-infra ham divergent LEKIN Sherset kattaroq
 > (api-client 247>177, schema 9356>8939) → VPS'nikiga almashtirilMAYDI; VPS sahifalari **Sherset infra'siga moslashtiriladi**.
-> **⏭️ KEYINGI = B1 (manba+overlay)** — reja: `docs/superpowers/plans/2026-07-23-vps-prodaji-port.md` (butun-repo adoption).
-> **Worktree MAJBURIY** (parallel sessiya main'da). Bosqichlar: B1 climart manba(`git archive`, docs/generated junk chiqarib)+tree
-> overlay → B2 sxema reconcile(climart + counterparties/debts) → B3 keep-list moslash(tc0) → B4 build+i18n → B5 yangi
-> dev-DB+seed+smoke → B6 verify. Deploy-config (`deploy/`, sherset.biznesjon.uz) climart'niki bilan almashtirilMASIN.
-> **HALOL:** kod hali adopt qilinmagan — faqat recon+reja. Prod deploy = alohida ehtiyotkor qadam.
+> **B1 ✅ BAJARILDI:** worktree `d:/projects/sherset-climart-adoption` (branch `climart-adoption`, commit `a52c3c7`).
+> climart tree overlay + keep(counterparties/debts/deploy/docs) + drop(sotuv/omborchi/cell/replenishment/restock-tasks) +
+> add(bulk-edit/specialoffers/subscription). `pnpm install` ✅ · money build ✅ · prisma generate ✅. **Main daxlsiz.**
+> **B2 ✅ + B3-partial ✅ (commit `2e3b35c`): typecheck 186 → 75.** B2 = Sherset Debt-modellar + back-relation'lar
+> climart sxemasiga (API 119→34). B3-partial = PermissionEntity/NotificationKind/AttachmentEntity +debt (API 34→8).
+> **🏁🎉 ADOPTION RUNTIME-VERIFIED (2026-07-23):** ✅ typecheck 0 · ✅ i18n PASS (+133 kalit) · ✅ build:web · ✅ **`prisma
+> db push` + `db:seed` OK** · ✅ **`pnpm dev` JONLI + brauzer smoke:** login `admin@demo.local`/`admin123` → **dashboard,
+> counterparties (Sherset kept, SMS/filtr, 2 seed-kontragent), debts «Qarz undirish» (Sherset kept), customer-orders
+> (climart Sotuvlar) — HAMMASI RENDER BO'LDI.** climart adoption + Sherset kept-ekotizim JONLI ishlaydi.
+> **RUN (lokal):** DB `climart_adopt` @ postgres 5432 (rol `sherset` yaratildi; PG18 PID5772 instance) · worktree `.env`
+> DATABASE_URL→climart_adopt · `pnpm dev` web:3100 + api:4000 · login `admin@demo.local`/`admin123`.
+> **⏭️ QOLGAN (polish):** (1) ba'zi i18n xom (`pages.debts.legend_*`/`scope_active` — runtime-only, static-test tutmadi;
+> merge'ni kengaytir); (2) dev-overlay "Issues" (debts 17, counterparties 1 — React runtime warn); (3) biome 43 lint;
+> (4) chek-shablon (retail/print) keep tekshir; (5) generated Prisma branch'ga tushdi (.gitignore). Keyin PROD deploy (alohida).
+> ~~**⏭️ KEYINGI = oxirgi 4 web + gate** (checkpoint `71231a3`, **API 0 · web 4** — jami 253→4, ~98% reconcile). Keep =~~
+> «konteragent ekotizimi» = counterparties+debts+sms+telegram + **xabar/CHEK shablonlari** (saqlansin, o'zgartirilmasin).
+> **✅ API TYPECHECK 0** (backend to'liq): telegram/MessageTemplate/CompanySettings/attachment schema + big-integer +
+> sms/telegram/hr-bridge/hr-tg-account modul + createFromBuffer/SupplyPostedEvent/blobUrl fix. **✅ WEB 67→4:** FE keep-deps
+> (components/sms+telegram, hooks/use-keyboard-nav+use-list-memory, lib/debt-api+sms-api) tiklandi + api.blobUrl.
+> **QOLGAN 4:** counterparties **ListView** + debts **DataTable** — climart `@moysklad/ui` API'si Sherset'nikidan farq (43+
+> prop). **QAROR:** kept-sahifani climart ListView/DataTable API'siga ADAPT, YOKI Sherset komponentini alohida-nom bilan
+> `@moysklad/ui`'ga qo'shib coexist (climart 20+ sahifasi climart ListView ishlatadi — u g'olib). Keyin: **CHEK-shablon**
+> (retail/print) keep-item tekshir (drop retail bilan bog'liqmi) → **typecheck 0** → biome+i18n → build → dev-DB+seed+smoke → verify.
+> **Har sessiya boshida:** worktree'da `pnpm --filter @moysklad/money build`. **CLIMART: read-only.** **HALOL:** hali BUILD BO'LMAYDI (4 web + gate qoldi).
 
 > **🟢 2026-07-23k (DEMAND list QISM 3 — Грузополучатель ustun+filtr + Товар/группа filtr · Phase-1 · `b2fe49f`)**
 > Ro'yxatni moysklad `demand-01-list` tomon: **L1** «Грузополучатель» ustuni (list `include`ga `consignee`;

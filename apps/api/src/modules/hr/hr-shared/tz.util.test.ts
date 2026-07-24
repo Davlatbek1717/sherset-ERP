@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseLocalIso, startOfLocalDay, toLocalIso } from './tz.util.js';
+import { parseLocalIso, startOfLocalDay, tashkentWeekday, toLocalIso } from './tz.util.js';
 
 describe('HR TZ helpers (Asia/Tashkent +05)', () => {
   it('toLocalIso formats UTC Date with +05:00 offset', () => {
@@ -31,5 +31,21 @@ describe('HR TZ helpers (Asia/Tashkent +05)', () => {
     // start of LOCAL day (2026-05-20) = 2026-05-19T19:00:00Z
     const d = new Date('2026-05-19T20:00:00.000Z');
     expect(startOfLocalDay(d).toISOString()).toBe('2026-05-19T19:00:00.000Z');
+  });
+
+  describe('tashkentWeekday (0=Sun..6=Sat)', () => {
+    it('Sunday -> 0', () => {
+      expect(tashkentWeekday(new Date('2026-07-26T08:00:00+05:00'))).toBe(0);
+    });
+    it('Monday -> 1', () => {
+      expect(tashkentWeekday(new Date('2026-07-27T08:00:00+05:00'))).toBe(1);
+    });
+    it('Saturday -> 6', () => {
+      expect(tashkentWeekday(new Date('2026-07-25T08:00:00+05:00'))).toBe(6);
+    });
+    it('respects Tashkent tz across UTC midnight', () => {
+      // 2026-07-26T23:30Z = 2026-07-27 04:30 Tashkent -> Monday
+      expect(tashkentWeekday(new Date('2026-07-26T23:30:00Z'))).toBe(1);
+    });
   });
 });

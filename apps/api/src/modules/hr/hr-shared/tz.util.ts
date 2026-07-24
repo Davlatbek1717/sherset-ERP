@@ -30,3 +30,13 @@ export function startOfLocalDay(d: Date): Date {
   const localDateStr = formatInTimeZone(d, HR_TZ, 'yyyy-MM-dd');
   return fromZonedTime(`${localDateStr}T00:00:00`, HR_TZ);
 }
+
+/**
+ * Local weekday in Tashkent, 0=Sunday … 6=Saturday (JS getDay convention).
+ * NOTE (LOCKED): EmployeeWorkSchedule.weekday uses this 0=Sun..6=Sat scheme —
+ * do NOT reuse cron-builder.util.ts's ISO 1=Mon..7=Sun mapping here.
+ */
+export function tashkentWeekday(d: Date): number {
+  // ISO 'i': Mon=1 … Sun=7. %7 maps Sun(7)->0, keeps Mon..Sat as 1..6.
+  return Number(formatInTimeZone(d, HR_TZ, 'i')) % 7;
+}
