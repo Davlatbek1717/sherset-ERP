@@ -119,3 +119,61 @@ describe('HrPingIngestService.ingest', () => {
     expect(updArg.data.checkOutTime).toBeInstanceOf(Date);
   });
 });
+
+describe('HrPingIngestService.manualCheckIn (instant button)', () => {
+  it('marks KELDI immediately on a single inside reading (no debounce)', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-27T09:10:00+05:00'));
+    const prisma = makePrisma();
+    const r = await new HrPingIngestService(prisma as never).manualCheckIn('acc', 'emp', INSIDE);
+    expect(r).toMatchObject({ ok: true, reason: null, status: 'at_work' });
+    expect(prisma.client.hrAttendance.create).toHaveBeenCalled();
+  });
+
+  it('rejects when outside the geofence', async () => {
+    const prisma = makePrisma();
+    const r = await new HrPingIngestService(prisma as never).manualCheckIn('acc', 'emp', OUTSIDE);
+    expect(r).toMatchObject({ ok: false, reason: 'outside' });
+    expect(prisma.client.hrAttendance.create).not.toHaveBeenCalled();
+  });
+
+  it('is idempotent when already checked in today', async () => {
+    const prisma = makePrisma();
+    prisma.client.hrAttendance.findFirst.mockResolvedValue({
+      checkInTime: new Date('2026-07-27T09:00:00+05:00'),
+      lateMinutes: 5,
+    });
+    const r = await new HrPingIngestService(prisma as never).manualCheckIn('acc', 'emp', INSIDE);
+    expect(r).toMatchObject({ ok: true, reason: 'already_open', status: 'at_work' });
+    expect(prisma.client.hrAttendance.create).not.toHaveBeenCalled();
+  });
+
+  it('benign when not opted in', async () => {
+    const prisma = makePrisma({ attendanceOptIn: false });
+    const r = await new HrPingIngestService(prisma as never).manualCheckIn('acc', 'emp', INSIDE);
+    expect(r).toMatchObject({ ok: false, reason: 'not_opted_in' });
+  });
+});
+
+describe('HrPingIngestService.manualCheckOut (instant button)', () => {
+  it('closes the open record immediately, no location gate', async () => {
+    const prisma = makePrisma();
+    prisma.client.hrAttendance.findFirst.mockResolvedValue({
+      id: 'att1',
+      checkInTime: new Date('2026-07-27T09:00:00+05:00'),
+      lateMinutes: 0,
+    });
+    const r = await new HrPingIngestService(prisma as never).manualCheckOut('acc', 'emp', OUTSIDE);
+    expect(r).toMatchObject({ ok: true, reason: null, status: 'left' });
+    const updArg = prisma.client.hrAttendance.updateMany.mock.calls[0]?.[0] as {
+      where: { id: string; checkOutTime: null };
+    };
+    expect(updArg.where).toMatchObject({ id: 'att1', checkOutTime: null });
+  });
+
+  it('errors when no open record exists', async () => {
+    const prisma = makePrisma();
+    const r = await new HrPingIngestService(prisma as never).manualCheckOut('acc', 'emp', INSIDE);
+    expect(r).toMatchObject({ ok: false, reason: 'no_open_record' });
+  });
+});

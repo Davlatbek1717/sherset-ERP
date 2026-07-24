@@ -32,4 +32,16 @@ export class HrDavomatPingController {
   async optIn(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
     return this.status.setOptIn(user.accountId, user.sub, OptInSchema.parse(body).optIn);
   }
+
+  /** Instant self-service "Keldim" button — geofence-verified, no debounce wait. */
+  @Post('my/check-in')
+  async manualCheckIn(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
+    return this.ingest.manualCheckIn(user.accountId, user.sub, PingSchema.parse(body));
+  }
+
+  /** Instant self-service "Ketyapman" button — closes today's open record immediately. */
+  @Post('my/check-out')
+  async manualCheckOut(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
+    return this.ingest.manualCheckOut(user.accountId, user.sub, PingSchema.parse(body));
+  }
 }
