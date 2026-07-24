@@ -206,6 +206,11 @@ model Account {
   hrWorkLocations         HrWorkLocation[]
   employeeWorkSchedules   EmployeeWorkSchedule[]
   hrLocationPings         HrLocationPing[]
+  hrDepartments           HrDepartment[]
+  hrPositions             HrPosition[]
+  hrSchedules             HrSchedule[]
+  hrScheduleDays          HrScheduleDay[]
+  hrEmployeeBranches      HrEmployeeBranch[]
 
   @@map("accounts")
 }
@@ -312,6 +317,19 @@ model Employee {
   workLocationId  String?         @map("work_location_id") @db.Uuid
   workLocation    HrWorkLocation? @relation("EmployeeWorkLocation", fields: [workLocationId], references: [id], onDelete: SetNull)
   attendanceOptIn Boolean         @default(false) @map("attendance_opt_in")
+
+  // === HR TimePay davomat: department / position / schedule (all nullable — prod-safe, no backfill) ===
+  // New FK source-of-truth going forward; legacy `department`/`position` string
+  // columns above are kept for back-compat (display fallback). See spec
+  // docs/superpowers/specs/2026-07-24-hr-timepay-attendance-core-design.md §4.
+  departmentId    String?            @map("department_id") @db.Uuid
+  department2     HrDepartment?      @relation("EmployeeDepartment", fields: [departmentId], references: [id], onDelete: SetNull)
+  positionId      String?            @map("position_id") @db.Uuid
+  position2       HrPosition?        @relation("EmployeePosition", fields: [positionId], references: [id], onDelete: SetNull)
+  scheduleId      String?            @map("schedule_id") @db.Uuid
+  schedule        HrSchedule?        @relation("EmployeeSchedule2", fields: [scheduleId], references: [id], onDelete: SetNull)
+  // Multi-branch: full assigned set (Employee.workLocationId above stays as primary/default branch).
+  branches        HrEmployeeBranch[] @relation("EmployeeBranches")
 
   account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
@@ -430,6 +448,9 @@ model Employee {
   @@unique([accountId, username], name: "Employee_account_username_uk")
   @@index([accountId, archived])
   @@index([accountId, groupId])
+  @@index([accountId, departmentId])
+  @@index([accountId, positionId])
+  @@index([accountId, scheduleId])
   @@map("employees")
 }
 
@@ -8863,8 +8884,9 @@ model HrWorkLocation {
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz()
 
-  account   Account    @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  employees Employee[] @relation("EmployeeWorkLocation")
+  account         Account            @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  employees       Employee[]         @relation("EmployeeWorkLocation")
+  branchEmployees HrEmployeeBranch[] @relation("BranchEmployees")
 
   @@index([accountId, archived])
   @@map("hr_work_locations")
@@ -8938,6 +8960,107 @@ model HrActivityLog {
   @@index([accountId, createdAt(sort: Desc)])
   @@index([accountId, entityType, entityId, createdAt(sort: Desc)])
   @@map("hr_activity_log")
+}
+
+// === HR TimePay davomat yadrosi (Bo'lim / Lavozim / Jadval / multi-branch) ===
+// TZ: docs/superpowers/specs/2026-07-24-hr-timepay-attendance-core-design.md §4.
+// Additive-only, account-scoped, soft-delete via `archived` (mirror HrWorkLocation).
+
+/// Bo'lim (TimePay "Bo'lim"). Name only; assigned 1:many to employees.
+model HrDepartment {
+  id        String   @id @default(uuid()) @db.Uuid
+  accountId String   @map("account_id") @db.Uuid
+  name      String   @db.VarChar(150)
+  archived  Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  account   Account    @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  employees Employee[] @relation("EmployeeDepartment")
+
+  @@index([accountId, archived])
+  @@map("hr_departments")
+}
+
+/// Lavozim (TimePay "Lavozim"). Name only; assigned 1:many to employees.
+/// Distinct from the legacy free-text Employee.position VarChar (kept for back-compat).
+model HrPosition {
+  id        String   @id @default(uuid()) @db.Uuid
+  accountId String   @map("account_id") @db.Uuid
+  name      String   @db.VarChar(150)
+  archived  Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  account   Account    @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  employees Employee[] @relation("EmployeePosition")
+
+  @@index([accountId, archived])
+  @@map("hr_positions")
+}
+
+/// Ish jadvali (TimePay "Ish jadvali"). Cycle-based schedule template.
+/// type: 'flexible' (Moslashuvchan) | 'free' (Erkin) — VarChar+comment,
+/// mirrors HrAttendance.source VarChar(12) 'auto_gps'|'manual'.
+model HrSchedule {
+  id              String   @id @default(uuid()) @db.Uuid
+  accountId       String   @map("account_id") @db.Uuid
+  name            String   @db.VarChar(150)
+  type            String   @default("flexible") @db.VarChar(12) // 'flexible' | 'free'
+  startDate       DateTime @map("start_date") @db.Date // cycle anchor, Asia/Tashkent calendar date (DATE not Timestamptz)
+  cycleDays       Int      @map("cycle_days") // Sikl (1..N)
+  calcOvertime    Boolean  @default(false) @map("calc_overtime") // "Qo'shimcha ish vaqtini hisoblash"
+  extendedWorkMin Int      @default(0) @map("extended_work_min") // "Uzaytirilgan ish vaqti", minutes
+  archived        Boolean  @default(false)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  account   Account         @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  days      HrScheduleDay[]
+  employees Employee[]      @relation("EmployeeSchedule2")
+
+  @@index([accountId, archived])
+  @@map("hr_schedules")
+}
+
+/// One row per cycle day (TimePay "Kun N" grid). dayIndex 1..cycleDays.
+/// Times as "HH:mm" VarChar(5), mirroring EmployeeWorkSchedule.
+/// break/times nullable so a day-off (isWorkday=false) can omit them.
+model HrScheduleDay {
+  id         String  @id @default(uuid()) @db.Uuid
+  accountId  String  @map("account_id") @db.Uuid
+  scheduleId String  @map("schedule_id") @db.Uuid
+  dayIndex   Int     @map("day_index") // 1..cycleDays
+  isWorkday  Boolean @default(true) @map("is_workday") // "Ish kuni"
+  startTime  String? @map("start_time") @db.VarChar(5) // "09:00"
+  endTime    String? @map("end_time") @db.VarChar(5) // "18:00"
+  breakStart String? @map("break_start") @db.VarChar(5) // "13:00"
+  breakEnd   String? @map("break_end") @db.VarChar(5) // "14:00"
+
+  account  Account    @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  schedule HrSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+
+  @@unique([scheduleId, dayIndex])
+  @@index([accountId, scheduleId])
+  @@map("hr_schedule_days")
+}
+
+/// Employee ↔ Branch (HrWorkLocation) many-to-many join. Composite PK.
+/// Employee.workLocationId stays as the primary/default branch (back-compat);
+/// this join holds the full assigned set (TimePay multi-branch).
+model HrEmployeeBranch {
+  accountId      String   @map("account_id") @db.Uuid
+  employeeId     String   @map("employee_id") @db.Uuid
+  workLocationId String   @map("work_location_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  account      Account        @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  employee     Employee       @relation("EmployeeBranches", fields: [employeeId], references: [id], onDelete: Cascade)
+  workLocation HrWorkLocation @relation("BranchEmployees", fields: [workLocationId], references: [id], onDelete: Cascade)
+
+  @@id([employeeId, workLocationId])
+  @@index([accountId, workLocationId])
+  @@map("hr_employee_branches")
 }
 
 // =====================================================================
