@@ -41,6 +41,8 @@ function pendingRow(
     id: overrides.id ?? 'r-1',
     accountId: overrides.accountId ?? 'acc1',
     toPhone: overrides.toPhone ?? '+998901234567',
+    toSelf: false,
+    viaSlot: null,
     messageText: overrides.messageText ?? 'Salom',
     status: overrides.status ?? 'pending',
     retryCount: overrides.retryCount ?? 0,
@@ -95,6 +97,20 @@ describe('HrTelegramOutboxWorker.runOnce', () => {
           failReason: null,
         }),
       }),
+    );
+  });
+
+  it('self-send row passes toSelf + viaSlot (and null toPhone → empty) to the adapter', async () => {
+    // A director self-send row: toSelf=true, viaSlot set, toPhone null.
+    prisma.client.hrTelegramOutbox.findMany.mockResolvedValue([
+      { ...pendingRow(), toPhone: null, toSelf: true, viaSlot: 3, messageText: '✅ Keldi' },
+    ]);
+    adapter.sendMessage.mockResolvedValue({ slot: 3, messageId: 'tg-self' });
+
+    await worker.runOnce();
+
+    expect(adapter.sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ toSelf: true, viaSlot: 3, toPhone: '', text: '✅ Keldi' }),
     );
   });
 

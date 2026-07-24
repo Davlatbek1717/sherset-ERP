@@ -17,6 +17,19 @@ export interface MtprotoSendOptions {
   toPhone: string;
   text: string;
   /**
+   * Self-send (2026-07-25 davomat notify): deliver to the sender's own
+   * «Saved Messages» (`'me'`) instead of resolving `toPhone`. Used for the
+   * director attendance notifier — the message lands in the director's own
+   * Telegram Saqlangan xabarlar via their MTProto slot (`viaSlot`).
+   */
+  toSelf?: boolean;
+  /**
+   * When `toSelf` is set, the specific MTProto slot (the director's account)
+   * that must deliver the self-send — bypasses the usual 1→2 slot failover
+   * since only that account can write to its own Saved Messages.
+   */
+  viaSlot?: number;
+  /**
    * `HrTelegramOutbox.sourceEventType` (e.g. `debt.reminder`), passed
    * through so the adapter can opt specific message families into a
    * different GramJS markdown dialect (2026-07-20: `debt.*` messages use

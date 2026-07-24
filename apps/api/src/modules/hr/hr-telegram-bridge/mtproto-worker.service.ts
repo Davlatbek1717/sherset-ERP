@@ -166,6 +166,30 @@ export class MtprotoWorkerService implements MtprotoAdapter, OnModuleInit {
 
   async sendMessage(opts: MtprotoSendOptions): Promise<MtprotoSendResult> {
     await this.pace(opts.accountId); // ban-himoya: yuborishlar orasi min bo'shliq
+
+    // Self-send (davomat notify): the director's OWN account writes to its own
+    // «Saved Messages» via 'me'. No phone/entity resolution, no 1→2 failover —
+    // only `viaSlot` (that director account) can reach its own Saved Messages.
+    if (opts.toSelf) {
+      const slot = opts.viaSlot ?? 0;
+      const client = await this.ensureClient(opts.accountId, slot);
+      if (!client) {
+        throw new Error(`mtproto_self_no_client: acc=${opts.accountId} slot=${slot}`);
+      }
+      try {
+        const res = await withTimeout(client.sendMessage('me', opts.text), 'sendSelf');
+        return { slot, messageId: res.messageId };
+      } catch (e) {
+        if (isGramjsFloodError(e)) {
+          const until = new Date(Date.now() + e.seconds * 1000);
+          await this.accounts.setFloodWaitUntil(opts.accountId, slot, until).catch(() => {});
+          throw new MtprotoFloodError(slot, e.seconds);
+        }
+        await this.handleAuthLossIfAny(opts.accountId, slot, e);
+        throw e;
+      }
+    }
+
     const errors: Error[] = [];
     for (const slot of MtprotoWorkerService.SLOTS) {
       if (await this.accounts.isFlooded(opts.accountId, slot)) {

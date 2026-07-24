@@ -88,6 +88,8 @@ export class HrTelegramOutboxWorker {
           toPhone: row.toPhone ?? '',
           text: row.messageText,
           sourceEventType: row.sourceEventType,
+          toSelf: row.toSelf,
+          viaSlot: row.viaSlot ?? undefined,
         });
         await this.prisma.client.hrTelegramOutbox.update({
           where: { id: row.id },

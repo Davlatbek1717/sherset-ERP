@@ -142,6 +142,37 @@ describe('MtprotoWorkerService', () => {
     expect(cache.set).toHaveBeenCalledWith('acc1', 1, '+998901234567', expect.anything());
   });
 
+  it("toSelf → sends to 'me' via the director slot (no entity resolution, no failover)", async () => {
+    // Only slot 3 (the director account) is active; toSelf must use it directly.
+    const client3 = makeClient();
+    handles.set('300', client3);
+    const accounts = makeAccountsSvc({
+      active: { 3: { apiId: 300, apiHashEncrypted, sessionEncrypted } },
+    });
+    const adapter = new MtprotoWorkerService(
+      factory,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      accounts as any,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      cache as any,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      inbound as any,
+    );
+
+    const result = await adapter.sendMessage({
+      accountId: 'acc1',
+      toPhone: '',
+      text: '✅ Keldi',
+      toSelf: true,
+      viaSlot: 3,
+    });
+
+    expect(result).toEqual({ slot: 3, messageId: 'm-1' });
+    // 'me' path — no phone resolution, direct 2-arg sendMessage('me', text).
+    expect(client3.sendMessage).toHaveBeenCalledWith('me', '✅ Keldi');
+    expect(client3.resolvePhone).not.toHaveBeenCalled();
+  });
+
   // 2026-07-20b: debt-telegram.util.ts messages need MarkdownV2 (underline
   // support) — the worker opts in ONLY when sourceEventType starts with
   // `debt.`, so every other HR/supply/task notification's formatting stays
