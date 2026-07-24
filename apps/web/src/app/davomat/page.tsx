@@ -3,6 +3,7 @@
 import { useDavomatStatus } from '@/hooks/use-davomat-status';
 import { useGeolocationAttendance } from '@/hooks/use-geolocation-attendance';
 import { useAuth } from '@/lib/auth-store';
+import { getCurrentPosition } from '@/lib/geolocation';
 import {
   type DavomatManualResult,
   type DavomatMyToday,
@@ -24,21 +25,6 @@ import { formatInTimeZone } from 'date-fns-tz';
 import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useState } from 'react';
 import { type HeroState, StatusHero } from './_components/status-hero';
-
-/** Reads a single fresh GPS fix, promise-wrapped for use inside a mutation. */
-function getCurrentPosition(): Promise<GeolocationPosition> {
-  return new Promise((resolve, reject) => {
-    if (!navigator.geolocation) {
-      reject(new Error('Geolocation not supported'));
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(resolve, reject, {
-      enableHighAccuracy: true,
-      timeout: 20_000,
-      maximumAge: 0,
-    });
-  });
-}
 
 const TZ = 'Asia/Tashkent';
 type Permission = 'unknown' | 'granted' | 'prompt' | 'denied';

@@ -1,6 +1,7 @@
 'use client';
 
 import { HomepageTabs } from '@/components/homepage-tabs';
+import { DavomatWidget } from '@/components/hr/davomat-widget';
 import { api } from '@/lib/api-client';
 import { Container, formatMoney } from '@moysklad/ui';
 import { useQuery } from '@tanstack/react-query';
@@ -391,6 +392,9 @@ export default function HomePage() {
 
   return (
     <Container size="lg" className="space-y-4 py-4">
+      {/* GPS-davomat — status + Keldim/Ketyapman, visible the moment the page loads */}
+      <DavomatWidget />
+
       {/* Page-level tabs (Показатели / Документы / Корзина / Аудит / Файлы / Начало работы) */}
       <HomepageTabs activeKey="metrics" />
 

@@ -6617,7 +6617,12 @@
       "manual_check_out": "🚪 Ketyapman",
       "manual_outside": "Siz ish joyi radiusida emassiz. Filialga yaqinlashib qayta urining.",
       "manual_failed": "Amalga oshmadi. Qayta urining.",
-      "manual_gps_failed": "Joylashuvni aniqlab bo'lmadi. GPS-ruxsatni tekshiring."
+      "manual_gps_failed": "Joylashuvni aniqlab bo'lmadi. GPS-ruxsatni tekshiring.",
+      "widget_not_enabled": "GPS-davomat yoqilmagan",
+      "widget_enable_link": "Yoqish",
+      "widget_at_work": "Ish joyidasiz",
+      "widget_left": "Bugun yakunlandi:",
+      "widget_not_arrived": "Hali kelmadingiz"
     },
     "workLocations": {
       "title": "Filiallar / Ish joylari",
