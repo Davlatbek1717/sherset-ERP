@@ -85,7 +85,7 @@ export class HrTelegramOutboxWorker {
       try {
         const result = await this.adapter.sendMessage({
           accountId: row.accountId,
-          toPhone: row.toPhone,
+          toPhone: row.toPhone ?? '',
           text: row.messageText,
           sourceEventType: row.sourceEventType,
         });

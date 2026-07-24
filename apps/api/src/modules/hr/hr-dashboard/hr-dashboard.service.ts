@@ -15,7 +15,8 @@ export interface HrDashboardSummary {
   recentMessages: Array<{
     id: string;
     counterpartyName: string | null;
-    toPhone: string;
+    // Nullable since davomat self-sends (toSelf=true → 'me') carry no phone.
+    toPhone: string | null;
     status: string;
     createdAt: string;
   }>;

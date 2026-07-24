@@ -195,6 +195,7 @@ model Account {
   hrTelegramOutbox        HrTelegramOutbox[]
   hrBonusFineLogs         HrBonusFineLog[]
   hrBonusFineRules        HrBonusFineRule[]
+  hrAttendanceNotifyConfig HrAttendanceNotifyConfig?
   hrSalaryConfig          HrSalaryConfig?
   hrKpiDailyLogs          HrKpiDailyLog[]
   hrKpiMonthlyScores      HrKpiMonthlyScore[]
@@ -8713,7 +8714,11 @@ model HrTelegramOutbox {
   accountId         String    @map("account_id") @db.Uuid
   counterpartyId    String?   @map("counterparty_id") @db.Uuid
   employeeId        String?   @map("employee_id") @db.Uuid
-  toPhone           String    @map("to_phone") @db.VarChar(20)
+  // toPhone is nullable: a self-send (toSelf=true → 'me'/Saqlangan xabarlar)
+  // has no recipient phone; the mtproto adapter uses viaSlot instead.
+  toPhone           String?   @map("to_phone") @db.VarChar(20)
+  toSelf            Boolean   @default(false) @map("to_self")
+  viaSlot           Int?      @map("via_slot")
   messageText       String    @map("message_text")
   status            String    @default("pending") @db.VarChar(20)
   retryCount        Int       @default(0) @map("retry_count")
@@ -8746,6 +8751,9 @@ model HrBonusFineLog {
   /// Employee name snapshotted at creation (spec §13.17) — survives renames.
   employeeName String?  @map("employee_name") @db.VarChar(255)
   taskLogId    String?  @map("task_log_id") @db.Uuid
+  /// Davomat qatoriga bog'lash (auto_late jarima) — bitta check-in'ga ko'pi
+  /// bilan bitta avto-jarima (idempotent, `@@unique([attendanceId, source])`).
+  attendanceId String?  @map("attendance_id") @db.Uuid
   ruleId       String?  @map("rule_id") @db.Uuid
   createdById  String?  @map("created_by_id") @db.Uuid
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz()
@@ -8756,6 +8764,7 @@ model HrBonusFineLog {
   rule      HrBonusFineRule? @relation(fields: [ruleId], references: [id])
   createdBy Employee?        @relation("HrBonusCreator", fields: [createdById], references: [id])
 
+  @@unique([attendanceId, source], name: "uq_bonusfine_attendance_source")
   @@index([accountId, employeeId, createdAt(sort: Desc)])
   @@index([accountId, source, createdAt(sort: Desc)])
   @@map("hr_bonus_fine_log")
@@ -8778,6 +8787,28 @@ model HrBonusFineRule {
   logs    HrBonusFineLog[]
 
   @@map("hr_bonus_fine_rule")
+}
+
+/// Davomat → Telegram bildirishnoma sozlamasi (akkаunt bo'yicha bitta).
+/// Xodim "Keldim"/"Ketdim" bosganда direktorning Telegram Saqlangan
+/// xabarlariga bildirishnoma yuborilishini boshqaradi + avto-jarima qoidasi.
+model HrAttendanceNotifyConfig {
+  id                  String   @id @default(uuid()) @db.Uuid
+  accountId           String   @unique @map("account_id") @db.Uuid
+  enabled             Boolean  @default(false)
+  notifyCheckIn       Boolean  @default(true) @map("notify_check_in")
+  notifyCheckOut      Boolean  @default(true) @map("notify_check_out")
+  directorSlot        Int?     @map("director_slot")
+  lateFineEnabled     Boolean  @default(false) @map("late_fine_enabled")
+  lateThresholdMin    Int      @default(15) @map("late_threshold_min")
+  lateFineAmountMinor BigInt   @default(0) @map("late_fine_amount_minor")
+  lateFinePerMinute   Boolean  @default(false) @map("late_fine_per_minute")
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt           DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@map("hr_attendance_notify_config")
 }
 
 model HrSalaryConfig {
