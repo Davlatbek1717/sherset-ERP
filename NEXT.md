@@ -305,6 +305,37 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-07-24 (YANGI TRACK — HR bo'limini TimePay/HRD davomat-SaaS'iga 1:1 kengaytirish · foydalanuvchi topshirig'i)**
+> Foydalanuvchi 3 demo-video berdi (`timepay1/2/3.mp4`, brend aslida **HRD** `web.hrd.uz`) — HR bo'limi shu videolardagi
+> bo'lim/funksiyalar bilan bo'lishi kerak, LEKIN **moysklad dizayn tizimida** (foydalanuvchi qarori: «moysklad uslubida
+> moslash») va mavjud `/hr` modulini **KENGAYTIRISH** (rebuild EMAS). **TZ: `docs/superpowers/specs/2026-07-24-hr-timepay-attendance-core-design.md`**
+> (7-agent code-verified workflow bilan yozildi; video kadr-tahlil 3 agent). MVP scope = **davomat yadrosi**:
+> Dashboard · Jadvallar (nomli shablon + resolveShift dvigatel) · Bo'lim · Lavozim · Xodimlar kengaytirish · Kuzatish.
+> Keyingi fazalar (MVP'dan tashqari): Jarima · Ish-haqi hisoblash · Hisobot · Qo'shimcha-ish arizalari · Bayram · Kiosk/Terminal.
+>
+> **✅ BAJARILDI shu sessiyada (3 commit):**
+> - **Spec** `ac28d23`.
+> - **Faza 1 — Model** `8fa2c99`: 5 yangi Prisma model (HrDepartment, HrPosition, HrSchedule, HrScheduleDay,
+>   HrEmployeeBranch) + Employee.departmentId/positionId/scheduleId FK (nullable, additive). Migration
+>   `20260724133452_hr_timepay_attendance_core` — **real Postgres'da 39 statement 0-xato qo'llandi** (lokal DB
+>   sinxronlandi). ⚠️ **Lokal DB nuance:** `climart_adopt`@5432 migration-tracked EMAS (db push bilan sozlangan) va
+>   `trgm_search_indexes`+`hr_davomat_gps` migratsiyalaridan orqada edi → to'liq schema `prisma migrate diff`+node-apply
+>   bilan sinxronlandi (pg_trgm YO'Q → 4 trgm GIN indeks o'tkazib yuborildi, alohida migratsiya). Repo migration.sql =
+>   FAQAT mening o'zgarishlarim (hr_davomat_gps prereq'iga tayanadi, `hr_work_locations` FK).
+> - **Faza 2 — Bo'lim + Lavozim** `b575d91`: backend `hr-department`+`hr-position` modul (CRUD, soft-delete,
+>   active-name uniqueness, delete-block); FE `/hr/departments`+`/hr/positions`+`/hr/positions/[id]/employees` drill;
+>   hr-employee'ga `position` filtri; hr-api + subnav + i18n(ru+uz). Gate: +13 test · tc 0 · biome 0 · i18n key-existence PASS.
+>   Model qarori: catalog = pick-list (Employee free-text `department`/`position` string manba; FK ustunlar hozircha ishlatilmaydi).
+>
+> **➡️ KEYINGI (Faza 3 — Jadvallar + resolveShift dvigatel · eng og'ir birlik):** spec §5.1 (`schedules-engine`).
+> Nomli jadval shablonlari (Moslashuvchan/Erkin, Sikl, Kun 1..N: ish-kuni toggle + smena + tanaffus) + **sof `resolveShift(employee,date)`
+> util** (cycle = `(date−startDate) mod cycleDays`, `scheduleId` yo'q → `EmployeeWorkSchedule` fallback; Asia/Tashkent). Bu
+> dvigatel Faza 5 (Dashboard KPI/kech/qo'shimcha) va Faza 6 (Kuzatish status)ni ta'minlaydi. Keyin Faza 4 (Xodimlar filtr+ustun+biriktirish).
+> Section fayllari: `spec-sections/*.md` scratchpad'da (dashboard/employees/monitoring/nav-i18n) yoki spec §5.
+>
+> **🟡 Pre-existing debt (mening o'zgarishim EMAS):** `i18n-no-hardcoded` gate `labels/print/page.tsx` regex `/[a-zа-яё]/i`
+> ustida qizil (2026-07-23 commit'dan) — Faza scope'idan tashqari, alohida hal qilinadi.
+
 > **🌐 2026-07-23l (YANGI YO'NALISH — VPS «moysklad» fork → Sherset Продажи port · recon+analiz+reja · `1e4b46a`)**
 > Foydalanuvchi yangi vazifa berdi: VPS `/var/www/moysklad` (climartgroup.uz, root 45.67.216.61) — bu **Sherset bilan
 > bir loyiha oilasi (moysklad-clone), alohida diverged fork** (`Biznesjon-Official/moysklad`, faol). Foydalanuvchi qarori
