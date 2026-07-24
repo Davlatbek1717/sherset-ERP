@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service.js';
+import { buildTestText } from './attendance-message.util.js';
 import type { UpsertNotifyConfigInput } from './hr-attendance-notify.schema.js';
 
 /**
@@ -105,10 +106,29 @@ export class HrAttendanceNotifyService {
   }
 
   /**
-   * Test-send — wired in Task 9. Stub for now so the controller endpoint
-   * exists; returns `not_wired` until the self outbox enqueue is added.
+   * Test-send — enqueues a single self ('me'/Saqlangan xabarlar) outbox row so
+   * the director can confirm the wiring end-to-end. No director slot →
+   * `{ ok:false, reason:'no_director_slot' }` (nothing enqueued). Delivery
+   * itself happens on the existing outbox worker (5s cron).
    */
-  async sendTest(_accountId: string): Promise<SendTestResult> {
-    return { ok: false, reason: 'not_wired' };
+  async sendTest(accountId: string): Promise<SendTestResult> {
+    const cfg = await this.prisma.client.hrAttendanceNotifyConfig.findUnique({
+      where: { accountId },
+    });
+    if (!cfg || cfg.directorSlot == null) {
+      return { ok: false, reason: 'no_director_slot' };
+    }
+    await this.prisma.client.hrTelegramOutbox.create({
+      data: {
+        accountId,
+        toSelf: true,
+        viaSlot: cfg.directorSlot,
+        toPhone: null,
+        messageText: buildTestText(),
+        status: 'pending',
+        sourceEventType: 'attendance.test',
+      },
+    });
+    return { ok: true };
   }
 }

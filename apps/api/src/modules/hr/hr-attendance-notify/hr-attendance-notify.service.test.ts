@@ -120,8 +120,44 @@ describe('HrAttendanceNotifyService', () => {
     expect(call.update).toEqual({ notifyCheckOut: false });
   });
 
-  it('sendTest is a stub (not_wired) until Task 9', async () => {
+  it('sendTest without a director slot → ok:false, no outbox row', async () => {
+    prisma.client.hrAttendanceNotifyConfig.findUnique.mockResolvedValue({ directorSlot: null });
     const res = await svc.sendTest(ACC);
-    expect(res).toEqual({ ok: false, reason: 'not_wired' });
+    expect(res).toEqual({ ok: false, reason: 'no_director_slot' });
+    expect(prisma.client.hrTelegramOutbox.create).not.toHaveBeenCalled();
+  });
+
+  it('sendTest with no config at all → ok:false', async () => {
+    prisma.client.hrAttendanceNotifyConfig.findUnique.mockResolvedValue(null);
+    const res = await svc.sendTest(ACC);
+    expect(res).toEqual({ ok: false, reason: 'no_director_slot' });
+    expect(prisma.client.hrTelegramOutbox.create).not.toHaveBeenCalled();
+  });
+
+  it('sendTest with a director slot → enqueues one self test outbox row', async () => {
+    prisma.client.hrAttendanceNotifyConfig.findUnique.mockResolvedValue({ directorSlot: 3 });
+    prisma.client.hrTelegramOutbox.create.mockResolvedValue({ id: 'o-1' });
+    const res = await svc.sendTest(ACC);
+    expect(res).toEqual({ ok: true });
+    const arg = prisma.client.hrTelegramOutbox.create.mock.calls[0]?.[0] as {
+      data: {
+        accountId: string;
+        toSelf: boolean;
+        viaSlot: number;
+        toPhone: null;
+        status: string;
+        sourceEventType: string;
+        messageText: string;
+      };
+    };
+    expect(arg.data).toMatchObject({
+      accountId: ACC,
+      toSelf: true,
+      viaSlot: 3,
+      toPhone: null,
+      status: 'pending',
+      sourceEventType: 'attendance.test',
+    });
+    expect(arg.data.messageText).toContain('Test');
   });
 });
