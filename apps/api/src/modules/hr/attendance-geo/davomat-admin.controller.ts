@@ -14,7 +14,7 @@ import { CurrentUser } from '../../auth/current-user.decorator.js';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard.js';
 import { HrPermissionGuard } from '../hr-auth/hr-permission.guard.js';
 import { RequireHrPermission } from '../hr-auth/require-hr-permission.decorator.js';
-import { MonthlyReportFilterSchema } from './attendance-geo.schema.js';
+import { DashboardQuerySchema, MonthlyReportFilterSchema } from './attendance-geo.schema.js';
 import { HrDavomatExportService } from './davomat-export.service.js';
 import { HrDavomatReportService } from './davomat-report.service.js';
 
@@ -31,6 +31,13 @@ export class HrDavomatAdminController {
   @RequireHrPermission('employees', 'read')
   async live(@CurrentUser() user: AuthenticatedUser) {
     return this.report.live(user.accountId);
+  }
+
+  @Get('dashboard')
+  @RequireHrPermission('employees', 'read')
+  async dashboard(@CurrentUser() user: AuthenticatedUser, @Query() query: unknown) {
+    const { date } = DashboardQuerySchema.parse(query);
+    return this.report.dashboard(user.accountId, date);
   }
 
   @Get('report/monthly')

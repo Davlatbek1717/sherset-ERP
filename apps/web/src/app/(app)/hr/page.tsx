@@ -1,136 +1,165 @@
 'use client';
 
 /**
- * HR Dashboard (bosh sahifa). Realtime stat cards + 7-day sent-message
- * AreaChart + recent messages. Auto-refresh 30s (react-query refetchInterval).
+ * HR Boshqaruv paneli — TimePay attendance board. Date picker + 4 KPI cards
+ * (Barchasi/Ishda/Kech/Ishda emas) + "Xodimlar davomati" table + manual
+ * attendance modal. The former Telegram dashboard lives below as a secondary
+ * section. See spec §5.3.
  */
 
-import { hrMessageStatusTone } from '@/lib/domain-status-tone';
-import { type HrDashboardSummary, hrDashboardApi } from '@/lib/hr-api';
-import { Badge, Skeleton } from '@moysklad/ui';
+import { fmtHhMm, fmtOvertime } from '@/lib/attendance-format';
+import { type HrAttendanceDashboard, hrDavomatReportApi } from '@/lib/hr-api';
+import { Avatar, Button, EmptyState, Skeleton } from '@moysklad/ui';
 import { useQuery } from '@tanstack/react-query';
 import { formatInTimeZone } from 'date-fns-tz';
 import { useTranslations } from 'next-intl';
-import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
+import { useState } from 'react';
+import { ManualAttendanceModal } from './_components/manual-attendance-modal';
+import { TelegramDashboardSummary } from './_components/telegram-dashboard-summary';
 
 const TZ = 'Asia/Tashkent';
-
-function fmtDateTime(iso: string): string {
-  return formatInTimeZone(new Date(iso), TZ, 'MM-dd HH:mm');
-}
+const todayIso = () => formatInTimeZone(new Date(), TZ, 'yyyy-MM-dd');
+const hhmm = (iso: string | null) => (iso ? formatInTimeZone(new Date(iso), TZ, 'HH:mm') : '--:--');
 
 export default function HrHomePage() {
   const t = useTranslations('pages.hrDashboard');
-  const tMessages = useTranslations('pages.hrMessages');
+  const [date, setDate] = useState(todayIso());
+  const [manualOpen, setManualOpen] = useState(false);
 
-  const query = useQuery<HrDashboardSummary>({
-    queryKey: ['hr-dashboard-summary'],
-    queryFn: () => hrDashboardApi.summary(),
+  const units = { h: t('unit_hour_short'), m: t('unit_minute_short') };
+
+  const { data, isLoading } = useQuery<HrAttendanceDashboard>({
+    queryKey: ['hr-attendance-dashboard', date],
+    queryFn: () => hrDavomatReportApi.dashboard(date),
     refetchInterval: 30_000,
   });
 
-  if (query.isLoading) return <Skeleton className="h-96" />;
-  const d = query.data;
-  if (!d) return null;
+  const counts = data?.counts ?? { all: 0, atWork: 0, late: 0, absent: 0 };
+  const rows = data?.rows ?? [];
 
   return (
     <div className="space-y-6">
-      <h1 className="font-semibold text-2xl text-[var(--ms-text-strong)]">{t('title')}</h1>
-
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        <StatCard label={t('total_counterparties')} value={d.totalCounterparties} />
-        <StatCard label={t('telegram_connected')} value={d.telegramConnectedSlots} />
-        <StatCard label={t('sent_today')} value={d.messagesSentToday} tone="success" />
-        <StatCard label={t('failed')} value={d.messagesFailed} tone="destructive" />
-        <StatCard label={t('pending_tasks')} value={d.pendingTasks} />
-        <StatCard label={t('pending_reviews')} value={d.pendingReviews} tone="warning" />
-      </div>
-
-      <div className="rounded-[var(--ms-radius-lg)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] p-4">
-        <div className="mb-3 font-medium text-[var(--ms-text-strong)] text-sm">
-          {t('sent_7days')}
-        </div>
-        <div className="h-56">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={d.sentSeries} margin={{ top: 10, right: 10, bottom: 0, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--ms-border-default)" />
-              <XAxis
-                dataKey="date"
-                tickFormatter={(v: string) => v.slice(5)}
-                fontSize={11}
-                stroke="var(--ms-text-muted)"
-              />
-              <YAxis allowDecimals={false} fontSize={11} stroke="var(--ms-text-muted)" />
-              <Tooltip />
-              <Area
-                type="monotone"
-                dataKey="sent"
-                stroke="#9fcf6a"
-                fill="#daf3c0"
-                name={t('sent_today')}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="font-semibold text-2xl text-[var(--ms-text-strong)]">{t('title')}</h1>
+        <div className="flex items-center gap-2">
+          <input
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value || todayIso())}
+            className="rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] px-2 py-1.5 text-sm text-[var(--ms-text-primary)]"
+            data-test-id="hr-dashboard-date"
+          />
+          <Button onClick={() => setManualOpen(true)} data-test-id="hr-dashboard-manual">
+            + {t('create_manual')}
+          </Button>
         </div>
       </div>
 
-      <div className="rounded-[var(--ms-radius-lg)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] p-4">
-        <div className="mb-3 font-medium text-[var(--ms-text-strong)] text-sm">{t('recent')}</div>
-        {d.recentMessages.length > 0 ? (
-          <table className="w-full border-collapse text-sm" data-test-id="hr-dashboard-recent">
-            <tbody>
-              {d.recentMessages.map((m) => (
-                <tr key={m.id} className="border-[var(--ms-border-default)] border-t">
-                  <td className="py-2 pr-3 font-mono text-[var(--ms-text-muted)] text-xs">
-                    {fmtDateTime(m.createdAt)}
-                  </td>
-                  <td className="py-2 pr-3">{m.counterpartyName ?? m.toPhone}</td>
-                  <td className="py-2 text-right">
-                    <Badge tone={hrMessageStatusTone(m.status)}>
-                      {tMessages(`status_${m.status}`)}
-                    </Badge>
-                  </td>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <KpiCard label={t('kpi_all')} value={counts.all} tone="strong" />
+        <KpiCard label={t('kpi_at_work')} value={counts.atWork} tone="success" />
+        <KpiCard label={t('kpi_late')} value={counts.late} tone="warning" />
+        <KpiCard label={t('kpi_absent')} value={counts.absent} tone="destructive" />
+      </div>
+
+      <div>
+        <h2 className="mb-2 font-semibold text-[var(--ms-text-strong)] text-lg">
+          {t('table_title')}
+        </h2>
+        <div className="overflow-hidden rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)]">
+          {isLoading ? (
+            <div className="p-4">
+              <Skeleton className="h-8 w-full" />
+            </div>
+          ) : rows.length === 0 ? (
+            <EmptyState title={t('empty_day')} />
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="border-[var(--ms-border-default)] border-b bg-[var(--ms-bg-app)] text-[var(--ms-text-muted)] text-xs">
+                <tr>
+                  <th className="px-3 py-2 text-left font-medium">{t('table_title')}</th>
+                  <th className="px-3 py-2 text-left font-medium">{t('col_check_in')}</th>
+                  <th className="px-3 py-2 text-left font-medium">{t('col_check_out')}</th>
+                  <th className="px-3 py-2 text-left font-medium">{t('col_overtime')}</th>
+                  <th className="px-3 py-2 text-left font-medium">{t('col_total')}</th>
+                  <th className="px-3 py-2 text-left font-medium">{t('col_branches')}</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        ) : (
-          <div className="text-[var(--ms-text-muted)] text-sm">{t('recent_empty')}</div>
-        )}
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr
+                    key={row.employeeId}
+                    className="border-[var(--ms-border-default)] border-b last:border-b-0"
+                    data-test-id={`hr-dashboard-row-${row.employeeId}`}
+                  >
+                    <td className="px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        <Avatar name={row.employee.name} size="sm" />
+                        <div className="min-w-0">
+                          <div className="truncate font-medium text-[var(--ms-text-primary)]">
+                            {row.employee.name}
+                          </div>
+                          <div className="truncate text-[var(--ms-text-muted)] text-[11px]">
+                            {row.employee.department || '—'}
+                          </div>
+                        </div>
+                      </div>
+                    </td>
+                    <td
+                      className={`px-3 py-2 font-mono ${
+                        row.lateMinutes > 0
+                          ? 'font-semibold text-[var(--ms-text-destructive)]'
+                          : 'text-[var(--ms-text-strong)]'
+                      }`}
+                    >
+                      {hhmm(row.checkIn)}
+                    </td>
+                    <td className="px-3 py-2 font-mono text-[var(--ms-text-strong)]">
+                      {hhmm(row.checkOut)}
+                    </td>
+                    <td className="px-3 py-2 font-mono text-[var(--ms-text-muted)]">
+                      {fmtOvertime(row.overtimeMinutes, units)}
+                    </td>
+                    <td className="px-3 py-2 font-mono text-[var(--ms-text-strong)]">
+                      {fmtHhMm(row.totalMinutes)}
+                    </td>
+                    <td className="px-3 py-2 text-[var(--ms-text-muted)] text-xs">
+                      {row.branches.length > 0 ? row.branches.join(', ') : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
       </div>
+
+      <TelegramDashboardSummary />
+
+      <ManualAttendanceModal open={manualOpen} onOpenChange={setManualOpen} defaultDate={date} />
     </div>
   );
 }
 
-function StatCard({
+function KpiCard({
   label,
   value,
-  tone = 'neutral',
+  tone,
 }: {
   label: string;
   value: number;
-  tone?: 'neutral' | 'success' | 'warning' | 'destructive';
+  tone: 'strong' | 'success' | 'warning' | 'destructive';
 }) {
-  const valueColor =
-    tone === 'success'
-      ? 'text-[var(--ms-text-success)]'
-      : tone === 'destructive'
-        ? 'text-[var(--ms-text-destructive)]'
-        : tone === 'warning'
-          ? 'text-[var(--ms-text-warning)]'
-          : 'text-[var(--ms-text-strong)]';
+  const color = {
+    strong: 'text-[var(--ms-text-strong)]',
+    success: 'text-[var(--ms-text-success)]',
+    warning: 'text-[var(--ms-text-warning)]',
+    destructive: 'text-[var(--ms-text-destructive)]',
+  }[tone];
   return (
     <div className="rounded-[var(--ms-radius-lg)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] p-4">
-      <div className={`font-semibold text-2xl ${valueColor}`}>{value}</div>
-      <div className="mt-1 text-[var(--ms-text-muted)] text-xs">{label}</div>
+      <div className={`font-semibold text-3xl ${color}`}>{value}</div>
+      <div className="mt-1 text-[var(--ms-text-muted)] text-sm">{label}</div>
     </div>
   );
 }

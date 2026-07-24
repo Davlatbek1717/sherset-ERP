@@ -330,9 +330,16 @@ export const hrAttendanceApi = {
     api.get<HrAttendanceRow[]>(
       `/hr/attendance/report${toQueryString(filter as unknown as Record<string, unknown>)}`,
     ),
-  checkIn: (data: { employeeId: string; notes?: string | null }) =>
-    api.post<HrAttendanceRow>('/hr/attendance/check-in', data),
+  checkIn: (data: {
+    employeeId: string;
+    at?: string;
+    workLocationId?: string | null;
+    notes?: string | null;
+  }) => api.post<HrAttendanceRow>('/hr/attendance/check-in', data),
   checkOut: (id: string) => api.post<HrAttendanceRow>(`/hr/attendance/${id}/check-out`, {}),
+  /** Manual check-out by employee (dashboard modal — no row id). */
+  checkOutManual: (data: { employeeId: string; at?: string; notes?: string | null }) =>
+    api.post<{ ok: true }>('/hr/attendance/check-out', data),
   edit: (id: string, data: HrAttendanceEditInput) =>
     api.patch<HrAttendanceRow>(`/hr/attendance/${id}`, data),
   remove: (id: string) => api.delete<{ ok: true }>(`/hr/attendance/${id}`),
@@ -971,12 +978,34 @@ export interface DavomatLiveBoard {
   absent: Array<{ employeeId: string; name: string }>;
 }
 
+/** TimePay "Xodimlar boshqaruv paneli" board (per date). */
+export interface HrAttendanceDashboardRow {
+  employeeId: string;
+  employee: { id: string; name: string; department: string | null };
+  checkIn: string | null;
+  checkOut: string | null;
+  lateMinutes: number;
+  overtimeMinutes: number;
+  totalMinutes: number;
+  branches: string[];
+  isWorkday: boolean;
+  hasRecord: boolean;
+  isAtWork: boolean;
+}
+export interface HrAttendanceDashboard {
+  date: string;
+  counts: { all: number; atWork: number; late: number; absent: number };
+  rows: HrAttendanceDashboardRow[];
+}
+
 export const hrDavomatReportApi = {
   monthly: (filter: { yearMonth: string; employeeId?: string }) =>
     api.get<DavomatMonthlyReport>(
       `/hr/attendance/report/monthly${toQueryString(filter as Record<string, unknown>)}`,
     ),
   live: () => api.get<DavomatLiveBoard>('/hr/attendance/live'),
+  dashboard: (date?: string) =>
+    api.get<HrAttendanceDashboard>(`/hr/attendance/dashboard${date ? `?date=${date}` : ''}`),
   monthlyXlsxUrl: (filter: { yearMonth: string; employeeId?: string }) =>
     `/hr/attendance/report/monthly.xlsx${toQueryString(filter as Record<string, unknown>)}`,
 };

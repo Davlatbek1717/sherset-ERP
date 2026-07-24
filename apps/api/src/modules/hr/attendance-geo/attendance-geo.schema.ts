@@ -48,6 +48,13 @@ export const MonthlyReportFilterSchema = z.object({
   employeeId: z.string().uuid().optional(),
 });
 
+export const DashboardQuerySchema = z.object({
+  date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Sana 'yyyy-MM-dd' formatida")
+    .optional(),
+});
+
 export type PingInput = z.infer<typeof PingSchema>;
 export type WorkLocationInput = z.infer<typeof WorkLocationSchema>;
 export type ScheduleWeekInput = z.infer<typeof ScheduleWeekSchema>;

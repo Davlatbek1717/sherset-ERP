@@ -18,6 +18,7 @@ import { RequireHrPermission } from '../hr-auth/require-hr-permission.decorator.
 import {
   CheckInSchema,
   EditAttendanceSchema,
+  ManualCheckOutSchema,
   ReportFilterSchema,
   TodayFilterSchema,
 } from './hr-attendance.schema.js';
@@ -47,6 +48,12 @@ export class HrAttendanceController {
   async checkIn(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
     const input = CheckInSchema.parse(body);
     return this.svc.checkIn(user.accountId, input);
+  }
+
+  @Post('check-out')
+  @RequireHrPermission('employees', 'full')
+  async checkOutByEmployee(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
+    return this.svc.checkOutByEmployee(user.accountId, ManualCheckOutSchema.parse(body));
   }
 
   @Post(':id/check-out')

@@ -10,7 +10,11 @@ function makePrisma() {
         findMany: vi.fn(),
         create: vi.fn(),
         update: vi.fn(),
+        updateMany: vi.fn(),
         delete: vi.fn(),
+      },
+      employee: {
+        findFirst: vi.fn(),
       },
     },
   };
@@ -25,18 +29,57 @@ describe('HrAttendanceService', () => {
     service = new HrAttendanceService(prisma as never);
   });
 
-  it('checkIn: success creates row with current timestamp', async () => {
+  it('checkIn: success creates a manual row and records lateMinutes', async () => {
     prisma.client.hrAttendance.findFirst.mockResolvedValue(null);
+    // No named schedule, no weekday rows → shift not a workday → late 0.
+    prisma.client.employee.findFirst.mockResolvedValue({
+      schedule: null,
+      workSchedules: [],
+    } as never);
     prisma.client.hrAttendance.create.mockResolvedValue({ id: 'a1' } as never);
 
     await service.checkIn('acc1', { employeeId: '11111111-1111-1111-1111-111111111111' });
 
     const createCall = prisma.client.hrAttendance.create.mock.calls[0]?.[0] as {
-      data: { accountId: string; employeeId: string; checkInTime: Date; notes?: string };
+      data: {
+        accountId: string;
+        employeeId: string;
+        checkInTime: Date;
+        source: string;
+        lateMinutes: number;
+      };
     };
     expect(createCall.data.accountId).toBe('acc1');
     expect(createCall.data.employeeId).toBe('11111111-1111-1111-1111-111111111111');
     expect(createCall.data.checkInTime).toBeInstanceOf(Date);
+    expect(createCall.data.source).toBe('manual');
+    expect(createCall.data.lateMinutes).toBe(0);
+  });
+
+  it('checkOutByEmployee: closes the open record atomically', async () => {
+    prisma.client.hrAttendance.findFirst.mockResolvedValue({
+      id: 'a1',
+      checkInTime: new Date('2026-07-24T04:00:00Z'),
+    } as never);
+    prisma.client.hrAttendance.updateMany.mockResolvedValue({ count: 1 } as never);
+
+    const res = await service.checkOutByEmployee('acc1', {
+      employeeId: '11111111-1111-1111-1111-111111111111',
+      at: new Date('2026-07-24T13:00:00Z'),
+    });
+    expect(res).toEqual({ ok: true });
+    const call = prisma.client.hrAttendance.updateMany.mock.calls[0]?.[0] as {
+      where: { id: string; checkOutTime: null };
+    };
+    expect(call.where).toMatchObject({ id: 'a1', checkOutTime: null });
+  });
+
+  it('checkOutByEmployee: 400 when no open record', async () => {
+    prisma.client.hrAttendance.findFirst.mockResolvedValue(null);
+    await expect(
+      service.checkOutByEmployee('acc1', { employeeId: '11111111-1111-1111-1111-111111111111' }),
+    ).rejects.toThrow(BadRequestException);
+    expect(prisma.client.hrAttendance.updateMany).not.toHaveBeenCalled();
   });
 
   it('checkIn: fails when employee already checked in today (BadRequest)', async () => {
