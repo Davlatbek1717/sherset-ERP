@@ -738,10 +738,28 @@ export interface DavomatMyToday {
   status: DavomatStatus;
 }
 
+export interface DavomatManualResult {
+  ok: boolean;
+  reason:
+    | 'accuracy'
+    | 'outside'
+    | 'not_opted_in'
+    | 'no_location'
+    | 'already_open'
+    | 'no_open_record'
+    | null;
+  status: DavomatStatus;
+  attendance: { checkInTime: string; checkOutTime: string | null; lateMinutes: number } | null;
+}
+
 export const hrDavomatApi = {
   ping: (data: DavomatPingInput) => api.post<DavomatPingResult>('/hr/attendance/ping', data),
   myToday: () => api.get<DavomatMyToday>('/hr/attendance/my/today'),
   optIn: (optIn: boolean) => api.post<{ optIn: boolean }>('/hr/attendance/my/opt-in', { optIn }),
+  checkIn: (data: DavomatPingInput) =>
+    api.post<DavomatManualResult>('/hr/attendance/my/check-in', data),
+  checkOut: (data: DavomatPingInput) =>
+    api.post<DavomatManualResult>('/hr/attendance/my/check-out', data),
 };
 
 // ─── Work-location (filial) admin API ──────────────────────────────────

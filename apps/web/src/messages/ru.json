@@ -5845,7 +5845,12 @@
       "detail_never": "никогда",
       "detail_created_at": "Создан",
       "salary_placeholder": "Будет реализовано в спринте P5 (HR-Зарплата + KPI).",
-      "tab_schedule": "График работы"
+      "tab_schedule": "График работы",
+      "davomat_section_title": "Рабочее место и GPS-учёт",
+      "davomat_branch": "Рабочее место (филиал)",
+      "davomat_branch_none": "Не назначено",
+      "davomat_optin": "GPS-учёт",
+      "davomat_optin_hint": "Отслеживание разрешено"
     },
     "hrAttendance": {
       "title": "Посещаемость",
@@ -6606,7 +6611,12 @@
       "keep_open_title": "Держите приложение открытым",
       "keep_open_body": "Чтобы посещаемость работала точно, держите этот экран открытым в рабочее время.",
       "last_update": "Обновлено: {time}",
-      "waiting_signal": "Ожидание сигнала…"
+      "waiting_signal": "Ожидание сигнала…",
+      "manual_check_in": "✅ Я пришёл",
+      "manual_check_out": "🚪 Я ухожу",
+      "manual_outside": "Вы не в радиусе рабочего места. Подойдите ближе к филиалу и повторите.",
+      "manual_failed": "Не удалось выполнить. Повторите попытку.",
+      "manual_gps_failed": "Не удалось определить местоположение. Проверьте разрешение GPS."
     },
     "workLocations": {
       "title": "Филиалы / Рабочие места",

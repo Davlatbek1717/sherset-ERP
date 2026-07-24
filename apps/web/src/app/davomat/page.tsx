@@ -3,12 +3,42 @@
 import { useDavomatStatus } from '@/hooks/use-davomat-status';
 import { useGeolocationAttendance } from '@/hooks/use-geolocation-attendance';
 import { useAuth } from '@/lib/auth-store';
-import { type DavomatMyToday, type DavomatPingResult, hrDavomatApi } from '@/lib/hr-api';
-import { Alert, Avatar, Button, Checkbox, Icons, ShersetLogo, Spinner } from '@moysklad/ui';
+import {
+  type DavomatManualResult,
+  type DavomatMyToday,
+  type DavomatPingResult,
+  hrDavomatApi,
+} from '@/lib/hr-api';
+import {
+  Alert,
+  Avatar,
+  Button,
+  Checkbox,
+  Icons,
+  ShersetLogo,
+  Spinner,
+  useToast,
+} from '@moysklad/ui';
+import { useMutation } from '@tanstack/react-query';
 import { formatInTimeZone } from 'date-fns-tz';
 import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useState } from 'react';
 import { type HeroState, StatusHero } from './_components/status-hero';
+
+/** Reads a single fresh GPS fix, promise-wrapped for use inside a mutation. */
+function getCurrentPosition(): Promise<GeolocationPosition> {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(new Error('Geolocation not supported'));
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(resolve, reject, {
+      enableHighAccuracy: true,
+      timeout: 20_000,
+      maximumAge: 0,
+    });
+  });
+}
 
 const TZ = 'Asia/Tashkent';
 type Permission = 'unknown' | 'granted' | 'prompt' | 'denied';
@@ -119,6 +149,31 @@ export default function DavomatPage() {
     await installEvent.prompt();
     setInstallEvent(null);
   }, [installEvent]);
+
+  const { toast } = useToast();
+  const manualMut = useMutation({
+    mutationFn: async (kind: 'in' | 'out'): Promise<DavomatManualResult> => {
+      const pos = await getCurrentPosition();
+      const dto = {
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude,
+        accuracy: pos.coords.accuracy,
+      };
+      return kind === 'in' ? hrDavomatApi.checkIn(dto) : hrDavomatApi.checkOut(dto);
+    },
+    onSuccess: async (r) => {
+      if (!r.ok && r.reason === 'outside') {
+        toast.error(t('manual_outside'));
+        return;
+      }
+      if (!r.ok) {
+        toast.error(t('manual_failed'));
+        return;
+      }
+      await refetch();
+    },
+    onError: () => toast.error(t('manual_gps_failed')),
+  });
 
   const firstName = auth.user?.name?.split(' ')[0] ?? '';
 
@@ -235,10 +290,27 @@ export default function DavomatPage() {
   const checkOut = today?.checkOutTime ?? geo.result?.attendance?.checkOutTime ?? null;
   const fresh = geo.lastPingAt != null && Date.now() - geo.lastPingAt < 90_000;
 
+  const showCheckIn = !checkIn && state !== 'day_off' && state !== 'no_branch';
+  const showCheckOut = !!checkIn && !checkOut && state !== 'day_off';
+
   return (
     <div className="flex flex-1 flex-col gap-4">
       {header}
       <StatusHero state={state} />
+
+      {(showCheckIn || showCheckOut) && (
+        <Button
+          size="lg"
+          variant={showCheckOut ? 'destructive' : 'success'}
+          className="w-full"
+          disabled={manualMut.isPending}
+          loading={manualMut.isPending}
+          onClick={() => manualMut.mutate(showCheckOut ? 'out' : 'in')}
+          data-test-id="davomat-manual-mark"
+        >
+          {showCheckOut ? t('manual_check_out') : t('manual_check_in')}
+        </Button>
+      )}
 
       <div className="grid grid-cols-2 gap-3">
         <div className="rounded-[var(--ms-radius-md)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] p-4 text-center">

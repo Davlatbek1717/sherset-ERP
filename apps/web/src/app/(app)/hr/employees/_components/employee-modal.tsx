@@ -20,17 +20,33 @@
  * On success invalidates ['hr-employees'] and closes the modal.
  */
 
+import { WeekScheduleGrid } from '@/components/hr/week-schedule-grid';
 import { useConflictReload } from '@/hooks/use-conflict-reload';
 import { api } from '@/lib/api-client';
-import { hrEmployeeApi } from '@/lib/hr-api';
-import type { HrEmployeeCreateInput, HrEmployeeDetail, HrEmployeeRow } from '@/lib/hr-api';
+import { hrEmployeeApi, hrScheduleApi, hrWorkLocationApi } from '@/lib/hr-api';
+import type {
+  HrEmployeeCreateInput,
+  HrEmployeeDetail,
+  HrEmployeeRow,
+  HrWeekDay,
+  HrWorkLocation,
+} from '@/lib/hr-api';
 import { isOptimisticConflict } from '@/lib/optimistic-lock';
-import { Button, Checkbox, Input, Modal } from '@moysklad/ui';
+import { Button, Checkbox, Input, Modal, NativeSelect, Switch } from '@moysklad/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
 import { MoyskladAgentDropdown } from './moysklad-agent-dropdown';
 import { RoleMultiSelect } from './role-multi-select';
+
+function defaultSchedule(): HrWeekDay[] {
+  return [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({
+    weekday,
+    startTime: '09:00',
+    endTime: '18:00',
+    isDayOff: false,
+  }));
+}
 
 export interface EmployeeModalProps {
   open: boolean;
@@ -54,6 +70,9 @@ interface FormState {
   username: string;
   password: string;
   skladNo: string; // '' = biriktirilmagan
+  workLocationId: string; // '' = biriktirilmagan
+  attendanceOptIn: boolean;
+  scheduleDays: HrWeekDay[];
 }
 
 function emptyForm(): FormState {
@@ -69,10 +88,14 @@ function emptyForm(): FormState {
     username: '',
     password: '',
     skladNo: '',
+    workLocationId: '',
+    attendanceOptIn: false,
+    scheduleDays: defaultSchedule(),
   };
 }
 
 function rowToForm(row: HrEmployeeRow | HrEmployeeDetail, skladNo?: number | null): FormState {
+  const detail = row as HrEmployeeDetail;
   return {
     name: row.name,
     email: row.email ?? '',
@@ -85,6 +108,9 @@ function rowToForm(row: HrEmployeeRow | HrEmployeeDetail, skladNo?: number | nul
     username: '',
     password: '',
     skladNo: skladNo != null ? String(skladNo) : '',
+    workLocationId: detail.workLocationId ?? '',
+    attendanceOptIn: detail.attendanceOptIn ?? false,
+    scheduleDays: defaultSchedule(), // overwritten by the async getWeek() fetch below
   };
 }
 
@@ -104,9 +130,18 @@ export function EmployeeModal({
   const [version, setVersion] = useState<number>(0);
 
   // Mavjud sklad birikmalari — edit rejimida xodimning hozirgi skladi aniqlanadi
-  const { data: keepersData } = useQuery<{ items: Array<{ skladNo: number; employeeId: string }> }>({
-    queryKey: ['sklad-keepers'],
-    queryFn: () => api.get('/sklad-keepers'),
+  const { data: keepersData } = useQuery<{ items: Array<{ skladNo: number; employeeId: string }> }>(
+    {
+      queryKey: ['sklad-keepers'],
+      queryFn: () => api.get('/sklad-keepers'),
+      enabled: open,
+    },
+  );
+
+  // Filiallar ro'yxati — "Ish joyi" dropdown uchun.
+  const { data: workLocations = [] } = useQuery<HrWorkLocation[]>({
+    queryKey: ['hr-work-locations'],
+    queryFn: () => hrWorkLocationApi.list(),
     enabled: open,
   });
 
@@ -117,6 +152,20 @@ export function EmployeeModal({
       const currentSklad = keepersData?.items.find((k) => k.employeeId === initialValues.id);
       setForm(rowToForm(initialValues, currentSklad?.skladNo ?? null));
       setVersion(initialValues.version);
+      // rowToForm's attendance-config fields may be stale (list rows don't
+      // carry them) — always refetch the full detail + real week schedule
+      // so the modal shows the employee's true current davomat setup.
+      Promise.all([
+        hrEmployeeApi.findOne(initialValues.id),
+        hrScheduleApi.getWeek(initialValues.id),
+      ]).then(([detail, week]) => {
+        setForm((prev) => ({
+          ...prev,
+          workLocationId: detail.workLocationId ?? '',
+          attendanceOptIn: detail.attendanceOptIn ?? false,
+          scheduleDays: week,
+        }));
+      });
     } else {
       setForm(emptyForm());
       setVersion(0);
@@ -161,7 +210,8 @@ export function EmployeeModal({
 
       // Sklad biriktirish / o'chirish
       const newSkladNo = form.skladNo.trim() !== '' ? Number(form.skladNo) : null;
-      const prevSkladNo = keepersData?.items.find((k) => k.employeeId === saved.id)?.skladNo ?? null;
+      const prevSkladNo =
+        keepersData?.items.find((k) => k.employeeId === saved.id)?.skladNo ?? null;
 
       if (newSkladNo != null) {
         // Yangi yoki o'zgargan sklad
@@ -170,6 +220,14 @@ export function EmployeeModal({
         // Sklad o'chirilgan — eski biriktmani olib tashlash
         await api.delete(`/sklad-keepers/${prevSkladNo}`);
       }
+
+      // GPS-davomat: ish joyi/ruxsat + haftalik jadval — xodim yangi
+      // yaratilgan bo'lsa ham, `saved.id` shu yerda allaqachon mavjud.
+      await hrScheduleApi.setConfig(saved.id, {
+        workLocationId: form.workLocationId || null,
+        attendanceOptIn: form.attendanceOptIn,
+      });
+      await hrScheduleApi.replaceWeek(saved.id, form.scheduleDays);
 
       return saved;
     },
@@ -193,13 +251,31 @@ export function EmployeeModal({
 
   const submit = () => {
     setError(null);
-    if (!form.name.trim()) { setError('Ism familiya kiritilishi shart'); return; }
-    if (!form.phone.trim()) { setError('Telefon raqam kiritilishi shart'); return; }
-    if (form.hrRoles.length === 0) { setError('Kamida bitta rol tanlanishi shart'); return; }
+    if (!form.name.trim()) {
+      setError('Ism familiya kiritilishi shart');
+      return;
+    }
+    if (!form.phone.trim()) {
+      setError('Telefon raqam kiritilishi shart');
+      return;
+    }
+    if (form.hrRoles.length === 0) {
+      setError('Kamida bitta rol tanlanishi shart');
+      return;
+    }
     if (mode === 'create') {
-      if (!form.username.trim()) { setError('Login kiritilishi shart'); return; }
-      if (!form.password) { setError('Parol kiritilishi shart'); return; }
-      if (form.password.length < 4) { setError('Parol kamida 4 belgi bolishi kerak'); return; }
+      if (!form.username.trim()) {
+        setError('Login kiritilishi shart');
+        return;
+      }
+      if (!form.password) {
+        setError('Parol kiritilishi shart');
+        return;
+      }
+      if (form.password.length < 4) {
+        setError('Parol kamida 4 belgi bolishi kerak');
+        return;
+      }
     }
     saveMut.mutate();
   };
@@ -219,7 +295,7 @@ export function EmployeeModal({
       open={open}
       onOpenChange={onOpenChange}
       title={mode === 'edit' ? t('edit_title') : t('create_title')}
-      widthClass="w-[640px]"
+      widthClass="w-[720px]"
       testId="hr-employee-modal"
       footer={
         <div className="flex justify-end gap-2">
@@ -326,10 +402,7 @@ export function EmployeeModal({
           />
         </Field>
 
-        <SkladSelect
-          value={form.skladNo}
-          onChange={(v) => update('skladNo', v)}
-        />
+        <SkladSelect value={form.skladNo} onChange={(v) => update('skladNo', v)} />
 
         <label className="flex items-start gap-2 text-sm sm:col-span-2">
           <Checkbox
@@ -345,6 +418,49 @@ export function EmployeeModal({
             </span>
           </span>
         </label>
+
+        <div className="sm:col-span-2 border-[var(--ms-border-default)] border-t pt-4">
+          <h3 className="font-medium text-[var(--ms-text-primary)] text-sm">
+            {t('davomat_section_title')}
+          </h3>
+          <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label={t('davomat_branch')}>
+              <NativeSelect
+                value={form.workLocationId}
+                onChange={(e) => update('workLocationId', e.target.value)}
+                data-test-id="hr-employee-work-location"
+              >
+                <option value="">{t('davomat_branch_none')}</option>
+                {workLocations.map((wl) => (
+                  <option key={wl.id} value={wl.id}>
+                    {wl.name}
+                  </option>
+                ))}
+              </NativeSelect>
+            </Field>
+            <div className="flex flex-col gap-1">
+              <span className="font-medium text-[var(--ms-text-primary)] text-sm">
+                {t('davomat_optin')}
+              </span>
+              <div className="flex min-h-[36px] items-center gap-2">
+                <Switch
+                  checked={form.attendanceOptIn}
+                  onCheckedChange={(v) => update('attendanceOptIn', v === true)}
+                  data-test-id="hr-employee-attendance-optin"
+                />
+                <span className="text-[var(--ms-text-muted)] text-sm">
+                  {t('davomat_optin_hint')}
+                </span>
+              </div>
+            </div>
+          </div>
+          <div className="mt-3">
+            <WeekScheduleGrid
+              value={form.scheduleDays}
+              onChange={(days) => update('scheduleDays', days)}
+            />
+          </div>
+        </div>
 
         {error && (
           <div
@@ -385,7 +501,10 @@ function Field({
   );
 }
 
-interface StoreItem { id: string; name: string; }
+interface StoreItem {
+  id: string;
+  name: string;
+}
 
 function SkladSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const { data } = useQuery<{ items: StoreItem[] }>({

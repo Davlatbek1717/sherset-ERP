@@ -5845,7 +5845,12 @@
       "detail_never": "hech qachon",
       "detail_created_at": "Yaratilgan",
       "salary_placeholder": "P5 sprint (HR-Oylik + KPI) doirasida ishlab chiqiladi.",
-      "tab_schedule": "Ish jadvali"
+      "tab_schedule": "Ish jadvali",
+      "davomat_section_title": "Ish joyi va GPS-davomat",
+      "davomat_branch": "Ish joyi (filial)",
+      "davomat_branch_none": "Biriktirilmagan",
+      "davomat_optin": "GPS-davomat",
+      "davomat_optin_hint": "Kuzatuvga ruxsat berilgan"
     },
     "hrAttendance": {
       "title": "Davomat",
@@ -6607,7 +6612,12 @@
       "keep_open_title": "Ilovani ochiq tuting",
       "keep_open_body": "Davomat aniq ishlashi uchun bu ekranni ish vaqtida ochiq qoldiring.",
       "last_update": "Oxirgi yangilanish: {time}",
-      "waiting_signal": "Signal kutilmoqda…"
+      "waiting_signal": "Signal kutilmoqda…",
+      "manual_check_in": "✅ Keldim",
+      "manual_check_out": "🚪 Ketyapman",
+      "manual_outside": "Siz ish joyi radiusida emassiz. Filialga yaqinlashib qayta urining.",
+      "manual_failed": "Amalga oshmadi. Qayta urining.",
+      "manual_gps_failed": "Joylashuvni aniqlab bo'lmadi. GPS-ruxsatni tekshiring."
     },
     "workLocations": {
       "title": "Filiallar / Ish joylari",
