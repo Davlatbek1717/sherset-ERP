@@ -20,13 +20,19 @@ function makePrisma() {
   };
 }
 
+function makeEmitter() {
+  return { emit: vi.fn() };
+}
+
 describe('HrAttendanceService', () => {
   let prisma: ReturnType<typeof makePrisma>;
+  let emitter: ReturnType<typeof makeEmitter>;
   let service: HrAttendanceService;
 
   beforeEach(() => {
     prisma = makePrisma();
-    service = new HrAttendanceService(prisma as never);
+    emitter = makeEmitter();
+    service = new HrAttendanceService(prisma as never, emitter as never);
   });
 
   it('checkIn: success creates a manual row and records lateMinutes', async () => {
@@ -56,6 +62,26 @@ describe('HrAttendanceService', () => {
     expect(createCall.data.lateMinutes).toBe(0);
   });
 
+  it('checkIn: emits HR_ATTENDANCE_CHECKED_IN with attendanceId + lateMinutes', async () => {
+    prisma.client.hrAttendance.findFirst.mockResolvedValue(null);
+    prisma.client.employee.findFirst.mockResolvedValue({
+      schedule: null,
+      workSchedules: [],
+    } as never);
+    prisma.client.hrAttendance.create.mockResolvedValue({ id: 'a1' } as never);
+
+    const emp = '11111111-1111-1111-1111-111111111111';
+    await service.checkIn('acc1', { employeeId: emp });
+
+    expect(emitter.emit).toHaveBeenCalledWith(
+      'hr.attendance.checked_in',
+      expect.objectContaining({ accountId: 'acc1', employeeId: emp, attendanceId: 'a1' }),
+    );
+    const payload = emitter.emit.mock.calls[0]?.[1] as { lateMinutes: number; at: Date };
+    expect(payload.lateMinutes).toBe(0);
+    expect(payload.at).toBeInstanceOf(Date);
+  });
+
   it('checkOutByEmployee: closes the open record atomically', async () => {
     prisma.client.hrAttendance.findFirst.mockResolvedValue({
       id: 'a1',
@@ -72,6 +98,14 @@ describe('HrAttendanceService', () => {
       where: { id: string; checkOutTime: null };
     };
     expect(call.where).toMatchObject({ id: 'a1', checkOutTime: null });
+    expect(emitter.emit).toHaveBeenCalledWith(
+      'hr.attendance.checked_out',
+      expect.objectContaining({
+        accountId: 'acc1',
+        attendanceId: 'a1',
+        employeeId: '11111111-1111-1111-1111-111111111111',
+      }),
+    );
   });
 
   it('checkOutByEmployee: 400 when no open record', async () => {
@@ -110,6 +144,10 @@ describe('HrAttendanceService', () => {
     };
     expect(updateCall.data.checkOutTime).toBeInstanceOf(Date);
     expect((result as { employee: { name: string } }).employee.name).toBe('Ahmad');
+    expect(emitter.emit).toHaveBeenCalledWith(
+      'hr.attendance.checked_out',
+      expect.objectContaining({ accountId: 'acc1', attendanceId: 'a1' }),
+    );
   });
 
   it('checkOut: fails when checkOutTime already set', async () => {

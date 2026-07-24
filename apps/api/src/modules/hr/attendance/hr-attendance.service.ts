@@ -1,8 +1,10 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { formatInTimeZone } from 'date-fns-tz';
 import { PrismaService } from '../../../prisma/prisma.service.js';
 import { SCHEDULE_SELECT, toResolvedSchedule } from '../attendance-geo/prisma-schedule.util.js';
 import { lateMinutesForShift, resolveShift } from '../attendance-geo/resolve-shift.util.js';
+import { HR_EVENT } from '../hr-shared/hr-events.types.js';
 import { HR_TZ, startOfLocalDay } from '../hr-shared/tz.util.js';
 import type {
   CheckInInput,
@@ -13,7 +15,10 @@ import type {
 
 @Injectable()
 export class HrAttendanceService {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(EventEmitter2) private readonly events: EventEmitter2,
+  ) {}
 
   /** Today's attendance records (one per employee). */
   async listToday(accountId: string, date?: Date) {
@@ -92,7 +97,7 @@ export class HrAttendanceService {
     });
     const lateMinutes = lateMinutesForShift(at, shift, HR_TZ);
 
-    return this.prisma.client.hrAttendance.create({
+    const created = await this.prisma.client.hrAttendance.create({
       data: {
         accountId,
         employeeId: input.employeeId,
@@ -104,6 +109,15 @@ export class HrAttendanceService {
       },
       include: { employee: { select: { id: true, name: true } } },
     });
+    // Out-of-band: notifier applies the fine + sends the director message.
+    this.events.emit(HR_EVENT.HR_ATTENDANCE_CHECKED_IN, {
+      accountId,
+      attendanceId: created.id,
+      employeeId: input.employeeId,
+      at,
+      lateMinutes,
+    });
+    return created;
   }
 
   /**
@@ -134,6 +148,12 @@ export class HrAttendanceService {
       data: { checkOutTime: at, ...(input.notes !== undefined ? { notes: input.notes } : {}) },
     });
     if (res.count === 0) throw new BadRequestException('Ochiq davomat yozuvi topilmadi');
+    this.events.emit(HR_EVENT.HR_ATTENDANCE_CHECKED_OUT, {
+      accountId,
+      attendanceId: open.id,
+      employeeId: input.employeeId,
+      at,
+    });
     return { ok: true };
   }
 
@@ -146,11 +166,19 @@ export class HrAttendanceService {
     if (row.checkOutTime) {
       throw new BadRequestException('Allaqachon ketish belgilangan');
     }
-    return this.prisma.client.hrAttendance.update({
+    const at = new Date();
+    const updated = await this.prisma.client.hrAttendance.update({
       where: { id },
-      data: { checkOutTime: new Date() },
+      data: { checkOutTime: at },
       include: { employee: { select: { id: true, name: true } } },
     });
+    this.events.emit(HR_EVENT.HR_ATTENDANCE_CHECKED_OUT, {
+      accountId,
+      attendanceId: id,
+      employeeId: row.employeeId,
+      at,
+    });
+    return updated;
   }
 
   /** Edit attendance (admin only — controller-level guard). */

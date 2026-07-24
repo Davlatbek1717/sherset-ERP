@@ -13,6 +13,9 @@ export const HR_EVENT = {
   HR_TASK_PENDING_REVIEW: 'hr.event.hrTaskLog.pendingReview',
   HR_TASK_LOG_FINALIZED: 'hr.event.hrTaskLog.finalized',
   HR_TASK_LOG_DEADLINE_EXPIRED: 'hr.event.hrTaskLog.deadlineExpired',
+  // Attendance (keldi/ketdi) — drives the director Telegram notifier + auto-fine.
+  HR_ATTENDANCE_CHECKED_IN: 'hr.attendance.checked_in',
+  HR_ATTENDANCE_CHECKED_OUT: 'hr.attendance.checked_out',
 } as const;
 
 export type HrEventName = (typeof HR_EVENT)[keyof typeof HR_EVENT];
@@ -113,6 +116,24 @@ export interface HrTaskLogDeadlineExpiredEvent {
   employeeId: string;
 }
 
+export interface HrAttendanceCheckedInEvent {
+  accountId: string;
+  attendanceId: string;
+  employeeId: string;
+  /** Moment of check-in (UTC Date). */
+  at: Date;
+  /** Minutes late vs the resolved shift (0 = on time). */
+  lateMinutes: number;
+}
+
+export interface HrAttendanceCheckedOutEvent {
+  accountId: string;
+  attendanceId: string;
+  employeeId: string;
+  /** Moment of check-out (UTC Date). */
+  at: Date;
+}
+
 export type HrEventPayloadMap = {
   [HR_EVENT.DEMAND_POSTED]: DemandPostedEvent;
   [HR_EVENT.PAYMENT_IN_POSTED]: PaymentInPostedEvent;
@@ -124,4 +145,6 @@ export type HrEventPayloadMap = {
   [HR_EVENT.HR_TASK_PENDING_REVIEW]: HrTaskPendingReviewEvent;
   [HR_EVENT.HR_TASK_LOG_FINALIZED]: HrTaskLogFinalizedEvent;
   [HR_EVENT.HR_TASK_LOG_DEADLINE_EXPIRED]: HrTaskLogDeadlineExpiredEvent;
+  [HR_EVENT.HR_ATTENDANCE_CHECKED_IN]: HrAttendanceCheckedInEvent;
+  [HR_EVENT.HR_ATTENDANCE_CHECKED_OUT]: HrAttendanceCheckedOutEvent;
 };
