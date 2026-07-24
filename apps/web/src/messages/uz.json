@@ -1035,7 +1035,8 @@
       "settings": "Sozlamalar",
       "departments": "Bo'limlar",
       "positions": "Lavozimlar",
-      "schedules": "Ish jadvallari"
+      "schedules": "Ish jadvallari",
+      "monitoring": "Kuzatuv"
     }
   },
   "counterparty_activity": {
@@ -7508,7 +7509,8 @@
       "widget_enable_link": "Yoqish",
       "widget_at_work": "Ish joyidasiz",
       "widget_left": "Bugun yakunlandi:",
-      "widget_not_arrived": "Hali kelmadingiz"
+      "widget_not_arrived": "Hali kelmadingiz",
+      "badge_ontime": "Vaqtida"
     },
     "workLocations": {
       "title": "Filiallar / Ish joylari",
@@ -7642,6 +7644,34 @@
       "pagination": "{total} dan {from} – {to}",
       "prev": "Oldingi",
       "next": "Keyingi"
+    },
+    "hrMonitoring": {
+      "title": "Xodimlarni kuzatish",
+      "date_label": "Sana",
+      "status_label": "Holati",
+      "status_all": "Barchasi",
+      "status_late": "Kechikkanlar",
+      "status_ontime": "Vaqtida",
+      "status_at_work": "Ishda",
+      "status_absent": "Kelmaganlar",
+      "col_employee": "Xodim",
+      "col_position": "Lavozim",
+      "col_state": "Holati",
+      "col_branch": "Filial",
+      "col_schedule": "Jadval",
+      "dayoff": "Dam olish",
+      "empty": "Xodimlar yo'q",
+      "marks_title": "{date} ga tegishli belgilar",
+      "col_time": "Vaqt",
+      "col_type": "Turi",
+      "col_location": "Manzil",
+      "col_photo": "Rasm",
+      "type_entry": "Kirish",
+      "type_exit": "Chiqish",
+      "open_on_map": "Xaritada ochish",
+      "auto_closed": "Avto-yopilgan",
+      "no_photo": "—",
+      "back": "Orqaga"
     }
   },
   "print_entity": {

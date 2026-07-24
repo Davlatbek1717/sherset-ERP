@@ -102,6 +102,7 @@ describe('aggregateEmployeeDay', () => {
     expect(today.totalMinutes).toBe(180); // 09:00→12:00
     expect(today.isAtWork).toBe(true);
     expect(today.checkOut).toBeNull();
+    // A stale open record on a PAST day is not "at work now" (Faza-6 MED fix).
 
     const past = aggregateEmployeeDay({
       rows: [{ checkInTime: at('09:00'), checkOutTime: null, lateMinutes: 0 }],
@@ -112,6 +113,7 @@ describe('aggregateEmployeeDay', () => {
       isToday: false,
     });
     expect(past.totalMinutes).toBe(0); // stale open record on a past day
+    expect(past.isAtWork).toBe(false); // not "at work now" on a past day
   });
 
   it('multiple segments: earliest in, latest out, summed total', () => {

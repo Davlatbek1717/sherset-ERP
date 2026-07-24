@@ -1035,7 +1035,8 @@
       "settings": "Настройки",
       "departments": "Отделы",
       "positions": "Должности",
-      "schedules": "Графики работы"
+      "schedules": "Графики работы",
+      "monitoring": "Мониторинг"
     }
   },
   "counterparty_activity": {
@@ -7507,7 +7508,8 @@
       "widget_enable_link": "Включить",
       "widget_at_work": "Вы на работе",
       "widget_left": "Сегодня завершено:",
-      "widget_not_arrived": "Вы ещё не пришли"
+      "widget_not_arrived": "Вы ещё не пришли",
+      "badge_ontime": "Вовремя"
     },
     "workLocations": {
       "title": "Филиалы / Рабочие места",
@@ -7641,6 +7643,34 @@
       "pagination": "{from} – {to} из {total}",
       "prev": "Предыдущая",
       "next": "Следующая"
+    },
+    "hrMonitoring": {
+      "title": "Мониторинг сотрудников",
+      "date_label": "Дата",
+      "status_label": "Статус",
+      "status_all": "Все",
+      "status_late": "Опоздавшие",
+      "status_ontime": "Вовремя",
+      "status_at_work": "На работе",
+      "status_absent": "Отсутствуют",
+      "col_employee": "Сотрудник",
+      "col_position": "Должность",
+      "col_state": "Статус",
+      "col_branch": "Филиал",
+      "col_schedule": "График",
+      "dayoff": "Выходной",
+      "empty": "Нет сотрудников",
+      "marks_title": "Отметки за {date}",
+      "col_time": "Время",
+      "col_type": "Тип",
+      "col_location": "Адрес",
+      "col_photo": "Фото",
+      "type_entry": "Вход",
+      "type_exit": "Выход",
+      "open_on_map": "Открыть на карте",
+      "auto_closed": "Авто-закрытие",
+      "no_photo": "—",
+      "back": "Назад"
     }
   },
   "print_entity": {

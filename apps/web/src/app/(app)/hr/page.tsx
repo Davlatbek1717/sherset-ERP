@@ -13,6 +13,7 @@ import { Avatar, Button, EmptyState, Skeleton } from '@moysklad/ui';
 import { useQuery } from '@tanstack/react-query';
 import { formatInTimeZone } from 'date-fns-tz';
 import { useTranslations } from 'next-intl';
+import Link from 'next/link';
 import { useState } from 'react';
 import { ManualAttendanceModal } from './_components/manual-attendance-modal';
 import { TelegramDashboardSummary } from './_components/telegram-dashboard-summary';
@@ -56,10 +57,30 @@ export default function HrHomePage() {
       </div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <KpiCard label={t('kpi_all')} value={counts.all} tone="strong" />
-        <KpiCard label={t('kpi_at_work')} value={counts.atWork} tone="success" />
-        <KpiCard label={t('kpi_late')} value={counts.late} tone="warning" />
-        <KpiCard label={t('kpi_absent')} value={counts.absent} tone="destructive" />
+        <KpiCard
+          label={t('kpi_all')}
+          value={counts.all}
+          tone="strong"
+          href={`/hr/monitoring?date=${date}`}
+        />
+        <KpiCard
+          label={t('kpi_at_work')}
+          value={counts.atWork}
+          tone="success"
+          href={`/hr/monitoring?date=${date}&status=at_work`}
+        />
+        <KpiCard
+          label={t('kpi_late')}
+          value={counts.late}
+          tone="warning"
+          href={`/hr/monitoring?date=${date}&status=late`}
+        />
+        <KpiCard
+          label={t('kpi_absent')}
+          value={counts.absent}
+          tone="destructive"
+          href={`/hr/monitoring?date=${date}&status=absent`}
+        />
       </div>
 
       <div>
@@ -145,10 +166,12 @@ function KpiCard({
   label,
   value,
   tone,
+  href,
 }: {
   label: string;
   value: number;
   tone: 'strong' | 'success' | 'warning' | 'destructive';
+  href: string;
 }) {
   const color = {
     strong: 'text-[var(--ms-text-strong)]',
@@ -157,9 +180,12 @@ function KpiCard({
     destructive: 'text-[var(--ms-text-destructive)]',
   }[tone];
   return (
-    <div className="rounded-[var(--ms-radius-lg)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] p-4">
+    <Link
+      href={href}
+      className="block rounded-[var(--ms-radius-lg)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] p-4 transition-colors hover:bg-[var(--ms-bg-hover)]"
+    >
       <div className={`font-semibold text-3xl ${color}`}>{value}</div>
       <div className="mt-1 text-[var(--ms-text-muted)] text-sm">{label}</div>
-    </div>
+    </Link>
   );
 }

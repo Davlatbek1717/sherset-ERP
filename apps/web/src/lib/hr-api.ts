@@ -998,6 +998,58 @@ export interface HrAttendanceDashboard {
   rows: HrAttendanceDashboardRow[];
 }
 
+// ─── Xodimlarni kuzatish (monitoring) ─────────────────────────────────
+
+export type MonitoringStatus = 'all' | 'late' | 'ontime' | 'at_work' | 'absent';
+export type MonitoringPresence = 'at_work' | 'left' | 'absent' | 'dayoff';
+
+export interface MonitoringDailyRow {
+  employeeId: string;
+  name: string;
+  position: string | null;
+  department: string | null;
+  workLocation: { id: string; name: string } | null;
+  schedule: { startTime: string; endTime: string; isDayOff: boolean } | null;
+  attendanceState: 'ontime' | 'late' | null;
+  presence: MonitoringPresence;
+  checkInTime: string | null;
+  checkOutTime: string | null;
+  lateMinutes: number;
+  attendanceId: string | null;
+}
+export interface MonitoringDailyResult {
+  date: string;
+  rows: MonitoringDailyRow[];
+}
+
+export interface MonitoringMark {
+  id: string;
+  at: string;
+  type: 'entry' | 'exit';
+  state: 'ontime' | 'late' | null;
+  lateMinutes: number;
+  lat: number | null;
+  lng: number | null;
+  accuracy: number | null;
+  autoClosed: boolean;
+  photoUrl: null;
+}
+export interface MonitoringMarksResult {
+  employee: { id: string; name: string; position: string | null };
+  marks: MonitoringMark[];
+}
+
+export const hrMonitoringApi = {
+  daily: (filter: { date?: string; status?: MonitoringStatus } = {}) =>
+    api.get<MonitoringDailyResult>(
+      `/hr/monitoring${toQueryString(filter as Record<string, unknown>)}`,
+    ),
+  marks: (employeeId: string, filter: { from: string; to: string }) =>
+    api.get<MonitoringMarksResult>(
+      `/hr/monitoring/${employeeId}/marks${toQueryString(filter as Record<string, unknown>)}`,
+    ),
+};
+
 export const hrDavomatReportApi = {
   monthly: (filter: { yearMonth: string; employeeId?: string }) =>
     api.get<DavomatMonthlyReport>(

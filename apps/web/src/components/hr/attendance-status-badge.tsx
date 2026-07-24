@@ -4,13 +4,14 @@ import type { AttendanceDayStatus } from '@/lib/hr-api';
 import { Badge } from '@moysklad/ui';
 import { useTranslations } from 'next-intl';
 
-export type BadgeStatus = AttendanceDayStatus | 'at_work' | 'left';
+export type BadgeStatus = AttendanceDayStatus | 'at_work' | 'left' | 'ontime';
 
 const TONE: Record<BadgeStatus, 'success' | 'destructive' | 'warning' | 'neutral'> = {
   present: 'success',
+  ontime: 'success',
   at_work: 'success',
   late: 'destructive',
-  absent: 'neutral',
+  absent: 'destructive',
   dayoff: 'neutral',
   left: 'neutral',
 };

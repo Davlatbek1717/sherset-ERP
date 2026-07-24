@@ -85,6 +85,9 @@ export function aggregateEmployeeDay(params: {
     lateMinutes: sorted[0]?.lateMinutes ?? 0,
     totalMinutes,
     overtimeMinutes: checkOut ? computeOvertimeMinutes(checkOut, shift, tz, localDate) : 0,
-    isAtWork: hasOpen,
+    // An open record on a PAST day is not "at work now" (cron will auto-close
+    // it); gating on isToday keeps the dashboard atWork count consistent with
+    // the monitoring board, which reads such records as 'left'.
+    isAtWork: hasOpen && isToday,
   };
 }

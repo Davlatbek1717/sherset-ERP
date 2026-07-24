@@ -406,6 +406,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   const hrSubNav: SubNavItem[] = [
     { key: 'home', label: tHr('home'), href: '/hr' },
+    { key: 'monitoring', label: tHr('monitoring'), href: '/hr/monitoring' },
     { key: 'employees', label: tHr('employees'), href: '/hr/employees' },
     { key: 'departments', label: tHr('departments'), href: '/hr/departments' },
     { key: 'positions', label: tHr('positions'), href: '/hr/positions' },

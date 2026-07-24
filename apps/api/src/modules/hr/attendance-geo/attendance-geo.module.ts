@@ -10,6 +10,8 @@ import { HrDavomatReportService } from './davomat-report.service.js';
 import { HrDavomatStatusService } from './davomat-status.service.js';
 import { HrEmployeeScheduleController } from './employee-schedule.controller.js';
 import { HrEmployeeScheduleService } from './employee-schedule.service.js';
+import { HrMonitoringController } from './monitoring.controller.js';
+import { HrMonitoringService } from './monitoring.service.js';
 import { HrPingIngestService } from './ping-ingest.service.js';
 import { HrDavomatPingController } from './ping.controller.js';
 import { HrWorkLocationController } from './work-location.controller.js';
@@ -29,6 +31,7 @@ import { HrWorkLocationService } from './work-location.service.js';
     HrDavomatAdminController,
     HrWorkLocationController,
     HrEmployeeScheduleController,
+    HrMonitoringController,
   ],
   providers: [
     HrPingIngestService,
@@ -37,6 +40,7 @@ import { HrWorkLocationService } from './work-location.service.js';
     HrDavomatExportService,
     HrWorkLocationService,
     HrEmployeeScheduleService,
+    HrMonitoringService,
     HrDavomatAutoCheckoutCron,
     HrDavomatPingCleanupCron,
   ],
