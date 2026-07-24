@@ -345,12 +345,22 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 >   biome exit 0 · i18n PASS. ⚠️ **DEFER (spec §5.4):** multi-branch multi-select UI, foto yuklash, ism/familiya split,
 >   mamlakat-kodi, bonus quick-modal, attendance-stats ikonka (`/hr/monitoring/{id}` — Faza 6).
 >
-> **➡️ KEYINGI (Faza 5 — Boshqaruv paneli / davomat dashboard):** spec §5.3 (`dashboard`, `spec-sections/dashboard.md`).
-> `/hr` bosh sahifasini Telegram-markazlidan **davomat-markazli**ga qayta ishlash: sana tanlash + 4 KPI karta
-> (Barchasi/Ishda/Kech/Ishda emas) + "Xodimlar davomati" jadvali (Kirish/Chiqish/Qo'shimcha/Jami/Filiallar) + "Qo'lda
-> davomat yaratish" modal. **`resolveShift` dvigatelini shu yerda birinchi marta jonli ishlatamiz** (kech/qo'shimcha/jami
-> hisoblash; `HrAttendance` + `resolveShift(employee,date)`). Eski Telegram-dashboard kontenti ikkilamchi/`/hr/messages`ga
-> ko'chadi. Keyin Faza 6 (Xodimlarni kuzatish — jonli status jadvali + detal). Bu MVP davomat-yadrosining oxirgi 2 fazasi.
+> - **Faza 5 — Boshqaruv paneli (davomat dashboard)** `c5b58e6`: `resolveShift` dvigatelining **BIRINCHI jonli
+>   consumeri**. Backend `davomat-report.dashboard(date)` — cohort(opt-in) × resolveShift × `aggregateEmployeeDay` → KPI
+>   (Barchasi/Ishda/Kech/Ishda emas, mustaqil) + Xodimlar davomati (Kirish/Chiqish/Qo'shimcha/Jami/Filiallar);
+>   `GET /hr/attendance/dashboard`. Qo'lda check-in kengaytma (at/workLocationId/source=manual/lateMinutes) +
+>   `checkOutByEmployee` (atomik race-guard). FE `/hr` davomat-markazli qayta yozildi (sana + 4 KPI + jadval + qo'lda
+>   davomat modal); eski Telegram panel ikkilamchi bo'lim. **Adversarial-verify workflow (5 linza): 4/4 confirmed → FIXED**
+>   (HIGH tanaffus multi-segment double-deduct → per-segment; MED check-out null-wipe; LOW check-in TOCTOU izohlandi).
+>   Gate: +10 test · attendance 101 green · tc 0 · biome 0 · i18n PASS.
+>
+> **➡️ KEYINGI (Faza 6 — Xodimlarni kuzatish · MVP davomat-yadrosining OXIRGI fazasi):** spec §5.5
+> (`monitoring`, `spec-sections/monitoring.md`). `/hr/monitoring` jonli status jadvali: sana + status filtri, ustunlar
+> Xodim/Lavozim/Holati/Filial/Jadval; **Holati = 2 badge** (Kechikkan/Vaqtida + Ishda/Kelmagan) — `resolveShift` + o'sha
+> kungi `HrAttendance` join'idan hosil qilinadi (dashboard `aggregateEmployeeDay`/`resolveShift`ni qayta ishlat). Satr →
+> per-xodim davomat detali (`/hr/monitoring/{id}`: belgilar — vaqt/yo'nalish/GPS xarita/foto; foto schema'da yo'q → defer).
+> Mavjud GPS davomat servislarини (`davomat-status`/`davomat-report`/`HrLocationPing`) qayta ishlat. Dashboard KPI
+> kartalari shu yerga status bo'yicha deep-link qiladi. Bu tugagach **davomat-yadrosi MVP 6/6 TUGAYDI.**
 >
 > **🟡 Pre-existing debt (mening o'zgarishim EMAS):** `i18n-no-hardcoded` gate `labels/print/page.tsx` regex `/[a-zа-яё]/i`
 > ustida qizil (2026-07-23 commit'dan) — Faza scope'idan tashqari, alohida hal qilinadi.
