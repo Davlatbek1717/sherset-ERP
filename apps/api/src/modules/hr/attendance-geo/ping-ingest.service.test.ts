@@ -24,6 +24,7 @@ function makePrisma(opts: MakeOpts = {}) {
       hrAttendance: {
         findFirst: vi.fn().mockResolvedValue(null), // open record today
         create: vi.fn().mockResolvedValue({
+          id: 'att-new',
           checkInTime: new Date(),
           checkOutTime: null,
           lateMinutes: 10,
@@ -47,7 +48,7 @@ afterEach(() => vi.useRealTimers());
 describe('HrPingIngestService.ingest', () => {
   it('rejects accuracy>100 without persisting', async () => {
     const prisma = makePrisma();
-    const svc = new HrPingIngestService(prisma as never);
+    const svc = new HrPingIngestService(prisma as never, { emit: vi.fn() } as never);
     const r = await svc.ingest('acc', 'emp', { lat: 41.311, lng: 69.24, accuracy: 250 });
     expect(r).toMatchObject({ accepted: false, reason: 'accuracy' });
     expect(prisma.client.hrLocationPing.create).not.toHaveBeenCalled();
@@ -55,7 +56,7 @@ describe('HrPingIngestService.ingest', () => {
 
   it('benign when not opted in', async () => {
     const prisma = makePrisma({ attendanceOptIn: false });
-    const svc = new HrPingIngestService(prisma as never);
+    const svc = new HrPingIngestService(prisma as never, { emit: vi.fn() } as never);
     const r = await svc.ingest('acc', 'emp', INSIDE);
     expect(r).toMatchObject({ accepted: false, reason: 'not_opted_in' });
     expect(prisma.client.hrLocationPing.create).not.toHaveBeenCalled();
@@ -63,7 +64,7 @@ describe('HrPingIngestService.ingest', () => {
 
   it('benign when no work-location assigned', async () => {
     const prisma = makePrisma({ workLocationId: null });
-    const svc = new HrPingIngestService(prisma as never);
+    const svc = new HrPingIngestService(prisma as never, { emit: vi.fn() } as never);
     const r = await svc.ingest('acc', 'emp', INSIDE);
     expect(r).toMatchObject({ accepted: false, reason: 'no_location' });
   });
@@ -77,7 +78,8 @@ describe('HrPingIngestService.ingest', () => {
       { inside: true, createdAt: new Date('2026-07-27T09:10:00+05:00') },
       { inside: true, createdAt: new Date('2026-07-27T09:09:00+05:00') },
     ]);
-    const svc = new HrPingIngestService(prisma as never);
+    const emitter = { emit: vi.fn() };
+    const svc = new HrPingIngestService(prisma as never, emitter as never);
     const r = await svc.ingest('acc', 'emp', INSIDE);
 
     expect(r.decision).toBe('KELDI');
@@ -88,6 +90,16 @@ describe('HrPingIngestService.ingest', () => {
     expect(createArg.data.source).toBe('auto_gps');
     expect(createArg.data.lateMinutes).toBe(10);
     expect(createArg.data.checkInLat).toBe(INSIDE.lat);
+    // Auto-GPS check-in emits the domain event (director notifier / auto-fine).
+    expect(emitter.emit).toHaveBeenCalledWith(
+      'hr.attendance.checked_in',
+      expect.objectContaining({
+        accountId: 'acc',
+        employeeId: 'emp',
+        attendanceId: 'att-new',
+        lateMinutes: 10,
+      }),
+    );
   });
 
   it('closes open record on KETDI via atomic updateMany', async () => {
@@ -106,7 +118,8 @@ describe('HrPingIngestService.ingest', () => {
       { inside: false, createdAt: new Date('2026-07-27T18:25:00+05:00') },
       { inside: true, createdAt: new Date('2026-07-27T18:10:00+05:00') },
     ]);
-    const svc = new HrPingIngestService(prisma as never);
+    const emitter = { emit: vi.fn() };
+    const svc = new HrPingIngestService(prisma as never, emitter as never);
     const r = await svc.ingest('acc', 'emp', OUTSIDE);
 
     expect(r.decision).toBe('KETDI');
@@ -117,6 +130,11 @@ describe('HrPingIngestService.ingest', () => {
     };
     expect(updArg.where).toMatchObject({ id: 'att1', checkOutTime: null });
     expect(updArg.data.checkOutTime).toBeInstanceOf(Date);
+    // Auto-GPS check-out emits the domain event only when the atomic close won.
+    expect(emitter.emit).toHaveBeenCalledWith(
+      'hr.attendance.checked_out',
+      expect.objectContaining({ accountId: 'acc', employeeId: 'emp', attendanceId: 'att1' }),
+    );
   });
 });
 
@@ -125,14 +143,20 @@ describe('HrPingIngestService.manualCheckIn (instant button)', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-07-27T09:10:00+05:00'));
     const prisma = makePrisma();
-    const r = await new HrPingIngestService(prisma as never).manualCheckIn('acc', 'emp', INSIDE);
+    const r = await new HrPingIngestService(
+      prisma as never,
+      { emit: vi.fn() } as never,
+    ).manualCheckIn('acc', 'emp', INSIDE);
     expect(r).toMatchObject({ ok: true, reason: null, status: 'at_work' });
     expect(prisma.client.hrAttendance.create).toHaveBeenCalled();
   });
 
   it('rejects when outside the geofence', async () => {
     const prisma = makePrisma();
-    const r = await new HrPingIngestService(prisma as never).manualCheckIn('acc', 'emp', OUTSIDE);
+    const r = await new HrPingIngestService(
+      prisma as never,
+      { emit: vi.fn() } as never,
+    ).manualCheckIn('acc', 'emp', OUTSIDE);
     expect(r).toMatchObject({ ok: false, reason: 'outside' });
     expect(prisma.client.hrAttendance.create).not.toHaveBeenCalled();
   });
@@ -143,14 +167,20 @@ describe('HrPingIngestService.manualCheckIn (instant button)', () => {
       checkInTime: new Date('2026-07-27T09:00:00+05:00'),
       lateMinutes: 5,
     });
-    const r = await new HrPingIngestService(prisma as never).manualCheckIn('acc', 'emp', INSIDE);
+    const r = await new HrPingIngestService(
+      prisma as never,
+      { emit: vi.fn() } as never,
+    ).manualCheckIn('acc', 'emp', INSIDE);
     expect(r).toMatchObject({ ok: true, reason: 'already_open', status: 'at_work' });
     expect(prisma.client.hrAttendance.create).not.toHaveBeenCalled();
   });
 
   it('benign when not opted in', async () => {
     const prisma = makePrisma({ attendanceOptIn: false });
-    const r = await new HrPingIngestService(prisma as never).manualCheckIn('acc', 'emp', INSIDE);
+    const r = await new HrPingIngestService(
+      prisma as never,
+      { emit: vi.fn() } as never,
+    ).manualCheckIn('acc', 'emp', INSIDE);
     expect(r).toMatchObject({ ok: false, reason: 'not_opted_in' });
   });
 });
@@ -163,7 +193,10 @@ describe('HrPingIngestService.manualCheckOut (instant button)', () => {
       checkInTime: new Date('2026-07-27T09:00:00+05:00'),
       lateMinutes: 0,
     });
-    const r = await new HrPingIngestService(prisma as never).manualCheckOut('acc', 'emp', OUTSIDE);
+    const r = await new HrPingIngestService(
+      prisma as never,
+      { emit: vi.fn() } as never,
+    ).manualCheckOut('acc', 'emp', OUTSIDE);
     expect(r).toMatchObject({ ok: true, reason: null, status: 'left' });
     const updArg = prisma.client.hrAttendance.updateMany.mock.calls[0]?.[0] as {
       where: { id: string; checkOutTime: null };
@@ -173,7 +206,10 @@ describe('HrPingIngestService.manualCheckOut (instant button)', () => {
 
   it('errors when no open record exists', async () => {
     const prisma = makePrisma();
-    const r = await new HrPingIngestService(prisma as never).manualCheckOut('acc', 'emp', INSIDE);
+    const r = await new HrPingIngestService(
+      prisma as never,
+      { emit: vi.fn() } as never,
+    ).manualCheckOut('acc', 'emp', INSIDE);
     expect(r).toMatchObject({ ok: false, reason: 'no_open_record' });
   });
 });

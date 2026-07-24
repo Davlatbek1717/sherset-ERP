@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { PrismaModule } from '../../../prisma/prisma.module.js';
 import { AuthModule } from '../../auth/auth.module.js';
 import { HrAuthModule } from '../hr-auth/hr-auth.module.js';
+import { HrEventsModule } from '../hr-events/hr-events.module.js';
 import { HrDavomatAdminController } from './davomat-admin.controller.js';
 import { HrDavomatAutoCheckoutCron } from './davomat-autocheckout.cron.js';
 import { HrDavomatExportService } from './davomat-export.service.js';
@@ -25,7 +26,7 @@ import { HrWorkLocationService } from './work-location.service.js';
  * TZ: docs/superpowers/specs/2026-07-23-hr-gps-attendance-design.md
  */
 @Module({
-  imports: [PrismaModule, AuthModule, HrAuthModule],
+  imports: [PrismaModule, AuthModule, HrAuthModule, HrEventsModule],
   controllers: [
     HrDavomatPingController,
     HrDavomatAdminController,

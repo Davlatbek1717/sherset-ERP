@@ -1,5 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../../prisma/prisma.service.js';
+import { HR_EVENT } from '../hr-shared/hr-events.types.js';
 import { HR_TZ, startOfLocalDay, tashkentWeekday } from '../hr-shared/tz.util.js';
 import type { PingInput } from './attendance-geo.schema.js';
 import {
@@ -64,7 +66,10 @@ const manualBenign = (reason: ManualMarkResult['reason']): ManualMarkResult => (
  */
 @Injectable()
 export class HrPingIngestService {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(EventEmitter2) private readonly events: EventEmitter2,
+  ) {}
 
   async ingest(accountId: string, employeeId: string, dto: PingInput): Promise<PingResult> {
     // 1. Opt-in + assigned work-location gate (benign — never 500).
@@ -165,12 +170,13 @@ export class HrPingIngestService {
           workLocationId: emp.workLocationId,
           lateMinutes,
         },
-        select: { checkInTime: true, checkOutTime: true, lateMinutes: true },
+        select: { id: true, checkInTime: true, checkOutTime: true, lateMinutes: true },
       });
       attendance = created;
+      this.emitCheckedIn(accountId, created.id, employeeId, now, lateMinutes);
     } else if (decision === 'KETDI' && openRecord) {
       // Atomic close — only one worker wins the race (mirror hr-deadline-expire).
-      await this.prisma.client.hrAttendance.updateMany({
+      const closed = await this.prisma.client.hrAttendance.updateMany({
         where: { id: openRecord.id, checkOutTime: null },
         data: { checkOutTime: now, checkOutLat: dto.lat, checkOutLng: dto.lng },
       });
@@ -179,6 +185,11 @@ export class HrPingIngestService {
         checkOutTime: now,
         lateMinutes: openRecord.lateMinutes,
       };
+      // Only emit if this worker actually won the atomic close (count>0),
+      // so a lost race does not double-notify the director.
+      if (closed.count > 0) {
+        this.emitCheckedOut(accountId, openRecord.id, employeeId, now);
+      }
     }
 
     const status: DavomatLiveStatus = attendance
@@ -271,8 +282,9 @@ export class HrPingIngestService {
         workLocationId: emp.workLocationId,
         lateMinutes,
       },
-      select: { checkInTime: true, checkOutTime: true, lateMinutes: true },
+      select: { id: true, checkInTime: true, checkOutTime: true, lateMinutes: true },
     });
+    this.emitCheckedIn(accountId, created.id, employeeId, now, lateMinutes);
 
     return { ok: true, reason: null, status: 'at_work', attendance: created };
   }
@@ -304,10 +316,13 @@ export class HrPingIngestService {
     });
     if (!openRecord) return manualBenign('no_open_record');
 
-    await this.prisma.client.hrAttendance.updateMany({
+    const closed = await this.prisma.client.hrAttendance.updateMany({
       where: { id: openRecord.id, checkOutTime: null },
       data: { checkOutTime: now, checkOutLat: dto.lat, checkOutLng: dto.lng },
     });
+    if (closed.count > 0) {
+      this.emitCheckedOut(accountId, openRecord.id, employeeId, now);
+    }
 
     return {
       ok: true,
@@ -319,5 +334,36 @@ export class HrPingIngestService {
         lateMinutes: openRecord.lateMinutes,
       },
     };
+  }
+
+  /** Out-of-band domain event → director Telegram notifier + auto-fine. */
+  private emitCheckedIn(
+    accountId: string,
+    attendanceId: string,
+    employeeId: string,
+    at: Date,
+    lateMinutes: number,
+  ): void {
+    this.events.emit(HR_EVENT.HR_ATTENDANCE_CHECKED_IN, {
+      accountId,
+      attendanceId,
+      employeeId,
+      at,
+      lateMinutes,
+    });
+  }
+
+  private emitCheckedOut(
+    accountId: string,
+    attendanceId: string,
+    employeeId: string,
+    at: Date,
+  ): void {
+    this.events.emit(HR_EVENT.HR_ATTENDANCE_CHECKED_OUT, {
+      accountId,
+      attendanceId,
+      employeeId,
+      at,
+    });
   }
 }
