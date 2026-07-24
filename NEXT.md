@@ -354,13 +354,25 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 >   (HIGH tanaffus multi-segment double-deduct → per-segment; MED check-out null-wipe; LOW check-in TOCTOU izohlandi).
 >   Gate: +10 test · attendance 101 green · tc 0 · biome 0 · i18n PASS.
 >
-> **➡️ KEYINGI (Faza 6 — Xodimlarni kuzatish · MVP davomat-yadrosining OXIRGI fazasi):** spec §5.5
-> (`monitoring`, `spec-sections/monitoring.md`). `/hr/monitoring` jonli status jadvali: sana + status filtri, ustunlar
-> Xodim/Lavozim/Holati/Filial/Jadval; **Holati = 2 badge** (Kechikkan/Vaqtida + Ishda/Kelmagan) — `resolveShift` + o'sha
-> kungi `HrAttendance` join'idan hosil qilinadi (dashboard `aggregateEmployeeDay`/`resolveShift`ni qayta ishlat). Satr →
-> per-xodim davomat detali (`/hr/monitoring/{id}`: belgilar — vaqt/yo'nalish/GPS xarita/foto; foto schema'da yo'q → defer).
-> Mavjud GPS davomat servislarини (`davomat-status`/`davomat-report`/`HrLocationPing`) qayta ishlat. Dashboard KPI
-> kartalari shu yerga status bo'yicha deep-link qiladi. Bu tugagach **davomat-yadrosi MVP 6/6 TUGAYDI.**
+> - **Faza 6 — Xodimlarni kuzatish** `5f2d3bc`: MVP oxirgi fazasi. Mavjud GPS-davomat ustiga read/derive qatlam
+>   (yangi model YO'Q). `monitoring.service` daily() (cohort ∪ record-only × resolveShift × resolveDayRow → 2 badge:
+>   Vaqtida/Kechikkan + Ishda/Ketgan/Kelmagan/Dam-olish) + marks() (expandMarks entry/exit+GPS). FE `/hr/monitoring`
+>   (sana+status filtr) + `/hr/monitoring/[id]` (belgilar, OSM xarita). Dashboard KPI deep-link. Badge: ontime +
+>   absent→destructive. **Adversarial-verify: 2/2 confirmed→fixed** (HIGH daily() nomli HrSchedule'ni e'tiborsiz
+>   qoldirar edi → resolveShift+SCHEDULE_SELECT; MED dashboard atWork o'tgan-kun ochiq yozuv → isAtWork=hasOpen&&isToday).
+>   Gate: +14 test · attendance-geo 104 green · tc 0 · biome 0 · i18n PASS.
+>
+> **🎉 DAVOMAT-YADROSI MVP 6/6 TUGADI** (spec/model/bo'lim-lavozim/jadval-dvigatel/xodimlar/dashboard/kuzatish). Barcha
+> fazalar **Phase-1** (strukturaviy, gate-yashil, adversarial-verify bilan; **browser-smoke YO'Q**).
+>
+> **➡️ KEYINGI (tanlov — foydalanuvchi yo'naltiradi):**
+> 1. **Phase-2 browser-QA** (tavsiya): `pnpm dev` (DB 5432 climart_adopt sinxron) + Playwright bilan davomat-yadrosini
+>    real brauzerda tekshirish (KPI/jadval/modal/filtr/drill/deep-link/xarita). `seed:hr` bilan test-data.
+> 2. **Keyingi feature fazalari** (spec §2 OUT ro'yxati): Jarimalar (tiered) · Ish-haqi tarif+hisoblash · Ish-haqi
+>    to'lovlari jurnali · Hisobotlar (oylik statistika+eksport) · Qo'shimcha-ish arizalari (approve/reject) · Bayramlar ·
+>    Kiosk/Terminal/PIN · punch-photo (schema kolonka + PWA kamera). Har biri alohida spec/faza.
+> 3. **resolveShift GPS-consumer refactor** (Faza 3 defer): ping-ingest/autocheckout-cron/monthly-report'ni dvigatelga
+>    ko'chirish (nomli jadvalli xodimlar uchun jonli GPS-davomat kech/smena'ni to'g'ri hisoblasin).
 >
 > **🟡 Pre-existing debt (mening o'zgarishim EMAS):** `i18n-no-hardcoded` gate `labels/print/page.tsx` regex `/[a-zа-яё]/i`
 > ustida qizil (2026-07-23 commit'dan) — Faza scope'idan tashqari, alohida hal qilinadi.
