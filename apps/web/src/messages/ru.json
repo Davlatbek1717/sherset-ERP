@@ -1034,7 +1034,8 @@
       "reports": "Отчёты",
       "settings": "Настройки",
       "departments": "Отделы",
-      "positions": "Должности"
+      "positions": "Должности",
+      "schedules": "Графики работы"
     }
   },
   "counterparty_activity": {
@@ -7569,6 +7570,40 @@
       "not_found": "Должность не найдена",
       "save": "Сохранить",
       "cancel": "Отмена"
+    },
+    "hrSchedules": {
+      "title": "Графики работы",
+      "subtitle": "Шаблоны рабочих графиков",
+      "create_button": "Новый график",
+      "col_name": "Название",
+      "col_type": "Тип",
+      "col_start_date": "Дата начала",
+      "col_cycle": "Цикл",
+      "col_actions": "Действия",
+      "type_flexible": "Гибкий",
+      "type_free": "Свободный",
+      "name_placeholder": "Введите название графика",
+      "calc_overtime": "Учитывать переработку",
+      "extended_work": "Продлённое рабочее время",
+      "hours_suffix": "ч",
+      "flex_details": "Детали гибкого графика",
+      "day_n": "День {n}",
+      "is_workday": "Рабочий день",
+      "field_start": "Начало",
+      "field_end": "Конец",
+      "field_break_start": "Начало перерыва",
+      "field_break_end": "Конец перерыва",
+      "delete_confirm": "Удалить график?",
+      "empty": "Графиков пока нет",
+      "create_title": "Новый график",
+      "edit_title": "Редактирование графика",
+      "view_title": "Просмотр графика",
+      "close": "Закрыть",
+      "save": "Сохранить",
+      "cancel": "Отмена",
+      "pagination": "{from} – {to} из {total}",
+      "prev": "Предыдущая",
+      "next": "Следующая"
     }
   },
   "print_entity": {

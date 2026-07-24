@@ -16,6 +16,7 @@ import { HrPositionModule } from './hr-position/hr-position.module.js';
 import { HrReportsModule } from './hr-reports/hr-reports.module.js';
 import { HrRoleModule } from './hr-role/hr-role.module.js';
 import { HrSalaryModule } from './hr-salary/hr-salary.module.js';
+import { HrScheduleModule } from './hr-schedule/hr-schedule.module.js';
 import { HrSchedulerModule } from './hr-scheduler/hr-scheduler.module.js';
 import { HrSettingsModule } from './hr-settings/hr-settings.module.js';
 import { HrActivityInterceptor } from './hr-shared/hr-activity.interceptor.js';
@@ -56,6 +57,7 @@ import { HrWebsocketModule } from './hr-websocket/hr-websocket.module.js';
     HrRoleModule,
     HrDepartmentModule,
     HrPositionModule,
+    HrScheduleModule,
     HrTaskTemplateModule,
     HrTaskReviewModule,
     HrTaskSendModule,

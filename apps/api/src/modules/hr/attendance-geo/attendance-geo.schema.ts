@@ -37,6 +37,10 @@ export const ScheduleWeekSchema = z
 export const AttendanceConfigSchema = z.object({
   workLocationId: z.string().uuid().nullable(),
   attendanceOptIn: z.boolean(),
+  // Named-schedule assignment (TimePay Jadval). Optional so existing callers
+  // that only set branch/opt-in leave it untouched; null clears it (→ weekday
+  // fallback in resolveShift).
+  scheduleId: z.string().uuid().nullable().optional(),
 });
 
 export const MonthlyReportFilterSchema = z.object({

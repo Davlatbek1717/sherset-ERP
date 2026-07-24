@@ -59,11 +59,28 @@ export class HrEmployeeScheduleService {
       });
       if (!loc) throw new BadRequestException('Filial topilmadi');
     }
+    // Named-schedule assignment (optional): validate ownership when a non-null
+    // id is given; only touch the column when the field is present in the body.
+    if (input.scheduleId) {
+      const sched = await this.prisma.client.hrSchedule.findFirst({
+        where: { id: input.scheduleId, accountId },
+        select: { id: true },
+      });
+      if (!sched) throw new BadRequestException('Jadval topilmadi');
+    }
     await this.prisma.client.employee.updateMany({
       where: { id: employeeId, accountId },
-      data: { workLocationId: input.workLocationId, attendanceOptIn: input.attendanceOptIn },
+      data: {
+        workLocationId: input.workLocationId,
+        attendanceOptIn: input.attendanceOptIn,
+        ...(input.scheduleId !== undefined ? { scheduleId: input.scheduleId } : {}),
+      },
     });
-    return { workLocationId: input.workLocationId, attendanceOptIn: input.attendanceOptIn };
+    return {
+      workLocationId: input.workLocationId,
+      attendanceOptIn: input.attendanceOptIn,
+      ...(input.scheduleId !== undefined ? { scheduleId: input.scheduleId } : {}),
+    };
   }
 
   private async assertEmployee(accountId: string, employeeId: string) {

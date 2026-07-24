@@ -409,6 +409,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     { key: 'employees', label: tHr('employees'), href: '/hr/employees' },
     { key: 'departments', label: tHr('departments'), href: '/hr/departments' },
     { key: 'positions', label: tHr('positions'), href: '/hr/positions' },
+    { key: 'schedules', label: tHr('schedules'), href: '/hr/schedules' },
     { key: 'attendance', label: tHr('attendance'), href: '/hr/attendance' },
     { key: 'tasks', label: tHr('tasks'), href: '/hr/tasks' },
     { key: 'review', label: tHr('review'), href: '/hr/review' },

@@ -187,6 +187,74 @@ export const hrPositionApi = {
   remove: (id: string) => api.delete<{ ok: true }>(`/hr/positions/${id}`),
 };
 
+// ─── HrSchedule (Ish jadvali) API ──────────────────────────────────────
+
+export type HrScheduleType = 'flexible' | 'free';
+
+export interface HrScheduleDay {
+  dayIndex: number;
+  isWorkday: boolean;
+  startTime: string | null;
+  endTime: string | null;
+  breakStart: string | null;
+  breakEnd: string | null;
+}
+
+export interface HrScheduleRow {
+  id: string;
+  name: string;
+  type: HrScheduleType;
+  startDate: string; // "yyyy-MM-dd"
+  cycleDays: number;
+  calcOvertime: boolean;
+  extendedWorkMin: number;
+  archived: boolean;
+  assignedCount: number;
+}
+
+export interface HrScheduleDetail extends HrScheduleRow {
+  days: HrScheduleDay[];
+}
+
+export interface HrScheduleListResult {
+  rows: HrScheduleRow[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export interface HrScheduleInput {
+  name: string;
+  type: HrScheduleType;
+  startDate: string;
+  cycleDays: number;
+  calcOvertime: boolean;
+  extendedWorkMin: number;
+  days: HrScheduleDay[];
+}
+
+export interface HrScheduleFilter {
+  search?: string;
+  type?: HrScheduleType;
+  archived?: boolean;
+  page?: number;
+  limit?: number;
+}
+
+// Named schedule-TEMPLATE catalog (Jadvallar). Distinct from `hrScheduleApi`
+// below, which is the per-employee WEEKLY schedule + attendance-config client.
+export const hrScheduleTemplateApi = {
+  list: (filter: HrScheduleFilter = {}) =>
+    api.get<HrScheduleListResult>(
+      `/hr/schedules${toQueryString(filter as Record<string, unknown>)}`,
+    ),
+  findOne: (id: string) => api.get<HrScheduleDetail>(`/hr/schedules/${id}`),
+  create: (data: HrScheduleInput) => api.post<HrScheduleDetail>('/hr/schedules', data),
+  update: (id: string, data: HrScheduleInput) =>
+    api.put<HrScheduleDetail>(`/hr/schedules/${id}`, data),
+  remove: (id: string) => api.delete<{ ok: true }>(`/hr/schedules/${id}`),
+};
+
 // ─── HrEmployeePermission API ──────────────────────────────────────────
 
 export const hrPermissionApi = {

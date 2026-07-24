@@ -1034,7 +1034,8 @@
       "reports": "Hisobotlar",
       "settings": "Sozlamalar",
       "departments": "Bo'limlar",
-      "positions": "Lavozimlar"
+      "positions": "Lavozimlar",
+      "schedules": "Ish jadvallari"
     }
   },
   "counterparty_activity": {
@@ -7570,6 +7571,40 @@
       "not_found": "Lavozim topilmadi",
       "save": "Saqlash",
       "cancel": "Bekor qilish"
+    },
+    "hrSchedules": {
+      "title": "Ish jadvallari",
+      "subtitle": "Ish jadvali shablonlari",
+      "create_button": "Yangi jadval",
+      "col_name": "Nomi",
+      "col_type": "Turi",
+      "col_start_date": "Boshlanish sanasi",
+      "col_cycle": "Sikl",
+      "col_actions": "Amallar",
+      "type_flexible": "Moslashuvchan",
+      "type_free": "Erkin",
+      "name_placeholder": "Jadval nomini kiriting",
+      "calc_overtime": "Qo'shimcha ish vaqtini hisoblash",
+      "extended_work": "Uzaytirilgan ish vaqti",
+      "hours_suffix": "soat",
+      "flex_details": "Moslashuvchan jadval tafsilotlari",
+      "day_n": "Kun {n}",
+      "is_workday": "Ish kuni",
+      "field_start": "Boshlanish vaqti",
+      "field_end": "Tugash vaqti",
+      "field_break_start": "Tanaffus boshlanishi",
+      "field_break_end": "Tanaffus tugashi",
+      "delete_confirm": "Jadval o'chirilsinmi?",
+      "empty": "Hozircha jadval yo'q",
+      "create_title": "Yangi jadval",
+      "edit_title": "Jadvalni tahrirlash",
+      "view_title": "Jadvalni ko'rish",
+      "close": "Yopish",
+      "save": "Saqlash",
+      "cancel": "Bekor qilish",
+      "pagination": "{total} dan {from} – {to}",
+      "prev": "Oldingi",
+      "next": "Keyingi"
     }
   },
   "print_entity": {
