@@ -2246,7 +2246,17 @@
       "type_legal": "Юридическое лицо (RU)",
       "type_entrepreneur": "ИП",
       "type_individual": "Физическое лицо",
-      "sms_broadcast_button": "SMS рассылка"
+      "sms_broadcast_button": "SMS рассылка",
+      "akt_title": "Акт сверки",
+      "akt_generate": "Отправить акт сверки",
+      "akt_generating": "Формируется…",
+      "akt_sent": "Акт сверки сформирован и отправлен",
+      "akt_sent_cp": "Акт сверки также отправлен контрагенту",
+      "akt_empty": "Актов сверки пока нет",
+      "akt_download": "Скачать",
+      "akt_owes_us": "Должен вам {amt} сум",
+      "akt_we_owe": "Вы должны {amt} сум",
+      "akt_settled": "Взаиморасчёты сведены"
     },
     "counterparty_new": {
       "title": "Новый контрагент",

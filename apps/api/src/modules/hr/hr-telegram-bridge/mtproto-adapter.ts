@@ -55,6 +55,17 @@ export interface MtprotoAdapter {
   sendMessage(opts: MtprotoSendOptions): Promise<MtprotoSendResult>;
 
   /**
+   * Sends a local file as a Telegram DOCUMENT (акт-сверка .xlsx) to `toPhone`
+   * with a caption. Same slot-loop + flood discipline as `sendMessage`.
+   */
+  sendDocument(opts: {
+    accountId: string;
+    toPhone: string;
+    filePath: string;
+    caption: string;
+  }): Promise<MtprotoSendResult>;
+
+  /**
    * Dialog tarixidan bitta sahifa oladi (talab-bo'yicha backfill + catch-up,
    * 2026-07-20). FLOOD_WAIT'da `MtprotoFloodError`, boshqa xatoда plain Error.
    * Implementatsiya o'z pool/failover'ini boshqaradi (sendMessage kabi).
@@ -127,6 +138,13 @@ export class NoopMtprotoAdapter implements MtprotoAdapter {
   async sendMessage(opts: MtprotoSendOptions): Promise<MtprotoSendResult> {
     this.logger.warn(
       `NoopMtprotoAdapter — Telegram delivery NOT configured. Pretending to fail send for account=${opts.accountId} to=${opts.toPhone} (${opts.text.length} chars). Configure HR_TELEGRAM_CREDENTIALS in production.`,
+    );
+    throw new Error('mtproto_adapter_not_configured');
+  }
+
+  async sendDocument(opts: { accountId: string; toPhone: string }): Promise<MtprotoSendResult> {
+    this.logger.warn(
+      `NoopMtprotoAdapter — document send NOT configured (acc=${opts.accountId} to=${opts.toPhone}).`,
     );
     throw new Error('mtproto_adapter_not_configured');
   }

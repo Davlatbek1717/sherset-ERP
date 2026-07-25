@@ -67,6 +67,13 @@ export interface TelegramClientHandle {
   ): Promise<{ messageId: string }>;
 
   /**
+   * Sends a local file (e.g. an .xlsx акт-сверка) as a Telegram DOCUMENT to
+   * `entity`, with an optional plain-text caption. Uses gramjs sendFile with a
+   * filesystem path; forceDocument keeps spreadsheets from being image-previewed.
+   */
+  sendDocument(entity: unknown, filePath: string, caption: string): Promise<{ messageId: string }>;
+
+  /**
    * Videoni Telegram'ga BIR MARTA yuklaydi (o'zining «Saved Messages»iga) va
    * qayta ishlatiladigan hujjat-referensini qaytaradi (2026-07-20 video-tarqatma).
    * Broadcast har mijozga videoni QAYTA yuklamaydi — bir marta yuklab, shu

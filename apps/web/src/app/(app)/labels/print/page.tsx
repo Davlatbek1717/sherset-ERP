@@ -633,7 +633,8 @@ function BarcodeLabelCell({
 function textUnits(text: string): number {
   let units = 0;
   for (const ch of text) {
-    units += /[0-9]/.test(ch) ? 0.6 : /[a-zа-яё]/i.test(ch) ? 0.66 : 0.34;
+    // Latin + Cyrillic letters score wider; digits narrower (Cyrillic uses escapes).
+    units += /[0-9]/.test(ch) ? 0.6 : /[a-z\u0430-\u044f\u0451]/i.test(ch) ? 0.66 : 0.34;
   }
   return units;
 }

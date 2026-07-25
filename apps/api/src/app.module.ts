@@ -28,6 +28,7 @@ import { CounterpartyBalanceModule } from './modules/counterparty-balance/counte
 import { CounterpartyDebtNotifyModule } from './modules/counterparty-debt-notify/counterparty-debt-notify.module.js';
 import { CounterpartyGroupModule } from './modules/counterparty-group/counterparty-group.module.js';
 import { CounterpartyNoteModule } from './modules/counterparty-note/counterparty-note.module.js';
+import { CounterpartyStatementModule } from './modules/counterparty-statement/counterparty-statement.module.js';
 import { CounterpartyModule } from './modules/counterparty/counterparty.module.js';
 import { CountryModule } from './modules/country/country.module.js';
 import { CurrencyModule } from './modules/currency/currency.module.js';
@@ -163,6 +164,7 @@ import { PrismaModule } from './prisma/prisma.module.js';
     AuditLogModule,
     MoneyModule,
     CounterpartyBalanceModule,
+    CounterpartyStatementModule,
     CounterpartyDebtNotifyModule,
     CounterpartyAdjustmentModule,
     PrepaymentModule,

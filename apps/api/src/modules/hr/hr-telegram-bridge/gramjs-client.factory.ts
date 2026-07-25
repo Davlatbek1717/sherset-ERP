@@ -256,6 +256,20 @@ class GramjsClientHandle implements TelegramClientHandle {
     return { messageId: id === undefined ? '' : String(id) };
   }
 
+  async sendDocument(
+    entity: unknown,
+    filePath: string,
+    caption: string,
+  ): Promise<{ messageId: string }> {
+    const msg = await this.client.sendFile(entity as never, {
+      file: filePath,
+      caption,
+      forceDocument: true,
+    });
+    const id = (msg as { id?: number | bigint }).id;
+    return { messageId: id === undefined ? '' : String(id) };
+  }
+
   async sendCode(opts: {
     apiId: number;
     apiHash: string;

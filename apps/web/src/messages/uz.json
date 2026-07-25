@@ -2246,7 +2246,17 @@
       "type_legal": "Yuridik shaxs (RU)",
       "type_entrepreneur": "IP",
       "type_individual": "Jismoniy shaxs",
-      "sms_broadcast_button": "SMS tarqatma"
+      "sms_broadcast_button": "SMS tarqatma",
+      "akt_title": "Akt-sverka",
+      "akt_generate": "Akt-sverka yuborish",
+      "akt_generating": "Yaratilmoqda…",
+      "akt_sent": "Akt-sverka yaratildi va yuborildi",
+      "akt_sent_cp": "Akt-sverka kontragentga ham yuborildi",
+      "akt_empty": "Hali akt-sverka yo'q",
+      "akt_download": "Yuklab olish",
+      "akt_owes_us": "Sizga {amt} so'm qarzdor",
+      "akt_we_owe": "Siz {amt} so'm qarzdorsiz",
+      "akt_settled": "Hisob teng"
     },
     "counterparty_new": {
       "title": "Yangi kontragent",

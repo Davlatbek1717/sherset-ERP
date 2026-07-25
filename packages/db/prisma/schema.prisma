@@ -8720,6 +8720,9 @@ model HrTelegramOutbox {
   toSelf            Boolean   @default(false) @map("to_self")
   viaSlot           Int?      @map("via_slot")
   messageText       String    @map("message_text")
+  // Optional file to send as a Telegram document (акт-сверка .xlsx). When set,
+  // the mtproto worker uses sendFile(caption=messageText) instead of a text send.
+  attachmentPath    String?   @map("attachment_path")
   status            String    @default("pending") @db.VarChar(20)
   retryCount        Int       @default(0) @map("retry_count")
   nextRetryAt       DateTime? @map("next_retry_at") @db.Timestamptz()
@@ -8738,6 +8741,28 @@ model HrTelegramOutbox {
   @@index([accountId, status, nextRetryAt])
   @@index([accountId, counterpartyId, createdAt(sort: Desc)])
   @@map("hr_telegram_outbox")
+}
+
+/// Kontragent akt-sverka (reconciliation statement) — a generated .xlsx snapshot
+/// of a counterparty's full transaction history + final balance. Stored on disk
+/// (filePath) and served via an unguessable capability token (fileToken). Scalar
+/// FKs only (no relation navigation) to keep the Counterparty/Account models untouched.
+model CounterpartyStatement {
+  id                String    @id @default(uuid()) @db.Uuid
+  accountId         String    @map("account_id") @db.Uuid
+  counterpartyId    String    @map("counterparty_id") @db.Uuid
+  periodFrom        DateTime? @map("period_from") @db.Timestamptz()
+  periodTo          DateTime? @map("period_to") @db.Timestamptz()
+  fileToken         String    @unique @map("file_token") @db.VarChar(64)
+  filePath          String    @map("file_path")
+  fileName          String    @map("file_name") @db.VarChar(255)
+  finalBalanceMinor BigInt    @default(0) @map("final_balance_minor")
+  currency          String    @default("UZS") @db.VarChar(3)
+  createdById       String?   @map("created_by_id") @db.Uuid
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+
+  @@index([accountId, counterpartyId, createdAt(sort: Desc)])
+  @@map("counterparty_statement")
 }
 
 model HrBonusFineLog {

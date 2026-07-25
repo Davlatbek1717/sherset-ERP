@@ -242,6 +242,52 @@ export class MtprotoWorkerService implements MtprotoAdapter, OnModuleInit {
   }
 
   /**
+   * Send a local file as a Telegram DOCUMENT (акт-сверка .xlsx) — same slot-loop
+   * + flood-failover + `withTimeout` discipline as `sendMessage`.
+   */
+  async sendDocument(opts: {
+    accountId: string;
+    toPhone: string;
+    filePath: string;
+    caption: string;
+  }): Promise<MtprotoSendResult> {
+    await this.pace(opts.accountId);
+    const errors: Error[] = [];
+    for (const slot of MtprotoWorkerService.SLOTS) {
+      if (await this.accounts.isFlooded(opts.accountId, slot)) continue;
+      try {
+        const client = await this.ensureClient(opts.accountId, slot);
+        if (!client) continue;
+        const { entity } = await this.resolveEntity(client, opts.accountId, slot, opts.toPhone);
+        const result = await withTimeout(
+          client.sendDocument(entity, opts.filePath, opts.caption),
+          'sendDocument',
+        );
+        return { slot, messageId: result.messageId };
+      } catch (e) {
+        if (isGramjsFloodError(e)) {
+          const until = new Date(Date.now() + e.seconds * 1000);
+          await this.accounts.setFloodWaitUntil(opts.accountId, slot, until).catch(() => {});
+          errors.push(new MtprotoFloodError(slot, e.seconds));
+          continue;
+        }
+        errors.push(e as Error);
+        this.logger.warn(
+          `sendDocument failed slot=${slot} acc=${opts.accountId}: ${(e as Error).message}`,
+        );
+        await this.handleAuthLossIfAny(opts.accountId, slot, e);
+      }
+    }
+    const flood = errors.find((e): e is MtprotoFloodError => e instanceof MtprotoFloodError);
+    if (flood) throw flood;
+    throw new Error(
+      errors.length === 0
+        ? 'mtproto_no_active_slot'
+        : `mtproto_all_slots_failed: ${errors.map((e) => e.message).join(' | ')}`.slice(0, 500),
+    );
+  }
+
+  /**
    * Dialog tarixidan bitta sahifa oladi — `sendMessage` bilan bir xil
    * slot-loop + flood-failover + `withTimeout` intizomi (2026-07-20
    * to'liq-tarix backfill). Entity resolutsiyasi (`resolveEntity`) va

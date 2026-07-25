@@ -83,14 +83,23 @@ export class HrTelegramOutboxWorker {
       if (claim.count === 0) continue;
 
       try {
-        const result = await this.adapter.sendMessage({
-          accountId: row.accountId,
-          toPhone: row.toPhone ?? '',
-          text: row.messageText,
-          sourceEventType: row.sourceEventType,
-          toSelf: row.toSelf,
-          viaSlot: row.viaSlot ?? undefined,
-        });
+        // A row carrying an attachment (акт-сверка .xlsx) is delivered as a
+        // Telegram document; otherwise a plain text message.
+        const result = row.attachmentPath
+          ? await this.adapter.sendDocument({
+              accountId: row.accountId,
+              toPhone: row.toPhone ?? '',
+              filePath: row.attachmentPath,
+              caption: row.messageText,
+            })
+          : await this.adapter.sendMessage({
+              accountId: row.accountId,
+              toPhone: row.toPhone ?? '',
+              text: row.messageText,
+              sourceEventType: row.sourceEventType,
+              toSelf: row.toSelf,
+              viaSlot: row.viaSlot ?? undefined,
+            });
         await this.prisma.client.hrTelegramOutbox.update({
           where: { id: row.id },
           data: {
