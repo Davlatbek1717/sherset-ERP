@@ -120,10 +120,9 @@ describe('CounterpartyDebtNotifier', () => {
     const svc = new CounterpartyDebtNotifier(makePrisma({ name: 'Akme' }) as any);
     await svc.onBalanceChanged(baseEvent);
     const body = lastFetchBody(fetchMock);
-    expect(body.text).toContain('🔴 *Qarz oshdi*');
-    expect(body.text).toContain('Akmega');
-    expect(body.text).toContain("+10 000 so'm");
-    expect(body.text).toContain("Umumiy qarz: 50 000 so'm");
+    expect(body.text).toContain('📥 *Kirim* — «Akme»');
+    expect(body.text).toContain("Qarzga tovar olindi: *10 000 so'm*");
+    expect(body.text).toContain("💰 Jami: «Akme» bizga 50 000 so'm qarzdor");
   });
 
   it('onBalanceChanged: paymentIn → 🔵 counterparty-paid message', async () => {
@@ -135,7 +134,9 @@ describe('CounterpartyDebtNotifier', () => {
       deltaMinor: -2_000_000n,
       newBalanceMinor: 3_000_000n,
     });
-    expect(lastFetchBody(fetchMock).text).toContain("🔵 *Kontragent to'ladi* — Beta 20 000");
+    const t = lastFetchBody(fetchMock).text;
+    expect(t).toContain("💵 *Kontragent to'ladi* — «Beta»");
+    expect(t).toContain("To'lov: *20 000 so'm*");
   });
 
   it('onBalanceChanged: no source (reversal/rebalance) → no message', async () => {
