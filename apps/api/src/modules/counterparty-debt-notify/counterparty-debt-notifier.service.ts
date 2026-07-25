@@ -55,6 +55,10 @@ export class CounterpartyDebtNotifier {
 
   @OnEvent(HR_EVENT.COUNTERPARTY_BALANCE_CHANGED, { async: true, promisify: true })
   async onBalanceChanged(payload: CounterpartyBalanceChangedEvent): Promise<void> {
+    // Global kill-switch — set DEBT_NOTIFY_ENABLED=false during a bulk historical
+    // import so creating thousands of documents cannot spam the owner OR the real
+    // counterparties. Absent / any other value ⇒ enabled (normal operation).
+    if (process.env.DEBT_NOTIFY_ENABLED === 'false') return;
     if (!payload.source) return; // reversal / rebalance / adjustment — no alert
 
     // Shared prerequisite for both deliveries: the counterparty's name (owner

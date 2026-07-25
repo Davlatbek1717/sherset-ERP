@@ -93,6 +93,17 @@ describe('CounterpartyDebtNotifier', () => {
     process.env.DEBT_NOTIFY_BOT_TOKEN = '';
     process.env.DEBT_NOTIFY_CHAT_ID = '';
     process.env.DEBT_NOTIFY_THRESHOLD_MINOR = '';
+    process.env.DEBT_NOTIFY_ENABLED = '';
+  });
+
+  it('kill-switch: DEBT_NOTIFY_ENABLED=false → total no-op (no lookup, no fetch)', async () => {
+    process.env.DEBT_NOTIFY_ENABLED = 'false';
+    const prisma = makePrisma();
+    // biome-ignore lint/suspicious/noExplicitAny: test wiring
+    const svc = new CounterpartyDebtNotifier(prisma as any);
+    await svc.onBalanceChanged(baseEvent);
+    expect(prisma.client.counterparty.findFirst).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('sendViaBot: no-op when token/chat not configured', async () => {
