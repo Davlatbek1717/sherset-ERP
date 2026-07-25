@@ -12,7 +12,7 @@ function makeTx() {
     counterpartyBalance: {
       upsert: vi.fn().mockImplementation(async (args: (typeof upsertArgs)[number]) => {
         upsertArgs.push(args);
-        return {};
+        return { balanceMinor: args.create.balanceMinor };
       }),
     },
   };
@@ -20,7 +20,8 @@ function makeTx() {
 }
 
 function svc() {
-  return new CounterpartyBalanceService({} as never);
+  const events = { emit: vi.fn() };
+  return new CounterpartyBalanceService({} as never, events as never);
 }
 
 describe('CounterpartyBalanceService.applyDelta', () => {

@@ -25,6 +25,7 @@ import { ContactPersonModule } from './modules/contact-person/contact-person.mod
 import { ContractModule } from './modules/contract/contract.module.js';
 import { CounterpartyAdjustmentModule } from './modules/counterparty-adjustment/counterparty-adjustment.module.js';
 import { CounterpartyBalanceModule } from './modules/counterparty-balance/counterparty-balance.module.js';
+import { CounterpartyDebtNotifyModule } from './modules/counterparty-debt-notify/counterparty-debt-notify.module.js';
 import { CounterpartyGroupModule } from './modules/counterparty-group/counterparty-group.module.js';
 import { CounterpartyNoteModule } from './modules/counterparty-note/counterparty-note.module.js';
 import { CounterpartyModule } from './modules/counterparty/counterparty.module.js';
@@ -162,6 +163,7 @@ import { PrismaModule } from './prisma/prisma.module.js';
     AuditLogModule,
     MoneyModule,
     CounterpartyBalanceModule,
+    CounterpartyDebtNotifyModule,
     CounterpartyAdjustmentModule,
     PrepaymentModule,
     PrepaymentReturnModule,

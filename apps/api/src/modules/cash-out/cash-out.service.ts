@@ -484,6 +484,7 @@ export class CashOutService {
         existing.agentId,
         existing.currency,
         existing.sumMinor,
+        { source: 'cashOut', docType: 'cashOut', docId: id },
       );
 
       for (const op of existing.operations) {

@@ -1209,6 +1209,7 @@ export class InvoiceOutService {
         existing.agentId,
         existing.currency,
         existing.sumMinor,
+        { source: 'invoiceOut', docType: 'invoiceOut', docId: id },
       );
 
       if (existing.customerOrderId) {

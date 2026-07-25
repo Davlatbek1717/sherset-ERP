@@ -1110,6 +1110,7 @@ export class InvoiceInService {
         existing.agentId,
         existing.currency,
         -existing.sumMinor,
+        { source: 'invoiceIn', docType: 'invoiceIn', docId: id },
       );
 
       if (existing.purchaseOrderId) {

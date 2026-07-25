@@ -639,6 +639,7 @@ export class PaymentInService {
         existing.agentId,
         existing.currency,
         -existing.sumMinor,
+        { source: 'paymentIn', docType: 'paymentIn', docId: id },
       );
 
       // Apply each allocation to its target (invoice-out OR customer-order).

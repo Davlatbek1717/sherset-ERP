@@ -638,6 +638,7 @@ export class PaymentOutService {
         existing.agentId,
         existing.currency,
         existing.sumMinor,
+        { source: 'paymentOut', docType: 'paymentOut', docId: id },
       );
 
       // Apply each allocation to its target (InvoiceIn or direct PO advance).

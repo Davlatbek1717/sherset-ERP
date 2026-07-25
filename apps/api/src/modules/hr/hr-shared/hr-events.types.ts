@@ -16,6 +16,8 @@ export const HR_EVENT = {
   // Attendance (keldi/ketdi) — drives the director Telegram notifier + auto-fine.
   HR_ATTENDANCE_CHECKED_IN: 'hr.attendance.checked_in',
   HR_ATTENDANCE_CHECKED_OUT: 'hr.attendance.checked_out',
+  // Counterparty balance moved (debt/payment) — drives the owner debt notifier.
+  COUNTERPARTY_BALANCE_CHANGED: 'hr.event.counterparty.balanceChanged',
 } as const;
 
 export type HrEventName = (typeof HR_EVENT)[keyof typeof HR_EVENT];
@@ -134,6 +136,35 @@ export interface HrAttendanceCheckedOutEvent {
   at: Date;
 }
 
+/**
+ * Which document/operation moved the counterparty balance. Only the "real"
+ * debt/payment postings thread a source through applyDelta's optional `meta`;
+ * reversals (unpost/cancel), rebalances and internal adjustments leave it
+ * `undefined`, so the owner notifier can no-op on them.
+ */
+export type CounterpartyBalanceChangeSource =
+  | 'invoiceIn'
+  | 'invoiceOut'
+  | 'paymentIn'
+  | 'paymentOut'
+  | 'cashIn'
+  | 'cashOut';
+
+export interface CounterpartyBalanceChangedEvent {
+  accountId: string;
+  counterpartyId: string;
+  /** ISO-3 currency of the moved balance row (UZS/USD/…). */
+  currency: string;
+  /** Pre-signed delta applied: positive = counterparty owes us more. */
+  deltaMinor: bigint;
+  /** Balance AFTER the delta was applied (the upserted row value). */
+  newBalanceMinor: bigint;
+  /** Undefined for reversals / internal rebalances (notifier skips those). */
+  source?: CounterpartyBalanceChangeSource;
+  docType?: string;
+  docId?: string;
+}
+
 export type HrEventPayloadMap = {
   [HR_EVENT.DEMAND_POSTED]: DemandPostedEvent;
   [HR_EVENT.PAYMENT_IN_POSTED]: PaymentInPostedEvent;
@@ -147,4 +178,5 @@ export type HrEventPayloadMap = {
   [HR_EVENT.HR_TASK_LOG_DEADLINE_EXPIRED]: HrTaskLogDeadlineExpiredEvent;
   [HR_EVENT.HR_ATTENDANCE_CHECKED_IN]: HrAttendanceCheckedInEvent;
   [HR_EVENT.HR_ATTENDANCE_CHECKED_OUT]: HrAttendanceCheckedOutEvent;
+  [HR_EVENT.COUNTERPARTY_BALANCE_CHANGED]: CounterpartyBalanceChangedEvent;
 };

@@ -577,6 +577,7 @@ export class CashInService {
         existing.agentId,
         existing.currency,
         -existing.sumMinor,
+        { source: 'cashIn', docType: 'cashIn', docId: id },
       );
 
       // Apply each invoice allocation.

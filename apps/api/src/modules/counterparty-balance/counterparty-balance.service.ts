@@ -1,6 +1,25 @@
 import type { Prisma } from '@moysklad/db';
-import { BadRequestException, Inject, Injectable } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import {
+  type CounterpartyBalanceChangeSource,
+  type CounterpartyBalanceChangedEvent,
+  HR_EVENT,
+} from '../hr/hr-shared/hr-events.types.js';
+
+/**
+ * Optional per-call metadata so applyDelta can emit a domain event that carries
+ * WHICH document moved the balance. applyDelta itself has no knowledge of the
+ * source — each caller passes it. Kept optional so the ~40 existing call sites
+ * (unpost/cancel/rebalance/adjustment/prepayment) compile unchanged and emit
+ * with `source: undefined` → the owner debt notifier no-ops on them.
+ */
+export interface ApplyDeltaMeta {
+  source?: CounterpartyBalanceChangeSource;
+  docType?: string;
+  docId?: string;
+}
 
 /**
  * Sign convention mirrors moysklad.uz's "Баланс":
@@ -20,12 +39,25 @@ import { PrismaService } from '../../prisma/prisma.service.js';
  */
 @Injectable()
 export class CounterpartyBalanceService {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(CounterpartyBalanceService.name);
+
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(EventEmitter2) private readonly events: EventEmitter2,
+  ) {}
 
   /**
    * Atomically adjust a counterparty×currency balance. Must be called from
    * within the caller's $transaction. Uses an upsert so the row is created
    * on first touch.
+   *
+   * After the upsert we emit a COUNTERPARTY_BALANCE_CHANGED domain event
+   * carrying the delta + the NEW balance (read back from the upsert). The emit
+   * is wrapped in try/catch and listeners are strictly out-of-band
+   * ({ async, promisify }), so a failing/throwing listener can NEVER break the
+   * caller's transaction. NOTE: this runs pre-commit (inside the caller's tx);
+   * on a later rollback the notification is a harmless phantom — the spec
+   * explicitly permits "event commit-dan keyin, yoki try/catch".
    */
   async applyDelta(
     tx: Prisma.TransactionClient,
@@ -33,12 +65,13 @@ export class CounterpartyBalanceService {
     counterpartyId: string,
     currency: string,
     deltaMinor: bigint,
+    meta?: ApplyDeltaMeta,
   ): Promise<void> {
     if (deltaMinor === 0n) return;
     if (currency.length !== 3) {
       throw new BadRequestException(`Invalid currency code: "${currency}"`);
     }
-    await tx.counterpartyBalance.upsert({
+    const row = await tx.counterpartyBalance.upsert({
       where: {
         counterpartyId_currency: { counterpartyId, currency },
       },
@@ -51,7 +84,24 @@ export class CounterpartyBalanceService {
       update: {
         balanceMinor: { increment: deltaMinor },
       },
+      select: { balanceMinor: true },
     });
+
+    try {
+      const payload: CounterpartyBalanceChangedEvent = {
+        accountId,
+        counterpartyId,
+        currency,
+        deltaMinor,
+        newBalanceMinor: row.balanceMinor,
+        source: meta?.source,
+        docType: meta?.docType,
+        docId: meta?.docId,
+      };
+      this.events.emit(HR_EVENT.COUNTERPARTY_BALANCE_CHANGED, payload);
+    } catch (e) {
+      this.logger.warn(`balance-changed emit failed: ${(e as Error).message}`);
+    }
   }
 
   /**
