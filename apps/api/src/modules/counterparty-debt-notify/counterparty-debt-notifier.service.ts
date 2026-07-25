@@ -76,14 +76,66 @@ export class CounterpartyDebtNotifier {
     }
     if (!cp) return;
 
+    // Report header data — the source document's number + date (best-effort; a
+    // miss just omits those header parts). Shared by both deliveries.
+    const doc = await this.fetchDocMeta(payload.docType, payload.docId, payload.accountId);
+
     // Two INDEPENDENT deliveries — each self-contained so one cannot block the
     // other. Awaited sequentially (single event loop); neither can throw.
-    await this.notifyOwner(payload, cp.name);
-    await this.notifyCounterparty(payload, cp.name, cp.phone);
+    await this.notifyOwner(payload, cp.name, doc);
+    await this.notifyCounterparty(payload, cp.name, cp.phone, doc);
+  }
+
+  /**
+   * Best-effort lookup of the source document's number (`name`) + date
+   * (`moment`) for the report header, keyed by the event's docType+docId. Any
+   * miss / error ⇒ null (the message builders then omit the header parts).
+   */
+  private async fetchDocMeta(
+    docType: string | undefined,
+    docId: string | undefined,
+    accountId: string,
+  ): Promise<{ number: string; moment: Date } | null> {
+    if (!docType || !docId) return null;
+    const where = { id: docId, accountId };
+    const select = { name: true, moment: true } as const;
+    try {
+      let row: { name: string; moment: Date } | null = null;
+      switch (docType) {
+        case 'invoiceOut':
+          row = await this.prisma.client.invoiceOut.findFirst({ where, select });
+          break;
+        case 'invoiceIn':
+          row = await this.prisma.client.invoiceIn.findFirst({ where, select });
+          break;
+        case 'cashIn':
+          row = await this.prisma.client.cashIn.findFirst({ where, select });
+          break;
+        case 'cashOut':
+          row = await this.prisma.client.cashOut.findFirst({ where, select });
+          break;
+        case 'paymentIn':
+          row = await this.prisma.client.paymentIn.findFirst({ where, select });
+          break;
+        case 'paymentOut':
+          row = await this.prisma.client.paymentOut.findFirst({ where, select });
+          break;
+        default:
+          return null;
+      }
+      return row ? { number: row.name, moment: row.moment } : null;
+    } catch (e) {
+      this.logger.warn(`debt notify: doc meta lookup failed: ${(e as Error).message}`);
+      return null;
+    }
   }
 
   /** OWNER alert via the Bot API. Self-contained: never throws. */
-  private async notifyOwner(payload: CounterpartyBalanceChangedEvent, name: string): Promise<void> {
+  private async notifyOwner(
+    payload: CounterpartyBalanceChangedEvent,
+    name: string,
+    doc: { number: string; moment: Date } | null,
+  ): Promise<void> {
     try {
       if (!payload.source) return;
       const text = buildDebtMessage({
@@ -93,6 +145,8 @@ export class CounterpartyDebtNotifier {
         newBalanceMinor: payload.newBalanceMinor,
         source: payload.source,
         overThreshold: this.isOverThreshold(payload.newBalanceMinor),
+        docNumber: doc?.number,
+        docMoment: doc?.moment,
       });
       if (!text) return;
       await this.sendViaBot(text);
@@ -111,6 +165,7 @@ export class CounterpartyDebtNotifier {
     payload: CounterpartyBalanceChangedEvent,
     name: string,
     phone: string | null,
+    doc: { number: string; moment: Date } | null,
   ): Promise<void> {
     try {
       if (!payload.source) return;
@@ -128,6 +183,8 @@ export class CounterpartyDebtNotifier {
         deltaMinor: payload.deltaMinor,
         newBalanceMinor: payload.newBalanceMinor,
         source: payload.source,
+        docNumber: doc?.number,
+        docMoment: doc?.moment,
       });
       if (!text) return; // e.g. non-payment change landing on a zero balance
 

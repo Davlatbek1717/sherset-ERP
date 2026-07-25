@@ -131,8 +131,9 @@ describe('CounterpartyDebtNotifier', () => {
     const svc = new CounterpartyDebtNotifier(makePrisma({ name: 'Akme' }) as any);
     await svc.onBalanceChanged(baseEvent);
     const body = lastFetchBody(fetchMock);
-    expect(body.text).toContain('📥 *Kirim* — «Akme»');
-    expect(body.text).toContain("Qarzga tovar olindi: *10 000 so'm*");
+    expect(body.text).toContain('📄 *Kirim (xarid)*');
+    expect(body.text).toContain('👤 «Akme»');
+    expect(body.text).toContain("📥 Qarzga tovar olindi: *10 000 so'm*");
     expect(body.text).toContain("💰 Jami: «Akme» bizga 50 000 so'm qarzdor");
   });
 
@@ -146,8 +147,8 @@ describe('CounterpartyDebtNotifier', () => {
       newBalanceMinor: 3_000_000n,
     });
     const t = lastFetchBody(fetchMock).text;
-    expect(t).toContain("💵 *Kontragent to'ladi* — «Beta»");
-    expect(t).toContain("To'lov: *20 000 so'm*");
+    expect(t).toContain('👤 «Beta»');
+    expect(t).toContain("💵 Kontragent to'ladi: *20 000 so'm*");
   });
 
   it('onBalanceChanged: no source (reversal/rebalance) → no message', async () => {
@@ -234,14 +235,14 @@ describe('CounterpartyDebtNotifier', () => {
       expect(outboxCreate).toHaveBeenCalledTimes(1);
       const data = lastOutboxData(outboxCreate);
       expect(data.toPhone).toBe('+998901112233');
-      expect(data.messageText).toContain("Sherset'ga 50 000 so'm qarzingiz bor");
+      expect(data.messageText).toContain("💰 Jami qarzingiz: 50 000 so'm");
       expect(data.sourceEventType).toBe('debt.counterparty_notify');
       expect(data.sourceDocId).toBe('inv-1');
       expect(data.status).toBe('pending');
       expect(data.counterpartyId).toBe('cp-1');
     });
 
-    it('we owe them (negative balance) → enqueues "Sherset sizga … qarzdor"', async () => {
+    it('we owe them (negative balance) → enqueues "Sizga qarzimiz … tez orada to\'lanadi"', async () => {
       const { prisma, outboxCreate } = makePrismaFull({ name: 'Beta', phone: '998900000000' });
       // biome-ignore lint/suspicious/noExplicitAny: test wiring
       const svc = new CounterpartyDebtNotifier(prisma as any);
@@ -251,7 +252,7 @@ describe('CounterpartyDebtNotifier', () => {
         newBalanceMinor: -2_000_000n,
       });
       expect(lastOutboxData(outboxCreate).messageText).toContain(
-        "Sherset sizga 20 000 so'm qarzdor",
+        "💰 Sizga qarzimiz: 20 000 so'm — tez orada to'lanadi",
       );
     });
 
@@ -266,8 +267,8 @@ describe('CounterpartyDebtNotifier', () => {
         newBalanceMinor: 3_000_000n,
       });
       const text = lastOutboxData(outboxCreate).messageText;
-      expect(text).toContain("to'lovingiz qabul qilindi: 20 000 so'm");
-      expect(text).toContain("Qolgan qarz: 30 000 so'm");
+      expect(text).toContain("✅ To'lovingiz qabul qilindi: 20 000 so'm");
+      expect(text).toContain("💰 Qolgan qarzingiz: 30 000 so'm");
     });
 
     it('owner AND counterparty both enqueue for one event', async () => {

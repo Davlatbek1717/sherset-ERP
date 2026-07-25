@@ -10,18 +10,19 @@ const base: DebtMessageContext = {
   source: 'invoiceIn',
 };
 
-describe('buildDebtMessage — owner alerts (direction-explicit)', () => {
-  it("invoiceIn → 📥 Kirim, 'biz qarzdor' emas — kontragent bizga qarzdor total", () => {
+describe('buildDebtMessage — owner report (title + delta + total)', () => {
+  it('invoiceIn → 📥 Kirim; total says the counterparty owes us', () => {
     const t = buildDebtMessage({ ...base, source: 'invoiceIn' });
     expect(t).toBe(
-      "📥 *Kirim* — «Akme»\nQarzga tovar olindi: *10 000 so'm*\n💰 Jami: «Akme» bizga 50 000 so'm qarzdor",
+      "📄 *Kirim (xarid)*\n👤 «Akme»\n📥 Qarzga tovar olindi: *10 000 so'm*\n💰 Jami: «Akme» bizga 50 000 so'm qarzdor",
     );
   });
 
-  it('invoiceOut → 📤 Sotuv', () => {
+  it('invoiceOut → 📤 Sotuv title + amount + who', () => {
     const t = buildDebtMessage({ ...base, source: 'invoiceOut' });
-    expect(t).toContain('📤 *Sotuv* — «Akme»');
-    expect(t).toContain('Qarzga sotildi:');
+    expect(t).toContain('📄 *Sotuv*');
+    expect(t).toContain('👤 «Akme»');
+    expect(t).toContain('📤 Qarzga sotildi:');
   });
 
   it("paymentOut → 💸 Biz to'ladik + 'biz qarzdormiz' when balance negative", () => {
@@ -32,24 +33,39 @@ describe('buildDebtMessage — owner alerts (direction-explicit)', () => {
       newBalanceMinor: -3_000_000n,
     });
     expect(t).toBe(
-      "💸 *Biz to'ladik* — «Akme»\nTo'lov: *20 000 so'm*\n💰 Jami: biz «Akme»ga 30 000 so'm qarzdormiz",
+      "📄 *To'lov (chiqim)*\n👤 «Akme»\n💸 Biz to'ladik: *20 000 so'm*\n💰 Jami: biz «Akme»ga 30 000 so'm qarzdormiz",
     );
   });
 
   it("paymentIn → 💵 Kontragent to'ladi", () => {
     const t = buildDebtMessage({ ...base, source: 'paymentIn', newBalanceMinor: 1_000_000n });
-    expect(t).toContain("💵 *Kontragent to'ladi* — «Akme»");
+    expect(t).toContain("💵 Kontragent to'ladi:");
     expect(t).toContain("«Akme» bizga 10 000 so'm qarzdor");
   });
 
   it('cashIn / cashOut share the payment headers', () => {
-    expect(buildDebtMessage({ ...base, source: 'cashIn' })).toContain("💵 *Kontragent to'ladi*");
-    expect(buildDebtMessage({ ...base, source: 'cashOut' })).toContain("💸 *Biz to'ladik*");
+    expect(buildDebtMessage({ ...base, source: 'cashIn' })).toContain("💵 Kontragent to'ladi:");
+    expect(buildDebtMessage({ ...base, source: 'cashOut' })).toContain("💸 Biz to'ladik:");
   });
 
   it('newBalance 0 → settled total line', () => {
     const t = buildDebtMessage({ ...base, source: 'paymentIn', newBalanceMinor: 0n });
     expect(t).toContain('💰 Jami: hisob teng');
+  });
+
+  it('docNumber + docMoment → header carries date and number', () => {
+    const t = buildDebtMessage({
+      ...base,
+      source: 'invoiceOut',
+      docNumber: 'СЧ-2026-00123',
+      docMoment: new Date('2026-07-25T10:00:00Z'),
+    });
+    expect(t).toContain('📄 *Sotuv* — 25.07.2026 · №СЧ-2026-00123');
+  });
+
+  it('missing docNumber/docMoment → header omits those parts (no dangling separators)', () => {
+    const t = buildDebtMessage({ ...base, source: 'invoiceOut' });
+    expect(t?.split('\n')[0]).toBe('📄 *Sotuv*');
   });
 
   it('overThreshold → appends ⚠️ warning', () => {

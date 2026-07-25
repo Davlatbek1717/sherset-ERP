@@ -2,23 +2,16 @@ import type { CounterpartyBalanceChangeSource } from '../hr/hr-shared/hr-events.
 import { formatMinor } from '../hr/hr-telegram-bridge/template-render.util.js';
 
 /**
- * Pure, Telegram-free message builders for the COUNTERPARTY-facing debt/payment
- * notices. Unlike {@link ./debt-notify.util.ts} (which addresses the OWNER via
- * the Bot API in Markdown), these are addressed to the counterparty themselves
- * and delivered plain-text over the MTProto outbox (admin account → the
- * counterparty's chat). No Markdown: the MTProto worker sends plain text, so we
- * neither escape nor style the name.
+ * Pure, Telegram-free message builder for the COUNTERPARTY-facing debt/payment
+ * notices. Unlike {@link ./debt-notify.util.ts} (owner, Markdown), these are
+ * addressed to the counterparty themselves and delivered plain-text over the
+ * MTProto outbox (admin account → the counterparty's chat). No Markdown: the
+ * MTProto worker sends plain text, so we neither escape nor style the name.
  *
- * Direction / source → wording:
- *   - paymentIn | cashIn (they paid us)  → "to'lovingiz qabul qilindi …
- *     Qolgan qarz: …"  (a receipt, regardless of the resulting balance sign).
- *   - any other source, then by resulting balance:
- *       newBalance > 0 (they owe us)   → "Sherset'ga … qarzingiz bor."
- *       newBalance < 0 (we owe them)   → "Sherset sizga … qarzdor — tez orada
- *                                         to'lanadi."
- *       newBalance === 0               → null (nothing to tell them).
- *
- * All amounts are abs()'d and rendered in so'm (or the ISO code for non-UZS).
+ * Format redesign (2026-07-25, owner request «aniqroq hisobot»): a compact
+ * receipt/report — document title + date + number, how much THIS operation
+ * moved (added to the debt / paid), and the resulting total. Date + number come
+ * from the source document; when unavailable those header parts are omitted.
  */
 
 /** Render a signed tiyin amount as an absolute so'm/currency string. */
@@ -26,6 +19,19 @@ function fmtAmount(minor: bigint, currency: string): string {
   const abs = minor < 0n ? -minor : minor;
   const unit = currency === 'UZS' ? "so'm" : currency;
   return `${formatMinor(abs)} ${unit}`;
+}
+
+/** Document `moment` → "25.07.2026" (Asia/Tashkent), or '' when absent/invalid. */
+function fmtDate(m?: Date | string | null): string {
+  if (!m) return '';
+  const d = typeof m === 'string' ? new Date(m) : m;
+  if (Number.isNaN(d.getTime())) return '';
+  return new Intl.DateTimeFormat('ru-RU', {
+    timeZone: 'Asia/Tashkent',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(d);
 }
 
 export interface CounterpartyMessageContext {
@@ -39,34 +45,65 @@ export interface CounterpartyMessageContext {
   newBalanceMinor: bigint;
   /** Which document moved the balance. */
   source: CounterpartyBalanceChangeSource;
+  /** Source document number/name; omitted from header if absent. */
+  docNumber?: string | null;
+  /** Source document date; omitted from header if absent. */
+  docMoment?: Date | string | null;
 }
 
-/** 🧾 They paid us (paymentIn / cashIn) — a payment receipt with remaining debt. */
-export function buildCounterpartyPaymentText(ctx: CounterpartyMessageContext): string {
-  return `Hurmatli ${ctx.name}, to'lovingiz qabul qilindi: ${fmtAmount(ctx.deltaMinor, ctx.currency)}. Qolgan qarz: ${fmtAmount(ctx.newBalanceMinor, ctx.currency)}.`;
+/** Per-source report title + the "this operation" amount line (counterparty framing). */
+function cpHead(
+  source: CounterpartyBalanceChangeSource,
+  amt: string,
+): { title: string; amountLine: string } | null {
+  switch (source) {
+    case 'invoiceOut': // we sold to them → their debt to us grew
+      return { title: 'Sotuv', amountLine: `🛒 Qarzga qo'shildi: +${amt}` };
+    case 'invoiceIn': // we bought from them → we owe them more
+      return { title: 'Qabul (mahsulot)', amountLine: `📦 Mahsulot summasi: ${amt}` };
+    case 'paymentIn':
+    case 'cashIn': // they paid us
+      return { title: "To'lov", amountLine: `✅ To'lovingiz qabul qilindi: ${amt}` };
+    case 'paymentOut':
+    case 'cashOut': // we paid them
+      return { title: "To'lov (bizdan)", amountLine: `💸 Bizning to'lovimiz: ${amt}` };
+    default:
+      return null;
+  }
 }
 
-/** They owe us (newBalance > 0). */
-export function buildCounterpartyOwesUsText(ctx: CounterpartyMessageContext): string {
-  return `Hurmatli ${ctx.name}, Sherset'ga ${fmtAmount(ctx.newBalanceMinor, ctx.currency)} qarzingiz bor.`;
-}
-
-/** We owe them (newBalance < 0). */
-export function buildWeOweCounterpartyText(ctx: CounterpartyMessageContext): string {
-  return `Hurmatli ${ctx.name}, Sherset sizga ${fmtAmount(ctx.newBalanceMinor, ctx.currency)} qarzdor — tez orada to'lanadi.`;
+/** Resulting-total line from the counterparty's own perspective. */
+function cpTotal(newBalanceMinor: bigint, currency: string, isPayment: boolean): string {
+  const amt = fmtAmount(newBalanceMinor, currency);
+  if (newBalanceMinor > 0n) {
+    return `💰 ${isPayment ? 'Qolgan qarzingiz' : 'Jami qarzingiz'}: ${amt}`;
+  }
+  if (newBalanceMinor < 0n) return `💰 Sizga qarzimiz: ${amt} — tez orada to'lanadi`;
+  return "💰 Hisob teng — qarzingiz yo'q";
 }
 
 /**
- * Pick + build the right counterparty-facing message, or return null when
- * there is nothing meaningful to tell them (a non-payment change that lands on
- * a zero balance). A payment (paymentIn/cashIn) is always acknowledged, even if
- * it clears the balance to zero ("Qolgan qarz: 0 so'm.").
+ * Pick + build the right counterparty-facing report, or return null when there
+ * is nothing meaningful to tell them (a non-payment change that lands on a zero
+ * balance). A payment is always acknowledged, even if it clears the balance.
  */
 export function buildCounterpartyMessage(ctx: CounterpartyMessageContext): string | null {
-  if (ctx.source === 'paymentIn' || ctx.source === 'cashIn') {
-    return buildCounterpartyPaymentText(ctx);
-  }
-  if (ctx.newBalanceMinor > 0n) return buildCounterpartyOwesUsText(ctx);
-  if (ctx.newBalanceMinor < 0n) return buildWeOweCounterpartyText(ctx);
-  return null;
+  const isPayment = ctx.source === 'paymentIn' || ctx.source === 'cashIn';
+  const head = cpHead(ctx.source, fmtAmount(ctx.deltaMinor, ctx.currency));
+  if (!head) return null;
+  // Non-payment change landing exactly on zero ⇒ nothing meaningful to say.
+  if (!isPayment && ctx.newBalanceMinor === 0n) return null;
+
+  const date = fmtDate(ctx.docMoment);
+  const num = (ctx.docNumber || '').trim();
+
+  const lines: string[] = [`Hurmatli ${ctx.name},`];
+  let hdr = `📄 ${head.title}`;
+  if (date) hdr += ` — ${date}`;
+  if (num) hdr += `, №${num}`;
+  lines.push(hdr);
+  lines.push(head.amountLine);
+  lines.push('━━━━━━━━━━━━');
+  lines.push(cpTotal(ctx.newBalanceMinor, ctx.currency, isPayment));
+  return lines.join('\n');
 }

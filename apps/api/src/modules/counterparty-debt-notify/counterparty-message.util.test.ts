@@ -2,9 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   type CounterpartyMessageContext,
   buildCounterpartyMessage,
-  buildCounterpartyOwesUsText,
-  buildCounterpartyPaymentText,
-  buildWeOweCounterpartyText,
 } from './counterparty-message.util.js';
 
 const base: CounterpartyMessageContext = {
@@ -15,69 +12,82 @@ const base: CounterpartyMessageContext = {
   source: 'invoiceOut',
 };
 
-describe('counterparty-message.util', () => {
-  it('buildCounterpartyOwesUsText: they owe us → "Sherset\'ga … qarzingiz bor"', () => {
-    const text = buildCounterpartyOwesUsText(base);
-    expect(text).toBe("Hurmatli Akme, Sherset'ga 50 000 so'm qarzingiz bor.");
-  });
-
-  it('buildWeOweCounterpartyText: we owe them → "Sherset sizga … qarzdor"', () => {
-    const text = buildWeOweCounterpartyText({ ...base, newBalanceMinor: -3_000_000n });
-    expect(text).toBe("Hurmatli Akme, Sherset sizga 30 000 so'm qarzdor — tez orada to'lanadi.");
-  });
-
-  it('buildCounterpartyPaymentText: acknowledges payment + remaining debt', () => {
-    const text = buildCounterpartyPaymentText({
-      ...base,
-      source: 'paymentIn',
-      deltaMinor: -2_000_000n, // sign stripped to abs
-      newBalanceMinor: 3_000_000n,
-    });
-    expect(text).toBe(
-      "Hurmatli Akme, to'lovingiz qabul qilindi: 20 000 so'm. Qolgan qarz: 30 000 so'm.",
+describe('buildCounterpartyMessage — counterparty report (delta + total)', () => {
+  it('invoiceOut → sale report; total says they owe us', () => {
+    const t = buildCounterpartyMessage({ ...base, source: 'invoiceOut' });
+    expect(t).toBe(
+      "Hurmatli Akme,\n📄 Sotuv\n🛒 Qarzga qo'shildi: +10 000 so'm\n━━━━━━━━━━━━\n💰 Jami qarzingiz: 50 000 so'm",
     );
   });
 
-  it('buildCounterpartyMessage: paymentIn → payment receipt (even at zero balance)', () => {
-    const text = buildCounterpartyMessage({
+  it('paymentIn → payment receipt + remaining debt (delta abs-valued)', () => {
+    const t = buildCounterpartyMessage({
+      ...base,
+      source: 'paymentIn',
+      deltaMinor: -2_000_000n,
+      newBalanceMinor: 3_000_000n,
+    });
+    expect(t).toContain("✅ To'lovingiz qabul qilindi: 20 000 so'm");
+    expect(t).toContain("💰 Qolgan qarzingiz: 30 000 so'm");
+  });
+
+  it('paymentIn acknowledged even at zero balance', () => {
+    const t = buildCounterpartyMessage({
       ...base,
       source: 'paymentIn',
       deltaMinor: -5_000_000n,
       newBalanceMinor: 0n,
     });
-    expect(text).toContain("to'lovingiz qabul qilindi");
-    expect(text).toContain("Qolgan qarz: 0 so'm");
+    expect(t).toContain("To'lovingiz qabul qilindi");
+    expect(t).toContain('Hisob teng');
   });
 
-  it('buildCounterpartyMessage: cashIn routes to the payment receipt too', () => {
+  it('cashIn routes to the payment report too', () => {
     expect(buildCounterpartyMessage({ ...base, source: 'cashIn' })).toContain(
-      "to'lovingiz qabul qilindi",
+      "To'lovingiz qabul qilindi",
     );
   });
 
-  it('buildCounterpartyMessage: positive balance (non-payment) → they-owe-us', () => {
-    expect(buildCounterpartyMessage({ ...base, source: 'invoiceOut' })).toContain('qarzingiz bor');
+  it('positive balance (non-payment) → they-owe-us total', () => {
+    expect(buildCounterpartyMessage({ ...base, source: 'invoiceOut' })).toContain(
+      '💰 Jami qarzingiz:',
+    );
   });
 
-  it('buildCounterpartyMessage: negative balance (non-payment) → we-owe-them', () => {
+  it('negative balance (non-payment) → we-owe-them total', () => {
     expect(
       buildCounterpartyMessage({ ...base, source: 'paymentOut', newBalanceMinor: -1_000_000n }),
-    ).toContain('Sherset sizga');
+    ).toContain("💰 Sizga qarzimiz: 10 000 so'm — tez orada to'lanadi");
   });
 
-  it('buildCounterpartyMessage: non-payment change landing on zero → null', () => {
+  it('non-payment change landing on zero → null', () => {
     expect(
       buildCounterpartyMessage({ ...base, source: 'invoiceOut', newBalanceMinor: 0n }),
     ).toBeNull();
   });
 
-  it('non-UZS currency renders the ISO code instead of "so\'m"', () => {
-    const text = buildCounterpartyOwesUsText({
+  it('docNumber + docMoment → header carries date and number', () => {
+    const t = buildCounterpartyMessage({
       ...base,
+      source: 'invoiceOut',
+      docNumber: 'СЧ-2026-00123',
+      docMoment: new Date('2026-07-25T10:00:00Z'),
+    });
+    expect(t).toContain('📄 Sotuv — 25.07.2026, №СЧ-2026-00123');
+  });
+
+  it('unknown source → null', () => {
+    expect(buildCounterpartyMessage({ ...base, source: 'adjustment' as never })).toBeNull();
+  });
+
+  it('non-UZS currency renders the ISO code instead of "so\'m"', () => {
+    const t = buildCounterpartyMessage({
+      ...base,
+      source: 'invoiceOut',
       currency: 'USD',
       newBalanceMinor: 100_00n,
     });
-    expect(text).toContain('100 USD');
-    expect(text).not.toContain("so'm");
+    expect(t).toContain('100 USD');
+    expect(t).not.toContain("so'm");
   });
 });
