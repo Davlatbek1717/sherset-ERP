@@ -3,8 +3,10 @@ import { PrismaModule } from '../../../prisma/prisma.module.js';
 import { AuthModule } from '../../auth/auth.module.js';
 import { HrAuthModule } from '../hr-auth/hr-auth.module.js';
 import { HrEventsModule } from '../hr-events/hr-events.module.js';
+import { AttendanceNotifyService } from './attendance-notify.service.js';
 import { HrDavomatAdminController } from './davomat-admin.controller.js';
 import { HrDavomatAutoCheckoutCron } from './davomat-autocheckout.cron.js';
+import { HrDavomatDailyDigestCron } from './davomat-daily-digest.cron.js';
 import { HrDavomatExportService } from './davomat-export.service.js';
 import { HrDavomatPingCleanupCron } from './davomat-ping-cleanup.cron.js';
 import { HrDavomatReportService } from './davomat-report.service.js';
@@ -36,6 +38,7 @@ import { HrWorkLocationService } from './work-location.service.js';
   ],
   providers: [
     HrPingIngestService,
+    AttendanceNotifyService,
     HrDavomatStatusService,
     HrDavomatReportService,
     HrDavomatExportService,
@@ -44,6 +47,7 @@ import { HrWorkLocationService } from './work-location.service.js';
     HrMonitoringService,
     HrDavomatAutoCheckoutCron,
     HrDavomatPingCleanupCron,
+    HrDavomatDailyDigestCron,
   ],
 })
 export class AttendanceGeoModule {}
