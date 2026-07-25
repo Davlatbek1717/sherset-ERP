@@ -27,6 +27,46 @@ function lastFetchBody(fetchMock: ReturnType<typeof vi.fn>): {
   return JSON.parse((call?.[1] as { body: string }).body);
 }
 
+/**
+ * Fuller Prisma double that also models `hrTelegramOutbox` (findFirst for
+ * dedup + create for enqueue) so the counterparty MTProto path can be asserted.
+ * `existingRow` seeds the dedup lookup (a prior row for the same document).
+ */
+function makePrismaFull(
+  opts: {
+    name?: string | null;
+    phone?: string | null;
+    existingRow?: boolean;
+    createImpl?: () => Promise<unknown>;
+  } = {},
+) {
+  const cp = opts.name === null ? null : { name: opts.name ?? 'Akme', phone: opts.phone ?? null };
+  const outboxCreate = vi.fn(opts.createImpl ?? (async () => ({ id: 'out-1' })));
+  const outboxFindFirst = vi.fn(async () => (opts.existingRow ? { id: 'out-existing' } : null));
+  return {
+    prisma: {
+      client: {
+        counterparty: { findFirst: vi.fn(async () => cp) },
+        hrTelegramOutbox: { findFirst: outboxFindFirst, create: outboxCreate },
+      },
+    },
+    outboxCreate,
+    outboxFindFirst,
+  };
+}
+
+/** The `data` object passed to the last hrTelegramOutbox.create call. */
+function lastOutboxData(create: ReturnType<typeof vi.fn>): {
+  toPhone: string;
+  messageText: string;
+  sourceEventType: string;
+  sourceDocId: string | null;
+  status: string;
+  counterpartyId: string;
+} {
+  return create.mock.calls.at(-1)?.[0].data;
+}
+
 const baseEvent: CounterpartyBalanceChangedEvent = {
   accountId: 'acc-1',
   counterpartyId: 'cp-1',
@@ -146,5 +186,121 @@ describe('CounterpartyDebtNotifier', () => {
     // biome-ignore lint/suspicious/noExplicitAny: test wiring
     const svc = new CounterpartyDebtNotifier(makePrisma({ name: 'Akme' }) as any);
     await expect(svc.onBalanceChanged(baseEvent)).resolves.not.toThrow();
+  });
+
+  // ── Counterparty MTProto outbox path ───────────────────────────────────────
+  describe('counterparty notice (MTProto outbox)', () => {
+    it('no phone → no outbox row (owner alert still sent)', async () => {
+      const { prisma, outboxCreate } = makePrismaFull({ name: 'Akme', phone: null });
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      const svc = new CounterpartyDebtNotifier(prisma as any);
+      await svc.onBalanceChanged(baseEvent);
+      expect(outboxCreate).not.toHaveBeenCalled();
+      expect(fetchMock).toHaveBeenCalledTimes(1); // owner send is independent
+    });
+
+    it('blank/whitespace phone → treated as missing → no outbox row', async () => {
+      const { prisma, outboxCreate } = makePrismaFull({ name: 'Akme', phone: '   ' });
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      const svc = new CounterpartyDebtNotifier(prisma as any);
+      await svc.onBalanceChanged(baseEvent);
+      expect(outboxCreate).not.toHaveBeenCalled();
+    });
+
+    it('they owe us (positive balance) → enqueues "qarzingiz bor" to their phone', async () => {
+      const { prisma, outboxCreate } = makePrismaFull({
+        name: 'Akme',
+        phone: '+998901112233',
+      });
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      const svc = new CounterpartyDebtNotifier(prisma as any);
+      await svc.onBalanceChanged({
+        ...baseEvent,
+        source: 'invoiceOut',
+        newBalanceMinor: 5_000_000n,
+      });
+      expect(outboxCreate).toHaveBeenCalledTimes(1);
+      const data = lastOutboxData(outboxCreate);
+      expect(data.toPhone).toBe('+998901112233');
+      expect(data.messageText).toContain("Sherset'ga 50 000 so'm qarzingiz bor");
+      expect(data.sourceEventType).toBe('debt.counterparty_notify');
+      expect(data.sourceDocId).toBe('inv-1');
+      expect(data.status).toBe('pending');
+      expect(data.counterpartyId).toBe('cp-1');
+    });
+
+    it('we owe them (negative balance) → enqueues "Sherset sizga … qarzdor"', async () => {
+      const { prisma, outboxCreate } = makePrismaFull({ name: 'Beta', phone: '998900000000' });
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      const svc = new CounterpartyDebtNotifier(prisma as any);
+      await svc.onBalanceChanged({
+        ...baseEvent,
+        source: 'paymentOut',
+        newBalanceMinor: -2_000_000n,
+      });
+      expect(lastOutboxData(outboxCreate).messageText).toContain(
+        "Sherset sizga 20 000 so'm qarzdor",
+      );
+    });
+
+    it('payment (paymentIn) → enqueues a "to\'lovingiz qabul qilindi" receipt', async () => {
+      const { prisma, outboxCreate } = makePrismaFull({ name: 'Akme', phone: '998911234567' });
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      const svc = new CounterpartyDebtNotifier(prisma as any);
+      await svc.onBalanceChanged({
+        ...baseEvent,
+        source: 'paymentIn',
+        deltaMinor: -2_000_000n,
+        newBalanceMinor: 3_000_000n,
+      });
+      const text = lastOutboxData(outboxCreate).messageText;
+      expect(text).toContain("to'lovingiz qabul qilindi: 20 000 so'm");
+      expect(text).toContain("Qolgan qarz: 30 000 so'm");
+    });
+
+    it('owner AND counterparty both enqueue for one event', async () => {
+      const { prisma, outboxCreate } = makePrismaFull({ name: 'Akme', phone: '998911234567' });
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      const svc = new CounterpartyDebtNotifier(prisma as any);
+      await svc.onBalanceChanged(baseEvent);
+      expect(fetchMock).toHaveBeenCalledTimes(1); // owner (Bot API)
+      expect(outboxCreate).toHaveBeenCalledTimes(1); // counterparty (MTProto outbox)
+    });
+
+    it('dedup: an existing row for the same docId → no second enqueue', async () => {
+      const { prisma, outboxCreate, outboxFindFirst } = makePrismaFull({
+        name: 'Akme',
+        phone: '998911234567',
+        existingRow: true,
+      });
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      const svc = new CounterpartyDebtNotifier(prisma as any);
+      await svc.onBalanceChanged(baseEvent);
+      expect(outboxFindFirst).toHaveBeenCalledTimes(1);
+      expect(outboxCreate).not.toHaveBeenCalled();
+    });
+
+    it('deliveries are independent: outbox create throwing does not skip owner send', async () => {
+      const { prisma } = makePrismaFull({
+        name: 'Akme',
+        phone: '998911234567',
+        createImpl: async () => {
+          throw new Error('db down');
+        },
+      });
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      const svc = new CounterpartyDebtNotifier(prisma as any);
+      await expect(svc.onBalanceChanged(baseEvent)).resolves.not.toThrow();
+      expect(fetchMock).toHaveBeenCalledTimes(1); // owner still delivered
+    });
+
+    it('no source (reversal) → neither owner nor counterparty is notified', async () => {
+      const { prisma, outboxCreate } = makePrismaFull({ name: 'Akme', phone: '998911234567' });
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      const svc = new CounterpartyDebtNotifier(prisma as any);
+      await svc.onBalanceChanged({ ...baseEvent, source: undefined });
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(outboxCreate).not.toHaveBeenCalled();
+    });
   });
 });

@@ -2,31 +2,50 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { type CounterpartyBalanceChangedEvent, HR_EVENT } from '../hr/hr-shared/hr-events.types.js';
+import { buildCounterpartyMessage } from './counterparty-message.util.js';
 import { buildDebtMessage } from './debt-notify.util.js';
 
 const BOT_API_TIMEOUT_MS = 10_000;
 
 /**
- * Owner-facing counterparty debt/payment Telegram notifier.
+ * `HrTelegramOutbox.sourceEventType` tag for the counterparty-facing debt/
+ * payment notices this service enqueues. Also the dedup key (with sourceDocId)
+ * so a re-emitted balance event never double-messages the counterparty.
+ */
+const COUNTERPARTY_NOTIFY_EVENT = 'debt.counterparty_notify';
+
+/**
+ * Counterparty debt/payment Telegram notifier — TWO independent deliveries per
+ * balance change (emitted by CounterpartyBalanceService.applyDelta):
  *
- * Listens to COUNTERPARTY_BALANCE_CHANGED (emitted by
- * CounterpartyBalanceService.applyDelta) and pushes an Uzbek Markdown message
- * to the OWNER's Telegram group via the Bot API. Mirrors HrAdminNotifier 1:1:
- *   - @OnEvent({ async, promisify }) so it runs OUT-OF-BAND on the event loop,
- *     never inline in the caller's transaction.
- *   - The ENTIRE handler body is try/catch → logger.warn, so it can NEVER throw
- *     back into the event bus / source document flow (proven by test).
- *   - Transport gated on env DEBT_NOTIFY_BOT_TOKEN + DEBT_NOTIFY_CHAT_ID; absent
- *     ⇒ silent no-op (dormant until an owner wires a bot/group).
+ *   1. OWNER alert (Bot API, Uzbek Markdown → the owner's Telegram group).
+ *      Gated on env DEBT_NOTIFY_BOT_TOKEN + DEBT_NOTIFY_CHAT_ID; absent ⇒
+ *      silent no-op (dormant until an owner wires a bot/group).
+ *
+ *   2. COUNTERPARTY notice (MTProto outbox → the counterparty's own chat). We
+ *      enqueue an `HrTelegramOutbox` row (status='pending') keyed to the
+ *      counterparty's phone; the admin-slot outbox worker delivers it. Requires
+ *      a phone on the counterparty AND a logged-in admin MTProto slot at
+ *      runtime — both absent-safe: no phone ⇒ skip (log, no row); no slot ⇒
+ *      the row just sits `pending` until a slot logs in (dormant, no error).
+ *
+ * The two deliveries are INDEPENDENT: each runs in its own try/catch, so a
+ * failure (or missing config) in one never blocks the other. The whole handler
+ * mirrors HrAdminNotifier: @OnEvent({ async, promisify }) → OUT-OF-BAND on the
+ * event loop, never inline in the caller's transaction, and can NEVER throw
+ * back into the event bus / source document flow (proven by test).
  *
  * Only "real" debt/payment postings carry a `source` (threaded through
  * applyDelta's `meta`). Reversals (unpost/cancel), rebalances and internal
- * adjustments arrive with `source === undefined` ⇒ buildDebtMessage returns
- * null ⇒ no owner alert, so owners are not spammed by internal churn.
+ * adjustments arrive with `source === undefined` ⇒ both deliveries skip, so
+ * neither owner nor counterparty is spammed by internal churn.
+ *
+ * Dedup: the counterparty row is keyed by (sourceEventType, sourceDocId=docId);
+ * a re-emitted event for the same document never enqueues a second notice.
  *
  * Optional env DEBT_NOTIFY_THRESHOLD_MINOR: when set and abs(newBalance)
- * exceeds it, the message gets an extra ⚠️ warning line. It never suppresses a
- * message — absent threshold ⇒ every real change still notifies.
+ * exceeds it, the OWNER message gets an extra ⚠️ warning line. It never
+ * suppresses a message — absent threshold ⇒ every real change still notifies.
  */
 @Injectable()
 export class CounterpartyDebtNotifier {
@@ -36,16 +55,35 @@ export class CounterpartyDebtNotifier {
 
   @OnEvent(HR_EVENT.COUNTERPARTY_BALANCE_CHANGED, { async: true, promisify: true })
   async onBalanceChanged(payload: CounterpartyBalanceChangedEvent): Promise<void> {
-    try {
-      if (!payload.source) return; // reversal / rebalance / adjustment — no alert
-      const cp = await this.prisma.client.counterparty.findFirst({
-        where: { id: payload.counterpartyId, accountId: payload.accountId },
-        select: { name: true },
-      });
-      if (!cp) return;
+    if (!payload.source) return; // reversal / rebalance / adjustment — no alert
 
+    // Shared prerequisite for both deliveries: the counterparty's name (owner
+    // message) and phone (counterparty outbox). Read once; a lookup failure
+    // skips both (nothing to address), never throws into the event bus.
+    let cp: { name: string; phone: string | null } | null;
+    try {
+      cp = await this.prisma.client.counterparty.findFirst({
+        where: { id: payload.counterpartyId, accountId: payload.accountId },
+        select: { name: true, phone: true },
+      });
+    } catch (e) {
+      this.logger.warn(`debt notify: counterparty lookup failed: ${(e as Error).message}`);
+      return;
+    }
+    if (!cp) return;
+
+    // Two INDEPENDENT deliveries — each self-contained so one cannot block the
+    // other. Awaited sequentially (single event loop); neither can throw.
+    await this.notifyOwner(payload, cp.name);
+    await this.notifyCounterparty(payload, cp.name, cp.phone);
+  }
+
+  /** OWNER alert via the Bot API. Self-contained: never throws. */
+  private async notifyOwner(payload: CounterpartyBalanceChangedEvent, name: string): Promise<void> {
+    try {
+      if (!payload.source) return;
       const text = buildDebtMessage({
-        name: cp.name,
+        name,
         currency: payload.currency,
         deltaMinor: payload.deltaMinor,
         newBalanceMinor: payload.newBalanceMinor,
@@ -53,10 +91,70 @@ export class CounterpartyDebtNotifier {
         overThreshold: this.isOverThreshold(payload.newBalanceMinor),
       });
       if (!text) return;
-
       await this.sendViaBot(text);
     } catch (e) {
-      this.logger.warn(`debt notify failed: ${(e as Error).message}`);
+      this.logger.warn(`owner debt notify failed: ${(e as Error).message}`);
+    }
+  }
+
+  /**
+   * COUNTERPARTY notice: enqueue an HrTelegramOutbox row (admin MTProto slot
+   * delivers it). Self-contained: never throws. Skips silently when the
+   * counterparty has no phone, when there is nothing meaningful to say, or when
+   * a row for this document was already enqueued (dedup).
+   */
+  private async notifyCounterparty(
+    payload: CounterpartyBalanceChangedEvent,
+    name: string,
+    phone: string | null,
+  ): Promise<void> {
+    try {
+      if (!payload.source) return;
+      const toPhone = phone?.trim();
+      if (!toPhone) {
+        this.logger.log(
+          `Counterparty ${payload.counterpartyId} has no phone — skip Telegram notice`,
+        );
+        return;
+      }
+
+      const text = buildCounterpartyMessage({
+        name,
+        currency: payload.currency,
+        deltaMinor: payload.deltaMinor,
+        newBalanceMinor: payload.newBalanceMinor,
+        source: payload.source,
+      });
+      if (!text) return; // e.g. non-payment change landing on a zero balance
+
+      // Dedup: one outbox row per (event-type, source document). A re-emitted
+      // balance event for the same doc must not double-message the counterparty.
+      if (payload.docId) {
+        const existing = await this.prisma.client.hrTelegramOutbox.findFirst({
+          where: {
+            accountId: payload.accountId,
+            counterpartyId: payload.counterpartyId,
+            sourceEventType: COUNTERPARTY_NOTIFY_EVENT,
+            sourceDocId: payload.docId,
+          },
+          select: { id: true },
+        });
+        if (existing) return;
+      }
+
+      await this.prisma.client.hrTelegramOutbox.create({
+        data: {
+          accountId: payload.accountId,
+          counterpartyId: payload.counterpartyId,
+          toPhone,
+          messageText: text,
+          sourceEventType: COUNTERPARTY_NOTIFY_EVENT,
+          sourceDocId: payload.docId ?? null,
+          status: 'pending',
+        },
+      });
+    } catch (e) {
+      this.logger.warn(`counterparty debt notify failed: ${(e as Error).message}`);
     }
   }
 
