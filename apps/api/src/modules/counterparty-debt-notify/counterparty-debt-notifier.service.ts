@@ -108,6 +108,9 @@ export class CounterpartyDebtNotifier {
         case 'invoiceIn':
           row = await this.prisma.client.invoiceIn.findFirst({ where, select });
           break;
+        case 'supply':
+          row = await this.prisma.client.supply.findFirst({ where, select });
+          break;
         case 'cashIn':
           row = await this.prisma.client.cashIn.findFirst({ where, select });
           break;

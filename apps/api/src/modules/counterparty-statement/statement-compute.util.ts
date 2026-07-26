@@ -13,6 +13,7 @@
 export type StatementDocType =
   | 'invoiceOut'
   | 'invoiceIn'
+  | 'supply'
   | 'cashIn'
   | 'cashOut'
   | 'paymentIn'
@@ -65,6 +66,7 @@ const DEBIT_TYPES: ReadonlySet<StatementDocType> = new Set<StatementDocType>([
 export const DOC_TYPE_LABEL: Record<StatementDocType, string> = {
   invoiceOut: 'Sotuv',
   invoiceIn: 'Xarid',
+  supply: 'Qabul',
   cashIn: "To'lov (kirim)",
   cashOut: "To'lov (chiqim)",
   paymentIn: "Bank to'lovi (kirim)",

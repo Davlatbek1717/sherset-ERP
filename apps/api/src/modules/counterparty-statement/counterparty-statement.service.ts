@@ -100,21 +100,24 @@ export class CounterpartyStatementService {
         },
       } as const;
       const w = { ...where, positions: { some: { productId } } };
-      const [invOut, invIn, product] = await Promise.all([
+      const [invOut, invIn, supply, product] = await Promise.all([
         c.invoiceOut.findMany({ where: w, select: sel }),
         c.invoiceIn.findMany({ where: w, select: sel }),
+        c.supply.findMany({ where: w, select: sel }),
         c.product.findFirst({ where: { id: productId, accountId }, select: { name: true } }),
       ]);
       const raw: RawDoc[] = [
         ...(invOut as GoodsRow[]).map((d) => this.productLine(d, 'invoiceOut')),
         ...(invIn as GoodsRow[]).map((d) => this.productLine(d, 'invoiceIn')),
+        ...(supply as GoodsRow[]).map((d) => this.productLine(d, 'supply')),
       ];
       return { cp, data: computeStatement(raw), productName: product?.name ?? '(buyum)' };
     }
 
-    const [invOut, invIn, cashIn, cashOut, payIn, payOut] = await Promise.all([
+    const [invOut, invIn, supply, cashIn, cashOut, payIn, payOut] = await Promise.all([
       c.invoiceOut.findMany({ where, select: GOODS_SELECT }),
       c.invoiceIn.findMany({ where, select: GOODS_SELECT }),
+      c.supply.findMany({ where, select: GOODS_SELECT }),
       c.cashIn.findMany({ where, select: FLAT_SELECT }),
       c.cashOut.findMany({ where, select: FLAT_SELECT }),
       c.paymentIn.findMany({ where, select: FLAT_SELECT }),
@@ -124,6 +127,7 @@ export class CounterpartyStatementService {
     const raw: RawDoc[] = [
       ...(invOut as GoodsRow[]).map((d) => this.goods(d, 'invoiceOut')),
       ...(invIn as GoodsRow[]).map((d) => this.goods(d, 'invoiceIn')),
+      ...(supply as GoodsRow[]).map((d) => this.goods(d, 'supply')),
       ...(cashIn as FlatRow[]).map((d) => this.flat(d, 'cashIn')),
       ...(cashOut as FlatRow[]).map((d) => this.flat(d, 'cashOut')),
       ...(payIn as FlatRow[]).map((d) => this.flat(d, 'paymentIn')),

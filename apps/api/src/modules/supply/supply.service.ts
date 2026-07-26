@@ -11,6 +11,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { allocateDocumentNumber } from '../../prisma/document-number.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { AttributeMetadataService } from '../attribute-metadata/attribute-metadata.service.js';
+import { CounterpartyBalanceService } from '../counterparty-balance/counterparty-balance.service.js';
 import { type CurrencyRate, toBaseMinor } from '../currency/currency-convert.js';
 import { HR_EVENT, type SupplyPostedEvent } from '../hr/hr-shared/hr-events.types.js';
 import { PaymentOutService } from '../payment-out/payment-out.service.js';
@@ -71,6 +72,8 @@ export class SupplyService {
     @Inject(AttributeMetadataService) private readonly attrs: AttributeMetadataService,
     @Inject(WebhookFireService) private readonly webhookFire: WebhookFireService,
     @Inject(EventEmitter2) private readonly events: EventEmitter2,
+    @Inject(CounterpartyBalanceService)
+    private readonly balance: CounterpartyBalanceService,
   ) {}
 
   async list(accountId: string, rawFilter: unknown) {
@@ -1323,6 +1326,18 @@ export class SupplyService {
           data: transitionData,
         });
 
+        // 3b. Supplier debt — we received goods → we owe them → -sumMinor. Fires
+        //     the debt notifier (Telegram). This is the /supplies (Qabul) purchase
+        //     flow; docType 'supply' lets the report header find the doc.
+        await this.balance.applyDelta(
+          tx,
+          accountId,
+          existing.agentId,
+          existing.currency,
+          -existing.sumMinor,
+          { source: 'invoiceIn', docType: 'supply', docId: id },
+        );
+
         // 4. Sprint 4.4 cascade — if linked to a PurchaseOrder, increment its
         //    receivedSum + per-position receivedQty (only positions with a
         //    purchaseOrderPositionId back-link participate).
@@ -1453,6 +1468,15 @@ export class SupplyService {
 
         await this.stock.applyDeltas(tx, accountId, userId, deltas);
 
+        // Reverse supplier debt (no source ⇒ no notification on reversal).
+        await this.balance.applyDelta(
+          tx,
+          accountId,
+          existing.agentId,
+          existing.currency,
+          existing.sumMinor,
+        );
+
         // Reset remainingQty and costMinor
         for (const p of existing.positions) {
           await tx.supplyPosition.update({
@@ -1569,6 +1593,15 @@ export class SupplyService {
           };
         });
         await this.stock.applyDeltas(tx, accountId, userId, deltas);
+
+        // Reverse supplier debt (was posted ⇒ balance had been moved).
+        await this.balance.applyDelta(
+          tx,
+          accountId,
+          existing.agentId,
+          existing.currency,
+          existing.sumMinor,
+        );
 
         for (const p of existing.positions) {
           await tx.supplyPosition.update({
