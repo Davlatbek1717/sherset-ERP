@@ -5,6 +5,7 @@ import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { type ProductReportRow, buildProductReportXlsx } from './product-report-xlsx.util.js';
 import { type RawDoc, type StatementDocType, computeStatement } from './statement-compute.util.js';
+import { type SupplyGoodsRow, buildSupplyGoodsXlsx } from './supply-goods-xlsx.util.js';
 import { buildStatementXlsx } from './xlsx-builder.util.js';
 
 const STATEMENTS_DIR = process.env.STATEMENTS_DIR || join(process.cwd(), 'var', 'statements');
@@ -432,6 +433,113 @@ export class CounterpartyStatementService {
       downloadUrl: link,
       totalSumMinor: agg.totalSumMinor,
     };
+  }
+
+  /**
+   * «Qabul tovarlari» Excel for ONE supply — only THIS document's goods (not the
+   * full akt). Optionally delivered to the supply's agent (MTProto) + admin bot.
+   */
+  async generateSupplyGoods(
+    accountId: string,
+    supplyId: string,
+    userId: string | null,
+    deliver: boolean,
+  ) {
+    const c = this.prisma.client;
+    const supply = await c.supply.findFirst({
+      where: { id: supplyId, accountId },
+      select: {
+        name: true,
+        moment: true,
+        agent: { select: { id: true, name: true, phone: true } },
+        positions: {
+          orderBy: { position: 'asc' },
+          select: { quantity: true, priceMinor: true, product: { select: { name: true } } },
+        },
+      },
+    });
+    if (!supply) throw new NotFoundException('Qabul topilmadi');
+
+    const rows: SupplyGoodsRow[] = supply.positions.map((p) => {
+      const qty = Number(p.quantity ?? 0);
+      return {
+        name: p.product?.name ?? '(tovar)',
+        quantity: String(p.quantity ?? ''),
+        priceMinor: p.priceMinor,
+        sumMinor: BigInt(Math.round(qty * Number(p.priceMinor))),
+      };
+    });
+    const total = rows.reduce((s, x) => s + x.sumMinor, 0n);
+    const dateLabel = new Intl.DateTimeFormat('ru-RU', {
+      timeZone: 'Asia/Tashkent',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(supply.moment);
+    const org = await c.organization.findFirst({ where: { accountId }, select: { name: true } });
+
+    const buf = await buildSupplyGoodsXlsx({
+      companyName: org?.name ?? 'Sherset',
+      counterpartyName: supply.agent.name,
+      docNumber: supply.name,
+      dateLabel,
+      rows,
+      totalSumMinor: total,
+      currency: 'UZS',
+    });
+
+    const token = randomBytes(24).toString('hex');
+    const fileName = `qabul-tovarlar-${this.slug(supply.name)}-${Date.now()}.xlsx`;
+    const filePath = join(STATEMENTS_DIR, `${token}.xlsx`);
+    await mkdir(STATEMENTS_DIR, { recursive: true });
+    await writeFile(filePath, buf);
+
+    const row = await c.counterpartyStatement.create({
+      data: {
+        accountId,
+        counterpartyId: supply.agent.id,
+        fileToken: token,
+        filePath,
+        fileName,
+        finalBalanceMinor: total,
+        currency: 'UZS',
+        createdById: userId,
+      },
+    });
+
+    const base = process.env.STATEMENT_BASE_URL || 'https://erp.sherset.uz/api/v1';
+    const link = `${base}/akt/${token}`;
+    let counterpartySent = false;
+    const phone = supply.agent.phone?.trim();
+    if (deliver && phone) {
+      try {
+        await c.hrTelegramOutbox.create({
+          data: {
+            accountId,
+            counterpartyId: supply.agent.id,
+            toPhone: phone,
+            messageText: `Hurmatli ${supply.agent.name}, qabul №${supply.name} — tovarlar ro'yxati (Excel).`,
+            attachmentPath: filePath,
+            sourceEventType: 'supply_goods',
+            sourceDocId: row.id,
+            status: 'pending',
+          },
+        });
+        counterpartySent = true;
+      } catch (e) {
+        this.logger.warn(`supply-goods enqueue failed: ${(e as Error).message}`);
+      }
+    }
+    try {
+      await this.sendBotLink(
+        `📦 *Qabul tovarlari* — «${supply.agent.name}» №${supply.name}\n${link}`,
+      );
+    } catch {
+      /* logged inside sendBotLink */
+    }
+    return { row, agentName: supply.agent.name, counterpartySent, link };
   }
 
   /** Product reports for a product (newest first). */

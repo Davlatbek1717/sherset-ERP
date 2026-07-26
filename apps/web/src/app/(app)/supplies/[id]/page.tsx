@@ -609,15 +609,12 @@ export default function SupplyDetailPage() {
     },
   });
 
-  // «Akt-sverka (Excel) → kontragentga yuborish» straight from the supply — the
-  // full reconciliation for this supply's agent, delivered to their Telegram.
+  // «Tovarlar ro'yxati (Excel) → kontragentga yuborish» — ONLY this supply's
+  // goods (not the full akt), delivered to the supplier's Telegram.
   const aktMut = useApiMutation({
     mutationFn: () =>
-      api.post<{ counterpartySent: boolean }>(
-        `/counterparty-statements/${data?.agent.id}?deliver=true`,
-        {},
-      ),
-    successMessage: t('send_akt_ok'),
+      api.post<{ counterpartySent: boolean }>(`/supply-goods/${id}?deliver=true`, {}),
+    successMessage: t('send_goods_ok'),
   });
 
   const { runDestructive } = useDestructiveMutation();
@@ -961,8 +958,8 @@ export default function SupplyDetailPage() {
   };
   const sendMenuItems: CreateMenuItem[] = [
     {
-      id: 'akt-sverka',
-      label: t('send_akt'),
+      id: 'goods-excel',
+      label: t('send_goods'),
       onSelect: () => aktMut.mutate(),
     },
     ...(printForms ?? []).map((f) => ({

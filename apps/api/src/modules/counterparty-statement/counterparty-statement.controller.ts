@@ -116,6 +116,31 @@ export class CounterpartyStatementController {
     };
   }
 
+  /** «Qabul tovarlari» Excel for ONE supply (only this doc's goods). */
+  @Post('supply-goods/:supplyId')
+  @UseGuards(JwtAuthGuard)
+  @RequirePermission({ entity: 'supply', action: 'view' })
+  async supplyGoods(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('supplyId', new ParseUUIDPipe()) supplyId: string,
+    @Query('deliver') deliver?: string,
+  ) {
+    const res = await this.svc.generateSupplyGoods(
+      user.accountId,
+      supplyId,
+      user.sub ?? null,
+      deliver === 'true',
+    );
+    return {
+      id: res.row.id,
+      token: res.row.fileToken,
+      fileName: res.row.fileName,
+      agentName: res.agentName,
+      counterpartySent: res.counterpartySent,
+      downloadUrl: res.link,
+    };
+  }
+
   /**
    * Download by capability token — NO auth (unguessable token = capability).
    * The bot link points here; the counterparty gets the file via MTProto, not this.

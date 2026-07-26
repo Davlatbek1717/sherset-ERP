@@ -3840,7 +3840,9 @@
       "mass_edit_hint": "{count} ta yozuv tanlandi. Belgilangan maydonlar barchasiga qo'llanadi.",
       "filter_shared": "Umumiy kirish",
       "send_akt": "Akt-sverka (Excel) kontragentga yuborish",
-      "send_akt_ok": "Akt-sverka kontragentga yuborildi"
+      "send_akt_ok": "Akt-sverka kontragentga yuborildi",
+      "send_goods": "Tovarlar ro'yxati (Excel) kontragentga yuborish",
+      "send_goods_ok": "Tovarlar ro'yxati kontragentga yuborildi"
     },
     "payments": {
       "title": "To'lovlar",
