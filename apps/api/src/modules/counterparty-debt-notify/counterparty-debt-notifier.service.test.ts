@@ -87,6 +87,8 @@ describe('CounterpartyDebtNotifier', () => {
     process.env.DEBT_NOTIFY_BOT_TOKEN = 'tok123';
     process.env.DEBT_NOTIFY_CHAT_ID = '-100999';
     process.env.DEBT_NOTIFY_THRESHOLD_MINOR = '';
+    // Text alerts are opt-in (default OFF); enable for the delivery tests below.
+    process.env.DEBT_NOTIFY_ENABLED = 'true';
   });
   afterEach(() => {
     vi.unstubAllGlobals();
