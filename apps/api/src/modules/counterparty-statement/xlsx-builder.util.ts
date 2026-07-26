@@ -111,7 +111,7 @@ function addSimpleSheet(wb: ExcelJS.Workbook, input: StatementXlsxInput, unit: s
     { key: 'n', width: 5 },
     { key: 'date', width: 18 },
     { key: 'op', width: 24 },
-    { key: 'goods', width: 40 },
+    { key: 'goods', width: 52 },
     { key: 'sum', width: 16, style: { numFmt: SUM_FMT } },
     { key: 'balance', width: 18, style: { numFmt: BAL_FMT } },
   ];
@@ -136,7 +136,12 @@ function addSimpleSheet(wb: ExcelJS.Workbook, input: StatementXlsxInput, unit: s
     row.getCell(3).value = `${DOC_TYPE_LABEL[line.docType]} №${line.docNumber}`;
     row.getCell(3).font = { bold: true };
     row.getCell(4).value = line.items.length
-      ? line.items.map((it) => `${it.name} ×${it.quantity}`).join('\n')
+      ? line.items
+          .map(
+            (it) =>
+              `${it.name} ×${it.quantity} — ${new Intl.NumberFormat('ru-RU').format(Number(it.priceMinor) / 100)} ${unit}`,
+          )
+          .join('\n')
       : '—';
     row.getCell(4).alignment = { wrapText: true, vertical: 'top' };
     const signed = line.side === 'debit' ? somSigned(line.debitMinor) : -somAbs(line.creditMinor);
