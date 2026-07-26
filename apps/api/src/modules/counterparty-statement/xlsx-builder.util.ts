@@ -55,6 +55,8 @@ function fmtDate(m: Date): string {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
   }).format(m);
 }
 function finalBalanceText(name: string, balanceMinor: bigint, unit: string): string {
@@ -107,7 +109,7 @@ function addSimpleSheet(wb: ExcelJS.Workbook, input: StatementXlsxInput, unit: s
   const COLS = 6;
   ws.columns = [
     { key: 'n', width: 5 },
-    { key: 'date', width: 13 },
+    { key: 'date', width: 18 },
     { key: 'op', width: 24 },
     { key: 'goods', width: 40 },
     { key: 'sum', width: 16, style: { numFmt: SUM_FMT } },
@@ -146,6 +148,9 @@ function addSimpleSheet(wb: ExcelJS.Workbook, input: StatementXlsxInput, unit: s
     r++;
   });
 
+  // Autofilter on the header + data rows — dropdown filter on every column.
+  ws.autoFilter = { from: { row: HEAD, column: 1 }, to: { row: r - 1, column: COLS } };
+
   r++;
   ws.getCell(`C${r}`).value = 'Umumiy aylanma:';
   ws.getCell(`C${r}`).font = { italic: true };
@@ -167,7 +172,7 @@ function addDetailedSheet(wb: ExcelJS.Workbook, input: StatementXlsxInput, unit:
   const COLS = 8;
   ws.columns = [
     { key: 'n', width: 5 },
-    { key: 'date', width: 13 },
+    { key: 'date', width: 18 },
     { key: 'desc', width: 42 },
     { key: 'qty', width: 10 },
     { key: 'price', width: 14, style: { numFmt: MONEY_FMT } },
@@ -211,6 +216,9 @@ function addDetailedSheet(wb: ExcelJS.Workbook, input: StatementXlsxInput, unit:
       r++;
     }
   });
+
+  // Autofilter on the header + data rows — dropdown filter on every column.
+  ws.autoFilter = { from: { row: HEAD, column: 1 }, to: { row: r - 1, column: COLS } };
 
   const totalRow = ws.getRow(r);
   totalRow.getCell(3).value = 'JAMI:';

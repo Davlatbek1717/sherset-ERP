@@ -101,6 +101,9 @@ export async function buildProductReportXlsx(input: ProductReportInput): Promise
     r++;
   });
 
+  // Autofilter on the header + data rows — dropdown filter on every column.
+  ws.autoFilter = { from: { row: HEAD, column: 1 }, to: { row: r - 1, column: 5 } };
+
   const tot = ws.getRow(r);
   tot.getCell(2).value = 'JAMI:';
   tot.getCell(3).value = input.totalQty;
