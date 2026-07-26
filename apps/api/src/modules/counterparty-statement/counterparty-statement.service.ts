@@ -3,6 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { type ProductReportRow, buildProductReportXlsx } from './product-report-xlsx.util.js';
 import { type RawDoc, type StatementDocType, computeStatement } from './statement-compute.util.js';
 import { buildStatementXlsx } from './xlsx-builder.util.js';
 
@@ -72,16 +73,46 @@ export class CounterpartyStatementService {
 
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
-  /** Query + normalise every balance-affecting posted document for the agent. */
-  async aggregate(accountId: string, counterpartyId: string) {
+  /**
+   * Query + normalise the balance-affecting posted documents for the agent.
+   * When `productId` is set → PRODUCT-filtered log: only goods documents that
+   * contain that product, and each row carries only that product's line (sum,
+   * qty). Cash/payment docs are excluded (no product). Otherwise → full history.
+   */
+  async aggregate(accountId: string, counterpartyId: string, productId?: string) {
     const c = this.prisma.client;
     const where = { accountId, agentId: counterpartyId, state: 'posted' };
 
-    const [cp, invOut, invIn, cashIn, cashOut, payIn, payOut] = await Promise.all([
-      c.counterparty.findFirst({
-        where: { id: counterpartyId, accountId },
-        select: { id: true, name: true, phone: true },
-      }),
+    const cp = await c.counterparty.findFirst({
+      where: { id: counterpartyId, accountId },
+      select: { id: true, name: true, phone: true },
+    });
+    if (!cp) throw new NotFoundException('Kontragent topilmadi');
+
+    if (productId) {
+      const sel = {
+        moment: true,
+        name: true,
+        sumMinor: true,
+        positions: {
+          where: { productId },
+          select: { quantity: true, priceMinor: true, product: { select: { name: true } } },
+        },
+      } as const;
+      const w = { ...where, positions: { some: { productId } } };
+      const [invOut, invIn, product] = await Promise.all([
+        c.invoiceOut.findMany({ where: w, select: sel }),
+        c.invoiceIn.findMany({ where: w, select: sel }),
+        c.product.findFirst({ where: { id: productId, accountId }, select: { name: true } }),
+      ]);
+      const raw: RawDoc[] = [
+        ...(invOut as GoodsRow[]).map((d) => this.productLine(d, 'invoiceOut')),
+        ...(invIn as GoodsRow[]).map((d) => this.productLine(d, 'invoiceIn')),
+      ];
+      return { cp, data: computeStatement(raw), productName: product?.name ?? '(buyum)' };
+    }
+
+    const [invOut, invIn, cashIn, cashOut, payIn, payOut] = await Promise.all([
       c.invoiceOut.findMany({ where, select: GOODS_SELECT }),
       c.invoiceIn.findMany({ where, select: GOODS_SELECT }),
       c.cashIn.findMany({ where, select: FLAT_SELECT }),
@@ -89,7 +120,6 @@ export class CounterpartyStatementService {
       c.paymentIn.findMany({ where, select: FLAT_SELECT }),
       c.paymentOut.findMany({ where, select: FLAT_SELECT }),
     ]);
-    if (!cp) throw new NotFoundException('Kontragent topilmadi');
 
     const raw: RawDoc[] = [
       ...(invOut as GoodsRow[]).map((d) => this.goods(d, 'invoiceOut')),
@@ -100,7 +130,23 @@ export class CounterpartyStatementService {
       ...(payOut as FlatRow[]).map((d) => this.flat(d, 'paymentOut')),
     ];
 
-    return { cp, data: computeStatement(raw) };
+    return { cp, data: computeStatement(raw), productName: null as string | null };
+  }
+
+  /** A goods doc reduced to ONLY the matched product's line(s) — sum = Σ(qty·price). */
+  private productLine(d: GoodsRow, docType: StatementDocType): RawDoc {
+    const items = d.positions.map((p) => {
+      const qty = Number(p.quantity ?? 0);
+      const sum = BigInt(Math.round(qty * Number(p.priceMinor)));
+      return {
+        name: p.product?.name ?? '(tovar)',
+        quantity: String(p.quantity ?? ''),
+        priceMinor: p.priceMinor,
+        sumMinor: sum,
+      };
+    });
+    const total = items.reduce((s, it) => s + it.sumMinor, 0n);
+    return { moment: d.moment, docType, docNumber: d.name, sumMinor: total, items };
   }
 
   private goods(d: GoodsRow, docType: StatementDocType): RawDoc {
@@ -127,8 +173,13 @@ export class CounterpartyStatementService {
   }
 
   /** Generate + persist the statement; returns the DB row (with token). */
-  async generate(accountId: string, counterpartyId: string, userId: string | null) {
-    const { cp, data } = await this.aggregate(accountId, counterpartyId);
+  async generate(
+    accountId: string,
+    counterpartyId: string,
+    userId: string | null,
+    productId?: string,
+  ) {
+    const { cp, data, productName } = await this.aggregate(accountId, counterpartyId, productId);
 
     const generatedAtLabel = new Intl.DateTimeFormat('ru-RU', {
       timeZone: 'Asia/Tashkent',
@@ -145,14 +196,17 @@ export class CounterpartyStatementService {
     const buf = await buildStatementXlsx({
       companyName: org?.name ?? 'Sherset',
       counterpartyName: cp.name,
-      periodLabel: 'Butun tarix',
+      periodLabel: productName ? `Buyum: ${productName} · butun tarix` : 'Butun tarix',
       generatedAtLabel,
       data,
       currency: 'UZS',
     });
 
     const token = randomBytes(24).toString('hex');
-    const fileName = `akt-sverka-${this.slug(cp.name)}-${Date.now()}.xlsx`;
+    const namePart = productName
+      ? `${this.slug(cp.name)}-${this.slug(productName)}`
+      : this.slug(cp.name);
+    const fileName = `akt-sverka-${namePart}-${Date.now()}.xlsx`;
     const filePath = join(STATEMENTS_DIR, `${token}.xlsx`);
     await mkdir(STATEMENTS_DIR, { recursive: true });
     await writeFile(filePath, buf);
@@ -185,6 +239,12 @@ export class CounterpartyStatementService {
       cp: { id: string; name: string; phone: string | null };
       finalBalanceMinor: bigint;
     },
+    /**
+     * EXPLICIT gate (owner 2026-07-26): the counterparty gets the file ONLY when
+     * the admin presses «Kontragentga yuborish». Default false ⇒ generate/download
+     * never auto-messages the counterparty. The admin bot link is always sent.
+     */
+    toCounterparty = false,
   ): Promise<{ link: string; counterpartySent: boolean }> {
     const base = process.env.STATEMENT_BASE_URL || 'https://erp.sherset.uz/api/v1';
     const link = `${base}/akt/${ctx.row.fileToken}`;
@@ -192,7 +252,7 @@ export class CounterpartyStatementService {
     // (1) Counterparty — MTProto file via the outbox (worker sends the document).
     let counterpartySent = false;
     const phone = ctx.cp.phone?.trim();
-    if (phone) {
+    if (toCounterparty && phone) {
       try {
         await this.prisma.client.hrTelegramOutbox.create({
           data: {
@@ -249,6 +309,142 @@ export class CounterpartyStatementService {
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  // ===== Report B: «Buyum bo'yicha» (product → counterparties) =====
+
+  /** For a product: each counterparty's bought qty + sum + their current debt. */
+  async aggregateByProduct(accountId: string, productId: string) {
+    const c = this.prisma.client;
+    const product = await c.product.findFirst({
+      where: { id: productId, accountId },
+      select: { name: true },
+    });
+    if (!product) throw new NotFoundException('Buyum topilmadi');
+
+    const invoices = await c.invoiceOut.findMany({
+      where: { accountId, state: 'posted', positions: { some: { productId } } },
+      select: {
+        agentId: true,
+        agent: { select: { name: true } },
+        positions: { where: { productId }, select: { quantity: true, priceMinor: true } },
+      },
+    });
+
+    const map = new Map<string, { name: string; qty: number; sumMinor: bigint }>();
+    for (const inv of invoices) {
+      const e = map.get(inv.agentId) ?? { name: inv.agent.name, qty: 0, sumMinor: 0n };
+      for (const p of inv.positions) {
+        const q = Number(p.quantity ?? 0);
+        e.qty += q;
+        e.sumMinor += BigInt(Math.round(q * Number(p.priceMinor)));
+      }
+      map.set(inv.agentId, e);
+    }
+
+    const agentIds = [...map.keys()];
+    const balances = agentIds.length
+      ? await c.counterpartyBalance.findMany({
+          where: { accountId, counterpartyId: { in: agentIds }, currency: 'UZS' },
+          select: { counterpartyId: true, balanceMinor: true },
+        })
+      : [];
+    const debt = new Map(balances.map((b) => [b.counterpartyId, b.balanceMinor]));
+
+    const rows: ProductReportRow[] = agentIds
+      .map((id) => {
+        const e = map.get(id) as { name: string; qty: number; sumMinor: bigint };
+        return { cpName: e.name, qty: e.qty, sumMinor: e.sumMinor, debtMinor: debt.get(id) ?? 0n };
+      })
+      .sort((a, b) => (b.sumMinor > a.sumMinor ? 1 : b.sumMinor < a.sumMinor ? -1 : 0));
+
+    return {
+      productName: product.name,
+      rows,
+      totalQty: rows.reduce((s, r) => s + r.qty, 0),
+      totalSumMinor: rows.reduce((s, r) => s + r.sumMinor, 0n),
+    };
+  }
+
+  /** Generate + persist + (bot-)deliver the product report. */
+  async generateProductReport(accountId: string, productId: string, userId: string | null) {
+    const agg = await this.aggregateByProduct(accountId, productId);
+    const generatedAtLabel = new Intl.DateTimeFormat('ru-RU', {
+      timeZone: 'Asia/Tashkent',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    }).format(new Date());
+    const org = await this.prisma.client.organization.findFirst({
+      where: { accountId },
+      select: { name: true },
+    });
+
+    const buf = await buildProductReportXlsx({
+      companyName: org?.name ?? 'Sherset',
+      productName: agg.productName,
+      periodLabel: 'Butun tarix',
+      generatedAtLabel,
+      rows: agg.rows,
+      totalQty: agg.totalQty,
+      totalSumMinor: agg.totalSumMinor,
+      currency: 'UZS',
+    });
+
+    const token = randomBytes(24).toString('hex');
+    const fileName = `buyum-hisobot-${this.slug(agg.productName)}-${Date.now()}.xlsx`;
+    const filePath = join(STATEMENTS_DIR, `${token}.xlsx`);
+    await mkdir(STATEMENTS_DIR, { recursive: true });
+    await writeFile(filePath, buf);
+
+    const row = await this.prisma.client.counterpartyStatement.create({
+      data: {
+        accountId,
+        counterpartyId: null,
+        productId,
+        fileToken: token,
+        filePath,
+        fileName,
+        finalBalanceMinor: agg.totalSumMinor,
+        currency: 'UZS',
+        createdById: userId,
+      },
+    });
+
+    // Admin bot link only — a product report has no single counterparty for MTProto.
+    const base = process.env.STATEMENT_BASE_URL || 'https://erp.sherset.uz/api/v1';
+    const link = `${base}/akt/${token}`;
+    const totalSom = new Intl.NumberFormat('ru-RU').format(Number(agg.totalSumMinor) / 100);
+    try {
+      await this.sendBotLink(
+        `📦 *Buyum hisoboti* — «${agg.productName}»\n${agg.rows.length} ta kontragent · jami ${totalSom} so'm\n${link}`,
+      );
+    } catch {
+      /* logged inside sendBotLink */
+    }
+    return {
+      row,
+      productName: agg.productName,
+      downloadUrl: link,
+      totalSumMinor: agg.totalSumMinor,
+    };
+  }
+
+  /** Product reports for a product (newest first). */
+  listForProduct(accountId: string, productId: string) {
+    return this.prisma.client.counterpartyStatement.findMany({
+      where: { accountId, productId, counterpartyId: null },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        fileToken: true,
+        fileName: true,
+        finalBalanceMinor: true,
+        currency: true,
+        createdAt: true,
+      },
+      take: 100,
+    });
   }
 
   /** Past statements for a counterparty (newest first). */

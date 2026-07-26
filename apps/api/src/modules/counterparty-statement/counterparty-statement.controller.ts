@@ -6,6 +6,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
   StreamableFile,
   UseGuards,
 } from '@nestjs/common';
@@ -29,17 +30,22 @@ export class CounterpartyStatementController {
   async generate(
     @CurrentUser() user: AuthenticatedUser,
     @Param('counterpartyId', new ParseUUIDPipe()) counterpartyId: string,
+    @Query('productId') productId?: string,
+    // Only send the file to the counterparty when explicitly requested
+    // («Kontragentga yuborish»). Default (generate/download) never messages them.
+    @Query('deliver') deliver?: string,
   ) {
     const { row, cp, data } = await this.svc.generate(
       user.accountId,
       counterpartyId,
       user.sub ?? null,
+      productId || undefined,
     );
-    const delivery = await this.svc.deliver(user.accountId, {
-      row,
-      cp,
-      finalBalanceMinor: data.finalBalanceMinor,
-    });
+    const delivery = await this.svc.deliver(
+      user.accountId,
+      { row, cp, finalBalanceMinor: data.finalBalanceMinor },
+      deliver === 'true',
+    );
     return {
       id: row.id,
       token: row.fileToken,
@@ -59,6 +65,45 @@ export class CounterpartyStatementController {
     @Param('counterpartyId', new ParseUUIDPipe()) counterpartyId: string,
   ) {
     const items = await this.svc.listForCounterparty(user.accountId, counterpartyId);
+    return {
+      items: items.map((r) => ({
+        id: r.id,
+        token: r.fileToken,
+        fileName: r.fileName,
+        finalBalanceMinor: r.finalBalanceMinor.toString(),
+        currency: r.currency,
+        createdAt: r.createdAt,
+      })),
+    };
+  }
+
+  /** Report B — generate a «buyum bo'yicha» report (product → counterparties). */
+  @Post('product-statements/:productId')
+  @UseGuards(JwtAuthGuard)
+  @RequirePermission({ entity: 'product', action: 'view' })
+  async generateProduct(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('productId', new ParseUUIDPipe()) productId: string,
+  ) {
+    const res = await this.svc.generateProductReport(user.accountId, productId, user.sub ?? null);
+    return {
+      id: res.row.id,
+      token: res.row.fileToken,
+      fileName: res.row.fileName,
+      productName: res.productName,
+      totalSumMinor: res.totalSumMinor.toString(),
+      downloadUrl: res.downloadUrl,
+    };
+  }
+
+  @Get('product-statements/:productId')
+  @UseGuards(JwtAuthGuard)
+  @RequirePermission({ entity: 'product', action: 'view' })
+  async listProduct(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('productId', new ParseUUIDPipe()) productId: string,
+  ) {
+    const items = await this.svc.listForProduct(user.accountId, productId);
     return {
       items: items.map((r) => ({
         id: r.id,

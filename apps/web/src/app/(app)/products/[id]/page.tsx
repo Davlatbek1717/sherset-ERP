@@ -18,6 +18,7 @@ import { type PackDraft, ProductDetailWidget } from '@/components/product-detail
 import { ProductFormShell } from '@/components/product-form-layout';
 import { ProductFormLeftCards } from '@/components/products/product-form-left-cards';
 import { ProductPriceEditor } from '@/components/products/product-price-editor';
+import { ProductReportCard } from '@/components/products/product-report-card';
 import { type ProductHydrateInput, useProductForm } from '@/components/products/use-product-form';
 import { useApiMutation } from '@/hooks/use-api-mutation';
 import { useConflictReload } from '@/hooks/use-conflict-reload';
@@ -324,18 +325,22 @@ export default function ProductDetailPage() {
             />
           }
           right={
-            <ProductDetailWidget
-              productId={data.id}
-              buyPrice={data.buyPrice}
-              minPrice={data.minPrice}
-              salePrices={data.salePrices}
-              packs={packs}
-              onPacksChange={onPacksChange}
-              uomItems={pf.uomItems}
-              initialTab={initialTab}
-              autoOpenModifications={openTab === 'variants'}
-              pricesEditor={<ProductPriceEditor pf={pf} />}
-            />
+            <div className="space-y-4">
+              <ProductDetailWidget
+                productId={data.id}
+                buyPrice={data.buyPrice}
+                minPrice={data.minPrice}
+                salePrices={data.salePrices}
+                packs={packs}
+                onPacksChange={onPacksChange}
+                uomItems={pf.uomItems}
+                initialTab={initialTab}
+                autoOpenModifications={openTab === 'variants'}
+                pricesEditor={<ProductPriceEditor pf={pf} />}
+              />
+              {/* Sherset custom — «buyum bo'yicha» akt-sverka (Report B). */}
+              <ProductReportCard productId={data.id} />
+            </div>
           }
         />
       </main>

@@ -2166,7 +2166,13 @@
       "loc_col_address": "Manzil",
       "loc_col_note": "Izoh",
       "loc_col_qty": "Soni",
-      "loc_open_card": "Kartochkani ochish"
+      "loc_open_card": "Kartochkani ochish",
+      "report_title": "Buyum bo'yicha hisobot",
+      "report_generate": "Hisobot yaratish",
+      "report_generating": "Yaratilmoqda…",
+      "report_sent": "Hisobot yaratildi (botga havola)",
+      "report_empty": "Hali hisobot yo'q",
+      "report_download": "Yuklab olish"
     },
     "product_folders": {
       "title": "Tovar guruhlari",
@@ -2256,7 +2262,15 @@
       "akt_download": "Yuklab olish",
       "akt_owes_us": "Sizga {amt} so'm qarzdor",
       "akt_we_owe": "Siz {amt} so'm qarzdorsiz",
-      "akt_settled": "Hisob teng"
+      "akt_settled": "Hisob teng",
+      "akt_by_product": "Buyum bo'yicha akt",
+      "akt_pick_product": "Buyum tanlang",
+      "akt_generate_product": "Buyum bo'yicha yuborish",
+      "akt_all_scope": "Barcha savdo",
+      "akt_btn_create": "Yaratish",
+      "akt_btn_send": "Kontragentga yuborish",
+      "akt_toast_created": "Akt yaratildi",
+      "akt_toast_sent": "Kontragentga yuborildi"
     },
     "counterparty_new": {
       "title": "Yangi kontragent",

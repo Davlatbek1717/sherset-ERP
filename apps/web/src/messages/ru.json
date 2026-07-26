@@ -2166,7 +2166,13 @@
       "loc_col_address": "Адрес",
       "loc_col_note": "Примечание",
       "loc_col_qty": "Кол-во",
-      "loc_open_card": "Открыть карточку"
+      "loc_open_card": "Открыть карточку",
+      "report_title": "Отчёт по товару",
+      "report_generate": "Сформировать отчёт",
+      "report_generating": "Формируется…",
+      "report_sent": "Отчёт сформирован (ссылка в бот)",
+      "report_empty": "Отчётов пока нет",
+      "report_download": "Скачать"
     },
     "product_folders": {
       "title": "Группы товаров",
@@ -2256,7 +2262,15 @@
       "akt_download": "Скачать",
       "akt_owes_us": "Должен вам {amt} сум",
       "akt_we_owe": "Вы должны {amt} сум",
-      "akt_settled": "Взаиморасчёты сведены"
+      "akt_settled": "Взаиморасчёты сведены",
+      "akt_by_product": "Акт по товару",
+      "akt_pick_product": "Выберите товар",
+      "akt_generate_product": "Отправить по товару",
+      "akt_all_scope": "Все операции",
+      "akt_btn_create": "Сформировать",
+      "akt_btn_send": "Отправить контрагенту",
+      "akt_toast_created": "Акт сформирован",
+      "akt_toast_sent": "Отправлено контрагенту"
     },
     "counterparty_new": {
       "title": "Новый контрагент",

@@ -8750,7 +8750,10 @@ model HrTelegramOutbox {
 model CounterpartyStatement {
   id                String    @id @default(uuid()) @db.Uuid
   accountId         String    @map("account_id") @db.Uuid
-  counterpartyId    String    @map("counterparty_id") @db.Uuid
+  // Nullable: a product-scoped report (buyum→kontragentlar) has no single agent.
+  counterpartyId    String?   @map("counterparty_id") @db.Uuid
+  // Set for product reports (Report B) and product-filtered agent akts (Report A).
+  productId         String?   @map("product_id") @db.Uuid
   periodFrom        DateTime? @map("period_from") @db.Timestamptz()
   periodTo          DateTime? @map("period_to") @db.Timestamptz()
   fileToken         String    @unique @map("file_token") @db.VarChar(64)
