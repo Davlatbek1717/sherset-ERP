@@ -58,6 +58,7 @@ import {
   PositionTable,
   type PositionTableColumnConfig,
   Textarea,
+  useToast,
 } from '@moysklad/ui';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
@@ -150,6 +151,7 @@ export default function NewSupplyPage() {
   const router = useRouter();
   const { user } = useAuth();
   const t = useTranslations('pages.supplies');
+  const { toast } = useToast();
   const tFields = useTranslations('fields');
   const tForm = useTranslations('form');
   const tDetailForm = useTranslations('detail_form');
@@ -624,7 +626,7 @@ export default function NewSupplyPage() {
   // moysklad «Печать» on a NEW receipt: silently save, then open the check in a NEW
   // TAB (HTML print view) — the print flag lives on the ref so `createMut.onSuccess`
   // knows whether the save was triggered by «Печать».
-  const afterSaveRef = useRef<'view' | 'print'>('view');
+  const afterSaveRef = useRef<'view' | 'print' | 'send-goods'>('view');
   // Which form the save-first print should open once the receipt exists: {view} =
   // built-in «Приходная накладная» HTML check, {form} = a custom form PDF (rendered
   // via /supplies/bulk-print + opened in a new tab), {kit} = «Комплект…». Mirror PO/new.
@@ -711,6 +713,17 @@ export default function NewSupplyPage() {
       // «Печать»: open the chosen form of the freshly-saved receipt in a NEW TAB
       // (moysklad «Открыть в браузере» — the user presses «Печать» there, no
       // auto-print), then land on the saved receipt's detail page. Mirror PO/new.
+      // «Tovarlar ro'yxati (Excel)» — send THIS supply's goods to the agent.
+      if (intent === 'send-goods') {
+        try {
+          await api.post(`/supply-goods/${created.id}?deliver=true`, {});
+          toast.success(t('send_goods_ok'));
+        } catch (e) {
+          toast.error((e as Error).message);
+        }
+        router.push(`/supplies/${created.id}`);
+        return;
+      }
       if (intent === 'print') {
         const target = printTargetRef.current;
         printTargetRef.current = { kind: 'view' };
@@ -1515,14 +1528,25 @@ export default function NewSupplyPage() {
             },
           },
         ]}
-        // «Отправить» — moysklad: Приходная накладная · Комплект…
-        sendMenu={[tPrintSupply('prixodnaya'), tPrint('set')].map((label) => ({
-          label,
-          onClick: () => {
-            setError(null);
-            createMut.mutate();
+        // «Отправить» — «Tovarlar ro'yxati (Excel)» (saqlab, agentga yuboradi) +
+        // moysklad: Приходная накладная · Комплект…
+        sendMenu={[
+          {
+            label: t('send_goods'),
+            onClick: () => {
+              afterSaveRef.current = 'send-goods';
+              setError(null);
+              createMut.mutate();
+            },
           },
-        }))}
+          ...[tPrintSupply('prixodnaya'), tPrint('set')].map((label) => ({
+            label,
+            onClick: () => {
+              setError(null);
+              createMut.mutate();
+            },
+          })),
+        ]}
         // moysklad pins each configured custom print form as its OWN button right
         // after «Отправить». Each saves the receipt first, then renders that form's
         // PDF into a new tab. Mirror PO/new.
