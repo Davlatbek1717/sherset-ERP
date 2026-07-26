@@ -3838,7 +3838,9 @@
       "mass_edit_apply": "Qo'llash",
       "mass_edit_cancel": "Bekor",
       "mass_edit_hint": "{count} ta yozuv tanlandi. Belgilangan maydonlar barchasiga qo'llanadi.",
-      "filter_shared": "Umumiy kirish"
+      "filter_shared": "Umumiy kirish",
+      "send_akt": "Akt-sverka (Excel) kontragentga yuborish",
+      "send_akt_ok": "Akt-sverka kontragentga yuborildi"
     },
     "payments": {
       "title": "To'lovlar",

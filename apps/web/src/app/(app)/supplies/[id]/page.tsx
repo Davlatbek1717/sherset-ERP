@@ -609,6 +609,17 @@ export default function SupplyDetailPage() {
     },
   });
 
+  // «Akt-sverka (Excel) → kontragentga yuborish» straight from the supply — the
+  // full reconciliation for this supply's agent, delivered to their Telegram.
+  const aktMut = useApiMutation({
+    mutationFn: () =>
+      api.post<{ counterpartySent: boolean }>(
+        `/counterparty-statements/${data?.agent.id}?deliver=true`,
+        {},
+      ),
+    successMessage: t('send_akt_ok'),
+  });
+
   const { runDestructive } = useDestructiveMutation();
 
   const saveMut = useSaveMutation({
@@ -949,6 +960,11 @@ export default function SupplyDetailPage() {
     setEmailOpen(true);
   };
   const sendMenuItems: CreateMenuItem[] = [
+    {
+      id: 'akt-sverka',
+      label: t('send_akt'),
+      onSelect: () => aktMut.mutate(),
+    },
     ...(printForms ?? []).map((f) => ({
       id: `form-${f.id}`,
       label: f.name,
