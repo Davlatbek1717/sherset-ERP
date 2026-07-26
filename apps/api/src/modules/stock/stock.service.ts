@@ -241,34 +241,84 @@ export class StockService {
       });
     }
 
-    // 3. Per-cell balance (Адресное хранение, Phase 4) — only for deltas that carry
-    //    a cellId. Mirrors the Stock upsert exactly, one extra key (cellId). Null-cell
-    //    deltas skip this entirely (store-level remains the source of truth; cost +
-    //    reservation stay store-level — StockByCell tracks qty only).
+    // 3. Per-cell balance (Адресное хранение, Phase 4).
+    //
+    //    a) EXPLICIT cell (d.cellId set — Supply/Enter/Loss/returns): mirror the
+    //       Stock upsert exactly on the (…, cellId) row.
+    //    b) OUTBOUND with NO cell (Demand sale, Move-out, Inventory shortage —
+    //       whose position models carry no cellId): the goods still physically
+    //       leave the cells they occupy. Without this, cells only ever get
+    //       INCREMENTED (by supply/enter) and never decremented → StockByCell
+    //       drifts permanently ABOVE the store total, cells show phantom
+    //       occupancy and render «Занята» forever (the owner's exact complaint).
+    //       So we auto-deduct the outflow from the SKU's occupied cells,
+    //       largest-first, capped per cell (never negative). Any remainder means
+    //       the SKU also held un-celled stock — that part stays store-level only.
+    //       Safe under concurrency: every outbound caller lockBalances/Serializable
+    //       -serializes same-SKU postings before reaching here, so two demands
+    //       can't both read+decrement the same cell.
+    //    c) INBOUND with no cell (positive delta, no cellId): can't be
+    //       auto-placed into a specific cell → store-level only (unchanged).
     for (const d of deltas) {
-      if (!d.cellId) continue;
-      await tx.stockByCell.upsert({
-        where: {
-          accountId_storeId_cellId_assortmentKind_assortmentId: {
+      if (d.cellId) {
+        await tx.stockByCell.upsert({
+          where: {
+            accountId_storeId_cellId_assortmentKind_assortmentId: {
+              accountId,
+              storeId: d.storeId,
+              cellId: d.cellId,
+              assortmentKind: d.assortmentKind,
+              assortmentId: d.assortmentId,
+            },
+          },
+          create: {
             accountId,
             storeId: d.storeId,
             cellId: d.cellId,
             assortmentKind: d.assortmentKind,
             assortmentId: d.assortmentId,
+            qty: d.qtyDelta as Prisma.Decimal,
           },
-        },
-        create: {
+          update: {
+            qty: { increment: d.qtyDelta as Prisma.Decimal },
+          },
+        });
+        continue;
+      }
+
+      const micro = toMicro(String(d.qtyDelta));
+      if (micro >= 0n) continue; // inbound / zero-delta with no cell → nothing to place
+
+      let remaining = -micro; // positive amount still to remove from cells
+      const occupied = await tx.stockByCell.findMany({
+        where: {
           accountId,
           storeId: d.storeId,
-          cellId: d.cellId,
           assortmentKind: d.assortmentKind,
           assortmentId: d.assortmentId,
-          qty: d.qtyDelta as Prisma.Decimal,
+          qty: { gt: 0 },
         },
-        update: {
-          qty: { increment: d.qtyDelta as Prisma.Decimal },
-        },
+        orderBy: { qty: 'desc' },
       });
+      for (const c of occupied) {
+        if (remaining <= 0n) break;
+        const have = toMicro(c.qty.toString());
+        const take = have < remaining ? have : remaining;
+        if (take <= 0n) continue;
+        await tx.stockByCell.update({
+          where: {
+            accountId_storeId_cellId_assortmentKind_assortmentId: {
+              accountId,
+              storeId: d.storeId,
+              cellId: c.cellId,
+              assortmentKind: d.assortmentKind,
+              assortmentId: d.assortmentId,
+            },
+          },
+          data: { qty: { decrement: fromMicro(take) as unknown as Prisma.Decimal } },
+        });
+        remaining -= take;
+      }
     }
   }
 
@@ -400,9 +450,30 @@ export class StockService {
   ): void {
     if (allowNegativeStock) return;
 
-    const shortages: Array<Shortage & { name?: string }> = [];
+    // AGGREGATE duplicate lines for the SAME assortment BEFORE checking —
+    // otherwise two 60-unit lines against a 100-unit balance would EACH pass
+    // the per-line check (60 ≤ 100 twice) and oversell to −20, silently
+    // slipping past the no-negative guard. Sum in exact Decimal(20,6)
+    // micro-units (BigInt) so fractional quantities never drift on float
+    // (`Number()` on a Decimal(20,6) loses precision past ~15 significant
+    // digits → spurious block OR sub-unit oversell).
+    const agg = new Map<string, { kind: string; id: string; name?: string; micro: bigint }>();
     for (const r of requests) {
-      const bal = balances.get(r.assortmentId);
+      const m = toMicro(String(r.requested));
+      const cur = agg.get(r.assortmentId);
+      if (cur) cur.micro += m;
+      else
+        agg.set(r.assortmentId, {
+          kind: r.assortmentKind,
+          id: r.assortmentId,
+          name: r.name,
+          micro: m,
+        });
+    }
+
+    const shortages: Array<Shortage & { name?: string }> = [];
+    for (const want of agg.values()) {
+      const bal = balances.get(want.id);
       // §2c — POSTING SUFFICIENCY = PHYSICAL on-hand − reserved.
       // ⚠️ This is DELIBERATELY *not* moysklad's displayed «Доступно»
       // (= Остаток − Резерв + Ожидание). Expected-incoming (in-transit)
@@ -415,16 +486,15 @@ export class StockService {
       // (only Production reservation writes it), so qty − 0 === qty
       // ⇒ byte-identical unless a reservation actually exists; then
       // it correctly blocks other documents from the held stock.
-      const avail = bal ? Number(bal.qty) - Number(bal.reservedQty) : 0;
-      const want = Number(r.requested);
-      if (want > avail) {
+      const availMicro = bal ? toMicro(bal.qty) - toMicro(bal.reservedQty) : 0n;
+      if (want.micro > availMicro) {
         shortages.push({
-          assortmentKind: r.assortmentKind,
-          assortmentId: r.assortmentId,
-          name: r.name,
-          requested: String(want),
-          available: String(avail),
-          shortage: String(want - avail),
+          assortmentKind: want.kind,
+          assortmentId: want.id,
+          name: want.name,
+          requested: fromMicro(want.micro),
+          available: fromMicro(availMicro),
+          shortage: fromMicro(want.micro - availMicro),
         });
       }
     }

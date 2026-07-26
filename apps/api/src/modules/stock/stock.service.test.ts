@@ -276,3 +276,81 @@ describe('StockService.assertAvailable — reservation enforcement (§2c)', () =
     expect(() => svc.assertAvailable(true, req, bal('0', '999'))).not.toThrow();
   });
 });
+
+// =========================================================================
+// Duplicate-line aggregation + exact (Decimal) sufficiency — oversell guard
+// =========================================================================
+
+describe('StockService.assertAvailable — duplicate-line + exactness', () => {
+  const svc = makeService();
+  const bal = (qty: string): Map<string, StockBalance> =>
+    new Map([
+      [
+        'p1',
+        { storeId: 's', assortmentKind: 'product', assortmentId: 'p1', qty, reservedQty: '0' },
+      ],
+    ]);
+
+  it('TWO lines of the SAME sku are SUMMED before the check (no oversell)', () => {
+    // 100 on hand; two 60-unit lines ⇒ 120 requested > 100 ⇒ MUST block.
+    // The pre-fix per-line loop passed each 60 ≤ 100 independently → oversold to −20.
+    try {
+      svc.assertAvailable(
+        false,
+        [
+          { assortmentKind: 'product', assortmentId: 'p1', requested: '60' },
+          { assortmentKind: 'product', assortmentId: 'p1', requested: '60' },
+        ],
+        bal('100'),
+      );
+      expect.fail('should have thrown — 60+60 > 100');
+    } catch (e) {
+      const resp = (e as BadRequestException).getResponse() as {
+        details: { shortages: Array<{ requested: string; available: string; shortage: string }> };
+      };
+      expect(resp.details.shortages).toHaveLength(1); // aggregated to ONE line
+      expect(resp.details.shortages[0]).toMatchObject({
+        requested: '120',
+        available: '100',
+        shortage: '20',
+      });
+    }
+  });
+
+  it('duplicate lines that TOGETHER fit still pass', () => {
+    expect(() =>
+      svc.assertAvailable(
+        false,
+        [
+          { assortmentKind: 'product', assortmentId: 'p1', requested: '40' },
+          { assortmentKind: 'product', assortmentId: 'p1', requested: '60' },
+        ],
+        bal('100'),
+      ),
+    ).not.toThrow();
+  });
+
+  it('fractional sub-unit sufficiency is exact (no float drift)', () => {
+    // 0.3 on hand, request 0.1 + 0.2 ⇒ exactly 0.3 ⇒ passes (float 0.1+0.2=0.30000000000000004 would wrongly block)
+    expect(() =>
+      svc.assertAvailable(
+        false,
+        [
+          { assortmentKind: 'product', assortmentId: 'p1', requested: '0.1' },
+          { assortmentKind: 'product', assortmentId: 'p1', requested: '0.2' },
+        ],
+        bal('0.3'),
+      ),
+    ).not.toThrow();
+  });
+
+  it('fractional oversell by one micro-unit is caught', () => {
+    expect(() =>
+      svc.assertAvailable(
+        false,
+        [{ assortmentKind: 'product', assortmentId: 'p1', requested: '0.300001' }],
+        bal('0.3'),
+      ),
+    ).toThrow(BadRequestException);
+  });
+});

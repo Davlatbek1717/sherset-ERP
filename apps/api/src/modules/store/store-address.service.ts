@@ -570,14 +570,23 @@ export class StoreAddressService {
     });
     if (!existing) throw new NotFoundException(`Cell ${cellId} not found`);
     // A cell holding stock cannot be deleted (parity «нельзя удалить непустую ячейку»;
-    // the FK is ON DELETE RESTRICT — we check first for a friendly message).
+    // the StockByCell FK is ON DELETE RESTRICT — we check first for a friendly message).
     const stocked = await this.prisma.client.stockByCell.count({
       where: { accountId, storeId, cellId, qty: { gt: 0 } },
     });
     if (stocked > 0) {
       throw new BadRequestException("Yacheykada tovar qoldig'i bor — avval boshqasiga ko'chiring");
     }
-    await this.prisma.client.storeCell.delete({ where: { id: cellId } });
+    // Purge residual EMPTY StockByCell rows (qty = 0) — an emptied cell keeps a
+    // zero-qty materialized row (outflow decrements to 0 without deleting it), and
+    // the RESTRICT FK would otherwise reject the delete with a raw 500 even though
+    // the cell holds nothing. A zero row carries no stock (absence == zero), so
+    // dropping it is loss-free. Both in one tx so the cell can't gain stock
+    // between the purge and the delete.
+    await this.prisma.client.$transaction(async (tx) => {
+      await tx.stockByCell.deleteMany({ where: { accountId, storeId, cellId, qty: { lte: 0 } } });
+      await tx.storeCell.delete({ where: { id: cellId } });
+    });
     return { ok: true };
   }
 

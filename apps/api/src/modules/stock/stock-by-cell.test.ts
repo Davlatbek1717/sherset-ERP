@@ -19,10 +19,17 @@ describe('StockByCell is driven centrally from applyDeltas (one insertion point)
     expect(STOCK).toMatch(/cellId:\s*d\.cellId\s*\?\?\s*null/);
   });
 
-  it('null-cell deltas SKIP the per-cell upsert (no phantom rows, store-level unchanged)', () => {
-    // Non-vacuous: removing this guard would attempt a StockByCell write with a null
-    // PK component for every store-level delta.
-    expect(STOCK).toMatch(/if\s*\(!d\.cellId\)\s*continue;/);
+  it('null-cell INBOUND deltas skip per-cell placement (can’t auto-assign an inflow to a cell)', () => {
+    // Positive/zero delta with no cellId ⇒ store-level only (no phantom row).
+    expect(STOCK).toMatch(/if\s*\(micro\s*>=\s*0n\)\s*continue;/);
+  });
+
+  it('null-cell OUTBOUND deltas AUTO-DEDUCT from the sku’s occupied cells (no phantom occupancy)', () => {
+    // Sales/Move-out/Inventory-shortage carry no cellId; without this the cells
+    // would only ever be incremented → StockByCell drifts above the store total.
+    expect(STOCK).toMatch(/tx\.stockByCell\.findMany/);
+    expect(STOCK).toMatch(/orderBy:\s*\{\s*qty:\s*'desc'\s*\}/);
+    expect(STOCK).toMatch(/decrement:\s*fromMicro\(take\)/);
   });
 
   it('applies the per-cell qty by incrementing StockByCell (mirrors the Stock upsert)', () => {

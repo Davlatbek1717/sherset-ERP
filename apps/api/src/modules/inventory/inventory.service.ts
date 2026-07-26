@@ -627,6 +627,18 @@ export class InventoryService {
               : Number(buyPriceById.get(p.assortmentId) ?? 0n);
           sumMinor += BigInt(Math.round(actualNum * unitCostNum));
 
+          // Cost delta for the variance — MUST move the cost basis in lock-step
+          // with qty, exactly like Loss/Enter do. Passing null (the old bug) kept
+          // costBalanceMinor frozen while qty changed → the weighted-average
+          // per-unit cost (costBalanceMinor / qty) was corrupted on EVERY recount
+          // (e.g. 10 units @1000 recounted to 5 ⇒ 5000/5 = 1000 stays right ONLY
+          // if cost also drops by 5×1000; without it 10000/5 = 2000, doubled).
+          // varianceNum carries the sign (surplus + / shortage −); surplus enters
+          // at the current weighted-average (unitCostNum) so the average is
+          // unshifted, shortage leaves at that same average.
+          const varianceCostMinor =
+            unitCostNum > 0 ? BigInt(Math.round(varianceNum * unitCostNum)) : null;
+
           // Persist snapshot + variance on position
           await tx.inventoryPosition.update({
             where: { id: p.id },
@@ -645,7 +657,7 @@ export class InventoryService {
               assortmentKind: p.assortmentKind,
               assortmentId: p.assortmentId,
               qtyDelta: String(varianceNum),
-              costDeltaMinor: null, // cost basis unchanged for surplus (unknown source)
+              costDeltaMinor: varianceCostMinor,
               docType: 'inventory_surplus',
               docId: id,
               docPositionId: p.id,
@@ -658,7 +670,7 @@ export class InventoryService {
               assortmentKind: p.assortmentKind,
               assortmentId: p.assortmentId,
               qtyDelta: String(varianceNum), // already negative
-              costDeltaMinor: null,
+              costDeltaMinor: varianceCostMinor, // negative — mirrors qty outflow
               docType: 'inventory_shortage',
               docId: id,
               docPositionId: p.id,
@@ -671,13 +683,20 @@ export class InventoryService {
           await this.stock.applyDeltas(tx, accountId, userId, deltas);
         }
 
-        const updated = await tx.inventory.update({
-          where: { id, accountId },
-          // sumMinor = Σ(actualQty × per-unit cost) — "Sum of (counted_qty ×
-          // cost)" per the column's schema contract; feeds the list «Сумма»
-          // column + the editor «Итого» after posting.
+        // Atomic state-claim — transition ONLY if still 'draft'. A concurrent
+        // post/cancel that already moved the doc gets count=0, we throw, and the
+        // whole tx (incl. the stock deltas applied above) rolls back — so stock
+        // can never end up adjusted on a doc someone else already cancelled.
+        // sumMinor = Σ(actualQty × per-unit cost) — feeds the list «Сумма»
+        // column + the editor «Итого» after posting.
+        const claimed = await tx.inventory.updateMany({
+          where: { id, accountId, state: 'draft' },
           data: { state: 'posted', applicable: true, postedAt: new Date(), sumMinor },
         });
+        if (claimed.count === 0) {
+          throw new BadRequestException("Holat o'zgardi — hujjatni qayta oching");
+        }
+        const updated = await tx.inventory.findFirstOrThrow({ where: { id, accountId } });
         await tx.auditLog.create({
           data: {
             accountId,
@@ -706,19 +725,36 @@ export class InventoryService {
   ) {
     if (existing.state === 'cancelled') throw new BadRequestException('Oldin cancel qilingan');
     return this.prisma.client.$transaction(async (tx) => {
+      // Atomic state-claim FIRST — only one caller wins the transition. A
+      // concurrent second cancel (or a post racing this) gets count=0 and aborts
+      // BEFORE reversing any delta, so the variance can never be reversed twice
+      // (which would double-adjust stock).
+      const claimed = await tx.inventory.updateMany({
+        where: { id, accountId, state: { not: 'cancelled' } },
+        data: { state: 'cancelled', applicable: false },
+      });
+      if (claimed.count === 0) throw new BadRequestException('Oldin cancel qilingan');
+
       const wasApplicable = existing.applicable;
       if (wasApplicable) {
-        // Reverse the variance deltas we applied on post
+        // Reverse the variance deltas we applied on post — EXACTLY negating both
+        // the qty and the cost we moved. The cost delta must be the negative of
+        // what post applied (round(varianceNum × unitCost)); we recompute it from
+        // the persisted varianceQty + costMinor snapshot so it's bit-for-bit the
+        // reversal. Passing null (the old bug) left costBalanceMinor decremented
+        // by the sale/loss basis but never restored on cancel → drift.
         const deltas: StockDelta[] = [];
         for (const p of existing.positions) {
           const varianceNum = Number(String(p.varianceQty));
           if (varianceNum === 0) continue;
+          const unitCost = p.costMinor != null ? Number(p.costMinor) : 0;
+          const reverseCost = unitCost > 0 ? -BigInt(Math.round(varianceNum * unitCost)) : null;
           deltas.push({
             storeId: existing.storeId,
             assortmentKind: p.assortmentKind,
             assortmentId: p.assortmentId,
             qtyDelta: String(-varianceNum), // reverse sign
-            costDeltaMinor: null,
+            costDeltaMinor: reverseCost,
             docType: 'inventory_cancel',
             docId: id,
             docPositionId: p.id,
@@ -729,10 +765,7 @@ export class InventoryService {
           await this.stock.applyDeltas(tx, accountId, userId, deltas);
         }
       }
-      const updated = await tx.inventory.update({
-        where: { id, accountId },
-        data: { state: 'cancelled', applicable: false },
-      });
+      const updated = await tx.inventory.findFirstOrThrow({ where: { id, accountId } });
       await tx.auditLog.create({
         data: {
           accountId,
