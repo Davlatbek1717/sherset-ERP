@@ -28,6 +28,7 @@ import { PositionDiscountMenu } from '@/components/documents/position-discount-m
 import { PositionPriceMenu } from '@/components/documents/position-price-menu';
 import { useNewDocStaging } from '@/components/documents/use-new-doc-staging';
 import { usePrintTemplatesManager } from '@/components/print/print-templates-provider';
+import { ProductCreateModal } from '@/components/products/product-create-modal';
 import { ProductEditModal } from '@/components/products/product-edit-modal';
 import { type KitPrintForm, KitPrintModal } from '@/components/purchase-orders/kit-print-modal';
 import { useDocumentEditorLabels } from '@/hooks/use-document-editor-labels';
@@ -416,6 +417,9 @@ export default function NewSupplyPage() {
   // «Наименование» click → edit that product in an overlay, WITHOUT leaving the
   // (unsaved) receipt (owner 2026-07-27). Conditionally mounted → fresh each open.
   const [editProductId, setEditProductId] = useState<string | null>(null);
+  // «Создать новый товар "<query>"» → create in an overlay, then append it as a
+  // position (null = closed; a string = open, pre-filling that typed name).
+  const [createProductName, setCreateProductName] = useState<string | null>(null);
   const handleImportFile = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = ''; // allow re-picking the same file
@@ -1296,7 +1300,7 @@ export default function NewSupplyPage() {
                   sortAvailableLabel={tPos('sortByAvailable')}
                   moreItemsLabel={(n) => tPos('moreItems', { count: n })}
                   createProductLabel={(q) => tPos('createProductNamed', { query: q })}
-                  onCreateProduct={() => router.push('/products/new')}
+                  onCreateProduct={(q) => setCreateProductName(q)}
                   // Owner 2026-07-27: product picks add DIRECTLY — no qty/price modal
                   // (moysklad's Приёмка add-line has none). Price defaults to the
                   // retail sale price (retailPriceTypeId); the search box clears.
@@ -1897,6 +1901,44 @@ export default function NewSupplyPage() {
       />
       {editProductId && (
         <ProductEditModal productId={editProductId} open onClose={() => setEditProductId(null)} />
+      )}
+      {createProductName !== null && (
+        <ProductCreateModal
+          open
+          initialName={createProductName}
+          onClose={() => setCreateProductName(null)}
+          onCreated={async (created) => {
+            try {
+              const res = await api.get<{
+                name: string;
+                uom: string | null;
+                buyPrice: string | null;
+                vat?: number | null;
+                salePrices?: Array<{ priceTypeId: string; value: string }> | null;
+              }>(`/products/${created.id}`);
+              const retail = retailPriceTypeId
+                ? res.salePrices?.find((s) => s.priceTypeId === retailPriceTypeId)?.value
+                : undefined;
+              setPositions((ps) => [
+                ...ps,
+                {
+                  id: uid(),
+                  assortmentId: created.id,
+                  productLabel: res.name,
+                  productUom: res.uom ?? null,
+                  quantity: '1',
+                  priceMinor: retail ?? res.salePrices?.[0]?.value ?? res.buyPrice ?? '0',
+                  discount: '0',
+                  vat: res.vat != null ? String(res.vat) : '12',
+                  vatEnabled: true,
+                  salePrices: res.salePrices ?? null,
+                },
+              ]);
+            } catch {
+              // product created but couldn't fetch to append — non-fatal
+            }
+          }}
+        />
       )}
     </>
   );

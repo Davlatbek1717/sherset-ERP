@@ -2417,6 +2417,7 @@
       "section_images": "Изображения",
       "name_label": "Наименование товара",
       "modal_title_edit": "Редактирование товара",
+      "modal_title_create": "Новый товар",
       "name_required": "Наименование обязательно",
       "code_label": "Код",
       "code_prefix": "Код",

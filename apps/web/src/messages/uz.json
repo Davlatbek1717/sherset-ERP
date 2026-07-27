@@ -2417,6 +2417,7 @@
       "section_images": "Rasmlar",
       "name_label": "Tovar nomi",
       "modal_title_edit": "Tovarni tahrirlash",
+      "modal_title_create": "Yangi tovar",
       "name_required": "Nomi majburiy",
       "code_label": "Kod",
       "code_prefix": "Kod",
