@@ -932,6 +932,20 @@ export default function NewSupplyPage() {
     );
   };
 
+  // «Цена ▾» per-row quick-pick — the product's sale prices (Оптом / Sotilish),
+  // labelled by price-type name; picking one sets the row price (owner 2026-07-27).
+  const positionPriceOptions = useCallback(
+    (row: DocPositionRow) => {
+      const sps = (row as NewPositionRow).salePrices ?? [];
+      return sps.map((sp) => ({
+        id: sp.priceTypeId,
+        label: priceTypesData?.items.find((t) => t.id === sp.priceTypeId)?.name ?? tCols('price'),
+        value: sp.value,
+      }));
+    },
+    [priceTypesData, tCols],
+  );
+
   const renderPositionCountryCell = (row: DocPositionRow) => (
     <CatalogPickerField
       value={row.countryId ? { id: row.countryId, label: row.countryLabel ?? '' } : null}
@@ -1239,6 +1253,7 @@ export default function NewSupplyPage() {
               });
             }}
             renderNameCell={renderPositionNameCell}
+            priceOptions={positionPriceOptions}
             renderCountryCell={renderPositionCountryCell}
             renderCellCell={renderPositionCellCell}
             onReplace={(id) => setOpenPicker({ kind: 'product', rowUid: id })}

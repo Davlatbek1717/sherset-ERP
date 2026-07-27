@@ -250,6 +250,10 @@ export interface PositionTableProps {
   onPriceAction?: (action: 'reprice' | 'save') => void;
   repriceLabel?: string;
   savePricesLabel?: string;
+  /** Per-row «Цена» quick-pick (owner 2026-07-27): when this returns options for a
+   *  row, the price cell gets a ▾ listing them (e.g. Оптом / Sotilish from the
+   *  product's sale prices); picking one sets the row's price. Empty ⇒ no ▾. */
+  priceOptions?: (row: DocPositionRow) => Array<{ id: string; label: string; value: string }>;
   /**
    * moysklad «Комиссия ▾» header menu (live-grounded — «Пересчитать»). When
    * `onCommissionRecalc` + the label are supplied, the `commission` column header
@@ -448,6 +452,7 @@ export function PositionTable({
   columnConfig,
   onColumnToggle,
   columnConfigLabel,
+  priceOptions,
   onPriceAction,
   repriceLabel,
   savePricesLabel,
@@ -828,6 +833,7 @@ export function PositionTable({
                           canDrag: !!onReorder && !readOnly,
                           autoFocusQty: !!autoFocusRowId && row.id === autoFocusRowId,
                           editableReserve: !!editableReserve,
+                          priceOptions,
                           warnStock: !!warnStock,
                           showInlineUnit,
                           onQtyEnter: handleQtyEnter,
@@ -1052,6 +1058,7 @@ function renderCell({
   canDrag,
   autoFocusQty,
   editableReserve,
+  priceOptions,
   warnStock,
   showInlineUnit,
   onQtyEnter,
@@ -1075,6 +1082,7 @@ function renderCell({
   canDrag?: boolean;
   autoFocusQty?: boolean;
   editableReserve?: boolean;
+  priceOptions?: (row: DocPositionRow) => Array<{ id: string; label: string; value: string }>;
   /** moysklad: colour «Остаток»/«Доступно» red when ≤ 0 (sales grids only). */
   warnStock?: boolean;
   /** moysklad: render the unit («шт») inline after the «Кол-во» quantity. */
@@ -1192,14 +1200,14 @@ function renderCell({
     case 'volume':
       // «Объём» = line total (per-unit ml × Кол-во); falls back to a pre-set string.
       return <ReadOnlyCell value={lineMeasure(row.volumeML, row.quantity) || row.volume} />;
-    case 'price':
+    case 'price': {
       // moysklad «Цена»: entered/shown in MAJOR sum, formatted «890,00» (comma +
       // 2 decimals) at rest, stored as minor. The old NumberInput bound the raw
       // `priceMinor`, so a 900,00 price showed as «90000» (minor, unformatted)
       // and typing «90000» booked only 900,00. MoneyInput fixes both — major
       // entry + formatted display.
       if (readOnly) return <ReadOnlyCell value={formatMinor(BigInt(row.priceMinor || '0'))} />;
-      return (
+      const priceInput = (
         <MoneyInput
           valueMinor={row.priceMinor}
           onChangeMinor={(v) => onUpdate(row.id, { priceMinor: v })}
@@ -1221,6 +1229,40 @@ function renderCell({
           data-test-id={`pos-${row.id}-price`}
         />
       );
+      // Owner 2026-07-27: when the product carries sale prices (Оптом / Sotilish),
+      // the «Цена» cell gets a ▾ to switch between them; picking sets the row price.
+      const priceOpts = priceOptions?.(row) ?? [];
+      if (priceOpts.length === 0) return priceInput;
+      return (
+        <div className="flex items-center justify-end gap-1">
+          <span className="min-w-0 flex-1">{priceInput}</span>
+          <DropdownMenu
+            align="end"
+            testId={`pos-${row.id}-price-pick`}
+            trigger={
+              <button
+                type="button"
+                aria-label="Narxni tanlash"
+                className="shrink-0 text-[var(--ms-text-brand)] leading-none hover:opacity-70 focus:outline-none"
+                data-test-id={`pos-${row.id}-price-pick-trigger`}
+              >
+                <Icons.down className="h-3.5 w-3.5" aria-hidden />
+              </button>
+            }
+          >
+            {priceOpts.map((o) => (
+              <DropdownMenu.Item
+                key={o.id}
+                onSelect={() => onUpdate(row.id, { priceMinor: o.value })}
+                testId={`pos-${row.id}-price-opt-${o.id}`}
+              >
+                {o.label}: {formatMinor(BigInt(o.value || '0'))}
+              </DropdownMenu.Item>
+            ))}
+          </DropdownMenu>
+        </div>
+      );
+    }
     case 'vat':
       return renderVatCell ? (
         renderVatCell(row)

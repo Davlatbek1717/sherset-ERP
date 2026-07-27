@@ -1062,6 +1062,22 @@ export default function SupplyDetailPage() {
   };
 
   // Position «Страна» cell — opens the per-row country picker.
+  // «Цена ▾» per-row quick-pick — the product's sale prices (Оптом / Sotilish),
+  // labelled by price-type name; picking one sets the row price (owner 2026-07-27).
+  const positionPriceOptions = useCallback(
+    (row: DocPositionRow) => {
+      const sps =
+        (row as { salePrices?: Array<{ priceTypeId: string; value: string }> | null }).salePrices ??
+        [];
+      return sps.map((sp) => ({
+        id: sp.priceTypeId,
+        label: priceTypesData?.items.find((t) => t.id === sp.priceTypeId)?.name ?? tCols('price'),
+        value: sp.value,
+      }));
+    },
+    [priceTypesData, tCols],
+  );
+
   const renderPositionCountryCell = (row: DocPositionRow) => (
     <CatalogPickerField
       value={row.countryId ? { id: row.countryId, label: row.countryLabel ?? '' } : null}
@@ -1589,6 +1605,7 @@ export default function SupplyDetailPage() {
                   sortByNameLabel={tPos('sort_by_name')}
                   sortByCodeLabel={tPos('sort_by_code')}
                   renderNameCell={renderPositionNameCell}
+                  priceOptions={positionPriceOptions}
                   // moysklad row ⋮ «Заменить» — swap the line's product (the name is now
                   // a card link, so swapping moves here). Opens the per-row product picker.
                   onReplace={(rowId) => editableLines && setProductRowId(rowId)}
