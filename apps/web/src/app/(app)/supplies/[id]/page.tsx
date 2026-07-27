@@ -20,6 +20,7 @@ import { PositionColumnCustomizer } from '@/components/documents/position-column
 import { PositionDiscountMenu } from '@/components/documents/position-discount-menu';
 import { PositionPriceMenu } from '@/components/documents/position-price-menu';
 import { usePrintTemplatesManager } from '@/components/print/print-templates-provider';
+import { ProductEditModal } from '@/components/products/product-edit-modal';
 import { type KitPrintForm, KitPrintModal } from '@/components/purchase-orders/kit-print-modal';
 import { SendEmailDialog } from '@/components/send-email-dialog';
 import { useApiMutation } from '@/hooks/use-api-mutation';
@@ -468,6 +469,8 @@ export default function SupplyDetailPage() {
   const [openCatalogPicker, setOpenCatalogPicker] = useState(false);
   const [productRowId, setProductRowId] = useState<string | null>(null);
   const [countryRowId, setCountryRowId] = useState<string | null>(null);
+  // «Наименование» click → edit that product in an overlay (mirror /new).
+  const [editProductId, setEditProductId] = useState<string | null>(null);
   const [colVisible, setColVisible] = useState<Record<string, boolean>>(DEFAULT_COL_VISIBLE);
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
   // «Отправить» email composer + «Печать ▸ Комплект…» dialog (mirror PO/[id]).
@@ -1054,7 +1057,8 @@ export default function SupplyDetailPage() {
         placeholder={tForm('select_product')}
         onPick={() => editableLines && setProductRowId(p.id)}
         productHref={href}
-        onNavigate={href ? () => router.push(href) : undefined}
+        onNavigate={p.assortmentId ? () => setEditProductId(p.assortmentId) : undefined}
+        navigateAsButton
         disabled={!editableLines}
         testId={`pos-${p.id}-name`}
       />
@@ -2037,6 +2041,9 @@ export default function SupplyDetailPage() {
         }}
         onLinked={() => qc.invalidateQueries({ queryKey: manualLinksKey })}
       />
+      {editProductId && (
+        <ProductEditModal productId={editProductId} open onClose={() => setEditProductId(null)} />
+      )}
     </div>
   );
 }
