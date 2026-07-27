@@ -35,6 +35,9 @@ export const SupplyPositionInputSchema = z.object({
   discount: discountPercent.optional(),
   vat: z.number().int().min(0).max(100).nullish(),
   vatEnabled: z.boolean().default(true),
+  // moysklad «РНПТ» + «Маркировка» (Честный знак) — free-text per-line entry.
+  rnpt: z.string().max(255).nullish(),
+  marking: z.string().max(500).nullish(),
   // moysklad «Номер ГТД» / «Сумма ГТД» / «Страна» — import/customs block
   // (live-confirmed on Приёмка, PARITY-AUDIT §41). gtdSumMinor = tiyin.
   gtdNumber: z.string().max(255).nullish(),

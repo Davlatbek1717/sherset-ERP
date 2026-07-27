@@ -69,6 +69,8 @@ interface PositionDetail {
   vatEnabled: boolean;
   costMinor: string | null;
   product: { id: string; name: string; code: string | null; uom: string | null } | null;
+  rnpt: string | null;
+  marking: string | null;
   gtdNumber: string | null;
   gtdSumMinor: string | null;
   countryId: string | null;
@@ -178,6 +180,9 @@ const OPTIONAL_POSITION_COLUMNS: { key: PositionColumnKey; labelKey: string; on:
   // Import/customs block — editable when toggled on (default OFF, moysklad parity).
   { key: 'gtdNumber', labelKey: 'gtd', on: false },
   { key: 'country', labelKey: 'country', on: false },
+  // «Маркировка» (Честный знак) + «РНПТ» — marked-goods only, default OFF (⚙ to enable).
+  { key: 'marking', labelKey: 'marking', on: false },
+  { key: 'rnpt', labelKey: 'rnpt', on: false },
 ];
 const DEFAULT_COL_VISIBLE: Record<string, boolean> = Object.fromEntries(
   OPTIONAL_POSITION_COLUMNS.map((c) => [c.key, c.on]),
@@ -289,6 +294,8 @@ function formFromData(d: SupplyDetail): FormState {
       discount: p.discount,
       vat: p.vat != null ? String(p.vat) : '',
       vatEnabled: p.vatEnabled,
+      rnpt: p.rnpt ?? '',
+      marking: p.marking ?? '',
       gtdNumber: p.gtdNumber ?? '',
       gtdSumMinor: p.gtdSumMinor ?? '',
       countryId: p.countryId ?? null,
@@ -330,6 +337,8 @@ function snapshot(s: FormState): string {
       discount: p.discount,
       vat: p.vat,
       vatEnabled: p.vatEnabled,
+      rnpt: p.rnpt ?? '',
+      marking: p.marking ?? '',
       gtdNumber: p.gtdNumber ?? '',
       gtdSumMinor: p.gtdSumMinor ?? '',
       countryId: p.countryId ?? null,
@@ -675,6 +684,8 @@ export default function SupplyDetailPage() {
           vat: p.vat ? Number(p.vat) : undefined,
           vatEnabled: p.vatEnabled,
           // Customs block — round-trip the import columns (preserved from current page).
+          rnpt: p.rnpt || undefined,
+          marking: p.marking || undefined,
           gtdNumber: p.gtdNumber || undefined,
           gtdSumMinor: p.gtdSumMinor || undefined,
           countryId: p.countryId || undefined,
@@ -798,6 +809,8 @@ export default function SupplyDetailPage() {
     const cols: PositionTableColumnConfig[] = [{ key: 'dragarea' }, { key: 'select' }];
     if (colVisible.image) cols.push({ key: 'image' });
     cols.push({ key: 'name', label: tCols('name') });
+    // moysklad «Маркировка» sits right after «Наименование» (marked-goods; ⚙-optional).
+    if (colVisible.marking) cols.push({ key: 'marking', label: tCols('marking') });
     // moysklad «Приёмка» qty header is «Принято» (received), NOT «Кол-во» (grounded
     // live 2026-07-06 on #supply/edit 00905). «Ячейка» sits right after the qty
     // block, before «Остаток» (moysklad order: Принято · Ячейка · Остаток).
@@ -846,6 +859,7 @@ export default function SupplyDetailPage() {
     if (colVisible.volume) cols.push({ key: 'volume', label: tCols('volume') });
     // moysklad «Приёмка» import/customs columns — editable when toggled on (⚙).
     if (colVisible.gtdNumber) cols.push({ key: 'gtdNumber', label: tCols('gtd') });
+    if (colVisible.rnpt) cols.push({ key: 'rnpt', label: tCols('rnpt') });
     if (colVisible.country) cols.push({ key: 'country', label: tCols('country') });
     cols.push({
       key: 'amount',

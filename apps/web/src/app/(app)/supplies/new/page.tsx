@@ -143,6 +143,9 @@ const OPTIONAL_POSITION_COLUMNS: { key: PositionColumnKey; labelKey: string; on:
   // Import/customs block — editable when toggled on (default OFF, moysklad parity).
   { key: 'gtdNumber', labelKey: 'gtd', on: false },
   { key: 'country', labelKey: 'country', on: false },
+  // «Маркировка» (Честный знак) + «РНПТ» — marked-goods only, default OFF (⚙ to enable).
+  { key: 'marking', labelKey: 'marking', on: false },
+  { key: 'rnpt', labelKey: 'rnpt', on: false },
 ];
 const DEFAULT_COL_VISIBLE: Record<string, boolean> = Object.fromEntries(
   OPTIONAL_POSITION_COLUMNS.map((c) => [c.key, c.on]),
@@ -531,6 +534,8 @@ export default function NewSupplyPage() {
       p.discount,
       p.vat,
       p.cellId ?? null,
+      p.rnpt ?? null,
+      p.marking ?? null,
     ]),
   });
   useEffect(() => {
@@ -601,6 +606,8 @@ export default function NewSupplyPage() {
     const cols: PositionTableColumnConfig[] = [{ key: 'dragarea' }, { key: 'select' }];
     if (colVisible.image) cols.push({ key: 'image' });
     cols.push({ key: 'name', label: tCols('name') });
+    // moysklad «Маркировка» sits right after «Наименование» (marked-goods; ⚙-optional).
+    if (colVisible.marking) cols.push({ key: 'marking', label: tCols('marking') });
     // moysklad «Приёмка» qty header is «Принято» (received), NOT «Кол-во» — grounded
     // live 2026-07-06 on the user's account (#supply/edit 00905) + the user's own
     // screenshot. The earlier «Кол-во» was mis-borrowed from the PO editor (whose
@@ -646,6 +653,7 @@ export default function NewSupplyPage() {
     if (colVisible.volume) cols.push({ key: 'volume', label: tCols('volume') });
     // moysklad «Приёмка» import/customs columns — editable when toggled on (⚙).
     if (colVisible.gtdNumber) cols.push({ key: 'gtdNumber', label: tCols('gtd') });
+    if (colVisible.rnpt) cols.push({ key: 'rnpt', label: tCols('rnpt') });
     if (colVisible.country) cols.push({ key: 'country', label: tCols('country') });
     cols.push({
       key: 'amount',
@@ -763,6 +771,8 @@ export default function NewSupplyPage() {
           gtdNumber: p.gtdNumber || undefined,
           gtdSumMinor: p.gtdSumMinor || undefined,
           countryId: p.countryId || undefined,
+          rnpt: p.rnpt || undefined,
+          marking: p.marking || undefined,
           // «Ячейка» — address-storage bin (cellId drives per-cell stock).
           ...(p.cellId ? { cellId: p.cellId } : {}),
           ...(p.cell ? { cell: p.cell } : {}),

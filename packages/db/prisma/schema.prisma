@@ -5220,7 +5220,11 @@ model SupplyPosition {
 
   // moysklad «Номер ГТД» / «Сумма ГТД» / «Страна» — import/customs block on
   // inventory-inbound positions (live-confirmed on Приёмка, PARITY-AUDIT §41).
-  // РНПТ/Маркировка intentionally NOT here — separate marking-system feature.
+  // moysklad «РНПТ» (registration number of goods batch) + «Маркировка» (Честный
+  // знак marking code(s)) — free-text per-line entry on the Приёмка grid (scan-based
+  // DataMatrix capture is a later enhancement; these persist the typed/pasted value).
+  rnpt        String? @db.VarChar(255)
+  marking     String? @db.VarChar(500)
   gtdNumber   String? @map("gtd_number") @db.VarChar(255)
   gtdSumMinor BigInt? @map("gtd_sum_minor")
   countryId   String? @map("country_id") @db.Uuid

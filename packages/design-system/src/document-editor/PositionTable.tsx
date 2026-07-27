@@ -56,6 +56,7 @@ export type PositionColumnKey =
   | 'gtdNumber' // «Номер ГТД» — customs declaration no. (import inbound, §41)
   | 'gtdSumMinor' // «Сумма ГТД» / «Себестоимость ГТД» — customs sum (tiyin)
   | 'rnpt' // «РНПТ» — registration number of goods batch, free-text (Enter import grid)
+  | 'marking' // «Маркировка» — Честный знак marking code(s), free-text entry (scan later)
   | 'country' // «Страна» — country of origin (Country picker, §41/§45)
   | 'cell' // «Ячейка» — warehouse bin/cell reference, free-text (Enter grid)
   | 'reason' // «Причина оприходования» — per-position free text (Enter, §enter)
@@ -102,6 +103,8 @@ export interface DocPositionRow {
   reason?: string;
   /** «РНПТ» — registration number of goods batch, free-text (Enter import grid). */
   rnpt?: string;
+  /** «Маркировка» — Честный знак marking code(s), free-text (scan entry is a later feature). */
+  marking?: string;
   /** «Ячейка» — address-storage bin. `cellId` = picked StoreCell; `cell` = the
    *  denormalized «Зона / Ячейка» label shown in the trigger / read-only span. */
   cellId?: string | null;
@@ -287,6 +290,7 @@ const DEFAULT_LABELS: Record<PositionColumnKey, string> = {
   gtdNumber: 'Номер ГТД',
   gtdSumMinor: 'Сумма ГТД',
   rnpt: 'РНПТ',
+  marking: 'Маркировка',
   country: 'Страна',
   cell: 'Ячейка',
   reason: 'Причина оприходования',
@@ -329,6 +333,7 @@ const DEFAULT_WIDTHS: Record<PositionColumnKey, string> = {
   gtdNumber: '150px',
   gtdSumMinor: '120px',
   rnpt: '150px',
+  marking: '180px',
   country: '140px',
   cell: '90px',
   reason: '180px',
@@ -1324,6 +1329,17 @@ function renderCell({
           onChange={(v) => onUpdate(row.id, { rnpt: v })}
           readOnly={readOnly}
           testId={`pos-${row.id}-rnpt`}
+        />
+      );
+    case 'marking':
+      // «Маркировка» — Честный знак marking code(s), free-text (scan entry later).
+      return (
+        <TextInput
+          value={row.marking ?? ''}
+          onChange={(v) => onUpdate(row.id, { marking: v })}
+          readOnly={readOnly}
+          placeholder={column.placeholder}
+          testId={`pos-${row.id}-marking`}
         />
       );
     case 'cell':
