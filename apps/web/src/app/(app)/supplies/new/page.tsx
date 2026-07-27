@@ -28,6 +28,7 @@ import { PositionDiscountMenu } from '@/components/documents/position-discount-m
 import { PositionPriceMenu } from '@/components/documents/position-price-menu';
 import { useNewDocStaging } from '@/components/documents/use-new-doc-staging';
 import { usePrintTemplatesManager } from '@/components/print/print-templates-provider';
+import { ProductEditModal } from '@/components/products/product-edit-modal';
 import { type KitPrintForm, KitPrintModal } from '@/components/purchase-orders/kit-print-modal';
 import { useDocumentEditorLabels } from '@/hooks/use-document-editor-labels';
 import { useUnsavedGuard } from '@/hooks/use-unsaved-guard';
@@ -412,6 +413,9 @@ export default function NewSupplyPage() {
   // a bad file / unmatched lines degrade to a summary toast (owner "no new bugs"
   // bar). Parsing is the unit-tested pure `parsePositionImport`.
   const importInputRef = useRef<HTMLInputElement>(null);
+  // «Наименование» click → edit that product in an overlay, WITHOUT leaving the
+  // (unsaved) receipt (owner 2026-07-27). Conditionally mounted → fresh each open.
+  const [editProductId, setEditProductId] = useState<string | null>(null);
   const handleImportFile = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = ''; // allow re-picking the same file
@@ -926,7 +930,7 @@ export default function NewSupplyPage() {
         placeholder={tForm('select_product')}
         onPick={() => setOpenPicker({ kind: 'product', rowUid: p.id })}
         productHref={href}
-        onNavigate={href ? () => router.push(href) : undefined}
+        onNavigate={p.assortmentId ? () => setEditProductId(p.assortmentId) : undefined}
         testId={`pos-${p.id}-name`}
       />
     );
@@ -1890,6 +1894,9 @@ export default function NewSupplyPage() {
         }}
         onConfirm={kitPrint}
       />
+      {editProductId && (
+        <ProductEditModal productId={editProductId} open onClose={() => setEditProductId(null)} />
+      )}
     </>
   );
 }
