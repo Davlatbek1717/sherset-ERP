@@ -164,6 +164,10 @@ export interface PositionInlineAddProps {
   /** Items for the «Импорт ▾» dropdown. Empty array hides the button.
    *  Each item: { label, onClick }. */
   importItems?: Array<{ label: React.ReactNode; onClick: () => void }>;
+  /** Clear the search input after a pick, instead of keeping the typed text
+   *  selected for overwrite (the legacy default). Opt-in per page (supply wants
+   *  a clean input so the leftover query doesn't linger). */
+  clearQueryOnPick?: boolean;
   /** @deprecated Inline CSV import removed for moysklad parity (2026-06-24) — the
    *  «Импорт CSV» button no longer renders. Kept so existing callers type-check;
    *  the handler is never invoked. (`findCatalogMatch` stays exported for reuse.) */
@@ -221,6 +225,7 @@ export function PositionInlineAdd({
   onCheckCompleteness,
   extraActions,
   importItems = [],
+  clearQueryOnPick = false,
   disabled,
   testId,
   className,
@@ -339,10 +344,15 @@ export function PositionInlineAdd({
     const returned = onPick?.(item, entry);
     const rowId = typeof returned === 'string' ? returned : null;
     suppressOpenRef.current = true;
-    // moysklad parity (owner 2026-07-11): the query text STAYS, selected —
-    // typing replaces it from scratch (native select-all overwrite), a click
-    // into the text places the caret to continue editing it.
-    pickedQueryRef.current = query;
+    // Default (owner 2026-07-11): the query text STAYS, selected — typing replaces
+    // it from scratch. `clearQueryOnPick` (supply): wipe it so the leftover search
+    // text doesn't linger in the box after the product is added.
+    if (clearQueryOnPick) {
+      setQuery('');
+      pickedQueryRef.current = '';
+    } else {
+      pickedQueryRef.current = query;
+    }
     setSuggestions([]);
     setOpen(false);
     setActiveIdx(-1);

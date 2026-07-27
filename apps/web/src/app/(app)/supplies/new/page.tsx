@@ -563,6 +563,15 @@ export default function NewSupplyPage() {
       }),
     );
   }, []);
+  // «Sotilish narxi» (retail) price-type id — a picked product defaults its price
+  // to its retail sale price on the receipt (owner 2026-07-27), not the buy price.
+  // Matched by name; falls back to the first configured price type.
+  const retailPriceTypeId = useMemo(() => {
+    const items = priceTypesData?.items ?? [];
+    return (
+      items.find((t) => /sotil|розничн|retail|продаж/i.test(t.name))?.id ?? items[0]?.id ?? null
+    );
+  }, [priceTypesData]);
   // «Сохранить цены» — push each line's price back onto its product; on a receipt
   // the line price is the BUY price → Product.buyPrice (mirror supplies/[id]).
   const saveProductPrices = useCallback(async () => {
@@ -1268,23 +1277,10 @@ export default function NewSupplyPage() {
                   moreItemsLabel={(n) => tPos('moreItems', { count: n })}
                   createProductLabel={(q) => tPos('createProductNamed', { query: q })}
                   onCreateProduct={() => router.push('/products/new')}
-                  // owner 2026-07-18: qty/price modal on EVERY product-add search
-                  // (was sales-only). No price-scope checkboxes here — writing a
-                  // permanent SALE price from a purchase price would be wrong.
-                  pickModal={{
-                    currency,
-                    permanentPriceOption: false,
-                    labels: {
-                      stock: tPos('pick_modal_stock'),
-                      price: tPos('pick_modal_price'),
-                      quantity: tPos('pick_modal_quantity'),
-                      salePrice: tPos('pick_modal_sale_price'),
-                      priceThisSale: tPos('pick_modal_price_this_sale'),
-                      pricePermanent: tPos('pick_modal_price_permanent'),
-                      save: tPos('pick_modal_save'),
-                      cancel: tPos('pick_modal_cancel'),
-                    },
-                  }}
+                  // Owner 2026-07-27: product picks add DIRECTLY — no qty/price modal
+                  // (moysklad's Приёмка add-line has none). Price defaults to the
+                  // retail sale price (retailPriceTypeId); the search box clears.
+                  clearQueryOnPick
                   onPick={(item, entry) => {
                     const raw = item.raw as ProductItem | undefined;
                     const newId = uid();
@@ -1296,7 +1292,15 @@ export default function NewSupplyPage() {
                         productLabel: item.primary,
                         productUom: raw?.uom ?? null,
                         quantity: entry?.quantity ?? '1',
-                        priceMinor: entry?.priceMinor ?? raw?.buyPrice ?? '0',
+                        priceMinor:
+                          entry?.priceMinor ??
+                          (retailPriceTypeId
+                            ? raw?.salePrices?.find((s) => s.priceTypeId === retailPriceTypeId)
+                                ?.value
+                            : undefined) ??
+                          raw?.salePrices?.[0]?.value ??
+                          raw?.buyPrice ??
+                          '0',
                         discount: '0',
                         vat: raw?.vat != null ? String(raw.vat) : '12',
                         vatEnabled: true,
