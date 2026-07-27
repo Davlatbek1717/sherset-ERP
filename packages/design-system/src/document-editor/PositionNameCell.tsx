@@ -32,6 +32,12 @@ export interface PositionNameCellProps {
   /** SPA navigation for the product-card link — when supplied the link calls
    *  this (preventing a full reload) instead of letting the anchor navigate. */
   onNavigate?: () => void;
+  /** Render the picked name as a plain <button> that calls `onNavigate`, instead of
+   *  an <a href> — an in-page unsaved-changes navigation guard intercepts anchor
+   *  clicks (capture phase) before the anchor's own preventDefault runs, so an
+   *  overlay-opening click (e.g. an edit modal) would trigger the "leave page?"
+   *  dialog. A button carries no href, so the guard leaves it alone. */
+  navigateAsButton?: boolean;
 }
 
 /**
@@ -57,6 +63,7 @@ export function PositionNameCell({
   testId,
   productHref,
   onNavigate,
+  navigateAsButton,
 }: PositionNameCellProps) {
   const picked = Boolean(label);
   const inner = (
@@ -84,6 +91,21 @@ export function PositionNameCell({
   // the «Аналоги» tab lives) — clicking it opens the card, NOT a swap picker. The
   // swap moves to the row ⋮ «Заменить». Only when href is supplied + a product is
   // picked + the row is editable; otherwise we fall back to the picker button.
+  if (picked && navigateAsButton && onNavigate && !disabled) {
+    // Overlay-open click (edit modal) — a <button>, not an <a>, so a page's
+    // unsaved-changes navigation guard doesn't intercept it as a route change.
+    return (
+      <button
+        type="button"
+        onClick={onNavigate}
+        className="flex w-full min-w-0 items-center gap-2 text-left text-[12px] text-[var(--ms-text-brand)] hover:underline focus:outline-none"
+        title={label}
+        data-test-id={testId}
+      >
+        {inner}
+      </button>
+    );
+  }
   if (picked && productHref && !disabled) {
     return (
       <a

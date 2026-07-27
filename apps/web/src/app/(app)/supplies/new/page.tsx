@@ -931,6 +931,7 @@ export default function NewSupplyPage() {
         onPick={() => setOpenPicker({ kind: 'product', rowUid: p.id })}
         productHref={href}
         onNavigate={p.assortmentId ? () => setEditProductId(p.assortmentId) : undefined}
+        navigateAsButton
         testId={`pos-${p.id}-name`}
       />
     );
