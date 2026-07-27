@@ -34,6 +34,7 @@ import { useUnsavedGuard } from '@/hooks/use-unsaved-guard';
 import { useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-store';
+import { parsePositionImport } from '@/lib/parse-position-import';
 import { distributeAgreementDelta } from '@/lib/position-agreement';
 import { computePositionTotal } from '@moysklad/money';
 import {
@@ -63,7 +64,7 @@ import {
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 interface RefItem {
   id: string;
   name: string;
@@ -400,6 +401,63 @@ export default function NewSupplyPage() {
         countryLabel: '',
       },
     ]);
+  };
+
+  // «Импорт ▾» — the user picks a CSV/TSV (Excel «Сохранить как CSV» or a plain
+  // list of «kod;miqdor»). Each line is resolved against the catalog by code →
+  // exact name → sole result, and matched products are appended. NEVER throws:
+  // a bad file / unmatched lines degrade to a summary toast (owner "no new bugs"
+  // bar). Parsing is the unit-tested pure `parsePositionImport`.
+  const importInputRef = useRef<HTMLInputElement>(null);
+  const handleImportFile = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // allow re-picking the same file
+    if (!file) return;
+    try {
+      const { rows, skipped } = parsePositionImport(await file.text());
+      if (rows.length === 0) {
+        toast.warning(tPos('import_empty'));
+        return;
+      }
+      let missing = 0;
+      const additions: NewPositionRow[] = [];
+      for (const row of rows) {
+        try {
+          const res = await api.get<{ items: ProductItem[] }>(
+            `/products?search=${encodeURIComponent(row.identifier)}&limit=20`,
+          );
+          const items = res.items ?? [];
+          const key = row.identifier.toLowerCase();
+          const found =
+            items.find((p) => (p.code ?? '').toLowerCase() === key) ??
+            items.find((p) => p.name.toLowerCase() === key) ??
+            (items.length === 1 ? items[0] : undefined);
+          if (!found) {
+            missing += 1;
+            continue;
+          }
+          additions.push({
+            id: uid(),
+            assortmentId: found.id,
+            productLabel: found.name,
+            productUom: found.uom ?? null,
+            quantity: String(row.quantity),
+            priceMinor: found.buyPrice ?? '0',
+            discount: '0',
+            vat: found.vat != null ? String(found.vat) : '12',
+            vatEnabled: true,
+            stock: found.stock?.onHand != null ? String(found.stock.onHand) : undefined,
+            salePrices: found.salePrices ?? null,
+          });
+        } catch {
+          missing += 1;
+        }
+      }
+      if (additions.length > 0) setPositions((ps) => [...ps, ...additions]);
+      toast.success(tPos('import_result', { added: additions.length, missing, skipped }));
+    } catch {
+      toast.error(tPos('import_empty'));
+    }
   };
   const updatePosition = (id: string, patch: Partial<NewPositionRow>) => {
     setPositions((ps) => ps.map((p) => (p.id === id ? { ...p, ...patch } : p)));
@@ -1169,89 +1227,105 @@ export default function NewSupplyPage() {
             selectedIds={selectedRowIds}
             onSelectionChange={setSelectedRowIds}
             footerToolbar={
-              <PositionInlineAdd
-                placeholder={tPos('addPositionPlaceholder')}
-                addFromCatalogLabel={tPos('addFromCatalog')}
-                checkCompletenessLabel={tPos('checkCompleteness')}
-                // Rich product suggestions — thumbnail · code · «Доступно» badge ·
-                // sort toggle · «Ещё N» · «Создать новый товар» (mirror the certed
-                // purchase-returns/new + supplies/[id] actionbar).
-                onSearch={async (q) => {
-                  const r = await api.get<{ items: ProductItem[]; total: number }>(
-                    `/products?search=${encodeURIComponent(q)}&limit=20`,
-                  );
-                  return {
-                    items: r.items.map((p) => ({
-                      id: p.id,
-                      primary: p.name,
-                      code: p.code ?? undefined,
-                      available: p.stock?.available != null ? Number(p.stock.available) : 0,
-                      // Pick modal (owner 2026-07-18): reference «Цена» = the same
-                      // default the row would get (buy price on purchase docs).
-                      priceMinor: p.buyPrice ?? '0',
-                      uomLabel: p.uom ?? undefined,
-                      raw: p,
-                    })),
-                    total: r.total ?? r.items.length,
-                  };
-                }}
-                sortAvailableLabel={tPos('sortByAvailable')}
-                moreItemsLabel={(n) => tPos('moreItems', { count: n })}
-                createProductLabel={(q) => tPos('createProductNamed', { query: q })}
-                onCreateProduct={() => router.push('/products/new')}
-                // owner 2026-07-18: qty/price modal on EVERY product-add search
-                // (was sales-only). No price-scope checkboxes here — writing a
-                // permanent SALE price from a purchase price would be wrong.
-                pickModal={{
-                  currency,
-                  permanentPriceOption: false,
-                  labels: {
-                    stock: tPos('pick_modal_stock'),
-                    price: tPos('pick_modal_price'),
-                    quantity: tPos('pick_modal_quantity'),
-                    salePrice: tPos('pick_modal_sale_price'),
-                    priceThisSale: tPos('pick_modal_price_this_sale'),
-                    pricePermanent: tPos('pick_modal_price_permanent'),
-                    save: tPos('pick_modal_save'),
-                    cancel: tPos('pick_modal_cancel'),
-                  },
-                }}
-                onPick={(item, entry) => {
-                  const raw = item.raw as ProductItem | undefined;
-                  const newId = uid();
-                  setPositions((ps) => [
-                    ...ps,
-                    {
-                      id: newId,
-                      assortmentId: item.id,
-                      productLabel: item.primary,
-                      productUom: raw?.uom ?? null,
-                      quantity: entry?.quantity ?? '1',
-                      priceMinor: entry?.priceMinor ?? raw?.buyPrice ?? '0',
-                      discount: '0',
-                      vat: raw?.vat != null ? String(raw.vat) : '12',
-                      vatEnabled: true,
-                      stock: raw?.stock?.onHand != null ? String(raw.stock.onHand) : undefined,
-                      salePrices: raw?.salePrices ?? null,
+              <>
+                <PositionInlineAdd
+                  placeholder={tPos('addPositionPlaceholder')}
+                  addFromCatalogLabel={tPos('addFromCatalog')}
+                  checkCompletenessLabel={tPos('checkCompleteness')}
+                  // Rich product suggestions — thumbnail · code · «Доступно» badge ·
+                  // sort toggle · «Ещё N» · «Создать новый товар» (mirror the certed
+                  // purchase-returns/new + supplies/[id] actionbar).
+                  onSearch={async (q) => {
+                    const r = await api.get<{ items: ProductItem[]; total: number }>(
+                      `/products?search=${encodeURIComponent(q)}&limit=20`,
+                    );
+                    return {
+                      items: r.items.map((p) => ({
+                        id: p.id,
+                        primary: p.name,
+                        code: p.code ?? undefined,
+                        available: p.stock?.available != null ? Number(p.stock.available) : 0,
+                        // Pick modal (owner 2026-07-18): reference «Цена» = the same
+                        // default the row would get (buy price on purchase docs).
+                        priceMinor: p.buyPrice ?? '0',
+                        uomLabel: p.uom ?? undefined,
+                        raw: p,
+                      })),
+                      total: r.total ?? r.items.length,
+                    };
+                  }}
+                  sortAvailableLabel={tPos('sortByAvailable')}
+                  moreItemsLabel={(n) => tPos('moreItems', { count: n })}
+                  createProductLabel={(q) => tPos('createProductNamed', { query: q })}
+                  onCreateProduct={() => router.push('/products/new')}
+                  // owner 2026-07-18: qty/price modal on EVERY product-add search
+                  // (was sales-only). No price-scope checkboxes here — writing a
+                  // permanent SALE price from a purchase price would be wrong.
+                  pickModal={{
+                    currency,
+                    permanentPriceOption: false,
+                    labels: {
+                      stock: tPos('pick_modal_stock'),
+                      price: tPos('pick_modal_price'),
+                      quantity: tPos('pick_modal_quantity'),
+                      salePrice: tPos('pick_modal_sale_price'),
+                      priceThisSale: tPos('pick_modal_price_this_sale'),
+                      pricePermanent: tPos('pick_modal_price_permanent'),
+                      save: tPos('pick_modal_save'),
+                      cancel: tPos('pick_modal_cancel'),
                     },
-                  ]);
-                  // owner 2026-07-18: returning the id hands focus to the new
-                  // row's «Кол-во» (modal → table entry chain).
-                  return newId;
-                }}
-                onAddFromCatalog={addPosition}
-                onCheckCompleteness={() => {
-                  if (!storeId) {
-                    setError(t('select_store_first'));
-                    return;
-                  }
-                  if (positions.length === 0) {
-                    setError(t('add_position_first'));
-                    return;
-                  }
-                  setError(null);
-                }}
-              />
+                  }}
+                  onPick={(item, entry) => {
+                    const raw = item.raw as ProductItem | undefined;
+                    const newId = uid();
+                    setPositions((ps) => [
+                      ...ps,
+                      {
+                        id: newId,
+                        assortmentId: item.id,
+                        productLabel: item.primary,
+                        productUom: raw?.uom ?? null,
+                        quantity: entry?.quantity ?? '1',
+                        priceMinor: entry?.priceMinor ?? raw?.buyPrice ?? '0',
+                        discount: '0',
+                        vat: raw?.vat != null ? String(raw.vat) : '12',
+                        vatEnabled: true,
+                        stock: raw?.stock?.onHand != null ? String(raw.stock.onHand) : undefined,
+                        salePrices: raw?.salePrices ?? null,
+                      },
+                    ]);
+                    // owner 2026-07-18: returning the id hands focus to the new
+                    // row's «Кол-во» (modal → table entry chain).
+                    return newId;
+                  }}
+                  onAddFromCatalog={addPosition}
+                  onCheckCompleteness={() => {
+                    if (!storeId) {
+                      setError(t('select_store_first'));
+                      return;
+                    }
+                    if (positions.length === 0) {
+                      setError(t('add_position_first'));
+                      return;
+                    }
+                    setError(null);
+                  }}
+                  importItems={[
+                    {
+                      label: tPos('import_file'),
+                      onClick: () => importInputRef.current?.click(),
+                    },
+                  ]}
+                />
+                <input
+                  ref={importInputRef}
+                  type="file"
+                  accept=".csv,.txt,text/csv,text/plain"
+                  className="hidden"
+                  onChange={handleImportFile}
+                  data-test-id="supply-import-file"
+                />
+              </>
             }
           />
 
