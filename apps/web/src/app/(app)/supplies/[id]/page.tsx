@@ -171,6 +171,10 @@ const OPTIONAL_POSITION_COLUMNS: { key: PositionColumnKey; labelKey: string; on:
   { key: 'weight', labelKey: 'weight', on: false },
   { key: 'volume', labelKey: 'volume', on: false },
   { key: 'vatAmount', labelKey: 'vatAmount', on: false },
+  // «Себест. единицы» / «Себестоимость» — moysklad Приёмка default-visible columns
+  // (2026-07-27 HTML ground). Read-only: unit cost = price, line cost = amount. Mirror /new.
+  { key: 'costPerUnit', labelKey: 'costPerUnit', on: true },
+  { key: 'costTotal', labelKey: 'costTotal', on: true },
   // Import/customs block — editable when toggled on (default OFF, moysklad parity).
   { key: 'gtdNumber', labelKey: 'gtd', on: false },
   { key: 'country', labelKey: 'country', on: false },
@@ -843,28 +847,29 @@ export default function SupplyDetailPage() {
     // moysklad «Приёмка» import/customs columns — editable when toggled on (⚙).
     if (colVisible.gtdNumber) cols.push({ key: 'gtdNumber', label: tCols('gtd') });
     if (colVisible.country) cols.push({ key: 'country', label: tCols('country') });
-    cols.push(
-      {
-        key: 'amount',
-        label: (
-          <span className="inline-flex items-center gap-1">
-            {tCols('amount')}
-            {editableCols && (
-              <PositionColumnCustomizer
-                options={OPTIONAL_POSITION_COLUMNS.map((c) => ({
-                  key: c.key,
-                  label: tCols(c.labelKey),
-                }))}
-                visible={colVisible}
-                onToggle={(key, next) => setColVisible((v) => ({ ...v, [key]: next }))}
-                ariaLabel={tCols('configure')}
-              />
-            )}
-          </span>
-        ),
-      },
-      { key: 'menu' },
-    );
+    cols.push({
+      key: 'amount',
+      label: (
+        <span className="inline-flex items-center gap-1">
+          {tCols('amount')}
+          {editableCols && (
+            <PositionColumnCustomizer
+              options={OPTIONAL_POSITION_COLUMNS.map((c) => ({
+                key: c.key,
+                label: tCols(c.labelKey),
+              }))}
+              visible={colVisible}
+              onToggle={(key, next) => setColVisible((v) => ({ ...v, [key]: next }))}
+              ariaLabel={tCols('configure')}
+            />
+          )}
+        </span>
+      ),
+    });
+    // moysklad column order: …Сумма · Себест. единицы · Себестоимость (after «Сумма»).
+    if (colVisible.costPerUnit) cols.push({ key: 'costPerUnit', label: tCols('costPerUnit') });
+    if (colVisible.costTotal) cols.push({ key: 'costTotal', label: tCols('costTotal') });
+    cols.push({ key: 'menu' });
     return cols;
   }, [
     colVisible,
