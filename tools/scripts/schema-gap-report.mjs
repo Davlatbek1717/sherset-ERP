@@ -59,7 +59,6 @@ const SLUG_TO_PRISMA = {
   'assortment-legacy': null,
   gtd: null, // RU customs declaration — no UZ analogue (1 field)
   'bonus-operation': 'BonusOperation',
-  gtd: null, // customs decl — not modelled
   processingplan: 'BillOfMaterials',
   processingplanfolder: 'ProcessingPlanFolder',
   processingprocess: 'ProcessingProcess',
@@ -421,8 +420,6 @@ const FIELD_ALIASES = {
     organizationAccount: 'organizationAccount',
   },
   CompanySettings: { meta: '_skip', currency: 'defaultCurrencyId', priceTypes: 'priceTypesJson' },
-  UserSettings: { meta: '_skip' },
-  Webhook: { meta: '_skip' },
   WebhookStock: { meta: '_skip' },
   Consignment: { meta: '_skip', files: '_skip', assortment: 'productId', images: '_skip' },
   BonusOperation: {
@@ -522,7 +519,6 @@ const FIELD_ALIASES = {
   },
   Group: { meta: '_skip' },
   ProcessingProcess: { meta: '_skip', files: '_skip', positions: 'stages' },
-  ProcessingStage: { meta: '_skip', files: '_skip' },
   ProcessingPlanFolder: {
     meta: '_skip',
     files: '_skip',
@@ -642,8 +638,6 @@ const FIELD_ALIASES = {
     organizationAccount: '_skip',
     agentAccount: '_skip',
   },
-  EmissionOrder: { meta: '_skip', files: '_skip', project: '_skip' },
-  MarkingCodeOrder: { meta: '_skip', files: '_skip', project: '_skip' },
   // RetireOrder block lives below, with full alias map
   AuditLog: {
     // moysklad's eventfeed schema only exposes 4 permission strings — they're
@@ -657,6 +651,7 @@ const FIELD_ALIASES = {
     // moysklad's webhook entity exposes only `events` (Object) + `auditContext`
     // (Object) at the top level. Our richer Webhook stores enough to drive
     // the same behaviour without copying these noisy outer wrappers.
+    meta: '_skip',
     events: '_skip',
     auditContext: '_skip',
   },
