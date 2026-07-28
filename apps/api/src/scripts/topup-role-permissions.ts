@@ -102,6 +102,12 @@ const NEW_ENTITIES = [
   'publication',
   'label',
   'settings',
+  // Debts (Sherset KEEP — B3). MASTER-TODO #19 — bu skript ESKI DB'larni
+  // davolaydi, shuning uchun ro'yxat union bilan to'liq mos bo'lishi shart.
+  'debt',
+  'debtpayment',
+  'debtcardpayment',
+  'debtreport',
 ];
 const ACTIONS = ['view', 'create', 'update', 'delete', 'approve', 'print'];
 const TEMPLATES: Record<string, Record<string, string>> = {

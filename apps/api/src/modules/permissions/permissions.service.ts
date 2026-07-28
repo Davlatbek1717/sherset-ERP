@@ -11,6 +11,7 @@ import {
   canAccessRecord,
   isAtLeast,
   maxScope,
+  scopeFromTemplate,
 } from './permissions.types.js';
 
 /**
@@ -316,6 +317,11 @@ export class PermissionsService {
       'report',
       'analitika',
       'settings',
+      // Debts (Sherset KEEP — B3) — MASTER-TODO #19.
+      'debt',
+      'debtpayment',
+      'debtcardpayment',
+      'debtreport',
     ];
     const actions: PermissionAction[] = ['view', 'create', 'update', 'delete', 'approve', 'print'];
 
@@ -339,7 +345,13 @@ export class PermissionsService {
       const perms: Prisma.RolePermissionCreateManyInput[] = [];
       for (const entity of entities) {
         for (const action of actions) {
-          const scope = (tpl.defaults as Record<string, string>)[action] ?? 'NO';
+          // Per-entity override (qarz rollari) → defaults → 'NO'. Shu funksiya
+          // tufayli «kassir naqd qabul qiladi, lekin screenshot kirita olmaydi»
+          // qoidasi seed'da mexanik ravishda yoziladi (TZ §6).
+          // MASTER-TODO #20: oldin bu yerda faqat `tpl.defaults[action]` o'qilardi
+          // → override'li rollar (QarzOperatori/QarzKassiri) NOTO'G'RI seed
+          // bo'lardi (operator screenshot to'lovini kirita olmay qolardi).
+          const scope = scopeFromTemplate(tpl, entity, action);
           perms.push({
             roleId: role.id,
             entity,

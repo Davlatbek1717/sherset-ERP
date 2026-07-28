@@ -138,6 +138,14 @@ async function main(): Promise<void> {
     'publication',
     'label',
     'settings',
+    // Debts (Sherset KEEP — B3). MASTER-TODO #19: bular PermissionEntity
+    // union'ida bor edi, lekin uchala seed-ro'yxatidan tushib qolgan —
+    // natijada YANGI seed qilingan DB'da Qarz bo'limi har foydalanuvchiga
+    // 403 qaytarardi (`permissions-seed-sync.test.ts` shu drift-klassni tutadi).
+    'debt',
+    'debtpayment',
+    'debtcardpayment',
+    'debtreport',
   ];
   const actions = ['view', 'create', 'update', 'delete', 'approve', 'print'];
   const systemRoles = [
