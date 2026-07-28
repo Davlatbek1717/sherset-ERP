@@ -23,7 +23,7 @@
 import { useBarcodeCamera } from '@/components/stores/use-barcode-camera';
 import { api } from '@/lib/api-client';
 import { normalizeScanInput } from '@/lib/scan';
-import { Button, Icons, Modal } from '@moysklad/ui';
+import { Button, Icons, Modal, useToast } from '@moysklad/ui';
 import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -101,6 +101,17 @@ export function CellScanBindModal({
   // Step 1 = the cell label is still wanted; step 2 = scan products.
   const step = cell ? 2 : 1;
 
+  const { toast } = useToast();
+  // Owner 2026-07-25 (phone report): the always-armed input must NOT pop the
+  // virtual keyboard — on touch devices the input keeps FOCUS (hardware
+  // scanners still type into it) but inputMode="none" suppresses the keyboard
+  // until the user deliberately taps the field.
+  const [coarsePointer, setCoarsePointer] = useState(false);
+  useEffect(() => {
+    setCoarsePointer(window.matchMedia('(pointer: coarse)').matches);
+  }, []);
+  const [manualKb, setManualKb] = useState(false);
+
   // Reset per open; the opener's cell is the starting context. The input is
   // armed via rAF — it runs AFTER Radix Dialog's own open-autofocus (which
   // lands on the header close button), so the scanner needs no extra click.
@@ -115,6 +126,7 @@ export function CellScanBindModal({
     setValue('');
     setLastRead(null);
     setFlashCard(null);
+    setManualKb(false);
     const id = requestAnimationFrame(() => inputRef.current?.focus());
     return () => cancelAnimationFrame(id);
   }, [open, initialCell]);
@@ -174,6 +186,8 @@ export function CellScanBindModal({
         setPending((p) => p.filter((x) => x.key !== r.key));
       }
       setMessage({ kind: 'ok', text: t('scan_saved_n', { count: done }) });
+      // Owner 2026-07-25: a full save also toasts «Saqlandi…».
+      toast.success(t('scan_saved_n', { count: done }));
     } catch (e) {
       // Owner 2026-07-21: NOTHING resets silently — the failure names its cause
       // and the unsaved rows stay in the list for a retry.
@@ -185,7 +199,7 @@ export function CellScanBindModal({
     if (done > 0) onBound();
     setSaving(false);
     rearm();
-  }, [pending, saving, storeId, onBound, t, rearm]);
+  }, [pending, saving, storeId, onBound, t, rearm, toast]);
 
   const resolve = useCallback(
     async (raw: string) => {
@@ -308,6 +322,45 @@ export function CellScanBindModal({
   useEffect(() => {
     resolveRef.current = resolve;
   }, [resolve]);
+
+  // Owner 2026-07-26 (kb-spec §1): scanning must work NO MATTER where the
+  // cursor is. A keyboard-wedge scanner is just fast keystrokes — if focus
+  // drifted to a button (or anywhere outside the input), this capture-phase
+  // listener collects the burst itself and Enter feeds it to resolve().
+  // Printable keys are swallowed so a focused button is never «clicked» by
+  // the scanner's Enter, and no virtual keyboard is involved at any point
+  // (nothing gets focused). The input's own path is untouched.
+  useEffect(() => {
+    if (!open) return;
+    const buf = { s: '', at: 0 };
+    const onKey = (e: KeyboardEvent) => {
+      if (conflictRef.current) return;
+      if (document.activeElement === inputRef.current) return; // input handles itself
+      const el = e.target as HTMLElement | null;
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable))
+        return;
+      const now = Date.now();
+      if (now - buf.at > 900) buf.s = ''; // stale half-burst — start fresh
+      buf.at = now;
+      if (e.key === 'Enter') {
+        if (buf.s) {
+          e.preventDefault();
+          e.stopPropagation();
+          const v = buf.s;
+          buf.s = '';
+          void resolveRef.current(v);
+        }
+        return;
+      }
+      if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        buf.s += e.key;
+        e.preventDefault();
+      }
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, [open]);
+
   const onCameraDecoded = useCallback((raw: string) => {
     if (conflictRef.current) return;
     void resolveRef.current(raw);
@@ -457,6 +510,9 @@ export function CellScanBindModal({
                 }
               }, 80);
             }}
+            // Touch: no virtual keyboard until the user taps the field itself.
+            inputMode={coarsePointer && !manualKb ? 'none' : undefined}
+            onPointerDown={() => setManualKb(true)}
             placeholder={t('scan_input_placeholder')}
             className="h-10 w-full rounded-[var(--ms-radius-sm)] border border-[var(--ms-border-input)] px-3 text-sm placeholder:text-[var(--ms-text-placeholder)] focus:border-[var(--ms-border-focus)] focus:outline-none focus:ring-2 focus:ring-[var(--ms-text-brand)]"
             data-test-id="cell-scan-input"
