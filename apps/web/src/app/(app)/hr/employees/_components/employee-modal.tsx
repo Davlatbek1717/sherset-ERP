@@ -22,7 +22,6 @@
 
 import { WeekScheduleGrid } from '@/components/hr/week-schedule-grid';
 import { useConflictReload } from '@/hooks/use-conflict-reload';
-import { api } from '@/lib/api-client';
 import {
   hrDepartmentApi,
   hrEmployeeApi,
@@ -83,7 +82,6 @@ interface FormState {
   positionId: string;
   departmentId: string;
   scheduleId: string;
-  skladNo: string; // '' = biriktirilmagan
   workLocationId: string; // '' = biriktirilmagan
   attendanceOptIn: boolean;
   scheduleDays: HrWeekDay[];
@@ -104,14 +102,13 @@ function emptyForm(): FormState {
     positionId: '',
     departmentId: '',
     scheduleId: '',
-    skladNo: '',
     workLocationId: '',
     attendanceOptIn: false,
     scheduleDays: defaultSchedule(),
   };
 }
 
-function rowToForm(row: HrEmployeeRow | HrEmployeeDetail, skladNo?: number | null): FormState {
+function rowToForm(row: HrEmployeeRow | HrEmployeeDetail): FormState {
   const detail = row as HrEmployeeDetail;
   return {
     name: row.name,
@@ -127,7 +124,6 @@ function rowToForm(row: HrEmployeeRow | HrEmployeeDetail, skladNo?: number | nul
     positionId: detail.positionId ?? '',
     departmentId: detail.departmentId ?? '',
     scheduleId: detail.scheduleId ?? '',
-    skladNo: skladNo != null ? String(skladNo) : '',
     workLocationId: detail.workLocationId ?? '',
     attendanceOptIn: detail.attendanceOptIn ?? false,
     scheduleDays: defaultSchedule(), // overwritten by the async getWeek() fetch below
@@ -148,15 +144,6 @@ export function EmployeeModal({
   const [form, setForm] = useState<FormState>(emptyForm);
   const [error, setError] = useState<string | null>(null);
   const [version, setVersion] = useState<number>(0);
-
-  // Mavjud sklad birikmalari — edit rejimida xodimning hozirgi skladi aniqlanadi
-  const { data: keepersData } = useQuery<{ items: Array<{ skladNo: number; employeeId: string }> }>(
-    {
-      queryKey: ['sklad-keepers'],
-      queryFn: () => api.get('/sklad-keepers'),
-      enabled: open,
-    },
-  );
 
   // Filiallar ro'yxati — "Ish joyi" dropdown uchun.
   const { data: workLocations = [] } = useQuery<HrWorkLocation[]>({
@@ -186,8 +173,7 @@ export function EmployeeModal({
   useEffect(() => {
     if (!open) return;
     if (mode === 'edit' && initialValues) {
-      const currentSklad = keepersData?.items.find((k) => k.employeeId === initialValues.id);
-      setForm(rowToForm(initialValues, currentSklad?.skladNo ?? null));
+      setForm(rowToForm(initialValues));
       setVersion(initialValues.version);
       // rowToForm's attendance-config fields may be stale (list rows don't
       // carry them) — always refetch the full detail + real week schedule
@@ -208,7 +194,7 @@ export function EmployeeModal({
       setVersion(0);
     }
     setError(null);
-  }, [open, mode, initialValues, keepersData]);
+  }, [open, mode, initialValues]);
 
   const buildPayload = (): HrEmployeeCreateInput => ({
     name: form.name.trim(),
@@ -249,18 +235,21 @@ export function EmployeeModal({
           ? await hrEmployeeApi.update(initialValues.id, { ...payload, version })
           : await hrEmployeeApi.create(payload);
 
-      // Sklad biriktirish / o'chirish
-      const newSkladNo = form.skladNo.trim() !== '' ? Number(form.skladNo) : null;
-      const prevSkladNo =
-        keepersData?.items.find((k) => k.employeeId === saved.id)?.skladNo ?? null;
-
-      if (newSkladNo != null) {
-        // Yangi yoki o'zgargan sklad
-        await api.put('/sklad-keepers', { skladNo: newSkladNo, employeeId: saved.id });
-      } else if (prevSkladNo != null) {
-        // Sklad o'chirilgan — eski biriktmani olib tashlash
-        await api.delete(`/sklad-keepers/${prevSkladNo}`);
-      }
+      // MASTER-TODO #2 (2026-07-28): bu yerda «Sklad» (omborchi) biriktirish
+      // bloki turardi — `/sklad-keepers` GET/PUT/DELETE. Lekin `sklad-keeper`
+      // BE moduli climart adoption'ida DROP qilingan (`omborchi` oilasi bilan
+      // birga), ya'ni uchala chaqiruv ham JIMGINA 404 qaytarardi.
+      //
+      // Bu shunchaki o'lik maydon emas, HIGH bug edi: `api.put` himoyalanmagan
+      // va quyidagi `hrScheduleApi` chaqiruvlaridan OLDIN turardi → foydalanuvchi
+      // ombor tanlasa: (1) xodim SAQLANARDI, (2) PUT 404 tashlardi,
+      // (3) GPS ish joyi + haftalik jadval HECH QACHON yozilmasdi (jimgina
+      // yo'qolardi), (4) modal xato bilan ochiq qolardi → foydalanuvchi qayta
+      // urinib dublikat yaratishi mumkin edi.
+      //
+      // Maydon va uchala chaqiruv olib tashlandi. Agar omborchi oilasi
+      // qaytarilsa (MASTER-TODO #118/#137 — foydalanuvchi qarori), maydon
+      // moduli bilan birga qaytadi.
 
       // GPS-davomat: ish joyi/ruxsat + haftalik jadval — xodim yangi
       // yaratilgan bo'lsa ham, `saved.id` shu yerda allaqachon mavjud.
@@ -274,7 +263,6 @@ export function EmployeeModal({
     },
     onSuccess: (row) => {
       qc.invalidateQueries({ queryKey: ['hr-employees'] });
-      qc.invalidateQueries({ queryKey: ['sklad-keepers'] });
       if (mode === 'edit' && initialValues) {
         qc.invalidateQueries({ queryKey: ['hr-employee', initialValues.id] });
       }
@@ -489,8 +477,6 @@ export function EmployeeModal({
           />
         </Field>
 
-        <SkladSelect value={form.skladNo} onChange={(v) => update('skladNo', v)} />
-
         <label className="flex items-start gap-2 text-sm sm:col-span-2">
           <Checkbox
             checked={form.isChecker}
@@ -585,40 +571,5 @@ function Field({
       {children}
       {hint && <span className="text-[var(--ms-text-muted)] text-xs">{hint}</span>}
     </div>
-  );
-}
-
-interface StoreItem {
-  id: string;
-  name: string;
-}
-
-function SkladSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  const { data } = useQuery<{ items: StoreItem[] }>({
-    queryKey: ['stores-for-sklad-select'],
-    queryFn: () => api.get('/stores?limit=100'),
-    staleTime: 60_000,
-  });
-  const stores = data?.items ?? [];
-
-  return (
-    <Field
-      label="Sklad"
-      hint="Omborchi sifatida mas'ul bo'lgan ombor. Bo'sh = sklad biriktirilmagan."
-    >
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="h-9 rounded-[var(--ms-radius-sm)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] px-2 text-sm text-[var(--ms-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--ms-accent)]"
-        data-test-id="hr-employee-sklad-no"
-      >
-        <option value="">— Tanlanmagan —</option>
-        {stores.map((s, idx) => (
-          <option key={s.id} value={String(idx + 1)}>
-            Sklad {idx + 1}: {s.name}
-          </option>
-        ))}
-      </select>
-    </Field>
   );
 }

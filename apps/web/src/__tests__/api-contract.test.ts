@@ -36,6 +36,13 @@ const WEB_SRC = join(REPO_ROOT, 'apps', 'web', 'src');
 const DYNAMIC_SEGMENT_ALLOWLIST = new Set([
   'POST /cashier-sessions/:P/:P', // retail drawer ops — /${id}/close|drawer-in|drawer-out (live 2xx)
   'POST /analitika/counts/:P/:P', // inventory count — /${id}/approve|reject (live 2xx)
+  // HR employee bulk bar — `/hr/employees/${action}` where action is a union of
+  // three LITERALS, and all three are declared on the controller:
+  // @Post('bulk-archive') · @Post('bulk-restore') · @Post('bulk-delete')
+  // (hr-employee.controller.ts). The static matcher turns `${action}` into a
+  // param segment, which cannot match a literal route — same limitation the two
+  // entries above document. Verified by reading the controller, 2026-07-28.
+  'POST /hr/employees/:P',
 ]);
 
 function walk(dir: string, pred: (f: string) => boolean, out: string[] = []): string[] {
@@ -172,5 +179,33 @@ describe('FE api.* call-sites resolve to a BE route with the same method', () =>
   it('has no FE→BE method/path mismatch (silent 404/405)', () => {
     expect(routes.length).toBeGreaterThan(500); // sanity: route table actually built
     expect(offenders, `FE↔BE HTTP-contract violations:\n${offenders.join('\n')}`).toEqual([]);
+  });
+
+  /**
+   * The allowlist above suppresses a whole `METHOD /path/:P` shape, so it also
+   * hides a REAL break if the concrete literal routes behind it ever go away.
+   * These pin the literals so the allowlist can't rot into a blind spot.
+   */
+  describe('allowlisted dynamic segments still resolve to real literal routes', () => {
+    const has = (method: string, path: string) =>
+      routes.some((r) => r.method === method && r.segs.join('/') === path.replace(/^\//, ''));
+
+    for (const action of ['bulk-archive', 'bulk-restore', 'bulk-delete']) {
+      it(`POST /hr/employees/${action} exists on the controller`, () => {
+        expect(has('POST', `/hr/employees/${action}`)).toBe(true);
+      });
+    }
+
+    for (const action of ['close', 'drawer-in', 'drawer-out']) {
+      it(`POST /cashier-sessions/:id/${action} exists on the controller`, () => {
+        expect(has('POST', `/cashier-sessions/P/${action}`)).toBe(true);
+      });
+    }
+
+    for (const action of ['approve', 'reject']) {
+      it(`POST /analitika/counts/:id/${action} exists on the controller`, () => {
+        expect(has('POST', `/analitika/counts/P/${action}`)).toBe(true);
+      });
+    }
   });
 });
