@@ -688,10 +688,16 @@ export default function InvoicesOutPage() {
       sortable: true,
       cell: (i) => (
         <span className="font-medium tabular-nums">
-          {formatMoney(i.sumMinor, 'UZS', { displayAs: 'none' })}
+          {formatMoney(i.sumMinor, i.currency, { displayAs: 'none' })}
         </span>
       ),
-      cellText: (r: InvoiceRow) => (r.sumMinor ? formatMoney(r.sumMinor) : ''),
+      // MASTER-TODO #3: `cellText` feeds the CSV export (design-system lib/csv.ts).
+      // It used to call `formatMoney(r.sumMinor)` with NO options, so the export
+      // appended the DEFAULT «сум» suffix to every row — a USD invoice exported
+      // as "1 000,00 сум" — and the CSV disagreed with the on-screen cell, which
+      // renders suffix-less. Mirrors invoices-in, which already did this right.
+      cellText: (r: InvoiceRow) =>
+        r.sumMinor ? formatMoney(r.sumMinor, r.currency, { displayAs: 'none' }) : '',
     },
     // moysklad parity (v2.2 audit): «Валюта» between Сумма and План.
     // дата оплаты — backend Prisma currency surfaced.
@@ -729,10 +735,11 @@ export default function InvoicesOutPage() {
       sortable: true,
       cell: (i) => (
         <span className="text-sm tabular-nums">
-          {formatMoney(i.payedSumMinor, 'UZS', { displayAs: 'none' })}
+          {formatMoney(i.payedSumMinor, i.currency, { displayAs: 'none' })}
         </span>
       ),
-      cellText: (r: InvoiceRow) => (r.payedSumMinor ? formatMoney(r.payedSumMinor) : ''),
+      cellText: (r: InvoiceRow) =>
+        r.payedSumMinor ? formatMoney(r.payedSumMinor, r.currency, { displayAs: 'none' }) : '',
     },
     {
       key: 'shipped',
@@ -741,10 +748,11 @@ export default function InvoicesOutPage() {
       width: '130px',
       cell: (i) => (
         <span className="text-sm tabular-nums">
-          {formatMoney(i.shippedSumMinor, 'UZS', { displayAs: 'none' })}
+          {formatMoney(i.shippedSumMinor, i.currency, { displayAs: 'none' })}
         </span>
       ),
-      cellText: (r: InvoiceRow) => (r.shippedSumMinor ? formatMoney(r.shippedSumMinor) : ''),
+      cellText: (r: InvoiceRow) =>
+        r.shippedSumMinor ? formatMoney(r.shippedSumMinor, r.currency, { displayAs: 'none' }) : '',
     },
     {
       key: 'state',

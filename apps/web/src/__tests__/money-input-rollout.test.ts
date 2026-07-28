@@ -25,10 +25,22 @@ import { describe, expect, it } from 'vitest';
  */
 
 const FE = (...p: string[]) => join(__dirname, '..', 'app', '(app)', ...p);
+const CMP = (...p: string[]) => join(__dirname, '..', 'components', ...p);
 
 // Each entry: the page + the money state-bindings that must now flow through
 // <MoneyInput valueMinor=…> and must NOT remain as a raw editable `value={…}`.
-const PAGES: Array<{ file: string; minMoneyInputs: number; bannedRaw: string[] }> = [
+//
+// `alsoScan` (MASTER-TODO #5, 2026-07-28): a page may DELEGATE its money editing
+// to an extracted component — the count then has to follow the composition, not
+// the file. products/[id] renders `pricesEditor={<ProductPriceEditor …/>}`, so
+// its three MoneyInputs (buy / min / sale prices) live in that component. A
+// file-only scan reported 0 and read as "the rollout regressed" when it hadn't.
+const PAGES: Array<{
+  file: string;
+  minMoneyInputs: number;
+  bannedRaw: string[];
+  alsoScan?: string[];
+}> = [
   {
     file: FE('cash-in', '[id]', 'page.tsx'),
     minMoneyInputs: 2,
@@ -116,18 +128,28 @@ const PAGES: Array<{ file: string; minMoneyInputs: number; bannedRaw: string[] }
     minMoneyInputs: 2,
     bannedRaw: ['value={cfg.monthlySalesTargetMinor}', 'value={cfg.monthlyKpiBudgetMinor}'],
   },
-  { file: FE('products', '[id]', 'page.tsx'), minMoneyInputs: 3, bannedRaw: [] },
+  {
+    file: FE('products', '[id]', 'page.tsx'),
+    minMoneyInputs: 3,
+    bannedRaw: [],
+    // buyPrice / minPrice / salePrices — extracted out of the page.
+    alsoScan: [CMP('products', 'product-price-editor.tsx')],
+  },
   { file: FE('payrolls', 'new', 'page.tsx'), minMoneyInputs: 1, bannedRaw: [] },
   { file: FE('payrolls', '[id]', 'page.tsx'), minMoneyInputs: 1, bannedRaw: [] },
 ];
 
 describe('money inputs use <MoneyInput> (som display), not raw minor <Input>', () => {
-  for (const { file, minMoneyInputs, bannedRaw } of PAGES) {
+  for (const { file, minMoneyInputs, bannedRaw, alsoScan } of PAGES) {
     const rel = file.split(/[/\\]\(app\)[/\\]/)[1] ?? file;
     describe(rel, () => {
       const src = readFileSync(file, 'utf8');
+      // The composed surface: the page plus any component it delegates money
+      // editing to. `bannedRaw` still applies to the PAGE only — those bindings
+      // are page-local state.
+      const composed = [src, ...(alsoScan ?? []).map((f) => readFileSync(f, 'utf8'))].join('\n');
       it(`renders ≥${minMoneyInputs} <MoneyInput>`, () => {
-        const count = (src.match(/<MoneyInput/g) ?? []).length;
+        const count = (composed.match(/<MoneyInput/g) ?? []).length;
         expect(count).toBeGreaterThanOrEqual(minMoneyInputs);
       });
       for (const raw of bannedRaw) {
@@ -140,12 +162,17 @@ describe('money inputs use <MoneyInput> (som display), not raw minor <Input>', (
   }
 });
 
-describe('invoices balance display uses formatMoney (not raw minor)', () => {
-  for (const f of ['invoices-in', 'invoices-out']) {
-    it(`${f} field-remaining is formatted`, () => {
-      const src = readFileSync(FE(f, '[id]', 'page.tsx'), 'utf8');
-      expect(src).toMatch(/value=\{formatMoney\(remainingMinor\)\}/);
-      expect(src).not.toMatch(/value=\{remainingMinor\}/);
-    });
-  }
-});
+/**
+ * The «invoices balance display» block that used to live here required
+ * `value={formatMoney(remainingMinor)}` on the invoice detail pages. That
+ * binding has never existed in this repository (`git log -S` is empty) — it
+ * came from the other Sherset checkout via the snapshot import, and this repo
+ * deliberately keeps payment status OFF the doc editor (moysklad grounding
+ * quoted in `invoices-in/[id]/page.tsx`). See MASTER-TODO #3.
+ *
+ * The surviving invariant — invoice money is never rendered as raw minor units —
+ * is now enforced where the values are actually rendered, by
+ * `app/(app)/invoices-in/[id]/invoices-paid-display.test.ts` (17 tests: list
+ * cells + CSV cellText currency-aware, detail pages free of raw-minor leaks).
+ * Removed here rather than duplicated, so there is one owner per invariant.
+ */
