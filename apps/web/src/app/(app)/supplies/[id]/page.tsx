@@ -542,6 +542,23 @@ export default function SupplyDetailPage() {
       items.find((t) => /sotil|розничн|retail|продаж/i.test(t.name))?.id ?? items[0]?.id ?? null
     );
   }, [priceTypesData]);
+  // «Цена ▾» per-row quick-pick — the product's sale prices (Оптом / Sotilish),
+  // labelled by price-type name; picking one sets the row price (owner 2026-07-27).
+  // MUST be above the loading early-return (hooks-order — React #310) since /[id]
+  // early-returns while the doc loads; the pre-fix placement crashed the saved page.
+  const positionPriceOptions = useCallback(
+    (row: DocPositionRow) => {
+      const sps =
+        (row as { salePrices?: Array<{ priceTypeId: string; value: string }> | null }).salePrices ??
+        [];
+      return sps.map((sp) => ({
+        id: sp.priceTypeId,
+        label: priceTypesData?.items.find((t) => t.id === sp.priceTypeId)?.name ?? tCols('price'),
+        value: sp.value,
+      }));
+    },
+    [priceTypesData, tCols],
+  );
   // «Сохранить цены» — push each line's price back onto its product. On a receipt
   // the line price is the BUY price, so save to Product.buyPrice (mirror PO/[id]).
   const saveProductPrices = useCallback(async () => {
@@ -1066,22 +1083,6 @@ export default function SupplyDetailPage() {
   };
 
   // Position «Страна» cell — opens the per-row country picker.
-  // «Цена ▾» per-row quick-pick — the product's sale prices (Оптом / Sotilish),
-  // labelled by price-type name; picking one sets the row price (owner 2026-07-27).
-  const positionPriceOptions = useCallback(
-    (row: DocPositionRow) => {
-      const sps =
-        (row as { salePrices?: Array<{ priceTypeId: string; value: string }> | null }).salePrices ??
-        [];
-      return sps.map((sp) => ({
-        id: sp.priceTypeId,
-        label: priceTypesData?.items.find((t) => t.id === sp.priceTypeId)?.name ?? tCols('price'),
-        value: sp.value,
-      }));
-    },
-    [priceTypesData, tCols],
-  );
-
   const renderPositionCountryCell = (row: DocPositionRow) => (
     <CatalogPickerField
       value={row.countryId ? { id: row.countryId, label: row.countryLabel ?? '' } : null}
