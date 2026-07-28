@@ -54,10 +54,22 @@ async function main() {
       _sum: { sumMinor: true };
     }): Promise<SumRow[]>;
   };
-  // The 8 fixed-sign doc types → Σ sumMinor × posted-sign.
+  // The 9 fixed-sign doc types → Σ sumMinor × posted-sign.
+  //
+  // ⚠️ Bu ro'yxat `CounterpartyBalanceService.applyDelta` ni chaqiradigan HAR
+  // yo'lni qamrashi SHART, aks holda skript APPLY=1 bilan yugurganda qamralmagan
+  // manbadan kelgan saldo jimgina 0 ga tushiriladi.
+  //   - `supply` 2026-07-28 da qo'shildi: `Supply.post` (supply.service.ts:1338)
+  //     `applyDelta(..., -sumMinor)` yozadi — qabul qilingan tovar bizning
+  //     yetkazib beruvchiga qarzimizni oshiradi. Ro'yxatda yo'q edi, shuning
+  //     uchun faqat Qabul orqali ishlanadigan yetkazib beruvchida «bizning
+  //     qarzimiz» butunlay ko'rinmasdi.
+  //   - `DebtPayment` quyida alohida yig'iladi (uning shakli boshqacha:
+  //     agentId yo'q, kontragent `debt` relationi orqali topiladi).
   const fixed: Array<[GroupByDelegate, bigint]> = [
     [prisma.invoiceOut as unknown as GroupByDelegate, 1n],
     [prisma.invoiceIn as unknown as GroupByDelegate, -1n],
+    [prisma.supply as unknown as GroupByDelegate, -1n],
     [prisma.paymentIn as unknown as GroupByDelegate, -1n],
     [prisma.paymentOut as unknown as GroupByDelegate, 1n],
     [prisma.cashIn as unknown as GroupByDelegate, -1n],
@@ -86,6 +98,31 @@ async function main() {
       r.currency,
       (r.direction === 'INCREASE' ? 1n : -1n) * (r._sum.sumMinor ?? 0n),
     );
+  }
+
+  // Qarz kartochkasi to'lovlari — `DebtService.recalc` har to'lovda
+  // `applyDelta(..., -paidDelta)` yozadi (debt.service.ts:217), shuning uchun
+  // ular ham qayta-qurishga kirishi SHART. Storno qilingan (reversedAt != null)
+  // to'lovlar yig'indiga kirmaydi — `recalc` ham aynan shu filtrni ishlatadi.
+  // Kontragent `debt` relationi orqali topiladi (DebtPayment'da agentId yo'q).
+  const debtPayments = await prisma.debtPayment.findMany({
+    where: {
+      reversedAt: null,
+      ...(ONLY_CP ? { debt: { counterpartyId: ONLY_CP } } : {}),
+    },
+    select: {
+      accountId: true,
+      amountMinor: true,
+      // DIQQAT: `DebtPayment.currency` — TO'LOV (tender) valyutasi (mijoz naqdni
+      // dollarda berishi mumkin), `amountMinor` esa HAR DOIM QARZ valyutasida
+      // (schema izohi). `recalc` ham `debt.currency` bilan applyDelta qiladi —
+      // shuning uchun bu yerda ham qarz valyutasi olinadi, aks holda so'mlik
+      // qarzga qilingan dollar to'lov USD saldo qatoriga tushib ketardi.
+      debt: { select: { counterpartyId: true, currency: true } },
+    },
+  });
+  for (const dp of debtPayments) {
+    add(dp.accountId, dp.debt.counterpartyId, dp.debt.currency, -dp.amountMinor);
   }
 
   // Current cache rows (so we can detect changes + zero-out rows that no longer have docs).

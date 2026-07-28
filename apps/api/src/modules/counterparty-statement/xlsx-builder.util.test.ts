@@ -64,11 +64,23 @@ describe('buildStatementXlsx — two sheets (Sodda + Batafsil)', () => {
   it('«Batafsil»: keeps Debet/Kredit columns + indented goods', async () => {
     const wb = await load(await buildStatementXlsx({ ...base, data: sampleData() }));
     const ws = wb.getWorksheet('Batafsil')!;
-    expect(ws.getCell('F5').value).toBe('Debet');
-    expect(ws.getCell('G5').value).toBe('Kredit');
-    expect(ws.getCell('F6').value).toBe(150_000); // doc debit
+    // 2026-07-28: «Chegirma» ustuni F ga qo'shildi ⇒ Debet/Kredit/Qoldiq G/H/I.
+    expect(ws.getCell('F5').value).toBe('Chegirma');
+    expect(ws.getCell('G5').value).toBe('Debet');
+    expect(ws.getCell('H5').value).toBe('Kredit');
+    expect(ws.getCell('G6').value).toBe(150_000); // doc debit
     expect(String(ws.getCell('C7').value)).toContain('Sement'); // indented item
-    expect(ws.getCell('F7').value).toBe(100_000); // item sum in debit column
+    expect(ws.getCell('G7').value).toBe(100_000); // item sum in debit column
+  });
+
+  it('«Batafsil»: chegirma ustuni tovar qatorida chiqadi', async () => {
+    const data = sampleData();
+    data.lines[0].items[0].discountPercent = '10';
+    const wb = await load(await buildStatementXlsx({ ...base, data }));
+    const ws = wb.getWorksheet('Batafsil')!;
+    expect(ws.getCell('F7').value).toBe('10%');
+    // Chegirmasiz pozitsiyada «—» — ustun ko'z bilan tez o'qilsin.
+    expect(ws.getCell('F8').value).toBe('—');
   });
 
   it('final balance banner (both sheets) states who owes whom', async () => {

@@ -1,8 +1,16 @@
 import { randomBytes } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { computePositionTotal } from '@moysklad/money';
 import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { CounterpartySettlementService } from '../counterparty-settlement/counterparty-settlement.service.js';
+import {
+  currencyUnit,
+  formatSettlementAmount,
+  settlementTextForCounterparty,
+  settlementTextForOwner,
+} from '../counterparty-settlement/counterparty-settlement.util.js';
 import { type ProductReportRow, buildProductReportXlsx } from './product-report-xlsx.util.js';
 import { type RawDoc, type StatementDocType, computeStatement } from './statement-compute.util.js';
 import { type SupplyGoodsRow, buildSupplyGoodsXlsx } from './supply-goods-xlsx.util.js';
@@ -31,16 +39,27 @@ function cpBalanceText(balanceMinor: bigint): string {
   return "💰 Hisob teng — qarz yo'q.";
 }
 
-/** Goods docs expose positions; cash/payment docs are single-line. */
+/**
+ * Goods docs expose positions; cash/payment docs are single-line.
+ *
+ * 2026-07-28 — `discount` / `vat` / `vatEnabled` (pozitsiya) va `vatEnabled` /
+ * `vatIncluded` (hujjat) qo'shildi: ularsiz qator summasi brutto hisoblanardi
+ * va aktdagi tovar qatorlari hujjatning o'z summasiga yig'ilmasdi.
+ */
 const GOODS_SELECT = {
   moment: true,
   name: true,
   sumMinor: true,
+  vatEnabled: true,
+  vatIncluded: true,
   positions: {
     orderBy: { position: 'asc' as const },
     select: {
       quantity: true,
       priceMinor: true,
+      discount: true,
+      vat: true,
+      vatEnabled: true,
       product: { select: { name: true } },
     },
   },
@@ -51,9 +70,14 @@ interface GoodsRow {
   moment: Date;
   name: string;
   sumMinor: bigint;
+  vatEnabled: boolean;
+  vatIncluded: boolean;
   positions: Array<{
     quantity: unknown;
     priceMinor: bigint;
+    discount: unknown;
+    vat: number | null;
+    vatEnabled: boolean;
     product: { name: string } | null;
   }>;
 }
@@ -72,7 +96,11 @@ interface FlatRow {
 export class CounterpartyStatementService {
   private readonly logger = new Logger(CounterpartyStatementService.name);
 
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(CounterpartySettlementService)
+    private readonly settlement: CounterpartySettlementService,
+  ) {}
 
   /**
    * Query + normalise the balance-affecting posted documents for the agent.
@@ -95,9 +123,18 @@ export class CounterpartyStatementService {
         moment: true,
         name: true,
         sumMinor: true,
+        vatEnabled: true,
+        vatIncluded: true,
         positions: {
           where: { productId },
-          select: { quantity: true, priceMinor: true, product: { select: { name: true } } },
+          select: {
+            quantity: true,
+            priceMinor: true,
+            discount: true,
+            vat: true,
+            vatEnabled: true,
+            product: { select: { name: true } },
+          },
         },
       } as const;
       const w = { ...where, positions: { some: { productId } } };
@@ -115,15 +152,39 @@ export class CounterpartyStatementService {
       return { cp, data: computeStatement(raw), productName: product?.name ?? '(buyum)' };
     }
 
-    const [invOut, invIn, supply, cashIn, cashOut, payIn, payOut] = await Promise.all([
-      c.invoiceOut.findMany({ where, select: GOODS_SELECT }),
-      c.invoiceIn.findMany({ where, select: GOODS_SELECT }),
-      c.supply.findMany({ where, select: GOODS_SELECT }),
-      c.cashIn.findMany({ where, select: FLAT_SELECT }),
-      c.cashOut.findMany({ where, select: FLAT_SELECT }),
-      c.paymentIn.findMany({ where, select: FLAT_SELECT }),
-      c.paymentOut.findMany({ where, select: FLAT_SELECT }),
-    ]);
+    // 2026-07-28 — avans / avans-qaytarish / korrektirovka / qarz-to'lovi
+    // QO'SHILDI. Ular `CounterpartyBalanceService.applyDelta` ni chaqiradi, ya'ni
+    // materiallashgan saldoni harakatlantiradi, lekin aktda yo'q edi: shuning
+    // uchun aktning yakuniy qoldig'i kontragentning haqiqiy saldosidan farq
+    // qilardi — va aynan o'sha son mijozga «Sizda N so'm qarz bor» bo'lib
+    // yuborilardi. Endi akt ham o'zi bilan yig'iladi, ham bosh daftarga mos.
+    const [invOut, invIn, supply, cashIn, cashOut, payIn, payOut, prepay, prepayRet, adj, debtPay] =
+      await Promise.all([
+        c.invoiceOut.findMany({ where, select: GOODS_SELECT }),
+        c.invoiceIn.findMany({ where, select: GOODS_SELECT }),
+        c.supply.findMany({ where, select: GOODS_SELECT }),
+        c.cashIn.findMany({ where, select: FLAT_SELECT }),
+        c.cashOut.findMany({ where, select: FLAT_SELECT }),
+        c.paymentIn.findMany({ where, select: FLAT_SELECT }),
+        c.paymentOut.findMany({ where, select: FLAT_SELECT }),
+        c.prepayment.findMany({ where, select: FLAT_SELECT }),
+        c.prepaymentReturn.findMany({ where, select: FLAT_SELECT }),
+        c.counterpartyAdjustment.findMany({
+          where,
+          select: { ...FLAT_SELECT, direction: true },
+        }),
+        // Qarz kartochkasi to'lovlari — `DebtService.recalc` applyDelta(-paid)
+        // yozadi. Storno qilinganlari (reversedAt) chiqarib tashlanadi, xuddi
+        // recalc'dagidek. Hujjat raqami sifatida QRZ- nomi ko'rsatiladi.
+        c.debtPayment.findMany({
+          where: { accountId, reversedAt: null, debt: { counterpartyId } },
+          select: {
+            createdAt: true,
+            amountMinor: true,
+            debt: { select: { name: true } },
+          },
+        }),
+      ]);
 
     const raw: RawDoc[] = [
       ...(invOut as GoodsRow[]).map((d) => this.goods(d, 'invoiceOut')),
@@ -133,23 +194,60 @@ export class CounterpartyStatementService {
       ...(cashOut as FlatRow[]).map((d) => this.flat(d, 'cashOut')),
       ...(payIn as FlatRow[]).map((d) => this.flat(d, 'paymentIn')),
       ...(payOut as FlatRow[]).map((d) => this.flat(d, 'paymentOut')),
+      ...(prepay as FlatRow[]).map((d) => this.flat(d, 'prepayment')),
+      ...(prepayRet as FlatRow[]).map((d) => this.flat(d, 'prepaymentReturn')),
+      ...(adj as Array<FlatRow & { direction: string }>).map((d) =>
+        this.flat(d, d.direction === 'INCREASE' ? 'adjustmentIncrease' : 'adjustmentDecrease'),
+      ),
+      ...debtPay.map((d) => ({
+        moment: d.createdAt,
+        docType: 'debtPayment' as const,
+        docNumber: d.debt.name,
+        sumMinor: d.amountMinor,
+        items: [],
+      })),
     ];
 
     return { cp, data: computeStatement(raw), productName: null as string | null };
   }
 
-  /** A goods doc reduced to ONLY the matched product's line(s) — sum = Σ(qty·price). */
+  /**
+   * Bitta pozitsiyaning aktdagi summasi — hujjatni post qilgan mantiq bilan
+   * AYNAN bir xil (`computePositionTotal`: chegirma, keyin QQS, aniq BigInt).
+   *
+   * Ilgari bu `Math.round(qty * Number(priceMinor))` edi — chegirmani ham,
+   * QQSni ham tashlab ketardi. Oqibati ikki xil edi: (1) to'liq aktda hujjat
+   * jami `d.sumMinor` (chegirmali) bo'lgani holda tovar qatorlari brutto
+   * chiqib, kontragent qatorlarni qo'shsa hujjat summasiga to'g'ri kelmasdi;
+   * (2) buyum-bo'yicha aktda esa shu brutto summa LEDGER qiymati sifatida
+   * ishlatilib, «sizda N so'm qarz bor» raqamini shishirib yuborardi.
+   */
+  private positionSum(d: GoodsRow, p: GoodsRow['positions'][number]): bigint {
+    return computePositionTotal(
+      {
+        quantity: String(p.quantity ?? '0'),
+        priceMinor: String(p.priceMinor),
+        discount: String(p.discount ?? '0'),
+        vat: p.vat ?? null,
+      },
+      d.vatEnabled && p.vatEnabled,
+      d.vatIncluded,
+    ).totalMinor;
+  }
+
+  private itemsOf(d: GoodsRow) {
+    return d.positions.map((p) => ({
+      name: p.product?.name ?? '(tovar)',
+      quantity: String(p.quantity ?? ''),
+      priceMinor: p.priceMinor,
+      discountPercent: String(p.discount ?? '0'),
+      sumMinor: this.positionSum(d, p),
+    }));
+  }
+
+  /** A goods doc reduced to ONLY the matched product's line(s) — discount applied. */
   private productLine(d: GoodsRow, docType: StatementDocType): RawDoc {
-    const items = d.positions.map((p) => {
-      const qty = Number(p.quantity ?? 0);
-      const sum = BigInt(Math.round(qty * Number(p.priceMinor)));
-      return {
-        name: p.product?.name ?? '(tovar)',
-        quantity: String(p.quantity ?? ''),
-        priceMinor: p.priceMinor,
-        sumMinor: sum,
-      };
-    });
+    const items = this.itemsOf(d);
     const total = items.reduce((s, it) => s + it.sumMinor, 0n);
     return { moment: d.moment, docType, docNumber: d.name, sumMinor: total, items };
   }
@@ -160,16 +258,7 @@ export class CounterpartyStatementService {
       docType,
       docNumber: d.name,
       sumMinor: d.sumMinor,
-      items: d.positions.map((p) => {
-        const qty = Number(p.quantity ?? 0);
-        const sum = BigInt(Math.round(qty * Number(p.priceMinor)));
-        return {
-          name: p.product?.name ?? '(tovar)',
-          quantity: String(p.quantity ?? ''),
-          priceMinor: p.priceMinor,
-          sumMinor: sum,
-        };
-      }),
+      items: this.itemsOf(d),
     };
   }
 
@@ -451,25 +540,73 @@ export class CounterpartyStatementService {
       select: {
         name: true,
         moment: true,
+        currency: true,
+        sumMinor: true,
+        vatEnabled: true,
+        vatIncluded: true,
         agent: { select: { id: true, name: true, phone: true } },
         positions: {
           orderBy: { position: 'asc' },
-          select: { quantity: true, priceMinor: true, product: { select: { name: true } } },
+          select: {
+            quantity: true,
+            priceMinor: true,
+            // 2026-07-28 — chegirma/QQS ilgari SELECT qilinmasdi, shuning uchun
+            // qator summasi brutto chiqib, jadval hujjat summasiga to'g'ri
+            // kelmasdi (egasi: «skidkani yubormadi»).
+            discount: true,
+            vat: true,
+            vatEnabled: true,
+            product: { select: { name: true } },
+          },
         },
       },
     });
     if (!supply) throw new NotFoundException('Qabul topilmadi');
 
+    // Qator summasi hujjatni post qilgan mantiq bilan AYNAN bir xil hisoblanadi
+    // (`computePositionTotal` — chegirma, keyin QQS, aniq BigInt, half-up).
+    // Ilgari bu yerda `Math.round(qty * Number(priceMinor))` turardi: chegirmani
+    // ham, QQSni ham tashlab ketardi va float arifmetikasida edi.
     const rows: SupplyGoodsRow[] = supply.positions.map((p) => {
-      const qty = Number(p.quantity ?? 0);
+      const discount = String(p.discount ?? '0');
+      const { totalMinor } = computePositionTotal(
+        {
+          quantity: String(p.quantity ?? '0'),
+          priceMinor: String(p.priceMinor),
+          discount,
+          vat: p.vat ?? null,
+        },
+        supply.vatEnabled && p.vatEnabled,
+        supply.vatIncluded,
+      );
+      // Chegirmasiz (brutto) summa — QQSsiz taqqoslash ustuni uchun: aynan
+      // shu narx×miqdor kontragent kutgan raqam, chegirma esa undan ayriladi.
+      const { totalMinor: grossMinor } = computePositionTotal(
+        {
+          quantity: String(p.quantity ?? '0'),
+          priceMinor: String(p.priceMinor),
+          discount: '0',
+          vat: p.vat ?? null,
+        },
+        supply.vatEnabled && p.vatEnabled,
+        supply.vatIncluded,
+      );
       return {
         name: p.product?.name ?? '(tovar)',
         quantity: String(p.quantity ?? ''),
         priceMinor: p.priceMinor,
-        sumMinor: BigInt(Math.round(qty * Number(p.priceMinor))),
+        discountPercent: discount,
+        grossSumMinor: grossMinor,
+        discountSumMinor: grossMinor - totalMinor,
+        sumMinor: totalMinor,
       };
     });
-    const total = rows.reduce((s, x) => s + x.sumMinor, 0n);
+    const grossTotal = rows.reduce((s, x) => s + x.grossSumMinor, 0n);
+    const discountTotal = rows.reduce((s, x) => s + x.discountSumMinor, 0n);
+    // Hujjatning O'Z summasi — yagona haqiqat. Qatorlar yig'indisi undan farq
+    // qilsa (masalan hujjat post qilingandan keyin narx qo'lda tuzatilgan
+    // bo'lsa), kontragentga hujjatdagi raqam ketishi kerak.
+    const total = supply.sumMinor;
     const dateLabel = new Intl.DateTimeFormat('ru-RU', {
       timeZone: 'Asia/Tashkent',
       day: '2-digit',
@@ -480,14 +617,28 @@ export class CounterpartyStatementService {
     }).format(supply.moment);
     const org = await c.organization.findFirst({ where: { accountId }, select: { name: true } });
 
+    // Kontragentning BARCHA qarzlari bo'yicha yakuniy holat — bitta manbadan
+    // (materiallashgan CounterpartyBalance + QRZ- reyestri). Bu yerda hech narsa
+    // qayta hisoblanmaydi; izohi counterparty-settlement.util.ts da.
+    const settlement = await this.settlement.forCounterparty(accountId, supply.agent.id);
+    const settlementLines = settlement.lines.map((l) => ({
+      currency: l.currency,
+      ledgerBalanceMinor: l.ledgerBalanceMinor,
+      debtRegistryOutstandingMinor: l.debtRegistryOutstandingMinor,
+      verdict: settlementTextForCounterparty(l.ledgerBalanceMinor, l.currency),
+    }));
+
     const buf = await buildSupplyGoodsXlsx({
       companyName: org?.name ?? 'Sherset',
       counterpartyName: supply.agent.name,
       docNumber: supply.name,
       dateLabel,
       rows,
+      grossTotalMinor: grossTotal,
+      discountTotalMinor: discountTotal,
       totalSumMinor: total,
-      currency: 'UZS',
+      currency: supply.currency,
+      settlement: settlementLines,
     });
 
     const token = randomBytes(24).toString('hex');
@@ -496,6 +647,11 @@ export class CounterpartyStatementService {
     await mkdir(STATEMENTS_DIR, { recursive: true });
     await writeFile(filePath, buf);
 
+    // `finalBalanceMinor` — ustun nomi aytganidek, kontragentning YAKUNIY
+    // SALDOSI. Ilgari bu yerga qabulning SUMMASI yozilardi (`total`), ya'ni
+    // hujjat summasi «balans» sifatida saqlanardi va shu son kontragentga
+    // qarz bo'lib ko'rinardi — egasi keltirgan «45 ming so'm» aynan shu edi.
+    const primary = settlement.primary;
     const row = await c.counterpartyStatement.create({
       data: {
         accountId,
@@ -503,8 +659,8 @@ export class CounterpartyStatementService {
         fileToken: token,
         filePath,
         fileName,
-        finalBalanceMinor: total,
-        currency: 'UZS',
+        finalBalanceMinor: primary?.ledgerBalanceMinor ?? 0n,
+        currency: primary?.currency ?? supply.currency,
         createdById: userId,
       },
     });
@@ -520,7 +676,19 @@ export class CounterpartyStatementService {
             accountId,
             counterpartyId: supply.agent.id,
             toPhone: phone,
-            messageText: `Hurmatli ${supply.agent.name}, qabul №${supply.name} — tovarlar ro'yxati (Excel).`,
+            // Xabar matnida ham chegirma va yakuniy hisob-kitob turadi —
+            // kontragent Excel'ni ochmasdan asosiy raqamlarni ko'rsin. Ilgari
+            // bu yerda faqat «tovarlar ro'yxati (Excel)» bor edi: na chegirma,
+            // na qarz — akt-sverka yo'lida esa balans matni allaqachon bor edi.
+            messageText: this.supplyGoodsCaption({
+              name: supply.agent.name,
+              docNumber: supply.name,
+              currency: supply.currency,
+              grossTotalMinor: grossTotal,
+              discountTotalMinor: discountTotal,
+              totalSumMinor: total,
+              settlementLines,
+            }),
             attachmentPath: filePath,
             sourceEventType: 'supply_goods',
             sourceDocId: row.id,
@@ -533,13 +701,49 @@ export class CounterpartyStatementService {
       }
     }
     try {
+      const ownerSettle = primary
+        ? `\n${settlementTextForOwner(supply.agent.name, primary.ledgerBalanceMinor, primary.currency)}`
+        : '';
       await this.sendBotLink(
-        `📦 *Qabul tovarlari* — «${supply.agent.name}» №${supply.name}\n${link}`,
+        `📦 *Qabul tovarlari* — «${supply.agent.name}» №${supply.name}${ownerSettle}\n${link}`,
       );
     } catch {
       /* logged inside sendBotLink */
     }
     return { row, agentName: supply.agent.name, counterpartySent, link };
+  }
+
+  /**
+   * Qabul-tovarlari xabarining matni. Ataylab alohida, sof metod — MTProto
+   * ishga tushirmasdan testlanadi.
+   *
+   * Matn tarkibi (egasi 2026-07-28 talabi): hujjat sarlavhasi → chegirma
+   * (bo'lsa) → hujjat summasi → kontragentning BARCHA qarzlari bo'yicha
+   * yakuniy holat. Chegirma nol bo'lsa o'sha qator umuman chizilmaydi.
+   */
+  private supplyGoodsCaption(ctx: {
+    name: string;
+    docNumber: string;
+    currency: string;
+    grossTotalMinor: bigint;
+    discountTotalMinor: bigint;
+    totalSumMinor: bigint;
+    settlementLines: Array<{ currency: string; verdict: string }>;
+  }): string {
+    const unit = currencyUnit(ctx.currency);
+    const lines = [`Hurmatli ${ctx.name}, qabul №${ctx.docNumber} — tovarlar ro'yxati (Excel).`];
+    if (ctx.discountTotalMinor !== 0n) {
+      lines.push(
+        `Chegirmasiz: ${formatSettlementAmount(ctx.grossTotalMinor)} ${unit}`,
+        `Chegirma: ${formatSettlementAmount(ctx.discountTotalMinor)} ${unit}`,
+      );
+    }
+    lines.push(`Jami: ${formatSettlementAmount(ctx.totalSumMinor)} ${unit}`);
+    if (ctx.settlementLines.length > 0) {
+      lines.push('━━━━━━━━━━━━');
+      for (const l of ctx.settlementLines) lines.push(l.verdict);
+    }
+    return lines.join('\n');
   }
 
   /** Product reports for a product (newest first). */

@@ -6,8 +6,16 @@
  *
  * Sign convention (mirrors CounterpartyBalanceService.applyDelta):
  *   balance = Σdebit − Σcredit ·  > 0 → counterparty owes us · < 0 → we owe them.
- *   DEBIT  docs (they owe us more / we paid them):  invoiceOut, cashOut, paymentOut
- *   CREDIT docs (we owe them more / they paid us):  invoiceIn,  cashIn,  paymentIn
+ *   DEBIT  docs (they owe us more / we paid them):
+ *     invoiceOut, cashOut, paymentOut, prepaymentReturn, adjustmentIncrease
+ *   CREDIT docs (we owe them more / they paid us):
+ *     invoiceIn, supply, cashIn, paymentIn, prepayment, adjustmentDecrease, debtPayment
+ *
+ * 2026-07-28 — oxirgi 5 tur QO'SHILDI. Ular `applyDelta` ni chaqiradi, ya'ni
+ * materiallashgan saldoga ta'sir qiladi, lekin akt-sverka agregatsiyasida yo'q
+ * edi. Natijada aktning yakuniy qoldig'i kontragentning HAQIQIY saldosidan
+ * farq qilardi — va aynan shu son mijozga «Sizda N so'm qarz bor» bo'lib
+ * ketardi. Endi akt qatorlari ham yig'iladi, ham bosh daftarga mos keladi.
  */
 
 export type StatementDocType =
@@ -17,7 +25,12 @@ export type StatementDocType =
   | 'cashIn'
   | 'cashOut'
   | 'paymentIn'
-  | 'paymentOut';
+  | 'paymentOut'
+  | 'prepayment'
+  | 'prepaymentReturn'
+  | 'adjustmentIncrease'
+  | 'adjustmentDecrease'
+  | 'debtPayment';
 
 export interface StatementItem {
   /** Product/assortment display name. */
@@ -26,7 +39,13 @@ export interface StatementItem {
   quantity: string;
   /** Unit price in tiyin. */
   priceMinor: bigint;
-  /** Line total in tiyin. */
+  /**
+   * Chegirma foizi ("10", "12.5"). 2026-07-28 da qo'shildi: kontragent
+   * qatorni ko'rib «bu narxga kelishmagandim» demasin — chegirma OCHIQ
+   * ustunda turadi. Bo'lmasa/nol bo'lsa Excel'da «—» chiqadi.
+   */
+  discountPercent?: string;
+  /** Line total in tiyin — CHEGIRMA VA QQS QO'LLANGANDAN KEYIN. */
   sumMinor: bigint;
 }
 
@@ -60,6 +79,10 @@ const DEBIT_TYPES: ReadonlySet<StatementDocType> = new Set<StatementDocType>([
   'invoiceOut',
   'cashOut',
   'paymentOut',
+  // Avans qaytarilishi = pulni ularga qaytardik ⇒ qarzimiz kamayadi (+).
+  'prepaymentReturn',
+  // Qo'lda korrektirovka: INCREASE = ular bizga ko'proq qarzdor (+).
+  'adjustmentIncrease',
 ]);
 
 /** Human label per document type (Uzbek). */
@@ -71,7 +94,23 @@ export const DOC_TYPE_LABEL: Record<StatementDocType, string> = {
   cashOut: "To'lov (chiqim)",
   paymentIn: "Bank to'lovi (kirim)",
   paymentOut: "Bank to'lovi (chiqim)",
+  prepayment: 'Avans (olindi)',
+  prepaymentReturn: 'Avans qaytarildi',
+  adjustmentIncrease: 'Korrektirovka (+)',
+  adjustmentDecrease: 'Korrektirovka (−)',
+  debtPayment: "Qarz to'lovi",
 };
+
+/**
+ * Chegirma foizi → katak matni. «10» → «10%», «12.50» → «12.5%», nol/yo'q → «—».
+ * Ikkala Excel quruvchisi (akt-sverka «Batafsil» va qabul-tovarlari) shuni
+ * ishlatadi — ustun bir xil o'qilsin.
+ */
+export function discountLabel(percent: string | undefined): string {
+  const n = Number(percent ?? '0');
+  if (!Number.isFinite(n) || n === 0) return '—';
+  return `${String(Number(n.toFixed(4)))}%`;
+}
 
 /**
  * Build the reconciliation statement. Documents are sorted by `moment` (stable),

@@ -1,5 +1,5 @@
 import ExcelJS from 'exceljs';
-import { DOC_TYPE_LABEL, type StatementData } from './statement-compute.util.js';
+import { DOC_TYPE_LABEL, type StatementData, discountLabel } from './statement-compute.util.js';
 
 /**
  * Reconciliation-statement (акт-сверка) XLSX with TWO worksheets, so both views
@@ -174,21 +174,36 @@ function addDetailedSheet(wb: ExcelJS.Workbook, input: StatementXlsxInput, unit:
   const ws = wb.addWorksheet('Batafsil', {
     pageSetup: { paperSize: 9, orientation: 'landscape', fitToPage: true },
   });
-  const COLS = 8;
+  // 2026-07-28 — «Chegirma» ustuni qo'shildi (COLS 8 → 9). Tovar qatori endi
+  // chegirmadan KEYINGI summani ko'rsatadi, chegirma foizi esa yonida ochiq
+  // turadi: ilgari qator brutto edi va hujjatning Debet/Kredit summasiga
+  // yig'ilmasdi, chegirma esa umuman ko'rinmasdi.
+  const COLS = 9;
   ws.columns = [
     { key: 'n', width: 5 },
     { key: 'date', width: 18 },
     { key: 'desc', width: 42 },
     { key: 'qty', width: 10 },
     { key: 'price', width: 14, style: { numFmt: MONEY_FMT } },
+    { key: 'discount', width: 11 },
     { key: 'debit', width: 16, style: { numFmt: MONEY_FMT } },
     { key: 'credit', width: 16, style: { numFmt: MONEY_FMT } },
     { key: 'balance', width: 18, style: { numFmt: BAL_FMT } },
   ];
-  titleBlock(ws, 'H', input);
+  titleBlock(ws, 'I', input);
 
   const HEAD = 5;
-  ['№', 'Sana', 'Hujjat / Tovar', 'Miqdor', 'Narx', 'Debet', 'Kredit', 'Qoldiq'].forEach((h, i) => {
+  [
+    '№',
+    'Sana',
+    'Hujjat / Tovar',
+    'Miqdor',
+    'Narx',
+    'Chegirma',
+    'Debet',
+    'Kredit',
+    'Qoldiq',
+  ].forEach((h, i) => {
     const c = ws.getRow(HEAD).getCell(i + 1);
     c.value = h;
     c.font = { bold: true, color: { argb: 'FFFFFFFF' } };
@@ -205,9 +220,9 @@ function addDetailedSheet(wb: ExcelJS.Workbook, input: StatementXlsxInput, unit:
     dr.getCell(2).value = fmtDate(line.moment);
     dr.getCell(3).value = `${DOC_TYPE_LABEL[line.docType]} №${line.docNumber}`;
     dr.getCell(3).font = { bold: true };
-    if (line.debitMinor > 0n) dr.getCell(6).value = somAbs(line.debitMinor);
-    if (line.creditMinor > 0n) dr.getCell(7).value = somAbs(line.creditMinor);
-    dr.getCell(8).value = somSigned(line.runningBalanceMinor);
+    if (line.debitMinor > 0n) dr.getCell(7).value = somAbs(line.debitMinor);
+    if (line.creditMinor > 0n) dr.getCell(8).value = somAbs(line.creditMinor);
+    dr.getCell(9).value = somSigned(line.runningBalanceMinor);
     for (let i = 1; i <= COLS; i++) dr.getCell(i).border = thin;
     r++;
     for (const it of line.items) {
@@ -216,7 +231,9 @@ function addDetailedSheet(wb: ExcelJS.Workbook, input: StatementXlsxInput, unit:
       ir.getCell(3).font = { color: { argb: 'FF555555' } };
       ir.getCell(4).value = it.quantity;
       ir.getCell(5).value = somAbs(it.priceMinor);
-      ir.getCell(line.side === 'debit' ? 6 : 7).value = somAbs(it.sumMinor);
+      ir.getCell(6).value = discountLabel(it.discountPercent);
+      ir.getCell(6).alignment = { horizontal: 'center' };
+      ir.getCell(line.side === 'debit' ? 7 : 8).value = somAbs(it.sumMinor);
       for (let i = 1; i <= COLS; i++) ir.getCell(i).border = thin;
       r++;
     }
@@ -227,9 +244,9 @@ function addDetailedSheet(wb: ExcelJS.Workbook, input: StatementXlsxInput, unit:
 
   const totalRow = ws.getRow(r);
   totalRow.getCell(3).value = 'JAMI:';
-  totalRow.getCell(6).value = somAbs(input.data.totalDebitMinor);
-  totalRow.getCell(7).value = somAbs(input.data.totalCreditMinor);
-  totalRow.getCell(8).value = somSigned(input.data.finalBalanceMinor);
+  totalRow.getCell(7).value = somAbs(input.data.totalDebitMinor);
+  totalRow.getCell(8).value = somAbs(input.data.totalCreditMinor);
+  totalRow.getCell(9).value = somSigned(input.data.finalBalanceMinor);
   for (let i = 1; i <= COLS; i++) {
     totalRow.getCell(i).fill = TOTAL_FILL;
     totalRow.getCell(i).font = { bold: true };
