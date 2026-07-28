@@ -9,7 +9,9 @@
 #      (pre-commit runs only lint-staged + progress). Don't bypass with
 #      --no-verify — fix the type errors.
 #
-#   2. DRIFT DETECTOR (warning only, 2026-05-31 layer 3) — if the last 3 commits
+#   2. GUARD GATE (blocking, 2026-07-28) — see the block below.
+#
+#   3. DRIFT DETECTOR (warning only, 2026-05-31 layer 3) — if the last 3 commits
 #      touched list-page bulk-actions but no detail page ([id]/page.tsx), print a
 #      visible reminder. Does NOT block the push.
 
@@ -19,6 +21,20 @@ if ! pnpm -s typecheck; then
   echo "X pre-push blocked: typecheck failed. Fix the type errors before pushing."
   echo "  (Project rule: push -> CI green. Don't bypass with --no-verify.)"
   echo ""
+  exit 1
+fi
+
+#   3. GUARD GATE (blocking, 2026-07-28 — MASTER-TODO #29). The comment above
+#      used to end with "test suite is NOT in pre-push (too slow) — enforced by
+#      hand". That honour system failed: 133 guard tests were found red at once,
+#      and once a suite is broadly red every NEW break hides in the noise (that
+#      is how the «Sklad»-field save bug and the missing debt permissions
+#      survived). So run the SOURCE-SCAN guards only — pure fs reads, no jsdom —
+#      ~18s for ~370 assertions, and block only on a guard that was green.
+#      Known-red files live in scripts/guard-baseline.json WITH a reason + a
+#      MASTER-TODO ref, so the debt is visible rather than muted.
+echo "-> pre-push: source-scan guards (~18s; CHECK_GUARDS=0 to skip on a WIP branch)..."
+if ! node scripts/check-guards.mjs; then
   exit 1
 fi
 

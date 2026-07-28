@@ -1,0 +1,18 @@
+{
+  "//": "MASTER-TODO #29 — known-red source-scan guards. `scripts/check-guards.mjs` blocks a push that makes a NEW guard file fail, and tells you to shrink this list when a listed one starts passing. Add an entry ONLY with a todo ref + a reason; it is a debt register, not a mute button.",
+  "generatedAt": "2026-07-28",
+  "knownRed": [
+    {
+      "file": "src/__tests__/label-grounding.test.ts",
+      "failing": 25,
+      "todo": "#18 / #35",
+      "reason": "docs/moysklad-reference/visual-captures is EMPTY in this checkout (git ls-files = 0). The capture corpus never came across with the adoption, so every capture-grounded label assertion has nothing to read. Unblocking needs a moysklad.uz login to re-capture — it is not fixable from source."
+    },
+    {
+      "file": "src/__tests__/raw-element-conventions.test.ts",
+      "failing": 1,
+      "todo": "#12",
+      "reason": "25 climart surfaces still use raw <select>/<textarea>/radio/input instead of the DS primitives. A real convention-adoption backlog: each file needs the right primitive (visual + behaviour risk), so it is sized work, not a mechanical sweep. Putting them in the test's own EXEMPT registry would kill the guard."
+    }
+  ]
+}

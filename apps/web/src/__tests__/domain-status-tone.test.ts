@@ -199,9 +199,28 @@ const BAN_NAMED_MAP =
 const BAN_LOCAL_HELPER =
   /(?:const|function)\s+(?:statusTone|directionTone|actionTone|classTone|sideTone|priorityTone|kindTone)\s*[=(]/;
 const BAN_ISACTIVE_PAIR = /\.isActive\s*\?\s*'success'\s*:\s*'neutral'/;
+/**
+ * INLINE map indexed on the spot — `{ moving: 'success', stopped: 'warning' }[d.status]`.
+ *
+ * MASTER-TODO #29 (2026-07-28): found by mutation-testing the new pre-push
+ * guard gate. Reverting a consolidated helper to an inline object slipped past
+ * all three patterns above (nothing is named, nothing is declared), so the
+ * consolidation could be undone silently — the exact drift this file exists to
+ * stop. Requires >=2 tone-valued keys AND an immediate index, so ordinary
+ * option/label objects are untouched.
+ */
+const TONE = "(?:'(?:success|warning|destructive|neutral|info|brand)')";
+const BAN_INLINE_MAP = new RegExp(
+  `\\{\\s*\\w+\\s*:\\s*${TONE}\\s*,(?:\\s*\\w+\\s*:\\s*${TONE}\\s*,?)+\\s*\\}\\s*\\[`,
+);
 
 function offends(src: string): boolean {
-  return BAN_NAMED_MAP.test(src) || BAN_LOCAL_HELPER.test(src) || BAN_ISACTIVE_PAIR.test(src);
+  return (
+    BAN_NAMED_MAP.test(src) ||
+    BAN_LOCAL_HELPER.test(src) ||
+    BAN_ISACTIVE_PAIR.test(src) ||
+    BAN_INLINE_MAP.test(src)
+  );
 }
 
 describe('drift-lock: no surface re-declares a domain-status tone mapping', () => {
@@ -216,6 +235,11 @@ describe('drift-lock: no surface re-declares a domain-status tone mapping', () =
       offends("const classTone = (c: ClassGroup) => (c === 'A' ? 'success' : 'warning');"),
     ).toBe(true);
     expect(offends("tone={tpl.isActive ? 'success' : 'neutral'}")).toBe(true);
+    // Inline map indexed on the spot — the hole a mutation test found (#29).
+    expect(offends("tone={{ moving: 'success', stopped: 'warning' }[d.status]}")).toBe(true);
+    // …but an ordinary options/label object must NOT trip it.
+    expect(offends("const OPTIONS = { draft: 'Черновик', posted: 'Проведён' };")).toBe(false);
+    expect(offends("const cfg = { tone: 'success' };")).toBe(false);
     // helper IMPORTS and call sites are NOT flagged:
     expect(offends("import { callStatusTone } from '@/lib/domain-status-tone';")).toBe(false);
     expect(offends('tone={taskStatusTone(data.status)}')).toBe(false);
