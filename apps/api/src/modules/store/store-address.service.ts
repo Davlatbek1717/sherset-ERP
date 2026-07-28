@@ -162,7 +162,14 @@ export class StoreAddressService {
     // here — counted stock rows AND home-cell-bound products that have no count
     // yet (they render with qty 0, ready for «Sanash»).
     const bound = await this.prisma.client.product.findMany({
-      where: { accountId, attributes: { path: ['__yacheyka'], equals: cell.name } },
+      // deletedAt: soft-deleted product must not resurface in the cell view —
+      // stale __yacheyka attributes linger on deleted rows (climart 2026-07-26:
+      // bulk count picked a dead id and the save 404'd).
+      where: {
+        accountId,
+        deletedAt: null,
+        attributes: { path: ['__yacheyka'], equals: cell.name },
+      },
       select: { id: true },
       orderBy: { name: 'asc' },
     });
@@ -194,7 +201,9 @@ export class StoreAddressService {
     const [products, variants] = await Promise.all([
       productIds.length
         ? this.prisma.client.product.findMany({
-            where: { id: { in: productIds }, accountId },
+            // deletedAt: stale StockByCell rows can point at soft-deleted products —
+            // those must not surface in the count/view flows (climart 2026-07-26).
+            where: { id: { in: productIds }, accountId, deletedAt: null },
             select: {
               id: true,
               name: true,
@@ -232,19 +241,24 @@ export class StoreAddressService {
 
     return {
       cell,
-      items: rows.map((r) => {
-        const info = byId.get(r.assortmentId);
-        return {
-          assortmentKind: r.assortmentKind,
-          assortmentId: r.assortmentId,
-          name: info?.name ?? r.assortmentId,
-          code: info?.code ?? null,
-          barcode: info?.barcode ?? null,
-          description: info?.description ?? null,
-          mainImageId: info?.mainImageId ?? null,
-          qty: r.qty.toString(),
-        };
-      }),
+      // Rows whose assortment no longer resolves (soft/hard-deleted product) are
+      // DROPPED — a dead id in the count flow produced 404 saves (climart 2026-07-26);
+      // a ghost row on a label helps nobody either.
+      items: rows
+        .filter((r) => byId.has(r.assortmentId))
+        .map((r) => {
+          const info = byId.get(r.assortmentId);
+          return {
+            assortmentKind: r.assortmentKind,
+            assortmentId: r.assortmentId,
+            name: info?.name ?? r.assortmentId,
+            code: info?.code ?? null,
+            barcode: info?.barcode ?? null,
+            description: info?.description ?? null,
+            mainImageId: info?.mainImageId ?? null,
+            qty: r.qty.toString(),
+          };
+        }),
     };
   }
 
