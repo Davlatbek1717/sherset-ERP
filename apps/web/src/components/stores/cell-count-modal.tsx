@@ -18,9 +18,10 @@
 
 import { useBarcodeCamera } from '@/components/stores/use-barcode-camera';
 import { api } from '@/lib/api-client';
+import { beep } from '@/lib/beep';
 import { imageRawUrl } from '@/lib/image-url';
 import { normalizeScanInput } from '@/lib/scan';
-import { Button, Icons, Input, Modal, cn } from '@moysklad/ui';
+import { Button, Icons, Input, Modal, cn, useToast } from '@moysklad/ui';
 import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -59,6 +60,16 @@ export function CellCountModal({
   onSaved: () => void;
 }) {
   const t = useTranslations('pages.stores.address_storage');
+  const tCommon = useTranslations('common');
+  const tCommonSaved = tCommon('saved');
+  const { toast } = useToast();
+  // Owner 2026-07-25 (phone report): focus stays armed for hardware scanners,
+  // but the virtual keyboard opens ONLY on a deliberate tap on the field.
+  const [coarsePointer, setCoarsePointer] = useState(false);
+  useEffect(() => {
+    setCoarsePointer(window.matchMedia('(pointer: coarse)').matches);
+  }, []);
+  const [manualKb, setManualKb] = useState(false);
   const [cell, setCell] = useState<{ id: string; name: string } | null>(null);
   const [items, setItems] = useState<CellStockItem[]>([]);
   const [loadingItems, setLoadingItems] = useState(false);
@@ -70,8 +81,42 @@ export function CellCountModal({
   const [lastRead, setLastRead] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [value, setValue] = useState('');
+  // Owner 2026-07-28: typing LETTERS from a product name into the scan input
+  // must surface live suggestions (word-start catalog search) — tapping one
+  // behaves exactly like scanning that product's barcode.
+  const [suggests, setSuggests] = useState<
+    Array<{ id: string; name: string; code: string | null; mainImageId: string | null }>
+  >([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const qtyRef = useRef<HTMLInputElement>(null);
+  // «Umumiy sanash» (owner 2026-07-26): one common qty, then cells scan in a
+  // row — each lands in the list below with the common qty (editable per row).
+  const [bulkMode, setBulkMode] = useState(false);
+  const [bulkQty, setBulkQty] = useState('');
+  // The CLEAN common qty for bulkAdd. During a wedge burst the bulkQty STATE
+  // briefly holds scan garbage (each key echoes before the guard rolls it
+  // back) — a row added at that instant must still get the human value, so
+  // the guard writes the restored value here BEFORE routing the scan.
+  const bulkQtyRef = useRef('');
+  const setBulkQtyClean = useCallback((v: string) => {
+    bulkQtyRef.current = v;
+    setBulkQty(v);
+  }, []);
+  const [bulkRows, setBulkRows] = useState<
+    Array<{
+      key: string;
+      cell: { id: string; name: string };
+      product: { id: string; name: string };
+      qty: string;
+    }>
+  >([]);
+  // Single-mode guard (owner 2026-07-26 band 3): a second cell scanned before
+  // the qty is entered → the qty field turns RED (+ beep + message).
+  const [qtyMissing, setQtyMissing] = useState(false);
+  const qtyValidRe = /^\d+(\.\d{1,6})?$/;
+  const qtyValid = qtyValidRe.test(qty.trim());
+  const bulkQtyValid = qtyValidRe.test(bulkQty.trim());
+  const bulkRowsValid = bulkRows.length > 0 && bulkRows.every((r) => qtyValidRe.test(r.qty.trim()));
 
   // Reset per open; arm the wedge input after Radix's own autofocus.
   useEffect(() => {
@@ -84,9 +129,14 @@ export function CellCountModal({
     setLastRead(null);
     setValue('');
     setSaving(false);
+    setManualKb(false);
+    setBulkMode(false);
+    setBulkQtyClean('');
+    setBulkRows([]);
+    setQtyMissing(false);
     const id = requestAnimationFrame(() => inputRef.current?.focus());
     return () => cancelAnimationFrame(id);
-  }, [open]);
+  }, [open, setBulkQtyClean]);
 
   const loadItems = useCallback(
     async (target: { id: string; name: string }) => {
@@ -107,15 +157,24 @@ export function CellCountModal({
     [storeId],
   );
 
-  const selectProduct = useCallback((id: string) => {
-    setSelectedId(id);
-    setQty('');
-    requestAnimationFrame(() => qtyRef.current?.focus());
-  }, []);
+  const selectProduct = useCallback(
+    (id: string) => {
+      setSelectedId(id);
+      setQty('');
+      // Touch: no qty autofocus — it would pop the keyboard uninvited
+      // (owner 2026-07-25); the user taps the field when ready to type.
+      if (!coarsePointer) requestAnimationFrame(() => qtyRef.current?.focus());
+    },
+    [coarsePointer],
+  );
 
   // Owner 2026-07-23: the scan field ECHOES what was recognised — the cell's
   // CODE or the product's NAME — selected, so the next scan overwrites it.
+  // Echoed results must not re-trigger the name-suggestion dropdown (the
+  // echo IS letters) — the suggestion effect skips this exact string.
+  const echoSkipRef = useRef('');
   const echoInInput = useCallback((text: string, refocus: boolean) => {
+    echoSkipRef.current = text;
     setValue(text);
     if (refocus) {
       requestAnimationFrame(() => {
@@ -125,6 +184,41 @@ export function CellCountModal({
     }
   }, []);
 
+  // Bulk mode: a scanned cell lands in the list with the common qty. Only a
+  // single-product cell can ride the bulk lane — anything else answers loudly.
+  const bulkAdd = useCallback(
+    async (target: { id: string; name: string }) => {
+      const res = await api
+        .get<{ items: CellStockItem[] }>(`/admin/stores/${storeId}/cells/${target.id}/stock`)
+        .catch(() => null);
+      const list = (res?.items ?? []).filter((i) => i.assortmentKind === 'product');
+      if (list.length === 0) {
+        beep();
+        setMessage({ kind: 'err', text: `${target.name}: ${t('count_empty')}` });
+        return;
+      }
+      if (list.length > 1) {
+        beep();
+        setMessage({ kind: 'err', text: `${target.name}: ${t('count_bulk_multi')}` });
+        return;
+      }
+      const p = list[0];
+      if (!p) return;
+      setBulkRows((rows) => [
+        {
+          key: `${target.id}-${p.assortmentId}`,
+          cell: target,
+          product: { id: p.assortmentId, name: p.name },
+          qty: bulkQtyRef.current,
+        },
+        ...rows.filter((r) => r.key !== `${target.id}-${p.assortmentId}`),
+      ]);
+      setMessage({ kind: 'ok', text: `${t('count_bulk_added', { name: p.name })}` });
+      echoInInput(target.name, true);
+    },
+    [storeId, t, echoInInput],
+  );
+
   const resolve = useCallback(
     async (raw: string) => {
       const code = normalizeScanInput(raw);
@@ -133,12 +227,27 @@ export function CellCountModal({
       // 1) cell label? (local snapshot first, by-barcode endpoint as fallback)
       const hitCell =
         cells.find((c) => c.barcode === code) ?? cells.find((c) => c.name === code) ?? null;
-      if (hitCell) {
-        const target = { id: hitCell.id, name: hitCell.name };
+      const onCell = async (target: { id: string; name: string }) => {
+        if (bulkMode) {
+          await bulkAdd(target);
+          return;
+        }
+        // Band 3 guard: a product is picked but its qty is still empty — the
+        // NEXT cell scan must not silently drop the unfinished count.
+        if (cell && selectedId && !qtyValid) {
+          beep();
+          setQtyMissing(true);
+          setMessage({ kind: 'err', text: t('count_qty_first') });
+          requestAnimationFrame(() => qtyRef.current?.focus());
+          return;
+        }
         setCell(target);
-        setMessage({ kind: 'ok', text: `${t('scan_cell_label')}: ${hitCell.name}` });
-        echoInInput(hitCell.name, true);
+        setMessage({ kind: 'ok', text: `${t('scan_cell_label')}: ${target.name}` });
+        echoInInput(target.name, true);
         await loadItems(target);
+      };
+      if (hitCell) {
+        await onCell({ id: hitCell.id, name: hitCell.name });
         return;
       }
       const fresh = await api
@@ -148,11 +257,13 @@ export function CellCountModal({
         .catch(() => null);
       const found = fresh?.cells?.[0];
       if (found && found.storeId === storeId) {
-        const target = { id: found.id, name: found.name };
-        setCell(target);
-        setMessage({ kind: 'ok', text: `${t('scan_cell_label')}: ${found.name}` });
-        echoInInput(found.name, true);
-        await loadItems(target);
+        await onCell({ id: found.id, name: found.name });
+        return;
+      }
+      // Bulk mode counts CELLS only — any other code answers loudly.
+      if (bulkMode) {
+        beep();
+        setMessage({ kind: 'err', text: t('count_bulk_cell_only') });
         return;
       }
       if (found) {
@@ -231,13 +342,157 @@ export function CellCountModal({
       }
       setMessage({ kind: 'err', text: t('count_not_found') });
     },
-    [cells, storeId, cell, items, t, loadItems, selectProduct, echoInInput],
+    [
+      cells,
+      storeId,
+      cell,
+      items,
+      t,
+      loadItems,
+      selectProduct,
+      echoInInput,
+      bulkMode,
+      bulkAdd,
+      selectedId,
+      qtyValid,
+    ],
   );
 
   const resolveRef = useRef(resolve);
   useEffect(() => {
     resolveRef.current = resolve;
   }, [resolve]);
+
+  // Owner 2026-07-27 (real-device report): a keyboard-wedge scanner types into
+  // WHATEVER field holds the cursor — after tapping «Umumiy miqdor» the next
+  // cell scans landed inside the qty input as garbage instead of the list.
+  // Guard: every qty field watches its keystroke timing; a fast burst (≥4
+  // chars, ≤45ms between keys) finished by Enter is a SCAN — the burst is
+  // stripped back out of the field and handed to resolve(), so the qty box
+  // only ever keeps what a human deliberately typed.
+  const burstRef = useRef(
+    new Map<string, { keys: Array<{ ch: string; t: number }>; base: string }>(),
+  );
+  const wedgeGuard = useCallback(
+    (id: string, setVal: (v: string) => void, onPlainEnter?: () => void) =>
+      (e: React.KeyboardEvent<HTMLInputElement>) => {
+        const m = burstRef.current;
+        const st = m.get(id) ?? { keys: [], base: '' };
+        const now = performance.now();
+        if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+          const last = st.keys[st.keys.length - 1]?.t ?? 0;
+          if (st.keys.length === 0 || now - last > 600) {
+            // A long pause = whatever came before was separate. This key
+            // starts a fresh potential burst; remember the field as it is
+            // NOW (before this key lands) so a scan can be rolled back
+            // no matter where the caret inserted it.
+            st.keys = [];
+            st.base = e.currentTarget.value;
+          }
+          st.keys.push({ ch: e.key, t: now });
+          m.set(id, st);
+          return;
+        }
+        if (e.key !== 'Enter') return;
+        const lastAt = st.keys[st.keys.length - 1]?.t ?? 0;
+        const burst = st.keys.map((x) => x.ch).join('');
+        const gaps = st.keys
+          .slice(1)
+          .map((k, i) => k.t - (st.keys[i]?.t ?? k.t))
+          .sort((a, b) => a - b);
+        const median = gaps[Math.floor(gaps.length / 2)] ?? 9999;
+        const base = st.base;
+        m.set(id, { keys: [], base: '' });
+        // A scan is (a) any Enter-finished burst carrying NON-qty characters
+        // (letters/dashes never belong in a quantity) or (b) a long digit run
+        // typed scanner-fast (median gap counts, so one render-jank spike
+        // doesn't break detection — real phones jank too).
+        const nonQtyChars = /[^0-9.,\s]/.test(burst);
+        const isScan =
+          burst.length >= 4 &&
+          now - lastAt <= 600 &&
+          (nonQtyChars || (burst.length >= 8 && median <= 120));
+        if (isScan) {
+          e.preventDefault();
+          e.stopPropagation();
+          setVal(base);
+          void resolveRef.current(burst);
+          return;
+        }
+        e.preventDefault();
+        onPlainEnter?.();
+      },
+    [],
+  );
+
+  // Live name-search (owner 2026-07-28): letters in the scan input → word-start
+  // catalog suggestions after a 300ms pause. Bulk mode counts CELLS only, so
+  // the dropdown stays off there.
+  useEffect(() => {
+    const q = value.trim();
+    const hasLetters = /[^\d\s.,-]/.test(q);
+    if (bulkMode || q.length < 2 || !hasLetters || q === echoSkipRef.current) {
+      setSuggests([]);
+      return;
+    }
+    const timer = setTimeout(() => {
+      api
+        .get<{
+          items: Array<{
+            id: string;
+            name: string;
+            code: string | null;
+            mainImageId?: string | null;
+          }>;
+        }>(`/products?search=${encodeURIComponent(q)}&limit=8`)
+        .then((r) =>
+          setSuggests(
+            (r.items ?? []).map((p) => ({
+              id: p.id,
+              name: p.name,
+              code: p.code ?? null,
+              mainImageId: p.mainImageId ?? null,
+            })),
+          ),
+        )
+        .catch(() => setSuggests([]));
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [value, bulkMode]);
+
+  /** Tapping a suggestion = scanning that product's label. */
+  const pickSuggest = useCallback(
+    (p: { id: string; name: string; code: string | null; mainImageId: string | null }) => {
+      setSuggests([]);
+      if (!cell) {
+        beep();
+        setMessage({ kind: 'err', text: t('scan_no_cell_yet') });
+        return;
+      }
+      setItems((prev) =>
+        prev.some((x) => x.assortmentId === p.id)
+          ? prev
+          : [
+              ...prev,
+              {
+                assortmentKind: 'product',
+                assortmentId: p.id,
+                name: p.name,
+                code: p.code,
+                barcode: null,
+                description: null,
+                mainImageId: p.mainImageId,
+                qty: '0',
+              },
+            ],
+      );
+      selectProduct(p.id);
+      setMessage({ kind: 'ok', text: p.name });
+      echoInInput(p.name, false);
+    },
+    [cell, selectProduct, echoInInput, t],
+  );
+
   const onCameraDecoded = useCallback((raw: string) => {
     void resolveRef.current(raw);
   }, []);
@@ -247,14 +502,41 @@ export function CellCountModal({
     cameraErrorText: t('scan_camera_error'),
   });
 
-  const qtyValid = /^\d+(\.\d{1,6})?$/.test(qty.trim());
   // Owner 2026-07-23: the qty input is ALWAYS live and Save is clickable as
   // soon as a number is typed — a missing cell/product answers with a clear
   // message instead of a silently dead form.
-  const canSave = qtyValid && !saving;
+  const canSave = bulkMode ? bulkRowsValid && !saving : qtyValid && !saving;
 
   const save = useCallback(async () => {
-    if (!qtyValid || saving) return;
+    if (saving) return;
+    if (bulkMode) {
+      // Bulk: write every listed cell with its (common or edited) qty.
+      if (!bulkRowsValid) return;
+      setSaving(true);
+      let done = 0;
+      try {
+        for (const r of [...bulkRows].reverse()) {
+          await api.put(`/admin/stores/${storeId}/cells/${r.cell.id}/stock`, {
+            assortmentId: r.product.id,
+            qty: r.qty.trim(),
+          });
+          done += 1;
+          setBulkRows((rows) => rows.filter((x) => x.key !== r.key));
+        }
+        toast.success(tCommonSaved);
+        onSaved();
+        onOpenChange(false);
+      } catch (e) {
+        setMessage({
+          kind: 'err',
+          text: t('scan_save_failed', { msg: e instanceof Error ? e.message : String(e) }),
+        });
+        setSaving(false);
+        if (done > 0) onSaved();
+      }
+      return;
+    }
+    if (!qtyValid) return;
     if (!cell) {
       setMessage({ kind: 'err', text: t('scan_no_cell_yet') });
       return;
@@ -269,6 +551,9 @@ export function CellCountModal({
         assortmentId: selectedId,
         qty: qty.trim(),
       });
+      // Owner 2026-07-25: a short top «Сохранено» note, then the window closes —
+      // reopening starts a fresh, ready-to-scan count.
+      toast.success(tCommonSaved);
       onSaved();
       onOpenChange(false); // spec: Save closes the window
     } catch (e) {
@@ -278,7 +563,22 @@ export function CellCountModal({
       });
       setSaving(false);
     }
-  }, [cell, selectedId, qty, qtyValid, saving, storeId, onSaved, onOpenChange, t]);
+  }, [
+    bulkMode,
+    bulkRows,
+    bulkRowsValid,
+    cell,
+    selectedId,
+    qty,
+    qtyValid,
+    saving,
+    storeId,
+    onSaved,
+    onOpenChange,
+    t,
+    toast,
+    tCommonSaved,
+  ]);
 
   return (
     <Modal
@@ -303,7 +603,27 @@ export function CellCountModal({
             type="button"
             variant="secondary"
             size="sm"
-            onClick={() => onOpenChange(false)}
+            onClick={() => {
+              // Owner 2026-07-26 band 3: cancel drops the CURRENT action first
+              // (the scanned-but-unsaved cell / staged bulk rows); a second
+              // press with nothing in progress closes the window.
+              if (bulkMode && bulkRows.length > 0) {
+                setBulkRows([]);
+                setMessage(null);
+                return;
+              }
+              if (!bulkMode && cell) {
+                setCell(null);
+                setItems([]);
+                setSelectedId(null);
+                setQty('');
+                setQtyMissing(false);
+                setMessage(null);
+                inputRef.current?.focus();
+                return;
+              }
+              onOpenChange(false);
+            }}
             data-test-id="cell-count-cancel"
           >
             {t('scan_cancel')}
@@ -353,10 +673,49 @@ export function CellCountModal({
               void resolve(v);
             }
           }}
+          inputMode={coarsePointer && !manualKb ? 'none' : undefined}
+          onPointerDown={() => setManualKb(true)}
           placeholder={t('scan_input_placeholder')}
           className="h-10 w-full rounded-[var(--ms-radius-sm)] border border-[var(--ms-border-input)] px-3 text-sm placeholder:text-[var(--ms-text-placeholder)] focus:border-[var(--ms-border-focus)] focus:outline-none focus:ring-2 focus:ring-[var(--ms-text-brand)]"
           data-test-id="cell-count-input"
         />
+
+        {/* Live name-search suggestions (typed letters → matching products). */}
+        {suggests.length > 0 && (
+          <ul
+            className="-mt-1 max-h-[200px] overflow-y-auto rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] shadow-sm"
+            data-test-id="cell-count-suggests"
+          >
+            {suggests.map((p) => (
+              <li key={p.id} className="border-[var(--ms-border-default)] border-b last:border-b-0">
+                <button
+                  type="button"
+                  onClick={() => pickSuggest(p)}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-[var(--ms-bg-hover)]"
+                  data-test-id={`cell-count-suggest-${p.id}`}
+                >
+                  {p.mainImageId ? (
+                    <img
+                      src={imageRawUrl(p.mainImageId)}
+                      alt=""
+                      className="h-7 w-7 shrink-0 rounded object-cover"
+                    />
+                  ) : (
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-[var(--ms-bg-muted)] text-[10px] text-[var(--ms-text-muted)]">
+                      —
+                    </span>
+                  )}
+                  <span className="min-w-0 flex-1 truncate text-[13px]">{p.name}</span>
+                  {p.code && (
+                    <span className="shrink-0 text-[11px] text-[var(--ms-text-muted)] tabular-nums">
+                      {p.code}
+                    </span>
+                  )}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
 
         {/* Product cards — selectable, chosen one highlights BLUE. */}
         {cell &&
@@ -415,25 +774,115 @@ export function CellCountModal({
           ))}
 
         {/* Counted amount — ALWAYS live (owner 2026-07-23); saving without a
-            scanned product answers «mahsulot topilmadi». */}
-        <label className="flex items-center justify-between gap-3">
-          <span className="text-[13px] text-[var(--ms-text-primary)]">{t('count_qty_label')}</span>
-          <Input
-            ref={qtyRef}
-            inputMode="decimal"
-            value={qty}
-            onChange={(e) => setQty(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                void save();
-              }
+            scanned product answers «mahsulot topilmadi». Hidden in bulk mode —
+            the common qty above rules there. */}
+        {!bulkMode && (
+          <label className="flex items-center justify-between gap-3">
+            <span className="text-[13px] text-[var(--ms-text-primary)]">
+              {t('count_qty_label')}
+            </span>
+            <Input
+              ref={qtyRef}
+              inputMode="decimal"
+              value={qty}
+              invalid={qtyMissing}
+              onChange={(e) => {
+                setQtyMissing(false);
+                setQty(e.target.value);
+              }}
+              onKeyDown={wedgeGuard(
+                'qty',
+                (v) => {
+                  setQtyMissing(false);
+                  setQty(v);
+                },
+                () => void save(),
+              )}
+              placeholder={selectedId ? '' : t('count_select_first')}
+              className="h-9 w-40 text-right tabular-nums"
+              data-test-id="cell-count-qty"
+            />
+          </label>
+        )}
+
+        {/* «Umumiy sanash» (owner 2026-07-26): common qty once, then cells scan
+            back-to-back; each lands below with an editable qty + ✕. */}
+        <label className="flex items-center gap-2 text-[13px]">
+          <input
+            type="checkbox"
+            checked={bulkMode}
+            onChange={(e) => {
+              setBulkMode(e.target.checked);
+              setMessage(null);
+              setQtyMissing(false);
+              inputRef.current?.focus();
             }}
-            placeholder={selectedId ? '' : t('count_select_first')}
-            className="h-9 w-40 text-right tabular-nums"
-            data-test-id="cell-count-qty"
+            className="h-4 w-4"
+            data-test-id="cell-count-bulk-toggle"
           />
+          <span className="font-medium">{t('count_bulk_label')}</span>
         </label>
+        {bulkMode && (
+          <div className="flex flex-col gap-2" data-test-id="cell-count-bulk">
+            <label className="flex items-center justify-between gap-3">
+              <span className="text-[13px] text-[var(--ms-text-primary)]">
+                {t('count_bulk_qty')}
+              </span>
+              <Input
+                inputMode="decimal"
+                value={bulkQty}
+                invalid={bulkQty !== '' && !bulkQtyValid}
+                onChange={(e) => setBulkQtyClean(e.target.value)}
+                onKeyDown={wedgeGuard('bulkQty', setBulkQtyClean)}
+                placeholder="50"
+                className="h-9 w-40 text-right tabular-nums"
+                data-test-id="cell-count-bulk-qty"
+              />
+            </label>
+            <p className="text-[12px] text-[var(--ms-text-muted)]">{t('count_bulk_hint')}</p>
+            {bulkRows.length > 0 && (
+              <ul
+                className="max-h-[220px] divide-y divide-[var(--ms-border-default)] overflow-y-auto rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)]"
+                data-test-id="cell-count-bulk-rows"
+              >
+                {bulkRows.map((r) => (
+                  <li key={r.key} className="flex items-center gap-2 px-2.5 py-1.5">
+                    <span className="shrink-0 rounded bg-[var(--ms-bg-muted)] px-1.5 py-0.5 font-medium text-[12px] text-[var(--ms-text-muted)] tabular-nums">
+                      {r.cell.name}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-[13px]">{r.product.name}</span>
+                    <Input
+                      inputMode="decimal"
+                      value={r.qty}
+                      invalid={r.qty !== '' && !qtyValidRe.test(r.qty.trim())}
+                      onChange={(e) =>
+                        setBulkRows((rows) =>
+                          rows.map((x) => (x.key === r.key ? { ...x, qty: e.target.value } : x)),
+                        )
+                      }
+                      onKeyDown={wedgeGuard(`row-${r.key}`, (v) =>
+                        setBulkRows((rows) =>
+                          rows.map((x) => (x.key === r.key ? { ...x, qty: v } : x)),
+                        ),
+                      )}
+                      className="h-8 w-24 shrink-0 text-right tabular-nums"
+                      data-test-id={`cell-count-bulk-qty-${r.cell.name}`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setBulkRows((rows) => rows.filter((x) => x.key !== r.key))}
+                      className="shrink-0 rounded px-1 text-[14px] text-[var(--ms-text-muted)] hover:bg-[var(--ms-bg-hover)] hover:text-[var(--ms-text-destructive)]"
+                      aria-label={t('scan_cancel')}
+                      data-test-id={`cell-count-bulk-remove-${r.cell.name}`}
+                    >
+                      ✕
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
 
         {/* Camera screen (shared pipeline). */}
         <div className="flex flex-col gap-2" data-test-id="cell-count-screen">
