@@ -104,6 +104,23 @@ export class DebtService {
     };
   }
 
+  /**
+   * `todayCalls(dayOffset)` uchun kun siljishi → ISO sana (`tashkentDay` kutgan
+   * shakl). 0 → `undefined` (tashkentDay o'zi bugunni oladi), 1 → ertaga.
+   *
+   * MASTER-TODO #139/#142: `/debts/calls/tomorrow` sahifasi adoption'da
+   * yo'qolgan edi va u bilan birga BE'ning `dayOffset` parametri ham. Bu yerda
+   * FAQAT siljish tiklanadi — `includeOverdue` default'i va main'dagi
+   * «qo'ng'iroq qilinganlar ro'yxatdan chiqadi» filtri ATAYLAB ko'chirilmadi
+   * (ular mavjud `/debts/calls` xulqini o'zgartiradi → alohida QA talab qiladi,
+   * MASTER-TODO'da follow-up sifatida qayd etilgan).
+   */
+  private dayOffsetIso(offset: number): string | undefined {
+    if (!offset) return undefined;
+    const shifted = new Date(Date.now() + TASHKENT_OFFSET_MS + offset * DAY_MS);
+    return shifted.toISOString().slice(0, 10);
+  }
+
   /** Qoldiqdan status chiqarish — statusning YAGONA manbai. */
   private deriveStatus(totalMinor: bigint, paidMinor: bigint): DebtStatus {
     if (paidMinor >= totalMinor) return 'paid';
@@ -1367,9 +1384,15 @@ export class DebtService {
    * TZ §3.5 «muddati o'tib ketgan qo'ng'iroqlar ro'yxatda rangda ajratiladi»
    * degani — demak ular ro'yxatda TURISHI kerak.
    */
-  async todayCalls(accountId: string, opts: { ownerId?: string; includeOverdue?: boolean } = {}) {
-    const day = this.tashkentDay();
-    const includeOverdue = opts.includeOverdue ?? true;
+  async todayCalls(
+    accountId: string,
+    opts: { ownerId?: string; includeOverdue?: boolean; dayOffset?: number } = {},
+  ) {
+    const dayOffset = opts.dayOffset ?? 0;
+    const day = this.tashkentDay(this.dayOffsetIso(dayOffset));
+    // Bugundan boshqa kunda «muddati o'tgan» tushunchasi yo'q — oyna qat'iy.
+    // dayOffset=0 da mavjud xulq o'zgarmaydi (default hamon `true`).
+    const includeOverdue = dayOffset === 0 && (opts.includeOverdue ?? true);
 
     const rows = await this.prisma.client.debt.findMany({
       where: {

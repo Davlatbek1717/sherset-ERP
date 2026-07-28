@@ -79,17 +79,29 @@ export class DebtController {
     return this.service.summary(user.accountId);
   }
 
-  /** §3.5 — «Bugungi qo'ng'iroqlar» (muddati o'tganlar ham, `overdue` bayrog'i bilan). */
+  /**
+   * §3.5 — «Bugungi qo'ng'iroqlar» (muddati o'tganlar ham, `overdue` bayrog'i bilan).
+   * `?dayOffset=1` — «Ertaga qo'ng'iroq qilinishi kerak bo'lganlar»
+   * (MASTER-TODO #139: `/debts/calls/tomorrow` sahifasi shunga tayanadi).
+   */
   @Get('calls/today')
   @RequirePermission({ entity: 'debt', action: 'view' })
   todayCalls(
     @CurrentUser() user: AuthenticatedUser,
     @Query('ownerId') ownerId?: string,
     @Query('includeOverdue') includeOverdue?: string,
+    @Query('dayOffset') dayOffset?: string,
   ) {
+    // Number('') === 0, Number(undefined) === NaN → ikkalasi ham 0 ga tushadi.
+    // CLAMP majburiy: cheklanmagan qiymat (`?dayOffset=1e15`) `new Date(...)`ni
+    // Invalid Date qiladi → `toISOString()` RangeError tashlaydi → 500.
+    // Jonli tasdiqlangan (2026-07-28). ±366 kun — real oyna uchun yetarli.
+    const raw = Number(dayOffset);
+    const offset = Number.isFinite(raw) ? Math.trunc(raw) : 0;
     return this.service.todayCalls(user.accountId, {
       ownerId: ownerId || undefined,
       includeOverdue: includeOverdue !== 'false',
+      dayOffset: Math.max(-366, Math.min(366, offset)),
     });
   }
 

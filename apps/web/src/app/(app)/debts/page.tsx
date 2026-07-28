@@ -481,6 +481,11 @@ export default function DebtsPage() {
             <Button variant="secondary" asChild>
               <Link href="/debts/calls">{t('tab_calls')}</Link>
             </Button>
+            {/* MASTER-TODO #139: «Ertaga» sahifasi ham, shu havola ham
+                adoption'da yo'qolgan edi (debts = KEEP to'plamida). */}
+            <Button variant="secondary" asChild>
+              <Link href="/debts/calls/tomorrow">{t('tab_calls_tomorrow')}</Link>
+            </Button>
             <Button variant="secondary" asChild>
               <Link href="/debts/called">{t('tab_called')}</Link>
             </Button>

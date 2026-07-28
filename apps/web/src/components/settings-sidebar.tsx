@@ -103,6 +103,11 @@ const EXTRA_GROUPS: SidebarGroup[] = [
       { href: '/settings/regions', labelKey: 'regions' },
       { href: '/settings/email', labelKey: 'email' },
       { href: '/settings/email/log', labelKey: 'email_log' },
+      // MASTER-TODO #138: the SMS pages (and these two nav rows) were lost in
+      // the climart adoption even though SMS is in the KEEP set — the backend
+      // module (17 files) stayed, only the UI entry points vanished.
+      { href: '/settings/sms', labelKey: 'sms' },
+      { href: '/settings/sms/templates', labelKey: 'sms_templates' },
       { href: '/settings/webhooks', labelKey: 'webhooks' },
       { href: '/settings/publications', labelKey: 'publications' },
       { href: '/settings/label-templates', labelKey: 'label_templates' },

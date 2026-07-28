@@ -258,8 +258,11 @@ export const debtApi = {
   get: (id: string) => api.get<DebtDetail>(`/debts/${id}`),
 
   /** §3.5 — bugungi qo'ng'iroqlar (muddati o'tganlar ham, `overdue` bayrog'i bilan). */
-  todayCalls: (ownerId?: string) =>
-    api.get<{ rows: DebtRow[] }>(`/debts/calls/today${qs({ ownerId })}`),
+  /** `dayOffset=1` → «Ertaga» sahifasi (MASTER-TODO #139). */
+  todayCalls: (ownerId?: string, dayOffset?: number) =>
+    api.get<{ rows: DebtRow[] }>(
+      `/debts/calls/today${qs({ ownerId, dayOffset: dayOffset ? String(dayOffset) : undefined })}`,
+    ),
 
   /** §3.3 — yangi qarz berish (KASSIR). Izoh + keyingi sana MAJBURIY. */
   create: (body: {
