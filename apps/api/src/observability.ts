@@ -93,7 +93,13 @@ export function initSentry(): void {
     // covers but at the Sentry layer.
     beforeSend(event) {
       if (event.request?.headers) {
+        // Security redaction, not a hot path: assigning `undefined` KEEPS the
+        // key (Sentry still serialises it, and the header name alone reveals
+        // the request was authenticated), so `delete` — which removes the
+        // property outright — is the correct operator here, not a perf smell.
+        // biome-ignore lint/performance/noDelete: must remove the key, not blank it
         delete event.request.headers.authorization;
+        // biome-ignore lint/performance/noDelete: must remove the key, not blank it
         delete event.request.headers.cookie;
       }
       if (event.request?.cookies) event.request.cookies = { _: '[redacted]' };

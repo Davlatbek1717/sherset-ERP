@@ -190,7 +190,7 @@ describe('Card', () => {
           <p>Body</p>
         </CardContent>
         <CardFooter>
-          <button>Action</button>
+          <button type="button">Action</button>
         </CardFooter>
       </Card>,
     );
@@ -239,7 +239,14 @@ describe('PageHeader', () => {
 
   it('renders actions slot to the right', () => {
     renderWithProviders(
-      <PageHeader title="x" actions={<button data-test-id="my-action">Save</button>} />,
+      <PageHeader
+        title="x"
+        actions={
+          <button type="button" data-test-id="my-action">
+            Save
+          </button>
+        }
+      />,
     );
     expect(screen.getByTestId('my-action')).toBeInTheDocument();
   });

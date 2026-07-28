@@ -51,7 +51,14 @@ describe('EmptyState', () => {
 
     it('renders action slot below the body', () => {
       renderWithProviders(
-        <EmptyState title="x" action={<button data-test-id="my-action">Add</button>} />,
+        <EmptyState
+          title="x"
+          action={
+            <button type="button" data-test-id="my-action">
+              Add
+            </button>
+          }
+        />,
       );
       expect(screen.getByTestId('my-action')).toBeInTheDocument();
     });
@@ -252,7 +259,11 @@ describe('Drawer', () => {
           open
           onOpenChange={vi.fn()}
           title="x"
-          toolbar={<button data-test-id="my-tool">Tool</button>}
+          toolbar={
+            <button type="button" data-test-id="my-tool">
+              Tool
+            </button>
+          }
         >
           <div>Body</div>
         </Drawer>,
@@ -268,7 +279,11 @@ describe('Drawer', () => {
           open
           onOpenChange={vi.fn()}
           title="x"
-          footer={<button data-test-id="save-btn">Save</button>}
+          footer={
+            <button type="button" data-test-id="save-btn">
+              Save
+            </button>
+          }
         >
           <div>Body</div>
         </Drawer>,

@@ -100,6 +100,7 @@ export function PaymentDialog({
           {/* Cash / Card inputs */}
           <div className="mb-4 grid grid-cols-2 gap-3">
             <button
+              type="button"
               onClick={() => setActiveField('cash')}
               className={`flex flex-col rounded-lg border-2 p-3 text-left transition-colors ${
                 activeField === 'cash'
@@ -113,6 +114,7 @@ export function PaymentDialog({
               </span>
             </button>
             <button
+              type="button"
               onClick={() => setActiveField('card')}
               className={`flex flex-col rounded-lg border-2 p-3 text-left transition-colors ${
                 activeField === 'card'
@@ -140,6 +142,7 @@ export function PaymentDialog({
           {/* Quick-pay buttons */}
           <div className="mb-4 flex gap-2">
             <button
+              type="button"
               onClick={handleExact}
               className="flex-1 rounded-lg border border-[var(--ms-border)] bg-[var(--ms-bg-input)] px-2 py-2 font-medium text-xs transition-colors hover:bg-[var(--ms-bg-hover)]"
             >
@@ -147,6 +150,7 @@ export function PaymentDialog({
             </button>
             {QUICK_AMOUNTS.map((amount) => (
               <button
+                type="button"
                 key={amount.toString()}
                 onClick={() => handleQuickAdd(amount)}
                 className="flex-1 rounded-lg border border-[var(--ms-border)] bg-[var(--ms-bg-input)] px-2 py-2 text-xs transition-colors hover:bg-[var(--ms-bg-hover)]"
@@ -160,6 +164,7 @@ export function PaymentDialog({
           <div className="mb-4 grid grid-cols-3 gap-2">
             {['1', '2', '3', '4', '5', '6', '7', '8', '9', '000', '0', '⌫'].map((k) => (
               <button
+                type="button"
                 key={k}
                 onClick={() => (k === '⌫' ? handleBackspace() : handleDigit(k))}
                 className="h-12 rounded-lg border border-[var(--ms-border)] bg-[var(--ms-bg-input)] font-semibold text-[var(--ms-text-primary)] text-lg transition-all hover:bg-[var(--ms-bg-hover)] active:scale-95"
@@ -171,6 +176,7 @@ export function PaymentDialog({
 
           {/* Confirm button */}
           <button
+            type="button"
             onClick={handleConfirm}
             disabled={!canConfirm}
             className="h-12 w-full rounded-xl bg-[var(--ms-brand)] font-semibold text-base text-white transition-all hover:bg-[var(--ms-brand-hover)] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
@@ -179,7 +185,10 @@ export function PaymentDialog({
           </button>
 
           <Dialog.Close asChild>
-            <button className="mt-3 h-10 w-full rounded-xl border border-[var(--ms-border)] text-[var(--ms-text-muted)] text-sm transition-colors hover:bg-[var(--ms-bg-hover)]">
+            <button
+              type="button"
+              className="mt-3 h-10 w-full rounded-xl border border-[var(--ms-border)] text-[var(--ms-text-muted)] text-sm transition-colors hover:bg-[var(--ms-bg-hover)]"
+            >
               {t('cancel')}
             </button>
           </Dialog.Close>

@@ -144,7 +144,8 @@ export class CounterpartyBalanceService {
         return { balanceMinor: { lt: 0 } };
       case 'nonzero':
         return { balanceMinor: { not: 0 } };
-      case 'all':
+      // `all` falls through to the default (no filter) — listing it separately
+      // added nothing but a lint error.
       default:
         return {};
     }

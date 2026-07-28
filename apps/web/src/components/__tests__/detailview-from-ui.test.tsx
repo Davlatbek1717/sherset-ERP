@@ -114,7 +114,14 @@ describe('DetailView', () => {
   describe('actions slot', () => {
     it('renders action nodes provided via actions prop', () => {
       renderWithProviders(
-        <DetailView title="x" actions={<button data-test-id="my-action">Click</button>}>
+        <DetailView
+          title="x"
+          actions={
+            <button type="button" data-test-id="my-action">
+              Click
+            </button>
+          }
+        >
           <div>Body</div>
         </DetailView>,
       );
