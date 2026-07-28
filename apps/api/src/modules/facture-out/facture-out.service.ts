@@ -145,7 +145,11 @@ export class FactureOutService {
     return row;
   }
 
-  /** Doc-number sequence «СФ-YYYY-NNNNN» (mirrors nextSupplyName). */
+  /**
+   * Doc-number sequence — plain 5-digit zero-padded «Номер» (moysklad parity).
+   * MASTER-TODO #21: the comment used to say «СФ-YYYY-NNNNN», a format the body
+   * stopped emitting when it moved to the prefix-less moysklad form.
+   */
   private async nextName(accountId: string): Promise<string> {
     const n = await allocateDocumentNumber(
       this.prisma.client,

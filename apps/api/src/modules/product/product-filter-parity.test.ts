@@ -46,7 +46,17 @@ describe('product list filter — moysklad Фильтр parity is wired end-to-e
     expect(schema).toMatch(/\bproductFolderIdDeep:\s*uuid\.nullable\(\)\.optional\(\)/);
     // «Код упаковки ТАСНИФ» (2026-06-16) — filter + ProductPack.tasnifCode.
     expect(schema).toMatch(/\bpackTasnifCode:\s*z\.string\(\)\.optional\(\)/);
-    expect(schema).toMatch(/ProductPackSchema[\s\S]{0,200}\btasnifCode:\s*z\.string\(\)/);
+    // MASTER-TODO #24: this was `ProductPackSchema[\s\S]{0,200}tasnifCode` — a
+    // fixed CHARACTER window. `tasnifCode` is still declared on the schema, but
+    // explanatory comments added above it pushed it past 200 chars, so the
+    // guard failed on comment length rather than on a missing field. Scan the
+    // z.object BLOCK instead, which cannot drift with prose.
+    const packBlock = schema.slice(
+      schema.indexOf('export const ProductPackSchema'),
+      schema.indexOf('});', schema.indexOf('export const ProductPackSchema')),
+    );
+    expect(packBlock, 'ProductPackSchema block not found').toContain('ProductPackSchema');
+    expect(packBlock).toMatch(/\btasnifCode:\s*z\.string\(\)/);
   });
 
   it('Код упаковки ТАСНИФ → packs.some.tasnifCode contains (insensitive)', () => {

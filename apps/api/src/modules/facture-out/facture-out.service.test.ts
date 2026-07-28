@@ -127,6 +127,17 @@ function makePrismaMock(state: Partial<MockState>) {
   const paymentIn = { findFirst: vi.fn(sourceFinder(s.paymentsIn)) };
 
   const factureOut = {
+    // MASTER-TODO #21: the service's document-number seeder calls
+    // `factureOut.findMany({ where: { accountId }, select: { name: true } })` to
+    // find the highest TRAILING number across existing names. The mock predated
+    // that allocator and only exposed findFirst/create, so every generate* test
+    // died on «factureOut.findMany is not a function» — the suite was reporting
+    // a mock gap as service breakage. Modelled faithfully (account-scoped,
+    // name-only) so the numbering assertions actually mean something.
+    findMany: vi.fn(async (args: { where: Record<string, unknown> }) => {
+      const w = args.where ?? {};
+      return s.factures.filter((f) => f.accountId === w.accountId).map((f) => ({ name: f.name }));
+    }),
     findFirst: vi.fn(async (args: { where: Record<string, unknown>; include?: unknown }) => {
       const w = args.where ?? {};
       if (w.name && typeof w.name === 'object') {
@@ -243,7 +254,35 @@ describe('FactureOutService.generateFromDemand (Chat-3 §82 parity, preserved)',
     expect(r.demandId).toBe('dem-1');
     expect(r.state).toBe('draft');
     expect(r.ownerId).toBe('emp-1');
-    expect(r.name).toMatch(/^СФ-\d{4}-\d{5}$/);
+    // MASTER-TODO #21: was /^СФ-\d{4}-\d{5}$/ — the legacy prefixed format.
+    // The number generator was moved to moysklad parity: «plain 5-digit
+    // zero-padded «Номер» (no prefix)» (facture-out.service.ts). The seeder
+    // still reads the highest TRAILING number, so legacy «СФ-2026-00007» rows
+    // keep the sequence going — that continuity is what the next assertion
+    // covers.
+    expect(r.name).toMatch(/^\d{5}$/);
+  });
+
+  it('continues the sequence past legacy PREFIXED names (no number reuse)', async () => {
+    // The seeder matches on the trailing digits precisely so a tenant that has
+    // old «СФ-2026-00007» rows does not get a colliding «00001».
+    const m = makePrismaMock({
+      demands: [DEMAND],
+      factures: [
+        {
+          id: 'f-legacy',
+          accountId: 'acc-1',
+          name: 'СФ-2026-00007',
+          demandId: null,
+          state: 'draft',
+          ownerId: null,
+          deletedAt: null,
+        } as never,
+      ],
+    });
+    const svc = new FactureOutService({ client: m.client } as never);
+    const r = (await svc.generateFromDemand('acc-1', 'emp-1', 'dem-1')) as FactureRow;
+    expect(r.name).toBe('00008');
   });
 
   it('copies header refs losslessly from the Demand (§8.3 parity)', async () => {

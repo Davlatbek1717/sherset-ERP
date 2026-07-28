@@ -86,9 +86,24 @@ for (const svc of SERVICES) {
       );
     });
 
-    it('each transition rejects the losing claim (3× claim.count === 0 → ConflictException)', () => {
-      const claimGuards = SOURCE.match(/claim\.count === 0/g) ?? [];
-      expect(claimGuards.length).toBe(3); // post + unpost + cancel
+    it('every atomic claim rejects the losing race (claim.count === 0 → ConflictException)', () => {
+      // MASTER-TODO #25: this asserted an exact `toBe(3)` (post + unpost +
+      // cancel). enter.service.ts now has FOUR — the extra one is a
+      // version-checked claim on a posted row (`state: 'posted', version:
+      // parsed.version`), i.e. a STRONGER guard, not a missing transition. A
+      // hardcoded count turns "someone added protection" into a red test.
+      //
+      // The three transitions are already pinned individually above, so what
+      // this adds is the invariant that matters and cannot drift: EVERY
+      // `const claim = await tx.<model>.updateMany(...)` is followed by a
+      // count check. An unchecked claim is exactly the TOCTOU hole.
+      const claims = SOURCE.match(new RegExp(`const claim = await tx\\.${m}\\.updateMany`, 'g'));
+      const guards = SOURCE.match(/claim\.count === 0/g) ?? [];
+      expect(claims, `${svc.name}: no atomic claim found (scan broken?)`).not.toBeNull();
+      expect(claims?.length ?? 0).toBeGreaterThanOrEqual(3); // post + unpost + cancel
+      expect(guards.length, 'every claim must be checked for the lost race').toBe(
+        claims?.length ?? 0,
+      );
       expect(SOURCE).toMatch(/throw new ConflictException\(/);
     });
 

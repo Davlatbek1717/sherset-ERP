@@ -28,7 +28,13 @@ const RESOLVE =
 const STAMP = /groupId:\s*creatorGroupId\b/;
 // counterparty already exposes the «Доступ» group picker → default to the
 // creator's group only when the user left it empty.
-const COALESCE_STAMP = /groupId:\s*parsed\.groupId\s*\?\?\s*creatorGroupId\b/;
+//
+// MASTER-TODO #25: internal-order does the SAME thing but names its payload
+// `data` rather than `parsed`, so the `parsed`-only pattern reported the stamp
+// as missing when it is present (and in the stronger, user-choice-respecting
+// form). Accept either receiver — what matters is «explicit group wins, creator
+// group is the fallback», not the local variable name.
+const COALESCE_STAMP = /groupId:\s*(?:parsed|data)\.groupId\s*\?\?\s*creatorGroupId\b/;
 // product's create lives in product.repository.ts; the service coalesces the
 // creator group into `parsed.groupId` (its «Отдел» field) as a NULL-only fallback
 // before delegating, so the user-picked product group is never overwritten.
@@ -60,7 +66,8 @@ const SERVICES: Spec[] = [
   { name: 'prepayment' },
   { name: 'prepayment-return' },
   { name: 'counterparty-adjustment' },
-  { name: 'internal-order' },
+  // Uses the coalesce form (`data.groupId ?? creatorGroupId`) — MASTER-TODO #25.
+  { name: 'internal-order', stamp: COALESCE_STAMP },
   { name: 'move' },
   { name: 'enter' },
   { name: 'loss' },

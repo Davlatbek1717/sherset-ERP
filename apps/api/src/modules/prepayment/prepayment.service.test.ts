@@ -95,7 +95,18 @@ function makePrismaMock(state: { rows: PrepaymentRow[] }) {
     create,
     update,
     count: vi.fn(),
-    findMany: vi.fn(),
+    // MASTER-TODO #22: this was a bare `vi.fn()` returning undefined, so the
+    // document-number seeder's `for (const r of rows)` threw «rows is not
+    // iterable» and every create/audit test died before reaching its assertion
+    // — a mock gap reported as service breakage. Modelled on the real call
+    // (`findMany({ where: { accountId }, select: { name: true } })`) so the
+    // generated «Номер» is actually exercised.
+    findMany: vi.fn(async (args?: { where?: Record<string, unknown> }) => {
+      const accountId = args?.where?.accountId;
+      return state.rows
+        .filter((r) => accountId === undefined || r.accountId === accountId)
+        .map((r) => ({ name: r.name }));
+    }),
   };
   // Audit-log write parity (History/«Tarix» tab): create/update/delete/
   // transition now write an auditLog row. The mock must expose it on both the

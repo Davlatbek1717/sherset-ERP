@@ -115,8 +115,14 @@ describe('list date-tz sweep — migrated services use the shared helper', () =>
         );
       });
 
-      it('calls tashkentRangeBounds(filter.X, filter.Y) for its date range(s)', () => {
-        expect(code).toMatch(/tashkentRangeBounds\(filter\.\w+,\s*filter\.\w+\)/);
+      it('calls tashkentRangeBounds(<query>.X, <query>.Y) for its date range(s)', () => {
+        // MASTER-TODO #25: was hardcoded to a receiver named `filter`.
+        // commission-report calls its query object `q`
+        // (`tashkentRangeBounds(q.momentFrom, q.momentTo)`), so the guard
+        // reported a missing tz-conversion that was in fact present. What must
+        // hold is that BOTH range ends come from the same query object — not
+        // what that object is called locally.
+        expect(code).toMatch(/tashkentRangeBounds\((\w+)\.\w+,\s*\1\.\w+\)/);
       });
     });
   }

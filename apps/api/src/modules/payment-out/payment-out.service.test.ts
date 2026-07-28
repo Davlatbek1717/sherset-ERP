@@ -52,6 +52,13 @@ function buildClone(operations: Op[]) {
         findFirst: vi.fn(async (args: { where: { name?: unknown } }) =>
           args.where?.name ? null : source,
         ),
+        // MASTER-TODO #23: the doc-number seeder reads every existing name to
+        // continue the sequence (`findMany({ where: { accountId }, select: {
+        // name: true } })`). Without it clone() threw «paymentOut.findMany is
+        // not a function» BEFORE copying any allocation, so all three FK-copy
+        // assertions failed for a reason unrelated to what they test.
+        // Empty tenant → the clone gets the first number.
+        findMany: vi.fn(async () => []),
         create,
       },
       auditLog: { create: vi.fn(async () => ({})) },

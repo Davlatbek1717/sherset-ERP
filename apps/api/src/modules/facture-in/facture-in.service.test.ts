@@ -124,6 +124,15 @@ function makePrismaMock(state: Partial<MockState>) {
     }),
   };
   const factureIn = {
+    // MASTER-TODO #21: the number seeder calls
+    // `factureIn.findMany({ where: { accountId }, select: { name: true } })`.
+    // The mock predated that allocator, so every generate* test died on
+    // «factureIn.findMany is not a function» — a mock gap reported as service
+    // breakage. Modelled faithfully (account-scoped, name-only).
+    findMany: vi.fn(async (args: { where: Record<string, unknown> }) => {
+      const w = args.where ?? {};
+      return s.factures.filter((f) => f.accountId === w.accountId).map((f) => ({ name: f.name }));
+    }),
     findFirst: vi.fn(async (args: { where: Record<string, unknown>; include?: unknown }) => {
       const w = args.where ?? {};
       if (w.name && typeof w.name === 'object') {
@@ -236,7 +245,28 @@ describe('FactureInService.generateFromSupply (Chat-3 §82 parity, preserved)', 
     expect(m.state.factures).toHaveLength(1);
     expect(r.supplyId).toBe('sup-1');
     expect(r.state).toBe('draft');
-    expect(r.name).toMatch(/^СФП-\d{4}-\d{5}$/);
+    // MASTER-TODO #21: was /^СФП-\d{4}-\d{5}$/ — the legacy prefixed format the
+    // generator stopped emitting when it moved to moysklad's prefix-less «Номер».
+    expect(r.name).toMatch(/^\d{5}$/);
+  });
+
+  it('continues the sequence past legacy PREFIXED names (no number reuse)', async () => {
+    const m = makePrismaMock({
+      supplies: [SUPPLY],
+      factures: [
+        {
+          id: 'f-legacy',
+          accountId: 'acc-1',
+          name: 'СФП-2026-00042',
+          supplyId: null,
+          state: 'draft',
+          deletedAt: null,
+        } as never,
+      ],
+    });
+    const svc = new FactureInService({ client: m.client } as never);
+    const r = (await svc.generateFromSupply('acc-1', 'emp-1', 'sup-1')) as FactureRow;
+    expect(r.name).toBe('00043');
   });
 
   it('copies header refs + supplier incomingNumber/Date losslessly', async () => {

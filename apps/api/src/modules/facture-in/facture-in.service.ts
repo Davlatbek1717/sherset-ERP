@@ -126,7 +126,12 @@ export class FactureInService {
     return row;
   }
 
-  /** Doc-number sequence «СФП-YYYY-NNNNN» (полученная — distinct from СФ). */
+  /**
+   * Doc-number sequence — plain 5-digit zero-padded «Номер» (moysklad parity).
+   * MASTER-TODO #21: this used to read «СФП-YYYY-NNNNN»; the body below has
+   * generated the prefix-less form for a while, so the comment was describing
+   * a format the code no longer emits.
+   */
   private async nextName(accountId: string): Promise<string> {
     const n = await allocateDocumentNumber(this.prisma.client, accountId, 'facturein', async () => {
       // moysklad-parity: plain 5-digit zero-padded «Номер» (no prefix). Seed = highest

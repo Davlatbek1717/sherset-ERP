@@ -90,8 +90,20 @@ describe('position line-total class uses scaleMinorByQty (6-dp, no 3-dp truncati
         // Tolerant of nested parens (Math.round(Number(p.quantity) * 1_000)) and
         // the underscore digit-group separator (1_000 / 1_000n) — the two ways
         // internal-order's miss hid from the first grep + first guard regex.
-        expect(code).not.toMatch(/Math\.round\([^;\n]*\*\s*1_?000\b/);
-        expect(code).not.toMatch(/\/\s*1_?000n\b/);
+        //
+        // MASTER-TODO #25: the ban targets the MONEY path (price/cost × qty).
+        // `PositionTable.lineMeasure` also multiplies by 1000, but it computes
+        // «Вес»/«Объём» — grams/millilitres × Кол-во, deliberately trimmed to
+        // 3 dp for display — and never touches minor units. Flagging it read as
+        // "the money rounding regressed" when the money path had (correctly)
+        // moved to computePositionTotal, as that function's own comment records.
+        // Excised by name so the ban keeps full force everywhere else.
+        const moneyCode = code.replace(
+          /function lineMeasure\([\s\S]*?\n\}/,
+          '/* lineMeasure: weight/volume display, not money */',
+        );
+        expect(moneyCode).not.toMatch(/Math\.round\([^;\n]*\*\s*1_?000\b/);
+        expect(moneyCode).not.toMatch(/\/\s*1_?000n\b/);
       });
     });
   }

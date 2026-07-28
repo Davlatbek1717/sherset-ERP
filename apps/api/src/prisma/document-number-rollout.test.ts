@@ -1,5 +1,5 @@
 import { readFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
@@ -46,14 +46,29 @@ const files = collectServiceFiles(MODULES_DIR).map((path) => ({
   src: readFileSync(path, 'utf8'),
 }));
 
+/**
+ * MASTER-TODO #26: the detector used to require BOTH `startsWith: prefix` AND
+ * a width-5 padStart. That shape is being RETIRED — services have moved to
+ * moysklad's prefix-less «Номер» (plain 5-digit; the seeder reads the highest
+ * trailing digits instead of a prefix-scoped query), so only 11 files still
+ * match it while 37 actually generate document numbers. The floor of 31 then
+ * failed — reporting the migration AWAY from the raced pattern as breakage.
+ *
+ * Keyed on the durable half instead: a width-5 zero-padded number IS the
+ * generator shape, prefixed or not. `analitika/order.service.ts` stays exempt
+ * for the reason the header documents (count()+1 with a P2002 retry loop).
+ */
+const NUMBER_EXEMPT = ['analitika', 'order.service.ts'].join(sep);
+
 const generatorFiles = files.filter(
-  (f) => /startsWith: (prefix|yearPrefix)/.test(f.src) && f.src.includes(".padStart(5, '0')"),
+  (f) => f.src.includes(".padStart(5, '0')") && !f.path.endsWith(NUMBER_EXEMPT),
 );
 
 describe('document-number generators allocate atomically (no read-max race)', () => {
   it('finds the generator fleet (non-vacuous scan floor)', () => {
     // 31 at rollout time (29 doc services + customer-order + opportunity);
-    // a refactor that breaks the detector shape must lower this consciously.
+    // 36 today. A refactor that breaks the detector shape must lower this
+    // consciously — it must never silently drop to a handful.
     expect(generatorFiles.length).toBeGreaterThanOrEqual(31);
   });
 

@@ -118,7 +118,16 @@ function makePrismaMock(state: {
     create,
     update,
     count: vi.fn(),
-    findMany: vi.fn(),
+    // MASTER-TODO #22: bare `vi.fn()` returned undefined, so the doc-number
+    // seeder's `for (const r of rows)` threw «rows is not iterable» and the
+    // balance / cap / currency-lock / audit tests all died before asserting.
+    // Modelled on the real call (`{ where: { accountId }, select: { name } }`).
+    findMany: vi.fn(async (args?: { where?: Record<string, unknown> }) => {
+      const accountId = args?.where?.accountId;
+      return state.returns
+        .filter((r) => accountId === undefined || r.accountId === accountId)
+        .map((r) => ({ name: r.name }));
+    }),
     aggregate: prepaymentReturnAggregate,
   };
   const prepayment = { findFirst: prepaymentFindFirst };
