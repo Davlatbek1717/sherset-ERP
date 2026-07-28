@@ -163,6 +163,61 @@ export const BONUS_FINE_TONE: Record<string, StateTone> = {
 export const bonusFineTone = (kind: string | null | undefined): StateTone =>
   resolve(BONUS_FINE_TONE, kind);
 
+// --- Loyalty (MASTER-TODO #10) --------------------------------------------
+// These lived as TWO byte-identical private copies — `TYPE_TONE`/`STATUS_TONE`
+// in loyalty-operations/page.tsx and `LOYALTY_*_TONE` in
+// counterparty-activity-widget.tsx. Identical today, free to diverge tomorrow:
+// precisely the drift this module exists to prevent (the same widget renders a
+// loyalty badge next to the list's, so a one-sided recolour would be visible).
+
+/** Loyalty operation kind — points earned vs spent. */
+export const LOYALTY_TYPE_TONE: Record<string, StateTone> = {
+  EARNING: 'success',
+  SPENDING: 'neutral',
+};
+export const loyaltyTypeTone = (t: string | null | undefined): StateTone =>
+  resolve(LOYALTY_TYPE_TONE, t);
+
+/** Loyalty operation status. */
+export const LOYALTY_STATUS_TONE: Record<string, StateTone> = {
+  COMMITTED: 'success',
+  PENDING: 'warning',
+  CANCELLED: 'destructive',
+};
+export const loyaltyStatusTone = (s: string | null | undefined): StateTone =>
+  resolve(LOYALTY_STATUS_TONE, s);
+
+/**
+ * Debt-collection call outcome (Sherset «Qarz undirish», TZ §3.5).
+ * `callback` is deliberately neutral — a scheduled call-back is not a failure,
+ * it is the normal continuation of the collection loop.
+ */
+export const DEBT_CALL_OUTCOME_TONE: Record<string, StateTone> = {
+  paid_full: 'success',
+  paid_partial: 'warning',
+  not_paid: 'destructive',
+  callback: 'neutral',
+};
+export const debtCallOutcomeTone = (o: string | null | undefined): StateTone =>
+  resolve(DEBT_CALL_OUTCOME_TONE, o);
+
+/**
+ * Debt repayment status.
+ *
+ * Deliberately its OWN map rather than reusing `DOCUMENT_STATE_TONE`
+ * (`paid`/`partially_paid`): a debt's vocabulary is `paid | partial | unpaid`
+ * and `unpaid` is the NORMAL resting state of an open debt — neutral, not the
+ * `destructive` an unpaid *document* would warrant. Same colours as the
+ * page-local helper this replaced.
+ */
+export const DEBT_STATUS_TONE: Record<string, StateTone> = {
+  paid: 'success',
+  partial: 'warning',
+  unpaid: 'neutral',
+};
+export const debtStatusTone = (s: string | null | undefined): StateTone =>
+  resolve(DEBT_STATUS_TONE, s);
+
 /**
  * Active/inactive record (`isActive` flags, attendance "working", …) —
  * the boolean sibling of {@link ../lib/archived-tone} (which covers the

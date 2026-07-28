@@ -111,7 +111,19 @@ describe('payments-out filter — every new field is forwarded to the API query'
   it('the Счёт организации picker fetches /organization-accounts scoped to the org', () => {
     expect(listPage).toMatch(/pickerOpen === 'orgAccount'/);
     expect(listPage).toContain('/organization-accounts?');
-    expect(listPage).toMatch(/disabled=\{!filterValues\.organizationId\}/);
+    // MASTER-TODO #8 (2026-07-28): the gate used to be pinned as
+    // `disabled={!filterValues.organizationId}` — a SINGLE-select filter shape
+    // this page no longer has. «Организация» became an inline MultiCombobox
+    // (moysklad parity, mirrors purchase-orders), so the live gate is «at least
+    // one organization chosen». Same invariant, current spelling.
+    expect(listPage).toMatch(/disabled=\{!organizations\[0\]\?\.id\}/);
+    // …and the picker only opens once that choice exists.
+    expect(listPage).toMatch(/organizations\[0\]\?\.id && setPickerOpen\('orgAccount'\)/);
+    // KNOWN LIMITATION (documented, not silently green): the account fetcher
+    // scopes to organizations[0] — with several orgs selected only the first
+    // one's accounts are offered. Widening it needs a BE change
+    // (/organization-accounts takes a single organizationId).
+    expect(listPage).toMatch(/const orgId = organizations\[0\]\?\.id/);
   });
 });
 

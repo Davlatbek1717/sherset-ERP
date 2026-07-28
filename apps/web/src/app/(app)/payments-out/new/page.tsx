@@ -10,7 +10,7 @@
  *   Организация* (+ «Счёт организации» labelless subRow)  | Контрагент* (+ Баланс)
  *   Договор                                               | Сумма*
  *   Проект                                                | Включая НДС
- *   Канал продаж                                          | Статья расходов (free-form Input)
+ *   Канал продаж                                          | Статья расходов (reference picker)
  *   Назначение платежа (textarea)                         | —
  *   Валюта документа* ✎  (left-only, inline rate)
  *   «Комментарий» (bottom textarea)
@@ -40,7 +40,6 @@ import {
   DocumentMetaRow,
   DocumentTabs,
   Icons,
-  Input,
   MoneyInput,
   NativeSelect,
   type PickerItem,
@@ -166,7 +165,9 @@ export default function NewPaymentOutPage() {
   const [rate, setRate] = useState('1');
   const [rateDialogOpen, setRateDialogOpen] = useState(false);
   const [paymentPurpose, setPaymentPurpose] = useState('');
-  // «Статья расходов» — free-form expense item name (no master dictionary).
+  // «Статья расходов» — the NAME picked from the /expense-items reference.
+  // (MASTER-TODO #8: the old comment claimed «no master dictionary» — there IS
+  // one, `settings/expense-items`, and the edit form already picked from it.)
   // Persists to PaymentOut.expenseItem so the list filter is honest.
   const [expenseItem, setExpenseItem] = useState('');
   const [description, setDescription] = useState(''); // «Комментарий»
@@ -181,6 +182,7 @@ export default function NewPaymentOutPage() {
     | 'project'
     | 'salesChannel'
     | 'organizationAccount'
+    | 'expenseItem'
     | { kind: 'target'; rowUid: string; targetKind: OperationKind }
   >(null);
 
@@ -311,6 +313,17 @@ export default function NewPaymentOutPage() {
   const orgFetcher = async (s: string): Promise<PickerItem[]> => {
     const d = await api.get<{ items: RefItem[] }>(`/organizations?search=${encodeURIComponent(s)}`);
     return d.items.map((o) => ({ id: o.id, primary: o.name }));
+  };
+  // MASTER-TODO #8: «Статья расходов» IS a master dictionary here
+  // (`settings/expense-items` + GET /expense-items) — the old comment on this
+  // field claiming otherwise was wrong. The edit form (payments-out/[id])
+  // already picked from it; this form let the user type anything, so the
+  // list's «Статья расходов» filter could not match what create wrote.
+  const expenseItemFetcher = async (s: string): Promise<PickerItem[]> => {
+    const d = await api.get<{ items: Array<{ id: string; name: string }> }>(
+      `/expense-items?search=${encodeURIComponent(s)}&limit=50`,
+    );
+    return d.items.map((x) => ({ id: x.id, primary: x.name }));
   };
   const contractFetcher = async (s: string): Promise<PickerItem[]> => {
     const d = await api.get<{ items: Array<{ id: string; name: string }> }>(
@@ -568,12 +581,16 @@ export default function NewPaymentOutPage() {
             createLabel={tForm('create_new')}
           />
         </DocumentMetaField>
-        {/* «Статья расходов» — free-form expense item (no master dictionary). */}
+        {/* «Статья расходов» — picker over the /expense-items reference
+            (mirrors payments-out/[id]); a catalog value is what keeps the
+            list filter live. */}
         <DocumentMetaField label={tFields('expense_item')}>
-          <Input
-            value={expenseItem}
-            onChange={(e) => setExpenseItem(e.target.value)}
-            data-test-id="field-expense-item"
+          <CatalogPickerField
+            value={expenseItem ? { id: expenseItem, label: expenseItem } : null}
+            placeholder={tFields('expense_item')}
+            onPick={() => setOpenPicker('expenseItem')}
+            onClear={() => setExpenseItem('')}
+            testId="field-expense-item"
           />
         </DocumentMetaField>
       </DocumentMetaRow>
@@ -865,6 +882,18 @@ export default function NewPaymentOutPage() {
         onSelect={(item) => {
           setSalesChannelId(item.id);
           setSalesChannelLabel(String(item.primary));
+          setOpenPicker(null);
+        }}
+      />
+      <CatalogPicker
+        open={openPicker === 'expenseItem'}
+        onClose={() => setOpenPicker(null)}
+        title={tFields('expense_item')}
+        fetcher={expenseItemFetcher}
+        onSelect={(item) => {
+          // Store the NAME — PaymentOut.expenseItem is a string column and the
+          // list filter matches on it; same contract as the edit form.
+          setExpenseItem(String(item.primary));
           setOpenPicker(null);
         }}
       />

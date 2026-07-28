@@ -101,9 +101,26 @@ describe('invoices-in filter — moysklad Фильтр 25-field set renders', ()
     expect(listPage).not.toMatch(/pickerOpen === 'group'/);
   });
 
-  it('keeps the single-FK pickers (agent / org / accounts) as CatalogPicker modals', () => {
+  /**
+   * MASTER-TODO #8 — rewritten 2026-07-28.
+   *
+   * This used to assert the OPPOSITE: that agent / org / agentAccount /
+   * orgAccount stayed `pickerOpen === '…'` CatalogPicker MODALS. The page has
+   * since moved every one of them to inline MultiCombobox checkbox-dropdowns
+   * «mirroring the purchase-orders gold standard» (its own comment) — there is
+   * no `pickerOpen` left on this page at all. The old assertion therefore
+   * demanded a shape the refactor deliberately removed, i.e. it asked for a
+   * parity regression. Pinned here against what the page actually is.
+   */
+  it('agent / organization are inline multi-selects feeding CSV id params', () => {
+    expect(listPage).toMatch(/MultiCombobox/);
+    expect(listPage).toMatch(/agentIds: agents\.map\(\(x\) => x\.id\)\.join\(','\)/);
+    expect(listPage).toMatch(/const \[agents, setAgents\] = useState<RefMulti\[\]>/);
+  });
+
+  it('NON-VACUOUS: the superseded modal shape is really gone', () => {
     for (const picker of ['agent', 'org', 'agentAccount', 'orgAccount']) {
-      expect(listPage).toMatch(new RegExp(`pickerOpen === '${picker}'`));
+      expect(listPage).not.toMatch(new RegExp(`pickerOpen === '${picker}'`));
     }
   });
 });

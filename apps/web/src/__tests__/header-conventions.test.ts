@@ -72,7 +72,13 @@ const COMPOSITE_ID_PAGES = [
   'processing-orders',
   'processings',
   'productions',
-  'products',
+  // products/[id] dropped 2026-07-28 (MASTER-TODO #11): it was rebuilt onto the
+  // SAME shell as products/new — «Shares the EXACT form of /products/new» — and
+  // moysklad's product editor has NO title band. The «Изменения: <name>
+  // <datetime>» + author avatar sit on the TOOLBAR's right edge, and the page
+  // goes straight from toolbar to a bold full-width «Наименование» input.
+  // Demanding the composite here would add a header row moysklad does not show.
+  // Custom shell → PAIRING_EXEMPT + its own structural assertion below.
   'purchase-orders',
   'purchase-returns',
   'sales-returns',
@@ -110,6 +116,8 @@ const PAGER_EXEMPT = new Set(['opportunities', 'pipelines']);
 // so the toolbar stands alone above the 2-column form shell.
 const PAIRING_EXEMPT = [
   join('products', 'new', 'page.tsx'),
+  // products/[id] shares that exact shell (MASTER-TODO #11).
+  join('products', '[id]', 'page.tsx'),
   join('counterparties', 'new', 'page.tsx'),
   join('counterparties', '[id]', 'page.tsx'),
 ];
@@ -143,6 +151,24 @@ describe('Convention 5 — detail-header composite (DetailToolbar + DetailHeader
     // Either the static <DetailHeader> or the converged editable <DocumentHeader>
     // (customer-orders/[id] + purchase-orders/[id] use the latter — same composite).
     expect(src).toMatch(/<(DetailHeader|DocumentHeader)/);
+  });
+
+  /**
+   * The PAIRING_EXEMPT pages must not become "untested" — an exemption that
+   * asserts nothing is how a real regression hides. products/[id] keeps its
+   * grounded custom shell: toolbar present, NO header band, and the
+   * «Изменения» + author block living on the toolbar's rightSlot.
+   * (MASTER-TODO #11.)
+   */
+  it('2b. products/[id] keeps its grounded custom shell (no title band)', () => {
+    const src = read(join(APP, 'products', '[id]', 'page.tsx'));
+    expect(src).toContain('<DetailToolbar');
+    expect(src).not.toMatch(/<(DetailHeader|DocumentHeader)/);
+    // The author/updated block moysklad puts on the toolbar edge.
+    expect(src).toContain('data-test-id="detail-header-updated"');
+    expect(src).toContain('data-test-id="detail-header-author-avatar"');
+    // …and it is passed as the toolbar's rightSlot, not rendered as its own row.
+    expect(src).toMatch(/rightSlot=\{/);
   });
 
   it.each(COMPOSITE_NEW_PAGES)('2. adoption: %s/new keeps the composite', (route) => {

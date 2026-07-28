@@ -40,6 +40,7 @@
     "action_set_waiting": "Поставлено в ожидание",
     "action_clear_waiting": "Снято с ожидания",
     "action_create_cashout": "Создан расходный ордер",
+    "action_create_paymentout": "Создан исходящий платёж",
     "action_transition": "Статус изменён",
     "action_transition_posted": "Проведено",
     "action_transition_unposted": "Проведение снято",

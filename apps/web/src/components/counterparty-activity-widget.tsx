@@ -7,6 +7,9 @@ import { useAuditLabels } from '@/hooks/use-audit-labels';
 import { useDocumentHistory } from '@/hooks/use-document-history';
 import { api } from '@/lib/api-client';
 import { documentStateTone } from '@/lib/document-state-tone';
+// MASTER-TODO #10: the loyalty maps were duplicated here byte-for-byte from
+// loyalty-operations/page.tsx — the same badge rendered from two copies.
+import { loyaltyStatusTone, loyaltyTypeTone } from '@/lib/domain-status-tone';
 import {
   Badge,
   Button,
@@ -122,12 +125,6 @@ interface MetricsData {
 }
 
 // Tone maps mirror the /loyalty-operations page (same Badge semantics).
-const LOYALTY_TYPE_TONE = { EARNING: 'success', SPENDING: 'neutral' } as const;
-const LOYALTY_STATUS_TONE = {
-  COMMITTED: 'success',
-  PENDING: 'warning',
-  CANCELLED: 'destructive',
-} as const;
 
 // The «⊕ Документ ▾» create-menu — 3 groups (sales / purchase / money), each item opens a
 // new doc of that type pre-linked to this counterparty (/<route>/new?agentId=<cp>). Grounded
@@ -1257,7 +1254,7 @@ export function CounterpartyActivityWidget({
                       <td className="px-3 py-2 font-medium tabular-nums">{op.name}</td>
                       <td className="px-3 py-2 tabular-nums">{loyaltyDateTime(op.moment)}</td>
                       <td className="px-3 py-2">
-                        <Badge tone={LOYALTY_TYPE_TONE[op.transactionType]}>
+                        <Badge tone={loyaltyTypeTone(op.transactionType)}>
                           {tLoyalty(`types.${op.transactionType}`)}
                         </Badge>
                       </td>
@@ -1269,7 +1266,7 @@ export function CounterpartyActivityWidget({
                         {op.bonusValue > 0 ? `+${op.bonusValue}` : op.bonusValue}
                       </td>
                       <td className="px-3 py-2">
-                        <Badge tone={LOYALTY_STATUS_TONE[op.transactionStatus]}>
+                        <Badge tone={loyaltyStatusTone(op.transactionStatus)}>
                           {tLoyalty(`statuses.${op.transactionStatus}`)}
                         </Badge>
                       </td>

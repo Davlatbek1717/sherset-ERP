@@ -24,6 +24,9 @@ import {
   type DebtScope,
   debtApi,
 } from '@/lib/debt-api';
+// MASTER-TODO #10: was a page-local OUTCOME_TONE map — moved to the shared
+// module so the debt-call vocabulary can't drift from the rest of the app.
+import { debtCallOutcomeTone, debtStatusTone } from '@/lib/domain-status-tone';
 import {
   Badge,
   Button,
@@ -50,14 +53,6 @@ const SCOPES: DebtScope[] = ['active', 'today', 'overdue', 'called', 'all'];
 
 /** Bir sahifadagi qarzdorlar soni (server max 500). */
 const PAGE_SIZE = 100;
-
-/** Qo'ng'iroq natijasi → badge rangi (2026-07-12). */
-const OUTCOME_TONE: Record<CallOutcome, 'success' | 'warning' | 'destructive' | 'neutral'> = {
-  paid_full: 'success',
-  paid_partial: 'warning',
-  not_paid: 'destructive',
-  callback: 'neutral',
-};
 
 /** Mijoz-segment tablari (2026-07-11 talab): Hammasi · Elektriklar · Boshqalar. */
 type Segment = 'all' | 'elektrik' | 'boshqa';
@@ -252,9 +247,6 @@ export default function DebtsPage() {
     );
   }
 
-  const statusTone = (r: DebtRow) =>
-    r.status === 'paid' ? 'success' : r.status === 'partial' ? 'warning' : 'neutral';
-
   const statusLabel = (r: DebtRow) =>
     r.status === 'paid'
       ? t('status_paid')
@@ -414,11 +406,11 @@ export default function DebtsPage() {
       header: t('col_status'),
       cell: (r) => (
         <div className="flex items-center gap-1.5">
-          <Badge tone={statusTone(r)}>{statusLabel(r)}</Badge>
+          <Badge tone={debtStatusTone(r.status)}>{statusLabel(r)}</Badge>
           {r.overdue && <Badge tone="destructive">{t('badge_overdue')}</Badge>}
           {/* Oxirgi qo'ng'iroq natijasi — bir qarashda ko'rinadi (2026-07-12). */}
           {r.lastCallOutcome && (
-            <Badge tone={OUTCOME_TONE[r.lastCallOutcome]}>
+            <Badge tone={debtCallOutcomeTone(r.lastCallOutcome)}>
               📞 {t(`outcome_${r.lastCallOutcome}` as 'outcome_paid_full')}
             </Badge>
           )}

@@ -249,7 +249,11 @@ describe('adoption: migrated surfaces use the shared helpers', () => {
       join(APP, 'service-requests', 'page.tsx'),
       ['serviceRequestStatusTone', 'serviceRequestPriorityTone'],
     ],
-    [join(APP, 'hr', 'page.tsx'), ['hrMessageStatusTone']],
+    // MASTER-TODO #10 (2026-07-28): the Telegram-messages panel moved out of
+    // /hr when that page was rewritten attendance-first (HR Faza 5) — the
+    // status badges now live on /hr/messages, which uses the helper. Pointing
+    // at the old file demanded a badge the page no longer renders.
+    [join(APP, 'hr', 'messages', 'page.tsx'), ['hrMessageStatusTone']],
     [join(APP, 'hr', 'my-tasks', 'page.tsx'), ['hrTaskLogStatusTone']],
     [join(APP, 'hr', 'messages', 'page.tsx'), ['hrMessageStatusTone']],
     [join(APP, 'hr', 'tasks', 'page.tsx'), ['hrTaskPriorityTone', 'activeTone']],

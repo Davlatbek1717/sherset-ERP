@@ -11,6 +11,7 @@ import {
   Input,
   PageHeader,
   SegmentedControl,
+  Textarea,
   useToast,
 } from '@moysklad/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -184,9 +185,14 @@ export default function SmsTemplatesPage() {
           </div>
 
           <FormField id="tpl-body" label={t('body')}>
-            <textarea
+            {/* DS Textarea, not a raw <textarea> — MASTER-TODO #12. The page
+                was restored from an older checkout (#138) that predates the
+                raw-element migration; keeping the raw tag would have re-opened
+                a closed convention. `ref` is forwarded, so the caret-insert
+                («Kalitlar» chips) still works. */}
+            <Textarea
               ref={textareaRef}
-              className="min-h-[120px] w-full rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] p-3 text-sm"
+              className="min-h-[120px]"
               value={body}
               onChange={(e) => setBody(e.target.value)}
             />

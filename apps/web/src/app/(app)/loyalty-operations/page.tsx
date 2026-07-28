@@ -12,6 +12,9 @@
  */
 
 import { api } from '@/lib/api-client';
+// MASTER-TODO #10: these two maps used to be declared here AND (byte-identical)
+// in counterparty-activity-widget.tsx — consolidated into the shared module.
+import { loyaltyStatusTone, loyaltyTypeTone } from '@/lib/domain-status-tone';
 import { Badge, type DataTableColumn, ListView, useDebounce } from '@moysklad/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
@@ -52,16 +55,6 @@ function formatDateTime(iso: string | null): string {
     })
     .replace(', ', ' ');
 }
-
-const TYPE_TONE = {
-  EARNING: 'success',
-  SPENDING: 'neutral',
-} as const;
-const STATUS_TONE = {
-  COMMITTED: 'success',
-  PENDING: 'warning',
-  CANCELLED: 'destructive',
-} as const;
 
 export default function LoyaltyOperationsPage() {
   const t = useTranslations('pages.loyalty_operations');
@@ -107,7 +100,7 @@ export default function LoyaltyOperationsPage() {
       header: t('col_type'),
       width: '130px',
       cell: (o) => (
-        <Badge tone={TYPE_TONE[o.transactionType]}>{t(`types.${o.transactionType}`)}</Badge>
+        <Badge tone={loyaltyTypeTone(o.transactionType)}>{t(`types.${o.transactionType}`)}</Badge>
       ),
       cellText: (o) => o.transactionType,
     },
@@ -132,7 +125,7 @@ export default function LoyaltyOperationsPage() {
       header: t('col_status'),
       width: '130px',
       cell: (o) => (
-        <Badge tone={STATUS_TONE[o.transactionStatus]}>
+        <Badge tone={loyaltyStatusTone(o.transactionStatus)}>
           {t(`statuses.${o.transactionStatus}`)}
         </Badge>
       ),

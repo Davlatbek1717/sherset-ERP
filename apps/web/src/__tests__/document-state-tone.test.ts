@@ -127,11 +127,19 @@ describe('drift-lock: no page re-declares a local *STATE_TONE map', () => {
 
 describe('override wiring: the 5 divergent pages keep passing their override map', () => {
   const FE = (...p: string[]) => join(APP, ...p, 'page.tsx');
+  // MASTER-TODO #10 (2026-07-28): the two invoice DETAIL entries were dropped.
+  // Neither detail editor renders a state badge, so there is nothing to tone:
+  // invoices-in/[id] passes `status="" statusOptions={[]}` behind a grounded
+  // comment — «supplier invoices have no account custom statuses yet, so the
+  // pill stays a grey «Статус» (FSM lifecycle is driven by «Проведено»)» — and
+  // invoices-out/[id] renders ACCOUNT CUSTOM statuses (`statusOptions`), which
+  // carry their own colours and are not FSM state slugs. Demanding the override
+  // there would have meant adding a badge moysklad does not show.
+  // The override itself is NOT orphaned — it is wired on both LIST pages, which
+  // is exactly where the state badge lives; those entries stay below.
   const cases: Array<[string[], string]> = [
     [['invoices-in'], 'INVOICE_STATE_TONE'],
-    [['invoices-in', '[id]'], 'INVOICE_STATE_TONE'],
     [['invoices-out'], 'INVOICE_STATE_TONE'],
-    [['invoices-out', '[id]'], 'INVOICE_STATE_TONE'],
     [['retail', 'sessions'], 'RETAIL_SESSION_STATE_TONE'],
     [['retail', 'sessions', '[id]'], 'RETAIL_SESSION_STATE_TONE'],
   ];

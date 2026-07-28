@@ -127,6 +127,7 @@
     "action_set_waiting": "Kutishga qo'yildi",
     "action_clear_waiting": "Kutishdan olindi",
     "action_create_cashout": "Chiqim orderi yaratildi",
+    "action_create_paymentout": "Chiquvchi to'lov yaratildi",
     "action_transition": "Holat o'zgardi",
     "action_transition_posted": "O'tkazildi",
     "action_transition_unposted": "O'tkazish bekor qilindi",
