@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 import { AttendanceGeoModule } from './attendance-geo/attendance-geo.module.js';
 import { HrAttendanceModule } from './attendance/attendance.module.js';
+import { DriverTrackingModule } from './driver-tracking/driver-tracking.module.js';
 import { HrAttendanceNotifyModule } from './hr-attendance-notify/hr-attendance-notify.module.js';
 import { HrAuthModule } from './hr-auth/hr-auth.module.js';
 import { HrBonusFineModule } from './hr-bonus-fine/hr-bonus-fine.module.js';
@@ -54,6 +55,7 @@ import { HrWebsocketModule } from './hr-websocket/hr-websocket.module.js';
     HrAttendanceModule,
     HrAttendanceNotifyModule,
     AttendanceGeoModule,
+    DriverTrackingModule,
     HrEmployeeModule,
     HrEmployeePermissionModule,
     HrRoleModule,

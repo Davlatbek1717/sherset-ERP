@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Backend bazaviy URL. MainActivity buni o'qishга ko'chiriladi (hozir skeletда hardcoded). -->
+    <string name="api_base_url">https://erp.sherset.uz/api/v1</string>
+    <string name="app_name">Sherset Driver</string>
+</resources>

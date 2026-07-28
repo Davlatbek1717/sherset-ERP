@@ -1,0 +1,10 @@
+# Android build artefaktlari (skelet — build-verified emas)
+.gradle/
+build/
+app/build/
+local.properties
+*.apk
+*.aab
+.idea/
+captures/
+.cxx/

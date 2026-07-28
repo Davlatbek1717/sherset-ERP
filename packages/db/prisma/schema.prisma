@@ -318,6 +318,11 @@ model Employee {
   workLocationId  String?         @map("work_location_id") @db.Uuid
   workLocation    HrWorkLocation? @relation("EmployeeWorkLocation", fields: [workLocationId], references: [id], onDelete: SetNull)
   attendanceOptIn Boolean         @default(false) @map("attendance_opt_in")
+  // === HR haydovchi jonli-tracking (TZ 2026-07-28) ===
+  // 'geofence' = ofis xodimi (jadval-kechikish davomat, mavjud xulq).
+  // 'field'    = haydovchi (jonli iz + smena/yetkazma; jadval-kechikish O'CHIQ).
+  // Default 'geofence' → mavjud xodimlar xulqi o'zgarmaydi (prod-safe, backfillsiz).
+  trackingMode    String          @default("geofence") @map("tracking_mode") @db.VarChar(10)
 
   // === HR TimePay davomat: department / position / schedule (all nullable — prod-safe, no backfill) ===
   // New FK source-of-truth going forward; legacy `department`/`position` string
@@ -433,6 +438,8 @@ model Employee {
   hrOutboxEntries     HrTelegramOutbox[]     @relation("HrOutboxEmployee")
   hrActivities        HrActivityLog[]        @relation("HrActivityActor")
   workSchedules       EmployeeWorkSchedule[] @relation("EmployeeSchedule")
+  driverTrips         DriverTrip[]           @relation("DriverTrips")
+  driverShifts        DriverShift[]          @relation("DriverShifts")
 
   @@unique([accountId, email])
   // ── PARTIAL unique index (Prisma representation gap — READ before "fixing" any diff) ──
@@ -8984,12 +8991,76 @@ model HrLocationPing {
   lng        Float
   accuracy   Int
   inside     Boolean
+  /// Instantaneous GPS speed (m/s) — nullable (older/geofence pings omit it).
+  /// Used by FIELD-mode stop-detection (TZ 2026-07-28 §7) alongside displacement.
+  speed      Float?
+  /// GPS heading 0–360° — nullable. Drives the live-map marker direction.
+  heading    Float?
   createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz()
 
   account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
   @@index([accountId, employeeId, createdAt(sort: Desc)])
   @@map("hr_location_pings")
+}
+
+// === HR haydovchi jonli-tracking (TZ 2026-07-28-hr-driver-tracking-design.md) ===
+
+/// Bitta yetkazma: haydovchi ↔ manzil. ETA shu trip destatsiyasiga hisoblanadi.
+/// `accountId` — plain scalar (Account back-relation'siz; ko'p-ijara filtri +index
+/// orqali), asosiy referensial butunlik `driver` FK'da. Cascade migration SQL'da.
+model DriverTrip {
+  id             String    @id @default(uuid()) @db.Uuid
+  accountId      String    @map("account_id") @db.Uuid
+  driverId       String    @map("driver_id") @db.Uuid
+  // Manba hujjat (ixtiyoriy — qo'lda ham yaratiladi)
+  orderType      String?   @map("order_type") @db.VarChar(20) // 'demand' | 'retail_sale' | 'manual'
+  orderId        String?   @map("order_id") @db.Uuid
+  // Manzil (gibrid: avto-geocode + qo'lda tuzatilishi mumkin)
+  destLat        Float     @map("dest_lat")
+  destLng        Float     @map("dest_lng")
+  destAddress    String?   @map("dest_address")
+  geocodeSource  String    @default("manual") @map("geocode_source") @db.VarChar(10) // 'auto' | 'manual'
+  // Holat-mashina: assigned → enroute → arrived → completed | cancelled
+  status         String    @default("assigned") @map("status") @db.VarChar(12)
+  assignedAt     DateTime  @default(now()) @map("assigned_at") @db.Timestamptz()
+  startedAt      DateTime? @map("started_at") @db.Timestamptz()
+  arrivedAt      DateTime? @map("arrived_at") @db.Timestamptz()
+  completedAt    DateTime? @map("completed_at") @db.Timestamptz()
+  // Oxirgi hisoblangan ETA (SSE push manbai)
+  distanceMeters Int?      @map("distance_meters")
+  etaSeconds     Int?      @map("eta_seconds")
+  etaComputedAt  DateTime? @map("eta_computed_at") @db.Timestamptz()
+
+  driver Employee @relation("DriverTrips", fields: [driverId], references: [id], onDelete: Cascade)
+
+  @@index([accountId, driverId, status])
+  @@index([accountId, status])
+  @@map("driver_trips")
+}
+
+/// Haydovchi ish-smenasi — grafiksiz ish o'lchovi (jadval-kechikish EMAS).
+/// Yig'ma (km/active/stop/deliveries) ping-oqimidan hisoblanadi.
+model DriverShift {
+  id              String    @id @default(uuid()) @db.Uuid
+  accountId       String    @map("account_id") @db.Uuid
+  driverId        String    @map("driver_id") @db.Uuid
+  startedAt       DateTime  @map("started_at") @db.Timestamptz()
+  endedAt         DateTime? @map("ended_at") @db.Timestamptz()
+  distanceMeters  Int       @default(0) @map("distance_meters")
+  activeSeconds   Int       @default(0) @map("active_seconds")
+  stopSeconds     Int       @default(0) @map("stop_seconds")
+  deliveriesCount Int       @default(0) @map("deliveries_count")
+  autoClosed      Boolean   @default(false) @map("auto_closed")
+
+  driver Employee @relation("DriverShifts", fields: [driverId], references: [id], onDelete: Cascade)
+
+  @@index([accountId, driverId, startedAt(sort: Desc)])
+  // PARTIAL UNIQUE (xom-SQL migratsiyada, Prisma modellay olmaydi — Employee username
+  // partial index kabi): `driver_shifts_one_open_per_driver ON (account_id, driver_id)
+  // WHERE ended_at IS NULL` — har haydovchida bir vaqtda bitta ochiq smena.
+  // `migrate dev` bu indexni diff'да ko'rsatadi (DROP taklif qiladi) — QO'LLAMA.
+  @@map("driver_shifts")
 }
 
 model HrNotificationTemplate {
