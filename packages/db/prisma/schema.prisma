@@ -9673,3 +9673,41 @@ model MessageTemplate {
   @@index([accountId, channel])
   @@map("sms_templates")
 }
+
+// =========================================================================
+// «Yig'ish ro'yxati» (pick-list / yacheykali chek) — TASHQI (haqiqiy) MoySklad
+// hisobidan «Заказ покупателя» + «Возврат покупателя» snapshot'i (climart port
+// 2026-07-28). Kassir MoySklad'da ishlaydi; ombor BIZNING saytni ochib har
+// tovarni uy-yacheykasi (__yacheyka) bilan yig'ish-varaqda chop etadi.
+// Pozitsiyalar snapshot [{msAssortmentId,name,qty,code,barcode,...}]; uy-yacheyka
+// SAQLANMAYDI — print (READ) paytida bizning mahsulotdan hal qilinadi (qayta-
+// bog'lash keyingi chopda darhol ko'rinadi). Standalone (Account-relation yo'q).
+// =========================================================================
+model MsPickList {
+  id          String    @id @default(uuid()) @db.Uuid
+  accountId   String    @map("account_id") @db.Uuid
+  msOrderId   String    @map("ms_order_id") @db.Uuid
+  docType     String    @default("customerorder") @map("doc_type") @db.VarChar(30)
+  name        String    @db.VarChar(64)
+  moment      DateTime  @db.Timestamptz()
+  /// MoySklad `updated` — sync-kursor; max(msUpdatedAt) keyingi poll'ni boshqaradi.
+  msUpdatedAt DateTime  @map("ms_updated_at") @db.Timestamptz()
+  agentName   String?   @map("agent_name") @db.VarChar(255)
+  agentPhone  String?   @map("agent_phone") @db.VarChar(64)
+  storeName   String?   @map("store_name") @db.VarChar(255)
+  ownerName   String?   @map("owner_name") @db.VarChar(255)
+  description String?   @db.Text
+  sumMinor    BigInt    @default(0) @map("sum_minor")
+  /// MoySklad «Проведено» — faqat provedeno buyurtmalar pick-list sifatida ko'rinadi.
+  applicable  Boolean   @default(true)
+  /// MoySklad payedSum (tiyin) — ro'yxat Оплачен/Частично/Не оплачен ko'rsatadi.
+  payedMinor  BigInt    @default(0) @map("payed_minor")
+  positions   Json      @default("[]")
+  printedAt   DateTime? @map("printed_at") @db.Timestamptz()
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
+
+  @@unique([accountId, msOrderId])
+  @@index([accountId, moment(sort: Desc)])
+  @@map("ms_pick_lists")
+}

@@ -76,6 +76,7 @@ import { PaymentOutModule } from './modules/payment-out/payment-out.module.js';
 import { PaymentsModule } from './modules/payments/payments.module.js';
 import { PayrollModule } from './modules/payroll/payroll.module.js';
 import { PermissionsModule } from './modules/permissions/permissions.module.js';
+import { PickListModule } from './modules/pick-list/pick-list.module.js';
 import { PipelineModule } from './modules/pipeline/pipeline.module.js';
 import { PrepaymentReturnModule } from './modules/prepayment-return/prepayment-return.module.js';
 import { PrepaymentModule } from './modules/prepayment/prepayment.module.js';
@@ -197,6 +198,7 @@ import { PrismaModule } from './prisma/prisma.module.js';
     PayrollModule,
     PublicationModule,
     LabelModule,
+    PickListModule,
     CashierSessionModule,
     RetailSaleModule,
     SalesChannelModule,

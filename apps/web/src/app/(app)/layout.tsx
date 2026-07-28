@@ -340,6 +340,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     { key: 'moves', label: tStock('moves'), href: '/moves' },
     { key: 'inventories', label: tStock('inventories'), href: '/inventories' },
     { key: 'pickingwaves', label: tStock('picking_waves'), href: '/picking-waves' },
+    { key: 'picklists', label: tStock('pick_lists'), href: '/pick-lists' },
     { key: 'internalorders', label: tStock('internal_orders'), href: '/internal-orders' },
     { key: 'remains', label: tStock('remains'), href: '/stock-balance' },
     { key: 'turnover', label: tStock('turnover'), href: '/turnover' },
@@ -497,6 +498,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   pathname.startsWith('/enters') ||
                   pathname.startsWith('/inventories') ||
                   pathname.startsWith('/picking-waves') ||
+                  pathname.startsWith('/pick-lists') ||
                   pathname.startsWith('/stores') ||
                   pathname.startsWith('/turnover') ||
                   pathname.startsWith('/stock-balance') ||
