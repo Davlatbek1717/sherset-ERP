@@ -66,17 +66,42 @@ describe('counterparty/[id] CRM activity widget (B6 S17)', () => {
     expect(page).not.toMatch(/<AttachmentsSection/);
   });
 
-  it('Показатели create-actions are inline forms, not floating modals', () => {
-    // moysklad opens «Создать корректировку»/«акт сверки» IN PLACE inside the panel — the
-    // form replaces the toolbar while «Баланс»/«Продажи»/«Возвраты» stay visible. Lock that
-    // shape so it can't regress back to the old centered-dialog modals.
-    expect(widget).toMatch(/AdjustmentCreateForm/);
-    expect(widget).toMatch(/ReconciliationActForm/);
-    expect(widget).toMatch(/counterparties\/metrics-create-forms/);
+  /**
+   * MASTER-TODO #16 (2026-07-28) — OPEN PRODUCT DECISION, deliberately not
+   * forced by this guard.
+   *
+   * This used to require the «Показатели» toolbar to open INLINE forms
+   * (`AdjustmentCreateForm` / `ReconciliationActForm` from
+   * `counterparties/metrics-create-forms`). Today the widget navigates instead,
+   * and `metrics-create-forms.tsx` is ORPHANED — nothing imports it.
+   *
+   * Satisfying the old assertion was investigated and rejected, because the
+   * reconciliation half has MOVED ON: акт сверки now lives in `AktSverkaCard`
+   * (counterparties/[id]/page.tsx:951 → /counterparty-statements, xlsx builder,
+   * public /akt/:token), added over ~7 commits of active work. Wiring the
+   * orphaned inline form back in would duplicate a shipped feature, and the
+   * adoption commit's own rule («KEEP (Sherset): counterparties + debts») does
+   * not say which of the two shapes wins.
+   *
+   * So the shape stays a user decision. What this guard protects instead is the
+   * part that is unambiguous and user-visible TODAY: the adjustment action must
+   * carry the counterparty, otherwise the target form opens blank.
+   */
+  it('Показатели create-actions reach their target WITH the counterparty context', () => {
+    // «Создать корректировку» → prefilled adjustment editor (agentId is what
+    // counterparty-adjustments/new reads to preselect «Контрагент»).
+    expect(widget).toMatch(/counterparty-adjustments\/new\?agentId=\$\{counterpartyId\}/);
+    expect(widget).toMatch(/data-test-id="metric-create-adjustment"/);
+    expect(widget).toMatch(/data-test-id="metric-create-reconciliation"/);
+    // The old centered-dialog modals must not come back either way.
     expect(widget).not.toMatch(/AdjustmentCreateModal|ReconciliationActModal/);
-    // One inline form at a time, toggled from the toolbar buttons.
-    expect(widget).toMatch(/setMetricForm\('adjustment'\)/);
-    expect(widget).toMatch(/setMetricForm\('reconciliation'\)/);
+  });
+
+  it('DECISION MARKER: metrics-create-forms is still orphaned', () => {
+    // Fails the day someone wires it in — at which point the assertion above
+    // should be replaced by the inline-form shape and #16 closed. Keeps the
+    // open decision visible instead of letting it rot silently.
+    expect(widget).not.toMatch(/metrics-create-forms/);
   });
 
   it('the counterparty_activity i18n namespace is complete ru+uz', () => {

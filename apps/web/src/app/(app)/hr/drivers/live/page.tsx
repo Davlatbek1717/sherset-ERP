@@ -12,8 +12,11 @@
  * next-intl namespace'ga ko'chiriladi).
  */
 
-import type { DriverLiveRow, DriverStatus } from '@/components/hr/driver-live-map';
+import type { DriverLiveRow } from '@/components/hr/driver-live-map';
 import { api } from '@/lib/api-client';
+// MASTER-TODO #10: tone maps live in one module so the vocabulary can't drift
+// (the drift-lock in __tests__/domain-status-tone.test.ts enforces it).
+import { driverStatusTone } from '@/lib/domain-status-tone';
 import { Badge, Button, EmptyState, Skeleton } from '@moysklad/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useLocale } from 'next-intl';
@@ -67,13 +70,6 @@ const L10N = {
     eta: 'ETA',
   },
 } as const;
-
-const STATUS_TONE: Record<DriverStatus, 'success' | 'warning' | 'info' | 'neutral'> = {
-  moving: 'success',
-  stopped: 'warning',
-  unknown: 'info',
-  offline: 'neutral',
-};
 
 function fmtDur(sec: number, isRu: boolean): string {
   const min = Math.floor(sec / 60);
@@ -158,7 +154,7 @@ export default function DriversLivePage() {
                       )}
                     </td>
                     <td className="px-3 py-2">
-                      <Badge tone={STATUS_TONE[d.status]}>{t[d.status]}</Badge>
+                      <Badge tone={driverStatusTone(d.status)}>{t[d.status]}</Badge>
                       {d.status === 'stopped' && d.currentStopSec > 0 && (
                         <span className="ml-2 text-[var(--ms-text-muted)] text-xs">
                           {fmtDur(d.currentStopSec, isRu)} {t.stopFor}

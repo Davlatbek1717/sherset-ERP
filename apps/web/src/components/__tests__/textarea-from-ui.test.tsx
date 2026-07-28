@@ -1,5 +1,5 @@
 import { renderWithProviders, screen, userEvent } from '@/test-utils';
-import { Textarea } from '@moysklad/ui';
+import { Input, Textarea } from '@moysklad/ui';
 /**
  * Textarea (from @moysklad/ui) tests — multi-line text input mirror of
  * Input. Used by description fields, comment boxes, address inputs.
@@ -113,12 +113,32 @@ describe('Textarea', () => {
       expect(ta?.className).toContain('w-full');
     });
 
-    it('applies px-3 py-2 padding + 12px font (moysklad parity)', () => {
-      const { container } = renderWithProviders(<Textarea aria-label="x" />);
+    // MASTER-TODO #14 (2026-07-28): the font size was pinned as the literal
+    // `text-[12px]`. Both Textarea and Input are `text-[13px]` today, so the
+    // guard failed on a value change while the property it actually protects —
+    // «a Textarea must not look different from the rest of the control family,
+    // or swapping a field visually jumps» — was intact.
+    //
+    // Re-expressed as SIBLING PARITY: whatever the family size is, Textarea
+    // must share it. That still fails loudly if Textarea alone ever drifts,
+    // and it cannot go stale when the design system re-tunes the scale.
+    it('applies px-3 py-2 padding + the same font size as Input (moysklad parity)', () => {
+      const { container } = renderWithProviders(
+        <>
+          <Textarea aria-label="x" />
+          <Input aria-label="i" />
+        </>,
+      );
       const ta = container.querySelector('textarea');
+      const input = container.querySelector('input');
       expect(ta?.className).toContain('px-3');
       expect(ta?.className).toContain('py-2');
-      expect(ta?.className).toContain('text-[12px]');
+
+      const sizeOf = (cls: string | undefined) => cls?.match(/text-\[(\d+)px\]/)?.[1];
+      const taSize = sizeOf(ta?.className);
+      const inputSize = sizeOf(input?.className);
+      expect(taSize, 'Textarea declares no text-[Npx]').toBeDefined();
+      expect(taSize).toBe(inputSize);
     });
   });
 
@@ -140,7 +160,10 @@ describe('Textarea', () => {
       const { container } = renderWithProviders(<Textarea aria-label="x" className="my-class" />);
       const ta = container.querySelector('textarea');
       expect(ta?.className).toContain('my-class');
-      expect(ta?.className).toContain('text-[12px]');
+      // The base classes must survive the merge — asserted by shape, not by a
+      // literal size (the family size is pinned by the parity test above).
+      expect(ta?.className).toMatch(/text-\[\d+px\]/);
+      expect(ta?.className).toContain('px-3');
     });
   });
 });

@@ -219,6 +219,23 @@ export const debtStatusTone = (s: string | null | undefined): StateTone =>
   resolve(DEBT_STATUS_TONE, s);
 
 /**
+ * Driver live-tracking status (`hr/drivers/live`).
+ *
+ * `unknown` is `info`, not `warning`: a driver whose last ping cannot be
+ * classified is not a problem to act on — only genuinely `stopped` is. Landed
+ * as a page-local map with the driver-tracking feature (`f0dd781`) and pulled
+ * in here by the same drift-lock that owns the rest (MASTER-TODO #10).
+ */
+export const DRIVER_STATUS_TONE: Record<string, StateTone> = {
+  moving: 'success',
+  stopped: 'warning',
+  unknown: 'info',
+  offline: 'neutral',
+};
+export const driverStatusTone = (s: string | null | undefined): StateTone =>
+  resolve(DRIVER_STATUS_TONE, s);
+
+/**
  * Active/inactive record (`isActive` flags, attendance "working", …) —
  * the boolean sibling of {@link ../lib/archived-tone} (which covers the
  * `archived` vocabulary): active → success, inactive → neutral.

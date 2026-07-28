@@ -81,12 +81,28 @@ describe('CreateRelatedDropdown', () => {
     expect(api.post).not.toHaveBeenCalled();
   });
 
-  it('navigates to /purchase-orders/new?available=1 when "with available" is clicked', async () => {
+  // MASTER-TODO #15 (2026-07-28): this pinned the param name `available=1`.
+  // Nothing in this repo has ever consumed that name — the only reader is
+  // purchase-orders/new/page.tsx, which parses `availability` («с учётом
+  // доступно» → the /supply-shortfall basis). The component emits
+  // `?availability=1`, so the guard was asserting a param that would have been
+  // silently ignored had the component actually sent it.
+  //
+  // Re-expressed by PARSING the URL rather than string-matching a literal, so
+  // the guard survives another rename while still catching the original bug:
+  // the «с учётом доступно» item must reach /purchase-orders/new WITH a
+  // shortfall flag, i.e. it must differ from the plain «Заказ поставщику» item.
+  it('navigates to /purchase-orders/new with the availability flag set', async () => {
     const user = userEvent.setup();
     renderWithProviders(<CreateRelatedDropdown selectedIds={new Set(['id-1'])} />);
     await user.click(screen.getByRole('button', { name: /Yaratish/i }));
     await user.click(screen.getByTestId('create-related-purchase-order-available'));
     expect(pushMock).toHaveBeenCalledTimes(1);
-    expect(pushMock.mock.calls[0]?.[0]).toContain('/purchase-orders/new?available=1');
+
+    const href = String(pushMock.mock.calls[0]?.[0]);
+    const url = new URL(href, 'http://localhost');
+    expect(url.pathname).toBe('/purchase-orders/new');
+    // The flag the destination page actually reads.
+    expect(url.searchParams.get('availability')).toBe('1');
   });
 });

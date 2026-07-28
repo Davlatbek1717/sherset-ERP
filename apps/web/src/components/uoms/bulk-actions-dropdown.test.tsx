@@ -33,9 +33,30 @@ describe('UomBulkActionsDropdown', () => {
     expect(screen.getByRole('button', { name: /O'zgartirish/i })).toBeInTheDocument();
   });
 
-  it('disables the trigger when no rows are selected', () => {
+  // MASTER-TODO #13 (2026-07-28). This used to assert the TRIGGER is disabled at
+  // 0-selection. The climart adoption overlay (a52c3c7) deliberately moved that
+  // gate onto the ITEMS — moysklad opens «Изменить» with nothing selected so the
+  // user can see what is available, greying every selection-bound action. The
+  // product code carries that grounding (see the sibling comment in
+  // components/assortment/bulk-actions-dropdown.tsx:479-481), and the
+  // customer-orders test was already migrated to this shape. The overlay
+  // replaced the components but not these five specs, so they kept asserting the
+  // pre-adoption Sherset shape.
+  //
+  // Re-expressed, NOT deleted: the original bug — firing a bulk mutation with an
+  // empty selection — is still caught, now at the level where the gate lives.
+  // `uom-bulk-action-mass-edit` is a permanently-disabled label-parity
+  // placeholder, so it is not part of the selection contract.
+  it('keeps the trigger enabled at 0-selection (moysklad parity), items disabled', async () => {
+    const user = userEvent.setup();
     renderWithProviders(<UomBulkActionsDropdown {...baseProps} selectedIds={new Set()} />);
-    expect(screen.getByRole('button', { name: /O'zgartirish/i })).toBeDisabled();
+    const trigger = screen.getByRole('button', { name: /O'zgartirish/i });
+    expect(trigger).toBeEnabled();
+    await user.click(trigger);
+    expect(
+      screen.getByTestId('uom-bulk-action-delete'),
+      'uom-bulk-action-delete must stay disabled at 0-selection',
+    ).toHaveAttribute('data-disabled');
   });
 
   it('opens the menu and shows exactly the 2 moysklad items in order', async () => {

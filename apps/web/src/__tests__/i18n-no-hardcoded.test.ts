@@ -122,11 +122,39 @@ interface Leak {
   kind: 'cyrillic' | 'uzbek';
 }
 
+/**
+ * Blank out regex literals that are syntactically consumed as MATCHERS
+ * (MASTER-TODO #17, 2026-07-28).
+ *
+ * The scanner is line-granular and syntax-blind: any Cyrillic codepoint on a
+ * line is reported as a hardcoded label. That is right for a string literal and
+ * wrong for a pattern that MATCHES SERVER DATA and is never rendered — e.g.
+ * supplies picks the retail price type with
+ *   items.find((t) => /sotil|розничн|retail|продaж/i.test(t.name))
+ * where «розничн» must be Cyrillic precisely because the seeded price type is
+ * «Розничная цена». Localising it would BREAK the match.
+ *
+ * Narrow on purpose: only a `/…/flags` immediately consumed by `.test(`/`.exec(`
+ * or passed as the first argument of a String matcher is blanked. A Cyrillic
+ * STRING literal anywhere on the line is still reported, so the guard keeps its
+ * full power over real labels.
+ */
+const RE_BODY = String.raw`(?:\\.|\[(?:\\.|[^\]\\\n])*\]|[^/\\\n])+`;
+const RE_TEST_EXEC = new RegExp(`/${RE_BODY}/[dgimsuvy]*(?=\\s*\\.\\s*(?:test|exec)\\s*\\()`, 'g');
+const RE_STR_METHOD = new RegExp(
+  `(\\.\\s*(?:match|matchAll|replace|replaceAll|split|search)\\s*\\(\\s*)/${RE_BODY}/[dgimsuvy]*`,
+  'g',
+);
+
+function stripRegexMatchers(line: string): string {
+  return line.replace(RE_TEST_EXEC, '/RE/').replace(RE_STR_METHOD, '$1/RE/');
+}
+
 function scan(file: string): Leak[] {
   const raw = readFileSync(file, 'utf8');
   const stripped = stripComments(raw);
   const leaks: Leak[] = [];
-  const lines = stripped.split('\n');
+  const lines = stripped.split('\n').map(stripRegexMatchers);
   lines.forEach((line, i) => {
     if (/[А-Яа-яЁё]/.test(line)) {
       leaks.push({ file, line: i + 1, snippet: line.trim().slice(0, 100), kind: 'cyrillic' });
@@ -136,6 +164,33 @@ function scan(file: string): Leak[] {
   });
   return leaks;
 }
+
+describe('stripRegexMatchers — narrow enough to keep the guard sharp', () => {
+  it('blanks a Cyrillic pattern that only MATCHES data (.test / .exec)', () => {
+    const line = 'items.find((t) => /sotil|розничн|retail|продаж/i.test(t.name))';
+    expect(/[А-Яа-яЁё]/.test(stripRegexMatchers(line))).toBe(false);
+  });
+
+  it('blanks a Cyrillic pattern passed to a String matcher', () => {
+    expect(/[А-Яа-яЁё]/.test(stripRegexMatchers("s.replace(/сум/g, '')"))).toBe(false);
+    expect(/[А-Яа-яЁё]/.test(stripRegexMatchers('s.split(/из/)'))).toBe(false);
+  });
+
+  it('STILL reports a real hardcoded label (the bug this file exists for)', () => {
+    for (const leak of [
+      '<span>Розничная цена</span>',
+      "const label = 'Оплачено';",
+      'placeholder="Контрагент"',
+      // a regex that is NOT consumed as a matcher is not a matcher
+      'const RE = /Наименование/;',
+      // …and a label sitting on the same line as a legitimate matcher must
+      // still be caught, or the strip would become a loophole.
+      "/розничн/i.test(t.name) ? 'Розничная' : ''",
+    ]) {
+      expect(/[А-Яа-яЁё]/.test(stripRegexMatchers(leak)), leak).toBe(true);
+    }
+  });
+});
 
 describe('i18n no-hardcoded (completed document forms)', () => {
   const checked: string[] = [];

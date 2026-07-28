@@ -80,13 +80,29 @@ describe('InlineFilterPanel', () => {
       expect(onApply).toHaveBeenCalled();
     });
 
-    it('Найти button is disabled when onApply is omitted (no handler)', () => {
+    // MASTER-TODO #14 (2026-07-28): this asserted the OPPOSITE of the current,
+    // deliberate behaviour — and the behaviour it demanded is a bug that was
+    // reported and fixed. The component says so itself (InlineFilterPanel):
+    //   «Filters are always-applied (reactive: field change → query key →
+    //    refetch), so «Найти» is a moysklad-parity confirm, not the apply
+    //    trigger. It must NEVER be disabled just because no explicit onApply is
+    //    wired — that made the button look broken on ~every list (the reported
+    //    bug).»
+    // Satisfying the old assertion would have re-greyed «Найти» across the app.
+    // Inverted to lock the fix, and extended to pin that clicking it is safe
+    // without a handler (the reason it was disabled in the first place).
+    it('Найти stays ENABLED without onApply (always-applied filters) and is click-safe', async () => {
+      const user = userEvent.setup();
       renderWithProviders(
         <InlineFilterPanel onClear={vi.fn()}>
           <div />
         </InlineFilterPanel>,
       );
-      expect(screen.getByTestId('inline-filter-apply')).toBeDisabled();
+      const apply = screen.getByTestId('inline-filter-apply');
+      expect(apply).toBeEnabled();
+      // No onApply wired → must not throw (the handler is optional-chained).
+      await user.click(apply);
+      expect(apply).toBeEnabled();
     });
 
     it('honors custom applyLabel', () => {
@@ -174,7 +190,11 @@ describe('InlineFilterPanel', () => {
       renderWithProviders(
         <InlineFilterPanel
           onClear={vi.fn()}
-          rightRail={<button data-test-id="my-rail-content">Add Filter</button>}
+          rightRail={
+            <button type="button" data-test-id="my-rail-content">
+              Add Filter
+            </button>
+          }
         >
           <div />
         </InlineFilterPanel>,

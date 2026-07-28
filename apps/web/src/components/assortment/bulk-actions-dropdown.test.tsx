@@ -58,9 +58,52 @@ describe('AssortmentBulkActionsDropdown', () => {
     expect(screen.getByRole('button', { name: /O'zgartirish/i })).toBeInTheDocument();
   });
 
-  it('disables the trigger when no rows are selected', () => {
+  // MASTER-TODO #13 (2026-07-28). This used to assert the TRIGGER is disabled at
+  // 0-selection. The climart adoption overlay (a52c3c7) deliberately moved that
+  // gate onto the ITEMS — moysklad opens «Изменить» with nothing selected so the
+  // user can see what is available, greying every selection-bound action. The
+  // product code carries that grounding (see the sibling comment in
+  // components/assortment/bulk-actions-dropdown.tsx:479-481), and the
+  // customer-orders test was already migrated to this shape. The overlay
+  // replaced the components but not these five specs, so they kept asserting the
+  // pre-adoption Sherset shape.
+  //
+  // Re-expressed, NOT deleted: the original bug — firing a bulk mutation with an
+  // empty selection — is still caught, now at the level where the gate lives.
+  it('keeps the trigger enabled at 0-selection (moysklad parity), items disabled', async () => {
+    const user = userEvent.setup();
     renderWithProviders(<AssortmentBulkActionsDropdown {...baseProps} selectedIds={new Set()} />);
-    expect(screen.getByRole('button', { name: /O'zgartirish/i })).toBeDisabled();
+    const trigger = screen.getByRole('button', { name: /O'zgartirish/i });
+    expect(trigger).toBeEnabled();
+    await user.click(trigger);
+    expect(
+      screen.getByTestId('assortment-bulk-action-delete'),
+      'assortment-bulk-action-delete must stay disabled at 0-selection',
+    ).toHaveAttribute('data-disabled');
+    expect(
+      screen.getByTestId('assortment-bulk-action-copy'),
+      'assortment-bulk-action-copy must stay disabled at 0-selection',
+    ).toHaveAttribute('data-disabled');
+    expect(
+      screen.getByTestId('assortment-bulk-action-mass-edit'),
+      'assortment-bulk-action-mass-edit must stay disabled at 0-selection',
+    ).toHaveAttribute('data-disabled');
+    expect(
+      screen.getByTestId('assortment-bulk-action-move'),
+      'assortment-bulk-action-move must stay disabled at 0-selection',
+    ).toHaveAttribute('data-disabled');
+    expect(
+      screen.getByTestId('assortment-bulk-action-archive'),
+      'assortment-bulk-action-archive must stay disabled at 0-selection',
+    ).toHaveAttribute('data-disabled');
+    expect(
+      screen.getByTestId('assortment-bulk-action-restore'),
+      'assortment-bulk-action-restore must stay disabled at 0-selection',
+    ).toHaveAttribute('data-disabled');
+    expect(
+      screen.getByTestId('assortment-bulk-action-prices'),
+      'assortment-bulk-action-prices must stay disabled at 0-selection',
+    ).toHaveAttribute('data-disabled');
   });
 
   it('opens the menu and shows all 7 moysklad items in order', async () => {

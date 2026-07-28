@@ -277,7 +277,19 @@ describe('Pagination (moyskladStyle)', () => {
       expect(screen.getByTestId('pagination-range').textContent).toMatch(/^1-37/);
     });
 
-    it('shows "0-0" when total=0', () => {
+    // MASTER-TODO #14 (2026-07-28): this asserted "0-0". moysklad shows
+    // «1-1 из 0» for an empty list — CAPTURE-GROUNDED, verified as element
+    // content (not banner/help text, per CLAUDE.md §4):
+    //   audit/moysklad/customer-orders-list.html and demands-list.html both
+    //   contain <td class="pages"><div class="gwt-HTML">1-1 из 0</div></td>
+    // The component encodes exactly that (Pagination.tsx: «moysklad shows
+    // «1-1 из 0» for an empty list (NOT «0-0 из 0») — the range floor is 1»).
+    // So the guard was demanding a parity REGRESSION.
+    //
+    // Re-expressed, not deleted: the original intent — an empty list must not
+    // render a nonsense/limit-derived range like "1-100" — is now asserted
+    // directly, alongside a positive pin of the grounded output.
+    it('shows the grounded "1-1 из 0" when total=0 (NOT "0-0", NOT "1-100")', () => {
       renderWithProviders(
         <Pagination
           total={0}
@@ -289,8 +301,14 @@ describe('Pagination (moyskladStyle)', () => {
           moyskladStyle
         />,
       );
-      // total=0 → from=0, visible=Math.min(100,0)=0, to=0
-      expect(screen.getByTestId('pagination-range').textContent).toMatch(/^0-0/);
+      const range = screen.getByTestId('pagination-range').textContent ?? '';
+      // Positive pin: the capture-grounded floor-of-1 range.
+      expect(range.startsWith('1-1')).toBe(true);
+      // The bug this case was written for: the range must never be derived from
+      // `limit` when there is nothing to show.
+      expect(range).not.toMatch(/100/);
+      // …and the total is still reported as 0.
+      expect(range.trim().endsWith('0')).toBe(true);
     });
   });
 

@@ -115,12 +115,33 @@ describe('PeriodPicker', () => {
       expect(screen.getByLabelText('to')).toBeInTheDocument();
     });
 
-    it('reflects from/to props as dd.MM.yyyy in the triggers', () => {
+    // MASTER-TODO #14 (2026-07-28): this rendered with from+to set and read the
+    // `from`/`to` triggers directly. The component now COLLAPSES when both ends
+    // are set — it shows one summary label plus ◀/▶ day-shift buttons — and the
+    // two triggers only exist in the expanded (editing) state. So the guard was
+    // querying elements the current UI intentionally hides, not catching a
+    // formatting regression.
+    //
+    // Re-expressed: expand first, then keep the ORIGINAL assertion verbatim —
+    // day-before-month with a non-digit separator, i.e. never the native
+    // mm/dd/yyyy that this widget exists to avoid.
+    it('reflects from/to props as dd.MM.yyyy in the triggers (after expanding)', async () => {
+      const user = userEvent.setup();
       renderWithProviders(<PeriodPicker from="2026-04-01" to="2026-04-07" onChange={vi.fn()} />);
-      // day.month.year with a non-digit separator (locale-dependent), NOT the
-      // native mm/dd/yyyy ordering.
+      await user.click(screen.getByTestId('period-collapsed-label'));
       expect(screen.getByLabelText('from').textContent).toMatch(/01\D+04\D+2026/);
       expect(screen.getByLabelText('to').textContent).toMatch(/07\D+04\D+2026/);
+    });
+
+    // The collapsed mode itself had ZERO coverage — locking it here so the
+    // behaviour that displaced the assertion above cannot silently regress.
+    it('collapses to one label with day-shift buttons when both ends are set', () => {
+      renderWithProviders(<PeriodPicker from="2026-04-01" to="2026-04-07" onChange={vi.fn()} />);
+      expect(screen.getByTestId('period-collapsed-label')).toBeInTheDocument();
+      expect(screen.getByTestId('period-shift-prev')).toBeInTheDocument();
+      expect(screen.getByTestId('period-shift-next')).toBeInTheDocument();
+      // Collapsed → the editing triggers are not mounted.
+      expect(screen.queryByLabelText('from')).toBeNull();
     });
   });
 
