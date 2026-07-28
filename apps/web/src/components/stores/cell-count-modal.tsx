@@ -21,7 +21,7 @@ import { api } from '@/lib/api-client';
 import { beep } from '@/lib/beep';
 import { imageRawUrl } from '@/lib/image-url';
 import { normalizeScanInput } from '@/lib/scan';
-import { Button, Icons, Input, Modal, cn, useToast } from '@moysklad/ui';
+import { Button, Checkbox, Icons, Input, Modal, cn, useToast } from '@moysklad/ui';
 import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -808,16 +808,14 @@ export function CellCountModal({
         {/* «Umumiy sanash» (owner 2026-07-26): common qty once, then cells scan
             back-to-back; each lands below with an editable qty + ✕. */}
         <label className="flex items-center gap-2 text-[13px]">
-          <input
-            type="checkbox"
+          <Checkbox
             checked={bulkMode}
-            onChange={(e) => {
-              setBulkMode(e.target.checked);
+            onCheckedChange={(n) => {
+              setBulkMode(n === true);
               setMessage(null);
               setQtyMissing(false);
               inputRef.current?.focus();
             }}
-            className="h-4 w-4"
             data-test-id="cell-count-bulk-toggle"
           />
           <span className="font-medium">{t('count_bulk_label')}</span>
