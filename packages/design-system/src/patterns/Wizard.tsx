@@ -85,8 +85,14 @@ export function Wizard({
       data-test-id={testId}
     >
       {/* Stepper */}
+      {/* `role="list"` is NOT redundant in practice: Safari/VoiceOver strips list
+          semantics from any list whose `list-style` is none, and Tailwind preflight
+          sets exactly that. Removing the role would silently drop the "list, 4 items"
+          announcement for the stepper. */}
       <ol
         className="flex items-center gap-2 border-b border-[var(--ms-border-default)] px-4 py-3 overflow-x-auto"
+        // biome-ignore lint/a11y/useSemanticElements: this IS the semantic element — the rule only fires because of the explicit role
+        // biome-ignore lint/a11y/noRedundantRoles: deliberate Safari list-semantics restoration, see the comment above the element
         role="list"
       >
         {steps.map((step, i) => {

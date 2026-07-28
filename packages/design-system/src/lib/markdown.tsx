@@ -151,6 +151,7 @@ function renderBlock(block: MarkdownBlock, key: number): React.ReactElement {
       return (
         <ul key={key}>
           {(block.items ?? []).map((item, j) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: parsed markdown items are stateless text nodes with no id, and the whole block re-renders when the source string changes
             <li key={j}>{renderInline(item)}</li>
           ))}
         </ul>
@@ -159,6 +160,7 @@ function renderBlock(block: MarkdownBlock, key: number): React.ReactElement {
       return (
         <ol key={key}>
           {(block.items ?? []).map((item, j) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: parsed markdown items are stateless text nodes with no id, and the whole block re-renders when the source string changes
             <li key={j}>{renderInline(item)}</li>
           ))}
         </ol>

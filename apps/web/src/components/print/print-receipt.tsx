@@ -88,6 +88,7 @@ export function PrintReceipt({
 
       <div className="signatures">
         {signatures.map((s, i) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: static print markup, rendered once and never mutated; signer names repeat by design (two «Директор» rows are normal) so name is not unique
           <div key={i}>
             <div className="sig-name">{s.name}</div>
             <div className="sig-line">{s.label}</div>

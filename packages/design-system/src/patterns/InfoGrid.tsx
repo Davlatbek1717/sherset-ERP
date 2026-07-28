@@ -32,6 +32,7 @@ export const InfoGrid = React.forwardRef<HTMLDListElement, InfoGridProps>(
       {...props}
     >
       {items.map((item, i) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: dt/dd pairs render straight from props with no state, and `label` is a ReactNode so it cannot serve as a key
         <React.Fragment key={i}>
           <dt className="text-[var(--ms-text-muted)] py-1 shrink-0">{item.label}</dt>
           <dd

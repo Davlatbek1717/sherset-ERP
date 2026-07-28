@@ -23,6 +23,7 @@ export const Breadcrumb = React.forwardRef<HTMLElement, BreadcrumbProps>(
         {items.map((item, i) => {
           const isLast = i === items.length - 1;
           return (
+            // biome-ignore lint/suspicious/noArrayIndexKey: a breadcrumb trail never reorders and its <li> holds no state; `label` is a ReactNode and `href` is optional, so neither is a usable key
             <li key={i} className="flex items-center gap-1">
               {item.href && !isLast ? (
                 <a

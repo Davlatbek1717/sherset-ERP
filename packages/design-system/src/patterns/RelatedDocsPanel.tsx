@@ -72,6 +72,7 @@ export function RelatedDocsPanel({
     <div className={cn('space-y-4', className)} data-test-id="related-docs-panel">
       {groups.map((g, gi) =>
         g.docs.length > 0 || g.createHref ? (
+          // biome-ignore lint/suspicious/noArrayIndexKey: `RelatedDocsGroup.label` is a ReactNode, so there is no stable string key; the sections are stateless link lists that never reorder
           <section key={gi}>
             <header className="flex items-center justify-between mb-1.5">
               <h4 className="text-xs font-medium uppercase tracking-wide text-[var(--ms-text-muted)]">

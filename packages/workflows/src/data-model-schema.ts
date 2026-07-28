@@ -76,7 +76,7 @@ export const DataModelSchema = z
     }
 
     // If source starts with "MANUAL", url is optional but capturedAt should still be set
-    if (schema.source && schema.source.startsWith('MANUAL') && !schema.capturedAt) {
+    if (schema.source?.startsWith('MANUAL') && !schema.capturedAt) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: 'Manual schemas must still set capturedAt',

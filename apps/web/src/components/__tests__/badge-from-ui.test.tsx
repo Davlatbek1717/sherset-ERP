@@ -143,6 +143,7 @@ describe('Badge', () => {
 
     it('forwards arbitrary HTMLSpanElement props (data-test-id, aria-*, role)', () => {
       renderWithProviders(
+        // biome-ignore lint/a11y/useSemanticElements: role="status" is the PROP UNDER TEST — this case proves Badge forwards arbitrary span props, so swapping in <output> would delete the thing being asserted
         <Badge data-test-id="state-confirmed" aria-label="Confirmed state" role="status">
           C
         </Badge>,

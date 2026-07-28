@@ -38,6 +38,17 @@ if ! node scripts/check-guards.mjs; then
   exit 1
 fi
 
+#   4. LINT GATE (blocking, 2026-07-28 — MASTER-TODO #28). `pnpm lint` is
+#      `biome check .`, which also lints scripts/ + tools/ (~530 errors nobody
+#      intends to fix) — permanently red, therefore not a gate. This one scopes
+#      biome to shipped code (apps/*/src, packages/*/src), where the count is now
+#      0, and additionally pins the invariant behind the noConsoleLog warnings:
+#      no console.log outside a CLI entry point. Policy: scripts/check-lint.mjs.
+echo "-> pre-push: product lint gate (~16s; CHECK_LINT=0 to skip on a WIP branch)..."
+if ! node scripts/check-lint.mjs; then
+  exit 1
+fi
+
 # --- drift detector (warning only) ---
 list_hits=$(git log -3 --name-only --format= 2>/dev/null | grep -cE 'components/[^/]+/bulk-actions|components/assortment/' || true)
 detail_hits=$(git log -3 --name-only --format= 2>/dev/null | grep -cE 'app/\(app\)/[^/]+/\[id\]/page\.tsx' || true)

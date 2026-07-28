@@ -27,7 +27,7 @@ export interface MoyskladListResponse<T = unknown> {
   rows: T[];
 }
 
-export interface MoyskladSingleResponse<T = unknown> {
+export interface MoyskladSingleResponse {
   context?: { employee: { meta: MoyskladMeta } };
   meta: MoyskladMeta;
   rows?: never;

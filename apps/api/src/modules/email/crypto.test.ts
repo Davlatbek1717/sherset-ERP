@@ -11,6 +11,7 @@ describe('email/crypto', () => {
 
   afterEach(() => {
     if (originalKey === undefined) {
+      // biome-ignore lint/performance/noDelete: must REMOVE the env var, not blank it — `process.env.X = undefined` stores the literal string "undefined", which would make the key-absent branch untestable
       delete process.env.EMAIL_ENCRYPTION_KEY;
     } else {
       process.env.EMAIL_ENCRYPTION_KEY = originalKey;

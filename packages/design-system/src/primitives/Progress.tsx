@@ -44,6 +44,7 @@ export function Progress({
   const pct = (clamped / safeMax) * 100;
 
   return (
+    // biome-ignore lint/a11y/useFocusableInteractive: ARIA `progressbar` is a RANGE role, not a widget — it is explicitly not required to be focusable (a bare readout has nothing to operate)
     <div
       role="progressbar"
       aria-label={ariaLabel}
@@ -81,7 +82,11 @@ export function Progress({
       )}
       {/* Keyframes injected once per page via a style tag — cheap and
           self-contained so a consumer doesn't have to add CSS. */}
-      <style>{`@keyframes ms-progress-slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(400%); } }`}</style>
+      <style>
+        {
+          '@keyframes ms-progress-slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(400%); } }'
+        }
+      </style>
     </div>
   );
 }

@@ -194,6 +194,7 @@ function ToastItem({
   const Icon = ICON[toast.tone];
   return (
     <div
+      // biome-ignore lint/a11y/useSemanticElements: the suggested <output> is a FORM-associated element (it carries `form`/`for`/`name` and is display:inline). A toast is a floating portal notification, not a form result — role="status" on a div is the conventional shape
       role="status"
       aria-live={TONE_ARIA[toast.tone]}
       data-tone={toast.tone}
