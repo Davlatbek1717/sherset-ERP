@@ -19,7 +19,7 @@
  * dialog is the document/preview rate — it is NOT persisted onto the product.
  */
 
-import { Button } from '@moysklad/ui';
+import { Button, Input, RadioGroup } from '@moysklad/ui';
 import { useEffect } from 'react';
 
 export interface PriceRateDialogProps {
@@ -83,49 +83,46 @@ export function PriceRateDialog(props: PriceRateDialogProps) {
           </button>
         </div>
 
-        <div className="space-y-3 text-sm">
-          <label className="flex items-start gap-2">
-            <input
-              type="radio"
-              name="rate-mode"
-              checked={!useCustom}
-              onChange={() => onApply(null)}
-              className="mt-1"
-              data-test-id="price-rate-reference"
-            />
-            <span>
-              <span className="text-[var(--ms-text-primary)]">
-                1 = {referenceRate} {baseCode}
-              </span>
-              <span className="block text-[var(--ms-text-muted)] text-xs">
-                Текущий курс валюты из справочника
-              </span>
-            </span>
-          </label>
-
-          <label className="flex items-center gap-2">
-            <input
-              type="radio"
-              name="rate-mode"
-              checked={useCustom}
-              onChange={() => onApply(draft)}
-              data-test-id="price-rate-custom-radio"
-            />
-            <span className="flex items-center gap-1.5 text-[var(--ms-text-primary)]">
-              1 =
-              <input
-                type="text"
-                inputMode="decimal"
-                value={draft}
-                disabled={!useCustom}
-                onChange={(e) => onApply(e.target.value.replace(/[^\d.]/g, ''))}
-                className="h-8 w-28 rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] px-2 text-right tabular-nums disabled:bg-[var(--ms-bg-muted)]"
-                data-test-id="price-rate-custom-input"
-                aria-label={`Курс ${currencyCode}`}
-              />
-              {baseCode}
-            </span>
-          </label>
+        <div className="text-sm">
+          <RadioGroup
+            name="rate-mode"
+            value={useCustom ? 'custom' : 'reference'}
+            onChange={(next) => onApply(next === 'custom' ? draft : null)}
+            className="gap-3"
+            options={[
+              {
+                value: 'reference',
+                label: (
+                  <span className="text-[var(--ms-text-primary)]">
+                    1 = {referenceRate} {baseCode}
+                  </span>
+                ),
+                description: 'Текущий курс валюты из справочника',
+                testId: 'price-rate-reference',
+              },
+              {
+                // The rate field sits INSIDE the option label — clicking it
+                // selects «custom» via htmlFor, as the raw markup did.
+                value: 'custom',
+                label: (
+                  <span className="flex items-center gap-1.5 text-[var(--ms-text-primary)]">
+                    1 =
+                    <Input
+                      inputMode="decimal"
+                      value={draft}
+                      disabled={!useCustom}
+                      onChange={(e) => onApply(e.target.value.replace(/[^\d.]/g, ''))}
+                      className="h-8 w-28 rounded-[var(--ms-radius-default)] text-right tabular-nums"
+                      data-test-id="price-rate-custom-input"
+                      aria-label={`Курс ${currencyCode}`}
+                    />
+                    {baseCode}
+                  </span>
+                ),
+                testId: 'price-rate-custom-radio',
+              },
+            ]}
+          />
         </div>
 
         <div className="mt-5 flex items-center gap-2">

@@ -9,7 +9,7 @@
 
 import { AttendanceStatusBadge } from '@/components/hr/attendance-status-badge';
 import { type MonitoringDailyResult, type MonitoringStatus, hrMonitoringApi } from '@/lib/hr-api';
-import { Avatar, EmptyState, NativeSelect, Skeleton } from '@moysklad/ui';
+import { Avatar, DatePicker, EmptyState, NativeSelect, Skeleton } from '@moysklad/ui';
 import { useQuery } from '@tanstack/react-query';
 import { formatInTimeZone } from 'date-fns-tz';
 import { useTranslations } from 'next-intl';
@@ -44,13 +44,12 @@ export default function HrMonitoringPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="font-semibold text-2xl text-[var(--ms-text-strong)]">{t('title')}</h1>
         <div className="flex items-center gap-2">
-          <input
-            type="date"
+          <DatePicker
             value={date}
-            onChange={(e) => setDate(e.target.value || todayIso())}
-            className="rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] px-2 py-1.5 text-sm text-[var(--ms-text-primary)]"
-            data-test-id="hr-monitoring-date"
-            aria-label={t('date_label')}
+            onChange={(next) => setDate(next || todayIso())}
+            className="w-auto min-w-[150px] rounded-[var(--ms-radius-default)]"
+            testId="hr-monitoring-date"
+            ariaLabel={t('date_label')}
           />
           <NativeSelect
             value={status}

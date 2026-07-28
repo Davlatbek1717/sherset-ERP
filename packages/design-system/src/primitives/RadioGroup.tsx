@@ -9,6 +9,9 @@ export interface RadioOption<V extends string = string> {
   /** Optional secondary line shown beneath the label (small, muted). */
   description?: React.ReactNode;
   disabled?: boolean;
+  /** Rendered as `data-test-id` on the option's `<input type="radio">` — the
+   *  element assertions like `toBeChecked()` need to reach. */
+  testId?: string;
 }
 
 export interface RadioGroupProps<V extends string = string> {
@@ -74,6 +77,7 @@ export function RadioGroup<V extends string = string>({
               checked={checked}
               disabled={opt.disabled}
               onChange={() => onChange(opt.value)}
+              data-test-id={opt.testId}
               className={cn(
                 'peer mt-0.5 h-4 w-4 shrink-0 cursor-pointer appearance-none',
                 'rounded-full border border-[var(--ms-border-strong)] bg-[var(--ms-bg-surface)]',

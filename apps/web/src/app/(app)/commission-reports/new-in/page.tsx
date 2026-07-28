@@ -34,6 +34,7 @@ import {
   Button,
   CatalogPicker,
   CatalogPickerField,
+  Checkbox,
   DatePicker,
   type DocPositionRow,
   DocumentDisclosurePanel,
@@ -658,11 +659,9 @@ export default function NewCommissionReportInPage() {
           </div>
           <div className="flex items-center justify-between">
             <label className="inline-flex cursor-pointer items-center gap-2">
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={vatEnabled}
-                onChange={(e) => setVatEnabled(e.target.checked)}
-                className="h-4 w-4"
+                onCheckedChange={(v) => setVatEnabled(Boolean(v))}
                 data-test-id="in-vat-enabled"
               />
               {tFields('vat')}:
@@ -691,11 +690,9 @@ export default function NewCommissionReportInPage() {
           </div>
           {vatEnabled && (
             <label className="flex cursor-pointer items-center gap-2">
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={vatIncluded}
-                onChange={(e) => setVatIncluded(e.target.checked)}
-                className="h-4 w-4"
+                onCheckedChange={(v) => setVatIncluded(Boolean(v))}
                 data-test-id="in-vat-included"
               />
               {t('rev_price_incl_vat')}

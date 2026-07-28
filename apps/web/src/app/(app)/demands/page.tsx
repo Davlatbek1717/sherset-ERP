@@ -1448,21 +1448,18 @@ export default function DemandsPage() {
             </InlineFilterPanel.Field>
             {/* 19. Адрес доставки — shipmentAddress contains-match. */}
             <InlineFilterPanel.Field label={tFields('delivery_address')} expandable={false}>
-              <input
-                type="text"
+              <Input
                 value={extFilter.shipmentAddress ?? ''}
                 onChange={(e) => {
                   setExtFilter({ ...extFilter, shipmentAddress: e.target.value || undefined });
                   setCursor(undefined);
                 }}
                 data-test-id="filter-delivery-address"
-                className="h-7 w-full rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] px-2 text-[var(--ms-text-primary)] text-sm focus:border-[var(--ms-border-focus)] focus:outline-none"
               />
             </InlineFilterPanel.Field>
             {/* 20. Комментарий к адресу доставки — shipmentAddressFull.comment contains. */}
             <InlineFilterPanel.Field label={tFields('delivery_address_comment')} expandable={false}>
-              <input
-                type="text"
+              <Input
                 value={extFilter.shipmentAddressComment ?? ''}
                 onChange={(e) => {
                   setExtFilter({
@@ -1472,7 +1469,6 @@ export default function DemandsPage() {
                   setCursor(undefined);
                 }}
                 data-test-id="filter-delivery-address-comment"
-                className="h-7 w-full rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] px-2 text-[var(--ms-text-primary)] text-sm focus:border-[var(--ms-border-focus)] focus:outline-none"
               />
             </InlineFilterPanel.Field>
             {/* 21. Владелец-сотрудник */}

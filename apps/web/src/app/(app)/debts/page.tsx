@@ -30,6 +30,7 @@ import { debtCallOutcomeTone, debtStatusTone } from '@/lib/domain-status-tone';
 import {
   Badge,
   Button,
+  Checkbox,
   Container,
   DataTable,
   type DataTableColumn,
@@ -307,22 +308,20 @@ export default function DebtsPage() {
       key: 'select',
       // Master-checkbox: ko'rinayotgan hammasini belgilash/bekor qilish.
       header: (
-        <input
-          type="checkbox"
+        <Checkbox
           checked={allVisibleSelected}
-          onChange={toggleAllVisible}
-          className="h-4 w-4 cursor-pointer"
+          onCheckedChange={() => toggleAllVisible()}
+          className="cursor-pointer"
           data-test-id="debt-select-all"
         />
       ),
       cell: (r) => (
         // biome-ignore lint/a11y/useKeyWithClickEvents: checkbox o'zi klaviaturaga ega; wrapper faqat qator-klik navigatsiyasini to'xtatadi
         <span onClick={(e) => e.stopPropagation()}>
-          <input
-            type="checkbox"
+          <Checkbox
             checked={selected.has(r.id)}
-            onChange={() => toggleOne(r.id)}
-            className="h-4 w-4 cursor-pointer"
+            onCheckedChange={() => toggleOne(r.id)}
+            className="cursor-pointer"
             data-test-id={`debt-select-${r.id}`}
           />
         </span>

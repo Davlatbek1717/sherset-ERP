@@ -1,7 +1,7 @@
 'use client';
 
 import { type MessageTemplate, messageTemplateApi, smsApi } from '@/lib/sms-api';
-import { Button, Modal, useToast } from '@moysklad/ui';
+import { Button, Modal, NativeSelect, Textarea, useToast } from '@moysklad/ui';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useEffect, useMemo, useState } from 'react';
@@ -75,11 +75,11 @@ export function SmsBroadcastModal({
           <label htmlFor="bc-template" className="block font-medium text-sm">
             {t('template')}
           </label>
-          <select
+          {/* DS NativeSelect — MASTER-TODO #12. */}
+          <NativeSelect
             id="bc-template"
             value={templateId}
             onChange={(e) => setTemplateId(e.target.value)}
-            className="h-9 w-full rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] px-2 text-sm"
             data-test-id="broadcast-template"
           >
             {usable.length === 0 && <option value="">{t('no_template')}</option>}
@@ -89,19 +89,21 @@ export function SmsBroadcastModal({
                 {tpl.isDefault ? ' ★' : ''}
               </option>
             ))}
-          </select>
+          </NativeSelect>
         </div>
 
         <div className="space-y-1">
           <label htmlFor="bc-manual" className="block font-medium text-sm">
             {t('manual_numbers')}
           </label>
-          <textarea
+          {/* DS Textarea — MASTER-TODO #12. min-h kept: this box is a
+              free-text recipient list, deliberately taller than the default. */}
+          <Textarea
             id="bc-manual"
             value={manualText}
             onChange={(e) => setManualText(e.target.value)}
             placeholder={t('manual_placeholder')}
-            className="min-h-[70px] w-full rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] p-2 text-sm"
+            className="min-h-[70px]"
             data-test-id="broadcast-manual"
           />
           <div className="text-[var(--ms-text-muted)] text-xs">{t('manual_hint')}</div>

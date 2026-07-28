@@ -9,6 +9,7 @@ import {
   type DataTableColumn,
   DatePicker,
   InlineFilterPanel,
+  Input,
   ListView,
   NativeSelect,
   type PickerItem,
@@ -227,14 +228,12 @@ export default function SerialNumbersPage() {
               />
             </InlineFilterPanel.Field>
             <InlineFilterPanel.Field label={t('filter_serial_number')} expandable>
-              <input
-                type="text"
+              <Input
                 value={serialNumber}
                 onChange={(e) => {
                   setSerialNumber(e.target.value);
                   setCursor(undefined);
                 }}
-                className="h-[var(--ms-control-h)] w-full rounded-[var(--ms-radius-sm)] border border-[var(--ms-border-default)] px-2 text-sm"
                 data-test-id="filter-serial-number"
               />
             </InlineFilterPanel.Field>

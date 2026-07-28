@@ -13,7 +13,7 @@
 import { OrderTelegramPanel } from '@/components/telegram/order-telegram-panel';
 import { api } from '@/lib/api-client';
 import { messageTemplateApi, smsApi } from '@/lib/sms-api';
-import { Button, Modal, useToast } from '@moysklad/ui';
+import { Button, Modal, NativeSelect, Textarea, useToast } from '@moysklad/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
@@ -131,10 +131,11 @@ export function SendMessageModal({
               <>
                 <label className="block font-medium text-[var(--ms-text-secondary)] text-sm">
                   {t('template')}
-                  <select
+                  {/* DS NativeSelect — MASTER-TODO #12. */}
+                  <NativeSelect
                     value={templateId ?? ''}
                     onChange={(e) => setTemplateId(e.target.value || undefined)}
-                    className="mt-1 h-9 w-full rounded-[var(--ms-radius)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] px-2 text-sm"
+                    className="mt-1"
                     data-test-id="cp-msg-template-select"
                   >
                     {usable.map((tpl) => (
@@ -143,7 +144,7 @@ export function SendMessageModal({
                         {tpl.isDefault ? ` · ${t('default')}` : ''}
                       </option>
                     ))}
-                  </select>
+                  </NativeSelect>
                 </label>
                 {templateId && (
                   <pre className="max-h-36 overflow-auto whitespace-pre-wrap rounded-[var(--ms-radius)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-app)] p-2 text-[var(--ms-text-muted)] text-xs">
@@ -191,12 +192,12 @@ export function SendMessageModal({
             {!phone && (
               <p className="text-[var(--ms-text-destructive)] text-xs">{t('err_no_phone')}</p>
             )}
-            <textarea
+            {/* DS Textarea — MASTER-TODO #12. */}
+            <Textarea
               value={text}
               onChange={(e) => setText(e.target.value)}
               rows={3}
               placeholder={t('sms_placeholder')}
-              className="w-full rounded-[var(--ms-radius)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] p-2 text-sm"
               data-test-id="cp-msg-sms-text"
             />
             <div className="flex justify-end gap-2">

@@ -2,7 +2,7 @@
 
 import { debtApi } from '@/lib/debt-api';
 import { messageTemplateApi } from '@/lib/sms-api';
-import { Button, Modal, useToast } from '@moysklad/ui';
+import { Button, Modal, NativeSelect, RadioGroup, useToast } from '@moysklad/ui';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
@@ -57,24 +57,16 @@ export function SendReminderModal({
         </div>
         <fieldset className="space-y-2">
           <legend className="mb-1 font-medium text-sm">{t('channel')}</legend>
-          <label className="flex cursor-pointer items-center gap-2 text-sm">
-            <input
-              type="radio"
-              name="reminder-channel"
-              checked={channel === 'sms'}
-              onChange={() => setChannel('sms')}
-            />
-            {t('channel_sms')}
-          </label>
-          <label className="flex cursor-pointer items-center gap-2 text-sm">
-            <input
-              type="radio"
-              name="reminder-channel"
-              checked={channel === 'telegram'}
-              onChange={() => setChannel('telegram')}
-            />
-            {t('channel_telegram')}
-          </label>
+          <RadioGroup
+            name="reminder-channel"
+            value={channel}
+            onChange={setChannel}
+            ariaLabel={t('channel')}
+            options={[
+              { value: 'sms', label: t('channel_sms') },
+              { value: 'telegram', label: t('channel_telegram') },
+            ]}
+          />
         </fieldset>
 
         {/* Shablon tanlagich — tanlangan kanalда shablon bo'lsa. Bo'sh bo'lsa
@@ -87,11 +79,11 @@ export function SendReminderModal({
             >
               {t('template')}
             </label>
-            <select
+            {/* DS NativeSelect — MASTER-TODO #12. */}
+            <NativeSelect
               id="reminder-template"
               value={templateId ?? ''}
               onChange={(e) => setTemplateId(e.target.value || undefined)}
-              className="h-9 w-full rounded-[var(--ms-radius)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] px-2 text-sm focus:outline-none focus:ring-1 focus:ring-[var(--ms-border-focus)]"
               data-test-id="reminder-template-select"
             >
               {usable.map((tpl) => (
@@ -100,7 +92,7 @@ export function SendReminderModal({
                   {tpl.isDefault ? ` · ${t('template_default')}` : ''}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           </div>
         )}
 

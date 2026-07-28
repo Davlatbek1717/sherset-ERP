@@ -11,7 +11,7 @@
  * choice as a rate-override (null ⇒ use the reference). Shared across CO/PO/money docs.
  */
 
-import { Button, Input, Modal } from '@moysklad/ui';
+import { Button, Input, Modal, RadioGroup } from '@moysklad/ui';
 import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
 
@@ -59,44 +59,46 @@ export function CurrencyRateModal({
   return (
     <Modal open={open} onOpenChange={onOpenChange} title={t('title')}>
       <div className="flex flex-col gap-4 p-4 text-sm">
-        <label className="flex cursor-pointer items-start gap-2">
-          <input
-            type="radio"
-            checked={mode === 'reference'}
-            onChange={() => setMode('reference')}
-            className="mt-1"
-            data-test-id="rate-mode-reference"
-          />
-          <span className="flex flex-col">
-            <span className="tabular-nums">
-              1 {currency} = {fmtRate(referenceRate)} UZS
-            </span>
-            <span className="text-[var(--ms-text-muted)] text-xs">{t('from_reference')}</span>
-          </span>
-        </label>
-
-        <label className="flex cursor-pointer items-center gap-2">
-          <input
-            type="radio"
-            checked={mode === 'custom'}
-            onChange={() => setMode('custom')}
-            data-test-id="rate-mode-custom"
-          />
-          <span className="inline-flex items-center gap-1.5">
-            <span>1 {currency} =</span>
-            <Input
-              value={customValue}
-              onChange={(e) => {
-                setCustomValue(e.target.value);
-                setMode('custom');
-              }}
-              inputMode="decimal"
-              className="w-28 text-right tabular-nums"
-              data-test-id="rate-custom-input"
-            />
-            <span>UZS</span>
-          </span>
-        </label>
+        <RadioGroup
+          value={mode}
+          onChange={setMode}
+          className="gap-4"
+          options={[
+            {
+              value: 'reference' as const,
+              label: (
+                <span className="tabular-nums">
+                  1 {currency} = {fmtRate(referenceRate)} UZS
+                </span>
+              ),
+              description: t('from_reference'),
+              testId: 'rate-mode-reference',
+            },
+            {
+              value: 'custom' as const,
+              // The rate field lives INSIDE the option label, so clicking it
+              // selects «custom» through the label's htmlFor — the same
+              // behaviour the hand-rolled <label><input type="radio"> had.
+              label: (
+                <span className="inline-flex items-center gap-1.5">
+                  <span>1 {currency} =</span>
+                  <Input
+                    value={customValue}
+                    onChange={(e) => {
+                      setCustomValue(e.target.value);
+                      setMode('custom');
+                    }}
+                    inputMode="decimal"
+                    className="w-28 text-right tabular-nums"
+                    data-test-id="rate-custom-input"
+                  />
+                  <span>UZS</span>
+                </span>
+              ),
+              testId: 'rate-mode-custom',
+            },
+          ]}
+        />
 
         <div className="flex justify-start gap-2 pt-1">
           <Button

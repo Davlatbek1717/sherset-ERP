@@ -29,7 +29,16 @@ import {
   debtApi,
   todayAt9InputValue,
 } from '@/lib/debt-api';
-import { Button, Input, Modal, MoneyInput, Textarea, formatMoney, useToast } from '@moysklad/ui';
+import {
+  Button,
+  Checkbox,
+  Input,
+  Modal,
+  MoneyInput,
+  Textarea,
+  formatMoney,
+  useToast,
+} from '@moysklad/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useState } from 'react';
@@ -443,11 +452,10 @@ export function CallOutcomeForm({
         ].join(' ')}
       >
         <label className="flex cursor-pointer items-start gap-2">
-          <input
-            type="checkbox"
+          <Checkbox
             checked={problem}
-            onChange={(e) => setProblem(e.target.checked)}
-            className="mt-0.5 h-4 w-4"
+            onCheckedChange={(v) => setProblem(Boolean(v))}
+            className="mt-0.5"
             data-test-id="call-problem"
           />
           <span>

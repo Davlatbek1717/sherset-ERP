@@ -18,7 +18,7 @@
 
 import { api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-store';
-import { Button, CatalogPicker, Icons, type PickerItem, Textarea } from '@moysklad/ui';
+import { Button, CatalogPicker, DatePicker, Icons, type PickerItem, Textarea } from '@moysklad/ui';
 import * as Dialog from '@radix-ui/react-dialog';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
@@ -406,37 +406,30 @@ export function TaskCreateModal({
                       {t('due')}
                     </label>
                     {/* moysklad «Срок выполнения»: a calendar-iconed field that reads «Не ограничен»
-                        until a date is picked. A transparent native date input on top drives the
-                        picker (so the empty-state text is ours, not the browser's «mm/dd/yyyy»). */}
+                        until a date is picked. The DS DatePicker popover drives it through a custom
+                        trigger — our own calendar and our own empty-state text, not the browser's. */}
                     <div className="relative">
-                      <div className="flex items-center gap-2 rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] px-3 py-2 pr-8 text-sm">
-                        <Icons.calendar
-                          className="h-4 w-4 shrink-0 text-[var(--ms-text-muted)]"
-                          aria-hidden
-                        />
-                        <span className={dueAt ? '' : 'text-[var(--ms-text-muted)]'}>
-                          {dueAt ? dueAt.split('-').reverse().join('.') : t('due_unlimited')}
-                        </span>
-                      </div>
-                      <input
-                        id="task-due"
-                        type="date"
-                        value={dueAt}
-                        onChange={(e) => setDueAt(e.target.value)}
-                        onClick={(e) => {
-                          // A native date input doesn't open its calendar on a plain click; ask
-                          // for it explicitly so clicking anywhere on the field shows the picker.
-                          try {
-                            (
-                              e.currentTarget as HTMLInputElement & { showPicker?: () => void }
-                            ).showPicker?.();
-                          } catch {
-                            // showPicker unsupported / blocked — focus still allows keyboard entry.
-                          }
-                        }}
-                        aria-label={t('due')}
-                        className="absolute inset-0 cursor-pointer opacity-0"
-                        data-test-id="task-create-due"
+                      <DatePicker
+                        value={dueAt || null}
+                        onChange={(next) => setDueAt(next ?? '')}
+                        ariaLabel={t('due')}
+                        trigger={
+                          <button
+                            type="button"
+                            id="task-due"
+                            aria-label={t('due')}
+                            data-test-id="task-create-due"
+                            className="flex w-full items-center gap-2 rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] px-3 py-2 pr-8 text-left text-sm"
+                          >
+                            <Icons.calendar
+                              className="h-4 w-4 shrink-0 text-[var(--ms-text-muted)]"
+                              aria-hidden
+                            />
+                            <span className={dueAt ? '' : 'text-[var(--ms-text-muted)]'}>
+                              {dueAt ? dueAt.split('-').reverse().join('.') : t('due_unlimited')}
+                            </span>
+                          </button>
+                        }
                       />
                       {dueAt && (
                         <button

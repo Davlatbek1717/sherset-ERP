@@ -25,7 +25,7 @@
 
 import { ReceiptViewer } from '@/components/debts/receipt-viewer';
 import { api } from '@/lib/api-client';
-import { Button } from '@moysklad/ui';
+import { Button, Input } from '@moysklad/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Send } from 'lucide-react';
 import { useTranslations } from 'next-intl';
@@ -283,8 +283,7 @@ export function OrderTelegramPanel({
 
       {/* Composer */}
       <div className="flex items-center gap-2 border-[var(--ms-border-default)] border-t px-3 py-2.5">
-        <input
-          type="text"
+        <Input
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
@@ -295,7 +294,7 @@ export function OrderTelegramPanel({
           }}
           placeholder={t('composer_placeholder')}
           disabled={data ? !data.connected : false}
-          className="h-9 flex-1 rounded-full border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] px-4 text-sm focus:outline-none focus:ring-1 focus:ring-[var(--ms-border-focus)] disabled:opacity-60"
+          className="h-9 w-auto flex-1 rounded-full px-4 text-sm focus:ring-1 focus:ring-[var(--ms-border-focus)] disabled:opacity-60"
           data-test-id="order-telegram-input"
         />
         <Button

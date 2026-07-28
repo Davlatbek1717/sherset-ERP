@@ -9,7 +9,7 @@
 
 import { hrAttendanceApi, hrEmployeeApi, hrWorkLocationApi } from '@/lib/hr-api';
 import type { HrEmployeeListResult, HrWorkLocation } from '@/lib/hr-api';
-import { Button, Input, Modal, NativeSelect, useToast } from '@moysklad/ui';
+import { Button, Input, Modal, NativeSelect, Textarea, useToast } from '@moysklad/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatInTimeZone } from 'date-fns-tz';
 import { useTranslations } from 'next-intl';
@@ -177,12 +177,14 @@ export function ManualAttendanceModal({
         </div>
 
         <Labeled label={tAtt('notes')}>
-          <textarea
+          {/* DS Textarea, not a raw tag — MASTER-TODO #12. The hand-rolled
+              class list was a copy of the DS baseline; keeping it meant this
+              field drifted from every other multi-line input in the app. */}
+          <Textarea
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             maxLength={500}
             rows={2}
-            className="w-full rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] px-2 py-1.5 text-sm text-[var(--ms-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--ms-border-focus)]"
             data-test-id="hr-manual-notes"
           />
         </Labeled>

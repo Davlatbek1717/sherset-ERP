@@ -25,6 +25,7 @@ import {
   Avatar,
   Button,
   CatalogPicker,
+  DatePicker,
   Icons,
   type PickerItem,
   Textarea,
@@ -303,7 +304,6 @@ export function TaskDetailPanel({
                             onChange={(e) => setDescDraft(e.target.value)}
                             rows={4}
                             data-test-id="task-detail-desc-input"
-                            // biome-ignore lint/a11y/noAutofocus: inline edit focuses the field the user just opened
                             autoFocus
                           />
                           <div className="flex gap-2">
@@ -354,22 +354,28 @@ export function TaskDetailPanel({
                   <div className="space-y-4">
                     <div className={cardCls}>
                       <span className={labelCls}>{tc('due')}</span>
-                      <div className="relative mt-1">
-                        <div className="flex items-center gap-2 rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] px-3 py-2 text-sm">
-                          <Icons.calendar className="h-4 w-4 shrink-0 text-[var(--ms-text-muted)]" />
-                          <span className={data.dueAt ? '' : 'text-[var(--ms-text-muted)]'}>
-                            {dueLabel}
-                          </span>
-                        </div>
-                        <input
-                          type="date"
-                          value={data.dueAt ? data.dueAt.slice(0, 10) : ''}
-                          onChange={(e) =>
-                            patchMut.mutate({ dueAt: e.target.value ? e.target.value : null })
+                      <div className="mt-1">
+                        {/* moysklad «Срок»: own calendar popover, not the browser's native
+                            date widget — the DS DatePicker drives a custom trigger so the
+                            empty-state text stays ours. */}
+                        <DatePicker
+                          value={data.dueAt ? data.dueAt.slice(0, 10) : null}
+                          onChange={(next) => patchMut.mutate({ dueAt: next })}
+                          clearable
+                          ariaLabel={tc('due')}
+                          trigger={
+                            <button
+                              type="button"
+                              aria-label={tc('due')}
+                              data-test-id="task-detail-due"
+                              className="flex w-full items-center gap-2 rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] px-3 py-2 text-left text-sm"
+                            >
+                              <Icons.calendar className="h-4 w-4 shrink-0 text-[var(--ms-text-muted)]" />
+                              <span className={data.dueAt ? '' : 'text-[var(--ms-text-muted)]'}>
+                                {dueLabel}
+                              </span>
+                            </button>
                           }
-                          aria-label={tc('due')}
-                          className="absolute inset-0 cursor-pointer opacity-0"
-                          data-test-id="task-detail-due"
                         />
                       </div>
                     </div>

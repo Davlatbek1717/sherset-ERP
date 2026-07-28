@@ -15,7 +15,7 @@
  * payload, so org fields + accounts persist atomically in one «Сохранить».
  */
 
-import { Icons, Input, NativeSelect, formatMoney } from '@moysklad/ui';
+import { Icons, Input, NativeSelect, RadioGroup, formatMoney } from '@moysklad/ui';
 import { useTranslations } from 'next-intl';
 
 const CURRENCIES = ['UZS', 'USD', 'EUR', 'RUB'] as const;
@@ -195,16 +195,23 @@ export function OrganizationAccountsEditor({
               </span>
             </Row>
             <Row label="">
-              <label className="inline-flex cursor-pointer items-center gap-2 text-[12px] text-[var(--ms-text-primary)]">
-                <input
-                  type="radio"
-                  checked={card.isDefault}
-                  onChange={() => setDefault(card.key)}
-                  className="h-3.5 w-3.5 cursor-pointer"
-                  data-test-id="org-account-default"
-                />
-                {t('is_default_account')}
-              </label>
+              {/* One radio per account card — the group spans the sibling cards,
+                  so each card contributes a single option under a shared `name`
+                  (that shared name is what makes them mutually exclusive; the
+                  pre-DS markup had no name at all). */}
+              <RadioGroup
+                name="org-account-default"
+                value={card.isDefault ? card.key : undefined}
+                onChange={() => setDefault(card.key)}
+                className="text-[12px]"
+                options={[
+                  {
+                    value: card.key,
+                    label: t('is_default_account'),
+                    testId: 'org-account-default',
+                  },
+                ]}
+              />
             </Row>
           </div>
         </div>

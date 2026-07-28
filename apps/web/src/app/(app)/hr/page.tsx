@@ -9,7 +9,7 @@
 
 import { fmtHhMm, fmtOvertime } from '@/lib/attendance-format';
 import { type HrAttendanceDashboard, hrDavomatReportApi } from '@/lib/hr-api';
-import { Avatar, Button, EmptyState, Skeleton } from '@moysklad/ui';
+import { Avatar, Button, DatePicker, EmptyState, Skeleton } from '@moysklad/ui';
 import { useQuery } from '@tanstack/react-query';
 import { formatInTimeZone } from 'date-fns-tz';
 import { useTranslations } from 'next-intl';
@@ -43,12 +43,11 @@ export default function HrHomePage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="font-semibold text-2xl text-[var(--ms-text-strong)]">{t('title')}</h1>
         <div className="flex items-center gap-2">
-          <input
-            type="date"
+          <DatePicker
             value={date}
-            onChange={(e) => setDate(e.target.value || todayIso())}
-            className="rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] px-2 py-1.5 text-sm text-[var(--ms-text-primary)]"
-            data-test-id="hr-dashboard-date"
+            onChange={(next) => setDate(next || todayIso())}
+            className="w-auto min-w-[150px] rounded-[var(--ms-radius-default)]"
+            testId="hr-dashboard-date"
           />
           <Button onClick={() => setManualOpen(true)} data-test-id="hr-dashboard-manual">
             + {t('create_manual')}

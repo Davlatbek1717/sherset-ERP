@@ -36,6 +36,7 @@ import {
   Button,
   CatalogPicker,
   CatalogPickerField,
+  Checkbox,
   type DocPositionRow,
   DropdownMenu,
   Icons,
@@ -1096,10 +1097,9 @@ export function InventoryPositionsPanel({
           <p>{t('fill_stock_question')}</p>
           <label className="flex items-center gap-2">
             <span>{t('set_actual_stocks')}</span>
-            <input
-              type="checkbox"
+            <Checkbox
               checked={fillStockSetActual}
-              onChange={(e) => setFillStockSetActual(e.target.checked)}
+              onCheckedChange={(v) => setFillStockSetActual(Boolean(v))}
               data-test-id="fill-from-stock-set-actual"
             />
           </label>
@@ -1173,10 +1173,9 @@ export function InventoryPositionsPanel({
           </div>
           <label className="flex items-center gap-2">
             <span>{t('set_actual_stocks')}</span>
-            <input
-              type="checkbox"
+            <Checkbox
               checked={fillAssortSetActual}
-              onChange={(e) => setFillAssortSetActual(e.target.checked)}
+              onCheckedChange={(v) => setFillAssortSetActual(Boolean(v))}
               data-test-id="fill-from-assortment-set-actual"
             />
           </label>

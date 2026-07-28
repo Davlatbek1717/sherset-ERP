@@ -11,7 +11,7 @@
  * can't be a negative discount in our model (the API rejects discount < 0).
  */
 
-import { Button, Modal } from '@moysklad/ui';
+import { Button, Input, Modal, RadioGroup } from '@moysklad/ui';
 import { useState } from 'react';
 
 export interface PositionDiscountMenuLabels {
@@ -60,31 +60,29 @@ export function PositionDiscountMenu({
     setMode('discount');
   };
 
-  const row = (value: 'discount' | 'markup', text: string) => (
-    <label className="flex items-center gap-2 text-[12px] text-[var(--ms-text-primary)]">
-      <input
-        type="radio"
-        name="discount-markup-mode"
-        checked={mode === value}
-        onChange={() => setMode(value)}
-        className="h-3.5 w-3.5"
-        data-test-id={`position-discount-mode-${value}`}
-      />
-      <span className="w-28">{text}</span>
-      <input
-        type="text"
-        inputMode="decimal"
-        value={mode === value ? percent : ''}
-        onChange={(e) => {
-          setMode(value);
-          setPercent(e.target.value);
-        }}
-        className="h-7 w-20 rounded-[var(--ms-radius-sm)] border border-[var(--ms-border-default)] px-1.5 text-right text-[12px] tabular-nums focus:border-[var(--ms-text-brand)] focus:outline-none"
-        data-test-id={`position-discount-input-${value}`}
-      />
-      <span className="text-[var(--ms-text-muted)]">%</span>
-    </label>
-  );
+  // Each option carries its own percent field INSIDE the label (moysklad's
+  // «Скидка/Наценка» window) — clicking the field selects that mode through
+  // the label's htmlFor, exactly as the hand-rolled markup did.
+  const option = (value: 'discount' | 'markup', text: string) => ({
+    value,
+    testId: `position-discount-mode-${value}`,
+    label: (
+      <span className="flex items-center gap-2 text-[12px] text-[var(--ms-text-primary)]">
+        <span className="w-28">{text}</span>
+        <Input
+          inputMode="decimal"
+          value={mode === value ? percent : ''}
+          onChange={(e) => {
+            setMode(value);
+            setPercent(e.target.value);
+          }}
+          className="h-7 w-20 rounded-[var(--ms-radius-sm)] px-1.5 text-right text-[12px] tabular-nums"
+          data-test-id={`position-discount-input-${value}`}
+        />
+        <span className="text-[var(--ms-text-muted)]">%</span>
+      </span>
+    ),
+  });
 
   return (
     <>
@@ -123,8 +121,13 @@ export function PositionDiscountMenu({
       >
         <div className="space-y-3 py-1">
           <p className="text-[12px] text-[var(--ms-text-muted)]">{selectedText}</p>
-          {row('discount', discountLabel)}
-          {row('markup', markupLabel)}
+          <RadioGroup
+            name="discount-markup-mode"
+            value={mode}
+            onChange={setMode}
+            className="gap-3"
+            options={[option('discount', discountLabel), option('markup', markupLabel)]}
+          />
         </div>
       </Modal>
     </>

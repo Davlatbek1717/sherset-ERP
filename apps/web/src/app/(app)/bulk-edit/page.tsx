@@ -21,7 +21,7 @@
 
 import { api } from '@/lib/api-client';
 import { readBulkEdit } from '@/lib/bulk-edit-nav';
-import { Button, Checkbox, NativeSelect, useToast } from '@moysklad/ui';
+import { Button, Checkbox, NativeSelect, RadioGroup, useToast } from '@moysklad/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
@@ -478,28 +478,17 @@ export default function BulkEditPage() {
                     label={t('shared')}
                     testId="bulk-edit-row-shared"
                   >
-                    <div className="flex flex-col gap-1 text-sm">
-                      <label className="inline-flex items-center gap-1.5">
-                        <input
-                          type="radio"
-                          name="bulk-edit-shared"
-                          checked={sharedValue}
-                          onChange={() => setSharedValue(true)}
-                          disabled={!editShared}
-                        />
-                        {t('yes')}
-                      </label>
-                      <label className="inline-flex items-center gap-1.5">
-                        <input
-                          type="radio"
-                          name="bulk-edit-shared"
-                          checked={!sharedValue}
-                          onChange={() => setSharedValue(false)}
-                          disabled={!editShared}
-                        />
-                        {t('no')}
-                      </label>
-                    </div>
+                    <RadioGroup
+                      name="bulk-edit-shared"
+                      value={sharedValue ? 'yes' : 'no'}
+                      onChange={(next) => setSharedValue(next === 'yes')}
+                      ariaLabel={t('shared')}
+                      className="gap-1 text-sm"
+                      options={[
+                        { value: 'yes', label: t('yes'), disabled: !editShared },
+                        { value: 'no', label: t('no'), disabled: !editShared },
+                      ]}
+                    />
                   </Row>
                 </div>
               </div>

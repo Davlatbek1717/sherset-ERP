@@ -47,6 +47,26 @@ import { describe, expect, it } from 'vitest';
  *     hr/employees permissions stays a bespoke radio MATRIX (one dot-radio per
  *     table cell, shared row name) → EXEMPT_RADIO. file (5: hidden/`file:`
  *     pseudo pickers) → no DS FileInput.
+ *
+ * 2026-07-28 (MASTER-TODO #12) — the last 17 raw sites were resolved:
+ *   - textarea (3) → DS `Textarea`; select (5) → DS `NativeSelect` (the two
+ *     dense inline VAT cells keep an h-7 override, which twMerge honours).
+ *   - input text/number (6) → DS `Input`. The demands / invoices-in /
+ *     serial-numbers FILTER fields also dropped their hand-rolled `h-7` class:
+ *     the audited sibling (cash-in) renders a bare `<Input>` inside
+ *     `InlineFilterPanel.Field`, so those pages were the visual outliers.
+ *   - input date (5) → DS `DatePicker` (a BANNED type — no exemptions). The two
+ *     task fields used the "invisible native date input over a styled div"
+ *     overlay; DatePicker's `trigger` prop expresses that directly, and the
+ *     `showPicker()` workaround died with it — we now open OUR calendar, which
+ *     is what moysklad shows, instead of the browser's native widget.
+ *   - checkbox (7) → DS `Checkbox` in the established `<label><Checkbox/><span>`
+ *     shape (103 existing call-sites).
+ *   - radio (11 of 14) → DS `RadioGroup`, incl. three sites whose value-control
+ *     sits INSIDE the option label — expressible because `RadioOption.label` is
+ *     a ReactNode and the DS renders `<label htmlFor>`, so a click on the field
+ *     still selects its option. `RadioOption.testId` was added to the DS for
+ *     this (price-rate-dialog.test.tsx asserts `toBeChecked()` on the input).
  */
 
 const SRC = join(__dirname, '..');
@@ -67,6 +87,15 @@ const EXEMPT_CHECKBOX = ['hr/employees/_components/role-multi-select.tsx'];
 const EXEMPT_RADIO = [
   'hr/employees/[id]/permissions/page.tsx',
   'components/assortment/bulk-actions-dropdown.tsx',
+  // product «Неснижаемый остаток» mode set — the SAME interleaved-control class
+  // as bulk-actions, in its sibling-of-label variant: option 1 («Общий») shows
+  // an `ml-auto` <Input> as a SIBLING of the label inside the option's flex row
+  // (right-aligned to the card edge), and a conditional react-hook-form error
+  // <p> renders BETWEEN option 1 and option 2. RadioGroup's `options` array can
+  // host a control inside the label node (see currency-rate-modal /
+  // price-rate-dialog / position-discount-menu, migrated 2026-07-28) but has no
+  // slot for a sibling element or for content between two options.
+  'components/products/product-form-left-cards.tsx',
 ];
 const EXEMPT_INPUT_TEXTNUM = [
   'customer-orders/new/page.tsx',

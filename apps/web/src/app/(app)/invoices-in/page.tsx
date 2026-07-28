@@ -21,6 +21,7 @@ import {
   type DataTableColumn,
   type FilterDrawerValues,
   InlineFilterPanel,
+  Input,
   ListView,
   MassEditModal,
   MultiCombobox,
@@ -973,8 +974,7 @@ export default function InvoicesInPage() {
       {/* 2. Входящий номер — plain text contains-match on supplier's doc №.
          Full-word page-local label (moysklad «Входящий номер», not «Входящий №»). */}
       <InlineFilterPanel.Field label={t('col_incoming_number')} expandable={false}>
-        <input
-          type="text"
+        <Input
           value={filterValues.incomingNumber ?? ''}
           onChange={(e) => {
             const v = e.target.value;
@@ -982,7 +982,6 @@ export default function InvoicesInPage() {
             onResetCursor();
           }}
           data-test-id="filter-incoming-number"
-          className="h-7 w-full rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] px-2 text-[var(--ms-text-primary)] text-sm focus:border-[var(--ms-border-focus)] focus:outline-none"
         />
       </InlineFilterPanel.Field>
       {/* 3. Входящая дата */}

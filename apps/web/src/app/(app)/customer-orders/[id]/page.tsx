@@ -1226,13 +1226,17 @@ export default function CustomerOrderDetailPage() {
     }
     const opts = ['', '0', '12'].includes(vat) ? ['', '0', '12'] : ['', '0', '12', vat];
     return (
-      <select
-        // biome-ignore lint/a11y/noAutofocus: click-to-edit cell focuses the picker the user just opened (moysklad inline editor)
+      // MASTER-TODO #12: DS NativeSelect with a DENSE override. The base
+      // control is h-9/13px; this is an inline click-to-edit cell inside the
+      // positions grid, so it keeps h-7/12px via `selectClassName` (twMerge
+      // lets the override win). Swapping to the DS primitive is what buys the
+      // shared chevron + focus ring; the size stays moysklad-dense.
+      <NativeSelect
         autoFocus
         value={vat}
         onChange={(e) => updatePosition(p.id, { vat: e.target.value })}
         onBlur={() => setEditingVatId(null)}
-        className="h-7 w-full rounded-[var(--ms-radius-sm)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] px-1 text-[12px] focus:border-[var(--ms-border-focus)] focus:outline-none"
+        selectClassName="h-7 px-1 text-[12px]"
         data-test-id={`pos-${p.id}-vat-select`}
       >
         {opts.map((v) => (
@@ -1240,7 +1244,7 @@ export default function CustomerOrderDetailPage() {
             {fmtVat(v)}
           </option>
         ))}
-      </select>
+      </NativeSelect>
     );
   };
 

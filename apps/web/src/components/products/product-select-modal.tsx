@@ -36,8 +36,10 @@ import { resolveDefaultSalePriceOrZero } from '@/lib/sale-price';
 import {
   Button,
   CatalogPickerField,
+  Checkbox,
   DataTable,
   type DataTableColumn,
+  DatePicker,
   Input,
   MultiCombobox,
   NativeSelect,
@@ -1013,26 +1015,32 @@ export function ProductSelectModal({
                 </label>
               )}
               {labels.filter.updatedPeriod && (
-                <label className="flex flex-col gap-1">
+                // The DatePicker trigger is a <button>, not a labelable form
+                // control, so this caption is a plain <div> + <span> (same shape
+                // as the `modifiedBy` filter below) and each picker carries its
+                // own aria-label.
+                <div className="flex flex-col gap-1">
                   <span className="text-[var(--ms-text-muted)]">{labels.filter.updatedPeriod}</span>
                   <div className="flex items-center gap-1">
-                    <input
-                      type="date"
-                      value={updatedFrom}
-                      onChange={(e) => setUpdatedFrom(e.target.value)}
-                      className="h-[var(--ms-control-h)] border border-[var(--ms-border-input)] px-1 text-[12px]"
-                      data-test-id="product-select-filter-updated-from"
+                    <DatePicker
+                      value={updatedFrom || null}
+                      onChange={(next) => setUpdatedFrom(next ?? '')}
+                      clearable
+                      className="w-auto min-w-[124px] px-1 text-[12px]"
+                      ariaLabel={labels.filter.updatedPeriod}
+                      testId="product-select-filter-updated-from"
                     />
                     <span className="text-[var(--ms-text-muted)]">—</span>
-                    <input
-                      type="date"
-                      value={updatedTo}
-                      onChange={(e) => setUpdatedTo(e.target.value)}
-                      className="h-[var(--ms-control-h)] border border-[var(--ms-border-input)] px-1 text-[12px]"
-                      data-test-id="product-select-filter-updated-to"
+                    <DatePicker
+                      value={updatedTo || null}
+                      onChange={(next) => setUpdatedTo(next ?? '')}
+                      clearable
+                      className="w-auto min-w-[124px] px-1 text-[12px]"
+                      ariaLabel={labels.filter.updatedPeriod}
+                      testId="product-select-filter-updated-to"
                     />
                   </div>
-                </label>
+                </div>
               )}
               {labels.filter.modifiedBy && (
                 <div className="flex w-48 flex-col gap-1">
@@ -1395,11 +1403,10 @@ export function ProductSelectModal({
                             data-test-id={`product-select-row-${p.id}`}
                           >
                             <td className="w-10 px-2 py-1 text-center">
-                              <input
-                                type="checkbox"
+                              <Checkbox
                                 checked={selected.has(p.id) || lockedIds.has(p.id)}
                                 disabled={lockedIds.has(p.id)}
-                                onChange={() => toggleSelected(p.id)}
+                                onCheckedChange={() => toggleSelected(p.id)}
                                 onClick={(e) => e.stopPropagation()}
                                 data-test-id={`product-select-check-${p.id}`}
                               />
