@@ -15,6 +15,8 @@ import { PositionAgreementButton } from '@/components/documents/position-agreeme
 import { PositionDiscountMenu } from '@/components/documents/position-discount-menu';
 import { useNewDocStaging } from '@/components/documents/use-new-doc-staging';
 import { usePrintTemplatesManager } from '@/components/print/print-templates-provider';
+import { ProductCreateModal } from '@/components/products/product-create-modal';
+import { ProductEditModal } from '@/components/products/product-edit-modal';
 import { useDocumentEditorLabels } from '@/hooks/use-document-editor-labels';
 import { useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
@@ -43,7 +45,6 @@ import {
   PositionTable,
   type PositionTableColumnConfig,
   Textarea,
-  useToast,
 } from '@moysklad/ui';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
@@ -68,6 +69,8 @@ interface ProductItem {
 
 interface NewPositionRow extends DocPositionRow {
   assortmentId: string | null;
+  /** Product sale-price list — powers the per-row «Цена ▾» quick-pick. */
+  salePrices?: Array<{ priceTypeId: string; value: string }> | null;
 }
 
 function uid(): string {
@@ -135,7 +138,6 @@ export default function NewDemandPage() {
   const tBulk = useTranslations('bulk_actions');
   const tCreate = useTranslations('create_related');
   const tPos = useTranslations('position_editor');
-  const { toast } = useToast();
   const tCols = useTranslations('position_cols');
   const docEditorLabels = useDocumentEditorLabels();
   const { openTemplates } = usePrintTemplatesManager();
@@ -305,6 +307,32 @@ export default function NewDemandPage() {
       ),
     [applyDiscountMarkup, selectedRowIds, tCols],
   );
+
+  // «Цена ▾» price-type list — labels the per-row quick-pick (mirror supplies).
+  const { data: priceTypesData } = useQuery<{ items: Array<{ id: string; name: string }> }>({
+    queryKey: ['price-types'],
+    queryFn: () => api.get('/price-types'),
+  });
+  // «Цена ▾» per-row quick-pick — the product's sale prices (Оптом / Sotilish),
+  // labelled by price-type name; picking one sets the row price (owner 2026-07-28).
+  const positionPriceOptions = useCallback(
+    (row: DocPositionRow) => {
+      const sps = (row as NewPositionRow).salePrices ?? [];
+      return sps.map((sp) => ({
+        id: sp.priceTypeId,
+        label: priceTypesData?.items.find((pt) => pt.id === sp.priceTypeId)?.name ?? tCols('price'),
+        value: sp.value,
+      }));
+    },
+    [priceTypesData, tCols],
+  );
+
+  // «Наименование» click → edit that product in an overlay, WITHOUT leaving the
+  // (unsaved) shipment (owner 2026-07-28). Conditionally mounted → fresh each open.
+  const [editProductId, setEditProductId] = useState<string | null>(null);
+  // «Создать новый товар "<query>"» → create in an overlay, then append it as a
+  // position (null = closed; a string = open, pre-filling that typed name).
+  const [createProductName, setCreateProductName] = useState<string | null>(null);
 
   // Pickers + error
   const [openPicker, setOpenPicker] = useState<
@@ -665,7 +693,8 @@ export default function NewDemandPage() {
           placeholder={tForm('select_product')}
           onPick={() => setOpenPicker({ kind: 'product', rowUid: p.id })}
           productHref={href}
-          onNavigate={href ? () => router.push(href) : undefined}
+          onNavigate={p.assortmentId ? () => setEditProductId(p.assortmentId) : undefined}
+          navigateAsButton
           testId={`pos-${p.id}-name`}
         />
         {stockQty !== undefined && (
@@ -899,6 +928,7 @@ export default function NewDemandPage() {
               });
             }}
             renderNameCell={renderPositionNameCell}
+            priceOptions={positionPriceOptions}
             // moysklad row ⋮ «Заменить» — swap the line's product (the name is now a
             // card link, so swapping moves here). Opens the per-row product picker.
             onReplace={(id) => setOpenPicker({ kind: 'product', rowUid: id })}
@@ -922,27 +952,13 @@ export default function NewDemandPage() {
                     raw: p,
                   }));
                 }}
-                pickModal={{
-                  currency,
-                  labels: {
-                    stock: tPos('pick_modal_stock'),
-                    price: tPos('pick_modal_price'),
-                    quantity: tPos('pick_modal_quantity'),
-                    salePrice: tPos('pick_modal_sale_price'),
-                    priceThisSale: tPos('pick_modal_price_this_sale'),
-                    pricePermanent: tPos('pick_modal_price_permanent'),
-                    save: tPos('pick_modal_save'),
-                    cancel: tPos('pick_modal_cancel'),
-                  },
-                }}
+                createProductLabel={(q) => tPos('createProductNamed', { query: q })}
+                onCreateProduct={(q) => setCreateProductName(q)}
+                // Owner 2026-07-28: product picks add DIRECTLY — no qty/price modal
+                // (moysklad's Отгрузка add-line has none). Price defaults to the
+                // product's sale price; the search box clears.
+                clearQueryOnPick
                 onPick={(item, entry) => {
-                  if (entry?.permanent) {
-                    // «Doimiy narx» — persist to the product card (owner 2026-07-17).
-                    api
-                      .post(`/products/${item.id}/sale-price`, { priceMinor: entry.priceMinor })
-                      .then(() => toast.success(tPos('pick_modal_price_saved')))
-                      .catch(() => toast.error(tPos('pick_modal_price_save_failed')));
-                  }
                   const raw = item.raw as ProductItem | undefined;
                   const defaultPrice = resolveDefaultSalePriceOrZero(raw?.salePrices);
                   const newId = uid();
@@ -958,6 +974,7 @@ export default function NewDemandPage() {
                       discount: '0',
                       vat: raw?.vat != null ? String(raw.vat) : '12',
                       vatEnabled: true,
+                      salePrices: raw?.salePrices ?? null,
                     },
                   ]);
                   // owner 2026-07-18: returning the id hands focus to the new
@@ -992,6 +1009,7 @@ export default function NewDemandPage() {
                         discount: '0',
                         vat: raw?.vat != null ? String(raw.vat) : '12',
                         vatEnabled: true,
+                        salePrices: raw?.salePrices ?? null,
                       };
                     }),
                   ]);
@@ -1520,6 +1538,7 @@ export default function NewDemandPage() {
             productUom: raw?.uom ?? null,
             priceMinor: defaultPrice,
             vat: raw?.vat != null ? String(raw.vat) : '12',
+            salePrices: raw?.salePrices ?? null,
           });
         }}
       />
@@ -1531,6 +1550,44 @@ export default function NewDemandPage() {
           referenceRate={adminRate ?? '1'}
           currentOverride={rateOverride}
           onApply={setRateOverride}
+        />
+      )}
+      {editProductId && (
+        <ProductEditModal productId={editProductId} open onClose={() => setEditProductId(null)} />
+      )}
+      {createProductName !== null && (
+        <ProductCreateModal
+          open
+          initialName={createProductName}
+          onClose={() => setCreateProductName(null)}
+          onCreated={async (created) => {
+            try {
+              const res = await api.get<{
+                name: string;
+                uom: string | null;
+                buyPrice: string | null;
+                vat?: number | null;
+                salePrices?: Array<{ priceTypeId: string; value: string }> | null;
+              }>(`/products/${created.id}`);
+              setPositions((ps) => [
+                ...ps,
+                {
+                  id: uid(),
+                  assortmentId: created.id,
+                  productLabel: res.name,
+                  productUom: res.uom ?? null,
+                  quantity: '1',
+                  priceMinor: resolveDefaultSalePriceOrZero(res.salePrices),
+                  discount: '0',
+                  vat: res.vat != null ? String(res.vat) : '12',
+                  vatEnabled: true,
+                  salePrices: res.salePrices ?? null,
+                },
+              ]);
+            } catch {
+              // product created but couldn't fetch to append — non-fatal
+            }
+          }}
         />
       )}
     </>

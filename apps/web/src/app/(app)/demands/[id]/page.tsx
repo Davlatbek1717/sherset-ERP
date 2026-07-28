@@ -35,6 +35,8 @@ import { PositionAgreementButton } from '@/components/documents/position-agreeme
 import { PositionColumnCustomizer } from '@/components/documents/position-column-customizer';
 import { PositionDiscountMenu } from '@/components/documents/position-discount-menu';
 import { PositionPriceMenu } from '@/components/documents/position-price-menu';
+import { ProductCreateModal } from '@/components/products/product-create-modal';
+import { ProductEditModal } from '@/components/products/product-edit-modal';
 import { SendEmailDialog } from '@/components/send-email-dialog';
 import { useApiMutation } from '@/hooks/use-api-mutation';
 import { useConflictReload } from '@/hooks/use-conflict-reload';
@@ -428,6 +430,24 @@ export default function DemandDetailPage() {
     queryFn: () => api.get('/price-types'),
     staleTime: 60_000,
   });
+
+  // «Наименование» click → edit that product in an overlay (owner 2026-07-28);
+  // «Создать товар "<q>"» → create in an overlay then append (null = closed).
+  const [editProductId, setEditProductId] = useState<string | null>(null);
+  const [createProductName, setCreateProductName] = useState<string | null>(null);
+  // «Цена ▾» per-row quick-pick — the product's sale prices, labelled by
+  // price-type name; picking one sets the row price (mirror /new + supplies).
+  const positionPriceOptions = useCallback(
+    (row: DocPositionRow) => {
+      const sps = (row as DetailPositionRow).salePrices ?? [];
+      return sps.map((sp) => ({
+        id: sp.priceTypeId,
+        label: priceTypesData?.items.find((pt) => pt.id === sp.priceTypeId)?.name ?? tCols('price'),
+        value: sp.value,
+      }));
+    },
+    [priceTypesData, tCols],
+  );
 
   const { data, isLoading } = useQuery<DemandDetail>({
     queryKey: ['demand', id],
@@ -997,7 +1017,8 @@ export default function DemandDetailPage() {
         placeholder={tForm('select_product')}
         onPick={() => editableLines && setProductRowId(p.id)}
         productHref={href}
-        onNavigate={href ? () => router.push(href) : undefined}
+        onNavigate={p.assortmentId ? () => setEditProductId(p.assortmentId) : undefined}
+        navigateAsButton
         disabled={!editableLines}
         testId={`pos-${p.id}-name`}
       />
@@ -1662,6 +1683,7 @@ export default function DemandDetailPage() {
                 sortByNameLabel={tPos('sort_by_name')}
                 sortByCodeLabel={tPos('sort_by_code')}
                 renderNameCell={renderPositionNameCell}
+                priceOptions={positionPriceOptions}
                 onReplace={(rowId) => editableLines && setProductRowId(rowId)}
                 renderVatCell={renderVatCell}
                 vatIncluded={form.vatIncluded}
@@ -1694,30 +1716,11 @@ export default function DemandDetailPage() {
                       sortAvailableLabel={tPos('sortByAvailable')}
                       moreItemsLabel={(n) => tPos('moreItems', { count: n })}
                       createProductLabel={(qq) => tPos('createProductNamed', { query: qq })}
-                      onCreateProduct={() => router.push('/products/new')}
-                      pickModal={{
-                        currency: form.currency,
-                        labels: {
-                          stock: tPos('pick_modal_stock'),
-                          price: tPos('pick_modal_price'),
-                          quantity: tPos('pick_modal_quantity'),
-                          salePrice: tPos('pick_modal_sale_price'),
-                          priceThisSale: tPos('pick_modal_price_this_sale'),
-                          pricePermanent: tPos('pick_modal_price_permanent'),
-                          save: tPos('pick_modal_save'),
-                          cancel: tPos('pick_modal_cancel'),
-                        },
-                      }}
+                      onCreateProduct={(q) => setCreateProductName(q)}
+                      // Owner 2026-07-28: product picks add DIRECTLY — no qty/price
+                      // modal (moysklad Отгрузка parity). The search box clears.
+                      clearQueryOnPick
                       onPick={(item, entry) => {
-                        if (entry?.permanent) {
-                          // «Doimiy narx» — persist to the product card (owner 2026-07-17).
-                          api
-                            .post(`/products/${item.id}/sale-price`, {
-                              priceMinor: entry.priceMinor,
-                            })
-                            .then(() => toast.success(tPos('pick_modal_price_saved')))
-                            .catch(() => toast.error(tPos('pick_modal_price_save_failed')));
-                        }
                         const raw = item.raw as ProductItem | undefined;
                         const defaultPrice = resolveDefaultSalePriceOrZero(raw?.salePrices);
                         const newId = uid();
@@ -2183,6 +2186,51 @@ export default function DemandDetailPage() {
         defaultSubject={tEmail('subject_shipment', { name: data.name })}
         defaultBodyHtml={tEmail.raw('body_shipment')}
       />
+
+      {editProductId && (
+        <ProductEditModal productId={editProductId} open onClose={() => setEditProductId(null)} />
+      )}
+      {createProductName !== null && (
+        <ProductCreateModal
+          open
+          initialName={createProductName}
+          onClose={() => setCreateProductName(null)}
+          onCreated={async (created) => {
+            try {
+              const res = await api.get<{
+                name: string;
+                uom: string | null;
+                vat?: number | null;
+                salePrices?: Array<{ priceTypeId: string; value: string }> | null;
+              }>(`/products/${created.id}`);
+              setForm((s) =>
+                s
+                  ? {
+                      ...s,
+                      positions: [
+                        ...s.positions,
+                        {
+                          id: uid(),
+                          assortmentId: created.id,
+                          productLabel: res.name,
+                          productUom: res.uom ?? null,
+                          quantity: '1',
+                          priceMinor: resolveDefaultSalePriceOrZero(res.salePrices),
+                          discount: '0',
+                          vat: res.vat != null ? String(res.vat) : '12',
+                          vatEnabled: s.vatEnabled,
+                          salePrices: res.salePrices ?? null,
+                        },
+                      ],
+                    }
+                  : s,
+              );
+            } catch {
+              // product created but couldn't fetch to append — non-fatal
+            }
+          }}
+        />
+      )}
     </div>
   );
 }
