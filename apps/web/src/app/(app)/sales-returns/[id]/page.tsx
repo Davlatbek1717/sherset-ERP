@@ -45,6 +45,11 @@ import { OwnerAccessPopover } from '@/components/documents/owner-access-popover'
 import { PositionAgreementButton } from '@/components/documents/position-agreement-modal';
 import { PositionColumnCustomizer } from '@/components/documents/position-column-customizer';
 import { PositionDiscountMenu } from '@/components/documents/position-discount-menu';
+import {
+  type ReceiptData,
+  ReceiptPrintPortal,
+  receiptDate,
+} from '@/components/pick-list/receipt-print-portal';
 import { usePrintTemplatesManager } from '@/components/print/print-templates-provider';
 import { type KitPrintForm, KitPrintModal } from '@/components/purchase-orders/kit-print-modal';
 import { SendEmailDialog } from '@/components/send-email-dialog';
@@ -355,6 +360,7 @@ export default function SalesReturnDetailPage() {
   const { toast } = useToast();
   const tCols = useTranslations('position_cols');
   const tPrint = useTranslations('print_menu');
+  const tSpiska = useTranslations('pages.pickLists');
   const tCreate = useTranslations('create_related');
 
   const { data, isLoading } = useQuery<SalesReturnDetail>({
@@ -785,6 +791,38 @@ export default function SalesReturnDetailPage() {
 
   if (isLoading || !form)
     return <div className="p-8 text-[var(--ms-text-muted)] text-sm">{tCommon('loading')}</div>;
+  // «Печать → Лист сборки» (climart port 2026-07-28): qaytarilgan tovarni
+  // yacheykasiga QAYTA JOYLASH varag'i (posted return'da ham read-only print).
+  // Hook-tartib barqarorligi uchun `if (!data)` early-return'dan OLDIN e'lon.
+  const [spiska, setSpiska] = useState<ReceiptData | null>(null);
+  const openSpiska = useCallback(async () => {
+    if (!form || !data) return;
+    const rows = form.positions.filter((p) => p.assortmentId);
+    const ids = [...new Set(rows.map((r) => r.assortmentId as string))];
+    const res = ids.length
+      ? await api
+          .get<{ cells: Record<string, string | null> }>(
+            `/pick-lists/cells-by-products?productIds=${ids.join(',')}`,
+          )
+          .catch(() => ({ cells: {} as Record<string, string | null> }))
+      : { cells: {} as Record<string, string | null> };
+    setSpiska({
+      title: tSpiska('receipt_title_return'),
+      number: data.name,
+      dateStr: receiptDate(new Date(form.moment)),
+      agentName: form.agentLabel || null,
+      agentPhone: null,
+      ownerName: form.ownerLabel || null,
+      description: form.description || null,
+      positions: rows.map((r) => ({
+        name: r.productLabel,
+        qty: r.quantity,
+        uom: r.productUom ?? null,
+        cell: res.cells[r.assortmentId as string] ?? null,
+      })),
+    });
+  }, [form, data, tSpiska]);
+
   if (!data) return <div className="p-8 text-sm">{tCommon('not_found')}</div>;
 
   const editableLines = !data.applicable;
@@ -851,6 +889,8 @@ export default function SalesReturnDetailPage() {
     })),
     // The standard built-in «Возврат покупателя» form — downloads via bulk-print.
     { id: 'standard', label: tDetailTitles('sales_return'), onSelect: () => printForm() },
+    // «Лист сборки» — qaytarilgan tovarni yacheykaga qayta joylash varag'i.
+    { id: 'spiska', label: tSpiska('spiska_form'), onSelect: () => void openSpiska() },
     // «Комплект…» — bundle several forms into one PDF.
     { id: 'set', label: tPrint('set'), onSelect: () => setKitPrintOpen(true) },
     // «Настроить…» — right-side «Настройка шаблонов» slide-over for the return.
@@ -1886,6 +1926,7 @@ export default function SalesReturnDetailPage() {
         }}
         onConfirm={kitPrint}
       />
+      {spiska && <ReceiptPrintPortal data={spiska} onClose={() => setSpiska(null)} />}
     </div>
   );
 }

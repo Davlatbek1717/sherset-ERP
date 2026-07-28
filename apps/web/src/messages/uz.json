@@ -1517,6 +1517,7 @@
   "pages": {
     "pickLists": {
       "title": "Yig'ish ro'yxatlari",
+      "spiska_form": "Yig'ish varag'i",
       "search_placeholder": "Raqam, kontragent yoki sotuvchi",
       "empty_title": "Yig'ish ro'yxatlari yo'q",
       "col_number": "Raqam",

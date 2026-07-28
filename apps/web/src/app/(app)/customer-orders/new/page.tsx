@@ -16,6 +16,11 @@ import { PositionDiscountMenu } from '@/components/documents/position-discount-m
 import { PositionPriceMenu } from '@/components/documents/position-price-menu';
 import { PositionReserveMenu } from '@/components/documents/position-reserve-menu';
 import { useNewDocStaging } from '@/components/documents/use-new-doc-staging';
+import {
+  type ReceiptData,
+  ReceiptPrintPortal,
+  receiptDate,
+} from '@/components/pick-list/receipt-print-portal';
 import { usePrintTemplatesManager } from '@/components/print/print-templates-provider';
 import { ProductSelectModal } from '@/components/products/product-select-modal';
 import { useDocumentEditorLabels } from '@/hooks/use-document-editor-labels';
@@ -198,6 +203,7 @@ export default function NewCustomerOrderPage() {
   // print template sent by email) · Изменить=[Удалить, Копировать]. On /new
   // these are post-save actions, so they save first (like «Создать документ»).
   const tPrint = useTranslations('print_menu');
+  const tSpiska = useTranslations('pages.pickLists');
   const tBulk = useTranslations('bulk_actions');
   const docEditorLabels = useDocumentEditorLabels();
   const { defaultId } = usePriceTypeIds();
@@ -591,6 +597,36 @@ export default function NewCustomerOrderPage() {
     staleTime: 60_000,
   });
   const printForms = printFormsData ?? [];
+  // «Печать → Лист сборки» (climart port 2026-07-28): joriy forma pozitsiyalarini
+  // ombor yig'ish-varag'i sifatida chiqaradi (/pick-lists bilan bir xil 72mm chek);
+  // yacheyka mahsulotdan JONLI hal qilinadi — saqlash shart emas.
+  const [spiska, setSpiska] = useState<ReceiptData | null>(null);
+  const openSpiska = useCallback(async () => {
+    const rows = positions.filter((p) => p.assortmentId && Number(p.quantity) > 0);
+    const ids = [...new Set(rows.map((r) => r.assortmentId as string))];
+    const res = ids.length
+      ? await api
+          .get<{ cells: Record<string, string | null> }>(
+            `/pick-lists/cells-by-products?productIds=${ids.join(',')}`,
+          )
+          .catch(() => ({ cells: {} as Record<string, string | null> }))
+      : { cells: {} as Record<string, string | null> };
+    setSpiska({
+      title: tSpiska('receipt_title'),
+      number: docNumber || '—',
+      dateStr: receiptDate(new Date()),
+      agentName: agentLabel || null,
+      agentPhone: null,
+      ownerName: user?.name ?? null,
+      description: description || null,
+      positions: rows.map((r) => ({
+        name: r.productLabel,
+        qty: r.quantity,
+        uom: r.productUom ?? null,
+        cell: res.cells[r.assortmentId as string] ?? null,
+      })),
+    });
+  }, [positions, docNumber, agentLabel, description, user?.name, tSpiska]);
   // «Связанные документы» tab — staged links / tasks / files (moysklad's create
   // form works fully in place; everything persists in flush() right after save).
   const staging = useNewDocStaging({ entityType: 'CustomerOrder', route: 'customer-orders' });
@@ -1714,6 +1750,12 @@ export default function NewCustomerOrderPage() {
               createMut.mutate();
             },
           },
+          {
+            // «Лист сборки» — joriy formadagi pozitsiyalarning yacheykali yig'ish
+            // varag'i (climart 2026-07-28); saqlash shart emas.
+            label: tSpiska('spiska_form'),
+            onClick: () => void openSpiska(),
+          },
           { divider: true, label: '' },
           {
             label: tPrint('configure'),
@@ -2000,6 +2042,7 @@ export default function NewCustomerOrderPage() {
           router.push('/products/new');
         }}
       />
+      {spiska && <ReceiptPrintPortal data={spiska} onClose={() => setSpiska(null)} />}
     </>
   );
 }

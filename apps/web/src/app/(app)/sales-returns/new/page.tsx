@@ -33,6 +33,11 @@ import { PositionAgreementButton } from '@/components/documents/position-agreeme
 import { PositionColumnCustomizer } from '@/components/documents/position-column-customizer';
 import { PositionDiscountMenu } from '@/components/documents/position-discount-menu';
 import { useNewDocStaging } from '@/components/documents/use-new-doc-staging';
+import {
+  type ReceiptData,
+  ReceiptPrintPortal,
+  receiptDate,
+} from '@/components/pick-list/receipt-print-portal';
 import { usePrintTemplatesManager } from '@/components/print/print-templates-provider';
 import { type KitPrintForm, KitPrintModal } from '@/components/purchase-orders/kit-print-modal';
 import { SendEmailDialog } from '@/components/send-email-dialog';
@@ -149,6 +154,7 @@ export default function NewSalesReturnPage() {
   const tFields = useTranslations('fields');
   const tForm = useTranslations('form');
   const tPrint = useTranslations('print_menu');
+  const tSpiska = useTranslations('pages.pickLists');
   const tBulk = useTranslations('bulk_actions');
   const tCreate = useTranslations('create_related');
   const { openTemplates } = usePrintTemplatesManager();
@@ -1452,6 +1458,36 @@ export default function NewSalesReturnPage() {
   // «Комплект…» + «Настроить…». A custom form saves the return first, then opens
   // that form's PDF in a NEW TAB (same handler as the pinned toolbar buttons);
   // the built-in form + «Комплект…» keep their save-then-download flow.
+  // «Печать → Лист сборки» (climart port 2026-07-28): qaytarilgan tovarni
+  // omborga JOYLASH varag'i — yacheyka mahsulotdan jonli hal qilinadi (qatorning
+  // o'z tanlangan yacheykasi ustun); sarlavha «qaytarish» ekanini ko'rsatadi.
+  const [spiska, setSpiska] = useState<ReceiptData | null>(null);
+  const openSpiska = useCallback(async () => {
+    const rows = positions.filter((p) => p.assortmentId && Number(p.quantity) > 0);
+    const ids = [...new Set(rows.map((r) => r.assortmentId as string))];
+    const res = ids.length
+      ? await api
+          .get<{ cells: Record<string, string | null> }>(
+            `/pick-lists/cells-by-products?productIds=${ids.join(',')}`,
+          )
+          .catch(() => ({ cells: {} as Record<string, string | null> }))
+      : { cells: {} as Record<string, string | null> };
+    setSpiska({
+      title: tSpiska('receipt_title_return'),
+      number: docNumber || '—',
+      dateStr: receiptDate(new Date()),
+      agentName: agentLabel || null,
+      agentPhone: null,
+      ownerName: user?.name ?? null,
+      description: description || null,
+      positions: rows.map((r) => ({
+        name: r.productLabel,
+        qty: r.quantity,
+        uom: r.productUom ?? null,
+        cell: r.cell || (res.cells[r.assortmentId as string] ?? null),
+      })),
+    });
+  }, [positions, docNumber, agentLabel, description, user?.name, tSpiska]);
   const printMenu = [
     ...(printForms ?? []).map((f) => ({
       label: f.name,
@@ -1462,6 +1498,11 @@ export default function NewSalesReturnPage() {
       label: tDetailTitles('sales_return'),
       onClick: () => saveThenPrint(),
       testId: 'sr-new-print-standard',
+    },
+    {
+      label: tSpiska('spiska_form'),
+      onClick: () => void openSpiska(),
+      testId: 'sr-new-print-spiska',
     },
     { label: tPrint('set'), onClick: () => setKitPrintOpen(true), testId: 'sr-new-print-kit' },
     { divider: true },
@@ -1727,6 +1768,7 @@ export default function NewSalesReturnPage() {
           initialAttachments={emailAttachments}
         />
       )}
+      {spiska && <ReceiptPrintPortal data={spiska} onClose={() => setSpiska(null)} />}
     </>
   );
 }

@@ -1517,6 +1517,7 @@
   "pages": {
     "pickLists": {
       "title": "Листы сборки",
+      "spiska_form": "Лист сборки",
       "search_placeholder": "Номер, контрагент или продавец",
       "empty_title": "Нет листов сборки",
       "col_number": "Номер",
