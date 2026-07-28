@@ -172,7 +172,8 @@ export class StoreController {
     @Param('cellId') cellId: string,
     @Body() body: unknown,
   ) {
-    return this.addr.setCellStock(user.accountId, id, cellId, body);
+    // user.sub → «Umumiy sanash» true-up posts the auto Enter/Loss as this user.
+    return this.addr.setCellStock(user.accountId, id, cellId, body, user.sub);
   }
 
   /** «Товары в ячейке» — products whose home cell (__yacheyka) is this cell. */

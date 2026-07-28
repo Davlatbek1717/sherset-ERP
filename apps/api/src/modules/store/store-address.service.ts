@@ -2,6 +2,8 @@ import { Prisma } from '@moysklad/db';
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import type { z } from 'zod';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { EnterService } from '../enter/enter.service.js';
+import { LossService } from '../loss/loss.service.js';
 import {
   AssignProductsSchema,
   CellBarcodeLookupSchema,
@@ -28,7 +30,13 @@ import {
  */
 @Injectable()
 export class StoreAddressService {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    // «Umumiy sanash» true-up: the counted cell qty posts an auto Enter/Loss so
+    // document-derived product stock follows (climart 2026-07-26 feature port).
+    @Inject(EnterService) private readonly enters: EnterService,
+    @Inject(LossService) private readonly losses: LossService,
+  ) {}
 
   // -------------------------------------------------------------------
   // Guards
@@ -349,39 +357,94 @@ export class StoreAddressService {
    * delete it (qty = 0). Owner-custom addressing feature: per-cell counts are
    * hand-counted bin contents; store-level totals stay document-derived.
    */
-  async setCellStock(accountId: string, storeId: string, cellId: string, raw: unknown) {
+  async setCellStock(
+    accountId: string,
+    storeId: string,
+    cellId: string,
+    raw: unknown,
+    userId?: string,
+  ) {
     await this.assertStore(accountId, storeId);
     const cell = await this.prisma.client.storeCell.findFirst({
       where: { id: cellId, storeId, accountId },
-      select: { id: true },
+      select: { id: true, name: true },
     });
     if (!cell) throw new NotFoundException();
     const { assortmentId, qty } = this.parse(SetCellStockSchema, raw);
     const product = await this.prisma.client.product.findFirst({
       where: { id: assortmentId, accountId, deletedAt: null },
-      select: { id: true },
+      select: { id: true, buyPrice: true },
     });
     if (!product) throw new NotFoundException();
+
+    // Owner 2026-07-26 («Umumiy sanash» spec, band 2): the counted amount must
+    // BECOME the product's real remainder that sales/returns see. The count is
+    // therefore a true-up: the cell-level delta posts an auto Оприходование
+    // (delta>0) or Списание (delta<0) so the document-derived stock follows.
+    const before = await this.prisma.client.stockByCell.findFirst({
+      where: { accountId, storeId, cellId, assortmentKind: 'product', assortmentId },
+      select: { qty: true },
+    });
+    const oldQty = Number(before?.qty ?? 0);
+
     if (Number(qty) === 0) {
       await this.prisma.client.stockByCell.deleteMany({
         where: { accountId, storeId, cellId, assortmentKind: 'product', assortmentId },
       });
-      return { cellId, assortmentId, qty: '0' };
-    }
-    const row = await this.prisma.client.stockByCell.upsert({
-      where: {
-        accountId_storeId_cellId_assortmentKind_assortmentId: {
-          accountId,
-          storeId,
-          cellId,
-          assortmentKind: 'product',
-          assortmentId,
+    } else {
+      await this.prisma.client.stockByCell.upsert({
+        where: {
+          accountId_storeId_cellId_assortmentKind_assortmentId: {
+            accountId,
+            storeId,
+            cellId,
+            assortmentKind: 'product',
+            assortmentId,
+          },
         },
-      },
-      create: { accountId, storeId, cellId, assortmentKind: 'product', assortmentId, qty },
-      update: { qty },
-    });
-    return { cellId, assortmentId, qty: row.qty.toString() };
+        create: { accountId, storeId, cellId, assortmentKind: 'product', assortmentId, qty },
+        update: { qty },
+      });
+    }
+
+    const delta = Number(qty) - oldQty;
+    let stockDoc: { type: 'enter' | 'loss'; name: string } | null = null;
+    if (delta !== 0 && userId) {
+      const org = await this.prisma.client.organization.findFirst({
+        where: { accountId },
+        orderBy: { createdAt: 'asc' },
+        select: { id: true },
+      });
+      if (org) {
+        const note = `Sanash (yacheyka ${cell.name}) — avto-tenglash`;
+        if (delta > 0) {
+          const doc = (await this.enters.create(accountId, userId, {
+            organizationId: org.id,
+            storeId,
+            applicable: true,
+            description: note,
+            positions: [
+              {
+                assortmentId,
+                quantity: String(delta),
+                costMinor: product.buyPrice?.toString() ?? '0',
+              },
+            ],
+          })) as { name?: string };
+          stockDoc = { type: 'enter', name: doc?.name ?? '' };
+        } else {
+          const doc = (await this.losses.create(accountId, userId, {
+            organizationId: org.id,
+            storeId,
+            applicable: true,
+            description: note,
+            positions: [{ assortmentId, quantity: String(-delta) }],
+          })) as { name?: string };
+          stockDoc = { type: 'loss', name: doc?.name ?? '' };
+        }
+      }
+    }
+    return { cellId, assortmentId, qty: String(qty), stockDoc };
   }
 
   /** Assign products to this cell — set each product's __yacheyka/__polka. */
