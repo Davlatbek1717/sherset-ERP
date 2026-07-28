@@ -4,6 +4,29 @@
 
 ---
 
+> ## ⚠️ BU HUJJAT `main` BRANCH'INI TASVIRLAYDI (banner qo'shildi 2026-07-28, MASTER-TODO #32)
+>
+> Siz `climart-adoption` branch'idasiz. Adoption climart forkining FE'sini ustiga qo'ygan —
+> NEXT.md 2026-07-23l o'zi yozadi: «**HAR Продажи FE fayli farq qiladi**» (demands 1775>1445,
+> sales-returns/new 1732>1151). Shuning uchun quyidagi jadvaldagi **Phase-1 «63/67 audit
+> qilingan» va Phase-2 «7 cohort»** raqamlari **shu branch'dagi sahifalarga tegishli EMAS** —
+> ular boshqa implementatsiyalarni tasvirlaydi. Ularni **yuqori chegara** deb o'qing.
+>
+> **Bu branch uchun jonli, o'lchangan holat — `docs/MASTER-TODO-100.md`** (157 band, har birida
+> dalil ustuni). 2026-07-28 o'lchovi:
+>
+> | Qatlam | `main` (quyida) | `climart-adoption` (real) |
+> |---|---|---|
+> | Phase-1 struktura | «~tugadi» 63/67 | **~70%** — climart sahifalari qayta audit qilinmagan (#36/#37) |
+> | Phase-2 runtime QA | 7 cohort ✅ | **~15%** — bu branch'da amalda 0 (Blok 2) |
+> | Vizual pixel-1:1 | 1 sahifa ~90% | **~5%** — capture korpusi BO'SH, bloklangan (#35) |
+> | Hisobotlar | — | **17 / 200+** (#151) |
+> | Gate | — | api Vitest **4101/4101 ✅** · web 26 fail (2 hujjatlangan band) |
+>
+> **Umumiy: ~57%.** Quyidagi tarix VERBATIM saqlanadi — u `main`'ning haqiqiy yo'li.
+
+---
+
 ## 🎯 MAQSAD (o'zgarmas)
 
 **Butun ilovani moysklad.uz bilan 1ga-1 (sertifikatlangan parity) qilish** — nafaqat

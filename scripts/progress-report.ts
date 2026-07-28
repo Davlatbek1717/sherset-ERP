@@ -418,8 +418,50 @@ const TOTAL_DETAIL_PAGES_TARGET = detailPages;
 const listToolbarComponentsBuilt =
   dedicatedDirs.length + sharedAssortmentReuse + inlineDropdownPages;
 
+/**
+ * Branch caveat (MASTER-TODO #33).
+ *
+ * Every audit percentage below is COMPUTED from proof-doc existence under
+ * `docs/audits/`. Those docs were written against `main`'s pages. The
+ * climart adoption overlaid most of the FE with a different implementation
+ * («HAR Продажи FE fayli farq qiladi» — NEXT.md 2026-07-23l), so on this
+ * branch the same percentages describe pages that, in several cases, no longer
+ * exist in the audited form. Reading `phase2: 100%` here as "this branch is
+ * QA'd" is exactly the drift the honesty gate exists to prevent.
+ *
+ * Both signals are FACTS, not opinions: the branch name, and whether the
+ * capture corpus the label-grounding audits depend on is present at all.
+ */
+const branchName = (() => {
+  try {
+    // In a git WORKTREE (this checkout is one) `.git` is a FILE containing
+    // `gitdir: <path>`, not a directory — reading `.git/HEAD` blindly yields
+    // 'unknown' and the caveat then names the wrong branch.
+    const dotGit = join(ROOT, '.git');
+    let gitDir = dotGit;
+    if (statSync(dotGit).isFile()) {
+      const pointer = readFileSync(dotGit, 'utf8').trim();
+      gitDir = pointer.replace(/^gitdir:\s*/, '');
+    }
+    const head = readFileSync(join(gitDir, 'HEAD'), 'utf8').trim();
+    return head.startsWith('ref:') ? (head.split('/').pop() ?? 'unknown') : 'detached';
+  } catch {
+    return 'unknown';
+  }
+})();
+const auditsInheritedFromMain = branchName !== 'main';
+
 const payload = {
   generatedAt: new Date().toISOString(),
+  branch: branchName,
+  /** Null on `main`; on any other branch, a loud caveat over every audit pct. */
+  audit_pct_caveat: auditsInheritedFromMain
+    ? `Branch '${branchName}' != main. detail_pages.audited_pct, list_audits and phase2.pct are COMPUTED from docs/audits/* proof docs written against MAIN's pages. The climart adoption replaced most FE implementations, so these percentages are INHERITED, not re-verified here. Treat them as an upper bound. Re-audit = MASTER-TODO #36/#37.${
+        capturedModules.length === 0
+          ? ' Also: docs/moysklad-reference is EMPTY (0 captured modules) — every capture-grounded audit is unreproducible until it is restored (MASTER-TODO #35).'
+          : ''
+      }`
+    : null,
   list_pages: {
     total_target: TOTAL_LIST_PAGES_TARGET,
     actual_routes_in_app: allListPages.length,

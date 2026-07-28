@@ -305,6 +305,61 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-07-28a (SCOPE REESTRI + BLOK-0 QARZINI YOPISH — 12 commit · `a430879`…`2379a58`)**
+> Foydalanuvchi «hamma qilinishi kerak bo'lgan narsalarni ro'yxatla, keyin bir-bir bajar» dedi.
+>
+> **📋 YANGI: `docs/MASTER-TODO-100.md` — loyihaning YAGONA scope reestri (157 band, 12 blok).**
+> Uch «completeness» tekshiruvidan o'tgan (116 → 136 → 150 → 157); har qo'shimcha nega kelgani
+> revizion tarixda. Har bandda **DALIL ustuni** (test nomi / fayl:qator / o'lchov) — keyingi sessiya
+> bandni o'qib darhol ishga kirisha oladi. **Har sessiya shundan keyingi ochiq bandni oladi.**
+>
+> **🔴 SESSIYA BOSHIDAGI HOLAT (o'lchangan, taxmin emas):** api Vitest **62 fail** · web **71 fail** ·
+> `pnpm audit` **78 zaiflik (3 critical)** · biome 601 error. Ya'ni **regressiya-himoya qatlami o'chgan edi**.
+>
+> **✅ YAKUNIY: api Vitest 4101/4101 (0 fail) · web 71 → 26 fail · zaiflik 78 → 30 · typecheck 9/9.**
+> Qolgan 26 ning **hammasi** ikki hujjatlangan bandda — «noma'lum qizil» qolmadi.
+>
+> **ASOSIY TOPILMA — «qizil test ≠ buzuq kod».** 13 tekshirilgan failure'dan **11 tasi eskirgan guard**
+> edi: ular «Sherset snapshot» importi bilan **boshqa checkout'dan** kelgan va bu repodagi kodni emas,
+> o'sha repodagi kodni tasvirlaydi. Ularni ko'r-ko'rona yashil qilmadim — har birida (1) haqiqatni
+> tekshirdim (`git log -S`, manba, BE marshrutlari, capture DOM-roli), (2) guardni **KUCHAYTIRIB**
+> qayta yozdim (literal→invariant · curated→derived · fayl→kompozitsiya · identifikator→shakl),
+> (3) **mutatsiya bilan** tasdiqladim. Ikkitasi esa **tuzatilgan bug'ni qaytarishni** talab qilardi
+> (`InlineFilterPanel` «Найти» disabled; invoice detail'ga moysklad ko'rsatmaydigan maydon).
+>
+> **Yo'l-yo'lakay topilgan HAQIQIY buglar:** 🔴 o'lik «Sklad» maydoni **xodim saqlashni buzardi**
+> (GPS jadval jimgina yo'qolardi + dublikat xavfi) · `seedSystemRoles` `overrides`ni e'tiborsiz
+> qoldirardi (Qarz rollari noto'g'ri seed) · HR guard testi async imzoga moslanmagani uchun **HR RBAC
+> umuman tekshirilmay turgan edi** · CSV eksportda USD faktura «сум» bo'lib chiqardi · `?dayOffset=1e15`
+> → 500 · «Прибыль» qatori ulanmagan · `pay_account` RU'da yo'q (xom kalit ko'rinardi).
+>
+> **🔒 TIZIMLI TUZATISH (#29):** pre-push faqat typecheck yugurtirardi — shuning uchun 133 qizil test
+> sezilmay to'plangan. Endi **`scripts/check-guards.mjs`**: manba-skan guard'lari (~18s, ~370 assertion),
+> faqat **yashil bo'lgan** guard yiqilsa bloklaydi; ma'lum-qizillar `scripts/guard-baseline.json` da
+> **sabab + TODO ref** bilan (mute emas — ro'yxat faqat qisqara oladi). Mutatsiya-testi drift-lock'da
+> **teshik ochdi** (inline tone-map uchala naqshdan o'tib ketardi) → `BAN_INLINE_MAP` qo'shildi.
+>
+> **⛔ SIZDAN KUTILMOQDA (busiz bloklangan):** `docs/moysklad-reference/visual-captures` **BO'SH**
+> (0 fayl). Shuning uchun `label-grounding` 25 test qizil (baseline'da), §4 label-grounding intizomi
+> ishlamaydi va **butun Blok 6 (vizual pixel-1:1)** boshlanolmaydi. Kerak: **moysklad.uz login** →
+> capture korpusini qayta olish (MASTER-TODO **#35**). Yana 4 qaror: #118 (6 bo'lim drop qaytariladimi),
+> #134 (SaaS'mi/single-tenant), #16 (kontragent «Показатели» inline forma vs navigatsiya), #F (pixel-1:1
+> majburiymi — bu Blok 6 ni 60-75 → 15-20 sessiyaga tushiradi).
+>
+> **➡️ KEYINGI:** MASTER-TODO tartibi bo'yicha — `#12` (raw-element, 25 fayl) · `#31-34` qolgani ·
+> keyin **Blok 1** (adoption'ni haqiqatda tugatish: #35 capture → #36 6 audit qilinmagan detail →
+> #37 climart sahifalari uchun Phase-1 qayta).
+>
+> **🤝 Parallel sessiya (§6):** ayni paytda **haydovchi jonli-tracking** qurildi (`9c1c3e3` TZ,
+> `f0dd781` Faza 0-3). Ularning fayllariga tegmadim; diff'im path-cheklangan. Ular commit qilgach
+> `hr/drivers/live` dagi lokal `STATUS_TONE` drift-lock'ni buzdi — **commit qilingan kod umumiy**
+> bo'lgani uchun uni `DRIVER_STATUS_TONE`ga birlashtirdim. Ular ham men bilan to'qnashmaslik uchun
+> lokal i18n obyekti ishlatgan (izohlarida yozilgan) — muvofiqlik ishladi.
+>
+> **⚠️ Phase-1, browser-smoke YO'Q.** Hech bir o'zgarish real brauzerda ko'rilmagan (`pnpm dev`
+> ko'tarilmadi). «Прибыль» qatori, expense-item pickerlari, tiklangan SMS/qarz sahifalari —
+> hammasi Phase-2 QA kutmoqda.
+
 > **🕒 2026-07-24 (YANGI TRACK — HR bo'limini TimePay/HRD davomat-SaaS'iga 1:1 kengaytirish · foydalanuvchi topshirig'i)**
 > Foydalanuvchi 3 demo-video berdi (`timepay1/2/3.mp4`, brend aslida **HRD** `web.hrd.uz`) — HR bo'limi shu videolardagi
 > bo'lim/funksiyalar bilan bo'lishi kerak, LEKIN **moysklad dizayn tizimida** (foydalanuvchi qarori: «moysklad uslubida

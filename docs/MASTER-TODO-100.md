@@ -147,10 +147,10 @@ parallel Blok 3/4 va Blok 6 → Blok 7/8/9/10.
 
 | # | ☐ | Ish | Dalil | Bajarildi |
 |---|---|---|---|---|
-| 31 | [ ] | `NEXT.md` **36 commit orqada** | Oxirgi yangilanish 2026-07-24 (`b47bfd9`). Yozilmagan: akt-sverka Excel (7 commit) · приёмка ustunlari (4) · yacheyka/oversell · debt-notify opt-in · supply→balans+Telegram | |
-| 32 | [ ] | `docs/PARITY-STATUS.md` 2026-06-15, `main` haqida | Bu branch uchun qayta yozish | |
-| 33 | [ ] | `docs/progress.json` bu branch realiyasini aks ettirmaydi | `captured_modules: 0` · `phase2: 7/7` (main tarixi) · `detail_pages.audited: 63` (main audit'lari) | |
-| 34 | [ ] | `qabullar-amallar-royxati.txt` 162–166 «QO'SHILYAPTI» — aslida commit qilingan | `f82ca64` · `f062006` · `87df197` | |
+| 31 | [x] | ✅ **NEXT.md hand-off yozildi** | `2026-07-28a` entry (sana-harf kolliziyasi tekshirildi — 07-28 band emas edi). Sessiya boshidagi **o'lchangan** holat, yakuniy holat, «qizil test ≠ buzuq kod» asosiy topilmasi, yo'l-yo'lakay topilgan 7 real bug, #29 tizimli tuzatish, ⛔ sizdan kutilayotgan 5 qaror, va §6 bo'yicha parallel sessiya ishi (haydovchi-tracking) qayd etildi. Keyingi sessiya endi arzon boshlanadi | 2026-07-28 |
+| 32 | [x] | ✅ **PARITY-STATUS.md ga branch-banner** | Hujjat `main`ni tasvirlaydi (2026-06-15). Tarixni **o'chirmadim** — u `main`ning haqiqiy yo'li; o'rniga yuqoriga banner: adoption FE'ni ustiga qo'ygan («HAR Продажи FE fayli farq qiladi» — NEXT.md 2026-07-23l), shuning uchun «63/67 audit» va «7 cohort» **shu branch'ga tegishli emas**, ularni **yuqori chegara** deb o'qish kerak + `main` ↔ `climart-adoption` yonma-yon jadval (o'lchangan) | 2026-07-28 |
+| 33 | [x] | ✅ **`progress.json` endi branch-caveat chiqaradi (hisoblanadigan, qo'lda emas)** | Muammo: `phase2: 100%` audit-hujjat mavjudligidan hisoblanadi, hujjatlar esa **main sahifalarini** tasvirlaydi → bu branch'da chalg'ituvchi. Raqamni qo'lda o'zgartirmadim (fayl «qo'lda inflyatsiya yo'q» deb ogohlantiradi) — generatorga **ikki FAKT signali** qo'shildi: branch nomi va capture korpusi bo'sh-yo'qligi. `branch != main` bo'lsa `audit_pct_caveat` chiqadi. **Worktree gotcha:** bu checkout worktree, `.git` — papka emas, **fayl** (`gitdir:` ko'rsatkichi); ko'r-ko'rona `.git/HEAD` o'qish `unknown` berardi → ikkala holat qo'llab-quvvatlandi (tasdiqlandi: `branch: climart-adoption`) | 2026-07-28 |
+| 34 | [x] | ✅ **Mavzu qolmadi — siz allaqachon yangilagansiz** | Tekshirdim: `qabullar-amallar-royxati.txt` da `QO'SHILYAPTI`/`HOZIR YO'Q` belgilari **yo'q**, fayl endi «RETURN (hisobot formati)» bo'limi bilan tugaydi. Bundan tashqari fayl **untracked** — sizning ishchi hujjatingiz, shuning uchun unga tegilmadi | 2026-07-28 |
 
 **Blok 0 hajmi: ~8–10 sessiya**
 
