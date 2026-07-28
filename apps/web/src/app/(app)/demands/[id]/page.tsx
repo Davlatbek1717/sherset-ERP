@@ -1075,6 +1075,21 @@ export default function DemandDetailPage() {
   // «Не оплачено» pill.
   const savedSumBig = BigInt(data.sumMinor || '0');
   const paidBig = BigInt(data.payedSumMinor || '0');
+
+  // «Прибыль» (MASTER-TODO #6) — moysklad shows gross profit on a shipment.
+  // `DocumentTotalsPanel` has carried an optional `profitMinor` prop all along
+  // and the API already returns `costSumMinor`; the page simply never wired the
+  // two, so the row never rendered.
+  //
+  // Gated on cost>0 ON PURPOSE: `costSumMinor` is only populated at POST time
+  // (FIFO / weighted-average consumption). A draft has 0, and `sum - 0` would
+  // present the FULL REVENUE as profit — the exact mis-read this gate prevents.
+  //
+  // Paired with the SAVED sum, not the live editor total: cost is a persisted,
+  // posted-time value, so mixing it with unsaved position edits would show a
+  // profit that belongs to neither state.
+  const costSumBig = BigInt(data.costSumMinor || '0');
+  const profitMinor = costSumBig > 0n ? (savedSumBig - costSumBig).toString() : undefined;
   const fullyPaid = savedSumBig > 0n && paidBig >= savedSumBig;
   const partiallyPaid = paidBig > 0n && paidBig < savedSumBig;
   const paymentTone = fullyPaid ? 'paid' : partiallyPaid ? 'partial' : 'unpaid';
@@ -1801,6 +1816,7 @@ export default function DemandDetailPage() {
                     editable ? (v) => setForm((s) => s && { ...s, vatIncluded: v }) : undefined
                   }
                   quantity={totalQty}
+                  profitMinor={profitMinor}
                 />
               </div>
 
