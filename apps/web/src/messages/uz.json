@@ -1549,7 +1549,14 @@
       "receipt_col_qty": "Soni",
       "receipt_uom_default": "dona",
       "receipt_footer": "Tovarni oldim, e'tirozim yo'q",
-      "receipt_items_short": "Jami pozitsiya: {n}"
+      "receipt_items_short": "Jami pozitsiya: {n}",
+      "receipt_title_customer": "Tovar cheki",
+      "receipt_col_price": "Цена",
+      "receipt_col_sum": "Сумма",
+      "receipt_sum_total": "Chek summasi",
+      "receipt_discount": "Скидка",
+      "receipt_itogo": "Jami",
+      "receipt_items_sum": "Jami {n} nom, summa {sum}"
     },
     "specialoffers": {
       "title": "Maxsus takliflar",

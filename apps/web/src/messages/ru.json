@@ -1549,7 +1549,14 @@
       "receipt_col_qty": "Кол-во",
       "receipt_uom_default": "шт",
       "receipt_footer": "Товар получил, претензий не имею",
-      "receipt_items_short": "Всего позиций: {n}"
+      "receipt_items_short": "Всего позиций: {n}",
+      "receipt_title_customer": "Товарный чек",
+      "receipt_col_price": "Цена",
+      "receipt_col_sum": "Сумма",
+      "receipt_sum_total": "Сумма чека",
+      "receipt_discount": "Скидка",
+      "receipt_itogo": "Итого",
+      "receipt_items_sum": "Всего наименований {n} на сумму {sum}"
     },
     "specialoffers": {
       "title": "Спецпредложения",

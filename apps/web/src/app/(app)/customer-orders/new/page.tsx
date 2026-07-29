@@ -17,6 +17,10 @@ import { PositionPriceMenu } from '@/components/documents/position-price-menu';
 import { PositionReserveMenu } from '@/components/documents/position-reserve-menu';
 import { useNewDocStaging } from '@/components/documents/use-new-doc-staging';
 import {
+  type CustomerReceiptData,
+  CustomerReceiptPortal,
+} from '@/components/pick-list/customer-receipt-portal';
+import {
   type ReceiptData,
   ReceiptPrintPortal,
   receiptDate,
@@ -627,6 +631,28 @@ export default function NewCustomerOrderPage() {
       })),
     });
   }, [positions, docNumber, agentLabel, description, user?.name, tSpiska]);
+  // «Печать → Товарный чек» (climart port 2026-07-29): mijoz cheki — narx, per-satr
+  // summa (hujjatning o'z computeLineTotal.gross'i bilan), jami, so'z bilan.
+  const [creceipt, setCreceipt] = useState<CustomerReceiptData | null>(null);
+  const openCustomerReceipt = useCallback(() => {
+    const rows = positions.filter((p) => p.assortmentId && Number(p.quantity) > 0);
+    setCreceipt({
+      number: docNumber || '—',
+      dateStr: receiptDate(new Date()),
+      orgName: organizationLabel || null,
+      sellerName: user?.name ?? null,
+      buyerName: agentLabel || null,
+      phone: null,
+      comment: description || null,
+      positions: rows.map((r) => ({
+        name: r.productLabel,
+        uom: r.productUom ?? null,
+        qty: r.quantity,
+        priceMinor: r.priceMinor || '0',
+        sumMinor: computeLineTotal(r, vatIncluded).gross.toString(),
+      })),
+    });
+  }, [positions, docNumber, organizationLabel, agentLabel, description, user?.name, vatIncluded]);
   // «Связанные документы» tab — staged links / tasks / files (moysklad's create
   // form works fully in place; everything persists in flush() right after save).
   const staging = useNewDocStaging({ entityType: 'CustomerOrder', route: 'customer-orders' });
@@ -1756,6 +1782,11 @@ export default function NewCustomerOrderPage() {
             label: tSpiska('spiska_form'),
             onClick: () => void openSpiska(),
           },
+          {
+            // «Товарный чек» — mijoz cheki (narx/summa/jami/so'z bilan; climart 2026-07-29).
+            label: tSpiska('receipt_title_customer'),
+            onClick: () => openCustomerReceipt(),
+          },
           { divider: true, label: '' },
           {
             label: tPrint('configure'),
@@ -2043,6 +2074,7 @@ export default function NewCustomerOrderPage() {
         }}
       />
       {spiska && <ReceiptPrintPortal data={spiska} onClose={() => setSpiska(null)} />}
+      {creceipt && <CustomerReceiptPortal data={creceipt} onClose={() => setCreceipt(null)} />}
     </>
   );
 }
