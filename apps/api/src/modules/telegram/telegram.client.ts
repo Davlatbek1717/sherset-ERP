@@ -50,6 +50,17 @@ async function call<T>(
   return json.result as T;
 }
 
+/** Inline button — a callback button (`callback_data`) or a URL button. */
+export interface TelegramInlineButton {
+  text: string;
+  callback_data?: string;
+  url?: string;
+}
+/** reply_markup: inline keyboard (rows of buttons) or a force-reply prompt. */
+export type TelegramReplyMarkup =
+  | { inline_keyboard: TelegramInlineButton[][] }
+  | { force_reply: true; input_field_placeholder?: string };
+
 export interface TelegramSendMessageArgs {
   chatId: string;
   text: string;
@@ -58,6 +69,8 @@ export interface TelegramSendMessageArgs {
   disableWebPagePreview?: boolean;
   /** Telegram Business: send ON BEHALF OF the connected Premium account. */
   businessConnectionId?: string;
+  /** Inline keyboard / force-reply — e.g. supply-approval confirm/reject buttons. */
+  replyMarkup?: TelegramReplyMarkup;
 }
 
 export interface TelegramSendMessageResult {
@@ -77,7 +90,46 @@ export async function tgSendMessage(
     parse_mode: args.parseMode,
     disable_web_page_preview: args.disableWebPagePreview ?? true,
     ...(args.businessConnectionId ? { business_connection_id: args.businessConnectionId } : {}),
+    ...(args.replyMarkup ? { reply_markup: args.replyMarkup } : {}),
   });
+}
+
+/** Acknowledge a callback_query (button tap) — stops the client's spinner. */
+export async function tgAnswerCallbackQuery(
+  token: string,
+  args: { callbackQueryId: string; text?: string; showAlert?: boolean },
+): Promise<true> {
+  await call(token, 'answerCallbackQuery', {
+    callback_query_id: args.callbackQueryId,
+    ...(args.text ? { text: args.text } : {}),
+    ...(args.showAlert ? { show_alert: true } : {}),
+  });
+  return true;
+}
+
+export interface TelegramEditMessageArgs {
+  chatId: string;
+  messageId: number;
+  text: string;
+  parseMode?: 'HTML' | 'MarkdownV2';
+  replyMarkup?: TelegramReplyMarkup;
+  businessConnectionId?: string;
+}
+
+/** Edit a message's text (+ optional new keyboard) — used for the two-step confirm. */
+export async function tgEditMessageText(
+  token: string,
+  args: TelegramEditMessageArgs,
+): Promise<true> {
+  await call(token, 'editMessageText', {
+    chat_id: args.chatId,
+    message_id: args.messageId,
+    text: args.text,
+    parse_mode: args.parseMode,
+    ...(args.replyMarkup ? { reply_markup: args.replyMarkup } : {}),
+    ...(args.businessConnectionId ? { business_connection_id: args.businessConnectionId } : {}),
+  });
+  return true;
 }
 
 export interface TelegramBotInfo {
