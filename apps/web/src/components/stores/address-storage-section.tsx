@@ -1371,10 +1371,14 @@ export function AddressStorageSection({
                               e.stopPropagation();
                               setLabelCell({ id: c.id, name: c.name, barcode: c.barcode });
                             }}
-                            className="invisible text-[var(--ms-text-muted)] hover:text-[var(--ms-text-primary)] group-hover:visible"
+                            // Owner 2026-07-28: was `invisible group-hover:visible` —
+                            // hover doesn't fire on touch, so the print button never
+                            // showed on a phone (the warehouse's main device). Always
+                            // visible + 44px tap target on mobile, like the ＋ button.
+                            className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-[var(--ms-radius-sm)] border border-[var(--ms-border-strong)] text-[var(--ms-text-link)] transition-colors hover:border-[var(--ms-border-focus)] hover:bg-[var(--ms-text-brand)] hover:text-white max-md:h-[44px] max-md:w-[44px]"
                             data-test-id={`cell-print-${c.id}`}
                           >
-                            <Icons.print className="h-3.5 w-3.5" />
+                            <Icons.print className="h-4 w-4 max-md:h-5 max-md:w-5" />
                           </button>
                         )}
                         <RowDelete

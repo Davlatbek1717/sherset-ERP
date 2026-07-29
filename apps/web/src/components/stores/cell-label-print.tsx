@@ -372,12 +372,15 @@ export function CellLabelPrintOverlay({
       `}</style>
 
       <div className="no-print sticky top-0 z-10 border-[var(--ms-border-default)] border-b bg-white px-6 py-3 shadow-sm">
-        <div className="mx-auto flex max-w-5xl items-center justify-between gap-4">
+        <div className="mx-auto flex max-w-5xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
           <div className="min-w-0">
             <div className="truncate font-medium text-slate-800">{t('title')}</div>
             <div className="text-slate-500 text-xs">{t('subtitle', { labels: flat.length })}</div>
           </div>
-          <div className="flex items-start gap-2">
+          {/* Owner 2026-07-28: was a single non-wrapping row → on a phone the
+              260px picker + copies + Print/Close overflowed OUT of the header bar
+              (print button unreachable). Now stacks on mobile + wraps. */}
+          <div className="flex flex-wrap items-start gap-2">
             {/* User 2026-07-05: capped chip box that auto-scrolls to the newest
                 ticked cell + a dedicated search input beneath it. */}
             <CellMultiSelect
