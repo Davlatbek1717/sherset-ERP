@@ -30,6 +30,19 @@ export interface StockDelta {
    * zero per-cell write, byte-identical to the pre-cell behaviour.
    */
   cellId?: string | null;
+  /**
+   * Yacheyka-inferensiya rejimi (2026-07-29 drift-fix).
+   *   undefined/'auto' — no-cell delta uchun IMPLICIT joylash: KIRIMda tovarning
+   *     uy-yacheykasiga (resolveHomeCells), CHIQIMda band yacheykalardan avtomat-
+   *     yechish (real sotuv/qabul — tovar jismonan yacheykadan chiqadi/kiradi).
+   *   'store-only' — FAQAT store-darajasidagi Stock siljiydi; HECH QANDAY
+   *     StockByCell ga tegilmaydi. Chaqiruvchi per-cell balansni O'ZI boshqaradigan
+   *     holatlar uchun: `place` (yacheykasiz «остаток» dan chiqim) va `setCellStock`
+   *     (count true-up — cellId'li hujjat orqali yoziladi). Bularsiz avtomat-
+   *     inferensiya IKKI-YOZUVGA olib kelardi ⇒ Σ StockByCell store jamidan
+   *     oshib/kamayib ketardi (fantom «Занята» / noto'g'ri «С этим товаром»).
+   */
+  cellMode?: 'auto' | 'store-only';
 }
 
 export interface StockBalance {
@@ -273,6 +286,10 @@ export class StockService {
     const homeCells = await this.resolveHomeCells(tx, accountId, deltas);
 
     for (const d of deltas) {
+      // 'store-only' — chaqiruvchi StockByCell'ni O'ZI yozadi (yoki bu yacheykasiz
+      // «остаток» chiqimi): avtomat uy-joylash / band-yacheyka yechishни BUTUNLAY
+      // o'tkazib yubor, aks holda ikki-yozuv → Σcell drift (2026-07-29 fix).
+      if (d.cellMode === 'store-only') continue;
       const targetCell =
         d.cellId ?? (toMicro(String(d.qtyDelta)) > 0n ? homeCells.get(homeKey(d)) : undefined);
       if (targetCell) {
@@ -361,7 +378,11 @@ export class StockService {
   ): Promise<Map<string, string>> {
     const out = new Map<string, string>();
     const need = deltas.filter(
-      (d) => !d.cellId && d.assortmentKind === 'product' && toMicro(String(d.qtyDelta)) > 0n,
+      (d) =>
+        !d.cellId &&
+        d.cellMode !== 'store-only' &&
+        d.assortmentKind === 'product' &&
+        toMicro(String(d.qtyDelta)) > 0n,
     );
     if (need.length === 0) return out;
 

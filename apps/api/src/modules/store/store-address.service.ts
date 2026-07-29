@@ -386,62 +386,82 @@ export class StoreAddressService {
       select: { qty: true },
     });
     const oldQty = Number(before?.qty ?? 0);
+    const delta = Number(qty) - oldQty;
 
-    if (Number(qty) === 0) {
-      await this.prisma.client.stockByCell.deleteMany({
-        where: { accountId, storeId, cellId, assortmentKind: 'product', assortmentId },
-      });
-    } else {
-      await this.prisma.client.stockByCell.upsert({
-        where: {
-          accountId_storeId_cellId_assortmentKind_assortmentId: {
-            accountId,
-            storeId,
-            cellId,
-            assortmentKind: 'product',
-            assortmentId,
+    // Store-level true-up hujjati (avto Оприходование/Списание) SANALGAN yacheyka
+    // `cellId`'ini olib boradi ⇒ applyDeltas StockByCell[cellId]'ni AYNAN `delta`ga
+    // siljitadi va u absolyut sanoq qiymatiga (oldQty+delta = qty) tushadi. Hujjat —
+    // YAGONA per-cell yozuvchi: to'g'ridan-to'g'ri StockByCell.upsert QILMAYMIZ.
+    //
+    // ⚠️ 2026-07-29 drift-fix: ilgari cell to'g'ridan-to'g'ri absolyut yozilar,
+    // KEYIN cellId'siz hujjat post qilinardi — applyDeltas o'sha (yoki uy-)yacheykani
+    // IKKINCHI marta siljitardi (KIRIMda uy-cell +delta, CHIQIMda band-cell auto-
+    // yechish) ⇒ Σ StockByCell store jamidan oshib/kamayib ketardi (fantom «Занята»).
+    // Hujjatni cellId bilan yuborish ikki-yozuvni ildizdan yopadi.
+    const org =
+      delta !== 0 && userId
+        ? await this.prisma.client.organization.findFirst({
+            where: { accountId },
+            orderBy: { createdAt: 'asc' },
+            select: { id: true },
+          })
+        : null;
+    const willPostDoc = delta !== 0 && !!userId && !!org;
+
+    if (!willPostDoc) {
+      // Degenerat yo'l (delta=0, yoki userId/org konteksti yo'q): store-darajani
+      // ergashtiradigan hujjat yo'q ⇒ per-cell balansni to'g'ridan-to'g'ri yozamiz.
+      if (Number(qty) === 0) {
+        await this.prisma.client.stockByCell.deleteMany({
+          where: { accountId, storeId, cellId, assortmentKind: 'product', assortmentId },
+        });
+      } else {
+        await this.prisma.client.stockByCell.upsert({
+          where: {
+            accountId_storeId_cellId_assortmentKind_assortmentId: {
+              accountId,
+              storeId,
+              cellId,
+              assortmentKind: 'product',
+              assortmentId,
+            },
           },
-        },
-        create: { accountId, storeId, cellId, assortmentKind: 'product', assortmentId, qty },
-        update: { qty },
-      });
+          create: { accountId, storeId, cellId, assortmentKind: 'product', assortmentId, qty },
+          update: { qty },
+        });
+      }
     }
 
-    const delta = Number(qty) - oldQty;
     let stockDoc: { type: 'enter' | 'loss'; name: string } | null = null;
-    if (delta !== 0 && userId) {
-      const org = await this.prisma.client.organization.findFirst({
-        where: { accountId },
-        orderBy: { createdAt: 'asc' },
-        select: { id: true },
-      });
-      if (org) {
-        const note = `Sanash (yacheyka ${cell.name}) — avto-tenglash`;
-        if (delta > 0) {
-          const doc = (await this.enters.create(accountId, userId, {
-            organizationId: org.id,
-            storeId,
-            applicable: true,
-            description: note,
-            positions: [
-              {
-                assortmentId,
-                quantity: String(delta),
-                costMinor: product.buyPrice?.toString() ?? '0',
-              },
-            ],
-          })) as { name?: string };
-          stockDoc = { type: 'enter', name: doc?.name ?? '' };
-        } else {
-          const doc = (await this.losses.create(accountId, userId, {
-            organizationId: org.id,
-            storeId,
-            applicable: true,
-            description: note,
-            positions: [{ assortmentId, quantity: String(-delta) }],
-          })) as { name?: string };
-          stockDoc = { type: 'loss', name: doc?.name ?? '' };
-        }
+    if (willPostDoc && org && userId) {
+      const note = `Sanash (yacheyka ${cell.name}) — avto-tenglash`;
+      if (delta > 0) {
+        const doc = (await this.enters.create(accountId, userId, {
+          organizationId: org.id,
+          storeId,
+          applicable: true,
+          description: note,
+          positions: [
+            {
+              assortmentId,
+              quantity: String(delta),
+              costMinor: product.buyPrice?.toString() ?? '0',
+              // Sanalgan yacheyka — hujjat shu yacheykaga aynan `delta` yozadi.
+              cellId,
+              cell: cell.name,
+            },
+          ],
+        })) as { name?: string };
+        stockDoc = { type: 'enter', name: doc?.name ?? '' };
+      } else {
+        const doc = (await this.losses.create(accountId, userId, {
+          organizationId: org.id,
+          storeId,
+          applicable: true,
+          description: note,
+          positions: [{ assortmentId, quantity: String(-delta), cellId, cell: cell.name }],
+        })) as { name?: string };
+        stockDoc = { type: 'loss', name: doc?.name ?? '' };
       }
     }
     return { cellId, assortmentId, qty: String(qty), stockDoc };

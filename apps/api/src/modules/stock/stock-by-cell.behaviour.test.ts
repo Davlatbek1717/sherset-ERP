@@ -248,4 +248,45 @@ describe("applyDeltas — yacheyka qoldig'i (XULQ, manba-skan emas)", () => {
     expect(upserts).toEqual([{ cellId: 'cell-B', qty: '4' }]);
     expect(updates).toEqual([{ cellId: 'cell-A', decrement: '3' }]);
   });
+
+  // ─── 'store-only' rejimi (2026-07-29 drift-fix) ────────────────────────────
+  // Chaqiruvchi StockByCell'ni O'ZI boshqaradi (place remainder-chiqimi /
+  // setCellStock count) ⇒ avtomat uy-joylash + band-yacheyka auto-yechish
+  // BUTUNLAY o'tkazib yuboriladi (aks holda ikki-yozuv → Σcell drift).
+
+  it("'store-only' KIRIM — uy-yacheykasi BOR bo'lsa ham joylashtirmaydi", async () => {
+    const { tx, upserts, updates } = makeTx([], { 'prod-1': 'A-01' }, { 'A-01': 'cell-home' });
+    await svc.applyDeltas(tx as never, 'acc', 'user', [
+      delta({ qtyDelta: dec('7'), cellId: null, cellMode: 'store-only' }),
+    ]);
+    expect(upserts).toEqual([]); // uy-yacheykaga IKKINCHI yozuv yo'q
+    expect(updates).toEqual([]);
+  });
+
+  it("'store-only' CHIQIM — band yacheykalardan avtomat-yechmaydi (bin talanmaydi)", async () => {
+    const { tx, upserts, updates, cells } = makeTx([
+      { cellId: 'cell-A', qty: dec('4') },
+      { cellId: 'cell-B', qty: dec('9') },
+    ]);
+    await svc.applyDeltas(tx as never, 'acc', 'user', [
+      delta({ qtyDelta: dec('-3'), cellId: null, cellMode: 'store-only' }),
+    ]);
+    expect(upserts).toEqual([]);
+    expect(updates).toEqual([]); // hech qaysi yacheyka tegilmaydi
+    // yacheyka qoldiqlari o'zgarmaydi — «остаток» store darajasida kamayadi
+    expect(Number(cells.find((c) => c.cellId === 'cell-A')?.qty.toString())).toBe(4);
+    expect(Number(cells.find((c) => c.cellId === 'cell-B')?.qty.toString())).toBe(9);
+  });
+
+  it("'store-only' aralash partiya — faqat auto-delta'lar yacheykaga ta'sir qiladi", async () => {
+    // place same-store: manba (store-only, -3) + nishon (cell-B, +3).
+    const { tx, upserts, updates } = makeTx([{ cellId: 'cell-A', qty: dec('5') }]);
+    await svc.applyDeltas(tx as never, 'acc', 'user', [
+      delta({ qtyDelta: dec('-3'), cellId: null, cellMode: 'store-only' }),
+      delta({ qtyDelta: dec('3'), cellId: 'cell-B' }),
+    ]);
+    // faqat nishon-yacheyka yoziladi; manba cell-A tegilmaydi (remainder'dan chiqdi)
+    expect(upserts).toEqual([{ cellId: 'cell-B', qty: '3' }]);
+    expect(updates).toEqual([]);
+  });
 });

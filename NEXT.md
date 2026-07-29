@@ -305,6 +305,35 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-07-29c (OMBOR CHUQUR RE-AUDIT — yacheyka per-cell drift 2 bug TUZATILDI · Phase-1)**
+> Foydalanuvchi: «omborni yana chuqur qaytadan tekshirib chiq… hamma xatoliklarini to'g'irlab ber». 3 paralel adversarial
+> bug-hunt agent (atomicity · yacheyka · valuation) + har finding **o'zim ground-truth tekshirildi** (§2). Yadro (stock/loss/
+> move/enter/supply/demand/inventory + 2 return) **TOZA** — TOCTOU-claim, lockBalances, Serializable, belgilar, in-transit
+> ajratish, reservation-idempotentligi hammasi tasdiqlandi. Yagona real cluster — **yacheyka per-cell integritet** (e2cda34
+> home-cell + 054ff32 auto-deduct `applyDeltas`ga qo'shilganda ESKI cell-chaqiruvchilar «null-cell=store-only» kontraktida qoldi).
+>
+> **✅ Tuzatildi (Phase-1: strukturaviy + unit-tasdiqlangan, browser/DB-smoke YO'Q):**
+> - **HIGH — `setCellStock` ikki-yozuv** (`store-address.service.ts`): «Sanash» StockByCell'ni to'g'ridan-to'g'ri absolyut yozar,
+>   keyin cellId'siz Enter/Loss post qilar → applyDeltas o'sha/uy-yacheykani IKKINCHI marta siljitardi ⇒ Σcell store'dan oshib
+>   fantom «Занята». Fix: auto Enter/Loss endi **`cellId=sanalgan-cell`** bilan yuboriladi (hujjat = yagona per-cell yozuvchi);
+>   to'g'ridan-to'g'ri upsert faqat doc-yo'q degenerat holatga (delta=0 / userId·org yo'q) fallback.
+> - **MEDIUM — `place` bin talaydi** (`product-cell-move.service.ts`): «остаток»dan chiqim manba-oyog'i `cellId:null` edi →
+>   auto-deduct uni band yacheykadan yechardi (remainder emas). Fix: yangi **`StockDelta.cellMode:'store-only'`** primitivi —
+>   applyDeltas cell-effektlarni butunlay o'tkazib yuboradi (faqat store Stock siljiydi). Manba-oyoq shu rejimga o'tdi.
+> - **Guard:** `stock-by-cell.behaviour.test.ts` +3 store-only test (KIRIM uy-joylashmaydi · CHIQIM bin-talamaydi · aralash partiya).
+>
+> **🟢 Gate:** api typecheck 0 · biome 0 (4 fayl) · stock 55/55 · hujjat-modullar 319/319 (regressiya YO'Q).
+>
+> **⏭️ Follow-up (alohida sessiya, TUZATILMAGAN — bu sessiya yacheyka-clusterga fokuslandi):**
+> - **MED — retail-sale (POS chakana) cost-drift** (`retail-sale.service.ts:579,783`): sotuv/qaytarish `costDeltaMinor:null`
+>   uzatadi → `Stock.qty` kamayadi lekin `costBalanceMinor` muzlaydi → o'rtacha-tannarx buziladi (har boshqa hujjat shu bazani
+>   o'qiydi). 066d55fb cost-drift klassi — Loss/Move/Inventory/return'larda tuzatilgan, retail-sale'da yo'q. Refund zero-sum
+>   uchun sotuv-vaqtidagi perUnit'ni muzlatish kerak (RetailSalePosition'da cost-ustun YO'Q → migration yoki stock_operations
+>   ledger-rekonsiliatsiyasi). *(Eslatma: sherset/climart real sotuvi = InvoiceOut, POS-chakana ehtimol ishlatilmaydi — latent.)*
+> - **LOW** (Agent C/B): round-then-multiply qty=0'da bir necha tiyin qoldirar (loss/move — house-pattern, material emas) ·
+>   FIFO supply→demand fraksion drift · `product-cell-move.ts:39` & `move.service.ts:638` `Number(Decimal)` float (toMicro emas) ·
+>   `deleteCell` non-empty guard tx-tashqarisida (raqib post → do'stona-xabar o'rniga xom 500, korruptsiya YO'Q).
+>
 > **🕒 2026-07-29b (QABUL-TASDIQLASH FAZA A — BE state-machine QURILDI · `c2ead48`…`7819a3a`)**
 > 07-29a hand-off (b) BAJARILDI. Spec+plan (`docs/superpowers/plans/2026-07-29-supply-approval-phase-a.md`) → 5 task TDD inline ijro.
 >

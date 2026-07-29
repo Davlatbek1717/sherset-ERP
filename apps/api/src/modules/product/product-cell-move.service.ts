@@ -236,15 +236,20 @@ export class ProductCellMoveService {
         }
 
         const costOfN = crossStore ? this.costOfUnits(balances.get(productId), parsed.qty) : 0n;
-        // Source delta carries NO cellId — it comes off the store's unallocated
-        // pool (remainder), not a specific bin. Same store ⇒ the +N target cancels
-        // it (store unchanged); other store ⇒ the source warehouse really loses N.
+        // Source delta comes off the store's UNALLOCATED pool (remainder =
+        // store stock − Σ StockByCell), NOT a specific bin — so it must be
+        // `cellMode: 'store-only'`. Ilgari cellId:null edi, lekin outbound
+        // auto-deduct (054ff32) uni band yacheykadan yechardi ⇒ mavjud bin
+        // talanardi (remainder emas). Same store ⇒ the +N target cancels it at
+        // store level (store unchanged, remainder −N); other store ⇒ source
+        // warehouse really loses N. (2026-07-29 per-cell drift-fix.)
         await this.stock.applyDeltas(tx, accountId, userId, [
           {
             storeId: fromStore,
             assortmentKind: 'product',
             assortmentId: productId,
             cellId: null,
+            cellMode: 'store-only',
             qtyDelta: `-${parsed.qty}`,
             costDeltaMinor: crossStore ? -costOfN : null,
             docType: 'cell_place',
