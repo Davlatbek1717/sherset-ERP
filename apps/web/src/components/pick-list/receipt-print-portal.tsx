@@ -176,17 +176,21 @@ export function ReceiptPrintPortal({
         .rcpt, .rcpt table { font-weight: 600; }
         .rcpt td.rcpt-name { font-weight: 700; }
         @media print {
-          /* A «chek» is a thermal receipt: an EXPLICIT 80mm roll width (× auto
-             content height) — NOT «size: auto», which let the printer pick an
-             A4/Letter page length and feed ~20cm of blank paper per receipt
-             («endless» print) AND let «Fit to page» scale the old 72mm up until
-             the last column clipped. 80mm auto = one exact-height 80mm strip:
-             correct on a thermal printer, and complete (no clip) on an A4 one. */
-          @page { size: 80mm auto; margin: 2mm; }
+          /* A «chek» is a thermal receipt on an 80mm roll. size: 80mm auto = one
+             exact-height 80mm strip (NOT «size: auto» → A4/Letter page length →
+             ~20cm blank feed). CRITICAL WIDTH FIX (2026-07-29): an «80mm» thermal
+             printer's PRINTABLE width is only ~72mm (its own ~4mm/side dead zone).
+             The old 76mm receipt + a 2mm @page margin filled past that → the last
+             column («Ячейка») touched / clipped at the edge — the reported bug.
+             68mm content, centred (margin:0 auto), leaves a clear ~6mm gap each
+             side so the border never reaches the printable edge on ANY 80mm roll;
+             @page margin 0 (the printer supplies its own dead margin — stacking a
+             CSS margin on top pushed content off the printable area). */
+          @page { size: 80mm auto; margin: 0; }
           html, body { background: #fff !important; margin: 0 !important; padding: 0 !important; overflow: visible !important; height: auto !important; min-height: 0 !important; }
           body > *:not([data-pick-print-root]) { display: none !important; }
           [data-pick-print-root] { position: static !important; overflow: visible !important; background: #fff !important; height: auto !important; min-height: 0 !important; max-height: none !important; }
-          .rcpt { width: 100% !important; max-width: 76mm !important; margin: 0 auto !important; padding: 1mm !important; }
+          .rcpt { width: 68mm !important; max-width: 68mm !important; margin: 0 auto !important; padding: 2mm !important; }
           .no-print { display: none !important; }
         }
       `}</style>
