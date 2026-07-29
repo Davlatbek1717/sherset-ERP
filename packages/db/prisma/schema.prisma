@@ -5165,6 +5165,11 @@ model Supply {
   /// it on the selected receipts. SetNull so deleting a status just unlinks.
   statusId        String? @map("status_id") @db.Uuid
 
+  /// Multi-role approval workflow bosqichi (2026-07-29 spec). FSM `state` +
+  /// `applicable`dan ORTOGONAL; taminotchi→omborchi→admin zanjirini boshqaradi.
+  /// Stock faqat admin-tasdig'ida (stage→completed → transition 'post') oshadi.
+  approvalStage   String  @default("none") @map("approval_stage") @db.VarChar(30) // none|awaiting_supplier|delivering|awaiting_admin|completed
+
   account             Account              @relation(fields: [accountId], references: [id], onDelete: Cascade)
   owner               Employee?            @relation("SupplyOwner", fields: [ownerId], references: [id], onDelete: SetNull)
   agent               Counterparty         @relation(fields: [agentId], references: [id], onDelete: Restrict)
@@ -5177,6 +5182,7 @@ model Supply {
   project             Project?             @relation("SupplyProject", fields: [projectId], references: [id], onDelete: SetNull)
   status              State?               @relation("SupplyStatus", fields: [statusId], references: [id], onDelete: SetNull)
   positions           SupplyPosition[]
+  approvalEvents      SupplyApprovalEvent[]
   purchaseReturns     PurchaseReturn[]
   moves               Move[]               @relation("MoveSupply")
   factureIns          FactureIn[]          @relation("FactureInSupply")
@@ -5192,6 +5198,28 @@ model Supply {
   @@index([accountId, contractId])
   @@index([accountId, projectId])
   @@map("supplies")
+}
+
+/// Qabul-tasdiqlash workflow audit-izi (2026-07-29 spec). Har bosqich-o'tishiga
+/// (forward yoki reject) bitta qator — kim / qachon / sabab / omborchi-tuzatishlari.
+model SupplyApprovalEvent {
+  id        String @id @default(uuid()) @db.Uuid
+  accountId String @map("account_id") @db.Uuid
+  supplyId  String @map("supply_id") @db.Uuid
+  supply    Supply @relation(fields: [supplyId], references: [id], onDelete: Cascade)
+
+  fromStage String  @map("from_stage") @db.VarChar(30)
+  toStage   String  @map("to_stage") @db.VarChar(30)
+  action    String  @db.VarChar(20) // send | supplier_ok | omborchi_ok | admin_ok | reject
+  actorType String  @map("actor_type") @db.VarChar(20) // supplier | omborchi | admin | system
+  actorId   String? @map("actor_id") @db.Uuid
+  reason    String? @db.Text
+  detail    Json? // omborchi tuzatishlari: [{positionId, was, now}]
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  @@index([accountId, supplyId, createdAt])
+  @@map("supply_approval_events")
 }
 
 /// Supply line position. Polymorphic assortment. costMinor is per-unit cost
