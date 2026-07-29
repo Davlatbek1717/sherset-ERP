@@ -177,9 +177,12 @@ export function ReceiptPrintPortal({
         .rcpt td.rcpt-name { font-weight: 700; }
         @media print {
           @page { size: auto; margin: 6mm; }
-          html, body { background: #fff !important; margin: 0 !important; padding: 0 !important; overflow: visible !important; }
+          /* height:auto + min-height:0 collapse the full-viewport overlay to the
+             receipt's REAL height — otherwise the leftover ~viewport height below
+             the receipt feeds endless blank paper on a thermal/roll printer. */
+          html, body { background: #fff !important; margin: 0 !important; padding: 0 !important; overflow: visible !important; height: auto !important; min-height: 0 !important; }
           body > *:not([data-pick-print-root]) { display: none !important; }
-          [data-pick-print-root] { position: static !important; overflow: visible !important; background: #fff !important; }
+          [data-pick-print-root] { position: static !important; overflow: visible !important; background: #fff !important; height: auto !important; min-height: 0 !important; max-height: none !important; }
           /* Owner 2026-07-29 (photo bug): the old fixed «width: 72mm» got scaled
              UP by the browser's «Fit to page» on an A4 printer → the last column
              (Yacheyka) was clipped off the right edge. Fill the printable width
