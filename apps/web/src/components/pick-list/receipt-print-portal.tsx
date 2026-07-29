@@ -70,10 +70,7 @@ export function ReceiptPrintPortal({
   } else {
     const groups = groupByWarehouse(data.positions);
     let rowNo = 0;
-    // Owner 2026-07-29: uzbek header labels are single long words (no wrap point)
-    // vs climart's short ru «Ед. изм»/«Кол-во» — px-0.5 + wider uom/qty columns
-    // below stop «Birlik»/«Soni» cramping on the 72mm receipt.
-    const th = 'border border-black px-0.5 py-0.5 text-center font-bold';
+    const th = 'border border-black px-1 py-0.5 text-center font-bold';
     const td = 'border border-black px-1 py-0.5 align-top';
     body = (
       <div
@@ -117,9 +114,9 @@ export function ReceiptPrintPortal({
                 <tr>
                   <th className={`${th} w-[5mm]`}>№</th>
                   <th className={th}>{t('receipt_col_name')}</th>
-                  <th className={`${th} w-[10mm]`}>{t('receipt_col_uom')}</th>
-                  <th className={`${th} w-[9mm]`}>{t('receipt_col_qty')}</th>
-                  <th className={`${th} w-[18mm]`}>{t('print_col_cell')}</th>
+                  <th className={`${th} w-[7mm]`}>{t('receipt_col_uom')}</th>
+                  <th className={`${th} w-[8mm]`}>{t('receipt_col_qty')}</th>
+                  <th className={`${th} w-[19mm]`}>{t('print_col_cell')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -176,21 +173,13 @@ export function ReceiptPrintPortal({
         .rcpt, .rcpt table { font-weight: 600; }
         .rcpt td.rcpt-name { font-weight: 700; }
         @media print {
-          /* A «chek» is a thermal receipt on an 80mm roll. size: 80mm auto = one
-             exact-height 80mm strip (NOT «size: auto» → A4/Letter page length →
-             ~20cm blank feed). CRITICAL WIDTH FIX (2026-07-29): an «80mm» thermal
-             printer's PRINTABLE width is only ~72mm (its own ~4mm/side dead zone).
-             The old 76mm receipt + a 2mm @page margin filled past that → the last
-             column («Ячейка») touched / clipped at the edge — the reported bug.
-             68mm content, centred (margin:0 auto), leaves a clear ~6mm gap each
-             side so the border never reaches the printable edge on ANY 80mm roll;
-             @page margin 0 (the printer supplies its own dead margin — stacking a
-             CSS margin on top pushed content off the printable area). */
-          @page { size: 80mm auto; margin: 0; }
-          html, body { background: #fff !important; margin: 0 !important; padding: 0 !important; overflow: visible !important; height: auto !important; min-height: 0 !important; }
+          /* climart 1:1 (asl, ishlaydigan): 72mm .rcpt inline kengligi + size:auto/3mm.
+             Termal printer o'z kengligiga moslaydi; qo'lda 80mm/68mm/max-width qo'shish
+             ARALASHTIRIB, chetga tegizib qo'ygan edi — shuning uchun climart'niki tiklandi. */
+          @page { size: auto; margin: 3mm; }
+          html, body { background: #fff !important; margin: 0 !important; padding: 0 !important; overflow: visible !important; }
           body > *:not([data-pick-print-root]) { display: none !important; }
-          [data-pick-print-root] { position: static !important; overflow: visible !important; background: #fff !important; height: auto !important; min-height: 0 !important; max-height: none !important; }
-          .rcpt { width: 68mm !important; max-width: 68mm !important; margin: 0 auto !important; padding: 2mm !important; }
+          [data-pick-print-root] { position: static !important; overflow: visible !important; background: #fff !important; }
           .no-print { display: none !important; }
         }
       `}</style>
