@@ -27,6 +27,13 @@ export class SupplyApprovalController {
     return this.svc.send(user.accountId, user.sub, id);
   }
 
+  @Post(':id/approval/supplier-confirm')
+  @RequirePermission({ entity: 'supply', action: 'update' })
+  supplierConfirm(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    // ERP-fallback: taminotchi Telegram'siz (qo'lda, masalan telefon orqali) tasdiqlanganda.
+    return this.svc.applySupplierDecision(user.accountId, id, true);
+  }
+
   @Post(':id/approval/omborchi-confirm')
   @RequirePermission({ entity: 'supply', action: 'update' })
   omborchiConfirm(

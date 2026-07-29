@@ -1558,6 +1558,33 @@
       "receipt_itogo": "Итого",
       "receipt_items_sum": "Всего наименований {n} на сумму {sum}"
     },
+    "supplyApproval": {
+      "title": "Процесс подтверждения",
+      "awaiting_supplier": "Ожидается ответ поставщика…",
+      "completed": "✅ Добавлено на склад",
+      "error": "Действие не выполнено (нет прав или не тот этап)",
+      "history": "История этапов",
+      "reject_reason_prompt": "Причина отклонения:",
+      "confirm_send": "Отправить поставщику?",
+      "confirm_omborchi": "Принято — подтверждаете?",
+      "confirm_admin": "Финальное подтверждение — добавить на склад?",
+      "action_send": "Отправить поставщику",
+      "action_supplier_confirm": "Поставщик подтвердил (вручную)",
+      "confirm_supplier": "Отметить, что поставщик подтвердил?",
+      "action_omborchi_confirm": "Принято — подтвердить",
+      "action_admin_confirm": "Финал → на склад",
+      "action_reject": "Отклонить",
+      "stage_none": "Не начато",
+      "stage_awaiting_supplier": "Ожидает поставщика",
+      "stage_delivering": "Доставляется",
+      "stage_awaiting_admin": "Ожидает админа",
+      "stage_completed": "Завершено",
+      "action_label_send": "Отправлено",
+      "action_label_supplier_ok": "Поставщик подтвердил",
+      "action_label_omborchi_ok": "Кладовщик подтвердил",
+      "action_label_admin_ok": "Админ подтвердил",
+      "action_label_reject": "Отклонено"
+    },
     "specialoffers": {
       "title": "Спецпредложения",
       "empty": "Спецпредложений пока нет. Здесь появляются акции и предложения — в собственной установке этот раздел не используется."

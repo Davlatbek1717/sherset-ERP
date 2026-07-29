@@ -1558,6 +1558,33 @@
       "receipt_itogo": "Jami",
       "receipt_items_sum": "Jami {n} nom, summa {sum}"
     },
+    "supplyApproval": {
+      "title": "Tasdiqlash jarayoni",
+      "awaiting_supplier": "Taminotchi javobi kutilmoqda…",
+      "completed": "✅ Omborga qo'shildi",
+      "error": "Amal bajarilmadi (ruxsat yoki bosqich mos emas)",
+      "history": "Bosqich tarixi",
+      "reject_reason_prompt": "Rad etish sababi:",
+      "confirm_send": "Taminotchiga yuborilsinmi?",
+      "confirm_omborchi": "Qabul qilindi — tasdiqlaysizmi?",
+      "confirm_admin": "Yakuniy tasdiq — omborga qo'shilsinmi?",
+      "action_send": "Taminotchiga yuborish",
+      "action_supplier_confirm": "Taminotchi tasdiqladi (qo'lda)",
+      "confirm_supplier": "Taminotchi tasdiqlaganini belgilaysizmi?",
+      "action_omborchi_confirm": "Qabul qilindi — tasdiqlash",
+      "action_admin_confirm": "Yakuniy tasdiq → omborga",
+      "action_reject": "Rad etish",
+      "stage_none": "Boshlanmagan",
+      "stage_awaiting_supplier": "Taminotchi kutilmoqda",
+      "stage_delivering": "Yetkazilyapti",
+      "stage_awaiting_admin": "Admin kutilmoqda",
+      "stage_completed": "Tugallandi",
+      "action_label_send": "Yuborildi",
+      "action_label_supplier_ok": "Taminotchi tasdiqladi",
+      "action_label_omborchi_ok": "Omborchi tasdiqladi",
+      "action_label_admin_ok": "Admin tasdiqladi",
+      "action_label_reject": "Rad etildi"
+    },
     "specialoffers": {
       "title": "Maxsus takliflar",
       "empty": "Hozircha maxsus takliflar yo'q. Bu bo'limda aksiyalar chiqadi — o'z serveringizdagi o'rnatmada ishlatilmaydi."

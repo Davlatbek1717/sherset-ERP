@@ -23,6 +23,7 @@ import { usePrintTemplatesManager } from '@/components/print/print-templates-pro
 import { ProductEditModal } from '@/components/products/product-edit-modal';
 import { type KitPrintForm, KitPrintModal } from '@/components/purchase-orders/kit-print-modal';
 import { SendEmailDialog } from '@/components/send-email-dialog';
+import { SupplyApprovalPanel } from '@/components/supplies/supply-approval-panel';
 import { useApiMutation } from '@/hooks/use-api-mutation';
 import { useConflictReload } from '@/hooks/use-conflict-reload';
 import { useDestructiveMutation } from '@/hooks/use-destructive-mutation';
@@ -1551,6 +1552,10 @@ export default function SupplyDetailPage() {
           >
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
               <div className="min-w-0">
+                {/* Faza C (2026-07-29): qabul-tasdiqlash paneli — bosqich + amal + timeline. */}
+                <div className="mb-4">
+                  <SupplyApprovalPanel supplyId={id} />
+                </div>
                 {/* Owner 2026-07-23: «Договорная цена» — blue, at the table's OUTER
                     top-right corner (same spot in every section). */}
                 {editableLines && (
