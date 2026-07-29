@@ -1,7 +1,19 @@
 import type { Prisma } from '@moysklad/db';
 import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { decryptPassword } from '../email/crypto.js';
 import { SupplyService } from '../supply/supply.service.js';
+import {
+  tgAnswerCallbackQuery,
+  tgEditMessageText,
+  tgSendMessage,
+} from '../telegram/telegram.client.js';
+import {
+  type InlineKeyboard,
+  confirmKeyboard,
+  doubleConfirmKeyboard,
+  parseCallbackData,
+} from './supply-approval.callback.js';
 import {
   type ActorType,
   type ApprovalStage,
@@ -88,6 +100,8 @@ export class SupplyApprovalService {
   async send(accountId: string, userId: string, id: string) {
     await this.claim(accountId, id, 'none', 'awaiting_supplier');
     await this.logEvent(accountId, id, 'none', 'awaiting_supplier', 'send', 'system', userId);
+    // Faza B: inline-tugmali xabar taminotchiga (non-fatal — holat allaqachon o'zgardi).
+    await this.dispatchToSupplier(accountId, id).catch(() => {});
     return this.getApproval(accountId, id);
   }
 
@@ -192,5 +206,85 @@ export class SupplyApprovalService {
       );
     }
     return this.getApproval(accountId, id);
+  }
+
+  /** Faza B: taminotchiga inline-tugmali xabar (Bot API). Non-fatal.
+   *  Inline callback FAQAT bot o'z xabarida ishlaydi — taminotchi botni START qilgan bo'lishi kerak. */
+  private async dispatchToSupplier(accountId: string, supplyId: string): Promise<void> {
+    const supply = await this.prisma.client.supply.findFirst({
+      where: { id: supplyId, accountId },
+      select: { agentId: true, name: true },
+    });
+    if (!supply) return;
+    const cfg = await this.prisma.client.telegramConfig.findUnique({ where: { accountId } });
+    if (!cfg?.enabled || !cfg.botTokenCipher) return;
+    const chat = await this.prisma.client.telegramChat.findFirst({
+      where: { accountId, counterpartyId: supply.agentId },
+      orderBy: { lastMessageAt: 'desc' },
+      select: { chatId: true },
+    });
+    if (!chat) return;
+    await tgSendMessage(decryptPassword(cfg.botTokenCipher), {
+      chatId: chat.chatId.toString(),
+      text: `📦 Yangi qabul: ${supply.name}\nTasdiqlaysizmi yoki rad etasizmi?`,
+      replyMarkup: confirmKeyboard(supplyId),
+    });
+  }
+
+  /** Faza B: Telegram callback_query — telegram.service.handleInbound chaqiradi.
+   *  Binding-auth: callback kelgan chat supply agentiga bog'langan bo'lishi shart. */
+  async handleSupplierCallback(
+    accountId: string,
+    cbq: { id: string; data: string; chatId: string; messageId: number },
+  ): Promise<void> {
+    const parsed = parseCallbackData(cbq.data);
+    if (!parsed) return;
+    const cfg = await this.prisma.client.telegramConfig.findUnique({ where: { accountId } });
+    if (!cfg?.botTokenCipher) return;
+    const token = decryptPassword(cfg.botTokenCipher);
+    const supply = await this.prisma.client.supply.findFirst({
+      where: { id: parsed.supplyId, accountId },
+      select: { agentId: true },
+    });
+    const chat = await this.prisma.client.telegramChat.findFirst({
+      where: { accountId, chatId: BigInt(cbq.chatId) },
+      select: { counterpartyId: true },
+    });
+    if (!supply || !chat || chat.counterpartyId !== supply.agentId) {
+      await tgAnswerCallbackQuery(token, {
+        callbackQueryId: cbq.id,
+        text: "Ruxsat yo'q",
+        showAlert: true,
+      }).catch(() => {});
+      return;
+    }
+    const edit = (text: string, keyboard?: InlineKeyboard) =>
+      tgEditMessageText(token, {
+        chatId: cbq.chatId,
+        messageId: cbq.messageId,
+        text,
+        replyMarkup: keyboard,
+      }).catch(() => {});
+    try {
+      if (parsed.action === 'cfm') {
+        await edit('Aniqmi? Tasdiqlaysizmi?', doubleConfirmKeyboard(parsed.supplyId));
+      } else if (parsed.action === 'cxl') {
+        await edit('Tasdiqlaysizmi yoki rad etasizmi?', confirmKeyboard(parsed.supplyId));
+      } else if (parsed.action === 'cfm2') {
+        await this.applySupplierDecision(accountId, parsed.supplyId, true);
+        await edit('✅ Tasdiqlandi — yetkazib berilmoqda.');
+      } else if (parsed.action === 'rej') {
+        await this.applySupplierDecision(accountId, parsed.supplyId, false, 'Taminotchi rad etdi');
+        await edit('❌ Rad etildi.');
+      }
+    } catch {
+      await tgAnswerCallbackQuery(token, {
+        callbackQueryId: cbq.id,
+        text: "Bu qabul allaqachon o'zgargan",
+        showAlert: true,
+      }).catch(() => {});
+      return;
+    }
+    await tgAnswerCallbackQuery(token, { callbackQueryId: cbq.id }).catch(() => {});
   }
 }

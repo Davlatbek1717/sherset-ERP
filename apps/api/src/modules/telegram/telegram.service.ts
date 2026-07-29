@@ -9,6 +9,7 @@ import { normalizeTelegramPhone } from '../hr/hr-shared/phone-normalize.util.js'
 import type { MtprotoInboundHandler } from '../hr/hr-telegram-bridge/mtproto-inbound-handler.js';
 import type { IncomingMtprotoMessage } from '../hr/hr-telegram-bridge/telegram-client-factory.js';
 import { DEFAULT_MESSAGING_CONTACT } from '../sms/sms-render.util.js';
+import { SupplyApprovalService } from '../supply-approval/supply-approval.service.js';
 import { parseBusinessUpdate } from './telegram-business.util.js';
 import { TelegramLookupService } from './telegram-lookup.service.js';
 import {
@@ -63,6 +64,7 @@ export class TelegramService implements MtprotoInboundHandler {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(AttachmentService) private readonly attachments: AttachmentService,
     @Inject(TelegramLookupService) private readonly lookup: TelegramLookupService,
+    @Inject(SupplyApprovalService) private readonly supplyApproval: SupplyApprovalService,
   ) {}
 
   /**
@@ -238,6 +240,33 @@ export class TelegramService implements MtprotoInboundHandler {
    * versions can route /commands to handler functions.
    */
   async handleInbound(accountId: string, update: unknown): Promise<{ ok: true }> {
+    // Faza B (2026-07-29): qabul-tasdiqlash inline-tugma callback (sa:...) —
+    // taminotchi «✅ Tasdiqlash»/«❌ Rad etish»ni bosgan. Business-update'dan OLDIN.
+    const cbq = (
+      update as {
+        callback_query?: {
+          id: string;
+          data?: string;
+          message?: { chat?: { id: number }; message_id?: number };
+        };
+      }
+    )?.callback_query;
+    if (
+      cbq?.data?.startsWith('sa:') &&
+      cbq.message?.chat?.id != null &&
+      cbq.message.message_id != null
+    ) {
+      await this.supplyApproval
+        .handleSupplierCallback(accountId, {
+          id: cbq.id,
+          data: cbq.data,
+          chatId: String(cbq.message.chat.id),
+          messageId: cbq.message.message_id,
+        })
+        .catch((e: Error) => this.logger.warn(`supply-approval callback: ${e.message}`));
+      return { ok: true };
+    }
+
     const parsed = parseBusinessUpdate(update);
 
     if (parsed.kind === 'business_connection') {

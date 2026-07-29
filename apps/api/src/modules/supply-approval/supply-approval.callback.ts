@@ -1,6 +1,6 @@
 import type { TelegramInlineButton } from '../telegram/telegram.client.js';
 
-type InlineKeyboard = { inline_keyboard: TelegramInlineButton[][] };
+export type InlineKeyboard = { inline_keyboard: TelegramInlineButton[][] };
 
 /**
  * Qabul-tasdiqlash Telegram callback-protokoli (Faza B, spec §4). Taminotchi
