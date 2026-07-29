@@ -324,6 +324,10 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 >
 > **🟢 Gate:** api typecheck 0 · biome 0 (4 fayl) · stock 55/55 · hujjat-modullar 319/319 (regressiya YO'Q).
 >
+> **✅ DEPLOYED (erp.sherset.uz / sherset-v2, `8b60af6`):** BE-only (tsx — build/migration YO'Q). push → box `git reset --hard`
+> → `pm2 restart sherset-v2-api`. Verify: health 200 · erp.sherset.uz 200 · jonli manbada `cellMode`/`store-only`/`willPostDoc`
+> grep-tasdiqlandi. Browser-QA (real «Sanash»/«Переместить» round-trip) HALI qilinmagan — Phase-2.
+>
 > **⏭️ Follow-up (alohida sessiya, TUZATILMAGAN — bu sessiya yacheyka-clusterga fokuslandi):**
 > - **MED — retail-sale (POS chakana) cost-drift** (`retail-sale.service.ts:579,783`): sotuv/qaytarish `costDeltaMinor:null`
 >   uzatadi → `Stock.qty` kamayadi lekin `costBalanceMinor` muzlaydi → o'rtacha-tannarx buziladi (har boshqa hujjat shu bazani
