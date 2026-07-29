@@ -121,7 +121,7 @@ export class PickListService {
     return {
       id: row.id,
       name: row.name,
-      docType: 'customerorder',
+      docType: 'invoiceout',
       moment: row.moment,
       agentName: row.agent?.name ?? null,
       agentPhone: row.agent?.phone ?? null,
