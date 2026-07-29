@@ -36,6 +36,15 @@ import { PositionAgreementButton } from '@/components/documents/position-agreeme
 import { PositionColumnCustomizer } from '@/components/documents/position-column-customizer';
 import { PositionDiscountMenu } from '@/components/documents/position-discount-menu';
 import { PositionPriceMenu } from '@/components/documents/position-price-menu';
+import {
+  type CustomerReceiptData,
+  CustomerReceiptPortal,
+} from '@/components/pick-list/customer-receipt-portal';
+import {
+  type ReceiptData,
+  ReceiptPrintPortal,
+  receiptDate,
+} from '@/components/pick-list/receipt-print-portal';
 import { usePrintTemplatesManager } from '@/components/print/print-templates-provider';
 import { type KitPrintForm, KitPrintModal } from '@/components/purchase-orders/kit-print-modal';
 import { SendEmailDialog } from '@/components/send-email-dialog';
@@ -307,6 +316,7 @@ export default function InvoiceOutDetailPage() {
   const tCols = useTranslations('position_cols');
   const tPrint = useTranslations('print_menu');
   const tMoneyMenu = useTranslations('money_docs_menu');
+  const tSpiska = useTranslations('pages.pickLists');
   const tEmail = useTranslations('email_template');
 
   const { data, isLoading } = useQuery<InvoiceDetail>({
@@ -345,6 +355,57 @@ export default function InvoiceOutDetailPage() {
   const currencies = useMemo(() => currenciesData?.items ?? [], [currenciesData]);
 
   const [form, setForm] = useState<FormState | null>(null);
+  // «Печать → Лист сборки» / «Товарный чек» (climart 2026-07-29): ikkala 72mm termal
+  // chekni AYNAN SHU HISOBVARAQDAN chop etish (invoices-out = foydalanuvchining savdosi).
+  const [spiska, setSpiska] = useState<ReceiptData | null>(null);
+  const openSpiska = useCallback(async () => {
+    if (!form || !data) return;
+    const rows = form.positions.filter((p) => p.assortmentId);
+    const ids = [...new Set(rows.map((r) => r.assortmentId as string))];
+    const res = ids.length
+      ? await api
+          .get<{ cells: Record<string, string | null> }>(
+            `/pick-lists/cells-by-products?productIds=${ids.join(',')}`,
+          )
+          .catch(() => ({ cells: {} as Record<string, string | null> }))
+      : { cells: {} as Record<string, string | null> };
+    setSpiska({
+      title: tSpiska('receipt_title'),
+      number: data.name,
+      dateStr: receiptDate(new Date(form.moment)),
+      agentName: form.agentLabel || null,
+      agentPhone: null,
+      ownerName: form.ownerLabel || null,
+      description: form.description || null,
+      positions: rows.map((r) => ({
+        name: r.productLabel,
+        qty: r.quantity,
+        uom: r.productUom ?? null,
+        cell: res.cells[r.assortmentId as string] ?? null,
+      })),
+    });
+  }, [form, data, tSpiska]);
+  const [creceipt, setCreceipt] = useState<CustomerReceiptData | null>(null);
+  const openCustomerReceipt = useCallback(() => {
+    if (!form || !data) return;
+    const rows = form.positions.filter((p) => p.assortmentId && Number(p.quantity) > 0);
+    setCreceipt({
+      number: data.name,
+      dateStr: receiptDate(new Date(form.moment)),
+      orgName: form.organizationLabel || null,
+      sellerName: form.ownerLabel || null,
+      buyerName: form.agentLabel || null,
+      phone: null,
+      comment: form.description || null,
+      positions: rows.map((r) => ({
+        name: r.productLabel,
+        uom: r.productUom ?? null,
+        qty: r.quantity,
+        priceMinor: r.priceMinor || '0',
+        sumMinor: String(Math.round(Number(r.priceMinor || '0') * Number(r.quantity || '0'))),
+      })),
+    });
+  }, [form, data]);
   const [original, setOriginal] = useState<string>('');
   const [openPicker, setOpenPicker] = useState<
     | null
@@ -852,6 +913,13 @@ export default function InvoiceOutDetailPage() {
       label: tMoneyMenu('inv_out_plain'),
       onSelect: () =>
         window.open(`/print/invoice-out/${data.id}?auto=1`, '_blank', 'width=820,height=1100'),
+    },
+    // «Лист сборки» + «Товарный чек» — 72mm termal cheklar (climart), shu hisobvaraqdan.
+    { id: 'spiska', label: tSpiska('spiska_form'), onSelect: () => void openSpiska() },
+    {
+      id: 'creceipt',
+      label: tSpiska('receipt_title_customer'),
+      onSelect: () => openCustomerReceipt(),
     },
     // «Комплект…» — bundle several forms into one PDF.
     { id: 'set', label: tPrint('set'), onSelect: () => setKitPrintOpen(true) },
@@ -1813,6 +1881,8 @@ export default function InvoiceOutDetailPage() {
         }}
         onConfirm={kitPrint}
       />
+      {spiska && <ReceiptPrintPortal data={spiska} onClose={() => setSpiska(null)} />}
+      {creceipt && <CustomerReceiptPortal data={creceipt} onClose={() => setCreceipt(null)} />}
     </div>
   );
 }
