@@ -15,6 +15,7 @@ import { tashkentRangeBounds } from '../report/report-date-bounds.util.js';
 import { resolveCreatorGroupId } from '../shared/group-stamp.js';
 import { assertMassEditRefsInTenant } from '../shared/mass-edit.js';
 import { mapVersionedUpdateError } from '../shared/optimistic-lock.js';
+import { withSerializationRetry } from '../shared/serialization-retry.js';
 import { type StockDelta, StockService } from '../stock/stock.service.js';
 import { WebhookFireService } from '../webhook/webhook-fire.service.js';
 import {
@@ -455,13 +456,24 @@ export class LossService {
     const r = LossTransitionSchema.safeParse(targetRaw);
     if (!r.success) throw new BadRequestException(`Notog'ri transition: ${String(targetRaw)}`);
     const target: LossTransitionTarget = r.data;
-    const existing = await this.findById(accountId, id);
-    const result =
-      target === 'post'
-        ? await this.post(accountId, userId, id, existing)
+    // Serializable konfliktida (40001) AVTOMAT qayta urinish — o'lchangan:
+    // 20 qoldiqqa 10 parallel post yuborilganda atigi 2 tasi o'tardi, 8 tasi
+    // xom baza xatosi bilan yiqilardi.
+    //
+    // ⚠️ `findById` HAR URINISHDA qaytadan chaqiriladi (closure ichida). Bu
+    // MAJBURIY: yakuniy `update` holat sharti bilan yozmaydi (`where: { id }`),
+    // shuning uchun eski `existing` bilan qayta urinilsa, raqib tranzaksiya
+    // allaqachon post qilgan hujjat IKKINCHI marta post bo'lib, qoldiqni ikki
+    // marta harakatlantirardi. Qayta o'qilgan holat `draft` bo'lmasa, post()
+    // biznes-xatosi bilan to'xtaydi va u qayta urinilmaydi.
+    const result = await withSerializationRetry(async () => {
+      const existing = await this.findById(accountId, id);
+      return target === 'post'
+        ? this.post(accountId, userId, id, existing)
         : target === 'unpost'
-          ? await this.unpost(accountId, userId, id, existing)
-          : await this.cancel(accountId, userId, id, existing);
+          ? this.unpost(accountId, userId, id, existing)
+          : this.cancel(accountId, userId, id, existing);
+    });
     this.webhookFire.fireForEvent(accountId, 'loss', 'UPDATE', id, ['state']);
     return result;
   }
@@ -592,6 +604,25 @@ export class LossService {
 
     return this.prisma.client.$transaction(
       async (tx) => {
+        // TOCTOU guard: atomically claim draft→posted as the FIRST op so a
+        // second concurrent post sees count 0 and gets a clean 409 — never a
+        // second write-off. Inside the tx, so a later failure rolls it back.
+        //
+        // 2026-07-29: Loss was the ONLY stock document missing this claim (the
+        // other seven — enter/move/inventory/sales-return/purchase-return/
+        // supply/demand — all had it). Serializable + lockBalances hid the hole
+        // whenever positions existed (both txs touch the same Stock rows ⇒ the
+        // loser aborts with 40001), but an EMPTY write-off locks nothing, so two
+        // concurrent posts could both succeed. The pre-tx `existing.state`
+        // check is a read on a stale snapshot and cannot close this.
+        const claim = await tx.loss.updateMany({
+          where: { id, accountId, state: 'draft' },
+          data: { state: 'posted' },
+        });
+        if (claim.count === 0) {
+          throw new ConflictException("Spisanie allaqachon o'tkazilgan yoki 'draft' holatida emas");
+        }
+
         const assortments = existing.positions.map((p) => ({
           kind: p.assortmentKind,
           id: p.assortmentId,

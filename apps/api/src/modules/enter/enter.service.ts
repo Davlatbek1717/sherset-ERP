@@ -15,6 +15,7 @@ import { tashkentRangeBounds } from '../report/report-date-bounds.util.js';
 import { resolveCreatorGroupId } from '../shared/group-stamp.js';
 import { assertMassEditRefsInTenant } from '../shared/mass-edit.js';
 import { mapVersionedUpdateError } from '../shared/optimistic-lock.js';
+import { withSerializationRetry } from '../shared/serialization-retry.js';
 import { type StockDelta, StockService } from '../stock/stock.service.js';
 // Pure, dependency-free largest-remainder helper (16 adversarial tests,
 // §12). Оприходование is structurally identical to Приёмка so the same
@@ -826,13 +827,24 @@ export class EnterService {
     const r = EnterTransitionSchema.safeParse(targetRaw);
     if (!r.success) throw new BadRequestException(`Notog'ri transition: ${String(targetRaw)}`);
     const target: EnterTransitionTarget = r.data;
-    const existing = await this.findById(accountId, id);
-    const result =
-      target === 'post'
-        ? await this.post(accountId, userId, id, existing)
+    // Serializable konfliktida (40001) AVTOMAT qayta urinish — o'lchangan:
+    // 20 qoldiqqa 10 parallel post yuborilganda atigi 2 tasi o'tardi, 8 tasi
+    // xom baza xatosi bilan yiqilardi.
+    //
+    // ⚠️ `findById` HAR URINISHDA qaytadan chaqiriladi (closure ichida). Bu
+    // MAJBURIY: yakuniy `update` holat sharti bilan yozmaydi (`where: { id }`),
+    // shuning uchun eski `existing` bilan qayta urinilsa, raqib tranzaksiya
+    // allaqachon post qilgan hujjat IKKINCHI marta post bo'lib, qoldiqni ikki
+    // marta harakatlantirardi. Qayta o'qilgan holat `draft` bo'lmasa, post()
+    // biznes-xatosi bilan to'xtaydi va u qayta urinilmaydi.
+    const result = await withSerializationRetry(async () => {
+      const existing = await this.findById(accountId, id);
+      return target === 'post'
+        ? this.post(accountId, userId, id, existing)
         : target === 'unpost'
-          ? await this.unpost(accountId, userId, id, existing)
-          : await this.cancel(accountId, userId, id, existing);
+          ? this.unpost(accountId, userId, id, existing)
+          : this.cancel(accountId, userId, id, existing);
+    });
     this.webhookFire.fireForEvent(accountId, 'enter', 'UPDATE', id, ['state']);
     return result;
   }

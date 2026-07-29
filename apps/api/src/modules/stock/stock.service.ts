@@ -135,6 +135,11 @@ export function netOutstandingReservations(
   return out;
 }
 
+/** Uy-yacheyka keshi uchun kalit: bitta (ombor × tovar) juftligi. */
+function homeKey(d: { storeId: string; assortmentKind: string; assortmentId: string }): string {
+  return `${d.storeId}|${d.assortmentKind}|${d.assortmentId}`;
+}
+
 @Injectable()
 export class StockService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
@@ -259,14 +264,24 @@ export class StockService {
     //       can't both read+decrement the same cell.
     //    c) INBOUND with no cell (positive delta, no cellId): can't be
     //       auto-placed into a specific cell → store-level only (unchanged).
+    // Yacheykasiz KIRIM uchun tovarning «uy» yacheykasi (2026-07-29).
+    // Ilgari yacheykasiz kirim ombor darajasida qolib ketardi va hech qaysi
+    // yacheykada ko'rinmasdi — omborchi qabulda yacheykani tanlashni unutsa,
+    // tovar «yo'qolardi» (izoh: c-band). Endi tovarga BIRIKTIRILGAN uy-yacheykasi
+    // bo'lsa (Product.attributes.__yacheyka — `bindProductIfEmpty` yozadi),
+    // kirim o'sha yacheykaga tushadi. Biriktirma yo'q bo'lsa xulq o'zgarmaydi.
+    const homeCells = await this.resolveHomeCells(tx, accountId, deltas);
+
     for (const d of deltas) {
-      if (d.cellId) {
+      const targetCell =
+        d.cellId ?? (toMicro(String(d.qtyDelta)) > 0n ? homeCells.get(homeKey(d)) : undefined);
+      if (targetCell) {
         await tx.stockByCell.upsert({
           where: {
             accountId_storeId_cellId_assortmentKind_assortmentId: {
               accountId,
               storeId: d.storeId,
-              cellId: d.cellId,
+              cellId: targetCell,
               assortmentKind: d.assortmentKind,
               assortmentId: d.assortmentId,
             },
@@ -274,7 +289,7 @@ export class StockService {
           create: {
             accountId,
             storeId: d.storeId,
-            cellId: d.cellId,
+            cellId: targetCell,
             assortmentKind: d.assortmentKind,
             assortmentId: d.assortmentId,
             qty: d.qtyDelta as Prisma.Decimal,
@@ -287,7 +302,9 @@ export class StockService {
       }
 
       const micro = toMicro(String(d.qtyDelta));
-      if (micro >= 0n) continue; // inbound / zero-delta with no cell → nothing to place
+      // Kirim/nol bu yerga faqat uy-yacheykasi TOPILMAGANDA yetib keladi
+      // ⇒ joylashtiradigan yacheyka yo'q, ombor darajasida qoladi.
+      if (micro >= 0n) continue;
 
       let remaining = -micro; // positive amount still to remove from cells
       const occupied = await tx.stockByCell.findMany({
@@ -327,6 +344,64 @@ export class StockService {
    * The picker only offers in-store cells, but a buggy/malicious client could post a
    * foreign cellId — that would credit/debit a cell in another warehouse. Reject it.
    */
+  /**
+   * Yacheykasiz KIRIM deltalari uchun tovarning «uy» yacheykasini topadi.
+   *
+   * Manba — `Product.attributes.__yacheyka` (yacheyka NOMI, `bindProductIfEmpty`
+   * yozadi). Nom o'sha ombordagi `StoreCell` ga xaritalanadi; topilmasa juftlik
+   * natijaga kirmaydi va chaqiruvchi eski xulqni saqlaydi (ombor darajasi).
+   *
+   * Ikkita qo'shimcha so'rov FAQAT yacheykasiz kirim bo'lganda yuriladi ⇒
+   * yacheykasiz ishlaydigan akkauntlarga (99% holat) qo'shimcha yuk yo'q.
+   */
+  private async resolveHomeCells(
+    tx: Prisma.TransactionClient,
+    accountId: string,
+    deltas: StockDelta[],
+  ): Promise<Map<string, string>> {
+    const out = new Map<string, string>();
+    const need = deltas.filter(
+      (d) => !d.cellId && d.assortmentKind === 'product' && toMicro(String(d.qtyDelta)) > 0n,
+    );
+    if (need.length === 0) return out;
+
+    const productIds = [...new Set(need.map((d) => d.assortmentId))];
+    const products = await tx.product.findMany({
+      where: { accountId, id: { in: productIds } },
+      select: { id: true, attributes: true },
+    });
+    const cellNameByProduct = new Map<string, string>();
+    for (const p of products) {
+      const attrs =
+        p.attributes && typeof p.attributes === 'object' && !Array.isArray(p.attributes)
+          ? (p.attributes as Record<string, unknown>)
+          : {};
+      const name = typeof attrs.__yacheyka === 'string' ? attrs.__yacheyka.trim() : '';
+      if (name) cellNameByProduct.set(p.id, name);
+    }
+    if (cellNameByProduct.size === 0) return out;
+
+    const storeIds = [...new Set(need.map((d) => d.storeId))];
+    const cells = await tx.storeCell.findMany({
+      where: {
+        accountId,
+        storeId: { in: storeIds },
+        name: { in: [...cellNameByProduct.values()] },
+      },
+      select: { id: true, name: true, storeId: true },
+    });
+    const cellByStoreName = new Map<string, string>();
+    for (const c of cells) cellByStoreName.set(`${c.storeId}|${c.name}`, c.id);
+
+    for (const d of need) {
+      const name = cellNameByProduct.get(d.assortmentId);
+      if (!name) continue;
+      const cellId = cellByStoreName.get(`${d.storeId}|${name}`);
+      if (cellId) out.set(homeKey(d), cellId);
+    }
+    return out;
+  }
+
   async assertCellsInStore(
     accountId: string,
     storeId: string,
