@@ -650,10 +650,13 @@ function SectionBar({
 function CellTable({ children }: { children: ReactNode }) {
   const t = useTranslations('pages.stores.address_storage');
   return (
-    // Mobile: the 760px fixed-col cell grid pans in its own scroll box.
-    <div className="max-md:overflow-x-auto">
+    // The fixed-col cell grid (~890px) pans in its own scroll box on ANY viewport
+    // that can't show it in full — so the last «amallar» ustuni (Ko'rish/＋/🖨/✕)
+    // hech qachon card chetidan tashqariga chiqmaydi (2026-07-29: ✕ card'dan
+    // «chiqib ketgan» edi — amallar ustuni 40px'da 4 tugmani ushlolmasdi).
+    <div className="overflow-x-auto">
       <table
-        className={`w-full max-w-[761px] table-fixed border-collapse border-b-2 ${TABLE_BLUE}`}
+        className={`w-full max-w-[891px] table-fixed border-collapse border-b-2 ${TABLE_BLUE}`}
         data-test-id="cells-table"
       >
         <colgroup>
@@ -661,7 +664,8 @@ function CellTable({ children }: { children: ReactNode }) {
           <col className="w-[205px]" />
           <col className="w-[115px]" />
           <col className="w-[195px]" />
-          <col className="w-[40px]" />
+          {/* «Amallar» — Ko'rish + ＋ + 🖨 + ✕ (~150px); 40px'dan kengaytirildi. */}
+          <col className="w-[171px]" />
         </colgroup>
         <thead>
           <tr className={`border-b-2 ${TABLE_BLUE}`}>
@@ -1324,7 +1328,7 @@ export function AddressStorageSection({
                       )}
                     </td>
                     <td className={`${CELL_TD} text-center`}>
-                      <span className="flex items-center justify-center gap-2">
+                      <span className="flex items-center justify-center gap-1">
                         {/* «＋ Добавить товар» — saved cells only: assign products to
                             this cell (user 2026-07-06). Always visible so it reads as
                             the row's primary action. */}
