@@ -108,6 +108,7 @@ import { SmsModule } from './modules/sms/sms.module.js';
 import { StateModule } from './modules/state/state.module.js';
 import { StockModule } from './modules/stock/stock.module.js';
 import { StoreModule as StoreAdminModule } from './modules/store/store.module.js';
+import { SupplyApprovalModule } from './modules/supply-approval/supply-approval.module.js';
 import { SupplyModule } from './modules/supply/supply.module.js';
 import { TaskTypeModule } from './modules/task-type/task-type.module.js';
 import { TaskModule } from './modules/task/task.module.js';
@@ -148,6 +149,7 @@ import { PrismaModule } from './prisma/prisma.module.js';
     InvoiceOutModule,
     PaymentInModule,
     PaymentsModule,
+    SupplyApprovalModule,
     SupplyModule,
     PurchaseOrderModule,
     InvoiceInModule,
