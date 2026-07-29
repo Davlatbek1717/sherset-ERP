@@ -70,7 +70,10 @@ export function ReceiptPrintPortal({
   } else {
     const groups = groupByWarehouse(data.positions);
     let rowNo = 0;
-    const th = 'border border-black px-1 py-0.5 text-center font-bold';
+    // Owner 2026-07-29: uzbek header labels are single long words (no wrap point)
+    // vs climart's short ru «Ед. изм»/«Кол-во» — px-0.5 + wider uom/qty columns
+    // below stop «Birlik»/«Soni» cramping on the 72mm receipt.
+    const th = 'border border-black px-0.5 py-0.5 text-center font-bold';
     const td = 'border border-black px-1 py-0.5 align-top';
     body = (
       <div
@@ -114,9 +117,9 @@ export function ReceiptPrintPortal({
                 <tr>
                   <th className={`${th} w-[5mm]`}>№</th>
                   <th className={th}>{t('receipt_col_name')}</th>
-                  <th className={`${th} w-[7mm]`}>{t('receipt_col_uom')}</th>
-                  <th className={`${th} w-[8mm]`}>{t('receipt_col_qty')}</th>
-                  <th className={`${th} w-[19mm]`}>{t('print_col_cell')}</th>
+                  <th className={`${th} w-[10mm]`}>{t('receipt_col_uom')}</th>
+                  <th className={`${th} w-[9mm]`}>{t('receipt_col_qty')}</th>
+                  <th className={`${th} w-[18mm]`}>{t('print_col_cell')}</th>
                 </tr>
               </thead>
               <tbody>

@@ -1545,8 +1545,8 @@
       "receipt_phone": "Telefon",
       "receipt_comment": "Izoh",
       "receipt_col_name": "Nomi",
-      "receipt_col_uom": "O'lchov",
-      "receipt_col_qty": "Miqdor",
+      "receipt_col_uom": "Birlik",
+      "receipt_col_qty": "Soni",
       "receipt_uom_default": "dona",
       "receipt_footer": "Tovarni oldim, e'tirozim yo'q",
       "receipt_items_short": "Jami pozitsiya: {n}"
