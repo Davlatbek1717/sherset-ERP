@@ -305,6 +305,21 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-07-29b (QABUL-TASDIQLASH FAZA A — BE state-machine QURILDI · `c2ead48`…`7819a3a`)**
+> 07-29a hand-off (b) BAJARILDI. Spec+plan (`docs/superpowers/plans/2026-07-29-supply-approval-phase-a.md`) → 5 task TDD inline ijro.
+>
+> **✅ Faza A (Phase-1: BE strukturaviy, runtime-tasdiqlanmagan):**
+> - `Supply.approvalStage` (none|awaiting_supplier|delivering|awaiting_admin|completed) + `supply_approval_events` audit-jadval + migration `20260729130000_add_supply_approval` (repo'da; **DB'ga HALI qo'llanmagan** — deploy'da `migrate deploy`).
+> - `supply-approval` moduli: **FSM pure-logic** (forward/reject/adjustment-diff, 12 test) · Zod DTO (6 test) · **Service** (optimistik `claim` bosqich-o'tish · omborchi `$transaction` qty-tuzatish+audit · admin→`SupplyService.transition('post')` stock · reject→oldingi-bosqich · `applySupplierDecision` Faza B uchun export) · controller (`GET/POST /supplies/:id/approval{,/send,/omborchi-confirm,/admin-confirm,/reject}`) · modul + app.module.
+> - **Permission (spec §3.2 aniqlashtirildi):** yangi action YO'Q — `update` (send/omborchi/reject) + `approve` (admin) qayta ishlatildi (`PermissionAction` fixed enum; yangi action 6 rol-shablon + QarzOperatori/Kassiri parallel-domenni buzardi).
+> - **Tuzatilgan bug (o'z ishimda):** biome lint-staged `import type`ni controller-DI'ga qo'lladi → NestJS runtime DI buzilardi (metadata-reflection value talab qiladi); mavjud `@Inject(Service)` konvensiyasiga moslandi (`7819a3a`).
+>
+> **🟢 Gate:** api typecheck 0 · biome 0 (supply-approval) · yangi 18 test yashil · **to'liq api Vitest 4159 passed / 0 fail (325 fayl — regressiya YO'Q)**.
+>
+> **⚠️ Phase-1, browser/DB-smoke YO'Q:** migration hech qaysi DB'ga qo'llanmagan · endpointlar real brauzer/DB'da ishlatilmagan (Phase-2 QA) · Telegram(B)/UI(C) hali yo'q. §6: butun mantiq yangi `supply-approval` modulida — `counterparty-statement`/`supply.service`/`permissions.types` TEGILMADI.
+>
+> **➡️ HAND-OFF:** **(a)** [ochiq] debt/telegram/sms drift repo-migration + sherset_v2 `migrate resolve` (07-29a) · **(b) Faza B** — Telegram inline-tugma callback (`telegram.service.handleInbound` `sa:` branch → `applySupplierDecision`; MTProto Excel + Bot-API reply_markup; spec §4) · **(c) Faza C** — ERP UI panel (`/supplies/[id]` omborchi-sanash + admin-tasdiq + ikki-bosqich dialog + event-timeline; spec §5) · **deploy** — `prisma migrate deploy` (supply-approval migration'ni sherset_v2+lokalga qo'llash).
+
 > **🕒 2026-07-29a (PROD HOTFIX: supply-deliver 500 + QABUL-TASDIQLASH WORKFLOW dizayn/spec · `9594d21`)**
 > Fokus-sessiya (climart-adoption deploy oqimida). Ikki deliverable + 2 ochiq hand-off.
 >
