@@ -305,6 +305,42 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-07-29a (PROD HOTFIX: supply-deliver 500 + QABUL-TASDIQLASH WORKFLOW dizayn/spec · `9594d21`)**
+> Fokus-sessiya (climart-adoption deploy oqimida). Ikki deliverable + 2 ochiq hand-off.
+>
+> **1. ✅ PROD HOTFIX (runtime-VERIFIED — bu Phase-1 emas, jonli tasdiqlangan) — `supply-goods/:id?deliver=true` → 500.**
+> Sabab: `prisma.debt.findMany()` **P2021** — `debts` jadvali sherset_v2 DB'da YO'Q edi. Ildiz: `Debt`/`DebtPayment`/
+> `DebtNote` + `telegram_chats`/`telegram_chat_messages`/`telegram_backfill_job` + `sms_templates` modellari SXEMADA
+> bor, lekin ularni yaratadigan **migration YOZILMAGAN** (schema drift). `prisma migrate diff` (DB→schema) → additive-only
+> (DROP/ALTER COLUMN yo'q, NOT-NULL-default-siz yo'q) → 7 jadval sherset_v2'ga atomik (`psql --single-transaction`).
+> **Verify (jonli):** `debts` so'raladi (0 qator, xatosiz), api-log `prisma:error` spam TO'XTADI. `notifications/stream`
+> 401/HTTP2 = token-eskirish SSE-reconnect shovqini (benign — feature buzuq emas, tegmadim).
+>
+> **⚠️ HAND-OFF (a) — REPO MIGRATION QARZI:** drift FAQAT sherset_v2 prod-DB'da qo'lda yopildi — **repo'da migration YO'Q.**
+> Keyingi sessiya: `packages/db/prisma/migrations/<ts>_add_debt_telegram_sms_drift` yoz (7 jadval CREATE, sxemadagi
+> modellarga mos) → **sherset_v2'da `prisma migrate resolve --applied <ts>_...`** (jadvallar allaqachon bor, deploy re-run
+> FAIL bermasin) → lokal/fresh DB'lar oddiy `migrate deploy` bilan olsin. DIQQAT: migration-state sync (sherset_v2=resolve, boshqa=deploy).
+>
+> **2. ✅ QABUL-TASDIQLASH WORKFLOW — dizayn + spec (egasi tasdiqladi; KOD YO'Q hali).**
+> Spec: `docs/superpowers/specs/2026-07-29-qabul-tasdiqlash-workflow-design.md` (`9594d21`). 3-rolli ketma-ket zanjir —
+> taminotchi (Telegram inline-tugma) → omborchi (jismonan sanaydi/tuzatadi) → admin (yakuniy tasdiq → stock). Egasi 4
+> qarorni tasdiqladi: Telegram-tugma · admin→Проведено/stock · omborchi-sonini-tuzatadi · reject→sabab+oldingi-bosqichga.
+> State-machine: `none→awaiting_supplier→delivering→awaiting_admin→completed`; reject har bosqichda oldingiga qaytadi;
+> `supply_approval_events` audit-log (kim/qachon/sabab).
+>
+> **➡️ HAND-OFF (b) = Faza A (BE state-machine, spec §6):** `Supply.approvalStage` + `supply_approval_events` jadval + migration +
+> yangi **`supply-approval`** moduli (send / omborchi-confirm / admin-confirm / reject transitionlar · stock-post admin
+> bosqichida mavjud Supply-«Проведено» orqali · audit-log · rol-gate · yangi permission `supply:receive`+`supply:approve`) +
+> **Vitest** (valid/invalid o'tish · reject→qaytish · stock faqat `completed`da · audit yoziladi). Telegram=Faza B, ERP-UI=Faza C
+> (keyin, alohida sessiya). **Spec ochiq savolsiz — darhol qurishga tayyor.**
+>
+> **🤝 §6 parallel-sessiya:** workflow `counterparty-statement` (Excel/MTProto — parallel domen) + `telegram` + `supply`'ga
+> tegadi. Izolyatsiya majburiy: butun mantiq YANGI `supply-approval` modulida; `generateSupplyGoods` faqat CHAQIRILADI
+> (ichi o'zgarmaydi), `handleInbound`'ga additive `sa:` callback-branch qo'shiladi. Prod-hotfix repo-fayl tegmadi (faqat sherset_v2 DB).
+>
+> **📌 Shu sessiyada avvalroq (davomi, memory `pick-list-feature.md`):** pick-list «chek» 80mm termal print fix deploy
+> qilindi (`@page 80mm auto`, `068808b`) — 80mm PDF-simulyatsiyada to'g'ri chiqdi; **real termal-printer tasdig'i foydalanuvchidan kutilmoqda.**
+
 > **🕒 2026-07-28a (SCOPE REESTRI + BLOK-0 QARZINI YOPISH — 12 commit · `a430879`…`2379a58`)**
 > Foydalanuvchi «hamma qilinishi kerak bo'lgan narsalarni ro'yxatla, keyin bir-bir bajar» dedi.
 >
