@@ -176,19 +176,17 @@ export function ReceiptPrintPortal({
         .rcpt, .rcpt table { font-weight: 600; }
         .rcpt td.rcpt-name { font-weight: 700; }
         @media print {
-          @page { size: auto; margin: 6mm; }
-          /* height:auto + min-height:0 collapse the full-viewport overlay to the
-             receipt's REAL height — otherwise the leftover ~viewport height below
-             the receipt feeds endless blank paper on a thermal/roll printer. */
+          /* A «chek» is a thermal receipt: an EXPLICIT 80mm roll width (× auto
+             content height) — NOT «size: auto», which let the printer pick an
+             A4/Letter page length and feed ~20cm of blank paper per receipt
+             («endless» print) AND let «Fit to page» scale the old 72mm up until
+             the last column clipped. 80mm auto = one exact-height 80mm strip:
+             correct on a thermal printer, and complete (no clip) on an A4 one. */
+          @page { size: 80mm auto; margin: 2mm; }
           html, body { background: #fff !important; margin: 0 !important; padding: 0 !important; overflow: visible !important; height: auto !important; min-height: 0 !important; }
           body > *:not([data-pick-print-root]) { display: none !important; }
           [data-pick-print-root] { position: static !important; overflow: visible !important; background: #fff !important; height: auto !important; min-height: 0 !important; max-height: none !important; }
-          /* Owner 2026-07-29 (photo bug): the old fixed «width: 72mm» got scaled
-             UP by the browser's «Fit to page» on an A4 printer → the last column
-             (Yacheyka) was clipped off the right edge. Fill the printable width
-             instead (A4 → ~120mm centred; a 72mm thermal roll → its own 72mm) so
-             it can never overflow, whatever the scale. */
-          .rcpt { width: 100% !important; max-width: 120mm !important; margin: 0 auto !important; padding: 1mm !important; }
+          .rcpt { width: 100% !important; max-width: 76mm !important; margin: 0 auto !important; padding: 1mm !important; }
           .no-print { display: none !important; }
         }
       `}</style>
