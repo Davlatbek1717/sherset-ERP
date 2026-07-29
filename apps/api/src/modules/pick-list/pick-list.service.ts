@@ -1,36 +1,37 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
-import { allowedStoreNames } from './picksync-env.util.js';
 
-/** One snapshot position as stored in MsPickList.positions JSON. */
+/** One snapshot position (kept for the dormant external-sync service's type). */
 export interface PickListPosition {
   msAssortmentId: string | null;
   name: string;
   qty: number;
   code: string | null;
   barcode: string | null;
-  /** Position price in minor units (tiyin), AFTER MoySklad's own semantics. */
   priceMinor?: number;
-  /** Percent discount on the position (MoySklad `discount`). */
   discount?: number;
-  /** Unit name («шт», «м», …) from assortment.uom. */
   uom?: string | null;
 }
 
-/** Position enriched with the CURRENT home cell of the product (read-time). */
-export interface ResolvedPosition extends PickListPosition {
+/** One resolved pick-list position (product + its CURRENT home cell). */
+export interface ResolvedPosition {
+  name: string;
+  qty: number;
+  uom: string | null;
   cell: string | null;
 }
 
 /**
- * «Yig'ish ro'yxatlari» — pick lists mirrored from the real MoySklad account.
- * The list/detail read side; the poller lives in PickListSyncService.
+ * «Yig'ish ro'yxatlari» — pick lists sourced from OUR OWN «Счёт покупателю»
+ * (InvoiceOut) documents (own-orders variant, owner 2026-07-28: sales live in
+ * THIS app as invoices-out, not mirrored from an external MoySklad account).
+ * The list is the warehouse screen; each invoice prints a 72mm pick list
+ * grouped by cell («Лист сборки»).
  *
- * Cells are resolved at READ time (not stored): the owner keeps re-binding
- * products to cells from the phone, and the print must always show the
- * current address. Match key = product.externalCode === MoySklad assortment
- * UUID (how the bulk import wrote every product), with a barcode fallback
- * for products created after the import.
+ * Cells are resolved at READ time from the product's `__yacheyka` attribute —
+ * re-binding a product to a new cell shows on the very next print. For our own
+ * documents the position → product link is direct (productId), so no code/
+ * barcode matching is needed.
  */
 @Injectable()
 export class PickListService {
@@ -40,76 +41,99 @@ export class PickListService {
     const limit = Math.min(Math.max(Number(query.limit) || 50, 1), 200);
     const offset = Math.max(Number(query.offset) || 0, 0);
     const search = typeof query.search === 'string' ? query.search.trim() : '';
-    // Owner 2026-07-27: show only the configured stores for now (Иподром);
-    // every order is still SYNCED, so adding a store later reveals history.
-    const stores = allowedStoreNames();
     const where = {
       accountId,
-      // «Проведено» unchecked = not a real sale (owner 2026-07-27) — hidden;
-      // re-proving the order in MoySklad brings it back within a tick.
-      applicable: true,
-      ...(stores.length ? { storeName: { in: stores } } : {}),
+      deletedAt: null,
       ...(search
         ? {
             OR: [
               { name: { contains: search, mode: 'insensitive' as const } },
-              { agentName: { contains: search, mode: 'insensitive' as const } },
-              { ownerName: { contains: search, mode: 'insensitive' as const } },
+              { agent: { name: { contains: search, mode: 'insensitive' as const } } },
             ],
           }
         : {}),
     };
     const [rows, total] = await Promise.all([
-      this.prisma.client.msPickList.findMany({
+      this.prisma.client.invoiceOut.findMany({
         where,
         orderBy: { moment: 'desc' },
         take: limit,
         skip: offset,
+        select: {
+          id: true,
+          name: true,
+          moment: true,
+          sumMinor: true,
+          payedSumMinor: true,
+          agent: { select: { name: true } },
+          store: { select: { name: true } },
+          owner: { select: { name: true } },
+          _count: { select: { positions: true } },
+        },
       }),
-      this.prisma.client.msPickList.count({ where }),
+      this.prisma.client.invoiceOut.count({ where }),
     ]);
     return {
       items: rows.map((r) => ({
         id: r.id,
         name: r.name,
-        docType: r.docType,
+        docType: 'invoiceout',
         moment: r.moment,
-        agentName: r.agentName,
-        storeName: r.storeName,
-        ownerName: r.ownerName,
+        agentName: r.agent?.name ?? null,
+        storeName: r.store?.name ?? null,
+        ownerName: r.owner?.name ?? null,
         sumMinor: r.sumMinor,
-        payedMinor: r.payedMinor,
-        positionsCount: Array.isArray(r.positions) ? r.positions.length : 0,
-        printedAt: r.printedAt,
+        payedMinor: r.payedSumMinor,
+        positionsCount: r._count.positions,
+        // Own orders carry no pick-print flag — always «new» (feature parity dropped).
+        printedAt: null as Date | null,
       })),
       total,
     };
   }
 
   async findById(accountId: string, id: string) {
-    const row = await this.prisma.client.msPickList.findFirst({ where: { id, accountId } });
-    if (!row) throw new NotFoundException(`Pick list ${id} not found`);
-    const positions = (Array.isArray(row.positions)
-      ? row.positions
-      : []) as unknown as PickListPosition[];
-    const resolved = await this.resolveCells(accountId, positions);
-    return { ...row, positions: resolved };
+    const row = await this.prisma.client.invoiceOut.findFirst({
+      where: { id, accountId, deletedAt: null },
+      select: {
+        id: true,
+        name: true,
+        moment: true,
+        description: true,
+        agent: { select: { name: true, phone: true } },
+        owner: { select: { name: true } },
+        positions: {
+          orderBy: { position: 'asc' },
+          select: {
+            quantity: true,
+            product: { select: { name: true, uom: true, attributes: true } },
+          },
+        },
+      },
+    });
+    if (!row) throw new NotFoundException(`Invoice ${id} not found`);
+    const positions: ResolvedPosition[] = row.positions.map((p) => ({
+      name: p.product?.name ?? '?',
+      qty: Number(p.quantity),
+      uom: p.product?.uom ?? null,
+      cell: cellOf(p.product?.attributes),
+    }));
+    return {
+      id: row.id,
+      name: row.name,
+      docType: 'customerorder',
+      moment: row.moment,
+      agentName: row.agent?.name ?? null,
+      agentPhone: row.agent?.phone ?? null,
+      ownerName: row.owner?.name ?? null,
+      description: row.description,
+      positions,
+    };
   }
 
-  /** Stamp printedAt (idempotent — the first print wins, reprints keep it). */
-  async markPrinted(accountId: string, id: string) {
-    const row = await this.prisma.client.msPickList.findFirst({
-      where: { id, accountId },
-      select: { id: true, printedAt: true },
-    });
-    if (!row) throw new NotFoundException(`Pick list ${id} not found`);
-    if (row.printedAt) return { id, printedAt: row.printedAt };
-    const upd = await this.prisma.client.msPickList.update({
-      where: { id },
-      data: { printedAt: new Date() },
-      select: { id: true, printedAt: true },
-    });
-    return upd;
+  /** No-op in the own-orders variant (own orders have no pick-print flag). */
+  async markPrinted(_accountId: string, id: string) {
+    return { id, printedAt: null as Date | null };
   }
 
   /** Home cells for OUR products by id — the «Печать → Лист сборки» action on
@@ -134,59 +158,17 @@ export class PickListService {
     });
     const cells: Record<string, string | null> = {};
     for (const p of products) {
-      const attrs = p.attributes as Record<string, unknown> | null;
-      const v = attrs?.__yacheyka;
-      cells[p.id] = typeof v === 'string' && v.length > 0 ? v : null;
+      cells[p.id] = cellOf(p.attributes);
     }
     return { cells };
   }
+}
 
-  /** Attach each position's CURRENT home cell (__yacheyka) from our products. */
-  private async resolveCells(
-    accountId: string,
-    positions: PickListPosition[],
-  ): Promise<ResolvedPosition[]> {
-    const extIds = [...new Set(positions.map((p) => p.msAssortmentId).filter(Boolean))] as string[];
-    const barcodes = [...new Set(positions.map((p) => p.barcode).filter(Boolean))] as string[];
-    // PROD reality (2026-07-27 live check): our products carry NO externalCode
-    // and their barcodes differ from MoySklad's — but `code` is IDENTICAL in
-    // both systems (8/8 sample hit). Code is the workhorse key; externalCode/
-    // barcode stay for accounts where they do line up.
-    const codes = [...new Set(positions.map((p) => p.code).filter(Boolean))] as string[];
-    const products = await this.prisma.client.product.findMany({
-      where: {
-        accountId,
-        deletedAt: null,
-        OR: [
-          ...(extIds.length ? [{ externalCode: { in: extIds } }] : []),
-          ...(barcodes.length ? [{ barcodes: { hasSome: barcodes } }] : []),
-          ...(codes.length ? [{ code: { in: codes } }] : []),
-        ],
-      },
-      select: { externalCode: true, barcodes: true, code: true, attributes: true },
-    });
-    const cellOf = (attrs: unknown): string | null => {
-      if (attrs && typeof attrs === 'object' && '__yacheyka' in attrs) {
-        const v = (attrs as Record<string, unknown>).__yacheyka;
-        return typeof v === 'string' && v.length > 0 ? v : null;
-      }
-      return null;
-    };
-    const byExt = new Map<string, string | null>();
-    const byBarcode = new Map<string, string | null>();
-    const byCode = new Map<string, string | null>();
-    for (const p of products) {
-      const cell = cellOf(p.attributes);
-      if (p.externalCode) byExt.set(p.externalCode, cell);
-      if (p.code && !byCode.has(p.code)) byCode.set(p.code, cell);
-      for (const b of p.barcodes ?? []) if (!byBarcode.has(b)) byBarcode.set(b, cell);
-    }
-    return positions.map((p) => ({
-      ...p,
-      cell:
-        (p.msAssortmentId ? byExt.get(p.msAssortmentId) : null) ??
-        (p.barcode ? byBarcode.get(p.barcode) : null) ??
-        (p.code ? (byCode.get(p.code) ?? null) : null),
-    }));
+/** Read the product's home cell from its `__yacheyka` attribute (else null). */
+function cellOf(attrs: unknown): string | null {
+  if (attrs && typeof attrs === 'object' && '__yacheyka' in attrs) {
+    const v = (attrs as Record<string, unknown>).__yacheyka;
+    return typeof v === 'string' && v.length > 0 ? v : null;
   }
+  return null;
 }
