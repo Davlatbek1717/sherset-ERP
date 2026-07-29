@@ -1,9 +1,9 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Inject, Param, Post, UseGuards } from '@nestjs/common';
 import type { AuthenticatedUser } from '../auth/auth.schema.js';
 import { CurrentUser } from '../auth/current-user.decorator.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { RequirePermission } from '../permissions/require-permission.decorator.js';
-import type { SupplyApprovalService } from './supply-approval.service.js';
+import { SupplyApprovalService } from './supply-approval.service.js';
 
 /**
  * Qabul-tasdiqlash workflow endpointlari (2026-07-29 spec). `/supplies` base'i
@@ -13,7 +13,7 @@ import type { SupplyApprovalService } from './supply-approval.service.js';
 @Controller('supplies')
 @UseGuards(JwtAuthGuard)
 export class SupplyApprovalController {
-  constructor(private readonly svc: SupplyApprovalService) {}
+  constructor(@Inject(SupplyApprovalService) private readonly svc: SupplyApprovalService) {}
 
   @Get(':id/approval')
   @RequirePermission({ entity: 'supply', action: 'view' })
