@@ -54,8 +54,19 @@ export interface ExpandedCell {
 
 const PLACEHOLDER = /\{([^{}]+)\}/g;
 
-/** Bitta o'zgaruvchining barcha qiymatlari, tartib bo'yicha. */
-function valuesOf(v: CellRangeVariable): string[] {
+/**
+ * Bitta o'zgaruvchining VALIDATSIYASI + qiymatlar SONI — massiv QURMASDAN.
+ *
+ * Sanoq ataylab arifmetik: `CELL_RANGE_MAX` tekshiruvi massivlar qurilishidan
+ * OLDIN bajarilishi shart. Aks holda `num('a', 1, 50_000_000)` da 5000 chegarasiga
+ * yetguncha 50 million satrli massiv yaratilib, Node event loop bloklanadi yoki
+ * xotira tugaydi. Task 2 Zod sxemasida `to` uchun yuqori chegara YO'Q, ya'ni
+ * foydalanuvchining oddiy yozuv xatosi (`999999`) serverni osib qo'yishi mumkin edi.
+ *
+ * Butun validatsiya SHU YERDA — `valuesOf` faqat shuni chaqiradi, shuning uchun
+ * xato xabarlari bitta joyda va o'zgarmasdan qoladi.
+ */
+function countOf(v: CellRangeVariable): number {
   if (v.kind === 'number') {
     if (!Number.isInteger(v.from) || !Number.isInteger(v.to)) {
       throw new CellRangeError(`«${v.key}»: chegaralar butun son bo'lishi kerak`);
@@ -68,9 +79,7 @@ function valuesOf(v: CellRangeVariable): string[] {
     if (!Number.isInteger(pad) || pad < 0 || pad > 6) {
       throw new CellRangeError(`«${v.key}»: nol-to'ldirish 0 dan 6 gacha bo'lishi kerak`);
     }
-    const out: string[] = [];
-    for (let i = v.from; i <= v.to; i++) out.push(String(i).padStart(pad, '0'));
-    return out;
+    return v.to - v.from + 1;
   }
 
   const from = String(v.from).toUpperCase();
@@ -86,8 +95,26 @@ function valuesOf(v: CellRangeVariable): string[] {
     throw new CellRangeError(`«${v.key}»: faqat A–Z harflari`);
   }
   if (f > t) throw new CellRangeError(`«${v.key}»: boshlanish (${from}) tugashdan (${to}) katta`);
+  return t - f + 1;
+}
+
+/**
+ * Bitta o'zgaruvchining barcha qiymatlari, tartib bo'yicha.
+ * Validatsiya `countOf` da — bu yerda faqat qurish.
+ * Faqat `CELL_RANGE_MAX` tekshiruvidan KEYIN chaqirilishi kerak.
+ */
+function valuesOf(v: CellRangeVariable): string[] {
+  const count = countOf(v);
   const out: string[] = [];
-  for (let c = f; c <= t; c++) out.push(String.fromCharCode(c));
+
+  if (v.kind === 'number') {
+    const pad = v.pad ?? 0;
+    for (let i = v.from; i <= v.to; i++) out.push(String(i).padStart(pad, '0'));
+    return out;
+  }
+
+  const f = String(v.from).toUpperCase().charCodeAt(0);
+  for (let i = 0; i < count; i++) out.push(String.fromCharCode(f + i));
   return out;
 }
 
@@ -121,12 +148,17 @@ export function expandCellRange(spec: CellRangeSpec): ExpandedCell[] {
     throw new CellRangeError(`Zona uchun «${spec.zoneFrom}» o'zgaruvchisi topilmadi`);
   }
 
-  const lists = spec.variables.map((v) => ({ key: v.key, values: valuesOf(v) }));
+  // AVVAL sanaymiz (validatsiya + arifmetika, massivsiz), KEYIN quramiz —
+  // aks holda chegaradan oshib ketgan diapazon tekshiruvga yetguncha xotirani yeydi.
+  const counts = spec.variables.map(countOf);
   let total = 1;
-  for (const l of lists) total *= l.values.length;
+  for (const c of counts) total *= c;
   if (total > CELL_RANGE_MAX) {
     throw new CellRangeError(`${total} ta yacheyka chiqadi, chegara ${CELL_RANGE_MAX}`);
   }
+
+  // Endi xavfsiz: `total` <= CELL_RANGE_MAX, ya'ni har massiv ham shu chegara ichida.
+  const lists = spec.variables.map((v) => ({ key: v.key, values: valuesOf(v) }));
 
   const out: ExpandedCell[] = [];
   for (let i = 0; i < total; i++) {

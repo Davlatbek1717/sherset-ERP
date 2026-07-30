@@ -162,6 +162,19 @@ describe('expandCellRange', () => {
     ).toThrow(/takroriy nom/);
   });
 
+  it('juda katta diapazon massiv qurmasdan darhol rad etiladi', () => {
+    const t0 = Date.now();
+    expect(() =>
+      expandCellRange({
+        template: '{a}',
+        variables: [num('a', 1, 50_000_000)],
+        zoneFrom: null,
+      }),
+    ).toThrow(/5000/);
+    // Massiv qurilsa bu soniyalar oladi; arifmetik yo'l mikrosoniya.
+    expect(Date.now() - t0).toBeLessThan(1000);
+  });
+
   it("ajratuvchi bo'lsa to'qnashuv yo'q", () => {
     const r = expandCellRange({
       template: '{a}-{b}',
