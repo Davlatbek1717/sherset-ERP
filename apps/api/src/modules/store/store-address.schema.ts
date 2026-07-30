@@ -81,3 +81,40 @@ export const SetCellStockSchema = z.object({
     .regex(/^\d+(\.\d{1,6})?$/, 'qty must be a non-negative decimal (≤6 dp)'),
 });
 export type SetCellStockInput = z.infer<typeof SetCellStockSchema>;
+
+// ---- Ommaviy yaratish (diapazon generatori) ----
+//
+// Bu sxema FAQAT shakl va tipni tekshiradi. Semantik qoidalar — diapazon
+// chegaralari (`from > to`), harflar A–Z ekani, 5000 chegara, takroriy nom,
+// nom uzunligi — `cell-range.util.ts` dagi `countOf`/`expandCellRange` da,
+// bitta joyda. Bu yerda takrorlansa, bitta xato ikki xil xabar bilan chiqadi.
+// Xususan `to` uchun ataylab `.max()` YO'Q: util massiv qurishdan OLDIN
+// arifmetik sanaydi, ya'ni katta diapazon xotirani yemasdan rad etiladi.
+
+/** Bitta shablon o'zgaruvchisi. Yoyish qoidalari — `cell-range.util.ts`. */
+const rangeVariable = z.discriminatedUnion('kind', [
+  z.object({
+    key: z.string().trim().min(1).max(40),
+    kind: z.literal('number'),
+    from: z.coerce.number().int().min(0),
+    to: z.coerce.number().int().min(0),
+    pad: z.coerce.number().int().min(0).max(6).optional(),
+  }),
+  z.object({
+    key: z.string().trim().min(1).max(40),
+    kind: z.literal('letter'),
+    from: z.string().trim().length(1),
+    to: z.string().trim().length(1),
+  }),
+]);
+
+export const BulkCreateCellsSchema = z.object({
+  template: z.string().trim().min(1, 'Shablon boʻsh boʻlmasligi kerak').max(255),
+  // 6 tadan ortiq o'zgaruvchi amalda uchramaydi va dekart ko'paytmasini
+  // portlatadi — chegara qo'yiladi (yoyish o'zi ham 5000 da to'xtaydi).
+  variables: z.array(rangeVariable).min(1).max(6),
+  zoneFrom: z.string().trim().min(1).max(40).nullable(),
+  /** true ⇒ hech narsa yozilmaydi, faqat sanoq qaytadi. */
+  dryRun: z.boolean().default(false),
+});
+export type BulkCreateCellsInput = z.infer<typeof BulkCreateCellsSchema>;

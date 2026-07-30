@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import type { CellRangeSpec } from './cell-range.util.js';
 import {
+  BulkCreateCellsSchema,
   CreateCellSchema,
   CreateZoneSchema,
   UpdateCellSchema,
@@ -111,5 +113,66 @@ describe('CellBarcodeLookupSchema', () => {
     expect(CellBarcodeLookupSchema.safeParse({ code: '   ' }).success).toBe(false);
     expect(CellBarcodeLookupSchema.safeParse({}).success).toBe(false);
     expect(CellBarcodeLookupSchema.safeParse({ code: 'x'.repeat(256) }).success).toBe(false);
+  });
+});
+
+describe('BulkCreateCellsSchema', () => {
+  const ok = {
+    template: '{a}-{b}',
+    variables: [
+      { key: 'a', kind: 'number', from: 1, to: 5, pad: 2 },
+      { key: 'b', kind: 'letter', from: 'A', to: 'C' },
+    ],
+    zoneFrom: 'a',
+  };
+
+  it("to'g'ri retseptni qabul qiladi, dryRun default false", () => {
+    const r = BulkCreateCellsSchema.safeParse(ok);
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.dryRun).toBe(false);
+  });
+
+  it('dryRun uzatilsa saqlanadi', () => {
+    const r = BulkCreateCellsSchema.safeParse({ ...ok, dryRun: true });
+    expect(r.success && r.data.dryRun).toBe(true);
+  });
+
+  it("zoneFrom null bo'lishi mumkin", () => {
+    expect(BulkCreateCellsSchema.safeParse({ ...ok, zoneFrom: null }).success).toBe(true);
+  });
+
+  it("bo'sh shablon rad etiladi", () => {
+    expect(BulkCreateCellsSchema.safeParse({ ...ok, template: '' }).success).toBe(false);
+  });
+
+  it("noma'lum kind rad etiladi", () => {
+    const bad = { ...ok, variables: [{ key: 'a', kind: 'roman', from: 1, to: 3 }] };
+    expect(BulkCreateCellsSchema.safeParse(bad).success).toBe(false);
+  });
+
+  it("variables bo'sh massiv rad etiladi", () => {
+    expect(BulkCreateCellsSchema.safeParse({ ...ok, variables: [] }).success).toBe(false);
+  });
+
+  it("o'zgaruvchilar soni 6 tadan oshsa rad etiladi", () => {
+    const many = Array.from({ length: 7 }, (_, i) => ({
+      key: `k${i}`,
+      kind: 'number' as const,
+      from: 1,
+      to: 2,
+    }));
+    expect(BulkCreateCellsSchema.safeParse({ ...ok, variables: many }).success).toBe(false);
+  });
+
+  // Zod chiqishi Task 1 ning CellRangeSpec'iga struktur mos bo'lishi SHART —
+  // aks holda servis `expandCellRange(input)` ni chaqira olmaydi.
+  it('sxema chiqishi CellRangeSpec bilan mos', () => {
+    const parsed = BulkCreateCellsSchema.parse(ok);
+    const spec: CellRangeSpec = {
+      template: parsed.template,
+      variables: parsed.variables,
+      zoneFrom: parsed.zoneFrom,
+    };
+    expect(spec.variables).toHaveLength(2);
   });
 });
