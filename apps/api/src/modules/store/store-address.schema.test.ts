@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { CellRangeSpec } from './cell-range.util.js';
+import { type CellRangeSpec, expandCellRange } from './cell-range.util.js';
 import {
   BulkCreateCellsSchema,
   CreateCellSchema,
@@ -162,6 +162,39 @@ describe('BulkCreateCellsSchema', () => {
       to: 2,
     }));
     expect(BulkCreateCellsSchema.safeParse({ ...ok, variables: many }).success).toBe(false);
+  });
+
+  it("manfiy `from` Zod'dan O'TADI — semantik xato countOf'da chiqadi", () => {
+    // Zod faqat shakl/tipni tekshiradi. Manfiy diapazon — semantik qoida,
+    // uning yagona manzili cell-range.util.ts dagi countOf(); u xatoda
+    // o'zgaruvchi NOMINI beradi, Zod esa umumiy xabar berardi.
+    const r = BulkCreateCellsSchema.safeParse({
+      ...ok,
+      variables: [{ key: 'a', kind: 'number', from: -3, to: 5 }],
+    });
+    expect(r.success).toBe(true);
+    expect(() =>
+      expandCellRange({
+        template: '{a}',
+        variables: r.success ? r.data.variables : [],
+        zoneFrom: null,
+      }),
+    ).toThrow(/manfiy son bo'lmaydi/);
+  });
+
+  it("chegaradan tashqari `pad` Zod'dan O'TADI — semantik xato countOf'da chiqadi", () => {
+    const r = BulkCreateCellsSchema.safeParse({
+      ...ok,
+      variables: [{ key: 'a', kind: 'number', from: 1, to: 3, pad: 9 }],
+    });
+    expect(r.success).toBe(true);
+    expect(() =>
+      expandCellRange({
+        template: '{a}',
+        variables: r.success ? r.data.variables : [],
+        zoneFrom: null,
+      }),
+    ).toThrow(/nol-to'ldirish/);
   });
 
   // Zod chiqishi Task 1 ning CellRangeSpec'iga struktur mos bo'lishi SHART —

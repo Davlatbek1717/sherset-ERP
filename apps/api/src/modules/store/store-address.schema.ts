@@ -84,21 +84,32 @@ export type SetCellStockInput = z.infer<typeof SetCellStockSchema>;
 
 // ---- Ommaviy yaratish (diapazon generatori) ----
 //
-// Bu sxema FAQAT shakl va tipni tekshiradi. Semantik qoidalar — diapazon
-// chegaralari (`from > to`), harflar A–Z ekani, 5000 chegara, takroriy nom,
-// nom uzunligi — `cell-range.util.ts` dagi `countOf`/`expandCellRange` da,
-// bitta joyda. Bu yerda takrorlansa, bitta xato ikki xil xabar bilan chiqadi.
-// Xususan `to` uchun ataylab `.max()` YO'Q: util massiv qurishdan OLDIN
-// arifmetik sanaydi, ya'ni katta diapazon xotirani yemasdan rad etiladi.
+// Bu sxema FAQAT shakl va tipni tekshiradi. HAMMA semantik qoida —
+// `cell-range.util.ts` dagi `countOf`/`expandCellRange` da, bitta manzilda.
+//
+// Shuning uchun bu yerda ATAYLAB YO'Q (qaytarib qo'shmang):
+//   · `from`/`to` da `.min(0)` — manfiy diapazonni `countOf` rad etadi va
+//     xatoda o'zgaruvchi NOMINI beradi («a»: manfiy son bo'lmaydi), Zod esa
+//     umumiy «greater than or equal to 0» berardi va aniq xabar hech qachon
+//     ishga tushmasdi (o'lik shox).
+//   · `pad` da `.min(0).max(6)` — xuddi shu sabab, `countOf` xabari aniqroq.
+//   · `to` da `.max()` — util massiv qurishdan OLDIN arifmetik sanaydi,
+//     ya'ni katta diapazon xotirani yemasdan rad etiladi.
+// Takrorlansa bitta xato ikki xil xabar bilan chiqadi — bu loyihada
+// qayta-qayta chiqqan bug-klass.
+//
+// `variables` dagi `.max(6)` esa semantik qoida EMAS — u kirishning SHAKLI
+// (nechta element) va dekart ko'paytmasi portlashiga qarshi DoS himoyasi,
+// shuning uchun Zod'da qoladi.
 
 /** Bitta shablon o'zgaruvchisi. Yoyish qoidalari — `cell-range.util.ts`. */
 const rangeVariable = z.discriminatedUnion('kind', [
   z.object({
     key: z.string().trim().min(1).max(40),
     kind: z.literal('number'),
-    from: z.coerce.number().int().min(0),
-    to: z.coerce.number().int().min(0),
-    pad: z.coerce.number().int().min(0).max(6).optional(),
+    from: z.coerce.number().int(),
+    to: z.coerce.number().int(),
+    pad: z.coerce.number().int().optional(),
   }),
   z.object({
     key: z.string().trim().min(1).max(40),
