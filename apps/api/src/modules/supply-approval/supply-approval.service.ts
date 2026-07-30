@@ -1,6 +1,16 @@
+import { randomBytes } from 'node:crypto';
 import type { Prisma } from '@moysklad/db';
-import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
+
+/** Faza E: taminotchi magic-link amal muddati — 14 kun. */
+const SUPPLIER_LINK_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 import { decryptPassword } from '../email/crypto.js';
 import { SupplyService } from '../supply/supply.service.js';
 import {
@@ -211,6 +221,89 @@ export class SupplyApprovalService {
       );
     }
     return this.getApproval(accountId, id);
+  }
+
+  // =========================================================================
+  // Faza E (2026-07-30): taminotchi PAROLSIZ magic-link — tasdiq/rad.
+  // Token supply+role+agentга bog'langan + muddatli. Public endpoint FAQAT
+  // applySupplierDecision chaqiradi (CRUD YO'Q). accountId token-qatordан olinadi.
+  // =========================================================================
+
+  /** Taminotchi uchun bir-martalik capability-token + public URL yaratadi (14 kun). */
+  async issueSupplierLink(
+    accountId: string,
+    supplyId: string,
+  ): Promise<{ token: string; url: string }> {
+    const supply = await this.prisma.client.supply.findFirst({
+      where: { id: supplyId, accountId, deletedAt: null },
+      select: { agentId: true },
+    });
+    if (!supply) throw new NotFoundException('Qabul topilmadi');
+    const token = randomBytes(24).toString('hex');
+    const expiresAt = new Date(Date.now() + SUPPLIER_LINK_TTL_MS);
+    await this.prisma.client.supplyApprovalLink.create({
+      data: { accountId, supplyId, token, role: 'supplier', agentId: supply.agentId, expiresAt },
+    });
+    const base = process.env.APP_BASE_URL || 'https://erp.sherset.uz';
+    return { token, url: `${base}/p/qabul/${token}` };
+  }
+
+  /** Token → yaroqli link (muddat tekshiriladi) yoki null. */
+  private async loadValidLink(token: string) {
+    const link = await this.prisma.client.supplyApprovalLink.findUnique({ where: { token } });
+    if (!link || link.expiresAt.getTime() < Date.now()) return null;
+    return link;
+  }
+
+  /** Public (token-auth): taminotchi ko'radigan qabul ko'rinishi. */
+  async getPublicSupplyView(token: string) {
+    const link = await this.loadValidLink(token);
+    if (!link) throw new NotFoundException("Havola yaroqsiz yoki muddati o'tgan");
+    const supply = await this.prisma.client.supply.findFirst({
+      where: { id: link.supplyId, accountId: link.accountId, deletedAt: null },
+      select: {
+        name: true,
+        currency: true,
+        sumMinor: true,
+        approvalStage: true,
+        agent: { select: { name: true } },
+        positions: {
+          orderBy: { position: 'asc' },
+          select: { quantity: true, priceMinor: true, product: { select: { name: true } } },
+        },
+      },
+    });
+    if (!supply) throw new NotFoundException('Qabul topilmadi');
+    return {
+      name: supply.name,
+      agentName: supply.agent?.name ?? null,
+      stage: supply.approvalStage as ApprovalStage,
+      currency: supply.currency,
+      sumMinor: supply.sumMinor.toString(),
+      positions: supply.positions.map((p) => ({
+        product: p.product?.name ?? '—',
+        quantity: p.quantity.toString(),
+        priceMinor: p.priceMinor.toString(),
+      })),
+    };
+  }
+
+  /** Public (token-auth): taminotchi tasdiq (approve=true) yoki rad (false + sabab). */
+  async decideViaLink(token: string, approve: boolean, reason?: string) {
+    if (!approve && !reason?.trim()) throw new BadRequestException('Rad etish sababi majburiy');
+    const link = await this.loadValidLink(token);
+    if (!link) throw new NotFoundException("Havola yaroqsiz yoki muddati o'tgan");
+    const result = await this.applySupplierDecision(
+      link.accountId,
+      link.supplyId,
+      approve,
+      reason?.trim(),
+    );
+    await this.prisma.client.supplyApprovalLink.update({
+      where: { id: link.id },
+      data: { usedAt: new Date() },
+    });
+    return result;
   }
 
   /** Faza B: taminotchiga inline-tugmali xabar (Bot API). Non-fatal.

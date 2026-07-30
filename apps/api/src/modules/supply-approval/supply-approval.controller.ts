@@ -55,4 +55,11 @@ export class SupplyApprovalController {
   reject(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() body: unknown) {
     return this.svc.reject(user.accountId, user.sub, id, body);
   }
+
+  // Faza E: taminotchi uchun parolsiz magic-link (URL) yaratadi — admin lichkasidan yuboriladi.
+  @Post(':id/approval/supplier-link')
+  @RequirePermission({ entity: 'supply', action: 'update' })
+  supplierLink(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.svc.issueSupplierLink(user.accountId, id);
+  }
 }
