@@ -51,9 +51,9 @@ type RangeVariablePayload =
   | { key: string; kind: 'letter'; from: string; to: string };
 
 /**
- * Ombor kodidan nomning BIRINCHI segmenti. Bittalab yacheyka muharriri bilan
- * bir xil qoida (`cellPrefix`, address-storage-section.tsx): kod 1–2 xonali
- * raqam bo'lsa o'sha (nol bilan to'ldirilgan), aks holda «01».
+ * Ombor kodidan nomning BIRINCHI segmenti — bittalab yacheyka muharriri
+ * (`NewCellRow`, address-storage-section.tsx) bilan bir xil qoida: kod 1–2
+ * xonali raqam bo'lsa o'sha (nol bilan to'ldirilgan), aks holda «01».
  */
 function omborSegment(storeCode?: string): string {
   const raw = storeCode?.trim() ?? '';

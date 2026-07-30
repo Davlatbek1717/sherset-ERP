@@ -5618,7 +5618,7 @@
         "cell_placeholder": "Наименование ячейки",
         "seg_store": "Склад",
         "seg_shelf": "Полка",
-        "seg_level": "Ярус",
+        "seg_level": "Ряд",
         "seg_cell": "Ячейка",
         "barcode_placeholder": "Штрихкод",
         "generate_barcode": "Сгенерировать штрихкод",

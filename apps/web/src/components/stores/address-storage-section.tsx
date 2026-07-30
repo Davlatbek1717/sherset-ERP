@@ -212,23 +212,18 @@ function InlineText({
 }
 
 /**
- * The cell code's first two segments (Sklad-section): seg1 = the store's «Код»
- * if it's a 1–2 digit number, else «01»; seg2 = «01». So a polka's
- * auto-generated cells read «01-01-{polka}-{NN}» (user 2026-07-05). Kept fixed
- * per store — NOT learned from existing cells (legacy/junk cells could carry a
- * stray prefix and derail the sequence).
+ * Yacheyka kodi — TO'RT segment: `ombor-polka-qator-yacheyka`, har biri 2 xonali
+ * raqam, nol bilan to'ldirilgan (egasi 2026-07-30 da tasdiqladi). Segment
+ * nomlari `CELL_SEGMENTS` da, 1-segment ombor «Kod»idan oldindan to'ladi.
+ *
+ * 2026-07-30 da bu yerdan IKKI o'lik funksiya olib tashlandi:
+ *   - `cellPrefix()` — «seg1-01» prefiksini qaytarardi, ya'ni 2-segmentga qat'iy
+ *     «01» qo'yardi. Yangi ta'rifda 2-segment = POLKA, qat'iy qiymat noto'g'ri.
+ *   - `polkaSeg3()` — polkani 3-segmentdan o'qirdi. Yangi ta'rifda polka =
+ *     2-segment; ustiga o'sha izohning o'zi «bu qoida 2026-07-06 da olib
+ *     tashlangan» derdi. Ikkalasi ham hech qayerda chaqirilmasdi (grep 0).
+ * Polka endi faqat qatorning o'z dropdown'idan keladi (`draftPolka`).
  */
-export function cellPrefix(storeCode?: string): string {
-  const raw = storeCode?.trim() ?? '';
-  const s1 = /^\d{1,2}$/.test(raw) ? raw.padStart(2, '0') : '01';
-  return `${s1}-01`;
-}
-
-/** Polka = the cell code's THIRD segment (numeric), else null (polka-less). */
-export function polkaSeg3(name: string): string | null {
-  const seg = name.split('-')[2]?.trim();
-  return seg && /^\d+$/.test(seg) ? seg : null;
-}
 
 /**
  * A draft cell's effective polka = ONLY the explicitly chosen `polka` (via the
