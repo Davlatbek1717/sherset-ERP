@@ -35,6 +35,7 @@ import { genEan13 } from '@/components/products/use-product-form';
 import { CellContentsModal } from '@/components/stores/cell-contents-modal';
 import { CellCountModal } from '@/components/stores/cell-count-modal';
 import { CellLabelPrintOverlay } from '@/components/stores/cell-label-print';
+import type { SegmentRange } from '@/components/stores/cell-name-range';
 import { CellRangeModal } from '@/components/stores/cell-range-modal';
 import { CellScanBindModal } from '@/components/stores/cell-scan-bind-modal';
 import { api } from '@/lib/api-client';
@@ -714,6 +715,9 @@ export function AddressStorageSection({
   // «Diapazon bo'yicha» — ommaviy yacheyka generatori (faqat server rejimida:
   // yangi ombor hali saqlanmagan, `storeId` yo'q ⇒ endpoint ham yo'q).
   const [rangeOpen, setRangeOpen] = useState(false);
+  // Diapazon bilan yaratilgandan keyin etiketka oynasi shu diapazon bilan
+  // ochiladi — foydalanuvchi yuzlab katakchani qayta belgilamasin.
+  const [labelRanges, setLabelRanges] = useState<Array<SegmentRange | null> | null>(null);
   // «🖨 Этикетка» print-preview target (server mode only — needs per-cell stock).
   const [labelCell, setLabelCell] = useState<{
     id: string;
@@ -1420,14 +1424,22 @@ export function AddressStorageSection({
         )}
       </div>
 
-      {serverMode && storeId && labelCell && (
+      {/* Etiketka oynasi ikki yo'l bilan ochiladi: qatordagi 🖨 (bitta yacheyka
+          oldindan belgilangan) YOKI diapazon bilan yaratilgandan keyin
+          (`labelRanges` — moslar avtomat belgilanadi, yuzlab katakchani qo'lda
+          bosish shart emas). */}
+      {serverMode && storeId && (labelCell || labelRanges) && (
         <CellLabelPrintOverlay
-          cell={labelCell}
+          cell={labelCell ?? undefined}
+          initialRanges={labelRanges ?? undefined}
           // Only saved cells are printable — pending drafts have no real id yet.
           cells={cells
             .filter((c) => !c.pending)
             .map((c) => ({ id: c.id, name: c.name, barcode: c.barcode }))}
-          onClose={() => setLabelCell(null)}
+          onClose={() => {
+            setLabelCell(null);
+            setLabelRanges(null);
+          }}
         />
       )}
 
@@ -1439,7 +1451,10 @@ export function AddressStorageSection({
           storeId={storeId}
           storeCode={storeCode}
           onClose={() => setRangeOpen(false)}
-          onCreated={invalidate}
+          onCreated={(ranges) => {
+            invalidate();
+            setLabelRanges(ranges);
+          }}
         />
       )}
 

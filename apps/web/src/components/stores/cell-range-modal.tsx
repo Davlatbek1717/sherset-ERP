@@ -12,6 +12,7 @@
  * (1) katta). Oyna ularni o'zi yozsa, ikkita haqiqat manbai paydo bo'lardi.
  */
 
+import type { SegmentRange } from '@/components/stores/cell-name-range';
 import { api } from '@/lib/api-client';
 import { Button, Input, Modal, NativeSelect, useToast } from '@moysklad/ui';
 import { useMutation } from '@tanstack/react-query';
@@ -72,7 +73,14 @@ export function CellRangeModal({
   /** Ombor «Kod»i — nomning 1-segmenti shundan oldindan to'ldiriladi. */
   storeCode?: string;
   onClose(): void;
-  onCreated(): void;
+  /**
+   * Yaratilgandan keyin. `ranges` — aynan shu amalda ishlatilgan diapazon
+   * (ombor segmenti cheklanmagan deb beriladi, chunki oyna baribir bitta
+   * ombor ichida). Ota-komponent shu bilan etiketka chop etish oynasini
+   * to'g'ridan-to'g'ri ochadi — foydalanuvchi 400 katakchani qayta
+   * belgilamasin.
+   */
+  onCreated(ranges: Array<SegmentRange | null>): void;
 }) {
   const t = useTranslations('pages.stores.address_storage');
   const tc = useTranslations('common');
@@ -181,7 +189,17 @@ export function CellRangeModal({
       // o'sha nomlarni yaratib ulgursa, server kamroq yozadi va oyna yolg'on
       // son aytmasligi kerak.
       toast.success(t('range_done', { created: r.created, skipped: r.existing }));
-      onCreated();
+      // Nom `ombor-polka-qator-yacheyka`: chop etish filtri uchun oxirgi uch
+      // segment kifoya, ombor cheklanmagan (oyna shu ombor ichida).
+      const seg = (key: string): SegmentRange | null => {
+        const v = vars[key];
+        if (!v || v.kind !== 'number') return null;
+        const f = Number.parseInt(v.from, 10);
+        const t2 = Number.parseInt(v.to, 10);
+        if (!Number.isFinite(f) || !Number.isFinite(t2)) return null;
+        return f <= t2 ? { from: f, to: t2 } : { from: t2, to: f };
+      };
+      onCreated([null, seg('polka'), seg('qator'), seg('yacheyka')]);
       onClose();
     },
     onError: (e: Error) => setError(e.message),

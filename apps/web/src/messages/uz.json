@@ -5693,7 +5693,14 @@
         "search_cell": "Yacheyka raqamini yozing…",
         "subtitle": "Etiketkalar: {labels} (58×40 mm, har biri alohida varaqda)",
         "copies": "Nusxa",
-        "print": "Chop etish"
+        "print": "Chop etish",
+        "range_title": "Diapazon bo'yicha:",
+        "range_polka": "polka",
+        "range_qator": "qator",
+        "range_yacheyka": "yacheyka",
+        "range_from": "dan",
+        "range_to": "gacha",
+        "range_apply": "Belgilash ({count})"
       },
       "cell_labels": "Yacheyka labellari",
       "address_storage_title": "Tovarlarni adresli saqlash",

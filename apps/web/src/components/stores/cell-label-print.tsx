@@ -22,6 +22,7 @@
  */
 
 import { TAG_FONT } from '@/components/assortment/qr-price-tag-print';
+import { type SegmentRange, filterCellsByRange } from '@/components/stores/cell-name-range';
 import { code128Widths } from '@/lib/vendor/code128';
 import { Button, Icons, Input } from '@moysklad/ui';
 import { useTranslations } from 'next-intl';
@@ -142,6 +143,92 @@ function CellLabel({ label }: { label: LabelData }) {
           free-text name, no barcode) prints the big code text only — no QR
           anywhere (user rule 2026-07-05). */}
       {barcodeEncodable && <Code128Svg value={label.qrValue} heightPx={52} />}
+    </div>
+  );
+}
+
+/**
+ * «Diapazon bo'yicha belgilash» — 400 ta katakchani qo'lda belgilash o'rniga
+ * (egasi 2026-07-30). Nom `ombor-polka-qator-yacheyka` bo'lgani uchun uch
+ * segmentga diapazon berish kifoya; ombor baribir bitta (oyna shu ombor
+ * ichida). Mos kelganlar tanlovga QO'SHILADI — mavjud belgilar o'chmaydi.
+ *
+ * Bu YARATMAYDI, faqat mavjud yacheykalarni filtrlaydi (sof mantiq
+ * `cell-name-range.ts` da, testlari bilan).
+ */
+function RangeSelectRow({
+  cells,
+  onSelect,
+}: {
+  cells: Array<{ id: string; name: string }>;
+  onSelect: (ids: string[]) => void;
+}) {
+  const t = useTranslations('pages.stores.cell_label');
+  const [polka, setPolka] = useState({ from: '', to: '' });
+  const [qator, setQator] = useState({ from: '', to: '' });
+  const [yach, setYach] = useState({ from: '', to: '' });
+
+  /** Bo'sh juftlik ⇒ null (cheklanmagan). Yarim to'ldirilgani ham null. */
+  const toRange = (v: { from: string; to: string }): SegmentRange | null => {
+    const f = Number.parseInt(v.from, 10);
+    const tt = Number.parseInt(v.to, 10);
+    if (!Number.isFinite(f) || !Number.isFinite(tt)) return null;
+    return f <= tt ? { from: f, to: tt } : { from: tt, to: f };
+  };
+
+  const ranges = [null, toRange(polka), toRange(qator), toRange(yach)];
+  const anySet = ranges.some((r) => r !== null);
+  const matched = anySet ? filterCellsByRange(cells, ranges) : [];
+
+  const num = (v: string) => v.replace(/\D/g, '').slice(0, 2);
+  const pair = (
+    label: string,
+    v: { from: string; to: string },
+    set: (n: { from: string; to: string }) => void,
+    testId: string,
+  ) => (
+    <span className="flex items-center gap-1">
+      <span className="text-slate-500 text-xs">{label}</span>
+      <Input
+        value={v.from}
+        onChange={(e) => set({ ...v, from: num(e.target.value) })}
+        className="h-7 w-12 text-center tabular-nums"
+        inputMode="numeric"
+        aria-label={`${label} ${t('range_from')}`}
+        title={`${label} ${t('range_from')}`}
+        data-test-id={`label-range-${testId}-from`}
+      />
+      <span className="text-slate-400">–</span>
+      <Input
+        value={v.to}
+        onChange={(e) => set({ ...v, to: num(e.target.value) })}
+        className="h-7 w-12 text-center tabular-nums"
+        inputMode="numeric"
+        aria-label={`${label} ${t('range_to')}`}
+        title={`${label} ${t('range_to')}`}
+        data-test-id={`label-range-${testId}-to`}
+      />
+    </span>
+  );
+
+  return (
+    <div
+      className="flex flex-wrap items-center gap-2 rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-white px-2 py-1.5"
+      data-test-id="label-range-row"
+    >
+      <span className="font-medium text-slate-700 text-xs">{t('range_title')}</span>
+      {pair(t('range_polka'), polka, setPolka, 'polka')}
+      {pair(t('range_qator'), qator, setQator, 'qator')}
+      {pair(t('range_yacheyka'), yach, setYach, 'yacheyka')}
+      <Button
+        size="sm"
+        variant="secondary"
+        disabled={matched.length === 0}
+        onClick={() => onSelect(matched.map((c) => c.id))}
+        data-test-id="label-range-apply"
+      >
+        {t('range_apply', { count: matched.length })}
+      </Button>
     </div>
   );
 }
@@ -323,10 +410,22 @@ function CellMultiSelect({
 export function CellLabelPrintOverlay({
   cell,
   cells,
+  initialRanges,
   onClose,
 }: {
-  /** The row whose 🖨 opened the overlay — pre-checked. */
-  cell: { id: string; name: string; barcode: string | null };
+  /**
+   * The row whose 🖨 opened the overlay — pre-checked. Diapazon bilan
+   * ochilganda (yaratishdan keyin) berilmaydi — o'shanda `initialRanges`
+   * tanlovni belgilaydi.
+   */
+  cell?: { id: string; name: string; barcode: string | null };
+  /**
+   * Diapazon bo'yicha oldindan belgilash — «yaratildi → etiketkalarni chop
+   * etish» oqimi uchun. Yacheykalar ro'yxati keyinroq yangilanishi mumkin
+   * (yaratishdan so'ng so'rov qayta yuklanadi), shuning uchun moslar
+   * `cells` har o'zgarganda QO'SHIB boriladi.
+   */
+  initialRanges?: Array<SegmentRange | null>;
   /** ALL of the store's cells — the multi-select source (USER 2026-07-05:
    *  print MANY labels in one go by ticking cells, not one 🖨 per cell). */
   cells: Array<{ id: string; name: string; barcode: string | null }>;
@@ -335,7 +434,19 @@ export function CellLabelPrintOverlay({
   const t = useTranslations('pages.stores.cell_label');
   const tCommon = useTranslations('common');
   const [copies, setCopies] = useState(1);
-  const [selectedIds, setSelectedIds] = useState<string[]>([cell.id]);
+  const [selectedIds, setSelectedIds] = useState<string[]>(cell ? [cell.id] : []);
+
+  // Diapazon bilan ochilgan bo'lsa: moslarni belgilab boramiz. `cells` yangi
+  // yaratilganlar bilan to'lgach effekt qayta ishlaydi va ularni ham qo'shadi.
+  useEffect(() => {
+    if (!initialRanges) return;
+    const ids = filterCellsByRange(cells, initialRanges).map((c) => c.id);
+    if (ids.length === 0) return;
+    setSelectedIds((prev) => {
+      const next = [...new Set([...prev, ...ids])];
+      return next.length === prev.length ? prev : next;
+    });
+  }, [cells, initialRanges]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -412,6 +523,14 @@ export function CellLabelPrintOverlay({
           <div className="flex flex-wrap items-start gap-2">
             {/* User 2026-07-05: capped chip box that auto-scrolls to the newest
                 ticked cell + a dedicated search input beneath it. */}
+            <RangeSelectRow
+              cells={cells.map((c) => ({ id: c.id, name: c.name }))}
+              onSelect={(ids) =>
+                // QO'SHADI, almashtirmaydi — bir necha diapazonni ketma-ket
+                // belgilash mumkin bo'lsin.
+                setSelectedIds((prev) => [...new Set([...prev, ...ids])])
+              }
+            />
             <CellMultiSelect
               cells={cells.map((c) => ({ id: c.id, name: c.name }))}
               value={selectedIds}

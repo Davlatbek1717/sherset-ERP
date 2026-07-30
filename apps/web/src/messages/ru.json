@@ -5693,7 +5693,14 @@
         "search_cell": "Введите номер ячейки…",
         "subtitle": "Этикеток: {labels} (58×40 мм, по одной на лист)",
         "copies": "Копий",
-        "print": "Печать"
+        "print": "Печать",
+        "range_title": "По диапазону:",
+        "range_polka": "полка",
+        "range_qator": "ряд",
+        "range_yacheyka": "ячейка",
+        "range_from": "от",
+        "range_to": "до",
+        "range_apply": "Отметить ({count})"
       },
       "cell_labels": "Этикетки ячеек",
       "address_storage_title": "Адресное хранение товаров",
