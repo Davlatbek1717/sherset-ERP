@@ -5,6 +5,10 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 import { AttachmentService } from '../attachment/attachment.service.js';
 import { renderTelegramTemplate } from '../debt/telegram-template-render.util.js';
 import { decryptPassword, encryptPassword } from '../email/crypto.js';
+import {
+  EmployeeTelegramService,
+  parseBindToken,
+} from '../hr/hr-employee/employee-telegram.service.js';
 import { normalizeTelegramPhone } from '../hr/hr-shared/phone-normalize.util.js';
 import type { MtprotoInboundHandler } from '../hr/hr-telegram-bridge/mtproto-inbound-handler.js';
 import type { IncomingMtprotoMessage } from '../hr/hr-telegram-bridge/telegram-client-factory.js';
@@ -65,6 +69,7 @@ export class TelegramService implements MtprotoInboundHandler {
     @Inject(AttachmentService) private readonly attachments: AttachmentService,
     @Inject(TelegramLookupService) private readonly lookup: TelegramLookupService,
     @Inject(SupplyApprovalService) private readonly supplyApproval: SupplyApprovalService,
+    @Inject(EmployeeTelegramService) private readonly employeeTelegram: EmployeeTelegramService,
   ) {}
 
   /**
@@ -334,6 +339,30 @@ export class TelegramService implements MtprotoInboundHandler {
           fwdFromName: parsed.fwdFromName,
         },
       });
+
+      // ── XODIM TELEGRAM BOG'LASH (/start bind_<token>, Faza D1 2026-07-30) ────
+      // Xodim ERP «Telegram ulash» deep-link'ini ochib botni START qiladi.
+      // Tokenli xodimni topib chat_id saqlanadi ⇒ endi unga qabul-tasdiqlash
+      // inline-tugmalari yuborsa bo'ladi. Bind-buyruq erta qaytadi (fayl/autoBind
+      // yo'q — bu chek rasmi ham, kontragent chati ham emas).
+      const bindToken = parseBindToken(parsed.text);
+      if (bindToken) {
+        const bound = await this.employeeTelegram
+          .bindByToken(String(parsed.chatId), bindToken)
+          .catch(() => null);
+        const bindCfg = await this.prisma.client.telegramConfig.findUnique({
+          where: { accountId },
+        });
+        if (bindCfg?.botTokenCipher) {
+          await tgSendMessage(decryptPassword(bindCfg.botTokenCipher), {
+            chatId: String(parsed.chatId),
+            text: bound
+              ? `✅ Ulandi. Salom, ${bound.name}! Endi qabul-tasdiqlash xabarlari shu chatga keladi.`
+              : "⚠️ Havola eskirgan yoki yaroqsiz. ERP'da «Telegram ulash»ni qayta bosing.",
+          }).catch(() => {});
+        }
+        return { ok: true };
+      }
 
       // ── CHEK RASMI (2026-07-13) ────────────────────────────────────────────
       // Fayl webhook javobidan TASHQARIDA yuklab olinadi: Telegram webhook'ga

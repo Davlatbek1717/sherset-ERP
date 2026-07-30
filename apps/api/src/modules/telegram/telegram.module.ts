@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { AttachmentModule } from '../attachment/attachment.module.js';
 import { AuthModule } from '../auth/auth.module.js';
+import { HrEmployeeModule } from '../hr/hr-employee/hr-employee.module.js';
 import { HrTelegramAccountModule } from '../hr/hr-telegram-account/hr-telegram-account.module.js';
 import { HrTelegramClientModule } from '../hr/hr-telegram-bridge/hr-telegram-client.module.js';
 import { SupplyApprovalModule } from '../supply-approval/supply-approval.module.js';
@@ -19,6 +20,8 @@ import { TelegramService } from './telegram.service.js';
     AttachmentModule,
     HrTelegramClientModule,
     HrTelegramAccountModule,
+    // HrEmployeeModule — `/start bind_` xodim chat bog'lash (EmployeeTelegramService).
+    HrEmployeeModule,
     SupplyApprovalModule,
   ],
   controllers: [TelegramController, TelegramWebhookController],
