@@ -20,6 +20,7 @@ import { JwtAuthGuard } from '../../auth/jwt-auth.guard.js';
 import { BulkIdsSchema, runBulk } from '../../shared/bulk.js';
 import { HrPermissionGuard } from '../hr-auth/hr-permission.guard.js';
 import { RequireHrPermission } from '../hr-auth/require-hr-permission.decorator.js';
+import { EmployeeTelegramService } from './employee-telegram.service.js';
 import {
   CreateHrEmployeeSchema,
   HrEmployeeFilterSchema,
@@ -32,7 +33,10 @@ import { HrEmployeeService } from './hr-employee.service.js';
 @Controller('hr/employees')
 @UseGuards(JwtAuthGuard, HrPermissionGuard)
 export class HrEmployeeController {
-  constructor(@Inject(HrEmployeeService) private readonly svc: HrEmployeeService) {}
+  constructor(
+    @Inject(HrEmployeeService) private readonly svc: HrEmployeeService,
+    @Inject(EmployeeTelegramService) private readonly telegram: EmployeeTelegramService,
+  ) {}
 
   @Get()
   @RequireHrPermission('employees', 'read')
@@ -154,5 +158,21 @@ export class HrEmployeeController {
   ) {
     const input = SetPasswordSchema.parse(body);
     return this.svc.setPassword(user.accountId, id, input, user.sub);
+  }
+
+  // ─── Telegram bog'lash (Faza D1) ─────────────────────────────────────────
+  // «Telegram ulash» → bir-martalik token + deep-link (xodim botni START qiladi,
+  // bot `/start bind_<token>`ни tanaydi). «Uzish» → chat_id tozalanadi.
+  @Post(':id/telegram-bind-token')
+  @RequireHrPermission('employees', 'full')
+  async telegramBindToken(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.telegram.issueBindToken(user.accountId, id);
+  }
+
+  @Delete(':id/telegram')
+  @RequireHrPermission('employees', 'full')
+  async telegramUnbind(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    await this.telegram.unbind(user.accountId, id);
+    return { ok: true };
   }
 }
