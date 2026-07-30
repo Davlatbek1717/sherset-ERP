@@ -30,7 +30,9 @@ import { createPortal } from 'react-dom';
 
 const LABEL_W_MM = 58;
 const LABEL_H_MM = 40;
-const PAD_MM = 2.4;
+// 2026-07-30: kod-shrift kattalashtirildi — padding kamaytirilib kodga en berildi
+// (qog'oz o'lchami LABEL_W/H_MM O'ZGARMAYDI).
+const PAD_MM = 1.4;
 
 interface LabelData {
   key: string;
@@ -70,6 +72,44 @@ function Code128Svg({ value, heightPx }: { value: string; heightPx: number }) {
   );
 }
 
+/**
+ * Yacheyka kodi — etiketka enini TO'LIQ egallaydigan avto-o'lchamli SVG-matn
+ * (2026-07-30: egasi «yana kattalashtirish» so'radi, qog'oz o'lchami o'zgarmaydi).
+ * `textLength` matnни viewBox eniga cho'zadi ⇒ kod har uzunlikda maksimal katta,
+ * hech qachon kesilmaydi. `viewBox` eni belgi-soniga proporsional (~0.48em/belgi) —
+ * uzun kodlar (11 belgi) biroz ZICHROQ, lekin sezilarli BALANDROQ chiqadi; qisqa
+ * kodlar butun bo'sh joyni to'ldiradi.
+ */
+function LabelCodeSvg({ value }: { value: string }) {
+  const vbH = 100;
+  const vbW = Math.max(1, value.length) * 48;
+  return (
+    <svg
+      viewBox={`0 0 ${vbW} ${vbH}`}
+      preserveAspectRatio="xMidYMid meet"
+      style={{ width: '100%', height: '100%', display: 'block' }}
+      role="img"
+      aria-label={value}
+      data-test-id="cell-label-code"
+    >
+      <text
+        x={vbW / 2}
+        y={vbH / 2}
+        textAnchor="middle"
+        dominantBaseline="central"
+        textLength={vbW}
+        lengthAdjust="spacingAndGlyphs"
+        fontWeight={800}
+        fontSize={vbH * 0.9}
+        fill="#111"
+        style={{ fontFamily: TAG_FONT, fontVariantNumeric: 'tabular-nums' }}
+      >
+        {value}
+      </text>
+    </svg>
+  );
+}
+
 function CellLabel({ label }: { label: LabelData }) {
   const barcodeEncodable = code128Widths(label.qrValue) !== null;
   return (
@@ -89,25 +129,9 @@ function CellLabel({ label }: { label: LabelData }) {
         boxSizing: 'border-box',
       }}
     >
-      {/* Cell code — the human-readable half, big and centred on top. */}
-      <div
-        data-test-id="cell-label-code"
-        style={{
-          flex: 1,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontWeight: 800,
-          fontSize: '30px',
-          lineHeight: 1.05,
-          letterSpacing: '0.04em',
-          fontVariantNumeric: 'tabular-nums',
-          whiteSpace: 'nowrap',
-          overflow: 'hidden',
-          minHeight: 0,
-        }}
-      >
-        {label.cellCode}
+      {/* Cell code — auto-scaled SVG that fills the label width (any length). */}
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden' }}>
+        <LabelCodeSvg value={label.cellCode} />
       </div>
       {/* Scanner half: Code 128 strip. A non-encodable legacy value (Cyrillic
           free-text name, no barcode) prints the big code text only — no QR
