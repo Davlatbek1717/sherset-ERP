@@ -4,8 +4,10 @@ import type { z } from 'zod';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { EnterService } from '../enter/enter.service.js';
 import { LossService } from '../loss/loss.service.js';
+import { CellRangeError, type CellRangeSpec, expandCellRange } from './cell-range.util.js';
 import {
   AssignProductsSchema,
+  BulkCreateCellsSchema,
   CellBarcodeLookupSchema,
   CreateCellSchema,
   CreateZoneSchema,
@@ -629,6 +631,90 @@ export class StoreAddressService {
       this.rethrowDuplicate(e, 'yacheyka');
       throw e;
     }
+  }
+
+  /**
+   * «Diapazon bo'yicha yaratish» — retseptni yoyib, YETISHMAYOTGAN yacheykalarni
+   * yaratadi. Mavjud nomlar o'tkazib yuboriladi (idempotent: generator ombor
+   * kengayganda qayta ishlatiladi).
+   *
+   * `dryRun: true` da yozuv qadami o'tkazib yuboriladi, qolgan hamma hisob AYNAN
+   * bir xil bajariladi — shuning uchun oldindan ko'rish haqiqiy natijadan farq
+   * qila olmaydi.
+   */
+  async bulkCreateCells(accountId: string, storeId: string, raw: unknown) {
+    await this.assertStore(accountId, storeId);
+    const input = this.parse(BulkCreateCellsSchema, raw);
+
+    // Zod FAQAT shakl/tipni tekshiradi (`from: -3`, `pad: 9` undan O'TADI) —
+    // semantik qoidalar `expandCellRange` da. Uning `CellRangeError`i oddiy
+    // foydalanuvchi yozuv xatosi, shuning uchun majburan 400 ga aylantiriladi;
+    // boshqa turdagi xato esa yutilmaydi — qayta tashlanadi (500 haqiqiy bug).
+    let expanded: ReturnType<typeof expandCellRange>;
+    try {
+      expanded = expandCellRange(input satisfies CellRangeSpec);
+    } catch (e) {
+      if (e instanceof CellRangeError) throw new BadRequestException(e.message);
+      throw e;
+    }
+
+    const names = expanded.map((c) => c.name);
+    const existingRows = await this.prisma.client.storeCell.findMany({
+      where: { accountId, storeId, name: { in: names } },
+      select: { name: true },
+    });
+    const existing = new Set(existingRows.map((r) => r.name));
+    const missing = expanded.filter((c) => !existing.has(c.name));
+
+    const neededZones = [
+      ...new Set(missing.map((c) => c.zoneName).filter((z): z is string => !!z)),
+    ];
+    const existingZones = await this.prisma.client.storeZone.findMany({
+      where: { accountId, storeId, name: { in: neededZones } },
+      select: { name: true },
+    });
+    const haveZone = new Set(existingZones.map((z) => z.name));
+    const zonesToCreate = neededZones.filter((z) => !haveZone.has(z));
+
+    const base = {
+      total: expanded.length,
+      toCreate: missing.length,
+      existing: existing.size,
+      zonesToCreate,
+      sample: missing.slice(0, 10).map((c) => c.name),
+    };
+    if (input.dryRun) return { ...base, created: 0, zonesCreated: 0 };
+
+    return this.prisma.client.$transaction(async (tx) => {
+      // Zonalar: `createZone()` bu yerda ISHLATILMAYDI — u `this.prisma.client`
+      // ga bog'langan (tranzaksiyaga moslashmagan), ya'ni uni chaqirish zonalarni
+      // tranzaksiyadan tashqarida yozardi va yaratish yiqilganda yetim qoldirardi.
+      if (zonesToCreate.length > 0) {
+        await tx.storeZone.createMany({
+          data: zonesToCreate.map((name) => ({ accountId, storeId, name })),
+          skipDuplicates: true,
+        });
+      }
+      const zoneRows = await tx.storeZone.findMany({
+        where: { accountId, storeId, name: { in: neededZones } },
+        select: { id: true, name: true },
+      });
+      const zoneIdByName = new Map(zoneRows.map((z) => [z.name, z.id]));
+
+      const res = await tx.storeCell.createMany({
+        data: missing.map((c) => ({
+          accountId,
+          storeId,
+          name: c.name,
+          zoneId: c.zoneName ? (zoneIdByName.get(c.zoneName) ?? null) : null,
+        })),
+        // Parallel sessiya o'sha nomni yaratib qo'ysa ham yiqilmaymiz —
+        // DB darajasidagi @@unique([storeId, name]) ga tayanamiz.
+        skipDuplicates: true,
+      });
+
+      return { ...base, created: res.count, zonesCreated: zonesToCreate.length };
+    });
   }
 
   async updateCell(accountId: string, storeId: string, cellId: string, raw: unknown) {

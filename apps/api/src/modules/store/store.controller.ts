@@ -265,6 +265,19 @@ export class StoreController {
     return this.addr.createCell(user.accountId, id, body);
   }
 
+  /** «Diapazon bo'yicha yaratish» — dryRun:true faqat sanoq qaytaradi.
+   *  Marshrut `:id/cells/:cellId` DAN OLDIN turadi — aks holda «bulk»
+   *  cellId deb o'qilishi mumkin edi. */
+  @Post(':id/cells/bulk')
+  @RequirePermission({ entity: 'store', action: 'update' })
+  async bulkCreateCells(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    return this.addr.bulkCreateCells(user.accountId, id, body);
+  }
+
   @Patch(':id/cells/:cellId')
   @RequirePermission({ entity: 'store', action: 'update' })
   async updateCell(
