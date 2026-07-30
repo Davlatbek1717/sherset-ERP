@@ -689,12 +689,19 @@ export class StoreAddressService {
       // Zonalar: `createZone()` bu yerda ISHLATILMAYDI — u `this.prisma.client`
       // ga bog'langan (tranzaksiyaga moslashmagan), ya'ni uni chaqirish zonalarni
       // tranzaksiyadan tashqarida yozardi va yaratish yiqilganda yetim qoldirardi.
-      if (zonesToCreate.length > 0) {
-        await tx.storeZone.createMany({
-          data: zonesToCreate.map((name) => ({ accountId, storeId, name })),
-          skipDuplicates: true,
-        });
-      }
+      //
+      // `zonesCreated` HAQIQIY `count` dan olinadi, `zonesToCreate.length` dan
+      // EMAS — yacheykalardagi bilan bir xil sabab: parallel so'rov o'sha zona
+      // nomini orada yaratib ulgursa, `skipDuplicates` uni jimgina o'tkazadi va
+      // oldindan hisoblangan son YOLG'ON chiqardi. Bu taskning invarianti —
+      // qaytgan sonlar haqiqiy DB natijasini aks ettirishi shart.
+      const zoneRes =
+        zonesToCreate.length > 0
+          ? await tx.storeZone.createMany({
+              data: zonesToCreate.map((name) => ({ accountId, storeId, name })),
+              skipDuplicates: true,
+            })
+          : { count: 0 };
       const zoneRows = await tx.storeZone.findMany({
         where: { accountId, storeId, name: { in: neededZones } },
         select: { id: true, name: true },
@@ -713,7 +720,7 @@ export class StoreAddressService {
         skipDuplicates: true,
       });
 
-      return { ...base, created: res.count, zonesCreated: zonesToCreate.length };
+      return { ...base, created: res.count, zonesCreated: zoneRes.count };
     });
   }
 
