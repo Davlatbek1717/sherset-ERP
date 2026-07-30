@@ -305,7 +305,35 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
-> **🕒 2026-07-30a (⏭️ KEYINGI VAZIFA: FAZA D1 — Telegram bog'lash poydevorini QURISH)**
+> **🕒 2026-07-30c (FAZA D1 — Telegram bog'lash poydevori QURILDI + DEPLOYED · ⏭️ keyingi = D2)**
+> D1 plan (`docs/superpowers/plans/2026-07-30-telegram-approval-d1-binding.md`) 6 vazifa inline ijro (executing-plans).
+> Plan `employee/` deb taxmin qilgan edi — real modul **`hr` / `hr-employee`** (route `/hr/employees`, `@RequireHrPermission`),
+> shunga moslashtirildi.
+>
+> **✅ Bajarildi (commit `09450fe`→`ab1bfbc`):**
+> - Migration `20260730120000_add_employee_telegram_chat_id`: `Employee.telegramChatId` + `telegramBindToken` + `…ExpiresAt`.
+> - `hr-employee/employee-telegram.service.ts`: `parseBindToken` (pure) + `issueBindToken` (token+deep-link) + `unbind` +
+>   `bindByToken` (muddatli token→chat_id, iste'mol). **5 unit test.**
+> - Endpointlar: `POST /hr/employees/:id/telegram-bind-token` · `DELETE /hr/employees/:id/telegram` (`@RequireHrPermission('employees','full')`).
+> - `telegram.service.handleInbound`: `/start bind_<token>` handler (chat_id saqlab «✅ Ulandi» javob). telegram.module→HrEmployeeModule (DI sikl YO'Q).
+> - ERP `employee-card.tsx`: «Telegram ulash/uzish» + deep-link ko'rsatish + holat; i18n uz+ru 6 kalit.
+>
+> **🟢 Gate:** api typecheck 0 · biome 0 · **to'liq api Vitest 4227 pass / 0 fail (329 fayl)** · web typecheck 0 ·
+> contract-guard 9/9 · i18n key-existence+no-hardcoded 9/9.
+>
+> **✅ DEPLOYED (erp.sherset.uz/sherset-v2, `ab1bfbc`):** `migrate deploy` (3 ustun DB'da tasdiqlandi) → **`prisma generate`
+> + api restart** (health 200, 500 YO'Q ⇒ client yangilandi + DI bootladi) → web build (ALL_OK) + restart (erp 200).
+> Endpoint `telegram-bind-token` → **401** (route jonli). §6: parallel diapazon commiti (`f88bc55`) branch'da — deploy u bilan
+> ketdi (u ham Phase-1 gated).
+>
+> **⚠️ Phase-1 — jonli-bot bind round-trip YO'Q:** real xodim deep-link'ni bosib chat bog'lashi sinovlanmagan (bot token+
+> webhook kerak — bu D4 jonli-QA). ERP UI + endpoint + migration + handler struktura-tasdiqlangan va jonli.
+>
+> **⏭️ KEYINGI = D2 (omborchi Telegram):** taminotchi tasdiqlagach omborchilarga (`supply.update`+chat_id) inline-tugmali
+> xabar (`dispatchToOmborchi`) + `ocfm/orej` callback + rol-auth + `editMessageText`. Spec §«Bosqichlar» 2-band. Keyin
+> D3(admin TG+reject-reason)→D4(jonli-bot QA). Bog'liq: [[supply-approval-workflow]].
+>
+> **🕒 2026-07-30a (FAZA D1 — Telegram bog'lash poydevorini QURISH · plan/spec yozildi — D1 endi TUGADI, ↑2026-07-30c)**
 > **Plan tayyor:** `docs/superpowers/plans/2026-07-30-telegram-approval-d1-binding.md` (6 vazifa, bite-sized TDD).
 > **Spec:** `docs/superpowers/specs/2026-07-30-uch-rolli-telegram-tasdiqlash-design.md`. **Kontekst:** egasi «qabul-
 > tasdiqlashning UCHALA bosqichi ham Telegram'da bo'lsin» dedi — hozir FAQAT taminotchi Telegram'da (Faza B), omborchi+
