@@ -49,7 +49,7 @@ gap'lar aniq va boshqariladigan to'plam. Aksari — mayda wiring yoki vizual gur
 | D2 | **«Отправить (N)» count-badge** | «Отправить» bor, N badge YO'Q | Mayda: yuborilgan-soni badge qo'shish |
 | D3 | **«Решения» menyu** | YO'Q | ✅ **QURILADI** (user 2026-07-23). moysklad «Decisions» |
 | D4 | **Archive / «Восстановить»** | YO'Q (list+detail) | ✅ **QURILADI** (user 2026-07-23). BE+FE ish |
-| D5 | **Shipping bloki «Грузоотправитель» sarlavhasi ostida guruhlanmagan** | 10 maydon bor, lekin guruhsiz | Vizual/strukturaviy guruhlash |
+| D5 | **Shipping bloki «Грузоотправитель» guruhlash** | ✅ **BAJARILDI 2026-07-30** — alohida blok; bizning qo'shimchalar «Другие поля»ga chiqarildi | Ikkala sahifada bir xil |
 | D6 | **«Изменения» = collapsible seksiya, bottom-tab EMAS** | tarix MAVJUD (`DocumentHistoryLink` + `auditEntity="Demand"`, `historyInline={false}`) — faqat joylashuvi farq | Mayda strukturaviy, funksional gap emas |
 
 ## CREATE (`demands/new`)
@@ -57,7 +57,7 @@ gap'lar aniq va boshqariladigan to'plam. Aksari — mayda wiring yoki vizual gur
 |---|-----|-------|------|
 | N1 | **Custom-attributes editor YO'Q** | ✅ **BAJARILDI 2026-07-30** — доп.поля asosiy meta-panelda (customer-orders/new naqshi) | Runtime: yaratish→o'qish qiymat saqlandi |
 | N2 | **«Прибыль» YO'Q** | ✅ **BAJARILDI 2026-07-30** — «—» bilan (qoralamada tannarx yo'q) | C3 ko'r |
-| N3 | Shipping «Другие поля» ostida (moysklad'da «Грузоотправитель» bloki) | 10 maydon bor, joyi farq | D5 ko'r |
+| N3 | Shipping «Грузоотправитель» bloki | ✅ **BAJARILDI 2026-07-30** | D5 ko'r |
 | — | Header tugmalar minimal (faqat Сохранить/Закрыть/Статус) | moysklad create ham minimal | **PARITY OK** (gap emas) |
 
 ## LIST (`demands`)
@@ -79,7 +79,12 @@ gap'lar aniq va boshqariladigan to'plam. Aksari — mayda wiring yoki vizual gur
 12 gap'dan **5 tasi aslida allaqachon bajarilgan** edi (L1, L3, L4, D1 va qisman D6), 1 tasi ataylab rad etilgan
 (L2 — akkaunt-maxsus maydon). Ya'ni 2026-07-23 dagi ro'yxat kodni to'liq tekshirmasdan yozilgan.
 **Sabog'i: bu jadvalni ko'r-ko'rona ish ro'yxati sifatida olmang** — har bandni kodda tasdiqlang.
-Quyidagi qolgan bandlar 2026-07-30 da qayta tekshirildi va HAQIQATAN ochiq: D2, D3, D4, D5/N3, N1, C2.
+**Holat 2026-07-30 sessiyasi oxirida** — 13 banddan **11 tasi yopiq**:
+- Shu sessiyada bajarildi: **C1, C3, C4, N1, N2, D5/N3**
+- Allaqachon bor edi (ro'yxat noto'g'ri): **L1, L3, L4, D1, D6**
+- Ataylab rad etilgan: **L2** (akkaunt-maxsus maydon)
+- **HAQIQATAN OCHIQ qolgani: D2** (Отправить badge) · **D3** (Решения menyu) ·
+  **D4** (arxiv, BE+FE) · **C2** (Маркировка — katta, alohida quyi-loyiha)
 
 ## Rank (eng ta'sirlisidan)
 1. **C1 Ячейка** · 2. **C3/N2 Прибыль** (create+draft) · 3. **D1 Связанные документы** (bo'sh) · 4. **L1 Грузополучатель kolonka** ·

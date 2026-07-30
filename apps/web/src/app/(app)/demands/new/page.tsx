@@ -1124,7 +1124,10 @@ export default function NewDemandPage() {
 
           {/* «Задачи» / «Файлы» now have their own tabs (moysklad new-design) — the
               old inline «save after» disclosures were removed to avoid duplication. */}
-          <DocumentDisclosurePanel title={tForm('other_fields')} defaultOpen={false}>
+          {/* «Грузоотправитель» — moysklad groups the 10 shipping fields under
+              this heading (capture demand-02-detail: shippingBlock_Грузоотправитель).
+              We had them inside a generic «Другие поля» mixed with our own extras. */}
+          <DocumentDisclosurePanel title={tFields('consignor')} defaultOpen={false}>
             <DocumentMetaPanel compact>
               <DocumentMetaRow>
                 <DocumentMetaField label={tFields('consignor')}>
@@ -1224,6 +1227,27 @@ export default function NewDemandPage() {
                     data-test-id="field-state-contract-id"
                   />
                 </DocumentMetaField>
+              </DocumentMetaRow>
+
+              <DocumentMetaRow>
+                <DocumentMetaField label={tFields('shipper_instructions')} fullWidth>
+                  <Input
+                    value={shipperInstructions}
+                    onChange={(e) => setShipperInstructions(e.target.value)}
+                    data-test-id="field-shipper-instructions"
+                  />
+                </DocumentMetaField>
+              </DocumentMetaRow>
+            </DocumentMetaPanel>
+          </DocumentDisclosurePanel>
+
+          {/* «Другие поля» — the fields that are OURS, not moysklad's shipping
+              block: Внешний код + Накладные расходы. Kept in a separate
+              disclosure so the «Грузоотправитель» block above is a faithful
+              1:1 of the capture's 10-field group instead of a mixed bag. */}
+          <DocumentDisclosurePanel title={tForm('other_fields')} defaultOpen={false}>
+            <DocumentMetaPanel compact>
+              <DocumentMetaRow>
                 <DocumentMetaField label={tDetailForm('external_code')}>
                   <Input
                     value={externalCode}
@@ -1262,16 +1286,6 @@ export default function NewDemandPage() {
                     <option value="VOLUME">{tDetailForm('overhead_by_volume')}</option>
                     <option value="QUANTITY">{tDetailForm('overhead_by_quantity')}</option>
                   </NativeSelect>
-                </DocumentMetaField>
-              </DocumentMetaRow>
-
-              <DocumentMetaRow>
-                <DocumentMetaField label={tFields('shipper_instructions')} fullWidth>
-                  <Input
-                    value={shipperInstructions}
-                    onChange={(e) => setShipperInstructions(e.target.value)}
-                    data-test-id="field-shipper-instructions"
-                  />
                 </DocumentMetaField>
               </DocumentMetaRow>
             </DocumentMetaPanel>

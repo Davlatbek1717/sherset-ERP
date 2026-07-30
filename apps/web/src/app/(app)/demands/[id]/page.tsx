@@ -1868,7 +1868,10 @@ export default function DemandDetailPage() {
 
               {/* «Другие поля» — transport block + Накладные расходы + Внешний код +
                   Проведён, hidden by default exactly like moysklad + /demands/new. */}
-              <DocumentDisclosurePanel title={tForm('other_fields')} defaultOpen={false}>
+              {/* «Грузоотправитель» — moysklad groups the 10 shipping fields under
+                  this heading (capture demand-02-detail: shippingBlock_Грузоотправитель).
+                  Ours used to sit in a generic «Другие поля» with our extras mixed in. */}
+              <DocumentDisclosurePanel title={tFields('consignor')} defaultOpen={false}>
                 <DocumentMetaColumns>
                   <DocumentMetaColumn>
                     <DocumentMetaField label={tFields('consignor')}>
@@ -1919,43 +1922,6 @@ export default function DemandDetailPage() {
                         disabled={!editable}
                         testId="field-carrier"
                       />
-                    </DocumentMetaField>
-                    <DocumentMetaField label={tDetailForm('overhead_sum')}>
-                      <Input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        inputMode="decimal"
-                        value={form.overheadMajor}
-                        placeholder="0"
-                        onChange={(e) =>
-                          setForm((s) => s && { ...s, overheadMajor: e.target.value })
-                        }
-                        disabled={!editable}
-                        data-test-id="field-overhead-sum"
-                      />
-                    </DocumentMetaField>
-                    <DocumentMetaField label={tDetailForm('overhead_distribution')}>
-                      <NativeSelect
-                        value={form.overheadDistribution}
-                        onChange={(e) =>
-                          setForm(
-                            (s) =>
-                              s && {
-                                ...s,
-                                overheadDistribution: e.target
-                                  .value as FormState['overheadDistribution'],
-                              },
-                          )
-                        }
-                        data-test-id="field-overhead-distribution"
-                        disabled={!editable || !(Number(form.overheadMajor) > 0)}
-                      >
-                        <option value="PRICE">{tDetailForm('overhead_by_price')}</option>
-                        <option value="WEIGHT">{tDetailForm('overhead_by_weight')}</option>
-                        <option value="VOLUME">{tDetailForm('overhead_by_volume')}</option>
-                        <option value="QUANTITY">{tDetailForm('overhead_by_quantity')}</option>
-                      </NativeSelect>
                     </DocumentMetaField>
                   </DocumentMetaColumn>
 
@@ -2040,6 +2006,17 @@ export default function DemandDetailPage() {
                         data-test-id="field-state-contract-id"
                       />
                     </DocumentMetaField>
+                  </DocumentMetaColumn>
+                </DocumentMetaColumns>
+              </DocumentDisclosurePanel>
+
+              {/* «Другие поля» — OUR additions, not part of moysklad's
+                  «Грузоотправитель» block: Внешний код, Проведён и Накладные
+                  расходы. Split out so the block above is a faithful 1:1 of the
+                  capture's 10-field group instead of interleaving our extras. */}
+              <DocumentDisclosurePanel title={tForm('other_fields')} defaultOpen={false}>
+                <DocumentMetaColumns>
+                  <DocumentMetaColumn>
                     <DocumentMetaField label={tDetailForm('external_code')}>
                       <Input
                         value={form.externalCode}
@@ -2058,6 +2035,46 @@ export default function DemandDetailPage() {
                         placeholder="—"
                         data-test-id="field-posted-at"
                       />
+                    </DocumentMetaField>
+                  </DocumentMetaColumn>
+
+                  <DocumentMetaColumn>
+                    <DocumentMetaField label={tDetailForm('overhead_sum')}>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        inputMode="decimal"
+                        value={form.overheadMajor}
+                        placeholder="0"
+                        onChange={(e) =>
+                          setForm((s) => s && { ...s, overheadMajor: e.target.value })
+                        }
+                        disabled={!editable}
+                        data-test-id="field-overhead-sum"
+                      />
+                    </DocumentMetaField>
+                    <DocumentMetaField label={tDetailForm('overhead_distribution')}>
+                      <NativeSelect
+                        value={form.overheadDistribution}
+                        onChange={(e) =>
+                          setForm(
+                            (s) =>
+                              s && {
+                                ...s,
+                                overheadDistribution: e.target
+                                  .value as FormState['overheadDistribution'],
+                              },
+                          )
+                        }
+                        data-test-id="field-overhead-distribution"
+                        disabled={!editable || !(Number(form.overheadMajor) > 0)}
+                      >
+                        <option value="PRICE">{tDetailForm('overhead_by_price')}</option>
+                        <option value="WEIGHT">{tDetailForm('overhead_by_weight')}</option>
+                        <option value="VOLUME">{tDetailForm('overhead_by_volume')}</option>
+                        <option value="QUANTITY">{tDetailForm('overhead_by_quantity')}</option>
+                      </NativeSelect>
                     </DocumentMetaField>
                   </DocumentMetaColumn>
                 </DocumentMetaColumns>
