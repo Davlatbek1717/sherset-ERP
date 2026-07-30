@@ -12,6 +12,7 @@ import { api } from '@/lib/api-client';
 import { Button } from '@moysklad/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
+import { useState } from 'react';
 
 type Stage = 'none' | 'awaiting_supplier' | 'delivering' | 'awaiting_admin' | 'completed';
 type SaAction = 'send' | 'supplier-confirm' | 'omborchi-confirm' | 'admin-confirm' | 'reject';
@@ -42,9 +43,17 @@ export function SupplyApprovalPanel({ supplyId }: { supplyId: string }) {
   const t = useTranslations('pages.supplyApproval');
   const qc = useQueryClient();
 
+  const [linkUrl, setLinkUrl] = useState<string | null>(null);
+
   const { data } = useQuery<ApprovalState>({
     queryKey: ['supply-approval', supplyId],
     queryFn: () => api.get<ApprovalState>(`/supplies/${supplyId}/approval`),
+  });
+
+  // Faza E: taminotchi parolsiz magic-link — ko'rish/nusxalash (qo'lda yuborish yoki sinash).
+  const linkMut = useMutation({
+    mutationFn: () => api.post<{ url: string }>(`/supplies/${supplyId}/approval/supplier-link`, {}),
+    onSuccess: (r) => setLinkUrl(r.url),
   });
 
   // Konkret yo'llar — FE↔BE contract-guard dinamik path-segmentni hal qilolmaydi.
@@ -113,6 +122,14 @@ export function SupplyApprovalPanel({ supplyId }: { supplyId: string }) {
             >
               {t('action_supplier_confirm')}
             </Button>
+            <Button
+              variant="secondary"
+              onClick={() => linkMut.mutate()}
+              disabled={linkMut.isPending}
+              data-test-id="sa-supplier-link"
+            >
+              {t('supplier_link_show')}
+            </Button>
           </>
         )}
         {stage === 'delivering' && (
@@ -148,6 +165,30 @@ export function SupplyApprovalPanel({ supplyId }: { supplyId: string }) {
           <div className="font-medium text-emerald-600 text-sm">{t('completed')}</div>
         )}
       </div>
+
+      {linkUrl && (
+        <div className="mt-2 flex flex-col gap-1 rounded bg-slate-50 p-2">
+          <div className="text-slate-500 text-xs">{t('supplier_link_hint')}</div>
+          <div className="flex items-center gap-2">
+            <a
+              href={linkUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="break-all text-[var(--ms-text-brand)] text-xs hover:underline"
+              data-test-id="sa-supplier-link-url"
+            >
+              {linkUrl}
+            </a>
+            <button
+              type="button"
+              onClick={() => navigator.clipboard?.writeText(linkUrl)}
+              className="shrink-0 rounded border border-slate-300 px-2 py-0.5 text-slate-600 text-xs hover:bg-slate-100"
+            >
+              {t('supplier_link_copy')}
+            </button>
+          </div>
+        </div>
+      )}
 
       {act.isError && <div className="mt-2 text-red-600 text-xs">{t('error')}</div>}
 

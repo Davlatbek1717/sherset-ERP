@@ -1560,6 +1560,9 @@
     },
     "supplyApproval": {
       "title": "Tasdiqlash jarayoni",
+      "supplier_link_show": "Taminotchi havolasi",
+      "supplier_link_hint": "Parolsiz tasdiqlash havolasi — taminotchiga yuboring (14 kun amal qiladi):",
+      "supplier_link_copy": "Nusxalash",
       "awaiting_supplier": "Taminotchi javobi kutilmoqda…",
       "completed": "✅ Omborga qo'shildi",
       "error": "Amal bajarilmadi (ruxsat yoki bosqich mos emas)",
