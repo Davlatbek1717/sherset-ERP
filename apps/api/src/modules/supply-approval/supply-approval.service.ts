@@ -13,7 +13,6 @@ import {
   adminKeyboard,
   confirmKeyboard,
   doubleConfirmKeyboard,
-  omborchiKeyboard,
   parseCallbackData,
 } from './supply-approval.callback.js';
 import {
@@ -337,25 +336,51 @@ export class SupplyApprovalService {
     return emp?.id ?? null;
   }
 
-  /** Faza D2: omborchilarga (supply.update ruxsatli + Telegram bog'langan) inline-tugmali xabar. */
+  /**
+   * Faza D (MTProto, 2026-07-30): omborchilarga adminning SHAXSIY Telegram
+   * akkauntidan (userbot) TELEFON-raqami orqali xabar — `hrTelegramOutbox`ga
+   * qator qo'shiladi, `hr-telegram-outbox-worker` yuboradi. **Bot EMAS** (egasi
+   * talabi: hammasi admin lichkasidan). supply.update ruxsatli + `telegramPhone`i
+   * bor xodimlar oladi. Non-fatal — outbox band bo'lsa ham bosqich o'zgargan.
+   */
   private async dispatchToOmborchi(accountId: string, supplyId: string): Promise<void> {
     const supply = await this.prisma.client.supply.findFirst({
       where: { id: supplyId, accountId },
       select: { name: true },
     });
     if (!supply) return;
-    const cfg = await this.prisma.client.telegramConfig.findUnique({ where: { accountId } });
-    if (!cfg?.enabled || !cfg.botTokenCipher) return;
-    const chats = await this.supplyPermChats(accountId, 'update');
-    if (chats.length === 0) return;
-    const token = decryptPassword(cfg.botTokenCipher);
-    const text = `📦 Qabul omborga keldi: ${supply.name}\nSonini sanab tekshiring va tasdiqlang.`;
-    for (const chatId of chats) {
-      await tgSendMessage(token, {
-        chatId,
-        text,
-        replyMarkup: omborchiKeyboard(supplyId),
-      }).catch(() => {});
+    const emps = await this.prisma.client.employee.findMany({
+      where: {
+        accountId,
+        archived: false,
+        telegramPhone: { not: null },
+        roles: {
+          some: {
+            role: {
+              permissions: { some: { entity: 'supply', action: 'update', scope: { not: 'NO' } } },
+            },
+          },
+        },
+      },
+      select: { id: true, telegramPhone: true },
+    });
+    const text = `📦 Yangi qabul omborga keldi: ${supply.name}\nSonini sanab tekshiring. Tasdiqni ERP'da bering.`;
+    for (const e of emps) {
+      const phone = e.telegramPhone?.trim();
+      if (!phone) continue;
+      await this.prisma.client.hrTelegramOutbox
+        .create({
+          data: {
+            accountId,
+            employeeId: e.id,
+            toPhone: phone,
+            messageText: text,
+            sourceEventType: 'supply_approval_omborchi',
+            sourceDocId: supplyId,
+            status: 'pending',
+          },
+        })
+        .catch(() => {});
     }
   }
 
