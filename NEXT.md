@@ -323,6 +323,36 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > - «Ombor 1»ga 35 yacheyka (`01-02-01-01…35`) prod DB'ga yaratildi.
 > - Faza D spec (`72cd8b3`) + D1 plan (`a737e66`) yozildi.
 >
+> **🕒 2026-07-30b (YACHEYKA DIAPAZON-GENERATORI — TUGALLANDI · Phase-1 · browser-smoke YO'Q)**
+> Egasi: yacheykalarni bittalab emas, **diapazon retsepti** bilan ommaviy yaratish. Spec `18d968d` → plan `940713b` →
+> 5 vazifa (subagent-driven, har biri review'dan o'tgan). Zanjir: `efaecd7` (sof yoyish utili) → `46f4110` (takroriy nom
+> = xato) → `b0694a9` (chegara massiv qurishdan OLDIN) → `189cefb` (`BulkCreateCellsSchema`) → `12cafdc` (semantik
+> dublikat olib tashlandi) → `02e5652` (`POST :id/cells/bulk` + `dryRun`) → `fd3f667` (`zonesCreated` haqiqiy count'dan)
+> → `f88bc55` (FE `cell-range-modal.tsx`). Dizayn yadrosi: **butun yoyish mantig'i FAQAT `cell-range.util.ts` da** —
+> FE nomlarni o'zi hosil qilmaydi, shuning uchun oldindan ko'rish haqiqiy natijadan farq QILA OLMAYDI.
+>
+> **🟢 Yakuniy gate (2026-07-30b, o'lchangan):** api Vitest **328 fayl / 4222 test, 0 fail** (1 skip) · web Vitest
+> **158/159 fayl, 2457 pass / 25 fail** — 25 fail FAQAT `label-grounding.test.ts` (ma'lum qarz #35, capture korpusi
+> bo'sh, `guard-baseline.json` da ro'yxatda; boshqa regress YO'Q) · `tsc --noEmit` api **0** · web **0** ·
+> `check-lint.mjs` **0 errors / 484 warnings (policy OK)** · `check-guards.mjs` **OK**.
+>
+> **🔬 HTTP jonli tekshiruv (lokal `tsx src/main.ts` @4000, `admin@demo.local` login 201) — 3 da'vo ISBOTLANDI:**
+> - **dryRun ≡ haqiqiy:** `dryRun:true` → `toCreate:6` · `dryRun:false` → `created:6`, `zonesCreated:2` (TENG).
+>   Qisman-mavjud holatda ham: diapazon kengaytirilgach `dryRun:true` → `toCreate:4, existing:6` · `false` → `created:4`.
+> - **Idempotent:** o'sha so'rov qayta yuborilganda → `created:0, existing:6, toCreate:0` (HTTP 201).
+> - **`from:-3` → HTTP 400** (500 EMAS), tanasi o'zbekcha: `«a»: manfiy son bo'lmaydi`.
+>   `HTTPTEST-*` 10 yacheyka + 2 zona oxirida **o'chirildi** (address-storage bo'sh: `zones=[] cells=[]`), API to'xtatildi.
+>
+> **⚠️ BROWSER-SMOKE YO'Q** — FE `cell-range-modal.tsx` real brauzerda ochilmagan. Status **Phase-1: strukturaviy +
+> unit + HTTP-tasdiqlangan, runtime-UI tasdiqlanmagan**. «Done/production-ready» EMAS. Deploy ham QILINMAGAN.
+>
+> **🔧 Lokal DB gotcha (yon-ta'sir, hujjatlanadi):** parallel sessiyaning `09450fe` commit'i `employees.telegram_*` 3
+> ustun qo'shdi, lokal `climart_adopt` DB esa orqada edi ⇒ `POST /auth/login` **500** (`P2022`). Drift `prisma migrate
+> diff --from-schema-datasource --to-schema-datamodel` bilan o'lchandi — **AYNAN** o'sha 3 `ADD COLUMN` + 1 unique
+> indeks, faqat qo'shimcha (DROP yo'q) ⇒ `$executeRawUnsafe` bilan qo'llandi (`IF NOT EXISTS`). Login 201 ga qaytdi.
+> Repo migratsiya fayli allaqachon parallel sessiyada bor — men **kod yozmadim**, faqat lokal DB'ni sinxronladim.
+> Bog'liq: [[climart-adopt-local-db-untracked]] memory.
+>
 > **🕒 2026-07-29c (OMBOR CHUQUR RE-AUDIT — yacheyka per-cell drift 2 bug TUZATILDI · Phase-1)**
 > Foydalanuvchi: «omborni yana chuqur qaytadan tekshirib chiq… hamma xatoliklarini to'g'irlab ber». 3 paralel adversarial
 > bug-hunt agent (atomicity · yacheyka · valuation) + har finding **o'zim ground-truth tekshirildi** (§2). Yadro (stock/loss/
