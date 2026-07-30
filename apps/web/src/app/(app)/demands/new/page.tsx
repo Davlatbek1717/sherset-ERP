@@ -10,6 +10,7 @@
  */
 
 import { CurrencyRateModal } from '@/components/document-detail/currency-rate-modal';
+import { CellPickerField } from '@/components/documents/cell-picker-field';
 import { NewDocRelatedTab } from '@/components/documents/new-doc-related-tab';
 import { PositionAgreementButton } from '@/components/documents/position-agreement-modal';
 import { PositionDiscountMenu } from '@/components/documents/position-discount-menu';
@@ -115,6 +116,9 @@ const POSITION_COLUMNS: PositionTableColumnConfig[] = [
   { key: 'name' },
   { key: 'quantity' },
   { key: 'goodPack' },
+  // «Ячейка» — the address-storage bin the goods leave FROM (PositionTable
+  // supplies the header). Mirrors purchase-returns/new, the other outbound doc.
+  { key: 'cell' },
   { key: 'price' },
   { key: 'vat' },
   { key: 'vatAmount' },
@@ -540,6 +544,8 @@ export default function NewDemandPage() {
           discount: p.discount || '0',
           vat: p.vat ? Number(p.vat) : undefined,
           vatEnabled: p.vatEnabled,
+          ...(p.cellId ? { cellId: p.cellId } : {}),
+          ...(p.cell ? { cell: p.cell } : {}),
         })),
       };
       return api.post<{ id: string }>('/demands', payload);
@@ -705,6 +711,21 @@ export default function NewDemandPage() {
           </span>
         )}
       </div>
+    );
+  };
+
+  // «Ячейка» — address-storage cell picker. The closure carries storeId + the row's
+  // product so the picker can filter «С этим товаром» (mirror purchase-returns/new).
+  const renderPositionCellCell = (row: DocPositionRow) => {
+    const p = row as NewPositionRow;
+    return (
+      <CellPickerField
+        storeId={storeId}
+        assortmentId={p.assortmentId}
+        label={p.cell}
+        onSelect={(cellId, label) => updatePosition(row.id, { cellId, cell: label })}
+        onClear={() => updatePosition(row.id, { cellId: null, cell: '' })}
+      />
     );
   };
 
@@ -928,6 +949,7 @@ export default function NewDemandPage() {
               });
             }}
             renderNameCell={renderPositionNameCell}
+            renderCellCell={renderPositionCellCell}
             priceOptions={positionPriceOptions}
             // moysklad row ⋮ «Заменить» — swap the line's product (the name is now a
             // card link, so swapping moves here). Opens the per-row product picker.

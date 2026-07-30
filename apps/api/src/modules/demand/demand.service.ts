@@ -318,6 +318,12 @@ export class DemandService {
   async create(accountId: string, userId: string, raw: unknown) {
     const parsed = this.parseCreate(raw);
     await this.ensureRefs(accountId, parsed.agentId, parsed.organizationId, parsed.storeId);
+    // «Ячейка» — every picked bin must belong to the document's store (mirror purchase-return).
+    await this.stock.assertCellsInStore(
+      accountId,
+      parsed.storeId,
+      parsed.positions.map((p) => p.cellId),
+    );
     if (parsed.customerOrderId) {
       await this.ensureCustomerOrder(accountId, parsed.customerOrderId);
     }
@@ -393,6 +399,8 @@ export class DemandService {
               discount: p.discount ?? '0',
               vat: p.vat ?? null,
               vatEnabled: p.vatEnabled,
+              cellId: p.cellId ?? null,
+              cell: p.cell ?? null,
             })),
           },
         },
@@ -593,6 +601,13 @@ export class DemandService {
     if (parsed.externalCode !== undefined) data.externalCode = parsed.externalCode ?? null;
 
     if (parsed.positions !== undefined) {
+      // «Ячейка» — bins must belong to the (possibly changed) store. Runs BEFORE
+      // the transaction so a bad bin 400s without touching the positions.
+      await this.stock.assertCellsInStore(
+        accountId,
+        parsed.storeId ?? existing.storeId,
+        parsed.positions.map((p) => p.cellId),
+      );
       // Read-only data-build here; the destructive deleteMany is deferred into
       // the $transaction below so a version conflict (409) rolls back the
       // delete instead of leaving the positions destroyed (data corruption).
@@ -609,6 +624,8 @@ export class DemandService {
           discount: p.discount ?? '0',
           vat: p.vat ?? null,
           vatEnabled: p.vatEnabled,
+          cellId: p.cellId ?? null,
+          cell: p.cell ?? null,
         })),
       };
     }
@@ -889,6 +906,8 @@ export class DemandService {
             discount: p.discount,
             vat: p.vat,
             vatEnabled: p.vatEnabled,
+            cellId: p.cellId,
+            cell: p.cell,
           })),
         },
       },
@@ -1213,6 +1232,7 @@ export class DemandService {
           storeId: existing.storeId,
           assortmentKind: p.assortmentKind,
           assortmentId: p.assortmentId,
+          cellId: p.cellId ?? null,
           qtyDelta: `-${String(p.quantity)}`,
           costDeltaMinor: -(positionCosts.get(p.id) ?? 0n),
           docType: 'demand',
@@ -1351,6 +1371,8 @@ export class DemandService {
           storeId: existing.storeId,
           assortmentKind: p.assortmentKind,
           assortmentId: p.assortmentId,
+          // Reverse into the SAME bin the goods left from (cost zero-sum, bin zero-sum).
+          cellId: p.cellId ?? null,
           qtyDelta: String(p.quantity),
           costDeltaMinor: positionRefunds.get(p.id) ?? 0n,
           docType: 'demand_unpost',
@@ -1467,6 +1489,8 @@ export class DemandService {
           storeId: existing.storeId,
           assortmentKind: p.assortmentKind,
           assortmentId: p.assortmentId,
+          // Reverse into the SAME bin the goods left from (bin zero-sum).
+          cellId: p.cellId ?? null,
           qtyDelta: String(p.quantity),
           costDeltaMinor: positionRefunds.get(p.id) ?? 0n,
           docType: 'demand_cancel',

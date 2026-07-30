@@ -31,6 +31,7 @@ import {
 } from '@/components/document-detail';
 import { CurrencyRateModal } from '@/components/document-detail/currency-rate-modal';
 import { DocumentTasksSection } from '@/components/document-tasks-section';
+import { CellPickerField } from '@/components/documents/cell-picker-field';
 import { PositionAgreementButton } from '@/components/documents/position-agreement-modal';
 import { PositionColumnCustomizer } from '@/components/documents/position-column-customizer';
 import { PositionDiscountMenu } from '@/components/documents/position-discount-menu';
@@ -91,6 +92,9 @@ interface PositionDetail {
   vatEnabled: boolean;
   costMinor: string | null;
   customerOrderPositionId: string | null;
+  // «Ячейка» — address-storage bin: `cellId` (FK, drives the picker) + `cell` (label).
+  cellId: string | null;
+  cell: string | null;
   product: {
     id: string;
     name: string;
@@ -353,6 +357,8 @@ function formFromData(d: DemandDetail): FormState {
       volumeML: p.product?.volumeML ?? undefined,
       imageUrl: p.product?.images?.[0]?.id ? imageRawUrl(p.product.images[0].id) : undefined,
       salePrices: null,
+      cellId: p.cellId ?? null,
+      cell: p.cell ?? undefined,
     })),
     attributes: (d as { attributes?: Record<string, unknown> }).attributes ?? {},
   };
@@ -397,6 +403,8 @@ function snapshot(s: FormState): string {
       discount: p.discount,
       vat: p.vat,
       vatEnabled: p.vatEnabled,
+      // Part of the dirty-check snapshot — re-picking a bin must mark the form dirty.
+      cell: p.cell ?? null,
     })),
     attributes: s.attributes,
   });
@@ -770,6 +778,9 @@ export default function DemandDetailPage() {
           discount: Number(p.discount || '0'),
           vat: p.vat ? Number(p.vat) : undefined,
           vatEnabled: p.vatEnabled,
+          // «Ячейка» — address-storage bin (cellId drives per-cell stock on post).
+          ...(p.cellId ? { cellId: p.cellId } : {}),
+          ...(p.cell ? { cell: p.cell } : {}),
         }));
       }
       payload.attributes = form.attributes;
@@ -882,6 +893,8 @@ export default function DemandDetailPage() {
     if (colVisible.code) cols.push({ key: 'code', label: tCols('code') });
     if (colVisible.article) cols.push({ key: 'article', label: tCols('article') });
     cols.push({ key: 'quantity', label: tPos('quantity') });
+    // «Ячейка» — the bin the goods leave FROM (mirror purchase-returns/[id]).
+    cols.push({ key: 'cell', label: tCols('cell'), placeholder: tCols('cell_unset') });
     if (colVisible.stock) cols.push({ key: 'stock', label: tCols('stock') });
     if (colVisible.available) cols.push({ key: 'available', label: tCols('available') });
     cols.push(
@@ -1021,6 +1034,22 @@ export default function DemandDetailPage() {
         navigateAsButton
         disabled={!editableLines}
         testId={`pos-${p.id}-name`}
+      />
+    );
+  };
+
+  // «Ячейка» — address-storage cell picker. The closure carries storeId + the row's
+  // product so the picker can filter «С этим товаром» (mirror purchase-returns/[id]).
+  const renderPositionCellCell = (row: DocPositionRow) => {
+    const p = row as DetailPositionRow;
+    return (
+      <CellPickerField
+        storeId={form.storeId || null}
+        assortmentId={p.assortmentId}
+        label={p.cell}
+        readOnly={!editableLines}
+        onSelect={(cellId, label) => updatePosition(row.id, { cellId, cell: label })}
+        onClear={() => updatePosition(row.id, { cellId: null, cell: '' })}
       />
     );
   };
@@ -1702,6 +1731,7 @@ export default function DemandDetailPage() {
                 sortByNameLabel={tPos('sort_by_name')}
                 sortByCodeLabel={tPos('sort_by_code')}
                 renderNameCell={renderPositionNameCell}
+                renderCellCell={renderPositionCellCell}
                 priceOptions={positionPriceOptions}
                 onReplace={(rowId) => editableLines && setProductRowId(rowId)}
                 renderVatCell={renderVatCell}

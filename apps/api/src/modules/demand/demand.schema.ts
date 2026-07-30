@@ -46,6 +46,11 @@ export const DemandPositionInputSchema = z.object({
   discount: discountPercent.optional(),
   vat: z.number().int().min(0).max(100).nullish(),
   vatEnabled: z.boolean().default(true),
+  // moysklad «Ячейка» — address-storage bin the goods leave FROM (validated
+  // against the store on create); `cell` = denormalized «Зона / Ячейка» label.
+  // Mirror purchase-return (the other outbound doc).
+  cellId: z.string().uuid().nullish(),
+  cell: z.string().max(255).nullish(),
 });
 export type DemandPositionInput = z.infer<typeof DemandPositionInputSchema>;
 

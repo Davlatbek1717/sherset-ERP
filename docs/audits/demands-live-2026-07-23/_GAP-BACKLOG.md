@@ -9,12 +9,23 @@
 Demand bo'limi **strukturaviy jihatdan ~90% mavjud** (barcha 3 sahifa, aksar maydon/kolonka/tugma bor). Qolgan
 gap'lar aniq va boshqariladigan to'plam. Aksari — mayda wiring yoki vizual guruhlash; 2–3 tasi katta DS ishi.
 
+## Bajarilish jurnali
+- **2026-07-30** — **C1 «Ячейка» YOPILDI** (rank #1). Migratsiya `demand_positions.cell_id/cell` + zod + create/update
+  `assertCellsInStore` + post/unpost/cancel deltalarida `cellId` + FE ustun (`/new` va `/[id]`, `CellPickerField`).
+  Namuna: purchase-return (boshqa chiquvchi hujjat). Test: `demand-cell.test.ts` (10) — manba-skan guard'lari
+  o'zgarishdan oldingi faylda 0 mos beradi (bo'sh emasligi o'lchandi). **API runtime tasdiqlandi**: yacheyka
+  qoldig'i 30→28 (o'tkazish), 28→30 (bekor, zero-sum), mavjud bo'lmagan yacheyka 400. **Brauzer-QA YO'Q.**
+- **2026-07-30** — **L1 «Грузополучатель» kolonka** allaqachon yopilgan ekan (web ustun + API `consignee` select);
+  ro'yxat 2026-07-23 dan eskirgan edi.
+- Eslatma: C2 «Маркировка» uchun «DS'da umuman YO'Q» dan'vosi ham **eskirgan** — `DocPositionRow.marking` mavjud
+  (`packages/design-system/src/document-editor/PositionTable.tsx`). Qayta baholash kerak.
+
 ---
 
 ## Cross-cutting (pozitsiya jadvali — detail + create ikkalasiga tegadi)
 | # | Gap | Holat | Izoh / qaror |
 |---|-----|-------|--------------|
-| C1 | **«Ячейка» (bin) kolonka** | DS qo'llab-quvvatlaydi (`customs.cell`), demand'ga wire QILINMAGAN | ✅ **QURILADI** (user 2026-07-23). Wire qilish arzon |
+| C1 | **«Ячейка» (bin) kolonka** | ✅ **BAJARILDI 2026-07-30** — uchdan-uchgacha (DB→API→FE), runtime tasdiqlangan | Brauzer-QA hali yo'q |
 | C2 | **«Маркировка» kolonka** | DS'da umuman YO'Q (yangi komponent kerak) | ✅ **QURILADI** (user 2026-07-23). KATTA ish → ehtimol alohida sub-project |
 | C3 | **«Прибыль» (profit) qatori** | Nomuvofiq: create'da YO'Q; detail'da faqat posted (`costSumMinor>0`) | moysklad doim ko'rsatadi. Create'da COGS noma'lum → draft'da '—' ko'rsatish mumkin |
 | C4 | **«Вес» / «Объём» totals** | YO'Q (ikkala sahifada) | Tovar weight/volume yig'indisi. O'rta ish |
