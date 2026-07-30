@@ -151,4 +151,24 @@ describe('expandCellRange', () => {
       expandCellRange({ template: '{a}', variables: [num('a', 1, 2, 7)], zoneFrom: null }),
     ).toThrow(CellRangeError);
   });
+
+  it('shablon takroriy nom bersa → xato (ajratuvchisiz {a}{b})', () => {
+    expect(() =>
+      expandCellRange({
+        template: '{a}{b}',
+        variables: [num('a', 1, 12), num('b', 1, 12)],
+        zoneFrom: null,
+      }),
+    ).toThrow(/takroriy nom/);
+  });
+
+  it("ajratuvchi bo'lsa to'qnashuv yo'q", () => {
+    const r = expandCellRange({
+      template: '{a}-{b}',
+      variables: [num('a', 1, 12), num('b', 1, 12)],
+      zoneFrom: null,
+    });
+    expect(r).toHaveLength(144);
+    expect(new Set(r.map((c) => c.name)).size).toBe(144);
+  });
 });

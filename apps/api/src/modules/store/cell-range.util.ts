@@ -147,5 +147,23 @@ export function expandCellRange(spec: CellRangeSpec): ExpandedCell[] {
     }
     out.push({ name, zoneName: spec.zoneFrom ? (picked[spec.zoneFrom] ?? null) : null });
   }
+
+  // Takroriy nom — jimgina dedup QILINMAYDI, ataylab XATO tashlanadi.
+  //
+  // Ajratuvchisiz shablon to'qnashuv beradi: `{a}{b}` da a=1,b=11 va a=11,b=1
+  // ikkalasi ham «111» chiqaradi. Agar jim dedup qilsak, foydalanuvchi 144 ta
+  // yacheyka so'rab 142 tasini olardi va NEGA ekanini bilmasdi — dryRun ko'rsatgan
+  // son haqiqiy `created` dan farq qilib ketardi (bu dizaynning kalit xossasi).
+  // Xato esa uni to'g'ri yechimga yo'naltiradi: `{a}-{b}` deb ajratuvchi qo'yish.
+  const seen = new Set<string>();
+  for (const cell of out) {
+    if (seen.has(cell.name)) {
+      throw new CellRangeError(
+        `Shablon takroriy nom beradi («${cell.name}»). O'zgaruvchilar orasiga ajratuvchi qo'shing, masalan «{a}-{b}».`,
+      );
+    }
+    seen.add(cell.name);
+  }
+
   return out;
 }
