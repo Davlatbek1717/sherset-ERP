@@ -305,6 +305,20 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-07-30g (⏭️ KEYINGI VAZIFA: FAZA E — QABUL MAGIC-LINK TASDIQLASH · spec tayyor)**
+> **Egasi aniqlashtirdi (2026-07-30):** tasdiq HAVOLA orqali — taminotchi/omborchiga lichkadan (userbot) link boradi, bosib
+> belgilashadi (tasdiq/rad). Taminotchi **parolsiz magic-link** bilan kiradi (token identifikatsiya qiladi — qaysi taminotchi);
+> omborchi/admin ichki (to'liq CRUD, oddiy ERP login). **Sabab:** Telegram inline-tugma FAQAT botда — lichka xabariga tugma
+> qo'yib bo'lmaydi, shuning uchun HAVOLA. **Spec (professional, grounded):** `docs/superpowers/specs/2026-07-30-qabul-magic-
+> link-tasdiqlash-design.md`.
+> **Arxitektura (mavjud infra reuse):** capability-token (`randomBytes(24)`, `counterparty-statement`да bor) + `SupplyApprovalLink`
+> jadval (migration) + public token-auth endpoint (`GET/POST /p/qabul/:token`) + public veb-sahifa (`app/p/qabul/[token]`,
+> `app/p/[token]` patterni) + havolani MTProto outbox (`hrTelegramOutbox`) yetkazadi. FSM `claim` idempotent (mavjud).
+> **Xavfsizlik:** 192-bit token · supply+role+agent scope · muddat (14 kun) · FAQAT applySupplierDecision/reject (CRUD YO'Q) ·
+> HTTPS · audit. **Bosqichlar:** E1(token+endpoint)→E2(public sahifa)→E3(havola yetkazish + bot-kod D1-D3 olib tashlash)→E4(QA).
+> **Egasidан aniqlashtir (E1 oldidan):** token-muddat 14 kun okmi · taminotchi sahifasi faqat-tasdiq (CRUD yo'q) · omborchi
+> havolasi ERP-login yetadimi. Bog'liq: [[supply-approval-workflow]].
+>
 > **🕒 2026-07-30f (⚠️ ARXITEKTURA KORREKSIYASI — bot-yondashuv BEKOR, MTProto redizayn keyingi vazifa)**
 > **Egasi aniqlashtirdi (2026-07-30):** «BOT KERAK EMAS — hammasi adminning SHAXSIY Telegram akkauntidan (lichka/MTProto)
 > boradi; taminotchiga admin telegramidan, omborchiga uning ULANGAN TELEFON RAQAMI orqali (admin lichkasidan), admin oxirida
