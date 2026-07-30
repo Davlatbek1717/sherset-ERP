@@ -305,7 +305,30 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
-> **🕒 2026-07-30c (FAZA D1 — Telegram bog'lash poydevori QURILDI + DEPLOYED · ⏭️ keyingi = D2)**
+> **🕒 2026-07-30d (FAZA D2 — omborchi Telegram QURILDI + DEPLOYED · ⏭️ keyingi = D3)**
+> Taminotchi tasdiqlagach (`applySupplierDecision(approve)` — Telegram cfm2 YOKI ERP supplier-confirm, ikkalasi shu yerдан)
+> → 🆕 **`dispatchToOmborchi`**: `supply.update` ruxsatli (`Employee→roles→role→permissions[entity='supply',action='update']`)
+> + `telegramChatId` bog'langan BARCHA xodimga inline-tugmali xabar. Callback protokoli kengaydi: **`ocfm`** («✅ To'g'ri,
+> tasdiqlash» → `omborchiConfirm` adjustmentsiz → `awaiting_admin`) · **`oadj`** («✏️ Son noto'g'ri» → «ERP'da tuzating» alert,
+> bosqich o'zgarmaydi). **`handleOmborchiCallback`** auth: callback chat egasi `supply.update` ruxsatli xodim (aks holda «ruxsat
+> yo'q»). Router **`handleApprovalCallback`** action'ga qarab taminotchi/omborchi handleriga yo'naltiradi; telegram.service shuni
+> chaqiradi. Kim birinchi tasdiqlasa — FSM `claim` g'olib (atomik).
+>
+> **🟢 Gate:** api typecheck 0 · biome 0 · supply-approval 24 test (+2 yangi ocfm/oadj) · nishonli 171 test (supply-approval+
+> telegram+supply+hr-employee, 0 fail — to'liq suite mashina xotira-bosimidan worker-crash, lokal o'zgarish uchun nishonli yetarli).
+>
+> **✅ DEPLOYED (erp.sherset.uz, `4c3ecb8`, BE-only):** push (⚠️ 1-urinish pre-push typecheck bloklagan — `SupplierCallbackAction`
+> alias olib tashlanганда parseCallbackda `as`-cast qolib ketgan edi, `4c3ecb8`da tuzatildi) → box reset → api restart (health 200).
+> Migration/FE build YO'Q.
+>
+> **⚠️ Phase-1 — jonli-bot round-trip YO'Q:** real omborchi tugma-bosishi bot token+webhook talab qiladi (D4). Admin hozircha
+> ERP-panelда (D3'gача). Xabarга qabul-qatorlari (mahsulot×son) qo'shilmagan — nomi+yo'riqnoma (nice-to-have keyin).
+>
+> **⏭️ KEYINGI = D3 (admin Telegram + reject-reason):** omborchi tasdiqlagach adminlarga (`supply.approve`+chat_id) inline xabar
+> (`dispatchToAdmin`) + `acfm/arej` callback + admin `adminConfirm`→stock. Reject `orej/arej` → `force_reply` sabab oqimi (uch rol).
+> Spec §«Bosqichlar» 3-band. Keyin D4(jonli-bot QA).
+>
+> **🕒 2026-07-30c (FAZA D1 — Telegram bog'lash poydevori QURILDI + DEPLOYED · D2 endi TUGADI, ↑2026-07-30d)**
 > D1 plan (`docs/superpowers/plans/2026-07-30-telegram-approval-d1-binding.md`) 6 vazifa inline ijro (executing-plans).
 > Plan `employee/` deb taxmin qilgan edi — real modul **`hr` / `hr-employee`** (route `/hr/employees`, `@RequireHrPermission`),
 > shunga moslashtirildi.
