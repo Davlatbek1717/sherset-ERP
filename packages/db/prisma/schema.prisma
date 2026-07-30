@@ -304,6 +304,11 @@ model Employee {
   username        String?  @db.VarChar(50)
   isChecker       Boolean  @default(false) @map("is_checker")
   telegramPhone   String?  @map("telegram_phone") @db.VarChar(20)
+  // Bot API chat_id — qabul-tasdiqlash inline-tugmalari uchun (Faza D1, 2026-07-30).
+  // `/start bind_<token>` deep-link orqali to'ldiriladi; token bir-martalik + muddatli.
+  telegramChatId             String?   @map("telegram_chat_id") @db.VarChar(64)
+  telegramBindToken          String?   @unique @map("telegram_bind_token") @db.VarChar(64)
+  telegramBindTokenExpiresAt DateTime? @map("telegram_bind_token_expires_at") @db.Timestamptz()
   moyskladAgentId String?  @map("moysklad_agent_id") @db.Uuid
   department      String?  @db.VarChar(100)
   hrRoles         String[] @default([]) @map("hr_roles")
