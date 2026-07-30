@@ -305,7 +305,31 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
-> **🕒 2026-07-30d (FAZA D2 — omborchi Telegram QURILDI + DEPLOYED · ⏭️ keyingi = D3)**
+> **🕒 2026-07-30e (FAZA D3 — admin Telegram QURILDI + DEPLOYED · 🎉 UCH-ROLLI ZANJIR TO'LIQ · ⏭️ keyingi = D4)**
+> Omborchi tasdiqlagach (`omborchiConfirm` — Telegram ocfm YOKI ERP omborchi-confirm) → 🆕 **`dispatchToAdmin`**: `supply.approve`
+> ruxsatli + `telegramChatId` xodimlarga inline xabar. Callback: **`acfm`** («✅ Tasdiqlash» → `adminConfirm` → «Проведено» +
+> **stock oshadi**) · **`arej`** («❌ Rad» → `reject` → omborchiga qaytadi). **`handleAdminCallback`** auth: `supply.approve`.
+> Router `handleApprovalCallback` endi acfm/arej → admin handler. DRY: `supplyPermChats(action)` + `authSupplyEmployee(chatId,
+> action)` helperlar (omborchi+admin ikkalasi ishlatadi; omborchi auth ham shunga refaktor qilindi).
+>
+> **✅ Endi UCHALA rol ham Telegram'da** (egasi talabi bajarildi): taminotchi(B) → omborchi(D2) → admin(D3). FSM `claim` har
+> bosqichda g'olibni belgilaydi (bir nechta xodim parallel bossa — biri o'tadi).
+>
+> **🟢 Gate:** api typecheck 0 (script) · biome 0 · supply-approval callback 10 test (+4 acfm/arej/keyboard) · nishonli
+> supply-approval+telegram 58 test / 0 fail.
+>
+> **✅ DEPLOYED (erp.sherset.uz, `4f1aec1`, BE-only):** push (pre-push o'tdi) → box reset → api restart (health 200). Migration/FE yo'q.
+>
+> **⚠️ Phase-1 — jonli-bot round-trip YO'Q (D4):** real tugma-bosishlar bot token+webhook + xodim chat_id bog'lash talab qiladi.
+> **arej/orej reject MVP generic-sabab** (supplier-flow kabi `'Admin Telegram orqali rad etdi'`) — `force_reply` text-capture
+> (real sabab yozdirish) keyingi refinement, ataylab qoldirildi (stateful ikki-xabarli oqim). Xabarга qabul-qatorlari (mahsulot×
+> son) qo'shilmagan — nomi+yo'riqnoma.
+>
+> **⏭️ KEYINGI = D4 (jonli-bot QA + refinementlar):** (a) real Telegram bot token+webhook sozlab, uchala rol round-trip'ini bir
+> qabulда boshdan-oxir sinash (yuborish→taminotchi→omborchi→admin→stock) + ruxsatsiz xodim bloklanishi; (b) ixtiyoriy: `force_reply`
+> reject-sabab, xabarга qabul-qatorlari, «✏️ Son noto'g'ri»→ERP URL-tugma. Spec §Testlash/Phase-2.
+>
+> **🕒 2026-07-30d (FAZA D2 — omborchi Telegram QURILDI + DEPLOYED · D3 endi TUGADI, ↑2026-07-30e)**
 > Taminotchi tasdiqlagach (`applySupplierDecision(approve)` — Telegram cfm2 YOKI ERP supplier-confirm, ikkalasi shu yerдан)
 > → 🆕 **`dispatchToOmborchi`**: `supply.update` ruxsatli (`Employee→roles→role→permissions[entity='supply',action='update']`)
 > + `telegramChatId` bog'langan BARCHA xodimga inline-tugmali xabar. Callback protokoli kengaydi: **`ocfm`** («✅ To'g'ri,
