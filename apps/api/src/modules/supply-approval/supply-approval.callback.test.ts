@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  adminKeyboard,
   buildCallbackData,
   confirmKeyboard,
   doubleConfirmKeyboard,
@@ -67,5 +68,24 @@ describe('supply-approval callback protocol', () => {
     const kb = omborchiKeyboard(ID);
     expect(kb.inline_keyboard[0][0].callback_data).toBe(`sa:ocfm:${ID}`);
     expect(kb.inline_keyboard[0][1].callback_data).toBe(`sa:oadj:${ID}`);
+  });
+
+  // ── Admin (Faza D3) ───────────────────────────────────────────────────────
+  it('admin action (acfm/arej) round-trip', () => {
+    expect(parseCallbackData(buildCallbackData('acfm', ID))).toEqual({
+      action: 'acfm',
+      supplyId: ID,
+    });
+    expect(parseCallbackData(buildCallbackData('arej', ID))).toEqual({
+      action: 'arej',
+      supplyId: ID,
+    });
+    expect(buildCallbackData('arej', ID).length).toBeLessThanOrEqual(64);
+  });
+
+  it("adminKeyboard to'g'ri callback_data beradi", () => {
+    const kb = adminKeyboard(ID);
+    expect(kb.inline_keyboard[0][0].callback_data).toBe(`sa:acfm:${ID}`);
+    expect(kb.inline_keyboard[0][1].callback_data).toBe(`sa:arej:${ID}`);
   });
 });

@@ -12,12 +12,31 @@ export type InlineKeyboard = { inline_keyboard: TelegramInlineButton[][] };
  * (uuid=36 + prefiks ≤ 8 = 44 bayt < Telegram 64-bayt limiti.)
  */
 
-// Taminotchi (Faza B): cfm/cfm2/rej/cxl · Omborchi (Faza D2): ocfm/oadj
+// Taminotchi (Faza B): cfm/cfm2/rej/cxl · Omborchi (Faza D2): ocfm/oadj · Admin (Faza D3): acfm/arej
 //   ocfm — «✅ To'g'ri, tasdiqlash» → omborchiConfirm (adjustmentsiz)
 //   oadj — «✏️ Son noto'g'ri» → ERP'da tuzatish (bosqich o'zgarmaydi, yo'riqnoma)
-export type ApprovalCallbackAction = 'cfm' | 'cfm2' | 'rej' | 'cxl' | 'ocfm' | 'oadj';
+//   acfm — «✅ Tasdiqlash» → adminConfirm → «Проведено» + stock oshadi
+//   arej — «❌ Rad» → reject (oldingi bosqichga; MVP generic sabab, supplier-flow kabi)
+export type ApprovalCallbackAction =
+  | 'cfm'
+  | 'cfm2'
+  | 'rej'
+  | 'cxl'
+  | 'ocfm'
+  | 'oadj'
+  | 'acfm'
+  | 'arej';
 const PREFIX = 'sa';
-const ACTIONS: readonly ApprovalCallbackAction[] = ['cfm', 'cfm2', 'rej', 'cxl', 'ocfm', 'oadj'];
+const ACTIONS: readonly ApprovalCallbackAction[] = [
+  'cfm',
+  'cfm2',
+  'rej',
+  'cxl',
+  'ocfm',
+  'oadj',
+  'acfm',
+  'arej',
+];
 
 export function buildCallbackData(action: ApprovalCallbackAction, supplyId: string): string {
   return `${PREFIX}:${action}:${supplyId}`;
@@ -64,6 +83,18 @@ export function omborchiKeyboard(supplyId: string): InlineKeyboard {
       [
         { text: "✅ To'g'ri, tasdiqlash", callback_data: buildCallbackData('ocfm', supplyId) },
         { text: "✏️ Son noto'g'ri", callback_data: buildCallbackData('oadj', supplyId) },
+      ],
+    ],
+  };
+}
+
+/** Admin tugmalari (Faza D3) — yakuniy tasdiq (stock) yoki rad. */
+export function adminKeyboard(supplyId: string): InlineKeyboard {
+  return {
+    inline_keyboard: [
+      [
+        { text: '✅ Tasdiqlash', callback_data: buildCallbackData('acfm', supplyId) },
+        { text: '❌ Rad', callback_data: buildCallbackData('arej', supplyId) },
       ],
     ],
   };

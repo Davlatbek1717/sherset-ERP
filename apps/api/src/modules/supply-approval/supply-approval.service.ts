@@ -10,6 +10,7 @@ import {
 } from '../telegram/telegram.client.js';
 import {
   type InlineKeyboard,
+  adminKeyboard,
   confirmKeyboard,
   doubleConfirmKeyboard,
   omborchiKeyboard,
@@ -139,6 +140,8 @@ export class SupplyApprovalService {
         },
       });
     });
+    // Faza D3: omborchi tasdiqladi → adminlarga yakuniy-tasdiq xabari (non-fatal).
+    await this.dispatchToAdmin(accountId, id).catch(() => {});
     return this.getApproval(accountId, id);
   }
 
@@ -291,6 +294,49 @@ export class SupplyApprovalService {
     await tgAnswerCallbackQuery(token, { callbackQueryId: cbq.id }).catch(() => {});
   }
 
+  /** Xodimlar (supply.<action> ruxsatli + Telegram bog'langan) chat_id'lari. */
+  private async supplyPermChats(
+    accountId: string,
+    action: 'update' | 'approve',
+  ): Promise<string[]> {
+    const emps = await this.prisma.client.employee.findMany({
+      where: {
+        accountId,
+        archived: false,
+        telegramChatId: { not: null },
+        roles: {
+          some: {
+            role: { permissions: { some: { entity: 'supply', action, scope: { not: 'NO' } } } },
+          },
+        },
+      },
+      select: { telegramChatId: true },
+    });
+    return emps.map((e) => e.telegramChatId).filter((c): c is string => !!c);
+  }
+
+  /** Callback chat egasi supply.<action> ruxsatli xodimmi → uning id'si yoki null (auth). */
+  private async authSupplyEmployee(
+    accountId: string,
+    chatId: string,
+    action: 'update' | 'approve',
+  ): Promise<string | null> {
+    const emp = await this.prisma.client.employee.findFirst({
+      where: {
+        accountId,
+        telegramChatId: chatId,
+        archived: false,
+        roles: {
+          some: {
+            role: { permissions: { some: { entity: 'supply', action, scope: { not: 'NO' } } } },
+          },
+        },
+      },
+      select: { id: true },
+    });
+    return emp?.id ?? null;
+  }
+
   /** Faza D2: omborchilarga (supply.update ruxsatli + Telegram bog'langan) inline-tugmali xabar. */
   private async dispatchToOmborchi(accountId: string, supplyId: string): Promise<void> {
     const supply = await this.prisma.client.supply.findFirst({
@@ -300,32 +346,37 @@ export class SupplyApprovalService {
     if (!supply) return;
     const cfg = await this.prisma.client.telegramConfig.findUnique({ where: { accountId } });
     if (!cfg?.enabled || !cfg.botTokenCipher) return;
-    const emps = await this.prisma.client.employee.findMany({
-      where: {
-        accountId,
-        archived: false,
-        telegramChatId: { not: null },
-        roles: {
-          some: {
-            role: {
-              permissions: {
-                some: { entity: 'supply', action: 'update', scope: { not: 'NO' } },
-              },
-            },
-          },
-        },
-      },
-      select: { telegramChatId: true },
-    });
-    if (emps.length === 0) return;
+    const chats = await this.supplyPermChats(accountId, 'update');
+    if (chats.length === 0) return;
     const token = decryptPassword(cfg.botTokenCipher);
     const text = `📦 Qabul omborga keldi: ${supply.name}\nSonini sanab tekshiring va tasdiqlang.`;
-    for (const e of emps) {
-      if (!e.telegramChatId) continue;
+    for (const chatId of chats) {
       await tgSendMessage(token, {
-        chatId: e.telegramChatId,
+        chatId,
         text,
         replyMarkup: omborchiKeyboard(supplyId),
+      }).catch(() => {});
+    }
+  }
+
+  /** Faza D3: adminlarga (supply.approve ruxsatli + Telegram bog'langan) yakuniy-tasdiq xabari. */
+  private async dispatchToAdmin(accountId: string, supplyId: string): Promise<void> {
+    const supply = await this.prisma.client.supply.findFirst({
+      where: { id: supplyId, accountId },
+      select: { name: true },
+    });
+    if (!supply) return;
+    const cfg = await this.prisma.client.telegramConfig.findUnique({ where: { accountId } });
+    if (!cfg?.enabled || !cfg.botTokenCipher) return;
+    const chats = await this.supplyPermChats(accountId, 'approve');
+    if (chats.length === 0) return;
+    const token = decryptPassword(cfg.botTokenCipher);
+    const text = `🧾 Omborchi tasdiqladi: ${supply.name}\nYakuniy tasdiqlaysizmi? (tasdiqlansa — omborga qo'shiladi.)`;
+    for (const chatId of chats) {
+      await tgSendMessage(token, {
+        chatId,
+        text,
+        replyMarkup: adminKeyboard(supplyId),
       }).catch(() => {});
     }
   }
@@ -340,24 +391,8 @@ export class SupplyApprovalService {
     const cfg = await this.prisma.client.telegramConfig.findUnique({ where: { accountId } });
     if (!cfg?.botTokenCipher) return;
     const token = decryptPassword(cfg.botTokenCipher);
-    const emp = await this.prisma.client.employee.findFirst({
-      where: {
-        accountId,
-        telegramChatId: cbq.chatId,
-        archived: false,
-        roles: {
-          some: {
-            role: {
-              permissions: {
-                some: { entity: 'supply', action: 'update', scope: { not: 'NO' } },
-              },
-            },
-          },
-        },
-      },
-      select: { id: true },
-    });
-    if (!emp) {
+    const empId = await this.authSupplyEmployee(accountId, cbq.chatId, 'update');
+    if (!empId) {
       await tgAnswerCallbackQuery(token, {
         callbackQueryId: cbq.id,
         text: "Bu amal uchun ruxsatingiz yo'q",
@@ -375,7 +410,7 @@ export class SupplyApprovalService {
     }
     // ocfm — sonini borligicha tasdiqlash (adjustmentsiz) → delivering→awaiting_admin.
     try {
-      await this.omborchiConfirm(accountId, emp.id, parsed.supplyId, { adjustments: [] });
+      await this.omborchiConfirm(accountId, empId, parsed.supplyId, { adjustments: [] });
       await tgEditMessageText(token, {
         chatId: cbq.chatId,
         messageId: cbq.messageId,
@@ -392,7 +427,60 @@ export class SupplyApprovalService {
     await tgAnswerCallbackQuery(token, { callbackQueryId: cbq.id }).catch(() => {});
   }
 
-  /** Telegram `sa:` callback router — action'ga qarab taminotchi/omborchi handleriga yo'naltiradi. */
+  /** Faza D3: admin callback — auth: chat egasi supply.approve ruxsatli xodim bo'lishi shart. */
+  private async handleAdminCallback(
+    accountId: string,
+    cbq: { id: string; data: string; chatId: string; messageId: number },
+  ): Promise<void> {
+    const parsed = parseCallbackData(cbq.data);
+    if (!parsed) return;
+    const cfg = await this.prisma.client.telegramConfig.findUnique({ where: { accountId } });
+    if (!cfg?.botTokenCipher) return;
+    const token = decryptPassword(cfg.botTokenCipher);
+    const empId = await this.authSupplyEmployee(accountId, cbq.chatId, 'approve');
+    if (!empId) {
+      await tgAnswerCallbackQuery(token, {
+        callbackQueryId: cbq.id,
+        text: "Bu amal uchun ruxsatingiz yo'q",
+        showAlert: true,
+      }).catch(() => {});
+      return;
+    }
+    try {
+      if (parsed.action === 'acfm') {
+        await this.adminConfirm(accountId, empId, parsed.supplyId);
+        await tgEditMessageText(token, {
+          chatId: cbq.chatId,
+          messageId: cbq.messageId,
+          text: "✅ Admin tasdiqladi — qabul o'tkazildi, tovar omborga qo'shildi.",
+        }).catch(() => {});
+      } else {
+        // arej — MVP generic sabab (force_reply text-capture keyingi refinement).
+        await this.reject(
+          accountId,
+          empId,
+          parsed.supplyId,
+          { reason: 'Admin Telegram orqali rad etdi' },
+          'admin',
+        );
+        await tgEditMessageText(token, {
+          chatId: cbq.chatId,
+          messageId: cbq.messageId,
+          text: '❌ Admin rad etdi — omborchiga qaytarildi.',
+        }).catch(() => {});
+      }
+    } catch {
+      await tgAnswerCallbackQuery(token, {
+        callbackQueryId: cbq.id,
+        text: "Bu qabul allaqachon o'zgargan",
+        showAlert: true,
+      }).catch(() => {});
+      return;
+    }
+    await tgAnswerCallbackQuery(token, { callbackQueryId: cbq.id }).catch(() => {});
+  }
+
+  /** Telegram `sa:` callback router — action'ga qarab rol-handlerga yo'naltiradi. */
   async handleApprovalCallback(
     accountId: string,
     cbq: { id: string; data: string; chatId: string; messageId: number },
@@ -401,6 +489,9 @@ export class SupplyApprovalService {
     if (!parsed) return;
     if (parsed.action === 'ocfm' || parsed.action === 'oadj') {
       return this.handleOmborchiCallback(accountId, cbq);
+    }
+    if (parsed.action === 'acfm' || parsed.action === 'arej') {
+      return this.handleAdminCallback(accountId, cbq);
     }
     return this.handleSupplierCallback(accountId, cbq);
   }
