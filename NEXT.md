@@ -305,7 +305,26 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
-> **🕒 2026-07-30e (FAZA D3 — admin Telegram QURILDI + DEPLOYED · 🎉 UCH-ROLLI ZANJIR TO'LIQ · ⏭️ keyingi = D4)**
+> **🕒 2026-07-30f (⚠️ ARXITEKTURA KORREKSIYASI — bot-yondashuv BEKOR, MTProto redizayn keyingi vazifa)**
+> **Egasi aniqlashtirdi (2026-07-30):** «BOT KERAK EMAS — hammasi adminning SHAXSIY Telegram akkauntidan (lichka/MTProto)
+> boradi; taminotchiga admin telegramidan, omborchiga uning ULANGAN TELEFON RAQAMI orqali (admin lichkasidan), admin oxirida
+> SAYTда (ERP) tasdiqlaydi.» Egasi qarori: **«olib tashlab, MTProto'ga o't».** Ya'ni D1-D3 (bot inline-tugma) — NOTO'G'RI yo'l.
+>
+> **To'g'ri arxitektura (grounded — korrektlangan spec: `docs/superpowers/specs/2026-07-30-uch-rolli-telegram-tasdiqlash-design.md`
+> §KORREKSIYA):**
+> - **Taminotchi** = `counterparty-statement.generateSupplyGoods(deliver=true)` → `hrTelegramOutbox` (`toPhone=agent.phone`) →
+>   userbot (admin lichkasi) yuboradi — ✅ **ALLAQACHON ISHLAYDI** (supply-goods «deliver» — sessiya boshida 500 tuzatilgan).
+> - **Omborchi** = 🆕 `hrTelegramOutbox` qatori `toPhone=Employee.telegramPhone` (SHU mexanizm; grounded API
+>   `counterparty-statement.service.ts:672-697`).
+> - **Admin** = ERP `supply-approval-panel` (Faza C) — ✅ BOR.
+>
+> **⏭️ KEYINGI VAZIFA (MTProto redizayn — toza fokus-sessiya):** (1) bot-inline dispatch/callback (D2/D3) + `/start bind` handler
+> + employee bind endpoint/UI (D1) OLIB TASHLA — migration ustunlari qoladi (zararsiz); (2) taminotchi «yuborish» →
+> `generateSupplyGoods` MTProto yo'liga ula; (3) omborchiga MTProto-send (`supply.update` ruxsatli xodim `telegramPhone`iga outbox);
+> (4) admin ERP-panel; (5) gate + BE deploy. **Egasidан aniqlashtir:** omborchi-notify TRIGGER (avtomat taminotchidan keyinmi yoki
+> ERP tugmasi?) + xabar-format. **Muhim:** deployed bot-kod (D1-D3) UXLAB YOTIBDI — bot sozlanmaguncha ishlamaydi, zararsiz.
+>
+> **🕒 2026-07-30e (FAZA D3 — admin Telegram [BOT] QURILDI + DEPLOYED · ⚠️ BEKOR — bot-yondashuv, ↑2026-07-30f)**
 > Omborchi tasdiqlagach (`omborchiConfirm` — Telegram ocfm YOKI ERP omborchi-confirm) → 🆕 **`dispatchToAdmin`**: `supply.approve`
 > ruxsatli + `telegramChatId` xodimlarga inline xabar. Callback: **`acfm`** («✅ Tasdiqlash» → `adminConfirm` → «Проведено» +
 > **stock oshadi**) · **`arej`** («❌ Rad» → `reject` → omborchiga qaytadi). **`handleAdminCallback`** auth: `supply.approve`.

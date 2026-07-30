@@ -1,7 +1,46 @@
 # Uch-rolli Telegram tasdiqlash (Qabul-tasdiqlash — Faza D) — dizayn
 
+> ## ⚠️⚠️ KORREKSIYA — 2026-07-30 (BU DIZAYNNING BOT-QISMI BEKOR)
+> **Egasi aniqlashtirdi (2026-07-30):** «bot kerak emas — hammasi adminning SHAXSIY Telegram akkauntidan (lichka/MTProto)
+> boradi; taminotchiga admin telegramidan, omborchiga uning ULANGAN TELEFON RAQAMI orqali (admin lichkasidan), admin esa
+> oxirida SAYTда (ERP) tasdiqlaydi.» Ya'ni quyidagi **Bot API / inline-tugma** dizayni (D1 bind + D2/D3 inline) — **NOTO'G'RI
+> yo'l, olib tashlanadi.** Egasi qarori: «olib tashlab, MTProto'ga o't».
+>
+> ### To'g'ri arxitektura (MTProto — grounded, mavjud infra):
+> | Rol | Mexanizm | Holat |
+> |---|---|---|
+> | **Taminotchi** | `counterparty-statement.generateSupplyGoods(deliver=true)` → `hrTelegramOutbox` qatori (`toPhone=agent.phone`) → outbox-worker adminning userbot (gramjs) akkauntidan yuboradi | ✅ **ALLAQACHON ISHLAYDI** (supply-goods «deliver» oqimi) |
+> | **Omborchi** | 🆕 `hrTelegramOutbox` qatori `toPhone=Employee.telegramPhone` (SHU mexanizm; `messageText`+ixtiyoriy `attachmentPath`) | qurish kerak |
+> | **Admin** | ERP `supply-approval-panel` (Faza C) da yakuniy tasdiq → `adminConfirm`→`supply.transition('post')`→stock | ✅ BOR |
+>
+> **Outbox-yuborish API (grounded, `counterparty-statement.service.ts:672-697`):** `prisma.hrTelegramOutbox.create({ data: {
+> accountId, counterpartyId?, toPhone, messageText, attachmentPath?, sourceEventType, sourceDocId, status: 'pending' } })` —
+> `hr-telegram-outbox-worker` pending qatorlarni userbot orqali `toPhone`ga yuboradi. Telefon→Telegram = `TelegramLookupService`
+> / gramjs `getEntity(phone)`.
+>
+> ### OLIB TASHLANADIGAN bot-ishi (deployed, LEKIN uxlab yotibdi — bot sozlanmaguncha ishlamaydi, zararsiz):
+> - **D1** (`09450fe`): `Employee.telegramChatId`/`telegramBindToken`/`…ExpiresAt` migration · `hr-employee/employee-telegram.service`
+>   (parseBindToken/issueBindToken/bindByToken) · `POST/DELETE /hr/employees/:id/telegram*` endpointlar · `employee-card.tsx`
+>   «Telegram ulash/uzish» UI + i18n 6 kalit · telegram.service `/start bind_` handler · telegram.module→HrEmployeeModule.
+>   *(Migration ustunlarini DB'дан olib tashlash SHART EMAS — zararsiz; kod/UI/endpoint olib tashlanadi. Omborchi TELEFON orqali
+>   topiladi (`telegramPhone`), chat_id bind kerak emas.)*
+> - **D2** (`4c3ecb8`): `dispatchToOmborchi` + `ocfm/oadj` callback + `handleOmborchiCallback`.
+> - **D3** (`4f1aec1`): `dispatchToAdmin` + `acfm/arej` callback + `handleAdminCallback` + `adminKeyboard` + DRY helperlar.
+> - callback.ts inline-keyboard protokoli · telegram.service `handleApprovalCallback` routing · `supply-approval.callback.test` inline testlari.
+> - **Faza B `dispatchToSupplier` (bot)** — MTProto `generateSupplyGoods`ga almashtiriladi.
+>
+> ### KEYINGI SESSIYA REJASI (MTProto redizayn):
+> 1. Bot-inline dispatch/callback (D2/D3) + `/start bind` handler + employee bind endpoint/UI (D1) ni OLIB TASHLA (migration ustunlari qoladi).
+> 2. Taminotchi «yuborish» → `generateSupplyGoods(deliver=true)` MTProto yo'liga ula (bot `dispatchToSupplier` o'rniga).
+> 3. 🆕 Omborchiga MTProto-send: `supplyPermChats` o'rniga `supply.update` ruxsatli xodimlarning `telegramPhone`'iga outbox-qatori.
+>    Trigger: taminotchi bosqichidан keyin (yoki ERP «Omborchiga yuborish» tugmasi — keyingi sessiyada egasidan aniqlashtiriladi).
+> 4. Admin → ERP-panel (mavjud). FSM stage'lari kuzatuv uchun qolishi mumkin (yoki soddalashtiriladi).
+> 5. Gate + BE deploy. Egasidан omborchi-trigger + xabar-formatini aniqlashtir.
+
+---
+
 **Sana:** 2026-07-30
-**Holat:** Dizayn tasdiqlangan (egasi 2026-07-30). Qurish — alohida fokus-sessiya(lar).
+**Holat:** ⚠️ Bot-dizayn BEKOR (yuqoridagi korreksiya) — MTProto redizayn keyingi fokus-sessiyada. Quyisi tarixiy (bot-yondashuv).
 **Asos:** Qabul-tasdiqlash Faza A (BE state-machine) + B (taminotchi Telegram) + C (ERP UI) —
 `docs/superpowers/specs/2026-07-29-qabul-tasdiqlash-workflow-design.md`, modul `apps/api/src/modules/supply-approval`.
 
