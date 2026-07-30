@@ -71,6 +71,8 @@ export interface EmployeeDetail {
     string,
     { enabled?: boolean; web?: boolean; email?: boolean; phone?: boolean }
   >;
+  /** Faza D1 — bog'langan Telegram chat_id (null ⇒ ulanmagan). */
+  telegramChatId?: string | null;
 }
 
 interface RoleRow {
@@ -335,6 +337,8 @@ export function EmployeeCard({ id }: { id?: string }) {
   const [newPassword, setNewPassword] = useState('');
   const [passwordOpen, setPasswordOpen] = useState(false);
   const [rightsOpen, setRightsOpen] = useState(false);
+  // Faza D1 — «Telegram ulash» bosilganda ko'rsatiladigan deep-link.
+  const [tgLink, setTgLink] = useState<string | null>(null);
   // «Изображение»: local state so photo ops never refetch the card (a refetch
   // would clobber unsaved form edits); bust forces the <img> past the cache.
   const [image, setImage] = useState<{ has: boolean; name: string | null }>({
@@ -608,6 +612,33 @@ export function EmployeeCard({ id }: { id?: string }) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['employee-card'] });
       qc.invalidateQueries({ queryKey: ['employees-owner-scan'] });
+    },
+  });
+
+  // ── Telegram bog'lash (Faza D1) ───────────────────────────────────────────
+  const tgBindMutation = useApiMutation<
+    { deepLink: string | null; expiresAt: string },
+    Error,
+    void
+  >({
+    mutationFn: () =>
+      api.post<{ deepLink: string | null; expiresAt: string }>(
+        `/hr/employees/${id}/telegram-bind-token`,
+        {},
+      ),
+    silent: true,
+    onSuccess: (res) => {
+      if (res.deepLink) setTgLink(res.deepLink);
+      else toast.error(t('telegram_no_bot'));
+    },
+  });
+
+  const tgUnbindMutation = useApiMutation<unknown, Error, void>({
+    mutationFn: () => api.delete(`/hr/employees/${id}/telegram`),
+    successMessage: t('telegram_unlinked'),
+    onSuccess: () => {
+      setTgLink(null);
+      qc.invalidateQueries({ queryKey: ['employee-card'] });
     },
   });
 
@@ -900,6 +931,53 @@ export function EmployeeCard({ id }: { id?: string }) {
                     >
                       {t('reset_password')}
                     </Button>
+                  </div>
+                )}
+                {/* Telegram bog'lash (Faza D1) — qabul-tasdiqlash inline-tugmalari uchun. */}
+                {!isNew && (
+                  <div className="flex flex-col gap-2 pl-[132px]">
+                    {employeeQuery.data?.telegramChatId ? (
+                      <div className="flex items-center gap-3">
+                        <span className="text-[13px] text-[var(--ms-text-success)]">
+                          {t('telegram_linked')} ✓
+                        </span>
+                        <Button
+                          variant="secondary"
+                          onClick={() => tgUnbindMutation.mutate()}
+                          disabled={tgUnbindMutation.isPending}
+                          data-testid="employee-telegram-unlink"
+                        >
+                          {t('telegram_unlink')}
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col gap-2">
+                        <Button
+                          variant="secondary"
+                          onClick={() => tgBindMutation.mutate()}
+                          disabled={tgBindMutation.isPending}
+                          data-testid="employee-telegram-link"
+                        >
+                          {t('telegram_link')}
+                        </Button>
+                        {tgLink && (
+                          <div className="flex flex-col gap-1">
+                            <span className="text-[12px] text-[var(--ms-text-muted)]">
+                              {t('telegram_link_hint')}
+                            </span>
+                            <a
+                              href={tgLink}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="break-all text-[13px] text-[var(--ms-text-brand)] hover:underline"
+                              data-testid="employee-telegram-deeplink"
+                            >
+                              {tgLink}
+                            </a>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

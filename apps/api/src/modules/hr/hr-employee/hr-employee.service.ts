@@ -222,6 +222,8 @@ export class HrEmployeeService {
         phone: true,
         username: true,
         telegramPhone: true,
+        // Faza D1 — «Telegram ulash» holati (chat_id bor/yo'q kartochkada ko'rinadi).
+        telegramChatId: true,
         department: true,
         hrRoles: true,
         isChecker: true,
