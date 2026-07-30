@@ -12,6 +12,7 @@ import {
   type InlineKeyboard,
   confirmKeyboard,
   doubleConfirmKeyboard,
+  omborchiKeyboard,
   parseCallbackData,
 } from './supply-approval.callback.js';
 import {
@@ -192,6 +193,8 @@ export class SupplyApprovalService {
         'supplier',
         null,
       );
+      // Faza D2: qabul omborga keldi → omborchilarga inline-tugmali xabar (non-fatal).
+      await this.dispatchToOmborchi(accountId, id).catch(() => {});
     } else {
       await this.claim(accountId, id, 'awaiting_supplier', 'none');
       await this.logEvent(
@@ -286,5 +289,119 @@ export class SupplyApprovalService {
       return;
     }
     await tgAnswerCallbackQuery(token, { callbackQueryId: cbq.id }).catch(() => {});
+  }
+
+  /** Faza D2: omborchilarga (supply.update ruxsatli + Telegram bog'langan) inline-tugmali xabar. */
+  private async dispatchToOmborchi(accountId: string, supplyId: string): Promise<void> {
+    const supply = await this.prisma.client.supply.findFirst({
+      where: { id: supplyId, accountId },
+      select: { name: true },
+    });
+    if (!supply) return;
+    const cfg = await this.prisma.client.telegramConfig.findUnique({ where: { accountId } });
+    if (!cfg?.enabled || !cfg.botTokenCipher) return;
+    const emps = await this.prisma.client.employee.findMany({
+      where: {
+        accountId,
+        archived: false,
+        telegramChatId: { not: null },
+        roles: {
+          some: {
+            role: {
+              permissions: {
+                some: { entity: 'supply', action: 'update', scope: { not: 'NO' } },
+              },
+            },
+          },
+        },
+      },
+      select: { telegramChatId: true },
+    });
+    if (emps.length === 0) return;
+    const token = decryptPassword(cfg.botTokenCipher);
+    const text = `📦 Qabul omborga keldi: ${supply.name}\nSonini sanab tekshiring va tasdiqlang.`;
+    for (const e of emps) {
+      if (!e.telegramChatId) continue;
+      await tgSendMessage(token, {
+        chatId: e.telegramChatId,
+        text,
+        replyMarkup: omborchiKeyboard(supplyId),
+      }).catch(() => {});
+    }
+  }
+
+  /** Faza D2: omborchi callback — auth: chat egasi supply.update ruxsatli xodim bo'lishi shart. */
+  private async handleOmborchiCallback(
+    accountId: string,
+    cbq: { id: string; data: string; chatId: string; messageId: number },
+  ): Promise<void> {
+    const parsed = parseCallbackData(cbq.data);
+    if (!parsed) return;
+    const cfg = await this.prisma.client.telegramConfig.findUnique({ where: { accountId } });
+    if (!cfg?.botTokenCipher) return;
+    const token = decryptPassword(cfg.botTokenCipher);
+    const emp = await this.prisma.client.employee.findFirst({
+      where: {
+        accountId,
+        telegramChatId: cbq.chatId,
+        archived: false,
+        roles: {
+          some: {
+            role: {
+              permissions: {
+                some: { entity: 'supply', action: 'update', scope: { not: 'NO' } },
+              },
+            },
+          },
+        },
+      },
+      select: { id: true },
+    });
+    if (!emp) {
+      await tgAnswerCallbackQuery(token, {
+        callbackQueryId: cbq.id,
+        text: "Bu amal uchun ruxsatingiz yo'q",
+        showAlert: true,
+      }).catch(() => {});
+      return;
+    }
+    if (parsed.action === 'oadj') {
+      await tgAnswerCallbackQuery(token, {
+        callbackQueryId: cbq.id,
+        text: "Son noto'g'ri bo'lsa — ERP'da qabulni oching va sonni tuzatib tasdiqlang.",
+        showAlert: true,
+      }).catch(() => {});
+      return;
+    }
+    // ocfm — sonini borligicha tasdiqlash (adjustmentsiz) → delivering→awaiting_admin.
+    try {
+      await this.omborchiConfirm(accountId, emp.id, parsed.supplyId, { adjustments: [] });
+      await tgEditMessageText(token, {
+        chatId: cbq.chatId,
+        messageId: cbq.messageId,
+        text: "✅ Omborchi tasdiqladi — admin tasdig'i kutilmoqda.",
+      }).catch(() => {});
+    } catch {
+      await tgAnswerCallbackQuery(token, {
+        callbackQueryId: cbq.id,
+        text: "Bu qabul allaqachon o'zgargan",
+        showAlert: true,
+      }).catch(() => {});
+      return;
+    }
+    await tgAnswerCallbackQuery(token, { callbackQueryId: cbq.id }).catch(() => {});
+  }
+
+  /** Telegram `sa:` callback router — action'ga qarab taminotchi/omborchi handleriga yo'naltiradi. */
+  async handleApprovalCallback(
+    accountId: string,
+    cbq: { id: string; data: string; chatId: string; messageId: number },
+  ): Promise<void> {
+    const parsed = parseCallbackData(cbq.data);
+    if (!parsed) return;
+    if (parsed.action === 'ocfm' || parsed.action === 'oadj') {
+      return this.handleOmborchiCallback(accountId, cbq);
+    }
+    return this.handleSupplierCallback(accountId, cbq);
   }
 }

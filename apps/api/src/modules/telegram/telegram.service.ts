@@ -262,7 +262,7 @@ export class TelegramService implements MtprotoInboundHandler {
       cbq.message.message_id != null
     ) {
       await this.supplyApproval
-        .handleSupplierCallback(accountId, {
+        .handleApprovalCallback(accountId, {
           id: cbq.id,
           data: cbq.data,
           chatId: String(cbq.message.chat.id),

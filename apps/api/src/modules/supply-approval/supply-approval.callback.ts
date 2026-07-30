@@ -12,20 +12,23 @@ export type InlineKeyboard = { inline_keyboard: TelegramInlineButton[][] };
  * (uuid=36 + prefiks ≤ 8 = 44 bayt < Telegram 64-bayt limiti.)
  */
 
-export type SupplierCallbackAction = 'cfm' | 'cfm2' | 'rej' | 'cxl';
+// Taminotchi (Faza B): cfm/cfm2/rej/cxl · Omborchi (Faza D2): ocfm/oadj
+//   ocfm — «✅ To'g'ri, tasdiqlash» → omborchiConfirm (adjustmentsiz)
+//   oadj — «✏️ Son noto'g'ri» → ERP'da tuzatish (bosqich o'zgarmaydi, yo'riqnoma)
+export type ApprovalCallbackAction = 'cfm' | 'cfm2' | 'rej' | 'cxl' | 'ocfm' | 'oadj';
 const PREFIX = 'sa';
-const ACTIONS: readonly SupplierCallbackAction[] = ['cfm', 'cfm2', 'rej', 'cxl'];
+const ACTIONS: readonly ApprovalCallbackAction[] = ['cfm', 'cfm2', 'rej', 'cxl', 'ocfm', 'oadj'];
 
-export function buildCallbackData(action: SupplierCallbackAction, supplyId: string): string {
+export function buildCallbackData(action: ApprovalCallbackAction, supplyId: string): string {
   return `${PREFIX}:${action}:${supplyId}`;
 }
 
 export function parseCallbackData(
   data: string,
-): { action: SupplierCallbackAction; supplyId: string } | null {
+): { action: ApprovalCallbackAction; supplyId: string } | null {
   const parts = data.split(':');
   if (parts.length !== 3 || parts[0] !== PREFIX) return null;
-  const action = parts[1] as SupplierCallbackAction;
+  const action = parts[1] as ApprovalCallbackAction;
   if (!ACTIONS.includes(action)) return null;
   const supplyId = parts[2];
   if (!supplyId) return null;
@@ -50,6 +53,18 @@ export function doubleConfirmKeyboard(supplyId: string): InlineKeyboard {
     inline_keyboard: [
       [{ text: '✅ Ha, tasdiqlayman', callback_data: buildCallbackData('cfm2', supplyId) }],
       [{ text: '↩︎ Bekor', callback_data: buildCallbackData('cxl', supplyId) }],
+    ],
+  };
+}
+
+/** Omborchi tugmalari (Faza D2) — sonini sanab tasdiq yoki «noto'g'ri»→ERP. */
+export function omborchiKeyboard(supplyId: string): InlineKeyboard {
+  return {
+    inline_keyboard: [
+      [
+        { text: "✅ To'g'ri, tasdiqlash", callback_data: buildCallbackData('ocfm', supplyId) },
+        { text: "✏️ Son noto'g'ri", callback_data: buildCallbackData('oadj', supplyId) },
+      ],
     ],
   };
 }

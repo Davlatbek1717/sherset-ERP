@@ -3,6 +3,7 @@ import {
   buildCallbackData,
   confirmKeyboard,
   doubleConfirmKeyboard,
+  omborchiKeyboard,
   parseCallbackData,
 } from './supply-approval.callback.js';
 
@@ -47,5 +48,24 @@ describe('supply-approval callback protocol', () => {
     const dbl = doubleConfirmKeyboard(ID);
     expect(dbl.inline_keyboard[0][0].callback_data).toBe(`sa:cfm2:${ID}`);
     expect(dbl.inline_keyboard[1][0].callback_data).toBe(`sa:cxl:${ID}`);
+  });
+
+  // ── Omborchi (Faza D2) ────────────────────────────────────────────────────
+  it('omborchi action (ocfm/oadj) round-trip', () => {
+    expect(parseCallbackData(buildCallbackData('ocfm', ID))).toEqual({
+      action: 'ocfm',
+      supplyId: ID,
+    });
+    expect(parseCallbackData(buildCallbackData('oadj', ID))).toEqual({
+      action: 'oadj',
+      supplyId: ID,
+    });
+    expect(buildCallbackData('ocfm', ID).length).toBeLessThanOrEqual(64);
+  });
+
+  it("omborchiKeyboard to'g'ri callback_data beradi", () => {
+    const kb = omborchiKeyboard(ID);
+    expect(kb.inline_keyboard[0][0].callback_data).toBe(`sa:ocfm:${ID}`);
+    expect(kb.inline_keyboard[0][1].callback_data).toBe(`sa:oadj:${ID}`);
   });
 });
