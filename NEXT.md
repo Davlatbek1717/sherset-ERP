@@ -305,6 +305,24 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-07-30a (⏭️ KEYINGI VAZIFA: FAZA D1 — Telegram bog'lash poydevorini QURISH)**
+> **Plan tayyor:** `docs/superpowers/plans/2026-07-30-telegram-approval-d1-binding.md` (6 vazifa, bite-sized TDD).
+> **Spec:** `docs/superpowers/specs/2026-07-30-uch-rolli-telegram-tasdiqlash-design.md`. **Kontekst:** egasi «qabul-
+> tasdiqlashning UCHALA bosqichi ham Telegram'da bo'lsin» dedi — hozir FAQAT taminotchi Telegram'da (Faza B), omborchi+
+> admin ERP-panelда (Faza C). Faza D shuni to'ldiradi. Qarorlar (egasi 2026-07-30): (1) uch rol ham Telegram (2) har
+> xodimga `Employee.telegramChatId` — `/start bind_<token>` deep-link (3) omborchi «✅ To'g'ri»/«✏️ Son noto'g'ri»→ERP'da
+> tuzatadi (4) rol-ruxsatli HAR KIM oladi (omborchi=`supply.update`, admin=`supply.approve`+chat_id), FSM `claim` g'olib.
+> **D1 qamrovi:** migration (Employee 3 maydon) + bind-service (`parseBindToken`/`issueBindToken`/`bindByToken`) + 2
+> endpoint + telegram `/start bind_` handler + ERP «Telegram ulash» UI + deploy (migrate+generate+web build). Keyin
+> D2(omborchi TG)→D3(admin TG+reject-reason)→D4(jonli-bot QA). **Boshlash:** «D1 planni bajar» → subagent-driven, har
+> vazifada gate. Bog'liq: [[supply-approval-workflow]] memory (Faza D bo'limi).
+>
+> **✅ Shu sessiyada bajarilgan (2026-07-30):**
+> - Ombor chuqur re-audit → yacheyka per-cell drift 2 bug (setCellStock ikki-yozuv HIGH + place bin-talash MED) TUZATILDI+DEPLOYED (`8b60af6`).
+> - Yacheyka «amallar» ustuni ✕ card'dan chiqishi TUZATILDI+DEPLOYED (`d3626ac`, web build).
+> - «Ombor 1»ga 35 yacheyka (`01-02-01-01…35`) prod DB'ga yaratildi.
+> - Faza D spec (`72cd8b3`) + D1 plan (`a737e66`) yozildi.
+>
 > **🕒 2026-07-29c (OMBOR CHUQUR RE-AUDIT — yacheyka per-cell drift 2 bug TUZATILDI · Phase-1)**
 > Foydalanuvchi: «omborni yana chuqur qaytadan tekshirib chiq… hamma xatoliklarini to'g'irlab ber». 3 paralel adversarial
 > bug-hunt agent (atomicity · yacheyka · valuation) + har finding **o'zim ground-truth tekshirildi** (§2). Yadro (stock/loss/

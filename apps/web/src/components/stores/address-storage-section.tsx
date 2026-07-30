@@ -35,6 +35,7 @@ import { genEan13 } from '@/components/products/use-product-form';
 import { CellContentsModal } from '@/components/stores/cell-contents-modal';
 import { CellCountModal } from '@/components/stores/cell-count-modal';
 import { CellLabelPrintOverlay } from '@/components/stores/cell-label-print';
+import { CellRangeModal } from '@/components/stores/cell-range-modal';
 import { CellScanBindModal } from '@/components/stores/cell-scan-bind-modal';
 import { api } from '@/lib/api-client';
 import { Button, Checkbox, Icons, Input, NativeSelect } from '@moysklad/ui';
@@ -715,6 +716,9 @@ export function AddressStorageSection({
   const [countOpen, setCountOpen] = useState(false);
   // Row currently in inline-edit mode ('zone-<id>' / 'cell-<id>' / 'new-zone' / 'new-cell').
   const [editing, setEditing] = useState<string | null>(null);
+  // «Diapazon bo'yicha» — ommaviy yacheyka generatori (faqat server rejimida:
+  // yangi ombor hali saqlanmagan, `storeId` yo'q ⇒ endpoint ham yo'q).
+  const [rangeOpen, setRangeOpen] = useState(false);
   // «🖨 Этикетка» print-preview target (server mode only — needs per-cell stock).
   const [labelCell, setLabelCell] = useState<{
     id: string;
@@ -1403,11 +1407,20 @@ export function AddressStorageSection({
                 />
               )}
             </CellTable>
-            <PlusAddButton
-              label={t('add_cell')}
-              onClick={() => setEditing('new-cell')}
-              testId="add-cell"
-            />
+            <div className="flex items-center gap-4">
+              <PlusAddButton
+                label={t('add_cell')}
+                onClick={() => setEditing('new-cell')}
+                testId="add-cell"
+              />
+              {serverMode && storeId && (
+                <PlusAddButton
+                  label={t('range_button')}
+                  onClick={() => setRangeOpen(true)}
+                  testId="add-cell-range"
+                />
+              )}
+            </div>
           </>
         )}
       </div>
@@ -1420,6 +1433,17 @@ export function AddressStorageSection({
             .filter((c) => !c.pending)
             .map((c) => ({ id: c.id, name: c.name, barcode: c.barcode }))}
           onClose={() => setLabelCell(null)}
+        />
+      )}
+
+      {/* «Diapazon bo'yicha yaratish» — bitta amalda yuzlab yacheyka. Oldindan
+          ko'rish ham, yaratish ham SERVERdagi bitta endpointdan o'tadi. */}
+      {serverMode && storeId && (
+        <CellRangeModal
+          open={rangeOpen}
+          storeId={storeId}
+          onClose={() => setRangeOpen(false)}
+          onCreated={invalidate}
         />
       )}
 
