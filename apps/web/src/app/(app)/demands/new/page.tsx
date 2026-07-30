@@ -22,6 +22,7 @@ import { useDocumentEditorLabels } from '@/hooks/use-document-editor-labels';
 import { useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-store';
+import { docMeasureTotals } from '@/lib/doc-totals';
 import { distributeAgreementDelta } from '@/lib/position-agreement';
 import { resolveDefaultSalePriceOrZero } from '@/lib/sale-price';
 import { computePositionTotal } from '@moysklad/money';
@@ -66,6 +67,10 @@ interface ProductItem {
   vat: number | null;
   /** Stock cluster from /products — the pick modal's «Остаток» line. */
   stock?: { available: string } | null;
+  /** Per-unit weight (g) / volume (ml) — feed the «Вес» / «Объём» footer.
+   *  /products returns every scalar Product column (`include`, not `select`). */
+  weightG?: number | null;
+  volumeML?: number | null;
 }
 
 interface NewPositionRow extends DocPositionRow {
@@ -475,6 +480,10 @@ export default function NewDemandPage() {
       ),
     [positions, vatIncluded],
   );
+
+  // «Вес» / «Объём» footer — same aggregation the detail page uses, so the two
+  // pages can never disagree about the same document.
+  const measures = useMemo(() => docMeasureTotals(positions), [positions]);
 
   const createMut = useMutation({
     mutationFn: async () => {
@@ -997,6 +1006,8 @@ export default function NewDemandPage() {
                       vat: raw?.vat != null ? String(raw.vat) : '12',
                       vatEnabled: true,
                       salePrices: raw?.salePrices ?? null,
+                      weightG: raw?.weightG ?? undefined,
+                      volumeML: raw?.volumeML ?? undefined,
                     },
                   ]);
                   // owner 2026-07-18: returning the id hands focus to the new
@@ -1032,6 +1043,8 @@ export default function NewDemandPage() {
                         vat: raw?.vat != null ? String(raw.vat) : '12',
                         vatEnabled: true,
                         salePrices: raw?.salePrices ?? null,
+                        weightG: raw?.weightG ?? undefined,
+                        volumeML: raw?.volumeML ?? undefined,
                       };
                     }),
                   ]);
@@ -1058,6 +1071,12 @@ export default function NewDemandPage() {
               vatIncluded={vatIncluded}
               onVatIncludedChange={setVatIncluded}
               quantity={positions.reduce((acc, p) => acc + Number(p.quantity || '0'), 0)}
+              weight={measures.weight}
+              volume={measures.volume}
+              // A draft has no FIFO cost yet, so real profit is unknowable. moysklad
+              // still shows the row — render it with «—» rather than dropping it
+              // (layout parity) or printing revenue as profit (a dangerous mis-read).
+              profitUnknown
             />
           </div>
 
@@ -1561,6 +1580,10 @@ export default function NewDemandPage() {
             priceMinor: defaultPrice,
             vat: raw?.vat != null ? String(raw.vat) : '12',
             salePrices: raw?.salePrices ?? null,
+            // «Заменить» swaps the product — the measures must follow it, else the
+            // footer keeps the OLD product's weight.
+            weightG: raw?.weightG ?? undefined,
+            volumeML: raw?.volumeML ?? undefined,
           });
         }}
       />

@@ -27,6 +27,14 @@ export interface DocumentTotalsPanelProps {
   totalMinor: bigint | string | number;
   /** Optional profit row (Demand only — moysklad shows Прибыль for sales). */
   profitMinor?: bigint | string | number;
+  /**
+   * Render the «Прибыль» row with «—» because the cost basis is not known yet
+   * (an unposted draft has no FIFO cost). moysklad always shows the row, so
+   * hiding it shifts the whole totals block; but inventing a number would
+   * present revenue as profit. This keeps the row and states «unknown».
+   * Ignored when `profitMinor` is provided.
+   */
+  profitUnknown?: boolean;
   /** Optional «Комиссия» row (commission report «Выданный» — total per-line
    *  commission/reward). Rendered under Итого. */
   commissionMinor?: bigint | string | number;
@@ -64,6 +72,7 @@ export function DocumentTotalsPanel({
   profitMinor,
   commissionMinor,
   commitentMinor,
+  profitUnknown,
   weight,
   volume,
   quantity,
@@ -131,11 +140,11 @@ export function DocumentTotalsPanel({
             {fmt(totalMinor, currency)}
           </dd>
         </div>
-        {profitMinor !== undefined && (
+        {(profitMinor !== undefined || profitUnknown) && (
           <div className="flex justify-between text-[var(--ms-text-success)] text-sm">
             <dt>Прибыль:</dt>
             <dd className="tabular-nums" data-test-id="totals-profit">
-              {fmt(profitMinor, currency)}
+              {profitMinor !== undefined ? fmt(profitMinor, currency) : '—'}
             </dd>
           </div>
         )}

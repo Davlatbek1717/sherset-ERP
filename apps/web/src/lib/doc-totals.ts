@@ -28,3 +28,57 @@ export function docTotals(
 ): { subtotal: bigint; total: bigint } {
   return { subtotal: sumMinor - vatSumMinor, total: sumMinor };
 }
+
+/** A position as far as «Вес»/«Объём» aggregation is concerned. */
+export interface MeasureRow {
+  quantity: string;
+  /** Per-unit weight in grams (from the product). */
+  weightG?: number | null;
+  /** Per-unit volume in millilitres (from the product). */
+  volumeML?: number | null;
+}
+
+/**
+ * «Вес» / «Объём» document totals — moysklad shows both under Итого.
+ *
+ * Deliberately mirrors `lineMeasure` in the design-system PositionTable: the
+ * per-unit measure is multiplied by Кол-во and kept in its RAW unit (g / ml),
+ * NOT converted to kg / m³ — so the totals row is the literal sum of the
+ * per-line column above it. Converting here would make the footer disagree
+ * with every line.
+ *
+ * Returns `null` (→ the row is hidden) when no position carries the measure,
+ * so a document of weightless services shows no «Вес», exactly like moysklad.
+ * Rounded to 3 dp to absorb float drift from fractional quantities.
+ */
+export function docMeasureTotals(rows: readonly MeasureRow[]): {
+  weight: number | null;
+  volume: number | null;
+} {
+  let weight = 0;
+  let volume = 0;
+  let hasWeight = false;
+  let hasVolume = false;
+
+  for (const r of rows) {
+    const qty = Number(r.quantity);
+    if (!Number.isFinite(qty) || qty <= 0) continue;
+
+    const w = Number(r.weightG);
+    if (Number.isFinite(w) && w > 0) {
+      weight += w * qty;
+      hasWeight = true;
+    }
+    const v = Number(r.volumeML);
+    if (Number.isFinite(v) && v > 0) {
+      volume += v * qty;
+      hasVolume = true;
+    }
+  }
+
+  const round3 = (n: number) => Math.round(n * 1000) / 1000;
+  return {
+    weight: hasWeight ? round3(weight) : null,
+    volume: hasVolume ? round3(volume) : null,
+  };
+}

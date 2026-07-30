@@ -15,6 +15,13 @@ gap'lar aniq va boshqariladigan to'plam. Aksari — mayda wiring yoki vizual gur
   Namuna: purchase-return (boshqa chiquvchi hujjat). Test: `demand-cell.test.ts` (10) — manba-skan guard'lari
   o'zgarishdan oldingi faylda 0 mos beradi (bo'sh emasligi o'lchandi). **API runtime tasdiqlandi**: yacheyka
   qoldig'i 30→28 (o'tkazish), 28→30 (bekor, zero-sum), mavjud bo'lmagan yacheyka 400. **Brauzer-QA YO'Q.**
+- **2026-07-30** — **C3+C4+N2 totals bloki YOPILDI** (rank #2, #7). Capture ground-truth: `Промежуточный итог ·
+  НДС · Итого · Прибыль · Вес · Объем · Кол-во`. «Прибыль» endi ikkala sahifada doim ko'rinadi — tannarx
+  ma'lum bo'lsa son, qoralamada «—» (DS `profitUnknown` propi). **Son o'ylab topilmaydi**: `sum − 0` daromadni
+  foyda deb ko'rsatgan bo'lardi. «Вес»/«Объём» — `docMeasureTotals` (apps/web/src/lib/doc-totals.ts, 7 test),
+  xom birlikda (g/ml) — pozitsiya ustunidagi `lineMeasure` bilan aynan bir xil, aks holda footer qatorlarga
+  qarama-qarshi bo'lardi. Create'da `weightG/volumeML` uch tanlash joyida to'ldiriladi (yakka, ommaviy,
+  «Заменить») — ilgari umuman o'qilmasdi. **Brauzer-QA YO'Q.**
 - **2026-07-30** — **L1 «Грузополучатель» kolonka** allaqachon yopilgan ekan (web ustun + API `consignee` select);
   ro'yxat 2026-07-23 dan eskirgan edi.
 - Eslatma: C2 «Маркировка» uchun «DS'da umuman YO'Q» dan'vosi ham **eskirgan** — `DocPositionRow.marking` mavjud
@@ -27,8 +34,8 @@ gap'lar aniq va boshqariladigan to'plam. Aksari — mayda wiring yoki vizual gur
 |---|-----|-------|--------------|
 | C1 | **«Ячейка» (bin) kolonka** | ✅ **BAJARILDI 2026-07-30** — uchdan-uchgacha (DB→API→FE), runtime tasdiqlangan | Brauzer-QA hali yo'q |
 | C2 | **«Маркировка» kolonka** | DS'da umuman YO'Q (yangi komponent kerak) | ✅ **QURILADI** (user 2026-07-23). KATTA ish → ehtimol alohida sub-project |
-| C3 | **«Прибыль» (profit) qatori** | Nomuvofiq: create'da YO'Q; detail'da faqat posted (`costSumMinor>0`) | moysklad doim ko'rsatadi. Create'da COGS noma'lum → draft'da '—' ko'rsatish mumkin |
-| C4 | **«Вес» / «Объём» totals** | YO'Q (ikkala sahifada) | Tovar weight/volume yig'indisi. O'rta ish |
+| C3 | **«Прибыль» (profit) qatori** | ✅ **BAJARILDI 2026-07-30** — qator doim ko'rinadi; tannarx noma'lum bo'lsa «—» | Son O'YLAB TOPILMAYDI (daromadni foyda deb ko'rsatish xavfi) |
+| C4 | **«Вес» / «Объём» totals** | ✅ **BAJARILDI 2026-07-30** — `docMeasureTotals`, ikkala sahifada | Xom birlik (g/ml) — pozitsiya ustuni bilan bir xil |
 
 ## DETAIL (`demands/[id]`)
 | # | Gap | Holat | Izoh |
@@ -44,7 +51,7 @@ gap'lar aniq va boshqariladigan to'plam. Aksari — mayda wiring yoki vizual gur
 | # | Gap | Holat | Izoh |
 |---|-----|-------|------|
 | N1 | **Custom-attributes editor YO'Q** | detail'da bor, create'da YO'Q | create'dagi «Другие поля» shipping uchun band → haqiqiy доп.поля create'da kiritib bo'lmaydi |
-| N2 | **«Прибыль» YO'Q** | — | C3 ko'r |
+| N2 | **«Прибыль» YO'Q** | ✅ **BAJARILDI 2026-07-30** — «—» bilan (qoralamada tannarx yo'q) | C3 ko'r |
 | N3 | Shipping «Другие поля» ostida (moysklad'da «Грузоотправитель» bloki) | 10 maydon bor, joyi farq | D5 ko'r |
 | — | Header tugmalar minimal (faqat Сохранить/Закрыть/Статус) | moysklad create ham minimal | **PARITY OK** (gap emas) |
 

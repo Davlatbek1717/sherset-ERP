@@ -14,10 +14,11 @@
  * fields move into a «Другие поля» disclosure exactly like /demands/new + moysklad.
  *
  * Deferred (honest — needs backend the account doesn't have yet):
- *  - «Ячейка» per-position column: DemandPosition has no cellId column (adding it
- *    needs a DB migration; supplies got it, demand did not). Not faked.
  *  - «Маркировка» column: the marked-goods (Честный знак) subsystem is separate;
  *    not wired to demand positions. Not faked.
+ *
+ * Closed since: «Ячейка» per-position column (2026-07-30 — demand_positions.cell_id
+ * migration + CellPickerField; cellId reaches the StockDelta on post/unpost/cancel).
  */
 
 import { AttachmentsSection } from '@/components/attachments-section';
@@ -47,6 +48,7 @@ import { useDocumentEditorLabels } from '@/hooks/use-document-editor-labels';
 import { useSaveMutation } from '@/hooks/use-save-mutation';
 import { useUnsavedGuard } from '@/hooks/use-unsaved-guard';
 import { api } from '@/lib/api-client';
+import { docMeasureTotals } from '@/lib/doc-totals';
 import { imageRawUrl } from '@/lib/image-url';
 import { distributeAgreementDelta } from '@/lib/position-agreement';
 import { resolveDefaultSalePriceOrZero, usePriceTypeIds } from '@/lib/sale-price';
@@ -1123,6 +1125,13 @@ export default function DemandDetailPage() {
   // profit that belongs to neither state.
   const costSumBig = BigInt(data.costSumMinor || '0');
   const profitMinor = costSumBig > 0n ? (savedSumBig - costSumBig).toString() : undefined;
+  // When cost is not known yet the row still renders, with «—» (moysklad always
+  // shows Прибыль; dropping the row shifts the whole totals block). See the
+  // gate above for why a number is never invented here.
+  const profitUnknown = profitMinor === undefined;
+
+  // «Вес» / «Объём» footer — shared helper, so /new and /[id] agree exactly.
+  const measures = docMeasureTotals(form.positions);
   const fullyPaid = savedSumBig > 0n && paidBig >= savedSumBig;
   const partiallyPaid = paidBig > 0n && paidBig < savedSumBig;
   const paymentTone = fullyPaid ? 'paid' : partiallyPaid ? 'partial' : 'unpaid';
@@ -1851,6 +1860,9 @@ export default function DemandDetailPage() {
                   }
                   quantity={totalQty}
                   profitMinor={profitMinor}
+                  profitUnknown={profitUnknown}
+                  weight={measures.weight}
+                  volume={measures.volume}
                 />
               </div>
 
