@@ -306,27 +306,32 @@ export class SupplyApprovalService {
     return result;
   }
 
-  /** Faza B: taminotchiga inline-tugmali xabar (Bot API). Non-fatal.
-   *  Inline callback FAQAT bot o'z xabarida ishlaydi — taminotchi botni START qilgan bo'lishi kerak. */
+  /**
+   * Faza E (MTProto + magic-link): taminotchiga adminning SHAXSIY akkauntidan
+   * (userbot) TELEFON-raqami orqali PAROLSIZ tasdiqlash HAVOLASI yuboriladi.
+   * Bot EMAS. `hrTelegramOutbox` → worker yuboradi. Non-fatal.
+   */
   private async dispatchToSupplier(accountId: string, supplyId: string): Promise<void> {
     const supply = await this.prisma.client.supply.findFirst({
       where: { id: supplyId, accountId },
-      select: { agentId: true, name: true },
+      select: { name: true, agent: { select: { id: true, phone: true } } },
     });
-    if (!supply) return;
-    const cfg = await this.prisma.client.telegramConfig.findUnique({ where: { accountId } });
-    if (!cfg?.enabled || !cfg.botTokenCipher) return;
-    const chat = await this.prisma.client.telegramChat.findFirst({
-      where: { accountId, counterpartyId: supply.agentId },
-      orderBy: { lastMessageAt: 'desc' },
-      select: { chatId: true },
-    });
-    if (!chat) return;
-    await tgSendMessage(decryptPassword(cfg.botTokenCipher), {
-      chatId: chat.chatId.toString(),
-      text: `📦 Yangi qabul: ${supply.name}\nTasdiqlaysizmi yoki rad etasizmi?`,
-      replyMarkup: confirmKeyboard(supplyId),
-    });
+    const phone = supply?.agent?.phone?.trim();
+    if (!supply || !phone) return;
+    const { url } = await this.issueSupplierLink(accountId, supplyId);
+    await this.prisma.client.hrTelegramOutbox
+      .create({
+        data: {
+          accountId,
+          counterpartyId: supply.agent.id,
+          toPhone: phone,
+          messageText: `📦 Yangi qabul: ${supply.name}\nTasdiqlash yoki rad etish uchun havolani oching:\n${url}`,
+          sourceEventType: 'supply_approval_supplier',
+          sourceDocId: supplyId,
+          status: 'pending',
+        },
+      })
+      .catch(() => {});
   }
 
   /** Faza B: Telegram callback_query — telegram.service.handleInbound chaqiradi.
@@ -457,7 +462,8 @@ export class SupplyApprovalService {
       },
       select: { id: true, telegramPhone: true },
     });
-    const text = `📦 Yangi qabul omborga keldi: ${supply.name}\nSonini sanab tekshiring. Tasdiqni ERP'da bering.`;
+    const base = process.env.APP_BASE_URL || 'https://erp.sherset.uz';
+    const text = `📦 Yangi qabul omborga keldi: ${supply.name}\nSonini sanab tekshiring va tasdiqlang:\n${base}/supplies/${supplyId}`;
     for (const e of emps) {
       const phone = e.telegramPhone?.trim();
       if (!phone) continue;
