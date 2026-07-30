@@ -305,7 +305,19 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
-> **🕒 2026-07-30g (⏭️ KEYINGI VAZIFA: FAZA E — QABUL MAGIC-LINK TASDIQLASH · spec tayyor)**
+> **🕒 2026-07-30h (FAZA E — QABUL MAGIC-LINK TASDIQLASH QURILDI + DEPLOYED · `3cf9b5b`)**
+> Taminotchi PAROLSIZ havola bilan tasdiq/rad. **E1** (backend): `SupplyApprovalLink` migration (prod'da qo'llandi) +
+> `issueSupplierLink`/`getPublicSupplyView`/`decideViaLink` + public controller `p/qabul` (guardsiz, token-auth) + 4 test.
+> **E2**: public veb-sahifa `app/p/qabul/[token]` (Tasdiqlash/Rad, DS Textarea). **E3**: `dispatchToSupplier` bot→MTProto+
+> magic-link (send→taminotchi telefoniга havola userbot orqali) + omborchi xabariga ERP-havola. **Xavfsizlik:** 192-bit token,
+> supply+role+agent scope, 14-kun muddat, accountId token-qatordан, FAQAT applySupplierDecision (CRUD yo'q), rad-sabab majburiy.
+> **Gate:** TC 0 · biome 0 · supply-approval+telegram 62/0 · guard raw-element yashil. **Verify:** web `/p/qabul` 200 · api
+> 404-on-bad-token · DB jadval · erp/api 200.
+> **⚠️ Phase-1 — jonli end-to-end YO'Q.** Talab: admin userbot ulangan + taminotchi telefoni + omborchi telegramPhone+ruxsat.
+> **⏭️ Qolgan:** jonli QA (real qabul → havola → tasdiq → stock) · bot-kod (D1-D3) OLIB TASHLASH (hali dormant) · omborchiga
+> ham parolsiz-link (ixtiyoriy) · xabarга tovar-ro'yxat. Spec: `docs/superpowers/specs/2026-07-30-qabul-magic-link-tasdiqlash-design.md`.
+>
+> **🕒 2026-07-30g (FAZA E spec — QURILDI, ↑2026-07-30h)**
 > **Egasi aniqlashtirdi (2026-07-30):** tasdiq HAVOLA orqali — taminotchi/omborchiga lichkadan (userbot) link boradi, bosib
 > belgilashadi (tasdiq/rad). Taminotchi **parolsiz magic-link** bilan kiradi (token identifikatsiya qiladi — qaysi taminotchi);
 > omborchi/admin ichki (to'liq CRUD, oddiy ERP login). **Sabab:** Telegram inline-tugma FAQAT botда — lichka xabariga tugma
