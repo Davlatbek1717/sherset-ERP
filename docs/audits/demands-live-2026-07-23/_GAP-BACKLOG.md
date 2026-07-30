@@ -48,7 +48,7 @@ gap'lar aniq va boshqariladigan to'plam. Aksari — mayda wiring yoki vizual gur
 | D1 | ~~«Связанные документы» tab doim bo'sh~~ | ✅ **ALLAQACHON BOR** (2026-07-30 tekshiruvi) — `relatedGroups={[]}` ishlatilmaydigan eski prop; tarkib `relatedSlot`→`<RelatedDocsTab>` orqali keladi: BE `GET /demands/:id/related` (Заказ покупателя + Возвраты + Перемещения) + qo'lda «Привязать документ» | Ro'yxatdagi asl da'vo NOTO'G'RI edi |
 | D2 | **«Отправить (N)» count-badge** | «Отправить» bor, N badge YO'Q | Mayda: yuborilgan-soni badge qo'shish |
 | D3 | **«Решения» menyu** | YO'Q | ✅ **QURILADI** (user 2026-07-23). moysklad «Decisions» |
-| D4 | **Archive / «Восстановить»** | YO'Q (list+detail) | ✅ **QURILADI** (user 2026-07-23). BE+FE ish |
+| D4 | ~~Archive / «Восстановить»~~ | ✅ **ALLAQACHON BOR** (2026-07-30 runtime tasdiqlandi) — `Demand.deletedAt` yumshoq o'chirish + `korzina` moduli (`list`+`restore`) + `/korzina` sahifasi | Faqat JOYLASHUV farq: moysklad'da hujjat menyusida, bizda Korzina sahifasida |
 | D5 | **Shipping bloki «Грузоотправитель» guruhlash** | ✅ **BAJARILDI 2026-07-30** — alohida blok; bizning qo'shimchalar «Другие поля»ga chiqarildi | Ikkala sahifada bir xil |
 | D6 | **«Изменения» = collapsible seksiya, bottom-tab EMAS** | tarix MAVJUD (`DocumentHistoryLink` + `auditEntity="Demand"`, `historyInline={false}`) — faqat joylashuvi farq | Mayda strukturaviy, funksional gap emas |
 
@@ -79,12 +79,17 @@ gap'lar aniq va boshqariladigan to'plam. Aksari — mayda wiring yoki vizual gur
 12 gap'dan **5 tasi aslida allaqachon bajarilgan** edi (L1, L3, L4, D1 va qisman D6), 1 tasi ataylab rad etilgan
 (L2 — akkaunt-maxsus maydon). Ya'ni 2026-07-23 dagi ro'yxat kodni to'liq tekshirmasdan yozilgan.
 **Sabog'i: bu jadvalni ko'r-ko'rona ish ro'yxati sifatida olmang** — har bandni kodda tasdiqlang.
-**Holat 2026-07-30 sessiyasi oxirida** — 13 banddan **11 tasi yopiq**:
+**Holat 2026-07-30 sessiyasi oxirida** — 13 banddan **12 tasi yopiq**:
 - Shu sessiyada bajarildi: **C1, C3, C4, N1, N2, D5/N3**
-- Allaqachon bor edi (ro'yxat noto'g'ri): **L1, L3, L4, D1, D6**
+- Allaqachon bor edi (ro'yxat noto'g'ri): **L1, L3, L4, D1, D4, D6**
 - Ataylab rad etilgan: **L2** (akkaunt-maxsus maydon)
-- **HAQIQATAN OCHIQ qolgani: D2** (Отправить badge) · **D3** (Решения menyu) ·
-  **D4** (arxiv, BE+FE) · **C2** (Маркировка — katta, alohida quyi-loyiha)
+- **HAQIQATAN OCHIQ qolgani — 3 ta:**
+  - **D2** «Отправить (N)» badge — ❗ capture'da faqat «(N)» deb yozilgan, N NIMANI
+    sanashi qayd etilmagan (yuborishlar soni? qabul qiluvchilar? kanallar?).
+    Semantika o'ylab topilmaydi → **yangi capture kerak**.
+  - **D3** «Решения» menyu — mazmuni haqida ground-truth yo'q → **yangi capture kerak**.
+  - **C2** «Маркировка» — katta ish (Честный знак quyi-tizimi). DS'da
+    `DocPositionRow.marking` bor, lekin to'liq tizim alohida loyiha.
 
 ## Rank (eng ta'sirlisidan)
 1. **C1 Ячейка** · 2. **C3/N2 Прибыль** (create+draft) · 3. **D1 Связанные документы** (bo'sh) · 4. **L1 Грузополучатель kolonka** ·
