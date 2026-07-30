@@ -22,6 +22,11 @@ gap'lar aniq va boshqariladigan to'plam. Aksari — mayda wiring yoki vizual gur
   xom birlikda (g/ml) — pozitsiya ustunidagi `lineMeasure` bilan aynan bir xil, aks holda footer qatorlarga
   qarama-qarshi bo'lardi. Create'da `weightG/volumeML` uch tanlash joyida to'ldiriladi (yakka, ommaviy,
   «Заменить») — ilgari umuman o'qilmasdi. **Brauzer-QA YO'Q.**
+- **2026-07-30** — **N1 create доп.поля YOPILDI**. Backend `CreateDemandSchema` `attributes`ni allaqachon
+  qabul qilardi — faqat forma maydon bermasdi, ya'ni MAJBURIY custom maydoni bor akkauntda /new dan jo'natma
+  yaratib bo'lmasdi. Endi asosiy meta-panelda (customer-orders/new naqshi). Runtime: maydon yaratildi →
+  jo'natma o'sha qiymat bilan yaratildi → o'qishda qaytdi. Noma'lum kod 201 qaytaradi, lekin
+  `validateAndNormalize` chiqishni faqat ma'lum metalardan quradi — noma'lum kalit SAQLANMAYDI (oq ro'yxat).
 - **2026-07-30** — **L1 «Грузополучатель» kolonka** allaqachon yopilgan ekan (web ustun + API `consignee` select);
   ro'yxat 2026-07-23 dan eskirgan edi.
 - Eslatma: C2 «Маркировка» uchun «DS'da umuman YO'Q» dan'vosi ham **eskirgan** — `DocPositionRow.marking` mavjud
@@ -40,17 +45,17 @@ gap'lar aniq va boshqariladigan to'plam. Aksari — mayda wiring yoki vizual gur
 ## DETAIL (`demands/[id]`)
 | # | Gap | Holat | Izoh |
 |---|-----|-------|------|
-| D1 | **«Связанные документы» tab doim bo'sh** | tab bor, `relatedGroups={[]}` hardcoded | related-doc grafi qurilmaydi. O'rta ish (BE `/related`?) |
+| D1 | ~~«Связанные документы» tab doim bo'sh~~ | ✅ **ALLAQACHON BOR** (2026-07-30 tekshiruvi) — `relatedGroups={[]}` ishlatilmaydigan eski prop; tarkib `relatedSlot`→`<RelatedDocsTab>` orqali keladi: BE `GET /demands/:id/related` (Заказ покупателя + Возвраты + Перемещения) + qo'lda «Привязать документ» | Ro'yxatdagi asl da'vo NOTO'G'RI edi |
 | D2 | **«Отправить (N)» count-badge** | «Отправить» bor, N badge YO'Q | Mayda: yuborilgan-soni badge qo'shish |
 | D3 | **«Решения» menyu** | YO'Q | ✅ **QURILADI** (user 2026-07-23). moysklad «Decisions» |
 | D4 | **Archive / «Восстановить»** | YO'Q (list+detail) | ✅ **QURILADI** (user 2026-07-23). BE+FE ish |
 | D5 | **Shipping bloki «Грузоотправитель» sarlavhasi ostida guruhlanmagan** | 10 maydon bor, lekin guruhsiz | Vizual/strukturaviy guruhlash |
-| D6 | **«Изменения» = collapsible seksiya, bottom-tab EMAS** | mavjud, lekin joylashuvi farq | Mayda strukturaviy |
+| D6 | **«Изменения» = collapsible seksiya, bottom-tab EMAS** | tarix MAVJUD (`DocumentHistoryLink` + `auditEntity="Demand"`, `historyInline={false}`) — faqat joylashuvi farq | Mayda strukturaviy, funksional gap emas |
 
 ## CREATE (`demands/new`)
 | # | Gap | Holat | Izoh |
 |---|-----|-------|------|
-| N1 | **Custom-attributes editor YO'Q** | detail'da bor, create'da YO'Q | create'dagi «Другие поля» shipping uchun band → haqiqiy доп.поля create'da kiritib bo'lmaydi |
+| N1 | **Custom-attributes editor YO'Q** | ✅ **BAJARILDI 2026-07-30** — доп.поля asosiy meta-panelda (customer-orders/new naqshi) | Runtime: yaratish→o'qish qiymat saqlandi |
 | N2 | **«Прибыль» YO'Q** | ✅ **BAJARILDI 2026-07-30** — «—» bilan (qoralamada tannarx yo'q) | C3 ko'r |
 | N3 | Shipping «Другие поля» ostida (moysklad'da «Грузоотправитель» bloki) | 10 maydon bor, joyi farq | D5 ko'r |
 | — | Header tugmalar minimal (faqat Сохранить/Закрыть/Статус) | moysklad create ham minimal | **PARITY OK** (gap emas) |
@@ -58,10 +63,10 @@ gap'lar aniq va boshqariladigan to'plam. Aksari — mayda wiring yoki vizual gur
 ## LIST (`demands`)
 | # | Gap | Holat | Izoh |
 |---|-----|-------|------|
-| L1 | **«Грузополучатель» kolonka** | YO'Q (consignee list query'da tanlanmaydi) | O'rta ish |
-| L2 | **Filtr «Тип возврата»** | YO'Q | return-type filtr |
-| L3 | **Filtr «Товар или группа»** | YO'Q | product/group filtr |
-| L4 | **Filtr «Грузополучатель»** | YO'Q (Контрагент bor) | consignee filtr |
+| L1 | ~~«Грузополучатель» kolonka~~ | ✅ **ALLAQACHON BOR** — web ustuni standart ko'rinadi + API `consignee: {select}` | Ro'yxat eskirgan edi |
+| L2 | **Filtr «Тип возврата»** | ❌ YO'Q — **ATAYLAB** | moysklad'da bu akkaunt-maxsus (custom) maydon, standart emas. Panel izohida hujjatlangan. Gap deb hisoblanmaydi |
+| L3 | ~~Filtr «Товар или группа»~~ | ✅ **ALLAQACHON BOR** — FE `products` holati → `productIds` → BE `positions.some.productId in` | Ro'yxat eskirgan edi |
+| L4 | ~~Filtr «Грузополучатель»~~ | ✅ **ALLAQACHON BOR** — FE `consignees` → `consigneeIds` → BE `consigneeId in` | Ro'yxat eskirgan edi |
 | — | Bulk «Статус» dedicated menyu | «Изменить» ichida Провести/Снять bor | PARTIAL — moysklad alohida «Статус». Mayda |
 
 ## Bizda ORTIQCHA bor (moysklad capture ko'rsatmadi — saqlanadi, olib tashlanmaydi)
@@ -69,6 +74,12 @@ gap'lar aniq va boshqariladigan to'plam. Aksari — mayda wiring yoki vizual gur
   Организация, Счёт организации, Статус, Проведено, Напечатано, Отправлено, Канал продаж, Владелец, Сумма-range, Когда изменен).
 - DETAIL/CREATE: Накладные расходы (overhead) + taqsimot, Счёт организации, План. дата отгрузки/оплаты, editable kurs (/new),
   Задачи/Файлы seksiyalari, email-yuborish dialogi.
+
+## ⚠️ Ro'yxatning ishonchliligi (2026-07-30 qayta-tekshiruvi)
+12 gap'dan **5 tasi aslida allaqachon bajarilgan** edi (L1, L3, L4, D1 va qisman D6), 1 tasi ataylab rad etilgan
+(L2 — akkaunt-maxsus maydon). Ya'ni 2026-07-23 dagi ro'yxat kodni to'liq tekshirmasdan yozilgan.
+**Sabog'i: bu jadvalni ko'r-ko'rona ish ro'yxati sifatida olmang** — har bandni kodda tasdiqlang.
+Quyidagi qolgan bandlar 2026-07-30 da qayta tekshirildi va HAQIQATAN ochiq: D2, D3, D4, D5/N3, N1, C2.
 
 ## Rank (eng ta'sirlisidan)
 1. **C1 Ячейка** · 2. **C3/N2 Прибыль** (create+draft) · 3. **D1 Связанные документы** (bo'sh) · 4. **L1 Грузополучатель kolonka** ·

@@ -9,6 +9,7 @@
  * Status includes 'shipped' in addition to the standard 3.
  */
 
+import { AttributeInput, type AttributeMetaRow } from '@/components/attributes-editor';
 import { CurrencyRateModal } from '@/components/document-detail/currency-rate-modal';
 import { CellPickerField } from '@/components/documents/cell-picker-field';
 import { NewDocRelatedTab } from '@/components/documents/new-doc-related-tab';
@@ -222,6 +223,9 @@ export default function NewDemandPage() {
   const [salesChannelId, setSalesChannelId] = useState<string | null>(null);
   const [salesChannelLabel, setSalesChannelLabel] = useState('');
   const [shipmentAddress, setShipmentAddress] = useState('');
+  // «Доп. поля» values keyed by attribute code — sent as `attributes` on create
+  // (CreateDemandSchema already accepts it; only the form was missing).
+  const [customAttrs, setCustomAttrs] = useState<Record<string, unknown>>({});
   const [consignorId, setConsignorId] = useState<string | null>(null);
   const [consignorLabel, setConsignorLabel] = useState('');
   const [consigneeId, setConsigneeId] = useState<string | null>(null);
@@ -485,6 +489,16 @@ export default function NewDemandPage() {
   // pages can never disagree about the same document.
   const measures = useMemo(() => docMeasureTotals(positions), [positions]);
 
+  // Account custom fields (доп. поля). Required-ness is validated by the backend
+  // (validateAndNormalize) — an empty required field 400s into the error banner,
+  // matching customer-orders/new rather than duplicating the rule client-side.
+  const { data: attrMetaData } = useQuery<{ items: AttributeMetaRow[] }>({
+    queryKey: ['attribute-metadata-entity', 'Demand'],
+    queryFn: () => api.get('/attribute-metadata/entity/Demand'),
+    staleTime: 60_000,
+  });
+  const customFields = [...(attrMetaData?.items ?? [])].sort((a, b) => a.position - b.position);
+
   const createMut = useMutation({
     mutationFn: async () => {
       // moysklad «＋ Задача» saves the order as a DRAFT (no post, no positions
@@ -532,6 +546,7 @@ export default function NewDemandPage() {
             }
           : {}),
         ...(docNumber ? { name: docNumber } : {}),
+        attributes: customAttrs,
         ...(deliveryDate ? { deliveryPlannedMoment: deliveryDate } : {}),
         ...(paymentPlannedMoment ? { paymentPlannedMoment } : {}),
         moment: docDate ? new Date(docDate).toISOString() : undefined,
@@ -911,6 +926,33 @@ export default function NewDemandPage() {
           </NativeSelect>
         </DocumentMetaField>
       </DocumentMetaRow>
+      {/* Account custom fields (доп. поля — «Уста», «Санаси» …). The detail page
+          has always had these; /new did not, so a required custom field made the
+          shipment IMPOSSIBLE to create from this form (backend 400s on save and
+          the form offers no input). Mirrors customer-orders/new. */}
+      {customFields.length > 0 && (
+        <DocumentMetaRow>
+          {customFields.map((m) => (
+            <DocumentMetaField key={m.id} label={m.name} required={m.required}>
+              <AttributeInput
+                meta={m}
+                value={customAttrs[m.code]}
+                onChange={(v) =>
+                  setCustomAttrs((prev) => {
+                    if (v === '' || v == null) {
+                      const next = { ...prev };
+                      delete next[m.code];
+                      return next;
+                    }
+                    return { ...prev, [m.code]: v };
+                  })
+                }
+                testId={`field-attr-${m.code}`}
+              />
+            </DocumentMetaField>
+          ))}
+        </DocumentMetaRow>
+      )}
     </DocumentMetaPanel>
   );
 
