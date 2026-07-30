@@ -1442,6 +1442,7 @@ export function AddressStorageSection({
         <CellRangeModal
           open={rangeOpen}
           storeId={storeId}
+          storeCode={storeCode}
           onClose={() => setRangeOpen(false)}
           onCreated={invalidate}
         />

@@ -86,7 +86,8 @@ function LabelCodeSvg({ value }: { value: string }) {
   return (
     <svg
       viewBox={`0 0 ${vbW} ${vbH}`}
-      preserveAspectRatio="xMidYMid meet"
+      // xMidYMin — kod o'z bloki ichida TEPAga hizalanadi (markazда emas).
+      preserveAspectRatio="xMidYMin meet"
       style={{ width: '100%', height: '100%', display: 'block' }}
       role="img"
       aria-label={value}
@@ -129,8 +130,12 @@ function CellLabel({ label }: { label: LabelData }) {
         boxSizing: 'border-box',
       }}
     >
-      {/* Cell code — auto-scaled SVG that fills the label width (any length). */}
-      <div style={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden' }}>
+      {/* Kod + shtrix-kod etiketka TEPAsida (o'rtaga EMAS): etiketka-printer
+          kontentni pastga suradi, shuning uchun tepaga qo'yamiz va PASTDA bo'sh
+          joy qoldiramiz ⇒ chop etilganda markazga tushib to'g'ri bo'ladi (egasi
+          2026-07-30). Kod-blok chegaralangan balandlik (flex:1 EMAS) ⇒ o'rtaga
+          cho'zilib ketmaydi, 2-stikerga oshmaydi. */}
+      <div style={{ height: '56px', minHeight: 0, display: 'flex', overflow: 'hidden' }}>
         <LabelCodeSvg value={label.cellCode} />
       </div>
       {/* Scanner half: Code 128 strip. A non-encodable legacy value (Cyrillic

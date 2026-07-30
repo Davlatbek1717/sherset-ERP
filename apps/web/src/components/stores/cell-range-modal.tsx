@@ -40,19 +40,37 @@ interface BulkResult {
 
 const PLACEHOLDER = /\{([^{}]+)\}/g;
 
+/** Nomning 1-segmenti — ombor kodidan to'ldiriladi, diapazon emas. */
+const OMBOR_KEY = 'ombor';
+/** Nomning 2-segmenti — u ayni paytda ZONA nomi ham bo'ladi. */
+const POLKA_KEY = 'polka';
+
 /** Server kutgan variable shakli (Task 3 kontrakti). */
 type RangeVariablePayload =
   | { key: string; kind: 'number'; from: number; to: number; pad?: number }
   | { key: string; kind: 'letter'; from: string; to: string };
 
+/**
+ * Ombor kodidan nomning BIRINCHI segmenti. Bittalab yacheyka muharriri bilan
+ * bir xil qoida (`cellPrefix`, address-storage-section.tsx): kod 1–2 xonali
+ * raqam bo'lsa o'sha (nol bilan to'ldirilgan), aks holda «01».
+ */
+function omborSegment(storeCode?: string): string {
+  const raw = storeCode?.trim() ?? '';
+  return /^\d{1,2}$/.test(raw) ? raw.padStart(2, '0') : '01';
+}
+
 export function CellRangeModal({
   open,
   storeId,
+  storeCode,
   onClose,
   onCreated,
 }: {
   open: boolean;
   storeId: string;
+  /** Ombor «Kod»i — nomning 1-segmenti shundan oldindan to'ldiriladi. */
+  storeCode?: string;
   onClose(): void;
   onCreated(): void;
 }) {
@@ -60,7 +78,11 @@ export function CellRangeModal({
   const tc = useTranslations('common');
   const { toast } = useToast();
 
-  const [template, setTemplate] = useState('{qator}-{stellaj}-{polka}');
+  // Egasi (2026-07-30) aniqlagan tuzilish: OMBOR-POLKA-QATOR-YACHEYKA.
+  // Bittalab yacheyka muharriri ham aynan shu 4 segmentni ishlatadi (har biri
+  // 2 xonali raqam, nol bilan to'ldirilgan) — ikkalasi bir xil nom beradi.
+  const [template, setTemplate] = useState('{ombor}-{polka}-{qator}-{yacheyka}');
+  const ombor = omborSegment(storeCode);
   const [vars, setVars] = useState<Record<string, RangeVar>>({});
   const [zoneFrom, setZoneFrom] = useState<string>('');
   const [preview, setPreview] = useState<BulkResult | null>(null);
@@ -81,12 +103,25 @@ export function CellRangeModal({
     setVars((prev) => {
       const next: Record<string, RangeVar> = {};
       for (const k of keys) {
-        next[k] = prev[k] ?? { key: k, kind: 'number', from: '1', to: '5', pad: '2' };
+        if (prev[k]) {
+          next[k] = prev[k];
+          continue;
+        }
+        // «ombor» — diapazon EMAS, bitta qiymat: oyna aynan SHU ombor ichida
+        // ochiladi, boshqa omborga yacheyka yaratib bo'lmaydi. Shuning uchun
+        // from == to va ombor kodidan oldindan to'ldiriladi (foydalanuvchi
+        // xohlasa o'zgartira oladi — kod raqam bo'lmasa «01» tushadi).
+        next[k] =
+          k === OMBOR_KEY
+            ? { key: k, kind: 'number', from: ombor, to: ombor, pad: '2' }
+            : { key: k, kind: 'number', from: '1', to: '5', pad: '2' };
       }
       return next;
     });
-    setZoneFrom((z) => (keys.includes(z) ? z : ''));
-  }, [keys]);
+    // Zona = POLKA: egasining tuzilishida polka aynan zona rolini o'ynaydi.
+    // Shablonda {polka} bo'lsa uni avtomat tanlaymiz; bo'lmasa — zonasiz.
+    setZoneFrom((z) => (keys.includes(z) ? z : keys.includes(POLKA_KEY) ? POLKA_KEY : ''));
+  }, [keys, ombor]);
 
   const payload = useMemo(() => {
     const variables: RangeVariablePayload[] = keys.map((k) => {
@@ -211,6 +246,37 @@ export function CellRangeModal({
           {keys.map((k) => {
             const v = vars[k];
             if (!v) return null;
+            // «ombor» — DIAPAZON EMAS: oyna aynan shu ombor ichida ochiladi,
+            // boshqa omborga yacheyka yaratib bo'lmaydi. Shuning uchun bitta
+            // maydon ko'rsatiladi va u from/to ni birga o'rnatadi — «dan 01
+            // gacha 01» degan chalkash juftlik chiqmasin.
+            if (k === OMBOR_KEY) {
+              return (
+                <div
+                  key={k}
+                  className="flex flex-wrap items-center gap-2 rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] p-2"
+                  data-test-id={`range-var-${k}`}
+                >
+                  <span className="w-24 shrink-0 truncate font-medium text-sm" title={k}>
+                    {k}
+                  </span>
+                  <Input
+                    value={v.from}
+                    onChange={(e) => {
+                      const val = cleanBound('number', e.target.value);
+                      setVar(k, { from: val, to: val });
+                    }}
+                    className="h-7 w-16"
+                    aria-label={t('range_ombor')}
+                    title={t('range_ombor')}
+                    data-test-id="range-ombor"
+                  />
+                  <span className="text-[var(--ms-text-muted)] text-xs">
+                    {t('range_ombor_hint')}
+                  </span>
+                </div>
+              );
+            }
             return (
               <div
                 key={k}

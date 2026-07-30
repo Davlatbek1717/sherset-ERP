@@ -5683,7 +5683,9 @@
         "range_zones_to_create": "Будут созданы зоны",
         "range_create": "Создать {count} ячеек",
         "range_nothing": "Новых ячеек нет",
-        "range_done": "Создано {created}, пропущено {skipped}"
+        "range_done": "Создано {created}, пропущено {skipped}",
+        "range_ombor": "Код склада",
+        "range_ombor_hint": "1-й сегмент кода (из «Кода» карточки склада)"
       },
       "cell_label": {
         "title": "Этикетка ячейки",

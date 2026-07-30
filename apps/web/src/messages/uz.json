@@ -5683,7 +5683,9 @@
         "range_zones_to_create": "Yaratiladigan zonalar",
         "range_create": "{count} ta yacheyka yaratish",
         "range_nothing": "Yangi yacheyka yo'q",
-        "range_done": "{created} ta yaratildi, {skipped} ta o'tkazildi"
+        "range_done": "{created} ta yaratildi, {skipped} ta o'tkazildi",
+        "range_ombor": "Ombor kodi",
+        "range_ombor_hint": "nomning 1-segmenti (ombor kartochkasidagi «Kod»dan)"
       },
       "cell_label": {
         "title": "Yacheyka etiketkasi",
