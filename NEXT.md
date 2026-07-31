@@ -305,7 +305,18 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
-> **🕒 2026-07-31b (CUSTOMER-ORDERS parity — 13/56 punkt · ❌ DEPLOY YO'Q, owner qarori)**
+> **🕒 2026-07-31b (CUSTOMER-ORDERS parity — 23/56 punkt · ✅ DEPLOYED `217c345`)**
+> **DEPLOY tasdiqlandi** (erp.sherset.uz = sherset-v2, `DS_TARGET=v2 deploy-smart.sh`, `177c7b5 → 217c345`):
+> HEAD ✅ · erp.sherset.uz 200 · api :4001 health 200 · web :3011 200 · yangi filtr marshruti 401 (404 emas) ·
+> **4/4 yangi kod-markeri build chunk'lari ichida topildi** (`deliveryPlannedFrom`, `filter-shipment-address`,
+> `doc-header-reserve`, `detail-bottom-sections`). Faqat `sherset-v2-*` restart bo'ldi, boshqa ijarachilar tegilmadi.
+> ⚠️ **Deploy hodisasi (takrorlanmasin):** paramiko fon-jarayon kanalini kutgani uchun birinchi launch «qotgan»dek
+> ko'rindi va qayta yuborildi → **bir katalogda IKKITA parallel `next build`**. 3 daqiqada payqalib ikkalasi ham
+> to'xtatildi, bitta toza deploy qayta yugurtirildi; pm2 ga tegilmagani uchun prod uzilmadi. Yechim: `ssh_launch.py`
+> (exec_command → sleep → close, stdout O'QILMAYDI). **Launch buyrug'ini hech qachon qayta yubormang — avval
+> `pgrep -f deploy-smart.sh` bilan tekshiring.**
+>
+> **🕒 (eski holat, tarix uchun) 13/56 punkt**
 > To'liq backlog + dalil: [`docs/audits/customer-orders-parity-2026-07-31.md`](docs/audits/customer-orders-parity-2026-07-31.md).
 > **Ground truth JONLI olindi** (`online.moysklad.uz`, tenant `elektro_sentr`) — 3 ta qayta-yugurtiriladigan skript:
 > `scripts/co-capture-ours.mjs` (biznikini oladi + **`grid` metrikasi**: overflowPx/kolonka kengliklari) ·
@@ -321,11 +332,22 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > **⚠️ BUG-CLASS (#55, hali guard'siz):** `DocumentEditor` prop'larni aniq destructure qiladi, `DocumentEditorProps`
 > esa `DocumentHeaderProps`dan meros oladi → **yangi header-prop typecheck'dan JIM o'tadi, render'ga yetmaydi**.
 > Menda `reserve*` shunga uchradi; parallel sessiya ham ayni paytda date/time label prop'larida shu bug'ni tuzatmoqda.
-> **⏭️ Qolgan 43 punkt — MUHIM:** #14-#21 (8 filtr) **UI ishi EMAS** — `CustomerOrderFilterSchema`da 28 kalit bor,
-> bu 8 tasining birortasi YO'Q. Kichik BE (ustun mavjud): #14 `deliveryPlannedMoment` · #17 `shipmentAddress` · #18 ·
-> O'rta: #16 agent-join · #19 (`updatedById` yo'q → migratsiya) · Katta: #15/#20/#21 (agregatsiya/Task-join).
-> Keyin UI: #31/#32/#33 sarlavha · #36/#37/#38 balans+majburiylik · #42/#43/#46/#48 pozitsiya.
-> **Phase-1 — render/o'lchov live-smoke bor, to'liq browser-QA (klik→saqlash→BE) YO'Q. DEPLOY QILINMADI.**
+> **2-to'lqin qo'shimchalari:** `42c819f` #14/#17 «План. дата отгрузки»+«Адрес доставки» filtrlari (BE schema+service+FE,
+> **API 4/4 end-to-end verify**, +3 schema testi) · `6667208` #37 /new «Склад» majburiylik belgisi · `4fc98bb` **#53
+> `401 /permissions/me`** — har sahifadagi konsol xatosi, `usePermissions` endi session bootstrap'ga bog'landi
+> (**butun ilovaga taalluqli**) · `2a263ca` #23 «Оплата» tartibi + #12 printer ikonkasi · `3c38768` #38 «Договор» disabled.
+>
+> **📊 56 bandning HAMMASI dispozitsiya qilindi** (`docs/audits/customer-orders-parity-2026-07-31.md`):
+> ✅ 23 tuzatildi · ✅ 3 allaqachon to'g'ri edi (#36 balans · #43 «без НДС» · #44 kolonka-sozlagich — noto'g'ri pozitiv,
+> test-ma'lumot holatni yuzaga keltirmagan) · 🔒 1 owner-override (#42 tovar kodi — 2026-07-06 yacheyka chalkashligi) ·
+> 🔒 5 owner qarori bilan qoldirildi · ⏸️ 4 defer · 🔧 **20 qoldi**.
+>
+> **✅ OWNER QARORLARI berildi — keyingi to'plam shulardan:** #1 `max-w-[1440px]` cheklovi olib tashlansin (app-wide;
+> keyin «Зарезервировано» sig'adi) · **#48 «Цена включает НДС» default ☑ — ⚠️ PUL SEMANTIKASI**, avval aniqlansin:
+> faqat CO uchunmi yoki 8 hujjat turigami, **mavjud hujjatlarga TEGILMASIN** · #18/#19 migratsiya (prod backup shart) ·
+> #46/#50 «Импорт» feature (avval spec).
+>
+> **Phase-1 — render/o'lchov live-smoke + API end-to-end bor; to'liq browser-QA (klik→saqlash→BE) YO'Q.**
 > **🔴 #56 (bloklovchi emas, lekin jiddiy):** `label-grounding.test.ts` 25 ta ENOENT bilan yiqiladi —
 > `docs/moysklad-reference/` bu checkout'da **hech qachon bo'lmagan** (git tarixi yo'q). Label-grounding himoyasi
 > hozir ISHLAMAYAPTI. (2026-07-31a entry ham shu dir yo'qligini mustaqil qayd etgan.)
