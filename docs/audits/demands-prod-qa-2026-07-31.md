@@ -1,5 +1,43 @@
 # «Jo'natmalar» (demands) — PROD brauzer-QA, 2026-07-31
 
+## ✅ YAKUNIY HOLAT (sessiya oxiri)
+
+| | Soni |
+|---|---|
+| Boshlang'ich ro'yxat | 35 |
+| **SOXTA chiqdi** (o'zim tutdim, quyida) | **3** |
+| Haqiqiy nuqson | 32 |
+| **TUZATILDI** | **32** |
+| Ochiq qoldi | **0** |
+
+### Soxta bo'lib chiqqan bandlar — nega
+1. **«Jo'natma№ bo'shliqsiz»** — accessibility daraxtidan o'qigandim, u matnni
+   bo'shliqsiz birlashtiradi. Ekran rasmi: `ml-1` chekinishi ishlaydi, bo'shliq bor.
+2. **«Davr tugmalari o'qib bo'lmaydi»** — qisqartma uslubining O'ZI to'g'ri
+   (ru ham «вч·сег·нед·мес»). Haqiqiy muammo torroq edi: `kech`/`bug` boshqa
+   ma'noli so'zlar bilan to'qnashardi. Faqat shu tuzatildi.
+3. **«шт birligi ruscha»** — UI nuqsoni EMAS: `product.uom` da MA'LUMOT
+   sifatida saqlangan. Birlik tili — egasining qarori, kod bilan hal qilinmaydi.
+
+### Tekshirildi, nuqson emas
+- Saralanmaydigan ustunlar (Валюта / Отправлено / Напечатано / Комментарий) —
+  FE va BE **izchil**: API `sortBy` enum'i aynan 7 maydonni qo'llaydi.
+  moysklad'da saralanishi capture'da qayd etilmagan → taxmin qilinmadi.
+- `/permissions/me` **401** — buzuq funksiya emas, **start-poygasi**: so'rov
+  ikki marta ketadi (tokensiz 401 → token bilan 200). Keraksiz so'rov,
+  foydalanuvchiga ko'rinmaydi.
+- `/demands/new` **ChunkLoadError** — o'sha payt parallel sessiya deploy
+  qilayotgan edi (`next build` `.next/static` ni almashtirayotgandi).
+
+### Tuzatish commitlari
+`cd2cbb8` yacheyka · `67d8912` totals · `705cba8` доп.поля · `bb517e0`
+Грузоотправитель · `b7f51e3` arxiv-tasdiq · `57d7b37` o'lik havolalar+guard ·
+`13c7d4b` shu hujjat · `91ee5db` jamlanma i18n+xrapovik · `e84d371` deploy
+skripti · `2d56ab8` sarlavha i18n · `e3c515f` atamalar · `7d47ec4`
+/position endpoint · `46ac69f` ustun tartibi+saralash
+
+---
+
 > Manba: **real prod** `https://erp.sherset.uz`, Playwright MCP, admin@demo.local.
 > Prod commit: `bb517e0`. Har band brauzerda KO'RILGAN (taxmin emas) — qaysi sahifada
 > va nima kuzatilgani yozilgan.
