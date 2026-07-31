@@ -692,6 +692,9 @@ export default function DemandsPage() {
       key: 'consignee',
       header: tFields('consignee'),
       width: '180px',
+      // «Грузополучатель» — relation like «Контрагент», which is sortable;
+      // this column offered no sort at all (prod QA 2026-07-31).
+      sortable: true,
       cell: (d) => (
         <span className="max-w-[180px] truncate text-sm">{d.consignee?.name ?? ''}</span>
       ),
@@ -760,26 +763,6 @@ export default function DemandsPage() {
         </span>
       ),
       cellText: (r: DemandRow) => formatMoney(r.payedSumMinor, r.currency),
-    },
-    // moysklad parity: «Не оплачено» = Сумма − Оплачено (clamp ≥ 0).
-    {
-      key: 'unpaid',
-      header: tFields('unpaid'),
-      align: 'right',
-      width: '150px',
-      cell: (d) => {
-        const diff = BigInt(d.sumMinor) - BigInt(d.payedSumMinor);
-        const unpaid = (diff > 0n ? diff : 0n).toString();
-        return (
-          <span className="font-medium tabular-nums">
-            {formatMoney(unpaid, d.currency, { displayAs: 'none' })}
-          </span>
-        );
-      },
-      cellText: (r: DemandRow) => {
-        const diff = BigInt(r.sumMinor) - BigInt(r.payedSumMinor);
-        return formatMoney((diff > 0n ? diff : 0n).toString(), r.currency);
-      },
     },
     // moysklad gear: «Проект» (hidden by default).
     {
@@ -890,33 +873,6 @@ export default function DemandsPage() {
       cell: (d) => <span className="max-w-[160px] truncate text-sm">{d.owner?.name ?? ''}</span>,
       cellText: (r: DemandRow) => r.owner?.name ?? '',
     },
-    // moysklad parity: «Статус» column = the account-defined CUSTOM status
-    // (coloured pill), NOT the FSM state. A grey «Status» placeholder shows until
-    // a status is assigned (live-grounded #demand: every row shows «Status»).
-    // Posting state lives in the «Проведено» filter, not this column.
-    {
-      key: 'state',
-      header: tFields('state'),
-      width: '150px',
-      cell: (d) =>
-        d.status ? (
-          <span
-            className="inline-flex items-center whitespace-nowrap rounded-[3px] px-2 py-0.5 font-medium text-white text-xs"
-            style={{ backgroundColor: d.status.color ?? 'var(--ms-text-muted)' }}
-            data-test-id="demand-status-pill"
-          >
-            {d.status.name}
-          </span>
-        ) : (
-          <span
-            className="inline-flex items-center whitespace-nowrap rounded-[3px] bg-[var(--ms-bg-muted)] px-2 py-0.5 text-[var(--ms-text-muted)] text-xs"
-            data-test-id="demand-status-placeholder"
-          >
-            {tFields('custom_status_placeholder')}
-          </span>
-        ),
-      cellText: (r: DemandRow) => r.status?.name ?? '',
-    },
     // moysklad parity: «Отправлено» renders a cyan (#00bfe6) filled pill «Отправлен»
     // when sent, and an EMPTY cell otherwise (NOT «Да»/«—»). Colour + word-pill
     // live-grounded on online.moysklad.ru #demand (rgb(0,191,230)); mirror CO list.
@@ -961,6 +917,56 @@ export default function DemandsPage() {
         </span>
       ),
       cellText: (r: DemandRow) => r.description ?? '',
+    },
+    // Bizning QO`SHIMCHA ustunlarimiz — moysklad capture`ida yo`q. Ular
+    // moysklad ketma-ketligidan KEYIN turadi: aks holda yonma-yon
+    // solishtirganda ustun tartibi mos kelmaydi (2026-07-31 prod QA).
+    // moysklad parity: «Не оплачено» = Сумма − Оплачено (clamp ≥ 0).
+    {
+      key: 'unpaid',
+      header: tFields('unpaid'),
+      align: 'right',
+      width: '150px',
+      cell: (d) => {
+        const diff = BigInt(d.sumMinor) - BigInt(d.payedSumMinor);
+        const unpaid = (diff > 0n ? diff : 0n).toString();
+        return (
+          <span className="font-medium tabular-nums">
+            {formatMoney(unpaid, d.currency, { displayAs: 'none' })}
+          </span>
+        );
+      },
+      cellText: (r: DemandRow) => {
+        const diff = BigInt(r.sumMinor) - BigInt(r.payedSumMinor);
+        return formatMoney((diff > 0n ? diff : 0n).toString(), r.currency);
+      },
+    },
+    // moysklad parity: «Статус» column = the account-defined CUSTOM status
+    // (coloured pill), NOT the FSM state. A grey «Status» placeholder shows until
+    // a status is assigned (live-grounded #demand: every row shows «Status»).
+    // Posting state lives in the «Проведено» filter, not this column.
+    {
+      key: 'state',
+      header: tFields('state'),
+      width: '150px',
+      cell: (d) =>
+        d.status ? (
+          <span
+            className="inline-flex items-center whitespace-nowrap rounded-[3px] px-2 py-0.5 font-medium text-white text-xs"
+            style={{ backgroundColor: d.status.color ?? 'var(--ms-text-muted)' }}
+            data-test-id="demand-status-pill"
+          >
+            {d.status.name}
+          </span>
+        ) : (
+          <span
+            className="inline-flex items-center whitespace-nowrap rounded-[3px] bg-[var(--ms-bg-muted)] px-2 py-0.5 text-[var(--ms-text-muted)] text-xs"
+            data-test-id="demand-status-placeholder"
+          >
+            {tFields('custom_status_placeholder')}
+          </span>
+        ),
+      cellText: (r: DemandRow) => r.status?.name ?? '',
     },
     // moysklad gear: «Когда изменен» (updatedAt). moysklad labels this column
     // «Когда изменен» (not «Обновлено») — reuse the filter's matching string.

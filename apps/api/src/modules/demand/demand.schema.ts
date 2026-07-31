@@ -284,7 +284,18 @@ export const DemandFilterSchema = z.object({
   // enabling true previous/first/LAST jumps. Cursor stays for back-compat.
   page: z.coerce.number().int().min(0).optional(),
   sortBy: z
-    .enum(['moment', 'name', 'sumMinor', 'payedSumMinor', 'agent', 'organization', 'store'])
+    .enum([
+      'moment',
+      'name',
+      'sumMinor',
+      'payedSumMinor',
+      'agent',
+      // «Грузополучатель» — relation like `agent`; the list column offered no
+      // sort while the neighbouring «Контрагент» did (prod QA 2026-07-31).
+      'consignee',
+      'organization',
+      'store',
+    ])
     .default('moment'),
   sortDir: z.enum(['asc', 'desc']).default('desc'),
 });

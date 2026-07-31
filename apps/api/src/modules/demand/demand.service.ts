@@ -103,11 +103,13 @@ export class DemandService {
     const primaryOrder =
       filter.sortBy === 'agent'
         ? { agent: { name: filter.sortDir } }
-        : filter.sortBy === 'organization'
-          ? { organization: { name: filter.sortDir } }
-          : filter.sortBy === 'store'
-            ? { store: { name: filter.sortDir } }
-            : { [filter.sortBy]: filter.sortDir };
+        : filter.sortBy === 'consignee'
+          ? { consignee: { name: filter.sortDir } }
+          : filter.sortBy === 'organization'
+            ? { organization: { name: filter.sortDir } }
+            : filter.sortBy === 'store'
+              ? { store: { name: filter.sortDir } }
+              : { [filter.sortBy]: filter.sortDir };
     // Stable secondary sort by id — REQUIRED for correct offset pagination:
     // without a unique tiebreaker, rows sharing a `moment` (or name/…) drift
     // across page boundaries (skip/duplicate). Harmless for the cursor path too.
