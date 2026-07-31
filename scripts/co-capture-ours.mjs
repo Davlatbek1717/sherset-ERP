@@ -60,6 +60,9 @@ const HARVEST = () => {
       testId: el.getAttribute('data-test-id') || '',
       disabled: el.disabled === true,
       readOnly: el.readOnly === true,
+      // `value` on a checkbox is the HTML attribute ("on"), NOT its state —
+      // capture the real state so default-checked parity is verifiable.
+      checked: el.type === 'checkbox' || el.type === 'radio' ? el.checked : undefined,
       value: el.type === 'password' ? '***' : (el.value || '').slice(0, 40),
     }));
 

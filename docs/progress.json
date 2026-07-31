@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-31T12:47:56.915Z",
+  "generatedAt": "2026-07-31T12:45:17.910Z",
   "branch": "climart-adoption",
   "audit_pct_caveat": "Branch 'climart-adoption' != main. detail_pages.audited_pct, list_audits and phase2.pct are COMPUTED from docs/audits/* proof docs written against MAIN's pages. The climart adoption replaced most FE implementations, so these percentages are INHERITED, not re-verified here. Treat them as an upper bound. Re-audit = MASTER-TODO #36/#37. Also: docs/moysklad-reference is EMPTY (0 captured modules) — every capture-grounded audit is unreproducible until it is restored (MASTER-TODO #35).",
   "list_pages": {
@@ -221,16 +221,8 @@
       {
         "name": "Katalog (Cohort B)",
         "page_count": 5,
-        "pages": [
-          "counterparties",
-          "products",
-          "projects",
-          "stores",
-          "uoms"
-        ],
-        "proof_docs": [
-          "_PHASE2-katalog-cohort.audit.md"
-        ],
+        "pages": ["counterparties", "products", "projects", "stores", "uoms"],
+        "proof_docs": ["_PHASE2-katalog-cohort.audit.md"],
         "verified_inline": false,
         "done": true,
         "missing_proof_docs": []
@@ -238,15 +230,8 @@
       {
         "name": "Stock + internal",
         "page_count": 4,
-        "pages": [
-          "enters",
-          "losses",
-          "inventories",
-          "internal-orders"
-        ],
-        "proof_docs": [
-          "_PHASE2-stock-internal-cohort.audit.md"
-        ],
+        "pages": ["enters", "losses", "inventories", "internal-orders"],
+        "proof_docs": ["_PHASE2-stock-internal-cohort.audit.md"],
         "verified_inline": false,
         "done": true,
         "missing_proof_docs": []
@@ -260,9 +245,7 @@
           "production/stages",
           "production/work-orders"
         ],
-        "proof_docs": [
-          "_PHASE2-production-config-cohort.audit.md"
-        ],
+        "proof_docs": ["_PHASE2-production-config-cohort.audit.md"],
         "verified_inline": true,
         "done": true,
         "missing_proof_docs": []
@@ -270,14 +253,8 @@
       {
         "name": "Money / returns",
         "page_count": 3,
-        "pages": [
-          "prepayments",
-          "prepayment-returns",
-          "counterparty-adjustments"
-        ],
-        "proof_docs": [
-          "_PHASE2-money-returns-cohort.audit.md"
-        ],
+        "pages": ["prepayments", "prepayment-returns", "counterparty-adjustments"],
+        "proof_docs": ["_PHASE2-money-returns-cohort.audit.md"],
         "verified_inline": true,
         "done": true,
         "missing_proof_docs": []
@@ -285,14 +262,8 @@
       {
         "name": "Retail",
         "page_count": 2,
-        "pages": [
-          "retail/sales",
-          "retail/sessions"
-        ],
-        "proof_docs": [
-          "_PHASE2-retail-cash-scale.audit.md",
-          "_PHASE2-retail-register.audit.md"
-        ],
+        "pages": ["retail/sales", "retail/sessions"],
+        "proof_docs": ["_PHASE2-retail-cash-scale.audit.md", "_PHASE2-retail-register.audit.md"],
         "verified_inline": false,
         "done": true,
         "missing_proof_docs": []
@@ -300,15 +271,8 @@
       {
         "name": "Catalog items",
         "page_count": 4,
-        "pages": [
-          "bundles",
-          "services",
-          "variants",
-          "tracking-codes"
-        ],
-        "proof_docs": [
-          "_PHASE2-catalog-cohort.audit.md"
-        ],
+        "pages": ["bundles", "services", "variants", "tracking-codes"],
+        "proof_docs": ["_PHASE2-catalog-cohort.audit.md"],
         "verified_inline": false,
         "done": true,
         "missing_proof_docs": []

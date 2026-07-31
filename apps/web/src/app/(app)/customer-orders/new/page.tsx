@@ -541,7 +541,14 @@ export default function NewCustomerOrderPage() {
 
   // VAT toggles (totals panel)
   const [vatEnabled, setVatEnabled] = useState(true);
-  const [vatIncluded, setVatIncluded] = useState(false);
+  // «Цена включает НДС» — CHECKED by default (owner decision 2026-07-31, grounded
+  // on the live #customerorder editor where both /new and a saved order show it
+  // ticked). NEW customer orders only: the value is stored per document, so every
+  // existing order keeps whatever it was saved with — nothing is recomputed.
+  // Scope is deliberately customer-orders ONLY. The DB column defaults to false
+  // across 8+ document models; flipping those too is a separate decision, since
+  // it changes what a typed price MEANS on each of those documents.
+  const [vatIncluded, setVatIncluded] = useState(true);
   // «Kelishuv» — spread the negotiated delta across the lines (owner 2026-07-17).
   const applyAgreement = useCallback(
     (deltaMinor: bigint) => {
