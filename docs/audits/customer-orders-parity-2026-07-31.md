@@ -220,6 +220,12 @@ test-ma'lumotim o'sha holatni yuzaga keltirmagan edi.
 | 36 | Capture'da «Баланс: 0,00 сум» — yo'nalishsiz, rangsiz | To'liq implement qilingan: `owed_to_us`/`we_owe` qo'shimchasi + `--ms-action-destructive` qizil rang (`agent-balance`). Test-kontragent balansi **0** bo'lgani uchun qo'shimcha bo'sh chiqqan — to'g'ri xulq |
 | 43 | Capture'da «12%» ko'rindi | `fmtVat` bo'sh qiymat uchun «без НДС» qaytaradi. Test-pozitsiyada НДС=12 bo'lgan. НДС-siz buyurtma yaratib tekshirildi → «без НДС» chiqdi ✅ |
 
+## C1a. OWNER-OVERRIDE — parity EMAS, lekin ATAYLAB (tuzatilmasin)
+
+| # | Band | Sabab |
+|---|---|---|
+| 42 | Pozitsiya nomidan oldin tovar KODI | moysklad DOM'da tasdiqlangan: `<td class="cell name">` ichida `<span class="code-view">01698 </span>` + nom. **Lekin bizda ataylab o'chirilgan** — `PositionNameCell.tsx` izohi: *«account choice 2026-07-06; gluing the code to the name confused it with a cell path»*. Loyihada yacheyka kodlari (`01-02-02-07`) ishlatilgani uchun raqamli prefiks yacheyka manzili bilan chalkashtirilgan. Kod o'z «Код» kolonkasida qoladi. **Owner qayta so'ramaguncha tegilmasin** |
+
 ## C1b. DEFER qilinganlar (sabab bilan)
 
 | # | Band | Nega defer |

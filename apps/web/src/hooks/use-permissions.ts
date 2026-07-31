@@ -14,6 +14,7 @@
  */
 
 import { api } from '@/lib/api-client';
+import { useAuth } from '@/lib/auth-store';
 import { useQuery } from '@tanstack/react-query';
 
 export type PermissionScope = 'NO' | 'OWN' | 'OWN_GROUP' | 'OWN_AND_GROUP' | 'ALL';
@@ -99,11 +100,20 @@ export const ROUTE_ENTITIES: Array<[prefix: string, entities: string[]]> = [
 ];
 
 export function usePermissions() {
+  // Wait for the session bootstrap before asking. The query used to fire on
+  // mount, BEFORE /auth/refresh had produced an access token, so every page load
+  // logged a `401 GET /permissions/me` in the console; `retry: 1` then quietly
+  // re-fetched with the token and the app worked — the failure was invisible in
+  // behaviour but polluted the console and any error monitoring. Gating on the
+  // bootstrapped token removes the doomed first call entirely. (Found by the
+  // 2026-07-31 customer-orders parity capture, which flags console errors.)
+  const { accessToken, initialized } = useAuth();
   const query = useQuery<{ matrix: PermissionsMatrix }>({
     queryKey: ['permissions-me'],
     queryFn: () => api.get<{ matrix: PermissionsMatrix }>('/permissions/me'),
     staleTime: 300_000,
     retry: 1,
+    enabled: initialized && !!accessToken,
   });
 
   const matrix = query.data?.matrix;
