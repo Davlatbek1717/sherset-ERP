@@ -10,7 +10,36 @@
 
 **Dalil fayllari:** `.audit-co/` (scratchpad) — har delta yonida ekran nomi ko'rsatilgan.
 
-**Status:** Phase-1 — strukturaviy audit, runtime-tasdiqlanmagan. Browser-smoke YO'Q.
+**Status:** Phase-1 — strukturaviy audit. Bajarilgan bandlar render-darajasida live
+browser smoke bilan tekshirilgan; to'liq Phase-2 QA (klik → saqlash → BE) YO'Q.
+
+---
+
+## BAJARILGANLAR (2026-07-31 sessiyasi)
+
+| Commit | Bandlar | Natija |
+|---|---|---|
+| `f9cb42a` | #25 #26 #27 #28 | Detail tab-strip → `Главная \| Связанные документы \| События`; `Задачи`/`Файлы` pastdagi bo'limlarga. `DetailContentTabs.bottomSections` opt-in prop (20+ qardosh sahifa tegilmadi) |
+| `3c6535e` | #29 #49 | «Резерв» checkbox — detail + /new. Yo'l-yo'lakay: `DocumentEditor` prop-uzatish bug'i (#55) |
+| `add1d31` | #35 #51 | Org-hisob ost-qatori bo'sh ko'rinishi — caption `accountNumber \|\| name`; default hisob ustunligi. Cert: `tools/capture/cert-co-org-account-2026-07-31.mjs` |
+| `d22e022` | #39 #40 | Pozitsiyalarda «Доступно» + «Отгружено» default ON |
+| `079436f` | #13 | Filtr paneli 10 → 20 maydon ochiq (yashirin to'plam bo'shatildi) |
+
+**Yopilgan: 9 band.** Qolgan: **47** (shundan 3 tasi — #54 defer, #55/#56 ochiq bug-class).
+
+### Keyingi sessiya uchun tavsiya etilgan tartib
+1. **#5** — list gridi gorizontal kesiladi (eng ko'zga tashlanadigan)
+2. **#4** — doimiy «Итого» footer qatori
+3. **#14–#21** — yetishmayotgan 8 filtr maydoni (План. дата отгрузки · Тип возврата · Владелец контрагента · Адрес доставки · Комментарий к адресу доставки · Кто изменил · Ближайшая задача · Срок задачи)
+4. **#22** — «Счёт» → «Счет» (ё→е) label-grounding
+5. **#56** — `docs/moysklad-reference/` yo'qligi label-grounding himoyasini o'chirib qo'ygan — tiklash yoki testni moslashtirish
+
+---
+
+**Eskirgan da'volar (bu audit RAD ETDI):** kod izohlarida «live-grounded» deb yozilgan
+3 ta da'vo bugungi capture bilan ziddiyatda chiqdi — filtr «~10 maydon», pozitsiya
+«available/shipped OFF», va detail «5 tab». Uchalasi ham tuzatildi va izohlar
+bugungi dalil bilan almashtirildi.
 
 ---
 
