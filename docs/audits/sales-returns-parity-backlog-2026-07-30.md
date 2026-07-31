@@ -18,11 +18,11 @@ Manbalar: audit fayllari (yuqorida) + purchase-returns sibling *(faqat ishora �
 3. [G] MoySklad'да yo'q filtrlarni olib tashlash/«Ещё»ga: «Отгрузка»/«Заказ покупателя»/«Сумма from-to» (811-853, 951-983).
 4. [G] «Дата отгрузки» filtri qo'shish (sibling «Дата приемки»). **BE gap.**
 5. ✅ [QAROR] «Оплата» refund payment-state tri-state filtri. **NB: MoySklad returns list'da «Оплата» YO'Q** (schema NOTE + audit tasdiqlagan) — bu **non-parity foydali extra** (owner 2026-07-31). schema+service(AND-merge)+FE, sibling mantiqidan. *(4d249fd)*
-6. [G] «Товар или группа» filtri (purchase-returns:202,725-739 dan). **BE gap.**
-7. [G] «Счёт контрагента» filtri surface (BE `agentAccountId` tayyor, schema.ts:143) — sof FE.
-8. [G] «Счёт организации» filtri surface (BE `organizationAccountId` tayyor, schema.ts:148) — sof FE.
-9. [G] «Владелец контрагента» filtri. **BE gap.**
-10. [G] «Общий доступ» (shared) filtri. **BE gap.**
+6. ✅ [G] «Товар или группа» filtri (purchase-returns:202,725-739 dan). **BE gap.**
+7. ✅ [G] «Счёт контрагента» filtri surface (BE `agentAccountId` tayyor, schema.ts:143) — sof FE.
+8. ✅ [G] «Счёт организации» filtri surface (BE `organizationAccountId` tayyor, schema.ts:148) — sof FE.
+9. [DEFER-niche] «Владелец контрагента» — agent.ownerId merge + yangi employee-picker; past-qiymat, keyingi sessiya.
+10. ✅ [G] «Общий доступ» (shared) filtri. **BE gap.**
 11. [G] «Кто изменил» filtri — `SalesReturn`'да `updatedById` yo'q. **BE migration.**
 12. [G] Toolbar «Создать ▾» bulk-create dropdown. **FE+BE.**
 13. [A] Sahifa CSV «Экспорт» (hozir disabled, 1052) — capture.
