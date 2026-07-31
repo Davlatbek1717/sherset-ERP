@@ -1,14 +1,23 @@
 # Sales-returns («Возврат покупателя») — MoySklad-parity 50-punkt backlog (2026-07-30)
 
-Grounded: `docs/moysklad-reference/salesreturn/` (jonli MoySklad capture) + `docs/audits/sales-returns-live-2026-07-23/_GAP-BACKLOG.md` + purchase-returns sibling.
-Playwright (2026-07-30) jonli list tasdiqladi: ustunlar «Валюта»+«Оплачено» yetishmaydi. **[G]**=grounded · **[A]**=capture kerak · **✅**=bittalab bajarilgach belgilanadi.
+> ⚠️ **GROUNDING TUZATISH (2026-07-31, §2/§4):** header dastlab «grounded: `docs/moysklad-reference/salesreturn/`»
+> deb yozgan edi — **u papka MAVJUD EMAS** (konfabulyatsiya). Haqiqiy ground-truth manbalari:
+> `docs/audits/sales-returns-list.audit.md` + `sales-returns-detail.audit.md` + `sales-returns-live-2026-07-23/_GAP-BACKLOG.md`.
+> **`list.audit.md:5` (jonli capture, «o'zim o'qidim»):** default list ustunlari =
+> `№·Время·На склад·Контрагент·Организация·Сумма·Отправлено·Напечатано·Комментарий` — **«Оплачено» va «Валюта» YO'Q**
+> («no payment/status columns — returns are simpler»). Demak #1/#2 aslida MoySklad-parity EMAS, balki **ataylab
+> qo'shilgan foydali extra** (owner 2026-07-31 qarori: «ikkalasi qolsin»). Har bir `[G]` sibling-taxminга tayangan
+> punkt qayta-grounding talab qiladi (audit fayllariga, sibling'ga EMAS) — sales-return ≠ purchase-return.
+
+Manbalar: audit fayllari (yuqorida) + purchase-returns sibling *(faqat ishora — grounding EMAS)*.
+**[G]**=grounded · **[A]**=capture kerak · **[QAROR]**=owner qarori · **✅**=bajarilgan.
 
 ## LIST — `apps/web/src/app/(app)/sales-returns/page.tsx`
-1. ✅ [G] «Оплачено» ustuni qo'shish (BE `list()` select'ga `payedSumMinor` + FE column). Sibling: purchase-returns. *(f1064bf)*
-2. ✅ [G] «Валюта» ustunini default-ko'rinadigan qilish (defined 470-480, default array 301-311'да yo'q). *(f1064bf)*
+1. ✅ [QAROR] «Оплачено» ustuni (payedSumMinor). **NB: capture default-ustunlarда YO'Q** — non-parity foydali extra (owner 2026-07-31 «qolsin»). *(f1064bf, deployed)*
+2. ✅ [QAROR] «Валюта» default-ko'rinadigan. **NB: `list.audit.md:13` uni ataylab default'дан olib tashlagan edi (capture'да yo'q)** — bu qaror owner-so'rovi bilan qayta-kiritildi (non-parity extra). *(f1064bf, deployed)*
 3. [G] MoySklad'да yo'q filtrlarni olib tashlash/«Ещё»ga: «Отгрузка»/«Заказ покупателя»/«Сумма from-to» (811-853, 951-983).
 4. [G] «Дата отгрузки» filtri qo'shish (sibling «Дата приемки»). **BE gap.**
-5. [G] «Оплата» (payment-status tri-state) filtri (purchase-returns:132-136,713-725 dan copy). **BE gap.**
+5. ✅ [QAROR] «Оплата» refund payment-state tri-state filtri. **NB: MoySklad returns list'da «Оплата» YO'Q** (schema NOTE + audit tasdiqlagan) — bu **non-parity foydali extra** (owner 2026-07-31). schema+service(AND-merge)+FE, sibling mantiqidan. *(4d249fd)*
 6. [G] «Товар или группа» filtri (purchase-returns:202,725-739 dan). **BE gap.**
 7. [G] «Счёт контрагента» filtri surface (BE `agentAccountId` tayyor, schema.ts:143) — sof FE.
 8. [G] «Счёт организации» filtri surface (BE `organizationAccountId` tayyor, schema.ts:148) — sof FE.
