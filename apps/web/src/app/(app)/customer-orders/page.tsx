@@ -473,17 +473,21 @@ export default function CustomerOrdersPage() {
     'agent',
     'organization',
     'sum',
-    // moysklad live default-visible set (climart capture 2026-06-18,
-    // docs/audits/co-live-2026-06-18 grid headers): №·Время·Контрагент·
-    // Организация·Сумма·Валюта·Выставлено счетов·Оплачено·Не оплачено·
-    // Отгружено·Статус·Отправлено·Напечатано·Комментарий. So «Валюта» AND
-    // «Не оплачено» ARE default-visible (corrects the stale 2026-05-21 note);
-    // «Зарезервировано» is NOT — kept in the column list for the ⚙ only.
+    // Re-grounded 2026-07-31 on the LIVE #customerorder register (elektro_sentr):
+    // №·Время·Контрагент·Организация·Сумма·Валюта·Выставлено счетов·Оплачено·
+    // Отгружено·**Зарезервировано**·Статус·Отправлено·Напечатано·Комментарий.
+    // «Зарезервировано» IS default-visible there — the earlier note said it was
+    // not (parity delta #1). It could only be enabled once the app-shell 1440px
+    // content cap was lifted: before that the grid already needed 1870px in a
+    // 1402px box. Container is now ~1642px on a 1680px viewport.
+    // «Не оплачено» stays as our deliberate extra (owner decision 2026-07-31) —
+    // moysklad does not show it.
     'currency',
     'invoicedSum',
     'payedSum',
     'unpaidSum',
     'shippedSum',
+    'reservedSum',
     'state',
     'published',
     'printed',

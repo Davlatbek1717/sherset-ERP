@@ -241,11 +241,16 @@ export function AppShell({
           DataTable `fillHeight` fill this exactly (no double scroll); taller
           form/detail pages scroll here normally. */}
       <main className="flex flex-col">
-        {/* Large monitors: page content centres at the same 1440px cap as the
-            navbar row; the app-grey backdrop fills the sides evenly. */}
-        <div className="flex w-full flex-col min-[1600px]:mx-auto min-[1600px]:max-w-[1440px]">
-          {children}
-        </div>
+        {/* CONTENT width — uncapped (owner 2026-07-31, reversing the content half
+            of the 2026-07-19 cap).
+            moysklad does not cap its registers: the whole grid fits the window.
+            Ours was capped at 1440px, which on a 1680px viewport left the
+            customer-orders grid a 1402px budget for ~1870px of columns — columns
+            were clipped off the right edge and «Комментарий» collapsed to 0px
+            (measured; parity delta #5/#1).
+            The NAVBAR row above keeps its cap: the 2026-07-19 objection was that
+            the CHROME read stretched at 2560px, and that still holds. */}
+        <div className="flex w-full flex-col">{children}</div>
       </main>
     </div>
   );
