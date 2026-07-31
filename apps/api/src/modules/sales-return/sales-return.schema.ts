@@ -189,9 +189,12 @@ export const SalesReturnFilterSchema = z.object({
   /** «Сумма» — SalesReturn.sumMinor range (tiyin). */
   sumMinorFrom: z.coerce.number().int().nonnegative().optional(),
   sumMinorTo: z.coerce.number().int().nonnegative().optional(),
-  // NOTE: «Кто изменил» (modifiedById) is SKIPPED — the SalesReturn model
-  // has no `updatedById` column (only `ownerId`). Add such a column before
-  // wiring this filter (mirrors the deferred invoice-out / demand field).
+  /**
+   * «Кто изменил» — SalesReturn has no `updatedById` column, so this resolves
+   * via the auditLog (entities this employee `update`d) instead of a scalar FK —
+   * NO migration needed. Mirror of purchase-return / invoice-in resolveModifiedByIdFilter.
+   */
+  modifiedById: z.string().uuid().optional(),
   /**
    * «Оплата» — refund payment-state tri-state (paid / partlyPaid / unpaid),
    * computed cross-column from `payedSumMinor` vs `sumMinor`. NB: the moysklad

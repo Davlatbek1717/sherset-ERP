@@ -148,6 +148,7 @@ export default function SalesReturnsPage() {
     | 'agentAccount'
     | 'orgAccount'
     | 'agentOwner'
+    | 'modifiedBy'
     | 'massEditOwner'
     | 'massEditProject'
   >(null);
@@ -178,6 +179,9 @@ export default function SalesReturnsPage() {
     // «Владелец контрагента» — the counterparty's owner (responsible employee)
     agentOwnerId?: string;
     agentOwnerLabel?: string;
+    // «Кто изменил» — employee who last updated (auditLog-resolved, no column)
+    modifiedById?: string;
+    modifiedByLabel?: string;
     contractId?: string;
     contractLabel?: string;
     projectId?: string;
@@ -232,6 +236,7 @@ export default function SalesReturnsPage() {
   if (extFilter.paymentState) paramsRecord.paymentState = extFilter.paymentState;
   if (extFilter.agentGroupId) paramsRecord.agentGroupId = extFilter.agentGroupId;
   if (extFilter.agentOwnerId) paramsRecord.agentOwnerId = extFilter.agentOwnerId;
+  if (extFilter.modifiedById) paramsRecord.modifiedById = extFilter.modifiedById;
   if (extFilter.contractId) paramsRecord.contractId = extFilter.contractId;
   if (extFilter.projectId) paramsRecord.projectId = extFilter.projectId;
   if (extFilter.salesChannelId) paramsRecord.salesChannelId = extFilter.salesChannelId;
@@ -357,6 +362,7 @@ export default function SalesReturnsPage() {
     !!extFilter.agentAccountId ||
     !!extFilter.organizationAccountId ||
     !!extFilter.agentOwnerId ||
+    !!extFilter.modifiedById ||
     agents.length > 0 ||
     organizations.length > 0;
 
@@ -777,6 +783,30 @@ export default function SalesReturnsPage() {
                   setCursor(undefined);
                 }}
                 testId="filter-agent-owner"
+              />
+            </InlineFilterPanel.Field>
+            {/* 3c. Кто изменил — employee who last updated (auditLog-resolved). */}
+            <InlineFilterPanel.Field label={tFilters('modified_by')} expandable>
+              <CatalogPickerField
+                value={
+                  extFilter.modifiedById
+                    ? {
+                        id: extFilter.modifiedById,
+                        label: extFilter.modifiedByLabel ?? extFilter.modifiedById,
+                      }
+                    : null
+                }
+                placeholder=""
+                onPick={() => setPickerOpen('modifiedBy')}
+                onClear={() => {
+                  setExtFilter({
+                    ...extFilter,
+                    modifiedById: undefined,
+                    modifiedByLabel: undefined,
+                  });
+                  setCursor(undefined);
+                }}
+                testId="filter-modified-by"
               />
             </InlineFilterPanel.Field>
             {/* 4. Договор */}
@@ -1382,6 +1412,25 @@ export default function SalesReturnsPage() {
             ...extFilter,
             agentOwnerId: item.id,
             agentOwnerLabel: String(item.primary),
+          });
+          setCursor(undefined);
+        }}
+      />
+      <CatalogPicker
+        open={pickerOpen === 'modifiedBy'}
+        onClose={() => setPickerOpen(null)}
+        title={tFilters('modified_by')}
+        fetcher={async (q): Promise<PickerItem[]> => {
+          const r = await api.get<{ items: { id: string; name: string }[] }>(
+            `/employees?search=${encodeURIComponent(q)}&limit=20`,
+          );
+          return r.items.map((x) => ({ id: x.id, primary: x.name }));
+        }}
+        onSelect={(item) => {
+          setExtFilter({
+            ...extFilter,
+            modifiedById: item.id,
+            modifiedByLabel: String(item.primary),
           });
           setCursor(undefined);
         }}

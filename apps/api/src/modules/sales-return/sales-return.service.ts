@@ -69,7 +69,8 @@ export class SalesReturnService {
 
   async list(accountId: string, rawFilter: unknown) {
     const filter = SalesReturnFilterSchema.parse(rawFilter);
-    const where = this.buildListWhere(accountId, filter);
+    const extraIdFilter = await this.resolveModifiedByIdFilter(accountId, filter);
+    const where = this.buildListWhere(accountId, filter, extraIdFilter);
 
     // moysklad parity: relational sort for agent/organization/store
     // (Prisma `{ relation: { field } }`). Other keys are flat.
@@ -112,7 +113,8 @@ export class SalesReturnService {
    */
   async aggregateTotals(accountId: string, rawFilter: unknown) {
     const filter = SalesReturnFilterSchema.parse(rawFilter);
-    const where = this.buildListWhere(accountId, filter);
+    const extraIdFilter = await this.resolveModifiedByIdFilter(accountId, filter);
+    const where = this.buildListWhere(accountId, filter, extraIdFilter);
     const [agg, currencyGroups] = await Promise.all([
       this.prisma.client.salesReturn.aggregate({
         where,
@@ -163,9 +165,36 @@ export class SalesReturnService {
    * `groupId`. All other backed fields are flat columns on the return row.
    * Keeps the accountId tenant guard + deletedAt/includeDeleted handling.
    */
+  /**
+   * «Кто изменил» (modifiedById) — SalesReturn has no modifiedById column, so
+   * approximate "modified by employee X" via the auditLog: the DISTINCT entityIds
+   * this account's returns were `update`d on by the requested user. Returns
+   * `undefined` when none requested (no narrowing), or `[]` when requested but no
+   * audit rows match (forces an EMPTY result, not match-all). Mirror purchase-return.
+   * Remove once a real modifiedById column lands.
+   */
+  private async resolveModifiedByIdFilter(
+    accountId: string,
+    filter: SalesReturnFilterInput,
+  ): Promise<string[] | undefined> {
+    if (!filter.modifiedById) return undefined;
+    const rows = await this.prisma.client.auditLog.findMany({
+      where: {
+        accountId,
+        entity: 'SalesReturn',
+        userId: filter.modifiedById,
+        action: { contains: 'update' },
+      },
+      select: { entityId: true },
+      distinct: ['entityId'],
+    });
+    return rows.map((r) => r.entityId);
+  }
+
   private buildListWhere(
     accountId: string,
     filter: SalesReturnFilterInput,
+    extraIdFilter?: string[],
   ): Prisma.SalesReturnWhereInput {
     const momentRange =
       filter.momentFrom || filter.momentTo
@@ -231,6 +260,9 @@ export class SalesReturnService {
     return {
       accountId,
       ...(filter.includeDeleted ? {} : { deletedAt: null }),
+      // «Кто изменил» — auditLog-resolved id set (undefined ⇒ no narrowing,
+      // [] ⇒ force empty result). Mirror purchase-return.
+      ...(extraIdFilter ? { id: { in: extraIdFilter } } : {}),
       ...(filter.state ? { state: filter.state } : {}),
       ...(filter.statusIds ? { statusId: { in: filter.statusIds } } : {}),
       ...(filter.agentId ? { agentId: filter.agentId } : {}),

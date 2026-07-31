@@ -249,6 +249,11 @@ describe('SalesReturnFilterSchema', () => {
     expect(SalesReturnFilterSchema.parse({ agentOwnerId: UUID }).agentOwnerId).toBe(UUID);
   });
 
+  // «Кто изменил» — auditLog-resolved employee filter (no column).
+  it('accepts a modifiedById filter', () => {
+    expect(SalesReturnFilterSchema.parse({ modifiedById: UUID }).modifiedById).toBe(UUID);
+  });
+
   // «Общий доступ» — shared flag coerced from string (mirror applicable/printed).
   it('coerces the shared flag from string', () => {
     expect(SalesReturnFilterSchema.parse({ shared: 'true' }).shared).toBe(true);

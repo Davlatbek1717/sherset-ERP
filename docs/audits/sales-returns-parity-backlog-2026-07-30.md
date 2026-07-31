@@ -23,7 +23,7 @@ Manbalar: audit fayllari (yuqorida) + purchase-returns sibling *(faqat ishora �
 8. ✅ [G] «Счёт организации» filtri surface (BE `organizationAccountId` tayyor, schema.ts:148) — sof FE.
 9. ✅ [G] «Владелец контрагента» filtri (agent.ownerId merge + employee-picker).
 10. ✅ [G] «Общий доступ» (shared) filtri. **BE gap.**
-11. [G] «Кто изменил» filtri — `SalesReturn`'да `updatedById` yo'q. **BE migration.**
+11. ✅ [G] «Кто изменил» filtri — auditLog orqali (migration KERAK EMAS; sibling resolveModifiedByIdFilter patterni). Backlog «migration» taxmini xato edi.
 12. [G] Toolbar «Создать ▾» bulk-create dropdown. **FE+BE.**
 13. [A] Sahifa CSV «Экспорт» (hozir disabled, 1052) — capture.
 14. [verify] «Статус ▾» dropdown — endi bor (1046-1051); capture bilan yopish.
