@@ -557,7 +557,7 @@ export default function NewCashInPage() {
               setSalesChannelId(null);
               setSalesChannelLabel('');
             }}
-            onCreate={() => router.push('/sales-channels/new')}
+            onCreate={() => router.push('/ecommerce/channels/new')}
             createLabel={tForm('create_new')}
           />
         </DocumentMetaField>

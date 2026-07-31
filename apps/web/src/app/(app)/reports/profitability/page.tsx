@@ -1177,7 +1177,10 @@ export default function ProfitabilityReportPage() {
             »
           </PagerBtn>
           {isChannel && (
-            <a href="/sales-channels" className="ml-3 text-[var(--ms-text-brand)] hover:underline">
+            <a
+              href="/ecommerce/channels"
+              className="ml-3 text-[var(--ms-text-brand)] hover:underline"
+            >
               {t('go_to_channels')}
             </a>
           )}
