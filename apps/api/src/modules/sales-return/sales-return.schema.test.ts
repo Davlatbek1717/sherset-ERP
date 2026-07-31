@@ -236,6 +236,14 @@ describe('SalesReturnFilterSchema', () => {
     expect(() => SalesReturnFilterSchema.parse({ paymentState: 'overpaid' })).toThrow();
   });
 
+  // «Товар или группа» — product filter (positions.some.assortmentId).
+  it('accepts a productId filter', () => {
+    expect(SalesReturnFilterSchema.parse({ productId: UUID }).productId).toBe(UUID);
+  });
+  it('rejects a non-uuid productId', () => {
+    expect(() => SalesReturnFilterSchema.parse({ productId: 'p1' })).toThrow();
+  });
+
   it('accepts the «Когда изменен» (updatedFrom/To) range', () => {
     const p = SalesReturnFilterSchema.parse({
       updatedFrom: '2026-01-01',

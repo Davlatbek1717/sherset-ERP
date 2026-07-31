@@ -144,6 +144,7 @@ export default function SalesReturnsPage() {
     | 'group'
     | 'demand'
     | 'customerOrder'
+    | 'product'
     | 'massEditOwner'
     | 'massEditProject'
   >(null);
@@ -185,6 +186,9 @@ export default function SalesReturnsPage() {
     customerOrderLabel?: string;
     // «Оплата» — refund payment-state (non-parity useful extra, owner request)
     paymentState?: 'paid' | 'partlyPaid' | 'unpaid';
+    // «Товар или группа» — product filter (positions.some.assortmentId)
+    productId?: string;
+    productLabel?: string;
     // tri-state flag filters ('true' | 'false')
     applicable?: 'true' | 'false';
     printed?: 'true' | 'false';
@@ -206,6 +210,7 @@ export default function SalesReturnsPage() {
   if (agents.length) paramsRecord.agentIds = agents.map((x) => x.id).join(',');
   if (organizations.length) paramsRecord.organizationIds = organizations.map((x) => x.id).join(',');
   if (filterValues.storeId) paramsRecord.storeId = filterValues.storeId;
+  if (extFilter.productId) paramsRecord.productId = extFilter.productId;
   if (filterValues.ownerId) paramsRecord.ownerId = filterValues.ownerId;
   if (extFilter.state) paramsRecord.state = extFilter.state;
   if (extFilter.paymentState) paramsRecord.paymentState = extFilter.paymentState;
@@ -330,6 +335,7 @@ export default function SalesReturnsPage() {
     !!search ||
     !!extFilter.state ||
     !!extFilter.paymentState ||
+    !!extFilter.productId ||
     agents.length > 0 ||
     organizations.length > 0;
 
@@ -795,6 +801,30 @@ export default function SalesReturnsPage() {
                 testId="filter-store"
               />
             </InlineFilterPanel.Field>
+            {/* 6b. Товар или группа — returns containing this product (mirror PR). */}
+            <InlineFilterPanel.Field label={tFilters('product_or_group')} expandable>
+              <CatalogPickerField
+                value={
+                  extFilter.productId
+                    ? {
+                        id: extFilter.productId,
+                        label: extFilter.productLabel ?? extFilter.productId,
+                      }
+                    : null
+                }
+                placeholder=""
+                onPick={() => setPickerOpen('product')}
+                onClear={() => {
+                  setExtFilter({
+                    ...extFilter,
+                    productId: undefined,
+                    productLabel: undefined,
+                  });
+                  setCursor(undefined);
+                }}
+                testId="filter-product"
+              />
+            </InlineFilterPanel.Field>
             {/* 7. Проект */}
             <InlineFilterPanel.Field label={tFilters('project')} expandable>
               <CatalogPickerField
@@ -1131,6 +1161,25 @@ export default function SalesReturnsPage() {
             ...filterValues,
             storeId: item.id,
             storeLabel: String(item.primary),
+          });
+          setCursor(undefined);
+        }}
+      />
+      <CatalogPicker
+        open={pickerOpen === 'product'}
+        onClose={() => setPickerOpen(null)}
+        title={tFilters('product_or_group')}
+        fetcher={async (q): Promise<PickerItem[]> => {
+          const r = await api.get<{ items: { id: string; name: string }[] }>(
+            `/products?search=${encodeURIComponent(q)}&limit=20`,
+          );
+          return r.items.map((x) => ({ id: x.id, primary: x.name }));
+        }}
+        onSelect={(item) => {
+          setExtFilter({
+            ...extFilter,
+            productId: item.id,
+            productLabel: String(item.primary),
           });
           setCursor(undefined);
         }}

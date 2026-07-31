@@ -234,6 +234,8 @@ export class SalesReturnService {
         ? { organizationAccountId: filter.organizationAccountId }
         : {}),
       ...(filter.storeId ? { storeId: filter.storeId } : {}),
+      // «Товар или группа» — returns having ≥1 position with this assortment.
+      ...(filter.productId ? { positions: { some: { assortmentId: filter.productId } } } : {}),
       ...(filter.demandId ? { demandId: filter.demandId } : {}),
       ...(filter.customerOrderId ? { customerOrderId: filter.customerOrderId } : {}),
       ...(filter.projectId ? { projectId: filter.projectId } : {}),

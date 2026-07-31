@@ -146,6 +146,9 @@ export const SalesReturnFilterSchema = z.object({
   organizationIds: csvUuid.optional(),
   /** «Счёт организации» — SalesReturn.organizationAccountId (backend-only). */
   organizationAccountId: z.string().uuid().optional(),
+  /** «Товар или группа» — narrows to returns whose positions include this product
+   *  (assortmentId). moysklad-parity list filter (mirror purchase-return). */
+  productId: z.string().uuid().optional(),
   /** «Склад» — SalesReturn.storeId (receiving warehouse). */
   storeId: z.string().uuid().optional(),
   /** «Отгрузка» — back-link to the original Demand (SalesReturn.demandId). */
