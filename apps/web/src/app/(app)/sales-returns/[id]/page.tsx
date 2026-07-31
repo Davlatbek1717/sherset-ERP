@@ -81,6 +81,7 @@ import {
   PositionTable,
   type PositionTableColumnConfig,
   Textarea,
+  currencyDisplayName,
   useToast,
 } from '@moysklad/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -1256,7 +1257,7 @@ export default function SalesReturnDetailPage() {
                       minimumFractionDigits: 2,
                       maximumFractionDigits: 2,
                     })}{' '}
-                    {tCurShort('uzs')}
+                    {currencyDisplayName('UZS')}
                     {form.currency !== 'UZS'
                       ? ` (${(balanceAbsMajor / balanceDocRate).toLocaleString('ru-RU', {
                           maximumFractionDigits: 4,

@@ -75,6 +75,7 @@ import {
   PositionTable,
   type PositionTableColumnConfig,
   Textarea,
+  currencyDisplayName,
   formatDate,
   useToast,
 } from '@moysklad/ui';
@@ -421,7 +422,6 @@ export default function DemandDetailPage() {
   const tDetailForm = useTranslations('detail_form');
   const docEditorLabels = useDocumentEditorLabels();
   const tDetailHeader = useTranslations('detail_header');
-  const tCurShort = useTranslations('currency_short');
   const tDetailTitles = useTranslations('detail_titles');
   const tStates = useTranslations('states.demand');
   const tDetailTabs = useTranslations('detail_tabs');
@@ -1401,7 +1401,7 @@ export default function DemandDetailPage() {
                       minimumFractionDigits: 2,
                       maximumFractionDigits: 2,
                     })}{' '}
-                    {tCurShort('uzs')}
+                    {currencyDisplayName('UZS')}
                   </span>
                 ) : undefined
               }

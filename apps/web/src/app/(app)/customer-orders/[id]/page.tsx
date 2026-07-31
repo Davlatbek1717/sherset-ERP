@@ -62,6 +62,7 @@ import {
   PositionTable,
   type PositionTableColumnConfig,
   Textarea,
+  currencyDisplayName,
   isRowOversold,
   useToast,
 } from '@moysklad/ui';
@@ -1683,7 +1684,7 @@ export default function CustomerOrderDetailPage() {
                       minimumFractionDigits: 2,
                       maximumFractionDigits: 2,
                     })}{' '}
-                    {tCurShort('uzs')}
+                    {currencyDisplayName('UZS')}
                     {form.currency !== 'UZS'
                       ? ` (${(balanceAbsMajor / balanceDocRate).toLocaleString('ru-RU', {
                           maximumFractionDigits: 4,

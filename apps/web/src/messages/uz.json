@@ -8332,7 +8332,7 @@
   "counterparty_balance": {
     "balance_label": "Balans",
     "owe_us": "(bizga qarz)",
-    "we_owe": "(biz qarzdor)",
+    "we_owe": "(biz qarzdormiz)",
     "clean": "sof"
   },
   "product_select": {
