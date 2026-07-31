@@ -58,6 +58,25 @@ export interface DocumentHeaderProps {
    *  into the RU locale. */
   numberTooltip?: string;
 
+  /**
+   * Date/time strip captions. Hardcoded Russian until 2026-07-31 — the uz UI
+   * showed «от / Открыть календарь / Дата документа / дд.мм.гггг / чч:мм /
+   * Время» on prod. Defaults keep the Russian originals so ru (and any caller
+   * not yet wired) renders exactly as before.
+   */
+  /** Separator between № and the date («№ 00002 **от** 29.07.2026»). */
+  dateSeparatorLabel?: string;
+  /** aria-label of the calendar trigger. */
+  openCalendarLabel?: string;
+  /** Date input: placeholder + aria-label. */
+  datePlaceholder?: string;
+  dateAriaLabel?: string;
+  /** Time input: placeholder + aria-label. */
+  timePlaceholder?: string;
+  timeAriaLabel?: string;
+  /** Fallback caption of the status pill when no status is selected. */
+  statusFallbackLabel?: string;
+
   /** Document moment (ISO date string). */
   date: string;
   onDateChange?: (value: string) => void;
@@ -174,6 +193,7 @@ function StatusPill({
   label,
   onConfigure,
   configureLabel,
+  fallbackLabel,
 }: {
   status?: string;
   options?: DocumentStatusOption[];
@@ -181,6 +201,7 @@ function StatusPill({
   label?: React.ReactNode;
   onConfigure?: () => void;
   configureLabel?: React.ReactNode;
+  fallbackLabel?: string;
 }) {
   // Render the pill when there are options OR a «Настроить» entry (an empty
   // account-status list still needs the grey «Статус» pill + the configure
@@ -203,7 +224,7 @@ function StatusPill({
             style={{ backgroundColor: bg, color: fg }}
             data-test-id="doc-header-status"
           >
-            <span>{current?.label ?? 'Статус'}</span>
+            <span>{current?.label ?? fallbackLabel ?? 'Статус'}</span>
             <Icons.down className="h-3.5 w-3.5" aria-hidden />
           </button>
         }
@@ -243,6 +264,13 @@ export function DocumentHeader({
   onNumberChange,
   numberPlaceholder,
   numberTooltip,
+  dateSeparatorLabel,
+  openCalendarLabel,
+  datePlaceholder,
+  dateAriaLabel,
+  timePlaceholder,
+  timeAriaLabel,
+  statusFallbackLabel,
   date,
   onDateChange,
   status,
@@ -315,7 +343,7 @@ export function DocumentHeader({
           {number}
         </span>
       )}
-      <span className="text-[var(--ms-text-muted)] text-base">от</span>
+      <span className="text-[var(--ms-text-muted)] text-base">{dateSeparatorLabel ?? 'от'}</span>
       {/* moysklad «от» = ONE bordered field "DD.MM.YYYY HH:MM" (24-hour) with a
           calendar icon on the LEFT. The icon+date is the calendar trigger; the
           time is an inline borderless field inside the same box. Recombined to
@@ -335,7 +363,7 @@ export function DocumentHeader({
           trigger={
             <button
               type="button"
-              aria-label="Открыть календарь"
+              aria-label={openCalendarLabel ?? 'Открыть календарь'}
               data-test-id="doc-header-date-picker"
               className="inline-flex h-full items-center pr-0.5 pl-2 text-[var(--ms-text-muted)] hover:text-[var(--ms-text-primary)] focus:outline-none"
             >
@@ -353,8 +381,8 @@ export function DocumentHeader({
             if (iso) onDateChange?.(`${iso}T${date.slice(11, 16) || '00:00'}`);
           }}
           onBlur={() => setDateText(isoDate ? formatDdMmYyyy(isoDate) : '')}
-          placeholder="дд.мм.гггг"
-          aria-label="Дата документа"
+          placeholder={datePlaceholder ?? 'дд.мм.гггг'}
+          aria-label={dateAriaLabel ?? 'Дата документа'}
           className="h-full w-[84px] border-0 bg-transparent px-0.5 text-[13px] tabular-nums focus:outline-none focus:ring-0"
           data-test-id="doc-header-date-input"
         />
@@ -366,8 +394,8 @@ export function DocumentHeader({
             const t = e.target.value.replace(/[^\d:]/g, '').slice(0, 5);
             onDateChange?.(`${isoDate}T${t}`);
           }}
-          placeholder="чч:мм"
-          aria-label="Время"
+          placeholder={timePlaceholder ?? 'чч:мм'}
+          aria-label={timeAriaLabel ?? 'Время'}
           className="h-full w-14 border-0 bg-transparent px-1 text-center text-[13px] tabular-nums focus:outline-none focus:ring-0"
           data-test-id="doc-header-time"
         />
@@ -418,6 +446,7 @@ export function DocumentHeader({
         label={statusLabel}
         onConfigure={onConfigureStatuses}
         configureLabel={configureStatusesLabel}
+        fallbackLabel={statusFallbackLabel}
       />
       {onApplicableChange && (
         // moysklad parity: the help «?» sits BEFORE the checkbox («? ☑ Проведено»),

@@ -468,28 +468,24 @@ export default function CustomerOrdersPage() {
   // purchase-orders.
   const colWidths = useColumnWidths('customer-orders');
 
-  // moysklad ⚙ filter field-visibility — the live CO list shows a compact
-  // ~10-field set by default, the remaining 14 fields are tucked behind the
-  // filter-panel gear. The default array = the keys HIDDEN on first load
-  // (useColumnVisibility's `visibleKeys` stores the HIDDEN set here, same as
-  // products/purchase-orders use it). Each <InlineFilterPanel.Field> carries a
-  // stable, locale-independent `fieldKey`; a key in this set hides that field.
-  const filterHidden = useColumnVisibility('customer-orders-filter-hidden', [
-    'reserve',
-    'agentGroup',
-    'agentAccount',
-    'contract',
-    'applicable',
-    'printed',
-    'published',
-    'shared',
-    'salesChannel',
-    'ownerEmployee',
-    'ownerDept',
-    'sumFrom',
-    'sumTo',
-    'updatedRange',
-  ]);
+  // moysklad ⚙ filter field-visibility. The default array = the keys HIDDEN on
+  // first load (useColumnVisibility's `visibleKeys` stores the HIDDEN set here,
+  // same as products/purchase-orders use it). Each <InlineFilterPanel.Field>
+  // carries a stable, locale-independent `fieldKey`; a key in this set hides it.
+  //
+  // Re-grounded 2026-07-31 on the LIVE #customerorder list (elektro_sentr): the
+  // filter panel there opens with ALL ~29 fields expanded — Период · Оплата ·
+  // Отгружено · План. дата отгрузки · Товар или группа · Тип возврата · Склад ·
+  // Проект · Контрагент · Группа контрагента · Счет контрагента · Договор ·
+  // Владелец контрагента · Организация · Счет организации · Статус · Проведено ·
+  // Напечатано · Отправлено · Канал продаж · Адрес доставки · Комментарий к
+  // адресу доставки · Владелец-сотрудник · Владелец-отдел · Общий доступ ·
+  // Когда изменен · Кто изменил · Ближайшая задача · Срок задачи.
+  // Nothing is tucked behind the gear. The previous note here claimed moysklad
+  // shows "a compact ~10-field set" — the capture REFUTES that, so the hidden
+  // set is now empty (parity delta #13). Users can still hide fields via the ⚙;
+  // the choice persists per-user through useColumnVisibility.
+  const filterHidden = useColumnVisibility('customer-orders-filter-hidden', []);
 
   // moysklad's customer-orders list does NOT use pill sub-tabs for the
   // status quick-filter — instead it surfaces "Статус" as a dropdown in
