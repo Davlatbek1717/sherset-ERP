@@ -95,6 +95,11 @@ export function DocumentEditor({
   onApplicableChange,
   applicableLabel,
   applicableHelp,
+  reserve,
+  onReserveChange,
+  reserveLabel,
+  reserveHelp,
+  reserveDisabled,
   waiting,
   onWaitingChange,
   waitingLabel,
@@ -158,6 +163,11 @@ export function DocumentEditor({
         onApplicableChange={onApplicableChange}
         applicableLabel={applicableLabel}
         applicableHelp={applicableHelp}
+        reserve={reserve}
+        onReserveChange={onReserveChange}
+        reserveLabel={reserveLabel}
+        reserveHelp={reserveHelp}
+        reserveDisabled={reserveDisabled}
         waiting={waiting}
         onWaitingChange={onWaitingChange}
         waitingLabel={waitingLabel}

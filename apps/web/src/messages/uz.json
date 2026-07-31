@@ -506,7 +506,9 @@
     "number_auto_tooltip": "Avtomatik raqam o'rnatish uchun maydonni bo'sh qoldiring",
     "save_error": "Saqlashda xato",
     "paid": "To'langan",
-    "partially_paid": "Qisman to'langan"
+    "partially_paid": "Qisman to'langan",
+    "reserve": "Zaxira",
+    "reserve_help": "Barcha pozitsiyalar bo'yicha to'liq buyurtma miqdorini zaxiralash"
   },
   "detail_titles": {
     "customer_order": "Xaridor buyurtmasi",
@@ -585,7 +587,11 @@
     "vat_included": "Narx QQSni o'z ichiga oladi",
     "total": "Jami",
     "profit": "Foyda",
-    "qty": "Soni"
+    "qty": "Soni",
+    "commission": "Komissiya",
+    "commitent": "Komitent summasi",
+    "weight": "Og'irlik",
+    "volume": "Hajm"
   },
   "detail_tabs": {
     "main": "Asosiy",

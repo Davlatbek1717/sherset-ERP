@@ -104,6 +104,16 @@ export interface DocumentHeaderProps {
    *  terminal doc, e.g. a cancelled one — it just can't be toggled). */
   applicableDisabled?: boolean;
 
+  /** Резерв flag — customer-order only. moysklad renders it as a SECOND
+   *  «? ☑» pair right after «Проведено» (grounded 2026-07-31 on the live
+   *  #customerorder editor). Checked = every line reserves its full ordered
+   *  quantity; unchecked = no line is reserved. */
+  reserve?: boolean;
+  onReserveChange?: (value: boolean) => void;
+  reserveLabel?: React.ReactNode;
+  reserveHelp?: React.ReactNode;
+  reserveDisabled?: boolean;
+
   /** Ожидание flag — procurement-only «waiting for delivery». */
   waiting?: boolean;
   onWaitingChange?: (value: boolean) => void;
@@ -250,6 +260,11 @@ export function DocumentHeader({
   applicableLabel,
   applicableHelp,
   applicableDisabled,
+  reserve,
+  onReserveChange,
+  reserveLabel,
+  reserveHelp,
+  reserveDisabled,
   waiting,
   onWaitingChange,
   waitingLabel,
@@ -419,6 +434,24 @@ export function DocumentHeader({
               data-test-id="doc-header-applicable"
             />
             {applicableLabel ?? 'Проведено'}
+          </label>
+        </span>
+      )}
+      {onReserveChange && (
+        // «? ☑ Резерв» — the second checkbox pair moysklad shows on a customer
+        // order, immediately after «Проведено» and with its own help «?».
+        <span className="inline-flex items-center gap-1.5 text-base">
+          <HelpIcon tooltip={reserveHelp} />
+          <label className="inline-flex items-center gap-1.5">
+            <input
+              type="checkbox"
+              checked={!!reserve}
+              onChange={(e) => onReserveChange(e.target.checked)}
+              disabled={reserveDisabled}
+              className="h-[18px] w-[18px] accent-[var(--ms-action-success)]"
+              data-test-id="doc-header-reserve"
+            />
+            {reserveLabel ?? 'Резерв'}
           </label>
         </span>
       )}

@@ -33,6 +33,7 @@ import { useDetailNavigation } from '@/hooks/use-detail-navigation';
 import { useDocumentEditorLabels } from '@/hooks/use-document-editor-labels';
 import { usePresence } from '@/hooks/use-presence';
 import { useSaveMutation } from '@/hooks/use-save-mutation';
+import { useTotalsLabels } from '@/hooks/use-totals-labels';
 import { useUnsavedGuard } from '@/hooks/use-unsaved-guard';
 import { api } from '@/lib/api-client';
 import { imageRawUrl } from '@/lib/image-url';
@@ -427,6 +428,7 @@ const ORDER_STATES = [
 
 export default function CustomerOrderDetailPage() {
   const tCommon = useTranslations('common');
+  const totalsLabels = useTotalsLabels();
   const tFields = useTranslations('fields');
   const tForm = useTranslations('form');
   const tDetailForm = useTranslations('detail_form');
@@ -717,6 +719,14 @@ export default function CustomerOrderDetailPage() {
   const clearAllReserve = useCallback(() => {
     setForm((s) => (s ? { ...s, positions: s.positions.map((p) => ({ ...p, reserve: '0' })) } : s));
   }, []);
+  // Header «☑ Резерв» (moysklad document-level reserve flag, grounded 2026-07-31).
+  // We model reserve PER LINE, so the flag is derived: it reads as checked only
+  // when every line already holds its full ordered quantity. An order with no
+  // lines is not "reserved" — an empty document must not show a checked box.
+  const allLinesReserved = useMemo(() => {
+    const ps = form?.positions ?? [];
+    return ps.length > 0 && ps.every((p) => Number(p.reserve ?? 0) >= Number(p.quantity ?? 0));
+  }, [form?.positions]);
   // «Расценить» — re-price every row by the chosen price-type (from each
   // product's carried salePrices). Loaded rows have no salePrices until the
   // product is re-picked, so they keep their current price.
@@ -1493,6 +1503,13 @@ export default function CustomerOrderDetailPage() {
         applicable={data.applicable}
         onApplicableChange={(next) => transitionMut.mutate(next ? 'confirmed' : 'draft')}
         applicableHelp={tPages('applicable_help')}
+        // «Резерв» — moysklad's second header checkbox. Toggling it drives the
+        // SAME per-line bulk helpers the «Зарезерв. ▾» column menu uses, so both
+        // surfaces stay consistent and the value is persisted by the normal save.
+        reserve={allLinesReserved}
+        onReserveChange={(next) => (next ? setAllReserve() : clearAllReserve())}
+        reserveLabel={tDetailHeader('reserve')}
+        reserveHelp={tDetailHeader('reserve_help')}
         // moysklad parity: the owner / «Смотрит» / «Изменения» cluster moved UP to
         // the toolbar row (DetailToolbar rightSlot) — moysklad keeps them on the
         // action-bar line, not a separate header row. So DocumentHeader has no
@@ -2170,6 +2187,7 @@ export default function CustomerOrderDetailPage() {
                   )}
                 </div>
                 <DocumentTotalsPanel
+                  labels={totalsLabels}
                   subtotalMinor={totals.net}
                   vatMinor={totals.vat}
                   totalMinor={totals.gross}

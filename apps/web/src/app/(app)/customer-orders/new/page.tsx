@@ -28,6 +28,7 @@ import {
 import { usePrintTemplatesManager } from '@/components/print/print-templates-provider';
 import { ProductSelectModal } from '@/components/products/product-select-modal';
 import { useDocumentEditorLabels } from '@/hooks/use-document-editor-labels';
+import { useTotalsLabels } from '@/hooks/use-totals-labels';
 import { api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-store';
 import { imageRawUrl } from '@/lib/image-url';
@@ -189,6 +190,7 @@ export default function NewCustomerOrderPage() {
   const { openTemplates } = usePrintTemplatesManager();
   const { user } = useAuth();
   const t = useTranslations('pages.customer_orders');
+  const totalsLabels = useTotalsLabels();
   const tForm = useTranslations('form');
   const tFields = useTranslations('fields');
   const tDetailTitles = useTranslations('detail_titles');
@@ -390,6 +392,15 @@ export default function NewCustomerOrderPage() {
     // moysklad parity: cleared reserve shows «0», not a blank cell.
     setPositions((ps) => ps.map((p) => ({ ...p, reserve: '0' })));
   }, []);
+  // Header «☑ Резерв» (moysklad document-level flag, grounded 2026-07-31) — derived
+  // from the per-line reserves, same rule as the detail page. A draft with no lines
+  // yet reads as unchecked.
+  const allLinesReserved = useMemo(
+    () =>
+      positions.length > 0 &&
+      positions.every((p) => Number(p.reserve ?? 0) >= Number(p.quantity ?? 0)),
+    [positions],
+  );
   const positionColumns = useMemo<PositionTableColumnConfig[]>(() => {
     // moysklad parity (user 2026-06-20 «# kerak emas»): no row-number column —
     // moysklad's position grid starts at the select checkbox, then Наименование.
@@ -1511,6 +1522,7 @@ export default function NewCustomerOrderPage() {
               )}
             </div>
             <DocumentTotalsPanel
+              labels={totalsLabels}
               subtotalMinor={totals.net}
               vatMinor={totals.vat}
               totalMinor={totals.gross}
@@ -1648,6 +1660,12 @@ export default function NewCustomerOrderPage() {
         applicable={applicable}
         onApplicableChange={setApplicable}
         applicableHelp={t('applicable_help')}
+        // «Резерв» — mirrors the detail header; drives the same bulk helpers the
+        // «Зарезерв. ▾» column menu uses, so both surfaces agree.
+        reserve={allLinesReserved}
+        onReserveChange={(next) => (next ? setAllReserve() : clearAllReserve())}
+        reserveLabel={tDetailHeader('reserve')}
+        reserveHelp={tDetailHeader('reserve_help')}
         waiting={undefined}
         onSave={() => {
           if (hasOversold) return;
