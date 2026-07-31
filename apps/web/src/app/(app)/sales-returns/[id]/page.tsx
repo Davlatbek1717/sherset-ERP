@@ -97,6 +97,9 @@ interface PositionDetail {
   demandPositionId: string | null;
   quantity: string;
   priceMinor: string;
+  // «Себестоимость единицы» — weighted-average carrying cost frozen at post-time
+  // (tiyin); null on a draft. Distinct from priceMinor (sale price). #19.
+  costMinor: string | null;
   discount: string;
   vat: number | null;
   vatEnabled: boolean;
@@ -210,6 +213,8 @@ const CUSTOMS_POSITION_COLUMNS: { key: PositionColumnKey; on: boolean }[] = [
 const DEFAULT_COL_VISIBLE: Record<string, boolean> = {
   ...Object.fromEntries(OPTIONAL_POSITION_COLUMNS.map((c) => [c.key, c.on])),
   ...Object.fromEntries(CUSTOMS_POSITION_COLUMNS.map((c) => [c.key, c.on])),
+  // «Себест. единицы» (#19) — moysklad shows unit carrying cost by default.
+  costPerUnit: true,
 };
 
 interface FormState {
@@ -293,6 +298,8 @@ function formFromData(d: SalesReturnDetail): FormState {
       demandPositionId: p.demandPositionId ?? null,
       quantity: p.quantity,
       priceMinor: p.priceMinor,
+      // «Себест. единицы» (#19) — carrying cost for the costPerUnit column; null→undefined.
+      costMinor: p.costMinor ?? undefined,
       discount: p.discount,
       vat: p.vat != null ? String(p.vat) : '',
       vatEnabled: p.vatEnabled,
@@ -772,6 +779,8 @@ export default function SalesReturnDetailPage() {
                   key: c.key,
                   label: tCols(c.labelKey),
                 })),
+                // «Себест. единицы» (#19) — carrying-cost column, ⚙-toggleable.
+                { key: 'costPerUnit', label: tCols('costPerUnit') },
                 // SR customs — labels live in `fields`, appended to the ⚙ list.
                 { key: 'gtdSumMinor', label: tFields('gtd_cost') },
                 { key: 'country', label: tFields('country') },
@@ -784,6 +793,9 @@ export default function SalesReturnDetailPage() {
         </span>
       ),
     });
+    // «Себест. единицы» (#19) — unit carrying cost (costMinor; ≠ price). Post-time
+    // only (null on draft → renders 0). ⚙-toggleable, default-visible (moysklad).
+    if (colVisible.costPerUnit) cols.push({ key: 'costPerUnit', label: tCols('costPerUnit') });
     // «Возврат покупателя» customs — Себестоимость ГТД + Страна (after «Сумма», before
     // the row ⋮). Gear-toggleable but shown by default.
     if (colVisible.gtdSumMinor) cols.push({ key: 'gtdSumMinor', label: tFields('gtd_cost') });

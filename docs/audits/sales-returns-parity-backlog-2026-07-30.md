@@ -33,7 +33,7 @@ Manbalar: audit fayllari (yuqorida) + purchase-returns sibling *(faqat ishora �
 16. ✅ [G] Kontragent ostiga qizil «Баланс (нам должны): …» sub-satr (D1).
 17. [G] Организация ostiga «Перечисление» (payment-type) dropdown (D2). **BE+FE.**
 18. [BLOK-tekshirilgan] Pozitsiya «Остаток» — FE tayyor (`p.stock` render), LEKIN to'g'ri ko'rsatish `StockBalanceService` + in-transit semantikasi kerak (design-doc); raw `getBalances` = integrity-bug (stock.service:574-580). Fokus-sessiya.
-19. [BLOK-tekshirilgan] `costMinor` pozitsiyada bor + findById qaytaradi, LEKIN shared `PositionTable.costPerUnit` `priceMinor`ни o'qiydi (cost≠narx). To'g'ri qilish design-system o'zgarishi — parallel sessiya o'sha yerда faol (§6). Fokus-sessiya.
+19. ✅ [G] Pozitsiya «Себест. единицы» ustuni — `costMinor` (post-time), shared `PositionTable.costPerUnit` `costMinor ?? priceMinor` backward-compat fallback (enters/supplies regression yo'q, web tc 0). costPerUnit default-on.
 20. [BLOK-tekshirilgan] SalesReturnPosition'да rnpt maydoni yo'q → migration + DS. Fokus-sessiya.
 21. [G] Tab'lar faqat «Главная»+«Связанные документы» — Файлы/История alohida tab'ini olib tashlash (D10; 1419-1426).
 22. [G] «Причина» inputni olib tashlash/«Ещё»ga — MoySklad'да faqat «Комментарий» (N8; 1675-1682).

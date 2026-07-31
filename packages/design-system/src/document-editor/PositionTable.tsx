@@ -82,6 +82,11 @@ export interface DocPositionRow {
   vatEnabled: boolean;
   /** Optional read-only fields shown for procurement/inventory contexts. */
   shipped?: string;
+  /** Per-unit cost (tiyin). When set, the «Себест. единицы» (costPerUnit) column
+   *  renders THIS instead of `priceMinor` — for docs where carrying cost ≠ price
+   *  (sales-return / loss weighted-average). Falls back to `priceMinor` when unset
+   *  (Enter/Supply, where cost = price), so existing callers are unaffected. */
+  costMinor?: string;
   available?: string;
   stock?: string;
   reserve?: string;
@@ -1401,9 +1406,13 @@ function renderCell({
         />
       );
     case 'costPerUnit':
-      // «Себест. единицы» — read-only unit cost (= price for an Enter).
+      // «Себест. единицы» — read-only unit cost. Uses `costMinor` (carrying cost,
+      // e.g. sales-return weighted-average) when provided; falls back to `priceMinor`
+      // for docs where cost = price (Enter/Supply) — backward-compatible.
       return (
-        <span className="block tabular-nums">{formatMinor(BigInt(row.priceMinor || '0'))}</span>
+        <span className="block tabular-nums">
+          {formatMinor(BigInt(row.costMinor ?? row.priceMinor ?? '0'))}
+        </span>
       );
     case 'costTotal': {
       // «Себестоимость» — read-only total cost (price × qty; no VAT/discount on Enter).
