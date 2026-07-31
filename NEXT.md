@@ -305,6 +305,23 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-07-31a (SALES-RETURNS parity — 3 punkt + ✅ DEPLOYED · `414b6fc`)**
+> `/sales-returns` bo'limi bo'yicha 50-punkt backlog (`docs/audits/sales-returns-parity-backlog-2026-07-30.md`).
+> **Bajarilgan:** #1 «Оплачено» ustuni · #2 «Валюта» default · #31/#36 customs (ГТД/Страна) /new default-on ·
+> #5 «Оплата» refund payment-filtri (schema+service AND-merge+FE+2 test). Gate: API tc 0 · web tc 0 · biome 0 ·
+> schema-test 32/32. **DEPLOYED sherset-v2** (`sr-deploy2/3`, web+api restart UPTIME-reset bilan TASDIQLANDI —
+> o'tgan «restart ta'sir qilmadi» bug takrorlanmadi).
+> **⚠️ GROUNDING TUZATISH (§2/§4):** backlog header dastlab yolg'on `docs/moysklad-reference/salesreturn/` (MAVJUD EMAS)
+> ga tayandi. Haqiqiy ground-truth = `sales-returns-list.audit.md:5`: default ustunlar
+> `№·Время·На склад·Контрагент·Организация·Сумма·Отправлено·Напечатано·Комментарий` — **«Оплачено»/«Валюта» YO'Q**.
+> Demak #1/#2/#5 aslida MoySklad-parity EMAS — **owner-so'rovi bilan non-parity foydali extra** (2026-07-31: «ikkalasi qolsin»).
+> **⏭️ Qolgan (qayta-grounding shart — audit fayllariga, sibling'ga EMAS):** #30 «Ячейка» default-off (QAROR: yacheyka faol
+> ishlatiladi, owner qarori kutilmoqda) · additive-detail #16/#18/#19/#20 (BE join) · #11/#17/#33 (BE migration) ·
+> capture-kerak #13/#26/#39/#46/#49/#50 (reference dir yo'q → avval jonli capture). **Phase-1 — browser-smoke YO'Q.**
+> **Xavfsizlik:** Playwright uchun forge qilingan admin refresh-token revoke qilindi (11 token o'chirildi).
+> **§6:** parallel sessiya (customer-orders/DocumentTotalsPanel totals-labels) faol — bitta commit'im ularning staged
+> ishini yutgan edi, soft-reset bilan tuzatildi (ish working-tree'да butun saqlandi, push qilinmagan edi).
+>
 > **🕒 2026-07-30h (FAZA E — QABUL MAGIC-LINK TASDIQLASH QURILDI + DEPLOYED · `3cf9b5b`)**
 > Taminotchi PAROLSIZ havola bilan tasdiq/rad. **E1** (backend): `SupplyApprovalLink` migration (prod'da qo'llandi) +
 > `issueSupplierLink`/`getPublicSupplyView`/`decideViaLink` + public controller `p/qabul` (guardsiz, token-auth) + 4 test.
