@@ -72,7 +72,24 @@ assert_pm2 "$PM2_API"
 
 step "Target: $APP_DIR @ $BRANCH → $PM2_WEB / $PM2_API"
 
+# Diff base = the last SUCCESSFULLY deployed commit, not merely the current HEAD.
+#
+# Why (2026-07-31, hit for real): a run that aborts AFTER `git reset --hard` but
+# BEFORE the build leaves HEAD at the new commit with a STALE `.next` and an
+# un-restarted API. The next run then diffs new→new, sees «only docs changed»
+# and skips the build forever — the box serves old code with no error anywhere.
+# The stamp is written only after all steps succeed, so an aborted run is retried
+# in full.
+STATE="$APP_DIR/.deploy-last-success"
 BEFORE=$(git rev-parse HEAD)
+if [ -f "$STATE" ]; then
+  LAST=$(cat "$STATE")
+  if git cat-file -e "${LAST}^{commit}" 2>/dev/null; then
+    [ "$LAST" != "$BEFORE" ] && step "Previous run left HEAD ahead — diffing from last SUCCESS $LAST"
+    BEFORE="$LAST"
+  fi
+fi
+
 step "fetch + reset --hard origin/$BRANCH (was $BEFORE)"
 # The local repo is a SHALLOW clone (deep history not portable — 2026-07-20
 # migration), so each push to origin (Davlatbek1717/wareflow-erp) is a fresh
@@ -161,5 +178,9 @@ fi
 if [ "$DID_SOMETHING" = 0 ]; then
   echo "Note: only docs/config changed — no service rebuilt or restarted."
 fi
+
+# Stamp AFTER every step succeeded (set -e aborts earlier otherwise), so a
+# half-finished run is retried in full next time instead of being skipped.
+echo "$AFTER" > "$STATE"
 
 step "Deploy done: $BEFORE → $AFTER"

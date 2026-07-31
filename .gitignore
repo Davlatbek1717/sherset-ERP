@@ -175,3 +175,4 @@ docs/moysklad-reference/
 # Prisma generated client — WHOLE dir (the *.tmp* line above only caught tmp files,
 # which is why it got committed). Regenerated on deploy; never track.
 packages/db/src/generated/
+.deploy-last-success
