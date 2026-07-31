@@ -201,6 +201,7 @@ export default function SalesReturnsPage() {
     applicable?: 'true' | 'false';
     printed?: 'true' | 'false';
     published?: 'true' | 'false';
+    shared?: 'true' | 'false';
     // «Когда изменен» period
     updatedFrom?: string;
     updatedTo?: string;
@@ -235,6 +236,7 @@ export default function SalesReturnsPage() {
   if (extFilter.applicable) paramsRecord.applicable = extFilter.applicable;
   if (extFilter.printed) paramsRecord.printed = extFilter.printed;
   if (extFilter.published) paramsRecord.published = extFilter.published;
+  if (extFilter.shared) paramsRecord.shared = extFilter.shared;
   if (extFilter.updatedFrom) paramsRecord.updatedFrom = extFilter.updatedFrom;
   if (extFilter.updatedTo) paramsRecord.updatedTo = extFilter.updatedTo;
   const params = new URLSearchParams(paramsRecord);
@@ -1081,6 +1083,17 @@ export default function SalesReturnsPage() {
                   setCursor(undefined);
                 }}
                 testId="filter-published"
+              />
+            </InlineFilterPanel.Field>
+            {/* 13b. Общий доступ — shared flag (moysklad list filter). */}
+            <InlineFilterPanel.Field label={tFilters('shared')} expandable>
+              <YesNoSelect
+                value={extFilter.shared}
+                onChange={(v) => {
+                  setExtFilter({ ...extFilter, shared: v });
+                  setCursor(undefined);
+                }}
+                testId="filter-shared"
               />
             </InlineFilterPanel.Field>
             {/* 14. Канал продаж */}

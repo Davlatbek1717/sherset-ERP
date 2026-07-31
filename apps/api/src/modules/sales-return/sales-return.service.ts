@@ -246,6 +246,7 @@ export class SalesReturnService {
       ...(filter.applicable !== undefined ? { applicable: filter.applicable } : {}),
       ...(filter.printed !== undefined ? { printed: filter.printed } : {}),
       ...(filter.published !== undefined ? { published: filter.published } : {}),
+      ...(filter.shared !== undefined ? { shared: filter.shared } : {}),
       ...momentRange,
       ...updatedRange,
       // «Оплата» + «Сумма» range + search «содержит» all fold into one AND (see

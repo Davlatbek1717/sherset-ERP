@@ -171,6 +171,8 @@ export const SalesReturnFilterSchema = z.object({
   printed: boolFromString.optional(),
   /** «Отправлено» — SalesReturn.published flag. */
   published: boolFromString.optional(),
+  /** «Общий доступ» — SalesReturn.shared flag (moysklad list filter). */
+  shared: boolFromString.optional(),
   search: z.string().max(100).optional(),
   includeDeleted: boolFromString.optional(),
   /** «Период» — SalesReturn.moment range. */

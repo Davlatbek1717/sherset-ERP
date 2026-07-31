@@ -244,6 +244,12 @@ describe('SalesReturnFilterSchema', () => {
     expect(() => SalesReturnFilterSchema.parse({ productId: 'p1' })).toThrow();
   });
 
+  // «Общий доступ» — shared flag coerced from string (mirror applicable/printed).
+  it('coerces the shared flag from string', () => {
+    expect(SalesReturnFilterSchema.parse({ shared: 'true' }).shared).toBe(true);
+    expect(SalesReturnFilterSchema.parse({ shared: 'false' }).shared).toBe(false);
+  });
+
   it('accepts the «Когда изменен» (updatedFrom/To) range', () => {
     const p = SalesReturnFilterSchema.parse({
       updatedFrom: '2026-01-01',
