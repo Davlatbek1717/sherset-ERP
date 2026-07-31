@@ -392,10 +392,18 @@ export default function CustomerOrdersPage() {
   aggregateParams.delete('limit');
   aggregateParams.delete('sortBy');
   aggregateParams.delete('sortDir');
-  // moysklad collapses the all-pages «Итого» strip behind a «Показать итоги»
-  // link on big lists (CO has ~31k rows) — the aggregate isn't computed until
-  // the user clicks. `showTotals` gates BOTH the query (enabled) and the
-  // footer strip; default OFF → the link shows, no aggregate is fetched.
+  // «Итого» all-pages strip. Re-grounded 2026-07-31 on the LIVE #customerorder
+  // list (elektro_sentr, 5 orders): the totals row renders IMMEDIATELY above the
+  // «1-5 из 5» pager and there is no «Показать итоги» link anywhere in the DOM.
+  // The archived capture (older register design) DOES carry that link — so
+  // moysklad's behaviour differs, and the previous unconditional link was wrong
+  // for ordinary-sized lists.
+  //
+  // The perf reason behind the link is still real (the aggregate scans the whole
+  // filtered set), so it is kept as a size guard rather than deleted: small lists
+  // compute totals automatically, large ones keep the opt-in link. `showTotals`
+  // still gates BOTH the query (enabled) and the footer strip.
+  const AUTO_TOTALS_MAX_ROWS = 500;
   const [showTotals, setShowTotals] = useState(false);
   const { data: totalsData } = useQuery<{
     count: number;
@@ -412,6 +420,15 @@ export default function CustomerOrdersPage() {
     staleTime: 30_000,
     enabled: showTotals,
   });
+  // Auto-reveal the totals strip once we know the filtered set is small — the
+  // live moysklad list shows it with no interaction at all. Only ever turns the
+  // flag ON: a user who clicked «Показать итоги» on a huge list must not have it
+  // yanked away when they narrow the filter and the count drops.
+  useEffect(() => {
+    const total = data?.total;
+    if (!showTotals && typeof total === 'number' && total <= AUTO_TOTALS_MAX_ROWS)
+      setShowTotals(true);
+  }, [data?.total, showTotals]);
 
   // moysklad surfaces bulk actions through inline toolbar dropdowns
   // (Изменить / Статус / Создать / Печать), NOT a sticky bottom bar —
@@ -495,11 +512,21 @@ export default function CustomerOrdersPage() {
   // 03-module/customerorder/dom/01-default.html — no `.list-tabs` node).
   const filters: ListViewFilter[] = [];
 
+  // Column widths — compacted 2026-07-31 (parity delta #5). Measured before:
+  // the default column set summed to 1870px inside a 1402px container, i.e. a
+  // 475px horizontal overflow that clipped «Статус» onward off the right edge
+  // and squeezed «Комментарий» to literally 0px. moysklad fits its whole
+  // register row in the window, so the widths here follow its compact scale.
+  //
+  // The 1402px budget comes from the APP shell («min-[1600px]:max-w-[1440px]»),
+  // not from this page — moysklad does not cap register width, but changing that
+  // cap is an app-wide layout decision and is deliberately out of scope here.
+  // Toggling extra columns on via the ⚙ can still overflow (so does moysklad).
   const columns: DataTableColumn<CustomerOrderRow>[] = [
     {
       key: 'name',
       header: '№',
-      width: '140px',
+      width: '70px',
       sortable: true,
       cell: (o) => (
         <a
@@ -514,7 +541,7 @@ export default function CustomerOrdersPage() {
     {
       key: 'moment',
       header: tFields('time'),
-      width: '140px',
+      width: '105px',
       sortable: true,
       cell: (o) => (
         <span className="text-[var(--ms-text-muted)] text-[12px] tabular-nums">
@@ -526,7 +553,7 @@ export default function CustomerOrdersPage() {
     {
       key: 'agent',
       header: tFields('agent'),
-      width: '220px',
+      width: '130px',
       sortable: true,
       // moysklad «Заказы покупателей» Контрагент cell = a SINGLE counterparty-name
       // link to the counterparty card (no «Полное наименование» sub-line — that
@@ -545,7 +572,7 @@ export default function CustomerOrdersPage() {
     {
       key: 'organization',
       header: tFields('organization'),
-      width: '180px',
+      width: '120px',
       sortable: true,
       cell: (o) => (
         <span className="max-w-[200px] truncate text-sm">{o.organization?.name ?? '—'}</span>
@@ -557,7 +584,7 @@ export default function CustomerOrdersPage() {
       sortField: 'sumMinor',
       header: tFields('sum'),
       align: 'right',
-      width: '140px',
+      width: '95px',
       sortable: true,
       cell: (o) => (
         <span className="font-medium tabular-nums">
@@ -573,7 +600,7 @@ export default function CustomerOrdersPage() {
       // — typically just "сум" / "$" / "₽". We render the ISO code in
       // lowercase to match the captured screenshot ("сум" not "UZS").
       header: tFields('currency'),
-      width: '70px',
+      width: '45px',
       align: 'center',
       cell: (o) => (
         <span className="text-[var(--ms-text-muted)] text-xs">
@@ -587,7 +614,7 @@ export default function CustomerOrdersPage() {
       sortField: 'invoicedSumMinor',
       header: tFields('invoiced_sum'),
       align: 'right',
-      width: '130px',
+      width: '95px',
       sortable: true,
       cell: (o) => (
         <MoneyProgress valueMinor={o.invoicedSumMinor} totalMinor={o.sumMinor} align="right" />
@@ -602,7 +629,7 @@ export default function CustomerOrdersPage() {
       sortField: 'payedSumMinor',
       header: tFields('payed_sum'),
       align: 'right',
-      width: '130px',
+      width: '90px',
       sortable: true,
       cell: (o) => (
         <MoneyProgress valueMinor={o.payedSumMinor} totalMinor={o.sumMinor} align="right" />
@@ -617,7 +644,7 @@ export default function CustomerOrdersPage() {
       key: 'unpaidSum',
       header: tFields('unpaid_sum'),
       align: 'right',
-      width: '130px',
+      width: '95px',
       cell: (o) => {
         const unpaid = BigInt(o.sumMinor || '0') - BigInt(o.payedSumMinor || '0');
         const negative = unpaid < 0n;
@@ -638,7 +665,7 @@ export default function CustomerOrdersPage() {
       key: 'shippedSum',
       header: tFields('shipped_sum'),
       align: 'right',
-      width: '130px',
+      width: '90px',
       cell: (o) => (
         <MoneyProgress valueMinor={o.shippedSumMinor} totalMinor={o.sumMinor} align="right" />
       ),
@@ -649,7 +676,7 @@ export default function CustomerOrdersPage() {
       key: 'reservedSum',
       header: tFields('reserved_sum'),
       align: 'right',
-      width: '130px',
+      width: '95px',
       cell: (o) => (
         <span className="text-sm tabular-nums">
           {formatMoney(o.reservedSumMinor, 'UZS', { displayAs: 'none' })}
@@ -671,7 +698,7 @@ export default function CustomerOrdersPage() {
       // backend-side, so a blank cell only appears for legacy null rows.
       key: 'state',
       header: tFields('state'),
-      width: '180px',
+      width: '110px',
       cell: (o) =>
         o.status ? (
           <span
@@ -687,7 +714,7 @@ export default function CustomerOrdersPage() {
     {
       key: 'published',
       header: tFields('published'),
-      width: '110px',
+      width: '90px',
       // moysklad renders a cyan (#00bfe6) filled pill «Отправлен» when sent, and
       // an empty cell otherwise (NOT a ✓ icon). Colour + word-pill live-grounded
       // on online.moysklad.ru #customerorder (measured rgb(0,191,230)).
@@ -705,7 +732,7 @@ export default function CustomerOrdersPage() {
     {
       key: 'printed',
       header: tFields('printed'),
-      width: '110px',
+      width: '90px',
       // moysklad renders a cyan (#00bfe6) filled pill «Напечатан» when printed,
       // and an empty cell otherwise (NOT a ✓ icon). Colour + word-pill live-
       // grounded on online.moysklad.ru #customerorder (measured rgb(0,191,230)).
@@ -723,8 +750,13 @@ export default function CustomerOrdersPage() {
     {
       key: 'description',
       header: tFields('description'),
+      // Had no width at all, so the browser gave it whatever was left after the
+      // fixed columns — which, once they overflowed, was 0px: «Комментарий»
+      // rendered as a zero-width column (measured 2026-07-31). Give it a real
+      // share of the row like moysklad's trailing comment column.
+      width: '90px',
       cell: (o) => (
-        <span className="max-w-[200px] truncate text-[var(--ms-text-muted)] text-[11px]">
+        <span className="block max-w-full truncate text-[var(--ms-text-muted)] text-[11px]">
           {o.description ?? ''}
         </span>
       ),
