@@ -4,8 +4,8 @@ Grounded: `docs/moysklad-reference/salesreturn/` (jonli MoySklad capture) + `doc
 Playwright (2026-07-30) jonli list tasdiqladi: ustunlar «Валюта»+«Оплачено» yetishmaydi. **[G]**=grounded · **[A]**=capture kerak · **✅**=bittalab bajarilgach belgilanadi.
 
 ## LIST — `apps/web/src/app/(app)/sales-returns/page.tsx`
-1. [G] «Оплачено» ustuni qo'shish (BE `list()` select'ga `payedSumMinor` + FE column). Sibling: purchase-returns.
-2. [G] «Валюта» ustunini default-ko'rinadigan qilish (defined 470-480, default array 301-311'да yo'q).
+1. ✅ [G] «Оплачено» ustuni qo'shish (BE `list()` select'ga `payedSumMinor` + FE column). Sibling: purchase-returns. *(f1064bf)*
+2. ✅ [G] «Валюта» ustunini default-ko'rinadigan qilish (defined 470-480, default array 301-311'да yo'q). *(f1064bf)*
 3. [G] MoySklad'да yo'q filtrlarni olib tashlash/«Ещё»ga: «Отгрузка»/«Заказ покупателя»/«Сумма from-to» (811-853, 951-983).
 4. [G] «Дата отгрузки» filtri qo'shish (sibling «Дата приемки»). **BE gap.**
 5. [G] «Оплата» (payment-status tri-state) filtri (purchase-returns:132-136,713-725 dan copy). **BE gap.**
@@ -35,15 +35,15 @@ Playwright (2026-07-30) jonli list tasdiqladi: ustunlar «Валюта»+«Оп�
 27. [verify] «Валюта документа» selektor — endi bor (1358-1373).
 28. [G] Meta-grid MoySklad'ning ixcham 2-ustunига moslash (D4).
 29. [A] Refund «Запросить оплату» chip (S7) — L1/D8 bilan bog'liq.
-30. [G] «Ячейка» ustuni default-off qilish (parity; N4).
-31. [G] Customs ustunlari detail'да default-ON, /new'да default-OFF — moslash.
+30. [QAROR] «Ячейка» ustuni default-off qilish (MoySklad parity; N4) — **LEKIN bu ombor yacheyka-adресlashni faol ishlatadi; ko'r-ko'rona parity ishlatishga zid bo'lishi mumkin. Foydalanuvchi qarori kutilmoqda** (default-off qilaymi yoki ko'rinadigan qoldiraymi).
+31. ✅ [G] Customs ustunlari detail'да default-ON, /new'да default-OFF — moslash. *(e3668df)*
 
 ## NEW — `apps/web/src/app/(app)/sales-returns/new/page.tsx`
 32. [G] Meta-grid maydon tartibi MoySklad create'ga moslash; Валюта — pastki full-width satr (N2/N3).
 33. [G] Организация ostiga «Перечисление» combo (N1). **BE+FE.**
 34. [G] «Причина» inputni olib tashlash (N8; 1348-1353).
 35. [G] Pozitsiya default ustunlari: «Себест. единицы» + «РНПТ» qo'shish (N4).
-36. [G] Customs (Себест. ГТД/Страна) /new'да default-ko'rinadigan (N4; 140-147).
+36. ✅ [G] Customs (Себест. ГТД/Страна) /new'да default-ko'rinadigan (N4; 140-147). *(e3668df)*
 37. [verify] Скидка/Сумма НДС/Ед. default-yashirin (N5/N6/N7) — endi to'g'ri.
 38. [G] «Создать документ» placeholders — #23 kabi real to'plam (1452-1456).
 39. [A] `?fromCustomerOrder=` prefill (hozir faqat `?fromDemand=`) — capture.
