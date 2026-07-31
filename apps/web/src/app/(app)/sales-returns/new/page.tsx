@@ -142,8 +142,10 @@ const DEFAULT_COL_VISIBLE: Record<string, boolean> = {
   unit: false,
   discount: false,
   vatAmount: false,
-  gtdSumMinor: false,
-  country: false,
+  // moysklad-parity (#31/#36, 2026-07-30): «Себестоимость ГТД»/«Страна» /new'da
+  // ham default-ko'rinadigan — detail sahifasi bilan moslashtirildi (u yerda on).
+  gtdSumMinor: true,
+  country: true,
 };
 
 export default function NewSalesReturnPage() {
