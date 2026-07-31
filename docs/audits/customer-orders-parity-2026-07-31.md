@@ -25,14 +25,49 @@ browser smoke bilan tekshirilgan; to'liq Phase-2 QA (klik → saqlash → BE) YO
 | `d22e022` | #39 #40 | Pozitsiyalarda «Доступно» + «Отгружено» default ON |
 | `079436f` | #13 | Filtr paneli 10 → 20 maydon ochiq (yashirin to'plam bo'shatildi) |
 
-**Yopilgan: 9 band.** Qolgan: **47** (shundan 3 tasi — #54 defer, #55/#56 ochiq bug-class).
+| `982fc80` | #5 #4 #3 | List gridi sig'adi (overflow 475px → 6px, o'lchangan) · «Итого» qatori avtomat (hajm-himoyasi ≤500 qator) · header ⚙ ko'rindi |
+| `483ef10` | #22 | «Счёт» → «Счет» — 4 umumiy i18n kaliti |
 
-### Keyingi sessiya uchun tavsiya etilgan tartib
-1. **#5** — list gridi gorizontal kesiladi (eng ko'zga tashlanadigan)
-2. **#4** — doimiy «Итого» footer qatori
-3. **#14–#21** — yetishmayotgan 8 filtr maydoni (План. дата отгрузки · Тип возврата · Владелец контрагента · Адрес доставки · Комментарий к адресу доставки · Кто изменил · Ближайшая задача · Срок задачи)
-4. **#22** — «Счёт» → «Счет» (ё→е) label-grounding
-5. **#56** — `docs/moysklad-reference/` yo'qligi label-grounding himoyasini o'chirib qo'ygan — tiklash yoki testni moslashtirish
+**Yopilgan: 13 band.** Qolgan: **43**.
+
+---
+
+### ⚠️ Qolgan ishning haqiqiy hajmi (2026-07-31 da o'lchangan)
+
+**#14–#21 — 8 ta yetishmayotgan filtr — bu UI ishi EMAS.** API'ning
+`CustomerOrderFilterSchema` qo'llab-quvvatlaydigan kalitlari tekshirildi:
+
+```
+search state statusId agentId agentIds agentGroupId agentAccountId
+organizationId organizationIds organizationAccountId storeId projectId
+contractId salesChannelId groupId productId paymentStatus shippedStatus
+reservedStatus applicable printed published shared ownerId
+momentFrom/To updatedFrom/To sumMinorFrom/To
+```
+
+Yetishmayotgan 8 tasining **birortasi ham yo'q**. Har biri BE ishi talab qiladi:
+
+| Band | Filtr | BE hajmi |
+|---|---|---|
+| #14 | План. дата отгрузки | **Kichik** — `deliveryPlannedMoment` ustuni MAVJUD (schema.prisma:4840). Faqat `deliveryPlannedFrom/To` + where-clause |
+| #17 | Адрес доставки | **Kichik** — `shipmentAddress` ustuni MAVJUD (schema.prisma:4862). `contains` filtri |
+| #18 | Комментарий к адресу доставки | **Kichik** — ustun bor-yo'qligi tekshirilsin |
+| #16 | Владелец контрагента | **O'rta** — `agent.ownerId` bo'yicha join-filtr |
+| #19 | Кто изменил | **O'rta** — CO'da `updatedById` yo'q, avval model kengaytirilishi kerak |
+| #15 | Тип возврата | **Katta** — qaytarilgan miqdor agregatsiyasi |
+| #20 | Ближайшая задача | **Katta** — Task join + «eng yaqin» tanlash |
+| #21 | Срок задачи | **Katta** — yuqoridagi bilan birga |
+
+**Tavsiya:** #14 · #17 · #18 ni bitta BE sessiyasida (kichik uchlik), #16 · #19 ni
+keyingisida, #15 · #20 · #21 ni alohida feature sifatida.
+
+### Keyingi tartib
+1. **#14 · #17 · #18** — arzon BE filtrlar uchligi
+2. **#31 #32 #33** — sarlavha: raqam matn bo'lishi · bitta sana-vaqt maydoni · status pill
+3. **#36 #37 #38** — balans yo'nalishi «(нам должны)» · «Склад» yulduzchasi · «Договор» disabled
+4. **#42 #43 #46 #48** — pozitsiya: tovar kodi · «без НДС» · «Импорт» · «Цена включает НДС» default
+5. **#56** — `docs/moysklad-reference/` yo'qligi label-grounding himoyasini o'chirib qo'ygan
+6. **#55** — DocumentEditor prop-drop bug-class'iga guard test
 
 ---
 
