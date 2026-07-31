@@ -210,6 +210,24 @@ Dalil: `ms/20-new-default.png` vs `ours/new.png`
 
 ---
 
+## C1. Ikkinchi to'lqinda RAD ETILGAN bandlar (allaqachon to'g'ri ekan)
+
+Kodni o'qib + runtime tekshirib, quyidagilar **noto'g'ri pozitiv** chiqdi. Sabab bir xil:
+test-ma'lumotim o'sha holatni yuzaga keltirmagan edi.
+
+| # | Nega «delta» ko'ringan | Haqiqat |
+|---|---|---|
+| 36 | Capture'da «Баланс: 0,00 сум» — yo'nalishsiz, rangsiz | To'liq implement qilingan: `owed_to_us`/`we_owe` qo'shimchasi + `--ms-action-destructive` qizil rang (`agent-balance`). Test-kontragent balansi **0** bo'lgani uchun qo'shimcha bo'sh chiqqan — to'g'ri xulq |
+| 43 | Capture'da «12%» ko'rindi | `fmtVat` bo'sh qiymat uchun «без НДС» qaytaradi. Test-pozitsiyada НДС=12 bo'lgan. НДС-siz buyurtma yaratib tekshirildi → «без НДС» chiqdi ✅ |
+
+## C1b. DEFER qilinganlar (sabab bilan)
+
+| # | Band | Nega defer |
+|---|---|---|
+| 48 | «Цена включает НДС» default ☑ | **Pul semantikasi.** `vatIncluded` 8+ hujjat modelida DB darajasida `false`; hisob-sozlamasi yo'q. Faqat CO uchun teskari qilish terilgan narx ma'nosini o'zgartiradi va boshqa hujjat turlaridan ajratadi. Owner qarori kerak: akkaunt-darajasidagi sozlama qilinsinmi? |
+| 37 (yarmi) | «Склад» moysklad'da majburiy EMAS | Bizda BE talab qiladi (`CreateCustomerOrderSchema.storeId: uuid`) va pozitsiyalar omborga zaxiralanadi. Ixtiyoriy qilish BE + zaxira mantiqi o'zgarishi. **Ichki nomuvofiqlik yarmi tuzatildi** — `/new` endi detail kabi yulduzcha ko'rsatadi (oldin saqlamaguncha bilinmasdi) |
+| 18, 19 | Комментарий к адресу доставки · Кто изменил | Ustun yo'q → migratsiya. Ikkalasi BITTA migratsiyada qilinadi |
+
 ## C2. Ish davomida topilgan yangi bandlar
 
 | # | Delta | Holat |

@@ -1129,7 +1129,17 @@ export default function NewCustomerOrderPage() {
                 }}
               />
             </DocumentMetaField>
-            <DocumentMetaField label={tFields('store')} className="pl-8">
+            {/* «Склад» IS required here: the save handler throws on an empty
+                storeId and CreateCustomerOrderSchema types it as a plain uuid
+                (not optional). It was rendered WITHOUT the asterisk, so the user
+                only learned it was mandatory after pressing «Сохранить» — while
+                the detail page marked it required. Marked here too (parity delta
+                #37, internal-consistency half).
+                NOTE: moysklad itself does NOT mark «Склад» required on a customer
+                order. Making it genuinely optional is a BE + reservation-logic
+                change (positions reserve against a store), so that half stays
+                deferred rather than being faked by hiding the asterisk. */}
+            <DocumentMetaField label={tFields('store')} required className="pl-8">
               <CatalogPickerField
                 value={storeId ? { id: storeId, label: storeLabel } : null}
                 placeholder={tForm('select_store')}
