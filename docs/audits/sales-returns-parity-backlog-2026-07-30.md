@@ -32,14 +32,14 @@ Manbalar: audit fayllari (yuqorida) + purchase-returns sibling *(faqat ishora �
 ## DETAIL — `apps/web/src/app/(app)/sales-returns/[id]/page.tsx`
 16. ✅ [G] Kontragent ostiga qizil «Баланс (нам должны): …» sub-satr (D1).
 17. [G] Организация ostiga «Перечисление» (payment-type) dropdown (D2). **BE+FE.**
-18. [G] Pozitsiya «Остаток» — real per-store/cell stock (D5). **BE join.**
-19. [G] Pozitsiya «Себестоимость единицы» ustuni (D6). **BE+FE.**
-20. [G] Pozitsiya «РНПТ» ustuni (D7). **BE+DS.**
+18. [BLOK-tekshirilgan] Pozitsiya «Остаток» — FE tayyor (`p.stock` render), LEKIN to'g'ri ko'rsatish `StockBalanceService` + in-transit semantikasi kerak (design-doc); raw `getBalances` = integrity-bug (stock.service:574-580). Fokus-sessiya.
+19. [BLOK-tekshirilgan] `costMinor` pozitsiyada bor + findById qaytaradi, LEKIN shared `PositionTable.costPerUnit` `priceMinor`ни o'qiydi (cost≠narx). To'g'ri qilish design-system o'zgarishi — parallel sessiya o'sha yerда faol (§6). Fokus-sessiya.
+20. [BLOK-tekshirilgan] SalesReturnPosition'да rnpt maydoni yo'q → migration + DS. Fokus-sessiya.
 21. [G] Tab'lar faqat «Главная»+«Связанные документы» — Файлы/История alohida tab'ini olib tashlash (D10; 1419-1426).
 22. [G] «Причина» inputni olib tashlash/«Ещё»ga — MoySklad'да faqat «Комментарий» (N8; 1675-1682).
 23. [G] «Создать документ ▾» real to'plam {Исходящий платеж, Расходный ордер, Списание} — labellar+flow (D8; 936-940).
 24. [G] «Отправить ▾» capture bilan solishtirish (D9; 917-928).
-25. [G] Totals sidebar «Прибыль» (conditional, past-prioritet; S5).
+25. [BLOK-tekshirilgan] Прибыль = Σ(price−cost)×qty (ma'lumot bor), LEKIN shared `DocumentTotalsPanel` — parallel sessiya aynan shuni tahrirlayapti (§6). Fokus-sessiya.
 26. [A] Totals sidebar «Вес»/«Объём» — capture.
 27. [verify] «Валюта документа» selektor — endi bor (1358-1373).
 28. [G] Meta-grid MoySklad'ning ixcham 2-ustunига moslash (D4).
