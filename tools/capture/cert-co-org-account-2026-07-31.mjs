@@ -74,7 +74,8 @@ try {
     `value="${account?.value ?? ''}" placeholder="${account?.placeholder ?? ''}"`,
   );
 
-  await page.screenshot({ path: 'cert-co-org-account.png', fullPage: false });
+  // No screenshot on purpose — the PASS/FAIL lines above ARE the evidence, and
+  // writing a png here littered the repo root on the first run.
 } catch (e) {
   console.log('FATAL', e.message);
   failures++;
