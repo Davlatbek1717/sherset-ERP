@@ -211,9 +211,17 @@ function momentToLocalInput(iso: string): string {
 }
 
 // moysklad position table = fixed columns + optional columns toggled by the
-// «Сумма ⚙» customizer. Default-visible: reserve + stock + vatAmount ON (live-
-// grounded against the customer-order header); image / available / waiting /
-// shipped / weight / volume OFF (mirrors /new/page.tsx exactly).
+// «Сумма ⚙» customizer defaults.
+//
+// Re-grounded 2026-07-31 on the LIVE #customerorder editor (elektro_sentr,
+// order 00002): the position grid there is
+//   № · Наименование · Кол-во · Отгруж. · Доступно · Цена · НДС · Скидка · Сумма
+// so «Отгруж.» (shipped) and «Доступно» (available) are default-VISIBLE. Ours had
+// both OFF — the #39/#40 parity deltas. Flipped ON here and in /new.
+//
+// reserve / stock / vatAmount stay ON: moysklad does not show those on this grid,
+// but they are our deliberate extras (kept by product decision 2026-07-31) and
+// remain toggleable via the ⚙ customizer.
 const OPTIONAL_POSITION_COLUMNS: { key: PositionColumnKey; on: boolean }[] = [
   { key: 'image', on: false },
   // «Единица измерения» — base unit, rendered INLINE in «Кол-во» («1 шт»); ON by
@@ -223,9 +231,9 @@ const OPTIONAL_POSITION_COLUMNS: { key: PositionColumnKey; on: boolean }[] = [
   { key: 'article', on: false },
   { key: 'reserve', on: true },
   { key: 'stock', on: true },
-  { key: 'available', on: false },
+  { key: 'available', on: true },
   { key: 'waiting', on: false },
-  { key: 'shipped', on: false },
+  { key: 'shipped', on: true },
   { key: 'weight', on: false },
   { key: 'volume', on: false },
   { key: 'vatAmount', on: true },

@@ -158,12 +158,16 @@ function computeLineTotal(
 
 // moysklad position table = fixed columns (Наименование/Кол-во/Цена/НДС/Скидка/
 // Сумма) + optional columns toggled by the «Сумма ⚙» customizer. The default-
-// visible set is live-grounded against moysklad's customer-order header
-// (Наименование · Кол-во · Зарезерв. · Остаток · Цена · НДС · Сумма НДС · Скидка
-// · Сумма): only reserve + stock + vatAmount are ON by default; image /
-// available / weight / waiting / shipped / volume are OFF (user toggles them via
-// the customizer). The i18n label (position_cols namespace) is resolved in the
-// component (no-hardcoded gate forbids Cyrillic literals in the page).
+// Re-grounded 2026-07-31 on the LIVE #customerorder editor (elektro_sentr): the
+// moysklad position grid is
+//   № · Наименование · Кол-во · Отгруж. · Доступно · Цена · НДС · Скидка · Сумма
+// — i.e. «Отгруж.» (shipped) + «Доступно» (available) are default-VISIBLE. Both
+// were OFF here (parity deltas #39/#40); flipped ON, same as the detail page.
+// The earlier note claimed the opposite; it predates this capture.
+// reserve / stock / vatAmount stay ON as deliberate extras (product decision
+// 2026-07-31) and remain toggleable via the customizer. The i18n label
+// (position_cols namespace) is resolved in the component (no-hardcoded gate
+// forbids Cyrillic literals in the page).
 const OPTIONAL_POSITION_COLUMNS: { key: PositionColumnKey; on: boolean }[] = [
   { key: 'image', on: false },
   // «Единица измерения» — the base unit (e.g. «шт»). PositionTable renders it
@@ -174,9 +178,9 @@ const OPTIONAL_POSITION_COLUMNS: { key: PositionColumnKey; on: boolean }[] = [
   { key: 'article', on: false },
   { key: 'reserve', on: true },
   { key: 'stock', on: true },
-  { key: 'available', on: false },
+  { key: 'available', on: true },
   { key: 'waiting', on: false },
-  { key: 'shipped', on: false },
+  { key: 'shipped', on: true },
   { key: 'weight', on: false },
   { key: 'volume', on: false },
   { key: 'vatAmount', on: true },

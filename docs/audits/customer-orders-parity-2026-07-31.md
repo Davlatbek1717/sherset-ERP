@@ -146,6 +146,14 @@ Dalil: `ms/20-new-default.png` vs `ours/new.png`
 
 ---
 
+## C2. Ish davomida topilgan yangi bandlar
+
+| # | Delta | Holat |
+|---|---|---|
+| 54 | Pozitsiya kolonkasi sarlavhasi: moysklad **«Отгруж.»** (qisqartma), bizda «Отгружено» (to'liq). moysklad list-gridida esa to'liq shakl ishlatiladi — ya'ni ikki kontekstda ikki xil | **DEFER** — `position_cols.shipped` kaliti **invoices-out** bilan bo'lishiladi, unga grounding yo'q. CLAUDE.md §4: capture'da yo'q → ko'r-ko'rona yozma. Invoices-out capture qilingach hal qilinsin |
+| 55 | `DocumentEditor` prop'larni aniq destructure qiladi; `DocumentEditorProps` `DocumentHeaderProps`dan meros olgani uchun **yangi header-prop typecheck'dan jim o'tadi, lekin render'ga yetmaydi** | ✅ `reserve*` uchun tuzatildi (`3c6535e`). **Bug-class saqlanib qolgan** — kelasi har qanday yangi prop uchun takrorlanadi. Guard test kerak |
+| 56 | `label-grounding.test.ts` — 25 test `ENOENT` bilan yiqiladi, `docs/moysklad-reference/` bu checkout'da hech qachon bo'lmagan (git tarixi yo'q) | **OCHIQ** — ya'ni label-grounding himoyasi hozir **ishlamayapti** |
+
 ## D. Sahifadan qat'i nazar
 
 | # | Delta | Og'irlik |
