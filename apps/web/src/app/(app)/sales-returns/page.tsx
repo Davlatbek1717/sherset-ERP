@@ -145,6 +145,8 @@ export default function SalesReturnsPage() {
     | 'demand'
     | 'customerOrder'
     | 'product'
+    | 'agentAccount'
+    | 'orgAccount'
     | 'massEditOwner'
     | 'massEditProject'
   >(null);
@@ -189,6 +191,12 @@ export default function SalesReturnsPage() {
     // «Товар или группа» — product filter (positions.some.assortmentId)
     productId?: string;
     productLabel?: string;
+    // «Счёт контрагента» / «Счёт организации» — BE-ready (SalesReturn.agentAccountId
+    // / organizationAccountId). Scoped to the first picked agent / organization.
+    agentAccountId?: string;
+    agentAccountLabel?: string;
+    organizationAccountId?: string;
+    organizationAccountLabel?: string;
     // tri-state flag filters ('true' | 'false')
     applicable?: 'true' | 'false';
     printed?: 'true' | 'false';
@@ -211,6 +219,9 @@ export default function SalesReturnsPage() {
   if (organizations.length) paramsRecord.organizationIds = organizations.map((x) => x.id).join(',');
   if (filterValues.storeId) paramsRecord.storeId = filterValues.storeId;
   if (extFilter.productId) paramsRecord.productId = extFilter.productId;
+  if (extFilter.agentAccountId) paramsRecord.agentAccountId = extFilter.agentAccountId;
+  if (extFilter.organizationAccountId)
+    paramsRecord.organizationAccountId = extFilter.organizationAccountId;
   if (filterValues.ownerId) paramsRecord.ownerId = filterValues.ownerId;
   if (extFilter.state) paramsRecord.state = extFilter.state;
   if (extFilter.paymentState) paramsRecord.paymentState = extFilter.paymentState;
@@ -336,6 +347,8 @@ export default function SalesReturnsPage() {
     !!extFilter.state ||
     !!extFilter.paymentState ||
     !!extFilter.productId ||
+    !!extFilter.agentAccountId ||
+    !!extFilter.organizationAccountId ||
     agents.length > 0 ||
     organizations.length > 0;
 
@@ -823,6 +836,114 @@ export default function SalesReturnsPage() {
                   setCursor(undefined);
                 }}
                 testId="filter-product"
+              />
+            </InlineFilterPanel.Field>
+            {/* 6c. Счёт контрагента — BE-ready; scoped to the first picked agent. */}
+            <InlineFilterPanel.Field label={tFilters('agent_account')} expandable>
+              <CatalogPickerField
+                value={
+                  extFilter.agentAccountId
+                    ? {
+                        id: extFilter.agentAccountId,
+                        label: extFilter.agentAccountLabel ?? extFilter.agentAccountId,
+                      }
+                    : null
+                }
+                placeholder=""
+                onPick={() => agents[0]?.id && setPickerOpen('agentAccount')}
+                inlineFetcher={async (q): Promise<PickerItem[]> => {
+                  const agentId = agents[0]?.id;
+                  if (!agentId) return [];
+                  const d = await api.get<
+                    Array<{ id: string; accountNumber: string; bankName: string | null }>
+                  >(`/counterparties/${agentId}/bank-accounts`);
+                  const k = q.trim().toLowerCase();
+                  return d
+                    .filter(
+                      (x) =>
+                        !k ||
+                        x.accountNumber.toLowerCase().includes(k) ||
+                        (x.bankName ?? '').toLowerCase().includes(k),
+                    )
+                    .map((x) => ({
+                      id: x.id,
+                      primary: x.accountNumber,
+                      secondary: x.bankName ?? undefined,
+                    }));
+                }}
+                onInlineSelect={(item) => {
+                  setExtFilter({
+                    ...extFilter,
+                    agentAccountId: item.id,
+                    agentAccountLabel: String(item.primary),
+                  });
+                  setCursor(undefined);
+                }}
+                onClear={() => {
+                  setExtFilter({
+                    ...extFilter,
+                    agentAccountId: undefined,
+                    agentAccountLabel: undefined,
+                  });
+                  setCursor(undefined);
+                }}
+                disabled={!agents[0]?.id}
+                disabledHint={tFilters('agent_account_disabled_hint')}
+                testId="filter-agent-account"
+              />
+            </InlineFilterPanel.Field>
+            {/* 6d. Счёт организации — BE-ready; scoped to the first picked organization. */}
+            <InlineFilterPanel.Field label={tFilters('organization_account')} expandable>
+              <CatalogPickerField
+                value={
+                  extFilter.organizationAccountId
+                    ? {
+                        id: extFilter.organizationAccountId,
+                        label:
+                          extFilter.organizationAccountLabel ?? extFilter.organizationAccountId,
+                      }
+                    : null
+                }
+                placeholder=""
+                onPick={() => organizations[0]?.id && setPickerOpen('orgAccount')}
+                inlineFetcher={async (q): Promise<PickerItem[]> => {
+                  const organizationId = organizations[0]?.id;
+                  if (!organizationId) return [];
+                  const p = new URLSearchParams({ search: q, limit: '50' });
+                  p.set('organizationId', organizationId);
+                  const r = await api.get<{
+                    items: {
+                      id: string;
+                      name: string;
+                      accountNumber: string | null;
+                      bankName: string | null;
+                    }[];
+                  }>(`/organization-accounts?${p.toString()}`);
+                  return r.items.map((x) => ({
+                    id: x.id,
+                    primary: x.accountNumber || x.name,
+                    secondary: x.bankName ?? undefined,
+                  }));
+                }}
+                onInlineSelect={(item) => {
+                  setExtFilter({
+                    ...extFilter,
+                    organizationAccountId: item.id,
+                    organizationAccountLabel: String(item.primary),
+                  });
+                  setCursor(undefined);
+                }}
+                onClear={() => {
+                  setExtFilter({
+                    ...extFilter,
+                    organizationAccountId: undefined,
+                    organizationAccountLabel: undefined,
+                  });
+                  setCursor(undefined);
+                }}
+                disabled={!organizations[0]?.id}
+                disabledHint={tFilters('org_account_disabled_hint')}
+                testId="filter-org-account"
               />
             </InlineFilterPanel.Field>
             {/* 7. Проект */}
