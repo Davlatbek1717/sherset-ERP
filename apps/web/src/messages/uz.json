@@ -496,7 +496,7 @@
     "balance": "Balans",
     "owed_to_us": "(bizga qarz)",
     "we_owe": "(biz qarzdormiz)",
-    "status": "Status",
+    "status": "Holat",
     "request_payment": "To'lov so'rash",
     "role_primary": "Asosiy",
     "changed": "O'zgarishlar",
@@ -508,7 +508,12 @@
     "paid": "To'langan",
     "partially_paid": "Qisman to'langan",
     "reserve": "Zaxira",
-    "reserve_help": "Barcha pozitsiyalar bo'yicha to'liq buyurtma miqdorini zaxiralash"
+    "reserve_help": "Barcha pozitsiyalar bo'yicha to'liq buyurtma miqdorini zaxiralash",
+    "open_calendar": "Kalendarni ochish",
+    "date_placeholder": "kk.oo.yyyy",
+    "date_aria": "Hujjat sanasi",
+    "time_placeholder": "ss:dd",
+    "time_aria": "Vaqt"
   },
   "detail_titles": {
     "customer_order": "Xaridor buyurtmasi",
@@ -1249,7 +1254,7 @@
     "shipping_doc_date": "Hujjat sanasi",
     "state_contract_id": "Davlat kontrakti ID",
     "state": "Holat",
-    "custom_status_placeholder": "Status",
+    "custom_status_placeholder": "Holat",
     "applicable": "O'tkazilgan",
     "posted_at": "O'tkazilgan sana",
     "customer_order": "Buyurtma",

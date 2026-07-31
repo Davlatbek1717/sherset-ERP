@@ -87,6 +87,13 @@ export function DocumentEditor({
   statusLabel,
   onConfigureStatuses,
   configureStatusesLabel,
+  dateSeparatorLabel,
+  openCalendarLabel,
+  datePlaceholder,
+  dateAriaLabel,
+  timePlaceholder,
+  timeAriaLabel,
+  statusFallbackLabel,
   paymentLabel,
   paymentTone,
   requestPaymentLabel,
@@ -155,6 +162,13 @@ export function DocumentEditor({
         statusLabel={statusLabel}
         onConfigureStatuses={onConfigureStatuses}
         configureStatusesLabel={configureStatusesLabel}
+        dateSeparatorLabel={dateSeparatorLabel}
+        openCalendarLabel={openCalendarLabel}
+        datePlaceholder={datePlaceholder}
+        dateAriaLabel={dateAriaLabel}
+        timePlaceholder={timePlaceholder}
+        timeAriaLabel={timeAriaLabel}
+        statusFallbackLabel={statusFallbackLabel}
         paymentLabel={paymentLabel}
         paymentTone={paymentTone}
         requestPaymentLabel={requestPaymentLabel}

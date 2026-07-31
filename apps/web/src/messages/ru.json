@@ -421,7 +421,12 @@
     "paid": "Оплачено",
     "partially_paid": "Частично оплачено",
     "reserve": "Резерв",
-    "reserve_help": "Зарезервировать полное заказанное количество по всем позициям"
+    "reserve_help": "Зарезервировать полное заказанное количество по всем позициям",
+    "open_calendar": "Открыть календарь",
+    "date_placeholder": "дд.мм.гггг",
+    "date_aria": "Дата документа",
+    "time_placeholder": "чч:мм",
+    "time_aria": "Время"
   },
   "detail_titles": {
     "customer_order": "Заказ покупателя",
@@ -1249,7 +1254,7 @@
     "shipping_doc_date": "Перевозочный документ от",
     "state_contract_id": "ИД гос. контракта",
     "state": "Статус",
-    "custom_status_placeholder": "Status",
+    "custom_status_placeholder": "Статус",
     "applicable": "Проведено",
     "posted_at": "Дата проведения",
     "customer_order": "Заказ",

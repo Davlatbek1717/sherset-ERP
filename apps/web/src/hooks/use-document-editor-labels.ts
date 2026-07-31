@@ -50,5 +50,15 @@ export function useDocumentEditorLabels() {
     numberTooltip: tHeader('number_auto_tooltip'),
     errorTitle: tHeader('save_error'),
     errorRetryLabel: tCommon('retry'),
+    // Date/time strip — hardcoded Russian in the DS until 2026-07-31; the uz UI
+    // showed «от / Открыть календарь / Дата документа / дд.мм.гггг / чч:мм»
+    // on prod. `from` already carried the uz decision for the separator («—»).
+    dateSeparatorLabel: tHeader('from'),
+    openCalendarLabel: tHeader('open_calendar'),
+    datePlaceholder: tHeader('date_placeholder'),
+    dateAriaLabel: tHeader('date_aria'),
+    timePlaceholder: tHeader('time_placeholder'),
+    timeAriaLabel: tHeader('time_aria'),
+    statusFallbackLabel: tHeader('status'),
   };
 }
