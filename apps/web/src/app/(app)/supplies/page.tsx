@@ -650,33 +650,6 @@ export default function SuppliesPage() {
       cell: (s) => <span className="text-xs">{s.incomingNumber ?? '—'}</span>,
     },
     {
-      // moysklad parity: «Статус» column = the account-defined CUSTOM status
-      // (coloured pill), NOT the FSM state. A grey «Status» placeholder shows
-      // until a status is assigned (live-grounded #supply: «Кирилди» orange pill).
-      // Posting state lives in the «Проведено» flag, not this column. Mirror demands.
-      key: 'state',
-      header: tFields('state'),
-      width: '150px',
-      cell: (s) =>
-        s.status ? (
-          <span
-            className="inline-flex items-center whitespace-nowrap rounded-[3px] px-2 py-0.5 font-medium text-white text-xs"
-            style={{ backgroundColor: s.status.color ?? 'var(--ms-text-muted)' }}
-            data-test-id="supply-status-pill"
-          >
-            {s.status.name}
-          </span>
-        ) : (
-          <span
-            className="inline-flex items-center whitespace-nowrap rounded-[3px] bg-[var(--ms-bg-muted)] px-2 py-0.5 text-[var(--ms-text-muted)] text-xs"
-            data-test-id="supply-status-placeholder"
-          >
-            {tFields('custom_status_placeholder')}
-          </span>
-        ),
-      cellText: (r: SupplyRow) => r.status?.name ?? '',
-    },
-    {
       // gear-only: moysklad #supply has NO positions-count column — kept as an
       // optional column, hidden by default (not in the visibleKeys default).
       key: 'positions',
@@ -733,6 +706,37 @@ export default function SuppliesPage() {
         </span>
       ),
       cellText: (r: SupplyRow) => r.description ?? '',
+    },
+    // Bizning QO`SHIMCHA ustunimiz — capture`da yo`q, shuning uchun moysklad
+    // ketma-ketligidan KEYIN turadi (2026-07-31 prod QA, demands bilan bir xil).
+    // Ground-truth: №·Время·На склад·Контрагент·Организация·Сумма·Оплачено·
+    // Входящая дата·Входящий номер·Отправлено·Напечатано·Комментарий
+    {
+      // moysklad parity: «Статус» column = the account-defined CUSTOM status
+      // (coloured pill), NOT the FSM state. A grey «Status» placeholder shows
+      // until a status is assigned (live-grounded #supply: «Кирилди» orange pill).
+      // Posting state lives in the «Проведено» flag, not this column. Mirror demands.
+      key: 'state',
+      header: tFields('state'),
+      width: '150px',
+      cell: (s) =>
+        s.status ? (
+          <span
+            className="inline-flex items-center whitespace-nowrap rounded-[3px] px-2 py-0.5 font-medium text-white text-xs"
+            style={{ backgroundColor: s.status.color ?? 'var(--ms-text-muted)' }}
+            data-test-id="supply-status-pill"
+          >
+            {s.status.name}
+          </span>
+        ) : (
+          <span
+            className="inline-flex items-center whitespace-nowrap rounded-[3px] bg-[var(--ms-bg-muted)] px-2 py-0.5 text-[var(--ms-text-muted)] text-xs"
+            data-test-id="supply-status-placeholder"
+          >
+            {tFields('custom_status_placeholder')}
+          </span>
+        ),
+      cellText: (r: SupplyRow) => r.status?.name ?? '',
     },
   ];
 
