@@ -1061,9 +1061,12 @@ export default function CustomerOrdersPage() {
                 data-test-id="filter-payment-status"
               >
                 <option value="" />
-                <option value="unpaid">{tFilters('payment_unpaid')}</option>
-                <option value="partial">{tFilters('payment_partial')}</option>
+                {/* Order matches the live moysklad «Оплата» dropdown (grounded
+                    2026-07-31): Оплачено → Частично оплачено → Не оплачено.
+                    Ours listed them reversed (parity delta #23). */}
                 <option value="paid">{tFilters('payment_paid')}</option>
+                <option value="partial">{tFilters('payment_partial')}</option>
+                <option value="unpaid">{tFilters('payment_unpaid')}</option>
               </NativeSelect>
             </InlineFilterPanel.Field>
             {/* 3. Отгрузка — shipment progress. */}

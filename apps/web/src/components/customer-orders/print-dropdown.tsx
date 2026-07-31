@@ -48,6 +48,10 @@ export function PrintDropdown({
     <DropdownMenu
       trigger={
         <Button variant="secondary">
+          {/* moysklad's list toolbar renders «🖨 Печать ▾» — the printer glyph
+              sits BEFORE the caption (grounded 2026-07-31 on the live
+              #customerorder register). Ours had the caption alone (delta #12). */}
+          <Icons.print className="h-4 w-4" aria-hidden />
           {t('trigger')}
           <Icons.down className="h-4 w-4" />
         </Button>
