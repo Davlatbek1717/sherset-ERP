@@ -48,6 +48,7 @@ interface SalesReturnRow {
   // moysklad parity (v2.2 audit): backend already returns these scalar
   // fields by default; surfaced for parity with moysklad's «Возвраты
   // покупателей» default columns.
+  payedSumMinor: string;
   currency: string;
   printed: boolean;
   published: boolean;
@@ -305,6 +306,9 @@ export default function SalesReturnsPage() {
     'agent',
     'organization',
     'sum',
+    // moysklad default: Сумма · Валюта · Оплачено · Отправлено · Напечатано · Комментарий
+    'currency',
+    'paid',
     'published',
     'printed',
     'description',
@@ -370,7 +374,7 @@ export default function SalesReturnsPage() {
         <div>
           <div className="max-w-[300px] truncate font-medium">{r.agent.name}</div>
           {r.agent.legalTitle && (
-            <div className="max-w-[300px] truncate text-[var(--ms-text-muted)] text-[11px]">
+            <div className="max-w-[300px] truncate text-[11px] text-[var(--ms-text-muted)]">
               {r.agent.legalTitle}
             </div>
           )}
@@ -478,6 +482,21 @@ export default function SalesReturnsPage() {
       ),
       cellText: (r) => r.currency,
     },
+    // moysklad «Оплачено» — to'langan summa (BE payed_sum_minor). Sotuv-qaytarishда
+    // pul qaytarilgan qism; mirror «Сумма» money-cell.
+    {
+      key: 'paid',
+      header: tFields('paid'),
+      headerText: tFields('paid'),
+      width: '120px',
+      align: 'right',
+      cell: (r) => (
+        <span className="text-[var(--ms-text-muted)] text-sm tabular-nums">
+          {formatMoney(r.payedSumMinor, 'UZS', { displayAs: 'none' })}
+        </span>
+      ),
+      cellText: (r) => formatMoney(r.payedSumMinor),
+    },
     {
       key: 'published',
       header: tFields('published'),
@@ -518,7 +537,7 @@ export default function SalesReturnsPage() {
       headerText: tFields('description'),
       width: '220px',
       cell: (r) => (
-        <span className="block max-w-[220px] truncate text-[var(--ms-text-muted)] text-[11px]">
+        <span className="block max-w-[220px] truncate text-[11px] text-[var(--ms-text-muted)]">
           {r.description ?? ''}
         </span>
       ),
