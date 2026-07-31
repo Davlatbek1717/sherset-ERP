@@ -305,6 +305,31 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-07-31b (CUSTOMER-ORDERS parity — 13/56 punkt · ❌ DEPLOY YO'Q, owner qarori)**
+> To'liq backlog + dalil: [`docs/audits/customer-orders-parity-2026-07-31.md`](docs/audits/customer-orders-parity-2026-07-31.md).
+> **Ground truth JONLI olindi** (`online.moysklad.uz`, tenant `elektro_sentr`) — 3 ta qayta-yugurtiriladigan skript:
+> `scripts/co-capture-ours.mjs` (biznikini oladi + **`grid` metrikasi**: overflowPx/kolonka kengliklari) ·
+> `scripts/co-capture-moysklad.mjs` · `scripts/co-capture-ms-detail.mjs`. Cert: `tools/capture/cert-co-org-account-2026-07-31.mjs`.
+> **Bajarilgan (7 commit):** `f9cb42a` #25-28 detail tab-strip → moysklad CLASSIC (`Главная|Связанные документы|События`,
+> Задачи/Файлы pastki bo'limlarga; `DetailContentTabs.bottomSections` opt-in — 20+ qardosh sahifa tegilmadi) ·
+> `3c6535e` #29/#49 «Резерв» checkbox · `add1d31` #35/#51 org-hisob caption (`accountNumber || name`) ·
+> `d22e022` #39/#40 «Доступно»+«Отгружено» default-on · `079436f` #13 filtr 10→20 maydon ochiq ·
+> `982fc80` #5/#4/#3 grid overflow **475px→6px o'lchangan** + «Итого» avtomat (≤500 qator hajm-himoyasi) + header ⚙ ko'rindi ·
+> `483ef10` #22 «Счёт»→«Счет» (4 umumiy kalit).
+> **⚠️ 3 ta ESKIRGAN «live-grounded» DA'VO RAD ETILDI** (kod izohlarida yozilgan edi, bugungi capture teskarisini ko'rsatdi):
+> filtr «~10 maydon» · pozitsiya «available/shipped OFF» · detail «5 tab». Izohlar bugungi dalil bilan almashtirildi.
+> **⚠️ BUG-CLASS (#55, hali guard'siz):** `DocumentEditor` prop'larni aniq destructure qiladi, `DocumentEditorProps`
+> esa `DocumentHeaderProps`dan meros oladi → **yangi header-prop typecheck'dan JIM o'tadi, render'ga yetmaydi**.
+> Menda `reserve*` shunga uchradi; parallel sessiya ham ayni paytda date/time label prop'larida shu bug'ni tuzatmoqda.
+> **⏭️ Qolgan 43 punkt — MUHIM:** #14-#21 (8 filtr) **UI ishi EMAS** — `CustomerOrderFilterSchema`da 28 kalit bor,
+> bu 8 tasining birortasi YO'Q. Kichik BE (ustun mavjud): #14 `deliveryPlannedMoment` · #17 `shipmentAddress` · #18 ·
+> O'rta: #16 agent-join · #19 (`updatedById` yo'q → migratsiya) · Katta: #15/#20/#21 (agregatsiya/Task-join).
+> Keyin UI: #31/#32/#33 sarlavha · #36/#37/#38 balans+majburiylik · #42/#43/#46/#48 pozitsiya.
+> **Phase-1 — render/o'lchov live-smoke bor, to'liq browser-QA (klik→saqlash→BE) YO'Q. DEPLOY QILINMADI.**
+> **🔴 #56 (bloklovchi emas, lekin jiddiy):** `label-grounding.test.ts` 25 ta ENOENT bilan yiqiladi —
+> `docs/moysklad-reference/` bu checkout'da **hech qachon bo'lmagan** (git tarixi yo'q). Label-grounding himoyasi
+> hozir ISHLAMAYAPTI. (2026-07-31a entry ham shu dir yo'qligini mustaqil qayd etgan.)
+
 > **🕒 2026-07-31a (SALES-RETURNS parity — 3 punkt + ✅ DEPLOYED · `414b6fc`)**
 > `/sales-returns` bo'limi bo'yicha 50-punkt backlog (`docs/audits/sales-returns-parity-backlog-2026-07-30.md`).
 > **Bajarilgan:** #1 «Оплачено» ustuni · #2 «Валюта» default · #31/#36 customs (ГТД/Страна) /new default-on ·
