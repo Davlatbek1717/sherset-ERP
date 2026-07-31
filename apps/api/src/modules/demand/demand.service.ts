@@ -315,6 +315,60 @@ export class DemandService {
     return demand;
   }
 
+  /**
+   * «N из TOTAL» + prev/next for the detail toolbar's record navigator.
+   *
+   * The FE's `useDetailNavigation({ server: true })` calls `/demands/:id/position`.
+   * Demand was the ONE page in server mode without this endpoint, so every detail
+   * load fired three 404s (found on prod 2026-07-31). Mirrors customer-order.
+   *
+   * Replicates the list's DEFAULT where (no filters) + record scope, so the
+   * counter matches the unfiltered, newest-first list the arrows walk.
+   */
+  async findPosition(accountId: string, userId: string, id: string) {
+    // Scoped read first: a record the actor may not see must 404 here too,
+    // otherwise the navigator leaks its existence via the position counter.
+    await this.findByIdScoped(accountId, userId, id);
+    const current = await this.prisma.client.demand.findFirst({
+      where: { id, accountId, deletedAt: null },
+      select: { id: true, moment: true },
+    });
+    if (!current) throw new NotFoundException(`Demand ${id} not found`);
+
+    const filter = DemandFilterSchema.parse({});
+    const baseWhere = this.buildListWhere(accountId, filter);
+    const scoped = await this.permissions.recordScopeWhere(accountId, userId, 'demand', 'view');
+    const where: Prisma.DemandWhereInput =
+      Object.keys(scoped).length > 0 ? { AND: [baseWhere, scoped as typeof baseWhere] } : baseWhere;
+
+    // Tuple comparisons for the default (moment desc, id desc) order.
+    const aboveCurrent: Prisma.DemandWhereInput = {
+      OR: [{ moment: { gt: current.moment } }, { moment: current.moment, id: { gt: current.id } }],
+    };
+    const belowCurrent: Prisma.DemandWhereInput = {
+      OR: [{ moment: { lt: current.moment } }, { moment: current.moment, id: { lt: current.id } }],
+    };
+
+    const [total, above, prev, next] = await Promise.all([
+      this.prisma.client.demand.count({ where }),
+      this.prisma.client.demand.count({ where: { AND: [where, aboveCurrent] } }),
+      // prevId = row immediately ABOVE (position − 1): smallest tuple still greater.
+      this.prisma.client.demand.findFirst({
+        where: { AND: [where, aboveCurrent] },
+        orderBy: [{ moment: 'asc' }, { id: 'asc' }],
+        select: { id: true },
+      }),
+      // nextId = row immediately BELOW (position + 1): largest tuple still smaller.
+      this.prisma.client.demand.findFirst({
+        where: { AND: [where, belowCurrent] },
+        orderBy: [{ moment: 'desc' }, { id: 'desc' }],
+        select: { id: true },
+      }),
+    ]);
+
+    return { current: above + 1, total, prevId: prev?.id ?? null, nextId: next?.id ?? null };
+  }
+
   async create(accountId: string, userId: string, raw: unknown) {
     const parsed = this.parseCreate(raw);
     await this.ensureRefs(accountId, parsed.agentId, parsed.organizationId, parsed.storeId);

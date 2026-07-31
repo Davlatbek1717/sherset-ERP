@@ -61,6 +61,16 @@ export class DemandController {
     return this.demand.aggregateTotals(user.accountId, user.sub, query);
   }
 
+  /**
+   * «N из TOTAL» + prev/next ids for the detail toolbar's record navigator.
+   * Consumed by the FE's `useDetailNavigation({ server: true })`.
+   */
+  @Get(':id/position')
+  @RequirePermission({ entity: 'demand', action: 'view' })
+  async position(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.demand.findPosition(user.accountId, user.sub, id);
+  }
+
   @Get(':id')
   @RequirePermission({ entity: 'demand', action: 'view' })
   async findById(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
