@@ -43,6 +43,17 @@ browser smoke bilan tekshirilgan; to'liq Phase-2 QA (klik → saqlash → BE) YO
 | ⏸️ **Defer, sabab hujjatlangan** | 4 | #18+#19 (migratsiya) · #48 (pul semantikasi) · #54 («Отгруж.» bo'lishilgan kalit) · #37-yarmi (Склад ixtiyoriyligi) |
 | 🔧 **Qolgan haqiqiy ish** | 20 | pastda |
 
+### ✅ OWNER QARORLARI (2026-07-31, deploy paytida berilgan)
+
+Quyidagi 4 band bo'yicha qaror **berildi** — keyingi to'plam shulardan boshlanadi:
+
+| # | Qaror | Ta'siri / ehtiyot choralari |
+|---|---|---|
+| **#1** | `min-[1600px]:max-w-[1440px]` cheklovi **olib tashlansin** — reestr sahifalari to'liq ekran kengligini olsin (moysklad kabi) | **App-wide.** Barcha ro'yxat sahifalari kengayadi. Buni qilgach «Зарезервировано» kolonkasi ham sig'adi (#1 yopiladi). Har bir reestrda gorizontal sig'ishni `co-capture-ours.mjs` `grid.overflowPx` bilan qayta o'lchash kerak |
+| **#48** | «Цена включает НДС» default **☑ belgilangan** bo'lsin | ⚠️ **PUL SEMANTIKASI.** `vatIncluded` 8+ hujjat modelida DB darajasida `false`. Aniqlanishi kerak: faqat CO uchunmi yoki barcha hujjat turlariga yoyilsinmi? **Mavjud hujjatlarga TEGILMASIN** — faqat yangi hujjat default'i. Jamlanma testlari yangilanadi |
+| **#18, #19** | Migratsiya **qilinsin** — «Комментарий к адресу доставки» + «Кто изменил» (`updatedById`) | Prod-DB migratsiyasi. Deploy oldidan `pg_dump` backup (memory: `?schema=` qismini olib tashlash shart). `updatedById` uchun yozuv joyi ham kerak (service update path) |
+| **#46, #50** | «Импорт ▾» funksiyasi **qilinsin** — pozitsiyalarni fayldan yuklash | Alohida feature: fayl formati (CSV/Excel), ustun-moslashtirish, xato-hisoboti, tovar-topish qoidasi (kod/artikul/shtrixkod). Avval spec kerak |
+
 ### 🔧 Qolgan 20 band — turlari bo'yicha
 
 **A. Layout cheklovi bloklagan (1):** #1 «Зарезервировано» default-ko'rinish — hozir grid
