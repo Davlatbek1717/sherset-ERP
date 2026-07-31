@@ -122,8 +122,22 @@ fi
 #    the 2026-07-31 outage — code with `demand_positions.cell_id` running
 #    against a DB without the column, every GET /demands/:id a 500.
 #    Running it unconditionally makes the schema a precondition of the deploy.
+#    Invocation notes (2026-07-31 — the old one was BROKEN and nobody noticed
+#    because it only ran inside the `has(migrations)` branch):
+#      - cwd must be packages/db — the schema is NOT at APP_DIR/prisma/schema.prisma
+#      - use the WORKSPACE prisma (pnpm exec), else npx downloads prisma@latest
+#        and runs a different major against the prod DB
+#      - DATABASE_URL is not exported on this box; the API reads apps/api/.env,
+#        so source it here too
 step "prisma migrate deploy (always — schema must match the code being served)"
-npx prisma migrate deploy
+(
+  cd packages/db
+  set -a
+  # shellcheck disable=SC1091
+  . "$APP_DIR/apps/api/.env"
+  set +a
+  pnpm exec prisma migrate deploy
+)
 
 # 3. Frontend — the ONLY step that needs the slow build. money builds first
 #    (web imports it). .next/cache is preserved → incremental, not cold.
