@@ -185,10 +185,15 @@ export const SalesReturnFilterSchema = z.object({
   // NOTE: «Кто изменил» (modifiedById) is SKIPPED — the SalesReturn model
   // has no `updatedById` column (only `ownerId`). Add such a column before
   // wiring this filter (mirrors the deferred invoice-out / demand field).
-  // NOTE: «Оплата» (paymentStatus) is SKIPPED — although SalesReturn carries
-  // a `payedSumMinor` column, the moysklad «Возвраты покупателей» list filter
-  // has no «Оплата» field (returns track refund cascades, not a billed sum),
-  // so we stay 1:1 with the reference field set.
+  /**
+   * «Оплата» — refund payment-state tri-state (paid / partlyPaid / unpaid),
+   * computed cross-column from `payedSumMinor` vs `sumMinor`. NB: the moysklad
+   * «Возвраты покупателей» list has NO «Оплата» filter (returns track refund
+   * cascades, not a billed sum) — this is a DELIBERATE non-parity extra kept at
+   * the owner's request (2026-07-31), since sherset does track refund payment on
+   * returns and surfaces the «Оплачено» column. Mirror of purchase-return.
+   */
+  paymentState: z.enum(['paid', 'partlyPaid', 'unpaid']).optional(),
   limit: z.coerce.number().int().min(1).max(500).default(50),
   cursor: z.string().uuid().optional(),
   sortBy: z

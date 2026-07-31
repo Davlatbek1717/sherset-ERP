@@ -226,6 +226,16 @@ describe('SalesReturnFilterSchema', () => {
     expect(p.published).toBe(false);
   });
 
+  // «Оплата» — refund payment-state tri-state (non-parity useful extra, owner request).
+  it('accepts the paymentState tri-state', () => {
+    for (const s of ['paid', 'partlyPaid', 'unpaid'] as const) {
+      expect(SalesReturnFilterSchema.parse({ paymentState: s }).paymentState).toBe(s);
+    }
+  });
+  it('rejects an unknown paymentState', () => {
+    expect(() => SalesReturnFilterSchema.parse({ paymentState: 'overpaid' })).toThrow();
+  });
+
   it('accepts the «Когда изменен» (updatedFrom/To) range', () => {
     const p = SalesReturnFilterSchema.parse({
       updatedFrom: '2026-01-01',

@@ -188,6 +188,36 @@ export class SalesReturnService {
             },
           }
         : {};
+    // «Оплата» — cross-column refund state (payed vs sum). sumMinor>0 so a
+    // zero-amount return doesn't trivially match `paid`. Mirror purchase-return.
+    const paymentClause: Prisma.SalesReturnWhereInput | null = (() => {
+      if (!filter.paymentState) return null;
+      const f = this.prisma.client.salesReturn.fields;
+      switch (filter.paymentState) {
+        case 'paid':
+          return { sumMinor: { gt: 0n }, payedSumMinor: { gte: f.sumMinor } };
+        case 'partlyPaid':
+          return { sumMinor: { gt: 0n }, payedSumMinor: { gt: 0n, lt: f.sumMinor } };
+        case 'unpaid':
+          return { payedSumMinor: 0n };
+      }
+    })();
+    // «Оплата» and «Сумма» range BOTH constrain `sumMinor`; the search groups ALSO
+    // key on `AND`. Merge everything into ONE `AND` array so no object key collides
+    // (side-by-side spread would silently drop a predicate — last-wins).
+    const combinedAnd: Prisma.SalesReturnWhereInput[] = [
+      ...[paymentClause, sumRange].filter(
+        (c): c is Prisma.SalesReturnWhereInput => !!c && Object.keys(c).length > 0,
+      ),
+      ...(filter.search
+        ? searchTokenGroups(filter.search, (tok): Prisma.SalesReturnWhereInput[] => [
+            { name: { contains: tok, mode: 'insensitive' as const } },
+            { reason: { contains: tok, mode: 'insensitive' as const } },
+            { description: { contains: tok, mode: 'insensitive' as const } },
+            { agent: { name: { contains: tok, mode: 'insensitive' as const } } },
+          ])
+        : []),
+    ];
 
     return {
       accountId,
@@ -216,19 +246,9 @@ export class SalesReturnService {
       ...(filter.published !== undefined ? { published: filter.published } : {}),
       ...momentRange,
       ...updatedRange,
-      ...sumRange,
-      ...(filter.search
-        ? {
-            // moysklad «содержит»: split the query into words, AND-match each across
-            // the fields (words may match different fields). shared/search-tokens.
-            AND: searchTokenGroups(filter.search, (tok): Prisma.SalesReturnWhereInput[] => [
-              { name: { contains: tok, mode: 'insensitive' as const } },
-              { reason: { contains: tok, mode: 'insensitive' as const } },
-              { description: { contains: tok, mode: 'insensitive' as const } },
-              { agent: { name: { contains: tok, mode: 'insensitive' as const } } },
-            ]),
-          }
-        : {}),
+      // «Оплата» + «Сумма» range + search «содержит» all fold into one AND (see
+      // combinedAnd above) so the sumMinor predicates and search groups coexist.
+      ...(combinedAnd.length ? { AND: combinedAnd } : {}),
     };
   }
 

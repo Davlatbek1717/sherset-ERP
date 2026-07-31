@@ -183,6 +183,8 @@ export default function SalesReturnsPage() {
     demandLabel?: string;
     customerOrderId?: string;
     customerOrderLabel?: string;
+    // «Оплата» — refund payment-state (non-parity useful extra, owner request)
+    paymentState?: 'paid' | 'partlyPaid' | 'unpaid';
     // tri-state flag filters ('true' | 'false')
     applicable?: 'true' | 'false';
     printed?: 'true' | 'false';
@@ -206,6 +208,7 @@ export default function SalesReturnsPage() {
   if (filterValues.storeId) paramsRecord.storeId = filterValues.storeId;
   if (filterValues.ownerId) paramsRecord.ownerId = filterValues.ownerId;
   if (extFilter.state) paramsRecord.state = extFilter.state;
+  if (extFilter.paymentState) paramsRecord.paymentState = extFilter.paymentState;
   if (extFilter.agentGroupId) paramsRecord.agentGroupId = extFilter.agentGroupId;
   if (extFilter.contractId) paramsRecord.contractId = extFilter.contractId;
   if (extFilter.projectId) paramsRecord.projectId = extFilter.projectId;
@@ -323,7 +326,12 @@ export default function SalesReturnsPage() {
   // invoiceout DOM capture). Status filtering is a "Статус" select in
   // the inline filter panel below, matching the customer-orders gold
   // standard.
-  const hasFilter = !!search || !!extFilter.state || agents.length > 0 || organizations.length > 0;
+  const hasFilter =
+    !!search ||
+    !!extFilter.state ||
+    !!extFilter.paymentState ||
+    agents.length > 0 ||
+    organizations.length > 0;
 
   const columns: DataTableColumn<SalesReturnRow>[] = [
     {
@@ -824,6 +832,27 @@ export default function SalesReturnsPage() {
                     {tStates(s)}
                   </option>
                 ))}
+              </NativeSelect>
+            </InlineFilterPanel.Field>
+            {/* 8b. Оплата — refund payment-state tri-state. NON-parity useful extra
+              (moysklad returns list has no «Оплата»), kept at owner request to
+              pair with the «Оплачено» column. */}
+            <InlineFilterPanel.Field label={tFilters('payment_status')} expandable>
+              <NativeSelect
+                value={extFilter.paymentState ?? ''}
+                onChange={(e) => {
+                  setExtFilter({
+                    ...extFilter,
+                    paymentState: (e.target.value as 'paid' | 'partlyPaid' | 'unpaid') || undefined,
+                  });
+                  setCursor(undefined);
+                }}
+                data-test-id="filter-payment-state"
+              >
+                <option value="" />
+                <option value="paid">{tFilters('payment_paid')}</option>
+                <option value="partlyPaid">{tFilters('payment_partial')}</option>
+                <option value="unpaid">{tFilters('payment_unpaid')}</option>
               </NativeSelect>
             </InlineFilterPanel.Field>
             {/* 9. Отгрузка — back-link to the original Demand. */}
