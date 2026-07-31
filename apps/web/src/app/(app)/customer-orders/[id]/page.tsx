@@ -1115,6 +1115,35 @@ export default function CustomerOrderDetailPage() {
       secondary: x.bankName ?? undefined,
     }));
   };
+  /** moysklad parity: picking an organization pre-fills its DEFAULT account, the
+   *  same way /new does. Called only when the user CHANGES the organization —
+   *  never on load, so opening a stored order can't silently rewrite its saved
+   *  account. Default accounts carry accountNumber=null, hence the name fallback
+   *  (labelling from accountNumber alone is what rendered the sub-row blank). */
+  const applyDefaultAccountForOrg = useCallback(async (organizationId: string) => {
+    if (!organizationId) return;
+    const d = await api
+      .get<{
+        items: Array<{
+          id: string;
+          name: string;
+          accountNumber: string | null;
+          isDefault: boolean;
+        }>;
+      }>(`/organization-accounts?organizationId=${organizationId}&limit=50`)
+      .catch(() => null);
+    const acct = d?.items.find((a) => a.isDefault) ?? d?.items[0];
+    if (!acct) return;
+    setForm((s) =>
+      s && s.organizationId === organizationId
+        ? {
+            ...s,
+            organizationAccountId: acct.id,
+            organizationAccountLabel: acct.accountNumber || acct.name,
+          }
+        : s,
+    );
+  }, []);
   const productFetcher = async (s: string) => {
     const d = await api.get<{ items: ProductItem[] }>(
       `/products?search=${encodeURIComponent(s)}&limit=50`,
@@ -1584,19 +1613,21 @@ export default function CustomerOrderDetailPage() {
                 placeholder={tFields('organization')}
                 onPick={() => editableLines && setOpenPicker('org')}
                 inlineFetcher={orgFetcher}
-                onInlineSelect={(item) =>
+                onInlineSelect={(item) => {
                   setForm(
                     (s) =>
                       s && {
                         ...s,
                         organizationId: item.id,
                         organizationLabel: String(item.primary),
-                        // Changing the org invalidates any org-scoped account.
+                        // Changing the org invalidates any org-scoped account…
                         organizationAccountId: null,
                         organizationAccountLabel: '',
                       },
-                  )
-                }
+                  );
+                  // …then the new org's default account takes its place.
+                  void applyDefaultAccountForOrg(item.id);
+                }}
                 onEdit={
                   form.organizationId
                     ? () =>
@@ -2225,7 +2256,7 @@ export default function CustomerOrderDetailPage() {
         onClose={() => setOpenPicker(null)}
         title={tFields('organization')}
         fetcher={orgFetcher}
-        onSelect={(item) =>
+        onSelect={(item) => {
           setForm(
             (s) =>
               s && {
@@ -2237,8 +2268,9 @@ export default function CustomerOrderDetailPage() {
                 organizationAccountId: null,
                 organizationAccountLabel: '',
               },
-          )
-        }
+          );
+          void applyDefaultAccountForOrg(item.id);
+        }}
       />
       <CatalogPicker
         open={openPicker === 'store'}

@@ -356,6 +356,8 @@ export default function SalesReturnDetailPage() {
   const tDetailForm = useTranslations('detail_form');
   const tDetailTabs = useTranslations('detail_tabs');
   const tForm = useTranslations('form');
+  const tDetailHeader = useTranslations('detail_header');
+  const tCurShort = useTranslations('currency_short');
   const tPos = useTranslations('position_editor');
   const { toast } = useToast();
   const tCols = useTranslations('position_cols');
@@ -400,6 +402,15 @@ export default function SalesReturnDetailPage() {
   const { openTemplates } = usePrintTemplatesManager();
 
   const [form, setForm] = useState<FormState | null>(null);
+  // moysklad parity (#16/D1): «Баланс (нам должны): …» caption under Контрагент —
+  // the counterparty balance ledger (per currency). Consolidated to base сум below.
+  const { data: agentBalanceData } = useQuery<{
+    items: Array<{ currency: string; balanceMinor: string }>;
+  }>({
+    queryKey: ['counterparty-balance', form?.agentId],
+    queryFn: () => api.get(`/counterparty-balances/${form?.agentId}`),
+    enabled: !!form?.agentId,
+  });
   const [original, setOriginal] = useState<string>('');
   const [openPicker, setOpenPicker] = useState<
     | null
@@ -832,6 +843,22 @@ export default function SalesReturnDetailPage() {
   const isBaseCurrency = (form.currency ?? 'UZS') === 'UZS';
   const adminRate = selectedCurrency?.rate;
   const effectiveRate = rateOverride ?? adminRate ?? '1';
+  // moysklad «Баланс» — consolidate per-currency balances to base сум (UZS as-is;
+  // doc-currency × rate). Sign: + ⇒ «нам должны», − ⇒ «мы должны». Mirror customer-order.
+  const balanceDocRate = Number(effectiveRate) || 1;
+  const agentBaseBalanceMinor = (agentBalanceData?.items ?? []).reduce((acc, b) => {
+    const m = Number(b.balanceMinor || '0');
+    if (b.currency === 'UZS') return acc + m;
+    if (b.currency === form.currency) return acc + m * balanceDocRate;
+    return acc; // other currencies (rare) aren't consolidated here
+  }, 0);
+  const balanceAbsMajor = Math.abs(agentBaseBalanceMinor) / 100;
+  const balanceQualifier =
+    agentBaseBalanceMinor > 0
+      ? tDetailHeader('owed_to_us')
+      : agentBaseBalanceMinor < 0
+        ? tDetailHeader('we_owe')
+        : '';
   const sumBig = BigInt(data.sumMinor || '0');
   const vatBig = BigInt(data.vatSumMinor || '0');
   const { subtotal, total } = docTotals(sumBig, vatBig);
@@ -1208,7 +1235,37 @@ export default function SalesReturnDetailPage() {
           </DocumentMetaRow>
 
           <DocumentMetaRow fixedWidth>
-            <DocumentMetaField label={tFields('agent')} required>
+            <DocumentMetaField
+              label={tFields('agent')}
+              required
+              helper={
+                form.agentId ? (
+                  // moysklad: «Баланс (нам должны): 300 000,00 сум (24,5902 доллар)» —
+                  // base-сум amount + qualifier + doc-currency equivalent, red when nonzero.
+                  <span
+                    data-test-id="agent-balance"
+                    className={
+                      agentBaseBalanceMinor !== 0
+                        ? 'text-[var(--ms-action-destructive)]'
+                        : 'text-[var(--ms-text-muted)]'
+                    }
+                  >
+                    {tDetailHeader('balance')}
+                    {balanceQualifier ? ` ${balanceQualifier}` : ''}:{' '}
+                    {balanceAbsMajor.toLocaleString('ru-RU', {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}{' '}
+                    {tCurShort('uzs')}
+                    {form.currency !== 'UZS'
+                      ? ` (${(balanceAbsMajor / balanceDocRate).toLocaleString('ru-RU', {
+                          maximumFractionDigits: 4,
+                        })} ${tCurShort(form.currency.toLowerCase())})`
+                      : ''}
+                  </span>
+                ) : undefined
+              }
+            >
               <CatalogPickerField
                 value={form.agentId ? { id: form.agentId, label: form.agentLabel } : null}
                 placeholder={tFields('agent')}

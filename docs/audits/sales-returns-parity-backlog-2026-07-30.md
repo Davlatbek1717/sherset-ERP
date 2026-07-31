@@ -30,7 +30,7 @@ Manbalar: audit fayllari (yuqorida) + purchase-returns sibling *(faqat ishora �
 15. [noop] demand/state/positions ustunlari default-yashirin (to'g'ri) — qayta qo'shma.
 
 ## DETAIL — `apps/web/src/app/(app)/sales-returns/[id]/page.tsx`
-16. [G] Kontragent ostiga qizil «Баланс (нам должны): …» sub-satr (D1).
+16. ✅ [G] Kontragent ostiga qizil «Баланс (нам должны): …» sub-satr (D1).
 17. [G] Организация ostiga «Перечисление» (payment-type) dropdown (D2). **BE+FE.**
 18. [G] Pozitsiya «Остаток» — real per-store/cell stock (D5). **BE join.**
 19. [G] Pozitsiya «Себестоимость единицы» ustuni (D6). **BE+FE.**

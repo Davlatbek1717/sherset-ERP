@@ -729,12 +729,25 @@ export default function NewCustomerOrderPage() {
     let cancelled = false;
     void (async () => {
       const d = await api.get<{
-        items: Array<{ id: string; accountNumber: string; currency: string }>;
+        items: Array<{
+          id: string;
+          name: string;
+          accountNumber: string | null;
+          currency: string;
+          isDefault: boolean;
+        }>;
       }>(`/bank-accounts?organizationId=${organizationId}`);
       if (cancelled) return;
-      const acct = d.items.find((a) => a.currency === currency) ?? d.items[0];
+      // Prefer the organization's DEFAULT account for the document currency —
+      // that is the one moysklad pre-fills; "first row wins" only as a fallback.
+      const inCurrency = d.items.filter((a) => a.currency === currency);
+      const acct = inCurrency.find((a) => a.isDefault) ?? inCurrency[0] ?? d.items[0];
       setBankAccountId(acct?.id ?? null);
-      setBankAccountLabel(acct?.accountNumber ?? '');
+      // Default accounts have accountNumber=null. Labelling from accountNumber
+      // alone left the caption EMPTY, so the sub-row rendered as a blank combobox
+      // even though an account WAS selected — the «пустой» field in the parity
+      // audit. Fall back to the account name (same rule as the detail form).
+      setBankAccountLabel(acct ? acct.accountNumber || acct.name : '');
     })();
     return () => {
       cancelled = true;
@@ -967,8 +980,9 @@ export default function NewCustomerOrderPage() {
     const d = await api.get<{
       items: Array<{
         id: string;
+        name: string;
         bankName: string | null;
-        accountNumber: string;
+        accountNumber: string | null;
         currency: string;
       }>;
     }>(`/bank-accounts?organizationId=${organizationId}&search=${encodeURIComponent(s)}`);
@@ -976,7 +990,10 @@ export default function NewCustomerOrderPage() {
       .filter((a) => a.currency === currency)
       .map((a) => ({
         id: a.id,
-        primary: a.accountNumber,
+        // Default accounts carry accountNumber=null, so the headline fell back to
+        // an EMPTY string and the picker rendered a blank row (and a blank
+        // selected value). Mirror the detail form + list filter: number, else name.
+        primary: a.accountNumber || a.name,
         secondary: a.bankName ?? undefined,
       }));
   };
