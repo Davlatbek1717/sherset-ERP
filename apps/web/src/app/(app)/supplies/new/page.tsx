@@ -32,6 +32,7 @@ import { ProductCreateModal } from '@/components/products/product-create-modal';
 import { ProductEditModal } from '@/components/products/product-edit-modal';
 import { type KitPrintForm, KitPrintModal } from '@/components/purchase-orders/kit-print-modal';
 import { useDocumentEditorLabels } from '@/hooks/use-document-editor-labels';
+import { useTotalsLabels } from '@/hooks/use-totals-labels';
 import { useUnsavedGuard } from '@/hooks/use-unsaved-guard';
 import { useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
@@ -162,6 +163,7 @@ export default function NewSupplyPage() {
   const router = useRouter();
   const { user } = useAuth();
   const t = useTranslations('pages.supplies');
+  const totalsLabels = useTotalsLabels();
   const { toast } = useToast();
   const tFields = useTranslations('fields');
   const tForm = useTranslations('form');
@@ -1383,6 +1385,7 @@ export default function NewSupplyPage() {
             />
             <div className="space-y-2">
               <DocumentTotalsPanel
+                labels={totalsLabels}
                 subtotalMinor={totals.net}
                 vatMinor={totals.vat}
                 totalMinor={totals.gross}

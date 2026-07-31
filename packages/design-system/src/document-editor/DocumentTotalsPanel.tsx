@@ -57,9 +57,47 @@ export interface DocumentTotalsPanelProps {
   vatIncluded: boolean;
   onVatIncludedChange?: (value: boolean) => void;
 
+  /**
+   * Row captions. The design-system has no i18n of its own, so the app passes
+   * translated strings in; the defaults below are the Russian originals so the
+   * ru locale (and any caller not yet wired) renders exactly as before.
+   *
+   * Without this the block was hardcoded Russian in EVERY locale — the uz UI
+   * showed «Промежуточный итог / НДС / Итого / Прибыль / Кол-во» (found on prod
+   * 2026-07-31). Colons are added by the component, not carried in the values.
+   */
+  labels?: Partial<DocumentTotalsLabels>;
+
   className?: string;
   testId?: string;
 }
+
+/** Caption set for {@link DocumentTotalsPanel}. Values carry NO trailing colon. */
+export interface DocumentTotalsLabels {
+  subtotal: string;
+  vat: string;
+  vatIncluded: string;
+  total: string;
+  profit: string;
+  commission: string;
+  commitent: string;
+  weight: string;
+  volume: string;
+  quantity: string;
+}
+
+const DEFAULT_LABELS: DocumentTotalsLabels = {
+  subtotal: 'Промежуточный итог',
+  vat: 'НДС',
+  vatIncluded: 'Цена включает НДС',
+  total: 'Итого',
+  profit: 'Прибыль',
+  commission: 'Комиссия',
+  commitent: 'Сумма комитента',
+  weight: 'Вес',
+  volume: 'Объем',
+  quantity: 'Кол-во',
+};
 
 function fmt(v: bigint | string | number, currency: string): string {
   return formatMoney(v, currency, { displayAs: 'none' });
@@ -81,9 +119,11 @@ export function DocumentTotalsPanel({
   onVatEnabledChange,
   vatIncluded,
   onVatIncludedChange,
+  labels,
   className,
   testId,
 }: DocumentTotalsPanelProps) {
+  const L = { ...DEFAULT_LABELS, ...labels };
   return (
     <div
       // moysklad parity (OLD design): the totals sit as PLAIN text on the page —
@@ -96,7 +136,7 @@ export function DocumentTotalsPanel({
         {/* moysklad bolds «Промежуточный итог» (and «Итого» below) — the section
             totals. The НДС / «Цена включает НДС» / Прибыль rows stay regular. */}
         <div className="flex justify-between font-semibold">
-          <dt className="text-[var(--ms-text-primary)]">Промежуточный итог:</dt>
+          <dt className="text-[var(--ms-text-primary)]">{L.subtotal}:</dt>
           <dd className="tabular-nums" data-test-id="totals-subtotal">
             {fmt(subtotalMinor, currency)}
           </dd>
@@ -111,7 +151,7 @@ export function DocumentTotalsPanel({
               className="h-4 w-4"
               data-test-id="totals-vat-enabled"
             />
-            НДС:
+            {L.vat}:
           </label>
           <span className="tabular-nums" data-test-id="totals-vat">
             {vatEnabled ? fmt(vatMinor, currency) : '—'}
@@ -130,19 +170,19 @@ export function DocumentTotalsPanel({
                 className="h-4 w-4"
                 data-test-id="totals-vat-included"
               />
-              Цена включает НДС
+              {L.vatIncluded}
             </label>
           </div>
         )}
         <div className="flex justify-between border-[var(--ms-border-default)] border-t pt-2 font-semibold text-base">
-          <dt>Итого:</dt>
+          <dt>{L.total}:</dt>
           <dd className="tabular-nums" data-test-id="totals-total">
             {fmt(totalMinor, currency)}
           </dd>
         </div>
         {(profitMinor !== undefined || profitUnknown) && (
           <div className="flex justify-between text-[var(--ms-text-success)] text-sm">
-            <dt>Прибыль:</dt>
+            <dt>{L.profit}:</dt>
             <dd className="tabular-nums" data-test-id="totals-profit">
               {profitMinor !== undefined ? fmt(profitMinor, currency) : '—'}
             </dd>
@@ -152,7 +192,7 @@ export function DocumentTotalsPanel({
             комитента» under Итого (plain text, not bold). */}
         {commissionMinor !== undefined && (
           <div className="flex justify-between text-sm">
-            <dt className="text-[var(--ms-text-primary)]">Комиссия:</dt>
+            <dt className="text-[var(--ms-text-primary)]">{L.commission}:</dt>
             <dd className="tabular-nums" data-test-id="totals-commission">
               {fmt(commissionMinor, currency)}
             </dd>
@@ -160,7 +200,7 @@ export function DocumentTotalsPanel({
         )}
         {commitentMinor !== undefined && (
           <div className="flex justify-between text-sm">
-            <dt className="text-[var(--ms-text-primary)]">Сумма комитента:</dt>
+            <dt className="text-[var(--ms-text-primary)]">{L.commitent}:</dt>
             <dd className="tabular-nums" data-test-id="totals-commitent">
               {fmt(commitentMinor, currency)}
             </dd>
@@ -168,13 +208,23 @@ export function DocumentTotalsPanel({
         )}
         {(weight != null || volume != null) && (
           <div className="flex justify-between gap-3 text-[var(--ms-text-muted)] text-xs">
-            {weight != null && <span>Вес: {weight.toLocaleString('ru-RU')}</span>}
-            {volume != null && <span>Объем: {volume.toLocaleString('ru-RU')}</span>}
+            {weight != null && (
+              <span>
+                {L.weight}: {weight.toLocaleString('ru-RU')}
+              </span>
+            )}
+            {volume != null && (
+              <span>
+                {L.volume}: {volume.toLocaleString('ru-RU')}
+              </span>
+            )}
           </div>
         )}
         {quantity != null && (
           <div className="flex justify-between text-[var(--ms-text-muted)] text-xs">
-            <span>Кол-во: {quantity.toLocaleString('ru-RU')}</span>
+            <span>
+              {L.quantity}: {quantity.toLocaleString('ru-RU')}
+            </span>
           </div>
         )}
       </dl>

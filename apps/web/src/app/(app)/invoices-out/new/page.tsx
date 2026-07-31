@@ -29,6 +29,7 @@ import { PositionDiscountMenu } from '@/components/documents/position-discount-m
 import { PositionPriceMenu } from '@/components/documents/position-price-menu';
 import { useNewDocStaging } from '@/components/documents/use-new-doc-staging';
 import { useDocumentEditorLabels } from '@/hooks/use-document-editor-labels';
+import { useTotalsLabels } from '@/hooks/use-totals-labels';
 import { useUnsavedGuard } from '@/hooks/use-unsaved-guard';
 import { useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
@@ -143,6 +144,7 @@ const DEFAULT_COL_VISIBLE: Record<string, boolean> = Object.fromEntries(
 export default function NewInvoiceOutPage() {
   const router = useRouter();
   const t = useTranslations('pages.invoices_out');
+  const totalsLabels = useTotalsLabels();
   const tFields = useTranslations('fields');
   const tForm = useTranslations('form');
   const tDetailForm = useTranslations('detail_form');
@@ -1192,6 +1194,7 @@ export default function NewInvoiceOutPage() {
               data-test-id="field-description"
             />
             <DocumentTotalsPanel
+              labels={totalsLabels}
               subtotalMinor={totals.net}
               vatMinor={totals.vat}
               totalMinor={totals.gross}

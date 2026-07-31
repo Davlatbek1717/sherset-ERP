@@ -27,6 +27,7 @@ import { PositionPriceMenu } from '@/components/documents/position-price-menu';
 import { useNewDocStaging } from '@/components/documents/use-new-doc-staging';
 import { usePrintTemplatesManager } from '@/components/print/print-templates-provider';
 import { useDocumentEditorLabels } from '@/hooks/use-document-editor-labels';
+import { useTotalsLabels } from '@/hooks/use-totals-labels';
 import { useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
 import { distributeAgreementDelta } from '@/lib/position-agreement';
@@ -143,6 +144,7 @@ const DEFAULT_COL_VISIBLE: Record<string, boolean> = Object.fromEntries(
 export default function NewInvoiceInPage() {
   const router = useRouter();
   const t = useTranslations('pages.invoices_in');
+  const totalsLabels = useTotalsLabels();
   const tFields = useTranslations('fields');
   const tForm = useTranslations('form');
   const tDetailForm = useTranslations('detail_form');
@@ -1114,6 +1116,7 @@ export default function NewInvoiceInPage() {
                   (live-checked 2026-06-25 — DOM has a hidden `external-code-link`, never shown). */}
             </div>
             <DocumentTotalsPanel
+              labels={totalsLabels}
               subtotalMinor={totals.net}
               vatMinor={totals.vat}
               totalMinor={totals.gross}

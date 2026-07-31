@@ -13,6 +13,7 @@
  */
 
 import { useDocumentEditorLabels } from '@/hooks/use-document-editor-labels';
+import { useTotalsLabels } from '@/hooks/use-totals-labels';
 import { useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-store';
@@ -89,6 +90,7 @@ export default function NewProcessingPage() {
   const searchParams = useSearchParams();
   const { user } = useAuth();
   const t = useTranslations('pages.processing');
+  const totalsLabels = useTotalsLabels();
   const tFields = useTranslations('fields');
   const tForm = useTranslations('form');
   const tStates = useTranslations('states.processing');
@@ -690,6 +692,7 @@ export default function NewProcessingPage() {
               )}
             </div>
             <DocumentTotalsPanel
+              labels={totalsLabels}
               subtotalMinor={totalCostMinor}
               vatMinor={0n}
               totalMinor={totalCostMinor}

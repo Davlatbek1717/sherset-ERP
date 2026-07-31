@@ -38,6 +38,7 @@ export {
 export { PositionNameCell, type PositionNameCellProps } from './PositionNameCell.tsx';
 export {
   DocumentTotalsPanel,
+  type DocumentTotalsLabels,
   type DocumentTotalsPanelProps,
 } from './DocumentTotalsPanel.tsx';
 export {

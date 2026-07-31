@@ -25,6 +25,7 @@ import {
 import { CurrencyRateModal } from '@/components/document-detail/currency-rate-modal';
 import { PositionAgreementButton } from '@/components/documents/position-agreement-modal';
 import { useDocumentEditorLabels } from '@/hooks/use-document-editor-labels';
+import { useTotalsLabels } from '@/hooks/use-totals-labels';
 import { useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-store';
@@ -119,6 +120,7 @@ export default function NewCommissionReportOutPage() {
   const router = useRouter();
   const { user } = useAuth();
   const t = useTranslations('pages.commission_reports');
+  const totalsLabels = useTotalsLabels();
   const tCommon = useTranslations('common');
   const tFields = useTranslations('fields');
   const tForm = useTranslations('form');
@@ -683,6 +685,7 @@ export default function NewCommissionReportOutPage() {
               data-test-id="field-description"
             />
             <DocumentTotalsPanel
+              labels={totalsLabels}
               subtotalMinor={totals.net}
               vatMinor={totals.vat}
               totalMinor={totals.gross}

@@ -42,6 +42,7 @@ import { usePrintTemplatesManager } from '@/components/print/print-templates-pro
 import { type KitPrintForm, KitPrintModal } from '@/components/purchase-orders/kit-print-modal';
 import { SendEmailDialog } from '@/components/send-email-dialog';
 import { useDocumentEditorLabels } from '@/hooks/use-document-editor-labels';
+import { useTotalsLabels } from '@/hooks/use-totals-labels';
 import { useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-store';
@@ -153,6 +154,7 @@ export default function NewSalesReturnPage() {
   const { user } = useAuth();
   const searchParams = useSearchParams();
   const t = useTranslations('pages.sales_returns');
+  const totalsLabels = useTotalsLabels();
   const tFields = useTranslations('fields');
   const tForm = useTranslations('form');
   const tPrint = useTranslations('print_menu');
@@ -1362,6 +1364,7 @@ export default function NewSalesReturnPage() {
               />
             </div>
             <DocumentTotalsPanel
+              labels={totalsLabels}
               subtotalMinor={totals.net}
               vatMinor={totals.vat}
               totalMinor={totals.gross}

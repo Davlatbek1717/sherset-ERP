@@ -40,6 +40,7 @@ import { PositionColumnCustomizer } from '@/components/documents/position-column
 import { usePrintTemplatesManager } from '@/components/print/print-templates-provider';
 import { ProductSelectModal } from '@/components/products/product-select-modal';
 import { useDocumentEditorLabels } from '@/hooks/use-document-editor-labels';
+import { useTotalsLabels } from '@/hooks/use-totals-labels';
 import { useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-store';
@@ -149,6 +150,7 @@ export default function NewInternalOrderPage() {
   const router = useRouter();
   const { user } = useAuth();
   const t = useTranslations('pages.internal_order');
+  const totalsLabels = useTotalsLabels();
   const tErrors = useTranslations('errors');
   const tFields = useTranslations('fields');
   const tForm = useTranslations('form');
@@ -836,6 +838,7 @@ export default function NewInternalOrderPage() {
               )}
             </div>
             <DocumentTotalsPanel
+              labels={totalsLabels}
               subtotalMinor={totals.net}
               vatMinor={totals.vat}
               totalMinor={totals.gross}

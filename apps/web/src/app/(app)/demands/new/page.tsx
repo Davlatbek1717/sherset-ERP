@@ -20,6 +20,7 @@ import { usePrintTemplatesManager } from '@/components/print/print-templates-pro
 import { ProductCreateModal } from '@/components/products/product-create-modal';
 import { ProductEditModal } from '@/components/products/product-edit-modal';
 import { useDocumentEditorLabels } from '@/hooks/use-document-editor-labels';
+import { useTotalsLabels } from '@/hooks/use-totals-labels';
 import { useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-store';
@@ -137,6 +138,7 @@ export default function NewDemandPage() {
   const router = useRouter();
   const { user } = useAuth();
   const t = useTranslations('pages.demands');
+  const totalsLabels = useTotalsLabels();
   const tFields = useTranslations('fields');
   const tForm = useTranslations('form');
   const tDetailForm = useTranslations('detail_form');
@@ -1104,6 +1106,7 @@ export default function NewDemandPage() {
               data-test-id="field-description"
             />
             <DocumentTotalsPanel
+              labels={totalsLabels}
               subtotalMinor={totals.net}
               vatMinor={totals.vat}
               totalMinor={totals.gross}

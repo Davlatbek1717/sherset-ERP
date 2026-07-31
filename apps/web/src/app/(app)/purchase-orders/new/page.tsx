@@ -26,6 +26,7 @@ import { useNewDocStaging } from '@/components/documents/use-new-doc-staging';
 import { usePrintTemplatesManager } from '@/components/print/print-templates-provider';
 import { type KitPrintForm, KitPrintModal } from '@/components/purchase-orders/kit-print-modal';
 import { useDocumentEditorLabels } from '@/hooks/use-document-editor-labels';
+import { useTotalsLabels } from '@/hooks/use-totals-labels';
 import { useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-store';
@@ -169,6 +170,7 @@ export default function NewPurchaseOrderPage() {
   const fromOrderAvailability = searchParams.get('availability') === '1';
   const { user } = useAuth();
   const t = useTranslations('pages.purchase_orders');
+  const totalsLabels = useTotalsLabels();
   const tFields = useTranslations('fields');
   const tForm = useTranslations('form');
   const tDetailForm = useTranslations('detail_form');
@@ -1293,6 +1295,7 @@ export default function NewPurchaseOrderPage() {
               )}
             </div>
             <DocumentTotalsPanel
+              labels={totalsLabels}
               subtotalMinor={totals.net}
               vatMinor={totals.vat}
               totalMinor={totals.gross}

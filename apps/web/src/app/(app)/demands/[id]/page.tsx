@@ -8,7 +8,7 @@
  * pill via the immediate setStatus endpoint, «Проведено» FSM toggle, «Не оплачено»
  * pill) + three-column <DocumentMetaColumns> + <PositionTable> (moysklad grid with
  * «Остаток» reddened at ≤ 0, inline «Добавить позицию» search, «Цена ▾» menu,
- * column ⚙) + <DocumentTotalsPanel>. Demand-only bits (Накладные расходы, cost,
+ * column ⚙) + <DocumentTotalsPanel labels={totalsLabels}>. Demand-only bits (Накладные расходы, cost,
  * the transport block, the from-CustomerOrder cascade, the stock-shortage post
  * error, «Возврат покупателя») are preserved; the transport/overhead/shipping
  * fields move into a «Другие поля» disclosure exactly like /demands/new + moysklad.
@@ -46,6 +46,7 @@ import { useDestructiveMutation } from '@/hooks/use-destructive-mutation';
 import { useDetailNavigation } from '@/hooks/use-detail-navigation';
 import { useDocumentEditorLabels } from '@/hooks/use-document-editor-labels';
 import { useSaveMutation } from '@/hooks/use-save-mutation';
+import { useTotalsLabels } from '@/hooks/use-totals-labels';
 import { useUnsavedGuard } from '@/hooks/use-unsaved-guard';
 import { api } from '@/lib/api-client';
 import { docMeasureTotals } from '@/lib/doc-totals';
@@ -414,6 +415,7 @@ function snapshot(s: FormState): string {
 
 export default function DemandDetailPage() {
   const tCommon = useTranslations('common');
+  const totalsLabels = useTotalsLabels();
   const tFields = useTranslations('fields');
   const tForm = useTranslations('form');
   const tDetailForm = useTranslations('detail_form');
@@ -1846,6 +1848,7 @@ export default function DemandDetailPage() {
                   />
                 </div>
                 <DocumentTotalsPanel
+                  labels={totalsLabels}
                   subtotalMinor={totals.net}
                   vatMinor={totals.vat}
                   totalMinor={totals.gross}
