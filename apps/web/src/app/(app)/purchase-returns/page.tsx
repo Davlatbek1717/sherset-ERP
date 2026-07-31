@@ -468,48 +468,6 @@ export default function PurchaseReturnsPage() {
         r.agent?.legalTitle ? `${r.agent.name} (${r.agent.legalTitle})` : (r.agent?.name ?? ''),
     },
     {
-      key: 'supply',
-      header: tFields('linked_supply'),
-      width: '130px',
-      cell: (r) =>
-        r.supply ? (
-          <a
-            href={`/supplies/${r.supply.id}`}
-            className="text-[var(--ms-text-brand)] text-sm underline-offset-2 hover:underline"
-          >
-            {r.supply.name}
-          </a>
-        ) : (
-          <span className="text-[var(--ms-text-muted)] text-xs">{tCommon('none')}</span>
-        ),
-    },
-    {
-      // moysklad parity: «Статус» column = the account-defined CUSTOM status
-      // (coloured pill), NOT the FSM state. Grey «Status» placeholder until one is
-      // assigned. Posting lives in «Проведено», not here. Mirror demands.
-      key: 'state',
-      header: tFields('state'),
-      width: '150px',
-      cell: (r) =>
-        r.status ? (
-          <span
-            className="inline-flex items-center whitespace-nowrap rounded-[3px] px-2 py-0.5 font-medium text-white text-xs"
-            style={{ backgroundColor: r.status.color ?? 'var(--ms-text-muted)' }}
-            data-test-id="pr-status-pill"
-          >
-            {r.status.name}
-          </span>
-        ) : (
-          <span
-            className="inline-flex items-center whitespace-nowrap rounded-[3px] bg-[var(--ms-bg-muted)] px-2 py-0.5 text-[var(--ms-text-muted)] text-xs"
-            data-test-id="pr-status-placeholder"
-          >
-            {tFields('custom_status_placeholder')}
-          </span>
-        ),
-      cellText: (r: PurchaseReturnRow) => r.status?.name ?? '',
-    },
-    {
       key: 'sum',
       sortField: 'sumMinor',
       header: tFields('sum'),
@@ -522,18 +480,6 @@ export default function PurchaseReturnsPage() {
         </span>
       ),
       cellText: (r: PurchaseReturnRow) => (r.sumMinor ? formatMoney(r.sumMinor) : ''),
-    },
-    {
-      key: 'positions',
-      header: tFields('positions_count'),
-      width: '70px',
-      align: 'right',
-      cell: (r) => (
-        <span className="text-[var(--ms-text-muted)] text-sm tabular-nums">
-          {r._count.positions}
-        </span>
-      ),
-      cellText: (r: PurchaseReturnRow) => String(r._count?.positions ?? ''),
     },
     // moysklad parity (v2.2 audit): «Валюта» · «Отправлено» ·
     // «Напечатано» · «Комментарий».
@@ -589,6 +535,64 @@ export default function PurchaseReturnsPage() {
         </span>
       ),
       cellText: (r: PurchaseReturnRow) => r.description ?? '',
+    },
+    // Bizning QO`SHIMCHA ustunlarimiz — capture`da yo`q, moysklad
+    // ketma-ketligidan KEYIN turadi (2026-07-31 prod QA).
+    // Ground-truth: №·Время·Со склада·Организация·Контрагент·Сумма·
+    // Отправлено·Напечатано·Комментарий
+    {
+      key: 'supply',
+      header: tFields('linked_supply'),
+      width: '130px',
+      cell: (r) =>
+        r.supply ? (
+          <a
+            href={`/supplies/${r.supply.id}`}
+            className="text-[var(--ms-text-brand)] text-sm underline-offset-2 hover:underline"
+          >
+            {r.supply.name}
+          </a>
+        ) : (
+          <span className="text-[var(--ms-text-muted)] text-xs">{tCommon('none')}</span>
+        ),
+    },
+    {
+      // moysklad parity: «Статус» column = the account-defined CUSTOM status
+      // (coloured pill), NOT the FSM state. Grey «Status» placeholder until one is
+      // assigned. Posting lives in «Проведено», not here. Mirror demands.
+      key: 'state',
+      header: tFields('state'),
+      width: '150px',
+      cell: (r) =>
+        r.status ? (
+          <span
+            className="inline-flex items-center whitespace-nowrap rounded-[3px] px-2 py-0.5 font-medium text-white text-xs"
+            style={{ backgroundColor: r.status.color ?? 'var(--ms-text-muted)' }}
+            data-test-id="pr-status-pill"
+          >
+            {r.status.name}
+          </span>
+        ) : (
+          <span
+            className="inline-flex items-center whitespace-nowrap rounded-[3px] bg-[var(--ms-bg-muted)] px-2 py-0.5 text-[var(--ms-text-muted)] text-xs"
+            data-test-id="pr-status-placeholder"
+          >
+            {tFields('custom_status_placeholder')}
+          </span>
+        ),
+      cellText: (r: PurchaseReturnRow) => r.status?.name ?? '',
+    },
+    {
+      key: 'positions',
+      header: tFields('positions_count'),
+      width: '70px',
+      align: 'right',
+      cell: (r) => (
+        <span className="text-[var(--ms-text-muted)] text-sm tabular-nums">
+          {r._count.positions}
+        </span>
+      ),
+      cellText: (r: PurchaseReturnRow) => String(r._count?.positions ?? ''),
     },
   ];
 
