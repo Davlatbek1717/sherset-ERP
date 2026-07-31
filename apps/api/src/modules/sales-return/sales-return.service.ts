@@ -219,6 +219,15 @@ export class SalesReturnService {
         : []),
     ];
 
+    // «Группа контрагента» + «Владелец контрагента» BOTH narrow the SAME `agent`
+    // relation — merge into ONE clause so the object keys don't collide (a second
+    // `agent:` spread would silently drop the first). Mirror invoice-in / PR.
+    const agentSub = {
+      ...(filter.agentGroupId ? { groupId: filter.agentGroupId } : {}),
+      ...(filter.agentOwnerId ? { ownerId: filter.agentOwnerId } : {}),
+    };
+    const agentRelation = Object.keys(agentSub).length ? { agent: agentSub } : {};
+
     return {
       accountId,
       ...(filter.includeDeleted ? {} : { deletedAt: null }),
@@ -226,7 +235,7 @@ export class SalesReturnService {
       ...(filter.statusIds ? { statusId: { in: filter.statusIds } } : {}),
       ...(filter.agentId ? { agentId: filter.agentId } : {}),
       ...(filter.agentIds ? { agentId: { in: filter.agentIds } } : {}),
-      ...(filter.agentGroupId ? { agent: { groupId: filter.agentGroupId } } : {}),
+      ...agentRelation,
       ...(filter.agentAccountId ? { agentAccountId: filter.agentAccountId } : {}),
       ...(filter.organizationId ? { organizationId: filter.organizationId } : {}),
       ...(filter.organizationIds ? { organizationId: { in: filter.organizationIds } } : {}),

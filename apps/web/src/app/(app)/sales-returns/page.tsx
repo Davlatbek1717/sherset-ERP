@@ -147,6 +147,7 @@ export default function SalesReturnsPage() {
     | 'product'
     | 'agentAccount'
     | 'orgAccount'
+    | 'agentOwner'
     | 'massEditOwner'
     | 'massEditProject'
   >(null);
@@ -174,6 +175,9 @@ export default function SalesReturnsPage() {
     state?: string;
     agentGroupId?: string;
     agentGroupLabel?: string;
+    // «Владелец контрагента» — the counterparty's owner (responsible employee)
+    agentOwnerId?: string;
+    agentOwnerLabel?: string;
     contractId?: string;
     contractLabel?: string;
     projectId?: string;
@@ -227,6 +231,7 @@ export default function SalesReturnsPage() {
   if (extFilter.state) paramsRecord.state = extFilter.state;
   if (extFilter.paymentState) paramsRecord.paymentState = extFilter.paymentState;
   if (extFilter.agentGroupId) paramsRecord.agentGroupId = extFilter.agentGroupId;
+  if (extFilter.agentOwnerId) paramsRecord.agentOwnerId = extFilter.agentOwnerId;
   if (extFilter.contractId) paramsRecord.contractId = extFilter.contractId;
   if (extFilter.projectId) paramsRecord.projectId = extFilter.projectId;
   if (extFilter.salesChannelId) paramsRecord.salesChannelId = extFilter.salesChannelId;
@@ -351,6 +356,7 @@ export default function SalesReturnsPage() {
     !!extFilter.productId ||
     !!extFilter.agentAccountId ||
     !!extFilter.organizationAccountId ||
+    !!extFilter.agentOwnerId ||
     agents.length > 0 ||
     organizations.length > 0;
 
@@ -747,6 +753,30 @@ export default function SalesReturnsPage() {
                   setCursor(undefined);
                 }}
                 testId="filter-agent-group"
+              />
+            </InlineFilterPanel.Field>
+            {/* 3b. Владелец контрагента — the counterparty's owner (employee). */}
+            <InlineFilterPanel.Field label={tFilters('agent_owner')} expandable>
+              <CatalogPickerField
+                value={
+                  extFilter.agentOwnerId
+                    ? {
+                        id: extFilter.agentOwnerId,
+                        label: extFilter.agentOwnerLabel ?? extFilter.agentOwnerId,
+                      }
+                    : null
+                }
+                placeholder=""
+                onPick={() => setPickerOpen('agentOwner')}
+                onClear={() => {
+                  setExtFilter({
+                    ...extFilter,
+                    agentOwnerId: undefined,
+                    agentOwnerLabel: undefined,
+                  });
+                  setCursor(undefined);
+                }}
+                testId="filter-agent-owner"
               />
             </InlineFilterPanel.Field>
             {/* 4. Договор */}
@@ -1333,6 +1363,25 @@ export default function SalesReturnsPage() {
             ...filterValues,
             ownerId: item.id,
             ownerLabel: String(item.primary),
+          });
+          setCursor(undefined);
+        }}
+      />
+      <CatalogPicker
+        open={pickerOpen === 'agentOwner'}
+        onClose={() => setPickerOpen(null)}
+        title={tFilters('agent_owner')}
+        fetcher={async (q): Promise<PickerItem[]> => {
+          const r = await api.get<{ items: { id: string; name: string }[] }>(
+            `/employees?search=${encodeURIComponent(q)}&limit=20`,
+          );
+          return r.items.map((x) => ({ id: x.id, primary: x.name }));
+        }}
+        onSelect={(item) => {
+          setExtFilter({
+            ...extFilter,
+            agentOwnerId: item.id,
+            agentOwnerLabel: String(item.primary),
           });
           setCursor(undefined);
         }}

@@ -244,6 +244,11 @@ describe('SalesReturnFilterSchema', () => {
     expect(() => SalesReturnFilterSchema.parse({ productId: 'p1' })).toThrow();
   });
 
+  // «Владелец контрагента» — agent.ownerId filter.
+  it('accepts an agentOwnerId filter', () => {
+    expect(SalesReturnFilterSchema.parse({ agentOwnerId: UUID }).agentOwnerId).toBe(UUID);
+  });
+
   // «Общий доступ» — shared flag coerced from string (mirror applicable/printed).
   it('coerces the shared flag from string', () => {
     expect(SalesReturnFilterSchema.parse({ shared: 'true' }).shared).toBe(true);

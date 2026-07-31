@@ -139,6 +139,8 @@ export const SalesReturnFilterSchema = z.object({
   agentIds: csvUuid.optional(),
   /** «Группа контрагента» — filters via the agent (Counterparty) relation's groupId. */
   agentGroupId: z.string().uuid().optional(),
+  /** «Владелец контрагента» — filters via the agent's ownerId (Counterparty owner). */
+  agentOwnerId: z.string().uuid().optional(),
   /** «Счёт контрагента» — SalesReturn.agentAccountId (backend-only, no own list field). */
   agentAccountId: z.string().uuid().optional(),
   /** «Организация» — SalesReturn.organizationId. */
