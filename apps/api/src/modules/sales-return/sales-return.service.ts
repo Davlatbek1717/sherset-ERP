@@ -324,7 +324,32 @@ export class SalesReturnService {
       },
     });
     if (!sr) throw new NotFoundException(`SalesReturn ${id} not found`);
-    return sr;
+    // #18 «Остаток» — attach per-position live PHYSICAL on-hand at the return's store.
+    // moysklad's position «Остаток» = on-hand (NOT the in-transit «Доступно», which is
+    // a separate concept — see stock.service §2c). reserved from the same balance;
+    // available = on-hand − reserved (physical). Read-only display only.
+    const stockBalances = await this.stock.getBalances(
+      accountId,
+      sr.storeId,
+      sr.positions.map((p) => ({ kind: p.assortmentKind, id: p.assortmentId })),
+    );
+    return {
+      ...sr,
+      positions: sr.positions.map((p) => {
+        const b = stockBalances.get(p.assortmentId);
+        const onHand = b?.qty ?? '0';
+        const reserved = b?.reservedQty ?? '0';
+        return {
+          ...p,
+          stock: {
+            onHand,
+            reserved,
+            inTransit: '0',
+            available: String(Number(onHand) - Number(reserved)),
+          },
+        };
+      }),
+    };
   }
 
   async create(accountId: string, userId: string, raw: unknown) {

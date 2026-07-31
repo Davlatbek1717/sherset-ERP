@@ -100,6 +100,8 @@ interface PositionDetail {
   // «Себестоимость единицы» — weighted-average carrying cost frozen at post-time
   // (tiyin); null on a draft. Distinct from priceMinor (sale price). #19.
   costMinor: string | null;
+  // «Остаток» — live physical stock at the return's store, attached by findById (#18).
+  stock?: { onHand: string; reserved: string; inTransit: string; available: string } | null;
   discount: string;
   vat: number | null;
   vatEnabled: boolean;
@@ -300,6 +302,9 @@ function formFromData(d: SalesReturnDetail): FormState {
       priceMinor: p.priceMinor,
       // «Себест. единицы» (#19) — carrying cost for the costPerUnit column; null→undefined.
       costMinor: p.costMinor ?? undefined,
+      // «Остаток» (#18) — live physical on-hand from findById (PositionTable reads
+      // `stock` as the display string).
+      stock: p.stock?.onHand ?? undefined,
       discount: p.discount,
       vat: p.vat != null ? String(p.vat) : '',
       vatEnabled: p.vatEnabled,
