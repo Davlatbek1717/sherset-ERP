@@ -217,6 +217,21 @@ export const CustomerOrderFilterSchema = z.object({
   /** ISO date (yyyy-mm-dd) — inclusive upper bound on `moment`. */
   momentTo: z.string().optional(),
   /**
+   * «План. дата отгрузки» — moysklad parity (grounded 2026-07-31 on the live
+   * #customerorder filter panel, where it sits in the first row next to
+   * «Отгружено»). Filters `deliveryPlannedMoment` between the two ISO dates,
+   * exactly like momentFrom/To. Orders with a NULL planned date are excluded
+   * once either bound is set — a row with no date cannot satisfy a range.
+   */
+  deliveryPlannedFrom: z.string().optional(),
+  deliveryPlannedTo: z.string().optional(),
+  /**
+   * «Адрес доставки» — moysklad parity (same capture). Case-insensitive
+   * substring match on `shipmentAddress`, the flat one-line address the
+   * detail form edits.
+   */
+  shipmentAddress: z.string().max(500).optional(),
+  /**
    * "Когда изменен" — moysklad parity. Filters on `updatedAt` between
    * the two ISO dates (mirror momentFrom/To).
    */

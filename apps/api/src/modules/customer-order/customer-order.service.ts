@@ -2216,6 +2216,27 @@ export class CustomerOrderService {
             updatedAt: tashkentRangeBounds(filter.updatedFrom, filter.updatedTo),
           }
         : {};
+    // «План. дата отгрузки» — same Tashkent-day bounds as `moment`. The column is
+    // nullable, so a bound also implies NOT NULL (Prisma range operators already
+    // exclude NULL, which is the wanted semantics: no planned date ⇒ not in range).
+    const deliveryPlannedRange =
+      filter.deliveryPlannedFrom || filter.deliveryPlannedTo
+        ? {
+            deliveryPlannedMoment: tashkentRangeBounds(
+              filter.deliveryPlannedFrom,
+              filter.deliveryPlannedTo,
+            ),
+          }
+        : {};
+    // «Адрес доставки» — case-insensitive substring, like the other text filters.
+    const shipmentAddressClause = filter.shipmentAddress?.trim()
+      ? {
+          shipmentAddress: {
+            contains: filter.shipmentAddress.trim(),
+            mode: 'insensitive' as const,
+          },
+        }
+      : {};
     const sumRange =
       filter.sumMinorFrom !== undefined || filter.sumMinorTo !== undefined
         ? {
@@ -2275,6 +2296,8 @@ export class CustomerOrderService {
       ...(filter.ownerId ? { ownerId: filter.ownerId } : {}),
       ...momentRange,
       ...updatedRange,
+      ...deliveryPlannedRange,
+      ...shipmentAddressClause,
       ...(filter.search
         ? {
             OR: [

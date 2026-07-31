@@ -260,6 +260,11 @@ export default function CustomerOrdersPage() {
     // «Когда изменен» period
     updatedFrom?: string;
     updatedTo?: string;
+    // «План. дата отгрузки» period (moysklad first filter row, grounded 2026-07-31)
+    deliveryPlannedFrom?: string;
+    deliveryPlannedTo?: string;
+    // «Адрес доставки» — free-text substring
+    shipmentAddress?: string;
   }>({});
 
   // moysklad «Статус» filter — the account's custom order statuses (e.g.
@@ -333,6 +338,11 @@ export default function CustomerOrdersPage() {
   if (extFilter.shared) paramsRecord.shared = extFilter.shared;
   if (extFilter.updatedFrom) paramsRecord.updatedFrom = extFilter.updatedFrom;
   if (extFilter.updatedTo) paramsRecord.updatedTo = extFilter.updatedTo;
+  if (extFilter.deliveryPlannedFrom)
+    paramsRecord.deliveryPlannedFrom = extFilter.deliveryPlannedFrom;
+  if (extFilter.deliveryPlannedTo) paramsRecord.deliveryPlannedTo = extFilter.deliveryPlannedTo;
+  if (extFilter.shipmentAddress?.trim())
+    paramsRecord.shipmentAddress = extFilter.shipmentAddress.trim();
   // Custom-attribute (доп.поля) filters → a JSON-encoded `attrs` array of
   // {code, value?|from?/to?} clauses. Date attrs send from/to; everything else
   // sends a single value. Only non-empty clauses are included; the backend maps
@@ -961,6 +971,9 @@ export default function CustomerOrdersPage() {
                     shared: pickStr<'true' | 'false'>('shared'),
                     updatedFrom: pickStr('updatedFrom'),
                     updatedTo: pickStr('updatedTo'),
+                    deliveryPlannedFrom: pickStr('deliveryPlannedFrom'),
+                    deliveryPlannedTo: pickStr('deliveryPlannedTo'),
+                    shipmentAddress: pickStr('shipmentAddress'),
                   });
                   // Restore custom-attribute (доп.поля) filters too, so a saved
                   // pill that encoded «Уста»/«Санаси» re-applies instead of being
@@ -1191,6 +1204,63 @@ export default function CustomerOrdersPage() {
                   setCursor(undefined);
                 }}
                 testId="filter-project"
+              />
+            </InlineFilterPanel.Field>
+            {/* 3b. План. дата отгрузки — moysklad puts this in the FIRST filter row,
+                right after «Отгружено» (grounded 2026-07-31 on the live #customerorder
+                filter panel). Backed by CustomerOrder.deliveryPlannedMoment; the API
+                takes deliveryPlannedFrom/To with the same Tashkent-day bounds as
+                «Период». */}
+            <InlineFilterPanel.Field
+              fieldKey="deliveryPlannedRange"
+              label={tFields('delivery_planned')}
+              inlineSuffix={
+                <PeriodShortcuts
+                  onChange={({ from, to }) => {
+                    setExtFilter({
+                      ...extFilter,
+                      deliveryPlannedFrom: from,
+                      deliveryPlannedTo: to,
+                    });
+                    setCursor(undefined);
+                  }}
+                  labels={{
+                    yesterday: tFilters('period_yesterday'),
+                    today: tFilters('period_today'),
+                    week: tFilters('period_week'),
+                    month: tFilters('period_month'),
+                  }}
+                />
+              }
+              expandable
+            >
+              <PeriodInputs
+                from={extFilter.deliveryPlannedFrom}
+                to={extFilter.deliveryPlannedTo}
+                onChange={({ from, to }) => {
+                  setExtFilter({
+                    ...extFilter,
+                    deliveryPlannedFrom: from,
+                    deliveryPlannedTo: to,
+                  });
+                  setCursor(undefined);
+                }}
+                testId="filter-delivery-planned"
+              />
+            </InlineFilterPanel.Field>
+            {/* 3c. Адрес доставки — case-insensitive substring on
+                CustomerOrder.shipmentAddress. */}
+            <InlineFilterPanel.Field fieldKey="shipmentAddress" label={tFields('delivery_address')}>
+              <Input
+                value={extFilter.shipmentAddress ?? ''}
+                onChange={(e) => {
+                  setExtFilter({
+                    ...extFilter,
+                    shipmentAddress: e.target.value || undefined,
+                  });
+                  setCursor(undefined);
+                }}
+                data-test-id="filter-shipment-address"
               />
             </InlineFilterPanel.Field>
             {/* 4. Резерв — reservation progress against reservedSumMinor. */}

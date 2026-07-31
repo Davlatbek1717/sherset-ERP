@@ -187,6 +187,31 @@ describe('CustomerOrderFilterSchema', () => {
     expect(result.updatedTo).toBe('2026-01-31');
   });
 
+  it('accepts the План. дата отгрузки range bounds', () => {
+    const result = CustomerOrderFilterSchema.parse({
+      deliveryPlannedFrom: '2026-03-01',
+      deliveryPlannedTo: '2026-03-31',
+    });
+    expect(result.deliveryPlannedFrom).toBe('2026-03-01');
+    expect(result.deliveryPlannedTo).toBe('2026-03-31');
+  });
+
+  it('accepts an Адрес доставки substring and caps its length', () => {
+    expect(CustomerOrderFilterSchema.parse({ shipmentAddress: 'Chilonzor' }).shipmentAddress).toBe(
+      'Chilonzor',
+    );
+    // The column is VarChar(500); a longer needle can never match, so reject it
+    // rather than send a doomed query.
+    expect(() => CustomerOrderFilterSchema.parse({ shipmentAddress: 'x'.repeat(501) })).toThrow();
+  });
+
+  it('leaves the new filters undefined when absent (no accidental defaults)', () => {
+    const result = CustomerOrderFilterSchema.parse({});
+    expect(result.deliveryPlannedFrom).toBeUndefined();
+    expect(result.deliveryPlannedTo).toBeUndefined();
+    expect(result.shipmentAddress).toBeUndefined();
+  });
+
   it('accepts the relational + money sort keys and rejects unknown ones', () => {
     for (const k of ['agent', 'organization', 'shippedSumMinor', 'reservedSumMinor'] as const) {
       expect(CustomerOrderFilterSchema.parse({ sortBy: k }).sortBy).toBe(k);
