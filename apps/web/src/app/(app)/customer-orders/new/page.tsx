@@ -1206,6 +1206,13 @@ export default function NewCustomerOrderPage() {
               <CatalogPickerField
                 value={contractId ? { id: contractId, label: contractLabel } : null}
                 placeholder={agentId ? tForm('select_contract') : tForm('select_customer_first')}
+                // moysklad greys «Договор» OUT until a counterparty is chosen —
+                // contracts are agent-scoped, so the field is inert before then
+                // (grounded 2026-07-31: the live /new form renders it disabled,
+                // the live detail with an agent renders it active). We already
+                // gated onPick, but the control still LOOKED editable and the
+                // inline fetcher was reachable — parity delta #38.
+                disabled={!agentId}
                 onPick={() => agentId && setOpenPicker('contract')}
                 inlineFetcher={contractFetcher}
                 onInlineSelect={(item) => {
