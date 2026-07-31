@@ -32,6 +32,43 @@ browser smoke bilan tekshirilgan; to'liq Phase-2 QA (klik → saqlash → BE) YO
 
 ---
 
+### 📊 To'liq dispozitsiya (2-to'lqindan keyin)
+
+| Holat | Soni | Bandlar |
+|---|---|---|
+| ✅ **Tuzatildi** | 23 | #3 #4 #5 #12 #13 #14 #17 #22 #23 #25 #26 #27 #28 #29 #30 #35 #37 #38 #39 #40 #49 #51 #53 |
+| ✅ **Allaqachon to'g'ri edi** (noto'g'ri pozitiv) | 3 | #36 balans yo'nalishi+rangi · #43 «без НДС» · #44 pozitsiya kolonka-sozlagichi (`position-column-customizer`) |
+| 🔒 **Owner-override** (parity emas, ataylab) | 1 | #42 pozitsiya nomida tovar kodi (yacheyka bilan chalkashlik, 2026-07-06) |
+| 🔒 **Owner qaroriga ko'ra qoldirildi** | 5 | #2 «Не оплачено» · #11 «Список\|Столбцы» · #24 qo'shimcha filtrlar · #41 «Сумма НДС» · #47 «Договорная цена» |
+| ⏸️ **Defer, sabab hujjatlangan** | 4 | #18+#19 (migratsiya) · #48 (pul semantikasi) · #54 («Отгруж.» bo'lishilgan kalit) · #37-yarmi (Склад ixtiyoriyligi) |
+| 🔧 **Qolgan haqiqiy ish** | 20 | pastda |
+
+### 🔧 Qolgan 20 band — turlari bo'yicha
+
+**A. Layout cheklovi bloklagan (1):** #1 «Зарезервировано» default-ko'rinish — hozir grid
+1402px konteynerda 6px zaxira bilan turibdi; yana bir kolonka (~110px) qo'shilsa #5 qayta
+buziladi. Haqiqiy yechim — ilova qobig'idagi `min-[1600px]:max-w-[1440px]` cheklovini
+reestr sahifalari uchun olib tashlash (moysklad cheklamaydi). **App-wide layout qarori.**
+
+**B. Yetishmayotgan funksiyalar (4):** #8 «Бизнес-процессы» · #9 toolbar oxiridagi ⚙ ·
+#46+#50 «Импорт ▾» (pozitsiyalarni fayldan yuklash) — har biri alohida feature.
+
+**C. Backend filtrlar (5):** #15 «Тип возврата» · #16 «Владелец контрагента» ·
+#20 «Ближайшая задача» · #21 «Срок задачи» (+#18/#19 migratsiya bilan).
+
+**D. Sarlavha/ko'rinish, GROUNDING YETARLI EMAS (10):** #6 «Напечатан» pill (chop etilgan
+buyurtma kerak) · #7 yashil progress-chiziq · #10 «Столбцы» joyi · #31 raqam matn bo'lishi ·
+#32 bitta sana-vaqt maydoni · #33 status pill · #34 detail pager · #45 pushti qator foni
+(bizda oversell ogohlantirishi — ehtimol owner feature) · #55 prop-drop guard test ·
+#56 label-grounding tiklash.
+
+> **#31/#32 haqida:** moysklad detail'da raqam quti**siz**, /new'da esa qutili ko'rindi —
+> bu «to'ldirilgan bo'lsa borderless» inline-editor uslubi bo'lishi mumkin. Statik
+> capture'dan focus/hover holatini tekshirib bo'lmaydi, o'zgartirish esa umumiy
+> `DocumentHeader` ga tegadi (barcha hujjat turlari). CLAUDE.md §4: **DEFER + hujjatla**.
+
+---
+
 ### ⚠️ Qolgan ishning haqiqiy hajmi (2026-07-31 da o'lchangan)
 
 **#14–#21 — 8 ta yetishmayotgan filtr — bu UI ishi EMAS.** API'ning
