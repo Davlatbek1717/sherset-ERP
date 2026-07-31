@@ -1876,15 +1876,22 @@ export default function CustomerOrderDetailPage() {
           </DocumentMetaColumns>
         )}
 
-        {/* Tab strip — Pozitsiyalar (default) | Bog'liq hujjatlar | Fayllar | Tarix.
-            Mirrors the tab strip moysklad renders across every doc type;
+        {/* Tab strip — «Главная» | «Связанные документы» | «События», with Задачи /
+            Файлы as collapsibles BELOW (bottomSections). This mirrors the CLASSIC
+            moysklad editor design, which #customerorder still runs — grounded
+            2026-07-31 on the live editor, where the tab strip is exactly
+            «Главная | Связанные документы» and Задачи/Файлы are bottom sections.
+            (Sibling doc types stay on the 5-tab NEW design; see the component's
+            docstring — moysklad ships the two designs per document type.)
+            «События» is ours, kept by product decision.
             customer-order keeps its custom RelatedDocsTab (with the visual
             diagram) by passing it via the relatedSlot. */}
         <div className="mt-6">
           <DetailContentTabs
             auditEntity="CustomerOrder"
             entityId={data.id}
-            positionsLabel={tDetailTabs('positions')}
+            bottomSections
+            positionsLabel={tDetailTabs('main')}
             relatedGroups={[]}
             filesSlot={<AttachmentsSection entity="CustomerOrder" entityId={data.id} />}
             tasksSlot={<DocumentTasksSection entity="CustomerOrder" entityId={data.id} />}

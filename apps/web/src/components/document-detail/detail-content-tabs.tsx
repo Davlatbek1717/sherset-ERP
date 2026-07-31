@@ -13,6 +13,14 @@
  * «События» shows the document event timeline (the audit history — created /
  * posted / edited events), fetched eagerly by entity+id. There is no separate
  * comment feed yet, so «События» surfaces the real lifecycle events only.
+ *
+ * ⚠️ moysklad runs TWO editor designs, per document type. The 5-tab layout above
+ * is the NEW design (grounded 2026-07-07 on #purchaseorder). The CLASSIC design —
+ * still live on #customerorder as of 2026-07-31 (the account is offered
+ * «Попробуйте новый дизайн» there, i.e. it has NOT switched) — shows only
+ * «Главная | Связанные документы» and renders Задачи / Файлы as collapsible
+ * sections BELOW the tab body. Pages on a classic-design doc type opt in with
+ * `bottomSections`; every other caller keeps the 5-tab layout unchanged.
  */
 
 import { type AttachmentEntity, AttachmentsSection } from '@/components/attachments-section';
@@ -60,6 +68,12 @@ export interface DetailContentTabsProps {
    *  <DocumentHistoryLink> in the header). Defaults to true so non-converged pages
    *  keep the bottom history section. */
   historyInline?: boolean;
+  /** Classic-design layout (moysklad #customerorder, grounded 2026-07-31): drop the
+   *  «Файлы» + «Задачи» TABS and render those slots as collapsible sections below
+   *  the tab body instead — «Задачи» first, then «Файлы», the order the live editor
+   *  uses. The remaining tabs are «Главная» · «Связанные документы» · «События».
+   *  Defaults to false = the 5-tab new-design layout every other page relies on. */
+  bottomSections?: boolean;
 }
 
 export function DetailContentTabs({
@@ -71,6 +85,7 @@ export function DetailContentTabs({
   filesSlot,
   positionsLabel,
   relatedSlot,
+  bottomSections = false,
   // `historyInline` is accepted for caller compat but no longer used — history now
   // lives in the «События» tab, not an inline collapsible.
 }: DetailContentTabsProps) {
@@ -89,9 +104,12 @@ export function DetailContentTabs({
   // RelatedDocsTab inside it auto-opens the «Привязка документа» modal).
   // useSearchParams() may be null outside a Next router context (jsdom tests,
   // static prerender) — optional-chain so the tabs still render.
+  // In `bottomSections` layout there is no «Задачи» TAB to land on — the tasks
+  // section sits below the tab body and is always visible, so «?task=new» stays
+  // on «Главная» and the create modal opens inside that section.
   const searchParams = useSearchParams();
   const initialTab =
-    searchParams?.get('task') === 'new'
+    searchParams?.get('task') === 'new' && !bottomSections
       ? 'tasks'
       : searchParams?.get('link') === 'new'
         ? 'related'
@@ -115,17 +133,24 @@ export function DetailContentTabs({
             />
             {tDetailTabs('related')}
           </TabsTrigger>
-          <TabsTrigger value="files" data-test-id="tab-files">
-            <Icons.file className="mr-1.5 inline h-4 w-4 text-[var(--ms-text-muted)]" aria-hidden />
-            {tDetailTabs('files')}
-          </TabsTrigger>
-          <TabsTrigger value="tasks" data-test-id="tab-tasks">
-            <Icons.tasks
-              className="mr-1.5 inline h-4 w-4 text-[var(--ms-text-muted)]"
-              aria-hidden
-            />
-            {tDetailTabs('tasks')}
-          </TabsTrigger>
+          {!bottomSections && (
+            <TabsTrigger value="files" data-test-id="tab-files">
+              <Icons.file
+                className="mr-1.5 inline h-4 w-4 text-[var(--ms-text-muted)]"
+                aria-hidden
+              />
+              {tDetailTabs('files')}
+            </TabsTrigger>
+          )}
+          {!bottomSections && (
+            <TabsTrigger value="tasks" data-test-id="tab-tasks">
+              <Icons.tasks
+                className="mr-1.5 inline h-4 w-4 text-[var(--ms-text-muted)]"
+                aria-hidden
+              />
+              {tDetailTabs('tasks')}
+            </TabsTrigger>
+          )}
           <TabsTrigger value="events" data-test-id="tab-events">
             <Icons.chat className="mr-1.5 inline h-4 w-4 text-[var(--ms-text-muted)]" aria-hidden />
             {tDetailTabs('events')}
@@ -144,21 +169,25 @@ export function DetailContentTabs({
             override with an explicit filesSlot; otherwise the shared section is used
             (auditEntity is the PascalCase model name, which is also the attachments
             entity key). */}
-        <TabsContent value="files">
-          <div data-test-id="detail-files-section">
-            {filesSlot ?? (
-              <AttachmentsSection entity={auditEntity as AttachmentEntity} entityId={entityId} />
-            )}
-          </div>
-        </TabsContent>
+        {!bottomSections && (
+          <TabsContent value="files">
+            <div data-test-id="detail-files-section">
+              {filesSlot ?? (
+                <AttachmentsSection entity={auditEntity as AttachmentEntity} entityId={entityId} />
+              )}
+            </div>
+          </TabsContent>
+        )}
 
         {/* «Задачи» — «+ Задача» opens the create-task modal (POST /tasks, linked by
             entity+entityId). Same override/default pattern as Файлы. */}
-        <TabsContent value="tasks">
-          <div data-test-id="detail-tasks-section">
-            {tasksSlot ?? <DocumentTasksSection entity={auditEntity} entityId={entityId} />}
-          </div>
-        </TabsContent>
+        {!bottomSections && (
+          <TabsContent value="tasks">
+            <div data-test-id="detail-tasks-section">
+              {tasksSlot ?? <DocumentTasksSection entity={auditEntity} entityId={entityId} />}
+            </div>
+          </TabsContent>
+        )}
 
         {/* «События» — the document event timeline (audit history: created /
             posted / edited). No separate comment feed yet. */}
@@ -178,6 +207,22 @@ export function DetailContentTabs({
           </div>
         </TabsContent>
       </Tabs>
+
+      {/* Classic-design bottom collapsibles — «Задачи» then «Файлы», the order the
+          live #customerorder editor renders them in (grounded 2026-07-31). Both
+          sections are self-titled, so no extra heading is added here. */}
+      {bottomSections && (
+        <div className="mt-8 space-y-6" data-test-id="detail-bottom-sections">
+          <div data-test-id="detail-tasks-section">
+            {tasksSlot ?? <DocumentTasksSection entity={auditEntity} entityId={entityId} />}
+          </div>
+          <div data-test-id="detail-files-section">
+            {filesSlot ?? (
+              <AttachmentsSection entity={auditEntity as AttachmentEntity} entityId={entityId} />
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
