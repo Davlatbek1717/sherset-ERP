@@ -105,6 +105,28 @@ export class SupplyApprovalService {
   /** Egasi taminotchiga yuboradi (none → awaiting_supplier). Faza B: shu yerda Excel+Telegram. */
   async send(accountId: string, userId: string, id: string) {
     await this.claim(accountId, id, 'none', 'awaiting_supplier');
+    // Approval STOCK'ni GATE qiladi: tovar omborga FAQAT admin tasdig'ida kirishi kerak,
+    // yaratilishда emas. «Проведено» (posted) bilan yaratilgan qabul stock'ni allaqachon
+    // kommit qilgan — uni SHU YERDA unpost qilamiz (posted→draft, erta stock qaytariladi)
+    // ki tovar haqiqatda qachon kirishini approval-flow boshqarsin. `adminConfirm` oxirida
+    // draft'ni qayta post qiladi (stock o'shanда qo'shiladi). Rad etilsa — draft qoladi,
+    // stock kirmaydi. Draft bo'lsa — hech narsa qilinmaydi.
+    try {
+      const s = await this.prisma.client.supply.findFirst({
+        where: { id, accountId, deletedAt: null },
+        select: { state: true },
+      });
+      if (s?.state === 'posted') {
+        await this.supply.transition(accountId, userId, id, 'unpost'); // posted→draft, stock reverse
+      }
+    } catch (e) {
+      // unpost yiqilsa — bosqich-da'vosini qaytar (yuborish bekor).
+      await this.prisma.client.supply.updateMany({
+        where: { id, accountId },
+        data: { approvalStage: 'none' },
+      });
+      throw e;
+    }
     await this.logEvent(accountId, id, 'none', 'awaiting_supplier', 'send', 'system', userId);
     // Faza B: inline-tugmali xabar taminotchiga (non-fatal — holat allaqachon o'zgardi).
     await this.dispatchToSupplier(accountId, id).catch(() => {});
