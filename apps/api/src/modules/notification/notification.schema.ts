@@ -15,6 +15,11 @@ export const NotificationKind = z.enum([
   // F2 (user feature 2026-07-03): cashier pressed «Отправил кладовщику» on a
   // POS refund receipt — the warehouse keeper must accept the returned goods.
   'return_to_warehouse',
+  // Sherset /sotuv (2026-08-01 da qaytarildi): kassir qaytarilgan tovarni
+  // omborchiga joylashtirishga yubordi.
+  'restock_assigned',
+  // Sherset /sotuv: sotilgan buyurtmaning yig'ish topshirig'i omborchiga berildi.
+  'picking_assigned',
   // Debts (Sherset KEEP — B3): operator call-due reminder.
   'debt_call_due',
 ]);

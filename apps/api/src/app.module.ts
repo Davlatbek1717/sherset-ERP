@@ -98,12 +98,16 @@ import { PurchaseReturnModule } from './modules/purchase-return/purchase-return.
 import { ReferenceModule } from './modules/reference/reference.module.js';
 import { RegionModule } from './modules/region/region.module.js';
 import { ReportModule } from './modules/report/report.module.js';
+import { RestockTaskModule } from './modules/restock-task/restock-task.module.js';
 import { RetailSaleModule } from './modules/retail-sale/retail-sale.module.js';
 import { SalesChannelModule } from './modules/sales-channel/sales-channel.module.js';
 import { SalesReturnModule } from './modules/sales-return/sales-return.module.js';
 import { SavedFilterModule } from './modules/saved-filter/saved-filter.module.js';
 import { SerialNumberModule } from './modules/serial-number/serial-number.module.js';
 import { ServiceDeskModule } from './modules/service-desk/service-desk.module.js';
+import { ShiftScheduleModule } from './modules/shift-schedule/shift-schedule.module.js';
+import { SkladKeeperModule } from './modules/sklad-keeper/sklad-keeper.module.js';
+import { SmenaModule } from './modules/smena/smena.module.js';
 import { SmsModule } from './modules/sms/sms.module.js';
 import { StateModule } from './modules/state/state.module.js';
 import { StockModule } from './modules/stock/stock.module.js';
@@ -208,6 +212,11 @@ import { PrismaModule } from './prisma/prisma.module.js';
     ProjectModule,
     ContractModule,
     CountryModule,
+    // Smena (POS navbat) — /sotuv sahifasi uchun; climart adoption o'chirgan edi.
+    SmenaModule,
+    RestockTaskModule,
+    SkladKeeperModule,
+    ShiftScheduleModule,
     CompanySettingsModule,
     UomModule,
     TaxRateModule,

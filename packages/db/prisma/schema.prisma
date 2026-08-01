@@ -28,29 +28,29 @@ datasource db {
 // Tenant. Everything else scopes to this.
 model Account {
   // Sherset KEEP (debts) back-relations — B2
-  debts        Debt[]
-  debtPayments DebtPayment[]
-  debtNotes    DebtNote[]
+  debts                Debt[]
+  debtPayments         DebtPayment[]
+  debtNotes            DebtNote[]
   // Sherset KEEP (telegram) back-relations — B3
   telegramChats        TelegramChat[]
   telegramChatMessages TelegramChatMessage[]
   telegramBackfillJobs TelegramBackfillJob[]
   // Sherset KEEP (message templates) back-relation — B3
-  messageTemplates MessageTemplate[]
-  id        String   @id @default(uuid()) @db.Uuid
-  name      String   @db.VarChar(255)
-  country   String   @default("UZ") @db.VarChar(2)
-  currency  String   @default("UZS") @db.VarChar(3)
-  locale    String   @default("uz-Latn") @db.VarChar(10)
-  timezone  String   @default("Asia/Tashkent") @db.VarChar(50)
-  plan      String   @default("trial") @db.VarChar(20)
+  messageTemplates     MessageTemplate[]
+  id                   String                @id @default(uuid()) @db.Uuid
+  name                 String                @db.VarChar(255)
+  country              String                @default("UZ") @db.VarChar(2)
+  currency             String                @default("UZS") @db.VarChar(3)
+  locale               String                @default("uz-Latn") @db.VarChar(10)
+  timezone             String                @default("Asia/Tashkent") @db.VarChar(50)
+  plan                 String                @default("trial") @db.VarChar(20)
   // H4 record-scope (RFC _H4-OWN-GROUP-SCOPE-RFC.md, W4). Per-account opt-in for
   // OWN/OWN_GROUP per-record visibility enforcement. Default OFF — when false the
   // read-path adds no scope filter (today's behaviour). Flip per account only after
   // the cohort's groupId is backfilled + the manager-visibility test passes.
-  recordScopeEnforced Boolean @default(false) @map("record_scope_enforced")
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+  recordScopeEnforced  Boolean               @default(false) @map("record_scope_enforced")
+  createdAt            DateTime              @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt            DateTime              @updatedAt @map("updated_at") @db.Timestamptz()
 
   employees                      Employee[]
   organizations                  Organization[]
@@ -110,6 +110,8 @@ model Account {
   bomComponents                  BomComponent[]
   workOrders                     WorkOrder[]
   cashierSessions                CashierSession[]
+  shiftSchedules                 ShiftSchedule[]
+  smenas                         Smena[]
   retailSales                    RetailSale[]
   retailSalePositions            RetailSalePosition[]
   salesChannels                  SalesChannel[]
@@ -186,32 +188,32 @@ model Account {
   ProcessingMaterial             ProcessingMaterial[]
   ProcessingProduct              ProcessingProduct[]
 
-  hrTaskTemplates         HrTaskTemplate[]
-  hrTaskLogs              HrTaskLog[]
-  hrAttendances           HrAttendance[]
-  hrTelegramAccounts      HrTelegramAccount[]
-  hrTelegramSessions      HrTelegramSession[]
-  hrChatHistories         HrChatHistory[]
-  hrTelegramOutbox        HrTelegramOutbox[]
-  hrBonusFineLogs         HrBonusFineLog[]
-  hrBonusFineRules        HrBonusFineRule[]
+  hrTaskTemplates          HrTaskTemplate[]
+  hrTaskLogs               HrTaskLog[]
+  hrAttendances            HrAttendance[]
+  hrTelegramAccounts       HrTelegramAccount[]
+  hrTelegramSessions       HrTelegramSession[]
+  hrChatHistories          HrChatHistory[]
+  hrTelegramOutbox         HrTelegramOutbox[]
+  hrBonusFineLogs          HrBonusFineLog[]
+  hrBonusFineRules         HrBonusFineRule[]
   hrAttendanceNotifyConfig HrAttendanceNotifyConfig?
-  hrSalaryConfig          HrSalaryConfig?
-  hrKpiDailyLogs          HrKpiDailyLog[]
-  hrKpiMonthlyScores      HrKpiMonthlyScore[]
-  hrEmployeePermissions   HrEmployeePermission[]
-  hrRoles                 HrRole[]
-  hrNotificationTemplates HrNotificationTemplate[]
-  hrActivityLogs          HrActivityLog[]
-  documentSequences       DocumentSequence[]
-  hrWorkLocations         HrWorkLocation[]
-  employeeWorkSchedules   EmployeeWorkSchedule[]
-  hrLocationPings         HrLocationPing[]
-  hrDepartments           HrDepartment[]
-  hrPositions             HrPosition[]
-  hrSchedules             HrSchedule[]
-  hrScheduleDays          HrScheduleDay[]
-  hrEmployeeBranches      HrEmployeeBranch[]
+  hrSalaryConfig           HrSalaryConfig?
+  hrKpiDailyLogs           HrKpiDailyLog[]
+  hrKpiMonthlyScores       HrKpiMonthlyScore[]
+  hrEmployeePermissions    HrEmployeePermission[]
+  hrRoles                  HrRole[]
+  hrNotificationTemplates  HrNotificationTemplate[]
+  hrActivityLogs           HrActivityLog[]
+  documentSequences        DocumentSequence[]
+  hrWorkLocations          HrWorkLocation[]
+  employeeWorkSchedules    EmployeeWorkSchedule[]
+  hrLocationPings          HrLocationPing[]
+  hrDepartments            HrDepartment[]
+  hrPositions              HrPosition[]
+  hrSchedules              HrSchedule[]
+  hrScheduleDays           HrScheduleDay[]
+  hrEmployeeBranches       HrEmployeeBranch[]
 
   @@map("accounts")
 }
@@ -250,72 +252,72 @@ model Employee {
   debtPaymentsReversed DebtPayment[] @relation("DebtPaymentReverser")
   debtNotesWritten     DebtNote[]    @relation("DebtNoteAuthor")
   debtNotesCanceled    DebtNote[]    @relation("DebtNoteCanceler")
-  id                  String    @id @default(uuid()) @db.Uuid
-  accountId           String    @map("account_id") @db.Uuid
-  ownerId             String?   @map("owner_id") @db.Uuid
-  email               String    @db.VarChar(255)
-  passwordHash        String    @default("") @map("password_hash") @db.VarChar(255)
-  name                String    @db.VarChar(255)
-  firstName           String?   @map("first_name") @db.VarChar(100)
-  lastName            String?   @map("last_name") @db.VarChar(100)
-  middleName          String?   @map("middle_name") @db.VarChar(100)
+  id                   String        @id @default(uuid()) @db.Uuid
+  accountId            String        @map("account_id") @db.Uuid
+  ownerId              String?       @map("owner_id") @db.Uuid
+  email                String        @db.VarChar(255)
+  passwordHash         String        @default("") @map("password_hash") @db.VarChar(255)
+  name                 String        @db.VarChar(255)
+  firstName            String?       @map("first_name") @db.VarChar(100)
+  lastName             String?       @map("last_name") @db.VarChar(100)
+  middleName           String?       @map("middle_name") @db.VarChar(100)
   // Display-time helpers moysklad pre-computes:
   //   fullName  — "lastName firstName middleName"
   //   shortFio  — "lastName F.M." (Russian convention)
   // We store both denormalised so reports don't recompute.
-  fullName            String?   @map("full_name") @db.VarChar(310)
-  shortFio            String?   @map("short_fio") @db.VarChar(120)
-  position            String?   @db.VarChar(255)
-  phone               String?   @db.VarChar(20)
+  fullName             String?       @map("full_name") @db.VarChar(310)
+  shortFio             String?       @map("short_fio") @db.VarChar(120)
+  position             String?       @db.VarChar(255)
+  phone                String?       @db.VarChar(20)
   // Personal STIR (only for natural persons / sole proprietors).
-  inn                 String?   @db.VarChar(20)
+  inn                  String?       @db.VarChar(20)
   // Salary base + currency (UZS minor units). UI hides this from non-HR roles.
-  salaryMinor         BigInt?   @map("salary_minor")
-  salaryCurrency      String    @default("UZS") @map("salary_currency") @db.VarChar(3)
+  salaryMinor          BigInt?       @map("salary_minor")
+  salaryCurrency       String        @default("UZS") @map("salary_currency") @db.VarChar(3)
   // Profile photo bytes. Inline (small) — separate uploads use Attachment.
-  imageContent        Bytes?    @map("image_content")
-  imageMime           String?   @map("image_mime") @db.VarChar(100)
-  description         String?
-  externalCode        String?   @map("external_code") @db.VarChar(50)
+  imageContent         Bytes?        @map("image_content")
+  imageMime            String?       @map("image_mime") @db.VarChar(100)
+  description          String?
+  externalCode         String?       @map("external_code") @db.VarChar(50)
   // Stable user identifier — moysklad's auth subject id (`uid` field).
-  uid                 String?   @db.VarChar(64)
-  shared              Boolean   @default(false)
-  attributes          Json?     @default("{}")
+  uid                  String?       @db.VarChar(64)
+  shared               Boolean       @default(false)
+  attributes           Json?         @default("{}")
   // Group/department (for OWN_GROUP permission scope)
-  groupId             String?   @map("group_id") @db.Uuid
+  groupId              String?       @map("group_id") @db.Uuid
   // Login tracking
-  lastLoginAt         DateTime? @map("last_login_at") @db.Timestamptz()
-  failedLoginAttempts Int       @default(0) @map("failed_login_attempts")
-  lockedUntil         DateTime? @map("locked_until") @db.Timestamptz()
-  archived            Boolean   @default(false)
-  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt           DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
+  lastLoginAt          DateTime?     @map("last_login_at") @db.Timestamptz()
+  failedLoginAttempts  Int           @default(0) @map("failed_login_attempts")
+  lockedUntil          DateTime?     @map("locked_until") @db.Timestamptz()
+  archived             Boolean       @default(false)
+  createdAt            DateTime      @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt            DateTime      @updatedAt @map("updated_at") @db.Timestamptz()
   // Optimistic-lock token (moysklad parity). Guards the field-edit forms that
   // edit this shared row — HR /hr/employees (PUT), Analitika /analitika/staff
   // (PATCH) and the self-profile /auth/me. Auth bookkeeping writes
   // (lastLoginAt/failedLoginAttempts/lockedUntil/passwordHash) deliberately do
   // NOT touch version: they are not edit-form fields, so bumping them would
   // 409 every admin edit-form after any login. See _PHASE2-optimistic-lock.audit.md.
-  version             Int       @default(1)
+  version              Int           @default(1)
 
   // === HR module fields (P0 sprint) ===
   // All nullable/defaulted for backward compatibility. Populated when
   // an employee opts into the HR workflow (set-password + telegram link).
-  username        String?  @db.VarChar(50)
-  isChecker       Boolean  @default(false) @map("is_checker")
-  telegramPhone   String?  @map("telegram_phone") @db.VarChar(20)
+  username                   String?   @db.VarChar(50)
+  isChecker                  Boolean   @default(false) @map("is_checker")
+  telegramPhone              String?   @map("telegram_phone") @db.VarChar(20)
   // Bot API chat_id — qabul-tasdiqlash inline-tugmalari uchun (Faza D1, 2026-07-30).
   // `/start bind_<token>` deep-link orqali to'ldiriladi; token bir-martalik + muddatli.
   telegramChatId             String?   @map("telegram_chat_id") @db.VarChar(64)
   telegramBindToken          String?   @unique @map("telegram_bind_token") @db.VarChar(64)
   telegramBindTokenExpiresAt DateTime? @map("telegram_bind_token_expires_at") @db.Timestamptz()
-  moyskladAgentId String?  @map("moysklad_agent_id") @db.Uuid
-  department      String?  @db.VarChar(100)
-  hrRoles         String[] @default([]) @map("hr_roles")
+  moyskladAgentId            String?   @map("moysklad_agent_id") @db.Uuid
+  department                 String?   @db.VarChar(100)
+  hrRoles                    String[]  @default([]) @map("hr_roles")
   /// Per-employee salary override. If null, fallback to HrSalaryConfig
   /// (per-account singleton). Shape: { fixWeight, kpiWeight, bonusWeight,
   /// monthlySalesTarget, monthlyKpiBudget, commissionPercent, kpiTiers[] }.
-  salaryConfig    Json?    @map("salary_config")
+  salaryConfig               Json?     @map("salary_config")
 
   // === HR GPS-davomat (attendance geofence) ===
   // All nullable/defaulted — prod-safe, no backfill. Populated when an
@@ -333,14 +335,14 @@ model Employee {
   // New FK source-of-truth going forward; legacy `department`/`position` string
   // columns above are kept for back-compat (display fallback). See spec
   // docs/superpowers/specs/2026-07-24-hr-timepay-attendance-core-design.md §4.
-  departmentId    String?            @map("department_id") @db.Uuid
-  department2     HrDepartment?      @relation("EmployeeDepartment", fields: [departmentId], references: [id], onDelete: SetNull)
-  positionId      String?            @map("position_id") @db.Uuid
-  position2       HrPosition?        @relation("EmployeePosition", fields: [positionId], references: [id], onDelete: SetNull)
-  scheduleId      String?            @map("schedule_id") @db.Uuid
-  schedule        HrSchedule?        @relation("EmployeeSchedule2", fields: [scheduleId], references: [id], onDelete: SetNull)
+  departmentId String?            @map("department_id") @db.Uuid
+  department2  HrDepartment?      @relation("EmployeeDepartment", fields: [departmentId], references: [id], onDelete: SetNull)
+  positionId   String?            @map("position_id") @db.Uuid
+  position2    HrPosition?        @relation("EmployeePosition", fields: [positionId], references: [id], onDelete: SetNull)
+  scheduleId   String?            @map("schedule_id") @db.Uuid
+  schedule     HrSchedule?        @relation("EmployeeSchedule2", fields: [scheduleId], references: [id], onDelete: SetNull)
   // Multi-branch: full assigned set (Employee.workLocationId above stays as primary/default branch).
-  branches        HrEmployeeBranch[] @relation("EmployeeBranches")
+  branches     HrEmployeeBranch[] @relation("EmployeeBranches")
 
   account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
@@ -378,6 +380,7 @@ model Employee {
   ownedWorkOrders            WorkOrder[]                @relation("WorkOrderOwner")
   cashierSessions            CashierSession[]           @relation("CashierSessionCashier")
   ownedCashierSessions       CashierSession[]           @relation("CashierSessionOwner")
+  smenaAssignments           SmenaEmployee[]            @relation("SmenaEmployees")
   ownedRetailSales           RetailSale[]               @relation("RetailSaleOwner")
   ownedOrganizations         Organization[]             @relation("OrganizationOwner")
   ownedStores                Store[]                    @relation("StoreOwner")
@@ -673,6 +676,7 @@ model Organization {
   markingCodeOrders  MarkingCodeOrder[]       @relation("MarkingCodeOrderOrg")
   retireOrders       RetireOrder[]            @relation("RetireOrderOrg")
   retailStores       RetailStore[]            @relation("RetailStoreOrg")
+  smenas             Smena[]                  @relation("SmenaOrganization")
 
   @@index([accountId, archived])
   @@map("organizations")
@@ -806,8 +810,8 @@ model StoreCell {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
 
-  store Store      @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  zone  StoreZone? @relation(fields: [zoneId], references: [id], onDelete: SetNull)
+  store                   Store                    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  zone                    StoreZone?               @relation(fields: [zoneId], references: [id], onDelete: SetNull)
   // Documents that reference this cell (the position keeps a denormalized `cell`
   // label too); per-cell stock balances (Phase 4 «Свободна/Занята» + «С этим товаром»).
   lossPositions           LossPosition[]           @relation("LossPositionCell")
@@ -816,7 +820,7 @@ model StoreCell {
   purchaseReturnPositions PurchaseReturnPosition[] @relation("PurchaseReturnPositionCell")
   salesReturnPositions    SalesReturnPosition[]    @relation("SalesReturnPositionCell")
   demandPositions         DemandPosition[]         @relation("DemandPositionCell")
-  stockByCell     StockByCell[]
+  stockByCell             StockByCell[]
 
   // Cell names are unique within a warehouse (the picker identifies a cell by name).
   @@unique([storeId, name])
@@ -885,16 +889,16 @@ model OrganizationAccount {
 model CashDesk {
   // Sherset KEEP (debts) back-relation — B2
   debtPayments DebtPayment[]
-  id           String   @id @default(uuid()) @db.Uuid
-  accountId    String   @map("account_id") @db.Uuid
-  name         String   @db.VarChar(255)
-  currency     String   @default("UZS") @db.VarChar(3)
-  balanceMinor BigInt   @default(0) @map("balance_minor")
-  archived     Boolean  @default(false)
-  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  id           String        @id @default(uuid()) @db.Uuid
+  accountId    String        @map("account_id") @db.Uuid
+  name         String        @db.VarChar(255)
+  currency     String        @default("UZS") @db.VarChar(3)
+  balanceMinor BigInt        @default(0) @map("balance_minor")
+  archived     Boolean       @default(false)
+  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz()
   /// Optimistic concurrency version (moysklad parity). See Product.version.
-  version      Int      @default(1)
-  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+  version      Int           @default(1)
+  updatedAt    DateTime      @updatedAt @map("updated_at") @db.Timestamptz()
 
   account         Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
   operations      MoneyOperation[]
@@ -910,6 +914,142 @@ model CashDesk {
 // Every PaymentIn/PaymentOut/CashIn/CashOut post writes one entry per
 // money source; unpost writes a compensating entry. Used for reconciliation
 // and auditing.
+// ── Smena (POS navbat) tizimi — /sotuv sahifasi uchun ───────────────────────
+// climart adoption (55cf3bf) buni «sherset-only» deb o'chirgan edi; /sotuv
+// bo'limi bilan birga qaytarildi (2026-08-01). Manba — o'sha commitdan oldingi
+// sxema; sherset.biznesjon.uz prod'ida ishlayotgan nusxa bilan bir xil.
+
+model ShiftSchedule {
+  id        String   @id @default(uuid()) @db.Uuid
+  accountId String   @map("account_id") @db.Uuid
+  name      String   @db.VarChar(100)
+  startTime String   @map("start_time") @db.VarChar(5) // "08:00"
+  endTime   String   @map("end_time") @db.VarChar(5) // "16:00"
+  archived  Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  smenas  Smena[]
+
+  @@index([accountId, archived])
+  @@map("shift_schedules")
+}
+
+model Smena {
+  id             String   @id @default(uuid()) @db.Uuid
+  accountId      String   @map("account_id") @db.Uuid
+  name           String   @db.VarChar(100)
+  scheduleId     String   @map("schedule_id") @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  archived       Boolean  @default(false)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  account      Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  schedule     ShiftSchedule    @relation(fields: [scheduleId], references: [id], onDelete: Restrict)
+  organization Organization     @relation("SmenaOrganization", fields: [organizationId], references: [id], onDelete: Restrict)
+  employees    SmenaEmployee[]
+  sessions     CashierSession[]
+
+  @@index([accountId, archived])
+  @@map("smenas")
+}
+
+model SmenaEmployee {
+  smenaId    String @map("smena_id") @db.Uuid
+  employeeId String @map("employee_id") @db.Uuid
+
+  smena    Smena    @relation(fields: [smenaId], references: [id], onDelete: Cascade)
+  employee Employee @relation("SmenaEmployees", fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@id([smenaId, employeeId])
+  @@map("smena_employees")
+}
+
+// ── Omborchi (restock/sklad-keeper) tizimi — /sotuv sahifasi uchun ────────
+// climart adoption (55cf3bf) bilan o'chgan; /sotuv «Rasmiylashtirish»
+// oqimi (yig'ish varag'i + omborchi printeri) shularga tayanadi.
+
+model SkladKeeper {
+  id           String   @id @default(uuid()) @db.Uuid
+  accountId    String   @map("account_id") @db.Uuid
+  skladNo      Int      @map("sklad_no")
+  employeeId   String   @map("employee_id") @db.Uuid
+  employeeName String?  @map("employee_name") @db.VarChar(255)
+  // Windows printer name this warehouse's picking sheet is routed to (via the
+  // local print-agent). Two sklads may share one printer (→ both receipts on it)
+  // or use separate printers (→ each on its own). Null ⇒ falls back on print.
+  printerName  String?  @map("printer_name") @db.VarChar(255)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  @@unique([accountId, skladNo])
+  @@index([accountId])
+  @@map("sklad_keepers")
+}
+
+model RestockTask {
+  id            String   @id @default(uuid()) @db.Uuid
+  accountId     String   @map("account_id") @db.Uuid
+  // Warehouse-task kind: 'restock' (inbound — put returned goods back) or
+  // 'picking' (outbound — collect a sold order's goods for shipment). Picking
+  // tasks are split per sklad (one task per warehouse zone / omborchi).
+  type          String   @default("restock") @db.VarChar(20)
+  // For picking tasks: the sklad (warehouse zone) number this task collects from
+  // (the 1st segment of the bin code). Null for restock tasks.
+  skladNo       Int?     @map("sklad_no")
+  // Source document the goods relate to ('salesreturn' for restock,
+  // 'customerorder' for picking).
+  sourceType    String   @default("salesreturn") @map("source_type") @db.VarChar(30)
+  sourceId      String   @map("source_id") @db.Uuid
+  sourceName    String?  @map("source_name") @db.VarChar(255)
+  storeId       String?  @map("store_id") @db.Uuid
+  storeName     String?  @map("store_name") @db.VarChar(255)
+  // The warehouse-keeper (omborchi) the task is assigned to. Nullable for
+  // picking groups whose sklad has no keeper configured yet (shows unassigned).
+  assigneeId    String?  @map("assignee_id") @db.Uuid
+  assigneeName  String?  @map("assignee_name") @db.VarChar(255)
+  // The cashier / employee who sent it.
+  createdById   String   @map("created_by_id") @db.Uuid
+  createdByName String?  @map("created_by_name") @db.VarChar(255)
+  // pending | in_progress | done
+  status        String   @default("pending") @db.VarChar(20)
+  note          String?
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+  version       Int      @default(1)
+
+  lines RestockTaskLine[]
+
+  @@index([accountId, status, createdAt(sort: Desc)])
+  @@index([accountId, assigneeId, status])
+  @@index([accountId, sourceType, sourceId])
+  @@index([accountId, type])
+  @@map("restock_tasks")
+}
+
+model RestockTaskLine {
+  id              String    @id @default(uuid()) @db.Uuid
+  accountId       String    @map("account_id") @db.Uuid
+  restockTaskId   String    @map("restock_task_id") @db.Uuid
+  productId       String?   @map("product_id") @db.Uuid
+  productName     String    @map("product_name") @db.VarChar(255)
+  quantity        Decimal   @db.Decimal(20, 6)
+  // Snapshot of the product's home location «NN-NN-NN-NN» at send time (null = unset).
+  binLocation     String?   @map("bin_location") @db.VarChar(20)
+  confirmedAt     DateTime? @map("confirmed_at") @db.Timestamptz()
+  confirmedById   String?   @map("confirmed_by_id") @db.Uuid
+  confirmedByName String?   @map("confirmed_by_name") @db.VarChar(255)
+  position        Int       @default(0)
+
+  restockTask RestockTask @relation(fields: [restockTaskId], references: [id], onDelete: Cascade)
+
+  @@index([restockTaskId, position])
+  @@index([accountId, productId])
+  @@map("restock_task_lines")
+}
+
 model MoneyOperation {
   id                    String   @id @default(uuid()) @db.Uuid
   accountId             String   @map("account_id") @db.Uuid
@@ -1663,55 +1803,55 @@ model ProductFolder {
 // Counterparty (mijoz / ta'minlovchi / ikkisi).
 model Counterparty {
   // Sherset KEEP (debts) back-relation — B2
-  debts Debt[]
+  debts                Debt[]
   // Sherset KEEP (telegram) back-relations — B3
   telegramChats        TelegramChat[]
   telegramBackfillJobs TelegramBackfillJob[] @relation("TgBackfillCp")
-  id                 String   @id @default(uuid()) @db.Uuid
-  accountId          String   @map("account_id") @db.Uuid
-  ownerId            String?  @map("owner_id") @db.Uuid
-  groupId            String?  @map("group_id") @db.Uuid
-  priceTypeId        String?  @map("price_type_id") @db.Uuid
-  stateId            String?  @map("state_id") @db.Uuid
-  bonusProgramId     String?  @map("bonus_program_id") @db.Uuid
+  id                   String                @id @default(uuid()) @db.Uuid
+  accountId            String                @map("account_id") @db.Uuid
+  ownerId              String?               @map("owner_id") @db.Uuid
+  groupId              String?               @map("group_id") @db.Uuid
+  priceTypeId          String?               @map("price_type_id") @db.Uuid
+  stateId              String?               @map("state_id") @db.Uuid
+  bonusProgramId       String?               @map("bonus_program_id") @db.Uuid
   // «Кто изменил» — last employee to update this record (stamped on update).
   // Mirrors Product.modifiedById. Nullable: rows created before this column.
-  modifiedById       String?  @map("modified_by_id") @db.Uuid
-  name               String   @db.VarChar(255)
-  legalTitle         String?  @map("legal_title") @db.VarChar(255)
-  legalAddress       String?  @map("legal_address")
+  modifiedById         String?               @map("modified_by_id") @db.Uuid
+  name                 String                @db.VarChar(255)
+  legalTitle           String?               @map("legal_title") @db.VarChar(255)
+  legalAddress         String?               @map("legal_address")
   // Structured legal address: { country, region, city, street, house, apartment, postalCode, addInfo }
-  legalAddressFull   Json?    @map("legal_address_full")
+  legalAddressFull     Json?                 @map("legal_address_full")
   // Actual address (often differs from legal in UZ — registered in oblast, operating in city)
-  actualAddress      String?  @map("actual_address") @db.VarChar(255)
-  actualAddressFull  Json?    @map("actual_address_full")
-  companyType        String   @default("legalUZ") @map("company_type") @db.VarChar(20)
-  email              String?  @db.VarChar(255)
-  phone              String?  @db.VarChar(20)
-  fax                String?  @db.VarChar(50)
-  tags               String[] @default([])
+  actualAddress        String?               @map("actual_address") @db.VarChar(255)
+  actualAddressFull    Json?                 @map("actual_address_full")
+  companyType          String                @default("legalUZ") @map("company_type") @db.VarChar(20)
+  email                String?               @db.VarChar(255)
+  phone                String?               @db.VarChar(20)
+  fax                  String?               @db.VarChar(50)
+  tags                 String[]              @default([])
   // Custom user-defined fields. Universal moysklad pattern; key = attribute slug, value = scalar/object.
-  attributes         Json?    @default("{}")
+  attributes           Json?                 @default("{}")
   // UZ regional data: { inn: "STIR", okoned?: "...", mfo?: "..." }
-  uzRequisites       Json?    @map("uz_requisites")
-  description        String?
-  code               String?  @db.VarChar(50)
+  uzRequisites         Json?                 @map("uz_requisites")
+  description          String?
+  code                 String?               @db.VarChar(50)
   // External system sync key (1C, e-commerce, ...). Immutable once set.
-  externalCode       String?  @map("external_code") @db.VarChar(255)
-  syncId             String?  @map("sync_id") @db.Uuid
+  externalCode         String?               @map("external_code") @db.VarChar(255)
+  syncId               String?               @map("sync_id") @db.Uuid
   // Discount card + per-counterparty personal discounts (rule list as JSON).
-  discountCardNumber String?  @map("discount_card_number") @db.VarChar(100)
-  discounts          Json?
+  discountCardNumber   String?               @map("discount_card_number") @db.VarChar(100)
+  discounts            Json?
   // Bonus program tracking (out-of-band program model TBD; counter is local).
-  bonusPoints        Int      @default(0) @map("bonus_points")
-  shared             Boolean  @default(false)
-  archived           Boolean  @default(false)
+  bonusPoints          Int                   @default(0) @map("bonus_points")
+  shared               Boolean               @default(false)
+  archived             Boolean               @default(false)
   // Sales amount aggregate (updated by stock/money ledgers).
-  salesAmount        BigInt   @default(0) @map("sales_amount")
-  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  salesAmount          BigInt                @default(0) @map("sales_amount")
+  createdAt            DateTime              @default(now()) @map("created_at") @db.Timestamptz()
   /// Optimistic concurrency version (moysklad parity). See Product.version.
-  version            Int      @default(1)
-  updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+  version              Int                   @default(1)
+  updatedAt            DateTime              @updatedAt @map("updated_at") @db.Timestamptz()
 
   account            Account                  @relation(fields: [accountId], references: [id], onDelete: Cascade)
   owner              Employee?                @relation("CounterpartyOwner", fields: [ownerId], references: [id], onDelete: SetNull)
@@ -1928,15 +2068,15 @@ model State {
   createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz()
 
-  account        Account        @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  counterparties Counterparty[]
-  customerOrders CustomerOrder[] @relation("CustomerOrderStatus")
-  purchaseOrders  PurchaseOrder[]  @relation("PurchaseOrderStatus")
-  supplies        Supply[]         @relation("SupplyStatus")
-  purchaseReturns PurchaseReturn[] @relation("PurchaseReturnStatus")
-  salesReturns    SalesReturn[]    @relation("SalesReturnStatus")
-  demands         Demand[]         @relation("DemandStatus")
-  tasks           Task[]           @relation("TaskState")
+  account              Account               @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  counterparties       Counterparty[]
+  customerOrders       CustomerOrder[]       @relation("CustomerOrderStatus")
+  purchaseOrders       PurchaseOrder[]       @relation("PurchaseOrderStatus")
+  supplies             Supply[]              @relation("SupplyStatus")
+  purchaseReturns      PurchaseReturn[]      @relation("PurchaseReturnStatus")
+  salesReturns         SalesReturn[]         @relation("SalesReturnStatus")
+  demands              Demand[]              @relation("DemandStatus")
+  tasks                Task[]                @relation("TaskState")
   commissionReportsOut CommissionReportOut[] @relation("CommReportOutStatus")
   commissionReportsIn  CommissionReportIn[]  @relation("CommReportInStatus")
   invoicesOut          InvoiceOut[]          @relation("InvoiceOutStatus")
@@ -2389,6 +2529,9 @@ model CompanySettings {
   priceTypesJson           Json?    @map("price_types_json")
   createdAt                DateTime @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt                DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+  /// Kassir cheki chiqadigan printer nomi (omborchi agenti o'qiydi).
+  /// climart adoption o'chirgan; /sotuv «Rasmiylashtirish» oqimi bilan qaytdi.
+  receiptPrinterName       String?  @map("receipt_printer_name") @db.VarChar(255)
 
   account         Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
   defaultCurrency Currency? @relation(fields: [defaultCurrencyId], references: [id], onDelete: SetNull)
@@ -4288,11 +4431,11 @@ model CommissionReportOut {
   state      String    @default("draft") @db.VarChar(30)
   postedAt   DateTime? @map("posted_at") @db.Timestamptz()
 
-  sumMinor          BigInt @default(0) @map("sum_minor")
-  vatSumMinor       BigInt @default(0) @map("vat_sum_minor")
-  rewardSumMinor    BigInt @default(0) @map("reward_sum_minor")
-  rewardVatSumMinor BigInt @default(0) @map("reward_vat_sum_minor")
-  payedSumMinor     BigInt @default(0) @map("payed_sum_minor")
+  sumMinor              BigInt @default(0) @map("sum_minor")
+  vatSumMinor           BigInt @default(0) @map("vat_sum_minor")
+  rewardSumMinor        BigInt @default(0) @map("reward_sum_minor")
+  rewardVatSumMinor     BigInt @default(0) @map("reward_vat_sum_minor")
+  payedSumMinor         BigInt @default(0) @map("payed_sum_minor")
   // «Сумма комитента» payable to the consigner; «Прочие услуги» = non-commission
   // service positions. moysklad list columns; default 0 until the create/post sprint.
   commitentSumMinor     BigInt @default(0) @map("commitent_sum_minor")
@@ -4357,11 +4500,11 @@ model CommissionReportIn {
   state      String    @default("draft") @db.VarChar(30)
   postedAt   DateTime? @map("posted_at") @db.Timestamptz()
 
-  sumMinor          BigInt @default(0) @map("sum_minor")
-  vatSumMinor       BigInt @default(0) @map("vat_sum_minor")
-  rewardSumMinor    BigInt @default(0) @map("reward_sum_minor")
-  rewardVatSumMinor BigInt @default(0) @map("reward_vat_sum_minor")
-  payedSumMinor     BigInt @default(0) @map("payed_sum_minor")
+  sumMinor              BigInt @default(0) @map("sum_minor")
+  vatSumMinor           BigInt @default(0) @map("vat_sum_minor")
+  rewardSumMinor        BigInt @default(0) @map("reward_sum_minor")
+  rewardVatSumMinor     BigInt @default(0) @map("reward_vat_sum_minor")
+  payedSumMinor         BigInt @default(0) @map("payed_sum_minor")
   // «Сумма комитента» payable to the consigner; «Прочие услуги» = non-commission
   // service positions. moysklad list columns; default 0 until the create/post sprint.
   commitentSumMinor     BigInt @default(0) @map("commitent_sum_minor")
@@ -4579,8 +4722,8 @@ model Product {
   kind String @default("product") @db.VarChar(20)
 
   // Pricing (stored in minor units = tiyin; scale 100)
-  minPrice   BigInt? @map("min_price")
-  buyPrice   BigInt? @map("buy_price")
+  minPrice         BigInt? @map("min_price")
+  buyPrice         BigInt? @map("buy_price")
   // Per-price currency (ISO code) — moysklad parity: each price row picks its
   // own currency. NULL = the account base currency. NOTE: the stored amount is
   // the as-entered value in that currency; downstream cost/profit/document math
@@ -4590,7 +4733,7 @@ model Product {
   buyPriceCurrency String? @map("buy_price_currency") @db.VarChar(3)
   minPriceCurrency String? @map("min_price_currency") @db.VarChar(3)
   // Multi-tier prices: [{ priceTypeId, value, currencyCode }]
-  salePrices Json?   @map("sale_prices")
+  salePrices       Json?   @map("sale_prices")
 
   // Physical
   weightG  Int?    @map("weight_g") // weight in grams
@@ -4642,17 +4785,17 @@ model Product {
   minimumBalanceMinor BigInt @default(0) @map("minimum_balance_minor")
 
   // Metadata
-  shared     Boolean  @default(false)
-  archived   Boolean  @default(false)
-  syncId     String?  @map("sync_id") @db.Uuid
-  barcodes   String[] @default([])
+  shared       Boolean  @default(false)
+  archived     Boolean  @default(false)
+  syncId       String?  @map("sync_id") @db.Uuid
+  barcodes     String[] @default([])
   // Per-barcode GTIN type (moysklad parity — moysklad stores barcodes typed:
   // `[{ean13: "…"}]`). Index-aligned PARALLEL array to `barcodes` (barcodeTypes[i]
   // is the type of barcodes[i]); empty/short ⇒ the FE defaults the row to "ean13".
   // Kept SEPARATE from `barcodes` on purpose so the list/search `has` filters over
   // raw barcode values stay unchanged. Additive, defaults [] (back-compat).
   barcodeTypes String[] @default([]) @map("barcode_types")
-  attributes Json?
+  attributes   Json?
 
   /// Optimistic concurrency version (moysklad parity). Incremented on every
   /// field-edit save; a stale value rejects the write with HTTP 409 so two
@@ -5174,26 +5317,26 @@ model Supply {
   /// Multi-role approval workflow bosqichi (2026-07-29 spec). FSM `state` +
   /// `applicable`dan ORTOGONAL; taminotchi→omborchi→admin zanjirini boshqaradi.
   /// Stock faqat admin-tasdig'ida (stage→completed → transition 'post') oshadi.
-  approvalStage   String  @default("none") @map("approval_stage") @db.VarChar(30) // none|awaiting_supplier|delivering|awaiting_admin|completed
+  approvalStage String @default("none") @map("approval_stage") @db.VarChar(30) // none|awaiting_supplier|delivering|awaiting_admin|completed
 
-  account             Account              @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  owner               Employee?            @relation("SupplyOwner", fields: [ownerId], references: [id], onDelete: SetNull)
-  agent               Counterparty         @relation(fields: [agentId], references: [id], onDelete: Restrict)
-  agentAccount        CounterpartyAccount? @relation("SupplyAgentAccount", fields: [agentAccountId], references: [id], onDelete: SetNull)
-  organization        Organization         @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  organizationAccount OrganizationAccount? @relation("SupplyOrgAccount", fields: [organizationAccountId], references: [id], onDelete: SetNull)
-  store               Store                @relation(fields: [storeId], references: [id], onDelete: Restrict)
-  purchaseOrder       PurchaseOrder?       @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
-  contract            Contract?            @relation("SupplyContract", fields: [contractId], references: [id], onDelete: SetNull)
-  project             Project?             @relation("SupplyProject", fields: [projectId], references: [id], onDelete: SetNull)
-  status              State?               @relation("SupplyStatus", fields: [statusId], references: [id], onDelete: SetNull)
+  account             Account               @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  owner               Employee?             @relation("SupplyOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  agent               Counterparty          @relation(fields: [agentId], references: [id], onDelete: Restrict)
+  agentAccount        CounterpartyAccount?  @relation("SupplyAgentAccount", fields: [agentAccountId], references: [id], onDelete: SetNull)
+  organization        Organization          @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  organizationAccount OrganizationAccount?  @relation("SupplyOrgAccount", fields: [organizationAccountId], references: [id], onDelete: SetNull)
+  store               Store                 @relation(fields: [storeId], references: [id], onDelete: Restrict)
+  purchaseOrder       PurchaseOrder?        @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
+  contract            Contract?             @relation("SupplyContract", fields: [contractId], references: [id], onDelete: SetNull)
+  project             Project?              @relation("SupplyProject", fields: [projectId], references: [id], onDelete: SetNull)
+  status              State?                @relation("SupplyStatus", fields: [statusId], references: [id], onDelete: SetNull)
   positions           SupplyPosition[]
   approvalEvents      SupplyApprovalEvent[]
   approvalLinks       SupplyApprovalLink[]
   purchaseReturns     PurchaseReturn[]
-  moves               Move[]               @relation("MoveSupply")
-  factureIns          FactureIn[]          @relation("FactureInSupply")
-  factureInLinks      FactureInSupply[]    @relation("FactureInSupplyLink")
+  moves               Move[]                @relation("MoveSupply")
+  factureIns          FactureIn[]           @relation("FactureInSupply")
+  factureInLinks      FactureInSupply[]     @relation("FactureInSupplyLink")
 
   @@unique([accountId, name])
   @@index([accountId, state, deletedAt])
@@ -5993,7 +6136,7 @@ model SalesReturn {
   /// entityType="salesreturn"), mirroring PurchaseReturn.statusId. Orthogonal
   /// to the FSM `state` (draft/posted/cancelled) + «Проведено»; onDelete
   /// SetNull so deleting a status just unlinks the returns that used it.
-  statusId              String? @map("status_id") @db.Uuid
+  statusId String? @map("status_id") @db.Uuid
 
   // Moment + lifecycle
   moment     DateTime  @default(now()) @db.Timestamptz()
@@ -6486,10 +6629,10 @@ model LossPosition {
 ///      draft → (soft-deleted)
 /// Used for: initial stock, found goods, gifts, corrections.
 model Enter {
-  id        String  @id @default(uuid()) @db.Uuid
-  accountId String  @map("account_id") @db.Uuid
-  ownerId   String? @map("owner_id") @db.Uuid
-  groupId   String? @map("group_id") @db.Uuid
+  id           String  @id @default(uuid()) @db.Uuid
+  accountId    String  @map("account_id") @db.Uuid
+  ownerId      String? @map("owner_id") @db.Uuid
+  groupId      String? @map("group_id") @db.Uuid
   // moysklad-parity «Кто изменил» — author of last update. SetNull on user
   // deletion to preserve attribution. Mirrors Move.modifiedById.
   modifiedById String? @map("modified_by_id") @db.Uuid
@@ -6584,12 +6727,12 @@ model EnterPosition {
   // per-position fields on the #enter grid. РНПТ here is a plain text field (NOT
   // the full Честный Знак marking system); Ячейка is a free-text cell reference
   // (NOT the validated address-storage picker — that needs a warehouse cell model).
-  rnpt String? @db.VarChar(255)
+  rnpt        String? @db.VarChar(255)
   // moysklad «Ячейка» — address-storage bin. `cellId` = picked StoreCell (validated);
   // `cell` keeps the denormalized «Зона / Ячейка» label for display + legacy rows.
   // post() increments per-cell stock (StockByCell) for the picked cell.
-  cellId String? @map("cell_id") @db.Uuid
-  cell   String? @db.VarChar(255)
+  cellId      String? @map("cell_id") @db.Uuid
+  cell        String? @db.VarChar(255)
 
   enter   Enter      @relation(fields: [enterId], references: [id], onDelete: Cascade)
   product Product?   @relation("ProductEnterPositions", fields: [productId], references: [id], onDelete: Restrict)
@@ -6704,7 +6847,7 @@ model StockOperation {
   // moysklad «Ячейка» — the address-storage cell this movement applied to (null =
   // store-level only). Informational on the ledger; the materialized per-cell
   // balance lives in StockByCell. No relation (append-only ledger, like docPositionId).
-  cellId         String? @map("cell_id") @db.Uuid
+  cellId String? @map("cell_id") @db.Uuid
 
   // Signed delta: positive = inflow (supply / unpost-reversal), negative = outflow (demand posting).
   qtyDelta       Decimal @map("qty_delta") @db.Decimal(20, 6)
@@ -7354,6 +7497,10 @@ model CashierSession {
   groupId               String? @map("group_id") @db.Uuid
   cashierId             String  @map("cashier_id") @db.Uuid
   cashDeskId            String  @map("cash_desk_id") @db.Uuid
+  // Smena tizimi: sessiya qaysi smenaga tegishli (/sotuv navbat boshqaruvi).
+  smenaId               String? @map("smena_id") @db.Uuid
+  // Smena vaqtidan TASHQARI ochilgan bo'lsa — kassir ko'rsatgan sabab.
+  outOfShiftReason      String? @map("out_of_shift_reason") @db.VarChar(500)
   storeId               String  @map("store_id") @db.Uuid
   organizationId        String  @map("organization_id") @db.Uuid
   organizationAccountId String? @map("organization_account_id") @db.Uuid
@@ -7415,6 +7562,7 @@ model CashierSession {
   store               Store                 @relation(fields: [storeId], references: [id], onDelete: Restrict)
   organization        Organization          @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   organizationAccount OrganizationAccount?  @relation("CashierSessionOrgAccount", fields: [organizationAccountId], references: [id], onDelete: SetNull)
+  smena               Smena?                @relation(fields: [smenaId], references: [id], onDelete: SetNull)
   sales               RetailSale[]
   drawerCashIn        RetailDrawerCashIn[]  @relation("RetailDrawerInShift")
   drawerCashOut       RetailDrawerCashOut[] @relation("RetailDrawerOutShift")
@@ -9360,12 +9508,12 @@ model AnalitikaOrderLine {
 /// without a cross-model resolution map. A link is bidirectional: querying by
 /// either endpoint returns the OTHER endpoint's snapshot.
 model DocumentLink {
-  id         String   @id @default(uuid()) @db.Uuid
-  accountId  String   @map("account_id") @db.Uuid
-  sourceType String   @map("source_type") @db.VarChar(64)
-  sourceId   String   @map("source_id") @db.Uuid
-  targetType String   @map("target_type") @db.VarChar(64)
-  targetId   String   @map("target_id") @db.Uuid
+  id         String @id @default(uuid()) @db.Uuid
+  accountId  String @map("account_id") @db.Uuid
+  sourceType String @map("source_type") @db.VarChar(64)
+  sourceId   String @map("source_id") @db.Uuid
+  targetType String @map("target_type") @db.VarChar(64)
+  targetId   String @map("target_id") @db.Uuid
 
   sourceName     String   @map("source_name") @db.VarChar(255)
   sourceMoment   DateTime @map("source_moment") @db.Timestamptz()

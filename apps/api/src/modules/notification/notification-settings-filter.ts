@@ -25,6 +25,8 @@ const ROW_BY_KIND: Partial<Record<NotificationKindValue, string>> = {
   invoice_overdue: 'customer_invoices',
   mention: 'mentions',
   return_to_warehouse: 'retail',
+  restock_assigned: 'retail',
+  picking_assigned: 'retail',
 };
 
 export function notificationRowForKind(kind: NotificationKindValue): string | undefined {

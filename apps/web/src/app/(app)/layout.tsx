@@ -381,6 +381,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     { key: 'sessions', label: tRetail('sessions'), href: '/retail/sessions' },
     { key: 'sales', label: tRetail('sales'), href: '/retail/sales' },
     { key: 'z_report', label: tRetail('z_report'), href: '/retail/z-report' },
+    // «Sotuv» — sherset'ning o'z POS sahifasi (climart adoption o'chirgan,
+    // 2026-08-01 da qaytarildi). climart'ning `/retail` MS-parity kassasi
+    // O'RNIGA emas, YONIDA turadi — eski `retail → sotuv` redirecti
+    // QAYTARILMADI, u climart kassasini bosib ketardi.
+    { key: 'sotuv', label: tRetail('sotuv'), href: '/sotuv' },
   ];
 
   const ecomSubNav: SubNavItem[] = [
@@ -512,7 +517,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                         pathname.startsWith('/processing-orders') ||
                         pathname.startsWith('/processings')
                       ? 'production'
-                      : pathname.startsWith('/retail')
+                      : pathname.startsWith('/retail') || pathname.startsWith('/sotuv')
                         ? 'retail'
                         : // e-commerce lives UNDER «Решения» (apps), not as its own
                           // tab — /ecommerce highlights the Решения module.

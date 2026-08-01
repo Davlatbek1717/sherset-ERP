@@ -116,6 +116,17 @@ const COMMANDS: Command[] = [
     keywords: ['kassa', 'pos'],
   },
   {
+    // «Sotuv» — sherset'ning o'z POS sahifasi. climart'ning `/retail`
+    // kassasi O'RNIGA emas, alohida band: ikkalasi ham kerak.
+    id: 'm.sotuv',
+    labelKey: 'go_sotuv',
+    icon: 'retail',
+    iconColorClass: 'text-rose-500',
+    href: '/sotuv',
+    group: 'modules',
+    keywords: ['kassa', 'pos', 'savdo'],
+  },
+  {
     id: 'm.production',
     labelKey: 'go_production',
     icon: 'production',

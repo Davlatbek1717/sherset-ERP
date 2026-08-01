@@ -113,6 +113,14 @@ const EXEMPT_INPUT_TEXTNUM = [
   // — same dense-numeric rationale as product-select-modal.
   'components/documents/completeness-check-modal.tsx',
   'retail/page.tsx',
+  // /sotuv POS (sherset'ning o'z kassasi, 2026-08-01 da qaytarildi) —
+  // `retail/page.tsx` bilan AYNAN bir xil sabab: teginish uchun mo'ljallangan
+  // zich kassa terisi (miqdor/narx mikro-maydonlari, chegirma). Sahifa
+  // sherset.biznesjon.uz bilan 1:1 saqlanadi, shuning uchun DS Input'ga
+  // ko'chirish uni ataylab o'zgartirgan bo'lardi. Faqat text/number —
+  // taqiqlangan turlar (date/password/…) yo'q.
+  'app/(app)/sotuv/page.tsx',
+  'components/pos/rasmilashtirish-modal.tsx',
 ];
 // Types every site of which is migrated — banned outright, no exemptions.
 const BANNED_INPUT_TYPES = [

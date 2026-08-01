@@ -55,6 +55,27 @@ import {
  *   - CashDesk.balanceMinor decremented on refund (cash portion)
  *   - Session aggregates (salesCount, salesSumMinor, returnsCount, returnsSumMinor) updated on post
  */
+
+/**
+ * Tovarning «uy» yacheykasi — climart tizimidan («01-02-03-05» satri).
+ * Sherset'da bu 4 ta ustun edi (`locSklad/locPolka/...`); egasining qaroriga
+ * ko'ra (2026-08-01) ular qaytarilmadi — bitta manzil tizimi qoladi.
+ */
+function cellOf(attrs: unknown): string {
+  if (attrs && typeof attrs === 'object' && '__yacheyka' in attrs) {
+    const v = (attrs as Record<string, unknown>).__yacheyka;
+    if (typeof v === 'string' && v.length > 0) return v;
+  }
+  return '';
+}
+
+/** «01-02-03-05» → 1 (ombor raqami); kod yo'q/noraqamli bo'lsa null. */
+function skladNoOf(cell: string): number | null {
+  const first = cell.split('-')[0];
+  const n = Number(first);
+  return first !== '' && Number.isInteger(n) ? n : null;
+}
+
 @Injectable()
 export class RetailSaleService {
   private readonly logger = new Logger(RetailSaleService.name);
@@ -927,5 +948,156 @@ export class RetailSaleService {
       throw new ConflictException('Duplicate name or unique constraint violation');
     }
     throw e;
+  }
+
+  async sendToPicking(accountId: string, id: string, userId: string, userName: string) {
+    const sale = await this.prisma.client.retailSale.findFirst({
+      where: { id, accountId },
+      select: { id: true, state: true },
+    });
+    if (!sale) throw new NotFoundException(`RetailSale ${id} not found`);
+    if (sale.state !== 'draft') {
+      throw new BadRequestException(
+        `Only draft sales can be sent to picking (current: ${sale.state})`,
+      );
+    }
+    const result = await this.prisma.client.retailSale.updateMany({
+      where: { id, accountId, state: 'draft' },
+      data: { state: 'picking' },
+    });
+    if (result.count === 0) {
+      throw new ConflictException('Sale state changed; send-to-picking aborted');
+    }
+    // Create per-sklad picking tasks for each configured warehouse keeper.
+    // Best-effort: a failure here must not roll back the state change.
+    this.createPickingTasksForSale(accountId, id, userId, userName).catch((e) => {
+      this.logger.error(
+        `createPickingTasksForSale failed for retailsale ${id}: ${e instanceof Error ? e.message : e}`,
+      );
+    });
+    return this.prisma.client.retailSale.findUniqueOrThrow({
+      where: { id },
+      include: {
+        positions: {
+          include: { product: { select: { id: true, name: true, code: true } } },
+          orderBy: { position: 'asc' },
+        },
+      },
+    });
+  }
+
+  private async createPickingTasksForSale(
+    accountId: string,
+    saleId: string,
+    userId: string,
+    userName: string,
+  ): Promise<void> {
+    const sale = await this.prisma.client.retailSale.findFirst({
+      where: { id: saleId, accountId },
+      select: {
+        name: true,
+        storeId: true,
+        store: { select: { name: true } },
+        positions: {
+          include: {
+            product: {
+              select: {
+                id: true,
+                name: true,
+                attributes: true,
+              },
+            },
+          },
+          orderBy: { position: 'asc' },
+        },
+      },
+    });
+    if (!sale || sale.positions.length === 0) {
+      this.logger.warn(`createPickingTasks[${saleId}]: sale not found or no positions`);
+      return;
+    }
+
+    const keepers = await this.prisma.client.skladKeeper.findMany({ where: { accountId } });
+    if (keepers.length === 0) {
+      this.logger.warn(`createPickingTasks[${saleId}]: no skladKeeper mappings found`);
+      return;
+    }
+    const keeperBySklad = new Map(keepers.map((k) => [k.skladNo, k]));
+
+    // Pozitsiyalar ombor raqami bo'yicha guruhlanadi (yacheyka kodining 1-bo'lagi).
+    // Yacheykasi yo'q tovarlar NULL_SKLAD=-1 guruhiga, u birinchi omborchiga.
+    const NULL_SKLAD = -1;
+    type Pos = (typeof sale.positions)[number];
+    const groups = new Map<number, Pos[]>();
+    for (const pos of sale.positions) {
+      // climart: manzil tovarda `attributes.__yacheyka` satri («01-02-03-05»);
+      // ombor raqami = birinchi bo'lak (sherset'dagi `locSklad` ekvivalenti).
+      const sklad = (pos.product ? skladNoOf(cellOf(pos.product.attributes)) : null) ?? NULL_SKLAD;
+      if (sklad === NULL_SKLAD) {
+        this.logger.warn(
+          `createPickingTasks[${saleId}]: product ${pos.productId} yacheykasi yo'q - zaxira guruh`,
+        );
+      }
+      const bucket = groups.get(sklad);
+      if (bucket) bucket.push(pos);
+      else groups.set(sklad, [pos]);
+    }
+    this.logger.log(
+      `createPickingTasks[${saleId}]: grouped into sklads: ${[...groups.keys()].join(', ')}, keepers: ${[...keeperBySklad.keys()].join(', ')}`,
+    );
+
+    const storeId = sale.storeId ?? null;
+    const storeName = sale.store?.name ?? null;
+    // Yacheykasiz tovarlar uchun zaxira omborchi: birinchi sozlangani.
+    const fallbackKeeper = keepers[0];
+
+    for (const [skladNo, entries] of groups) {
+      const keeper = skladNo === NULL_SKLAD ? fallbackKeeper : keeperBySklad.get(skladNo);
+      if (!keeper) continue;
+
+      const task = await this.prisma.client.restockTask.create({
+        data: {
+          accountId,
+          type: 'picking',
+          skladNo,
+          sourceType: 'retailsale',
+          sourceId: saleId,
+          sourceName: sale.name,
+          storeId,
+          storeName,
+          assigneeId: keeper.employeeId,
+          assigneeName: keeper.employeeName,
+          createdById: userId,
+          createdByName: userName,
+          status: 'pending',
+          lines: {
+            create: entries.map((pos, i) => {
+              const p = pos.product;
+              const bin = p ? cellOf(p.attributes) : '';
+              return {
+                accountId,
+                productId: pos.productId ?? null,
+                productName: p?.name ?? '—',
+                quantity: pos.quantity,
+                binLocation: bin || null,
+                position: i,
+              };
+            }),
+          },
+        },
+      });
+
+      await this.notifications
+        .emit(
+          accountId,
+          keeper.employeeId,
+          'picking_assigned',
+          "Yig'ish vazifasi",
+          `${entries.length} ta mahsulot${sale.name ? ` — ${sale.name}` : ''}`,
+          'RestockTask',
+          task.id,
+        )
+        .catch(() => {});
+    }
   }
 }
