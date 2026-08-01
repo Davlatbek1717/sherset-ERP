@@ -253,6 +253,16 @@ export const CustomerOrderFilterSchema = z.object({
   taskDueFrom: z.string().optional(),
   taskDueTo: z.string().optional(),
   /**
+   * «Тип возврата» — moysklad parity (grounded 2026-07-31; the live filter offers
+   * «Без возвратов» / «Частично возвращено» / «Полностью возвращено»).
+   *   none    → the order has no sales return at all
+   *   partial → returned amount is above zero but below the order total
+   *   full    → returned amount covers the order total
+   * Compared on money (SalesReturn.sumMinor vs CustomerOrder.sumMinor), which is
+   * the same basis the list's «Оплачено»/«Отгружено» derived states use.
+   */
+  returnStatus: z.enum(['none', 'partial', 'full']).optional(),
+  /**
    * "Когда изменен" — moysklad parity. Filters on `updatedAt` between
    * the two ISO dates (mirror momentFrom/To).
    */

@@ -60,7 +60,14 @@ export class CustomerOrderService {
     const filter = CustomerOrderFilterSchema.parse(rawFilter);
     const attrTypes = await this.attrTypeMap(accountId, filter.attrs);
     const taskDueOrderIds = await this.resolveTaskDueOrderIds(accountId, filter);
-    const baseWhere = this.buildListWhere(accountId, filter, attrTypes, taskDueOrderIds);
+    const returnStatusOrderIds = await this.resolveReturnStatusOrderIds(accountId, filter);
+    const baseWhere = this.buildListWhere(
+      accountId,
+      filter,
+      attrTypes,
+      taskDueOrderIds,
+      returnStatusOrderIds,
+    );
     // H4 record-scope (RFC W4): AND the per-record visibility filter. No-op until
     // the account opts in — recordScopeWhere returns {} when the flag is off (or
     // the actor's scope is ALL), so today's behaviour is unchanged.
@@ -133,7 +140,14 @@ export class CustomerOrderService {
     const filter = CustomerOrderFilterSchema.parse(rawFilter);
     const attrTypes = await this.attrTypeMap(accountId, filter.attrs);
     const taskDueOrderIds = await this.resolveTaskDueOrderIds(accountId, filter);
-    const baseWhere = this.buildListWhere(accountId, filter, attrTypes, taskDueOrderIds);
+    const returnStatusOrderIds = await this.resolveReturnStatusOrderIds(accountId, filter);
+    const baseWhere = this.buildListWhere(
+      accountId,
+      filter,
+      attrTypes,
+      taskDueOrderIds,
+      returnStatusOrderIds,
+    );
     const scoped = await this.permissions.recordScopeWhere(
       accountId,
       userId,
@@ -432,7 +446,14 @@ export class CustomerOrderService {
     // in identically so the footer never sums orders the user can't see.
     const attrTypes = await this.attrTypeMap(accountId, filter.attrs);
     const taskDueOrderIds = await this.resolveTaskDueOrderIds(accountId, filter);
-    const baseWhere = this.buildListWhere(accountId, filter, attrTypes, taskDueOrderIds);
+    const returnStatusOrderIds = await this.resolveReturnStatusOrderIds(accountId, filter);
+    const baseWhere = this.buildListWhere(
+      accountId,
+      filter,
+      attrTypes,
+      taskDueOrderIds,
+      returnStatusOrderIds,
+    );
     const scoped = await this.permissions.recordScopeWhere(
       accountId,
       userId,
@@ -2164,11 +2185,54 @@ export class CustomerOrderService {
     return [...new Set(rows.map((r) => r.entityId).filter((id): id is string => id !== null))];
   }
 
+  /**
+   * «Тип возврата» — resolve the orders whose returned amount is partial / full.
+   *
+   * «Без возвратов» needs no query at all — it is a plain `salesReturns: { none: {} }`
+   * relation filter built inline — so this only runs for the two comparing cases.
+   * Prisma cannot aggregate a relation inside `where`, so the sums are grouped up
+   * front and compared here.
+   *
+   * Returns `null` when the filter is unset or is the `none` case.
+   */
+  private async resolveReturnStatusOrderIds(
+    accountId: string,
+    filter: CustomerOrderFilter,
+  ): Promise<string[] | null> {
+    const want = filter.returnStatus;
+    if (want !== 'partial' && want !== 'full') return null;
+    const grouped = await this.prisma.client.salesReturn.groupBy({
+      by: ['customerOrderId'],
+      where: { accountId, deletedAt: null, customerOrderId: { not: null } },
+      _sum: { sumMinor: true },
+    });
+    const returned = new Map<string, bigint>();
+    for (const g of grouped) {
+      if (g.customerOrderId) returned.set(g.customerOrderId, g._sum.sumMinor ?? 0n);
+    }
+    if (returned.size === 0) return [];
+    // Only the orders that actually have returns need their total fetched.
+    const orders = await this.prisma.client.customerOrder.findMany({
+      where: { accountId, deletedAt: null, id: { in: [...returned.keys()] } },
+      select: { id: true, sumMinor: true },
+    });
+    return orders
+      .filter((o) => {
+        const back = returned.get(o.id) ?? 0n;
+        if (back <= 0n) return false;
+        // A zero-total order can never be "partially" returned — guard the
+        // comparison so it lands in `full` rather than dividing by nothing.
+        return want === 'full' ? back >= o.sumMinor : back < o.sumMinor;
+      })
+      .map((o) => o.id);
+  }
+
   private buildListWhere(
     accountId: string,
     filter: CustomerOrderFilter,
     attrTypes: Map<string, AttributeType> = new Map(),
     taskDueOrderIds: string[] | null = null,
+    returnStatusOrderIds: string[] | null = null,
   ): Prisma.CustomerOrderWhereInput {
     const fields = this.prisma.client.customerOrder.fields;
 
@@ -2307,6 +2371,16 @@ export class CustomerOrderService {
     // they don't collide with the sum guards above).
     sumScopedAnd.push(...this.buildAttrWhere(filter.attrs, attrTypes));
 
+    // «Срок задачи» + «Тип возврата» — both narrow by `id`. They MUST join the
+    // single AND array, not be spread as their own keys: the object literal
+    // already carries `AND: sumScopedAnd`, and a second `AND` (or two `id` keys)
+    // would be last-wins and silently drop the other filter — the exact bug the
+    // sum-guard comment above documents.
+    // `null` = filter not set (no restriction); `[]` = set but nothing matched
+    // (⇒ no rows), so the two cases must stay distinguishable.
+    if (taskDueOrderIds !== null) sumScopedAnd.push({ id: { in: taskDueOrderIds } });
+    if (returnStatusOrderIds !== null) sumScopedAnd.push({ id: { in: returnStatusOrderIds } });
+
     return {
       accountId,
       deletedAt: null,
@@ -2349,9 +2423,8 @@ export class CustomerOrderService {
       ...updatedRange,
       ...deliveryPlannedRange,
       ...shipmentAddressClause,
-      // «Срок задачи» — null means "filter not set"; an empty array means "set but
-      // nothing matched" and must therefore yield no rows.
-      ...(taskDueOrderIds !== null ? { id: { in: taskDueOrderIds } } : {}),
+      // «Без возвратов» — a pure relation filter, no pre-resolution needed.
+      ...(filter.returnStatus === 'none' ? { salesReturns: { none: {} } } : {}),
       ...(filter.search
         ? {
             OR: [

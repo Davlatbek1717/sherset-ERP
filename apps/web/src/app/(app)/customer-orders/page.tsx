@@ -272,6 +272,8 @@ export default function CustomerOrdersPage() {
     // «Срок задачи» — open-task deadline range
     taskDueFrom?: string;
     taskDueTo?: string;
+    // «Тип возврата» — returned-amount state against the order total
+    returnStatus?: 'none' | 'partial' | 'full';
   }>({});
 
   // moysklad «Статус» filter — the account's custom order statuses (e.g.
@@ -353,6 +355,7 @@ export default function CustomerOrdersPage() {
   if (extFilter.agentOwnerId) paramsRecord.agentOwnerId = extFilter.agentOwnerId;
   if (extFilter.taskDueFrom) paramsRecord.taskDueFrom = extFilter.taskDueFrom;
   if (extFilter.taskDueTo) paramsRecord.taskDueTo = extFilter.taskDueTo;
+  if (extFilter.returnStatus) paramsRecord.returnStatus = extFilter.returnStatus;
   // Custom-attribute (доп.поля) filters → a JSON-encoded `attrs` array of
   // {code, value?|from?/to?} clauses. Date attrs send from/to; everything else
   // sends a single value. Only non-empty clauses are included; the backend maps
@@ -991,6 +994,7 @@ export default function CustomerOrdersPage() {
                     agentOwnerId: pickStr('agentOwnerId'),
                     taskDueFrom: pickStr('taskDueFrom'),
                     taskDueTo: pickStr('taskDueTo'),
+                    returnStatus: pickStr<'none' | 'partial' | 'full'>('returnStatus'),
                   });
                   // Restore custom-attribute (доп.поля) filters too, so a saved
                   // pill that encoded «Уста»/«Санаси» re-applies instead of being
@@ -1225,6 +1229,26 @@ export default function CustomerOrdersPage() {
                 }}
                 testId="filter-project"
               />
+            </InlineFilterPanel.Field>
+            {/* 3a. Тип возврата — moysklad lists it right after «Отгружено»
+                (grounded 2026-07-31). Compared on money: returned SalesReturn
+                total vs the order total. «Без возвратов» is a plain relation
+                filter; the two comparing cases are pre-resolved server-side. */}
+            <InlineFilterPanel.Field fieldKey="returnStatus" label={tFilters('return_type')}>
+              <NativeSelect
+                value={extFilter.returnStatus ?? ''}
+                onChange={(e) => {
+                  const v = e.target.value as '' | 'none' | 'partial' | 'full';
+                  setExtFilter({ ...extFilter, returnStatus: v || undefined });
+                  setCursor(undefined);
+                }}
+                data-test-id="filter-return-status"
+              >
+                <option value="" />
+                <option value="partial">{tFilters('return_partial')}</option>
+                <option value="none">{tFilters('return_none')}</option>
+                <option value="full">{tFilters('return_full')}</option>
+              </NativeSelect>
             </InlineFilterPanel.Field>
             {/* 3b. План. дата отгрузки — moysklad puts this in the FIRST filter row,
                 right after «Отгружено» (grounded 2026-07-31 on the live #customerorder

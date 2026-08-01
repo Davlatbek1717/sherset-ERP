@@ -217,6 +217,13 @@ describe('CustomerOrderFilterSchema', () => {
     expect(t.taskDueTo).toBe('2026-09-30');
   });
 
+  it('accepts the «Тип возврата» states and rejects unknown ones', () => {
+    for (const s of ['none', 'partial', 'full'] as const) {
+      expect(CustomerOrderFilterSchema.parse({ returnStatus: s }).returnStatus).toBe(s);
+    }
+    expect(() => CustomerOrderFilterSchema.parse({ returnStatus: 'sometimes' })).toThrow();
+  });
+
   it('leaves the new filters undefined when absent (no accidental defaults)', () => {
     const result = CustomerOrderFilterSchema.parse({});
     expect(result.deliveryPlannedFrom).toBeUndefined();
