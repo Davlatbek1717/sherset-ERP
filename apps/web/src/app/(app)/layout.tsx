@@ -342,6 +342,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     { key: 'pickingwaves', label: tStock('picking_waves'), href: '/picking-waves' },
     { key: 'picklists', label: tStock('pick_lists'), href: '/pick-lists' },
     { key: 'internalorders', label: tStock('internal_orders'), href: '/internal-orders' },
+    // /sotuv omborchi zanjiri (2026-08-01 da qaytarildi) — jonli
+    // sherset.biznesjon.uz dagi tartib: topshiriqlar → omborchi paneli → skaner.
+    { key: 'restocktasks', label: tStock('restock'), href: '/restock-tasks' },
+    { key: 'omborchi', label: tStock('omborchi'), href: '/omborchi' },
+    { key: 'cellscanner', label: tStock('cell_scanner'), href: '/cell' },
     { key: 'remains', label: tStock('remains'), href: '/stock-balance' },
     { key: 'turnover', label: tStock('turnover'), href: '/turnover' },
     { key: 'stores', label: tStock('stores'), href: '/stores' },

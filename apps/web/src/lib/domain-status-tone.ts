@@ -79,6 +79,15 @@ export const callDirectionTone = (d: string | null | undefined): StateTone =>
   resolve(CALL_DIRECTION_TONE, d);
 
 /** CRM task status (`open | in_progress | done | cancelled`). */
+/** Omborchi topshirig'i (joylashtirish/yig'ish) — /restock-tasks, /omborchi. */
+export const RESTOCK_STATUS_TONE: Record<string, StateTone> = {
+  pending: 'neutral',
+  in_progress: 'info',
+  done: 'success',
+};
+export const restockStatusTone = (s: string | null | undefined): StateTone =>
+  resolve(RESTOCK_STATUS_TONE, s);
+
 export const TASK_STATUS_TONE: Record<string, StateTone> = {
   open: 'info',
   in_progress: 'warning',

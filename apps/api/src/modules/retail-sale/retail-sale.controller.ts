@@ -58,6 +58,12 @@ export class RetailSaleController {
     return this.sales.update(user.accountId, id, body);
   }
 
+  @Post(':id/mark-ready')
+  @RequirePermission({ entity: 'retailsale', action: 'update' })
+  async markReady(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.sales.markReady(user.accountId, id, user.sub);
+  }
+
   @Post(':id/send-to-picking')
   @RequirePermission({ entity: 'retailsale', action: 'update' })
   async sendToPicking(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {

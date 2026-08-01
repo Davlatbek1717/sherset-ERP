@@ -21,11 +21,13 @@ import { SlowMoversService } from './slow-movers.service.js';
 import { StockBalanceService } from './stock-balance.service.js';
 import { TurnoverService } from './turnover.service.js';
 import { UnitEconomicsService } from './unit-economics.service.js';
+import { WarehouseOpsService } from './warehouse-ops.service.js';
 
 @Module({
   imports: [AuthModule, StockModule],
   controllers: [ReportController],
   providers: [
+    WarehouseOpsService,
     ReportService,
     CashFlowService,
     StockBalanceService,

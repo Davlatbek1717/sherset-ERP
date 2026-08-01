@@ -1100,4 +1100,80 @@ export class RetailSaleService {
         .catch(() => {});
     }
   }
+
+  async markReady(accountId: string, id: string, userId: string) {
+    const sale = await this.prisma.client.retailSale.findFirst({
+      where: { id, accountId },
+      select: { id: true, state: true },
+    });
+    if (!sale) throw new NotFoundException(`RetailSale ${id} not found`);
+    if (sale.state !== 'picking') {
+      throw new BadRequestException(
+        `Only picking sales can be marked ready (current: ${sale.state})`,
+      );
+    }
+
+    // Does THIS omborchi own a picking task for this sale?
+    const myTaskCount = await this.prisma.client.restockTask.count({
+      where: {
+        accountId,
+        sourceId: id,
+        sourceType: 'retailsale',
+        type: 'picking',
+        assigneeId: userId,
+      },
+    });
+
+    if (myTaskCount > 0) {
+      // Per-warehouse: close only the caller's own zone.
+      await this.prisma.client.restockTask.updateMany({
+        where: {
+          accountId,
+          sourceId: id,
+          sourceType: 'retailsale',
+          type: 'picking',
+          assigneeId: userId,
+          status: { not: 'done' },
+        },
+        data: { status: 'done' },
+      });
+    } else {
+      // No keeper-assigned task for this user → legacy behaviour: close everything.
+      await this.prisma.client.restockTask.updateMany({
+        where: {
+          accountId,
+          sourceId: id,
+          sourceType: 'retailsale',
+          type: 'picking',
+          status: { not: 'done' },
+        },
+        data: { status: 'done' },
+      });
+    }
+
+    // Any warehouse still outstanding? Then the sale stays 'picking' — this
+    // omborchi's zone is done, but another keeper hasn't collected theirs yet.
+    const remaining = await this.prisma.client.restockTask.count({
+      where: {
+        accountId,
+        sourceId: id,
+        sourceType: 'retailsale',
+        type: 'picking',
+        status: { not: 'done' },
+      },
+    });
+    if (remaining > 0) {
+      return this.prisma.client.retailSale.findUniqueOrThrow({ where: { id } });
+    }
+
+    // All warehouses done → flip to 'ready' (atomic guard against a racing post/cancel).
+    const result = await this.prisma.client.retailSale.updateMany({
+      where: { id, accountId, state: 'picking' },
+      data: { state: 'ready' },
+    });
+    if (result.count === 0) {
+      throw new ConflictException('Sale state changed; mark-ready aborted');
+    }
+    return this.prisma.client.retailSale.findUniqueOrThrow({ where: { id } });
+  }
 }

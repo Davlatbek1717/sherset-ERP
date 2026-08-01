@@ -969,7 +969,9 @@
       "stores": "Склады",
       "training": "Обучение",
       "restock": "Размещение",
-      "picking": "Сборка"
+      "picking": "Сборка",
+      "omborchi": "Кладовщик (сборка)",
+      "cell_scanner": "Сканер ячейки"
     },
     "reports": {
       "overview": "Обзор",

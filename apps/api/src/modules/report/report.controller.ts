@@ -22,6 +22,7 @@ import { SlowMoversService } from './slow-movers.service.js';
 import { StockBalanceService } from './stock-balance.service.js';
 import { TurnoverService } from './turnover.service.js';
 import { UnitEconomicsService } from './unit-economics.service.js';
+import { WarehouseOpsService } from './warehouse-ops.service.js';
 
 @Controller('reports')
 @UseGuards(JwtAuthGuard)
@@ -48,7 +49,19 @@ export class ReportController {
     private readonly purchaseMgmt: PurchaseManagementService,
     @Inject(UnitEconomicsService)
     private readonly unitEcon: UnitEconomicsService,
+    @Inject(WarehouseOpsService)
+    private readonly warehouseOps: WarehouseOpsService,
   ) {}
+
+  /** Sherset /sotuv zanjiri — qabul→joylashtirish→yig'ish paneli. */
+  @Get('warehouse-ops')
+  @RequirePermission({ entity: 'report', action: 'view' })
+  async warehouseOpsReport(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: Record<string, unknown>,
+  ) {
+    return this.warehouseOps.report(user.accountId, query);
+  }
 
   @Get('unit-economics')
   @RequirePermission({ entity: 'report', action: 'view' })

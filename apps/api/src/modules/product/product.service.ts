@@ -10,6 +10,7 @@ import { allocateDocumentNumber } from '../../prisma/document-number.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { resolveCreatorGroupId } from '../shared/group-stamp.js';
 import { mapVersionedUpdateError } from '../shared/optimistic-lock.js';
+import { formatCellCode, parseCellCode } from './cell-code.util.js';
 import {
   type BulkUpdatePatch,
   ProductRepository,
@@ -504,5 +505,82 @@ export class ProductService {
       throw new ConflictException(`Duplicate value on unique field: ${target}`);
     }
     throw e as Error;
+  }
+
+  /** Scan page: product detail + stock balance per store. */
+  async getScanInfo(accountId: string, id: string) {
+    const full = await this.findById(accountId, id);
+    // TAN NARX skan sahifasida ko'rsatilmaydi (omborchi ko'rmasligi kerak) —
+    // buyPrice/minPrice/buyPriceCurrency javobdan olib tashlanadi.
+    const { buyPrice, minPrice, buyPriceCurrency, ...product } = full as typeof full & {
+      buyPrice?: unknown;
+      minPrice?: unknown;
+      buyPriceCurrency?: unknown;
+    };
+    void buyPrice;
+    void minPrice;
+    void buyPriceCurrency;
+    const stocks = await this.prisma.client.stock.findMany({
+      where: { accountId, assortmentId: id, assortmentKind: 'product' },
+      include: { store: { select: { name: true } } },
+    });
+    const balances = stocks.map((s) => ({
+      storeId: s.storeId,
+      storeName: s.store?.name ?? null,
+      qty: s.qty.toString(),
+      reservedQty: s.reservedQty.toString(),
+    }));
+    const totalQty = stocks.reduce((sum, s) => sum + Number(s.qty.toFixed(6)), 0);
+    return { product, balances, totalQty };
+  }
+
+  /**
+   * «Yacheyka skaneri» (/cell/[code]) — yacheykada QAYSI tovarlar turibdi.
+   *
+   * Sherset versiyasi 4 ta ustunni (locSklad/locPolka/locQavat/locYacheyka) va
+   * `ProductLocation` (ko'p-yacheyka) jadvalini so'rardi. Egasi 2026-08-01 da
+   * climart manzil tizimini tanladi: manzil tovarda BITTA satr —
+   * `attributes.__yacheyka` = «01-02-03-05». Shuning uchun so'rov ancha sodda;
+   * ko'p-yacheyka va per-yacheyka miqdori YO'Q (climart'da ekvivalenti yo'q —
+   * `restock-task` bilan bir xil ochiq qarz).
+   */
+  async getCellContents(accountId: string, rawCode: string) {
+    const addr = parseCellCode(rawCode);
+    if (!addr) {
+      throw new BadRequestException(
+        "Yacheyka kodi noto'g'ri - NN-NN-NN-NN yoki 8 raqamli barcode kutiladi",
+      );
+    }
+    const code = formatCellCode(addr);
+
+    const [products, store] = await Promise.all([
+      this.prisma.client.product.findMany({
+        where: {
+          accountId,
+          deletedAt: null,
+          attributes: { path: ['__yacheyka'], equals: code },
+        },
+        select: {
+          id: true,
+          name: true,
+          code: true,
+          article: true,
+          uom: true,
+          archived: true,
+          salePrices: true,
+        },
+        orderBy: { name: 'asc' },
+      }),
+      this.prisma.client.store.findFirst({
+        where: {
+          accountId,
+          archived: false,
+          code: { in: [String(addr.sklad), String(addr.sklad).padStart(2, '0')] },
+        },
+        select: { id: true, name: true },
+      }),
+    ]);
+
+    return { code, address: addr, store, products };
   }
 }

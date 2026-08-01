@@ -969,7 +969,9 @@
       "stores": "Omborlar",
       "training": "O'quv",
       "restock": "Joylashtirish",
-      "picking": "Yig'ish"
+      "picking": "Yig'ish",
+      "omborchi": "Omborchi (yig'ish)",
+      "cell_scanner": "Yacheyka skaneri"
     },
     "reports": {
       "overview": "Umumiy",

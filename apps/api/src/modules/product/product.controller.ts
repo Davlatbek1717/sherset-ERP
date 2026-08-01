@@ -39,6 +39,19 @@ export class ProductController {
     @Inject(ProductCellMoveService) private readonly cellMoveService: ProductCellMoveService,
   ) {}
 
+  @Get('cell/:code')
+  @RequirePermission({ entity: 'product', action: 'view' })
+  async cellContents(@CurrentUser() user: AuthenticatedUser, @Param('code') code: string) {
+    return this.service.getCellContents(user.accountId, code);
+  }
+
+  // `:id` dan OLDIN e'lon qilinadi, aks holda `:id` bu yo'lni yutib yuboradi.
+  @Get(':id/scan')
+  @RequirePermission({ entity: 'product', action: 'view' })
+  async scanInfo(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.service.getScanInfo(user.accountId, id);
+  }
+
   @Get()
   @RequirePermission({ entity: 'product', action: 'view' })
   async list(@CurrentUser() user: AuthenticatedUser, @Query() query: Record<string, unknown>) {
