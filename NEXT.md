@@ -305,6 +305,52 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-01b (/sotuv POS TIKLANDI + React #310 fix · ✅ DEPLOYED `cded942`)**
+> **1) React #310** — `demands/[id]` PROD'DA YIQILARDI. Sabab MENDA: chek/varaq hook'larini erta
+> `return`dan KEYIN qo'ygandim (1171-qator, return 984-da) → hook soni renderlar orasida o'zgarardi.
+> `sales-returns/[id]` da ham xuddi shu. Ikkalasi ham yuqoriga ko'chirildi. **Tizimli sabab:**
+> `correctness/useHookAtTopLevel` Biome tavsiyalarida YO'Q ekan → **error** darajasida yoqildi
+> (`apps/api` uchun override — NestJS `app.use` soxta signal). Mutatsiya bilan isbotlandi: buzuq
+> versiyada 4 error, tuzatilganida 0. Grafik `width(-1)` ogohlantirishi: recharts 3.x manbasi
+> o'qildi — `minWidth/minHeight` maslahati ISHLAMAYDI (hisobga uzatilmaydi), yagona prop
+> `initialDimension`; 5 konteynerga berildi.
+>
+> **2) Omborchi varag'i** 3 bo'limga qo'shildi (qabullar «Joylashtirish varag'i»; taminotchiga
+> qaytarish + chiqim «Yig'ish varag'i») va **`/new` sahifalarga ham** — egasi «hech nima
+> o'zgarmadi» degani shundan edi: `/new` sahifalar alohida menyularga ega. Yo'l-yo'lakay 2 bug:
+> qatorning O'Z yacheykasi e'tiborsiz qolardi; «Зона / Ячейка» xom yorlig'i ombor guruhlashni
+> buzardi va 19mm nowrap ustunda qirqilardi (`cellCode()`). `customer-orders/[id]` da chop
+> menyusi UMUMAN yo'q edi — to'liq qurildi. Parity qo'riqchisi: `pick-sheet-new-vs-detail.test.ts`.
+>
+> **3) `/sotuv` POS BO'LIMI QAYTARILDI** — climart adoption (`55cf3bf`, «drop sherset-only») uni
+> chek shabloni bilan birga o'chirgan ekan. Jonli `sherset.biznesjon.uz` manbasi bilan
+> hash-solishtirildi: `sotuv/page.tsx` `1b600e92`, `customer-display` `f4873aea`, `print-agent`
+> `925856480` — **JONLI BILAN BAYT-TENG**; `rasmilashtirish-modal` faqat format farqi (isbotlandi:
+> asl faylni biome bilan formatlaganda mening nusxam bilan bayt-teng).
+> Qaytarilgan: 4 FE fayl (3081 q.) + `settings/smena` (3 sahifa) + backend `smena`/`shift-schedule`/
+> `sklad-keeper`/`restock-task` + `POST /retail-sales/:id/send-to-picking` + 6 Prisma model +
+> `CashierSession.{smena_id,out_of_shift_reason}` + `CompanySettings.receipt_printer_name`.
+>
+> **IKKI QAROR (hujjatlangan):** (a) MANZIL — egasi climart yacheykasini tanladi: sherset'ning
+> `Product.locSklad/locPolka/...` ustunlari QAYTARILMADI, omborchi oqimi `attributes.__yacheyka`
+> («01-02-03-05») ni o'qiydi. Qarz: per-yacheyka miqdori va ko'p-yacheyka climart'da yo'q.
+> (b) KASSA/OMBOR — climart `CashierSession` da ular MAJBURIY, `/sotuv` yubormaydi: server
+> aniqlaydi (ombor = kassirning `defaultStoreId`, kassa = eng eski). **Sxemada «asosiy kassa»
+> tushunchasi YO'Q** — egasi smenaga aniq kassa biriktirishni xohlashi mumkin (OCHIQ).
+>
+> **DEPLOY tasdiqlandi** (`0dbfce3 → cded942`): 252MB zaxira (215 jadval, tekshirilgan) · to'qnashuv
+> tekshiruvi (nishon jadvallar prodda yo'q edi) · migratsiya `20260801120000_restore_sotuv_pos`
+> qo'llandi · `/sotuv` **200** · build ichida 5 route · 6 jadval + `smena_id` bazada ·
+> `/admin/smenas/mine`, `/admin/shift-schedules`, `/sklad-keepers` → **401** (bor, himoyalangan).
+>
+> **⚠️ BROWSER-QA YO'Q** — `/sotuv` brauzerda ochilmadi. HTTP 200 React ishlashini ISBOTLAMAYDI
+> (aynan shu farq bu sessiyada #310 ni yashirgan edi). Keyingi sessiya: `/sotuv` (savat, qidiruv,
+> smena ochish, «Rasmiylashtirish»), `/demands/[id]`, bosh sahifa konsoli.
+>
+> **SABOQ:** `biome check` chiqishi «Diagnostics not shown: N» deb KESILADI — bo'sh grep natijasi
+> «toza» degani EMAS. Gate `--max-diagnostics=2000` ishlatadi; qo'lda tekshirganda ham shunday
+> qilish kerak (bu sessiyada 6 lint xatosi shu tarzda o'tkazib yuborildi, push gate tutdi).
+
 > **🕒 2026-08-01a (CHOP ETISH to'lqini — 11 commit · ✅ DEPLOYED `c161ef1`)**
 > **DEPLOY tasdiqlandi** (erp.sherset.uz = sherset-v2, `DS_TARGET=v2 deploy-smart.sh`, `217c345 → c161ef1`):
 > erp.sherset.uz 200 · web :3011 200 · api :4001 health 200 · migratsiya «No pending» (yangi migratsiya yo'q,
