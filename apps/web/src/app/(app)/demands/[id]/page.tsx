@@ -41,11 +41,7 @@ import {
   type CustomerReceiptData,
   CustomerReceiptPortal,
 } from '@/components/pick-list/customer-receipt-portal';
-import {
-  type ReceiptData,
-  ReceiptPrintPortal,
-  receiptDate,
-} from '@/components/pick-list/receipt-print-portal';
+import { ReceiptPrintPortal, receiptDate } from '@/components/pick-list/receipt-print-portal';
 import { usePrintTemplatesManager } from '@/components/print/print-templates-provider';
 import { ProductCreateModal } from '@/components/products/product-create-modal';
 import { ProductEditModal } from '@/components/products/product-edit-modal';
@@ -55,6 +51,7 @@ import { useConflictReload } from '@/hooks/use-conflict-reload';
 import { useDestructiveMutation } from '@/hooks/use-destructive-mutation';
 import { useDetailNavigation } from '@/hooks/use-detail-navigation';
 import { useDocumentEditorLabels } from '@/hooks/use-document-editor-labels';
+import { usePickSheet } from '@/hooks/use-pick-sheet';
 import { useSaveMutation } from '@/hooks/use-save-mutation';
 import { useTotalsLabels } from '@/hooks/use-totals-labels';
 import { useUnsavedGuard } from '@/hooks/use-unsaved-guard';
@@ -1167,36 +1164,27 @@ export default function DemandDetailPage() {
   // ── Climart termal cheklar (72mm) — invoices-out bilan bir xil manba ──────
   // «Yig'ish varag'i»: ombor bo'yicha guruh + yacheyka, NARXSIZ (omborchi uchun).
   // «Tovar cheki»: narx + qator summasi (xaridorga beriladi).
-  const [spiska, setSpiska] = useState<ReceiptData | null>(null);
+  // Varaq mantiqi umumiy hook'da (`hooks/use-pick-sheet.ts`) — bu yerdagi nusxa
+  // qatorning O'Z yacheykasini e'tiborsiz qoldirib, har safar tovarning standart
+  // yacheykasini so'rardi: hujjatda «01-02-03 dan olindi» yozilgan bo'lsa ham
+  // omborchi boshqa javonga yuborilishi mumkin edi.
+  const { sheet: spiska, openSheet, closeSheet } = usePickSheet();
   const [creceipt, setCreceipt] = useState<CustomerReceiptData | null>(null);
 
-  const openSpiska = useCallback(async () => {
+  const openSpiska = useCallback(() => {
     if (!form || !data) return;
-    const rows = form.positions.filter((p) => p.assortmentId);
-    const ids = [...new Set(rows.map((r) => r.assortmentId as string))];
-    const res = ids.length
-      ? await api
-          .get<{ cells: Record<string, string | null> }>(
-            `/pick-lists/cells-by-products?productIds=${ids.join(',')}`,
-          )
-          .catch(() => ({ cells: {} as Record<string, string | null> }))
-      : { cells: {} as Record<string, string | null> };
-    setSpiska({
-      title: tSpiska('receipt_title'),
+    // Sarlavha «Tovar cheki» EMAS — u xaridor chekining nomi; omborchi varag'i
+    // xuddi shu nom bilan chiqsa, ikkalasi bir hujjatdek ko'rinardi.
+    return openSheet({
+      title: tSpiska('sheet_title_pick'),
       number: data.name,
-      dateStr: receiptDate(new Date(form.moment)),
+      moment: form.moment,
       agentName: form.agentLabel || null,
-      agentPhone: null,
       ownerName: data.owner?.name ?? null,
       description: form.description || null,
-      positions: rows.map((r) => ({
-        name: r.productLabel,
-        qty: r.quantity,
-        uom: r.productUom ?? null,
-        cell: res.cells[r.assortmentId as string] ?? null,
-      })),
+      rows: form.positions,
     });
-  }, [form, data, tSpiska]);
+  }, [form, data, tSpiska, openSheet]);
 
   const openCustomerReceipt = useCallback(() => {
     if (!form || !data) return;
@@ -2368,7 +2356,7 @@ export default function DemandDetailPage() {
         />
       )}
 
-      {spiska && <ReceiptPrintPortal data={spiska} onClose={() => setSpiska(null)} />}
+      {spiska && <ReceiptPrintPortal data={spiska} onClose={closeSheet} />}
       {creceipt && <CustomerReceiptPortal data={creceipt} onClose={() => setCreceipt(null)} />}
 
       <SendEmailDialog

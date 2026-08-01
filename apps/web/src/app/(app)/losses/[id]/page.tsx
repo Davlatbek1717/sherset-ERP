@@ -42,12 +42,14 @@ import { DocumentTasksSection } from '@/components/document-tasks-section';
 import { CellPickerField } from '@/components/documents/cell-picker-field';
 import { PositionAgreementButton } from '@/components/documents/position-agreement-modal';
 import { PositionColumnCustomizer } from '@/components/documents/position-column-customizer';
+import { ReceiptPrintPortal } from '@/components/pick-list/receipt-print-portal';
 import { usePrintTemplatesManager } from '@/components/print/print-templates-provider';
 import { useApiMutation } from '@/hooks/use-api-mutation';
 import { useConflictReload } from '@/hooks/use-conflict-reload';
 import { useDestructiveMutation } from '@/hooks/use-destructive-mutation';
 import { useDetailNavigation } from '@/hooks/use-detail-navigation';
 import { useDocumentEditorLabels } from '@/hooks/use-document-editor-labels';
+import { usePickSheet } from '@/hooks/use-pick-sheet';
 import { useSaveMutation } from '@/hooks/use-save-mutation';
 import { useUnsavedGuard } from '@/hooks/use-unsaved-guard';
 import { api } from '@/lib/api-client';
@@ -324,6 +326,9 @@ export default function LossDetailPage() {
   const tPos = useTranslations('position_editor');
   const tCols = useTranslations('position_cols');
   const tPrint = useTranslations('print_menu');
+  const tSheet = useTranslations('pages.pickLists');
+  // Omborchi varag'i (yacheykali, narxsiz) — `hooks/use-pick-sheet.ts`.
+  const { sheet, openSheet, closeSheet } = usePickSheet();
   const tPrintLoss = useTranslations('print_menu_loss');
 
   const { data, isLoading } = useQuery<LossDetail>({
@@ -845,6 +850,21 @@ export default function LossDetailPage() {
                   templateId: tpl.id,
                 }),
             })),
+            // Omborchi varag'i — yacheyka bo'yicha, NARXSIZ (chiqim: javondan OLISH).
+            {
+              id: 'spiska',
+              label: tSheet('spiska_form'),
+              onSelect: () =>
+                void openSheet({
+                  title: tSheet('sheet_title_pick'),
+                  number: data.name,
+                  moment: form.moment,
+                  agentName: null,
+                  ownerName: form.ownerLabel || null,
+                  description: form.description || null,
+                  rows: form.positions,
+                }),
+            },
             // «Комплект…» — disabled placeholder (mirror the list dropdown).
             { id: 'set', label: tPrint('set') },
             {
@@ -1436,6 +1456,7 @@ export default function LossDetailPage() {
         currentOverride={form.rate === docGlobalRate ? null : form.rate}
         onApply={(r) => setForm((s) => (s ? { ...s, rate: r ?? docGlobalRate } : s))}
       />
+      {sheet && <ReceiptPrintPortal data={sheet} onClose={closeSheet} />}
     </div>
   );
 }

@@ -40,11 +40,7 @@ import {
   type CustomerReceiptData,
   CustomerReceiptPortal,
 } from '@/components/pick-list/customer-receipt-portal';
-import {
-  type ReceiptData,
-  ReceiptPrintPortal,
-  receiptDate,
-} from '@/components/pick-list/receipt-print-portal';
+import { ReceiptPrintPortal, receiptDate } from '@/components/pick-list/receipt-print-portal';
 import { usePrintTemplatesManager } from '@/components/print/print-templates-provider';
 import { type KitPrintForm, KitPrintModal } from '@/components/purchase-orders/kit-print-modal';
 import { SendEmailDialog } from '@/components/send-email-dialog';
@@ -53,6 +49,7 @@ import { useConflictReload } from '@/hooks/use-conflict-reload';
 import { useDestructiveMutation } from '@/hooks/use-destructive-mutation';
 import { useDetailNavigation } from '@/hooks/use-detail-navigation';
 import { useDocumentEditorLabels } from '@/hooks/use-document-editor-labels';
+import { usePickSheet } from '@/hooks/use-pick-sheet';
 import { useSaveMutation } from '@/hooks/use-save-mutation';
 import { useUnsavedGuard } from '@/hooks/use-unsaved-guard';
 import { api } from '@/lib/api-client';
@@ -357,34 +354,23 @@ export default function InvoiceOutDetailPage() {
   const [form, setForm] = useState<FormState | null>(null);
   // «Печать → Лист сборки» / «Товарный чек» (climart 2026-07-29): ikkala 72mm termal
   // chekni AYNAN SHU HISOBVARAQDAN chop etish (invoices-out = foydalanuvchining savdosi).
-  const [spiska, setSpiska] = useState<ReceiptData | null>(null);
-  const openSpiska = useCallback(async () => {
+  // Varaq mantiqi umumiy hook'da (`hooks/use-pick-sheet.ts`): bu yerdagi nusxa
+  // qatorning O'Z yacheykasini e'tiborsiz qoldirib, har safar tovarning standart
+  // yacheykasini so'rardi — omborchi noto'g'ri javonga yuborilishi mumkin edi.
+  const { sheet: spiska, openSheet, closeSheet } = usePickSheet();
+  const openSpiska = useCallback(() => {
     if (!form || !data) return;
-    const rows = form.positions.filter((p) => p.assortmentId);
-    const ids = [...new Set(rows.map((r) => r.assortmentId as string))];
-    const res = ids.length
-      ? await api
-          .get<{ cells: Record<string, string | null> }>(
-            `/pick-lists/cells-by-products?productIds=${ids.join(',')}`,
-          )
-          .catch(() => ({ cells: {} as Record<string, string | null> }))
-      : { cells: {} as Record<string, string | null> };
-    setSpiska({
-      title: tSpiska('receipt_title'),
+    // hisobvaraq bo'yicha tovar javondan OLINADI. Sarlavha «Tovar cheki» EMAS — u xaridor chekining nomi.
+    return openSheet({
+      title: tSpiska('sheet_title_pick'),
       number: data.name,
-      dateStr: receiptDate(new Date(form.moment)),
+      moment: form.moment,
       agentName: form.agentLabel || null,
-      agentPhone: null,
       ownerName: form.ownerLabel || null,
       description: form.description || null,
-      positions: rows.map((r) => ({
-        name: r.productLabel,
-        qty: r.quantity,
-        uom: r.productUom ?? null,
-        cell: res.cells[r.assortmentId as string] ?? null,
-      })),
+      rows: form.positions,
     });
-  }, [form, data, tSpiska]);
+  }, [form, data, tSpiska, openSheet]);
   const [creceipt, setCreceipt] = useState<CustomerReceiptData | null>(null);
   const openCustomerReceipt = useCallback(() => {
     if (!form || !data) return;
@@ -1881,7 +1867,7 @@ export default function InvoiceOutDetailPage() {
         }}
         onConfirm={kitPrint}
       />
-      {spiska && <ReceiptPrintPortal data={spiska} onClose={() => setSpiska(null)} />}
+      {spiska && <ReceiptPrintPortal data={spiska} onClose={closeSheet} />}
       {creceipt && <CustomerReceiptPortal data={creceipt} onClose={() => setCreceipt(null)} />}
     </div>
   );

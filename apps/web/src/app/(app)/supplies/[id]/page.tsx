@@ -19,6 +19,7 @@ import { PositionAgreementButton } from '@/components/documents/position-agreeme
 import { PositionColumnCustomizer } from '@/components/documents/position-column-customizer';
 import { PositionDiscountMenu } from '@/components/documents/position-discount-menu';
 import { PositionPriceMenu } from '@/components/documents/position-price-menu';
+import { ReceiptPrintPortal } from '@/components/pick-list/receipt-print-portal';
 import { usePrintTemplatesManager } from '@/components/print/print-templates-provider';
 import { ProductEditModal } from '@/components/products/product-edit-modal';
 import { type KitPrintForm, KitPrintModal } from '@/components/purchase-orders/kit-print-modal';
@@ -29,6 +30,7 @@ import { useConflictReload } from '@/hooks/use-conflict-reload';
 import { useDestructiveMutation } from '@/hooks/use-destructive-mutation';
 import { useDetailNavigation } from '@/hooks/use-detail-navigation';
 import { useDocumentEditorLabels } from '@/hooks/use-document-editor-labels';
+import { usePickSheet } from '@/hooks/use-pick-sheet';
 import { useSaveMutation } from '@/hooks/use-save-mutation';
 import { useUnsavedGuard } from '@/hooks/use-unsaved-guard';
 import { api } from '@/lib/api-client';
@@ -368,6 +370,9 @@ export default function SupplyDetailPage() {
   const tPos = useTranslations('position_editor');
   const tCols = useTranslations('position_cols');
   const tPrint = useTranslations('print_menu');
+  const tSheet = useTranslations('pages.pickLists');
+  // Omborchi varag'i (yacheykali, narxsiz) — `hooks/use-pick-sheet.ts`.
+  const { sheet, openSheet, closeSheet } = usePickSheet();
   const tPrintSupply = useTranslations('print_menu_supply');
   const tEmail = useTranslations('email_template');
 
@@ -985,6 +990,21 @@ export default function SupplyDetailPage() {
       label: tPrintSupply('prixodnaya'),
       // moysklad: open the check in a NEW TAB, user presses «Печать» there (no auto-print).
       onSelect: () => window.open(`/print/supply/${data.id}`, '_blank'),
+    },
+    // Omborchi varag'i — yacheyka bo'yicha, NARXSIZ (qabul: javonga QO'YISH).
+    {
+      id: 'putaway',
+      label: tSheet('putaway_form'),
+      onSelect: () =>
+        void openSheet({
+          title: tSheet('sheet_title_putaway'),
+          number: data.name,
+          moment: form.moment,
+          agentName: form.agentLabel || null,
+          ownerName: form.ownerLabel || null,
+          description: form.description || null,
+          rows: form.positions,
+        }),
     },
     // «Комплект…» — bundle several forms into one PDF.
     { id: 'set', label: tPrint('set'), onSelect: () => setKitPrintOpen(true) },
@@ -2050,6 +2070,7 @@ export default function SupplyDetailPage() {
       {editProductId && (
         <ProductEditModal productId={editProductId} open onClose={() => setEditProductId(null)} />
       )}
+      {sheet && <ReceiptPrintPortal data={sheet} onClose={closeSheet} />}
     </div>
   );
 }
