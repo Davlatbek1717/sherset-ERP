@@ -38,7 +38,17 @@ interface SupplyDetail {
     name: string;
     legalTitle: string | null;
     legalAddress: string | null;
+    phone: string | null;
+    director: string | null;
+    directorPosition: string | null;
+    chiefAccountant: string | null;
+    uzRequisites?: { inn?: string } | null;
   };
+  organizationAccount?: {
+    accountNumber: string | null;
+    bankName: string | null;
+    bic: string | null;
+  } | null;
   positions: PositionDetail[];
 }
 
@@ -85,7 +95,27 @@ export default function PrintSupplyPage() {
         organization={{
           label: t('party.organization'),
           name: data.organization.legalTitle ?? data.organization.name,
-          details: data.organization.legalAddress,
+          // To'liq rekvizit — chop etilgan birlamchi hujjat tomonni nomi bilan
+          // emas, STIR va bank bilan tanitishi kerak. API bularni allaqachon
+          // qaytarardi, shakl esa faqat manzilni chizardi (jo'natmadagi bilan
+          // bir xil kamchilik, 2026-08-01 da tuzatildi).
+          details:
+            [
+              data.organization.legalAddress,
+              data.organization.uzRequisites?.inn
+                ? `${t('req.inn')}: ${data.organization.uzRequisites.inn}`
+                : null,
+              data.organizationAccount?.accountNumber
+                ? `${t('req.account')}: ${data.organizationAccount.accountNumber}`
+                : null,
+              data.organizationAccount?.bankName,
+              data.organizationAccount?.bic
+                ? `${t('req.mfo')}: ${data.organizationAccount.bic}`
+                : null,
+              data.organization.phone ? `${t('req.phone')}: ${data.organization.phone}` : null,
+            ]
+              .filter(Boolean)
+              .join('\n') || null,
         }}
         agent={{
           label: t('party.agent'),
@@ -104,8 +134,17 @@ export default function PrintSupplyPage() {
         vatTotalMinor={vatTotalMinor.toString()}
         grandTotalMinor={data.sumMinor}
         description={data.description}
+        // KIRUVCHI hujjat — yo'nalish jo'natmaga TESKARI: tashkilot OLADI,
+        // ta'minlovchi BERADI. Shuning uchun direktor «Olgan» tomonda imzolaydi.
+        // Ilgari ikkala qator ham shunchaki kompaniya nomini takrorlardi.
         signatures={[
-          { label: t('signature.received_by'), name: data.organization.name },
+          {
+            label: data.organization.directorPosition ?? t('signature.received_by'),
+            name: data.organization.director ?? data.organization.name,
+          },
+          ...(data.organization.chiefAccountant
+            ? [{ label: t('signature.accountant'), name: data.organization.chiefAccountant }]
+            : []),
           { label: t('signature.issued_by'), name: data.agent.name },
         ]}
       />
