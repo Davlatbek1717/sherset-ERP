@@ -38,7 +38,17 @@ interface DemandDetail {
     name: string;
     legalTitle: string | null;
     legalAddress: string | null;
+    phone: string | null;
+    director: string | null;
+    directorPosition: string | null;
+    chiefAccountant: string | null;
+    uzRequisites?: { inn?: string } | null;
   };
+  organizationAccount?: {
+    accountNumber: string | null;
+    bankName: string | null;
+    bic: string | null;
+  } | null;
   customerOrder: { id: string; name: string } | null;
   positions: PositionDetail[];
 }
@@ -86,7 +96,26 @@ export default function PrintDemandPage() {
         organization={{
           label: t('party.organization'),
           name: data.organization.legalTitle ?? data.organization.name,
-          details: data.organization.legalAddress,
+          // Full requisites — a printed primary document must identify the
+          // issuer by STIR and bank, not just by name (the form used to print
+          // the legal address alone even though the API returns all of this).
+          details:
+            [
+              data.organization.legalAddress,
+              data.organization.uzRequisites?.inn
+                ? `${t('req.inn')}: ${data.organization.uzRequisites.inn}`
+                : null,
+              data.organizationAccount?.accountNumber
+                ? `${t('req.account')}: ${data.organizationAccount.accountNumber}`
+                : null,
+              data.organizationAccount?.bankName,
+              data.organizationAccount?.bic
+                ? `${t('req.mfo')}: ${data.organizationAccount.bic}`
+                : null,
+              data.organization.phone ? `${t('req.phone')}: ${data.organization.phone}` : null,
+            ]
+              .filter(Boolean)
+              .join('\n') || null,
         }}
         agent={{
           label: t('party.agent'),
@@ -94,7 +123,9 @@ export default function PrintDemandPage() {
           details:
             [
               data.agent.legalAddress,
-              data.agent.uzRequisites?.inn ? `STIR: ${data.agent.uzRequisites.inn}` : null,
+              data.agent.uzRequisites?.inn
+                ? `${t('req.inn')}: ${data.agent.uzRequisites.inn}`
+                : null,
             ]
               .filter(Boolean)
               .join('\n') || null,
@@ -108,8 +139,23 @@ export default function PrintDemandPage() {
         vatTotalMinor={vatTotalMinor.toString()}
         grandTotalMinor={data.sumMinor}
         description={data.description}
+        // moysklad/UZ practice: the issuing side signs by NAME and POSITION
+        // (director, then chief accountant when the account records one), the
+        // receiving side signs blank. Previously both lines just repeated the
+        // company name, which is not a usable signature block.
         signatures={[
-          { label: t('signature.issued_by'), name: data.organization.name },
+          {
+            label: data.organization.directorPosition ?? t('signature.issued_by'),
+            name: data.organization.director ?? data.organization.name,
+          },
+          ...(data.organization.chiefAccountant
+            ? [
+                {
+                  label: t('signature.accountant'),
+                  name: data.organization.chiefAccountant,
+                },
+              ]
+            : []),
           { label: t('signature.received_by'), name: data.agent.name },
         ]}
       />

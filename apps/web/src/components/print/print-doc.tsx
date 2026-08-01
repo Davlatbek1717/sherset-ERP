@@ -1,7 +1,8 @@
 'use client';
 
+import { amountInWords } from '@moysklad/money';
 import { formatMoney } from '@moysklad/ui';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 
 export interface PrintDocPosition {
   position: number;
@@ -50,6 +51,15 @@ export interface PrintDocProps {
   description?: string | null;
   /** Lines for the signature block — typically 2: organization + counterparty */
   signatures: { label: string; name: string }[];
+  /**
+   * Print «Сумма прописью» under the totals. On by default — a UZ/CIS
+   * document without the spelled-out total is not a valid primary document
+   * (the figure could be altered after signing). Pass `false` only for
+   * internal slips that carry no money (e.g. a picking list).
+   */
+  showAmountInWords?: boolean;
+  /** Stamp placeholder («М.П.») next to the issuing signature. */
+  showStamp?: boolean;
 }
 
 function fmtDate(iso: string): string {
@@ -90,8 +100,11 @@ export function PrintDoc({
   grandTotalMinor,
   description,
   signatures,
+  showAmountInWords = true,
+  showStamp = true,
 }: PrintDocProps) {
   const t = useTranslations('pages.print');
+  const locale = useLocale() === 'uz' ? 'uz' : 'ru';
 
   return (
     <>
@@ -180,6 +193,23 @@ export function PrintDoc({
         </table>
       </div>
 
+      {/* «Всего наименований N, на сумму X» — the standard summary line that
+          sits between the totals and the spelled-out amount on UZ/CIS forms. */}
+      <div className="items-summary">
+        {t('items_summary', {
+          count: positions.length,
+          sum: formatMoney(BigInt(grandTotalMinor), currency),
+        })}
+      </div>
+
+      {/* «Сумма прописью» — without it the figure could be altered after
+          signing, so a primary document is not considered valid. */}
+      {showAmountInWords && (
+        <div className="amount-in-words">
+          <strong>{t('in_words')}:</strong> {amountInWords(grandTotalMinor, currency, locale)}
+        </div>
+      )}
+
       {description && (
         <div className="description-block">
           <strong>{t('note')}:</strong> {description}
@@ -187,10 +217,11 @@ export function PrintDoc({
       )}
 
       <div className="signatures">
-        {signatures.map((s) => (
+        {signatures.map((s, i) => (
           <div key={`${s.label}:${s.name}`}>
             <div className="sig-name">{s.name}</div>
             <div className="sig-line">{s.label}</div>
+            {showStamp && i === 0 && <div className="sig-stamp">{t('stamp')}</div>}
           </div>
         ))}
       </div>

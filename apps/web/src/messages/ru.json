@@ -3691,7 +3691,16 @@
       "chek_col_sum": "Сумма",
       "chek_discount": "Скидка",
       "chek_subtotal": "Сумма (без скидки)",
-      "chek_total": "ИТОГО"
+      "chek_total": "ИТОГО",
+      "in_words": "Сумма прописью",
+      "items_summary": "Всего наименований {count}, на сумму {sum}",
+      "stamp": "М.П.",
+      "req": {
+        "inn": "ИНН",
+        "account": "Р/с",
+        "mfo": "МФО",
+        "phone": "Тел"
+      }
     },
     "attachments": {
       "section_title": "Файлы",

@@ -13,3 +13,4 @@ export {
   type PositionInput,
   type PositionTotals,
 } from './position.js';
+export { amountInWords, type WordsLocale } from './amount-in-words.js';

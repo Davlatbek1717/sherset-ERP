@@ -3691,7 +3691,16 @@
       "chek_col_sum": "Summa",
       "chek_discount": "Chegirma",
       "chek_subtotal": "Summa (chegirmasiz)",
-      "chek_total": "JAMI"
+      "chek_total": "JAMI",
+      "in_words": "Summa so'z bilan",
+      "items_summary": "Jami {count} nomdagi tovar, summasi {sum}",
+      "stamp": "M.O‘.",
+      "req": {
+        "inn": "STIR",
+        "account": "H/r",
+        "mfo": "MFO",
+        "phone": "Tel"
+      }
     },
     "attachments": {
       "section_title": "Fayllar",
