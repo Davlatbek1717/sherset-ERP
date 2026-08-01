@@ -333,8 +333,15 @@ export class SalesReturnService {
       sr.storeId,
       sr.positions.map((p) => ({ kind: p.assortmentKind, id: p.assortmentId })),
     );
+    // #25 «Прибыль» — total COGS = Σ(per-unit costMinor × qty), decimal-precise via
+    // scaleMinorByQty. Frozen post-time (0 on a draft); the FE gates the profit row on
+    // cost>0 so a draft never shows full revenue as profit. Mirror demand.costSumMinor.
+    const costSumMinor = sr.positions
+      .reduce((acc, p) => acc + scaleMinorByQty(p.costMinor ?? 0n, p.quantity.toString()), 0n)
+      .toString();
     return {
       ...sr,
+      costSumMinor,
       positions: sr.positions.map((p) => {
         const b = stockBalances.get(p.assortmentId);
         const onHand = b?.qty ?? '0';

@@ -130,6 +130,8 @@ interface SalesReturnDetail {
   reason: string | null;
   description: string | null;
   sumMinor: string;
+  // «Прибыль» (#25) — total COGS aggregate (Σ costMinor × qty), computed by findById.
+  costSumMinor: string;
   /** ISO currency of the document (e.g. USD), for money formatting. */
   currency: string;
   vatSumMinor: string;
@@ -881,6 +883,11 @@ export default function SalesReturnDetailPage() {
   const vatBig = BigInt(data.vatSumMinor || '0');
   const { subtotal, total } = docTotals(sumBig, vatBig);
   const totalQty = form.positions.reduce((acc, p) => acc + Number(p.quantity || 0), 0);
+  // «Прибыль» (#25) — revenue − COGS. Gated on cost>0: costSumMinor is post-time only
+  // (0 on a draft), and `sum − 0` would present full revenue as profit (mirror demand
+  // §S5). Paired with the SAVED sum, not the live editor total.
+  const costSumBig = BigInt(data.costSumMinor || '0');
+  const profitMinor = costSumBig > 0n ? (sumBig - costSumBig).toString() : undefined;
 
   // moysklad «Статус» pill — the account's custom return statuses (grey «Статус»
   // when none configured). FSM post/unpost lives on «Проведено» (orthogonal), exactly
@@ -1775,6 +1782,7 @@ export default function SalesReturnDetailPage() {
                 vatIncluded={form.vatIncluded}
                 totalMinor={total.toString()}
                 totalQty={totalQty}
+                profitMinor={profitMinor}
                 readOnly={!editableLines}
                 onToggleVatEnabled={(v) => setForm((s) => s && { ...s, vatEnabled: v })}
                 onToggleVatIncluded={(v) => setForm((s) => s && { ...s, vatIncluded: v })}

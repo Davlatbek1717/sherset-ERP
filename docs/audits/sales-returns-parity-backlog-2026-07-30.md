@@ -39,7 +39,7 @@ Manbalar: audit fayllari (yuqorida) + purchase-returns sibling *(faqat ishora �
 22. [G] «Причина» inputni olib tashlash/«Ещё»ga — MoySklad'да faqat «Комментарий» (N8; 1675-1682).
 23. [G] «Создать документ ▾» real to'plam {Исходящий платеж, Расходный ордер, Списание} — labellar+flow (D8; 936-940).
 24. [G] «Отправить ▾» capture bilan solishtirish (D9; 917-928).
-25. [BLOK-tekshirilgan] Прибыль = Σ(price−cost)×qty (ma'lumot bor), LEKIN shared `DocumentTotalsPanel` — parallel sessiya aynan shuni tahrirlayapti (§6). Fokus-sessiya.
+25. ✅ [G] Totals «Прибыль» — `DetailTotalsSidebar` (SR ishlatadigan komponent, DocumentTotalsPanel EMAS) profitMinor'ni allaqachon qo'llaydi. findById `costSumMinor` (scaleMinorByQty aggregate) + FE profit=sum−cost, cost>0 gate (demand mirror). Shared o'zgarish yo'q.
 26. [A] Totals sidebar «Вес»/«Объём» — capture.
 27. [verify] «Валюта документа» selektor — endi bor (1358-1373).
 28. [G] Meta-grid MoySklad'ning ixcham 2-ustunига moslash (D4).
