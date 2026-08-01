@@ -30,8 +30,10 @@ import {
 } from '@/components/documents/owner-access-popover';
 import { PositionAgreementButton } from '@/components/documents/position-agreement-modal';
 import { PositionColumnCustomizer } from '@/components/documents/position-column-customizer';
+import { ReceiptPrintPortal } from '@/components/pick-list/receipt-print-portal';
 import { usePrintTemplatesManager } from '@/components/print/print-templates-provider';
 import { useDocumentEditorLabels } from '@/hooks/use-document-editor-labels';
+import { usePickSheet } from '@/hooks/use-pick-sheet';
 import { useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-store';
@@ -252,6 +254,11 @@ export default function NewLossPage() {
 
   // Positions
   const [positions, setPositions] = useState<NewPositionRow[]>([]);
+  // Omborchi varag'i — saqlashsiz, JONLI forma holatidan chiqadi
+  // (customer-orders/new dagi o'rnatilgan namuna; varaq yuridik hujjat
+  //  emas — ish qog'ozi, shuning uchun hujjat raqami hali bo'lmasa ham).
+  const tSheet = useTranslations('pages.pickLists');
+  const { sheet, openSheet, closeSheet } = usePickSheet();
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
   const [colVisible, setColVisible] = useState<Record<string, boolean>>(DEFAULT_COL_VISIBLE);
   // moysklad «Наименование ▾ → ☐ С учётом групп» — group lines by product folder first.
@@ -1056,6 +1063,21 @@ export default function NewLossPage() {
               createMut.mutate();
             },
           })),
+          {
+            // «Yig'ish varag'i» — omborchi tovarni javondan olib, chiqim uchun
+            // yig'adi. Saqlash shart emas (joriy forma pozitsiyalaridan).
+            // Chiqimda kontragent yo'q — «Xaridor» qatori bo'sh qoladi.
+            label: tSheet('spiska_form'),
+            onClick: () =>
+              void openSheet({
+                title: tSheet('sheet_title_pick'),
+                number: docNumber || '—',
+                moment: docDate,
+                ownerName: user?.name ?? null,
+                description: description || null,
+                rows: positions,
+              }),
+          },
           { divider: true },
           {
             label: tPrint('set'),
@@ -1211,6 +1233,7 @@ export default function NewLossPage() {
         currentOverride={rateOverride}
         onApply={setRateOverride}
       />
+      {sheet && <ReceiptPrintPortal data={sheet} onClose={closeSheet} />}
     </>
   );
 }

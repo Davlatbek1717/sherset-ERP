@@ -27,11 +27,13 @@ import { PositionColumnCustomizer } from '@/components/documents/position-column
 import { PositionDiscountMenu } from '@/components/documents/position-discount-menu';
 import { PositionPriceMenu } from '@/components/documents/position-price-menu';
 import { useNewDocStaging } from '@/components/documents/use-new-doc-staging';
+import { ReceiptPrintPortal } from '@/components/pick-list/receipt-print-portal';
 import { usePrintTemplatesManager } from '@/components/print/print-templates-provider';
 import { ProductCreateModal } from '@/components/products/product-create-modal';
 import { ProductEditModal } from '@/components/products/product-edit-modal';
 import { type KitPrintForm, KitPrintModal } from '@/components/purchase-orders/kit-print-modal';
 import { useDocumentEditorLabels } from '@/hooks/use-document-editor-labels';
+import { usePickSheet } from '@/hooks/use-pick-sheet';
 import { useTotalsLabels } from '@/hooks/use-totals-labels';
 import { useUnsavedGuard } from '@/hooks/use-unsaved-guard';
 import { useUserDefaults } from '@/hooks/use-user-defaults';
@@ -272,6 +274,11 @@ export default function NewSupplyPage() {
 
   // Positions
   const [positions, setPositions] = useState<NewPositionRow[]>([]);
+  // Omborchi varag'i — saqlashsiz, JONLI forma holatidan chiqadi
+  // (customer-orders/new dagi o'rnatilgan namuna; varaq yuridik hujjat
+  //  emas — ish qog'ozi, shuning uchun hujjat raqami hali bo'lmasa ham).
+  const tSheet = useTranslations('pages.pickLists');
+  const { sheet, openSheet, closeSheet } = usePickSheet();
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
   // ⚙ gear-optional column visibility (mirror supplies/[id]).
   const [colVisible, setColVisible] = useState<Record<string, boolean>>(DEFAULT_COL_VISIBLE);
@@ -1627,6 +1634,23 @@ export default function NewSupplyPage() {
             },
           },
           {
+            // «Joylashtirish varag'i» — omborchi tovarni QAYSI javonga qo'yishini
+            // ko'rsatadi. Boshqa bandlardan farqli: saqlash SHART EMAS, chunki
+            // varaq hujjat emas — u joriy forma pozitsiyalaridan chiqadi
+            // (customer-orders/new dagi o'rnatilgan namuna).
+            label: tSheet('putaway_form'),
+            onClick: () =>
+              void openSheet({
+                title: tSheet('sheet_title_putaway'),
+                number: docNumber || '—',
+                moment: docDate,
+                agentName: agentLabel || null,
+                ownerName: user?.name ?? null,
+                description: description || null,
+                rows: positions,
+              }),
+          },
+          {
             // «Комплект…» — bundle several forms into one PDF over the saved receipt.
             label: tPrint('set'),
             onClick: () => {
@@ -1943,6 +1967,7 @@ export default function NewSupplyPage() {
           }}
         />
       )}
+      {sheet && <ReceiptPrintPortal data={sheet} onClose={closeSheet} />}
     </>
   );
 }

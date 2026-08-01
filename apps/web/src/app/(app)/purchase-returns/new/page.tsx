@@ -32,10 +32,12 @@ import { PositionAgreementButton } from '@/components/documents/position-agreeme
 import { PositionColumnCustomizer } from '@/components/documents/position-column-customizer';
 import { PositionDiscountMenu } from '@/components/documents/position-discount-menu';
 import { useNewDocStaging } from '@/components/documents/use-new-doc-staging';
+import { ReceiptPrintPortal } from '@/components/pick-list/receipt-print-portal';
 import { usePrintTemplatesManager } from '@/components/print/print-templates-provider';
 import { type KitPrintForm, KitPrintModal } from '@/components/purchase-orders/kit-print-modal';
 import { SendEmailDialog } from '@/components/send-email-dialog';
 import { useDocumentEditorLabels } from '@/hooks/use-document-editor-labels';
+import { usePickSheet } from '@/hooks/use-pick-sheet';
 import { useTotalsLabels } from '@/hooks/use-totals-labels';
 import { useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
@@ -261,6 +263,11 @@ export default function NewPurchaseReturnPage() {
 
   // Positions
   const [positions, setPositions] = useState<NewPositionRow[]>([]);
+  // Omborchi varag'i — saqlashsiz, JONLI forma holatidan chiqadi
+  // (customer-orders/new dagi o'rnatilgan namuna; varaq yuridik hujjat
+  //  emas — ish qog'ozi, shuning uchun hujjat raqami hali bo'lmasa ham).
+  const tSheet = useTranslations('pages.pickLists');
+  const { sheet, openSheet, closeSheet } = usePickSheet();
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
   // «Скидка» header bulk discount/markup (moysklad parity) — apply % to selected
   // rows (or all when none selected). Discount sets each line's `discount`; markup
@@ -1274,6 +1281,22 @@ export default function NewPurchaseReturnPage() {
       onClick: () => saveThenPrintView(),
       testId: 'pr-new-print-standard',
     },
+    {
+      // «Yig'ish varag'i» — tovar javondan OLINADI (taminotchiga qaytariladi).
+      // Saqlash shart emas: varaq joriy forma pozitsiyalaridan chiqadi.
+      label: tSheet('spiska_form'),
+      onClick: () =>
+        void openSheet({
+          title: tSheet('sheet_title_pick'),
+          number: docNumber || '—',
+          moment: docDate,
+          agentName: agentLabel || null,
+          ownerName: user?.name ?? null,
+          description: description || null,
+          rows: positions,
+        }),
+      testId: 'pr-new-print-sheet',
+    },
     { label: tPrint('set'), onClick: () => setKitPrintOpen(true), testId: 'pr-new-print-kit' },
     { divider: true },
     {
@@ -1492,6 +1515,7 @@ export default function NewPurchaseReturnPage() {
           initialAttachments={emailAttachments}
         />
       )}
+      {sheet && <ReceiptPrintPortal data={sheet} onClose={closeSheet} />}
     </>
   );
 }

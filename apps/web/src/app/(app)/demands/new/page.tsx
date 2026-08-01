@@ -16,10 +16,12 @@ import { NewDocRelatedTab } from '@/components/documents/new-doc-related-tab';
 import { PositionAgreementButton } from '@/components/documents/position-agreement-modal';
 import { PositionDiscountMenu } from '@/components/documents/position-discount-menu';
 import { useNewDocStaging } from '@/components/documents/use-new-doc-staging';
+import { ReceiptPrintPortal } from '@/components/pick-list/receipt-print-portal';
 import { usePrintTemplatesManager } from '@/components/print/print-templates-provider';
 import { ProductCreateModal } from '@/components/products/product-create-modal';
 import { ProductEditModal } from '@/components/products/product-edit-modal';
 import { useDocumentEditorLabels } from '@/hooks/use-document-editor-labels';
+import { usePickSheet } from '@/hooks/use-pick-sheet';
 import { useTotalsLabels } from '@/hooks/use-totals-labels';
 import { useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
@@ -264,6 +266,11 @@ export default function NewDemandPage() {
 
   // Positions
   const [positions, setPositions] = useState<NewPositionRow[]>([]);
+  // Omborchi varag'i — saqlashsiz, JONLI forma holatidan chiqadi
+  // (customer-orders/new dagi o'rnatilgan namuna; varaq yuridik hujjat
+  //  emas — ish qog'ozi, shuning uchun hujjat raqami hali bo'lmasa ham).
+  const tSheet = useTranslations('pages.pickLists');
+  const { sheet, openSheet, closeSheet } = usePickSheet();
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
   // «Kelishuv» — spread the negotiated delta across the lines (owner 2026-07-17).
   const applyAgreement = useCallback(
@@ -1458,6 +1465,22 @@ export default function NewDemandPage() {
               createMut.mutate();
             },
           },
+          {
+            // «Yig'ish varag'i» — omborchi jo'natma uchun tovarni javondan yig'adi.
+            // Saqlash SHART EMAS: varaq joriy forma pozitsiyalaridan chiqadi
+            // (saqlangan jo'natmada ham xuddi shu band bor — demands/[id]).
+            label: tSheet('spiska_form'),
+            onClick: () =>
+              void openSheet({
+                title: tSheet('sheet_title_pick'),
+                number: docNumber || '—',
+                moment: docDate,
+                agentName: agentLabel || null,
+                ownerName: user?.name ?? null,
+                description: description || null,
+                rows: positions,
+              }),
+          },
           { divider: true, label: '' },
           { label: tPrint('configure'), onClick: () => openTemplates('demand') },
         ]}
@@ -1694,6 +1717,7 @@ export default function NewDemandPage() {
           }}
         />
       )}
+      {sheet && <ReceiptPrintPortal data={sheet} onClose={closeSheet} />}
     </>
   );
 }

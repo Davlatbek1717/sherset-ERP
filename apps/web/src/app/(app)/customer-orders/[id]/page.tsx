@@ -25,12 +25,19 @@ import { PositionDiscountMenu } from '@/components/documents/position-discount-m
 import { PositionPriceMenu } from '@/components/documents/position-price-menu';
 import { PositionReserveMenu } from '@/components/documents/position-reserve-menu';
 import { PresenceIndicator } from '@/components/documents/presence-indicator';
+import {
+  type CustomerReceiptData,
+  CustomerReceiptPortal,
+} from '@/components/pick-list/customer-receipt-portal';
+import { ReceiptPrintPortal, receiptDate } from '@/components/pick-list/receipt-print-portal';
+import { usePrintTemplatesManager } from '@/components/print/print-templates-provider';
 import { SendEmailDialog } from '@/components/send-email-dialog';
 import { useApiMutation } from '@/hooks/use-api-mutation';
 import { useConflictReload } from '@/hooks/use-conflict-reload';
 import { useDestructiveMutation } from '@/hooks/use-destructive-mutation';
 import { useDetailNavigation } from '@/hooks/use-detail-navigation';
 import { useDocumentEditorLabels } from '@/hooks/use-document-editor-labels';
+import { usePickSheet } from '@/hooks/use-pick-sheet';
 import { usePresence } from '@/hooks/use-presence';
 import { useSaveMutation } from '@/hooks/use-save-mutation';
 import { useTotalsLabels } from '@/hooks/use-totals-labels';
@@ -38,6 +45,7 @@ import { useUnsavedGuard } from '@/hooks/use-unsaved-guard';
 import { api } from '@/lib/api-client';
 import { imageRawUrl } from '@/lib/image-url';
 import { distributeAgreementDelta } from '@/lib/position-agreement';
+import { buildPrintMenu } from '@/lib/print-menu';
 import { resolveDefaultSalePriceOrZero, usePriceTypeIds } from '@/lib/sale-price';
 import { computePositionTotal } from '@moysklad/money';
 import {
@@ -462,6 +470,16 @@ export default function CustomerOrderDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const qc = useQueryClient();
+  const { openTemplates } = usePrintTemplatesManager();
+  const tSheet = useTranslations('pages.pickLists');
+  // Omborchi varag'i + xaridor cheki — /new bilan bir xil ikki chek.
+  const { sheet, openSheet, closeSheet } = usePickSheet();
+  const [creceipt, setCreceipt] = useState<CustomerReceiptData | null>(null);
+  const { data: printForms } = useQuery<Array<{ id: string; name: string }>>({
+    queryKey: ['customer-order-print-forms'],
+    queryFn: () => api.get<Array<{ id: string; name: string }>>('/customer-orders/print-forms'),
+    staleTime: 60_000,
+  });
   // Server mode → real «N из ВСЕГО» + whole-set ‹ › (shows even on direct URL).
   const detailNav = useDetailNavigation('customer-orders', id, { server: true });
   const { toast } = useToast();
@@ -1360,6 +1378,70 @@ export default function CustomerOrderDetailPage() {
   // pre-linked (?fromOrder=…); Отгрузка/Счёт use the existing backend conversions
   // (from-customer-order). Три пункта disabled: no Волна отбора / Розничная
   // продажа / Снабжение document subsystem yet (future scope).
+  // ── «Печать ▾» — to'liq menyu (2026-08-01) ────────────────────────────────
+  // Ilgari bu sahifa qobiqning ZAXIRA 2 bandli menyusini olardi («Заказ» +
+  // «Настроить…»), holbuki /new da yig'ish varag'i ham, xaridor cheki ham bor
+  // edi. Saqlangan buyurtma — omborchi uchun eng muhim hujjat — varaqsiz
+  // qolgan edi. Kanonik tartib: `lib/print-menu.ts`.
+  // «Комплект…» YO'Q: customer-order modulida `kit-print` endpointi yo'q
+  // (demands bilan bir xil holat) — soxta band qo'yishdan ko'ra tushirib
+  // qoldirish halolroq.
+  const printForm = (templateId?: string) => {
+    void api.postOpenInBrowser('/customer-orders/bulk-print', {
+      ids: [data.id],
+      ...(templateId ? { templateId } : {}),
+    });
+  };
+  const printMenuItems: CreateMenuItem[] = buildPrintMenu({
+    accountForms: printForms,
+    onAccountForm: printForm,
+    standard: {
+      label: tPrint('order_form'),
+      onSelect: () =>
+        window.open(`/print/customer-order/${data.id}?auto=1`, '_blank', 'width=820,height=1100'),
+    },
+    extras: [
+      {
+        id: 'spiska',
+        label: tSheet('spiska_form'),
+        onSelect: () =>
+          void openSheet({
+            title: tSheet('sheet_title_pick'),
+            number: data.name,
+            moment: form.moment,
+            agentName: form.agentLabel || null,
+            ownerName: form.ownerAccess.ownerLabel || null,
+            description: form.description || null,
+            rows: form.positions,
+          }),
+      },
+      {
+        id: 'creceipt',
+        label: tSheet('receipt_title_customer'),
+        onSelect: () =>
+          setCreceipt({
+            number: data.name,
+            dateStr: receiptDate(new Date(form.moment)),
+            orgName: form.organizationLabel || null,
+            sellerName: form.ownerAccess.ownerLabel || null,
+            buyerName: form.agentLabel || null,
+            phone: null,
+            comment: form.description || null,
+            positions: form.positions
+              .filter((p) => p.assortmentId && Number(p.quantity) > 0)
+              .map((r) => ({
+                name: r.productLabel,
+                uom: r.productUom ?? null,
+                qty: r.quantity,
+                priceMinor: r.priceMinor || '0',
+                sumMinor: computeLineTotal(r, form.vatIncluded).gross.toString(),
+              })),
+          }),
+      },
+    ],
+    configure: { label: tPrint('configure'), onSelect: () => openTemplates('customerorder') },
+  });
+
   const createMenuItems: CreateMenuItem[] = [
     {
       id: 'move',
@@ -1477,6 +1559,7 @@ export default function CustomerOrderDetailPage() {
                 })
             : undefined
         }
+        printMenuItems={printMenuItems}
         createMenuItems={createMenuItems}
         onPrintList={() =>
           window.open(`/print/customer-order/${data.id}?auto=1`, '_blank', 'width=820,height=1100')
@@ -2455,6 +2538,8 @@ export default function CustomerOrderDetailPage() {
         defaultSubject={tEmail('subject_order', { name: data.name })}
         defaultBodyHtml={tEmail.raw('body_order')}
       />
+      {sheet && <ReceiptPrintPortal data={sheet} onClose={closeSheet} />}
+      {creceipt && <CustomerReceiptPortal data={creceipt} onClose={() => setCreceipt(null)} />}
     </div>
   );
 }
