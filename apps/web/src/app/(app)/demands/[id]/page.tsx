@@ -46,6 +46,7 @@ import {
   ReceiptPrintPortal,
   receiptDate,
 } from '@/components/pick-list/receipt-print-portal';
+import { usePrintTemplatesManager } from '@/components/print/print-templates-provider';
 import { ProductCreateModal } from '@/components/products/product-create-modal';
 import { ProductEditModal } from '@/components/products/product-edit-modal';
 import { SendEmailDialog } from '@/components/send-email-dialog';
@@ -61,6 +62,7 @@ import { api } from '@/lib/api-client';
 import { docMeasureTotals } from '@/lib/doc-totals';
 import { imageRawUrl } from '@/lib/image-url';
 import { distributeAgreementDelta } from '@/lib/position-agreement';
+import { buildPrintMenu } from '@/lib/print-menu';
 import { resolveDefaultSalePriceOrZero, usePriceTypeIds } from '@/lib/sale-price';
 import { computePositionTotal } from '@moysklad/money';
 import {
@@ -440,6 +442,12 @@ export default function DemandDetailPage() {
   const tCreate = useTranslations('create_related');
   const tPrintMenu = useTranslations('print_menu');
   const tSpiska = useTranslations('pages.pickLists');
+  const { openTemplates } = usePrintTemplatesManager();
+  const { data: printForms } = useQuery<Array<{ id: string; name: string }>>({
+    queryKey: ['demand-print-forms'],
+    queryFn: () => api.get<Array<{ id: string; name: string }>>('/demands/print-forms'),
+    staleTime: 60_000,
+  });
   const tDemands = useTranslations('pages.demands');
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -1211,23 +1219,41 @@ export default function DemandDetailPage() {
     });
   }, [form, data]);
 
-  // moysklad hujjatga BIR NECHTA chop shakli beradi. Jo'natma esa faqat zaxira
-  // 2-bandli menyuni ko'rsatardi, holbuki shakllar ilovada ALLAQACHON bor edi
-  // (invoices-out ularni ishlatadi) — menyuga ulanmagani uchun ko'rinmasdi.
-  const printMenuItems: CreateMenuItem[] = [
-    {
-      id: 'blank',
+  // Akkauntning O'Z «Отгрузка» shablonlari — bulk-print orqali templateId bilan.
+  // Backend `GET /demands/print-forms` + `POST /demands/bulk-print` ALLAQACHON
+  // bor edi, sahifa esa ularni so'ramasdi (2026-08-01 audit).
+  const printForm = (templateId?: string) => {
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    void api
+      .postDownload(
+        '/demands/bulk-print',
+        { ids: [data.id], ...(templateId ? { templateId } : {}) },
+        `demand-${data.name}-${stamp}.pdf`,
+      )
+      .then(() => qc.invalidateQueries({ queryKey: ['demand', id] }));
+  };
+
+  // Kanonik tartib — `lib/print-menu.ts` ga qara. «Комплект…» YO'Q, chunki
+  // demand modulida `kit-print` endpointi yo'q (invoice-out/supply/… da bor).
+  // Soxta band qo'yishdan ko'ra tushirib qoldirish halolroq.
+  const printMenuItems: CreateMenuItem[] = buildPrintMenu({
+    accountForms: printForms,
+    onAccountForm: printForm,
+    standard: {
       label: tPrintMenu('document_blank'),
       onSelect: () =>
         window.open(`/print/demand/${data.id}?auto=1`, '_blank', 'width=820,height=1100'),
     },
-    { id: 'spiska', label: tSpiska('spiska_form'), onSelect: () => void openSpiska() },
-    {
-      id: 'creceipt',
-      label: tSpiska('receipt_title_customer'),
-      onSelect: () => openCustomerReceipt(),
-    },
-  ];
+    extras: [
+      { id: 'spiska', label: tSpiska('spiska_form'), onSelect: () => void openSpiska() },
+      {
+        id: 'creceipt',
+        label: tSpiska('receipt_title_customer'),
+        onSelect: () => openCustomerReceipt(),
+      },
+    ],
+    configure: { label: tPrintMenu('configure'), onSelect: () => openTemplates('demand') },
+  });
 
   const createMenuItems: CreateMenuItem[] = [
     { id: 'move', label: tDetailTitles('move'), disabled: true },
