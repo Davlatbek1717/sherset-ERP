@@ -3676,7 +3676,7 @@
           "counterpartyAdjustment": "Korrektirovka"
         }
       },
-      "chek_title_sale": "Savdo cheki",
+      "chek_title_sale": "SAVDO CHEKI",
       "chek_title_return": "Qaytarish cheki",
       "chek_dated": "Sana: {date}",
       "chek_seller": "Sotuvchi",
@@ -3685,13 +3685,13 @@
       "chek_comment": "Izoh",
       "chek_reference": "Asos",
       "chek_col_name": "Nomi",
-      "chek_col_uom": "O'lch.",
+      "chek_col_uom": "O'lch. birligi",
       "chek_col_qty": "Soni",
-      "chek_col_price": "Narx",
+      "chek_col_price": "Narxi",
       "chek_col_sum": "Summa",
       "chek_discount": "Chegirma",
-      "chek_subtotal": "Summa (chegirmasiz)",
-      "chek_total": "JAMI",
+      "chek_subtotal": "Chek bo'yicha umumiy summa",
+      "chek_total": "Jami summa",
       "in_words": "Summa so'z bilan",
       "items_summary": "Jami {count} nomdagi tovar, summasi {sum}",
       "stamp": "M.O‘.",
@@ -3700,7 +3700,12 @@
         "account": "H/r",
         "mfo": "MFO",
         "phone": "Tel"
-      }
+      },
+      "chek_items_count": "Jami nomenklaturalar soni",
+      "chek_items_unit": "ta",
+      "chek_in_words": "Raqam bilan",
+      "chek_footer_legal": "Ushbu chek to'lovni tasdiqlovchi hujjat hisoblanadi.",
+      "chek_footer_thanks": "Rahmat, bizni tanlaganingiz uchun!"
     },
     "attachments": {
       "section_title": "Fayllar",

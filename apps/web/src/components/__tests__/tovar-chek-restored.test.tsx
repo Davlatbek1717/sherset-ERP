@@ -89,21 +89,50 @@ describe('TovarChek — restored receipt template', () => {
     expect(screen.getByText('Avtomat 16A')).toBeTruthy();
   });
 
-  it('shows the discount line when gross exceeds the total', () => {
-    const { container } = renderChek();
-    // 110 000 000 − 109 000 000 = 1 000 000 tiyin = 10 000 so'm.
-    // fmtSom ATAYLAB butun so'mni kasrsiz chizadi (egasining namunasi shunday).
-    expect(hasAmount(container, '-10000')).toBe(true);
+  it('always shows the three summary rows — namunada shunday', () => {
+    // chek.png: «Chek bo'yicha umumiy summa» · «Chegirma» · «Jami summa»
+    // UCHALASI ham doim chiqadi. Ilgari chegirmasiz chekda faqat JAMI qolardi.
+    const { container } = renderChek({ subtotalMinor: '109000000' });
+    const txt = container.textContent ?? '';
+    expect(txt).toMatch(/Chek bo|Общая сумма/);
+    expect(txt).toMatch(/Chegirma|Скидка/);
+    expect(txt).toMatch(/Jami summa|Итого/);
   });
 
-  it('hides the discount line when there is no discount', () => {
+  it('prints the discount amount when there is one', () => {
+    const { container } = renderChek();
+    // 110 000 000 − 109 000 000 = 1 000 000 tiyin = 10 000 so'm (kasrsiz)
+    expect(hasAmount(container, '10000')).toBe(true);
+  });
+
+  it('prints a literal 0 when there is no discount', () => {
     const { container } = renderChek({ subtotalMinor: '109000000' });
-    // «Chegirma» must not appear when gross === total.
-    expect(container.textContent).not.toMatch(/Chegirma|Скидка/);
+    expect(container.querySelector('[data-test-id="chek-discount"]')?.textContent).toBe('0');
   });
 
   it('always prints the grand total', () => {
     const { container } = renderChek();
     expect(hasAmount(container, '1090000')).toBe(true);
+  });
+
+  it('prints «Jami nomenklaturalar soni» with the row count', () => {
+    const { container } = renderChek();
+    const txt = (container.textContent ?? '').replace(/\s/g, '');
+    expect(txt).toMatch(/(Jaminomenklaturalarsoni|Всегонаименований):?2/);
+  });
+
+  it('prints the total in words («Raqam bilan»)', () => {
+    const { container } = renderChek();
+    const txt = container.textContent ?? '';
+    expect(txt).toMatch(/Raqam bilan|прописью/);
+    // 1 090 000,00 -> «Bir million to‘qson ming so‘m 00 tiyin»
+    expect(txt).toMatch(/million/i);
+  });
+
+  it('prints the two footer lines from the sample', () => {
+    const { container } = renderChek();
+    const txt = container.textContent ?? '';
+    expect(txt).toMatch(/tasdiqlovchi hujjat|подтверждающим оплату/);
+    expect(txt).toMatch(/Rahmat|Спасибо/);
   });
 });

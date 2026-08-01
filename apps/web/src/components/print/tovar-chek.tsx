@@ -21,7 +21,8 @@
  * ishlatiladi: 80mm default, `?w=58` bilan 58mm.
  */
 
-import { useTranslations } from 'next-intl';
+import { amountInWords } from '@moysklad/money';
+import { useLocale, useTranslations } from 'next-intl';
 
 export interface ChekPosition {
   position: number;
@@ -102,13 +103,13 @@ export function TovarChek({
   widthMm,
 }: TovarChekProps) {
   const t = useTranslations('pages.print');
+  const wordsLocale = useLocale() === 'uz' ? 'uz' : 'ru';
   // 58mm tor lentada shrift bir pog'ona kichikroq (retail-sale cheki bilan bir intizom).
   const fs = widthMm === 58 ? 9 : 11;
 
   // Chegirma: oraliq jami bilan yakuniy summa farqi (musbat bo'lsagina ko'rsatiladi).
   const discountMinor =
     subtotalMinor != null ? (BigInt(subtotalMinor) - BigInt(totalMinor)).toString() : null;
-  const hasDiscount = discountMinor != null && BigInt(discountMinor) > 0n;
 
   const cell: React.CSSProperties = {
     border: '1px solid #000',
@@ -196,35 +197,53 @@ export function TovarChek({
           ))}
         </tbody>
         <tfoot>
-          {/* Chegirma bo'lsa: chegirmasiz summa → chegirma → JAMI (2026-07-17
-              talab: «qancha skidka qilindi ko'rinsin»). Chegirmasiz chekda
-              faqat JAMI qatori — namunadagidek ixcham qoladi. */}
-          {hasDiscount && discountMinor && subtotalMinor && (
-            <>
-              <tr>
-                <td colSpan={5} style={{ ...num, fontWeight: 600 }}>
-                  {t('chek_subtotal')}:
-                </td>
-                <td style={{ ...num, fontWeight: 600 }}>{fmtSom(subtotalMinor)}</td>
-              </tr>
-              <tr>
-                <td colSpan={5} style={{ ...num, fontWeight: 600 }}>
-                  {t('chek_discount')}:
-                </td>
-                <td style={{ ...num, fontWeight: 600 }} data-test-id="chek-discount">
-                  -{fmtSom(discountMinor)}
-                </td>
-              </tr>
-            </>
-          )}
+          {/* Egasining namunasi (chek.png, 2026-08-01) UCHALA qatorni ham DOIM
+              ko'rsatadi — chegirma 0 bo'lsa ham «Chegirma: 0» chiqadi. Ilgari
+              chegirmasiz chekda faqat JAMI qatori chizilardi. */}
+          <tr>
+            <td colSpan={5} style={{ ...cell, textAlign: 'center' }}>
+              {t('chek_subtotal')}:
+            </td>
+            <td style={num}>{fmtSom(subtotalMinor ?? totalMinor)}</td>
+          </tr>
+          <tr>
+            <td colSpan={5} style={{ ...cell, textAlign: 'center' }}>
+              {t('chek_discount')}:
+            </td>
+            <td style={num} data-test-id="chek-discount">
+              {discountMinor ? fmtSom(discountMinor) : '0'}
+            </td>
+          </tr>
           <tr style={{ fontWeight: 700, fontSize: fs + 2 }}>
-            <td colSpan={5} style={num}>
+            <td colSpan={5} style={{ ...cell, textAlign: 'center', fontWeight: 700 }}>
               {t('chek_total')}:
             </td>
             <td style={num}>{fmtSom(totalMinor)}</td>
           </tr>
         </tfoot>
       </table>
+
+      {/* ── Jadval ostidagi ikki qator (namunada bor edi, bizda YO'Q edi) ── */}
+      <div style={{ marginTop: 8 }}>
+        <div>
+          {t('chek_items_count')}:{' '}
+          <b>
+            {positions.length} {t('chek_items_unit')}
+          </b>
+        </div>
+        {/* «Raqam bilan» — summa so'z bilan. Chek qog'ozda o'zgartirilmasligi
+            uchun raqam yonida so'z bilan ham yoziladi. */}
+        <div style={{ marginTop: 2 }}>
+          {t('chek_in_words')}: <b>{amountInWords(totalMinor, 'UZS', wordsLocale)}</b>
+        </div>
+      </div>
+
+      {/* ── Ajratgich + minnatdorchilik (namunadagidek markazda) ── */}
+      <div style={{ borderTop: '1px solid #000', margin: '14px 0 8px' }} />
+      <div style={{ textAlign: 'center', lineHeight: 1.5 }}>
+        <div>{t('chek_footer_legal')}</div>
+        <div>{t('chek_footer_thanks')}</div>
+      </div>
     </div>
   );
 }
