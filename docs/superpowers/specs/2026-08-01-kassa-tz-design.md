@@ -31,7 +31,18 @@ Bu bo'lim **noldan qurilmaydi**. Kodda mavjud va ishlayotgan qismlar (tekshirilg
    (`retail-sale.schema.ts:18`), lekin `send-to-picking` bazaga `state:'picking'` yozadi
    (`retail-sale.service.ts:966`; DB ustuni `VarChar(20)` bo'lgani uchun o'tib ketadi), POS esa
    `?state=ready` / `?state=picking` bo'yicha so'rov yuboradi (`sotuv/page.tsx:666`) — **Zod enum bularni rad etadi**.
-2. **`ready` holatini hech qaysi kod o'rnatmaydi** — «omborchi yig'ib tayyor deb belgilaydi» bosqichi mavjud emas.
+2. ~~**`ready` holatini hech qaysi kod o'rnatmaydi**~~ — **2026-08-01 23:55 da parallel sessiya
+   yopdi** (`d7ab3b1`): `POST /retail-sales/:id/mark-ready` qo'shildi va u bu TZ ko'zda tutganidan
+   **kuchliroq** — har omborchi faqat **o'z zonasi** (`RestockTask.assigneeId`) topshiriqlarini
+   yopadi, sotuv `ready` ga **barcha omborlar** tugagach o'tadi (`retail-sale.service.ts:1169`).
+   Shu bilan birga omborchi paneli, yacheyka skaneri, `sklad-keepers` sozlamalari va
+   `warehouse-ops` hisoboti qaytarildi. **§4.1 dagi `mark-ready` talabi bajarilgan hisoblanadi**;
+   qisman yig'ish (§4.1) hali qoladi.
+   **LEKIN 1-uzilish saqlanib qolgan** — `RetailSaleStateSchema` hamon
+   `['draft','posted','refunded','cancelled']` (`retail-sale.schema.ts:18`), `list()` esa shu
+   sxema bilan filtrlaydi (`retail-sale.service.ts:270`). Ya'ni POS'ning
+   `GET /retail-sales?state=ready` va `?state=picking` so'rovlari **hamon 400 qaytaradi** —
+   «Yig'ilmoqda» va «Tayyor» ro'yxatlari to'lmaydi. Enum kengaytmasi (§4.1) **eng shoshilinch ish**.
 3. **`RetailSalePosition` da `costMinor` yo'q** va POS `post` FIFO'ni chaqirmaydi → **kassa sotuvidan foyda
    hisoblab bo'lmaydi** (na tovar, na kassir kesimida).
 4. **To'lov turlari 2 ta** — `cashAmountMinor` + `cardAmountMinor` (`retail-sale.schema.ts:64-69`).
