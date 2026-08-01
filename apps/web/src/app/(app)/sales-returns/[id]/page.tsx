@@ -817,11 +817,12 @@ export default function SalesReturnDetailPage() {
     selectedRowIds.size,
   ]);
 
-  if (isLoading || !form)
-    return <div className="p-8 text-[var(--ms-text-muted)] text-sm">{tCommon('loading')}</div>;
   // «Печать → Лист сборки» (climart port 2026-07-28): qaytarilgan tovarni
   // yacheykasiga QAYTA JOYLASH varag'i (posted return'da ham read-only print).
-  // Hook-tartib barqarorligi uchun `if (!data)` early-return'dan OLDIN e'lon.
+  // ⚠️ HAMMA erta `return`dan YUQORIDA turishi shart. Avval bu blok faqat
+  // `if (!data)` dan oldinga qo'yilgan edi — lekin undan ham oldin
+  // `if (isLoading || !form) return` bor: birinchi render hook'larni
+  // chaqirmasdi, ikkinchisi chaqirardi → React #310, sahifa yiqilardi.
   // Varaq mantiqi umumiy hook'da (`hooks/use-pick-sheet.ts`): bu yerdagi nusxa
   // qatorning O'Z yacheykasini e'tiborsiz qoldirib, har safar tovarning standart
   // yacheykasini so'rardi — omborchi noto'g'ri javonga yuborilishi mumkin edi.
@@ -839,6 +840,9 @@ export default function SalesReturnDetailPage() {
       rows: form.positions,
     });
   }, [form, data, tSpiska, openSheet]);
+
+  if (isLoading || !form)
+    return <div className="p-8 text-[var(--ms-text-muted)] text-sm">{tCommon('loading')}</div>;
 
   if (!data) return <div className="p-8 text-sm">{tCommon('not_found')}</div>;
 

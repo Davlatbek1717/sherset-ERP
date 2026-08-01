@@ -64,7 +64,8 @@
       "correctness": {
         "noUnusedVariables": "error",
         "noUnusedImports": "error",
-        "useExhaustiveDependencies": "warn"
+        "useExhaustiveDependencies": "warn",
+        "useHookAtTopLevel": "error"
       },
       "style": {
         "useConst": "error",
@@ -84,5 +85,17 @@
         "useSortedClasses": "warn"
       }
     }
-  }
+  },
+  "overrides": [
+    {
+      "include": ["apps/api/**/*.ts", "apps/api/**/*.tsx"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "useHookAtTopLevel": "off"
+          }
+        }
+      }
+    }
+  ]
 }

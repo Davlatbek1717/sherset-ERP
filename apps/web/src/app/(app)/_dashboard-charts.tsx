@@ -32,7 +32,7 @@ const fmt = (value: unknown): [string, string] => {
 /** «Продажи» sales line chart (moysklad parity: straight teal segments). */
 export function SalesLineChart({ data }: { data: ChartRow[] }) {
   return (
-    <ResponsiveContainer width="100%" height="100%">
+    <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 0, height: 200 }}>
       <LineChart data={data} margin={{ top: 10, right: 10, bottom: 0, left: 0 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="var(--ms-border-default)" vertical={false} />
         <XAxis
@@ -64,7 +64,7 @@ export function SalesLineChart({ data }: { data: ChartRow[] }) {
 /** «Деньги» inflow/outflow bars + balance line (moysklad parity). */
 export function CashComposedChart({ data }: { data: ChartRow[] }) {
   return (
-    <ResponsiveContainer width="100%" height="100%">
+    <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 0, height: 200 }}>
       <ComposedChart data={data} margin={{ top: 10, right: 10, bottom: 0, left: 0 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="var(--ms-border-default)" vertical={false} />
         <XAxis

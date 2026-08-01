@@ -128,7 +128,11 @@ export default function HrReportsPage() {
               {t('daily_chart')}
             </div>
             <div className="h-72">
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer
+                width="100%"
+                height="100%"
+                initialDimension={{ width: 0, height: 288 }}
+              >
                 <BarChart data={barData} margin={{ top: 10, right: 10, bottom: 0, left: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--ms-border-default)" />
                   <XAxis dataKey="date" fontSize={11} stroke="var(--ms-text-muted)" />
@@ -146,7 +150,11 @@ export default function HrReportsPage() {
             </div>
             {pieData.length > 0 ? (
               <div className="h-72">
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer
+                  width="100%"
+                  height="100%"
+                  initialDimension={{ width: 0, height: 288 }}
+                >
                   <PieChart>
                     <Pie
                       data={pieData}

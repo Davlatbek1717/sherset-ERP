@@ -981,6 +981,58 @@ export default function DemandDetailPage() {
     selectedRowIds.size,
   ]);
 
+  // ⚠️ HOOK'LAR ERTA `return`DAN YUQORIDA TURISHI SHART.
+  // Bu blok avval pastda, `if (isLoading || !form) return` dan KEYIN edi:
+  // birinchi render (yuklanmoqda) erta chiqib ketib hook'larni chaqirmasdi,
+  // ikkinchi render esa chaqirardi — hook SONI o'zgarib React #310 bilan
+  // butun sahifani yiqitardi. Callback'lar `form`/`data` ni o'zlari
+  // tekshiradi, shuning uchun bu yerda turishi xavfsiz.
+  // ── Climart termal cheklar (72mm) — invoices-out bilan bir xil manba ──────
+  // «Yig'ish varag'i»: ombor bo'yicha guruh + yacheyka, NARXSIZ (omborchi uchun).
+  // «Tovar cheki»: narx + qator summasi (xaridorga beriladi).
+  // Varaq mantiqi umumiy hook'da (`hooks/use-pick-sheet.ts`) — bu yerdagi nusxa
+  // qatorning O'Z yacheykasini e'tiborsiz qoldirib, har safar tovarning standart
+  // yacheykasini so'rardi: hujjatda «01-02-03 dan olindi» yozilgan bo'lsa ham
+  // omborchi boshqa javonga yuborilishi mumkin edi.
+  const { sheet: spiska, openSheet, closeSheet } = usePickSheet();
+  const [creceipt, setCreceipt] = useState<CustomerReceiptData | null>(null);
+
+  const openSpiska = useCallback(() => {
+    if (!form || !data) return;
+    // Sarlavha «Tovar cheki» EMAS — u xaridor chekining nomi; omborchi varag'i
+    // xuddi shu nom bilan chiqsa, ikkalasi bir hujjatdek ko'rinardi.
+    return openSheet({
+      title: tSpiska('sheet_title_pick'),
+      number: data.name,
+      moment: form.moment,
+      agentName: form.agentLabel || null,
+      ownerName: data.owner?.name ?? null,
+      description: form.description || null,
+      rows: form.positions,
+    });
+  }, [form, data, tSpiska, openSheet]);
+
+  const openCustomerReceipt = useCallback(() => {
+    if (!form || !data) return;
+    const rows = form.positions.filter((p) => p.assortmentId && Number(p.quantity) > 0);
+    setCreceipt({
+      number: data.name,
+      dateStr: receiptDate(new Date(form.moment)),
+      orgName: form.organizationLabel || null,
+      sellerName: data.owner?.name ?? null,
+      buyerName: form.agentLabel || null,
+      phone: null,
+      comment: form.description || null,
+      positions: rows.map((r) => ({
+        name: r.productLabel,
+        uom: r.productUom ?? null,
+        qty: r.quantity,
+        priceMinor: r.priceMinor || '0',
+        sumMinor: String(Math.round(Number(r.priceMinor || '0') * Number(r.quantity || '0'))),
+      })),
+    });
+  }, [form, data]);
+
   if (isLoading || !form) {
     return <div className="p-8 text-[var(--ms-text-muted)] text-sm">{tCommon('loading')}</div>;
   }
@@ -1161,51 +1213,6 @@ export default function DemandDetailPage() {
 
   // moysklad «Создать документ» for a shipment. Only «Возврат покупателя» is wired
   // (its from-demand backend exists); the rest are label-parity placeholders.
-  // ── Climart termal cheklar (72mm) — invoices-out bilan bir xil manba ──────
-  // «Yig'ish varag'i»: ombor bo'yicha guruh + yacheyka, NARXSIZ (omborchi uchun).
-  // «Tovar cheki»: narx + qator summasi (xaridorga beriladi).
-  // Varaq mantiqi umumiy hook'da (`hooks/use-pick-sheet.ts`) — bu yerdagi nusxa
-  // qatorning O'Z yacheykasini e'tiborsiz qoldirib, har safar tovarning standart
-  // yacheykasini so'rardi: hujjatda «01-02-03 dan olindi» yozilgan bo'lsa ham
-  // omborchi boshqa javonga yuborilishi mumkin edi.
-  const { sheet: spiska, openSheet, closeSheet } = usePickSheet();
-  const [creceipt, setCreceipt] = useState<CustomerReceiptData | null>(null);
-
-  const openSpiska = useCallback(() => {
-    if (!form || !data) return;
-    // Sarlavha «Tovar cheki» EMAS — u xaridor chekining nomi; omborchi varag'i
-    // xuddi shu nom bilan chiqsa, ikkalasi bir hujjatdek ko'rinardi.
-    return openSheet({
-      title: tSpiska('sheet_title_pick'),
-      number: data.name,
-      moment: form.moment,
-      agentName: form.agentLabel || null,
-      ownerName: data.owner?.name ?? null,
-      description: form.description || null,
-      rows: form.positions,
-    });
-  }, [form, data, tSpiska, openSheet]);
-
-  const openCustomerReceipt = useCallback(() => {
-    if (!form || !data) return;
-    const rows = form.positions.filter((p) => p.assortmentId && Number(p.quantity) > 0);
-    setCreceipt({
-      number: data.name,
-      dateStr: receiptDate(new Date(form.moment)),
-      orgName: form.organizationLabel || null,
-      sellerName: data.owner?.name ?? null,
-      buyerName: form.agentLabel || null,
-      phone: null,
-      comment: form.description || null,
-      positions: rows.map((r) => ({
-        name: r.productLabel,
-        uom: r.productUom ?? null,
-        qty: r.quantity,
-        priceMinor: r.priceMinor || '0',
-        sumMinor: String(Math.round(Number(r.priceMinor || '0') * Number(r.quantity || '0'))),
-      })),
-    });
-  }, [form, data]);
 
   // Akkauntning O'Z «Отгрузка» shablonlari — bulk-print orqali templateId bilan.
   // Backend `GET /demands/print-forms` + `POST /demands/bulk-print` ALLAQACHON

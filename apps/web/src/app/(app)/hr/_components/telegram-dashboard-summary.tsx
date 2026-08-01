@@ -62,7 +62,11 @@ export function TelegramDashboardSummary() {
           {t('sent_7days')}
         </div>
         <div className="h-56">
-          <ResponsiveContainer width="100%" height="100%">
+          <ResponsiveContainer
+            width="100%"
+            height="100%"
+            initialDimension={{ width: 0, height: 224 }}
+          >
             <AreaChart data={d.sentSeries} margin={{ top: 10, right: 10, bottom: 0, left: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--ms-border-default)" />
               <XAxis
