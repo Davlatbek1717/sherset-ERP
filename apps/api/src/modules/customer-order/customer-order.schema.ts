@@ -232,6 +232,12 @@ export const CustomerOrderFilterSchema = z.object({
    */
   shipmentAddress: z.string().max(500).optional(),
   /**
+   * «Владелец контрагента» — moysklad parity (same capture). Filters by the
+   * OWNER OF THE COUNTERPARTY (Counterparty.ownerId), not the order's own
+   * `ownerId`; the two are different people and moysklad lists both filters.
+   */
+  agentOwnerId: uuid.optional(),
+  /**
    * "Когда изменен" — moysklad parity. Filters on `updatedAt` between
    * the two ISO dates (mirror momentFrom/To).
    */

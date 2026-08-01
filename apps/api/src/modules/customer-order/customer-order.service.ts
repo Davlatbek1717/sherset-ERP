@@ -2275,7 +2275,17 @@ export class CustomerOrderService {
       ...(filter.statusId ? { statusId: filter.statusId } : {}),
       ...(filter.agentId ? { agentId: filter.agentId } : {}),
       ...(filter.agentIds ? { agentId: { in: filter.agentIds } } : {}),
-      ...(filter.agentGroupId ? { agent: { groupId: filter.agentGroupId } } : {}),
+      // «Группа контрагента» + «Владелец контрагента» BOTH scope through `agent`.
+      // They must be merged into ONE `agent` object — two spread keys would be
+      // last-wins and the group filter would be silently dropped.
+      ...(filter.agentGroupId || filter.agentOwnerId
+        ? {
+            agent: {
+              ...(filter.agentGroupId ? { groupId: filter.agentGroupId } : {}),
+              ...(filter.agentOwnerId ? { ownerId: filter.agentOwnerId } : {}),
+            },
+          }
+        : {}),
       ...(filter.agentAccountId ? { agentAccountId: filter.agentAccountId } : {}),
       ...(filter.organizationId ? { organizationId: filter.organizationId } : {}),
       ...(filter.organizationIds ? { organizationId: { in: filter.organizationIds } } : {}),

@@ -265,6 +265,10 @@ export default function CustomerOrdersPage() {
     deliveryPlannedTo?: string;
     // «Адрес доставки» — free-text substring
     shipmentAddress?: string;
+    // «Владелец контрагента» — the COUNTERPARTY's owner (Counterparty.ownerId),
+    // a different person from the order's own «Владелец-сотрудник».
+    agentOwnerId?: string;
+    agentOwnerLabel?: string;
   }>({});
 
   // moysklad «Статус» filter — the account's custom order statuses (e.g.
@@ -343,6 +347,7 @@ export default function CustomerOrdersPage() {
   if (extFilter.deliveryPlannedTo) paramsRecord.deliveryPlannedTo = extFilter.deliveryPlannedTo;
   if (extFilter.shipmentAddress?.trim())
     paramsRecord.shipmentAddress = extFilter.shipmentAddress.trim();
+  if (extFilter.agentOwnerId) paramsRecord.agentOwnerId = extFilter.agentOwnerId;
   // Custom-attribute (доп.поля) filters → a JSON-encoded `attrs` array of
   // {code, value?|from?/to?} clauses. Date attrs send from/to; everything else
   // sends a single value. Only non-empty clauses are included; the backend maps
@@ -978,6 +983,7 @@ export default function CustomerOrdersPage() {
                     deliveryPlannedFrom: pickStr('deliveryPlannedFrom'),
                     deliveryPlannedTo: pickStr('deliveryPlannedTo'),
                     shipmentAddress: pickStr('shipmentAddress'),
+                    agentOwnerId: pickStr('agentOwnerId'),
                   });
                   // Restore custom-attribute (доп.поля) filters too, so a saved
                   // pill that encoded «Уста»/«Санаси» re-applies instead of being
@@ -1465,6 +1471,50 @@ export default function CustomerOrdersPage() {
                   setCursor(undefined);
                 }}
                 testId="filter-contract"
+              />
+            </InlineFilterPanel.Field>
+            {/* 8b. Владелец контрагента — the COUNTERPARTY's owner, which moysklad
+                lists right after «Договор». Distinct from «Владелец-сотрудник»
+                (the order's own owner) further down. Backed by
+                CustomerOrderFilterSchema.agentOwnerId → `agent: { ownerId }`. */}
+            <InlineFilterPanel.Field fieldKey="agentOwner" label={tFilters('agent_owner')}>
+              <CatalogPickerField
+                value={
+                  extFilter.agentOwnerId
+                    ? {
+                        id: extFilter.agentOwnerId,
+                        label: extFilter.agentOwnerLabel ?? extFilter.agentOwnerId,
+                      }
+                    : null
+                }
+                placeholder=""
+                // Inline-only: the employee list is small enough to pick from the
+                // dropdown, so no modal picker is wired (unlike «Владелец-сотрудник»,
+                // which predates the inline fetcher). onPick is required by the type.
+                onPick={() => {}}
+                inlineFetcher={async (q): Promise<PickerItem[]> => {
+                  const r = await api.get<{ items: { id: string; name: string }[] }>(
+                    `/employees?search=${encodeURIComponent(q)}&limit=20`,
+                  );
+                  return r.items.map((x) => ({ id: x.id, primary: x.name }));
+                }}
+                onInlineSelect={(item) => {
+                  setExtFilter({
+                    ...extFilter,
+                    agentOwnerId: item.id,
+                    agentOwnerLabel: String(item.primary),
+                  });
+                  setCursor(undefined);
+                }}
+                onClear={() => {
+                  setExtFilter({
+                    ...extFilter,
+                    agentOwnerId: undefined,
+                    agentOwnerLabel: undefined,
+                  });
+                  setCursor(undefined);
+                }}
+                testId="filter-agent-owner"
               />
             </InlineFilterPanel.Field>
             {/* 9. Организация — moysklad-parity inline multi-select checkbox

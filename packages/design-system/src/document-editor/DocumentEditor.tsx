@@ -79,6 +79,7 @@ export function DocumentEditor({
   number,
   onNumberChange,
   numberPlaceholder,
+  numberTooltip,
   date,
   onDateChange,
   status,
@@ -102,6 +103,7 @@ export function DocumentEditor({
   onApplicableChange,
   applicableLabel,
   applicableHelp,
+  applicableDisabled,
   reserve,
   onReserveChange,
   reserveLabel,
@@ -154,6 +156,7 @@ export function DocumentEditor({
         number={number}
         onNumberChange={onNumberChange}
         numberPlaceholder={numberPlaceholder}
+        numberTooltip={numberTooltip}
         date={date}
         onDateChange={onDateChange}
         status={status}
@@ -177,6 +180,7 @@ export function DocumentEditor({
         onApplicableChange={onApplicableChange}
         applicableLabel={applicableLabel}
         applicableHelp={applicableHelp}
+        applicableDisabled={applicableDisabled}
         reserve={reserve}
         onReserveChange={onReserveChange}
         reserveLabel={reserveLabel}
