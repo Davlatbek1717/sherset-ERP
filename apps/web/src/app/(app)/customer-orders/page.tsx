@@ -2134,37 +2134,11 @@ export default function CustomerOrdersPage() {
           /* Filter-toggle goes BEFORE the inline search per moysklad's
            i-default.png ordering. ListView places search + 0 counter
            after this slot, then renders the bulk-action dropdowns. */
-          <>
-            <FilterToggleButton
-              open={filterOpen}
-              onToggle={() => setFilterOpen((v) => !v)}
-              label={tFilters('trigger')}
-            />
-            {/* moysklad «Список | Столбцы» segmented view toggle (new-design
-                реестров) — «Столбцы» swaps the flat table for the status
-                kanban; «Список» is the default table. Sits right after Фильтр. */}
-            <div
-              className="inline-flex items-center gap-0.5 rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] p-0.5"
-              data-test-id="co-view-toggle"
-            >
-              <button
-                type="button"
-                onClick={() => setView('list')}
-                className={`rounded-[var(--ms-radius-default)] px-3 py-1 text-sm transition-colors ${view === 'list' ? 'bg-[var(--ms-bg-surface)] font-medium text-[var(--ms-text-primary)] shadow-sm' : 'text-[var(--ms-text-muted)] hover:text-[var(--ms-text-primary)]'}`}
-                data-test-id="co-view-list"
-              >
-                {t('view_list')}
-              </button>
-              <button
-                type="button"
-                onClick={() => setView('columns')}
-                className={`rounded-[var(--ms-radius-default)] px-3 py-1 text-sm transition-colors ${view === 'columns' ? 'bg-[var(--ms-bg-surface)] font-medium text-[var(--ms-text-primary)] shadow-sm' : 'text-[var(--ms-text-muted)] hover:text-[var(--ms-text-primary)]'}`}
-                data-test-id="co-view-columns"
-              >
-                {t('columns_button')}
-              </button>
-            </div>
-          </>
+          <FilterToggleButton
+            open={filterOpen}
+            onToggle={() => setFilterOpen((v) => !v)}
+            label={tFilters('trigger')}
+          />
         }
         extraActions={
           // moysklad parity: dropdowns only in the toolbar — no
@@ -2202,10 +2176,35 @@ export default function CustomerOrdersPage() {
               onPrintOrder={() => bulk.bulkPrint.mutateAsync(Array.from(bulk.selectedIds))}
               selectedIds={bulk.selectedIds}
             />
-            {/* The old toolbar «Столбцы» column-visibility button is gone: that
-                slot is now the «Список | Столбцы» VIEW toggle (extraActionsLeft,
-                moysklad new-design реестров). Column visibility now lives solely
-                on the table-header gear below (headerEndSlot). */}
+            {/* «Список | Столбцы» view toggle — «Столбцы» swaps the flat table
+                for the status kanban. Moved here from extraActionsLeft
+                2026-07-31 (parity delta #10): the live moysklad register puts
+                «Столбцы» AFTER «Печать», not between «Фильтр» and the search box
+                where ours sat.
+                The old toolbar «Столбцы» COLUMN-VISIBILITY button is gone —
+                column visibility lives solely on the table-header gear below
+                (headerEndSlot), like moysklad. */}
+            <div
+              className="inline-flex items-center gap-0.5 rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] p-0.5"
+              data-test-id="co-view-toggle"
+            >
+              <button
+                type="button"
+                onClick={() => setView('list')}
+                className={`rounded-[var(--ms-radius-default)] px-3 py-1 text-sm transition-colors ${view === 'list' ? 'bg-[var(--ms-bg-surface)] font-medium text-[var(--ms-text-primary)] shadow-sm' : 'text-[var(--ms-text-muted)] hover:text-[var(--ms-text-primary)]'}`}
+                data-test-id="co-view-list"
+              >
+                {t('view_list')}
+              </button>
+              <button
+                type="button"
+                onClick={() => setView('columns')}
+                className={`rounded-[var(--ms-radius-default)] px-3 py-1 text-sm transition-colors ${view === 'columns' ? 'bg-[var(--ms-bg-surface)] font-medium text-[var(--ms-text-primary)] shadow-sm' : 'text-[var(--ms-text-muted)] hover:text-[var(--ms-text-primary)]'}`}
+                data-test-id="co-view-columns"
+              >
+                {t('columns_button')}
+              </button>
+            </div>
           </>
         }
         headerEndSlot={
