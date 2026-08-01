@@ -347,6 +347,18 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > (aynan shu farq bu sessiyada #310 ni yashirgan edi). Keyingi sessiya: `/sotuv` (savat, qidiruv,
 > smena ochish, «Rasmiylashtirish»), `/demands/[id]`, bosh sahifa konsoli.
 >
+> **4) POS qobig'i balandligi** (`76c54df`, DEPLOYED) — egasi suratda pastki blokni belgiladi:
+> JAMI + yashil to'lov tugmasi ekrandan chiqib, qirqilgan ko'rinardi. Sahifa
+> `h-[calc(100dvh-58px)]` bilan yozilgan edi (sherset'da faqat 58px navbar); climart'da navbar
+> USTIGA subnav ham bor → qobiq ~47px uzun. Ustiga climart `(app)/layout.tsx` balandlik
+> chegarasini ATAYLAB bermaydi («ichki scroll YO'Q» — ro'yxatlar uchun eski talab). Yechim: yangi
+> raqam EMAS — qobiq o'z tepa-offsetini o'lchaydi (`hooks/use-fill-viewport.ts`), xrom o'zgarsa ham
+> ishlaydi. Chromium'da o'lchandi: eski 767/720 (47px qirqilgan) → yangi 720/720 (sig'adi).
+> Qo'riqchi `pos-shell-height.test.ts` (mutatsiya bilan sinaldi). Deploy markeri: eski Tailwind
+> klassi CSS'da 0 fayl, yangi `calc(100dvh - ` literali 3 chunk'da.
+> **MARKER SABOG'I:** minifikatsiya identifikatorlarni o'zgartiradi — `useFillViewport` ni build
+> ichidan qidirish YAROQSIZ. Faqat satr literallari yoki CSS klasslari ishonchli marker.
+>
 > **SABOQ:** `biome check` chiqishi «Diagnostics not shown: N» deb KESILADI — bo'sh grep natijasi
 > «toza» degani EMAS. Gate `--max-diagnostics=2000` ishlatadi; qo'lda tekshirganda ham shunday
 > qilish kerak (bu sessiyada 6 lint xatosi shu tarzda o'tkazib yuborildi, push gate tutdi).
