@@ -305,6 +305,33 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-01a (CHOP ETISH to'lqini — 11 commit · ✅ DEPLOYED `c161ef1`)**
+> **DEPLOY tasdiqlandi** (erp.sherset.uz = sherset-v2, `DS_TARGET=v2 deploy-smart.sh`, `217c345 → c161ef1`):
+> erp.sherset.uz 200 · web :3011 200 · api :4001 health 200 · migratsiya «No pending» (yangi migratsiya yo'q,
+> faqat `apps/web`) · yangi kod-markerlari build ichida (`SAVDO CHEKI`, `JOYLASHTIRISH VARAG'I`, `YIG'ISH VARAG'I`
+> — hammasi `server/chunks/5153.js`). Faqat `sherset-v2-*` restart, boshqa ijarachilar 3s uptime bilan tegilmadi.
+> Pre-deploy zaxira: `sherset_v2-PREDEPLOY-c161ef1-121139.sql.gz` (227M, 215 jadval, `dump complete` markeri bor).
+>
+> **Ish:** «SAVDO CHEKI» egasining namunasiga 1:1 (brauzerda 302px = 80mm da o'lchandi, chetga chiqish YO'Q) ·
+> omborchi varag'i (yacheykali) 3 yangi bo'limga — qabullar «Joylashtirish varag'i», taminotchiga qaytarish va
+> chiqim «Yig'ish varag'i» · varaq mantiqi `hooks/use-pick-sheet.ts` ga yig'ildi (6 bo'lim bitta manbadan).
+>
+> ⚠️ **Ikki tuzatilgan bug:** (1) varaq qatorning O'Z yacheykasini e'tiborsiz qoldirib har safar tovarning
+> standart yacheykasini so'rardi — omborchi noto'g'ri javonga yuborilardi; (2) «Зона / Ячейка» yorlig'i xom
+> holda varaqqa tushsa `warehouseOfCell()` omborni «Zona A / 01» deb o'qib har zonani soxta ombor guruhiga
+> bo'lardi va 19mm nowrap ustunni printer qirqardi (`cellCode()` qo'shildi).
+>
+> 🔴 **DEPLOYDA TOPILGAN, TUZATILMAGAN (egasining qarori kutilmoqda):** `/var/log/sherset-v2/api.out.log` =
+> **127 MB**, shundan **189 818 qator** bitta ogohlantirish: `HrTelegramOutboxWorker — Outbox tick skipped:
+> previous run still in flight` (har 5s da 3 marta, **2026-07-25 dan beri**, deploydan OLDIN boshlangan).
+> `logrotate.d` da sherset/pm2 uchun konfiguratsiya **YO'Q**. Bu aynan 2026-07-31 dagi disk-100% uzilishini
+> keltirgan mexanizm. Ikki alohida ish: (a) worker'ning uch marta tetiklanishi, (b) log rotatsiyasi — (b)
+> umumiy ko'p-ijarali box'ga tegadi, shuning uchun so'ramasdan qilinmadi.
+>
+> **Browser-QA YO'Q** — chek 80mm o'lchovi headless render bilan tasdiqlandi, lekin jonli sahifada emas.
+>
+> ---
+>
 > **🕒 2026-07-31b (CUSTOMER-ORDERS parity — 23/56 punkt · ✅ DEPLOYED `217c345`)**
 > **DEPLOY tasdiqlandi** (erp.sherset.uz = sherset-v2, `DS_TARGET=v2 deploy-smart.sh`, `177c7b5 → 217c345`):
 > HEAD ✅ · erp.sherset.uz 200 · api :4001 health 200 · web :3011 200 · yangi filtr marshruti 401 (404 emas) ·
