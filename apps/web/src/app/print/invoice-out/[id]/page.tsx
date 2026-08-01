@@ -3,6 +3,7 @@
 import { PrintDoc, type PrintDocPosition } from '@/components/print/print-doc';
 import { PrintShell } from '@/components/print/print-shell';
 import { api } from '@/lib/api-client';
+import { agentParty, orgParty, partySignatures } from '@/lib/print-party';
 import { computePositionTotal } from '@moysklad/money';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
@@ -33,13 +34,24 @@ interface InvoiceDetail {
     legalTitle: string | null;
     legalAddress: string | null;
     uzRequisites?: { inn?: string } | null;
+    phone: string | null;
   };
   organization: {
     id: string;
     name: string;
     legalTitle: string | null;
     legalAddress: string | null;
+    phone: string | null;
+    director: string | null;
+    directorPosition: string | null;
+    chiefAccountant: string | null;
+    uzRequisites?: { inn?: string } | null;
   };
+  organizationAccount?: {
+    accountNumber: string | null;
+    bankName: string | null;
+    bic: string | null;
+  } | null;
   positions: PositionDetail[];
 }
 
@@ -83,32 +95,25 @@ export default function PrintInvoiceOutPage() {
         docTitle={t('doc_title.invoice_out')}
         docNumber={data.name}
         docDate={data.moment}
-        organization={{
-          label: t('party.organization'),
-          name: data.organization.legalTitle ?? data.organization.name,
-          details: data.organization.legalAddress,
-        }}
-        agent={{
-          label: t('party.agent'),
-          name: data.agent.legalTitle ?? data.agent.name,
-          details:
-            [
-              data.agent.legalAddress,
-              data.agent.uzRequisites?.inn ? `STIR: ${data.agent.uzRequisites.inn}` : null,
-            ]
-              .filter(Boolean)
-              .join('\n') || null,
-        }}
+        organization={orgParty(
+          t,
+          t('party.organization'),
+          data.organization,
+          data.organizationAccount,
+        )}
+        agent={agentParty(t, t('party.agent'), data.agent)}
         positions={positions}
         currency="UZS"
         subtotalMinor={subtotalMinor.toString()}
         vatTotalMinor={vatTotalMinor.toString()}
         grandTotalMinor={data.sumMinor}
         description={data.description}
-        signatures={[
-          { label: t('signature.director'), name: data.organization.name },
-          { label: t('signature.received_by'), name: data.agent.name },
-        ]}
+        signatures={partySignatures(
+          t,
+          data.organization,
+          data.agent.name,
+          t('signature.received_by'),
+        )}
       />
     </PrintShell>
   );
