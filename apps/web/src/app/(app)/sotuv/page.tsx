@@ -1,6 +1,7 @@
 'use client';
 
 import { RasmiyashtirishModal } from '@/components/pos/rasmilashtirish-modal';
+import { useFillViewport } from '@/hooks/use-fill-viewport';
 import { api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-store';
 import { printPickingViaAgent, printReceiptViaAgent } from '@/lib/print-agent';
@@ -1677,6 +1678,10 @@ export default function SotuvPage() {
     enabled: !!user,
   });
 
+  // DIQQAT: hook erta `return`dan YUQORIDA — pastga qo'yilsa React #310
+  // («Rendered more hooks…») butun sahifani yiqitadi (2026-08-01 saboqi).
+  const { ref: shellRef, height: shellHeight } = useFillViewport<HTMLDivElement>();
+
   if (!user || isLoading) {
     return (
       <div className="flex h-64 items-center justify-center text-[var(--ms-text-muted)] text-sm">
@@ -1694,8 +1699,12 @@ export default function SotuvPage() {
   }
 
   return (
-    <div className="flex h-[calc(100dvh-58px)] flex-col">
-      <div className="border-[var(--ms-border)] border-b px-4 py-2">
+    // Balandlik O'LCHANADI, qat'iy raqam emas — `hooks/use-fill-viewport.ts` ga
+    // qara. Avval `calc(100dvh-58px)` edi (faqat navbar), climart'da esa subnav
+    // ham bor → qobiq ~46px uzun bo'lib JAMI + to'lov tugmasi ekrandan chiqib
+    // ketardi.
+    <div ref={shellRef} className="flex flex-col" style={{ height: shellHeight }}>
+      <div className="shrink-0 border-[var(--ms-border)] border-b px-4 py-2">
         <h1 className="font-semibold text-[var(--ms-text-primary)] text-base">{t('title')}</h1>
       </div>
       <div className="flex min-h-0 flex-1 overflow-hidden">
