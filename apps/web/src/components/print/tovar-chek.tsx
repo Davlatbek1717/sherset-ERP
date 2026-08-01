@@ -117,6 +117,13 @@ export function TovarChek({
     verticalAlign: 'top',
   };
   const num: React.CSSProperties = { ...cell, textAlign: 'right', whiteSpace: 'nowrap' };
+  // Namunada USTUN SARLAVHALARI hammasi markazda — qiymatlar esa turlicha
+  // (nom/birlik/soni markaz, narx/summa o'ngda). Shuning uchun sarlavha uchun
+  // alohida uslub: markaz + nowrap (pul ustuni sarlavhasi ikkiga bo'linmasin).
+  const numHead: React.CSSProperties = { ...cell, textAlign: 'center', whiteSpace: 'nowrap' };
+  // Nom ustuni o'ralganda (80mm da 3-4 qator bo'ladi) qisqa ustunlar tepada
+  // osilib qolmasin — namunada bunday qator yo'q, lekin «tepada» ko'rinishi buzuq.
+  const midCell: React.CSSProperties = { ...cell, textAlign: 'center', verticalAlign: 'middle' };
 
   return (
     <div
@@ -137,11 +144,18 @@ export function TovarChek({
         <div style={{ fontWeight: 700, fontSize: fs + 4, marginTop: 2 }}>
           {title} № {docNumber}
         </div>
-        <div style={{ fontWeight: 600 }}>{t('chek_dated', { date: fmtDate(docDate) })}</div>
+        {/* Namunada FAQAT «Sana:» qalin, sananing o'zi oddiy — shuning uchun
+            xabar ichida <b> teg turadi va rich-render bilan chiqadi. */}
+        <div>
+          {t.rich('chek_dated', {
+            date: fmtDate(docDate),
+            b: (chunks) => <b>{chunks}</b>,
+          })}
+        </div>
       </div>
 
-      {/* ── Rekvizit qatorlari (namunadagidek chapdan, qalin label bilan) ── */}
-      <div style={{ marginTop: 4, fontWeight: 600 }}>
+      {/* ── Rekvizit qatorlari — namunada ODDIY qalinlikda (qalin EMAS) ── */}
+      <div style={{ marginTop: 4 }}>
         {sellerName && (
           <div>
             {t('chek_seller')}: {sellerName}
@@ -177,22 +191,22 @@ export function TovarChek({
         <thead>
           <tr style={{ fontWeight: 700 }}>
             <td style={{ ...cell, width: 14, textAlign: 'center' }}>№</td>
-            <td style={cell}>{t('chek_col_name')}</td>
+            <td style={{ ...cell, textAlign: 'center' }}>{t('chek_col_name')}</td>
             <td style={{ ...cell, width: 24, textAlign: 'center' }}>{t('chek_col_uom')}</td>
             <td style={{ ...cell, width: 26, textAlign: 'center' }}>{t('chek_col_qty')}</td>
-            <td style={{ ...num, width: 52 }}>{t('chek_col_price')}</td>
-            <td style={{ ...num, width: 58 }}>{t('chek_col_sum')}</td>
+            <td style={{ ...numHead, width: 52 }}>{t('chek_col_price')}</td>
+            <td style={{ ...numHead, width: 58 }}>{t('chek_col_sum')}</td>
           </tr>
         </thead>
         <tbody>
           {positions.map((p, i) => (
             <tr key={p.position}>
-              <td style={{ ...cell, textAlign: 'center' }}>{i + 1}</td>
-              <td style={cell}>{p.name}</td>
-              <td style={{ ...cell, textAlign: 'center' }}>{p.uom ?? '—'}</td>
-              <td style={{ ...cell, textAlign: 'center' }}>{fmtQty(p.quantity)}</td>
-              <td style={num}>{fmtSom(p.priceMinor)}</td>
-              <td style={num}>{fmtSom(p.sumMinor)}</td>
+              <td style={midCell}>{i + 1}</td>
+              <td style={{ ...cell, textAlign: 'center', verticalAlign: 'middle' }}>{p.name}</td>
+              <td style={midCell}>{p.uom ?? '—'}</td>
+              <td style={midCell}>{fmtQty(p.quantity)}</td>
+              <td style={{ ...num, verticalAlign: 'middle' }}>{fmtSom(p.priceMinor)}</td>
+              <td style={{ ...num, verticalAlign: 'middle' }}>{fmtSom(p.sumMinor)}</td>
             </tr>
           ))}
         </tbody>

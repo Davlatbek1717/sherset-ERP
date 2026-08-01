@@ -169,4 +169,41 @@ describe('TovarChek — restored receipt template', () => {
     const nroot = narrow.querySelector('[data-test-id="tovar-chek"]') as HTMLElement;
     expect(nroot.style.fontSize).toBe('9px');
   });
+
+  // ── Namunaga (chek.png) 1:1 tekislash — jimgina qaytib buzilmasin ─────────
+  it('centers EVERY column header, including the money columns', () => {
+    const { container } = renderChek();
+    const heads = [...(container.querySelector('thead tr')?.children ?? [])];
+    expect(heads).toHaveLength(6);
+    for (const th of heads) {
+      expect((th as HTMLElement).style.textAlign).toBe('center');
+    }
+  });
+
+  it('keeps the party block at NORMAL weight (namuna qalin emas)', () => {
+    const { container } = renderChek();
+    // DIQQAT: `find` ILDIZ div'ni qaytaradi — uning textContent'ida ham
+    // «Sotuvchi» bor, ildizda esa fontWeight yo'q, ya'ni test VAKUUM bo'lardi
+    // (mutatsiya bilan isbotlangan). Hujjat tartibida OXIRGISI = eng ichkisi.
+    const matches = [...container.querySelectorAll('div')].filter((d) =>
+      /Sotuvchi|Продавец/.test(d.textContent ?? ''),
+    );
+    const seller = matches.at(-1);
+    expect(seller).toBeTruthy();
+    // Blok o'zi ham, ota-bloki ham qalinlik majburlamasin.
+    let node: HTMLElement | null = seller as HTMLElement;
+    while (node && node !== container) {
+      const w = node.style.fontWeight;
+      expect(w === '' || w === '400' || w === 'normal').toBe(true);
+      node = node.parentElement;
+    }
+  });
+
+  it('centers the name column values and vertically centers short cells', () => {
+    const { container } = renderChek();
+    const firstRow = container.querySelector('tbody tr');
+    const nameCell = firstRow?.children[1] as HTMLElement;
+    expect(nameCell.style.textAlign).toBe('center');
+    expect(nameCell.style.verticalAlign).toBe('middle');
+  });
 });

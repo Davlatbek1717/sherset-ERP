@@ -3678,7 +3678,7 @@
       },
       "chek_title_sale": "SAVDO CHEKI",
       "chek_title_return": "Qaytarish cheki",
-      "chek_dated": "Sana: {date}",
+      "chek_dated": "<b>Sana:</b> {date}",
       "chek_seller": "Sotuvchi",
       "chek_buyer": "Xaridor",
       "chek_phone": "Telefon",
