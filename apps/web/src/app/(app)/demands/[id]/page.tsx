@@ -37,6 +37,15 @@ import { PositionAgreementButton } from '@/components/documents/position-agreeme
 import { PositionColumnCustomizer } from '@/components/documents/position-column-customizer';
 import { PositionDiscountMenu } from '@/components/documents/position-discount-menu';
 import { PositionPriceMenu } from '@/components/documents/position-price-menu';
+import {
+  type CustomerReceiptData,
+  CustomerReceiptPortal,
+} from '@/components/pick-list/customer-receipt-portal';
+import {
+  type ReceiptData,
+  ReceiptPrintPortal,
+  receiptDate,
+} from '@/components/pick-list/receipt-print-portal';
 import { ProductCreateModal } from '@/components/products/product-create-modal';
 import { ProductEditModal } from '@/components/products/product-edit-modal';
 import { SendEmailDialog } from '@/components/send-email-dialog';
@@ -429,6 +438,8 @@ export default function DemandDetailPage() {
   const tPos = useTranslations('position_editor');
   const tCols = useTranslations('position_cols');
   const tCreate = useTranslations('create_related');
+  const tPrintMenu = useTranslations('print_menu');
+  const tSpiska = useTranslations('pages.pickLists');
   const tDemands = useTranslations('pages.demands');
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -1145,6 +1156,79 @@ export default function DemandDetailPage() {
 
   // moysklad «Создать документ» for a shipment. Only «Возврат покупателя» is wired
   // (its from-demand backend exists); the rest are label-parity placeholders.
+  // ── Climart termal cheklar (72mm) — invoices-out bilan bir xil manba ──────
+  // «Yig'ish varag'i»: ombor bo'yicha guruh + yacheyka, NARXSIZ (omborchi uchun).
+  // «Tovar cheki»: narx + qator summasi (xaridorga beriladi).
+  const [spiska, setSpiska] = useState<ReceiptData | null>(null);
+  const [creceipt, setCreceipt] = useState<CustomerReceiptData | null>(null);
+
+  const openSpiska = useCallback(async () => {
+    if (!form || !data) return;
+    const rows = form.positions.filter((p) => p.assortmentId);
+    const ids = [...new Set(rows.map((r) => r.assortmentId as string))];
+    const res = ids.length
+      ? await api
+          .get<{ cells: Record<string, string | null> }>(
+            `/pick-lists/cells-by-products?productIds=${ids.join(',')}`,
+          )
+          .catch(() => ({ cells: {} as Record<string, string | null> }))
+      : { cells: {} as Record<string, string | null> };
+    setSpiska({
+      title: tSpiska('receipt_title'),
+      number: data.name,
+      dateStr: receiptDate(new Date(form.moment)),
+      agentName: form.agentLabel || null,
+      agentPhone: null,
+      ownerName: data.owner?.name ?? null,
+      description: form.description || null,
+      positions: rows.map((r) => ({
+        name: r.productLabel,
+        qty: r.quantity,
+        uom: r.productUom ?? null,
+        cell: res.cells[r.assortmentId as string] ?? null,
+      })),
+    });
+  }, [form, data, tSpiska]);
+
+  const openCustomerReceipt = useCallback(() => {
+    if (!form || !data) return;
+    const rows = form.positions.filter((p) => p.assortmentId && Number(p.quantity) > 0);
+    setCreceipt({
+      number: data.name,
+      dateStr: receiptDate(new Date(form.moment)),
+      orgName: form.organizationLabel || null,
+      sellerName: data.owner?.name ?? null,
+      buyerName: form.agentLabel || null,
+      phone: null,
+      comment: form.description || null,
+      positions: rows.map((r) => ({
+        name: r.productLabel,
+        uom: r.productUom ?? null,
+        qty: r.quantity,
+        priceMinor: r.priceMinor || '0',
+        sumMinor: String(Math.round(Number(r.priceMinor || '0') * Number(r.quantity || '0'))),
+      })),
+    });
+  }, [form, data]);
+
+  // moysklad hujjatga BIR NECHTA chop shakli beradi. Jo'natma esa faqat zaxira
+  // 2-bandli menyuni ko'rsatardi, holbuki shakllar ilovada ALLAQACHON bor edi
+  // (invoices-out ularni ishlatadi) — menyuga ulanmagani uchun ko'rinmasdi.
+  const printMenuItems: CreateMenuItem[] = [
+    {
+      id: 'blank',
+      label: tPrintMenu('document_blank'),
+      onSelect: () =>
+        window.open(`/print/demand/${data.id}?auto=1`, '_blank', 'width=820,height=1100'),
+    },
+    { id: 'spiska', label: tSpiska('spiska_form'), onSelect: () => void openSpiska() },
+    {
+      id: 'creceipt',
+      label: tSpiska('receipt_title_customer'),
+      onSelect: () => openCustomerReceipt(),
+    },
+  ];
+
   const createMenuItems: CreateMenuItem[] = [
     { id: 'move', label: tDetailTitles('move'), disabled: true },
     { id: 'invoice-out', label: tDetailTitles('invoice_out'), disabled: true },
@@ -1215,9 +1299,7 @@ export default function DemandDetailPage() {
             : undefined
         }
         createMenuItems={createMenuItems}
-        onPrintList={() =>
-          window.open(`/print/demand/${data.id}?auto=1`, '_blank', 'width=820,height=1100')
-        }
+        printMenuItems={printMenuItems}
         printEntity="demand"
         onSendEmail={() => setEmailOpen(true)}
         apiData={data}
@@ -2259,6 +2341,9 @@ export default function DemandDetailPage() {
           disabled={!editable}
         />
       )}
+
+      {spiska && <ReceiptPrintPortal data={spiska} onClose={() => setSpiska(null)} />}
+      {creceipt && <CustomerReceiptPortal data={creceipt} onClose={() => setCreceipt(null)} />}
 
       <SendEmailDialog
         open={emailOpen}
