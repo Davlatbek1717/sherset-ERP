@@ -13,18 +13,23 @@
  *   4.  Товарно-транспортная накладная (форма № 1-Т, Узбекистан)   (disabled)
  *   5.  Товарно-транспортная накладная (форма № 1-Т, Узбекистан, новая) (disabled)
  *   6.  Акт                                                         (disabled)
- *   7.  Товарный чек                                                (disabled)
- *   8.  Расходная накладная                                         (disabled)
+ *   7.  Товарный чек                          ✅ LIVE (1 qator tanlansa)
+ *   8.  Расходная накладная                   ✅ LIVE (1 qator tanlansa)
  *   9.  Коды маркировки: тег 1162                                   (disabled)
  *   10. Сборочный лист                                              (disabled)
  *   11. Комплект...                                                 (disabled)
  *   12. Настроить...                                                (enabled)
  *
- * Items 2-11 are placeholders — they appear in moysklad's UI but
- * require account-specific PrintTemplate rows to render. Until the
- * template pipeline binds these slugs to actual eta templates, they
- * stay disabled — clicking them is a no-op in moysklad too because
- * "no template configured" is the default account state.
+ * 2026-08-01: 7 va 8 JONLANTIRILDI — o'sha shakllar endi haqiqatan bor
+ * (`/print/demand/:id` A4 blankasi va `?form=chek` termal cheki). Ular
+ * per-HUJJAT bo'lgani uchun aynan BITTA qator tanlanishini talab qiladi;
+ * moysklad ham tanlov bitta hujjatni ko'rsatmaguncha ularni so'ndiradi.
+ *
+ * Qolgan o'chirilganlar (2-6, 9-11) — bu shakllar HALI YO'Q: TTN'lar va
+ * «Акт» O'zbekiston davlat shakllari (rasmiy maket kerak), «Коды маркировки»
+ * Честный знак quyi-tizimini talab qiladi, «Сборочный лист» esa detal
+ * sahifasidagi portal (ro'yxatdan URL bilan ochib bo'lmaydi).
+ * O'chirilgan qoldirish — soxta ishlaydigan tugmadan halolroq.
  */
 
 import { AccountPrintTemplateItems } from '@/components/print/account-template-items';
@@ -41,6 +46,17 @@ export interface DemandPrintDropdownProps {
 export function DemandPrintDropdown({ onExportList, selectedIds }: DemandPrintDropdownProps) {
   const t = useTranslations('print_menu');
   const tDemand = useTranslations('print_menu_demand');
+
+  // «Расходная накладная» / «Товарный чек» are per-DOCUMENT forms, so they need
+  // exactly one row picked. moysklad greys them out the same way until the
+  // selection identifies a single document. The other placeholders below stay
+  // disabled because those forms genuinely do not exist yet — see the header.
+  const ids = selectedIds ? Array.from(selectedIds) : [];
+  const oneId = ids.length === 1 ? ids[0] : null;
+  const openForm = (query: string) => {
+    if (!oneId) return;
+    window.open(`/print/demand/${oneId}${query}`, '_blank', 'noopener');
+  };
 
   return (
     <DropdownMenu
@@ -74,10 +90,18 @@ export function DemandPrintDropdown({ onExportList, selectedIds }: DemandPrintDr
       <DropdownMenu.Item disabled testId="demand-print-akt">
         {tDemand('akt')}
       </DropdownMenu.Item>
-      <DropdownMenu.Item disabled testId="demand-print-tovarniy-chek">
+      <DropdownMenu.Item
+        onSelect={() => openForm('?form=chek')}
+        disabled={!oneId}
+        testId="demand-print-tovarniy-chek"
+      >
         {tDemand('tovarniy_chek')}
       </DropdownMenu.Item>
-      <DropdownMenu.Item disabled testId="demand-print-rashodnaya">
+      <DropdownMenu.Item
+        onSelect={() => openForm('')}
+        disabled={!oneId}
+        testId="demand-print-rashodnaya"
+      >
         {tDemand('rashodnaya')}
       </DropdownMenu.Item>
       <DropdownMenu.Item disabled testId="demand-print-marking-codes-1162">
