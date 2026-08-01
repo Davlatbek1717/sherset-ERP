@@ -201,13 +201,13 @@ export function TovarChek({
               ko'rsatadi — chegirma 0 bo'lsa ham «Chegirma: 0» chiqadi. Ilgari
               chegirmasiz chekda faqat JAMI qatori chizilardi. */}
           <tr>
-            <td colSpan={5} style={{ ...cell, textAlign: 'center' }}>
+            <td colSpan={5} style={{ ...cell, textAlign: 'center', overflowWrap: 'anywhere' }}>
               {t('chek_subtotal')}:
             </td>
             <td style={num}>{fmtSom(subtotalMinor ?? totalMinor)}</td>
           </tr>
           <tr>
-            <td colSpan={5} style={{ ...cell, textAlign: 'center' }}>
+            <td colSpan={5} style={{ ...cell, textAlign: 'center', overflowWrap: 'anywhere' }}>
               {t('chek_discount')}:
             </td>
             <td style={num} data-test-id="chek-discount">
@@ -215,7 +215,10 @@ export function TovarChek({
             </td>
           </tr>
           <tr style={{ fontWeight: 700, fontSize: fs + 2 }}>
-            <td colSpan={5} style={{ ...cell, textAlign: 'center', fontWeight: 700 }}>
+            <td
+              colSpan={5}
+              style={{ ...cell, textAlign: 'center', fontWeight: 700, overflowWrap: 'anywhere' }}
+            >
               {t('chek_total')}:
             </td>
             <td style={num}>{fmtSom(totalMinor)}</td>
@@ -224,15 +227,17 @@ export function TovarChek({
       </table>
 
       {/* ── Jadval ostidagi ikki qator (namunada bor edi, bizda YO'Q edi) ── */}
-      <div style={{ marginTop: 8 }}>
+      {/* 80mm lenta ~302px — «Raqam bilan» satri uzun bo'lgani uchun o'ralishi
+          SHART, aks holda termal printer o'ng chetini qirqib tashlaydi. */}
+      <div style={{ marginTop: 8, overflowWrap: 'anywhere' }}>
         <div>
           {t('chek_items_count')}:{' '}
           <b>
             {positions.length} {t('chek_items_unit')}
           </b>
         </div>
-        {/* «Raqam bilan» — summa so'z bilan. Chek qog'ozda o'zgartirilmasligi
-            uchun raqam yonida so'z bilan ham yoziladi. */}
+        {/* «Raqam bilan» — summa so'z bilan. Chek qog'ozda raqam
+            o'zgartirilmasligi uchun yonida so'z bilan ham yoziladi. */}
         <div style={{ marginTop: 2 }}>
           {t('chek_in_words')}: <b>{amountInWords(totalMinor, 'UZS', wordsLocale)}</b>
         </div>
@@ -240,7 +245,7 @@ export function TovarChek({
 
       {/* ── Ajratgich + minnatdorchilik (namunadagidek markazda) ── */}
       <div style={{ borderTop: '1px solid #000', margin: '14px 0 8px' }} />
-      <div style={{ textAlign: 'center', lineHeight: 1.5 }}>
+      <div style={{ textAlign: 'center', lineHeight: 1.5, overflowWrap: 'anywhere' }}>
         <div>{t('chek_footer_legal')}</div>
         <div>{t('chek_footer_thanks')}</div>
       </div>

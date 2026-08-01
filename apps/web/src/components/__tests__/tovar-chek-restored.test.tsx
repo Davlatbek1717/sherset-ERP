@@ -135,4 +135,38 @@ describe('TovarChek — restored receipt template', () => {
     expect(txt).toMatch(/tasdiqlovchi hujjat|подтверждающим оплату/);
     expect(txt).toMatch(/Rahmat|Спасибо/);
   });
+
+  // ── 80mm lenta cheklovlari ────────────────────────────────────────────────
+  // Egasi 80mm da chop etadi (~302px). Uzun matnlar o'ralmasa, termal printer
+  // o'ng chetini QIRQIB tashlaydi — bu qog'ozda ko'rinadi, testda emas.
+  it('wraps the long «Raqam bilan» line instead of overflowing', () => {
+    const { container } = renderChek();
+    const words = [...container.querySelectorAll('div')].find((d) =>
+      /Raqam bilan|прописью/.test(d.textContent ?? ''),
+    );
+    expect(words).toBeTruthy();
+    // O'ralish o'z konteynerida yoki ota-blokda e'lon qilingan bo'lsin.
+    const withWrap = [...container.querySelectorAll('div')].some(
+      (d) => (d as HTMLElement).style.overflowWrap === 'anywhere',
+    );
+    expect(withWrap).toBe(true);
+  });
+
+  it('keeps money cells on ONE line (nowrap) so sums stay readable', () => {
+    const { container } = renderChek();
+    const cells = [...container.querySelectorAll('td')].filter(
+      (td) => (td as HTMLElement).style.whiteSpace === 'nowrap',
+    );
+    // Narx + Summa ustunlari va jamlanma qiymatlari — kamida bir nechta.
+    expect(cells.length).toBeGreaterThan(3);
+  });
+
+  it('uses the 80mm font size (58mm strip drops to 9px)', () => {
+    const { container } = renderChek({ widthMm: 80 });
+    const root = container.querySelector('[data-test-id="tovar-chek"]') as HTMLElement;
+    expect(root.style.fontSize).toBe('11px');
+    const { container: narrow } = renderChek({ widthMm: 58 });
+    const nroot = narrow.querySelector('[data-test-id="tovar-chek"]') as HTMLElement;
+    expect(nroot.style.fontSize).toBe('9px');
+  });
 });
