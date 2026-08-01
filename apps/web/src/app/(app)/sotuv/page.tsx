@@ -732,7 +732,7 @@ function SalesScreen({ session }: { session: CurrentSession }) {
       prev.map((l) => {
         if (l.productId !== productId) return l;
         const num = Number.parseFloat(input.replace(/\s/g, '').replace(',', '.'));
-        const minor = !isNaN(num) && num >= 0 ? BigInt(Math.round(num * 100)) : l.priceMinor;
+        const minor = !Number.isNaN(num) && num >= 0 ? BigInt(Math.round(num * 100)) : l.priceMinor;
         return { ...l, priceStr: input, priceMinor: minor };
       }),
     );

@@ -37,16 +37,6 @@ interface Props {
   loading?: boolean;
 }
 
-// Quick-add amounts in minor units (1 sum = 100 minor)
-// 1 000 sum, 5 000 sum, 10 000 sum, 50 000 sum
-function buildQuickAmounts(sumMinor: bigint): bigint[] {
-  const sum = Number(sumMinor);
-  if (sum <= 0) return [100_000n, 500_000n, 1_000_000n, 5_000_000n];
-  const magnitude = Math.pow(10, Math.floor(Math.log10(sum / 10)));
-  const step = Math.max(1, Math.ceil(sum / 10 / magnitude) * magnitude);
-  const s = BigInt(step);
-  return [s, s * 2n, s * 5n, s * 10n];
-}
 const NUMPAD_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '000', '0', '⌫'];
 
 type ActiveField = 'cash' | 'card' | 'terminal';
@@ -122,7 +112,6 @@ export function RasmiyashtirishModal({
   const terminalMinor = toMinor(terminalInput);
   const totalPaid = cashMinor + cardMinor + terminalMinor;
   const debtMinor = totalPaid < sumMinor ? sumMinor - totalPaid : 0n;
-  const remaining = debtMinor; // alias for display
   const change = totalPaid > sumMinor ? totalPaid - sumMinor : 0n;
 
   // Can confirm if fully paid OR if there's debt but agent is selected
@@ -178,12 +167,6 @@ export function RasmiyashtirishModal({
     setActive(String(Number(left) / 100));
   };
 
-  const handleQuick = (amount: bigint) => {
-    const cur =
-      activeField === 'cash' ? cashMinor : activeField === 'card' ? cardMinor : terminalMinor;
-    setActive(String(Number(cur + amount) / 100));
-  };
-
   const handleConfirm = () => {
     if (!canConfirm) return;
     onConfirm({
@@ -194,9 +177,6 @@ export function RasmiyashtirishModal({
       agentId: agent?.id,
     });
   };
-
-  const activeMinor =
-    activeField === 'cash' ? cashMinor : activeField === 'card' ? cardMinor : terminalMinor;
 
   const colors = FIELD_COLORS[activeField];
 
