@@ -32,6 +32,27 @@ browser smoke bilan tekshirilgan; to'liq Phase-2 QA (klik → saqlash → BE) YO
 
 ---
 
+### 🌊 3-TO'LQIN (2026-07-31, deploy QILINMAGAN)
+
+| Commit | Bandlar | Natija |
+|---|---|---|
+| `3eeaa2b` | #1 #5 | AppShell kontent kenglik cheklovi olib tashlandi (navbar cheklovi qoldi) → konteyner 1402→1642px, **15 kolonka sig'di**, «Зарезервировано» qaytdi |
+| `2e5bb46` | #48 | `/new` «Цена включает НДС» default ☑ — faqat yangi hujjatlar, mavjudlari tegilmadi (tekshirildi) |
+| `eea73e1` | #55 #56 #16 | **prop-forwarding guard test** (79 tekshiruv, darhol 2 ta mavjud drop topdi: `numberTooltip`, `applicableDisabled`) · label-grounding capture yo'qligida skip → **web suite TO'LIQ YASHIL** · «Владелец контрагента» filtri |
+| `768448b` | #21 | «Срок задачи» filtri (Task polimorf bog'lanish → 2 bosqichli id-lookup, TASK_ID_CAP=5000) |
+| `1cee79d` | #15 | «Тип возврата» filtri (none = relation filter; partial/full = groupBy + taqqoslash) |
+| `2c3b9f1` | #10 | «Список\|Столбцы» toggle «Печать»dan keyinga |
+
+**Yana bir noto'g'ri pozitiv:** #6 «Напечатан» pill — allaqachon bor (`#00bfe6` ko'k pill,
+`data-test-id="printed-badge"`); test-buyurtmalar chop etilmagani uchun ko'rinmagan.
+*(Kod bo'yicha tasdiqlangan, runtime'da emas — chop etilgan buyurtma kerak.)*
+
+**Yo'l-yo'lakay oldi olingan 2 ta yashirin bug:**
+1. `agentGroupId` + `agentOwnerId` ikkalasi ham `agent` orqali filtrlaydi — ikki alohida
+   spread kaliti oxirgi-g'olib bo'lib guruh filtrini yeb qo'yardi. Bitta obyektga birlashtirildi.
+2. `taskDue` + `returnStatus` ikkalasi ham `id` bo'yicha cheklaydi — alohida `AND` kaliti
+   mavjud `AND: sumScopedAnd` ni yeb qo'yardi. Yagona massivga qo'shildi.
+
 ### 📊 To'liq dispozitsiya (2-to'lqindan keyin)
 
 | Holat | Soni | Bandlar |
