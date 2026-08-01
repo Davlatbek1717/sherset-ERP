@@ -154,11 +154,22 @@ export class SupplyApprovalService {
     return this.getApproval(accountId, id);
   }
 
-  /** Admin yakuniy tasdiq (awaiting_admin → completed) + stock post. */
+  /** Admin yakuniy tasdiq (awaiting_admin → completed) + stock post (agar hali draft). */
   async adminConfirm(accountId: string, userId: string, id: string) {
     await this.claim(accountId, id, 'awaiting_admin', 'completed');
     try {
-      await this.supply.transition(accountId, userId, id, 'post'); // draft→posted + stock
+      // «Проведено» (applicable=true) bilan yaratilgan qabul approval-flow BOSHLANISHIDAN
+      // OLDIN posted bo'ladi — stock allaqachon kommit. Faqat hali DRAFT qabulni post
+      // qilamiz; posted qabulni qayta post qilish «O'tkazilmaydi: posted → posted»
+      // (supply.transition guard, supply.service:1206) — admin-confirm shu sabab «ishlamas»
+      // edi (supply #00018 awaiting_admin'da qotib qolgan edi).
+      const cur = await this.prisma.client.supply.findFirst({
+        where: { id, accountId, deletedAt: null },
+        select: { state: true },
+      });
+      if (cur?.state === 'draft') {
+        await this.supply.transition(accountId, userId, id, 'post'); // draft→posted + stock
+      }
     } catch (e) {
       // rollback the stage claim so admin can retry
       await this.prisma.client.supply.updateMany({
