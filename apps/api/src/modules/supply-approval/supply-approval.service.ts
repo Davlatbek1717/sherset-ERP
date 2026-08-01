@@ -13,14 +13,9 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 const SUPPLIER_LINK_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 import { decryptPassword } from '../email/crypto.js';
 import { SupplyService } from '../supply/supply.service.js';
-import {
-  tgAnswerCallbackQuery,
-  tgEditMessageText,
-  tgSendMessage,
-} from '../telegram/telegram.client.js';
+import { tgAnswerCallbackQuery, tgEditMessageText } from '../telegram/telegram.client.js';
 import {
   type InlineKeyboard,
-  adminKeyboard,
   confirmKeyboard,
   doubleConfirmKeyboard,
   parseCallbackData,
@@ -494,25 +489,54 @@ export class SupplyApprovalService {
     }
   }
 
-  /** Faza D3: adminlarga (supply.approve ruxsatli + Telegram bog'langan) yakuniy-tasdiq xabari. */
+  /**
+   * Faza D3 (MTProto, 2026-08-01): omborchi tasdiqlagach adminlarga adminning
+   * SHAXSIY Telegram akkauntidan (userbot) TELEFON orqali yakuniy-tasdiq xabari —
+   * `hrTelegramOutbox`ga qator qo'shiladi, worker yuboradi. **Bot EMAS** (egasi
+   * talabi: hammasi lichkadan; personal akkauntda inline-tugma bo'lmaydi → matn+link).
+   * `supply.approve` ruxsatli + `telegramPhone`i bor xodimlar oladi. Non-fatal.
+   * Ilgari bot-versiya edi — telegram_config bo'lmagani uchun jim `return` qilib
+   * xabar YUBORMASDAN qolardi (2026-08-01 bug).
+   */
   private async dispatchToAdmin(accountId: string, supplyId: string): Promise<void> {
     const supply = await this.prisma.client.supply.findFirst({
       where: { id: supplyId, accountId },
       select: { name: true },
     });
     if (!supply) return;
-    const cfg = await this.prisma.client.telegramConfig.findUnique({ where: { accountId } });
-    if (!cfg?.enabled || !cfg.botTokenCipher) return;
-    const chats = await this.supplyPermChats(accountId, 'approve');
-    if (chats.length === 0) return;
-    const token = decryptPassword(cfg.botTokenCipher);
-    const text = `🧾 Omborchi tasdiqladi: ${supply.name}\nYakuniy tasdiqlaysizmi? (tasdiqlansa — omborga qo'shiladi.)`;
-    for (const chatId of chats) {
-      await tgSendMessage(token, {
-        chatId,
-        text,
-        replyMarkup: adminKeyboard(supplyId),
-      }).catch(() => {});
+    const emps = await this.prisma.client.employee.findMany({
+      where: {
+        accountId,
+        archived: false,
+        telegramPhone: { not: null },
+        roles: {
+          some: {
+            role: {
+              permissions: { some: { entity: 'supply', action: 'approve', scope: { not: 'NO' } } },
+            },
+          },
+        },
+      },
+      select: { id: true, telegramPhone: true },
+    });
+    const base = process.env.APP_BASE_URL || 'https://erp.sherset.uz';
+    const text = `🧾 Omborchi tasdiqladi: ${supply.name}\nYakuniy tasdiq kutilmoqda (tasdiqlansa — omborga qo'shiladi):\n${base}/supplies/${supplyId}`;
+    for (const e of emps) {
+      const phone = e.telegramPhone?.trim();
+      if (!phone) continue;
+      await this.prisma.client.hrTelegramOutbox
+        .create({
+          data: {
+            accountId,
+            employeeId: e.id,
+            toPhone: phone,
+            messageText: text,
+            sourceEventType: 'supply_approval_admin',
+            sourceDocId: supplyId,
+            status: 'pending',
+          },
+        })
+        .catch(() => {});
     }
   }
 
