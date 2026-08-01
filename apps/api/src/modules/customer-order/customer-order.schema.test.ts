@@ -205,11 +205,26 @@ describe('CustomerOrderFilterSchema', () => {
     expect(() => CustomerOrderFilterSchema.parse({ shipmentAddress: 'x'.repeat(501) })).toThrow();
   });
 
+  it('accepts «Владелец контрагента» and «Срок задачи» filters', () => {
+    const owner = '11111111-2222-3333-4444-555555555555';
+    expect(CustomerOrderFilterSchema.parse({ agentOwnerId: owner }).agentOwnerId).toBe(owner);
+    expect(() => CustomerOrderFilterSchema.parse({ agentOwnerId: 'not-a-uuid' })).toThrow();
+    const t = CustomerOrderFilterSchema.parse({
+      taskDueFrom: '2026-09-01',
+      taskDueTo: '2026-09-30',
+    });
+    expect(t.taskDueFrom).toBe('2026-09-01');
+    expect(t.taskDueTo).toBe('2026-09-30');
+  });
+
   it('leaves the new filters undefined when absent (no accidental defaults)', () => {
     const result = CustomerOrderFilterSchema.parse({});
     expect(result.deliveryPlannedFrom).toBeUndefined();
     expect(result.deliveryPlannedTo).toBeUndefined();
     expect(result.shipmentAddress).toBeUndefined();
+    expect(result.agentOwnerId).toBeUndefined();
+    expect(result.taskDueFrom).toBeUndefined();
+    expect(result.taskDueTo).toBeUndefined();
   });
 
   it('accepts the relational + money sort keys and rejects unknown ones', () => {

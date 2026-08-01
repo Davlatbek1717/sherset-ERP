@@ -59,7 +59,8 @@ export class CustomerOrderService {
   async list(accountId: string, userId: string, rawFilter: unknown) {
     const filter = CustomerOrderFilterSchema.parse(rawFilter);
     const attrTypes = await this.attrTypeMap(accountId, filter.attrs);
-    const baseWhere = this.buildListWhere(accountId, filter, attrTypes);
+    const taskDueOrderIds = await this.resolveTaskDueOrderIds(accountId, filter);
+    const baseWhere = this.buildListWhere(accountId, filter, attrTypes, taskDueOrderIds);
     // H4 record-scope (RFC W4): AND the per-record visibility filter. No-op until
     // the account opts in — recordScopeWhere returns {} when the flag is off (or
     // the actor's scope is ALL), so today's behaviour is unchanged.
@@ -131,7 +132,8 @@ export class CustomerOrderService {
   async kanban(accountId: string, userId: string, rawFilter: unknown) {
     const filter = CustomerOrderFilterSchema.parse(rawFilter);
     const attrTypes = await this.attrTypeMap(accountId, filter.attrs);
-    const baseWhere = this.buildListWhere(accountId, filter, attrTypes);
+    const taskDueOrderIds = await this.resolveTaskDueOrderIds(accountId, filter);
+    const baseWhere = this.buildListWhere(accountId, filter, attrTypes, taskDueOrderIds);
     const scoped = await this.permissions.recordScopeWhere(
       accountId,
       userId,
@@ -429,7 +431,8 @@ export class CustomerOrderService {
     // could drift — now they share buildListWhere). Record-scope is ANDed
     // in identically so the footer never sums orders the user can't see.
     const attrTypes = await this.attrTypeMap(accountId, filter.attrs);
-    const baseWhere = this.buildListWhere(accountId, filter, attrTypes);
+    const taskDueOrderIds = await this.resolveTaskDueOrderIds(accountId, filter);
+    const baseWhere = this.buildListWhere(accountId, filter, attrTypes, taskDueOrderIds);
     const scoped = await this.permissions.recordScopeWhere(
       accountId,
       userId,
@@ -2124,10 +2127,48 @@ export class CustomerOrderService {
    * fixes the prior silent fall-through where `paid` / `shipped` were
    * accepted by the schema but produced no WHERE clause (no-op).
    */
+  /**
+   * «Срок задачи» — resolve the orders that have an OPEN task due in the range.
+   *
+   * Task links to documents polymorphically (`entity` + `entityId` strings), so
+   * there is no Prisma relation to filter through; this does the lookup up front
+   * and the caller feeds the ids into buildListWhere.
+   *
+   * Returns `null` when the filter is not set (⇒ no id restriction at all), which
+   * is deliberately different from `[]` (filter set, nothing matched ⇒ no rows).
+   *
+   * Capped: a filter that matched an unbounded number of tasks would build an
+   * enormous `IN (…)`. TASK_ID_CAP bounds it; the cap is ordered by due date so
+   * the soonest tasks — the ones a «Срок задачи» filter is actually about — win.
+   */
+  private static readonly TASK_ID_CAP = 5000;
+
+  private async resolveTaskDueOrderIds(
+    accountId: string,
+    filter: CustomerOrderFilter,
+  ): Promise<string[] | null> {
+    if (!filter.taskDueFrom && !filter.taskDueTo) return null;
+    const rows = await this.prisma.client.task.findMany({
+      where: {
+        accountId,
+        entity: 'CustomerOrder',
+        entityId: { not: null },
+        // Only OPEN work is a "срок" — a finished task's deadline is history.
+        status: { in: ['open', 'in_progress'] },
+        dueAt: tashkentRangeBounds(filter.taskDueFrom, filter.taskDueTo),
+      },
+      select: { entityId: true },
+      orderBy: { dueAt: 'asc' },
+      take: CustomerOrderService.TASK_ID_CAP,
+    });
+    return [...new Set(rows.map((r) => r.entityId).filter((id): id is string => id !== null))];
+  }
+
   private buildListWhere(
     accountId: string,
     filter: CustomerOrderFilter,
     attrTypes: Map<string, AttributeType> = new Map(),
+    taskDueOrderIds: string[] | null = null,
   ): Prisma.CustomerOrderWhereInput {
     const fields = this.prisma.client.customerOrder.fields;
 
@@ -2308,6 +2349,9 @@ export class CustomerOrderService {
       ...updatedRange,
       ...deliveryPlannedRange,
       ...shipmentAddressClause,
+      // «Срок задачи» — null means "filter not set"; an empty array means "set but
+      // nothing matched" and must therefore yield no rows.
+      ...(taskDueOrderIds !== null ? { id: { in: taskDueOrderIds } } : {}),
       ...(filter.search
         ? {
             OR: [

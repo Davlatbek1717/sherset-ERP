@@ -238,6 +238,21 @@ export const CustomerOrderFilterSchema = z.object({
    */
   agentOwnerId: uuid.optional(),
   /**
+   * «Срок задачи» — moysklad parity (grounded 2026-07-31: the live filter panel
+   * renders it with the same вч·сег·нед·мес day shortcuts as «Период»). Matches
+   * orders that have at least one OPEN task whose `dueAt` falls in the range.
+   *
+   * Task links to documents polymorphically (entity/entityId strings, no Prisma
+   * relation), so the service resolves it as a two-step id lookup rather than a
+   * relation filter.
+   *
+   * NOT implemented: «Ближайшая задача» (#20) — the live capture renders it as a
+   * combobox whose options are not visible in a static DOM dump, so there is
+   * nothing to ground the semantics on (CLAUDE.md §4 → defer, don't guess).
+   */
+  taskDueFrom: z.string().optional(),
+  taskDueTo: z.string().optional(),
+  /**
    * "Когда изменен" — moysklad parity. Filters on `updatedAt` between
    * the two ISO dates (mirror momentFrom/To).
    */

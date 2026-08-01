@@ -855,7 +855,8 @@
     "only_incoming": "Faqat kutilayotgan",
     "below_minimum": "Minimumdan past",
     "no_options": "Variant yo'q",
-    "consignee": "Yuk qabul qiluvchi"
+    "consignee": "Yuk qabul qiluvchi",
+    "task_due": "Vazifa muddati"
   },
   "catalog_picker": {
     "empty_description": "Qidiruv so'rovni o'zgartiring yoki yangi yozuv qo'shing",

@@ -768,7 +768,8 @@
     "only_incoming": "Только с ожиданием",
     "below_minimum": "Ниже минимума",
     "no_options": "Нет вариантов",
-    "consignee": "Грузополучатель"
+    "consignee": "Грузополучатель",
+    "task_due": "Срок задачи"
   },
   "common": {
     "loading": "Загрузка...",

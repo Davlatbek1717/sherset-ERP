@@ -269,6 +269,9 @@ export default function CustomerOrdersPage() {
     // a different person from the order's own «Владелец-сотрудник».
     agentOwnerId?: string;
     agentOwnerLabel?: string;
+    // «Срок задачи» — open-task deadline range
+    taskDueFrom?: string;
+    taskDueTo?: string;
   }>({});
 
   // moysklad «Статус» filter — the account's custom order statuses (e.g.
@@ -348,6 +351,8 @@ export default function CustomerOrdersPage() {
   if (extFilter.shipmentAddress?.trim())
     paramsRecord.shipmentAddress = extFilter.shipmentAddress.trim();
   if (extFilter.agentOwnerId) paramsRecord.agentOwnerId = extFilter.agentOwnerId;
+  if (extFilter.taskDueFrom) paramsRecord.taskDueFrom = extFilter.taskDueFrom;
+  if (extFilter.taskDueTo) paramsRecord.taskDueTo = extFilter.taskDueTo;
   // Custom-attribute (доп.поля) filters → a JSON-encoded `attrs` array of
   // {code, value?|from?/to?} clauses. Date attrs send from/to; everything else
   // sends a single value. Only non-empty clauses are included; the backend maps
@@ -984,6 +989,8 @@ export default function CustomerOrdersPage() {
                     deliveryPlannedTo: pickStr('deliveryPlannedTo'),
                     shipmentAddress: pickStr('shipmentAddress'),
                     agentOwnerId: pickStr('agentOwnerId'),
+                    taskDueFrom: pickStr('taskDueFrom'),
+                    taskDueTo: pickStr('taskDueTo'),
                   });
                   // Restore custom-attribute (доп.поля) filters too, so a saved
                   // pill that encoded «Уста»/«Санаси» re-applies instead of being
@@ -1962,6 +1969,41 @@ export default function CustomerOrdersPage() {
                   setCursor(undefined);
                 }}
                 data-test-id="filter-sum-to"
+              />
+            </InlineFilterPanel.Field>
+            {/* 19b. Срок задачи — deadline of an OPEN task linked to the order.
+                moysklad renders it with the same вч·сег·нед·мес shortcuts as
+                «Период» (grounded 2026-07-31). Backed by taskDueFrom/To; the API
+                resolves it through Task.entity/entityId (no Prisma relation).
+                «Ближайшая задача» (#20) is deliberately NOT here — the capture
+                shows a combobox whose options a static DOM dump cannot reveal. */}
+            <InlineFilterPanel.Field
+              fieldKey="taskDueRange"
+              label={tFilters('task_due')}
+              inlineSuffix={
+                <PeriodShortcuts
+                  onChange={({ from, to }) => {
+                    setExtFilter({ ...extFilter, taskDueFrom: from, taskDueTo: to });
+                    setCursor(undefined);
+                  }}
+                  labels={{
+                    yesterday: tFilters('period_yesterday'),
+                    today: tFilters('period_today'),
+                    week: tFilters('period_week'),
+                    month: tFilters('period_month'),
+                  }}
+                />
+              }
+              expandable
+            >
+              <PeriodInputs
+                from={extFilter.taskDueFrom}
+                to={extFilter.taskDueTo}
+                onChange={({ from, to }) => {
+                  setExtFilter({ ...extFilter, taskDueFrom: from, taskDueTo: to });
+                  setCursor(undefined);
+                }}
+                testId="filter-task-due"
               />
             </InlineFilterPanel.Field>
             {/* 20. Когда изменен — updatedAt range. fieldKey wires it to the
