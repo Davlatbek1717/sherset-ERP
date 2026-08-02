@@ -1161,7 +1161,24 @@ export default function ProfitabilityReportPage() {
                     {isProduct && <Td> </Td>}
                     {isProduct && <Td> </Td>}
                     <Td>{money(data.totals.salesSumMinor)}</Td>
-                    <Td>{money(data.totals.salesSumCostMinor)}</Td>
+                    <Td>
+                      {money(data.totals.salesSumCostMinor)}
+                      {/* Jami qatori ham belgilanadi. Brauzer-QA (2026-08-02):
+                          qatorlarda «*» bor edi, JAMIDA yo'q — natijada jamidagi
+                          tan narx to'liq yig'ilgandek ko'rinardi, holbuki u
+                          kam hisoblangan. Odam eng avval jami qatorga qaraydi. */}
+                      {data.totals.costIncomplete && (
+                        <span
+                          className="ml-1 cursor-help font-bold text-[var(--ms-text-warning,#b26a00)]"
+                          title={t('cost_incomplete_row', {
+                            count: data.totals.costMissingLines,
+                          })}
+                          data-test-id="prof-cost-flag-total"
+                        >
+                          *
+                        </span>
+                      )}
+                    </Td>
                     <Td>{data.totals.returnDocuments}</Td>
                     {isProduct ? (
                       <Td>{trimQty(data.totals.returnQuantity)}</Td>

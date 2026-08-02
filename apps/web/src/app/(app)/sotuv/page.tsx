@@ -15,6 +15,7 @@ import {
 import {
   Money,
   classifyPrice,
+  formatPercent,
   lineProfitMinor,
   marginPercent,
   markdownMinor,
@@ -752,8 +753,13 @@ function SalesScreen({ session }: { session: CurrentSession }) {
   const cartCost = sumCostMinor(
     cart.map((l) => ({ costMinor: l.costMinor, quantity: BigInt(l.quantity) })),
   );
-  const cartProfitMinor = cartCost.complete ? discountedTotal - cartCost.costMinor : null;
-  const cartMarginPct = marginPercent(cartProfitMinor, discountedTotal);
+  // Foyda asosi = kassa HAQIQATAN oladigan pul. Mavjud chekni to'layotgan
+  // bo'lsak (omborchidan qaytgan «Tayyor» chek) — bu serverning o'z `sumMinor`i,
+  // qayta hisoblangan raqam emas: server qator-ba-qator yaxlitlagan, biz esa
+  // jamiga foiz qo'llaymiz, ikkalasi tiyinda farq qilishi mumkin.
+  const revenueMinor = payingSale?.sumMinor ?? discountedTotal;
+  const cartProfitMinor = cartCost.complete ? revenueMinor - cartCost.costMinor : null;
+  const cartMarginPct = marginPercent(cartProfitMinor, revenueMinor);
 
   // The three numbers a cart line carries off the product card (kassa TZ §5.1):
   // cost floor, wholesale floor, retail starting price.
@@ -895,6 +901,19 @@ function SalesScreen({ session }: { session: CurrentSession }) {
             };
           }),
         );
+        // Saqlangan chegirmani TIKLAYMIZ. Aks holda savat chekni yolg'on
+        // ko'rsatadi: qatorlar chegirmasiz narxda qayta yuklanadi-yu, chek esa
+        // chegirmali summaga to'lanadi. Brauzer-QA da (2026-08-02) aynan shu
+        // ko'rindi — savat «29 000», to'lov oynasi «26 100», va savat foydasi
+        // «+4 200» deganda hisobot to'g'ri «+1 300» derdi. Kassir pul olayotgan
+        // ondagi foyda raqami noto'g'ri bo'lishi mumkin emas.
+        // Savat chegirmasi hamma qatorga BIR XIL foiz sifatida yoziladi
+        // (`positions()` shunday yuboradi), shuning uchun qatorlar bir xil
+        // bo'lsagina tiklanadi; aralash bo'lsa 0 qoladi va jami — sotuvning
+        // o'z `sumMinor`i orqali baribir to'g'ri chiqadi.
+        const discounts = new Set(d.positions.map((p) => String(p.discount ?? '0')));
+        const uniform = discounts.size === 1 ? Number([...discounts][0]) : Number.NaN;
+        setDiscountPct(Number.isFinite(uniform) && uniform > 0 ? uniform : 0);
         setPayingSale({ id: d.id, sumMinor: BigInt(d.sumMinor) });
         setTab('savat');
         setCheckoutOpen(true);
@@ -1747,7 +1766,7 @@ function SalesScreen({ session }: { session: CurrentSession }) {
                               <>
                                 {lineProfit > 0n ? '+' : ''}
                                 {formatMoney(lineProfit)}
-                                {linePct != null && ` (${linePct.toLocaleString('uz-UZ')}%)`}
+                                {linePct != null && ` (${formatPercent(linePct)})`}
                               </>
                             )}
                           </span>
@@ -1816,7 +1835,7 @@ function SalesScreen({ session }: { session: CurrentSession }) {
                       <>
                         {cartProfitMinor > 0n ? '+' : ''}
                         {formatMoney(cartProfitMinor)}
-                        {cartMarginPct != null && ` (${cartMarginPct.toLocaleString('uz-UZ')}%)`}
+                        {cartMarginPct != null && ` (${formatPercent(cartMarginPct)})`}
                       </>
                     )}
                   </p>

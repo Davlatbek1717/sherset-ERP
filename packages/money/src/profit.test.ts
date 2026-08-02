@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   classifyPrice,
+  formatPercent,
   lineProfitMinor,
   marginPercent,
   markdownMinor,
@@ -72,6 +73,15 @@ describe('marginPercent', () => {
     expect(marginPercent(760_000n, 2_480_000n)).toBe(30.6);
   });
 
+  it('ROUNDS instead of truncating (brauzer-QA 2026-08-02)', () => {
+    // 1300/26100 = 4.98% — truncation printed «4.9%», always shaving the
+    // profit and flattering the loss. Both directions are checked so the fix
+    // can't be a one-sided hack.
+    expect(marginPercent(1300n, 26_100n)).toBe(5);
+    expect(marginPercent(4200n, 29_000n)).toBe(14.5); // 14.48…
+    expect(marginPercent(-1300n, 26_100n)).toBe(-5); // away from zero
+  });
+
   it('is NULL when profit is unknown', () => {
     expect(marginPercent(null, 1000n)).toBeNull();
   });
@@ -82,6 +92,23 @@ describe('marginPercent', () => {
 
   it('goes negative for a loss', () => {
     expect(marginPercent(-500n, 1000n)).toBe(-50);
+  });
+});
+
+describe('formatPercent', () => {
+  it('uses a COMMA, matching the money formatter on the same line', () => {
+    // Brauzer-QA: «-800,00 сум (-3.3%)» — pul vergul, foiz nuqta bilan edi.
+    expect(formatPercent(-3.3)).toBe('-3,3%');
+    expect(formatPercent(30.6)).toBe('30,6%');
+  });
+
+  it('drops a pointless trailing zero', () => {
+    expect(formatPercent(100)).toBe('100%');
+    expect(formatPercent(5)).toBe('5%');
+  });
+
+  it('keeps exactly one decimal', () => {
+    expect(formatPercent(14.48)).toBe('14,5%');
   });
 });
 

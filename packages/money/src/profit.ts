@@ -69,12 +69,36 @@ export function sumCostMinor(
  * Margin as a percent of revenue, to one decimal place. Display-only — never
  * feed the result back into money math. NULL when profit is unknown or revenue
  * is zero (no denominator).
+ *
+ * Rounds half-away-from-zero rather than truncating: browser QA (2026-08-02)
+ * showed a 4.98% margin rendered as «4.9%» and 14.48% as «14.4%». A tenth is
+ * small, but it is wrong in one direction every time — always flattering a loss
+ * and shaving a profit — and the owner reads these numbers to set prices.
  */
 export function marginPercent(profitMinor: bigint | null, revenueMinor: bigint): number | null {
   if (profitMinor == null || revenueMinor === 0n) return null;
   // Scale by 1000 in BigInt first, so the division keeps one decimal place and
   // nothing passes through Float until the final, already-small quotient.
-  return Number((profitMinor * 1000n) / revenueMinor) / 10;
+  // `+ half` before dividing turns BigInt's truncation into proper rounding;
+  // the sign follows the numerator so −4.98 rounds to −5.0, not −4.9.
+  const scaled = profitMinor * 1000n;
+  const denom = revenueMinor < 0n ? -revenueMinor : revenueMinor;
+  const num = revenueMinor < 0n ? -scaled : scaled;
+  const half = denom / 2n;
+  const rounded = num >= 0n ? (num + half) / denom : (num - half) / denom;
+  return Number(rounded) / 10;
+}
+
+/**
+ * Format a percent for display next to money on the same line.
+ *
+ * `Number.toLocaleString` is deliberately NOT used: for uz-UZ it yields a DOT
+ * decimal separator while the money formatter yields a COMMA, so a cart row read
+ * «-800,00 сум (-3.3%)» — two separators in one sentence (browser QA 2026-08-02).
+ * The money formatting is the one users read all day, so the percent follows it.
+ */
+export function formatPercent(value: number): string {
+  return `${value.toFixed(1).replace(/\.0$/, '').replace('.', ',')}%`;
 }
 
 /**

@@ -82,10 +82,30 @@ describe('/sotuv savat foydasi', () => {
     expect(src).not.toContain('isAdmin');
   });
 
+  it('«Tayyor» chek savatga tortilganda saqlangan chegirma TIKLANADI', () => {
+    // Brauzer-QA (2026-08-02): tiklanmasdi → savat «29 000», to'lov oynasi va
+    // chek «26 100», savat foydasi «+4 200» (haqiqiy +1 300). Kassir pul
+    // olayotgan ondagi foyda raqami noto'g'ri bo'lishi mumkin emas.
+    expect(src).toContain('setDiscountPct(');
+    expect(src).toMatch(/d\.positions\.map\(\(p\) => String\(p\.discount/);
+  });
+
+  it('mavjud chek to`lanayotganda foyda asosi = serverning `sumMinor`i', () => {
+    // Qayta hisoblangan jami bilan serverning qator-ba-qator yaxlitlagan
+    // summasi tiyinda farq qilishi mumkin; to'lanadigan raqam — serverniki.
+    expect(src).toContain('payingSale?.sumMinor ?? discountedTotal');
+  });
+
+  it('foiz umumiy formatlagichdan o`tadi (pul bilan bir xil ajratgich)', () => {
+    expect(src).toContain('formatPercent(');
+    expect(src).not.toContain("toLocaleString('uz-UZ')}%");
+  });
+
   it('chek bo`yicha jami foyda chegirmadan KEYINGI summadan olinadi', () => {
     // Chegirma hisobga olinmasa, kassir 30% tushirib bergan chekda ham to'liq
     // foyda ko'rinardi — nazorat raqami emas, taskin bo'lib qolardi.
-    expect(src).toContain('discountedTotal - cartCost.costMinor');
+    expect(src).toContain('revenueMinor - cartCost.costMinor');
+    expect(src).toContain('payingSale?.sumMinor ?? discountedTotal');
     // ...va bironta qator tan narxsiz bo'lsa, jami umuman ko'rsatilmaydi.
     expect(src).toContain('cartCost.complete ?');
   });

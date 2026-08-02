@@ -16,6 +16,7 @@ export {
 export { amountInWords, type WordsLocale } from './amount-in-words.js';
 export {
   classifyPrice,
+  formatPercent,
   lineProfitMinor,
   marginPercent,
   markdownMinor,
