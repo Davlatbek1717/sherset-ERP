@@ -12,6 +12,7 @@
  * next-intl namespace'ga ko'chiriladi).
  */
 
+import { DriverCashPanel } from '@/components/hr/driver-cash-panel';
 import type { DriverLiveRow } from '@/components/hr/driver-live-map';
 import { DriverTripAssign } from '@/components/hr/driver-trip-assign';
 import { api } from '@/lib/api-client';
@@ -174,10 +175,12 @@ export default function DriversLivePage() {
                 ))}
               </tbody>
             </table>
-            <div className="p-3">
+            <div className="flex flex-col gap-4 p-3">
               <DriverTripAssign
                 drivers={drivers.map((d) => ({ driverId: d.driverId, name: d.name }))}
               />
+              {/* Topshirilmagan naqd — TZ §7.2 «qizil bo'lib turadi». */}
+              <DriverCashPanel />
             </div>
           </div>
         </div>

@@ -1177,6 +1177,50 @@ export const driverTrackingApi = {
   myTrips: () => api.get<DriverTrip[]>('/driver-tracking/my/trips'),
 };
 
+// ─── Haydovchi naqd topshirig'i (HR TZ §7.2) ───────────────────────────
+//
+// Ikki bosqich: haydovchi «oldim» deydi (pul UNING qo'lida) → kassir sanab
+// qabul qiladi va AYNAN shunda ПКО yaratiladi. Bitta qadam bo'lsa kassa
+// qoldig'i haqiqiy pulsiz oshib ketardi.
+
+export interface DriverCashHandover {
+  id: string;
+  driverId: string;
+  tripId: string | null;
+  amountMinor: string;
+  currency: string;
+  status: 'pending' | 'handed' | 'cancelled';
+  collectedAt: string;
+  handedAt: string | null;
+  cashInId: string | null;
+  note: string | null;
+  version: number;
+}
+
+/** «Kimda qancha turibdi» — dispecher paneli uchun yig'ma. */
+export interface DriverCashOutstanding {
+  driverId: string;
+  driverName: string;
+  pendingCount: number;
+  pendingMinor: string;
+}
+
+export const driverCashApi = {
+  collect: (data: { amountMinor: string; tripId?: string | null; note?: string | null }) =>
+    api.post<DriverCashHandover>('/driver-cash/collect', data),
+  mine: () => api.get<DriverCashHandover[]>('/driver-cash/mine'),
+  outstanding: () => api.get<DriverCashOutstanding[]>('/driver-cash/outstanding'),
+  list: (driverId?: string) =>
+    api.get<DriverCashHandover[]>(
+      `/driver-cash?status=pending${driverId ? `&driverId=${driverId}` : ''}`,
+    ),
+  handOver: (
+    id: string,
+    data: { agentId: string; organizationId: string; cashDeskId: string; version: number },
+  ) => api.post<DriverCashHandover>(`/driver-cash/${id}/hand-over`, data),
+  cancel: (id: string) => api.post<DriverCashHandover>(`/driver-cash/${id}/cancel`, {}),
+};
+
 /**
  * Manzil → koordinata. Geokoder o'chiq bo'lsa `enabled:false` (dispecher
  * koordinatani qo'lda kiritadi — panel baribir to'liq ishlaydi).

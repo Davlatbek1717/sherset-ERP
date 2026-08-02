@@ -24,8 +24,14 @@
 
 import { useDriverPing } from '@/hooks/use-driver-ping';
 import { useAuth } from '@/lib/auth-store';
-import { type DriverShift, type DriverTrip, driverTrackingApi } from '@/lib/hr-api';
-import { Alert, Button, ShersetLogo, Spinner, useToast } from '@moysklad/ui';
+import {
+  type DriverCashHandover,
+  type DriverShift,
+  type DriverTrip,
+  driverCashApi,
+  driverTrackingApi,
+} from '@/lib/hr-api';
+import { Alert, Button, Input, ShersetLogo, Spinner, formatMoney, useToast } from '@moysklad/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatInTimeZone } from 'date-fns-tz';
 import { useTranslations } from 'next-intl';
@@ -104,6 +110,33 @@ export default function HaydovchiPage() {
       qc.invalidateQueries({ queryKey: ['driver-shift-current'] });
       toast.success(t('shift_started'));
       if (permission !== 'granted') askPermission();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  // ── Naqd topshirig'i (TZ §7.2) ──
+  // Haydovchi «oldim» deydi — pul UNING qo'lida qoladi, kassa qoldig'i
+  // O'ZGARMAYDI. Kassir sanab qabul qilgandagina ПКО yaratiladi.
+  const [cashAmount, setCashAmount] = useState('');
+  const { data: myCash } = useQuery<DriverCashHandover[]>({
+    queryKey: ['driver-cash-mine'],
+    queryFn: () => driverCashApi.mine(),
+    refetchInterval: 60_000,
+  });
+  const pendingCash = (myCash ?? []).filter((c) => c.status === 'pending');
+  const pendingTotal = pendingCash.reduce((s, c) => s + BigInt(c.amountMinor), 0n);
+
+  const collectMut = useMutation({
+    mutationFn: () => {
+      // So'mdan tiyinga — foydalanuvchi butun so'm kiritadi.
+      const major = Number(cashAmount.replace(/\s/g, '').replace(',', '.'));
+      if (!Number.isFinite(major) || major <= 0) throw new Error(t('cash_amount_invalid'));
+      return driverCashApi.collect({ amountMinor: String(Math.round(major * 100)) });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['driver-cash-mine'] });
+      setCashAmount('');
+      toast.success(t('cash_collected'));
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -232,6 +265,39 @@ export default function HaydovchiPage() {
           </div>
         </div>
       )}
+
+      {/* ── Naqd topshirig'i (TZ §7.2) ── */}
+      <div className="rounded-xl border border-[var(--ms-border-default)] p-3">
+        <div className="mb-2 font-medium text-sm">{t('cash_title')}</div>
+        {pendingTotal > 0n && (
+          <div
+            className="mb-2 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-red-800 text-sm"
+            data-test-id="driver-cash-pending"
+          >
+            {t('cash_pending', {
+              amount: formatMoney(pendingTotal, 'UZS'),
+              count: pendingCash.length,
+            })}
+          </div>
+        )}
+        <div className="flex gap-2">
+          <Input
+            value={cashAmount}
+            onChange={(e) => setCashAmount(e.target.value)}
+            placeholder={t('cash_placeholder')}
+            inputMode="decimal"
+            data-test-id="driver-cash-amount"
+          />
+          <Button
+            onClick={() => collectMut.mutate()}
+            disabled={!cashAmount.trim() || collectMut.isPending}
+            data-test-id="driver-cash-submit"
+          >
+            {t('cash_add')}
+          </Button>
+        </div>
+        <p className="mt-1 text-[var(--ms-text-muted)] text-xs">{t('cash_hint')}</p>
+      </div>
 
       {/* ── Yetkazmalar ── */}
       {shiftOpen && (

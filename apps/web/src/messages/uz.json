@@ -7946,7 +7946,14 @@
       "trip_enroute": "Yo'lda",
       "trip_arrived": "Yetib bordi",
       "trip_completed": "Bajarildi",
-      "trip_cancelled": "Bekor qilindi"
+      "trip_cancelled": "Bekor qilindi",
+      "cash_title": "Mijozlardan olingan naqd",
+      "cash_pending": "Qo'lingizda: {amount} ({count} ta yozuv) — kassirga topshiring",
+      "cash_placeholder": "Summa, so'm",
+      "cash_add": "Oldim",
+      "cash_collected": "Yozildi — pul qo'lingizda",
+      "cash_amount_invalid": "Noldan katta summa kiriting",
+      "cash_hint": "Bu yozuv kassani TO'LDIRMAYDI. Kassa kassir sanab qabul qilganda to'ladi."
     },
     "driver_trips": {
       "assign_title": "Yetkazma biriktirish",
@@ -7980,6 +7987,19 @@
       "src_demand": "Otgruzka bo'yicha",
       "pick_demand": "Otgruzkani tanlang",
       "linked_demand": "Otgruzka"
+    },
+    "driver_cash": {
+      "title": "Haydovchilardagi naqd (topshirilmagan)",
+      "none": "Topshirilmagan naqd yo'q",
+      "pick_agent": "Kontragent",
+      "pick_org": "Tashkilot",
+      "pick_desk": "Kassa",
+      "need_refs": "Kontragent, tashkilot va kassani tanlang — ular ПКО uchun majburiy",
+      "accept": "Qabul qilish",
+      "cancel": "Bekor qilish",
+      "accepted": "Qabul qilindi — ПКО yaratildi va o'tkazildi",
+      "cancelled": "Yozuv bekor qilindi",
+      "hint": "Qabul qilinganda kirim kassa orderi (ПКО) yaratilib o'tkaziladi — kassa faqat shu yerda to'ladi."
     }
   },
   "print_entity": {
