@@ -305,7 +305,27 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
-> **🕒 2026-08-02h (TO'LQIN 1.4 — yagona formulalar qatlami · `bbf7af5` + `0c36680`)**
+> **🕒 2026-08-02h (TO'LQIN 1.4 — yagona formulalar qatlami · `bbf7af5` + `0c36680`) · ✅ DEPLOYED `90d8d0d`**
+>
+> **DEPLOY tasdiqlandi** (erp.sherset.uz, `DS_TARGET=v2 deploy-smart.sh`, `a646bdd → 90d8d0d`;
+> skript oxirgi MUVAFFAQIYATLI deploy'dan diff olgani uchun oraliqdagi hamma narsa birga ketdi):
+> zaxira `sherset_v2-PREDEPLOY-90d8d0d-091416.sql.gz` (302M, 222 jadval, `dump complete` markeri) ·
+> `packages/money` o'zgargani uchun to'liq web build ishladi · `/` `/sotuv` `/retail/sales`
+> `/reports/profitability` `/demands` → **200** · api health ok · pm2 xato jurnalida **bugungi
+> yozuv YO'Q** · faqat `sherset-v2-*` restart, boshqa 8 ijarachi 24h uptime bilan tegilmadi.
+> **Jonli tekshirilgan markerlar:** `metrics/` 4 fayl manbada · **7 hisobot** `metrics/index.js` dan
+> import qiladi · qo'lda `Number()/Number()` **0** (grep 1 ta topdi — u **izoh matni**, nima olib
+> tashlanganini tushuntiradi) · `percentScaled` money `dist/` da (web build shundan oziqlanadi) ·
+> `.husky/post-commit` va `CLAUDE.md §6.7` box'da bor.
+>
+> **🎉 1.3 JONLI ISHLAYAPTI:** prod bazasida `cashier_audit_events` da **`SALE_CANCELLED` yozuvi
+> paydo bo'ldi** — ya'ni haqiqiy chek bekor qilinganda jurnal to'lyapti. Bu funksiya deploydan
+> keyin o'zini ko'rsatgan birinchi dalil.
+>
+> **⚠️ Hamon browser-QA YO'Q:** HTTP 200 React ishlashini isbotlamaydi. Hisobot ekranlarida
+> (`/reports/profitability`, dashboard, ABC, unit-economics) foizlar **ko'z bilan solishtirilmagan**
+> — 1.4 chiqish formatlarini o'zgartirmasligi kerak edi va testlar shuni tasdiqlaydi, lekin ekranda
+> ko'rilmagan. Audit jurnalini KO'RSATADIGAN interfeys ham yo'q (menejer paneli 4-to'lqin).
 >
 > **Analitika TZ §4/X4: «har hisobot o'z formulasini yozmaydi».** Taxminiy qatlam qurilmadi —
 > avval takrorlanish **o'lchandi**, va topilgani kutilganidan yomonroq chiqdi. Hisobot modulida bir
