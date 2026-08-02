@@ -4,18 +4,34 @@ import { discountPercent } from '../shared/discount.js';
 /**
  * RetailSale — POS receipt document.
  *
- * FSM: draft → posted
- *           → cancelled  (only from draft)
+ * FSM: draft ──send-to-picking──► picking ──mark-ready──► ready ──post──► posted
+ *        └──────────────────────── post ────────────────────────────────────┘
+ *      har bosqichdan → cancelled (draft/picking/ready)
  *      (refund creates a new RetailSale in posted state immediately)
+ *
+ * `picking` / `ready` — omborchi zanjiri (2026-08-01 `d7ab3b1`):
+ * `send-to-picking` omborlarga yig'ish varaqalarini yuboradi va hujjatni
+ * `picking` ga o'tkazadi; har omborchi `mark-ready` bilan O'Z zonasi
+ * topshiriqlarini yopadi, barcha zonalar tugagach hujjat `ready` bo'ladi.
+ * Ular DB'ga (VarChar) yozilardi-yu, shu enum'da yo'q edi — natijada POS'ning
+ * `?state=picking` / `?state=ready` ro'yxat so'rovlari 400 qaytarardi va
+ * «Yig'ilmoqda» / «Tayyor» ro'yxatlari bo'sh qolardi (TZ 1-bo'lim §0.1).
  *
  * Invariants:
  *   - post requires session.state='open'
  *   - post: cashAmount + cardAmount >= sumMinor (change computed from overpayment)
- *   - cancel only from draft state
+ *   - cancel only from a pre-posted state (draft/picking/ready)
  *   - One open session per cashier enforced in CashierSessionService
  */
 
-export const RetailSaleStateSchema = z.enum(['draft', 'posted', 'refunded', 'cancelled']);
+export const RetailSaleStateSchema = z.enum([
+  'draft',
+  'picking',
+  'ready',
+  'posted',
+  'refunded',
+  'cancelled',
+]);
 export type RetailSaleState = z.infer<typeof RetailSaleStateSchema>;
 
 // --- Position ---

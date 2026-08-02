@@ -20,16 +20,37 @@ const validPosition = {
 };
 
 describe('RetailSaleStateSchema', () => {
-  it('accepts all four states', () => {
+  it('accepts all six states', () => {
     expect(RetailSaleStateSchema.parse('draft')).toBe('draft');
     expect(RetailSaleStateSchema.parse('posted')).toBe('posted');
     expect(RetailSaleStateSchema.parse('refunded')).toBe('refunded');
     expect(RetailSaleStateSchema.parse('cancelled')).toBe('cancelled');
   });
 
+  // Omborchi zanjiri (d7ab3b1): send-to-picking DB'ga 'picking' yozadi,
+  // mark-ready 'ready' ga o'tkazadi. Enum ularni bilmasa, POS'ning
+  // ?state=picking / ?state=ready so'rovlari 400 qaytaradi va
+  // «Yig'ilmoqda»/«Tayyor» ro'yxatlari bo'sh qoladi.
+  it('accepts the omborchi picking-chain states', () => {
+    expect(RetailSaleStateSchema.parse('picking')).toBe('picking');
+    expect(RetailSaleStateSchema.parse('ready')).toBe('ready');
+  });
+
   it('rejects unknown state', () => {
     expect(() => RetailSaleStateSchema.parse('open')).toThrow();
     expect(() => RetailSaleStateSchema.parse('paid')).toThrow();
+  });
+});
+
+describe('RetailSaleFilterSchema — picking-chain states', () => {
+  // Regressiya qulfi: POS sahifasi aynan shu ikki so'rovni yuboradi
+  // (sotuv/page.tsx — retail-sales-picking / retail-sales-ready).
+  it('accepts ?state=picking', () => {
+    expect(RetailSaleFilterSchema.parse({ state: 'picking' }).state).toBe('picking');
+  });
+
+  it('accepts ?state=ready', () => {
+    expect(RetailSaleFilterSchema.parse({ state: 'ready' }).state).toBe('ready');
   });
 });
 

@@ -52,7 +52,11 @@ export class OnlineOrderController {
 
   @Post(':id/convert')
   @RequirePermission({ entity: 'onlineorder', action: 'create' })
-  async convert(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
-    return this.svc.convertToCustomerOrder(user.accountId, id);
+  async convert(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    return this.svc.convertToCustomerOrder(user.accountId, id, body);
   }
 }

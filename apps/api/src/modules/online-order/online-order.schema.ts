@@ -54,3 +54,15 @@ export const RejectOnlineOrderSchema = z.object({
   reason: z.string().max(500).optional(),
 });
 export type RejectOnlineOrderInput = z.infer<typeof RejectOnlineOrderSchema>;
+
+/**
+ * Konvertatsiya — HAQIQIY CustomerOrder ga bog'lash.
+ *
+ * `customerOrderId` majburiy va shu ijarachida mavjud bo'lishi tekshiriladi.
+ * Ilgari bu yerda tasodifiy UUID generatsiya qilinardi (V1 stub) — bazada
+ * hech qayerga ishora qilmaydigan havola qolardi.
+ */
+export const ConvertOnlineOrderSchema = z.object({
+  customerOrderId: z.string().uuid('customerOrderId — haqiqiy buyurtma id si bo‘lishi kerak'),
+});
+export type ConvertOnlineOrderInput = z.infer<typeof ConvertOnlineOrderSchema>;

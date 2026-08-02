@@ -3,7 +3,7 @@
 import { DocumentTabs } from '@/components/document-tabs';
 import { api } from '@/lib/api-client';
 import { documentStateTone } from '@/lib/document-state-tone';
-import { Badge, Button, Container, PageHeader, formatMoney } from '@moysklad/ui';
+import { Badge, Button, Container, Input, PageHeader, formatMoney } from '@moysklad/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useParams } from 'next/navigation';
@@ -28,6 +28,12 @@ interface OnlineOrderDetail {
 
 type OrderState = 'pending' | 'accepted' | 'rejected' | 'converted';
 
+interface LinkCandidate {
+  id: string;
+  name: string;
+  agent: { id: string; name: string } | null;
+}
+
 export default function OnlineOrderDetailPage() {
   const params = useParams<{ id: string }>();
   const id = params?.id ?? '';
@@ -35,6 +41,8 @@ export default function OnlineOrderDetailPage() {
   const t = useTranslations('pages.online_orders');
   const tCommon = useTranslations('common');
   const [actionError, setActionError] = useState<string | null>(null);
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [linkSearch, setLinkSearch] = useState('');
 
   const { data, isLoading } = useQuery<OnlineOrderDetail>({
     queryKey: ['online-order', id],
@@ -60,10 +68,27 @@ export default function OnlineOrderDetailPage() {
     onError: (e: Error) => setActionError(e.message),
   });
 
+  // Konvertatsiya = MAVJUD xaridor buyurtmasiga bog'lash. Onlayn buyurtma
+  // tarkibi erkin JSON (tovar kodlarisiz), shuning uchun buyurtma avtomatik
+  // qurilmaydi — operator uni yaratadi va shu yerda bog'laydi.
   const convertMut = useMutation({
-    mutationFn: () => api.post(`/online-orders/${id}/convert`, {}),
-    onSuccess: invalidate,
+    mutationFn: (customerOrderId: string) =>
+      api.post(`/online-orders/${id}/convert`, { customerOrderId }),
+    onSuccess: () => {
+      setLinkOpen(false);
+      setLinkSearch('');
+      invalidate();
+    },
     onError: (e: Error) => setActionError(e.message),
+  });
+
+  const { data: linkCandidates } = useQuery<{ items: LinkCandidate[] }>({
+    queryKey: ['customer-orders-link', linkSearch],
+    queryFn: () =>
+      api.get<{ items: LinkCandidate[] }>(
+        `/customer-orders?limit=10${linkSearch ? `&search=${encodeURIComponent(linkSearch)}` : ''}`,
+      ),
+    enabled: linkOpen,
   });
 
   if (isLoading) {
@@ -140,18 +165,63 @@ export default function OnlineOrderDetailPage() {
         </div>
       )}
 
-      {state === 'accepted' && (
+      {state === 'accepted' && !linkOpen && (
         <div className="mb-6 flex gap-2">
           <Button
             variant="primary"
             size="sm"
             onClick={() => {
               setActionError(null);
-              convertMut.mutate();
+              setLinkOpen(true);
             }}
-            disabled={convertMut.isPending}
           >
             {t('convert_button')}
+          </Button>
+        </div>
+      )}
+
+      {state === 'accepted' && linkOpen && (
+        <div className="mb-6 rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] p-4">
+          <h3 className="mb-1 font-semibold text-sm">{t('link_order_title')}</h3>
+          <p className="mb-3 text-[var(--ms-text-muted)] text-xs">{t('link_order_hint')}</p>
+          <Input
+            value={linkSearch}
+            onChange={(e) => setLinkSearch(e.target.value)}
+            placeholder={t('link_order_search')}
+          />
+          <div className="mt-3 max-h-60 overflow-y-auto">
+            {(linkCandidates?.items ?? []).length === 0 ? (
+              <div className="py-2 text-[var(--ms-text-muted)] text-sm">
+                {t('link_order_empty')}
+              </div>
+            ) : (
+              (linkCandidates?.items ?? []).map((row) => (
+                <button
+                  key={row.id}
+                  type="button"
+                  className="flex w-full items-center justify-between gap-2 rounded-[var(--ms-radius-default)] px-2 py-2 text-left text-sm hover:bg-[var(--ms-bg-hover)]"
+                  onClick={() => {
+                    setActionError(null);
+                    convertMut.mutate(row.id);
+                  }}
+                  disabled={convertMut.isPending}
+                >
+                  <span className="font-medium">{row.name}</span>
+                  <span className="text-[var(--ms-text-muted)]">{row.agent?.name ?? '—'}</span>
+                </button>
+              ))
+            )}
+          </div>
+          <Button
+            variant="secondary"
+            size="sm"
+            className="mt-3"
+            onClick={() => {
+              setLinkOpen(false);
+              setLinkSearch('');
+            }}
+          >
+            {t('link_order_cancel')}
           </Button>
         </div>
       )}

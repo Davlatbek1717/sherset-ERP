@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import type { Prisma } from '@moysklad/db';
 import {
   BadRequestException,
@@ -9,21 +8,19 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import {
+  ConvertOnlineOrderSchema,
   CreateOnlineOrderSchema,
   OnlineOrderFilterSchema,
   RejectOnlineOrderSchema,
 } from './online-order.schema.js';
 
 /**
- * OnlineOrderService — list, accept, reject, convertToCustomerOrder (stub).
+ * OnlineOrderService — list, accept, reject, convertToCustomerOrder.
  *
- * convertToCustomerOrder V1 behavior:
- *   - Validates state === 'accepted'
- *   - Flips state to 'converted'
- *   - Sets customerOrderId to a generated UUID (placeholder)
- *   - Documents TODO for V2 actual conversion
- *
- * V2 will: create a real CustomerOrder + Demand from the online order items.
+ * `convertToCustomerOrder` mavjud CustomerOrder ga **bog'laydi** (batafsil izoh
+ * metodning o'zida). Buyurtmani `items` dan **avtomatik qurish** hali yo'q —
+ * `OnlineOrder.items` erkin JSON bo'lgani uchun mahsulot moslashtirish kerak;
+ * u 2-bo'lim TZ B1 bosqichida qilinadi.
  */
 @Injectable()
 export class OnlineOrderService {
@@ -161,18 +158,28 @@ export class OnlineOrderService {
   }
 
   /**
-   * convertToCustomerOrder — V1 STUB.
+   * convertToCustomerOrder — onlayn buyurtmani HAQIQIY xaridor buyurtmasiga bog'laydi.
    *
-   * Current behavior:
-   *   1. Validate state === 'accepted' (not pending/rejected/already converted)
-   *   2. Flip state to 'converted'
-   *   3. Assign a generated UUID as customerOrderId (placeholder — no actual
-   *      CustomerOrder row is created in V1)
+   * Ilgari (V1 stub) bu yer `customerOrderId` ga **tasodifiy generatsiya qilingan
+   * UUID** yozardi — bazada hech qayerga ishora qilmaydigan havola qolardi. Bu
+   * shunchaki «bajarilmagan funksiya» emas, **ma'lumot yaxlitligining buzilishi**:
+   * hisobot yoki integratsiya o'sha id bo'yicha buyurtma qidirsa topa olmaydi va
+   * sababi ko'rinmaydi (TZ 2-bo'lim §0.1/1).
    *
-   * TODO V2: Create a real CustomerOrder + Demand from the online order items.
-   * Reference: CustomerOrderService.create() + DemandService.create()
+   * Hozirgi xulq:
+   *   1. Holat `accepted` ekanini tekshiradi
+   *   2. Berilgan `customerOrderId` **shu ijarachida mavjud** ekanini tekshiradi
+   *   3. Faqat shundan keyin `converted` ga o'tkazadi va bog'laydi
+   * Aks holda hech narsa yozilmaydi — hujjat `accepted` da qoladi.
+   *
+   * Avtomatik yaratish (`CustomerOrder` ni `items` dan qurish) hozir imkonsiz:
+   * `OnlineOrder.items` — erkin JSON (`{name, qty, price}`), `productId` yo'q,
+   * `agentId`/`organizationId` ham yo'q. U 2-bo'lim TZ B1 bosqichida, mahsulot
+   * moslashtirish bilan birga qilinadi va **shu bog'lash yo'lini** chaqiradi.
    */
-  async convertToCustomerOrder(accountId: string, id: string) {
+  async convertToCustomerOrder(accountId: string, id: string, rawBody: unknown) {
+    const { customerOrderId } = ConvertOnlineOrderSchema.parse(rawBody ?? {});
+
     const order = await this.findById(accountId, id);
     if (order.state !== 'accepted') {
       throw new BadRequestException(
@@ -180,22 +187,20 @@ export class OnlineOrderService {
       );
     }
 
-    // V1: Generate a placeholder UUID — no real CustomerOrder created yet.
-    const placeholderCustomerOrderId = randomUUID();
+    // Ijarachi ichida mavjudligini tasdiqlash — soxta/begona id yozilmasin.
+    const target = await this.prisma.client.customerOrder.findFirst({
+      where: { id: customerOrderId, accountId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!target) {
+      throw new NotFoundException('Bog‘lanadigan xaridor buyurtmasi topilmadi');
+    }
 
     const updated = await this.prisma.client.onlineOrder.update({
       where: { id },
-      data: {
-        state: 'converted',
-        customerOrderId: placeholderCustomerOrderId,
-      },
+      data: { state: 'converted', customerOrderId },
     });
-    return {
-      ...updated,
-      sumMinor: updated.sumMinor.toString(),
-      _v1Warning:
-        'customerOrderId is a placeholder UUID. Real CustomerOrder creation is deferred to V2.',
-    };
+    return { ...updated, sumMinor: updated.sumMinor.toString() };
   }
 
   async counts(accountId: string) {
