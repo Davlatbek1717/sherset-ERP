@@ -1,5 +1,9 @@
+import type { Prisma } from '@moysklad/db';
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
+// Kassa TZ §9 — the audit-event shapes live with the rest of the cashier
+// journal so every writer agrees on the payload.
+import { planOutOfScheduleAuditEvent } from '../retail-sale/cashier-audit.js';
 import {
   type CreateSmenaInput,
   CreateSmenaSchema,
@@ -174,21 +178,49 @@ export class SmenaService {
     });
     if (!cashDesk) throw new BadRequestException('Kassa topilmadi — avval kassa yarating');
 
-    return this.prisma.client.cashierSession.create({
-      data: {
-        accountId,
-        cashierId,
-        cashDeskId: cashDesk.id,
-        storeId: store.id,
-        organizationId: smena.organizationId,
-        smenaId: smena.id,
-        outOfShiftReason: input.outOfShiftReason ?? null,
-        openingCashMinor: input.openingCashMinor,
-        state: 'open',
-      },
-      include: {
-        organization: { select: { id: true, name: true } },
-      },
+    // Kassa TZ §9 — smena vaqtdan TASHQARI ochilsa, sabab bilan birga audit
+    // jurnaliga tushadi. Sabab `CashierSession` da ham saqlanadi, lekin u —
+    // sessiyaning joriy holati; jurnal esa menejer «kim qancha marta vaqtdan
+    // tashqari ochadi» deb so'raganda javob beradigan yagona manba (3-bo'lim).
+    // Sessiya yaratish va hodisa yozish bitta tranzaksiyada: izsiz ochilgan
+    // smena bo'lishi mumkin emas.
+    return this.prisma.client.$transaction(async (tx) => {
+      const session = await tx.cashierSession.create({
+        data: {
+          accountId,
+          cashierId,
+          cashDeskId: cashDesk.id,
+          storeId: store.id,
+          organizationId: smena.organizationId,
+          smenaId: smena.id,
+          outOfShiftReason: input.outOfShiftReason ?? null,
+          openingCashMinor: input.openingCashMinor,
+          state: 'open',
+        },
+        include: {
+          organization: { select: { id: true, name: true } },
+        },
+      });
+
+      if (!withinShift && input.outOfShiftReason) {
+        const event = planOutOfScheduleAuditEvent(session.id, {
+          smenaId: smena.id,
+          smenaName: smena.name,
+          reason: input.outOfShiftReason,
+        });
+        await tx.cashierAuditEvent.create({
+          data: {
+            accountId,
+            sessionId: session.id,
+            employeeId: cashierId,
+            type: event.type,
+            docId: event.docId,
+            payload: event.payload as Prisma.InputJsonValue,
+          },
+        });
+      }
+
+      return session;
     });
   }
 }

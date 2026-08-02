@@ -83,7 +83,7 @@ export class RetailSaleController {
   @Post(':id/cancel')
   @RequirePermission({ entity: 'retailsale', action: 'approve' })
   async cancel(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
-    return this.sales.cancel(user.accountId, id);
+    return this.sales.cancel(user.accountId, user.sub, id);
   }
 
   @Post(':id/refund')

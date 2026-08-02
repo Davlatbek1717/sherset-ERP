@@ -229,9 +229,11 @@ describe('RetailSaleService.post — CAS state guard', () => {
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
         findUniqueOrThrow: vi.fn().mockResolvedValue({ id: SALE_ID, state: 'posted' }),
       },
-      // post() also freezes the price snapshot onto the lines (kassa TZ §5.3);
-      // covered on its own in retail-sale-freeze.test.ts.
+      // post() also freezes the price snapshot onto the lines (kassa TZ §5.3)
+      // and appends cashier audit events (§9); both are covered on their own in
+      // retail-sale-freeze.test.ts / cashier-audit.test.ts.
       retailSalePosition: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      cashierAuditEvent: { createMany: vi.fn().mockResolvedValue({ count: 0 }) },
       cashDesk: { update: vi.fn().mockResolvedValue({}) },
       cashierSession: { update: vi.fn().mockResolvedValue({}) },
     };
@@ -240,7 +242,7 @@ describe('RetailSaleService.post — CAS state guard', () => {
       documentSequence: mockDocumentSequence(),
       employee: { findUnique: vi.fn(async () => null) },
       product: { findMany: vi.fn().mockResolvedValue([]) },
-      priceType: { findFirst: vi.fn().mockResolvedValue(null) },
+      priceType: { findMany: vi.fn().mockResolvedValue([]) },
       retailSale: {
         findFirst: vi.fn().mockResolvedValue({
           id: SALE_ID,
@@ -292,35 +294,53 @@ describe('RetailSaleService.post — CAS state guard', () => {
   });
 });
 
+/**
+ * 2026-08-02 (kassa TZ §9): cancel() endi holat-almashtirish va audit yozuvini
+ * BITTA tranzaksiyada bajaradi — poygada yutgan odam jurnalga tushadi,
+ * yutqazgani hech narsa yozmaydi. Mock shuni aks ettiradi.
+ */
+function makeCancelCasClient(casCount: number) {
+  const retailSale = {
+    findFirst: vi.fn().mockResolvedValue({
+      id: SALE_ID,
+      state: 'draft',
+      name: 'ТРН-1',
+      sessionId: SESSION_ID,
+      sumMinor: 100_000n,
+      positions: [],
+    }),
+    updateMany: vi.fn().mockResolvedValue({ count: casCount }),
+    findUniqueOrThrow: vi.fn().mockResolvedValue({ id: SALE_ID, state: 'cancelled' }),
+  };
+  const cashierAuditEvent = { createMany: vi.fn().mockResolvedValue({ count: 1 }) };
+  return {
+    documentSequence: mockDocumentSequence(),
+    employee: { findUnique: vi.fn(async () => null) },
+    retailSale,
+    cashierAuditEvent,
+    $transaction: vi
+      .fn()
+      .mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) =>
+        fn({ retailSale, cashierAuditEvent }),
+      ),
+  };
+}
+
 describe('RetailSaleService.cancel — CAS state guard', () => {
   it('throws ConflictException when the sale was posted between read and cancel', async () => {
-    const client = {
-      documentSequence: mockDocumentSequence(),
-      employee: { findUnique: vi.fn(async () => null) },
-      retailSale: {
-        findFirst: vi.fn().mockResolvedValue({ id: SALE_ID, state: 'draft' }),
-        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
-        findUniqueOrThrow: vi.fn(),
-      },
-    };
+    const client = makeCancelCasClient(0);
 
-    await expect(makeService(client).cancel(ACCOUNT, SALE_ID)).rejects.toBeInstanceOf(
+    await expect(makeService(client).cancel(ACCOUNT, USER_ID, SALE_ID)).rejects.toBeInstanceOf(
       ConflictException,
     );
+    // Poygani yutqazgan urinish jurnalga HECH NARSA yozmaydi.
+    expect(client.cashierAuditEvent.createMany).not.toHaveBeenCalled();
   });
 
   it('cancels successfully when CAS matches', async () => {
-    const client = {
-      documentSequence: mockDocumentSequence(),
-      employee: { findUnique: vi.fn(async () => null) },
-      retailSale: {
-        findFirst: vi.fn().mockResolvedValue({ id: SALE_ID, state: 'draft' }),
-        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
-        findUniqueOrThrow: vi.fn().mockResolvedValue({ id: SALE_ID, state: 'cancelled' }),
-      },
-    };
+    const client = makeCancelCasClient(1);
 
-    const result = (await makeService(client).cancel(ACCOUNT, SALE_ID)) as {
+    const result = (await makeService(client).cancel(ACCOUNT, USER_ID, SALE_ID)) as {
       state: string;
     };
     expect(result.state).toBe('cancelled');

@@ -110,6 +110,7 @@ model Account {
   bomComponents                  BomComponent[]
   workOrders                     WorkOrder[]
   cashierSessions                CashierSession[]
+  cashierAuditEvents             CashierAuditEvent[]
   shiftSchedules                 ShiftSchedule[]
   smenas                         Smena[]
   retailSales                    RetailSale[]
@@ -380,6 +381,7 @@ model Employee {
   ownedWorkOrders            WorkOrder[]                @relation("WorkOrderOwner")
   cashierSessions            CashierSession[]           @relation("CashierSessionCashier")
   ownedCashierSessions       CashierSession[]           @relation("CashierSessionOwner")
+  cashierAuditEvents         CashierAuditEvent[]        @relation("CashierAuditEventEmployee")
   smenaAssignments           SmenaEmployee[]            @relation("SmenaEmployees")
   ownedRetailSales           RetailSale[]               @relation("RetailSaleOwner")
   ownedOrganizations         Organization[]             @relation("OrganizationOwner")
@@ -7569,10 +7571,67 @@ model CashierSession {
   drawerCashIn        RetailDrawerCashIn[]  @relation("RetailDrawerInShift")
   drawerCashOut       RetailDrawerCashOut[] @relation("RetailDrawerOutShift")
   retailSalesReturns  RetailSalesReturn[]   @relation("RetailSalesReturnShift")
+  auditEvents         CashierAuditEvent[]
 
   @@index([accountId, cashierId, state])
   @@index([accountId, cashDeskId, state])
   @@map("cashier_sessions")
+}
+
+/// CashierAuditEvent — kassa TZ §9: the control half of the «trust the cashier»
+/// model. The cashier may set any price, sell below cost, cancel a receipt and
+/// refund freely (Q8/Q11/Q16); none of that is blocked, so ALL of it has to
+/// leave a trace. Without this table «freedom» is simply an absence of control.
+///
+/// Deliberately NOT the existing `AuditLog`. That one is the moysklad History
+/// tab: a per-entity field diff (entity/entityId/fieldChanges), queried as
+/// "what happened to THIS document". These events are queried along a
+/// completely different axis — by shift and by cashier ("who discounts the
+/// most", "whose debts grow fastest", "who cancels most") — and carry a typed
+/// business payload rather than a before/after map. Forcing them into AuditLog
+/// would drop `sessionId`, which is the very axis the analytics need.
+///
+/// `type` is a VarChar rather than a Postgres enum, matching the convention
+/// used across this schema (RestockTask.status, RetailSale.state): new event
+/// types then ship without a migration. Known values:
+///   PRICE_CHANGED          — sold at a price other than the card's retail tier
+///   SOLD_BELOW_WHOLESALE   — below the negotiated floor («Оптовая цена»)
+///   SOLD_BELOW_COST        — below cost; payload carries the loss amount
+///   SALE_CANCELLED         — receipt cancelled; payload carries the stage
+///   REFUND                 — mirror receipt created
+///   SHIFT_OUT_OF_SCHEDULE  — shift opened outside its schedule, with reason
+/// Reserved for later waves (features do not exist yet): SOLD_ON_CREDIT,
+/// EXPENSE, SHIFT_VARIANCE.
+model CashierAuditEvent {
+  id        String @id @default(uuid()) @db.Uuid
+  accountId String @map("account_id") @db.Uuid
+  /// The shift the event belongs to — the primary analytics axis.
+  sessionId String @map("session_id") @db.Uuid
+  /// Who did it. Kept as its own column (not derived from the session) because
+  /// an admin can act inside another cashier's shift.
+  employeeId String @map("employee_id") @db.Uuid
+  type       String @db.VarChar(40)
+  /// The document the event is about (RetailSale id for sale events). Not a FK:
+  /// the event must survive the document being deleted — an audit trail that
+  /// disappears with its subject is not an audit trail.
+  docId   String? @map("doc_id") @db.Uuid
+  /// Typed per `type`; money always in minor units as strings (BigInt is not
+  /// JSON-safe). See the per-type shapes in `cashier-audit.ts`.
+  payload Json
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  account  Account        @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  session  CashierSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  employee Employee       @relation("CashierAuditEventEmployee", fields: [employeeId], references: [id], onDelete: Restrict)
+
+  // Shift report / Z-report: everything that happened in one shift, newest first.
+  @@index([accountId, sessionId, createdAt(sort: Desc)])
+  // «Which cashier does X, and how often» — the manager's question (3-bo'lim).
+  @@index([accountId, employeeId, type, createdAt(sort: Desc)])
+  // Account-wide feed of one event kind (e.g. every below-cost sale this month).
+  @@index([accountId, type, createdAt(sort: Desc)])
+  @@map("cashier_audit_events")
 }
 
 /// RetailSale — POS receipt. One open session can hold many. Each sale

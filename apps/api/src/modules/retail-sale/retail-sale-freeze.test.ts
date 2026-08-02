@@ -39,6 +39,9 @@ interface Position {
   id: string;
   productId: string | null;
   quantity: string;
+  /** post() bularni audit hodisalari uchun o'qiydi (kassa TZ §9). */
+  priceMinor?: bigint;
+  product?: { name: string } | null;
 }
 
 interface ProductCard {
@@ -65,6 +68,9 @@ function makeHarness(opts: {
       }),
     },
     retailSalePosition: { updateMany: positionUpdateMany },
+    // post() endi kassir audit hodisalarini ham shu tranzaksiyada yozadi
+    // (kassa TZ §9) — alohida `cashier-audit.test.ts` da qoplangan.
+    cashierAuditEvent: { createMany: vi.fn().mockResolvedValue({ count: 0 }) },
     cashDesk: { update: vi.fn().mockResolvedValue({}) },
     cashierSession: { update: vi.fn().mockResolvedValue({}) },
   };
@@ -74,11 +80,15 @@ function makeHarness(opts: {
     documentSequence: mockDocumentSequence(),
     employee: { findUnique: vi.fn(async () => null) },
     product: { findMany: productFindMany },
+    // Narx turlari `position` bo'yicha o'qiladi: birinchi non-default = optom
+    // chegara (audit uchun). `defaultPriceTypeId: null` = hisobda narx turi yo'q.
     priceType: {
-      findFirst: vi
+      findMany: vi
         .fn()
         .mockResolvedValue(
-          opts.defaultPriceTypeId === null ? null : { id: opts.defaultPriceTypeId ?? DEFAULT_TYPE },
+          opts.defaultPriceTypeId === null
+            ? []
+            : [{ id: opts.defaultPriceTypeId ?? DEFAULT_TYPE, isDefault: true }],
         ),
     },
     retailSale: {
@@ -98,7 +108,13 @@ function makeHarness(opts: {
           store: { allowNegativeStock: true },
           cashDesk: { currency: 'UZS' },
         },
-        positions: opts.positions,
+        // Audit hodisalari uchun kerakli maydonlar sukut bilan to'ldiriladi —
+        // bu fayl MUZLATISHNI sinaydi, hodisalar `cashier-audit.test.ts` da.
+        positions: opts.positions.map((p) => ({
+          product: null,
+          priceMinor: 0n,
+          ...p,
+        })),
       }),
     },
     $transaction: vi

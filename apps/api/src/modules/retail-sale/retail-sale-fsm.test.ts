@@ -190,29 +190,47 @@ describe("RetailSaleService.post — yig'ilgan chek to'lanadi", () => {
 
 function makeCancelClient(state: string) {
   const restockTask = { updateMany: vi.fn().mockResolvedValue({ count: 1 }) };
+  // Bekor qilish holat-almashtirishi va audit yozuvi (kassa TZ §9) BITTA
+  // tranzaksiyada: poygada yutgan odam jurnalga tushadi, yutqazgani hech narsa
+  // yozmaydi. Shuning uchun mock endi `$transaction` beradi.
+  const cashierAuditEvent = { createMany: vi.fn().mockResolvedValue({ count: 1 }) };
+  const retailSale = {
+    findFirst: vi.fn().mockResolvedValue({
+      id: SALE_ID,
+      state,
+      name: 'CHK-1',
+      sessionId: SESSION_ID,
+      sumMinor: 100_000n,
+      positions: [{ productId: 'prod-1', quantity: 2 }],
+    }),
+    updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+    findUniqueOrThrow: vi.fn().mockResolvedValue({ id: SALE_ID, state: 'cancelled' }),
+  };
   const client = {
     documentSequence: mockDocumentSequence(),
     restockTask,
-    retailSale: {
-      findFirst: vi.fn().mockResolvedValue({ id: SALE_ID, state }),
-      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
-      findUniqueOrThrow: vi.fn().mockResolvedValue({ id: SALE_ID, state: 'cancelled' }),
-    },
+    retailSale,
+    cashierAuditEvent,
+    $transaction: vi
+      .fn()
+      .mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) =>
+        fn({ retailSale, cashierAuditEvent }),
+      ),
   };
-  return { client, restockTask };
+  return { client, restockTask, cashierAuditEvent };
 }
 
 describe("RetailSaleService.cancel — yig'ilayotgan chek bekor qilinadi", () => {
   it.each(['draft', 'picking', 'ready'])('%s holatidan bekor qilinadi', async (state) => {
     const { client } = makeCancelClient(state);
-    await expect(makeService(client).cancel(ACCOUNT, SALE_ID)).resolves.toBeTruthy();
+    await expect(makeService(client).cancel(ACCOUNT, USER_ID, SALE_ID)).resolves.toBeTruthy();
     const where = client.retailSale.updateMany.mock.calls[0][0].where;
     expect(where.state).toEqual({ in: ['draft', 'picking', 'ready'] });
   });
 
   it("picking bekor qilinganda ochiq yig'ish topshiriqlari cancelled bo'ladi (done EMAS)", async () => {
     const { client, restockTask } = makeCancelClient('picking');
-    await makeService(client).cancel(ACCOUNT, SALE_ID);
+    await makeService(client).cancel(ACCOUNT, USER_ID, SALE_ID);
 
     expect(restockTask.updateMany).toHaveBeenCalledTimes(1);
     const call = restockTask.updateMany.mock.calls[0][0];
@@ -227,15 +245,34 @@ describe("RetailSaleService.cancel — yig'ilayotgan chek bekor qilinadi", () =>
     expect(call.where.status).toEqual({ notIn: ['done', 'cancelled'] });
   });
 
+  it('bekor qilish audit jurnaliga BOSQICHI bilan tushadi (kassa TZ §9)', async () => {
+    // `ready` bosqichida bekor qilish — tovar allaqachon yig'ilgan, kimdir uni
+    // joyiga qaytarishi kerak; jurnal buni ayta olishi shart.
+    const { client, cashierAuditEvent } = makeCancelClient('ready');
+    await makeService(client).cancel(ACCOUNT, USER_ID, SALE_ID);
+
+    expect(cashierAuditEvent.createMany).toHaveBeenCalledTimes(1);
+    const rows = cashierAuditEvent.createMany.mock.calls[0][0].data;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      accountId: ACCOUNT,
+      sessionId: SESSION_ID,
+      employeeId: USER_ID,
+      type: 'SALE_CANCELLED',
+      docId: SALE_ID,
+    });
+    expect(rows[0].payload).toMatchObject({ stage: 'ready', name: 'CHK-1' });
+  });
+
   it("draft bekor qilinganda topshiriq tozalash CHAQIRILMAYDI (topshiriq yo'q)", async () => {
     const { client, restockTask } = makeCancelClient('draft');
-    await makeService(client).cancel(ACCOUNT, SALE_ID);
+    await makeService(client).cancel(ACCOUNT, USER_ID, SALE_ID);
     expect(restockTask.updateMany).not.toHaveBeenCalled();
   });
 
   it("to'langan chek bekor qilinmaydi (refund yo'li bilan qaytariladi)", async () => {
     const { client } = makeCancelClient('posted');
-    await expect(makeService(client).cancel(ACCOUNT, SALE_ID)).rejects.toBeInstanceOf(
+    await expect(makeService(client).cancel(ACCOUNT, USER_ID, SALE_ID)).rejects.toBeInstanceOf(
       BadRequestException,
     );
     expect(client.retailSale.updateMany).not.toHaveBeenCalled();

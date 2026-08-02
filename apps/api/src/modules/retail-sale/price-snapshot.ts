@@ -31,6 +31,9 @@ export type SalePricesJson =
  */
 export const RETAIL_SENTINEL = 'default';
 
+/** Legacy sentinel for the wholesale tier. Mirrors `WHOLESALE_SENTINEL` in web. */
+export const WHOLESALE_SENTINEL = 'wholesale';
+
 export interface PriceSnapshotSource {
   /** `Product.buyPrice` — minor units, or null when the card has no cost. */
   buyPrice: bigint | null;
@@ -68,6 +71,36 @@ export function resolveBasePriceMinor(
   } catch {
     // A malformed stored value must not fail the sale — the cashier is standing
     // at the till. Degrade to "not collected"; the report will flag it.
+    return null;
+  }
+}
+
+/**
+ * Resolve the WHOLESALE («Оптовая цена») tier — the negotiated floor.
+ *
+ * Deliberately NOT written to the receipt: the TZ freezes cost and retail only
+ * (§5.3), because those two are what profit is reconstructed from. Wholesale is
+ * a live threshold — it answers «did the cashier break the floor AT THE TIME OF
+ * SALE», and that verdict is recorded as an audit event, not as a column.
+ *
+ * Unlike the retail resolver there is NO "first listed price" fallback: guessing
+ * would invent a floor out of the retail price and then file a below-wholesale
+ * event for every ordinary sale. An absent floor means no verdict.
+ */
+export function resolveWholesaleMinor(
+  salePrices: SalePricesJson,
+  wholesalePriceTypeId?: string | null,
+): bigint | null {
+  const list = salePrices ?? [];
+  if (list.length === 0) return null;
+  const chosen =
+    (wholesalePriceTypeId ? list.find((p) => p.priceTypeId === wholesalePriceTypeId) : undefined) ??
+    list.find((p) => p.priceTypeId === WHOLESALE_SENTINEL);
+  const raw = chosen?.value;
+  if (raw == null || raw === '') return null;
+  try {
+    return BigInt(raw);
+  } catch {
     return null;
   }
 }

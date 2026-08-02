@@ -20,12 +20,19 @@ import { resolveCreatorGroupId } from '../shared/group-stamp.js';
 // Optimistic-lock (lost-update guard) for the draft field-edit update() path.
 import { mapVersionedUpdateError } from '../shared/optimistic-lock.js';
 import { type StockDelta, StockService } from '../stock/stock.service.js';
+import {
+  type CashierAuditEventInput,
+  planCancelAuditEvent,
+  planRefundAuditEvent,
+  planSaleAuditEvents,
+} from './cashier-audit.js';
 import { computePositions } from './compute-positions.js';
 // Kassa TZ §5.3 — pure cost/base-price snapshot rules (NULL = "not collected",
 // never 0), kept testable without a Prisma mock.
 import {
   type FrozenPrices,
   type SalePricesJson,
+  resolveWholesaleMinor,
   snapshotPricesByProduct,
 } from './price-snapshot.js';
 import { planLoyaltyAccrual, planLoyaltyReversal } from './retail-loyalty.js';
@@ -532,7 +539,16 @@ export class RetailSaleService {
           },
         },
         positions: {
-          select: { id: true, productId: true, quantity: true },
+          // priceMinor + product name ride along for the audit events (kassa
+          // TZ §9): the log has to say WHAT was sold and at what price, not
+          // just that something was.
+          select: {
+            id: true,
+            productId: true,
+            quantity: true,
+            priceMinor: true,
+            product: { select: { name: true } },
+          },
           orderBy: { position: 'asc' },
         },
       },
@@ -622,6 +638,33 @@ export class RetailSaleService {
       // statement per distinct product, not one per line.
       await this.freezePositionPrices(tx, accountId, id, sale.positions, frozen);
 
+      // Kassa TZ §9 — narx erkinligi ISHLATILGAN bo'lsa, iz qoladi.
+      // Chegaralar server tomonda hal qilinadi (yuqoridagi `frozen`), POS
+      // aytganiga emas — auditni auditdan o'tayotgan odam yozmasligi kerak.
+      await this.writeAuditEvents(
+        tx,
+        accountId,
+        sale.sessionId,
+        userId,
+        planSaleAuditEvents(
+          id,
+          sale.positions
+            .filter((p): p is typeof p & { productId: string } => p.productId !== null)
+            .map((p) => {
+              const snap = frozen.get(p.productId);
+              return {
+                productId: p.productId,
+                productName: p.product?.name ?? null,
+                quantity: String(p.quantity),
+                priceMinor: p.priceMinor,
+                costMinor: snap?.costMinor ?? null,
+                basePriceMinor: snap?.basePriceMinor ?? null,
+                wholesaleMinor: snap?.wholesaleMinor ?? null,
+              };
+            }),
+        ),
+      );
+
       // Stock cascade — same lock-then-assert-then-apply pattern as DemandService.post.
       if (stockPositions.length > 0) {
         const assortments = stockPositions.map((p) => ({
@@ -694,10 +737,19 @@ export class RetailSaleService {
     return posted;
   }
 
-  async cancel(accountId: string, id: string) {
+  async cancel(accountId: string, userId: string, id: string) {
     const sale = await this.prisma.client.retailSale.findFirst({
       where: { id, accountId },
-      select: { id: true, state: true },
+      // name/sumMinor/positions feed the audit event (kassa TZ §9): a cancel
+      // has to record WHAT was thrown away, not merely that something was.
+      select: {
+        id: true,
+        state: true,
+        name: true,
+        sessionId: true,
+        sumMinor: true,
+        positions: { select: { productId: true, quantity: true }, orderBy: { position: 'asc' } },
+      },
     });
     if (!sale) throw new NotFoundException(`RetailSale ${id} not found`);
     // Yig'ilayotgan (`picking`) va yig'ilgan (`ready`) cheklar ham bekor
@@ -711,15 +763,32 @@ export class RetailSaleService {
     // cancel that races with a post() would silently overwrite 'posted' to
     // 'cancelled' while the cashDesk inflow and session aggregates remain —
     // leaving money in the till against a cancelled receipt.
-    const flipResult = await this.prisma.client.retailSale.updateMany({
-      where: { id, accountId, state: { in: [...allowedFrom('cancel')] } },
-      data: { state: 'cancelled' },
+    // The audit event shares the transaction with the flip: whoever wins the
+    // race is the one who gets logged, and a lost race logs nothing.
+    await this.prisma.client.$transaction(async (tx) => {
+      const flipResult = await tx.retailSale.updateMany({
+        where: { id, accountId, state: { in: [...allowedFrom('cancel')] } },
+        data: { state: 'cancelled' },
+      });
+      if (flipResult.count === 0) {
+        throw new ConflictException(
+          `RetailSale ${id} state changed; cancel aborted (already posted?)`,
+        );
+      }
+      await this.writeAuditEvents(tx, accountId, sale.sessionId, userId, [
+        planCancelAuditEvent(id, {
+          // The stage BEFORE the flip — «cancelled a ready receipt» means the
+          // warehouse already picked the goods and has to put them back.
+          stage: sale.state,
+          name: sale.name,
+          sumMinor: sale.sumMinor,
+          lines: sale.positions.map((p) => ({
+            productId: p.productId,
+            quantity: String(p.quantity),
+          })),
+        }),
+      ]);
     });
-    if (flipResult.count === 0) {
-      throw new ConflictException(
-        `RetailSale ${id} state changed; cancel aborted (already posted?)`,
-      );
-    }
 
     // Omborchining ochiq yig'ish topshiriqlari yopiladi — aks holda bekor
     // qilingan chekning vazifasi panelda «pending» bo'lib qolardi va omborchi
@@ -886,6 +955,24 @@ export class RetailSaleService {
         },
       });
 
+      // Kassa TZ §9 — qaytarish erkin (Q11), shuning uchun iz qoladi.
+      // `docId` = OYNA chek: pul aynan o'sha hujjat orqali harakat qiladi;
+      // asl chek payload ichida.
+      await this.writeAuditEvents(tx, accountId, original.sessionId, userId, [
+        planRefundAuditEvent(refundSale.id, {
+          originalId: original.id,
+          originalName: original.name,
+          sumMinor: refundPositions.totalMinor,
+          cashMinor: cashReturn,
+          cardMinor: cardReturn,
+          lines: refundPositions.rows.map((p) => ({
+            productId: p.productId,
+            quantity: String(p.quantity),
+            priceMinor: p.priceMinor,
+          })),
+        }),
+      ]);
+
       // Stock cascade — restore quantities back to session.storeId. Only
       // rows with productId trigger inflow; service-only positions are
       // skipped consistent with post().
@@ -1031,8 +1118,14 @@ export class RetailSaleService {
   private computePositions = computePositions;
 
   /**
-   * Kassa TZ §5.3 — read each product's cost + default («Розничная цена») tier
-   * so `post()` can pin them onto the receipt lines.
+   * Kassa TZ §5.3 + §9 — read each product's three prices off the card:
+   * cost and the retail tier (frozen onto the line by `post()`), plus the
+   * wholesale floor (not frozen — it only decides whether an audit event is
+   * raised; see `resolveWholesaleMinor`).
+   *
+   * Read on the SERVER, never taken from the request: the POS reporting its own
+   * «this was below cost» flag would let the audited party write their own audit
+   * trail (kassa TZ §9).
    *
    * Products that no longer exist, and service-only lines (`productId === null`),
    * simply get no entry: the caller writes NULL, which the reports read as
@@ -1041,27 +1134,75 @@ export class RetailSaleService {
   private async loadFrozenPrices(
     accountId: string,
     productIds: ReadonlyArray<string | null>,
-  ): Promise<Map<string, FrozenPrices>> {
+  ): Promise<Map<string, FrozenPrices & { wholesaleMinor: bigint | null }>> {
     const ids = [...new Set(productIds.filter((p): p is string => p !== null))];
     if (ids.length === 0) return new Map();
-    const [products, defaultType] = await Promise.all([
+    const [products, priceTypes] = await Promise.all([
       this.prisma.client.product.findMany({
         where: { accountId, id: { in: ids } },
-        select: { id: true, buyPrice: true, salePrices: true },
+        select: { id: true, name: true, buyPrice: true, salePrices: true },
       }),
-      this.prisma.client.priceType.findFirst({
-        where: { accountId, isDefault: true },
-        select: { id: true },
+      // Wholesale = the first non-default tier by position, matching what the
+      // POS screen shows as «Min» (`usePriceTypeIds` in the web sale-price lib).
+      // Both ends must agree, or the cashier is warned about one floor while
+      // the audit log records another.
+      this.prisma.client.priceType.findMany({
+        where: { accountId, archived: false },
+        orderBy: { position: 'asc' },
+        select: { id: true, isDefault: true },
       }),
     ]);
-    return snapshotPricesByProduct(
+    const defaultTypeId = priceTypes.find((t) => t.isDefault)?.id ?? priceTypes[0]?.id ?? null;
+    const wholesaleTypeId = priceTypes.find((t) => t.id !== defaultTypeId)?.id ?? null;
+
+    const frozen = snapshotPricesByProduct(
       products.map((p) => ({
         id: p.id,
         buyPrice: p.buyPrice,
         salePrices: p.salePrices as SalePricesJson,
       })),
-      defaultType?.id,
+      defaultTypeId,
     );
+    return new Map(
+      products.map((p) => [
+        p.id,
+        {
+          ...(frozen.get(p.id) ?? { costMinor: null, basePriceMinor: null }),
+          wholesaleMinor: resolveWholesaleMinor(p.salePrices as SalePricesJson, wholesaleTypeId),
+        },
+      ]),
+    );
+  }
+
+  /**
+   * Kassa TZ §9 — append cashier audit events.
+   *
+   * Runs INSIDE the caller's transaction, deliberately. The alternative (fire
+   * and forget after commit, the way loyalty accrual works) would allow a
+   * posted receipt with no trace, and «a sale nobody can see» is precisely the
+   * failure this table exists to prevent. The cost of the choice is that a
+   * failed insert rolls the sale back — acceptable, because these are plain
+   * inserts with no constraints beyond the FKs, so the only realistic failure
+   * is a database that could not have committed the sale either.
+   */
+  private async writeAuditEvents(
+    tx: Prisma.TransactionClient,
+    accountId: string,
+    sessionId: string,
+    employeeId: string,
+    events: ReadonlyArray<CashierAuditEventInput>,
+  ): Promise<void> {
+    if (events.length === 0) return;
+    await tx.cashierAuditEvent.createMany({
+      data: events.map((e) => ({
+        accountId,
+        sessionId,
+        employeeId,
+        type: e.type,
+        docId: e.docId,
+        payload: e.payload as Prisma.InputJsonValue,
+      })),
+    });
   }
 
   /**
