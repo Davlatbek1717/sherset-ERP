@@ -113,6 +113,8 @@ packages/design-system         — @moysklad/ui React primitivlar · packages/wo
 
 # SCRIPTS / TOOLS / QOLGANLAR
 scripts/preflight.mjs          — sessiya-boshi deterministik tekshiruv (SessionStart hook yugurtiradi)
+scripts/snapshot-staged.mjs    — pre-commit: stage ro'yxatini yozadi (§6.7 B)
+scripts/verify-commit-contents.mjs — post-commit: commit tarkibi stage bilan mos kelganini tekshiradi
 scripts/audit-module*.ts       — audit dvigateli · capture-moysklad-*.ts — MS reference capture
 scripts/wf-*.js                — workflow skriptlar (cohort-detail-audit, label-grounding-audit…)
 scripts/cert-*.mjs, ground-*.mjs, verify-* — bir-martalik sertifikatsiya/grounding skriptlar (graveyard)
@@ -141,3 +143,41 @@ Bir vaqtda bir nechta Claude sessiyasi ishlashi mumkin. Halaqit bermaslik qoidal
    alohida checkout, merge git orqali. Bir checkout'da faqat path-kesishmaydigan ishlar parallel yuradi.
 6. **Diff'ing path-cheklangan bo'lsin**; parallel sessiya ishini ko'rgan bo'lsang NEXT.md entry'ingda qayd et
    («parallel sessiya X qildi, diff'im path-cheklangan» uslubida).
+
+### 6.7 Git vositalari BUTUN daraxtda ishlaydi — ikki real hodisa (2026-08-02)
+
+Bir sessiyada ikki marta ish buzildi. Ikkalasining ham sababi bitta: `lint-staged` ham,
+`git reset --hard` ham **kim ishga tushirganidan qat'i nazar butun ish daraxtiga** ta'sir qiladi.
+§6.2 dagi «bir vaqtda commit qilmang» buni to'liq qoplamaydi.
+
+**A. `git reset --hard` / `fetch + reset` — BOSHQANING ishini o'chiradi. 🔴 ENG XAVFLISI.**
+Reflog: `HEAD@{1}: reset: moving to FETCH_HEAD`. Bu bir amal bilan (a) boshqa sessiyaning **commit
+qilinmagan** 7 fayldagi tahririni va (b) allaqachon qilingan **commit'ini** yo'q qildi. Faqat
+*untracked* yangi fayllar omon qoldi. Git'da `pre-reset` hook YO'Q — buni faqat qoida to'xtatadi:
+- **Umumiy checkout'da `reset --hard`, `checkout -- .`, `clean -fd`, `stash` — TAQIQ**, agar
+  daraxtda sen yaratmagan o'zgarish bo'lsa. Avval `git status --short` bilan ko'r.
+- Remote bilan sinxronlash kerak bo'lsa: `git pull --rebase` yoki `fetch` + **`merge`** ishlat;
+  `reset --hard FETCH_HEAD` faqat daraxt **toza** bo'lganda va o'z commit'ing yo'qolmasligi
+  tekshirilgandan keyin.
+- **Uzoq ishni commit qilinmagan holda ushlab turma** — bosqichma-bosqich commit qil («qatlam
+  qo'shildi» → «chaqiruvchilar ko'chirildi»). Bir soatlik tahrir bir `reset --hard` bilan ketadi.
+- Yo'qotish bo'lsa: `git reflog` sababni aniq ko'rsatadi. Commit qilinganini `git reset --hard <hash>`
+  yoki `cherry-pick` bilan tiklash mumkin; commit qilinmaganini — **yo'q**, qayta yozish kerak
+  (deterministik skript bilan: anchor topilmasa to'xtaydi, «jimgina yarim qo'llanish» bo'lmaydi).
+
+**B. `lint-staged` — BEGONA faylni sening commit'ingga qo'shadi.**
+`git add` faqat aniq yo'llar bilan qilingan edi (12 fayl), commit'ga 16 tasi tushdi: lint-staged
+butun daraxtni stash qilib tiklaganda parallel sessiyaning 4 fayli qo'shilib ketdi. Commit
+muvaffaqiyatli, testlar yashil, hech narsa shikoyat qilmaydi.
+- **Avtomat himoya qo'yilgan:** `pre-commit` → `scripts/snapshot-staged.mjs` (stage ro'yxatini
+  yozadi) va `post-commit` → `scripts/verify-commit-contents.mjs` (tarkib bilan solishtiradi,
+  farq bo'lsa baland ovozda ogohlantiradi va tuzatish buyruqlarini beradi). `post-commit` commit'ni
+  bekor qila olmaydi, lekin hali push qilinmagan — `reset --soft HEAD~1` bilan tuzatiladi.
+- Qayta commit'da **hook'larni bir martaga chetlab o't** (`git -c core.hooksPath=/dev/null commit`),
+  aks holda lint-staged yana qo'shadi. Bu holda gate'larni (typecheck/biome/test) **qo'lda to'liq**
+  yugurtir va commit xabarida shuni yoz.
+- Commit'dan **keyin** `git show --stat HEAD` bilan tarkibni ko'rish odat bo'lsin — `git add` ning
+  aniqligi kafolat emas.
+
+**Xulosa:** haqiqatan uzoq/mustaqil ish uchun §6.5 (worktree izolyatsiyasi) — bu ikki hodisaning
+ham yagona to'liq yechimi.

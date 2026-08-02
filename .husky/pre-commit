@@ -1,4 +1,8 @@
 #!/usr/bin/env sh
 set -e
+# Stage qilingan ro'yxatni lint-staged'DAN OLDIN yozib qo'yamiz — post-commit
+# hook shu bilan solishtiradi (CLAUDE.md §6.7: lint-staged parallel sessiya
+# fayllarini commit'ga qo'shib yuborishi mumkin). Yiqilsa commit to'xtamaydi.
+node scripts/snapshot-staged.mjs || true
 npx lint-staged
 pnpm -s progress > /dev/null 2>&1 && git add docs/progress.json || echo "⚠️  progress hook skipped (pnpm progress failed — commit allowed but progress.json may be stale)"

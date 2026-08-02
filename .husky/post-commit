@@ -1,0 +1,5 @@
+#!/usr/bin/env sh
+# Commit tarkibi stage qilinganiga mos keldimi? (CLAUDE.md §6.7)
+# post-commit commit'ni bekor qila olmaydi — faqat ogohlantiradi. Bu yetarli,
+# chunki hali push qilinmagan va `reset --soft` bilan tuzatiladi.
+node scripts/verify-commit-contents.mjs || true
