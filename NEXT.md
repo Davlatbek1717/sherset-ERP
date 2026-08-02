@@ -305,6 +305,57 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-02e (PHASE-2 QA — to'lqin 1.1 + 1.2 BRAUZERDA TEKSHIRILDI · `23fdd3e`)**
+>
+> **Bu — 1.1/1.2 ning «browser-QA yo'q» qarzini yopgan sessiya.** Playwright MCP, lokal stack,
+> **haqiqiy chek o'tkazildi** va natija bazada tekshirildi. Kirish uchun lokal `climart_adopt`
+> sxema drift'i yopildi (30 bayonot, **DROP yo'q** — additiv; `smenas`/`shift_schedules`/
+> `sklad_keepers`/`restock_tasks` va `cashier_sessions.smena_id` yetishmasdi, ularsiz `/sotuv`
+> smena ocholmasdi). QA ma'lumoti ataylab **uchta narx holatini** qopladi: optomli tovar ·
+> tan narxsiz tovar · tan narxi **haqiqatan nol** tovar.
+>
+> **✅ TASDIQLANGAN (ekranda ko'rildi — «Phase-2 verified»):**
+> savat qatori TZ §5.2 ko'rinishida (`Qolgan · Tan · Min` + jonli foyda/%) · narx optomdan past →
+> sariq, tan narxdan past → qizil **«ZARAR»** va sotuv **bloklanmaydi** (Q16) · **NULL ≠ 0 jonli**:
+> tan narxsiz tovar «Tan: —»/«Foyda: —», tan narxi nol tovar «Tan: 0,00»/«100%» · bironta qatorda
+> tan narx bo'lmasa **jami umuman ko'rsatilmaydi** · `post()` muzlatishi bazada
+> (`cost=2 480 000`, `base=3 600 000`; tekin tovarda `cost=0`, NULL emas) · hisobot muzlatilgan tan
+> narxni o'qiydi va zararni zarar deb ko'rsatadi (−3 200) · «tan narx yig'ilmagan» banneri va
+> qatordagi «*» ishlaydi, **haqiqiy nol tan narxda «*» YO'Q** (farq hisobotda ham ko'rinadi).
+>
+> **🔴 TOPILGAN VA TUZATILGAN (4 ta — hammasi jonli topildi, statik tahlil ko'rmagan edi):**
+> 1. **Eng jiddiysi — savat/chek nomuvofiqligi.** «Tayyor» chek savatga tortilganda **saqlangan
+>    chegirma tiklanmasdi**: savat «29 000», to'lov oynasi va chek esa «26 100»; savat foydasi
+>    «+4 200» derdi, hisobot esa aynan o'sha chek uchun to'g'ri «+1 300». *Kassir pul olayotgan
+>    ondagi foyda raqami noto'g'ri edi.* Endi chegirma tiklanadi va mavjud chek to'lanayotganda
+>    foyda asosi — serverning `sumMinor`i (qayta hisoblangan jami emas: tiyin farqi bo'lardi).
+> 2. **Foiz nuqta, pul vergul bilan** chiqardi: «-800,00 сум (**-3.3%**)» — bir gapda ikki ajratgich.
+>    Yangi `formatPercent` (`@moysklad/money`) pul formatiga ergashadi.
+> 3. **Foiz yaxlitlanmay KESILARDI** (BigInt bo'lish): 4,98% → «4.9%», 14,48% → «14.4%». Xato bir
+>    yo'nalishda — foydani qirqib, zararni chiroyliroq ko'rsatardi; egasi shu raqamga qarab narx
+>    belgilaydi. Endi noldan uzoqqa yaxlitlanadi.
+> 4. **Hisobotning JAMI qatorida «*» yo'q edi** (qatorlarda bor edi) — 02d hand-off'i «jamida ham
+>    bor» degan, aslida yo'q edi (§2: da'vo tekshirildi). Jamidagi tan narx to'liq yig'ilgandek
+>    ko'rinardi; odam avval jami qatorga qaraydi.
+>
+> **Har tuzatish o'sha brauzerda QAYTA tekshirildi:** savat 32 400 = to'lov oynasi 32 400 ·
+> «−10% chegirma» tiklandi · foyda +7 600 (haqiqiy) · foizlar «23,5%»/«31,1%» · jami qatorda «*»
+> va tooltip. **Dalil:** live browser smoke 12/12 · +18 test green (money 88→92, web 2636→2650).
+>
+> **Gate:** biome 0 · i18n ru+uz 9 · money 92 · web 2650 · api (retail-sale + profitability) 151.
+> ⚠️ **Typecheck:** mening fayllarimda 0; daraxtda 3 xato bor, lekin ular **parallel sessiyaning**
+> shu daqiqada yozayotgan `haydovchi/page.tsx` + `driver-ping-buffer.ts` fayllarida (§6.1 — tegilmadi,
+> stage qilinmadi; ularning `messages/{ru,uz}.json` va `hr-api.ts` o'zgarishlari ham tegilmadi).
+>
+> **⏭️ KEYINGI ISH = To'lqin 1.3 `CashierAuditEvent`** — zararga sotuv hodisasi (Q16) hozir HECH
+> QAYERGA yozilmaydi: savat «ZARAR» deb ogohlantiradi, sotuvga ruxsat beradi, lekin iz qolmaydi.
+> «Erkinlik + nazorat» modelining nazorat yarmi shu. Keyin 1.4 `report/metrics/`.
+>
+> **Ochiq (bu sessiyada tuzatilmadi):** (a) hisobotda tan narxsiz qator foydasi baribir aniq raqam
+> sifatida ko'rsatiladi («100%»), faqat «*» bilan belgilanadi — 02d ning ataylab qarori, lekin egasi
+> uchun chalg'itishi mumkin; (b) grafikda chakana YO'Q (02d topgan, tuzatilmagan); (c) `costMinor`
+> valyutasi hisobga olinmaydi (repo bo'ylab shunday).
+
 > **🕒 2026-08-02d (TO'LQIN 1.2 — «Прибыльность» tan narx yolg'oni yopildi · `6adc495`)**
 >
 > **Bajarildi (master-roadmap To'lqin 1.2, analitika TZ §B2):** hisobot har kassa chekini **100% marja**
