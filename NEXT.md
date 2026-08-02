@@ -305,6 +305,61 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-02h (TO'LQIN 1.4 — yagona formulalar qatlami · `bbf7af5` + `0c36680`)**
+>
+> **Analitika TZ §4/X4: «har hisobot o'z formulasini yozmaydi».** Taxminiy qatlam qurilmadi —
+> avval takrorlanish **o'lchandi**, va topilgani kutilganidan yomonroq chiqdi. Hisobot modulida bir
+> xil savolning **yetti joyda** alohida javobi bor edi:
+> `profitability pct()` · `pnl` · `unit-economics` (×2) · `purchase-management` ·
+> `abc-analysis` (×2) · `returns-ratio` (×2) · `dashboard`.
+> **Uch xil xulq:** bitta nisbat qaysi ekranni ochishingizga qarab **30.65 % / 30.6 % / 31 %** bo'lib
+> chiqardi. Beshtasi BigInt'ni `Number()` orqali bo'lardi — 2^53 tiyindan (~900 mlrd so'm) katta
+> yig'indida aniqlik jimgina yo'qoladi; yillik agregat shunga yetadi.
+>
+> **Yechim ikki qavat:**
+> · `@moysklad/money` → **`percentScaled(numer, denom, decimals)`** — yagona bo'linish: to'liq
+>   BigInt, noldan uzoqqa yaxlitlash, maxraj nol bo'lsa `null` («o'lchab bo'lmadi» ≠ «nol»).
+>   **POS savati ham shundan o'qiydi** — kassir ko'rgan marja bilan egasi ko'rgan marja bir bo'lsin.
+> · **`apps/api/src/modules/report/metrics/`** — hisobotga qaragan qatlam: `percent` · `percentText`
+>   (bo'sh-satr shartnomasi saqlandi) · `grossProfitMinor` · `marginPercentText` (÷ tushum) va
+>   `markupPercentText` (÷ tan narx — **ikkalasi ham «marja» deyiladi**, shuning uchun ikki nom) ·
+>   `averageCheckMinor` · `returnRatePercent(Text)`.
+>
+> Yettala joy ham ko'chirildi. **Sirtga xos ko'rsatish saqlandi** (dashboard butun son, qolganlari
+> 2 xona, returns-ratio 1000 % cheklovi) — ya'ni bitta **bo'linish**, sirt bo'yicha turli
+> **ko'rsatish**, har sirtda o'z bo'linishi EMAS. `abc-analysis`da sinf chegarasi endi
+> KO'RSATILADIGAN ulushdan hisoblanadi (ko'rgan raqami bilan sinfi mos keladi).
+>
+> **Qo'riqchi `no-adhoc-percent.test.ts`** (source-scan): `Number()/Number()`, `*100).toFixed(`,
+> `*10000n)/` shakllari va foiz ishlatib `metrics/` dan import qilmaydigan fayllar.
+> **Mutatsiya bilan sinaldi** — `aging.service.ts` ga qo'lda formula qo'shilganda 2 test yiqildi.
+> Bu buzilishni na typecheck, na testlar tutadi: sakkizinchi implementatsiya mukammal
+> kompilyatsiya bo'lardi. *(Qo'riqchining o'zi men ko'rmagan 4 joyni topdi — dastlab 3 tasini
+> ko'chirgandim.)*
+>
+> **Gate:** typecheck 0 · biome 0 · **api 4349** (+21) · money 92 · hisobot **290/290** — chiqish
+> shartnomalari o'zgarmadi.
+>
+> **⚠️ Phase-1: brauzerda ko'rilmagan.** Formatlar testlar bilan qulflangan, lekin ekranda
+> solishtirilmagan. **Deploy qilinmagan** (1.3 ham).
+>
+> **🔴 SESSIYADA YO'QOTISH BO'LDI (hujjatlanadi):** ish ikki commitga bo'lingan, chunki birinchi
+> urinishdagi **7 servis tahriri va `packages/money` o'zgarishlari yo'qoldi** — parallel sessiya
+> `git reset --hard FETCH_HEAD` qilgan (reflog: `HEAD@{1} reset: moving to FETCH_HEAD`), bu mening
+> commit qilinmagan ishimni ham, `3280acb` commit'imni ham o'chirib yubordi. Faqat **untracked**
+> yangi fayllar (`metrics/`) omon qoldi. Qayta qo'llash deterministik skript bilan qilindi.
+> **Saboq (§6.2 ga qo'shimcha):** parallel sessiya faol bo'lsa (a) uzoq ishni commit qilinmagan
+> holda ushlab turmang — bosqichma-bosqich commit qiling; (b) `git add` dan keyin commit'ni
+> **kechiktirmang**; (c) commit'dan keyin `git show --stat` bilan tarkibni tekshiring.
+> *(Bir sessiyada ikkinchi hodisa: oldin lint-staged begona fayllarni QO'SHGAN edi, endi reset
+> meniknini O'CHIRDI.)*
+>
+> **⏭️ KEYINGI ISH = To'lqin 2.1 `Branch` modeli** (master-roadmap 2-to'lqin): filial modeli +
+> migratsiya + `branchId` muhrlash. **Hozir arzon, keyin qimmat** — keyinroq har hujjatni orqaga
+> backfill qilish kerak bo'ladi. Keyin 2.2 `skladNo → StoreZone`.
+> **Yoki avval deploy:** 1.3 + 1.4 prod'da yo'q; 1.4 da migratsiya yo'q, 1.3 da bor
+> (`20260802140000_cashier_audit_events`).
+
 > **🕒 2026-08-02f (TO'LQIN 1.3 — kassir audit jurnali · `d35efab`)**
 >
 > **Nima uchun:** kassir narxni istagancha qo'yadi, tan narxdan past sotadi, chekni bekor qiladi va
