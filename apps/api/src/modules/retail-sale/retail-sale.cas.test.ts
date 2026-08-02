@@ -319,8 +319,12 @@ describe('RetailSaleService.cancel — CAS state guard', () => {
       state: string;
     };
     expect(result.state).toBe('cancelled');
+    // 2026-08-02: qo'riqchi `state: 'draft'` dan FSM jadvalidagi ruxsat etilgan
+    // holatlar ro'yxatiga kengaydi (`picking`/`ready` cheklar ham bekor
+    // qilinadi — TZ §4). Bu yerdagi eski qat'iy tenglik aynan o'sha tor
+    // qo'riqchini qulflab turgan edi.
     expect(client.retailSale.updateMany).toHaveBeenCalledWith({
-      where: { id: SALE_ID, accountId: ACCOUNT, state: 'draft' },
+      where: { id: SALE_ID, accountId: ACCOUNT, state: { in: ['draft', 'picking', 'ready'] } },
       data: { state: 'cancelled' },
     });
   });

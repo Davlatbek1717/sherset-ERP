@@ -29,6 +29,9 @@ import { computeRetailPayment } from './retail-payment.js';
 // schema's documented "subset of original positions" contract that
 // refund() never checked: blocks over-refund of qty/products/cash).
 import { validateRefundAmount, validateRefundPositions } from './retail-refund-validation.js';
+// Yagona FSM o'tish jadvali — oldindan tekshiruv va tranzaksiya ichidagi CAS
+// qo'riqchisi bir manbadan oziqlanadi (ajralib qolsa qo'riqchi tor/keng bo'ladi).
+import { allowedFrom, canTransition, transitionRejection } from './retail-sale-fsm.js';
 import {
   CreateRetailSaleSchema,
   PostRetailSaleSchema,
@@ -40,9 +43,10 @@ import {
 /**
  * RetailSaleService — POS receipt CRUD + FSM.
  *
- * FSM rules:
- *   draft → posted (via post())       — session must be open; payment >= sumMinor
- *   draft → cancelled (via cancel())  — no payment taken
+ * FSM rules (yagona jadval: `./retail-sale-fsm.ts`):
+ *   draft → picking → ready           — omborchi zanjiri (send-to-picking / mark-ready)
+ *   draft | ready → posted (post())   — session must be open; payment >= sumMinor
+ *   draft | picking | ready → cancelled (cancel()) — no payment taken
  *   posted → refunded                 — creates a mirror RetailSale (negative)
  *
  * V1 deferred:
@@ -514,8 +518,11 @@ export class RetailSaleService {
       },
     });
     if (!sale) throw new NotFoundException(`RetailSale ${id} not found`);
-    if (sale.state !== 'draft') {
-      throw new BadRequestException(`Only draft sales can be posted (current: ${sale.state})`);
+    // `ready` ham to'lanadi: omborchi yig'ib bo'lgan chek kassirga shu holatda
+    // keladi (`sotuv/page.tsx` «Tayyor» ro'yxati → to'lov oynasi). Ilgari bu
+    // yerda `!== 'draft'` turardi — butun yig'ish zanjiri to'lovda berkilardi.
+    if (!canTransition(sale.state, 'post')) {
+      throw new BadRequestException(transitionRejection(sale.state, 'post'));
     }
     if (sale.session.state !== 'open') {
       throw new BadRequestException(`Session is ${sale.session.state}. Cannot post sale.`);
@@ -555,13 +562,15 @@ export class RetailSaleService {
     const allowNegative = sale.session.store.allowNegativeStock;
 
     const posted = await this.prisma.client.$transaction(async (tx) => {
-      // Atomic state guard: only 'draft' → 'posted'. Two concurrent posts on the
-      // same draft would otherwise both succeed (both reads see 'draft', both
-      // updates flip 'posted' → 'posted' as no-op) — but the cash inflow,
-      // session aggregates, and stock decrement would fire twice. updateMany
-      // returns count=0 when the row state has already moved.
+      // Atomic state guard: only a postable state ('draft' | 'ready') → 'posted'.
+      // Two concurrent posts on the same receipt would otherwise both succeed
+      // (both reads see the pre-state, both updates flip 'posted' → 'posted' as
+      // a no-op) — but the cash inflow, session aggregates, and stock decrement
+      // would fire twice. updateMany returns count=0 when the row state has
+      // already moved. The IN-list comes from the same FSM table as the
+      // pre-check above, so the guard can't drift narrower/wider than it.
       const flipResult = await tx.retailSale.updateMany({
-        where: { id, accountId, state: 'draft' },
+        where: { id, accountId, state: { in: [...allowedFrom('post')] } },
         data: {
           state: 'posted',
           postedAt: new Date(),
@@ -654,16 +663,19 @@ export class RetailSaleService {
       select: { id: true, state: true },
     });
     if (!sale) throw new NotFoundException(`RetailSale ${id} not found`);
-    if (sale.state !== 'draft') {
-      throw new BadRequestException(`Only draft sales can be cancelled (current: ${sale.state})`);
+    // Yig'ilayotgan (`picking`) va yig'ilgan (`ready`) cheklar ham bekor
+    // qilinadi — TZ §4 diagrammasi. Ilgari `!== 'draft'` edi: mijoz ketib
+    // qolsa chek hech qachon yopilmasdi (post ham, cancel ham rad etardi).
+    if (!canTransition(sale.state, 'cancel')) {
+      throw new BadRequestException(transitionRejection(sale.state, 'cancel'));
     }
 
-    // Atomic state guard: 'draft' → 'cancelled'. Without this, a cancel that
-    // races with a post() would silently overwrite 'posted' to 'cancelled'
-    // while the cashDesk inflow and session aggregates remain — leaving money
-    // in the till against a cancelled receipt.
+    // Atomic state guard: pre-posted holatlardan → 'cancelled'. Without this, a
+    // cancel that races with a post() would silently overwrite 'posted' to
+    // 'cancelled' while the cashDesk inflow and session aggregates remain —
+    // leaving money in the till against a cancelled receipt.
     const flipResult = await this.prisma.client.retailSale.updateMany({
-      where: { id, accountId, state: 'draft' },
+      where: { id, accountId, state: { in: [...allowedFrom('cancel')] } },
       data: { state: 'cancelled' },
     });
     if (flipResult.count === 0) {
@@ -671,6 +683,32 @@ export class RetailSaleService {
         `RetailSale ${id} state changed; cancel aborted (already posted?)`,
       );
     }
+
+    // Omborchining ochiq yig'ish topshiriqlari yopiladi — aks holda bekor
+    // qilingan chekning vazifasi panelda «pending» bo'lib qolardi va omborchi
+    // yo'q sotuv uchun tovar yig'ib yurardi. `done` EMAS ('yig'ib bo'lindi'
+    // degan yolg'on bo'lardi) — alohida `cancelled` holat.
+    // Best-effort: chek allaqachon bekor qilingan, topshiriq tozalashdagi
+    // xato uni orqaga qaytarmasligi kerak.
+    if (sale.state === 'picking' || sale.state === 'ready') {
+      await this.prisma.client.restockTask
+        .updateMany({
+          where: {
+            accountId,
+            sourceId: id,
+            sourceType: 'retailsale',
+            type: 'picking',
+            status: { notIn: ['done', 'cancelled'] },
+          },
+          data: { status: 'cancelled' },
+        })
+        .catch((e) => {
+          this.logger.error(
+            `cancel[${id}]: picking-task cleanup failed: ${e instanceof Error ? e.message : e}`,
+          );
+        });
+    }
+
     return this.prisma.client.retailSale.findUniqueOrThrow({ where: { id, accountId } });
   }
 
@@ -956,13 +994,11 @@ export class RetailSaleService {
       select: { id: true, state: true },
     });
     if (!sale) throw new NotFoundException(`RetailSale ${id} not found`);
-    if (sale.state !== 'draft') {
-      throw new BadRequestException(
-        `Only draft sales can be sent to picking (current: ${sale.state})`,
-      );
+    if (!canTransition(sale.state, 'send-to-picking')) {
+      throw new BadRequestException(transitionRejection(sale.state, 'send-to-picking'));
     }
     const result = await this.prisma.client.retailSale.updateMany({
-      where: { id, accountId, state: 'draft' },
+      where: { id, accountId, state: { in: [...allowedFrom('send-to-picking')] } },
       data: { state: 'picking' },
     });
     if (result.count === 0) {
@@ -1107,10 +1143,8 @@ export class RetailSaleService {
       select: { id: true, state: true },
     });
     if (!sale) throw new NotFoundException(`RetailSale ${id} not found`);
-    if (sale.state !== 'picking') {
-      throw new BadRequestException(
-        `Only picking sales can be marked ready (current: ${sale.state})`,
-      );
+    if (!canTransition(sale.state, 'mark-ready')) {
+      throw new BadRequestException(transitionRejection(sale.state, 'mark-ready'));
     }
 
     // Does THIS omborchi own a picking task for this sale?
@@ -1133,7 +1167,7 @@ export class RetailSaleService {
           sourceType: 'retailsale',
           type: 'picking',
           assigneeId: userId,
-          status: { not: 'done' },
+          status: { notIn: ['done', 'cancelled'] },
         },
         data: { status: 'done' },
       });
@@ -1145,7 +1179,7 @@ export class RetailSaleService {
           sourceId: id,
           sourceType: 'retailsale',
           type: 'picking',
-          status: { not: 'done' },
+          status: { notIn: ['done', 'cancelled'] },
         },
         data: { status: 'done' },
       });
@@ -1159,7 +1193,7 @@ export class RetailSaleService {
         sourceId: id,
         sourceType: 'retailsale',
         type: 'picking',
-        status: { not: 'done' },
+        status: { notIn: ['done', 'cancelled'] },
       },
     });
     if (remaining > 0) {

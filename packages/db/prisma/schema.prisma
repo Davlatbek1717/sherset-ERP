@@ -1013,7 +1013,9 @@ model RestockTask {
   // The cashier / employee who sent it.
   createdById   String   @map("created_by_id") @db.Uuid
   createdByName String?  @map("created_by_name") @db.VarChar(255)
-  // pending | in_progress | done
+  // pending | in_progress | done | cancelled
+  // 'cancelled' — manba hujjat bekor qilinganda (RetailSale cancel'i ochiq
+  // yig'ish topshiriqlarini shunga o'tkazadi; 'done' yolg'on bo'lardi).
   status        String   @default("pending") @db.VarChar(20)
   note          String?
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz()

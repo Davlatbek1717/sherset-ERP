@@ -7638,7 +7638,10 @@
       "customer_dokon": "Магазин",
       "customer_not_selected": "Не выбран",
       "customer_select": "Выбрать клиента",
-      "confirm_sotuv": "Подтвердить продажу"
+      "confirm_sotuv": "Подтвердить продажу",
+      "cancel_sale": "Отменить",
+      "cancel_sale_confirm": "Отменить чек «{name}»?",
+      "cancel_sale_success": "Чек отменён"
     },
     "report_warehouse_ops": {
       "title": "Складские операции",

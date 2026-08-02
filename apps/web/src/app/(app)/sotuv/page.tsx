@@ -1,6 +1,7 @@
 'use client';
 
 import { RasmiyashtirishModal } from '@/components/pos/rasmilashtirish-modal';
+import { useDestructiveMutation } from '@/hooks/use-destructive-mutation';
 import { useFillViewport } from '@/hooks/use-fill-viewport';
 import { api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-store';
@@ -513,6 +514,7 @@ function SalesScreen({ session }: { session: CurrentSession }) {
   const qc = useQueryClient();
   const { user } = useAuth();
   const { toast } = useToast();
+  const { runDestructive } = useDestructiveMutation();
 
   // Cost price («Kelgan») is owner-only — the cashier sees stock + sale price
   // but never margin. Admin role bypasses (hr-permission.guard parity).
@@ -849,6 +851,26 @@ function SalesScreen({ session }: { session: CurrentSession }) {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  // Yig'ilayotgan / yig'ilgan chekni bekor qilish (mijoz ketib qolsa).
+  // Backend `cancel` 2026-08-02 dan `picking`/`ready` ni ham qabul qiladi va
+  // omborchining ochiq yig'ish topshiriqlarini yopadi — usiz bunday chek na
+  // to'lanardi, na bekor qilinardi (abadiy osilib qolardi).
+  const cancelSale = useCallback(
+    async (saleId: string, saleName: string) => {
+      const ok = await runDestructive({
+        title: t('cancel_sale_confirm', { name: saleName }),
+        confirmLabel: t('cancel_sale'),
+        successMessage: t('cancel_sale_success'),
+        run: () => api.post(`/retail-sales/${saleId}/cancel`, {}),
+      });
+      if (ok) {
+        qc.invalidateQueries({ queryKey: ['retail-sales-ready', session.id] });
+        qc.invalidateQueries({ queryKey: ['retail-sales-picking', session.id] });
+      }
+    },
+    [runDestructive, qc, session.id, t],
+  );
+
   // Step 2: Pay a ready sale (after omborchi marks tayyor)
   const payReadySaleMut = useMutation({
     mutationFn: async (payment: {
@@ -1135,6 +1157,13 @@ function SalesScreen({ session }: { session: CurrentSession }) {
                           <span className="shrink-0 rounded-full bg-amber-200 px-2 py-0.5 text-[10px] font-medium text-amber-800">
                             Omborchi yig'moqda
                           </span>
+                          <button
+                            type="button"
+                            onClick={() => cancelSale(s.id, s.name)}
+                            className="flex h-8 shrink-0 items-center rounded-lg border border-amber-300 px-3 text-xs font-semibold text-amber-800 transition-all hover:bg-amber-100 active:scale-95"
+                          >
+                            {t('cancel_sale')}
+                          </button>
                         </div>
                       ))}
                     </div>
@@ -1174,6 +1203,13 @@ function SalesScreen({ session }: { session: CurrentSession }) {
                         {formatMoney(BigInt(s.sumMinor))}
                       </div>
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => cancelSale(s.id, s.name)}
+                      className="flex h-9 shrink-0 items-center rounded-lg border border-emerald-300 px-3 text-xs font-semibold text-emerald-800 transition-all hover:bg-emerald-100 active:scale-95"
+                    >
+                      {t('cancel_sale')}
+                    </button>
                     <button
                       type="button"
                       onClick={() => loadReadyToCart(s.id)}

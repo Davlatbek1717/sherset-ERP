@@ -7638,7 +7638,10 @@
       "customer_dokon": "Do'kon",
       "customer_not_selected": "Tanlanmagan",
       "customer_select": "Mijozni tanlash",
-      "confirm_sotuv": "Sotishni tasdiqlash"
+      "confirm_sotuv": "Sotishni tasdiqlash",
+      "cancel_sale": "Bekor qilish",
+      "cancel_sale_confirm": "«{name}» chekini bekor qilasizmi?",
+      "cancel_sale_success": "Chek bekor qilindi"
     },
     "report_warehouse_ops": {
       "title": "Ombor operatsiyalari",

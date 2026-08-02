@@ -22,7 +22,11 @@ const boolFromString = z
   .transform((v) => (typeof v === 'boolean' ? v : v === 'true'));
 
 export const RestockTaskFilterSchema = z.object({
-  status: z.enum(['pending', 'in_progress', 'done']).optional(),
+  // 'cancelled' — manba hujjat bekor qilinganda yopiladi (masalan kassir
+  // yig'ilayotgan chekni bekor qilsa): omborchi yo'q sotuv uchun tovar
+  // yig'masligi kerak, lekin 'done' deb belgilash «yig'ib bo'lindi» degan
+  // yolg'on bo'lardi.
+  status: z.enum(['pending', 'in_progress', 'done', 'cancelled']).optional(),
   /** 'restock' (inbound, default view) or 'picking' (outbound) — omit = all. */
   type: z.enum(['restock', 'picking']).optional(),
   /** Filter to one source document (e.g. all picking tasks of one order). */
