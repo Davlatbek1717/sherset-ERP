@@ -305,6 +305,63 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-02b (To'lqin 0 QOLDIG'I — yig'ilgan chek to'lanadi va bekor qilinadi · `2011424`)**
+>
+> **Nima topildi:** 02a To'lqin 0.1 bilan POS'ning «Yig'ilmoqda»/«Tayyor» ro'yxatlarini ochdi
+> (enum'ga `picking`+`ready`), lekin zanjirning **OXIRI berk qolgan edi** — ro'yxatlar to'ldi-yu,
+> ular bilan hech nima qilib bo'lmasdi:
+> - `post()` (`retail-sale.service.ts`) faqat `draft` ni qabul qilardi → omborchi yig'ib «tayyor»
+>   bosgach kassirning «💳 To'lov» tugmasi (`sotuv/page.tsx` «Tayyor» ro'yxati →
+>   `POST /retail-sales/:id/post`) **400** qaytarardi. **Butun yig'ish oqimi to'lovda o'lardi.**
+> - `cancel()` ham faqat `draft` → `picking`/`ready` dagi chek **abadiy osilib qolardi**
+>   (na to'lanadi, na bekor qilinadi). Mijoz ketib qolsa kassirda chiqish yo'li yo'q edi.
+> - Sxema izohi (`retail-sale.schema.ts`) va TZ §4 diagrammasi ikkalasi ham
+>   `ready ──post──► posted` va `draft|picking|ready → cancelled` deb yozilgan edi — ya'ni
+>   **hujjat to'g'ri, kod orqada** edi.
+>
+> **Fix (`2011424`):** FSM jadvali bitta manbaga chiqarildi — **`retail-sale-fsm.ts`**
+> (`post ← draft|ready` · `cancel ← draft|picking|ready` · `send-to-picking ← draft` ·
+> `mark-ready ← picking`). `picking` dan to'lov **ATAYLAB yo'q**: tovar hali yig'ilmagan, kassir
+> pul olmasligi kerak. Oldindan tekshiruv ham, tranzaksiya ichidagi **CAS qo'riqchisi**
+> (`updateMany WHERE state IN (...)`) ham shu jadvaldan oziqlanadi — ajralib qolsa qo'riqchi yo
+> tor (haqiqiy o'tish 409) yo keng (poyga o'tib ketadi) bo'lardi.
+> **Bekor qilishda** omborchining ochiq yig'ish topshiriqlari yopiladi (`RestockTask.status`
+> yangi qiymati **`cancelled`** — `done` EMAS, u «yig'ib bo'lindi» degan yolg'on bo'lardi);
+> `markReady` hisoblagichlari `notIn: ['done','cancelled']` ga o'tdi. **Ustunlar VarChar —
+> MIGRATSIYA KERAK EMAS** (Prisma izohi + Zod filtr enum'i yangilandi).
+> **POS'da «Bekor qilish» tugmasi** qo'shildi (Jarayonda + Tayyor ro'yxatlari),
+> `useDestructiveMutation` tasdig'i bilan; `pages.sotuv` ru+uz kalitlari.
+>
+> **Testlar +14** (`retail-sale-fsm.test.ts`): o'tish jadvali · **enum↔FSM drift qo'riqchisi** ·
+> ready to'lovi · CAS kengligi · picking to'lanmasligi · uchala holatdan bekor · topshiriq
+> tozalash. `retail-sale.cas.test.ts` dagi eski `state: 'draft'` qat'iy da'vosi yangilandi —
+> **aynan o'sha tor qo'riqchini qulflab turgan edi** (test bug'ni himoya qilayotgan edi).
+> **Gate:** typecheck 0 · biome 0 · i18n key-existence ru+uz + no-hardcoded · **api 4285** ·
+> **web 2628** (regress yo'q).
+>
+> ⚠️ **Phase-1: strukturaviy, runtime-tasdiqlanmagan — BROWSER-SMOKE YO'Q.** Servis testlari
+> Prisma mock'i bilan; real HTTP round-trip va POS ekrani tekshirilmagan. Phase-2 QA'da:
+> savat → «Rasmiylashtirish» → omborchi «tayyor» → kassir «To'lov» (200 kutiladi) va
+> «Bekor qilish» (chek yo'qoladi, omborchi topshirig'i `cancelled`).
+>
+> 🔴 **SHU SESSIYADA TOPILGAN, TUZATILMAGAN (kattaligi sabab alohida ish):**
+> 1. **Terminal va qarz to'lovi BUTUNLAY ishlamaydi.** `rasmilashtirish-modal.tsx` kassirdan
+>    `terminalAmountMinor` + `debtAmountMinor` yig'adi va `sotuv/page.tsx:865-866` ularni
+>    yuboradi, LEKIN `PostRetailSaleSchema` da bunday maydonlar YO'Q → Zod ularni **jimgina
+>    tashlab yuboradi**, `RetailSale` da ham bunday ustun yo'q (`noCashSumMinor`/`qrSumMinor`
+>    bor, boshqa semantika). Natija: terminal bilan to'liq to'langan chek serverda
+>    `cash=0, card=0` bo'lib **400 «Payment insufficient»** oladi. Chek shabloni
+>    (`print-agent.ts:385`) ham API qaytarmaydigan `sale.terminalAmountMinor` ni o'qiydi.
+>    Bu = **To'lqin 3.1 (aralash to'lov, `RetailSalePayment`)** — kassa TZ §6. Bitta flagship.
+> 2. **`expectedSumMinor` qabul qilinadi-yu, HECH QAYERDA solishtirilmaydi.** Sxema izohi
+>    «server revalidates against DB sum» deydi — bu **yolg'on**, `post()` da taqqoslash yo'q
+>    (grep bilan tasdiqlandi: faqat testlarda va sxemada uchraydi). Server o'z `sumMinor` ini
+>    ishlatgani uchun pul yo'qolmaydi, lekin klientning kutgan summasi e'tiborsiz qoladi —
+>    mayda ish (taqqoslash + 409) yoki izohni halol qilish.
+>
+> **▶️ KEYINGI ISH o'zgarmadi: To'lqin 1.1** (`costMinor`/`basePriceMinor` muzlatish + savat
+> qatorida tan narx/optom/foyda) — pastdagi 02a entry'sida to'liq brief bor.
+
 > **🕒 2026-08-02a (EGASINING 8-BO'LIMLI TZ'si YOZILDI + To'lqin 0 bajarildi `f6cc310`)**
 >
 > **Bu sessiya nima qildi:** egasi butun tizim strukturasini bo'lim-bo'lim tushuntirdi; har bo'lim
