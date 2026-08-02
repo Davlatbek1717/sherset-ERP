@@ -7687,6 +7687,23 @@ model RetailSalePosition {
   discount     Decimal @default(0) @db.Decimal(5, 2)
   sumMinor     BigInt  @map("sum_minor")
 
+  // ── Frozen price snapshot (written once, at post() — kassa TZ §5.3) ────────
+  // Why frozen and not read live: the product card's buyPrice / sale prices are
+  // edited over time. A profit report re-derived from TODAY's product card would
+  // silently rewrite LAST MONTH's numbers. These two columns pin the figures the
+  // receipt was actually sold against.
+  //   costMinor      = Product.buyPrice at the moment of post()
+  //   basePriceMinor = the default («Розничная цена») tier at the moment of post()
+  // NULL is meaningful and NOT the same as 0: it means "never collected" — either
+  // the receipt predates this migration, or the product had no such price. Cost
+  // reports must render NULL as «tan narx yig'ilmagan», never as zero cost (that
+  // is exactly the 100%-margin lie profitability.service currently tells).
+  // Currency: the raw as-entered minor value, consistent with
+  // Product.buyPriceCurrency / salePrices[].currencyCode — app-wide multi-currency
+  // cost math is future work (see the note on Product.buyPriceCurrency).
+  costMinor      BigInt? @map("cost_minor")
+  basePriceMinor BigInt? @map("base_price_minor")
+
   account    Account    @relation(fields: [accountId], references: [id], onDelete: Cascade)
   retailSale RetailSale @relation(fields: [retailSaleId], references: [id], onDelete: Cascade)
   product    Product?   @relation("RetailSalePositionProduct", fields: [productId], references: [id], onDelete: Restrict)

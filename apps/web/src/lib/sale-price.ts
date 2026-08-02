@@ -51,6 +51,26 @@ export function resolveDefaultSalePriceOrZero(
   return resolveDefaultSalePrice(salePrices, defaultPriceTypeId) ?? '0';
 }
 
+/**
+ * Resolve the WHOLESALE («Оптовая цена») tier — the negotiated floor the POS
+ * cart warns below (kassa TZ §5.1). Matches the real wholesale PriceType id
+ * (when known) → the legacy 'wholesale' sentinel. Unlike the retail resolver
+ * there is deliberately NO "first listed price" fallback: guessing here would
+ * invent a floor out of the retail price and paint every normal sale yellow.
+ * Returns null when the product has no wholesale tier.
+ */
+export function resolveWholesaleSalePrice(
+  salePrices: SalePricesLike,
+  wholesalePriceTypeId?: string | null,
+): string | null {
+  const list = salePrices ?? [];
+  if (list.length === 0) return null;
+  const chosen =
+    (wholesalePriceTypeId ? list.find((p) => p.priceTypeId === wholesalePriceTypeId) : undefined) ??
+    list.find((p) => p.priceTypeId === WHOLESALE_SENTINEL);
+  return chosen?.value ?? null;
+}
+
 interface PriceTypeLite {
   id: string;
   name: string;

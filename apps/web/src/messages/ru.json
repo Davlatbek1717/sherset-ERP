@@ -7638,7 +7638,17 @@
       "customer_dokon": "Магазин",
       "customer_not_selected": "Не выбран",
       "customer_select": "Выбрать клиента",
-      "confirm_sotuv": "Подтвердить продажу"
+      "confirm_sotuv": "Подтвердить продажу",
+      "cart_remaining": "Остаток",
+      "cart_cost": "Себест.",
+      "cart_min": "Опт",
+      "cart_price": "Цена",
+      "cart_profit": "Прибыль",
+      "cart_loss": "УБЫТОК",
+      "cart_below_wholesale": "ниже опта",
+      "cart_cost_missing": "себестоимость не собрана",
+      "cart_total_profit": "Прибыль по чеку",
+      "cart_markdown": "уступлено"
     },
     "report_warehouse_ops": {
       "title": "Складские операции",

@@ -229,6 +229,9 @@ describe('RetailSaleService.post — CAS state guard', () => {
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
         findUniqueOrThrow: vi.fn().mockResolvedValue({ id: SALE_ID, state: 'posted' }),
       },
+      // post() also freezes the price snapshot onto the lines (kassa TZ §5.3);
+      // covered on its own in retail-sale-freeze.test.ts.
+      retailSalePosition: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
       cashDesk: { update: vi.fn().mockResolvedValue({}) },
       cashierSession: { update: vi.fn().mockResolvedValue({}) },
     };
@@ -236,6 +239,8 @@ describe('RetailSaleService.post — CAS state guard', () => {
     const client = {
       documentSequence: mockDocumentSequence(),
       employee: { findUnique: vi.fn(async () => null) },
+      product: { findMany: vi.fn().mockResolvedValue([]) },
+      priceType: { findFirst: vi.fn().mockResolvedValue(null) },
       retailSale: {
         findFirst: vi.fn().mockResolvedValue({
           id: SALE_ID,

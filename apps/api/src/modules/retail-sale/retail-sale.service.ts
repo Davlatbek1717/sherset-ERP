@@ -21,6 +21,13 @@ import { resolveCreatorGroupId } from '../shared/group-stamp.js';
 import { mapVersionedUpdateError } from '../shared/optimistic-lock.js';
 import { type StockDelta, StockService } from '../stock/stock.service.js';
 import { computePositions } from './compute-positions.js';
+// Kassa TZ §5.3 — pure cost/base-price snapshot rules (NULL = "not collected",
+// never 0), kept testable without a Prisma mock.
+import {
+  type FrozenPrices,
+  type SalePricesJson,
+  snapshotPricesByProduct,
+} from './price-snapshot.js';
 import { planLoyaltyAccrual, planLoyaltyReversal } from './retail-loyalty.js';
 // Pure, adversarially-tested mixed-payment money rule (§107 — extracted
 // faithfully from post(); byte-identical insufficient/change behaviour).
@@ -333,7 +340,20 @@ export class RetailSaleService {
         refundedFrom: { select: { id: true, name: true } },
         positions: {
           include: {
-            product: { select: { id: true, name: true, code: true, uom: true } },
+            // buyPrice + salePrices ride along so the POS can show cost / the
+            // wholesale floor / live profit when the cashier pulls a picked
+            // receipt back into the cart. Before post() the line's own
+            // costMinor is still NULL — the card is the only source there.
+            product: {
+              select: {
+                id: true,
+                name: true,
+                code: true,
+                uom: true,
+                buyPrice: true,
+                salePrices: true,
+              },
+            },
           },
           orderBy: { position: 'asc' },
         },
@@ -554,6 +574,15 @@ export class RetailSaleService {
     const storeId = sale.session.storeId;
     const allowNegative = sale.session.store.allowNegativeStock;
 
+    // Kassa TZ §5.3 — read the price snapshot BEFORE the transaction opens. The
+    // product cards are not part of the sale's consistency set (nobody may edit
+    // a card and expect a mid-flight receipt to follow), and keeping the read
+    // outside keeps the money/stock transaction as short as possible.
+    const frozen = await this.loadFrozenPrices(
+      accountId,
+      sale.positions.map((p) => p.productId),
+    );
+
     const posted = await this.prisma.client.$transaction(async (tx) => {
       // Atomic state guard: only 'draft' → 'posted'. Two concurrent posts on the
       // same draft would otherwise both succeed (both reads see 'draft', both
@@ -575,6 +604,14 @@ export class RetailSaleService {
           `RetailSale ${id} state changed; post aborted (already posted?)`,
         );
       }
+
+      // Kassa TZ §5.3 — pin cost + base price onto the lines, inside the same
+      // transaction as the state flip. If the stock or money cascade below
+      // rolls back, the snapshot rolls back with it: a receipt is never left
+      // holding frozen numbers for a sale that did not happen.
+      // Grouped by product so a receipt with repeated products still costs one
+      // statement per distinct product, not one per line.
+      await this.freezePositionPrices(tx, accountId, id, sale.positions, frozen);
 
       // Stock cascade — same lock-then-assert-then-apply pattern as DemandService.post.
       if (stockPositions.length > 0) {
@@ -691,7 +728,18 @@ export class RetailSaleService {
         },
         // §105: needed to enforce the documented "subset of original
         // positions" contract (over-refund guard).
-        positions: { select: { productId: true, quantity: true } },
+        // The frozen snapshot rides along so the mirror receipt reverses the
+        // SAME cost the original was sold against (kassa TZ §5.3) — re-reading
+        // the product card here would book a refund at today's cost and leave a
+        // phantom profit behind whenever the card changed in between.
+        positions: {
+          select: {
+            productId: true,
+            quantity: true,
+            costMinor: true,
+            basePriceMinor: true,
+          },
+        },
       },
     });
     if (!original) throw new NotFoundException(`RetailSale ${originalSaleId} not found`);
@@ -732,6 +780,23 @@ export class RetailSaleService {
     if (amtError) throw new BadRequestException(amtError);
 
     const name = await this.nextRetailSaleName(accountId);
+
+    // Original snapshot, keyed by product. First occurrence wins when a receipt
+    // listed the same product on several lines — the refund is validated
+    // against the aggregated quantity, so it has no single line to point back
+    // at, and the frozen numbers are per-product anyway.
+    const originalFrozen = new Map<
+      string,
+      { costMinor: bigint | null; basePriceMinor: bigint | null }
+    >();
+    for (const p of original.positions) {
+      if (p.productId && !originalFrozen.has(p.productId)) {
+        originalFrozen.set(p.productId, {
+          costMinor: p.costMinor,
+          basePriceMinor: p.basePriceMinor,
+        });
+      }
+    }
 
     // H4 record-scope: the refund document is created by the acting user.
     const creatorGroupId = await resolveCreatorGroupId(this.prisma.client, accountId, userId);
@@ -775,6 +840,9 @@ export class RetailSaleService {
               priceMinor: p.priceMinor,
               discount: p.discount,
               sumMinor: p.lineMinor,
+              // Inherited, not re-read — see the select comment above.
+              costMinor: originalFrozen.get(p.productId)?.costMinor ?? null,
+              basePriceMinor: originalFrozen.get(p.productId)?.basePriceMinor ?? null,
             })),
           },
         },
@@ -923,6 +991,65 @@ export class RetailSaleService {
   // Pure compute-positions logic lives in `./compute-positions.ts` so the
   // BigInt-precision invariants are unit-testable without mocking Prisma.
   private computePositions = computePositions;
+
+  /**
+   * Kassa TZ §5.3 — read each product's cost + default («Розничная цена») tier
+   * so `post()` can pin them onto the receipt lines.
+   *
+   * Products that no longer exist, and service-only lines (`productId === null`),
+   * simply get no entry: the caller writes NULL, which the reports read as
+   * «tan narx yig'ilmagan». A missing card must never post as zero cost.
+   */
+  private async loadFrozenPrices(
+    accountId: string,
+    productIds: ReadonlyArray<string | null>,
+  ): Promise<Map<string, FrozenPrices>> {
+    const ids = [...new Set(productIds.filter((p): p is string => p !== null))];
+    if (ids.length === 0) return new Map();
+    const [products, defaultType] = await Promise.all([
+      this.prisma.client.product.findMany({
+        where: { accountId, id: { in: ids } },
+        select: { id: true, buyPrice: true, salePrices: true },
+      }),
+      this.prisma.client.priceType.findFirst({
+        where: { accountId, isDefault: true },
+        select: { id: true },
+      }),
+    ]);
+    return snapshotPricesByProduct(
+      products.map((p) => ({
+        id: p.id,
+        buyPrice: p.buyPrice,
+        salePrices: p.salePrices as SalePricesJson,
+      })),
+      defaultType?.id,
+    );
+  }
+
+  /**
+   * Write the snapshot onto the receipt's lines. Grouped by product id so a
+   * receipt listing the same product twice still issues one statement per
+   * distinct product. Lines whose product resolved to nothing are left NULL.
+   */
+  private async freezePositionPrices(
+    tx: Prisma.TransactionClient,
+    accountId: string,
+    retailSaleId: string,
+    positions: ReadonlyArray<{ productId: string | null }>,
+    frozen: Map<string, FrozenPrices>,
+  ): Promise<void> {
+    const productIds = [...new Set(positions.map((p) => p.productId))].filter(
+      (p): p is string => p !== null,
+    );
+    for (const productId of productIds) {
+      const snap = frozen.get(productId);
+      if (!snap || (snap.costMinor == null && snap.basePriceMinor == null)) continue;
+      await tx.retailSalePosition.updateMany({
+        where: { retailSaleId, accountId, productId },
+        data: { costMinor: snap.costMinor, basePriceMinor: snap.basePriceMinor },
+      });
+    }
+  }
 
   private async nextRetailSaleName(accountId: string): Promise<string> {
     const year = new Date().getFullYear();
