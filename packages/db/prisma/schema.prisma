@@ -111,6 +111,12 @@ model Account {
   workOrders                     WorkOrder[]
   cashierSessions                CashierSession[]
   cashierAuditEvents             CashierAuditEvent[]
+  kpiMetricDefs                  KpiMetricDef[]
+  kpiProfiles                    KpiProfile[]
+  kpiProfileVersions             KpiProfileVersion[]
+  kpiProfileMetrics              KpiProfileMetric[]
+  employeeDailyKpis              EmployeeDailyKpi[]
+  employeeDailyKpiMetrics        EmployeeDailyKpiMetric[]
   retailSalePayments             RetailSalePayment[]
   shiftSchedules                 ShiftSchedule[]
   smenas                         Smena[]
@@ -383,6 +389,7 @@ model Employee {
   cashierSessions            CashierSession[]           @relation("CashierSessionCashier")
   ownedCashierSessions       CashierSession[]           @relation("CashierSessionOwner")
   cashierAuditEvents         CashierAuditEvent[]        @relation("CashierAuditEventEmployee")
+  employeeDailyKpis          EmployeeDailyKpi[]         @relation("EmployeeDailyKpiEmployee")
   smenaAssignments           SmenaEmployee[]            @relation("SmenaEmployees")
   ownedRetailSales           RetailSale[]               @relation("RetailSaleOwner")
   ownedOrganizations         Organization[]             @relation("OrganizationOwner")
@@ -9229,6 +9236,201 @@ model HrKpiDailyLog {
   @@map("hr_kpi_daily_log")
 }
 
+// ===========================================================================
+// Menejer — kunlik xodim KPI (4-bo'lim kengaytmasi, 4M.1)
+// docs/superpowers/specs/2026-08-02-menejer-kunlik-kpi-tz-design.md
+//
+// Nega yuqoridagi `HrKpiDailyLog` ni kengaytirmaymiz: u uchta QAT'IY ustundan
+// iborat (sotuv / target / bajarish %) va har yangi o'lchov migratsiya talab
+// qiladi. Egasi kassa, davomat, vazifa va ombor ko'rsatkichlarini ham so'radi —
+// ular ustun sifatida sig'maydi.
+//
+// Eski jadval DARHOL o'chirilmaydi: HR oylik dvigateli undan o'qiydi. Tartib —
+// (1) ikkalasi parallel to'ldiriladi, (2) HR yangi ombordan o'qishga o'tadi,
+// (3) eskisi faqat-o'qish, (4) olib tashlanadi. Har qadam qaytariladigan.
+// ===========================================================================
+
+/// KpiMetricDef — ko'rsatkich katalogi. Kod tomonidagi manba:
+/// `apps/api/src/modules/manager/kpi/kpi-metrics.ts` (sof modul, testlangan);
+/// bu jadval uni hisob bo'yicha SOZLASH uchun (nomi, ko'rsatilishi, o'chirish).
+model KpiMetricDef {
+  id        String @id @default(uuid()) @db.Uuid
+  accountId String @map("account_id") @db.Uuid
+  /// `cash_revenue`, `gross_profit`, `late_minutes` … — kod katalogidagi kalit.
+  key     String @db.VarChar(50)
+  labelUz String @map("label_uz") @db.VarChar(120)
+  labelRu String @map("label_ru") @db.VarChar(120)
+  /// `money` | `count` | `percent` | `minutes`
+  unit String @db.VarChar(10)
+  /// `higher_better` | `lower_better` | `neutral` — rang va reyting shundan.
+  direction String @db.VarChar(15)
+  /// `cashier` | `sales` | `attendance` | `task` | `warehouse` — drill-down manzili.
+  source  String  @db.VarChar(20)
+  /// Soatga normallashtiriladimi (adolat: yarim kun ishlagan xodim uchun).
+  perHour  Boolean @default(false) @map("per_hour")
+  archived Boolean @default(false)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  account        Account             @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  profileMetrics KpiProfileMetric[]
+
+  @@unique([accountId, key])
+  @@index([accountId, archived])
+  @@map("kpi_metric_defs")
+}
+
+/// KpiProfile — lavozim bo'yicha KPI to'plami. Kassirni va omborchini bir xil
+/// o'lchash ma'nosiz, shuning uchun har lavozimning o'z ko'rsatkichlari bor.
+model KpiProfile {
+  id        String  @id @default(uuid()) @db.Uuid
+  accountId String  @map("account_id") @db.Uuid
+  name      String  @db.VarChar(120)
+  /// Qaysi lavozimga tegishli. NULL = hisob bo'yicha sukut profil.
+  positionId String? @map("position_id") @db.Uuid
+  archived   Boolean @default(false)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  account  Account             @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  position HrPosition?         @relation(fields: [positionId], references: [id], onDelete: SetNull)
+  versions KpiProfileVersion[]
+
+  @@index([accountId, archived])
+  @@index([accountId, positionId])
+  @@map("kpi_profiles")
+}
+
+/// KpiProfileVersion — 🔴 PROFIL VERSIYALANADI (TZ §2.3).
+///
+/// Og'irlik yoki ko'rsatkichlar to'plami o'zgarsa YANGI versiya yaratiladi;
+/// eski kunlar o'z versiyasiga havola qilib turadi.
+///
+/// Nega: aks holda bugun og'irlikni o'zgartirganingizda O'TGAN OYNING raqamlari
+/// o'zgaradi va allaqachon to'langan oylik bilan hisobot bir-biriga mos
+/// kelmay qoladi. Bu — tan narx muzlatish bilan aynan bir xil klass
+/// (`RetailSalePosition.costMinor`): hisobot tarixni qayta yozmasligi kerak.
+model KpiProfileVersion {
+  id        String @id @default(uuid()) @db.Uuid
+  accountId String @map("account_id") @db.Uuid
+  profileId String @map("profile_id") @db.Uuid
+  /// 1 dan boshlab o'sadi.
+  version Int
+  /// Shu versiya qaysi kundan boshlab amal qiladi (kunlik hisob shunga qaraydi).
+  effectiveFrom DateTime @map("effective_from") @db.Date
+  note          String?  @db.VarChar(300)
+
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  createdById String?  @map("created_by_id") @db.Uuid
+
+  account   Account            @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  profile   KpiProfile         @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  metrics   KpiProfileMetric[]
+  dailyKpis EmployeeDailyKpi[]
+
+  @@unique([profileId, version])
+  @@index([accountId, profileId, effectiveFrom(sort: Desc)])
+  @@map("kpi_profile_versions")
+}
+
+/// KpiProfileMetric — versiya ichidagi bitta ko'rsatkich va uning og'irligi.
+model KpiProfileMetric {
+  id               String @id @default(uuid()) @db.Uuid
+  accountId        String @map("account_id") @db.Uuid
+  profileVersionId String @map("profile_version_id") @db.Uuid
+  metricDefId      String @map("metric_def_id") @db.Uuid
+  /// Kompozit balldagi og'irligi (M10 da ishlatiladi). 0 = faqat ko'rsatiladi.
+  weight Decimal @default(0) @db.Decimal(5, 2)
+
+  account        Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  profileVersion KpiProfileVersion @relation(fields: [profileVersionId], references: [id], onDelete: Cascade)
+  metricDef      KpiMetricDef      @relation(fields: [metricDefId], references: [id], onDelete: Restrict)
+
+  @@unique([profileVersionId, metricDefId])
+  @@index([accountId, profileVersionId])
+  @@map("kpi_profile_metrics")
+}
+
+/// EmployeeDailyKpi — kun × xodim. Menejer aynan shu yozuvni QABUL QILADI.
+///
+/// `state` VarChar (sxema konventsiyasi: `RetailSale.state`, `RestockTask.status`)
+/// — 4M.2 da qabul qilish FSM'i qo'shilganda yangi holatlar migratsiyasiz keladi.
+/// 4M.1 da faqat `computed` yoziladi.
+model EmployeeDailyKpi {
+  id         String   @id @default(uuid()) @db.Uuid
+  accountId  String   @map("account_id") @db.Uuid
+  employeeId String   @map("employee_id") @db.Uuid
+  date       DateTime @db.Date
+
+  /// Qaysi profil VERSIYASI bilan hisoblangan — tarixni muzlatadi (§2.3).
+  /// NULL = xodimga profil biriktirilmagan (ma'lumot sifati panelida ko'rinadi).
+  profileVersionId String? @map("profile_version_id") @db.Uuid
+
+  /// `computed` → (4M.2) `pending` | `accepted` | `rejected` | `stale` | `escalated`
+  state String @default("computed") @db.VarChar(20)
+
+  /// Kun ko'rsatkichlarining HAMMASI to'liq manbadan hisoblanganmi.
+  /// `false` — masalan ba'zi qatorlarda tan narx muzlatilmagan: foyda kam
+  /// ko'rsatilgan bo'lishi mumkin. Menejer buni ekranda ko'radi va shu
+  /// bilimda qabul qiladi (NULL ≠ 0 shartnomasi, 1.1/1.2).
+  dataComplete Boolean @default(true) @map("data_complete")
+
+  /// Normalizatsiya asosi — soatga bo'lish shundan (§2.5). NULL = davomat yo'q.
+  workedMinutes Int? @map("worked_minutes")
+
+  /// Qabul qilingandan KEYIN manba hujjat o'zgargan bo'lsa — eskirish vaqti
+  /// (TZ §3.4). Kun navbatga qaytadi va oylikka tuzatuvchi qator yoziladi;
+  /// eski raqam jimgina qayta yozilmaydi. 4M.1 da faqat maydon, mantiq 4M.2/4M.3.
+  staleAt DateTime? @map("stale_at") @db.Timestamptz()
+
+  computedAt DateTime @default(now()) @map("computed_at") @db.Timestamptz()
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  account        Account                  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  employee       Employee                 @relation("EmployeeDailyKpiEmployee", fields: [employeeId], references: [id], onDelete: Cascade)
+  profileVersion KpiProfileVersion?       @relation(fields: [profileVersionId], references: [id], onDelete: SetNull)
+  metrics        EmployeeDailyKpiMetric[]
+
+  @@unique([accountId, employeeId, date])
+  // Menejerning kunlik ro'yxati: «shu kun, qabul kutayotganlar».
+  @@index([accountId, date(sort: Desc), state])
+  // Xodim kartasidagi trend.
+  @@index([accountId, employeeId, date(sort: Desc)])
+  @@map("employee_daily_kpi")
+}
+
+/// EmployeeDailyKpiMetric — kun × xodim × ko'rsatkich.
+///
+/// `autoValue` va `adjustValue` YONMA-YON turadi: menejer tuzatmasi avtomat
+/// raqamni USTIGA YOZMAYDI (TZ §3.2). Sabab — 1.1 sabog'i: haqiqatni
+/// yo'qotmaslik. «Menejer qancha va nega tuzatdi» degan savolga javob shu
+/// ikkitasining farqidan chiqadi (egaga haftalik xulosa, M-Q7).
+model EmployeeDailyKpiMetric {
+  id         String @id @default(uuid()) @db.Uuid
+  accountId  String @map("account_id") @db.Uuid
+  dailyKpiId String @map("daily_kpi_id") @db.Uuid
+  metricKey  String @map("metric_key") @db.VarChar(50)
+
+  /// Tizim hisoblagani. NULL = O'LCHANMAGAN (0 EMAS).
+  autoValue BigInt? @map("auto_value")
+  /// Menejer tuzatmasi (4M.2). NULL = tuzatilmagan.
+  adjustValue BigInt? @map("adjust_value")
+  /// Tuzatma sababi — 4M.2 da MAJBURIY bo'ladi.
+  reasonCode String? @map("reason_code") @db.VarChar(40)
+
+  /// Shu ko'rsatkich to'liq manbadan hisoblanganmi.
+  complete Boolean @default(true)
+
+  account  Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  dailyKpi EmployeeDailyKpi @relation(fields: [dailyKpiId], references: [id], onDelete: Cascade)
+
+  @@unique([dailyKpiId, metricKey])
+  @@index([accountId, metricKey])
+  @@map("employee_daily_kpi_metrics")
+}
+
 model HrKpiMonthlyScore {
   id                 String   @id @default(uuid()) @db.Uuid
   accountId          String   @map("account_id") @db.Uuid
@@ -9523,7 +9725,8 @@ model HrPosition {
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
 
   account   Account    @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  employees Employee[] @relation("EmployeePosition")
+  employees   Employee[]   @relation("EmployeePosition")
+  kpiProfiles KpiProfile[]
 
   @@index([accountId, archived])
   @@map("hr_positions")

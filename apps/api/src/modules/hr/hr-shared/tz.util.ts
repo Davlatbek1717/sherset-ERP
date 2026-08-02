@@ -32,6 +32,22 @@ export function startOfLocalDay(d: Date): Date {
 }
 
 /**
+ * Returns the DATE-only value (midnight UTC) naming d's local Tashkent day.
+ *
+ * Use this to LABEL a row, not to bound a query — `startOfLocalDay` is the
+ * bound. The two differ and mixing them shifts the label by one day: at 23:30
+ * Tashkent on Aug 2, `startOfLocalDay` is Aug 1 19:00 UTC, so reading its UTC
+ * calendar fields yields "Aug 1" for a row that actually covers Aug 2.
+ *
+ * NOTE: `hr-kpi.service.ts` still derives its `HrKpiDailyLog.date` the old way
+ * and is off by one for exactly this reason — see NEXT.md 2026-08-02b. It is
+ * left alone here because changing it re-labels rows that already exist.
+ */
+export function localDateOnly(d: Date): Date {
+  return new Date(`${formatInTimeZone(d, HR_TZ, 'yyyy-MM-dd')}T00:00:00.000Z`);
+}
+
+/**
  * Local weekday in Tashkent, 0=Sunday … 6=Saturday (JS getDay convention).
  * NOTE (LOCKED): EmployeeWorkSchedule.weekday uses this 0=Sun..6=Sat scheme —
  * do NOT reuse cron-builder.util.ts's ISO 1=Mon..7=Sun mapping here.

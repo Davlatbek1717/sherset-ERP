@@ -59,6 +59,8 @@ import { KorzinaModule } from './modules/korzina/korzina.module.js';
 import { LabelModule } from './modules/label/label.module.js';
 import { LossModule } from './modules/loss/loss.module.js';
 import { LoyaltyModule } from './modules/loyalty/loyalty.module.js';
+// Menejer bo'limi (4-bo'lim TZ kengaytmasi) — kunlik xodim KPI o'lchov yadrosi.
+import { ManagerModule } from './modules/manager/manager.module.js';
 import { MarkingModule } from './modules/marking/marking.module.js';
 import { MoneyModule } from './modules/money/money.module.js';
 import { MoveModule } from './modules/move/move.module.js';
@@ -250,6 +252,7 @@ import { PrismaModule } from './prisma/prisma.module.js';
     PrintTemplateModule,
     HelpModule,
     HrModule,
+    ManagerModule,
     OnboardingModule,
     SmsModule,
     EdoModule,
