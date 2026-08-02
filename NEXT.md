@@ -305,6 +305,62 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-02f (HAYDOVCHI GPS — o'lik halqa yopildi · `3dcb807` + `24bc562`)**
+>
+> **PROD TEKSHIRUVI (SSH, `13.140.157.10` / sherset-v2) — egasining «gps haydovchilar tayyormi?»
+> savoliga javob:** backend **to'liq deploy qilingan va tirik**, lekin **BITTA HAM ma'lumot yo'q edi**:
+>
+> | Tekshiruv | Natija |
+> |---|---|
+> | migratsiya `20260728120000_hr_driver_tracking` | ✅ qo'llangan |
+> | `driver_trips` / `driver_shifts` jadvallari | ✅ bor |
+> | `employees.tracking_mode`, `pings.speed/heading` | ✅ bor |
+> | `GET /api/v1/driver-tracking/live` · `/driver-trips` | ✅ 401 (tirik) |
+> | web `/hr/drivers/live` | ✅ 200 |
+> | `employees(tracking_mode='field')` | 🔴 **0** |
+> | `driver_shifts` · `driver_trips` · `hr_location_pings` | 🔴 **0 · 0 · 0** |
+>
+> **Sabab (ildiz):** yagona ko'zda tutilgan **ishlab chiqaruvchi** — native Android ilova — hech qachon
+> build qilinmagan (`f0dd781` o'zi «BUILD-VERIFIED EMAS» deb yozgan), web esa faqat `/driver-tracking/live`
+> ni **O'QIRDI**, hech narsa **YOZMASDI**. Mavjud brauzer GPS yuboruvchisi (`use-geolocation-attendance`)
+> geofence davomat endpointiga yozadi — `/hr/attendance/ping`, `/driver-tracking/ping` GA EMAS.
+> Ya'ni dispecher xaritasi **bo'sh bo'lmasdan boshqa holatda bo'lolmasdi**.
+>
+> **1) `3dcb807` — `/haydovchi` (haydovchining telefon ekrani):** smena boshlash/tugatish · ochiq smena +
+> ruxsat berilganda `watchPosition` → `POST /driver-tracking/ping` (`speed`/`heading` bilan) · **oflayn
+> bufer** (localStorage) · server rad etsa sababi **ekranda** (`not_field`/`no_shift`/`accuracy`/`jump`) ·
+> smena yig'masi + o'z yetkazmalari · ru+uz 35/35.
+> **Bufer dekorativ EMAS** — server izohi (#7) ping'lar **KETMA-KET** kelishini talab qiladi (parallel
+> kelsa masofa ikki marta sanaladi) va har ping **ASL `ts`** ini olib yurishi kerak (kech flush «hozir»
+> deb yozilsa jump-filter rad etadi va haydovchi teleport qiladi). Throttle davomat bilan **bir xil**
+> qoidadan (`shouldSendPing` 45s/20m).
+>
+> **2) `24bc562` — dispecher paneli (`/hr/drivers/live` ichida):** `POST /driver-trips` ning **chaqiruvchisi
+> yo'q edi** → `DriverTrip` hech qachon yaratilmasdi va unga bog'liq hammasi o'lik edi: ETA-worker'ga
+> yetkazma yo'q · ping ingest'dagi «manzilga yetdi» avto-belgilash (80m) **hech qachon ishga tushmasdi** ·
+> smena yakunidagi `deliveriesCount` **doim 0** qolardi. Endi: haydovchi tanlash · manzil **gibrid**
+> (Yandex kaliti bo'lsa avto, bo'lmasa **qo'lda koordinata** — prodda kalit YO'Q, shuning uchun
+> koordinata maydonlari doim ko'rinadi) · holat tugmalari · 409 (CAS) xabari ekranda · ru+uz 26/26.
+> **DRIFT-QULF:** FE holat-jadvali (`lib/driver-trip-fsm.ts`) testda **server faylidan o'qib**
+> solishtiriladi — **mutatsiya bilan sinaldi** (`enroute`dan `cancelled` olib tashlanganda yiqildi).
+>
+> **Gate:** typecheck 0 · biome 0 (o'z fayllarimda) · i18n ru+uz · **web 2660** · +21 test green.
+>
+> ⚠️ **Phase-1 — BRAUZERDA/TELEFONDA OCHILMAGAN va DEPLOY QILINMAGAN.** Haqiqiy GPS oqimi, ruxsat
+> oqimi, bufer flush va biriktirish jonli sinalmagan.
+>
+> **HALOL CHEKLOV (kodda ham, ekranda ham yozilgan):** `/haydovchi` **native ilova o'rnini BOSMAYDI** —
+> brauzer fon rejimida `watchPosition`ни to'xtatadi, Wake Lock faqat sahifa ko'rinib turganda yordam
+> beradi. Ishonchli fon-uzatish = TZ Faza 1 (Android foreground-service). Bu TZ §11 Faza 0 ning aynan
+> o'zi: «vaqtincha mavjud PWA bilan sinash».
+>
+> **▶️ KEYINGI QADAM (egasi bilan kelishilgan tartib):** (a) **deploy** → (b) egasi xodim kartochkasida
+> **«Haydovchi (jonli-iz)»** ni yoqadi (hozir 0 ta field xodim — usiz hech narsa ko'rinmaydi) →
+> (c) telefonda `/haydovchi` ochib smena boshlash va xaritada ko'rish. **Faqat shundan keyin** oqim
+> haqiqatan ishlashini aytish mumkin.
+> **Qolgan TZ §7 qarzi (To'lqin 7):** yetkazma↔buyurtma bog'lanishi (`DriverDelivery`) · **naqd
+> topshirish (`DriverCashHandover`)** · ish birligiga oylik. Yandex kaliti ham yo'q (ETA taxminiy).
+
 > **🕒 2026-08-02e (PHASE-2 QA — to'lqin 1.1 + 1.2 BRAUZERDA TEKSHIRILDI · `23fdd3e`)**
 >
 > **Bu — 1.1/1.2 ning «browser-QA yo'q» qarzini yopgan sessiya.** Playwright MCP, lokal stack,
