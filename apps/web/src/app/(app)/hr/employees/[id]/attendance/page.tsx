@@ -6,6 +6,7 @@
  * Reuses the existing monthly report API filtered by employeeId.
  */
 
+import { attendanceDayStatusTone } from '@/lib/domain-status-tone';
 import { type DavomatMonthlyReport, hrDavomatReportApi, hrEmployeeApi } from '@/lib/hr-api';
 import type { HrEmployeeDetail } from '@/lib/hr-api';
 import { Badge, EmptyState, Input, Skeleton } from '@moysklad/ui';
@@ -20,13 +21,6 @@ function currentYearMonth(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
-
-const STATUS_TONE: Record<string, 'success' | 'warning' | 'destructive' | 'neutral'> = {
-  present: 'success',
-  late: 'warning',
-  absent: 'destructive',
-  dayoff: 'neutral',
-};
 
 export default function HrEmployeeAttendancePage() {
   const t = useTranslations('pages.hrEmployees');
@@ -124,7 +118,7 @@ export default function HrEmployeeAttendancePage() {
                     {r.lateMinutes > 0 ? r.lateMinutes : '—'}
                   </td>
                   <td className="px-3 py-2">
-                    <Badge tone={STATUS_TONE[r.status] ?? 'neutral'}>
+                    <Badge tone={attendanceDayStatusTone(r.status)}>
                       {t(`attendance_st_${r.status}`)}
                     </Badge>
                   </td>

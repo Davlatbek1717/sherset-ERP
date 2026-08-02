@@ -146,6 +146,16 @@ export const HR_TASK_LOG_STATUS_TONE: Record<string, StateTone> = {
 export const hrTaskLogStatusTone = (s: string | null | undefined): StateTone =>
   resolve(HR_TASK_LOG_STATUS_TONE, s);
 
+/** Davomat kunlik status (`present | late | absent | dayoff`) — HR xodim «Davomat» tab. */
+export const ATTENDANCE_DAY_STATUS_TONE: Record<string, StateTone> = {
+  present: 'success',
+  late: 'warning',
+  absent: 'destructive',
+  dayoff: 'neutral',
+};
+export const attendanceDayStatusTone = (s: string | null | undefined): StateTone =>
+  resolve(ATTENDANCE_DAY_STATUS_TONE, s);
+
 /** Telegram message delivery (`pending | retry | sent | failed`). `sent` = delivered → success. */
 export const HR_MESSAGE_STATUS_TONE: Record<string, StateTone> = {
   sent: 'success',
