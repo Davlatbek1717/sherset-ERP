@@ -305,6 +305,67 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-02j (GEOKODER — Nominatim provayderi · `5a7e722`) · ✅ DEPLOYED `5a7e722`**
+>
+> **NEGA:** egasi Yandex kabinetida kalit olmoqchi bo'ldi; men shartlarni o'qib chiqdim va
+> **Yandex Maps API'ning BEPUL tarifi bu loyihaga HUQUQAN to'g'ri kelmasligi** aniqlandi —
+> uchta mustaqil sabab: (1) loyiha **ochiq kirishli** bo'lishi shart, bizniki login ortida;
+> (2) natijani **saqlash taqiqlanadi**, biz `driver_trips.dest_lat/lng` ga yozamiz;
+> (3) **transport/xodimni real vaqtda kuzatish ALOHIDA taqiqlangan** — bu loyihaning aynan o'zi.
+> Pullik litsenziya **208 800 ₽/yil**. Egasi «bepul» ni tanlasa — noto'g'ri ma'lumot berish,
+> kalit keyin bloklanishi mumkin. Shuning uchun **OpenStreetMap Nominatim** default qilindi
+> (ODbL: saqlash mumkin, kuzatuv taqiqi yo'q).
+>
+> **Arxitektura:** `GeocodeProvider` porti + 2 implementatsiya + `GeocodeService` fasadi.
+> Kontroller FAQAT fasadga bog'langan. `GEOCODER_PROVIDER` = `nominatim` (default) | `yandex` | `none`.
+> Yandex kodi **saqlandi** — egasi litsenziya olsa bitta env bilan yoqiladi.
+>
+> **Nominatim siyosati — ISHLASH SHARTI, optimizatsiya emas (buzilsa IP ban):**
+> 1 so'rov/sek bitta oqimda → **`MinIntervalGate`** (navbat zanjiri; oddiy `setTimeout` yetmaydi —
+> ikki dispecher parallel so'rov yuborardi) · **o'zini tanitadigan User-Agent** (standart kutubxona
+> UA'si rad etiladi) · **kesh majburiy**, musbat ham MANFIY ham · **avtomatik-to'ldirish QAT'IY
+> taqiqlangan** → FE'da «Topish» **TUGMASIGA** bog'langan, matn o'zgarishiga EMAS · atribut
+> «© OpenStreetMap (ODbL)» natija ostida. Bularning hammasi `nominatim-geocode.parse.test.ts` da
+> **manba-skaner** bilan qulflangan (kelajakdagi refaktor jimgina buzmasin).
+>
+> **Jim o'chib qolishga qarshi:** `yandex` tanlangan-u kalit yo'q bo'lsa Nominatim'ga tushadi va
+> **ogohlantiradi**; env'da typo bo'lsa ham default ishlaydi. Aks holda dispecher tugmani bosardi,
+> hech narsa bo'lmasdi, sabab hech qayerda ko'rinmasdi.
+>
+> **🔬 JONLI TEKSHIRUV (deploydan keyin, VPS'dan haqiqiy chaqiruv):** Nominatim **ishlaydi** —
+> `lat`/`lon` **SATR** sifatida keldi (parser shartnomam tasdiqlandi), `addresstype: "road"` →
+> `street`, `licence: "Data © OpenStreetMap contributors, ODbL 1.0"`.
+> ⚠️ **LEKIN sifat ogohlantirishim amalda tasdiqlandi:** «Toshkent Amir Temur ko'chasi» so'rovi
+> **Chortoq**dagi ko'chani qaytardi. Shuning uchun panel `display_name` ni ko'rsatadi va
+> koordinatani **tahrirlanadigan** qoldiradi — dispecher natijani tasdiqlashi SHART.
+>
+> **🚀 DEPLOY (`90d8d0d → 5a7e722`):** zaxira 317 MB `gzip -t` OK · migratsiya «no pending» ·
+> **money paketi TOZA qayta build qilindi** (quyidagi gotcha) · build «Compiled successfully» ·
+> jonli: `/` **200** · `/haydovchi` **200** · `/hr/drivers/live` **200** · `/sotuv` **200** ·
+> `/reports/profitability` **200** · `/api/v1/driver-trips` **401** · `/api/v1/driver-trips/geocode`
+> **401** (tirik) · `sherset.biznesjon.uz` **200** (boshqa ijarachi tegilmadi).
+>
+> ⚠️ **33 ta test «xatosi» KOD XATOSI EMAS EDI** — `packages/money/dist/index.js` eskirgan edi
+> (`tsconfig.tsbuildinfo` tufayli tsc `index.js` ni qayta emit qilmagan): `.d.ts` yangi →
+> **typecheck va push gate O'TADI**, runtime esa `percentScaled is not a function`. Yechim:
+> `rm -f tsconfig.tsbuildinfo && rm -rf dist && build`. Deploy skriptiga ham shu kiritildi.
+> Xotira: `money-dist-stale-tsbuildinfo`.
+>
+> ⚠️ **MENING XATOM (qayd, takrorlanmasin):** `git reset --hard FETCH_HEAD` bilan «sinxronlashga»
+> urinib, parallel sessiyaning **push qilinmagan** 3 commit'ini branch tepasidan tushirdim
+> (`26df34f`/`2750ff4`/`a670a09`). `git reflog` bilan **darhol tiklandi**, yo'qotish yo'q.
+> To'g'ri yo'l — `pull --rebase` yoki `merge FETCH_HEAD`; sinxronlashdan oldin lokal HEAD
+> remote'dan oldindami tekshirish. `CLAUDE.md` §6.7 va xotira yangilandi.
+>
+> **Gate:** typecheck 0 · biome 0 · i18n ru+uz 31/31 · **api 4373/4375** · **web 2660/2686**
+> (driver-tracking 40/40) · +22 yangi test.
+>
+> ⚠️ **Phase-1 — brauzerda ochilmagan:** «Topish» tugmasi ekranda bosilmagan, atribut ko'rilmagan.
+> Nominatim'ning O'ZI VPS'dan tekshirildi (yuqorida), lekin ilova orqali emas.
+>
+> **▶️ GEOKODER BO'YICHA EGASIGA:** Yandex kaliti **shart emas** — hech narsa qilmasangiz ham
+> ishlaydi. Kalit olmang (bepul tarif yaramaydi, pullik 208 800 ₽/yil).
+
 > **🕒 2026-08-02i (TO'LQIN 3.1 — aralash to'lov; TERMINAL va QARZ endi ishlaydi · `26df34f`, merge `2750ff4`)**
 >
 > **PRODDA BUZUQ EDI.** Egasi «kassada yana nima bo'ladi?» deb so'raganda TZ'ning B-ro'yxatini kod
