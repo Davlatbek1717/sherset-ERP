@@ -1112,4 +1112,66 @@ export function sendDavomatNotifyTest() {
   return api.post<HrDavomatNotifyTestResult>('/hr/attendance-notify/test', {});
 }
 
+// ─── Haydovchi jonli-iz (driver live tracking) ─────────────────────────
+//
+// Ishlab chiqaruvchi tomon: `/driver-tracking/*` endpointlari 2026-07-28
+// (`f0dd781`) da qurilgan, LEKIN ularга yozadigan mijoz YO'Q edi — native
+// Android skeleti build qilinmagan. Natijada prod'da `driver_shifts` = 0,
+// `driver_trips` = 0, `hr_location_pings` = 0 va dispecher xaritasi doim bo'sh.
+// Bu klient shu halqani yopadi (TZ 2026-07-28 §11 Faza 0: «vaqtincha mavjud
+// PWA bilan sinash»).
+
+export interface DriverShift {
+  id: string;
+  driverId: string;
+  startedAt: string;
+  endedAt: string | null;
+  activeSeconds: number;
+  stopSeconds: number;
+  deliveriesCount: number;
+  distanceMeters: number;
+  autoClosed: boolean;
+}
+
+export interface DriverFieldPingInput {
+  lat: number;
+  lng: number;
+  accuracy: number;
+  /** m/s — brauzer bermasa null. */
+  speed?: number | null;
+  /** daraja 0..360 — brauzer bermasa null. */
+  heading?: number | null;
+  /** Klient vaqti; oflayn-bufer flush qilinganda ASL vaqtni saqlaydi. */
+  ts?: string;
+}
+
+export interface DriverFieldPingResult {
+  accepted: boolean;
+  reason: 'not_field' | 'no_shift' | 'accuracy' | 'jump' | null;
+  arrivedTripId: string | null;
+}
+
+export interface DriverTrip {
+  id: string;
+  status: 'assigned' | 'enroute' | 'arrived' | 'completed' | 'cancelled';
+  destAddress: string | null;
+  destLat: number;
+  destLng: number;
+  etaSeconds: number | null;
+  distanceMeters: number | null;
+  assignedAt: string;
+  completedAt: string | null;
+}
+
+export const driverTrackingApi = {
+  ping: (data: DriverFieldPingInput) =>
+    api.post<DriverFieldPingResult>('/driver-tracking/ping', data),
+  startShift: () => api.post<DriverShift>('/driver-tracking/shifts/start', {}),
+  endShift: () => api.post<DriverShift>('/driver-tracking/shifts/end', {}),
+  currentShift: () => api.get<DriverShift | null>('/driver-tracking/shifts/current'),
+  // DIQQAT: `listForDriver` YALANG'OCH massiv qaytaradi (`{items}` EMAS) —
+  // `driver-trip.service.ts` `findMany` natijasini to'g'ridan-to'g'ri beradi.
+  myTrips: () => api.get<DriverTrip[]>('/driver-tracking/my/trips'),
+};
+
 export type { HrAccessLevel, HrPermissionRow };
