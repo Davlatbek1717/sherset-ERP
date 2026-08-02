@@ -359,7 +359,23 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > `markdownMinor` · `classifyPrice`) 1.1 da qurildi va savat ishlatadi; 1.4 hisobotlarni ham shunga
 > ko'chirishi kerak. Keyin 2-to'lqin (`Branch` modeli + `skladNo → StoreZone`).
 
-> **🕒 2026-08-02f (HAYDOVCHI GPS — o'lik halqa yopildi · `3dcb807` + `24bc562`)**
+> **🕒 2026-08-02g (HAYDOVCHI GPS — o'lik halqa yopildi · `3dcb807` + `24bc562` + §7.1) · ✅ DEPLOYED `e091cae`**
+>
+> *(Yorliq `02f` dan `02g` ga o'zgartirildi — parallel sessiya ham `02f` ni ishlatgan, §6.3 to'qnashuvi.)*
+>
+> **🚀 DEPLOY TASDIQLANDI (erp.sherset.uz = sherset-v2, `a646bdd → e091cae`):**
+> zaxira `sherset_v2-PREDEPLOY-driver-081153.sql.gz` **288 MB, `gzip -t` OK, 221 jadval, yakun markeri bor** ·
+> migratsiya `20260802140000_cashier_audit_events` qo'llandi (**faqat qo'shuvchi**: CREATE TABLE + 3 indeks +
+> 3 FK; `DROP` faqat izohdagi qaytarish eslatmasi) va `cashier_audit_events` jadvali bazada tasdiqlandi ·
+> build **«Compiled successfully»** (`NODE_OPTIONS=--max-old-space-size=3072`, OOM bo'lmadi) ·
+> **jonli tekshiruv (tashqi internetdan):** `/` **200** · **`/haydovchi` 200** · `/hr/drivers/live` **200** ·
+> `/sotuv` **200** (eski POS buzilmadi) · `/api/v1/driver-trips` **401** (tirik, himoyalangan) ·
+> API `/health` 200 (~30s da ko'tarildi) ·
+> **build markerlari** `.next` ichida: `/haydovchi` marshruti build ro'yxatida (4.92 kB) va
+> `sherset.driver.pingBuffer.v1` + `driver-tracking/shifts/start` **satr-literallari** chunk'larda
+> (xotira saboqi: minifikatsiya identifikatorlarni o'zgartiradi — faqat satr-literal ishonchli marker) ·
+> **faqat `sherset-v2-*` restart bo'ldi** — qolgan 8 ijarachi (erp/biznesjon/akademiya/servis/sherset) 23h/2h
+> uptime bilan tegilmadi.
 >
 > **PROD TEKSHIRUVI (SSH, `13.140.157.10` / sherset-v2) — egasining «gps haydovchilar tayyormi?»
 > savoliga javob:** backend **to'liq deploy qilingan va tirik**, lekin **BITTA HAM ma'lumot yo'q edi**:
@@ -408,12 +424,28 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > beradi. Ishonchli fon-uzatish = TZ Faza 1 (Android foreground-service). Bu TZ §11 Faza 0 ning aynan
 > o'zi: «vaqtincha mavjud PWA bilan sinash».
 >
-> **▶️ KEYINGI QADAM (egasi bilan kelishilgan tartib):** (a) **deploy** → (b) egasi xodim kartochkasida
-> **«Haydovchi (jonli-iz)»** ni yoqadi (hozir 0 ta field xodim — usiz hech narsa ko'rinmaydi) →
-> (c) telefonda `/haydovchi` ochib smena boshlash va xaritada ko'rish. **Faqat shundan keyin** oqim
-> haqiqatan ishlashini aytish mumkin.
-> **Qolgan TZ §7 qarzi (To'lqin 7):** yetkazma↔buyurtma bog'lanishi (`DriverDelivery`) · **naqd
-> topshirish (`DriverCashHandover`)** · ish birligiga oylik. Yandex kaliti ham yo'q (ETA taxminiy).
+> **3) §7.1 — yetkazma ↔ otgruzka bog'lanishi** (`orderType`/`orderId` ustunlari 2026-07-28 dan bor edi,
+> to'ldiradigan ekran yo'q edi → har yetkazma `manual` bo'lib qolardi). Dispecher «otgruzka bo'yicha» ni
+> tanlasa manzil **hujjatdan** olinadi (`shipmentAddress`) va faol yetkazmada hujjatga havola chiqadi.
+> Hujjat nomi API javobida yo'q → havola beriladi, **nom to'qib chiqarilmaydi**. Migratsiya kerak emas.
+>
+> ⚠️ **BU KOD `d35efab` ICHIDA KETDI, MENING COMMIT'IMDA EMAS.** Sabab: commit xabarim «halollik gate»ida
+> rad etilgan, fayllar **index'da qolgan**, parallel sessiya esa o'z commit'i bilan ularni ham olib ketgan
+> (12 fayl stage qilgan, 16 tasi kirgan). **Yo'qotish yo'q** — mazmun HEAD'da tasdiqlandi (15 marker,
+> i18n 30/30 kalit). Saboq xotiraga yozildi: rad etilgan commit index'ni tozalamaydi.
+>
+> **▶️ ENDI EGASINING QO'LIDA (kod tayyor va prodda):**
+> 1. Xodim kartochkasida **«Haydovchi (jonli-iz)»** ni yoqing — hozir prodda **0 ta** field xodim,
+>    usiz `/haydovchi` ham, dispecher xaritasi ham bo'sh qoladi (server `not_field` bilan rad etadi).
+> 2. Haydovchi telefonida **`https://erp.sherset.uz/haydovchi`** ochsin → «Smenani boshlash» →
+>    joylashuvga ruxsat bersin. **Ekran yoqiq turishi kerak** (brauzer cheklovi).
+> 3. `/hr/drivers/live` da nuqta harakatlanishini va «Yetkazma biriktirish» panelini tekshiring.
+>
+> **QOLGAN TZ §7 QARZI (To'lqin 7 — hali qurilmagan):** **naqd topshirish (`DriverCashHandover`)** —
+> model + migratsiya kerak, LEKIN `schema.prisma` shu sessiyada parallel sessiya qo'lida edi (To'lqin 1.3),
+> §6.1 bo'yicha tegilmadi · ish birligiga oylik (5-to'lqin payroll'ga bog'liq) · **Yandex kaliti yo'q**
+> (ETA haversine-taxmin, geokoder `enabled:false` → manzil koordinatasi qo'lda) · **Android ilova**
+> (fon rejimida ishonchli GPS — brauzer buni bermaydi).
 
 > **🕒 2026-08-02e (PHASE-2 QA — to'lqin 1.1 + 1.2 BRAUZERDA TEKSHIRILDI · `23fdd3e`)**
 >
