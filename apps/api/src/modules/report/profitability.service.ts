@@ -21,9 +21,28 @@ import { type RateContext, consolidateToBase, loadRateContext } from './report-r
  * DATA:
  *   Продажи = posted Demands (Отгрузка) + optionally posted RetailSales (Продажа).
  *   Возврат = posted SalesReturns.
- *   Retail positions carry NO frozen per-line cost in our schema, so retail
- *   contributes revenue/qty/documents only (cost 0). Демандs are FIFO-costed
- *   and drive every verified number; «Отгрузка» is the fully-correct path.
+ *   Демандs are FIFO-costed; retail carries the cost frozen at post() from the
+ *   product card (`retail_sale_positions.cost_minor`, To'lqin 1.1).
+ *
+ * COST HONESTY (To'lqin 1.2, 2026-08-02) — «tan narx yig'ilmagan»:
+ *   `cost_minor` is NULLABLE on every position table, and NULL means "never
+ *   captured", NOT "free". Retail used to select a literal `0::bigint AS cost`
+ *   and the demand/return queries used `COALESCE(cost_minor, 0)` — so any
+ *   uncosted line was reported as pure profit and the report claimed **100%
+ *   margin** on it. Owners priced against that number.
+ *   Now: NULL lines are EXCLUDED from the cost SUM (arithmetically identical to
+ *   coalescing them to zero — that was never the bug) and COUNTED into
+ *   `costMissingLines`, which rides on every row, the totals and each chart
+ *   bucket. `costIncomplete = costMissingLines > 0` tells the FE the cost column
+ *   is an UNDER-count and profit / profitability are an UPPER bound, so it can
+ *   label the figure instead of presenting it as fact.
+ *   Old receipts are deliberately NOT backfilled: the cost at that moment was
+ *   never recorded anywhere, and re-deriving it from today's product card would
+ *   invent a number. They stay NULL and stay marked.
+ *
+ * KNOWN GAP (pre-existing, unchanged here): `chartBuckets` aggregates demands +
+ * returns only — retail is absent from the chart while it IS in the table, so a
+ * `documentType=retail` filter draws an empty/returns-only series. Separate fix.
  */
 export const ProfitabilityFilterSchema = z.object({
   /** Which dimension to group rows by (the 4 tabs). */
@@ -111,6 +130,14 @@ export interface ProfitabilityRow {
   profitGoodsPct: string;
   /** Рентабельность продаж, 2dp string; '' when net revenue = 0. */
   profitSalesPct: string;
+  /**
+   * Lines behind this row whose cost was never captured («tan narx yig'ilmagan»).
+   * > 0 means the cost columns are an UNDER-count and profit/profitability are an
+   * OVER-count — the FE must mark the row instead of presenting the figure as fact.
+   */
+  costMissingLines: number;
+  /** Convenience mirror of `costMissingLines > 0`. */
+  costIncomplete: boolean;
 }
 
 export interface ProfitabilityTotals {
@@ -125,6 +152,9 @@ export interface ProfitabilityTotals {
   profitMinor: string;
   profitGoodsPct: string;
   profitSalesPct: string;
+  /** Same contract as ProfitabilityRow — counted over ALL groups, not just the page. */
+  costMissingLines: number;
+  costIncomplete: boolean;
 }
 
 export interface ProfitabilityChartBucket {
@@ -142,6 +172,9 @@ export interface ProfitabilityChartBucket {
   profitGoodsPct: string;
   profitSalesPct: string;
   avgCheckMinor: string;
+  /** Same contract as ProfitabilityRow — the bucket's cost is an UNDER-count when > 0. */
+  costMissingLines: number;
+  costIncomplete: boolean;
 }
 
 export interface ProfitabilityReport {
@@ -177,6 +210,12 @@ type SalesRow = {
   qty: string;
   sum: bigint;
   cost: bigint;
+  /**
+   * Lines in this bucket whose `cost_minor` is NULL — cost was never captured.
+   * NOT folded into `cost` as zero: that is the 100%-margin lie. Optional so a
+   * legacy caller/fixture that predates the column degrades to "0 missing".
+   */
+  costMissing?: bigint;
 };
 type ReturnRow = SalesRow;
 
@@ -194,6 +233,8 @@ type Agg = {
   returnQty: number;
   returnSum: bigint;
   returnCost: bigint;
+  /** Sold/returned lines with no captured cost — makes `*Cost` an UNDER-count. */
+  costMissingLines: number;
 };
 
 @Injectable()
@@ -357,7 +398,8 @@ export class ProfitabilityService {
             COUNT(DISTINCT d.id)::bigint AS documents,
             COALESCE(SUM(dp.quantity), 0)::text AS qty,
             COALESCE(SUM((dp.quantity * dp.price_minor * (100 - dp.discount) / 100)::numeric), 0)::bigint AS sum,
-            COALESCE(SUM((dp.quantity * COALESCE(dp.cost_minor, 0))::numeric), 0)::bigint AS cost
+            COALESCE(SUM((dp.quantity * dp.cost_minor)::numeric), 0)::bigint AS cost,
+            COUNT(*) FILTER (WHERE dp.cost_minor IS NULL)::bigint AS "costMissing"
           FROM demand_positions dp
           JOIN demands d ON d.id = dp.demand_id AND ${demandWhere()}
           WHERE dp.assortment_id IS NOT NULL ${posWhere('dp')}
@@ -377,7 +419,8 @@ export class ProfitabilityService {
         COUNT(DISTINCT sr.id)::bigint AS documents,
         COALESCE(SUM(srp.quantity), 0)::text AS qty,
         COALESCE(SUM((srp.quantity * srp.price_minor * (100 - srp.discount) / 100)::numeric), 0)::bigint AS sum,
-        COALESCE(SUM((srp.quantity * COALESCE(srp.cost_minor, 0))::numeric), 0)::bigint AS cost
+        COALESCE(SUM((srp.quantity * srp.cost_minor)::numeric), 0)::bigint AS cost,
+        COUNT(*) FILTER (WHERE srp.cost_minor IS NULL)::bigint AS "costMissing"
       FROM sales_return_positions srp
       JOIN sales_returns sr ON sr.id = srp.sales_return_id AND ${returnWhere()}
       WHERE srp.assortment_id IS NOT NULL ${posWhere('srp')}
@@ -403,6 +446,7 @@ export class ProfitabilityService {
           returnQty: 0,
           returnSum: 0n,
           returnCost: 0n,
+          costMissingLines: 0,
         };
         byGroup.set(gid, a);
       }
@@ -417,6 +461,7 @@ export class ProfitabilityService {
       a.salesQty += Number(r.qty || '0');
       a.salesSum += consolidateToBase(r.sum, r.currency, ctx, seen);
       a.salesCost += r.cost; // already base
+      a.costMissingLines += Number(r.costMissing ?? 0n);
     }
     for (const r of returnRows) {
       if (r.gid == null && excludeNullKey) continue;
@@ -426,6 +471,7 @@ export class ProfitabilityService {
       a.returnQty += Number(r.qty || '0');
       a.returnSum += consolidateToBase(r.sum, r.currency, ctx, seen);
       a.returnCost += r.cost;
+      a.costMissingLines += Number(r.costMissing ?? 0n);
     }
 
     // ---- Resolve labels for the surviving group ids ---------------------
@@ -454,6 +500,8 @@ export class ProfitabilityService {
         profitMinor: profit.toString(),
         profitGoodsPct: pct(profit, netCost),
         profitSalesPct: pct(profit, netRev),
+        costMissingLines: a.costMissingLines,
+        costIncomplete: a.costMissingLines > 0,
       };
     });
 
@@ -538,14 +586,26 @@ export class ProfitabilityService {
     };
   }
 
-  /** Retail «Продажа» sales aggregate — revenue/qty/documents only (no cost). */
+  /**
+   * Retail «Продажа» sales aggregate — revenue/qty/documents + FROZEN per-line cost.
+   *
+   * 2026-08-02 (To'lqin 1.2): this used to select a literal `0::bigint AS cost`,
+   * so every POS receipt was reported at **100% margin** and owners made pricing
+   * decisions on that number. To'lqin 1.1 added `retail_sale_positions.cost_minor`
+   * (frozen at post()), so the real cost is now available.
+   *
+   * NULL ≠ 0 — the whole point. `SUM(quantity * cost_minor)` SKIPS NULL lines
+   * rather than COALESCE-ing them to zero, and `costMissing` counts them so the
+   * caller can label the row «tan narx yig'ilmagan». Coalescing here would just
+   * change the shape of the same lie: pre-1.1 receipts would read as free goods.
+   */
   private async queryRetailSales(
     accountId: string,
     filter: ProfitabilityFilter,
     gte: Date,
     lt: Date,
   ): Promise<SalesRow[]> {
-    // Retail positions have product_id but no assortment_kind/cost — treat as products.
+    // Retail positions have product_id but no assortment_kind — treat as products.
     if (filter.accountedType === 'services' || filter.accountedType === 'bundles') return [];
     let key: Prisma.Sql;
     if (filter.groupBy === 'product') key = Prisma.sql`rsp.product_id`;
@@ -575,7 +635,8 @@ export class ProfitabilityService {
         COUNT(DISTINCT rs.id)::bigint AS documents,
         COALESCE(SUM(rsp.quantity), 0)::text AS qty,
         COALESCE(SUM(rsp.sum_minor), 0)::bigint AS sum,
-        0::bigint AS cost
+        COALESCE(SUM((rsp.quantity * rsp.cost_minor)::numeric), 0)::bigint AS cost,
+        COUNT(*) FILTER (WHERE rsp.cost_minor IS NULL)::bigint AS "costMissing"
       FROM retail_sale_positions rsp
       JOIN retail_sales rs ON rs.id = rsp.retail_sale_id AND ${Prisma.join(rsParts, ' ')}
       WHERE rsp.product_id IS NOT NULL ${rspPos}
@@ -700,6 +761,7 @@ export class ProfitabilityService {
       qty: string;
       sum: bigint;
       cost: bigint;
+      costMissing?: bigint;
     };
     // The chart carries the SAME (non-date) filters but its own [gte,lt) — passed
     // explicitly so the compare period reuses this method with shifted bounds.
@@ -709,7 +771,8 @@ export class ProfitabilityService {
             COUNT(DISTINCT d.id)::bigint AS documents,
             COALESCE(SUM(dp.quantity), 0)::text AS qty,
             COALESCE(SUM((dp.quantity * dp.price_minor * (100 - dp.discount) / 100)::numeric), 0)::bigint AS sum,
-            COALESCE(SUM((dp.quantity * COALESCE(dp.cost_minor, 0))::numeric), 0)::bigint AS cost
+            COALESCE(SUM((dp.quantity * dp.cost_minor)::numeric), 0)::bigint AS cost,
+            COUNT(*) FILTER (WHERE dp.cost_minor IS NULL)::bigint AS "costMissing"
           FROM demand_positions dp
           JOIN demands d ON d.id = dp.demand_id AND ${this.windowedDemandWhere(accountId, filter, gte, lt)}
           WHERE dp.assortment_id IS NOT NULL ${q.posWhere('dp')}
@@ -721,7 +784,8 @@ export class ProfitabilityService {
         COUNT(DISTINCT sr.id)::bigint AS documents,
         COALESCE(SUM(srp.quantity), 0)::text AS qty,
         COALESCE(SUM((srp.quantity * srp.price_minor * (100 - srp.discount) / 100)::numeric), 0)::bigint AS sum,
-        COALESCE(SUM((srp.quantity * COALESCE(srp.cost_minor, 0))::numeric), 0)::bigint AS cost
+        COALESCE(SUM((srp.quantity * srp.cost_minor)::numeric), 0)::bigint AS cost,
+        COUNT(*) FILTER (WHERE srp.cost_minor IS NULL)::bigint AS "costMissing"
       FROM sales_return_positions srp
       JOIN sales_returns sr ON sr.id = srp.sales_return_id AND ${this.windowedReturnWhere(accountId, filter, gte, lt)}
       WHERE srp.assortment_id IS NOT NULL ${q.posWhere('srp')}
@@ -748,6 +812,8 @@ export class ProfitabilityService {
           profitGoodsPct: '',
           profitSalesPct: '',
           avgCheckMinor: '0',
+          costMissingLines: 0,
+          costIncomplete: false,
         };
         map.set(k, b);
       }
@@ -761,6 +827,7 @@ export class ProfitabilityService {
         BigInt(b.salesSumMinor) + consolidateToBase(r.sum, r.currency, ctx, seen)
       ).toString();
       b.salesSumCostMinor = (BigInt(b.salesSumCostMinor) + r.cost).toString();
+      b.costMissingLines += Number(r.costMissing ?? 0n);
     }
     for (const r of returnBuckets) {
       const b = ensure(r.bucket);
@@ -770,6 +837,7 @@ export class ProfitabilityService {
         BigInt(b.returnSumMinor) + consolidateToBase(r.sum, r.currency, ctx, seen)
       ).toString();
       b.returnSumCostMinor = (BigInt(b.returnSumCostMinor) + r.cost).toString();
+      b.costMissingLines += Number(r.costMissing ?? 0n);
     }
     // Finalise derived series + fill empty buckets across the whole range.
     const out: ProfitabilityChartBucket[] = [];
@@ -784,6 +852,7 @@ export class ProfitabilityService {
       b.avgCheckMinor = (
         b.salesDocuments > 0 ? BigInt(b.salesSumMinor) / BigInt(b.salesDocuments) : 0n
       ).toString();
+      b.costIncomplete = b.costMissingLines > 0;
       out.push(b);
     }
     return out;
@@ -858,7 +927,9 @@ function computeTotals(rows: ProfitabilityRow[]): ProfitabilityTotals {
   let returnQty = 0;
   let returnSum = 0n;
   let returnCost = 0n;
+  let costMissingLines = 0;
   for (const r of rows) {
+    costMissingLines += r.costMissingLines;
     salesDocuments += r.salesDocuments;
     salesQty += Number(r.salesQuantity);
     salesSum += BigInt(r.salesSumMinor);
@@ -883,6 +954,8 @@ function computeTotals(rows: ProfitabilityRow[]): ProfitabilityTotals {
     profitMinor: profit.toString(),
     profitGoodsPct: pct(profit, netCost),
     profitSalesPct: pct(profit, netRev),
+    costMissingLines,
+    costIncomplete: costMissingLines > 0,
   };
 }
 

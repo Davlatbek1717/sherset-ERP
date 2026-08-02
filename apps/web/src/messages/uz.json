@@ -3176,7 +3176,10 @@
       "col_revenue": "Daromad",
       "col_cogs": "Tannarx",
       "col_margin": "Marja",
-      "col_margin_pct": "Marja %"
+      "col_margin_pct": "Marja %",
+      "cost_incomplete": "Tan narx to'liq yig'ilmagan: {count} qatorda tan narx yo'q",
+      "cost_hint": "Bunday qatorlar nol tan narx deb hisoblanMAYDI. Ya'ni tan narx kam ko'rsatilgan, foyda va rentabellik esa oshirib ko'rsatilgan — bu raqamlar yuqori chegara, fakt emas. Tan narx yig'ila boshlaguncha o'tkazilgan cheklar orqaga qarab to'ldirilmaydi: o'sha ondagi tan narx hech qayerda yozilmagan.",
+      "cost_incomplete_row": "{count} qatorda tan narx yig'ilmagan — bu qatordagi foyda oshirib ko'rsatilgan"
     },
     "report_abc": {
       "title": "ABC tahlili",

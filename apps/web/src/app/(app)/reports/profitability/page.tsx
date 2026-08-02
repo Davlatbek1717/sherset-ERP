@@ -59,6 +59,13 @@ interface Row {
   profitMinor: string;
   profitGoodsPct: string;
   profitSalesPct: string;
+  /**
+   * «Tan narx yig'ilmagan» — lines behind this row with no captured cost.
+   * When > 0 the cost columns UNDER-count and profit/profitability OVER-count,
+   * so the figure is marked rather than shown as fact (To'lqin 1.2).
+   */
+  costMissingLines: number;
+  costIncomplete: boolean;
 }
 interface Totals {
   salesDocuments: number;
@@ -72,6 +79,8 @@ interface Totals {
   profitMinor: string;
   profitGoodsPct: string;
   profitSalesPct: string;
+  costMissingLines: number;
+  costIncomplete: boolean;
 }
 interface Report {
   groupBy: GroupBy;
@@ -741,6 +750,21 @@ export default function ProfitabilityReportPage() {
           </div>
         )}
 
+      {/* ---- «tan narx yig'ilmagan» banner (To'lqin 1.2) ----
+           Cost is nullable per position; NULL means "never captured", not 0.
+           Without this the report silently presents an inflated profit as fact. */}
+      {data?.totals.costIncomplete && (
+        <div
+          className="mt-2 rounded-[var(--ms-radius-default)] border border-[var(--ms-border-warning,#d9a441)] bg-[var(--ms-bg-warning,#fffbe6)] px-3 py-2 text-[var(--ms-text-primary)] text-sm"
+          data-test-id="prof-cost-banner"
+        >
+          <div className="mb-1 font-medium">
+            {t('cost_incomplete', { count: data.totals.costMissingLines })}
+          </div>
+          <div className="text-[var(--ms-text-secondary)] text-xs">{t('cost_hint')}</div>
+        </div>
+      )}
+
       {/* ---- chart panel ---- */}
       {chartOpen && (
         <div className="mt-2 rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] p-3">
@@ -1079,7 +1103,18 @@ export default function ProfitabilityReportPage() {
                       {isProduct && <Td>{perUnit(r.salesSumMinor, r.salesQuantity)}</Td>}
                       {isProduct && <Td muted>{perUnit(r.salesSumCostMinor, r.salesQuantity)}</Td>}
                       <Td>{money(r.salesSumMinor)}</Td>
-                      <Td muted>{money(r.salesSumCostMinor)}</Td>
+                      <Td muted>
+                        {money(r.salesSumCostMinor)}
+                        {r.costIncomplete && (
+                          <span
+                            className="ml-1 cursor-help font-bold text-[var(--ms-text-warning,#b26a00)]"
+                            title={t('cost_incomplete_row', { count: r.costMissingLines })}
+                            data-test-id="prof-cost-flag"
+                          >
+                            *
+                          </span>
+                        )}
+                      </Td>
                       {/* returns */}
                       <Td>{r.returnDocuments || 0}</Td>
                       {isProduct ? (
