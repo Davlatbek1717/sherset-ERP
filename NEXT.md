@@ -305,6 +305,64 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-02m (MENEJER 4M.1 — kunlik xodim KPI o'lchov yadrosi · `829c122`)**
+>
+> **KEYINGI ISH = 4M.2 «Kunlik qabul qilish» — egasining 1-USTUVORLIGI.** Reja:
+> `~/.claude/plans/endi-menejer-uchun-alohida-steady-tiger.md`, TZ:
+> `docs/superpowers/specs/2026-08-02-menejer-kunlik-kpi-tz-design.md` (4M.1 bosqichi shu bilan yopildi).
+>
+> **NIMA QILINDI.** Menejer bo'limining o'lchov poydevori. Servis FAQAT o'lchaydi — qabul qilish,
+> tuzatish va oylikka o'tkazish 4M.2/4M.3 da. **UI YO'Q** (rejadagidek).
+> - **Ombor, 6 jadval** (`20260802180000_manager_daily_kpi`, 37 statement, **faqat CREATE** — mavjud
+>   hech narsa o'zgarmaydi, `HrKpiDailyLog` joyida qoladi): `KpiMetricDef` · `KpiProfile`/`Version`/
+>   `Metric` · `EmployeeDailyKpi` · `EmployeeDailyKpiMetric`.
+> - **Profil VERSIYALANADI** — og'irlik bugun o'zgarsa o'tgan kunlar o'z versiyasida qoladi
+>   (tan narx muzlatish bilan bir klass: hisobot tarixni qayta yozmaydi).
+> - **Katalog** `kpi-metrics.ts` — 16 ko'rsatkich, har birida `direction` (ko'p-yaxshi/kam-yaxshi) va
+>   `perHour` bayrog'i. Soatga normallashtirish faqat OQIM ko'rsatkichlarida (kassa farqi yoki
+>   kechikishni soatga bo'lish ma'nosiz).
+> - **Manbalar** — faqat bugun mavjudlari: `CashierSession`+`CashierAuditEvent` (kassa),
+>   `RetailSalePosition.costMinor` (1.1 muzlatilgan tan narx), `Demand.ownerId` (sotuv),
+>   `HrAttendance` (davomat), `Task` (vazifa), `RestockTaskLine.confirmedById` (yig'ish).
+> - **Tungi cron** `40 0 * * *` `Asia/Tashkent`, `isRunning` qo'riqchisi bilan (hr-kpi-cron naqshi).
+>
+> **UCH SHARTNOMA TESTDA QULFLANDI** (buzilsa raqam YOLG'ON bo'ladi, gate esa yashil qolaveradi):
+> 1. **NULL ≠ 0** — tan narxi yig'ilmagan qator foydaga qo'shilmaydi va kun CHALA deb belgilanadi.
+> 2. **Kassir o'qi = `CashierSession.cashierId`**, `RetailSale.ownerId` EMAS (qaytarishda ownerId
+>    AKTYORGA yoziladi — analitika TZ X2 shu bilan yopildi).
+> 3. **Qayta hisoblash faqat `autoValue`/`complete` yozadi** — menejer tuzatmasini (`adjustValue`,
+>    `reasonCode`) va kun holatini (`state`) o'chirmaydi. 4M.2 qabul oqimi shunga tayanadi.
+>
+> **🔴 YO'L-YO'LAKAY TOPILGAN XATO — KUN YORLIG'I BIR KUNGA SURILARDI.** Mahalliy yarim tunning UTC
+> kalendar sanasi olinardi: 23:30 Toshkent = 01-avgust 19:00 UTC → 02-avgust ma'lumoti «01-avgust»
+> deb yozilardi. **Jonli hisobda ko'rindi** (test emas — mock'da TZ farqi bilinmaydi). Tuzatildi:
+> yangi `tz.util.localDateOnly` (yorliq uchun) — `startOfLocalDay` (chegara uchun) bilan aralashmasin;
+> 2 test qulfladi, jumladan «yorliq va so'rov chegarasi bir xil kunni bildiradi».
+> **⚠️ MAVJUD `hr-kpi.service.ts:55` AYNAN SHU XATO BILAN YASHAYAPTI** — `HrKpiDailyLog.date` bir kun
+> orqada. **ATAYLAB TEGILMADI**: tuzatish mavjud qatorlarni qayta yorliqlaydi va oylik hisobiga
+> ta'sir qiladi → alohida qaror + ma'lumot migratsiyasi kerak. 4M.3 (qabul → oylik) da hal qilinsin.
+>
+> **GATE:** typecheck 0 · biome 0 · **api Vitest 4446/4446 pass** (+34 yangi).
+> **JONLI TEKSHIRUV (API-daraja, brauzersiz):** lokal `moysklad_dev` bazasiga migratsiya qo'llandi
+> (37/37) va `computeDay` REAL ma'lumotda yugurdi → 10 ko'rsatkich yozildi, `cash_revenue 11 810 000` ·
+> `discount_given 3 600 000` · `below_cost_loss 240 000` · `cash_gross_profit −110 000` **«chala»
+> bayrog'i bilan** (aynan NULL≠0 shartnomasi ishladi — soxta 100% marja emas). Sana yorlig'i
+> tuzatishdan keyin `2026-08-02` (oldin `2026-08-01` edi).
+> **HALOL STATUS: Phase-1 — UI yo'q, brauzer-smoke YO'Q.** Runtime faqat API/DB darajasida tasdiqlandi.
+>
+> **DEPLOY QILINMAGAN.** Shu bilan birga **3.1 (`26df34f`, aralash to'lov — terminal/qarz) ham hali
+> prod'da yo'q** — 08-02i entry'siga qara, u prod'da hamon buzuq.
+>
+> **PARALLEL SESSIYA.** Ish `wave4m-kpi-core` worktree'da bajarildi; asosiy checkout'da parallel
+> sessiya `ru/uz.json` ustida ishlayotgan edi. Ularning tagini tortmaslik uchun branch `climart-adoption`
+> ustiga **rebase** qilindi va **fast-forward** bilan merge qilindi — ularning dirty fayllari
+> tegilmadi (merge oldi/keyin `git status` bir xil). To'qnashgan yagona fayl `docs/progress.json`
+> (hook generatsiya qiladi) — commit'dan chiqarib tashlandi.
+>
+> **4M.2 UCHUN TAYYOR NARSALAR:** `EmployeeDailyKpi.state` (VarChar, default `computed`) va
+> `staleAt` allaqachon sxemada · hisoblash ularga TEGMAYDI · `EmployeeDailyKpiEvent` (append-only
+> jurnal) hali YO'Q — 4M.2 da qo'shiladi. FSM naqshi: `supply-approval/supply-approval.fsm.ts`.
+
 > **🕒 2026-08-02l (HAYDOVCHI NAQD TOPSHIRIG'I — TZ §7.2 · `fd8056d` + `9ce42bb`) · ✅ DEPLOYED**
 >
 > **HAYDOVCHI GPS ISHI SHU BILAN TZ §7 BO'YICHA YOPILDI** (§7.1 va §7.2 bajarildi; §7.3 —
