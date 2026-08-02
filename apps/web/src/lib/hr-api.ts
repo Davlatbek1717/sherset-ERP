@@ -1174,4 +1174,30 @@ export const driverTrackingApi = {
   myTrips: () => api.get<DriverTrip[]>('/driver-tracking/my/trips'),
 };
 
+/** Manzil → koordinata. Yandex kaliti yo'q bo'lsa `enabled:false` (qo'lda kiritiladi). */
+export interface GeocodeResponse {
+  enabled: boolean;
+  result: { lat: number; lng: number; precision: string; formatted: string | null } | null;
+}
+
+export interface AssignTripInput {
+  driverId: string;
+  orderType: 'demand' | 'retail_sale' | 'manual';
+  orderId?: string | null;
+  destLat: number;
+  destLng: number;
+  destAddress?: string | null;
+  geocodeSource: 'auto' | 'manual';
+}
+
+export const driverTripApi = {
+  geocode: (address: string) =>
+    api.get<GeocodeResponse>(`/driver-trips/geocode?address=${encodeURIComponent(address)}`),
+  assign: (data: AssignTripInput) => api.post<DriverTrip>('/driver-trips', data),
+  updateStatus: (id: string, status: DriverTrip['status']) =>
+    api.patch<DriverTrip>(`/driver-trips/${id}/status`, { status }),
+  /** driverId'siz — barcha FAOL (assigned/enroute/arrived) yetkazmalar. */
+  listActive: () => api.get<DriverTrip[]>('/driver-trips'),
+};
+
 export type { HrAccessLevel, HrPermissionRow };

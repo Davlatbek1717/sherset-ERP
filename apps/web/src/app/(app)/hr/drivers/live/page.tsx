@@ -13,6 +13,7 @@
  */
 
 import type { DriverLiveRow } from '@/components/hr/driver-live-map';
+import { DriverTripAssign } from '@/components/hr/driver-trip-assign';
 import { api } from '@/lib/api-client';
 // MASTER-TODO #10: tone maps live in one module so the vocabulary can't drift
 // (the drift-lock in __tests__/domain-status-tone.test.ts enforces it).
@@ -127,7 +128,12 @@ export default function DriversLivePage() {
       {isLoading ? (
         <Skeleton className="h-[520px] w-full" />
       ) : drivers.length === 0 ? (
-        <EmptyState title={t.empty} />
+        <>
+          <EmptyState title={t.empty} />
+          {/* Haydovchi yo'q bo'lsa ham panel ko'rinadi — dispecher NEGA
+              biriktira olmayotganini o'sha yerda o'qiydi (jim bo'sh ekran emas). */}
+          <DriverTripAssign drivers={[]} />
+        </>
       ) : (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[2fr_1fr]">
           <DriverLiveMap drivers={drivers} popupText={popupText} />
@@ -168,6 +174,11 @@ export default function DriversLivePage() {
                 ))}
               </tbody>
             </table>
+            <div className="p-3">
+              <DriverTripAssign
+                drivers={drivers.map((d) => ({ driverId: d.driverId, name: d.name }))}
+              />
+            </div>
           </div>
         </div>
       )}
