@@ -17,12 +17,55 @@
  * ham panel ishlaydi, chunki prodda kalit hali yo'q.
  */
 
+import { api } from '@/lib/api-client';
 import { NEXT_STATUS, coordsValid } from '@/lib/driver-trip-fsm';
 import { type AssignTripInput, type DriverTrip, driverTripApi } from '@/lib/hr-api';
-import { Alert, Button, Input, NativeSelect, useToast } from '@moysklad/ui';
+import {
+  Alert,
+  Button,
+  Combobox,
+  type ComboboxItem,
+  Input,
+  NativeSelect,
+  useToast,
+} from '@moysklad/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useState } from 'react';
+
+/**
+ * TZ §7.1 — yetkazma ↔ hujjat bog'lanishi. `DriverTrip.orderType`/`orderId`
+ * ustunlari 2026-07-28 dan BERI BOR edi, lekin ularni to'ldiradigan ekran
+ * yo'qligi uchun har yetkazma `manual` bo'lib qolardi va «haydovchi qaysi
+ * hujjatni yetkazyapti» degan savolga javob yo'q edi.
+ *
+ * Manzil hujjatdan olinadi (`shipmentAddress` — «Адрес доставки»), shuning
+ * uchun dispecher uni qayta yozmaydi: bir manzil ikki joyda turib farq
+ * qilmasin.
+ */
+interface OrderHit {
+  id: string;
+  name: string;
+  agentName: string | null;
+  shipmentAddress: string | null;
+}
+
+async function searchDemands(q: string): Promise<OrderHit[]> {
+  const r = await api.get<{
+    items: {
+      id: string;
+      name: string;
+      agent?: { name: string } | null;
+      shipmentAddress?: string | null;
+    }[];
+  }>(`/demands?state=posted&search=${encodeURIComponent(q)}&limit=20`);
+  return r.items.map((d) => ({
+    id: d.id,
+    name: d.name,
+    agentName: d.agent?.name ?? null,
+    shipmentAddress: d.shipmentAddress ?? null,
+  }));
+}
 
 export interface DriverOption {
   driverId: string;
@@ -38,9 +81,17 @@ export function DriverTripAssign({ drivers }: { drivers: DriverOption[] }) {
   const [address, setAddress] = useState('');
   const [lat, setLat] = useState('');
   const [lng, setLng] = useState('');
+  // Manba hujjat: 'manual' = erkin manzil; 'demand' = Otgruzka'ga bog'langan.
+  const [orderType, setOrderType] = useState<'manual' | 'demand'>('manual');
+  const [orderId, setOrderId] = useState<string>('');
+  const [orderHits, setOrderHits] = useState<OrderHit[]>([]);
   // 'auto' faqat geokoder koordinatani TOPGAN bo'lsa — aks holda 'manual'
   // (server `geocodeSource` ni saqlaydi, keyin sifatni ajratish uchun kerak).
   const [source, setSource] = useState<'auto' | 'manual'>('manual');
+  // Qaysi geokoder topgani — OpenStreetMap natijasi uchun atribut ODbL
+  // bo'yicha MAJBURIY (xarita plitkalarida atribut bor, lekin geokod natijasi
+  // alohida ma'lumot — u ham belgilanadi).
+  const [geoProvider, setGeoProvider] = useState<'nominatim' | 'yandex' | null>(null);
 
   const { data: trips } = useQuery<DriverTrip[]>({
     queryKey: ['driver-trips-active'],
@@ -62,6 +113,7 @@ export function DriverTripAssign({ drivers }: { drivers: DriverOption[] }) {
       setLat(String(r.result.lat));
       setLng(String(r.result.lng));
       setSource('auto');
+      setGeoProvider(r.provider);
       if (r.result.formatted) setAddress(r.result.formatted);
       toast.success(t('geocode_ok'));
     },
@@ -72,7 +124,10 @@ export function DriverTripAssign({ drivers }: { drivers: DriverOption[] }) {
     mutationFn: () => {
       const payload: AssignTripInput = {
         driverId,
-        orderType: 'manual',
+        // Hujjat tanlanmagan bo'lsa `manual` — server enum'i shuni kutadi
+        // (bog'lanmagan yetkazma ham qonuniy: telefon orqali kelgan buyurtma).
+        orderType: orderType === 'demand' && orderId ? 'demand' : 'manual',
+        orderId: orderType === 'demand' && orderId ? orderId : null,
         destLat: Number(lat),
         destLng: Number(lng),
         destAddress: address.trim() || null,
@@ -87,6 +142,9 @@ export function DriverTripAssign({ drivers }: { drivers: DriverOption[] }) {
       setLat('');
       setLng('');
       setSource('manual');
+      setGeoProvider(null);
+      setOrderId('');
+      setOrderHits([]);
       toast.success(t('assigned'));
     },
     onError: (e: Error) => toast.error(e.message),
@@ -132,6 +190,52 @@ export function DriverTripAssign({ drivers }: { drivers: DriverOption[] }) {
               ))}
             </NativeSelect>
 
+            {/* Manba: erkin manzil yoki hujjat (TZ §7.1) */}
+            <NativeSelect
+              value={orderType}
+              onChange={(e) => {
+                setOrderType(e.target.value as 'manual' | 'demand');
+                setOrderId('');
+                setOrderHits([]);
+              }}
+              data-test-id="driver-trip-ordertype"
+            >
+              <option value="manual">{t('src_manual')}</option>
+              <option value="demand">{t('src_demand')}</option>
+            </NativeSelect>
+
+            {orderType === 'demand' && (
+              <Combobox
+                value={orderId || undefined}
+                onChange={(v) => {
+                  setOrderId(v ?? '');
+                  const hit = orderHits.find((h) => h.id === v);
+                  // Manzil hujjatdan — dispecher qayta yozmaydi (bitta manba).
+                  if (hit?.shipmentAddress) {
+                    setAddress(hit.shipmentAddress);
+                    setSource('manual');
+                    setGeoProvider(null);
+                  }
+                }}
+                items={orderHits.map((h) => ({
+                  value: h.id,
+                  label: h.name,
+                  sublabel: h.agentName ?? undefined,
+                }))}
+                onSearch={async (q): Promise<ComboboxItem[]> => {
+                  const hits = await searchDemands(q);
+                  setOrderHits(hits);
+                  return hits.map((h) => ({
+                    value: h.id,
+                    label: h.name,
+                    sublabel: h.agentName ?? undefined,
+                  }));
+                }}
+                placeholder={t('pick_demand')}
+                testId="driver-trip-order"
+              />
+            )}
+
             <div className="flex gap-2">
               <Input
                 value={address}
@@ -176,6 +280,12 @@ export function DriverTripAssign({ drivers }: { drivers: DriverOption[] }) {
             {!valid && (lat.trim() !== '' || lng.trim() !== '') && (
               <p className="text-[var(--ms-text-destructive)] text-xs">{t('coords_invalid')}</p>
             )}
+            {/* ODbL atributi — OpenStreetMap natijasi ko'rsatilganда majburiy. */}
+            {geoProvider === 'nominatim' && source === 'auto' && (
+              <p className="text-[var(--ms-text-muted)] text-xs" data-test-id="geocode-attribution">
+                {t('osm_attribution')}
+              </p>
+            )}
 
             <Button
               onClick={() => assignMut.mutate()}
@@ -205,6 +315,17 @@ export function DriverTripAssign({ drivers }: { drivers: DriverOption[] }) {
                 <div className="text-[var(--ms-text-muted)] text-xs">
                   {t(`status_${tr.status}` as 'status_assigned')}
                   {tr.etaSeconds != null && ` · ETA ${Math.round(tr.etaSeconds / 60)} ${t('min')}`}
+                  {/* Bog'langan hujjatga havola — «qaysi otgruzkani yetkazyapti»
+                      savoliga javob (TZ §7.1). Hujjat nomi API javobida yo'q,
+                      shuning uchun havola beriladi, nom to'qib chiqarilmaydi. */}
+                  {tr.orderType === 'demand' && tr.orderId && (
+                    <>
+                      {' · '}
+                      <a className="underline" href={`/demands/${tr.orderId}`}>
+                        {t('linked_demand')}
+                      </a>
+                    </>
+                  )}
                 </div>
                 <div className="mt-1.5 flex flex-wrap gap-1.5">
                   {NEXT_STATUS[tr.status].map((s) => (

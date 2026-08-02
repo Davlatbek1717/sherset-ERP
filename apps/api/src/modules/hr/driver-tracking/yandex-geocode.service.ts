@@ -1,21 +1,27 @@
 import { Injectable, Logger } from '@nestjs/common';
+import type { GeocodeProvider, GeocodeResult } from './geocode.port.js';
 
-export interface GeocodeResult {
-  lat: number;
-  lng: number;
-  /** Yandex «precision»: exact | number | near | range | street | other. */
-  precision: string;
-  formatted: string | null;
-}
+// `GeocodeResult` endi `geocode.port.ts` da (ikki provayder bitta shakl
+// qaytarishi uchun). Eski import yo'llari buzilmasin deb re-eksport qilinadi.
+export type { GeocodeResult };
 
 /**
- * Yandex Geocoder (manzil → koordinata) — gibrid biriktirish oqimining AVTO
- * qismi (TZ 2026-07-28 §8). Kalit `YANDEX_API_KEY` env'да; kalitsiz yoki xatoда
- * `null` qaytaradi (graceful — dispecher qo'lда nuqta qo'yadi). Bir xil matn
+ * Yandex Geocoder (manzil → koordinata) — TZ 2026-07-28 §8.
+ *
+ * ⚠️ FAQAT PULLIK LITSENZIYA BILAN. Yandex Maps API'ning BEPUL sharti bu
+ * loyihaga to'g'ri kelmaydi (2026-08-02 tekshiruvi): loyiha ochiq kirishli
+ * bo'lishi shart (bizniki login ortida) · natijani saqlash taqiqlanadi (biz
+ * `driver_trips.dest_lat/lng` ga yozamiz) · **xodim/transportni real vaqtda
+ * kuzatish alohida taqiqlangan** — bu loyihaning aynan o'zi. Shu sababli
+ * default provayder Nominatim (`geocode.service.ts`); bu servis faqat
+ * `GEOCODER_PROVIDER=yandex` + `YANDEX_API_KEY` bo'lganda ishlaydi.
+ *
+ * Kalitsiz yoki xatoda `null` qaytaradi (graceful). Bir xil matn
  * qayta-geokodlanmaydi (in-memory kesh).
  */
 @Injectable()
-export class YandexGeocodeService {
+export class YandexGeocodeService implements GeocodeProvider {
+  readonly name = 'yandex';
   private readonly logger = new Logger(YandexGeocodeService.name);
   private readonly cache = new Map<string, GeocodeResult | null>();
 

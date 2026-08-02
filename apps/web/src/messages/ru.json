@@ -7974,7 +7974,12 @@
       "to_enroute": "В путь",
       "to_arrived": "На месте",
       "to_completed": "Выполнена",
-      "to_cancelled": "Отменить"
+      "to_cancelled": "Отменить",
+      "osm_attribution": "Координаты © участники OpenStreetMap (ODbL)",
+      "src_manual": "Свободный адрес",
+      "src_demand": "По отгрузке",
+      "pick_demand": "Выберите отгрузку",
+      "linked_demand": "Отгрузка"
     }
   },
   "print_entity": {

@@ -7974,7 +7974,12 @@
       "to_enroute": "Yo'lga chiqdi",
       "to_arrived": "Yetib bordi",
       "to_completed": "Bajarildi",
-      "to_cancelled": "Bekor qilish"
+      "to_cancelled": "Bekor qilish",
+      "osm_attribution": "Koordinata © OpenStreetMap ishtirokchilari (ODbL)",
+      "src_manual": "Erkin manzil",
+      "src_demand": "Otgruzka bo'yicha",
+      "pick_demand": "Otgruzkani tanlang",
+      "linked_demand": "Otgruzka"
     }
   },
   "print_entity": {

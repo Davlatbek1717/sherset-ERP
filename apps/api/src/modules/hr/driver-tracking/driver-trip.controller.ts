@@ -15,7 +15,7 @@ import { JwtAuthGuard } from '../../auth/jwt-auth.guard.js';
 import { DispatcherGuard } from './dispatcher.guard.js';
 import { TripAssignSchema, TripStatusSchema } from './driver-tracking.schema.js';
 import { DriverTripService } from './driver-trip.service.js';
-import { YandexGeocodeService } from './yandex-geocode.service.js';
+import { GeocodeService } from './geocode.service.js';
 
 /**
  * Yetkazma (DriverTrip) — dispecher biriktirish + holat-o'tishlar (TZ §4.3).
@@ -27,15 +27,27 @@ import { YandexGeocodeService } from './yandex-geocode.service.js';
 export class DriverTripController {
   constructor(
     @Inject(DriverTripService) private readonly trips: DriverTripService,
-    @Inject(YandexGeocodeService) private readonly geocoder: YandexGeocodeService,
+    @Inject(GeocodeService) private readonly geocoder: GeocodeService,
   ) {}
 
-  /** Manzil matnini koordinataga (gibrid AVTO qismi). Kalitsiz → enabled:false. */
+  /**
+   * Manzil matnini koordinataga (gibrid AVTO qismi). O'chiq bo'lsa
+   * `enabled:false` → dispecher koordinatani qo'lda kiritadi.
+   *
+   * `provider` qaytariladi: FE atributni to'g'ri ko'rsatishi uchun
+   * (Nominatim natijasi ODbL — «© OpenStreetMap contributors»).
+   *
+   * ⚠️ Bu endpoint AVTOMATIK-TO'LDIRISH uchun chaqirilmasin — Nominatim
+   * siyosatida autocomplete qat'iy taqiqlangan (ban sababi). FE'da u
+   * «Topish» tugmasiga bog'langan, matn o'zgarishiga EMAS.
+   */
   @Get('geocode')
   async geocode(@Query('address') address?: string) {
-    if (!this.geocoder.isEnabled()) return { enabled: false, result: null };
+    if (!this.geocoder.isEnabled()) {
+      return { enabled: false, provider: null, result: null };
+    }
     const result = address ? await this.geocoder.geocode(address) : null;
-    return { enabled: true, result };
+    return { enabled: true, provider: this.geocoder.providerName(), result };
   }
 
   @Post()

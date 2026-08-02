@@ -8,6 +8,8 @@ import { DriverTrackingController } from './driver-tracking.controller.js';
 import { DriverTripController } from './driver-trip.controller.js';
 import { DriverTripService } from './driver-trip.service.js';
 import { DriverEtaWorkerCron } from './eta-worker.cron.js';
+import { GeocodeService } from './geocode.service.js';
+import { NominatimGeocodeService } from './nominatim-geocode.service.js';
 import { YandexGeocodeService } from './yandex-geocode.service.js';
 
 /**
@@ -23,7 +25,11 @@ import { YandexGeocodeService } from './yandex-geocode.service.js';
     DriverShiftService,
     DriverTripService,
     DriverLiveService,
+    // Geokoder: ikki provayder + tanlovchi fasad. Kontroller FAQAT fasadga
+    // bog'lanadi — provayderni almashtirish uchun kontroller o'zgarmaydi.
+    NominatimGeocodeService,
     YandexGeocodeService,
+    GeocodeService,
     DriverEtaWorkerCron,
   ],
   exports: [DriverShiftService],

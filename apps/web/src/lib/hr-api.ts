@@ -1154,6 +1154,9 @@ export interface DriverFieldPingResult {
 export interface DriverTrip {
   id: string;
   status: 'assigned' | 'enroute' | 'arrived' | 'completed' | 'cancelled';
+  /** TZ §7.1 — manba hujjat. `manual` = bog'lanmagan (telefon buyurtmasi). */
+  orderType: 'demand' | 'retail_sale' | 'manual' | null;
+  orderId: string | null;
   destAddress: string | null;
   destLat: number;
   destLng: number;
@@ -1174,9 +1177,16 @@ export const driverTrackingApi = {
   myTrips: () => api.get<DriverTrip[]>('/driver-tracking/my/trips'),
 };
 
-/** Manzil → koordinata. Yandex kaliti yo'q bo'lsa `enabled:false` (qo'lda kiritiladi). */
+/**
+ * Manzil → koordinata. Geokoder o'chiq bo'lsa `enabled:false` (dispecher
+ * koordinatani qo'lda kiritadi — panel baribir to'liq ishlaydi).
+ *
+ * `provider`: 'nominatim' (default, OpenStreetMap — ODbL, **atribut talab
+ * qilinadi**) yoki 'yandex' (faqat pullik litsenziya bilan).
+ */
 export interface GeocodeResponse {
   enabled: boolean;
+  provider: 'nominatim' | 'yandex' | null;
   result: { lat: number; lng: number; precision: string; formatted: string | null } | null;
 }
 
