@@ -52,7 +52,13 @@ function feKeys(): string[] {
   }
   const body = src.slice(open, end);
   // `key:` ko'rinishidagi TOP-DARAJA kalitlar (ichma-ich obyekt yo'q bu yerda).
-  return [...new Set([...body.matchAll(/(?:^|[\s{,(])([a-zA-Z_][\w]*)\s*:/g)].map((m) => m[1]))];
+  // `flatMap` + guard: `noUncheckedIndexedAccess` ostida `m[1]` — `string|undefined`,
+  // shuning uchun `map` `(string|undefined)[]` beradi va `string[]` ga sig'maydi.
+  return [
+    ...new Set(
+      [...body.matchAll(/(?:^|[\s{,(])([a-zA-Z_][\w]*)\s*:/g)].flatMap((m) => (m[1] ? [m[1]] : [])),
+    ),
+  ];
 }
 
 /** `PostRetailSaleSchema = z.object({ … })` da e'lon qilingan kalitlar. */
@@ -78,7 +84,11 @@ function apiKeys(): string[] {
     // Izohlar ichidagi `so'z:` kalit deb sanalmasin.
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/\/\/[^\n]*/g, '');
-  return [...new Set([...body.matchAll(/(?:^|\n)\s{2}([a-zA-Z_][\w]*)\s*:/g)].map((m) => m[1]))];
+  return [
+    ...new Set(
+      [...body.matchAll(/(?:^|\n)\s{2}([a-zA-Z_][\w]*)\s*:/g)].flatMap((m) => (m[1] ? [m[1]] : [])),
+    ),
+  ];
 }
 
 describe('POS to`lov shartnomasi — FE yuborgan har maydonni API biladi', () => {
