@@ -305,6 +305,54 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-02k (MENEJER BO'LIMI TZ'si — kunlik KPI qabul qilish · `ab79f7a`)**
+>
+> **Egasi menejer bo'limini so'radi** va ikkita aniq talab qo'ydi: (1) **xodimlarning kunini KPI
+> bo'yicha QABUL QILIB OLISH** — birinchi navbatda, (2) **to'liq xodimlar nazorati** — keyin.
+> Mavjud 4-bo'lim TZ'sini tekshirganda ma'lum bo'ldi: **ikkalasi ham unda yo'q** — u ruxsatlar va
+> tasdiqlash navbati haqida, plan **faqat oylik**, «kunlik xodim KPI» hech bir qarorida yo'q.
+>
+> Asl hujjat egasi tasdiqlagani uchun **qayta yozilmadi** — kengaytma alohida hujjatda
+> (`2026-08-02-menejer-kunlik-kpi-tz-design.md`, 445 satr), asl hujjatga ishora va **Q3 tuzatmasi**
+> qo'shildi.
+>
+> **🔴 TOPILGAN ZIDDIYAT:** koddа **uchta parallel «kunlik xodim o'lchovi»** bor yoki
+> rejalashtirilgan va hech qayerda kelishtirilmagan — `HrKpiDailyLog` (**ishlayapti**, cron 23:30,
+> faqat `Demand.ownerId` sotuvi) · `EmployeeDailyRollup` (3-TZ §5.1 da rejalashtirilgan) ·
+> `SalesPlan` (2-TZ). Egasi qaroriga ko'ra **bitta ombor qoladi: mavjud HR KPI kengaytiriladi** —
+> 1.4 da o'rnatilgan «bir savolga ikki javob bo'lmasin» tamoyilining davomi.
+>
+> **Qarorlar M-Q1…M-Q11.** Ikkitasi bo'yicha ochiq izoh yozildi:
+> · **M-Q8 «bloklaydi»** — menejer kasal bo'lsa xodim oyliksiz qoladi → **egaga eskalatsiya
+>   klapani** (majburiy yopish, audit bilan). Bloklash saqlandi, boshi berk ko'cha yopildi.
+> · **M-Q9 «har kun qo'lda»** — 20+ xodim degani → ekran **tezlik uchun** qurilishi shart (bitta
+>   ekran, skrollsiz, klaviatura), aks holda menejer ko'r-ko'rona bosa boshlaydi.
+>
+> **TZ'ga qo'shilgan, hech bir hujjatda yo'q bo'lgan narsalar:**
+> **KPI profili VERSIYALANADI** (og'irlik o'zgarsa o'tgan kunlar o'z versiyasida qoladi — tan narx
+> muzlatish bilan bir xil klass) · **ma'lumot sifati bayrog'i** (tan narx yig'ilmagan kunda foyda
+> «to'liq emas», kam ko'rsatilmaydi — NULL ≠ 0 intizomi KPI'ga o'tadi) · **adolat normalizatsiyasi**
+> (soat, yarim stavka, ta'til, yangi xodim, ikki smena, bir odam ikki rolda) · **manba drill-down**
+> va **«o'z 30-kunlik o'rtachasidan og'ish»** (busiz qabul qilish rasmiyatchilikka aylanadi) ·
+> **eskirish** (qabul qilingan kunning hujjati o'zgarsa tuzatuvchi qator, jimgina qayta yozish yo'q)
+> · **🔴 xodim hayot sikli — bugun umuman yo'q va bu XAVFSIZLIK TESHIGI**: xodim ishdan ketsa
+> ERP+HR ruxsatlari, Telegram ulanishi va ochiq sessiyalari **ochiq qolaveradi**.
+>
+> **Roadmap tuzatildi:** `4.8`–`4.11` (plan qo'yish ekranlari · record-scope 4-to'lqin va **flagni
+> yoqish** · xodim kesimidagi 4 blok · xodim kartasi) **hech bir to'lqinda yo'q edi** — qo'shildi.
+> Yangi **«To'lqin 4M»** — menejer bo'limining 10 bosqichi; u 4-to'lqinning qolganidan **mustaqil**
+> boshlanadi (menejer butun korxonani ko'radi, ruxsat qatlamlari kutilmaydi).
+>
+> **⏭️ KEYINGI ISH = 4M.1 — KPI o'lchov yadrosi.** Katalog + **versiyalangan** profil + yangi ombor
+> + hisoblash + tungi cron (UI yo'q). Manbalar faqat bugun mavjudlaridan: kassa (`CashierSession` +
+> `CashierAuditEvent`), sotuv (`Demand.ownerId`), davomat (`HrAttendance.lateMinutes`), vazifa
+> (`Task`, `HrTaskLog`), yig'ish (`RestockTaskLine.confirmedAt/ById`). Formulalar **`report/metrics/`**
+> dan — yangi bo'linish yozilmaydi. Cron naqshi: `hr-kpi-cron.service.ts`.
+> Keyin **4M.2 — kunlik qabul qilish** (egasining 1-ustuvorligi).
+>
+> **Ochiq qarz (bu sessiyaga aloqasiz):** 3.1 (aralash to'lov) **deploy qilinmagan** va
+> **brauzerda ko'rilmagan** — `26df34f`+`2750ff4`. Terminal/qarz oqimi prodda hamon eski holatda.
+
 > **🕒 2026-08-02j (GEOKODER — Nominatim provayderi · `5a7e722`) · ✅ DEPLOYED `5a7e722`**
 >
 > **NEGA:** egasi Yandex kabinetida kalit olmoqchi bo'ldi; men shartlarni o'qib chiqdim va
