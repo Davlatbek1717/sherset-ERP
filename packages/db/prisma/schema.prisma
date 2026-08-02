@@ -451,6 +451,8 @@ model Employee {
   workSchedules       EmployeeWorkSchedule[] @relation("EmployeeSchedule")
   driverTrips         DriverTrip[]           @relation("DriverTrips")
   driverShifts        DriverShift[]          @relation("DriverShifts")
+  driverCashCollected DriverCashHandover[]   @relation("DriverCashCollected")
+  driverCashAccepted  DriverCashHandover[]   @relation("DriverCashAccepted")
 
   @@unique([accountId, email])
   // ── PARTIAL unique index (Prisma representation gap — READ before "fixing" any diff) ──
@@ -9403,6 +9405,58 @@ model DriverShift {
   // WHERE ended_at IS NULL` — har haydovchida bir vaqtda bitta ochiq smena.
   // `migrate dev` bu indexni diff'да ko'rsatadi (DROP taklif qiladi) — QO'LLAMA.
   @@map("driver_shifts")
+}
+
+/// Haydovchi mijozdan olgan NAQD pulning kassaga topshirilishi (HR TZ §7.2).
+///
+/// Nega alohida jadval: haydovchi pulni OLGAN payt bilan kassaga TOPSHIRGAN
+/// payt orasida vaqt bor va shu oraliqda pul «haydovchining qo'lida» turadi.
+/// Buni hech qayerda yozmasak, kassa qoldig'i bilan real pul o'rtasidagi farq
+/// ko'rinmaydi va «kim qancha ushlab turibdi» degan savolga javob bo'lmaydi.
+///
+/// Pul HARAKATI bu jadvalda EMAS: topshirish qabul qilinganda mavjud auditlangan
+/// `CashIn` (ПКО) hujjati yaratilib post qilinadi va `cashInId` shu yerga
+/// bog'lanadi. Ya'ni bu jadval — kassa kirimining SABABI va kutish holati,
+/// pul reyestrining dublikati emas (aks holda bir summa ikki marta sanalardi).
+model DriverCashHandover {
+  id        String @id @default(uuid()) @db.Uuid
+  accountId String @map("account_id") @db.Uuid
+
+  driverId String  @map("driver_id") @db.Uuid
+  /// Qaysi smenada olingan (yig'ma hisobot uchun). Smena yopilib ketsa ham
+  /// yozuv qoladi — shuning uchun SetNull, Cascade EMAS.
+  shiftId  String? @map("shift_id") @db.Uuid
+  /// Qaysi yetkazmadan (ixtiyoriy — telefon buyurtmasi bo'lishi mumkin).
+  tripId   String? @map("trip_id") @db.Uuid
+
+  amountMinor BigInt @map("amount_minor")
+  currency    String @default("UZS") @db.VarChar(3)
+
+  /// 'pending' = haydovchining qo'lida · 'handed' = kassaga topshirilgan ·
+  /// 'cancelled' = xato yozuv (pul aslida olinmagan).
+  status String @default("pending") @db.VarChar(12)
+
+  collectedAt DateTime  @default(now()) @map("collected_at") @db.Timestamptz()
+  handedAt    DateTime? @map("handed_at") @db.Timestamptz()
+
+  /// Pulni qabul qilgan kassir.
+  acceptedById String? @map("accepted_by_id") @db.Uuid
+  /// Yaratilgan ПКО — pul harakatining YAGONA manbai.
+  cashInId     String? @map("cash_in_id") @db.Uuid
+
+  note String?
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+  /// Optimistik qulf — ikki kassir bir vaqtda qabul qilib ikki ПКО yaratmasin.
+  version   Int      @default(1)
+
+  driver     Employee @relation("DriverCashCollected", fields: [driverId], references: [id], onDelete: Cascade)
+  acceptedBy Employee? @relation("DriverCashAccepted", fields: [acceptedById], references: [id], onDelete: SetNull)
+
+  @@index([accountId, driverId, status])
+  @@index([accountId, status, collectedAt(sort: Desc)])
+  @@map("driver_cash_handovers")
 }
 
 model HrNotificationTemplate {

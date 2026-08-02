@@ -1,6 +1,10 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../../../prisma/prisma.module.js';
 import { AuthModule } from '../../auth/auth.module.js';
+// §7.2 — naqd topshirig'i ПКО'ni mavjud auditlangan yo'ldan yaratadi.
+import { CashInModule } from '../../cash-in/cash-in.module.js';
+import { DriverCashController } from './driver-cash.controller.js';
+import { DriverCashService } from './driver-cash.service.js';
 import { DriverFieldIngestService } from './driver-field-ingest.service.js';
 import { DriverLiveService } from './driver-live.service.js';
 import { DriverShiftService } from './driver-shift.service.js';
@@ -18,8 +22,8 @@ import { YandexGeocodeService } from './yandex-geocode.service.js';
  * lekin geofence keldi/ketdi oqimiga TEGMAYDI (alohida endpoint, 0 regressiya).
  */
 @Module({
-  imports: [PrismaModule, AuthModule],
-  controllers: [DriverTrackingController, DriverTripController],
+  imports: [PrismaModule, AuthModule, CashInModule],
+  controllers: [DriverTrackingController, DriverTripController, DriverCashController],
   providers: [
     DriverFieldIngestService,
     DriverShiftService,
@@ -30,6 +34,7 @@ import { YandexGeocodeService } from './yandex-geocode.service.js';
     NominatimGeocodeService,
     YandexGeocodeService,
     GeocodeService,
+    DriverCashService,
     DriverEtaWorkerCron,
   ],
   exports: [DriverShiftService],
