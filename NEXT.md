@@ -305,6 +305,61 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-02i (TO'LQIN 3.1 — aralash to'lov; TERMINAL va QARZ endi ishlaydi · `26df34f`, merge `2750ff4`)**
+>
+> **PRODDA BUZUQ EDI.** Egasi «kassada yana nima bo'ladi?» deb so'raganda TZ'ning B-ro'yxatini kod
+> bilan solishtirdim va shu chiqdi: `/sotuv` to'lov oynasi serverga **to'rtta** turni yuborardi
+> (naqd · karta · terminal · qarz), server sxemasi esa **ikkitasini** bilardi. Zod ortiqcha
+> kalitlarni **jimgina tashlaydi** → terminal orqali to'langan chek serverga «0 to'landi» bo'lib
+> yetar va **400 «Payment insufficient»** olardi. Ya'ni **kassir terminal bilan to'lagan yoki
+> qarzga olgan mijozning chekini umuman rasmiylashtira olmasdi**, va oyna tugmani faol qilgani
+> uchun xatoni faqat bosgandan keyin ko'rardi.
+>
+> **Yangi `RetailSalePayment` jadvali** (TZ §6.1, migratsiya `20260802160000_retail_sale_payments`,
+> faqat CREATE): har to'lov turi alohida qator. Bu Z-hisobotning «to'lov turlari kesimida tushum»
+> bandi uchun yagona manba — ikkita ustundan kanalni tiklab bo'lmaydi.
+> `RetailSale.cash/cardAmountMinor` saqlanadi va endi shu qatorlardan hisoblanadi (TZ §6.3 orqaga
+> moslik: terminal `card`ga qo'shiladi, qarz **hech qaysi ustunga tushmaydi** — u pul emas).
+>
+> **Qoidalar sof modulda** (`retail-tenders.ts`): qarzli chekda arifmetika **aniq** (to'langan +
+> qarz = jami; kam ham, **ortiqcha ham** rad — aks holda qarz summasi haqiqiy qoldiqqa mos kelmay,
+> mijoz balansiga noto'g'ri raqam tushardi) · **qaytim faqat naqddan** (TZ §6.2 — karta/terminal
+> ortiqcha o'tkazilsa bloklanadi, aks holda kassa bank pulidan naqd qaytim berib o'z pulini
+> yo'qotardi). Bir xil qoida FE'da ham: tugma bloklanadi + sabab yoziladi.
+>
+> **Qarz (TZ §7.1)** mijozning **umumiy balansiga** yoziladi. `Debt` reyestriga (QRZ-) ataylab
+> YOZILMAYDI: reyestrning `create` yo'li balansga tegmaydi, ikkalasiga birdan yozilsa hujjatdan
+> kelgan qarz **ikki marta** sanalardi (xotira: `debt-ledger-asymmetry`). Mijozsiz qarzga sotish
+> bloklanadi. Yangi audit hodisasi **`SOLD_ON_CREDIT`** — payload'da o'sha ondagi **yangi balans**
+> (keyin «kimning qarzi tez o'sadi» deb so'rash uchun).
+>
+> **🔴 YO'L-YO'LAKAY IKKI PUL XATOSI TUZATILDI:**
+> 1. **Qaytim kassadan chegirilmasdi.** 100 000 berib 90 000 lik tovar olgan mijozga 10 000
+>    qaytarilsa ham kassa balansi **100 000** ga o'sardi. Smena yopilishida (TZ §8.4 «farq akti»)
+>    bu har qaytim summasicha **soxta kamomad** berardi.
+> 2. **`expectedSumMinor` tekshirilmasdi** — sxema izohidagi «server revalidates against DB sum»
+>    da'vosi **yolg'on** edi. Chek yuklangan va to'lov olingan on orasida hujjat o'zgarsa, kassir
+>    ekrandagidan **boshqa summaga** pul olardi. Endi 409.
+>
+> **Yangi qo'riqchi `pos-payment-contract.test.ts`** — FE↔BE **tana** shartnomasi (mavjud
+> `api-contract.test.ts` faqat yo'l/metodni tekshiradi). Aynan shu bug-klassni tutadi: FE yuborgan
+> har maydon API sxemasida bormi. **Mutatsiya bilan sinaldi** — sxemadan `terminalAmountMinor`
+> olib tashlanganda 2 test yiqildi va xato xabari maydon nomini aytdi.
+>
+> **Gate:** typecheck 0 (api+web) · biome 0 · **api 4380/4380** · **web 2660/2660** · +34 test.
+>
+> **⚠️ Phase-1: BRAUZERDA KO'RILMAGAN.** Terminal/qarz oqimi lokal brauzerda o'tkazilmagan —
+> **keyingi sessiya shundan boshlasin** (lokal bazaga migratsiya qo'llangan, QA seed tayyor:
+> QA-1/2/3 tovarlar + «QA smena»). **Deploy qilinmagan.**
+>
+> **📋 KASSA TZ HOLATI (kod bilan solishtirilgan):** B1 ✅ · B2 ✅ · **B3 ✅ (shu sessiya)** ·
+> B4 ❌ kiosk rejim (`Role.uiMode` yo'q) · B5 ❌ qarz to'lovi PKO · B6 ❌ xarajat RKO +
+> inkassatsiya · B7 ❌ smena yopish farq akti + Z-hisobot (`CashierSessionVariance` yo'q) ·
+> B8 ✅ audit jurnali / ❌ `sotuv/page.tsx` bo'lish (**1997 satr**, TZ: har fayl <300).
+>
+> **⏭️ KEYINGI:** brauzer-QA → keyin 3.3 qarz to'lovi (PKO) yoki 2.1 `Branch` modeli (roadmap
+> tartibi; «hozir arzon, keyin qimmat»). Egasi tanlaydi.
+
 > **🕒 2026-08-02h (TO'LQIN 1.4 — yagona formulalar qatlami · `bbf7af5` + `0c36680`) · ✅ DEPLOYED `90d8d0d`**
 >
 > **DEPLOY tasdiqlandi** (erp.sherset.uz, `DS_TARGET=v2 deploy-smart.sh`, `a646bdd → 90d8d0d`;
