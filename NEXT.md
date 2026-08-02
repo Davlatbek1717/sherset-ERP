@@ -364,7 +364,29 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > kerak edi). Keyin 1.4 `report/metrics/` (formulalar allaqachon `@moysklad/money/profit.ts` da —
 > qayta yozilmasin).
 
-> **🕒 2026-08-02c (TO'LQIN 1.1 — tan narx muzlatish + savatda foyda · `6d1be01`, merge `092989c`)**
+> **🕒 2026-08-02c (TO'LQIN 1.1 — tan narx muzlatish + savatda foyda · `6d1be01`, merge `092989c`) · ✅ DEPLOYED `a646bdd`**
+>
+> **DEPLOY tasdiqlandi** (erp.sherset.uz = sherset-v2, `DS_TARGET=v2 deploy-smart.sh`, `d7ab3b1 → a646bdd`):
+> pre-deploy zaxira `sherset_v2-PREDEPLOY-a646bdd-063723.sql.gz` (275M, 221 jadval, `dump complete`
+> markeri tekshirilgan) · **migratsiya `20260802120000_retail_position_price_freeze` qo'llandi**
+> (`_prisma_migrations` da 06:44:12; `cost_minor`+`base_price_minor` bazada, ikkalasi ham `is_nullable=YES`) ·
+> web build «Compiled successfully in 4.3min» · `/` `/sotuv` `/retail/sales` `/demands` → **200** ·
+> api health ok · pm2 xato jurnalida bugungi yozuv YO'Q (hammasi 26–30 iyul, Telegram MTProto) ·
+> faqat `sherset-v2-*` restart qilindi, boshqa 8 ijarachi 21h uptime bilan tegilmadi.
+> **Kod-markerlari build ichida** (satr literallari — minifikatsiyaga chidamli): `sotuv-cart-line`,
+> `data-price-band`, `sotuv-cart-profit`, `sotuv-grid-cost`, `sotuv-cart-markdown` (har biri 5 chunk) +
+> `cart_total_profit`/`cart_below_wholesale`/`cart_cost_missing` (7 fayl).
+>
+> **⚠️ Deploy oynasidagi xavf tutildi:** box'da eski sessiyalardan qolgan **4 ta yetim poll-sikl**
+> (`chek-build.log`/`chek3`/`chek4`/`wf-build.log` kutayotgan `while pgrep -f 'next build'`) turgan edi;
+> ulardan ikkitasi `next build` tugashi bilan **`pm2 restart sherset-v2-web`** qilardi — deploy build'i
+> tugagan zahoti nazoratsiz restart aynan 2026-08-01 dagi 502 klassini qaytarardi. To'rttasi ham
+> deploy boshlangach o'ldirildi (PID mosligi `ps -o args` bilan tasdiqlab). **Saboq:** nohup poll-sikl
+> qoldirmang yoki `setsid` bilan uzing; deploydan oldin `pgrep -af 'while pgrep'` bilan tekshiring.
+>
+> **⚠️ Baribir BROWSER-QA YO'Q** — HTTP 200 React'ning ishlashini isbotlamaydi (aynan shu farq
+> 08-01b da React #310 ni yashirgan edi). Savat qatorining o'zi (Tan/Min ustunlari, ZARAR belgisi,
+> jami foyda, «Tayyor» chekni tortish) **ekranda ko'rilmagan** — keyingi sessiya shundan boshlasin.
 >
 > **Bajarildi (master-roadmap To'lqin 1.1, kassa TZ §5):**
 > `RetailSalePosition` ga **`cost_minor` + `base_price_minor`** (migratsiya
