@@ -8,7 +8,7 @@
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 
-export type EmployeeTab = 'main' | 'permissions' | 'salary' | 'schedule';
+export type EmployeeTab = 'main' | 'attendance' | 'tasks' | 'schedule' | 'salary' | 'permissions';
 
 export interface TabBarProps {
   employeeId: string;
@@ -19,13 +19,20 @@ export function TabBar({ employeeId, active }: TabBarProps) {
   const t = useTranslations('pages.hrEmployees');
   const tabs: { key: EmployeeTab; href: string; label: string }[] = [
     { key: 'main', href: `/hr/employees/${employeeId}`, label: t('tab_main') },
+    // «Hammasi xodim ichida» (egasi 2026-08-01) — davomat + vazifalar shu yerda.
+    {
+      key: 'attendance',
+      href: `/hr/employees/${employeeId}/attendance`,
+      label: t('tab_attendance'),
+    },
+    { key: 'tasks', href: `/hr/employees/${employeeId}/tasks`, label: t('tab_tasks') },
+    { key: 'schedule', href: `/hr/employees/${employeeId}/schedule`, label: t('tab_schedule') },
+    { key: 'salary', href: `/hr/employees/${employeeId}/salary`, label: t('tab_salary') },
     {
       key: 'permissions',
       href: `/hr/employees/${employeeId}/permissions`,
       label: t('tab_permissions'),
     },
-    { key: 'salary', href: `/hr/employees/${employeeId}/salary`, label: t('tab_salary') },
-    { key: 'schedule', href: `/hr/employees/${employeeId}/schedule`, label: t('tab_schedule') },
   ];
   return (
     <nav className="flex gap-1 border-[var(--ms-border-default)] border-b">
