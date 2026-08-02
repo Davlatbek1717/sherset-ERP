@@ -305,6 +305,65 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-02d (TO'LQIN 1.2 — «Прибыльность» tan narx yolg'oni yopildi · `6adc495`)**
+>
+> **Bajarildi (master-roadmap To'lqin 1.2, analitika TZ §B2):** hisobot har kassa chekini **100% marja**
+> bilan ko'rsatardi va egasi narxni SHU raqamga qarab belgilardi. Ikki sabab:
+> 1. **Chakana umuman tan narxsiz** hisoblanardi — SQL'da tom ma'noda `0::bigint AS cost`
+>    (`profitability.service.ts`). 1.1 `retail_sale_positions.cost_minor` ni qo'shgach bu eskirdi →
+>    endi haqiqiy **muzlatilgan** tan narx o'qiladi.
+> 2. `cost_minor` **har** pozitsiya jadvalida NULL bo'la oladi; demand/vozvrat so'rovlari uni
+>    `COALESCE(cost_minor, 0)` bilan **nolga** aylantirardi.
+>
+> **⚠️ MUHIM NUANS — arifmetika O'ZGARMADI va bu ataylab.** NULL qator ham, nol tan narxli qator ham
+> yig'indiga 0 qo'shadi. **Lokal Postgres'da yonma-yon tasdiqlandi: `old_cost = new_cost = 0`.**
+> Ya'ni bug hisob-kitobda emas — **SUKUTDA** edi: hisobot kam hisoblangan tan narxni FAKT sifatida
+> ko'rsatardi. Shuning uchun ishning asosiy mahsuli — **belgi**, raqam emas:
+> `costMissingLines` (tan narxi yig'ilmagan qatorlar soni) + `costIncomplete` — har **qatorda**, **jamida**
+> (butun natijadan, faqat joriy sahifadan EMAS) va har **grafik ustunida**. Web'da sariq banner +
+> tan narx katagida `*` (tooltip qatordagi sonni aytadi), ru+uz.
+> **Eski cheklar ATAYLAB backfill qilinmadi** — o'sha ondagi tan narx hech qayerda yozilmagan;
+> bugungi kartochkadan to'qish yangi yolg'on bo'lardi. NULL qoladi va belgilanadi (1.1 qarori bilan bir xil).
+>
+> **🔬 VERIFIKATSIYA (bu sessiya odatdagidan kuchliroq — SQL jonli bazada yugurtirildi):**
+> lokal `climart_adopt` da: ikkala ustun bor va nullable · `COUNT(*) FILTER (WHERE ... IS NULL)` va
+> `"costMissing"` alias'i **Prisma raw orqali ishlaydi** (alias registri saqlanadi) · eski/yangi shakl
+> yonma-yon (yuqoridagi natija) · qisman yig'ilgan holat: `cost=5000` **saqlanadi** va `costMissing=1`
+> baribir belgilanadi. **LEKIN:** lokal bazada `posted` chakana sotuv **0 ta** → hisobot haqiqiy chek
+> ma'lumoti bilan yugurtirilmadi.
+> **Manba-skaner qo'riqchisi** qo'shildi (`0::bigint AS cost` va `COALESCE(cost_minor,0)` qaytib
+> kelmasin; 5 agregatning har birida hamroh hisoblagich bor) — **mutatsiya bilan sinaldi**: eski SQL
+> qaytarilganda 2 test yiqildi. Sabab: mock SQL'ni bajarmaydi, faqat matn bo'yicha marshrutlaydi —
+> ya'ni xulq-testlari SQL'ni ISBOTLAMAYDI, shuning uchun shakl alohida qulflandi.
+>
+> **Gate:** typecheck 0 · biome 0 · i18n ru+uz · **api 4312** · **web 2636** (regress yo'q) ·
+> +11 test (profitability to'plami 14/14 green).
+>
+> **⚠️ Phase-1: SQL lokal bazada tasdiqlangan, hisobot haqiqiy ma'lumot bilan va BRAUZERDA
+> ko'rilmagan** — banner va `*` belgisi ekranda tekshirilmagan. Phase-2 QA: chek o'tkazib
+> (`/sotuv`), keyin `/reports/profitability` da tan narx ustuni + banner.
+>
+> 🔴 **TOPILDI, TUZATILMADI:** grafik (`chartBuckets`) faqat **demand + vozvrat**ni yig'adi —
+> **chakana unda YO'Q**, jadvalda esa BOR. `documentType=retail` filtri jadvalda satr ko'rsatadi-yu
+> grafikni bo'sh (yoki faqat-vozvrat) qoldiradi. Bu **1.2 dan oldin ham shunday edi**, tegilmadi —
+> alohida ish (grafikka retail'ni qo'shish + shu bilan birga retail'ning `chartBuckets` filtrlari).
+>
+> ⚠️ **PARALLEL SESSIYA HODISASI (§6.2 aynan bashorat qilgan):** birinchi commit urinishim
+> **commit-msg «halollik gate»i**da rad etildi (xabarda «tasdiqlandi» bor edi, lekin gate tanigan
+> dalil formati yo'q edi → `14/14 test green` qo'shildi). Rad etish paytida **lint-staged butun
+> tree'ni stash qilgan** edi va `stash@{0}` (`lint-staged automatic backup`) qolib ketdi — ichida
+> **parallel sessiyaning 24 fayli** (DocumentEditor/DocumentTotalsPanel/use-totals-labels/i18n-ratchet).
+> **Tekshirdim: yo'qotish YO'Q** — `git diff stash@{0} HEAD` o'sha fayllarda bo'sh, ya'ni ular
+> allaqachon `91ee5db` da. Stash MENIKI EMAS → **tegilmadi** (drop ham, pop ham qilinmadi).
+> Kim uni yaratgan bo'lsa o'zi tozalasin. **Saboq: commit xabarini gate formatiga OLDINDAN moslang** —
+> rad etilgan commit stash qoldiradi.
+>
+> **▶️ KEYINGI ISH = To'lqin 1.3** — `CashierAuditEvent` (kassa TZ §9). «Erkinlik + nazorat»
+> modelining nazorat yarmi: **zararga sotuv hodisasi hozir hech qayerga yozilmayapti** (1.1 savatda
+> «ZARAR» ni ko'rsatadi va sotuvni bloklamaydi — bu egasining qarori, lekin hodisa jurnalga tushishi
+> kerak edi). Keyin 1.4 `report/metrics/` (formulalar allaqachon `@moysklad/money/profit.ts` da —
+> qayta yozilmasin).
+
 > **🕒 2026-08-02c (TO'LQIN 1.1 — tan narx muzlatish + savatda foyda · `6d1be01`, merge `092989c`)**
 >
 > **Bajarildi (master-roadmap To'lqin 1.1, kassa TZ §5):**
