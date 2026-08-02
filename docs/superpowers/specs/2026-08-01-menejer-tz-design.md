@@ -56,10 +56,25 @@ chegaralangan bo'ladi.
 |---|---|---|
 | Q1 | Menejer qamrovi | xodimlar (rol/dostup/plan/bonus-jarima) · tasdiqlash navbati · mijoz taqsimoti va narx siyosati · ombor va ta'minot nazorati |
 | Q2 | Dostup berish | **Rol shabloni + xodimga individual tuzatish** |
-| Q3 | Ko'rinish chegarasi | **`OWN_GROUP` yoqiladi** (o'z bo'limi/guruhi) |
+| Q3 | Ko'rinish chegarasi | ~~**`OWN_GROUP`** (o'z bo'limi/guruhi)~~ → **TUZATILDI 2026-08-02: menejer BUTUN KORXONANI ko'radi** ([kengaytma §1.1](2026-08-02-menejer-kunlik-kpi-tz-design.md)) |
 | Q4 | Tasdiqlash qamrovi | kassa kamomadi · katta chegirma/zararga sotuv · katta qarz va muddati o'tgan qarz |
 | Q5 | Xarajatlar | **tasdiqlanmaydi** — erkin qoladi (1-bo'lim Q10 bilan izchil), faqat analitikada ko'rinadi |
 | Q6 | Tasdiqlash tabiati | **bloklamaydi** — keyingi ko'rib chiqish navbati (§5) |
+
+> ### ⚠️ 2026-08-02 — KENGAYTMA MAVJUD
+> Egasi menejer bo'limini so'raganda ikkita talab qo'ydi: **xodimlarning kunini KPI bo'yicha qabul
+> qilib olish** va **to'liq xodimlar nazorati**. Ular bu hujjatda **yo'q** (bu yerda plan faqat
+> **oylik**, kunlik KPI hech bir Q'da yo'q). Ular alohida hujjatda spetsifikatsiyalangan:
+> **[4-bo'lim kengaytmasi — kunlik KPI va xodimlar nazorati](2026-08-02-menejer-kunlik-kpi-tz-design.md)**
+> (qarorlar M-Q1…M-Q11).
+>
+> Kengaytma bu hujjatning **Q3 qarorini tuzatadi** (menejer `OWN_GROUP` emas, **butun korxonani**
+> ko'radi) va **bloklash** kiritadi (M-Q8): qabul qilinmagan kun oylikka tushmaydi — bu Q6 ning
+> «bloklamaydi» qoidasidan farq qiladi, chunki Q6 **hujjat oqimi** haqida, M-Q8 esa **oylik hisobi**
+> haqida. Ikkalasi ziddiyatda emas: sotuv baribir to'xtamaydi.
+>
+> Qolgan hamma narsa (ruxsat qatlamlari, `OWN_GROUP` to'lqinlari, tasdiqlash navbati asosi,
+> rol shablonlari) **kuchda qoladi**.
 
 ---
 

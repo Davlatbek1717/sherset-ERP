@@ -12,6 +12,7 @@
 | 2 | Onlayn sotuv / B2B / B2G | [2026-08-01-onlayn-sotuv-b2b-b2g-tz-design.md](2026-08-01-onlayn-sotuv-b2b-b2g-tz-design.md) |
 | 3 | Analitika | [2026-08-01-analitika-tz-design.md](2026-08-01-analitika-tz-design.md) |
 | 4 | Menejer | [2026-08-01-menejer-tz-design.md](2026-08-01-menejer-tz-design.md) |
+| 4+ | **Menejer — kunlik KPI qabul qilish va xodimlar nazorati** (kengaytma) | [2026-08-02-menejer-kunlik-kpi-tz-design.md](2026-08-02-menejer-kunlik-kpi-tz-design.md) |
 | 5 | Ta'minotchilar | [2026-08-01-taminotchilar-tz-design.md](2026-08-01-taminotchilar-tz-design.md) |
 | 6 | HR | [2026-08-02-hr-tz-design.md](2026-08-02-hr-tz-design.md) |
 | 7 | Ombor | [2026-08-02-ombor-tz-design.md](2026-08-02-ombor-tz-design.md) |
@@ -78,6 +79,34 @@ Ustuvorlik mezonlari (yuqoridan pastga):
 | 4.5 | Rollup jadvallari + cron + qayta qurish CLI | 3-B3 |
 | 4.6 | Rol bo'yicha panellar + xodim shaxsiy ekrani | 3-B4, 3-B5 |
 | 4.7 | Record-scope 1–2-to'lqin **+ filial filtri birga** | 4-B5, 4-B6, 8-B4 |
+| 4.8 | **Plan qo'yish, mijoz taqsimoti, narx siyosati ekranlari** | 4-B7 |
+| 4.9 | **Record-scope 4-to'lqin + `recordScopeEnforced` YOQISH** | 4-B8 |
+| 4.10 | **Xodim kesimidagi 4 blok hisoboti** | 3-B6 |
+| 4.11 | **Xodim kartasi (bitta ekran)** | 6-B9 |
+
+> **2026-08-02 tuzatish:** `4.8`–`4.11` roadmap'ning hech bir to'lqinida yo'q edi — ya'ni
+> menejerning kundalik boshqaruv ekranlari va xodim KPI hisoboti **rejalashtirilmagan** edi.
+> Qo'shildi.
+
+## To'lqin 4M — Menejer bo'limi: kunlik KPI qabul qilish va xodimlar nazorati 🟦
+
+> Egasining 2026-08-02 talabi. To'liq spetsifikatsiya:
+> **[4-bo'lim kengaytmasi](2026-08-02-menejer-kunlik-kpi-tz-design.md)** (M-Q1…M-Q11).
+> 4-to'lqinning qolgan qismidan **mustaqil** boshlanishi mumkin: ruxsat qatlamlari (`4.1`–`4.3`)
+> kerak emas, chunki menejer butun korxonani ko'radi (M-Q1). 1-to'lqin (o'lchov poydevori) tugagan.
+
+| # | Ish | Nega |
+|---|---|---|
+| 4M.1 | KPI o'lchov yadrosi: katalog · **versiyalangan** profil · yangi ombor · hisoblash · tungi cron | Qabul qilish uchun avval o'lchash kerak. `HrKpiDailyLog` yopiq 3 ustun — kengaymaydi |
+| **4M.2** | **Kunlik qabul qilish** ⭐ — FSM · hodisa jurnali · menejer ekrani · drill-down · tuzatma · rad etish halqasi · egaga eskalatsiya | **Egasining 1-ustuvorligi** |
+| 4M.3 | Qabul → oylik: bloklash · idempotent bonus/jarima · eskirgan kun tuzatmasi · egaga haftalik xulosa | Pul halqasini yopadi |
+| **4M.4** | **To'liq xodimlar nazorati** ⭐ — jonli holat · xodim kartasi 360° · **hayot sikli** · javobgarlik | Egasining 2-ustuvorligi. Hayot sikli — **xavfsizlik teshigi**: xodim ketsa ruxsatlari ochiq qolaveradi |
+| 4M.5 | Ogohlantirish navbati: qoida dvigateli · 12 qoida turi · sabab kodlari | Nazorat halqasi |
+| 4M.6 | Smena yakunini qabul qilish · ma'lumot sifati paneli | Qabul naqshini kengaytirish |
+| 4M.7 | «Nima qotib qolgan» · SLA paneli | Jarayon nazorati |
+| 4M.8 | Uch xil zaxira signali · narx o'zgarishi tarixi va chegarasi | Tovar va narx nazorati |
+| 4M.9 | Xarajat byudjeti (plan/fakt) | Pul chiqishi ko'rinadi |
+| 4M.10 | Kunlik/haftalik target · kompozit ball va **reyting formulasi** | Panelda va'da qilingan, formulasi hech qayerda yo'q edi |
 
 ## To'lqin 5 — Sotuv va bonus 🟣
 
