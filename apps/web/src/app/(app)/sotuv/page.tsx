@@ -6,8 +6,20 @@ import { useFillViewport } from '@/hooks/use-fill-viewport';
 import { api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-store';
 import { printPickingViaAgent, printReceiptViaAgent } from '@/lib/print-agent';
-import { resolveDefaultSalePrice, resolveDefaultSalePriceOrZero } from '@/lib/sale-price';
-import { Money } from '@moysklad/money';
+import {
+  resolveDefaultSalePrice,
+  resolveDefaultSalePriceOrZero,
+  resolveWholesaleSalePrice,
+  usePriceTypeIds,
+} from '@/lib/sale-price';
+import {
+  Money,
+  classifyPrice,
+  lineProfitMinor,
+  marginPercent,
+  markdownMinor,
+  sumCostMinor,
+} from '@moysklad/money';
 import { isCurrencyCode } from '@moysklad/money/currencies';
 import { Badge, Button, Input, formatMoney, useToast } from '@moysklad/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -60,11 +72,34 @@ interface CartLine {
   priceMinor: bigint;
   priceStr: string; // user-editable price string (major units)
   availableStock?: number;
+  // Kassa TZ §5 — the two floors and the starting price, read off the product
+  // card when the line is added. NULL means the card carries no such number;
+  // the row then shows «—» and raises no warning, because an absent floor is
+  // not evidence that the price is wrong. These are LIVE values for the
+  // cashier's benefit — `post()` re-reads and freezes them server-side.
+  costMinor: bigint | null;
+  wholesaleMinor: bigint | null;
+  basePriceMinor: bigint | null;
 }
 
 interface ListResponse<T> {
   items: T[];
   total: number;
+}
+
+/**
+ * Minor-unit string → bigint, preserving the "not set" case as null.
+ * Deliberately NOT `?? 0n`: a zero cost reads as «this was free to us» and
+ * yields a 100% margin, which is precisely the false number the cart exists to
+ * stop showing (kassa TZ §5.3).
+ */
+function toMinorOrNull(value: string | null | undefined): bigint | null {
+  if (value == null || value === '') return null;
+  try {
+    return BigInt(value);
+  } catch {
+    return null;
+  }
 }
 
 // ── Open Shift Form ─────────────────────────────────────────────────────────
@@ -516,9 +551,17 @@ function SalesScreen({ session }: { session: CurrentSession }) {
   const { toast } = useToast();
   const { runDestructive } = useDestructiveMutation();
 
-  // Cost price («Kelgan») is owner-only — the cashier sees stock + sale price
-  // but never margin. Admin role bypasses (hr-permission.guard parity).
+  // Cost price («Kelgan») on the PRODUCT GRID stays owner-only. The cart row is
+  // deliberately different: kassa TZ §5.2 puts cost / wholesale floor / live
+  // profit in front of the cashier, because the owner's model is «kassirga
+  // ishonch + keyingi nazorat» — a cashier free to set the price has to see
+  // what they are giving away. Admin role bypasses (hr-permission.guard parity).
   const isAdmin = user?.hrRoles?.includes('admin') ?? false;
+
+  // Real PriceType ids so the cart reads the same tiers the server freezes at
+  // post() — the retail tier for the starting price, the «Оптовая цена» tier
+  // for the negotiated floor.
+  const { defaultId: defaultPriceTypeId, wholesaleId: wholesalePriceTypeId } = usePriceTypeIds();
 
   const [tab, setTab] = useState<'savat' | 'jarayonda' | 'tayyor' | 'cheklar' | 'smena'>('savat');
   const [search, setSearch] = useState('');
@@ -650,7 +693,16 @@ function SalesScreen({ session }: { session: CurrentSession }) {
       priceMinor: string;
       sumMinor: string;
       discount: string;
-      product: { id: string; name: string; code: string | null };
+      // Frozen at post() — NULL while the receipt is still draft/picking/ready.
+      costMinor: string | null;
+      basePriceMinor: string | null;
+      product: {
+        id: string;
+        name: string;
+        code: string | null;
+        buyPrice: string | null;
+        salePrices?: Array<{ priceTypeId: string; value: string }> | null;
+      };
     }>;
   }
 
@@ -687,28 +739,56 @@ function SalesScreen({ session }: { session: CurrentSession }) {
   const discountedTotal =
     discountPct > 0 ? cartTotal - (cartTotal * BigInt(discountPct)) / 100n : cartTotal;
 
-  const addToCart = useCallback((product: ProductRow) => {
-    setCart((prev) => {
-      const existing = prev.find((l) => l.productId === product.id);
-      if (existing) {
-        return prev.map((l) =>
-          l.productId === product.id ? { ...l, quantity: l.quantity + 1 } : l,
-        );
-      }
-      const minor = BigInt(resolveDefaultSalePriceOrZero(product.salePrices));
-      return [
-        ...prev,
-        {
-          productId: product.id,
-          productName: product.name,
-          quantity: 1,
-          priceMinor: minor,
-          priceStr: (Number(minor) / 100).toString(),
-          availableStock: product.stock != null ? Number(product.stock.available) : undefined,
-        },
-      ];
-    });
-  }, []);
+  // Chek bo'yicha foyda (kassa TZ §5.2) — profit is taken off the DISCOUNTED
+  // total, since that is the money the till actually receives. `complete` goes
+  // false as soon as one line has no cost on its card; the footer then says so
+  // instead of showing a total that silently counts that line as pure profit.
+  const cartCost = sumCostMinor(
+    cart.map((l) => ({ costMinor: l.costMinor, quantity: BigInt(l.quantity) })),
+  );
+  const cartProfitMinor = cartCost.complete ? discountedTotal - cartCost.costMinor : null;
+  const cartMarginPct = marginPercent(cartProfitMinor, discountedTotal);
+
+  // The three numbers a cart line carries off the product card (kassa TZ §5.1):
+  // cost floor, wholesale floor, retail starting price.
+  const cardPrices = useCallback(
+    (
+      buyPrice: string | null | undefined,
+      salePrices: ProductRow['salePrices'],
+    ): Pick<CartLine, 'costMinor' | 'wholesaleMinor' | 'basePriceMinor'> => ({
+      costMinor: toMinorOrNull(buyPrice),
+      wholesaleMinor: toMinorOrNull(resolveWholesaleSalePrice(salePrices, wholesalePriceTypeId)),
+      basePriceMinor: toMinorOrNull(resolveDefaultSalePrice(salePrices, defaultPriceTypeId)),
+    }),
+    [defaultPriceTypeId, wholesalePriceTypeId],
+  );
+
+  const addToCart = useCallback(
+    (product: ProductRow) => {
+      setCart((prev) => {
+        const existing = prev.find((l) => l.productId === product.id);
+        if (existing) {
+          return prev.map((l) =>
+            l.productId === product.id ? { ...l, quantity: l.quantity + 1 } : l,
+          );
+        }
+        const minor = BigInt(resolveDefaultSalePriceOrZero(product.salePrices, defaultPriceTypeId));
+        return [
+          ...prev,
+          {
+            productId: product.id,
+            productName: product.name,
+            quantity: 1,
+            priceMinor: minor,
+            priceStr: (Number(minor) / 100).toString(),
+            availableStock: product.stock != null ? Number(product.stock.available) : undefined,
+            ...cardPrices(product.buyPrice, product.salePrices),
+          },
+        ];
+      });
+    },
+    [cardPrices, defaultPriceTypeId],
+  );
 
   // Savat har o'zgarganda mijoz-ekranga uzatamiz — ikkala yo'l bilan:
   //  • Electron IPC (pushCart) — dastur ichidagi native 2-oyna,
@@ -791,14 +871,23 @@ function SalesScreen({ session }: { session: CurrentSession }) {
       try {
         const d = await api.get<SaleDetail>(`/retail-sales/${saleId}`);
         setCart(
-          d.positions.map((p) => ({
-            productId: p.product.id,
-            productName: p.product.name,
-            quantity: Number(p.quantity),
-            priceMinor: BigInt(p.priceMinor),
-            priceStr: (Number(p.priceMinor) / 100).toString(),
-            availableStock: undefined,
-          })),
+          d.positions.map((p) => {
+            const live = cardPrices(p.product.buyPrice, p.product.salePrices);
+            return {
+              productId: p.product.id,
+              productName: p.product.name,
+              quantity: Number(p.quantity),
+              priceMinor: BigInt(p.priceMinor),
+              priceStr: (Number(p.priceMinor) / 100).toString(),
+              availableStock: undefined,
+              // A ready receipt is not posted yet, so its own snapshot is still
+              // NULL — fall back to the live card. Once a receipt IS posted the
+              // frozen value wins, so re-opening it never re-prices history.
+              costMinor: toMinorOrNull(p.costMinor) ?? live.costMinor,
+              basePriceMinor: toMinorOrNull(p.basePriceMinor) ?? live.basePriceMinor,
+              wholesaleMinor: live.wholesaleMinor,
+            };
+          }),
         );
         setPayingSale({ id: d.id, sumMinor: BigInt(d.sumMinor) });
         setTab('savat');
@@ -807,7 +896,7 @@ function SalesScreen({ session }: { session: CurrentSession }) {
         toast.error(e instanceof Error ? e.message : 'Yuklashda xato');
       }
     },
-    [toast],
+    [toast, cardPrices],
   );
 
   // Step 1: "Rasmilashtirish" → create draft → send to picking → print picking sheet
@@ -1479,81 +1568,184 @@ function SalesScreen({ session }: { session: CurrentSession }) {
                 </div>
               ) : (
                 <div className="flex flex-col divide-y divide-[var(--ms-border)]">
-                  {cart.map((line) => (
-                    <div key={line.productId} className="px-3 py-2 hover:bg-[var(--ms-bg-hover)]">
-                      {/* Qator 1: Nom + soni + o'chirish */}
-                      <div className="flex items-center gap-2">
-                        <div className="min-w-0 flex-1 truncate text-sm font-medium text-[var(--ms-text-primary)]">
-                          {line.productName}
-                        </div>
-                        {/* Soni */}
-                        <div className="flex shrink-0 items-center gap-0.5">
-                          <button
-                            type="button"
-                            onClick={() => updateQty(line.productId, -1)}
-                            className="flex h-6 w-6 items-center justify-center rounded border border-[var(--ms-border)] bg-[var(--ms-bg-input)] text-sm leading-none hover:bg-[var(--ms-bg-hover)]"
-                          >
-                            −
-                          </button>
-                          <span className="w-8 text-center text-sm tabular-nums">
-                            {line.quantity}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => updateQty(line.productId, 1)}
-                            className="flex h-6 w-6 items-center justify-center rounded border border-[var(--ms-border)] bg-[var(--ms-bg-input)] text-sm leading-none hover:bg-[var(--ms-bg-hover)]"
-                          >
-                            +
-                          </button>
-                        </div>
-                        {/* O'chirish */}
-                        <button
-                          type="button"
-                          onClick={() => removeFromCart(line.productId)}
-                          className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-[var(--ms-text-muted)] text-xs hover:bg-red-50 hover:text-red-500"
-                        >
-                          ✕
-                        </button>
-                      </div>
-
-                      {/* Qator 2: Qolgan + narx input + summa */}
-                      <div className="mt-1.5 flex items-center gap-3">
-                        {/* Qolgan */}
-                        {line.availableStock !== undefined && (
-                          <span className="text-xs text-[var(--ms-text-muted)]">
-                            Qolgan:{' '}
-                            <span
-                              className={
-                                line.availableStock <= 0
-                                  ? 'text-red-500 font-medium'
-                                  : 'tabular-nums'
-                              }
+                  {cart.map((line) => {
+                    // Kassa TZ §5.2 — the row's own profit is taken at the price
+                    // the cashier typed (the cart-level discount is a separate,
+                    // footer-level figure), so editing the price moves this number
+                    // immediately and visibly.
+                    const band = classifyPrice({
+                      priceMinor: line.priceMinor,
+                      costMinor: line.costMinor,
+                      wholesaleMinor: line.wholesaleMinor,
+                    });
+                    const qty = BigInt(line.quantity);
+                    const lineRevenue = line.priceMinor * qty;
+                    const lineProfit = lineProfitMinor({
+                      priceMinor: line.priceMinor,
+                      costMinor: line.costMinor,
+                      quantity: qty,
+                    });
+                    const linePct = marginPercent(lineProfit, lineRevenue);
+                    // «Kassir qancha tushirib berdi» (kassa TZ §5.3) — shown only
+                    // when the cashier actually went below the card price; a sale
+                    // at or above it needs no annotation.
+                    const markdown = markdownMinor({
+                      basePriceMinor: line.basePriceMinor,
+                      priceMinor: line.priceMinor,
+                      quantity: qty,
+                    });
+                    return (
+                      <div
+                        key={line.productId}
+                        data-test-id="sotuv-cart-line"
+                        data-price-band={band}
+                        className={`px-3 py-2 ${
+                          band === 'loss'
+                            ? 'bg-red-50 hover:bg-red-100'
+                            : band === 'below-wholesale'
+                              ? 'bg-amber-50 hover:bg-amber-100'
+                              : 'hover:bg-[var(--ms-bg-hover)]'
+                        }`}
+                      >
+                        {/* Qator 1: Nom + soni + o'chirish */}
+                        <div className="flex items-center gap-2">
+                          <div className="min-w-0 flex-1 truncate text-sm font-medium text-[var(--ms-text-primary)]">
+                            {line.productName}
+                          </div>
+                          {/* Soni */}
+                          <div className="flex shrink-0 items-center gap-0.5">
+                            <button
+                              type="button"
+                              onClick={() => updateQty(line.productId, -1)}
+                              className="flex h-6 w-6 items-center justify-center rounded border border-[var(--ms-border)] bg-[var(--ms-bg-input)] text-sm leading-none hover:bg-[var(--ms-bg-hover)]"
                             >
-                              {line.availableStock}
+                              −
+                            </button>
+                            <span className="w-8 text-center text-sm tabular-nums">
+                              {line.quantity}
                             </span>
-                          </span>
-                        )}
-                        <div className="flex flex-1 items-center justify-end gap-2">
-                          {/* Narx (tahrir qilsa bo'ladi) */}
-                          <div className="flex items-center gap-1">
-                            <span className="text-xs text-[var(--ms-text-muted)]">Narx:</span>
-                            <input
-                              type="text"
-                              inputMode="decimal"
-                              value={line.priceStr}
-                              onChange={(e) => updatePrice(line.productId, e.target.value)}
-                              onFocus={(e) => e.target.select()}
-                              className="w-24 rounded border border-[var(--ms-border)] bg-[var(--ms-bg-input)] px-1.5 py-0.5 text-right text-sm tabular-nums focus:border-[var(--ms-border-focus)] focus:outline-none"
-                            />
+                            <button
+                              type="button"
+                              onClick={() => updateQty(line.productId, 1)}
+                              className="flex h-6 w-6 items-center justify-center rounded border border-[var(--ms-border)] bg-[var(--ms-bg-input)] text-sm leading-none hover:bg-[var(--ms-bg-hover)]"
+                            >
+                              +
+                            </button>
                           </div>
-                          {/* Summa */}
-                          <div className="w-28 text-right text-sm font-semibold tabular-nums text-[var(--ms-text-primary)]">
-                            {formatMoney(line.priceMinor * BigInt(line.quantity))}
+                          {/* O'chirish */}
+                          <button
+                            type="button"
+                            onClick={() => removeFromCart(line.productId)}
+                            className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-[var(--ms-text-muted)] text-xs hover:bg-red-50 hover:text-red-500"
+                          >
+                            ✕
+                          </button>
+                        </div>
+
+                        {/* Qator 2: Qolgan · Tan · Min + narx input + summa */}
+                        <div className="mt-1.5 flex items-center gap-3">
+                          {/* Qolgan · Tan narx · Optom chegara (kassa TZ §5.2) */}
+                          <span className="flex flex-wrap items-center gap-x-1.5 text-xs text-[var(--ms-text-muted)]">
+                            {line.availableStock !== undefined && (
+                              <span>
+                                {t('cart_remaining')}:{' '}
+                                <span
+                                  className={
+                                    line.availableStock <= 0
+                                      ? 'text-red-500 font-medium'
+                                      : 'tabular-nums'
+                                  }
+                                >
+                                  {line.availableStock}
+                                </span>
+                              </span>
+                            )}
+                            <span data-test-id="sotuv-cart-cost">
+                              · {t('cart_cost')}:{' '}
+                              <span className="tabular-nums">
+                                {line.costMinor != null ? formatMoney(line.costMinor) : '—'}
+                              </span>
+                            </span>
+                            {line.wholesaleMinor != null && (
+                              <span data-test-id="sotuv-cart-min">
+                                · {t('cart_min')}:{' '}
+                                <span className="tabular-nums">
+                                  {formatMoney(line.wholesaleMinor)}
+                                </span>
+                              </span>
+                            )}
+                          </span>
+                          <div className="flex flex-1 items-center justify-end gap-2">
+                            {/* Narx (tahrir qilsa bo'ladi) */}
+                            <div className="flex items-center gap-1">
+                              <span className="text-xs text-[var(--ms-text-muted)]">
+                                {t('cart_price')}:
+                              </span>
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                value={line.priceStr}
+                                onChange={(e) => updatePrice(line.productId, e.target.value)}
+                                onFocus={(e) => e.target.select()}
+                                className="w-24 rounded border border-[var(--ms-border)] bg-[var(--ms-bg-input)] px-1.5 py-0.5 text-right text-sm tabular-nums focus:border-[var(--ms-border-focus)] focus:outline-none"
+                              />
+                            </div>
+                            {/* Summa */}
+                            <div className="w-28 text-right text-sm font-semibold tabular-nums text-[var(--ms-text-primary)]">
+                              {formatMoney(line.priceMinor * BigInt(line.quantity))}
+                            </div>
                           </div>
                         </div>
+
+                        {/* Qator 3: chegara ogohlantirishi + qator foydasi */}
+                        <div className="mt-1 flex items-center gap-2 text-xs">
+                          {band === 'loss' && (
+                            <span
+                              data-test-id="sotuv-cart-loss"
+                              className="rounded bg-red-600 px-1.5 py-0.5 font-bold text-[10px] text-white uppercase tracking-wide"
+                            >
+                              {t('cart_loss')}
+                            </span>
+                          )}
+                          {band === 'below-wholesale' && (
+                            <span className="rounded bg-amber-500 px-1.5 py-0.5 font-semibold text-[10px] text-white">
+                              {t('cart_below_wholesale')}
+                            </span>
+                          )}
+                          {markdown != null && markdown > 0n && (
+                            <span
+                              data-test-id="sotuv-cart-markdown"
+                              className="text-[var(--ms-text-muted)] tabular-nums"
+                            >
+                              −{formatMoney(markdown)} {t('cart_markdown')}
+                            </span>
+                          )}
+                          <span
+                            data-test-id="sotuv-cart-profit"
+                            className={`ml-auto tabular-nums ${
+                              lineProfit == null
+                                ? 'text-[var(--ms-text-muted)]'
+                                : lineProfit < 0n
+                                  ? 'font-semibold text-red-600'
+                                  : 'font-medium text-emerald-600'
+                            }`}
+                          >
+                            {t('cart_profit')}:{' '}
+                            {lineProfit == null ? (
+                              // Tan narx kartochkada yo'q — «0 foyda» EMAS, «noma'lum».
+                              <span title={t('cart_cost_missing')}>—</span>
+                            ) : (
+                              <>
+                                {lineProfit > 0n ? '+' : ''}
+                                {formatMoney(lineProfit)}
+                                {linePct != null && ` (${linePct.toLocaleString('uz-UZ')}%)`}
+                              </>
+                            )}
+                          </span>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -1592,6 +1784,32 @@ function SalesScreen({ session }: { session: CurrentSession }) {
                 {cartCount > 0 && (
                   <p className="mt-1 text-xs text-[var(--ms-text-muted)]">
                     {cartCount} ta mahsulot
+                  </p>
+                )}
+
+                {/* Chek bo'yicha foyda — kassir bir tovarda yon berib boshqasida
+                    qoplayotganini ko'radi (kassa TZ §5.2). */}
+                {cartCount > 0 && (
+                  <p
+                    data-test-id="sotuv-cart-total-profit"
+                    className={`mt-1 text-xs tabular-nums ${
+                      cartProfitMinor == null
+                        ? 'text-[var(--ms-text-muted)]'
+                        : cartProfitMinor < 0n
+                          ? 'font-semibold text-red-600'
+                          : 'font-medium text-emerald-600'
+                    }`}
+                  >
+                    {t('cart_total_profit')}:{' '}
+                    {cartProfitMinor == null ? (
+                      t('cart_cost_missing')
+                    ) : (
+                      <>
+                        {cartProfitMinor > 0n ? '+' : ''}
+                        {formatMoney(cartProfitMinor)}
+                        {cartMarginPct != null && ` (${cartMarginPct.toLocaleString('uz-UZ')}%)`}
+                      </>
+                    )}
                   </p>
                 )}
 

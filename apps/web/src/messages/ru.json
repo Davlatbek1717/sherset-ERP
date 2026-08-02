@@ -7641,7 +7641,17 @@
       "confirm_sotuv": "Подтвердить продажу",
       "cancel_sale": "Отменить",
       "cancel_sale_confirm": "Отменить чек «{name}»?",
-      "cancel_sale_success": "Чек отменён"
+      "cancel_sale_success": "Чек отменён",
+      "cart_remaining": "Остаток",
+      "cart_cost": "Себест.",
+      "cart_min": "Опт",
+      "cart_price": "Цена",
+      "cart_profit": "Прибыль",
+      "cart_loss": "УБЫТОК",
+      "cart_below_wholesale": "ниже опта",
+      "cart_cost_missing": "себестоимость не собрана",
+      "cart_total_profit": "Прибыль по чеку",
+      "cart_markdown": "уступлено"
     },
     "report_warehouse_ops": {
       "title": "Складские операции",

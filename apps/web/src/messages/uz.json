@@ -7641,7 +7641,17 @@
       "confirm_sotuv": "Sotishni tasdiqlash",
       "cancel_sale": "Bekor qilish",
       "cancel_sale_confirm": "«{name}» chekini bekor qilasizmi?",
-      "cancel_sale_success": "Chek bekor qilindi"
+      "cancel_sale_success": "Chek bekor qilindi",
+      "cart_remaining": "Qolgan",
+      "cart_cost": "Tan",
+      "cart_min": "Min",
+      "cart_price": "Narx",
+      "cart_profit": "Foyda",
+      "cart_loss": "ZARAR",
+      "cart_below_wholesale": "optomdan past",
+      "cart_cost_missing": "tan narx yig'ilmagan",
+      "cart_total_profit": "Chek foydasi",
+      "cart_markdown": "tushirildi"
     },
     "report_warehouse_ops": {
       "title": "Ombor operatsiyalari",
