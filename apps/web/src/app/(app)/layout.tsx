@@ -424,6 +424,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     { key: 'employees', label: tHr('employees'), href: '/hr/employees' },
     { key: 'attendance', label: tHr('attendance'), href: '/hr/attendance' },
     { key: 'tasks', label: tHr('tasks'), href: '/hr/tasks' },
+    { key: 'drivers', label: tHr('drivers'), href: '/hr/drivers/live' },
     { key: 'my-tasks', label: tHr('my_tasks'), href: '/hr/my-tasks' },
     { key: 'settings', label: tHr('settings'), href: '/hr/settings' },
   ];

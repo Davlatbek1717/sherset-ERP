@@ -1175,6 +1175,8 @@ export const driverTrackingApi = {
   // DIQQAT: `listForDriver` YALANG'OCH massiv qaytaradi (`{items}` EMAS) —
   // `driver-trip.service.ts` `findMany` natijasini to'g'ridan-to'g'ri beradi.
   myTrips: () => api.get<DriverTrip[]>('/driver-tracking/my/trips'),
+  /** Haydovchiga PAROLSIZ magic-link (dispecher ulashadi; telefonда GPS yuboradi). */
+  link: (employeeId: string) => api.get<{ url: string }>(`/driver-tracking/link/${employeeId}`),
 };
 
 // ─── Haydovchi naqd topshirig'i (HR TZ §7.2) ───────────────────────────

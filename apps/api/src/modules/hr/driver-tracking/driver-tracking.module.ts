@@ -7,6 +7,7 @@ import { DriverCashController } from './driver-cash.controller.js';
 import { DriverCashService } from './driver-cash.service.js';
 import { DriverFieldIngestService } from './driver-field-ingest.service.js';
 import { DriverLiveService } from './driver-live.service.js';
+import { DriverPublicController } from './driver-public.controller.js';
 import { DriverShiftService } from './driver-shift.service.js';
 import { DriverTrackingController } from './driver-tracking.controller.js';
 import { DriverTripController } from './driver-trip.controller.js';
@@ -23,7 +24,12 @@ import { YandexGeocodeService } from './yandex-geocode.service.js';
  */
 @Module({
   imports: [PrismaModule, AuthModule, CashInModule],
-  controllers: [DriverTrackingController, DriverTripController, DriverCashController],
+  controllers: [
+    DriverTrackingController,
+    DriverTripController,
+    DriverCashController,
+    DriverPublicController,
+  ],
   providers: [
     DriverFieldIngestService,
     DriverShiftService,

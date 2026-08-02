@@ -1,9 +1,10 @@
-import { Body, Controller, Get, Inject, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Inject, Param, Post, Query, UseGuards } from '@nestjs/common';
 import type { AuthenticatedUser } from '../../auth/auth.schema.js';
 import { CurrentUser } from '../../auth/current-user.decorator.js';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard.js';
 import { DispatcherGuard } from './dispatcher.guard.js';
 import { DriverFieldIngestService } from './driver-field-ingest.service.js';
+import { signDriverToken } from './driver-link.util.js';
 import { DriverLiveService } from './driver-live.service.js';
 import { DriverShiftService } from './driver-shift.service.js';
 import { FieldPingSchema } from './driver-tracking.schema.js';
@@ -26,6 +27,14 @@ export class DriverTrackingController {
     @Inject(DriverTripService) private readonly trips: DriverTripService,
     @Inject(DriverLiveService) private readonly live: DriverLiveService,
   ) {}
+
+  // ── DISPECHER: haydovchiga PAROLSIZ magic-link (telefonда ochib GPS yuboradi) ──
+  @Get('link/:employeeId')
+  driverLink(@CurrentUser() user: AuthenticatedUser, @Param('employeeId') employeeId: string) {
+    const token = signDriverToken(user.accountId, employeeId);
+    const base = process.env.APP_BASE_URL || 'https://erp.sherset.uz';
+    return { url: `${base}/p/driver/${token}` };
+  }
 
   // ── SELF (native app) ──
   @Post('ping')

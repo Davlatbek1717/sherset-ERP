@@ -10,7 +10,7 @@
  * with a header «Tahrirlash» button that opens EmployeeModal.
  */
 
-import { hrEmployeeApi, hrRoleApi } from '@/lib/hr-api';
+import { driverTrackingApi, hrEmployeeApi, hrRoleApi } from '@/lib/hr-api';
 import type { HrEmployeeDetail, HrRole } from '@/lib/hr-api';
 import { Avatar, Badge, Button, ErrorState, Skeleton, useConfirm, useToast } from '@moysklad/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -172,6 +172,8 @@ export default function HrEmployeeDetailPage() {
         </dl>
       </div>
 
+      {data.trackingMode === 'field' && <DriverLinkCard employeeId={data.id} />}
+
       <EmployeeModal open={editOpen} onOpenChange={setEditOpen} mode="edit" initialValues={data} />
     </div>
   );
@@ -184,6 +186,71 @@ function InfoRow({ label, value }: { label: string; value: string }) {
         {label}
       </dt>
       <dd className="text-[var(--ms-text-primary)] text-sm">{value}</dd>
+    </div>
+  );
+}
+
+/**
+ * Haydovchi jonli-kuzatuv magic-link kartochkasi — faqat `trackingMode='field'`
+ * xodimда. Dispecher havolani ochib telefon raqamiga (Telegram/SMS) yuboradi;
+ * haydovchi parolsiz ochib GPS oqimini boshlaydi. Link on-demand olinadi (HMAC).
+ */
+function DriverLinkCard({ employeeId }: { employeeId: string }) {
+  const t = useTranslations('pages.hrEmployees');
+  const tCommon = useTranslations('common');
+  const { toast } = useToast();
+  const [url, setUrl] = useState<string | null>(null);
+
+  const linkMut = useMutation({
+    mutationFn: () => driverTrackingApi.link(employeeId),
+    onSuccess: (r) => setUrl(r.url),
+    onError: (e: Error) => toast.error(tCommon('action_failed'), { description: e.message }),
+  });
+
+  const copy = async () => {
+    if (!url) return;
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success(t('driver_link_copied'));
+    } catch {
+      toast.error(tCommon('action_failed'));
+    }
+  };
+
+  return (
+    <div className="rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] p-4">
+      <div className="mb-1 flex items-center gap-2">
+        <h2 className="font-semibold text-[var(--ms-text-strong)] text-sm">
+          🚚 {t('driver_link_title')}
+        </h2>
+      </div>
+      <p className="mb-3 text-[var(--ms-text-muted)] text-xs leading-relaxed">
+        {t('driver_link_hint')}
+      </p>
+      {url ? (
+        <div className="flex flex-col gap-2">
+          <div className="overflow-x-auto rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-muted)] px-3 py-2 font-mono text-[var(--ms-text-primary)] text-xs">
+            {url}
+          </div>
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={copy}>
+              {t('driver_link_copy')}
+            </Button>
+            <a href={url} target="_blank" rel="noopener noreferrer">
+              <Button variant="ghost">{t('driver_link_open')}</Button>
+            </a>
+          </div>
+        </div>
+      ) : (
+        <Button
+          variant="secondary"
+          onClick={() => linkMut.mutate()}
+          disabled={linkMut.isPending}
+          data-test-id="hr-driver-link-generate"
+        >
+          {t('driver_link_generate')}
+        </Button>
+      )}
     </div>
   );
 }
