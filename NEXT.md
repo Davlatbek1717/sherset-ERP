@@ -305,6 +305,67 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-02c (TO'LQIN 1.1 — tan narx muzlatish + savatda foyda · `6d1be01`, merge `092989c`)**
+>
+> **Bajarildi (master-roadmap To'lqin 1.1, kassa TZ §5):**
+> `RetailSalePosition` ga **`cost_minor` + `base_price_minor`** (migratsiya
+> `20260802120000_retail_position_price_freeze`, ikkalasi ham NULL bo'la oladi) va `post()` ularni
+> **sotuv onida tovar kartochkasidan muhrlaydi** (`costMinor` = `Product.buyPrice`, `basePriceMinor` =
+> «Розничная цена» tier). Sabab: kartochkadagi narx keyin o'zgarsa, o'tgan oy hisoboti jimgina qayta
+> yozilmasin.
+>
+> **NULL ≠ 0 — bu ishning markaziy sharti.** NULL = «yig'ilmagan». Nolga aylantirilsa hisobot «100%
+> marja» deb yolg'on ko'rsatadi — aynan shu bug hozir `report/profitability.service.ts:578` dagi
+> `0::bigint AS cost` da o'tiribdi. **Eski cheklar backfill QILINMADI**: o'sha paytdagi tan narx hech
+> qayerda yozilmagan, uni bugungi kartochkadan to'qib chiqarish yolg'on raqam bo'lardi. Ular NULL
+> qoladi va 1.2 ularni «tan narx yig'ilmagan» deb belgilashi kerak.
+>
+> **Qarorlar (hujjatlangan):** muzlatish `post()` **tranzaksiyasi ICHIDA** (zaxira/pul kaskadi qaytsa
+> snapshot ham qaytadi), kartochkalarni o'qish esa **tashqarida** (kartochka sotuvning konsistensiya
+> to'plamiga kirmaydi). **Refund** oyna cheki tan narxni **asl chekdan meros** qilib oladi — bugungi
+> kartochkani qayta o'qiganda, kartochka o'zgargan bo'lsa arvoh foyda qolardi. Yozish **mahsulot
+> bo'yicha guruhlangan** (bir tovar bir necha qatorda bo'lsa ham 1 statement).
+>
+> **Savat (kassa TZ §5.2):** qatorda `Qolgan · Tan · Min` + real vaqtda **foyda va %** (narx
+> tahrirlanganda darhol o'zgaradi) · narx optomdan past → **sariq**, tan narxdan past → **qizil
+> «ZARAR»** (Q16: sotuv BLOKLANMAYDI) · kartochkadan tushirilgan bo'lsa «−X tushirildi». Savat
+> pastida **chek bo'yicha jami foyda** — **chegirmadan KEYINGI** summadan; bironta qatorda tan narx
+> bo'lmasa jami umuman ko'rsatilmaydi.
+>
+> **Rol qarori:** tan narx **savatda kassirga OCHIQ** (TZ §5.2 «kassirga ishonch + keyingi nazorat»).
+> Tovar setkasidagi `isAdmin` gate'i **TEGILMADI** — ⚠️ bu **nomuvofiqlik**: setkada «Kelgan» faqat
+> egaga, savatda «Tan» hammaga. Egadan so'ralsin.
+>
+> **Formulalar `@moysklad/money/profit.ts` da** (`lineProfitMinor` · `sumCostMinor` · `marginPercent` ·
+> `markdownMinor` · `classifyPrice`) — savat va kelajakdagi hisobotlar bitta manbadan o'qisin. Bu
+> **1.4 ning oldindan to'langan qismi**; 1.2 shu funksiyalarni ishlatsin, formulani qayta yozmasin.
+>
+> **Gate:** typecheck 0 · biome 0 xato · i18n ru+uz 9 · api **4302** · web **2635** · money 88.
+> Qo'riqchi `apps/web/src/__tests__/pos-cart-profit.test.ts` (source-scan) **mutatsiya bilan sinaldi**:
+> `costMinor ?? 0n` kiritilganda yiqiladi.
+>
+> **⚠️ Phase-1: strukturaviy, RUNTIME-TASDIQLANMAGAN — BROWSER-QA YO'Q.** `/sotuv` savat brauzerda
+> ochilmadi: yangi qator ko'rinishi, ranglar, ZARAR belgisi va jami foyda **ekranda tekshirilmagan**.
+>
+> **Parallel sessiya:** bu ish **alohida worktree**da (`.claude/worktrees/wave1-1-cost-freeze`, branch
+> `wave1-cost-freeze`) bajarildi — sessiya boshida 02b sessiyasi `retail-sale.service.ts` ni **faol
+> ushlab turgan edi** (fayllar 3 daqiqa oldin yozilgan). U `2011424` da yopilgach merge qilindi.
+> To'qnashuv faqat `messages/{ru,uz}.json` (ikkala tomon `pages.sotuv` oxiriga kalit qo'shgan) va
+> `docs/progress.json` da bo'ldi; JSON strukturaviy birlashtirildi, ru/uz kalit pariteti 59=59.
+> `retail-sale.service.ts` avtomat birlashdi va qo'lda tekshirildi (FSM qo'riqchilari + muzlatish
+> bir-birini buzmaydi). **Worktree hali turibdi** — kerak bo'lmasa `git worktree remove` qilinsin.
+>
+> **⏭️ KEYINGI ISH = To'lqin 1.2** — `report/profitability.service.ts:578` `0::bigint AS cost` ni
+> `retail_sale_positions.cost_minor` ga ulash **+ «tan narx yig'ilmagan» belgisi** (NULL qatorlar
+> nol tan narx sifatida hisoblanmasin — aks holda bug shakl o'zgartirib qoladi). Formulalar
+> `@moysklad/money/profit.ts` dan olinsin. Keyin 1.3 `CashierAuditEvent` (zararga sotuv hodisasi
+> shu yerga yoziladi — hozir hech qayerga yozilmayapti) · 1.4 `report/metrics/`.
+>
+> **Ochiq:** (a) setka/savat tan-narx ko'rinish nomuvofiqligi (yuqorida); (b) valyuta — `costMinor`
+> kartochkadagi xom qiymat, `Product.buyPriceCurrency` hisobga olinmaydi (repo bo'ylab shunday,
+> `schema.prisma` izohida qayd etilgan); (c) lokal DB `climart_adopt` ga 2 ustun qo'lda qo'shildi
+> (`ADD COLUMN IF NOT EXISTS`), lekin u boshqa migratsiyalardan hamon orqada.
+
 > **🕒 2026-08-02b (To'lqin 0 QOLDIG'I — yig'ilgan chek to'lanadi va bekor qilinadi · `2011424`)**
 >
 > **Nima topildi:** 02a To'lqin 0.1 bilan POS'ning «Yig'ilmoqda»/«Tayyor» ro'yxatlarini ochdi
