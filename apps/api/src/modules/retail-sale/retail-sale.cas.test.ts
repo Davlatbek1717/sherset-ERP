@@ -54,6 +54,9 @@ function makeService(
     { client } as unknown as PrismaLike as never,
     stock as never,
     money as never,
+    undefined as never,
+    undefined as never,
+    { applyDelta: vi.fn().mockResolvedValue(undefined) } as never,
   );
 }
 
@@ -64,6 +67,9 @@ describe('RetailSaleService.post — CAS state guard', () => {
         updateMany: vi.fn().mockResolvedValue({ count: 0 }),
         findUniqueOrThrow: vi.fn(),
       },
+      // Kassa TZ §6.1 — post() endi har to`lov turini alohida qator qilib
+      // yozadi; qoidalar `retail-tenders.test.ts` da qoplangan.
+      retailSalePayment: { createMany: vi.fn().mockResolvedValue({ count: 1 }) },
       cashDesk: { update: vi.fn() },
       cashierSession: { update: vi.fn() },
     };
@@ -118,6 +124,9 @@ describe('RetailSaleService.post — CAS state guard', () => {
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
         findUniqueOrThrow: vi.fn().mockResolvedValue({ id: SALE_ID, state: 'posted' }),
       },
+      // Kassa TZ §6.1 — post() endi har to`lov turini alohida qator qilib
+      // yozadi; qoidalar `retail-tenders.test.ts` da qoplangan.
+      retailSalePayment: { createMany: vi.fn().mockResolvedValue({ count: 1 }) },
       cashDesk: { update: vi.fn().mockResolvedValue({}) },
       cashierSession: { update: vi.fn().mockResolvedValue({}) },
     };
@@ -182,6 +191,9 @@ describe('RetailSaleService.post — CAS state guard', () => {
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
         findUniqueOrThrow: vi.fn().mockResolvedValue({ id: SALE_ID, state: 'posted' }),
       },
+      // Kassa TZ §6.1 — post() endi har to`lov turini alohida qator qilib
+      // yozadi; qoidalar `retail-tenders.test.ts` da qoplangan.
+      retailSalePayment: { createMany: vi.fn().mockResolvedValue({ count: 1 }) },
       cashDesk: { update: vi.fn() },
       cashierSession: { update: vi.fn().mockResolvedValue({}) },
     };
@@ -234,6 +246,9 @@ describe('RetailSaleService.post — CAS state guard', () => {
       // retail-sale-freeze.test.ts / cashier-audit.test.ts.
       retailSalePosition: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
       cashierAuditEvent: { createMany: vi.fn().mockResolvedValue({ count: 0 }) },
+      // Kassa TZ §6.1 — post() endi har to`lov turini alohida qator qilib
+      // yozadi; qoidalar `retail-tenders.test.ts` da qoplangan.
+      retailSalePayment: { createMany: vi.fn().mockResolvedValue({ count: 1 }) },
       cashDesk: { update: vi.fn().mockResolvedValue({}) },
       cashierSession: { update: vi.fn().mockResolvedValue({}) },
     };
@@ -363,6 +378,9 @@ describe('RetailSaleService.refund — CAS state guard', () => {
         create: vi.fn(),
       },
       retailSalePosition: { findMany: vi.fn().mockResolvedValue([]) },
+      // Kassa TZ §6.1 — post() endi har to`lov turini alohida qator qilib
+      // yozadi; qoidalar `retail-tenders.test.ts` da qoplangan.
+      retailSalePayment: { createMany: vi.fn().mockResolvedValue({ count: 1 }) },
       cashDesk: { update: vi.fn() },
       cashierSession: { update: vi.fn() },
     };

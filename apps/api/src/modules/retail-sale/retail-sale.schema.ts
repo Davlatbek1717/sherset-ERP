@@ -83,6 +83,21 @@ export const PostRetailSaleSchema = z.object({
   cardAmountMinor: z.coerce
     .string()
     .regex(/^\d+$/, 'cardAmountMinor must be a non-negative integer'),
+  // Kassa TZ §6 — aralash to'lov. Bu ikkitasi `/sotuv` to'lov oynasidan
+  // ALLAQACHON kelardi, lekin sxemada yo'q edi: Zod ularni jimgina tashlab
+  // yuborardi va server «0 to'landi» deb 400 qaytarardi. Ya'ni terminal bilan
+  // to'lagan yoki qarzga olgan mijozning cheki umuman rasmiylashmasdi.
+  // `.default('0')` — eski chaqiruvchilar (moysklad-compat, testlar) buzilmasin.
+  terminalAmountMinor: z.coerce
+    .string()
+    .regex(/^\d+$/, 'terminalAmountMinor must be a non-negative integer')
+    .default('0'),
+  debtAmountMinor: z.coerce
+    .string()
+    .regex(/^\d+$/, 'debtAmountMinor must be a non-negative integer')
+    .default('0'),
+  /** Qarzga sotishda MAJBURIY — qarz kimning balansiga yozilishi (TZ §7.1). */
+  agentId: z.string().uuid().optional(),
   /** Client-side sanity check — server revalidates against DB sum */
   expectedSumMinor: z.coerce
     .string()

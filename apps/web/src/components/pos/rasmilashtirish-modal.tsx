@@ -114,9 +114,18 @@ export function RasmiyashtirishModal({
   const debtMinor = totalPaid < sumMinor ? sumMinor - totalPaid : 0n;
   const change = totalPaid > sumMinor ? totalPaid - sumMinor : 0n;
 
+  // Qaytim FAQAT naqddan (kassa TZ §6.2). Karta/terminal ortiqcha o'tkazilsa
+  // kassa uni naqd bilan qaytarib bera olmaydi — server buni rad etadi, shu
+  // sababli tugmani shu yerda ham bloklaymiz: kassir xatoni bosgandan KEYIN
+  // emas, oldin ko'rsin.
+  const changeExceedsCash = change > cashMinor;
+
   // Can confirm if fully paid OR if there's debt but agent is selected
   const canConfirm =
-    !loading && totalPaid > 0n && (totalPaid >= sumMinor || (debtMinor > 0n && agent !== null));
+    !loading &&
+    totalPaid > 0n &&
+    !changeExceedsCash &&
+    (totalPaid >= sumMinor || (debtMinor > 0n && agent !== null));
 
   // ── Reset on close ────────────────────────────────────────────────────────
   const reset = useCallback(() => {
@@ -531,6 +540,11 @@ export function RasmiyashtirishModal({
               {/* Confirm — pinned at bottom, never scrolls */}
               <div className="shrink-0 p-4 border-t border-[var(--ms-border)]">
                 {/* Hint: why button is disabled */}
+                {changeExceedsCash && !loading && (
+                  <p className="mb-2 text-center text-[10px] font-medium text-red-500">
+                    Qaytim faqat naqddan beriladi — ortiqcha karta/terminal summasini kamaytiring
+                  </p>
+                )}
                 {totalPaid === 0n && !loading && (
                   <p className="mb-2 text-center text-[10px] text-[var(--ms-text-muted)]">
                     To'lov summasini kiriting

@@ -111,6 +111,7 @@ model Account {
   workOrders                     WorkOrder[]
   cashierSessions                CashierSession[]
   cashierAuditEvents             CashierAuditEvent[]
+  retailSalePayments             RetailSalePayment[]
   shiftSchedules                 ShiftSchedule[]
   smenas                         Smena[]
   retailSales                    RetailSale[]
@@ -7727,6 +7728,7 @@ model RetailSale {
   refundedFrom        RetailSale?          @relation("RetailSaleRefund", fields: [refundedFromId], references: [id], onDelete: SetNull)
   refunds             RetailSale[]         @relation("RetailSaleRefund")
   positions           RetailSalePosition[]
+  payments            RetailSalePayment[]
   retailSalesReturns  RetailSalesReturn[]  @relation("RetailSalesReturnSource")
 
   @@unique([accountId, name])
@@ -7734,6 +7736,55 @@ model RetailSale {
   @@index([accountId, state, moment(sort: Desc)])
   @@index([accountId, customerOrderId])
   @@map("retail_sales")
+}
+
+/// RetailSalePayment — kassa TZ §6: bitta chek bir NECHA to'lov turi bilan
+/// yopilishi mumkin (500 000 naqd + 300 000 plastik + qolgani qarz).
+///
+/// Nega kerak bo'ldi: `/sotuv` to'lov oynasi allaqachon to'rtta turni
+/// yuborardi (naqd · karta · terminal · qarz), server esa faqat ikkitasini
+/// bilardi — terminal orqali to'langan chek 400 «Payment insufficient» olardi.
+/// Ya'ni bu jadval yangi imkoniyat emas, avvalo mavjud interfeysning
+/// serverdagi juftligi.
+///
+/// `RetailSale.cashAmountMinor` / `cardAmountMinor` ustunlari O'CHIRILMAYDI —
+/// ular endi shu qatorlardan HISOBLANADI (TZ §6.3), shunda eski hisobotlar va
+/// `moysklad-compat` qatlami buzilmaydi.
+///
+/// `method` — VarChar, Postgres enum EMAS (sxema bo'ylab konventsiya:
+/// RetailSale.state, RestockTask.status). Yangi kanal (CLICK/PAYME/QR)
+/// migratsiyasiz qo'shiladi. Hozir yozib turilganlari:
+///   CASH_UZS · CARD · TERMINAL · DEBT
+/// TZ'da rejalashtirilgan, hali ULANMAGAN: CASH_USD (kunlik kurs kerak —
+/// `rateMinor` ga muzlatiladi va kurs topilmasa to'lov BLOKLANADI, jim 1:1
+/// qabul qilish taqiqlanadi), CLICK, PAYME, QR.
+model RetailSalePayment {
+  id        String @id @default(uuid()) @db.Uuid
+  accountId String @map("account_id") @db.Uuid
+  saleId    String @map("sale_id") @db.Uuid
+
+  method String @db.VarChar(20)
+  /// To'lov valyutasidagi summa (tiyin/sent).
+  amountMinor BigInt @map("amount_minor")
+  currency    String @default("UZS") @db.VarChar(3)
+  /// `CASH_USD` uchun qo'llanilgan kurs — chekka MUZLATILADI (kurs keyin
+  /// o'zgarsa, eski chek qayta baholanmasin). UZS to'lovda NULL.
+  rateMinor BigInt? @map("rate_minor")
+  /// Hisob valyutasiga (UZS) o'girilgan summa — BARCHA hisob-kitob shundan.
+  /// UZS to'lovda `amountMinor` bilan teng.
+  amountBaseMinor BigInt @map("amount_base_minor")
+  /// Terminal chek raqami / Click tranzaksiya id — nizoli holatda izlash uchun.
+  reference String? @db.VarChar(100)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  account Account    @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  sale    RetailSale @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  @@index([accountId, saleId])
+  // «Shu smenada terminal orqali qancha tushdi» — Z-hisobot savoli (TZ §8.5).
+  @@index([accountId, method, createdAt(sort: Desc)])
+  @@map("retail_sale_payments")
 }
 
 /// RetailSalePosition — single line on a POS receipt.
