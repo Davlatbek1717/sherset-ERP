@@ -332,7 +332,7 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > pastida **chek bo'yicha jami foyda** — **chegirmadan KEYINGI** summadan; bironta qatorda tan narx
 > bo'lmasa jami umuman ko'rsatilmaydi.
 >
-> **Rol qarori (YOPILDI, `50f7980`):** tan narx **butun `/sotuv` sahifasida ochiq** — setkada ham,
+> **Rol qarori (YOPILDI, `234432d`):** tan narx **butun `/sotuv` sahifasida ochiq** — setkada ham,
 > savatda ham. Sabab: savat 1.1 dan keyin raqamni ko'rsatgach, setkadagi `isAdmin` gate'i **hech
 > nimani himoya qilmay qoldi** (tovarni bir marta bosish yetardi) — ishlamaydigan cheklov «bu raqam
 > sir» deb o'rgatib, ikki soniyadan keyin o'zi ko'rsatardi. TZ §5 «kassirga ishonch + keyingi
