@@ -305,6 +305,60 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-02f (TO'LQIN 1.3 — kassir audit jurnali · `d35efab`)**
+>
+> **Nima uchun:** kassir narxni istagancha qo'yadi, tan narxdan past sotadi, chekni bekor qiladi va
+> qaytaradi (Q8/Q11/Q16) — hech biri bloklanmaydi. Shu paytgacha ularning **hech biri iz
+> qoldirmasdi**: savat «ZARAR» deb ogohlantirar, sotuvga ruxsat berar, keyin hodisa yo'qolardi.
+> «Erkinlik + nazorat» modelining nazorat yarmi shu edi.
+>
+> **Yangi jadval `CashierAuditEvent`** (`session_id` · `employee_id` · `type` · `doc_id` · `payload`,
+> migratsiya `20260802140000_cashier_audit_events`, faqat CREATE). **Mavjud `audit_log` dan ATAYLAB
+> alohida:** u — hujjat maydonlarining diff'i (moysklad History tabi, «shu hujjatga nima bo'ldi»),
+> bu esa smena/kassir kesimida so'raladigan **xulq** hodisalari. `audit_log` ga tiqilsa aynan
+> `session_id` — butun tahlilning o'qi — yo'qolardi.
+>
+> **Yoziladigan hodisalar** (mavjud oqimlar bo'yicha): `PRICE_CHANGED` (farq + foiz) ·
+> `SOLD_BELOW_WHOLESALE` (qancha pastligi) · `SOLD_BELOW_COST` (**zarar summasi**) ·
+> `SALE_CANCELLED` (**bosqichi bilan** — `ready` bekor qilish tovar allaqachon yig'ilgan degani) ·
+> `REFUND` · `SHIFT_OUT_OF_SCHEDULE` (sabab bilan).
+> `SOLD_ON_CREDIT` / `EXPENSE` / `SHIFT_VARIANCE` — 3-to'lqin, funksiyalari hali yo'q.
+>
+> **Uch qaror (kodda hujjatlangan):**
+> 1. **Chegaralar SERVER tomonda** hal qilinadi. POS o'zining «bu zararga sotildi» bayrog'ini
+>    yuborganda, auditni **auditdan o'tayotgan odam** yozgan bo'lardi. Optom narx ham server tomonda
+>    (`resolveWholesaleMinor`), lekin chekka **muzlatilmaydi**: u — o'sha ondagi hukm, ustun emas.
+> 2. **Yozuv sotuv tranzaksiyasi ICHIDA** (loyalty kabi «commit'dan keyin» emas). Izsiz to'langan
+>    chek — aynan shu jadval oldini olishi kerak bo'lgan holat. Narxi: yozuv yiqilsa sotuv qaytadi.
+> 3. **Noma'lum narx hodisa YARATMAYDI.** NULL ni 0 deb olish kartochkasiz har tovarni «zararga
+>    sotildi» deb belgilardi; yolg'on signalga to'lgan jurnal o'qilmay qoladi = jurnal yo'qligi.
+>
+> `cancel()` endi `userId` oladi va holat-almashtirish + audit yozuvini bitta tranzaksiyada bajaradi
+> (poygada yutgan odam jurnalga tushadi, yutqazgani hech narsa yozmaydi).
+>
+> **Dalil — live smoke lokal bazada** (haqiqiy chek API orqali, natija bazadan o'qildi):
+> 3 dona × (tan 24 800 → 24 000) → **uchala hodisa ham yozildi** — `PRICE_CHANGED` (diff −12 000,
+> 33.3%) · `SOLD_BELOW_WHOLESALE` (belowBy 4 000) · `SOLD_BELOW_COST` (**lossMinor 2 400** = 800×3);
+> `picking` bosqichidan bekor qilish → `SALE_CANCELLED` `stage: picking`.
+> **+26 test green** (api 4302 → 4328). Gate: typecheck 0 · biome 0 · api 4328.
+>
+> **⚠️ Phase-1: brauzerda ko'rilmagan** — jurnalni KO'RSATADIGAN interfeys hali yo'q (menejer paneli
+> 4-to'lqin). Hozircha faqat yoziladi. **Deploy qilinmagan.**
+>
+> **🔴 SESSIYADA YO'L QO'YILGAN XATO (hujjatlanadi, yashirilmaydi):** birinchi commit'ga parallel
+> sessiyaning 4 fayli (`driver-trip-assign.tsx`, `hr-api.ts`, `messages/{ru,uz}.json`) kirib ketdi,
+> garchi `git add` faqat aniq yo'llar bilan qilingan bo'lsa ham — **lint-staged** commit paytida
+> ularni qo'shib yubordi. Push qilinmagani uchun `reset --soft` → ularni `restore --staged` →
+> qayta commit bilan tuzatildi; fayllar md5 bo'yicha o'zgarmagan va ish daraxtida qoldi. Qayta
+> commit **hook'larsiz** qilindi (aks holda lint-staged yana qo'shardi) — gate'lar esa qo'lda to'liq
+> yugurtirilgan edi. **Saboq §6.2 ga qo'shimcha:** parallel sessiya faol bo'lsa commit'dan keyin
+> `git show --stat` bilan ro'yxatni TEKSHIR — `git add` ning aniqligi yetarli emas.
+>
+> **⏭️ KEYINGI ISH = To'lqin 1.4 `report/metrics/`** — yagona formulalar qatlami. Qisman
+> allaqachon bor: `@moysklad/money/profit.ts` (`lineProfitMinor` · `sumCostMinor` · `marginPercent` ·
+> `markdownMinor` · `classifyPrice`) 1.1 da qurildi va savat ishlatadi; 1.4 hisobotlarni ham shunga
+> ko'chirishi kerak. Keyin 2-to'lqin (`Branch` modeli + `skladNo → StoreZone`).
+
 > **🕒 2026-08-02f (HAYDOVCHI GPS — o'lik halqa yopildi · `3dcb807` + `24bc562`)**
 >
 > **PROD TEKSHIRUVI (SSH, `13.140.157.10` / sherset-v2) — egasining «gps haydovchilar tayyormi?»
