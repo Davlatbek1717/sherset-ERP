@@ -2,6 +2,8 @@ import { Prisma } from '@moysklad/db';
 import { Inject, Injectable } from '@nestjs/common';
 import { z } from 'zod';
 import { PrismaService } from '../../prisma/prisma.service.js';
+// Analitika TZ §4 — yagona formulalar qatlami.
+import { grossProfitMinor, marginPercentText } from './metrics/index.js';
 import { reportDateBounds } from './report-date-bounds.util.js';
 import { consolidateToBase, loadRateContext } from './report-rate-ctx.util.js';
 
@@ -178,10 +180,10 @@ export class UnitEconomicsService {
       const avgPriceMinor = qty > 0 ? BigInt(Math.round(Number(revenue) / qty)) : 0n;
       const avgCostMinor = qty > 0 ? BigInt(Math.round(Number(cogs) / qty)) : 0n;
       const avgMarginMinor = avgPriceMinor - avgCostMinor;
-      const pct =
-        revenue === 0n
-          ? ''
-          : (((Number(revenue) - Number(cogs)) / Number(revenue)) * 100).toFixed(2);
+      // Yagona qatlam (analitika TZ §4). Ilgari bu yerda foyda QAYTA
+      // hisoblanardi (`Number(revenue) - Number(cogs)`) — ikki marta yozilgan
+      // formula ikkinchi javob manbai; endi bitta.
+      const pct = marginPercentText(grossProfitMinor(revenue, cogs), revenue);
       out.push({
         productId,
         name: a.name,
@@ -211,10 +213,7 @@ export class UnitEconomicsService {
     const totalCogs = out.reduce((acc, r) => acc + BigInt(r.cogsMinor), 0n);
     const avgMargin =
       totalQty > 0 ? BigInt(Math.round(Number(totalRevenue - totalCogs) / totalQty)) : 0n;
-    const totalPct =
-      totalRevenue === 0n
-        ? ''
-        : (((Number(totalRevenue) - Number(totalCogs)) / Number(totalRevenue)) * 100).toFixed(2);
+    const totalPct = marginPercentText(grossProfitMinor(totalRevenue, totalCogs), totalRevenue);
 
     return {
       filter,

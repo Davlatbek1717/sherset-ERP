@@ -1,6 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { z } from 'zod';
 import { PrismaService } from '../../prisma/prisma.service.js';
+// Analitika TZ §4 — yagona formulalar qatlami.
+import { percent } from './metrics/index.js';
 import { reportDateBounds } from './report-date-bounds.util.js';
 
 export const AbcAnalysisFilterSchema = z.object({
@@ -154,7 +156,11 @@ export class AbcAnalysisService {
     let cumulative = 0n;
     for (const r of positive.slice(0, filter.limit)) {
       cumulative += r.revenueMinor;
-      const share = totalRevenue > 0n ? Number((cumulative * 10000n) / totalRevenue) / 100 : 0;
+      // Yagona qatlam (analitika TZ §4). Ilgari bu yerda `(x * 10000n) / total`
+      // KESILARDI, boshqa hisobotlar esa yaxlitlardi. Endi sinf chegarasi
+      // (A ≤ 80 %) aynan KO'RSATILADIGAN ulushdan hisoblanadi — ko'rgan raqami
+      // bilan tegishli sinfi bir-biriga mos keladi.
+      const share = percent(cumulative, totalRevenue) ?? 0;
       const classGroup: 'A' | 'B' | 'C' = share <= 80 ? 'A' : share <= 95 ? 'B' : 'C';
       rows.push({
         productId: r.productId,
@@ -172,7 +178,7 @@ export class AbcAnalysisService {
       const cohort = rows.filter((r) => r.classGroup === cls);
       const cohortRevenue = cohort.reduce((acc, r) => acc + BigInt(r.revenueMinor), 0n);
       const cohortQty = cohort.reduce((acc, r) => acc + Number(r.qty), 0);
-      const share = totalRevenue > 0n ? Number((cohortRevenue * 10000n) / totalRevenue) / 100 : 0;
+      const share = percent(cohortRevenue, totalRevenue) ?? 0;
       return {
         classGroup: cls,
         itemCount: cohort.length,

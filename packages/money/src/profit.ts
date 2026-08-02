@@ -66,27 +66,51 @@ export function sumCostMinor(
 }
 
 /**
- * Margin as a percent of revenue, to one decimal place. Display-only — never
- * feed the result back into money math. NULL when profit is unknown or revenue
- * is zero (no denominator).
+ * `numer ÷ denom × 100`, to `decimals` places — the ONE division every percent
+ * in this system goes through.
  *
- * Rounds half-away-from-zero rather than truncating: browser QA (2026-08-02)
- * showed a 4.98% margin rendered as «4.9%» and 14.48% as «14.4%». A tenth is
- * small, but it is wrong in one direction every time — always flattering a loss
- * and shaving a profit — and the owner reads these numbers to set prices.
+ * Why it exists: the reports each grew their own version. SEVEN were in the
+ * tree at once (profitability, pnl, unit-economics ×2, purchase-management,
+ * abc-analysis ×2, returns-ratio ×2, dashboard) with three different
+ * behaviours, so the same ratio could print as 30.65%, 30.6% or 31% depending
+ * on which screen you opened — the exact «two reports, two answers» failure the
+ * metrics layer is meant to end (analitika TZ §4, X4).
+ *
+ * Two properties the hand-rolled versions did not have:
+ *  • **Exact.** `Number(a) / Number(b)` on BigInts silently loses precision once
+ *    a sum passes 2^53 tiyin (~900 billion so'm). Yearly aggregates reach that.
+ *  • **One rounding rule** — half away from zero, so −4.98 → −5.0 and not
+ *    −4.9. Truncation is wrong in one direction every time: it flatters losses
+ *    and shaves profits, and the owner sets prices off these numbers.
+ *
+ * Returns null when the denominator is zero — «no denominator» is not 0%.
  */
-export function marginPercent(profitMinor: bigint | null, revenueMinor: bigint): number | null {
-  if (profitMinor == null || revenueMinor === 0n) return null;
-  // Scale by 1000 in BigInt first, so the division keeps one decimal place and
-  // nothing passes through Float until the final, already-small quotient.
-  // `+ half` before dividing turns BigInt's truncation into proper rounding;
-  // the sign follows the numerator so −4.98 rounds to −5.0, not −4.9.
-  const scaled = profitMinor * 1000n;
-  const denom = revenueMinor < 0n ? -revenueMinor : revenueMinor;
-  const num = revenueMinor < 0n ? -scaled : scaled;
+export function percentScaled(
+  numerMinor: bigint,
+  denomMinor: bigint,
+  decimals: number,
+): number | null {
+  if (denomMinor === 0n) return null;
+  const factor = 10n ** BigInt(decimals);
+  // ×100 for the percent, ×factor for the decimals — all in BigInt, so nothing
+  // reaches Float until the final, already-small quotient. `+ half` before
+  // dividing turns BigInt truncation into proper rounding.
+  const scaled = numerMinor * 100n * factor;
+  const denom = denomMinor < 0n ? -denomMinor : denomMinor;
+  const num = denomMinor < 0n ? -scaled : scaled;
   const half = denom / 2n;
   const rounded = num >= 0n ? (num + half) / denom : (num - half) / denom;
-  return Number(rounded) / 10;
+  return Number(rounded) / Number(factor);
+}
+
+/**
+ * Margin as a percent of revenue, to one decimal place — the POS cart surface.
+ * Display-only; never feed the result back into money math. NULL when profit is
+ * unknown or revenue is zero (no denominator).
+ */
+export function marginPercent(profitMinor: bigint | null, revenueMinor: bigint): number | null {
+  if (profitMinor == null) return null;
+  return percentScaled(profitMinor, revenueMinor, 1);
 }
 
 /**

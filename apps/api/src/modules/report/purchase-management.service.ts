@@ -2,6 +2,8 @@ import { Prisma } from '@moysklad/db';
 import { Inject, Injectable } from '@nestjs/common';
 import { z } from 'zod';
 import { PrismaService } from '../../prisma/prisma.service.js';
+// Analitika TZ §4 — yagona formulalar qatlami.
+import { percentText } from './metrics/index.js';
 import { reportDateBounds } from './report-date-bounds.util.js';
 import { consolidateToBase, loadRateContext } from './report-rate-ctx.util.js';
 
@@ -192,8 +194,10 @@ export class PurchaseManagementService {
       .slice(0, filter.limit)
       .map((agg) => {
         const outstanding = agg.ordered - agg.payed;
-        const onTimePct =
-          agg.completed === 0 ? '' : ((agg.onTime / agg.completed) * 100).toFixed(2);
+        // Yagona qatlam (analitika TZ §4). Bu — pul emas, HUJJAT sanog'i, lekin
+        // foiz bitta qoida bilan yaxlitlanishi kerak: ta'minotchi «94.5%» deb
+        // ko'rinsa, boshqa ekranda «94%» bo'lib qolmasin.
+        const onTimePct = percentText(BigInt(agg.onTime), BigInt(agg.completed));
         return {
           agentId: agg.agentId,
           agentName: agg.agentName,

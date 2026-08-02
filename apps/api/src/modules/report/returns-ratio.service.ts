@@ -1,6 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { z } from 'zod';
 import { PrismaService } from '../../prisma/prisma.service.js';
+// Analitika TZ §4 — yagona formulalar qatlami.
+import { returnRatePercent } from './metrics/index.js';
 import { reportDateBounds } from './report-date-bounds.util.js';
 
 export const ReturnsRatioFilterSchema = z.object({
@@ -166,10 +168,10 @@ export class ReturnsRatioService {
 
     const merged = sold.map((s) => {
       const ret = returnsMap.get(s.group_id) ?? { qty: 0, revenue: 0n };
-      const ratio =
-        s.revenue > 0n
-          ? Math.min(1000, Math.round(Number((ret.revenue * 10000n) / s.revenue)) / 100)
-          : 0;
+      // Yagona qatlam (analitika TZ §4). 1000 % cheklovi SAQLANADI: qaytarish
+      // sotuvdan ko'p bo'lgan chekka holatda (o'tgan davrda sotilgan tovar shu
+      // davrda qaytarilsa) nisbat ma'nosiz kattalashadi va jadvalni buzadi.
+      const ratio = Math.min(1000, returnRatePercent(ret.revenue, s.revenue) ?? 0);
       return {
         groupId: s.group_id,
         groupName: s.group_name ?? '(unknown)',
@@ -217,10 +219,7 @@ export class ReturnsRatioService {
     const totSoldRev = sold.reduce((acc, r) => acc + r.revenue, 0n);
     const totRetQty = returned.reduce((acc, r) => acc + Number(r.qty), 0);
     const totRetRev = returned.reduce((acc, r) => acc + r.revenue, 0n);
-    const totRatio =
-      totSoldRev > 0n
-        ? Math.min(1000, Math.round(Number((totRetRev * 10000n) / totSoldRev)) / 100)
-        : 0;
+    const totRatio = Math.min(1000, returnRatePercent(totRetRev, totSoldRev) ?? 0);
 
     return {
       from: from.toISOString(),

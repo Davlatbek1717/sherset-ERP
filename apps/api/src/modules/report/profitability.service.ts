@@ -2,6 +2,8 @@ import { Prisma } from '@moysklad/db';
 import { Inject, Injectable } from '@nestjs/common';
 import { z } from 'zod';
 import { PrismaService } from '../../prisma/prisma.service.js';
+// Analitika TZ §4 — yagona formulalar qatlami.
+import { percentText } from './metrics/index.js';
 import { reportDateBounds } from './report-date-bounds.util.js';
 import { type RateContext, consolidateToBase, loadRateContext } from './report-rate-ctx.util.js';
 
@@ -913,10 +915,11 @@ function trimNum(n: number): string {
   return Number.isInteger(n) ? String(n) : String(Math.round(n * 1e6) / 1e6);
 }
 
-function pct(numer: bigint, denom: bigint): string {
-  if (denom === 0n) return '';
-  return ((Number(numer) / Number(denom)) * 100).toFixed(2);
-}
+// Foiz endi yagona qatlamdan (`report/metrics/`) keladi. Ilgari bu yerda
+// `Number(numer) / Number(denom)` turardi — BigInt'ni Float orqali bo'lish
+// 2^53 tiyindan katta yig'indida aniqlikni jimgina yo'qotadi, va boshqa
+// hisobotlar shu ratio'ni boshqacha yaxlitlardi (analitika TZ §4, X4).
+const pct = percentText;
 
 function computeTotals(rows: ProfitabilityRow[]): ProfitabilityTotals {
   let salesDocuments = 0;

@@ -1,6 +1,8 @@
 import { Prisma } from '@moysklad/db';
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
+// Analitika TZ §4 — yagona formulalar qatlami.
+import { marginPercentText } from './metrics/index.js';
 import { type PnlFilterInput, PnlFilterSchema, type PnlGroupByValue } from './pnl.schema.js';
 import { reportDateBounds } from './report-date-bounds.util.js';
 import { type RateContext, consolidateToBase, loadRateContext } from './report-rate-ctx.util.js';
@@ -292,8 +294,10 @@ export class PnlService {
     const revenue = sales - returnsAmount;
     const grossProfit = revenue - cogs;
     const netProfit = grossProfit - expenses;
-    const marginPercent =
-      revenue > 0n ? ((Number(netProfit) / Number(revenue)) * 100).toFixed(2) : '';
+    // Yagona qatlam (analitika TZ §4). Diqqat: bu yerdagi «marja» sof foydadan
+    // (xarajatlar chegirilgandan keyin) hisoblanadi — `profitability`dagi yalpi
+    // marjadan farq qiladi. Ikkalasi ham to'g'ri, lekin BO'LINISH bitta joyda.
+    const marginPercent = revenue > 0n ? marginPercentText(netProfit, revenue) : '';
     return {
       key,
       label,

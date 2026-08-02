@@ -14,6 +14,9 @@ import {
   type SalesBlock,
   type SalesChartPoint,
 } from './dashboard.schema.js';
+// Analitika TZ §4 — yagona formulalar qatlami. `percentOf` deb nomlangan:
+// bu faylda `percent` lokal o'zgaruvchi sifatida band.
+import { percent as percentOf } from './metrics/index.js';
 import { consolidateToBase, loadRateContext } from './report-rate-ctx.util.js';
 import { ReportService } from './report.service.js';
 
@@ -334,12 +337,13 @@ export class DashboardService {
     const cur = BigInt(current.sumMinor);
     const prev = BigInt(previous.sumMinor);
     const delta = cur - prev;
-    // Percent — guard against divide-by-zero and round to integer for
-    // display (moysklad shows whole-number percentages on this surface).
+    // Bo'linish yagona qatlamdan (analitika TZ §4); BUTUN songa yaxlitlash esa
+    // shu sirtning ataylab qilingan tanlovi — moysklad panelida foizlar butun
+    // ko'rsatiladi. Ya'ni «bir bo'linish, sirt bo'yicha turli ko'rsatish», har
+    // sirtda o'z bo'linishi EMAS.
     let percent = 0;
     if (prev !== 0n) {
-      const ratio = Number((delta * 10000n) / prev);
-      percent = Math.round(ratio / 100);
+      percent = Math.round(percentOf(delta, prev) ?? 0);
     } else if (cur !== 0n) {
       // From zero baseline any positive amount reads as +100% on the
       // dashboard tile; a negative amount can't occur (sales are >= 0)

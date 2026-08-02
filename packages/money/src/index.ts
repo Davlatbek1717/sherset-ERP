@@ -20,6 +20,7 @@ export {
   lineProfitMinor,
   marginPercent,
   markdownMinor,
+  percentScaled,
   sumCostMinor,
   type LineProfitInput,
   type PriceBand,
