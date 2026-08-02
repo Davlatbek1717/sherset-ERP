@@ -35,6 +35,7 @@ export const CASHIER_EVENT = {
   saleCancelled: 'SALE_CANCELLED',
   refund: 'REFUND',
   shiftOutOfSchedule: 'SHIFT_OUT_OF_SCHEDULE',
+  soldOnCredit: 'SOLD_ON_CREDIT',
 } as const;
 
 export type CashierEventType = (typeof CASHIER_EVENT)[keyof typeof CASHIER_EVENT];
@@ -200,6 +201,38 @@ export function planRefundAuditEvent(
         quantity: l.quantity,
         priceMinor: l.priceMinor.toString(),
       })),
+    },
+  };
+}
+
+/**
+ * Qarzga sotildi (kassa TZ §9). Kassir qarz berishda erkin (Q4) — limit
+ * tekshiruvi yo'q — shuning uchun har holat izga tushadi.
+ *
+ * Payload'da mijozning YANGI balansi ham bor: «kimning qarzi tez o'sadi»
+ * degan savolga javob berish uchun har hodisada o'sha ondagi holat kerak,
+ * aks holda faqat hozirgi balansni ko'rib, o'sish tezligini bilib bo'lmaydi.
+ */
+export function planCreditSaleAuditEvent(
+  saleId: string,
+  args: {
+    agentId: string;
+    saleName: string;
+    debtMinor: bigint;
+    totalMinor: bigint;
+    /** Qarz yozilgandan KEYINGI balans; noma'lum bo'lsa null. */
+    newBalanceMinor: bigint | null;
+  },
+): CashierAuditEventInput {
+  return {
+    type: CASHIER_EVENT.soldOnCredit,
+    docId: saleId,
+    payload: {
+      agentId: args.agentId,
+      saleName: args.saleName,
+      debtMinor: args.debtMinor.toString(),
+      totalMinor: args.totalMinor.toString(),
+      newBalanceMinor: args.newBalanceMinor == null ? null : args.newBalanceMinor.toString(),
     },
   };
 }

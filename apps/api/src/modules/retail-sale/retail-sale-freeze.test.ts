@@ -71,6 +71,9 @@ function makeHarness(opts: {
     // post() endi kassir audit hodisalarini ham shu tranzaksiyada yozadi
     // (kassa TZ §9) — alohida `cashier-audit.test.ts` da qoplangan.
     cashierAuditEvent: { createMany: vi.fn().mockResolvedValue({ count: 0 }) },
+    // Kassa TZ §6.1 — post() endi har to'lov turini alohida qator qilib
+    // yozadi; qoidalar `retail-tenders.test.ts` da qoplangan.
+    retailSalePayment: { createMany: vi.fn().mockResolvedValue({ count: 1 }) },
     cashDesk: { update: vi.fn().mockResolvedValue({}) },
     cashierSession: { update: vi.fn().mockResolvedValue({}) },
   };
@@ -126,6 +129,9 @@ function makeHarness(opts: {
     { client } as never,
     makeStockStub() as never,
     makeMoneyStub() as never,
+    undefined as never,
+    undefined as never,
+    { applyDelta: vi.fn().mockResolvedValue(undefined) } as never,
   );
   return { svc, tx, client, positionUpdateMany, productFindMany };
 }

@@ -101,6 +101,7 @@ function makeService(
     money as never,
     { computeEarnedPoints: vi.fn(), createOperation: vi.fn() } as never,
     { emit: vi.fn().mockResolvedValue(undefined) } as never,
+    { applyDelta: vi.fn().mockResolvedValue(undefined) } as never,
   );
 }
 
@@ -112,6 +113,8 @@ function makePostClient(state: string) {
         .fn()
         .mockResolvedValue({ id: SALE_ID, state: 'posted', agentId: null, sumMinor: 100_000n }),
     },
+    // Kassa TZ §6.1 — post() endi har to'lov turini alohida qator qilib yozadi.
+    retailSalePayment: { createMany: vi.fn().mockResolvedValue({ count: 1 }) },
     cashDesk: { update: vi.fn() },
     cashierSession: { update: vi.fn() },
   };

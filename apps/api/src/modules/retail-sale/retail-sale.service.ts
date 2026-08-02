@@ -9,6 +9,9 @@ import {
 } from '@nestjs/common';
 import { allocateDocumentNumber } from '../../prisma/document-number.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
+// Kassa TZ §7.1 — qarzga sotish mijoz balansiga yoziladi (moysklad «Баланс»
+// ishora konventsiyasi: musbat = mijoz bizga qarzdor).
+import { CounterpartyBalanceService } from '../counterparty-balance/counterparty-balance.service.js';
 // §109: loyalty accrual/reversal on POS sale/refund. Only loyalty's
 // existing public API is called (computeEarnedPoints + createOperation);
 // the loyalty module itself is NOT edited (DO NOT respected).
@@ -23,6 +26,7 @@ import { type StockDelta, StockService } from '../stock/stock.service.js';
 import {
   type CashierAuditEventInput,
   planCancelAuditEvent,
+  planCreditSaleAuditEvent,
   planRefundAuditEvent,
   planSaleAuditEvents,
 } from './cashier-audit.js';
@@ -36,9 +40,6 @@ import {
   snapshotPricesByProduct,
 } from './price-snapshot.js';
 import { planLoyaltyAccrual, planLoyaltyReversal } from './retail-loyalty.js';
-// Pure, adversarially-tested mixed-payment money rule (§107 — extracted
-// faithfully from post(); byte-identical insufficient/change behaviour).
-import { computeRetailPayment } from './retail-payment.js';
 // Pure, adversarially-tested refund guards (§105 — enforces the
 // schema's documented "subset of original positions" contract that
 // refund() never checked: blocks over-refund of qty/products/cash).
@@ -53,6 +54,8 @@ import {
   RetailSaleFilterSchema,
   UpdateRetailSaleSchema,
 } from './retail-sale.schema.js';
+// Kassa TZ §6 — aralash to'lov qoidalari (sof, testlangan).
+import { computeTenders, legacyTotals } from './retail-tenders.js';
 
 /**
  * RetailSaleService — POS receipt CRUD + FSM.
@@ -104,6 +107,9 @@ export class RetailSaleService {
     @Inject(MoneyService) private readonly money: MoneyService,
     @Inject(LoyaltyService) private readonly loyalty: LoyaltyService,
     @Inject(NotificationService) private readonly notifications: NotificationService,
+    // Kassa TZ §7.1 — qarzga sotilgan qism mijozning umumiy balansiga tushadi.
+    @Inject(CounterpartyBalanceService)
+    private readonly counterpartyBalance: CounterpartyBalanceService,
   ) {}
 
   /**
@@ -564,17 +570,33 @@ export class RetailSaleService {
       throw new BadRequestException(`Session is ${sale.session.state}. Cannot post sale.`);
     }
 
+    // `expectedSumMinor` — kassir EKRANDA ko'rgan summa. Ilgari u qabul
+    // qilinardi-yu hech qayerda solishtirilmasdi (sxema izohidagi «server
+    // revalidates against DB sum» da'vosi yolg'on edi). Oqibati: chek yuklangan
+    // va to'lov olingan on orasida hujjat o'zgarsa (boshqa foydalanuvchi
+    // tahrirlasa), kassir ekrandagidan BOSHQA summaga pul olardi va buni hech
+    // kim sezmasdi. Endi bu 409 — optimistik qulf bilan bir klass.
+    if (BigInt(parsed.expectedSumMinor) !== sale.sumMinor) {
+      throw new ConflictException(
+        `Chek summasi o'zgargan: ekranda ${parsed.expectedSumMinor}, bazada ${sale.sumMinor.toString()}. Chekni qayta oching.`,
+      );
+    }
+
     const cashAmount = BigInt(parsed.cashAmountMinor);
     const cardAmount = BigInt(parsed.cardAmountMinor);
+    const terminalAmount = BigInt(parsed.terminalAmountMinor);
+    const debtAmount = BigInt(parsed.debtAmountMinor);
     const total = sale.sumMinor;
 
-    // §107: mixed-payment money rule via the pure, adversarially-tested
-    // validator. Behaviour byte-identical to the prior inline block
-    // (same insufficient message, same change formula). 'negative-input'
-    // is defensive — the Zod schema already enforces `^\d+$` upstream.
-    const pay = computeRetailPayment({
+    // Kassa TZ §6 — aralash to'lov (naqd · karta · terminal · qarz).
+    // `/sotuv` to'lov oynasi to'rttasini ham ALLAQACHON yuborardi; server
+    // ikkitasini bilardi va qolgani jimgina tashlanardi → terminal/qarz chek
+    // 400 olardi. Qoidalar `retail-tenders.ts` da (sof, testlangan).
+    const pay = computeTenders({
       cashMinor: cashAmount,
       cardMinor: cardAmount,
+      terminalMinor: terminalAmount,
+      debtMinor: debtAmount,
       totalMinor: total,
     });
     if (!pay.ok) {
@@ -583,10 +605,30 @@ export class RetailSaleService {
           `Payment insufficient: paid ${pay.paidMinor.toString()} < total ${pay.totalMinor.toString()}`,
         );
       }
+      if (pay.reason === 'debt-overpaid') {
+        throw new BadRequestException(
+          `Qarzli chekda to'lov + qarz JAMIga teng bo'lishi kerak: ${pay.paidMinor.toString()} ≠ ${pay.totalMinor.toString()}`,
+        );
+      }
+      if (pay.reason === 'change-exceeds-cash') {
+        // TZ §6.2: qaytim faqat naqddan. Aks holda kassa mijozga bank pulidan
+        // naqd qaytim berib, o'z kassasidan pul yo'qotadi.
+        throw new BadRequestException(
+          `Qaytim faqat naqddan beriladi: qaytim ${pay.changeMinor.toString()} > naqd ${pay.cashMinor.toString()}`,
+        );
+      }
       throw new BadRequestException('Payment amounts must be non-negative');
     }
 
+    // Qarzga sotishda kontragent MAJBURIY — aks holda qarz kimningdir
+    // balansiga emas, hech qayerga yozilgan bo'lardi (TZ §7.1).
+    const debtAgentId = parsed.agentId ?? sale.agentId ?? null;
+    if (debtAmount > 0n && !debtAgentId) {
+      throw new BadRequestException('Qarzga sotish uchun mijoz tanlanishi shart');
+    }
+
     const change = pay.changeMinor;
+    const legacy = legacyTotals(pay.lines);
 
     // Stock cascade: rows with a productId trigger an outflow against
     // session.storeId. Service-only positions (productId === null) are
@@ -619,8 +661,11 @@ export class RetailSaleService {
         data: {
           state: 'posted',
           postedAt: new Date(),
-          cashAmountMinor: cashAmount,
-          cardAmountMinor: cardAmount,
+          // TZ §6.3 — bu ikki ustun endi to'lov qatorlaridan HISOBLANADI
+          // (terminal `card` yig'indisiga kiradi: ikkalasi ham naqdsiz).
+          // Ustunlar saqlanadi, chunki mavjud hisobotlar va moysklad-compat
+          // ularni o'qiydi.
+          ...legacy,
           changeMinor: change,
         },
       });
@@ -695,18 +740,44 @@ export class RetailSaleService {
         await this.stock.applyDeltas(tx, accountId, userId, deltas);
       }
 
+      // Kassa TZ §6.1 — har to'lov turi alohida qator. Bu Z-hisobotning
+      // «to'lov turlari kesimida tushum» bandi uchun yagona manba (§8.5):
+      // ikkita ustundan («naqd» va «naqdsiz») kanalni tiklab bo'lmaydi.
+      if (pay.lines.length > 0) {
+        await tx.retailSalePayment.createMany({
+          data: pay.lines.map((l) => ({
+            accountId,
+            saleId: id,
+            method: l.method,
+            amountMinor: l.amountMinor,
+            currency: sale.session.cashDesk.currency,
+            // UZS to'lovda hisob valyutasidagi summa aynan o'zi. CASH_USD
+            // ulanganda bu yerda `rateMinor` bilan o'girish qo'shiladi.
+            amountBaseMinor: l.amountMinor,
+          })),
+        });
+      }
+
       // Cash inflow: route through MoneyService so the ledger captures
       // both the materialized balance update and a MoneyOperation row
       // (audit trail) — atomic with the FSM flip and stock cascade.
-      // Card portion is intentionally NOT booked yet — V2 requires a
+      // Card/terminal portion is intentionally NOT booked yet — V2 requires a
       // BankAccount routing decision (which account to credit per
-      // POS terminal). For now card lives only in RetailSale.cardAmountMinor.
-      if (cashAmount > 0n) {
+      // POS terminal). For now it lives in RetailSale.cardAmountMinor +
+      // the RetailSalePayment rows above.
+      //
+      // ⚠️ QAYTIM CHEGIRILADI. Kassaga tushadigan pul — berilgan naqd MINUS
+      // qaytim. Ilgari to'liq `cashAmount` yozilardi: 100 000 berib 90 000 lik
+      // tovar olgan mijozga 10 000 qaytarilsa ham, kassa balansi 100 000 ga
+      // o'sardi. Bu smena yopilishida (TZ §8.4 «farq akti») SOXTA KAMOMAD
+      // beradi — kutilgan naqd haqiqiydan har qaytim summasicha ko'p bo'ladi.
+      const cashToDrawer = cashAmount - change;
+      if (cashToDrawer > 0n) {
         const moneyDeltas: MoneyDelta[] = [
           {
             sourceKind: 'cash_desk',
             sourceId: sale.session.cashDeskId,
-            deltaMinor: cashAmount,
+            deltaMinor: cashToDrawer,
             currency: sale.session.cashDesk.currency,
             documentKind: 'retailsale',
             documentId: id,
@@ -714,6 +785,44 @@ export class RetailSaleService {
           },
         ];
         await this.money.applyDeltas(tx, accountId, moneyDeltas);
+      }
+
+      // Kassa TZ §7.1 — qarzga sotilgan qism MIJOZNING UMUMIY BALANSIGA
+      // yoziladi. Ishora konventsiyasi moysklad «Баланс» bilan bir xil:
+      // musbat = mijoz bizga qarzdor (`InvoiceOut.post` bilan bir xil yo'nalish).
+      //
+      // Bu yerda ATAYLAB `Debt` reyestriga (QRZ-…) yozmaymiz: reyestr — qo'lda
+      // ochiladigan qarzlar uchun, va uning `create` yo'li balansga tegmaydi.
+      // Ikkalasiga birdan yozilsa, hujjatdan kelgan qarz IKKI MARTA sanalardi
+      // (xotira: `debt-ledger-asymmetry`). Bitta daftar — bitta haqiqat.
+      if (debtAmount > 0n && debtAgentId) {
+        await this.counterpartyBalance.applyDelta(
+          tx,
+          accountId,
+          debtAgentId,
+          sale.session.cashDesk.currency,
+          debtAmount,
+          { docType: 'retailsale', docId: id },
+        );
+        // Yangi balansni O'QIYMIZ va hodisaga yozamiz — «kimning qarzi tez
+        // o'sadi» savoliga keyin javob berish uchun o'sha ondagi holat kerak.
+        const bal = await tx.counterpartyBalance.findFirst({
+          where: {
+            accountId,
+            counterpartyId: debtAgentId,
+            currency: sale.session.cashDesk.currency,
+          },
+          select: { balanceMinor: true },
+        });
+        await this.writeAuditEvents(tx, accountId, sale.sessionId, userId, [
+          planCreditSaleAuditEvent(id, {
+            agentId: debtAgentId,
+            saleName: sale.name,
+            debtMinor: debtAmount,
+            totalMinor: total,
+            newBalanceMinor: bal?.balanceMinor ?? null,
+          }),
+        ]);
       }
 
       // Update session aggregates
