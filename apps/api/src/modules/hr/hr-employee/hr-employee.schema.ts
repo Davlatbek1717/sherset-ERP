@@ -50,6 +50,9 @@ export const CreateHrEmployeeSchema = z.object({
   positionId: z.string().uuid().optional().nullable(),
   departmentId: z.string().uuid().optional().nullable(),
   scheduleId: z.string().uuid().optional().nullable(),
+  // «Haydovchi (jonli-iz)» — 'field' = driver (live GPS trail + shifts/trips,
+  // schedule-lateness OFF); 'geofence' = office worker (default). Driver-tracking.
+  trackingMode: z.enum(['geofence', 'field']).optional(),
   // «Разрешить вход в систему» — stored in attributes.__employee_system.
   loginAllowed: z.boolean().optional(),
   // «Сеть»: Доступ только с адресов / только из сети.

@@ -6067,7 +6067,12 @@
         "accepted": "Принят",
         "rejected": "Отклонён",
         "converted": "Конвертирован"
-      }
+      },
+      "link_order_title": "Связать с существующим заказом покупателя",
+      "link_order_search": "Поиск по номеру заказа или покупателю",
+      "link_order_empty": "Заказ не найден",
+      "link_order_hint": "В онлайн-заказе нет кодов товаров, поэтому заказ покупателя создаётся вручную и связывается здесь.",
+      "link_order_cancel": "Отмена"
     },
     "apps": {
       "title": "Решения",
@@ -6507,7 +6512,9 @@
       "form_position": "Должность",
       "form_department_catalog": "Отдел",
       "form_schedule": "График",
-      "form_unassigned": "Не назначено"
+      "form_unassigned": "Не назначено",
+      "form_driver": "Водитель (живой трек)",
+      "form_driver_hint": "GPS-местоположение, смены и доставки в реальном времени"
     },
     "hrAttendance": {
       "title": "Посещаемость",

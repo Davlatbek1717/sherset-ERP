@@ -29,6 +29,8 @@ export interface HrEmployeeRow {
   department: string | null;
   hrRoles: string[];
   isChecker: boolean;
+  /** «Haydovchi (jonli-iz)» — 'field' = driver live-tracking; 'geofence' = office. */
+  trackingMode?: 'geofence' | 'field';
   moyskladAgentId: string | null;
   archived: boolean;
   /** Optimistic-lock token — round-tripped on edit Save (PUT). */
@@ -97,6 +99,7 @@ export interface HrEmployeeCreateInput {
   department?: string | null;
   hrRoles?: string[];
   isChecker?: boolean;
+  trackingMode?: 'geofence' | 'field';
   moyskladAgentId?: string | null;
   // TimePay catalog assignment (nullable FK ids).
   positionId?: string | null;

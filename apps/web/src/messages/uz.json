@@ -6067,7 +6067,12 @@
         "accepted": "Qabul qilindi",
         "rejected": "Rad etildi",
         "converted": "Aylantirildi"
-      }
+      },
+      "link_order_title": "Mavjud xaridor buyurtmasiga bog‘lash",
+      "link_order_search": "Buyurtma raqami yoki mijoz bo‘yicha qidiring",
+      "link_order_empty": "Buyurtma topilmadi",
+      "link_order_hint": "Onlayn buyurtma tarkibida tovar kodlari yo‘q, shuning uchun xaridor buyurtmasi qo‘lda yaratiladi va shu yerda bog‘lanadi.",
+      "link_order_cancel": "Bekor qilish"
     },
     "apps": {
       "title": "Yechimlar",
@@ -6507,7 +6512,9 @@
       "form_position": "Lavozim",
       "form_department_catalog": "Bo'lim",
       "form_schedule": "Jadval",
-      "form_unassigned": "Biriktirilmagan"
+      "form_unassigned": "Biriktirilmagan",
+      "form_driver": "Haydovchi (jonli-iz)",
+      "form_driver_hint": "GPS joylashuv, smena va yetkazmalarni real-time kuzatish"
     },
     "hrAttendance": {
       "title": "Davomat",

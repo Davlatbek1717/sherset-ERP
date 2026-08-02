@@ -75,6 +75,7 @@ interface FormState {
   department: string;
   hrRoles: string[];
   isChecker: boolean;
+  trackingMode: 'geofence' | 'field';
   moyskladAgentId: string | null;
   username: string;
   password: string;
@@ -96,6 +97,7 @@ function emptyForm(): FormState {
     department: '',
     hrRoles: [],
     isChecker: false,
+    trackingMode: 'geofence',
     moyskladAgentId: null,
     username: '',
     password: '',
@@ -118,6 +120,7 @@ function rowToForm(row: HrEmployeeRow | HrEmployeeDetail): FormState {
     department: row.department ?? '',
     hrRoles: row.hrRoles ?? [],
     isChecker: row.isChecker,
+    trackingMode: detail.trackingMode ?? 'geofence',
     moyskladAgentId: row.moyskladAgentId,
     username: '',
     password: '',
@@ -204,6 +207,7 @@ export function EmployeeModal({
     department: form.department.trim() || null,
     hrRoles: form.hrRoles,
     isChecker: form.isChecker,
+    trackingMode: form.trackingMode,
     moyskladAgentId: form.moyskladAgentId,
     // TimePay catalog assignment ('' → null).
     positionId: form.positionId || null,
@@ -488,6 +492,22 @@ export function EmployeeModal({
             <span className="font-medium">{t('form_checker')}</span>
             <span className="ml-2 text-[var(--ms-text-muted)] text-xs">
               {t('form_checker_hint')}
+            </span>
+          </span>
+        </label>
+
+        {/* «Haydovchi (jonli-iz)» — driver live-tracking (trackingMode='field'). */}
+        <label className="flex items-start gap-2 text-sm sm:col-span-2">
+          <Checkbox
+            checked={form.trackingMode === 'field'}
+            onCheckedChange={(v) => update('trackingMode', v === true ? 'field' : 'geofence')}
+            className="mt-0.5"
+            data-test-id="hr-employee-driver"
+          />
+          <span>
+            <span className="font-medium">{t('form_driver')}</span>
+            <span className="ml-2 text-[var(--ms-text-muted)] text-xs">
+              {t('form_driver_hint')}
             </span>
           </span>
         </label>

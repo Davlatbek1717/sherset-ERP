@@ -151,6 +151,7 @@ export class HrEmployeeService {
           department: true,
           hrRoles: true,
           isChecker: true,
+          trackingMode: true,
           moyskladAgentId: true,
           archived: true,
           // Optimistic-lock token — the edit modal opens off a list row, so the
@@ -495,6 +496,8 @@ export class HrEmployeeService {
           ...(input.positionId !== undefined && { positionId: input.positionId }),
           ...(input.departmentId !== undefined && { departmentId: input.departmentId }),
           ...(input.scheduleId !== undefined && { scheduleId: input.scheduleId }),
+          // «Haydovchi (jonli-iz)» — geofence↔field (driver-tracking designation).
+          ...(input.trackingMode !== undefined && { trackingMode: input.trackingMode }),
           ...(Object.keys(sysPatch).length > 0 && {
             attributes: mergeEmployeeSystemAttrs(current.attributes, sysPatch) as object,
           }),
