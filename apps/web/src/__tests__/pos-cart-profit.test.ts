@@ -73,6 +73,15 @@ describe('/sotuv savat foydasi', () => {
     expect(src).toContain('cart_below_wholesale');
   });
 
+  it('tan narx setkada ham, savatda ham bir xil ko`rinadi (rol gate`i yo`q)', () => {
+    // 1.1 dan keyin setkadagi `isAdmin` gate'i hech nimani himoya qilmasdi —
+    // tovarni bosgan zahoti o'sha raqam savatda chiqardi. Yarim yopiq holat
+    // qaytib kelmasin: bir sahifada bitta raqam ikki xil qoida bilan
+    // ko'rsatilmaydi.
+    expect(src).not.toMatch(/isAdmin\s*&&[^\n]*buyPrice/);
+    expect(src).not.toContain('isAdmin');
+  });
+
   it('chek bo`yicha jami foyda chegirmadan KEYINGI summadan olinadi', () => {
     // Chegirma hisobga olinmasa, kassir 30% tushirib bergan chekda ham to'liq
     // foyda ko'rinardi — nazorat raqami emas, taskin bo'lib qolardi.

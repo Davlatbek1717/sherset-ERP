@@ -547,16 +547,22 @@ function ChekDetailPanel({ saleId, onBack }: { saleId: string; onBack: () => voi
 function SalesScreen({ session }: { session: CurrentSession }) {
   const t = useTranslations('pages.sotuv');
   const qc = useQueryClient();
-  const { user } = useAuth();
   const { toast } = useToast();
   const { runDestructive } = useDestructiveMutation();
 
-  // Cost price («Kelgan») on the PRODUCT GRID stays owner-only. The cart row is
-  // deliberately different: kassa TZ §5.2 puts cost / wholesale floor / live
-  // profit in front of the cashier, because the owner's model is «kassirga
-  // ishonch + keyingi nazorat» — a cashier free to set the price has to see
-  // what they are giving away. Admin role bypasses (hr-permission.guard parity).
-  const isAdmin = user?.hrRoles?.includes('admin') ?? false;
+  // Tan narx BUTUN sahifada ko'rinadi — setkada ham, savatda ham.
+  //
+  // Ilgari setkadagi «Kelgan» faqat egaga ko'rinardi. Kassa TZ §5.2 savat
+  // qatoriga tan narx / optom chegara / jonli foydani chiqargach (2026-08-02,
+  // to'lqin 1.1), o'sha gate HIMOYA QILMAY qo'ydi: kassir tovarni bir marta
+  // bosib savatga qo'shsa, o'sha raqamni baribir ko'radi. Ishlamaydigan
+  // cheklovni saqlash undan ham yomoni — u «bu raqam sir» deb o'rgatadi va
+  // ikki soniyadan keyin o'zi ko'rsatadi.
+  //
+  // Egasining modeli buni allaqachon hal qilgan: «kassirga ishonch + keyingi
+  // nazorat» (TZ §5 «Boshqaruvchi falsafa»). Narxni erkin qo'yadigan kassir
+  // nima berayotganini ko'rishi KERAK; nazorat esa keyin — audit jurnali va
+  // menejer analitikasi orqali (to'lqin 1.3).
 
   // Real PriceType ids so the cart reads the same tiers the server freezes at
   // post() — the retail tier for the starting price, the «Оптовая цена» tier
@@ -1096,8 +1102,11 @@ function SalesScreen({ session }: { session: CurrentSession }) {
                       >
                         {t('stock')}: {onHand.toLocaleString('uz-UZ')} {t('pieces')}
                       </span>
-                      {isAdmin && p.buyPrice != null && (
-                        <span className="text-[var(--ms-text-muted)]">
+                      {p.buyPrice != null && (
+                        <span
+                          data-test-id="sotuv-grid-cost"
+                          className="text-[var(--ms-text-muted)]"
+                        >
                           {' '}
                           · {t('cost')}: {formatMoney(BigInt(p.buyPrice))}
                         </span>

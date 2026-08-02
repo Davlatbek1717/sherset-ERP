@@ -332,9 +332,12 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > pastida **chek bo'yicha jami foyda** — **chegirmadan KEYINGI** summadan; bironta qatorda tan narx
 > bo'lmasa jami umuman ko'rsatilmaydi.
 >
-> **Rol qarori:** tan narx **savatda kassirga OCHIQ** (TZ §5.2 «kassirga ishonch + keyingi nazorat»).
-> Tovar setkasidagi `isAdmin` gate'i **TEGILMADI** — ⚠️ bu **nomuvofiqlik**: setkada «Kelgan» faqat
-> egaga, savatda «Tan» hammaga. Egadan so'ralsin.
+> **Rol qarori (YOPILDI, `50f7980`):** tan narx **butun `/sotuv` sahifasida ochiq** — setkada ham,
+> savatda ham. Sabab: savat 1.1 dan keyin raqamni ko'rsatgach, setkadagi `isAdmin` gate'i **hech
+> nimani himoya qilmay qoldi** (tovarni bir marta bosish yetardi) — ishlamaydigan cheklov «bu raqam
+> sir» deb o'rgatib, ikki soniyadan keyin o'zi ko'rsatardi. TZ §5 «kassirga ishonch + keyingi
+> nazorat» modeli buni allaqachon hal qilgan; nazorat 1.3 audit jurnali orqali keladi.
+> Qo'riqchi `pos-cart-profit.test.ts` yarim-yopiq holat qaytishini bloklaydi.
 >
 > **Formulalar `@moysklad/money/profit.ts` da** (`lineProfitMinor` · `sumCostMinor` · `marginPercent` ·
 > `markdownMinor` · `classifyPrice`) — savat va kelajakdagi hisobotlar bitta manbadan o'qisin. Bu
@@ -353,7 +356,8 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > To'qnashuv faqat `messages/{ru,uz}.json` (ikkala tomon `pages.sotuv` oxiriga kalit qo'shgan) va
 > `docs/progress.json` da bo'ldi; JSON strukturaviy birlashtirildi, ru/uz kalit pariteti 59=59.
 > `retail-sale.service.ts` avtomat birlashdi va qo'lda tekshirildi (FSM qo'riqchilari + muzlatish
-> bir-birini buzmaydi). **Worktree hali turibdi** — kerak bo'lmasa `git worktree remove` qilinsin.
+> bir-birini buzmaydi). **Worktree o'chirildi** — ishi to'liq merge bo'lgani isbotlangach
+> (`git log wave1-cost-freeze --not climart-adoption` bo'sh, tree toza).
 >
 > **⏭️ KEYINGI ISH = To'lqin 1.2** — `report/profitability.service.ts:578` `0::bigint AS cost` ni
 > `retail_sale_positions.cost_minor` ga ulash **+ «tan narx yig'ilmagan» belgisi** (NULL qatorlar
@@ -361,7 +365,7 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > `@moysklad/money/profit.ts` dan olinsin. Keyin 1.3 `CashierAuditEvent` (zararga sotuv hodisasi
 > shu yerga yoziladi — hozir hech qayerga yozilmayapti) · 1.4 `report/metrics/`.
 >
-> **Ochiq:** (a) setka/savat tan-narx ko'rinish nomuvofiqligi (yuqorida); (b) valyuta — `costMinor`
+> **Ochiq:** (b) valyuta — `costMinor`
 > kartochkadagi xom qiymat, `Product.buyPriceCurrency` hisobga olinmaydi (repo bo'ylab shunday,
 > `schema.prisma` izohida qayd etilgan); (c) lokal DB `climart_adopt` ga 2 ustun qo'lda qo'shildi
 > (`ADD COLUMN IF NOT EXISTS`), lekin u boshqa migratsiyalardan hamon orqada.
