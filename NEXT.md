@@ -305,6 +305,50 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-02a (EGASINING 8-BO'LIMLI TZ'si YOZILDI + To'lqin 0 bajarildi `f6cc310`)**
+>
+> **Bu sessiya nima qildi:** egasi butun tizim strukturasini bo'lim-bo'lim tushuntirdi; har bo'lim
+> uchun savol-javob (AskUserQuestion) → dizayn → tasdiq → **professional TZ** yozildi. Jami
+> **8 TZ + master roadmap**, hammasi `docs/superpowers/specs/` da:
+> `2026-08-01-kassa` (`0f10050`, tuzatish `764a9f5`) · `2026-08-01-onlayn-sotuv-b2b-b2g` (`e4f2e2b`) ·
+> `2026-08-01-analitika` (`986abb4`) · `2026-08-01-menejer` (`20a593a`) · `2026-08-01-taminotchilar`
+> (`5c49e8a`) · `2026-08-02-hr` (`17c8778`) · `2026-08-02-ombor` (`ae1d40f`) ·
+> `2026-08-02-kop-filiallilik` (`ea1e481`) · **`2026-08-02-master-roadmap`** (`2dd75e6`).
+>
+> **▶️ KEYINGI SESSIYA SHUNDAN BOSHLAYDI: `docs/superpowers/specs/2026-08-02-master-roadmap.md`.**
+> U 8 to'lqinli bajarish tartibini beradi (bo'lim-bo'lim EMAS, bog'liqlik bo'yicha). **To'lqin 0
+> tugadi.** Keyingi ish = **To'lqin 1.1**.
+>
+> **✅ To'lqin 0 (`f6cc310`) — Phase-1, brauzerda tekshirilmagan:**
+> 1. `RetailSaleStateSchema` ga `picking`+`ready` qo'shildi. `send-to-picking` DB'ga 'picking'
+>    yozardi, `mark-ready` (d7ab3b1) 'ready' ga o'tkazadi — lekin Zod enum bilmasdi va `list()`
+>    shu sxema bilan filtrlaydi → POS'ning `?state=picking/ready` so'rovlari **400** qaytarardi,
+>    «Yig'ilmoqda»/«Tayyor» ro'yxatlari bo'sh qolardi.
+> 2. `online-order` konvertatsiyasi **soxta UUID** yozishni to'xtatdi (V1 stub `randomUUID()`
+>    yozardi → bazada hech qayerga ishora qilmaydigan havola). Endi MAVJUD `CustomerOrder` ga
+>    bog'laydi (ijarachi ichida mavjudligi tekshiriladi); web'da qidiruv-tanlash paneli.
+>    Gate: tc0 · biome0 · **api 4271** · **web 2628** · +7 test.
+>
+> **⏭️ To'lqin 1.1 (keyingi ish, ~1 flagship sessiya):** `RetailSalePosition.costMinor` +
+> `basePriceMinor` **muzlatish** (`post` paytida) va **savat qatorida tan narx / optom narx /
+> foyda** ko'rsatish. Egasi eng ko'p so'ragan xususiyat. Manba: `Product.buyPrice` (tan narx) +
+> «Оптовая цена» narx turi (minimal ruxsat etilgan narx) + «Розничная цена» (asos narx).
+> Narx optomdan past → sariq; tan narxdan past → qizil «ZARAR», **sotuvga ruxsat beriladi**
+> (egasining qarori) lekin audit jurnaliga tushadi. Batafsil: kassa TZ §5.
+> **DIQQAT: baza migratsiyasi kerak** → CLAUDE.md §6.4 (umumiy resurs — parallel sessiya
+> `prisma migrate` ishlatayotgan bo'lmasin; xotira: `climart-adopt-local-db-untracked`).
+>
+> **Keyin:** 1.2 `profitability.service.ts:576` dagi `0::bigint AS cost` (hozir har kassa cheki
+> **100% marja** ko'rsatadi) · 1.3 `CashierAuditEvent` · 1.4 `report/metrics/` yagona qatlam.
+>
+> **Parallel sessiya:** `d7ab3b1` (omborchi zanjiri: 12 sahifa + `mark-ready` + `warehouse-ops`)
+> shu sessiya davomida keldi — diff'im path-cheklangan bo'lgan, kesishma yo'q. Kassa TZ'sidagi
+> eskirgan da'vo `764a9f5` da tuzatildi.
+>
+> **Ochiq qarz:** bazada oldin yozilgan **soxta `customerOrderId`** qiymatlari bo'lsa, tozalash
+> migratsiyasi kerak (onlayn-sotuv TZ §8). · `stash@{0}` — 2026-07-31 dagi begona lint-staged
+> zaxirasi, tegilmadi.
+
 > **🕒 2026-08-01b (/sotuv POS TIKLANDI + React #310 fix · ✅ DEPLOYED `cded942`)**
 > **1) React #310** — `demands/[id]` PROD'DA YIQILARDI. Sabab MENDA: chek/varaq hook'larini erta
 > `return`dan KEYIN qo'ygandim (1171-qator, return 984-da) → hook soni renderlar orasida o'zgarardi.
