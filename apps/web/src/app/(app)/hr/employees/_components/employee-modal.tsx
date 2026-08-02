@@ -388,60 +388,68 @@ export function EmployeeModal({
           />
         </Field>
 
-        <Field label={t('form_department')}>
-          <Input
-            type="text"
-            value={form.department}
-            onChange={(e) => update('department', e.target.value)}
-            data-test-id="hr-employee-department"
-          />
-        </Field>
+        {/* Egasi 2026-08-01: «Bo'lim / Lavozim / Ish grafigi» yangi-xodim oynasidan
+            OLIB TASHLANDI — bular endi Xodimlar → xodim-sahifasi tab'larida boshqariladi.
+            Form-state + buildPayload saqlanadi (edit'da mavjud qiymatlar round-trip qiladi,
+            yo'qolmaydi). Qaytarish uchun: `false` → `true`. */}
+        {false && (
+          <>
+            <Field label={t('form_department')}>
+              <Input
+                type="text"
+                value={form.department}
+                onChange={(e) => update('department', e.target.value)}
+                data-test-id="hr-employee-department"
+              />
+            </Field>
 
-        {/* TimePay catalog assignment: lavozim / bo'lim / jadval */}
-        <Field label={t('form_position')}>
-          <NativeSelect
-            value={form.positionId}
-            onChange={(e) => update('positionId', e.target.value)}
-            data-test-id="hr-employee-position-select"
-          >
-            <option value="">{t('form_unassigned')}</option>
-            {positions.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </NativeSelect>
-        </Field>
+            {/* TimePay catalog assignment: lavozim / bo'lim / jadval */}
+            <Field label={t('form_position')}>
+              <NativeSelect
+                value={form.positionId}
+                onChange={(e) => update('positionId', e.target.value)}
+                data-test-id="hr-employee-position-select"
+              >
+                <option value="">{t('form_unassigned')}</option>
+                {positions.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </NativeSelect>
+            </Field>
 
-        <Field label={t('form_department_catalog')}>
-          <NativeSelect
-            value={form.departmentId}
-            onChange={(e) => update('departmentId', e.target.value)}
-            data-test-id="hr-employee-department-select"
-          >
-            <option value="">{t('form_unassigned')}</option>
-            {departments.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.name}
-              </option>
-            ))}
-          </NativeSelect>
-        </Field>
+            <Field label={t('form_department_catalog')}>
+              <NativeSelect
+                value={form.departmentId}
+                onChange={(e) => update('departmentId', e.target.value)}
+                data-test-id="hr-employee-department-select"
+              >
+                <option value="">{t('form_unassigned')}</option>
+                {departments.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name}
+                  </option>
+                ))}
+              </NativeSelect>
+            </Field>
 
-        <Field label={t('form_schedule')}>
-          <NativeSelect
-            value={form.scheduleId}
-            onChange={(e) => update('scheduleId', e.target.value)}
-            data-test-id="hr-employee-schedule-select"
-          >
-            <option value="">{t('form_unassigned')}</option>
-            {schedules.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </NativeSelect>
-        </Field>
+            <Field label={t('form_schedule')}>
+              <NativeSelect
+                value={form.scheduleId}
+                onChange={(e) => update('scheduleId', e.target.value)}
+                data-test-id="hr-employee-schedule-select"
+              >
+                <option value="">{t('form_unassigned')}</option>
+                {schedules.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </NativeSelect>
+            </Field>
+          </>
+        )}
 
         <Field label={t('form_roles')} required>
           <RoleMultiSelect value={form.hrRoles} onChange={(next) => update('hrRoles', next)} />

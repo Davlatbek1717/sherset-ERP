@@ -415,20 +415,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     { key: 'serial-numbers', label: tProducts('serial_numbers'), href: '/serial-numbers' },
   ];
 
+  // HR menyu SODDALASHTIRILDI (egasi 2026-08-01): per-xodim ma'lumotlar endi
+  // Xodimlar → xodim-sahifasi tab'larida. Olib tashlangan bo'limlar (monitoring,
+  // departments, positions, schedules, review, payroll, messages, reports) sahifalari
+  // + ma'lumotlari SAQLANADI — faqat menyudan yashirildi (URL bilan hali ochiladi).
   const hrSubNav: SubNavItem[] = [
     { key: 'home', label: tHr('home'), href: '/hr' },
-    { key: 'monitoring', label: tHr('monitoring'), href: '/hr/monitoring' },
     { key: 'employees', label: tHr('employees'), href: '/hr/employees' },
-    { key: 'departments', label: tHr('departments'), href: '/hr/departments' },
-    { key: 'positions', label: tHr('positions'), href: '/hr/positions' },
-    { key: 'schedules', label: tHr('schedules'), href: '/hr/schedules' },
     { key: 'attendance', label: tHr('attendance'), href: '/hr/attendance' },
     { key: 'tasks', label: tHr('tasks'), href: '/hr/tasks' },
-    { key: 'review', label: tHr('review'), href: '/hr/review' },
     { key: 'my-tasks', label: tHr('my_tasks'), href: '/hr/my-tasks' },
-    { key: 'payroll', label: tHr('payroll'), href: '/hr/payroll' },
-    { key: 'messages', label: tHr('messages'), href: '/hr/messages' },
-    { key: 'reports', label: tHr('reports'), href: '/hr/reports' },
     { key: 'settings', label: tHr('settings'), href: '/hr/settings' },
   ];
 
