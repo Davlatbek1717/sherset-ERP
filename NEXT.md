@@ -305,6 +305,57 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-02l (HAYDOVCHI NAQD TOPSHIRIG'I — TZ §7.2 · `fd8056d` + `9ce42bb`) · ✅ DEPLOYED**
+>
+> **HAYDOVCHI GPS ISHI SHU BILAN TZ §7 BO'YICHA YOPILDI** (§7.1 va §7.2 bajarildi; §7.3 —
+> ish birligiga oylik — 5-to'lqin payroll'ga bog'liq, alohida).
+>
+> **Muammo:** haydovchi mijozdan naqd olgan payt bilan kassaga topshirgan payt orasida pul
+> **uning qo'lida** turadi. Bu hech qayerda yozilmasa, kassa qoldig'i bilan real pul o'rtasidagi
+> farq ko'rinmaydi va «kimda qancha turibdi» degan savolga javob bo'lmaydi.
+>
+> **IKKI BOSQICH ATAYLAB ajratilgan** — `DriverCashHandover`:
+> `collect` (haydovchi «oldim» deydi — **pul harakati YO'Q**) → `handOver` (kassir sanab qabul
+> qiladi va **aynan shu qadamda ПКО** yaratiladi). Bitta qadam qilinsa, haydovchi e'lon qilishi
+> bilan kassa qoldig'i oshib ketardi — kassada esa pul yo'q.
+>
+> **PUL YAXLITLIGI (asosiy qaror):** servis kassa qoldig'iga **o'zi tegmaydi** —
+> `CashInService.create` + `transition('post')` chaqiriladi, ya'ni pul mavjud **auditlangan**
+> yo'ldan o'tadi (MoneyOperation, kontragent balansi, hujjat raqami). Alohida «tezroq» yozuv
+> qilinsa, kassa hisoboti bilan ПКО reyestri farq qilib ketardi.
+>
+> **POYGA HIMOYASI:** holat **AVVAL** CAS + optimistik qulf bilan band qilinadi, ПКО **KEYIN**.
+> Teskarisi bo'lsa, poygada yutqazgan kassirning ПКО'si osilib qolardi — kassaga **ikki marta**
+> pul tushardi. ПКО yaratilmasa holat `pending`ga **qaytadi** (aks holda yozuv «topshirilgan»
+> ko'rinib, pul kassaga tushmay qolardi).
+>
+> **Rol ajratilgan:** haydovchi faqat **o'zi** olgan naqdni e'lon qiladi (`driverId` **tanadan
+> emas, token'dan**); qabul/bekor/hisobot — `DispatcherGuard` ostida.
+>
+> **Ekranlar:** `/haydovchi` — «Oldim» + summa, qo'lidagi naqd **qizil** yig'ma, va ochiq matn:
+> «bu yozuv kassani TO'LDIRMAYDI» (aks holda haydovchi «topshirdim» deb o'ylardi) ·
+> `/hr/drivers/live` — haydovchi bo'yicha **qizil** qatorlar («kimda qancha turibdi», TZ talabi),
+> kontragent/tashkilot/kassa tanlab har yozuvni qabul qilish; 409 xabari ekranda.
+>
+> **🔬 VERIFIKATSIYA:** migratsiya SQL'i (qo'lda yozilgan) **haqiqiy Postgres'da** tranzaksiya
+> ichida qo'llanib jadval yaratilgani tasdiqlandi, so'ng **rollback** — lokal baza o'zgarmadi.
+> Prodda migratsiya qo'llandi va `driver_cash_handovers` jadvali **bazada tasdiqlandi**.
+>
+> **🚀 DEPLOY:** zaxira 318 MB `gzip -t` OK · migratsiya qo'llandi · build «Compiled successfully»
+> (money **toza** qayta build) · jonli: `/` 200 · `/haydovchi` **200** · `/hr/drivers/live` **200** ·
+> `/sotuv` 200 · **`/api/v1/driver-cash/outstanding` 401** va **`/mine` 401** (404 EMAS — yangi
+> kontroller ro'yxatdan o'tgan) · `sherset.biznesjon.uz` 200 (boshqa ijarachi tegilmadi).
+>
+> **Gate:** typecheck 0 · biome 0 · i18n ru+uz (haydovchi 42/42, driver_cash 11/11) ·
+> **api driver-tracking 52/52** · **web 2663/2689** · +12 pul-yaxlitligi testi.
+>
+> ⚠️ **Phase-1 — BRAUZERDA OCHILMAGAN.** Naqd oqimi ekranda o'tkazilmagan. Phase-2 QA:
+> haydovchi «Oldim» → kassir qabul qiladi → **ПКО reyestrida hujjat paydo bo'lishini va kassa
+> qoldig'i aynan shu payt oshishini** tekshirish.
+>
+> **▶️ HAYDOVCHI BO'YICHA QOLGANI:** Android ilova (fon GPS — brauzer bermaydi) · ish birligiga
+> oylik (§7.3, 5-to'lqin) · Yandex kaliti kerak emas (Nominatim ishlaydi, 02j ga qarang).
+
 > **🕒 2026-08-02k (MENEJER BO'LIMI TZ'si — kunlik KPI qabul qilish · `ab79f7a`)**
 >
 > **Egasi menejer bo'limini so'radi** va ikkita aniq talab qo'ydi: (1) **xodimlarning kunini KPI
