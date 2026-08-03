@@ -8,7 +8,14 @@
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 
-export type EmployeeTab = 'main' | 'attendance' | 'tasks' | 'schedule' | 'salary' | 'permissions';
+export type EmployeeTab =
+  | 'main'
+  | 'attendance'
+  | 'tasks'
+  | 'kpi'
+  | 'schedule'
+  | 'salary'
+  | 'permissions';
 
 export interface TabBarProps {
   employeeId: string;
@@ -26,6 +33,7 @@ export function TabBar({ employeeId, active }: TabBarProps) {
       label: t('tab_attendance'),
     },
     { key: 'tasks', href: `/hr/employees/${employeeId}/tasks`, label: t('tab_tasks') },
+    { key: 'kpi', href: `/hr/employees/${employeeId}/kpi`, label: t('tab_kpi') },
     { key: 'schedule', href: `/hr/employees/${employeeId}/schedule`, label: t('tab_schedule') },
     { key: 'salary', href: `/hr/employees/${employeeId}/salary`, label: t('tab_salary') },
     {
