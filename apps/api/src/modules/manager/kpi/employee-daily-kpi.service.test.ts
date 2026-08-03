@@ -257,3 +257,34 @@ describe('kun yorlig`i — mahalliy sana', () => {
     expect(new Date(gte.getTime() + 5 * 60 * 60 * 1000).toISOString().slice(0, 10)).toBe(label);
   });
 });
+
+describe('profil tanlash — XODIM → LAVOZIM → sukut (4M.2 individual)', () => {
+  it('individual (employeeId) profil lavozim profilidan USTUN', async () => {
+    const { svc, dailyUpsert, client } = makeService({});
+    client.employee.findMany.mockResolvedValue([{ id: EMP, positionId: 'pos-1' }]);
+    client.kpiProfile.findMany.mockResolvedValue([
+      { positionId: 'pos-1', employeeId: null, versions: [{ id: 'ver-pos' }] },
+      { positionId: null, employeeId: EMP, versions: [{ id: 'ver-emp' }] },
+    ]);
+    await svc.computeDay(ACCOUNT, DAY);
+    // Xodimga aynan uning individual profil versiyasi biriktiriladi.
+    expect(dailyUpsert.mock.calls[0][0].create.profileVersionId).toBe('ver-emp');
+  });
+
+  it('individual profil yo`q bo`lsa LAVOZIM profiliga tushadi', async () => {
+    const { svc, dailyUpsert, client } = makeService({});
+    client.employee.findMany.mockResolvedValue([{ id: EMP, positionId: 'pos-1' }]);
+    client.kpiProfile.findMany.mockResolvedValue([
+      { positionId: 'pos-1', employeeId: null, versions: [{ id: 'ver-pos' }] },
+    ]);
+    await svc.computeDay(ACCOUNT, DAY);
+    expect(dailyUpsert.mock.calls[0][0].create.profileVersionId).toBe('ver-pos');
+  });
+
+  it('hech qanday profil yo`q bo`lsa NULL (biriktirilmagan)', async () => {
+    const { svc, dailyUpsert, client } = makeService({});
+    client.employee.findMany.mockResolvedValue([{ id: EMP, positionId: 'pos-1' }]);
+    await svc.computeDay(ACCOUNT, DAY);
+    expect(dailyUpsert.mock.calls[0][0].create.profileVersionId).toBeNull();
+  });
+});

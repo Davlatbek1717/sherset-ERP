@@ -46,7 +46,7 @@ export class EmployeeDailyKpiService {
     });
     if (employees.length === 0) return { written: 0 };
 
-    const [cashier, cashProfit, sales, attendance, tasks, picking, profileByPosition] =
+    const [cashier, cashProfit, sales, attendance, tasks, picking, profileVersions] =
       await Promise.all([
         this.cashierMetrics(accountId, dayStart, dayEnd),
         this.cashierProfit(accountId, dayStart, dayEnd),
@@ -74,9 +74,11 @@ export class EmployeeDailyKpiService {
       // masalan buxgalterda kassa ko'rsatkichi umuman bo'lmaydi, bu kamchilik
       // emas. Chala = «o'lchandi, lekin manba to'liq emas edi».
       const dataComplete = values.every((v) => v.value == null || v.complete);
+      // Profil tanlash: XODIM (individual) → LAVOZIM → hisob sukut profili.
       const profileVersionId =
-        (emp.positionId ? profileByPosition.get(emp.positionId) : undefined) ??
-        profileByPosition.get(DEFAULT_PROFILE_KEY) ??
+        profileVersions.byEmployee.get(emp.id) ??
+        (emp.positionId ? profileVersions.byPosition.get(emp.positionId) : undefined) ??
+        profileVersions.byPosition.get(DEFAULT_PROFILE_KEY) ??
         null;
 
       await this.upsertDay(accountId, emp.id, dateOnly, {
@@ -430,11 +432,15 @@ export class EmployeeDailyKpiService {
    * Kun o'z versiyasiga havola qilib turadi, shuning uchun keyin og'irlik
    * o'zgartirilsa ham o'tgan kun raqami o'zgarmaydi.
    */
-  private async resolveProfileVersions(accountId: string, day: Date): Promise<Map<string, string>> {
+  private async resolveProfileVersions(
+    accountId: string,
+    day: Date,
+  ): Promise<{ byEmployee: Map<string, string>; byPosition: Map<string, string> }> {
     const profiles = await this.prisma.client.kpiProfile.findMany({
       where: { accountId, archived: false },
       select: {
         positionId: true,
+        employeeId: true,
         versions: {
           where: { effectiveFrom: { lte: day } },
           orderBy: [{ effectiveFrom: 'desc' }, { version: 'desc' }],
@@ -443,13 +449,17 @@ export class EmployeeDailyKpiService {
         },
       },
     });
-    const out = new Map<string, string>();
+    const byEmployee = new Map<string, string>();
+    const byPosition = new Map<string, string>();
     for (const p of profiles) {
       const versionId = p.versions[0]?.id;
       if (!versionId) continue;
-      out.set(p.positionId ?? DEFAULT_PROFILE_KEY, versionId);
+      // Individual (employeeId) profil lavozim profilidan ustun — u byEmployee'ga
+      // tushadi va resolution xodimni avval shu yerdan qidiradi.
+      if (p.employeeId) byEmployee.set(p.employeeId, versionId);
+      else byPosition.set(p.positionId ?? DEFAULT_PROFILE_KEY, versionId);
     }
-    return out;
+    return { byEmployee, byPosition };
   }
 
   // ── Yozish ────────────────────────────────────────────────────────────────

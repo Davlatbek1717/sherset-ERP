@@ -390,6 +390,7 @@ model Employee {
   ownedCashierSessions       CashierSession[]           @relation("CashierSessionOwner")
   cashierAuditEvents         CashierAuditEvent[]        @relation("CashierAuditEventEmployee")
   employeeDailyKpis          EmployeeDailyKpi[]         @relation("EmployeeDailyKpiEmployee")
+  kpiProfiles                KpiProfile[]               @relation("KpiProfileEmployee")
   smenaAssignments           SmenaEmployee[]            @relation("SmenaEmployees")
   ownedRetailSales           RetailSale[]               @relation("RetailSaleOwner")
   ownedOrganizations         Organization[]             @relation("OrganizationOwner")
@@ -9289,6 +9290,10 @@ model KpiProfile {
   name      String  @db.VarChar(120)
   /// Qaysi lavozimga tegishli. NULL = hisob bo'yicha sukut profil.
   positionId String? @map("position_id") @db.Uuid
+  /// Bitta xodimga individual biriktirilgan profil (TZ 4M.2 — «har xodim uchun
+  /// alohida»). Kunlik hisob profilni XODIM → LAVOZIM → sukut tartibida tanlaydi,
+  /// shuning uchun bu to'ldirilgan bo'lsa lavozim profilidan ustun turadi.
+  employeeId String? @map("employee_id") @db.Uuid
   archived   Boolean @default(false)
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
@@ -9296,10 +9301,12 @@ model KpiProfile {
 
   account  Account             @relation(fields: [accountId], references: [id], onDelete: Cascade)
   position HrPosition?         @relation(fields: [positionId], references: [id], onDelete: SetNull)
+  employee Employee?           @relation("KpiProfileEmployee", fields: [employeeId], references: [id], onDelete: Cascade)
   versions KpiProfileVersion[]
 
   @@index([accountId, archived])
   @@index([accountId, positionId])
+  @@index([accountId, employeeId])
   @@map("kpi_profiles")
 }
 
@@ -9343,6 +9350,10 @@ model KpiProfileMetric {
   metricDefId      String @map("metric_def_id") @db.Uuid
   /// Kompozit balldagi og'irligi (M10 da ishlatiladi). 0 = faqat ko'rsatiladi.
   weight Decimal @default(0) @db.Decimal(5, 2)
+  /// Kunlik maqsad-raqam (reja) — ko'rsatkichning O'Z birligida, butun songa
+  /// (pul = tiyin, dona = dona, daqiqa = daqiqa). NULL = maqsadsiz (faqat fakt
+  /// ko'rsatiladi). Bajarish % = fakt ÷ maqsad (`direction` yo'nalishiga qarab).
+  target BigInt? @map("target")
 
   account        Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
   profileVersion KpiProfileVersion @relation(fields: [profileVersionId], references: [id], onDelete: Cascade)
