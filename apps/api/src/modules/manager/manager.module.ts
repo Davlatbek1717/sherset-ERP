@@ -1,7 +1,10 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../../prisma/prisma.module.js';
+import { AuthModule } from '../auth/auth.module.js';
 import { EmployeeDailyKpiCron } from './kpi/employee-daily-kpi.cron.js';
 import { EmployeeDailyKpiService } from './kpi/employee-daily-kpi.service.js';
+import { KpiConfigController } from './kpi/kpi-config.controller.js';
+import { KpiConfigService } from './kpi/kpi-config.service.js';
 
 /**
  * Menejer bo'limi — 4-bo'lim TZ kengaytmasi.
@@ -14,8 +17,9 @@ import { EmployeeDailyKpiService } from './kpi/employee-daily-kpi.service.js';
  * da global (`attendance-geo.module.ts` dagi izoh bilan bir xil konventsiya).
  */
 @Module({
-  imports: [PrismaModule],
-  providers: [EmployeeDailyKpiService, EmployeeDailyKpiCron],
+  imports: [PrismaModule, AuthModule],
+  controllers: [KpiConfigController],
+  providers: [EmployeeDailyKpiService, EmployeeDailyKpiCron, KpiConfigService],
   exports: [EmployeeDailyKpiService],
 })
 export class ManagerModule {}
