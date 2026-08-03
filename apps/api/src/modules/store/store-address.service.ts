@@ -26,9 +26,10 @@ import {
  * cells back to the «Без зоны хранения» bucket (FK onDelete: SetNull) — never
  * deletes the cells.
  *
- * Cell status (Свободна/Занята) and per-zone free/occupied counts are NOT computed
- * here yet — they need stock-by-cell (Phase 4). `cellCount` is the only real
- * aggregate exposed now.
+ * Cell status (Свободна/Занята) and per-zone free/occupied counts ARE computed in
+ * `getAddressStorage`: a cell counts as «Занята» when it holds counted stock
+ * (`StockByCell.qty > 0`) OR when a product is bound to it as its home cell
+ * (`attributes.__yacheyka`) — the same union the cell detail «Ko'rish» lists.
  */
 @Injectable()
 export class StoreAddressService {
@@ -118,6 +119,29 @@ export class StoreAddressService {
     ]);
 
     const occupied = new Set(occupiedRows.map((r) => r.cellId));
+
+    // A cell is «Занята» not only when it holds counted stock, but also when a
+    // product is BOUND to it as its home cell (`attributes.__yacheyka` = cell
+    // name) even before any count — exactly what the cell detail «Ko'rish»
+    // (`getCellStock`) already lists. Without this the two surfaces disagree:
+    // the owner fills a cell (binds a product), the list still shows «Свободна»,
+    // yet «Ko'rish» shows the product (reported 2026-08-03). Match `getCellStock`
+    // semantics precisely: non-deleted products, exact cell-name match, product
+    // kind only. One DISTINCT query returns just the occupied cell names.
+    const boundNameRows = await this.prisma.client.$queryRaw<Array<{ name: string | null }>>`
+      SELECT DISTINCT attributes->>'__yacheyka' AS name
+      FROM products
+      WHERE account_id = ${accountId}::uuid
+        AND deleted_at IS NULL
+        AND attributes->>'__yacheyka' IS NOT NULL
+    `;
+    const boundCellNames = new Set(
+      boundNameRows.map((r) => r.name).filter((n): n is string => !!n),
+    );
+    for (const c of cells) {
+      if (boundCellNames.has(c.name)) occupied.add(c.id);
+    }
+
     const productQtyByCell = new Map(productRows.map((r) => [r.cellId, String(r.qty)]));
     const zoneName = new Map(zones.map((z) => [z.id, z.name]));
 
