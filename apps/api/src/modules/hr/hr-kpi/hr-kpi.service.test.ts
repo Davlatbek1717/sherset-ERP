@@ -145,3 +145,71 @@ describe('HrKpiService.snapshotAllAccountsToday', () => {
     expect(result.rows).toBe(1);
   });
 });
+
+describe('kun YORLIG`I — mahalliy sana (4M.3 da tuzatilgan off-by-one)', () => {
+  function harness() {
+    const prisma = makePrisma();
+    prisma.client.employee.findMany.mockResolvedValue([{ id: 'emp-1' }]);
+    prisma.client.demand.groupBy.mockResolvedValue([]);
+    prisma.client.hrKpiDailyLog.upsert.mockResolvedValue({});
+    // biome-ignore lint/suspicious/noExplicitAny: test wiring
+    const svc = new HrKpiService(prisma as any, makeSalary() as any);
+    return { svc, upsert: prisma.client.hrKpiDailyLog.upsert };
+  }
+
+  const labelOf = (upsert: ReturnType<typeof vi.fn>) =>
+    (upsert.mock.calls[0]?.[0] as { create: { date: Date } }).create.date
+      .toISOString()
+      .slice(0, 10);
+
+  it('yorliq MAHALLIY kunni nomlaydi, UTC kunini emas', async () => {
+    // 2026-08-04 10:00 Tashkent = 05:00 UTC. Mahalliy yarim tun esa
+    // 2026-08-03T19:00Z — uning UTC kalendar maydonini o'qish «3-avgust»
+    // berardi, ya'ni 4-avgustni qamragan qator 3-avgust deb yozilardi.
+    const { svc, upsert } = harness();
+    await svc.snapshotDay('acc-1', new Date('2026-08-04T05:00:00Z'));
+    expect(labelOf(upsert)).toBe('2026-08-04');
+  });
+
+  it('cron vaqti (23:30 mahalliy) ham O`SHA kunni nomlaydi', async () => {
+    // 2026-08-04 23:30 Tashkent = 18:30 UTC — bug aynan shu yerda ko'rinardi.
+    const { svc, upsert } = harness();
+    await svc.snapshotDay('acc-1', new Date('2026-08-04T18:30:00Z'));
+    expect(labelOf(upsert)).toBe('2026-08-04');
+  });
+
+  it('yarim tundan keyin (00:30 mahalliy) YANGI kunni nomlaydi', async () => {
+    // 2026-08-05 00:30 Tashkent = 2026-08-04T19:30Z.
+    const { svc, upsert } = harness();
+    await svc.snapshotDay('acc-1', new Date('2026-08-04T19:30:00Z'));
+    expect(labelOf(upsert)).toBe('2026-08-05');
+  });
+
+  it('yorliq va SO`ROV CHEGARASI bir xil kunni bildiradi', async () => {
+    // Bug'ning mohiyati shu nomuvofiqlikda edi: chegara to'g'ri (mahalliy
+    // 4-avgust 00:00 → 03-08T19:00Z), yorliq esa o'sha instantning UTC
+    // kunidan olinib «3-avgust» bo'lib qolardi.
+    const prisma = makePrisma();
+    prisma.client.employee.findMany.mockResolvedValue([{ id: 'emp-1' }]);
+    prisma.client.demand.groupBy.mockResolvedValue([]);
+    prisma.client.hrKpiDailyLog.upsert.mockResolvedValue({});
+    // biome-ignore lint/suspicious/noExplicitAny: test wiring
+    const svc = new HrKpiService(prisma as any, makeSalary() as any);
+
+    await svc.snapshotDay('acc-1', new Date('2026-08-04T18:30:00Z'));
+
+    const label = (
+      prisma.client.hrKpiDailyLog.upsert.mock.calls[0]?.[0] as { create: { date: Date } }
+    ).create.date;
+    const bounds = (
+      prisma.client.demand.groupBy.mock.calls[0]?.[0] as {
+        where: { postedAt: { gte: Date; lt: Date } };
+      }
+    ).where.postedAt;
+
+    expect(label.toISOString()).toBe('2026-08-04T00:00:00.000Z');
+    // Chegara = mahalliy 4-avgust 00:00 (UTC+5 → 3-avgust 19:00Z) va +24 soat.
+    expect(bounds.gte.toISOString()).toBe('2026-08-03T19:00:00.000Z');
+    expect(bounds.lt.toISOString()).toBe('2026-08-04T19:00:00.000Z');
+  });
+});

@@ -3,7 +3,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service.js';
 import { HrSalaryService } from '../hr-salary/hr-salary.service.js';
 import { computeAchievementPercent } from '../hr-salary/tier-lookup.util.js';
-import { HR_TZ, startOfLocalDay } from '../hr-shared/tz.util.js';
+import { HR_TZ, localDateOnly, startOfLocalDay } from '../hr-shared/tz.util.js';
 import type { KpiDailyFilter } from './hr-kpi.schema.js';
 
 /**
@@ -51,9 +51,20 @@ export class HrKpiService {
   async snapshotDay(accountId: string, day: Date): Promise<{ written: number }> {
     const dayStart = startOfLocalDay(day);
     const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
-    const dateOnly = new Date(
-      Date.UTC(dayStart.getUTCFullYear(), dayStart.getUTCMonth(), dayStart.getUTCDate()),
-    );
+    // 🔧 2026-08-04 (4M.3 qarzi yopildi): yorliq `localDateOnly` dan olinadi.
+    //
+    // Oldin bu yerda `Date.UTC(dayStart.getUTC*)` turardi va yorliq BIR KUN
+    // ORQADA chiqardi: Tashkent +05 bo'lgani uchun mahalliy yarim tun UTC'da
+    // oldingi kunning 19:00 i — uning UTC kalendar maydonlarini o'qish
+    // «kecha» ni beradi. So'rov chegarasi (`dayStart`/`dayEnd`) to'g'ri edi,
+    // faqat YORLIQ siljigan; ya'ni 4-avgustni qamragan qator 3-avgust deb
+    // yozilardi (`tz.util.localDateOnly` izohi shu hodisani ta'riflaydi).
+    //
+    // Endi tuzatish xavfsiz: oylik dvigateli 4M.3 da bu jadvaldan o'qishni
+    // TO'XTATDI (qabul ombori manba bo'ldi), shuning uchun yorliqni to'g'rilash
+    // hisoblangan oyliklarga tegmaydi. Mavjud qatorlar migratsiya bilan
+    // bir kunga suriladi: `20260804190000_hr_kpi_daily_date_fix`.
+    const dateOnly = localDateOnly(day);
 
     const config = await this.salary.getResolved(accountId);
     const daysInMonth = daysInMonthOf(dayStart);

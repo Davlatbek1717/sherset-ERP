@@ -9518,21 +9518,34 @@ model EmployeeDailyKpiEvent {
 }
 
 model HrKpiMonthlyScore {
-  id                 String   @id @default(uuid()) @db.Uuid
-  accountId          String   @map("account_id") @db.Uuid
-  employeeId         String   @map("employee_id") @db.Uuid
-  yearMonth          String   @map("year_month") @db.VarChar(7)
-  totalSalesMinor    BigInt   @map("total_sales_minor")
-  targetMinor        BigInt   @map("target_minor")
-  achievementPercent Decimal  @map("achievement_percent") @db.Decimal(6, 2)
-  tierPayoutPercent  Decimal  @map("tier_payout_percent") @db.Decimal(6, 2)
-  kpiEarnedMinor     BigInt   @map("kpi_earned_minor")
-  fixComponentMinor  BigInt   @map("fix_component_minor")
-  bonusSumMinor      BigInt   @map("bonus_sum_minor")
-  fineSumMinor       BigInt   @map("fine_sum_minor")
-  commissionMinor    BigInt   @map("commission_minor")
-  finalSalaryMinor   BigInt   @map("final_salary_minor")
-  computedAt         DateTime @default(now()) @map("computed_at") @db.Timestamptz()
+  id                 String  @id @default(uuid()) @db.Uuid
+  accountId          String  @map("account_id") @db.Uuid
+  employeeId         String  @map("employee_id") @db.Uuid
+  yearMonth          String  @map("year_month") @db.VarChar(7)
+  totalSalesMinor    BigInt  @map("total_sales_minor")
+  targetMinor        BigInt  @map("target_minor")
+  achievementPercent Decimal @map("achievement_percent") @db.Decimal(6, 2)
+  tierPayoutPercent  Decimal @map("tier_payout_percent") @db.Decimal(6, 2)
+  kpiEarnedMinor     BigInt  @map("kpi_earned_minor")
+  fixComponentMinor  BigInt  @map("fix_component_minor")
+  bonusSumMinor      BigInt  @map("bonus_sum_minor")
+  fineSumMinor       BigInt  @map("fine_sum_minor")
+  commissionMinor    BigInt  @map("commission_minor")
+  finalSalaryMinor   BigInt  @map("final_salary_minor")
+
+  /// Oylikka KIRGAN kunlar soni — menejer qabul qilganlari (4M.3, M-Q8).
+  acceptedDays Int @default(0) @map("accepted_days")
+
+  /// Qabul KUTAYOTGAN kunlar soni. Oylik hujjatida ko'rsatiladi — buxgalter
+  /// ko'r-ko'rona to'lamasin (TZ §4.4). 0 dan katta bo'lsa hisob CHALA.
+  pendingDays Int @default(0) @map("pending_days")
+
+  /// Qabul qilinmagani uchun hisobga KIRMAGAN sotuv summasi.
+  /// Yashirilmaydi: «nega oylik kam» degan savolga javob shu ustunda,
+  /// aks holda blok sabab-noma'lum kamayish bo'lib ko'rinardi.
+  blockedSalesMinor BigInt @default(0) @map("blocked_sales_minor")
+
+  computedAt DateTime @default(now()) @map("computed_at") @db.Timestamptz()
 
   account  Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
   employee Employee @relation("HrKpiMonthlyEmployee", fields: [employeeId], references: [id])

@@ -1,8 +1,14 @@
 import { Prisma } from '@moysklad/db';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service.js';
+import type { DailyKpiState } from '../../manager/kpi/daily-kpi-fsm.js';
 import { HrBonusFineService } from '../hr-bonus-fine/hr-bonus-fine.service.js';
 import { HrSalaryService } from './hr-salary.service.js';
+import {
+  PAYROLL_SALES_METRIC_KEY,
+  type PayrollAcceptanceResult,
+  sumAcceptedSales,
+} from './payroll-acceptance.util.js';
 import {
   computeFinalSalaryMinor,
   extractBaseSalaryMinor,
@@ -17,7 +23,10 @@ import {
 
 /**
  * Monthly payroll engine. For an employee + "YYYY-MM" it:
- *   1. Sums personal sales from HrKpiDailyLog (snapshotted nightly, P5b).
+ *   1. Sums personal sales from the ACCEPTANCE store `EmployeeDailyKpi` —
+ *      **only days the manager accepted** (4M.3 / M-Q8 blocking). Was
+ *      `HrKpiDailyLog` until 2026-08-04; that table has no acceptance concept
+ *      and its `date` label is a day behind, so it could not gate payment.
  *   2. Resolves achievement % vs the monthly target → KPI tier → payout %.
  *   3. kpiEarned = monthlyKpiBudget × payout%.
  *   4. commission = totalSales × commissionPercent%.
@@ -50,12 +59,18 @@ export class HrPayrollService {
       throw new Error(`Employee ${employeeId} not found in account`);
     }
 
-    // 1. Total sales for the month = Σ daily personal sales (snapshotted).
-    const dailyAgg = await this.prisma.client.hrKpiDailyLog.aggregate({
-      where: { accountId, employeeId, date: { gte: start, lt: endExclusive } },
-      _sum: { personalSalesMinor: true },
-    });
-    const totalSalesMinor = dailyAgg._sum.personalSalesMinor ?? 0n;
+    // 1. Total sales for the month — from the ACCEPTANCE store (4M.3, M-Q8).
+    //
+    // Manba `HrKpiDailyLog` dan `EmployeeDailyKpi` ga ko'chdi (TZ §9 dagi
+    // tartibning 2-qadami). Ikki sabab:
+    //   a) eski jadvalda QABUL tushunchasi umuman yo'q — menejer ko'rmagan kun
+    //      ham oylikka tushib ketardi, ya'ni M-Q8 bloklashni amalga oshirib
+    //      bo'lmasdi;
+    //   b) eski jadvalning `date` yorlig'i bir kun orqada (`tz.util` izohi),
+    //      shuning uchun ikkalasini sana bo'yicha bog'lash har kunni siljitardi.
+    // Yangi omborda holat ham, sana ham, tuzatma ham BIR qatorda.
+    const acceptance = await this.acceptedSales(accountId, employeeId, start, endExclusive);
+    const totalSalesMinor = acceptance.totalSalesMinor;
 
     // 2-3. achievement → tier → kpi earned
     const achievement = computeAchievementPercent(totalSalesMinor, config.monthlySalesTargetMinor);
@@ -103,6 +118,9 @@ export class HrPayrollService {
         fineSumMinor: fineMinor,
         commissionMinor,
         finalSalaryMinor,
+        acceptedDays: acceptance.acceptedDays,
+        pendingDays: acceptance.pendingDays,
+        blockedSalesMinor: acceptance.blockedSalesMinor,
       },
       update: {
         totalSalesMinor,
@@ -115,10 +133,46 @@ export class HrPayrollService {
         fineSumMinor: fineMinor,
         commissionMinor,
         finalSalaryMinor,
+        acceptedDays: acceptance.acceptedDays,
+        pendingDays: acceptance.pendingDays,
+        blockedSalesMinor: acceptance.blockedSalesMinor,
         computedAt: new Date(),
       },
     });
     return row;
+  }
+
+  /**
+   * Oyning kunlarini qabul omboridan o'qib, oylikka kiradiganini ajratadi.
+   *
+   * Qoida SHU YERDA EMAS — `payroll-acceptance.util.ts` da (sof modul), u esa
+   * «qaysi holat to'lanadi» degan savolni `daily-kpi-fsm.countsTowardPayroll()`
+   * dan so'raydi. Ya'ni ro'yxat butun kod bazasida BITTA joyda.
+   */
+  private async acceptedSales(
+    accountId: string,
+    employeeId: string,
+    start: Date,
+    endExclusive: Date,
+  ): Promise<PayrollAcceptanceResult> {
+    const days = await this.prisma.client.employeeDailyKpi.findMany({
+      where: { accountId, employeeId, date: { gte: start, lt: endExclusive } },
+      select: {
+        state: true,
+        metrics: {
+          where: { metricKey: PAYROLL_SALES_METRIC_KEY },
+          select: { autoValue: true, adjustValue: true },
+        },
+      },
+    });
+
+    return sumAcceptedSales(
+      days.map((d) => ({
+        state: d.state as DailyKpiState,
+        autoSalesMinor: d.metrics[0]?.autoValue ?? null,
+        adjustSalesMinor: d.metrics[0]?.adjustValue ?? null,
+      })),
+    );
   }
 
   /** Recompute the whole roster for a month. Returns rows written. */

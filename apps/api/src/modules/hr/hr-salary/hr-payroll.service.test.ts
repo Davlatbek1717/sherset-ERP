@@ -5,7 +5,8 @@ function makePrisma() {
   return {
     client: {
       employee: { findFirst: vi.fn(), findMany: vi.fn() },
-      hrKpiDailyLog: { aggregate: vi.fn() },
+      // 4M.3: oylik manbai `HrKpiDailyLog` dan QABUL omboriga ko'chdi.
+      employeeDailyKpi: { findMany: vi.fn() },
       hrKpiMonthlyScore: { upsert: vi.fn(), findMany: vi.fn() },
     },
   };
@@ -36,6 +37,14 @@ function makeSalary(
   };
 }
 
+/**
+ * Qabul omboridan keladigan kunlar. Sukut bo'yicha HAMMASI qabul qilingan —
+ * eski testlar «sotuv shuncha edi» degan taxminni saqlab qolsin.
+ */
+function acceptedDay(salesMinor: bigint, state = 'accepted') {
+  return { state, metrics: [{ autoValue: salesMinor, adjustValue: null }] };
+}
+
 function makeBonusFine(bonus = 0n, fine = 0n) {
   return {
     aggregateRaw: vi.fn().mockResolvedValue({ bonusMinor: bonus, fineMinor: fine }),
@@ -62,9 +71,7 @@ describe('HrPayrollService.computeMonthly', () => {
       id: 'emp-1',
       salaryConfig: { baseSalaryMinor: '500000000' }, // 5M so'm = 500_000_000 tiyin
     });
-    prisma.client.hrKpiDailyLog.aggregate.mockResolvedValue({
-      _sum: { personalSalesMinor: 20_000_000_00n },
-    });
+    prisma.client.employeeDailyKpi.findMany.mockResolvedValue([acceptedDay(20_000_000_00n)]);
     prisma.client.hrKpiMonthlyScore.upsert.mockImplementation((args: unknown) =>
       Promise.resolve((args as { create: unknown }).create),
     );
@@ -97,9 +104,8 @@ describe('HrPayrollService.computeMonthly', () => {
 
   it('50% achievement → tier 20% payout', async () => {
     prisma.client.employee.findFirst.mockResolvedValue({ id: 'emp-1', salaryConfig: null });
-    prisma.client.hrKpiDailyLog.aggregate.mockResolvedValue({
-      _sum: { personalSalesMinor: 10_000_000_00n }, // half of 20M target
-    });
+    // half of 20M target
+    prisma.client.employeeDailyKpi.findMany.mockResolvedValue([acceptedDay(10_000_000_00n)]);
     prisma.client.hrKpiMonthlyScore.upsert.mockImplementation((args: unknown) =>
       Promise.resolve((args as { create: unknown }).create),
     );
@@ -116,9 +122,8 @@ describe('HrPayrollService.computeMonthly', () => {
 
   it('bonus added, fine subtracted into final', async () => {
     prisma.client.employee.findFirst.mockResolvedValue({ id: 'emp-1', salaryConfig: null });
-    prisma.client.hrKpiDailyLog.aggregate.mockResolvedValue({
-      _sum: { personalSalesMinor: 0n }, // no sales → 0 kpi, 0 commission
-    });
+    // no sales → 0 kpi, 0 commission
+    prisma.client.employeeDailyKpi.findMany.mockResolvedValue([acceptedDay(0n)]);
     bonusFine.aggregateRaw.mockResolvedValue({
       bonusMinor: 300_000_00n,
       fineMinor: 100_000_00n,
@@ -140,7 +145,7 @@ describe('HrPayrollService.computeMonthly', () => {
 
   it('zero sales → 0% achievement, 0% tier, 0 kpi, 0 commission', async () => {
     prisma.client.employee.findFirst.mockResolvedValue({ id: 'emp-1', salaryConfig: null });
-    prisma.client.hrKpiDailyLog.aggregate.mockResolvedValue({ _sum: { personalSalesMinor: null } });
+    prisma.client.employeeDailyKpi.findMany.mockResolvedValue([]); // kun umuman yo'q
     prisma.client.hrKpiMonthlyScore.upsert.mockImplementation((args: unknown) =>
       Promise.resolve((args as { create: unknown }).create),
     );
@@ -163,7 +168,7 @@ describe('HrPayrollService.computeMonthly', () => {
 
   it('bonus/fine aggregate queried over the month window', async () => {
     prisma.client.employee.findFirst.mockResolvedValue({ id: 'emp-1', salaryConfig: null });
-    prisma.client.hrKpiDailyLog.aggregate.mockResolvedValue({ _sum: { personalSalesMinor: 0n } });
+    prisma.client.employeeDailyKpi.findMany.mockResolvedValue([acceptedDay(0n)]);
     prisma.client.hrKpiMonthlyScore.upsert.mockResolvedValue({});
 
     await svc.computeMonthly('acc1', 'emp-1', '2026-05');
@@ -183,7 +188,7 @@ describe('HrPayrollService.computeMonthly', () => {
 
   it('upsert keyed by (accountId, employeeId, yearMonth) — idempotent recompute', async () => {
     prisma.client.employee.findFirst.mockResolvedValue({ id: 'emp-1', salaryConfig: null });
-    prisma.client.hrKpiDailyLog.aggregate.mockResolvedValue({ _sum: { personalSalesMinor: 0n } });
+    prisma.client.employeeDailyKpi.findMany.mockResolvedValue([acceptedDay(0n)]);
     prisma.client.hrKpiMonthlyScore.upsert.mockResolvedValue({});
 
     await svc.computeMonthly('acc1', 'emp-1', '2026-05');
@@ -218,10 +223,99 @@ describe('HrPayrollService.computeMonthlyAll', () => {
     prisma.client.employee.findFirst
       .mockResolvedValueOnce({ id: 'emp-1', salaryConfig: null })
       .mockResolvedValueOnce(null); // emp-2 → throws inside computeMonthly
-    prisma.client.hrKpiDailyLog.aggregate.mockResolvedValue({ _sum: { personalSalesMinor: 0n } });
+    prisma.client.employeeDailyKpi.findMany.mockResolvedValue([acceptedDay(0n)]);
     prisma.client.hrKpiMonthlyScore.upsert.mockResolvedValue({});
 
     const result = await svc.computeMonthlyAll('acc1', '2026-05');
     expect(result.written).toBe(1); // only emp-1 succeeded
+  });
+});
+
+describe('4M.3 — QABUL → OYLIK bloklash (M-Q8)', () => {
+  let prisma: ReturnType<typeof makePrisma>;
+  let svc: HrPayrollService;
+
+  beforeEach(() => {
+    prisma = makePrisma();
+    prisma.client.employee.findFirst.mockResolvedValue({ id: 'emp-1', salaryConfig: null });
+    prisma.client.hrKpiMonthlyScore.upsert.mockImplementation((args: unknown) =>
+      Promise.resolve((args as { create: unknown }).create),
+    );
+    prisma.client.employeeDailyKpi.findMany.mockResolvedValue([]);
+    // biome-ignore lint/suspicious/noExplicitAny: test wiring
+    svc = new HrPayrollService(prisma as any, makeSalary() as any, makeBonusFine() as any);
+  });
+
+  const created = () =>
+    (
+      prisma.client.hrKpiMonthlyScore.upsert.mock.calls[0]?.[0] as {
+        create: {
+          totalSalesMinor: bigint;
+          acceptedDays: number;
+          pendingDays: number;
+          blockedSalesMinor: bigint;
+        };
+      }
+    ).create;
+
+  it('qabul QILINMAGAN kunning sotuvi oylikka kirmaydi', async () => {
+    prisma.client.employeeDailyKpi.findMany.mockResolvedValue([
+      acceptedDay(5_000_000_00n),
+      acceptedDay(15_000_000_00n, 'pending'),
+    ]);
+    await svc.computeMonthly('acc1', 'emp-1', '2026-05');
+    const c = created();
+    // 20M ning faqat 5M i qabul qilingan.
+    expect(c.totalSalesMinor).toBe(5_000_000_00n);
+    expect(c.blockedSalesMinor).toBe(15_000_000_00n);
+    expect(c.acceptedDays).toBe(1);
+    expect(c.pendingDays).toBe(1);
+  });
+
+  it('bloklangan summa YASHIRILMAYDI — ustunga yoziladi', async () => {
+    // «Nega oylik kam» degan savolga javob shu ustunda; aks holda blok
+    // sabab-noma'lum kamayish bo'lib ko'rinardi.
+    prisma.client.employeeDailyKpi.findMany.mockResolvedValue([
+      acceptedDay(1_000n, 'rejected'),
+      acceptedDay(2_000n, 'escalated'),
+    ]);
+    await svc.computeMonthly('acc1', 'emp-1', '2026-05');
+    expect(created().blockedSalesMinor).toBe(3_000n);
+    expect(created().totalSalesMinor).toBe(0n);
+  });
+
+  it('majburiy yopilgan kun TO`LANADI (xodim oyliksiz qolmaydi)', async () => {
+    prisma.client.employeeDailyKpi.findMany.mockResolvedValue([
+      acceptedDay(7_000_000_00n, 'force_accepted'),
+    ]);
+    await svc.computeMonthly('acc1', 'emp-1', '2026-05');
+    expect(created().totalSalesMinor).toBe(7_000_000_00n);
+    expect(created().acceptedDays).toBe(1);
+  });
+
+  it('menejer tuzatmasi to`lanadigan raqam bo`ladi (M-Q3)', async () => {
+    prisma.client.employeeDailyKpi.findMany.mockResolvedValue([
+      { state: 'accepted', metrics: [{ autoValue: 1_000n, adjustValue: 9_000n }] },
+    ]);
+    await svc.computeMonthly('acc1', 'emp-1', '2026-05');
+    expect(created().totalSalesMinor).toBe(9_000n);
+  });
+
+  it('sotuv ko`rsatkichi bo`yicha FILTRLANADI (boshqa metrikalar qo`shilmaydi)', async () => {
+    await svc.computeMonthly('acc1', 'emp-1', '2026-05');
+    const where = prisma.client.employeeDailyKpi.findMany.mock.calls[0]?.[0] as {
+      select: { metrics: { where: { metricKey: string } } };
+    };
+    // Kassa tushumi yoki kechikish daqiqasi oylik sotuviga qo'shilib ketmasin.
+    expect(where.select.metrics.where.metricKey).toBe('sales_revenue');
+  });
+
+  it('oy chegarasi bo`yicha so`raladi (qo`shni oy kunlari kirmaydi)', async () => {
+    await svc.computeMonthly('acc1', 'emp-1', '2026-05');
+    const args = prisma.client.employeeDailyKpi.findMany.mock.calls[0]?.[0] as {
+      where: { date: { gte: Date; lt: Date } };
+    };
+    expect(args.where.date.gte.toISOString().slice(0, 10)).toBe('2026-05-01');
+    expect(args.where.date.lt.toISOString().slice(0, 10)).toBe('2026-06-01');
   });
 });
