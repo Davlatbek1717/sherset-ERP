@@ -305,7 +305,7 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
-> **🕒 2026-08-04c (🔀 4M.2 IKKI IMPLEMENTATSIYA BIRLASHTIRILDI · `fa58171` BE + `a2b4bb6` FE + `d86320b` QA) · ⏳ DEPLOY QILINMAGAN · ✅ BRAUZER-QA BAJARILDI**
+> **🕒 2026-08-04c (🔀 4M.2 IKKI IMPLEMENTATSIYA BIRLASHTIRILDI · `fa58171` BE + `a2b4bb6` FE + `d86320b` QA) · ✅ **DEPLOYED** `28967e91` · ✅ BRAUZER-QA BAJARILDI**
 >
 > ### 🔴 Nima bo'lgan edi (kelajak uchun sabog'i bor)
 > 4M.2 qabul oqimi **ikki marta, bir-biridan bexabar qurilgan**:
@@ -391,12 +391,26 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > **DEPLOY QILINMAGAN.** ⚠️ Men ishga tushirgan `next dev` (3100) va `tsx src/main.ts` (4000)
 > jarayonlari tirik bo'lishi mumkin — keyingi sessiya portlarni tekshirsin.
 >
+> ### ✅ DEPLOY (erp.sherset.uz = sherset-v2), 2026-08-04
+> Backup avval olindi: `/root/sherset-v2-backups/pre-4M2merge-20260804-145238.sql.gz` (376M, 230 jadval,
+> `gzip -t` OK). Push → `sherset-ERP.git` `63684d08..28967e91`. Deploy:
+> `nohup env DS_TARGET=v2 bash deploy/deploy-smart.sh` → `90d8d0d` → `28967e91`.
+> - **Migratsiyalar qo'llandi:** `20260804120000_kpi_daily_acceptance` + `20260804140000_kpi_acceptance_merge`
+>   → «All migrations have been successfully applied»; `prisma migrate status` → **«Database schema is up to date!»**
+>   (181 migratsiya). Ya'ni merge-migratsiyaning RENAME yo'li prodda ham toza o'tdi.
+> - **Build:** 274/274 sahifa, OOM yo'q. **502 YO'Q.**
+> - **Jonli verify (tashqaridan):** `erp.sherset.uz` **200** · `/menejer` **200** · `/api/v1/health` **200** ·
+>   `/api/v1/manager/kpi/days` **401** (404 EMAS — yangi route tirik va himoyalangan) ·
+>   `/api/v1/manager/kpi/reference` **401**.
+> - **Prodda hali sinalmagani:** real foydalanuvchi bilan login qilib qabul oqimini bosib ko'rish
+>   (lokal brauzerda sinaldi, prodда YO'Q). Prod'da hali KPI profili sozlanmagan bo'lishi mumkin —
+>   menejer ekrani bo'sh navbat ko'rsatishi normal, tungi cron (00:40) birinchi kunlarni hisoblaydi.
+>
 > ### ⏭️ KEYINGI (tartib bilan)
-> 1. **Deploy** — `migrate deploy` (`20260804120000` + `20260804140000`) + build + `pm2 restart`.
-> 2. **4M.3** — qabul → oylik: `countsTowardPayroll()` bo'yicha bloklash · idempotent bonus/jarima ·
+> 1. **4M.3** — qabul → oylik: `countsTowardPayroll()` bo'yicha bloklash · idempotent bonus/jarima ·
 >    eskirgan kun tuzatuvchi qatori · egaga haftalik xulosa (jurnal tayyor). Shu yerda
 >    `hr-kpi.service.ts:55` sana bug'i ham yopiladi ([[hr-kpi-daily-date-off-by-one]]).
-> 3. **`wave4m-accept` branchi** — TEGILMADI, arxiv sifatida turibdi. Egasi tasdiqlasa o'chiriladi.
+> 2. **`wave4m-accept` branchi** — TEGILMADI, arxiv sifatida turibdi. Egasi tasdiqlasa o'chiriladi.
 >
 > **⚠️ Qayd:** 2026-07-31 dan qolgan begona `stash@{0}` hamon turibdi (ichidagi ish allaqachon
 > daraxtda) — §6.1 bo'yicha tegilmadi.
