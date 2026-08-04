@@ -305,7 +305,7 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
-> **🕒 2026-08-04c (🔀 4M.2 IKKI IMPLEMENTATSIYA BIRLASHTIRILDI · `4f7a3f2` BE + `a2b4bb6` FE) · ⏳ DEPLOY QILINMAGAN · BRAUZER-QA YO'Q**
+> **🕒 2026-08-04c (🔀 4M.2 IKKI IMPLEMENTATSIYA BIRLASHTIRILDI · `fa58171` BE + `a2b4bb6` FE) · ⏳ DEPLOY QILINMAGAN · BRAUZER-QA YO'Q**
 >
 > ### 🔴 Nima bo'lgan edi (kelajak uchun sabog'i bor)
 > 4M.2 qabul oqimi **ikki marta, bir-biridan bexabar qurilgan**:
