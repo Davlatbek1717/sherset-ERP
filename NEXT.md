@@ -305,6 +305,84 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-04c (🔀 4M.2 IKKI IMPLEMENTATSIYA BIRLASHTIRILDI · `4f7a3f2` BE + `a2b4bb6` FE) · ⏳ DEPLOY QILINMAGAN · BRAUZER-QA YO'Q**
+>
+> ### 🔴 Nima bo'lgan edi (kelajak uchun sabog'i bor)
+> 4M.2 qabul oqimi **ikki marta, bir-biridan bexabar qurilgan**:
+> - **A** — `climart-adoption` da (`59863f0`+`d11ca50`, 08-04, shu kunning o'zida);
+> - **B** — `wave4m-accept` branchida (`c62ca77`, **2026-08-02**), worktree `.claude/worktrees/m4-accept`,
+>   hech qachon merge qilinmagan. NEXT.md 08-03a «4M.2 qabul FSM **qolgan**» deb yozgan va o'sha branch
+>   haqida bir og'iz ham yo'q edi.
+>
+> **Qanday topildi:** Phase-2 QA uchun lokal DB'ga ma'lumot tayyorlayotganda kod yiqildi —
+> `employee_daily_kpi_events` jadvali DB'da **boshqa ustun nomlari** bilan turgan ekan
+> (`comment`/`detail`). `git worktree list` → B chiqdi. **Sabog'i: `git worktree list` va
+> `git branch --no-merged` preflight'ning bir qismi bo'lishi kerak.**
+>
+> Egasi **to'liq merge**ni tanladi.
+>
+> ### Yakuniy tanlov (nima kimdan olingan)
+> | Qism | Kimdan | Nega |
+> |---|---|---|
+> | FSM (7 holat, `force_accepted` alohida) | **B** | oylik «majburiy yopilgan» kunni ajrata oladi; `countsTowardPayroll()` 4M.3 uchun yagona shart manbai |
+> | Optimistik da'vo (`updateMany where state:from`) | **B** | A'ning o'qib-keyin-yozishi parallel menejerda yozuvni yo'qotardi |
+> | Amal-bo'yicha sabab kodlari + `other`da izoh majburiy | **B** | hamma «other» ni tanlab statistika yo'qolmasin |
+> | `allowedActions(state, actor)` | **B** | ekran tugmalari FSM'dan chiziladi, FE o'z shartini yozmaydi |
+> | `HrPermissionGuard` (`employees:read`) | **B** | A'ning ad-hoc `ManagerGuard` i o'rniga mavjud tizim |
+> | **Drill-down** (17 ko'rsatkich, 517 qator) | **B** | A'da umuman yo'q edi; TZ §3.5 talabi |
+> | **Kompozit ball** (`kpi-score.ts`) | **A** | B'da umuman yo'q edi |
+> | **Ball qabulda MUZLATILADI** (`score_percent`) | **A** | og'irlik keyin o'zgarsa to'langan oylik ortidagi raqam o'zgarmasin |
+> | **Idempotentlik** (`Transition.idempotent` + `noop`) | **A** | takror `accept` 409 bermaydi va jurnalga 2-qator yozmaydi → 4M.3 da bonus 2 marta yozilmaydi |
+> | Begona kunga **404** (403 emas) | **A** | mavjudlik sizishi |
+> | FE ekran | **B** (route/nav/i18n **A**) | B'da drill-down bor; `/menejer` nomlash A'niki |
+>
+> ### Merge paytida tuzatilgan uchta nuqson
+> 1. **B'da `markStale()` yozilgan-u, uni hech kim chaqirmasdi.** Endi `computeDay` muzlagan kunning
+>    `autoValue` i o'zgarganini ko'rsa nomzod deb belgilaydi, o'tishni esa FSM qiladi (jurnal + da'vo).
+> 2. **PROFIL-SANA BUG'I (ikkala implementatsiyada ham bor edi):** `saveEmployeeConfig` versiyani
+>    `effectiveFrom = BUGUN` bilan yozadi, dvigatel esa `effectiveFrom <= kun` talab qiladi → menejer
+>    KPI'ni **birinchi marta** sozlaganda allaqachon hisoblangan BARCHA kunlar profilsiz qolib, abadiy
+>    «ball yo'q» bo'lardi. Endi mos versiya topilmasa **eng erta** versiyaga tushadi (muzlatishni
+>    buzmaydi). Bu **runtime QA topilmasi** — statik ko'rinmasdi. +4 test.
+> 3. **A'ning holat→rang jadvali noto'g'ri uyda edi** (`document-state-tone.ts` — hujjatlar uchun);
+>    `domain-status-tone.ts` ga ko'chirildi (`dailyKpiStateTone`, B'niki).
+> 4. **O'lik FE client**: A'ning `manager-api.ts` qabul-metodlari endi yo'q route'larga borardi —
+>    mavjud **FE↔BE kontrakt-testi** 6 ta «silent 404» ni tutdi. Olib tashlandi.
+>
+> ### Migratsiya
+> `20260804140000_kpi_acceptance_merge` — **idempotent**, uch xil boshlang'ich holatda ishlaydi
+> (A shakli / B shakli / bo'sh): `note`→`comment`, `payload`→`detail` **RENAME** (jurnal append-only),
+> `queued_at`→`state_changed_at`, `score_*` qo'shish, indekslar. Lokal DB'ga qo'llandi va tekshirildi.
+>
+> ### GATE
+> api tc 0 · web tc 0 · biome 0 · **api vitest 4540/4540 test** · **web vitest 2679/2679 test**.
+>
+> ### RUNTIME VERIFY (servis darajasi, `scratchpad/qa-seed-kpi.ts`)
+> Lokal DB'da real dvigatel orqali: 4 xodim × 3 kun hisoblandi → 10 kun navbatga → **ballar 0…150**
+> (150% chek ko'rindi) → e'tibor signallari to'ldi → 08-02 dagi qabul qilingan kun qayta hisobda
+> o'zgarib **`stale` bo'lib navbat boshiga chiqdi**. Zanjir: compute → profil → ball → openForReview →
+> markStale → navbat tartibi — **jonli ishladi**.
+>
+> ### ⛔ HALOL STATUS
+> **Phase-1 + servis-runtime.** **BRAUZER-QA YO'Q**: `pnpm dev` da web 3100 ko'tarildi, lekin **api 4000
+> 6 daqiqada ham ochilmadi** (log `tsx watch src/main.ts` dan keyin jim). Shu sababli HTTP qatlami
+> (controller + `HrPermissionGuard`) va UI zanjiri **umuman sinalmagan**. **DEPLOY QILINMAGAN.**
+> ⚠️ Men ishga tushirgan `pnpm dev` jarayonlari **hali tirik bo'lishi mumkin** (§6.4 bo'yicha
+> o'ldirmadim) — keyingi sessiya avval portlarni tekshirsin.
+>
+> ### ⏭️ KEYINGI (tartib bilan)
+> 1. **Phase-2 brauzer QA** — api'ni ko'tarish (nega jim qolgani aniqlansin) → login → `/menejer` →
+>    navbat, qabul, rad, tuzatma, **drill-down**, klaviatura oqimi. Ma'lumot tayyor
+>    (`scratchpad/qa-seed-kpi.ts`, admin `hrRoles=['admin']` qilib qo'yilgan).
+> 2. **Deploy** — `migrate deploy` (`20260804120000` + `20260804140000`) + build + `pm2 restart`.
+> 3. **4M.3** — qabul → oylik: `countsTowardPayroll()` bo'yicha bloklash · idempotent bonus/jarima ·
+>    eskirgan kun tuzatuvchi qatori · egaga haftalik xulosa (jurnal tayyor). Shu yerda
+>    `hr-kpi.service.ts:55` sana bug'i ham yopiladi ([[hr-kpi-daily-date-off-by-one]]).
+> 4. **`wave4m-accept` branchi** — TEGILMADI, arxiv sifatida turibdi. Egasi tasdiqlasa o'chiriladi.
+>
+> **⚠️ Qayd:** 2026-07-31 dan qolgan begona `stash@{0}` hamon turibdi (ichidagi ish allaqachon
+> daraxtda) — §6.1 bo'yicha tegilmadi.
+
 > **🕒 2026-08-04b (MENEJER 4M.2 FE — menejer ekrani: navbat + kun qabuli + klaviatura · `d11ca50`) · ⏳ DEPLOY QILINMAGAN**
 >
 > 08-04a yadrosining **ko'rinadigan tomoni**. TZ §3.5 talabi bo'yicha `/menejer` — **master-detail**
