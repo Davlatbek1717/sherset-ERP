@@ -117,6 +117,7 @@ model Account {
   kpiProfileMetrics              KpiProfileMetric[]
   employeeDailyKpis              EmployeeDailyKpi[]
   employeeDailyKpiMetrics        EmployeeDailyKpiMetric[]
+  employeeDailyKpiEvents         EmployeeDailyKpiEvent[]
   retailSalePayments             RetailSalePayment[]
   shiftSchedules                 ShiftSchedule[]
   smenas                         Smena[]
@@ -7614,21 +7615,21 @@ model CashierSession {
 /// Reserved for later waves (features do not exist yet): SOLD_ON_CREDIT,
 /// EXPENSE, SHIFT_VARIANCE.
 model CashierAuditEvent {
-  id        String @id @default(uuid()) @db.Uuid
-  accountId String @map("account_id") @db.Uuid
+  id         String  @id @default(uuid()) @db.Uuid
+  accountId  String  @map("account_id") @db.Uuid
   /// The shift the event belongs to — the primary analytics axis.
-  sessionId String @map("session_id") @db.Uuid
+  sessionId  String  @map("session_id") @db.Uuid
   /// Who did it. Kept as its own column (not derived from the session) because
   /// an admin can act inside another cashier's shift.
-  employeeId String @map("employee_id") @db.Uuid
-  type       String @db.VarChar(40)
+  employeeId String  @map("employee_id") @db.Uuid
+  type       String  @db.VarChar(40)
   /// The document the event is about (RetailSale id for sale events). Not a FK:
   /// the event must survive the document being deleted — an audit trail that
   /// disappears with its subject is not an audit trail.
-  docId   String? @map("doc_id") @db.Uuid
+  docId      String? @map("doc_id") @db.Uuid
   /// Typed per `type`; money always in minor units as strings (BigInt is not
   /// JSON-safe). See the per-type shapes in `cashier-audit.ts`.
-  payload Json
+  payload    Json
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
 
@@ -7773,18 +7774,18 @@ model RetailSalePayment {
   accountId String @map("account_id") @db.Uuid
   saleId    String @map("sale_id") @db.Uuid
 
-  method String @db.VarChar(20)
+  method          String  @db.VarChar(20)
   /// To'lov valyutasidagi summa (tiyin/sent).
-  amountMinor BigInt @map("amount_minor")
-  currency    String @default("UZS") @db.VarChar(3)
+  amountMinor     BigInt  @map("amount_minor")
+  currency        String  @default("UZS") @db.VarChar(3)
   /// `CASH_USD` uchun qo'llanilgan kurs — chekka MUZLATILADI (kurs keyin
   /// o'zgarsa, eski chek qayta baholanmasin). UZS to'lovda NULL.
-  rateMinor BigInt? @map("rate_minor")
+  rateMinor       BigInt? @map("rate_minor")
   /// Hisob valyutasiga (UZS) o'girilgan summa — BARCHA hisob-kitob shundan.
   /// UZS to'lovda `amountMinor` bilan teng.
-  amountBaseMinor BigInt @map("amount_base_minor")
+  amountBaseMinor BigInt  @map("amount_base_minor")
   /// Terminal chek raqami / Click tranzaksiya id — nizoli holatda izlash uchun.
-  reference String? @db.VarChar(100)
+  reference       String? @db.VarChar(100)
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
 
@@ -9255,26 +9256,26 @@ model HrKpiDailyLog {
 /// `apps/api/src/modules/manager/kpi/kpi-metrics.ts` (sof modul, testlangan);
 /// bu jadval uni hisob bo'yicha SOZLASH uchun (nomi, ko'rsatilishi, o'chirish).
 model KpiMetricDef {
-  id        String @id @default(uuid()) @db.Uuid
-  accountId String @map("account_id") @db.Uuid
+  id        String  @id @default(uuid()) @db.Uuid
+  accountId String  @map("account_id") @db.Uuid
   /// `cash_revenue`, `gross_profit`, `late_minutes` … — kod katalogidagi kalit.
-  key     String @db.VarChar(50)
-  labelUz String @map("label_uz") @db.VarChar(120)
-  labelRu String @map("label_ru") @db.VarChar(120)
+  key       String  @db.VarChar(50)
+  labelUz   String  @map("label_uz") @db.VarChar(120)
+  labelRu   String  @map("label_ru") @db.VarChar(120)
   /// `money` | `count` | `percent` | `minutes`
-  unit String @db.VarChar(10)
+  unit      String  @db.VarChar(10)
   /// `higher_better` | `lower_better` | `neutral` — rang va reyting shundan.
-  direction String @db.VarChar(15)
+  direction String  @db.VarChar(15)
   /// `cashier` | `sales` | `attendance` | `task` | `warehouse` — drill-down manzili.
-  source  String  @db.VarChar(20)
+  source    String  @db.VarChar(20)
   /// Soatga normallashtiriladimi (adolat: yarim kun ishlagan xodim uchun).
-  perHour  Boolean @default(false) @map("per_hour")
-  archived Boolean @default(false)
+  perHour   Boolean @default(false) @map("per_hour")
+  archived  Boolean @default(false)
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
 
-  account        Account             @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  account        Account            @relation(fields: [accountId], references: [id], onDelete: Cascade)
   profileMetrics KpiProfileMetric[]
 
   @@unique([accountId, key])
@@ -9285,9 +9286,9 @@ model KpiMetricDef {
 /// KpiProfile — lavozim bo'yicha KPI to'plami. Kassirni va omborchini bir xil
 /// o'lchash ma'nosiz, shuning uchun har lavozimning o'z ko'rsatkichlari bor.
 model KpiProfile {
-  id        String  @id @default(uuid()) @db.Uuid
-  accountId String  @map("account_id") @db.Uuid
-  name      String  @db.VarChar(120)
+  id         String  @id @default(uuid()) @db.Uuid
+  accountId  String  @map("account_id") @db.Uuid
+  name       String  @db.VarChar(120)
   /// Qaysi lavozimga tegishli. NULL = hisob bo'yicha sukut profil.
   positionId String? @map("position_id") @db.Uuid
   /// Bitta xodimga individual biriktirilgan profil (TZ 4M.2 — «har xodim uchun
@@ -9320,11 +9321,11 @@ model KpiProfile {
 /// kelmay qoladi. Bu — tan narx muzlatish bilan aynan bir xil klass
 /// (`RetailSalePosition.costMinor`): hisobot tarixni qayta yozmasligi kerak.
 model KpiProfileVersion {
-  id        String @id @default(uuid()) @db.Uuid
-  accountId String @map("account_id") @db.Uuid
-  profileId String @map("profile_id") @db.Uuid
+  id            String   @id @default(uuid()) @db.Uuid
+  accountId     String   @map("account_id") @db.Uuid
+  profileId     String   @map("profile_id") @db.Uuid
   /// 1 dan boshlab o'sadi.
-  version Int
+  version       Int
   /// Shu versiya qaysi kundan boshlab amal qiladi (kunlik hisob shunga qaraydi).
   effectiveFrom DateTime @map("effective_from") @db.Date
   note          String?  @db.VarChar(300)
@@ -9344,16 +9345,16 @@ model KpiProfileVersion {
 
 /// KpiProfileMetric — versiya ichidagi bitta ko'rsatkich va uning og'irligi.
 model KpiProfileMetric {
-  id               String @id @default(uuid()) @db.Uuid
-  accountId        String @map("account_id") @db.Uuid
-  profileVersionId String @map("profile_version_id") @db.Uuid
-  metricDefId      String @map("metric_def_id") @db.Uuid
+  id               String  @id @default(uuid()) @db.Uuid
+  accountId        String  @map("account_id") @db.Uuid
+  profileVersionId String  @map("profile_version_id") @db.Uuid
+  metricDefId      String  @map("metric_def_id") @db.Uuid
   /// Kompozit balldagi og'irligi (M10 da ishlatiladi). 0 = faqat ko'rsatiladi.
-  weight Decimal @default(0) @db.Decimal(5, 2)
+  weight           Decimal @default(0) @db.Decimal(5, 2)
   /// Kunlik maqsad-raqam (reja) — ko'rsatkichning O'Z birligida, butun songa
   /// (pul = tiyin, dona = dona, daqiqa = daqiqa). NULL = maqsadsiz (faqat fakt
   /// ko'rsatiladi). Bajarish % = fakt ÷ maqsad (`direction` yo'nalishiga qarab).
-  target BigInt? @map("target")
+  target           BigInt? @map("target")
 
   account        Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
   profileVersion KpiProfileVersion @relation(fields: [profileVersionId], references: [id], onDelete: Cascade)
@@ -9393,8 +9394,31 @@ model EmployeeDailyKpi {
 
   /// Qabul qilingandan KEYIN manba hujjat o'zgargan bo'lsa — eskirish vaqti
   /// (TZ §3.4). Kun navbatga qaytadi va oylikka tuzatuvchi qator yoziladi;
-  /// eski raqam jimgina qayta yozilmaydi. 4M.1 da faqat maydon, mantiq 4M.2/4M.3.
+  /// eski raqam jimgina qayta yozilmaydi.
   staleAt DateTime? @map("stale_at") @db.Timestamptz()
+
+  /// Kun menejer navbatiga qachon tushgan (4M.2). Eskalatsiya soati SHUNDAN
+  /// sanaladi — `updatedAt` yaramaydi, u har tuzatmada siljib navbatni
+  /// abadiy «yangi» qilib qo'yardi.
+  queuedAt DateTime? @map("queued_at") @db.Timestamptz()
+
+  /// Kim va qachon qabul qilgan (TZ §9). Egasi majburiy yopganda ham shu
+  /// to'ladi — farqi hodisa jurnalidagi `force_accept` da ko'rinadi.
+  acceptedById String?   @map("accepted_by_id") @db.Uuid
+  acceptedAt   DateTime? @map("accepted_at") @db.Timestamptz()
+
+  /// Qabul paytidagi kompozit ball (og'irlik × bajarish %), foizda.
+  ///
+  /// 🔴 MUZLATILADI: profil versiyasi kabi, ball ham qabul lahzasida yoziladi.
+  /// Aks holda keyin og'irlik o'zgartirilsa yoki katalog kengaysa, allaqachon
+  /// to'langan oylik ortidagi raqam qayta hisoblanib boshqacha chiqardi
+  /// (tan narx muzlatish bilan bir klass).
+  scorePercent Decimal? @map("score_percent") @db.Decimal(7, 2)
+
+  /// Ball kunning qanchasini qamragan (0…1): og'irliklarning necha qismi
+  /// haqiqatan ballangan. Chala qamrov YASHIRILMAYDI — menejer ballga qanchalik
+  /// ishonish kerakligini ko'rib turadi.
+  scoreCoverage Decimal? @map("score_coverage") @db.Decimal(5, 4)
 
   computedAt DateTime @default(now()) @map("computed_at") @db.Timestamptz()
   updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz()
@@ -9403,6 +9427,7 @@ model EmployeeDailyKpi {
   employee       Employee                 @relation("EmployeeDailyKpiEmployee", fields: [employeeId], references: [id], onDelete: Cascade)
   profileVersion KpiProfileVersion?       @relation(fields: [profileVersionId], references: [id], onDelete: SetNull)
   metrics        EmployeeDailyKpiMetric[]
+  events         EmployeeDailyKpiEvent[]
 
   @@unique([accountId, employeeId, date])
   // Menejerning kunlik ro'yxati: «shu kun, qabul kutayotganlar».
@@ -9425,11 +9450,11 @@ model EmployeeDailyKpiMetric {
   metricKey  String @map("metric_key") @db.VarChar(50)
 
   /// Tizim hisoblagani. NULL = O'LCHANMAGAN (0 EMAS).
-  autoValue BigInt? @map("auto_value")
+  autoValue   BigInt? @map("auto_value")
   /// Menejer tuzatmasi (4M.2). NULL = tuzatilmagan.
   adjustValue BigInt? @map("adjust_value")
   /// Tuzatma sababi — 4M.2 da MAJBURIY bo'ladi.
-  reasonCode String? @map("reason_code") @db.VarChar(40)
+  reasonCode  String? @map("reason_code") @db.VarChar(40)
 
   /// Shu ko'rsatkich to'liq manbadan hisoblanganmi.
   complete Boolean @default(true)
@@ -9440,6 +9465,57 @@ model EmployeeDailyKpiMetric {
   @@unique([dailyKpiId, metricKey])
   @@index([accountId, metricKey])
   @@map("employee_daily_kpi_metrics")
+}
+
+/// EmployeeDailyKpiEvent — kunning APPEND-ONLY hodisa jurnali (TZ §3.1, M-Q7).
+///
+/// Nega alohida jadval, nega `EmployeeDailyKpi` ustunlari emas: menejer o'z
+/// qo'l ostidagilarning PULINI tasdiqlaydi, shuning uchun uning har harakati
+/// ham o'lchanishi kerak. «Kim qabul qildi» ustuni faqat OXIRGI holatni
+/// bilardi — «necha marta rad etildi, kim nechta raqamni qo'lda tuzatdi,
+/// egaga necha kun kech eskalatsiya bo'ldi» degan savollarga javob bermasdi.
+/// Egaga haftalik xulosa (M-Q7) aynan shu jadvaldan quriladi.
+///
+/// Yozuv HECH QACHON o'zgartirilmaydi va o'chirilmaydi (shu sababli
+/// `updatedAt` yo'q) — nizo bo'lganda yozma iz shu.
+model EmployeeDailyKpiEvent {
+  id         String @id @default(uuid()) @db.Uuid
+  accountId  String @map("account_id") @db.Uuid
+  dailyKpiId String @map("daily_kpi_id") @db.Uuid
+
+  /// FSM harakati: `submit` | `accept` | `reject` | `explain` | `escalate` |
+  /// `force_accept` | `reopen` | `mark_stale` | `adjust`.
+  /// `adjust` — holat o'zgarmaydigan yagona hodisa (`fromState` = `toState`).
+  action String @db.VarChar(20)
+
+  fromState String @map("from_state") @db.VarChar(20)
+  toState   String @map("to_state") @db.VarChar(20)
+
+  /// `system` | `manager` | `owner` | `employee` — vakolat tekshiruvi natijasi.
+  actorType String  @map("actor_type") @db.VarChar(10)
+  /// Foydalanuvchi (yoki xodim) id'si. FK YO'Q — `KpiProfileVersion.createdById`
+  /// bilan bir xil konventsiya: aktyor o'chirilsa ham iz qolishi kerak.
+  actorId   String? @map("actor_id") @db.Uuid
+
+  /// Yopiq ro'yxatdagi sabab kodi (`daily-kpi.fsm.ts` → `KPI_REASON_CODES`).
+  /// Rad etish, qayta ochish, majburiy yopish va tuzatmada MAJBURIY.
+  reasonCode String? @map("reason_code") @db.VarChar(40)
+  /// Erkin izoh — statistikaga kirmaydi (shuning uchun sabab kodi alohida).
+  note       String? @db.VarChar(1000)
+
+  /// Tuzatma tafsiloti: `{ metricKey, from, to }` (pul minor-birlikda, matn
+  /// sifatida — BigInt JSON'da yo'qolmasin).
+  payload Json?
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  account  Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  dailyKpi EmployeeDailyKpi @relation(fields: [dailyKpiId], references: [id], onDelete: Cascade)
+
+  @@index([dailyKpiId, createdAt])
+  // Egaga haftalik xulosa: «kim, qaysi haftada, nechta tuzatma qildi».
+  @@index([accountId, createdAt(sort: Desc), action])
+  @@map("employee_daily_kpi_events")
 }
 
 model HrKpiMonthlyScore {
@@ -9664,7 +9740,7 @@ model DriverCashHandover {
   /// Optimistik qulf — ikki kassir bir vaqtda qabul qilib ikki ПКО yaratmasin.
   version   Int      @default(1)
 
-  driver     Employee @relation("DriverCashCollected", fields: [driverId], references: [id], onDelete: Cascade)
+  driver     Employee  @relation("DriverCashCollected", fields: [driverId], references: [id], onDelete: Cascade)
   acceptedBy Employee? @relation("DriverCashAccepted", fields: [acceptedById], references: [id], onDelete: SetNull)
 
   @@index([accountId, driverId, status])
@@ -9735,7 +9811,7 @@ model HrPosition {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
 
-  account   Account    @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  account     Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
   employees   Employee[]   @relation("EmployeePosition")
   kpiProfiles KpiProfile[]
 

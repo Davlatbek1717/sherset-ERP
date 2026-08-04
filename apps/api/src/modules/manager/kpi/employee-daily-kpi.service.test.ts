@@ -22,14 +22,24 @@ interface Harness {
   events?: unknown[];
   demands?: unknown[];
   attendance?: unknown[];
+  /** Kunning MAVJUD holati va oldingi avtomat qiymatlari (eskirish testi uchun). */
+  dayState?: string;
+  priorMetrics?: Array<{ metricKey: string; autoValue: bigint | null }>;
 }
 
 function makeService(h: Harness = {}) {
-  const dailyUpsert = vi.fn().mockResolvedValue({ id: 'day-1' });
+  const dailyUpsert = vi.fn().mockResolvedValue({
+    id: 'day-1',
+    state: h.dayState ?? 'computed',
+    metrics: h.priorMetrics ?? [],
+  });
   const metricUpsert = vi.fn().mockResolvedValue({});
+  const dailyUpdate = vi.fn().mockResolvedValue({});
+  const eventCreate = vi.fn().mockResolvedValue({});
   const tx = {
-    employeeDailyKpi: { upsert: dailyUpsert },
+    employeeDailyKpi: { upsert: dailyUpsert, update: dailyUpdate },
     employeeDailyKpiMetric: { upsert: metricUpsert },
+    employeeDailyKpiEvent: { create: eventCreate },
   };
   const client = {
     employee: { findMany: vi.fn().mockResolvedValue([{ id: EMP, positionId: null }]) },
@@ -46,8 +56,12 @@ function makeService(h: Harness = {}) {
       .fn()
       .mockImplementation(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
   };
-  const svc = new EmployeeDailyKpiService({ client } as never);
-  return { svc, dailyUpsert, metricUpsert, client };
+  const acceptance = {
+    submitClosedDays: vi.fn().mockResolvedValue({ submitted: 0 }),
+    escalateOverdue: vi.fn().mockResolvedValue({ escalated: 0 }),
+  };
+  const svc = new EmployeeDailyKpiService({ client } as never, acceptance as never);
+  return { svc, dailyUpsert, metricUpsert, dailyUpdate, eventCreate, client, acceptance };
 }
 
 /** Yozilgan ko'rsatkichni kalit bo'yicha topadi. */
@@ -286,5 +300,77 @@ describe('profil tanlash — XODIM → LAVOZIM → sukut (4M.2 individual)', () 
     client.employee.findMany.mockResolvedValue([{ id: EMP, positionId: 'pos-1' }]);
     await svc.computeDay(ACCOUNT, DAY);
     expect(dailyUpsert.mock.calls[0][0].create.profileVersionId).toBeNull();
+  });
+});
+
+describe('ESKIRISH — qabul qilingan kunning raqami o`zgarsa (TZ §3.4)', () => {
+  const session = { session: { cashierId: EMP } };
+
+  it('qabul qilingan kunda avtomat qiymat o`zgarsa kun `stale` bo`ladi', async () => {
+    const { svc, dailyUpdate, eventCreate } = makeService({
+      dayState: 'accepted',
+      priorMetrics: [{ metricKey: 'cash_revenue', autoValue: 500_000n }],
+      sessions: [{ cashierId: EMP, salesSumMinor: 900_000n, salesCount: 3, discrepancyMinor: 0n }],
+    });
+    await svc.computeDay(ACCOUNT, DAY);
+
+    expect(dailyUpdate).toHaveBeenCalledTimes(1);
+    expect(dailyUpdate.mock.calls[0][0].data.state).toBe('stale');
+    expect(dailyUpdate.mock.calls[0][0].data.staleAt).toBeInstanceOf(Date);
+    // Navbatga QAYTADI — aks holda eskirgan kun ko'rinmay qolardi.
+    expect(dailyUpdate.mock.calls[0][0].data.queuedAt).toBeInstanceOf(Date);
+
+    const ev = eventCreate.mock.calls[0][0].data;
+    expect(ev).toMatchObject({ action: 'mark_stale', fromState: 'accepted', toState: 'stale' });
+    // Nima o'zgargani jurnalda: eski → yangi (tekshiruv izi).
+    expect(ev.payload.changed[0]).toMatchObject({
+      metricKey: 'cash_revenue',
+      from: '500000',
+      to: '900000',
+    });
+  });
+
+  it('qiymat O`ZGARMAGAN bo`lsa qabul qilingan kun tegilmaydi', async () => {
+    const { svc, dailyUpdate, eventCreate } = makeService({
+      dayState: 'accepted',
+      priorMetrics: [{ metricKey: 'cash_revenue', autoValue: 900_000n }],
+      sessions: [{ cashierId: EMP, salesSumMinor: 900_000n, salesCount: 3, discrepancyMinor: 0n }],
+    });
+    await svc.computeDay(ACCOUNT, DAY);
+    // Tungi cron har kuni yuradi — o'zgarishsiz qayta hisob navbatni
+    // to'ldirib yuborsa, qabul qilish ma'nosini yo'qotardi.
+    expect(dailyUpdate).not.toHaveBeenCalled();
+    expect(eventCreate).not.toHaveBeenCalled();
+  });
+
+  it('qabul QILINMAGAN kun o`zgarganda eskirmaydi (u allaqachon navbatda)', async () => {
+    const { svc, dailyUpdate } = makeService({
+      dayState: 'pending',
+      priorMetrics: [{ metricKey: 'cash_revenue', autoValue: 1n }],
+      sessions: [{ cashierId: EMP, salesSumMinor: 900_000n, salesCount: 3, discrepancyMinor: 0n }],
+    });
+    await svc.computeDay(ACCOUNT, DAY);
+    expect(dailyUpdate).not.toHaveBeenCalled();
+  });
+
+  it('YANGI ko`rsatkich qo`shilishi eskirish hisoblanmaydi (katalog kengaydi)', async () => {
+    // Katalogga yangi o'lchov qo'shilsa, u oldin YO'Q edi — bu manba
+    // hujjatning o'zgarishi emas, shuning uchun to'langan kunni buzmasligi kerak.
+    const { svc, dailyUpdate } = makeService({
+      dayState: 'accepted',
+      priorMetrics: [],
+      positions: [{ sumMinor: 300_000n, costMinor: 100_000n, quantity: '2', retailSale: session }],
+    });
+    await svc.computeDay(ACCOUNT, DAY);
+    expect(dailyUpdate).not.toHaveBeenCalled();
+  });
+});
+
+describe('cron ketma-ketligi — avval hisob, keyin navbat', () => {
+  it('hisoblashdan keyin yopilgan kunlar navbatga qo`yiladi va eskisi eskalatsiya bo`ladi', async () => {
+    const { svc, acceptance } = makeService({});
+    await svc.computeYesterdayAllAccounts();
+    expect(acceptance.submitClosedDays).toHaveBeenCalledWith(ACCOUNT);
+    expect(acceptance.escalateOverdue).toHaveBeenCalledWith(ACCOUNT);
   });
 });

@@ -3,6 +3,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service.js';
 import { localDateOnly, startOfLocalDay } from '../../hr/hr-shared/tz.util.js';
 import { CASHIER_EVENT } from '../../retail-sale/cashier-audit.js';
+import { DailyKpiAcceptanceService } from './daily-kpi-acceptance.service.js';
 import { KPI_METRICS, type MetricValue, measured, unmeasured } from './kpi-metrics.js';
 
 /**
@@ -29,7 +30,10 @@ import { KPI_METRICS, type MetricValue, measured, unmeasured } from './kpi-metri
 export class EmployeeDailyKpiService {
   private readonly logger = new Logger(EmployeeDailyKpiService.name);
 
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(DailyKpiAcceptanceService) private readonly acceptance: DailyKpiAcceptanceService,
+  ) {}
 
   /**
    * Bitta hisob + bitta kunni hisoblaydi. Yozilgan xodim qatorlari sonini
@@ -92,14 +96,25 @@ export class EmployeeDailyKpiService {
     return { written };
   }
 
-  /** Kechagi kunni barcha hisoblar bo'yicha hisoblaydi (cron kirish nuqtasi). */
+  /**
+   * Kechagi kunni barcha hisoblar bo'yicha hisoblaydi (cron kirish nuqtasi),
+   * so'ng yopilgan kunlarni menejer navbatiga qo'yadi va javobsiz qolganlarini
+   * egaga eskalatsiya qiladi (4M.2).
+   *
+   * Tartib muhim: avval HISOBLASH, keyin NAVBAT. Aks holda hali hisoblanmagan
+   * kun navbatga tushib, menejer bo'sh ekran ko'rardi.
+   */
   async computeYesterdayAllAccounts(): Promise<void> {
     const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const accounts = await this.prisma.client.account.findMany({ select: { id: true } });
     for (const acc of accounts) {
       try {
         const { written } = await this.computeDay(acc.id, yesterday);
-        this.logger.log(`KPI[${acc.id}]: ${written} xodim kuni hisoblandi`);
+        const { submitted } = await this.acceptance.submitClosedDays(acc.id);
+        const { escalated } = await this.acceptance.escalateOverdue(acc.id);
+        this.logger.log(
+          `KPI[${acc.id}]: ${written} kun hisoblandi · ${submitted} navbatga · ${escalated} eskalatsiya`,
+        );
       } catch (e) {
         // Bitta hisobning xatosi qolganlarini to'xtatmasin.
         this.logger.error(`KPI[${acc.id}] yiqildi: ${e instanceof Error ? e.message : e}`);
@@ -494,8 +509,14 @@ export class EmployeeDailyKpiService {
           workedMinutes: data.workedMinutes,
           computedAt: new Date(),
         },
-        select: { id: true },
+        select: {
+          id: true,
+          state: true,
+          metrics: { select: { metricKey: true, autoValue: true } },
+        },
       });
+
+      const before = new Map(day.metrics.map((m) => [m.metricKey, m.autoValue]));
 
       for (const v of data.values) {
         await tx.employeeDailyKpiMetric.upsert({
@@ -511,6 +532,42 @@ export class EmployeeDailyKpiService {
           // menejerniki — tungi cron ularni o'chirib yubormaydi.
           update: { autoValue: v.value, complete: v.complete },
         });
+      }
+
+      // ESKIRISH (TZ §3.4): qabul qilingan kunning raqami qayta hisoblashda
+      // o'zgargan bo'lsa (chek tahrirlandi, qaytarish kiritildi) — kun
+      // JIMGINA yangilanmaydi, u `stale` bo'lib navbatga qaytadi va oylikka
+      // tuzatuvchi qator yoziladi (4M.3). Manba hujjatlarga hook osish
+      // ATAYLAB tanlanmadi: ~130 modulning har biriga ulanish qarzi
+      // to'lanmagan hook bo'lib qolardi; qayta hisoblash esa allaqachon
+      // hamma manbani o'qiydi.
+      if (day.state === 'accepted') {
+        const changed = data.values.filter(
+          (v) => before.has(v.key) && before.get(v.key) !== v.value,
+        );
+        if (changed.length > 0) {
+          await tx.employeeDailyKpi.update({
+            where: { id: day.id },
+            data: { state: 'stale', staleAt: new Date(), queuedAt: new Date() },
+          });
+          await tx.employeeDailyKpiEvent.create({
+            data: {
+              accountId,
+              dailyKpiId: day.id,
+              action: 'mark_stale',
+              fromState: 'accepted',
+              toState: 'stale',
+              actorType: 'system',
+              payload: {
+                changed: changed.map((v) => ({
+                  metricKey: v.key,
+                  from: before.get(v.key)?.toString() ?? null,
+                  to: v.value == null ? null : v.value.toString(),
+                })),
+              },
+            },
+          });
+        }
       }
     });
   }
