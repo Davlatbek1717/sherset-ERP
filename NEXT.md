@@ -305,7 +305,7 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
-> **🕒 2026-08-04c (🔀 4M.2 IKKI IMPLEMENTATSIYA BIRLASHTIRILDI · `fa58171` BE + `a2b4bb6` FE) · ⏳ DEPLOY QILINMAGAN · BRAUZER-QA YO'Q**
+> **🕒 2026-08-04c (🔀 4M.2 IKKI IMPLEMENTATSIYA BIRLASHTIRILDI · `fa58171` BE + `a2b4bb6` FE + `d86320b` QA) · ⏳ DEPLOY QILINMAGAN · ✅ BRAUZER-QA BAJARILDI**
 >
 > ### 🔴 Nima bo'lgan edi (kelajak uchun sabog'i bor)
 > 4M.2 qabul oqimi **ikki marta, bir-biridan bexabar qurilgan**:
@@ -363,22 +363,40 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > o'zgarib **`stale` bo'lib navbat boshiga chiqdi**. Zanjir: compute → profil → ball → openForReview →
 > markStale → navbat tartibi — **jonli ishladi**.
 >
+> ### ✅ PHASE-2 BRAUZER QA BAJARILDI (`d86320b`)
+> `pnpm dev` ostida api jarayoni o'lgan ekan; **API'ni alohida ko'tarish** (`npx tsx src/main.ts`)
+> muammoni yechdi — 4000-port ochildi. (Turbo ostida nega o'lgani aniqlanmadi; keyingi safar API'ni
+> alohida ishga tushirish qulayroq.)
+>
+> **🐞 Topilgan bug (faqat brauzerda ko'rinadigan klass):** command-palette yorlig'i
+> `command_palette.commands.*` EMAS, `command_palette.*` ostiga yozilgan edi. Kalit **dinamik**
+> o'qilgani uchun typecheck ham, i18n key-existence gate ham, test suite ham **jim** — konsolga har
+> sahifada 4 ta `MISSING_MESSAGE` chiqardi. Tuzatildi + **yangi guard**
+> `command-palette-i18n.test.ts` (har `labelKey` uchun ru+uz; non-vacuous sinaldi).
+>
+> **Brauzerda tasdiqlangan (uz, konsol TOZA):** navbat 11 qator · **tartib to'g'ri** (eskirgan kun,
+> 5 signal bilan, birinchi) · kun paneli + ko'rsatkichlar jadvali (fakt/o'rtacha/og'ish) · tugmalar
+> FSM `allowedActions` dan · **drill-down** («Kassa tushumi» → «Bu raqam qayerdan» → haqiqiy chek
+> `ТРН-2026-00004`) · **klaviatura `↓` va `A`** (navbat 11→10) · **hodisa jurnali parallel
+> branchning 02.08 dagi yozuvini SAQLAB QOLGAN** — migratsiyadagi `comment`/`detail` RENAME
+> append-only jurnalni yo'qotmagani jonli isbotlandi.
+>
+> **HTTP (curl):** `days`/`days/:id`/`reference`/`drilldown` 200 · **idempotentlik** (2-`accept` →
+> `changed:false`, 409 yo'q, jurnalda 2-qator yo'q) · **muzlatish** (qabul qilingan kunga tuzatma →
+> 409) · DB'da `score_percent=150`, `score_coverage=0.15`.
+>
 > ### ⛔ HALOL STATUS
-> **Phase-1 + servis-runtime.** **BRAUZER-QA YO'Q**: `pnpm dev` da web 3100 ko'tarildi, lekin **api 4000
-> 6 daqiqada ham ochilmadi** (log `tsx watch src/main.ts` dan keyin jim). Shu sababli HTTP qatlami
-> (controller + `HrPermissionGuard`) va UI zanjiri **umuman sinalmagan**. **DEPLOY QILINMAGAN.**
-> ⚠️ Men ishga tushirgan `pnpm dev` jarayonlari **hali tirik bo'lishi mumkin** (§6.4 bo'yicha
-> o'ldirmadim) — keyingi sessiya avval portlarni tekshirsin.
+> **/menejer asosiy oqimi Phase-2 VERIFIED.** **Sinalmagani:** rad etish → tushuntirish halqasi ·
+> eskalatsiya / majburiy yopish · tuzatma dialogi · **RU-locale** · xodim tomoni.
+> **DEPLOY QILINMAGAN.** ⚠️ Men ishga tushirgan `next dev` (3100) va `tsx src/main.ts` (4000)
+> jarayonlari tirik bo'lishi mumkin — keyingi sessiya portlarni tekshirsin.
 >
 > ### ⏭️ KEYINGI (tartib bilan)
-> 1. **Phase-2 brauzer QA** — api'ni ko'tarish (nega jim qolgani aniqlansin) → login → `/menejer` →
->    navbat, qabul, rad, tuzatma, **drill-down**, klaviatura oqimi. Ma'lumot tayyor
->    (`scratchpad/qa-seed-kpi.ts`, admin `hrRoles=['admin']` qilib qo'yilgan).
-> 2. **Deploy** — `migrate deploy` (`20260804120000` + `20260804140000`) + build + `pm2 restart`.
-> 3. **4M.3** — qabul → oylik: `countsTowardPayroll()` bo'yicha bloklash · idempotent bonus/jarima ·
+> 1. **Deploy** — `migrate deploy` (`20260804120000` + `20260804140000`) + build + `pm2 restart`.
+> 2. **4M.3** — qabul → oylik: `countsTowardPayroll()` bo'yicha bloklash · idempotent bonus/jarima ·
 >    eskirgan kun tuzatuvchi qatori · egaga haftalik xulosa (jurnal tayyor). Shu yerda
 >    `hr-kpi.service.ts:55` sana bug'i ham yopiladi ([[hr-kpi-daily-date-off-by-one]]).
-> 4. **`wave4m-accept` branchi** — TEGILMADI, arxiv sifatida turibdi. Egasi tasdiqlasa o'chiriladi.
+> 3. **`wave4m-accept` branchi** — TEGILMADI, arxiv sifatida turibdi. Egasi tasdiqlasa o'chiriladi.
 >
 > **⚠️ Qayd:** 2026-07-31 dan qolgan begona `stash@{0}` hamon turibdi (ichidagi ish allaqachon
 > daraxtda) — §6.1 bo'yicha tegilmadi.
