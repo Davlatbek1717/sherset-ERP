@@ -305,6 +305,44 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-04d (4M.3 — QABUL → OYLIK bloklash + hr-kpi sana qarzi · `HEAD`) · ⏳ DEPLOY QILINMAGAN**
+>
+> Egasining **M-Q8** qarori kuchga kirdi: **menejer qabul qilmagan kun oylik hisobiga UMUMAN
+> kirmaydi.** Shu paytgacha menejer ekrani qurilgan-u, uning qarori pulga ta'sir qilmasdi.
+>
+> - **Sof modul** `payroll-acceptance.util.ts` (+18 test): qaysi kun to'lanadi/bloklanadi.
+>   «Qaysi holat to'lanadi» ro'yxati **takrorlanmaydi** — u `daily-kpi-fsm.countsTowardPayroll()`
+>   da, yagona joyda. Menejer tuzatmasi **g'olib** (M-Q3); NULL ≠ 0.
+> - **Oylik manbai ko'chdi** (TZ §9 tartibining 2-qadami): `HrKpiDailyLog` → `EmployeeDailyKpi`.
+>   Eski jadvalda qabul tushunchasi yo'q edi va uning sanasi bir kun orqada — bog'lash har kunni
+>   siljitardi. Yangi omborda holat/sana/tuzatma bir qatorda, join kerak emas.
+> - **`HrKpiMonthlyScore` +3 ustun** (`20260804180000`): `accepted_days` · `pending_days` ·
+>   `blocked_sales_minor`. Bloklangan summa **yashirilmaydi** — «nega oylik kam» degan savolga
+>   javob shu ustunda (TZ §4.4).
+> - **🔧 4M.3 QARZI YOPILDI** — `hr-kpi.service.ts` sana off-by-one (`localDateOnly` ga o'tdi).
+>   Aynan hozir xavfsiz bo'ldi: oylik u jadvaldan o'qishni to'xtatdi. Mavjud qatorlar
+>   `20260804190000` bilan surildi — **ikki qadam** (+10000/−9999), chunki UNIQUE bitta `+1 day` da
+>   qo'shni kun bilan to'qnashardi. [[hr-kpi-daily-date-off-by-one]] yopildi.
+>
+> **RUNTIME VERIFY** (jonli DB, real dvigatel — `scratchpad/qa-payroll-money.ts`):
+> tuzatma 500 000 000 tiyin → kun qabul qilinmagan: `sotuv=0 bloklangan=500000000` →
+> qabul: `sotuv=500000000 bloklangan=0`, komissiya 7 500 000 (1.5% ✓) →
+> qayta ochish: `sotuv=0 bloklangan=500000000`. M-Q8 va M-Q3 jonli ishladi.
+>
+> **GATE:** api tc 0 · biome 0 · **api vitest 4568/4568 test** (+28).
+> Yo'l-yo'lakay: `packages/money` dist YANA eskirgan edi (turbo dev qayta build qiladi) —
+> qayta build ([[money-dist-stale-tsbuildinfo]]; bu ikkinchi marta shu sessiyada).
+>
+> **⛔ HALOL STATUS: Phase-1 + servis-runtime.** FE tomoni **YO'Q** — oylik jadvalida «N kun qabul
+> qilinmagan» ogohlantirishi hali ko'rsatilmaydi (ustunlar tayyor). **DEPLOY QILINMAGAN.**
+>
+> **⏭️ KEYINGI:**
+> 1. **FE**: oylik jadvalida `pendingDays` ogohlantirishi + `blockedSalesMinor` ustuni.
+> 2. **4M.3 qolgani**: idempotent bonus/jarima `HrBonusFineLog` ga (TZ §4.2) · eskirgan kun
+>    **tuzatuvchi qatori** (§3.4) · **egaga haftalik xulosa** (M-Q7 — jurnal tayyor).
+> 3. **Deploy** (`20260804180000` + `20260804190000`).
+> 4. **4M.4** — to'liq xodimlar nazorati (jonli holat · xodim kartasi 360° · hayot sikli).
+
 > **🕒 2026-08-04c (🔀 4M.2 IKKI IMPLEMENTATSIYA BIRLASHTIRILDI · `fa58171` BE + `a2b4bb6` FE + `d86320b` QA) · ✅ **DEPLOYED** `28967e91` · ✅ BRAUZER-QA BAJARILDI**
 >
 > ### 🔴 Nima bo'lgan edi (kelajak uchun sabog'i bor)
