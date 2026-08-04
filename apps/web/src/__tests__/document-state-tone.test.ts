@@ -142,6 +142,10 @@ describe('override wiring: the 5 divergent pages keep passing their override map
     [['invoices-out'], 'INVOICE_STATE_TONE'],
     [['retail', 'sessions'], 'RETAIL_SESSION_STATE_TONE'],
     [['retail', 'sessions', '[id]'], 'RETAIL_SESSION_STATE_TONE'],
+    // Kunlik KPI qabul (TZ 4M.2): `accepted` bu yerda TERMINAL natija
+    // (success, hujjatlardagi info emas), `stale`/`escalated` esa kanonikda
+    // umuman yo'q. Override o'chirilsa uchalasi jimgina neutral bo'lib qolardi.
+    [['menejer'], 'KPI_DAY_STATE_TONE'],
   ];
   for (const [segments, sym] of cases) {
     it(`${segments.join('/')} passes ${sym}`, () => {

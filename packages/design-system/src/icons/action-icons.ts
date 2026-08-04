@@ -34,6 +34,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
   CirclePlus,
+  ClipboardCheck,
   ClipboardList,
   Clock,
   Cog,
@@ -189,6 +190,9 @@ export const Icons = {
   apps: Puzzle,
   hr: UserCog,
   analitika: ChartBar,
+  // Menejer — kunlik KPI qabul qilish (TZ 4M.2). «Tekshirilgan ro'yxat»
+  // metaforasi: menejerning ishi = kunlarni ko'rib chiqib yopish.
+  menejer: ClipboardCheck,
 
   // Settings landing — one icon per admin domain card
   organizations: Building2,

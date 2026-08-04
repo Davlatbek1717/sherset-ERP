@@ -42,6 +42,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const tEcom = useTranslations('subnav.ecom');
   const tHr = useTranslations('subnav.hr');
   const tAnalitika = useTranslations('subnav.analitika');
+  const tMenejer = useTranslations('subnav.menejer');
 
   // Redirect to /login if not authenticated (after bootstrap attempt).
   // Suppress the redirect when sessionStorage still has the auth hint —
@@ -208,6 +209,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       label: tNav('analitika'),
       href: '/analitika',
       icon: <Icons.analitika className={navIconClass} />,
+    },
+    // Menejer — ALOHIDA modul, analitika ichida emas (TZ M-Q11): analitika
+    // «qarab tushunish», menejer «qaror qilib yopish». Bir ekranga qo'shilsa
+    // na hisobot, na ish ro'yxati bo'ladi; ruxsatlar ham chalkashadi
+    // (o'qish vs pulni o'zgartiradigan amal).
+    {
+      key: 'menejer',
+      label: tNav('menejer'),
+      href: '/menejer',
+      icon: <Icons.menejer className={navIconClass} />,
     },
   ];
 
@@ -429,6 +440,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     { key: 'settings', label: tHr('settings'), href: '/hr/settings' },
   ];
 
+  // 4M.2 da bitta bo'lim: kunni qabul qilish. 4M.4–4M.9 da qo'shiladi
+  // (jonli holat · ish navbati · SLA · byudjet) — shuning uchun subnav
+  // hozircha bitta yozuvli bo'lsa ham strukturasi tayyor turadi.
+  const menejerSubNav: SubNavItem[] = [
+    { key: 'acceptance', label: tMenejer('acceptance'), href: '/menejer' },
+  ];
+
   const analitikaSubNav: SubNavItem[] = [
     { key: 'dashboard', label: tAnalitika('dashboard'), href: '/analitika' },
     {
@@ -531,9 +549,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                               ? 'hr'
                               : pathname.startsWith('/analitika')
                                 ? 'analitika'
-                                : pathname === '/'
-                                  ? 'homepage'
-                                  : null;
+                                : pathname.startsWith('/menejer')
+                                  ? 'menejer'
+                                  : pathname === '/'
+                                    ? 'homepage'
+                                    : null;
 
   // moysklad employee rights (Настройки → Сотрудники → Настроить права):
   // modules the user has NO view access to disappear from the bar entirely.
@@ -575,7 +595,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                             ? matchActive(hrSubNav)
                             : activeModule === 'analitika'
                               ? matchActive(analitikaSubNav)
-                              : null;
+                              : activeModule === 'menejer'
+                                ? matchActive(menejerSubNav)
+                                : null;
 
   // Trial banner removed from the global layout — moysklad surfaces the
   // upgrade CTA in /settings/billing instead, and the orange strip across
@@ -601,6 +623,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     apps: ecomSubNav,
     hr: hrSubNav,
     analitika: analitikaSubNav,
+    menejer: menejerSubNav,
   };
   const mobileSections: MobileNavSection[] = [
     ...navWithActive.map((m) => {
