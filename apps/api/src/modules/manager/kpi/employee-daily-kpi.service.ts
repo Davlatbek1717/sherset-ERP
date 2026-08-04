@@ -39,7 +39,7 @@ export class EmployeeDailyKpiService {
    * Bitta hisob + bitta kunni hisoblaydi. Yozilgan xodim qatorlari sonini
    * qaytaradi. Cron ham, qo'lda ishga tushirish ham shuni chaqiradi.
    */
-  async computeDay(accountId: string, day: Date): Promise<{ written: number }> {
+  async computeDay(accountId: string, day: Date): Promise<{ written: number; stale: number }> {
     const dayStart = startOfLocalDay(day);
     const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
     const dateOnly = localDateOnly(day);
@@ -48,7 +48,7 @@ export class EmployeeDailyKpiService {
       where: { accountId, archived: false },
       select: { id: true, positionId: true },
     });
-    if (employees.length === 0) return { written: 0 };
+    if (employees.length === 0) return { written: 0, stale: 0 };
 
     const [cashier, cashProfit, sales, attendance, tasks, picking, profileVersions] =
       await Promise.all([
@@ -62,6 +62,7 @@ export class EmployeeDailyKpiService {
       ]);
 
     let written = 0;
+    const staleCandidates: string[] = [];
     for (const emp of employees) {
       const values: MetricValue[] = [
         ...(cashier.get(emp.id) ?? emptyFor('cashier')),
@@ -85,15 +86,26 @@ export class EmployeeDailyKpiService {
         profileVersions.byPosition.get(DEFAULT_PROFILE_KEY) ??
         null;
 
-      await this.upsertDay(accountId, emp.id, dateOnly, {
+      const { staleCandidate } = await this.upsertDay(accountId, emp.id, dateOnly, {
         profileVersionId,
         dataComplete,
         workedMinutes,
         values,
       });
+      if (staleCandidate) staleCandidates.push(emp.id);
       written++;
     }
-    return { written };
+
+    // Muzlagan kunning raqami o'zgargan bo'lsa — FSM orqali `stale` ga
+    // o'tkazamiz (jurnal + optimistik da'vo bilan). Tranzaksiyadan TASHQARIDA:
+    // holat o'zgarishi o'z da'vosini oladi va menejerning parallel qarori
+    // ustun turadi.
+    let stale = 0;
+    for (const employeeId of staleCandidates) {
+      const { marked } = await this.acceptance.markStale(accountId, employeeId, dateOnly);
+      stale += marked;
+    }
+    return { written, stale };
   }
 
   /**
@@ -109,11 +121,11 @@ export class EmployeeDailyKpiService {
     const accounts = await this.prisma.client.account.findMany({ select: { id: true } });
     for (const acc of accounts) {
       try {
-        const { written } = await this.computeDay(acc.id, yesterday);
-        const { submitted } = await this.acceptance.submitClosedDays(acc.id);
+        const { written, stale } = await this.computeDay(acc.id, yesterday);
+        const { opened } = await this.acceptance.openForReview(acc.id);
         const { escalated } = await this.acceptance.escalateOverdue(acc.id);
         this.logger.log(
-          `KPI[${acc.id}]: ${written} kun hisoblandi · ${submitted} navbatga · ${escalated} eskalatsiya`,
+          `KPI[${acc.id}]: ${written} kun hisoblandi · ${stale} eskirdi · ${opened} navbatga · ${escalated} eskalatsiya`,
         );
       } catch (e) {
         // Bitta hisobning xatosi qolganlarini to'xtatmasin.
@@ -446,6 +458,20 @@ export class EmployeeDailyKpiService {
    *
    * Kun o'z versiyasiga havola qilib turadi, shuning uchun keyin og'irlik
    * o'zgartirilsa ham o'tgan kun raqami o'zgarmaydi.
+   *
+   * 🔎 BIRINCHI VERSIYA ORQAGA HAM AMAL QILADI (2026-08-04 runtime QA topilmasi).
+   * Muammo: `saveEmployeeConfig` yangi versiyani `effectiveFrom = BUGUN` bilan
+   * yozadi, dvigatel esa `effectiveFrom <= kun` shartini qo'yadi. Ya'ni menejer
+   * KPI'ni birinchi marta sozlaganda allaqachon hisoblangan BARCHA kunlar
+   * profilsiz qolar va abadiy «ball yo'q» bo'lib turardi — qabul qilish esa
+   * aynan ballga tayanadi.
+   *
+   * Nega bu muzlatish shartnomasini BUZMAYDI: shartnoma og'irlik
+   * O'ZGARTIRILGANDA o'tgan kunni qayta yozmaslik haqida. Birinchi versiyada
+   * o'zgartiriladigan tarix YO'Q (hech bir kun ballanmagan), qabul qilingan
+   * kunlar esa `scorePercent` da muzlagan va ular baribir tegilmaydi.
+   * Shu sababli fallback FAQAT eng erta versiyaga va faqat mos versiya
+   * topilmaganda ishlaydi.
    */
   private async resolveProfileVersions(
     accountId: string,
@@ -456,18 +482,20 @@ export class EmployeeDailyKpiService {
       select: {
         positionId: true,
         employeeId: true,
+        // Barcha versiyalar o'sish tartibida — tanlash JS'da (profil boshiga
+        // versiyalar soni kichik, va bitta so'rovda ikki xil `take: 1` ni
+        // Prisma bermaydi).
         versions: {
-          where: { effectiveFrom: { lte: day } },
-          orderBy: [{ effectiveFrom: 'desc' }, { version: 'desc' }],
-          take: 1,
-          select: { id: true },
+          orderBy: [{ effectiveFrom: 'asc' }, { version: 'asc' }],
+          select: { id: true, effectiveFrom: true },
         },
       },
     });
     const byEmployee = new Map<string, string>();
     const byPosition = new Map<string, string>();
     for (const p of profiles) {
-      const versionId = p.versions[0]?.id;
+      const effective = [...p.versions].reverse().find((v) => v.effectiveFrom <= day);
+      const versionId = effective?.id ?? p.versions[0]?.id;
       if (!versionId) continue;
       // Individual (employeeId) profil lavozim profilidan ustun — u byEmployee'ga
       // tushadi va resolution xodimni avval shu yerdan qidiradi.
@@ -489,7 +517,8 @@ export class EmployeeDailyKpiService {
       workedMinutes: number | null;
       values: MetricValue[];
     },
-  ): Promise<void> {
+  ): Promise<{ staleCandidate: boolean }> {
+    let staleCandidate = false;
     await this.prisma.client.$transaction(async (tx) => {
       // `state` ATAYLAB yozilmaydi — qayta hisoblash menejer qabul qilgan
       // kunni «hisoblandi» ga qaytarib yubormasligi kerak (4M.2 mantiqi).
@@ -535,43 +564,26 @@ export class EmployeeDailyKpiService {
       }
 
       // ESKIRISH (TZ §3.4): qabul qilingan kunning raqami qayta hisoblashda
-      // o'zgargan bo'lsa (chek tahrirlandi, qaytarish kiritildi) — kun
-      // JIMGINA yangilanmaydi, u `stale` bo'lib navbatga qaytadi va oylikka
-      // tuzatuvchi qator yoziladi (4M.3). Manba hujjatlarga hook osish
-      // ATAYLAB tanlanmadi: ~130 modulning har biriga ulanish qarzi
-      // to'lanmagan hook bo'lib qolardi; qayta hisoblash esa allaqachon
-      // hamma manbani o'qiydi.
-      if (day.state === 'accepted') {
-        const changed = data.values.filter(
+      // o'zgargan bo'lsa (chek tahrirlandi, qaytarish kiritildi) — kun JIMGINA
+      // yangilanmaydi. Bu yerda faqat NOMZOD deb belgilanadi; haqiqiy o'tishni
+      // `DailyKpiAcceptanceService.markStale()` qiladi, chunki holat o'zgarishi
+      // FAQAT FSM orqali va jurnal yozuvi bilan bo'lishi kerak.
+      //
+      // Manba hujjatlarga hook osish ATAYLAB tanlanmadi: ~130 modulning har
+      // biriga ulanish to'lanmagan qarz bo'lib qolardi; qayta hisoblash esa
+      // allaqachon hamma manbani o'qiydi.
+      if (FROZEN_STATES.includes(day.state)) {
+        staleCandidate = data.values.some(
           (v) => before.has(v.key) && before.get(v.key) !== v.value,
         );
-        if (changed.length > 0) {
-          await tx.employeeDailyKpi.update({
-            where: { id: day.id },
-            data: { state: 'stale', staleAt: new Date(), queuedAt: new Date() },
-          });
-          await tx.employeeDailyKpiEvent.create({
-            data: {
-              accountId,
-              dailyKpiId: day.id,
-              action: 'mark_stale',
-              fromState: 'accepted',
-              toState: 'stale',
-              actorType: 'system',
-              payload: {
-                changed: changed.map((v) => ({
-                  metricKey: v.key,
-                  from: before.get(v.key)?.toString() ?? null,
-                  to: v.value == null ? null : v.value.toString(),
-                })),
-              },
-            },
-          });
-        }
       }
     });
+    return { staleCandidate };
   }
 }
+
+/** Muzlagan holatlar — «eskirish» tushunchasi faqat ular uchun mavjud. */
+const FROZEN_STATES: readonly string[] = ['accepted', 'force_accepted'];
 
 const DEFAULT_PROFILE_KEY = '__default__';
 

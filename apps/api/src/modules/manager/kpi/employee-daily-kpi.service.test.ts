@@ -57,8 +57,9 @@ function makeService(h: Harness = {}) {
       .mockImplementation(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
   };
   const acceptance = {
-    submitClosedDays: vi.fn().mockResolvedValue({ submitted: 0 }),
+    openForReview: vi.fn().mockResolvedValue({ opened: 0 }),
     escalateOverdue: vi.fn().mockResolvedValue({ escalated: 0 }),
+    markStale: vi.fn().mockResolvedValue({ marked: 1 }),
   };
   const svc = new EmployeeDailyKpiService({ client } as never, acceptance as never);
   return { svc, dailyUpsert, metricUpsert, dailyUpdate, eventCreate, client, acceptance };
@@ -306,71 +307,132 @@ describe('profil tanlash — XODIM → LAVOZIM → sukut (4M.2 individual)', () 
 describe('ESKIRISH — qabul qilingan kunning raqami o`zgarsa (TZ §3.4)', () => {
   const session = { session: { cashierId: EMP } };
 
-  it('qabul qilingan kunda avtomat qiymat o`zgarsa kun `stale` bo`ladi', async () => {
-    const { svc, dailyUpdate, eventCreate } = makeService({
+  it('qabul qilingan kunda avtomat qiymat o`zgarsa FSM orqali eskiradi', async () => {
+    const { svc, acceptance, dailyUpdate } = makeService({
       dayState: 'accepted',
       priorMetrics: [{ metricKey: 'cash_revenue', autoValue: 500_000n }],
       sessions: [{ cashierId: EMP, salesSumMinor: 900_000n, salesCount: 3, discrepancyMinor: 0n }],
     });
-    await svc.computeDay(ACCOUNT, DAY);
+    const res = await svc.computeDay(ACCOUNT, DAY);
 
-    expect(dailyUpdate).toHaveBeenCalledTimes(1);
-    expect(dailyUpdate.mock.calls[0][0].data.state).toBe('stale');
-    expect(dailyUpdate.mock.calls[0][0].data.staleAt).toBeInstanceOf(Date);
-    // Navbatga QAYTADI — aks holda eskirgan kun ko'rinmay qolardi.
-    expect(dailyUpdate.mock.calls[0][0].data.queuedAt).toBeInstanceOf(Date);
-
-    const ev = eventCreate.mock.calls[0][0].data;
-    expect(ev).toMatchObject({ action: 'mark_stale', fromState: 'accepted', toState: 'stale' });
-    // Nima o'zgargani jurnalda: eski → yangi (tekshiruv izi).
-    expect(ev.payload.changed[0]).toMatchObject({
-      metricKey: 'cash_revenue',
-      from: '500000',
-      to: '900000',
-    });
+    // Holatni hisoblash servisi O'ZI yozmaydi — o'tish FSM + optimistik da'vo
+    // + jurnal bilan `DailyKpiAcceptanceService` da bo'ladi.
+    expect(dailyUpdate).not.toHaveBeenCalled();
+    expect(acceptance.markStale).toHaveBeenCalledTimes(1);
+    expect(acceptance.markStale.mock.calls[0][0]).toBe(ACCOUNT);
+    expect(acceptance.markStale.mock.calls[0][1]).toBe(EMP);
+    expect(res.stale).toBe(1);
   });
 
-  it('qiymat O`ZGARMAGAN bo`lsa qabul qilingan kun tegilmaydi', async () => {
-    const { svc, dailyUpdate, eventCreate } = makeService({
+  it('qiymat O`ZGARMAGAN bo`lsa eskirish chaqirilmaydi', async () => {
+    const { svc, acceptance } = makeService({
       dayState: 'accepted',
       priorMetrics: [{ metricKey: 'cash_revenue', autoValue: 900_000n }],
       sessions: [{ cashierId: EMP, salesSumMinor: 900_000n, salesCount: 3, discrepancyMinor: 0n }],
     });
-    await svc.computeDay(ACCOUNT, DAY);
-    // Tungi cron har kuni yuradi — o'zgarishsiz qayta hisob navbatni
+    // Tungi cron har kuni yuguradi — o'zgarishsiz qayta hisob navbatni
     // to'ldirib yuborsa, qabul qilish ma'nosini yo'qotardi.
-    expect(dailyUpdate).not.toHaveBeenCalled();
-    expect(eventCreate).not.toHaveBeenCalled();
+    await svc.computeDay(ACCOUNT, DAY);
+    expect(acceptance.markStale).not.toHaveBeenCalled();
   });
 
-  it('qabul QILINMAGAN kun o`zgarganda eskirmaydi (u allaqachon navbatda)', async () => {
-    const { svc, dailyUpdate } = makeService({
+  it('MUZLAMAGAN kun o`zgarganda eskirmaydi (u allaqachon navbatda)', async () => {
+    const { svc, acceptance } = makeService({
       dayState: 'pending',
       priorMetrics: [{ metricKey: 'cash_revenue', autoValue: 1n }],
       sessions: [{ cashierId: EMP, salesSumMinor: 900_000n, salesCount: 3, discrepancyMinor: 0n }],
     });
     await svc.computeDay(ACCOUNT, DAY);
-    expect(dailyUpdate).not.toHaveBeenCalled();
+    expect(acceptance.markStale).not.toHaveBeenCalled();
+  });
+
+  it('`force_accepted` kun ham eskiradi (u ham muzlagan)', async () => {
+    const { svc, acceptance } = makeService({
+      dayState: 'force_accepted',
+      priorMetrics: [{ metricKey: 'cash_revenue', autoValue: 1n }],
+      sessions: [{ cashierId: EMP, salesSumMinor: 900_000n, salesCount: 3, discrepancyMinor: 0n }],
+    });
+    await svc.computeDay(ACCOUNT, DAY);
+    expect(acceptance.markStale).toHaveBeenCalledTimes(1);
   });
 
   it('YANGI ko`rsatkich qo`shilishi eskirish hisoblanmaydi (katalog kengaydi)', async () => {
     // Katalogga yangi o'lchov qo'shilsa, u oldin YO'Q edi — bu manba
     // hujjatning o'zgarishi emas, shuning uchun to'langan kunni buzmasligi kerak.
-    const { svc, dailyUpdate } = makeService({
+    const { svc, acceptance } = makeService({
       dayState: 'accepted',
       priorMetrics: [],
       positions: [{ sumMinor: 300_000n, costMinor: 100_000n, quantity: '2', retailSale: session }],
     });
     await svc.computeDay(ACCOUNT, DAY);
-    expect(dailyUpdate).not.toHaveBeenCalled();
+    expect(acceptance.markStale).not.toHaveBeenCalled();
   });
 });
 
 describe('cron ketma-ketligi — avval hisob, keyin navbat', () => {
-  it('hisoblashdan keyin yopilgan kunlar navbatga qo`yiladi va eskisi eskalatsiya bo`ladi', async () => {
+  it('hisoblashdan keyin kunlar ko`rikka qo`yiladi va eskisi eskalatsiya bo`ladi', async () => {
     const { svc, acceptance } = makeService({});
     await svc.computeYesterdayAllAccounts();
-    expect(acceptance.submitClosedDays).toHaveBeenCalledWith(ACCOUNT);
+    expect(acceptance.openForReview).toHaveBeenCalledWith(ACCOUNT);
     expect(acceptance.escalateOverdue).toHaveBeenCalledWith(ACCOUNT);
+  });
+});
+
+describe('profil versiyasi vs SANA (2026-08-04 runtime QA topilmasi)', () => {
+  const OLD = new Date('2026-07-01T00:00:00Z');
+  const NEW = new Date('2026-08-01T00:00:00Z');
+
+  it('o`sha kunda AMAL QILGAN versiya tanlanadi (eng oxirgisi emas)', async () => {
+    const { svc, dailyUpsert, client } = makeService({});
+    client.kpiProfile.findMany.mockResolvedValue([
+      {
+        positionId: null,
+        employeeId: EMP,
+        versions: [
+          { id: 'ver-eski', effectiveFrom: OLD },
+          { id: 'ver-yangi', effectiveFrom: NEW },
+        ],
+      },
+    ]);
+    // DAY = 2026-07-15 → iyulda amal qilgan versiya.
+    await svc.computeDay(ACCOUNT, DAY);
+    expect(dailyUpsert.mock.calls[0][0].create.profileVersionId).toBe('ver-eski');
+  });
+
+  it('kun versiyadan OLDIN bo`lsa — eng erta versiyaga tushadi (backlog ballsiz qolmasin)', async () => {
+    // Muammo: `saveEmployeeConfig` versiyani `effectiveFrom = BUGUN` bilan
+    // yozadi, ya'ni menejer KPI'ni birinchi marta sozlaganda allaqachon
+    // hisoblangan kunlar abadiy profilsiz qolardi va «ball yo'q» bo'lardi.
+    const { svc, dailyUpsert, client } = makeService({});
+    client.kpiProfile.findMany.mockResolvedValue([
+      { positionId: null, employeeId: EMP, versions: [{ id: 'ver-1', effectiveFrom: NEW }] },
+    ]);
+    await svc.computeDay(ACCOUNT, DAY); // DAY (07-15) < NEW (08-01)
+    expect(dailyUpsert.mock.calls[0][0].create.profileVersionId).toBe('ver-1');
+  });
+
+  it('fallback FAQAT eng ertaga tushadi — keyingi versiya orqaga qo`llanmaydi', async () => {
+    // Muzlatish shartnomasi: og'irlik o'zgartirilsa o'tgan kun raqami
+    // o'zgarmaydi. Shuning uchun 2-versiya hech qachon orqaga ketmaydi.
+    const { svc, dailyUpsert, client } = makeService({});
+    client.kpiProfile.findMany.mockResolvedValue([
+      {
+        positionId: null,
+        employeeId: EMP,
+        versions: [
+          { id: 'ver-1', effectiveFrom: NEW },
+          { id: 'ver-2', effectiveFrom: new Date('2026-09-01T00:00:00Z') },
+        ],
+      },
+    ]);
+    await svc.computeDay(ACCOUNT, DAY);
+    expect(dailyUpsert.mock.calls[0][0].create.profileVersionId).toBe('ver-1');
+  });
+
+  it('profil umuman yo`q bo`lsa NULL (taxminiy profil biriktirilmaydi)', async () => {
+    const { svc, dailyUpsert, client } = makeService({});
+    client.kpiProfile.findMany.mockResolvedValue([]);
+    await svc.computeDay(ACCOUNT, DAY);
+    expect(dailyUpsert.mock.calls[0][0].create.profileVersionId).toBeNull();
   });
 });

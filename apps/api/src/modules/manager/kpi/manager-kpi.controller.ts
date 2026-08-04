@@ -1,0 +1,167 @@
+import { Body, Controller, Get, Inject, Param, Post, Query, UseGuards } from '@nestjs/common';
+import type { AuthenticatedUser } from '../../auth/auth.schema.js';
+import { CurrentUser } from '../../auth/current-user.decorator.js';
+import { JwtAuthGuard } from '../../auth/jwt-auth.guard.js';
+import { HrPermissionGuard } from '../../hr/hr-auth/hr-permission.guard.js';
+import { RequireHrPermission } from '../../hr/hr-auth/require-hr-permission.decorator.js';
+import { type ActorContext, DailyKpiAcceptanceService } from './daily-kpi-acceptance.service.js';
+import { DailyKpiDrilldownService } from './daily-kpi-drilldown.service.js';
+import {
+  ACTOR,
+  type Actor,
+  DAILY_KPI_ACTION,
+  DAILY_KPI_STATE,
+  type DailyKpiState,
+  REASON_CODES,
+  allowedActions,
+} from './daily-kpi-fsm.js';
+import { KPI_METRICS } from './kpi-metrics.js';
+import {
+  AdjustSchema,
+  DrilldownQuerySchema,
+  QueueFilterSchema,
+  TransitionSchema,
+} from './manager-kpi.schema.js';
+
+/**
+ * Menejer — kunlik KPI qabul qilish HTTP sirti (4M.2).
+ *
+ * IKKI QATLAMLI RUXSAT, ataylab:
+ *   1. **Qo'pol darvoza** — `HrPermissionGuard` + `employees:read`. Bu shunchaki
+ *      «HR ma'lumotini ko'rish huquqi bormi» degan savol.
+ *   2. **Nozik darvoza** — FSM aktyor qoidalari (`daily-kpi-fsm.ts`). Kimning
+ *      qaysi amalni qila olishi SHU YERDA emas, FSM'da hal bo'ladi: qabul
+ *      qilish menejer/egaga, majburiy yopish faqat egaga, tushuntirish
+ *      xodimga (va faqat O'Z kuniga).
+ *
+ * `explain` metodida ATAYLAB `@RequireHrPermission` YO'Q: oddiy xodimda
+ * `employees:read` bo'lmaydi, lekin u o'z kuniga tushuntirish bera olishi
+ * SHART — busiz rad etish → tushuntirish halqasi (§3.3) uzilib qolardi.
+ * Guard metadata topmasa o'tkazib yuboradi; egalik tekshiruvi servisda.
+ */
+@Controller('manager/kpi')
+@UseGuards(JwtAuthGuard, HrPermissionGuard)
+export class ManagerKpiController {
+  constructor(
+    @Inject(DailyKpiAcceptanceService) private readonly acceptance: DailyKpiAcceptanceService,
+    @Inject(DailyKpiDrilldownService) private readonly drilldown: DailyKpiDrilldownService,
+  ) {}
+
+  /** Menejer navbati — og'ishli kunlar birinchi. */
+  @Get('days')
+  @RequireHrPermission('employees', 'read')
+  async queue(@CurrentUser() user: AuthenticatedUser, @Query() query: unknown) {
+    const filter = QueueFilterSchema.parse(query ?? {});
+    return this.acceptance.queue(user.accountId, {
+      ...filter,
+      states: filter.states as DailyKpiState[] | undefined,
+    });
+  }
+
+  /** Bitta xodim kuni — ko'rsatkichlar, og'ish, jurnal. */
+  @Get('days/:id')
+  @RequireHrPermission('employees', 'read')
+  async detail(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    const day = await this.acceptance.detail(user.accountId, id);
+    const actor = resolveActor(user);
+    return {
+      ...day,
+      /** Ekran tugmalari shundan chiziladi — FE o'z shartini yozmasin. */
+      actor,
+      allowedActions: allowedActions(day.state, actor),
+    };
+  }
+
+  /** «Bu raqam qayerdan chiqdi» — tile ortidagi hujjatlar. */
+  @Get('days/:id/drilldown')
+  @RequireHrPermission('employees', 'read')
+  async drill(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Query() query: unknown,
+  ) {
+    const q = DrilldownQuerySchema.parse(query ?? {});
+    return this.drilldown.forMetric(user.accountId, id, q.metric, q.limit ?? 100);
+  }
+
+  /** Qabul · rad · eskalatsiya · majburiy yopish · qayta ochish. */
+  @Post('days/:id/transition')
+  @RequireHrPermission('employees', 'read')
+  async transition(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    const input = TransitionSchema.parse(body);
+    return this.acceptance.transition(ctxOf(user), id, input.action, input);
+  }
+
+  /** Ko'rsatkich tuzatmasi — `autoValue` ga tegilmaydi. */
+  @Post('days/:id/adjust')
+  @RequireHrPermission('employees', 'read')
+  async adjust(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    const input = AdjustSchema.parse(body);
+    return this.acceptance.adjust(ctxOf(user), id, {
+      metricKey: input.metricKey,
+      adjustValue: input.adjustValue == null ? null : BigInt(input.adjustValue),
+      reasonCode: input.reasonCode,
+      comment: input.comment,
+    });
+  }
+
+  /**
+   * Xodimning tushuntirishi — rad etilgan kunni navbatga qaytaradi.
+   * HR sahifa-ruxsati TALAB QILINMAYDI (yuqoridagi izohga qara).
+   */
+  @Post('days/:id/explain')
+  async explain(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    const input = TransitionSchema.parse({ ...(body as object), action: DAILY_KPI_ACTION.explain });
+    return this.acceptance.transition(ctxOf(user), id, DAILY_KPI_ACTION.explain, input);
+  }
+
+  /**
+   * Ma'lumotnoma: ko'rsatkich katalogi, holatlar va sabab kodlari.
+   * FE bu ro'yxatlarni O'ZIDA takrorlamasin — ular FSM bilan bir manbadan.
+   */
+  @Get('reference')
+  async reference() {
+    return {
+      metrics: KPI_METRICS.map((m) => ({
+        key: m.key,
+        labelUz: m.labelUz,
+        labelRu: m.labelRu,
+        unit: m.unit,
+        direction: m.direction,
+        perHour: m.perHour,
+        source: m.source,
+      })),
+      states: Object.values(DAILY_KPI_STATE),
+      reasonCodes: REASON_CODES,
+    };
+  }
+}
+
+/**
+ * Aktyor roli — mavjud `hrRoles` konvensiyasidan (yangi rol tizimi
+ * o'ylab topilmaydi): `admin` HR'da allaqachon «hammasi mumkin» degani
+ * (`hr-permission.guard.ts`), shuning uchun u EGA. `manager` — menejer.
+ * Qolgani oddiy xodim: faqat O'Z kuniga tushuntirish bera oladi.
+ */
+export function resolveActor(user: AuthenticatedUser): Actor {
+  const roles = user.hrRoles ?? [];
+  if (roles.includes('admin')) return ACTOR.owner;
+  if (roles.includes('manager')) return ACTOR.manager;
+  return ACTOR.employee;
+}
+
+function ctxOf(user: AuthenticatedUser): ActorContext {
+  return { accountId: user.accountId, actor: resolveActor(user), actorId: user.sub };
+}

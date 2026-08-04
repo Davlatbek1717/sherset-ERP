@@ -1,35 +1,45 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../../prisma/prisma.module.js';
 import { AuthModule } from '../auth/auth.module.js';
-import { DailyKpiAcceptanceController } from './kpi/daily-kpi-acceptance.controller.js';
+import { PermissionsModule } from '../permissions/permissions.module.js';
 import { DailyKpiAcceptanceService } from './kpi/daily-kpi-acceptance.service.js';
+import { DailyKpiDrilldownService } from './kpi/daily-kpi-drilldown.service.js';
 import { EmployeeDailyKpiCron } from './kpi/employee-daily-kpi.cron.js';
 import { EmployeeDailyKpiService } from './kpi/employee-daily-kpi.service.js';
 import { KpiConfigController } from './kpi/kpi-config.controller.js';
 import { KpiConfigService } from './kpi/kpi-config.service.js';
-import { MyKpiController } from './kpi/my-kpi.controller.js';
+import { ManagerKpiController } from './kpi/manager-kpi.controller.js';
 
 /**
  * Menejer bo'limi — 4-bo'lim TZ kengaytmasi.
  * `docs/superpowers/specs/2026-08-02-menejer-kunlik-kpi-tz-design.md`
  *
- * 4M.1 — o'lchov yadrosi (kunlik xodim KPI hisoblanadi va saqlanadi).
- * 4M.2 — har-xodim KPI konfiguratsiyasi + **kunlik qabul qilish**: FSM,
- *        append-only hodisa jurnali, kompozit ball, tuzatma, rad etish
- *        halqasi va egaga eskalatsiya.
- * 4M.3 — qabulni oylikka ulash (bloklash · idempotent bonus/jarima).
+ * 4M.1 — o'lchov yadrosi (kunlik KPI hisoblanadi va saqlanadi).
+ * 4M.2 — QABUL QILISH oqimi: FSM, append-only jurnal, drill-down, kompozit
+ *        ball (qabulda MUZLATILADI), har-xodim KPI konfiguratsiyasi, HTTP sirt.
+ * 4M.3 — oylikka ulanish (hali yo'q): faqat qabul qilingan kunlar hisobga
+ *        kiradi, `daily-kpi-fsm.countsTowardPayroll()` shu shartning yagona
+ *        manbai bo'ladi.
  *
- * `ScheduleModule` bu yerda QAYTA ro'yxatdan o'tkazilmaydi — u `app.module.ts`
- * da global (`attendance-geo.module.ts` dagi izoh bilan bir xil konventsiya).
+ * ⚠️ 2026-08-04: bu modul IKKI mustaqil implementatsiyaning birlashmasi
+ * (`wave4m-accept` branchi + `climart-adoption`). Yakuniy tanlov: FSM/servis/
+ * drill-down/HTTP — `wave4m-accept` niki (optimistik da'vo va yopiq sabab
+ * ro'yxatlari kuchliroq); kompozit ball, ball muzlatish, idempotent no-op va
+ * «begona kun 404» — `climart-adoption` niki.
+ *
+ * `PermissionsModule` — `HrPermissionGuard` `PermissionsService` ni talab
+ * qiladi. `ScheduleModule` bu yerda QAYTA ro'yxatdan o'tkazilmaydi — u
+ * `app.module.ts` da global (`attendance-geo.module.ts` bilan bir xil).
  */
 @Module({
-  imports: [PrismaModule, AuthModule],
-  controllers: [KpiConfigController, DailyKpiAcceptanceController, MyKpiController],
+  imports: [PrismaModule, AuthModule, PermissionsModule],
+  controllers: [KpiConfigController, ManagerKpiController],
   providers: [
     EmployeeDailyKpiService,
     EmployeeDailyKpiCron,
     KpiConfigService,
     DailyKpiAcceptanceService,
+    DailyKpiDrilldownService,
   ],
   exports: [EmployeeDailyKpiService, DailyKpiAcceptanceService],
 })

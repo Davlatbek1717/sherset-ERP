@@ -9397,15 +9397,17 @@ model EmployeeDailyKpi {
   /// eski raqam jimgina qayta yozilmaydi.
   staleAt DateTime? @map("stale_at") @db.Timestamptz()
 
-  /// Kun menejer navbatiga qachon tushgan (4M.2). Eskalatsiya soati SHUNDAN
-  /// sanaladi — `updatedAt` yaramaydi, u har tuzatmada siljib navbatni
-  /// abadiy «yangi» qilib qo'yardi.
-  queuedAt DateTime? @map("queued_at") @db.Timestamptz()
-
-  /// Kim va qachon qabul qilgan (TZ §9). Egasi majburiy yopganda ham shu
-  /// to'ladi — farqi hodisa jurnalidagi `force_accept` da ko'rinadi.
+  /// Kim va qachon qabul qilgan (TZ §9). Oylik hisobi (§4) va egaga haftalik
+  /// xulosa (M-Q7) shu ikkisiga tayanadi. FK YO'Q — `actorId` naqshi
+  /// (`SupplyApprovalEvent`), aktyor tizim ham bo'lishi mumkin.
   acceptedById String?   @map("accepted_by_id") @db.Uuid
   acceptedAt   DateTime? @map("accepted_at") @db.Timestamptz()
+
+  /// Holat OXIRGI MARTA qachon o'zgardi — eskalatsiya soati shundan sanaydi.
+  /// `updatedAt` bu ish uchun YARAMAYDI: u tungi qayta hisoblashda ham
+  /// yangilanadi, ya'ni javobsiz turgan kun har kecha «yangi» bo'lib
+  /// ko'rinardi va hech qachon egaga chiqmasdi.
+  stateChangedAt DateTime? @map("state_changed_at") @db.Timestamptz()
 
   /// Qabul paytidagi kompozit ball (og'irlik × bajarish %), foizda.
   ///
@@ -9434,6 +9436,8 @@ model EmployeeDailyKpi {
   @@index([accountId, date(sort: Desc), state])
   // Xodim kartasidagi trend.
   @@index([accountId, employeeId, date(sort: Desc)])
+  // Eskalatsiya skani: «qaysi kunlar N kundan beri javobsiz turibdi».
+  @@index([accountId, state, stateChangedAt])
   @@map("employee_daily_kpi")
 }
 
@@ -9467,54 +9471,49 @@ model EmployeeDailyKpiMetric {
   @@map("employee_daily_kpi_metrics")
 }
 
-/// EmployeeDailyKpiEvent — kunning APPEND-ONLY hodisa jurnali (TZ §3.1, M-Q7).
+/// EmployeeDailyKpiEvent — kunlik KPI qabul qilish jurnali (TZ §3, 4M.2).
 ///
-/// Nega alohida jadval, nega `EmployeeDailyKpi` ustunlari emas: menejer o'z
-/// qo'l ostidagilarning PULINI tasdiqlaydi, shuning uchun uning har harakati
-/// ham o'lchanishi kerak. «Kim qabul qildi» ustuni faqat OXIRGI holatni
-/// bilardi — «necha marta rad etildi, kim nechta raqamni qo'lda tuzatdi,
-/// egaga necha kun kech eskalatsiya bo'ldi» degan savollarga javob bermasdi.
-/// Egaga haftalik xulosa (M-Q7) aynan shu jadvaldan quriladi.
+/// APPEND-ONLY. Hech qachon UPDATE/DELETE qilinmaydi — nizo bo'lganda yozma iz
+/// shu yerda qoladi va u ham xodimni, ham menejerni himoya qiladi (§3.3).
+/// Naqsh `SupplyApprovalEvent` dan olingan (bir xil maydon nomlari ataylab):
+/// shu sababli erkin matn `comment`, tafsilot esa `detail` deb ataladi.
 ///
-/// Yozuv HECH QACHON o'zgartirilmaydi va o'chirilmaydi (shu sababli
-/// `updatedAt` yo'q) — nizo bo'lganda yozma iz shu.
+/// Egaga haftalik nazorat xulosasi (M-Q7) AYNAN shu jadvaldan chiqadi: nechta
+/// tuzatma, qancha summaga, kim ko'p tuzatgan.
 model EmployeeDailyKpiEvent {
-  id         String @id @default(uuid()) @db.Uuid
-  accountId  String @map("account_id") @db.Uuid
-  dailyKpiId String @map("daily_kpi_id") @db.Uuid
+  id         String           @id @default(uuid()) @db.Uuid
+  accountId  String           @map("account_id") @db.Uuid
+  dailyKpiId String           @map("daily_kpi_id") @db.Uuid
+  dailyKpi   EmployeeDailyKpi @relation(fields: [dailyKpiId], references: [id], onDelete: Cascade)
+  account    Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
-  /// FSM harakati: `submit` | `accept` | `reject` | `explain` | `escalate` |
-  /// `force_accept` | `reopen` | `mark_stale` | `adjust`.
-  /// `adjust` — holat o'zgarmaydigan yagona hodisa (`fromState` = `toState`).
-  action String @db.VarChar(20)
-
+  /// Tuzatmada (`adjust`) holat o'zgarmaydi — `fromState` va `toState` teng
+  /// bo'ladi. Nullable qilinmadi: bo'sh ustun so'rovlarni murakkablashtiradi.
   fromState String @map("from_state") @db.VarChar(20)
   toState   String @map("to_state") @db.VarChar(20)
 
-  /// `system` | `manager` | `owner` | `employee` — vakolat tekshiruvi natijasi.
-  actorType String  @map("actor_type") @db.VarChar(10)
-  /// Foydalanuvchi (yoki xodim) id'si. FK YO'Q — `KpiProfileVersion.createdById`
-  /// bilan bir xil konventsiya: aktyor o'chirilsa ham iz qolishi kerak.
+  /// `daily-kpi-fsm.ts` dagi DAILY_KPI_ACTION qiymati.
+  action String @db.VarChar(30)
+
+  /// system | manager | employee | owner (FSM'dagi ACTOR).
+  actorType String  @map("actor_type") @db.VarChar(20)
   actorId   String? @map("actor_id") @db.Uuid
 
-  /// Yopiq ro'yxatdagi sabab kodi (`daily-kpi.fsm.ts` → `KPI_REASON_CODES`).
-  /// Rad etish, qayta ochish, majburiy yopish va tuzatmada MAJBURIY.
+  /// Yopiq ro'yxatdan (FSM REASON_CODES). `other` bo'lsa izoh MAJBURIY.
   reasonCode String? @map("reason_code") @db.VarChar(40)
-  /// Erkin izoh — statistikaga kirmaydi (shuning uchun sabab kodi alohida).
-  note       String? @db.VarChar(1000)
+  comment    String? @db.Text
 
-  /// Tuzatma tafsiloti: `{ metricKey, from, to }` (pul minor-birlikda, matn
-  /// sifatida — BigInt JSON'da yo'qolmasin).
-  payload Json?
+  /// Tuzatma tafsiloti: `{ metricKey, was, now }` — «nima o'zgardi» shundan.
+  detail Json?
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
 
-  account  Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  dailyKpi EmployeeDailyKpi @relation(fields: [dailyKpiId], references: [id], onDelete: Cascade)
-
-  @@index([dailyKpiId, createdAt])
-  // Egaga haftalik xulosa: «kim, qaysi haftada, nechta tuzatma qildi».
-  @@index([accountId, createdAt(sort: Desc), action])
+  // Kun kartochkasidagi tarix.
+  @@index([accountId, dailyKpiId, createdAt])
+  // Egaga haftalik xulosa: «shu haftada nima bo'ldi».
+  @@index([accountId, createdAt(sort: Desc)])
+  // «Kim ko'p tuzatgan» va sabab-kodi statistikasi.
+  @@index([accountId, action, createdAt(sort: Desc)])
   @@map("employee_daily_kpi_events")
 }
 
