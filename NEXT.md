@@ -305,6 +305,54 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-04b (MENEJER 4M.2 FE — menejer ekrani: navbat + kun qabuli + klaviatura · `d11ca50`) · ⏳ DEPLOY QILINMAGAN**
+>
+> 08-04a yadrosining **ko'rinadigan tomoni**. TZ §3.5 talabi bo'yicha `/menejer` — **master-detail**
+> (route almashmaydi: «keyingi → qabul → keyingi» halqasi uzilmaydi).
+> - **Chapda navbat**: xodim · sana · holat · ball · «chala»/«profilsiz»/«tuzatma» belgilari.
+>   Tartib **serverdan** keladi (og'ishli kunlar birinchi) — FE qayta saralamaydi.
+> - **O'ngda kun**: ball + **qamrov** (`weightScored/weightTotal` ochiq) · ko'rsatkichlar jadvali
+>   (fakt · maqsad · bajarish% · **30-kunlik o'rtachadan og'ish** · og'irlik · **soatiga ish yuki**) ·
+>   hodisa jurnali · amal tugmalari.
+> - **Klaviatura**: `↓/↑` o'tish · `A` qabul · `R` rad · `E` tuzatish. Matn kiritilayotganda
+>   qisqartmalar **o'chadi** (izohdagi «a» kunni qabul qilib yubormasin); tanlangan qator
+>   `scrollIntoView` bilan ko'rinishda qoladi.
+> - **Dialoglar**: rad/qayta ochish/majburiy yopish (**sabab kodi majburiy**, yopiq ro'yxat serverdan)
+>   va tuzatma («avtomat qiymat saqlanadi» ekranda yozilgan; «tuzatmani olib tashlash» **alohida**
+>   tugma — bu «0 yozish» bilan bir narsa emas).
+> - **NULL ≠ 0 ekranda ham**: o'lchanmagan fakt «o'lchanmagan» deb chiqadi · ballsiz kun «0%» EMAS,
+>   «ball yo'q» · ballga kirmagan ko'rsatkichning **sababi** ko'rsatiladi · qabul qilingan kunda
+>   **muzlatilgan** ball ko'rsatiladi (jonli qayta hisoblangani emas).
+> - **Konventsiyalar:** holat→rang lokal jadval EMAS — `documentStateTone(state, KPI_DAY_STATE_TONE)`;
+>   uch farq (`accepted`=success terminal · `stale`=warning · `escalated`=destructive) `document-state-tone.ts`
+>   da oshkora override va mavjud drift-lock testiga qo'shildi. Nav: **«Menejer» alohida modul**
+>   (TZ M-Q11) + subnav + `Icons.menejer`. i18n ru+uz **85 kalit**.
+> - **YANGI GUARD** (`menejer-acceptance-screen.test.ts`, 19 test): ekran yorliqlari `t(`state_${x}`)`
+>   kabi **dinamik** kalitlar — odatiy i18n key-existence gate'i ularni **ko'rmaydi**. Test BE'ning
+>   `daily-kpi.fsm.ts` faylini o'qib har holat/amal/sabab uchun ru+uz tarjimasi borligini tekshiradi
+>   (BE'ga yangi sabab kodi qo'shilsa test yiqiladi). **Non-vacuous jonli sinaldi.**
+>
+> **GATE:** web tc 0 · design-system tc 0 · biome 0 · **web vitest 2683/2683 test** (+19 guard).
+>
+> **HALOL STATUS: Phase-1** — **BROWSER-QA YO'Q** (ekran real brauzerda hech qachon ochilmagan,
+> jonli data bilan tekshirilmagan). **DEPLOY QILINMAGAN.**
+>
+> **⏭️ KEYINGI (tartib bilan):**
+> 1. **Phase-2 QA + deploy**: `pnpm dev` → login → `/menejer` → seed/real data bilan navbat, qabul,
+>    rad, tuzatma, klaviatura oqimini brauzerda tekshirish. So'ng erp.sherset.uz ga `migrate deploy`
+>    (`20260804120000_kpi_daily_acceptance`) + build + `pm2 restart`.
+> 2. **Drill-down** (TZ §3.5 «busiz menejer raqamga ishonmaydi»): `GET /manager/kpi/day/:id/metric/:key/documents`
+>    — 5 manba (cashier/sales/attendance/task/warehouse) bo'yicha hujjatlar ro'yxati + FE modal.
+> 3. **Xodim tomoni**: «kuningiz hali qabul qilinmagan» + tushuntirish formasi. BE **tayyor**
+>    (`manager/kpi/my/days`, `my/day/:id/explain`), FE yo'q.
+> 4. **4M.3** — qabul → oylik: bloklash · idempotent bonus/jarima · eskirgan kun tuzatuvchi qatori ·
+>    egaga haftalik xulosa. Shu yerda `hr-kpi.service.ts:55` sana bug'i ham yopiladi
+>    ([[hr-kpi-daily-date-off-by-one]]).
+>
+> **⚠️ Qayd:** daraxtda **2026-07-31 dan qolgan begona `stash@{0}`** («lint-staged automatic backup»,
+> 24 fayl) turibdi — ichidagi ish allaqachon daraxtda bor (diff bo'sh), lekin §6.1 bo'yicha TEGILMADI.
+> Egasi tasdiqlasa `git stash drop` qilinadi.
+
 > **🕒 2026-08-04a (MENEJER 4M.2 YADRO — kunlik KPI qabul FSM + hodisa jurnali + kompozit ball · `59863f0`) · ⏳ DEPLOY QILINMAGAN**
 >
 > Egasining **1-ustuvorligi** (TZ [4M.2](docs/superpowers/specs/2026-08-02-menejer-kunlik-kpi-tz-design.md) §3):
