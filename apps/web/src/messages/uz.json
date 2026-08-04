@@ -8423,7 +8423,8 @@
       "settings_users": "Foydalanuvchilar",
       "settings_organizations": "Tashkilotlar",
       "settings_email": "Pochta sozlamalari",
-      "settings_exchange_rates": "Valyuta kurslari"
+      "settings_exchange_rates": "Valyuta kurslari",
+      "go_manager_kpi": "Menejer — KPI qabuli"
     }
   },
   "task_create": {

@@ -8423,7 +8423,8 @@
       "settings_users": "Пользователи",
       "settings_organizations": "Организации",
       "settings_email": "Настройки почты",
-      "settings_exchange_rates": "Курсы валют"
+      "settings_exchange_rates": "Курсы валют",
+      "go_manager_kpi": "Менеджер — приёмка KPI"
     }
   },
   "task_create": {
