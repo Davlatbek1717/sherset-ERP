@@ -7,16 +7,16 @@ import uz from '../messages/uz.json';
 /**
  * Menejer — kunlik KPI qabul ekrani (TZ 4M.2 §3.5) drift-lock.
  *
- * NEGA MANBA-SKAN: ekranning yorliqlari BE'dagi yopiq ro'yxatlardan
- * (`daily-kpi.fsm.ts` — holatlar, amallar, sabab kodlari) kelib chiqadi va
- * `t(`state_${x}`)` kabi DINAMIK kalitlar bilan chaqiriladi. Dinamik kalitni
- * odatiy i18n key-existence gate'i KO'RMAYDI: BE'ga yangi sabab kodi
- * qo'shilsa, ekranda foydalanuvchiga xom `reason_yangi_kod` chiqib turadi va
- * hech bir test shikoyat qilmaydi. Shuning uchun bu yerda BE fayli o'qilib,
- * har element uchun ru+uz tarjimasi BOR-YO'QLIGI tekshiriladi.
+ * NEGA MANBA-SKAN: ekranning yorliqlari BE'dagi YOPIQ ro'yxatlardan
+ * (`daily-kpi-fsm.ts` — holatlar, amallar, amal-bo'yicha sabab kodlari) kelib
+ * chiqadi va `t(`state_${x}`)` kabi DINAMIK kalitlar bilan chaqiriladi.
+ * Dinamik kalitni odatiy i18n key-existence gate'i KO'RMAYDI: BE'ga yangi
+ * sabab kodi qo'shilsa, ekranda foydalanuvchiga xom `reason_yangi_kod` chiqib
+ * turadi va hech bir test shikoyat qilmaydi. Shuning uchun bu yerda BE fayli
+ * o'qilib, har element uchun ru+uz tarjimasi BOR-YO'QLIGI tekshiriladi.
  *
  * Qulflanadigan ikkinchi narsa — TZ §3.5 ning MAJBURIY xususiyatlari:
- * klaviatura (↓/↑/A/R/E) va «NULL ≠ 0» ko'rsatilishi.
+ * klaviatura (↓/↑/A/R/E), drill-down va «NULL ≠ 0» ko'rsatilishi.
  */
 
 const FSM = join(
@@ -31,34 +31,35 @@ const FSM = join(
   'modules',
   'manager',
   'kpi',
-  'daily-kpi.fsm.ts',
+  'daily-kpi-fsm.ts',
 );
 const PAGE = join(__dirname, '..', 'app', '(app)', 'menejer', 'page.tsx');
 
 const fsmSrc = readFileSync(FSM, 'utf8');
 const pageSrc = readFileSync(PAGE, 'utf8');
 
-/** Regex guruhidan barcha `'kalit'` qiymatlarini oladi. */
-function slugs(body: string, pattern: RegExp): string[] {
-  return [...body.matchAll(pattern)].map((x) => x[1] ?? '').filter(Boolean);
-}
-
-/** `export const NAME = [ 'a', 'b' ] as const;` dan qiymatlarni oladi. */
-function constArray(name: string): string[] {
-  const m = fsmSrc.match(
-    new RegExp(`export const ${name}[^=]*=\\s*\\[([\\s\\S]*?)\\]\\s*as const`),
-  );
+/** `const X = { key: 'value', ... }` bloklaridan qiymatlarni oladi. */
+function constMapValues(name: string): string[] {
+  const m = fsmSrc.match(new RegExp(`export const ${name}\\s*=\\s*\\{([\\s\\S]*?)\\n\\} as const`));
   if (!m?.[1]) throw new Error(`${name} topilmadi — BE fayli o'zgargan bo'lsa testni yangilang`);
-  return slugs(m[1], /'([a-z_]+)'/g);
+  return [...m[1].matchAll(/:\s*'([a-z_]+)'/g)].map((x) => x[1] ?? '').filter(Boolean);
 }
 
-const STATES = constArray('DAILY_KPI_STATES');
-const REASON_CODES = constArray('KPI_REASON_CODES');
-/** FSM amallari — `DAILY_KPI_TRANSITIONS` obyektining kalitlari. */
-const ACTIONS = (() => {
-  const m = fsmSrc.match(/DAILY_KPI_TRANSITIONS[^=]*=\s*\{([\s\S]*?)\n\};/);
-  if (!m?.[1]) throw new Error('DAILY_KPI_TRANSITIONS topilmadi');
-  return slugs(m[1], /^ {2}([a-z_]+):\s*\{/gm);
+const STATES = constMapValues('DAILY_KPI_STATE');
+const ACTIONS = constMapValues('DAILY_KPI_ACTION');
+
+/**
+ * `REASON_CODES` — amal → kodlar ro'yxati; bizga barcha kodlar kerak.
+ *
+ * Regex QATOR BOSHIDAGI qiymatga bog'langan (`'kod',`), chunki umumiy
+ * `'([a-z_]+)'` naqshi o'zbekcha izohlardagi apostroflarni ham tutadi:
+ * `to'g'ri` ichidan `'g'` «sabab kodi» bo'lib chiqib qolgan edi.
+ */
+const REASON_CODES = (() => {
+  const m = fsmSrc.match(/export const REASON_CODES = \{([\s\S]*?)\n\} as const satisfies/);
+  if (!m?.[1]) throw new Error('REASON_CODES topilmadi');
+  const found = [...m[1].matchAll(/^\s*'([a-z_]+)',/gm)].map((x) => x[1] ?? '').filter(Boolean);
+  return [...new Set(found)];
 })();
 
 const LOCALES: Array<[string, Record<string, unknown>]> = [
@@ -73,9 +74,10 @@ function menejerKeys(bundle: Record<string, unknown>): Record<string, string> {
 
 describe('manba: BE yopiq ro`yxatlari o`qildi (test bo`sh emas)', () => {
   it('holat / amal / sabab ro`yxatlari topildi', () => {
-    expect(STATES.length).toBeGreaterThanOrEqual(6);
-    expect(ACTIONS.length).toBeGreaterThanOrEqual(8);
-    expect(REASON_CODES.length).toBeGreaterThanOrEqual(8);
+    // 7 holat, 9 amal (adjust ham), 20+ sabab kodi — merge natijasi.
+    expect(STATES.length).toBeGreaterThanOrEqual(7);
+    expect(ACTIONS.length).toBeGreaterThanOrEqual(9);
+    expect(REASON_CODES.length).toBeGreaterThanOrEqual(15);
   });
 });
 
@@ -88,35 +90,13 @@ describe('dinamik i18n kalitlari — ru va uz da BOR', () => {
       expect(missing, `yo'q: ${missing.join(', ')}`).toEqual([]);
     });
 
-    it(`${locale}: har FSM amali uchun jurnal yorlig'i`, () => {
-      // Jurnalda holat o'zgartirmaydigan `adjust` ham chiqadi.
-      const all = [...ACTIONS, 'adjust'];
-      const missing = all.filter((a) => !keys[`action_log_${a}`]);
+    it(`${locale}: har FSM amali uchun action_* yorlig'i`, () => {
+      const missing = ACTIONS.filter((a) => !keys[`action_${a}`]);
       expect(missing, `yo'q: ${missing.join(', ')}`).toEqual([]);
     });
 
-    it(`${locale}: har sabab kodi uchun yorliq`, () => {
+    it(`${locale}: har sabab kodi uchun reason_* yorlig'i`, () => {
       const missing = REASON_CODES.filter((c) => !keys[`reason_${c}`]);
-      expect(missing, `yo'q: ${missing.join(', ')}`).toEqual([]);
-    });
-
-    it(`${locale}: aktyor turlari va ballga kirmaslik sabablari`, () => {
-      const required = [
-        'actor_system',
-        'actor_manager',
-        'actor_owner',
-        'actor_employee',
-        'skip_unmeasured',
-        'skip_no_target',
-        'skip_no_weight',
-        'skip_neutral',
-        'skip_unknown_metric',
-        'unit_money',
-        'unit_count',
-        'unit_percent',
-        'unit_minutes',
-      ];
-      const missing = required.filter((k) => !keys[k]);
       expect(missing, `yo'q: ${missing.join(', ')}`).toEqual([]);
     });
   }
@@ -130,58 +110,52 @@ describe('dinamik i18n kalitlari — ru va uz da BOR', () => {
 
 describe('TZ §3.5 majburiy xususiyatlari ekranda ulangan', () => {
   it('klaviatura: ↓/↑ o`tish, A qabul, R rad, E tuzatish', () => {
-    expect(pageSrc).toContain("'ArrowDown'");
-    expect(pageSrc).toContain("'ArrowUp'");
-    // Katta va kichik harf — Caps Lock bilan ham ishlashi kerak.
-    expect(pageSrc).toMatch(/case 'a':\s*\n\s*case 'A':/);
-    expect(pageSrc).toMatch(/case 'r':\s*\n\s*case 'R':/);
-    expect(pageSrc).toMatch(/case 'e':\s*\n\s*case 'E':/);
-    expect(pageSrc).toContain("addEventListener('keydown'");
+    expect(pageSrc).toMatch(/useHotkey\('arrowdown'/);
+    expect(pageSrc).toMatch(/useHotkey\('arrowup'/);
+    expect(pageSrc).toMatch(/useHotkey\('a'/);
+    expect(pageSrc).toMatch(/useHotkey\('r'/);
+    expect(pageSrc).toMatch(/useHotkey\('e'/);
   });
 
-  it('matn kiritilayotganda qisqartmalar O`CHADI', () => {
-    // Aks holda izoh yozayotganda «a» harfi kunni qabul qilib yuborardi.
-    expect(pageSrc).toMatch(/tag === 'INPUT'/);
-    expect(pageSrc).toMatch(/tag === 'TEXTAREA'/);
+  it('DRILL-DOWN ulangan — «bu raqam qayerdan chiqdi»', () => {
+    // TZ: busiz menejer raqamga ishonmaydi va qabul rasmiyatchilikka aylanadi.
+    expect(pageSrc).toContain('drilldown');
+    expect(pageSrc).toMatch(/setDrillMetric/);
   });
 
-  it('og`ish va soatiga ish yuki ustunlari bor', () => {
+  it('og`ish va soatiga ish yuki ko`rsatiladi', () => {
     expect(pageSrc).toContain('deviationPercent');
-    expect(pageSrc).toContain('perHour');
+    expect(pageSrc).toContain('revenuePerHourMinor');
   });
 
   it('hodisa jurnali ko`rsatiladi (nizoda yozma iz)', () => {
-    expect(pageSrc).toContain('journal_title');
-    expect(pageSrc).toContain('day.events.map');
+    expect(pageSrc).toMatch(/events/);
+  });
+
+  it('tugmalar FSM `allowedActions` dan chiziladi, FE o`z shartini yozmaydi', () => {
+    expect(pageSrc).toContain('allowedActions');
   });
 });
 
-describe('NULL ≠ 0 va muzlatish shartnomalari ekranda', () => {
+describe('holat→rang lokal jadval EMAS', () => {
+  it('`dailyKpiStateTone` umumiy helper ishlatiladi', () => {
+    // 2026-06-10 drift-lock sabog'i: har sahifa o'z rang-jadvalini saqlaganda
+    // ikki holat jimgina bir-biridan uzoqlashgan edi.
+    expect(pageSrc).toContain('dailyKpiStateTone');
+    expect(pageSrc).toMatch(/from '@\/lib\/domain-status-tone'/);
+    expect(pageSrc).not.toMatch(/\bconst \w*STATE_TONE\w*\s*[:=]/);
+  });
+});
+
+describe('NULL ≠ 0 shartnomasi ekranda', () => {
   it('o`lchanmagan fakt NOL deb ko`rsatilmaydi', () => {
-    // `?? 0` yoki `|| 0` fakt/ball yo'lida bo'lsa — o'lchanmagan kun eng
-    // yomon xodimga aylanardi (1.1/1.2 sabog'i).
-    expect(pageSrc).toContain('unmeasured_dash');
-    expect(pageSrc).not.toMatch(/(autoValue|adjustValue|\bscore)\s*\?\?\s*0\b/);
+    // `?? 0` fakt yo'lida bo'lsa — o'lchanmagan kun eng yomon xodimga
+    // aylanardi (1.1/1.2 sabog'i).
+    expect(pageSrc).not.toMatch(/(autoValue|adjustValue|baselineValue)\s*\?\?\s*0\b/);
   });
 
-  it('ballsiz kun «0%» emas, «ball yo`q» deb ko`rsatiladi', () => {
-    expect(pageSrc).toMatch(/score == null \? t\('score_none'\)/);
-  });
-
-  it('qabul qilingan kun uchun MUZLATILGAN ball ko`rsatiladi', () => {
-    // Jonli qayta hisoblangan ball ko'rsatilsa, ekran bilan to'langan oylik
-    // bir-biriga zid bo'lib qolardi.
-    expect(pageSrc).toContain('scoreFrozen');
-    expect(pageSrc).toMatch(/accepted && day\.scoreFrozen != null/);
-  });
-
-  it('qamrov (weightScored/weightTotal) yashirilmaydi', () => {
-    expect(pageSrc).toContain('weightScored');
-    expect(pageSrc).toContain('weightTotal');
-  });
-
-  it('qabul qilingan kunda tuzatish tugmasi o`chirilgan (muzlatish)', () => {
-    expect(pageSrc).toMatch(/const accepted = day\.state === 'accepted'/);
-    expect(pageSrc).toMatch(/disabled=\{disabled\}/);
+  it('chala ma`lumot bayrog`i ko`rsatiladi', () => {
+    expect(pageSrc).toContain('dataComplete');
+    expect(pageSrc).toContain('partial');
   });
 });

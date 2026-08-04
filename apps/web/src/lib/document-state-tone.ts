@@ -94,28 +94,6 @@ export const RETAIL_SESSION_STATE_TONE: Record<string, StateTone> = {
 };
 
 /**
- * Kunlik KPI qabul (`/menejer`) override — TZ 4M.2 FSM holatlari.
- *
- * Uch holat kanonik jadvaldan farq qiladi va farq ATAYLAB:
- *   `accepted`  — hujjatlarda «axborot uchun tasdiq» (info), bu yerda esa
- *                 TERMINAL natija: kun yopildi va oylikka kiradi → success;
- *   `stale`     — kanonikda umuman yo'q. Qabul qilingandan keyin manba hujjat
- *                 o'zgargan kun — e'tibor talab qiladi → warning;
- *   `escalated` — kanonikda yo'q. Menejer javob bermagani uchun EGAGA o'tgan
- *                 kun — bu nosozlik signali → destructive.
- * `pending` (warning), `rejected` (destructive) va `computed` (noma'lum →
- * neutral) kanonikdan keladi — ular aynan mos tushadi.
- *
- * Kanonik jadvalga QO'SHILMAYDI: bular hujjat holatlari emas, KPI kunining
- * holatlari; `document-state-tone.test.ts` kanonik ro'yxatni qulflab turadi.
- */
-export const KPI_DAY_STATE_TONE: Record<string, StateTone> = {
-  accepted: 'success',
-  stale: 'warning',
-  escalated: 'destructive',
-};
-
-/**
  * Resolve a document `state` slug to its Badge tone.
  *
  * @param state     the document's state slug (null/undefined → `neutral`)

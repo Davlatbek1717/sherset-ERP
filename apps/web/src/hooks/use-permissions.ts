@@ -39,6 +39,10 @@ export const MODULE_ENTITIES: Record<string, string[]> = {
   tasks: ['task'],
   apps: [],
   hr: [],
+  // Menejer bo'limi — `hr` bilan bir xil: ro'yxat BO'SH, ya'ni menyu hammaga
+  // ko'rinadi. Haqiqiy chek backendda: `HrPermissionGuard` (`employees:read`)
+  // + FSM aktyor qoidalari. FE gating bu yerda FAIL-OPEN — qulf emas, qulaylik.
+  menejer: [],
   analitika: ['analitika'],
 };
 

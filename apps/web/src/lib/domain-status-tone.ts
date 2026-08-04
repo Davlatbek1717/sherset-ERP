@@ -380,3 +380,22 @@ export const INVENTORY_PRIORITY_TONE: Record<string, StateTone> = {
 };
 export const inventoryPriorityTone = (p: string | null | undefined): StateTone =>
   resolve(INVENTORY_PRIORITY_TONE, p);
+
+/**
+ * Kunlik KPI qabul holati (4M.2 · `daily-kpi-fsm.ts` dagi DAILY_KPI_STATE).
+ *
+ * `stale` va `escalated` — OGOHLANTIRISH: ikkalasi ham menejer aralashuvini
+ * talab qiladi. `force_accepted` — `brand`, chunki u qabul qilingan, lekin
+ * ODATIY yo'l bilan emas (egasi majburiy yopgan) va bu ko'rinib turishi kerak.
+ */
+export const DAILY_KPI_STATE_TONE: Record<string, StateTone> = {
+  computed: 'neutral',
+  pending: 'info',
+  accepted: 'success',
+  rejected: 'destructive',
+  escalated: 'warning',
+  force_accepted: 'brand',
+  stale: 'warning',
+};
+export const dailyKpiStateTone = (s: string | null | undefined): StateTone =>
+  resolve(DAILY_KPI_STATE_TONE, s);

@@ -135,6 +135,15 @@ const COMMANDS: Command[] = [
     group: 'modules',
   },
   {
+    id: 'm.manager-kpi',
+    labelKey: 'go_manager_kpi',
+    icon: 'menejer',
+    iconColorClass: 'text-indigo-600',
+    href: '/menejer',
+    group: 'modules',
+    keywords: ['menejer', 'kpi', 'qabul', 'приемка', 'менеджер'],
+  },
+  {
     id: 'm.settings',
     labelKey: 'go_settings',
     icon: 'settings',
