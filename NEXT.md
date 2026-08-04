@@ -305,6 +305,118 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-04a (MENEJER 4M.2 YADRO — kunlik KPI qabul FSM + hodisa jurnali + kompozit ball · `59863f0`) · ⏳ DEPLOY QILINMAGAN**
+>
+> Egasining **1-ustuvorligi** (TZ [4M.2](docs/superpowers/specs/2026-08-02-menejer-kunlik-kpi-tz-design.md) §3):
+> «xodimning kunini KPI bo'yicha qabul qilib olish». Bu sessiya **BE yadrosini** yopdi.
+>
+> **Sof modullar** (DB'siz — qaror qoidalari servisda ko'milib qolmasin):
+> - `daily-kpi.fsm.ts` — 6 holat (`computed/pending/accepted/rejected/stale/escalated`), 8 o'tish,
+>   vakolat (menejer vs **ega**: `force_accept` faqat egaga), **majburiy sabab kodlari** (yopiq
+>   ro'yxat, 8 ta), **muzlatish** (`assertWritable`) va **idempotentlik** (takror qabul = no-op).
+>   Naqsh `supply-approval.fsm.ts` dan — yangi mexanizm o'ylab topilmadi. **32 test.**
+> - `kpi-score.ts` — og'irlik × bajarish %. **NULL ≠ 0** (o'lchanmagan ko'rsatkich ballni
+>   PASAYTIRMAYDI), maqsadsiz/og'irliksiz ko'rsatkich ballga kirmaydi va **sababi ochiq**
+>   (`skipReason`), qamrov (`weightScored/weightTotal`) yashirilmaydi. `lower_better` chiziqli-simmetrik
+>   (fakt 0 → 200%, maqsad → 100%, 2×maqsad → 0%); maqsad 0 = nol-tolerantlik. **19 test.**
+>   ⚠️ **TZ'da yo'q, men tanladim:** bitta ko'rsatkichning hissasi **150%** bilan cheklangan (bitta
+>   yirik chek butun kunni yopib yubormasin) — 4M.10 da `ManagerRuleConfig` ga sozlama bo'lib chiqadi.
+> - **Ombor:** `EmployeeDailyKpiEvent` (APPEND-ONLY jurnal, `updatedAt` yo'q) + `employee_daily_kpi` ga
+>   `queued_at`/`accepted_by_id`/`accepted_at`/`score_percent`/`score_coverage`. **Ball qabul
+>   lahzasida MUZLATILADI** — keyin og'irlik o'zgarsa ham to'langan oylik ortidagi raqam o'zgarmaydi
+>   (tan narx muzlatish bilan bir klass, [[retail-cost-freeze-null-contract]]).
+>   Migratsiya `20260804120000_kpi_daily_acceptance` (DDL prisma-generatsiya bilan bayt-ba-bayt solishtirildi).
+> - **Servis + HTTP** (`manager/kpi/*`): navbat (**og'ishli kunlar birinchi**: eskalatsiya > eskirgan >
+>   rad > kutayotgan, guruh ichida eng past ball; **ballsiz kun ham YUQORIDA**) · kun detali
+>   (auto/tuzatma/maqsad/bajarish% + **30-kunlik o'rtachadan og'ish** + soatiga ish yuki + jurnal) ·
+>   `accept/reject/reopen/escalate/force-accept` · `manager/kpi/my/*` — xodimning **o'z** kuniga
+>   tushuntirishi (begona kun **404**, 403 emas) · tuzatma (`autoValue` TEGILMAYDI, pul MATN→BigInt).
+> - **`ManagerGuard`** — `hrRoles` rol-gate (`admin/menejer/manager/director`; `owner` = admin/director).
+>   NEXT.md 08-03a da ochiq qolgan «rol-gate» qarzi **yopildi**. TODO 4-B3 da `EmployeePermission` ga ko'chadi.
+> - **ESKIRISH (§3.4) qayta hisoblashda tutiladi:** qabul qilingan kunning `autoValue`'si o'zgarsa kun
+>   `stale` bo'lib navbatga qaytadi va **nima o'zgargani** jurnalga yoziladi. ~130 modulga hook osish
+>   o'rniga — qayta hisob allaqachon hamma manbani o'qiydi. Cron: hisobla → navbatga → 3 kun javobsizni egaga.
+>
+> **GATE:** API tc 0 · biome 0 · **API vitest 4538/4538** (yangi 79: FSM 32 · ball 19 · qabul 23 · eskirish 5).
+> Lokal DB idempotent sinxronlandi (`climart_adopt`@5432 drifted — unda `state_changed_at` bor, repoda yo'q).
+> **Yo'l-yo'lakay tuzatildi:** `packages/money` dist eskirgan edi (`percentScaled` export'i `index.js` da
+> yo'q → tc yashil-u 33 report testi runtime'да yiqilardi) — `tsbuildinfo` tozalab qayta build ([[money-dist-stale-tsbuildinfo]]).
+>
+> **HALOL STATUS: Phase-1** — unit/ulanish testlari yashil, **BROWSER-QA YO'Q** (FE ekran hali yo'q,
+> endpointlar jonli sinalmagan). **DEPLOY QILINMAGAN.**
+>
+> **⏭️ KEYINGI (tartib bilan):**
+> 1. **4M.2 FE — menejer ekrani** (TZ §3.5): navbat + bitta kun **bitta ekranda skrollsiz**,
+>    klaviatura (`↓/↑` keyingi, `A` qabul, `R` rad, `E` tuzatish), **drill-down** (raqamni bosganda
+>    uni hosil qilgan hujjatlar), sabab-kod tanlagichi, `/menejer/*` route + i18n ru+uz.
+> 2. **4M.3** — qabul → oylik: bloklash (qabul qilinmagan kun `HrKpiMonthlyScore` ga kirmaydi) ·
+>    idempotent bonus/jarima · eskirgan kun **tuzatuvchi qatori** · egaga haftalik xulosa (jurnal tayyor).
+>    Shu yerda `hr-kpi.service.ts:55` sana bug'i ham yopiladi ([[hr-kpi-daily-date-off-by-one]]).
+> 3. Deploy (erp.sherset.uz=sherset-v2) — `migrate deploy` + `pm2 restart`.
+
+> **🕒 2026-08-03a (YACHEYKA occupied-fix + MENEJER 4M.2 har-xodim KPI config · `9230d5e`+`f287bc6`+`63684d0`) · ✅ DEPLOYED**
+>
+> **1) YACHEYKA BUG (`9230d5e`, DEPLOYED, BE-only).** Egasi: yacheyka «bo'sh» ko'rinardi-yu «Ko'rish»да
+> tovar chiqardi. Ildiz: `getAddressStorage.occupied` faqat `StockByCell.qty>0` sanardi, `getCellStock`
+> «Ko'rish» esa biriktirilган (`attributes.__yacheyka`) tovarni ham ko'rsatardi — ikki yuza zid. Fix:
+> occupied endi biriktirilган tovarni ham sanaydi (DISTINCT `$queryRaw`). +3 behaviour test. Verify:
+> api health 200 (runtime brauzer-QA egasi tomonidan).
+>
+> **2) MENEJER 4M.2 «HAR-XODIM KPI CONFIG» (slice 0-3, DEPLOYED).** Egasi 2 qaror: KPI **har xodim uchun
+> alohida** + **og'irlik + maqsad-raqam**. [[manager-daily-kpi-acceptance]].
+> - **Slice 0:** 4M.1 dvigatel migratsiyasi (`829c122`, prodда yo'q edi) qo'llandi — LEKIN u `driver_cash_handovers`
+>   (drift) ni ham CREATE qilmoqchi bo'lib P3018 berdi → **idempotent recon** bilan yopildi (`scratchpad/make-kpi-recon.mjs`
+>   → `db execute` → `migrate resolve --applied`). [[sherset-v2-schema-drift]].
+> - **Slice 1 (`f287bc6`):** `KpiProfile.employeeId` + `KpiProfileMetric.target` schema · dvigatel profil
+>   tanlash XODIM→LAVOZIM→sukut · migratsiya `20260803120000` · +3 test.
+> - **Slice 2:** `@Controller('manager/kpi')` — metrics/config(GET+PUT versiyalanadi)/daily · `kpi_metric_defs`
+>   idempotent sync · +7 test.
+> - **Slice 3 (`63684d0`):** xodim sahifasida «KPI» tab (og'irlik+maqsad tahrirlagich, money so'm↔tiyin) + i18n.
+> - **GATE:** API tc 0 · web tc 0 · biome 0 · kpi tests 37 · config 7 · store 98 · i18n · drift-lock 78 ·
+>   raw-element guard (checkbox → DS Checkbox tuzatildi).
+> - **DEPLOY (erp.sherset.uz=sherset-v2):** backup (PREKPI2) → reset `63684d0` → `prisma generate` → `migrate deploy`
+>   (`20260803120000` qo'llandi, `employee_id`+`target` ustunlar tasdiqlandi) → build money+web (BUILD_OK, 3GB) →
+>   `pm2 restart v2-api+v2-web`. **Tashqi-verify:** `/api/v1/manager/kpi/metrics`→401 · `/hr/employees/x/kpi`→200 ·
+>   site 200 · api health 200 · ikkala app online.
+> - **HALOL STATUS: Phase-1** — routelar jonli + unit-test, LEKIN **brauzer end-to-end (login→saqlash→cron→natija)
+>   O'ZIM tekshirmadim.** Qolgan: kompozit ball (weight×%) hisobi · 4M.2 qabul FSM · rol-gate · `hr-kpi.service.ts:55`
+>   sana bug'i ([[hr-kpi-daily-date-off-by-one]]) hamon ochiq.
+>
+> **⚠️ NEXT.md commit qilinmagan:** parallel 08-02m (deploy qilinmagan) + 08-02n (mening driver) bloklari dirty —
+> §6 bo'yicha commit qilmadim; keyingi sessiya birga commit qiladi.
+
+> **🕒 2026-08-02n (HAYDOVCHI PAROLSIZ MAGIC-LINK GPS + HR soddalashtirish · `65655f7`) · ✅ DEPLOYED `65655f7`**
+>
+> **NIMA QILINDI (bu sessiyaning flagman ishi = haydovchi magic-link).** Egasi haydovchiga LOGIN
+> yaratmasдан jonli-kuzatuvni yoqishi uchun parolsiz havola. Mavjud `/haydovchi` (login-talab PWA,
+> `3dcb807`)дан FARQI — parol/hisob YO'Q; foydalanuvchi shu variantni so'radi.
+> - **BE:** `driver-link.util.ts` HMAC capability-token (`<b64(accountId:employeeId)>.<hmac>`, kalit
+>   JWT_SECRET, **migration YO'Q**) · `driver-public.controller.ts` `@Controller('p/driver')` guardsiz
+>   (auth = token; accountId+employeeId token ICHIDAN → cross-tenant yo'q): view/ping/shift-start/end ·
+>   authed `GET /driver-tracking/link/:employeeId`.
+> - **FE:** `/p/driver/[token]` parolsiz GPS-sahifa (watchPosition oqim + smena) · xodim-sahifada
+>   (faqat `trackingMode='field'`) «Havola yaratish» kartochka · `hr/drivers/live` menyuga qo'shildi.
+> - **HR soddalashtirish (shu sessiyaning oldingi commitlari, JONLI):** menyu 14→6, yangi-xodim oynasidan
+>   grafik/lavozim/bo'lim/xabarlar olib tashlandi (`{false&&}`), xodim-sahifaga Davomat+Vazifalar tab
+>   konsolidatsiya (`003b918`). Haydovchi-toggle (`trackingMode`) xodim oynasiga qo'shildi (`7306343`).
+>
+> **GATE:** API tc 0 · web tc 0 · biome 0 · i18n key-existence (ru+uz) · drift-lock 75/75 · no-hardcoded.
+> ⚠️ API tc avval `employeeDailyKpiMetric` topolmadi — parallel 08-02m sxema qo'shган, LOKAL prisma
+> klient eskirgan edi; `prisma generate --no-engine` bilan tuzatildi (mening kodимга aloqasi yo'q).
+>
+> **✅ DEPLOYED (erp.sherset.uz = sherset-v2, `65655f7`):** backup 224-jadval
+> (`sherset_v2_20260802_130340.sql.gz`, gzip-OK) → fetch+reset → build money+web (BUILD_OK, pipefail +
+> `--max-old-space-size=3072`) → `pm2 restart sherset-v2-api sherset-v2-web`. **Tashqi-internet verify:**
+> `/api/v1/p/driver/badtoken`→404«Havola yaroqsiz» · link-route→401 · web `/p/driver/x`→200 · site 200 ·
+> api health 200 · v2-api+v2-web online. Lockfile/schema o'zgarmagani uchun install/generate/migrate SKIP.
+>
+> **HALOL STATUS: Phase-1 — telefonda/brauzerda runtime-tasdiqlanmagan.** Qolgan ochiq: egasi hech kimni
+> `field` qilib belgilamagan (prodda 0 field-xodim → ekran bo'sh) · brauzer fon rejimida GPS to'xtaydi →
+> ishonchli fon-uzatish uchun Android ilova (TZ Faza 1) baribir kerak. Xotira: [[driver-gps-producer-gap]].
+>
+> **⚠️ NEXT.md commit qilinmagan:** parallel sessiyaning 08-02m (deploy qilinmagan MENEJER KPI) bloki
+> dirty turibdi — §6 bo'yicha ustidan ketmaslik uchun bu yozuvni commit qilmadim; keyingi sessiya birga commit qiladi.
+
 > **🕒 2026-08-02m (MENEJER 4M.1 — kunlik xodim KPI o'lchov yadrosi · `829c122`)**
 >
 > **KEYINGI ISH = 4M.2 «Kunlik qabul qilish» — egasining 1-USTUVORLIGI.** Reja:
@@ -343,7 +455,9 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > ta'sir qiladi → alohida qaror + ma'lumot migratsiyasi kerak. 4M.3 (qabul → oylik) da hal qilinsin.
 >
 > **GATE:** typecheck 0 · biome 0 · **api Vitest 4446/4446 pass** (+34 yangi).
-> **JONLI TEKSHIRUV (API-daraja, brauzersiz):** lokal `moysklad_dev` bazasiga migratsiya qo'llandi
+> **JONLI TEKSHIRUV (API-daraja, brauzersiz):** lokal `climart_adopt` @ `localhost:5432` bazasiga
+> (CLAUDE.md §1 dagi `moysklad_dev`@5433 EMAS — bu repo `packages/db/.env` da boshqa baza;
+> xotira: `climart-adopt-local-db-untracked.md`) migratsiya qo'llandi
 > (37/37) va `computeDay` REAL ma'lumotda yugurdi → 10 ko'rsatkich yozildi, `cash_revenue 11 810 000` ·
 > `discount_given 3 600 000` · `below_cost_loss 240 000` · `cash_gross_profit −110 000` **«chala»
 > bayrog'i bilan** (aynan NULL≠0 shartnomasi ishladi — soxta 100% marja emas). Sana yorlig'i

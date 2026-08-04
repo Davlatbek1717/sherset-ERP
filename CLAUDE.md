@@ -39,7 +39,11 @@ Detail/list parity-audit ishi **ikki alohida fazaga** bo'linadi. Ularni aralasht
 ### Phase 2 — QA sessiyasi (alohida, COHORT bo'yicha)
 - **Qachon**: mantiqiy guruh (cohort) tugaganda — masalan «barcha hujjat-detail», keyin «barcha katalog», keyin «retail/processing». **«Hammasini 63 oxirida» QILMASLIK** (sovuq-kontekst debug = qimmat). Cohort ~8–12 sahifa.
 - **Maqsad**: *runtime correctness* — real brauzer + adversarial QA (concurrency / timeout / data-integrity / edge-case / authorization savollari), nafaqat «render bo'ldimi».
-- **Stack** (bu yerda ishlaydi): DB = PostgreSQL `moysklad_dev` @ `localhost:5433` (103+ migration, up-to-date) · `pnpm dev` (turbo --parallel: api `tsx watch`, web `next dev`) · seed `pnpm db:seed` / `seed-real`. Playwright MCP mavjud.
+- **Stack** (bu yerda ishlaydi): DB = PostgreSQL **`climart_adopt` @ `localhost:5432`** — bu repo
+  `packages/db/.env` da shu turibdi. *(2026-08-02 tuzatildi: bu yerda ilgari `moysklad_dev` @ `5433`
+  yozilgan edi — 5433 portida hech narsa TINGLAMAYDI, tekshirildi. Eski qiymat bir sessiyani
+  adashtirdi. Xotira: `climart-adopt-local-db-untracked.md`.)* · `pnpm dev` (turbo --parallel: api
+  `tsx watch`, web `next dev`) · seed `pnpm db:seed` / `seed-real`. Playwright MCP mavjud.
 - **Natija**: cohort sahifalari status **«Phase-1» → «Phase-2 verified»**ga o'tadi; topilgan buglar darhol (issiq-kontekst) tuzatiladi.
 - **QA-backlog** (qaysi cohort kutmoqda) — `NEXT.md` → «QA-backlog (Phase 2)» bo'limida.
 - **Istisno (inline qoladi)**: mavjud Playwright e2e spec (`apps/web/tests/e2e/*.spec.ts`) qoplagan runtime o'zgarish — o'sha spec'ni yangilash/yugurtirish Phase 1'da qoladi (regress'ni darhol tutadi).
