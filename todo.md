@@ -105,7 +105,11 @@ kuniga **3 sessiya** → **~6 hafta**.
 - [x] **1-Kassa B5 (FE)** — POS «Qarz to'lovi» oynasi (mijoz → qoldiq konteksti → summa →
       tasdiq) + **PKO cheki** `DebtPayment.batchId` bo'yicha *(qayta chop etiladi, aynan o'sha
       summalar)* — `a23de43` ⬜ *real termal printerda sinalmagan → Phase-2*
-- [ ] **1-Kassa B6** — Xarajat (RKO) + inkassatsiya
+- [x] **1-Kassa B6 (BE)** — Xarajat (RKO) + inkassatsiya: `RetailDrawerCashOut` **tasniflandi**
+      (`kind`+`expenseItemId`+`recipientId`) — yangi jadval ATAYLAB ochilmadi (kutilgan naqd shu
+      jadvalni yig'adi, yangi turni formulaga qo'shishni unutish = §100 bug'i) · sof qoidalar
+      *(24 test)* · `CASH_OVERDRAWN` anomaliyasi (taqiq emas, Q10) — `1941627`
+- [ ] **1-Kassa B6 (qolgani)** — POS xarajat/inkassatsiya oynasi (FE) + **RKO cheki**
 - [ ] **1-Kassa B7** — Smena yopish: `CashierSessionVariance` (YO'Q) + farq akti + **Z-hisobot**
       *(UZS va USD alohida; farq ≠ 0 → menejerga Telegram)*
 - [ ] **1-Kassa B8 (qoldig'i)** — `sotuv/page.tsx` **1997 satr** → modullarga bo'lish

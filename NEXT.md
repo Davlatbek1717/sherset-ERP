@@ -305,6 +305,50 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-05e (1-KASSA B6 BACKEND — xarajat (RKO) + inkassatsiya · `1941627`) · ⏳ DEPLOY QILINMAGAN**
+>
+> **ASOSIY QAROR — yangi jadval ATAYLAB ochilmadi.** Mavjud `RetailDrawerCashOut` **tasniflandi**
+> (`kind` + `expenseItemId` + `recipientId`, migratsiya `20260805190000_drawer_cash_out_kind`).
+> Sabab: smena yakunidagi «kutilgan naqd» AYNAN shu jadvalni yig'adi. Har yangi pul-chiqishi
+> turiga alohida jadval ochilsa, uni formulaga qo'shishni **unutish** mumkin — bu §100 bug'ining
+> («drawer in/out kutilgan naqddan tushib qolgan edi») qaytadan ochilishi bo'lardi.
+> **Bitta pul yo'li — tasniflangan.** Z-hisobot ajratishni `kind` orqali oladi.
+>
+> **Qoidalar sof modulda** (`pos-cash-out.ts`, **24 test**) — servis faqat Prisma-I/O:
+> - Moddasiz xarajat va qabul qiluvchisiz inkassatsiya **RAD**. Bu ruxsat masalasi EMAS (Q10 —
+>   kassir erkin): moddasiz xarajat = «pul ketdi, nimaga noma'lum», qabul qiluvchisiz
+>   inkassatsiya = javobgar yo'q. Hujjatning o'zi o'qilmas bo'ladi.
+> - **Hamma muammo birdan** qaytadi — birinchisida to'xtash kassirni ikki marta yuborardi.
+> - Chalkash hujjat ham rad etiladi (inkassatsiyaga xarajat moddasi) — aks holda Z-hisobotda
+>   ham moddalar kesimiga, ham inkassatsiyaga tushib **ikki marta** o'qilardi.
+> - Yashiqdagidan ko'p chiqarish **TO'XTATILMAYDI** (tashqi pul kiritilgan bo'lishi mumkin,
+>   bloklash haqiqiy ishni buzardi), lekin **`CASH_OVERDRAWN`** hodisasi yoziladi.
+>   `cashBefore` noma'lum (`null`) bo'lsa ogohlantirish YO'Q — **noma'lum ≠ nol**, aks holda
+>   har smena boshida soxta signal chiqardi.
+>
+> **Hujjat va audit izi BITTA tranzaksiyada**: tasdiqsiz erkinlikning yagona muvozanati — iz,
+> shuning uchun iz yozilmasa hujjat ham yozilmaydi.
+>
+> **Refaktor:** `close()` ichidagi kutilgan-naqd yig'ishi **`collectCashInputs`** metodiga
+> ajratildi — xarajat ham «yashiqda hozir qancha bor» ni bilishi kerak; nusxalash ikki formula
+> qoldirardi va biri jimgina eskirardi.
+>
+> **Drift-lock** (`cash-out-wiring.test.ts`, **mutatsiya bilan tekshirilgan** — `kind` filtri
+> qo'shilsa test yiqiladi): chiqim yig'indisi `kind` bo'yicha FILTRLANMAYDI · kutilgan naqd
+> **bitta** joyda hisoblanadi · hujjat va audit bir tranzaksiyada.
+>
+> **Runtime verify (lokal DB):** moddasiz xarajat RAD · qabul qiluvchisiz inkassatsiya RAD ·
+> `РКО-2026-00001` 25 000 modda bilan + `CASH_EXPENSE` · `ИНК-2026-00002` 40 000 qabul qiluvchi
+> bilan + `CASH_COLLECTION` · yashiqdan ko'p → **o'tdi** + `CASH_OVERDRAWN` · moddalar kesimi
+> jami xarajatga TENG · xarajat kutilgan naqdni **aynan 70 000** ga kamaytirdi.
+>
+> **Gate:** typecheck 0 · biome 0 · api **4704/4704**.
+> ⚠️ **Phase-1: brauzer-smoke YO'Q** — POS xarajat/inkassatsiya **oynasi (FE)** va **RKO cheki**
+> hali yo'q, bu faqat backend. Endpointlar: `POST /cashier-sessions/:id/cash-out`,
+> `GET /cashier-sessions/:id/cash-out-summary`.
+>
+> **Keyingi:** `1-Kassa B6 (qolgani)` — POS oynasi + RKO cheki (B5 FE bilan bir xil naqsh).
+
 > **🕒 2026-08-05d (1-KASSA B5 TUGADI — POS «Qarz to'lovi» oynasi + PKO cheki · `a23de43`) · ⏳ DEPLOY QILINMAGAN**
 >
 > **Nima qilindi:** B5 ning FE qismi — 1-Kassa bo'limi endi B1–B5 yopiq.
