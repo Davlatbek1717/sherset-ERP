@@ -305,6 +305,44 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-05f (1-KASSA B6 TUGADI — xarajat/inkassatsiya oynasi + RKO cheki · `08e0fd1`) · ⏳ DEPLOY QILINMAGAN**
+>
+> **1-Kassa endi B1–B6 yopiq** (qolgani B7, B8).
+>
+> - **«Kassadan chiqim» oynasi** — xarajat va inkassatsiya **bitta oynada**. Kassir uchun bu
+>   bitta harakat («yashiqdan pul chiqadi»), farqi faqat NEGA chiqishida; ikki alohida tugma
+>   uni har safar «qaysinisi edi» deb o'ylashga majbur qilardi.
+> - 🔴 **`CASH_OVERDRAWN` kassirga KO'RSATILADI** (`toast.error`). Server yashiqdagidan ko'p
+>   chiqishni to'xtatmaydi (Q10) va faqat audit hodisasi yozadi — FE uni ko'rsatmasa, farq
+>   faqat smena YOPILGANDA chiqib, sababi unutilgan bo'lardi.
+> - Modda/qabul qiluvchisiz tugma **oldindan** bloklanadi va faqat o'z turiga tegishli maydon
+>   yuboriladi (chalkash hujjatni server ham rad etadi — lekin kassir bosgandan KEYIN ko'rardi).
+> - 🔐 **Qabul qiluvchilar TOR endpointdan**: `GET /cashier-sessions/cash-out-recipients` —
+>   faqat `id`+`name`, kassir o'zi ro'yxatda YO'Q. `/hr/employees` ni kiosk allowlist'iga
+>   qo'shish `salaryMinor` va telefonni **har POS terminalida oshkor qilardi**.
+> - **RKO cheki** `/print/cash-out/[docId]?auto=1` — bitta shablon ikki hujjat uchun (farqi
+>   sarlavha va «nima uchun» qatori); ikkita deyarli bir xil shablon asta uzoqlashardi.
+>   Imzo satri inkassatsiyada dalilning o'zi.
+>
+> **Drift-lock** (`pos-cash-out-wiring.test.ts`, mutatsiya bilan tekshirilgan): `CASH_OVERDRAWN`
+> ko'rsatilishi · chalkash hujjat yuborilmasligi · chek route mavjudligi · tor endpoint.
+>
+> ⚠️ **Yo'lda topilgan qarz:** `pos-debt-payment-wiring.test.ts` «**birinchi** `window.open`» ni
+> olardi — sahifada ikkinchi chek paydo bo'lishi bilan yiqildi. Qo'riqchining o'zi mo'rt edi;
+> endi hammasi yig'ilib, oralaridan qarz cheki qidiriladi. *(Saboq: manba-skanerlovchi
+> qo'riqchi «birinchi mos kelgani» ga tayanmasin.)*
+>
+> **Runtime verify:** qabul qiluvchilar 3 ta, maydonlar **aynan** `id,name`, kassir o'zi yo'q ·
+> `РКО-2026-00004` cheki hujjatga aynan mos (tashkilot, kassir, modda, kassa, izoh) ·
+> noma'lum hujjat → «Hujjat topilmadi».
+>
+> **Gate:** typecheck 0 · biome 0 · api **4704/4704** · web **2708/2708**.
+> ⚠️ **Phase-1: brauzer-smoke YO'Q** — oyna va chek real brauzerda ochilmagan, termal printerda
+> sinalmagan → 1-Kassa **Phase-2 QA**.
+>
+> **Keyingi:** `1-Kassa B7` — smena yopish: `CashierSessionVariance` (YO'Q) + farq akti +
+> Z-hisobot. Qolgan bosqichlar **64 → 63**.
+
 > **🕒 2026-08-05e (1-KASSA B6 BACKEND — xarajat (RKO) + inkassatsiya · `1941627`) · ⏳ DEPLOY QILINMAGAN**
 >
 > **ASOSIY QAROR — yangi jadval ATAYLAB ochilmadi.** Mavjud `RetailDrawerCashOut` **tasniflandi**

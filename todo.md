@@ -15,10 +15,10 @@
 
 | | Soni |
 |---|---|
-| **Qolgan bosqichlar** | **64** |
+| **Qolgan bosqichlar** | **63** |
 | Sifat qarzlari | 7 |
 | Brauzer-QA (Phase-2) o'tishlari | ~9 (har bo'lim uchun 1) |
-| **JAMI ish birligi** | **~80** |
+| **JAMI ish birligi** | **~79** |
 
 **Hisob:** 1 bosqich ≈ 1 sessiya. Kuniga **1 sessiya** → **~4 oy**; kuniga **2 sessiya** → **~2 oy**;
 kuniga **3 sessiya** → **~6 hafta**.
@@ -31,7 +31,7 @@ kuniga **3 sessiya** → **~6 hafta**.
 
 | Bo'lim | Bajarildi | Qoldi |
 |---|---|---|
-| 1 — Kassa | B1 B2 B3 B4 **B5** | **3** (B6–B8) |
+| 1 — Kassa | B1 B2 B3 B4 B5 **B6** | **2** (B7, B8) |
 | 2 — Onlayn sotuv / B2B / B2G | B1 | **8** (B2–B9) |
 | 3 — Analitika | B1, B2 (qisman) | **6** (B3–B8) |
 | 4 — Menejer (ruxsatlar) | — | **8** (B1–B8) |
@@ -109,7 +109,10 @@ kuniga **3 sessiya** → **~6 hafta**.
       (`kind`+`expenseItemId`+`recipientId`) — yangi jadval ATAYLAB ochilmadi (kutilgan naqd shu
       jadvalni yig'adi, yangi turni formulaga qo'shishni unutish = §100 bug'i) · sof qoidalar
       *(24 test)* · `CASH_OVERDRAWN` anomaliyasi (taqiq emas, Q10) — `1941627`
-- [ ] **1-Kassa B6 (qolgani)** — POS xarajat/inkassatsiya oynasi (FE) + **RKO cheki**
+- [x] **1-Kassa B6 (FE)** — POS «Kassadan chiqim» oynasi (xarajat/inkassatsiya bitta oynada) +
+      **RKO cheki** · `CASH_OVERDRAWN` kassirga ko'rsatiladi · qabul qiluvchilar **tor
+      endpointdan** (`/hr/employees` kiosk'ga ochilsa oylik oshkor bo'lardi) — `08e0fd1`
+      ⬜ *real termal printerda sinalmagan → Phase-2*
 - [ ] **1-Kassa B7** — Smena yopish: `CashierSessionVariance` (YO'Q) + farq akti + **Z-hisobot**
       *(UZS va USD alohida; farq ≠ 0 → menejerga Telegram)*
 - [ ] **1-Kassa B8 (qoldig'i)** — `sotuv/page.tsx` **1997 satr** → modullarga bo'lish
