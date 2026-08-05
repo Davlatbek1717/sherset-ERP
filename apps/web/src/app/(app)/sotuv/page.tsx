@@ -1,5 +1,6 @@
 'use client';
 
+import { DebtPaymentDialog } from '@/components/pos/debt-payment-dialog';
 import { RasmiyashtirishModal } from '@/components/pos/rasmilashtirish-modal';
 import { useDestructiveMutation } from '@/hooks/use-destructive-mutation';
 import { useFillViewport } from '@/hooks/use-fill-viewport';
@@ -666,6 +667,7 @@ function SalesScreen({ session }: { session: CurrentSession }) {
     ? session.cashDesk!.currency
     : 'UZS';
   const [drawerMode, setDrawerMode] = useState<'in' | 'out' | null>(null);
+  const [debtPayOpen, setDebtPayOpen] = useState(false);
   const [drawerAmount, setDrawerAmount] = useState('');
   const [drawerComment, setDrawerComment] = useState('');
   const [closingCash, setClosingCash] = useState('');
@@ -1479,6 +1481,18 @@ function SalesScreen({ session }: { session: CurrentSession }) {
                   − Chiqim
                 </button>
               </div>
+              {/* Qarz to'lovi (kassa TZ §7.2) — naqd bo'lsa shu smenaning
+                  «kutilgan naqd»iga kiradi, ya'ni smena yakunida ortiqcha
+                  ko'rinmaydi. Shuning uchun u shu yerda, kassa operatsiyalari
+                  ichida turadi. */}
+              <button
+                type="button"
+                onClick={() => setDebtPayOpen(true)}
+                data-test-id="pos-debt-pay-open"
+                className="mb-3 w-full rounded-lg border border-[var(--ms-border)] py-2 text-sm font-medium text-[var(--ms-text-primary)] transition-colors hover:bg-[var(--ms-bg-hover)]"
+              >
+                Qarz to'lovi
+              </button>
               {drawerMode && (
                 <div className="flex flex-col gap-2">
                   <input
@@ -1932,6 +1946,23 @@ function SalesScreen({ session }: { session: CurrentSession }) {
           </>
         )}
       </div>
+
+      <DebtPaymentDialog
+        open={debtPayOpen}
+        onOpenChange={setDebtPayOpen}
+        sessionId={session.id}
+        cashDeskId={session.cashDesk?.id ?? null}
+        onPaid={(result) => {
+          toast.success(
+            result.closedCount > 0
+              ? `To'lov qabul qilindi · ${result.closedCount} qarz yopildi`
+              : "To'lov qabul qilindi",
+          );
+          // PKO cheki — kassa TZ §7.2/5-qadam. Yangi oynada, `auto=1` bilan
+          // darhol chop etish dialogi ochiladi (retail-sale cheki bilan bir xil).
+          window.open(`/print/debt-payment/${result.batchId}?auto=1`, '_blank');
+        }}
+      />
 
       <RasmiyashtirishModal
         open={checkoutOpen}

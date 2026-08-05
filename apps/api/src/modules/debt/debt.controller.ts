@@ -350,6 +350,12 @@ export class DebtController {
    * To'lovni FIFO bo'yicha taqsimlab yozadi va PKO uchun ma'lumot qaytaradi.
    * Kassir qaysi qarzga tushishini tanlamaydi — eng eskisidan yopiladi (Q9).
    */
+  /** PKO chekini qayta chop etish (kassir yo'qotdi / printer tiqildi). */
+  @Get('pos/receipt/:batchId')
+  posReceipt(@CurrentUser() user: AuthenticatedUser, @Param('batchId') batchId: string) {
+    return this.pos.receipt(user.accountId, batchId);
+  }
+
   @Post('pos/pay')
   posPay(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
     // Validatsiya SERVISDA — bu controllerdagi qolgan hamma endpoint

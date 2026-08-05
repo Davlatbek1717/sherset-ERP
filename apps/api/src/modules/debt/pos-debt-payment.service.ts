@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { Prisma } from '@moysklad/db';
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
@@ -92,6 +93,10 @@ export class PosDebtPaymentService {
     }
 
     const currency = input.currency ?? rows[0]?.currency ?? 'UZS';
+    // Bitta jismoniy to'lov = N qator, lekin PKO cheki BITTA hujjat.
+    // Shu id chekni keyin ANIQ yig'ishga imkon beradi (mijoz+vaqt bo'yicha
+    // taxmin qilish moliyaviy hujjatda yaramaydi).
+    const batchId = randomUUID();
 
     const result = await this.prisma.client.$transaction(async (tx) => {
       const receipts: Array<{ debtName: string; amountMinor: bigint; closed: boolean }> = [];
@@ -109,6 +114,7 @@ export class PosDebtPaymentService {
             currency,
             cashDeskId: input.cashDeskId ?? null,
             retailShiftId: input.retailShiftId ?? null,
+            batchId,
             receivedById: userId,
             comment: input.comment ?? null,
           },
@@ -137,7 +143,9 @@ export class PosDebtPaymentService {
         input.counterpartyId,
         currency,
         -plan.appliedMinor,
-        { docType: 'debtpayment', docId: plan.allocations[0]?.debtId },
+        // docId = BATCH: buxgalter jurnaldan chekka boradi, ixtiyoriy
+        // qarz qatoriga emas.
+        { docType: 'debtpayment', docId: batchId },
       );
 
       return receipts;
@@ -147,8 +155,10 @@ export class PosDebtPaymentService {
     const after = summarize(rest.map(toFifo));
 
     return {
+      batchId,
       /** PKO (prixodnik order) cheki uchun — TZ §7.2/5-qadam. */
       receipt: {
+        batchId,
         paidMinor: plan.appliedMinor.toString(),
         currency,
         method: input.method,
@@ -161,6 +171,71 @@ export class PosDebtPaymentService {
         outstandingAfterMinor: after.outstandingMinor.toString(),
       },
       closedCount: result.filter((r) => r.closed).length,
+    };
+  }
+
+  /**
+   * PKO chekini QAYTA yig'adi (kassir chekni yo'qotdi / printer tiqildi).
+   *
+   * Chek — moliyaviy hujjat: qayta chop etilgani ham AYNAN o'sha summalarni
+   * ko'rsatishi shart. Shuning uchun qatorlar `batchId` bo'yicha aniq
+   * olinadi, qayta hisoblanmaydi. Storno qilingan qator ham ko'rinadi
+   * (`reversedAt`) — chekni «tozalab» ko'rsatish tarixni yashirish bo'lardi.
+   */
+  async receipt(accountId: string, batchId: string) {
+    const rows = await this.prisma.client.debtPayment.findMany({
+      where: { accountId, batchId },
+      select: {
+        id: true,
+        amountMinor: true,
+        method: true,
+        currency: true,
+        createdAt: true,
+        reversedAt: true,
+        debt: { select: { id: true, name: true, counterpartyId: true } },
+        receivedBy: { select: { id: true, name: true } },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (rows.length === 0) throw new NotFoundException('Chek topilmadi');
+
+    const counterpartyId = rows[0]?.debt.counterpartyId;
+    const [cp, org] = await Promise.all([
+      this.prisma.client.counterparty.findFirst({
+        where: { id: counterpartyId, accountId },
+        select: { id: true, name: true, phone: true },
+      }),
+      this.prisma.client.organization.findFirst({
+        where: { accountId },
+        select: { name: true, legalTitle: true },
+        orderBy: { createdAt: 'asc' },
+      }),
+    ]);
+
+    // Qaytarilmagan qatorlar yig'indisi — chekdagi «jami».
+    const paidMinor = rows
+      .filter((r) => r.reversedAt === null)
+      .reduce((acc, r) => acc + r.amountMinor, 0n);
+
+    const rest = counterpartyId ? await this.loadOpenDebts(accountId, counterpartyId) : [];
+    const after = summarize(rest.map(toFifo));
+
+    return {
+      batchId,
+      counterparty: cp,
+      organization: org,
+      cashier: rows[0]?.receivedBy ?? null,
+      paidAt: rows[0]?.createdAt ?? null,
+      method: rows[0]?.method ?? 'cash',
+      currency: rows[0]?.currency ?? 'UZS',
+      paidMinor: paidMinor.toString(),
+      outstandingAfterMinor: after.outstandingMinor.toString(),
+      lines: rows.map((r) => ({
+        debtId: r.debt.id,
+        debtName: r.debt.name,
+        amountMinor: r.amountMinor.toString(),
+        reversed: r.reversedAt !== null,
+      })),
     };
   }
 

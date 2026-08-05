@@ -10152,6 +10152,15 @@ model DebtPayment {
   /// necha smena bo'ladi. NULL = POS'dan tashqarida qabul qilingan.
   retailShiftId String? @map("retail_shift_id") @db.Uuid
 
+  /// Bitta POS to'lovining BARCHA qatorlarini bog'lovchi id (kassa TZ §7.2/5-qadam).
+  ///
+  /// Mijoz bitta summa beradi, u FIFO bo'yicha bir necha qarzga bo'linadi —
+  /// ya'ni bitta jismoniy to'lov = N ta qator. PKO cheki esa BITTA hujjat.
+  /// Busiz chekni qayta chop etish uchun qatorlarni (mijoz + vaqt + kassir)
+  /// bo'yicha taxminan yig'ishga to'g'ri kelardi — moliyaviy hujjatda
+  /// taxmin qabul qilinmaydi. NULL = eski (POS'dan tashqari) to'lovlar.
+  batchId String? @map("batch_id") @db.Uuid
+
   /// §3.7 — chek rasmi. `attachments.id` (entity='debtpayment'). FK EMAS:
   /// attachment polimorf jadval, Prisma relation'i yo'q — id sifatida saqlanadi.
   attachmentId String? @map("attachment_id") @db.Uuid
@@ -10198,6 +10207,8 @@ model DebtPayment {
   @@index([accountId, method, createdAt])
   // Smena yakunidagi «kutilgan naqd» hisobi shu indeks bo yicha yig adi.
   @@index([retailShiftId])
+  // PKO chekini qayta chop etish shu indeks bo'yicha yig'adi.
+  @@index([accountId, batchId])
   @@map("debt_payments")
 }
 
