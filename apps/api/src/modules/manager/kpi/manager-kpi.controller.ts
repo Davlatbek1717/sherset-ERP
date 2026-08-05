@@ -51,14 +51,11 @@ export class ManagerKpiController {
 
   // ── Ko'rsatkich katalogi (hisobning O'Z KPI'lari) ────────────────────────
 
-  /**
-   * Katalog: built-in + hisob yaratganlar (`custom: true` bayrog'i bilan).
-   * `Put`/`Delete` emas, `Post` — bu controller allaqachon shu uslubda.
-   */
-  @Get('metrics')
-  listMetrics(@CurrentUser() user: AuthenticatedUser) {
-    return this.catalog.list(user.accountId);
-  }
+  // ⚠️ `GET metrics` BU YERDA YO'Q — u `KpiConfigController` da
+  // (`@Controller('manager/kpi')` ham o'sha prefiks). Ikkalasida ham
+  // e'lon qilinganda Fastify `FST_ERR_DUPLICATED_ROUTE` bilan butun API'ni
+  // ko'tarmaydi (2026-08-05 da prod 502 bo'ldi). Yozuv qatlami shu yerda,
+  // o'qish qatlami o'sha yerda qoladi.
 
   /** Yangi KPI yaratish. Manba doim `manual` — faktni menejer kiritadi. */
   @Post('metrics')
