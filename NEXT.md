@@ -305,6 +305,44 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-05b (DEPLOY: 4M.3 + o'z KPI · `a3cd7336`) · ✅ DEPLOYED · 🔴 yo'lda PROD 502 bo'ldi va tuzatildi**
+>
+> **Deploy qamrovi:** `232e7d64..a3cd7336` — 4M.3 (qabul → oylik bloklash) + o'z KPI ko'rsatkichi.
+> Backup: `pre-4M3-20260805-100043.sql.gz` (390M). **2 migratsiya qo'llandi**
+> (`20260804180000_payroll_acceptance_gate` + `20260804190000_hr_kpi_daily_date_fix` —
+> oxirgisi prodda **165 qatorning sanasini bir kunga surdi**).
+>
+> **🔴 UZILISH (o'zim keltirib chiqardim):** birinchi deploydan keyin `sherset-v2-api`
+> crash-loop'ga tushdi, `/api/v1/*` **502** qaytardi. Sabab — `FST_ERR_DUPLICATED_ROUTE`:
+> `@Get('metrics')` IKKI controllerda (`KpiConfigController` + `ManagerKpiController`),
+> ikkalasining prefiksi ham `manager/kpi`. **Sayt (web) 200 xizmat qilaverdi** — ya'ni
+> tashqaridan «ishlayapti» ko'rinardi, faqat API o'lgan edi.
+>
+> **NEGA HECH BIR GATE TUTMADI:** typecheck — ikki klassdagi ikki metod to'g'ri · biome —
+> qoida buzilmagan · unit-testlar — Nest HTTP qatlami umuman ko'tarilmaydi. Xato faqat
+> ilova **ishga tushganda** ko'rinadi.
+>
+> **FIX + GUARD (`a3cd7336`):** `GET metrics` `ManagerKpiController` dan olib tashlandi
+> (o'qish `KpiConfigController` da, yozish ManagerKpi'da). **Yangi guard**
+> `apps/api/src/app-boot.test.ts` — barcha controllerlar skanlanib `metod + yo'l`
+> takrorlanishi qidiriladi. *Skaner nozikligi:* bitta faylda bir nechta `@Controller`
+> bo'lishi mumkin, shuning uchun route eng yaqin OLDINGI prefiksga biriktiriladi
+> (birinchi versiyam 2 ta yolg'on to'qnashuv chiqargan edi). Non-vacuous jonli sinaldi.
+>
+> **JONLI VERIFY (hotfix'dan keyin):** `erp.sherset.uz` **200** · `/menejer` **200** ·
+> `/api/v1/health` **200** · `manager/kpi/metrics` **401** · `.../reference` **401** ·
+> `.../days` **401** (401 = route tirik va himoyalangan).
+>
+> **GATE:** api tc 0 · biome 0 · **api 4588/4588 test**. `packages/money` dist shu kuni
+> **uchinchi marta** eskirgan edi ([[money-dist-stale-tsbuildinfo]]).
+>
+> **⛔ QOLGAN QARZ:** o'z-KPI ekrani (dialog) **brauzerda ochilmagan** — 4M.3 ning oylik
+> ogohlantirish FE'si ham yo'q. Keyingi: 1) brauzer-QA · 2) idempotent bonus/jarima +
+> eskirgan kun tuzatuvchi qatori + egaga haftalik xulosa · 3) 4M.4.
+>
+> **📌 SABOQ:** deploydan keyin `/api/v1/health` ni **majburiy** tekshir — web 200 bo'lishi
+> API sog'ligini isbotlamaydi. Xotira: [[duplicate-route-prod-502]].
+
 > **🕒 2026-08-05a (O'Z KPI KO'RSATKICHINI YARATISH — egasining shikoyati bo'yicha) · ⏳ DEPLOY QILINMAGAN**
 >
 > **Shikoyat:** «xodimlarga KPI qo'sha olmayapman, faqat tayyor KPI'lar bor».
