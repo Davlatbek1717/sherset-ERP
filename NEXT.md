@@ -305,6 +305,38 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-05a (O'Z KPI KO'RSATKICHINI YARATISH — egasining shikoyati bo'yicha) · ⏳ DEPLOY QILINMAGAN**
+>
+> **Shikoyat:** «xodimlarga KPI qo'sha olmayapman, faqat tayyor KPI'lar bor».
+> **Tashxis (tasdiqlangan):** katalog `kpi-metrics.ts` da qattiq yozilgan 17 yozuv edi;
+> `saveEmployeeConfig` ro'yxatdan tashqaridagi kalitni «Noma'lum ko'rsatkich» deb rad etardi.
+>
+> **Yechim:** katalog endi ikki manbadan — built-in (tizim hisoblaydi) + **hisobning O'Z
+> ko'rsatkichlari** (`kpi_metric_defs`, `source='manual'`). `KpiMetricCatalogService`:
+> yaratish/tahrirlash/arxivlash + `resolve()`. Kalit nomdan yasaladi (`custom_…`, kirill ham),
+> **tahrirlashda kalit o'zgarmaydi** (unga kunlik qiymatlar bog'langan), **o'chirish o'rniga
+> arxivlash** (FK + o'tgan kunlar raqami saqlanadi). Tizim ko'rsatkichi himoyalangan (400).
+>
+> **⚠️ HALOL CHEKLOV:** o'z ko'rsatkichini tizim **hisoblay olmaydi** — dvigatel unga
+> `autoValue=NULL` qator ochadi, faktni menejer **qo'lda** kiritadi. Ekranda «qo'lda» belgisi
+> va dialogda tushuntirish bor; `source` tanlash ATAYLAB berilmadi (yolg'on va'da bo'lardi).
+>
+> **FE:** xodim → KPI tabida «O'z ko'rsatkichim» tugmasi + dialog (nom uz/ru · birlik ·
+> yo'nalish · soatga normallashtirish), ro'yxatda tahrirlash/arxivlash. i18n ru+uz 10 kalit.
+>
+> **RUNTIME VERIFY** (`scratchpad/qa-custom-kpi.ts`): katalog 21→22 · yaratildi ·
+> **xodimga berildi** (ilgari shu qadam yiqilardi) · kunlik qator BOR (`autoValue=NULL`) ·
+> menejer qo'lda 3 kiritdi, ekranda ko'rindi · bugungi kunda `og'irlik=40 maqsad=0`.
+> Kechagi kun ataylab **eski profil versiyasida** qoldi (tarix muzlaydi, §2.3).
+>
+> **GATE:** api tc 0 · web tc 0 · biome 0 · **api 4585/4585 · web 2684/2684 test** (+17).
+>
+> **⛔ HALOL STATUS: Phase-1 + servis-runtime.** Ekran **brauzerda ochilmadi** (dialog jonli
+> sinalmagan). **DEPLOY QILINMAGAN.**
+>
+> **⏭️ KEYINGI:** 1) brauzer-QA (dialog + saqlash) va deploy · 2) 4M.3 qolgani (idempotent
+> bonus/jarima · eskirgan kun tuzatuvchi qatori · egaga haftalik xulosa) · 3) 4M.4.
+
 > **🕒 2026-08-04d (4M.3 — QABUL → OYLIK bloklash + hr-kpi sana qarzi · `HEAD`) · ⏳ DEPLOY QILINMAGAN**
 >
 > Egasining **M-Q8** qarori kuchga kirdi: **menejer qabul qilmagan kun oylik hisobiga UMUMAN
