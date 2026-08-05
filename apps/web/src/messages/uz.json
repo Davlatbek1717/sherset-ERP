@@ -1535,6 +1535,16 @@
   },
   "pages": {
     "pickLists": {
+      "col_pick_state": "Yig'ish",
+      "coverage_all": "Barcha yacheykalar aniq",
+      "coverage_ambiguous": "{ambiguous} pozitsiyada bir necha yacheyka — menejer tekshirsin",
+      "coverage_partial": "{withoutCell} pozitsiyada yacheyka yo`q",
+      "pick_action_new": "Yig'ishni boshlash",
+      "pick_action_picked": "Qaytarish",
+      "pick_action_picking": "Yig'ildi",
+      "pick_state_new": "Yangi",
+      "pick_state_picked": "Yig'ildi",
+      "pick_state_picking": "Yig'ilmoqda",
       "col_agent": "Kontragent",
       "col_datetime": "Sana va vaqt",
       "col_number": "Raqam",

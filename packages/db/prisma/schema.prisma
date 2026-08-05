@@ -418,6 +418,7 @@ model Employee {
   ownedPriceLists            PriceList[]                @relation("PriceListOwner")
   ownedRetailDrawerIn        RetailDrawerCashIn[]       @relation("RetailDrawerInOwner")
   ownedRetailDrawerOut       RetailDrawerCashOut[]      @relation("RetailDrawerOutOwner")
+  pickedMsPickLists          MsPickList[]               @relation("MsPickListPicker")
   cashierSessionVariances    CashierSessionVariance[]   @relation("CashierSessionVarianceCashier")
   acknowledgedVariances      CashierSessionVariance[]   @relation("CashierSessionVarianceAck")
   retailDrawerOutRecipient   RetailDrawerCashOut[]      @relation("RetailDrawerOutRecipient")
@@ -10529,10 +10530,29 @@ model MsPickList {
   payedMinor  BigInt    @default(0) @map("payed_minor")
   positions   Json      @default("[]")
   printedAt   DateTime? @map("printed_at") @db.Timestamptz()
+
+  /// Omborchi zanjiri: 'new' → 'picking' → 'picked'.
+  ///
+  /// NEGA KERAK: MoySklad'dan kelgan buyurtma o'z-o'zidan «yig'ilgan» holatga
+  /// o'tmaydi — MoySklad omborchi ishini bilmaydi. Holatsiz ro'yxatda ikki
+  /// omborchi bitta buyurtmani birga yig'a boshlaydi yoki bittasi ikki marta
+  /// yig'iladi. Holat mahalliy: MoySklad'ga qaytarilmaydi (u yerda bu tushuncha
+  /// yo'q), shuning uchun sync uni HECH QACHON ustidan yozmaydi.
+  pickState   String    @default("new") @map("pick_state") @db.VarChar(20)
+  /// Kim yig'a boshlagani — «bu meniki» belgisi (ikki omborchi urishmasin).
+  pickedById  String?   @map("picked_by_id") @db.Uuid
+  pickStartedAt DateTime? @map("pick_started_at") @db.Timestamptz()
+  pickedAt    DateTime? @map("picked_at") @db.Timestamptz()
+  /// Omborchi izohi: «3 dona yo'q edi» — kamomad sababi shu yerdan boshlanadi.
+  pickNote    String?   @map("pick_note") @db.Text
   createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
 
+  pickedBy Employee? @relation("MsPickListPicker", fields: [pickedById], references: [id], onDelete: SetNull)
+
   @@unique([accountId, msOrderId])
   @@index([accountId, moment(sort: Desc)])
+  /// Omborchi ekrani: «yig'ilmagan buyurtmalar» — asosiy so'rov.
+  @@index([accountId, pickState, moment(sort: Desc)])
   @@map("ms_pick_lists")
 }

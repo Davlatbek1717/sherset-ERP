@@ -1535,6 +1535,16 @@
   },
   "pages": {
     "pickLists": {
+      "col_pick_state": "Сборка",
+      "coverage_all": "Все ячейки определены",
+      "coverage_ambiguous": "Несколько ячеек: {ambiguous} позиц. — проверьте",
+      "coverage_partial": "Без ячейки: {withoutCell} позиц.",
+      "pick_action_new": "Начать сборку",
+      "pick_action_picked": "Вернуть",
+      "pick_action_picking": "Собран",
+      "pick_state_new": "Новый",
+      "pick_state_picked": "Собран",
+      "pick_state_picking": "Собирается",
       "col_agent": "Контрагент",
       "col_datetime": "Дата и время",
       "col_number": "Номер",
