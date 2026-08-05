@@ -305,6 +305,44 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-05d (1-KASSA B5 TUGADI — POS «Qarz to'lovi» oynasi + PKO cheki · `a23de43`) · ⏳ DEPLOY QILINMAGAN**
+>
+> **Nima qilindi:** B5 ning FE qismi — 1-Kassa bo'limi endi B1–B5 yopiq.
+> - **POS «Qarz to'lovi» oynasi** (`components/pos/debt-payment-dialog.tsx`) — smena tabida,
+>   Kirim/Chiqim yonida. Kassir mijozni topadi → **qoldiqni KO'RADI** (jami, nechta qarz, eng
+>   eskisi qachon va **necha kun** oldin, qarzlar ro'yxati) → summa → tasdiq. Qaysi `QRZ-`
+>   hujjatga tushishi kassirdan SO'RALMAYDI — server FIFO qiladi.
+>   *Nega qoldiq ko'rsatiladi:* faqat summa maydoni bo'lsa kassir ko'r-ko'rona kiritardi —
+>   mijoz «hammasini yopaman» desa qancha ekanini bilmasdi. «Hammasi» tugmasi shundan.
+> - 🔴 **`DebtPayment.batchId`** (migratsiya `20260805163000_debt_payment_batch`) —
+>   bitta jismoniy to'lov FIFO bo'yicha N qatorga bo'linadi, **chek esa BITTA hujjat**. Busiz
+>   chekni qayta chop etish uchun qatorlarni (mijoz+vaqt+kassir) bo'yicha **taxminan** yig'ishga
+>   to'g'ri kelardi — moliyaviy hujjatda taxmin yaramaydi.
+> - **PKO cheki** `/print/debt-payment/[batchId]?auto=1` — har qarzga qancha tushgani ALOHIDA
+>   (mijoz chekni tekshira olsin) + eng muhim qatori **«Qolgan qarz»** (keyingi safar bahs
+>   chiqmasin). Storno qatori **chizilgan holda KO'RINADI** — tarixni yashirmaslik uchun.
+>   `GET debts/pos/receipt/:batchId` → istalgan vaqtda AYNAN o'sha summalar.
+>
+> **Ikki jim buzilish qulflandi** (`pos-debt-payment-wiring.test.ts`, **mutatsiya bilan
+> tekshirilgan** — ikkalasi ham 2 testni yiqitadi):
+> 1. `retailShiftId` prop IXTIYORIY → tushib qolsa hammasi kompilyatsiya bo'ladi, to'lov o'tadi,
+>    faqat pul smena hisobida YO'Q (soxta ortiqcha — B5-BE da tuzatilgan bug qaytib kelardi);
+> 2. `window.open('/print/...')` oddiy satr → yo'l noto'g'ri bo'lsa 404 ochiladi va hech bir gate
+>    shikoyat qilmaydi → havola va route fayli **birga** tekshiriladi.
+>
+> **Runtime verify (lokal DB):** 2 qarz (120k+80k) → 150 000 to'lov → batchId, 2 qator (biri
+> yopildi) · **qayta chop etish AYNAN mos** (tashkilot, kassir, mijoz, qatorlar, qolgan qarz
+> 50 000) · smena naqdiga 150 000 tushdi · noma'lum batch → «Chek topilmadi».
+>
+> **Gate:** typecheck 0 · biome 0 · api **4674/4674** · web **2702/2702**.
+> ⚠️ **Phase-1: brauzer-smoke YO'Q** — oyna va chek REAL BRAUZERDA ochilmagan, termal printerda
+> sinalmagan. 1-Kassa **Phase-2 QA** ga kiradi (u yerda chek qog'ozga chiqishi tekshiriladi).
+>
+> ℹ️ *Yo'lda `raw-element-conventions` gate qidiruv maydonini tutdi (xom `<input>` taqiqlangan) —
+> DS `Input` ga o'tkazildi; exempt ro'yxati o'stirilmadi.*
+>
+> **Keyingi:** `1-Kassa B6` — Xarajat (RKO) + inkassatsiya. Qolgan bosqichlar **65 → 64**.
+
 > **🕒 2026-08-05c (1-KASSA B5 BACKEND — qarz to'lovi FIFO + smena naqdi · `8f4c100` · 4M.3 FE qoldig'i `f267636`) · ⏳ DEPLOY QILINMAGAN**
 >
 > **Nima qilindi (2 commit, ikkalasi ham gate-yashil):**
