@@ -7,7 +7,8 @@
  * so any mid-shift drawer cash-in/out produced a WRONG discrepancy
  * (false shortage/surplus). The correct formula is:
  *
- *   expectedCash = opening + salesCash + drawerIn − drawerOut − returnsCash
+ *   expectedCash = opening + salesCash + drawerIn + debtCash
+ *                − drawerOut − returnsCash
  *   discrepancy  = closingCash − expectedCash
  *
  * All values are tiyin (BigInt) — no floating point. Extracted as a pure
@@ -35,12 +36,27 @@ export interface ShiftCashInputs {
   drawerOutMinor: bigint;
   /** Σ cash portion of posted refunds in the shift. */
   returnsCashMinor: bigint;
+  /**
+   * Σ NAQD qarz to'lovlari (kassa TZ §8.4 — «+ naqd qarz to'lovlari»).
+   *
+   * Busiz kassir qabul qilgan qarz puli yashiqda turadi-yu, kutilganda
+   * ko'rinmaydi — har smena yakunida soxta ORTIQCHA chiqardi va farq akti
+   * ma'nosini yo'qotardi.
+   *
+   * Ixtiyoriy: eski chaqiruvchilar uzatmasa 0 deb qaraladi (regressiya yo'q).
+   */
+  debtCashMinor?: bigint;
 }
 
 /** Cash that SHOULD be in the drawer at close. */
 export function expectedCashMinor(i: ShiftCashInputs): bigint {
   return (
-    i.openingCashMinor + i.salesCashMinor + i.drawerInMinor - i.drawerOutMinor - i.returnsCashMinor
+    i.openingCashMinor +
+    i.salesCashMinor +
+    i.drawerInMinor +
+    (i.debtCashMinor ?? 0n) -
+    i.drawerOutMinor -
+    i.returnsCashMinor
   );
 }
 

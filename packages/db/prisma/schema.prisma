@@ -10144,6 +10144,14 @@ model DebtPayment {
   sourceName String? @map("source_name") @db.VarChar(120)
   cashDeskId String? @map("cash_desk_id") @db.Uuid
 
+  /// Qaysi kassa SMENASIDA qabul qilingani (kassa TZ §7.2/6-qadam).
+  ///
+  /// Busiz naqd qarz to'lovi smena yakunidagi «kutilgan naqd» hisobiga
+  /// KIRMASDI va kassir har safar shu summaga ortiqcha chiqardi (soxta
+  /// излишек). `cashDeskId` yetarli emas: bitta kassada kun davomida bir
+  /// necha smena bo'ladi. NULL = POS'dan tashqarida qabul qilingan.
+  retailShiftId String? @map("retail_shift_id") @db.Uuid
+
   /// §3.7 — chek rasmi. `attachments.id` (entity='debtpayment'). FK EMAS:
   /// attachment polimorf jadval, Prisma relation'i yo'q — id sifatida saqlanadi.
   attachmentId String? @map("attachment_id") @db.Uuid
@@ -10188,6 +10196,8 @@ model DebtPayment {
   /// §3.9 kunlik kassir hisoboti — (kassir, kun) kesimi.
   @@index([accountId, receivedById, createdAt])
   @@index([accountId, method, createdAt])
+  // Smena yakunidagi «kutilgan naqd» hisobi shu indeks bo yicha yig adi.
+  @@index([retailShiftId])
   @@map("debt_payments")
 }
 

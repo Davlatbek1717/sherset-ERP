@@ -10,6 +10,7 @@ import { TelegramModule } from '../telegram/telegram.module.js';
 import { DebtReminderService } from './debt-reminder.service.js';
 import { DebtController } from './debt.controller.js';
 import { DebtService } from './debt.service.js';
+import { PosDebtPaymentService } from './pos-debt-payment.service.js';
 
 /**
  * «Qarz undirish» moduli (TZ v2) — call-markaz + kassa.
@@ -34,7 +35,7 @@ import { DebtService } from './debt.service.js';
     SmsModule,
   ],
   controllers: [DebtController],
-  providers: [DebtService, DebtReminderService],
-  exports: [DebtService],
+  providers: [DebtService, DebtReminderService, PosDebtPaymentService],
+  exports: [DebtService, PosDebtPaymentService],
 })
 export class DebtModule {}

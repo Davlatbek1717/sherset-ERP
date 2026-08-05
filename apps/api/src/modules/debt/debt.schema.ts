@@ -410,3 +410,19 @@ export const BulkRemindersSchema = z.object({
   templateId: z.string().uuid().optional(),
 });
 export type BulkRemindersInput = z.infer<typeof BulkRemindersSchema>;
+
+/**
+ * POS «Qarz to'lovi» (kassa TZ §7.2) — bitta summa, FIFO bo'yicha bir necha
+ * qarzga taqsimlanadi. Kassir qaysi QRZ- hujjatga tushishini tanlamaydi.
+ */
+export const PosDebtPaymentSchema = z.object({
+  counterpartyId: z.string().uuid(),
+  amountMinor: moneyMinor,
+  method: z.enum(['cash', 'terminal']).default('cash'),
+  currency: z.string().length(3).optional(),
+  cashDeskId: z.string().uuid().nullish(),
+  /** Qaysi smenaga tushgani — naqd bo'lsa «kutilgan naqd» ga kiradi (§8.4). */
+  retailShiftId: z.string().uuid().nullish(),
+  comment: z.string().trim().max(4000).nullish(),
+});
+export type PosDebtPaymentInput = z.infer<typeof PosDebtPaymentSchema>;

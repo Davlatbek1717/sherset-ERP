@@ -114,3 +114,39 @@ describe('invariant #4 — BigInt exactness + no clamping', () => {
     );
   });
 });
+
+describe('naqd qarz to`lovlari (kassa TZ §8.4)', () => {
+  const base = {
+    openingCashMinor: 100_000n,
+    salesCashMinor: 500_000n,
+    drawerInMinor: 0n,
+    drawerOutMinor: 0n,
+    returnsCashMinor: 0n,
+  };
+
+  it('qarz to`lovi kutilgan naqdni AYNAN shuncha oshiradi', () => {
+    // Busiz kassir qabul qilgan qarz puli yashiqda turadi-yu, kutilganda
+    // ko'rinmaydi → smena har safar shu summaga ORTIQCHA chiqardi.
+    const without = expectedCashMinor(base);
+    const with_ = expectedCashMinor({ ...base, debtCashMinor: 250_000n });
+    expect(with_ - without).toBe(250_000n);
+  });
+
+  it('maydon berilmasa eski formula BAYT-BA-BAYT saqlanadi (regressiya yo`q)', () => {
+    expect(expectedCashMinor(base)).toBe(expectedCashMinor({ ...base, debtCashMinor: 0n }));
+    expect(expectedCashMinor(base)).toBe(600_000n);
+  });
+
+  it('farq hisobiga ham to`g`ri kiradi', () => {
+    // Kassir 850 000 sanadi: 100k ochilish + 500k sotuv + 250k qarz = 850k.
+    const inputs = { ...base, debtCashMinor: 250_000n };
+    expect(shiftDiscrepancyMinor(850_000n, inputs)).toBe(0n);
+    // Qarz to'lovi hisobga olinmasa 250 000 «ortiqcha» ko'rinardi.
+    expect(shiftDiscrepancyMinor(850_000n, base)).toBe(250_000n);
+  });
+
+  it('2^53 dan katta summada ham aniq', () => {
+    const big = 9_007_199_254_740_993n;
+    expect(expectedCashMinor({ ...base, debtCashMinor: big })).toBe(600_000n + big);
+  });
+});

@@ -229,6 +229,15 @@ export class CashierSessionService {
 
     // §100 bug-fix: include mid-shift drawer Внесение/Изъятие in the
     // reconciliation. Posted drawer ops scoped to this shift.
+    // Kassa TZ §8.4 — «+ naqd qarz to'lovlari». Busiz kassir qabul qilgan
+    // qarz puli yashiqda turadi-yu, kutilgan naqdda ko'rinmaydi va smena
+    // har safar shu summaga ORTIQCHA (излишек) chiqardi.
+    // Faqat NAQD: terminal to'lovi yashiqqa tushmaydi.
+    const debtCashAgg = await this.prisma.client.debtPayment.aggregate({
+      where: { accountId, retailShiftId: sessionId, method: 'cash', reversedAt: null },
+      _sum: { amountMinor: true },
+    });
+
     const [drawerInAgg, drawerOutAgg] = await Promise.all([
       this.prisma.client.retailDrawerCashIn.aggregate({
         where: { accountId, retailShiftId: sessionId, state: 'posted', deletedAt: null },
@@ -246,6 +255,7 @@ export class CashierSessionService {
       drawerInMinor: drawerInAgg._sum.sumMinor ?? 0n,
       drawerOutMinor: drawerOutAgg._sum.sumMinor ?? 0n,
       returnsCashMinor: refundAgg._sum.cashAmountMinor ?? 0n,
+      debtCashMinor: debtCashAgg._sum.amountMinor ?? 0n,
     };
     const expectedCash = expectedCashMinor(cashInputs);
     const discrepancy = shiftDiscrepancyMinor(closingCash, cashInputs);

@@ -19,6 +19,7 @@ import { PermissionsService } from '../permissions/permissions.service.js';
 import { RequirePermission } from '../permissions/require-permission.decorator.js';
 import type { ActorRole } from './debt.service.js';
 import { DebtService } from './debt.service.js';
+import { PosDebtPaymentService } from './pos-debt-payment.service.js';
 
 /**
  * «Qarz undirish» controller — TZ v2.
@@ -44,6 +45,7 @@ import { DebtService } from './debt.service.js';
 export class DebtController {
   constructor(
     @Inject(DebtService) private readonly service: DebtService,
+    @Inject(PosDebtPaymentService) private readonly pos: PosDebtPaymentService,
     @Inject(PermissionsService) private readonly permissions: PermissionsService,
   ) {}
 
@@ -331,5 +333,27 @@ export class DebtController {
   @RequirePermission({ entity: 'debt', action: 'delete' })
   remove(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     return this.service.remove(user.accountId, id);
+  }
+
+  // ── POS «Qarz to'lovi» oynasi (kassa TZ §7.2) ─────────────────────────────
+
+  /** Oyna ochilganda: qoldiq, eng eski qarz sanasi, ochiq qarzlar ro'yxati. */
+  @Get('pos/summary/:counterpartyId')
+  posSummary(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('counterpartyId') counterpartyId: string,
+  ) {
+    return this.pos.summary(user.accountId, counterpartyId);
+  }
+
+  /**
+   * To'lovni FIFO bo'yicha taqsimlab yozadi va PKO uchun ma'lumot qaytaradi.
+   * Kassir qaysi qarzga tushishini tanlamaydi — eng eskisidan yopiladi (Q9).
+   */
+  @Post('pos/pay')
+  posPay(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
+    // Validatsiya SERVISDA — bu controllerdagi qolgan hamma endpoint
+    // shu konventsiyada (xom `body` uzatiladi).
+    return this.pos.pay(user.accountId, user.sub, body);
   }
 }
