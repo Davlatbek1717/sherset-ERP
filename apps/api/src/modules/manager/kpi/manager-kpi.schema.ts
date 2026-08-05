@@ -77,3 +77,21 @@ export const DrilldownQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(500).optional(),
 });
 export type DrilldownQuery = z.infer<typeof DrilldownQuerySchema>;
+
+/**
+ * Hisobning O'Z ko'rsatkichi (TZ §2.1 katalogi kengaytmasi).
+ *
+ * `source` DTO'da YO'Q — u har doim `manual`. Foydalanuvchi ko'rsatkichni
+ * biror modulga «ulay» olmaydi: tizim uni hisoblay olmaydi, faktni menejer
+ * qo'lda kiritadi. Buni tanlov sifatida ko'rsatish yolg'on va'da bo'lardi.
+ */
+export const SaveCustomMetricSchema = z.object({
+  labelUz: z.string().trim().min(2).max(120),
+  /** Bo'sh qoldirilsa `labelUz` ishlatiladi — RU UI xom kalit ko'rsatmasin. */
+  labelRu: z.string().trim().max(120).optional().default(''),
+  unit: z.enum(['money', 'count', 'percent', 'minutes']),
+  direction: z.enum(['higher_better', 'lower_better', 'neutral']),
+  /** Soatga normallashtirilsinmi (yarim kun ishlaganni adolatli solishtirish). */
+  perHour: z.boolean().optional().default(false),
+});
+export type SaveCustomMetricInput = z.infer<typeof SaveCustomMetricSchema>;

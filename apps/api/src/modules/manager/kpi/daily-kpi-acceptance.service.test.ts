@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { DailyKpiAcceptanceService } from './daily-kpi-acceptance.service.js';
+import { BUILT_IN_CATALOG } from './kpi-metrics.js';
 
 /**
  * Qabul servisi — bazasiz ULANISH testlari.
@@ -70,7 +71,16 @@ function makeService(opts: {
       .fn()
       .mockImplementation(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
   };
-  const svc = new DailyKpiAcceptanceService({ client } as never);
+  // Katalog stub'i: built-in ro'yxat + hisobning o'z ko'rsatkichlari.
+  // Testlar built-in bilan ishlaydi, shuning uchun sof katalog yetarli.
+  const catalog = {
+    resolve: vi.fn().mockResolvedValue(BUILT_IN_CATALOG),
+    list: vi.fn().mockResolvedValue([...BUILT_IN_CATALOG.values()]),
+    ensureDefs: vi
+      .fn()
+      .mockResolvedValue(new Map([...BUILT_IN_CATALOG.keys()].map((k) => [k, `def-${k}`]))),
+  };
+  const svc = new DailyKpiAcceptanceService({ client } as never, catalog as never);
   return { svc, dayUpdateMany, eventCreate, metricUpdate, client };
 }
 

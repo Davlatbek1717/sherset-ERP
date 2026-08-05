@@ -8,6 +8,7 @@ import { EmployeeDailyKpiCron } from './kpi/employee-daily-kpi.cron.js';
 import { EmployeeDailyKpiService } from './kpi/employee-daily-kpi.service.js';
 import { KpiConfigController } from './kpi/kpi-config.controller.js';
 import { KpiConfigService } from './kpi/kpi-config.service.js';
+import { KpiMetricCatalogService } from './kpi/kpi-metric-catalog.service.js';
 import { ManagerKpiController } from './kpi/manager-kpi.controller.js';
 
 /**
@@ -38,6 +39,7 @@ import { ManagerKpiController } from './kpi/manager-kpi.controller.js';
     EmployeeDailyKpiService,
     EmployeeDailyKpiCron,
     KpiConfigService,
+    KpiMetricCatalogService,
     DailyKpiAcceptanceService,
     DailyKpiDrilldownService,
   ],

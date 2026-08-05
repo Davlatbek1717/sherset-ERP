@@ -15,11 +15,12 @@ import {
   REASON_CODES,
   allowedActions,
 } from './daily-kpi-fsm.js';
-import { KPI_METRICS } from './kpi-metrics.js';
+import { KpiMetricCatalogService } from './kpi-metric-catalog.service.js';
 import {
   AdjustSchema,
   DrilldownQuerySchema,
   QueueFilterSchema,
+  SaveCustomMetricSchema,
   TransitionSchema,
 } from './manager-kpi.schema.js';
 
@@ -45,7 +46,41 @@ export class ManagerKpiController {
   constructor(
     @Inject(DailyKpiAcceptanceService) private readonly acceptance: DailyKpiAcceptanceService,
     @Inject(DailyKpiDrilldownService) private readonly drilldown: DailyKpiDrilldownService,
+    @Inject(KpiMetricCatalogService) private readonly catalog: KpiMetricCatalogService,
   ) {}
+
+  // ── Ko'rsatkich katalogi (hisobning O'Z KPI'lari) ────────────────────────
+
+  /**
+   * Katalog: built-in + hisob yaratganlar (`custom: true` bayrog'i bilan).
+   * `Put`/`Delete` emas, `Post` — bu controller allaqachon shu uslubda.
+   */
+  @Get('metrics')
+  listMetrics(@CurrentUser() user: AuthenticatedUser) {
+    return this.catalog.list(user.accountId);
+  }
+
+  /** Yangi KPI yaratish. Manba doim `manual` — faktni menejer kiritadi. */
+  @Post('metrics')
+  createMetric(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
+    return this.catalog.create(user.accountId, SaveCustomMetricSchema.parse(body));
+  }
+
+  /** Nomi/birligi/yo'nalishini tahrirlash. KALIT o'zgarmaydi (tarix uzilmasin). */
+  @Post('metrics/:key')
+  updateMetric(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('key') key: string,
+    @Body() body: unknown,
+  ) {
+    return this.catalog.update(user.accountId, key, SaveCustomMetricSchema.parse(body));
+  }
+
+  /** Arxivlash — o'chirish EMAS (o'tgan kunlarning raqamlari saqlanadi). */
+  @Post('metrics/:key/archive')
+  archiveMetric(@CurrentUser() user: AuthenticatedUser, @Param('key') key: string) {
+    return this.catalog.archive(user.accountId, key);
+  }
 
   /** Menejer navbati — og'ishli kunlar birinchi. */
   @Get('days')
@@ -132,9 +167,9 @@ export class ManagerKpiController {
    * FE bu ro'yxatlarni O'ZIDA takrorlamasin — ular FSM bilan bir manbadan.
    */
   @Get('reference')
-  async reference() {
+  async reference(@CurrentUser() user: AuthenticatedUser) {
     return {
-      metrics: KPI_METRICS.map((m) => ({
+      metrics: (await this.catalog.list(user.accountId)).map((m) => ({
         key: m.key,
         labelUz: m.labelUz,
         labelRu: m.labelRu,

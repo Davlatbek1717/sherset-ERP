@@ -22,7 +22,14 @@ import {
   evaluate,
   evaluateAdjust,
 } from './daily-kpi-fsm.js';
-import { KPI_METRICS, deviationPercent, metricDef, perHourValue } from './kpi-metrics.js';
+import { KpiMetricCatalogService } from './kpi-metric-catalog.service.js';
+import {
+  BUILT_IN_CATALOG,
+  type MetricCatalog,
+  deviationPercent,
+  metricDef,
+  perHourValue,
+} from './kpi-metrics.js';
 import { type DayScore, type ScoreMetricInput, scoreDay } from './kpi-score.js';
 
 /**
@@ -43,7 +50,10 @@ import { type DayScore, type ScoreMetricInput, scoreDay } from './kpi-score.js';
 export class DailyKpiAcceptanceService {
   private readonly logger = new Logger(DailyKpiAcceptanceService.name);
 
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(KpiMetricCatalogService) private readonly catalog: KpiMetricCatalogService,
+  ) {}
 
   // ── Navbat ────────────────────────────────────────────────────────────────
 
@@ -177,10 +187,14 @@ export class DailyKpiAcceptanceService {
     if (!day) throw new NotFoundException('Kun topilmadi');
 
     const baseline = await this.baseline(accountId, day.employeeId, day.date);
-    const score = scoreRow(day);
+    // Katalog = built-in + hisobning O'Z ko'rsatkichlari. Ilgari bu yerda
+    // `KPI_METRICS` turardi, shuning uchun egasining o'z KPI'si ekranda
+    // umuman ko'rinmasdi (qiymati bazada bo'lsa ham).
+    const catalog = await this.catalog.resolve(accountId);
+    const score = scoreRow(day, catalog);
     const scored = new Map(score.metrics.map((m) => [m.metricKey, m]));
 
-    const metrics = KPI_METRICS.map((def) => {
+    const metrics = [...catalog.values()].map((def) => {
       const row = day.metrics.find((m) => m.metricKey === def.key);
       const auto = row?.autoValue ?? null;
       const avg = baseline.get(def.key) ?? null;
@@ -410,7 +424,7 @@ export class DailyKpiAcceptanceService {
       comment?: string | null;
     },
   ) {
-    if (!metricDef(input.metricKey)) {
+    if (!metricDef(input.metricKey, await this.catalog.resolve(ctx.accountId))) {
       throw new NotFoundException(`Noma'lum ko'rsatkich: ${input.metricKey}`);
     }
     const day = await this.load(ctx, id);
@@ -688,7 +702,7 @@ interface ScorableRow {
  * Formula bu yerda TAKRORLANMAYDI — 1.4 dagi «yetti joyda uch xil foiz»
  * hodisasi aynan shunday boshlangan edi.
  */
-function scoreRow(row: ScorableRow): DayScore {
+function scoreRow(row: ScorableRow, catalog: MetricCatalog = BUILT_IN_CATALOG): DayScore {
   const cfg = new Map(
     (row.profileVersion?.metrics ?? []).map((pm) => [
       pm.metricDef.key,
@@ -703,7 +717,7 @@ function scoreRow(row: ScorableRow): DayScore {
     weight: cfg.get(m.metricKey)?.weight ?? 0,
     complete: m.complete,
   }));
-  return scoreDay(inputs);
+  return scoreDay(inputs, catalog);
 }
 
 /** Baseline oynasi — «o'z odatiy kuni» shuncha kundan olinadi. */

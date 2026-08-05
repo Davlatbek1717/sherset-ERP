@@ -12,7 +12,11 @@ import { api } from './api-client';
 
 export type KpiUnit = 'money' | 'count' | 'percent' | 'minutes';
 export type KpiDirection = 'higher_better' | 'lower_better' | 'neutral';
-export type KpiSource = 'cashier' | 'sales' | 'attendance' | 'task' | 'warehouse';
+/**
+ * `manual` — hisob O'ZI yaratgan ko'rsatkich: tizim uni hisoblamaydi,
+ * faktni menejer qo'lda kiritadi (`autoValue` doim NULL).
+ */
+export type KpiSource = 'cashier' | 'sales' | 'attendance' | 'task' | 'warehouse' | 'manual';
 
 export interface KpiMetricDef {
   key: string;
@@ -22,6 +26,17 @@ export interface KpiMetricDef {
   direction: KpiDirection;
   source: KpiSource;
   perHour: boolean;
+  /** Hisob o'zi yaratganmi (tahrirlash/arxivlash faqat shularga). */
+  custom?: boolean;
+}
+
+/** Yangi/tahrirlanadigan o'z ko'rsatkichi. `source` yo'q — u doim `manual`. */
+export interface SaveCustomMetricInput {
+  labelUz: string;
+  labelRu?: string;
+  unit: KpiUnit;
+  direction: KpiDirection;
+  perHour?: boolean;
 }
 
 /** Bitta konfiguratsiya qatori (og'irlik + ixtiyoriy maqsad, xom string). */
@@ -75,4 +90,12 @@ export const managerKpiApi = {
     api.get<KpiEmployeeDaily | null>(
       `/manager/kpi/employee/${employeeId}/daily${date ? `?date=${date}` : ''}`,
     ),
+
+  // — hisobning O'Z ko'rsatkichlari —
+  createMetric: (data: SaveCustomMetricInput) =>
+    api.post<KpiMetricDef>('/manager/kpi/metrics', data),
+  updateMetric: (key: string, data: SaveCustomMetricInput) =>
+    api.post<KpiMetricDef>(`/manager/kpi/metrics/${key}`, data),
+  archiveMetric: (key: string) =>
+    api.post<{ key: string; archived: boolean }>(`/manager/kpi/metrics/${key}/archive`, {}),
 };

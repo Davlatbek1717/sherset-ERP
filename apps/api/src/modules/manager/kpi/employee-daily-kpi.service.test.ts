@@ -51,6 +51,8 @@ function makeService(h: Harness = {}) {
     task: { groupBy: vi.fn().mockResolvedValue([]) },
     restockTaskLine: { groupBy: vi.fn().mockResolvedValue([]) },
     kpiProfile: { findMany: vi.fn().mockResolvedValue([]) },
+    // Hisobning o'z (`manual`) ko'rsatkichlari — sukut bo'yicha yo'q.
+    kpiMetricDef: { findMany: vi.fn().mockResolvedValue([]) },
     account: { findMany: vi.fn().mockResolvedValue([{ id: ACCOUNT }]) },
     $transaction: vi
       .fn()

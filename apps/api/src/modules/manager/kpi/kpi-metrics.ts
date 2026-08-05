@@ -21,8 +21,16 @@ export type MetricUnit = 'money' | 'count' | 'percent' | 'minutes';
  */
 export type MetricDirection = 'higher_better' | 'lower_better' | 'neutral';
 
-/** Ko'rsatkich qaysi moduldan hisoblanadi — drill-down shu manbaga boradi. */
-export type MetricSource = 'cashier' | 'sales' | 'attendance' | 'task' | 'warehouse';
+/**
+ * Ko'rsatkich qaysi moduldan hisoblanadi — drill-down shu manbaga boradi.
+ *
+ * `manual` — hisob egasi O'ZI yaratgan ko'rsatkich. Uni tizim hisoblay
+ * OLMAYDI (biror modulga ulanmagan), shuning uchun `autoValue` doim NULL
+ * bo'ladi va faktni menejer qo'lda kiritadi. Bu cheklov yashirilmaydi:
+ * ekranda «qo'lda kiritiladi» deb turadi, aks holda menejer raqam o'zi
+ * paydo bo'lishini kutib qolardi.
+ */
+export type MetricSource = 'cashier' | 'sales' | 'attendance' | 'task' | 'warehouse' | 'manual';
 
 export interface KpiMetricDef {
   key: string;
@@ -214,8 +222,30 @@ export const KPI_METRICS: readonly KpiMetricDef[] = [
 
 const BY_KEY = new Map(KPI_METRICS.map((m) => [m.key, m]));
 
-export function metricDef(key: string): KpiMetricDef | undefined {
-  return BY_KEY.get(key);
+/**
+ * Ko'rsatkich katalogi — `kalit → ta'rif`.
+ *
+ * Ikki manbadan yig'iladi: yuqoridagi TS ro'yxati (**built-in**, tizim
+ * hisoblaydi) va hisobning O'Z ko'rsatkichlari (`kpi_metric_defs`, `manual`).
+ * Har ikkisi bir xil shaklda bo'lgani uchun ball, ekran va tuzatma mantiqi
+ * ular orasida farq qilmaydi — farq faqat qiymat QAYERDAN kelishida.
+ */
+export type MetricCatalog = ReadonlyMap<string, KpiMetricDef>;
+
+/** Faqat tizim hisoblaydigan ko'rsatkichlar (o'zgarmas). */
+export const BUILT_IN_CATALOG: MetricCatalog = BY_KEY;
+
+/** Kalit built-in ro'yxatdami — hisobning o'z ko'rsatkichi bilan to'qnashmasin. */
+export function isBuiltInMetric(key: string): boolean {
+  return BY_KEY.has(key);
+}
+
+/**
+ * Ta'rifni katalogdan oladi. `catalog` berilmasa faqat built-in'lar ko'riladi —
+ * hisobga bog'liq bo'lmagan sof kontekstlar (testlar, drill-down) uchun.
+ */
+export function metricDef(key: string, catalog: MetricCatalog = BY_KEY): KpiMetricDef | undefined {
+  return catalog.get(key);
 }
 
 /**

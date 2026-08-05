@@ -1,9 +1,9 @@
-import type { Prisma } from '@moysklad/db';
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service.js';
 import { localDateOnly } from '../../hr/hr-shared/tz.util.js';
 import type { SaveKpiConfigInput } from './kpi-config.schema.js';
-import { KPI_METRICS, metricDef } from './kpi-metrics.js';
+import { KpiMetricCatalogService } from './kpi-metric-catalog.service.js';
+import { metricDef } from './kpi-metrics.js';
 
 /**
  * KpiConfigService — har-xodim KPI konfiguratsiyasi (TZ 4M.2).
@@ -18,52 +18,18 @@ import { KPI_METRICS, metricDef } from './kpi-metrics.js';
  */
 @Injectable()
 export class KpiConfigService {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
-
-  /** Ko'rsatkich katalogi — FE tanlagich uchun (16 ta, TS manba). */
-  listMetrics() {
-    return KPI_METRICS.map((m) => ({
-      key: m.key,
-      labelUz: m.labelUz,
-      labelRu: m.labelRu,
-      unit: m.unit,
-      direction: m.direction,
-      source: m.source,
-      perHour: m.perHour,
-    }));
-  }
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(KpiMetricCatalogService) private readonly catalog: KpiMetricCatalogService,
+  ) {}
 
   /**
-   * TS-katalogni `kpi_metric_defs` jadvaliga sinxronlaydi (idempotent) va
-   * `key → id` xaritasini qaytaradi. Yo'q ko'rsatkichlar yaratiladi.
+   * Ko'rsatkich katalogi — FE tanlagich uchun: built-in + hisobning O'Z
+   * ko'rsatkichlari (`custom: true`). Ilgari bu yerda faqat TS ro'yxati
+   * qaytarilardi, shuning uchun egasi o'z KPI'sini qo'sha olmasdi.
    */
-  private async ensureMetricDefs(
-    accountId: string,
-    tx: Prisma.TransactionClient,
-  ): Promise<Map<string, string>> {
-    const existing = await tx.kpiMetricDef.findMany({
-      where: { accountId },
-      select: { id: true, key: true },
-    });
-    const map = new Map(existing.map((d) => [d.key, d.id]));
-    for (const m of KPI_METRICS) {
-      if (map.has(m.key)) continue;
-      const row = await tx.kpiMetricDef.create({
-        data: {
-          accountId,
-          key: m.key,
-          labelUz: m.labelUz,
-          labelRu: m.labelRu,
-          unit: m.unit,
-          direction: m.direction,
-          source: m.source,
-          perHour: m.perHour,
-        },
-        select: { id: true, key: true },
-      });
-      map.set(row.key, row.id);
-    }
-    return map;
+  listMetrics(accountId: string) {
+    return this.catalog.list(accountId);
   }
 
   /** Xodimning JORIY (eng oxirgi versiya) KPI konfiguratsiyasi. */
@@ -114,9 +80,12 @@ export class KpiConfigService {
     if (!emp) throw new NotFoundException('Xodim topilmadi');
 
     // Kalitlarni katalogга tekshir — noma'lum ko'rsatkich yozilmasin.
+    // Katalog = built-in + hisobning O'Z ko'rsatkichlari; ilgari bu yerda
+    // faqat TS ro'yxati ko'rilgani uchun egasining o'z KPI'si rad etilardi.
+    const catalog = await this.catalog.resolve(accountId);
     const seen = new Set<string>();
     for (const m of input.metrics) {
-      if (!metricDef(m.metricKey)) {
+      if (!metricDef(m.metricKey, catalog)) {
         throw new BadRequestException(`Noma'lum ko'rsatkich: ${m.metricKey}`);
       }
       if (seen.has(m.metricKey)) {
@@ -126,7 +95,7 @@ export class KpiConfigService {
     }
 
     return this.prisma.client.$transaction(async (tx) => {
-      const keyToId = await this.ensureMetricDefs(accountId, tx);
+      const keyToId = await this.catalog.ensureDefs(accountId, tx);
 
       let profileId = (
         await tx.kpiProfile.findFirst({

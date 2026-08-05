@@ -61,6 +61,15 @@ export class EmployeeDailyKpiService {
         this.resolveProfileVersions(accountId, dateOnly),
       ]);
 
+    // Hisobning O'Z ko'rsatkichlari — tizim hisoblamaydi, lekin qatori bo'lishi
+    // kerak (menejer faktni faqat mavjud qatorga kiritadi).
+    const manualKeys = (
+      await this.prisma.client.kpiMetricDef.findMany({
+        where: { accountId, source: 'manual', archived: false },
+        select: { key: true },
+      })
+    ).map((m) => m.key);
+
     let written = 0;
     const staleCandidates: string[] = [];
     for (const emp of employees) {
@@ -71,6 +80,11 @@ export class EmployeeDailyKpiService {
         ...(attendance.get(emp.id) ?? emptyFor('attendance')),
         ...(tasks.get(emp.id) ?? emptyFor('task')),
         ...(picking.get(emp.id) ?? emptyFor('warehouse')),
+        // Hisobning O'Z ko'rsatkichlari (`manual`): tizim ularni hisoblay
+        // olmaydi, shuning uchun O'LCHANMAGAN qator ochiladi. Qator BO'LISHI
+        // shart — menejer faktni faqat mavjud qatorga kirita oladi; qatorsiz
+        // ko'rsatkich ekranda ko'rinib turib, tegib bo'lmaydigan bo'lardi.
+        ...manualKeys.map((key) => unmeasured(key)),
       ];
 
       const workedMinutes = numberOf(values.find((v) => v.key === 'worked_minutes')?.value);

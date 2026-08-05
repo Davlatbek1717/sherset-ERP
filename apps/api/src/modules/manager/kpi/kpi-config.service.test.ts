@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { KpiConfigService } from './kpi-config.service.js';
+import { BUILT_IN_CATALOG } from './kpi-metrics.js';
 import { KPI_METRICS } from './kpi-metrics.js';
 
 /**
@@ -42,8 +43,17 @@ function makeService(opts: { lastVersion?: number; profileExists?: boolean } = {
       .fn()
       .mockImplementation(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
   };
-  const svc = new KpiConfigService({ client } as never);
-  return { svc, tx, client, versionCreate, metricCreateMany };
+  // Katalog stub'i: built-in ro'yxat + hisobning o'z ko'rsatkichlari.
+  // Testlar built-in bilan ishlaydi, shuning uchun sof katalog yetarli.
+  const catalog = {
+    resolve: vi.fn().mockResolvedValue(BUILT_IN_CATALOG),
+    list: vi.fn().mockResolvedValue([...BUILT_IN_CATALOG.values()]),
+    ensureDefs: vi
+      .fn()
+      .mockResolvedValue(new Map([...BUILT_IN_CATALOG.keys()].map((k) => [k, `def-${k}`]))),
+  };
+  const svc = new KpiConfigService({ client } as never, catalog as never);
+  return { svc, tx, client, versionCreate, metricCreateMany, catalog };
 }
 
 describe('saveEmployeeConfig', () => {
@@ -108,5 +118,58 @@ describe('saveEmployeeConfig', () => {
     await expect(svc.saveEmployeeConfig(ACCOUNT, 'user-1', 'yoq', { metrics: [] })).rejects.toThrow(
       /topilmadi/,
     );
+  });
+});
+
+describe('🐞 REGRESSIYA — hisobning O`Z ko`rsatkichi xodimga berilishi', () => {
+  // EGASINING SHIKOYATI (2026-08-05): «xodimlarga KPI qo'sha olmayapman,
+  // faqat tayyorlarini qo'sha olyapman». Sabab: validatsiya faqat TS
+  // katalogini ko'rardi va o'z ko'rsatkichini «Noma'lum» deb rad etardi.
+  const CUSTOM = 'custom_mijoz_shikoyati';
+
+  function withCustom() {
+    const h = makeService();
+    // Katalogda built-in'lar + bitta o'z ko'rsatkichi.
+    const merged = new Map(BUILT_IN_CATALOG);
+    merged.set(CUSTOM, {
+      key: CUSTOM,
+      labelUz: 'Mijoz shikoyati',
+      labelRu: 'Жалобы',
+      unit: 'count',
+      direction: 'lower_better',
+      source: 'manual',
+      perHour: false,
+    });
+    h.catalog.resolve.mockResolvedValue(merged);
+    h.catalog.ensureDefs.mockResolvedValue(new Map([...merged.keys()].map((k) => [k, `def-${k}`])));
+    return h;
+  }
+
+  it('o`z ko`rsatkichi RAD ETILMAYDI', async () => {
+    const { svc } = withCustom();
+    await expect(
+      svc.saveEmployeeConfig(ACCOUNT, 'user-1', EMP, {
+        metrics: [{ metricKey: CUSTOM, weight: 40, target: 0 }],
+      }),
+    ).resolves.toBeDefined();
+  });
+
+  it('u profil versiyasiga og`irligi bilan yoziladi', async () => {
+    const { svc, metricCreateMany } = withCustom();
+    await svc.saveEmployeeConfig(ACCOUNT, 'user-1', EMP, {
+      metrics: [{ metricKey: CUSTOM, weight: 40, target: 5 }],
+    });
+    const rows = metricCreateMany.mock.calls[0][0].data;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ metricDefId: `def-${CUSTOM}`, weight: 40, target: 5n });
+  });
+
+  it('katalogda YO`Q kalit hamon rad etiladi (tekshiruv yo`qolmagan)', async () => {
+    const { svc } = withCustom();
+    await expect(
+      svc.saveEmployeeConfig(ACCOUNT, 'user-1', EMP, {
+        metrics: [{ metricKey: 'custom_yolgon', weight: 10 }],
+      }),
+    ).rejects.toThrow(/Noma.?lum ko.?rsatkich/);
   });
 });

@@ -1,4 +1,9 @@
-import { type MetricDirection, metricDef } from './kpi-metrics.js';
+import {
+  BUILT_IN_CATALOG,
+  type MetricCatalog,
+  type MetricDirection,
+  metricDef,
+} from './kpi-metrics.js';
 
 /**
  * Kompozit ball — «og'irlik × bajarish %» (TZ §2.2, M10 formulasi).
@@ -118,8 +123,18 @@ export function achievementPercent(
   return round1(Math.max(0, (2 - ratio) * 100));
 }
 
-/** Kun bo'yicha kompozit ball. */
-export function scoreDay(inputs: readonly ScoreMetricInput[]): DayScore {
+/**
+ * Kun bo'yicha kompozit ball.
+ *
+ * `catalog` — hisobning ko'rsatkich ta'riflari (built-in + o'z ko'rsatkichlari).
+ * Berilmasa faqat built-in'lar ko'riladi; hisobning O'Z ko'rsatkichi u holda
+ * «katalogda yo'q» bo'lib ballanmay qolardi, shuning uchun chaqiruvchi
+ * (servis) uni har doim uzatadi.
+ */
+export function scoreDay(
+  inputs: readonly ScoreMetricInput[],
+  catalog: MetricCatalog = BUILT_IN_CATALOG,
+): DayScore {
   const metrics: ScoredMetric[] = [];
   let weightScored = 0;
   let weightTotal = 0;
@@ -127,7 +142,7 @@ export function scoreDay(inputs: readonly ScoreMetricInput[]): DayScore {
   let dataComplete = true;
 
   for (const input of inputs) {
-    const def = metricDef(input.metricKey);
+    const def = metricDef(input.metricKey, catalog);
     const direction: MetricDirection = def?.direction ?? 'neutral';
     // Tuzatma g'olib, lekin avtomat qiymat saqlanadi (§3.2).
     const fact = input.adjustValue ?? input.autoValue;

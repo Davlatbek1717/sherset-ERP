@@ -17,10 +17,10 @@ import { KpiConfigService } from './kpi-config.service.js';
 export class KpiConfigController {
   constructor(@Inject(KpiConfigService) private readonly kpi: KpiConfigService) {}
 
-  /** Ko'rsatkich katalogi (tanlagich uchun). */
+  /** Ko'rsatkich katalogi (tanlagich uchun): built-in + hisobning O'Z KPI'lari. */
   @Get('metrics')
-  metrics() {
-    return this.kpi.listMetrics();
+  metrics(@CurrentUser() user: AuthenticatedUser) {
+    return this.kpi.listMetrics(user.accountId);
   }
 
   /** Xodimning joriy KPI konfiguratsiyasi. */
