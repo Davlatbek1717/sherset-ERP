@@ -113,7 +113,12 @@ kuniga **3 sessiya** → **~6 hafta**.
       **RKO cheki** · `CASH_OVERDRAWN` kassirga ko'rsatiladi · qabul qiluvchilar **tor
       endpointdan** (`/hr/employees` kiosk'ga ochilsa oylik oshkor bo'lardi) — `08e0fd1`
       ⬜ *real termal printerda sinalmagan → Phase-2*
-- [ ] **1-Kassa B7** — Smena yopish: `CashierSessionVariance` (YO'Q) + farq akti + **Z-hisobot**
+- [x] **1-Kassa B7 (BE)** — `CashierSessionVariance` + farq akti (nol farqda akt YO'Q) +
+      menejerga Telegram + **Z-hisobot** (§8.5 to'liq tarkibi) *(21 sof + 11 drift-lock test)* —
+      `02f42d7` ⚠️ **USD farqi ataylab yozilmaydi** — USD naqd oqimi (`CASH_USD`) ulanmagan,
+      «kutilgan 0» soxta signal berardi
+- [ ] **1-Kassa B7 (qolgani)** — smena yopish formasi (farq izohi) + **Z-hisobot sahifasi** (FE)
+      · menejerda «ko'rilmagan farq aktlari» ro'yxati + tan olish
       *(UZS va USD alohida; farq ≠ 0 → menejerga Telegram)*
 - [ ] **1-Kassa B8 (qoldig'i)** — `sotuv/page.tsx` **1997 satr** → modullarga bo'lish
       *(har fayl < 300 satr; `lib/pos/` sof funksiyalar 100% unit-test)*

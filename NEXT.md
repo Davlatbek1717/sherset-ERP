@@ -305,6 +305,59 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-05g (1-KASSA B7 BACKEND — smena farq akti + Z-hisobot · `02f42d7`) · ⏳ DEPLOY QILINMAGAN**
+>
+> **`CashierSessionVariance` jadvali** (migratsiya `20260805210000_cashier_session_variance`):
+> sanalgan naqd kutilgandan farq qilsa akt yoziladi + menejerga Telegram.
+> *Nega alohida jadval:* `CashierSession.discrepancyMinor` faqat OXIRGI raqamni saqlaydi — sabab,
+> kassir izohi, kim ko'rgani YO'Q. Farq = pul yo'qolishi da'vosi, yonida **dalil** turishi kerak.
+>
+> **Sof modul** `shift-variance.ts` (**21 test**):
+> - **Nol farqda akt YO'Q** — «ko'rilmagan aktlar» ro'yxatini ma'nosiz yozuvlar bilan to'ldirish
+>   haqiqiylarini ko'rinmas qilardi.
+> - Kamomad va ortiqcha **boshqa sarlavha** oladi (ortiqcha ham muammo, lekin BOSHQA muammo).
+> - Xabar «farq bor» deb emas, **QANCHA va QAYSI TOMONGA** deb boshlanadi va kutilgan/sanalgan
+>   har ikkisi ko'rinadi — menejer telefonida bir qatordan qaror qiladi.
+> - **Bir tiyinlik farq ham** akt yozadi: «kichik farqni e'tiborsiz qoldirish» siyosati TZ'da YO'Q.
+>
+> 🔴 **TARTIB MUHIM:** akt **holat qulfidan (`updateMany`) KEYIN** yoziladi. Oldin yozilsa, poyga
+> yutqazgan ikkinchi chaqiruv ham akt yozib qo'yardi. Akt/xabar nosozligi **yopishni yiqitmaydi** —
+> kassir ishini davom ettirishi kerak; farq `discrepancyMinor` da baribir saqlangan.
+>
+> ⚠️ **USD FARQI ATAYLAB YOZILMAYDI (ochiq qarz).** TZ §8.4 «UZS va USD alohida» deydi, lekin USD
+> naqd oqimi hali ULANMAGAN: `retail-sale.service.ts` to'lovni har doim kassa valyutasida yozadi
+> («CASH_USD ulanganda…» degan ochiq joy). Kutilgan USD hisoblanmaydigan holatda uni 0 deb olish
+> **har smenada soxta «USD ortiqcha»** akti berardi — menejer bir hafta ichida farq
+> ogohlantirishlarini butunlay e'tiborsiz qoldirardi. Sof modul ko'p valyutani QO'LLAYDI
+> (`planVarianceActs`), faqat chaqiruv UZS bilan cheklangan: **`CASH_USD` ulanganda bir qator
+> qo'shiladi** (shu joyda `variance-wiring.test.ts` ni ham yangilash kerak).
+>
+> **Z-hisobot** `GET /cashier-sessions/:id/z-report` (§8.5 to'liq tarkibi): to'lov turlari kesimida
+> tushum (`RetailSalePayment` dan — ikki ustundan kanalni tiklab bo'lmaydi) · chek soni · o'rtacha
+> chek · yalpi foyda · chegirma · qarzga sotilgan · qabul qilingan qarz to'lovlari · qaytarishlar ·
+> xarajatlar **moddalar bo'yicha** · inkassatsiya · kutilgan/sanalgan/farq. **Ochiq smenada ham
+> ishlaydi** (kassir kun o'rtasida holatni ko'radi).
+>
+> **NULL ≠ 0 shartnomasi:** cheksiz smenada o'rtacha chek `null` (0 ga bo'lish emas va «o'rtacha 0»
+> yolg'oni ham emas); tan narx muzlatilmagan qator bo'lsa yalpi foyda `null` — `0` deb ko'rsatish
+> «100% marja» yolg'onini beradi.
+>
+> **Drift-lock** (`variance-wiring.test.ts`, mutatsiya bilan tekshirilgan: `skipDuplicates` olib
+> tashlansa va USD qatori qo'shilsa 2 test yiqiladi).
+>
+> **Runtime verify** (toza smena, 500 000 ochilish): ochiq smenada sanoq va farq **NULL**, o'rtacha
+> chek **NULL** · 470 000 sanaldi → UZS kamomad **aynan −30 000**, kassir izohi saqlandi, hali
+> ko'rilmagan · **USD akti YO'Q** · Telegram navbatida `pending` xabar (sarlavha «KASSA KAMOMADI»,
+> kutilgan 5 000,00 va sanalgan 4 700,00 bilan) · ikkinchi yopish rad, aktlar soni o'zgarmadi ·
+> yopilgan Z-hisobotda farq −30 000.
+>
+> **Gate:** typecheck 0 · biome 0 · api **4736/4736**.
+> ⚠️ **Phase-1: brauzer-smoke YO'Q** — yopish formasi (farq izohi maydoni) va Z-hisobot **sahifasi**
+> FE tomonda hali qilinmagan; menejerda «ko'rilmagan aktlar» ro'yxati ham yo'q.
+>
+> **Keyingi:** `1-Kassa B7 (qolgani)` — yopish formasi + Z-hisobot sahifasi + menejer aktlarni
+> tan olishi. Qolgan bosqichlar 63 (B7 ikkiga bo'lindi).
+
 > **🕒 2026-08-05f (1-KASSA B6 TUGADI — xarajat/inkassatsiya oynasi + RKO cheki · `08e0fd1`) · ⏳ DEPLOY QILINMAGAN**
 >
 > **1-Kassa endi B1–B6 yopiq** (qolgani B7, B8).
