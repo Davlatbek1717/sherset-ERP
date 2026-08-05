@@ -20,8 +20,17 @@ import {
   CloseSessionSchema,
   DrawerCashSchema,
   OpenSessionSchema,
+  PosCashOutSchema,
   SessionFilterSchema,
 } from './cashier-session.schema.js';
+// Xarajat/inkassatsiya qoidalari — sof modul (§8.2/§8.3).
+import {
+  type CashOutKind,
+  cashOutPrefix,
+  planCashOutAuditEvents,
+  summarizeCashOut,
+  validateCashOut,
+} from './pos-cash-out.js';
 
 /**
  * CashierSessionService — manages cashier shift lifecycle.
@@ -212,51 +221,7 @@ export class CashierSessionService {
     // (not just cash). The post step updates these. We compute expected using
     // the session's cash-amount accumulators instead.
     // We query aggregates directly from posted sales for accuracy.
-    const cashAgg = await this.prisma.client.retailSale.aggregate({
-      where: { accountId, sessionId, state: { in: ['posted', 'refunded'] } },
-      _sum: { cashAmountMinor: true },
-    });
-
-    const refundAgg = await this.prisma.client.retailSale.aggregate({
-      where: {
-        accountId,
-        sessionId,
-        state: 'posted',
-        refundedFromId: { not: null },
-      },
-      _sum: { cashAmountMinor: true },
-    });
-
-    // §100 bug-fix: include mid-shift drawer Внесение/Изъятие in the
-    // reconciliation. Posted drawer ops scoped to this shift.
-    // Kassa TZ §8.4 — «+ naqd qarz to'lovlari». Busiz kassir qabul qilgan
-    // qarz puli yashiqda turadi-yu, kutilgan naqdda ko'rinmaydi va smena
-    // har safar shu summaga ORTIQCHA (излишек) chiqardi.
-    // Faqat NAQD: terminal to'lovi yashiqqa tushmaydi.
-    const debtCashAgg = await this.prisma.client.debtPayment.aggregate({
-      where: { accountId, retailShiftId: sessionId, method: 'cash', reversedAt: null },
-      _sum: { amountMinor: true },
-    });
-
-    const [drawerInAgg, drawerOutAgg] = await Promise.all([
-      this.prisma.client.retailDrawerCashIn.aggregate({
-        where: { accountId, retailShiftId: sessionId, state: 'posted', deletedAt: null },
-        _sum: { sumMinor: true },
-      }),
-      this.prisma.client.retailDrawerCashOut.aggregate({
-        where: { accountId, retailShiftId: sessionId, state: 'posted', deletedAt: null },
-        _sum: { sumMinor: true },
-      }),
-    ]);
-
-    const cashInputs: ShiftCashInputs = {
-      openingCashMinor: session.openingCashMinor,
-      salesCashMinor: cashAgg._sum.cashAmountMinor ?? 0n,
-      drawerInMinor: drawerInAgg._sum.sumMinor ?? 0n,
-      drawerOutMinor: drawerOutAgg._sum.sumMinor ?? 0n,
-      returnsCashMinor: refundAgg._sum.cashAmountMinor ?? 0n,
-      debtCashMinor: debtCashAgg._sum.amountMinor ?? 0n,
-    };
+    const cashInputs = await this.collectCashInputs(accountId, sessionId, session.openingCashMinor);
     const expectedCash = expectedCashMinor(cashInputs);
     const discrepancy = shiftDiscrepancyMinor(closingCash, cashInputs);
 
@@ -293,6 +258,59 @@ export class CashierSessionService {
         organization: { select: { id: true, name: true } },
       },
     });
+  }
+
+  /**
+   * Smenaning naqd kirim/chiqimlarini yig'adi (kutilgan naqd manbasi).
+   *
+   * ALOHIDA metod: smena yopish ham, xarajat/inkassatsiya ham «yashiqda
+   * hozir qancha bor» ni bilishi kerak. Nusxalash ikki formula qoldirardi
+   * va biri jimgina eskirardi — §100 bug'i («drawer in/out kutilgan
+   * naqddan tushib qolgan edi») aynan shu klassdan chiqqan.
+   */
+  private async collectCashInputs(
+    accountId: string,
+    sessionId: string,
+    openingCashMinor: bigint,
+  ): Promise<ShiftCashInputs> {
+    const [cashAgg, refundAgg, debtCashAgg, drawerInAgg, drawerOutAgg] = await Promise.all([
+      this.prisma.client.retailSale.aggregate({
+        where: { accountId, sessionId, state: { in: ['posted', 'refunded'] } },
+        _sum: { cashAmountMinor: true },
+      }),
+      this.prisma.client.retailSale.aggregate({
+        where: { accountId, sessionId, state: 'posted', refundedFromId: { not: null } },
+        _sum: { cashAmountMinor: true },
+      }),
+      // Kassa TZ §8.4 — «+ naqd qarz to'lovlari». Busiz kassir qabul qilgan
+      // qarz puli yashiqda turadi-yu, kutilgan naqdda ko'rinmaydi va smena
+      // har safar shu summaga ORTIQCHA (излишек) chiqardi.
+      // Faqat NAQD: terminal to'lovi yashiqqa tushmaydi.
+      this.prisma.client.debtPayment.aggregate({
+        where: { accountId, retailShiftId: sessionId, method: 'cash', reversedAt: null },
+        _sum: { amountMinor: true },
+      }),
+      this.prisma.client.retailDrawerCashIn.aggregate({
+        where: { accountId, retailShiftId: sessionId, state: 'posted', deletedAt: null },
+        _sum: { sumMinor: true },
+      }),
+      // Xarajat (РКО) va inkassatsiya (ИНК) ham SHU jadvalda — tasnifi
+      // `kind` da. Shuning uchun ular formulaga o'z-o'zidan kiradi va
+      // «yangi turni qo'shishni unutish» xatosi tug'ilmaydi (§8.2/§8.3).
+      this.prisma.client.retailDrawerCashOut.aggregate({
+        where: { accountId, retailShiftId: sessionId, state: 'posted', deletedAt: null },
+        _sum: { sumMinor: true },
+      }),
+    ]);
+
+    return {
+      openingCashMinor,
+      salesCashMinor: cashAgg._sum.cashAmountMinor ?? 0n,
+      drawerInMinor: drawerInAgg._sum.sumMinor ?? 0n,
+      drawerOutMinor: drawerOutAgg._sum.sumMinor ?? 0n,
+      returnsCashMinor: refundAgg._sum.cashAmountMinor ?? 0n,
+      debtCashMinor: debtCashAgg._sum.amountMinor ?? 0n,
+    };
   }
 
   // ---- Drawer cash in/out (Внесение / Изъятие) — §100/§101 ----
@@ -389,6 +407,195 @@ export class CashierSessionService {
         description: parsed.description ?? null,
       },
     });
+  }
+
+  // ---- Xarajat (RKO) va inkassatsiya — kassa TZ §8.2 / §8.3 ----
+
+  /**
+   * Xarajat (RKO) yoki inkassatsiya hujjati.
+   *
+   * NEGA `drawerCashOut` ning o'zi yetarli emas: u tasnifsiz «Изъятие»
+   * yozadi, ya'ni Z-hisobot «qaysi moddaga qancha ketdi» va «qancha
+   * topshirildi» degan savollarga javob bera olmaydi (§8.5).
+   *
+   * ⚠️ Hujjat va audit izi BITTA tranzaksiyada: tasdiqsiz erkinlikning
+   * (Q10) yagona muvozanati — izning o'zi. Izsiz qolgan xarajat bu
+   * modelda eng yomon natija, shuning uchun iz yozilmasa hujjat ham
+   * yozilmaydi.
+   */
+  async posCashOut(accountId: string, cashierId: string, sessionId: string, raw: unknown) {
+    const parsed = PosCashOutSchema.parse(raw);
+    const kind = parsed.kind as CashOutKind;
+    const sumMinor = BigInt(parsed.sumMinor);
+
+    const problems = validateCashOut({
+      kind,
+      sumMinor,
+      expenseItemId: parsed.expenseItemId,
+      recipientId: parsed.recipientId,
+    });
+    if (problems.length > 0) {
+      throw new BadRequestException(problems.map((x) => x.message).join('; '));
+    }
+
+    const session = await this.loadOpenShiftForDrawer(accountId, cashierId, sessionId);
+
+    // Nomlar audit payload'iga MUZLATIB yoziladi: modda keyin qayta
+    // nomlansa ham jurnal o'sha ondagi holatni ko'rsatishi kerak.
+    const [expenseItem, recipient] = await Promise.all([
+      parsed.expenseItemId
+        ? this.prisma.client.expenseItem.findFirst({
+            where: { id: parsed.expenseItemId, accountId },
+            select: { id: true, name: true },
+          })
+        : Promise.resolve(null),
+      parsed.recipientId
+        ? this.prisma.client.employee.findFirst({
+            where: { id: parsed.recipientId, accountId },
+            select: { id: true, name: true },
+          })
+        : Promise.resolve(null),
+    ]);
+    if (parsed.expenseItemId && !expenseItem) {
+      throw new NotFoundException('Xarajat moddasi topilmadi');
+    }
+    if (parsed.recipientId && !recipient) {
+      throw new NotFoundException('Qabul qiluvchi xodim topilmadi');
+    }
+
+    // Hujjatdan OLDINGI kutilgan naqd — «yashiqda yo'q pul chiqarildi»
+    // anomaliyasini aniqlash uchun.
+    const cashBeforeMinor = expectedCashMinor(
+      await this.collectCashInputs(accountId, sessionId, session.openingCashMinor),
+    );
+
+    const year = new Date().getFullYear();
+    const prefix = cashOutPrefix(kind, year);
+    const n = await allocateDocumentNumber(this.prisma.client, accountId, prefix, async () => {
+      const last = await this.prisma.client.retailDrawerCashOut.findFirst({
+        where: { accountId, name: { startsWith: prefix } },
+        orderBy: { name: 'desc' },
+        select: { name: true },
+      });
+      return last ? Number.parseInt(last.name.slice(prefix.length), 10) || 0 : 0;
+    });
+    const name = `${prefix}${String(n).padStart(5, '0')}`;
+    const creatorGroupId = await resolveCreatorGroupId(this.prisma.client, accountId, cashierId);
+
+    return this.prisma.client.$transaction(async (tx) => {
+      const doc = await tx.retailDrawerCashOut.create({
+        data: {
+          accountId,
+          ownerId: cashierId,
+          groupId: creatorGroupId,
+          name,
+          retailShiftId: sessionId,
+          organizationId: session.organizationId,
+          sumMinor,
+          currency: session.cashDesk.currency,
+          moment: new Date(),
+          applicable: true,
+          state: 'posted',
+          postedAt: new Date(),
+          description: parsed.description ?? null,
+          kind,
+          expenseItemId: expenseItem?.id ?? null,
+          recipientId: recipient?.id ?? null,
+        },
+        select: {
+          id: true,
+          name: true,
+          sumMinor: true,
+          currency: true,
+          kind: true,
+          description: true,
+          createdAt: true,
+        },
+      });
+
+      const events = planCashOutAuditEvents({
+        docId: doc.id,
+        docName: doc.name,
+        kind,
+        sumMinor,
+        expenseItemId: expenseItem?.id ?? null,
+        expenseItemName: expenseItem?.name ?? null,
+        recipientId: recipient?.id ?? null,
+        recipientName: recipient?.name ?? null,
+        description: parsed.description ?? null,
+        cashBeforeMinor,
+      });
+      if (events.length > 0) {
+        await tx.cashierAuditEvent.createMany({
+          data: events.map((e) => ({
+            accountId,
+            sessionId,
+            employeeId: cashierId,
+            type: e.type,
+            docId: e.docId,
+            payload: e.payload as Prisma.InputJsonValue,
+          })),
+        });
+      }
+
+      return {
+        ...doc,
+        sumMinor: doc.sumMinor.toString(),
+        expenseItem,
+        recipient,
+        /** Yozilgan audit hodisalari — FE «anomaliya» belgisini shundan oladi. */
+        auditTypes: events.map((e) => e.type),
+      };
+    });
+  }
+
+  /** Smenadagi pul chiqishi — turlar va moddalar kesimida (Z-hisobot §8.5). */
+  async cashOutSummary(accountId: string, sessionId: string) {
+    const rows = await this.prisma.client.retailDrawerCashOut.findMany({
+      where: { accountId, retailShiftId: sessionId, deletedAt: null },
+      select: {
+        id: true,
+        name: true,
+        kind: true,
+        sumMinor: true,
+        description: true,
+        createdAt: true,
+        expenseItem: { select: { id: true, name: true } },
+        recipient: { select: { id: true, name: true } },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    const s = summarizeCashOut(
+      rows.map((r) => ({
+        kind: r.kind,
+        sumMinor: r.sumMinor,
+        expenseItemId: r.expenseItem?.id ?? null,
+        expenseItemName: r.expenseItem?.name ?? null,
+      })),
+    );
+
+    return {
+      expenseMinor: s.expenseMinor.toString(),
+      collectionMinor: s.collectionMinor.toString(),
+      otherMinor: s.otherMinor.toString(),
+      totalMinor: s.totalMinor.toString(),
+      byExpenseItem: s.byExpenseItem.map((i) => ({
+        id: i.id,
+        name: i.name,
+        sumMinor: i.sumMinor.toString(),
+      })),
+      rows: rows.map((r) => ({
+        id: r.id,
+        name: r.name,
+        kind: r.kind,
+        sumMinor: r.sumMinor.toString(),
+        description: r.description,
+        createdAt: r.createdAt,
+        expenseItem: r.expenseItem,
+        recipient: r.recipient,
+      })),
+    };
   }
 
   /** All posted drawer Внесение/Изъятие for a shift (session detail + Z). */

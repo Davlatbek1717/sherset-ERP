@@ -417,6 +417,7 @@ model Employee {
   ownedPriceLists            PriceList[]                @relation("PriceListOwner")
   ownedRetailDrawerIn        RetailDrawerCashIn[]       @relation("RetailDrawerInOwner")
   ownedRetailDrawerOut       RetailDrawerCashOut[]      @relation("RetailDrawerOutOwner")
+  retailDrawerOutRecipient   RetailDrawerCashOut[]      @relation("RetailDrawerOutRecipient")
   ownedRetailSalesReturns    RetailSalesReturn[]        @relation("RetailSalesReturnOwner")
   ownedProcessingProcesses   ProcessingProcess[]        @relation("ProcessingProcessOwner")
   ownedProcessingStages      ProcessingStage[]          @relation("ProcessingStageOwner")
@@ -2324,6 +2325,8 @@ model ExpenseItem {
   updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz()
 
   account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  /// Shu modda bo'yicha kassadan chiqqan xarajatlar (kassa TZ §8.2).
+  drawerCashOuts RetailDrawerCashOut[] @relation("RetailDrawerOutExpenseItem")
 
   @@unique([accountId, code])
   @@map("expense_items")
@@ -3301,6 +3304,24 @@ model RetailDrawerCashOut {
   published   Boolean @default(false)
   attributes  Json?   @default("{}")
 
+  /// Pul yashiqdan NEGA chiqdi (kassa TZ §8.2/§8.3): 'expense' — xarajat (RKO),
+  /// 'collection' — inkassatsiya, 'other' — tasniflanmagan (eski yozuvlar).
+  ///
+  /// NEGA alohida jadval EMAS: smena yakunidagi «kutilgan naqd» AYNAN shu
+  /// jadvalni yig'adi. Har yangi pul-chiqishi turi uchun yangi jadval ochilsa,
+  /// uni formulaga qo'shishni UNUTISH mumkin — bu ayni §100 bug'i («drawer
+  /// in/out kutilgan naqddan tushib qolgan edi») qaytadan ochilishi bo'lardi.
+  /// Bitta pul yo'li — tasniflangan. Z-hisobot ajratishni `kind` orqali oladi.
+  kind String @default("other") @db.VarChar(20)
+
+  /// Xarajat moddasi (`kind='expense'` da MAJBURIY — servis tekshiradi).
+  /// Sxema darajasida nullable: bitta jadval uch xil hujjatni saqlaydi.
+  expenseItemId String? @map("expense_item_id") @db.Uuid
+
+  /// Inkassatsiyani QABUL QILGAN xodim (`kind='collection'` da majburiy).
+  /// «Pulni kimga topshirdim» — javobgarlik shu yerdan boshlanadi.
+  recipientId String? @map("recipient_id") @db.Uuid
+
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
   deletedAt DateTime? @map("deleted_at") @db.Timestamptz()
@@ -3311,9 +3332,15 @@ model RetailDrawerCashOut {
   retailShift  CashierSession @relation("RetailDrawerOutShift", fields: [retailShiftId], references: [id], onDelete: Restrict)
   agent        Counterparty?  @relation("RetailDrawerOutAgent", fields: [agentId], references: [id], onDelete: SetNull)
   organization Organization   @relation("RetailDrawerOutOrg", fields: [organizationId], references: [id], onDelete: Restrict)
+  // Restrict: ishlatilgan xarajat moddasi o'chirilsa hujjat «moddasiz» qolardi
+  // va Z-hisobotdagi moddalar kesimi jimgina buzilardi.
+  expenseItem  ExpenseItem?   @relation("RetailDrawerOutExpenseItem", fields: [expenseItemId], references: [id], onDelete: Restrict)
+  recipient    Employee?      @relation("RetailDrawerOutRecipient", fields: [recipientId], references: [id], onDelete: SetNull)
 
   @@unique([accountId, name])
   @@index([accountId, retailShiftId])
+  // Z-hisobot: smenadagi xarajat/inkassatsiya kesimi.
+  @@index([accountId, retailShiftId, kind])
   @@map("retail_drawer_cash_out")
 }
 

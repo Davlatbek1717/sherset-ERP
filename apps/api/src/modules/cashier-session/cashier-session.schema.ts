@@ -61,6 +61,25 @@ export const DrawerCashSchema = z.object({
 });
 export type DrawerCashInput = z.infer<typeof DrawerCashSchema>;
 
+/**
+ * Xarajat (RKO) / inkassatsiya — kassa TZ §8.2 / §8.3.
+ *
+ * `kind` ni MIJOZ yuboradi, lekin qaysi maydon majburiy ekanini schema
+ * emas, sof `validateCashOut` hal qiladi: bir xil qoida servis ichida ham,
+ * testda ham bitta manbadan o'qiladi.
+ */
+export const PosCashOutSchema = z.object({
+  kind: z.enum(['expense', 'collection']),
+  sumMinor: z.coerce
+    .string()
+    .regex(/^\d+$/, 'sumMinor must be a non-negative integer')
+    .refine((v) => /[1-9]/.test(v), 'sumMinor must be greater than 0'),
+  expenseItemId: z.string().uuid().nullish(),
+  recipientId: z.string().uuid().nullish(),
+  description: z.string().trim().max(4000).nullish(),
+});
+export type PosCashOutInput = z.infer<typeof PosCashOutSchema>;
+
 // --- List filter ---
 
 const boolFromString = z

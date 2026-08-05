@@ -70,6 +70,29 @@ export class CashierSessionController {
     return this.sessions.drawerCashOut(user.accountId, user.sub, id, body);
   }
 
+  /**
+   * Xarajat (RKO) yoki inkassatsiya — kassa TZ §8.2 / §8.3.
+   *
+   * Tasdiq talab qilinmaydi (Q10): kassir erkin yozadi, muvozanat —
+   * §9 audit jurnali. Shu sababli ruxsat `drawer-out` bilan bir xil.
+   */
+  @Post(':id/cash-out')
+  @RequirePermission({ entity: 'cashiersession', action: 'create' })
+  async cashOut(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    return this.sessions.posCashOut(user.accountId, user.sub, id, body);
+  }
+
+  /** Smenadagi pul chiqishi — turlar va moddalar kesimida (Z-hisobot §8.5). */
+  @Get(':id/cash-out-summary')
+  @RequirePermission({ entity: 'cashiersession', action: 'view' })
+  async cashOutSummary(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.sessions.cashOutSummary(user.accountId, id);
+  }
+
   /** Posted drawer Внесение/Изъятие for a shift. */
   @Get(':id/drawer')
   @RequirePermission({ entity: 'cashiersession', action: 'view' })
