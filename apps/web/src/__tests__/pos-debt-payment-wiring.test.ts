@@ -33,10 +33,15 @@ describe('POS qarz to`lovi — ulanish', () => {
   });
 
   it('to`lovdan keyin PKO cheki ochiladi va route MAVJUD', () => {
-    const m = POS_PAGE.match(/window\.open\(`(\/print\/[^`?]+)/);
-    expect(m, 'PKO chekini ochuvchi window.open topilmadi').not.toBeNull();
-    const urlPath = m?.[1] ?? '';
-    expect(urlPath).toContain('/print/debt-payment/');
+    // Sahifada bir nechta chek ochiladi (qarz to'lovi, xarajat/inkassatsiya) —
+    // shuning uchun HAMMASI yig'iladi va oralaridan qarz cheki qidiriladi.
+    // «Birinchi topilgani» deb olish yangi chek qo'shilishi bilan buzilardi.
+    const paths = [...POS_PAGE.matchAll(/window\.open\(`(\/print\/[^`?]+)/g)].map((m) => m[1]);
+    expect(paths.length, 'chek ochuvchi window.open topilmadi').toBeGreaterThan(0);
+    const urlPath = paths.find((p) => p?.includes('/print/debt-payment/')) ?? '';
+    expect(urlPath, `qarz cheki havolasi yo'q — topilganlar: ${paths.join(', ')}`).toContain(
+      '/print/debt-payment/',
+    );
 
     // Havoladagi yo'l uchun haqiqiy App Router fayli borligini tekshiramiz.
     const routeFile = join(WEB_SRC, 'app', 'print', 'debt-payment', '[batchId]', 'page.tsx');

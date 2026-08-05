@@ -549,6 +549,52 @@ export class CashierSessionService {
     });
   }
 
+  /**
+   * Inkassatsiyani qabul qila oladigan xodimlar — FAQAT `id` va `name`.
+   *
+   * NEGA `/hr/employees` EMAS: u `salaryMinor`, telefon va boshqa shaxsiy
+   * ma'lumotni qaytaradi, va kiosk-kassirga uni ochish butun POS
+   * terminalida oyliklarni oshkor qilardi. Kiosk allowlist'ida
+   * `/cashier-sessions` allaqachon ochiq, shuning uchun eng tor yo'l —
+   * shu yerda kerakli ikki maydonni berish.
+   */
+  async cashOutRecipients(accountId: string, cashierId: string) {
+    return this.prisma.client.employee.findMany({
+      where: {
+        accountId,
+        // O'ziga topshirish ma'nosiz — javobgarlik o'zgarmaydi.
+        id: { not: cashierId },
+        archived: false,
+      },
+      select: { id: true, name: true },
+      orderBy: { name: 'asc' },
+      take: 200,
+    });
+  }
+
+  /** Bitta pul-chiqishi hujjati — RKO cheki uchun (§8.2). */
+  async cashOutDoc(accountId: string, docId: string) {
+    const doc = await this.prisma.client.retailDrawerCashOut.findFirst({
+      where: { id: docId, accountId, deletedAt: null },
+      select: {
+        id: true,
+        name: true,
+        kind: true,
+        sumMinor: true,
+        currency: true,
+        description: true,
+        createdAt: true,
+        expenseItem: { select: { id: true, name: true } },
+        recipient: { select: { id: true, name: true } },
+        owner: { select: { id: true, name: true } },
+        organization: { select: { name: true, legalTitle: true } },
+        retailShift: { select: { id: true, cashDesk: { select: { name: true } } } },
+      },
+    });
+    if (!doc) throw new NotFoundException('Hujjat topilmadi');
+    return { ...doc, sumMinor: doc.sumMinor.toString() };
+  }
+
   /** Smenadagi pul chiqishi — turlar va moddalar kesimida (Z-hisobot §8.5). */
   async cashOutSummary(accountId: string, sessionId: string) {
     const rows = await this.prisma.client.retailDrawerCashOut.findMany({

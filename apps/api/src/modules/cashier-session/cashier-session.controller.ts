@@ -26,6 +26,26 @@ export class CashierSessionController {
     return this.sessions.findCurrentForCashier(user.accountId, user.sub);
   }
 
+  /**
+   * Inkassatsiya qabul qiluvchilari (id + name).
+   *
+   * `current` kabi — `:id` dan OLDIN. Fastify statik segmentni parametrik
+   * segmentdan ustun qo'yadi, lekin bu yozilmagan kafolatga tayanmaymiz:
+   * fayldagi konventsiya «statik yo'l avval turadi».
+   */
+  @Get('cash-out-recipients')
+  @RequirePermission({ entity: 'cashiersession', action: 'view' })
+  async cashOutRecipients(@CurrentUser() user: AuthenticatedUser) {
+    return this.sessions.cashOutRecipients(user.accountId, user.sub);
+  }
+
+  /** Bitta pul-chiqishi hujjati — RKO cheki uchun (§8.2). */
+  @Get('cash-out/:docId')
+  @RequirePermission({ entity: 'cashiersession', action: 'view' })
+  async cashOutDoc(@CurrentUser() user: AuthenticatedUser, @Param('docId') docId: string) {
+    return this.sessions.cashOutDoc(user.accountId, docId);
+  }
+
   @Get(':id')
   @RequirePermission({ entity: 'cashiersession', action: 'view' })
   async findById(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {

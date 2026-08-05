@@ -1,5 +1,6 @@
 'use client';
 
+import { CashOutDialog } from '@/components/pos/cash-out-dialog';
 import { DebtPaymentDialog } from '@/components/pos/debt-payment-dialog';
 import { RasmiyashtirishModal } from '@/components/pos/rasmilashtirish-modal';
 import { useDestructiveMutation } from '@/hooks/use-destructive-mutation';
@@ -668,6 +669,7 @@ function SalesScreen({ session }: { session: CurrentSession }) {
     : 'UZS';
   const [drawerMode, setDrawerMode] = useState<'in' | 'out' | null>(null);
   const [debtPayOpen, setDebtPayOpen] = useState(false);
+  const [cashOutOpen, setCashOutOpen] = useState(false);
   const [drawerAmount, setDrawerAmount] = useState('');
   const [drawerComment, setDrawerComment] = useState('');
   const [closingCash, setClosingCash] = useState('');
@@ -1493,6 +1495,17 @@ function SalesScreen({ session }: { session: CurrentSession }) {
               >
                 Qarz to'lovi
               </button>
+              {/* Xarajat (RKO) va inkassatsiya — kassa TZ §8.2/§8.3. Ikkalasi
+                  ham yashiqdan pul chiqaradi, ya'ni smena yakunidagi
+                  «kutilgan naqd» shuncha kamayadi. */}
+              <button
+                type="button"
+                onClick={() => setCashOutOpen(true)}
+                data-test-id="pos-cash-out-open"
+                className="mb-3 w-full rounded-lg border border-[var(--ms-border)] py-2 text-sm font-medium text-[var(--ms-text-primary)] transition-colors hover:bg-[var(--ms-bg-hover)]"
+              >
+                Xarajat / inkassatsiya
+              </button>
               {drawerMode && (
                 <div className="flex flex-col gap-2">
                   <input
@@ -1946,6 +1959,23 @@ function SalesScreen({ session }: { session: CurrentSession }) {
           </>
         )}
       </div>
+
+      <CashOutDialog
+        open={cashOutOpen}
+        onOpenChange={setCashOutOpen}
+        sessionId={session.id}
+        onDone={(doc) => {
+          // `CASH_OVERDRAWN` — yashiqda yo'q pul chiqarildi. Server to'xtatmaydi
+          // (Q10), lekin kassir buni BILISHI kerak: aks holda farq faqat smena
+          // yopilganda chiqib, sababi unutilgan bo'lardi.
+          if (doc.auditTypes.includes('CASH_OVERDRAWN')) {
+            toast.error('Diqqat: summa yashiqdagi naqddan ko`p — menejerga bildirildi');
+          } else {
+            toast.success(`${doc.name} yozildi`);
+          }
+          window.open(`/print/cash-out/${doc.id}?auto=1`, '_blank');
+        }}
+      />
 
       <DebtPaymentDialog
         open={debtPayOpen}
