@@ -31,7 +31,7 @@ kuniga **3 sessiya** → **~6 hafta**.
 
 | Bo'lim | Bajarildi | Qoldi |
 |---|---|---|
-| 1 — Kassa | B1 B2 B3 **B4** | **4** (B5–B8) |
+| 1 — Kassa | B1 B2 B3 B4, **B5-yadro** | **4** (B5-FE, B6–B8) |
 | 2 — Onlayn sotuv / B2B / B2G | B1 | **8** (B2–B9) |
 | 3 — Analitika | B1, B2 (qisman) | **6** (B3–B8) |
 | 4 — Menejer (ruxsatlar) | — | **8** (B1–B8) |
@@ -66,7 +66,8 @@ kuniga **3 sessiya** → **~6 hafta**.
 - [x] **3-Analitika B2 (qisman)** — X1 `6adc495` · X3 `6d1be01` · **X2 qisman** (kassir o'qi
       `CashierAuditEvent` da bor, hisobot kesimi yo'q)
 - [x] **1-Kassa B8 (yarim)** — `CashierAuditEvent` — `d35efab` *(page.tsx bo'linishi qolgan)*
-- [x] **1-Kassa B4** — kiosk rejim: server guard + POS PIN + menyusiz qobiq — `45350ea` + FE
+- [x] **1-Kassa B4** — kiosk rejim: server guard + POS PIN + menyusiz qobiq — `45350ea` + `3b306c2`
+- [x] **1-Kassa B5 (yadro)** — qarz moduli ulandi + balans simmetriyasi + FIFO — `dae7289`
 - [x] **4M.1** — KPI o'lchov yadrosi + har-xodim config + **o'z ko'rsatkichi** — `829c122`, `809e2891`
 - [x] **4M.2** — kunlik qabul FSM · jurnal · ball · ekran · drill-down — `fa58171`+`a2b4bb6` (brauzer-QA `d86320b`)
 - [x] **4M.3 (yarim)** — M-Q8 bloklash + oylik manbai ko'chdi + sana qarzi — `e1a761b`
@@ -93,8 +94,11 @@ kuniga **3 sessiya** → **~6 hafta**.
       default-deny)** + PIN servisi *(48+16 test, jonli tekshirilgan)*
 - [x] **1-Kassa B4 (FE)** — kiosk qobiq (menyusiz POS) + PIN-qulf overlay *(12 guard test)*
       ⬜ *brauzerda ochilmagan — 1-Kassa Phase-2 QA ga kiradi*
-- [ ] **1-Kassa B5** — Qarz to'lovi (PKO) + **balans simmetriyasi**
-      *(hozir: qarz berilganda balansga yozilmaydi, to'langanda yoziladi → FIFO noto'g'ri ishlaydi)*
+- [x] **1-Kassa B5 (yadro)** — 🔴 `DebtModule` ilovaga ULANDI *(u yetim edi: prodda `/debts` → 404,
+      butun qarz funksiyasi o'lik kod)* + **balans simmetriyasi** (`create` endi `+total` yozadi;
+      backfill kerak emas — prodda 0 qarz) + **FIFO yadrosi** *(15 test)* — `dae7289`
+- [ ] **1-Kassa B5 (qolgani)** — POS «Qarz to'lovi» oynasi (FE) · **PKO cheki** ·
+      to'lovning joriy smenaga kirishi
 - [ ] **1-Kassa B6** — Xarajat (RKO) + inkassatsiya
 - [ ] **1-Kassa B7** — Smena yopish: `CashierSessionVariance` (YO'Q) + farq akti + **Z-hisobot**
       *(UZS va USD alohida; farq ≠ 0 → menejerga Telegram)*
@@ -258,6 +262,8 @@ kuniga **3 sessiya** → **~6 hafta**.
 - [ ] **List toolbar 19/56** — qolgan 37 sahifa
 - [ ] **Navigation graph 0%**
 - [ ] **Conv-6 data-bog'liq vizuallar** — 3/13 browser-smoked
+- [ ] **Prodda ~20 yangi `/debts` route jonlanadi** — `DebtModule` ulangani sababli;
+      deploy oldidan hisobga oling (avval hech qachon ishlamagan kod)
 - [ ] **`wave4m-accept` branch + worktree** tozalash
 - [ ] **`stash@{0}` (2026-07-31)** — begona backup, `git stash drop` (egasi tasdiqlasa)
 
