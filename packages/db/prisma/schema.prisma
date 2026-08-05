@@ -111,6 +111,7 @@ model Account {
   workOrders                     WorkOrder[]
   cashierSessions                CashierSession[]
   cashierAuditEvents             CashierAuditEvent[]
+  cashierSessionVariances        CashierSessionVariance[]
   kpiMetricDefs                  KpiMetricDef[]
   kpiProfiles                    KpiProfile[]
   kpiProfileVersions             KpiProfileVersion[]
@@ -417,6 +418,8 @@ model Employee {
   ownedPriceLists            PriceList[]                @relation("PriceListOwner")
   ownedRetailDrawerIn        RetailDrawerCashIn[]       @relation("RetailDrawerInOwner")
   ownedRetailDrawerOut       RetailDrawerCashOut[]      @relation("RetailDrawerOutOwner")
+  cashierSessionVariances    CashierSessionVariance[]   @relation("CashierSessionVarianceCashier")
+  acknowledgedVariances      CashierSessionVariance[]   @relation("CashierSessionVarianceAck")
   retailDrawerOutRecipient   RetailDrawerCashOut[]      @relation("RetailDrawerOutRecipient")
   ownedRetailSalesReturns    RetailSalesReturn[]        @relation("RetailSalesReturnOwner")
   ownedProcessingProcesses   ProcessingProcess[]        @relation("ProcessingProcessOwner")
@@ -7628,6 +7631,7 @@ model CashierSession {
   drawerCashOut       RetailDrawerCashOut[] @relation("RetailDrawerOutShift")
   retailSalesReturns  RetailSalesReturn[]   @relation("RetailSalesReturnShift")
   auditEvents         CashierAuditEvent[]
+  variances          CashierSessionVariance[] @relation("CashierSessionVarianceSession")
 
   @@index([accountId, cashierId, state])
   @@index([accountId, cashDeskId, state])
@@ -7658,6 +7662,64 @@ model CashierSession {
 ///   SHIFT_OUT_OF_SCHEDULE  — shift opened outside its schedule, with reason
 /// Reserved for later waves (features do not exist yet): SOLD_ON_CREDIT,
 /// EXPENSE, SHIFT_VARIANCE.
+/// Smena farq akti (kassa TZ §8.4) — sanalgan naqd kutilgandan farq qilganda.
+///
+/// NEGA ALOHIDA JADVAL: `CashierSession.discrepancyMinor` faqat OXIRGI raqamni
+/// saqlaydi va u yerda sabab ham, kassir izohi ham, kim ko'rgani ham yo'q.
+/// Farq — pul yo'qolishi haqidagi da'vo: uning yonida DALIL turishi kerak,
+/// aks holda menejer keyin «nega minus edi» degan savolga javob topa olmaydi.
+///
+/// Yozuv HECH QACHON o'chirilmaydi/ustidan yozilmaydi: bir smenaning farqi
+/// bitta akt. Tan olinishi (`acknowledgedAt`) alohida maydon — aktning o'zi
+/// o'zgarmaydi.
+model CashierSessionVariance {
+  id        String @id @default(uuid()) @db.Uuid
+  accountId String @map("account_id") @db.Uuid
+  sessionId String @map("session_id") @db.Uuid
+
+  /// Kim yopgan (odatda smena kassiri; admin boshqa smenani yopishi mumkin).
+  cashierId String @map("cashier_id") @db.Uuid
+
+  /// Sanoq VALYUTASI. USD farqi UZS'ga O'GIRILMAYDI (§8.4): kurs bilan
+  /// o'girish yo'qolgan dollarni «taxminiy so'm» ga aylantirib, dalilni
+  /// yo'qotardi. Har valyuta uchun alohida qator.
+  currency String @default("UZS") @db.VarChar(3)
+
+  expectedMinor BigInt @map("expected_minor")
+  countedMinor  BigInt @map("counted_minor")
+  /// `counted − expected`. Manfiy = KAMOMAD, musbat = ORTIQCHA.
+  varianceMinor BigInt @map("variance_minor")
+
+  /// 'shortage' | 'surplus' — hisoblanadigan qiymat, lekin saqlanadi:
+  /// hisobotlar shu bo'yicha filtrlaydi va `variance_minor < 0` sharti
+  /// har so'rovda takrorlanishi indekssiz skanerga olib kelardi.
+  kind String @db.VarChar(20)
+
+  /// Kassirning izohi (yopish formasida yoziladi, ixtiyoriy).
+  cashierNote String? @map("cashier_note")
+
+  /// Menejer aktni ko'rib, tan olgani. NULL = hali ko'rilmagan.
+  acknowledgedAt   DateTime? @map("acknowledged_at") @db.Timestamptz()
+  acknowledgedById String?   @map("acknowledged_by_id") @db.Uuid
+  managerNote      String?   @map("manager_note")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  account        Account        @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  session        CashierSession @relation("CashierSessionVarianceSession", fields: [sessionId], references: [id], onDelete: Cascade)
+  cashier        Employee       @relation("CashierSessionVarianceCashier", fields: [cashierId], references: [id], onDelete: Restrict)
+  acknowledgedBy Employee?      @relation("CashierSessionVarianceAck", fields: [acknowledgedById], references: [id], onDelete: SetNull)
+
+  /// Bir smena + bir valyuta = bitta akt. Ikki marta yopishga urinish
+  /// (§8.4 idempotentligi) ikkinchi aktni yaratmaydi.
+  @@unique([sessionId, currency])
+  /// Menejerning asosiy savoli: «ko'rilmagan aktlar qaysi?»
+  @@index([accountId, acknowledgedAt, createdAt(sort: Desc)])
+  /// «Qaysi kassirda farq tez-tez chiqadi» (4-bo'lim / HR jarima asosi).
+  @@index([accountId, cashierId, kind, createdAt(sort: Desc)])
+  @@map("cashier_session_variances")
+}
+
 model CashierAuditEvent {
   id         String  @id @default(uuid()) @db.Uuid
   accountId  String  @map("account_id") @db.Uuid

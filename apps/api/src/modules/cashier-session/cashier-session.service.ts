@@ -1,9 +1,11 @@
 import type { Prisma } from '@moysklad/db';
+import { scaleMinorByQty } from '@moysklad/money';
 import {
   BadRequestException,
   ConflictException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { allocateDocumentNumber } from '../../prisma/document-number.js';
@@ -31,6 +33,13 @@ import {
   summarizeCashOut,
   validateCashOut,
 } from './pos-cash-out.js';
+// Farq akti va Z-hisobot qoidalari — sof modul (§8.4/§8.5).
+import {
+  type VarianceAct,
+  buildZReport,
+  formatVarianceMessage,
+  planVarianceActs,
+} from './shift-variance.js';
 
 /**
  * CashierSessionService — manages cashier shift lifecycle.
@@ -44,6 +53,8 @@ import {
  */
 @Injectable()
 export class CashierSessionService {
+  private readonly logger = new Logger(CashierSessionService.name);
+
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   async list(accountId: string, rawFilter: unknown) {
@@ -249,6 +260,20 @@ export class CashierSessionService {
         `Session ${sessionId} state changed; close aborted (already closed?)`,
       );
     }
+
+    // Farq akti — holat allaqachon 'closed' ga o'tgandan KEYIN. Tartib
+    // muhim: `updateMany` optimistik qulf, ya'ni faqat BITTA chaqiruv shu
+    // yergacha yetadi. Aktni oldin yozsak, poyga yutqazgan ikkinchi
+    // chaqiruv ham akt yozib qo'yardi.
+    await this.recordVariance({
+      accountId,
+      sessionId,
+      cashierId,
+      expectedCash,
+      closingCash,
+      varianceNote: parsed.varianceNote ?? null,
+    });
+
     return this.prisma.client.cashierSession.findUniqueOrThrow({
       where: { id: sessionId, accountId },
       include: {
@@ -407,6 +432,251 @@ export class CashierSessionService {
         description: parsed.description ?? null,
       },
     });
+  }
+
+  /**
+   * Farq akti (`CashierSessionVariance`) + menejerga xabar — kassa TZ §8.4.
+   *
+   * ⚠️ **Yopishni yiqitmaydi.** Akt yozish yoki xabar navbatiga qo'yish
+   * xato bersa, smena YOPILGAN holida qoladi: kassir ishini davom ettira
+   * olishi kerak, aks holda bir texnik nosozlik butun kassani to'xtatardi.
+   * Xato jurnalga tushadi, farq esa `CashierSession.discrepancyMinor` da
+   * baribir saqlangan.
+   *
+   * Idempotent: `@@unique([sessionId, currency])` tufayli takroriy
+   * urinish yangi akt yaratmaydi (`skipDuplicates`).
+   */
+  private async recordVariance(args: {
+    accountId: string;
+    sessionId: string;
+    cashierId: string;
+    expectedCash: bigint;
+    closingCash: bigint;
+    varianceNote: string | null;
+  }): Promise<VarianceAct[]> {
+    // Faqat UZS. Sof modul bir necha valyutani qo'llaydi (`planVarianceActs`),
+    // lekin USD «kutilgan»i hozir hisoblanmaydi — USD naqd oqimi ulanmagan
+    // (CASH_USD). Soxta «USD ortiqcha» aktidan ko'ra akt YO'Qligi to'g'ri:
+    // ogohlantirishga ishonch yo'qolsa, haqiqiy kamomad ham o'qilmaydi.
+    const acts = planVarianceActs([
+      { currency: 'UZS', expectedMinor: args.expectedCash, countedMinor: args.closingCash },
+    ]);
+    if (acts.length === 0) return [];
+
+    try {
+      await this.prisma.client.cashierSessionVariance.createMany({
+        data: acts.map((a) => ({
+          accountId: args.accountId,
+          sessionId: args.sessionId,
+          cashierId: args.cashierId,
+          currency: a.currency,
+          expectedMinor: a.expectedMinor,
+          countedMinor: a.countedMinor,
+          varianceMinor: a.varianceMinor,
+          kind: a.kind,
+          cashierNote: args.varianceNote,
+        })),
+        skipDuplicates: true,
+      });
+
+      const session = await this.prisma.client.cashierSession.findFirst({
+        where: { id: args.sessionId, accountId: args.accountId },
+        select: {
+          closedAt: true,
+          cashier: { select: { name: true } },
+          cashDesk: { select: { name: true } },
+        },
+      });
+
+      await this.prisma.client.hrTelegramOutbox.create({
+        data: {
+          accountId: args.accountId,
+          toPhone: '',
+          toSelf: true,
+          messageText: formatVarianceMessage({
+            cashierName: session?.cashier?.name ?? '—',
+            cashDeskName: session?.cashDesk?.name ?? null,
+            closedAtLabel: (session?.closedAt ?? new Date())
+              .toISOString()
+              .slice(0, 16)
+              .replace('T', ' '),
+            acts,
+            cashierNote: args.varianceNote,
+          }),
+          sourceEventType: 'kassa.smena_farqi',
+          sourceDocId: args.sessionId,
+          status: 'pending',
+        },
+      });
+    } catch (err) {
+      // Yopish bajarildi — akt/xabar nosozligi uni bekor qilmaydi.
+      this.logger.warn(
+        `Smena farq akti (session=${args.sessionId}) yozilmadi: ${(err as Error).message}`,
+      );
+    }
+    return acts;
+  }
+
+  /**
+   * Z-hisobot (kassa TZ §8.5) — smenaning to'liq moliyaviy manzarasi.
+   *
+   * Ochiq smenada ham ishlaydi: kassir kun o'rtasida «hozirgi holat»ni
+   * ko'rishi kerak. Bu holda `countedCashMinor` = `null` va farq ham
+   * `null` — sanoq hali bo'lmagan (nol EMAS).
+   */
+  async zReport(accountId: string, sessionId: string) {
+    const session = await this.prisma.client.cashierSession.findFirst({
+      where: { id: sessionId, accountId },
+      select: {
+        id: true,
+        state: true,
+        openedAt: true,
+        closedAt: true,
+        openingCashMinor: true,
+        closingCashMinor: true,
+        cashier: { select: { id: true, name: true } },
+        cashDesk: { select: { id: true, name: true, currency: true } },
+        store: { select: { name: true } },
+        organization: { select: { name: true, legalTitle: true } },
+      },
+    });
+    if (!session) throw new NotFoundException(`CashierSession ${sessionId} not found`);
+
+    const [payments, sales, refundAgg, debtAgg, cashOut, variances] = await Promise.all([
+      // To'lov turlari kesimida tushum — `RetailSalePayment` bo'yicha, chunki
+      // aralash to'lovda bitta chek bir necha turga bo'linadi (B3).
+      this.prisma.client.retailSalePayment.groupBy({
+        by: ['method'],
+        where: { sale: { accountId, sessionId, state: { in: ['posted', 'refunded'] } } },
+        _sum: { amountMinor: true },
+      }),
+      this.prisma.client.retailSale.findMany({
+        where: { accountId, sessionId, state: { in: ['posted', 'refunded'] } },
+        select: {
+          id: true,
+          sumMinor: true,
+          refundedFromId: true,
+          positions: {
+            select: {
+              quantity: true,
+              priceMinor: true,
+              sumMinor: true,
+              costMinor: true,
+              basePriceMinor: true,
+            },
+          },
+        },
+      }),
+      this.prisma.client.retailSale.aggregate({
+        where: { accountId, sessionId, state: 'posted', refundedFromId: { not: null } },
+        _sum: { sumMinor: true },
+      }),
+      this.prisma.client.debtPayment.aggregate({
+        where: { accountId, retailShiftId: sessionId, reversedAt: null },
+        _sum: { amountMinor: true },
+      }),
+      this.cashOutSummary(accountId, sessionId),
+      this.prisma.client.cashierSessionVariance.findMany({
+        where: { accountId, sessionId },
+        select: {
+          currency: true,
+          expectedMinor: true,
+          countedMinor: true,
+          varianceMinor: true,
+          kind: true,
+          cashierNote: true,
+          acknowledgedAt: true,
+        },
+      }),
+    ]);
+
+    // Yalpi foyda: tan narx MUZLATILGAN qatorlardan. Bittasi ham
+    // muzlatilmagan bo'lsa natija `null` — 0 deb ko'rsatish «100% marja»
+    // yolg'onini berardi (tan-narx shartnomasi).
+    let grossProfitMinor: bigint | null = 0n;
+    let discountMinor = 0n;
+    let realSalesCount = 0;
+    for (const sale of sales) {
+      if (sale.refundedFromId == null) realSalesCount += 1;
+      for (const pos of sale.positions) {
+        if (pos.basePriceMinor != null) {
+          const base = scaleMinorByQty(pos.basePriceMinor, pos.quantity.toString());
+          if (base > pos.sumMinor) discountMinor += base - pos.sumMinor;
+        }
+        if (grossProfitMinor == null) continue;
+        if (pos.costMinor == null) {
+          grossProfitMinor = null;
+          continue;
+        }
+        const cost = scaleMinorByQty(pos.costMinor, pos.quantity.toString());
+        grossProfitMinor += pos.sumMinor - cost;
+      }
+    }
+
+    const creditAgg = await this.prisma.client.retailSalePayment.aggregate({
+      where: { method: 'debt', sale: { accountId, sessionId } },
+      _sum: { amountMinor: true },
+    });
+
+    const cashInputs = await this.collectCashInputs(accountId, sessionId, session.openingCashMinor);
+
+    const z = buildZReport({
+      salesCount: realSalesCount,
+      revenueByMethod: payments.map((p) => ({
+        method: p.method,
+        sumMinor: p._sum.amountMinor ?? 0n,
+      })),
+      grossProfitMinor,
+      discountMinor,
+      creditSoldMinor: creditAgg._sum.amountMinor ?? 0n,
+      debtPaidMinor: debtAgg._sum.amountMinor ?? 0n,
+      returnsMinor: refundAgg._sum.sumMinor ?? 0n,
+      expenseMinor: BigInt(cashOut.expenseMinor),
+      collectionMinor: BigInt(cashOut.collectionMinor),
+      expectedCashMinor: expectedCashMinor(cashInputs),
+      countedCashMinor: session.closingCashMinor,
+    });
+
+    return {
+      session: {
+        id: session.id,
+        state: session.state,
+        openedAt: session.openedAt,
+        closedAt: session.closedAt,
+        cashier: session.cashier,
+        cashDesk: session.cashDesk,
+        store: session.store,
+        organization: session.organization,
+      },
+      salesCount: z.salesCount,
+      revenueMinor: z.revenueMinor.toString(),
+      revenueByMethod: z.revenueByMethod.map((r) => ({
+        method: r.method,
+        sumMinor: r.sumMinor.toString(),
+      })),
+      averageReceiptMinor: z.averageReceiptMinor?.toString() ?? null,
+      grossProfitMinor: z.grossProfitMinor?.toString() ?? null,
+      discountMinor: z.discountMinor.toString(),
+      creditSoldMinor: z.creditSoldMinor.toString(),
+      debtPaidMinor: z.debtPaidMinor.toString(),
+      returnsMinor: z.returnsMinor.toString(),
+      expenseMinor: z.expenseMinor.toString(),
+      collectionMinor: z.collectionMinor.toString(),
+      expenseByItem: cashOut.byExpenseItem,
+      openingCashMinor: session.openingCashMinor.toString(),
+      expectedCashMinor: z.expectedCashMinor.toString(),
+      countedCashMinor: z.countedCashMinor?.toString() ?? null,
+      varianceMinor: z.varianceMinor?.toString() ?? null,
+      variances: variances.map((v) => ({
+        currency: v.currency,
+        expectedMinor: v.expectedMinor.toString(),
+        countedMinor: v.countedMinor.toString(),
+        varianceMinor: v.varianceMinor.toString(),
+        kind: v.kind,
+        cashierNote: v.cashierNote,
+        acknowledgedAt: v.acknowledgedAt,
+      })),
+    };
   }
 
   // ---- Xarajat (RKO) va inkassatsiya — kassa TZ §8.2 / §8.3 ----

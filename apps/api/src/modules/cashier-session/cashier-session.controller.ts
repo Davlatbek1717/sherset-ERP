@@ -106,6 +106,18 @@ export class CashierSessionController {
     return this.sessions.posCashOut(user.accountId, user.sub, id, body);
   }
 
+  /**
+   * Z-hisobot (kassa TZ §8.5) — smenaning to'liq moliyaviy manzarasi.
+   *
+   * Ochiq smenada ham ishlaydi (kassir kun o'rtasida holatni ko'radi):
+   * bu holda sanoq va farq `null` — hali sanalmagan, nol EMAS.
+   */
+  @Get(':id/z-report')
+  @RequirePermission({ entity: 'cashiersession', action: 'view' })
+  async zReport(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.sessions.zReport(user.accountId, id);
+  }
+
   /** Smenadagi pul chiqishi — turlar va moddalar kesimida (Z-hisobot §8.5). */
   @Get(':id/cash-out-summary')
   @RequirePermission({ entity: 'cashiersession', action: 'view' })

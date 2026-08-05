@@ -38,6 +38,18 @@ export const CloseSessionSchema = z.object({
     .string()
     .regex(/^\d+$/, 'closingCashMinor must be a non-negative integer'),
   description: z.string().max(4000).nullish(),
+  /**
+   * Kassirning farq bo'yicha izohi — farq aktiga yoziladi.
+   *
+   * ⚠️ **USD sanoq maydoni ATAYLAB YO'Q** (TZ §8.4 «UZS va USD alohida»).
+   * USD naqd oqimi hali ulanmagan: `retail-sale.service.ts` to'lovni har
+   * doim kassa valyutasida yozadi («CASH_USD ulanganda...» degan ochiq
+   * joy). Kutilgan USD hisoblanmaydigan holatda uni 0 deb olish har
+   * smenada soxta «USD ortiqcha» akti berardi — menejer bir hafta ichida
+   * farq ogohlantirishlarini butunlay e'tiborsiz qoldirardi.
+   * USD sanoq CASH_USD bilan BIRGA qo'shiladi.
+   */
+  varianceNote: z.string().trim().max(4000).nullish(),
 });
 export type CloseSessionInput = z.infer<typeof CloseSessionSchema>;
 
