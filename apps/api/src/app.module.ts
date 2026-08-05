@@ -36,6 +36,7 @@ import { CountryModule } from './modules/country/country.module.js';
 import { CurrencyModule } from './modules/currency/currency.module.js';
 import { CustomEntityModule } from './modules/custom-entity/custom-entity.module.js';
 import { CustomerOrderModule } from './modules/customer-order/customer-order.module.js';
+import { DebtModule } from './modules/debt/debt.module.js';
 import { DemandModule } from './modules/demand/demand.module.js';
 import { DiscountModule } from './modules/discount/discount.module.js';
 import { DocumentLinkModule } from './modules/document-link/document-link.module.js';
@@ -177,6 +178,12 @@ import { PrismaModule } from './prisma/prisma.module.js';
     CounterpartyBalanceModule,
     CounterpartyStatementModule,
     CounterpartyDebtNotifyModule,
+    // 🔴 2026-08-05: qarz moduli ilovaga UMUMAN ulanmagan edi (yetim modul) —
+    // `/api/v1/debts` prodda 404 qaytarardi, ya'ni 1926 satrlik servis, uning
+    // Telegram/SMS eslatmalari va hisobotlari o'lik kod bo'lib turgan.
+    // Kassa TZ §0 uni «ishlaydi» deb sanaydi va §7 (qarz to'lovi) aynan
+    // shunga tayanadi. Qo'riqchi: `app-boot.test.ts` — yetim modul testi.
+    DebtModule,
     CounterpartyAdjustmentModule,
     PrepaymentModule,
     PrepaymentReturnModule,

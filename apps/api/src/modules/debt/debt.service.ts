@@ -575,6 +575,31 @@ export class DebtService {
         },
       });
 
+      // 🔴 BALANS SIMMETRIYASI (kassa TZ §7.3, 2026-08-05).
+      //
+      // OLDIN: `create` balansga UMUMAN yozmasdi, `recalc` esa to'lovda
+      // `-paidDelta` yozardi. Natijada qo'lda ochilgan QRZ- qarz to'liq
+      // to'langanda kontragent saldosi o'sha summaga MANFIYga ketardi —
+      // ya'ni pul kirgani balansdan ayrilar, lekin qarz kirgani hech qachon
+      // qo'shilmagan edi (xotira: `debt-ledger-asymmetry`).
+      //
+      // ENDI: reyestrga qarz ochilishi ham daftarga tushadi. Qarz berilishi
+      // (+) va to'lanishi (−) bir jurnalda, ya'ni to'liq to'langan qarz
+      // saldoni AYNAN nolga qaytaradi.
+      //
+      // ⚠️ Nega bu ikki marta sanashga olib kelmaydi: hujjatdan kelgan qarz
+      // (kassa qarzga sotuvi) reyestrga YOZILMAYDI — u faqat balansga
+      // tushadi (`retail-sale.service.ts` §7.1 izohi). Reyestr esa faqat
+      // qo'lda ochiladigan, hujjatsiz qarzlar uchun. Bitta qarz — bitta yo'l.
+      await this.balances.applyDelta(
+        tx,
+        accountId,
+        input.counterpartyId,
+        input.currency,
+        BigInt(input.totalMinor),
+        { docType: 'debt', docId: debt.id },
+      );
+
       // §3.3 — izoh muloqot tarixiga «Kassir» yozuvi bo'lib tushadi.
       await tx.debtNote.create({
         data: {

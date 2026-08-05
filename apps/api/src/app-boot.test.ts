@@ -129,3 +129,107 @@ describe('marshrutlar to`qnashmaydi (FST_ERR_DUPLICATED_ROUTE)', () => {
     expect([...seen.values()].some((n) => n > 1)).toBe(true);
   });
 });
+
+/**
+ * YETIM MODUL qo'riqchisi (2026-08-05 topilmasidan).
+ *
+ * BO'LGAN ISH: `DebtModule` — 1926 satrlik servis, controller, Telegram/SMS
+ * eslatmalari va hisobotlari — `AppModule` ga (va boshqa hech qayerga)
+ * IMPORT QILINMAGAN edi. Ya'ni butun qarz funksiyasi o'lik kod bo'lib
+ * turgan: prodda `/api/v1/debts` **404** qaytarardi, TZ esa uni «ishlaydi»
+ * deb sanardi va kassa §7 aynan shunga tayanardi.
+ *
+ * NEGA HECH BIR GATE TUTMADI: fayl kompilyatsiya bo'ladi, testlari yashil
+ * (servis to'g'ridan-to'g'ri `new` bilan sinaladi), lint jim. Modul
+ * ro'yxatdan o'tmagani faqat **ishlayotgan ilovada** — 404 sifatida
+ * ko'rinadi. Bu klass: [[climart-dropped-sherset-features]].
+ *
+ * Qoida: **controller e'lon qilgan har modul ilovaga ulangan bo'lishi shart.**
+ * Servis-only modul (controllersiz) bu tekshiruvdan tashqarida — u boshqa
+ * modul tomonidan ishlatilishi mumkin.
+ */
+/** Windows yo'l ajratgichi — regexsiz (yakka `\` yaroqsiz regex). */
+const SEP = String.fromCharCode(92);
+
+describe('yetim modul yo`q (controller bor — route ham bor)', () => {
+  const SRC = join(__dirname);
+
+  function allModuleFiles(): string[] {
+    return readdirSync(join(SRC, 'modules'), { recursive: true, encoding: 'utf8' })
+      .filter((p) => p.endsWith('.module.ts'))
+      .map((p) => join(SRC, 'modules', p));
+  }
+
+  /** Barcha `.ts` manbalar (testlardan tashqari) — havolalarni izlash uchun. */
+  function allSources(): string[] {
+    return readdirSync(SRC, { recursive: true, encoding: 'utf8' })
+      .filter((p) => p.endsWith('.ts') && !p.endsWith('.test.ts'))
+      .map((p) => join(SRC, p));
+  }
+
+  it('controller e`lon qilgan modul ILOVAGA ULANGAN', () => {
+    const modules = new Map<string, { file: string; controllers: string[] }>();
+    for (const file of allModuleFiles()) {
+      const src = stripComments(readFileSync(file, 'utf8'));
+      const name = src.match(/export class (\w+Module)/)?.[1];
+      if (!name) continue;
+      const block = src.match(/controllers:\s*\[([^\]]*)\]/s)?.[1] ?? '';
+      const controllers = block
+        .split(',')
+        .map((c) => c.trim())
+        .filter(Boolean);
+      if (controllers.length > 0) {
+        const rel = file.slice(SRC.length).split(SEP).join('/');
+        modules.set(name, { file: rel, controllers });
+      }
+    }
+
+    // Modul HAQIQATAN ro'yxatdan o'tganmi.
+    //
+    // ⚠️ «Faylda eslatilgan» YETARLI EMAS: `import { DebtModule } from ...`
+    // qatori qolib, `imports: [...]` dan tushib qolishi mumkin — aynan shu
+    // holat 2026-08-05 da topildi. Shuning uchun faqat MODUL DEKORATORINING
+    // `imports` massivi ichidagi nom hisobga olinadi.
+    const registered = new Set<string>();
+    for (const file of allSources()) {
+      const src = stripComments(readFileSync(file, 'utf8'));
+      const selfName = src.match(/export class (\w+Module)/)?.[1];
+
+      // Taxallus bilan import: `import { StoreModule as StoreAdminModule }`.
+      // Ro'yxatda LOKAL nom turadi, shuning uchun uni asl nomga qaytaramiz —
+      // aks holda tirik modul «yetim» deb yolg'on xabar berilardi.
+      const aliasToReal = new Map<string, string>();
+      for (const a of src.matchAll(/(\w+Module)\s+as\s+(\w+)/g)) {
+        if (a[1] && a[2]) aliasToReal.set(a[2], a[1]);
+      }
+
+      // `@Module({ ... imports: [ ... ] ... })` — massiv ichidagi ro'yxat.
+      for (const m of src.matchAll(/imports:\s*\[([\s\S]*?)\]/g)) {
+        const body = m[1] ?? '';
+        const names = [...body.matchAll(/(\w+)/g)].map((x) => x[1] ?? '');
+        for (const local of names) {
+          const real = aliasToReal.get(local) ?? local;
+          if (real !== selfName && modules.has(real)) registered.add(real);
+        }
+      }
+    }
+
+    const orphans = [...modules.entries()]
+      .filter(([name]) => !registered.has(name))
+      .map(([name, d]) => `${name} (${d.controllers.join(', ')}) — ${d.file}`);
+
+    expect(
+      orphans,
+      `Bu modullar controller e'lon qilgan, lekin ilovaga ULANMAGAN — ularning
+barcha route'lari 404 qaytaradi:
+${orphans.join('\n')}`,
+    ).toEqual([]);
+  });
+
+  it('skaner ishlayapti — controllerli modullar topildi (vakuum emas)', () => {
+    const withControllers = allModuleFiles().filter((f) =>
+      /controllers:\s*\[\s*\w/.test(stripComments(readFileSync(f, 'utf8'))),
+    );
+    expect(withControllers.length).toBeGreaterThan(80);
+  });
+});
