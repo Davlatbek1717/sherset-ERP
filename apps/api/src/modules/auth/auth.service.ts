@@ -129,6 +129,9 @@ export class AuthService {
         username: employee.username,
         hrRoles: employee.hrRoles,
         isChecker: employee.isChecker,
+        // FE kiosk qobig'ini shundan biladi (menyu render qilinmaydi).
+        // Yashirish — qulaylik; haqiqiy cheklov `KioskGuard` da (server).
+        uiMode: authUser.uiMode,
         hrPermissions: authUser.hrPermissions,
       },
     };
@@ -194,6 +197,9 @@ export class AuthService {
         username: employee.username,
         hrRoles: employee.hrRoles,
         isChecker: employee.isChecker,
+        // FE kiosk qobig'ini shundan biladi (menyu render qilinmaydi).
+        // Yashirish — qulaylik; haqiqiy cheklov `KioskGuard` da (server).
+        uiMode: authUser.uiMode,
         hrPermissions: authUser.hrPermissions,
       },
     };

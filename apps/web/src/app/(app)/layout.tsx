@@ -5,11 +5,12 @@ import { CommandPalette } from '@/components/command-palette';
 import { HelpButton } from '@/components/help-button';
 import { LocaleSwitcher } from '@/components/locale-switcher';
 import { NotificationBell } from '@/components/notification-bell';
+import { PosPinLock } from '@/components/pos/pos-pin-lock';
 import { UserMenu } from '@/components/user-menu';
 import { useNotificationStream } from '@/hooks/use-notification-stream';
 import { usePermissions } from '@/hooks/use-permissions';
 import { useTasksBadgeCount } from '@/hooks/use-tasks-badge-count';
-import { hasAuthHint, useAuth } from '@/lib/auth-store';
+import { hasAuthHint, isKioskUser, useAuth } from '@/lib/auth-store';
 import {
   AppShell,
   Icons,
@@ -641,6 +642,24 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       active: activeModule === 'settings',
     },
   ];
+
+  // ── KIOSK QOBIQ (kassa TZ §3.1) ──────────────────────────────────────────
+  //
+  // Kassir butun ERP menyusini ko'rmaydi: chap/yuqori navigatsiya, global
+  // qidiruv (cmd+k palitra), bildirishnoma va yordam tugmalari umuman
+  // RENDER QILINMAYDI. Faqat POS va PIN-qulf qoladi.
+  //
+  // ⚠️ Bu — QULAYLIK qatlami, xavfsizlik EMAS. Menyuni yashirish bevosita
+  // URL bilan kirishni to'xtatmaydi — haqiqiy cheklov serverdagi
+  // `KioskGuard` da (default-deny ro'yxat). Ikkalasi birga ishlaydi.
+  if (isKioskUser(auth.user)) {
+    return (
+      <div className="flex min-h-screen flex-col bg-[var(--ms-bg-app)]">
+        {children}
+        <PosPinLock />
+      </div>
+    );
+  }
 
   return (
     <AppShell

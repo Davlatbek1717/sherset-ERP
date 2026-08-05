@@ -98,6 +98,9 @@ export interface LoginResponse {
     username: string | null;
     hrRoles: string[];
     isChecker: boolean;
+    /** Kiosk qobig i uchun (kassa TZ §3.1). Yashirish — qulaylik;
+     *  haqiqiy cheklov serverdagi `KioskGuard` da. */
+    uiMode?: 'full' | 'kiosk';
     hrPermissions: Array<{
       pageKey: string;
       section: string | null;

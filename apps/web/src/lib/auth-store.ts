@@ -65,7 +65,22 @@ export interface User {
   username: string | null;
   hrRoles: string[];
   isChecker: boolean;
+  /**
+   * Interfeys rejimi (kassa TZ §3.1). `kiosk` — kassir ish o'rni: chap menyu
+   * va global qidiruv render qilinmaydi, login to'g'ridan-to'g'ri POS'ga
+   * olib boradi.
+   *
+   * ⚠️ Bu — QULAYLIK, xavfsizlik emas. Haqiqiy cheklov serverdagi
+   * `KioskGuard` da: menyuni yashirish bevosita URL bilan kirishni
+   * to'xtatmaydi. Eski tokenlarda maydon yo'q → `full` deb qaraladi.
+   */
+  uiMode?: 'full' | 'kiosk';
   hrPermissions: HrPermissionRow[];
+}
+
+/** Xodim kiosk rejimidami (maydon yo'q bo'lsa — yo'q). */
+export function isKioskUser(user: User | null | undefined): boolean {
+  return user?.uiMode === 'kiosk';
 }
 
 interface State {
@@ -94,7 +109,7 @@ function getSnapshot(): State {
 
 const BASE = '/api/v1';
 
-export async function login(identifier: string, password: string): Promise<void> {
+export async function login(identifier: string, password: string): Promise<User> {
   const isEmail = identifier.includes('@');
   const res = await fetch(`${BASE}/auth/login`, {
     method: 'POST',
@@ -112,6 +127,8 @@ export async function login(identifier: string, password: string): Promise<void>
   state = { accessToken: data.accessToken, user: data.user, initialized: true };
   writeAuthHint(true);
   emit();
+  // Chaqiruvchi kiosk yo'naltirishini shundan hal qiladi (login sahifasi).
+  return data.user;
 }
 
 export async function logout(): Promise<void> {

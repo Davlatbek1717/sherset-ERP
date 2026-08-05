@@ -1,6 +1,6 @@
 'use client';
 
-import { login } from '@/lib/auth-store';
+import { isKioskUser, login } from '@/lib/auth-store';
 import { Alert, Button, Container, FormField, Input, PasswordInput } from '@moysklad/ui';
 import { useTranslations } from 'next-intl';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -21,8 +21,11 @@ export default function LoginPage() {
     setError(null);
     setPending(true);
     try {
-      await login(email, password);
-      const redirect = params?.get('redirect') ?? '/';
+      const user = await login(email, password);
+      // Kiosk kassiri ERP bosh sahifasini umuman ko'rmaydi (TZ §3.1) —
+      // login'dan keyin darhol POS. `redirect` ham e'tiborga olinmaydi:
+      // kiosk uchun boshqa sahifa mavjud emas.
+      const redirect = isKioskUser(user) ? '/sotuv' : (params?.get('redirect') ?? '/');
       router.replace(redirect);
     } catch (err) {
       setError(err instanceof Error ? err.message : t('error_invalid'));
