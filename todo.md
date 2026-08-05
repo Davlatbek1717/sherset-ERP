@@ -15,10 +15,10 @@
 
 | | Soni |
 |---|---|
-| **Qolgan bosqichlar** | **66** |
+| **Qolgan bosqichlar** | **65** |
 | Sifat qarzlari | 7 |
 | Brauzer-QA (Phase-2) o'tishlari | ~9 (har bo'lim uchun 1) |
-| **JAMI ish birligi** | **~82** |
+| **JAMI ish birligi** | **~81** |
 
 **Hisob:** 1 bosqich ≈ 1 sessiya. Kuniga **1 sessiya** → **~4 oy**; kuniga **2 sessiya** → **~2 oy**;
 kuniga **3 sessiya** → **~6 hafta**.
@@ -31,7 +31,7 @@ kuniga **3 sessiya** → **~6 hafta**.
 
 | Bo'lim | Bajarildi | Qoldi |
 |---|---|---|
-| 1 — Kassa | B1 B2 B3 B4, **B5-yadro** | **4** (B5-FE, B6–B8) |
+| 1 — Kassa | B1 B2 B3 B4, **B5-BE** | **4** (B5-FE, B6–B8) |
 | 2 — Onlayn sotuv / B2B / B2G | B1 | **8** (B2–B9) |
 | 3 — Analitika | B1, B2 (qisman) | **6** (B3–B8) |
 | 4 — Menejer (ruxsatlar) | — | **8** (B1–B8) |
@@ -97,8 +97,12 @@ kuniga **3 sessiya** → **~6 hafta**.
 - [x] **1-Kassa B5 (yadro)** — 🔴 `DebtModule` ilovaga ULANDI *(u yetim edi: prodda `/debts` → 404,
       butun qarz funksiyasi o'lik kod)* + **balans simmetriyasi** (`create` endi `+total` yozadi;
       backfill kerak emas — prodda 0 qarz) + **FIFO yadrosi** *(15 test)* — `dae7289`
-- [ ] **1-Kassa B5 (qolgani)** — POS «Qarz to'lovi» oynasi (FE) · **PKO cheki** ·
-      to'lovning joriy smenaga kirishi
+- [x] **1-Kassa B5 (BE)** — `PosDebtPaymentService`: bitta summa → FIFO bo'yicha bir necha qarz,
+      hammasi bitta tranzaksiyada; ortiqcha to'lov RAD (qaytim — kassir qarori, §6.2) +
+      **`DebtPayment.retailShiftId`** → naqd qarz to'lovi smena «kutilgan naqd»iga kiradi (§8.4;
+      busiz har smenada shu summaga ortiqcha chiqardi) *(drift-lock mutatsiya bilan tekshirilgan)*
+      — runtime: 3 qarz → 250k qisman → 999k rad → saldo aynan 0 — `8f4c100`
+- [ ] **1-Kassa B5 (qolgani)** — POS «Qarz to'lovi» oynasi (FE) · **PKO cheki**
 - [ ] **1-Kassa B6** — Xarajat (RKO) + inkassatsiya
 - [ ] **1-Kassa B7** — Smena yopish: `CashierSessionVariance` (YO'Q) + farq akti + **Z-hisobot**
       *(UZS va USD alohida; farq ≠ 0 → menejerga Telegram)*

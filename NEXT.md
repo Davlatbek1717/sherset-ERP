@@ -305,6 +305,41 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-05c (1-KASSA B5 BACKEND — qarz to'lovi FIFO + smena naqdi · `8f4c100` · 4M.3 FE qoldig'i `f267636`) · ⏳ DEPLOY QILINMAGAN**
+>
+> **Nima qilindi (2 commit, ikkalasi ham gate-yashil):**
+> 1. `f267636` — **4M.3 FE qoldig'i**: oylik jadvalida «qabul holati» ustuni. Backend `e1a761ba` da
+>    ko'rmagan kunni oylikdan bloklagan edi, lekin FE jim turardi — buxgalter kamaygan raqamni
+>    *sababsiz* deb qabul qilardi. Endi qatorda: nechta kun qabul qilingan / kutmoqda / **qancha
+>    summa bloklangan**. (`MonthlyScoreRow` maydonlarini backend allaqachon qaytarardi.)
+> 2. `8f4c100` — **1-Kassa B5 backend** (kassa TZ §7.2 + §8.4):
+>    - `PosDebtPaymentService` — **bitta summa → FIFO bo'yicha bir necha qarz** (eng eskisidan).
+>      Mavjud `addCashPayment` faqat BITTA qarzga yozadi, kassada esa mijoz qaysi QRZ- hujjatga
+>      tushishini bilmaydi. Taqsimlash sof modulda (`debt-fifo.ts`, 15 test), servis — faqat I/O.
+>      **Hammasi bitta tranzaksiyada** (to'lov + qarz holati + balans): «pul kirdi-yu qarz yopilmadi» bo'lmasin.
+>    - **Ortiqcha to'lov RAD** etiladi (qancha ortiqcha ekani bilan) — jimgina avans qilib yozilmaydi,
+>      qaytim §6.2 bo'yicha kassir qarori.
+>    - 🔴 **`DebtPayment.retailShiftId`** (migratsiya `20260805140000_debt_payment_shift`) → naqd qarz
+>      to'lovi smena **«kutilgan naqd»**iga kiradi. Busiz kassir qabul qilgan qarz puli yashiqda
+>      turardi-yu hisobda ko'rinmasdi: har smenada AYNAN shu summaga **ortiqcha** chiqardi.
+>      `cashDeskId` yetarli emas — bitta kassada kuniga bir necha smena bo'ladi.
+>    - `debtCashMinor` **ixtiyoriy** maydon → servis uzatishni to'xtatsa typecheck jim o'tardi
+>      (`DocumentEditor` prop-drop klassi) → `debt-cash-wiring.test.ts` manba bo'yicha qulflaydi;
+>      **mutatsiya bilan tekshirildi** (maydon olib tashlansa 2 test yiqiladi).
+>
+> **Runtime verify (lokal DB, 3 qarz 100k+200k+300k):** 250 000 → 1-qarz YOPILDI + 2-qarzga 150k,
+> saldo 600k→350k · 999 000 → **RAD** («qarzdan 649000 tiyinga ko'p») · qolgan 350 000 → 2 qarz
+> yopildi, **saldo aynan 0**, ochiq qarz 0.
+>
+> **Gate:** typecheck 0 · biome 0 · api **4674/4674** · web **2696/2696**.
+> ⚠️ **Phase-1: brauzer-smoke YO'Q** — POS «Qarz to'lovi» **oynasi (FE)** va **PKO cheki** hali yo'q,
+> bu faqat backend. Deploy qilinsa `/debts/pos/*` 2 yangi endpoint jonlanadi (hech qachon ishlamagan kod).
+>
+> **Keyingi (todo.md tartibi bo'yicha):** `1-Kassa B5 (qolgani)` — POS «Qarz to'lovi» oynasi + PKO cheki.
+>
+> ℹ️ *Daraxtda 2026-07-31 dan `lint-staged automatic backup` stash'i turibdi (24 fayl,
+> sales-returns/DocumentEditor — parallel sessiyaniki, ishi HEAD'da bor). Tegilmadi.*
+
 > **🕒 2026-08-05b (DEPLOY: 4M.3 + o'z KPI · `a3cd7336`) · ✅ DEPLOYED · 🔴 yo'lda PROD 502 bo'ldi va tuzatildi**
 >
 > **Deploy qamrovi:** `232e7d64..a3cd7336` — 4M.3 (qabul → oylik bloklash) + o'z KPI ko'rsatkichi.
