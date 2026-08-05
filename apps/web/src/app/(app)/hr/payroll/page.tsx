@@ -441,6 +441,8 @@ function FinalTab({
               <th className="px-3 py-2 text-right">{t('col_bonus')}</th>
               <th className="px-3 py-2 text-right">{t('col_fine')}</th>
               <th className="px-3 py-2 text-right">{t('col_final')}</th>
+              {/* Qabul holati — TZ §4.4: buxgalter ko'r-ko'rona to'lamasin. */}
+              <th className="px-3 py-2 text-right">{t('col_acceptance')}</th>
             </tr>
           </thead>
           <tbody>
@@ -476,12 +478,48 @@ function FinalTab({
                 <td className="px-3 py-2 text-right font-mono font-semibold text-[var(--ms-text-strong)]">
                   {fmtMinor(r.finalSalaryMinor)}
                 </td>
+                <td className="px-3 py-2 text-right">
+                  <AcceptanceCell row={r} t={t} />
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       ) : (
         <EmptyState title={t('empty_final')} description={t('empty_final_hint')} />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Oylik qatorining QABUL holati (TZ §4.4, bosqich 4M.3).
+ *
+ * Menejer ko'rmagan kun oylikka KIRMAYDI (M-Q8 bloklash). Buni ko'rsatmaslik
+ * eng xavfli variant bo'lardi: buxgalter kamaygan raqamni sababsiz deb
+ * qabul qilardi. Shuning uchun bu yerda uch narsa ochiq turadi — nechta kun
+ * kutmoqda, nechtasi hisobga kirgan va QANCHA SUMMA bloklangan.
+ */
+function AcceptanceCell({
+  row,
+  t,
+}: {
+  row: MonthlyScoreRow;
+  t: ReturnType<typeof useTranslations>;
+}) {
+  const blocked = BigInt(row.blockedSalesMinor || '0');
+  if (row.pendingDays === 0) {
+    return <Badge tone="success">{t('acceptance_all_accepted', { days: row.acceptedDays })}</Badge>;
+  }
+  return (
+    <div className="flex flex-col items-end gap-0.5">
+      <Badge tone="warning" data-test-id={`hr-payroll-pending-${row.employeeId}`}>
+        {t('acceptance_pending', { days: row.pendingDays })}
+      </Badge>
+      {blocked > 0n && (
+        <span className="font-mono text-[var(--ms-text-muted)] text-xs">
+          −{fmtMinor(row.blockedSalesMinor)}
+        </span>
       )}
     </div>
   );

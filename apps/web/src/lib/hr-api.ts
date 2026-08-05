@@ -645,6 +645,14 @@ export interface MonthlyScoreRow {
   fineSumMinor: string;
   commissionMinor: string;
   finalSalaryMinor: string;
+  /**
+   * Qabul → oylik bloklash (4M.3, M-Q8). `pendingDays > 0` = hisob CHALA:
+   * menejer ko'rmagan kunlar summasi (`blockedSalesMinor`) hisobga KIRMAGAN.
+   * Buxgalter buni ko'rmasa, kamaygan raqamni sababsiz deb qabul qilardi.
+   */
+  acceptedDays: number;
+  pendingDays: number;
+  blockedSalesMinor: string;
   computedAt: string;
 }
 
