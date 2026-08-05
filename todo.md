@@ -31,7 +31,7 @@ kuniga **3 sessiya** → **~6 hafta**.
 
 | Bo'lim | Bajarildi | Qoldi |
 |---|---|---|
-| 1 — Kassa | B1 B2 B3 | **5** (B4–B8) |
+| 1 — Kassa | B1 B2 B3, **B4-BE** | **5** (B4-FE, B5–B8) |
 | 2 — Onlayn sotuv / B2B / B2G | B1 | **8** (B2–B9) |
 | 3 — Analitika | B1, B2 (qisman) | **6** (B3–B8) |
 | 4 — Menejer (ruxsatlar) | — | **8** (B1–B8) |
@@ -66,6 +66,7 @@ kuniga **3 sessiya** → **~6 hafta**.
 - [x] **3-Analitika B2 (qisman)** — X1 `6adc495` · X3 `6d1be01` · **X2 qisman** (kassir o'qi
       `CashierAuditEvent` da bor, hisobot kesimi yo'q)
 - [x] **1-Kassa B8 (yarim)** — `CashierAuditEvent` — `d35efab` *(page.tsx bo'linishi qolgan)*
+- [x] **1-Kassa B4 (BE yarmi)** — kiosk siyosati + global guard + POS PIN — `HEAD`
 - [x] **4M.1** — KPI o'lchov yadrosi + har-xodim config + **o'z ko'rsatkichi** — `829c122`, `809e2891`
 - [x] **4M.2** — kunlik qabul FSM · jurnal · ball · ekran · drill-down — `fa58171`+`a2b4bb6` (brauzer-QA `d86320b`)
 - [x] **4M.3 (yarim)** — M-Q8 bloklash + oylik manbai ko'chdi + sana qarzi — `e1a761b`
@@ -88,8 +89,10 @@ kuniga **3 sessiya** → **~6 hafta**.
 
 ## 🟢 To'lqin 3 — Kassani to'liq yopish
 
-- [ ] **1-Kassa B4** — Kiosk rejim: `Role.uiMode` (YO'Q) + `Employee.posPinHash` + PIN-qulf
-      (5 daq harakatsizlik) + **server tomonda endpoint cheklovi** *(UI yashirish yetarli emas)*
+- [x] **1-Kassa B4 (BE)** — `Role.uiMode` + `Employee.posPinHash` + **`KioskGuard` (global,
+      default-deny)** + PIN servisi *(48+16 test, jonli tekshirilgan)*
+- [ ] **1-Kassa B4 (FE)** — kiosk qobiq: login → to'g'ridan-to'g'ri POS, chap menyu va global
+      qidiruv render qilinmaydi + **PIN-qulf ekrani** (5 daq harakatsizlik, savat saqlanadi)
 - [ ] **1-Kassa B5** — Qarz to'lovi (PKO) + **balans simmetriyasi**
       *(hozir: qarz berilganda balansga yozilmaydi, to'langanda yoziladi → FIFO noto'g'ri ishlaydi)*
 - [ ] **1-Kassa B6** — Xarajat (RKO) + inkassatsiya
