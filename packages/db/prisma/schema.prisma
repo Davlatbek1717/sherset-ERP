@@ -327,6 +327,12 @@ model Employee {
   /// (per-account singleton). Shape: { fixWeight, kpiWeight, bonusWeight,
   /// monthlySalesTarget, monthlyKpiBudget, commissionPercent, kpiTiers[] }.
   salaryConfig               Json?     @map("salary_config")
+  /// POS PIN-qulf xeshi (bcrypt, 4–6 raqam) — kassa TZ §3.2.
+  ///
+  /// 5 daqiqa harakatsizlikdan keyin POS ekrani qulflanadi va PIN bilan
+  /// qaytiladi — QAYTA LOGIN EMAS, chunki savat yo'qolib ketardi.
+  /// NULL = PIN o'rnatilmagan (qulf ishlamaydi).
+  posPinHash                 String?   @map("pos_pin_hash") @db.VarChar(255)
 
   // === HR GPS-davomat (attendance geofence) ===
   // All nullable/defaulted — prod-safe, no backfill. Populated when an
@@ -492,6 +498,17 @@ model Role {
   description String?
   // Is system-provisioned (cannot be deleted).
   isSystem    Boolean  @default(false) @map("is_system")
+  /// Interfeys rejimi (kassa TZ §3.1): `full` — butun ERP, `kiosk` — faqat POS.
+  ///
+  /// Kiosk roli xodimni login'dan keyin to'g'ridan-to'g'ri POS'ga olib boradi va
+  /// chap menyu render qilinmaydi. LEKIN UI'da yashirish YETARLI EMAS — server
+  /// tomonda ham cheklanadi (`KioskGuard`), aks holda bevosita URL bilan kirib
+  /// ketiladi.
+  ///
+  /// Bir xodimda bir necha rol bo'lsa va bittasi `full` bo'lsa — **`full` yutadi**
+  /// (`kiosk-policy.resolveUiMode`). Sukut `full`: kiosk OPT-IN, ya'ni mavjud
+  /// xodimlarning hech biri bu migratsiyadan keyin cheklanmaydi.
+  uiMode      String   @default("full") @map("ui_mode") @db.VarChar(10)
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz()
   /// Optimistic concurrency version (moysklad parity). See Product.version.

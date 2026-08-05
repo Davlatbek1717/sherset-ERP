@@ -13,10 +13,16 @@ import { UseGuards } from '@nestjs/common';
 import { BadRequestException } from '@nestjs/common';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { PrismaService } from '../../prisma/prisma.service.js';
-import { type AuthenticatedUser, ChangePasswordSchema, UpdateMeSchema } from './auth.schema.js';
+import {
+  type AuthenticatedUser,
+  ChangePasswordSchema,
+  SetPosPinSchema,
+  UpdateMeSchema,
+} from './auth.schema.js';
 import { AuthService } from './auth.service.js';
 import { CurrentUser } from './current-user.decorator.js';
 import { JwtAuthGuard } from './jwt-auth.guard.js';
+import { PosPinService } from './pos-pin.service.js';
 
 const REFRESH_COOKIE = 'ms_rt';
 const COOKIE_OPTS = {
@@ -32,6 +38,7 @@ export class AuthController {
   constructor(
     @Inject(AuthService) private readonly auth: AuthService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(PosPinService) private readonly posPin: PosPinService,
   ) {}
 
   @Post('login')
@@ -145,5 +152,33 @@ export class AuthController {
     }
     await this.auth.changePassword(user.sub, r.data.oldPassword, r.data.newPassword);
     return { ok: true };
+  }
+
+  // ── POS PIN-qulf (kassa TZ §3.2) ──────────────────────────────────────────
+
+  /** PIN o'rnatilganmi — FE qulf ekranini shunga qarab ko'rsatadi. */
+  @UseGuards(JwtAuthGuard)
+  @Get('pos-pin')
+  hasPosPin(@CurrentUser() user: AuthenticatedUser) {
+    return this.posPin.hasPin(user.accountId, user.sub);
+  }
+
+  /** PIN o'rnatish / almashtirish (4–6 raqam). */
+  @UseGuards(JwtAuthGuard)
+  @Post('pos-pin')
+  setPosPin(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
+    const { pin } = SetPosPinSchema.parse(body);
+    return this.posPin.setPin(user.accountId, user.sub, pin);
+  }
+
+  /**
+   * Qulfni ochish. Ketma-ket 5 xato → 401 `lockout: true` (FE to'liq chiqaradi).
+   * Bu QAYTA LOGIN emas: to'g'ri PIN'da savat saqlanib qoladi.
+   */
+  @UseGuards(JwtAuthGuard)
+  @Post('pos-pin/verify')
+  verifyPosPin(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
+    const { pin } = SetPosPinSchema.parse(body);
+    return this.posPin.verifyPin(user.accountId, user.sub, pin);
   }
 }

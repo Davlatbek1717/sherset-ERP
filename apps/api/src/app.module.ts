@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { APP_GUARD } from '@nestjs/core';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { ScheduleModule } from '@nestjs/schedule';
 import { HealthController } from './health.controller.js';
@@ -9,6 +10,7 @@ import { AttachmentModule } from './modules/attachment/attachment.module.js';
 import { AttributeMetadataModule } from './modules/attribute-metadata/attribute-metadata.module.js';
 import { AuditLogModule } from './modules/audit-log/audit-log.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
+import { KioskGuard } from './modules/auth/kiosk.guard.js';
 import { BankImportModule } from './modules/bank-import/bank-import.module.js';
 import { BomModule } from './modules/bom/bom.module.js';
 import { BundleModule } from './modules/bundle/bundle.module.js';
@@ -266,5 +268,15 @@ import { PrismaModule } from './prisma/prisma.module.js';
     KorzinaModule,
   ],
   controllers: [HealthController],
+  providers: [
+    /**
+     * Kiosk cheklovi GLOBAL (kassa TZ §3.1): kassir rolidagi xodim
+     * ruxsat etilgan endpointlardan tashqarisiga BEVOSITA URL bilan ham
+     * kira olmaydi. Har controllerga qo'lda yozish ~130 joyni talab qilardi
+     * va bittasi unutilsa teshik ochilardi — shuning uchun global.
+     * `full` foydalanuvchiga tegmaydi (guard darhol o'tkazadi).
+     */
+    { provide: APP_GUARD, useClass: KioskGuard },
+  ],
 })
 export class AppModule {}

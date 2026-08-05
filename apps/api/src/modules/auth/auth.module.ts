@@ -4,6 +4,8 @@ import { JwtModule, type JwtSignOptions } from '@nestjs/jwt';
 import { AuthController } from './auth.controller.js';
 import { AuthService } from './auth.service.js';
 import { JwtAuthGuard } from './jwt-auth.guard.js';
+import { KioskGuard } from './kiosk.guard.js';
+import { PosPinService } from './pos-pin.service.js';
 import { TokenService } from './token.service.js';
 
 /**
@@ -44,7 +46,7 @@ function parseTtl(raw: string | undefined, fallback: string, varName: string) {
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, TokenService, JwtAuthGuard],
-  exports: [AuthService, TokenService, JwtAuthGuard],
+  providers: [AuthService, TokenService, JwtAuthGuard, PosPinService, KioskGuard],
+  exports: [AuthService, TokenService, JwtAuthGuard, KioskGuard],
 })
 export class AuthModule {}

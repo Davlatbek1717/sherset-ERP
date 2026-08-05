@@ -1,0 +1,130 @@
+/**
+ * Kiosk rejim siyosati (kassa TZ §3.1) — SOF modul (DB yo'q, Nest yo'q).
+ *
+ * 🔴 NEGA SERVER TOMONDA: TZ ochiq aytadi — «Faqat UI yashirish **yetarli
+ * emas** (bevosita URL bilan kirish bloklanishi shart)». Chap menyuni
+ * yashirish kassirni `/counterparties` yoki `/reports/profitability` ga
+ * qo'lda kirishdan to'xtatmaydi; token esa haqiqiy va hamma endpoint ochiq
+ * bo'lardi. Shuning uchun ro'yxat shu yerda, guard esa uni bajaradi.
+ *
+ * Ro'yxat **default-deny**: yangi endpoint qo'shilganda kiosk uni AVTOMAT
+ * ko'rmaydi. Bu ataylab — xavfsizlik ro'yxati «unutish» bilan kengaymasin.
+ */
+
+export type UiMode = 'full' | 'kiosk';
+
+export const UI_MODE = { full: 'full', kiosk: 'kiosk' } as const;
+
+/**
+ * Xodimning amaldagi rejimi. **`full` YUTADI** (TZ §3.1): bir xodimga bir
+ * necha rol berilsa va bittasi to'liq bo'lsa, u cheklanmaydi — aks holda
+ * kassirlik roli qo'shilgan menejer to'satdan ERP'dan chiqib qolardi.
+ *
+ * Roli umuman yo'q xodim ham `full`: kiosk **opt-in**, ya'ni migratsiyadan
+ * keyin hech kim jimgina cheklanmaydi.
+ */
+export function resolveUiMode(roles: ReadonlyArray<{ uiMode?: string | null }>): UiMode {
+  if (roles.length === 0) return UI_MODE.full;
+  const allKiosk = roles.every((r) => r.uiMode === UI_MODE.kiosk);
+  return allKiosk ? UI_MODE.kiosk : UI_MODE.full;
+}
+
+/** HTTP metodlari — `*` = hammasi. */
+type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | '*';
+
+interface Rule {
+  /** Yo'l prefiksi (`/api/v1` global prefiksisiz). */
+  prefix: string;
+  methods: readonly Method[];
+  why: string;
+}
+
+/**
+ * Kiosk roliga OCHIQ endpointlar (TZ §3.1 ro'yxati).
+ *
+ * Har qator uchun sabab yozilgan — ro'yxat kengayganda «nega bu bor?» degan
+ * savolga javob kodda tursin, aks holda vaqt o'tib hamma narsa ochilib ketadi.
+ */
+export const KIOSK_ALLOWED: readonly Rule[] = [
+  // ── Kassaning o'z ishi ────────────────────────────────────────────────────
+  { prefix: '/retail-sales', methods: ['*'], why: 'kassa sotuvi — asosiy ish' },
+  { prefix: '/cashier-sessions', methods: ['*'], why: "o'z smenasi: ochish/yopish/kirim/chiqim" },
+  { prefix: '/smena/mine', methods: ['GET'], why: "o'z jadvali" },
+
+  // ── O'qish uchun ochiq ma'lumotnomalar ────────────────────────────────────
+  { prefix: '/products', methods: ['GET'], why: 'tovar qidiruv va narx' },
+  { prefix: '/product-folders', methods: ['GET'], why: 'katalog daraxti' },
+  { prefix: '/stock', methods: ['GET'], why: "qoldiq ko'rsatish" },
+  { prefix: '/price-types', methods: ['GET'], why: 'chakana/optom narx turi' },
+  { prefix: '/expense-items', methods: ['GET'], why: 'xarajat moddasi tanlash' },
+  { prefix: '/currencies', methods: ['GET'], why: 'USD naqd uchun' },
+  { prefix: '/exchange-rates', methods: ['GET'], why: 'USD kursi (muzlatiladi)' },
+  { prefix: '/company-settings', methods: ['GET'], why: 'chek sozlamalari' },
+
+  // ── Mijoz: o'qish + YARATISH (kassada yangi mijoz ochiladi) ───────────────
+  { prefix: '/counterparties', methods: ['GET', 'POST'], why: 'mijoz qidirish va kassada ochish' },
+
+  // ── Qarz: o'qish + to'lov ─────────────────────────────────────────────────
+  { prefix: '/debts', methods: ['GET', 'POST'], why: "qarz ko'rish va to'lov qabul qilish" },
+
+  // ── Xarajat (RKO) ─────────────────────────────────────────────────────────
+  { prefix: '/cash-out', methods: ['GET', 'POST'], why: 'kassadan xarajat (Q10 — tasdiqsiz)' },
+
+  // ── Chop etish ────────────────────────────────────────────────────────────
+  { prefix: '/print', methods: ['*'], why: 'chek, PKO, RKO, Z-hisobot' },
+  { prefix: '/print-templates', methods: ['GET'], why: "shablon o'qish" },
+
+  // ── Har foydalanuvchiga kerak bo'ladigan minimum ──────────────────────────
+  { prefix: '/auth', methods: ['*'], why: 'login/refresh/logout/PIN — qulfsiz qolmasin' },
+  { prefix: '/health', methods: ['GET'], why: "sog'lik tekshiruvi" },
+  { prefix: '/permissions/me', methods: ['GET'], why: 'FE menyu qurishi uchun' },
+  { prefix: '/notifications', methods: ['GET'], why: "bildirishnoma o'qish" },
+] as const;
+
+/** Yo'ldan global prefiks va so'rov qatorini olib tashlaydi. */
+export function normalizePath(url: string, globalPrefix = '/api/v1'): string {
+  const path = url.split('?')[0] ?? '';
+  const withoutPrefix = path.startsWith(globalPrefix) ? path.slice(globalPrefix.length) : path;
+  // Oxirgi `/` ahamiyatsiz; bo'sh bo'lsa ildiz.
+  const trimmed = withoutPrefix.replace(/\/+$/, '');
+  return trimmed === '' ? '/' : trimmed;
+}
+
+/**
+ * Kiosk shu so'rovni bajara oladimi.
+ *
+ * Prefiks mosligi **segment chegarasida** tekshiriladi: `/products` qoidasi
+ * `/products/123` ga mos keladi, lekin `/products-secret` ga MOS KELMAYDI.
+ * Aks holda o'xshash nomli yangi modul jimgina ochilib qolardi.
+ */
+export function isKioskAllowed(method: string, path: string): boolean {
+  const m = method.toUpperCase();
+  return KIOSK_ALLOWED.some((rule) => {
+    if (!(path === rule.prefix || path.startsWith(`${rule.prefix}/`))) return false;
+    return rule.methods.includes('*') || rule.methods.includes(m as Method);
+  });
+}
+
+/**
+ * PIN shakli: 4–6 raqam (TZ §3.2).
+ *
+ * Uzunlik chegarasi ataylab tor: PIN — qulay qaytish vositasi, parol emas.
+ * Uni uzaytirish kassirni yozib qo'yishga majbur qiladi va qulfni zaiflashtiradi.
+ */
+export const POS_PIN_RE = /^\d{4,6}$/;
+
+export function isValidPosPin(pin: string): boolean {
+  return POS_PIN_RE.test(pin);
+}
+
+/**
+ * Ketma-ket noto'g'ri PIN chegarasi (TZ §3.2): shundan keyin sessiya to'liq
+ * chiqariladi va menejerga xabar ketadi.
+ *
+ * Sabab: «erkin kassir» modelida asosiy xavf — kassir hisobidan boshqa
+ * odamning sotuvi. Cheksiz urinish qulfni bezakka aylantirardi.
+ */
+export const POS_PIN_MAX_ATTEMPTS = 5;
+
+/** Harakatsizlik chegarasi (daqiqa) — shundan keyin ekran qulflanadi. */
+export const POS_LOCK_IDLE_MINUTES = 5;

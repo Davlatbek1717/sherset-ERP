@@ -9,6 +9,7 @@ import {
   type LoginResponse,
   LoginSchema,
 } from './auth.schema.js';
+import { resolveUiMode } from './kiosk-policy.js';
 import { TokenService } from './token.service.js';
 
 const MAX_FAILED_ATTEMPTS = 5;
@@ -40,6 +41,8 @@ export class AuthService {
       include: {
         account: { select: { plan: true } },
         hrPermissions: { select: { pageKey: true, section: true, accessLevel: true } },
+        // Kiosk rejimi ERP rollaridan hisoblanadi (kassa TZ §3.1).
+        roles: { select: { role: { select: { uiMode: true } } } },
       },
     });
 
@@ -103,6 +106,7 @@ export class AuthService {
       username: employee.username,
       hrRoles: employee.hrRoles,
       isChecker: employee.isChecker,
+      uiMode: resolveUiMode(employee.roles.map((r) => r.role)),
       hrPermissions: employee.hrPermissions.map((p) => ({
         pageKey: p.pageKey,
         section: p.section,
@@ -142,6 +146,8 @@ export class AuthService {
       include: {
         account: { select: { plan: true } },
         hrPermissions: { select: { pageKey: true, section: true, accessLevel: true } },
+        // Kiosk rejimi ERP rollaridan hisoblanadi (kassa TZ §3.1).
+        roles: { select: { role: { select: { uiMode: true } } } },
       },
     });
     if (!employee || employee.archived) {
@@ -167,6 +173,7 @@ export class AuthService {
       username: employee.username,
       hrRoles: employee.hrRoles,
       isChecker: employee.isChecker,
+      uiMode: resolveUiMode(employee.roles.map((r) => r.role)),
       hrPermissions: employee.hrPermissions.map((p) => ({
         pageKey: p.pageKey,
         section: p.section,

@@ -64,6 +64,15 @@ export interface AuthenticatedUser {
   username: string | null;
   hrRoles: string[];
   isChecker: boolean;
+  /**
+   * Interfeys rejimi (kassa TZ §3.1). `kiosk` — faqat POS; `KioskGuard`
+   * server tomonda ham cheklaydi. ERP rollaridan hisoblanadi
+   * (`kiosk-policy.resolveUiMode`): bitta rol `full` bo'lsa — `full`.
+   *
+   * Ixtiyoriy: eski tokenlarda bu da'vo yo'q va u holda `full` deb
+   * qaraladi — refresh'gacha hech kim cheklanib qolmaydi.
+   */
+  uiMode?: 'full' | 'kiosk';
   hrPermissions: Array<{
     pageKey: string;
     section: string | null;
@@ -96,3 +105,14 @@ export interface LoginResponse {
     }>;
   };
 }
+
+/**
+ * POS PIN (kassa TZ §3.2) — 4–6 raqam.
+ *
+ * Uzunlik chegarasi ataylab tor: PIN qulay qaytish vositasi, parol emas.
+ * Uzaytirish kassirni yozib qo'yishga majbur qiladi va qulfni zaiflashtiradi.
+ */
+export const SetPosPinSchema = z.object({
+  pin: z.string().regex(/^\d{4,6}$/, 'PIN 4-6 raqamdan iborat bo`lishi kerak'),
+});
+export type SetPosPinInput = z.infer<typeof SetPosPinSchema>;

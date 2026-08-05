@@ -37,6 +37,7 @@ export class TokenService {
       username: user.username,
       hrRoles: user.hrRoles,
       isChecker: user.isChecker,
+      uiMode: user.uiMode,
       hrPermissions: user.hrPermissions,
     });
   }
