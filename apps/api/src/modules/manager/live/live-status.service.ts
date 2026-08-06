@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service.js';
+import { buildAccountability, employeeDuties } from './accountability.js';
 import {
   type LiveRow,
   attendanceRow,
@@ -21,6 +22,131 @@ import {
 @Injectable()
 export class LiveStatusService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+
+  /**
+   * Javobgarlik — «kimda nima qolgan» (4M.4).
+   *
+   * ⚠️ **Jihoz bu yerda YO'Q**: tizimda jihoz reyestri umuman yo'q, kimda
+   * nima borligini hech qayer bilmaydi. «0 ta jihoz» deb ko'rsatish
+   * menejerni yo'q ma'lumotga ishontirardi — ekran «hammasi topshirilgan»
+   * deb turardi, aslida hech kim tekshirmagan. Jihoz faqat bo'shatish
+   * ro'yxatida, qo'lda tasdiq sifatida.
+   */
+  async accountability(accountId: string) {
+    const [shifts, handovers, picking, kpiPending] = await Promise.all([
+      this.prisma.client.cashierSession.findMany({
+        where: { accountId, state: 'open' },
+        select: {
+          cashierId: true,
+          openingCashMinor: true,
+          cashier: { select: { id: true, name: true } },
+        },
+      }),
+      this.prisma.client.driverCashHandover.groupBy({
+        by: ['driverId'],
+        where: { accountId, status: 'pending' },
+        _sum: { amountMinor: true },
+        _count: { _all: true },
+      }),
+      this.prisma.client.msPickList.groupBy({
+        by: ['pickedById'],
+        where: { accountId, pickState: 'picking', pickedById: { not: null } },
+        _count: { _all: true },
+      }),
+      this.prisma.client.employeeDailyKpi.groupBy({
+        by: ['employeeId'],
+        where: { accountId, state: { in: ['pending', 'stale', 'computed'] } },
+        _count: { _all: true },
+      }),
+    ]);
+
+    // Xodim → yig'ilgan faktlar.
+    type Acc = {
+      name: string | null;
+      openShiftCount: number;
+      openShiftCashMinor: bigint;
+      pendingHandoverCount: number;
+      pendingHandoverMinor: bigint;
+      pickingCount: number;
+      pendingKpiDays: number;
+    };
+    const byEmp = new Map<string, Acc>();
+    const at = (id: string, name?: string | null): Acc => {
+      const found = byEmp.get(id);
+      if (found) {
+        if (name && !found.name) found.name = name;
+        return found;
+      }
+      const fresh: Acc = {
+        name: name ?? null,
+        openShiftCount: 0,
+        openShiftCashMinor: 0n,
+        pendingHandoverCount: 0,
+        pendingHandoverMinor: 0n,
+        pickingCount: 0,
+        pendingKpiDays: 0,
+      };
+      byEmp.set(id, fresh);
+      return fresh;
+    };
+
+    for (const s of shifts) {
+      const a = at(s.cashierId, s.cashier?.name ?? null);
+      a.openShiftCount += 1;
+      // Ochilish naqdi — smena boshidagi javobgarlik. Joriy kutilgan naqd
+      // har smena uchun alohida hisob talab qiladi (§8.4) va bu ekran
+      // uchun ortiqcha; ochilish summasi «kamida shuncha» ni beradi.
+      a.openShiftCashMinor += s.openingCashMinor;
+    }
+    for (const h of handovers) {
+      const a = at(h.driverId);
+      a.pendingHandoverCount += h._count._all;
+      a.pendingHandoverMinor += h._sum.amountMinor ?? 0n;
+    }
+    for (const p of picking) {
+      if (!p.pickedById) continue;
+      at(p.pickedById).pickingCount += p._count._all;
+    }
+    for (const k of kpiPending) {
+      at(k.employeeId).pendingKpiDays += k._count._all;
+    }
+
+    // Ismlari yo'q xodimlarni bitta so'rovda to'ldiramiz.
+    const missing = [...byEmp.entries()].filter(([, v]) => !v.name).map(([id]) => id);
+    if (missing.length > 0) {
+      const names = await this.prisma.client.employee.findMany({
+        where: { accountId, id: { in: missing } },
+        select: { id: true, name: true },
+      });
+      for (const n of names) {
+        const a = byEmp.get(n.id);
+        if (a) a.name = n.name;
+      }
+    }
+
+    const board = buildAccountability(
+      [...byEmp.entries()].map(([employeeId, v]) =>
+        employeeDuties({ employeeId, employeeName: v.name, ...v }),
+      ),
+    );
+
+    return {
+      totalCashMinor: board.totalCashMinor.toString(),
+      employeeCount: board.employeeCount,
+      employees: board.employees.map((e) => ({
+        employeeId: e.employeeId,
+        employeeName: e.employeeName,
+        totalCashMinor: e.totalCashMinor.toString(),
+        totalCount: e.totalCount,
+        duties: e.duties.map((d) => ({
+          kind: d.kind,
+          label: d.label,
+          count: d.count,
+          amountMinor: d.amountMinor?.toString() ?? null,
+        })),
+      })),
+    };
+  }
 
   async board(accountId: string) {
     const now = new Date();

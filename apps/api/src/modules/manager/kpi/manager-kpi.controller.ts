@@ -59,6 +59,18 @@ export class ManagerKpiController {
    * Diqqat talab qiladigan qatorlar TEPADA: bu ekran «hammasi joyida»
    * demaydi, u menejerni aynan aralashuv kerak joyga olib boradi.
    */
+  /**
+   * Javobgarlik (4M.4) — «kimda nima qolgan»: ochiq smena · topshirilmagan
+   * naqd · tugallanmagan yig'ish · qabul qilinmagan KPI kunlari.
+   *
+   * Jihoz bu yerda YO'Q — reyestr mavjud emas (servis izohiga qarang).
+   */
+  @Get('accountability')
+  @RequireHrPermission('employees', 'read')
+  async accountability(@CurrentUser() user: AuthenticatedUser) {
+    return this.live.accountability(user.accountId);
+  }
+
   @Get('live')
   @RequireHrPermission('employees', 'read')
   async liveBoard(@CurrentUser() user: AuthenticatedUser) {
