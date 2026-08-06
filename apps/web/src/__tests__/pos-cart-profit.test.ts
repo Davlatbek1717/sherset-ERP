@@ -93,7 +93,12 @@ describe('/sotuv savat foydasi', () => {
   it('mavjud chek to`lanayotganda foyda asosi = serverning `sumMinor`i', () => {
     // Qayta hisoblangan jami bilan serverning qator-ba-qator yaxlitlagan
     // summasi tiyinda farq qilishi mumkin; to'lanadigan raqam — serverniki.
-    expect(src).toContain('payingSale?.sumMinor ?? discountedTotal');
+    //
+    // B8 dan keyin qoida sof modulda (`lib/pos/cart-math.ts` →
+    // `revenueBaseMinor`, 20 test). Bu yerda faqat ULANISH qulflanadi:
+    // sahifa o'z formulasini qaytadan yozib qo'ymasin.
+    expect(src).toContain('revenueBaseMinor(payingSale?.sumMinor, discountedTotal)');
+    expect(src).not.toMatch(/payingSale\?\.sumMinor \?\? discountedTotal/);
   });
 
   it('foiz umumiy formatlagichdan o`tadi (pul bilan bir xil ajratgich)', () => {
@@ -105,7 +110,9 @@ describe('/sotuv savat foydasi', () => {
     // Chegirma hisobga olinmasa, kassir 30% tushirib bergan chekda ham to'liq
     // foyda ko'rinardi — nazorat raqami emas, taskin bo'lib qolardi.
     expect(src).toContain('revenueMinor - cartCost.costMinor');
-    expect(src).toContain('payingSale?.sumMinor ?? discountedTotal');
+    expect(src).toContain('revenueBaseMinor(payingSale?.sumMinor, discountedTotal)');
+    // Chegirma ham sof modulda — sahifada inline foiz formulasi qolmasin.
+    expect(src).toContain('applyDiscountMinor(cartTotal, discountPct)');
     // ...va bironta qator tan narxsiz bo'lsa, jami umuman ko'rsatilmaydi.
     expect(src).toContain('cartCost.complete ?');
   });

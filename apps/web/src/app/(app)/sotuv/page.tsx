@@ -7,6 +7,16 @@ import { useDestructiveMutation } from '@/hooks/use-destructive-mutation';
 import { useFillViewport } from '@/hooks/use-fill-viewport';
 import { api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-store';
+// B8 — savat matematikasi sof modulda (20 test). Ilgari bu qoidalar shu
+// faylda edi va ularni sinash uchun butun POS ekranini render qilish
+// kerak bo'lardi, shuning uchun ular umuman sinalmagan edi.
+import {
+  applyDiscountMinor,
+  cartTotalMinor,
+  revenueBaseMinor,
+  cartCount as sumCartCount,
+  toMinorOrNull,
+} from '@/lib/pos/cart-math';
 import { printPickingViaAgent, printReceiptViaAgent } from '@/lib/print-agent';
 import {
   resolveDefaultSalePrice,
@@ -88,21 +98,6 @@ interface CartLine {
 interface ListResponse<T> {
   items: T[];
   total: number;
-}
-
-/**
- * Minor-unit string → bigint, preserving the "not set" case as null.
- * Deliberately NOT `?? 0n`: a zero cost reads as «this was free to us» and
- * yields a 100% margin, which is precisely the false number the cart exists to
- * stop showing (kassa TZ §5.3).
- */
-function toMinorOrNull(value: string | null | undefined): bigint | null {
-  if (value == null || value === '') return null;
-  try {
-    return BigInt(value);
-  } catch {
-    return null;
-  }
 }
 
 // ── Open Shift Form ─────────────────────────────────────────────────────────
@@ -746,10 +741,9 @@ function SalesScreen({ session }: { session: CurrentSession }) {
   // Ready sale selected for payment
   const [payingSale, setPayingSale] = useState<{ id: string; sumMinor: bigint } | null>(null);
 
-  const cartCount = cart.reduce((n, l) => n + l.quantity, 0);
-  const cartTotal = cart.reduce((sum, l) => sum + l.priceMinor * BigInt(l.quantity), 0n);
-  const discountedTotal =
-    discountPct > 0 ? cartTotal - (cartTotal * BigInt(discountPct)) / 100n : cartTotal;
+  const cartCount = sumCartCount(cart);
+  const cartTotal = cartTotalMinor(cart);
+  const discountedTotal = applyDiscountMinor(cartTotal, discountPct);
 
   // Chek bo'yicha foyda (kassa TZ §5.2) — profit is taken off the DISCOUNTED
   // total, since that is the money the till actually receives. `complete` goes
@@ -762,7 +756,7 @@ function SalesScreen({ session }: { session: CurrentSession }) {
   // bo'lsak (omborchidan qaytgan «Tayyor» chek) — bu serverning o'z `sumMinor`i,
   // qayta hisoblangan raqam emas: server qator-ba-qator yaxlitlagan, biz esa
   // jamiga foiz qo'llaymiz, ikkalasi tiyinda farq qilishi mumkin.
-  const revenueMinor = payingSale?.sumMinor ?? discountedTotal;
+  const revenueMinor = revenueBaseMinor(payingSale?.sumMinor, discountedTotal);
   const cartProfitMinor = cartCost.complete ? revenueMinor - cartCost.costMinor : null;
   const cartMarginPct = marginPercent(cartProfitMinor, revenueMinor);
 
