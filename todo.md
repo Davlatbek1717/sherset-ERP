@@ -294,7 +294,10 @@ kuniga **3 sessiya** → **~6 hafta**.
 - [ ] **Prodda ~20 yangi `/debts` route jonlanadi** — `DebtModule` ulangani sababli;
       deploy oldidan hisobga oling (avval hech qachon ishlamagan kod)
 - [ ] **`wave4m-accept` branch + worktree** tozalash
-- [ ] **`stash@{0}` (2026-07-31)** — begona backup, `git stash drop` (egasi tasdiqlasa)
+- [x] **`stash@{0}` (2026-07-31)** — tekshirildi: hamma tarkibi (jamlanma bloki i18n +
+      CO/Demand header «Резерв» checkbox) allaqachon `91ee5db3`+keyingi commit'larda landed
+      (har fayl solishtirildi — mazmunan bir xil, faqat atrofdagi qatorlar 180 commit
+      davomida siljigan) → `git stash drop` — 2026-08-06
 
 ---
 
