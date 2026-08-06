@@ -2,6 +2,8 @@ import { Prisma } from '@moysklad/db';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service.js';
 import type { DailyKpiState } from '../../manager/kpi/daily-kpi-fsm.js';
+// TZ §3.4 — eskirgan kunlar tuzatmasi (sof modul, 17 test).
+import { summarizeCorrections } from '../../manager/kpi/kpi-correction.js';
 import { HrBonusFineService } from '../hr-bonus-fine/hr-bonus-fine.service.js';
 import { HrSalaryService } from './hr-salary.service.js';
 import {
@@ -91,6 +93,17 @@ export class HrPayrollService {
     // 6. fix component = per-employee base salary
     const fixComponentMinor = extractBaseSalaryMinor(employee.salaryConfig);
 
+    // 6b. Eskirgan kunlar tuzatmasi (§3.4) — SHU davrga tegishlilari.
+    //
+    // Filtr `period` bo'yicha, kun sanasi bo'yicha EMAS: iyul kunining
+    // avgustda topilgan xatosi AVGUST oyligiga kiradi, chunki iyul
+    // allaqachon to'langan va yopilgan.
+    const correctionRows = await this.prisma.client.employeeKpiCorrection.findMany({
+      where: { accountId, employeeId, period: yearMonth },
+      select: { diffMinor: true, direction: true },
+    });
+    const corrections = summarizeCorrections(correctionRows);
+
     // 7. final
     const finalSalaryMinor = computeFinalSalaryMinor({
       fixComponentMinor,
@@ -98,6 +111,7 @@ export class HrPayrollService {
       bonusSumMinor: bonusMinor,
       fineSumMinor: fineMinor,
       commissionMinor,
+      correctionNetMinor: corrections.netMinor,
     });
 
     const row = await this.prisma.client.hrKpiMonthlyScore.upsert({
@@ -121,6 +135,8 @@ export class HrPayrollService {
         acceptedDays: acceptance.acceptedDays,
         pendingDays: acceptance.pendingDays,
         blockedSalesMinor: acceptance.blockedSalesMinor,
+        correctionIncreaseMinor: corrections.increaseMinor,
+        correctionDecreaseMinor: corrections.decreaseMinor,
       },
       update: {
         totalSalesMinor,
@@ -136,6 +152,8 @@ export class HrPayrollService {
         acceptedDays: acceptance.acceptedDays,
         pendingDays: acceptance.pendingDays,
         blockedSalesMinor: acceptance.blockedSalesMinor,
+        correctionIncreaseMinor: corrections.increaseMinor,
+        correctionDecreaseMinor: corrections.decreaseMinor,
         computedAt: new Date(),
       },
     });

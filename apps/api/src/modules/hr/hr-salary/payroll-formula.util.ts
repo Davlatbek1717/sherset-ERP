@@ -10,6 +10,16 @@
  * so the Oylik UI can flag an underwater month).
  */
 export interface SalaryComponents {
+  /**
+   * Eskirgan kunlar tuzatmasining SOF summasi (§3.4) — ixtiyoriy.
+   *
+   * Ataylab ixtiyoriy: bu komponent 4M.3 da qo'shildi va tuzatmasi yo'q
+   * oylarda umuman bo'lmaydi. Majburiy qilinsa har chaqiruvchi `0n` yozishi
+   * kerak bo'lardi va o'sha `0n` «tuzatma yo'q» bilan «hisoblanmagan» ni
+   * aralashtirardi.
+   */
+  correctionNetMinor?: bigint;
+
   fixComponentMinor: bigint;
   kpiEarnedMinor: bigint;
   bonusSumMinor: bigint;
@@ -19,7 +29,16 @@ export interface SalaryComponents {
 
 export function computeFinalSalaryMinor(c: SalaryComponents): bigint {
   return (
-    c.fixComponentMinor + c.kpiEarnedMinor + c.bonusSumMinor - c.fineSumMinor + c.commissionMinor
+    c.fixComponentMinor +
+    c.kpiEarnedMinor +
+    c.bonusSumMinor -
+    c.fineSumMinor +
+    c.commissionMinor +
+    // TZ §3.4 — eskirgan kunlarning TUZATUVCHI QATORI. Alohida qo'shiluvchi:
+    // to'langan oyning KPI raqami qayta yozilmaydi, farq shu oyda ko'rinadi.
+    // Musbat = qo'shimcha to'lov, manfiy = ushlanma. `?? 0n` xavfsiz: tuzatma
+    // yo'q oyda komponent umuman bo'lmaydi (eski chaqiruvchilar buzilmaydi).
+    (c.correctionNetMinor ?? 0n)
   );
 }
 

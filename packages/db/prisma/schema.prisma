@@ -112,6 +112,7 @@ model Account {
   cashierSessions                CashierSession[]
   cashierAuditEvents             CashierAuditEvent[]
   cashierSessionVariances        CashierSessionVariance[]
+  employeeKpiCorrections         EmployeeKpiCorrection[]
   kpiMetricDefs                  KpiMetricDef[]
   kpiProfiles                    KpiProfile[]
   kpiProfileVersions             KpiProfileVersion[]
@@ -420,6 +421,8 @@ model Employee {
   ownedRetailDrawerOut       RetailDrawerCashOut[]      @relation("RetailDrawerOutOwner")
   pickedMsPickLists          MsPickList[]               @relation("MsPickListPicker")
   cashierSessionVariances    CashierSessionVariance[]   @relation("CashierSessionVarianceCashier")
+  kpiCorrections             EmployeeKpiCorrection[]    @relation("EmployeeKpiCorrectionEmployee")
+  acceptedKpiCorrections     EmployeeKpiCorrection[]    @relation("EmployeeKpiCorrectionActor")
   acknowledgedVariances      CashierSessionVariance[]   @relation("CashierSessionVarianceAck")
   retailDrawerOutRecipient   RetailDrawerCashOut[]      @relation("RetailDrawerOutRecipient")
   ownedRetailSalesReturns    RetailSalesReturn[]        @relation("RetailSalesReturnOwner")
@@ -9565,6 +9568,19 @@ model EmployeeDailyKpi {
   /// ishonish kerakligini ko'rib turadi.
   scoreCoverage Decimal? @map("score_coverage") @db.Decimal(5, 4)
 
+  /// Qabul lahzasida MUZLATILGAN oylik-fakti (tiyin) — TZ §3.4.
+  ///
+  /// NEGA: kun qabul qilinadi → oylikka kiradi → TO'LANADI. Keyin manba
+  /// hujjat o'zgarsa kun eskiradi va qayta qabul qilinadi. Agar oylik har
+  /// safar joriy raqamni qayta yig'sa, allaqachon to'langan oyning summasi
+  /// JIMGINA o'zgarardi va buni buxgalter tushuntira olmasdi.
+  /// Shu ustun «o'sha paytda nima to'langan» savoliga javob beradi; farq esa
+  /// `EmployeeKpiCorrection` da alohida qator bo'lib yoziladi.
+  ///
+  /// NULL = kun hech qachon qabul qilinmagan (0 EMAS: nol fakt ham haqiqiy
+  /// qiymat va u bilan «qabul qilinmagan» ni aralashtirib bo'lmaydi).
+  acceptedFactMinor BigInt? @map("accepted_fact_minor")
+
   computedAt DateTime @default(now()) @map("computed_at") @db.Timestamptz()
   updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz()
 
@@ -9573,6 +9589,7 @@ model EmployeeDailyKpi {
   profileVersion KpiProfileVersion?       @relation(fields: [profileVersionId], references: [id], onDelete: SetNull)
   metrics        EmployeeDailyKpiMetric[]
   events         EmployeeDailyKpiEvent[]
+  corrections    EmployeeKpiCorrection[]
 
   @@unique([accountId, employeeId, date])
   // Menejerning kunlik ro'yxati: «shu kun, qabul kutayotganlar».
@@ -9623,6 +9640,52 @@ model EmployeeDailyKpiMetric {
 ///
 /// Egaga haftalik nazorat xulosasi (M-Q7) AYNAN shu jadvaldan chiqadi: nechta
 /// tuzatma, qancha summaga, kim ko'p tuzatgan.
+/// Oylikning TUZATUVCHI QATORI (menejer KPI TZ §3.4).
+///
+/// Eskirgan kun qayta qabul qilinganda to'langan raqam QAYTA YOZILMAYDI —
+/// farq shu yerda alohida yozuv bo'lib qoladi va **tuzatma sanasi** tushgan
+/// oyga kiradi (iyul kunining avgustdagi xatosi → avgust oyligi).
+///
+/// Append-only: yozuv hech qachon o'chirilmaydi/tahrirlanmaydi. Bir kun bir
+/// necha marta eskirsa — bir necha tuzatma qatori bo'ladi, har biri o'z
+/// oyiga tushadi.
+model EmployeeKpiCorrection {
+  id         String @id @default(uuid()) @db.Uuid
+  accountId  String @map("account_id") @db.Uuid
+  dailyKpiId String @map("daily_kpi_id") @db.Uuid
+  employeeId String @map("employee_id") @db.Uuid
+
+  /// Tuzatilgan KUN (oylik davri emas) — «qaysi kun uchun» savoliga javob.
+  kpiDate DateTime @map("kpi_date") @db.Date
+
+  /// Tuzatma QAYSI oylikka kiradi: `YYYY-MM`, tuzatma sanasidan.
+  period String @db.VarChar(7)
+
+  /// Oldingi qabulda muzlatilgan fakt.
+  previousMinor BigInt @map("previous_minor")
+  /// Yangi qabuldagi fakt.
+  nextMinor     BigInt @map("next_minor")
+  /// `next − previous`. Manfiy = xodimga ortiqcha to'langan (ushlanma).
+  diffMinor     BigInt @map("diff_minor")
+  /// 'increase' | 'decrease' — hisobot filtri (indekssiz skanerdan qochish).
+  direction     String @db.VarChar(20)
+
+  /// Kim qayta qabul qilgan.
+  acceptedById String?  @map("accepted_by_id") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  account    Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  dailyKpi   EmployeeDailyKpi  @relation(fields: [dailyKpiId], references: [id], onDelete: Cascade)
+  employee   Employee          @relation("EmployeeKpiCorrectionEmployee", fields: [employeeId], references: [id], onDelete: Cascade)
+  acceptedBy Employee?         @relation("EmployeeKpiCorrectionActor", fields: [acceptedById], references: [id], onDelete: SetNull)
+
+  /// Oylik hisoblash so'rovi: xodim × davr.
+  @@index([accountId, employeeId, period])
+  /// «Bu oyda qancha tuzatma bo'ldi» — egaga haftalik/oylik xulosa.
+  @@index([accountId, period, createdAt(sort: Desc)])
+  @@map("employee_kpi_corrections")
+}
+
 model EmployeeDailyKpiEvent {
   id         String           @id @default(uuid()) @db.Uuid
   accountId  String           @map("account_id") @db.Uuid
@@ -9687,6 +9750,13 @@ model HrKpiMonthlyScore {
   /// Yashirilmaydi: «nega oylik kam» degan savolga javob shu ustunda,
   /// aks holda blok sabab-noma'lum kamayish bo'lib ko'rinardi.
   blockedSalesMinor BigInt @default(0) @map("blocked_sales_minor")
+
+  /// TZ §3.4 — eskirgan kunlar tuzatmasi. Qo'shimcha to'lov va ushlanma
+  /// ALOHIDA: buxgalter hujjatda ikkalasini alohida qator qilib ko'rsatadi,
+  /// «sof −50 000» bitta raqami unga yetarli emas.
+  correctionIncreaseMinor BigInt @default(0) @map("correction_increase_minor")
+  /// Ushlanma MUSBAT son sifatida saqlanadi («ushlandi: 50 000»).
+  correctionDecreaseMinor BigInt @default(0) @map("correction_decrease_minor")
 
   computedAt DateTime @default(now()) @map("computed_at") @db.Timestamptz()
 

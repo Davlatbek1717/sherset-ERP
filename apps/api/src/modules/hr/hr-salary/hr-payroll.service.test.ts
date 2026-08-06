@@ -7,6 +7,10 @@ function makePrisma() {
       employee: { findFirst: vi.fn(), findMany: vi.fn() },
       // 4M.3: oylik manbai `HrKpiDailyLog` dan QABUL omboriga ko'chdi.
       employeeDailyKpi: { findMany: vi.fn() },
+      // §3.4: eskirgan kunlar tuzatmasi oylikka alohida qator bo`lib kiradi.
+      // Standart — TUZATMASIZ oy: mavjud testlar formulaning asosiy qismini
+      // tekshiradi, tuzatma esa o`z testida beriladi.
+      employeeKpiCorrection: { findMany: vi.fn().mockResolvedValue([]) },
       hrKpiMonthlyScore: { upsert: vi.fn(), findMany: vi.fn() },
     },
   };
@@ -317,5 +321,70 @@ describe('4M.3 — QABUL → OYLIK bloklash (M-Q8)', () => {
     };
     expect(args.where.date.gte.toISOString().slice(0, 10)).toBe('2026-05-01');
     expect(args.where.date.lt.toISOString().slice(0, 10)).toBe('2026-06-01');
+  });
+});
+
+describe('§3.4 — eskirgan kunlar tuzatmasi oylikka kiradi', () => {
+  it('sof tuzatma yakuniy summaga qo`shiladi', async () => {
+    const prisma = makePrisma();
+    const salary = makeSalary();
+    const bonusFine = makeBonusFine();
+    prisma.client.employee.findFirst.mockResolvedValue({
+      id: 'emp-1',
+      salaryConfig: { baseSalaryMinor: '0' },
+    });
+    prisma.client.employeeDailyKpi.findMany.mockResolvedValue([]);
+    // Iyulda ortiqcha to'langan 60 000 avgustda ushlanadi.
+    prisma.client.employeeKpiCorrection.findMany.mockResolvedValue([
+      { diffMinor: -60_000n, direction: 'decrease' },
+    ]);
+    prisma.client.hrKpiMonthlyScore.upsert.mockImplementation((a: unknown) => a);
+
+    // biome-ignore lint/suspicious/noExplicitAny: test wiring
+    const svc = new HrPayrollService(prisma as any, salary as any, bonusFine as any);
+    await svc.computeMonthly('acc1', 'emp-1', '2026-08');
+
+    const arg = prisma.client.hrKpiMonthlyScore.upsert.mock.calls[0]?.[0];
+    expect(arg.create.correctionDecreaseMinor).toBe(60_000n);
+    expect(arg.create.correctionIncreaseMinor).toBe(0n);
+    // Yakuniy summa AYNAN shuncha kamayadi.
+    expect(arg.create.finalSalaryMinor).toBe(-60_000n);
+  });
+
+  it('tuzatma DAVR bo`yicha o`qiladi (kun sanasi bo`yicha emas)', async () => {
+    const prisma = makePrisma();
+    prisma.client.employee.findFirst.mockResolvedValue({
+      id: 'emp-1',
+      salaryConfig: {},
+    });
+    prisma.client.employeeDailyKpi.findMany.mockResolvedValue([]);
+    prisma.client.hrKpiMonthlyScore.upsert.mockImplementation((a: unknown) => a);
+
+    // biome-ignore lint/suspicious/noExplicitAny: test wiring
+    const svc = new HrPayrollService(prisma as any, makeSalary() as any, makeBonusFine() as any);
+    await svc.computeMonthly('acc1', 'emp-1', '2026-08');
+
+    const where = prisma.client.employeeKpiCorrection.findMany.mock.calls[0]?.[0]?.where;
+    expect(where.period).toBe('2026-08');
+    expect(where.employeeId).toBe('emp-1');
+  });
+
+  it('tuzatmasiz oyda summa o`zgarmaydi', async () => {
+    const prisma = makePrisma();
+    prisma.client.employee.findFirst.mockResolvedValue({
+      id: 'emp-1',
+      salaryConfig: { baseSalaryMinor: '100000' },
+    });
+    prisma.client.employeeDailyKpi.findMany.mockResolvedValue([]);
+    prisma.client.hrKpiMonthlyScore.upsert.mockImplementation((a: unknown) => a);
+
+    // biome-ignore lint/suspicious/noExplicitAny: test wiring
+    const svc = new HrPayrollService(prisma as any, makeSalary() as any, makeBonusFine() as any);
+    await svc.computeMonthly('acc1', 'emp-1', '2026-08');
+
+    const arg = prisma.client.hrKpiMonthlyScore.upsert.mock.calls[0]?.[0];
+    expect(arg.create.correctionIncreaseMinor).toBe(0n);
+    expect(arg.create.correctionDecreaseMinor).toBe(0n);
+    expect(arg.create.finalSalaryMinor).toBe(100_000n);
   });
 });

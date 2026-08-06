@@ -8,6 +8,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service.js';
+// TZ §3.4 — tuzatuvchi qator qoidalari (sof modul, 17 test).
+import { PAYROLL_SALES_METRIC_KEY } from '../../hr/hr-salary/payroll-acceptance.util.js';
 import { localDateOnly, startOfLocalDay } from '../../hr/hr-shared/tz.util.js';
 import {
   ACTOR,
@@ -22,6 +24,7 @@ import {
   evaluate,
   evaluateAdjust,
 } from './daily-kpi-fsm.js';
+import { correctionPeriod, planCorrection } from './kpi-correction.js';
 import { KpiMetricCatalogService } from './kpi-metric-catalog.service.js';
 import {
   BUILT_IN_CATALOG,
@@ -345,6 +348,10 @@ export class DailyKpiAcceptanceService {
       const frozen = await this.computeScore(ctx.accountId, id);
       extra.scorePercent = frozen.score;
       extra.scoreCoverage = frozen.coverage;
+      // 🔴 OYLIK-FAKTI HAM MUZLATILADI (§3.4). Busiz oylik har safar joriy
+      // raqamni qayta yig'ardi va ALLAQACHON TO'LANGAN oyning summasi
+      // jimgina o'zgarardi — buxgalter buni tushuntira olmasdi.
+      extra.acceptedFactMinor = await this.currentFactMinor(ctx.accountId, id);
     }
     // Navbatga qaytgan kun endi qabul qilingan emas — eski qabul izini
     // qoldirish «kim qabul qilgan» savoliga eski javob berardi.
@@ -359,6 +366,16 @@ export class DailyKpiAcceptanceService {
     if (verdict.to === DAILY_KPI_STATE.stale) extra.staleAt = now;
     if (from === DAILY_KPI_STATE.stale && verdict.to !== DAILY_KPI_STATE.stale)
       extra.staleAt = null;
+
+    // Tuzatuvchi qator KERAKMI — qabuldan OLDINGI muzlatilgan fakt bilan
+    // solishtiriladi. Qaror sof modulda; bu yerda faqat ma'lumot yig'iladi.
+    const correction =
+      verdict.to === DAILY_KPI_STATE.accepted || verdict.to === DAILY_KPI_STATE.forceAccepted
+        ? planCorrection({
+            previousMinor: day.acceptedFactMinor ?? null,
+            nextMinor: (extra.acceptedFactMinor as bigint | undefined) ?? 0n,
+          })
+        : null;
 
     await this.prisma.client.$transaction(async (tx) => {
       const claimed = await tx.employeeDailyKpi.updateMany({
@@ -382,9 +399,61 @@ export class DailyKpiAcceptanceService {
           comment: input.comment ?? null,
         },
       });
+
+      // ⚠️ Tuzatma AYNI tranzaksiyada: agar u alohida yozilsa va oradagi
+      // xato yuz bersa, kun yangi fakt bilan qabul qilingan-u oylikda
+      // farq ko'rinmagan holat qolardi — ya'ni pul jimgina o'zgarardi.
+      if (correction) {
+        await tx.employeeKpiCorrection.create({
+          data: {
+            accountId: ctx.accountId,
+            dailyKpiId: id,
+            employeeId: day.employeeId,
+            kpiDate: day.date,
+            // Kun sanasi bo'yicha EMAS: iyul kunining avgustdagi xatosi
+            // avgust oyligiga kiradi (iyul yopilgan).
+            period: correctionPeriod(now),
+            previousMinor: correction.previousMinor,
+            nextMinor: correction.nextMinor,
+            diffMinor: correction.diffMinor,
+            direction: correction.direction,
+            acceptedById: ctx.actorId,
+          },
+        });
+      }
     });
 
-    return { id, from, to: verdict.to, changed: true };
+    return {
+      id,
+      from,
+      to: verdict.to,
+      changed: true,
+      /** Tuzatuvchi qator yozilgan bo'lsa — FE uni darhol ko'rsatadi. */
+      correction: correction
+        ? { diffMinor: correction.diffMinor.toString(), direction: correction.direction }
+        : null,
+    };
+  }
+
+  /**
+   * Kunning JORIY oylik-fakti (tiyin) — qabul lahzasida muzlatiladi.
+   *
+   * Manba `sumAcceptedSales` bilan BIR XIL bo'lishi shart: tuzatma o'sha
+   * raqamdan hisoblanadi. Shuning uchun bu yerda ham `adjust` (menejer
+   * tuzatmasi) `auto` dan ustun turadi.
+   */
+  private async currentFactMinor(accountId: string, id: string): Promise<bigint> {
+    const row = await this.prisma.client.employeeDailyKpi.findFirst({
+      where: { id, accountId },
+      select: {
+        metrics: {
+          where: { metricKey: PAYROLL_SALES_METRIC_KEY },
+          select: { autoValue: true, adjustValue: true },
+        },
+      },
+    });
+    const m = row?.metrics[0];
+    return m?.adjustValue ?? m?.autoValue ?? 0n;
   }
 
   /**
@@ -488,7 +557,15 @@ export class DailyKpiAcceptanceService {
   private async load(ctx: ActorContext, id: string) {
     const day = await this.prisma.client.employeeDailyKpi.findFirst({
       where: { id, accountId: ctx.accountId },
-      select: { id: true, state: true, employeeId: true },
+      // `date` va `acceptedFactMinor` — tuzatuvchi qator uchun (§3.4):
+      // birinchisi «qaysi kun uchun», ikkinchisi «avval nima to'langan».
+      select: {
+        id: true,
+        state: true,
+        employeeId: true,
+        date: true,
+        acceptedFactMinor: true,
+      },
     });
     if (!day) throw new NotFoundException('Kun topilmadi');
     // Xodim FAQAT o'z kuniga tegishli amal qila oladi (tushuntirish berish).
