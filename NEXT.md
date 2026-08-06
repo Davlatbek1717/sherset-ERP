@@ -333,6 +333,48 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > **⏭️ Browser-QA ochiq** — bu Phase-1 (kod+test darajasida tasdiqlangan), real brauzerda
 > skaner qilib ko'rish qilinmadi.
 
+> **🕒 2026-08-06c (MENEJER BO'LIMI — 3 bosqich · `29ade7e` · `8923c19` · `0d9ca3b`) · ⏳ DEPLOY QILINMAGAN**
+>
+> Egasining talabi: «birinchi navbatda menejer bo'limini qil». Uch ish bajarildi.
+>
+> **1. Eskirgan kun TUZATUVCHI QATORI (§3.4)** — `29ade7e`
+> Kun qabul qilinib **to'langandan** keyin manba hujjat o'zgarsa, oylik endi jimgina qayta
+> yozilmaydi: qabul paytidagi fakt **muzlatiladi** (`acceptedFactMinor`), farq esa
+> `EmployeeKpiCorrection` da alohida qator bo'lib **tuzatma sanasi tushgan oyga** kiradi.
+> Iyul kunining avgustdagi xatosi → **avgust** oyligiga (iyul yopilgan). Qo'shimcha to'lov va
+> ushlanma alohida saqlanadi — buxgalterga «sof −50 000» yetarli emas.
+> *Runtime:* 500 000 → 440 000 → farq aynan −60 000, davr avgust; raqam o'zgarmay qayta qabulda
+> ortiqcha tuzatma yozilmadi.
+>
+> **2. Egaga HAFTALIK XULOSA (M-Q7)** — `8923c19`
+> Dushanba 09:00 cron + `GET manager/kpi/weekly-summary`. «Eng ko'p tuzatgan» **son** bo'yicha,
+> summa bo'yicha emas (bitta katta tuzatma normal ish, o'nlab mayda tuzatma — naqsh).
+> Tuzatmasiz haftada ham xabar ketadi.
+> 🔴 **Jonli ma'lumotda BUG topildi va tuzatildi:** jurnal payload'ida `was` birinchi tuzatmada
+> har doim `null` (u *oldingi qo'lda tuzatma* qiymati) — shuning uchun M-Q7 ning asosiy raqami
+> **doim 0** chiqardi. Endi baza `was ?? autoValue ?? 0`, va bazasiz qatorlar **alohida**
+> sanaladi («shundan yo'qdan kiritilgan: N ta») — «tuzatdi» bilan «yo'qdan kiritdi» boshqa ish.
+> Tuzatgandan keyin real 5 mln so'mlik aralashuv ko'rindi.
+>
+> **3. BO'SHATISH RO'YXATI (4M.4 hayot sikli)** — `0d9ca3b`
+> ⚠️ **todo.md dagi da'vo qisman NOTO'G'RI ekan.** Kodda tekshirdim: **login va refresh
+> allaqachon yopiq** (`auth.service` ikkalasida `archived` ni ko'radi). Haqiqiy teshiklar:
+> **Telegram bog'lami** · **ochiq kassa smenasi** · **qabul qilinmagan KPI kunlari** · **jihoz**.
+> Endi bo'shatish — ro'yxat; u tugamaguncha xodim arxivlanmaydi.
+> **Asosiy qaror:** tizim biladigan narsani odamdan so'ramaymiz — `auto` bandni **qo'lda
+> belgilab bo'lmaydi** (aks holda «Telegram uzildi» deb belgilanardi, bog'lam esa turardi).
+> Auto bandlar har so'rovda qayta tekshiriladi va yakunlashda ham qayta o'qiladi.
+> *Runtime:* ochiq smenali xodimda arxivlash bloklandi («1 ta ochiq smena»).
+>
+> **Gate:** typecheck 0 · biome 0 · api **4856/4856**.
+> ⚠️ **Phase-1: brauzer-smoke YO'Q** — uchala ishning ham FE ekrani yo'q (BE + endpointlar tayyor).
+>
+> ⛔ **EGASIDAN KUTILMOQDA (B1):** bonus/jarima **formulasi**. TZ «kun qabul qilinganda
+> bonus/jarima yoziladi» deydi, lekin **qancha** ekani yozilmagan — pul siyosati o'ylab
+> topilmaydi. Shu javob kelsa 4M.3 butunlay yopiladi.
+>
+> **Keyingi:** 4M.4 ning qolgani (jonli holat · xodim kartasi 360° · javobgarlik) yoki 4M.5.
+
 > **🕒 2026-08-06b (1-KASSA B7 TUGADI — yopish formasi + Z-hisobot + menejer aktlari · `cab41d8`) · ⏳ DEPLOY QILINMAGAN**
 >
 > **1-Kassa endi B1–B7 yopiq** (qolgani faqat B8 — `sotuv/page.tsx` bo'linishi).
