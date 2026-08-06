@@ -305,6 +305,43 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-06a (✅ DEPLOYED — 1-Kassa B5–B7 + MoySklad pick-list · `a3cd733 → 8d435a8b`)**
+>
+> **Deploy qamrovi:** 1-Kassa **B5** (qarz to'lovi + PKO) · **B6** (xarajat/inkassatsiya + RKO) ·
+> **B7 backend** (farq akti + Z-hisobot) · **4M.3 FE** · **MoySklad pick-list** (yacheykali chek).
+> Backup: `pre-kassa-b5b7-20260805-200030.sql.gz` (402M, 231 jadval).
+> **22 migratsiya qo'llandi** — «All migrations have been successfully applied».
+>
+> **Sog'liq (majburiy tekshiruv, o'tgan 502 sabog'i):** `api/v1/health` **200** · web:3011 **200** ·
+> `erp.sherset.uz` **200**. Yangi 6 marshrut **401** qaytardi (404 EMAS) ⇒ kod jonli:
+> `debts/pos/summary/:id` · `cashier-sessions/cash-out-recipients` · `:id/z-report` ·
+> `:id/cash-out-summary` · `pick-lists` · `debts`.
+> DB'da tasdiqlandi: `debt_payments.batch_id`+`retail_shift_id` · `retail_drawer_cash_out.kind`+
+> `expense_item_id`+`recipient_id` · `cashier_session_variances` jadval · `ms_pick_lists.pick_state`.
+>
+> 🔴 **DEPLOY PAYTIDA TOPILDI VA TUZATILDI:** `.picksync.env` qutida **YO'Q** edi ⇒ sync jim
+> turgan (`ms_pick_lists` = 0). Lekin `apps/api/.env` da **`MOYSKLAD_TOKEN` BOR** va u ishlaydi
+> (jonli: `GET /entity/customerorder` → 200). `authHeader()` endi **token'ni birinchi** tekshiradi
+> (Bearer), login/parol zaxira bo'lib qoladi — yangi maxfiy ma'lumot so'ramaymiz (`8d435a8b`).
+>
+> **✅ SYNC JONLI ISHLAYAPTI:** `«MoySklad pick-list sync: 9 order(s) upserted»` — `ms_pick_lists`
+> da **9 hujjat** (hammasi `salesreturn`, 2026-08-04/05). `customerorder` lar eskiroq
+> (oxirgisi 2026-07-21) ⇒ 48 soatlik oynadan tashqarida; kengaytirish uchun
+> **`MOYSKLAD_SYNC_BACKFILL_HOURS`** qo'shildi (default 48 o'zgarmadi).
+>
+> ⚠️ **JONLI MA'LUMOTDAGI ASOSIY XULOSA — yacheyka biriktirish qarzi:** sync qilingan
+> **15/15 pozitsiya** mahalliy tovarga **kod bo'yicha topildi** (moslashtirish ishlaydi), lekin
+> ularning **hech biriga yacheyka biriktirilmagan**. Prodda: **4898 tovar, shundan atigi 144 tasi
+> (≈3%) yacheykaga bog'langan.** Ya'ni chek hozir ko'pincha «yacheykasiz» chiqadi — bu KOD
+> muammosi emas, **ma'lumot kiritish** ishi (§1/§2 «Скан-sanash»/«Umumiy sanash» ekranlari).
+> Chek boshidagi qoplama ogohlantirishi aynan shuni ko'rsatadi.
+>
+> ⚠️ **Phase-1: brauzer-smoke YO'Q** — hech bir yangi ekran real brauzerda ochilmagan, termal
+> printerda sinalmagan. `expense_items` prodda **0 ta** ⇒ xarajat (RKO) oynasi «modda yo'q»
+> deydi, egasi avval xarajat moddalarini yaratishi kerak.
+>
+> **Keyingi:** 1-Kassa **B7 qolgani** (yopish formasi + Z-hisobot sahifasi) yoki **Phase-2 QA**.
+
 > **🕒 2026-08-05g (1-KASSA B7 BACKEND — smena farq akti + Z-hisobot · `02f42d7`) · ⏳ DEPLOY QILINMAGAN**
 >
 > **`CashierSessionVariance` jadvali** (migratsiya `20260805210000_cashier_session_variance`):
