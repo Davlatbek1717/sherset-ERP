@@ -333,6 +333,34 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > **⏭️ Browser-QA ochiq** — bu Phase-1 (kod+test darajasida tasdiqlangan), real brauzerda
 > skaner qilib ko'rish qilinmadi.
 
+> **🕒 2026-08-06b (1-KASSA B7 TUGADI — yopish formasi + Z-hisobot + menejer aktlari · `cab41d8`) · ⏳ DEPLOY QILINMAGAN**
+>
+> **1-Kassa endi B1–B7 yopiq** (qolgani faqat B8 — `sotuv/page.tsx` bo'linishi).
+>
+> 1. **POS yopish formasi** — kutilgan naqd va farq **tasdiqlashdan OLDIN** ko'rinadi. Kassir
+>    raqamni ko'rmasdan yopsa, farqni faqat menejer ertaga ko'radi va sababini hech kim eslamaydi.
+>    Izoh maydoni **faqat farq bo'lganda** chiqadi — farqsiz smenada u ortiqcha savol bo'lardi va
+>    kassir uni e'tiborsiz qoldirishga o'rganib qolardi.
+> 2. **Z-hisobot** — mavjud smena sahifasiga **§8.5 bloki** qo'shildi (ikkinchi sahifa
+>    yaratilmadi): to'lov turlari kesimi · o'rtacha chek · yalpi foyda · chegirma · qarzga
+>    sotilgan · qarz to'lovlari · qaytarishlar · **xarajatlar moddalar bo'yicha** · inkassatsiya ·
+>    farq aktlari. `NULL ≠ 0` ko'rinishda ham saqlanadi (yalpi foyda noma'lum → «—», 0 emas).
+> 3. **`/menejer/kassa-farqlari`** — default **faqat ko'rilmagan** aktlar; ko'rilmaganlar soni
+>    filtr o'zgarsa ham sarlavhada qoladi.
+>
+> 🔴 **ASOSIY QAROR:** tan olish **summalarga TEGMAYDI**. Akt — pul yo'qolishi haqidagi dalil;
+> uni tuzatish imkoni bo'lsa, u dalil bo'lishdan to'xtardi. Menejer faqat «ko'rdim» + sabab
+> yozadi. Qayta bosilsa **birinchi vaqt saqlanadi**.
+>
+> **Runtime:** 3 ko'rilmagan akt → 1 tan olindi → qayta bosishda vaqt **surilmadi** → summalar va
+> kassir izohi **o'zgarmadi** → filtrlar 2/1/3 to'g'ri.
+>
+> **Gate:** typecheck 0 · biome 0 · api **4779/4779** · web **2708/2708** · i18n ru+uz.
+> ⚠️ **Phase-1: brauzer-smoke YO'Q.**
+>
+> **Keyingi:** `1-Kassa B8` — `sotuv/page.tsx` (2000+ satr) modullarga bo'lish. Qolgan
+> bosqichlar **63 → 62**.
+
 > **🕒 2026-08-06a (✅ DEPLOYED — 1-Kassa B5–B7 + MoySklad pick-list · `a3cd733 → 8d435a8b`)**
 >
 > **Deploy qamrovi:** 1-Kassa **B5** (qarz to'lovi + PKO) · **B6** (xarajat/inkassatsiya + RKO) ·

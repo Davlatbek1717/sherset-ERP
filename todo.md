@@ -15,10 +15,10 @@
 
 | | Soni |
 |---|---|
-| **Qolgan bosqichlar** | **63** |
+| **Qolgan bosqichlar** | **62** |
 | Sifat qarzlari | 7 |
 | Brauzer-QA (Phase-2) o'tishlari | ~9 (har bo'lim uchun 1) |
-| **JAMI ish birligi** | **~79** |
+| **JAMI ish birligi** | **~78** |
 
 **Hisob:** 1 bosqich ≈ 1 sessiya. Kuniga **1 sessiya** → **~4 oy**; kuniga **2 sessiya** → **~2 oy**;
 kuniga **3 sessiya** → **~6 hafta**.
@@ -31,7 +31,7 @@ kuniga **3 sessiya** → **~6 hafta**.
 
 | Bo'lim | Bajarildi | Qoldi |
 |---|---|---|
-| 1 — Kassa | B1 B2 B3 B4 B5 **B6** | **2** (B7, B8) |
+| 1 — Kassa | B1 B2 B3 B4 B5 B6 **B7** | **1** (B8) |
 | 2 — Onlayn sotuv / B2B / B2G | B1 | **8** (B2–B9) |
 | 3 — Analitika | B1, B2 (qisman) | **6** (B3–B8) |
 | 4 — Menejer (ruxsatlar) | — | **8** (B1–B8) |
@@ -117,9 +117,10 @@ kuniga **3 sessiya** → **~6 hafta**.
       menejerga Telegram + **Z-hisobot** (§8.5 to'liq tarkibi) *(21 sof + 11 drift-lock test)* —
       `02f42d7` ⚠️ **USD farqi ataylab yozilmaydi** — USD naqd oqimi (`CASH_USD`) ulanmagan,
       «kutilgan 0» soxta signal berardi
-- [ ] **1-Kassa B7 (qolgani)** — smena yopish formasi (farq izohi) + **Z-hisobot sahifasi** (FE)
-      · menejerda «ko'rilmagan farq aktlari» ro'yxati + tan olish
-      *(UZS va USD alohida; farq ≠ 0 → menejerga Telegram)*
+- [x] **1-Kassa B7 (FE)** — yopish formasida **kutilgan naqd + farq TASDIQLASHDAN OLDIN** (farq
+      bo'lgandagina izoh maydoni) · smena sahifasiga **§8.5 Z-hisobot bloki** (moddalar bo'yicha
+      xarajat, farq aktlari) · **`/menejer/kassa-farqlari`** — default faqat ko'rilmaganlar,
+      tan olish **summalarga tegmaydi** (akt = dalil) — `cab41d8`
 - [ ] **1-Kassa B8 (qoldig'i)** — `sotuv/page.tsx` **1997 satr** → modullarga bo'lish
       *(har fayl < 300 satr; `lib/pos/` sof funksiyalar 100% unit-test)*
 - [ ] **1-Kassa Phase-2 QA** — real brauzer + **real termal printer**
