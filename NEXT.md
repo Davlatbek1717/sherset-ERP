@@ -305,6 +305,34 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-06b (✅ DEPLOYED — YACHEYKA MULTI-BIN fix · `4944583`)**
+>
+> Egasi shikoyati: skanerlaganda/qo'lda «bitta yacheykaga 1dan ortiq tovar» va «bitta tovarni
+> 1dan ortiq yacheykaga» kiritib bo'lmayapti. Sabab: `Product.attributes.__yacheyka` bitta
+> qiymatli maydon edi — har bind eskisini ustidan yozardi (jimgina o'chirardi). Bu aynan
+> avval qurilgan (`7639050c`, `ProductLocation`) va `55cf3bf` (climart-adoption drop) da
+> **jimgina o'chirilgan** funksiya edi — [[climart-dropped-sherset-features]] bug-klassi.
+>
+> **Fix:** yangi `ProductCellLink` jadvali (cellId orqali, eski nom-string emas — bu ham
+> cross-store nom-to'qnashuv teshigini yopdi). `assignProducts`/`bindProductIfEmpty` endi
+> ADD qiladi, hech qachon overwrite qilmaydi; `__yacheyka` faqat 1-marta seed bo'ladi (eski
+> single-label o'quvchilar uchun: label print, pick-list resolver, tovar formasi). FE'ga
+> tegilmadi — mavjud «yacheykaga tovar qo'sh» picker va scan-modal aynan shu endpoint'larni
+> chaqiradi.
+>
+> **Gate:** api+web tsc 0 · biome 0 · api vitest **4775/4775** (2 yangi test fayl — aynan
+> ikki shikoyatni qamraydi) · web vitest **2708/2708**. Migratsiya `20260806120000_add_
+> product_cell_link` lokal (`climart_adopt`) va prod (`sherset_v2`) DB'larga qo'llandi.
+> **Deploy:** `deploy-smart.sh DS_TARGET=v2` — fetch+reset (nothing-to-deploy edge case bilan
+> uchrashildi, ikkinchi urinishda git HEAD allaqachon `4944583` edi — birinchi urinish
+> paramiko PipeTimeout bergani bilan aslida remote'da fon jarayoni tugagan ekan;
+> `prisma migrate deploy` + `pm2 restart sherset-v2-api` ishladi). **Sog'liq tasdiqlandi:**
+> `erp.sherset.uz` 200 · `/api/v1/health` 200 · `product_cell_links` jadvali prod DB'da
+> mavjud (`\d` bilan tekshirildi) · api log'da yangi xatolik yo'q.
+>
+> **⏭️ Browser-QA ochiq** — bu Phase-1 (kod+test darajasida tasdiqlangan), real brauzerda
+> skaner qilib ko'rish qilinmadi.
+
 > **🕒 2026-08-06a (✅ DEPLOYED — 1-Kassa B5–B7 + MoySklad pick-list · `a3cd733 → 8d435a8b`)**
 >
 > **Deploy qamrovi:** 1-Kassa **B5** (qarz to'lovi + PKO) · **B6** (xarajat/inkassatsiya + RKO) ·
