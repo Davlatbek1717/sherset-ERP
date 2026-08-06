@@ -15,10 +15,10 @@
 
 | | Soni |
 |---|---|
-| **Qolgan bosqichlar** | **62** |
+| **Qolgan bosqichlar** | **61** |
 | Sifat qarzlari | 7 |
 | Brauzer-QA (Phase-2) o'tishlari | ~9 (har bo'lim uchun 1) |
-| **JAMI ish birligi** | **~78** |
+| **JAMI ish birligi** | **~77** |
 
 **Hisob:** 1 bosqich ≈ 1 sessiya. Kuniga **1 sessiya** → **~4 oy**; kuniga **2 sessiya** → **~2 oy**;
 kuniga **3 sessiya** → **~6 hafta**.
@@ -35,7 +35,7 @@ kuniga **3 sessiya** → **~6 hafta**.
 | 2 — Onlayn sotuv / B2B / B2G | B1 | **8** (B2–B9) |
 | 3 — Analitika | B1, B2 (qisman) | **6** (B3–B8) |
 | 4 — Menejer (ruxsatlar) | — | **8** (B1–B8) |
-| 4M — Menejer (kunlik KPI) | 4M.1, 4M.2 | **8** (4M.3 qoldig'i + 4M.4–4M.10) |
+| 4M — Menejer (kunlik KPI) | 4M.1 4M.2 **4M.4** | **7** (4M.3 qoldig'i + 4M.5–4M.10) |
 | 5 — Ta'minotchilar | — | **6** (B1–B6) |
 | 6 — HR | B8 (qisman) | **8** (B1–B7, B9) |
 | 7 — Ombor | B1 (qisman) | **11** (B2–B12) |
@@ -149,7 +149,10 @@ kuniga **3 sessiya** → **~6 hafta**.
       haydovchi reysi · yig'ilayotgan buyurtma. **Diqqat talab qiladigani tepada** — ekran
       «hammasi joyida» demaydi, chegaralar izohlangan (smena 12s · kechikish 15daq ·
       yig'ish 45daq) — `65700d8` ⬜ *FE ekrani yo'q*
-- [ ] **Xodim kartasi 360°** + **suhbat va ogohlantirish jurnali** *(hozir hech qayerda yo'q)*
+- [x] **Xodim kartasi 360°** + **suhbat va ogohlantirish jurnali** — `GET hr/employees/:id/card`
+      *(17 test + runtime)*. Jurnal **append-only**: yozuv o'chirilmaydi, xatosi `void` qilinadi
+      va tarixda ko'rinib qoladi · **90 kunlik oyna**, 3 ogohlantirish = naqsh · maqtov turi ham
+      bor (jurnal faqat salbiydan iborat bo'lmasin) ⬜ *FE ekrani yo'q*
 - [x] 🔴 **Bo'shatish ro'yxati** (`EmployeeOffboarding`) — ro'yxat tugamaguncha arxivlanmaydi
       *(21 test + runtime)* — `f9e40cd`
       ⚠️ **Aniqlangan haqiqat:** login va refresh ALLAQACHON yopiq edi (`auth.service` `archived` ni
