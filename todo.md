@@ -145,7 +145,10 @@ kuniga **3 sessiya** → **~6 hafta**.
 - [ ] ⛔ **Idempotent bonus/jarima** `HrBonusFineLog` ga — **B1 qaroriga bog'liq**
 
 ### 4M.4 — To'liq xodimlar nazorati ⭐
-- [ ] **Jonli holat** — kim smena ochgan · kechikkan · haydovchi yo'lda · omborchi nima yig'yapti
+- [x] **Jonli holat** — `GET manager/kpi/live` *(26 test + runtime)*: ochiq smena · davomat ·
+      haydovchi reysi · yig'ilayotgan buyurtma. **Diqqat talab qiladigani tepada** — ekran
+      «hammasi joyida» demaydi, chegaralar izohlangan (smena 12s · kechikish 15daq ·
+      yig'ish 45daq) — `65700d8` ⬜ *FE ekrani yo'q*
 - [ ] **Xodim kartasi 360°** + **suhbat va ogohlantirish jurnali** *(hozir hech qayerda yo'q)*
 - [x] 🔴 **Bo'shatish ro'yxati** (`EmployeeOffboarding`) — ro'yxat tugamaguncha arxivlanmaydi
       *(21 test + runtime)* — `f9e40cd`
