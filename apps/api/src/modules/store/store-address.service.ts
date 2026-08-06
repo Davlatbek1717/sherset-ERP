@@ -141,6 +141,16 @@ export class StoreAddressService {
     for (const c of cells) {
       if (boundCellNames.has(c.name)) occupied.add(c.id);
     }
+    // Multi-bin (2026-08-06): a product may ALSO be bound to a cell via
+    // ProductCellLink (any cell beyond its single `__yacheyka` home cache) —
+    // that must count as «Занята» too, matched by cellId (no name collision
+    // risk across warehouses, unlike the legacy string above).
+    const linkedRows = await this.prisma.client.productCellLink.findMany({
+      where: { accountId, cellId: { in: cells.map((c) => c.id) } },
+      select: { cellId: true },
+      distinct: ['cellId'],
+    });
+    for (const r of linkedRows) occupied.add(r.cellId);
 
     const productQtyByCell = new Map(productRows.map((r) => [r.cellId, String(r.qty)]));
     const zoneName = new Map(zones.map((z) => [z.id, z.name]));
@@ -193,8 +203,14 @@ export class StoreAddressService {
     });
 
     // Owner 2026-07-21 «Ko'rish»: the cell view lists EVERY product that lives
-    // here — counted stock rows AND home-cell-bound products that have no count
-    // yet (they render with qty 0, ready for «Sanash»).
+    // here — counted stock rows AND bound products that have no count yet
+    // (they render with qty 0, ready for «Sanash»). Multi-bin (2026-08-06):
+    // "bound" = the legacy single `__yacheyka` home cache OR a ProductCellLink
+    // row (a product can now be bound to several cells at once).
+    const linkedIds = await this.prisma.client.productCellLink.findMany({
+      where: { accountId, cellId },
+      select: { productId: true },
+    });
     const bound = await this.prisma.client.product.findMany({
       // deletedAt: soft-deleted product must not resurface in the cell view —
       // stale __yacheyka attributes linger on deleted rows (climart 2026-07-26:
@@ -202,7 +218,10 @@ export class StoreAddressService {
       where: {
         accountId,
         deletedAt: null,
-        attributes: { path: ['__yacheyka'], equals: cell.name },
+        OR: [
+          { attributes: { path: ['__yacheyka'], equals: cell.name } },
+          { id: { in: linkedIds.map((l) => l.productId) } },
+        ],
       },
       select: { id: true },
       orderBy: { name: 'asc' },
@@ -357,12 +376,27 @@ export class StoreAddressService {
     return cell;
   }
 
-  /** Products whose home cell (__yacheyka) is this cell — «в этой ячейке». */
+  /**
+   * Products bound to this cell — «в этой ячейке». Multi-bin (2026-08-06):
+   * union of the legacy single `__yacheyka` home cache (name match) and any
+   * ProductCellLink row (cellId match) — a product can now be bound to
+   * several cells, so this is no longer a single home-cell lookup.
+   */
   async getCellProducts(accountId: string, storeId: string, cellId: string) {
     await this.assertStore(accountId, storeId);
     const cell = await this.cellWithZone(accountId, storeId, cellId);
+    const linkedIds = await this.prisma.client.productCellLink.findMany({
+      where: { accountId, cellId },
+      select: { productId: true },
+    });
     const products = await this.prisma.client.product.findMany({
-      where: { accountId, attributes: { path: ['__yacheyka'], equals: cell.name } },
+      where: {
+        accountId,
+        OR: [
+          { attributes: { path: ['__yacheyka'], equals: cell.name } },
+          { id: { in: linkedIds.map((l) => l.productId) } },
+        ],
+      },
       select: { id: true, name: true, code: true, barcodes: true, archived: true },
       orderBy: { name: 'asc' },
     });
@@ -493,7 +527,17 @@ export class StoreAddressService {
     return { cellId, assortmentId, qty: String(qty), stockDoc };
   }
 
-  /** Assign products to this cell — set each product's __yacheyka/__polka. */
+  /**
+   * Assign products to this cell — ADDS a ProductCellLink row for each
+   * (multi-bin, 2026-08-06). Never moves/overwrites: a product already bound
+   * elsewhere keeps that binding too, so one product can now sit in several
+   * cells and one cell can hold several products (both directions were
+   * blocked before — binding used to overwrite the product's single
+   * `__yacheyka` home cache, silently unbinding it from wherever it was).
+   * The first-ever bind ALSO seeds `__yacheyka`/`__polka` (never overwritten
+   * again after that) — old readers (labels, pick-list, the product form's
+   * Полка/Ячейка pickers) keep working off that single cache.
+   */
   async assignProducts(accountId: string, storeId: string, cellId: string, raw: unknown) {
     await this.assertStore(accountId, storeId);
     const cell = await this.cellWithZone(accountId, storeId, cellId);
@@ -508,17 +552,34 @@ export class StoreAddressService {
         p.attributes && typeof p.attributes === 'object' && !Array.isArray(p.attributes)
           ? (p.attributes as Record<string, unknown>)
           : {};
-      const attrs: Record<string, unknown> = { ...base, __yacheyka: cell.name, __polka: polka };
-      await this.prisma.client.product.update({
-        where: { id: p.id },
-        data: { attributes: attrs as Prisma.InputJsonValue },
+      // Multi-bin membership row — idempotent (unique on productId+cellId).
+      await this.prisma.client.productCellLink.upsert({
+        where: { productId_cellId: { productId: p.id, cellId } },
+        create: { accountId, productId: p.id, cellId },
+        update: {},
       });
+      // Seed the home-cell cache ONLY when the product has none yet — never
+      // overwrite an existing one (that used to be the bug: a second bind
+      // silently moved the product OUT of its first cell).
+      const current = typeof base.__yacheyka === 'string' ? base.__yacheyka.trim() : '';
+      if (!current) {
+        const attrs: Record<string, unknown> = { ...base, __yacheyka: cell.name, __polka: polka };
+        await this.prisma.client.product.update({
+          where: { id: p.id },
+          data: { attributes: attrs as Prisma.InputJsonValue },
+        });
+      }
     }
     // Report any ids that didn't resolve (deleted / other tenant) — silently skipped.
     return { assigned: products.length, requested: productIds.length };
   }
 
-  /** Remove a product from this cell — clear its __yacheyka/__polka IF it points here. */
+  /**
+   * Remove a product from this cell — deletes its ProductCellLink row (if
+   * any) and, when this cell IS the product's `__yacheyka` home cache,
+   * clears that too (multi-bin, 2026-08-06: the two used to be one and the
+   * same; now a product can have other links left after this call).
+   */
   async unassignProduct(accountId: string, storeId: string, cellId: string, productId: string) {
     await this.assertStore(accountId, storeId);
     const cell = await this.cellWithZone(accountId, storeId, cellId);
@@ -533,14 +594,18 @@ export class StoreAddressService {
       !Array.isArray(product.attributes)
         ? (product.attributes as Record<string, unknown>)
         : {};
-    // Only clear when the product actually lives in THIS cell (avoid wiping a
-    // binding that was moved elsewhere between load and click).
-    if (base.__yacheyka !== cell.name) return { unassigned: false };
-    const { __yacheyka: _y, __polka: _p, ...rest } = base;
-    await this.prisma.client.product.update({
-      where: { id: product.id },
-      data: { attributes: rest as Prisma.InputJsonValue },
+    const { count: linksRemoved } = await this.prisma.client.productCellLink.deleteMany({
+      where: { accountId, productId, cellId },
     });
+    const isHome = base.__yacheyka === cell.name;
+    if (isHome) {
+      const { __yacheyka: _y, __polka: _p, ...rest } = base;
+      await this.prisma.client.product.update({
+        where: { id: product.id },
+        data: { attributes: rest as Prisma.InputJsonValue },
+      });
+    }
+    if (!isHome && linksRemoved === 0) return { unassigned: false };
     return { unassigned: true };
   }
 
@@ -576,6 +641,14 @@ export class StoreAddressService {
     await this.prisma.client.product.update({
       where: { id: product.id },
       data: { attributes: attrs as Prisma.InputJsonValue },
+    });
+    // Multi-bin (2026-08-06): keep the link table in sync so this bind shows
+    // up in getCellProducts/getCellStock/getAddressStorage the same way a
+    // manual assignProducts bind does.
+    await this.prisma.client.productCellLink.upsert({
+      where: { productId_cellId: { productId: product.id, cellId } },
+      create: { accountId, productId: product.id, cellId },
+      update: {},
     });
     return { bound: true, yacheyka: cell.name, polka: cell.zone?.name ?? '' };
   }

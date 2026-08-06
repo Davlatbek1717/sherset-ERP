@@ -20,6 +20,8 @@ interface FakeOpts {
   stockedCellIds?: string[];
   /** `__yacheyka` biriktirilgan tovarlar joylashgan yacheyka NOMLARI (DISTINCT). */
   boundCellNames?: string[];
+  /** Multi-bin (2026-08-06): ProductCellLink orqali biriktirilgan cellId'lar (DISTINCT). */
+  linkedCellIds?: string[];
 }
 
 function makeService(opts: FakeOpts): StoreAddressService {
@@ -38,6 +40,9 @@ function makeService(opts: FakeOpts): StoreAddressService {
         if (args?.distinct) return (opts.stockedCellIds ?? []).map((cellId) => ({ cellId }));
         return [];
       }),
+    },
+    productCellLink: {
+      findMany: vi.fn(async () => (opts.linkedCellIds ?? []).map((cellId) => ({ cellId }))),
     },
     $queryRaw: vi.fn(async () => (opts.boundCellNames ?? []).map((name) => ({ name }))),
   };
@@ -84,5 +89,25 @@ describe('getAddressStorage — occupied flag', () => {
     });
     const res = await svc.getAddressStorage('acc-1', 'store-1');
     expect(res.cells[0]?.occupied).toBe(false);
+  });
+
+  // Multi-bin (2026-08-06): a product bound via ProductCellLink (a SECOND —
+  // or later — cell, since assignProducts never overwrites the first bind
+  // any more) must count as «Занята» too, even with no `__yacheyka` name
+  // match and no counted stock yet.
+  it('marks a cell OCCUPIED via a ProductCellLink row (multi-bin, no name match)', async () => {
+    const svc = makeService({
+      cells: [
+        { id: 'cell-A', name: '01-01-01-01', zoneId: 'zone-1', sortOrder: 0 },
+        { id: 'cell-B', name: '01-01-01-02', zoneId: 'zone-1', sortOrder: 1 },
+      ],
+      stockedCellIds: [],
+      boundCellNames: [], // no `__yacheyka` home points here
+      linkedCellIds: ['cell-B'], // but a multi-bin link does
+    });
+    const res = await svc.getAddressStorage('acc-1', 'store-1');
+    const byId = new Map(res.cells.map((c) => [c.id, c]));
+    expect(byId.get('cell-A')?.occupied).toBe(false);
+    expect(byId.get('cell-B')?.occupied).toBe(true);
   });
 });

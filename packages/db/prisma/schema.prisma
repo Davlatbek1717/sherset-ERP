@@ -857,12 +857,44 @@ model StoreCell {
   salesReturnPositions    SalesReturnPosition[]    @relation("SalesReturnPositionCell")
   demandPositions         DemandPosition[]         @relation("DemandPositionCell")
   stockByCell             StockByCell[]
+  // Multi-bin: products bound to THIS cell (many-to-many with Product, see
+  // ProductCellLink).
+  productLinks            ProductCellLink[]        @relation("ProductCellLinkCell")
 
   // Cell names are unique within a warehouse (the picker identifies a cell by name).
   @@unique([storeId, name])
   @@index([accountId, storeId])
   @@index([zoneId])
   @@map("store_cells")
+}
+
+// ProductCellLink — many-to-many «product lives in this cell» membership
+// (address storage, 2026-08-06). Restores the multi-bin capability built in
+// 7639050c and silently dropped by 55cf3bf (climart-adoption; see memory
+// climart-dropped-sherset-features), rebuilt against the CURRENT StoreCell
+// model (by cellId, not the old numeric loc*/name-string addressing — closes
+// the cross-store name-collision gap the old `__yacheyka` string had too).
+//
+// `Product.attributes.__yacheyka`/`__polka` remain as a denormalized "first
+// cell" cache for old readers (labels, pick-list resolution, the product
+// form's Полка/Ячейка pickers) — never overwritten once set. This table is
+// the actual multi-valued source of truth: `assignProducts` ADDS a row here
+// on every bind (never moves/overwrites), so one product can sit in many
+// cells and one cell can hold many products — see StoreAddressService.
+model ProductCellLink {
+  id        String   @id @default(uuid()) @db.Uuid
+  accountId String   @map("account_id") @db.Uuid
+  productId String   @map("product_id") @db.Uuid
+  cellId    String   @map("cell_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  product Product   @relation("ProductCellLinks", fields: [productId], references: [id], onDelete: Cascade)
+  cell    StoreCell @relation("ProductCellLinkCell", fields: [cellId], references: [id], onDelete: Cascade)
+
+  // A product can't be linked to the same cell twice.
+  @@unique([productId, cellId])
+  @@index([accountId, cellId])
+  @@map("product_cell_links")
 }
 
 // OrganizationAccount — our own bank account (payer side). One Organization
@@ -4906,6 +4938,10 @@ model Product {
   // shows), `analogOf` are rows where this product is someone else's analog.
   analogs                 ProductAnalog[]          @relation("ProductAnalogsOwner")
   analogOf                ProductAnalog[]          @relation("ProductAnalogsTarget")
+  // Multi-bin (2026-08-06, restores 7639050c dropped by 55cf3bf): every cell
+  // this product is bound to, beyond the single denormalized
+  // `attributes.__yacheyka` "home" cache. See ProductCellLink.
+  cellLinks               ProductCellLink[]        @relation("ProductCellLinks")
 
   @@unique([accountId, code])
   @@unique([accountId, externalCode])

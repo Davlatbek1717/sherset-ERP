@@ -130,6 +130,11 @@ export class ProductCellMoveService {
    * product's attributes `__yacheyka` (cell name) + `__polka` (its zone/полка).
    * No stock moves (the binding is a location hint, not a per-cell balance), so
    * this can never touch the ledger. Gated `product.update` (it edits the card).
+   *
+   * Multi-bin (2026-08-06): this is a deliberate MOVE (unlike `assignProducts`,
+   * which only ADDS) — the old home cell's ProductCellLink row is dropped and
+   * the new one created, so the product genuinely leaves the old cell's
+   * contents. Any OTHER cells it's separately bound to are untouched.
    */
   async rebind(accountId: string, _userId: string, productId: string, raw: unknown) {
     const { toCellId } = CellRebindSchema.parse(raw);
@@ -150,12 +155,30 @@ export class ProductCellMoveService {
     // 2nd segment (mirrors ProductRepository.attachStorageCells).
     const polka = cell.zone?.name ?? cell.name.split('-')[1] ?? '';
     const attrs = { ...((product.attributes as Record<string, unknown>) ?? {}) };
+    const oldHomeName = typeof attrs.__yacheyka === 'string' ? attrs.__yacheyka : null;
     attrs.__yacheyka = cell.name;
     attrs.__polka = polka;
 
     await this.prisma.client.product.update({
       where: { id: productId, accountId },
       data: { attributes: attrs as Prisma.InputJsonValue },
+    });
+
+    if (oldHomeName && oldHomeName !== cell.name) {
+      const oldCell = await this.prisma.client.storeCell.findFirst({
+        where: { accountId, name: oldHomeName },
+        select: { id: true },
+      });
+      if (oldCell) {
+        await this.prisma.client.productCellLink.deleteMany({
+          where: { accountId, productId, cellId: oldCell.id },
+        });
+      }
+    }
+    await this.prisma.client.productCellLink.upsert({
+      where: { productId_cellId: { productId, cellId: toCellId } },
+      create: { accountId, productId, cellId: toCellId },
+      update: {},
     });
 
     return { ok: true, cellName: cell.name, polka };

@@ -55,11 +55,14 @@ export const UpdateCellSchema = z.object({
 export type UpdateCellInput = z.infer<typeof UpdateCellSchema>;
 
 // ---- «Добавить товар в ячейку» — assign products to a cell (user 2026-07-06) ----
-// A product's designated storage cell is Product.attributes.__yacheyka (the cell
-// CODE) + __polka (the zone name) — the SAME binding the product card's
-// «Полка»/«Ячейка» pickers write. Assigning from the cell side mirrors it, so a
-// product has ONE home cell and both views stay in sync. This is a location
-// LABEL, never a stock quantity (qty stays document-derived → no drift).
+// Multi-bin (2026-08-06): a product can now be bound to SEVERAL cells at once
+// (ProductCellLink, many-to-many) — assigning ADDS a binding, it never moves
+// the product out of a cell it's already in. `Product.attributes.__yacheyka`
+// (+ __polka) still caches the FIRST cell it was ever bound to (seeded once,
+// never overwritten by this endpoint) for readers that only want a single
+// label — the product card's «Полка»/«Ячейка» pickers, print labels, the
+// pick-list resolver. This is a location LABEL, never a stock quantity (qty
+// stays document-derived → no drift).
 export const AssignProductsSchema = z.object({
   productIds: z.array(uuid).min(1).max(500),
 });
