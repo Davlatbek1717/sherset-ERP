@@ -293,7 +293,14 @@ kuniga **3 sessiya** → **~6 hafta**.
 - [ ] **Conv-6 data-bog'liq vizuallar** — 3/13 browser-smoked
 - [ ] **Prodda ~20 yangi `/debts` route jonlanadi** — `DebtModule` ulangani sababli;
       deploy oldidan hisobga oling (avval hech qachon ishlamagan kod)
-- [ ] **`wave4m-accept` branch + worktree** tozalash
+- [x] **`wave4m-accept` branch + worktree** tozalash — tasdiqlandi: `c62ca778` climart-adoption'ga
+      ANCESTOR emas, LEKIN [[parallel-worktree-duplicate-work]] bo'yicha egasi «to'liq
+      birlashtirish»ni tanlab mazmuni `fa58171`+`a2b4bb6` orqali allaqachon mustaqil qurilgan
+      (worktree toza, uncommitted/stash yo'q) → `git worktree remove` (Windows uzun-yo'l xatosi
+      → `rm -rf` bilan yakunlandi) + `git branch -D`. Bonus: git tomonidan unutilgan yana 2 orfan
+      worktree-katalog (`m4-kpi-core`, `wave3-1-tenders` — `.git` fayli yo'q, hech qanday branch
+      ko'rsatmaydi) ham tozalandi. `wave4m-kpi-core` branch (`829c1228`) climart-adoption'ga haqiqiy
+      ANCESTOR ekan — xavfsiz `git branch -d` bilan o'chirildi — 2026-08-06
 - [x] **`stash@{0}` (2026-07-31)** — tekshirildi: hamma tarkibi (jamlanma bloki i18n +
       CO/Demand header «Резерв» checkbox) allaqachon `91ee5db3`+keyingi commit'larda landed
       (har fayl solishtirildi — mazmunan bir xil, faqat atrofdagi qatorlar 180 commit
