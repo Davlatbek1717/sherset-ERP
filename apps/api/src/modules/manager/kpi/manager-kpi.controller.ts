@@ -4,6 +4,7 @@ import { CurrentUser } from '../../auth/current-user.decorator.js';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard.js';
 import { HrPermissionGuard } from '../../hr/hr-auth/hr-permission.guard.js';
 import { RequireHrPermission } from '../../hr/hr-auth/require-hr-permission.decorator.js';
+import { LiveStatusService } from '../live/live-status.service.js';
 import { type ActorContext, DailyKpiAcceptanceService } from './daily-kpi-acceptance.service.js';
 import { DailyKpiDrilldownService } from './daily-kpi-drilldown.service.js';
 import {
@@ -49,7 +50,20 @@ export class ManagerKpiController {
     @Inject(DailyKpiDrilldownService) private readonly drilldown: DailyKpiDrilldownService,
     @Inject(KpiMetricCatalogService) private readonly catalog: KpiMetricCatalogService,
     @Inject(OwnerWeeklySummaryService) private readonly weekly: OwnerWeeklySummaryService,
+    @Inject(LiveStatusService) private readonly live: LiveStatusService,
   ) {}
+
+  /**
+   * Jonli holat (4M.4, M-Q10) — «hozir kim nima qilyapti».
+   *
+   * Diqqat talab qiladigan qatorlar TEPADA: bu ekran «hammasi joyida»
+   * demaydi, u menejerni aynan aralashuv kerak joyga olib boradi.
+   */
+  @Get('live')
+  @RequireHrPermission('employees', 'read')
+  async liveBoard(@CurrentUser() user: AuthenticatedUser) {
+    return this.live.board(user.accountId);
+  }
 
   /**
    * Egaga haftalik xulosa (M-Q7) — «menejerni kim nazorat qiladi».
