@@ -333,6 +333,40 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > **⏭️ Browser-QA ochiq** — bu Phase-1 (kod+test darajasida tasdiqlangan), real brauzerda
 > skaner qilib ko'rish qilinmadi.
 
+> **🕒 2026-08-06d (MENEJER 4M.4 TUGADI — jonli holat · javobgarlik · xodim kartasi · `5b5d78f`) · ⏳ DEPLOY QILINMAGAN**
+>
+> 4M.4 ning asosiy qismi yopildi (qolgani faqat ishga qabul tomoni — sinov muddati).
+>
+> **1. Jonli holat** `GET manager/kpi/live` *(26 test)* — ochiq smena · davomat · haydovchi
+> reysi · yig'ilayotgan buyurtma. **Asosiy qaror:** ekran «hammasi joyida» DEMAYDI — hamma
+> xodimni ro'yxatlash menejerni 40 qatordan 3 tasini qidirishga majbur qilardi va u ekranni
+> ochishni tashlardi. Chegaralar izohlangan: smena 12s · kechikish 15daq · yig'ish 45daq ·
+> «biriktirilgan» haydovchi 1s.
+>
+> **2. Javobgarlik** `GET manager/kpi/accountability` *(14 test)* — ochiq smena · haydovchi
+> qo'lidagi naqd · tugallanmagan yig'ish · qabul qilinmagan KPI kunlari. **Pul ko'p bo'lgan
+> tepada** (yo'qolgan pulni qaytarib bo'lmaydi, yig'ishni ertaga tugatsa bo'ladi).
+> ⚠️ **Jihoz ataylab YO'Q** — reyestr mavjud emas; «0 ta jihoz» deb ko'rsatish menejerni yo'q
+> ma'lumotga ishontirardi. Reyestr — alohida bosqich.
+>
+> **3. Xodim kartasi 360°** `GET hr/employees/:id/card` + **suhbat/ogohlantirish jurnali**
+> (`EmployeeNote`, ilgari hech qayerda YO'Q edi) *(17 test)*.
+> 🔴 **Jurnal APPEND-ONLY**: yozuv tahrirlanmaydi va **o'chirilmaydi** — o'chirib bo'ladigan
+> ogohlantirish ogohlantirish emas. Xato yozuv `void` qilinadi va tarixda **ko'rinib qoladi**,
+> faqat hisobga kirmaydi. Matn majburiy.
+> **Naqsh:** 90 kunlik oynada **3** ogohlantirish. 90 kun — bir yil oldingisi bugungi qarorga
+> asos bo'lmaydi, lekin uch oy naqshni ko'rsatadi; 3 — bittasi hodisa, ikkitasi tasodif,
+> uchtasi takrorlanish. **Maqtov** turi ham bor: jurnal faqat salbiydan iborat bo'lmasin.
+>
+> **Runtime:** 20 soatlik smena → alert tepaga · 4 xodimda majburiyat ko'rindi · 3
+> ogohlantirish → naqsh, bittasi bekor qilingach naqsh yo'qoldi va yozuv sababi bilan qoldi.
+>
+> **Gate:** typecheck 0 · biome 0 · api **4913/4913**. Qolgan bosqichlar **62 → 61**.
+> ⚠️ **Phase-1: brauzer-smoke YO'Q** — 4M.4 ning bironta ekrani FE'da yo'q (BE + 8 endpoint tayyor).
+>
+> 📦 **DEPLOY QARZI:** 1-Kassa B5–B7 · MoySklad pick-list · menejer 6 bosqichi — **hammasi
+> deploy qilinmagan** (20+ commit, 6 migratsiya).
+
 > **🕒 2026-08-06c (MENEJER BO'LIMI — 3 bosqich · `29ade7e` · `8923c19` · `0d9ca3b`) · ⏳ DEPLOY QILINMAGAN**
 >
 > Egasining talabi: «birinchi navbatda menejer bo'limini qil». Uch ish bajarildi.
