@@ -157,7 +157,11 @@ kuniga **3 sessiya** → **~6 hafta**.
       Telegram bog'lami · ochiq kassa smenasi · qabul qilinmagan KPI kunlari · jihoz.
       Tizim biladigan band **qo'lda belgilanmaydi** (yolg'onga eshik yopildi).
 - [ ] **Ishga qabul tomoni** — sinov muddati + baholash sanasi *(bo'shatish qismi bajarildi)*
-- [ ] **Javobgarlik** — topshirilmagan naqd · ochiq smena · yig'ilmagan topshiriq · qaytarilmagan jihoz
+- [x] **Javobgarlik** — `GET manager/kpi/accountability` *(14 test + runtime)*: ochiq smena ·
+      haydovchi qo'lidagi naqd · tugallanmagan yig'ish · qabul qilinmagan KPI kunlari.
+      Pul ko'p bo'lgan tepada; nol qatorlar tashlanadi — `0bee3ff`
+      ⚠️ **Jihoz ataylab YO'Q** — reyestr mavjud emas, «0 ta jihoz» deb ko'rsatish yo'q
+      ma'lumotga ishontirardi *(reyestr alohida bosqich)*
 
 ### 4M.5–4M.10
 - [ ] **4M.5** — Ogohlantirish navbati: `ManagerWorkItem` + `ManagerRuleConfig` (ikkalasi YO'Q) +
