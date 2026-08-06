@@ -114,6 +114,7 @@ model Account {
   cashierSessionVariances        CashierSessionVariance[]
   employeeKpiCorrections         EmployeeKpiCorrection[]
   employeeOffboardings           EmployeeOffboarding[]
+  employeeNotes                  EmployeeNote[]
   kpiMetricDefs                  KpiMetricDef[]
   kpiProfiles                    KpiProfile[]
   kpiProfileVersions             KpiProfileVersion[]
@@ -424,6 +425,9 @@ model Employee {
   cashierSessionVariances    CashierSessionVariance[]   @relation("CashierSessionVarianceCashier")
   kpiCorrections             EmployeeKpiCorrection[]    @relation("EmployeeKpiCorrectionEmployee")
   offboarding                EmployeeOffboarding?       @relation("EmployeeOffboardingEmployee")
+  notes                      EmployeeNote[]             @relation("EmployeeNoteEmployee")
+  authoredNotes              EmployeeNote[]             @relation("EmployeeNoteAuthor")
+  voidedNotes                EmployeeNote[]             @relation("EmployeeNoteVoider")
   startedOffboardings        EmployeeOffboarding[]      @relation("EmployeeOffboardingActor")
   acceptedKpiCorrections     EmployeeKpiCorrection[]    @relation("EmployeeKpiCorrectionActor")
   acknowledgedVariances      CashierSessionVariance[]   @relation("CashierSessionVarianceAck")
@@ -9530,6 +9534,41 @@ model KpiProfileMetric {
 /// kabi tizim biladigan bandlar HAR SO'ROVDA qayta tekshiriladi va bu yerga
 /// yozilmaydi — bir marta «bajarildi» deb muzlatib qo'yish keyin ochilib qolgan
 /// smenani ko'rinmas qilardi.
+/// Suhbat va ogohlantirish jurnali (menejer TZ 4M.4 — xodim kartasi 360°).
+///
+/// APPEND-ONLY: yozuv tahrirlanmaydi va o'chirilmaydi. O'chirib bo'ladigan
+/// ogohlantirish — ogohlantirish emas: noqulay yozuvni keyin yo'qotish imkoni
+/// bo'lsa, jurnalning butun ma'nosi yo'qoladi. Xato yozuv `voidedAt` bilan
+/// bekor qilinadi — u tarixda KO'RINADI, lekin hisobga kirmaydi.
+model EmployeeNote {
+  id         String @id @default(uuid()) @db.Uuid
+  accountId  String @map("account_id") @db.Uuid
+  employeeId String @map("employee_id") @db.Uuid
+
+  /// 'talk' | 'warning' | 'praise' — jurnal faqat salbiydan iborat bo'lmasin.
+  kind String @db.VarChar(20)
+  text String
+
+  authorId String?  @map("author_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  /// Bekor qilingan payt. Yozuv o'chirilmaydi — ko'rinadi, lekin sanalmaydi.
+  voidedAt     DateTime? @map("voided_at") @db.Timestamptz()
+  voidedById   String?   @map("voided_by_id") @db.Uuid
+  voidReason   String?   @map("void_reason")
+
+  account  Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  employee Employee  @relation("EmployeeNoteEmployee", fields: [employeeId], references: [id], onDelete: Cascade)
+  author   Employee? @relation("EmployeeNoteAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  voidedBy Employee? @relation("EmployeeNoteVoider", fields: [voidedById], references: [id], onDelete: SetNull)
+
+  /// Xodim kartasi: eng yangi yozuvlar birinchi.
+  @@index([accountId, employeeId, createdAt(sort: Desc)])
+  /// «Kimda ogohlantirish naqshi bor» — menejer kesimi.
+  @@index([accountId, kind, createdAt(sort: Desc)])
+  @@map("employee_notes")
+}
+
 model EmployeeOffboarding {
   id         String @id @default(uuid()) @db.Uuid
   accountId  String @map("account_id") @db.Uuid

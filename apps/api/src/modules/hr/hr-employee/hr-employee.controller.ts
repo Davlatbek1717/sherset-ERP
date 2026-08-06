@@ -20,6 +20,7 @@ import { JwtAuthGuard } from '../../auth/jwt-auth.guard.js';
 import { BulkIdsSchema, runBulk } from '../../shared/bulk.js';
 import { HrPermissionGuard } from '../hr-auth/hr-permission.guard.js';
 import { RequireHrPermission } from '../hr-auth/require-hr-permission.decorator.js';
+import { EmployeeCardService } from './employee-card.service.js';
 import { EmployeeTelegramService } from './employee-telegram.service.js';
 import {
   CreateHrEmployeeSchema,
@@ -38,7 +39,49 @@ export class HrEmployeeController {
     @Inject(HrEmployeeService) private readonly svc: HrEmployeeService,
     @Inject(EmployeeTelegramService) private readonly telegram: EmployeeTelegramService,
     @Inject(OffboardingService) private readonly offboarding: OffboardingService,
+    @Inject(EmployeeCardService) private readonly card: EmployeeCardService,
   ) {}
+
+  // ── Xodim kartasi 360° + suhbat jurnali (4M.4) ────────────────────────────
+
+  /**
+   * Xato yozuvni BEKOR qilish — o'chirish EMAS.
+   *
+   * Yozuv jurnalda ko'rinib qoladi, faqat hisobga kirmaydi: o'chirib
+   * bo'ladigan ogohlantirish ogohlantirish emas.
+   */
+  @Post('notes/:noteId/void')
+  @RequireHrPermission('employees', 'full')
+  async voidNote(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('noteId') noteId: string,
+    @Body() body: unknown,
+  ) {
+    return this.card.voidNote(user.accountId, user.sub, noteId, body);
+  }
+
+  /**
+   * Bitta odam haqidagi hamma narsa: profil · KPI · davomat · smenalar ·
+   * bo'shatish holati · suhbat va ogohlantirish jurnali.
+   *
+   * Yangi hisob QILMAYDI — mavjud manbalarni bir joyga yig'adi.
+   */
+  @Get(':id/card')
+  @RequireHrPermission('employees', 'read')
+  async employeeCard(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.card.card(user.accountId, id);
+  }
+
+  /** Jurnalga yozuv: suhbat · ogohlantirish · maqtov (matn majburiy). */
+  @Post(':id/notes')
+  @RequireHrPermission('employees', 'full')
+  async addNote(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    return this.card.addNote(user.accountId, user.sub, id, body);
+  }
 
   // ── Bo'shatish ro'yxati (4M.4 «hayot sikli») ──────────────────────────────
   //
