@@ -138,8 +138,10 @@ kuniga **3 sessiya** → **~6 hafta**.
 - [x] **Eskirgan kun tuzatuvchi qatori** (§3.4) — qabul faktini MUZLATISH
       (`acceptedFactMinor`) + `EmployeeKpiCorrection` · tuzatma **tuzatma sanasi** tushgan oyga
       kiradi (iyul yopilgan) · qo'shimcha to'lov va ushlanma **alohida** — `17+9+3 test`
-- [ ] **Egaga haftalik xulosa** (M-Q7) — nechta qabul · nechta tuzatma · jami summa · kim ko'p tuzatgan
-      *(hodisa jurnali tayyor, agregator yo'q)*
+- [x] **Egaga haftalik xulosa** (M-Q7) — dushanba 09:00 cron + `GET manager/kpi/weekly-summary`
+      *(18+7 test)* · 🔴 jonli ma'lumotda bug topildi: `was` birinchi tuzatmada `null` bo'lgani
+      uchun jami **doim 0** chiqardi — endi `was ?? autoValue ?? 0` va «yo'qdan kiritilgan»
+      alohida sanaladi ⬜ *FE ekrani yo'q*
 - [ ] ⛔ **Idempotent bonus/jarima** `HrBonusFineLog` ga — **B1 qaroriga bog'liq**
 
 ### 4M.4 — To'liq xodimlar nazorati ⭐
