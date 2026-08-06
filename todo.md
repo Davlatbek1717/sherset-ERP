@@ -121,8 +121,13 @@ kuniga **3 sessiya** → **~6 hafta**.
       bo'lgandagina izoh maydoni) · smena sahifasiga **§8.5 Z-hisobot bloki** (moddalar bo'yicha
       xarajat, farq aktlari) · **`/menejer/kassa-farqlari`** — default faqat ko'rilmaganlar,
       tan olish **summalarga tegmaydi** (akt = dalil) — `cab41d8`
-- [ ] **1-Kassa B8 (qoldig'i)** — `sotuv/page.tsx` **1997 satr** → modullarga bo'lish
-      *(har fayl < 300 satr; `lib/pos/` sof funksiyalar 100% unit-test)*
+- [x] **1-Kassa B8 (1-bo'lak)** — savat matematikasi **`lib/pos/cart-math.ts`** ga chiqdi
+      *(20 test — ilgari NOLTA edi)*: chegirma pastga yaxlitlash · manfiy/100+ foiz qisilishi ·
+      `NULL ≠ 0` · server summasi ustunligi — `11b4468`
+- [ ] **1-Kassa B8 (2-bo'lak)** — komponentlarni bo'lish: `OpenShiftForm` (~130) ·
+      `ChekDetailPanel` (~280) · `SalesScreen` (~1540) → alohida fayllar
+      ⚠️ **avval POS render testlari kerak** — hozir qoplama YO'Q, ko'r-ko'rona bo'lish
+      jonli kassani buzish xavfi (shuning uchun 1-bo'lakda ataylab qilinmadi)
 - [ ] **1-Kassa Phase-2 QA** — real brauzer + **real termal printer**
       *(E2E: smena → 3 ombordan tovar → yig'ish → `mark-ready` → aralash to'lov → chek → PKO → RKO → yopish)*
 
