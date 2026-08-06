@@ -10,6 +10,7 @@ import { KpiConfigController } from './kpi/kpi-config.controller.js';
 import { KpiConfigService } from './kpi/kpi-config.service.js';
 import { KpiMetricCatalogService } from './kpi/kpi-metric-catalog.service.js';
 import { ManagerKpiController } from './kpi/manager-kpi.controller.js';
+import { OwnerWeeklySummaryService } from './kpi/owner-weekly-summary.service.js';
 
 /**
  * Menejer bo'limi — 4-bo'lim TZ kengaytmasi.
@@ -41,6 +42,7 @@ import { ManagerKpiController } from './kpi/manager-kpi.controller.js';
     KpiConfigService,
     KpiMetricCatalogService,
     DailyKpiAcceptanceService,
+    OwnerWeeklySummaryService,
     DailyKpiDrilldownService,
   ],
   exports: [EmployeeDailyKpiService, DailyKpiAcceptanceService],

@@ -23,6 +23,7 @@ import {
   SaveCustomMetricSchema,
   TransitionSchema,
 } from './manager-kpi.schema.js';
+import { OwnerWeeklySummaryService } from './owner-weekly-summary.service.js';
 
 /**
  * Menejer — kunlik KPI qabul qilish HTTP sirti (4M.2).
@@ -47,7 +48,52 @@ export class ManagerKpiController {
     @Inject(DailyKpiAcceptanceService) private readonly acceptance: DailyKpiAcceptanceService,
     @Inject(DailyKpiDrilldownService) private readonly drilldown: DailyKpiDrilldownService,
     @Inject(KpiMetricCatalogService) private readonly catalog: KpiMetricCatalogService,
+    @Inject(OwnerWeeklySummaryService) private readonly weekly: OwnerWeeklySummaryService,
   ) {}
+
+  /**
+   * Egaga haftalik xulosa (M-Q7) — «menejerni kim nazorat qiladi».
+   *
+   * Sana berilmasa O'TGAN hafta: dushanba ertalab ochilgan ekran shu
+   * haftaning bir yarim kunini emas, TUGAGAN haftani ko'rsatishi kerak.
+   * Hech narsani bloklamaydi — faqat ko'rinadi (§7).
+   */
+  @Get('weekly-summary')
+  @RequireHrPermission('employees', 'read')
+  async weeklySummary(@CurrentUser() user: AuthenticatedUser, @Query('week') week?: string) {
+    const ref = week ? new Date(week) : undefined;
+    const s = await this.weekly.summary(
+      user.accountId,
+      ref && !Number.isNaN(ref.getTime()) ? ref : undefined,
+    );
+    return {
+      weekStart: s.weekStart,
+      weekEndExclusive: s.weekEndExclusive,
+      totalAccepted: s.totalAccepted,
+      totalAdjust: s.totalAdjust,
+      totalAdjustedAbsMinor: s.totalAdjustedAbsMinor.toString(),
+      totalForceAccepted: s.totalForceAccepted,
+      pendingDays: s.pendingDays,
+      staleDays: s.staleDays,
+      topAdjuster: s.topAdjuster
+        ? {
+            managerId: s.topAdjuster.managerId,
+            managerName: s.topAdjuster.managerName,
+            adjustCount: s.topAdjuster.adjustCount,
+            adjustedAbsMinor: s.topAdjuster.adjustedAbsMinor.toString(),
+          }
+        : null,
+      activity: s.activity.map((a: (typeof s.activity)[number]) => ({
+        managerId: a.managerId,
+        managerName: a.managerName,
+        acceptedCount: a.acceptedCount,
+        rejectedCount: a.rejectedCount,
+        adjustCount: a.adjustCount,
+        adjustedAbsMinor: a.adjustedAbsMinor.toString(),
+        forceAcceptedCount: a.forceAcceptedCount,
+      })),
+    };
+  }
 
   // ── Ko'rsatkich katalogi (hisobning O'Z KPI'lari) ────────────────────────
 
