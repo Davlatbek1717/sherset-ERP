@@ -674,6 +674,7 @@ function SalesScreen({ session }: { session: CurrentSession }) {
   const [drawerComment, setDrawerComment] = useState('');
   const [closingCash, setClosingCash] = useState('');
   const [showCloseForm, setShowCloseForm] = useState(false);
+  const [varianceNote, setVarianceNote] = useState('');
 
   const { data: products, isLoading } = useQuery<ListResponse<ProductRow>>({
     queryKey: ['products-sotuv', search],
@@ -1033,16 +1034,42 @@ function SalesScreen({ session }: { session: CurrentSession }) {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  /**
+   * Kutilgan naqd — smena yopilishidan OLDIN.
+   *
+   * Server ham hisoblaydi (yagona haqiqat), lekin kassir tasdiqlashdan
+   * oldin raqamni ko'rishi kerak: farqni faqat menejer ertaga ko'rsa,
+   * sababini hech kim eslamaydi.
+   */
+  const { data: closePreview } = useQuery<{ expectedCashMinor: string }>({
+    queryKey: ['z-report-preview', session.id],
+    queryFn: () => api.get(`/cashier-sessions/${session.id}/z-report`),
+    enabled: showCloseForm,
+  });
+  const expectedCash = closePreview ? BigInt(closePreview.expectedCashMinor) : null;
+  const countedCash =
+    closingCash.trim() === '' ? null : Money.fromMajor(closingCash, tillCurrency).toMinor();
+  const closeVariance =
+    expectedCash === null || countedCash === null ? null : countedCash - expectedCash;
+
   const closeMut = useMutation({
     mutationFn: () =>
       api.post(`/cashier-sessions/${session.id}/close`, {
         closingCashMinor: Money.fromMajor(closingCash || '0', tillCurrency)
           .toMinor()
           .toString(),
+        // Farq bo'lsa akt yoziladi va izoh o'sha aktga tushadi (TZ §8.4).
+        // Kassir sababni ayni damda yozadi — ertaga eslay olmaydi.
+        varianceNote: varianceNote.trim() || null,
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['cashier-session-current'] });
-      toast.success('Smena yopildi');
+      toast.success(
+        closeVariance === null || closeVariance === 0n
+          ? 'Smena yopildi'
+          : 'Smena yopildi — farq akti yozildi, menejerga xabar ketdi',
+      );
+      setVarianceNote('');
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -1571,6 +1598,57 @@ function SalesScreen({ session }: { session: CurrentSession }) {
                     autoFocus
                     className="h-10 w-full rounded-lg border border-[var(--ms-border)] bg-[var(--ms-bg-input)] px-3 text-sm focus:outline-none focus:border-[var(--ms-border-focus)]"
                   />
+
+                  {/* Kutilgan naqd va farq — TASDIQLASHDAN OLDIN.
+                      Kassir raqamni ko'rmasdan yopsa, farqni faqat menejer
+                      ertaga ko'radi va sababini hech kim eslamaydi. */}
+                  {expectedCash !== null && (
+                    <div className="rounded-lg border border-[var(--ms-border)] bg-[var(--ms-bg-input)] px-3 py-2 text-xs">
+                      <div className="flex justify-between">
+                        <span className="text-[var(--ms-text-muted)]">Kutilgan naqd</span>
+                        <span className="font-medium tabular-nums">
+                          {formatMoney(expectedCash)}
+                        </span>
+                      </div>
+                      {closeVariance !== null && (
+                        <div
+                          className={`mt-1 flex justify-between font-semibold ${
+                            closeVariance === 0n
+                              ? 'text-emerald-700'
+                              : closeVariance < 0n
+                                ? 'text-red-700'
+                                : 'text-amber-700'
+                          }`}
+                          data-test-id="close-variance"
+                        >
+                          <span>
+                            {closeVariance === 0n
+                              ? 'Farq yo`q'
+                              : closeVariance < 0n
+                                ? 'Kamomad'
+                                : 'Ortiqcha'}
+                          </span>
+                          <span className="tabular-nums">
+                            {closeVariance === 0n ? '0' : formatMoney(closeVariance)}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Izoh maydoni FAQAT farq bo'lganda: farqsiz smenada u
+                      ortiqcha savol bo'lardi va kassir uni e'tiborsiz
+                      qoldirishga o'rganib qolardi. */}
+                  {closeVariance !== null && closeVariance !== 0n && (
+                    <input
+                      type="text"
+                      value={varianceNote}
+                      onChange={(e) => setVarianceNote(e.target.value)}
+                      placeholder="Farq sababi (masalan: qaytim ortiqcha berildi)"
+                      data-test-id="close-variance-note"
+                      className="h-10 w-full rounded-lg border border-amber-300 bg-amber-50 px-3 text-sm focus:outline-none focus:border-amber-500"
+                    />
+                  )}
                   <div className="flex gap-2">
                     <button
                       type="button"
@@ -1585,6 +1663,7 @@ function SalesScreen({ session }: { session: CurrentSession }) {
                       onClick={() => {
                         setShowCloseForm(false);
                         setClosingCash('');
+                        setVarianceNote('');
                       }}
                       className="h-10 rounded-lg border border-[var(--ms-border)] px-4 text-sm text-[var(--ms-text-muted)] hover:bg-[var(--ms-bg-hover)]"
                     >

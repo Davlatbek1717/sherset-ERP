@@ -1060,7 +1060,8 @@
       "monitoring": "Мониторинг"
     },
     "menejer": {
-      "acceptance": "Приёмка KPI"
+      "acceptance": "Приёмка KPI",
+      "cash_variances": "Расхождения кассы"
     }
   },
   "counterparty_activity": {
@@ -6001,6 +6002,26 @@
       "cancel": "Отмена"
     },
     "z_report": {
+      "ack_done": "Менеджер просмотрел",
+      "ack_pending": "Менеджер ещё не просмотрел",
+      "avg_receipt": "Средний чек",
+      "collection": "Инкассация",
+      "counted": "посчитано",
+      "credit_sold": "Продано в долг",
+      "debt_paid": "Принятые платежи по долгам",
+      "discount": "Скидка",
+      "expected": "ожидалось",
+      "expense": "Расходы",
+      "expense_by_item": "Расходы по статьям",
+      "expense_no_item": "(без статьи)",
+      "full_title": "Z-отчёт (полный)",
+      "gross_profit": "Валовая прибыль",
+      "receipts": "Чеки",
+      "returns": "Возвраты",
+      "revenue": "Выручка",
+      "shortage": "недостача",
+      "surplus": "излишек",
+      "variance_acts": "Акты расхождения",
       "title": "Z-отчёт",
       "period_summary": "Итоги за период",
       "by_cashier": "По кассирам",
@@ -8197,6 +8218,25 @@
       "unlock": "Разблокировать",
       "wrong": "Неверный PIN",
       "wrong_remaining": "Неверный PIN. Осталось попыток: {n}"
+    },
+    "cashVariances": {
+      "title": "Расхождения кассы",
+      "scope_pending": "Не просмотрено",
+      "scope_done": "Просмотрено",
+      "scope_all": "Все",
+      "loading": "Загрузка…",
+      "empty_title": "Нет непросмотренных актов",
+      "empty_hint": "Смены закрыты без расхождений или всё просмотрено.",
+      "shortage": "Недостача",
+      "surplus": "Излишек",
+      "expected": "Ожидалось",
+      "counted": "Посчитано",
+      "cashier_note": "Комментарий кассира",
+      "manager_note": "Комментарий менеджера",
+      "note_placeholder": "Причина или решение (необязательно)",
+      "acknowledge": "Просмотрено",
+      "ack_done": "Просмотрено",
+      "open_shift": "Открыть смену"
     }
   },
   "print_entity": {

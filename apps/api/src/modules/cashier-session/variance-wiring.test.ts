@@ -118,3 +118,42 @@ describe('Z-hisobot — §8.5 ulanishi', () => {
     expect(body).not.toMatch(/costMinor \?\? 0n/);
   });
 });
+
+describe('farq akti — menejer tomoni', () => {
+  function ackBody(): string {
+    const start = SERVICE.indexOf('async acknowledgeVariance');
+    expect(start, 'acknowledgeVariance topilmadi').toBeGreaterThan(-1);
+    return SERVICE.slice(start, start + 2500);
+  }
+
+  it('tan olish SUMMALARGA tegmaydi (akt — dalil)', () => {
+    // Farq raqamini tahrirlash imkoni bo'lsa, akt dalil bo'lishdan to'xtardi.
+    const body = ackBody();
+    expect(body).not.toMatch(/varianceMinor:/);
+    expect(body).not.toMatch(/expectedMinor:|countedMinor:/);
+    expect(body).not.toMatch(/cashierNote:/);
+  });
+
+  it('qayta tan olishda BIRINCHI vaqt saqlanadi', () => {
+    // Aks holda «qachon ko'rildi» har bosishda surilib ketardi.
+    expect(ackBody()).toMatch(/if \(row\.acknowledgedAt\)/);
+  });
+
+  it('ro`yxat default FAQAT ko`rilmaganlarni beradi', () => {
+    const list = SERVICE.slice(
+      SERVICE.indexOf('async listVariances'),
+      SERVICE.indexOf('async acknowledgeVariance'),
+    );
+    expect(list).toMatch(/acknowledgedAt: null/);
+    expect(list).toMatch(/'pending'/);
+  });
+
+  it('ko`rilmaganlar soni filtrdan QAT`I NAZAR qaytadi', () => {
+    // Menejer filtrni o'zgartirsa ham «nechta ish qoldi» yo'qolmasin.
+    const list = SERVICE.slice(
+      SERVICE.indexOf('async listVariances'),
+      SERVICE.indexOf('async acknowledgeVariance'),
+    );
+    expect(list).toMatch(/pendingCount/);
+  });
+});

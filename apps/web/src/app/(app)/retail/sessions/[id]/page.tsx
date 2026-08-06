@@ -69,6 +69,45 @@ interface ZReport {
   netSumMinor: string;
 }
 
+/**
+ * §8.5 to'liq Z-hisobot (`/cashier-sessions/:id/z-report`).
+ *
+ * Eski `/retail-sales/z-report` faqat naqd/karta ajratmasini bilardi.
+ * Bu — TZ §8.5 bandlari: to'lov turlari kesimi, o'rtacha chek, yalpi
+ * foyda, chegirma, qarzga sotilgan, qabul qilingan qarz to'lovlari,
+ * xarajatlar (moddalar bo'yicha), inkassatsiya va farq aktlari.
+ *
+ * `null` — «noma'lum», `'0'` — «haqiqatan nol». Ikkalasi turlicha
+ * ko'rsatiladi: yalpi foyda `null` bo'lsa «—» chiqadi, chunki uni 0 deb
+ * ko'rsatish «100% marja» yolg'onini berardi.
+ */
+interface ZFull {
+  salesCount: number;
+  revenueMinor: string;
+  revenueByMethod: Array<{ method: string; sumMinor: string }>;
+  averageReceiptMinor: string | null;
+  grossProfitMinor: string | null;
+  discountMinor: string;
+  creditSoldMinor: string;
+  debtPaidMinor: string;
+  returnsMinor: string;
+  expenseMinor: string;
+  collectionMinor: string;
+  expenseByItem: Array<{ id: string | null; name: string | null; sumMinor: string }>;
+  expectedCashMinor: string;
+  countedCashMinor: string | null;
+  varianceMinor: string | null;
+  variances: Array<{
+    currency: string;
+    expectedMinor: string;
+    countedMinor: string;
+    varianceMinor: string;
+    kind: string;
+    cashierNote: string | null;
+    acknowledgedAt: string | null;
+  }>;
+}
+
 export default function SessionDetailPage() {
   const { id } = useParams<{ id: string }>();
   const t = useTranslations('pages.cashier_sessions');
@@ -84,6 +123,12 @@ export default function SessionDetailPage() {
   const { data: zReport } = useQuery<ZReport>({
     queryKey: ['z-report', id],
     queryFn: () => api.get<ZReport>(`/retail-sales/z-report?sessionId=${id}`),
+    enabled: !!id,
+  });
+
+  const { data: zFull } = useQuery<ZFull>({
+    queryKey: ['z-report-full', id],
+    queryFn: () => api.get<ZFull>(`/cashier-sessions/${id}/z-report`),
     enabled: !!id,
   });
 
@@ -190,6 +235,129 @@ export default function SessionDetailPage() {
           )}
         </div>
       </div>
+
+      {/* §8.5 — to'liq Z-hisobot */}
+      {zFull && (
+        <div className="mb-4 rounded-xl border border-[var(--ms-border)] bg-[var(--ms-bg-surface)] p-4">
+          <h2 className="mb-3 font-semibold text-sm">{tZ('full_title')}</h2>
+
+          {/* To'lov turlari kesimi — §8.5 birinchi bandi. `cashAmountMinor`
+              va `cardAmountMinor` ikki ustunidan kanalni tiklab bo'lmaydi,
+              shuning uchun manba `RetailSalePayment` qatorlari. */}
+          <div className="mb-3 flex flex-col gap-1">
+            {zFull.revenueByMethod.length === 0 ? (
+              <div className="text-[var(--ms-text-muted)] text-sm">—</div>
+            ) : (
+              zFull.revenueByMethod.map((r) => (
+                <div key={r.method} className="flex justify-between text-sm">
+                  <span className="text-[var(--ms-text-muted)]">{r.method}</span>
+                  <span className="font-medium tabular-nums">
+                    {formatMoney(BigInt(r.sumMinor), currency)}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 border-[var(--ms-border)] border-t pt-3 text-sm">
+            <MetaRow
+              label={tZ('revenue')}
+              value={formatMoney(BigInt(zFull.revenueMinor), currency)}
+              bold
+            />
+            <MetaRow label={tZ('receipts')} value={String(zFull.salesCount)} />
+            <MetaRow
+              label={tZ('avg_receipt')}
+              value={
+                zFull.averageReceiptMinor
+                  ? formatMoney(BigInt(zFull.averageReceiptMinor), currency)
+                  : '—'
+              }
+            />
+            <MetaRow
+              label={tZ('gross_profit')}
+              value={
+                zFull.grossProfitMinor ? formatMoney(BigInt(zFull.grossProfitMinor), currency) : '—'
+              }
+            />
+            <MetaRow
+              label={tZ('discount')}
+              value={formatMoney(BigInt(zFull.discountMinor), currency)}
+            />
+            <MetaRow
+              label={tZ('credit_sold')}
+              value={formatMoney(BigInt(zFull.creditSoldMinor), currency)}
+            />
+            <MetaRow
+              label={tZ('debt_paid')}
+              value={formatMoney(BigInt(zFull.debtPaidMinor), currency)}
+            />
+            <MetaRow
+              label={tZ('returns')}
+              value={formatMoney(BigInt(zFull.returnsMinor), currency)}
+            />
+            <MetaRow
+              label={tZ('expense')}
+              value={formatMoney(BigInt(zFull.expenseMinor), currency)}
+            />
+            <MetaRow
+              label={tZ('collection')}
+              value={formatMoney(BigInt(zFull.collectionMinor), currency)}
+            />
+          </div>
+
+          {/* Xarajatlar moddalar bo'yicha — §8.5 «xarajatlar (moddalar
+              bo'yicha)» bandi; jami raqam qayerga ketganini ko'rsatadi. */}
+          {zFull.expenseByItem.length > 0 && (
+            <div className="mt-3 border-[var(--ms-border)] border-t pt-3">
+              <div className="mb-1 text-[var(--ms-text-muted)] text-xs">
+                {tZ('expense_by_item')}
+              </div>
+              {zFull.expenseByItem.map((i) => (
+                <div key={i.id ?? 'none'} className="flex justify-between text-sm">
+                  <span>{i.name ?? tZ('expense_no_item')}</span>
+                  <span className="tabular-nums">{formatMoney(BigInt(i.sumMinor), currency)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Farq aktlari — dalil. Menejer ko'rgani ham shu yerda. */}
+          {zFull.variances.length > 0 && (
+            <div className="mt-3 border-[var(--ms-border)] border-t pt-3">
+              <div className="mb-1 text-[var(--ms-text-muted)] text-xs">{tZ('variance_acts')}</div>
+              {zFull.variances.map((v) => (
+                <div
+                  key={v.currency}
+                  className={`rounded-lg border px-3 py-2 text-sm ${
+                    v.kind === 'shortage'
+                      ? 'border-red-200 bg-red-50 text-red-800'
+                      : 'border-amber-200 bg-amber-50 text-amber-800'
+                  }`}
+                  data-test-id={`variance-act-${v.currency}`}
+                >
+                  <div className="flex justify-between font-semibold">
+                    <span>
+                      {v.currency} · {tZ(v.kind === 'shortage' ? 'shortage' : 'surplus')}
+                    </span>
+                    <span className="tabular-nums">
+                      {formatMoney(BigInt(v.varianceMinor), v.currency)}
+                    </span>
+                  </div>
+                  <div className="mt-0.5 text-xs opacity-80">
+                    {tZ('expected')}: {formatMoney(BigInt(v.expectedMinor), v.currency)} ·{' '}
+                    {tZ('counted')}: {formatMoney(BigInt(v.countedMinor), v.currency)}
+                  </div>
+                  {v.cashierNote && <div className="mt-1 text-xs">{v.cashierNote}</div>}
+                  <div className="mt-1 text-[11px] opacity-70">
+                    {v.acknowledgedAt ? tZ('ack_done') : tZ('ack_pending')}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Z-Report */}
       {zReport && (

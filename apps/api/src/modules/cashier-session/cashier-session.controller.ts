@@ -46,6 +46,31 @@ export class CashierSessionController {
     return this.sessions.cashOutDoc(user.accountId, docId);
   }
 
+  /**
+   * Farq aktlari (kassa TZ §8.4) — default FAQAT ko'rilmaganlar.
+   *
+   * `:id` dan OLDIN: statik yo'l birinchi (fayldagi konventsiya).
+   */
+  @Get('variances')
+  @RequirePermission({ entity: 'cashiersession', action: 'view' })
+  async listVariances(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: Record<string, unknown>,
+  ) {
+    return this.sessions.listVariances(user.accountId, query);
+  }
+
+  /** Aktni tan olish — summalar o'zgarmaydi, faqat «ko'rildi» + izoh. */
+  @Post('variances/:varianceId/acknowledge')
+  @RequirePermission({ entity: 'cashiersession', action: 'update' })
+  async acknowledgeVariance(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('varianceId') varianceId: string,
+    @Body() body: unknown,
+  ) {
+    return this.sessions.acknowledgeVariance(user.accountId, user.sub, varianceId, body);
+  }
+
   @Get(':id')
   @RequirePermission({ entity: 'cashiersession', action: 'view' })
   async findById(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {

@@ -446,6 +446,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   // hozircha bitta yozuvli bo'lsa ham strukturasi tayyor turadi.
   const menejerSubNav: SubNavItem[] = [
     { key: 'acceptance', label: tMenejer('acceptance'), href: '/menejer' },
+    // Kassa TZ §8.4 — «ko'rilmagan farq aktlari» menejerning kunlik ishi.
+    { key: 'cash_variances', label: tMenejer('cash_variances'), href: '/menejer/kassa-farqlari' },
   ];
 
   const analitikaSubNav: SubNavItem[] = [

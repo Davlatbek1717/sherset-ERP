@@ -679,6 +679,127 @@ export class CashierSessionService {
     };
   }
 
+  /**
+   * Farq aktlari — menejer ekrani (kassa TZ §8.4).
+   *
+   * Default: FAQAT ko'rilmaganlar. Menejerning savoli «bugun nimani
+   * ko'rishim kerak», «bir yilda qancha farq bo'lgan» emas — to'liq
+   * tarix `acknowledged=all` bilan so'raladi.
+   */
+  async listVariances(accountId: string, query: Record<string, unknown>) {
+    const limit = Math.min(Math.max(Number(query.limit) || 50, 1), 200);
+    const scope = typeof query.acknowledged === 'string' ? query.acknowledged : 'pending';
+    const where = {
+      accountId,
+      ...(scope === 'all'
+        ? {}
+        : scope === 'done'
+          ? { NOT: { acknowledgedAt: null } }
+          : { acknowledgedAt: null }),
+      ...(typeof query.kind === 'string' && query.kind ? { kind: query.kind } : {}),
+    };
+    const [rows, total, pendingCount] = await Promise.all([
+      this.prisma.client.cashierSessionVariance.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+        select: {
+          id: true,
+          currency: true,
+          expectedMinor: true,
+          countedMinor: true,
+          varianceMinor: true,
+          kind: true,
+          cashierNote: true,
+          managerNote: true,
+          acknowledgedAt: true,
+          createdAt: true,
+          cashier: { select: { id: true, name: true } },
+          acknowledgedBy: { select: { id: true, name: true } },
+          session: {
+            select: {
+              id: true,
+              openedAt: true,
+              closedAt: true,
+              cashDesk: { select: { name: true } },
+            },
+          },
+        },
+      }),
+      this.prisma.client.cashierSessionVariance.count({ where }),
+      // Ko'rilmaganlar soni HAR DOIM qaytadi — menejer filtrni o'zgartirsa
+      // ham «nechta ish qoldi» raqami yo'qolmasin.
+      this.prisma.client.cashierSessionVariance.count({
+        where: { accountId, acknowledgedAt: null },
+      }),
+    ]);
+    return {
+      items: rows.map((v) => ({
+        id: v.id,
+        currency: v.currency,
+        expectedMinor: v.expectedMinor.toString(),
+        countedMinor: v.countedMinor.toString(),
+        varianceMinor: v.varianceMinor.toString(),
+        kind: v.kind,
+        cashierNote: v.cashierNote,
+        managerNote: v.managerNote,
+        acknowledgedAt: v.acknowledgedAt,
+        acknowledgedBy: v.acknowledgedBy,
+        createdAt: v.createdAt,
+        cashier: v.cashier,
+        sessionId: v.session.id,
+        cashDeskName: v.session.cashDesk?.name ?? null,
+        openedAt: v.session.openedAt,
+        closedAt: v.session.closedAt,
+      })),
+      total,
+      pendingCount,
+    };
+  }
+
+  /**
+   * Aktni TAN OLISH — menejer ko'rdi va sababini yozdi.
+   *
+   * ⚠️ Aktning O'ZI o'zgarmaydi: summalar, kassir izohi, sana — hammasi
+   * joyida qoladi. Tan olish faqat «ko'rildi» belgisi va menejer izohi
+   * qo'shadi. Farq raqamini tahrirlash imkoni bo'lsa, akt dalil bo'lishdan
+   * to'xtardi.
+   *
+   * Idempotent: qayta tan olish BIRINCHI vaqtni saqlaydi — aks holda
+   * «qachon ko'rildi» har bosishda surilib ketardi.
+   */
+  async acknowledgeVariance(accountId: string, employeeId: string, id: string, raw: unknown) {
+    const body = (raw ?? {}) as { note?: unknown };
+    const row = await this.prisma.client.cashierSessionVariance.findFirst({
+      where: { id, accountId },
+      select: { id: true, acknowledgedAt: true },
+    });
+    if (!row) throw new NotFoundException(`Variance ${id} not found`);
+
+    const note = typeof body.note === 'string' ? body.note.trim() || null : undefined;
+    if (row.acknowledgedAt) {
+      // Faqat izohni yangilashga ruxsat — vaqt va kim ko'rgani muzlagan.
+      if (note === undefined) return { id, acknowledgedAt: row.acknowledgedAt, changed: false };
+      const upd = await this.prisma.client.cashierSessionVariance.update({
+        where: { id },
+        data: { managerNote: note },
+        select: { id: true, acknowledgedAt: true },
+      });
+      return { ...upd, changed: true };
+    }
+
+    const upd = await this.prisma.client.cashierSessionVariance.update({
+      where: { id },
+      data: {
+        acknowledgedAt: new Date(),
+        acknowledgedById: employeeId,
+        ...(note === undefined ? {} : { managerNote: note }),
+      },
+      select: { id: true, acknowledgedAt: true },
+    });
+    return { ...upd, changed: true };
+  }
+
   // ---- Xarajat (RKO) va inkassatsiya — kassa TZ §8.2 / §8.3 ----
 
   /**

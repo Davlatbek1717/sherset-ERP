@@ -1060,7 +1060,8 @@
       "monitoring": "Kuzatuv"
     },
     "menejer": {
-      "acceptance": "KPI qabuli"
+      "acceptance": "KPI qabuli",
+      "cash_variances": "Kassa farqlari"
     }
   },
   "counterparty_activity": {
@@ -6001,6 +6002,26 @@
       "cancel": "Bekor qilish"
     },
     "z_report": {
+      "ack_done": "Menejer ko'rgan",
+      "ack_pending": "Menejer hali ko'rmagan",
+      "avg_receipt": "O'rtacha chek",
+      "collection": "Inkassatsiya",
+      "counted": "sanalgan",
+      "credit_sold": "Qarzga sotilgan",
+      "debt_paid": "Qabul qilingan qarz to'lovlari",
+      "discount": "Chegirma",
+      "expected": "kutilgan",
+      "expense": "Xarajatlar",
+      "expense_by_item": "Xarajatlar moddalar bo`yicha",
+      "expense_no_item": "(moddasiz)",
+      "full_title": "Z-hisobot (to'liq)",
+      "gross_profit": "Yalpi foyda",
+      "receipts": "Cheklar",
+      "returns": "Qaytarishlar",
+      "revenue": "Tushum",
+      "shortage": "kamomad",
+      "surplus": "ortiqcha",
+      "variance_acts": "Farq aktlari",
       "title": "Z-hisobot",
       "period_summary": "Davr xulosasi",
       "by_cashier": "Kassirlar bo'yicha",
@@ -8197,6 +8218,25 @@
       "unlock": "Qulfni ochish",
       "wrong": "PIN noto'g'ri",
       "wrong_remaining": "PIN noto'g'ri. Qolgan urinish: {n}"
+    },
+    "cashVariances": {
+      "title": "Kassa farqlari",
+      "scope_pending": "Ko'rilmagan",
+      "scope_done": "Ko'rilgan",
+      "scope_all": "Hammasi",
+      "loading": "Yuklanmoqda…",
+      "empty_title": "Ko'rilmagan farq akti yo'q",
+      "empty_hint": "Smenalar farqsiz yopilgan yoki hammasi ko`rib chiqilgan.",
+      "shortage": "Kamomad",
+      "surplus": "Ortiqcha",
+      "expected": "Kutilgan",
+      "counted": "Sanalgan",
+      "cashier_note": "Kassir izohi",
+      "manager_note": "Menejer izohi",
+      "note_placeholder": "Sabab yoki qaror (ixtiyoriy)",
+      "acknowledge": "Ko'rdim",
+      "ack_done": "Ko'rilgan",
+      "open_shift": "Smenani ochish"
     }
   },
   "print_entity": {
