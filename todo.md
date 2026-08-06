@@ -147,12 +147,13 @@ kuniga **3 sessiya** → **~6 hafta**.
 ### 4M.4 — To'liq xodimlar nazorati ⭐
 - [ ] **Jonli holat** — kim smena ochgan · kechikkan · haydovchi yo'lda · omborchi nima yig'yapti
 - [ ] **Xodim kartasi 360°** + **suhbat va ogohlantirish jurnali** *(hozir hech qayerda yo'q)*
-- [ ] 🔴 **Hayot sikli** (`EmployeeLifecycle` YO'Q) — **XAVFSIZLIK TESHIGI**: xodim ketsa ERP+HR
-      ruxsatlari, Telegrami va sessiyalari **ochiq qolaveradi**
-      · ishga qabul: sinov muddati + baholash sanasi
-      · bo'shatish **majburiy ro'yxati**: ruxsatlarni bekor qilish · Telegram uzish · sessiyani yopish ·
-        kassani topshirish · jihozni topshirish · qabul qilinmagan kunlarni yopish
-      · ro'yxat tugamaguncha `arxivlangan` holatiga o'tmaydi
+- [x] 🔴 **Bo'shatish ro'yxati** (`EmployeeOffboarding`) — ro'yxat tugamaguncha arxivlanmaydi
+      *(21 test + runtime)* — `f9e40cd`
+      ⚠️ **Aniqlangan haqiqat:** login va refresh ALLAQACHON yopiq edi (`auth.service` `archived` ni
+      ko'radi) — todo'dagi «sessiyalar ochiq qoladi» qismi noto'g'ri edi. Haqiqiy teshiklar:
+      Telegram bog'lami · ochiq kassa smenasi · qabul qilinmagan KPI kunlari · jihoz.
+      Tizim biladigan band **qo'lda belgilanmaydi** (yolg'onga eshik yopildi).
+- [ ] **Ishga qabul tomoni** — sinov muddati + baholash sanasi *(bo'shatish qismi bajarildi)*
 - [ ] **Javobgarlik** — topshirilmagan naqd · ochiq smena · yig'ilmagan topshiriq · qaytarilmagan jihoz
 
 ### 4M.5–4M.10
