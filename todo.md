@@ -294,8 +294,10 @@ kuniga **3 sessiya** → **~6 hafta**.
 - [ ] **List toolbar 19/56** — qolgan 37 sahifa
 - [ ] **Navigation graph 0%**
 - [ ] **Conv-6 data-bog'liq vizuallar** — 3/13 browser-smoked
-- [ ] **Prodda ~20 yangi `/debts` route jonlanadi** — `DebtModule` ulangani sababli;
-      deploy oldidan hisobga oling (avval hech qachon ishlamagan kod)
+- [x] **Prodda ~20 yangi `/debts` route jonlanadi** — jonli tekshirildi (2026-08-06): `dae7289`
+      allaqachon prod'da (ko'p keyingi deploy orqali) — `GET /api/v1/debts` **401** (404 emas,
+      ya'ni route mavjud + tenant-guard ishlayapti) · `pm2 logs` oxirgi 3000 qatorda `debt` bo'yicha
+      **0 xatolik**. Caution bekor — endi shunchaki tasdiqlangan fakt.
 - [x] **`wave4m-accept` branch + worktree** tozalash — tasdiqlandi: `c62ca778` climart-adoption'ga
       ANCESTOR emas, LEKIN [[parallel-worktree-duplicate-work]] bo'yicha egasi «to'liq
       birlashtirish»ni tanlab mazmuni `fa58171`+`a2b4bb6` orqali allaqachon mustaqil qurilgan
