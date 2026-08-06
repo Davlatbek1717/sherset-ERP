@@ -29,6 +29,7 @@ import {
   UpdateHrEmployeeSchema,
 } from './hr-employee.schema.js';
 import { HrEmployeeService } from './hr-employee.service.js';
+import { OffboardingService } from './offboarding.service.js';
 
 @Controller('hr/employees')
 @UseGuards(JwtAuthGuard, HrPermissionGuard)
@@ -36,7 +37,59 @@ export class HrEmployeeController {
   constructor(
     @Inject(HrEmployeeService) private readonly svc: HrEmployeeService,
     @Inject(EmployeeTelegramService) private readonly telegram: EmployeeTelegramService,
+    @Inject(OffboardingService) private readonly offboarding: OffboardingService,
   ) {}
+
+  // ── Bo'shatish ro'yxati (4M.4 «hayot sikli») ──────────────────────────────
+  //
+  // Arxivlashning O'ZI login va refresh'ni yopadi, lekin Telegram bog'lami,
+  // ochiq kassa smenasi, qabul qilinmagan KPI kunlari va topshirilmagan
+  // jihoz ochiq qolardi. Ro'yxat tugamaguncha xodim arxivlanmaydi.
+  //
+  // `:id` li yo'llardan OLDIN — statik segment birinchi (fayl konventsiyasi).
+
+  /** Tugallanmagan bo'shatishlar — menejer ekrani. */
+  @Get('offboarding')
+  @RequireHrPermission('employees', 'read')
+  async listOffboarding(@CurrentUser() user: AuthenticatedUser) {
+    return this.offboarding.listOpen(user.accountId);
+  }
+
+  /** Bitta xodimning bo'shatish holati (ro'yxat + qolgan to'siqlar). */
+  @Get(':id/offboarding')
+  @RequireHrPermission('employees', 'read')
+  async offboardingStatus(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.offboarding.status(user.accountId, id);
+  }
+
+  /** Jarayonni boshlash — idempotent (mavjudini qaytaradi, ro'yxatni tozalamaydi). */
+  @Post(':id/offboarding')
+  @RequireHrPermission('employees', 'full')
+  async startOffboarding(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    return this.offboarding.start(user.accountId, user.sub, id, body);
+  }
+
+  /** Qo'lda tasdiqlanadigan bandni belgilash (`auto` band rad etiladi). */
+  @Post(':id/offboarding/item')
+  @RequireHrPermission('employees', 'full')
+  async markOffboardingItem(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    return this.offboarding.markItem(user.accountId, user.sub, id, body);
+  }
+
+  /** Yakunlash — ro'yxat to'liq bo'lsagina xodim arxivlanadi. */
+  @Post(':id/offboarding/complete')
+  @RequireHrPermission('employees', 'full')
+  async completeOffboarding(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.offboarding.complete(user.accountId, id);
+  }
 
   @Get()
   @RequireHrPermission('employees', 'read')

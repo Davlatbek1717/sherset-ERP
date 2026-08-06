@@ -113,6 +113,7 @@ model Account {
   cashierAuditEvents             CashierAuditEvent[]
   cashierSessionVariances        CashierSessionVariance[]
   employeeKpiCorrections         EmployeeKpiCorrection[]
+  employeeOffboardings           EmployeeOffboarding[]
   kpiMetricDefs                  KpiMetricDef[]
   kpiProfiles                    KpiProfile[]
   kpiProfileVersions             KpiProfileVersion[]
@@ -422,6 +423,8 @@ model Employee {
   pickedMsPickLists          MsPickList[]               @relation("MsPickListPicker")
   cashierSessionVariances    CashierSessionVariance[]   @relation("CashierSessionVarianceCashier")
   kpiCorrections             EmployeeKpiCorrection[]    @relation("EmployeeKpiCorrectionEmployee")
+  offboarding                EmployeeOffboarding?       @relation("EmployeeOffboardingEmployee")
+  startedOffboardings        EmployeeOffboarding[]      @relation("EmployeeOffboardingActor")
   acceptedKpiCorrections     EmployeeKpiCorrection[]    @relation("EmployeeKpiCorrectionActor")
   acknowledgedVariances      CashierSessionVariance[]   @relation("CashierSessionVarianceAck")
   retailDrawerOutRecipient   RetailDrawerCashOut[]      @relation("RetailDrawerOutRecipient")
@@ -9516,6 +9519,46 @@ model KpiProfileMetric {
 /// `state` VarChar (sxema konventsiyasi: `RetailSale.state`, `RestockTask.status`)
 /// — 4M.2 da qabul qilish FSM'i qo'shilganda yangi holatlar migratsiyasiz keladi.
 /// 4M.1 da faqat `computed` yoziladi.
+/// Xodimni bo'shatish jarayoni (menejer TZ 4M.4 — «hayot sikli»).
+///
+/// Bo'shatish bir bosishlik `archived: true` bayrog'i EMAS: ro'yxat tugamaguncha
+/// xodim arxivlanmaydi. Sabab — arxivlash o'zi login/refresh'ni yopadi, lekin
+/// Telegram bog'lami, ochiq kassa smenasi, qabul qilinmagan KPI kunlari va
+/// topshirilmagan jihoz OCHIQ qolaveradi.
+///
+/// Faqat QO'LDA tasdiqlanadigan bandlar saqlanadi (`items`): «Telegram uzildimi»
+/// kabi tizim biladigan bandlar HAR SO'ROVDA qayta tekshiriladi va bu yerga
+/// yozilmaydi — bir marta «bajarildi» deb muzlatib qo'yish keyin ochilib qolgan
+/// smenani ko'rinmas qilardi.
+model EmployeeOffboarding {
+  id         String @id @default(uuid()) @db.Uuid
+  accountId  String @map("account_id") @db.Uuid
+  employeeId String @map("employee_id") @db.Uuid
+
+  /// Oxirgi ish kuni — hisobot va davomat uchun.
+  lastWorkingDay DateTime? @map("last_working_day") @db.Date
+  /// Ketish sababi (erkin matn; yopiq ro'yxat hozircha talab qilinmagan).
+  reason         String?
+
+  /// Qo'lda tasdiqlangan bandlar: `{ [key]: { doneAt, byId } }`.
+  items Json @default("{}")
+
+  startedById String?   @map("started_by_id") @db.Uuid
+  startedAt   DateTime  @default(now()) @map("started_at") @db.Timestamptz()
+  /// Ro'yxat to'liq bajarilib, xodim ARXIVLANGAN payt. NULL = jarayon davom etmoqda.
+  completedAt DateTime? @map("completed_at") @db.Timestamptz()
+
+  account     Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  employee    Employee  @relation("EmployeeOffboardingEmployee", fields: [employeeId], references: [id], onDelete: Cascade)
+  startedBy   Employee? @relation("EmployeeOffboardingActor", fields: [startedById], references: [id], onDelete: SetNull)
+
+  /// Bir xodimda bir vaqtda bitta faol jarayon.
+  @@unique([employeeId])
+  /// Menejer ekrani: «tugallanmagan bo'shatishlar».
+  @@index([accountId, completedAt])
+  @@map("employee_offboardings")
+}
+
 model EmployeeDailyKpi {
   id         String   @id @default(uuid()) @db.Uuid
   accountId  String   @map("account_id") @db.Uuid

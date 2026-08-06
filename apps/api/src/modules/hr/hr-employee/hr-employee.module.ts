@@ -5,12 +5,13 @@ import { HrAuthModule } from '../hr-auth/hr-auth.module.js';
 import { EmployeeTelegramService } from './employee-telegram.service.js';
 import { HrEmployeeController } from './hr-employee.controller.js';
 import { HrEmployeeService } from './hr-employee.service.js';
+import { OffboardingService } from './offboarding.service.js';
 
 @Module({
   imports: [PrismaModule, AuthModule, HrAuthModule],
   controllers: [HrEmployeeController],
-  providers: [HrEmployeeService, EmployeeTelegramService],
+  providers: [HrEmployeeService, EmployeeTelegramService, OffboardingService],
   // EmployeeTelegramService export — telegram moduli `/start bind_` callback'da ishlatadi.
-  exports: [HrEmployeeService, EmployeeTelegramService],
+  exports: [HrEmployeeService, EmployeeTelegramService, OffboardingService],
 })
 export class HrEmployeeModule {}
