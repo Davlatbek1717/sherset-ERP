@@ -40,11 +40,36 @@ export class PickListSyncService {
     return process.env.MOYSKLAD_SYNC_ACCOUNT_ID ?? '00000000-0000-0000-0000-000000000001';
   }
 
+  /**
+   * Avtorizatsiya sarlavhasi — **token birinchi**, keyin login/parol.
+   *
+   * NEGA TOKEN BIRINCHI: `MOYSKLAD_TOKEN` prod qutisida ALLAQACHON bor
+   * (`apps/api/.env`), ya'ni sync uchun yangi maxfiy ma'lumot so'rash shart
+   * emas. Login/parol esa zaxira yo'l bo'lib qoladi — eski sozlamalar
+   * buzilmasin. Ikkalasi ham yo'q bo'lsa xizmat jim turadi (dev qutida
+   * normal holat).
+   */
   private authHeader(): string | null {
+    const token = picksyncVar('MOYSKLAD_TOKEN') ?? picksyncVar('MOYSKLAD_SYNC_TOKEN');
+    if (token) return `Bearer ${token}`;
     const login = picksyncVar('MOYSKLAD_SYNC_LOGIN');
     const password = picksyncVar('MOYSKLAD_SYNC_PASSWORD');
     if (!login || !password) return null;
     return `Basic ${Buffer.from(`${login}:${password}`).toString('base64')}`;
+  }
+
+  /**
+   * Birinchi yuklash oynasi (soat).
+   *
+   * Default 48 soat — kundalik ish uchun to'g'ri: butun tarixni tortib
+   * olish 33k buyurtmada MoySklad limitini yeb qo'yadi. Lekin YANGI
+   * o'rnatishda ombor ekrani BO'SH chiqadi va bu «hammasi yig'ilgan»
+   * degan yolg'on taassurot beradi — shuning uchun bir martalik kengroq
+   * yuklash `MOYSKLAD_SYNC_BACKFILL_HOURS` bilan sozlanadi.
+   */
+  private get backfillHours(): number {
+    const raw = Number(picksyncVar('MOYSKLAD_SYNC_BACKFILL_HOURS'));
+    return Number.isFinite(raw) && raw > 0 ? Math.min(raw, 24 * 365) : 48;
   }
 
   @Cron(CronExpression.EVERY_30_SECONDS)
@@ -135,7 +160,7 @@ export class PickListSyncService {
     });
     const cursor = last._max.msUpdatedAt
       ? new Date(last._max.msUpdatedAt.getTime() - 2 * 60_000)
-      : new Date(Date.now() - 48 * 3600_000);
+      : new Date(Date.now() - this.backfillHours * 3600_000);
 
     const filter = encodeURIComponent(`updated>=${this.msMoment(cursor)}`);
     const list = await this.fetchJson(
@@ -225,7 +250,10 @@ export class PickListSyncService {
    * Rows older than the window are history and stay.
    */
   private async reconcileDeleted(auth: string, accountId: string): Promise<void> {
-    const cutoff = new Date(Date.now() - 48 * 3600_000);
+    // ⚠️ Oyna yuklash oynasi bilan BIR XIL bo'lishi shart: kengroq
+    // yuklangan eski qatorlar tor oynadan tashqarida qolib, «MoySklad'da
+    // o'chirilgan» deb hisoblanib darhol yo'q qilinardi.
+    const cutoff = new Date(Date.now() - this.backfillHours * 3600_000);
     const filter = encodeURIComponent(
       `moment>=${this.msMoment(new Date(cutoff.getTime() - 3600_000))}`,
     );

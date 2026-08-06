@@ -108,3 +108,28 @@ describe('yacheyka O`QISH vaqtida yechiladi', () => {
     expect(detail.slice(0, 3000)).toMatch(/barcodes: \{ hasSome: barcodes \}/);
   });
 });
+
+describe('sync avtorizatsiyasi', () => {
+  it('TOKEN birinchi tekshiriladi (qutida allaqachon bor)', () => {
+    const auth = SYNC.slice(SYNC.indexOf('private authHeader'));
+    const tokenAt = auth.indexOf('MOYSKLAD_TOKEN');
+    const loginAt = auth.indexOf('MOYSKLAD_SYNC_LOGIN');
+    expect(tokenAt, 'token qo`llab-quvvatlanmaydi').toBeGreaterThan(-1);
+    expect(loginAt, 'login zaxira yo`li yo`qolgan').toBeGreaterThan(-1);
+    // Token birinchi: yangi maxfiy ma'lumot so'ramaslik uchun.
+    expect(tokenAt).toBeLessThan(loginAt);
+  });
+
+  it('hech qanday ma`lumot yo`q bo`lsa xizmat JIM turadi', () => {
+    // Dev qutida bu normal holat — xato bilan to'ldirmasin.
+    expect(SYNC).toMatch(/if \(!auth\) return/);
+  });
+
+  it('yuklash oynasi va o`chirilganlarni tekshirish BIR XIL oynani ishlatadi', () => {
+    // Farq bo'lsa: kengroq yuklangan eski qatorlar tor oynadan tashqarida
+    // qolib «MoySklad'da o'chirilgan» deb yo'q qilinardi.
+    const uses = SYNC.match(/this\.backfillHours/g) ?? [];
+    expect(uses.length).toBeGreaterThanOrEqual(2);
+    expect(SYNC).not.toMatch(/48 \* 3600_000/);
+  });
+});
