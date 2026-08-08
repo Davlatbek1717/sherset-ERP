@@ -81,6 +81,7 @@ export const DOC_TYPE_LABEL: Record<string, string> = {
   invoiceOut: 'Sotuv',
   invoiceIn: 'Xarid',
   supply: 'Qabul',
+  purchaseReturn: 'Taminotchiga qaytarish',
   cashIn: "To'lov (kirim)",
   cashOut: "To'lov (chiqim)",
   paymentIn: "Bank to'lovi (kirim)",

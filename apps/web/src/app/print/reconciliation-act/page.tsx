@@ -61,6 +61,8 @@ const ACT_DOC_TYPES = new Set([
   'prepaymentReturn',
   'adjustment',
   'supply',
+  // Faza 13 (`PP-02`): taminotchiga qaytarish endi balans jurnaliga yozadi.
+  'purchaseReturn',
   'debt',
   'debtpayment',
   'retailsale',

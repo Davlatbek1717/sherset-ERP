@@ -26,7 +26,16 @@
  */
 export const BALANCE_DOC_TYPE = {
   invoiceOut: 'invoiceOut',
+  /**
+   * ⚠️ TARIXIY — Faza 13 (2026-08-08, QAROR-B «Supply-only») dan keyin bu turni
+   * HECH KIM YOZMAYDI: `InvoiceIn` kontragent balansiga tegmaydi (qarzni faqat
+   * `Supply` yozadi, `PP-03`). Reyestrda QOLADI, chunki Faza 13'gacha yozilgan
+   * jurnal qatorlari shu satr bilan saqlangan — o'chirilsa akt/statement
+   * qatorlari hujjat raqamisiz yetim qolardi (saldo baribir o'zgarmaydi).
+   */
   invoiceIn: 'invoiceIn',
+  /** Faza 13 (`PP-02`): taminotchiga qaytarish — qabul deltasining teskarisi. */
+  purchaseReturn: 'purchaseReturn',
   paymentIn: 'paymentIn',
   paymentOut: 'paymentOut',
   cashIn: 'cashIn',

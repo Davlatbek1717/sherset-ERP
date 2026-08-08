@@ -11,7 +11,6 @@ import {
 import { allocateDocumentNumber } from '../../prisma/document-number.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { AttributeMetadataService } from '../attribute-metadata/attribute-metadata.service.js';
-import { CounterpartyBalanceService } from '../counterparty-balance/counterparty-balance.service.js';
 import { PaymentOutService } from '../payment-out/payment-out.service.js';
 import { PurchaseOrderService } from '../purchase-order/purchase-order.service.js';
 import { tashkentRangeBounds } from '../report/report-date-bounds.util.js';
@@ -40,6 +39,26 @@ interface ComputedTotals {
   vatSumMinor: bigint;
 }
 
+/**
+ * ⚠️ FAZA 13 (`PP-03`, QAROR-B «Supply-only», 2026-08-08) — INVOICE-IN
+ * KONTRAGENT BALANSIGA TEGMAYDI.
+ *
+ * Ilgari `post()` `-sumMinor`, `unpost()/cancel()` esa teskarisini yozardi, va
+ * AYNI PAYTDA `Supply.post` ham `-sumMinor` yozardi (supply.service.ts §3b).
+ * Standart xarid oqimi PO → hisob-faktura (InvoiceIn) + qabul (Supply) ikkala
+ * hujjatni ham ishlatgani uchun bitta xaridda yetkazib beruvchining qarzi IKKI
+ * marta ko'rinardi. `InvoiceIn`da `supplyId` FK yo'q (supply.service.ts:589)
+ * ⇒ juftlikni dedup qilib bo'lmaydi; egasi qarzni TOVAR HARAKATIga bog'lashni
+ * tanladi (1C/MoySklad'dagi kabi vzaimoraschyot bitta kanal orqali).
+ *
+ * Demak bu hujjat endi INFORMATSION/rasmiy: u `PurchaseOrder.invoicedSumMinor`
+ * ni yuritadi, to'lovlarga (`PaymentOut`) asos bo'ladi va o'z `payedSumMinor`
+ * FSM'ini saqlaydi — lekin `CounterpartyBalanceService` ni umuman CHAQIRMAYDI
+ * (servisda u endi inject ham qilinmaydi: qamrov-skaneri `applyDelta`
+ * chaqiruvini fayl bo'yicha topadi — `scripts/counterparty-balance-sources.ts`).
+ *
+ * Qulf: `modules/purchase-return/supplier-debt-supply-only.test.ts`.
+ */
 @Injectable()
 export class InvoiceInService {
   constructor(
@@ -55,8 +74,6 @@ export class InvoiceInService {
     // reverse is symmetric. Used by «Создать → Исходящие платежи».
     @Inject(forwardRef(() => PaymentOutService))
     private readonly paymentOut: PaymentOutService,
-    @Inject(CounterpartyBalanceService)
-    private readonly balance: CounterpartyBalanceService,
     @Inject(AttributeMetadataService) private readonly attrs: AttributeMetadataService,
     @Inject(WebhookFireService) private readonly webhookFire: WebhookFireService,
   ) {}
@@ -739,30 +756,20 @@ export class InvoiceInService {
       // stays keyed on {id, accountId} because update#1 already bumped the
       // row to N+1 (a version filter there would always miss → false-409).
       const saved = await this.prisma.client.$transaction(async (tx) => {
-        // moysklad keeps a POSTED invoice editable. Posting applied two side-effects:
-        // a balance delta (we owe the supplier) and, if linked, +PO.invoicedSumMinor.
-        // REVERSE them with the OLD agent/currency/PO/sum so the recompute below can
-        // RE-APPLY the NEW ones — keeping the agent balance + PO invoiced-total exact
-        // for ANY change (sum, agent, currency, PO link). All inside the tx, so a
-        // version conflict (409) rolls the reversal back too.
-        if (existing.applicable) {
-          await this.balance.applyDelta(
+        // moysklad keeps a POSTED invoice editable. Posting applied ONE side-effect
+        // that survives an edit: +PO.invoicedSumMinor (Faza 13 dan keyin balans
+        // deltasi YO'Q — sinf docstringiga qara). REVERSE it with the OLD PO/sum so
+        // the recompute below can RE-APPLY the NEW one — keeping the PO invoiced-total
+        // exact for ANY change (sum, PO link). Inside the tx, so a version conflict
+        // (409) rolls the reversal back too.
+        if (existing.applicable && existing.purchaseOrderId) {
+          await this.po.applyInvoice(
             tx,
             accountId,
-            existing.agentId,
-            existing.currency,
-            existing.sumMinor, // undo the "we owe them" delta (post() applied -sum)
-            { docType: 'invoiceIn', docId: id, organizationId: existing.organizationId },
+            existing.purchaseOrderId,
+            existing.sumMinor,
+            'revert',
           );
-          if (existing.purchaseOrderId) {
-            await this.po.applyInvoice(
-              tx,
-              accountId,
-              existing.purchaseOrderId,
-              existing.sumMinor,
-              'revert',
-            );
-          }
         }
 
         if (parsed.positions !== undefined) {
@@ -781,17 +788,10 @@ export class InvoiceInService {
 
         const finalData: Prisma.InvoiceInUpdateInput = { ...totals };
         if (existing.applicable) {
-          const newAgentId = parsed.agentId ?? existing.agentId;
-          const newCurrency = parsed.currency ?? existing.currency;
           const newPoId =
             parsed.purchaseOrderId !== undefined
               ? parsed.purchaseOrderId
               : existing.purchaseOrderId;
-          await this.balance.applyDelta(tx, accountId, newAgentId, newCurrency, -totals.sumMinor, {
-            docType: 'invoiceIn',
-            docId: id,
-            organizationId: effectiveOrgId,
-          });
           if (newPoId) {
             await this.po.applyInvoice(tx, accountId, newPoId, totals.sumMinor, 'invoice');
           }
@@ -1128,7 +1128,7 @@ export class InvoiceInService {
     return this.prisma.client.$transaction(async (tx) => {
       // TOCTOU guard (M-01/DUP-01): atomically claim draft→posted as the FIRST
       // op — the loser of a double-«Провести» sees count 0 → 409, never a
-      // second −sumMinor payable + PO.invoicedSum bump.
+      // second PO.invoicedSum bump.
       await transitionWithClaim(tx.invoiceIn, {
         id,
         accountId,
@@ -1142,21 +1142,8 @@ export class InvoiceInService {
         data: { state: 'posted', applicable: true, postedAt: new Date() },
       });
 
-      // Supplier billed us → we owe them → -delta on balance (we're the debtor).
-      await this.balance.applyDelta(
-        tx,
-        accountId,
-        existing.agentId,
-        existing.currency,
-        -existing.sumMinor,
-        {
-          source: 'invoiceIn',
-          docType: 'invoiceIn',
-          docId: id,
-          organizationId: existing.organizationId,
-        },
-      );
-
+      // Faza 13 (QAROR-B): yetkazib beruvchi qarzini FAQAT `Supply.post` yozadi.
+      // Bu yerda balans deltasi ATAYLAB yo'q — sinf docstringiga qara.
       if (existing.purchaseOrderId) {
         await this.po.applyInvoice(
           tx,
@@ -1209,16 +1196,8 @@ export class InvoiceInService {
         data: { state: 'draft', applicable: false, postedAt: null },
       });
 
-      // Revert: we no longer owe them.
-      await this.balance.applyDelta(
-        tx,
-        accountId,
-        existing.agentId,
-        existing.currency,
-        existing.sumMinor,
-        { docType: 'invoiceIn', docId: id, organizationId: existing.organizationId },
-      );
-
+      // Revert: PO.invoicedSumMinor only — balans deltasi Faza 13 da olib
+      // tashlangan (post() ham yozmaydi ⇒ qaytaradigan narsa yo'q).
       if (existing.purchaseOrderId) {
         await this.po.applyInvoice(
           tx,
@@ -1280,25 +1259,16 @@ export class InvoiceInService {
         data: { state: 'cancelled', applicable: false },
       });
 
-      // Revert balance + PO.invoicedSumMinor only if we were applicable.
-      if (wasApplicable) {
-        await this.balance.applyDelta(
+      // Revert PO.invoicedSumMinor only if we were applicable (balans deltasi
+      // Faza 13 da olib tashlangan).
+      if (wasApplicable && existing.purchaseOrderId) {
+        await this.po.applyInvoice(
           tx,
           accountId,
-          existing.agentId,
-          existing.currency,
+          existing.purchaseOrderId,
           existing.sumMinor,
-          { docType: 'invoiceIn', docId: id, organizationId: existing.organizationId },
+          'revert',
         );
-        if (existing.purchaseOrderId) {
-          await this.po.applyInvoice(
-            tx,
-            accountId,
-            existing.purchaseOrderId,
-            existing.sumMinor,
-            'revert',
-          );
-        }
       }
 
       await tx.auditLog.create({

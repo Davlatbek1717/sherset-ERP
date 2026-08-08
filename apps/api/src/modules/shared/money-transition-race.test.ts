@@ -169,6 +169,17 @@ const CASES: Array<{
    * gets through.
    */
   postFromCancelledAllowed?: true;
+  /**
+   * Poyga qaysi PUL-YON TA'SIRI bo'yicha o'lchanadi. Sukut — kontragent
+   * balansi (`balance.applyDelta`).
+   *
+   * FAZA 13 (QAROR-B «Supply-only», `PP-03`): `invoice-in` endi balansga
+   * TEGMAYDI — uning yagona pul-yon ta'siri `PurchaseOrder.invoicedSumMinor`
+   * (`po.applyInvoice`). Test shu ta'sir ustidan o'lchaydi, ya'ni claim-qulfi
+   * bu servisda ham NON-VACUOUS bo'lib qoladi (probe'siz u «hech narsa 2 marta
+   * bo'lmadi» degan bo'sh da'voga aylanardi).
+   */
+  moneyProbe?: (d: Deps) => { mock: { calls: unknown[] } };
   build(
     client: Record<string, unknown>,
     d: Deps,
@@ -244,12 +255,14 @@ const CASES: Array<{
   {
     name: 'invoice-in',
     model: 'invoiceIn',
+    // Faza 13: pul-yon ta'siri PO kaskadi ⇒ hujjat PO'ga bog'langan bo'lishi kerak.
+    row: { purchaseOrderId: 'po-1' },
+    moneyProbe: (d) => d.target.applyInvoice,
     build: (client, d) =>
       new InvoiceInService(
         { client } as never,
         d.target as never,
         d.target as never,
-        d.balance as never,
         {} as never,
         d.webhookFire as never,
       ),
@@ -277,6 +290,10 @@ async function race(
 const rejected = (rs: PromiseSettledResult<unknown>[]) =>
   rs.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
 
+/** Poyga o'lchanadigan pul-yon ta'siri (sukut — kontragent balansi). */
+const probeOf = (c: (typeof CASES)[number], d: Deps) =>
+  c.moneyProbe ? c.moneyProbe(d) : d.balance.applyDelta;
+
 for (const c of CASES) {
   describe(`${c.name}: concurrent transitions apply their money delta exactly once`, () => {
     it('two parallel post() calls → one wins, balance delta applied ONCE', async () => {
@@ -287,7 +304,7 @@ for (const c of CASES) {
 
       const results = await race(svc, 'post');
 
-      expect(d.balance.applyDelta).toHaveBeenCalledTimes(1);
+      expect(probeOf(c, d)).toHaveBeenCalledTimes(1);
       expect(row.state).toBe('posted');
       const losers = rejected(results);
       expect(losers).toHaveLength(1);
@@ -302,7 +319,7 @@ for (const c of CASES) {
 
       const results = await race(svc, 'unpost');
 
-      expect(d.balance.applyDelta).toHaveBeenCalledTimes(1);
+      expect(probeOf(c, d)).toHaveBeenCalledTimes(1);
       expect(row.state).toBe('draft');
       expect(rejected(results)).toHaveLength(1);
     });
@@ -315,7 +332,7 @@ for (const c of CASES) {
 
       const results = await race(svc, 'cancel');
 
-      expect(d.balance.applyDelta).toHaveBeenCalledTimes(1);
+      expect(probeOf(c, d)).toHaveBeenCalledTimes(1);
       expect(row.state).toBe('cancelled');
       expect(rejected(results)).toHaveLength(1);
     });
@@ -330,16 +347,42 @@ for (const c of CASES) {
 
       if (c.postFromCancelledAllowed) {
         // state-machine allows it; the claim still lets exactly one through
-        expect(d.balance.applyDelta).toHaveBeenCalledTimes(1);
+        expect(probeOf(c, d)).toHaveBeenCalledTimes(1);
         expect(rejected(results)).toHaveLength(1);
       } else {
-        expect(d.balance.applyDelta).not.toHaveBeenCalled();
+        expect(probeOf(c, d)).not.toHaveBeenCalled();
         expect(rejected(results)).toHaveLength(2);
         expect(row.state).toBe('cancelled');
       }
     });
   });
 }
+
+/**
+ * Faza 13 (QAROR-B) — `invoice-in` probe'i `po.applyInvoice` ga ko'chirildi.
+ * Shu almashtirish «balansga tegmaslik» da'vosini jimgina yo'qotmasligi uchun
+ * uni ALOHIDA qulflaymiz: balans deltasi 0 marta chaqirilishi shart.
+ */
+describe('invoice-in: Faza 13 dan keyin kontragent balansiga UMUMAN tegmaydi', () => {
+  for (const target of ['post', 'unpost', 'cancel'] as const) {
+    it(`${target} poygasida balance.applyDelta hech qachon chaqirilmaydi`, async () => {
+      const c = CASES.find((x) => x.name === 'invoice-in');
+      if (!c) throw new Error('case invoice-in missing');
+      const row = makeRow(
+        target === 'post'
+          ? { ...c.row, state: 'draft', applicable: false }
+          : { ...c.row, state: 'posted', applicable: true, postedAt: new Date() },
+      );
+      const { client } = makeClient(c.model, row);
+      const d = makeDeps();
+      const svc = c.build(client, d);
+
+      await race(svc, target);
+
+      expect(d.balance.applyDelta).not.toHaveBeenCalled();
+    });
+  }
+});
 
 /**
  * cash-in / cash-out additionally move the CashDesk ledger through

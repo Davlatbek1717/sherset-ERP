@@ -129,20 +129,27 @@ export class CounterpartyStatementService {
         },
       } as const;
       const w = { ...where, positions: { some: { productId } } };
-      const [invOut, invIn, supply, product] = await Promise.all([
+      const [invOut, supply, purchaseReturn, product] = await Promise.all([
         c.invoiceOut.findMany({ where: w, select: sel }),
-        c.invoiceIn.findMany({ where: w, select: sel }),
         c.supply.findMany({ where: w, select: sel }),
+        c.purchaseReturn.findMany({ where: w, select: sel }),
         c.product.findFirst({ where: { id: productId, accountId }, select: { name: true } }),
       ]);
       // BUYUM-bo'yicha jurnal — bu BALANS ko'rinishi EMAS (bitta tovar kesimi),
       // shuning uchun belgi hujjat turidan olinadi: sotuv (+) mijoz qarzini
-      // oshiradi, xarid/qabul (−) bizning qarzimizni. Ro'yxat qisqa va yopiq
-      // (faqat tovar hujjatlari), ya'ni «chala ro'yxat» xatari bu yerda yo'q.
+      // oshiradi, qabul (−) bizning qarzimizni, taminotchiga qaytarish (+) uni
+      // kamaytiradi. Ro'yxat qisqa va yopiq (faqat tovar hujjatlari), ya'ni
+      // «chala ro'yxat» xatari bu yerda yo'q.
+      //
+      // ⚠️ FAZA 13 (`PP-03`): `invoiceIn` bu ro'yxatdan CHIQARILDI. U yerda
+      // xarid IKKI marta — hisob-faktura va qabul sifatida — sanalardi, endi esa
+      // hisob-faktura kontragent balansiga umuman tegmaydi (QAROR-B
+      // «Supply-only»). Ro'yxat shu bilan yuqoridagi jurnal-manbali kesim bilan
+      // bir xil semantikaga keldi.
       const raw: RawDoc[] = [
         ...(invOut as GoodsRow[]).map((d) => this.productLine(d, 'invoiceOut', 1n)),
-        ...(invIn as GoodsRow[]).map((d) => this.productLine(d, 'invoiceIn', -1n)),
         ...(supply as GoodsRow[]).map((d) => this.productLine(d, 'supply', -1n)),
+        ...(purchaseReturn as GoodsRow[]).map((d) => this.productLine(d, 'purchaseReturn', 1n)),
       ];
       return { cp, data: computeStatement(raw), productName: product?.name ?? '(buyum)' };
     }

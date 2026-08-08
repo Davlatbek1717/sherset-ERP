@@ -61,15 +61,21 @@ export const DECLARED_BALANCE_WRITERS: readonly BalanceWriter[] = [
     sources: ['fixed-docs'],
     note: "post +sumMinor / unpost·cancel teskari (applicable bayrog'i bilan gate'langan)",
   },
-  {
-    file: 'modules/invoice-in/invoice-in.service.ts',
-    sources: ['fixed-docs'],
-    note: 'post −sumMinor / unpost·cancel teskari',
-  },
+  // ⚠️ `modules/invoice-in/invoice-in.service.ts` bu ro'yxatda ATAYLAB YO'Q.
+  // Faza 13 (2026-08-08, QAROR-B «Supply-only», `PP-03`) uni balansdan uzdi:
+  // xarid qarzini faqat Qabul (`Supply`) yozadi, aks holda PO → hisob-faktura +
+  // qabul oqimida bitta xarid ikki marta qarz bo'lardi. Skanner faylda
+  // `applyDelta` chaqiruvini topmaydi ⇒ ESKIRGAN yozuv qo'riqchisi shu qatorni
+  // qaytarib qo'yishga ham yo'l bermaydi.
   {
     file: 'modules/supply/supply.service.ts',
     sources: ['fixed-docs'],
     note: 'post −sumMinor (qabul qilingan tovar yetkazib beruvchiga qarzni oshiradi)',
+  },
+  {
+    file: 'modules/purchase-return/purchase-return.service.ts',
+    sources: ['fixed-docs'],
+    note: 'post +sumMinor (tovar taminotchiga qaytdi ⇒ qarzimiz kamayadi), unpost·cancel teskari',
   },
   {
     file: 'modules/payment-in/payment-in.service.ts',
@@ -116,7 +122,8 @@ export const DECLARED_BALANCE_WRITERS: readonly BalanceWriter[] = [
     sources: ['debt-issue'],
     note:
       'create() +totalMinor (QRZ- reyestri, 2026-08-05 balans-simmetriyasi). ' +
-      'remove() reversal YOZMAYDI (DUP-03) — skript soft-delete qilinganlarni ham sanaydi.',
+      'remove() −totalMinor reversal YOZADI (Faza 12/DUP-03) — shuning uchun skript ' +
+      "o'chirilganlarni (deletedAt != null) SANAMAYDI.",
   },
   {
     file: 'modules/retail-sale/retail-sale.service.ts',

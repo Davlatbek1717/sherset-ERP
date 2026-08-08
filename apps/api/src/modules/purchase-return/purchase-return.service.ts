@@ -10,6 +10,7 @@ import {
 import { allocateDocumentNumber } from '../../prisma/document-number.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { AttributeMetadataService } from '../attribute-metadata/attribute-metadata.service.js';
+import { CounterpartyBalanceService } from '../counterparty-balance/counterparty-balance.service.js';
 import { computePerUnitCost } from '../demand/fifo-consumer.js';
 import { PurchaseOrderService } from '../purchase-order/purchase-order.service.js';
 import { tashkentRangeBounds } from '../report/report-date-bounds.util.js';
@@ -50,8 +51,23 @@ interface ComputedTotals {
  *      returning a supply line N× (which would remove N× stock + revert the PO N×).
  *   2. Sufficiency (lockBalances + assertAvailable), then NEGATIVE StockDeltas (goods
  *      leave inventory) at the store's weighted-average unit cost (NOT the doc price).
- *   3. If the linked Supply came from a PO → cascade applyReceipt(tx, ..., 'revert').
- *   4. Audit event 'transition:posted'.
+ *   3. Kontragent balansi: `+sumMinor` — tovar qaytdi ⇒ yetkazib beruvchiga qarzimiz
+ *      kamayadi (unpost/cancel teskarisini yozadi).
+ *   4. If the linked Supply came from a PO → cascade applyReceipt(tx, ..., 'revert').
+ *   5. Audit event 'transition:posted'.
+ *
+ * ⚠️ BALANS SIMMETRIYASI (Faza 13, `PP-02`): 3-qadam 2026-08-08 gacha YO'Q edi —
+ * `Supply.post` `-sumMinor` yozardi, qaytarish esa balansga umuman tegmasdi
+ * (bu servis `CounterpartyBalanceService` ni import ham qilmasdi). To'liq
+ * qaytarilgan qabul bo'yicha yetkazib beruvchi kartochkasida soxta qarz abadiy
+ * qolardi va to'lov qarorlari shu songa qarab qabul qilinardi.
+ *
+ * Ishora qabulning AYNAN teskarisi (`supply.service.ts` §3b) va summa hujjatning
+ * O'Z `sumMinor`i — ya'ni qisman qaytarish ham qisman yopadi. DIQQAT: zaxira
+ * (stock) tomoni tannarxda (weighted-average) yuritiladi, balans tomoni esa
+ * SHARTNOMA summasida — bular ataylab har xil o'lchov.
+ *
+ * Qulf: `supplier-debt-supply-only.test.ts`.
  */
 @Injectable()
 export class PurchaseReturnService {
@@ -61,6 +77,8 @@ export class PurchaseReturnService {
     @Inject(PurchaseOrderService) private readonly po: PurchaseOrderService,
     @Inject(AttributeMetadataService) private readonly attrs: AttributeMetadataService,
     @Inject(WebhookFireService) private readonly webhookFire: WebhookFireService,
+    @Inject(CounterpartyBalanceService)
+    private readonly balance: CounterpartyBalanceService,
   ) {}
 
   async list(accountId: string, rawFilter: unknown) {
@@ -1115,6 +1133,24 @@ export class PurchaseReturnService {
           data: { state: 'posted', applicable: true, postedAt: new Date() },
         });
 
+        // Supplier debt — tovar yetkazib beruvchiga QAYTDI ⇒ unga qarzimiz
+        // kamayadi → +sumMinor. Qabulning (`supply.service.ts` §3b, −sumMinor)
+        // aynan simmetrigi. `source` ATAYLAB berilmaydi: u faqat egaga
+        // «yangi qarz paydo bo'ldi» Telegram xabari uchun, qarz KAMAYISHI esa
+        // bunday xabar chiqarmaydi (reversal ⇒ notifier no-op).
+        await this.balance.applyDelta(
+          tx,
+          accountId,
+          existing.agentId,
+          existing.currency,
+          existing.sumMinor,
+          {
+            docType: 'purchaseReturn',
+            docId: id,
+            organizationId: existing.organizationId,
+          },
+        );
+
         // Cascade to PO through linked Supply
         if (existing.supply?.purchaseOrderId) {
           const poDeltas = await this.buildPoDeltas(tx, existing);
@@ -1200,6 +1236,20 @@ export class PurchaseReturnService {
           data: { state: 'draft', applicable: false, postedAt: null },
         });
 
+        // Balans reversali — post() ning +sumMinor'i qaytariladi (qarz tiklandi).
+        await this.balance.applyDelta(
+          tx,
+          accountId,
+          existing.agentId,
+          existing.currency,
+          -existing.sumMinor,
+          {
+            docType: 'purchaseReturn',
+            docId: id,
+            organizationId: existing.organizationId,
+          },
+        );
+
         if (existing.supply?.purchaseOrderId) {
           const poDeltas = await this.buildPoDeltas(tx, existing);
           if (poDeltas.length > 0) {
@@ -1277,6 +1327,22 @@ export class PurchaseReturnService {
             };
           });
           await this.stock.applyDeltas(tx, accountId, userId, deltas);
+
+          // Balans reversali — faqat applicable bo'lgan (ya'ni post() delta
+          // yozgan) qaytarish uchun. Draft hujjatni cancel qilish balansga
+          // tegmaydi (yozilmagan deltani qaytarib bo'lmaydi).
+          await this.balance.applyDelta(
+            tx,
+            accountId,
+            existing.agentId,
+            existing.currency,
+            -existing.sumMinor,
+            {
+              docType: 'purchaseReturn',
+              docId: id,
+              organizationId: existing.organizationId,
+            },
+          );
 
           if (existing.supply?.purchaseOrderId) {
             const poDeltas = await this.buildPoDeltas(tx, existing);

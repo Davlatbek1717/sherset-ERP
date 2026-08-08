@@ -28,7 +28,7 @@
  * tekshiradi va backfill qilinmagan bo'lsa `APPLY=1` ni RAD ETADI.
  *
  * Hujjat cross-checkining formulasi (avvalgidek, `applyDelta` bilan bir xil):
- *   +InvoiceOut −InvoiceIn −Supply  −PaymentIn +PaymentOut  −CashIn +CashOut
+ *   +InvoiceOut −Supply +PurchaseReturn  −PaymentIn +PaymentOut  −CashIn +CashOut
  *   −Prepayment +PrepaymentReturn  CounterpartyAdjustment ±direction
  *   −DebtPayment  +Debt(QRZ- reyestr)  +RetailSale(qarz tender) −RetailSale(qarz qaytarish)
  * `applicable: true` is the precise predicate applyDelta gates on (cancel clears it).
@@ -154,10 +154,22 @@ async function main() {
   //     yetkazib beruvchiga qarzimizni oshiradi. Ro'yxatda yo'q edi, shuning
   //     uchun faqat Qabul orqali ishlanadigan yetkazib beruvchida «bizning
   //     qarzimiz» butunlay ko'rinmasdi.
+  //
+  //   ⚠️ FAZA 13 (2026-08-08, QAROR-B «Supply-only»):
+  //     · `invoiceIn` ro'yxatdan CHIQARILDI — `InvoiceIn` endi `applyDelta` ni
+  //       umuman chaqirmaydi (`PP-03`: xarid qarzi Supply bilan ikki marta
+  //       sanalardi). Qolgani bo'lsa cross-check «hujjatlar ≠ jurnal» deb
+  //       YOLG'ON signal berardi.
+  //     · `purchaseReturn` QO'SHILDI (`PP-02`, +1n): taminotchiga qaytarish
+  //       qabul deltasining teskarisini yozadi.
+  //     ⚠️ TARIXIY QATORLAR: Faza 13'gacha post qilingan InvoiceIn'larning
+  //     jurnal deltalari joyida QOLADI (append-only). Ya'ni bu skript endi
+  //     ularni hujjatlardan qayta qura olmaydi va o'sha kontragentlarda
+  //     cross-check farqi ko'rsatadi — bu KUTILGAN, jurnal (nishon) to'g'ri.
   const fixed: Array<[GroupByDelegate, bigint]> = [
     [prisma.invoiceOut as unknown as GroupByDelegate, 1n],
-    [prisma.invoiceIn as unknown as GroupByDelegate, -1n],
     [prisma.supply as unknown as GroupByDelegate, -1n],
+    [prisma.purchaseReturn as unknown as GroupByDelegate, 1n],
     [prisma.paymentIn as unknown as GroupByDelegate, -1n],
     [prisma.paymentOut as unknown as GroupByDelegate, 1n],
     [prisma.cashIn as unknown as GroupByDelegate, -1n],

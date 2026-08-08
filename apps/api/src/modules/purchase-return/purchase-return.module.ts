@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { AttachmentModule } from '../attachment/attachment.module.js';
 import { AttributeMetadataModule } from '../attribute-metadata/attribute-metadata.module.js';
 import { AuthModule } from '../auth/auth.module.js';
+import { CounterpartyBalanceModule } from '../counterparty-balance/counterparty-balance.module.js';
 import { PrintTemplateModule } from '../print-template/print-template.module.js';
 import { PurchaseOrderModule } from '../purchase-order/purchase-order.module.js';
 import { StockModule } from '../stock/stock.module.js';
@@ -15,6 +16,8 @@ import { PurchaseReturnService } from './purchase-return.service.js';
     AttributeMetadataModule,
     StockModule,
     PurchaseOrderModule,
+    // Faza 13 (PP-02): qaytarish yetkazib beruvchi qarzini kamaytiradi.
+    CounterpartyBalanceModule,
     WebhookModule,
     PrintTemplateModule,
     AttachmentModule,

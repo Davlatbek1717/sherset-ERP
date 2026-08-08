@@ -132,4 +132,32 @@ describe('skript manbalari yozuvchilar semantikasiga mos (DUP-02 fix)', () => {
     const groupByCall = SCRIPT_SRC.slice(callStart, SCRIPT_SRC.indexOf('});', callStart));
     expect(groupByCall).toMatch(/where:[\s\S]*deletedAt:\s*null/);
   });
+
+  /**
+   * Faza 13 (`PP-03`, QAROR-B «Supply-only») — xarid qarzini FAQAT `Supply`
+   * yozadi. Uch tomon bitta testda qulflanadi, chunki ular birga o'zgarishi
+   * shart: (a) `InvoiceIn` servisi `applyDelta` chaqirmasligi, (b) reyestrda
+   * uning yozuvi yo'qligi, (c) skriptning `fixed` ro'yxatida `prisma.invoiceIn`
+   * yo'qligi. Bittasi qaytib qo'shilsa — bitta xaridda qarz yana 2× bo'lardi.
+   */
+  it('InvoiceIn balansga TEGMAYDI — servis, reyestr va skript birga', () => {
+    const invoiceInSrc = readFileSync(
+      join(API_SRC_ROOT, 'modules', 'invoice-in', 'invoice-in.service.ts'),
+      'utf8',
+    );
+    // Izohlar tashlab yuboriladi: bu fayl `applyDelta` ni faqat izohda eslaydi.
+    const code = invoiceInSrc.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+    expect(code).not.toMatch(/\.applyDelta\s*\(/);
+    expect(scanBalanceWriters()).not.toContain('modules/invoice-in/invoice-in.service.ts');
+    expect(DECLARED_BALANCE_WRITERS.map((w) => w.file)).not.toContain(
+      'modules/invoice-in/invoice-in.service.ts',
+    );
+    expect(SCRIPT_SRC).not.toMatch(/prisma\.invoiceIn as unknown as GroupByDelegate/);
+  });
+
+  /** Faza 13 (`PP-02`) — qaytarish qabul deltasining teskarisini yozadi. */
+  it('PurchaseReturn qamrovda va skriptda MUSBAT ishora bilan turadi', () => {
+    expect(scanBalanceWriters()).toContain('modules/purchase-return/purchase-return.service.ts');
+    expect(SCRIPT_SRC).toMatch(/prisma\.purchaseReturn as unknown as GroupByDelegate, 1n/);
+  });
 });

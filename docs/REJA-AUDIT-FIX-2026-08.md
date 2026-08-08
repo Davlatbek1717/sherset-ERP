@@ -386,7 +386,10 @@ o'sha ro'yxatдan invoiceIn'ni chiqar). Tartib: Faza 13'ni Faza 10'dan KEYIN qil
 > `docs/REJA-AUDIT-FIX-2026-08.md` — **Faza 13**. O'ZGARMAS QOIDALAR. QAROR-B allaqachon **Supply-only** deb hal
 > qilingan. `PP-02`+`PP-03`'ni tasdiqla. InvoiceIn'ni balansdan uz (faqat Supply qarz yozsin), PurchaseReturn'ga
 > reversal qo'sh. TDD: 3 stsenariy. Balans qayta-hisoblash kerakmi — hisobotda ayt. Gate. TO'XTA.
-**◻ HISOBOT:** _(agent to'ldiradi)_
+**☑ HISOBOT (2026-08-08):** BAJARILDI — batafsili «HISOBOT JURNALI → Faza 13» da. **Balans
+qayta-hisoblash: `recompute` KERAK EMAS (u jurnaldan yozadi, tarixiy `invoiceIn` deltalarini
+o'chirmaydi), lekin TARIXIY IKKI-KARRA QARZ o'z-o'zidan yo'qolmaydi — korrektirovka qadami kerak
+(hisobotda buyruqlar bilan).**
 
 ---
 
@@ -2057,3 +2060,150 @@ tanasiga bog'landi va shundan keyingina haqiqiy RED ko'rindi.
   bekor-qilish oqimi qo'shilsa, `computeSettlement` va POS FIFO filtrlari bir vaqtda ko'rib chiqilsin.
 - **Browser-smoke YO'Q** — qarz kartochkasini o'chirish → kontragent «Balans» kartasi 0 ga tushishi va
   «Qabul tovarlari» xlsx'dagi «shundan …» qatori Phase-2 QA cohort'iga qoladi.
+
+---
+
+## Faza 13 — Taminotchi qarzi: PurchaseReturn reversal + double-debt → SUPPLY-ONLY
+
+**Sana:** 2026-08-08 · **ID'lar:** `PP-02` (HIGH), `PP-03` (HIGH) · **QAROR-B:** Supply-only (egasi tanlagan)
+
+### Da'volarni kodda tasdiqlash (reja §2)
+
+| ID | Da'vo | Kodda holat |
+|----|-------|-------------|
+| `PP-03` | `Supply.post` HAM, `InvoiceIn.post` HAM `-sumMinor` yozadi ⇒ bitta xaridda qarz 2× | ✅ **TASDIQLANDI** — `supply.service.ts:1349` `applyDelta(..., -existing.sumMinor, { source:'invoiceIn', docType:'supply' })` va `invoice-in.service.ts:1146` `applyDelta(..., -existing.sumMinor, { docType:'invoiceIn' })` (tuzatishdan oldingi raqamlash). Ikkalasi ham `applicable` gate'i ostida, dedup yo'q. Qo'shimcha: `InvoiceIn.update()` da yana IKKI chaqiruv (reversal :749 + qayta-qo'llash :790) — reja ularni nomlab ko'rsatmagan edi, ular ham olib tashlandi. |
+| `PP-02` | `PurchaseReturn.post` kontragent balansini tuzatmaydi | ✅ **TASDIQLANDI** — `purchase-return.service.ts` da `CounterpartyBalanceService` **import ham qilinmagan** edi; post/unpost/cancel faqat `stock.applyDeltas` + PO kaskadi + audit. |
+
+**Reja doirasidan tashqari, o'zim topgan bog'liqliklar (hammasi shu fazada yopildi):**
+1. **`counterparty-statement` BUYUM-kesimi** hamon `invoiceIn`ni qarz-manba deb sanardi
+   (`-1n`, supply bilan yonma-yon) — ya'ni bitta tovar bo'yicha ham xarid 2× chiqardi.
+2. **Qamrov reyestri** (`counterparty-balance-sources.ts`) — `invoice-in` yozuvchi bo'lib qolsa
+   «ESKIRGAN yozuv» qo'riqchisi gate'ni yiqitardi (yiqitdi ham), `purchase-return` esa yangi yozuvchi
+   sifatida «QAMROVSIZ» bo'lib qolardi.
+3. **`money-transition-race.test.ts`** invoice-in poygasini AYNAN `balance.applyDelta` soni bilan
+   o'lchardi — delta olib tashlangach test bo'shab qolardi (yiqildi ham).
+4. **Akt-sverka chop etish sahifasi** (`print/reconciliation-act`) `docType` yorliqlarini oq ro'yxatdan
+   oladi — `purchaseReturn` qo'shilmasa qator xom slug bilan chiqardi.
+
+### O'zgarishlar
+
+**(a) `PP-03` — `invoice-in/invoice-in.service.ts`: balansdan UZILDI**
+- **4 ta** `balance.applyDelta` chaqirig'i olib tashlandi: `post` (−sum), `unpost` (+sum),
+  `cancel` (+sum, `wasApplicable` ostida) va `update()` dagi juftlik (eski `−`ni qaytarish +
+  yangisini qo'llash). `CounterpartyBalanceService` **import va inject'i ham** olib tashlandi
+  (qamrov-skaneri fayl bo'yicha ishlaydi; o'lik inject qolsa skaner/o'quvchini chalg'itardi).
+- `invoice-in.module.ts` dan `CounterpartyBalanceModule` chiqarildi (sababi izohda).
+- Sinf docstring'i yozildi: hujjat endi **informatsion/rasmiy** — PO `invoicedSumMinor`,
+  `PaymentOut` uchun asos va o'z `payedSum` FSM'i saqlanadi, balans esa YO'Q.
+- ⚠️ **Yon ta'sir (ataylab):** InvoiceIn post qilinganda egaga ketadigan «qarz o'zgardi» Telegram
+  xabari (`source: 'invoiceIn'` → `counterparty-debt-notifier`) endi CHIQMAYDI. Xabarni Qabul
+  (`Supply.post`, o'sha `source` bilan) beradi — ya'ni bitta xaridda bitta xabar, ikkita emas.
+
+**(b) `PP-02` — `purchase-return/purchase-return.service.ts`: simmetriya qo'shildi**
+- `post()` → `applyDelta(+existing.sumMinor, { docType:'purchaseReturn', docId, organizationId })`;
+  `unpost()` va `cancel()` (faqat `wasApplicable`) → `-existing.sumMinor`.
+- `source` ATAYLAB berilmadi: u faqat egaga «yangi qarz» xabari uchun, qarz KAMAYISHI bunday xabar
+  chiqarmaydi (notifier `source: undefined` da no-op).
+- ⚠️ **Ikki o'lchov ataylab har xil** va docstring'da yozib qo'yildi: zaxira tomoni tannarxda
+  (weighted-average, `p.costMinor`), balans tomoni **hujjat summasida** (`sumMinor`) — chunki
+  taminotchiga qaytariladigan pul shartnoma narxi, tannarx emas.
+- `purchase-return.module.ts` ga `CounterpartyBalanceModule`.
+
+**(c) Jurnal reyestri va o'quvchilar (Faza 10 bilan izchillik)**
+- `counterparty-balance-doc-types.ts` — yangi tur **`purchaseReturn`**. `invoiceIn` reyestrda
+  **QOLDIRILDI** (o'chirilmadi): Faza 13'gacha yozilgan jurnal qatorlari shu satr bilan saqlangan,
+  o'chirilsa akt/statement qatorlari hujjat raqamisiz yetim qolardi. Izohda «TARIXIY — hech kim
+  yozmaydi» deb belgilandi.
+- `counterparty-balance-doc-resolver.ts` — `GOODS_TYPES` ga `purchaseReturn` (docType = Prisma
+  delegat nomi, sikl `client[t]` bilan indekslaydi) + `BalanceDocClient` ga maydon.
+- `counterparty-statement/statement-compute.util.ts` — `DOC_TYPE_LABEL.purchaseReturn`.
+- `counterparty-statement.service.ts` — **BUYUM-kesimi** ro'yxatidan `invoiceIn` chiqarildi,
+  `purchaseReturn` (+1n) qo'shildi. Endi u jurnal-manbali kesim bilan bir xil semantikada.
+- **Metrics / statement / akt saldosi** o'zgartirilmadi va o'zgartirilishi ham SHART EMAS —
+  Faza 10 dan beri ular jurnalni `docType` bo'yicha FILTRLAMASDAN o'qiydi (`balance-readers-invariant`
+  testi buni qulflaydi). Reja «Diqqat» bandidagi xavf shu sababdan yuzaga kelmadi.
+- `apps/web/.../print/reconciliation-act/page.tsx` + `ru.json`/`uz.json` — `purchaseReturn` yorlig'i
+  («Возврат поставщику» / «Ta'minlovchiga qaytarish» — repodagi mavjud tarjimalar bilan bir xil).
+
+**(d) Rekonstruksiya skripti (`scripts/recompute-counterparty-balances.ts`)**
+- `fixed` ro'yxatidan `prisma.invoiceIn` (−1n) **chiqarildi**, `prisma.purchaseReturn` (**+1n**)
+  qo'shildi; sarlavhadagi formula ham yangilandi.
+- ⚠️ Bu faqat **CROSS-CHECK** (Faza 10 dan beri skript nishoni — jurnal). Tarixiy `invoiceIn`
+  qatorlari jurnalda qolgani uchun o'sha kontragentlarda cross-check farq ko'rsatadi — bu
+  **KUTILGAN**, izohda yozib qo'yilgan.
+- `scripts/counterparty-balance-sources.ts` — `invoice-in` yozuvi **olib tashlandi** (o'rniga sababni
+  tushuntiruvchi izoh), `purchase-return` **qo'shildi**. Bonus: Faza 12 dan keyin eskirib qolgan
+  `debt.service.ts` izohi («remove() reversal YOZMAYDI») haqiqatga moslandi.
+
+### Testlar (TDD — avval yiqildi, keyin yashil)
+
+| Fayl | Test | Nimani ushlaydi |
+|------|------|-----------------|
+| **yangi** `purchase-return/supplier-debt-supply-only.test.ts` | 9 | Uchala servis (Qabul · Hisob-faktura · Qaytarish) BITTA soxta prisma va BITTA daftar ustida: InvoiceIn post daftarga tegmaydi · PO kaskadi baribir ishlaydi · post→unpost izsiz · **PO→Supply+InvoiceIn ⇒ FAQAT `[-4 000 000, docType:'supply']`** · to'liq qaytarish ⇒ **aynan 0** · reversal `docType:'purchaseReturn'` havolasi · unpost/cancel teskarisi · draft cancel daftarga tegmaydi |
+| `shared/money-transition-race.test.ts` | +3, 4 qayta yozildi | invoice-in poyga-probe'i `balance.applyDelta` → `po.applyInvoice` ga ko'chirildi (aks holda test bo'shab qolardi) **va** «balansga umuman tegmaydi» alohida 3 test bilan qulflandi |
+| `scripts/counterparty-balance-sources.test.ts` | +2 | InvoiceIn: servis + reyestr + skript **birga** (uchtasidan biri qaytsa yiqiladi) · PurchaseReturn qamrovda va skriptda `+1n` |
+| `shared/apply-payment-race.test.ts` | 0 (arity) | InvoiceIn konstruktori 6 → 5 parametr |
+
+**Non-vacuous (jonli o'lchangan, tuzatishdan OLDINGI kodda):** 7 assert yiqildi —
+`PO→Supply+InvoiceIn` daftari `[-4 000 000]` o'rniga **`[-4 000 000, -4 000 000]`** (PP-03 ayni
+o'zi), qaytarishdan keyin saldo `0` o'rniga `-4 000 000`, qaytarish deltalari massivi bo'sh,
+unpost/cancel teskarilari yo'q, InvoiceIn post 1 marta `applyDelta` chaqirdi.
+
+⚠️ **Bir soxta-RED tutildi:** birinchi urinishda test InvoiceIn'ni **fix'dan keyingi** 5-parametrli
+konstruktor bilan qurdi — natijada RED `this.balance.applyDelta is not a function` (TypeError) bo'lib
+chiqdi, ya'ni bug'ni EMAS, arity siljishini ko'rsatardi. Test vaqtincha 6-parametrli (fix'dan
+oldingi) shaklga qaytarilib **haqiqiy RED** o'lchandi, keyin fix + yakuniy 5-parametrli shakl.
+
+### Gate (jonli o'lchangan)
+- `pnpm --filter @moysklad/api typecheck` → **0**
+- `pnpm --filter @moysklad/web typecheck` → **0**
+- `pnpm lint:product` → **0 error** (738 warning — siyosat bo'yicha ruxsat)
+- `pnpm --filter @moysklad/api exec vitest run` → **391 fayl / 5161 test yashil** (1 fayl, 2 test skip)
+- `pnpm --filter @moysklad/web exec vitest run` → **183 fayl / 2746 test yashil** (26 skip)
+- `pnpm i18n:gate` → **o'tdi** (2 yangi kalit ru+uz)
+- **Browser-smoke YO'Q.** Status: **Phase-1 — strukturaviy + unit-tasdiqlangan.**
+
+### ⚠️ BALANSNI QAYTA-HISOBLASH KERAKMI (reja shuni so'ragan edi)
+
+**Qisqa javob: `recompute` skripti bu muammoni YECHMAYDI, lekin ALOHIDA korrektirovka qadami KERAK
+(agar prodda Faza 13'gacha post qilingan InvoiceIn bo'lsa).**
+
+1. **Nega `recompute` yechmaydi:** Faza 10 dan beri uning nishoni — `CounterpartyBalanceEntry`
+   **jurnali** (hujjatlar emas). Jurnal **append-only**: Faza 13'gacha `InvoiceIn.post` yozgan
+   `-sumMinor` qatorlari o'sha yerda TURIBDI. Skript `APPLY=1` bilan yugurtirilsa u faqat keshni
+   jurnalga tenglaydi — ikki-karra qarz saqlanib qoladi (Σ o'zgarmaydi).
+2. **Nega baribir yangi zarar yo'q:** «Σ(jurnal) == materiallashgan balans» invarianti buzilmagan;
+   barcha o'quvchilar (metrics · statement · akt · kontragent kartochkasi) bir xil (garchi tarixan
+   shishirilgan) sonni ko'rsatadi. Ya'ni **yangi drift paydo bo'lmaydi**, faqat eski xato qoladi.
+3. **Ta'sir doirasini o'lchash** (avval shuni yugurtiring — ehtimol 0 qator):
+   ```sql
+   SELECT counterparty_id, currency, COUNT(*) AS rows, SUM(delta_minor) AS overstated_minor
+   FROM counterparty_balance_entries
+   WHERE doc_type = 'invoiceIn'
+   GROUP BY 1, 2 ORDER BY 4;
+   ```
+   Har qator — o'sha kontragentda **ortiqcha yozilgan qarz** (manfiy = «biz qarzdormiz» tomonga).
+   Natija bo'sh bo'lsa **hech narsa qilish shart emas** va bu bandning qolgani ahamiyatsiz.
+4. **Agar qatorlar bo'lsa — IKKI yo'l:**
+   - **(tavsiya) `CounterpartyAdjustment`** har kontragent×valyuta uchun teskari summaga: auditorlik
+     izi qoladi, mavjud UI orqali ko'rinadi, jurnalga `docType:'adjustment'` bilan tushadi va
+     rekonstruksiya-skriptining `adjustments` manbasi uni to'g'ri qayta quradi.
+   - (muqobil) bir-martalik skript: har (kontragent, valyuta) uchun bitta kompensatsiya qatori.
+     ⚠️ `docType` sifatida `invoiceIn` ISHLATILMASIN — u endi «yozilmaydigan tur», aks holda
+     keyingi audit uni tirik yozuvchi deb o'qiydi.
+   - ❌ **Jurnal qatorlarini O'CHIRISH mumkin EMAS** (append-only shartnoma + `opening` backfill
+     mantig'i shunga tayanadi).
+5. **Faza 10 ops-qarzi o'zgarmadi:** `backfill-counterparty-balance-journal.ts` (opening snapshot)
+   hamon yugurtirilmagan; `recompute` `APPLY=1` undan OLDIN ishlashni o'zi rad etadi.
+
+### Qolgan qarz / DEFER
+- **Tarixiy ikki-karra qarz** — yuqoridagi 3–4 bandlar. Prodda hajm **noma'lum** (bu sessiyada DB'ga
+  ulanilmagan). Ops-qadam sifatida qoldi.
+- **`InvoiceIn` uchun to'lov semantikasi tekshirilmadi:** `PaymentOut`/`CashOut` hamon `+sumMinor`
+  yozadi (o'zgarmagan). Ya'ni faktura bo'yicha to'lov qarzni kamaytiradi, garchi qarzni Qabul yozgan
+  bo'lsa ham — bu **to'g'ri** (yagona kontragent saldosi), lekin tovar kelmasdan oldin to'lov
+  qilinsa saldo musbat tomonga o'tadi. Bu Faza 13 dan OLDIN ham shunday edi (o'zgarish yo'q).
+- **Browser-smoke YO'Q** — «Возврат поставщику» ni «Провести» → kontragent «Balans» kartasi va
+  akt-sverka qatori Phase-2 QA cohort'iga qoladi.
+- **Qisman qaytarish** birlik-testda alohida stsenariy sifatida yozilmadi (formula `sumMinor` bo'yicha
+  chiziqli, to'liq qaytarish testi uni qamraydi) — Phase-2 da real ma'lumot bilan ko'riladi.

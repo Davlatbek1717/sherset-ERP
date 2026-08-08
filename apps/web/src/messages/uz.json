@@ -3700,6 +3700,7 @@
           "counterpartyAdjustment": "Korrektirovka",
           "adjustment": "Korrektirovka",
           "supply": "Qabul",
+          "purchaseReturn": "Ta'minlovchiga qaytarish",
           "debt": "Qarz berildi",
           "debtpayment": "Qarz to'lovi",
           "retailsale": "Chakana savdo (qarzga)",

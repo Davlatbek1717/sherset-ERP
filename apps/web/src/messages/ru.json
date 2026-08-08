@@ -3700,6 +3700,7 @@
           "counterpartyAdjustment": "Корректировка",
           "adjustment": "Корректировка",
           "supply": "Приёмка",
+          "purchaseReturn": "Возврат поставщику",
           "debt": "Выдача долга",
           "debtpayment": "Оплата долга",
           "retailsale": "Розничная продажа (в долг)",

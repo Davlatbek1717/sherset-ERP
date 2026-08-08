@@ -142,14 +142,9 @@ const CASES: Case[] = [
     settledState: 'paid',
     partialState: 'partially_paid',
     build: (client) =>
-      new InvoiceInService(
-        { client } as never,
-        {} as never,
-        {} as never,
-        {} as never,
-        {} as never,
-        {} as never,
-      ),
+      // 5 parametr — Faza 13 da `CounterpartyBalanceService` inject'i olib
+      // tashlandi (InvoiceIn balansga tegmaydi, QAROR-B «Supply-only»).
+      new InvoiceInService({ client } as never, {} as never, {} as never, {} as never, {} as never),
   },
   {
     name: 'customer-order',
