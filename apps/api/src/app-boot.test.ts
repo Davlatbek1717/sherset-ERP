@@ -233,3 +233,68 @@ ${orphans.join('\n')}`,
     expect(withControllers.length).toBeGreaterThan(80);
   });
 });
+
+/**
+ * IN'YEKSIYA-PREMISASI qo'riqchisi (Faza 14, `PP-06` in'yeksiyasidan).
+ *
+ * BO'LGAN ISH: `SupplyService` ga `PermissionsService` qo'shildi, lekin
+ * `SupplyModule.imports` ga `PermissionsModule` yozilmadi — faqat
+ * `@Global()` ga tayanildi. Bu HOZIR ishlaydi, biroq @Global izohi o'zi
+ * («HrPermissionGuard uchun qo'shildi») uni vaqtinchalik deb ta'riflaydi:
+ * kim @Global'ni olib tashlasa, `SupplyService` DI'da hal bo'lmay qoladi va
+ * **API umuman ko'tarilmaydi** (prod 502) — [[duplicate-route-prod-502]] bilan
+ * bir xil klass.
+ *
+ * NEGA HECH BIR GATE TUTMAYDI: typecheck uchun `@Inject(X) private x: X` mutlaqo
+ * to'g'ri; unit-testlar servisni `new` bilan quradi (DI grafi UMUMAN qurilmaydi);
+ * yuqoridagi yetim-modul qo'riqchisi esa faqat controllerli modullarni ko'radi.
+ *
+ * Qoida: `PermissionsService`ni in'yeksiya qilgan servisning moduli
+ * `PermissionsModule`ni OSHKORA import qilsin (yoki servisning o'zini bersin).
+ * Loyihadagi 4/4 mavjud iste'molchi allaqachon shunday qiladi.
+ */
+describe("in'yeksiya premisasi — PermissionsService moduldan ta'minlangan", () => {
+  const MODULES_DIR = join(__dirname, 'modules');
+
+  function serviceFiles(): string[] {
+    return readdirSync(MODULES_DIR, { recursive: true, encoding: 'utf8' })
+      .filter((p) => p.endsWith('.service.ts') && !p.endsWith('.test.ts'))
+      .map((p) => join(MODULES_DIR, p));
+  }
+
+  /** Konstruktor in'yeksiyasi — `private readonly x: PermissionsService`. */
+  const INJECT_RE = /(?:private|public|protected|readonly)[^;()]*:\s*PermissionsService\b/;
+
+  function consumers(): string[] {
+    return serviceFiles().filter((f) => INJECT_RE.test(stripComments(readFileSync(f, 'utf8'))));
+  }
+
+  it("PermissionsService in'yeksiya qilgan HAR modul PermissionsModule'ni import qiladi", () => {
+    const unwired: string[] = [];
+    for (const file of consumers()) {
+      const dir = file.slice(0, file.lastIndexOf(SEP));
+      const mods = readdirSync(dir).filter((p) => p.endsWith('.module.ts'));
+      if (mods.length === 0) continue; // modulsiz yordamchi papka — tekshirilmaydi
+      const ok = mods.some((m) => {
+        const src = stripComments(readFileSync(join(dir, m), 'utf8'));
+        // O'z moduli servisni PROVIDER sifatida bersa ham yetarli (permissions/ o'zi).
+        if (/providers:\s*\[[\s\S]*?\bPermissionsService\b[\s\S]*?\]/.test(src)) return true;
+        return /imports:\s*\[[\s\S]*?\bPermissionsModule\b[\s\S]*?\]/.test(src);
+      });
+      if (!ok) unwired.push(file.slice(MODULES_DIR.length).split(SEP).join('/'));
+    }
+
+    expect(
+      unwired,
+      `Bu servislar PermissionsService'ni in'yeksiya qiladi, lekin moduli
+PermissionsModule'ni import qilmaydi — @Global bekor qilinsa API ko'tarilmaydi:
+${unwired.join('\n')}`,
+    ).toEqual([]);
+  });
+
+  it("skaner ishlayapti — iste'molchilar topildi (vakuum emas)", () => {
+    const found = consumers().map((f) => f.slice(MODULES_DIR.length).split(SEP).join('/'));
+    expect(found.length).toBeGreaterThanOrEqual(4);
+    expect(found.some((f) => f.includes('/supply/supply.service.ts'))).toBe(true);
+  });
+});
