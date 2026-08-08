@@ -302,7 +302,9 @@ aralash stsenariyda: supply, POS-qarz, debt-issue, invoice, payment).
 > `docs/REJA-AUDIT-FIX-2026-08.md` — **Faza 10** (Faza 9 tugagan). O'ZGARMAS QOIDALAR. `M-07`,`DUP-05/06/08`.
 > 4 balans-o'quvchini journal-jadvaldan o'qishga o'tkaz, «closing==materialized» invariantini test bilan qulfla.
 > TDD: aralash-hujjat stsenariy. Gate. Hisobot, TO'XTA.
-**◻ HISOBOT:** _(agent to'ldiradi)_
+**☑ HISOBOT (2026-08-08):** BAJARILDI — batafsili «HISOBOT JURNALI → Faza 10» da. **Backfill skripti
+yozildi, lekin `APPLY=1` bilan YUGURTIRILMAGAN** (ops-qadam, foydalanuvchi qaroriga qoldirildi);
+`recompute` backfillsiz `APPLY=1` ni RAD ETADI (halokat-guard).
 
 ---
 
@@ -1702,3 +1704,134 @@ noldan boshlangan qoldiqni ko'rsatadi. Ikki variant:
   keyin birga tekshirilsa mantiqli).
 
 **Commit:** `feat(counterparty-balance): faza 9 — CounterpartyBalanceEntry jurnal + majburiy applyDelta meta (DUP-15, M-07)`
+
+---
+
+## Faza 10 — 2026-08-08 — **Phase-1: strukturaviy + unit + real-DB-tasdiqlangan, browser-smoke YO'Q**
+### 4 balans-o'quvchi jurnalga ko'chirildi (`M-07`, `DUP-05`, `DUP-06`, `DUP-08`)
+
+**Da'volar tasdiqlandi (kodda, o'z ko'zim bilan — hammasi CONFIRMED).**
+- **`M-07` / `DUP-05`** — `counterparty.service.ts:456-457` izohi «Σ(byOrg) === materiallashgan
+  CounterpartyBalance … the cert asserts this invariant» deydi; `:510-525` esa 9 jadval groupBy'i
+  (`supply`, `debt`, `debtpayment`, `retailsale` YO'Q). Izoh yolg'on edi.
+- **`DUP-06`** — `counterparty-act.service.ts:70-71` docstring «closing balance equals the materialized
+  balance when `to` is now» deydi; `:113-126` esa 8 turli QATTIQ ro'yxat (+adjustment).
+- **`DUP-08`** — `statement-compute.util.ts:21-33` `StatementDocType` = 12 tur, `'debt'` va `'retailsale'`
+  yo'q; servis `:179-183` debtPayment'ni oladi, debt-issue va POS qarz-tenderni olmaydi.
+
+**ARXITEKTURA QARORI: saldo va yorliq AJRATILDI (bug-klassning ildizi shu edi)**
+Ilgari bitta hujjat-turlari ro'yxati ikki ishni birdan qilardi: (a) qatorda qaysi hujjat KO'RINADI,
+(b) saldoga nima QO'SHILADI. Shu sababli ro'yxatdan tushib qolgan tur — jimgina NOTO'G'RI SALDO berardi.
+Endi:
+- **SALDO** har doim jurnaldan (`counterparty-balance-journal.util.ts`), o'qish so'rovlarida `docType`
+  filtri **UMUMAN YO'Q**, belgi ham qatorning o'zidan (`deltaMinor` ishorasi) keladi ⇒ yangi hujjat
+  turi qo'shilganda 4 o'quvchida o'zgartiriladigan joy YO'Q;
+- **YORLIQ** `counterparty-balance-doc-resolver.ts` dan (audit DUP-06 tavsiyasi: «bitta shared
+  balance-doc-registry, N iste'molchi»). U yerda tur qo'shilmagan bo'lsa qator **raqamsiz** chiqadi —
+  ya'ni ro'yxatni unutishning eng yomon oqibati endi «—» yorliq, ilgarigi «yo'qolgan saldo» emas.
+
+**Yangi fayllar**
+- `counterparty-balance/counterparty-balance-doc-types.ts` — 13 `docType` ning yagona reyestri +
+  `OPENING_DOC_TYPE`. `ApplyDeltaMeta.docType` endi `string` emas, shu union ⇒ `'debtPayment'` va
+  `'debtpayment'` kabi bir harfli farq compile-time'da tutiladi (aks holda jimgina yangi tur yaratib
+  jurnal guruhlarini ikkiga bo'lardi). Typecheck 47 chaqiruv joyida **0 xato** berdi — reyestr aniq.
+- `counterparty-balance/counterparty-balance-journal.util.ts` — `journalWhere()` (shakli testda
+  qulflangan), `listJournalEntries()`, `sumJournalByOrganization()`, sof `foldJournalPeriod()`.
+- `counterparty-balance/counterparty-balance-doc-resolver.ts` — docType→model xaritasi, tur bo'yicha
+  BITTA `IN (…)` so'rovi (N+1 yo'q), `withItems` opsiyasi (tovar qatorlari faqat statement Excel'iga).
+- `scripts/backfill-counterparty-balance-journal.ts` — «opening snapshot», DRY default, **idempotent**
+  (mavjud jurnal yig'indisini hisobga olib faqat FARQNI yozadi).
+- `counterparty-balance/balance-readers-invariant.test.ts` — 7 test, 4 o'quvchini birdan qamraydi.
+- Migratsiya `20260808210000_counterparty_balance_entry_opening` — `doc_id` **NULLABLE** (Faza 9
+  hisobotidagi bloker) + `(account, docType, createdAt)` indeksi.
+
+**O'zgargan o'quvchilar**
+1. **`counterparty.service.ts` metrics byOrg** — 9 jadval groupBy → bitta jurnal groupBy. `organizationId`
+   endi `string | null`: null bandi «taqsimlanmagan» (Debt'da org o'lchovi yo'q, `RetailSale.organizationId`
+   optional, `opening` org'siz). U **ataylab tashlanmaydi** — tashlansa Σ(byOrg) materiallashgandan farq qilardi.
+2. **`report/counterparty-act.service.ts`** — 8 turli ro'yxat butunlay olib tashlandi. Qatorlar jurnaldan,
+   debet/kredit `deltaMinor` ishorasidan. **Shartnoma filtri** jurnalda yo'q (delta shartnoma o'lchovini
+   saqlamaydi) ⇒ u HUJJAT darajasida, resolverdan kelgan `contractId` bo'yicha qo'llanadi.
+   **Davr filtri so'rovda EMAS**: qatorlar hujjatning O'Z sanasi (`moment`) bo'yicha kesiladi — `createdAt`
+   filtri bo'lsa orqaga sanalgan hujjat (iyul sanasi, avgustda post qilingan) iyul aktidan jimgina tushib qolardi.
+3. **`counterparty-statement.service.ts` aggregate** — 11 ta `findMany` → 1 jurnal + resolver.
+   `statement-compute.util.ts` dagi `StatementDocType` union va `DEBIT_TYPES` to'plami **o'chirildi**;
+   `RawDoc.sumMinor` (mutlaq) → `RawDoc.deltaMinor` (belgili). `DOC_TYPE_LABEL` endi `Record<string,string>`
+   + `docTypeLabel()` fallback'i. **Buyum-bo'yicha** (productId) yo'li balans ko'rinishi EMAS, shuning uchun
+   u doc-manbada qoldi (ishora endi chaqiruv joyida ochiq beriladi).
+4. **`scripts/recompute-counterparty-balances.ts`** — nishon endi `Σ(jurnal)`. Hujjatlardan qayta-qurish
+   **SAQLANDI, lekin faqat CROSS-CHECK** («hujjatlar X deydi, jurnal Y deydi») ⇒ Faza 8 ning qamrov-guardi
+   ma'nosini saqlaydi, lekin uning xatosi endi ma'lumotni buza olmaydi.
+
+**BACKFILL QO'RIQCHISI (o'zim qo'shdim — auditda yo'q, lekin halokat oldini oladi)**
+Jurnal Faza 9 da bo'sh boshlangan. Backfillsiz `recompute` `APPLY=1` butun tarixiy saldoni **nolga
+tushirardi** — bu aynan `DUP-02` halokati, faqat boshqa eshikdan. Shuning uchun skript materiallashgan
+jadvalda bor-u jurnalda umuman ko'rinmagan kalitni topsa **to'xtaydi** va backfill buyrug'ini ko'rsatadi.
+Lokal DB'da jonli tekshirildi: 3 kalit topildi → `exit 1`, hech narsa yozilmadi.
+
+**TDD (qizil ko'rildi)**
+`balance-readers-invariant.test.ts` avval yozildi → **3 yiqilgan / 7** (act va statement `TypeError:
+Cannot read properties of undefined (reading 'in')` — ya'ni ular hamon doc-jadvallariga borardi;
+metrics ham jurnalni o'qimasdi). Ko'chirishdan keyin **7/7 yashil**.
+
+**Testlar (nima qulflandi)**
+1. `journalWhere()` da `docType` kaliti YO'Q (chala-ro'yxat bug-klassining mexanik qulfi) va `createdAt` ham yo'q.
+2. `organizationId: undefined` (filtrlamaslik) ≠ `null` (org'siz qatorlar).
+3. `opening` qatori davrdan qat'i nazar boshlang'ich qoldiqqa tushadi (backfill BUGUN yozilgan bo'lsa ham).
+4. **metrics**: `Σ(byOrg) == materiallashgan` + null-org bandi mavjud.
+5. **akt**: har org uchun `closing == o'sha org jurnal yig'indisi`; `opening + debit − credit == closing`;
+   `supply` qatori bor (ilgari 8-turli ro'yxatda YO'Q edi).
+6. **statement**: `finalBalance == materiallashgan`; `debt` va `retailsale` qatorlari bor.
+7. **recompute nishoni**: `Σ(jurnal) == materiallashgan`.
+
+Aralash-hujjat stsenariysi: opening · invoiceOut · supply · paymentIn · invoiceIn · cashOut ·
+adjustment · debt · debtpayment · retailsale · **cashOut unpost teskarisi** · **USD hujjat** (UZS
+o'quvchilariga tushmasligi kerak).
+`statement-compute.util.test.ts` yangi shartnomaga ko'chirildi va **noma'lum tur** testi qo'shildi
+(«kelajakdagi-yangi-tur» qatorga tushadi va saldoga qo'shiladi).
+
+**Runtime-tasdiq (lokal `climart_adopt @ 5432`) — mock EMAS**
+- Migratsiya `prisma db execute` bilan qo'llandi, `prisma migrate diff` → **`counterparty_balance_entries`
+  uchun drift 0** (fayldagi qolgan drift — bu DB'ning eski indeks-nom tarixi, bu fazaga aloqasi yo'q).
+- DB'dan o'qildi: `doc_id` **NULLABLE**, 4 indeks + pkey.
+- **Haqiqiy tranzaksiya** (real `PrismaClient`, oxirida ataylab throw → rollback): opening (`docId: NULL`)
+  + 2 delta → `Σ(jurnal byOrg) = 680 000` **==** materiallashgan `680 000`; org bandlari
+  `org=300 000 · NULL=380 000`; **rollbackdan keyin jurnal 0 qator**.
+- `backfill…` DRY: «3 materiallashgan qator | opening yoziladi: 2» — yozilmadi.
+- `recompute` DRY: cross-check 2 farqni ko'rsatdi va backfill-guard `exit 1` qildi (kutilgan xulq).
+
+**Gate (to'liq, jonli o'lchangan)**
+- `pnpm --filter @moysklad/api typecheck` → **0** · `@moysklad/db` → **0** · `@moysklad/web` → **0**
+- `pnpm lint:product` → **0 error** (738 warning — siyosat bo'yicha ruxsat)
+- `pnpm --filter @moysklad/api exec vitest run` (BUTUN suite) → **385 fayl / 5107 test yashil** (1 fayl,
+  2 test skip)
+- `pnpm --filter @moysklad/web exec vitest run` → **183 fayl / 2745 test yashil** (26 skip)
+- `pnpm i18n:gate` → **o'tdi** (12 281 kalit tekshirildi) — UI matni tegilgan (akt doc_types ru+uz)
+- **Browser-smoke YO'Q.**
+
+**Qolgan qarz / DEFER**
+- **BACKFILL HALI YUGURTIRILMAGAN** (na lokal, na prod). Bu — **ops qadami**, kod emas: `APPLY=1` bilan
+  yugurtirilmaguncha akt-sverka/metrics tarixiy qoldiqni ko'rsatmaydi (faqat Faza 9 dan keyingi deltalarni).
+  Tartib: (1) `backfill… APPLY=1` → (2) `recompute…` DRY bilan tasdiqla → (3) kerak bo'lsa `recompute APPLY=1`.
+  **Foydalanuvchi qaroriga qoldirildi** (reja §6: ma'lumot yozadigan skriptni o'zim yugurtirmayman).
+- **Prod (`sherset_v2`) migratsiyasi qo'llanMAGAN** — `doc_id` NOT NULL cheklovini olib tashlash kerak;
+  xotira `sherset-v2-schema-drift` bo'yicha bu DB'da qo'lda DDL kerak bo'lishi mumkin.
+- **Statement valyuta filtri xulqni O'ZGARTIRDI**: ilgari `aggregate()` valyuta bo'yicha umuman
+  filtrlamasdi, ya'ni dollarlik hujjat so'mlik running-balansga qo'shilib ketardi (hujjatlanmagan
+  mavjud xato). Endi `UZS` bilan cheklangan — Excel sarlavhasi va `CounterpartyStatement.currency`
+  allaqachon `'UZS'` edi. **Ko'p valyutali akt** — alohida ish (DEFER).
+- **`opening` qatori org'siz** ⇒ backfilldan OLDINGI tarix org-kesimida «taqsimlanmagan» bandiga
+  tushadi. Ataylab: materiallashgan jadvalda ham org o'lchovi YO'Q edi (aynan `DUP-15`), org-taqsimotni
+  o'ylab topish = ma'lumot yasash bo'lardi.
+- **`debtpayment` docId asimmetriyasi** (Faza 9 dan qolgan) — resolverda **hal qilindi** (ketma-ket
+  `DebtPayment.id` → `batchId` → `Debt.id`), lekin yozuv tomonidagi asimmetriya o'zi qoldi.
+- **Akt `typeKey` endi yopiq union EMAS** — FE'da tarjimasiz tur kelsa turning o'zi ko'rsatiladi
+  (`ACT_DOC_TYPES` to'plami + fallback). Eski `counterpartyAdjustment` i18n kaliti qoldirildi
+  (yangi qiymat — `adjustment`); tozalash — mayda qarz.
+- **`DUP-03` (debt.remove reversal yo'q) hamon OCHIQ** — Faza 12. Jurnal buni sodiqlik bilan aks
+  ettiradi (o'chirilgan qarzning +delta'si daftarda turibdi), ya'ni o'quvchilar «to'g'ri noto'g'ri»ni
+  ko'rsatadi. Faza 12 reversal qo'shganda jurnal o'z-o'zidan tuzaladi.
+- **Browser-smoke YO'Q** — kontragent kartochkasi «Показатели» tab + akt-sverka chop etish + akt-sverka
+  Excel Phase-2 QA cohort'ga qoladi.
+
+**Commit:** `dfea0d0b` — `fix(counterparty-balance): faza 10 — 4 balans-o'quvchi jurnaldan o'qiydi (M-07, DUP-05/06/08)`

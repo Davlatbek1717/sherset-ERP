@@ -305,6 +305,55 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-08g (AUDIT-FIX FAZA 10 — 4 balans-o'quvchi jurnalga ko'chirildi · `M-07`+`DUP-05/06/08`)
+> `dfea0d0b` · Phase-1: strukturaviy + unit + **real-DB**-tasdiqlangan, browser-smoke YO'Q ·
+> ⏳ DEPLOY QILINMAGAN · 🗄️ **MIGRATSIYA BOR** (lokal `climart_adopt`ga qo'llandi, prod'ga YO'Q) ·
+> 🔴 **BACKFILL SKRIPTI YUGURTIRILMAGAN — ops qadam, sizning qaroringiz (pastda)**
+>
+> **Muammo (kodda tasdiqlandi, 3/3 CONFIRMED).** Kontragent saldosi TO'RT joyda mustaqil qayta
+> qurilardi va har ro'yxat BOSHQACHA chala edi: metrics byOrg **9 tur** (`counterparty.service.ts:510`,
+> izohi esa `:456` da «cert asserts this invariant» deb yolg'on da'vo qilardi) · statement **12 tur**
+> (`debt`/`retailsale` yo'q) · akt-sverka **8 tur** (`supply`/`debt`/`debtpayment`/`retailsale` yo'q) ·
+> recompute **6 manba**. Oqibati: bitta kartochkada to'rt xil son, kontragentga IMZOGA yuboriladigan
+> aktda noto'g'ri yakuniy qoldiq.
+>
+> **Fix — ildiz: SALDO va YORLIQ ajratildi.** Ilgari bitta ro'yxat ikki ishni qilardi (qator ko'rinishi
+> + saldoga qo'shilish), shuning uchun ro'yxatdan tushgan tur = jimgina noto'g'ri saldo. Endi:
+> (a) **saldo** har doim jurnaldan — o'qish so'rovlarida `docType` filtri **UMUMAN YO'Q**, belgi
+> `deltaMinor` ishorasidan ⇒ yangi hujjat turi qo'shilganda o'quvchilarda o'zgartiriladigan joy yo'q;
+> (b) **yorliq** yangi `counterparty-balance-doc-resolver.ts` dan — tur yo'q bo'lsa qator RAQAMSIZ
+> chiqadi, saldo baribir to'g'ri (ataylab tanlangan degradatsiya).
+> Yana: `ApplyDeltaMeta.docType` endi `string` emas, reyestr union'i (`'debtPayment'` vs `'debtpayment'`
+> tipidagi bir harfli farq compile-time'da tutiladi) · migratsiya `doc_id` NULLABLE (opening bloker) ·
+> statement'ga **valyuta filtri** qo'shildi (ilgari USD hujjat UZS qoldig'iga qo'shilardi).
+>
+> **TDD.** `balance-readers-invariant.test.ts` — aralash-hujjat stsenariysi (opening · invoiceOut ·
+> supply · paymentIn · invoiceIn · cashOut · adjustment · debt · debtpayment · retailsale · **unpost
+> teskarisi** · **USD hujjat**). Avval **3/7 QIZIL** (act/statement hamon doc-jadvallariga borardi) →
+> ko'chirishdan keyin **7/7 yashil**.
+>
+> **Gate:** api/db/web typecheck **0** · `lint:product` **0 error** · api vitest **385 fayl / 5107 test** ·
+> web vitest **183 fayl / 2745 test** · `i18n:gate` OK. **Real-DB** (`climart_adopt @ 5432`): `doc_id`
+> NULLABLE + 4 indeks tasdiqlandi, haqiqiy tranzaksiyada **Σ(byOrg) == materiallashgan**, rollbackdan
+> keyin jurnal **0 qator**. **Browser-smoke YO'Q.** Batafsil: rejadagi «HISOBOT JURNALI → Faza 10».
+>
+> **🔴 SIZDAN QAROR — BACKFILL (ops qadam, men yugurtirmadim).** Jurnal Faza 9 da BO'SH boshlangan, ya'ni
+> tarixiy qoldiq unda yo'q. Backfillsiz akt-sverka/metrics faqat Faza 9 dan keyingi deltalarni ko'rsatadi.
+> Tanlangan usul — **«opening snapshot»** (hujjat-replay EMAS: u `DUP-02` xatarini takrorlardi):
+> ```
+> pnpm --filter @moysklad/api exec tsx src/scripts/backfill-counterparty-balance-journal.ts        # DRY
+> APPLY=1 pnpm --filter @moysklad/api exec tsx src/scripts/backfill-counterparty-balance-journal.ts # yozadi
+> pnpm --filter @moysklad/api exec tsx src/scripts/recompute-counterparty-balances.ts               # tasdiq
+> ```
+> Skript **idempotent** (qayta yugurtirish saldoni ikkilantirmaydi). `recompute` esa backfillsiz
+> `APPLY=1` ni **RAD ETADI** — bu qo'riqchi lokal DB'da jonli tekshirildi (3 kalit topib `exit 1` qildi).
+>
+> **⏭️ KEYINGI:** `docs/REJA-AUDIT-FIX-2026-08.md` → **Faza 11** (`M-06`+`M-05` — PaymentIn/Out'ni
+> `OrganizationAccount` balansiga, POS-qarz naqdini `CashDesk` ledgeriga yozdirish; `/money`'da
+> bank to'lovlari ko'rinsin). Sessiya-boshi prompt o'sha fazada.
+
+---
+
 > **🕒 2026-08-08f (AUDIT-FIX FAZA 9 — `CounterpartyBalanceEntry` balans jurnali · `DUP-15`+`M-07`)
 > `cc5370c` · Phase-1: strukturaviy + unit + **real-DB**-tasdiqlangan, browser-smoke YO'Q ·
 > ⏳ DEPLOY QILINMAGAN · 🗄️ **MIGRATSIYA BOR** (lokal `climart_adopt`ga qo'llandi, prod'ga YO'Q)**
