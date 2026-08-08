@@ -305,6 +305,46 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-08d (AUDIT-FIX FAZA 7 — POS refund qarz-qaytarish + kumulyativ + loyalty ulush ·
+> `SALES-04`+`SALES-05`) `e242ff6` · Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q ·
+> ⏳ DEPLOY QILINMAGAN · 🗄️ MIGRATSIYA BOR (faqat lokalga qo'llandi)**
+>
+> **Muammo (tasdiqlandi, eksploit JONLI takrorlandi).** `refund()` da `counterpartyBalance` so'zi
+> **umuman yo'q** edi — `post()` esa qarzni `applyDelta(+debtAmount)` bilan yozadi. RED yugurishda 100%
+> qarzga sotilgan 100 000 lik chek **100 000 NAQD bilan qaytdi** va mijoz qarzi joyida qoldi (ikki
+> tomonlama yo'qotish). Qisman refund esa `updateMany(data:{state:'refunded'})` — **shartsiz** — chekni
+> yopardi (10 tadan 1 tasi qaytsa qolgan 9 tasi abadiy bloklanardi) va `planLoyaltyReversal` butun
+> ballni tortardi.
+>
+> **Fix (5 qism).** (1) `computeRefundSettlementCaps()` — asl chekning `RetailSalePayment(DEBT)`
+> ulushidan ikki cap: naqd/karta payout faqat **haqiqatan olingan pul** ulushigacha, qolgani
+> `applyDelta(−)` bilan qarzdan yechiladi; caplar **kumulyativ** (`R` = jami qaytarilgan qiymat, oldingi
+> refundlar ayriladi) ⇒ bo'lingan qaytarishlarda tiyin-drift yo'q. `debtReturnMinor` **berilmasa server
+> o'zi yopadi** (POS bugun hech narsa yubormaydi). (2) `validateRefundPositions(..., alreadyRefunded)` +
+> `isFullyRefunded()` — state `refunded`ga faqat oxirgi dona qaytganda o'tadi. (3) **Mutex `state`dan
+> `version`ga ko'chdi** — qisman refund flip qilmagani uchun eski CAS yo'qolgan bo'lardi. (4) loyalty
+> clawback `⌊earned × refundSum / originalSum⌋` (qoidadan qayta hisoblanmaydi — §105 saqlandi).
+> (5) **Yon-topilma (bloker):** `post()` qarz mijozini chekka yozmasdi (`/sotuv` uni faqat post
+> payloadida yuboradi) ⇒ bazadagi HAR qarz chekida `agentId` NULL. Endi saqlanadi; eski cheklar uchun
+> qarzdor `SOLD_ON_CREDIT` audit hodisasidan tiklanadi (`resolveCreditDebtorId`).
+>
+> **Migratsiya:** `20260808120000_retail_sale_debt_return` — `retail_sales.debt_return_minor` (additive,
+> default 0). **Lokal `climart_adopt @ 5432` ga qo'llandi**; prod'da deploy paytida qo'llash kerak.
+>
+> **TDD:** 50 yangi test, har biri avval qizil ko'rildi — 25 sof (`retail-refund-validation.test.ts`) ·
+> 5 loyalty · 18 service-wiring (**YANGI** `retail-sale-refund-debt.test.ts`) · 2 `post()` wiring.
+> Fixture'lar (`refund-pricing`, `cas`) real `select` shakliga moslandi — mahsulot kodiga himoyaviy
+> `?? []` **qo'yilmadi**.
+>
+> **Gate:** api tsc **0** · biome **0 error** · api vitest BUTUN suite **5085/5085** (383 fayl).
+> `i18n:gate` yugurtirilmadi — UI matni tegilmagan (web umuman tegilmagan).
+>
+> **⏭️ KEYINGI:** `docs/REJA-AUDIT-FIX-2026-08.md` → **Faza 8** (`DUP-02` — `recompute-counterparty-balances.ts`
+> APPLY-guard + qamrov: skript qamramagan yozuvchilar balansini jimgina 0 qiladi). Sessiya-boshi prompti
+> o'sha fazada. **Faza 7 hisoboti** rejadagi «HISOBOT JURNALI → Faza 7» da (qolgan qarz/DEFER ro'yxati
+> bilan: web'da «qarzdan yechildi» ko'rsatkichi yo'q · legacy chek backfill'i ops-qadam · `zReport`
+> `creditAgg` `'debt'` vs `'DEBT'` nomuvofiqligi tasdiqlandi, Faza 15 ga).
+>
 > **🕒 2026-08-08c (AUDIT-FIX FAZA 6 — POS refund asl-narx cap + chegirma · `SALES-01`+`FE-01`) `c751a62`
 > · Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q · ⏳ DEPLOY QILINMAGAN**
 >
