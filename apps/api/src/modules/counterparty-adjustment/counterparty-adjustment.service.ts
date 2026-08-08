@@ -7,6 +7,8 @@ import { tashkentRangeBounds } from '../report/report-date-bounds.util.js';
 import { resolveCreatorGroupId } from '../shared/group-stamp.js';
 import { assertMassEditRefsInTenant } from '../shared/mass-edit.js';
 import { mapVersionedUpdateError } from '../shared/optimistic-lock.js';
+import { withSerializationRetry } from '../shared/serialization-retry.js';
+import { MONEY_TX_OPTS, transitionWithClaim } from '../shared/transition-with-claim.js';
 import {
   type CounterpartyAdjustmentFilterInput,
   CounterpartyAdjustmentFilterSchema,
@@ -339,6 +341,19 @@ export class CounterpartyAdjustmentService {
     id: string,
     target: 'post' | 'unpost' | 'cancel',
   ) {
+    // M-01/DUP-01 — see payment-in.transition: Serializable + retry, and the
+    // row re-read inside the closure so a retry never re-posts an adjustment a
+    // rival transaction already posted.
+    await withSerializationRetry(() => this.runTransition(accountId, userId, id, target));
+    return this.findById(accountId, id);
+  }
+
+  private async runTransition(
+    accountId: string,
+    userId: string,
+    id: string,
+    target: 'post' | 'unpost' | 'cancel',
+  ) {
     const row = await this.findById(accountId, id);
     const sumMinor = row.sumMinor;
     const delta = row.direction === 'INCREASE' ? sumMinor : -sumMinor;
@@ -346,6 +361,16 @@ export class CounterpartyAdjustmentService {
     await this.prisma.client.$transaction(async (tx) => {
       if (target === 'post') {
         if (row.applicable) throw new BadRequestException('Already posted');
+        // TOCTOU guard (M-01/DUP-01): atomically claim the state flip as the
+        // FIRST op — the loser of a double-«Провести» sees count 0 → 409,
+        // never a second balance delta.
+        await transitionWithClaim(tx.counterpartyAdjustment, {
+          id,
+          accountId,
+          fromStates: [row.state],
+          toState: 'posted',
+          message: "Korrektirovka holati o'zgargan (allaqachon o'tkazilgan)",
+        });
         await tx.counterpartyAdjustment.update({
           where: { id },
           data: { applicable: true, state: 'posted', postedAt: new Date() },
@@ -367,6 +392,13 @@ export class CounterpartyAdjustmentService {
         });
       } else if (target === 'unpost') {
         if (!row.applicable) throw new BadRequestException('Not posted');
+        await transitionWithClaim(tx.counterpartyAdjustment, {
+          id,
+          accountId,
+          fromStates: [row.state],
+          toState: 'draft',
+          message: "Korrektirovka holati o'zgargan (allaqachon o'zgartirilgan)",
+        });
         await tx.counterpartyAdjustment.update({
           where: { id },
           data: { applicable: false, state: 'draft', postedAt: null },
@@ -385,6 +417,15 @@ export class CounterpartyAdjustmentService {
           },
         });
       } else if (target === 'cancel') {
+        // cancel claims the EXACT snapshotted state so a concurrent unpost that
+        // already flipped posted→draft can't be double-reversed here.
+        await transitionWithClaim(tx.counterpartyAdjustment, {
+          id,
+          accountId,
+          fromStates: [row.state],
+          toState: 'cancelled',
+          message: "Korrektirovka holati o'zgargan (allaqachon o'zgartirilgan)",
+        });
         if (row.applicable) {
           await this.balances.applyDelta(tx, accountId, row.agentId, row.currency, -delta);
         }
@@ -405,8 +446,7 @@ export class CounterpartyAdjustmentService {
           },
         });
       }
-    });
-    return this.findById(accountId, id);
+    }, MONEY_TX_OPTS);
   }
 
   /**

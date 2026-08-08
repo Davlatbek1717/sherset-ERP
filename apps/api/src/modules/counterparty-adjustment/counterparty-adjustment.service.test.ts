@@ -74,12 +74,30 @@ function makePrismaMock(state: { rows: AdjustmentRow[] }) {
   });
   const count = vi.fn(async () => state.rows.length);
   const findMany = vi.fn(async () => state.rows);
+  // Faza 1 (M-01/DUP-01): transitions now open with an atomic state claim —
+  // a conditional `updateMany` whose WHERE carries id + accountId + state.
+  // The double must honour that WHERE or every transition loses its claim.
+  const updateMany = vi.fn(
+    async (args: { where: Record<string, unknown>; data: Partial<AdjustmentRow> }) => {
+      const w = args.where;
+      const row = state.rows.find((r) => r.id === w.id);
+      if (!row) return { count: 0 };
+      const st = w.state as { in?: string[] } | string | undefined;
+      if (st !== undefined) {
+        const allowed = typeof st === 'string' ? [st] : (st.in ?? []);
+        if (!allowed.includes(row.state)) return { count: 0 };
+      }
+      Object.assign(row, args.data);
+      return { count: 1 };
+    },
+  );
 
   const counterpartyAdjustment = {
     findFirst,
     findUnique: findFirst,
     create,
     update,
+    updateMany,
     count,
     findMany,
   };

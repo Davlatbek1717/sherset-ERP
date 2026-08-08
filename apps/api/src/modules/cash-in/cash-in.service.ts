@@ -16,6 +16,8 @@ import { tashkentRangeBounds } from '../report/report-date-bounds.util.js';
 import { resolveCreatorGroupId } from '../shared/group-stamp.js';
 import { assertMassEditRefsInTenant } from '../shared/mass-edit.js';
 import { mapVersionedUpdateError } from '../shared/optimistic-lock.js';
+import { withSerializationRetry } from '../shared/serialization-retry.js';
+import { MONEY_TX_OPTS, transitionWithClaim } from '../shared/transition-with-claim.js';
 import { WebhookFireService } from '../webhook/webhook-fire.service.js';
 import {
   type CashInFilterInput,
@@ -433,14 +435,18 @@ export class CashInService {
       );
     }
     const target: CashInTransitionTarget = r.data;
-    const existing = await this.findById(accountId, id);
 
-    const result =
-      target === 'post'
-        ? await this.post(accountId, userId, id, existing)
+    // M-01/DUP-01 — see payment-in.transition: Serializable + retry, and
+    // `findById` re-read inside the closure so a retry never re-posts a
+    // document a rival transaction already posted.
+    const result = await withSerializationRetry(async () => {
+      const existing = await this.findById(accountId, id);
+      return target === 'post'
+        ? this.post(accountId, userId, id, existing)
         : target === 'unpost'
-          ? await this.unpost(accountId, userId, id, existing)
-          : await this.cancel(accountId, userId, id, existing);
+          ? this.unpost(accountId, userId, id, existing)
+          : this.cancel(accountId, userId, id, existing);
+    });
     this.webhookFire.fireForEvent(accountId, 'cashin', 'UPDATE', id, ['state']);
     return result;
   }
@@ -556,6 +562,17 @@ export class CashInService {
     }
 
     return this.prisma.client.$transaction(async (tx) => {
+      // TOCTOU guard (M-01/DUP-01): atomically claim draft→posted as the FIRST
+      // op — the loser of a double-«Провести» sees count 0 → 409, never a
+      // second CashDesk credit + balance delta.
+      await transitionWithClaim(tx.cashIn, {
+        id,
+        accountId,
+        fromStates: ['draft'],
+        toState: 'posted',
+        message: "Prixodniy order allaqachon o'tkazilgan yoki 'draft' holatida emas",
+      });
+
       // Cash desk receives the money (+delta).
       await this.money.applyDeltas(tx, accountId, [
         {
@@ -615,7 +632,7 @@ export class CashInService {
       });
 
       return updated;
-    });
+    }, MONEY_TX_OPTS);
   }
 
   private async unpost(
@@ -629,6 +646,14 @@ export class CashInService {
     }
 
     return this.prisma.client.$transaction(async (tx) => {
+      await transitionWithClaim(tx.cashIn, {
+        id,
+        accountId,
+        fromStates: ['posted'],
+        toState: 'draft',
+        message: "Prixodniy order 'posted' holatida emas (allaqachon o'zgartirilgan)",
+      });
+
       // Reverse cash desk delta.
       await this.money.applyDeltas(tx, accountId, [
         {
@@ -683,7 +708,7 @@ export class CashInService {
       });
 
       return updated;
-    });
+    }, MONEY_TX_OPTS);
   }
 
   private async cancel(
@@ -697,6 +722,16 @@ export class CashInService {
     }
 
     return this.prisma.client.$transaction(async (tx) => {
+      // cancel claims the EXACT snapshotted state so a concurrent unpost that
+      // already flipped posted→draft can't be double-reversed here.
+      await transitionWithClaim(tx.cashIn, {
+        id,
+        accountId,
+        fromStates: [existing.state],
+        toState: 'cancelled',
+        message: "Prixodniy order holati o'zgargan (allaqachon o'zgartirilgan)",
+      });
+
       if (existing.applicable) {
         await this.money.applyDeltas(tx, accountId, [
           {
@@ -751,7 +786,7 @@ export class CashInService {
       });
 
       return updated;
-    });
+    }, MONEY_TX_OPTS);
   }
 
   // =====================================================================

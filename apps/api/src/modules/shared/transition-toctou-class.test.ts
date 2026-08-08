@@ -161,3 +161,150 @@ describe('processing transitions atomically claim their state (TOCTOU class-lock
     expect(SOURCE).toMatch(/throw new ConflictException\(/);
   });
 });
+
+/**
+ * ============================================================================
+ * MONEY family (Faza 1, 2026-08-08 — findings M-01 + DUP-01)
+ * ============================================================================
+ *
+ * The stock family closed this bug class in 2026-06; the MONEY document family
+ * still carried it: state checked OUTSIDE the `$transaction`, default
+ * ReadCommitted isolation, and a blind `update({ where: { id, accountId } })`
+ * to flip it. Two concurrent «Провести» requests both saw `draft` and both ran
+ * the counterparty-balance delta — the balance moved 2× silently.
+ *
+ * These services claim through the shared `transitionWithClaim()` primitive
+ * rather than an inline `updateMany`, so the scan below pins THAT call shape
+ * plus the two things that make it work: `Serializable` (via MONEY_TX_OPTS) and
+ * `withSerializationRetry` around the transition dispatch.
+ *
+ * Non-vacuous: before the fix none of these seven files contained the string
+ * `transitionWithClaim`, `MONEY_TX_OPTS` or `withSerializationRetry`.
+ *
+ * Behavioural counterpart (the race actually driven end-to-end):
+ * `shared/money-transition-race.test.ts`.
+ */
+const MONEY_SERVICES = [
+  {
+    name: 'payment-in',
+    model: 'paymentIn',
+    file: ['..', 'payment-in', 'payment-in.service.ts'],
+    postFrom: "\\['draft'\\]",
+    unpostFrom: "\\['posted'\\]",
+    cancelFrom: '\\[existing\\.state\\]',
+  },
+  {
+    name: 'payment-out',
+    model: 'paymentOut',
+    file: ['..', 'payment-out', 'payment-out.service.ts'],
+    postFrom: "\\['draft'\\]",
+    unpostFrom: "\\['posted'\\]",
+    cancelFrom: '\\[existing\\.state\\]',
+  },
+  {
+    name: 'cash-in',
+    model: 'cashIn',
+    file: ['..', 'cash-in', 'cash-in.service.ts'],
+    postFrom: "\\['draft'\\]",
+    unpostFrom: "\\['posted'\\]",
+    cancelFrom: '\\[existing\\.state\\]',
+  },
+  {
+    name: 'cash-out',
+    model: 'cashOut',
+    file: ['..', 'cash-out', 'cash-out.service.ts'],
+    postFrom: "\\['draft'\\]",
+    unpostFrom: "\\['posted'\\]",
+    cancelFrom: '\\[existing\\.state\\]',
+  },
+  {
+    name: 'invoice-out',
+    model: 'invoiceOut',
+    file: ['..', 'invoice-out', 'invoice-out.service.ts'],
+    postFrom: "\\['draft'\\]",
+    // posted OR sent are both legal unpost sources here → snapshotted state
+    unpostFrom: '\\[existing\\.state\\]',
+    cancelFrom: '\\[existing\\.state\\]',
+  },
+  {
+    name: 'invoice-in',
+    model: 'invoiceIn',
+    file: ['..', 'invoice-in', 'invoice-in.service.ts'],
+    postFrom: "\\['draft'\\]",
+    unpostFrom: "\\['posted'\\]",
+    cancelFrom: '\\[existing\\.state\\]',
+  },
+  {
+    name: 'counterparty-adjustment',
+    model: 'counterpartyAdjustment',
+    file: ['..', 'counterparty-adjustment', 'counterparty-adjustment.service.ts'],
+    // this one gates on `applicable`, not on a state literal → snapshotted state
+    postFrom: '\\[row\\.state\\]',
+    unpostFrom: '\\[row\\.state\\]',
+    cancelFrom: '\\[row\\.state\\]',
+    // ONE $transaction branches on the target internally (unlike the other six,
+    // which have a separate post()/unpost()/cancel() transaction each).
+    txCount: 1,
+  },
+] as const;
+
+const claimRe = (model: string, from: string, to: string) =>
+  new RegExp(
+    `transitionWithClaim\\(tx\\.${model},\\s*\\{\\s*id,\\s*accountId,\\s*fromStates:\\s*${from},\\s*toState:\\s*'${to}'`,
+  );
+
+for (const svc of MONEY_SERVICES) {
+  const SOURCE = stripComments(readFileSync(join(__dirname, ...svc.file), 'utf8'));
+
+  describe(`${svc.name} transitions atomically claim their state (MONEY TOCTOU class-lock)`, () => {
+    it('post() claims → posted through the shared primitive', () => {
+      expect(SOURCE).toMatch(claimRe(svc.model, svc.postFrom, 'posted'));
+    });
+
+    it('unpost() claims → draft', () => {
+      expect(SOURCE).toMatch(claimRe(svc.model, svc.unpostFrom, 'draft'));
+    });
+
+    it('cancel() claims → cancelled', () => {
+      expect(SOURCE).toMatch(claimRe(svc.model, svc.cancelFrom, 'cancelled'));
+    });
+
+    it('every transition runs Serializable (MONEY_TX_OPTS on each $transaction)', () => {
+      const expected = 'txCount' in svc ? svc.txCount : 3; // post + unpost + cancel
+      const uses = SOURCE.match(/\}, MONEY_TX_OPTS\)/g) ?? [];
+      expect(uses.length, `${svc.name}: a transition $transaction lost its options arg`).toBe(
+        expected,
+      );
+      expect(SOURCE).toMatch(
+        /import \{ MONEY_TX_OPTS, transitionWithClaim \} from '\.\.\/shared\/transition-with-claim\.js'/,
+      );
+    });
+
+    it('the transition dispatch retries serialization conflicts and re-reads the row', () => {
+      // Serializable ABORTS the loser (40001/P2034) instead of queueing it, so
+      // without the retry a legitimate second click would surface a raw DB
+      // error. The re-read inside the closure is what stops a retry from
+      // re-posting a doc a rival already posted (move/enter precedent).
+      expect(SOURCE).toMatch(/withSerializationRetry\(/);
+      expect(SOURCE).toMatch(/withSerializationRetry\((?:async )?\(\) => \{?\s*(?:const|this)/);
+    });
+  });
+}
+
+/**
+ * Coverage lock: the money family list above must not silently shrink. If a
+ * new money document service is added it belongs here too.
+ */
+describe('MONEY TOCTOU class-lock covers the whole money-document family', () => {
+  it('pins all seven balance-writing transition services', () => {
+    expect(MONEY_SERVICES.map((s) => s.name).sort()).toEqual([
+      'cash-in',
+      'cash-out',
+      'counterparty-adjustment',
+      'invoice-in',
+      'invoice-out',
+      'payment-in',
+      'payment-out',
+    ]);
+  });
+});

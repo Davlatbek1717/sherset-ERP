@@ -18,6 +18,8 @@ import { resolveCreatorGroupId } from '../shared/group-stamp.js';
 import { assertMassEditRefsInTenant } from '../shared/mass-edit.js';
 import { mapVersionedUpdateError } from '../shared/optimistic-lock.js';
 import { assertOrgAccountMatchesOrg } from '../shared/org-account.js';
+import { withSerializationRetry } from '../shared/serialization-retry.js';
+import { MONEY_TX_OPTS, transitionWithClaim } from '../shared/transition-with-claim.js';
 import { WebhookFireService } from '../webhook/webhook-fire.service.js';
 import {
   CreateFromInvoiceInSchema,
@@ -536,14 +538,18 @@ export class PaymentOutService {
       );
     }
     const target: PaymentOutTransitionTarget = r.data;
-    const existing = await this.findById(accountId, id);
 
-    const result =
-      target === 'post'
-        ? await this.post(accountId, userId, id, existing)
+    // M-01/DUP-01 — see payment-in.transition: Serializable + retry, and
+    // `findById` re-read inside the closure so a retry never re-posts a
+    // document a rival transaction already posted.
+    const result = await withSerializationRetry(async () => {
+      const existing = await this.findById(accountId, id);
+      return target === 'post'
+        ? this.post(accountId, userId, id, existing)
         : target === 'unpost'
-          ? await this.unpost(accountId, userId, id, existing)
-          : await this.cancel(accountId, userId, id, existing);
+          ? this.unpost(accountId, userId, id, existing)
+          : this.cancel(accountId, userId, id, existing);
+    });
     this.webhookFire.fireForEvent(accountId, 'paymentout', 'UPDATE', id, ['state']);
     return result;
   }
@@ -631,6 +637,17 @@ export class PaymentOutService {
     }
 
     return this.prisma.client.$transaction(async (tx) => {
+      // TOCTOU guard (M-01/DUP-01): atomically claim draft→posted as the FIRST
+      // op — the loser of a double-«Провести» sees count 0 → 409, never a
+      // second balance delta.
+      await transitionWithClaim(tx.paymentOut, {
+        id,
+        accountId,
+        fromStates: ['draft'],
+        toState: 'posted',
+        message: "To'lov allaqachon o'tkazilgan yoki 'draft' holatida emas",
+      });
+
       // We paid them → our debt shrinks toward zero → +delta.
       await this.balance.applyDelta(
         tx,
@@ -692,7 +709,7 @@ export class PaymentOutService {
       });
 
       return updated;
-    });
+    }, MONEY_TX_OPTS);
   }
 
   private async unpost(
@@ -706,6 +723,14 @@ export class PaymentOutService {
     }
 
     return this.prisma.client.$transaction(async (tx) => {
+      await transitionWithClaim(tx.paymentOut, {
+        id,
+        accountId,
+        fromStates: ['posted'],
+        toState: 'draft',
+        message: "To'lov 'posted' holatida emas (allaqachon o'zgartirilgan)",
+      });
+
       // Undo: we owe them again → −delta.
       await this.balance.applyDelta(
         tx,
@@ -754,7 +779,7 @@ export class PaymentOutService {
       });
 
       return updated;
-    });
+    }, MONEY_TX_OPTS);
   }
 
   private async cancel(
@@ -768,6 +793,16 @@ export class PaymentOutService {
     }
 
     return this.prisma.client.$transaction(async (tx) => {
+      // cancel claims the EXACT snapshotted state so a concurrent unpost that
+      // already flipped posted→draft can't be double-reversed here.
+      await transitionWithClaim(tx.paymentOut, {
+        id,
+        accountId,
+        fromStates: [existing.state],
+        toState: 'cancelled',
+        message: "To'lov holati o'zgargan (allaqachon o'zgartirilgan)",
+      });
+
       const wasApplicable = existing.applicable;
       if (wasApplicable) {
         await this.balance.applyDelta(
@@ -819,7 +854,7 @@ export class PaymentOutService {
       });
 
       return updated;
-    });
+    }, MONEY_TX_OPTS);
   }
 
   // =====================================================================

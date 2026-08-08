@@ -19,6 +19,8 @@ import { combineMergePositions } from '../shared/merge-positions.util.js';
 import { mapVersionedUpdateError } from '../shared/optimistic-lock.js';
 import { assertOrgAccountMatchesOrg } from '../shared/org-account.js';
 import { searchTokenGroups } from '../shared/search-tokens.js';
+import { withSerializationRetry } from '../shared/serialization-retry.js';
+import { MONEY_TX_OPTS, transitionWithClaim } from '../shared/transition-with-claim.js';
 import { WebhookFireService } from '../webhook/webhook-fire.service.js';
 import {
   CreateFromCustomerOrderSchema,
@@ -797,16 +799,20 @@ export class InvoiceOutService {
       );
     }
     const target: InvoiceOutTransitionTarget = r.data;
-    const existing = await this.findById(accountId, id);
 
-    const result =
-      target === 'post'
-        ? await this.post(accountId, userId, id, existing)
+    // M-01/DUP-01 — see payment-in.transition: Serializable + retry, and
+    // `findById` re-read inside the closure so a retry never re-posts a
+    // document a rival transaction already posted.
+    const result = await withSerializationRetry(async () => {
+      const existing = await this.findById(accountId, id);
+      return target === 'post'
+        ? this.post(accountId, userId, id, existing)
         : target === 'unpost'
-          ? await this.unpost(accountId, userId, id, existing)
+          ? this.unpost(accountId, userId, id, existing)
           : target === 'mark_sent'
-            ? await this.markSent(accountId, userId, id, existing)
-            : await this.cancel(accountId, userId, id, existing);
+            ? this.markSent(accountId, userId, id, existing)
+            : this.cancel(accountId, userId, id, existing);
+    });
     this.webhookFire.fireForEvent(accountId, 'invoiceout', 'UPDATE', id, ['state']);
     return result;
   }
@@ -1197,6 +1203,17 @@ export class InvoiceOutService {
     // (0 positions ⇒ 0 stock delta; moysklad allows it). No position precondition.
 
     return this.prisma.client.$transaction(async (tx) => {
+      // TOCTOU guard (M-01/DUP-01): atomically claim draft→posted as the FIRST
+      // op — the loser of a double-«Провести» sees count 0 → 409, never a
+      // second +sumMinor receivable + CO.invoicedSum bump.
+      await transitionWithClaim(tx.invoiceOut, {
+        id,
+        accountId,
+        fromStates: ['draft'],
+        toState: 'posted',
+        message: "Schyot allaqachon o'tkazilgan yoki 'draft' holatida emas",
+      });
+
       const updated = await tx.invoiceOut.update({
         where: { id, accountId },
         data: { state: 'posted', applicable: true, postedAt: new Date() },
@@ -1234,7 +1251,7 @@ export class InvoiceOutService {
       });
 
       return updated;
-    });
+    }, MONEY_TX_OPTS);
   }
 
   private async unpost(
@@ -1253,6 +1270,16 @@ export class InvoiceOutService {
     }
 
     return this.prisma.client.$transaction(async (tx) => {
+      // Both posted and sent are legal unpost sources (the pre-check above
+      // allows either), so the claim carries the snapshotted state.
+      await transitionWithClaim(tx.invoiceOut, {
+        id,
+        accountId,
+        fromStates: [existing.state],
+        toState: 'draft',
+        message: "Schyot holati o'zgargan (allaqachon o'zgartirilgan)",
+      });
+
       const updated = await tx.invoiceOut.update({
         where: { id, accountId },
         data: { state: 'draft', applicable: false, postedAt: null },
@@ -1291,7 +1318,7 @@ export class InvoiceOutService {
       });
 
       return updated;
-    });
+    }, MONEY_TX_OPTS);
   }
 
   private async cancel(
@@ -1312,6 +1339,16 @@ export class InvoiceOutService {
     }
 
     return this.prisma.client.$transaction(async (tx) => {
+      // cancel claims the EXACT snapshotted state so a concurrent unpost that
+      // already flipped posted→draft can't be double-reversed here.
+      await transitionWithClaim(tx.invoiceOut, {
+        id,
+        accountId,
+        fromStates: [existing.state],
+        toState: 'cancelled',
+        message: "Schyot holati o'zgargan (allaqachon o'zgartirilgan)",
+      });
+
       const wasApplicable = existing.applicable;
       const updated = await tx.invoiceOut.update({
         where: { id, accountId },
@@ -1352,7 +1389,7 @@ export class InvoiceOutService {
       });
 
       return updated;
-    });
+    }, MONEY_TX_OPTS);
   }
 
   // =====================================================================
