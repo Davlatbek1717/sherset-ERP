@@ -206,7 +206,7 @@ yopadi (eng xavflisi). `retail-refund-validation.ts` adversarial-testlangan — 
 > `docs/REJA-AUDIT-FIX-2026-08.md` — **Faza 6**. O'ZGARMAS QOIDALAR. `SALES-01`+web `FE-01`'ni tasdiqla.
 > Server refund payout'ni asl chek narxi bilan cap qil (`Σ refund ≤ original.sumMinor`), web'da chegirmani
 > yubor. TDD: over-refund 400 + chegirmali refund summasi testlari. Gate (API+web+i18n). Hisobot, TO'XTA.
-**◻ HISOBOT:** _(agent to'ldiradi)_
+**☑ HISOBOT (2026-08-08):** BAJARILDI — batafsili «HISOBOT JURNALI → Faza 6» da.
 
 ---
 
@@ -1272,3 +1272,94 @@ aytganidan **bitta kengroq**:
   alohida mexanik refaktor.
 
 **Commit:** `fix(stock): faza 5 — loss cancel/unpost atomik claim + Serializable (STK-01)`
+
+---
+
+## Faza 6 — 2026-08-08 — **Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q**
+
+**Topilma tasdiqlanishi (o'z ko'zim bilan kodda).** `SALES-01` va `FE-01` — **IKKALASI HAM TASDIQLANDI**,
+topilmalar aytganidek:
+- `retail-sale.service.ts:981-996` (fix'dan oldin): `refundPositions = this.computePositions(parsed.positions
+  .map(… priceMinor: p.priceMinor, discount: p.discount …))` — narx **to'g'ridan-to'g'ri so'rov tanasidan**;
+  keyin `validateRefundAmount(refundPositions.totalMinor, cashReturn, cardReturn)`. Ya'ni **cheklovchi ham,
+  cheklanayotgan ham bir manbadan** (o'ziga-havola cap). Asl pozitsiyalar `select`ida (`:951-958`)
+  `priceMinor`/`discount`/`sumMinor` **umuman yo'q edi** — server asl narxni bilmasdi.
+- `sotuv/page.tsx:277-291`: refund payload `priceMinor: p.priceMinor` yuborardi va
+  `cashRefund = Σ BigInt(pos.priceMinor) × BigInt(pos.quantity)` — **chegirmasiz** to'liq narx;
+  `:512-515` ekrandagi «Qaytariladigan summa» ham xuddi shu formula.
+- **Eksploit jonli takrorlandi (dalil, taxmin emas):** yangi service-testning RED yugurishida 10 000 tiyinlik
+  chek `priceMinor: '10000000'` bilan **muvaffaqiyatli qaytdi** — `cashAmountMinor: 10000000n` bilan oyna chek
+  yaratildi va `MoneyService.applyDeltas` chaqirildi. Barcha mavjud guardlar (qty-subset, payout≤refundSum,
+  CAS state-flip) o'tdi.
+
+**Fayllar**
+
+| Fayl | O'zgarish |
+|---|---|
+| `apps/api/src/modules/retail-sale/retail-refund-validation.ts` | **YANGI** `priceRefundFromOriginal()` + `OriginalPricedLine`/`PricedRefund` tiplari |
+| `apps/api/src/modules/retail-sale/retail-refund-validation.test.ts` | +8 test (sof funksiya: chegirma, prorate, aralash-narx, floor-invariant, kasr qty) |
+| `apps/api/src/modules/retail-sale/retail-sale-refund-pricing.test.ts` | **YANGI** — 7 service-darajali test (wiring: `refund()` mocked-Prisma ustidan) |
+| `apps/api/src/modules/retail-sale/retail-sale.service.ts` | `select`ga `priceMinor`/`discount`/`sumMinor`; `computePositions(klient narxi)` → `priceRefundFromOriginal(asl chek, faqat miqdor)` |
+| `apps/api/src/modules/retail-sale/retail-sale.schema.ts` | refund `priceMinor`/`discount` → **`.optional()`** + «server IGNORE qiladi» izohi |
+| `apps/api/src/modules/retail-sale/retail-sale.cas.test.ts` | fixture'ga pul-ustunlari qo'shildi (real `select` shakliga moslash) |
+| `apps/web/src/lib/pos/cart-math.ts` | **YANGI** `refundPayoutMinor()` — asl `sumMinor`dan proporsional, pastga yaxlitlash |
+| `apps/web/src/lib/pos/cart-math.test.ts` | +7 test (chegirma, prorate, floor, kasr qty, nol-miqdor) |
+| `apps/web/src/app/(app)/sotuv/page.tsx` | refundMut + ekran-summasi `refundPayoutMinor`'ga; payload endi narx yubormaydi |
+| `apps/web/src/__tests__/pos-refund-payout.test.ts` | **YANGI** — 3 test, WIRING regress-lock (formula to'g'ri-yu sahifa ishlatmasa tutadi) |
+
+**O'zgarish (3 qism)**
+1. **Server narxni klientdan UMUMAN olmaydi.** `priceRefundFromOriginal(original, requested)` — asl chek
+   qatorlarini **mahsulot bo'yicha agregatlaydi** (`validateRefundPositions` ham aynan shunday: cap
+   qator emas, mahsulot darajasida) va har qaytarish qatorini
+   `⌊ Σ(asl sumMinor) × qaytQty / Σ(asl qty) ⌋` bilan narxlaydi.
+   - **Nega prorate, «birinchi qator narxi» emas:** bir chek bir mahsulotni **turli narxda** ikki qatorda
+     sotishi mumkin (1×100 + 1×10 = 110). First-line-wins 2 dona uchun 200 berardi — invariantni buzardi.
+   - **Nega floor:** `validateRefundPositions` qty ≤ sotilgan qty ni kafolatlaydi, shuning uchun floor'lar
+     yig'indisi **hech qachon** asl summadan oshmaydi. Mijoz bo'lingan qisman qaytarishda qatoriga 1 tiyingacha
+     yutqazishi mumkin — chekdan **ortiq** to'lash esa aynan yopilayotgan zarar.
+   - Chegirma **asl `sumMinor` ichida** bo'lgani uchun FE-01 ham server tomondan yopiladi.
+   - Asl `priceMinor`/`discount` oyna qatorga **ko'chiriladi** (provenance/ko'rsatish uchun) — pul ulardan
+     hisoblanMAYDI.
+   - Asl chekda yo'q mahsulot **0 tiyin** narxlanadi (`validateRefundPositions` uni allaqachon rad etadi;
+     bu — guardlar tartibi kelajakda o'zgarsa pul yaralmasligi uchun ikkinchi qatlam).
+2. **Schema halollashtirildi:** refund `priceMinor`/`discount` endi `.optional()` va izohda «server IGNORE
+   qiladi» yozilgan. Eski klientlar buzilmaydi (yuborsa qabul qilinadi, e'tiborga olinmaydi).
+3. **Web ikkala joyda bir formuladan:** `refundPayoutMinor()` — server bilan **bir xil** (asl `sumMinor`dan
+   proporsional, floor). Bu shart edi: SALES-01 tuzatilgach eski FE formulasi chegirmali chekda payout > cap
+   berib **400 olardi**, ya'ni chegirmali chekni umuman qaytarib bo'lmasdi. Miqdor `Math.round(n*1e6)` bilan
+   mikro-birlikka o'tadi — yon-foyda: `BigInt(1.5)` otilishi (FE-02 klassi) bu yo'lda yo'q.
+
+**Testlar (TDD tartibi kuzatildi)**
+- RED-1 (sof funksiya): 8/8 yiqildi — `priceRefundFromOriginal is not a function`.
+- RED-2 (service wiring, fix'dan OLDIN, jonli o'lchangan): **7/7 yiqildi**, sabablari aynan bug:
+  over-refund `promise resolved … instead of rejecting`; `expected 10000000n to be 10000n`;
+  chegirmali chek `expected 1000000n to be 900000n`; prorate `expected 300000n to be 270000n`.
+- RED-3 (web): `refundPayoutMinor` yo'q (7 test) + wiring-skaner 3/3 qizil.
+- GREEN: yangi testlar 8+7+7+3 = **25 ta yashil**.
+- **Regress:** `retail-sale.cas.test.ts` ning refund-CAS testi yiqildi (fixture'da `sumMinor` yo'q edi →
+  BigInt mix). Bu **fixture qarzi**, mahsulot bug'i emas — real Prisma `select` endi bu ustunlarni qaytaradi;
+  fixture real shaklga moslandi (mahsulot kodiga himoyaviy `?? 0n` **qo'yilmadi** — u haqiqiy nosozlikni
+  yashirardi).
+
+**Gate (to'liq, jonli o'lchangan)**
+- `pnpm --filter @moysklad/api typecheck` → **0 xato** *(dastlab 1 xato tutdi: Prisma `quantity`/`discount`
+  = `Decimal`, `string` emas — `String()` bilan tuzatildi)*
+- `pnpm --filter @moysklad/web typecheck` → **0 xato**
+- `pnpm lint:product` → **0 error** (728 warning — siyosat bo'yicha ruxsat)
+- `pnpm i18n:gate` → **o'tdi** (9 test; 12281 kalit)
+- `pnpm --filter @moysklad/api exec vitest run` (BUTUN suite) → **382 fayl / 5038 test yashil, 0 yiqilgan**
+- `pnpm --filter @moysklad/web exec vitest run` (BUTUN suite) → **183 fayl / 2745 test yashil, 0 yiqilgan**
+
+**Qolgan qarz / DEFER**
+- **Browser-smoke YO'Q.** Real kassada chegirmali chekni qaytarish, 400 xabarining UI'da ko'rinishi va
+  yaxlitlash bir tiyinining kassirga qanday ko'rinishi — Phase-2 QA (retail cohort) ga qoladi.
+- **Faza 7 doirasi (ataylab tegilmadi):** qarz-sotuv refund'i hamon naqd chiqaradi va mijoz qarzi qolaveradi
+  (`SALES-04`); qisman refund chekni `refunded` qilib qolganini qaytarib bo'lmaydigan qiladi + butun loyalty
+  ballni tortadi (`SALES-05`). **Diqqat:** endi prorate ishlaydigani uchun qisman refund summasi TO'G'RI —
+  lekin kumulyativ cap yo'qligi sababli chek baribir bir marta qaytariladi.
+- **`costMinor`/`basePriceMinor` hamon «birinchi qator yutadi»** (`originalFrozen`) — bir mahsulot turli
+  narxda sotilgan chekda muzlatilgan tan narx aniq emas. Pul-payout endi prorate bo'lgani uchun bu **faqat
+  COGS/marja hisobotiga** ta'sir qiladi; Faza 18 (weighted-average) shu joyni qayta ko'radi.
+- **`this.computePositions` refund yo'lida endi ishlatilmaydi** (create/update'da qoladi) — o'chirilmadi.
+
+**Commit:** `fix(sales): faza 6 — POS refund asl-narx cap + chegirma (SALES-01, FE-01)`

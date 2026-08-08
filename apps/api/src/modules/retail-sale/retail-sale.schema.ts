@@ -116,8 +116,17 @@ export const RefundRetailSaleSchema = z.object({
         quantity: z.coerce
           .string()
           .regex(/^\d+(\.\d{1,6})?$/, 'quantity must be a positive decimal'),
-        priceMinor: z.coerce.string().regex(/^\d+$/, 'priceMinor must be a non-negative integer'),
-        discount: discountPercent.default('0'),
+        /**
+         * SALES-01: IGNORED by the server. The refund is priced from the
+         * original receipt (`priceRefundFromOriginal`) — trusting these made
+         * the payout cap self-referential. Optional so a client need not send
+         * them; kept accepted so existing callers do not break.
+         */
+        priceMinor: z.coerce
+          .string()
+          .regex(/^\d+$/, 'priceMinor must be a non-negative integer')
+          .optional(),
+        discount: discountPercent.optional(),
       }),
     )
     .min(1, 'at least one position required for refund'),

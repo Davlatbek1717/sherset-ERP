@@ -62,6 +62,46 @@ export function toMinorOrNull(value: string | null | undefined): bigint | null {
   }
 }
 
+/** Qaytarish uchun asl chek qatoridan kerakli minimal. */
+export interface RefundableLine {
+  /** Asl sotilgan miqdor — Decimal(20,6) satri. */
+  quantity: string;
+  /** Asl qator summasi CHEGIRMADAN KEYIN (tiyin-satr) — server saqlagan raqam. */
+  sumMinor: string;
+  /** Qaytarilayotgan miqdor. */
+  returnQty: number;
+}
+
+/** Miqdor (satr yoki son) → mikro-birlik bigint. `BigInt(1.5)` otilishini yopadi. */
+function qtyToMicro(qty: string | number): bigint {
+  const n = typeof qty === 'number' ? qty : Number(qty);
+  if (!Number.isFinite(n) || n <= 0) return 0n;
+  return BigInt(Math.round(n * 1e6));
+}
+
+/**
+ * Qaytariladigan naqd (tiyin) — asl chek qatorining CHEGIRMALI summasidan
+ * proporsional.
+ *
+ * FE-01: ilgari `priceMinor × qty` hisoblanardi, ya'ni chegirma e'tiborsiz
+ * qolardi va kassa mijoz to'lamagan pulni qaytarardi. Endi baza — server
+ * saqlagan `sumMinor` (chegirma ichida).
+ *
+ * ⚠️ Yaxlitlash **pastga** — ataylab va server bilan bir xil
+ * (`priceRefundFromOriginal`): FE ko'rsatgan summa server qabul qiladigan
+ * chegaradan oshsa, so'rov 400 bilan rad etilardi.
+ */
+export function refundPayoutMinor(lines: ReadonlyArray<RefundableLine>): bigint {
+  let sum = 0n;
+  for (const l of lines) {
+    const soldMicro = qtyToMicro(l.quantity);
+    const backMicro = qtyToMicro(l.returnQty);
+    if (soldMicro <= 0n || backMicro <= 0n) continue;
+    sum += (BigInt(l.sumMinor) * backMicro) / soldMicro;
+  }
+  return sum;
+}
+
 /**
  * Foyda bazasi — kassa HAQIQATAN oladigan pul.
  *

@@ -414,9 +414,18 @@ describe('RetailSaleService.refund — CAS state guard', () => {
             cashDesk: { currency: 'UZS' },
           },
           // §105: refund() now loads + validates original positions
-          // (over-refund guard). Mirror the real query shape so this
-          // CAS test still exercises the posted→refunded state guard.
-          positions: [{ productId: '00000000-0000-0000-0000-000000000099', quantity: '1' }],
+          // (over-refund guard). SALES-01: it also PRICES the refund from
+          // them, so the money columns are part of the real query shape.
+          // Mirror it so this CAS test still exercises posted→refunded.
+          positions: [
+            {
+              productId: '00000000-0000-0000-0000-000000000099',
+              quantity: '1',
+              priceMinor: 100_000n,
+              discount: '0',
+              sumMinor: 100_000n,
+            },
+          ],
         };
       }
       return null;

@@ -82,6 +82,101 @@ export function validateRefundPositions(
   return null;
 }
 
+/** An original receipt line with the money the customer was actually charged. */
+export interface OriginalPricedLine extends OriginalLine {
+  /** Unit price before discount (tiyin) — informational, carried onto the mirror row. */
+  priceMinor: bigint;
+  /** Percent, Decimal string — informational, carried onto the mirror row. */
+  discount: string;
+  /** Line total AFTER discount (tiyin) — this is the money that moves. */
+  sumMinor: bigint;
+}
+
+export interface PricedRefundRow {
+  productId: string;
+  /** Decimal(20,6) string, as requested. */
+  quantity: string;
+  priceMinor: bigint;
+  discount: string;
+  /** Refund value of this line (tiyin), derived from the ORIGINAL sum. */
+  lineMinor: bigint;
+}
+
+export interface PricedRefund {
+  rows: PricedRefundRow[];
+  totalMinor: bigint;
+}
+
+/**
+ * Price a refund **from the original receipt** — never from client input.
+ *
+ * SALES-01: refund() used to run the client's `priceMinor` through
+ * `computePositions()` and then cap the payout against that same number, so
+ * the cap was self-referential — a caller with `retailsale:approve` could
+ * refund a 10 000 so'm item for 10 000 000 and MoneyService would hand the
+ * cash over. The client no longer has any say in the money: each refunded
+ * line is worth its share of what the customer actually paid.
+ *
+ * Per product, the original lines are aggregated (a receipt may list the same
+ * product several times, possibly at different prices — mirroring
+ * `validateRefundPositions`, which caps quantity per product, not per line):
+ *
+ *   lineMinor = ⌊ Σ(original sumMinor) × refundQty / Σ(original qty) ⌋
+ *
+ * Floor division is deliberate: summed over any set of refund lines whose
+ * quantities stay within the sold quantity (which `validateRefundPositions`
+ * guarantees), the result can only be ≤ the original sum — never above it.
+ * The customer may lose up to one tiyin per line on a split partial refund;
+ * paying out more than the receipt is the failure mode that matters.
+ *
+ * `priceMinor`/`discount` are copied from the product's first original line
+ * for display/provenance only — they are not what the payout is computed from.
+ */
+export function priceRefundFromOriginal(
+  original: OriginalPricedLine[],
+  requested: RequestedRefundLine[],
+): PricedRefund {
+  const byProduct = new Map<
+    string,
+    { qtyMicro: bigint; sumMinor: bigint; priceMinor: bigint; discount: string }
+  >();
+  for (const o of original) {
+    if (o.productId == null) continue;
+    const agg = byProduct.get(o.productId);
+    if (agg) {
+      agg.qtyMicro += toMicro(o.quantity);
+      agg.sumMinor += o.sumMinor;
+    } else {
+      byProduct.set(o.productId, {
+        qtyMicro: toMicro(o.quantity),
+        sumMinor: o.sumMinor,
+        priceMinor: o.priceMinor,
+        discount: o.discount,
+      });
+    }
+  }
+
+  let totalMinor = 0n;
+  const rows = requested.map((r) => {
+    const agg = byProduct.get(r.productId);
+    // Unknown product / zero-qty original: worth nothing. `validateRefundPositions`
+    // rejects the first case before we get here; pricing it at 0 means a future
+    // caller that reorders the guards still cannot mint cash.
+    const lineMinor =
+      agg && agg.qtyMicro > 0n ? (agg.sumMinor * toMicro(r.quantity)) / agg.qtyMicro : 0n;
+    totalMinor += lineMinor;
+    return {
+      productId: r.productId,
+      quantity: r.quantity,
+      priceMinor: agg?.priceMinor ?? 0n,
+      discount: agg?.discount ?? '0',
+      lineMinor,
+    };
+  });
+
+  return { rows, totalMinor };
+}
+
 /**
  * Money guard: the cash+card paid back must not exceed the value of the
  * goods being refunded (you cannot hand back more money than the

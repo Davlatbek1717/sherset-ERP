@@ -3,6 +3,7 @@ import {
   applyDiscountMinor,
   cartCount,
   cartTotalMinor,
+  refundPayoutMinor,
   revenueBaseMinor,
   toMinorOrNull,
 } from './cart-math';
@@ -111,5 +112,59 @@ describe('revenueBaseMinor', () => {
 
   it('server summasi 0n bo`lsa ham U olinadi (null emas)', () => {
     expect(revenueBaseMinor(0n, 500_000n)).toBe(0n);
+  });
+});
+
+/**
+ * FE-01 (CRITICAL) — qaytariladigan naqd asl chekning CHEGIRMALI qator
+ * summasidan hisoblanadi.
+ *
+ * Eski kod `priceMinor × qty` qilardi: 10% chegirma bilan sotilgan chekda
+ * mijoz 900 000 to'lagan, kassa esa 1 000 000 qaytarardi — har chegirmali
+ * qaytarishda kassa chegirma foizicha pul yo'qotardi. SALES-01 tuzatilgach
+ * server bunday so'rovni umuman rad etadi (400), ya'ni bu formula
+ * tuzatilmasa chegirmali chekni qaytarib BO'LMAY qoladi.
+ *
+ * Yaxlitlash pastga — server (`priceRefundFromOriginal`) bilan bir xil,
+ * shunda FE ko'rsatgan summa server qabul qiladigan summadan oshmaydi.
+ */
+describe('refundPayoutMinor', () => {
+  it('to`liq qaytarishda CHEGIRMALI summa (ro`yxat narxi EMAS)', () => {
+    // 1 dona × 1 000 000, −10% → mijoz 900 000 to'lagan.
+    expect(refundPayoutMinor([{ quantity: '1', sumMinor: '900000', returnQty: 1 }])).toBe(900_000n);
+  });
+
+  it('qisman qaytarishda proporsional', () => {
+    expect(refundPayoutMinor([{ quantity: '10', sumMinor: '900000', returnQty: 3 }])).toBe(
+      270_000n,
+    );
+  });
+
+  it('qaytarilmayotgan qator 0 beradi', () => {
+    expect(refundPayoutMinor([{ quantity: '10', sumMinor: '900000', returnQty: 0 }])).toBe(0n);
+  });
+
+  it('bir nechta qatorni qo`shadi', () => {
+    expect(
+      refundPayoutMinor([
+        { quantity: '2', sumMinor: '200', returnQty: 1 },
+        { quantity: '1', sumMinor: '500', returnQty: 1 },
+      ]),
+    ).toBe(600n);
+  });
+
+  it('yaxlitlash PASTGA — asl summadan oshmaydi', () => {
+    // 3 dona = 100 tiyin; har dona 33.33 → 33 (34 emas).
+    expect(refundPayoutMinor([{ quantity: '3', sumMinor: '100', returnQty: 1 }])).toBe(33n);
+    expect(refundPayoutMinor([{ quantity: '3', sumMinor: '100', returnQty: 3 }])).toBe(100n);
+  });
+
+  it('kasr (og`irlik) miqdorda otilmaydi va to`g`ri hisoblaydi', () => {
+    // BigInt(1.5) TypeError berardi (FE-02 klassi) — mikro-birlik shuni yopadi.
+    expect(refundPayoutMinor([{ quantity: '1.5', sumMinor: '150', returnQty: 0.5 }])).toBe(50n);
+  });
+
+  it('nol miqdorli asl qator 0 beradi (bo`lish xatosi yo`q)', () => {
+    expect(refundPayoutMinor([{ quantity: '0', sumMinor: '100', returnQty: 1 }])).toBe(0n);
   });
 });

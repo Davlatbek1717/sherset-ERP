@@ -13,6 +13,7 @@ import { useAuth } from '@/lib/auth-store';
 import {
   applyDiscountMinor,
   cartTotalMinor,
+  refundPayoutMinor,
   revenueBaseMinor,
   cartCount as sumCartCount,
   toMinorOrNull,
@@ -274,17 +275,21 @@ function ChekDetailPanel({ saleId, onBack }: { saleId: string; onBack: () => voi
 
   const refundMut = useMutation({
     mutationFn: async () => {
-      const positions = (data?.positions ?? [])
-        .filter((p) => (returnQty[p.id] ?? 0) > 0)
-        .map((p) => ({
-          productId: p.product.id,
-          quantity: String(returnQty[p.id]),
-          priceMinor: p.priceMinor,
-        }));
-      if (positions.length === 0) throw new Error('Qaytariladigan tovar tanlanmagan');
-      const cashRefund = positions.reduce(
-        (sum, pos) => sum + BigInt(pos.priceMinor) * BigInt(pos.quantity),
-        0n,
+      const refundLines = (data?.positions ?? []).filter((p) => (returnQty[p.id] ?? 0) > 0);
+      if (refundLines.length === 0) throw new Error('Qaytariladigan tovar tanlanmagan');
+      const positions = refundLines.map((p) => ({
+        productId: p.product.id,
+        quantity: String(returnQty[p.id]),
+      }));
+      // FE-01: naqd asl chekning CHEGIRMALI qator summasidan proporsional —
+      // `priceMinor × qty` mijoz to'lamagan pulni qaytarardi. Server ham
+      // aynan shu bazadan hisoblaydi va oshib ketsa 400 beradi.
+      const cashRefund = refundPayoutMinor(
+        refundLines.map((p) => ({
+          quantity: p.quantity,
+          sumMinor: p.sumMinor,
+          returnQty: returnQty[p.id] ?? 0,
+        })),
       );
       await api.post(`/retail-sales/${saleId}/refund`, {
         positions,
@@ -509,9 +514,15 @@ function ChekDetailPanel({ saleId, onBack }: { saleId: string; onBack: () => voi
       {returnMode && (
         <div className="shrink-0 border-t border-[var(--ms-border)] bg-[var(--ms-bg-surface)] p-4">
           {(() => {
-            const refundMinor = data.positions.reduce(
-              (sum, p) => sum + BigInt(p.priceMinor) * BigInt(returnQty[p.id] ?? 0),
-              0n,
+            // Ekranda ko'rinadigan raqam so'rovga ketadigani bilan bir xil
+            // formuladan chiqsin (FE-01) — aks holda kassir bir summani
+            // ko'rib boshqasini yuborardi.
+            const refundMinor = refundPayoutMinor(
+              data.positions.map((p) => ({
+                quantity: p.quantity,
+                sumMinor: p.sumMinor,
+                returnQty: returnQty[p.id] ?? 0,
+              })),
             );
             return (
               <>

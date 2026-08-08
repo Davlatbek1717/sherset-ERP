@@ -43,7 +43,11 @@ import { planLoyaltyAccrual, planLoyaltyReversal } from './retail-loyalty.js';
 // Pure, adversarially-tested refund guards (§105 — enforces the
 // schema's documented "subset of original positions" contract that
 // refund() never checked: blocks over-refund of qty/products/cash).
-import { validateRefundAmount, validateRefundPositions } from './retail-refund-validation.js';
+import {
+  priceRefundFromOriginal,
+  validateRefundAmount,
+  validateRefundPositions,
+} from './retail-refund-validation.js';
 // Yagona FSM o'tish jadvali — oldindan tekshiruv va tranzaksiya ichidagi CAS
 // qo'riqchisi bir manbadan oziqlanadi (ajralib qolsa qo'riqchi tor/keng bo'ladi).
 import { allowedFrom, canTransition, transitionRejection } from './retail-sale-fsm.js';
@@ -954,6 +958,11 @@ export class RetailSaleService {
             quantity: true,
             costMinor: true,
             basePriceMinor: true,
+            // SALES-01: the refund is PRICED from these — the client's
+            // priceMinor is informational only (see priceRefundFromOriginal).
+            priceMinor: true,
+            discount: true,
+            sumMinor: true,
           },
         },
       },
@@ -978,20 +987,29 @@ export class RetailSaleService {
     );
     if (posError) throw new BadRequestException(posError);
 
-    const refundPositions = this.computePositions(
-      parsed.positions.map((p) => ({
+    // SALES-01: price the refund from the ORIGINAL receipt, never from the
+    // request. Running the client's `priceMinor` through computePositions()
+    // made the payout cap self-referential — a cashier could refund a
+    // 10 000 so'm item for 10 000 000 and every guard below still passed.
+    // `discount` is already baked into the original `sumMinor`, which also
+    // closes FE-01 (refunding a discounted receipt at the list price).
+    const refundPositions = priceRefundFromOriginal(
+      original.positions.map((p) => ({
         productId: p.productId,
-        quantity: p.quantity,
+        quantity: String(p.quantity),
         priceMinor: p.priceMinor,
-        discount: p.discount,
+        discount: String(p.discount),
+        sumMinor: p.sumMinor,
       })),
+      parsed.positions.map((p) => ({ productId: p.productId, quantity: p.quantity })),
     );
 
     const cashReturn = BigInt(parsed.cashAmountMinor);
     const cardReturn = BigInt(parsed.cardAmountMinor);
 
     // §105: cannot pay back more money than the refunded goods are
-    // worth (computed from the now-validated positions).
+    // worth. Now that `refundPositions.totalMinor` is derived from the
+    // original receipt, this cap is a real bound: Σ refund ≤ original.sumMinor.
     const amtError = validateRefundAmount(refundPositions.totalMinor, cashReturn, cardReturn);
     if (amtError) throw new BadRequestException(amtError);
 
