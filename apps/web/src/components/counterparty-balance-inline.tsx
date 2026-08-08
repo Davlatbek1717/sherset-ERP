@@ -10,8 +10,14 @@
  *
  * Fetches per-currency balances from /counterparty-balances/:id.
  * Positive ⇒ «(нам должны)» — they owe us; negative ⇒ «(мы должны)»
- * — we owe them. Zero/no rows ⇒ render nothing (clean state, like
- * moysklad which hides the line).
+ * — we owe them. A zero balance still renders (moysklad shows
+ * «Баланс : 0,00 сум»).
+ *
+ * COLOUR is NOT moysklad's — it is the owner's risk rule (2026-08-08):
+ * red iff the counterparty owes us, green otherwise (zero included).
+ * The rule lives in {@link ../lib/counterparty-balance-tone}; read its
+ * header before "fixing" the colours in a parity audit. Only the colour
+ * deviates — label, qualifiers and formatting stay at parity.
  *
  * Component is read-only and self-contained — drop next to the agent
  * field on any document form. `counterpartyId={null}` ⇒ renders
@@ -19,6 +25,7 @@
  */
 
 import { api } from '@/lib/api-client';
+import { counterpartyBalanceToneClass } from '@/lib/counterparty-balance-tone';
 import { formatMoney } from '@moysklad/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
@@ -53,7 +60,7 @@ export function CounterpartyBalanceInline({ counterpartyId }: CounterpartyBalanc
   if (rows.length === 0) {
     return (
       <div className="mt-1 text-xs" data-test-id="counterparty-balance-inline">
-        <span className="text-[var(--ms-text-muted)]">
+        <span className={counterpartyBalanceToneClass(0n)}>
           {t('balance_label')} :{' '}
           <span className="font-medium tabular-nums">{formatMoney(0n, 'UZS')}</span>
         </span>
@@ -66,11 +73,10 @@ export function CounterpartyBalanceInline({ counterpartyId }: CounterpartyBalanc
       {rows.map((r) => {
         const minor = BigInt(r.balanceMinor);
         // moysklad convention: positive ⇒ counterparty owes us («нам должны»);
-        // we display the magnitude with the directional label.
+        // we display the magnitude with the directional label. The COLOUR is
+        // the owner's risk rule, not the accounting sign — see the helper.
         const positive = minor > 0n;
-        const tone = positive
-          ? 'text-[var(--ms-text-success,#15803d)]'
-          : 'text-[var(--ms-text-destructive)]';
+        const tone = counterpartyBalanceToneClass(minor);
         const abs = positive ? minor : -minor;
         return (
           <span key={r.currency} className={tone}>
