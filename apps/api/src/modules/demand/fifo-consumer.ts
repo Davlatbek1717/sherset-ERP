@@ -1,16 +1,15 @@
 /**
- * FIFO cost consumer — pure decimal/bigint helpers for FIFO walk and cost
- * computation.
+ * Pure decimal/bigint cost helpers (tiyin-exact, no floating point).
  *
- * Background: SupplyPosition tracks `remainingQty` (Decimal 20,6) and
- * per-unit `costMinor` (BigInt tiyin). When a Demand is posted, we walk the
- * matching supply lots in FIFO order (oldest supply first), decrement each
- * `remainingQty`, and accumulate the consumed cost into the demand position.
+ * History: this file was born as the FIFO cost consumer's math. Faza 18a
+ * (QAROR-A, 2026-08-08) retired the FIFO lot walk — COGS is now the
+ * per-store WEIGHTED AVERAGE everywhere (Stock.costBalanceMinor ÷ qty) —
+ * but the helpers are model-agnostic and remain the shared cost arithmetic
+ * for demand/loss/retail-sale (and reverseLegacyFifo still reverses
+ * pre-18a DemandPositionCostConsumption rows with them).
  *
- * All math here is exact (BigInt) — no floating point. Quantities are
- * parsed from Decimal strings into a 1e6-scaled bigint so that
- *   line_cost = round(qtyScaled × unitCostMinor / 1e6)
- * gives a tiyin-exact result.
+ * Quantities are parsed from Decimal(20,6) strings into a 1e6-scaled bigint
+ * so that line_cost = round(qtyScaled × unitCostMinor / 1e6) is tiyin-exact.
  */
 
 const SCALE = 1_000_000n;

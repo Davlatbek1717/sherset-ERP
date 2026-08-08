@@ -52,6 +52,7 @@ function makeHarness(positions: OriginalPosition[]) {
       }),
     },
     retailSalePosition: { findMany: vi.fn().mockResolvedValue([]) },
+    stockOperation: { findMany: vi.fn().mockResolvedValue([]) },
     cashierAuditEvent: { createMany: vi.fn().mockResolvedValue({ count: 0 }) },
     cashierSession: { update: vi.fn().mockResolvedValue({}) },
   };

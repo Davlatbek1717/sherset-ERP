@@ -1,5 +1,5 @@
 import { Prisma } from '@moysklad/db';
-import { computePositionTotal } from '@moysklad/money';
+import { computePositionTotal, scaleMinorByQty } from '@moysklad/money';
 import {
   BadRequestException,
   ConflictException,
@@ -40,13 +40,7 @@ import {
   type UpdateDemandInput,
   UpdateDemandSchema,
 } from './demand.schema.js';
-import {
-  compareDecimals,
-  computeLineCost,
-  computePerUnitCost,
-  minDecimal,
-  subtractDecimals,
-} from './fifo-consumer.js';
+import { compareDecimals, computePerUnitCost } from './fifo-consumer.js';
 
 interface ComputedTotals {
   sumMinor: bigint;
@@ -974,158 +968,23 @@ export class DemandService {
   }
 
   // =====================================================================
-  // FIFO cost consumption (Sprint 17.2)
+  // COGS — weighted average (Faza 18a, QAROR-A 2026-08-08; FIFO bekor)
   // =====================================================================
 
   /**
-   * Consume `qty` units of a product from supply lots in FIFO order
-   * (oldest posted Supply first, then position order within supply).
+   * Reverse the FIFO consumption a LEGACY demand recorded on post (before
+   * Faza 18a switched COGS to the weighted average) — restore
+   * `SupplyPosition.remainingQty` and delete the ledger rows.
    *
-   * Walks `supply_positions` rows where `remaining_qty > 0` for the given
-   * (account, assortment), locks them with `FOR UPDATE` so concurrent
-   * Demand posts can't double-spend, decrements each `remainingQty`, and
-   * writes a `DemandPositionCostConsumption` ledger row per lot drawn.
-   *
-   * Returns the total cost (tiyin) and the uncovered quantity if FIFO
-   * depth is insufficient. Uncovered portion has cost 0 — the caller
-   * decides whether to allow it (moysklad allows when allowNegativeStock
-   * is true; otherwise the upstream sufficiency check rejects first).
-   *
-   * Services and bundles aren't FIFO-tracked; they always return cost=0,
-   * uncovered=qty.
+   * New posts write no consumption rows, so `hadRows` is false for them and
+   * the caller reverses from the frozen per-unit cost instead. Old rows are
+   * otherwise read-only legacy: nothing creates them anymore.
    */
-  private async consumeFifo(
-    tx: Prisma.TransactionClient,
-    accountId: string,
-    demandPosition: { id: string; assortmentKind: string; assortmentId: string; quantity: string },
-  ): Promise<{ totalCostMinor: bigint; uncoveredQty: string }> {
-    const demandQty = demandPosition.quantity;
-    if (demandPosition.assortmentKind !== 'product') {
-      return { totalCostMinor: 0n, uncoveredQty: demandQty };
-    }
-
-    // SELECT FOR UPDATE locks each matching supply_position row for the
-    // duration of this transaction. Combined with Serializable isolation,
-    // this prevents two parallel Demand posts from consuming the same lot.
-    const supplies = await tx.$queryRaw<
-      Array<{ id: string; remaining_qty: string; cost_minor: bigint | null }>
-    >`
-      SELECT sp.id, sp.remaining_qty::text AS remaining_qty, sp.cost_minor
-      FROM supply_positions sp
-      JOIN supplies s ON s.id = sp.supply_id
-      WHERE sp.account_id = ${accountId}::uuid
-        AND sp.assortment_kind = ${demandPosition.assortmentKind}
-        AND sp.assortment_id = ${demandPosition.assortmentId}::uuid
-        AND sp.remaining_qty > 0
-        AND s.state = 'posted'
-      ORDER BY s.moment ASC, sp.position ASC
-      FOR UPDATE OF sp
-    `;
-
-    let remaining = demandQty;
-    let totalCost = 0n;
-    let lastLotId: string | null = null;
-
-    for (const sp of supplies) {
-      if (remaining === '0') break;
-      const consumeQty = minDecimal(remaining, sp.remaining_qty);
-      if (consumeQty === '0') continue;
-      const unitCost = sp.cost_minor ?? 0n;
-      const lineCost = computeLineCost(consumeQty, unitCost);
-
-      await tx.demandPositionCostConsumption.create({
-        data: {
-          accountId,
-          demandPositionId: demandPosition.id,
-          supplyPositionId: sp.id,
-          quantity: consumeQty,
-          unitCostMinor: unitCost,
-          lineCostMinor: lineCost,
-        },
-      });
-
-      await tx.supplyPosition.update({
-        where: { id: sp.id },
-        data: { remainingQty: { decrement: new Prisma.Decimal(consumeQty) } },
-      });
-
-      totalCost += lineCost;
-      lastLotId = sp.id;
-      remaining = subtractDecimals(remaining, consumeQty);
-    }
-
-    // ── Negative-stock (uncovered) cost basis ────────────────────────────────
-    // When FIFO depth is insufficient (only reachable with allowNegativeStock —
-    // the upstream sufficiency check rejects otherwise) the uncovered units used
-    // to cost 0, understating COGS and inflating «Прибыль» (sumMinor −
-    // costSumMinor) on every oversell. moysklad's средневзвешенная model costs
-    // negative-stock write-offs at the moving-average unit cost, never 0. We
-    // cost the uncovered portion at the WEIGHTED AVERAGE of the lots this line
-    // actually drew; if it drew nothing (0 on hand), the most-recent posted
-    // supply lot's unit cost for this assortment (the last known purchase cost).
-    //
-    // The cost is recorded as a 0-QTY consumption row so reverseFifo() reverses
-    // it symmetrically on unpost/cancel (it sums lineCostMinor and increments
-    // remainingQty by 0 — a no-op) — keeping the post↔unpost stock-value cycle
-    // exactly zero-sum without a schema change. The FK needs a real lot, hence
-    // the lastLotId / most-recent-lot anchor.
-    if (compareDecimals(remaining, '0') > 0) {
-      const coveredQty = subtractDecimals(demandQty, remaining);
-      let basisUnit = 0n;
-      let basisLotId: string | null = null;
-      if (compareDecimals(coveredQty, '0') > 0 && totalCost > 0n) {
-        basisUnit = computePerUnitCost(totalCost, coveredQty);
-        basisLotId = lastLotId;
-      } else {
-        const recent = await tx.$queryRaw<Array<{ id: string; cost_minor: bigint | null }>>`
-          SELECT sp.id, sp.cost_minor
-          FROM supply_positions sp
-          JOIN supplies s ON s.id = sp.supply_id
-          WHERE sp.account_id = ${accountId}::uuid
-            AND sp.assortment_kind = ${demandPosition.assortmentKind}
-            AND sp.assortment_id = ${demandPosition.assortmentId}::uuid
-            AND s.state = 'posted'
-          ORDER BY s.moment DESC, sp.position DESC
-          LIMIT 1
-        `;
-        const lot = recent[0];
-        if (lot) {
-          basisUnit = lot.cost_minor ?? 0n;
-          basisLotId = lot.id;
-        }
-      }
-      if (basisLotId && basisUnit > 0n) {
-        const uncoveredCost = computeLineCost(remaining, basisUnit);
-        await tx.demandPositionCostConsumption.create({
-          data: {
-            accountId,
-            demandPositionId: demandPosition.id,
-            supplyPositionId: basisLotId,
-            quantity: '0',
-            unitCostMinor: basisUnit,
-            lineCostMinor: uncoveredCost,
-          },
-        });
-        totalCost += uncoveredCost;
-      }
-    }
-
-    return { totalCostMinor: totalCost, uncoveredQty: remaining };
-  }
-
-  /**
-   * Reverse the FIFO consumption recorded on Demand.post — restore
-   * `SupplyPosition.remainingQty` and delete the ledger rows. Idempotent
-   * via per-row delete (transaction wraps it).
-   *
-   * Returns the total cost that was reversed (used by stock-cost ledger
-   * reversal in unpost).
-   */
-  private async reverseFifo(
+  private async reverseLegacyFifo(
     tx: Prisma.TransactionClient,
     accountId: string,
     demandPositionId: string,
-  ): Promise<bigint> {
+  ): Promise<{ totalCostMinor: bigint; hadRows: boolean }> {
     const consumptions = await tx.demandPositionCostConsumption.findMany({
       where: { accountId, demandPositionId },
     });
@@ -1142,7 +1001,7 @@ export class DemandService {
         where: { accountId, demandPositionId },
       });
     }
-    return totalCost;
+    return { totalCostMinor: totalCost, hadRows: consumptions.length > 0 };
   }
 
   // =====================================================================
@@ -1260,30 +1119,58 @@ export class DemandService {
           balances,
         );
 
-        // 3. FIFO cost consumption (Sprint 17.2). Walks supply_positions in
-        //    FIFO order, locks them, decrements remainingQty, writes the
-        //    consumption ledger, and accumulates COGS for this demand.
+        // 3. COGS — weighted average (Faza 18a, QAROR-A; STK-02/03/04). The
+        //    per-unit basis is the SAME per-store locked balance the
+        //    sufficiency check just used: Stock.costBalanceMinor ÷ qty on
+        //    hand — the average every inbound document maintains through
+        //    applyDeltas, and the model Loss/Inventory/Move/Enter already
+        //    consume at. This closes the two FIFO contradictions: the lot
+        //    walk had no store filter (a store-B shipment drew store-A-priced
+        //    lots while decrementing store-B's balance → per-store cost
+        //    drift), and the avg-model documents never touched the lots (a
+        //    Loss left them intact, so a later Demand charged the same
+        //    received value AGAIN). Valueless/empty stock falls back to the
+        //    product cost (buyPrice) — the Loss precedent: a negative-stock
+        //    shipment still removes value, never 0 (moysklad's
+        //    средневзвешенная model).
+        const productIds = existing.positions
+          .filter((p) => p.assortmentKind === 'product')
+          .map((p) => p.assortmentId);
+        const buyPriceByProduct = new Map<string, bigint>();
+        if (productIds.length > 0) {
+          const prods = await tx.product.findMany({
+            where: { accountId, id: { in: productIds } },
+            select: { id: true, buyPrice: true },
+          });
+          for (const pr of prods) buyPriceByProduct.set(pr.id, pr.buyPrice ?? 0n);
+        }
         let docCostMinor = 0n;
+        const positionPerUnit = new Map<string, bigint>();
         const positionCosts = new Map<string, bigint>();
         for (const p of existing.positions) {
-          const fifo = await this.consumeFifo(tx, accountId, {
-            id: p.id,
-            assortmentKind: p.assortmentKind,
-            assortmentId: p.assortmentId,
-            quantity: String(p.quantity),
-          });
-          positionCosts.set(p.id, fifo.totalCostMinor);
-          docCostMinor += fifo.totalCostMinor;
-          if (p.assortmentKind === 'product' && fifo.uncoveredQty !== '0') {
-            this.logger.warn(
-              `Demand ${id} position ${p.id}: ${fifo.uncoveredQty} units uncovered by supply — costed at weighted-average (negative stock). allowNegativeStock=${store.allowNegativeStock}`,
-            );
+          // Services/bundles carry no stock value — cost 0, as under FIFO.
+          if (p.assortmentKind !== 'product') {
+            positionPerUnit.set(p.id, 0n);
+            positionCosts.set(p.id, 0n);
+            continue;
           }
+          const bal = balances.get(p.assortmentId);
+          const onHand = bal?.qty ?? '0';
+          const costBal = bal?.costBalanceMinor ? BigInt(bal.costBalanceMinor) : 0n;
+          const fallback = buyPriceByProduct.get(p.assortmentId) ?? 0n;
+          const perUnit =
+            costBal > 0n && compareDecimals(onHand, '0') > 0
+              ? computePerUnitCost(costBal, onHand)
+              : fallback;
+          const lineCost = scaleMinorByQty(perUnit, String(p.quantity));
+          positionPerUnit.set(p.id, perUnit);
+          positionCosts.set(p.id, lineCost);
+          docCostMinor += lineCost;
         }
 
         // 4. Build StockDeltas (negative qty + negative cost for outflow).
-        //    Cost decrement equals the FIFO total — Stock.costBalanceMinor
-        //    decreases by exactly what we consumed.
+        //    Stock.costBalanceMinor decreases by perUnit × qty — an outflow
+        //    at the average leaves the remaining per-unit average unchanged.
         const deltas: StockDelta[] = existing.positions.map((p) => ({
           storeId: existing.storeId,
           assortmentKind: p.assortmentKind,
@@ -1299,13 +1186,14 @@ export class DemandService {
 
         await this.stock.applyDeltas(tx, accountId, userId, deltas);
 
-        // 5. Persist per-position avg cost (display) + doc-level COGS total.
+        // 5. Freeze the per-unit cost onto the position — display AND the
+        //    reversal basis: unpost/cancel rebuild the value with the
+        //    IDENTICAL scaleMinorByQty(costMinor, qty) formula, so the
+        //    post↔unpost stock-value cycle is exactly zero-sum.
         for (const p of existing.positions) {
-          const lineCost = positionCosts.get(p.id) ?? 0n;
-          const perUnit = computePerUnitCost(lineCost, String(p.quantity));
           await tx.demandPosition.update({
             where: { id: p.id },
-            data: { costMinor: perUnit },
+            data: { costMinor: positionPerUnit.get(p.id) ?? 0n },
           });
         }
 
@@ -1413,12 +1301,19 @@ export class DemandService {
           );
         }
 
-        // 1. Reverse FIFO consumption — restore SupplyPosition.remainingQty
-        //    and capture the cost we put back into stock.
+        // 1. Reverse the outflow value. New-model demands froze the per-unit
+        //    average onto the position at post — rebuild with the IDENTICAL
+        //    formula (zero-sum). Demands posted under FIFO (pre-18a) instead
+        //    reverse their legacy consumption rows exactly as recorded.
         const positionRefunds = new Map<string, bigint>();
         for (const p of existing.positions) {
-          const refundedCost = await this.reverseFifo(tx, accountId, p.id);
-          positionRefunds.set(p.id, refundedCost);
+          const legacy = await this.reverseLegacyFifo(tx, accountId, p.id);
+          positionRefunds.set(
+            p.id,
+            legacy.hadRows
+              ? legacy.totalCostMinor
+              : scaleMinorByQty(p.costMinor ?? 0n, String(p.quantity)),
+          );
         }
 
         // 2. Build StockDeltas (positive qty + positive cost — goods come back).
@@ -1533,11 +1428,17 @@ export class DemandService {
           );
         }
 
-        // Reverse FIFO consumption (same as unpost path).
+        // Reverse the outflow value (same frozen-per-unit ∥ legacy-FIFO split
+        // as the unpost path).
         const positionRefunds = new Map<string, bigint>();
         for (const p of existing.positions) {
-          const refundedCost = await this.reverseFifo(tx, accountId, p.id);
-          positionRefunds.set(p.id, refundedCost);
+          const legacy = await this.reverseLegacyFifo(tx, accountId, p.id);
+          positionRefunds.set(
+            p.id,
+            legacy.hadRows
+              ? legacy.totalCostMinor
+              : scaleMinorByQty(p.costMinor ?? 0n, String(p.quantity)),
+          );
         }
 
         // Reverse stock (qty +, cost +). docType='demand_cancel'.

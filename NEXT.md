@@ -305,6 +305,43 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-08o (AUDIT-FIX FAZA 18a — tannarx yagonalash: POS/Demand → WEIGHTED-AVERAGE,
+> FIFO lot-ledger bekor · `STK-02/03/04`) · Phase-1: strukturaviy + unit-tasdiqlangan,
+> browser-smoke YO'Q · ⏳ DEPLOY QILINMAGAN · 🗄️ migratsiya YO'Q · ⚠️ **navbatdan tashqari** —
+> foydalanuvchi Faza 18 sessiya-boshi promptini bevosita berdi · ⚠️ parallel sessiya bir daraxtda
+> Faza 16/22 qildi — diff/gate path-cheklangan (§6.6)
+>
+> **Nima qilindi (QAROR-A weighted-average, 18a sub-fazasi; 18b/18c QOLDI).**
+> (1) `Demand.post` COGS endi FIFO lot-walk EMAS — yetarlilik-tekshiruv qulflagan per-store
+> balansdan: `perUnit = costBalanceMinor ÷ onHand`, bo'sh stock'da `buyPrice` fallback (Loss
+> presedenti); perUnit pozitsiyaga muzlatiladi, unpost/cancel AYNAN shu formula bilan teskari ⇒
+> zero-sum. `consumeFifo` O'CHIRILDI; `DemandPositionCostConsumption` endi YARATILMAYDI, eski
+> qatorlar read-only legacy — eski hujjat unpost'ida `reverseLegacyFifo` (hadRows) avvalgidek
+> qaytaradi. STK-03 (store-filtrsiz FIFO) va STK-04 (Loss→Demand COGS 2×) shu bilan ildizdan yopildi.
+> (2) POS `retail-sale.post` chiqim delta'si `null` EMAS — o'sha per-store o'rtacha (STK-02);
+> refund esa asl chekning O'Z StockOperation qatorlaridan kumulyativ-qoldiq bilan qaytaradi
+> (`retail-refund-cogs.ts`, sof modul): qisman qaytimlar seriyasi qat'iy zero-sum, legacy chek
+> (NULL chiqim) qaytimda ham NULL. TDD: 13 qizil → 64 yashil; qizil bosqich basis-agregatsiyadagi
+> haqiqiy ishora-xatoni tutdi. Batafsil: `docs/REJA-AUDIT-FIX-2026-08.md` → HISOBOT JURNALI → 18a.
+>
+> **Gate (PATH-CHEKLANGAN, §6.6):** api tc **0** · o'z 10 faylim biome **0** · `i18n:gate` **9/9** ·
+> vitest: retail-sale **261/261** · demand+sales-return+work-order+loss+stock **279/279** · katta
+> batareya (supply, purchase-return, move, enter, inventory, cashier-session, processing) **944/944**
+> (3 refund-mock'qa `stockOperation.findMany` qo'shildi). **To'liq api-suite YUGURTIRILMADI** —
+> daraxtda parallel sessiyaning Faza 16 yarim ishi (currency/money/payment-*) turardi, repo-wide
+> `lint:product` qizilligi ham o'sha fayllardan. **Browser-smoke YO'Q.**
+>
+> **🟠 QARZ:** (1) **18b** — WorkOrder weighted-avg cost (`PP-05`, 4 null-delta). (2) **18c** — Move
+> oxirgi-birlik yaxlitlash (STK-08 sinfi; demand to'liq-chiqim ±tiyin qoldig'i ham shu yerda) +
+> supply'dagi `remainingQty` endi COGS uchun o'lik — yozuv/guard tozalash. (3) POS post→qaytim
+> qiymat-simmetriyasi runtime'da Phase-2 QA'da ko'riladi.
+>
+> **⏭️ KEYINGI:** navbat bo'yicha — `docs/REJA-AUDIT-FIX-2026-08.md` → **Faza 15**
+> (`SALES-02`,`SALES-06`,`SALES-07/08`); yoki foydalanuvchi 18b/18c'ni to'g'ridan-to'g'ri berishi
+> mumkin (sessiya-boshi prompt: Faza 18 + «18b» / «18c» deb ayt).
+
+---
+
 > **🕒 2026-08-08n (AUDIT-FIX FAZA 22 — prod secret boot-guard + query-token allowlist ·
 > `AUTH-02`+`AUTH-04`/`FE-05`) · Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q ·
 > ⏳ DEPLOY QILINMAGAN · 🗄️ migratsiya YO'Q · ⚠️ **navbatdan tashqari** — foydalanuvchi Faza 22

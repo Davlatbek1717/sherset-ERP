@@ -378,6 +378,7 @@ describe('RetailSaleService.refund — CAS state guard', () => {
         create: vi.fn(),
       },
       retailSalePosition: { findMany: vi.fn().mockResolvedValue([]) },
+      stockOperation: { findMany: vi.fn().mockResolvedValue([]) },
       // Kassa TZ §6.1 — post() endi har to`lov turini alohida qator qilib
       // yozadi; qoidalar `retail-tenders.test.ts` da qoplangan.
       retailSalePayment: { createMany: vi.fn().mockResolvedValue({ count: 1 }) },

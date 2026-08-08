@@ -1,4 +1,5 @@
 import type { Prisma } from '@moysklad/db';
+import { scaleMinorByQty } from '@moysklad/money';
 import {
   BadRequestException,
   ConflictException,
@@ -12,6 +13,9 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 // Kassa TZ §7.1 — qarzga sotish mijoz balansiga yoziladi (moysklad «Баланс»
 // ishora konventsiyasi: musbat = mijoz bizga qarzdor).
 import { CounterpartyBalanceService } from '../counterparty-balance/counterparty-balance.service.js';
+// Faza 18a (QAROR-A weighted-average, STK-02): the POS stock outflow is priced
+// from the per-store locked balance with the same helpers Loss uses.
+import { compareDecimals, computePerUnitCost } from '../demand/fifo-consumer.js';
 // §109: loyalty accrual/reversal on POS sale/refund. Only loyalty's
 // existing public API is called (computeEarnedPoints + createOperation);
 // the loyalty module itself is NOT edited (DO NOT respected).
@@ -41,6 +45,10 @@ import {
   snapshotPricesByProduct,
 } from './price-snapshot.js';
 import { planLoyaltyAccrual, planLoyaltyReversal } from './retail-loyalty.js';
+// Faza 18a: refund returns EXACTLY the value the original sale's outflow
+// booked (cumulative remainder over partial refunds; NULL mirror for legacy
+// sales posted before the fix) — see retail-refund-cogs.test.ts.
+import { buildRefundCostBasis, consumeRefundCost } from './retail-refund-cogs.js';
 // Pure, adversarially-tested refund guards (§105 — enforces the
 // schema's documented "subset of original positions" contract that
 // refund() never checked: blocks over-refund of qty/products/cash).
@@ -769,17 +777,35 @@ export class RetailSaleService {
           })),
           balances,
         );
-        const deltas: StockDelta[] = stockPositions.map((p) => ({
-          storeId,
-          assortmentKind: 'product',
-          assortmentId: p.productId,
-          qtyDelta: `-${String(p.quantity)}`,
-          costDeltaMinor: null,
-          docType: 'retailsale',
-          docId: id,
-          docPositionId: p.id,
-          reason: 'post',
-        }));
+        // Faza 18a (STK-02): price the outflow VALUE, not just the qty. The
+        // old `costDeltaMinor: null` left Stock.costBalanceMinor untouched
+        // while qty fell, so every POS sale inflated the store's per-unit
+        // weighted average for all later consumers (Loss, Demand, reports).
+        // The basis is the per-store locked balance's average — identical to
+        // Loss — with the receipt's frozen buyPrice snapshot as the
+        // valueless-stock fallback (a sale from empty stock still removes
+        // value; NULL≠0 contract untouched, `frozen` misses simply cost 0).
+        const deltas: StockDelta[] = stockPositions.map((p) => {
+          const bal = balances.get(p.productId);
+          const onHand = bal?.qty ?? '0';
+          const costBal = bal?.costBalanceMinor ? BigInt(bal.costBalanceMinor) : 0n;
+          const fallback = frozen.get(p.productId)?.costMinor ?? 0n;
+          const perUnit =
+            costBal > 0n && compareDecimals(onHand, '0') > 0
+              ? computePerUnitCost(costBal, onHand)
+              : fallback;
+          return {
+            storeId,
+            assortmentKind: 'product',
+            assortmentId: p.productId,
+            qtyDelta: `-${String(p.quantity)}`,
+            costDeltaMinor: -scaleMinorByQty(perUnit, String(p.quantity)),
+            docType: 'retailsale',
+            docId: id,
+            docPositionId: p.id,
+            reason: 'post',
+          };
+        });
         await this.stock.applyDeltas(tx, accountId, userId, deltas);
       }
 
@@ -1031,6 +1057,7 @@ export class RetailSaleService {
         state: { in: ['posted', 'refunded'] },
       },
       select: {
+        id: true,
         sumMinor: true,
         cashAmountMinor: true,
         cardAmountMinor: true,
@@ -1244,6 +1271,32 @@ export class RetailSaleService {
           select: { id: true, productId: true, quantity: true, position: true },
           orderBy: { position: 'asc' },
         });
+        // Faza 18a (STK-02): return EXACTLY the value the original outflow
+        // booked — read back from the sale's own StockOperation rows, net of
+        // earlier partial refunds (cumulative remainder → the refund series
+        // is zero-sum against the original). Legacy sales (posted before the
+        // fix) booked NULL on the way out, so their refunds book NULL too.
+        const [originalPostOps, priorRefundOps] = await Promise.all([
+          tx.stockOperation.findMany({
+            where: { accountId, docType: 'retailsale', docId: original.id, reason: 'post' },
+            select: { assortmentId: true, qtyDelta: true, costDeltaMinor: true },
+          }),
+          priorRefunds.length > 0
+            ? tx.stockOperation.findMany({
+                where: {
+                  accountId,
+                  docType: 'retailsale',
+                  docId: { in: priorRefunds.map((r) => r.id) },
+                  reason: 'unpost',
+                },
+                select: { assortmentId: true, qtyDelta: true, costDeltaMinor: true },
+              })
+            : Promise.resolve([]),
+        ]);
+        const costBasis = buildRefundCostBasis(
+          originalPostOps.map((op) => ({ ...op, qtyDelta: String(op.qtyDelta) })),
+          priorRefundOps.map((op) => ({ ...op, qtyDelta: String(op.qtyDelta) })),
+        );
         const deltas: StockDelta[] = persistedPositions
           .filter((p): p is typeof p & { productId: string } => p.productId !== null)
           .map((p) => ({
@@ -1251,7 +1304,7 @@ export class RetailSaleService {
             assortmentKind: 'product',
             assortmentId: p.productId,
             qtyDelta: String(p.quantity), // positive — inflow back to stock
-            costDeltaMinor: null,
+            costDeltaMinor: consumeRefundCost(costBasis, p.productId, String(p.quantity)),
             docType: 'retailsale',
             docId: refundSale.id,
             docPositionId: p.id,

@@ -518,7 +518,9 @@ qatorlarini o'chirmasdan «read-only legacy» qoldirib, faqat yangi yo'lni weigh
 > o'rtacha-tortilgan COGS'ga o'tkaz, FIFO lot-ledgerni bekor qil (eski qatorlarни legacy qoldir), WorkOrder cost.
 > Hajm katta — 18a/18b/18c sub-fazaga bo'lishni taklif qil, faqat 18a'ni qilsang ham bo'ladi. TDD: 5 stsenariy.
 > Gate. Hisobot, TO'XTA.
-**◻ HISOBOT:** _(agent to'ldiradi)_
+**◑ HISOBOT (2026-08-08): 18a BAJARILDI** (POS+Demand weighted-avg, FIFO bekor, legacy read-only) —
+batafsili «HISOBOT JURNALI → Faza 18a» da. **18b (WorkOrder/PP-05) va 18c (Move oxirgi-birlik +
+unpost-guard tozalash) QOLDI** — alohida sessiyalarda.
 
 ---
 
@@ -2328,6 +2330,75 @@ atomik yozuvning ichida) qulflandi.
   Phase-2 QA cohort'ida ko'riladi.
 
 **Commit:** `fix(supply): faza 14 — tasdiq-FSM bypass guard + omborchi recompute (PP-06, PP-04)`
+
+---
+
+## Faza 18a — Tannarx yagonalash: POS/Demand → WEIGHTED-AVERAGE, FIFO bekor (`STK-02/03/04`)
+**2026-08-08 — Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q — 18b/18c QOLDI**
+
+### Da'voni kodda tasdiqlash (reja §2) — 4/4 TASDIQLANDI
+
+- **`STK-02`** — `retail-sale.service.ts` post `:777` va refund `:1254` **`costDeltaMinor: null`**:
+  POS chiqim/qaytim qiymat balansiga umuman tegmasdi ⇒ qty tushadi, `costBalanceMinor` turadi ⇒
+  har POS-sotuv keyingi iste'molchilar (Loss/Demand/hisobot) uchun o'rtachani SHISHIRADI.
+- **`STK-03`** — `consumeFifo` SQL'ida (`:1010-1023`) store-filtr YO'Q edi (faqat account+assortment+
+  posted) ⇒ B-ombor otgruzkasi A-ombor lotlaridan narx olar, balansni esa B'dan kamaytirardi.
+- **`STK-04`** — `remainingQty`ga faqat supply/demand tegadi (grep 7 fayl); Loss/Inventory/Move/Enter
+  weighted-avg bilan chiqim qilib lotni tegmaydi ⇒ keyingi Demand o'sha qabul qiymatini FIFO'dan
+  YANA hisoblaydi (COGS 2×).
+- **`PP-05`** — `work-order.service.ts` 4 delta-nuqtasi (`:436,469,553,568`) `costDeltaMinor: null` —
+  **18b'da**, bu sessiyada TEGILMADI.
+
+### Qilingan (18a — QAROR-A weighted-average, foydalanuvchi 2026-08-08)
+
+- **Demand.post** endi COGS'ni yetarlilik-tekshiruv ishlatgan **o'sha per-store qulflangan balans**dan
+  oladi: `perUnit = costBalanceMinor ÷ onHand` (`computePerUnitCost`), bo'sh/qiymatsiz stock'da
+  `product.buyPrice` fallback (Loss presedenti — manfiy-stock chiqim ham qiymat olib chiqadi, 0 emas).
+  `perUnit` pozitsiyaga MUZLATILADI (`costMinor`), delta = `−scaleMinorByQty(perUnit, qty)`.
+- **Demand.unpost/cancel** — AYNAN shu formula bilan teskari (`scaleMinorByQty(p.costMinor, qty)`) ⇒
+  post↔unpost qat'iy zero-sum. **Legacy yo'l saqlanadi:** FIFO davrida o'tkazilgan hujjatda
+  `DemandPositionCostConsumption` qatorlari bor — `reverseLegacyFifo` ularni avvalgidek qaytaradi
+  (`remainingQty` increment + delete), `hadRows=false` bo'lsa muzlatilgan perUnit ishlaydi.
+- **FIFO bekor:** `consumeFifo` (94 satr, 2 ta raw SQL) O'CHIRILDI; endi hech narsa
+  `DemandPositionCostConsumption` YARATMAYDI va lot `remainingQty`ni KAMAYTIRMAYDI — eski qatorlar
+  read-only legacy (rejadagi xavfsiz variant: tarixiy ma'lumot o'chirilmadi).
+- **POS (retail-sale).post** — chiqim delta'si endi xuddi Loss kabi per-store o'rtachadan; fallback —
+  chekka muzlatilgan `buyPrice` snapshot (`frozen`), NULL≠0 kontrakti buzilmadi.
+- **POS refund** — qaytim AYNAN asl chek chiqarganini qaytaradi: asl chekning o'z `StockOperation`
+  qatorlaridan bazis (`buildRefundCostBasis`), oldingi qisman qaytimlar ayirilib **kumulyativ qoldiq**
+  bo'yicha (`consumeRefundCost`) ⇒ qaytimlar seriyasi asl chiqimga nisbatan qat'iy zero-sum (333+334+333
+  testda). **Legacy chek** (fix'dan oldin o'tgan, NULL chiqim) qaytimda ham NULL — hech qachon qiymat
+  to'qib chiqarilmaydi. Bir qaytimda bir mahsulot ikki qatorda kelsa — qoldiqdan ketma-ket olinadi.
+
+### TDD (RED o'lchandi)
+
+Yangi 3 fayl: `demand-weighted-avg-cogs.test.ts` (10), `retail-cogs.test.ts` (6),
+`retail-refund-cogs.test.ts` (13, sof-xulqiy). Fix'dan oldin **13/16 qizil** (3 yashil — mavjud
+helperlar ustidagi maqsad-model arifmetikasi). Qizil bosqich **`buildRefundCostBasis`dagi haqiqiy
+ishora-xatoni tutdi** (sign ikki marta agdarilib qoldiq 0 chiqar edi). Eski FIFO class-lock
+`demand-cogs-uncovered.test.ts` O'CHIRILDI (himoya qilgan kod yo'q). Reja stsenariylari: (1) POS
+qiymat-kamayish ✓ (2) per-store o'rtacha ✓ (3) Loss→Demand 2× yo'q ✓ (5) unpost simmetrik ✓ +
+legacy-reversal ✓; (4) WorkOrder zero-sum — **18b'da**.
+
+### Gate (PATH-CHEKLANGAN — parallel sessiya Faza 16 ustida faol edi)
+
+api tc **0** · o'z 10 faylim biome **0** · `i18n:gate` **9/9** · vitest: retail-sale **261/261**,
+demand+sales-return+work-order+loss+stock **279/279**, katta batareya (supply, purchase-return, move,
+enter, inventory, cashier-session, processing) **944/944** (2 yiqilish mock'da `stockOperation.findMany`
+yo'qligidan edi — mock'lar to'ldirildi). **To'liq api-suite YUGURTIRILMADI** — daraxtda parallel
+sessiyaning Faza 16 (currency/rate-scale) yarim ishi turibdi, natija attributsiya qilib bo'lmasdi.
+
+### 🟠 QARZ / keyingi sub-fazalar
+
+1. **18b** — WorkOrder weighted-avg cost (`PP-05`): 4 null-delta + Processing naqshidagi consume/output.
+2. **18c** — Move per-unit yaxlitlash qoldig'i (oxirgi-birlik tuzatish, STK-08 sinfi) + supply
+   unpost-guard: `remainingQty` endi COGS uchun O'LIK (faqat legacy-reversal o'zgartiradi) — supply'da
+   `remainingQty = quantity` yozish va unga asoslangan har qanday kelajak-guard olib tashlanishi kerak.
+3. Demand'da to'liq chiqimda (qty == onHand) perUnit-yaxlitlashdan `costBalanceMinor`da ±tiyin qoldiq
+   qolishi mumkin (Loss'dagi bilan bir sinf) — 18c oxirgi-birlik tuzatish umumiy yechadi.
+4. **Browser-smoke YO'Q** — POS sotuv→qaytim va otgruzka post→unpost qiymat-simmetriyasi Phase-2 QA'da.
+
+**Commit:** `fix(cogs): faza 18a — POS/Demand weighted-average COGS, FIFO lot-ledger bekor (STK-02/03/04)`
 
 ---
 
