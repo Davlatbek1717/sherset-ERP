@@ -333,6 +333,26 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > **⏭️ Browser-QA ochiq** — bu Phase-1 (kod+test darajasida tasdiqlangan), real brauzerda
 > skaner qilib ko'rish qilinmadi.
 
+> **🕒 2026-08-07a (🔴 DEPLOY BLOKLANDI — VPS PAROLI ISHLAMAYAPTI)**
+>
+> `7a65b7f9` GitHub'ga (`sherset-ERP`) **push qilindi**, lekin prodga chiqmadi.
+>
+> **Tashxis (taxmin emas, o'lchangan):** server TIRIK — ping 122ms · 22-port ochiq ·
+> banner `SSH-2.0-OpenSSH_9.6p1`. `auth_none` sinovi serverning **hali ham `password`
+> usulini qabul qilishini** ko'rsatdi (`['publickey','password']`), ya'ni parol-kirish
+> o'chirilmagan — **parolning O'ZI o'zgargan**. Eski `Namoz8808` → `AuthenticationException`.
+>
+> **Prod holati SOG'LOM:** `erp.sherset.uz` **200** · `/api/v1/health` **200** — oldingi
+> deploy (`8d435a8b`) ishlab turibdi, hech narsa buzilmagan.
+>
+> **Deploy kutayotgan ish (24 commit, 5 migratsiya):** 1-Kassa B7 FE · B8 1-bo'lak ·
+> menejer 4M.3 (tuzatuvchi qator + haftalik xulosa) · 4M.4 (bo'shatish · jonli holat ·
+> javobgarlik · xodim kartasi + jurnal) · parallel sessiyaning multi-bin ishi (`49445838`).
+>
+> **Keyingi qadam:** egadan YANGI PAROLni olish → `scratchpad/ssh_run.py` va
+> `memory/sherset-vps-deploy.md` yangilanadi → `DS_TARGET=v2 deploy-smart.sh`.
+> Migratsiyalar tayyor, backup buyrug'i ham o'zgarmagan.
+
 > **🕒 2026-08-06d (MENEJER 4M.4 TUGADI — jonli holat · javobgarlik · xodim kartasi · `5b5d78f`) · ⏳ DEPLOY QILINMAGAN**
 >
 > 4M.4 ning asosiy qismi yopildi (qolgani faqat ishga qabul tomoni — sinov muddati).
