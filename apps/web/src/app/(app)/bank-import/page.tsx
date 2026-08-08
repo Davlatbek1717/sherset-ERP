@@ -61,6 +61,18 @@ interface Statement {
   rowCountImported: number;
   createdAt: string;
   rows: StatementRow[];
+  /**
+   * Faza 20 (INT-05) — upload javobi: aynan shu mazmunli fayl ilgari
+   * yuklangan bo'lsa, o'sha vypiska. Yuklash bloklanmaydi, lekin operator
+   * ogohlantiriladi (dublikat qatorlar commit'da rad etiladi).
+   */
+  duplicateOf?: {
+    id: string;
+    filename: string;
+    createdAt: string;
+    rowCountImported: number;
+    state: string;
+  } | null;
 }
 
 export default function BankImportPage() {
@@ -168,6 +180,10 @@ export default function BankImportPage() {
       ).length
     : 0;
 
+  const commitFailures = commitMut.data?.failed ?? [];
+  const rowLineNumber = (rowId: string) =>
+    statement?.rows.find((r) => r.id === rowId)?.lineNumber ?? '—';
+
   // Default-pick the first org once loaded.
   if (orgsData?.items[0] && !organizationId) {
     setOrganizationId(orgsData.items[0].id);
@@ -179,6 +195,38 @@ export default function BankImportPage() {
       <PageHeader title={t('title')} />
 
       {error && <Alert tone="destructive">{error}</Alert>}
+
+      {statement?.duplicateOf && (
+        <Alert tone="warning" data-test-id="duplicate-statement-warning">
+          {t('duplicate_warning', {
+            filename: statement.duplicateOf.filename,
+            date: formatDate(statement.duplicateOf.createdAt),
+            imported: statement.duplicateOf.rowCountImported,
+          })}
+        </Alert>
+      )}
+
+      {/*
+        Commit natijasidagi rad etilgan qatorlar. Ilgari `failed` umuman
+        ko'rsatilmasdi — operator «Hujjatlarni yaratish»ni bosib hech narsa
+        sodir bo'lmaganini ko'rardi. Faza 20 dedup'i aynan shu ro'yxat orqali
+        gapiradi, shuning uchun ko'rinishi shart.
+      */}
+      {commitFailures.length > 0 && (
+        <Alert
+          tone="warning"
+          title={t('commit_failed_title', { count: commitFailures.length })}
+          data-test-id="commit-failures"
+        >
+          <ul className="list-disc space-y-0.5 pl-4 text-xs">
+            {commitFailures.map((f) => (
+              <li key={f.rowId}>
+                {t('col_line')} {rowLineNumber(f.rowId)}: {f.error}
+              </li>
+            ))}
+          </ul>
+        </Alert>
+      )}
 
       <FormSection title={t('upload_label')}>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -226,6 +274,8 @@ export default function BankImportPage() {
         <Button
           onClick={() => {
             setError(null);
+            // Oldingi commit natijasi yangi vypiskaga tegishli emas.
+            commitMut.reset();
             uploadMut.mutate();
           }}
           loading={uploadMut.isPending}

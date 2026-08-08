@@ -1171,6 +1171,10 @@ model BankStatement {
   organizationAccountId String?  @map("organization_account_id") @db.Uuid
   filename              String   @db.VarChar(255)
   format                String   @default("csv") @db.VarChar(20)
+  /// Faza 20 (INT-05) — yuklangan fayl mazmunining sha256 hex hash'i. Bir xil
+  /// vypiskani ikkinchi marta yuklaganda upload javobida `duplicateOf` bilan
+  /// ogohlantirish uchun. Eski (migratsiyagacha) yozuvlarda NULL.
+  contentHash           String?  @map("content_hash") @db.VarChar(64)
   // Row counts captured at parse time — updated by commit() as rows transition.
   rowCountTotal         Int      @default(0) @map("row_count_total")
   rowCountMatched       Int      @default(0) @map("row_count_matched")
@@ -1186,6 +1190,7 @@ model BankStatement {
   rows                BankStatementRow[]
 
   @@index([accountId, createdAt(sort: Desc)])
+  @@index([accountId, contentHash])
   @@map("bank_statements")
 }
 
@@ -1213,6 +1218,13 @@ model BankStatementRow {
   // Once the user commits, this is populated with the new draft.
   paymentInId           String?  @map("payment_in_id") @db.Uuid
   paymentOutId          String?  @map("payment_out_id") @db.Uuid
+  /// Faza 20 (INT-05) — commit poygasining atomik «claim» belgisi. `commit()`
+  /// to'lov yaratishdan OLDIN `updateMany(WHERE payment_*_id IS NULL AND
+  /// (claim IS NULL OR claim < now-TTL))` bilan shu maydonni band qiladi;
+  /// `count === 0` ⇒ qatorni boshqa commit olib bo'lgan, o'tkazib yuboriladi.
+  /// To'lov yaratish xato bersa claim bo'shatiladi (NULL), crash bo'lsa TTL
+  /// (COMMIT_CLAIM_STALE_MS) o'tgach qayta olinadi.
+  commitClaimedAt       DateTime? @map("commit_claimed_at") @db.Timestamptz()
   skipped               Boolean  @default(false)
   error                 String?
 
@@ -1223,6 +1235,10 @@ model BankStatementRow {
 
   @@index([statementId, lineNumber])
   @@index([accountId, matchedCounterpartyId])
+  /// Faza 20 (INT-05) — vypiska-dedup qidiruvi uchun: «shu bank tranzaksiyasi
+  /// allaqachon import qilinganmi» (yo'nalish + sana + summa tabiiy kaliti).
+  /// (nom qo'lda berilgan — Prisma'ning avtomat nomi 63 belgidan oshib ketardi)
+  @@index([accountId, direction, moment, amountMinor], map: "bank_statement_rows_dedup_idx")
   @@map("bank_statement_rows")
 }
 

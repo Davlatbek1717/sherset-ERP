@@ -4577,7 +4577,9 @@
       "direction_out": "Расход",
       "status_parsed": "Разобрана",
       "status_committed": "Импортирована",
-      "status_cancelled": "Отменена"
+      "status_cancelled": "Отменена",
+      "duplicate_warning": "Внимание: этот файл уже загружался — «{filename}» от {date}, импортировано строк: {imported}. Повторный импорт тех же строк будет отклонён.",
+      "commit_failed_title": "Не импортировано строк: {count}"
     },
     "purchase_orders": {
       "title": "Заказы поставщикам",

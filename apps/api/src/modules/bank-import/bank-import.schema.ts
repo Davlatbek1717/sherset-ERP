@@ -41,5 +41,15 @@ export const CommitBankStatementSchema = z.object({
    * a counterparty manually in the preview UI.
    */
   counterpartyOverrides: z.record(z.string().uuid(), z.string().uuid()).optional(),
+  /**
+   * Faza 20 (INT-05) — dedup'dan ataylab chiqarilgan qatorlar. Commit har
+   * qatorni «shu bank tranzaksiyasi allaqachon import qilinganmi» (yo'nalish +
+   * sana + summa + hujjat raqami + kontragent hisob raqami) bo'yicha
+   * tekshiradi va topilsa RAD ETADI. Bir kunda bir kontragentga bir xil
+   * summali IKKI HAQIQIY to'lov bo'lishi mumkin — operator preview'da
+   * «baribir import qil» desa, o'sha qator id'si shu ro'yxatga tushadi va
+   * faqat o'shanga dedup qo'llanmaydi.
+   */
+  allowDuplicateRowIds: z.array(z.string().uuid()).optional(),
 });
 export type CommitBankStatementInput = z.infer<typeof CommitBankStatementSchema>;

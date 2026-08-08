@@ -4577,7 +4577,9 @@
       "direction_out": "Chiqim",
       "status_parsed": "Tahlil qilindi",
       "status_committed": "Import qilindi",
-      "status_cancelled": "Bekor qilindi"
+      "status_cancelled": "Bekor qilindi",
+      "duplicate_warning": "Diqqat: bu fayl allaqachon yuklangan — «{filename}», {date}, import qilingan qatorlar: {imported}. O‘sha qatorlarni qayta import qilish rad etiladi.",
+      "commit_failed_title": "Import qilinmagan qatorlar: {count}"
     },
     "purchase_orders": {
       "title": "Ta'minlovchi buyurtmalari",

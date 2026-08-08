@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { Prisma } from '@moysklad/db';
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
@@ -16,6 +17,27 @@ interface MatchHit {
   counterpartyId: string;
   reason: 'inn' | 'account';
 }
+
+/**
+ * Faza 20 (audit INT-05) — commit «claim»ining eskirish muddati.
+ *
+ * `commit()` to'lov yaratishdan oldin qatorni `commit_claimed_at` bilan band
+ * qiladi va yakunda uni PaymentIn/Out'ga bog'laydi yoki (xato bo'lsa)
+ * bo'shatadi. Jarayon aynan shu ikkisining ORASIDA o'lsa (pod restart, OOM)
+ * bo'shatish bajarilmay qoladi — TTL'siz qator abadiy «band» bo'lib, faqat
+ * DB'ga qo'l bilan kirib tuzatish mumkin bo'lardi. TTL o'tgach claim qayta
+ * olinadi. 15 daqiqa = to'lov yaratishning eng yomon holatidan ancha uzoq,
+ * operator kutishidan esa ancha qisqa.
+ *
+ * QOLDIQ XAVF (halol yozilsin): jarayon AYNAN `paymentIn.create` muvaffaqiyatli
+ * tugagan-u, `bankStatementRow.update({paymentInId})` hali yozilmagan lahzada
+ * o'lsa — yaratilgan to'lov HECH QAYSI qatorga bog'lanmagan bo'ladi, shu
+ * sababli TTL'dan keyingi qayta-urinishda dedup uni «egizak» sifatida topa
+ * olmaydi va IKKINCHI to'lov yaratiladi. Oyna millisekundlar; to'liq yopish
+ * uchun to'lovni qator-bog'lanishi bilan BIR tranzaksiyada yaratish kerak
+ * (PaymentInService.create hozir o'z tranzaksiyasini ochadi) — alohida ish.
+ */
+export const COMMIT_CLAIM_STALE_MS = 15 * 60_000;
 
 @Injectable()
 export class BankImportService {
@@ -68,6 +90,25 @@ export class BankImportService {
       Array.from(acctValues),
     );
 
+    // INT-05: bir xil vypiska ikkinchi marta yuklanmoqdami? Hash mazmun
+    // bo'yicha (fayl nomi emas — operator `may.csv`ni `may-copy.csv` deb
+    // qayta yuklashi odatiy hol). Yuklashni BLOKLAMAYMIZ (qayta-parse
+    // qonuniy bo'lishi mumkin — masalan mos-kelishuvni tuzatgandan keyin);
+    // haqiqiy himoya commit'dagi qator-dedup'da. Bu yerda faqat UI'ga
+    // ko'rsatiladigan ogohlantirish qaytariladi.
+    const contentHash = createHash('sha256').update(parsed.content, 'utf8').digest('hex');
+    const duplicateOf = await this.prisma.client.bankStatement.findFirst({
+      where: { accountId, contentHash, state: { not: 'cancelled' } },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        filename: true,
+        createdAt: true,
+        rowCountImported: true,
+        state: true,
+      },
+    });
+
     const statement = await this.prisma.client.bankStatement.create({
       data: {
         accountId,
@@ -75,6 +116,7 @@ export class BankImportService {
         organizationAccountId: parsed.organizationAccountId,
         filename: parsed.filename,
         format: resolvedFormat,
+        contentHash,
         notes,
         state: 'parsed',
         rowCountTotal: rows.length,
@@ -108,7 +150,7 @@ export class BankImportService {
       },
     });
 
-    return this.serialize(statement);
+    return { ...this.serialize(statement), duplicateOf: duplicateOf ?? null };
   }
 
   async list(accountId: string) {
@@ -144,6 +186,18 @@ export class BankImportService {
   /**
    * Create PaymentIn/Out drafts from the statement rows. Each row commits
    * independently so a single bad row doesn't abort the batch.
+   *
+   * Faza 20 (audit INT-05) — har qator uchun IKKI himoya:
+   *  1. **Dedup**: shu bank tranzaksiyasi (yo'nalish + sana + summa + hujjat
+   *     raqami + kontragent hisobi) boshqa vypiskadan allaqachon import
+   *     qilingan bo'lsa — rad etiladi. Bir oylik vypiskani ikki marta yuklab
+   *     ikkalasidan commit qilish endi butun oyni dublikat qilmaydi.
+   *  2. **Atomik claim**: to'lov yaratishdan OLDIN qator shartli `updateMany`
+   *     bilan band qilinadi. Ilgari kod statementni rows bilan bir marta
+   *     o'qib, keyin siklda `paymentIn.create` chaqirardi — ikki parallel
+   *     commit (double-click) IKKALASI ham `paymentInId = null` snapshot'ini
+   *     ko'rib IKKITA to'lov yaratardi va kontragent balansi ikki baravar
+   *     buzilardi.
    */
   async commit(accountId: string, userId: string, id: string, raw: unknown) {
     const parsed = this.parseCommit(raw);
@@ -158,6 +212,7 @@ export class BankImportService {
     }
 
     const selectedIds = parsed.rowIds && parsed.rowIds.length > 0 ? new Set(parsed.rowIds) : null;
+    const allowDuplicates = new Set(parsed.allowDuplicateRowIds ?? []);
 
     const succeeded: string[] = [];
     const failed: Array<{ rowId: string; error: string }> = [];
@@ -177,6 +232,23 @@ export class BankImportService {
         continue;
       }
 
+      if (!allowDuplicates.has(row.id)) {
+        const dup = await this.findImportedTwin(accountId, row);
+        if (dup) {
+          failed.push({
+            rowId: row.id,
+            error: `Duplicate of already-imported row ${dup.id} (statement ${dup.statementId})`,
+          });
+          continue;
+        }
+      }
+
+      const claimedAt = await this.claimRow(accountId, row.id);
+      // Qatorni shu orada boshqa commit oldi (yoki allaqachon import qildi) —
+      // uni O'SHA commit yakunlaydi, bu yerda hech narsa qilinmaydi. `failed`ga
+      // ham yozilmaydi: bu xato emas, ish taqsimoti.
+      if (!claimedAt) continue;
+
       try {
         if (row.direction === 'in') {
           const created = await this.paymentIn.create(accountId, userId, {
@@ -190,6 +262,7 @@ export class BankImportService {
             currency: row.currency,
           });
           if (!created) {
+            await this.releaseClaim(row.id, claimedAt);
             failed.push({ rowId: row.id, error: 'payment create returned no record' });
             continue;
           }
@@ -208,6 +281,7 @@ export class BankImportService {
             currency: row.currency,
           });
           if (!created) {
+            await this.releaseClaim(row.id, claimedAt);
             failed.push({ rowId: row.id, error: 'payment create returned no record' });
             continue;
           }
@@ -218,6 +292,7 @@ export class BankImportService {
           succeeded.push(row.id);
         }
       } catch (err) {
+        await this.releaseClaim(row.id, claimedAt);
         const msg = err instanceof Error ? err.message : String(err);
         failed.push({ rowId: row.id, error: msg });
       }
@@ -259,6 +334,85 @@ export class BankImportService {
   // =====================================================================
   // helpers
   // =====================================================================
+
+  /**
+   * INT-05 atomik claim. Yagona `updateMany` — WHERE'da «hali import
+   * qilinmagan VA (band emas YOKI bandligi eskirgan)» sharti bor, shuning
+   * uchun qatorni faqat BITTA raqib ola oladi: yutqazgani `count === 0`
+   * oladi. Qaytariladigan qiymat — qo'yilgan claim vaqti; uni bo'shatishda
+   * ishlatamiz (o'zimizniki ekanini tasdiqlash uchun).
+   */
+  private async claimRow(accountId: string, rowId: string): Promise<Date | null> {
+    const claimedAt = new Date();
+    const staleBefore = new Date(claimedAt.getTime() - COMMIT_CLAIM_STALE_MS);
+    const { count } = await this.prisma.client.bankStatementRow.updateMany({
+      where: {
+        id: rowId,
+        accountId,
+        paymentInId: null,
+        paymentOutId: null,
+        OR: [{ commitClaimedAt: null }, { commitClaimedAt: { lt: staleBefore } }],
+      },
+      data: { commitClaimedAt: claimedAt },
+    });
+    return count === 1 ? claimedAt : null;
+  }
+
+  /**
+   * Claim'ni bo'shatish — faqat AYNAN o'zimiz qo'ygan claim'ni (WHERE'dagi
+   * `commitClaimedAt: claimedAt`), aks holda TTL bo'yicha qatorni allaqachon
+   * qayta olgan raqibning claim'ini o'chirib yuborardik. Bo'shatishning o'zi
+   * yiqilsa yutamiz: eng yomoni qator TTL tugaguncha band qoladi — bu
+   * dublikat to'lovdan ancha arzon.
+   */
+  private async releaseClaim(rowId: string, claimedAt: Date): Promise<void> {
+    try {
+      await this.prisma.client.bankStatementRow.updateMany({
+        where: { id: rowId, commitClaimedAt: claimedAt, paymentInId: null, paymentOutId: null },
+        data: { commitClaimedAt: null },
+      });
+    } catch {
+      // best-effort — TTL baribir qatorni qaytadan olinadigan qiladi.
+    }
+  }
+
+  /**
+   * INT-05 vypiska-dedup: shu bank tranzaksiyasi boshqa (yoki shu) vypiskaning
+   * qatoridan allaqachon import qilinganmi?
+   *
+   * Tabiiy kalit = yo'nalish + moment + summa + hujjat raqami + kontragent
+   * hisob raqami. Bank vypiskasida aynan shu beshlik bir tranzaksiyani
+   * ajratadi; fayl nomi yoki qator raqami emas (qayta yuklashda o'zgaradi).
+   * `null` maydonlar Prisma'da `IS NULL` bo'lib solishtiriladi — ya'ni
+   * «hujjat raqami yo'q» qator faqat yana «hujjat raqami yo'q» qator bilan
+   * dublikat hisoblanadi.
+   */
+  private async findImportedTwin(
+    accountId: string,
+    row: {
+      id: string;
+      direction: string;
+      moment: Date;
+      amountMinor: bigint;
+      documentNumber: string | null;
+      counterpartyAccount: string | null;
+    },
+  ): Promise<{ id: string; statementId: string } | null> {
+    const twin = await this.prisma.client.bankStatementRow.findFirst({
+      where: {
+        accountId,
+        id: { not: row.id },
+        direction: row.direction,
+        moment: row.moment,
+        amountMinor: row.amountMinor,
+        documentNumber: row.documentNumber,
+        counterpartyAccount: row.counterpartyAccount,
+        OR: [{ paymentInId: { not: null } }, { paymentOutId: { not: null } }],
+      },
+      select: { id: true, statementId: true },
+    });
+    return twin ?? null;
+  }
 
   private parseUpload(raw: unknown): UploadBankStatementInput {
     const r = UploadBankStatementSchema.safeParse(raw);

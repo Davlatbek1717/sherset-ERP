@@ -305,6 +305,54 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-08l (AUDIT-FIX FAZA 20 — bank-import: commit-poyga qulfi + vypiska dedup ·
+> `INT-05`) · Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q ·
+> ⏳ DEPLOY QILINMAGAN · 🗄️ **MIGRATSIYA BOR** (`20260808230000_bank_import_claim_and_dedup`) ·
+> ⚠️ **navbatdan tashqari** — foydalanuvchi Faza 20 sessiya-boshi promptini bevosita berdi
+> (navbat bo'yicha Faza 15 hamon keyingi)
+>
+> **Muammo (kodda tasdiqlandi).** `commit()` statementni rows bilan bir marta o'qib
+> (`:151-154`), `if (row.paymentInId||row.paymentOutId) continue` (`:166`) bilan **snapshot**
+> bo'yicha tekshirib, siklda avval `paymentIn.create` keyin `bankStatementRow.update` qilardi
+> (`:182-199`) — hech qanday atomik qadam yo'q ⇒ double-click/ikki operator **ikkita** PaymentIn
+> yaratardi (kontragent balansi 2×). `upload()` esa faylni hech narsa bilan solishtirmasdi ⇒
+> bir oylik vypiskani ikki marta yuklab ikkalasidan commit qilish **butun oyni** dublikat qilardi.
+>
+> **Fix.** (1) Har qator uchun atomik claim — `commitClaimedAt` ustuni + shartli `updateMany`
+> (`payment_*_id IS NULL AND (claim IS NULL OR claim < now−15daq)`); yutqazgan raqib `count===0`
+> olib qatorni jimgina o'tkazadi, xatoda claim bo'shatiladi (faqat O'ZINIKI — WHERE'da claim vaqti).
+> (2) Qator-dedup tabiiy kalit bo'yicha (`direction+moment+amountMinor+documentNumber+
+> counterpartyAccount`) — allaqachon import qilingan egizak topilsa qator RAD etiladi; operator
+> uchun `allowDuplicateRowIds` chiqish yo'li. (3) `upload()` sha256 `contentHash` yozadi va
+> javobda `duplicateOf` qaytaradi. (4) FE: dublikat ogohlantirishi + **commit `failed` ro'yxati
+> endi ko'rinadi** (ilgari umuman ko'rsatilmasdi — rad etish jim qolardi).
+>
+> **TDD.** `bank-import.service.test.ts` 3 → 11 test; yangi 8 tadan **6 tasi fix'dan oldin qizil**.
+> Mock'dagi `updateMany` haqiqiy semantikaga ega (shartlar qator holatiga solishtiriladi) — soxta
+> `count:1` mock bug'ni ko'rsata olmasdi.
+>
+> **Gate:** api tc **0** · web tc **0** · `lint:product` **0 error** · `i18n:gate` **9/9** ·
+> vitest `bank-import` **31/31**, `payment-in`+`payment-out` bilan **88/88**, web
+> `button-conventions`+`domain-status-tone` **170/170**. Migratsiya lokal DB'ga qo'llandi
+> (`prisma db execute`), bank-import obyektlari bo'yicha **drift 0**, `prisma generate` bajarildi
+> ⇒ 08k entry'sidagi `TS2353 commitClaimedAt` ogohlantirishi **YOPILDI**.
+>
+> **🟠 QARZ:** (1) 🔴 **crash-oynasi** — `create` muvaffaqiyatli tugab `update({paymentInId})`
+> yozilmagan lahzada jarayon o'lsa, to'lov hech qaysi qatorga bog'lanmay qoladi ⇒ TTL'dan keyingi
+> urinishda dedup uni topa olmaydi va ikkinchi to'lov yaratiladi (yopish = to'lovni qator-bog'lanishi
+> bilan BIR tranzaksiyada yaratish, `PaymentInService.create` tashqi `tx` qabul qilishi kerak).
+> (2) **Partial unique index ATAYLAB qo'yilmadi** — prodda shu bug tufayli allaqachon dublikat
+> bo'lishi ehtimoli yuqori, indeks migratsiyani yiqitardi; avval o'lchash/tozalash (SQL rejadagi
+> hisobotda), keyin indeks. (3) Prod dublikatlari **o'lchanmadi** (prod DB'ga ulanilmadi).
+> (4) Eski yozuvlarda `contentHash`=NULL, backfill **mumkin emas** (fayl mazmuni saqlanmaydi).
+> (5) UI'da «baribir import qil» tugmasi yo'q — hozir faqat xabar ko'rinadi. **Browser-smoke YO'Q.**
+> Batafsil: rejadagi «HISOBOT JURNALI → Faza 20».
+>
+> **⏭️ KEYINGI:** o'zgarmadi — `docs/REJA-AUDIT-FIX-2026-08.md` → **Faza 15**
+> (`SALES-02`,`SALES-06`,`SALES-07/08`). Sessiya-boshi prompt o'sha fazada.
+
+---
+
 > **🕒 2026-08-08k (AUDIT-FIX FAZA 14 — qabul-tasdiqlash: FSM-bypass guard + omborchi recompute ·
 > `PP-06`+`PP-04`) `9e822fd` · Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q ·
 > ⏳ DEPLOY QILINMAGAN · 🗄️ migratsiya YO'Q · ⚠️ parallel sessiya bilan yonma-yon ishlandi (pastda)

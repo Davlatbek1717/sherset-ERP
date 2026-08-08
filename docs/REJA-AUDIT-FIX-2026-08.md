@@ -556,7 +556,8 @@ PaymentIn'ga ogohlantirish/dedup.
 **▶ SESSIYA-BOSHI PROMPT:**
 > `docs/REJA-AUDIT-FIX-2026-08.md` — **Faza 20**. O'ZGARMAS QOIDALAR. `INT-05`. Row-level atomik claim +
 > fayl/qator dedup. TDD: parallel-commit + qayta-yuklash testlari. Gate. Hisobot, TO'XTA.
-**◻ HISOBOT:** _(agent to'ldiradi)_
+**☑ HISOBOT (2026-08-08):** BAJARILDI — batafsili «HISOBOT JURNALI → Faza 20» da. **Crash-oynasi
+(create↔link) TO'LIQ yopilmadi** — sabab va yopish yo'li hisobotda.
 
 ---
 
@@ -2325,3 +2326,120 @@ atomik yozuvning ichida) qulflandi.
   Phase-2 QA cohort'ida ko'riladi.
 
 **Commit:** `fix(supply): faza 14 — tasdiq-FSM bypass guard + omborchi recompute (PP-06, PP-04)`
+
+---
+
+## Faza 20 — Bank-import: commit-poyga + vypiska-dedup (`INT-05`)
+**2026-08-08 — Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q**
+
+### Da'voni kodda tasdiqlash (reja §2)
+
+`INT-05` **TASDIQLANDI, audit xato o'qimagan.** Fix'dan oldingi `bank-import.service.ts`:
+
+- `:151-154` — `commit()` statementni `rows` bilan **bir marta** o'qiydi (snapshot).
+- `:166` — `if (row.paymentInId || row.paymentOutId) continue;` — tekshiruv **faqat o'sha
+  snapshot'ga** tayanadi.
+- `:182-199` / `:202-217` — siklda avval `paymentIn.create(...)` / `paymentOut.create(...)`,
+  **keyin** `bankStatementRow.update({ data: { paymentInId } })`.
+
+Ya'ni «o'qi → tekshir → yarat → belgila» ketma-ketligida hech qanday atomik qadam yo'q: ikki
+parallel commit (double-click, retry, ikki operator) ikkalasi ham `paymentInId = null` ko'radi va
+**ikkita** PaymentIn yaratadi. Dedup ham umuman yo'q edi — `upload()` (`:71-109`) faylni hech
+narsa bilan solishtirmasdan yangi statement yaratardi, ya'ni bir oylik vypiskani ikki marta
+yuklab ikkalasidan commit qilish oyning **hamma** to'lovlarini dublikat qilardi.
+
+### O'zgarishlar
+
+| Fayl | O'zgarish |
+|---|---|
+| `packages/db/prisma/schema.prisma` | `BankStatementRow.commitClaimedAt` (claim belgisi) · `BankStatement.contentHash` (sha256) · 2 indeks (`[accountId, contentHash]`, `bank_statement_rows_dedup_idx`) |
+| `packages/db/prisma/migrations/20260808230000_bank_import_claim_and_dedup/migration.sql` | **YANGI** — 2 ustun + 2 indeks (hammasi `IF NOT EXISTS`) |
+| `apps/api/src/modules/bank-import/bank-import.service.ts` | `COMMIT_CLAIM_STALE_MS` (15 daq) · `claimRow()` / `releaseClaim()` / `findImportedTwin()` · `commit()` sikli: dedup → claim → yaratish → bog'lash, xatoda claim bo'shatiladi · `upload()`: content-hash + `duplicateOf` |
+| `apps/api/src/modules/bank-import/bank-import.schema.ts` | `allowDuplicateRowIds` — operator dedup'ni **aniq qator** uchun ataylab chetlab o'tishi (haqiqiy bir xil summali ikki to'lov holati) |
+| `apps/web/src/app/(app)/bank-import/page.tsx` | `duplicateOf` ogohlantirish Alert'i · **commit `failed` ro'yxati endi ko'rinadi** (ilgari umuman ko'rsatilmasdi — dedup rad etishi jim qolardi) · yangi yuklashda `commitMut.reset()` |
+| `apps/web/src/messages/{ru,uz}.json` | `pages.bank_import.duplicate_warning`, `.commit_failed_title` |
+
+**Claim mexanikasi:** `updateMany({ where: { id, accountId, paymentInId: null, paymentOutId: null,
+OR: [{ commitClaimedAt: null }, { commitClaimedAt: { lt: now − TTL } }] }, data: { commitClaimedAt: now } })`
+— yagona shartli yozuv, qator-qulfini oladi, yutqazgan raqib `count === 0` oladi va qatorni
+**jimgina o'tkazib yuboradi** (`failed`ga yozilmaydi: bu xato emas, ish taqsimoti). Bo'shatish
+WHERE'da `commitClaimedAt: <o'zimizning vaqt>` bilan — TTL bo'yicha qatorni qayta olgan raqibning
+claim'ini o'chirib yubormaslik uchun.
+
+**Dedup tabiiy kaliti:** `direction + moment + amountMinor + documentNumber + counterpartyAccount`
+(fayl nomi/qator raqami EMAS — ular qayta yuklashda o'zgaradi). `null` maydonlar `IS NULL` bo'lib
+solishtiriladi. Topilsa qator `failed`ga
+`Duplicate of already-imported row <id> (statement <stmt>)` bilan tushadi.
+
+### Testlar (TDD — avval yiqildi, keyin yashil)
+
+`bank-import.service.test.ts` — 3 tadan 11 taga. Mock'dagi `updateMany` **haqiqiy semantikaga ega**
+(shartlar joriy qator holatiga solishtiriladi) — `vi.fn(async () => ({ count: 1 }))` bug'ni
+ko'rsata olmasdi.
+
+Yangi 8 testdan **6 tasi fix'dan oldin qizil** edi (2 tasi — «release» va «allow-duplicate» —
+o'sha paytda trivial yashil bo'lgani uchun kuchaytirildi: birinchisiga claim olindi-VA-bo'shatildi
+tasdig'i qo'shildi):
+
+1. `Promise.all` ikki `commit()` bir qatorga → `paymentIn.create` **1 marta**, `succeeded` jami `['row-1']`.
+2. Xuddi shu — `paymentOut` yo'nalishi.
+3. `create` throw qilsa claim `null`ga qaytadi va **keyingi urinish** qatorni import qiladi.
+4. Boshqa vypiskadan import qilingan egizak bor → `create` **chaqirilmaydi**, `failed`da dedup xabari.
+5. Dedup so'rovi aynan tabiiy kalit bo'yicha (`id: { not: … }` bilan) yuboriladi.
+6. `allowDuplicateRowIds` berilgan qator dedup'dan o'tadi va import qilinadi.
+7. `upload()` `contentHash` = sha256(content) yozadi, dublikat yo'qda `duplicateOf: null`.
+8. Bir xil mazmun qayta yuklansa `duplicateOf` = oldingi statement (id/fayl/sana/import soni/holat).
+
+### Gate (jonli o'lchangan)
+
+- `pnpm --filter @moysklad/api typecheck` → **0** · `pnpm --filter @moysklad/web typecheck` → **0**
+- `pnpm lint:product` → **0 error** (738 warning — siyosat bo'yicha ruxsat)
+- `pnpm i18n:gate` → **9/9 passed** (ru+uz key-existence + no-hardcoded)
+- `vitest run src/modules/bank-import` → **31/31** · regress: `payment-in` + `payment-out` bilan
+  birga **88/88**
+- Web: `button-conventions` + `domain-status-tone` → **170/170**
+- Migratsiya lokal DB'ga (`climart_adopt @ 5432`) `prisma db execute` bilan qo'llandi;
+  `prisma migrate diff` da **bank-import obyektlari bo'yicha drift 0** (fayldagi qolgan drift —
+  oldingi fazalardan qolgan indeks-nom o'zgartirishlari, meniki emas, tegilmadi).
+
+### Qolgan qarz / DEFER
+
+- **🔴 Crash-oynasi TO'LIQ yopilmadi.** `paymentIn.create` muvaffaqiyatli tugab, undan keyingi
+  `bankStatementRow.update({ paymentInId })` **hali yozilmagan** lahzada jarayon o'lsa — yaratilgan
+  to'lov hech qaysi qatorga bog'lanmagan qoladi, shuning uchun TTL'dan keyingi qayta-urinishda
+  `findImportedTwin()` uni topa olmaydi va **ikkinchi to'lov yaratiladi**. Oyna millisekundlar va
+  jarayon o'limini talab qiladi. To'liq yopish = to'lovni qator-bog'lanishi bilan **bir**
+  tranzaksiyada yaratish, buning uchun `PaymentInService.create` tashqi `tx` qabul qilishi kerak
+  (hozir o'z tranzaksiyasini ochadi) — **alohida ish**.
+- **Parallel commit ikki HAR XIL vypiskadan** — row-claim faqat bir qatorni himoya qiladi; ikki
+  statement'dagi bir xil bank tranzaksiyasi uchun ikkala commit ham `findImportedTwin()` o'qishidan
+  o'tib ketishi mumkin (read, qulf emas). To'liq atomik yechim — `(account_id, direction, moment,
+  amount_minor, document_number)` bo'yicha **partial unique index**. **ATAYLAB QO'YILMADI:** prod
+  bazasida shu bug tufayli allaqachon dublikatlar bo'lishi ehtimoli yuqori ⇒ indeks yaratish
+  migratsiyani yiqitardi. To'g'ri tartib: avval prod dublikatlarini o'lchash/tozalash, keyin indeks.
+- **Prod dublikatlarini o'lchash — bu sessiyada QILINMADI** (prod DB'ga ulanilmadi, hajm
+  **noma'lum**). O'lchash so'rovi:
+  ```sql
+  SELECT direction, moment, amount_minor, document_number, count(*) AS n,
+         array_agg(id) AS row_ids
+  FROM bank_statement_rows
+  WHERE payment_in_id IS NOT NULL OR payment_out_id IS NOT NULL
+  GROUP BY 1,2,3,4 HAVING count(*) > 1;
+  ```
+  Har qator — ikki marta import qilingan bank tranzaksiyasi. Tuzatish — ortiqcha PaymentIn/Out'ni
+  `CounterpartyAdjustment` bilan teskarilash (Faza 12/13 retsepti), jurnal qatorlarini
+  **O'CHIRMASDAN**.
+- **Bir fayl ichidagi haqiqiy egizak to'lovlar.** Dedup butun `accountId` bo'yicha qidiradi, shu
+  jumladan o'sha vypiskaning boshqa qatorlarini ham. Bir kunda bir kontragentga hujjat raqamsiz
+  ikkita haqiqiy bir xil summali to'lov bo'lsa — ikkinchisi rad etiladi. Chiqish yo'li bor
+  (`allowDuplicateRowIds`) va rad etish endi UI'da ko'rinadi, lekin **UI'da «baribir import qil»
+  tugmasi hali yo'q** — operator hozir faqat xabarni ko'radi. Kichik FE ishi, Phase-2 QA'ga.
+- **Eski (migratsiyagacha) yozuvlarda `contentHash` = NULL** — ular hech qachon dublikat sifatida
+  tanilmaydi. Backfill qilinmadi (fayl mazmuni saqlanmaydi — hash'ni qayta hisoblash **mumkin
+  emas**). Faqat yangi yuklashlar himoyalangan; qator-dedup esa eski qatorlarga ham ishlaydi.
+- **`upload()` bloklamaydi** — ataylab: qayta-parse qonuniy stsenariy (mos-kelishuvni tuzatgandan
+  keyin). Haqiqiy himoya commit'dagi qator-dedup'da.
+- **Browser-smoke YO'Q** — dublikat ogohlantirishi, commit `failed` ro'yxati va ikki tab'dan
+  parallel commit Phase-2 QA cohort'ida ko'riladi.
+
+**Commit:** `fix(bank-import): faza 20 — row-claim poyga qulfi + vypiska dedup (INT-05)`
