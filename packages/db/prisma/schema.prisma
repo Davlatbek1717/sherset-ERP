@@ -1276,7 +1276,12 @@ model CounterpartyBalanceEntry {
   /// 'debt', 'retailsale'). Yangi yozuvchi qo'shilganda bu yerga yangi qiymat kelaveradi, sxema
   /// o'zgarmaydi (enum ATAYLAB emas — 4 o'quvchi ro'yxatini yangilash majburiyati yo'qoladi).
   docType String @map("doc_type") @db.VarChar(40)
-  docId   String @map("doc_id") @db.Uuid
+
+  /// Deltani keltirgan hujjatning id'si. NULL — FAQAT `docType = 'opening'` uchun (Faza 10
+  /// backfill: jurnal bo'sh boshlangani uchun tarixiy qoldiq bitta hujjatsiz qator bilan
+  /// kiritiladi). Haqiqiy yozuvchilar uchun `ApplyDeltaMeta.docId` hamon majburiy `string` —
+  /// ya'ni bu NULL'ni tip tizimi yozuvchi tomonida ruxsat bermaydi.
+  docId String? @map("doc_id") @db.Uuid
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
 
@@ -1290,6 +1295,8 @@ model CounterpartyBalanceEntry {
   @@index([accountId, organizationId, currency])
   // Hujjat bo'yicha teskari qidiruv (unpost/cancel juftini topish, audit-trail).
   @@index([accountId, docType, docId])
+  // Faza 10 — `opening` backfill qatorlarini topish (skript idempotentligi).
+  @@index([accountId, docType, createdAt], map: "counterparty_balance_entries_account_doctype_created_idx")
   @@map("counterparty_balance_entries")
 }
 

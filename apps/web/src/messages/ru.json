@@ -3697,7 +3697,13 @@
           "paymentIn": "Входящий платёж",
           "cashIn": "Приходный ордер",
           "prepayment": "Предоплата",
-          "counterpartyAdjustment": "Корректировка"
+          "counterpartyAdjustment": "Корректировка",
+          "adjustment": "Корректировка",
+          "supply": "Приёмка",
+          "debt": "Выдача долга",
+          "debtpayment": "Оплата долга",
+          "retailsale": "Розничная продажа (в долг)",
+          "opening": "Входящий остаток"
         }
       },
       "chek_title_sale": "ТОВАРНЫЙ ЧЕК",

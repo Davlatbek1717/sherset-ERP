@@ -4,6 +4,11 @@ import { join } from 'node:path';
 import { computePositionTotal } from '@moysklad/money';
 import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import {
+  docKey,
+  resolveBalanceDocs,
+} from '../counterparty-balance/counterparty-balance-doc-resolver.js';
+import { listJournalEntries } from '../counterparty-balance/counterparty-balance-journal.util.js';
 import { CounterpartySettlementService } from '../counterparty-settlement/counterparty-settlement.service.js';
 import {
   currencyUnit,
@@ -12,11 +17,21 @@ import {
   settlementTextForOwner,
 } from '../counterparty-settlement/counterparty-settlement.util.js';
 import { type ProductReportRow, buildProductReportXlsx } from './product-report-xlsx.util.js';
-import { type RawDoc, type StatementDocType, computeStatement } from './statement-compute.util.js';
+import { type RawDoc, computeStatement } from './statement-compute.util.js';
 import { type SupplyGoodsRow, buildSupplyGoodsXlsx } from './supply-goods-xlsx.util.js';
 import { buildStatementXlsx } from './xlsx-builder.util.js';
 
 const STATEMENTS_DIR = process.env.STATEMENTS_DIR || join(process.cwd(), 'var', 'statements');
+
+/**
+ * Akt-sverka BIR valyutada yuritiladi — Excel sarlavhasi ham, saqlanadigan
+ * `CounterpartyStatement.currency` ham `'UZS'`. Faza 10 gacha agregatsiya
+ * hujjatlarni valyuta bo'yicha UMUMAN filtrlamasdi, ya'ni dollarlik hujjat
+ * so'mlik running-balansga qo'shilib ketardi (mavjud, hujjatlanmagan xato).
+ * Jurnal qatorida valyuta bor, shuning uchun endi filtr aniq — va aynan shu
+ * «closing == materiallashgan UZS balans» invariantining sharti.
+ */
+const STATEMENT_CURRENCY = 'UZS';
 
 function fmtSom(balanceMinor: bigint): string {
   const abs = balanceMinor < 0n ? -balanceMinor : balanceMinor;
@@ -40,32 +55,13 @@ function cpBalanceText(balanceMinor: bigint): string {
 }
 
 /**
- * Goods docs expose positions; cash/payment docs are single-line.
+ * BUYUM-bo'yicha aktda ishlatiladigan tovar hujjati shakli.
  *
- * 2026-07-28 — `discount` / `vat` / `vatEnabled` (pozitsiya) va `vatEnabled` /
- * `vatIncluded` (hujjat) qo'shildi: ularsiz qator summasi brutto hisoblanardi
- * va aktdagi tovar qatorlari hujjatning o'z summasiga yig'ilmasdi.
+ * Faza 10 da to'liq akt jurnalga ko'chgach, bu yerdagi `GOODS_SELECT` /
+ * `FLAT_SELECT` / `FlatRow` juftliklari o'lik qoldi va olib tashlandi — endi
+ * pul/tovar hujjatlarining balans uchun o'qilishi
+ * `counterparty-balance-doc-resolver.ts` da, BITTA joyda turadi.
  */
-const GOODS_SELECT = {
-  moment: true,
-  name: true,
-  sumMinor: true,
-  vatEnabled: true,
-  vatIncluded: true,
-  positions: {
-    orderBy: { position: 'asc' as const },
-    select: {
-      quantity: true,
-      priceMinor: true,
-      discount: true,
-      vat: true,
-      vatEnabled: true,
-      product: { select: { name: true } },
-    },
-  },
-} as const;
-const FLAT_SELECT = { moment: true, name: true, sumMinor: true } as const;
-
 interface GoodsRow {
   moment: Date;
   name: string;
@@ -80,11 +76,6 @@ interface GoodsRow {
     vatEnabled: boolean;
     product: { name: string } | null;
   }>;
-}
-interface FlatRow {
-  moment: Date;
-  name: string;
-  sumMinor: bigint;
 }
 
 /**
@@ -144,69 +135,46 @@ export class CounterpartyStatementService {
         c.supply.findMany({ where: w, select: sel }),
         c.product.findFirst({ where: { id: productId, accountId }, select: { name: true } }),
       ]);
+      // BUYUM-bo'yicha jurnal — bu BALANS ko'rinishi EMAS (bitta tovar kesimi),
+      // shuning uchun belgi hujjat turidan olinadi: sotuv (+) mijoz qarzini
+      // oshiradi, xarid/qabul (−) bizning qarzimizni. Ro'yxat qisqa va yopiq
+      // (faqat tovar hujjatlari), ya'ni «chala ro'yxat» xatari bu yerda yo'q.
       const raw: RawDoc[] = [
-        ...(invOut as GoodsRow[]).map((d) => this.productLine(d, 'invoiceOut')),
-        ...(invIn as GoodsRow[]).map((d) => this.productLine(d, 'invoiceIn')),
-        ...(supply as GoodsRow[]).map((d) => this.productLine(d, 'supply')),
+        ...(invOut as GoodsRow[]).map((d) => this.productLine(d, 'invoiceOut', 1n)),
+        ...(invIn as GoodsRow[]).map((d) => this.productLine(d, 'invoiceIn', -1n)),
+        ...(supply as GoodsRow[]).map((d) => this.productLine(d, 'supply', -1n)),
       ];
       return { cp, data: computeStatement(raw), productName: product?.name ?? '(buyum)' };
     }
 
-    // 2026-07-28 — avans / avans-qaytarish / korrektirovka / qarz-to'lovi
-    // QO'SHILDI. Ular `CounterpartyBalanceService.applyDelta` ni chaqiradi, ya'ni
-    // materiallashgan saldoni harakatlantiradi, lekin aktda yo'q edi: shuning
-    // uchun aktning yakuniy qoldig'i kontragentning haqiqiy saldosidan farq
-    // qilardi — va aynan o'sha son mijozga «Sizda N so'm qarz bor» bo'lib
-    // yuborilardi. Endi akt ham o'zi bilan yig'iladi, ham bosh daftarga mos.
-    const [invOut, invIn, supply, cashIn, cashOut, payIn, payOut, prepay, prepayRet, adj, debtPay] =
-      await Promise.all([
-        c.invoiceOut.findMany({ where, select: GOODS_SELECT }),
-        c.invoiceIn.findMany({ where, select: GOODS_SELECT }),
-        c.supply.findMany({ where, select: GOODS_SELECT }),
-        c.cashIn.findMany({ where, select: FLAT_SELECT }),
-        c.cashOut.findMany({ where, select: FLAT_SELECT }),
-        c.paymentIn.findMany({ where, select: FLAT_SELECT }),
-        c.paymentOut.findMany({ where, select: FLAT_SELECT }),
-        c.prepayment.findMany({ where, select: FLAT_SELECT }),
-        c.prepaymentReturn.findMany({ where, select: FLAT_SELECT }),
-        c.counterpartyAdjustment.findMany({
-          where,
-          select: { ...FLAT_SELECT, direction: true },
-        }),
-        // Qarz kartochkasi to'lovlari — `DebtService.recalc` applyDelta(-paid)
-        // yozadi. Storno qilinganlari (reversedAt) chiqarib tashlanadi, xuddi
-        // recalc'dagidek. Hujjat raqami sifatida QRZ- nomi ko'rsatiladi.
-        c.debtPayment.findMany({
-          where: { accountId, reversedAt: null, debt: { counterpartyId } },
-          select: {
-            createdAt: true,
-            amountMinor: true,
-            debt: { select: { name: true } },
-          },
-        }),
-      ]);
+    // FAZA 10 (`DUP-08`) — MANBA: `CounterpartyBalanceEntry` jurnali.
+    //
+    // Ilgari bu yerda 12 turdan iborat qattiq ro'yxat turardi, unda `debt`
+    // (QRZ- reyestrida qo'lda ochilgan qarz) va `retailsale` (POS qarzga sotuv)
+    // YO'Q edi — 2026-07-28 tuzatuvi 2026-08-05 o'zgarishi bilan qayta buzilgan
+    // edi. Oqibati: `finalBalanceMinor` haqiqiy saldodan farq qilardi va aynan
+    // o'sha son mijozga «Sizda N so'm qarz bor» bo'lib yuborilardi — modulning
+    // o'z izohida bir marta yopilgan bug-klass.
+    //
+    // Endi qatorlar jurnal deltalaridan quriladi ⇒ tur ro'yxati bilan
+    // boshqarilmaydi; belgi ham `applyDelta` ning o'zinikidan olinadi.
+    const entries = await listJournalEntries(c.counterpartyBalanceEntry, {
+      accountId,
+      counterpartyId,
+      currency: STATEMENT_CURRENCY,
+    });
+    const resolved = await resolveBalanceDocs(c, accountId, entries, { withItems: true });
 
-    const raw: RawDoc[] = [
-      ...(invOut as GoodsRow[]).map((d) => this.goods(d, 'invoiceOut')),
-      ...(invIn as GoodsRow[]).map((d) => this.goods(d, 'invoiceIn')),
-      ...(supply as GoodsRow[]).map((d) => this.goods(d, 'supply')),
-      ...(cashIn as FlatRow[]).map((d) => this.flat(d, 'cashIn')),
-      ...(cashOut as FlatRow[]).map((d) => this.flat(d, 'cashOut')),
-      ...(payIn as FlatRow[]).map((d) => this.flat(d, 'paymentIn')),
-      ...(payOut as FlatRow[]).map((d) => this.flat(d, 'paymentOut')),
-      ...(prepay as FlatRow[]).map((d) => this.flat(d, 'prepayment')),
-      ...(prepayRet as FlatRow[]).map((d) => this.flat(d, 'prepaymentReturn')),
-      ...(adj as Array<FlatRow & { direction: string }>).map((d) =>
-        this.flat(d, d.direction === 'INCREASE' ? 'adjustmentIncrease' : 'adjustmentDecrease'),
-      ),
-      ...debtPay.map((d) => ({
-        moment: d.createdAt,
-        docType: 'debtPayment' as const,
-        docNumber: d.debt.name,
-        sumMinor: d.amountMinor,
-        items: [],
-      })),
-    ];
+    const raw: RawDoc[] = entries.map((e) => {
+      const doc = resolved.get(docKey(e.docType, e.docId));
+      return {
+        moment: doc?.moment ?? e.createdAt,
+        docType: e.docType,
+        docNumber: doc?.number ?? '—',
+        deltaMinor: e.deltaMinor,
+        items: doc?.items ?? [],
+      };
+    });
 
     return { cp, data: computeStatement(raw), productName: null as string | null };
   }
@@ -246,24 +214,10 @@ export class CounterpartyStatementService {
   }
 
   /** A goods doc reduced to ONLY the matched product's line(s) — discount applied. */
-  private productLine(d: GoodsRow, docType: StatementDocType): RawDoc {
+  private productLine(d: GoodsRow, docType: string, sign: 1n | -1n): RawDoc {
     const items = this.itemsOf(d);
     const total = items.reduce((s, it) => s + it.sumMinor, 0n);
-    return { moment: d.moment, docType, docNumber: d.name, sumMinor: total, items };
-  }
-
-  private goods(d: GoodsRow, docType: StatementDocType): RawDoc {
-    return {
-      moment: d.moment,
-      docType,
-      docNumber: d.name,
-      sumMinor: d.sumMinor,
-      items: this.itemsOf(d),
-    };
-  }
-
-  private flat(d: FlatRow, docType: StatementDocType): RawDoc {
-    return { moment: d.moment, docType, docNumber: d.name, sumMinor: d.sumMinor, items: [] };
+    return { moment: d.moment, docType, docNumber: d.name, deltaMinor: sign * total, items };
   }
 
   /** Generate + persist the statement; returns the DB row (with token). */

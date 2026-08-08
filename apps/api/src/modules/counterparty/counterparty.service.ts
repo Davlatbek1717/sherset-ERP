@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { allocateDocumentNumber } from '../../prisma/document-number.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { sumJournalByOrganization } from '../counterparty-balance/counterparty-balance-journal.util.js';
 import { tashkentRangeBounds } from '../report/report-date-bounds.util.js';
 import { type BulkResult, runBulk } from '../shared/bulk.js';
 import { resolveCreatorGroupId } from '../shared/group-stamp.js';
@@ -446,16 +447,28 @@ export class CounterpartyService {
    *             (list() above) and exactly moysklad report/counterparty `profit`.
    *   returns — posted Возвраты покупателей (SalesReturn): total + count.
    *   balance — net «Взаиморасчёты» split PER ORGANIZATION (moysklad groups the balance
-   *             by наша организация; the breakdown sums to the bold total). We
-   *             reconstruct it from the 9 money docs that feed
-   *             CounterpartyBalance.applyDelta, using each doc's POSTED sign — the
-   *             `applicable` flag is the source of truth (applicable=true ⟺ the delta
-   *             is currently applied, set on post / cleared on unpost+cancel):
-   *               +InvoiceOut −InvoiceIn  −PaymentIn +PaymentOut  −CashIn +CashOut
-   *               −Prepayment +PrepaymentReturn  CounterpartyAdjustment ±(direction)
-   *             So Σ(byOrg) === the materialized CounterpartyBalance(UZS) — both derive
-   *             from the same applied deltas (the cert asserts this invariant). Only
-   *             non-zero orgs are shown, sorted by organization name (moysklad order).
+   *             by наша организация; the breakdown sums to the bold total).
+   *
+   *             FAZA 10 (`M-07`, `DUP-05`): bu bo'lim ilgari 9 ta hujjat jadvalini
+   *             `groupBy` qilib saldoni QAYTA QURARDI, va o'sha ro'yxatda `supply`,
+   *             `debt`, `debtpayment`, `retailsale` YO'Q edi — izoh esa
+   *             «Σ(byOrg) === materiallashgan balans» invariantini DA'VO qilardi.
+   *             Ya'ni yetkazib beruvchi (faqat Qabul orqali ishlaydigan) va qarzdor
+   *             mijoz (QRZ-/POS) kartochkasida «Balans» kartasi bilan «Показатели»
+   *             tab'i ikki xil son ko'rsatardi.
+   *
+   *             Endi manba — `CounterpartyBalanceEntry` jurnali: `applyDelta`
+   *             materiallashgan balans bilan BIR TRANZAKSIYADA unga yozadi, ya'ni
+   *             Σ(byOrg) === materiallashgan balans KONSTRUKSIYA bo'yicha to'g'ri
+   *             va hujjat-turlari ro'yxatiga UMUMAN bog'liq emas (yangi yozuvchi
+   *             qo'shilganda bu yerda o'zgartiriladigan narsa yo'q).
+   *
+   *             `organizationId: null` bandi — «taqsimlanmagan»: `Debt` da
+   *             organizatsiya o'lchovi yo'q, `RetailSale.organizationId` optional,
+   *             `opening` (tarixiy qoldiq) qatori ham org'siz. U ATAYLAB
+   *             tashlanmaydi — tashlansa yig'indi materiallashgan balansdan
+   *             farq qilardi. Faqat nolga teng bandlar yashiriladi (moysklad
+   *             shunday qiladi), tartib — organizatsiya nomi bo'yicha.
    */
   async metrics(accountId: string, id: string) {
     const cp = await this.prisma.client.counterparty.findFirst({
@@ -501,51 +514,15 @@ export class CounterpartyService {
       _sum: { sumMinor: true },
     });
 
-    // --- «Баланс по организациям» — signed Σ per org over the 9 balance docs. ---
-    // `applicable: true` is the exact predicate CounterpartyBalance.applyDelta gates on
-    // (NOT deletedAt — cancel sets applicable=false, so this captures the live delta set).
-    const where = { ...agent, applicable: true, currency: BASE } as const;
-    const sum = { sumMinor: true } as const;
-    const c = this.prisma.client;
-    const [io, ii, pi, po, ci, co, pp, ppr, adj] = await Promise.all([
-      c.invoiceOut.groupBy({ by: ['organizationId'], where, _sum: sum }),
-      c.invoiceIn.groupBy({ by: ['organizationId'], where, _sum: sum }),
-      c.paymentIn.groupBy({ by: ['organizationId'], where, _sum: sum }),
-      c.paymentOut.groupBy({ by: ['organizationId'], where, _sum: sum }),
-      c.cashIn.groupBy({ by: ['organizationId'], where, _sum: sum }),
-      c.cashOut.groupBy({ by: ['organizationId'], where, _sum: sum }),
-      c.prepayment.groupBy({ by: ['organizationId'], where, _sum: sum }),
-      c.prepaymentReturn.groupBy({ by: ['organizationId'], where, _sum: sum }),
-      // adjustments carry their own +/− via `direction` (INCREASE | DECREASE).
-      c.counterpartyAdjustment.groupBy({
-        by: ['organizationId', 'direction'],
-        where,
-        _sum: sum,
-      }),
-    ]);
-    const byOrg = new Map<string, bigint>();
-    const acc = (orgId: string, signed: bigint) =>
-      byOrg.set(orgId, (byOrg.get(orgId) ?? 0n) + signed);
-    const apply = (
-      rows: { organizationId: string; _sum: { sumMinor: bigint | null } }[],
-      s: bigint,
-    ) => {
-      for (const r of rows) acc(r.organizationId, s * (r._sum.sumMinor ?? 0n));
-    };
-    apply(io, 1n);
-    apply(ii, -1n);
-    apply(pi, -1n);
-    apply(po, 1n);
-    apply(ci, -1n);
-    apply(co, 1n);
-    apply(pp, -1n);
-    apply(ppr, 1n);
-    for (const r of adj) {
-      acc(r.organizationId, (r.direction === 'INCREASE' ? 1n : -1n) * (r._sum.sumMinor ?? 0n));
-    }
+    // --- «Баланс по организациям» — org kesimidagi Σ, BALANS JURNALIDAN. ---
+    const orgSums = await sumJournalByOrganization(this.prisma.client.counterpartyBalanceEntry, {
+      accountId,
+      counterpartyId: id,
+      currency: BASE,
+    });
 
     // Resolve org names for the orgs that actually have a balance contribution.
-    const orgIds = [...byOrg.keys()];
+    const orgIds = orgSums.map((r) => r.organizationId).filter((v): v is string => v !== null);
     const orgs = orgIds.length
       ? await this.prisma.client.organization.findMany({
           where: { accountId, id: { in: orgIds } },
@@ -554,16 +531,20 @@ export class CounterpartyService {
       : [];
     const orgName = new Map(orgs.map((o) => [o.id, o.name]));
     let balanceTotal = 0n;
-    const byOrgRows: { organizationId: string; organizationName: string; amountMinor: string }[] =
-      [];
-    for (const [orgId, amount] of byOrg) {
-      balanceTotal += amount;
+    const byOrgRows: {
+      organizationId: string | null;
+      organizationName: string;
+      amountMinor: string;
+    }[] = [];
+    for (const { organizationId, sumMinor } of orgSums) {
+      balanceTotal += sumMinor;
       // moysklad hides zero-balance organizations from the breakdown.
-      if (amount !== 0n) {
+      if (sumMinor !== 0n) {
         byOrgRows.push({
-          organizationId: orgId,
-          organizationName: orgName.get(orgId) ?? '—',
-          amountMinor: amount.toString(),
+          organizationId,
+          // `null` = organizatsiyasiz hujjatlar (Debt / POS qarz / tarixiy qoldiq).
+          organizationName: organizationId ? (orgName.get(organizationId) ?? '—') : '—',
+          amountMinor: sumMinor.toString(),
         });
       }
     }

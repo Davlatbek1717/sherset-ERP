@@ -6,31 +6,21 @@
  *
  * Sign convention (mirrors CounterpartyBalanceService.applyDelta):
  *   balance = Σdebit − Σcredit ·  > 0 → counterparty owes us · < 0 → we owe them.
- *   DEBIT  docs (they owe us more / we paid them):
- *     invoiceOut, cashOut, paymentOut, prepaymentReturn, adjustmentIncrease
- *   CREDIT docs (we owe them more / they paid us):
- *     invoiceIn, supply, cashIn, paymentIn, prepayment, adjustmentDecrease, debtPayment
+ *   deltaMinor > 0 → DEBET (kontragent qarzi oshdi)
+ *   deltaMinor < 0 → KREDIT (qarz kamaydi)
  *
- * 2026-07-28 — oxirgi 5 tur QO'SHILDI. Ular `applyDelta` ni chaqiradi, ya'ni
- * materiallashgan saldoga ta'sir qiladi, lekin akt-sverka agregatsiyasida yo'q
- * edi. Natijada aktning yakuniy qoldig'i kontragentning HAQIQIY saldosidan
- * farq qilardi — va aynan shu son mijozga «Sizda N so'm qarz bor» bo'lib
- * ketardi. Endi akt qatorlari ham yig'iladi, ham bosh daftarga mos keladi.
+ * FAZA 10 (`DUP-08`) — TUR → TOMON XARITASI OLIB TASHLANDI. Ilgari bu yerda
+ * 12 turdan iborat `StatementDocType` union va `DEBIT_TYPES` to'plami turardi,
+ * ya'ni qatorning debet/kredit ekani TUR NOMIDAN chiqarilardi. Shuning oqibati:
+ * ro'yxatga tushmagan tur (`debt` — QRZ- reyestrida ochilgan qarz, `retailsale`
+ * — POS qarzga sotuv) umuman kelmasdi va `finalBalanceMinor` haqiqiy saldodan
+ * farq qilardi — «mijozga N so'm qarz bo'lib ketardi» bug-klassi. 2026-07-28 da
+ * bir marta yopilgan, 2026-08-05 yangi yozuvchilar bilan QAYTA ochilgan edi.
+ *
+ * Endi belgi qatorning O'ZIDA keladi (`CounterpartyBalanceEntry.deltaMinor`) —
+ * ya'ni yangi hujjat turi qo'shilganda bu faylda o'zgartiriladigan narsa YO'Q,
+ * va akt qatorlari bosh daftardan printsipial ajrala olmaydi.
  */
-
-export type StatementDocType =
-  | 'invoiceOut'
-  | 'invoiceIn'
-  | 'supply'
-  | 'cashIn'
-  | 'cashOut'
-  | 'paymentIn'
-  | 'paymentOut'
-  | 'prepayment'
-  | 'prepaymentReturn'
-  | 'adjustmentIncrease'
-  | 'adjustmentDecrease'
-  | 'debtPayment';
 
 export interface StatementItem {
   /** Product/assortment display name. */
@@ -51,9 +41,15 @@ export interface StatementItem {
 
 export interface RawDoc {
   moment: Date;
-  docType: StatementDocType;
+  /**
+   * `CounterpartyBalanceEntry.docType` — ERKIN satr, union EMAS (yangi yozuvchi
+   * qo'shilganda bu fayl o'zgarmasin). Yorliq `DOC_TYPE_LABEL` dan, topilmasa
+   * turning o'zi ko'rsatiladi.
+   */
+  docType: string;
   docNumber: string;
-  sumMinor: bigint;
+  /** BELGILI delta — `applyDelta` balansga qo'llagan qiymatning aynan o'zi. */
+  deltaMinor: bigint;
   /** Goods lines (empty for cash/payment docs). */
   items: StatementItem[];
 }
@@ -75,18 +71,13 @@ export interface StatementData {
   finalBalanceMinor: bigint;
 }
 
-const DEBIT_TYPES: ReadonlySet<StatementDocType> = new Set<StatementDocType>([
-  'invoiceOut',
-  'cashOut',
-  'paymentOut',
-  // Avans qaytarilishi = pulni ularga qaytardik ⇒ qarzimiz kamayadi (+).
-  'prepaymentReturn',
-  // Qo'lda korrektirovka: INCREASE = ular bizga ko'proq qarzdor (+).
-  'adjustmentIncrease',
-]);
-
-/** Human label per document type (Uzbek). */
-export const DOC_TYPE_LABEL: Record<StatementDocType, string> = {
+/**
+ * Hujjat turining o'qiladigan nomi (o'zbekcha). Kalitlar —
+ * `CounterpartyBalanceEntry.docType` qiymatlari. Bu xarita faqat YORLIQ uchun:
+ * bu yerda yo'q tur qatorni yo'qotmaydi, `docTypeLabel()` turning o'zini
+ * qaytaradi (saldo esa umuman bunga bog'liq emas).
+ */
+export const DOC_TYPE_LABEL: Record<string, string> = {
   invoiceOut: 'Sotuv',
   invoiceIn: 'Xarid',
   supply: 'Qabul',
@@ -96,10 +87,17 @@ export const DOC_TYPE_LABEL: Record<StatementDocType, string> = {
   paymentOut: "Bank to'lovi (chiqim)",
   prepayment: 'Avans (olindi)',
   prepaymentReturn: 'Avans qaytarildi',
-  adjustmentIncrease: 'Korrektirovka (+)',
-  adjustmentDecrease: 'Korrektirovka (−)',
-  debtPayment: "Qarz to'lovi",
+  adjustment: 'Korrektirovka',
+  debt: 'Qarz ochildi',
+  debtpayment: "Qarz to'lovi",
+  retailsale: 'Chakana (qarzga)',
+  opening: "Boshlang'ich qoldiq",
 };
+
+/** Yorliq, topilmasa — turning o'zi (qator hech qachon yo'qolmaydi). */
+export function docTypeLabel(docType: string): string {
+  return DOC_TYPE_LABEL[docType] ?? docType;
+}
 
 /**
  * Chegirma foizi → katak matni. «10» → «10%», «12.50» → «12.5%», nol/yo'q → «—».
@@ -125,8 +123,9 @@ export function computeStatement(docs: RawDoc[]): StatementData {
   let totalCredit = 0n;
 
   const lines: StatementLine[] = sorted.map((d) => {
-    const isDebit = DEBIT_TYPES.has(d.docType);
-    const amt = d.sumMinor < 0n ? -d.sumMinor : d.sumMinor; // defensive abs
+    // Belgi qatorning O'ZIDAN keladi — tur nomidan EMAS (Faza 10, DUP-08).
+    const isDebit = d.deltaMinor > 0n;
+    const amt = d.deltaMinor < 0n ? -d.deltaMinor : d.deltaMinor;
     const debitMinor = isDebit ? amt : 0n;
     const creditMinor = isDebit ? 0n : amt;
     running += debitMinor - creditMinor;

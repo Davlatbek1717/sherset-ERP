@@ -1,5 +1,15 @@
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import {
+  docKey,
+  resolveBalanceDocs,
+} from '../counterparty-balance/counterparty-balance-doc-resolver.js';
+import { isOpeningEntry } from '../counterparty-balance/counterparty-balance-doc-types.js';
+import {
+  type DatedJournalEntry,
+  foldJournalPeriod,
+  listJournalEntries,
+} from '../counterparty-balance/counterparty-balance-journal.util.js';
 import { type CounterpartyActInput, CounterpartyActSchema } from './counterparty-act.schema.js';
 import { reportDateBounds } from './report-date-bounds.util.js';
 
@@ -42,33 +52,32 @@ interface PartyInfo {
   inn: string | null;
 }
 
-/**
- * Minimal structural shape shared by the eight fixed-sign money-doc delegates
- * (distinct Prisma models, identical here) so they can be looped over.
- */
-type MoneyDoc = { name: string; moment: Date; sumMinor: bigint };
-type MoneyDelegate = {
-  findMany(args: {
-    where: Record<string, unknown>;
-    select: { name: true; moment: true; sumMinor: true };
-  }): Promise<MoneyDoc[]>;
-};
-
 @Injectable()
 export class CounterpartyActService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   /**
    * Assemble the «Акт сверки взаимных расчётов» — the chronological ledger of
-   * posted balance-affecting documents between one organization and one
-   * counterparty over a period, with an opening + closing balance.
+   * balance-affecting movements between one organization and one counterparty
+   * over a period, with an opening + closing balance.
    *
-   * Debit (our books): documents that grow the counterparty's debt to us —
-   * the +sign docs (InvoiceOut, PaymentOut, CashOut, PrepaymentReturn,
-   * Adjustment INCREASE). Credit: the −sign docs that shrink it (InvoiceIn,
-   * PaymentIn, CashIn, Prepayment, Adjustment DECREASE). This is exactly the
-   * sign convention `CounterpartyBalanceService.applyDelta` uses, so the
-   * closing balance equals the materialized balance when `to` is now.
+   * FAZA 10 (`DUP-06`) — MANBA O'ZGARDI: `CounterpartyBalanceEntry` jurnali.
+   * Ilgari bu yerda 8 ta hujjat turining QATTIQ ro'yxati turardi
+   * (invoiceOut/paymentOut/cashOut/prepaymentReturn/invoiceIn/paymentIn/cashIn/
+   * prepayment + adjustment), va docstring «closing balance equals the
+   * materialized balance» deb DA'VO qilardi. Ro'yxatda `supply`, `debt`
+   * (QRZ- reyestri), `debtpayment` va `retailsale` (POS qarzga sotuv) YO'Q edi —
+   * ya'ni yetkazib beruvchi va qarzdor mijoz uchun kontragentga IMZOGA
+   * yuboriladigan rasmiy hujjat noto'g'ri yakuniy qoldiq ko'rsatardi.
+   *
+   * Endi qatorlar ham, qoldiq ham jurnal deltalaridan quriladi:
+   *   delta > 0 → DEBET (kontragent qarzi oshdi) · delta < 0 → KREDIT.
+   * Bu — `applyDelta` ning O'Z konvensiyasi, boshqa formula yo'q, shuning uchun
+   * `to = hozir` bo'lganda closing == materiallashgan balans KONSTRUKSIYA
+   * bo'yicha (invariant `balance-readers-invariant.test.ts` da qulflangan).
+   * Hujjat raqami/sanasi `counterparty-balance-doc-resolver.ts` dan keladi:
+   * u yerda tur qo'shilmagan bo'lsa qator RAQAMSIZ chiqadi — qoldiq baribir
+   * to'g'ri qoladi (ataylab tanlangan degradatsiya yo'li).
    */
   async counterpartyAct(accountId: string, raw: unknown): Promise<CounterpartyActReport> {
     const input = this.parse(raw);
@@ -98,81 +107,41 @@ export class CounterpartyActService {
     if (!org) throw new BadRequestException('Organization not found');
     if (!cp) throw new BadRequestException('Counterparty not found');
 
-    const baseWhere = {
-      accountId,
-      organizationId,
-      agentId: counterpartyId,
-      currency,
-      applicable: true,
-      deletedAt: null,
-      ...(contractId ? { contractId } : {}),
-      moment: { lt },
-    };
     const c = this.prisma.client;
-    // 8 fixed-sign doc types (+1 = debit / grows their debt, −1 = credit / shrinks it).
-    const fixed: Array<{ typeKey: string; model: MoneyDelegate; sign: 1 | -1 }> = [
-      { typeKey: 'invoiceOut', model: c.invoiceOut as unknown as MoneyDelegate, sign: 1 },
-      { typeKey: 'paymentOut', model: c.paymentOut as unknown as MoneyDelegate, sign: 1 },
-      { typeKey: 'cashOut', model: c.cashOut as unknown as MoneyDelegate, sign: 1 },
-      {
-        typeKey: 'prepaymentReturn',
-        model: c.prepaymentReturn as unknown as MoneyDelegate,
-        sign: 1,
-      },
-      { typeKey: 'invoiceIn', model: c.invoiceIn as unknown as MoneyDelegate, sign: -1 },
-      { typeKey: 'paymentIn', model: c.paymentIn as unknown as MoneyDelegate, sign: -1 },
-      { typeKey: 'cashIn', model: c.cashIn as unknown as MoneyDelegate, sign: -1 },
-      { typeKey: 'prepayment', model: c.prepayment as unknown as MoneyDelegate, sign: -1 },
-    ];
+    const entries = await listJournalEntries(c.counterpartyBalanceEntry, {
+      accountId,
+      counterpartyId,
+      currency,
+      organizationId,
+    });
+    const resolved = await resolveBalanceDocs(c, accountId, entries);
 
-    let opening = 0n;
-    let totalDebit = 0n;
-    let totalCredit = 0n;
-    const rows: CounterpartyActRow[] = [];
+    // Shartnoma filtri jurnalda YO'Q (delta shartnoma o'lchovini saqlamaydi) —
+    // shuning uchun u hujjat darajasida qo'llanadi. Shartnomasi aniqlanmagan
+    // qator (masalan Debt / POS cheki — ularda shartnoma tushunchasi yo'q)
+    // filtr yoqilganda TASHLANADI: aks holda «shu shartnoma bo'yicha» degan
+    // hujjatga tegishsiz harakat tushib ketardi.
+    const dated: DatedJournalEntry[] = [];
+    for (const e of entries) {
+      const doc = resolved.get(docKey(e.docType, e.docId));
+      if (contractId && !isOpeningEntry(e.docType) && doc?.contractId !== contractId) continue;
+      dated.push({ ...e, docMoment: doc?.moment ?? null });
+    }
 
-    const consume = (typeKey: string, doc: MoneyDoc, sign: 1 | -1) => {
-      const signed = BigInt(sign) * doc.sumMinor;
-      if (periodStart && doc.moment < periodStart) {
-        opening += signed;
-        return;
-      }
-      const debit = sign > 0 ? doc.sumMinor : 0n;
-      const credit = sign < 0 ? doc.sumMinor : 0n;
-      totalDebit += debit;
-      totalCredit += credit;
-      rows.push({
-        date: doc.moment,
-        typeKey,
-        number: doc.name,
+    const folded = foldJournalPeriod(dated, periodStart, lt);
+    const rows: CounterpartyActRow[] = folded.lines.map((e) => {
+      const doc = resolved.get(docKey(e.docType, e.docId));
+      const debit = e.deltaMinor > 0n ? e.deltaMinor : 0n;
+      const credit = e.deltaMinor < 0n ? -e.deltaMinor : 0n;
+      return {
+        date: e.docMoment ?? e.createdAt,
+        typeKey: e.docType,
+        // Resolverda turi yo'q / hujjat o'chirilgan ⇒ raqamsiz qator (qoldiq to'g'ri).
+        number: doc?.number ?? '—',
         debitMinor: debit.toString(),
         creditMinor: credit.toString(),
-      });
-    };
-
-    const fixedResults = await Promise.all(
-      fixed.map(async (f) => ({
-        f,
-        docs: await f.model.findMany({
-          where: baseWhere,
-          select: { name: true, moment: true, sumMinor: true },
-        }),
-      })),
-    );
-    for (const { f, docs } of fixedResults) {
-      for (const doc of docs) consume(f.typeKey, doc, f.sign);
-    }
-
-    // Adjustments carry their own sign via `direction` (INCREASE = +1, DECREASE = −1).
-    const adjustments = await c.counterpartyAdjustment.findMany({
-      where: baseWhere,
-      select: { name: true, moment: true, sumMinor: true, direction: true },
+      };
     });
-    for (const a of adjustments) {
-      consume('counterpartyAdjustment', a, a.direction === 'INCREASE' ? 1 : -1);
-    }
-
-    rows.sort((x, y) => x.date.getTime() - y.date.getTime());
-    const closing = opening + totalDebit - totalCredit;
 
     return {
       organization: this.toParty(org),
@@ -181,10 +150,10 @@ export class CounterpartyActService {
       from: input.from ?? null,
       to,
       currency,
-      openingMinor: opening.toString(),
-      closingMinor: closing.toString(),
-      totalDebitMinor: totalDebit.toString(),
-      totalCreditMinor: totalCredit.toString(),
+      openingMinor: folded.openingMinor.toString(),
+      closingMinor: folded.closingMinor.toString(),
+      totalDebitMinor: folded.totalDebitMinor.toString(),
+      totalCreditMinor: folded.totalCreditMinor.toString(),
       rows,
     };
   }

@@ -45,6 +45,28 @@ interface ActReport {
   rows: ActRow[];
 }
 
+/**
+ * `pages.print.act.doc_types` da tarjimasi BOR turlar. Ro'yxat balans
+ * jurnalining `docType` reyestriga (`counterparty-balance-doc-types.ts`) mos
+ * turadi; bu yerda yo'q tur qatorni yo'qotmaydi (yuqoridagi `docTypeLabel`).
+ */
+const ACT_DOC_TYPES = new Set([
+  'invoiceOut',
+  'invoiceIn',
+  'paymentIn',
+  'paymentOut',
+  'cashIn',
+  'cashOut',
+  'prepayment',
+  'prepaymentReturn',
+  'adjustment',
+  'supply',
+  'debt',
+  'debtpayment',
+  'retailsale',
+  'opening',
+]);
+
 export default function PrintReconciliationActPage() {
   const sp = useSearchParams();
   const t = useTranslations('pages.print');
@@ -103,6 +125,16 @@ export default function PrintReconciliationActPage() {
     if (side === 'debit') return v > 0n ? v.toString() : '0';
     return v < 0n ? (-v).toString() : '0';
   };
+  /**
+   * Hujjat turi yorlig'i. Faza 10 dan beri `typeKey` — balans jurnalining
+   * `docType` qiymati, ya'ni yopiq union EMAS: yangi balans-yozuvchi qo'shilsa
+   * bu yerga tarjimasiz tur kelishi mumkin. Bunday holatda qator TUSHIB
+   * QOLMAYDI — turning o'zi ko'rsatiladi (saldo baribir to'g'ri).
+   */
+  const docTypeLabel = (typeKey: string) =>
+    ACT_DOC_TYPES.has(typeKey)
+      ? t(`act.doc_types.${typeKey}` as 'act.doc_types.invoiceOut')
+      : typeKey;
 
   const closing = BigInt(data.closingMinor);
   const orgName = partyName(data.organization);
@@ -192,7 +224,7 @@ export default function PrintReconciliationActPage() {
               <tr key={`${r.typeKey}-${r.number}-${i}`}>
                 <td>{formatDate(r.date)}</td>
                 <td>
-                  {t(`act.doc_types.${r.typeKey}` as 'act.doc_types.invoiceOut')} № {r.number}
+                  {docTypeLabel(r.typeKey)} № {r.number}
                 </td>
                 <td className="num">{cell(r.debitMinor)}</td>
                 <td className="num">{cell(r.creditMinor)}</td>

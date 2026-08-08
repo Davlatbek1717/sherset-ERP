@@ -1,12 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { type RawDoc, computeStatement } from './statement-compute.util.js';
+import { type RawDoc, computeStatement, docTypeLabel } from './statement-compute.util.js';
 
+/**
+ * FAZA 10 (`DUP-08`) — bu testlar SHAKLI o'zgardi: ilgari `d(...)` ga MUTLAQ
+ * summa berilib, debet/kredit tomoni HUJJAT TURIDAN chiqarilardi. Aynan o'sha
+ * «tur → tomon» xaritasi bug-klassning ildizi edi (xaritada yo'q tur = qator
+ * ham, saldo ham yo'qoladi). Endi qatorga `applyDelta` qo'llagan BELGILI delta
+ * beriladi, tomon esa belgidan kelib chiqadi — shuning uchun quyidagi
+ * stsenariylarda ishoralar OCHIQ yozilgan (ular hujjat semantikasini emas,
+ * bosh daftardagi haqiqiy deltani hujjatlaydi).
+ */
 const d = (
   iso: string,
-  docType: RawDoc['docType'],
-  sumMinor: bigint,
+  docType: string,
+  deltaMinor: bigint,
   items: RawDoc['items'] = [],
-): RawDoc => ({ moment: new Date(iso), docType, docNumber: 'X', sumMinor, items });
+): RawDoc => ({ moment: new Date(iso), docType, docNumber: 'X', deltaMinor, items });
 
 describe('computeStatement', () => {
   it('empty → all zeros', () => {
@@ -27,7 +36,7 @@ describe('computeStatement', () => {
   it('sale then partial payment → remaining debt', () => {
     const r = computeStatement([
       d('2026-07-01', 'invoiceOut', 100n),
-      d('2026-07-02', 'cashIn', 60n),
+      d('2026-07-02', 'cashIn', -60n),
     ]);
     expect(r.lines[1]?.runningBalanceMinor).toBe(40n);
     expect(r.finalBalanceMinor).toBe(40n); // they owe us 40
@@ -37,14 +46,14 @@ describe('computeStatement', () => {
   });
 
   it('purchase → we owe them (credit, negative balance)', () => {
-    const r = computeStatement([d('2026-07-01', 'invoiceIn', 50n)]);
+    const r = computeStatement([d('2026-07-01', 'invoiceIn', -50n)]);
     expect(r.lines[0]?.side).toBe('credit');
     expect(r.finalBalanceMinor).toBe(-50n); // we owe them 50
   });
 
   it('sorts by moment regardless of input order', () => {
     const r = computeStatement([
-      d('2026-07-03', 'cashIn', 30n),
+      d('2026-07-03', 'cashIn', -30n),
       d('2026-07-01', 'invoiceOut', 100n),
       d('2026-07-02', 'invoiceOut', 20n),
     ]);
@@ -56,78 +65,66 @@ describe('computeStatement', () => {
   it('mixed full cycle settles to zero', () => {
     const r = computeStatement([
       d('2026-07-01', 'invoiceOut', 100n),
-      d('2026-07-02', 'invoiceIn', 40n),
-      d('2026-07-03', 'cashIn', 100n),
+      d('2026-07-02', 'invoiceIn', -40n),
+      d('2026-07-03', 'cashIn', -100n),
       d('2026-07-04', 'cashOut', 40n),
     ]);
-    // 100 (debit) - 40 (credit) - 100 (credit) + 40 (debit) = 0
+    // +100 −40 −100 +40 = 0
     expect(r.finalBalanceMinor).toBe(0n);
     expect(r.turnoverMinor).toBe(280n);
   });
 
-  it('cashOut/paymentOut count as debit; negative sums are abs-valued', () => {
-    const r = computeStatement([d('2026-07-01', 'paymentOut', -25n)]);
-    expect(r.lines[0]?.side).toBe('debit');
-    expect(r.lines[0]?.debitMinor).toBe(25n);
-    expect(r.finalBalanceMinor).toBe(25n);
+  it("nol delta ham qator bo'lib qoladi (kredit tomonda, 0 summa bilan)", () => {
+    const r = computeStatement([d('2026-07-01', 'adjustment', 0n)]);
+    expect(r.lines).toHaveLength(1);
+    expect(r.finalBalanceMinor).toBe(0n);
   });
 });
 
 /**
- * 2026-07-28 — akt-sverkaga QO'SHILGAN 5 tur. Ular `applyDelta` ni chaqiradi,
- * ya'ni materiallashgan saldoni harakatlantiradi, lekin aktda yo'q edi: akt
- * yakuniy qoldig'i haqiqiy saldodan farq qilib, mijozga noto'g'ri «qarzingiz»
- * raqami ketardi. Ishoralar `recompute-counterparty-balances.ts` bilan bir xil.
+ * Faza 10 gacha bu bo'lim «akt-sverkaga QO'SHILGAN 5 tur» deb nomlanardi —
+ * ya'ni ro'yxatning to'liqligini tekshirardi. Endi tekshiriladigan narsa
+ * boshqa: HAR QANDAY tur (ro'yxatda bor-yo'qligidan qat'i nazar) o'z belgisi
+ * bilan qatorga tushadi. Shu sababli ro'yxatda hech qachon bo'lmagan turlar —
+ * `debt` (QRZ- ochildi), `retailsale` (POS qarzga sotuv), `opening` (tarixiy
+ * qoldiq) va butunlay NOMA'LUM tur — ataylab qo'shilgan.
  */
-describe('computeStatement — balansni harakatlantiruvchi qolgan hujjatlar', () => {
-  it("avans olindi → KREDIT (biz ularga qarzdor bo'lamiz)", () => {
-    const r = computeStatement([d('2026-07-01', 'prepayment', 500n)]);
-    expect(r.lines[0].side).toBe('credit');
-    expect(r.finalBalanceMinor).toBe(-500n);
-  });
-
-  it('avans qaytarildi → DEBET (qarzimiz kamayadi)', () => {
-    const r = computeStatement([d('2026-07-01', 'prepaymentReturn', 500n)]);
-    expect(r.lines[0].side).toBe('debit');
-    expect(r.finalBalanceMinor).toBe(500n);
-  });
-
-  it('korrektirovka INCREASE → DEBET, DECREASE → KREDIT', () => {
-    const inc = computeStatement([d('2026-07-01', 'adjustmentIncrease', 300n)]);
-    const dec = computeStatement([d('2026-07-01', 'adjustmentDecrease', 300n)]);
-    expect(inc.finalBalanceMinor).toBe(300n);
-    expect(dec.finalBalanceMinor).toBe(-300n);
-  });
-
-  it("qarz kartochkasi to'lovi → KREDIT (mijoz pul berdi)", () => {
-    const r = computeStatement([d('2026-07-01', 'debtPayment', 250n)]);
-    expect(r.lines[0].side).toBe('credit');
-    expect(r.finalBalanceMinor).toBe(-250n);
-  });
-
-  it('qabul (supply) → KREDIT — yetkazib beruvchiga qarzimiz oshadi', () => {
-    const r = computeStatement([d('2026-07-01', 'supply', 4_500_000n)]);
-    expect(r.lines[0].side).toBe('credit');
-    expect(r.finalBalanceMinor).toBe(-4_500_000n);
-  });
-
-  it("to'liq aralash tsikl — barcha 12 tur birga nolga keladi", () => {
+describe('computeStatement — tur ro’yxatiga bog’liq EMAS (DUP-08 qulfi)', () => {
+  it("noma'lum tur ham qatorga tushadi va saldoga qo'shiladi", () => {
     const r = computeStatement([
-      d('2026-07-01', 'invoiceOut', 1000n), // +1000
-      d('2026-07-02', 'invoiceIn', 200n), //  -200
-      d('2026-07-03', 'supply', 300n), //     -300
-      d('2026-07-04', 'cashOut', 100n), //    +100
-      d('2026-07-05', 'cashIn', 150n), //     -150
-      d('2026-07-06', 'paymentOut', 250n), // +250
-      d('2026-07-07', 'paymentIn', 400n), //  -400
-      d('2026-07-08', 'prepayment', 500n), // -500
-      d('2026-07-09', 'prepaymentReturn', 500n), // +500
-      d('2026-07-10', 'adjustmentIncrease', 200n), // +200
-      d('2026-07-11', 'adjustmentDecrease', 300n), // -300
-      d('2026-07-12', 'debtPayment', 700n), // -700
+      d('2026-07-01', 'invoiceOut', 1000n),
+      d('2026-07-02', 'kelajakdagi-yangi-tur', -400n),
     ]);
-    // +1000 -200 -300 +100 -150 +250 -400 -500 +500 +200 -300 -700 = -500
-    expect(r.finalBalanceMinor).toBe(-500n);
-    expect(r.lines).toHaveLength(12);
+    expect(r.lines).toHaveLength(2);
+    expect(r.finalBalanceMinor).toBe(600n);
+  });
+
+  it("noma'lum tur yorlig'i — turning o'zi (qator raqamsiz emas, nomsiz emas)", () => {
+    expect(docTypeLabel('invoiceOut')).toBe('Sotuv');
+    expect(docTypeLabel('debt')).toBe('Qarz ochildi');
+    expect(docTypeLabel('kelajakdagi-yangi-tur')).toBe('kelajakdagi-yangi-tur');
+  });
+
+  it("to'liq aralash tsikl — Faza 9 ning 13 yozuvchisi + opening birga", () => {
+    const r = computeStatement([
+      d('2026-06-30', 'opening', 250n), //     +250 (tarixiy qoldiq)
+      d('2026-07-01', 'invoiceOut', 1000n), // +1000
+      d('2026-07-02', 'invoiceIn', -200n), //   −200
+      d('2026-07-03', 'supply', -300n), //      −300
+      d('2026-07-04', 'cashOut', 100n), //      +100
+      d('2026-07-05', 'cashIn', -150n), //      −150
+      d('2026-07-06', 'paymentOut', 250n), //   +250
+      d('2026-07-07', 'paymentIn', -400n), //   −400
+      d('2026-07-08', 'prepayment', -500n), //  −500
+      d('2026-07-09', 'prepaymentReturn', 500n), // +500
+      d('2026-07-10', 'adjustment', 200n), //   +200
+      d('2026-07-11', 'adjustment', -300n), //  −300
+      d('2026-07-12', 'debtpayment', -700n), // −700
+      d('2026-07-13', 'debt', 900n), //         +900
+      d('2026-07-14', 'retailsale', 75n), //     +75
+    ]);
+    // 250+1000−200−300+100−150+250−400−500+500+200−300−700+900+75 = 725
+    expect(r.finalBalanceMinor).toBe(725n);
+    expect(r.lines).toHaveLength(15);
   });
 });

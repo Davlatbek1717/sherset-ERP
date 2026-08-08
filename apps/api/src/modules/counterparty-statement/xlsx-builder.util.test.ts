@@ -15,7 +15,7 @@ const sampleData = () =>
       moment: new Date('2026-07-01T08:00:00Z'),
       docType: 'invoiceOut',
       docNumber: '03404',
-      sumMinor: 15_000_000n, // 150 000 so'm
+      deltaMinor: 15_000_000n, // +150 000 so'm (debet)
       items: [
         { name: 'Sement', quantity: '10', priceMinor: 1_000_000n, sumMinor: 10_000_000n },
         { name: "G'isht", quantity: '100', priceMinor: 50_000n, sumMinor: 5_000_000n },
@@ -25,7 +25,7 @@ const sampleData = () =>
       moment: new Date('2026-07-05T08:00:00Z'),
       docType: 'cashIn',
       docNumber: '00112',
-      sumMinor: 5_000_000n, // 50 000 so'm
+      deltaMinor: -5_000_000n, // −50 000 so'm (kredit)
       items: [],
     },
   ]);
@@ -98,7 +98,7 @@ describe('buildStatementXlsx — two sheets (Sodda + Batafsil)', () => {
         moment: new Date('2026-07-01T08:00:00Z'),
         docType: 'invoiceIn',
         docNumber: 'SF-1',
-        sumMinor: 20_000_000n,
+        deltaMinor: -20_000_000n,
         items: [],
       },
     ]);

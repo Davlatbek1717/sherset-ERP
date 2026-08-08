@@ -1,5 +1,5 @@
 import ExcelJS from 'exceljs';
-import { DOC_TYPE_LABEL, type StatementData, discountLabel } from './statement-compute.util.js';
+import { type StatementData, discountLabel, docTypeLabel } from './statement-compute.util.js';
 
 /**
  * Reconciliation-statement (акт-сверка) XLSX with TWO worksheets, so both views
@@ -133,7 +133,7 @@ function addSimpleSheet(wb: ExcelJS.Workbook, input: StatementXlsxInput, unit: s
     const row = ws.getRow(r);
     row.getCell(1).value = idx + 1;
     row.getCell(2).value = fmtDate(line.moment);
-    row.getCell(3).value = `${DOC_TYPE_LABEL[line.docType]} №${line.docNumber}`;
+    row.getCell(3).value = `${docTypeLabel(line.docType)} №${line.docNumber}`;
     row.getCell(3).font = { bold: true };
     row.getCell(4).value = line.items.length
       ? line.items
@@ -218,7 +218,7 @@ function addDetailedSheet(wb: ExcelJS.Workbook, input: StatementXlsxInput, unit:
     const dr = ws.getRow(r);
     dr.getCell(1).value = idx + 1;
     dr.getCell(2).value = fmtDate(line.moment);
-    dr.getCell(3).value = `${DOC_TYPE_LABEL[line.docType]} №${line.docNumber}`;
+    dr.getCell(3).value = `${docTypeLabel(line.docType)} №${line.docNumber}`;
     dr.getCell(3).font = { bold: true };
     if (line.debitMinor > 0n) dr.getCell(7).value = somAbs(line.debitMinor);
     if (line.creditMinor > 0n) dr.getCell(8).value = somAbs(line.creditMinor);

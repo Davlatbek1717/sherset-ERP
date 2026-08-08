@@ -3697,7 +3697,13 @@
           "paymentIn": "Kiruvchi to'lov",
           "cashIn": "Kirim orderi",
           "prepayment": "Oldindan to'lov",
-          "counterpartyAdjustment": "Korrektirovka"
+          "counterpartyAdjustment": "Korrektirovka",
+          "adjustment": "Korrektirovka",
+          "supply": "Qabul",
+          "debt": "Qarz berildi",
+          "debtpayment": "Qarz to'lovi",
+          "retailsale": "Chakana savdo (qarzga)",
+          "opening": "Boshlang'ich qoldiq"
         }
       },
       "chek_title_sale": "SAVDO CHEKI",

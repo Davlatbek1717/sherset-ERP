@@ -120,7 +120,9 @@ interface MetricsData {
   balance: {
     totalMinor: string;
     // Net «Взаиморасчёты» per наша организация — the breakdown sums to totalMinor.
-    byOrg: { organizationId: string; organizationName: string; amountMinor: string }[];
+    // `organizationId: null` — «taqsimlanmagan» bandi (Faza 10): qarz reyestri,
+    // POS qarz-sotuvi va tarixiy boshlang'ich qoldiqda organizatsiya o'lchovi yo'q.
+    byOrg: { organizationId: string | null; organizationName: string; amountMinor: string }[];
   };
 }
 
@@ -1350,7 +1352,7 @@ export function CounterpartyActivityWidget({
                 const amt = BigInt(o.amountMinor);
                 const positive = amt > 0n;
                 return (
-                  <Fragment key={o.organizationId}>
+                  <Fragment key={o.organizationId ?? '—'}>
                     <div
                       className={`text-right tabular-nums ${
                         positive

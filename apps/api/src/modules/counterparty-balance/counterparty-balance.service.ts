@@ -7,6 +7,7 @@ import {
   type CounterpartyBalanceChangedEvent,
   HR_EVENT,
 } from '../hr/hr-shared/hr-events.types.js';
+import type { ApplyDeltaDocType } from './counterparty-balance-doc-types.js';
 
 /**
  * Per-call metadata: WHICH document moved the balance, and under WHICH
@@ -31,7 +32,15 @@ import {
  */
 export interface ApplyDeltaMeta {
   source?: CounterpartyBalanceChangeSource;
-  docType: string;
+  /**
+   * Faza 10: `string` EMAS, `counterparty-balance-doc-types.ts` reyestrining
+   * union'i. Bu — nomlar bo'yicha compile-time qulf: `'debtPayment'` va
+   * `'debtpayment'` kabi bir harfli farq jimgina yangi tur yaratib, jurnal
+   * qatorlarini ikkiga bo'lib yuborardi (o'quvchilar docType bo'yicha
+   * guruhlaydi). `opening` bu unionda ATAYLAB yo'q — u faqat backfill
+   * skriptining texnik turi, servis uni tanlay olmasligi kerak.
+   */
+  docType: ApplyDeltaDocType;
   docId: string;
   organizationId: string | null;
 }

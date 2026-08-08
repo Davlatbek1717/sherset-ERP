@@ -1,27 +1,42 @@
 #!/usr/bin/env tsx
 /**
- * Recompute the materialized `CounterpartyBalance` cache from the source documents.
+ * Recompute the materialized `CounterpartyBalance` cache.
  *
- * WHY: the demo data was bulk-imported with `applicable: true` money docs but WITHOUT
- * running each service's post() (which is what calls CounterpartyBalanceService.applyDelta),
- * so the cache stayed 0 for imported counterparties. The counterparty LIST «Баланс» column
- * and /reports/counterparty-balance read this stale cache, while the card «Показатели» tab
- * recomputes from the docs — so they disagreed. This one-off backfill makes the cache match
- * the documents, so list / report / Показатели all show the same correct balance.
+ * ══ FAZA 10 — NISHON MANBASI O'ZGARDI: `CounterpartyBalanceEntry` JURNALI ══
  *
- * Deterministic + idempotent + re-runnable: the target is Σ(applicable docs × posted-sign)
- * per (account, counterparty, currency), mirroring CounterpartyBalanceService EXACTLY:
+ * Ilgari nishon hujjatlardan qayta qurilardi, va aynan o'sha qayta-qurish
+ * ro'yxati `DUP-02` ning ildizi edi: ro'yxatga tushmagan yozuvchining saldosi
+ * `APPLY=1` da JIMGINA nolga tushardi. Faza 8 buni skanner-guard bilan
+ * yumshatgan (yozuvchi ro'yxatdan tushib qolsa skript to'xtaydi), lekin
+ * printsipial xatar qolgan edi.
+ *
+ * Endi nishon — jurnal yig'indisi: `applyDelta` materiallashgan balans bilan
+ * BIR TRANZAKSIYADA jurnalga yozadi, ya'ni `Σ(jurnal) == materiallashgan`
+ * KONSTRUKSIYA bo'yicha to'g'ri va hech qanday hujjat-ro'yxatiga bog'liq emas.
+ * Skriptning vazifasi ham aniqlashdi: u endi «hujjatlardan saldo yasash» emas,
+ * **keshni bosh daftardan tiklash** (drift → 0).
+ *
+ * Hujjatlardan qayta-qurish SAQLANDI, lekin faqat **CROSS-CHECK** sifatida:
+ * u endi hech narsa yozmaydi, balki «hujjatlar X deydi, jurnal Y deydi» farqini
+ * ko'rsatadi. Shu bilan Faza 8 ning qamrov-guardi o'z ma'nosini saqlaydi
+ * (`applyDelta` ni chaqirmaydigan yoki umuman yozmaydigan yo'l darhol
+ * ko'rinadi), lekin uning xatosi endi ma'lumotni buza olmaydi.
+ *
+ * ⚠️ BACKFILL: jurnal Faza 9 da bo'sh boshlangan. `backfill-counterparty-balance-journal.ts`
+ * («opening snapshot») YUGURTIRILMAGUNCHA bu skriptning nishoni tarixiy
+ * saldoni BILMAYDI. Shuning uchun `main()` birinchi yozuvdan oldin buni
+ * tekshiradi va backfill qilinmagan bo'lsa `APPLY=1` ni RAD ETADI.
+ *
+ * Hujjat cross-checkining formulasi (avvalgidek, `applyDelta` bilan bir xil):
  *   +InvoiceOut −InvoiceIn −Supply  −PaymentIn +PaymentOut  −CashIn +CashOut
  *   −Prepayment +PrepaymentReturn  CounterpartyAdjustment ±direction
  *   −DebtPayment  +Debt(QRZ- reyestr)  +RetailSale(qarz tender) −RetailSale(qarz qaytarish)
  * `applicable: true` is the precise predicate applyDelta gates on (cancel clears it).
  *
- * ⚠️ QAMROV — bu skriptning eng xavfli tomoni. Nishonda ko'rinmagan kontragent
- * uchun `want = 0`, ya'ni `APPLY=1` uning saldosini JIMGINA o'chiradi. Shuning
- * uchun manba-ro'yxat `applyDelta` ni chaqiradigan HAR yo'lni qamrashi SHART.
- * Bu endi izoh emas, KOD: `counterparty-balance-sources.ts` manba-daraxtni
- * skanerlab yozuvchilarni topadi va reyestrga solishtiradi; `main()` birinchi
- * yozuvdan OLDIN `assertCounterpartyBalanceCoverage()` bilan to'xtaydi
+ * ⚠️ QAMROV — Faza 8 dan qolgan guard SAQLANADI. Endi u nishonni emas,
+ * CROSS-CHECK ni himoya qiladi: qamrovsiz yozuvchi bo'lsa hujjat-hisobi chala
+ * bo'lib, «jurnal noto'g'ri» degan YOLG'ON signal berardi. `main()` birinchi
+ * ishdan OLDIN `assertCounterpartyBalanceCoverage()` bilan to'xtaydi
  * (`counterparty-balance-sources.test.ts` xuddi shuni gate'da tekshiradi).
  * Har manba-blok quyida `SOURCE: <nom>` markeri bilan belgilangan — marker
  * reyestrdagi nomga bog'langan, shuning uchun blokni o'chirib reyestrni
@@ -313,7 +328,19 @@ async function main() {
     );
   }
 
-  // Current cache rows (so we can detect changes + zero-out rows that no longer have docs).
+  // ══ NISHON — BALANS JURNALI (Faza 10). Hujjat-hisobi yuqorida `target` da
+  // qoldi va faqat solishtirish uchun ishlatiladi.
+  const journalRows = await prisma.counterpartyBalanceEntry.groupBy({
+    by: ['accountId', 'counterpartyId', 'currency'],
+    where: ONLY_CP ? { counterpartyId: ONLY_CP } : {},
+    _sum: { deltaMinor: true },
+  });
+  const journal = new Map<Key, bigint>();
+  for (const r of journalRows) {
+    journal.set(key(r.accountId, r.counterpartyId, r.currency), r._sum.deltaMinor ?? 0n);
+  }
+
+  // Current cache rows (so we can detect drift + zero-out rows with no journal).
   const current = await prisma.counterpartyBalance.findMany({
     where: ONLY_CP ? { counterpartyId: ONLY_CP } : {},
     select: { accountId: true, counterpartyId: true, currency: true, balanceMinor: true },
@@ -322,14 +349,31 @@ async function main() {
   for (const c of current)
     currentMap.set(key(c.accountId, c.counterpartyId, c.currency), c.balanceMinor);
 
-  // Build the change set: every key in target ∪ current.
-  const allKeys = new Set<Key>([...target.keys(), ...currentMap.keys()]);
+  // ⚠️ BACKFILL QO'RIQCHISI. Jurnal Faza 9 da BO'SH boshlangan: `opening`
+  // qatorlarisiz uning yig'indisi faqat Faza 9 dan KEYINGI deltalarni biladi,
+  // ya'ni `APPLY=1` butun tarixiy saldoni o'chirib yuborardi — bu aynan
+  // DUP-02 halokati, faqat boshqa eshikdan. Shuning uchun: materiallashgan
+  // qatori bor, lekin jurnalda umuman ko'rinmagan kalit bo'lsa — YOZMAYMIZ.
+  const missingInJournal = [...currentMap.keys()].filter((k) => !journal.has(k));
+
+  const allKeys = new Set<Key>([...journal.keys(), ...currentMap.keys()]);
   let changed = 0;
   let unchanged = 0;
+  let docMismatch = 0;
   const samples: string[] = [];
+  const docSamples: string[] = [];
+  const writes: Array<[Key, bigint]> = [];
   for (const k of allKeys) {
-    const want = target.get(k) ?? 0n; // no docs ⇒ balance is 0
+    const want = journal.get(k) ?? 0n; // jurnalda yo'q ⇒ bosh daftarda harakat yo'q
     const have = currentMap.get(k) ?? 0n;
+    const fromDocs = target.get(k) ?? 0n;
+    if (fromDocs !== want) {
+      docMismatch++;
+      if (docSamples.length < 12) {
+        const [, cp, cur] = k.split('|');
+        docSamples.push(`  ${cp} ${cur}: hujjatlar ${fromDocs} vs jurnal ${want}`);
+      }
+    }
     if (want === have) {
       unchanged++;
       continue;
@@ -339,15 +383,7 @@ async function main() {
       const [, cp, cur] = k.split('|');
       samples.push(`  ${cp} ${cur}: ${have} → ${want}  (Δ ${want - have})`);
     }
-    if (APPLY) {
-      // key() built this as `${accountId}|${counterpartyId}|${currency}` → exactly 3 parts.
-      const [accountId, counterpartyId, currency] = k.split('|') as [string, string, string];
-      await prisma.counterpartyBalance.upsert({
-        where: { counterpartyId_currency: { counterpartyId, currency } },
-        create: { accountId, counterpartyId, currency, balanceMinor: want },
-        update: { balanceMinor: want },
-      });
-    }
+    writes.push([k, want]);
   }
 
   console.log(
@@ -357,8 +393,42 @@ async function main() {
     `(account,counterparty,currency) pairs: ${allKeys.size} | changed: ${changed} | unchanged: ${unchanged}`,
   );
   if (samples.length) {
-    console.log('sample changes (have → want):');
+    console.log('sample changes (have → want, JURNALDAN):');
     console.log(samples.join('\n'));
+  }
+  console.log(
+    docMismatch === 0
+      ? 'cross-check: hujjat-rekonstruksiyasi jurnal bilan MOS (0 farq)'
+      : `cross-check: ⚠️ ${docMismatch} kalitda hujjat-rekonstruksiyasi jurnaldan farq qiladi`,
+  );
+  if (docSamples.length) console.log(docSamples.join('\n'));
+
+  if (missingInJournal.length > 0) {
+    console.error(
+      [
+        '',
+        `⛔ ${missingInJournal.length} kontragent×valyuta jufti materiallashgan balansda BOR, jurnalda YO'Q.`,
+        'Bu — backfill qilinmagan tarix belgisi. Jurnaldan yozish ularning saldosini nolga tushirardi.',
+        'Avval `opening snapshot` ni yugurtiring:',
+        '  pnpm --filter @moysklad/api exec tsx src/scripts/backfill-counterparty-balance-journal.ts',
+        '  APPLY=1 pnpm --filter @moysklad/api exec tsx src/scripts/backfill-counterparty-balance-journal.ts',
+        ...missingInJournal.slice(0, 10).map((k) => `  · ${k}`),
+      ].join('\n'),
+    );
+    await prisma.$disconnect();
+    process.exit(1);
+  }
+
+  if (APPLY) {
+    for (const [k, want] of writes) {
+      // key() built this as `${accountId}|${counterpartyId}|${currency}` → exactly 3 parts.
+      const [accountId, counterpartyId, currency] = k.split('|') as [string, string, string];
+      await prisma.counterpartyBalance.upsert({
+        where: { counterpartyId_currency: { counterpartyId, currency } },
+        create: { accountId, counterpartyId, currency, balanceMinor: want },
+        update: { balanceMinor: want },
+      });
+    }
   }
   await prisma.$disconnect();
 }
