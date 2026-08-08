@@ -251,7 +251,7 @@ bilan cheklab, to'liq re-arxitekturани Faza 10'ga qoldirsa ham bo'ladi — hi
 > `docs/REJA-AUDIT-FIX-2026-08.md` — **Faza 8**. O'ZGARMAS QOIDALAR. `DUP-02`'ni tasdiqla. Skriptga
 > debt-issue + POS-qarz manbasini qo'sh, qamrov-guard test yoz (yangi yozuvchi → test yiqilsin). APPLY=1
 > yugurtirMA. Gate. Hisobot, TO'XTA.
-**◻ HISOBOT:** _(agent to'ldiradi)_
+**☑ HISOBOT (2026-08-08):** BAJARILDI — batafsili «HISOBOT JURNALI → Faza 8» da.
 
 ---
 
@@ -1467,3 +1467,119 @@ topilmalar aytganidek:
   (`SALES-02`) — bu faza uni **na yomonlashtirdi, na tuzatdi** (ikki holatda ham oyna chek `posted`).
 
 **Commit:** `fix(sales): faza 7 — POS refund qarz-qaytarish + kumulyativ + loyalty ulush (SALES-04, SALES-05)`
+
+---
+
+## Faza 8 — 2026-08-08 — **Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q**
+### `recompute-counterparty-balances.ts` — APPLY-guard + qamrov (`DUP-02`)
+
+**Da'vo tasdiqlandi (kodda, o'z ko'zim bilan).** `applyDelta` chaqiruvchilari skanerlandi — 13 fayl.
+Skript 11 tasini bilardi, IKKITASI qamrovsiz edi:
+- `debt/debt.service.ts:561` — `create()` `applyDelta(+totalMinor, {docType:'debt'})` (2026-08-05
+  «BALANS SIMMETRIYASI» o'zgarishi);
+- `retail-sale/retail-sale.service.ts:842` — post `+debtAmount`, `:1287` — refund `−debtReturn`.
+
+**Runtime-tasdiq (lokal `climart_adopt @ 5432`, DRY-RUN, yozuvsiz).** Bazada 8 ta QRZ- qarz bor va uchala
+materialized qatorning qiymati aynan `Σdebt − Σto'lov` ga teng:
+
+| kontragent | balans (bor) | Σ QRZ- totalMinor | ESKI skript nishoni (= balans − Σdebt) |
+|---|---|---|---|
+| `0000…0001` | 500 000 | 750 000 (3 qarz) | **−250 000** |
+| `99de5186…` | 0 | 600 000 (3 qarz) | **−600 000** |
+| `5495a6bd…` | 50 000 | 200 000 (2 qarz) | **−150 000** |
+
+Ya'ni bugun eski skript `APPLY=1` bilan yugurtirilganda **to'liq to'lagan mijoz «biz unga 600 ming
+qarzdormiz»** bo'lib yozilardi — auditda bashorat qilingan oqibat aynan shu. Tuzatilgan skript shu bazada
+`changed: 0` beradi (idempotent, drift yo'q).
+
+**O'zgargan/yaratilgan fayllar**
+- **Yangi** `apps/api/src/scripts/counterparty-balance-sources.ts` — QAMROV REYESTRI + skaner:
+  - `scanBalanceWriters()` — `apps/api/src` daraxtini o'qib `X.applyDelta(` CHAQIRUVI bor fayllarni topadi.
+    Izohlar oldindan olib tashlanadi (`counterparty-settlement.util.ts` va
+    `counterparty-statement.service.ts` `applyDelta` ni faqat premise-izohida tilga oladi — ular yozuvchi
+    EMAS); `*.test.ts` va e'lonning o'zi (`counterparty-balance.service.ts`) chiqarib tashlanadi.
+  - `DECLARED_BALANCE_WRITERS` — 13 yozuvchi, har biri skriptdagi manba nomiga (`SCRIPT_SOURCES`) va
+    «nima yozadi» izohiga bog'langan.
+  - `assertCounterpartyBalanceCoverage()` — IKKI tomonlama: **QAMROVSIZ** (kodda bor, reyestrda yo'q →
+    `APPLY=1` uning saldosini jimgina 0 qilardi) va **ESKIRGAN** (reyestrda bor, kodda yo'q → skript endi
+    mavjud bo'lmagan deltani qo'shadi). Xato xabari nima qilish kerakligini aytadi.
+- **Modify** `apps/api/src/scripts/recompute-counterparty-balances.ts`:
+  - `main()` **birinchi so'rovdan ham oldin** `assertCounterpartyBalanceCoverage()` chaqiradi — qamrov
+    buzilgan bo'lsa skript DRY-RUN'da ham `throw` qiladi (rejadagi «aks holda skript ishlashdan oldin
+    throw» talabi).
+  - **`SOURCE: debt-issue`** — `prisma.debt.groupBy` `Σ totalMinor` per (account, counterparty, currency).
+    `totalMinor` create'dan keyin o'zgarmaydi (Debt'ni tahrirlaydigan yo'l yo'q) ⇒ Σ = Σ yozilgan delta.
+  - **`SOURCE: retail-credit`** — `RetailSalePayment` `method=TENDER.debt` qatorlari (summa + valyuta aynan
+    `applyDelta` olgan qiymat, bir tranzaksiyada yozilgan), chek holati `posted|refunded`. Bu ikkilik aynan
+    «post yugurgan» to'plam: FSM'da `posted` dan `cancel` YO'Q (`retail-sale-fsm.ts`).
+  - **`SOURCE: retail-credit-refund`** — `RetailSale.debtReturnMinor > 0` qatorlari, teskari ishora bilan;
+    valyuta smena kassasidan.
+  - **Kontragentni aniqlash — faithful mirror:** qarz-sotuvda `SOLD_ON_CREDIT` audit hodisasi BIRLAMCHI
+    manba (u `applyDelta` bilan bir tranzaksiyada, aynan o'sha `debtAgentId` bilan yoziladi), chek
+    qatoridagi `agentId` — zaxira. Sabab: `post()` chekdagi `agentId` ni faqat u BO'SH bo'lsa to'ldiradi,
+    ya'ni chekda boshqa mijoz turgan holatda daftar va chek qatori AJRALADI. Qaytarish tomonida esa
+    `resolveCreditDebtorId` tartibi (avval `agentId`, keyin hodisa) aynan takrorlandi.
+  - **Mijozi aniqlanmagan qarz qatori → `throw`** (jimgina o'tkazib yuborish o'sha chekning qarzini
+    yo'qotib, kimningdir saldosini kamaytirib yozardi).
+  - **`ONLY_CP` endi MARKAZDA (`add()` ichida) filtrlanadi.** Ilgari har so'rovda edi; yangi manbalarda
+    kontragent so'rovdan KEYIN (audit hodisasidan) aniqlanadi, shuning uchun so'rov-filtri ularni
+    `ONLY_CP` rejimida tushirib qoldirib, o'sha kontragent saldosini «ortiqcha» ko'rsatardi.
+- **Yangi** `apps/api/src/scripts/counterparty-balance-sources.test.ts` — 13 test.
+
+**TDD (qizil ko'rildi)**
+Test avval yozildi, reyestr esa faqat skript BUGUN bilgan 11 manbani e'lon qildi → **6 yiqilgan / 13**:
+qamrov-testi xabarida aynan `modules/debt/debt.service.ts` va `modules/retail-sale/retail-sale.service.ts`
+«QAMROVSIZ» deb chiqdi (ya'ni test DUP-02 ni takrorlab ko'rsatdi), qolgan 5 tasi skriptda `SOURCE:`
+bloklari yo'qligidan yiqildi. Fix'dan keyin **13/13 yashil**.
+
+**Testlar (nima qulflandi)**
+1. Skaner ishlaydi (≥12 yozuvchi topadi) — non-vakuum lang'ar.
+2. E'lon (`async applyDelta(`), testlar va **izohdagi** eslatmalar yozuvchi deb sanalmaydi.
+3. `assertCounterpartyBalanceCoverage()` real daraxtda yiqilmaydi.
+4. **Yangi yozuvchi → QAMROVSIZ deb yiqiladi** (rejadagi asosiy talab).
+5. Eskirgan reyestr yozuvi → ESKIRGAN deb yiqiladi.
+6. Reyestrdagi har manba skriptda `SOURCE: <nom>` markeri bilan MAVJUD — «reyestrga yozdim, skriptni
+   yangilashni unutdim» holati ham yiqiladi.
+7. Skript qamrovni **birinchi `counterpartyBalance.upsert` dan OLDIN** tekshiradi (indeks solishtiruvi).
+8. debt-issue / retail-credit / retail-credit-refund manbalari kutilgan so'rov shakli bilan mavjud.
+9. **Premise-qulf:** `debt.remove()` da hali `applyDelta` yo'q — skriptning «soft-delete qilinganlarni ham
+   sana» siyosati shunga tayanadi (pastga qarang).
+
+**Gate (to'liq, jonli o'lchangan)**
+- `pnpm --filter @moysklad/api typecheck` → **0 xato**
+- `pnpm lint:product` → **0 error** (728 warning — siyosat bo'yicha ruxsat)
+- `pnpm --filter @moysklad/api test` (BUTUN suite) → **384 fayl / 5098 test yashil, 0 yiqilgan** (1 skip)
+- Skript **DRY-RUN** bilan lokal DB'da yugurtirildi → `changed: 0, unchanged: 3` (runtime-tasdiq: qamrov
+  guard'i o'tadi, oltita manba so'rovi ham haqiqiy bazada ishlaydi).
+- **`APPLY=1` YUGURTIRILMADI** (reja talabi).
+- `i18n:gate` yugurtirilMADI — UI matni tegilmagan (faqat API-skript + test).
+
+**Qaror: soft-delete qilingan qarzlar HAM sanaladi (va nega)**
+`DebtService.remove()` create'ning `+totalMinor` deltasini QAYTARMAYDI (`DUP-03`, Faza 12). Ya'ni daftarda
+o'sha delta hali turibdi. Bugun `deletedAt: null` filtri qo'yilsa skript o'chirilgan qarzlarni «ortiqcha»
+deb saldodan ayirib yuborardi — ya'ni bir bug'ni ikkinchisi bilan yopish. Shuning uchun rekonstruksiya
+**yozuvchilarga sodiq** qoldi. Faza 12 reversal qo'shgan kuni yuqoridagi 9-test yiqiladi va skriptga
+`deletedAt: null` qo'shish kerakligini aytadi — bog'lanish kod bilan mahkamlandi.
+
+**Rejaning «Diqqat» bandiga javob:** qamrov **TO'LIQ** yopildi (13/13 yozuvchi), ya'ni `APPLY=1` bugun
+xavfsiz — faza «faqat guard qo'yish» bilan cheklanmadi. Lekin **journal'dan qayta qurish (ildiz-yechim)
+hamon Faza 9/10'ga qoladi**: hozirgi rekonstruksiya har yozuvchining shaklini alohida taqlid qiladi, ya'ni
+yozuvchi semantikasi o'zgarsa skript ham o'zgarishi kerak. Skaner buni **«yangi fayl»** darajasida tutadi,
+**«o'zgargan ishora»** darajasida EMAS.
+
+**Qolgan qarz / DEFER**
+- **Browser-smoke YO'Q** — bu ops-skript, UI'siz. O'rniga qoida: prod'da `APPLY=1` dan oldin **majburiy
+  DRY-RUN + `changed` sonini ko'z bilan tekshirish**.
+- **Prod-DB'da drift bor-yo'qligi tekshirilMAGAN** — DRY-RUN faqat lokal `climart_adopt`da yugurtirildi.
+  Prod (`sherset_v2`) uchun bu ops-qadam: avval DRY-RUN, chiqishni saqlash, keyin qaror.
+- **Yangi topilma (bu fazada tuzatilMADI, faqat qayd):** `post()` da `parsed.agentId` chekdagi mavjud
+  `sale.agentId` dan USTUN turadi, lekin chek qatori yangilanmaydi (`retail-sale.service.ts:706` —
+  `!sale.agentId` sharti). Ya'ni daftar bir kontragentga, chek qatori boshqasiga ishora qilishi mumkin;
+  keyin `resolveCreditDebtorId` qaytarishda chek qatoridagini oladi ⇒ qarz **boshqa** mijozdan yechilishi
+  mumkin. Skript buni to'g'ri qayta quradi (audit hodisasidan o'qiydi), lekin **ildiz bug' ochiq** —
+  alohida mayda faza yoki Faza 15 uchun nomzod.
+- **Faza 13 bilan bog'lanish ishlaydi:** InvoiceIn balansdan uzilganda `fixed-docs` ro'yxatidan
+  `prisma.invoiceIn` olib tashlanishi shart. O'shanda skaner `invoice-in`ni yozuvchi sifatida ko'rmay
+  qoladi ⇒ reyestr **ESKIRGAN** deb yiqiladi va buni majburlaydi.
+
+**Commit:** `fix(scripts): faza 8 — recompute-balances qamrov-guard + debt/POS-qarz manbalari (DUP-02)`

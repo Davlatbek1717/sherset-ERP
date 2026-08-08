@@ -305,6 +305,42 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-08e (AUDIT-FIX FAZA 8 — `recompute-counterparty-balances` qamrov-guard · `DUP-02`)
+> `<commit>` · Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q · ⏳ DEPLOY QILINMAGAN ·
+> 🗄️ MIGRATSIYA YO'Q · ⚠️ `APPLY=1` YUGURTIRILMADI**
+>
+> **Muammo (kodda + JONLI bazada tasdiqlandi).** Skript materialized `CounterpartyBalance`ni
+> hujjatlardan qayta quradi va manbalarda ko'rinmagan kontragentga `0` yozadi. `applyDelta`ning **13**
+> yozuvchisidan skript **11** tasini bilardi; qamrovsizlari — `debt.service.ts:561` (`create()`
+> `+totalMinor`, 2026-08-05 balans-simmetriyasi) va `retail-sale.service.ts:842/1287` (POS qarzga sotuv
+> `+debtAmount` / qaytarish `−debtReturn`). Lokal DB'da o'lchandi: 8 ta QRZ- qarz bor, uchala balans
+> qatori aynan `Σdebt − Σto'lov` ga teng ⇒ **eski skript `APPLY=1` bilan −250 000 / −600 000 / −150 000
+> yozardi** (to'liq to'lagan mijoz «biz unga qarzdormiz» bo'lib qolardi).
+>
+> **Fix (3 qism).** (1) **YANGI** `scripts/counterparty-balance-sources.ts` — manba-daraxtni skanerlab
+> `X.applyDelta(` CHAQIRUVI bor fayllarni topadi (izohlar strip qilinadi ⇒ premise-izohlar yozuvchi deb
+> sanalmaydi) va 13 yozuvchili reyestr bilan **ikki tomonlama** solishtiradi: QAMROVSIZ (yangi yozuvchi)
+> va ESKIRGAN (olib tashlangan yozuvchi). (2) Skript `main()`da **birinchi so'rovdan oldin**
+> `assertCounterpartyBalanceCoverage()` — buzilgan bo'lsa DRY-RUN'da ham `throw`. (3) Uch yangi manba:
+> `debt-issue` (Σ totalMinor), `retail-credit` (DEBT tender qatorlari), `retail-credit-refund`
+> (`debtReturnMinor`, teskari ishora). Kontragent **`SOLD_ON_CREDIT` audit hodisasidan** aniqlanadi —
+> u `applyDelta` bilan bir tranzaksiyada yoziladi, chek qatoridagi `agentId` esa undan ajralishi mumkin.
+>
+> **TDD:** test avval yozildi, reyestr 11 manba bilan qoldirildi → **6/13 qizil**, xabar aynan ikki
+> qamrovsiz faylni ko'rsatdi (DUP-02 test bo'lib takrorlandi). Fix'dan keyin **13/13 yashil**.
+>
+> **Gate:** api tsc **0** · biome **0 error** · api vitest BUTUN suite **5098/5098** (384 fayl) ·
+> skript **DRY-RUN** lokal DB'da → `changed: 0` (idempotent). `i18n:gate` — UI tegilmagan.
+>
+> **Qaror:** soft-delete qilingan qarzlar **ham** sanaladi, chunki `debt.remove()` deltani qaytarmaydi
+> (`DUP-03`). Faza 12 reversal qo'shsa premise-testi yiqiladi va skriptga `deletedAt: null` qo'yishni
+> majburlaydi — bog'lanish kod bilan mahkam.
+>
+> **⏭️ KEYINGI:** `docs/REJA-AUDIT-FIX-2026-08.md` → **Faza 9** (`DUP-15`+`M-07` — `CounterpartyBalanceEntry`
+> journal-jadval + migratsiya; Faza 10 shunga bog'liq). Sessiya-boshi prompti o'sha fazada. **Faza 8
+> hisoboti** rejadagi «HISOBOT JURNALI → Faza 8» da (yon-topilma: `post()` `parsed.agentId`ni daftarga
+> yozadi-yu chek qatoriga yozmaydi ⇒ qaytarishda qarz boshqa mijozdan yechilishi mumkin — ildiz bug' ochiq).
+>
 > **🕒 2026-08-08d (AUDIT-FIX FAZA 7 — POS refund qarz-qaytarish + kumulyativ + loyalty ulush ·
 > `SALES-04`+`SALES-05`) `e242ff6` · Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q ·
 > ⏳ DEPLOY QILINMAGAN · 🗄️ MIGRATSIYA BOR (faqat lokalga qo'llandi)**
