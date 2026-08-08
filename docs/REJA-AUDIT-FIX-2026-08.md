@@ -165,7 +165,7 @@ allokatsiya yo'q. (2) yopilgan qarzda `closedAt` yoziladi. (3) soft-deleted qarz
 > `docs/REJA-AUDIT-FIX-2026-08.md` — **Faza 4**. O'ZGARMAS QOIDALAR. `M-10`+`DUP-07`'ni tasdiqla.
 > `pos-debt-payment`'ni tx-ichi FIFO + `DebtService.recalc` reuse + `deletedAt:null` filtr bilan tuzat.
 > TDD: parallel to'lov + closedAt + soft-delete testlari. Gate. Hisobot, TO'XTA.
-**◻ HISOBOT:** _(agent to'ldiradi)_
+**☑ HISOBOT (2026-08-08):** BAJARILDI — batafsili «HISOBOT JURNALI → Faza 4» da.
 
 ---
 
@@ -1093,3 +1093,96 @@ ostidagi, raqibning commit'ini ko'rgan) holatga qo'yilgan; rad etilsa `throw` �
 - **Faza 4 (`pos-debt-payment` FIFO)** — hamon ochiq, `M-10`+`DUP-07` bu fazada TEGILMADI.
 
 **Commit:** `fix(money): faza 3 — applyPayment payedSumMinor atomik increment (M-09)`
+
+---
+
+## Faza 4 — 2026-08-08 — **Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q**
+
+**Topilma tasdiqlanishi (o'z ko'zim bilan kodda).** Ikkalasi ham **TASDIQLANDI**, fix'dan oldingi qatorlar:
+- `M-10`: `pos-debt-payment.service.ts:80` `const rows = await this.loadOpenDebts(…)` — `$transaction`
+  (`:101`) dan **oldin**; `:85` `allocateFifo(rows…)` ham tashqarida. Ichkarida `:123-130`
+  `const paid = debt.paidMinor + alloc.amountMinor` → `tx.debt.update({ data: { paidMinor: paid, … } })` —
+  ya'ni **tx tashqarisidagi eski o'qishdan hisoblangan absolyut qiymat**.
+- `DUP-07`: o'sha `:124-130` `update`da `closedAt` **umuman yo'q**, `nextContactAt` tozalanmaydi, `paidMinor`
+  to'lovlardan qayta o'qilmaydi; `loadOpenDebts` (`:243-260`) WHERE'ida `deletedAt: null` **yo'q**.
+  Kanonik yo'l — `debt.service.ts:191-233` `recalc` (aggregate → `paidMinor`, `closedAt`, balans deltasi).
+- **Bitta atama aniqligi:** DUP-07 sarlavhasi «paidMinor increment» deydi; aslida u SQL-increment EMAS,
+  **eski o'qishga asoslangan absolyut set** edi (topilma matnining `ev:` qismi buni to'g'ri keltirgan).
+  Farqi muhim: SQL-increment poygada yo'qolmasdi, absolyut set esa yo'qotadi.
+
+**Fayllar**
+
+| Fayl | O'zgarish |
+|---|---|
+| `apps/api/src/modules/debt/debt-recalc.ts` | **YANGI** — `recalcDebt()` + `deriveDebtStatus()`: qarz denormalizatsiyasining YAGONA kanonik yo'li |
+| `apps/api/src/modules/debt/pos-debt-payment.service.test.ts` | **YANGI** — 8 test (poyga · closedAt · soft-delete) |
+| `apps/api/src/modules/debt/pos-debt-payment.service.ts` | FIFO tx ichiga + `lockOpenDebts` (`FOR UPDATE`) + `recalcDebt` reuse + `deletedAt: null` |
+| `apps/api/src/modules/debt/debt.service.ts` | `recalc`/`deriveStatus` endi `debt-recalc.ts` ga delegatsiya (tanasi ko'chirildi, mantiq o'zgarmadi) |
+
+**O'zgarish (5 qism)**
+1. **FIFO reja tranzaksiya ICHIDA**, qulflangan qatorlardan: yangi `lockOpenDebts(tx,…)` —
+   `SELECT id FROM debts WHERE account_id=$1::uuid AND counterparty_id=$2::uuid AND deleted_at IS NULL
+   AND status NOT IN ('paid','cancelled') ORDER BY created_at ASC, id ASC FOR UPDATE`, keyin o'sha id'lar
+   bo'yicha `findMany` (qulf ostidagi yangi qiymatlar). Naqsh — `stock.lockBalances` (`$queryRaw`, chunki
+   Prisma'da qator-qulfi yo'q). `ORDER BY created_at, id` = FIFO tartibining o'zi ⇒ deadlock'ga qarshi
+   barqaror qulflash tartibi. Qulf olingandan keyin Postgres WHERE'ni qayta baholaydi (EvalPlanQual) —
+   raqib tranzaksiya qarzni yopib ulgurgan bo'lsa u qator to'plamdan **tushadi**.
+2. **`paidMinor` endi absolyut set emas:** har allokatsiyadan keyin `recalcDebt(tx, balances, {…})` —
+   `paidMinor = Σ jonli (reversedAt: null) to'lovlar`, `status` = hosila, `closedAt` yoziladi, yopilganda
+   `nextContactAt` `null`ga tushadi (§3.6). Ya'ni `DUP-07` ning uchala oqibati ham yopildi.
+3. **Balans daftari:** POS'ning alohida `applyDelta(−plan.appliedMinor)` chaqiruvi **olib tashlandi** —
+   endi delta `recalcDebt` ichida har qarz uchun `paid_yangi − paid_eski` sifatida yoziladi. Yig'indi aynan
+   o'sha (`appliedMinor`), `meta` esa saqlanadi: `{ docType: 'debtpayment', docId: batchId }` — buxgalter
+   jurnaldan **chekka** boradi (ixtiyoriy qarz qatoriga emas). **Xulq farqi:** bitta batch endi N ta
+   `COUNTERPARTY_BALANCE_CHANGED` hodisasi chiqaradi (avval 1 ta), `docId` hammasida bir xil `batchId`.
+   Hodisa iste'molchisi `source` bo'yicha filtrlaydi, POS `source` uzatmaydi ⇒ no-op (tekshirildi).
+4. **Valyuta (kichik, lekin haqiqiy tuzatish):** balans deltasi endi **qarzning** valyutasida yoziladi
+   (`recalcDebt` `debt.currency`ni oladi), avval **to'lovning** valyutasida yozilardi. UZS qarzga USD naqd
+   qabul qilinsa (`input.currency='USD'`) avvalgi kod balansni **USD kesimida** kamaytirardi — qarz esa UZS.
+   Schema shartnomasi ham shunday: `DebtPayment.amountMinor` HAR DOIM qarz valyutasida.
+5. **Chekdagi «yopildi» belgisi** endi REJAdan emas, `recalc` qaytargan HAQIQIY holatdan
+   (`updated.status === 'paid'`) olinadi.
+
+**Testlar (TDD tartibi kuzatildi)**
+- RED (fix'dan oldin): **6/8 yiqildi** — (1) ikki parallel 50 000 to'lov → `paidMinor` **50 000**
+  (kutilgan 100 000; `DebtPayment` qatorlari esa 100 000 — daftar uzilgan); (2) 100 000 lik qarzga ikki
+  parallel 100 000 to'lov → **0 ta rad** (kutilgan 1), ya'ni 200 000 allokatsiya; (3) to'liq to'lovda
+  `closedAt: null`; (4) `nextContactAt` tozalanmagan; (5,6) soft-delete qilingan **eskiroq** qarz FIFO'ni
+  yeb ketardi va `summary()`da ham ko'rinardi.
+- GREEN: **8/8 yashil**.
+- Test-double halolligi (Faza 1–3 uslubi, bu repo'da servis testlari real DB'siz): `$queryRaw` = qulf oladi,
+  band bo'lsa **kutadi**, qulfdan keyin WHERE'ni **qayta baholaydi**; `findMany`/`aggregate` = qulfsiz o'qish
+  (`await` bilan yield qiladi ⇒ ikki chaqiruvchi haqiqatan interleave bo'ladi); `update`/`create` = birinchi
+  `await`gacha sinxron ⇒ qulflangan qator yozuvi kabi atomik; `$transaction` tugaganda qulflar bo'shaydi.
+  Cheklov ochiq yozilgan: qulf **kontragent** kesimida modellanadi (real `FOR UPDATE` — qator kesimida);
+  hech bir test yo'li «yozib bo'lib keyin throw» qilmagani uchun double rollback modellamaydi.
+
+**Gate (to'liq, jonli o'lchangan)**
+- `pnpm --filter @moysklad/api typecheck` → **0 xato**
+- `pnpm lint:product` → **0 error** (728 warning — siyosat bo'yicha ruxsat)
+- `pnpm --filter @moysklad/api exec vitest run` (BUTUN suite) → **380 fayl / 5013 test yashil, 0 yiqilgan**
+  (1 fayl / 2 test skipped — oldindan shunday)
+- Fazaga tegishli modullar alohida: `debt`, `counterparty-balance`, `counterparty-settlement` →
+  **11 fayl / 158 test yashil**
+- `i18n:gate` — **kerak emas** (UI-matn tegilmadi, faqat backend).
+
+**Qolgan qarz / DEFER**
+- **Browser-smoke YO'Q va raw SQL real Postgres'da YUGURTIRILMADI.** `FOR UPDATE` so'rovi faqat
+  `schema.prisma` `@map`lari bo'yicha tekshirildi (jadval `debts`; ustunlar `account_id`,
+  `counterparty_id`, `deleted_at`, `status`, `created_at`) — sintaksis/qulf xulqi Phase-2 QA'da (yoki
+  `pnpm dev` + ikki parallel POS to'lovi bilan) tasdiqlanishi kerak. **Bu fazadagi eng katta qoldiq risk.**
+- **Izolyatsiya ReadCommitted qoldi (ataylab, reja ruxsati bilan):** `FOR UPDATE` bu yo'l uchun yetarli —
+  Serializable + retry qo'shilmadi (40001 qayta-urinishlarini POS yo'liga olib kirmaslik uchun).
+- **Qulfdan KEYIN yaratilgan qarz rejaga kirmaydi** — bu to'g'ri xulq (o'qish paytida mavjud bo'lmagan
+  qarzga pul tushmasligi kerak), lekin natijada «ortiqcha to'lov» xatosi chiqishi mumkin. Kassir summani
+  qayta kiritadi; jimgina noto'g'ri allokatsiyadan xavfsizroq.
+- **Aralash valyutali FIFO hamon qamralmagan:** `allocateFifo` turli valyutali qarzlarni bitta rejaga
+  qo'shadi, `DebtPayment.currency` esa bitta. Bu **oldindan mavjud** kamchilik (bu faza doirasidan
+  tashqarida); endi hech bo'lmasa balans daftari har qarzning o'z valyutasida yuritiladi (4-band).
+- **Har allokatsiyaga +2 so'rov** (`aggregate` + `findFirstOrThrow`) — POS batch'i odatda 1–3 qarz, jonli
+  o'lchov qilinmadi.
+- **`M-05` OCHIQ:** POS qarz-to'lovi naqdi hamon `CashDesk` ledgeriga yozilmaydi — **Faza 11** ishi
+  (bu faza faqat qarz-reyestr tomonini yopdi, reja shunday aytgan edi).
+- **`summary()`/`receipt()` qulfsiz o'qiydi** — ular faqat ko'rsatish uchun, pul yozmaydi (ataylab).
+
+**Commit:** `fix(debt): faza 4 — POS qarz-to'lovi tx-ichi FIFO + recalc reuse (M-10, DUP-07)`

@@ -305,6 +305,48 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-08a (AUDIT-FIX FAZA 4 — POS qarz-to'lovi tx-ichi FIFO + `recalc` reuse · `M-10`+`DUP-07`)
+> · Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q · ⏳ DEPLOY QILINMAGAN**
+>
+> **Kontekst:** ish endi `docs/REJA-AUDIT-FIX-2026-08.md` (19 faza, har biri alohida sessiya) bo'yicha
+> boradi. Bugun **Faza 1–3** ham qilingan (`6683489e` atomik state-claim `M-01`/`DUP-01` · `0a0a2a2e`
+> `applyDeltas` increment `M-02` · `3925cc03` `applyPayment` increment `M-09`) — ular NEXT.md'ga yozilmagan
+> edi (preflight «hand-off drift» aynan shuni ko'rsatgan). To'liq hisobotlar rejadagi «HISOBOT JURNALI»da.
+>
+> **Bu sessiya (Faza 4).** `pos-debt-payment.service.ts` FIFO rejani `$transaction`dan **tashqarida**
+> hisoblab, `paidMinor`ni eski o'qishdan **absolyut set** qilardi: bir mijozga ikki parallel POS-to'lov →
+> `DebtPayment` qatorlari 2×, `paidMinor`da bittasi **jimgina yo'qolardi** (`M-10`). Yonida `DUP-07`:
+> `closedAt` hech qachon yozilmasdi, `nextContactAt` tozalanmasdi, `deletedAt` filtri yo'qligi sababli
+> **korzinaga tashlangan qarz** POS FIFO'sida turaverardi.
+>
+> **Fix:** (1) yangi `debt-recalc.ts` — `recalcDebt()` qarz denormalizatsiyasining YAGONA kanonik yo'li
+> (ilgari faqat `DebtService`ning private metodi edi, POS o'z chala nusxasini ishlatardi); (2) FIFO endi
+> tranzaksiya ichida, `lockOpenDebts()` `SELECT … FOR UPDATE` bilan (`stock.lockBalances` naqshi,
+> `ORDER BY created_at, id` = deadlock'ga qarshi barqaror tartib); (3) har allokatsiyadan keyin
+> `recalcDebt` — `paidMinor = Σ jonli to'lovlar`, `status`/`closedAt`/`nextContactAt`; (4) POS'ning
+> alohida `applyDelta` chaqiruvi olib tashlandi (delta endi `recalc` ichida, `docId: batchId` meta
+> saqlanib) va balans **qarz valyutasida** yoziladi — avval to'lov valyutasida yozilardi (USD naqd → UZS
+> qarz holati); (5) `loadOpenDebts` + qulf so'rovida `deletedAt: null`.
+>
+> **TDD:** yangi `pos-debt-payment.service.test.ts` — fix'dan oldin **6/8 yiqilardi** (parallel to'lovda
+> `paidMinor` 50 000 vs 100 000 · ortiqcha allokatsiyada 0 rad · `closedAt: null` · o'chirilgan qarz FIFO'da),
+> keyin **8/8 yashil**.
+>
+> **Gate:** api tsc **0** · biome **0** · api vitest BUTUN suite **5013/5013** (380 fayl, 2 skipped) ·
+> `debt`+`counterparty-balance`+`counterparty-settlement` **158/158**. i18n gate kerak emas (backend).
+>
+> **⚠️ Qoldiq risk (halol):** `FOR UPDATE` raw SQL **real Postgres'da yugurtirilmadi** — jadval/ustun
+> nomlari faqat `schema.prisma` `@map`laridan tekshirildi (`debts`, `account_id`, `counterparty_id`,
+> `deleted_at`, `created_at`). Browser/DB smoke — Phase-2 QA. `M-05` (POS qarz naqdi `CashDesk` ledgeriga
+> yozilmaydi) hamon ochiq — **Faza 11**.
+>
+> **⏭️ KEYINGI:** `docs/REJA-AUDIT-FIX-2026-08.md` → **Faza 5** (`STK-01` — `loss.cancel` atomik claim +
+> Serializable; kichik, Faza 1 helperi tayyor). Sessiya-boshi prompti o'sha fazada.
+>
+> **📌 Uy-ishi qarzi:** bu bo'limda **20+ entry** to'planib qolgan (qoida: eng yangi ~8–10, qolgani
+> `docs/audits/_ARCHIVE-NEXT-*.md`ga VERBATIM ko'chiriladi). Arxivlash bir necha sessiyadan beri
+> o'tkazib yuborilgan — keyingi sessiyalarning birida «1 mayda ish» sifatida bajarilsin.
+
 > **🕒 2026-08-06b (✅ DEPLOYED — YACHEYKA MULTI-BIN fix · `4944583`)**
 >
 > Egasi shikoyati: skanerlaganda/qo'lda «bitta yacheykaga 1dan ortiq tovar» va «bitta tovarni

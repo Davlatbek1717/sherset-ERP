@@ -4,7 +4,19 @@ import { BadRequestException, Inject, Injectable, NotFoundException } from '@nes
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { CounterpartyBalanceService } from '../counterparty-balance/counterparty-balance.service.js';
 import { type FifoDebt, allocateFifo, summarize } from './debt-fifo.js';
+import { recalcDebt } from './debt-recalc.js';
 import { type PosDebtPaymentInput, PosDebtPaymentSchema } from './debt.schema.js';
+
+/** FIFO/chek uchun kerakli maydonlar — qulfli va qulfsiz o'qish bir xil shaklda. */
+const DEBT_FIFO_SELECT = {
+  id: true,
+  name: true,
+  totalMinor: true,
+  paidMinor: true,
+  currency: true,
+  createdAt: true,
+  nextContactAt: true,
+} as const;
 
 /**
  * POS «Qarz to'lovi» oynasi (kassa TZ §7.2).
@@ -77,28 +89,32 @@ export class PosDebtPaymentService {
       throw new BadRequestException('To`lov summasi noldan katta bo`lishi kerak');
     }
 
-    const rows = await this.loadOpenDebts(accountId, input.counterpartyId);
-    if (rows.length === 0) {
-      throw new BadRequestException('Mijozda ochiq qarz yo`q');
-    }
-
-    const plan = allocateFifo(rows.map(toFifo), amountMinor);
-    if (plan.leftoverMinor > 0n) {
-      // Ortiqcha to'lovni jimgina «avans» qilib yozib qo'ymaymiz: kassa
-      // TZ §6.2 bo'yicha qaytim FAQAT naqddan beriladi va bu qaror
-      // kassirniki. Shuning uchun aniq xato — qancha ortiqcha ekani bilan.
-      throw new BadRequestException(
-        `To\`lov qarzdan ${plan.leftoverMinor.toString()} tiyinga ko\`p. Qaytimni kassadan bering yoki summani kamaytiring.`,
-      );
-    }
-
-    const currency = input.currency ?? rows[0]?.currency ?? 'UZS';
     // Bitta jismoniy to'lov = N qator, lekin PKO cheki BITTA hujjat.
     // Shu id chekni keyin ANIQ yig'ishga imkon beradi (mijoz+vaqt bo'yicha
     // taxmin qilish moliyaviy hujjatda yaramaydi).
     const batchId = randomUUID();
 
     const result = await this.prisma.client.$transaction(async (tx) => {
+      // ⚠️ FIFO REJA TRANZAKSIYA ICHIDA, QULFLANGAN qatorlardan hisoblanadi
+      // (2026-08-08 `M-10`). Ilgari qarzlar tx'dan TASHQARIDA o'qilardi: bir
+      // mijozga ikki parallel to'lov bir xil eski `paidMinor`ni ko'rib, bir
+      // qarzga jami qarzdan ortiq allokatsiya yozardi.
+      const rows = await this.lockOpenDebts(tx, accountId, input.counterpartyId);
+      if (rows.length === 0) {
+        throw new BadRequestException('Mijozda ochiq qarz yo`q');
+      }
+
+      const plan = allocateFifo(rows.map(toFifo), amountMinor);
+      if (plan.leftoverMinor > 0n) {
+        // Ortiqcha to'lovni jimgina «avans» qilib yozib qo'ymaymiz: kassa
+        // TZ §6.2 bo'yicha qaytim FAQAT naqddan beriladi va bu qaror
+        // kassirniki. Shuning uchun aniq xato — qancha ortiqcha ekani bilan.
+        throw new BadRequestException(
+          `To\`lov qarzdan ${plan.leftoverMinor.toString()} tiyinga ko\`p. Qaytimni kassadan bering yoki summani kamaytiring.`,
+        );
+      }
+
+      const currency = input.currency ?? rows[0]?.currency ?? 'UZS';
       const receipts: Array<{ debtName: string; amountMinor: bigint; closed: boolean }> = [];
 
       for (const alloc of plan.allocations) {
@@ -120,35 +136,26 @@ export class PosDebtPaymentService {
           },
         });
 
-        const paid = debt.paidMinor + alloc.amountMinor;
-        await tx.debt.update({
-          where: { id: alloc.debtId },
-          data: {
-            paidMinor: paid,
-            status: paid >= debt.totalMinor ? 'paid' : 'partial',
-          },
+        // KANONIK yo'l (`DUP-07`): `paidMinor` to'lovlardan qayta o'qiladi,
+        // `status`/`closedAt`/`nextContactAt` va kontragent balansi shu yerda
+        // yopiladi. Ilgari bu yerda increment + `closedAt`siz o'z nusxasi bor edi.
+        // docId = BATCH: buxgalter jurnaldan chekka boradi, ixtiyoriy qarz
+        // qatoriga emas.
+        const updated = await recalcDebt(tx, this.balances, {
+          accountId,
+          debtId: alloc.debtId,
+          meta: { docType: 'debtpayment', docId: batchId },
         });
 
         receipts.push({
           debtName: debt.name,
           amountMinor: alloc.amountMinor,
-          closed: alloc.closes,
+          // Yopilganini REJA emas, qayta hisoblangan HOLAT aytadi.
+          closed: updated.status === 'paid',
         });
       }
 
-      // Balans: to'lov qarzni kamaytiradi (ishora `Debt.create` ga teskari).
-      await this.balances.applyDelta(
-        tx,
-        accountId,
-        input.counterpartyId,
-        currency,
-        -plan.appliedMinor,
-        // docId = BATCH: buxgalter jurnaldan chekka boradi, ixtiyoriy
-        // qarz qatoriga emas.
-        { docType: 'debtpayment', docId: batchId },
-      );
-
-      return receipts;
+      return { receipts, appliedMinor: plan.appliedMinor, currency };
     });
 
     const rest = await this.loadOpenDebts(accountId, input.counterpartyId);
@@ -159,10 +166,10 @@ export class PosDebtPaymentService {
       /** PKO (prixodnik order) cheki uchun — TZ §7.2/5-qadam. */
       receipt: {
         batchId,
-        paidMinor: plan.appliedMinor.toString(),
-        currency,
+        paidMinor: result.appliedMinor.toString(),
+        currency: result.currency,
         method: input.method,
-        lines: result.map((r) => ({
+        lines: result.receipts.map((r) => ({
           debtName: r.debtName,
           amountMinor: r.amountMinor.toString(),
           closed: r.closed,
@@ -170,7 +177,7 @@ export class PosDebtPaymentService {
         /** To'lovdan KEYINGI qoldiq — chekda ko'rinadi, mijoz bilib tursin. */
         outstandingAfterMinor: after.outstandingMinor.toString(),
       },
-      closedCount: result.filter((r) => r.closed).length,
+      closedCount: result.receipts.filter((r) => r.closed).length,
     };
   }
 
@@ -239,23 +246,63 @@ export class PosDebtPaymentService {
     };
   }
 
-  /** Ochiq (yopilmagan va bekor qilinmagan) qarzlar — eng eskisi birinchi. */
+  /**
+   * Ochiq (yopilmagan, bekor qilinmagan, O'CHIRILMAGAN) qarzlar — eng eskisi
+   * birinchi. FAQAT KO'RSATISH uchun (xulosa/chek); pul yozadigan yo'l
+   * `lockOpenDebts` dan foydalanadi.
+   *
+   * `deletedAt: null` — 2026-08-08 `DUP-07`: operator korzinaga tashlagan qarz
+   * ilgari POS FIFO'sida turaverardi va mijoz puli mavjud bo'lmagan qarzga
+   * tushardi.
+   */
   private async loadOpenDebts(accountId: string, counterpartyId: string) {
     return this.prisma.client.debt.findMany({
       where: {
         accountId,
         counterpartyId,
+        deletedAt: null,
         status: { notIn: ['paid', 'cancelled'] },
       },
-      select: {
-        id: true,
-        name: true,
-        totalMinor: true,
-        paidMinor: true,
-        currency: true,
-        createdAt: true,
-        nextContactAt: true,
-      },
+      select: DEBT_FIFO_SELECT,
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
+  /**
+   * Xuddi shu ro'yxat, lekin qatorlar TRANZAKSIYA OXIRIGACHA QULFLANGAN
+   * (`SELECT … FOR UPDATE`, `stock.lockBalances` naqshi).
+   *
+   * NEGA raw SQL: Prisma'da qator-qulfi yo'q. Qulfsiz FIFO — `M-10`: ikki
+   * parallel to'lov bir xil snapshotni ko'rib, bir qarzga qarzdan ortiq
+   * allokatsiya qiladi.
+   *
+   * Qulf olingandan KEYIN Postgres WHERE'ni qayta baholaydi (EvalPlanQual) —
+   * raqib tranzaksiya qarzni yopib ulgurgan bo'lsa u qator to'plamdan tushadi.
+   * `ORDER BY created_at, id` — deadlock'ga qarshi barqaror qulflash tartibi
+   * (FIFO tartibining o'zi).
+   */
+  private async lockOpenDebts(
+    tx: Prisma.TransactionClient,
+    accountId: string,
+    counterpartyId: string,
+  ) {
+    const locked = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT id
+      FROM debts
+      WHERE account_id = ${accountId}::uuid
+        AND counterparty_id = ${counterpartyId}::uuid
+        AND deleted_at IS NULL
+        AND status NOT IN ('paid', 'cancelled')
+      ORDER BY created_at ASC, id ASC
+      FOR UPDATE
+    `;
+    if (locked.length === 0) return [];
+
+    // Qulf olingach qiymatlarni QAYTA o'qiymiz: endi ular tranzaksiya
+    // yakunigacha o'zgarmaydi.
+    return tx.debt.findMany({
+      where: { id: { in: locked.map((r) => r.id) }, accountId },
+      select: DEBT_FIFO_SELECT,
       orderBy: { createdAt: 'asc' },
     });
   }

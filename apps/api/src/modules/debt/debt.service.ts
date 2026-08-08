@@ -16,6 +16,7 @@ import { formatSomMinor, renderSmsTemplate } from '../sms/sms-render.util.js';
 import { MessageTemplateService } from '../sms/sms-template.service.js';
 import { SmsService } from '../sms/sms.service.js';
 import { TelegramService } from '../telegram/telegram.service.js';
+import { deriveDebtStatus, recalcDebt } from './debt-recalc.js';
 import {
   BulkRemindersSchema,
   CASHIER_METHODS,
@@ -121,11 +122,9 @@ export class DebtService {
     return shifted.toISOString().slice(0, 10);
   }
 
-  /** Qoldiqdan status chiqarish — statusning YAGONA manbai. */
+  /** Qoldiqdan status chiqarish — statusning YAGONA manbai (`debt-recalc.ts`). */
   private deriveStatus(totalMinor: bigint, paidMinor: bigint): DebtStatus {
-    if (paidMinor >= totalMinor) return 'paid';
-    if (paidMinor > 0n) return 'partial';
-    return 'unpaid';
+    return deriveDebtStatus(totalMinor, paidMinor);
   }
 
   /** Ro'yxat/detalga chiqariladigan shakl — qoldiq har doim server hisoblaydi. */
@@ -187,6 +186,9 @@ export class DebtService {
    * To'lovdan keyin qarzni qayta hisoblash — `paidMinor` to'lovlar
    * yig'indisidan QAYTA O'QILADI (increment emas): shu bilan denormalizatsiya
    * hech qachon haqiqatdan ajralib qolmaydi (o'chirilgan to'lov, qo'lda tuzatish).
+   *
+   * Amalga oshirish `debt-recalc.ts` da — POS qarz-to'lovi ham AYNAN shuni
+   * chaqiradi (2026-08-08 `DUP-07`: ilgari u o'zining chala nusxasini ishlatardi).
    */
   private async recalc(
     tx: Prisma.TransactionClient,
@@ -194,42 +196,7 @@ export class DebtService {
     debtId: string,
     nextContactAt: Date | null | undefined,
   ) {
-    // QAYTARILGAN (reversedAt != null) to'lovlar yig'indiga KIRMAYDI (2026-07-16
-    // storno) — shu bitta filtr orqali status/qoldiq/balans o'z-o'zidan tuzaladi.
-    const agg = await tx.debtPayment.aggregate({
-      where: { accountId, debtId, reversedAt: null },
-      _sum: { amountMinor: true },
-    });
-    const paid = agg._sum.amountMinor ?? 0n;
-
-    const debt = await tx.debt.findFirstOrThrow({
-      where: { id: debtId, accountId },
-      select: { totalMinor: true, paidMinor: true, currency: true, counterpartyId: true },
-    });
-
-    // 2026-07-13: qarz to'lovi KONTRAGENT BALANSINI ham kamaytiradi — mijoz
-    // kartochkasidagi «Balans (bizga qarz)» qarz yopilganda 0 ga tushsin.
-    // Delta = YANGI to'langan − ESKI to'langan (idempotent: recalc qayta
-    // chaqirilsa qo'sha ketmaydi). Balans musbat = mijoz bizga qarzdor,
-    // shuning uchun to'lov MANFIY delta.
-    const paidDelta = paid - debt.paidMinor;
-    if (paidDelta !== 0n) {
-      await this.balances.applyDelta(tx, accountId, debt.counterpartyId, debt.currency, -paidDelta);
-    }
-
-    const status = this.deriveStatus(debt.totalMinor, paid);
-    const closed = status === 'paid';
-
-    return tx.debt.update({
-      where: { id: debtId },
-      data: {
-        paidMinor: paid,
-        status,
-        // §3.6 — to'liq yopilganda keyingi aloqa sanasi kerak emas.
-        nextContactAt: closed ? null : (nextContactAt ?? undefined),
-        closedAt: closed ? new Date() : null,
-      },
-    });
+    return recalcDebt(tx, this.balances, { accountId, debtId, nextContactAt });
   }
 
   // ── MIJOZGA TELEGRAM XABARI (2026-07-13, 2026-07-20e avtomatik xabarlar
