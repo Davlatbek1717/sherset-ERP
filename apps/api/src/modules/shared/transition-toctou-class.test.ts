@@ -30,6 +30,12 @@ const SERVICES = [
     model: 'supply',
     file: ['..', 'supply', 'supply.service.ts'],
     delete: STD_DELETE,
+    // Faza 14 (`PP-06`): tasdiq zanjiri uchib turgan qabulni o'chirish SHU
+    // ATOMIK yozuvning o'zida bloklanadi (alohida oldindan-tekshiruv emas) —
+    // parallel `send()` (none → awaiting_supplier) delete'ni o'tkazib yubora
+    // olmasligi uchun. Shart qo'shimcha, ya'ni guard KUCHAYDI; shuning uchun
+    // umumiy shakl «}» bilan tugashni talab qilmaydi (pastdagi `[,}]`).
+    deleteAlso: 'approvalStage:\\s*\\{\\s*notIn:\\s*\\[\\.\\.\\.IN_FLIGHT_STAGES\\]\\s*\\}',
   },
   {
     name: 'sales-return',
@@ -108,12 +114,25 @@ for (const svc of SERVICES) {
     });
 
     it('delete() folds the state check into one conditional updateMany', () => {
+      // `[,}]` — the guard may carry EXTRA conditions after the standard ones
+      // (a stronger atomic write, e.g. supply's approvalStage clause). Pinning
+      // a closing brace here would turn "someone added protection" into a red
+      // test, the same drift trap called out on the claim-count assertion.
       expect(SOURCE).toMatch(
         new RegExp(
-          `${m}\\.updateMany\\(\\{\\s*where:\\s*\\{\\s*id,\\s*accountId,\\s*${svc.delete}\\s*\\}`,
+          `${m}\\.updateMany\\(\\{\\s*where:\\s*\\{\\s*id,\\s*accountId,\\s*${svc.delete}\\s*[,}]`,
         ),
       );
       expect(SOURCE).toMatch(/res\.count === 0/);
+      // …and where an extra condition IS required, pin it inside the SAME write.
+      const also = (svc as { deleteAlso?: string }).deleteAlso;
+      if (also) {
+        expect(SOURCE).toMatch(
+          new RegExp(
+            `${m}\\.updateMany\\(\\{\\s*where:\\s*\\{\\s*id,\\s*accountId,\\s*${svc.delete},\\s*${also}`,
+          ),
+        );
+      }
     });
   });
 }

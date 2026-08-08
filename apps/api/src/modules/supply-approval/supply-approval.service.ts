@@ -12,6 +12,7 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 /** Faza E: taminotchi magic-link amal muddati — 14 kun. */
 const SUPPLIER_LINK_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 import { decryptPassword } from '../email/crypto.js';
+import { computeSupplyTotals } from '../supply/supply-totals.js';
 import { SupplyService } from '../supply/supply.service.js';
 import { tgAnswerCallbackQuery, tgEditMessageText } from '../telegram/telegram.client.js';
 import {
@@ -153,6 +154,13 @@ export class SupplyApprovalService {
         data: { approvalStage: 'awaiting_admin' },
       });
       if (res.count === 0) throw new ConflictException("Bosqich 'delivering' emas");
+      // Faza 14 (`PP-04`): son o'zgardi ⇒ hujjat summalari ham o'zgarishi SHART.
+      // Aks holda `adminConfirm → post()` stock deltalarini YANGI sondan, ammo
+      // taminotchi qarzini ESKI `sumMinor`dan yozadi (omborga 90, qarz 100
+      // donalik). Shu tranzaksiya ichida — bosqich-da'vosi bilan bir butun.
+      if (detail.length > 0) {
+        await this.recomputeTotals(tx, accountId, id);
+      }
       await tx.supplyApprovalEvent.create({
         data: {
           accountId,
@@ -169,6 +177,38 @@ export class SupplyApprovalService {
     // Faza D3: omborchi tasdiqladi → adminlarga yakuniy-tasdiq xabari (non-fatal).
     await this.dispatchToAdmin(accountId, id).catch(() => {});
     return this.getApproval(accountId, id);
+  }
+
+  /**
+   * Faza 14 (`PP-04`): omborchi tuzatgan sonlardan hujjat jamilarini QAYTA
+   * hisoblab yozadi. Formula `SupplyService`nikining o'zi (`supply-totals.ts` —
+   * yagona manba), shuning uchun `sumMinor/vatSumMinor/costSumMinor` tahrir
+   * yo'li bilan bir xil qiymatga keladi. Overhead SHU YERDA qo'shilmaydi:
+   * `post()` `costSumMinor`ni overhead bilan o'zi qayta yozadi (draft holatidagi
+   * qiymat overheadsiz bo'lishi — mavjud kontrakt).
+   */
+  private async recomputeTotals(
+    tx: Prisma.TransactionClient,
+    accountId: string,
+    supplyId: string,
+  ): Promise<void> {
+    const supply = await tx.supply.findFirst({
+      where: { id: supplyId, accountId },
+      select: { vatEnabled: true, vatIncluded: true },
+    });
+    if (!supply) return;
+    const rows = await tx.supplyPosition.findMany({
+      where: { supplyId, accountId },
+      select: {
+        quantity: true,
+        priceMinor: true,
+        discount: true,
+        vat: true,
+        vatEnabled: true,
+      },
+    });
+    const totals = computeSupplyTotals(rows, supply.vatEnabled, supply.vatIncluded);
+    await tx.supply.update({ where: { id: supplyId, accountId }, data: totals });
   }
 
   /** Admin yakuniy tasdiq (awaiting_admin → completed) + stock post (agar hali draft). */

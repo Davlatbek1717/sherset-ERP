@@ -410,7 +410,7 @@ donaga qayta hisoblanadi, qarz mos. (3) create(applicable) approve-permissionsiz
 **▶ SESSIYA-BOSHI PROMPT:**
 > `docs/REJA-AUDIT-FIX-2026-08.md` — **Faza 14**. O'ZGARMAS QOIDALAR. `PP-06`+`PP-04`. FSM-bypass guard +
 > omborchi computeTotals. TDD: 3 stsenariy. Gate. Hisobot, TO'XTA.
-**◻ HISOBOT:** _(agent to'ldiradi)_
+**☑ HISOBOT (2026-08-08):** BAJARILDI — batafsili «HISOBOT JURNALI → Faza 14» da.
 
 ---
 
@@ -2207,3 +2207,121 @@ oldingi) shaklga qaytarilib **haqiqiy RED** o'lchandi, keyin fix + yakuniy 5-par
   akt-sverka qatori Phase-2 QA cohort'iga qoladi.
 - **Qisman qaytarish** birlik-testda alohida stsenariy sifatida yozilmadi (formula `sumMinor` bo'yicha
   chiziqli, to'liq qaytarish testi uni qamraydi) — Phase-2 da real ma'lumot bilan ko'riladi.
+
+---
+
+## Faza 14 — Qabul-tasdiqlash: FSM-bypass guard + omborchi recompute totals
+
+**Sana:** 2026-08-08 · **ID'lar:** `PP-06` (HIGH security), `PP-04` (HIGH data-integrity)
+**Status:** **Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q**
+
+### Da'volarni kodda tasdiqlash (reja §2)
+
+| ID | Da'vo | Kodda holat (fix'dan OLDINGI qatorlar) |
+|----|-------|----------------------------------------|
+| `PP-06` (a) | `post()` `approvalStage`ni tekshirmaydi | ✅ **TASDIQLANDI** — `supply.service.ts:1199-1230` `post()`da yagona shart `existing.state !== 'draft'`; `approvalStage` so'zi funksiyada UMUMAN yo'q. Zanjir `awaiting_supplier`da bo'lsa ham `POST :id/transitions/post` stockni kirgizadi. **Qo'shimcha oqibat (auditda aytilmagan):** post'dan keyin `adminConfirm` (`supply-approval.service.ts:187`) faqat `state==='draft'` bo'lsa post qiladi ⇒ hujjat `posted` bo'lgani uchun zanjir `awaiting_*`da abadiy qotib qoladi. |
+| `PP-06` (b) | `create(applicable)` `supply.approve`ni chetlab o'tadi | ✅ **TASDIQLANDI** — `supply.controller.ts:92-93` `@Post()` faqat `{entity:'supply', action:'create'}`; `supply.service.ts:768-770` `if (parsed.applicable) return await this.transition(..., 'post')`. Ya'ni AYNAN `@Post(':id/transitions/:target')` (`:118-119`, `action:'approve'`) himoyalagan amal ruxsatsiz bajariladi. |
+| `PP-06` (c) | Zanjir o'rtasida `update`/`delete` ochiq | ✅ **TASDIQLANDI** — `update()` (`:841`) faqat `existing.applicable`ni, `delete()` (`:1063`) faqat `state:'draft', applicable:false`ni qaraydi. Zanjir uchayotganda hujjat aynan `draft`+`applicable:false` (chunki `send()` (`:120`) uni unpost qiladi) ⇒ ikkala qulf ham VAKUUM. |
+| `PP-04` | Omborchi tuzatishi summalarni qayta hisoblamaydi | ✅ **TASDIQLANDI** — `supply-approval.service.ts:147-155` tx'da faqat `tx.supplyPosition.update({data:{quantity}})`; `computeTotals` chaqirilmaydi (u `SupplyService`ning **private** metodi bo'lgani uchun chaqirib ham bo'lmasdi). Keyin `post()` stock deltalarini YANGI `p.quantity`dan (`:1295-1306`), qarzni esa ESKI `existing.sumMinor`dan (`:1349-1354`) yozadi. |
+
+### Fayllar
+
+| Fayl | O'zgarish |
+|---|---|
+| `apps/api/src/modules/supply/supply-totals.ts` | **YANGI** — `computeSupplyTotals()` + `ComputedTotals`/`SupplyTotalsPosition`. Jami-formulaning YAGONA manbasi (ilgari `SupplyService` private metodi edi ⇒ tasdiqlash oqimi undan foydalana olmasdi). |
+| `apps/api/src/modules/supply-approval/approval-integrity.test.ts` | **YANGI** — 10 test (PP-06 ×7, PP-04 ×3). |
+| `apps/api/src/modules/supply-approval/supply-approval.fsm.ts` | `IN_FLIGHT_STAGES` + `isApprovalInFlight()` — «hujjat muzlagan» predikati FSM'da (bosqichlar bo'yicha yagona hokim). |
+| `apps/api/src/modules/supply-approval/supply-approval.service.ts` | `omborchiConfirm` tx'iga `recomputeTotals()` (yangi private metod) — bosqich-da'vosi bilan BIR tranzaksiyada. |
+| `apps/api/src/modules/supply/supply.service.ts` | `PermissionsService` inyeksiyasi; `create()` approve-gate; `update()`/`delete()`/`post()` in-flight guard; `computeTotals` → `supply-totals.ts`ga delegatsiya. |
+| `apps/api/src/modules/shared/transition-toctou-class.test.ts` | delete-guard shakli endi QO'SHIMCHA shartga ruxsat beradi (`[,}]`) + supply uchun `deleteAlso` bilan `approvalStage` bandini aynan SHU atomik yozuv ichida qulflaydi. |
+| `apps/api/src/modules/purchase-return/supplier-debt-supply-only.test.ts` | Faza 13 harness'iga 10-konstruktor argumenti (permissions dubli). |
+
+### O'zgarish (4 qism)
+
+1. **`post()` in-flight guard** — `isApprovalInFlight(existing.approvalStage)` → `ConflictException`.
+   Ruxsat etilgan to'plam **{`none`, `completed`}**: zanjirsiz odatdagi qabul, va admin allaqachon
+   tasdiqlagani. `adminConfirm` `completed`ni **CLAIM QILGANDAN KEYIN** post chaqiradi
+   (`supply-approval.service.ts:176` → `:188`), shuning uchun tasdiq oqimi guard'dan bemalol o'tadi —
+   bu tasodif emas, guard shu tartibga ataylab bog'langan.
+2. **`create(applicable:true)` → `permissions.require(userId,'supply','approve')`**, hujjat
+   yaratilishidan **OLDIN** (yarim-qoralama qolmaydi). `PermissionsModule` `@Global` ⇒ modul-import
+   o'zgarmadi. `userId` = `user.sub` = employeeId — `PermissionsGuard:60-65` bilan bir xil kalit.
+   Rol-shablonlari tekshirildi: `Administrator`/`Manager`/`Employee` `approve` ≥ `OWN` oladi
+   (`permissions.types.ts:179-212`), `ReadOnly` esa allaqachon `create:'NO'` — ya'ni bu gate hech
+   bir qonuniy foydalanuvchini yo'qotmaydi.
+3. **`update()`/`delete()` in-flight freeze.** `delete()`da shart pastdagi ATOMIK `updateMany`
+   WHERE'iga ham qo'shildi (`approvalStage: { notIn: [...IN_FLIGHT_STAGES] }`) — parallel `send()`
+   (`none → awaiting_supplier`) o'chirishni o'tkazib yubora olmasligi uchun; findById-tekshiruvi
+   faqat aniq xabar uchun.
+4. **`omborchiConfirm` → `recomputeTotals(tx, …)`** — bosqich-da'vosidan keyin, SHU tranzaksiyada:
+   pozitsiyalarni qayta o'qib `computeSupplyTotals` bilan `sumMinor/vatSumMinor/costSumMinor` yoziladi.
+   Faqat `detail.length > 0` bo'lganda (tuzatish bo'lmasa yozuv ham yo'q).
+
+### Testlar (TDD — avval yiqildi, non-vacuous)
+
+Fix'dan OLDIN o'lchangan (10 testdan **7 tasi qizil**):
+- `post` `awaiting_supplier`/`delivering`/`awaiting_admin`da → «promise resolved» (o'tib ketardi, stock kirardi);
+- `create(applicable)` ruxsatsiz → `TypeError` (tekshiruvning o'zi yo'q edi);
+- `update()` zanjir o'rtasida → guard'siz o'tib, `logAudit`'da `Do not know how to serialize a BigInt`ga yetardi;
+- `delete()` zanjir o'rtasida → `{ ok: true }` (hujjat o'chib ketardi);
+- omborchi 100→90 → `sumMinor` **40 000 000** (kutilgan 36 000 000);
+- admin tasdig'idan keyin qarz **−40 000 000**, stock esa **90 dona** ⇒ **4 000 000 tiyin** nomuvofiqlik.
+
+Fix'dan keyin **10/10 yashil**. Reja talab qilgan 3 stsenariy + 4 qo'shimcha (in-flight `delivering`/
+`awaiting_admin`, `{none, completed}` ijobiy nazorat, approve-gate faqat `applicable`da so'ralishi,
+tuzatishsiz idempotentlik).
+
+### Gate
+
+| Gate | Natija |
+|---|---|
+| `pnpm --filter @moysklad/api typecheck` | **0 xato** (mening fayllarimda; ish boshida to'liq toza o'tgan). ⚠️ Sessiya oxirida parallel sessiya `bank-import.service.ts`da 2 `TS2353` chiqardi (`commitClaimedAt` — ular schema qo'shgan, Prisma client hali regen qilinmagan). Meniki emas, tegilmadi (§6.1). |
+| `pnpm lint:product` | **0 xato**, 738 ogohlantirish (siyosat: ruxsat) |
+| `pnpm i18n:gate` | **9/9 ✅** |
+| `vitest` — supply · supply-approval · purchase-return · shared · stock · purchase-order | **697/697 ✅** (39 fayl) |
+| To'liq API suite | 5170 ✅ / 9 ✗ — **9 tasi ham meniki emas**: 7 ta `bank-import` (parallel sessiyaning ochiq ishi, Faza 20/INT-05), 1 ta `publication` (yolg'iz yugurtirilganda 21/21 yashil — yuk ostida flaky), 1 ta `transition-toctou-class` — **bu meniki edi va tuzatildi** (guard shakli, quyida). |
+
+**Guard-drift eslatmasi:** `delete()`ni kuchaytirish `transition-toctou-class.test.ts` source-scan
+guard'ini qizil qildi (regex `deletedAt: null` dan keyin darhol `}` talab qilardi). Bu aynan o'sha
+fayl o'zi ogohlantirgan tuzoq — «himoya qo'shgan odam testni qizil qiladi». Shakl bo'shatildi
+(`[,}]`) va o'rniga supply uchun `deleteAlso` bilan **kuchliroq** shart (approvalStage bandi SHU
+atomik yozuvning ichida) qulflandi.
+
+### Qolgan qarz / DEFER
+
+- **`moysklad-compat` guard'dan TASHQARIDA.** `moysklad-compat.service.ts:152-161` `supply`ni
+  to'g'ridan-to'g'ri Prisma-model sifatida (`model:'supply'`) yozadi — `SupplyService`dan
+  o'tmaydi, ya'ni MS-JSON-API qatlami orqali in-flight qabulni ham tahrirlash mumkin. **Alohida
+  bug-klass** (butun compat qatlami servis-qoidalarini chetlab o'tadi), Faza 14 doirasidan tashqari.
+- **`unpost` ataylab guard'siz** — `send()` (`supply-approval.service.ts:120`) posted qabulni
+  unpost qilib zanjirni boshlaydi; unpost'ga guard qo'yilsa oqim o'ladi. Zanjir uchayotganda
+  hujjat allaqachon `draft` bo'lgani uchun bu tirqish emas.
+- **`completed` bosqichida hujjat OCHIQ** (reja matni «`approvalStage != none` → blok» degan edi).
+  Ataylab: `completed` = admin tasdiqlagan va hujjat `posted` ⇒ `update`/`delete` mavjud
+  `applicable`/`state` qulflari bilan allaqachon yopiq. Barchasini blok qilish tasdiqlangan
+  qabulni **abadiy** muzlatardi (unpost'dan keyin ham tuzatib bo'lmasdi). Guard to'plami shu
+  sababli aynan `post()` ruxsati ({`none`,`completed`})ning to'ldiruvchisi.
+- **Overhead × omborchi-tuzatish o'zaro ta'siri sinovdan o'tmagan.** `recomputeTotals` overheadni
+  qo'shmaydi (draft `costSumMinor` overheadsiz bo'lishi — mavjud kontrakt; `post()` uni
+  `cleanBase + overheadSumMinor` bilan qayta yozadi). Overheadli qabulda omborchi sonni
+  tuzatgan stsenariy **birlik-testda yo'q** — Phase-2 QA'ga.
+- **Tarixiy nomuvofiqlik tuzatilmadi.** Fix'gacha omborchi tuzatgan qabullarda `sumMinor` eski
+  sonda qolgan va qarz o'sha eski summada yozilgan. Ta'sir doirasini o'lchash (prodda, DB'ga
+  ulanib):
+  ```sql
+  SELECT s.id, s.name, s.sum_minor
+  FROM supplies s
+  JOIN supply_approval_events e
+    ON e.supply_id = s.id AND e.action = 'omborchi_ok' AND e.detail IS NOT NULL
+  WHERE s.state = 'posted';
+  ```
+  Har qator — qarzi tovar sonidan farq qilishi mumkin bo'lgan qabul. Bu sessiyada DB'ga
+  ULANILMADI, hajm **noma'lum**. Tuzatish yo'li — `CounterpartyAdjustment` (Faza 13 hisobotidagi
+  bilan bir xil retsept), jurnal qatorlarini O'CHIRMASDAN.
+- **`PP-05`** (WorkOrder `costDeltaMinor:null`) va **`PP-01`/`PP-07`–`PP-09`** shu fazada
+  TEGILMADI — o'z fazalarida.
+- **Browser-smoke YO'Q** — «Проведено» belgilab saqlash (403 yo'lini FE qanday ko'rsatishi),
+  omborchi tuzatgandan keyin detail-sahifadagi «Сумма», va zanjir o'rtasidagi 409 xabari
+  Phase-2 QA cohort'ida ko'riladi.
+
+**Commit:** `fix(supply): faza 14 — tasdiq-FSM bypass guard + omborchi recompute (PP-06, PP-04)`

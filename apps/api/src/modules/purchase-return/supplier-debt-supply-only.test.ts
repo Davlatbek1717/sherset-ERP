@@ -279,6 +279,7 @@ function makeWorld() {
     webhookFire as never,
     events as never,
     ledger.balance as never,
+    { require: vi.fn(async () => 'ALL') } as never, // permissions (Faza 14)
   );
   const invoiceIn = new InvoiceInService(
     prisma,

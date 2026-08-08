@@ -15,6 +15,7 @@ import { CounterpartyBalanceService } from '../counterparty-balance/counterparty
 import { type CurrencyRate, toBaseMinor } from '../currency/currency-convert.js';
 import { HR_EVENT, type SupplyPostedEvent } from '../hr/hr-shared/hr-events.types.js';
 import { PaymentOutService } from '../payment-out/payment-out.service.js';
+import { PermissionsService } from '../permissions/permissions.service.js';
 import { PurchaseOrderService } from '../purchase-order/purchase-order.service.js';
 import { PurchaseReturnService } from '../purchase-return/purchase-return.service.js';
 import { tashkentRangeBounds } from '../report/report-date-bounds.util.js';
@@ -27,8 +28,14 @@ import { assertOrgAccountMatchesOrg } from '../shared/org-account.js';
 import { searchTokenGroups } from '../shared/search-tokens.js';
 import { withSerializationRetry } from '../shared/serialization-retry.js';
 import { type StockDelta, StockService } from '../stock/stock.service.js';
+import { IN_FLIGHT_STAGES, isApprovalInFlight } from '../supply-approval/supply-approval.fsm.js';
 import { WebhookFireService } from '../webhook/webhook-fire.service.js';
 import { type OverheadLineInput, distributeOverhead } from './overhead-distribution.js';
+import {
+  type ComputedTotals,
+  type SupplyTotalsPosition,
+  computeSupplyTotals,
+} from './supply-totals.js';
 import {
   CreateFromPurchaseOrderSchema,
   type CreateSupplyInput,
@@ -42,11 +49,12 @@ import {
   UpdateSupplySchema,
 } from './supply.schema.js';
 
-interface ComputedTotals {
-  sumMinor: bigint;
-  vatSumMinor: bigint;
-  costSumMinor: bigint;
-}
+/**
+ * Faza 14 (`PP-06`) — tasdiq zanjiri uchib turganda hujjatni muzlatuvchi
+ * yagona xabar. `post`/`update`/`delete` shu matn bilan rad etiladi.
+ */
+const APPROVAL_IN_FLIGHT_MSG =
+  "Qabul tasdiq zanjirida — tugamaguncha o'zgartirib/o'tkazib bo'lmaydi";
 
 /**
  * SupplyService — inbound stock document.
@@ -75,6 +83,11 @@ export class SupplyService {
     @Inject(EventEmitter2) private readonly events: EventEmitter2,
     @Inject(CounterpartyBalanceService)
     private readonly balance: CounterpartyBalanceService,
+    // Faza 14 (`PP-06`): create(applicable:true) ichkarida transition('post')
+    // chaqiradi — controller esa faqat `supply.create` gate'ini qo'yadi, ya'ni
+    // `supply.approve` chetlab o'tilardi. Servis darajasida qayta so'raymiz.
+    // PermissionsModule @Global — modul import'i shart emas.
+    @Inject(PermissionsService) private readonly permissions: PermissionsService,
   ) {}
 
   async list(accountId: string, rawFilter: unknown) {
@@ -642,6 +655,13 @@ export class SupplyService {
 
   async create(accountId: string, userId: string, raw: unknown) {
     const parsed = this.parseCreate(raw);
+    // `PP-06` (b): «Проведено» belgilangan saqlash ichkarida transition('post')
+    // ni yugurtiradi — bu `POST :id/transitions/post` bilan BIR XIL amal, demak
+    // AYNAN o'sha `supply.approve` ruxsatini talab qiladi. Tekshiruv hujjat
+    // yaratilishidan OLDIN: ruxsat yo'q bo'lsa yarim-qoralama ham qolmaydi.
+    if (parsed.applicable) {
+      await this.permissions.require(userId, 'supply', 'approve');
+    }
     await this.ensureRefs(accountId, parsed.agentId, parsed.organizationId, parsed.storeId);
     if (parsed.purchaseOrderId) {
       await this.ensurePurchaseOrder(accountId, parsed.purchaseOrderId);
@@ -842,6 +862,12 @@ export class SupplyService {
       throw new BadRequestException(
         "Provedeno priyomkani o'zgartirib bo'lmaydi — avval 'Snyat provedeno' qiling",
       );
+    }
+    // `PP-06` (c): zanjir uchib turganda hujjat `draft`+`applicable:false` —
+    // yuqoridagi qulf uni USHLAMAYDI. Omborchi sanaganidan keyin admin
+    // tasdig'igacha pozitsiyalarni jimgina almashtirish shu yerda yopiladi.
+    if (isApprovalInFlight(existing.approvalStage)) {
+      throw new ConflictException(APPROVAL_IN_FLIGHT_MSG);
     }
 
     const data: Prisma.SupplyUpdateInput = {};
@@ -1056,12 +1082,26 @@ export class SupplyService {
 
   async delete(accountId: string, userId: string, id: string) {
     // findById gives a clean 404 for a missing / wrong-tenant id.
-    await this.findById(accountId, id);
+    const existing = await this.findById(accountId, id);
+    // `PP-06` (c): tasdiq zanjiri uchib turgan qabulni o'chirib bo'lmaydi
+    // (aniq xabar uchun oldindan; TOCTOU'ni pastdagi WHERE sharti yopadi).
+    if (isApprovalInFlight(existing.approvalStage)) {
+      throw new ConflictException(APPROVAL_IN_FLIGHT_MSG);
+    }
     // TOCTOU guard: the state check + soft-delete are ONE atomic conditional
     // write, so a concurrent post() flipping draft→posted between a naive check
-    // and the write can't slip a delete through — count 0 → rejected.
+    // and the write can't slip a delete through — count 0 → rejected. The
+    // approvalStage clause is part of the SAME atomic write so a concurrent
+    // `send()` (none → awaiting_supplier) can't race a delete through either.
     const res = await this.prisma.client.supply.updateMany({
-      where: { id, accountId, state: 'draft', applicable: false, deletedAt: null },
+      where: {
+        id,
+        accountId,
+        state: 'draft',
+        applicable: false,
+        deletedAt: null,
+        approvalStage: { notIn: [...IN_FLIGHT_STAGES] },
+      },
       data: { deletedAt: new Date() },
     });
     if (res.count === 0) {
@@ -1204,6 +1244,15 @@ export class SupplyService {
   ) {
     if (existing.state !== 'draft') {
       throw new BadRequestException(`O'tkazilmaydi: ${existing.state} → posted. Faqat draft'dan`);
+    }
+    // `PP-06` (a): stock'ni ombor tasdiq zanjiri GATE qiladi — zanjir uchib
+    // turganda to'g'ridan-to'g'ri post TAQIQ. Aks holda `awaiting_supplier`da
+    // ham tovar omborga kirar, FSM esa o'sha bosqichda abadiy qotib qolardi
+    // (`adminConfirm` posted hujjatni qayta post qila olmaydi). {none, completed}
+    // — zanjirsiz odatdagi qabul va admin allaqachon tasdiqlagani (adminConfirm
+    // 'completed'ni CLAIM QILGANDAN KEYIN post chaqiradi, shuning uchun o'tadi).
+    if (isApprovalInFlight(existing.approvalStage)) {
+      throw new ConflictException(APPROVAL_IN_FLIGHT_MSG);
     }
     // Owner 2026-07-08: «Проведено» toggles freely — an empty doc may be posted
     // (0 positions ⇒ 0 stock delta; moysklad allows it). No position precondition.
@@ -1751,39 +1800,13 @@ export class SupplyService {
     return String(n).padStart(5, '0');
   }
 
+  /** Faza 14: tanasi `supply-totals.ts`ga ko'chirildi (qabul-tasdiqlash ham chaqiradi). */
   private computeTotals(
-    positions: Array<{
-      quantity: unknown;
-      priceMinor: bigint;
-      discount: unknown;
-      vat: number | null;
-      vatEnabled: boolean;
-    }>,
+    positions: readonly SupplyTotalsPosition[],
     docVatEnabled: boolean,
     vatIncluded: boolean,
   ): ComputedTotals {
-    let sumMinor = 0n;
-    let vatSumMinor = 0n;
-    let costSumMinor = 0n;
-
-    for (const p of positions) {
-      // Single-round per-line totals; baseMinor is the post-discount pre-VAT
-      // amount (= cost basis, VAT-exclusive) that costSumMinor tracks.
-      const { totalMinor, vatAmountMinor, baseMinor } = computePositionTotal(
-        {
-          quantity: String(p.quantity),
-          priceMinor: String(p.priceMinor),
-          discount: String(p.discount ?? '0'),
-          vat: p.vat ?? null,
-        },
-        docVatEnabled && p.vatEnabled,
-        vatIncluded,
-      );
-      sumMinor += totalMinor;
-      vatSumMinor += vatAmountMinor;
-      costSumMinor += baseMinor;
-    }
-    return { sumMinor, vatSumMinor, costSumMinor };
+    return computeSupplyTotals(positions, docVatEnabled, vatIncluded);
   }
 
   /**

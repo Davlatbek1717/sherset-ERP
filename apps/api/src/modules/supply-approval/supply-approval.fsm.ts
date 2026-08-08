@@ -34,6 +34,23 @@ const BACK: Partial<Record<ApprovalStage, ApprovalStage>> = {
   awaiting_admin: 'delivering',
 };
 
+/**
+ * Faza 14 (`PP-06`): tasdiq zanjiri UCHIB TURGAN bosqichlar — taminotchiga
+ * yuborilgandan admin yakuniy tasdig'igacha. Shu oraliqda hujjat MUZLAYDI:
+ * `post`/`update`/`delete` bloklanadi (aks holda `draft`+`applicable:false`
+ * bo'lgani uchun ular ochiq turardi va omborchi sanaganidan keyin sonlar
+ * sezdirmasdan o'zgartirilishi mumkin edi).
+ *
+ * To'ldiruvchisi — {`none`, `completed`}: zanjir hali boshlanmagan yoki
+ * allaqachon tugagan qabul odatdagi hujjat sifatida ishlaydi.
+ */
+export const IN_FLIGHT_STAGES = ['awaiting_supplier', 'delivering', 'awaiting_admin'] as const;
+
+/** `stage` tasdiq zanjirining o'rtasidami (hujjat muzlaganmi)? */
+export function isApprovalInFlight(stage: string | null | undefined): boolean {
+  return (IN_FLIGHT_STAGES as readonly string[]).includes(stage ?? 'none');
+}
+
 export function forwardTarget(action: ForwardAction, current: ApprovalStage): ApprovalStage {
   const step = FORWARD[action];
   if (step.from !== current) {
