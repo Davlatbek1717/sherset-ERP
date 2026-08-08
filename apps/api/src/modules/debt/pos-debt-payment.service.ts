@@ -144,7 +144,8 @@ export class PosDebtPaymentService {
         const updated = await recalcDebt(tx, this.balances, {
           accountId,
           debtId: alloc.debtId,
-          meta: { docType: 'debtpayment', docId: batchId },
+          // `Debt`da organizatsiya o'lchovi yo'q ⇒ jurnalda `organizationId` null.
+          meta: { docType: 'debtpayment', docId: batchId, organizationId: null },
         });
 
         receipts.push({

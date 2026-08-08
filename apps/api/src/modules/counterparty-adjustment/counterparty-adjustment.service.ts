@@ -206,7 +206,11 @@ export class CounterpartyAdjustmentService {
       });
       if (applicable) {
         const delta = data.direction === 'INCREASE' ? sumMinor : -sumMinor;
-        await this.balances.applyDelta(tx, accountId, data.agentId, data.currency, delta);
+        await this.balances.applyDelta(tx, accountId, data.agentId, data.currency, delta, {
+          docType: 'adjustment',
+          docId: row.id,
+          organizationId: row.organizationId,
+        });
       }
       return row;
     });
@@ -271,7 +275,11 @@ export class CounterpartyAdjustmentService {
     await this.prisma.client.$transaction(async (tx) => {
       if (row.applicable) {
         const delta = row.direction === 'INCREASE' ? row.sumMinor : -row.sumMinor;
-        await this.balances.applyDelta(tx, accountId, row.agentId, row.currency, -delta);
+        await this.balances.applyDelta(tx, accountId, row.agentId, row.currency, -delta, {
+          docType: 'adjustment',
+          docId: id,
+          organizationId: row.organizationId,
+        });
       }
       await tx.counterpartyAdjustment.update({
         where: { id },
@@ -375,7 +383,11 @@ export class CounterpartyAdjustmentService {
           where: { id },
           data: { applicable: true, state: 'posted', postedAt: new Date() },
         });
-        await this.balances.applyDelta(tx, accountId, row.agentId, row.currency, delta);
+        await this.balances.applyDelta(tx, accountId, row.agentId, row.currency, delta, {
+          docType: 'adjustment',
+          docId: id,
+          organizationId: row.organizationId,
+        });
         await tx.auditLog.create({
           data: {
             accountId,
@@ -403,7 +415,11 @@ export class CounterpartyAdjustmentService {
           where: { id },
           data: { applicable: false, state: 'draft', postedAt: null },
         });
-        await this.balances.applyDelta(tx, accountId, row.agentId, row.currency, -delta);
+        await this.balances.applyDelta(tx, accountId, row.agentId, row.currency, -delta, {
+          docType: 'adjustment',
+          docId: id,
+          organizationId: row.organizationId,
+        });
         await tx.auditLog.create({
           data: {
             accountId,
@@ -427,7 +443,11 @@ export class CounterpartyAdjustmentService {
           message: "Korrektirovka holati o'zgargan (allaqachon o'zgartirilgan)",
         });
         if (row.applicable) {
-          await this.balances.applyDelta(tx, accountId, row.agentId, row.currency, -delta);
+          await this.balances.applyDelta(tx, accountId, row.agentId, row.currency, -delta, {
+            docType: 'adjustment',
+            docId: id,
+            organizationId: row.organizationId,
+          });
         }
         await tx.counterpartyAdjustment.update({
           where: { id },

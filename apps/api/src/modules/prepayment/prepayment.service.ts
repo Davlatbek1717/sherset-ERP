@@ -228,7 +228,11 @@ export class PrepaymentService {
       });
       if (applicable) {
         // PaymentIn convention: money in from agent → -delta
-        await this.balances.applyDelta(tx, accountId, data.agentId, data.currency, -sumMinor);
+        await this.balances.applyDelta(tx, accountId, data.agentId, data.currency, -sumMinor, {
+          docType: 'prepayment',
+          docId: row.id,
+          organizationId: row.organizationId,
+        });
       }
       return row;
     });
@@ -309,7 +313,11 @@ export class PrepaymentService {
     await this.prisma.client.$transaction(async (tx) => {
       if (row.applicable) {
         // Reverse the -sumMinor delta we applied on post
-        await this.balances.applyDelta(tx, accountId, row.agentId, row.currency, row.sumMinor);
+        await this.balances.applyDelta(tx, accountId, row.agentId, row.currency, row.sumMinor, {
+          docType: 'prepayment',
+          docId: id,
+          organizationId: row.organizationId,
+        });
       }
       await tx.prepayment.update({
         where: { id },
@@ -399,7 +407,11 @@ export class PrepaymentService {
           where: { id },
           data: { applicable: true, state: 'posted', postedAt: new Date() },
         });
-        await this.balances.applyDelta(tx, accountId, row.agentId, row.currency, -row.sumMinor);
+        await this.balances.applyDelta(tx, accountId, row.agentId, row.currency, -row.sumMinor, {
+          docType: 'prepayment',
+          docId: id,
+          organizationId: row.organizationId,
+        });
         await tx.auditLog.create({
           data: {
             accountId,
@@ -419,7 +431,11 @@ export class PrepaymentService {
           where: { id },
           data: { applicable: false, state: 'draft', postedAt: null },
         });
-        await this.balances.applyDelta(tx, accountId, row.agentId, row.currency, row.sumMinor);
+        await this.balances.applyDelta(tx, accountId, row.agentId, row.currency, row.sumMinor, {
+          docType: 'prepayment',
+          docId: id,
+          organizationId: row.organizationId,
+        });
         await tx.auditLog.create({
           data: {
             accountId,
@@ -434,7 +450,11 @@ export class PrepaymentService {
         });
       } else if (target === 'cancel') {
         if (row.applicable) {
-          await this.balances.applyDelta(tx, accountId, row.agentId, row.currency, row.sumMinor);
+          await this.balances.applyDelta(tx, accountId, row.agentId, row.currency, row.sumMinor, {
+            docType: 'prepayment',
+            docId: id,
+            organizationId: row.organizationId,
+          });
         }
         await tx.prepayment.update({
           where: { id },

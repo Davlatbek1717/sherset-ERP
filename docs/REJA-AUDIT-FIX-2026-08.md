@@ -279,7 +279,8 @@ counterparty-balance.
 > `docs/REJA-AUDIT-FIX-2026-08.md` — **Faza 9**. O'ZGARMAS QOIDALAR. `DUP-15`+`M-07`'ni tasdiqla.
 > `CounterpartyBalanceEntry` journal-jadval + migration, `applyDelta`'da yozdirilsin. TDD: journal-yaraladi +
 > Σ==materialized invariant. Gate + migrate. Hisobot (backfill kerakmi — ayt), TO'XTA.
-**◻ HISOBOT:** _(agent to'ldiradi)_
+**☑ HISOBOT (2026-08-08):** BAJARILDI — batafsili «HISOBOT JURNALI → Faza 9» da. **Backfill: KERAK, lekin
+hujjat-replay EMAS — «opening snapshot»** (sabab va retsept hisobotda; Faza 10 boshida hal qilinadi).
 
 ---
 
@@ -1583,3 +1584,121 @@ yozuvchi semantikasi o'zgarsa skript ham o'zgarishi kerak. Skaner buni **«yangi
   qoladi ⇒ reyestr **ESKIRGAN** deb yiqiladi va buni majburlaydi.
 
 **Commit:** `fix(scripts): faza 8 — recompute-balances qamrov-guard + debt/POS-qarz manbalari (DUP-02)`
+
+---
+
+## Faza 9 — 2026-08-08 — **Phase-1: strukturaviy + unit + real-DB-tasdiqlangan, browser-smoke YO'Q**
+### `CounterpartyBalanceEntry` append-only balans jurnali (`DUP-15`/`DB-15` ildizi, `M-07` oqibati)
+
+**Da'volar tasdiqlandi (kodda, o'z ko'zim bilan).**
+- **`DUP-15`** — `counterparty-balance.service.ts:74-88` upsert kaliti `counterpartyId_currency`; modelda
+  (`schema.prisma`, eski holat) `organizationId` YO'Q, faqat `@@unique([counterpartyId, currency])`.
+  Ya'ni org-kesim materiallashgan jadvaldan **printsipial** olinmaydi — audit to'g'ri.
+- **`M-07`** — `counterparty.service.ts:456-457` izohi «Σ(byOrg) === materialized … the cert asserts this
+  invariant» deydi, `:510-525` groupBy ro'yxati esa 9 tur (supply/debt/debtPayment/retailsale yo'q).
+- **Auditda YO'Q, o'zim topgan qo'shimcha (fazani hal qiluvchi):** 49 `applyDelta` chaqiruv joyidan **faqat
+  `post()` yo'llari** `docType/docId` uzatardi — **barcha `unpost`/`cancel`/`update`-reapply joylari
+  meta'siz** edi (`ApplyDeltaMeta` ataylab optional qilingan, docstring: «kept optional so the ~40 existing
+  call sites compile unchanged»). Jurnalni faqat chokepoint'ga qo'shib qo'ysam, **teskari deltalarning
+  yarmi hujjat-identifikatorisiz** tushardi va Faza 10 o'quvchilari (statement/akt qatorlari, org-kesim)
+  jurnal ustiga qurilmasdi. Shu sababli faza qamrovi kengaytirildi (pastda).
+
+**O'zgargan/yaratilgan fayllar**
+- **Yangi** `packages/db/prisma/migrations/20260808180000_counterparty_balance_entry_journal/migration.sql`
+  + `schema.prisma` `model CounterpartyBalanceEntry` (+ 3 back-relation: Account/Counterparty/Organization):
+  `id, accountId, counterpartyId, organizationId?, currency, deltaMinor, docType(VARCHAR 40), docId(uuid), createdAt`.
+  - Indekslar: `(account, counterparty, currency, createdAt)` — statement/akt davr kesimi;
+    `(account, organization, currency)` — «Balans po organizatsiyam»; `(account, docType, docId)` —
+    hujjat bo'yicha teskari qidiruv.
+  - `updatedAt` **ataylab yo'q** — jadval append-only, unpost/cancel teskari belgili YANGI qator yozadi.
+  - `docType` **enum EMAS** (VARCHAR): yangi yozuvchi qo'shilganda sxema migratsiyasi kerak bo'lmasin —
+    aynan «N ta ro'yxatni yangilash majburiyati» DUP-15 ning ildizi edi.
+- **Modify** `counterparty-balance/counterparty-balance.service.ts`:
+  - `applyDelta` upsert bilan **BIR TRANZAKSIYADA** (`tx`, `this.prisma` EMAS) jurnal qatorini yozadi.
+  - `ApplyDeltaMeta`: `docType`/`docId` **majburiy** bo'ldi + **yangi majburiy `organizationId: string | null`**.
+    Bu — compile-time qo'riqchi: yangi balans-yozuvchi meta'ni **unutolmaydi** (Faza 8 ning skan-guard'i
+    «yangi FAYL» darajasida tutadi, bu esa «yangi CHAQIRUV» darajasida). `source?` optional qoldi — u
+    faqat HR owner-debt notifikatori uchun, jurnalga yozilmaydi (xulq o'zgarmadi).
+- **Modify — 49 chaqiruv joyi 13 faylda** (typecheck ro'yxatga oldi, hech biri qo'lda topilmadi):
+  `cash-in`(3) · `cash-out`(3) · `invoice-in`(5) · `invoice-out`(5) · `payment-in`(3) · `payment-out`(3) ·
+  `supply`(3) · `prepayment`(5) · `prepayment-return`(5) · `counterparty-adjustment`(5) · `retail-sale`(2) ·
+  `debt`(1 + recalc yo'li) · `debt-recalc`(pass-through) · `pos-debt-payment`(1).
+  - `organizationId` manbasi: pul/hujjat oilasida `existing.organizationId` (Prisma'da NOT NULL);
+    invoice `update()` re-apply'da mavjud `effectiveOrgId` (`parsed.organizationId ?? existing.organizationId`) —
+    ya'ni org o'zgarsa jurnal YANGI org'ga yozadi, reversal esa eskisiga (juftlik to'g'ri yopiladi).
+  - `organizationId: null` **ataylab**: `Debt` modelida organizatsiya o'lchovi umuman yo'q,
+    `RetailSale.organizationId` optional. Majburiy maydon bo'lgani uchun bu **qaror**, unutish emas.
+  - `debt-recalc.ts`: `meta` majburiy; `DebtService.recalc()`ga `docId` parametri qo'shildi —
+    `docType:'debtpayment'`, `docId` = to'lov ID'si ma'lum bo'lsa o'sha (`paymentId`/`created.id`/`payment.id`),
+    aks holda qarz kartochkasi ID'si (delta to'lovlar YIG'INDISIDAN keladi). POS yo'li avvalgidek `batchId`.
+- **Modify** `counterparty-balance.service.test.ts` — 5 → **10 test**.
+
+**TDD (qizil ko'rildi)**
+Jurnal testlari avval yozildi → **3 yiqilgan / 10**: `entryArgs` bo'sh (`expected [] to deeply equal
+['cp-1|USD','cp-1|UZS','cp-2|UZS']`), `organizationId` `undefined`. Ya'ni yiqilish sababi aynan «jurnal
+yozuvi yo'q», sintaksis/typo emas. Model + migratsiya + chokepoint yozuvidan keyin **10/10 yashil**.
+
+**Testlar (nima qulflandi)**
+1. Har qo'llangan delta uchun **bitta** jurnal qatori, to'liq shakl (`accountId/counterpartyId/
+   organizationId/currency/deltaMinor/docType/docId`) — `toEqual` bilan, ya'ni ortiqcha maydon ham tutiladi.
+2. `deltaMinor === 0n` → jurnalga **hech narsa** yozilmaydi (materiallashgan upsert ham yo'q).
+3. Valyuta rad etilsa (`USDT`) → jurnal qatori ham yozilmaydi (validatsiya yozuvdan OLDIN).
+4. Organizatsiyasiz hujjat (`Debt`) → `organizationId` **null** (jimgina tashlash emas).
+5. **Σ-invariant:** 7 chaqiruvli aralash stsenariy (2 kontragent × 2 valyuta, musbat/manfiy/nol) —
+   `Σ(journal.deltaMinor)` per (counterparty, currency) **==** materiallashgan balans. Fake `tx`
+   materiallashgan qiymatni **haqiqatda yig'adi** (mock-xulqiga assert qilinmaydi).
+
+**Runtime-tasdiq (lokal `climart_adopt @ 5432`) — mock EMAS**
+- Migratsiya `prisma db execute` bilan qo'llandi (bu DB `_prisma_migrations`-tracked emas, xotira:
+  `climart-adopt-local-db-untracked`), so'ng `prisma migrate diff` bilan **drift 0** ekani tasdiqlandi;
+  `prisma generate` qayta yugurtirildi.
+- DB'dan o'qib tekshirildi: 9 ustun (`organization_id` NULLABLE), **3 indeks + pkey**, **3 FK**,
+  `ROW COUNT = 0` (backfill yo'q).
+- **Haqiqiy `applyDelta` round-trip** (real `PrismaClient`, real tranzaksiya, oxirida ataylab throw →
+  rollback): 2 delta → 2 jurnal qatori (biri `organizationId` uuid bilan, biri `null`);
+  `Σ(journal) = 100 000` **==** `Δ(materialized) = 500 000 → 600 000`; **rollbackdan keyin jurnal 0 qator**
+  — ya'ni «bitta tranzaksiya» kafolati real DB'da ham ishlaydi (invariant hech qachon yarim qolmaydi).
+
+**Gate (to'liq, jonli o'lchangan)**
+- `pnpm --filter @moysklad/api typecheck` → **0 xato** · `pnpm --filter @moysklad/db typecheck` → **0**
+- `pnpm lint:product` → **0 error** (731 warning — siyosat bo'yicha ruxsat)
+- `pnpm --filter @moysklad/api exec vitest run` (BUTUN suite) → **384 fayl / 5103 test yashil, 0 yiqilgan** (1 skip)
+- Faza 8'ning qamrov-guard testi (parallel sessiya commit qildi: `0ee9a8c1`) mening o'zgarishimdan keyin
+  qayta yugurtirildi → **13/13 yashil** (yozuvchi FAYLLAR to'plami o'zgarmadi, faqat chaqiruv argumentlari).
+- `i18n:gate` yugurtirilMADI — UI matni tegilmagan (API + sxema).
+- **Browser-smoke YO'Q.**
+
+**BACKFILL — javob: KERAK, lekin hujjat-replay bilan EMAS (Faza 10 boshida hal qilinadi)**
+Jurnal bo'sh boshlandi ⇒ bugun **`Σ(journal) ≠ materialized`** (materiallashgan qiymatda butun tarix bor).
+Shuning uchun Faza 10 o'quvchilarini jurnalga ko'chirishdan OLDIN backfill shart, aks holda akt-sverka
+noldan boshlangan qoldiqni ko'rsatadi. Ikki variant:
+- **(a) Hujjat-replay** (tarixiy hujjatlarni qayta o'qib delta yozish) — **TAVSIYA ETILMAYDI**: bu aynan
+  `DUP-02` xatarini takrorlaydi (chala hujjat-ro'yxati → jimgina yo'qolgan/qo'shilgan saldo), va unpost
+  qilingan/o'chirilgan hujjatlar tarixini aniq tiklash imkoni yo'q.
+- **(b) «Opening snapshot»** — **TAVSIYA**: har mavjud `CounterpartyBalance` qatori uchun **bitta** jurnal
+  qatori (`deltaMinor = balanceMinor`, `docType:'opening'`, `organizationId: null`). Σ-invariant
+  **konstruksiya bo'yicha** aniq to'g'ri bo'ladi, ma'lumot yo'qolishi **nol**, tarixiy davr esa
+  «taqsimlanmagan boshlang'ich qoldiq» sifatida ko'rinadi (buxgalteriyada normal amaliyot).
+  **Bloker:** `docId` hozir NOT NULL `uuid` va opening qatorining hujjati yo'q ⇒ Faza 10'da yo ustun
+  nullable qilinadi, yoki nol-uuid sentinel ishlatiladi. Bu — **Faza 10 ning birinchi qadami**.
+
+**Qolgan qarz / DEFER**
+- **O'quvchilar hali ko'chirilmagan** — bu faza faqat YOZUV tomoni. `counterparty.metrics` byOrg,
+  `counterparty-statement`, `report/counterparty-act`, `recompute` skripti hamon o'z chala hujjat
+  ro'yxatlaridan o'qiydi ⇒ `M-07`/`DUP-05/06/08` **hali OCHIQ** (Faza 10).
+- **`docType` lug'ati kelishildi, lekin markazlashtirilmadi:** `invoiceOut/invoiceIn/paymentIn/paymentOut/
+  cashIn/cashOut/prepayment/prepaymentReturn/adjustment/supply/debt/debtpayment/retailsale`. Faza 10'da
+  bu to'plamni `counterparty-balance-sources.ts` (Faza 8) reyestri bilan **bitta konstantaga** birlashtirish
+  kerak — hozir ikki joyda mustaqil ro'yxat bor (kichik dublikat, lekin DUP-15 klassining urug'i).
+- **`docId` konventsiyasi bir joyda asimmetrik:** `debtpayment` uchun POS yo'li `batchId` (bir batch N
+  qarzni to'laydi), debt-modul yo'li to'lov/qarz ID'si. `docType` bo'yicha guruhlash to'g'ri ishlaydi,
+  lekin «docId → hujjat» yechimi Faza 10'da turga qarab bo'lishi kerak.
+- **Jurnalning o'zi hali hech kim tomonidan O'QILMAYDI** ⇒ bu fazadan keyin yozuv xarajati bor (har
+  applyDelta'ga +1 INSERT), foyda Faza 10'da keladi. Ataylab shunday (reja tartibi).
+- **Prod (`sherset_v2`) migratsiyasi qo'llanMAGAN** — deploy-vaqtidagi ops-qadam; xotira
+  `sherset-v2-schema-drift` bo'yicha bu DB'da drift tarixi bor, `migrate deploy` emas, qo'lda DDL kerak
+  bo'lishi mumkin.
+- **Browser-smoke YO'Q** — Phase-2 QA cohort'ga qoladi (kontragent kartochkasi + akt-sverka Faza 10'dan
+  keyin birga tekshirilsa mantiqli).
+
+**Commit:** `feat(counterparty-balance): faza 9 — CounterpartyBalanceEntry jurnal + majburiy applyDelta meta (DUP-15, M-07)`

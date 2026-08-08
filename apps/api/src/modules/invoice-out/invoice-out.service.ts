@@ -727,6 +727,7 @@ export class InvoiceOutService {
             existing.agentId,
             existing.currency,
             -existing.sumMinor, // undo the "they owe us" delta (post() applied +sum)
+            { docType: 'invoiceOut', docId: id, organizationId: existing.organizationId },
           );
           if (existing.customerOrderId) {
             await this.co.applyInvoice(
@@ -761,7 +762,11 @@ export class InvoiceOutService {
             parsed.customerOrderId !== undefined
               ? parsed.customerOrderId
               : existing.customerOrderId;
-          await this.balance.applyDelta(tx, accountId, newAgentId, newCurrency, totals.sumMinor);
+          await this.balance.applyDelta(tx, accountId, newAgentId, newCurrency, totals.sumMinor, {
+            docType: 'invoiceOut',
+            docId: id,
+            organizationId: effectiveOrgId,
+          });
           if (newCoId) {
             await this.co.applyInvoice(tx, accountId, newCoId, totals.sumMinor, 'invoice');
           }
@@ -1247,7 +1252,12 @@ export class InvoiceOutService {
         existing.agentId,
         existing.currency,
         existing.sumMinor,
-        { source: 'invoiceOut', docType: 'invoiceOut', docId: id },
+        {
+          source: 'invoiceOut',
+          docType: 'invoiceOut',
+          docId: id,
+          organizationId: existing.organizationId,
+        },
       );
 
       if (existing.customerOrderId) {
@@ -1313,6 +1323,7 @@ export class InvoiceOutService {
         existing.agentId,
         existing.currency,
         -existing.sumMinor,
+        { docType: 'invoiceOut', docId: id, organizationId: existing.organizationId },
       );
 
       if (existing.customerOrderId) {
@@ -1384,6 +1395,7 @@ export class InvoiceOutService {
           existing.agentId,
           existing.currency,
           -existing.sumMinor,
+          { docType: 'invoiceOut', docId: id, organizationId: existing.organizationId },
         );
         if (existing.customerOrderId) {
           await this.co.applyInvoice(

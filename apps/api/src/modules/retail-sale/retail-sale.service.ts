@@ -845,7 +845,7 @@ export class RetailSaleService {
           debtAgentId,
           sale.session.cashDesk.currency,
           debtAmount,
-          { docType: 'retailsale', docId: id },
+          { docType: 'retailsale', docId: id, organizationId: sale.organizationId },
         );
         // Yangi balansni O'QIYMIZ va hodisaga yozamiz — «kimning qarzi tez
         // o'sadi» savoliga keyin javob berish uchun o'sha ondagi holat kerak.
@@ -1290,7 +1290,7 @@ export class RetailSaleService {
           debtorId,
           original.session.cashDesk.currency,
           -debtReturn,
-          { docType: 'retailsale', docId: refundSale.id },
+          { docType: 'retailsale', docId: refundSale.id, organizationId: original.organizationId },
         );
       }
 

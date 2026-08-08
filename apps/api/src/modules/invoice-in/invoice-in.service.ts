@@ -752,6 +752,7 @@ export class InvoiceInService {
             existing.agentId,
             existing.currency,
             existing.sumMinor, // undo the "we owe them" delta (post() applied -sum)
+            { docType: 'invoiceIn', docId: id, organizationId: existing.organizationId },
           );
           if (existing.purchaseOrderId) {
             await this.po.applyInvoice(
@@ -786,7 +787,11 @@ export class InvoiceInService {
             parsed.purchaseOrderId !== undefined
               ? parsed.purchaseOrderId
               : existing.purchaseOrderId;
-          await this.balance.applyDelta(tx, accountId, newAgentId, newCurrency, -totals.sumMinor);
+          await this.balance.applyDelta(tx, accountId, newAgentId, newCurrency, -totals.sumMinor, {
+            docType: 'invoiceIn',
+            docId: id,
+            organizationId: effectiveOrgId,
+          });
           if (newPoId) {
             await this.po.applyInvoice(tx, accountId, newPoId, totals.sumMinor, 'invoice');
           }
@@ -1144,7 +1149,12 @@ export class InvoiceInService {
         existing.agentId,
         existing.currency,
         -existing.sumMinor,
-        { source: 'invoiceIn', docType: 'invoiceIn', docId: id },
+        {
+          source: 'invoiceIn',
+          docType: 'invoiceIn',
+          docId: id,
+          organizationId: existing.organizationId,
+        },
       );
 
       if (existing.purchaseOrderId) {
@@ -1206,6 +1216,7 @@ export class InvoiceInService {
         existing.agentId,
         existing.currency,
         existing.sumMinor,
+        { docType: 'invoiceIn', docId: id, organizationId: existing.organizationId },
       );
 
       if (existing.purchaseOrderId) {
@@ -1277,6 +1288,7 @@ export class InvoiceInService {
           existing.agentId,
           existing.currency,
           existing.sumMinor,
+          { docType: 'invoiceIn', docId: id, organizationId: existing.organizationId },
         );
         if (existing.purchaseOrderId) {
           await this.po.applyInvoice(

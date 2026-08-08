@@ -305,6 +305,47 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-08f (AUDIT-FIX FAZA 9 — `CounterpartyBalanceEntry` balans jurnali · `DUP-15`+`M-07`)
+> `<commit>` · Phase-1: strukturaviy + unit + **real-DB**-tasdiqlangan, browser-smoke YO'Q ·
+> ⏳ DEPLOY QILINMAGAN · 🗄️ **MIGRATSIYA BOR** (lokal `climart_adopt`ga qo'llandi, prod'ga YO'Q)**
+>
+> **Muammo (kodda tasdiqlandi).** `DUP-15`: materialized `CounterpartyBalance` kaliti
+> `counterpartyId_currency` — `organizationId` YO'Q ⇒ org-kesim va akt-sverka balansni **4 joyda
+> mustaqil (chala)** rekonstruksiya qiladi (`M-07`: `counterparty.service.ts:456` «cert asserts this
+> invariant» deydi, `:510` ro'yxati esa 9 tur). **Auditda yo'q qo'shimcha topilma:** 49 `applyDelta`
+> chaqiruvidan **faqat `post()`** meta uzatardi — barcha `unpost/cancel/update`-reapply meta'siz edi
+> (`ApplyDeltaMeta` ataylab optional qilingan edi), ya'ni jurnalni chokepoint'ga qo'shsam **teskari
+> deltalar hujjat-identifikatorisiz** tushardi va Faza 10 jurnal ustiga qurilmasdi.
+>
+> **Fix (3 qism).** (1) **YANGI** `CounterpartyBalanceEntry` append-only jadval + migratsiya
+> (`20260808180000_counterparty_balance_entry_journal`): `accountId, counterpartyId, organizationId?,
+> currency, deltaMinor, docType(VARCHAR — enum EMAS), docId, createdAt` + 3 indeks; `updatedAt` yo'q
+> (append-only). (2) `applyDelta` upsert bilan **BIR TX'DA** (`tx`, `prisma` emas) jurnal qatorini
+> yozadi. (3) `ApplyDeltaMeta` — `docType`/`docId` **majburiy** + yangi majburiy
+> `organizationId: string | null` ⇒ **compile-time qo'riqchi**: 49 chaqiruv joyi (13 fayl) typecheck
+> orqali topib wire qilindi; `organizationId: null` faqat `Debt` (org o'lchovi yo'q) uchun — ATAYLAB
+> qaror, unutish emas. Faza 8'ning skan-guard'i «yangi FAYL»ni tutadi, bu esa «yangi CHAQIRUV»ni.
+>
+> **TDD:** jurnal testlari avval yozildi → **3/10 qizil** (`entryArgs` bo'sh — sabab aynan «jurnal
+> yozuvi yo'q»). Fix'dan keyin **10/10 yashil**; Σ-invariant testi materiallashgan balansni fake tx'da
+> **haqiqatda yig'adi** (mock-xulqiga assert qilinmaydi).
+>
+> **Gate:** api tsc **0** · db tsc **0** · biome **0 error** · api vitest BUTUN suite **5103/5103**
+> (384 fayl) · Faza 8 qamrov-guard'i mendan keyin **13/13** · **real-DB round-trip**: 2 delta → 2 jurnal
+> qatori, `Σ(journal) == Δ(materialized)`, rollbackdan keyin **0 qator** (bir-tranzaksiya kafolati jonli
+> tasdiqlandi) · migratsiya `db execute` bilan qo'llandi, `migrate diff` **drift 0**. `i18n:gate` — UI tegilmagan.
+>
+> **BACKFILL javobi (reja so'ragan):** **KERAK, lekin hujjat-replay EMAS** — u `DUP-02` xatarini
+> takrorlaydi. Tavsiya: **«opening snapshot»** (har mavjud balans qatori uchun bitta
+> `docType:'opening'` jurnal qatori, `deltaMinor = balanceMinor`) ⇒ Σ-invariant konstruksiya bo'yicha
+> to'g'ri, yo'qotish nol. **Bloker:** `docId` hozir NOT NULL uuid ⇒ Faza 10'da nullable qilinadi yoki
+> nol-uuid sentinel. Bu — **Faza 10 ning BIRINCHI qadami**.
+>
+> **⏭️ KEYINGI:** `docs/REJA-AUDIT-FIX-2026-08.md` → **Faza 10** (`M-07`,`DUP-05/06/08` — 4 balans-o'quvchini
+> jurnaldan o'qishga o'tkazish). Sessiya-boshi prompti o'sha fazada; **avval backfill qarorini bajar**
+> (yuqoridagi opening-snapshot), aks holda akt-sverka noldan boshlangan qoldiq ko'rsatadi. To'liq hisobot —
+> rejadagi «HISOBOT JURNALI → Faza 9».
+>
 > **🕒 2026-08-08e (AUDIT-FIX FAZA 8 — `recompute-counterparty-balances` qamrov-guard · `DUP-02`)
 > `<commit>` · Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q · ⏳ DEPLOY QILINMAGAN ·
 > 🗄️ MIGRATSIYA YO'Q · ⚠️ `APPLY=1` YUGURTIRILMADI**

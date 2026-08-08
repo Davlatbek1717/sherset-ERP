@@ -502,7 +502,12 @@ export class CashOutService {
         existing.agentId,
         existing.currency,
         existing.sumMinor,
-        { source: 'cashOut', docType: 'cashOut', docId: id },
+        {
+          source: 'cashOut',
+          docType: 'cashOut',
+          docId: id,
+          organizationId: existing.organizationId,
+        },
       );
 
       for (const op of existing.operations) {
@@ -581,6 +586,7 @@ export class CashOutService {
         existing.agentId,
         existing.currency,
         -existing.sumMinor,
+        { docType: 'cashOut', docId: id, organizationId: existing.organizationId },
       );
 
       for (const op of existing.operations) {
@@ -656,6 +662,7 @@ export class CashOutService {
           existing.agentId,
           existing.currency,
           -existing.sumMinor,
+          { docType: 'cashOut', docId: id, organizationId: existing.organizationId },
         );
 
         for (const op of existing.operations) {

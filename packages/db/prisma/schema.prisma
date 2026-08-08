@@ -88,6 +88,7 @@ model Account {
   cashIns                        CashIn[]
   cashOuts                       CashOut[]
   counterpartyBalances           CounterpartyBalance[]
+  counterpartyBalanceEntries     CounterpartyBalanceEntry[]
   bankStatements                 BankStatement[]
   priceTypes                     PriceType[]
   variants                       Variant[]
@@ -711,6 +712,7 @@ model Organization {
   retailDrawerOut    RetailDrawerCashOut[]    @relation("RetailDrawerOutOrg")
   retailSalesReturns RetailSalesReturn[]      @relation("RetailSalesReturnOrg")
   productions        Production[]             @relation("ProductionOrg")
+  cpBalanceEntries   CounterpartyBalanceEntry[] @relation("CpBalanceEntryOrg")
   processingOrders   ProcessingOrder[]        @relation("ProcessingOrderOrg")
   processings        Processing[]             @relation("ProcessingOrg")
   payrolls           Payroll[]                @relation("PayrollOrg")
@@ -1245,6 +1247,50 @@ model CounterpartyBalance {
   @@unique([counterpartyId, currency])
   @@index([accountId, counterpartyId])
   @@map("counterparty_balances")
+}
+
+/// Faza 9 (audit DUP-15 / M-07) — append-only balans JURNALI: `CounterpartyBalanceService.applyDelta`
+/// har chaqirilganda materiallashgan `CounterpartyBalance` upsert'i BILAN BIR TRANZAKSIYADA shu yerga
+/// bitta qator yozadi. Sabab: materiallashgan jadvalda `organizationId` o'lchovi yo'q, shuning uchun
+/// «balans po organizatsiyam», akt-sverka, statement va recompute-skript balansni har biri o'z
+/// (chala) hujjat-ro'yxatidan MUSTAQIL rekonstruksiya qilardi → drift. Jurnal — o'sha to'rt
+/// o'quvchining yagona manbasi (Faza 10 ularni shu jadvalga ko'chiradi).
+///
+/// Invariant (test bilan qulflangan): Σ(deltaMinor per counterpartyId, currency) ==
+/// CounterpartyBalance.balanceMinor — jurnal va materiallashgan qiymat bitta applyDelta'dan chiqadi.
+/// Qatorlar HECH QACHON o'zgartirilmaydi/o'chirilmaydi (unpost/cancel teskari-belgili YANGI qator
+/// yozadi) — shuning uchun `updatedAt` yo'q.
+///
+/// `organizationId` NULLABLE: `Debt` (QRZ- qarz kartochkasi) modelida organizatsiya o'lchovi umuman
+/// yo'q, `RetailSale.organizationId` esa optional. Null = «organizatsiyaga taqsimlanmagan delta»
+/// (org-kesim hisobotida alohida ko'rsatiladi, jimgina tashlanmaydi).
+model CounterpartyBalanceEntry {
+  id             String  @id @default(uuid()) @db.Uuid
+  accountId      String  @map("account_id") @db.Uuid
+  counterpartyId String  @map("counterparty_id") @db.Uuid
+  organizationId String? @map("organization_id") @db.Uuid
+  currency       String  @db.VarChar(3)
+  deltaMinor     BigInt  @map("delta_minor")
+
+  /// Deltani keltirgan hujjat turi — `applyDeltaMeta.docType` (masalan 'invoiceOut', 'supply',
+  /// 'debt', 'retailsale'). Yangi yozuvchi qo'shilganda bu yerga yangi qiymat kelaveradi, sxema
+  /// o'zgarmaydi (enum ATAYLAB emas — 4 o'quvchi ro'yxatini yangilash majburiyati yo'qoladi).
+  docType String @map("doc_type") @db.VarChar(40)
+  docId   String @map("doc_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  account      Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  counterparty Counterparty  @relation(fields: [counterpartyId], references: [id], onDelete: Cascade)
+  organization Organization? @relation("CpBalanceEntryOrg", fields: [organizationId], references: [id], onDelete: SetNull)
+
+  // Asosiy o'qish naqshi: kontragent×valyuta bo'yicha davr kesimi (statement/akt running-balance).
+  @@index([accountId, counterpartyId, currency, createdAt])
+  // «Balans po organizatsiyam» (counterparty.metrics byOrg) — org bo'yicha groupBy.
+  @@index([accountId, organizationId, currency])
+  // Hujjat bo'yicha teskari qidiruv (unpost/cancel juftini topish, audit-trail).
+  @@index([accountId, docType, docId])
+  @@map("counterparty_balance_entries")
 }
 
 // CashIn (приходный кассовый ордер, ПКО) — cash coming INTO a cash desk
@@ -1961,6 +2007,7 @@ model Counterparty {
   cashIns            CashIn[]
   cashOuts           CashOut[]
   balances           CounterpartyBalance[]
+  balanceEntries     CounterpartyBalanceEntry[]
   bankStatementRows  BankStatementRow[]
   contactPersons     ContactPerson[]
   calls              Call[]

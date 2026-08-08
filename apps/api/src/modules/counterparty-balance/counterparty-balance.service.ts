@@ -9,16 +9,31 @@ import {
 } from '../hr/hr-shared/hr-events.types.js';
 
 /**
- * Optional per-call metadata so applyDelta can emit a domain event that carries
- * WHICH document moved the balance. applyDelta itself has no knowledge of the
- * source — each caller passes it. Kept optional so the ~40 existing call sites
- * (unpost/cancel/rebalance/adjustment/prepayment) compile unchanged and emit
- * with `source: undefined` → the owner debt notifier no-ops on them.
+ * Per-call metadata: WHICH document moved the balance, and under WHICH
+ * organization. applyDelta itself has no knowledge of the source — every caller
+ * passes it.
+ *
+ * Faza 9 (audit DUP-15/M-07) — `docType`/`docId`/`organizationId` MAJBURIY
+ * bo'ldi. Sabab: ular endi faqat domen-hodisa uchun emas, append-only
+ * `CounterpartyBalanceEntry` jurnaliga yoziladi va o'sha jurnal balans-o'quvchilar
+ * (metrics byOrg, statement, akt-sverka, recompute-skript) uchun YAGONA manba.
+ * Ilgari optional edi va aynan shu sababli barcha unpost/cancel yo'llari meta'siz
+ * chaqirardi — jurnal yozuvining yarmi hujjat-identifikatorsiz qolar edi. Majburiy
+ * qilingani = compile-time qo'riqchi: yangi applyDelta-yozuvchi meta'ni unutolmaydi
+ * (`DUP-02` klassidagi «qamralmagan manba» bug'i takrorlanmaydi).
+ *
+ * `organizationId: null` — ATAYLAB tanlov, unutish emas: `Debt` modelida
+ * organizatsiya o'lchovi yo'q, `RetailSale.organizationId` optional. Null qiymat
+ * org-kesimda «taqsimlanmagan» qatoriga tushadi.
+ *
+ * `source` optional qoladi — u faqat HR owner-debt notifikatori uchun
+ * (`source: undefined` → notifier no-op qiladi), jurnalga yozilmaydi.
  */
 export interface ApplyDeltaMeta {
   source?: CounterpartyBalanceChangeSource;
-  docType?: string;
-  docId?: string;
+  docType: string;
+  docId: string;
+  organizationId: string | null;
 }
 
 /**
@@ -51,6 +66,11 @@ export class CounterpartyBalanceService {
    * within the caller's $transaction. Uses an upsert so the row is created
    * on first touch.
    *
+   * Faza 9: upsert bilan BIR TRANZAKSIYADA append-only `CounterpartyBalanceEntry`
+   * jurnal qatori ham yoziladi (bir applyDelta = bir qator). Ikkalasi bitta
+   * `tx`da bo'lgani uchun rollback ikkisini ham qaytaradi → «Σ(jurnal) ==
+   * materiallashgan balans» invarianti hech qachon uzilmaydi.
+   *
    * After the upsert we emit a COUNTERPARTY_BALANCE_CHANGED domain event
    * carrying the delta + the NEW balance (read back from the upsert). The emit
    * is wrapped in try/catch and listeners are strictly out-of-band
@@ -65,7 +85,7 @@ export class CounterpartyBalanceService {
     counterpartyId: string,
     currency: string,
     deltaMinor: bigint,
-    meta?: ApplyDeltaMeta,
+    meta: ApplyDeltaMeta,
   ): Promise<void> {
     if (deltaMinor === 0n) return;
     if (currency.length !== 3) {
@@ -87,6 +107,20 @@ export class CounterpartyBalanceService {
       select: { balanceMinor: true },
     });
 
+    // Jurnal qatori — upsert bilan BIR tranzaksiyada, ATAYLAB `tx` orqali
+    // (`this.prisma` EMAS: aks holda rollback jurnalni qoldirib ketardi).
+    await tx.counterpartyBalanceEntry.create({
+      data: {
+        accountId,
+        counterpartyId,
+        organizationId: meta.organizationId,
+        currency,
+        deltaMinor,
+        docType: meta.docType,
+        docId: meta.docId,
+      },
+    });
+
     try {
       const payload: CounterpartyBalanceChangedEvent = {
         accountId,
@@ -94,9 +128,9 @@ export class CounterpartyBalanceService {
         currency,
         deltaMinor,
         newBalanceMinor: row.balanceMinor,
-        source: meta?.source,
-        docType: meta?.docType,
-        docId: meta?.docId,
+        source: meta.source,
+        docType: meta.docType,
+        docId: meta.docId,
       };
       this.events.emit(HR_EVENT.COUNTERPARTY_BALANCE_CHANGED, payload);
     } catch (e) {

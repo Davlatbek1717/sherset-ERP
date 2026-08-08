@@ -594,7 +594,12 @@ export class CashInService {
         existing.agentId,
         existing.currency,
         -existing.sumMinor,
-        { source: 'cashIn', docType: 'cashIn', docId: id },
+        {
+          source: 'cashIn',
+          docType: 'cashIn',
+          docId: id,
+          organizationId: existing.organizationId,
+        },
       );
 
       // Apply each invoice allocation.
@@ -675,6 +680,7 @@ export class CashInService {
         existing.agentId,
         existing.currency,
         existing.sumMinor,
+        { docType: 'cashIn', docId: id, organizationId: existing.organizationId },
       );
 
       // Reverse invoice allocations.
@@ -751,6 +757,7 @@ export class CashInService {
           existing.agentId,
           existing.currency,
           existing.sumMinor,
+          { docType: 'cashIn', docId: id, organizationId: existing.organizationId },
         );
 
         for (const op of existing.operations) {

@@ -659,7 +659,12 @@ export class PaymentInService {
         existing.agentId,
         existing.currency,
         -existing.sumMinor,
-        { source: 'paymentIn', docType: 'paymentIn', docId: id },
+        {
+          source: 'paymentIn',
+          docType: 'paymentIn',
+          docId: id,
+          organizationId: existing.organizationId,
+        },
       );
 
       // Apply each allocation to its target (invoice-out OR customer-order).
@@ -750,6 +755,7 @@ export class PaymentInService {
         existing.agentId,
         existing.currency,
         existing.sumMinor,
+        { docType: 'paymentIn', docId: id, organizationId: existing.organizationId },
       );
 
       for (const op of existing.operations) {
@@ -823,6 +829,7 @@ export class PaymentInService {
           existing.agentId,
           existing.currency,
           existing.sumMinor,
+          { docType: 'paymentIn', docId: id, organizationId: existing.organizationId },
         );
         for (const op of existing.operations) {
           if (op.targetKind === 'invoiceout' && op.invoiceOutId) {

@@ -195,8 +195,20 @@ export class DebtService {
     accountId: string,
     debtId: string,
     nextContactAt: Date | null | undefined,
+    /**
+     * Balans jurnaliga (Faza 9) yoziladigan hujjat-identifikatori — to'lov
+     * ID'si ma'lum bo'lsa o'sha, aks holda qarz kartochkasining o'zi (delta
+     * to'lovlar YIG'INDISIDAN kelib chiqadi, ya'ni kartochkaga tegishli).
+     * `organizationId` doim `null`: `Debt` modelida organizatsiya o'lchovi yo'q.
+     */
+    docId: string,
   ) {
-    return recalcDebt(tx, this.balances, { accountId, debtId, nextContactAt });
+    return recalcDebt(tx, this.balances, {
+      accountId,
+      debtId,
+      nextContactAt,
+      meta: { docType: 'debtpayment', docId, organizationId: null },
+    });
   }
 
   // ── MIJOZGA TELEGRAM XABARI (2026-07-13, 2026-07-20e avtomatik xabarlar
@@ -564,7 +576,8 @@ export class DebtService {
         input.counterpartyId,
         input.currency,
         BigInt(input.totalMinor),
-        { docType: 'debt', docId: debt.id },
+        // Qarz kartochkasida organizatsiya o'lchovi yo'q ⇒ jurnalda `null`.
+        { docType: 'debt', docId: debt.id, organizationId: null },
       );
 
       // §3.3 — izoh muloqot tarixiga «Kassir» yozuvi bo'lib tushadi.
@@ -865,6 +878,7 @@ export class DebtService {
         accountId,
         debtId,
         input.outcome === 'paid_full' ? null : (input.nextContactAt ?? null),
+        paymentId ?? debtId,
       );
 
       // ── MUAMMOLI MIJOZ (2026-07-14) ────────────────────────────────────────
@@ -1025,7 +1039,7 @@ export class DebtService {
         });
       }
 
-      return this.recalc(tx, accountId, debtId, input.nextContactAt ?? null);
+      return this.recalc(tx, accountId, debtId, input.nextContactAt ?? null, debtId);
     });
 
     return updated;
@@ -1086,7 +1100,7 @@ export class DebtService {
         });
       }
 
-      await this.recalc(tx, accountId, debtId, input.nextContactAt ?? null);
+      await this.recalc(tx, accountId, debtId, input.nextContactAt ?? null, created.id);
       return created;
     });
 
@@ -1207,7 +1221,13 @@ export class DebtService {
       });
 
       // recalc: paidMinor = Σ jonli to'lovlar → status/closedAt + balans delta.
-      const debtRow = await this.recalc(tx, accountId, debtId, input.nextContactAt ?? undefined);
+      const debtRow = await this.recalc(
+        tx,
+        accountId,
+        debtId,
+        input.nextContactAt ?? undefined,
+        payment.id,
+      );
 
       // lastCallAt/lastCallOutcome — qolgan JONLI natija-yozuvlaridan qayta
       // hisoblanadi (bekor qilingan «to'ladi» belgisi ro'yxatlarda qolmasin).
@@ -1347,7 +1367,13 @@ export class DebtService {
 
       // recalc: to'lov storno bo'lgan bo'lsa qoldiq/status/balans tiklanadi
       // (to'lov bo'lmasa — zararsiz, paidDelta = 0).
-      const debtRow = await this.recalc(tx, accountId, debtId, input.nextContactAt ?? undefined);
+      const debtRow = await this.recalc(
+        tx,
+        accountId,
+        debtId,
+        input.nextContactAt ?? undefined,
+        payment?.id ?? debtId,
+      );
 
       // lastCallAt/lastCallOutcome — qolgan jonli yozuvlardan.
       await this.recomputeLastCall(tx, accountId, debtId);

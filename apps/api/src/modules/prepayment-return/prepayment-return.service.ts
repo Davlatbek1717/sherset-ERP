@@ -273,7 +273,11 @@ export class PrepaymentReturnService {
       });
       if (applicable) {
         // Refund: +delta (customer's debt to us grows back / our debt shrinks)
-        await this.balances.applyDelta(tx, accountId, agentId, currency, sumMinor);
+        await this.balances.applyDelta(tx, accountId, agentId, currency, sumMinor, {
+          docType: 'prepaymentReturn',
+          docId: row.id,
+          organizationId: row.organizationId,
+        });
       }
       return row;
     });
@@ -351,7 +355,11 @@ export class PrepaymentReturnService {
     const row = await this.findById(accountId, id);
     await this.prisma.client.$transaction(async (tx) => {
       if (row.applicable) {
-        await this.balances.applyDelta(tx, accountId, row.agentId, row.currency, -row.sumMinor);
+        await this.balances.applyDelta(tx, accountId, row.agentId, row.currency, -row.sumMinor, {
+          docType: 'prepaymentReturn',
+          docId: id,
+          organizationId: row.organizationId,
+        });
       }
       await tx.prepaymentReturn.update({
         where: { id },
@@ -413,7 +421,11 @@ export class PrepaymentReturnService {
           where: { id },
           data: { applicable: true, state: 'posted', postedAt: new Date() },
         });
-        await this.balances.applyDelta(tx, accountId, row.agentId, row.currency, row.sumMinor);
+        await this.balances.applyDelta(tx, accountId, row.agentId, row.currency, row.sumMinor, {
+          docType: 'prepaymentReturn',
+          docId: id,
+          organizationId: row.organizationId,
+        });
         await tx.auditLog.create({
           data: {
             accountId,
@@ -433,7 +445,11 @@ export class PrepaymentReturnService {
           where: { id },
           data: { applicable: false, state: 'draft', postedAt: null },
         });
-        await this.balances.applyDelta(tx, accountId, row.agentId, row.currency, -row.sumMinor);
+        await this.balances.applyDelta(tx, accountId, row.agentId, row.currency, -row.sumMinor, {
+          docType: 'prepaymentReturn',
+          docId: id,
+          organizationId: row.organizationId,
+        });
         await tx.auditLog.create({
           data: {
             accountId,
@@ -448,7 +464,11 @@ export class PrepaymentReturnService {
         });
       } else if (target === 'cancel') {
         if (row.applicable) {
-          await this.balances.applyDelta(tx, accountId, row.agentId, row.currency, -row.sumMinor);
+          await this.balances.applyDelta(tx, accountId, row.agentId, row.currency, -row.sumMinor, {
+            docType: 'prepaymentReturn',
+            docId: id,
+            organizationId: row.organizationId,
+          });
         }
         await tx.prepaymentReturn.update({
           where: { id },

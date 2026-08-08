@@ -1352,7 +1352,12 @@ export class SupplyService {
           existing.agentId,
           existing.currency,
           -existing.sumMinor,
-          { source: 'invoiceIn', docType: 'supply', docId: id },
+          {
+            source: 'invoiceIn',
+            docType: 'supply',
+            docId: id,
+            organizationId: existing.organizationId,
+          },
         );
 
         // 4. Sprint 4.4 cascade — if linked to a PurchaseOrder, increment its
@@ -1492,6 +1497,7 @@ export class SupplyService {
           existing.agentId,
           existing.currency,
           existing.sumMinor,
+          { docType: 'supply', docId: id, organizationId: existing.organizationId },
         );
 
         // Reset remainingQty and costMinor
@@ -1618,6 +1624,7 @@ export class SupplyService {
           existing.agentId,
           existing.currency,
           existing.sumMinor,
+          { docType: 'supply', docId: id, organizationId: existing.organizationId },
         );
 
         for (const p of existing.positions) {

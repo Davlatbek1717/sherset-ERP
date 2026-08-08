@@ -655,7 +655,12 @@ export class PaymentOutService {
         existing.agentId,
         existing.currency,
         existing.sumMinor,
-        { source: 'paymentOut', docType: 'paymentOut', docId: id },
+        {
+          source: 'paymentOut',
+          docType: 'paymentOut',
+          docId: id,
+          organizationId: existing.organizationId,
+        },
       );
 
       // Apply each allocation to its target (InvoiceIn or direct PO advance).
@@ -738,6 +743,7 @@ export class PaymentOutService {
         existing.agentId,
         existing.currency,
         -existing.sumMinor,
+        { docType: 'paymentOut', docId: id, organizationId: existing.organizationId },
       );
 
       for (const op of existing.operations) {
@@ -811,6 +817,7 @@ export class PaymentOutService {
           existing.agentId,
           existing.currency,
           -existing.sumMinor,
+          { docType: 'paymentOut', docId: id, organizationId: existing.organizationId },
         );
         for (const op of existing.operations) {
           if (op.targetKind === 'invoicein' && op.invoiceInId) {

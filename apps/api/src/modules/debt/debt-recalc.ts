@@ -32,8 +32,12 @@ export interface RecalcDebtParams {
    * o'zgartirmaydi); qarz to'liq yopilsa har holda `null`ga tushadi (§3.6).
    */
   nextContactAt?: Date | null;
-  /** Balans jurnalida qaysi hujjat harakatga sabab bo'lganini ko'rsatadi. */
-  meta?: ApplyDeltaMeta;
+  /**
+   * Balans jurnalida (`CounterpartyBalanceEntry`) qaysi hujjat harakatga sabab
+   * bo'lganini ko'rsatadi. Faza 9'dan beri MAJBURIY — recalc'ning balans
+   * deltasi jurnalda hujjat-identifikatorisiz qolmasligi kerak.
+   */
+  meta: ApplyDeltaMeta;
 }
 
 export async function recalcDebt(
