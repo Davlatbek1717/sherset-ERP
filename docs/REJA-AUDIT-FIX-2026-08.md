@@ -458,7 +458,9 @@ qulflaydi. Katta backfill bo'lsa DEFER + hisobotda ops-qadam sifatida ayt.
 > `docs/REJA-AUDIT-FIX-2026-08.md` — **Faza 16**. O'ZGARMAS QOIDALAR. `M-03`,`DB-01`,`M-04`. isoCode-lookup +
 > kanonik rate-masshtab (×10^8) + valyutalararo to'lov guard. TDD: 3 stsenariy. Gate + migrate. Hisobot
 > (backfill kerakmi), TO'XTA.
-**◻ HISOBOT:** _(agent to'ldiradi)_
+**☑ HISOBOT (2026-08-08):** BAJARILDI — batafsili «HISOBOT JURNALI → Faza 16» da. **Backfill: lokal DB'da
+0 qator (bo'sh o'tdi); prod (sherset_v2)da migratsiya deploy'da `debt_payments.exchange_rate`ni ×10⁴→×10⁸
+o'tkazadi (idempotent guard bilan) — lekin sherset-v2 sxema-drift tufayli migratsiya oqimi tekshirilsin.**
 
 ---
 
@@ -2578,3 +2580,67 @@ ko'rsatildi), `boot-secrets.test` modul-yo'q bilan yiqildi. Fix'dan keyin: auth+
 - Browser-smoke YO'Q — SSE oqimi, rasm/fayl ko'rinishi, PDF-print Phase-2 QA cohort'ida runtime tekshiriladi.
 
 **Commit:** `fix(auth): faza 22 — prod secret boot-guard + query-token allowlist (AUTH-02, AUTH-04)`
+
+---
+
+## Faza 16 — Valyuta konventsiyasini yagonalash (2026-08-08) ✅
+
+**Topilmalar kodda tasdiqlandi (§2):** `M-03` — hujjatlar `currency`da ALPHA ('UZS') saqlaydi
+(schema default), `loadRateContext` esa xaritani `Currency.code` (yangi konventsiyada NUMERIC '860')
+bilan kalitlagan → baseCode '860' ≠ 'UZS', HAR konvertatsiya face-value fallback; CBU
+`applyAutoRatesFromSource` alpha `Ccy`ni numeric `code` bilan solishtirgan → AUTO kurs hech qachon
+yangilanmasdi. `DB-01` — 4 vakillik jonli: rateValue ×10⁸ ∥ DebtPayment.exchangeRate ×10⁴ ∥
+RetailSalePayment.rateMinor hujjatlanmagan ∥ ExchangeRate (CBU kesh) Decimal(20,6) + packages/money
+ExchangeRate ×10⁹ (hech kim ishlatmagan). `M-04` — payment-in/out `ensureOperations` faqat `{id}`
+tekshiradi, `applyPayment`da valyuta tushunchasi yo'q. Qo'shimcha tasdiqlangan fakt: schema.prisma
+Currency doc-comment ESKI konventsiyani (code=alpha) da'vo qilardi — Zod/seed'ga zid.
+
+**Kanonik masshtab qarori: ×10⁸** (reja farazi tasdiqlandi) — barcha hujjat `rateValue`lari allaqachon
+×10⁸; ozchilik (DebtPayment ×10⁴) ko'pchilikka o'tkazildi, `@moysklad/money`da `RATE_SCALE = 10⁸n`
+eksport qilinib test bilan qulflandi.
+
+**Fayllar:**
+| Fayl | Nima o'zgardi |
+|---|---|
+| `currency/currency-code.util.ts` | **YANGI** — `alphaCurrencyCode()`: qator qaysi avlod bo'lsa ham ALPHA kodni topadi (isoCode→code fallback) |
+| `report/report-rate-ctx.util.ts` | xarita ALPHA kalit + raw-code zaxira kalit; baseCode = default qatorning alpha'si; select'ga isoCode (M-03a) — 15+ hisobot-servis bitta joydan tuzaldi |
+| `currency/currency.service.ts` | `applyAutoRatesFromSource`: `OR[isoCode,code] IN keys` + alpha orqali match (M-03b) |
+| `payment-in/payment-in.service.ts` | `ensureOperations(+paymentCurrency)`: InvoiceOut/CustomerOrder currency select + mismatch→400 (M-04) |
+| `payment-out/payment-out.service.ts` | xuddi shu guard (InvoiceIn/PurchaseOrder) + **sibling-parity fix**: `createFromInvoiceIn`/`createFromPurchaseOrderAdvance` endi manba hujjatning `currency/rateValue`sini ko'chiradi (payment-in'dagi 2026-07-05 fix bu yerda yo'q edi — guard bilan birga shart bo'ldi) |
+| `debt/debt.schema.ts` | exchangeRate ×10⁸ hujjatlandi + `≥10⁹` stale-klient guard (eski ×10⁴ qiymat 400) + `usdCentsToSomTiyin()` sof helper (RATE_SCALE import) |
+| `debt/debt.service.ts` | markCall USD→so'm: `/10_000n` → `usdCentsToSomTiyin` (×10⁸); tarix-labelda `/1e8` |
+| `packages/money/exchange-rate.ts` + `index.ts` | SCALE ×10⁹→×10⁸ (kanonik), `RATE_SCALE` eksport; klass iste'molchisi apps'da YO'Q (grep) — xavfsiz |
+| `packages/db/prisma/schema.prisma` | Currency.code/isoCode doc-comment TO'G'RILANDI (code=NUMERIC, isoCode=ALPHA); DebtPayment.exchangeRate ×10⁸; RetailSalePayment.rateMinor ×10⁸ deb e'lon (yozuvchi yo'q — CASH_USD ulanmagan) |
+| `migrations/20260809010000_unify_rate_scale_e8_currency_isocode` | DATA-only: `debt_payments.exchange_rate × 10000` (guard `<10⁹` — idempotent) + legacy `currencies.iso_code = UPPER(code)` (code alpha bo'lsa) |
+| web: `debt-api.ts`, `debts/[id]/page.tsx`, `call-outcome-modal.tsx` | `RATE_SCALE 10⁴→10⁸`, `fmtRate /1e8` — wire-format server bilan sinxron |
+
+**Testlar (TDD: avval 8 qizil ko'rildi, fix'dan keyin yashil):** `report-rate-ctx.util.test` +4
+(numeric-konventsiya baseCode/xarita/konvertatsiya + legacy-almashgan qator), `currency.service.test`
+**YANGI** 3 (CBU: numeric-kod match ×1e8 qiymat bilan, legacy regress-lock, feed'da-yo'q tegilmaydi),
+`payment-in.service.test` **YANGI** 3 (USD→UZS 400 · UZS→UZS o'tadi · customerorder mismatch),
+`payment-out.service.test` +2 (mavjud clone-testlar SAQLANDI, guard qo'shildi), `debt.schema.test` +1
+(usdCentsToSomTiyin + eski-masshtab reject) + qiymatlar ×10⁸ga, `money.test` +1 (RATE_SCALE=10⁸ qulfi).
+
+**Gate:** api typecheck 0 · web typecheck 0 · `lint:product` 0 error · vitest: report-modul **294/294**,
+debt-modul **179/179**, tegilgan modullar **159/159** + payment-out 5/5, money **93/93** · migratsiya
+lokal `climart_adopt`ga qo'llandi (`prisma db execute`), holat tekshirildi: `debt_payments` kursli qator
+0 ta (lokal backfill bo'sh), `currencies` yagona qator allaqachon yangi konventsiyada. `i18n:gate`
+kerak emas (UI-matn tegilmadi — faqat konstanta/komment).
+
+**Backfill javobi (reja savoli):** KATTA EMAS — bitta UPDATE, migratsiya ichida, deploy'da avtomatik.
+Lokalda 0 qator. **Prod diqqat:** sherset_v2'da qo'lda yaratilgan debt-jadvallar bor (sxema-drift
+xotirasi) — deploy'da migratsiya oqimi o'tishini tekshirish kerak; o'tmasa SQL'ni qo'lda yugurtirish
+(idempotent).
+
+**Qolgan qarz / DEFER:**
+- `M-13` (packages/money ExchangeRate ↔ currency-convert yaxlitlash farqi) — masshtab yagonalandi,
+  lekin ikki konvertor hali ham alohida (truncation vs half-away). Alohida topilma, bu faza qamrovida emas.
+- Hisobotlar joriy kursda (`M-11`) — Faza 17 (endi ochiq, bog'liqlik hal).
+- Stale-klient oynasi: deploy paytida ochiq turgan eski tab ×10⁴ kurs yuborsa server 400 beradi
+  (jim 10 000× xato o'rniga) — bu ataylab.
+- Browser-smoke YO'Q — **Phase-1: strukturaviy + unit-tasdiqlangan**; debts UI + hisobot valyuta
+  konsolidatsiyasi Phase-2 QA cohort'ida runtime tekshiriladi.
+
+**Commit:** `94fe12ef` `fix(currency): faza 16 — valyuta konventsiyasi yagonalandi (M-03, DB-01, M-04)`
+*(hook'siz pathspec-commit — parallel Faza 18a sessiyasining staged-indexi faol edi, §6.7B; gate'lar
+qo'lda to'liq yugurtirildi).*

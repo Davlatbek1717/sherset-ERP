@@ -305,6 +305,43 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-08p (AUDIT-FIX FAZA 16 — valyuta konventsiyasi yagonalandi: isoCode-lookup +
+> kanonik ×10⁸ + valyutalararo to'lov guard · `M-03`+`DB-01`+`M-04`) `94fe12ef` · Phase-1:
+> strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q · ⏳ DEPLOY QILINMAGAN · 🗄️ migratsiya BOR
+> (20260809010000, DATA-only, lokalga qo'llandi) · ⚠️ **navbatdan tashqari** — foydalanuvchi Faza 16
+> sessiya-boshi promptini bevosita berdi · ⚠️ parallel sessiya bir daraxtda Faza 18a qildi —
+> commit'im hook'siz pathspec-cheklangan (§6.7B, gate'lar qo'lda), diff path-cheklangan (§6.6)
+>
+> **Nima qilindi.** (a) `M-03`: hujjatlar `currency`da ALPHA saqlaydi, rate-xarita esa NUMERIC
+> `Currency.code` bilan kalitlangan edi → HAR hisobot-konvertatsiya face-value fallback (~12 000×).
+> Yangi `currency-code.util.ts alphaCurrencyCode()` — `loadRateContext` (15+ hisobot bitta joydan)
+> va CBU `applyAutoRatesFromSource` endi ALPHA orqali (legacy alpha-in-code qatorlar ham qamrovda);
+> schema.prisma'dagi TESKARI doc-comment to'g'rilandi. (b) `DB-01`: kanonik masshtab **×10⁸**
+> tasdiqlandi — `DebtPayment.exchangeRate` ×10⁴→×10⁸ (migratsiya, idempotent), `@moysklad/money`
+> `RATE_SCALE=10⁸` eksport (ExchangeRate ×10⁹→×10⁸, iste'molchi yo'q edi), debt-schema stale-klient
+> guard (kurs <10⁹ → 400), web `RATE_SCALE`/`fmtRate` sinxron. (c) `M-04`: payment-in/out
+> `ensureOperations(+paymentCurrency)` — to'lov valyutasi ≠ nishon-hujjat valyutasi → 400; bonus
+> sibling-parity: payment-out `createFromInvoiceIn`/PO-advance manba valyutasini ko'chirmasdi
+> (payment-in'dagi 2026-07-05 fix) — guard bilan birga tuzatildi. TDD: 8 qizil → hammasi yashil,
+> 13+1 yangi test. Batafsil: `docs/REJA-AUDIT-FIX-2026-08.md` → HISOBOT JURNALI → Faza 16.
+>
+> **Gate:** api tc **0** · web tc **0** · `lint:product` **0 error** · vitest: report **294/294** ·
+> debt **179/179** · currency+payment-in/out+rate-ctx **159/159**+5 · money **93/93** · i18n:gate
+> kerak emas (UI-matn yo'q). ⚠️ Bir insident: `payment-out.service.test.ts`ni Write bilan ustidan
+> yozib qo'ygandim (mavjud clone-testlar) — HEAD'dan tiklab, guard-testlarni USTIGA qo'shdim, 5/5.
+>
+> **🟠 QARZ / DIQQAT:** (1) **Prod migratsiya** — sherset_v2 sxema-drift muhitida
+> `debt_payments ×10⁴→×10⁸` + `currencies.iso_code` backfill deploy'da o'tishini tekshirish
+> (o'tmasa SQL idempotent, qo'lda yugurtirsa bo'ladi). (2) Deploy oynasida ochiq eski tab USD-kursni
+> ×10⁴ da yuborsa server 400 beradi (ataylab — jim 10 000× emas). (3) `M-13` (ikki konvertor
+> yaxlitlash farqi) ochiq qoladi. (4) **Faza 17 endi ochildi** (bog'liqligi Faza 16 edi).
+>
+> **⏭️ KEYINGI:** navbat bo'yicha — `docs/REJA-AUDIT-FIX-2026-08.md` → **Faza 15**
+> (`SALES-02`,`SALES-06`,`SALES-07/08`); yoki endi ochilgan **Faza 17** (`M-11`,`M-12`,`M-14`) /
+> foydalanuvchi bergan 18b/18c.
+
+---
+
 > **🕒 2026-08-08o (AUDIT-FIX FAZA 18a — tannarx yagonalash: POS/Demand → WEIGHTED-AVERAGE,
 > FIFO lot-ledger bekor · `STK-02/03/04`) · Phase-1: strukturaviy + unit-tasdiqlangan,
 > browser-smoke YO'Q · ⏳ DEPLOY QILINMAGAN · 🗄️ migratsiya YO'Q · ⚠️ **navbatdan tashqari** —
