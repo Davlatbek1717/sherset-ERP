@@ -22,15 +22,24 @@
  * shu qayta-qurishni umuman bekor qiladi: **manba — materiallashgan balansning
  * o'zi**, chunki unga hamma yo'l `applyDelta` orqali yozadi.
  *
- * ⚠️ IKKI DAFTAR QO'SHILMAYDI, ALOHIDA KO'RSATILADI. Sabab — `Debt` reyestrida
- * asimmetriya bor: `DebtService.create` balansga umuman tegmaydi, `recalc` esa
- * to'lovda `applyDelta(−paid)` yozadi. Ya'ni QRZ- qarz bosh daftarga faqat
- * TO'LANGANDA ta'sir qiladi. Bu faqat har QRZ- qarz allaqachon sotuv hujjati
- * orqali daftarga tushgan bo'lsagina to'g'ri, lekin `Debt`da hujjat bog'lami
- * (FK) yo'q — tizim buni kafolatlay olmaydi. Shuning uchun ikkalasini jimgina
- * qo'shib yuborish YOKI birini tashlab ketish — ikkovi ham son buzadi. Biz
- * ikkalasini ochiq ko'rsatamiz va `combinedMinor` ni ALOHIDA, belgilangan
- * maydon sifatida beramiz (egasi qaysi konvensiyani tanlashi hali ochiq).
+ * ⚠️ IKKI DAFTAR QO'SHILMAYDI — reyestr qoldig'i saldoning ICHIDA (2026-08-08,
+ * Faza 12 `DUP-04`). QRZ- qarz endi bosh daftarga TO'LIQ tushadi:
+ * `DebtService.create` → `applyDelta(+total)`, to'lov → `applyDelta(−paid)`,
+ * o'chirish → `applyDelta(−total)`. Ya'ni `ledgerBalanceMinor` allaqachon
+ * reyestr qarzini o'z ichiga oladi; `debtRegistryOutstandingMinor` — o'sha
+ * saldoning QAYSI QISMI qarz kartochkalaridan kelganini ko'rsatadigan
+ * TARKIB («shundan …»), qo'shiluvchi emas.
+ *
+ * Shu sababli ilgari bu yerda bo'lgan `combinedMinor = ledger + registry`
+ * maydoni OLIB TASHLANDI: 2026-08-05 dan keyin u har ochiq QRZ- qarzni IKKI
+ * marta sanardi (eski premise — «`create` balansga umuman tegmaydi» — o'sha
+ * kuni eskirgan edi, izoh esa qolib ketgan). Yig'indi kerak deb o'ylagan
+ * har qanday iste'molchi `ledgerBalanceMinor` ni olsin.
+ *
+ * ⚠️ TARIXIY QARZLAR: 2026-08-05 dan OLDIN ochilgan QRZ- qarz bosh daftarga
+ * tushmagan bo'lishi mumkin (o'shanda `create` yozmasdi) — bunday qarz uchun
+ * reyestr qoldig'i saldoning ichida EMAS. Prodda o'sha sanada 0 qarz / 0
+ * to'lov bo'lgani tekshirilgan, shuning uchun amalda bunday qator yo'q.
  *
  * ⚠️ VALYUTALAR QO'SHILMAYDI. Har valyuta o'z qatorida qoladi — ilgari akt-sverka
  * USD sentlarini UZS tiyinlariga qo'shib, natijani «so'm» deb imzolardi.
@@ -44,14 +53,14 @@ export interface SettlementLine {
    * MUSBAT = kontragent bizga qarzdor · MANFIY = biz unga qarzdormiz.
    */
   ledgerBalanceMinor: bigint;
-  /** QRZ- reyestridagi yopilmagan qoldiq (tiyin). Har doim ≥ 0 (ular bizga qarz). */
-  debtRegistryOutstandingMinor: bigint;
   /**
-   * Ikkalasining yig'indisi — ATAYLAB alohida maydon. Yuqoridagi ogohlantirishni
-   * o'qimasdan ishlatilmasin: reyestr qarzi allaqachon sotuv hujjati orqali
-   * daftarga tushgan bo'lsa, bu son o'sha qarzni IKKI marta sanaydi.
+   * QRZ- reyestridagi yopilmagan qoldiq (tiyin). Har doim ≥ 0 (ular bizga qarz).
+   *
+   * TARKIB, qo'shiluvchi EMAS: bu summa `ledgerBalanceMinor` ichida allaqachon
+   * bor (yuqoridagi izoh). Hisobotlarda «shundan qarz kartochkalari bo'yicha …»
+   * qatori sifatida ko'rsatiladi.
    */
-  combinedMinor: bigint;
+  debtRegistryOutstandingMinor: bigint;
 }
 
 export interface Settlement {
@@ -77,7 +86,6 @@ function emptyLine(currency: string): SettlementLine {
     currency,
     ledgerBalanceMinor: 0n,
     debtRegistryOutstandingMinor: 0n,
-    combinedMinor: 0n,
   };
 }
 
@@ -106,10 +114,6 @@ export function computeSettlement(input: SettlementInput): Settlement {
     const remaining = d.totalMinor - d.paidMinor;
     if (remaining > 0n) line.debtRegistryOutstandingMinor += remaining;
     byCurrency.set(cur, line);
-  }
-
-  for (const line of byCurrency.values()) {
-    line.combinedMinor = line.ledgerBalanceMinor + line.debtRegistryOutstandingMinor;
   }
 
   // UZS birinchi (asosiy valyuta), qolgani alifbo bo'yicha — chiqish barqaror

@@ -835,9 +835,10 @@ export class RetailSaleService {
       // musbat = mijoz bizga qarzdor (`InvoiceOut.post` bilan bir xil yo'nalish).
       //
       // Bu yerda ATAYLAB `Debt` reyestriga (QRZ-…) yozmaymiz: reyestr — qo'lda
-      // ochiladigan qarzlar uchun, va uning `create` yo'li balansga tegmaydi.
-      // Ikkalasiga birdan yozilsa, hujjatdan kelgan qarz IKKI MARTA sanalardi
-      // (xotira: `debt-ledger-asymmetry`). Bitta daftar — bitta haqiqat.
+      // ochiladigan, hujjatsiz qarzlar uchun, va uning `create` yo'li ham
+      // AYNAN shu balansga `+total` yozadi (2026-08-05). Ikkalasiga birdan
+      // yozilsa, hujjatdan kelgan qarz IKKI MARTA sanalardi (xotira:
+      // `debt-ledger-asymmetry`). Bitta daftar — bitta haqiqat.
       if (debtAmount > 0n && debtAgentId) {
         await this.counterpartyBalance.applyDelta(
           tx,

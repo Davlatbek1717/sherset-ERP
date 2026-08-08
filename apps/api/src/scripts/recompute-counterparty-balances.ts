@@ -223,20 +223,21 @@ async function main() {
   // o'chirib, to'lovlari esa `-paid` bo'lib qolar va to'liq to'lagan mijoz
   // «biz unga qarzdormiz» bo'lib ko'rinardi.
   //
-  // ⚠️ SOFT-DELETE SIYOSATI: o'chirilgan (deletedAt != null) qarzlar HAM
-  // qo'shiladi, chunki `DebtService.remove()` create'ning +totalMinor deltasini
-  // QAYTARMAYDI (DUP-03 — Faza 12'ga qoldirilgan). Ya'ni daftarda o'sha delta
-  // hali turibdi va rekonstruksiya unga MOS bo'lishi kerak; `deletedAt: null`
-  // filtri bugun qo'yilsa skript o'chirilgan qarzlarni «ortiqcha» deb saldodan
-  // ayirib yuborardi. Faza 12 reversal qo'shganda bu filtr o'zgarishi SHART —
-  // `counterparty-balance-sources.test.ts` dagi premise-testi (remove() da
-  // applyDelta yo'qligi) o'sha kuni yiqilib buni eslatadi.
+  // ⚠️ SOFT-DELETE SIYOSATI (2026-08-08 Faza 12 da O'ZGARDI): o'chirilgan
+  // (deletedAt != null) qarzlar rekonstruksiyaga KIRMAYDI. Sabab —
+  // `DebtService.remove()` endi create'ning +totalMinor deltasini teskarisiga
+  // yozadi (`DUP-03` reversali), ya'ni daftarda o'sha delta QOLMAYDI.
+  // Filtrsiz qolsa `APPLY=1` o'chirilgan qarzni saldoga QAYTARIB olib kelardi.
+  // Ikki tomon `counterparty-balance-sources.test.ts` da birga qulflangan.
+  //
+  // (Faza 12'gacha aksi to'g'ri edi: reversal yo'q edi, shuning uchun
+  // o'chirilgan qarz ham qo'shilardi.)
   //
   // `totalMinor` create'dan keyin o'zgarmaydi (Debt'da uni tahrirlaydigan yo'l
   // yo'q), shuning uchun Σ totalMinor = Σ yozilgan delta.
   const debts = await prisma.debt.groupBy({
     by: ['accountId', 'counterpartyId', 'currency'],
-    where: ONLY_CP ? { counterpartyId: ONLY_CP } : {},
+    where: { deletedAt: null, ...(ONLY_CP ? { counterpartyId: ONLY_CP } : {}) },
     _sum: { totalMinor: true },
   });
   for (const d of debts) {

@@ -354,7 +354,10 @@ yo'q. (3) settlement `combinedMinor` ikki marta sanamaydi.
 > `docs/REJA-AUDIT-FIX-2026-08.md` — **Faza 12**. O'ZGARMAS QOIDALAR. `DUP-03`,`DUP-12`,`DUP-04`.
 > debt.remove reversal + settlement deletedAt-filtr + combinedMinor premise-tuzatish. TDD: 3 stsenariy. Gate.
 > Hisobot, TO'XTA.
-**◻ HISOBOT:** _(agent to'ldiradi)_
+**☑ HISOBOT (2026-08-08):** BAJARILDI — batafsili «HISOBOT JURNALI → Faza 12» da. **Faza 8 premise-guard'i
+kutilganidek yiqildi** → `recompute` skriptining debt-issue manbasiga `deletedAt: null` qo'shildi
+(ikkala tomon bitta testda qulflandi). **Tarixiy o'chirilgan qarzlar** saldoda hamon turibdi —
+Faza 10 backfill/`recompute` ops-qadamiga qoldi.
 
 ---
 
@@ -1956,3 +1959,101 @@ Konstruktor pozitsiyalari o'zgargani uchun `money-transition-race.test.ts`, `pay
   guard'ida 400 bo'lib **ko'rinadi** — jimgina buzilish o'rniga. Alohida ish.
 - **Browser-smoke YO'Q** — `/money` lentasida bank to'lovi + PKO qarz to'lovi qatorlari, «Ochish»
   havolalari, tur-filtri va In/Out/Net jamilar Phase-2 QA cohort'iga qoladi.
+
+---
+
+## Faza 12 — Debt simmetriyasi: remove-reversal + settlement filtr/premise
+
+**Sana:** 2026-08-08 · **ID'lar:** `DUP-03` (HIGH), `DUP-12` (MEDIUM), `DUP-04` (HIGH→MEDIUM)
+
+### Da'volarni kodda tasdiqlash (reja §2)
+
+| ID | Da'vo | Kodda holat |
+|----|-------|-------------|
+| `DUP-03` | `debt.remove()` create'ning `+totalMinor` deltasini qaytarmaydi | ✅ **TASDIQLANDI** — `debt.service.ts:2000-2010` (tuzatishdan oldingi raqamlash): `mustFind` → `paidMinor > 0` taqiqi → `debt.update({ deletedAt })`. Butun metod tanasi shu, `applyDelta` chaqirig'i yo'q. `create()` (:616) esa `applyDelta(+totalMinor, { docType: 'debt' })` yozadi. |
+| `DUP-12` | settlement debt-so'rovi `deletedAt`/`status` filtrsiz | ✅ **TASDIQLANDI** — `counterparty-settlement.service.ts:43-46` `where: { accountId, counterpartyId }` — boshqa hech narsa. Qiyos: `DebtService` ro'yxatlari (`:286`, `:438`) va `pos-debt-payment.service.ts:288` `deletedAt: null` + `status notIn` ishlatadi. |
+| `DUP-04` | `combinedMinor` premisesi eskirgan → ikki marta sanaydi | ✅ **TASDIQLANDI** — util docstring'i «`DebtService.create` balansga umuman tegmaydi» derdi, `create` esa 2026-08-05 dan beri yozadi; `:112` `combined = ledger + registry` ⇒ ochiq QRZ- qarz 2×. **Jonli iste'molchi YO'Q** (grep: statement faqat `ledgerBalanceMinor` + `debtRegistryOutstandingMinor` ni oladi) — ya'ni bugungi hisobotlarda soxta son CHIQMAGAN, xavf kelajak iste'molchida edi. |
+
+**Reja doirasidan tashqari, o'zim topgan bog'liqlik:** Faza 8 ataylab
+`counterparty-balance-sources.test.ts` ga **premise-guard** qo'yib ketgan edi («`remove()` da
+`applyDelta` YO'Q») va `recompute-counterparty-balances.ts` ning debt-issue manbasi aynan shu
+premise'ga tayanib o'chirilgan qarzlarni ham qo'shardi. Reversal qo'shilgach guard yiqildi —
+**bu kutilgan hodisa, avvalgi faza uni yozib qoldirgan**; ikkala tomon shu fazada birga yangilandi.
+
+### O'zgarishlar
+
+**`DUP-03` — `debt/debt.service.ts` `remove()`**
+- Endi `$transaction` ichida: **atomik claim** `updateMany({ where: { id, accountId, deletedAt: null,
+  paidMinor: 0n }, data: { deletedAt } })` → `count === 0` bo'lsa sabab qayta o'qiladi
+  (`paidMinor > 0` ⇒ 403, aks holda 404), keyin `applyDelta(-debt.totalMinor,
+  { docType: 'debt', docId: id, organizationId: null })`.
+- Claim'dagi ikki shart ATAYLAB: `deletedAt: null` — ikki parallel o'chirish ikki reversal yozmasin;
+  `paidMinor: 0n` — `mustFind` bilan yozuv orasiga tushgan to'lov `−total` reversalini yo'l qo'ymasin
+  (aks holda saldo `−paid` ga tushib ketardi). `paidMinor > 0` taqiqlangani uchun reversal to'liq
+  `−totalMinor`: to'lovi bor qarz umuman o'chmaydi, ya'ni `−paid` deltalarini hisoblash kerak emas.
+
+**`DUP-12` — `counterparty-settlement/counterparty-settlement.service.ts`**
+- `debt.findMany` where'iga `deletedAt: null, status: { not: 'cancelled' }`.
+  ⚠️ `'cancelled'` bugun `DebtStatusSchema` (`unpaid|partial|paid`) da YO'Q — filtr `pos-debt-payment`
+  (`status: { notIn: ['paid','cancelled'] }`) bilan **parity uchun** qo'shildi (ustun `VarChar(20)`,
+  enum emas). `'paid'` ataylab CHIQARILMAYDI — servis docstring'i tushuntirganidek qoldiq
+  `total−paid` dan hisoblanadi (status-drift'ga bardosh).
+
+**`DUP-04` — `counterparty-settlement/counterparty-settlement.util.ts`**
+- `combinedMinor` maydoni **BUTUNLAY OLIB TASHLANDI** (deprecate emas — jonli iste'molchisi yo'q edi,
+  qolgan taqdirda «egasi konvensiyani tanladi» deb yoqilishi mumkin bo'lgan tuzoq bo'lib qolardi).
+- Modul docstring'i yangi haqiqatga ko'chirildi: QRZ- qarz bosh daftarga to'liq tushadi
+  (`create +total` · to'lov `−paid` · o'chirish `−total`), ya'ni `debtRegistryOutstandingMinor` —
+  saldoning **TARKIBI** («shundan …»), qo'shiluvchi emas. Tarixiy ogohlantirish qoldirildi:
+  2026-08-05 dan OLDIN ochilgan qarz daftarga tushmagan bo'lishi mumkin (prodda o'sha kuni 0 qarz /
+  0 to'lov bo'lgani tekshirilgan — xotira `debt-ledger-asymmetry`).
+- Premiseni takrorlagan ikki izoh ham tuzatildi: `retail-sale.service.ts:837` («reyestrning `create`
+  yo'li balansga tegmaydi» → «AYNAN shu balansga `+total` yozadi») va
+  `counterparty-statement/supply-goods-xlsx.util.ts:208` («alohida» → «tarkib»).
+
+**Bog'liqlik (Faza 8 guard'i)**
+- `scripts/recompute-counterparty-balances.ts` — debt-issue `groupBy` where'i endi `deletedAt: null`
+  (hujjat cross-checki reversal bilan mos bo'lsin; Faza 10'dan keyin bu blok faqat **cross-check**,
+  hech narsa yozmaydi — shuning uchun ma'lumot xavfi yo'q edi).
+- `scripts/counterparty-balance-sources.test.ts` — premise-test **teskarisiga aylantirildi**: endi
+  `remove()` da `applyDelta(-debt.totalMinor)` BORLIGI **va** skript filtri BIRGA qulflanadi (biri
+  o'zgarib ikkinchisi qolib ketsa yiqiladi).
+
+### Testlar (TDD — avval yiqildi, keyin yashil)
+
+| Fayl | Test | Nimani ushlaydi |
+|------|------|-----------------|
+| **yangi** `debt/debt-remove-reversal.test.ts` | 5 | create→remove saldo **aynan 0** · reversal `docType:'debt'` havolasi · **ikki parallel o'chirish ⇒ BIR reversal** (ikkinchisi 404) · to'lovli qarz 403 + daftar tegilmagan · **TOCTOU**: o'qish bilan yozuv orasiga tushgan to'lov o'chirishni to'xtatadi |
+| **yangi** `counterparty-settlement/counterparty-settlement.service.test.ts` | 3 | korzinadagi qarz reyestr qoldig'ida yo'q · `cancelled` yo'q · tirik `paid` qarz qoldiqni shishirmaydi |
+| `counterparty-settlement.util.test.ts` | −2 assert, +1 test | reyestr qoldig'i saldo ICHIDA; `combinedMinor` **umuman berilmaydi** (`Object.keys` bilan) |
+| `scripts/counterparty-balance-sources.test.ts` | 1 (qayta yozildi) | reversal ↔ skript `deletedAt` filtri juftligi |
+
+**Non-vacuous (jonli o'lchangan):** tuzatishdan oldingi kodda 7 assert yiqildi — saldo `500000n` (0
+o'rniga), reversal delta `undefined`, parallel o'chirishda 0 rad, settlement qoldig'i `50000n`/`65000n`
+(`20000n`/`15000n` o'rniga), `combinedMinor` kalit ro'yxatida bor.
+
+⚠️ **Bir yolg'on-yashil tutildi:** skript-guard testining birinchi tahriri `deletedAt: null` ni butun
+**blok matnidan** (izohlar bilan birga) qidirgani uchun tuzatishdan OLDIN ham yashil chiqdi — regex
+kodni emas, izohdagi so'zni tutdi (CLAUDE.md §4 grep-grounding klassi). Assert `groupBy` chaqirig'ining
+tanasiga bog'landi va shundan keyingina haqiqiy RED ko'rindi.
+
+### Gate (jonli o'lchangan)
+- `pnpm --filter @moysklad/api typecheck` → **0**
+- `pnpm lint:product` → **0 error** (738 warning — siyosat bo'yicha ruxsat)
+- `pnpm --filter @moysklad/api exec vitest run` → **390 fayl / 5147 test yashil** (1 fayl, 2 test skip)
+- `pnpm i18n:gate` — **yugurtirilmadi**: UI-matn tegilmagan (faqat BE + izohlar), web o'zgarishi yo'q.
+- **Browser-smoke YO'Q.**
+
+### Qolgan qarz / DEFER
+- **Restore (korzinadan qaytarish) yo'li YO'Q** — reja «restore bo'lsa +total» degan edi; kodda
+  `DebtService`da ham, kontrollerda ham restore endpoint'i mavjud emas (grep bilan tekshirildi),
+  shuning uchun hech narsa qo'shilmadi. Kelajakda restore qo'shilsa `+debt.totalMinor` yozishi SHART —
+  `remove()` docstring'ida qayd etilgan.
+- **Tarixiy ma'lumot:** Faza 12'gacha o'chirilgan qarzlar daftarda `+total` bo'lib qolgan (reversal
+  o'sha paytda yo'q edi). Ular endi cross-check'dan chiqdi, lekin **materiallashgan saldoda hamon
+  turibdi** — tuzatish yo'li: `backfill-counterparty-balance-journal.ts` + `recompute` (Faza 10 ops-qadam,
+  `APPLY=1` hali yugurtirilmagan). Prodda hajm noma'lum — DRY yugurtirib ko'rish kerak.
+- **`status: { not: 'cancelled' }`** — mavjud bo'lmagan statusga qarshi mudofaa. `Debt`ga haqiqiy
+  bekor-qilish oqimi qo'shilsa, `computeSettlement` va POS FIFO filtrlari bir vaqtda ko'rib chiqilsin.
+- **Browser-smoke YO'Q** — qarz kartochkasini o'chirish → kontragent «Balans» kartasi 0 ga tushishi va
+  «Qabul tovarlari» xlsx'dagi «shundan …» qatori Phase-2 QA cohort'iga qoladi.

@@ -1996,16 +1996,60 @@ export class DebtService {
 
   // ───────────────────────────────────────────────────────────── soft-delete ──
 
-  /** Korzina parity — qarz jismonan o'chmaydi (to'lov tarixi saqlanadi). */
+  /**
+   * Korzina parity — qarz jismonan o'chmaydi (to'lov tarixi saqlanadi).
+   *
+   * 🔴 BALANS SIMMETRIYASI (Faza 12, `DUP-03`). `create()` reyestr qarzini
+   * bosh daftarga `+totalMinor` bilan yozadi (yuqoridagi izoh), shuning uchun
+   * o'chirish AYNAN teskarisini yozishi shart — aks holda kassir adashib
+   * ochib darhol o'chirgan qarz kontragent kartochkasida abadiy «qarzdor»
+   * bo'lib qolardi (reyestrdan yo'qolgan, balansdan yo'qolmagan).
+   *
+   * `paidMinor > 0` taqiqlangani uchun reversal to'liq `−totalMinor`:
+   * to'lovlar bo'lganda ularning `−paid` deltalari ham hisobga olinishi kerak
+   * bo'lardi, lekin bunday qarz umuman o'chmaydi.
+   *
+   * Soft-delete ATOMIK claim bilan (`updateMany` + `deletedAt: null,
+   * paidMinor: 0` sharti): (1) ikki parallel o'chirish ikki reversal
+   * yozmaydi, (2) o'qish bilan yozuv orasiga tushgan to'lov qarzni
+   * `−total` bilan o'chirib, saldoni `−paid` ga tushirib yubormaydi.
+   */
   async remove(accountId: string, id: string) {
     const debt = await this.mustFind(accountId, id);
     if (debt.paidMinor > 0n) {
       throw new ForbiddenException('To’lov kiritilgan qarzni o’chirib bo’lmaydi (tarix saqlanadi)');
     }
-    await this.prisma.client.debt.update({
-      where: { id },
-      data: { deletedAt: new Date() },
+
+    await this.prisma.client.$transaction(async (tx) => {
+      const claimed = await tx.debt.updateMany({
+        where: { id, accountId, deletedAt: null, paidMinor: 0n },
+        data: { deletedAt: new Date() },
+      });
+      if (claimed.count === 0) {
+        // Raqib tranzaksiya ulgurdi — sababni halol ayting.
+        const fresh = await tx.debt.findFirst({
+          where: { id, accountId },
+          select: { paidMinor: true },
+        });
+        if (fresh && fresh.paidMinor > 0n) {
+          throw new ForbiddenException(
+            'To’lov kiritilgan qarzni o’chirib bo’lmaydi (tarix saqlanadi)',
+          );
+        }
+        throw new NotFoundException('Qarz topilmadi');
+      }
+
+      await this.balances.applyDelta(
+        tx,
+        accountId,
+        debt.counterpartyId,
+        debt.currency,
+        -debt.totalMinor,
+        // Jurnal (Faza 9) — teskari yozuv o'sha qarz kartochkasiga havola qiladi.
+        { docType: 'debt', docId: id, organizationId: null },
+      );
     });
+
     return { ok: true };
   }
 }

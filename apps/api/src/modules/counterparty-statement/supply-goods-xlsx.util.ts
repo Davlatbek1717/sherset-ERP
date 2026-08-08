@@ -205,8 +205,9 @@ export async function buildSupplyGoodsXlsx(input: SupplyGoodsInput): Promise<Buf
       ws.getCell(`A${r}`).border = thin;
       r++;
       if (line.debtRegistryOutstandingMinor !== 0n) {
-        // Reyestr qarzi ALOHIDA ko'rsatiladi — u bosh daftar saldosiga qo'shib
-        // yuborilmaydi (izohi: counterparty-settlement.util.ts).
+        // Reyestr qarzi — saldoning TARKIBI («shundan …»), qo'shiluvchi EMAS:
+        // QRZ- qarz bosh daftarga allaqachon tushgan (izohi:
+        // counterparty-settlement.util.ts).
         ws.getCell(`A${r}`).value =
           `shundan qarz kartochkalari bo'yicha: ${new Intl.NumberFormat('ru-RU').format(som(line.debtRegistryOutstandingMinor))} ${line.currency === 'UZS' ? "so'm" : line.currency}`;
         merge(r);

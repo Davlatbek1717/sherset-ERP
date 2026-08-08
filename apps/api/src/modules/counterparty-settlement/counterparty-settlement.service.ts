@@ -41,7 +41,11 @@ export class CounterpartySettlementService {
         select: { currency: true, balanceMinor: true },
       }),
       c.debt.findMany({
-        where: { accountId, counterpartyId },
+        // `deletedAt`/`status` filtri — Faza 12 (`DUP-12`): korzinaga tashlangan
+        // yoki bekor qilingan qarz reyestr qoldig'ini shishirardi, ya'ni
+        // kontragentga imzo uchun ketadigan hujjatda MAVJUD BO'LMAGAN qarz
+        // ko'rinardi. `DebtService` ro'yxatlari ham aynan shu filtrni ishlatadi.
+        where: { accountId, counterpartyId, deletedAt: null, status: { not: 'cancelled' } },
         select: { currency: true, totalMinor: true, paidMinor: true },
       }),
     ]);

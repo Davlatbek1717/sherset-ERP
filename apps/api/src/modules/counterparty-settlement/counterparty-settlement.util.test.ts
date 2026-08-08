@@ -20,7 +20,6 @@ describe('computeSettlement — kim kimdan qancha qarzdor', () => {
       debts: [],
     });
     expect(s.primary?.ledgerBalanceMinor).toBe(4_500_000n);
-    expect(s.primary?.combinedMinor).toBe(4_500_000n);
   });
 
   it('manfiy saldo = BIZ qarzdormiz (Qabul/InvoiceIn holati)', () => {
@@ -41,8 +40,27 @@ describe('computeSettlement — kim kimdan qancha qarzdor', () => {
     });
     expect(s.primary?.ledgerBalanceMinor).toBe(100_000n);
     expect(s.primary?.debtRegistryOutstandingMinor).toBe(300_000n);
-    // combined ALOHIDA maydon — chaqiruvchi ongli ravishda tanlaydi.
-    expect(s.primary?.combinedMinor).toBe(400_000n);
+  });
+
+  /**
+   * Faza 12 — `DUP-04`. 2026-08-05 dan beri `DebtService.create` reyestr
+   * qarzini bosh daftarga ham yozadi (`applyDelta(+total)`), ya'ni reyestr
+   * qoldig'i endi saldo ICHIDA. Eski `combinedMinor = ledger + registry`
+   * maydoni shu sababli har ochiq QRZ- qarzni IKKI marta sanardi — maydon
+   * olib tashlandi, chunki uni «konvensiya tanlandi» deb yoqadigan har qanday
+   * iste'molchi qarzni 2× ko'rsatardi.
+   */
+  it("reyestr qoldig'i saldo ICHIDA — qo'shiladigan maydon umuman berilmaydi", () => {
+    const s = computeSettlement({
+      // Yagona ochiq QRZ- qarz: 500 000 berildi, 200 000 to'landi.
+      // Bosh daftar allaqachon +500 000 − 200 000 = 300 000 ni ko'rsatadi.
+      balances: [{ currency: 'UZS', balanceMinor: 300_000n }],
+      debts: [{ currency: 'UZS', totalMinor: 500_000n, paidMinor: 200_000n }],
+    });
+    expect(s.primary?.ledgerBalanceMinor).toBe(300_000n);
+    expect(s.primary?.debtRegistryOutstandingMinor).toBe(300_000n);
+    // Haqiqiy qarz — 300 000. Yig'indi (600 000) hech qayerda berilmaydi.
+    expect(Object.keys(s.primary as object)).not.toContain('combinedMinor');
   });
 
   it("bir nechta QRZ- qarz — qoldiqlar yig'iladi, yopilgani hisobga olinmaydi", () => {

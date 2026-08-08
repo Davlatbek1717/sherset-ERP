@@ -110,15 +110,26 @@ describe('skript manbalari yozuvchilar semantikasiga mos (DUP-02 fix)', () => {
   });
 
   /**
-   * Skriptning debt-issue manbasi soft-delete qilingan qarzlarni HAM
-   * qo'shadi — chunki `DebtService.remove()` create'ning +totalMinor deltasini
-   * QAYTARMAYDI (DUP-03, Faza 12'ga qoldirilgan). Faza 12 reversal qo'shsa bu
-   * test yiqiladi va skriptga `deletedAt: null` filtri qo'yish kerak bo'ladi —
-   * aks holda o'chirilgan qarz balansga qaytib kelardi.
+   * Faza 12 (`DUP-03`) `DebtService.remove()` ga reversal qo'shdi — ya'ni
+   * o'chirilgan qarzning `+totalMinor` deltasi daftarda ENDI QOLMAYDI.
+   * Shuning uchun rekonstruksiya ham uni qo'shmasligi SHART: aks holda
+   * `APPLY=1` o'chirilgan qarzni saldoga qaytarib olib kelardi.
+   *
+   * Ikki tomon bitta testda qulflanadi — biri o'zgarib, ikkinchisi qolib
+   * ketsa (aynan Faza 8 ↔ Faza 12 orasidagi xavf) test yiqiladi.
    */
-  it("premise: debt.remove() hali balansni qaytarmaydi (Faza 12 bilan bog'lanish)", () => {
+  it('debt.remove() reversali ↔ skriptning deletedAt filtri birga yuradi', () => {
     const debtSrc = readFileSync(join(API_SRC_ROOT, 'modules', 'debt', 'debt.service.ts'), 'utf8');
     const removeBody = debtSrc.slice(debtSrc.indexOf('async remove('));
-    expect(removeBody).not.toMatch(/applyDelta\s*\(/);
+    // remove() create'ning deltasini teskarisiga yozadi (`-debt.totalMinor`).
+    expect(removeBody).toMatch(/applyDelta\s*\(/);
+    expect(removeBody).toMatch(/-debt\.totalMinor/);
+    // Demak rekonstruksiya o'chirilgan qarzni SANAMAYDI. Da'vo AYNAN
+    // `groupBy` chaqirig'ining tanasiga bog'lanadi — izohda «deletedAt: null»
+    // so'zi turgani hech narsani isbotlamaydi (CLAUDE.md §4).
+    const callStart = SCRIPT_SRC.indexOf('prisma.debt.groupBy');
+    expect(callStart).toBeGreaterThan(0);
+    const groupByCall = SCRIPT_SRC.slice(callStart, SCRIPT_SRC.indexOf('});', callStart));
+    expect(groupByCall).toMatch(/where:[\s\S]*deletedAt:\s*null/);
   });
 });
