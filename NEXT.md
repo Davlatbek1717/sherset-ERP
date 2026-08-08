@@ -305,6 +305,40 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-08c (AUDIT-FIX FAZA 6 — POS refund asl-narx cap + chegirma · `SALES-01`+`FE-01`) `c751a62`
+> · Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q · ⏳ DEPLOY QILINMAGAN**
+>
+> **Muammo (tasdiqlandi, eksploit JONLI takrorlandi).** `retail-sale.service.refund()` klient yuborgan
+> `priceMinor`ni `computePositions()`dan o'tkazib, keyin payout'ni **o'sha raqam** bilan cheklardi —
+> cap o'ziga-havola edi. Asl pozitsiyalar `select`ida `priceMinor`/`discount`/`sumMinor` **umuman yo'q**
+> edi, ya'ni server asl narxni bilmasdi. RED yugurishda 10 000 tiyinlik chek `priceMinor: '10000000'`
+> bilan **muvaffaqiyatli qaytdi** (oyna chek + `MoneyService.applyDeltas` chaqirildi) — barcha mavjud
+> guardlar (qty-subset, payout≤refundSum, CAS flip) o'tdi. Web (`sotuv/page.tsx`) esa `discount`ni
+> yubormay `priceMinor × qty` hisoblardi ⇒ chegirmali chekda kassa ortiqcha naqd chiqarardi.
+>
+> **Fix:** yangi sof `priceRefundFromOriginal()` (`retail-refund-validation.ts`) — refund **faqat asl
+> chekdan** narxlanadi: asl qatorlar mahsulot bo'yicha agregatlanadi va har qator
+> `floor(Σ asl sumMinor × qaytQty / Σ asl qty)`. Floor + mavjud qty-subset guardi ⇒
+> **`Σ refund ≤ original.sumMinor`** invarianti. Prorate (birinchi-qator narxi EMAS) — bir mahsulot
+> turli narxda ikki qatorda sotilgan bo'lishi mumkin (1×100 + 1×10: first-line-wins 200 berardi).
+> Chegirma asl `sumMinor` ichida ⇒ FE-01 ham serverda yopiladi. Schema: refund `priceMinor`/`discount`
+> endi `.optional()` + «server IGNORE qiladi». Web `cart-math.refundPayoutMinor()` bilan **bir xil
+> formulaga** o'tdi (shart edi: aks holda chegirmali chek endi 400 olardi).
+>
+> **TDD:** 25 yangi test, har biri avval qizil ko'rildi — 8 sof (`retail-refund-validation.test.ts`) ·
+> 7 service-wiring (**YANGI** `retail-sale-refund-pricing.test.ts`, mocked-Prisma ustidan `refund()`) ·
+> 7 web-math · 3 web-wiring skaner (**YANGI** `pos-refund-payout.test.ts` — formula to'g'ri-yu sahifa
+> ishlatmasa tutadi). `retail-sale.cas.test.ts` fixture'i real `select` shakliga moslandi (mahsulot
+> kodiga himoyaviy `?? 0n` **qo'yilmadi**).
+>
+> **Gate:** api tsc **0** · web tsc **0** · biome **0 error** · `i18n:gate` **o'tdi** ·
+> api vitest BUTUN suite **5038/5038** (382 fayl) · web vitest BUTUN suite **2745/2745** (183 fayl).
+>
+> **⏭️ KEYINGI:** `docs/REJA-AUDIT-FIX-2026-08.md` → **Faza 7** (`SALES-04`+`SALES-05` — qarz-sotuv
+> refund'i naqd chiqarib mijoz qarzini qoldiradi · qisman refund chekni `refunded` qilib qolganini
+> bloklaydi + butun loyalty ballni tortadi). Faza 6 bog'liqligi bajarildi. Sessiya-boshi prompti o'sha
+> fazada.
+
 > **🕒 2026-08-08b (AUDIT-FIX FAZA 5 — `loss.cancel`/`unpost` atomik claim + Serializable · `STK-01`)
 > · Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q · ⏳ DEPLOY QILINMAGAN**
 >
