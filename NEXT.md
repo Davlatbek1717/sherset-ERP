@@ -305,6 +305,49 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-08m (FAZA 14 IZIDAN — `PermissionsModule` oshkora import + in'yeksiya qo'riqchisi)
+> `e934c304` · Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q ·
+> ⏳ DEPLOY QILINMAGAN · 🗄️ migratsiya YO'Q · ⚠️ **navbat o'zgarmadi — keyingi hamon Faza 15**
+>
+> **Kontekst (sessiya boshida).** Preflight ANOMALIYA berdi: daraxtda Faza 14 ning yarim ishi
+> turardi (uzilgan sessiya artefakti, 21:45–21:48). Uni tekshirib chiqdim — implementatsiya +
+> testlar to'liq edi. **RED'ni o'zim o'lchadim** (§2 — test izohidagi «oldin:» da'volari dalil
+> emas): 6 qo'riqchi-nuqtani neytrallab `approval-integrity.test.ts` yugurtirdim → **7/10 qizil**
+> (yashil qolgan 3 tasi ataylab negativ-nazorat). Keyin fayllarni backup'dan tikladim.
+> **Ish oralig'ida parallel sessiya Faza 14 ni o'zi commit qildi** (`9e822fd`, 22:18) va Faza 20 ga
+> o'tdi — men bilan bir daraxtda. Shu sababli mening hissam faqat quyidagi TOPILMA bo'lib qoldi.
+>
+> **Topilma (Faza 14 commit'ida YO'Q edi).** `SupplyService`ga `PermissionsService` in'yeksiya
+> qilindi, ammo `SupplyModule.imports`ga `PermissionsModule` **yozilmadi** — faqat `@Global()` ga
+> tayanildi. Hozir ishlaydi, lekin @Global izohining o'zi uni vaqtinchalik deb ta'riflaydi
+> (HrPermissionGuard uchun qo'shilgan): olib tashlansa `SupplyService` DI'da hal bo'lmaydi va
+> **API umuman ko'tarilmaydi** (prod 502 — `duplicate-route-prod-502` bilan bir klass).
+> Loyihada **4/4** mavjud iste'molchi (customer-order, demand, product-cut, permissions) modulni
+> oshkora import qiladi; supply yagona istisno edi.
+>
+> **Nega hech bir gate tutmaydi:** typecheck uchun `@Inject(X) private x: X` mutlaqo to'g'ri;
+> unit-testlar servisni `new` bilan quradi (**DI grafi umuman qurilmaydi**); `app-boot.test.ts`
+> ning mavjud yetim-modul qo'riqchisi esa faqat **controllerli** modullarni ko'radi.
+>
+> **Fix.** (1) `SupplyModule.imports` ga `PermissionsModule`. (2) `app-boot.test.ts` ga **uchinchi
+> qo'riqchi**: `PermissionsService` in'yeksiya qilgan har servisning moduli `PermissionsModule`ni
+> import qilishi (yoki servisni o'zi provider sifatida berishi) shart + vakuum-emas skaner testi.
+> Qo'riqchi **NON-VACUOUS o'lchandi**: import olib tashlanganda 1 qizil / 6 yashil, qaytarilganda 7/7.
+>
+> **Gate:** api tc **0** · `lint:product` **0 error** · `i18n:gate` **9/9** · api vitest
+> **392 fayl / 5181 test (exit 0)**. Web tegilmadi (API-only o'zgarish) ⇒ web tc/vitest
+> yugurtirilmadi. **Browser-smoke YO'Q.**
+>
+> **🟠 QARZ:** hali ham **hech bir test Nest DI grafini qurmaydi** — bu qo'riqchi faqat
+> `PermissionsService` klassini yopadi, boshqa @Global-ga tayangan in'yeksiyalar ochiq qoladi.
+> To'liq yechim = boot-smoke (`Test.createTestingModule(AppModule).compile()`), lekin u DB/Redis/cron
+> talab qiladi — alohida ish sifatida qaralsin.
+>
+> **⏭️ KEYINGI:** o'zgarmadi — `docs/REJA-AUDIT-FIX-2026-08.md` → **Faza 15**
+> (`SALES-02`,`SALES-06`,`SALES-07/08`). Sessiya-boshi prompt o'sha fazada.
+
+---
+
 > **🕒 2026-08-08l (AUDIT-FIX FAZA 20 — bank-import: commit-poyga qulfi + vypiska dedup ·
 > `INT-05`) · Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q ·
 > ⏳ DEPLOY QILINMAGAN · 🗄️ **MIGRATSIYA BOR** (`20260808230000_bank_import_claim_and_dedup`) ·
