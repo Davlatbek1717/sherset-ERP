@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { AttachmentModule } from '../attachment/attachment.module.js';
 import { AuthModule } from '../auth/auth.module.js';
 import { CounterpartyBalanceModule } from '../counterparty-balance/counterparty-balance.module.js';
+import { MoneyModule } from '../money/money.module.js';
 import { NotificationModule } from '../notification/notification.module.js';
 import { PermissionsModule } from '../permissions/permissions.module.js';
 import { PrintTemplateModule } from '../print-template/print-template.module.js';
@@ -29,6 +30,8 @@ import { PosDebtPaymentService } from './pos-debt-payment.service.js';
     NotificationModule,
     // Qarz to'lovi kontragent balansini ham kamaytiradi (2026-07-13).
     CounterpartyBalanceModule,
+    // Naqd qarz to'lovi kassa qoldig'iga ham tushadi (Faza 11, `M-05`).
+    MoneyModule,
     // Mijozga Telegram xabari: qarz berildi / to'lov qabul qilindi / yopildi.
     TelegramModule,
     // Ommaviy SMS eslatmasi (2026-07-20): SmsService + SmsTemplateService.

@@ -64,7 +64,8 @@ function makeDeps(
     findOne: vi.fn().mockResolvedValue(opts.pickedTemplate ?? null),
   };
   const telegram = { notifyCounterparty: vi.fn().mockResolvedValue({ sent: opts.tgSent ?? true }) };
-  // Konstruktor tartibi: prisma, attachments, htmlPdf, balances, telegram, sms, msgTemplates.
+  // Konstruktor tartibi: prisma, attachments, htmlPdf, balances, telegram, sms,
+  // msgTemplates, money.
   const svc = new DebtService(
     prisma,
     undefined as never,
@@ -73,6 +74,7 @@ function makeDeps(
     telegram as never,
     sms as never,
     msgTemplates as never,
+    undefined as never,
   );
   return { svc, sms, telegram };
 }

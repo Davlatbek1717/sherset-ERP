@@ -14,6 +14,8 @@ import { CounterpartyBalanceService } from '../counterparty-balance/counterparty
 import { CustomerOrderService } from '../customer-order/customer-order.service.js';
 import { HR_EVENT, type PaymentInPostedEvent } from '../hr/hr-shared/hr-events.types.js';
 import { InvoiceOutService } from '../invoice-out/invoice-out.service.js';
+import type { MoneyDelta } from '../money/money.service.js';
+import { MoneyService } from '../money/money.service.js';
 import { tashkentRangeBounds } from '../report/report-date-bounds.util.js';
 import { resolveCreatorGroupId } from '../shared/group-stamp.js';
 import { assertMassEditRefsInTenant } from '../shared/mass-edit.js';
@@ -43,6 +45,11 @@ export class PaymentInService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(InvoiceOutService) private readonly invoiceOut: InvoiceOutService,
     @Inject(CustomerOrderService) private readonly customerOrder: CustomerOrderService,
+    // Bank-side ledger (Faza 11, `M-06`) — mirrors CashIn/CashOut, which have
+    // written the money ledger since day one. Positioned like theirs
+    // (prisma, targets, money, balance, …) so the four money documents read
+    // the same way.
+    @Inject(MoneyService) private readonly money: MoneyService,
     @Inject(CounterpartyBalanceService)
     private readonly balance: CounterpartyBalanceService,
     @Inject(AttributeMetadataService) private readonly attrs: AttributeMetadataService,
@@ -629,6 +636,47 @@ export class PaymentInService {
   // Transition handlers
   // =====================================================================
 
+  /**
+   * The bank-account movement this payment causes (Faza 11, `M-06`).
+   *
+   * Returns `[]` when the document names no `organizationAccount` — the field
+   * is optional (cash-only tenants, or a payment recorded before the account
+   * was created), and inventing a source would be worse than recording none.
+   * `applyDeltas([])` is a no-op, so every call site can pass this through
+   * unconditionally.
+   */
+  private bankDeltas(
+    existing: {
+      organizationAccountId: string | null;
+      currency: string;
+      agentId: string;
+      paymentPurpose: string | null;
+    },
+    id: string,
+    deltaMinor: bigint,
+    reason?: 'unpost' | 'cancel',
+  ): MoneyDelta[] {
+    if (!existing.organizationAccountId) return [];
+    const purpose = existing.paymentPurpose ?? '';
+    return [
+      {
+        sourceKind: 'organization_account',
+        sourceId: existing.organizationAccountId,
+        deltaMinor,
+        currency: existing.currency,
+        documentKind: 'payment_in',
+        documentId: id,
+        counterpartyId: existing.agentId,
+        description: reason
+          ? `${reason === 'unpost' ? 'Unpost' : 'Cancel'}: ${purpose}`.trim()
+          : purpose || undefined,
+        // See MoneyDelta.allowNegative — bank opening balances were never
+        // captured, so the till overdraft rule cannot be applied here.
+        allowNegative: true,
+      },
+    ];
+  }
+
   private async post(
     accountId: string,
     userId: string,
@@ -651,6 +699,10 @@ export class PaymentInService {
         toState: 'posted',
         message: "To'lov allaqachon o'tkazilgan yoki 'draft' holatida emas",
       });
+
+      // Bank account receives the money (+delta) — same shape as CashIn's
+      // cash-desk credit, just the other money source.
+      await this.money.applyDeltas(tx, accountId, this.bankDeltas(existing, id, existing.sumMinor));
 
       // Counterparty paid us → receivable shrinks.
       await this.balance.applyDelta(
@@ -748,6 +800,13 @@ export class PaymentInService {
         message: "To'lov 'posted' holatida emas (allaqachon o'zgartirilgan)",
       });
 
+      // Reverse the bank credit.
+      await this.money.applyDeltas(
+        tx,
+        accountId,
+        this.bankDeltas(existing, id, -existing.sumMinor, 'unpost'),
+      );
+
       // Restore counterparty balance (they owe us again).
       await this.balance.applyDelta(
         tx,
@@ -823,6 +882,11 @@ export class PaymentInService {
 
       const wasApplicable = existing.applicable;
       if (wasApplicable) {
+        await this.money.applyDeltas(
+          tx,
+          accountId,
+          this.bankDeltas(existing, id, -existing.sumMinor, 'cancel'),
+        );
         await this.balance.applyDelta(
           tx,
           accountId,

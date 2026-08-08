@@ -3856,7 +3856,10 @@
         "paymentout": "Chiqim",
         "cash_in": "Kassa kirim",
         "cash_out": "Kassa chiqim",
-        "retailsale": "Chakana savdo"
+        "retailsale": "Chakana savdo",
+        "payment_in": "Kiruvchi to'lov",
+        "payment_out": "Chiquvchi to'lov",
+        "debtpayment": "Qarz to'lovi"
       },
       "flow": {
         "all": "Hammasi",

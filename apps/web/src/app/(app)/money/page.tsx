@@ -40,15 +40,25 @@ import { useState } from 'react';
 
 /**
  * De-facto `MoneyOperation.documentKind` slugs — exactly what the BE writers
- * store (cash-in/cash-out services write 'cash_in'/'cash_out', retail-sale
- * writes 'retailsale'; payments do NOT write the ledger today). The page
- * previously assumed 'cashin'/'cashout'/'paymentin'/'paymentout' — none of
- * which ever matched a stored row, so every row link was `undefined/<id>`,
- * the kind cell rendered the raw i18n key path, and the kind filter always
- * returned an empty list (FE↔BE contract drift, found by the 2026-06-11
- * Conv-3 browser smoke; locked by money-kind-contract.test.ts).
+ * store. The page previously assumed 'cashin'/'cashout'/'paymentin'/
+ * 'paymentout' — none of which ever matched a stored row, so every row link
+ * was `undefined/<id>`, the kind cell rendered the raw i18n key path, and the
+ * kind filter always returned an empty list (FE↔BE contract drift, found by
+ * the 2026-06-11 Conv-3 browser smoke; locked by money-kind-contract.test.ts).
+ *
+ * Faza 11 (`M-06`/`FE-03`) closed the other half of that drift: bank payments
+ * now WRITE the ledger, so 'payment_in'/'payment_out' appear here — until then
+ * this page offered «+ Создать → Входящий платёж» and then never showed the
+ * result, and the In/Out/Net totals silently excluded every bank movement.
+ * 'debtpayment' (`M-05`) is the cash a debtor hands over at the till.
  */
-type LedgerKind = 'cash_in' | 'cash_out' | 'retailsale';
+type LedgerKind =
+  | 'cash_in'
+  | 'cash_out'
+  | 'retailsale'
+  | 'payment_in'
+  | 'payment_out'
+  | 'debtpayment';
 /** Kinds offered by the «+ Создать» dropdown — navigation targets only. */
 type CreateKind = 'cashin' | 'cashout' | 'paymentin' | 'paymentout';
 
@@ -79,7 +89,15 @@ const KIND_ROUTES: Record<LedgerKind, string> = {
   cash_in: '/cash-in',
   cash_out: '/cash-out',
   retailsale: '/retail/sales',
+  payment_in: '/payments-in',
+  payment_out: '/payments-out',
+  // A POS debt payment has no editor page — its `documentId` is the PKO batch,
+  // and the receipt print view is the only per-batch document there is.
+  debtpayment: '/print/debt-payment',
 };
+
+/** Single source for the kind filter's options — see the select below. */
+const LEDGER_KINDS = Object.keys(KIND_ROUTES) as LedgerKind[];
 
 const NEW_ROUTES: Record<CreateKind, string> = {
   cashin: '/cash-in/new',
@@ -166,7 +184,10 @@ export default function MoneyPage() {
       key: 'kind',
       header: t('column_kind'),
       cell: (r: MoneyOperationRow) => (
-        <Badge tone={moneyFlowTone(r.documentKind.endsWith('in') ? 'in' : 'out')}>
+        // Tone follows the SIGN, not the slug: an unposted cash_in writes a
+        // negative 'cash_in' row, and 'debtpayment' is an inflow whose slug
+        // ends in neither. Reading the delta is the only always-true rule.
+        <Badge tone={moneyFlowTone(r.deltaMinor.startsWith('-') ? 'out' : 'in')}>
           {tKind(r.documentKind)}
         </Badge>
       ),
@@ -299,9 +320,15 @@ export default function MoneyPage() {
           data-test-id="money-filter-kind"
         >
           <option value="">{tFilters('all')}</option>
-          <option value="cash_in">{tKind('cash_in')}</option>
-          <option value="cash_out">{tKind('cash_out')}</option>
-          <option value="retailsale">{tKind('retailsale')}</option>
+          {/* Derived from KIND_ROUTES, never hand-listed: the three kinds
+              added in Faza 11 would otherwise have been filterable by the BE
+              and invisible in this dropdown — the same drift the kind slugs
+              themselves suffered. Locked by money-kind-contract.test.ts. */}
+          {LEDGER_KINDS.map((k) => (
+            <option key={k} value={k}>
+              {tKind(k)}
+            </option>
+          ))}
         </NativeSelect>
       </InlineFilterPanel.Field>
 

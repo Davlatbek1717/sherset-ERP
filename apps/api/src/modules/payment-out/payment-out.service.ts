@@ -12,6 +12,8 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 import { AttributeMetadataService } from '../attribute-metadata/attribute-metadata.service.js';
 import { CounterpartyBalanceService } from '../counterparty-balance/counterparty-balance.service.js';
 import { InvoiceInService } from '../invoice-in/invoice-in.service.js';
+import type { MoneyDelta } from '../money/money.service.js';
+import { MoneyService } from '../money/money.service.js';
 import { PurchaseOrderService } from '../purchase-order/purchase-order.service.js';
 import { tashkentRangeBounds } from '../report/report-date-bounds.util.js';
 import { resolveCreatorGroupId } from '../shared/group-stamp.js';
@@ -55,6 +57,8 @@ export class PaymentOutService {
     private readonly invoiceIn: InvoiceInService,
     @Inject(forwardRef(() => PurchaseOrderService))
     private readonly po: PurchaseOrderService,
+    // Bank-side ledger (Faza 11, `M-06`) — see PaymentInService.bankDeltas.
+    @Inject(MoneyService) private readonly money: MoneyService,
     @Inject(CounterpartyBalanceService)
     private readonly balance: CounterpartyBalanceService,
     @Inject(AttributeMetadataService) private readonly attrs: AttributeMetadataService,
@@ -626,6 +630,43 @@ export class PaymentOutService {
   // Transition handlers
   // =====================================================================
 
+  /**
+   * The bank-account movement this payment causes (Faza 11, `M-06`).
+   * Mirror of `PaymentInService.bankDeltas` — same rules, opposite sign at the
+   * call sites. `[]` when the document names no account.
+   */
+  private bankDeltas(
+    existing: {
+      organizationAccountId: string | null;
+      currency: string;
+      agentId: string;
+      paymentPurpose: string | null;
+    },
+    id: string,
+    deltaMinor: bigint,
+    reason?: 'unpost' | 'cancel',
+  ): MoneyDelta[] {
+    if (!existing.organizationAccountId) return [];
+    const purpose = existing.paymentPurpose ?? '';
+    return [
+      {
+        sourceKind: 'organization_account',
+        sourceId: existing.organizationAccountId,
+        deltaMinor,
+        currency: existing.currency,
+        documentKind: 'payment_out',
+        documentId: id,
+        counterpartyId: existing.agentId,
+        description: reason
+          ? `${reason === 'unpost' ? 'Unpost' : 'Cancel'}: ${purpose}`.trim()
+          : purpose || undefined,
+        // See MoneyDelta.allowNegative — without captured opening balances the
+        // till overdraft rule would reject every first bank outflow.
+        allowNegative: true,
+      },
+    ];
+  }
+
   private async post(
     accountId: string,
     userId: string,
@@ -647,6 +688,13 @@ export class PaymentOutService {
         toState: 'posted',
         message: "To'lov allaqachon o'tkazilgan yoki 'draft' holatida emas",
       });
+
+      // Money leaves the bank account (−delta).
+      await this.money.applyDeltas(
+        tx,
+        accountId,
+        this.bankDeltas(existing, id, -existing.sumMinor),
+      );
 
       // We paid them → our debt shrinks toward zero → +delta.
       await this.balance.applyDelta(
@@ -736,6 +784,13 @@ export class PaymentOutService {
         message: "To'lov 'posted' holatida emas (allaqachon o'zgartirilgan)",
       });
 
+      // Reverse the bank debit — money is back in the account.
+      await this.money.applyDeltas(
+        tx,
+        accountId,
+        this.bankDeltas(existing, id, existing.sumMinor, 'unpost'),
+      );
+
       // Undo: we owe them again → −delta.
       await this.balance.applyDelta(
         tx,
@@ -811,6 +866,11 @@ export class PaymentOutService {
 
       const wasApplicable = existing.applicable;
       if (wasApplicable) {
+        await this.money.applyDeltas(
+          tx,
+          accountId,
+          this.bankDeltas(existing, id, existing.sumMinor, 'cancel'),
+        );
         await this.balance.applyDelta(
           tx,
           accountId,

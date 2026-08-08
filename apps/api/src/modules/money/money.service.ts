@@ -14,6 +14,24 @@ export interface MoneyDelta {
   documentId: string;
   counterpartyId?: string;
   description?: string;
+  /**
+   * Skip the post-increment overdraft guard for THIS delta (Faza 11, `M-06`).
+   *
+   * The guard encodes a cash-drawer rule: you cannot hand out banknotes you do
+   * not physically have, and `CashDesk.balanceMinor` is trustworthy because
+   * every till movement has always gone through this ledger.
+   * `OrganizationAccount.balanceMinor` has the opposite history — until Faza 11
+   * NOTHING ever wrote it, so a stored `0` means «never measured», not «no
+   * funds». Enforcing the guard on the very first bank payment would reject a
+   * legitimate transfer out of an account that really holds money. Bank
+   * accounts also go legitimately negative (overdraft / credit line), which a
+   * till never does.
+   *
+   * Opt-in per delta, never a service-wide switch: the cash-desk callers stay
+   * guarded. Once opening balances are captured (bank-statement import), the
+   * payment call sites can drop the flag.
+   */
+  allowNegative?: boolean;
 }
 
 /**
@@ -83,7 +101,7 @@ export class MoneyService {
           data: { balanceMinor: { increment: d.deltaMinor } },
           select: { balanceMinor: true },
         });
-        if (updated.balanceMinor < 0n) {
+        if (updated.balanceMinor < 0n && !d.allowNegative) {
           throw new BadRequestException(
             `OrganizationAccount ${d.sourceId} overdraft: delta ${d.deltaMinor} → balance ${updated.balanceMinor}`,
           );
@@ -107,7 +125,7 @@ export class MoneyService {
           data: { balanceMinor: { increment: d.deltaMinor } },
           select: { balanceMinor: true },
         });
-        if (updated.balanceMinor < 0n) {
+        if (updated.balanceMinor < 0n && !d.allowNegative) {
           throw new BadRequestException(
             `CashDesk ${d.sourceId} overdraft: delta ${d.deltaMinor} → balance ${updated.balanceMinor}`,
           );

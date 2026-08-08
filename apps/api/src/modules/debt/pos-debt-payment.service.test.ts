@@ -236,8 +236,18 @@ function makeDb(rows: DebtRow[]) {
     ),
   };
 
-  const svc = new PosDebtPaymentService({ client } as never, balances as never);
-  return { svc, debts, payments, deltas, balances };
+  // Faza 11 (`M-05`): kassa daftari. Ilgari bu servis MoneyService'ni import
+  // ham qilmasdi — naqd yashiqqa tushar, `CashDesk.balanceMinor` va
+  // `/money` lentasi esa qimirlamasdi.
+  const cashDeltas: Array<Record<string, unknown>> = [];
+  const money = {
+    applyDeltas: vi.fn(async (_tx: unknown, _acc: string, ds: Array<Record<string, unknown>>) => {
+      cashDeltas.push(...ds);
+    }),
+  };
+
+  const svc = new PosDebtPaymentService({ client } as never, balances as never, money as never);
+  return { svc, debts, payments, deltas, balances, cashDeltas };
 }
 
 const paidSum = (payments: PaymentRow[]) =>
@@ -352,6 +362,68 @@ describe('PosDebtPaymentService.pay — DUP-07 recalc kanonik yo`li', () => {
     await expect(
       svc.pay(ACC, 'u1', { counterpartyId: CP, amountMinor: '30000' }),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it("naqd to'lov kassa daftariga bir marta yoziladi (M-05)", async () => {
+    const { svc, cashDeltas } = makeDb([debt({ id: 'd1', totalMinor: 40_000n })]);
+
+    const res = await svc.pay(ACC, 'u1', {
+      counterpartyId: CP,
+      amountMinor: '15000',
+      method: 'cash',
+      cashDeskId: '33333333-3333-3333-3333-333333333333',
+    });
+
+    // BITTA jismoniy to'lov = BITTA yashiq harakati, FIFO nechta qarzga
+    // bo'lganidan qat'i nazar; havola PKO cheki (batchId) bo'yicha.
+    expect(cashDeltas).toHaveLength(1);
+    expect(cashDeltas[0]).toMatchObject({
+      sourceKind: 'cash_desk',
+      sourceId: '33333333-3333-3333-3333-333333333333',
+      deltaMinor: 15_000n,
+      currency: 'UZS',
+      documentKind: 'debtpayment',
+      documentId: res.batchId,
+      counterpartyId: CP,
+    });
+  });
+
+  it("bir necha qarzga bo'lingan to'lov ham kassaga BIR marta tushadi", async () => {
+    const { svc, cashDeltas } = makeDb([
+      debt({ id: 'd1', totalMinor: 10_000n, createdAt: new Date('2026-07-01T00:00:00Z') }),
+      debt({ id: 'd2', totalMinor: 10_000n, createdAt: new Date('2026-07-02T00:00:00Z') }),
+    ]);
+
+    await svc.pay(ACC, 'u1', {
+      counterpartyId: CP,
+      amountMinor: '20000',
+      method: 'cash',
+      cashDeskId: '33333333-3333-3333-3333-333333333333',
+    });
+
+    expect(cashDeltas).toHaveLength(1);
+    expect(cashDeltas[0]).toMatchObject({ deltaMinor: 20_000n });
+  });
+
+  it("terminal to'lovi yashiqqa tushmaydi", async () => {
+    const { svc, cashDeltas } = makeDb([debt({ id: 'd1', totalMinor: 40_000n })]);
+
+    await svc.pay(ACC, 'u1', {
+      counterpartyId: CP,
+      amountMinor: '15000',
+      method: 'terminal',
+      cashDeskId: '33333333-3333-3333-3333-333333333333',
+    });
+
+    expect(cashDeltas).toHaveLength(0);
+  });
+
+  it("kassa ko'rsatilmagan naqd to'lov daftarga yozilmaydi", async () => {
+    const { svc, cashDeltas } = makeDb([debt({ id: 'd1', totalMinor: 40_000n })]);
+
+    await svc.pay(ACC, 'u1', { counterpartyId: CP, amountMinor: '15000', method: 'cash' });
+
+    expect(cashDeltas).toHaveLength(0);
   });
 
   it("summary() o'chirilgan qarzni ko'rsatmaydi", async () => {

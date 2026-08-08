@@ -3,6 +3,8 @@ import type { Prisma } from '@moysklad/db';
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { CounterpartyBalanceService } from '../counterparty-balance/counterparty-balance.service.js';
+import { MoneyService } from '../money/money.service.js';
+import { debtCashDeskDeltas } from './debt-cash-ledger.js';
 import { type FifoDebt, allocateFifo, summarize } from './debt-fifo.js';
 import { recalcDebt } from './debt-recalc.js';
 import { type PosDebtPaymentInput, PosDebtPaymentSchema } from './debt.schema.js';
@@ -39,6 +41,9 @@ export class PosDebtPaymentService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(CounterpartyBalanceService) private readonly balances: CounterpartyBalanceService,
+    // Kassa daftari (Faza 11, `M-05`) — naqd qarz to'lovi `CashDesk`
+    // qoldig'iga va `/money` lentasiga tushishi uchun.
+    @Inject(MoneyService) private readonly money: MoneyService,
   ) {}
 
   /**
@@ -155,6 +160,24 @@ export class PosDebtPaymentService {
           closed: updated.status === 'paid',
         });
       }
+
+      // Kassa daftari (`M-05`) — TRANZAKSIYA ICHIDA va BIR MARTA: mijoz bitta
+      // summa berdi, FIFO uni nechta qarzga bo'lgani yashiqqa aloqasiz.
+      // Havola PKO cheki (`batchId`) — buxgalter daftardan chekka boradi.
+      // Naqd bo'lmasa yoki kassa ko'rsatilmagan bo'lsa — bo'sh ro'yxat.
+      await this.money.applyDeltas(
+        tx,
+        accountId,
+        debtCashDeskDeltas(
+          {
+            method: input.method,
+            cashDeskId: input.cashDeskId ?? null,
+            currency,
+            amountMinor: plan.appliedMinor,
+          },
+          { sign: 1n, documentId: batchId, counterpartyId: input.counterpartyId },
+        ),
+      );
 
       return { receipts, appliedMinor: plan.appliedMinor, currency };
     });

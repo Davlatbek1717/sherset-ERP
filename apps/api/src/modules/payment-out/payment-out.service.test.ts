@@ -72,6 +72,7 @@ function buildClone(operations: Op[]) {
     prisma as never,
     {} as never, // invoiceIn — unused by clone()
     {} as never, // po — unused by clone()
+    {} as never, // money — unused by clone()
     {} as never, // balance — unused by clone()
     {} as never, // attrs — unused by clone()
     webhookFire as never,

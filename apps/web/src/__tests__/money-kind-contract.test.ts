@@ -27,6 +27,12 @@ const WRITER_FILES = [
   'apps/api/src/modules/cash-in/cash-in.service.ts',
   'apps/api/src/modules/cash-out/cash-out.service.ts',
   'apps/api/src/modules/retail-sale/retail-sale.service.ts',
+  // Faza 11 — the bank side (`M-06`) and the debt-till side (`M-05`). Before
+  // it these three wrote nothing, which is exactly why the page's KIND_ROUTES
+  // could stay silently incomplete.
+  'apps/api/src/modules/payment-in/payment-in.service.ts',
+  'apps/api/src/modules/payment-out/payment-out.service.ts',
+  'apps/api/src/modules/debt/debt-cash-ledger.ts',
 ];
 
 function writerKinds(): Set<string> {
@@ -42,7 +48,10 @@ function writerKinds(): Set<string> {
 // 2. The BE list-filter enum.
 function filterEnum(): Set<string> {
   const src = read(join(REPO, 'apps/api/src/modules/money/money-operation.schema.ts'));
-  const m = src.match(/documentKind:\s*z\.enum\(\[([^\]]+)\]\)/);
+  // `z\s*\.enum` — biome wraps the call as `z\n    .enum([…])` once the list
+  // outgrows one line (it did in Faza 11). A regex that assumed `z.enum`
+  // adjacency would silently stop finding the enum and fail the whole file.
+  const m = src.match(/documentKind:\s*z\s*\.enum\(\[([^\]]+)\]\)/);
   expect(m, 'documentKind z.enum not found in money-operation.schema.ts').toBeTruthy();
   const body = m?.[1] ?? '';
   return new Set(Array.from(body.matchAll(/'([^']+)'/g), (x) => x[1] as string));
@@ -69,7 +78,7 @@ describe('money documentKind FE↔BE contract', () => {
   const feRoutes = feKindRoutes();
 
   it('finds the writer literals (scan is not vacuous)', () => {
-    expect(writers.size).toBeGreaterThanOrEqual(3);
+    expect(writers.size).toBeGreaterThanOrEqual(6);
   });
 
   it('every written kind is filterable (writers ⊆ BE enum)', () => {
@@ -79,6 +88,19 @@ describe('money documentKind FE↔BE contract', () => {
 
   it('the BE enum and FE KIND_ROUTES agree exactly (no undefined row links)', () => {
     expect([...feRoutes].sort()).toEqual([...beEnum].sort());
+  });
+
+  it('the kind filter options are DERIVED from KIND_ROUTES, not hand-listed', () => {
+    // Faza 11: the dropdown used to hard-code three <option> literals. A new
+    // writer + route + label could all land correctly and the kind still be
+    // unfilterable — invisible to every other assertion in this file.
+    const src = read(join(WEB_SRC, 'app', '(app)', 'money', 'page.tsx'));
+    expect(src).toMatch(/LEDGER_KINDS\.map/);
+    for (const k of beEnum) {
+      expect(src, `hard-coded <option value="${k}"> — derive it instead`).not.toContain(
+        `<option value="${k}"`,
+      );
+    }
   });
 
   it('every ledger kind has a label in BOTH locales (no raw key-path cells)', () => {

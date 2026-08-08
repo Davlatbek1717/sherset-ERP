@@ -10,12 +10,18 @@ import { allocateDocumentNumber } from '../../prisma/document-number.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { AttachmentService } from '../attachment/attachment.service.js';
 import { CounterpartyBalanceService } from '../counterparty-balance/counterparty-balance.service.js';
+import { MoneyService } from '../money/money.service.js';
 import { HtmlPdfService } from '../print-template/html-pdf.service.js';
 import { TASHKENT_OFFSET_MS, tashkentRangeBounds } from '../report/report-date-bounds.util.js';
 import { formatSomMinor, renderSmsTemplate } from '../sms/sms-render.util.js';
 import { MessageTemplateService } from '../sms/sms-template.service.js';
 import { SmsService } from '../sms/sms.service.js';
 import { TelegramService } from '../telegram/telegram.service.js';
+import {
+  debtCashDeskDeltas,
+  debtCashLedgerWasWritten,
+  debtLedgerDocumentId,
+} from './debt-cash-ledger.js';
 import { deriveDebtStatus, recalcDebt } from './debt-recalc.js';
 import {
   BulkRemindersSchema,
@@ -86,6 +92,9 @@ export class DebtService {
     // Ommaviy SMS eslatmasi (2026-07-20): tanlangan qarzdorlarga SMS navbati.
     @Inject(SmsService) private readonly sms: SmsService,
     @Inject(MessageTemplateService) private readonly msgTemplates: MessageTemplateService,
+    // Kassa daftari (Faza 11, `M-05`): kassir naqd qabul qilganda va uni
+    // storno qilganda `CashDesk` qoldig'i / `/money` lentasi qimirlashi uchun.
+    @Inject(MoneyService) private readonly money: MoneyService,
   ) {}
 
   // ────────────────────────────────────────────────────────────── helpers ──
@@ -378,6 +387,40 @@ export class DebtService {
   }
 
   /** Qarzni oladi yoki 404. */
+  /**
+   * Storno'ning kassa tomoni (Faza 11, `M-05`) — IKKALA qaytarish yo'li
+   * (`reversePayment`, `cancelCallNote`) shu yerdan o'tadi.
+   *
+   * Ikki shart: (1) to'lov umuman yashiqqa tegishlimi (`debtCashDeskDeltas` —
+   * naqd + kassa), (2) o'sha kredit HAQIQATAN daftarda bormi
+   * (`debtCashLedgerWasWritten` — Faza 11'dan oldingi to'lovlar uchun yo'q).
+   */
+  private async reverseCashDeskDelta(
+    tx: Prisma.TransactionClient,
+    accountId: string,
+    payment: {
+      id: string;
+      batchId: string | null;
+      method: string;
+      cashDeskId: string | null;
+      currency: string;
+      amountMinor: bigint;
+      amountOriginalMinor: bigint | null;
+    },
+    counterpartyId: string,
+    reason: string,
+  ): Promise<void> {
+    const deltas = debtCashDeskDeltas(payment, {
+      sign: -1n,
+      documentId: debtLedgerDocumentId(payment),
+      counterpartyId,
+      description: `Storno: ${reason}`,
+    });
+    if (deltas.length === 0) return;
+    if (!(await debtCashLedgerWasWritten(tx, accountId, payment))) return;
+    await this.money.applyDeltas(tx, accountId, deltas);
+  }
+
   private async mustFind(accountId: string, id: string) {
     const debt = await this.prisma.client.debt.findFirst({
       where: { id, accountId, deletedAt: null },
@@ -1010,7 +1053,7 @@ export class DebtService {
     }
 
     const updated = await this.prisma.client.$transaction(async (tx) => {
-      await tx.debtPayment.create({
+      const payment = await tx.debtPayment.create({
         data: {
           accountId,
           debtId,
@@ -1023,6 +1066,22 @@ export class DebtService {
           receivedByRole: 'cashier',
         },
       });
+
+      // Kassa daftari (`M-05`): kassir jismonan naqd oldi — yashiq qoldig'i va
+      // `/money` lentasi shu yerda harakat qiladi. Predikat storno yo'li bilan
+      // BIR XIL (`debtCashDeskDeltas`), aks holda kreditlanib qaytarilmagan
+      // (yoki teskarisi) summa qolib ketardi.
+      await this.money.applyDeltas(
+        tx,
+        accountId,
+        // SAQLANGAN qatordan o'qiymiz, kirish DTO'sidan emas: storno ham aynan
+        // shu qatorni o'qiydi, ya'ni ikki tomon bir manbadan kelib chiqadi.
+        debtCashDeskDeltas(payment, {
+          sign: 1n,
+          documentId: debtLedgerDocumentId(payment),
+          counterpartyId: debt.counterpartyId,
+        }),
+      );
 
       // Qisman to'lovda kassir izohi muloqot tarixiga tushadi (§3.4).
       if (isPartial && input.comment) {
@@ -1163,7 +1222,7 @@ export class DebtService {
     raw: unknown,
   ) {
     const input: ReversePaymentInput = ReversePaymentSchema.parse(raw);
-    await this.mustFind(accountId, debtId);
+    const debt = await this.mustFind(accountId, debtId);
 
     const payment = await this.prisma.client.debtPayment.findFirst({
       where: { id: paymentId, accountId, debtId },
@@ -1191,6 +1250,9 @@ export class DebtService {
           reverseReason: input.reason,
         },
       });
+
+      // Kassa daftari (`M-05`): qaytarilgan naqd yashiqdan CHIQADI.
+      await this.reverseCashDeskDelta(tx, accountId, payment, debt.counterpartyId, input.reason);
 
       // Bu to'lov QO'NG'IROQ NATIJASIDAN tug'ilgan bo'lsa («to'ladi»/«qisman»),
       // o'sha natija-yozuvi ham bekor qilinadi (2026-07-16): aks holda
@@ -1294,7 +1356,7 @@ export class DebtService {
     raw: unknown,
   ) {
     const input: CancelCallNoteInput = CancelCallNoteSchema.parse(raw);
-    await this.mustFind(accountId, debtId);
+    const debt = await this.mustFind(accountId, debtId);
 
     const note = await this.prisma.client.debtNote.findFirst({
       where: { id: noteId, accountId, debtId },
@@ -1348,6 +1410,11 @@ export class DebtService {
             reverseReason: input.reason,
           },
         });
+
+        // Storno bo'lgan naqd — yashiqdan chiqadi (`M-05`). `reversePayment`
+        // bilan AYNAN bir yo'l: ikki kirish nuqtasi bir xil daftar harakatini
+        // berishi shart.
+        await this.reverseCashDeskDelta(tx, accountId, payment, debt.counterpartyId, input.reason);
       }
 
       // Tarixga iz: qaysi natija bekor qilindi, pul qaytdimi, nega.
