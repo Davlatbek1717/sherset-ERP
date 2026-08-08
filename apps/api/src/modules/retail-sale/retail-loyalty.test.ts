@@ -57,21 +57,56 @@ describe('planLoyaltyAccrual - invariant #2 (points from loyalty pure fn)', () =
 });
 
 describe('planLoyaltyReversal - invariant #3 (reverse EXACT recorded, never recompute)', () => {
-  it('reverses the exact recorded earned value', () => {
-    expect(planLoyaltyReversal({ bonusValue: 1234 })).toEqual({ points: 1234 });
+  it('a FULL refund reverses the exact recorded earned value', () => {
+    expect(planLoyaltyReversal({ bonusValue: 1234 }, 1_000_00n, 1_000_00n)).toEqual({
+      points: 1234,
+    });
   });
 
   it('null earned op (nothing earned / already reversed) -> no clawback', () => {
-    expect(planLoyaltyReversal(null)).toBeNull();
+    expect(planLoyaltyReversal(null, 1_000_00n, 1_000_00n)).toBeNull();
   });
 
   it('non-positive recorded value -> no clawback (defensive)', () => {
-    expect(planLoyaltyReversal({ bonusValue: 0 })).toBeNull();
-    expect(planLoyaltyReversal({ bonusValue: -10 })).toBeNull();
+    expect(planLoyaltyReversal({ bonusValue: 0 }, 1_000_00n, 1_000_00n)).toBeNull();
+    expect(planLoyaltyReversal({ bonusValue: -10 }, 1_000_00n, 1_000_00n)).toBeNull();
   });
 
   it('clawback is independent of any later program-rule change (§105)', () => {
     // The recorded op said 500; even if rules now yield 999, we claw 500.
-    expect(planLoyaltyReversal({ bonusValue: 500 })).toEqual({ points: 500 });
+    expect(planLoyaltyReversal({ bonusValue: 500 }, 1_000_00n, 1_000_00n)).toEqual({ points: 500 });
+  });
+});
+
+/**
+ * SALES-05 — a customer who returned 1 of 10 items lost the bonus earned on
+ * all 10. The clawback is the refund's SHARE of the recorded value: still
+ * never recomputed from program rules, just prorated by money returned.
+ */
+describe('planLoyaltyReversal - invariant #4 (partial refund claws back its SHARE)', () => {
+  it('claws back the refunded share, not the whole receipt (SALES-05)', () => {
+    // 10 tadan 1 tasi qaytdi → 1000 balldan 100 tasi.
+    expect(planLoyaltyReversal({ bonusValue: 1000 }, 100_00n, 1_000_00n)).toEqual({ points: 100 });
+  });
+
+  it('floors the share so split refunds can never claw back more than earned', () => {
+    let clawed = 0;
+    for (let i = 0; i < 3; i++) {
+      // 3 marta 1/3 dan: floor(100 × 33333/100000) = 33 → jami 99 ≤ 100.
+      clawed += planLoyaltyReversal({ bonusValue: 100 }, 33_333n, 100_000n)?.points ?? 0;
+    }
+    expect(clawed).toBeLessThanOrEqual(100);
+  });
+
+  it('a share too small for a whole point claws back nothing (no 0-value op)', () => {
+    expect(planLoyaltyReversal({ bonusValue: 10 }, 1n, 1_000_00n)).toBeNull();
+  });
+
+  it('a refund worth more than the receipt cannot claw back more than earned', () => {
+    expect(planLoyaltyReversal({ bonusValue: 100 }, 999_999n, 1_000n)).toEqual({ points: 100 });
+  });
+
+  it('a zero-value original receipt claws back nothing (no division by zero)', () => {
+    expect(planLoyaltyReversal({ bonusValue: 100 }, 0n, 0n)).toBeNull();
   });
 });

@@ -57,14 +57,37 @@ export function planLoyaltyAccrual(
 /**
  * Decide the refund clawback. `earnedOp` is the original sale's
  * recorded EARNING op (or null if none / already reversed). Returns the
- * EXACT positive point count to claw back — the caller writes it as a
+ * positive point count to claw back — the caller writes it as a
  * SPENDING / categoryType RETURN op with bonusValue = -points. Never
  * recomputes from program rules (rule could have changed; §105).
+ *
+ * SALES-05: the clawback is the refund's SHARE of the recorded value, not
+ * the whole of it. Returning 1 of 10 items used to wipe out the bonus
+ * earned on all 10 — the customer lost points for goods they kept:
+ *
+ *   points = ⌊ earned × refundSum / originalSum ⌋
+ *
+ * Floor is deliberate and mirrors `priceRefundFromOriginal`: since
+ * Σ refundSum ≤ originalSum, the floored shares can only sum to ≤ earned,
+ * so split refunds can never claw back more than was ever granted. A share
+ * too small for a whole point claws back nothing (invariant #1 — no
+ * 0-value op).
  */
 export function planLoyaltyReversal(
   earnedOp: { bonusValue: number } | null,
+  refundSumMinor: bigint,
+  originalSumMinor: bigint,
 ): { points: number } | null {
   if (!earnedOp) return null;
   if (!Number.isFinite(earnedOp.bonusValue) || earnedOp.bonusValue <= 0) return null;
-  return { points: earnedOp.bonusValue };
+  if (originalSumMinor <= 0n || refundSumMinor <= 0n) return null;
+  // A refund can never be worth more than the receipt (priceRefundFromOriginal
+  // guarantees it) — clamping keeps a corrupt row from over-clawing anyway.
+  const share = refundSumMinor >= originalSumMinor ? 1n : 0n;
+  const points =
+    share === 1n
+      ? earnedOp.bonusValue
+      : Number((BigInt(earnedOp.bonusValue) * refundSumMinor) / originalSumMinor);
+  if (points <= 0) return null;
+  return { points };
 }

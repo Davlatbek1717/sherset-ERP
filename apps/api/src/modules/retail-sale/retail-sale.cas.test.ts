@@ -390,6 +390,8 @@ describe('RetailSaleService.refund — CAS state guard', () => {
       employee: { findUnique: vi.fn(async () => null) },
       retailSale: {
         findFirst: vi.fn(),
+        // Oldingi qaytarishlar (kumulyativ chegaralar) — bu yerda yo'q.
+        findMany: vi.fn().mockResolvedValue([]),
       },
       $transaction: vi
         .fn()
@@ -403,9 +405,15 @@ describe('RetailSaleService.refund — CAS state guard', () => {
         return {
           id: SALE_ID,
           state: 'posted',
+          // SALES-05: qisman qaytarish endi holatni flip qilmaydi, shuning
+          // uchun mutex chekning `version` ustuniga ko'chdi.
+          version: 1,
+          sumMinor: 100_000n,
           sessionId: SESSION_ID,
           agentId: null,
           name: 'TRN-001',
+          // SALES-04: qarz ulushi (bu chekda yo'q).
+          payments: [],
           session: {
             id: SESSION_ID,
             state: 'open',

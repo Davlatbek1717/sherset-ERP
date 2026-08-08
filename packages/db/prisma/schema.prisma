@@ -7853,6 +7853,12 @@ model RetailSale {
   prepaymentQrSumMinor     BigInt @default(0) @map("prepayment_qr_sum_minor")
   changeMinor              BigInt @default(0) @map("change_minor")
   vatSumMinor              BigInt @default(0) @map("vat_sum_minor")
+  /// SALES-04 — qaytarish chekida (mirror) qarz hisobidan yopilgan ulush.
+  /// Qarzga sotilgan chek qaytarilganda pul kassadan CHIQMAYDI: mijozning
+  /// balansidagi qarz shu summaga kamayadi. Sotuv chekida doim 0.
+  /// Ketma-ket qisman qaytarishlarning kumulyativ chegarasi shu ustundan
+  /// hisoblanadi (`computeRefundSettlementCaps`).
+  debtReturnMinor          BigInt @default(0) @map("debt_return_minor")
 
   vatEnabled  Boolean @default(true) @map("vat_enabled")
   vatIncluded Boolean @default(false) @map("vat_included")

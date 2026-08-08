@@ -229,7 +229,7 @@ yig'indisini ber (sales-return cumulative-cap naqshi). (c) loyalty reversal'ni r
 > `docs/REJA-AUDIT-FIX-2026-08.md` — **Faza 7** (Faza 6 tugagan bo'lsin). O'ZGARMAS QOIDALAR. `SALES-04`+`SALES-05`.
 > `debtReturnMinor` + kumulyativ refund + loyalty prorate. TDD: qarz-refund, qisman-refund, loyalty testlari.
 > Gate. Hisobot, TO'XTA.
-**◻ HISOBOT:** _(agent to'ldiradi)_
+**☑ HISOBOT (2026-08-08):** BAJARILDI — batafsili «HISOBOT JURNALI → Faza 7» da.
 
 ---
 
@@ -1363,3 +1363,107 @@ topilmalar aytganidek:
 - **`this.computePositions` refund yo'lida endi ishlatilmaydi** (create/update'da qoladi) — o'chirilmadi.
 
 **Commit:** `fix(sales): faza 6 — POS refund asl-narx cap + chegirma (SALES-01, FE-01)`
+
+---
+
+## Faza 7 — 2026-08-08 — **Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q**
+
+**Topilma tasdiqlanishi (o'z ko'zim bilan kodda).** `SALES-04` va `SALES-05` — **IKKALASI HAM TASDIQLANDI**:
+- `retail-sale.service.ts` `refund()` (fix'dan oldin, 934–1169): butun metodda `counterpartyBalance` so'zi
+  **umuman yo'q** — `post()` esa `:802-810` da qarzni `applyDelta(+debtAmount)` bilan yozadi. Ya'ni qarz
+  yoziladi, hech qachon qaytarilmaydi. Refund sxemasida qarz maydoni ham yo'q edi.
+- `:1042-1045` `updateMany({where:{state:'posted'}, data:{state:'refunded'}})` — **shartsiz**; qisman refund
+  ham chekni yopardi va ikkinchi refund `:971` da 400 olardi.
+- `retail-loyalty.ts:64-70` `planLoyaltyReversal` — `return { points: earnedOp.bonusValue }`, ulushga
+  qaramaydi.
+- **Yon-topilma (audit ko'rmagan, SALES-04 fix'i uchun BLOKER):** `post()` `debtAgentId = parsed.agentId ??
+  sale.agentId` bilan qarzni yozadi-yu, `agentId`ni chekka **YOZMAYDI**; `/sotuv` (`page.tsx:1014`) mijozni
+  faqat post payloadida yuboradi. Demak bazadagi HAR qarz chekida `agentId` NULL — qarz kimniki ekani faqat
+  `SOLD_ON_CREDIT` audit hodisasida qolgan.
+
+**Fayllar**
+
+| Fayl | O'zgarish |
+|---|---|
+| `packages/db/prisma/schema.prisma` | `RetailSale.debtReturnMinor` (`debt_return_minor`, BigInt, default 0) |
+| `packages/db/prisma/migrations/20260808120000_retail_sale_debt_return/migration.sql` | **YANGI** — additive `ALTER TABLE ADD COLUMN` |
+| `apps/api/src/modules/retail-sale/retail-refund-validation.ts` | `validateRefundPositions(..., alreadyRefunded)` kumulyativ; **YANGI** `isFullyRefunded()`, `computeRefundSettlementCaps()`, `validateRefundSettlement()` |
+| `apps/api/src/modules/retail-sale/retail-refund-validation.test.ts` | +25 test (kumulyativ qty, to'liq-qaytarish sharti, ikki cap, yaxlitlash-drift sikllari) |
+| `apps/api/src/modules/retail-sale/retail-loyalty.ts` | `planLoyaltyReversal(earnedOp, refundSum, originalSum)` — ulushga proporsional (floor) |
+| `apps/api/src/modules/retail-sale/retail-loyalty.test.ts` | mavjud 4 test yangi imzoga; +5 test (ulush, floor-invariant, nol-holatlar) |
+| `apps/api/src/modules/retail-sale/retail-sale.schema.ts` | refund'ga `debtReturnMinor` (**optional** — berilmasa server o'zi hisoblaydi) |
+| `apps/api/src/modules/retail-sale/retail-sale.service.ts` | `refund()`: `payments` select, oldingi refundlarni o'qish, kumulyativ guard, ikki cap, qarz `applyDelta(−)`, versiya-CAS, shartli state-flip, loyalty ulushi; **YANGI** `resolveCreditDebtorId()`; `post()`: qarz mijozini chekka yozish |
+| `apps/api/src/modules/retail-sale/retail-sale-refund-debt.test.ts` | **YANGI** — 18 service-darajali test (SALES-04/05 wiring) |
+| `apps/api/src/modules/retail-sale/retail-sale-tenders-wiring.test.ts` | +2 test (qarz mijozi chekka yoziladi / mavjudi qayta yozilmaydi) |
+| `apps/api/src/modules/retail-sale/retail-sale-refund-pricing.test.ts`, `retail-sale.cas.test.ts` | fixture'lar real `select` shakliga (`version`, `sumMinor`, `payments`, `findMany`) |
+
+**O'zgarish (5 qism)**
+1. **Qaytarish qanday «to'lanishi» chekning o'zidan kelib chiqadi (SALES-04).**
+   `computeRefundSettlementCaps` asl chekning `RetailSalePayment(method='DEBT')` ulushidan ikki cap chiqaradi:
+   `moneyCap(R) = ⌊(sum − debt) × R / sum⌋`, `debtCap(R) = R − moneyCap(R)` (`debt` bilan clamp) — bu yerda
+   **R = KUMULYATIV** qaytarilgan qiymat, keyin oldingi refundlar qaytargani ayriladi. 100% qarz chekda
+   `moneyCap = 0` → kassadan bir tiyin ham chiqmaydi; `debtCap = R` → qarz shu summaga kamayadi.
+   - **Nega kumulyativ, per-refund emas:** floor'ni har refundda alohida hisoblash bo'lingan qaytarishlarda
+     tiyin-drift to'plardi. Kumulyativ hisoblashda `R = sum` da ikki cap **aynan** chekning naqd va qarz
+     ulushiga teng bo'ladi.
+   - `debtReturnMinor` **berilmasa** — server `debtCap`ni o'zi qo'llaydi. Ataylab shunday: POS bugun hech
+     narsa yubormaydi, va «tovar qaytdi, qarz qolaverdi» — aynan yopilayotgan bug. Berilgan qiymat cheklanadi.
+2. **Kumulyativ qisman refund (SALES-05).** `refund()` shu chekning barcha oyna cheklarini o'qiydi
+   (`refundedFromId`, `state ∈ {posted, refunded}`) va `validateRefundPositions`ga **oldingi qatorlarni** beradi.
+   State `refunded`ga faqat `isFullyRefunded` (har mahsulotning sotilgan qty'si qoplangan) bo'lganda o'tadi.
+   Xizmat qatorlari (`productId = null`) chekni ochiq ushlab turmaydi — ular qaytarilmaydi.
+3. **Mutex `state`dan `version`ga ko'chdi.** Eski CAS `posted → refunded` flip'ining o'zi edi; qisman refund
+   endi flip qilmagani uchun u **yo'qolgan bo'lardi** — ikki parallel refund bir xil «oldingi refundlar»
+   ro'yxatini o'qib, ikkalasi ham qolgan summani to'liq qaytarardi. Endi
+   `updateMany(where:{state:'posted', version}, data:{version:{increment:1}, …})` — yutqazgan 409 oladi.
+4. **Loyalty ulushga proporsional (SALES-05).** `⌊earned × refundSum / originalSum⌋`, dastur qoidasidan
+   **qayta hisoblanMAYDI** (§105 saqlanadi). Floor tufayli bo'lingan refundlar yig'indisi hech qachon
+   berilgan balldan oshmaydi; bir ballga yetmagan ulush 0 op yaratmaydi.
+5. **Qarzdorni topish (bloker yon-topilma).** `post()` endi qarz mijozini chekka yozadi (mavjudini qayta
+   yozmaydi). Bundan OLDIN sotilgan cheklar uchun `resolveCreditDebtorId()` `SOLD_ON_CREDIT` audit
+   hodisasidan (balans deltasi bilan **bir tranzaksiyada** yozilgan) mijozni tiklaydi — busiz bazadagi har
+   qarz cheki qaytarib bo'lmaydigan bo'lardi.
+
+**Testlar (TDD tartibi kuzatildi)**
+- RED-1 (sof modullar): **24/59 yiqildi** — `computeRefundSettlementCaps/isFullyRefunded/validateRefundSettlement
+  is not a function`, loyalty ulush testlari `expected {points:1000} to equal {points:100}`.
+- RED-2 (service wiring, fix'dan OLDIN, jonli o'lchangan): **13/15 yiqildi**, sabablari aynan bug:
+  qarz refund'da `applyDelta` «called 0 times»; naqd-qaytarish `promise resolved instead of rejecting`
+  (100% qarz chekdan 100 000 naqd CHIQDI — eksploit takrorlandi); qisman refund `expected 'refunded' to be
+  undefined`; kumulyativ over-refund o'tib ketdi.
+- RED-3 (`post()` mijozni saqlashi): 1/12 yiqildi — `expected {state:'posted',…} to match {agentId}`.
+- RED-4 (legacy qarzdor audit izidan): 1/18 yiqildi.
+- GREEN: **25 + 5 + 18 + 2 = 50 yangi test yashil**; modul jami 242/242.
+- **Regress:** `retail-sale-refund-pricing.test.ts` va `retail-sale.cas.test.ts` fixture'lari yiqildi
+  (`retailSale.findMany` yo'q, `version`/`sumMinor`/`payments` yo'q) — bu **fixture qarzi**, mahsulot bug'i
+  emas: real `findFirst` bu ustunlarni qaytaradi. Mahsulot kodiga himoyaviy `?? []` **qo'yilmadi** (u haqiqiy
+  nosozlikni yashirardi) — fixture'lar real shaklga moslandi.
+
+**Gate (to'liq, jonli o'lchangan)**
+- `pnpm --filter @moysklad/api typecheck` → **0 xato**
+- `pnpm lint:product` → **0 error** (728 warning — siyosat bo'yicha ruxsat)
+- `pnpm --filter @moysklad/api exec vitest run` (BUTUN suite) → **383 fayl / 5085 test yashil, 0 yiqilgan**
+- Migratsiya lokal `climart_adopt @ 5432` ga qo'llandi (idempotent skript; `_prisma_migrations` sinxron emas —
+  xotira `climart-adopt-local-db-untracked`). Ustun mavjudligi so'rov bilan tasdiqlandi.
+- `i18n:gate` yugurtirilMADI — UI matni tegilmagan (faqat API); web ham tegilmagan.
+
+**Qolgan qarz / DEFER**
+- **Browser-smoke YO'Q.** Kassada qarz chekini qaytarish, qisman qaytarishdan keyin chekning «Qaytarilgan»
+  ko'rinishi, 409/400 xabarlarining UI'da ko'rinishi — Phase-2 QA (retail cohort) ga qoladi.
+- **Web POS `debtReturnMinor` yubormaydi** — server default'i (qarz ulushini avtomatik yopish) shu holat
+  uchun ataylab tanlandi, lekin kassir ekranida «qancha qarzdan yechildi» **ko'rinmaydi**. UI ko'rsatkichi —
+  alohida ish (Faza 7 fayl ro'yxati API-only edi).
+- **Legacy qarz cheklari:** audit izi ham bo'lmasa (juda eski/import qilingan chek) qaytarish 400 beradi;
+  chiqish yo'li xabarda ko'rsatilgan — `debtReturnMinor: '0'` (tovar qaytadi, kassadan pul CHIQMAYDI, qarz
+  qo'lda tuzatiladi). Ommaviy backfill (audit hodisalaridan `retail_sales.agent_id`ni to'ldirish) — **ops
+  qadam sifatida tavsiya**, bu fazada bajarilMADI.
+- **`SALES-06` (legacy z-report) qisman yaxshilandi, lekin yopilmagan:** qisman refundda asl chek endi
+  `posted` bo'lib qolgani uchun `salesAgg`dan tushib qolmaydi (netSum to'g'ri chiqadi); **to'liq** refundda
+  esa eski ikki-marta-ayirish bug'i o'z holicha qoladi → **Faza 15**.
+- **`cashier-session.zReport` `creditAgg` `method: 'debt'` (kichik harf) bilan qidiradi**, tender qiymati esa
+  `'DEBT'` (`retail-tenders.ts:34`) → «qarzga sotildi» ko'rsatkichi doim 0. Tasdiqlandi, **tegilmadi**
+  (Faza 15 doirasiga yaqin) — hisobotda qayd etildi.
+- **Faza 15 bilan kesishma:** `collectCashInputs` refund oyna cheklarining naqdini ikki marta sanashi
+  (`SALES-02`) — bu faza uni **na yomonlashtirdi, na tuzatdi** (ikki holatda ham oyna chek `posted`).
+
+**Commit:** `fix(sales): faza 7 — POS refund qarz-qaytarish + kumulyativ + loyalty ulush (SALES-04, SALES-05)`

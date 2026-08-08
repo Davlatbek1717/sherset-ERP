@@ -65,8 +65,15 @@ function makeHarness(positions: OriginalPosition[]) {
         id: SALE_ID,
         name: 'ТРН-2026-00001',
         state: 'posted',
+        // SALES-05: refund() endi chekni versiya bo'yicha qulflaydi va
+        // qaytarilgan ulushni asl summaga nisbatan hisoblaydi.
+        version: 1,
+        sumMinor: positions.reduce((a, p) => a + p.sumMinor, 0n),
         sessionId: SESSION_ID,
         agentId: null,
+        // SALES-04: chek qanday to'langani (qarz ulushi bormi) — bu yerda
+        // sof pul chekи, qarz yo'q.
+        payments: [],
         session: {
           id: SESSION_ID,
           state: 'open',
@@ -80,6 +87,8 @@ function makeHarness(positions: OriginalPosition[]) {
           ...p,
         })),
       }),
+      // Oldingi qaytarishlar yo'q (kumulyativ chegaralar uchun).
+      findMany: vi.fn().mockResolvedValue([]),
     },
     $transaction: vi
       .fn()

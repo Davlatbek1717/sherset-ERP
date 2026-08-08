@@ -132,6 +132,19 @@ export const RefundRetailSaleSchema = z.object({
     .min(1, 'at least one position required for refund'),
   cashAmountMinor: z.coerce.string().regex(/^\d+$/).default('0'),
   cardAmountMinor: z.coerce.string().regex(/^\d+$/).default('0'),
+  /**
+   * SALES-04 — qarzga sotilgan chek qaytarilganda mijoz balansidan
+   * o'chiriladigan qarz ulushi. **Berilmasa** server o'zi hisoblaydi:
+   * chekning qarz ulushi qaytarilgan qiymatga proporsional yopiladi.
+   * Bu ataylab shunday — eski klientlar (POS) hech narsa yubormaydi, va
+   * «qarzga olgan mijoz tovarni qaytardi, qarzi qolaveradi» holati
+   * o'z-o'zidan yopiladi. Berilgan qiymat esa cheklanadi
+   * (`computeRefundSettlementCaps`), oshirib bo'lmaydi.
+   */
+  debtReturnMinor: z.coerce
+    .string()
+    .regex(/^\d+$/, 'debtReturnMinor must be a non-negative integer')
+    .optional(),
   description: z.string().max(4000).nullish(),
 });
 export type RefundRetailSaleInput = z.infer<typeof RefundRetailSaleSchema>;

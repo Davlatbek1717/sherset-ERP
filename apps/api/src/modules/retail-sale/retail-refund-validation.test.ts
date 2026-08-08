@@ -2,9 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
   type OriginalLine,
   type OriginalPricedLine,
+  computeRefundSettlementCaps,
+  isFullyRefunded,
   priceRefundFromOriginal,
   validateRefundAmount,
   validateRefundPositions,
+  validateRefundSettlement,
 } from './retail-refund-validation.js';
 
 const sale: OriginalLine[] = [
@@ -201,5 +204,247 @@ describe('priceRefundFromOriginal — refund value comes from the ORIGINAL recei
     expect(
       priceRefundFromOriginal(withService, [{ productId: 'A', quantity: '2' }]).totalMinor,
     ).toBe(200n);
+  });
+});
+
+/**
+ * SALES-05 — a partial refund used to burn the whole receipt: `refund()`
+ * flipped it to 'refunded' and every later refund got a 400, so 9 of the 10
+ * units a customer bought could never come back. The subset guard has to know
+ * what EARLIER refunds already took, so the receipt can stay open until the
+ * last unit is returned.
+ */
+describe('validateRefundPositions — cumulative across earlier refunds (SALES-05)', () => {
+  it('accepts the remainder after an earlier partial refund', () => {
+    expect(
+      validateRefundPositions(
+        sale,
+        [{ productId: 'A', quantity: '1' }],
+        [{ productId: 'A', quantity: '2' }],
+      ),
+    ).toBeNull();
+  });
+
+  it('REJECTS when this refund plus the earlier ones exceeds the sold qty', () => {
+    expect(
+      validateRefundPositions(
+        sale,
+        [{ productId: 'A', quantity: '2' }],
+        [{ productId: 'A', quantity: '2' }],
+      ),
+    ).toMatch(/exceeds sold qty/);
+  });
+
+  it('REJECTS a second refund of an already fully-refunded product', () => {
+    expect(
+      validateRefundPositions(
+        sale,
+        [{ productId: 'A', quantity: '0.000001' }],
+        [{ productId: 'A', quantity: '3' }],
+      ),
+    ).toMatch(/exceeds sold qty/);
+  });
+
+  it('earlier refunds of ANOTHER product do not consume this one', () => {
+    expect(
+      validateRefundPositions(
+        sale,
+        [{ productId: 'A', quantity: '3' }],
+        [{ productId: 'B', quantity: '1.5' }],
+      ),
+    ).toBeNull();
+  });
+});
+
+describe('isFullyRefunded — when the receipt may finally close', () => {
+  it('false while any sold unit is still out', () => {
+    expect(isFullyRefunded(sale, [{ productId: 'A', quantity: '3' }])).toBe(false);
+  });
+
+  it('true once every product line is covered', () => {
+    expect(
+      isFullyRefunded(sale, [
+        { productId: 'A', quantity: '3' },
+        { productId: 'B', quantity: '1.5' },
+      ]),
+    ).toBe(true);
+  });
+
+  it('service (null-product) lines never hold the receipt open', () => {
+    const withService: OriginalLine[] = [
+      { productId: null, quantity: '1' },
+      { productId: 'A', quantity: '2' },
+    ];
+    expect(isFullyRefunded(withService, [{ productId: 'A', quantity: '2' }])).toBe(true);
+  });
+
+  it('sums split refunds of the same product', () => {
+    expect(
+      isFullyRefunded(
+        [{ productId: 'A', quantity: '3' }],
+        [
+          { productId: 'A', quantity: '1' },
+          { productId: 'A', quantity: '2' },
+        ],
+      ),
+    ).toBe(true);
+  });
+});
+
+/**
+ * SALES-04 (HIGH) — a receipt sold on credit was refunded in CASH: the till
+ * paid out money it never took, and the customer's debt stayed on their
+ * balance (two losses from one return). Both caps are derived from how the
+ * receipt was actually settled, CUMULATIVELY, so split refunds cannot drift
+ * past either one.
+ */
+describe('computeRefundSettlementCaps — payout bounded by what was actually taken (SALES-04)', () => {
+  const base = {
+    priorRefundedSumMinor: 0n,
+    priorMoneyReturnedMinor: 0n,
+    priorDebtReturnedMinor: 0n,
+  };
+
+  it('a 100% credit receipt pays back NO money — the whole value clears the debt', () => {
+    expect(
+      computeRefundSettlementCaps({
+        ...base,
+        originalSumMinor: 100_000n,
+        originalDebtMinor: 100_000n,
+        refundSumMinor: 100_000n,
+      }),
+    ).toEqual({ moneyMaxMinor: 0n, debtMaxMinor: 100_000n });
+  });
+
+  it('a cash receipt pays the full refund value back in money', () => {
+    expect(
+      computeRefundSettlementCaps({
+        ...base,
+        originalSumMinor: 100_000n,
+        originalDebtMinor: 0n,
+        refundSumMinor: 100_000n,
+      }),
+    ).toEqual({ moneyMaxMinor: 100_000n, debtMaxMinor: 0n });
+  });
+
+  it('splits the caps in the proportion the receipt was settled', () => {
+    // 100 000 chek: 40 000 naqd + 60 000 qarz. Yarmi qaytarilyapti.
+    expect(
+      computeRefundSettlementCaps({
+        ...base,
+        originalSumMinor: 100_000n,
+        originalDebtMinor: 60_000n,
+        refundSumMinor: 50_000n,
+      }),
+    ).toEqual({ moneyMaxMinor: 20_000n, debtMaxMinor: 30_000n });
+  });
+
+  it('subtracts what earlier refunds already returned', () => {
+    expect(
+      computeRefundSettlementCaps({
+        originalSumMinor: 100_000n,
+        originalDebtMinor: 60_000n,
+        priorRefundedSumMinor: 50_000n,
+        priorMoneyReturnedMinor: 20_000n,
+        priorDebtReturnedMinor: 30_000n,
+        refundSumMinor: 50_000n,
+      }),
+    ).toEqual({ moneyMaxMinor: 20_000n, debtMaxMinor: 30_000n });
+  });
+
+  it('rounding never lets the cumulative money paid out exceed the money taken', () => {
+    // 100 tiyinlik chek, 50 qarzga; 3 tiyindan 33 marta qaytariladi.
+    let priorRefunded = 0n;
+    let priorMoney = 0n;
+    for (let i = 0; i < 33; i++) {
+      const caps = computeRefundSettlementCaps({
+        originalSumMinor: 100n,
+        originalDebtMinor: 50n,
+        priorRefundedSumMinor: priorRefunded,
+        priorMoneyReturnedMinor: priorMoney,
+        priorDebtReturnedMinor: 0n,
+        refundSumMinor: 3n,
+      });
+      priorMoney += caps.moneyMaxMinor;
+      priorRefunded += 3n;
+    }
+    expect(priorMoney).toBeLessThanOrEqual(50n);
+  });
+
+  it('rounding never lets the cumulative debt write-down exceed the credit taken', () => {
+    let priorRefunded = 0n;
+    let priorDebt = 0n;
+    for (let i = 0; i < 33; i++) {
+      const caps = computeRefundSettlementCaps({
+        originalSumMinor: 100n,
+        originalDebtMinor: 50n,
+        priorRefundedSumMinor: priorRefunded,
+        priorMoneyReturnedMinor: 0n,
+        priorDebtReturnedMinor: priorDebt,
+        refundSumMinor: 3n,
+      });
+      priorDebt += caps.debtMaxMinor;
+      priorRefunded += 3n;
+    }
+    expect(priorDebt).toBeLessThanOrEqual(50n);
+  });
+
+  it('a fully-consumed cap goes to 0, never negative', () => {
+    expect(
+      computeRefundSettlementCaps({
+        originalSumMinor: 100_000n,
+        originalDebtMinor: 0n,
+        priorRefundedSumMinor: 100_000n,
+        priorMoneyReturnedMinor: 100_000n,
+        priorDebtReturnedMinor: 0n,
+        refundSumMinor: 0n,
+      }),
+    ).toEqual({ moneyMaxMinor: 0n, debtMaxMinor: 0n });
+  });
+
+  it('a zero-value receipt yields zero caps (no division by zero)', () => {
+    expect(
+      computeRefundSettlementCaps({
+        ...base,
+        originalSumMinor: 0n,
+        originalDebtMinor: 0n,
+        refundSumMinor: 0n,
+      }),
+    ).toEqual({ moneyMaxMinor: 0n, debtMaxMinor: 0n });
+  });
+
+  it('a debt bigger than the receipt (corrupt data) cannot mint a money cap', () => {
+    const caps = computeRefundSettlementCaps({
+      ...base,
+      originalSumMinor: 100n,
+      originalDebtMinor: 500n,
+      refundSumMinor: 100n,
+    });
+    expect(caps.moneyMaxMinor).toBe(0n);
+    expect(caps.debtMaxMinor).toBe(100n);
+  });
+});
+
+describe('validateRefundSettlement — enforces both caps', () => {
+  const caps = { moneyMaxMinor: 40_000n, debtMaxMinor: 60_000n };
+
+  it('accepts a settlement inside both caps', () => {
+    expect(validateRefundSettlement(caps, 30_000n, 10_000n, 60_000n)).toBeNull();
+  });
+
+  it('REJECTS cash+card above the money actually taken (SALES-04)', () => {
+    expect(validateRefundSettlement(caps, 40_000n, 1n, 0n)).toMatch(/money actually taken/);
+  });
+
+  it('REJECTS writing off more debt than the receipt put on the account', () => {
+    expect(validateRefundSettlement(caps, 0n, 0n, 60_001n)).toMatch(/credit taken/);
+  });
+
+  it('REJECTS a negative debt return (a refund that ADDS debt)', () => {
+    expect(validateRefundSettlement(caps, 0n, 0n, -1n)).toMatch(/non-negative/);
+  });
+
+  it('exact at both boundaries (no off-by-one)', () => {
+    expect(validateRefundSettlement(caps, 40_000n, 0n, 60_000n)).toBeNull();
   });
 });

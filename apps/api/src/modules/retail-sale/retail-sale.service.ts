@@ -24,6 +24,7 @@ import { resolveCreatorGroupId } from '../shared/group-stamp.js';
 import { mapVersionedUpdateError } from '../shared/optimistic-lock.js';
 import { type StockDelta, StockService } from '../stock/stock.service.js';
 import {
+  CASHIER_EVENT,
   type CashierAuditEventInput,
   planCancelAuditEvent,
   planCreditSaleAuditEvent,
@@ -44,9 +45,12 @@ import { planLoyaltyAccrual, planLoyaltyReversal } from './retail-loyalty.js';
 // schema's documented "subset of original positions" contract that
 // refund() never checked: blocks over-refund of qty/products/cash).
 import {
+  computeRefundSettlementCaps,
+  isFullyRefunded,
   priceRefundFromOriginal,
   validateRefundAmount,
   validateRefundPositions,
+  validateRefundSettlement,
 } from './retail-refund-validation.js';
 // Yagona FSM o'tish jadvali — oldindan tekshiruv va tranzaksiya ichidagi CAS
 // qo'riqchisi bir manbadan oziqlanadi (ajralib qolsa qo'riqchi tor/keng bo'ladi).
@@ -59,7 +63,7 @@ import {
   UpdateRetailSaleSchema,
 } from './retail-sale.schema.js';
 // Kassa TZ §6 — aralash to'lov qoidalari (sof, testlangan).
-import { computeTenders, legacyTotals } from './retail-tenders.js';
+import { TENDER, computeTenders, legacyTotals } from './retail-tenders.js';
 
 /**
  * RetailSaleService — POS receipt CRUD + FSM.
@@ -248,11 +252,41 @@ export class RetailSaleService {
    * / categoryType RETURN, linked to the refund. Same side-ledger,
    * logged-not-rethrown discipline as accrual.
    */
+  /**
+   * SALES-04 — whose debt did this receipt create?
+   *
+   * Normally the receipt itself says so (`agentId`, persisted by post()).
+   * Receipts posted before that fix have it NULL even though the balance was
+   * moved, because `/sotuv` sends the customer only in the post payload. The
+   * SOLD_ON_CREDIT audit event is written inside the same transaction as the
+   * balance delta, so it is the one faithful record of the debtor — a
+   * fallback, never a substitute (a receipt with a customer never reads it).
+   */
+  private async resolveCreditDebtorId(
+    accountId: string,
+    original: { id: string; agentId: string | null },
+  ): Promise<string | null> {
+    if (original.agentId) return original.agentId;
+    const event = await this.prisma.client.cashierAuditEvent.findFirst({
+      where: { accountId, docId: original.id, type: CASHIER_EVENT.soldOnCredit },
+      orderBy: { createdAt: 'desc' },
+      select: { payload: true },
+    });
+    const payload = event?.payload;
+    if (payload && typeof payload === 'object' && 'agentId' in payload) {
+      const agentId = (payload as { agentId?: unknown }).agentId;
+      if (typeof agentId === 'string' && agentId.length > 0) return agentId;
+    }
+    return null;
+  }
+
   private async reverseLoyalty(
     accountId: string,
     userId: string,
     originalSaleId: string,
     refundSaleId: string,
+    /** SALES-05 — the share this refund represents of the original receipt. */
+    share: { refundSumMinor: bigint; originalSumMinor: bigint },
   ): Promise<void> {
     try {
       const earned = await this.prisma.client.bonusOperation.findFirst({
@@ -264,7 +298,7 @@ export class RetailSaleService {
         },
         select: { agentId: true, bonusProgramId: true, bonusValue: true },
       });
-      const plan = planLoyaltyReversal(earned);
+      const plan = planLoyaltyReversal(earned, share.refundSumMinor, share.originalSumMinor);
       if (!plan || !earned) return;
       const alreadyReversed = await this.prisma.client.bonusOperation.findFirst({
         where: {
@@ -665,6 +699,11 @@ export class RetailSaleService {
         data: {
           state: 'posted',
           postedAt: new Date(),
+          // Qarz to'lov oynasida tanlangan mijozga yozilsa, MIJOZ CHEKDA HAM
+          // qolishi shart: `/sotuv` kontragentni faqat post payloadida
+          // yuboradi, chek qatorida esa `agentId` NULL bo'lib qolardi —
+          // keyin qaytarishda qarz kimniki ekani noma'lum edi (SALES-04).
+          ...(debtAmount > 0n && debtAgentId && !sale.agentId ? { agentId: debtAgentId } : {}),
           // TZ §6.3 — bu ikki ustun endi to'lov qatorlaridan HISOBLANADI
           // (terminal `card` yig'indisiga kiradi: ikkalasi ham naqdsiz).
           // Ustunlar saqlanadi, chunki mavjud hisobotlar va moysklad-compat
@@ -965,6 +1004,10 @@ export class RetailSaleService {
             sumMinor: true,
           },
         },
+        // SALES-04: how the receipt was actually settled. A DEBT row means
+        // the till took no money for that share — refunding it in cash pays
+        // out money that never arrived AND leaves the debt standing.
+        payments: { select: { method: true, amountMinor: true } },
       },
     });
     if (!original) throw new NotFoundException(`RetailSale ${originalSaleId} not found`);
@@ -975,15 +1018,48 @@ export class RetailSaleService {
       throw new BadRequestException(`Session is ${original.session.state}. Cannot refund.`);
     }
 
+    // SALES-05: what earlier refunds of this receipt already took. Before this,
+    // the first partial refund flipped the receipt to 'refunded' and the other
+    // nine units of a ten-unit sale could never come back — so no cumulative
+    // bookkeeping was needed, and none existed. Cancelled mirrors are excluded:
+    // they returned nothing.
+    const priorRefunds = await this.prisma.client.retailSale.findMany({
+      where: {
+        accountId,
+        refundedFromId: original.id,
+        state: { in: ['posted', 'refunded'] },
+      },
+      select: {
+        sumMinor: true,
+        cashAmountMinor: true,
+        cardAmountMinor: true,
+        debtReturnMinor: true,
+        positions: { select: { productId: true, quantity: true } },
+      },
+    });
+    const priorLines = priorRefunds.flatMap((r) =>
+      r.positions.map((p) => ({ productId: p.productId, quantity: String(p.quantity) })),
+    );
+    const priorTotals = priorRefunds.reduce(
+      (acc, r) => ({
+        sumMinor: acc.sumMinor + r.sumMinor,
+        moneyMinor: acc.moneyMinor + r.cashAmountMinor + r.cardAmountMinor,
+        debtMinor: acc.debtMinor + r.debtReturnMinor,
+      }),
+      { sumMinor: 0n, moneyMinor: 0n, debtMinor: 0n },
+    );
+
     // §105 over-refund guard: refunded products/qty must be a subset of
     // the original sale (the schema documents this; refund() never
-    // enforced it → wrong stock inflow + over-refunded cash).
+    // enforced it → wrong stock inflow + over-refunded cash). SALES-05: the
+    // cap is on this refund PLUS every earlier one.
     const posError = validateRefundPositions(
       original.positions.map((p) => ({
         productId: p.productId,
         quantity: String(p.quantity),
       })),
       parsed.positions.map((p) => ({ productId: p.productId, quantity: p.quantity })),
+      priorLines,
     );
     if (posError) throw new BadRequestException(posError);
 
@@ -1013,6 +1089,42 @@ export class RetailSaleService {
     const amtError = validateRefundAmount(refundPositions.totalMinor, cashReturn, cardReturn);
     if (amtError) throw new BadRequestException(amtError);
 
+    // SALES-04: split the refund between the till and the customer's account
+    // the way the receipt itself was settled. `validateRefundAmount` above only
+    // knows what the goods are worth — it cannot tell that the customer never
+    // handed any money over.
+    const originalDebtMinor = original.payments
+      .filter((p) => p.method === TENDER.debt)
+      .reduce((a, p) => a + p.amountMinor, 0n);
+    const caps = computeRefundSettlementCaps({
+      originalSumMinor: original.sumMinor,
+      originalDebtMinor,
+      priorRefundedSumMinor: priorTotals.sumMinor,
+      priorMoneyReturnedMinor: priorTotals.moneyMinor,
+      priorDebtReturnedMinor: priorTotals.debtMinor,
+      refundSumMinor: refundPositions.totalMinor,
+    });
+    // Omitted → settle the credit share automatically (schema comment): the
+    // POS sends nothing today, and «goods came back, debt stayed» is the very
+    // bug being fixed. An explicit value is still capped.
+    const debtReturn =
+      parsed.debtReturnMinor === undefined ? caps.debtMaxMinor : BigInt(parsed.debtReturnMinor);
+    const settleError = validateRefundSettlement(caps, cashReturn, cardReturn, debtReturn);
+    if (settleError) throw new BadRequestException(settleError);
+
+    // The debtor is whoever the credit was booked against on post() — which is
+    // why post() now persists that counterparty onto the receipt. Receipts sold
+    // BEFORE that fix carry agentId = null (the POS only ever sent the customer
+    // in the post payload), so the debtor is recovered from the SOLD_ON_CREDIT
+    // audit event, written in the same transaction as the balance delta. Without
+    // this every credit receipt already in the database would be unrefundable.
+    const debtorId = debtReturn > 0n ? await this.resolveCreditDebtorId(accountId, original) : null;
+    if (debtReturn > 0n && !debtorId) {
+      throw new BadRequestException(
+        `Chek qarzga sotilgan, lekin mijoz biriktirilmagan — qarzni qaytarib bo'lmaydi (${original.name}). Qaytarishni davom ettirish uchun debtReturnMinor=0 yuboring va qarzni qo'lda tuzating.`,
+      );
+    }
+
     const name = await this.nextRetailSaleName(accountId);
 
     // Original snapshot, keyed by product. First occurrence wins when a receipt
@@ -1035,13 +1147,26 @@ export class RetailSaleService {
     // H4 record-scope: the refund document is created by the acting user.
     const creatorGroupId = await resolveCreatorGroupId(this.prisma.client, accountId, userId);
 
+    // SALES-05: the receipt only closes when the LAST sold unit is back. While
+    // units are still out it stays 'posted' so the rest can be returned.
+    const fullyRefunded = isFullyRefunded(
+      original.positions.map((p) => ({ productId: p.productId, quantity: String(p.quantity) })),
+      [
+        ...priorLines,
+        ...parsed.positions.map((p) => ({ productId: p.productId, quantity: p.quantity })),
+      ],
+    );
+
     const refunded = await this.prisma.client.$transaction(async (tx) => {
-      // Atomic state guard: only flip 'posted' → 'refunded'. updateMany returns
-      // count=0 if another refund already fired between our pre-read and now,
-      // which prevents double-refund (mirror sale + cash decrement applied twice).
+      // Atomic state guard. The old guard was `state: 'posted' → 'refunded'`:
+      // the flip itself served as the mutex, so a second concurrent refund got
+      // count=0. A partial refund no longer flips the state, so the mutex moved
+      // onto the receipt's optimistic-lock `version` — otherwise two concurrent
+      // refunds would both read the same (stale) list of earlier refunds and
+      // each pay out the full remaining value.
       const flipResult = await tx.retailSale.updateMany({
-        where: { id: original.id, accountId, state: 'posted' },
-        data: { state: 'refunded' },
+        where: { id: original.id, accountId, state: 'posted', version: original.version },
+        data: { ...(fullyRefunded ? { state: 'refunded' } : {}), version: { increment: 1 } },
       });
       if (flipResult.count === 0) {
         throw new ConflictException(
@@ -1064,6 +1189,10 @@ export class RetailSaleService {
           sumMinor: refundPositions.totalMinor,
           cashAmountMinor: cashReturn,
           cardAmountMinor: cardReturn,
+          // SALES-04: the credit share this return wrote off. Persisted (not
+          // recomputed) because the cumulative caps of every LATER partial
+          // refund are measured against it.
+          debtReturnMinor: debtReturn,
           refundedFromId: original.id,
           positions: {
             create: refundPositions.rows.map((p, idx) => ({
@@ -1150,6 +1279,21 @@ export class RetailSaleService {
         await this.money.applyDeltas(tx, accountId, refundDeltas);
       }
 
+      // SALES-04 — qarz hisobidan yopilgan ulush: pul kassadan chiqmaydi,
+      // mijozning balansidagi qarz kamayadi. post() dagi +debtAmount ning
+      // aynan teskarisi (musbat = mijoz qarzdor konventsiyasi), shu bilan
+      // «tovar qaytdi, qarz qolaverdi» ikki tomonlama yo'qotish yopiladi.
+      if (debtReturn > 0n && debtorId) {
+        await this.counterpartyBalance.applyDelta(
+          tx,
+          accountId,
+          debtorId,
+          original.session.cashDesk.currency,
+          -debtReturn,
+          { docType: 'retailsale', docId: refundSale.id },
+        );
+      }
+
       // Update session aggregates
       await tx.cashierSession.update({
         where: { id: original.sessionId },
@@ -1162,9 +1306,13 @@ export class RetailSaleService {
       return refundSale;
     });
 
-    // §109: claw back the original sale's earned points AFTER the
-    // refund txn commits. Reverses the EXACT recorded value (§105).
-    await this.reverseLoyalty(accountId, userId, original.id, refunded.id);
+    // §109: claw back the original sale's earned points AFTER the refund txn
+    // commits. Reverses the recorded value (§105 — never recomputed), prorated
+    // by the refunded share (SALES-05).
+    await this.reverseLoyalty(accountId, userId, original.id, refunded.id, {
+      refundSumMinor: refundPositions.totalMinor,
+      originalSumMinor: original.sumMinor,
+    });
     return refunded;
   }
 

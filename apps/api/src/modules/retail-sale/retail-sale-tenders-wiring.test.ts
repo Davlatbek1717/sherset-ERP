@@ -211,6 +211,26 @@ describe('post() — qarzga sotish (TZ §7.1)', () => {
     });
   });
 
+  it('to`lov oynasida tanlangan mijoz CHEKKA YOZILADI (SALES-04 ga shart)', async () => {
+    // `/sotuv` mijozni chek yaratilganda emas, to'lov paytida yuboradi:
+    // qarz `parsed.agentId` balansiga yozilardi-yu chek qatorida `agentId`
+    // NULL qolardi. Natijada qaytarishda qarz kimniki ekani NOMA'LUM bo'lib,
+    // uni qaytarib bo'lmasdi (SALES-04 fix'i shu maydonga tayanadi).
+    const { svc, tx, balanceService } = makeHarness({ agentId: null });
+    await svc.post(ACCOUNT, USER_ID, SALE_ID, {
+      ...PAY({ debtAmountMinor: TOTAL.toString() }),
+      agentId: AGENT_ID,
+    });
+    expect(balanceService.applyDelta.mock.calls[0][2]).toBe(AGENT_ID);
+    expect(tx.retailSale.updateMany.mock.calls[0][0].data).toMatchObject({ agentId: AGENT_ID });
+  });
+
+  it('chekdagi mijozni to`lov oynasi QAYTA YOZMAYDI', async () => {
+    const { svc, tx } = makeHarness({ agentId: AGENT_ID });
+    await svc.post(ACCOUNT, USER_ID, SALE_ID, PAY({ debtAmountMinor: TOTAL.toString() }));
+    expect(tx.retailSale.updateMany.mock.calls[0][0].data.agentId).toBeUndefined();
+  });
+
   it('qarz `cardAmountMinor` ga QO`SHILMAYDI — u pul emas', async () => {
     const { svc, tx } = makeHarness({ agentId: AGENT_ID });
     await svc.post(

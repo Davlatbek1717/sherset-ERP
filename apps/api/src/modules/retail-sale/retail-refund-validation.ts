@@ -38,6 +38,16 @@ function toMicro(decimal: string): bigint {
   return neg ? -micro : micro;
 }
 
+/** Σ qty per product, in micro-units. Null-product (service) lines are skipped. */
+function sumQtyByProduct(lines: ReadonlyArray<OriginalLine>): Map<string, bigint> {
+  const out = new Map<string, bigint>();
+  for (const l of lines) {
+    if (l.productId == null) continue;
+    out.set(l.productId, (out.get(l.productId) ?? 0n) + toMicro(l.quantity));
+  }
+  return out;
+}
+
 /**
  * Validate a refund request against the original posted sale's lines.
  * Returns null when valid, else a human-readable reason. Enforces:
@@ -45,17 +55,20 @@ function toMicro(decimal: string): bigint {
  *  2. cumulative refunded qty per product ≤ originally sold qty
  *     (aggregated across original lines, so split lines are summed);
  *  3. refunded qty is strictly positive.
+ *
+ * `alreadyRefunded` — the lines of every EARLIER refund mirrored from this
+ * receipt (SALES-05). The cap is on the running total, not on one request:
+ * before this parameter existed the receipt was burned after the first
+ * partial refund (flipped to 'refunded'), which is exactly why nobody
+ * noticed a per-request cap was not enough.
  */
 export function validateRefundPositions(
   original: OriginalLine[],
   requested: RequestedRefundLine[],
+  alreadyRefunded: ReadonlyArray<OriginalLine> = [],
 ): string | null {
-  // Aggregate original sold qty per product (skip null-product/service).
-  const soldByProduct = new Map<string, bigint>();
-  for (const o of original) {
-    if (o.productId == null) continue;
-    soldByProduct.set(o.productId, (soldByProduct.get(o.productId) ?? 0n) + toMicro(o.quantity));
-  }
+  const soldByProduct = sumQtyByProduct(original);
+  const doneByProduct = sumQtyByProduct(alreadyRefunded);
 
   // Sum the request per product so multiple refund lines of the same
   // product cannot individually pass yet collectively over-refund.
@@ -73,13 +86,34 @@ export function validateRefundPositions(
     if (sold === undefined) {
       return `Product ${productId} was not in the original sale — cannot refund it`;
     }
-    if (want > sold) {
+    const cumulative = want + (doneByProduct.get(productId) ?? 0n);
+    if (cumulative > sold) {
       return `Refund qty for product ${productId} exceeds sold qty (${
-        Number(want) / 1e6
+        Number(cumulative) / 1e6
       } > ${Number(sold) / 1e6})`;
     }
   }
   return null;
+}
+
+/**
+ * Has every sold UNIT come back? Only then may the receipt close
+ * ('posted' → 'refunded'); until then it stays open so the rest can still
+ * be returned (SALES-05).
+ *
+ * Service lines (`productId === null`) are ignored: they carry no stock and
+ * cannot be returned, so counting them would hold the receipt open forever.
+ */
+export function isFullyRefunded(
+  original: OriginalLine[],
+  refunded: ReadonlyArray<OriginalLine>,
+): boolean {
+  const sold = sumQtyByProduct(original);
+  const back = sumQtyByProduct(refunded);
+  for (const [productId, qty] of sold) {
+    if ((back.get(productId) ?? 0n) < qty) return false;
+  }
+  return true;
 }
 
 /** An original receipt line with the money the customer was actually charged. */
@@ -193,6 +227,98 @@ export function validateRefundAmount(
   }
   if (cashReturnMinor + cardReturnMinor > refundSumMinor) {
     return `Refund payout ${(cashReturnMinor + cardReturnMinor).toString()} exceeds refunded value ${refundSumMinor.toString()}`;
+  }
+  return null;
+}
+
+export interface RefundSettlementInput {
+  /** The original receipt's total (tiyin). */
+  originalSumMinor: bigint;
+  /** The part of it left on the customer's account — Σ RetailSalePayment(DEBT). */
+  originalDebtMinor: bigint;
+  /** Σ value of the refunds already mirrored from this receipt. */
+  priorRefundedSumMinor: bigint;
+  /** Σ cash+card those earlier refunds already paid back. */
+  priorMoneyReturnedMinor: bigint;
+  /** Σ debt those earlier refunds already wrote down. */
+  priorDebtReturnedMinor: bigint;
+  /** Value of the refund being made now (from `priceRefundFromOriginal`). */
+  refundSumMinor: bigint;
+}
+
+export interface RefundSettlementCaps {
+  /** Most cash+card this refund may pay out. */
+  moneyMaxMinor: bigint;
+  /** Most debt this refund may write off the customer's balance. */
+  debtMaxMinor: bigint;
+}
+
+const clamp = (v: bigint, lo: bigint, hi: bigint): bigint => (v < lo ? lo : v > hi ? hi : v);
+
+/**
+ * How much of a refund may leave the till, and how much must instead come
+ * off the customer's debt (SALES-04).
+ *
+ * A receipt sold on credit took no money, so refunding it in cash hands out
+ * money that was never received — and the debt it created stayed on the
+ * balance: the customer got the goods' value in cash AND kept owing for
+ * them. The caps therefore mirror how the receipt was actually settled:
+ *
+ *   moneyCap(R) = ⌊ (sum − debt) × R / sum ⌋      R = TOTAL refunded value
+ *   debtCap(R)  = R − moneyCap(R)                 (clamped to the debt taken)
+ *
+ * Both are computed on the CUMULATIVE refunded value and then reduced by
+ * what earlier refunds already returned. That is what makes split refunds
+ * safe: rounding is re-evaluated against the running total each time
+ * instead of accumulating a tiyin of drift per refund, and at R = sum the
+ * two caps add up to exactly what the customer paid and owed.
+ */
+export function computeRefundSettlementCaps(i: RefundSettlementInput): RefundSettlementCaps {
+  const originalSum = i.originalSumMinor > 0n ? i.originalSumMinor : 0n;
+  // Corrupt/legacy data (debt recorded above the receipt total) must never
+  // produce a money cap out of thin air — clamp before subtracting.
+  const debt = clamp(i.originalDebtMinor, 0n, originalSum);
+  const money = originalSum - debt;
+
+  const refundedTotal = clamp(
+    (i.priorRefundedSumMinor > 0n ? i.priorRefundedSumMinor : 0n) +
+      (i.refundSumMinor > 0n ? i.refundSumMinor : 0n),
+    0n,
+    originalSum,
+  );
+
+  const moneyCapTotal = originalSum === 0n ? 0n : (money * refundedTotal) / originalSum;
+  const debtCapTotal = clamp(refundedTotal - moneyCapTotal, 0n, debt);
+
+  const moneyMaxMinor = moneyCapTotal - i.priorMoneyReturnedMinor;
+  const debtMaxMinor = debtCapTotal - i.priorDebtReturnedMinor;
+  return {
+    moneyMaxMinor: moneyMaxMinor > 0n ? moneyMaxMinor : 0n,
+    debtMaxMinor: debtMaxMinor > 0n ? debtMaxMinor : 0n,
+  };
+}
+
+/**
+ * Money guard #2 (SALES-04): the settlement must fit inside BOTH caps —
+ * you cannot pay back money the till never took, and you cannot write off
+ * more credit than the receipt put on the account.
+ * Returns null when valid, else a reason.
+ */
+export function validateRefundSettlement(
+  caps: RefundSettlementCaps,
+  cashReturnMinor: bigint,
+  cardReturnMinor: bigint,
+  debtReturnMinor: bigint,
+): string | null {
+  if (cashReturnMinor < 0n || cardReturnMinor < 0n || debtReturnMinor < 0n) {
+    return 'Refund cash/card/debt amounts must be non-negative';
+  }
+  const payout = cashReturnMinor + cardReturnMinor;
+  if (payout > caps.moneyMaxMinor) {
+    return `Refund payout ${payout.toString()} exceeds the money actually taken for these goods (${caps.moneyMaxMinor.toString()})`;
+  }
+  if (debtReturnMinor > caps.debtMaxMinor) {
+    return `Debt write-down ${debtReturnMinor.toString()} exceeds the credit taken on these goods (${caps.debtMaxMinor.toString()})`;
   }
   return null;
 }
