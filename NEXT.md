@@ -306,7 +306,7 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
 > **🕒 2026-08-08f (AUDIT-FIX FAZA 9 — `CounterpartyBalanceEntry` balans jurnali · `DUP-15`+`M-07`)
-> `<commit>` · Phase-1: strukturaviy + unit + **real-DB**-tasdiqlangan, browser-smoke YO'Q ·
+> `cc5370c` · Phase-1: strukturaviy + unit + **real-DB**-tasdiqlangan, browser-smoke YO'Q ·
 > ⏳ DEPLOY QILINMAGAN · 🗄️ **MIGRATSIYA BOR** (lokal `climart_adopt`ga qo'llandi, prod'ga YO'Q)**
 >
 > **Muammo (kodda tasdiqlandi).** `DUP-15`: materialized `CounterpartyBalance` kaliti
