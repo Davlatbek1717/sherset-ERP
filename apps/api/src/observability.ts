@@ -19,6 +19,15 @@
 import * as Sentry from '@sentry/node';
 import { LoggerModule } from 'nestjs-pino';
 
+/**
+ * AUTH-04: SSE/media allowlist marshrutlarida token `?access_token=` query'da
+ * yuradi (EventSource/<img>/window.open header yubora olmaydi) — access-log'dagi
+ * `req.url` orqali sizmasligi uchun qiymati redakt qilinadi.
+ */
+export function scrubAccessTokenFromUrl(url: string): string {
+  return url.replace(/([?&]access_token=)[^&]*/g, '$1[redacted]');
+}
+
 const REDACT_PATHS = [
   'req.headers.authorization',
   'req.headers.cookie',
@@ -52,6 +61,16 @@ export function makePinoModule() {
           }
         : undefined,
       redact: { paths: REDACT_PATHS, remove: true },
+      serializers: {
+        // wrapSerializers (default true): std-serializer avval ishlaydi,
+        // bu yerga tayyor {method,url,…} obyekt keladi.
+        req: (req: { url?: unknown } & Record<string, unknown>) => {
+          if (typeof req.url === 'string') {
+            req.url = scrubAccessTokenFromUrl(req.url);
+          }
+          return req;
+        },
+      },
       // Quiet down healthchecks and static assets in the access log; they
       // would otherwise spam the log and obscure real request traffic.
       autoLogging: {

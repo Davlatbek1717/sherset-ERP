@@ -305,6 +305,34 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-08n (AUDIT-FIX FAZA 22 — prod secret boot-guard + query-token allowlist ·
+> `AUTH-02`+`AUTH-04`/`FE-05`) · Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q ·
+> ⏳ DEPLOY QILINMAGAN · 🗄️ migratsiya YO'Q · ⚠️ **navbatdan tashqari** — foydalanuvchi Faza 22
+> sessiya-boshi promptini bevosita berdi (navbat bo'yicha Faza 15 hamon keyingi)
+>
+> **Nima qilindi.** (a) `AUTH-02`: `auth/boot-secrets.ts` `resolveSecret()` — `NODE_ENV=production`da
+> `JWT_SECRET`/`COOKIE_SECRET` yo'q/bo'sh/dev-fallback bo'lsa **boot'da throw** (`parseTtl` uslubi);
+> `auth.module.ts` + `main.ts` ulandi. (b) `AUTH-04`: ikki guard'dagi nusxa-`extractToken` yagona
+> `auth/extract-token.ts`ga ko'chirildi — `?access_token=` endi FAQAT 5-marshrut allowlist'ida
+> (SSE stream · images raw · attachments raw · PO list-report · HR employee image raw; hammasi
+> header yubora olmaydigan transport — reja «faqat SSE» degan edi, lekin FE 5 joyda ishlatadi,
+> faqat-SSE rasm/PDF'ni sindirardi). Boshqa HAR endpointda query-token endi 401. (c) pino
+> `serializers.req` — access-log `req.url`dan token redakt. TDD: RED jonli ko'rsatildi (guard'lar
+> query-token'ni oddiy endpointda qabul qilardi) → 4 yangi test-fayl, auth+permissions 118/118 +
+> observability 3/3 + app-boot 7/7. Batafsil: rejadagi «HISOBOT JURNALI → Faza 22».
+>
+> **🔴 DEPLOY OGOHLANTIRISHI:** VPS env'da haqiqiy `JWT_SECRET`/`COOKIE_SECRET` bo'lmasa API endi
+> **boot'da yiqiladi** (ataylab). Deploy'dan oldin tekshirish shart. **DEFER:** FE media signed-URL
+> (token 5 allowlist yo'lida query'da qoladi → nginx-log sizishi shu yo'llarda saqlanadi; to'liq
+> yechim alohida faza) · nginx log-redakt (deploy-side yamoq).
+>
+> **⚠️ PARALLEL SESSIYA (commit paytida jonli):** Faza 18 (FIFO→weighted-avg) ishi in-flight edi —
+> `demand.service.ts` typecheck'i va 2 lint-error o'shaniki (mening fayllarim toza, 23:01 to'liq-daraxt
+> typecheck 0 bilan tasdiqlangan). Diff'im path-cheklangan, u fayllarga tegilmadi.
+>
+> **⏭️ KEYINGI:** o'zgarmadi — `docs/REJA-AUDIT-FIX-2026-08.md` → **Faza 15**
+> (`SALES-02`,`SALES-06`,`SALES-07/08`). Sessiya-boshi prompt o'sha fazada.
+
 > **🕒 2026-08-08m (FAZA 14 IZIDAN — `PermissionsModule` oshkora import + in'yeksiya qo'riqchisi)
 > `e934c304` · Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q ·
 > ⏳ DEPLOY QILINMAGAN · 🗄️ migratsiya YO'Q · ⚠️ **navbat o'zgarmadi — keyingi hamon Faza 15**

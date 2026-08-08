@@ -3,6 +3,7 @@ import type { CanActivate, ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import type { FastifyRequest } from 'fastify';
 import type { AuthenticatedUser } from '../auth/auth.schema.js';
+import { extractToken } from '../auth/extract-token.js';
 import { TokenService } from '../auth/token.service.js';
 import { PermissionsService } from './permissions.service.js';
 import { PERMISSION_META, type RequiredPermission } from './require-permission.decorator.js';
@@ -42,10 +43,10 @@ export class PermissionsGuard implements CanActivate {
     let user = req.user;
 
     // Backfill the user from the bearer token if the controller-level
-    // JwtAuthGuard has not run yet. Mirrors JwtAuthGuard token extraction
-    // (header first, then ?access_token query param fallback for SSE).
+    // JwtAuthGuard has not run yet. Shared extractToken: header first,
+    // `?access_token=` faqat SSE/media allowlist marshrutlarda (AUTH-04).
     if (!user) {
-      const token = this.extractToken(req);
+      const token = extractToken(req);
       if (!token) {
         throw new UnauthorizedException('Avtorizatsiya kerak');
       }
@@ -65,17 +66,5 @@ export class PermissionsGuard implements CanActivate {
     );
 
     return true;
-  }
-
-  private extractToken(req: FastifyRequest): string | null {
-    const auth = req.headers.authorization;
-    if (auth?.startsWith('Bearer ')) {
-      return auth.slice('Bearer '.length);
-    }
-    const queryToken = (req.query as { access_token?: unknown } | undefined)?.access_token;
-    if (typeof queryToken === 'string' && queryToken.length > 0) {
-      return queryToken;
-    }
-    return null;
   }
 }

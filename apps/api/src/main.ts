@@ -8,6 +8,7 @@ import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fa
 import { WsAdapter } from '@nestjs/platform-ws';
 import { Logger } from 'nestjs-pino';
 import { AppModule } from './app.module.js';
+import { resolveSecret } from './modules/auth/boot-secrets.js';
 import { PrismaExceptionFilter } from './modules/shared/prisma-exception.filter.js';
 import { StripTenantInterceptor } from './modules/shared/strip-tenant.interceptor.js';
 import { ZodExceptionFilter } from './modules/shared/zod-exception.filter.js';
@@ -41,7 +42,13 @@ async function bootstrap(): Promise<void> {
 
   await app.register(helmet);
   await app.register(cookie, {
-    secret: process.env.COOKIE_SECRET ?? 'dev-cookie-secret-change-in-prod',
+    // AUTH-02: prod'da sir majburiy — jim dev-fallback = auth-bypass.
+    secret: resolveSecret({
+      name: 'COOKIE_SECRET',
+      value: process.env.COOKIE_SECRET,
+      devFallback: 'dev-cookie-secret-change-in-prod',
+      nodeEnv: process.env.NODE_ENV,
+    }),
   });
   await app.register(cors, {
     origin: (origin, cb) => {

@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtModule, type JwtSignOptions } from '@nestjs/jwt';
 import { AuthController } from './auth.controller.js';
 import { AuthService } from './auth.service.js';
+import { resolveSecret } from './boot-secrets.js';
 import { JwtAuthGuard } from './jwt-auth.guard.js';
 import { KioskGuard } from './kiosk.guard.js';
 import { PosPinService } from './pos-pin.service.js';
@@ -38,7 +39,13 @@ function parseTtl(raw: string | undefined, fallback: string, varName: string) {
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (cs: ConfigService) => ({
-        secret: cs.get<string>('JWT_SECRET') ?? 'dev-secret-change-in-prod',
+        // AUTH-02: prod'da sir majburiy — jim dev-fallback = auth-bypass.
+        secret: resolveSecret({
+          name: 'JWT_SECRET',
+          value: cs.get<string>('JWT_SECRET'),
+          devFallback: 'dev-secret-change-in-prod',
+          nodeEnv: process.env.NODE_ENV,
+        }),
         signOptions: {
           expiresIn: parseTtl(cs.get<string>('JWT_ACCESS_TTL'), '15m', 'JWT_ACCESS_TTL'),
         },

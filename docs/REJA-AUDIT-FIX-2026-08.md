@@ -604,7 +604,9 @@ cheklab qo'y (alohida guard/path-check); FE'da rasm/fayl uchun qisqa-muddatli si
 > `docs/REJA-AUDIT-FIX-2026-08.md` — **Faza 22**. O'ZGARMAS QOIDALAR. `AUTH-02`+`AUTH-04`/`FE-05`. Boot-guard
 > (prod secret majbur) + query-token SSE-cheklov. TDD: boot-throw + guard testlari. Gate. Hisobot (media-URL
 > DEFER bo'lsa ayt), TO'XTA.
-**◻ HISOBOT:** _(agent to'ldiradi)_
+**☑ HISOBOT (2026-08-08):** BAJARILDI — batafsili «HISOBOT JURNALI → Faza 22» da. **FE media signed-URL —
+DEFER** (query-token 5 allowlist marshrutida qoldi, pino-redakt qo'shildi); **prod deploy'dan OLDIN env'da
+haqiqiy `JWT_SECRET`/`COOKIE_SECRET` borligini tekshir — endi yo'q bo'lsa API boot'da YIQILADI.**
 
 ---
 
@@ -2443,3 +2445,65 @@ tasdig'i qo'shildi):
   parallel commit Phase-2 QA cohort'ida ko'riladi.
 
 **Commit:** `fix(bank-import): faza 20 — row-claim poyga qulfi + vypiska dedup (INT-05)`
+
+## Faza 22 — 2026-08-08 — **Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q**
+
+**Topilma tasdiqlanishi (o'z ko'zim bilan kodda).** Ikkalasi ham TASDIQLANDI:
+- `AUTH-02`: `auth.module.ts:41` `?? 'dev-secret-change-in-prod'`, `main.ts:44`
+  `?? 'dev-cookie-secret-change-in-prod'` — sir uchun hech qanday boot-assert yo'q edi (TTL uchun
+  `parseTtl` bor edi). `driver-link.util.ts:14-15` allaqachon to'g'ri (throw) — tegilmadi.
+- `AUTH-04`/`FE-05`: `jwt-auth.guard.ts` va `permissions.guard.ts` — IKKI NUSXA `extractToken`,
+  `?access_token=` query-param HAR endpointda qabul qilinardi (komment «SSE uchun» desa ham).
+
+**Rejaga aniqlik (muhim).** Reja «faqat SSE'ga chekla» degan, lekin FE'da query-token **5 marshrutda**
+jonli ishlatiladi (hammasi header yubora olmaydigan transport): `/notifications/stream` (EventSource),
+`/images/:id/raw` va `/hr/employees/:id/image/raw` (`<img src>`, jumladan customer-display),
+`/attachments/:id/raw`, `/purchase-orders/list-report` (top-level `window.open` PDF). Faqat-SSE cheklov
+rasm/fayl/PDF'ni sindirardi ⇒ allowlist shu 5 marshrut qilib qo'yildi. FE'ga tegilmadi.
+
+**Fayllar**
+
+| Fayl | O'zgarish |
+|---|---|
+| `apps/api/src/modules/auth/boot-secrets.ts` | **YANGI** — `resolveSecret()`: prod'da sir yo'q/bo'sh/dev-fallback ⇒ boot-throw |
+| `apps/api/src/modules/auth/boot-secrets.test.ts` | **YANGI** — 6 test (prod-throw ×3, prod-pass, dev-fallback ×2) |
+| `apps/api/src/modules/auth/extract-token.ts` | **YANGI** — yagona `extractToken()` + `isQueryTokenRoute()` (5-regex allowlist) |
+| `apps/api/src/modules/auth/jwt-auth.guard.ts` | private `extractToken` o'chirildi → shared helper |
+| `apps/api/src/modules/auth/jwt-auth.guard.test.ts` | **YANGI** — 9 test (header-hamma-joyda, SSE/media-pass, oddiy-endpoint-401, prefiks-o'xshash-401) |
+| `apps/api/src/modules/permissions/permissions.guard.ts` | private `extractToken` o'chirildi → shared helper (backfill yo'li ham yopildi) |
+| `apps/api/src/modules/permissions/permissions.guard.test.ts` | **YANGI** — 3 test (regressiya qulfi: APP_GUARD backfill yo'li) |
+| `apps/api/src/modules/auth/auth.module.ts` | `JWT_SECRET` → `resolveSecret(...)` |
+| `apps/api/src/main.ts` | `COOKIE_SECRET` → `resolveSecret(...)` |
+| `apps/api/src/observability.ts` | `scrubAccessTokenFromUrl()` + pino `serializers.req` — access-log'dagi `req.url`dan token qiymati redakt (AUTH-04 fix-tavsiyasidagi «log redaktor» qismi) |
+| `apps/api/src/observability.test.ts` | **YANGI** — 3 test |
+
+**Testlar (TDD tartibi kuzatildi).** RED: `jwt-auth.guard.test` + `permissions.guard.test`'ning
+«query-token oddiy endpointda RAD» case'lari hozirgi kodda **yiqildi** (guard `true` qaytardi — bug jonli
+ko'rsatildi), `boot-secrets.test` modul-yo'q bilan yiqildi. Fix'dan keyin: auth+permissions modullari
+**10 fayl / 118 test yashil** (regress yo'q), + `observability.test.ts` 3/3, + `app-boot.test.ts` 7/7
+(DI grafi buzilmagan).
+
+**Gate (halol, parallel-sessiya izohi bilan).**
+- `vitest run` auth + permissions + observability + app-boot → **128/128 yashil**.
+- `typecheck`: mening o'zgarishlarim kirgan holda 23:01 da **to'liq daraxt 0 xato** o'tdi; 23:04 dagi
+  qayta-yugurtirishda 3 xato chiqdi — **hammasi `demand.service.ts`da** (`consumeFifo`/`reverseFifo`),
+  bu **parallel sessiyaning Faza 18 (FIFO→weighted-avg) yarim-yo'ldagi ishi**, mening fayllarimda xato yo'q.
+- `lint:product`: mening fayllarim 0 error (observability.test format xatosi topilib tuzatildi); qolgan
+  2 error parallel sessiyaning in-flight fayllarida (`report-rate-ctx.util.test.ts`,
+  `retail-sale.service.ts`) — §6.1 bo'yicha TEGILMADI.
+- `i18n:gate` kerak emas (UI-matn yo'q), web build kerak emas (FE fayl tegilmadi).
+
+**Qolgan qarz / DEFER**
+- **🔴 FE media signed-URL / cookie-media path — DEFER** (reja «Diqqat» bandi ruxsat bergan minimal yo'l).
+  Token 5 allowlist marshrutida hali ham query'da yuradi ⇒ nginx access-log sizishi **shu 5 yo'lda
+  qoladi** (API'ning o'z pino-logida endi redakt). To'liq yechim — qisqa muddatli signed-URL yoki
+  cookie-auth media-path — alohida faza. Vaqtinchalik nginx-yamoq (deploy-side, bu repoda emas):
+  log_format'da `access_token=[^&]*` ni redakt qilish.
+- **🔴 PROD DEPLOY OGOHLANTIRISHI:** VPS env'ida `JWT_SECRET`/`COOKIE_SECRET` yo'q yoki dev-fallback'ga
+  teng bo'lsa API endi **boot'da yiqiladi** (jim ishlamaydi — ataylab). Deploy'dan oldin
+  `deploy/ecosystem.config.cjs` / `.env` da ikkala sir haqiqiy ekanini tekshirish SHART.
+- Query-token'ni yangi marshrutga ochish kerak bo'lsa — `extract-token.ts` allowlist'iga regex qo'shiladi
+  (testlari bilan); guard'larга alohida nusxa qaytarmaslik.
+- Browser-smoke YO'Q — SSE oqimi, rasm/fayl ko'rinishi, PDF-print Phase-2 QA cohort'ida runtime tekshiriladi.
+
+**Commit:** `fix(auth): faza 22 — prod secret boot-guard + query-token allowlist (AUTH-02, AUTH-04)`
