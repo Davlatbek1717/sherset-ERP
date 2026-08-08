@@ -7,6 +7,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { alphaCurrencyCode } from './currency-code.util.js';
 import { cbuRateToRateValue } from './currency-rate-source.js';
 import {
   type CreateCurrencyInput,
@@ -243,18 +244,23 @@ export class CurrencyService {
   ): Promise<number> {
     if (rows.length === 0) return 0;
     const byCode = new Map(rows.map((r) => [r.currency.toUpperCase(), r]));
+    // M-03 (Faza 16): CBU feed ALPHA kod ('USD') beradi, Currency.code esa
+    // moysklad konventsiyasida NUMERIC ('840') — matching ALPHA `isoCode`
+    // orqali; legacy alpha-in-code qatorlar uchun `code` ham qamrab olinadi.
+    const keys = [...byCode.keys()];
     const targets = await this.prisma.client.currency.findMany({
       where: {
         rateUpdateType: 'AUTO',
         default: false,
         archived: false,
-        code: { in: [...byCode.keys()] },
+        OR: [{ isoCode: { in: keys } }, { code: { in: keys } }],
       },
-      select: { id: true, code: true, margin: true },
+      select: { id: true, code: true, isoCode: true, margin: true },
     });
     let updated = 0;
     for (const c of targets) {
-      const src = byCode.get(c.code.toUpperCase());
+      const alpha = alphaCurrencyCode(c);
+      const src = alpha ? byCode.get(alpha) : undefined;
       if (!src) continue;
       const rv = cbuRateToRateValue(
         src.rate,

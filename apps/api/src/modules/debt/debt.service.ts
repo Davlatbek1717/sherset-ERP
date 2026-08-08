@@ -52,6 +52,7 @@ import {
   ReversePaymentSchema,
   type SetProblemInput,
   SetProblemSchema,
+  usdCentsToSomTiyin,
 } from './debt.schema.js';
 import { renderReminderText } from './telegram-template-render.util.js';
 
@@ -783,7 +784,7 @@ export class DebtService {
     // yuritiladi. Shuning uchun har doim ikki qiymat saqlanadi:
     //   amountMinor          — so'mdagi ekvivalent (qarz hisobi shundan)
     //   amountOriginalMinor  — mijoz ASLIDA bergan summa (USD → sent)
-    // USD → so'm: sent × (kurs×10000) / 10000 = tiyin.
+    // USD → so'm: sent × (kurs×10^8) / 10^8 = tiyin (kanonik masshtab, DB-01).
     let paidSomMinor = 0n;
     let originalMinor: bigint | null = null;
     let rate: bigint | null = null;
@@ -801,7 +802,7 @@ export class DebtService {
         if (originalMinor == null || rate == null || rate <= 0n) {
           throw new BadRequestException('Dollar to’lovida summa va kurs majburiy');
         }
-        paidSomMinor = (originalMinor * rate) / 10_000n;
+        paidSomMinor = usdCentsToSomTiyin(originalMinor, rate);
       } else {
         paidSomMinor = originalMinor ?? 0n;
       }
@@ -837,7 +838,7 @@ export class DebtService {
     const origLabel =
       input.currency === 'USD' && originalMinor != null
         ? ` (${(Number(originalMinor) / 100).toFixed(2)} $ × ${
-            rate != null ? (Number(rate) / 10_000).toLocaleString('ru-RU') : '—'
+            rate != null ? (Number(rate) / 100_000_000).toLocaleString('ru-RU') : '—'
           })`
         : '';
 

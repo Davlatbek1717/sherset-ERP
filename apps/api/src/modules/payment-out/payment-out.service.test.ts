@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 import { mockDocumentSequence } from '../../prisma/document-sequence.mock.js';
 import { PaymentOutService } from './payment-out.service.js';
@@ -140,5 +141,70 @@ describe('PaymentOutService.clone — allocation copy preserves both FK kinds', 
       ['invoicein', 'inv-1', null],
       ['purchaseorder', null, 'po-1'],
     ]);
+  });
+});
+
+// ── M-04 (Faza 16): valyutalararo to'lov guard ─────────────────────────────
+// payment-in bilan bir xil bug-klass — chiquvchi to'lovda ham to'lov valyutasi
+// nishon-hujjat (InvoiceIn/PurchaseOrder) valyutasi bilan mos kelishi shart,
+// aks holda 400 (applyPayment summani konvertatsiyasiz qo'shadi).
+
+type EnsureOperations = {
+  ensureOperations(
+    accountId: string,
+    operations: Array<{
+      targetKind: string;
+      invoiceInId?: string | null;
+      purchaseOrderId?: string | null;
+      amountMinor: string;
+    }>,
+    sumMinor: bigint,
+    paymentCurrency: string,
+  ): Promise<void>;
+};
+
+function makeGuardService(rows: {
+  invoiceIn?: { id: string; currency: string } | null;
+  purchaseOrder?: { id: string; currency: string } | null;
+}) {
+  const client = {
+    invoiceIn: { findFirst: vi.fn().mockResolvedValue(rows.invoiceIn ?? null) },
+    purchaseOrder: { findFirst: vi.fn().mockResolvedValue(rows.purchaseOrder ?? null) },
+  };
+  const service = new PaymentOutService(
+    { client } as never,
+    undefined as never,
+    undefined as never,
+    undefined as never,
+    undefined as never,
+    undefined as never,
+    undefined as never,
+  );
+  return service as unknown as EnsureOperations;
+}
+
+describe('ensureOperations — valyutalararo to‘lov guard (M-04, payment-out)', () => {
+  it('UZS to‘lov USD invoice-in’ga taqsimlansa → 400', async () => {
+    const svc = makeGuardService({ invoiceIn: { id: 'ii1', currency: 'USD' } });
+    await expect(
+      svc.ensureOperations(
+        'acc1',
+        [{ targetKind: 'invoicein', invoiceInId: 'ii1', amountMinor: '10000' }],
+        10_000n,
+        'UZS',
+      ),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('bir xil valyuta → o‘tadi', async () => {
+    const svc = makeGuardService({ purchaseOrder: { id: 'po1', currency: 'USD' } });
+    await expect(
+      svc.ensureOperations(
+        'acc1',
+        [{ targetKind: 'purchaseorder', purchaseOrderId: 'po1', amountMinor: '7000' }],
+        7_000n,
+        'USD',
+      ),
+    ).resolves.toBeUndefined();
   });
 });

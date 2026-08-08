@@ -1,6 +1,6 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { ExchangeRate } from './exchange-rate.js';
+import { ExchangeRate, RATE_SCALE } from './exchange-rate.js';
 import { Money } from './money.js';
 
 describe('Money — construction', () => {
@@ -253,12 +253,20 @@ describe('Money — property tests (invariants)', () => {
 });
 
 describe('ExchangeRate', () => {
+  // DB-01 (Faza 16): kanonik rate-masshtab — ×10^8, Currency.rateValue va
+  // DebtPayment.exchangeRate bilan BIR XIL. ×10^9 emas (eski divergensiya).
+  it('kanonik masshtab ×10^8 — RATE_SCALE Currency.rateValue bilan mos', () => {
+    expect(RATE_SCALE).toBe(100_000_000n);
+    const rate = ExchangeRate.fromRatio('USD', 'UZS', 12_450.27);
+    expect(rate.multiplier).toBe(1_245_027_000_000n); // 12 450.27 × 1e8
+  });
+
   it('converts UZS to USD', () => {
     // 1 USD = 12 450 UZS → we want 1 UZS = 1/12450 USD
     const rate = ExchangeRate.fromRatio('USD', 'UZS', 12_450);
     const usd = Money.fromMajor('100', 'USD'); // 100.00 USD = 10_000 minor
     const uzs = rate.convert(usd);
-    // 10_000 * 12_450_000_000_000 / 1_000_000_000 = 124_500_000 minor UZS
+    // 10_000 × (12 450 × 1e8) / 1e8 = 124_500_000 minor UZS
     expect(uzs.toMinor()).toBe(124_500_000n);
   });
 

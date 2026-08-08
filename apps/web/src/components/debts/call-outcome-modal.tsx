@@ -54,7 +54,7 @@ export function outcomeLabelKey(o: CallOutcome): string {
   return `outcome_${o}`;
 }
 
-/** "12 800,5" / "12800.50" → kurs ×10000 (BigInt string). Bo'sh bo'lsa null. */
+/** "12 800,5" / "12800.50" → kurs KANONIK ×10^8 (BigInt string). Bo'sh bo'lsa null. */
 function rateToMinor(raw: string): string | null {
   const cleaned = raw.replace(/\s/g, '').replace(',', '.');
   if (!cleaned) return null;

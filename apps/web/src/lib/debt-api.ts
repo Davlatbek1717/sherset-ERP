@@ -45,8 +45,12 @@ export type CallPaymentKind = 'cash' | 'click' | 'account';
 /** To'lov valyutasi — naqd so'mda ham, dollarda ham bo'lishi mumkin. */
 export type PaymentCurrency = 'UZS' | 'USD';
 
-/** Kurs saqlanish ko'paytmasi: 12 800,50 so'm → 128 005 000. */
-export const RATE_SCALE = 10_000;
+/**
+ * Kurs saqlanish ko'paytmasi — KANONIK ×10^8 (DB-01, Faza 16; barcha
+ * hujjatlardagi rateValue bilan bir xil): 12 800,50 so'm → 1 280 050 000 000.
+ * Server past (eski ×10^4) qiymatni 400 bilan rad etadi.
+ */
+export const RATE_SCALE = 100_000_000;
 
 export interface DebtRow {
   id: string;

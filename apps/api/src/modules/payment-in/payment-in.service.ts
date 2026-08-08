@@ -289,7 +289,7 @@ export class PaymentInService {
       throw new BadRequestException("sumMinor 0 dan katta bo'lishi kerak");
     }
     if (parsed.operations.length > 0) {
-      await this.ensureOperations(accountId, parsed.operations, sumMinor);
+      await this.ensureOperations(accountId, parsed.operations, sumMinor, parsed.currency);
     }
 
     const name = await this.nextPaymentName(accountId);
@@ -495,7 +495,12 @@ export class PaymentInService {
       // Read-only validation here; the destructive deleteMany is deferred into
       // the $transaction below so a version conflict (409) rolls back the
       // delete instead of leaving the operations destroyed (data corruption).
-      await this.ensureOperations(accountId, parsed.operations, sumForOps);
+      await this.ensureOperations(
+        accountId,
+        parsed.operations,
+        sumForOps,
+        parsed.currency ?? existing.currency,
+      );
       data.operations = {
         create: parsed.operations.map((op) => ({
           accountId,
@@ -969,6 +974,10 @@ export class PaymentInService {
     if (!org) throw new BadRequestException('Tashkilot topilmadi');
   }
 
+  // M-04 (Faza 16): to'lov valyutasi nishon-hujjat valyutasi bilan mos
+  // bo'lishi SHART — applyPayment payedSumMinor'ga summani yuzma-yuz
+  // (konvertatsiyasiz) qo'shadi, valyuta farq qilsa USD-sent UZS-tiyinga
+  // aralashib ~12 000× xato bo'lardi. moysklad ham bir-valyuta talab qiladi.
   private async ensureOperations(
     accountId: string,
     operations: Array<{
@@ -978,6 +987,7 @@ export class PaymentInService {
       amountMinor: string;
     }>,
     sumMinor: bigint,
+    paymentCurrency: string,
   ): Promise<void> {
     let total = 0n;
     for (const op of operations) {
@@ -990,25 +1000,48 @@ export class PaymentInService {
         if (!op.invoiceOutId) throw new BadRequestException('invoiceOutId majburiy');
         const inv = await this.prisma.client.invoiceOut.findFirst({
           where: { id: op.invoiceOutId, accountId, deletedAt: null },
-          select: { id: true },
+          select: { id: true, currency: true },
         });
         if (!inv) {
           throw new BadRequestException(`InvoiceOut ${op.invoiceOutId} topilmadi`);
         }
+        this.assertOperationCurrency(
+          paymentCurrency,
+          inv.currency,
+          `InvoiceOut ${op.invoiceOutId}`,
+        );
       } else if (op.targetKind === 'customerorder') {
         if (!op.customerOrderId) throw new BadRequestException('customerOrderId majburiy');
         const co = await this.prisma.client.customerOrder.findFirst({
           where: { id: op.customerOrderId, accountId, deletedAt: null },
-          select: { id: true },
+          select: { id: true, currency: true },
         });
         if (!co) {
           throw new BadRequestException(`CustomerOrder ${op.customerOrderId} topilmadi`);
         }
+        this.assertOperationCurrency(
+          paymentCurrency,
+          co.currency,
+          `CustomerOrder ${op.customerOrderId}`,
+        );
       }
     }
     if (total > sumMinor) {
       throw new BadRequestException(
         `Operatsiyalar jami (${total}) to'lov summasidan (${sumMinor}) ortiq`,
+      );
+    }
+  }
+
+  private assertOperationCurrency(
+    paymentCurrency: string,
+    targetCurrency: string,
+    targetLabel: string,
+  ): void {
+    if (paymentCurrency !== targetCurrency) {
+      throw new BadRequestException(
+        `Valyutalar mos emas: to'lov ${paymentCurrency}, ${targetLabel} esa ${targetCurrency}. ` +
+          `To'lovni hujjat valyutasida kiriting`,
       );
     }
   }

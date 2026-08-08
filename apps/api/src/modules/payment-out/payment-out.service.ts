@@ -231,7 +231,12 @@ export class PaymentOutService {
       throw new BadRequestException("sumMinor 0 dan katta bo'lishi kerak");
     }
     if (parsed.operations.length > 0) {
-      await this.ensureOperations(accountId, parsed.operations as OperationInput[], sumMinor);
+      await this.ensureOperations(
+        accountId,
+        parsed.operations as OperationInput[],
+        sumMinor,
+        parsed.currency,
+      );
     }
 
     const name = await this.nextPaymentName(accountId);
@@ -324,6 +329,12 @@ export class PaymentOutService {
         sumMinor: true,
         payedSumMinor: true,
         state: true,
+        // M-04 (Faza 16): to'lov INVOICE valyutasida (+ kursida) ochiladi —
+        // aks holda UZS-default to'lov USD fakturaga taqsimlana olmaydi
+        // (ensureOperations valyuta-guard 400 beradi). payment-in'dagi
+        // createFromInvoiceOut bilan bir xil naqsh.
+        currency: true,
+        rateValue: true,
       },
     });
     if (!invoice) throw new NotFoundException('InvoiceIn topilmadi');
@@ -349,6 +360,8 @@ export class PaymentOutService {
     return this.create(accountId, userId, {
       agentId: invoice.agentId,
       organizationId: invoice.organizationId,
+      currency: invoice.currency,
+      rateValue: invoice.rateValue.toString(),
       sumMinor: amount.toString(),
       paymentPurpose: parsed.paymentPurpose ?? `Schyot-faktura bo'yicha to'lov`,
       operations: [
@@ -382,6 +395,9 @@ export class PaymentOutService {
         sumMinor: true,
         payedSumMinor: true,
         state: true,
+        // M-04 (Faza 16): avans ham PO valyutasida — ensureOperations guard.
+        currency: true,
+        rateValue: true,
       },
     });
     if (!order) throw new NotFoundException('PurchaseOrder topilmadi');
@@ -407,6 +423,8 @@ export class PaymentOutService {
     return this.create(accountId, userId, {
       agentId: order.agentId,
       organizationId: order.organizationId,
+      currency: order.currency,
+      rateValue: order.rateValue.toString(),
       sumMinor: amount.toString(),
       paymentPurpose: parsed.paymentPurpose ?? `PO bo'yicha avans to'lovi`,
       operations: [
@@ -486,7 +504,12 @@ export class PaymentOutService {
       // versioned $transaction below so an optimistic-lock 409 rolls it back
       // (otherwise a stale-version save would leave the operations already
       // deleted = data corruption).
-      await this.ensureOperations(accountId, parsed.operations as OperationInput[], sumForOps);
+      await this.ensureOperations(
+        accountId,
+        parsed.operations as OperationInput[],
+        sumForOps,
+        parsed.currency ?? existing.currency,
+      );
       data.operations = {
         create: parsed.operations.map((op) => ({
           accountId,
@@ -953,10 +976,14 @@ export class PaymentOutService {
     if (!org) throw new BadRequestException('Tashkilot topilmadi');
   }
 
+  // M-04 (Faza 16): payment-in bilan bir xil guard — to'lov valyutasi
+  // nishon-hujjat valyutasi bilan mos bo'lishi shart (applyPayment summani
+  // konvertatsiyasiz qo'shadi).
   private async ensureOperations(
     accountId: string,
     operations: OperationInput[],
     sumMinor: bigint,
+    paymentCurrency: string,
   ): Promise<void> {
     let total = 0n;
     for (const op of operations) {
@@ -970,22 +997,41 @@ export class PaymentOutService {
           throw new BadRequestException('invoicein operatsiyasida invoiceInId kerak');
         const inv = await this.prisma.client.invoiceIn.findFirst({
           where: { id: op.invoiceInId, accountId, deletedAt: null },
-          select: { id: true },
+          select: { id: true, currency: true },
         });
         if (!inv) throw new BadRequestException(`InvoiceIn ${op.invoiceInId} topilmadi`);
+        this.assertOperationCurrency(paymentCurrency, inv.currency, `InvoiceIn ${op.invoiceInId}`);
       } else if (op.targetKind === 'purchaseorder') {
         if (!op.purchaseOrderId)
           throw new BadRequestException('purchaseorder operatsiyasida purchaseOrderId kerak');
         const order = await this.prisma.client.purchaseOrder.findFirst({
           where: { id: op.purchaseOrderId, accountId, deletedAt: null },
-          select: { id: true },
+          select: { id: true, currency: true },
         });
         if (!order) throw new BadRequestException(`PurchaseOrder ${op.purchaseOrderId} topilmadi`);
+        this.assertOperationCurrency(
+          paymentCurrency,
+          order.currency,
+          `PurchaseOrder ${op.purchaseOrderId}`,
+        );
       }
     }
     if (total > sumMinor) {
       throw new BadRequestException(
         `Operatsiyalar jami (${total}) to'lov summasidan (${sumMinor}) ortiq`,
+      );
+    }
+  }
+
+  private assertOperationCurrency(
+    paymentCurrency: string,
+    targetCurrency: string,
+    targetLabel: string,
+  ): void {
+    if (paymentCurrency !== targetCurrency) {
+      throw new BadRequestException(
+        `Valyutalar mos emas: to'lov ${paymentCurrency}, ${targetLabel} esa ${targetCurrency}. ` +
+          `To'lovni hujjat valyutasida kiriting`,
       );
     }
   }

@@ -11,6 +11,7 @@ import {
   MarkCallSchema,
   ReversePaymentSchema,
   SetProblemSchema,
+  usdCentsToSomTiyin,
 } from './debt.schema.js';
 
 const CP = '11111111-1111-1111-1111-111111111111';
@@ -241,7 +242,7 @@ describe("MarkCallSchema — «qo'ng'iroq qilindi» natijasi (2026-07-12)", () =
         outcome: 'paid_full',
         paymentKind: 'click',
         currency: 'USD',
-        exchangeRate: '128000000',
+        exchangeRate: '1280000000000',
         amountOriginalMinor: '10000',
         screenshotBase64: 'data:image/png;base64,iVBORw0KGgo=',
       }),
@@ -276,7 +277,7 @@ describe("MarkCallSchema — «qo'ng'iroq qilindi» natijasi (2026-07-12)", () =
         outcome: 'paid_full',
         paymentKind: 'account',
         currency: 'USD',
-        exchangeRate: '128000000',
+        exchangeRate: '1280000000000',
         amountOriginalMinor: '10000',
       }),
     ).toThrow();
@@ -297,10 +298,29 @@ describe("MarkCallSchema — «qo'ng'iroq qilindi» natijasi (2026-07-12)", () =
       paymentKind: 'cash',
       currency: 'USD',
       amountOriginalMinor: '10000', // 100.00 $
-      exchangeRate: '128000000', // 12 800 so'm
+      exchangeRate: '1280000000000', // 12 800 so'm × 1e8 (kanonik ×10^8)
     });
     expect(ok.currency).toBe('USD');
-    expect(ok.exchangeRate).toBe('128000000');
+    expect(ok.exchangeRate).toBe('1280000000000');
+  });
+
+  // DB-01 (Faza 16): kurs KANONIK ×10^8 masshtabda (Currency.rateValue bilan
+  // bir xil). Eski ×10^4 qiymat (stale klient) jimgina 10 000× xato bermasin —
+  // schema past qiymatni rad etadi.
+  it('kurs kanonik ×10^8 — konvertatsiya va eski-masshtab guard', () => {
+    // $100.00 (10 000 sent) × 12 800 so'm (1 280 000 000 000 ×1e8) = 128 000 000 tiyin
+    expect(usdCentsToSomTiyin(10_000n, 1_280_000_000_000n)).toBe(128_000_000n);
+
+    // Eski ×10^4 klient qiymati (12 800 so'm → '128000000') endi RAD etiladi.
+    expect(() =>
+      MarkCallSchema.parse({
+        outcome: 'paid_full',
+        paymentKind: 'cash',
+        currency: 'USD',
+        amountOriginalMinor: '10000',
+        exchangeRate: '128000000',
+      }),
+    ).toThrow();
   });
 
   it("valyuta ko'rsatilmasa — so'm (UZS) deb olinadi", () => {

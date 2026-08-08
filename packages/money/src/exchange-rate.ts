@@ -4,11 +4,16 @@ import { Money } from './money.js';
 /**
  * ExchangeRate — valyuta konversiyasi. Moysklad API'dagi `rate` obyektini mapping qiladi.
  *
- * Rate precision: multiplier scaled by 10^9 (nano-precision).
- * Example: 1 USD = 12 450,27 UZS → multiplier = 12_450_270_000_000n (12450.27 * 10^9)
+ * Rate precision: multiplier scaled by RATE_SCALE = 10^8 — DB-01 (Faza 16)
+ * bo'yicha butun tizimning KANONIK kurs-masshtabi (Currency.rateValue,
+ * DebtPayment.exchangeRate, RetailSalePayment.rateMinor bilan bir xil).
+ * Example: 1 USD = 12 450,27 UZS → multiplier = 1_245_027_000_000n (12450.27 × 10^8)
  */
 
-const SCALE = 1_000_000_000n; // 10^9
+/** Kanonik kurs-masshtab: rate × 10^8 (butun tizim bo'ylab yagona). */
+export const RATE_SCALE = 100_000_000n; // 10^8
+
+const SCALE = RATE_SCALE;
 
 export interface ExchangeRateJSON {
   from: CurrencyCode;
@@ -21,7 +26,7 @@ export class ExchangeRate {
   constructor(
     public readonly from: CurrencyCode,
     public readonly to: CurrencyCode,
-    /** Scaled multiplier (multiplier / 10^9 = real ratio) */
+    /** Scaled multiplier (multiplier / RATE_SCALE = real ratio) */
     public readonly multiplier: bigint,
     public readonly effectiveAt: Date,
   ) {
@@ -39,7 +44,7 @@ export class ExchangeRate {
     if (!Number.isFinite(ratio) || ratio <= 0) {
       throw new Error(`ExchangeRate.fromRatio: ratio must be positive finite, got ${ratio}`);
     }
-    const multiplier = BigInt(Math.round(ratio * 1_000_000_000));
+    const multiplier = BigInt(Math.round(ratio * Number(RATE_SCALE)));
     return new ExchangeRate(from, to, multiplier, at);
   }
 
@@ -49,7 +54,7 @@ export class ExchangeRate {
         `ExchangeRate.convert: money is ${money.currency.code}, expected ${this.from}`,
       );
     }
-    // minor_out = minor_in * multiplier / 10^9
+    // minor_out = minor_in * multiplier / RATE_SCALE (10^8)
     // NOTE: cross-unit differences (e.g. JPY minor=0, USD minor=2) are assumed
     // pre-reconciled by the caller; this operates on minor units directly.
     const converted = (money.minor * this.multiplier) / SCALE;
@@ -81,6 +86,6 @@ export class ExchangeRate {
 
   /** Approximate ratio as number (for display; avoid in arithmetic). */
   toRatio(): number {
-    return Number(this.multiplier) / 1_000_000_000;
+    return Number(this.multiplier) / Number(RATE_SCALE);
   }
 }

@@ -1,3 +1,4 @@
+import { alphaCurrencyCode } from '../currency/currency-code.util.js';
 import { type CurrencyRate, toBaseMinor } from '../currency/currency-convert.js';
 import type { RateContext } from './cash-flow-consolidate.util.js';
 
@@ -34,6 +35,7 @@ export interface CurrencyReader {
       where: { accountId: string };
       select: {
         code: true;
+        isoCode: true;
         default: true;
         rateValue: true;
         multiplicity: true;
@@ -42,6 +44,7 @@ export interface CurrencyReader {
     }) => Promise<
       Array<{
         code: string;
+        isoCode: string | null;
         default: boolean;
         rateValue: bigint;
         multiplicity: number;
@@ -57,6 +60,14 @@ export interface CurrencyReader {
  * (§Unit-C). Shared by every money report that aggregates across currencies
  * (cash-flow, aging, …) so the conversion contract is identical everywhere.
  *
+ * M-03 (Faza 16): documents store the ALPHA code ('UZS'/'USD') in their
+ * `currency` column, while Currency.code is ISO NUMERIC ('860') under the
+ * moysklad convention (legacy rows may still be alpha-in-code). The map is
+ * therefore keyed by the row's resolved ALPHA code — plus the raw `code` as
+ * a defensive extra key — so a lookup by document currency always hits.
+ * Before this, baseCode='860' ≠ 'UZS' pushed EVERY conversion into the
+ * face-value fallback (~12 000× error on USD rows).
+ *
  * A tenant with no Currency rows defaults to base 'UZS' with an empty map —
  * callers then treat every bucket as base (single-currency fast path).
  */
@@ -66,17 +77,29 @@ export async function loadRateContext(
 ): Promise<RateContext> {
   const curs = await client.currency.findMany({
     where: { accountId },
-    select: { code: true, default: true, rateValue: true, multiplicity: true, indirect: true },
+    select: {
+      code: true,
+      isoCode: true,
+      default: true,
+      rateValue: true,
+      multiplicity: true,
+      indirect: true,
+    },
   });
   const rates = new Map<string, CurrencyRate>();
   let baseCode = 'UZS';
   for (const c of curs) {
-    rates.set(c.code, {
+    const rate: CurrencyRate = {
       rateValue: c.rateValue,
       multiplicity: BigInt(c.multiplicity),
       indirect: c.indirect,
-    });
-    if (c.default) baseCode = c.code;
+    };
+    const alpha = alphaCurrencyCode(c);
+    if (alpha) rates.set(alpha, rate);
+    // Numeric (yoki boshqa) `code` ham kalit bo'lib qoladi — qaysi
+    // konventsiyadagi hujjat kelsa ham xarita topadi.
+    if (!rates.has(c.code)) rates.set(c.code, rate);
+    if (c.default) baseCode = alpha ?? c.code;
   }
   return { baseCode, rates };
 }

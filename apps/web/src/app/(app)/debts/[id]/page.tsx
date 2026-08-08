@@ -96,8 +96,9 @@ function PaymentLines({
   }
 
   const fmtUsd = (cents: string) => `${(Number(cents) / 100).toFixed(2)} $`;
-  // Kurs DB'da ×10000 saqlanadi (12 800,50 so'm → 128 005 000).
-  const fmtRate = (rate: string) => (Number(rate) / 10_000).toLocaleString('ru-RU');
+  // Kurs DB'da KANONIK ×10^8 saqlanadi (12 800,50 so'm → 1 280 050 000 000) —
+  // DB-01 (Faza 16) yagonalashi, Currency.rateValue bilan bir xil masshtab.
+  const fmtRate = (rate: string) => (Number(rate) / 100_000_000).toLocaleString('ru-RU');
 
   return (
     <div className="flex flex-col gap-1.5" data-test-id={`${testPrefix}-payments`}>

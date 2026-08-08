@@ -1,3 +1,4 @@
+import { RATE_SCALE } from '@moysklad/money';
 import { z } from 'zod';
 
 /**
@@ -166,7 +167,11 @@ export const MarkCallSchema = z
      * To'liq to'lovda (paid_full) bo'sh qoldirilsa — server qoldiqni oladi.
      */
     amountOriginalMinor: z.string().regex(/^\d+$/, 'Summa — butun minor birlik').optional(),
-    /** Kurs ×10000 (12 800,50 so'm → 128005000). USD to'lovda MAJBURIY. */
+    /**
+     * Kurs — KANONIK ×10^8 masshtabda (DB-01, Faza 16; Currency.rateValue
+     * bilan bir xil): 12 800,50 so'm → '1280050000000'. USD to'lovda MAJBURIY.
+     * (2026-08-08 gacha ×10^4 edi — migratsiya 10 000×ga ko'paytirib o'tkazdi.)
+     */
     exchangeRate: z.string().regex(/^\d+$/, 'Kurs — butun son').optional(),
     /** Click to'lovida chek rasmi MAJBURIY (data-URI yoki toza base64). */
     screenshotBase64: z.string().optional(),
@@ -212,6 +217,14 @@ export const MarkCallSchema = z
   // Dollarda to'lansa — KURS majburiy (so'mga o'girish uchun).
   .refine((v) => v.currency !== 'USD' || (v.exchangeRate != null && BigInt(v.exchangeRate) > 0n), {
     message: 'Dollar to‘lovida kurs majburiy',
+    path: ['exchangeRate'],
+  })
+  // DB-01 (Faza 16): eski ×10^4 klient qiymati (12 800 so'm → 128 000 000)
+  // kanonik ×10^8 sifatida o'qilsa 10 000× xato bo'lardi — past qiymat
+  // JIM qabul qilinmaydi. 10^9 = 10 so'm×10^8; real USD kurs undan ming
+  // barobar yuqori, stale-klient qiymati esa doim past.
+  .refine((v) => v.exchangeRate == null || BigInt(v.exchangeRate) >= 1_000_000_000n, {
+    message: 'Kurs eski (×10⁴) masshtabda — sahifani yangilang (kanonik ×10⁸)',
     path: ['exchangeRate'],
   })
   // Click — bank/karta o'tkazmasi, u DOIM so'mda keladi (dollar Click yo'q).
@@ -426,3 +439,13 @@ export const PosDebtPaymentSchema = z.object({
   comment: z.string().trim().max(4000).nullish(),
 });
 export type PosDebtPaymentInput = z.infer<typeof PosDebtPaymentSchema>;
+
+/**
+ * USD-sent → so'm-tiyin konvertatsiya, KANONIK ×10^8 kurs bilan (DB-01,
+ * Faza 16). Sof funksiya — markCall (qo'ng'iroqda to'lov) va testlar bitta
+ * formulani bo'lishadi: sent × (kurs×10^8) / 10^8 = tiyin (sent↔tiyin va
+ * $↔so'm ×100 masshtablari o'zaro qisqaradi).
+ */
+export function usdCentsToSomTiyin(cents: bigint, rateE8: bigint): bigint {
+  return (cents * rateE8) / RATE_SCALE;
+}

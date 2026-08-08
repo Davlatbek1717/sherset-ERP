@@ -2334,9 +2334,13 @@ model Region {
 model Currency {
   id             String   @id @default(uuid()) @db.Uuid
   accountId      String   @map("account_id") @db.Uuid
-  /// ISO 4217 code (UZS, USD, EUR, RUB...). Unique per account.
+  /// ISO 4217 NUMERIC code ('860', '840') — moysklad parity. Unique per account.
+  /// DIQQAT (M-03): legacy qatorlarda bu yerda ALPHA ('UZS') bo'lishi mumkin —
+  /// runtime lookup HAR DOIM alphaCurrencyCode() orqali (currency-code.util.ts).
   code           String   @db.VarChar(3)
-  /// ISO numeric code (UZS=860). Optional — populated for system currencies.
+  /// ISO 4217 ALPHA code ('UZS', 'USD') — hujjatlar `currency` maydoni shu
+  /// qiymatni saqlaydi; rate-lookup va CBU-matching shu ustun orqali (M-03).
+  /// Migratsiya 20260808 legacy qatorlarni to'ldirgan; yangi create'da majburiy.
   isoCode        String?  @map("iso_code") @db.VarChar(3)
   name           String   @db.VarChar(100)
   fullName       String?  @map("full_name") @db.VarChar(255)
@@ -8009,6 +8013,8 @@ model RetailSalePayment {
   currency        String  @default("UZS") @db.VarChar(3)
   /// `CASH_USD` uchun qo'llanilgan kurs — chekka MUZLATILADI (kurs keyin
   /// o'zgarsa, eski chek qayta baholanmasin). UZS to'lovda NULL.
+  /// Masshtab: KANONIK ×10^8 (DB-01, Faza 16) — rateValue bilan bir xil.
+  /// Hozircha hech bir yozuvchi yo'q (CASH_USD ulanmagan) — backfill kerak emas.
   rateMinor       BigInt? @map("rate_minor")
   /// Hisob valyutasiga (UZS) o'girilgan summa — BARCHA hisob-kitob shundan.
   /// UZS to'lovda `amountMinor` bilan teng.
@@ -10524,7 +10530,9 @@ model DebtPayment {
   /// qarz hisobi shundan yuritiladi. Quyidagi uchlik esa ASL to'lovni saqlaydi:
   ///   currency            — 'UZS' | 'USD'
   ///   amountOriginalMinor — asl valyutadagi summa (USD → sent)
-  ///   exchangeRate        — kurs ×10000 (masalan 12 800,50 so'm → 128005000)
+  ///   exchangeRate        — kurs KANONIK ×10^8 (DB-01, Faza 16; rateValue
+  ///                         bilan bir xil masshtab): 12 800,50 → 1280050000000.
+  ///                         (2026-08-08 gacha ×10^4 edi — migratsiya o'tkazdi.)
   /// UZS to'lovda: currency='UZS', original=amountMinor, rate=null.
   currency            String  @default("UZS") @db.VarChar(3)
   amountOriginalMinor BigInt? @map("amount_original_minor")
