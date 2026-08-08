@@ -305,6 +305,58 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-08j (AUDIT-FIX FAZA 13 — taminotchi qarzi Supply-only + qaytarish reversali ·
+> `PP-02`+`PP-03`) `66fbe99` · Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q ·
+> ⏳ DEPLOY QILINMAGAN · 🗄️ migratsiya YO'Q · 🟠 **TARIXIY IKKI-KARRA QARZ QOLDI (pastda)**
+>
+> **Muammo (kodda tasdiqlandi, 2/2).** `PP-03`: `Supply.post` (`supply.service.ts:1349`) HAM,
+> `InvoiceIn.post` (`invoice-in.service.ts:1146`) HAM `-sumMinor` yozardi. Standart xarid oqimi
+> PO → hisob-faktura + qabul ikkala hujjatni ishlatgani uchun **bitta xaridda qarz IKKI marta**
+> turardi; `InvoiceIn`da `supplyId` FK yo'q ⇒ dedup imkonsiz. `PP-02`: `PurchaseReturn` balansga
+> **umuman tegmasdi** — servisda `CounterpartyBalanceService` import ham qilinmagan edi, ya'ni to'liq
+> qaytarilgan qabul bo'yicha «biz qarzdormiz» summasi abadiy qolardi.
+>
+> **Fix (QAROR-B = Supply-only, egasi 2026-08-08 tanlagan).** InvoiceIn balansdan **UZILDI**: 4 ta
+> `applyDelta` (post/unpost/cancel + `update()` dagi reversal-juftlik — rejada faqat 3 tasi nomlangan
+> edi), inject va modul importi olib tashlandi. Hujjat endi informatsion: `PO.invoicedSumMinor`,
+> `PaymentOut` asosi va `payedSum` FSM'i qoladi. PurchaseReturn'ga simmetriya: `post +sumMinor`,
+> `unpost/cancel −sumMinor` (cancel faqat `applicable` bo'lsa). ⚠️ Ataylab yon ta'sir: egaga
+> ketadigan «qarz o'zgardi» Telegram xabarini endi FAQAT Qabul beradi (bir xarid = bir xabar).
+>
+> **Reja doirasidan tashqari 4 bog'liqlik topildi va yopildi:** (1) statement BUYUM-kesimi hamon
+> `invoiceIn`ni supply bilan yonma-yon sanardi (bir tovar bo'yicha ham 2×); (2) qamrov reyestri —
+> `invoice-in` «ESKIRGAN yozuv» bo'lib gate'ni yiqitdi, `purchase-return` esa «QAMROVSIZ» bo'lardi;
+> (3) `money-transition-race` invoice-in poygasini AYNAN balans-deltasi soni bilan o'lchardi (delta
+> ketgach test bo'shab qolardi) — probe `po.applyInvoice` ga ko'chirildi + «balansga tegmaydi»
+> alohida qulflandi; (4) akt-sverka chop sahifasi `purchaseReturn` yorlig'isiz xom slug chiqarardi.
+> **Saldo-o'quvchilar (metrics/statement/akt) TEGILMADI** — Faza 10 dan beri ular `docType` bo'yicha
+> filtrlamaydi, shuning uchun rejadagi «Diqqat» xavfi yuzaga kelmadi.
+>
+> **TDD.** +14 test; yangi `supplier-debt-supply-only.test.ts` (9) uchala servisni BITTA soxta prisma
+> va BITTA daftar ustida yugurtiradi. Non-vacuous: fix'dan oldin **7 assert yiqildi** — jumladan
+> `PO→Supply+InvoiceIn` daftari `[-4 000 000, -4 000 000]` (PP-03 ayni o'zi) va qaytarishdan keyin
+> saldo `-4 000 000` (0 o'rniga). ⚠️ Bir **soxta-RED** tutildi: test avval fix'dan KEYINGI konstruktor
+> arity'si bilan yozilib `TypeError` bergan edi — haqiqiy RED eski arity bilan qayta o'lchandi.
+>
+> **Gate:** api tc **0** · web tc **0** · `lint:product` **0 error** · `i18n:gate` **OK** ·
+> api vitest **391 fayl / 5161 test** · web vitest **183 fayl / 2746 test**. **Browser-smoke YO'Q.**
+> Batafsil: rejadagi «HISOBOT JURNALI → Faza 13».
+>
+> **🟠 QARZ — TARIXIY IKKI-KARRA QARZ:** `recompute-counterparty-balances.ts` buni **YECHMAYDI**
+> (Faza 10 dan beri uning nishoni jurnal, jurnal esa append-only ⇒ eski `invoiceIn` deltalari joyida
+> qoladi). Prodda hajmni avval **o'lchash** kerak:
+> `SELECT counterparty_id, currency, COUNT(*), SUM(delta_minor) FROM counterparty_balance_entries
+> WHERE doc_type='invoiceIn' GROUP BY 1,2;` — bo'sh bo'lsa hech narsa qilinmaydi. Qatorlar bo'lsa
+> tavsiya: har kontragent×valyuta uchun **`CounterpartyAdjustment`** (auditorlik izi + skript uni
+> to'g'ri qayta quradi). Jurnal qatorlarini **o'chirish MUMKIN EMAS**. Batafsil — rejadagi hisobotning
+> «BALANSNI QAYTA-HISOBLASH KERAKMI» bo'limi. Faza 10 backfill ops-qarzi o'zgarmadi.
+>
+> **⏭️ KEYINGI:** `docs/REJA-AUDIT-FIX-2026-08.md` → **Faza 14** (`PP-06`+`PP-04` — supply-approval:
+> FSM-bypass guard + omborchi son-tuzatishida summalarni qayta hisoblash). Sessiya-boshi prompt
+> o'sha fazada.
+
+---
+
 > **🕒 2026-08-08i (AUDIT-FIX FAZA 12 — debt simmetriyasi: `remove()` reversal + settlement filtr/premise ·
 > `DUP-03`+`DUP-12`+`DUP-04`) `d18696db` · Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q ·
 > ⏳ DEPLOY QILINMAGAN · 🗄️ migratsiya YO'Q
