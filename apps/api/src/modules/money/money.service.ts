@@ -21,19 +21,29 @@ export interface MoneyDelta {
  * append MoneyOperation entries and update the materialized balance on the
  * source (OrganizationAccount.balanceMinor or CashDesk.balanceMinor).
  *
- * All writes MUST be called from within a Serializable $transaction started
- * by the caller (PaymentIn/Out, CashIn/Out). Cross-document ordering is
- * enforced by ordering deltas by sourceKind+sourceId ascending, so bulk
- * posts don't deadlock.
+ * All writes MUST be called from within a $transaction started by the caller
+ * (CashIn/Out, RetailSale) — the overdraft guard throws AFTER the balance has
+ * been incremented and relies on that transaction to roll it back. The balance
+ * move itself is an atomic increment, so ReadCommitted is enough; Serializable
+ * (which the money documents use since Faza 1) is fine too. Cross-document
+ * ordering is enforced by ordering deltas by sourceKind+sourceId ascending, so
+ * bulk posts don't deadlock.
  */
 @Injectable()
 export class MoneyService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   /**
-   * Apply signed deltas atomically: lock the source row, check for overdraft
-   * (unless the source allows negatives), write the ledger entry, update
-   * materialized balance.
+   * Apply signed deltas atomically: validate the source (tenant + currency),
+   * move the materialized balance with an ATOMIC increment (`SET x = x + d`,
+   * which takes the Postgres row lock for the rest of the transaction), then
+   * check the POST-increment balance for overdraft and write the ledger entry.
+   *
+   * The overdraft check must read AFTER the increment: reading before it is a
+   * read-then-write race (M-02) — two concurrent outflows would both see the
+   * old balance, both pass the guard and both write, driving the balance
+   * negative and away from the ledger sum. On overdraft we throw, and the
+   * caller's `$transaction` rolls the increment back.
    */
   async applyDeltas(
     tx: Prisma.TransactionClient,
@@ -51,10 +61,11 @@ export class MoneyService {
     const now = new Date();
     for (const d of sorted) {
       if (d.sourceKind === 'organization_account') {
-        // SELECT ... FOR UPDATE via unique id + update
+        // Unlocked pre-read — existence / tenant / currency only. The balance
+        // it returns is NEVER used for the write (see the increment below).
         const row = await tx.organizationAccount.findUnique({
           where: { id: d.sourceId },
-          select: { accountId: true, currency: true, balanceMinor: true },
+          select: { accountId: true, currency: true },
         });
         if (!row) throw new BadRequestException(`OrganizationAccount ${d.sourceId} not found`);
         if (row.accountId !== accountId) {
@@ -67,20 +78,20 @@ export class MoneyService {
             `Currency mismatch: account ${row.currency} vs delta ${d.currency}`,
           );
         }
-        const newBalance = row.balanceMinor + d.deltaMinor;
-        if (newBalance < 0n) {
+        const updated = await tx.organizationAccount.update({
+          where: { id: d.sourceId },
+          data: { balanceMinor: { increment: d.deltaMinor } },
+          select: { balanceMinor: true },
+        });
+        if (updated.balanceMinor < 0n) {
           throw new BadRequestException(
-            `OrganizationAccount ${d.sourceId} overdraft: balance ${row.balanceMinor} + ${d.deltaMinor} = ${newBalance}`,
+            `OrganizationAccount ${d.sourceId} overdraft: delta ${d.deltaMinor} → balance ${updated.balanceMinor}`,
           );
         }
-        await tx.organizationAccount.update({
-          where: { id: d.sourceId },
-          data: { balanceMinor: newBalance },
-        });
       } else {
         const row = await tx.cashDesk.findUnique({
           where: { id: d.sourceId },
-          select: { accountId: true, currency: true, balanceMinor: true },
+          select: { accountId: true, currency: true },
         });
         if (!row) throw new BadRequestException(`CashDesk ${d.sourceId} not found`);
         if (row.accountId !== accountId) {
@@ -91,16 +102,16 @@ export class MoneyService {
             `Currency mismatch: cash-desk ${row.currency} vs delta ${d.currency}`,
           );
         }
-        const newBalance = row.balanceMinor + d.deltaMinor;
-        if (newBalance < 0n) {
+        const updated = await tx.cashDesk.update({
+          where: { id: d.sourceId },
+          data: { balanceMinor: { increment: d.deltaMinor } },
+          select: { balanceMinor: true },
+        });
+        if (updated.balanceMinor < 0n) {
           throw new BadRequestException(
-            `CashDesk ${d.sourceId} overdraft: balance ${row.balanceMinor} + ${d.deltaMinor} = ${newBalance}`,
+            `CashDesk ${d.sourceId} overdraft: delta ${d.deltaMinor} → balance ${updated.balanceMinor}`,
           );
         }
-        await tx.cashDesk.update({
-          where: { id: d.sourceId },
-          data: { balanceMinor: newBalance },
-        });
       }
 
       await tx.moneyOperation.create({

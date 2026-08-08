@@ -121,7 +121,7 @@ ikki parallel manfiyga tushirishi mumkin). Serializable'ga o'tkazish ixtiyoriy, 
 > `docs/REJA-AUDIT-FIX-2026-08.md` — **Faza 2**. O'ZGARMAS QOIDALAR. `M-02`'ni o'qib kodda tasdiqla
 > (`money.service.ts:52-104`). `applyDeltas`'ni increment + read-after (yoki FOR UPDATE) qulfga o'tkaz,
 > komment-yolg'onni tuzat. TDD: parallel lost-update testi. Gate to'liq. Hisobot yozib TO'XTA.
-**◻ HISOBOT:** _(agent to'ldiradi)_
+**☑ HISOBOT (2026-08-08):** BAJARILDI — batafsili «HISOBOT JURNALI → Faza 2» da.
 
 ---
 
@@ -938,3 +938,70 @@ indekslash Prisma delegat-tiplari birlashmasini «chaqirib bo'lmaydigan» qiladi
   `payedSumMinor` absolute-set poygasi (M-09) TEGILMADI — u pozitsiya-hujjatlar tomonida.
 
 **Commit:** `fix(money): Faza 1 — pul-hujjat oilasiga atomik state-claim + Serializable (M-01, DUP-01)`
+
+---
+
+## Faza 2 — 2026-08-08 — **Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q**
+
+**Topilma tasdiqlanishi (o'z ko'zim bilan kodda).** `M-02` **TASDIQLANDI**, audit to'g'ri o'qigan.
+Fix'dan oldingi qatorlar: `money.service.ts:54` `// SELECT ... FOR UPDATE via unique id + update` —
+**yolg'on komment**, ostidagi kod `findUnique({ where: { id } })` (Prisma'da bu HECH QANDAY qulf olmaydi);
+`:70` va `:94` `const newBalance = row.balanceMinor + d.deltaMinor`; `:76-79` va `:100-103`
+`update({ data: { balanceMinor: newBalance } })` — **absolyut set, increment EMAS**. Overdraft tekshiruvi
+(`:71`, `:95`) ham o'sha qulfsiz o'qishdan hisoblangan qiymatga tayangan.
+
+**Fayllar**
+
+| Fayl | O'zgarish |
+|---|---|
+| `apps/api/src/modules/money/money-lost-update.test.ts` | **YANGI** — M-02 poyga-regressi (3 test) |
+| `apps/api/src/modules/money/money.service.ts` | ikkala manba-turida `{ increment }` + read-after overdraft; 2 komment-yolg'on tuzatildi |
+| `apps/api/src/modules/money/money.service.test.ts` | test-double halollashtirildi (`{increment}` semantikasi + Prisma kabi yangilangan qatorni QAYTARADI) — prod xulq da'volari o'zgarmadi |
+
+**O'zgarish (ikkala tarmoqda ham bir xil, 3 qism)**
+1. `findUnique` endi **faqat validatsiya** uchun (`select: { accountId, currency }`) — `balanceMinor` undan
+   umuman o'qilmaydi. Tenant/valyuta/mavjudlik xatolari va ularning matnlari o'zgarmadi.
+2. Balans **atomik increment** bilan siljiydi: `update({ data: { balanceMinor: { increment: d.deltaMinor } },
+   select: { balanceMinor: true } })` — SQL'da `SET balance_minor = balance_minor + $d`, qator-qulfi
+   tranzaksiya oxirigacha ushlanadi.
+3. **Overdraft tekshiruvi increment'dan KEYIN** — Prisma qaytargan yangilangan qiymat `< 0n` bo'lsa
+   `BadRequestException` (matn endi `delta X → balance Y`). Increment'ni chaqiruvchining `$transaction`'i
+   qaytaradi (rollback).
+
+**Rollback shartnomasi tekshirildi (da'vo emas, grep bilan).** `MoneyService.applyDeltas`ning **8 ta**
+chaqiruv joyi bor va **hammasi** `$transaction` closure'i ichida: `cash-in.service.ts:577/658/736`,
+`cash-out.service.ts:485/564/641`, `retail-sale.service.ts:787` (tx `:651`) va `:1132` (tx `:1020`).
+Demak «increment qilib, keyin throw» hech qayerda yarim-yozuv qoldirmaydi.
+
+**Testlar (TDD tartibi kuzatildi)**
+- RED: `money-lost-update.test.ts` → **3/3 yiqildi**, aynan bug sababidan:
+  (1) ikki parallel kirim 1000+500+500 → **1500** (kutilgan 2000, yo'qolgan yangilanish JONLI);
+  (2) ikki parallel chiqim org-hisobda 10000−2500−2500 → **7500** (kutilgan 5000);
+  (3) balans 100, ikki parallel −100 → **0 ta rad etish** (kutilgan 1) — overdraft-guard poyga bilan chetlanadi.
+- GREEN: fix'dan keyin **3/3 yashil**; `money` moduli **21/21**.
+- Test-double halolligi: `findUnique` **yield qiladi** va DETACHED snapshot qaytaradi (qulfsiz o'qish),
+  `update` tanasi esa yield qilmaydi va yangilangan qatorni qaytaradi (qator-qulfi ostidagi atomik yozuv) —
+  Faza 1 `money-transition-race.test.ts` bilan bir xil uslub (bu repo'da servis testlari real DB'siz).
+- Eski `money.service.test.ts` double'i `update`dan `{}` qaytarardi va absolyut qiymatni yozib olardi —
+  increment semantikasiga moslashtirildi (aks holda u testlar prod xatosidan emas, double eskirganidan yiqilardi).
+
+**Gate (to'liq, jonli o'lchangan)**
+- `pnpm --filter @moysklad/api typecheck` → **0 xato**
+- `pnpm lint:product` → **0 error** (728 warning — siyosat bo'yicha ruxsat)
+- `pnpm --filter @moysklad/api exec vitest run` (BUTUN suite) → **378 fayl / 4988 test yashil, 0 yiqilgan**
+  (Faza 1 dagi 4985 + shu fazadagi 3 yangi)
+- `i18n:gate` — **kerak emas** (UI-matn tegilmadi, faqat backend).
+
+**Qolgan qarz / DEFER**
+- **Browser-smoke YO'Q.** Ikki parallel POS-sotuv real Postgres'da yugurtirilmadi — Phase-2 QA cohort ishi.
+  Poyga faqat unit-double bilan ko'rsatildi (lekin non-vakuum: fix'dan oldin 3/3 yiqilardi).
+- **Serializable'ga o'tkazilmadi (ataylab, reja ruxsati bilan).** `cash-in/cash-out` allaqachon Faza 1 da
+  Serializable; `retail-sale` ReadCommitted qoladi — increment + read-after ReadCommitted'da ham to'g'ri
+  (ikkinchi yozuvchi qator-qulfida kutadi va o'z increment'idan keyingi haqiqiy qiymatni o'qiydi).
+- **`getBalance` tegilmadi** — u materialized ustunni o'qiydi, poyga emas.
+- **Ledger vs materialized invariant testi yo'q** (`Σ MoneyOperation.deltaMinor == balanceMinor` butun DB
+  bo'yicha). Yangi testda bitta manba doirasida tekshiriladi; global invariant — Faza 9/10 (journal) ishi.
+- **M-05/M-06 ochiq:** PaymentIn/Out hamon `MoneyService`ga tegmaydi, POS qarz-to'lovi kassaga yozilmaydi —
+  **Faza 11** (u shu fazaga bog'liq edi, endi bloki ochildi).
+
+**Commit:** `fix(money): faza 2 — applyDeltas atomik increment + read-after overdraft (M-02)`

@@ -13,6 +13,12 @@ interface MockCashDesk {
   balanceMinor: bigint;
 }
 
+/** Prisma applies `{ increment }` to the stored value and returns the row it wrote. */
+function applyWrite(row: { balanceMinor: bigint }, write: bigint | { increment: bigint }): bigint {
+  row.balanceMinor = typeof write === 'bigint' ? write : row.balanceMinor + write.increment;
+  return row.balanceMinor;
+}
+
 function makeTx(opts: {
   orgAccount?: MockAccount | null;
   cashDesk?: MockCashDesk | null;
@@ -20,28 +26,36 @@ function makeTx(opts: {
   const orgUpdates: Array<{ id: string; balance: bigint }> = [];
   const cashUpdates: Array<{ id: string; balance: bigint }> = [];
   const operations: Array<Partial<MoneyDelta>> = [];
+  const orgRow = opts.orgAccount ?? null;
+  const cashRow = opts.cashDesk ?? null;
   const tx = {
     organizationAccount: {
-      findUnique: vi.fn().mockResolvedValue(opts.orgAccount ?? null),
-      update: vi
-        .fn()
-        .mockImplementation(
-          async (args: { where: { id: string }; data: { balanceMinor: bigint } }) => {
-            orgUpdates.push({ id: args.where.id, balance: args.data.balanceMinor });
-            return {};
-          },
-        ),
+      findUnique: vi.fn().mockResolvedValue(orgRow),
+      update: vi.fn().mockImplementation(
+        async (args: {
+          where: { id: string };
+          data: { balanceMinor: bigint | { increment: bigint } };
+        }) => {
+          if (!orgRow) throw new Error('update on missing OrganizationAccount');
+          const balance = applyWrite(orgRow, args.data.balanceMinor);
+          orgUpdates.push({ id: args.where.id, balance });
+          return { balanceMinor: balance };
+        },
+      ),
     },
     cashDesk: {
-      findUnique: vi.fn().mockResolvedValue(opts.cashDesk ?? null),
-      update: vi
-        .fn()
-        .mockImplementation(
-          async (args: { where: { id: string }; data: { balanceMinor: bigint } }) => {
-            cashUpdates.push({ id: args.where.id, balance: args.data.balanceMinor });
-            return {};
-          },
-        ),
+      findUnique: vi.fn().mockResolvedValue(cashRow),
+      update: vi.fn().mockImplementation(
+        async (args: {
+          where: { id: string };
+          data: { balanceMinor: bigint | { increment: bigint } };
+        }) => {
+          if (!cashRow) throw new Error('update on missing CashDesk');
+          const balance = applyWrite(cashRow, args.data.balanceMinor);
+          cashUpdates.push({ id: args.where.id, balance });
+          return { balanceMinor: balance };
+        },
+      ),
     },
     moneyOperation: {
       create: vi.fn().mockImplementation(async (args: { data: Record<string, unknown> }) => {
