@@ -305,6 +305,55 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-08i (AUDIT-FIX FAZA 12 — debt simmetriyasi: `remove()` reversal + settlement filtr/premise ·
+> `DUP-03`+`DUP-12`+`DUP-04`) `d18696db` · Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q ·
+> ⏳ DEPLOY QILINMAGAN · 🗄️ migratsiya YO'Q
+>
+> **Muammo (kodda tasdiqlandi, 3/3).** `DebtService.create` 2026-08-05 dan beri balansga `+totalMinor`
+> yozadi, lekin **`remove()` uni qaytarmasdi** — metod tanasi `mustFind` + `paidMinor>0` taqiqi +
+> `update({deletedAt})` dan iborat edi, `applyDelta` yo'q (`DUP-03`). Ya'ni kassir adashib ochib darhol
+> o'chirgan qarz kontragent kartochkasida ABADIY «qarzdor» bo'lib qolardi. Juft bug: settlement
+> `debt.findMany` **filtrsiz** edi (`DUP-12`) ⇒ korzinadagi qarz kontragentga IMZOGA ketadigan xlsx'da
+> ko'rinardi. Uchinchisi — util docstring'i «`create` balansga tegmaydi» degan **eskirgan premise**ni
+> saqlab, `combinedMinor = ledger + registry` bilan ochiq qarzni 2× sanardi (`DUP-04`; jonli
+> iste'molchisi yo'q edi — soxta son bugungi hisobotlarga CHIQMAGAN).
+>
+> **Fix.** `remove()` endi `$transaction` + **atomik claim** (`updateMany where {deletedAt:null,
+> paidMinor:0n}`) → `applyDelta(-totalMinor, docType:'debt')`. Claim'ning ikki sharti ataylab: parallel
+> o'chirish ikki reversal yozmasin, va `mustFind` bilan yozuv orasiga tushgan to'lov saldoni `-paid` ga
+> tushirib yubormasin. Settlement so'roviga `deletedAt:null, status:{not:'cancelled'}`. `combinedMinor`
+> **butunlay olib tashlandi** (deprecate emas — jonli iste'molchisi yo'q, qolsa tuzoq); util docstring'i
+> + premiseni takrorlagan ikki izoh (`retail-sale.service.ts:837`, `supply-goods-xlsx.util.ts:208`)
+> haqiqatga moslandi: reyestr qoldig'i — saldoning **TARKIBI** («shundan …»), qo'shiluvchi emas.
+>
+> **Faza 8 guard'i kutilganidek yiqildi** (rejada yo'q edi, avvalgi faza yozib qoldirgan):
+> `counterparty-balance-sources.test.ts` «`remove()` da applyDelta YO'Q» premise'sini qulflagan, va
+> `recompute-counterparty-balances.ts` debt-issue manbasi shunga tayanib o'chirilgan qarzlarni
+> qo'shardi. Ikkala tomon birga yangilandi: skript `groupBy` where'iga `deletedAt: null`, test esa endi
+> **reversal ↔ filtr juftligini** qulflaydi (biri o'zgarib ikkinchisi qolsa yiqiladi).
+>
+> **TDD.** +9 test, 2 tasi yangi fayl (`debt-remove-reversal` 5 · `counterparty-settlement.service` 3) +
+> util testi yangilandi + skript-guard qayta yozildi. Non-vacuous: tuzatishdan oldin **7 assert yiqildi**.
+> ⚠️ Yo'l-yo'lakay bir **yolg'on-yashil** tutildi: skript-guard'ning birinchi tahriri `deletedAt: null`
+> ni blok MATNIDAN (izohlar bilan) qidirib, fix'dan OLDIN ham yashil chiqdi — assert `groupBy`
+> chaqirig'i tanasiga bog'langach haqiqiy RED ko'rindi (CLAUDE.md §4 grep-grounding klassi).
+>
+> **Gate:** api tc **0** · `lint:product` **0 error** · api vitest **390 fayl / 5147 test yashil**.
+> `i18n:gate` yugurtirilmadi — UI-matn tegilmagan (faqat BE + izohlar). **Browser-smoke YO'Q.**
+> Batafsil: rejadagi «HISOBOT JURNALI → Faza 12».
+>
+> **Qarz:** (1) **restore yo'li YO'Q** — korzinadan qaytarish endpoint'i kodda mavjud emas (tekshirildi),
+> qo'shilsa `+totalMinor` yozishi SHART (`remove()` docstring'ida qayd etilgan). (2) **Tarixiy
+> o'chirilgan qarzlar** materiallashgan saldoda hamon `+total` bo'lib turibdi (o'sha paytda reversal
+> yo'q edi) — Faza 10 ning backfill + `recompute` ops-qadamiga qoldi (`APPLY=1` hali yugurtirilmagan;
+> avval DRY bilan hajmni ko'rish kerak).
+>
+> **⏭️ KEYINGI:** `docs/REJA-AUDIT-FIX-2026-08.md` → **Faza 13** (`PP-02`+`PP-03` — taminotchi qarzi:
+> QAROR-B **Supply-only** allaqachon hal qilingan; InvoiceIn balansdan uziladi, PurchaseReturn'ga
+> reversal qo'shiladi). Sessiya-boshi prompt o'sha fazada.
+
+---
+
 > **🕒 2026-08-08h (AUDIT-FIX FAZA 11 — pul-daftar teshiklari: bank to'lovi + naqd qarz to'lovi ·
 > `M-06`+`M-05`+`FE-03`) `de77953e` · Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q ·
 > ⏳ DEPLOY QILINMAGAN · 🗄️ migratsiya YO'Q · 🔴 **BACKFILL YO'Q — daftar bugundan boshlanadi (pastda)**
