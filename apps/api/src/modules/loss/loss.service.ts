@@ -16,6 +16,7 @@ import { resolveCreatorGroupId } from '../shared/group-stamp.js';
 import { assertMassEditRefsInTenant } from '../shared/mass-edit.js';
 import { mapVersionedUpdateError } from '../shared/optimistic-lock.js';
 import { withSerializationRetry } from '../shared/serialization-retry.js';
+import { transitionWithClaim } from '../shared/transition-with-claim.js';
 import { type StockDelta, StockService } from '../stock/stock.service.js';
 import { WebhookFireService } from '../webhook/webhook-fire.service.js';
 import {
@@ -761,6 +762,20 @@ export class LossService {
     }
     return this.prisma.client.$transaction(
       async (tx) => {
+        // TOCTOU guard (STK-01, Faza 5): claim posted→draft as the FIRST op.
+        // `existing` comes from a read OUTSIDE this transaction, so without the
+        // claim two concurrent unposts both saw `posted` and both credited the
+        // stock back. Serializable alone only hid it while positions existed
+        // (both txs touch the same Stock rows ⇒ the loser aborts with 40001) —
+        // an EMPTY write-off locks nothing. Same reasoning as post() below.
+        await transitionWithClaim(tx.loss, {
+          id,
+          accountId,
+          fromStates: ['posted'],
+          toState: 'draft',
+          message: "Spisanie holati o'zgargan — allaqachon o'zgartirilgan",
+        });
+
         const deltas: StockDelta[] = existing.positions.map((p) => {
           const costPerUnit = p.costMinor ?? 0n;
           const valueMinor = scaleMinorByQty(costPerUnit, String(p.quantity));
@@ -806,45 +821,67 @@ export class LossService {
     existing: Awaited<ReturnType<LossService['findById']>>,
   ) {
     if (existing.state === 'cancelled') throw new BadRequestException('Oldin cancel qilingan');
-    return this.prisma.client.$transaction(async (tx) => {
-      const wasApplicable = existing.applicable;
-      if (wasApplicable) {
-        const deltas: StockDelta[] = existing.positions.map((p) => {
-          const costPerUnit = p.costMinor ?? 0n;
-          const valueMinor = scaleMinorByQty(costPerUnit, String(p.quantity));
-          return {
-            storeId: existing.storeId,
-            assortmentKind: p.assortmentKind,
-            assortmentId: p.assortmentId,
-            cellId: p.cellId ?? null,
-            qtyDelta: String(p.quantity),
-            costDeltaMinor: valueMinor,
-            docType: 'loss_cancel',
-            docId: id,
-            docPositionId: p.id,
-            reason: 'cancel',
-          };
-        });
-        await this.stock.applyDeltas(tx, accountId, userId, deltas);
-      }
-      const updated = await tx.loss.update({
-        where: { id, accountId },
-        data: { state: 'cancelled', applicable: false },
-      });
-      await tx.auditLog.create({
-        data: {
+    return this.prisma.client.$transaction(
+      async (tx) => {
+        // TOCTOU guard (STK-01, Faza 5): claim the EXACT snapshotted state →
+        // cancelled as the FIRST op. Loss was the only stock document whose
+        // cancel() had NEITHER the claim NOR Serializable (move/enter/inventory
+        // all do), so two parallel cancels — or a cancel racing an unpost that
+        // already flipped posted→draft — both ran `applyDeltas(+qty)` and gave
+        // the write-off back TWICE (phantom qty AND phantom costBalanceMinor,
+        // two `loss_cancel` ledger rows). A state LITERAL cannot close the
+        // cancel-vs-unpost variant; the snapshotted state can.
+        await transitionWithClaim(tx.loss, {
+          id,
           accountId,
-          userId,
-          entity: 'Loss',
-          entityId: id,
-          action: 'transition:cancelled',
-          fieldChanges: {
-            from: { before: existing.state, after: 'cancelled' },
-          } as Prisma.InputJsonValue,
-        },
-      });
-      return updated;
-    });
+          fromStates: [existing.state],
+          toState: 'cancelled',
+          message: "Spisanie holati o'zgargan — allaqachon o'zgartirilgan",
+        });
+
+        const wasApplicable = existing.applicable;
+        if (wasApplicable) {
+          const deltas: StockDelta[] = existing.positions.map((p) => {
+            const costPerUnit = p.costMinor ?? 0n;
+            const valueMinor = scaleMinorByQty(costPerUnit, String(p.quantity));
+            return {
+              storeId: existing.storeId,
+              assortmentKind: p.assortmentKind,
+              assortmentId: p.assortmentId,
+              cellId: p.cellId ?? null,
+              qtyDelta: String(p.quantity),
+              costDeltaMinor: valueMinor,
+              docType: 'loss_cancel',
+              docId: id,
+              docPositionId: p.id,
+              reason: 'cancel',
+            };
+          });
+          await this.stock.applyDeltas(tx, accountId, userId, deltas);
+        }
+        const updated = await tx.loss.update({
+          where: { id, accountId },
+          data: { state: 'cancelled', applicable: false },
+        });
+        await tx.auditLog.create({
+          data: {
+            accountId,
+            userId,
+            entity: 'Loss',
+            entityId: id,
+            action: 'transition:cancelled',
+            fieldChanges: {
+              from: { before: existing.state, after: 'cancelled' },
+            } as Prisma.InputJsonValue,
+          },
+        });
+        return updated;
+      },
+      // Serializable + `withSerializationRetry` (transition()) — the same
+      // discipline post()/unpost() already run under. cancel() was the one
+      // stock-reversing path still on the default ReadCommitted.
+      { isolationLevel: 'Serializable', timeout: 15000 },
+    );
   }
 
   // =====================================================================

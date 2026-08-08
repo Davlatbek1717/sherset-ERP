@@ -119,6 +119,53 @@ for (const svc of SERVICES) {
 }
 
 /**
+ * loss (Списание) — the stock document this class-lock never covered, which is
+ * exactly why the hole survived (STK-01, Faza 5, 2026-08-08).
+ *
+ * post() got its inline claim in 2026-07-29, but unpost() and cancel() kept
+ * reading the state OUTSIDE the tx and flipping it blind, and cancel() ran at
+ * the DEFAULT isolation level — no `isolationLevel` argument at all. Two
+ * parallel cancels (or a cancel racing an unpost) credited the written-off qty
+ * AND costBalanceMinor back twice. The two new claims go through the shared
+ * `transitionWithClaim()` primitive, so the shape pinned here is the same one
+ * the money family uses; post() keeps its (equivalent) inline claim.
+ *
+ * Behavioural counterpart: `../loss/loss-transition-race.test.ts`.
+ *
+ * NOT pinned here: `loss.delete()` still does read-check-then-write (a post
+ * racing a soft-delete can orphan stock) — a real, separate hole left open by
+ * Faza 5's scope, see the phase report.
+ */
+describe('loss transitions atomically claim their state (TOCTOU class-lock)', () => {
+  const SOURCE = stripComments(
+    readFileSync(join(__dirname, '..', 'loss', 'loss.service.ts'), 'utf8'),
+  );
+
+  it('post() claims draft→posted via a conditional updateMany', () => {
+    expect(SOURCE).toMatch(
+      /tx\.loss\.updateMany\(\{\s*where:\s*\{\s*id,\s*accountId,\s*state:\s*'draft'\s*\},\s*data:\s*\{\s*state:\s*'posted'\s*\}/,
+    );
+    expect(SOURCE).toMatch(/claim\.count === 0/);
+  });
+
+  it('unpost() claims posted→draft through the shared primitive', () => {
+    expect(SOURCE).toMatch(claimRe('loss', "\\['posted'\\]", 'draft'));
+  });
+
+  it('cancel() claims the EXACT snapshotted state→cancelled', () => {
+    // A state LITERAL would miss the cancel-vs-unpost race (different end
+    // states); only the snapshotted state serialises those two.
+    expect(SOURCE).toMatch(claimRe('loss', '\\[existing\\.state\\]', 'cancelled'));
+  });
+
+  it('all three stock-moving transitions run Serializable', () => {
+    const uses = SOURCE.match(/isolationLevel: 'Serializable'/g) ?? [];
+    expect(uses.length, 'post + unpost + cancel each need Serializable').toBe(3);
+    expect(SOURCE).toMatch(/withSerializationRetry\(/);
+  });
+});
+
+/**
  * processing (Техоперация) is the same class but a different shape: unpost and
  * cancel-from-posted share `reverseAndUpdate`, whose claim flips posted→a
  * `targetState` variable; post's claim carries the extra applicable/deletedAt

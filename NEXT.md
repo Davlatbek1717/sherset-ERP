@@ -305,6 +305,40 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-08b (AUDIT-FIX FAZA 5 — `loss.cancel`/`unpost` atomik claim + Serializable · `STK-01`)
+> · Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q · ⏳ DEPLOY QILINMAGAN**
+>
+> **Muammo (tasdiqlandi).** `loss.cancel()` `$transaction`ni **ikkinchi argumentsiz** ochardi (default
+> ReadCommitted) va holatni oxirida **shartsiz** `update({ where: { id, accountId } })` bilan flip qilardi —
+> holat esa `transition()` → `findById` dan, tranzaksiya **tashqarisidan** kelardi. Ikki parallel cancel
+> (yoki cancel ∥ unpost) spisaniye qoldig'ini va `costBalanceMinor`ni **ikki marta** qaytarardi.
+> **Kengroq:** `unpost()` da ham claim yo'q edi — Serializable uni yashirgan, lekin **bo'sh** (0 pozitsiyali)
+> spisaniye hech narsani qulflamaydi (aynan shu sabab `post()` ga 2026-07-29 da claim qo'yilgan edi).
+> **Ildiz:** `shared/transition-toctou-class.test.ts` klass-skaneri 7 stock-servisni qamraydi — **loss
+> ro'yxatda yo'q edi**, shuning uchun teshik 2026-06 dan beri omon qolgan.
+>
+> **Fix:** `cancel()` + `unpost()` ga Faza 1 helperi `transitionWithClaim(tx.loss, …)` tranzaksiyaning
+> BIRINCHI amali sifatida (cancel `fromStates: [existing.state]` — literal `'posted'` EMAS, chunki
+> cancel↔unpost poygasida yakuniy holatlar har xil); `cancel()` ga `{ isolationLevel: 'Serializable',
+> timeout: 15000 }`. `post()` ning inline claim'i tegilmadi. Klass-skanerga loss bloki qo'shildi.
+>
+> **TDD:** yangi `loss/loss-transition-race.test.ts` — fix'dan oldin **6 testdan 5 tasi yiqilardi**
+> (2× cancel → `applyDeltas` 2×; 2× unpost → 2×; cancel∥unpost → 2×; 3× cancel → 3×; draft-cancel'da
+> shartli `updateMany` umuman yo'q), keyin **6/6 yashil**. Skaner blokining vakuum emasligi `git show HEAD`
+> manbasiga qarshi alohida tekshirildi (4 assertdan 3 tasi eski kodda yiqilardi).
+>
+> **Gate:** api tsc **0** · biome **0 error** · api vitest BUTUN suite **5023/5023** (381 fayl, 2 skipped) ·
+> `loss` 27/27 · `shared` 501/501. i18n gate kerak emas (backend).
+>
+> **🔴 Yangi topilma, OCHIQ qoldi:** `loss.delete()` (`loss.service.ts:516-528`) hamon read-check-then-write —
+> parallel `post` bilan poygada **yetim StockOperation** qoldiradi (qoldiq harakatlandi, hujjat soft-delete).
+> 7 sibling servisda bu shartli `updateMany` bilan yopilgan. Klass-lok blokida `delete()` ataylab pin
+> qilinmadi (aks holda qizil bo'lardi) — **alohida kichik faza sifatida yopilsin**.
+>
+> **⏭️ KEYINGI:** `docs/REJA-AUDIT-FIX-2026-08.md` → **Faza 6** (`SALES-01`+`FE-01` — POS refund server
+> tomondan asl-narx cap; P0, CRITICAL: hozir refund payout mijoz yuborgan narxdan hisoblanadi ⇒ cheksiz
+> over-refund). Sessiya-boshi prompti o'sha fazada.
+
 > **🕒 2026-08-08a (AUDIT-FIX FAZA 4 — POS qarz-to'lovi tx-ichi FIFO + `recalc` reuse · `M-10`+`DUP-07`)
 > · Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q · ⏳ DEPLOY QILINMAGAN**
 >

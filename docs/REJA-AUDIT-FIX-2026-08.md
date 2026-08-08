@@ -182,7 +182,7 @@ Faza 1 helperi tayyor bo'lsa uni ishlat.
 **▶ SESSIYA-BOSHI PROMPT:**
 > `docs/REJA-AUDIT-FIX-2026-08.md` — **Faza 5**. O'ZGARMAS QOIDALAR. `STK-01`'ni tasdiqla. `loss.cancel`'ga
 > atomik claim + Serializable qo'sh (Faza 1 helperi bo'lsa ishlat). TDD: parallel cancel testi. Gate. Hisobot, TO'XTA.
-**◻ HISOBOT:** _(agent to'ldiradi)_
+**☑ HISOBOT (2026-08-08):** BAJARILDI — batafsili «HISOBOT JURNALI → Faza 5» da.
 
 ---
 
@@ -1186,3 +1186,89 @@ ostidagi, raqibning commit'ini ko'rgan) holatga qo'yilgan; rad etilsa `throw` �
 - **`summary()`/`receipt()` qulfsiz o'qiydi** — ular faqat ko'rsatish uchun, pul yozmaydi (ataylab).
 
 **Commit:** `fix(debt): faza 4 — POS qarz-to'lovi tx-ichi FIFO + recalc reuse (M-10, DUP-07)`
+
+---
+
+## Faza 5 — 2026-08-08 — **Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q**
+
+**Topilma tasdiqlanishi (o'z ko'zim bilan kodda).** `STK-01` **TASDIQLANDI** — va aslida topilma
+aytganidan **bitta kengroq**:
+- `cancel()` (fix'dan oldin `loss.service.ts:809`): `return this.prisma.client.$transaction(async (tx) => {…})`
+  — **ikkinchi argument umuman yo'q**, ya'ni default ReadCommitted; ichida birinchi amal `applyDeltas(+qty)`,
+  holat esa oxirida `tx.loss.update({ where: { id, accountId }, … })` bilan **shartsiz** flip qilinardi.
+  Holat `existing.state` orqali `transition()` → `findById` dan, ya'ni **tranzaksiya tashqarisidan** kelardi.
+- **QO'SHIMCHA (topilma `fix:` qatorida ishora qilingan, sarlavhada yo'q):** `unpost()` da ham claim **yo'q
+  edi** (`:782` `tx.loss.update({ where: { id, accountId }, data: { state: 'draft', … } })`). U Serializable
+  ostida yugurgani uchun bug **yashiringan**: pozitsiyalari bor hujjatda ikki raqib bir xil `Stock` qatorlariga
+  tegadi ⇒ mag'lub 40001 bilan tushadi. Lekin **bo'sh** (0 pozitsiyali) spisaniye hech narsani qulflamaydi —
+  aynan shu teshik uchun `post()` ga 2026-07-29 da claim qo'shilgan edi (`:607-624` izohi buni yozib qo'ygan).
+  Shuning uchun unpost ham shu fazada yopildi.
+- **Nega loss chetda qolgan:** `shared/transition-toctou-class.test.ts` klass-skaneri 7 stock-servisni
+  qamraydi (supply, sales-return, purchase-return, move, enter, production, processing) — **loss ro'yxatda
+  yo'q edi**. Guard yo'qligi teshikning 2026-06 dan beri omon qolishining bevosita sababi.
+
+**Fayllar**
+
+| Fayl | O'zgarish |
+|---|---|
+| `apps/api/src/modules/loss/loss-transition-race.test.ts` | **YANGI** — 6 test, haqiqiy parallel `transition()` poygasi |
+| `apps/api/src/modules/loss/loss.service.ts` | `cancel()` + `unpost()` ga `transitionWithClaim` (Faza 1 helperi); `cancel()` ga `{ isolationLevel: 'Serializable', timeout: 15000 }` |
+| `apps/api/src/modules/shared/transition-toctou-class.test.ts` | loss uchun klass-lock bloki (+4 test) — skaner endi loss'ni ham qamraydi |
+
+**O'zgarish (3 qism)**
+1. **`cancel()` — snapshot holatini da'vo qiladi:** tranzaksiyaning BIRINCHI amali
+   `transitionWithClaim(tx.loss, { id, accountId, fromStates: [existing.state], toState: 'cancelled' })`.
+   `existing.state` (literal `'posted'` EMAS) ataylab — move/enter qoidasi: **cancel↔unpost poygasi**da ikki
+   o'tkazish turli yakuniy holatga boradi, shuning uchun faqat snapshot holati ularni ketma-ketlashtiradi.
+2. **`cancel()` endi Serializable + 15s timeout** — `post()`/`unpost()` allaqachon shunday edi; cancel yagona
+   default-izolyatsiyali qoldiq-qaytaruvchi yo'l edi. `transition()` allaqachon `withSerializationRetry`
+   ichida va `findById`ni retry closure ICHIDA qayta o'qiydi (40001'dan keyin eski snapshot bilan qayta
+   urinish bo'lmaydi) — o'zgartirilmadi.
+3. **`unpost()` — `fromStates: ['posted']` claim** (yuqoridagi «bo'sh hujjat» teshigi uchun).
+   `post()` ning inline claim'i **tegilmadi** (ishlaydi, testi bor) — shu sababli faylda ikki shakl bor:
+   post inline, unpost/cancel esa shared helper. Sabab hisobotda ochiq: ishlayotgan kritik yo'lni sabab
+   ko'rsatmasdan qayta yozmaslik.
+
+**Testlar (TDD tartibi kuzatildi)**
+- RED (fix'dan oldin, jonli o'lchangan): **6 testdan 5 tasi yiqildi** —
+  (1) ikki parallel `cancel` → `applyDeltas` **2×** (kutilgan 1), 0 rad;
+  (2) ikki parallel `unpost` → **2×**;
+  (3) `cancel` ∥ `unpost` → **2×** (aynan STK-01 impact'idagi ikkinchi stsenariy);
+  (4) uchta parallel `cancel` → **3×**;
+  (5) draft spisaniyeni cancel qilishda shartli `updateMany` **umuman yo'q edi**.
+  Yagona o'tgan test — ikki parallel `post` (2026-07-29 claim'i, regress-lock sifatida qoldirildi).
+- GREEN: **6/6 yashil**.
+- Klass-skaner blokining **vakuum emasligi alohida tekshirildi** (`git show HEAD:…loss.service.ts` ustidan
+  o'sha regexlar): pre-fix'da `unpost claim: false`, `cancel claim: false`, `Serializable count: 2` (guard 3
+  kutadi) — ya'ni 4 ta yangi assertdan 3 tasi eski kodda yiqilardi.
+- Test-double halolligi: `updateMany` WHERE `state` filtrini (`'x'` ham, `{ in: [...] }` ham) hurmat qiladi
+  va tanasi **yield qilmaydi** ⇒ Postgres'ning qator-yozuv qulfi semantikasi; `findFirst` **detached nusxa**
+  qaytaradi (aks holda bir chaqiruvchining claim'i ikkinchisining snapshotini retroaktiv o'zgartirib,
+  poygani yashirardi). Harness shakli — `shared/money-transition-race.test.ts` (Faza 1) bilan bir xil.
+
+**Gate (to'liq, jonli o'lchangan)**
+- `pnpm --filter @moysklad/api typecheck` → **0 xato**
+- `pnpm lint:product` → **0 error** (728 warning — siyosat bo'yicha ruxsat)
+- `pnpm --filter @moysklad/api exec vitest run` (BUTUN suite) → **381 fayl / 5023 test yashil, 0 yiqilgan**
+  (1 fayl / 2 test skipped — oldindan shunday)
+- `loss` moduli alohida: **3 fayl / 27 test**; `shared`: **22 fayl / 501 test**
+- `i18n:gate` — **kerak emas** (UI-matn tegilmadi, faqat backend).
+
+**Qolgan qarz / DEFER**
+- **Browser-smoke YO'Q.** Poyga faqat in-memory Prisma double'da o'lchandi; real Postgres'da Serializable +
+  claim xulqi (409 matni UI'da qanday ko'rinishi ham) Phase-2 QA'ga qoladi.
+- **🔴 `loss.delete()` HAMON himoyasiz (yangi topilma, bu faza doirasidan tashqarida).**
+  `loss.service.ts:516-528` — `findById` bilan `applicable`/`state` tekshiriladi, keyin **shartsiz**
+  `update({ where: { id, accountId }, data: { deletedAt } })`. Parallel `post` bilan poygada: post qoldiqni
+  harakatlantiradi, delete esa hujjatni soft-delete qiladi ⇒ **yetim StockOperation** (hech qachon qaytmaydi).
+  7 sibling servisda bu yo'l `updateMany({ where: { …, state: 'draft', applicable: false, deletedAt: null } })`
+  bilan yopilgan; loss'da yo'q. Shuning uchun yangi klass-lok blokida `delete()` **ataylab pin qilinmadi** —
+  aks holda test qizil bo'lardi. **Tavsiya: alohida kichik faza (yoki Faza 14 yonida) sifatida yopilsin.**
+- **Klass-skaner qamrovi kengaydi, lekin to'liq emas:** loss qo'shildi (post/unpost/cancel + Serializable
+  soni), lekin skanerda hamon «barcha stock-servislar ro'yxatda bormi» degan **qamrov-lock yo'q** (MONEY
+  oilasida bunday lock bor: `MONEY_SERVICES` nomlar ro'yxati assert qilinadi). Yangi stock-hujjat qo'shilsa
+  u ham jimgina qamrovdan tashqarida qoladi — bu aynan STK-01 ning ildiz sababi edi.
+- **Bir faylda ikki claim shakli** (post inline ∥ unpost/cancel helper) — ataylab; birlashtirish istalsa
+  alohida mexanik refaktor.
+
+**Commit:** `fix(stock): faza 5 — loss cancel/unpost atomik claim + Serializable (STK-01)`
