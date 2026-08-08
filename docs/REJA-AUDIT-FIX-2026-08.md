@@ -331,7 +331,8 @@ qiladi (UI'da bank-balans ko'rsatiladi). Ikkilanish bo'lsa DEFER + foydalanuvchi
 > `docs/REJA-AUDIT-FIX-2026-08.md` — **Faza 11** (Faza 2 tugagan). O'ZGARMAS QOIDALAR. `M-06`+`M-05`.
 > PaymentIn/Out'ni OrganizationAccount balansiga, POS-qarz naqdini CashDesk'ga yozdir; `/money`'da ko'rin.
 > TDD: balans oshdi/teskari testlari. Gate (API+web). Hisobot, TO'XTA.
-**◻ HISOBOT:** _(agent to'ldiradi)_
+**☑ HISOBOT (2026-08-08):** BAJARILDI — batafsili «HISOBOT JURNALI → Faza 11» da. **Backfill YO'Q:
+daftar bugundan boshlanadi** (eski bank to'lovlari `/money`da ko'rinmaydi).
 
 ---
 
@@ -1835,3 +1836,123 @@ o'quvchilariga tushmasligi kerak).
   Excel Phase-2 QA cohort'ga qoladi.
 
 **Commit:** `dfea0d0b` — `fix(counterparty-balance): faza 10 — 4 balans-o'quvchi jurnaldan o'qiydi (M-07, DUP-05/06/08)`
+
+---
+
+## Faza 11 — Ledger-teshiklar: Payment→OrganizationAccount + POS-qarz→CashDesk
+
+**Sana:** 2026-08-08 · **ID'lar:** `M-06` (HIGH), `M-05` (HIGH→MEDIUM), `FE-03` (HIGH→MEDIUM)
+**Commit:** `de77953e` — `fix(money): faza 11 — Payment→OrganizationAccount + qarz-naqd→CashDesk`
+
+### Da'volarni kodda tasdiqlash (reja §2)
+
+| ID | Da'vo | Kodda holat |
+|----|-------|-------------|
+| `M-06` | PaymentIn/Out `MoneyService`ga umuman tegmaydi | ✅ **TASDIQLANDI** — ikkala servisda `MoneyService` importi ham yo'q edi; `post()` faqat `balance.applyDelta` + `applyPayment`. `money-operation.service.ts:7-9` docstring'i esa «union of CashIn/CashOut/**PaymentIn/PaymentOut**» deb va'da berardi. |
+| `M-05` | POS qarz-to'lovi kassa daftariga yozilmaydi | ✅ **QISMAN** — `CashDesk.balanceMinor` + `MoneyOperation` haqiqatan yozilmasdi. **LEKIN** auditning «smena soxta ortiqcha chiqadi» qismi TO'G'RI EMAS: `cashier-session.service.ts:315` naqd qarz to'lovlarini `debtPayment` jadvalidan to'g'ridan-to'g'ri qo'shadi (kassa TZ §8.4). Ya'ni **smena hisobi allaqachon to'g'ri edi**; haqiqiy teshik — kassa qoldig'i va `/money` lentasi. |
+| `FE-03` | `/money` bank to'lovlarini ko'rsatmaydi, «+ Yaratish» esa taklif qiladi | ✅ **TASDIQLANDI** — `LedgerKind = 'cash_in' \| 'cash_out' \| 'retailsale'`, `NEW_ROUTES` esa `paymentin`/`paymentout`ni ko'rsatardi. |
+
+### Dizayn qarori (reja «Diqqat» bandiga javob)
+
+Reja ikki variantni ko'rsatgan edi: (a) balansni yozdirish, (b) `OrganizationAccount.balanceMinor`ni
+umuman olib tashlash. **(a) tanlandi** — UI bank-balansni ko'rsatadi (`organization-account.service`
+har `find*` da qaytaradi; `organization.service` tashkilot kartochkasida chiqaradi; hisob o'chirishda
+`balanceMinor !== 0n` guard'i bor). Balansni olib tashlash uch o'quvchini va bir guard'ni buzardi.
+
+**Ikkinchi qaror — overdraft qo'riqchisi bank hisobida O'CHIRILDI** (`MoneyDelta.allowNegative`, faqat
+to'lov chaqiruv-joylarida `true`). Sabab: `OrganizationAccount.balanceMinor` hech qachon
+materiallashtirilmagan, ya'ni saqlangan `0` = «hech qachon o'lchanmagan», «pul yo'q» EMAS. Faza 2
+qo'riqchisini shu yerda qo'llash **har birinchi bank to'lovini soxta 400 bilan rad etardi** (prodda
+barcha hisoblar 0). Bank hisobi qonuniy ravishda minusga ham tushadi (overdraft/kredit liniyasi) —
+kassa tortmasi esa hech qachon. **Kassa tomonida qo'riqchi tegilmagan.** Ochilish qoldiqlari
+kiritilgach (bank-vypiska importi) bayroqni olib tashlash mumkin.
+
+### O'zgarishlar
+
+**BE — bank tomoni (`M-06`)**
+- `money/money.service.ts` — `MoneyDelta.allowNegative?: boolean` (har delta uchun opt-in, servis-keng
+  kalit EMAS) + ikkala overdraft tekshiruvi shuni hisobga oladi. Nega kerakligi docstring'da.
+- `payment-in/payment-in.service.ts` · `payment-out/payment-out.service.ts` — `MoneyService` inyeksiyasi
+  (cash-in/out bilan bir xil pozitsiyada: `prisma, targets, money, balance, …`) + `bankDeltas()` private
+  helper (hujjatda `organizationAccountId` bo'lmasa `[]` — `applyDeltas([])` no-op, shuning uchun har
+  chaqiruv-joy shartsiz uzatadi) + 3 chaqiruv-joy: post `±sumMinor`, unpost/cancel teskari
+  (cancel faqat `applicable` bo'lsa). `documentKind`: `payment_in` / `payment_out`.
+- `payment-in.module.ts` · `payment-out.module.ts` · `debt.module.ts` — `MoneyModule` importi.
+
+**BE — kassa tomoni (`M-05`)**
+- **Yangi** `debt/debt-cash-ledger.ts` — YAGONA predikat: `method === 'cash' && cashDeskId != null`
+  ⇒ yashiq harakati. Jismoniy summa = `amountOriginalMinor ?? amountMinor` `currency`da (sxema:
+  `amountMinor` HAR DOIM qarz valyutasida, `currency`/`amountOriginalMinor` — mijoz bergan asl pul).
+  Yana: `debtLedgerDocumentId()` (POS'da `batchId`, qolganda `payment.id`) va
+  `debtCashLedgerWasWritten()` (migratsiya-qo'riqchisi, pastda).
+- `debt/pos-debt-payment.service.ts` — tx ICHIDA, allokatsiyalardan keyin **BIR** delta (`+appliedMinor`,
+  `documentId = batchId`): bitta jismoniy to'lov = bitta yashiq harakati, FIFO nechta qarzga bo'lganidan
+  qat'i nazar.
+- `debt/debt.service.ts` — (1) `addCashPayment` ham yozadi (**auditning `files:` ro'yxatidan TASHQARI,
+  ataylab** — bu AYNAN o'sha jismoniy hodisa: kassir `cashDeskId` bilan naqd oladi; qoldirilsa storno
+  predikati hech qachon kreditlanmagan yashiqni debetlardi); (2) yangi private
+  `reverseCashDeskDelta()` — IKKALA storno yo'li (`reversePayment`, `cancelCallNote`) shundan o'tadi.
+
+**Migratsiya-qo'riqchisi (o'zim topgan, rejada yo'q edi)**
+Storno teskari harakatni FAQAT daftarda mos kredit BO'LSA yozadi. Prod bazada Faza 11'gacha yozilgan
+naqd qarz to'lovlari bor; ularning birini bugun qaytarsak, hech qachon kirmagan pulni yashiqdan
+chiqarardik — qoldiq noto'g'ri kamayardi, yomon holatda **overdraft qo'riqchisi stornoning O'ZINI
+400 bilan bloklardi** (operator xato to'lovni qaytara olmay qolardi). Tekshiruv daftarning o'zidan
+o'qiydi — sana yoki migratsiya bayrog'i kerak emas.
+
+**FE (`FE-03`)**
+- `money/page.tsx` — `LedgerKind` +3 tur; `KIND_ROUTES` (`payment_in→/payments-in`,
+  `payment_out→/payments-out`, `debtpayment→/print/debt-payment` — PKO chek sahifasi, `batchId` bo'yicha
+  yagona mavjud hujjat ko'rinishi); **tur-filtri endi `KIND_ROUTES`dan HOSILA** (qo'lda sanalgan 3
+  `<option>` aynan shu drift-klassining yashirin manbai edi); **badge toni slug o'rniga delta
+  ISHORASIDAN** (`documentKind.endsWith('in')` unpost qatorida ham, `debtpayment`da ham noto'g'ri edi).
+- `messages/{ru,uz}.json` — `pages.money.kinds`: `payment_in` «Входящий платёж» / «Kiruvchi to'lov»,
+  `payment_out` «Исходящий платёж» / «Chiquvchi to'lov», `debtpayment` «Оплата долга» / «Qarz to'lovi».
+  **Grounding (§4):** RU qiymatlar repo ichidagi parity-baseline'dan — `pages.payments_in.title`
+  «Входящие платежи» / `pages.payments_out.title` «Исходящие платежи» (kolonka-badge uchun birlik shakl);
+  `debtpayment` — MoySklad'da yo'q (bizning modul), `pages.debts` lug'atidan.
+- `money-operation.schema.ts` — filtr enum +3 (yozuvchisiz slug qo'shilmasin degan izoh bilan).
+
+### Testlar (TDD — avval yiqildi, keyin yashil)
+
+| Fayl | Test | Nimani ushlaydi |
+|------|------|-----------------|
+| **yangi** `shared/payment-org-account-ledger.test.ts` | 10 | PaymentIn/Out post/unpost/cancel deltalari, `net == 0`, draft-cancel harakatsiz, hisobsiz hujjat ⇒ qator yo'q, `allowNegative` |
+| **yangi** `debt/debt-cash-ledger.test.ts` | 8 | predikat: naqd+kassa / terminal / karta / kassasiz / 0-summa / valyuta / storno ishorasi / `allowNegative` yo'qligi |
+| **yangi** `debt/debt-cash-ledger.service.test.ts` | 9 | `addCashPayment` yozuvi · `reversePayment` + `cancelCallNote` stornosi · **legacy qator ⇒ harakatsiz** · **POS stornosi `batchId` ostida** |
+| `debt/pos-debt-payment.service.test.ts` | +4 | POS naqd bir marta · N qarzga bo'lingan to'lov ham BIR harakat · terminal/kassasiz ⇒ yo'q |
+| `web/money-kind-contract.test.ts` | +1, skan 3→6 fayl | yozuvchi⊆enum==KIND_ROUTES⊆i18n zanjiri yangi 3 turni qamraydi + `<option>` qo'lda sanalmasligi |
+
+**Non-vacuous:** tuzatishdan oldingi kodda har «delta bor» assert'i BO'SH massiv ko'radi
+(`applyDeltas` umuman chaqirilmasdi). Legacy-qo'riqchi testi qo'riqchisiz `1` qator ko'radi.
+Konstruktor pozitsiyalari o'zgargani uchun `money-transition-race.test.ts`, `payment-out.service.test.ts`,
+`debt-bulk-reminder.test.ts` yangilandi (xulq o'zgarmagan).
+
+### Gate (jonli o'lchangan)
+- `pnpm --filter @moysklad/api typecheck` → **0** · `@moysklad/web typecheck` → **0**
+- `pnpm lint:product` → **0 error** (738 warning — siyosat bo'yicha ruxsat)
+- `pnpm i18n:gate` → **o'tdi** (12 278 kalit)
+- `pnpm --filter @moysklad/api exec vitest run` → **388 fayl / 5138 test yashil** (1 fayl, 2 test skip)
+- `pnpm --filter @moysklad/web exec vitest run` → **183 fayl / 2746 test yashil** (26 skip)
+- **Browser-smoke YO'Q.**
+
+### Qolgan qarz / DEFER
+- 🔴 **BACKFILL YO'Q — daftar BUGUNDAN boshlanadi.** Faza 11'gacha post qilingan bank to'lovlari va naqd
+  qarz to'lovlari `MoneyOperation`da yo'q; `/money` va bank-balans faqat yangi hujjatlarni ko'rsatadi.
+  Faza 9/10 backfill'idan farqli, bu yerda **manba-hujjatlardan qayta qurish MUMKIN** (posted
+  PaymentIn/Out + `deletedAt: null` DebtPayment) — lekin ochilish qoldig'i noma'lum bo'lgani uchun
+  natija «harakatlar yig'indisi» bo'ladi, absolyut qoldiq emas. **Alohida ops-fazasi** (skript + `APPLY=1`).
+- **`allowNegative` bank hisobida** — vaqtinchalik. Ochilish qoldiqlari kiritilgach olib tashlansin.
+- **Valyuta mos kelmasligi endi 400 beradi:** bank hisobi/kassa valyutasi to'lov valyutasidan farq qilsa
+  `MoneyService` rad etadi (ilgari bu yo'llarda umuman tekshiruv yo'q edi). Bu — to'g'ri xulq (`M-04`
+  bilan bir intizom), lekin **xulq o'zgarishi**: ko'p valyutali tenant'da USD to'lovni UZS hisobiga
+  yozib bo'lmaydi. POS web-klienti `currency` yubormaydi (tekshirildi:
+  `debt-payment-dialog.tsx:136`), shuning uchun POS oqimida risk yo'q.
+- **`addCashPayment` to'lovida `batchId` YO'Q** ⇒ `/money`dagi «Ochish» havolasi
+  `/print/debt-payment/<paymentId>` PKO chekini topa olmaydi (POS to'lovlarida ishlaydi). Yechim —
+  kassir to'loviga ham `batchId` berish; **mayda qarz**.
+- **POS `input.currency`** hamon konvertatsiyasiz: berilsa `amountMinor` qarz valyutasida qolib,
+  qator boshqa valyuta yorlig'ini oladi (Faza 11'gacha ham shunday edi). Endi bu MoneyService valyuta
+  guard'ida 400 bo'lib **ko'rinadi** — jimgina buzilish o'rniga. Alohida ish.
+- **Browser-smoke YO'Q** — `/money` lentasida bank to'lovi + PKO qarz to'lovi qatorlari, «Ochish»
+  havolalari, tur-filtri va In/Out/Net jamilar Phase-2 QA cohort'iga qoladi.

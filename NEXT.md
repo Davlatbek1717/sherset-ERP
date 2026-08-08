@@ -305,6 +305,65 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-08h (AUDIT-FIX FAZA 11 — pul-daftar teshiklari: bank to'lovi + naqd qarz to'lovi ·
+> `M-06`+`M-05`+`FE-03`) `de77953e` · Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q ·
+> ⏳ DEPLOY QILINMAGAN · 🗄️ migratsiya YO'Q · 🔴 **BACKFILL YO'Q — daftar bugundan boshlanadi (pastda)**
+>
+> **Muammo (kodda tasdiqlandi, 3/3).** `MoneyOperation` daftariga faqat kassa hujjatlari va chakana
+> savdo yozardi. **PaymentIn/PaymentOut umuman tegmasdi** — ikkala servisda `MoneyService` importi ham
+> yo'q edi (`M-06`), ya'ni bank-hisob balansi abadiy `0`, `/money` lentasi bank to'lovlarini
+> KO'RSATMASDI, lekin o'sha sahifaning «+ Yaratish» menyusi ularni yaratishga yo'naltirardi (`FE-03`).
+> **Naqd qarz to'lovi** ham yashiqni kreditlamasdi (`M-05`).
+> ⚠️ **Auditning bir da'vosi RAD ETILDI:** «smena soxta ortiqcha chiqadi» — TO'G'RI EMAS.
+> `cashier-session.service.ts:315` naqd qarz to'lovlarini `debtPayment` jadvalidan bevosita qo'shadi
+> (kassa TZ §8.4), ya'ni smena hisobi allaqachon to'g'ri edi. Teshik faqat `CashDesk.balanceMinor` +
+> daftar edi.
+>
+> **Fix.** (a) PaymentIn/Out post/unpost/cancel → `money.applyDeltas('organization_account', ±sumMinor)`,
+> `documentKind` `payment_in`/`payment_out`; hujjatda hisob ko'rsatilmagan bo'lsa harakat YO'Q.
+> (b) POS/kassir naqd qarz to'lovi → `cash_desk` `+summa`, `documentKind: 'debtpayment'`, havola PKO
+> cheki (`batchId`) — FIFO nechta qarzga bo'lganidan qat'i nazar **BITTA** yashiq harakati.
+> (c) **Yagona predikat** `debt/debt-cash-ledger.ts`: naqd + kassa ko'rsatilgan ⇒ yashiq. Yozuv (POS,
+> `addCashPayment`) va **ikkala storno** (`reversePayment`, `cancelCallNote`) shundan o'tadi — ikki
+> nusxa muqarrar bir-biridan uzoqlashardi va farq = qaytarilmagan/yasama pul.
+> (d) FE `/money`: 3 yangi tur + ru/uz yorliqlar; **tur-filtri endi `KIND_ROUTES`dan HOSILA** (qo'lda
+> sanalgan `<option>`lar aynan shu drift-klassining yashirin manbai edi); badge toni slug o'rniga
+> **delta ISHORASIDAN** (unpost qatori manfiy `cash_in`, `debtpayment` esa kirim — eski qoida ikkalasida
+> ham yanglishardi).
+>
+> **Ikki DIZAYN QARORI (rejada so'ralgan edi — hisobotda ochiq).** (1) `OrganizationAccount.balanceMinor`
+> **saqlanadi** (olib tashlash varianti rad etildi: uni 3 o'quvchi va 1 o'chirish-guard'i ishlatadi).
+> (2) **Bank hisobida overdraft qo'riqchisi o'chirildi** (`MoneyDelta.allowNegative`, faqat to'lov
+> chaqiruv-joylarida). Saqlangan `0` = «hech qachon o'lchanmagan», «pul yo'q» EMAS — qo'riqchi bo'lsa
+> **har birinchi bank to'lovi soxta 400** olardi. Kassa tomonida qo'riqchi TEGILMAGAN.
+>
+> **Migratsiya-qo'riqchisi (rejada yo'q edi, o'zim topdim).** Storno teskari harakatni FAQAT daftarda
+> mos kredit BO'LSA yozadi (`debtCashLedgerWasWritten`). Prodda Faza 11'gacha yozilgan naqd qarz
+> to'lovlari bor — birini bugun qaytarsak hech qachon kirmagan pulni yashiqdan chiqarardik, yomon
+> holatda overdraft qo'riqchisi **stornoning o'zini bloklardi**.
+>
+> **TDD.** +34 test, 3 tasi yangi fayl (`payment-org-account-ledger` 10 · `debt-cash-ledger` 8 ·
+> `debt-cash-ledger.service` 9) + `pos-debt-payment` +4 + `money-kind-contract` +1 (yozuvchi-skan 3→6
+> fayl). Hammasi **non-vacuous**: tuzatishdan oldin har «delta bor» assert'i BO'SH massiv ko'radi.
+>
+> **Gate:** api tc **0** · web tc **0** · `lint:product` **0 error** · `i18n:gate` OK (12 278 kalit) ·
+> api vitest **388 fayl / 5138 test** · web vitest **183 fayl / 2746 test**. **Browser-smoke YO'Q.**
+> Batafsil: rejadagi «HISOBOT JURNALI → Faza 11».
+>
+> **🔴 QARZ — BACKFILL YO'Q.** Faza 11'gacha post qilingan bank to'lovlari va naqd qarz to'lovlari
+> daftarda YO'Q: `/money` va bank-balans faqat **bugundan keyingi** hujjatlarni ko'rsatadi. Faza 9/10
+> dan farqli, bu yerda manba-hujjatlardan qayta qurish MUMKIN (posted PaymentIn/Out + `deletedAt: null`
+> DebtPayment), lekin ochilish qoldig'i noma'lum ⇒ natija «harakatlar yig'indisi» bo'ladi, absolyut
+> qoldiq emas. **Alohida ops-fazasi** (skript + `APPLY=1`) — hali yozilmagan.
+> Mayda qarz: `addCashPayment` to'lovida `batchId` yo'q ⇒ `/money`dagi «Ochish» havolasi PKO chekini
+> topa olmaydi (POS to'lovlarida ishlaydi).
+>
+> **⏭️ KEYINGI:** `docs/REJA-AUDIT-FIX-2026-08.md` → **Faza 12** (`DUP-03`+`DUP-12`+`DUP-04` — debt
+> simmetriyasi: `debt.remove()` reversal + settlement `deletedAt`/status filtri + eskirgan
+> `combinedMinor` premisesi). Sessiya-boshi prompt o'sha fazada.
+
+---
+
 > **🕒 2026-08-08g (AUDIT-FIX FAZA 10 — 4 balans-o'quvchi jurnalga ko'chirildi · `M-07`+`DUP-05/06/08`)
 > `dfea0d0b` · Phase-1: strukturaviy + unit + **real-DB**-tasdiqlangan, browser-smoke YO'Q ·
 > ⏳ DEPLOY QILINMAGAN · 🗄️ **MIGRATSIYA BOR** (lokal `climart_adopt`ga qo'llandi, prod'ga YO'Q) ·
