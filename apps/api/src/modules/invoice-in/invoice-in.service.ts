@@ -1013,6 +1013,10 @@ export class InvoiceInService {
    *     a PO (purchaseOrderId set) — matches InvoiceOut→CO cascade chain.
    *     This keeps PO.payedSumMinor in sync even when the money flows
    *     through an InvoiceIn allocation rather than a direct PO advance.
+   *
+   * M-09 (Faza 3): atomic `{ increment }` + read-after — see the contract note
+   * on `InvoiceOutService.applyPayment` for why the unlocked pre-read must not
+   * feed the write.
    */
   async applyPayment(
     tx: Prisma.TransactionClient,
@@ -1022,10 +1026,24 @@ export class InvoiceInService {
     amountMinor: bigint,
     direction: 'apply' | 'revert',
   ): Promise<void> {
-    const invoice = await tx.invoiceIn.findFirst({
+    const exists = await tx.invoiceIn.findFirst({
       where: { id: invoiceInId, accountId, deletedAt: null },
+      select: { id: true },
     });
-    if (!invoice) throw new NotFoundException(`InvoiceIn ${invoiceInId} not found`);
+    if (!exists) throw new NotFoundException(`InvoiceIn ${invoiceInId} not found`);
+
+    const sign = direction === 'apply' ? 1n : -1n;
+    const invoice = await tx.invoiceIn.update({
+      where: { id: invoiceInId, accountId },
+      data: { payedSumMinor: { increment: amountMinor * sign } },
+      select: {
+        name: true,
+        state: true,
+        sumMinor: true,
+        payedSumMinor: true,
+        purchaseOrderId: true,
+      },
+    });
 
     const applicableStates = ['posted', 'partially_paid', 'paid'];
     if (!applicableStates.includes(invoice.state)) {
@@ -1034,11 +1052,11 @@ export class InvoiceInService {
       );
     }
 
-    const sign = direction === 'apply' ? 1n : -1n;
-    const newPayed = invoice.payedSumMinor + amountMinor * sign;
+    const newPayed = invoice.payedSumMinor;
     if (newPayed < 0n) {
       throw new BadRequestException("To'langan summa manfiy bo'la olmaydi");
     }
+    const prevPayed = newPayed - amountMinor * sign;
 
     const currentState = invoice.state;
     let newState: string = currentState;
@@ -1050,12 +1068,11 @@ export class InvoiceInService {
       newState = 'posted';
     }
 
-    await tx.invoiceIn.update({
-      where: { id: invoiceInId, accountId },
-      data: { payedSumMinor: newPayed, state: newState },
-    });
-
     if (newState !== currentState) {
+      await tx.invoiceIn.update({
+        where: { id: invoiceInId, accountId },
+        data: { state: newState },
+      });
       await tx.auditLog.create({
         data: {
           accountId,
@@ -1065,7 +1082,7 @@ export class InvoiceInService {
           action: `transition:${newState}`,
           fieldChanges: {
             from: { before: currentState, after: newState },
-            payedSumMinor: { before: invoice.payedSumMinor.toString(), after: newPayed.toString() },
+            payedSumMinor: { before: prevPayed.toString(), after: newPayed.toString() },
           } as Prisma.InputJsonValue,
         },
       });

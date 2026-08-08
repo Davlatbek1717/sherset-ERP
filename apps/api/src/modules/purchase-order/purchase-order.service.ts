@@ -1315,6 +1315,10 @@ export class PurchaseOrderService {
    *
    * Bookkeeping-only: no money ledger write here. That belongs to
    * Sprint 5 (OrganizationAccount / CashDesk balance tracking).
+   *
+   * M-09 (Faza 3): atomic `{ increment }` + read-after — see the contract note
+   * on `InvoiceOutService.applyPayment` for why the unlocked pre-read must not
+   * feed the write.
    */
   async applyPayment(
     tx: Prisma.TransactionClient,
@@ -1324,10 +1328,19 @@ export class PurchaseOrderService {
     amountMinor: bigint,
     direction: 'apply' | 'revert',
   ): Promise<void> {
-    const order = await tx.purchaseOrder.findFirst({
+    const exists = await tx.purchaseOrder.findFirst({
       where: { id: purchaseOrderId, accountId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!exists) {
+      throw new NotFoundException(`PurchaseOrder ${purchaseOrderId} not found`);
+    }
+
+    const sign = direction === 'apply' ? 1n : -1n;
+    const order = await tx.purchaseOrder.update({
+      where: { id: purchaseOrderId, accountId },
+      data: { payedSumMinor: { increment: amountMinor * sign } },
       select: {
-        id: true,
         state: true,
         sumMinor: true,
         payedSumMinor: true,
@@ -1335,12 +1348,8 @@ export class PurchaseOrderService {
         receivedSumMinor: true,
       },
     });
-    if (!order) {
-      throw new NotFoundException(`PurchaseOrder ${purchaseOrderId} not found`);
-    }
 
-    const sign = direction === 'apply' ? 1n : -1n;
-    const newPayed = order.payedSumMinor + amountMinor * sign;
+    const newPayed = order.payedSumMinor;
     if (newPayed < 0n) {
       throw new BadRequestException(
         "PO to'langan summasi manfiy bo'la olmaydi — revert qiymati ortiqcha",
@@ -1368,17 +1377,11 @@ export class PurchaseOrderService {
       newState = fullyReceived ? 'fully_received' : 'confirmed';
     }
 
-    const updateData: Prisma.PurchaseOrderUpdateInput = { payedSumMinor: newPayed };
     if (newState && newState !== currentState) {
-      updateData.state = newState;
-    }
-
-    await tx.purchaseOrder.update({
-      where: { id: purchaseOrderId, accountId },
-      data: updateData,
-    });
-
-    if (newState && newState !== currentState) {
+      await tx.purchaseOrder.update({
+        where: { id: purchaseOrderId, accountId },
+        data: { state: newState },
+      });
       await tx.auditLog.create({
         data: {
           accountId,

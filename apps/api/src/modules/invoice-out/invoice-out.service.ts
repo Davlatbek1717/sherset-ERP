@@ -1107,6 +1107,16 @@ export class InvoiceOutService {
    *
    * Guard: invoice must be applicable (posted/sent/partially_paid/paid/overdue).
    * Cannot apply payment to draft or cancelled invoices.
+   *
+   * M-09 (Faza 3): `payedSumMinor` moves by an atomic `{ increment }`, never by
+   * a read-then-absolute-set. The unlocked `findFirst` below establishes
+   * existence only — its `payedSumMinor` is stale the moment a second payment
+   * runs concurrently, and writing a total derived from it silently drops one
+   * of the two payments. Every decision (guard, state, audit) is therefore made
+   * on the row the increment RETURNS: Postgres holds the row lock for that
+   * statement, so it reflects the other transaction's committed payment.
+   * A guard that fails after the increment throws, and the caller's
+   * `$transaction` — every call site is inside one — rolls the increment back.
    */
   async applyPayment(
     tx: Prisma.TransactionClient,
@@ -1116,10 +1126,25 @@ export class InvoiceOutService {
     amountMinor: bigint,
     direction: 'apply' | 'revert',
   ): Promise<void> {
-    const invoice = await tx.invoiceOut.findFirst({
+    const exists = await tx.invoiceOut.findFirst({
       where: { id: invoiceOutId, accountId, deletedAt: null },
+      select: { id: true },
     });
-    if (!invoice) throw new NotFoundException(`InvoiceOut ${invoiceOutId} not found`);
+    if (!exists) throw new NotFoundException(`InvoiceOut ${invoiceOutId} not found`);
+
+    const sign = direction === 'apply' ? 1n : -1n;
+    const invoice = await tx.invoiceOut.update({
+      where: { id: invoiceOutId, accountId },
+      data: { payedSumMinor: { increment: amountMinor * sign } },
+      select: {
+        name: true,
+        state: true,
+        sumMinor: true,
+        payedSumMinor: true,
+        published: true,
+        customerOrderId: true,
+      },
+    });
 
     const applicableStates = ['posted', 'sent', 'partially_paid', 'paid', 'overdue'];
     if (!applicableStates.includes(invoice.state)) {
@@ -1128,13 +1153,13 @@ export class InvoiceOutService {
       );
     }
 
-    const sign = direction === 'apply' ? 1n : -1n;
-    const newPayed = invoice.payedSumMinor + amountMinor * sign;
+    const newPayed = invoice.payedSumMinor;
     if (newPayed < 0n) {
       throw new BadRequestException(
         "To'langan summa manfiy bo'la olmaydi — revert qiymati ortiqcha",
       );
     }
+    const prevPayed = newPayed - amountMinor * sign;
 
     // Determine new state
     const currentState = invoice.state;
@@ -1148,15 +1173,11 @@ export class InvoiceOutService {
       newState = invoice.published ? 'sent' : 'posted';
     }
 
-    await tx.invoiceOut.update({
-      where: { id: invoiceOutId, accountId },
-      data: {
-        payedSumMinor: newPayed,
-        state: newState,
-      },
-    });
-
     if (newState !== currentState) {
+      await tx.invoiceOut.update({
+        where: { id: invoiceOutId, accountId },
+        data: { state: newState },
+      });
       await tx.auditLog.create({
         data: {
           accountId,
@@ -1166,7 +1187,7 @@ export class InvoiceOutService {
           action: `transition:${newState}`,
           fieldChanges: {
             from: { before: currentState, after: newState },
-            payedSumMinor: { before: invoice.payedSumMinor.toString(), after: newPayed.toString() },
+            payedSumMinor: { before: prevPayed.toString(), after: newPayed.toString() },
           } as Prisma.InputJsonValue,
         },
       });

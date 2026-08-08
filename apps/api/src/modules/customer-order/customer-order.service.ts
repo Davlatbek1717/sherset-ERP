@@ -2056,6 +2056,10 @@ export class CustomerOrderService {
    *     → state = closed (from fully_shipped / paid / partially_shipped)
    *   - If payedSum >= sum AND not fully shipped
    *     → state = paid (from confirmed / awaiting_payment / partially_shipped)
+   *
+   * M-09 (Faza 3): atomic `{ increment }` + read-after — see the contract note
+   * on `InvoiceOutService.applyPayment` for why the unlocked pre-read must not
+   * feed the write. Mirrors `applyInvoiced` above, which already increments.
    */
   async applyPayment(
     tx: Prisma.TransactionClient,
@@ -2065,16 +2069,22 @@ export class CustomerOrderService {
     amountMinor: bigint,
     direction: 'apply' | 'revert',
   ): Promise<void> {
-    const order = await tx.customerOrder.findFirst({
+    const exists = await tx.customerOrder.findFirst({
       where: { id: customerOrderId, accountId, deletedAt: null },
-      select: { id: true, state: true, sumMinor: true, payedSumMinor: true, shippedSumMinor: true },
+      select: { id: true },
     });
-    if (!order) {
+    if (!exists) {
       throw new NotFoundException(`CustomerOrder ${customerOrderId} not found`);
     }
 
     const sign = direction === 'apply' ? 1n : -1n;
-    const newPayed = order.payedSumMinor + amountMinor * sign;
+    const order = await tx.customerOrder.update({
+      where: { id: customerOrderId, accountId },
+      data: { payedSumMinor: { increment: amountMinor * sign } },
+      select: { state: true, sumMinor: true, payedSumMinor: true, shippedSumMinor: true },
+    });
+
+    const newPayed = order.payedSumMinor;
     if (newPayed < 0n) {
       throw new BadRequestException("CO to'langan summasi manfiy bo'la olmaydi");
     }
@@ -2109,17 +2119,11 @@ export class CustomerOrderService {
       newState = fullyShipped ? 'fully_shipped' : 'confirmed';
     }
 
-    const updateData: Prisma.CustomerOrderUpdateInput = { payedSumMinor: newPayed };
     if (newState && newState !== currentState) {
-      updateData.state = newState;
-    }
-
-    await tx.customerOrder.update({
-      where: { id: customerOrderId, accountId },
-      data: updateData,
-    });
-
-    if (newState && newState !== currentState) {
+      await tx.customerOrder.update({
+        where: { id: customerOrderId, accountId },
+        data: { state: newState },
+      });
       await tx.auditLog.create({
         data: {
           accountId,

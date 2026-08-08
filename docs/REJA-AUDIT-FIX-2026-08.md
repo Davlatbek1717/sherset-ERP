@@ -142,7 +142,7 @@ yopadi; ikkalasi birga to'liq simmetriya beradi. Tartib muhim emas.
 **▶ SESSIYA-BOSHI PROMPT:**
 > `docs/REJA-AUDIT-FIX-2026-08.md` — **Faza 3**. O'ZGARMAS QOIDALAR. `M-09`'ni tasdiqla. 4 servisning
 > `applyPayment`'ini increment'ga o'tkaz, state'ni keyin hisobla. TDD: parallel to'lov testi. Gate. Hisobot, TO'XTA.
-**◻ HISOBOT:** _(agent to'ldiradi)_
+**☑ HISOBOT (2026-08-08):** BAJARILDI — batafsili «HISOBOT JURNALI → Faza 3» da.
 
 ---
 
@@ -1005,3 +1005,91 @@ Demak «increment qilib, keyin throw» hech qayerda yarim-yozuv qoldirmaydi.
   **Faza 11** (u shu fazaga bog'liq edi, endi bloki ochildi).
 
 **Commit:** `fix(money): faza 2 — applyDeltas atomik increment + read-after overdraft (M-02)`
+
+---
+
+## Faza 3 — 2026-08-08 — **Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q**
+
+**Topilma tasdiqlanishi (o'z ko'zim bilan kodda).** `M-09` **TASDIQLANDI va audit aytganidan KENGROQ** —
+reja «4 servis» degan edi, to'rttasida ham naqsh aynan bir xil ekani qatorma-qator tekshirildi.
+Fix'dan oldingi qatorlar: invoice-out `:1119` `findFirst` (qulfsiz) → `:1132` `const newPayed =
+invoice.payedSumMinor + amountMinor * sign` → `:1151-1157` `update({ data: { payedSumMinor: newPayed } })`;
+invoice-in `:1025 / :1038 / :1053`; customer-order `:2068 / :2077 / :2112-2120`;
+purchase-order `:1327 / :1343 / :1371-1379`. Hammasi **absolyut set**, WHERE'da hech qanday shart yo'q.
+
+**Chaqiruv-joyi shartnomasi tekshirildi (da'vo emas, grep + qator-tartibi bilan).** `applyPayment`ning
+**20 ta** chaqiruv joyi bor: **18 tashqi** (`cash-in` ×3 `:603/683/758`, `cash-out` ×3 `:510/588/663`,
+`payment-in` ×6 `:668/677/757/766/829/838`, `payment-out` ×6 `:666/676/745/754/817/826`) — har biri o'z
+faylidagi `$transaction` closure'i ICHIDA (qator-tartibi bilan tasdiqlandi) — va **2 kaskad**
+(`invoice-out`→CO `:1199`, `invoice-in`→PO `:1096`), ular qabul qilgan `tx`ni uzatadi. Demak «increment
+qilib, keyin throw» hech qayerda yarim-yozuv qoldirmaydi — rollback kafolatlangan (Faza 2 dagi shartnoma).
+
+**Fayllar**
+
+| Fayl | O'zgarish |
+|---|---|
+| `apps/api/src/modules/shared/apply-payment-race.test.ts` | **YANGI** — 4 servis × poyga/chegaraviy holat regressi (17 test) |
+| `invoice-out/invoice-out.service.ts` | `applyPayment`: `{ increment }` + read-after; holat-guard va audit endi qulflangan qatordan |
+| `invoice-in/invoice-in.service.ts` | shu naqsh |
+| `customer-order/customer-order.service.ts` | shu naqsh (yonidagi `applyInvoiced` allaqachon increment edi — endi izchil) |
+| `purchase-order/purchase-order.service.ts` | shu naqsh |
+
+**O'zgarish (to'rttasida ham bir xil, 3 qism)**
+1. `findFirst` endi **faqat mavjudlik** uchun (`select: { id: true }`, `deletedAt: null`) —
+   `payedSumMinor`/`state` undan **umuman o'qilmaydi**. `NotFoundException` matni o'zgarmadi.
+2. `payedSumMinor` **atomik increment** bilan siljiydi:
+   `update({ data: { payedSumMinor: { increment: amountMinor * sign } }, select: {…} })` — SQL'da
+   `SET payed_sum_minor = payed_sum_minor + $d`, qator-qulfi tranzaksiya oxirigacha ushlanadi.
+3. **Har qaror increment QAYTARGAN qatordan** hisoblanadi: holat-guard (`applicableStates`), manfiylik
+   tekshiruvi, `newState` (`paid`/`partially_paid`/`closed`…) va audit'ning `before` qiymati
+   (`newPayed − amountMinor*sign`). Holat o'zgarsa **ikkinchi** `update({ data: { state } })` yoziladi;
+   o'zgarmasa — umuman yozilmaydi (ilgari har chaqiruvda `state` qayta yozilardi).
+
+**Nima uchun guard endi increment'dan KEYIN (ataylab, xulq o'zgarishi).** Ilgari `applicableStates`
+qulfsiz pre-read'dan tekshirilardi — bu TOCTOU: raqib tranzaksiya hujjatni `cancelled` qilib commit qilsa,
+pre-read eski holatni ko'rib to'lovni o'tkazib yuborardi. Endi tekshiruv increment qaytargan (qator-qulfi
+ostidagi, raqibning commit'ini ko'rgan) holatga qo'yilgan; rad etilsa `throw` → chaqiruvchining
+`$transaction`'i increment'ni qaytaradi. Xato matni va turi (`BadRequestException`) o'zgarmadi.
+
+**Testlar (TDD tartibi kuzatildi)**
+- RED: `apply-payment-race.test.ts` → **8/17 yiqildi**, aynan bug sababidan (har 4 servisda 2 tadan):
+  (1) ikki parallel 400 000 to'lov → `payedSumMinor` **400 000** (kutilgan 800 000 — bitta to'lov JONLI
+  yo'qoldi); (2) 100 000 to'langan hujjatga ikki parallel 100 000 revert → **0 ta rad etish**
+  (kutilgan 1) — ikkalasi ham 0 hisoblab, bittasi jimgina yutildi.
+- GREEN: fix'dan keyin **17/17 yashil**.
+- Qolgan 9 test — regress-qulfi (fix'dan oldin ham yashil edi): ketma-ket to'lovlar `partially_paid`→`paid`/
+  `closed`ga o'tishi, nolgacha revert boshlang'ich holatni tiklashi, `cancelled` invoice-out'ga to'lov rad etilishi.
+- **Bir test-da'vosi noto'g'ri chiqdi (mening xatoyim, kod emas):** `CustomerOrder` uchun qisman to'lovdan
+  keyin `partially_paid` kutgandim — `OrderStateSchema`da bunday a'zo YO'Q (`customer-order.schema.ts:11-20`),
+  CO/PO to'liq to'langunicha holatini ataylab o'zgartirmaydi. Test-jadvaliga `partialState` ustuni qo'shildi.
+- Test-double halolligi: `findFirst` **yield qiladi** va DETACHED snapshot qaytaradi (qulfsiz o'qish),
+  `update` tanasi yield qilmaydi va yangilangan qatorni qaytaradi (qator-qulfi ostidagi atomik yozuv) —
+  Faza 1/2 bilan bir xil uslub (bu repo'da servis testlari real DB'siz).
+
+**Gate (to'liq, jonli o'lchangan)**
+- `pnpm --filter @moysklad/api typecheck` → **0 xato**
+- `pnpm lint:product` → **0 error** (728 warning — siyosat bo'yicha ruxsat)
+- `pnpm --filter @moysklad/api exec vitest run` (BUTUN suite) → **379 fayl / 5005 test yashil, 0 yiqilgan**
+  (1 fayl / 2 test skipped — oldindan shunday)
+- Fazaga tegishli modullar alohida: invoice-out/in, customer-order, purchase-order, payment-in/out,
+  cash-in/out, shared → **31 fayl / 679 test yashil**
+- `i18n:gate` — **kerak emas** (UI-matn tegilmadi, faqat backend).
+
+**Qolgan qarz / DEFER**
+- **Browser-smoke YO'Q.** Ikki parallel to'lov real Postgres'da yugurtirilmadi — Phase-2 QA cohort ishi.
+  Poyga faqat unit-double bilan ko'rsatildi (lekin non-vakuum: fix'dan oldin 8/17 yiqilardi).
+- **`deletedAt: null` hamon TOCTOU.** Mavjudlik pre-read'i bilan increment orasida hujjat soft-delete
+  qilinsa, increment baribir yoziladi. Yopish yo'li: `deletedAt: null`ni `update` WHERE'iga qo'yib
+  Prisma `P2025`ni tutish — lekin bu xato-shaklini o'zgartiradi (500 vs 404), M-09 doirasidan tashqarida.
+  **Ochiq qarz**, alohida mayda faza.
+- **Holat o'zgarishi hamon «oxirgi yozuvchi yutadi».** `payedSumMinor` endi atomik, ammo `state` alohida
+  `update` bilan yoziladi. Real Postgres'da poyga yo'q (qator-qulfi commit'gacha ushlanadi ⇒ ikkinchi
+  chaqiruv birinchisining commit'idan keyin ishlaydi), lekin bu **qulf semantikasiga tayanadi**, WHERE
+  shartiga emas. Faza 1 helperi (`transitionWithClaim`) bu yerda ishlatilmadi — `applyPayment`da
+  «kutilgan boshlang'ich holat» tushunchasi yo'q (u ko'p holatdan chaqiriladi).
+- **`sumMinor` o'zgarishi bilan poyga tekshirilmadi:** to'lov ketayotganda hujjat pozitsiyalari tahrirlanib
+  `sumMinor` o'zgarsa `paid` chegarasi eskirishi mumkin. Bu boshqa bug-klass (hujjat-tahrir FSM'i) — Faza 14
+  yaqinroq.
+- **Faza 4 (`pos-debt-payment` FIFO)** — hamon ochiq, `M-10`+`DUP-07` bu fazada TEGILMADI.
+
+**Commit:** `fix(money): faza 3 — applyPayment payedSumMinor atomik increment (M-09)`
