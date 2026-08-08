@@ -305,6 +305,71 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-08k (AUDIT-FIX FAZA 14 — qabul-tasdiqlash: FSM-bypass guard + omborchi recompute ·
+> `PP-06`+`PP-04`) `9e822fd` · Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q ·
+> ⏳ DEPLOY QILINMAGAN · 🗄️ migratsiya YO'Q · ⚠️ parallel sessiya bilan yonma-yon ishlandi (pastda)
+>
+> **Muammo (kodda tasdiqlandi, 4/4 da'vo).** `PP-06` — 3 tirqish: (a) `supply.post()` `approvalStage`ni
+> UMUMAN tekshirmasdi (funksiyada bu so'z yo'q edi) ⇒ `awaiting_supplier` bosqichida ham stock kirardi;
+> **auditda aytilmagan qo'shimcha oqibat** — `adminConfirm` faqat `draft`ni post qiladi, demak hujjat
+> allaqachon `posted` bo'lgach zanjir `awaiting_*`da **abadiy qotib** qolardi. (b) `POST /supplies`
+> faqat `supply.create` talab qiladi, servis esa `applicable:true` da ichkarida `transition('post')`
+> chaqirardi — ya'ni `@Post(':id/transitions/:target')` himoyalagan `supply.approve` chetlab o'tilardi.
+> (c) Zanjir uchayotganda hujjat aynan `draft`+`applicable:false` (chunki `send()` uni unpost qiladi)
+> ⇒ `update()`/`delete()` qulflari **VAKUUM** edi — omborchi sanaganidan keyin sonlarni jimgina
+> almashtirish (yoki hujjatni o'chirish) mumkin edi. `PP-04` — `omborchiConfirm` faqat
+> `supplyPosition.quantity`ni yozardi (`computeTotals` `SupplyService`ning **private** metodi bo'lgani
+> uchun chaqirib ham bo'lmasdi) ⇒ `post()` stockni YANGI sondan (90), qarzni ESKI `sumMinor`dan
+> (100 donalik) yozardi.
+>
+> **Fix.** FSM'ga `IN_FLIGHT_STAGES` + `isApprovalInFlight()` — «hujjat muzlagan» predikati bosqich
+> hokimi bo'lgan `supply-approval.fsm.ts`da. `post`/`update`/`delete` shu predikat bilan bloklanadi;
+> ruxsat to'plami **{`none`, `completed`}** (`adminConfirm` `completed`ni CLAIM QILGANDAN KEYIN post
+> chaqiradi — guard shu tartibga ataylab bog'langan). `delete()`da shart **ATOMIK `updateMany` WHERE'i
+> ichida** (parallel `send()` poygasi). `create(applicable)` endi `PermissionsService`dan
+> `supply.approve` so'raydi — hujjat yaratilishidan OLDIN (yarim-qoralama qolmaydi). `computeTotals`
+> yangi `supply/supply-totals.ts` ga chiqarildi (yagona manba) va `omborchiConfirm` tranzaksiyasida
+> chaqiriladi.
+>
+> **TDD.** +10 test (`supply-approval/approval-integrity.test.ts`), fix'dan oldin **7 tasi qizil** —
+> o'lchangan: `post` uch bosqichda ham «promise resolved», `delete()` → `{ok:true}`, omborchi 100→90
+> da `sumMinor` **40 000 000** (kutilgan 36 000 000), admin tasdig'idan keyin qarz **−40 000 000** vs
+> stock **90 dona** = **4 000 000 tiyin** nomuvofiqlik.
+>
+> **⚠️ Guard-drift tutildi:** `delete()`ni kuchaytirish `shared/transition-toctou-class.test.ts`
+> source-scan guard'ini qizil qildi (regex `deletedAt: null` dan keyin darhol `}` talab qilardi) —
+> ayni o'sha fayl ogohlantirgan «himoya qo'shgan odam testni qizil qiladi» tuzog'i. Shakl bo'shatildi
+> (`[,}]`) va o'rniga supply uchun **kuchliroq** shart (`deleteAlso` — `approvalStage` bandi SHU atomik
+> yozuvning ichida) qulflandi.
+>
+> **Gate:** api tc **0** (o'z fayllarimda) · `lint:product` **0 error** · `i18n:gate` **9/9** ·
+> vitest supply+supply-approval+purchase-return+shared+stock+purchase-order **39 fayl / 697 test**.
+> To'liq API suite 5170 ✅ / 9 ✗ — **9 tasi ham meniki emas** (7 `bank-import` = parallel sessiyaning
+> ochiq ishi, 1 `publication` yolg'iz yugurtirilganda 21/21 yashil = yuk ostida flaky). **Browser-smoke
+> YO'Q.** Batafsil: rejadagi «HISOBOT JURNALI → Faza 14».
+>
+> **⚠️ PARALLEL SESSIYA:** ish davomida boshqa sessiya `bank-import` (Faza 20/INT-05) + `schema.prisma`
+> + yangi migratsiya + web sahifa/messages ustida ishladi. Ularga TEGILMADI; commit `git add <aniq
+> fayllar>` bilan 9 fayl (8 meniki + hook'ning `progress.json`i) — `git show --stat` bilan tasdiqlandi,
+> begona fayl sizmadi. **Sessiya oxirida `tsc` ularning `bank-import.service.ts`ida 2 `TS2353` beradi**
+> (`commitClaimedAt` — schema qo'shilgan, Prisma client hali regen qilinmagan). Bu MENING qarzim EMAS;
+> keyingi sessiya preflight'da shuni ko'rsa — avval `pnpm --filter @moysklad/db generate` kerakmi
+> yoki ular hali ishlayaptimi, tekshirsin.
+>
+> **🟠 QARZ:** (1) **`moysklad-compat` guard'dan TASHQARIDA** — u `supply`ni to'g'ridan-to'g'ri Prisma
+> modeli sifatida yozadi, `SupplyService`dan o'tmaydi ⇒ MS-JSON-API orqali in-flight qabulni tahrirlash
+> hamon mumkin (alohida bug-klass: butun compat qatlami servis-qoidalarini chetlab o'tadi).
+> (2) **Tarixiy nomuvofiqlik** — fix'gacha omborchi tuzatgan qabullarda qarz eski summada qolgan;
+> o'lchash SQL'i rejadagi hisobotda, prodda DB'ga ULANILMADI. (3) Overhead × omborchi-tuzatish
+> stsenariysi testda yo'q. (4) `completed` bosqichida hujjat ATAYLAB ochiq qoldirildi (reja matni
+> «`!= none` → blok» degan edi) — aks holda tasdiqlangan qabul unpost'dan keyin ham abadiy muzlardi.
+>
+> **⏭️ KEYINGI:** `docs/REJA-AUDIT-FIX-2026-08.md` → **Faza 15** (`SALES-02`,`SALES-06`,`SALES-07/08` —
+> smena naqdi: expected-cash formula + z-report + close-race + picking-block). Sessiya-boshi prompt
+> o'sha fazada.
+
+---
+
 > **🕒 2026-08-08j (AUDIT-FIX FAZA 13 — taminotchi qarzi Supply-only + qaytarish reversali ·
 > `PP-02`+`PP-03`) `66fbe99` · Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q ·
 > ⏳ DEPLOY QILINMAGAN · 🗄️ migratsiya YO'Q · 🟠 **TARIXIY IKKI-KARRA QARZ QOLDI (pastda)**
