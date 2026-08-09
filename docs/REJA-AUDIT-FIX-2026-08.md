@@ -665,7 +665,12 @@ token faqat o'sha entity'ga kiradi.
 **▶ SESSIYA-BOSHI PROMPT:**
 > `docs/REJA-AUDIT-FIX-2026-08.md` — **Faza 24**. O'ZGARMAS QOIDALAR. `INT-06`+`INT-07`. PFX AES-GCM shifrlash +
 > ApiToken scope-enforcement. TDD: shifr + scope testlari. Gate. Hisobot, TO'XTA.
-**◻ HISOBOT:** _(agent to'ldiradi)_
+**☑ HISOBOT (2026-08-09):** BAJARILDI — batafsili «HISOBOT JURNALI → Faza 24» da. Ikkala topilma kodda
+tasdiqlandi va yopildi. **Xulq o'zgarishi YO'Q bo'lgan ikki joy (halol):** (a) mavjud PFX qatorlari
+DB'da OCHIQ qoladi — faqat qayta yuklash shifrlaydi (o'qish yo'li ikkalasini ham qo'llab-quvvatlaydi,
+WARN yozadi); (b) mavjud tokenlarning hammasi `scopes: []` ⇒ **to'liq kirish** (ataylab: jimgina
+integratsiya sindirmaslik). **`/settings/api-tokens` UI MAVJUD EMAS** — scope faqat API orqali
+beriladi; UI alohida ishga qoldi.
 
 ---
 
@@ -2923,3 +2928,99 @@ aniqlik · takroriy PREPARE/CreateTransaction bitta qator · P2002 poygasi.
    migratsiya izohidagi `SELECT ... HAVING COUNT(*) > 1` so'rovini yugurtirish kerak.
    Lokalda tekshirildi: jadval bo'sh (0 qator).
 6. `initiatePayment` (operator yo'li) capture'ga ulanmagan — Payme/Click redirect oqimida ishlatilmaydi.
+
+---
+
+## Faza 24 — EDO PFX shifrlash + ApiToken scopes (2026-08-09) — **Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q**
+
+**Topilmalar kodda tasdiqlandi (§2) — ikkalasi ham HAQIQIY, audit xato o'qimagan:**
+- `INT-06` — `edo.service.ts:99-114`: `/** Upload PFX bytes (binary) — encrypted at rest. */` kommenti
+  ostida `data: { pfxCipher: pfxBytes, pfxPassCipher: encryptPassword(pfxPass) }`. Ya'ni ECP xususiy
+  kaliti **o'z holicha** (maydon nomi `Cipher` bo'lsa-da), paroli esa **yonida shifrlangan** yozilardi.
+  Butun repo bo'yicha `pfxCipher` ning yagona o'quvchisi `sign()` (218-220) edi — u ham faqat
+  «bor/yo'q» tekshirardi, hech qachon deshifr qilmasdi (shuning uchun bug hech qayerda «sezilmasdi»).
+- `INT-07` — `api-token.guard.ts:66`: `permissions: ['*']` qat'iy; `apiToken.scopes` guard'da **umuman
+  o'qilmasdi** (grep bilan tasdiq: `scopes` moysklad-compat ichida faqat `api-token.service.ts:25`
+  list-select va `:49` create-yozuv). `ApiTokenGuard` esa faqat `MoyskladCompatController` da ishlatiladi
+  (butun `apps/api` bo'yicha 2 chaqiruv joyi) ⇒ enforcement uchun yagona nuqta shu guard.
+
+**Fayllar**
+
+| Fayl | O'zgarish |
+|---|---|
+| `email/crypto.ts` | **+3 eksport**: `encryptBuffer` / `decryptBuffer` / `isEncryptedBuffer` — `Bytes` ustunlar uchun binar AES-256-GCM o'ram. Format: `MAGIC('MSENCB1'):7 ‖ iv:12 ‖ tag:16 ‖ cipher:N`. Mavjud `encryptPassword`/`decryptPassword` **tegilmadi** (10 modul chaqiradi) |
+| `edo/edo.service.ts` | `setPfx` → `pfxCipher: encryptBuffer(pfxBytes)`; komment haqiqatga keltirildi (bug tarixi bilan). **YANGI** `loadSignerMaterial(accountId)` — `pfxCipher` ning yagona o'qish yo'li: deshifr + parol + `legacyPlaintext` bayrog'i. `sign()` endi presence-check o'rniga shu metodni chaqiradi (deshifr yo'li **tirik**, imzolashda yaroqsiz kalit aniq xato beradi) |
+| `moysklad-compat/api-token.scope.ts` | **YANGI** sof modul (DI'siz, prisma'siz): `normalizeScopes`, `isScopeSyntaxValid`, `scopesGrantFullAccess`, `slugFromRemapUrl`, `actionFromMethod`, `isCompatActionAllowed`, `scopesToPermissions` |
+| `moysklad-compat/api-token.guard.ts` | Token topilgach: `scopes` normallashtiriladi → URL'dan slug + method'dan action → ruxsat yo'q bo'lsa **403 `ForbiddenException`**; `permissions: ['*']` → `scopesToPermissions(scopes)` |
+| `moysklad-compat/api-token.service.ts` | `create` — scope sintaksisi tekshiriladi (`BadRequestException`) va normallashtirilib saqlanadi (`input.scopes ?? []` o'rniga) |
+
+**Scope shartnomasi (hujjatlangan qaror):**
+`*` = hammasi · `<slug>` = o'sha slug'ga read+write · `<slug>:read` = faqat o'qish · `<slug>:write` = yozish (read'ni ham qamraydi).
+- **Bo'sh `scopes` = TO'LIQ KIRISH** — reja «bo'sh scopes = '*' faqat ochiq hujjatlansa» degan edi, shu
+  yerda va modul doc-blokida oshkora hujjatlandi. Sabab: **mavjud tokenlarning hammasi `scopes: []`**
+  (UI yo'q, `CreateTokenSchema` default `[]`) — «bo'sh = hech narsa» qilsak, jonli 1C/CLIMART-proxy
+  integratsiyalari deploy kunida to'liq o'lardi. Cheklash = scope'ni **atay nomlash**.
+- Qolgan hamma narsa **fail-closed**: noma'lum/typo slug hech narsa ochmaydi. Shuning uchun typo
+  yaratish paytida rad etiladi (birinchi 403 dan emas).
+- Slug **URL'dan** o'qiladi (`req.params` emas): compat router prod'da global prefiks ostida
+  (`/api/v1/api/remap/1.2/...`), testda esa prefikssiz — URL yagona barqaror manba.
+- `_compat/slugs` (discovery) scope'siz o'tadi — akkaunt ma'lumoti bermaydi, faqat qo'llab-quvvatlanadigan
+  slug nomlari.
+- Scoped token `permissions` ga **`compat:<slug>:<action>`** oladi — bu ataylab ichki
+  `entity.action` nomlar fazosiga MOS EMAS: ertaga kimdir compat marshrutiga `PermissionsGuard` qo'ysa,
+  natija wildcard emas, **rad** bo'lishi kerak.
+
+**Testlar (TDD: 20 test avval QIZIL ko'rildi — `20 failed | 90 passed`, keyin implementatsiya):**
+- `email/crypto.test.ts` **+10** (mavjud 6 saqlandi) — binar round-trip · shifrmatnda ochiq bayt YO'Q
+  (`cipher.includes(plaintext)` = false) · tasodifiy IV · `isEncryptedBuffer` xom PFX'ni ajratadi
+  (PKCS#12 `0x30` bilan boshlanadi ⇒ ASCII magic bilan kolliziya bo'lishi mumkin emas) · buzilgan
+  auth-tag → throw · **belgisiz (eski) kirishni deshifr qilishni RAD etadi** (axlat qaytarmaydi) ·
+  boshqa kalit → throw · 4KB blob · bo'sh kirish.
+- `edo/edo.service.test.ts` **YANGI 7** — DB'ga yozilgan bayt shifrlangan va `PRIVATE-KEY-MATERIAL`
+  ni O'Z ICHIGA OLMAYDI · `bytes` haqiqiy (o'ram emas) uzunlik · yozib-o'qish round-trip aynan ·
+  **eski shifrlanmagan qator o'qilaveradi** (`legacyPlaintext: true`) · PFX yo'q → `BadRequest` ·
+  `sign()` regress: PFX yo'q → rad, shifrlangan PFX bilan → `signed`.
+- `moysklad-compat/api-token.scope.test.ts` **YANGI 35** — grammatika, normalizatsiya, URL→slug
+  (prefiksli/prefikssiz/`?query`/`/positions`/`/metadata`/katta harf), read≠write, typo fail-closed.
+- `moysklad-compat/api-token.guard.test.ts` **YANGI 10** — scoped token o'z slug'iga kiradi ·
+  **boshqa slug'ga 403** (asosiy teshik) · read-scope bilan POST → 403 · detail/positions/metadata
+  marshrutlari ham qamrab olingan · bo'sh scopes → o'tadi va `permissions: ['*']` · `lastUsedAt`
+  bump regress · revoked/`Basic`/topilmagan token uchun eski auth xulqi o'zgarmagan.
+- `moysklad-compat/api-token.service.test.ts` **YANGI 4** — normalizatsiya · bo'sh scope · yaroqsiz
+  scope rad (`create` **umuman chaqirilmaydi**) · plaintext token formati regress.
+
+### Gate (jonli o'lchangan)
+- `pnpm --filter @moysklad/api typecheck` → **0 xato**
+- `vitest run` **butun API suite → 414 fayl / 5388 passed, 0 failed** (2 skip) — regress yo'q.
+  Tegishli modullar alohida: `edo` + `moysklad-compat` + `email` → **172/172**.
+- `biome check` tegilgan 3 katalog (`edo`, `email`, `moysklad-compat`) → **0 error** (8 warning —
+  `moysklad-compat.service.ts` dagi mavjud `any`lar, meniki emas).
+- ⚠️ **`pnpm lint:product` PATH-CHEKLANGAN (§6.6):** repo-wide 4 format-xatosi bilan qizil —
+  `shared/timing-safe.ts(+test)`, `shared/constant-time-secret-class.test.ts`,
+  `telegram/telegram-config-patch.test.ts`. Bular **parallel sessiyaning** daraxtda ochiq turgan
+  ishi (§6.1) — TEGILMADI. Mening 5 faylim format'dan o'tkazildi va toza.
+- `i18n:gate` — kerak emas (UI-matn tegilmadi).
+- Migratsiya — **YO'Q** (sxema tegilmadi: `pfxCipher` allaqachon `Bytes`, `scopes` allaqachon `String[]`).
+- **Browser-smoke YO'Q.**
+
+### 🟠 Qolgan qarz / DEFER
+1. **Mavjud PFX qatorlari DB'da OCHIQ qoladi.** Kod ikkala formatni ham o'qiydi; shifrlash faqat
+   **qayta yuklashda** bo'ladi. Migratsiya-skript yozilmadi (ataylab: kalit `EMAIL_ENCRYPTION_KEY`
+   prod'da to'g'ri o'rnatilganini bilmasdan ommaviy re-encrypt qilish — kalitni yo'qotsa PFX ni
+   o'qib bo'lmay qolish xavfi). O'qishda `WARN [EdoService] ... stored UNENCRYPTED (pre-Faza-24 row)`
+   loglanadi — operator ko'rib qayta yuklaydi. **Prod'da EDO hali ulanmagan** (signer/provider stub),
+   shuning uchun ehtimol 0 qator.
+2. **Mavjud tokenlar hamon to'liq kirishga ega** (`scopes: []`). Enforcement mexanizmi tayyor, lekin
+   **hech bir tokenda scope yo'q** ⇒ bugungi kunda amaliy cheklov 0. Cheklash uchun admin scope
+   berishi kerak.
+3. **`/settings/api-tokens` UI MAVJUD EMAS** — `api-token.controller.ts:23` kommenti «UI:
+   /settings/api-tokens (admin-only)» deydi, lekin `apps/web` da bunday sahifa yo'q (grep:
+   `admin/api-tokens` bo'yicha 0 frontend chaqiruvi). Token va scope faqat to'g'ridan-to'g'ri API
+   orqali beriladi. Scope UI (checkbox-matritsa + slug ro'yxati `_compat/slugs` dan) — alohida ish.
+4. **Scope slug'i ro'yxatga solishtirilmaydi** — faqat sintaksis. `SLUGS` konstanta
+   `moysklad-compat.service.ts` ichida yopiq; uni scope-modulga eksport qilish servis-import
+   bog'liqligini keltirardi. Typo fail-closed bo'lgani uchun xavfsiz, lekin admin xatosini
+   yaratish paytida tutmaydi (403 da ko'rinadi).
+5. **`apiTokenCipher` (EDO provider tokeni) hech qachon deshifr qilinmaydi** — `submit()` da
+   `decryptPassword` chaqiruvi komment ichida turibdi, provider HTTP hali simlangan emas. Bu
+   `INT-06` dan tashqarida, faza-doirasidan chetda qoldi.

@@ -1,7 +1,13 @@
 import type { Prisma } from '@moysklad/db';
 import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
-import { encryptPassword } from '../email/crypto.js';
+import {
+  decryptBuffer,
+  decryptPassword,
+  encryptBuffer,
+  encryptPassword,
+  isEncryptedBuffer,
+} from '../email/crypto.js';
 import {
   CreateEdoSubmissionSchema,
   ListEdoSubmissionsSchema,
@@ -96,7 +102,16 @@ export class EdoService {
     return { ok: true };
   }
 
-  /** Upload PFX bytes (binary) — encrypted at rest. */
+  /**
+   * Upload PFX bytes (binary). Both the key material and its password are
+   * AES-256-GCM encrypted at rest under `EMAIL_ENCRYPTION_KEY`
+   * (`email/crypto.ts` — shared envelope, `encryptBuffer` for the blob).
+   *
+   * Before Faza 24 the comment claimed this while writing `pfxBytes` raw:
+   * a DB dump handed over the ECP private key, i.e. the ability to legally
+   * sign tax documents. Rows written back then stay readable —
+   * `loadSignerMaterial` detects the missing envelope; see `INT-06`.
+   */
   async setPfx(
     accountId: string,
     pfxBytes: Buffer,
@@ -106,11 +121,41 @@ export class EdoService {
     await this.prisma.client.edoConfig.update({
       where: { accountId: cfg.accountId },
       data: {
-        pfxCipher: pfxBytes,
+        pfxCipher: encryptBuffer(pfxBytes),
         pfxPassCipher: encryptPassword(pfxPass),
       },
     });
+    // Report the real key size, not the envelope size.
     return { ok: true, bytes: pfxBytes.length };
+  }
+
+  /**
+   * Decrypted signer material for the GOST signer. The only read path for
+   * `pfxCipher` — keep it that way so the plaintext key never spreads.
+   *
+   * `legacyPlaintext: true` means the row predates Faza 24 (stored raw);
+   * it is returned as-is so signing keeps working, and re-uploading the
+   * PFX migrates it. Callers must not log `pfx`/`pass`.
+   */
+  async loadSignerMaterial(
+    accountId: string,
+  ): Promise<{ pfx: Buffer; pass: string; legacyPlaintext: boolean }> {
+    const cfg = await this.requireConfig(accountId);
+    if (!cfg.pfxCipher || !cfg.pfxPassCipher) {
+      throw new BadRequestException('ECP fayl yuklanmagan — avval PFX ni yuklang');
+    }
+    const stored = Buffer.from(cfg.pfxCipher);
+    const legacyPlaintext = !isEncryptedBuffer(stored);
+    if (legacyPlaintext) {
+      this.logger.warn(
+        `EDO PFX for account ${accountId} is stored UNENCRYPTED (pre-Faza-24 row) — re-upload the PFX to encrypt it at rest`,
+      );
+    }
+    return {
+      pfx: legacyPlaintext ? stored : decryptBuffer(stored),
+      pass: decryptPassword(cfg.pfxPassCipher),
+      legacyPlaintext,
+    };
   }
 
   // --- submission lifecycle --------------------------------------------
@@ -214,17 +259,18 @@ export class EdoService {
         `Imzolab bo'lmaydi: ${submission.status} → signed. Faqat draft yoki rejected dan`,
       );
     }
-    const cfg = await this.requireConfig(accountId);
-    if (!cfg.pfxCipher || !cfg.pfxPassCipher) {
-      throw new BadRequestException('ECP fayl yuklanmagan — avval PFX ni yuklang');
-    }
+    // Decrypts here (not just a presence check) so a key that cannot be
+    // opened fails at sign time with a clear error instead of at the first
+    // live provider call.
+    const material = await this.loadSignerMaterial(accountId);
     if (!submission.xmlBody) {
       throw new BadRequestException('Draft XML topilmadi — qayta yarating');
     }
 
     // V1 stub — placeholder until GOST signer is wired.
-    // Real impl: pass xmlBody + decrypted PFX + password to a signer
+    // Real impl: signer(submission.xmlBody, material.pfx, material.pass)
     // (native addon, external service, or pure-TS GOST 34.10/34.11).
+    void material;
     const placeholderSig = Buffer.from(`UNSIGNED-V1-${submission.id}`).toString('base64');
 
     return this.prisma.client.edoSubmission.update({

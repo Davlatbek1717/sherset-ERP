@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { isScopeSyntaxValid, normalizeScopes } from './api-token.scope.js';
 
 /**
  * Service for managing ApiToken (long-lived integration tokens).
@@ -38,6 +39,18 @@ export class ApiTokenService {
     employeeId: string | null,
     input: { name: string; scopes?: string[]; expiresAt?: Date | null },
   ): Promise<{ id: string; token: string; name: string }> {
+    // Scopes are enforced by ApiTokenGuard since Faza 24 (`INT-07`), so a
+    // typo now means "grants nothing" rather than "grants everything".
+    // Reject it here — the admin should learn at creation time, not from
+    // the integration's first 403.
+    const scopes = normalizeScopes(input.scopes ?? []);
+    const invalid = scopes.filter((s) => !isScopeSyntaxValid(s));
+    if (invalid.length > 0) {
+      throw new BadRequestException(
+        `Yaroqsiz scope: ${invalid.join(', ')} — kutilgan shakl: '*', '<slug>', '<slug>:read', '<slug>:write'`,
+      );
+    }
+
     const plaintext = randomBytes(20).toString('hex'); // 40 hex chars, like moysklad
     const tokenHash = createHash('sha256').update(plaintext).digest('hex');
     const row = await this.prisma.client.apiToken.create({
@@ -46,7 +59,7 @@ export class ApiTokenService {
         employeeId,
         tokenHash,
         name: input.name,
-        scopes: input.scopes ?? [],
+        scopes,
         expiresAt: input.expiresAt ?? null,
       },
     });

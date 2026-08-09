@@ -305,6 +305,44 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-09d (AUDIT-FIX FAZA 24 — EDO PFX AES-GCM shifrlash + ApiToken scope-enforcement ·
+> `INT-06`+`INT-07`) · Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q ·
+> ⏳ DEPLOY QILINMAGAN · 🗄️ migratsiya YO'Q (sxema tegilmadi) · ⚠️ **navbatdan tashqari** —
+> foydalanuvchi IDE'da Faza 24 sessiya-boshi promptini bevosita berdi · ⚠️ parallel sessiya
+> daraxtda ochiq ish qoldirgan (`shared/timing-safe*`, `telegram/*`, `payment-gateway/*`,
+> `schema.prisma`) — TEGILMADI, commit pathspec-cheklangan
+>
+> **Nima qilindi.** (a) `INT-06`: `edo.service.ts` da «encrypted at rest» kommenti ostida ECP
+> xususiy kaliti **ochiq** yozilardi (paroli esa yonida shifrlangan!). `email/crypto.ts` ga binar
+> o'ram qo'shildi — `encryptBuffer`/`decryptBuffer`/`isEncryptedBuffer` (`MAGIC ‖ iv ‖ tag ‖ cipher`);
+> `setPfx` endi shifrlaydi, yangi `loadSignerMaterial()` — `pfxCipher` ning **yagona** o'qish yo'li
+> (deshifr + `legacyPlaintext` bayrog'i), `sign()` presence-check o'rniga shuni chaqiradi.
+> Sarlavha xom PKCS#12 (`0x30`) bilan hech qachon to'qnashmaydi ⇒ eski qatorlar buzilmay o'qiladi.
+> (b) `INT-07`: `api-token.guard.ts` har tokenga `permissions:['*']` berardi, `scopes` **umuman
+> o'qilmasdi**. Yangi sof modul `api-token.scope.ts` (grammatika `*` / `<slug>` / `<slug>:read` /
+> `:write`, URL→slug, method→action) + guard'da **403** + `create` da scope-sintaksis validatsiyasi.
+> TDD: 20 test avval qizil ko'rildi. Batafsil: `docs/REJA-AUDIT-FIX-2026-08.md` → HISOBOT JURNALI → Faza 24.
+>
+> **Gate:** `@moysklad/api typecheck` **0** · vitest **butun API suite 5388/5388 passed** (2 skip,
+> 0 fail) · `biome check` tegilgan 3 katalog **0 error**. ⚠️ Repo-bo'yicha `lint:product` qizil —
+> **faqat parallel sessiyaning 4 faylida** (`shared/timing-safe*`, `shared/constant-time-secret-class`,
+> `telegram/telegram-config-patch`); tegilmadi (§6.1). i18n gate kerak emas (UI-matn yo'q).
+>
+> **🟠 QARZ / DIQQAT:** (1) **Mavjud PFX qatorlari DB'da OCHIQ qoladi** — faqat qayta yuklash
+> shifrlaydi; o'qishda WARN loglanadi (ommaviy re-encrypt ataylab qilinmadi — kalit noto'g'ri
+> bo'lsa PFX butunlay o'qilmay qoladi). (2) **Mavjud tokenlarning hammasi `scopes: []` ⇒ to'liq
+> kirish** — mexanizm tayyor, amaliy cheklov hozircha 0 (jonli 1C/CLIMART integratsiyasini
+> sindirmaslik uchun ataylab). (3) **`/settings/api-tokens` UI MAVJUD EMAS** (controller kommenti
+> yolg'on) — scope faqat API orqali beriladi; UI alohida ish. (4) Scope slug'i `SLUGS` ro'yxatiga
+> solishtirilmaydi (typo fail-closed, lekin yaratishda tutilmaydi).
+>
+> **⏭️ KEYINGI:** navbat bo'yicha — `docs/REJA-AUDIT-FIX-2026-08.md` → **Faza 15**
+> (`SALES-02`,`SALES-06`,`SALES-07/08`), **Faza 21** (`INT-01`+`INT-14`) yoki **Faza 25**
+> (DB indeks-paketi). Parallel sessiya tugatmaguncha `shared/timing-safe*`, `telegram/*`,
+> `payment-gateway/*` fayllariga tegmang.
+
+---
+
 > **🕒 2026-08-09c (AUDIT-FIX FAZA 19 — to'lov-gateway → moliyaviy hujjat + idempotency ·
 > `INT-02`+`INT-03`+`INT-04`) · Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q ·
 > ⏳ DEPLOY QILINMAGAN · 🗄️ **migratsiya BOR** (`20260809120000_gateway_payment_in_link_and_unique`,
