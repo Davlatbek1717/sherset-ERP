@@ -43,7 +43,11 @@ function makeHarness(opts: { agentId?: string | null; balanceAfter?: bigint } = 
     cashierAuditEvent,
     counterpartyBalance,
     cashDesk: { update: vi.fn().mockResolvedValue({}) },
-    cashierSession: { update: vi.fn().mockResolvedValue({}) },
+    cashierSession: {
+      update: vi.fn().mockResolvedValue({}),
+      // Faza Q1: post() smenani `state:'open'` sharti bilan CLAIM qiladi.
+      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+    },
   };
   const client = {
     documentSequence: mockDocumentSequence(),

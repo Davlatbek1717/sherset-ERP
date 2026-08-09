@@ -10,6 +10,13 @@ import {
 } from '@nestjs/common';
 import { allocateDocumentNumber } from '../../prisma/document-number.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
+// Faza Q1 (SALES-08): «to'lovgacha bo'lgan holatlar» ro'yxati YAGONA manbadan.
+// `close()` qo'lda `['draft','picking','ready']` yozsa, FSM'ga yangi oraliq
+// holat qo'shilgan kuni u jimgina yopilgan smenada osilib qolardi.
+import { allowedFrom } from '../retail-sale/retail-sale-fsm.js';
+// Faza Q1: tender qiymati ('DEBT') — Z-hisobotdagi «qarzga sotildi» so'rovi
+// uni HARFMA-HARF takrorlamasin (`'debt'` yozilgani uchun ko'rsatkich doim 0 edi).
+import { TENDER } from '../retail-sale/retail-tenders.js';
 import { resolveCreatorGroupId } from '../shared/group-stamp.js';
 // Pure, adversarially-tested shift cash reconciliation (the §74 pattern;
 // fixes the §100 latent bug — drawer in/out were omitted from expected).
@@ -213,53 +220,68 @@ export class CashierSessionService {
       throw new BadRequestException('Only the cashier who opened the session can close it');
     }
 
-    // Ensure no draft RetailSales remain in this session
-    const draftCount = await this.prisma.client.retailSale.count({
-      where: { accountId, sessionId, state: 'draft' },
-    });
-    if (draftCount > 0) {
-      throw new BadRequestException(
-        `Session has ${draftCount} draft sale(s). Post or cancel them before closing.`,
-      );
-    }
-
     const closingCash = BigInt(parsed.closingCashMinor);
 
-    // expectedCashMinor = opening + cash portion of posted sales - cash portion of posted refunds
-    // We track this incrementally via salesSumMinor / returnsSumMinor which contain
-    // the CASH portions only (updated on post/refund in RetailSaleService).
-    // For V1, salesSumMinor and returnsSumMinor on the session represent total sums
-    // (not just cash). The post step updates these. We compute expected using
-    // the session's cash-amount accumulators instead.
-    // We query aggregates directly from posted sales for accuracy.
-    const cashInputs = await this.collectCashInputs(accountId, sessionId, session.openingCashMinor);
-    const expectedCash = expectedCashMinor(cashInputs);
-    const discrepancy = shiftDiscrepancyMinor(closingCash, cashInputs);
+    // Faza Q1 (SALES-07): sanoq + flip BITTA Serializable tranzaksiyada.
+    // Ilgari agregatlar tranzaksiyadan tashqarida o'qilardi, ya'ni o'qish bilan
+    // flip orasida `post()` yugurib chek qo'shsa, uning naqdi kutilganda
+    // KO'RINMASDI — kassirga tushuntirib bo'lmaydigan kamomad yozilardi.
+    // `post()` tomonida juftlik: smenani `state:'open'` sharti bilan claim
+    // qiladi, shuning uchun yopish poygasida faqat bittasi o'tadi.
+    const closed = await this.prisma.client.$transaction(
+      async (tx) => {
+        // Faza Q1 (SALES-08): faqat `draft` emas — YIG'ILAYOTGAN cheklar ham.
+        // `picking`/`ready` chek yopilgan smenada osilib qolardi: uni endi post
+        // qilib ham bo'lmaydi (`post()` ochiq smena talab qiladi), bekor qilish
+        // esa kassirga taklif qilinmasdi.
+        const pending = [...allowedFrom('cancel')];
+        const unresolved = await tx.retailSale.count({
+          where: { accountId, sessionId, state: { in: pending } },
+        });
+        if (unresolved > 0) {
+          throw new BadRequestException(
+            `Session has ${unresolved} unresolved sale(s) (${pending.join('/')}). Post or cancel them before closing.`,
+          );
+        }
 
-    // Atomic state guard: 'open' → 'closed'. Two concurrent close() calls would
-    // otherwise both succeed (both reads see 'open', both updates target the
-    // same id), with the second overwriting closingCash/expected/discrepancy
-    // computed from a stale aggregate read. updateMany returns count=0 if the
-    // session has already been closed by a peer.
-    const flipResult = await this.prisma.client.cashierSession.updateMany({
-      where: { id: sessionId, accountId, state: 'open' },
-      data: {
-        state: 'closed',
-        closedAt: new Date(),
-        closingCashMinor: closingCash,
-        expectedCashMinor: expectedCash,
-        discrepancyMinor: discrepancy,
-        // Persist the close-time note only when supplied — a non-
-        // destructive conditional set (codebase-wide convention) so a
-        // close without a note keeps the open-time description (§24).
-        ...(parsed.description != null ? { description: parsed.description } : {}),
+        const cashInputs = await this.collectCashInputs(
+          tx,
+          accountId,
+          sessionId,
+          session.openingCashMinor,
+        );
+        const expectedCash = expectedCashMinor(cashInputs);
+        const discrepancy = shiftDiscrepancyMinor(closingCash, cashInputs);
+
+        // Atomic state guard: 'open' → 'closed'. Two concurrent close() calls
+        // would otherwise both succeed (both reads see 'open', both updates
+        // target the same id), with the second overwriting
+        // closingCash/expected/discrepancy computed from a stale aggregate
+        // read. updateMany returns count=0 if the session has already been
+        // closed by a peer.
+        const flipResult = await tx.cashierSession.updateMany({
+          where: { id: sessionId, accountId, state: 'open' },
+          data: {
+            state: 'closed',
+            closedAt: new Date(),
+            closingCashMinor: closingCash,
+            expectedCashMinor: expectedCash,
+            discrepancyMinor: discrepancy,
+            // Persist the close-time note only when supplied — a non-
+            // destructive conditional set (codebase-wide convention) so a
+            // close without a note keeps the open-time description (§24).
+            ...(parsed.description != null ? { description: parsed.description } : {}),
+          },
+        });
+        if (flipResult.count === 0) {
+          throw new ConflictException(
+            `Session ${sessionId} state changed; close aborted (already closed?)`,
+          );
+        }
+        return { expectedCash, discrepancy };
       },
-    });
-    if (flipResult.count === 0) {
-      throw new ConflictException(
-        `Session ${sessionId} state changed; close aborted (already closed?)`,
-      );
-    }
+      { isolationLevel: 'Serializable', timeout: 15000 },
+    );
 
     // Farq akti — holat allaqachon 'closed' ga o'tgandan KEYIN. Tartib
     // muhim: `updateMany` optimistik qulf, ya'ni faqat BITTA chaqiruv shu
@@ -269,7 +291,7 @@ export class CashierSessionService {
       accountId,
       sessionId,
       cashierId,
-      expectedCash,
+      expectedCash: closed.expectedCash,
       closingCash,
       varianceNote: parsed.varianceNote ?? null,
     });
@@ -294,16 +316,34 @@ export class CashierSessionService {
    * naqddan tushib qolgan edi») aynan shu klassdan chiqqan.
    */
   private async collectCashInputs(
+    db: Prisma.TransactionClient,
     accountId: string,
     sessionId: string,
     openingCashMinor: bigint,
   ): Promise<ShiftCashInputs> {
     const [cashAgg, refundAgg, debtCashAgg, drawerInAgg, drawerOutAgg] = await Promise.all([
-      this.prisma.client.retailSale.aggregate({
-        where: { accountId, sessionId, state: { in: ['posted', 'refunded'] } },
-        _sum: { cashAmountMinor: true },
+      // Faza Q1 (SALES-02):
+      //  · `refundedFromId: null` — OYNA cheklar bu yerga TUSHMASLIGI kerak.
+      //    Ular ham `posted`, ya'ni ilgari sotuvga ham (+), qaytarishga ham (−)
+      //    kirib, bir-birini yeb qo'yardi: qaytarish kutilgan naqdga UMUMAN
+      //    ta'sir qilmasdi.
+      //  · `− Σ changeMinor` — `cashAmountMinor` BERILGAN naqd, yashiqqa esa
+      //    `cashAmount − change` tushadi (`retail-sale.service.ts` money-ledger
+      //    aynan shuni yozadi). Qaytim ayirilmasa kutilgan naqd har qaytim
+      //    summasicha ko'p bo'lib, kassirga SOXTA KAMOMAD yozilardi.
+      //  · `refunded` holat qoladi: to'liq qaytarilgan chekning naqdi yashiqqa
+      //    TUSHGAN edi (Faza 7 semantikasi), uni tushirib qoldirish ikkinchi
+      //    marta ayirish bilan teng.
+      db.retailSale.aggregate({
+        where: {
+          accountId,
+          sessionId,
+          state: { in: ['posted', 'refunded'] },
+          refundedFromId: null,
+        },
+        _sum: { cashAmountMinor: true, changeMinor: true },
       }),
-      this.prisma.client.retailSale.aggregate({
+      db.retailSale.aggregate({
         where: { accountId, sessionId, state: 'posted', refundedFromId: { not: null } },
         _sum: { cashAmountMinor: true },
       }),
@@ -311,18 +351,18 @@ export class CashierSessionService {
       // qarz puli yashiqda turadi-yu, kutilgan naqdda ko'rinmaydi va smena
       // har safar shu summaga ORTIQCHA (излишек) chiqardi.
       // Faqat NAQD: terminal to'lovi yashiqqa tushmaydi.
-      this.prisma.client.debtPayment.aggregate({
+      db.debtPayment.aggregate({
         where: { accountId, retailShiftId: sessionId, method: 'cash', reversedAt: null },
         _sum: { amountMinor: true },
       }),
-      this.prisma.client.retailDrawerCashIn.aggregate({
+      db.retailDrawerCashIn.aggregate({
         where: { accountId, retailShiftId: sessionId, state: 'posted', deletedAt: null },
         _sum: { sumMinor: true },
       }),
       // Xarajat (РКО) va inkassatsiya (ИНК) ham SHU jadvalda — tasnifi
       // `kind` da. Shuning uchun ular formulaga o'z-o'zidan kiradi va
       // «yangi turni qo'shishni unutish» xatosi tug'ilmaydi (§8.2/§8.3).
-      this.prisma.client.retailDrawerCashOut.aggregate({
+      db.retailDrawerCashOut.aggregate({
         where: { accountId, retailShiftId: sessionId, state: 'posted', deletedAt: null },
         _sum: { sumMinor: true },
       }),
@@ -330,7 +370,7 @@ export class CashierSessionService {
 
     return {
       openingCashMinor,
-      salesCashMinor: cashAgg._sum.cashAmountMinor ?? 0n,
+      salesCashMinor: (cashAgg._sum.cashAmountMinor ?? 0n) - (cashAgg._sum.changeMinor ?? 0n),
       drawerInMinor: drawerInAgg._sum.sumMinor ?? 0n,
       drawerOutMinor: drawerOutAgg._sum.sumMinor ?? 0n,
       returnsCashMinor: refundAgg._sum.cashAmountMinor ?? 0n,
@@ -613,12 +653,26 @@ export class CashierSessionService {
       }
     }
 
+    // Faza Q1: tender qiymati `TENDER.debt === 'DEBT'` (KATTA harf). Bu yerda
+    // `'debt'` qo'lda yozilgan edi, ya'ni «qarzga sotildi» ko'rsatkichi HAR
+    // DOIM 0 chiqardi — nol qiymat esa «bugun qarzga sotilmagan» degan
+    // ishonarli yolg'on. Endi qiymat konstantadan olinadi (drift imkonsiz).
+    // Holat filtri yuqoridagi `payments` groupBy bilan bir xil: chek bekor
+    // qilinmagan bo'lishi kerak.
     const creditAgg = await this.prisma.client.retailSalePayment.aggregate({
-      where: { method: 'debt', sale: { accountId, sessionId } },
+      where: {
+        method: TENDER.debt,
+        sale: { accountId, sessionId, state: { in: ['posted', 'refunded'] } },
+      },
       _sum: { amountMinor: true },
     });
 
-    const cashInputs = await this.collectCashInputs(accountId, sessionId, session.openingCashMinor);
+    const cashInputs = await this.collectCashInputs(
+      this.prisma.client,
+      accountId,
+      sessionId,
+      session.openingCashMinor,
+    );
 
     const z = buildZReport({
       salesCount: realSalesCount,
@@ -857,7 +911,12 @@ export class CashierSessionService {
     // Hujjatdan OLDINGI kutilgan naqd — «yashiqda yo'q pul chiqarildi»
     // anomaliyasini aniqlash uchun.
     const cashBeforeMinor = expectedCashMinor(
-      await this.collectCashInputs(accountId, sessionId, session.openingCashMinor),
+      await this.collectCashInputs(
+        this.prisma.client,
+        accountId,
+        sessionId,
+        session.openingCashMinor,
+      ),
     );
 
     const year = new Date().getFullYear();

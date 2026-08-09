@@ -116,7 +116,9 @@ function makePostClient(state: string) {
     // Kassa TZ §6.1 — post() endi har to'lov turini alohida qator qilib yozadi.
     retailSalePayment: { createMany: vi.fn().mockResolvedValue({ count: 1 }) },
     cashDesk: { update: vi.fn() },
-    cashierSession: { update: vi.fn() },
+    // Faza Q1: smena agregati endi `state:'open'` sharti bilan CLAIM qilinadi
+    // (shartsiz `update` o'rniga) — yopilayotgan smenaga post 409 beradi.
+    cashierSession: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
   };
   const client = {
     documentSequence: mockDocumentSequence(),
@@ -166,7 +168,9 @@ describe("RetailSaleService.post — yig'ilgan chek to'lanadi", () => {
 
     // Pul kassaga tushdi va smena agregatlari yangilandi.
     expect(money.applyDeltas).toHaveBeenCalledTimes(1);
-    expect(tx.cashierSession.update).toHaveBeenCalledTimes(1);
+    expect(tx.cashierSession.updateMany).toHaveBeenCalledTimes(1);
+    // Claim SHARTLI bo'lishi shart — shartsiz bo'lsa poyga oynasi qaytadi.
+    expect(tx.cashierSession.updateMany.mock.calls[0][0].where.state).toBe('open');
   });
 
   it("CAS qo'riqchisi ready ni ham qamraydi (tor bo'lsa haqiqiy to'lov 409 bo'lardi)", async () => {

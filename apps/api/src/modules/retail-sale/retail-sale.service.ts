@@ -666,6 +666,24 @@ export class RetailSaleService {
       throw new BadRequestException('Payment amounts must be non-negative');
     }
 
+    // Faza Q1: to'lov oynasidagi mijoz CHEKDAGIsiga ZID bo'lsa — 400.
+    //
+    // Ilgari `parsed.agentId` chekdagi mavjud `sale.agentId` dan USTUN turardi,
+    // lekin chek qatori faqat u BO'SH bo'lganda yangilanardi. Ya'ni chekda A,
+    // oynada B bo'lsa: qarz daftariga B yozilar, chek A ni ko'rsatar, qaytarish
+    // esa `resolveCreditDebtorId` orqali A ni tanlab qarzni BOSHQA mijozdan
+    // yechardi. Ikkalasi ham noto'g'ri saldo, hech bir gate ko'rmasdi.
+    //
+    // NEGA ustidan yozmaymiz: chek — huquqiy hujjat, to'lov oynasi uning
+    // kontragentini JIMGINA almashtira olmasligi kerak (Faza 7/8 bo'ylab
+    // quvilgan «jim divergensiya» klassining o'zi). Kassir chekni ochib
+    // mijozni to'g'irlaydi — ma'lumot yo'qolmaydi.
+    if (parsed.agentId && sale.agentId && parsed.agentId !== sale.agentId) {
+      throw new BadRequestException(
+        `Chekdagi mijoz to'lov oynasidagidan farq qiladi (chek: ${sale.agentId}, to'lov: ${parsed.agentId}). Chekni ochib mijozni to'g'rilang.`,
+      );
+    }
+
     // Qarzga sotishda kontragent MAJBURIY — aks holda qarz kimningdir
     // balansiga emas, hech qayerga yozilgan bo'lardi (TZ §7.1).
     const debtAgentId = parsed.agentId ?? sale.agentId ?? null;
@@ -723,6 +741,33 @@ export class RetailSaleService {
       if (flipResult.count === 0) {
         throw new ConflictException(
           `RetailSale ${id} state changed; post aborted (already posted?)`,
+        );
+      }
+
+      // Faza Q1 (SALES-07) — SMENA CLAIM'i: agregat inkrementi endi SHARTLI.
+      //
+      // Yuqoridagi `sale.session.state !== 'open'` tekshiruvi tranzaksiyadan
+      // TASHQARIDA o'qilgan (eskirgan) nusxa ustida ishlaydi. O'sha o'qish
+      // bilan bu yer orasida `close()` yugursa, chek YOPILGAN smenaga post
+      // bo'lardi: pul yashiqqa tushadi, `close()` esa uni allaqachon sanab
+      // bo'lgan ⇒ smena naqdi hech qachon to'g'ri chiqmaydi va kassirga
+      // tushuntirib bo'lmaydigan farq akti yoziladi.
+      //
+      // Shart `close()` ning flip'i bilan AYNI ustunda (`state`), ya'ni
+      // Postgres qator-qulfi ikkalasini ketma-ketlashtiradi: kim ikkinchi
+      // bo'lsa `count = 0` oladi. Qulf PUL/OMBOR kaskadidan OLDIN olinadi va
+      // agregat inkrementi ATAYLAB shu yerga ko'chirildi — alohida shartsiz
+      // `update` qolganida qulf va hisob ajralib, poyga oynasi qayta ochilardi.
+      const sessionClaim = await tx.cashierSession.updateMany({
+        where: { id: sale.sessionId, accountId, state: 'open' },
+        data: {
+          salesCount: { increment: 1 },
+          salesSumMinor: { increment: total },
+        },
+      });
+      if (sessionClaim.count === 0) {
+        throw new ConflictException(
+          `Smena ${sale.sessionId} yopilgan; chek rasmiylashtirilmadi. Yangi smena oching.`,
         );
       }
 
@@ -895,14 +940,8 @@ export class RetailSaleService {
         ]);
       }
 
-      // Update session aggregates
-      await tx.cashierSession.update({
-        where: { id: sale.sessionId },
-        data: {
-          salesCount: { increment: 1 },
-          salesSumMinor: { increment: total },
-        },
-      });
+      // Smena agregatlari (salesCount / salesSumMinor) yuqoridagi CLAIM bilan
+      // BIRGA yozildi — qulf va hisob ajralmasin (Faza Q1).
 
       return tx.retailSale.findUniqueOrThrow({ where: { id, accountId } });
     });
@@ -1387,7 +1426,12 @@ export class RetailSaleService {
         where: {
           accountId,
           sessionId,
-          state: 'posted',
+          // Faza Q1 (SALES-06): `refunded` HAM sotuv. Faza 7 dan keyin to'liq
+          // qaytarilgan chek `refunded` bo'lib qoladi — u faqat `posted` bilan
+          // qidirilsa sotuvlar jamidan TUSHIB qolar, oyna cheki esa quyidagi
+          // `returnsAgg` da baribir ayirilardi ⇒ netSum bir qaytarishni IKKI
+          // marta hisobga olib manfiy chiqardi (kassir «bugun zarar» ko'rardi).
+          state: { in: ['posted', 'refunded'] },
           refundedFromId: null,
         },
         _sum: {

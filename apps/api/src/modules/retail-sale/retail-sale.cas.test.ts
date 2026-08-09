@@ -71,7 +71,8 @@ describe('RetailSaleService.post — CAS state guard', () => {
       // yozadi; qoidalar `retail-tenders.test.ts` da qoplangan.
       retailSalePayment: { createMany: vi.fn().mockResolvedValue({ count: 1 }) },
       cashDesk: { update: vi.fn() },
-      cashierSession: { update: vi.fn() },
+      // Faza Q1: smena agregati `state:'open'` sharti bilan CLAIM qilinadi.
+      cashierSession: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
     };
 
     const client = {
@@ -113,7 +114,7 @@ describe('RetailSaleService.post — CAS state guard', () => {
     ).rejects.toBeInstanceOf(ConflictException);
 
     // Critical: NO side effects must have fired (cash, session, stock, ledger)
-    expect(tx.cashierSession.update).not.toHaveBeenCalled();
+    expect(tx.cashierSession.updateMany).not.toHaveBeenCalled();
     expect(stock.applyDeltas).not.toHaveBeenCalled();
     expect(money.applyDeltas).not.toHaveBeenCalled();
   });
@@ -128,7 +129,8 @@ describe('RetailSaleService.post — CAS state guard', () => {
       // yozadi; qoidalar `retail-tenders.test.ts` da qoplangan.
       retailSalePayment: { createMany: vi.fn().mockResolvedValue({ count: 1 }) },
       cashDesk: { update: vi.fn().mockResolvedValue({}) },
-      cashierSession: { update: vi.fn().mockResolvedValue({}) },
+      // Faza Q1: smena agregati `state:'open'` sharti bilan CLAIM qilinadi.
+      cashierSession: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
     };
 
     const client = {
@@ -182,7 +184,7 @@ describe('RetailSaleService.post — CAS state guard', () => {
         documentKind: 'retailsale',
       }),
     ]);
-    expect(tx.cashierSession.update).toHaveBeenCalledTimes(1);
+    expect(tx.cashierSession.updateMany).toHaveBeenCalledTimes(1);
   });
 
   it('skips cashDesk.update when cashAmount is zero (card-only payment)', async () => {
@@ -195,7 +197,8 @@ describe('RetailSaleService.post — CAS state guard', () => {
       // yozadi; qoidalar `retail-tenders.test.ts` da qoplangan.
       retailSalePayment: { createMany: vi.fn().mockResolvedValue({ count: 1 }) },
       cashDesk: { update: vi.fn() },
-      cashierSession: { update: vi.fn().mockResolvedValue({}) },
+      // Faza Q1: smena agregati `state:'open'` sharti bilan CLAIM qilinadi.
+      cashierSession: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
     };
 
     const client = {
@@ -250,7 +253,8 @@ describe('RetailSaleService.post — CAS state guard', () => {
       // yozadi; qoidalar `retail-tenders.test.ts` da qoplangan.
       retailSalePayment: { createMany: vi.fn().mockResolvedValue({ count: 1 }) },
       cashDesk: { update: vi.fn().mockResolvedValue({}) },
-      cashierSession: { update: vi.fn().mockResolvedValue({}) },
+      // Faza Q1: smena agregati `state:'open'` sharti bilan CLAIM qilinadi.
+      cashierSession: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
     };
 
     const client = {

@@ -121,7 +121,7 @@ post → 409. (4) picking chek yopilgan smenada bloklanadi. (5) creditAgg 'DEBT'
 > `docs/REJA-AUDIT-FIX-2026-08.md` Faza 15 matnini + Faza 7/8 hisobotlarining tegishli bandlarini o'qi,
 > kodda tasdiqla. expected-cash + z-report + close-race + picking-block + creditAgg 'DEBT' + agentId
 > override. TDD: 6 stsenariy. Gate. Hisobotни shu fayl jurnaliга yozib TO'XTA — keyingi fazani BOSHLAMA.
-**◻ HISOBOT:** _(agent to'ldiradi)_
+**☑ HISOBOT (2026-08-09):** BAJARILDI — batafsili «HISOBOT JURNALI → Faza Q1» da.
 
 ---
 
@@ -543,3 +543,88 @@ Dizayn-og'ir yoki past-ustuvor qoldiqlar (manba-faza qavsda):
 > Har agent o'z fazasini tugatgach shu yerga yozadi. Format:
 > `## Faza QN — <sana> — <status>` keyin: **Fayllar**, **O'zgarish**, **Testlar (RED→GREEN)**,
 > **Gate**, **Qolgan qarz/DEFER**. Yozish faqat qo'shimcha (append) tarzida — mavjud yozuvlarga tegilmaydi.
+
+---
+
+## Faza Q1 — 2026-08-09 — **Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q**
+### Smena naqdi paketi: expected-cash · z-report · close-race · picking-block · creditAgg · agentId
+
+**Da'volarni tasdiqlash (kodda, o'z ko'zim bilan — 7/7 TASDIQLANDI, hech biri eskirmagan)**
+
+| # | Da'vo | Manba | Holat | Dalil |
+|---|---|---|---|---|
+| 1 | `creditAgg` `method: 'debt'` ≠ tender `'DEBT'` | Faza 7 hisoboti | ✅ | `cashier-session.service.ts:617` `method: 'debt'` ∥ `retail-tenders.ts:34` `debt: 'DEBT'` |
+| 2 | `post()` `parsed.agentId` chek qatorini yangilamaydi | Faza 8 hisoboti | ✅ | `retail-sale.service.ts:671` `debtAgentId = parsed.agentId ?? sale.agentId`, `:714` yozuv sharti `&& !sale.agentId` |
+| 3 | `collectCashInputs` qaytarish naqdini ikki tomondan sanaydi | asl reja F15 `SALES-02` | ✅ | `salesCashMinor` so'rovida `refundedFromId` filtri YO'Q; oyna cheklar `posted` ⇒ sotuvga (+), qaytarishga (−) bo'lib bir-birini yeydi — ya'ni qaytarish kutilgan naqdga **umuman** ta'sir qilmaydi |
+| 4 | Qaytim (`changeMinor`) kutilgan naqddan ayirilmaydi | asl reja F15 `SALES-02` | ✅ | `cashAmountMinor` = BERILGAN naqd; pul-daftariga esa `cashToDrawer = cashAmount − change` yoziladi (`retail-sale.service.ts:843`) ⇒ ikki manba ajralib turgan |
+| 5 | Legacy z-report to'liq refundni 2× ayiradi | asl reja F15 `SALES-06` | ✅ | `retail-sale.service.ts:1390` `salesAgg` `state: 'posted'` — Faza 7 dan keyin to'liq qaytarilgan ASL chek `refunded` bo'lib sotuvlardan tushib qoladi, oyna cheki esa `returnsAgg` da baribir ayiriladi |
+| 6 | `close()` faqat `draft` ni bloklaydi | asl reja F15 `SALES-08` | ✅ | `:217` `state: 'draft'`; FSM'da `picking`/`ready` mavjud (`retail-sale-fsm.ts:37`) |
+| 7 | `post()` smena holatini tx'dan TASHQARIDA o'qiydi | asl reja F15 `SALES-07` | ✅ | `:615` tekshiruv tx'dan tashqarida; tx ichida `cashierSession.update` **shartsiz** (`:899`) |
+
+**O'zgargan/yaratilgan fayllar**
+
+| Fayl | O'zgarish |
+|---|---|
+| `apps/api/src/modules/cashier-session/cashier-session.service.ts` | `collectCashInputs` endi birinchi argument sifatida `db: Prisma.TransactionClient` oladi (tx ichidan chaqirsa bo'ladi); `salesCashMinor` so'roviga `refundedFromId: null` + `_sum.changeMinor` qo'shildi, natija `Σcash − Σchange`; `close()` **butunlay Serializable tx ichida** (pending-tekshiruv → agregat → flip); pending ro'yxati `allowedFrom('cancel')` dan (`draft/picking/ready`); `creditAgg` endi `TENDER.debt` konstantasi + `state: {in:['posted','refunded']}` |
+| `apps/api/src/modules/retail-sale/retail-sale.service.ts` | `post()`: chek CAS'idan KEYIN, pul/ombor kaskadidan OLDIN **smena claim'i** — `updateMany({where:{id,accountId,state:'open'}, data:{salesCount:+1, salesSumMinor:+total}})` → `count===0` ⇒ 409 (eski shartsiz `cashierSession.update` O'CHIRILDI, agregat claim bilan BIRLASHTIRILDI: qulf va hisob ajralmaydi); `parsed.agentId` chekdagi BOSHQA mijoz bilan zid bo'lsa **400**; legacy `zReport` `salesAgg` `state: {in:['posted','refunded']}` |
+| `apps/api/src/modules/cashier-session/shift-cash-faza-q1.test.ts` | **Yangi** — 11 test. Prisma dublyori `where` ni haqiqiy qatorlar ustida BAHOLAYDI (`in` / `not: null` / `null` + ichma-ich `sale: {...}` relyatsion filtri), aks holda `_sum` qaytaruvchi sof mock bug'ni ko'rmasdi |
+| `apps/api/src/modules/retail-sale/retail-sale-post-guards.test.ts` | **Yangi** — 6 test. Postgres semantikasi halol modellangan: `findFirst` DETACHED (eskirgan) nusxa, `updateMany` esa JONLI qator ustida shartni atomik baholaydi — aynan poyga oynasi |
+| `retail-sale-{freeze,fsm,tenders-wiring,.cas}.test.ts` | **Fixture qarzi** (mahsulot bug'i emas): `cashierSession.update` stublari `updateMany` ga ko'chirildi; `fsm`/`.cas` dagi 3 tasdiq `updateMany` ga, `fsm` ga qo'shimcha `where.state === 'open'` tasdig'i qo'shildi — claim SHARTLI ekani qulflandi |
+
+**QAROR — `agentId` zidligida 400, ustidan yozish EMAS** *(reja ikki variantni ochiq qoldirgan edi)*
+Chek — huquqiy hujjat; to'lov oynasi uning kontragentini **jimgina** qayta yozib yuborishi Faza 7/8 bo'ylab
+quvilgan «jim divergensiya» klassining o'zi bo'lardi (ma'lumot yo'qoladi, hech bir gate ko'rmaydi). 400 esa
+divergensiyani **strukturaviy imkonsiz** qiladi va kassirga aniq yo'l ko'rsatadi («chekni ochib mijozni
+to'g'rilang»). Zid BO'LMAGAN holat (chek bo'sh) — mavjud xulq saqlandi: mijoz chekka YOZILADI, ya'ni
+SALES-04 shartnomasi buzilmaydi. `/sotuv` bu yo'lga TUSHMAYDI: POS chekni mijozsiz yaratadi va kontragentni
+faqat post payloadida yuboradi (Faza 7/8 hisobotlarida o'lchangan) ⇒ regressiya xavfi yo'q.
+
+**Testlar (TDD tartibi kuzatildi — RED JONLI o'lchangan)**
+- **RED-1** `shift-cash-faza-q1.test.ts` (fix'dan OLDIN): **7 yiqildi / 11**, sabablari aynan bug:
+  - qaytim: `expected 250000n to be 200000n` (Σchange = 50 000 ayirilmagan)
+  - qaytarish oyna cheki: `expected 200000n to be 170000n` (+1/−1 bo'lib yo'qolgan)
+  - to'liq-refund smenasi: `expected 50000n to be 0n`
+  - `close()` `picking` va `ready`: `promise resolved … instead of rejecting` (2 test)
+  - Z-hisobot «qarzga sotildi»: `expected '0' to be '90000'`
+  - legacy z-report: `salesSumMinor expected '0' to be '100000'` (netSum `−100000` chiqardi)
+- **RED-2** `retail-sale-post-guards.test.ts` (fix'dan OLDIN): **2 yiqildi / 6** — yopilgan smenaga post
+  `promise resolved … instead of rejecting`; `agentId` zidligi ham `resolved … instead of rejecting`.
+- **GREEN:** ikkala yangi fayl **17/17**; `cashier-session` + `retail-sale` modullari **399/399**.
+- **Regress:** yuqoridagi 4 fixture fayli (23 yiqilish) — barchasi `tx.cashierSession.updateMany is not a
+  function` yoki `variance-wiring` drift-lock'i (`discrepancyMinor: discrepancy`) sababli edi. Mahsulot
+  kodiga himoyaviy `?.` **qo'yilmadi** (u haqiqiy nosozlikni yashirardi): stublar real shaklga moslandi va
+  `close()` ichidagi o'zgaruvchi nomlari drift-lock kutgan holida saqlandi.
+
+**Gate (to'liq, JONLI o'lchangan)**
+- `pnpm --filter @moysklad/api typecheck` → **0 xato**
+- `pnpm lint:product` → **0 error** (745 warning — siyosat bo'yicha ruxsat)
+- `pnpm --filter @moysklad/api exec vitest run src/modules/cashier-session src/modules/retail-sale` →
+  **27 fayl / 399 test yashil, 0 yiqilgan**
+- Kengroq regress `src/modules/{shared,debt,money,counterparty-balance}` → **47 fayl / 788 test yashil**
+- `pnpm --filter @moysklad/api exec vitest run` (BUTUN suite) →
+  **429 fayl yashil + 1 skip · 5588 test yashil + 2 skip · 0 yiqilgan**
+- `pnpm i18n:gate` yugurtirilMADI — UI matni tegilmagan (faqat API; web'ga umuman tegilmadi).
+- Migratsiya YO'Q — sxema tegilmadi.
+
+**Qolgan qarz / DEFER**
+- **Browser-smoke YO'Q.** Kassada qaytimli smenani yopish, `picking` chek bilan yopishga urinish (400
+  matni), yopilayotgan smenaga to'lov (409 matni), Z-hisobotdagi «Продано в долг» raqami — hammasi
+  Phase-2 QA (retail/POS cohort) ga qoladi.
+- **`close()` picking/ready cheklarni «ko'chirmaydi», BLOKLAYDI.** Reja «blok yoki keyingi smenaga
+  ko'chirish» degan edi; ko'chirish `sessionId` ni almashtirishni talab qiladi (chek yaratilgan
+  smenaning ombori/kassasi boshqa bo'lishi mumkin) — bu hujjat-egaligi qarori, ataylab QILINMADI.
+- **`post()` non-debt sotuvda `parsed.agentId` ni chekka YOZMAYDI** (mavjud shart `debtAmount > 0n`).
+  Ya'ni mijoz tanlangan NAQD chek `agentId: null` bo'lib qoladi va unga loyalty ball yozilmaydi
+  (`accrueLoyalty` `posted.agentId` ni o'qiydi). Bu fazada ATAYLAB tegilmadi — u loyalty xulqini
+  o'zgartiradi (yangi ball oqimi), Faza Q1 doirasidan tashqarida. **Yangi qarz sifatida qayd etildi.**
+- **`close()` 400 matni ingliz tilida** (`Session has N unresolved sale(s) (draft/picking/ready)…`) —
+  fayldagi mavjud konventsiya saqlandi; POS ekranida server matni ko'rinadi. i18n'lash — alohida ish.
+- **`retail-sale.controller.ts` tegilmadi** — reja uni fayllar ro'yxatiga kiritgan edi, lekin barcha
+  to'rt qo'riqchi servis qatlamida; kontrollerda o'zgarish talab qiladigan narsa topilmadi.
+- **`retail_sales.agent_id` backfill** (legacy qarz cheklari) hamon OPS-qadam — bu faza yangi
+  divergensiya YARATILISHINI to'xtatadi, MAVJUD tarixiy qatorlarni tuzatmaydi.
+- **Serializable tx `close()` da retry YO'Q** — Postgres `40001` (serialization failure) yuqori yuklamada
+  chiqishi mumkin; kassir «qayta urinib ko'ring» xatosini oladi. Repo'dagi boshqa Serializable
+  chaqiruvlar ham retry'siz (bir xil konventsiya) — o'zgartirilmadi.
+
+**Commit:** `fix(sales): faza q1 — smena naqdi expected-cash + z-report + close-race (SALES-02/06/07/08)`

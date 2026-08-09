@@ -75,7 +75,11 @@ function makeHarness(opts: {
     // yozadi; qoidalar `retail-tenders.test.ts` da qoplangan.
     retailSalePayment: { createMany: vi.fn().mockResolvedValue({ count: 1 }) },
     cashDesk: { update: vi.fn().mockResolvedValue({}) },
-    cashierSession: { update: vi.fn().mockResolvedValue({}) },
+    cashierSession: {
+      update: vi.fn().mockResolvedValue({}),
+      // Faza Q1: post() smenani `state:'open'` sharti bilan CLAIM qiladi.
+      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+    },
   };
 
   const productFindMany = vi.fn().mockResolvedValue(opts.products);
