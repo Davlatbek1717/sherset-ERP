@@ -4044,7 +4044,7 @@ so'ng scratch config o'chirildi.
 
 ### Qolgan qarz / DEFER (keyingi sessiyalar uchun ro'yxat)
 
-1. **`sotuv/page.tsx` migratsiyasi** — Faza 32 commit qilingandan KEYIN (yuqoriga qarang).
+1. ~~`sotuv/page.tsx` migratsiyasi~~ — **BAJARILDI shu sessiyada** (quyidagi qo'shimchaga qarang).
 2. **`ListResponse` — 92 faylning 91 tasi hali lokal.** `retail` o'tkazildi. Bu mexanik codemod
    ishi, LEKIN bir nuance bor: umumiy `ListEnvelope` da `total?: number` (API'ning uch xil
    javob shakli sababli), shuning uchun `data.total` ni to'g'ridan-to'g'ri `number` sifatida
@@ -4152,3 +4152,36 @@ stash qiladi (CLAUDE.md §6.7 B). Shu sababli gate'lar markazda QO'LDA to'liq yu
    chiqqani uchun sizish EMAS, lekin lokal-bog'liq format kerak bo'lsa qarz.
 6. **Qo'riqchining ko'r nuqtasi:** ko'p qatorli JSX matn tuguni ichida `{}` bo'lsa o'tkazib yuboriladi
    (ifoda bilan aralash matn). Bu fazadan keyin bunday qoldiq yo'q, lekin yangisi qo'shilsa tutilmaydi.
+
+### Faza 33 qo'shimchasi — `sotuv/page.tsx` ham migratsiya qilindi (`8d1c51aa` dan keyin)
+
+Birinchi commit (`8d1c51aa`) qilingan zahoti parallel sessiya **Faza 32 ni commit qildi**
+(`a54fedd7`). Ya'ni `sotuv/page.tsx` ni chetlab o'tish sababi — «ularning tugallanmagan ishi
+mening commitimga tushadi» — **yo'qoldi**. Fayl toza va commit qilingan bo'lgani uchun
+migratsiya darhol yakunlandi (kechiktirishning o'zi maqsad emas edi).
+
+- `sotuv/page.tsx`: `CashDesk`/`Store`/`Organization`/`CurrentSession`/`ProductRow`/
+  `ListResponse` lokal e'lonlari o'chirildi → `@moysklad/contracts` dan `import type`
+  (**−41/+17 qator**). Biome `organizeImports` importni minimallashtirdi — sahifa faqat
+  `CurrentSession`, `ListResponse`, `ProductRow` ni ishlatadi.
+- **Xulq o'zgarmadi.** Sahifadagi `session.cashDesk?.…` / `session.cashDesk!.…` himoyalari
+  **ATAYLAB QOLDIRILDI**: kontraktda tip endi non-null, lekin runtime qiymati allaqachon
+  har doim non-null edi (`cashDeskId` NOT NULL + shartsiz `include`), shuning uchun
+  `{session.cashDesk && …}` sharti ilgari ham doim rost edi. Himoyalarni olib tashlash
+  render yo'llarini o'zgartirardi, foyda bermay.
+- Web qo'riqchisi yangilandi: `sotuv` endi `ADOPTERS` da, `PENDING_MIGRATION` **bo'sh**
+  (mexanizm keyingi bosqichli migratsiya uchun qoladi). Testning «eskirgan istisno yiqiladi»
+  qoidasi ishladi — istisnoni o'chirishga MAJBUR qildi.
+
+**FE-12 ning bosh simptomi shu bilan yopildi:** bitta endpoint (`/cashier-sessions/current`)
+uchun ikkita qarama-qarshi e'lon endi bitta, serverga arqon bilan bog'langan manbadan keladi.
+
+**Yakuniy gate (Faza 32 commit bo'lgandan KEYIN, to'liq yashil):**
+- `@moysklad/contracts` · `@moysklad/api` · `@moysklad/web` typecheck — **0 xato**
+  (endi hech qanday istisnosiz: parallel sessiyaning `pos-i18n-guard.test.ts` fayli ham yashil).
+- `pnpm lint:product` — **0 xato** (745 warning, siyosat bo'yicha ruxsat).
+- `pnpm i18n:gate` — **9/9 yashil** (parallel sessiya o'z `pages.sotuv.*` kalitlarini qo'shdi).
+- **To'liq web suite: 187 fayl / 2832 test yashil, 0 yiqilish** (26 skip).
+- `apps/api` `shared` moduli: **29 fayl / 584 test yashil**; `@moysklad/contracts`: **15/15**.
+- To'liq API suite `8d1c51aa` da o'lchangan: **427 fayl / 5571 yashil, 0 yiqilish**
+  (bu qo'shimchada `apps/api` manbasi o'zgarmadi).

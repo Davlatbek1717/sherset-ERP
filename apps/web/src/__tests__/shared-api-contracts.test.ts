@@ -37,7 +37,7 @@ function collectSources(dir: string, prefix = '', out: string[] = []): string[] 
 }
 
 /** Pages that have adopted the shared contracts and must not regress. */
-const ADOPTERS = ['app/(app)/retail/page.tsx'];
+const ADOPTERS = ['app/(app)/retail/page.tsx', 'app/(app)/sotuv/page.tsx'];
 
 /**
  * Payload type names that belong to `@moysklad/contracts` and must not be
@@ -51,14 +51,13 @@ const OWNED_BY_CONTRACTS = ['CurrentSession'];
  * Files still carrying a local declaration, with the reason. Each entry is
  * tracked debt, and the test below fails if an entry becomes stale — so
  * migrating a file forces its exemption to be removed rather than left to rot.
+ *
+ * Empty is the goal state, and it is where `CurrentSession` landed: `/sotuv`
+ * sat here briefly while a parallel session held the file mid-edit (Faza 32),
+ * then migrated as soon as that work committed. The mechanism stays for the
+ * next contract that needs a staged rollout.
  */
-const PENDING_MIGRATION: Array<{ file: string; name: string; why: string }> = [
-  {
-    file: 'app/(app)/sotuv/page.tsx',
-    name: 'CurrentSession',
-    why: 'Faza 33: a parallel session was mid-edit in this file (Faza 32 POS i18n); migrating it here would have dragged their unfinished work into this commit. One import + one deleted block when that lands.',
-  },
-];
+const PENDING_MIGRATION: Array<{ file: string; name: string; why: string }> = [];
 
 describe('shared API contracts', () => {
   for (const rel of ADOPTERS) {

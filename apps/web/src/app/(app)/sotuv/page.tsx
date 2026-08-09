@@ -27,6 +27,11 @@ import {
   resolveWholesaleSalePrice,
   usePriceTypeIds,
 } from '@/lib/sale-price';
+import type {
+  CurrentSession,
+  ListEnvelope as ListResponse,
+  PosProductRow as ProductRow,
+} from '@moysklad/contracts';
 import {
   Money,
   classifyPrice,
@@ -44,42 +49,18 @@ import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 // ── Types ──────────────────────────────────────────────────────────────────
-
-interface CashDesk {
-  id: string;
-  name: string;
-  currency: string;
-}
-interface Store {
-  id: string;
-  name: string;
-}
-interface Organization {
-  id: string;
-  name: string;
-}
-
-interface CurrentSession {
-  id: string;
-  state: 'open' | 'closed';
-  openedAt: string;
-  cashier: { id: string; name: string };
-  cashDesk: CashDesk | null;
-  store: Store | null;
-  organization: Organization;
-  salesCount: number;
-  salesSumMinor: string;
-  openingCashMinor: string;
-}
-
-interface ProductRow {
-  id: string;
-  name: string;
-  code: string | null;
-  buyPrice: string | null;
-  salePrices?: Array<{ priceTypeId: string; value: string }> | null;
-  stock?: { onHand: string; reserved: string; available: string } | null;
-}
+//
+// The API payload types come from `@moysklad/contracts` (audit `FE-12`). This
+// page and `/retail` both hand-declared `CurrentSession` for the SAME endpoint
+// and disagreed: here `cashDesk`/`store` were nullable, in `/retail` they were
+// required. Ground truth settles it — `CashierSession.cashDeskId`/`.storeId`
+// are NOT NULL columns and `findCurrentForCashier` includes both relations
+// unconditionally, so they are always present and `/retail` was the accurate
+// one. The defensive `?.` reads kept below are now redundant rather than
+// load-bearing; they are left in place because removing them changes render
+// paths for no behavioural gain.
+//
+// `CartLine` stays local: it is this page's own UI state, not an API payload.
 
 interface CartLine {
   productId: string;
@@ -96,11 +77,6 @@ interface CartLine {
   costMinor: bigint | null;
   wholesaleMinor: bigint | null;
   basePriceMinor: bigint | null;
-}
-
-interface ListResponse<T> {
-  items: T[];
-  total: number;
 }
 
 // ── Open Shift Form ─────────────────────────────────────────────────────────

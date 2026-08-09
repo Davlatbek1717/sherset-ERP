@@ -399,11 +399,23 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > sessiyanikidan** (`grep "missing in" | grep -v sotuv` = **0**). Ikkala yangi qo'riqchi ham
 > **jonli sabotaj** bilan vakuum emasligi tekshirildi.
 >
+> **➕ QO'SHIMCHA commit (`sotuv` ham migratsiya qilindi).** Birinchi commitdan (`8d1c51aa`)
+> so'ng parallel sessiya Faza 32 ni commit qildi (`a54fedd7`) ⇒ `sotuv/page.tsx` ni chetlab
+> o'tish sababi yo'qoldi va migratsiya darhol yakunlandi (−41/+17). **FE-12 ning bosh simptomi
+> yopildi:** bitta endpoint uchun ikkita qarama-qarshi e'lon endi bitta manbadan. Web
+> qo'riqchisining `PENDING_MIGRATION` ro'yxati **bo'shadi** — «eskirgan istisno yiqiladi»
+> qoidasi uni o'chirishga majbur qildi. Sahifadagi `?.`/`!` himoyalari ATAYLAB qoldirildi
+> (runtime qiymati allaqachon non-null edi; olib tashlash render yo'lini foydasiz o'zgartirardi).
+>
+> **✅ YAKUNIY GATE (Faza 32 commitidan keyin — endi TO'LIQ yashil, istisnosiz):**
+> contracts/api/web typecheck **0** · `lint:product` **0 xato** · `i18n:gate` **9/9** ·
+> to'liq web **187 fayl / 2832 test yashil, 0 yiqilish** · `apps/api` `shared` **584 yashil** ·
+> `@moysklad/contracts` **15/15** · to'liq API suite (`8d1c51aa` da) **5571 yashil, 0 yiqilish**.
+>
 > **⏭️ KEYINGI:** ochiq fazalar — **27b** (`PERF-01`), **27c** (`PERF-02`, dalili ESKIRGAN),
-> **29b** (`HR-13` soft-delete), **32** (hozir parallel sessiyada). Faza 33 qarzi:
-> `sotuv/page.tsx` migratsiyasi (Faza 32 commit bo'lgach; web qo'riqchisining
-> `PENDING_MIGRATION` ro'yxati buni **mashina bilan kuzatadi** — istisno eskirsa test yiqiladi) ·
-> `ListResponse` 92 fayldan 91 tasi hali lokal · qamralmagan endpointlar ro'yxati —
+> **29b** (`HR-13` soft-delete). *(Faza 32 endi TUGADI — `a54fedd7`.)* Faza 33 qarzi:
+> `ListResponse` 92 fayldan 90 tasi hali lokal · konformans TIPNI emas, faqat kalit
+> MAVJUDLIGINI tekshiradi · qamralmagan endpointlar ro'yxati —
 > `docs/REJA-AUDIT-FIX-2026-08.md` → «HISOBOT JURNALI → Faza 33 → Qolgan qarz».
 >
 > **🗂️ ARXIV QARZI (o'lchandi, bu sessiyada ATAYLAB qilinmadi):** «Aniq keyingi vazifa» ostida
