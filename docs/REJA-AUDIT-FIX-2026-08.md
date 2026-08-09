@@ -2775,21 +2775,26 @@ bor-u, handler'larda talab yo'q ⇒ guard jim o'tkazadi). Ikkalasi ham shu fazad
 
 **Testlar (TDD: har biri avval QIZIL ko'rildi, keyin yashil):**
 - `hr-auth/privilege-escalation.test.ts` **YANGI** 9 — self/o'zga/aktorsiz · admin-grant diff (bor→bor, olib tashlash) · admin bo'lmagan aktor 403.
-- `hr-employee-permission/hr-employee-permission.service.test.ts` **YANGI** 2 — o'ziga yozish 403 va `$transaction` **umuman chaqirilmaydi**; o'zgaga yozish o'tadi.
+- `hr-employee-permission/hr-employee-permission.service.test.ts` +2 — o'ziga yozish 403 va `$transaction` **umuman chaqirilmaydi**; o'zgaga yozish o'tadi. ⚠️ **Insident (Faza 16'dagi bilan bir xil klass):** bu faylni `Write` bilan ustidan yozib, mavjud 5 testni yo'q qilgandim — `git show HEAD:` dan tiklab, o'z blokimni USTIGA qo'shdim; 7/7 yashil. *(Sabog'i: mavjud test-faylga faqat qo'shimcha, hech qachon Write.)*
 - `hr-employee/hr-employee.service.test.ts` +5 — update self-403 · non-admin admin-grant 403 · admin grant o'tadi · non-admin oddiy rol o'tadi · create admin-grant 403 (mavjud 31 test saqlandi).
 - `group/group.controller.test.ts` **YANGI** 4 — POST/PATCH/DELETE metadata + `GET` ataylab ochiqligi qulflandi.
 - `manager/kpi/kpi-permission-gate.test.ts` **YANGI** 6 — class'da `HrPermissionGuard` ro'yxatdan o'tgani (**guard bo'lmasa talab metadatasi o'lik** — shuning uchun ikkisi birga tekshiriladi) + 4 handler talabi + `explain` ochiqligi.
 - `hr-employee/offboarding.service.test.ts` **YANGI** 4 — revoke O'SHA `tx` bilan chaqiriladi · `hrEmployeePermission` tozalanadi + `hrRoles: []` · `permissions.invalidate` · allaqachon yakunlangan bo'lsa qayta revoke YO'Q (idempotent).
 
 **Gate:** `vitest` — tegilgan modullar (hr, group, manager, auth, permissions) + `app-boot.test.ts`
-**1160/1160 yashil**; butun API suite **5293/5296** (2 skip + quyidagi 1 flake). `biome check` tegilgan
+**1167/1167 yashil**; butun API suite **5293/5296** (2 skip + quyidagi 1 flake; suite tiklashdan
+OLDIN yugurtirilgan — tiklash faqat 5 ta mavjud testni qaytardi). `biome check` tegilgan
 5 modul: 0 error (13 warning — mavjud, meniki emas). `i18n:gate` — kerak emas (UI-matn tegilmadi).
-**`typecheck` va `lint:product` REPO BO'YICHA QIZIL, LEKIN MENING FAYLLARIMDA EMAS** — parallel sessiya
-ayni paytda `payment-gateway`/`money`/`report` + `schema.prisma` + yangi migratsiya ustida ishlayapti
-(`git status`: 20+ begona modified fayl, `20260809120000_gateway_payment_in_link_and_unique/` untracked).
-Qolgan 5 tsc xatosi 2 ta begona faylda (`payment-gateway/*` — generated Prisma client ularning yangi
-`paymentInId` sxemasidan orqada), 28 lint xatosi 17 ta begona faylda. **Ularning fayllariga TEGILMADI
-va `prisma generate` YUGURTIRILMADI** (§6.1/§6.4 — ish daraxti ular bilan bo'lishilgan).
+**Yakuniy repo-gate: `pnpm --filter @moysklad/api typecheck` → 0 xato · `pnpm lint:product` → 0 error**
+(743 warning, siyosat bo'yicha ruxsat).
+> ⚠️ Ish o'rtasida ikkalasi ham QIZIL edi — **faqat parallel sessiyaning yarim-holati sababli**
+> (`payment-gateway`/`money`/`report` + `schema.prisma` + yangi migratsiya ularning daraxtida ochiq
+> turardi; 5 tsc xatosi generated Prisma client ularning yangi `paymentInId` sxemasidan orqada
+> qolganidan edi). Ularning fayllariga TEGILMADI va `prisma generate` YUGURTIRILMADI (§6.1/§6.4);
+> ular `57416518` bilan commit qilgach ikkala gate ham o'z-o'zidan yashil bo'ldi.
+> **§6.7B yana takrorlandi:** o'sha commit (`fix(report): faza 17`) mening commit qilinmagan
+> `NEXT.md` va `docs/REJA-…md` matnimni ham olib ketdi (280+95 qator) — yo'qolish yo'q, lekin
+> Faza 23 hisoboti/hand-off'i **`57416518` ichida**, kod esa quyidagi o'z commit'imda.
 
 **Qolgan guard-siz mutatsiya-controllerlar (reja so'ragan ro'yxat) — 61 handler / 23 controller.**
 Skaner: har `@Post/@Patch/@Put/@Delete` handler'ining dekorator bloki `@RequirePermission` YOKI

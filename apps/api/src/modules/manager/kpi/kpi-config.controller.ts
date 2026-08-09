@@ -2,18 +2,23 @@ import { Body, Controller, Get, Inject, Param, Put, Query, UseGuards } from '@ne
 import type { AuthenticatedUser } from '../../auth/auth.schema.js';
 import { CurrentUser } from '../../auth/current-user.decorator.js';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard.js';
+import { HrPermissionGuard } from '../../hr/hr-auth/hr-permission.guard.js';
+import { RequireHrPermission } from '../../hr/hr-auth/require-hr-permission.decorator.js';
 import { SaveKpiConfigSchema } from './kpi-config.schema.js';
 import { KpiConfigService } from './kpi-config.service.js';
 
 /**
  * Menejer KPI konfiguratsiyasi (TZ 4M.2) — har-xodim ko'rsatkich + og'irlik +
- * kunlik maqsad. Barchasi JWT bilan himoyalangan.
+ * kunlik maqsad.
  *
- * TODO(rol-gate): faqat menejer/admin roli sozlashi kerak (permissions tizimi
- * barqarorlashgach — driver-tracking.controller bilan bir xil konvention).
+ * AUTH-07 (faza 23) — eski `TODO(rol-gate)` yopildi: **yozuv** (`PUT .../config`)
+ * endi `employees:full` talab qiladi. Bu konfiguratsiya oylik formulasiga kiradi
+ * (4M.3), ya'ni rol-tekshiruvsiz har autentifikatsiyalangan xodim O'ZIGA qulay
+ * maqsad/og'irlik qo'yib olishi mumkin edi. O'qish (`GET`) ochiq qoladi — sahifa
+ * ko'rish HR-navbat ekranlari bilan bir xil darajada.
  */
 @Controller('manager/kpi')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, HrPermissionGuard)
 export class KpiConfigController {
   constructor(@Inject(KpiConfigService) private readonly kpi: KpiConfigService) {}
 
@@ -31,6 +36,7 @@ export class KpiConfigController {
 
   /** Xodim KPI konfiguratsiyasini saqlash (yangi versiya). */
   @Put('employee/:employeeId/config')
+  @RequireHrPermission('employees', 'full')
   saveConfig(
     @CurrentUser() user: AuthenticatedUser,
     @Param('employeeId') employeeId: string,

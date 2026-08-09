@@ -129,14 +129,21 @@ export class ManagerKpiController {
   // ko'tarmaydi (2026-08-05 da prod 502 bo'ldi). Yozuv qatlami shu yerda,
   // o'qish qatlami o'sha yerda qoladi.
 
+  // AUTH-07 (faza 23): katalog YOZUVLARI `employees:full` ostida. Ilgari bu uchta
+  // handler'da talab yo'q edi — `HrPermissionGuard` talabsiz handler'ni o'tkazib
+  // yuboradi, ya'ni har xodim hammaning ballini boshqaradigan ko'rsatkichni
+  // yaratishi/nomini almashtirishi/arxivlashi mumkin edi.
+
   /** Yangi KPI yaratish. Manba doim `manual` — faktni menejer kiritadi. */
   @Post('metrics')
+  @RequireHrPermission('employees', 'full')
   createMetric(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
     return this.catalog.create(user.accountId, SaveCustomMetricSchema.parse(body));
   }
 
   /** Nomi/birligi/yo'nalishini tahrirlash. KALIT o'zgarmaydi (tarix uzilmasin). */
   @Post('metrics/:key')
+  @RequireHrPermission('employees', 'full')
   updateMetric(
     @CurrentUser() user: AuthenticatedUser,
     @Param('key') key: string,
@@ -147,6 +154,7 @@ export class ManagerKpiController {
 
   /** Arxivlash — o'chirish EMAS (o'tgan kunlarning raqamlari saqlanadi). */
   @Post('metrics/:key/archive')
+  @RequireHrPermission('employees', 'full')
   archiveMetric(@CurrentUser() user: AuthenticatedUser, @Param('key') key: string) {
     return this.catalog.archive(user.accountId, key);
   }

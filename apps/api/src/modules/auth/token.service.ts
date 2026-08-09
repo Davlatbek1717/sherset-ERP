@@ -17,6 +17,19 @@ import type { AuthenticatedUser } from './auth.schema.js';
  */
 const ROTATION_GRACE_MS = 60_000;
 
+/**
+ * `revokeAllForEmployee` uchun minimal klient-shakli: oddiy Prisma klient ham,
+ * `$transaction` ichidagi `tx` ham shu shartnomani qanoatlantiradi.
+ */
+type RevokeClient = {
+  refreshToken: {
+    updateMany: (args: {
+      where: { employeeId: string; revokedAt: null };
+      data: { revokedAt: Date };
+    }) => Promise<unknown>;
+  };
+};
+
 @Injectable()
 export class TokenService {
   private readonly refreshTtlDays = 7;
@@ -142,8 +155,17 @@ export class TokenService {
     });
   }
 
-  async revokeAllForEmployee(employeeId: string): Promise<void> {
-    await this.prisma.client.refreshToken.updateMany({
+  /**
+   * Xodimning BARCHA faol refresh-tokenlarini bekor qiladi (offboarding,
+   * majburiy chiqarish). `client` — ixtiyoriy tranzaksiya klienti: chaqiruvchi
+   * (masalan `OffboardingService.complete`) arxivlash bilan BIR tranzaksiyada
+   * uzishi uchun (AUTH-05). Berilmasa oddiy klient ishlatiladi.
+   */
+  async revokeAllForEmployee(
+    employeeId: string,
+    client: RevokeClient = this.prisma.client,
+  ): Promise<void> {
+    await client.refreshToken.updateMany({
       where: { employeeId, revokedAt: null },
       data: { revokedAt: new Date() },
     });

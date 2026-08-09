@@ -1,5 +1,7 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service.js';
+import { TokenService } from '../../auth/token.service.js';
+import { PermissionsService } from '../../permissions/permissions.service.js';
 import {
   type AutoFacts,
   type ManualState,
@@ -22,7 +24,13 @@ import {
  */
 @Injectable()
 export class OffboardingService {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    // AUTH-05 — arxivlash bilan bir tranzaksiyada sessiyalarni uzish uchun.
+    // Modul ikkalasini OSHKORA import qiladi (AuthModule + PermissionsModule).
+    @Inject(TokenService) private readonly tokens: TokenService,
+    @Inject(PermissionsService) private readonly permissions: PermissionsService,
+  ) {}
 
   /**
    * Tizim biladigan faktlar — HAR SO'ROVDA qayta o'qiladi.
@@ -184,16 +192,32 @@ export class OffboardingService {
     // Arxivlash va yakunlash BIRGA: xodim arxivlangan-u jarayon ochiq
     // qolsa, ro'yxat «bajarilmagan» bo'lib turaverardi va menejer ekranini
     // abadiy to'ldirardi.
-    await this.prisma.client.$transaction([
-      this.prisma.client.employee.update({
+    //
+    // AUTH-05 — SHU tranzaksiyada kirish huquqi ham uziladi:
+    //  · refresh-tokenlar bekor (aks holda `revokedAt=null` bo'lib turardi va
+    //    faqat keyingi `refresh` urinishida `archived` ushlanardi);
+    //  · `HrEmployeePermission` qatorlari o'chiriladi — bo'shatish ro'yxati
+    //    ularni umuman SANAMAYDI (faqat `hrRoles`), ya'ni sahifa-ruxsatlari
+    //    arxivlangan xodimda ochiq qolardi (qayta tiklansa darhol tirilardi);
+    //  · `hrRoles` bo'shatiladi — ro'yxat buni talab qiladi, lekin tekshiruv
+    //    bilan arxivlash orasida rol berilishi mumkin (TOCTOU).
+    // Amaldagi access-JWT (15 daq) baribir tugashini kutadi — bu qarz
+    // `AUTH-05` izohida qayd etilgan (deny-list/qisqa TTL alohida ish).
+    await this.prisma.client.$transaction(async (tx) => {
+      await tx.employee.update({
         where: { id: employeeId },
-        data: { archived: true, version: { increment: 1 } },
-      }),
-      this.prisma.client.employeeOffboarding.update({
+        data: { archived: true, hrRoles: [], version: { increment: 1 } },
+      });
+      await tx.employeeOffboarding.update({
         where: { id: row.id },
         data: { completedAt: new Date() },
-      }),
-    ]);
+      });
+      await tx.hrEmployeePermission.deleteMany({ where: { accountId, employeeId } });
+      await this.tokens.revokeAllForEmployee(employeeId, tx);
+    });
+    // Kesh tranzaksiya COMMIT bo'lgach tozalanadi: erta tozalash rollback'da
+    // eski (ruxsatli) holatni qayta keshlab qo'yish xavfini tug'diradi.
+    this.permissions.invalidate(employeeId);
     return this.status(accountId, employeeId);
   }
 

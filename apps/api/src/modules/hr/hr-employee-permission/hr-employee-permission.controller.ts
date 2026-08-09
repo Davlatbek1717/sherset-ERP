@@ -29,6 +29,7 @@ export class HrEmployeePermissionController {
     @Body() body: unknown,
   ) {
     const input = PutPermissionsSchema.parse(body);
-    return this.svc.replace(user.accountId, employeeId, input);
+    // user.sub — HR-10 self-eskalatsiya tekshiruvi uchun aktor.
+    return this.svc.replace(user.accountId, employeeId, input, user.sub);
   }
 }

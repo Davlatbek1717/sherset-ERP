@@ -10,6 +10,10 @@ import * as argon2 from 'argon2';
 import { PrismaService } from '../../../prisma/prisma.service.js';
 import { throwIfEmployeeUniqueViolation } from '../../shared/employee-unique.js';
 import { mapVersionedUpdateError } from '../../shared/optimistic-lock.js';
+import {
+  assertAdminRoleGrantAllowed,
+  assertNoSelfPrivilegeChange,
+} from '../hr-auth/privilege-escalation.js';
 import { normalizeTelegramPhone } from '../hr-shared/phone-normalize.util.js';
 import type {
   CreateHrEmployeeInput,
@@ -334,7 +338,31 @@ export class HrEmployeeService {
     return out;
   }
 
+  /**
+   * Aktorning O'Z HR-rollari (HR-10 imtiyoz tekshiruvi uchun).
+   *
+   * `actorId` yo'q = tizim/seed chaqiruvi — chaqiruvchi bu holatda tekshiruvni
+   * umuman o'tkazmaydi (bo'sh ro'yxat qaytarish «admin emas» degani bo'lardi).
+   */
+  private async actorHrRoles(accountId: string, actorId: string): Promise<string[]> {
+    const actor = await this.prisma.client.employee.findFirst({
+      where: { id: actorId, accountId },
+      select: { hrRoles: true },
+    });
+    return actor?.hrRoles ?? [];
+  }
+
   async create(accountId: string, input: CreateHrEmployeeInput, actorId?: string) {
+    // HR-10: yangi xodimni DARHOL 'admin' qilib yaratish — self-check'ni
+    // chetlab o'tuvchi bir xil eskalatsiya yo'li (yaratuvchi keyin unga
+    // parol qo'yib kirib oladi). Shu sababli create ham admin-grant qoidasiga bo'ysunadi.
+    if (actorId && input.hrRoles.length > 0) {
+      assertAdminRoleGrantAllowed({
+        actorHrRoles: await this.actorHrRoles(accountId, actorId),
+        currentHrRoles: [],
+        nextHrRoles: input.hrRoles,
+      });
+    }
     const telegramPhone = safeNormalizePhone(input.telegramPhone);
     const sysPatch = systemAttrsPatch(input);
     const mirror = await this.resolveCatalogMirror(accountId, input);
@@ -405,9 +433,26 @@ export class HrEmployeeService {
         inn: true,
         description: true,
         groupId: true,
+        // HR-10: imtiyoz-diff uchun (admin roli BERILDIMI?).
+        hrRoles: true,
       },
     });
     if (!current) throw new NotFoundException('Xodim topilmadi');
+
+    // HR-10: rol o'zgarishi — imtiyoz chegarasi. O'ziga yozish taqiqlangan;
+    // 'admin' rolini faqat admin bera oladi. Boshqa maydonlarni (telefon,
+    // rasm…) xodim o'zi tahrirlashi mumkin — faqat shu shox cheklangan.
+    if (input.hrRoles !== undefined) {
+      assertNoSelfPrivilegeChange(actorId, id, 'HR-rollaringizni');
+      if (actorId) {
+        assertAdminRoleGrantAllowed({
+          actorHrRoles: await this.actorHrRoles(accountId, actorId),
+          currentHrRoles: current.hrRoles,
+          nextHrRoles: input.hrRoles,
+        });
+      }
+    }
+
     const telegramPhone = safeNormalizePhone(input.telegramPhone);
     const sysPatch = systemAttrsPatch(input);
     const mirror = await this.resolveCatalogMirror(accountId, input);

@@ -1,4 +1,9 @@
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { OptimisticLockException } from '../../shared/optimistic-lock.js';
 import { HrEmployeeService } from './hr-employee.service.js';
@@ -369,5 +374,78 @@ describe('HrEmployeeService', () => {
     prisma.client.employee.findFirst.mockResolvedValue({ id: 'e1', archived: false } as never);
     prisma.client.employee.delete.mockRejectedValue(new Error('connection lost'));
     await expect(service.hardDelete('acc1', 'e1', 'me')).rejects.toThrow('connection lost');
+  });
+});
+
+/**
+ * HR-10 — imtiyoz chegarasi. `employees:full` egasi O'ZIGA (yoki o'zi admin
+ * bo'lmay turib boshqaga) HR-admin rolini bera olmasligi kerak.
+ */
+describe('HrEmployeeService — hrRoles self-eskalatsiya (HR-10)', () => {
+  let prisma: ReturnType<typeof makePrisma>;
+  let service: HrEmployeeService;
+
+  /** findFirst'ni `where.id` bo'yicha ajratadi: tahrirlanayotgan xodim vs aktor. */
+  function employees(rows: Record<string, unknown>) {
+    prisma.client.employee.findFirst.mockImplementation(
+      (async (args: {
+        where: { id: string };
+      }) => rows[args.where.id] ?? null) as never,
+    );
+  }
+
+  beforeEach(() => {
+    prisma = makePrisma();
+    service = new HrEmployeeService(prisma as never);
+    prisma.client.employee.update.mockResolvedValue({ id: 'e1' } as never);
+    prisma.client.employee.create.mockResolvedValue({ id: 'new1', version: 1 } as never);
+  });
+
+  it('update: o`ziga hrRoles yozishga urinish → 403, update chaqirilmaydi', async () => {
+    employees({ me: { id: 'me', attributes: null, hrRoles: [] } });
+    await expect(
+      service.update('acc1', 'me', { hrRoles: ['admin'], version: 1 }, 'me'),
+    ).rejects.toThrow(ForbiddenException);
+    expect(prisma.client.employee.update).not.toHaveBeenCalled();
+  });
+
+  it('update: admin bo`lmagan aktor boshqaga admin rolini beryapti → 403', async () => {
+    employees({
+      e1: { id: 'e1', attributes: null, hrRoles: ['kassir'] },
+      me: { id: 'me', hrRoles: ['hr'] },
+    });
+    await expect(
+      service.update('acc1', 'e1', { hrRoles: ['kassir', 'admin'], version: 1 }, 'me'),
+    ).rejects.toThrow(ForbiddenException);
+    expect(prisma.client.employee.update).not.toHaveBeenCalled();
+  });
+
+  it('update: admin aktor boshqaga admin rolini beradi → o`tadi', async () => {
+    employees({
+      e1: { id: 'e1', attributes: null, hrRoles: [] },
+      me: { id: 'me', hrRoles: ['admin'] },
+    });
+    await service.update('acc1', 'e1', { hrRoles: ['admin'], version: 1 }, 'me');
+    const call = prisma.client.employee.update.mock.calls[0]?.[0] as {
+      data: { hrRoles?: string[] };
+    };
+    expect(call.data.hrRoles).toEqual(['admin']);
+  });
+
+  it('update: admin bo`lmagan aktor admin bo`lmagan rol beradi → o`tadi', async () => {
+    employees({
+      e1: { id: 'e1', attributes: null, hrRoles: [] },
+      me: { id: 'me', hrRoles: ['hr'] },
+    });
+    await service.update('acc1', 'e1', { hrRoles: ['kassir'], version: 1 }, 'me');
+    expect(prisma.client.employee.update).toHaveBeenCalled();
+  });
+
+  it('create: admin bo`lmagan aktor admin rolli xodim yarata olmaydi → 403', async () => {
+    employees({ me: { id: 'me', hrRoles: ['hr'] } });
+    await expect(
+      service.create('acc1', { name: 'X', hrRoles: ['admin'], isChecker: false } as never, 'me'),
+    ).rejects.toThrow(ForbiddenException);
+    expect(prisma.client.employee.create).not.toHaveBeenCalled();
   });
 });

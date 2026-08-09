@@ -1,3 +1,4 @@
+import { ForbiddenException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { HrEmployeePermissionService } from './hr-employee-permission.service.js';
 
@@ -67,5 +68,43 @@ describe('HrEmployeePermissionService', () => {
   it('replace runs in single transaction', async () => {
     await service.replace('acc1', 'e1', { permissions: [] });
     expect(prisma.client.$transaction).toHaveBeenCalledOnce();
+  });
+});
+
+/**
+ * HR-10 — `employees:full` egasi shu endpoint orqali O'ZIGA istalgan HR-ruxsatni
+ * yozib olardi (controller ham, servis ham `actorId === employeeId` ni ko'rmasdi).
+ */
+describe('HrEmployeePermissionService.replace — self-eskalatsiya (HR-10)', () => {
+  let prisma: ReturnType<typeof makePrisma>;
+  let service: HrEmployeePermissionService;
+
+  beforeEach(() => {
+    prisma = makePrisma();
+    service = new HrEmployeePermissionService(prisma as never);
+  });
+
+  it("o'ziga ruxsat yozishga urinish → 403, DB'ga tegilmaydi", async () => {
+    await expect(
+      service.replace(
+        'acc1',
+        'e1',
+        { permissions: [{ pageKey: 'employees', section: null, accessLevel: 'full' }] },
+        'e1',
+      ),
+    ).rejects.toThrow(ForbiddenException);
+    expect(prisma.client.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("boshqa xodimga ruxsat yozish → o'tadi", async () => {
+    await expect(
+      service.replace(
+        'acc1',
+        'e2',
+        { permissions: [{ pageKey: 'employees', section: null, accessLevel: 'full' }] },
+        'e1',
+      ),
+    ).resolves.toEqual({ count: 1 });
+    expect(prisma.client.$transaction).toHaveBeenCalled();
   });
 });
