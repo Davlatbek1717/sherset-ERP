@@ -1075,7 +1075,8 @@
       "stock_signals": "Zaxira signallari",
       "stuck_sla": "Nima qotib qolgan",
       "weekly_summary": "Haftalik xulosa",
-      "work_queue": "Ish navbati"
+      "work_queue": "Ish navbati",
+      "money_map": "Pul manzarasi"
     }
   },
   "counterparty_activity": {
@@ -8495,7 +8496,22 @@
       "weekly_subtitle": "Egaga: menejer haftada nechta kunni qabul qildi, nechtasini tuzatdi. Hech narsani bloklamaydi.",
       "weekly_title": "Haftalik xulosa",
       "weekly_top_adjuster": "Eng ko‘p tuzatgan",
-      "worked": "{hours} soat ishlagan"
+      "worked": "{hours} soat ishlagan",
+      "mm_title": "Korxona puli qayerda",
+      "mm_subtitle": "Hozir qayerda qancha pul turibdi — har raqam o'z hisobotidan olinadi.",
+      "mm_net_title": "Sof qoldiq",
+      "mm_net_hint": "Aktivlar minus ta'minotchi qarzi.",
+      "mm_net_unmeasured": "Bloklardan biri hisoblanmadi — sof qoldiq ko'rsatilmaydi (yarim yig'indi noto'g'ri qaror berardi).",
+      "mm_unconverted": "Kursi yo'q (jamiga qo'shilmagan)",
+      "mm_unmeasured": "Hisoblanmadi — bu yerda nol emas, o'lchov yo'q.",
+      "mm_liability_hint": "Bu pul bizniki emas — sof qoldiqdan ayiriladi.",
+      "mm_footer_hint": "Panel hech narsani bloklamaydi. Batafsil ko'rish uchun tegishli hisobotga o'ting.",
+      "mm_block_cash": "Kassalarda",
+      "mm_block_bank": "Bank hisoblarida",
+      "mm_block_customer_debt": "Mijoz qarzida",
+      "mm_block_supplier_debt": "Ta'minotchi qarzida",
+      "mm_block_driver_cash": "Haydovchi qo'lida",
+      "mm_block_goods_in_transit": "Yo'ldagi tovarda"
     },
     "menejerLive": {
       "alert_count": "Diqqat talab qiladi: {count}",

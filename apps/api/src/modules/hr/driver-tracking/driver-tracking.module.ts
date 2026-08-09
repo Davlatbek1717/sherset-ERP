@@ -43,6 +43,8 @@ import { YandexGeocodeService } from './yandex-geocode.service.js';
     DriverCashService,
     DriverEtaWorkerCron,
   ],
-  exports: [DriverShiftService],
+  // `DriverCashService` — MK15 pul manzarasi panelida «haydovchi qo'lidagi
+  // naqd» bloki shu servisdan o'qiladi (yangi hisoblagich qurilmadi).
+  exports: [DriverShiftService, DriverCashService],
 })
 export class DriverTrackingModule {}

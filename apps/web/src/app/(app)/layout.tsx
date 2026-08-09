@@ -486,6 +486,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     // hodisa jurnali ustidagi ko'rinish (yangi jadval EMAS). Kunlik ish
     // ro'yxatlaridan keyin ataylab: bu bo'lib O'TGAN qarorlarning tarixi.
     { key: 'decisions', label: tMenejer('decisions'), href: '/menejer/qarorlar' },
+    // 4M TZ §8.1/1 (MK15) — «korxona puli qayerda»: kassa · bank · mijoz qarzi ·
+    // ta'minotchi qarzi · haydovchi naqdi · yo'ldagi tovar. Byudjetdan keyin
+    // ataylab: byudjet REJAni, bu esa HOZIRGI holatni ko'rsatadi. Har raqam
+    // mavjud hisobotdan olinadi — yangi formula yo'q.
+    { key: 'money_map', label: tMenejer('money_map'), href: '/menejer/pul-manzarasi' },
     // 4M §7 (M-Q7) — «menejerni kim nazorat qiladi»: egaga haftalik xulosa.
     { key: 'weekly_summary', label: tMenejer('weekly_summary'), href: '/menejer/haftalik' },
     // 4M TZ §2.4/§0.2 (MK09) — «bu raqamga qanchalik ishonish mumkin».

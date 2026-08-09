@@ -2,7 +2,11 @@ import { Module } from '@nestjs/common';
 import { PrismaModule } from '../../prisma/prisma.module.js';
 import { AuthModule } from '../auth/auth.module.js';
 import { DebtModule } from '../debt/debt.module.js';
+import { DriverTrackingModule } from '../hr/driver-tracking/driver-tracking.module.js';
+import { MoneyModule } from '../money/money.module.js';
 import { PermissionsModule } from '../permissions/permissions.module.js';
+import { ReportModule } from '../report/report.module.js';
+import { StockModule } from '../stock/stock.module.js';
 import { DebtCollectionService } from './collection/debt-collection.service.js';
 import { ManagerCollectionController } from './collection/manager-collection.controller.js';
 import { ManagerInventoryController } from './inventory/manager-inventory.controller.js';
@@ -20,6 +24,8 @@ import { KpiMetricCatalogService } from './kpi/kpi-metric-catalog.service.js';
 import { ManagerKpiController } from './kpi/manager-kpi.controller.js';
 import { OwnerWeeklySummaryService } from './kpi/owner-weekly-summary.service.js';
 import { LiveStatusService } from './live/live-status.service.js';
+import { MoneyMapController } from './money-map/money-map.controller.js';
+import { MoneyMapService } from './money-map/money-map.service.js';
 import { ManagerQueueController } from './queue/manager-queue.controller.js';
 import { ManagerQueueService } from './queue/manager-queue.service.js';
 import { ManagerSlaController } from './sla/manager-sla.controller.js';
@@ -51,7 +57,23 @@ import { ManagerSlaService } from './sla/manager-sla.service.js';
   // eslatmani `DebtService.sendBulkReminders` ga topshiradi (yangi jo'natgich
   // qurilmadi). Hech bir test DI grafini qurmaydi ⇒ modulni import qilishni
   // unutish faqat runtime'da chiqardi.
-  imports: [PrismaModule, AuthModule, PermissionsModule, DebtModule],
+  //
+  // MK15 — `MoneyMapService` TO'RTTA begona modul servisidan o'qiydi, shuning
+  // uchun ularning hammasi OSHKORA import qilinadi: `MoneyModule` (kassa/bank
+  // qoldig'i), `ReportModule` (kontragent saldosi), `StockModule` (yo'ldagi
+  // tovar), `DriverTrackingModule` (haydovchi naqdi). Bu yerda ham o'sha
+  // qoida: DI grafini hech bir unit test qurmaydi ⇒ import unutilsa faqat
+  // runtime'da chiqadi (`app-boot.test.ts` shuning uchun bor).
+  imports: [
+    PrismaModule,
+    AuthModule,
+    PermissionsModule,
+    DebtModule,
+    MoneyModule,
+    ReportModule,
+    StockModule,
+    DriverTrackingModule,
+  ],
   controllers: [
     KpiConfigController,
     ManagerKpiController,
@@ -60,6 +82,7 @@ import { ManagerSlaService } from './sla/manager-sla.service.js';
     ManagerCollectionController,
     ManagerSlaController,
     ManagerJournalController,
+    MoneyMapController,
   ],
   providers: [
     EmployeeDailyKpiService,
@@ -76,6 +99,7 @@ import { ManagerSlaService } from './sla/manager-sla.service.js';
     DebtCollectionService,
     ManagerSlaService,
     DecisionJournalService,
+    MoneyMapService,
   ],
   exports: [EmployeeDailyKpiService, DailyKpiAcceptanceService],
 })

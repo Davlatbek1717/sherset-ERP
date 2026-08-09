@@ -194,3 +194,43 @@ describe('outstanding — «kimda qancha turibdi»', () => {
     expect(client.employee.findMany).not.toHaveBeenCalled();
   });
 });
+
+describe('outstandingByCurrency — MK15 pul manzarasi uchun kesim', () => {
+  it("valyuta bo'yicha yig'iladi, valyutalar QO'SHILMAYDI", async () => {
+    const { svc, handover } = makeService({});
+    handover.groupBy.mockResolvedValue([
+      { currency: 'UZS', _sum: { amountMinor: 750_000n } },
+      { currency: 'USD', _sum: { amountMinor: 20_00n } },
+    ] as never);
+
+    expect(await svc.outstandingByCurrency(ACCOUNT)).toEqual([
+      { currency: 'UZS', amountMinor: 750_000n },
+      { currency: 'USD', amountMinor: 20_00n },
+    ]);
+  });
+
+  it("faqat 'pending' — topshirilgan/bekor qilingan pul haydovchi qo'lida emas", async () => {
+    const { svc, handover } = makeService({});
+    await svc.outstandingByCurrency(ACCOUNT);
+    const arg = handover.groupBy.mock.calls[0]?.[0] as {
+      by: string[];
+      where: { accountId: string; status: string };
+    };
+    expect(arg.by).toEqual(['currency']);
+    expect(arg.where.status).toBe('pending');
+    expect(arg.where.accountId).toBe(ACCOUNT);
+  });
+
+  it("yozuv yo'q — bo'sh massiv (o'lchandi va nol), null EMAS", async () => {
+    const { svc } = makeService({});
+    expect(await svc.outstandingByCurrency(ACCOUNT)).toEqual([]);
+  });
+
+  it("_sum null bo'lsa 0n — qator jimgina tushib qolmaydi", async () => {
+    const { svc, handover } = makeService({});
+    handover.groupBy.mockResolvedValue([{ currency: 'UZS', _sum: { amountMinor: null } }] as never);
+    expect(await svc.outstandingByCurrency(ACCOUNT)).toEqual([
+      { currency: 'UZS', amountMinor: 0n },
+    ]);
+  });
+});

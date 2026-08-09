@@ -171,4 +171,62 @@ export class MoneyService {
     });
     return row ? { balanceMinor: row.balanceMinor.toString(), currency: row.currency } : null;
   }
+
+  /**
+   * Every non-archived money source of one kind, with its materialized balance
+   * AND the provenance of that balance (MK15).
+   *
+   * `balanceMinor: null` means «never measured» — NOT zero. The distinction is
+   * load-bearing and asymmetric between the two source kinds:
+   *
+   *  · `cash_desk` — every till movement has always gone through this ledger
+   *    (see `allowNegative` above), so the stored column is trustworthy from
+   *    row one. A till at `0` really holds nothing. `ledgered: true` always.
+   *  · `organization_account` — NOTHING wrote this column before Faza 11, so a
+   *    stored `0` on an account with no ledger row means «we never measured
+   *    it». Reporting that as `0 so'm in the bank` is a lie the owner would
+   *    act on, so such an account yields `null` and the caller flags the block
+   *    as partial/uncollected.
+   *
+   * A non-zero balance on a bank account with no ledger row is STILL null:
+   * such a row can only come from a hand-edit or a migration, and treating it
+   * as a real measurement would punch a hole straight through the rule.
+   */
+  async sourceBalances(
+    accountId: string,
+    kind: MoneySourceKind,
+  ): Promise<
+    Array<{ id: string; currency: string; balanceMinor: bigint | null; ledgered: boolean }>
+  > {
+    const where = { accountId, archived: false };
+    const select = { id: true, currency: true, balanceMinor: true };
+
+    if (kind === 'cash_desk') {
+      const desks = await this.prisma.client.cashDesk.findMany({ where, select });
+      return desks.map((d) => ({
+        id: d.id,
+        currency: d.currency,
+        balanceMinor: d.balanceMinor,
+        ledgered: true,
+      }));
+    }
+
+    const accounts = await this.prisma.client.organizationAccount.findMany({ where, select });
+    if (accounts.length === 0) return [];
+
+    const ledgered = await this.prisma.client.moneyOperation.groupBy({
+      by: ['organizationAccountId'],
+      where: { accountId, organizationAccountId: { in: accounts.map((a) => a.id) } },
+    });
+    const measured = new Set(
+      ledgered.map((g) => g.organizationAccountId).filter((id): id is string => id !== null),
+    );
+
+    return accounts.map((a) => ({
+      id: a.id,
+      currency: a.currency,
+      balanceMinor: measured.has(a.id) ? a.balanceMinor : null,
+      ledgered: measured.has(a.id),
+    }));
+  }
 }

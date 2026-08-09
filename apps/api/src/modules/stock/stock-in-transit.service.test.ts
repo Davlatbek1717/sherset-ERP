@@ -92,3 +92,130 @@ describe('StockInTransitService — getInTransitMap (expected-incoming, §5)', (
     expect(arg.where.purchaseOrder.accountId).toBe('acc');
   });
 });
+
+/**
+ * MK15 — «yo'ldagi tovarda qancha PUL turibdi».
+ *
+ * The value method deliberately lives HERE, on the service that already owns
+ * the in-transit definition, rather than in the manager panel: the panel must
+ * not get to decide what «in transit» means. It reuses the very same
+ * per-position `MAX(0, qty − received)` clamp, so quantity and value can never
+ * disagree, and it prices the remainder with the shared `computePositionTotal`
+ * primitive (`@moysklad/money`) — the same one the stored document totals use.
+ *
+ * PO-level `sumMinor − receivedSumMinor` was REJECTED as the source: that is an
+ * aggregate-level clamp, so one over-received line would silently erode another
+ * line's expected-incoming value (the exact defect the per-position clamp exists
+ * to prevent).
+ */
+describe('StockInTransitService — getInTransitValueByCurrency (MK15)', () => {
+  function makeValueService(
+    positions: Array<{
+      quantity: Prisma.Decimal;
+      receivedQty: Prisma.Decimal;
+      priceMinor: bigint;
+      discount?: Prisma.Decimal;
+      purchaseOrder: { storeId: string; currency: string };
+    }>,
+  ) {
+    const findManyPositions = vi.fn(async () =>
+      positions.map((p) => ({
+        assortmentKind: 'product',
+        assortmentId: 'P1',
+        discount: D(0),
+        ...p,
+      })),
+    );
+    const client = { purchaseOrderPosition: { findMany: findManyPositions } };
+    const svc = new StockInTransitService({ client } as never);
+    return { svc, findManyPositions };
+  }
+
+  it('qolgan miqdorni narxga ko‘paytiradi (qabul qilingani chiqarib tashlanadi)', async () => {
+    const { svc } = makeValueService([
+      {
+        quantity: D(10),
+        receivedQty: D(4),
+        priceMinor: 1_000_00n,
+        purchaseOrder: { storeId: 'S1', currency: 'UZS' },
+      },
+    ]);
+    // qolgan 6 × 1 000.00 = 6 000.00 → 600 000 tiyin
+    expect(await svc.getInTransitValueByCurrency('acc')).toEqual([
+      { currency: 'UZS', amountMinor: 600_000n },
+    ]);
+  });
+
+  it('ortiqcha qabul qilingan qator MANFIY qo‘shmaydi (per-position clamp)', async () => {
+    const { svc } = makeValueService([
+      {
+        quantity: D(5),
+        receivedQty: D(9),
+        priceMinor: 1_000_00n,
+        purchaseOrder: { storeId: 'S1', currency: 'UZS' },
+      },
+      {
+        quantity: D(3),
+        receivedQty: D(0),
+        priceMinor: 1_000_00n,
+        purchaseOrder: { storeId: 'S1', currency: 'UZS' },
+      },
+    ]);
+    expect(await svc.getInTransitValueByCurrency('acc')).toEqual([
+      { currency: 'UZS', amountMinor: 300_000n },
+    ]);
+  });
+
+  it('chegirma qo‘llanadi (umumiy `computePositionTotal` bilan)', async () => {
+    const { svc } = makeValueService([
+      {
+        quantity: D(2),
+        receivedQty: D(0),
+        priceMinor: 1_000_00n,
+        discount: D(10),
+        purchaseOrder: { storeId: 'S1', currency: 'UZS' },
+      },
+    ]);
+    // 2 × 1 000.00 = 2 000.00, −10% = 1 800.00 → 180 000 tiyin
+    expect(await svc.getInTransitValueByCurrency('acc')).toEqual([
+      { currency: 'UZS', amountMinor: 180_000n },
+    ]);
+  });
+
+  it('valyutalar ALOHIDA qoladi — bu yerda konvertatsiya YO‘Q', async () => {
+    const { svc } = makeValueService([
+      {
+        quantity: D(1),
+        receivedQty: D(0),
+        priceMinor: 1_000_00n,
+        purchaseOrder: { storeId: 'S1', currency: 'UZS' },
+      },
+      {
+        quantity: D(1),
+        receivedQty: D(0),
+        priceMinor: 50_00n,
+        purchaseOrder: { storeId: 'S2', currency: 'USD' },
+      },
+    ]);
+    expect(await svc.getInTransitValueByCurrency('acc')).toEqual([
+      { currency: 'UZS', amountMinor: 100_000n },
+      { currency: 'USD', amountMinor: 5_000n },
+    ]);
+  });
+
+  it('yo‘lda tovar yo‘q — bo‘sh massiv (o‘lchandi va nol)', async () => {
+    const { svc } = makeValueService([]);
+    expect(await svc.getInTransitValueByCurrency('acc')).toEqual([]);
+  });
+
+  it('faqat faol xarid buyurtmalari (o‘chirilganlar emas)', async () => {
+    const { svc, findManyPositions } = makeValueService([]);
+    await svc.getInTransitValueByCurrency('acc');
+    const arg = findManyPositions.mock.calls[0]?.[0] as {
+      where: { accountId: string; purchaseOrder: { state: { in: string[] }; deletedAt: null } };
+    };
+    expect(arg.where.accountId).toBe('acc');
+    expect(arg.where.purchaseOrder.state).toEqual({ in: ['confirmed', 'partially_received'] });
+    expect(arg.where.purchaseOrder.deletedAt).toBeNull();
+  });
+});

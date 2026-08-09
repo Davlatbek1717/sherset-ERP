@@ -161,6 +161,56 @@ export interface DataQualityPanel {
   };
 }
 
+// ─── «Korxona puli qayerda» — pul manzarasi paneli (4M TZ §8.1/1 · MK15) ──
+
+/** Panel bloklari — server tartibida (ekran tartibi ham shu). */
+export type MoneyMapBlockKey =
+  | 'cash'
+  | 'bank'
+  | 'customer_debt'
+  | 'supplier_debt'
+  | 'driver_cash'
+  | 'goods_in_transit';
+
+/** Kursi topilmagani uchun jamiga QO'SHILMAGAN pul — o'z valyutasida. */
+export interface UnconvertedAmount {
+  currency: string;
+  amountMinor: string;
+}
+
+export interface MoneyMapBlock {
+  key: MoneyMapBlockKey;
+  /** `asset` — bizniki · `liability` — biz qarzdormiz (yakunda ayiriladi). */
+  direction: 'asset' | 'liability';
+  /** Raqam qaysi servisdan kelgani (provenance — ekranda ham ko'rinadi). */
+  source: string;
+  /**
+   * Bazaga konsolidatsiya qilingan summa. **`null` = «hisoblanmadi»**, `0`
+   * EMAS — ekranda `—` bo'lib chiziladi. Bank hisobi uchun bu real holat:
+   * daftar yozuvi bo'lmagan hisobning qoldig'i hech qachon o'lchanmagan.
+   */
+  amountMinor: string | null;
+  quality: DataQualityLevel;
+  unconvertedByCurrency: UnconvertedAmount[];
+  mixedCurrency: boolean;
+}
+
+export interface MoneyMapSnapshot {
+  blocks: MoneyMapBlock[];
+  summary: {
+    /** Aktivlar − passivlar. Bitta blok o'lchanmagan bo'lsa — **`null`**. */
+    netMinor: string | null;
+    currency: string;
+    quality: DataQualityLevel;
+    unconvertedByCurrency: UnconvertedAmount[];
+  };
+}
+
+export const managerMoneyMapApi = {
+  /** «Hozir qayerda qancha pul turibdi» — parametrsiz, joriy holat. */
+  snapshot: () => api.get<MoneyMapSnapshot>('/manager/money-map'),
+};
+
 export const managerKpiApi = {
   /** Ma'lumot sifati paneli. Davr berilmasa — oxirgi 30 kun. */
   dataQuality: (range?: { from?: string; to?: string }) => {

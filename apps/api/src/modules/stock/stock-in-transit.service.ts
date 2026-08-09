@@ -1,4 +1,5 @@
 import { Prisma } from '@moysklad/db';
+import { computePositionTotal } from '@moysklad/money';
 import { Inject, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
 
@@ -66,6 +67,9 @@ export class StockInTransitService {
       assortmentKind: string;
       assortmentId: string;
       remaining: Prisma.Decimal;
+      priceMinor: bigint;
+      discount: Prisma.Decimal;
+      currency: string;
     }>
   > {
     const positions = await this.prisma.client.purchaseOrderPosition.findMany({
@@ -84,7 +88,13 @@ export class StockInTransitService {
         assortmentId: true,
         quantity: true,
         receivedQty: true,
-        purchaseOrder: { select: { storeId: true } },
+        // MK15: pricing rides along on the SAME query so the money view can
+        // never drift from the quantity view (different filters would let
+        // «Ожидание» and «yo'ldagi tovar puli» disagree about what is in
+        // transit). The quantity callers simply ignore these columns.
+        priceMinor: true,
+        discount: true,
+        purchaseOrder: { select: { storeId: true, currency: true } },
       },
     });
 
@@ -93,6 +103,9 @@ export class StockInTransitService {
       assortmentKind: string;
       assortmentId: string;
       remaining: Prisma.Decimal;
+      priceMinor: bigint;
+      discount: Prisma.Decimal;
+      currency: string;
     }> = [];
     for (const p of positions) {
       const remaining = p.quantity.minus(p.receivedQty);
@@ -102,6 +115,9 @@ export class StockInTransitService {
         assortmentKind: p.assortmentKind,
         assortmentId: p.assortmentId,
         remaining,
+        priceMinor: p.priceMinor,
+        discount: p.discount,
+        currency: p.purchaseOrder.currency,
       });
     }
     return out;
@@ -138,5 +154,49 @@ export class StockInTransitService {
       map.set(key, prev ? prev.plus(p.remaining) : p.remaining);
     }
     return map;
+  }
+
+  /**
+   * MK15 — «yo'ldagi tovarda qancha PUL turibdi», valyuta kesimida.
+   *
+   * Lives here, on the owner of the in-transit definition, so the manager
+   * panel never gets to invent its own idea of «in transit»: the SAME
+   * per-position `MAX(0, qty − received)` clamp feeds both the quantity map
+   * and this value, and pricing goes through the shared
+   * `computePositionTotal` primitive the stored document totals already use.
+   *
+   * The PO header's `sumMinor − receivedSumMinor` was deliberately NOT used:
+   * that clamps at the aggregate level, so a single over-received line would
+   * silently eat another line's expected-incoming value — precisely the defect
+   * the per-position clamp exists to prevent.
+   *
+   * VAT is excluded (`vatEnabled: false`): the panel answers «how much of our
+   * money is tied up in goods on the way», i.e. the net purchase value.
+   *
+   * Currencies are NOT summed here — each purchase order carries its own
+   * currency, and consolidation belongs to the single `consolidateToBase`
+   * contract at the caller. First-seen order is preserved so the response is
+   * deterministic.
+   */
+  async getInTransitValueByCurrency(
+    accountId: string,
+    opts: { storeId?: string } = {},
+  ): Promise<Array<{ currency: string; amountMinor: bigint }>> {
+    const positions = await this.queryInTransitPositions(accountId, opts);
+    const byCurrency = new Map<string, bigint>();
+    for (const p of positions) {
+      const { totalMinor } = computePositionTotal(
+        {
+          quantity: p.remaining.toString(),
+          priceMinor: p.priceMinor.toString(),
+          discount: p.discount.toString(),
+          vat: null,
+        },
+        false,
+        false,
+      );
+      byCurrency.set(p.currency, (byCurrency.get(p.currency) ?? 0n) + totalMinor);
+    }
+    return Array.from(byCurrency, ([currency, amountMinor]) => ({ currency, amountMinor }));
   }
 }

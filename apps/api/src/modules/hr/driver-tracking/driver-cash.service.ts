@@ -208,4 +208,29 @@ export class DriverCashService {
       pendingMinor: (r._sum.amountMinor ?? 0n).toString(),
     }));
   }
+
+  /**
+   * Topshirilmagan naqd — VALYUTA kesimida (MK15 «korxona puli qayerda»).
+   *
+   * `outstanding()` haydovchi bo'yicha guruhlaydi va valyutani umuman
+   * ko'rmaydi, ya'ni uning summalarini qo'shish valyutalarni aralashtirardi.
+   * Panelga esa aynan valyuta kesimi kerak — konsolidatsiyani u yuqorida,
+   * yagona `consolidateToBase` shartnomasi bilan bajaradi.
+   *
+   * Faqat `pending`: `handed` pul allaqachon kassada (u yerda ikkinchi marta
+   * sanalardi), `cancelled` esa umuman olinmagan.
+   */
+  async outstandingByCurrency(
+    accountId: string,
+  ): Promise<Array<{ currency: string; amountMinor: bigint }>> {
+    const rows = await this.prisma.client.driverCashHandover.groupBy({
+      by: ['currency'],
+      where: { accountId, status: 'pending' },
+      _sum: { amountMinor: true },
+    });
+    return rows.map((r) => ({
+      currency: r.currency,
+      amountMinor: r._sum.amountMinor ?? 0n,
+    }));
+  }
 }
