@@ -1766,7 +1766,10 @@ Phase-2 verified — nimalar brauzerda ko'rildi)*
 ## Faza F001 — `Branch` modeli + migratsiya (bitta «Asosiy» filial) (sana: 2026-08-09)
 
 **Holat:** BAJARILDI
-**Commit(lar):** `<hash>` — `feat(branch): F001 — Branch modeli + «Asosiy» filial migratsiyasi`
+**Commit(lar):** `cfad3900` — `feat(branch): F001 — Branch modeli + «Asosiy» filial migratsiyasi`
+*(hook'lar bir martaga chetlab o'tilgan — parallel sessiya ~90 faylni o'zgartirayotgan edi;
+gate'lar qo'lda to'liq yugurtirildi, tarkib `git show --stat` bilan tekshirildi: 18 fayl, begona
+fayl tushmagan)*
 
 ### Nima o'zgardi
 - `packages/db/prisma/schema.prisma` — `model Branch` (`accountId`, `organizationId?`, `name`,
