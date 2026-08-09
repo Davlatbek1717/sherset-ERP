@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  type CardPrices,
   INFLOW_DOC_TYPES,
   SALES_DOC_TYPES,
+  SOLD_RETAIL_STATES,
+  type SoldLineRowShape,
   assembleSignalInputs,
+  assembleSoldLines,
+  cardKeyOf,
   resolveUnitCostMinor,
 } from './manager-inventory.service.js';
 
@@ -152,6 +157,184 @@ describe("hujjat turlari to'plami", () => {
     for (const t of INFLOW_DOC_TYPES) {
       expect(t.endsWith('_out')).toBe(false);
       expect(SALES_DOC_TYPES as readonly string[]).not.toContain(t);
+    }
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// MK18 — xato narx: DB shakli → sof modul kirishi
+// ───────────────────────────────────────────────────────────────────────────
+
+const AT = new Date('2026-08-09T09:00:00.000Z');
+
+function soldRow(over: Partial<SoldLineRowShape> = {}): SoldLineRowShape {
+  return {
+    docType: 'retailsale',
+    docId: 'sale-1',
+    docName: 'RS-0001',
+    lineId: 'line-1',
+    assortmentKind: 'product',
+    assortmentId: 'p1',
+    assortmentName: 'Kabel 3×2.5',
+    quantity: '1',
+    priceMinor: 100_000n,
+    discountPercent: 0,
+    costMinor: 60_000n,
+    frozenBaseMinor: null,
+    soldById: 'emp-1',
+    soldByName: 'Aziz Karimov',
+    at: AT,
+    ...over,
+  };
+}
+
+const card = (over: Partial<CardPrices> = {}): CardPrices => ({
+  baseMinor: 100_000n,
+  wholesaleMinor: 80_000n,
+  ...over,
+});
+
+describe("assembleSoldLines — o'rtacha narx", () => {
+  it("qator O'Z o'rtachasiga kirmaydi (leave-one-out)", () => {
+    // Aks holda 3 sotuvli tovarda bitta 10× xato o'rtachani o'zi ko'tarib,
+    // keyin o'sha o'rtachaga nisbatan «normal» bo'lib chiqardi.
+    const inputs = assembleSoldLines(
+      [
+        soldRow({ lineId: 'a', priceMinor: 100_000n }),
+        soldRow({ lineId: 'b', priceMinor: 200_000n }),
+        soldRow({ lineId: 'c', priceMinor: 300_000n }),
+      ],
+      new Map(),
+    );
+
+    expect(inputs[0]?.averageMinor).toBe(250_000n);
+    expect(inputs[0]?.averageSampleCount).toBe(2);
+    expect(inputs[1]?.averageMinor).toBe(200_000n);
+  });
+
+  it("nol/manfiy narx o'rtacha havzasini BUZMAYDI", () => {
+    const inputs = assembleSoldLines(
+      [
+        soldRow({ lineId: 'a', priceMinor: 100_000n }),
+        soldRow({ lineId: 'b', priceMinor: 200_000n }),
+        soldRow({ lineId: 'c', priceMinor: 0n }),
+      ],
+      new Map(),
+    );
+
+    // 'a' uchun havzada faqat 'b' qoladi — 0 hisobga olinmaydi.
+    expect(inputs[0]?.averageMinor).toBe(200_000n);
+    expect(inputs[0]?.averageSampleCount).toBe(1);
+    // 'c' o'zi havzada emas, shuning uchun ikkalasini ham ko'radi.
+    expect(inputs[2]?.averageSampleCount).toBe(2);
+    expect(inputs[2]?.averageMinor).toBe(150_000n);
+  });
+
+  it("yolg'iz sotuvda o'rtacha NULL — 0 emas", () => {
+    const [input] = assembleSoldLines([soldRow()], new Map());
+
+    expect(input?.averageMinor).toBeNull();
+    expect(input?.averageSampleCount).toBe(0);
+  });
+
+  it("tovar va modifikatsiya ALOHIDA guruh (bir xil id bo'lsa ham)", () => {
+    const inputs = assembleSoldLines(
+      [
+        soldRow({
+          lineId: 'a',
+          assortmentKind: 'product',
+          assortmentId: 'x',
+          priceMinor: 100_000n,
+        }),
+        soldRow({
+          lineId: 'b',
+          assortmentKind: 'product',
+          assortmentId: 'x',
+          priceMinor: 300_000n,
+        }),
+        soldRow({
+          lineId: 'c',
+          assortmentKind: 'variant',
+          assortmentId: 'x',
+          priceMinor: 900_000n,
+        }),
+      ],
+      new Map(),
+    );
+
+    expect(inputs[0]?.averageMinor).toBe(300_000n);
+    // Modifikatsiya o'z guruhida yolg'iz — tovarning o'rtachasini olmaydi.
+    expect(inputs[2]?.averageMinor).toBeNull();
+  });
+});
+
+describe("assembleSoldLines — mo'ljallar", () => {
+  it('MUZLATILGAN karta narxi bugungi kartadan USTUN', () => {
+    // Chek o'sha kuni ko'rsatilgan narx bilan solishtiriladi; karta keyin
+    // o'zgargan bo'lsa, o'tgan chek qayta baholanmaydi.
+    const [input] = assembleSoldLines(
+      [soldRow({ frozenBaseMinor: 120_000n })],
+      new Map([[cardKeyOf('product', 'p1'), card({ baseMinor: 999_000n })]]),
+    );
+
+    expect(input?.referenceMinor).toBe(120_000n);
+  });
+
+  it("yuk xatida muzlatilgan narx yo'q — kartaning bugungi narxi olinadi", () => {
+    const [input] = assembleSoldLines(
+      [soldRow({ docType: 'demand', frozenBaseMinor: null })],
+      new Map([[cardKeyOf('product', 'p1'), card({ baseMinor: 150_000n })]]),
+    );
+
+    expect(input?.referenceMinor).toBe(150_000n);
+    expect(input?.wholesaleMinor).toBe(80_000n);
+  });
+
+  it("karta topilmasa mo'ljal NULL — taxmin qilinmaydi", () => {
+    const [input] = assembleSoldLines([soldRow()], new Map());
+
+    expect(input?.referenceMinor).toBeNull();
+    expect(input?.wholesaleMinor).toBeNull();
+  });
+
+  it("xizmat qatori (birliksiz) kartaga ham, guruhga ham qo'shilmaydi", () => {
+    const inputs = assembleSoldLines(
+      [
+        soldRow({ lineId: 'a', assortmentId: null, priceMinor: 500_000n }),
+        soldRow({ lineId: 'b', priceMinor: 100_000n }),
+      ],
+      new Map([[cardKeyOf('product', 'p1'), card()]]),
+    );
+
+    expect(inputs[0]?.referenceMinor).toBeNull();
+    expect(inputs[0]?.averageMinor).toBeNull();
+    // 'b' xizmat qatorining narxini o'z o'rtachasiga qo'shib olmaydi.
+    expect(inputs[1]?.averageMinor).toBeNull();
+  });
+
+  it("muzlatilgan tan narx va chegirma o'zgarishsiz o'tadi", () => {
+    const [input] = assembleSoldLines(
+      [soldRow({ costMinor: 55_000n, discountPercent: 12.5, quantity: '2.5' })],
+      new Map(),
+    );
+
+    expect(input?.costMinor).toBe(55_000n);
+    expect(input?.discountPercent).toBe(12.5);
+    expect(input?.quantity).toBe('2.5');
+  });
+});
+
+describe('sotuv sanaladigan chek holatlari', () => {
+  it("to'liq qaytarilgan chek ham hisobga olinadi", () => {
+    // `refunded` — qaytarilgan ASL chek. Uni tashlab ketish o'sha kungi xato
+    // narxni ro'yxatdan yo'qotardi; oyna cheklar `refundedFromId` bilan
+    // chiqariladi (so'rov shartida), holat bilan emas.
+    expect(SOLD_RETAIL_STATES as readonly string[]).toEqual(['posted', 'refunded']);
+  });
+
+  it('qoralama va bekor qilingan chek sotuv EMAS', () => {
+    for (const s of ['draft', 'open', 'picking', 'ready', 'cancelled']) {
+      expect(SOLD_RETAIL_STATES as readonly string[]).not.toContain(s);
     }
   });
 });
