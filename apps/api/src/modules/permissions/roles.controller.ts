@@ -139,6 +139,9 @@ const KNOWN_ENTITIES = [
   'counterparty',
   'contactperson',
   'organization',
+  // Filial (8-bo'lim, F001) — «Master data»: filial STIR ostidagi tashkiliy
+  // birlik, hujjat emas.
+  'branch',
   'store',
   'cashdesk',
   'bankaccount',
@@ -241,6 +244,7 @@ const CATEGORY_BY_ENTITY: Record<(typeof KNOWN_ENTITIES)[number], (typeof CATEGO
   counterparty: 'Master data',
   contactperson: 'Master data',
   organization: 'Master data',
+  branch: 'Master data',
   store: 'Master data',
   cashdesk: 'Master data',
   bankaccount: 'Master data',

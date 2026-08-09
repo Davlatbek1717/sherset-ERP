@@ -54,6 +54,7 @@ model Account {
 
   employees                      Employee[]
   organizations                  Organization[]
+  branches                       Branch[]
   stores                         Store[]
   counterparties                 Counterparty[]
   savedFilters                   SavedFilter[]
@@ -725,6 +726,7 @@ model Organization {
   retireOrders       RetireOrder[]            @relation("RetireOrderOrg")
   retailStores       RetailStore[]            @relation("RetailStoreOrg")
   smenas             Smena[]                  @relation("SmenaOrganization")
+  branches           Branch[]                 @relation("BranchOrganization")
 
   @@index([accountId, archived])
   @@map("organizations")
@@ -733,6 +735,61 @@ model Organization {
 // =========================================================================
 // Reference Data
 // =========================================================================
+
+/// Filial (branch) — 8-bo'lim TZ `2026-08-02-kop-filiallilik-tz-design.md` §2.3.
+///
+/// NEGA ALOHIDA MODEL, NEGA `Store` FILIALGA AYLANTIRILMAYDI (TZ §2.2 — keyingi
+/// agent qayta muhokama qilmasin):
+///   · bitta filialda BIR NECHTA ombor bo'ladi (asosiy ombor + savdo zali);
+///   · filialda kassa, xodim, plan, hisobot bor — bular ombor xususiyati EMAS;
+///   · `Store` allaqachon o'z ierarxiyasiga ega (`parentId`) va 7-bo'limda
+///     zona/yacheyka bilan band.
+///
+/// NEGA BITTA YURIDIK SHAXS (TZ §2.1): egasi filiallararo harakat uchun
+/// «ichki ko'chirish (Move)» ni tanladi — alohida yuridik shaxslar orasida
+/// tovar ko'chirish huquqan RASMIY SOTUV bo'lishi shart edi. Umumiy mijozlar
+/// bazasi va umumiy xodimlar ham bir yuridik shaxs belgisi.
+///
+/// `organizationId` NEGA BOR (TZ §2.3): bugun hamma filial bitta STIR ostida,
+/// lekin ertaga alohida yuridik shaxs ochilsa model BUZILMAYDI — o'sha filialga
+/// boshqa `Organization` biriktiriladi va filiallararo harakat TZ §5.2 bo'yicha
+/// rasmiy sotuvga o'tadi. Shuning uchun nullable: F001 da hech kimga majburiy
+/// emas (mavjud xulq o'zgarmasligi — regressiya qulfi).
+///
+/// INVARIANT: har akkauntda AYNAN BITTA `isDefault` filial. Prisma qisman-unikal
+/// indeksni (partial unique index) ifodalay olmaydi, shuning uchun u
+/// migratsiya SQL'ida qo'lda turadi:
+///   `CREATE UNIQUE INDEX ... ON "branches" ("account_id") WHERE "is_default"`
+/// va `branch-migration.test.ts` uni qulflaydi.
+///
+/// `archived` — TZ §8 nomi va loyiha konvensiyasi (`Store`/`CashDesk`/
+/// `Organization` hammasida `archived`). Rejadagi `isActive` shuning teskarisi;
+/// ikki xil bayroq saqlanmaydi.
+model Branch {
+  id             String   @id @default(uuid()) @db.Uuid
+  accountId      String   @map("account_id") @db.Uuid
+  /// Yuridik shaxs — bugun hammasida bir xil (TZ §2.3).
+  organizationId String?  @map("organization_id") @db.Uuid
+  name           String   @db.VarChar(255)
+  code           String?  @db.VarChar(50)
+  address        String?
+  phone          String?  @db.VarChar(20)
+  /// Standart («Asosiy») filial — akkauntda AYNAN BITTA (yuqoridagi izoh).
+  isDefault      Boolean  @default(false) @map("is_default")
+  archived       Boolean  @default(false)
+  sortOrder      Int      @default(0) @map("sort_order")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+  /// Optimistic concurrency version (moysklad parity). See Product.version.
+  version        Int      @default(1)
+
+  account      Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  organization Organization? @relation("BranchOrganization", fields: [organizationId], references: [id], onDelete: SetNull)
+
+  @@unique([accountId, code])
+  @@index([accountId, archived])
+  @@map("branches")
+}
 
 // Store (ombor) — physical or logical inventory location.
 model Store {

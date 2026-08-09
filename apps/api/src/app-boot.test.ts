@@ -100,6 +100,10 @@ describe('marshrutlar to`qnashmaydi (FST_ERR_DUPLICATED_ROUTE)', () => {
     // test «to'qnashuv yo'q» deb yashil bo'laverardi.
     expect(routes.length).toBeGreaterThan(300);
     expect(routes.some((r) => r.path === 'manager/kpi/metrics')).toBe(true);
+    // Faza F001 — filial prefiksi ro'yxatga tushdi. Yuqoridagi «yetim modul»
+    // qo'riqchisi `BranchModule` AppModule'ga ulanganini alohida tekshiradi;
+    // bu qator esa route'ning O'ZI skanerga ko'rinishini qulflaydi.
+    expect(routes.some((r) => r.path === 'admin/branches')).toBe(true);
   });
 
   it('bitta `metod + yo`l` juftligi FAQAT bir marta e`lon qilingan', () => {

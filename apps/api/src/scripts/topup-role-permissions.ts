@@ -35,6 +35,7 @@ const NEW_ENTITIES = [
   'counterparty',
   'contactperson',
   'organization',
+  'branch',
   'store',
   'cashdesk',
   'bankaccount',

@@ -2,6 +2,18 @@
 
 **Yangilandi:** 2026-08-05 · **Manba:** 9 ta TZ hujjati (to'liq o'qilgan) + [master roadmap](docs/superpowers/specs/2026-08-02-master-roadmap.md) + `NEXT.md`
 
+> **▶ IJRO REJASI (2026-08-09):** [`docs/REJA-8-BOLIM-2026-08.md`](docs/REJA-8-BOLIM-2026-08.md) —
+> quyidagi bosqichlar **129 fazaga** bo'lindi va **ikki rejaga ajratildi** (2026-08-09):
+>
+> | Reja | Fazalar | Nima |
+> |---|---|---|
+> | [`docs/REJA-8-BOLIM-2026-08.md`](docs/REJA-8-BOLIM-2026-08.md) | **F001–F089** | 2,3,5,6,7,8-bo'limlar + F2/F3/F4 TZ'lari + **moysklad vizual 1:1** + ishonchlilik + sifat qarzlari |
+> | [`docs/REJA-MENEJER-KASSA-2026-08.md`](docs/REJA-MENEJER-KASSA-2026-08.md) | **MK01–MK40** | **1-Kassa** + **4/4M-Menejer** — *keyinroq hal qilinadi* |
+>
+> Har fazada maqsad · fayllar · TDD testlari · gate · **sessiya-boshi prompt** va hisobot jurnali
+> bor. **Har sessiya bitta faza**, keyin to'xtaydi. Ikki reja o'rtasidagi bog'liqlik MK faylining
+> boshida jadval bilan ko'rsatilgan. Bu fayl katakcha-tracker bo'lib qoladi (raqamlar jonli).
+
 > Bu fayl — **yagona bajarish ro'yxati**. Hamma katakcha belgilanganda loyiha **100% tayyor**.
 > Har TZ'ning har bosqichi (`B1`…`Bn`) shu yerda. Tartib — **bog'liqlik bo'yicha**.
 >
@@ -15,10 +27,10 @@
 
 | | Soni |
 |---|---|
-| **Qolgan bosqichlar** | **61** |
+| **Qolgan bosqichlar** | **60** |
 | Sifat qarzlari | 7 |
 | Brauzer-QA (Phase-2) o'tishlari | ~9 (har bo'lim uchun 1) |
-| **JAMI ish birligi** | **~77** |
+| **JAMI ish birligi** | **~76** |
 
 **Hisob:** 1 bosqich ≈ 1 sessiya. Kuniga **1 sessiya** → **~4 oy**; kuniga **2 sessiya** → **~2 oy**;
 kuniga **3 sessiya** → **~6 hafta**.
@@ -39,7 +51,7 @@ kuniga **3 sessiya** → **~6 hafta**.
 | 5 — Ta'minotchilar | — | **6** (B1–B6) |
 | 6 — HR | B8 (qisman) | **8** (B1–B7, B9) |
 | 7 — Ombor | B1 (qisman) | **11** (B2–B12) |
-| 8 — Ko'p filiallilik | — | **7** (B1–B7) |
+| 8 — Ko'p filiallilik | **B1** | **6** (B2–B7) |
 
 ---
 
@@ -78,11 +90,25 @@ kuniga **3 sessiya** → **~6 hafta**.
 
 # 🔜 QOLGAN ISHLAR (bajarish tartibida)
 
+## 🔎 Qoplama tekshiruvida topilgan (2026-08-09 — kodda tasdiqlangan)
+
+> Bu uchtasi hech bir `B`-bosqichga kirmay qolgan edi. Ijro rejasida: **F05**, **F20**, **F39**.
+
+- [ ] **Jihoz reyestri** (4M.4) — `Equipment`/`Asset` modeli YO'Q; javobgarlik taxtasida jihoz
+      bloki shu sababdan ataylab tashlangan, bo'shatish ro'yxatida ham bandi to'liq emas → **F05**
+- [ ] **Kassa `CASH_USD` naqd oqimi** — ulanmagan; smena yopishda **USD farqi yozilmaydi**
+      (hozirgi xulq `cashier-session/variance-wiring.test.ts` da qulflangan) → **F20**
+- [ ] **X2 — kassir kesimi hisobotlarda** — `apps/api/src/modules/report/` da `cashierId` **0 marta**
+      uchraydi; kassa xodim kesimi hamon `rs.owner_id` (hujjat egasi) bo'yicha → **F39**
+
 ## 🟡 To'lqin 2 — Struktura (keyin qimmatlashadi)
 
-- [ ] **8-Filial B1** — `Branch` modeli + migratsiya: bitta «Asosiy» filial
-      *(`Branch` YO'Q. Migratsiya: standart filial → `Store`/`CashDesk` biriktirish → xodimlar →
-      hujjatlarga backfill. Bir filialli holatda hech narsa o'zgarmasligi — regressiya qulfi)*
+- [x] **8-Filial B1** — `Branch` modeli + migratsiya: bitta «Asosiy» filial
+      *(**F001 · 2026-08-09 · Phase-1**: `Branch` modeli + `branches` jadvali + qisman-unikal indeks
+      «akkauntda aynan bitta `isDefault`» + `admin/branches` CRUD + `branch` ruxsat entity'si.
+      Lokal DB'da o'lchandi: 1 akkaunt → 1 «Asosiy» filial; backfill idempotent; 2-standart urinishi
+      P2002 bilan rad etildi. `Store`/`CashDesk`/xodim biriktirish → B2, hujjatlarga backfill → B3.
+      Browser-smoke YO'Q — bu fazada UI yo'q)*
 - [ ] **8-Filial B2** — `Store`/`CashDesk`/`Employee` bog'lanishi + **filial almashtirgich**
       *(`EmployeeBranch` ko'p-ko'pga, `Employee.defaultBranchId`)*
 - [ ] **8-Filial B3** — hujjatlarda `branchId` muhrlash + backfill

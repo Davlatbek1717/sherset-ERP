@@ -250,6 +250,7 @@ export class PermissionsService {
       'counterparty',
       'contactperson',
       'organization',
+      'branch',
       'store',
       'cashdesk',
       'bankaccount',

@@ -13,6 +13,7 @@ import { AuthModule } from './modules/auth/auth.module.js';
 import { KioskGuard } from './modules/auth/kiosk.guard.js';
 import { BankImportModule } from './modules/bank-import/bank-import.module.js';
 import { BomModule } from './modules/bom/bom.module.js';
+import { BranchModule } from './modules/branch/branch.module.js';
 import { BundleModule } from './modules/bundle/bundle.module.js';
 import { CallModule } from './modules/call/call.module.js';
 import { CashDeskModule } from './modules/cash-desk/cash-desk.module.js';
@@ -251,6 +252,7 @@ import { PrismaModule } from './prisma/prisma.module.js';
     EmailModule,
     ReportModule,
     OrganizationModule,
+    BranchModule,
     StoreAdminModule,
     CashDeskModule,
     OrganizationAccountModule,

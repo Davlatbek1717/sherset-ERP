@@ -35,6 +35,7 @@ export type PermissionEntity =
   | 'counterparty'
   | 'contactperson'
   | 'organization'
+  | 'branch'
   | 'store'
   | 'cashdesk'
   | 'bankaccount'

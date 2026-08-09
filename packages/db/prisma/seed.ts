@@ -67,6 +67,7 @@ async function main(): Promise<void> {
     'counterparty',
     'contactperson',
     'organization',
+    'branch',
     'store',
     'cashdesk',
     'bankaccount',
