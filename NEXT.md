@@ -483,6 +483,70 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > panelning real ma'lumotdagi ko'rinishi. **F011 (rollup) hamon ☐** — MK15 uni talab
 > qilmadi (hammasi jonli o'qish), lekin katta hisobda panel sekin bo'lishi mumkin.
 >
+> **🕒 2026-08-10a (REJA-MENEJER-KASSA **MK19** — 4M TZ §8.1/5: ertalabki brifing va kechki
+> yakun) — ✅ **Phase-1 complete** (strukturaviy + unit; **browser-smoke YO'Q**).**
+>
+> **Bajarildi (TDD — 73 yangi test: BE 62 + FE 11):**
+> `apps/api/src/modules/manager/briefing/` (yangi papka, 8 fayl) —
+> `day-briefing.ts` (**sof**, 25 test): blok registri + rol jadvali + «tinch kun» qoidasi +
+> Telegram digest matni va **dedup yorlig'i**. Prisma/Nest/`Date.now()` YO'Q ·
+> `day-briefing.service.ts` (18 test): OLTITA **mavjud** servisdan o'qish (`ManagerSlaService.board` ·
+> `DailyKpiAcceptanceService.queue` · `ManagerInventoryService.stockSignals` ·
+> `ReportService.salesReport` · `ShiftAcceptanceService.queue` · `ManagerQueueService.list`) +
+> `TelegramService.send` (mavjud outbox, Faza 28 claim'i) ·
+> `briefing-single-source.test.ts` (9 test) — **yangi hisob ochilmagani** qulfi: servis faqat
+> `telegramConfig`/`telegramOutbox` Prisma modellariga tegadi ·
+> `briefing-wiring.test.ts` (10 test) — DI simlari (`app-boot.test.ts` ichki papkani ko'rmaydi) ·
+> `manager-briefing.controller.ts` (`GET /manager/briefing/:kind` — `report:view`;
+> `POST /manager/briefing/:kind/telegram` — `report:update`) + Zod sxema ·
+> `manager.module.ts` — `CashierSessionModule` + `TelegramModule` OSHKORA import.
+> **FE:** `menejer/brifing/page.tsx` + `_components/briefing-screen.tsx` (11 test) +
+> `manager-api.ts` tiplari + `messages/{uz,ru}.json` (25 kalit ×2 + subnav) + `layout.tsx` subnav
+> (eng tepada — menejer kunni shu yerdan boshlaydi).
+>
+> **🔴 UCHTA SHARTNOMA (test bilan qulflangan, sezgiga zid):**
+> (1) **«tinch kun» faqat O'LCHANGAN nollardan chiqadi** — manba yiqilsa blok `count: null` va kun
+> `incomplete`, `quiet` EMAS. Brifing aynan «bugun tinch» deb aytish uchun ochiladi, o'lchanmagan
+> manbadan chiqqan xotirjamlik menejerni ekranga o'rgatib keyin jimgina aldardi.
+> (2) **Har raqam SIGNAL emas** — `stuck` (jarayonda turgan ish) va `revenue` (tushum) `measure`:
+> nolga teng bo'lmasa ham ogohlantirish BERMAYDI, aks holda 5 buyurtma yig'ilayotgan normal kun
+> «diqqat» bo'lib chiqardi. Rol jadvali `Record<BriefingBlockKey, …>` — yangi blok jimgina signal
+> bo'lib qololmaydi (tc yiqiladi).
+> (3) **Yarim yig'indi yo'q** — bitta signal o'lchanmasa `attentionCount: null`; LEKIN o'lchangan
+> ogohlantirish `incomplete` ostida YASHIRINMAYDI (holat baribir `attention`).
+> **Kassa farqi SUMMASI qo'shilmaydi** (`amountMinor: null`) — kassa TZ §8.4: valyutalar
+> aralashtirilmaydi, faqat NECHTA smenada farq bori sanaladi.
+>
+> **Telegram dublikatsizligi — yangi jadval/migratsiya YO'Q:** kalit xabar matnining ichida
+> (`#brifing_YYYY-MM-DD` / `#yakun_YYYY-MM-DD`), `TelegramOutbox` da dedup ustuni yo'q va u umumiy
+> resurs (CLAUDE.md §6.4). `pending|sending|sent` topilsa yubormaydi; `dead|failed` (yetkazilmagan)
+> qayta yuborishga to'sqinlik qilmaydi.
+> ⚠️ **Qolgan xavf (halol):** tekshiruv **atomik EMAS** — bir vaqtdagi ikki so'rov ikkalasi ham
+> o'tishi mumkin (unique indeks = migratsiya). Oyna tor va cron yo'q — yuborishni odam bosadi.
+>
+> **Gate (commit nuqtasida to'liq):** api typecheck **0** · web typecheck **0** · `lint:product`
+> **0 xato** · `vitest` **api 506 fayl / 6948 test**, **web 211 fayl / 3089 test** · i18n gate
+> (key-existence ru+uz + no-hardcoded) **9 test** — hammasi YASHIL.
+> **Halol yorliq: Phase-1 (strukturaviy + unit), browser-smoke YO'Q** → MK25 (M2 Phase-2 QA).
+>
+> **🔴 QARZ / keyingi sessiyaga:**
+> (1) **Avtomatik jo'natish YO'Q** — digest faqat tugma bosilganda ketadi. Cron (masalan 08:30 /
+> 20:00) qo'shilsa dedup atomik bo'lishi SHART (unique indeks) — hozirgi tekshiruv odam-tezligiga
+> mo'ljallangan;
+> (2) `chatId` faqat `TelegramConfig.defaultChatId` yoki so'rov tanasidan — **per-menejer kanal
+> yo'q** (MK24 mobil rejimida kerak bo'lishi mumkin);
+> (3) brifing **jonli o'qiydi** (6 servis, har biri o'z so'rovlari bilan) — katta hisobda sekin
+> bo'lishi mumkin, o'lchanmagan. `money-map` dagi F011 (rollup) bilan bir sinf;
+> (4) `report:update` ruxsat qatori eski seed'li bazada bo'lmasligi mumkin (xotira:
+> `stale-seeded-db-missing-permission-rows`) — prodda `topup-role-permissions.ts` yugurtirilsin.
+>
+> **⚠️ Parallel sessiya:** daraxtda menikidan boshqa o'zgarishlar bor edi
+> (`manager.module.ts` **staged** qayta-tartiblash · `NEXT.md` bloklarni ko'chirish ·
+> `docs/REJA-MENEJER-KASSA-2026-08.md` da MK19 prompti `c` ga aylanib qolgan). Commit **vaqtinchalik
+> indeks** bilan qurildi (`GIT_INDEX_FILE` + `read-tree HEAD` + faqat o'z blob'larim); uch umumiy
+> hujjatga HEAD blob'i ustiga **faqat mening tahrirlarim** fail-closed skript bilan qayta qo'llandi
+> (`scratchpad/build-mine.mjs`). Ularning ishi daraxtda **tegilmagan** holda qoldi.
+
 > **🕒 2026-08-09zb (REJA-MENEJER-KASSA **MK21** — 4M §8.1/8: qaror jurnali ekrani) —
 > `ae9b4bc6`, 18 fayl (+2635/−4). To'liq hisobot:
 > `docs/REJA-MENEJER-KASSA-2026-08.md` → HISOBOT JURNALI → «MK21».**

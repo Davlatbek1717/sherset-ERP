@@ -1077,7 +1077,8 @@
       "stuck_sla": "Что застряло",
       "weekly_summary": "Недельная сводка",
       "work_queue": "Очередь задач",
-      "money_map": "Карта денег"
+      "money_map": "Карта денег",
+      "briefing": "Бриф и итог"
     }
   },
   "counterparty_activity": {
@@ -8512,7 +8513,32 @@
       "mm_block_customer_debt": "В долгах клиентов",
       "mm_block_supplier_debt": "В долгах поставщикам",
       "mm_block_driver_cash": "У водителей",
-      "mm_block_goods_in_transit": "В товаре в пути"
+      "mm_block_goods_in_transit": "В товаре в пути",
+      "br_title": "Утренний бриф и вечерний итог",
+      "br_subtitle": "Каждое число берётся из существующих отчётов и списков — новых расчётов здесь нет.",
+      "br_morning_title": "Утренний бриф",
+      "br_morning_hint": "Что важно сегодня: где застряло, нарушения SLA, дни на приёмке, сигналы по запасам.",
+      "br_evening_title": "Вечерний итог",
+      "br_evening_hint": "Что было сегодня: выручка, приёмка смен, расхождения по кассе, что осталось открытым.",
+      "br_status_quiet": "Спокойный день",
+      "br_status_attention": "Требует внимания",
+      "br_status_incomplete": "Измерено не полностью",
+      "br_attention_count": "Единиц, требующих внимания",
+      "br_measure_hint": "Контекстное число — не предупреждение.",
+      "br_unmeasured": "Не измерено — это не ноль, измерения нет.",
+      "br_send": "Отправить в Telegram",
+      "br_sending": "Отправляем...",
+      "br_sent": "Поставлено в очередь Telegram.",
+      "br_duplicate": "Сегодняшний дайджест уже в очереди или отправлен — второй не ушёл.",
+      "br_footer_hint": "Бриф ничего не блокирует. Для деталей перейдите на соответствующий экран.",
+      "br_block_stuck": "Работа в процессе",
+      "br_block_sla_breach": "Нарушения SLA",
+      "br_block_acceptance_pending": "Дни на приёмке",
+      "br_block_stock_signal": "Сигналы по запасам",
+      "br_block_revenue": "Выручка за сегодня",
+      "br_block_shift_acceptance": "Смены на приёмке",
+      "br_block_cash_variance": "Смены с расхождением по кассе",
+      "br_block_open_items": "Открытые элементы очереди"
     },
     "menejerLive": {
       "alert_count": "Требуют внимания: {count}",

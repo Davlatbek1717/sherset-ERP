@@ -644,7 +644,7 @@ belgilanmaydi** (chegirma qonuniy). (3) tan narx NULL bo'lsa «tekshirib bo'lmad
 
 ---
 
-### MK19 — Ertalabki brifing va kechki yakun ☐ HISOBOT
+### MK19 — Ertalabki brifing va kechki yakun ☑ HISOBOT (2026-08-10)
 **Bo'lim/blok:** 4M §8.1/5 · **Ustuvorlik:** P3 · **Bog'liqlik:** MK03, MK10, MK14
 **Qamrov:** ertalabki brifing ekrani (bugun nima muhim: qotib qolganlar · SLA buzilishi · qabul
 kutayotgan kunlar · zaxira signali) · kechki yakun (bugun nima bo'ldi: tushum · qabul · farq ·
@@ -3615,3 +3615,132 @@ tugmani otmasligi.
 **4M (M1 bloki) → «Phase-2 verified»**, quyidagi ochiq bandlar bilan: xodim tomoni FE (MK44),
 reyting (MK13-2), navbat/SLA/byudjet raqam-tekshiruvi, ruxsat QA (MK40).
 Prod ops-qarzi: `20260810070000_shift_acceptance` migratsiyasi + `topup-role-permissions.ts`.
+
+## Faza MK19 — Ertalabki brifing va kechki yakun (sana: 2026-08-10)
+
+**Holat:** ✅ **Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q.**
+«done» / «production-ready» / «verified» EMAS — runtime-QA **MK25** (M2 Phase-2 QA) ga qoladi.
+**Commit:** pastdagi «Git holati» bo'limiga qara.
+
+### Nima o'zgardi
+
+**BE — yangi `apps/api/src/modules/manager/briefing/` (4 fayl + 4 test fayl):**
+- `day-briefing.ts` — **sof** qatlam (Prisma yo'q, Nest yo'q, `Date.now()` yo'q): blok registri
+  (`MORNING_BLOCK_KEYS` / `EVENING_BLOCK_KEYS`), **rol jadvali** (`signal` vs `measure`),
+  blok qurish (`buildBriefingBlock`), kun xulosasi (`summarizeBriefing`), Telegram digest matni
+  (`renderDigest`) va **dedup yorlig'i** (`digestTag` / `isDigestAlreadyQueued`). — 25 test.
+- `day-briefing.service.ts` — I/O: OLTITA mavjud servisdan o'qish + digestni mavjud outboxga
+  qo'yish. Har manba alohida `try/catch` da: bittasi yiqilsa panel qulamaydi, o'sha blok
+  «o'lchanmadi» bo'ladi va kun `quiet` deb ATALMAYDI. — 18 test.
+- `manager-briefing.schema.ts` — Zod (`kind` sof moduldan quriladi; `chatId` ≤40, ixtiyoriy).
+- `manager-briefing.controller.ts` — `GET /manager/briefing/:kind` (`report:view`) ·
+  `POST /manager/briefing/:kind/telegram` (`report:update`).
+- `briefing-single-source.test.ts` (9 test) — «yangi hisob ochilmagani» qo'riqchisi.
+- `briefing-wiring.test.ts` (10 test) — DI simlari qo'riqchisi.
+- `manager.module.ts` — `CashierSessionModule` + `TelegramModule` **oshkora import** +
+  controller/provider ro'yxati.
+
+**FE:**
+- `apps/web/src/app/(app)/menejer/brifing/page.tsx` — yupqa sahifa (ikkala panel bitta route'da).
+- `apps/web/src/app/(app)/menejer/_components/briefing-screen.tsx` — ekran (ikki panel + holat
+  bayrog'i + blok kartalari + «Telegramga yuborish»). — 11 test.
+- `lib/manager-api.ts` — `BriefingSnapshot` / `BriefingBlock` / `BriefingSendResult` tiplari va
+  `managerBriefingApi`.
+- `messages/{uz,ru}.json` — `pages.menejer.br_*` (25 kalit ×2) + `subnav.menejer.briefing`.
+- `layout.tsx` — menejer subnav'ining **eng tepasida** (menejer kunni shu yerdan boshlaydi va
+  shu yerda yakunlaydi; qolgan ekranlar — shu ikki paneldagi raqamning ichi).
+
+### Rejadagi uchta test bandi — qayerda qulflangan
+
+| Reja bandi | Qulf |
+|---|---|
+| (1) bo'sh kunda «tinch kun», soxta ogohlantirish yo'q | `day-briefing.test.ts` → «MK19 — «tinch kun»» (7 test) + `day-briefing.service.test.ts` «bo'sh kun» |
+| (2) Telegram yuborish dublikatsiz | `day-briefing.test.ts` → «digest yorlig'i» (4 test) + servis «Telegram yuborish» (6 test) |
+| (3) barcha raqamlar mavjud servislardan | `briefing-single-source.test.ts` (9 test) |
+
+### Qaror 1 — «tinch kun» faqat O'LCHANGAN nollardan chiqadi
+Manba javob bermasa blok `count: null` bo'ladi va kun **`incomplete`**, `quiet` EMAS. Sabab:
+brifing aynan «bugun tinch» deb aytish uchun ochiladi. O'lchanmagan manbadan chiqqan xotirjamlik
+menejerni ekranga ishonishga o'rgatib, keyin bir kuni jimgina aldardi — bu `money-map.ts` dagi
+NULL≠0 shartnomasining kunlik brifingdagi ko'rinishi. Bo'sh blok ro'yxati ham `incomplete`.
+
+### Qaror 2 — har raqam SIGNAL emas (`measure` roli)
+`stuck` (bosqichlarda turgan barcha ochiq ob'ekt) va `revenue` (bugungi tushum) — **`measure`**:
+nolga teng bo'lmasa ham ogohlantirish BERMAYDI. Aks holda 5 ta buyurtma yig'ilayotgan normal ish
+kuni ham «diqqat» bo'lib chiqardi va bir haftada signal qadrsizlanardi. Chegaradan oshgani
+alohida blok — `sla_breach` (**`signal`**). Rol jadvali `Record<BriefingBlockKey, BlockRole>`:
+yangi blok qo'shilsa TypeScript yiqiladi, ya'ni u jimgina «signal» bo'lib qololmaydi.
+
+### Qaror 3 — yarim yig'indi yo'q, lekin ogohlantirish yashirinmaydi
+Bitta signal o'lchanmagan bo'lsa `attentionCount: null` (qolganlarining yig'indisi to'liq raqamdek
+ko'rinardi). LEKIN holat tartibi: avval «o'lchangan ogohlantirish bormi» — bor bo'lsa `attention`,
+ya'ni haqiqiy ish `incomplete` ostida YASHIRINMAYDI.
+
+### Qaror 4 — kassa farqi SUMMASI qo'shilmaydi
+`cash_variance` bloki faqat NECHTA smenada nolga teng bo'lmagan farq borini sanaydi;
+`amountMinor: null`. Kassa TZ §8.4: «USD farqi UZS'ga o'girilmaydi — kurs bilan o'girish yo'qolgan
+dollarni taxminiy so'mga aylantirib, dalilni yo'qotardi». Sanalmagan smena (`discrepancyMinor =
+null`) farqni «nol» qilmaydi — blok «qisman» bo'ladi.
+
+### Qaror 5 — Telegram dublikatsizligi: yangi jadval/migratsiya YO'Q
+`TelegramOutbox` da dedup ustuni yo'q va migratsiya — umumiy resurs (CLAUDE.md §6.4). Shuning
+uchun kalit **xabar matnining ichiga** yozildi: `#brifing_YYYY-MM-DD` / `#yakun_YYYY-MM-DD` —
+tur va ish kunidan determinist chiqadi, raqamlar o'zgarsa ham o'zgarmaydi. Ikkinchi urinish shu
+yorliqli qatorni topadi:
+- `pending` / `sending` / `sent` ⇒ **yubormaydi** (`{ sent: false, skipped: 'duplicate' }` — xato
+  EMAS: takror bosish jazolanmaydi);
+- `dead` / `failed` (yetkazilMAGAN) ⇒ qayta yuborishga **to'sqinlik qilmaydi**.
+
+**⚠️ Qolgan xavf (halol yorliq):** tekshiruv **atomik EMAS** — bir vaqtda kelgan ikki so'rov
+ikkalasi ham dedupdan o'tishi mumkin. To'liq yopish uchun unique indeks (migratsiya) kerak. Oyna
+juda tor va bu yerda **takrorlanuvchi cron YO'Q** — yuborishni odam bosadi.
+
+### Qaror 6 — digest matni serverda o'zbekcha, EKRAN esa kalitlar bilan
+Telegram xabari UI EMAS: uni `next-intl` chizmaydi va foydalanuvchi til tanlamaydi
+(`live-status.ts` allaqachon shu qarorni qilgan). Ekran esa aksincha — server faqat kalit + raqam
+qaytaradi, matnni FE tarjima qiladi. `measure` bloklari digestda **tinch kunda ham** chiziladi:
+kechki yakun aynan tushum uchun ochiladi, uni yashirish ekranni ma'nosiz qilardi. `signal`
+bloklari esa tinch kunda ro'yxat bo'lib chizilmaydi (har kuni to'rt qatorlik nol ro'yxati kelsa
+xabar o'qilmay qolardi).
+
+### Manba jadvali (yangi hisob ochilmadi)
+
+| Blok | Manba |
+|---|---|
+| `stuck` · `sla_breach` (ertalab) | `ManagerSlaService.board` — **bitta** chaqiruv (ikki marta chaqirilsa ikki xil `now` bilan ikki xil son chiqardi) |
+| `acceptance_pending` | `DailyKpiAcceptanceService.queue` |
+| `stock_signal` | `ManagerInventoryService.stockSignals` |
+| `revenue` (kechqurun) | `ReportService.salesReport` — dashboard «bugun» katagi bilan AYNI so'rov |
+| `shift_acceptance` | `ShiftAcceptanceService.queue` (navbat holatlari, bugun yopilganlar) |
+| `cash_variance` | `ShiftAcceptanceService.queue` (BARCHA holatlar, bugun yopilganlar) |
+| `open_items` | `ManagerQueueService.list` |
+
+Har manba shiftga (`SOURCE_LIMIT = 500`) urilsa yoki chala bo'lsa blok «qisman» bo'ladi —
+«hammasi ko'rildi» degan yolg'on ishonch bermaydi.
+
+### Gate
+api typecheck **0** · web typecheck **0** · `lint:product` **0 xato** ·
+`vitest` **api 506 fayl / 6948 test** + **web 211 fayl / 3089 test** ·
+i18n gate (key-existence ru+uz + no-hardcoded) **9 test** — hammasi YASHIL.
+**Browser-smoke YO'Q** (Phase-1 yorlig'i).
+
+### 🔴 QARZ / DEFER
+1. **Avtomatik jo'natish YO'Q** — digest faqat tugma bosilganda ketadi. Cron qo'shilsa dedup
+   **atomik** bo'lishi SHART (unique indeks): hozirgi tekshiruv odam-tezligiga mo'ljallangan.
+2. **Per-menejer kanal yo'q** — `chatId` faqat `TelegramConfig.defaultChatId` yoki so'rov
+   tanasidan. MK24 (mobil rejim) da kerak bo'lishi mumkin.
+3. **Jonli o'qish** — brifing har so'rovda 6 servisni chaqiradi; katta hisobda sekin bo'lishi
+   mumkin, **o'lchanmagan**. `money-map` dagi F011 (rollup) bilan bir sinf.
+4. **`report:update` ruxsat qatori** eski seed'li bazada bo'lmasligi mumkin — prodda
+   `topup-role-permissions.ts` yugurtirilsin.
+5. **Ikkala panel bitta route'da** (`/menejer/brifing`) — reja «ikki ekran» degan edi. Sabab:
+   menejer bir kunda ikki marta shu yerni ochadi va ikkalasi ham «bugun» degan bitta savolning
+   ikki tomoni; alohida sahifa bir xil qobiqni ikki marta yozdirardi.
+
+### Git holati
+Daraxtda parallel sessiyaning ishi bor edi: `manager.module.ts` da **staged** qayta-tartiblash,
+`NEXT.md` da bloklarni ko'chirish, `docs/REJA-MENEJER-KASSA-2026-08.md` da MK19 sessiya-boshi
+prompti `c` ga aylanib qolgan. Commit **vaqtinchalik indeks** bilan qurildi (`GIT_INDEX_FILE` +
+`read-tree HEAD` + faqat o'z blob'larim); shu uch umumiy hujjatga HEAD blob'i ustiga **faqat
+mening tahrirlarim** fail-closed skript bilan qayta qo'llandi. Ularning ishlari daraxtda
+**tegilmagan** holda qoldi (CLAUDE.md §6.1/§6.7).

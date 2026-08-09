@@ -447,6 +447,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   // va javobgarlikni qo'shdi. Qolgani — 4M.5–4M.9 fazalarida.
   const menejerSubNav: SubNavItem[] = [
     { key: 'acceptance', label: tMenejer('acceptance'), href: '/menejer' },
+    // 4M TZ §8.1/5 (MK19) — ertalabki brifing va kechki yakun. Eng tepada
+    // ataylab: menejer kunni shu yerdan boshlaydi va shu yerda yakunlaydi;
+    // qolgan ekranlar — shu ikki paneldagi raqamning ichi. BLOKLAMAYDI.
+    { key: 'briefing', label: tMenejer('briefing'), href: '/menejer/brifing' },
     // 4M TZ §5.1 (MK06) — BITTA NAVBAT: «bugun nima muhim» degan yagona joy.
     // KPI qabulidan keyin ataylab tepada: qolgan sahifalar bitta-bitta signal
     // turini ko'rsatadi, bu esa hammasini yig'ib beradi. BLOKLAMAYDI.

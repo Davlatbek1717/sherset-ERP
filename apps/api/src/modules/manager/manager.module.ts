@@ -1,12 +1,16 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../../prisma/prisma.module.js';
 import { AuthModule } from '../auth/auth.module.js';
+import { CashierSessionModule } from '../cashier-session/cashier-session.module.js';
 import { DebtModule } from '../debt/debt.module.js';
 import { DriverTrackingModule } from '../hr/driver-tracking/driver-tracking.module.js';
 import { MoneyModule } from '../money/money.module.js';
 import { PermissionsModule } from '../permissions/permissions.module.js';
 import { ReportModule } from '../report/report.module.js';
 import { StockModule } from '../stock/stock.module.js';
+import { TelegramModule } from '../telegram/telegram.module.js';
+import { DayBriefingService } from './briefing/day-briefing.service.js';
+import { ManagerBriefingController } from './briefing/manager-briefing.controller.js';
 import { DebtCollectionService } from './collection/debt-collection.service.js';
 import { ManagerCollectionController } from './collection/manager-collection.controller.js';
 import { ManagerCommentTemplateController } from './comments/manager-comment-template.controller.js';
@@ -66,6 +70,11 @@ import { ManagerSlaService } from './sla/manager-sla.service.js';
   // tovar), `DriverTrackingModule` (haydovchi naqdi). Bu yerda ham o'sha
   // qoida: DI grafini hech bir unit test qurmaydi ⇒ import unutilsa faqat
   // runtime'da chiqadi (`app-boot.test.ts` shuning uchun bor).
+  //
+  // MK19 — `DayBriefingService` ham AYNI qoida bo'yicha: u `ReportService`
+  // (tushum), `ShiftAcceptanceService` (smena qabuli/farq) va
+  // `TelegramService` (digest navbati) ni in'yeksiya qiladi, shuning uchun
+  // `CashierSessionModule` va `TelegramModule` OSHKORA import qilinadi.
   imports: [
     PrismaModule,
     AuthModule,
@@ -75,6 +84,8 @@ import { ManagerSlaService } from './sla/manager-sla.service.js';
     ReportModule,
     StockModule,
     DriverTrackingModule,
+    CashierSessionModule,
+    TelegramModule,
   ],
   controllers: [
     KpiConfigController,
@@ -86,6 +97,7 @@ import { ManagerSlaService } from './sla/manager-sla.service.js';
     ManagerCommentTemplateController,
     ManagerJournalController,
     MoneyMapController,
+    ManagerBriefingController,
   ],
   providers: [
     EmployeeDailyKpiService,
@@ -107,6 +119,7 @@ import { ManagerSlaService } from './sla/manager-sla.service.js';
     ManagerCommentTemplateService,
     DecisionJournalService,
     MoneyMapService,
+    DayBriefingService,
   ],
   exports: [EmployeeDailyKpiService, DailyKpiAcceptanceService],
 })

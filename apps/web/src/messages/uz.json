@@ -1077,7 +1077,8 @@
       "stuck_sla": "Nima qotib qolgan",
       "weekly_summary": "Haftalik xulosa",
       "work_queue": "Ish navbati",
-      "money_map": "Pul manzarasi"
+      "money_map": "Pul manzarasi",
+      "briefing": "Brifing va yakun"
     }
   },
   "counterparty_activity": {
@@ -8512,7 +8513,32 @@
       "mm_block_customer_debt": "Mijoz qarzida",
       "mm_block_supplier_debt": "Ta'minotchi qarzida",
       "mm_block_driver_cash": "Haydovchi qo'lida",
-      "mm_block_goods_in_transit": "Yo'ldagi tovarda"
+      "mm_block_goods_in_transit": "Yo'ldagi tovarda",
+      "br_title": "Ertalabki brifing va kechki yakun",
+      "br_subtitle": "Har raqam mavjud hisobot va ro'yxatlardan olinadi — bu yerda yangi hisob yo'q.",
+      "br_morning_title": "Ertalabki brifing",
+      "br_morning_hint": "Bugun nima muhim: qotib qolgan ish, SLA buzilishi, qabul kutayotgan kunlar, zaxira signali.",
+      "br_evening_title": "Kechki yakun",
+      "br_evening_hint": "Bugun nima bo'ldi: tushum, smena qabuli, kassa farqi, ochiq qolganlar.",
+      "br_status_quiet": "Tinch kun",
+      "br_status_attention": "Diqqat talab qiladi",
+      "br_status_incomplete": "To'liq o'lchanmadi",
+      "br_attention_count": "Diqqat talab qilgan birliklar",
+      "br_measure_hint": "Kontekst raqami — ogohlantirish emas.",
+      "br_unmeasured": "O'lchanmadi — bu yerda nol emas, o'lchov yo'q.",
+      "br_send": "Telegramga yuborish",
+      "br_sending": "Yuborilmoqda...",
+      "br_sent": "Telegram navbatiga qo'yildi.",
+      "br_duplicate": "Bugungi digest allaqachon navbatda yoki yuborilgan — ikkinchisi ketmadi.",
+      "br_footer_hint": "Brifing hech narsani bloklamaydi. Batafsil ko'rish uchun tegishli ekranga o'ting.",
+      "br_block_stuck": "Jarayonda turgan ish",
+      "br_block_sla_breach": "SLA buzilishi",
+      "br_block_acceptance_pending": "Qabul kutayotgan kunlar",
+      "br_block_stock_signal": "Zaxira signali",
+      "br_block_revenue": "Bugungi tushum",
+      "br_block_shift_acceptance": "Qabul kutayotgan smenalar",
+      "br_block_cash_variance": "Kassa farqi bo'lgan smenalar",
+      "br_block_open_items": "Ochiq qolgan navbat elementlari"
     },
     "menejerLive": {
       "alert_count": "Diqqat talab qiladi: {count}",

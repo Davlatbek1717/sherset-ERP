@@ -211,6 +211,86 @@ export const managerMoneyMapApi = {
   snapshot: () => api.get<MoneyMapSnapshot>('/manager/money-map'),
 };
 
+// ── MK19 — ertalabki brifing / kechki yakun (4M TZ §8.1/5) ───────────────────
+
+export type BriefingKind = 'morning' | 'evening';
+
+export type BriefingBlockKey =
+  | 'stuck'
+  | 'sla_breach'
+  | 'acceptance_pending'
+  | 'stock_signal'
+  | 'revenue'
+  | 'shift_acceptance'
+  | 'cash_variance'
+  | 'open_items';
+
+/**
+ * `signal` — nolga teng bo'lmasa DIQQAT · `measure` — kontekst raqami.
+ *
+ * Ekran ikkalasini BOSHQACHA chizadi: `measure` hech qachon ogohlantirish
+ * rangini olmaydi. «Jarayonda 9 ta buyurtma» va «bugun 12 mln tushum» —
+ * normal ish kuni, muammo emas.
+ */
+export type BriefingBlockRole = 'signal' | 'measure';
+
+export interface BriefingBlock {
+  key: BriefingBlockKey;
+  role: BriefingBlockRole;
+  /** Raqam qaysi servisdan kelgani (provenance — ekranda ham ko'rinadi). */
+  source: string;
+  /** **`null` = «o'lchanmadi»**, `0` EMAS — ekranda `—` bo'lib chiziladi. */
+  count: number | null;
+  /** Blokning pul o'lchovi (bo'lsa). `null` = yo'q yoki o'lchanmadi. */
+  amountMinor: string | null;
+  quality: DataQualityLevel;
+  attention: boolean;
+  context: Record<string, number | string | null>;
+}
+
+/**
+ * `quiet` — hamma signal O'LCHANDI va nol · `attention` — o'lchangan signal
+ * bor · `incomplete` — signalning bir qismi o'lchanmagan (⚠️ «tinch kun» deb
+ * ATALMAYDI: o'lchanmagan manbadan chiqqan xotirjamlik yolg'on).
+ */
+export type BriefingStatus = 'quiet' | 'attention' | 'incomplete';
+
+export interface BriefingSnapshot {
+  kind: BriefingKind;
+  /** `YYYY-MM-DD` (Toshkent kuni). */
+  businessDate: string;
+  generatedAt: string;
+  currency: string;
+  blocks: BriefingBlock[];
+  summary: {
+    kind: BriefingKind;
+    status: BriefingStatus;
+    /** Bitta signal o'lchanmasa — **`null`** (yarim yig'indi berilmaydi). */
+    attentionCount: number | null;
+    attentionBlocks: BriefingBlockKey[];
+    quality: DataQualityLevel;
+  };
+}
+
+export interface BriefingSendResult {
+  sent: boolean;
+  /** `duplicate` — shu kunning digesti allaqachon navbatda/yuborilgan. */
+  skipped: 'duplicate' | null;
+  outboxId: string | null;
+  chatId: string;
+  tag: string;
+  businessDate: string;
+  status: BriefingStatus;
+}
+
+export const managerBriefingApi = {
+  /** «Bugun nima muhim» (morning) / «bugun nima bo'ldi» (evening). */
+  snapshot: (kind: BriefingKind) => api.get<BriefingSnapshot>(`/manager/briefing/${kind}`),
+  /** Digestni Telegram navbatiga qo'yadi — bir kunda bir marta. */
+  sendTelegram: (kind: BriefingKind) =>
+    api.post<BriefingSendResult>(`/manager/briefing/${kind}/telegram`, {}),
+};
+
 export const managerKpiApi = {
   /** Ma'lumot sifati paneli. Davr berilmasa — oxirgi 30 kun. */
   dataQuality: (range?: { from?: string; to?: string }) => {
