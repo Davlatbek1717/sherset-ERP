@@ -326,6 +326,50 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > `/root/sherset-v2-backups` = 5.4G / 18 fayl — keyingi deploy'dan oldin eski backup'larni
 > tozalash kerak bo'ladi, aks holda `next build` joy yetmasligidan yiqilishi mumkin.
 >
+> **🕒 2026-08-09y (REJA-MENEJER-KASSA **MK12** — 4M.9: xarajat byudjeti, modda × oy) —
+> `c5e1b153`, 20 fayl (+2202). To'liq hisobot:
+> `docs/REJA-MENEJER-KASSA-2026-08.md` → HISOBOT JURNALI → «Faza MK12».**
+>
+> Yangi `ExpenseBudget` (`expense_budgets`: `account × modda × oy` unique, `planned_minor`,
+> CHECK `>= 0` va `YYYY-MM`) + yangi `ExpenseBudgetModule` (AppModule'ga ulangan) +
+> `GET/POST/DELETE /expense-budget` + ekran `/menejer/byudjet` + 32 i18n kaliti ru+uz.
+>
+> **🔴 «Ikki manba qo'shilmaydi» AYNAN nima ekani aniqlandi:** `retail_drawer_cash_out` uch xil
+> pul chiqishini bitta jadvalda saqlaydi va **inkassatsiya (`kind='collection'`) xarajat EMAS** —
+> u kassadan bankka ko'chirish; filtrsiz yig'ilsa o'sha pul keyin bankdan `PaymentOut` bilan
+> chiqqanda **ikkinchi marta** sanalardi. Shart `drawerExpenseWhereKind()` ga chiqarildi va ikki
+> joyda qulflandi. `Loss` ataylab qo'shilmadi (tovar chiqimi, qiymati COGS'da). **Yangi yozuvchi
+> ochilmadi** — servis xarajat hujjatiga `create/update/delete` qilmasligi manba-skan testi bilan
+> qulflangan.
+>
+> **NULL ≠ 0 uch joyda:** reja qo'yilmagan oy → og'ish/foiz NULL, status `no_plan` (100% ham, 0%
+> ham emas; **reja yo'qligi = QATOR yo'qligi**, `planned_minor=0` emas) · kursi yo'q valyutadagi
+> REJA → NULL + `planUnconvertible` (0 deb o'qilsa «oshib ketdi» yolg'oni chiqardi) · kursi yo'q
+> FAKT → jamiga qo'shilmaydi, `unconvertedByCurrency` da qoladi. Moddasiz/tanilmagan tegli pul
+> alohida qatorda; bir nom ikki moddada bo'lsa taxmin qilinmaydi (`ambiguousNames`).
+> Oy chegarasi `monthInstantBounds` (Toshkent), `monthBounds` (UTC) EMAS.
+>
+> **Testlar 40 ta** (fact 8 · variance 11 · servis 11 · FE 10), TDD RED→GREEN.
+> **Gate qo'lda to'liq** (parallel sessiya faol → hook chetlab o'tildi): api/web typecheck 0 ·
+> biome 0 (o'z fayllarim) · i18n gate o'tdi · api vitest 484/486, web 200/201 — **ikkala yiqilish
+> ham parallel sessiyaning in-flight fayllarida** (MK07 `manager-queue.service.test.ts`,
+> MK10 `qotib-qolgan/page.tsx`), meniki emas. `ru/uz.json` uchun «HEAD + faqat mening
+> hunk'larim» blobi qurildi — MK07 kalitlari bu commit'ga tushmadi.
+>
+> **HOLAT: Phase-1 — strukturaviy + unit-tasdiqlangan, BROWSER-SMOKE YO'Q** (runtime QA = MK14).
+>
+> **Qarz:** (1) **MK41** — `pnl.service.ts` POS xarajatini (`retail_drawer_cash_out`) ko'rmaydi,
+> shu sababdan «xarajat» ikki ekranda ikki xil; (2) **MK42** — `cash_out`/`payments_out` dagi
+> modda tegi hamon erkin matn (FK emas) ⇒ «bir nom ikki modda» holati mumkin; (3) ogohlantirish
+> chegarasi 90% — TZ'da yo'q, agent tanlagan (so'rov parametri, muzlatilmagan) — MK13 dagi
+> `SCORE_CAP_PERCENT` bilan BIRGA sozlamaga chiqarilsin; (4) **OPS:** prod `sherset_v2` da
+> `20260810100000_expense_budget/migration.sql` qo'lda qo'llanishi kerak (lokal `climart_adopt`
+> da qo'llandi); (5) **preflight yolg'on pozitivi:** `scripts/preflight.mjs` matn ichidagi har
+> qanday 8-belgili hex'ni commit hash deb o'qiydi — `a0b44c73` aslida tovar UUID prefiksi
+> (`NEXT.md:689`), `9c046ac2` esa md5 dajesti (`NEXT.md:837`); (6) **NEXT.md top-entry'lari
+> 18+ ta** — arxivlash kerak, lekin parallel sessiyalar faol bo'lgani uchun shu sessiyada
+> QILINMADI (umumiy faylni og'ir qayta yozish begona ishni yo'qotish xavfi).
+>
 > **🕒 2026-08-09x (REJA-MENEJER-KASSA **MK16** — qarz undirish ish ro'yxati, 4M §8.1/2) —
 > `bc006578`, 15 fayl. To'liq hisobot:
 > `docs/REJA-MENEJER-KASSA-2026-08.md` → HISOBOT JURNALI → «Faza MK16».**

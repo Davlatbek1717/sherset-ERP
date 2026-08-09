@@ -461,7 +461,7 @@ signal «hisoblanmadi» deydi, 0 emas.
 
 ---
 
-### MK12 — 4M.9: xarajat byudjeti (plan/fakt) ☐ HISOBOT
+### MK12 — 4M.9: xarajat byudjeti (plan/fakt) ☑ HISOBOT (2026-08-09)
 **Bo'lim/blok:** 4M.9 · **TZ:** §8
 **Ustuvorlik:** P3 · **Bog'liqlik:** yo'q · **Holat:** `ExpenseBudget` sxemada **YO'Q**
 **Qamrov:** `ExpenseBudget` (modda × oy) · plan kiritish ekrani · fakt manbasi = mavjud xarajat
@@ -2540,3 +2540,172 @@ Diff'im path-cheklangan; `git add` faqat aniq yo'llar bilan.
   yig'indisi 58 — hisob allaqachon eskirgan). Qarz: §8.1 to'lqinini `todo.md` ga kiritish.
 - **Prod DDL/migratsiya:** kerak emas (yangi jadval/ustun yo'q). Faqat `kind` ning yangi
   qiymati — mavjud `VarChar(20)` ga sig'adi.
+
+---
+
+## Faza MK12 — 4M.9: xarajat byudjeti (plan/fakt) (sana: 2026-08-09)
+
+**Holat:** ✅ **Phase-1 — strukturaviy + unit-tasdiqlangan, BROWSER-SMOKE YO'Q** (runtime QA = MK14).
+**Commit:** `c5e1b153` — `feat(manager): MK12 — xarajat byudjeti (modda × oy): reja/fakt/og'ish`
+(20 fayl, +2202 qator).
+
+### Nima o'zgardi
+
+**Baza** — `packages/db/prisma/schema.prisma` + `migrations/20260810100000_expense_budget/`:
+yangi `ExpenseBudget` (`expense_budgets`) — `account × expense_item × year_month` **unique**,
+`planned_minor BIGINT`, `currency`, `note`, `created_by/updated_by`. CHECK'lar: `planned_minor >= 0`
+va `year_month ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'`. FK `expense_item_id` → **RESTRICT** (rejasi bor modda
+o'chirilsa byudjet «moddasiz» qolardi). **Fakt ustuni ataylab YO'Q** — u nusxalansa hujjat
+tahrirlanganda byudjet jimgina eskirardi.
+
+**Backend** — yangi `apps/api/src/modules/expense-budget/` (6 fayl), `AppModule`ga ulandi:
+- `expense-fact.ts` — sof agregatsiya qatlami (uch manba → modda × baza-valyutasi).
+- `budget-variance.ts` — sof og'ish/status qatlami (`no_plan` · `within` · `warning` · `over`).
+- `expense-budget.service.ts` — so'rovlar + yig'ish + reja upsert/delete.
+- `expense-budget.controller.ts` — `GET /expense-budget?yearMonth=` · `POST` · `DELETE /:id`.
+  Ruxsat: mavjud `expenseitem` entity'si (`view`/`update`) — **yangi `PermissionEntity` kiritilmadi**
+  (MK06 dagi bilan bir xil qaror: u seed matritsasini ham talab qilardi, MK26–MK30 qamrovi).
+
+**Frontend** — `apps/web/src/app/(app)/menejer/byudjet/` + `_components/expense-budget-screen.tsx`
++ `lib/expense-budget-api.ts` + subnav bandi (`layout.tsx`) + 32 i18n kaliti ru+uz.
+
+### 🔴 Fazaning asosiy qarori — «ikki manba qo'shilmaydi» AYNAN nima
+
+Reja testi (1) ni tekshirishda savol shu bo'ldi: **qaysi ikki manba bir pulni ikki marta sanaydi?**
+Kodda tasdiqlandi (CLAUDE.md §2):
+
+| Manba | Jadval | Modda kaliti | Byudjetda |
+|---|---|---|---|
+| Kassa RKO | `cash_out` | `expense_item` (erkin matn) | ✅ |
+| Bank to'lovi | `payments_out` | `expense_item` (erkin matn) | ✅ |
+| POS yashiq | `retail_drawer_cash_out` | `expense_item_id` (FK) | ✅ **faqat `kind='expense'`** |
+| Chiqim akti | `losses` | `expense_item` | ❌ |
+
+1. **`kind='expense'` filtri = ikki-karra sanoq qulfi.** `retail_drawer_cash_out` uch xil pul
+   chiqishini bitta jadvalda saqlaydi (`expense` · `collection` · `other`). **Inkassatsiya xarajat
+   EMAS** — u kassadan bankka **ko'chirish**; filtrsiz yig'sak, o'sha pul keyin bankdan `PaymentOut`
+   bilan chiqqanda **ikkinchi marta** sanalardi. Shart alohida funksiyaga
+   (`drawerExpenseWhereKind()`) chiqarildi va ikki joyda qulflandi: sof testda + servis so'rovida.
+2. **`Loss` QO'SHILMADI** — unda ham `expense_item` ustuni bor, lekin u tovar hisobdan chiqishi,
+   pul chiqishi emas; qiymati tan narx orqali allaqachon COGS'da. Qo'shilsa bir xarajat ikki marta.
+3. **Bitta hujjat — bitta chelak.** FK ham, teg matni ham to'lgan hujjatda tartib qat'iy: FK →
+   matn → moddasiz. Test bu invariantni alohida qulflaydi.
+4. **RKO va bank ikki xil pul yo'li** — ular bir-birini takrorlamaydi, ikkalasi ham kiradi
+   (P&L allaqachon shunday yig'adi).
+
+### ⚠️ P&L bilan ataylab farq (hujjatlangan qarz)
+
+`report/pnl.service.ts` xarajat qatorini faqat `payments_out` + `cash_out` dan yig'adi —
+`retail_drawer_cash_out` u yerda **YO'Q**. Byudjet POS xarajatini ham ko'rsatadi (aks holda
+kassadan to'langan ijara byudjetda umuman ko'rinmasdi). Ikki ekrandagi «xarajat» raqamining farqi
+shundan. **P&L tomonini tuzatish MK12 qamrovidan tashqarida** (O'ZGARMAS QOIDA 1) — quyida yangi
+faza taklifi sifatida yozildi. Sabab `expense-fact.ts` bosh izohida ham turibdi.
+
+### 🔴 NULL ≠ 0 — uch joyda
+
+1. **Reja qo'yilmagan oy** → `varianceMinor` va `usedPercent` **NULL**, status `no_plan`.
+   «0% ishlatildi» ham, «100% oshib ketdi» ham yolg'on bo'lardi. **Reja yo'qligi = QATOR yo'qligi**,
+   `planned_minor = 0` EMAS (nol reja boshqa javob: har qanday sarf ⇒ `over`).
+2. **Kursi yo'q valyutadagi REJA** → `plannedMinor: null` + `planUnconvertible: true`.
+   Bu yerda `consolidateToBase` ning 0 qaytarishi YARAMAYDI: 0 reja har qanday faktni «oshib ketdi»
+   qilib ko'rsatardi — mavjud bo'lmagan muammo.
+3. **Kursi yo'q valyutadagi FAKT** → jamiga qo'shilmaydi, `unconvertedByCurrency` da o'z valyutasida
+   qaytadi (Faza 17 / M-12 shartnomasi, [[report-conversion-contract-faza17]]).
+
+**Pul hech qayerda jimgina yo'qolmaydi:** moddasiz va tanilmagan tegli pul alohida qatorda
+(`untaggedMinor`); bir nomni ikki modda ko'tarsa **taxmin qilinmaydi** — moddasizga tushadi va
+`ambiguousNames` bayrog'i qaytadi ([[data-quality-flag-layer]] naqshi). Jamlar **faqat rejasi bor**
+qatorlar bo'yicha (yagona halol reja↔fakt solishtiruvi), rejasiz pul `unplannedActualMinor` da.
+
+### Oy chegarasi
+
+`monthInstantBounds` (Toshkent yarim tuni) — `monthBounds` (UTC) ishlatilsa oyning 1-kunidagi
+00:00–05:00 xarajatlari o'tgan oyga tushib qolardi ([[month-bounds-label-vs-instant]]).
+Sana ustuni `moment` (P&L bilan bir xil), `state='posted' AND deleted_at IS NULL`.
+
+### Testlar (RED → GREEN) — 40 ta
+
+RED tasdiqlandi: avval `expense-fact.test.ts` + `budget-variance.test.ts` yozildi, `Failed to load
+url ./expense-fact.js` bilan yiqildi, keyin implementatsiya.
+
+- `expense-fact.test.ts` (8) — uch manbadan yig'ish · bitta hujjat bitta chelakda · inkassatsiya
+  filtri · kursi yo'q valyuta · hujjatning o'z kursi · moddasiz pul · registr/bo'shliq · ikki xil
+  moddadagi bir nom.
+- `budget-variance.test.ts` (11) — plan yo'q (NULL, 0 emas) · chegara AYNAN 90% · 89.99% · planga
+  teng (`warning`, `over` emas) · +1 tiyin (`over`) · sozlanadigan chegara · plan=0 · BigInt aniqligi
+  (`> MAX_SAFE_INTEGER`).
+- `expense-budget.service.test.ts` (11) — `kind='expense'` so'rovda · `posted`/`deletedAt` · Toshkent
+  chegarasi (`2026-07-31T19:00:00Z`) · **manba-skan: servis xarajat hujjatiga `create/update/delete`
+  qilmaydi** · reja yo'q · reja bor · konvertatsiya qilinmaydigan reja · konvertatsiya qilinmaydigan
+  fakt · moddasiz qator · tartib (oshib ketgan tepada) · reja so'rovi oyi.
+- `expense-budget-screen.test.tsx` (10) — ekranda `—` (0% ham, 100% ham emas) · konvertatsiya
+  qilinmaydigan reja `—` · moddasiz qatorga reja qo'yib bo'lmaydi · jamdan tashqaridagi pul ·
+  major↔minor konvertatsiyasi BigInt aniqligida (yaroqsiz kiritma **NULL**, jimgina 0 emas).
+- `app-boot.test.ts` — `expense-budget` route skanerga qo'shildi (DoD); yetim-modul qo'riqchisi
+  `ExpenseBudgetModule` ning `AppModule`da ekanini tasdiqladi.
+
+### Gate natijasi (qo'lda to'liq — hook chetlab o'tildi)
+
+| Gate | Natija |
+|---|---|
+| `@moysklad/api typecheck` | **0** ✅ |
+| `@moysklad/web typecheck` | **0** ✅ |
+| biome (o'z fayllarim) | **0** ✅ (15 fayl, `check` toza) |
+| `pnpm i18n:gate` | **o'tdi** ✅ (+ 27 kalit ru/uz da borligi skript bilan alohida tekshirildi, `components/` ko'r nuqtasi uchun) |
+| `api vitest run` (to'liq) | 484/486 fayl ✅ — **1 yiqilish parallel sessiyaniki** (`manager/queue/manager-queue.service.test.ts`, MK07 in-flight) |
+| `web vitest run` (to'liq) | 200/201 ✅ — **1 yiqilish parallel sessiyaniki** (`raw-element-conventions` → `menejer/qotib-qolgan/page.tsx`, MK10 in-flight) |
+
+`pnpm lint:product` repo bo'yicha 8 xato ko'rsatadi — **hammasi parallel sessiyaning
+`manager/queue/*` fayllarida**, mening fayllarimda 0 (§6.1: tegilmadi).
+
+**Raw-element qoidasi (UI Convention 8):** dastlab `<select>` va `<input type="month">` yozilgan edi
+— `raw-element-conventions.test.ts` tutdi, DS `NativeSelect` / `Input` ga ko'chirildi
+(`hr/attendance/monthly` naqshi). Bu — web-only gate'ning foydasi ko'ringan joy.
+
+### Git holati (§6.7 ehtiyoti)
+
+Parallel sessiya butun sessiya davomida **faol** edi (MK07 navbat qoidalari, MK10 SLA, MK16 undirish).
+Shuning uchun:
+- `git add` faqat aniq yo'llar bilan; commit `-c core.hooksPath=/dev/null` bilan (lint-staged butun
+  daraxtni stash qilib begona faylni commit'ga qo'shib yuborardi — §6.7 B), gate'lar qo'lda to'liq
+  yugurtirildi va commit xabarida yozildi.
+- `ru.json`/`uz.json` da parallel sessiyaning MK07 kalitlari (rule_*/reason_*, ~56 qator) turgan edi.
+  `git add <fayl>` ularni ham olib kirardi ([[commit-pathspec-takes-worktree-version]]). Yechim:
+  **«HEAD + faqat mening hunk'larim»** blobi — fail-closed skript (anchor topilmasa `exit 1`,
+  `JSON.parse` bilan tekshiradi, qator sonini solishtiradi) → `hash-object -w` →
+  `update-index --cacheinfo`. Blob commitdan **darhol oldin qayta qurildi**
+  ([[rebuilt-blob-goes-stale]]) — SHA o'zgarmadi, ya'ni HEAD siljimagan edi.
+- `git show --stat HEAD`: **20 fayl, hammasi meniki**. Parallel sessiyaning kalitlari daraxtda
+  saqlanib qoldi (tekshirildi).
+
+### Preflight anomaliyalari — ikkalasi ham YOLG'ON POZITIV (tekshirildi)
+
+- «NEXT.md top-entry'larda git'da yo'q hash'lar: `a0b44c73`, `9c046ac2»` — birinchisi **tovar
+  UUID'ining prefiksi** (`NEXT.md:689`, yacheyka misoli), ikkinchisi **md5 dajesti**
+  (`NEXT.md:837`, `YesNoSelect` dedupi). `scripts/preflight.mjs` ning hex-regexi matn ichidagi har
+  qanday 8-belgili hex'ni commit hash deb o'qiydi. **Preflight qarzi** (quyida).
+- «ish daraxti toza emas» — parallel sessiyaning faol ishi (§6.1), tegilmadi.
+
+### Qolgan qarz / DEFER
+
+1. **P&L POS xarajatini ko'rmaydi** — `pnl.service.ts` ga `retail_drawer_cash_out` (`kind='expense'`)
+   qo'shilishi kerak, aks holda «xarajat» ikki ekranda ikki xil. Yangi faza taklifi: **MK41**.
+2. **Modda tegi erkin matn** — `cash_out`/`payments_out` da `expense_item VARCHAR(100)`, FK emas.
+   Shu sababdan nom bo'yicha moslash kerak bo'ldi va «bir nom ikki modda» holati mumkin. To'g'ri
+   yechim — hujjatlarni FK'ga ko'chirish migratsiyasi (backfill + FE). Yangi faza taklifi: **MK42**.
+3. **Ogohlantirish chegarasi 90%** — TZ'da yo'q, agent tanlagan default. Kodda muzlatilmagan
+   (`warnPercent` so'rov parametri, `DEFAULT_WARN_PERCENT`). Egasi boshqa qiymat xohlasa — sozlamaga
+   chiqarish MK13 dagi `SCORE_CAP_PERCENT` bilan **birga** qilinsin (bir xil naqsh, ikki marta emas).
+4. **Reja valyutasi** — ustun bor, lekin FE hozircha faqat baza valyutasida yozadi (`currency`
+   yuborilmasa `UZS`). Ko'p valyutali reja kiritish UI'si kerak bo'lsa alohida ish.
+5. **Browser-smoke YO'Q** → MK14 (4M Phase-2 QA). Ekranda tekshirilishi kerak: oy almashtirish,
+   inline reja tahriri, `—` kataklari, RU-locale.
+6. **Preflight yolg'on pozitivi** — `scripts/preflight.mjs` hash-tekshiruvi matn ichidagi hex'ni
+   commit deb o'qiydi (`\b[0-9a-f]{8}\b` klassi). Kamida backtick/`commit` konteksti talab qilinsin.
+
+### OPS-QADAM qo'shildimi
+
+**Ha** — prod (`sherset_v2`) sxema-drift: `migrations/20260810100000_expense_budget/migration.sql`
+qo'lda qo'llanishi kerak (`expense_budgets` jadvali + 2 indeks + 4 FK + 2 CHECK). Lokal
+`climart_adopt` da `prisma db execute --file` bilan **qo'llandi va tekshirildi**. Avtomatik
+`migrate deploy` QILINMADI (O'ZGARMAS QOIDA 7).
