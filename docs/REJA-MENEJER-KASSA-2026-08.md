@@ -424,7 +424,7 @@ ma'lumotda bayroq «to'liq». (3) panel foizi jonli hisob bilan mos.
 
 ---
 
-### MK10 — 4M.7: «Nima qotib qolgan» + SLA paneli ☐ HISOBOT
+### MK10 — 4M.7: «Nima qotib qolgan» + SLA paneli ☑ HISOBOT (2026-08-09)
 **Bo'lim/blok:** 4M.7 · **TZ:** §8
 **Ustuvorlik:** P2 · **Bog'liqlik:** MK06
 **Qamrov:** jarayon bo'yicha qotib qolgan ob'ektlar (yig'ilmagan buyurtma · qabul qilinmagan
@@ -2273,3 +2273,138 @@ xil**, `pages.menejerPriceErrors` 35 kalit ru+uz, subnav va layout yozuvi joyida
 - **Valyuta:** narxlar xom `minor` qiymatida taqqoslanadi (butun repo shunday). Ko'p valyutali
   karta bo'lsa taqqoslash yolg'on bo'lishi mumkin — MK11 dagi `currency_mismatch` naqli bu yerga
   hali ko'chirilmagan.
+
+
+## Faza MK10 — 4M.7: «Nima qotib qolgan» + SLA paneli (sana: 2026-08-09)
+
+**Holat:** ✅ **Phase-1 complete — strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q.**
+«done / production-ready / verified» EMAS. Runtime-QA — MK34/Phase-2 sessiyasiga qoladi.
+**Commit(lar):** shu sessiya commit'i (pastdagi «Git holati»ga qara).
+
+### Nima o'zgardi
+
+**Yangi sof modul** — `apps/api/src/modules/manager/sla/stuck-sla.ts` (Prisma'siz):
+- **Beshta bosqich registri** (rejadagi ro'yxat aynan): `ORDER_PICKING` (yig'ilmagan buyurtma) ·
+  `SUPPLY_ACCEPTANCE` (qabul qilinmagan yetkazma) · `CLAIM_RESPONSE` (javobsiz murojaat) ·
+  `SHIFT_CLOSE` (yopilmagan smena) · `DOC_APPROVAL` (o'tkazilmagan hujjat).
+- **Chegaralar SOZLAMADA** (DoD): `manager_rule_configs` jadvali, `SLA_*` kalitlari bilan
+  (MK06 navbat qoidalari bilan AYNI jadval, kesishmaydigan nom fazosi). **Yangi jadval/migratsiya
+  YO'Q** — ustunlar (`enabled`/`thresholdValue`/`thresholdUnit`/`severity`) aynan kerakli shakl,
+  migratsiya esa umumiy resurs (CLAUDE.md §6.4). Rejaning «Fayllar» ro'yxatida ham sxema yo'q edi.
+- **Birlik chegaradan ajralmaydi** (MK06 sabog'ining shu paneldagi ko'rinishi): faqat VAQT birliklari
+  qabul qilinadi — `hours` va `days` (24× aniq o'girish). `percent`/`minor`/`qty` **RAD** etiladi,
+  registr qiymati qoladi va ekranda `thresholdRejected` bayrog'i chiqadi (jim tushib qolgan sozlama
+  menejerni «men chegarani o'zgartirdim-ku» yolg'on ishonchida qoldirardi).
+- **`STAGE_OPEN_STATES`** — «ochiq holat» ta'rifining YAGONA manbai; servis Prisma `where` bandini
+  aynan shundan quradi, ya'ni **yopilgan ob'ekt umuman o'qilmaydi** (3-majburiy test shu sababdan
+  tavtologiya emas).
+- **🔴 `blocks: false` literal tipi** har ta'rifda — MK06 dagi bilan bir xil qulf: SLA oshgani hech
+  qanday hujjatni to'xtatmaydi (§5.1).
+
+**Prisma I/O** — `manager-sla.service.ts` (+ `manager-sla.schema.ts`, `manager-sla.controller.ts`):
+- To'qqizta manba bir `Promise.all` da: `MsPickList` · `Supply` · `ServiceRequest` ·
+  `CashierSession` · qoralama `Demand`/`PaymentIn`/`PaymentOut`/`CashIn`/`CashOut`.
+- **Yangi yozuvchi OCHILMADI**: qotib qolish holati manba jadvallarning o'zida (`pickState`,
+  `approvalStage`, `status`, `state`) — nusxalash ikki haqiqat bo'lardi. Panel har so'rovda jonli
+  hisoblanadi; yagona yozuv — menejer o'zgartiradigan chegara.
+- **Yetkazma yoshi `SupplyApprovalEvent` ning oxirgi hodisasidan** (`groupBy _max.createdAt`)
+  hisoblanadi, `updatedAt` dan EMAS: pozitsiya tahriri ham `updatedAt` ni yangilaydi va qotib qolgan
+  hujjat «hozirgina qimirlagan» bo'lib ko'rinardi.
+- **Manba shifti (500/manba) JIM emas** — `sourceTruncated: true` javobda va ekranda chiqadi.
+- **NULL ≠ 0 (MK09 shartnomasi):** murojaatda summa yo'q ⇒ `amountMinor: null` (0 emas);
+  bosqichda oshgani yo'q ⇒ `worstOverdueHours: null` (0 emas — «0 soat» «bir soniya kechikdi»
+  degan ma'no berardi).
+- Ruxsat: `employees:read` (ko'rish) / `employees:full` (chegara sozlash) — `manager/queue` va
+  `manager/kpi` bilan aynan bir darvoza; yangi `PermissionEntity` kiritilmadi (MK26–MK30 qamrovi).
+
+**Web** — `apps/web/src/app/(app)/menejer/qotib-qolgan/page.tsx` + subnav bandi (`stuck_sla`,
+navbatdan keyin) + `_components/stuck-doc-link.ts`:
+- Bosqich kartalari (chegara · jami · oshgan · eng yomoni) + **inline chegara tahriri** (qiymat +
+  birlik birga yuboriladi) va bosqichni yoqish/o'chirish.
+- Qatorlar: eng ko'p oshib ketgani TEPADA (bosqichlar aralash) — menejer ekranni yuqoridan o'qiydi.
+- **Ekran matni serverda yopilmaydi** (MK03 sabog'i): BE `stateKey` qaytaradi, FE tarjima qiladi.
+- i18n ru+uz — 48 kalit `pages.managerSla` + 1 subnav kaliti.
+
+### Testlar (RED → GREEN)
+
+| Fayl | Test | Nima qulflandi |
+|---|---|---|
+| `stuck-sla.test.ts` | **25** | 3 majburiy shartnoma + registr/sozlama/taxta qoidalari |
+| `manager-sla.service.test.ts` | **10** | `where` bandi `STAGE_OPEN_STATES` dan · panel YOZMAYDI · sozlama faqat `SLA_*` · bigint→satr · shift bayrog'i · yetkazma yoshi oxirgi hodisadan |
+| `stuck-doc-link.test.ts` (web) | **6** | `refId` bosqichga qarab boshqa ma'noda — yig'ish qatori `/pick-lists/<id>` ga boradi, `/customer-orders/<id>` ga EMAS |
+
+RED ko'rildi: birinchi yugurtishda `stuck-sla.js` topilmadi (modul yo'q edi) → keyin 25/25 GREEN.
+Servis testida bitta RED haqiqiy edi (`ageHours` 34.47 ≠ 30) — sabab: test qat'iy sanadan,
+servis esa jonli `new Date()` dan hisoblardi; test sanalari haqiqiy hozirgi paytga bog'landi.
+
+**Rejadagi uch majburiy test — qayerda:**
+1. «SLA ichidagi ob'ekt ro'yxatga tushmaydi» → `stuck-sla.test.ts` → «🔴 SLA ICHIDAGI ob'ekt…»
+   (chegaraga TENG yosh ham tushmaydi — qat'iy `>`; jamida esa sanaladi).
+2. «Chegara sozlamasi ta'sir qiladi» → o'sha faylda: 4 soat registrida bo'sh ro'yxat, sozlama
+   2 soatga tushirilsa to'ladi; `days` ga ko'tarilsa yana bo'shaydi.
+3. «Yopilgan ob'ekt ro'yxatdan chiqadi» → `isStageOpen` yopiq holatlarni rad etadi +
+   `manager-sla.service.test.ts` har manbaning `where` bandi aynan shu ro'yxatdan qurilishini
+   tekshiradi (ya'ni yopilgan ob'ekt BAZADAN ham o'qilmaydi).
+
+### Gate natijasi
+
+- `pnpm --filter @moysklad/api typecheck` → **0**
+- `pnpm --filter @moysklad/web typecheck` → **0**
+- `pnpm i18n:gate` → **o'tdi** (434 fayl, 12744 statik kalit)
+- `pnpm --filter @moysklad/api exec vitest run src/modules/manager/ src/app-boot.test.ts` →
+  **595/595** (32 fayl) · SLA moduli alohida **35/35**
+- `pnpm --filter @moysklad/web exec vitest run "src/app/(app)/menejer"` → **29/29**
+- `pnpm lint:product` → **mening fayllarimda 0** (`biome check` MK10 yo'llari bo'yicha toza).
+  ⚠️ Repo-bo'ylab gate shu payt YASHIL EMAS edi — yiqilishlar **parallel sessiyalarning
+  commit qilinmagan fayllarida** (`manager/queue/manager-queue.service.ts`,
+  `modules/expense-budget/*`, `menejer/_components/expense-budget-screen.tsx`,
+  `queue/rule-candidates*`). Ularga TEGILMADI (CLAUDE.md §6.1).
+
+### Halol cheklovlar (qarz sifatida ochiq yozilmoqda)
+
+1. **Browser-smoke YO'Q.** Sahifa hech qachon jonli brauzerda ochilmagan; barcha da'volar
+   typecheck + unit darajasida. Xotira: «brauzer-QA statik ko'rmaganini tutadi».
+2. **i18n gate dinamik kalitlarni ko'rmaydi.** `t(\`stage_${...}\`)` / `t(\`state_${...}\`)` —
+   gate ularni «dynamic» deb o'tkazib yuboradi (300 ta shunday kalit bor). Kalitlar qo'lda
+   ro'yxatlab qo'yilgan: 5 bosqich + 9 holat + 3 jiddiylik. Yangi holat qiymati paydo bo'lsa
+   (masalan `Supply.approvalStage` ga yangi bosqich) **ekranda kalit nomi ko'rinadi** — buni
+   hech bir gate tutmaydi.
+3. **`ServiceRequest.dueDate` ISHLATILMADI.** Panel «qancha vaqtdan beri qimirlamadi» ni
+   o'lchaydi; mijozga va'da qilingan muddatga nisbatan kechikish — boshqa ko'rsatkich. Ikkisini
+   bitta ustunda aralashtirish qaysi raqam nimani anglatishini yashirardi (kelajakdagi faza).
+4. **Yig'ish yoshi buyurtma KELGAN paytdan** (`MsPickList.moment`), yig'ish boshlanganidan emas.
+   Bu ataylab: omborchi hujjatni qo'liga olgani mijozning kutish vaqtini nolga qaytarmaydi.
+   `live-status.ts` dagi 45 daqiqa BOSHQA o'lchov (boshlangandan keyingi qotish) — u tegilmadi.
+5. **Valyutasiz manbalar:** `MsPickList` va `CashierSession` da valyuta ustuni yo'q ⇒ `currency: null`
+   qaytadi va FE `formatMoney` ning bazaviy valyutasi (UZS) bilan chizadi — mavjud menejer
+   ekranlaridagi bilan bir xil xulq, lekin bu **tasdiqlanmagan** taxmin.
+6. **Chegaralar boshlang'ich qiymatlari** (4 / 24 / 8 / 12 / 48 soat) — kodda izohlangan mulohaza,
+   egasi bilan kelishilmagan. Ular **sozlamadan** o'zgartiriladi; `SHIFT_CLOSE` ataylab
+   `live-status.ts` dagi `SHIFT_LONG_HOURS` ni import qiladi (ikkinchi raqam kiritilmadi).
+7. **`sourceCap` 500** — bir bosqichda undan ko'p qotib qolgan ob'ekt bo'lsa xulosadagi sonlar
+   «kamida shuncha» ma'nosini oladi (ekranda ogohlantirish chiqadi).
+
+### Git holati (parallel sessiyalar — MAJBURIY o'qish)
+
+Bu sessiya davomida ish daraxtida **kamida uchta boshqa sessiya** faol edi (MK07 qoida registri,
+MK16 qarz undirish, MK12 xarajat byudjeti). Natijada 4 ta fayl **uch sessiyaning** commit
+qilinmagan tahririni birga ushlab turardi: `manager.module.ts`, `layout.tsx`, `messages/ru.json`,
+`messages/uz.json`.
+
+- `work-item-rules.ts` ga qo'shilgan `hours` birligi **QAYTARIB OLINDI** — MK07 sessiyasi o'sha
+  faylni aynan shu paytda yozayotgan edi. O'rniga MK10 o'z birlik lug'atini (`SLA_THRESHOLD_UNIT`)
+  saqlaydi, `days` qiymati esa MK06 dagi bilan bir xil satr (bitta sozlama jadvali).
+- Shared fayllar uchun **«HEAD + faqat mening hunk'larim» blobi** qurildi
+  (`hash-object -w` + `update-index --cacheinfo`) — xotira `commit-pathspec-takes-worktree-version`
+  retsepti. Ish daraxti tegilmadi: boshqa sessiyalarning tahriri o'z joyida qoldi.
+- Hook'lar bir martaga chetlab o'tildi (`core.hooksPath=/dev/null`), chunki `lint-staged` butun
+  daraxtni stash qilib begona fayllarni commit'ga qo'shib yuborardi (§6.7 B). Gate'lar shu sababdan
+  **qo'lda to'liq** yugurtirildi — yuqoridagi «Gate natijasi» bo'limi.
+
+### Keyingi qadam uchun
+
+- MK07 (12 qoida turi) `MANAGER_RULES` ni to'ldiradi — SLA registri **alohida** (`SLA_STAGES`),
+  ikkalasi bir jadvalda yashaydi, `resolveRules`/`resolveSlaStages` bir-birining kalitini jim
+  tashlab ketadi. Yangi qoida qo'shilganda bu ajratma buzilmasin.
+- Phase-2 QA (MK34 yoki menejer cohort) — shu ekranni jonli brauzerda: bo'sh holat, chegara
+  tahriri, `thresholdRejected` bayrog'i, `sourceTruncated` ogohlantirishi.

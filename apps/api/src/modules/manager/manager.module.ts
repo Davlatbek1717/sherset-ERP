@@ -17,6 +17,8 @@ import { OwnerWeeklySummaryService } from './kpi/owner-weekly-summary.service.js
 import { LiveStatusService } from './live/live-status.service.js';
 import { ManagerQueueController } from './queue/manager-queue.controller.js';
 import { ManagerQueueService } from './queue/manager-queue.service.js';
+import { ManagerSlaController } from './sla/manager-sla.controller.js';
+import { ManagerSlaService } from './sla/manager-sla.service.js';
 
 /**
  * Menejer bo'limi — 4-bo'lim TZ kengaytmasi.
@@ -46,6 +48,7 @@ import { ManagerQueueService } from './queue/manager-queue.service.js';
     ManagerKpiController,
     ManagerInventoryController,
     ManagerQueueController,
+    ManagerSlaController,
   ],
   providers: [
     EmployeeDailyKpiService,
@@ -59,6 +62,7 @@ import { ManagerQueueService } from './queue/manager-queue.service.js';
     DataQualityService,
     ManagerInventoryService,
     ManagerQueueService,
+    ManagerSlaService,
   ],
   exports: [EmployeeDailyKpiService, DailyKpiAcceptanceService],
 })

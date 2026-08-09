@@ -451,6 +451,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     // KPI qabulidan keyin ataylab tepada: qolgan sahifalar bitta-bitta signal
     // turini ko'rsatadi, bu esa hammasini yig'ib beradi. BLOKLAMAYDI.
     { key: 'work_queue', label: tMenejer('work_queue'), href: '/menejer/navbat' },
+    // 4M TZ §8 (MK10) — «nima QOTIB QOLGAN»: jarayonning qaysi bosqichida ish
+    // turib qolgani + SLA chegarasi. Navbatdan keyin ataylab: navbat bo'lib
+    // O'TGAN qoida buzilishini yig'adi, bu esa HALI BO'LMAGAN ishni ko'rsatadi.
+    // BLOKLAMAYDI.
+    { key: 'stuck_sla', label: tMenejer('stuck_sla'), href: '/menejer/qotib-qolgan' },
     // 4M TZ §6.1 — «hozir kim ishda»: diqqat talab qilgani tepada.
     { key: 'live', label: tMenejer('live'), href: '/menejer/jonli' },
     // 4M TZ §6.4 — «kimda nima qolgan»: pul ko'p bo'lgan tepada.
