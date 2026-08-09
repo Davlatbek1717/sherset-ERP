@@ -305,6 +305,60 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-09m (AUDIT-FIX FAZA 32 — FE auth-UX + POS i18n: refresh-dead redirect +
+> `/sotuv` va 3 POS dialogini i18n ga · `FE-07`, `FE-08`) · Phase-1: strukturaviy + unit,
+> RUNTIME-TASDIQLANMAGAN (browser-smoke YO'Q) · ⏳ DEPLOY QILINMAGAN · 🗄️ migratsiya SHART EMAS ·
+> ⚠️ parallel sessiya Faza 33 (`packages/contracts`, `retail/page.tsx`) ustida JONLI ishlayotgan
+> edi — `git add` 9 aniq yo'l, ularning fayllariga TEGILMADI; tarkib `git show --stat HEAD` bilan
+> tasdiqlandi.**
+>
+> **Nima qilindi (`a54fedd7`, 9 fayl, +982/−277):**
+>
+> **🐞 `FE-07` — o'lgan seans «tirik» ko'rinardi.** `auth-store.ts refresh()` `!res.ok` da faqat
+> `false` qaytarardi: `state.user` eski qiymatda, `ms:auth-hint` hamon `'1'`. `layout.tsx` redirect
+> sharti `initialized && !user && !hasAuthHint()` — uchala shart ham buzilmagani uchun **hech qachon
+> otilmasdi**. Refresh-cookie tugagach ilova to'liq qobiq bilan render bo'laverardi (menyu, tugmalar,
+> bo'sh ro'yxatlar) va HAR so'rov 401 berardi; faqat qo'lda `F5` qutqarardi. Endi **faqat 401/403**
+> da seans tozalanadi + `emit()` → redirect otiladi. **Tarmoq xatosi va 5xx ATAYLAB tozalamaydi** —
+> API restart yoki bir soniyalik offline kassirni sotuv o'rtasida chiqarib yuborsa, bu tuzatilgan
+> bugdan battar bo'lardi; ikkala holat testda qulflandi.
+>
+> **`FE-08` — POS i18n.** `/sotuv/page.tsx` (2050 qator) + `cash-out-dialog`, `debt-payment-dialog`,
+> `rasmilashtirish-modal`. **150 kalit × 2 til**: `pages.sotuv` +91, yangi `pages.pos` +59.
+> `payment-dialog` va `pos-pin-lock` allaqachon toza edi — tegilmadi. RU tarjimalar loyihaning
+> mavjud lug'atidan grounded (`fields.expense_item` «Статья расходов», `pages.z_report.collection`
+> «Инкассация», `fields.payee` «Получатель», `pages.payment_dialog` «Наличные/Карта/Сдача»).
+> Kalitlar **fail-closed skript** bilan qo'shildi (mavjud kalit boshqa qiymatda bo'lsa `exit 1`).
+>
+> **🛡️ Ikki gate teshigi O'LCHAB yopildi** (`__tests__/pos-i18n-guard.test.ts`):
+> (1) `i18n-key-existence` FAQAT `app/(app)` ni yuradi — **`src/components/` umuman skanerlanmaydi**,
+> ya'ni `components/pos/*` dagi `t('typo')` kassir ekraniga xom kalit bo'lib chiqardi va hamma gate
+> yashil qolardi; (2) `i18n-no-hardcoded` faqat `<route>/{new,[id]}` hujjat-formalarini tekshiradi —
+> `/sotuv` (yakka `page.tsx`) va dialoglar undan tashqarida edi. Skaner **pozitsiya bo'yicha**
+> (JSX matn tuguni · user-facing prop · `toast`/`alert`/`Error` argumenti), so'z-ro'yxati bo'yicha
+> emas ⇒ `data-test-id`/`queryKey` strukturaviy chetda (qo'riqchini qayta nomlash bilan aldab
+> bo'lmaydi). **Bo'sh-yashil EMASLIGI o'lchandi:** aynan shu mantiq `git show HEAD:` nusxalarida
+> **88 sizish** topdi (sotuv 56 · rasmiylashtirish 16 · debt 10 · cash-out 6 · payment-dialog 0 ·
+> pin-lock 0), hozir **0**.
+>
+> **Gate (QO'LDA to'liq):** web typecheck **0** · `check-lint.mjs` **0 error** · `i18n:gate` **9/9** ·
+> to'liq web Vitest **187 fayl / 2829 test yashil, 0 yiqilish**. Sanoq nazorati:
+> `2829 = 2814 (HEAD) + 5 (auth-store) + 5 (pos-guard) + 5 (parallel sessiyaning
+> shared-api-contracts.test.ts)`. Hook'lar **bir martaga** chetlab o'tildi
+> (`core.hooksPath=/dev/null`) — parallel sessiya jonli ishlayotganda `lint-staged` butun daraxtni
+> stash qiladi (CLAUDE.md §6.7 B), shuning uchun gate'lar markazda QO'LDA to'liq yugurtirildi.
+>
+> **⚠️ HUJJAT QARZI:** `docs/REJA-AUDIT-FIX-2026-08.md` dagi Faza 32 hisoboti **yozildi, lekin
+> ATAYLAB stage QILINMADI** — o'sha faylda parallel sessiyaning commit qilinmagan Faza 33 hisoboti
+> ham turibdi; butun faylni add qilsam ularning matni mening commit'imga tushardi (xotira
+> `commit-pathspec-takes-worktree-version`). Shu NEXT.md yozuvi ham xuddi shunday holatda.
+>
+> **⏭️ KEYINGI:** ochiq fazalar — **27b** (`PERF-01`), **27c** (`PERF-02`, dalili ESKIRGAN —
+> qayta o'qi), **29b** (`HR-13` soft-delete). Faza 32 qarzi (browser-QA · RU tarjimalarni ona
+> tilida so'zlashuvchi ko'rmagan · 3 dinamik kalit statik tekshirilmaydi · qo'riqchining
+> `{}` aralash ko'p qatorli matn ko'r nuqtasi) — `docs/REJA-AUDIT-FIX-2026-08.md` →
+> «Faza 32 → Qolgan qarz».
+
 > **🕒 2026-08-09l (AUDIT-FIX FAZA 33 — `@moysklad/contracts`: API-javob tiplari uchun yagona
 > manba + **provenance** arqoni · `FE-12`) · Phase-1: strukturaviy + unit, RUNTIME-TASDIQLANMAGAN
 > (browser-smoke YO'Q) · ⏳ DEPLOY QILINMAGAN · 🗄️ migratsiya SHART EMAS · ⚠️ parallel sessiya
