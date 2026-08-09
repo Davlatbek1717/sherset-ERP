@@ -69,7 +69,8 @@ foydalanuvchi bilan birga bajariladi (`/deploy` skill + shu ro'yxat):
 5. **Prod (`sherset_v2`) DDL'lari** — sxema-drift tufayli `migrate deploy` emas, qo'lda
    `prisma db execute --file`: jurnal-jadval + `doc_id` nullable · gateway `@@unique` (avval dublikat
    tekshir!) · dashboard indekslari (past yuklamada) · `move_positions.base_cost_minor` ·
-   `debt_payments.exchange_rate` ×10⁴→×10⁸ · `retail_sales.debt_return_minor`.
+   `debt_payments.exchange_rate` ×10⁴→×10⁸ · `retail_sales.debt_return_minor` ·
+   **`demand_positions.base_cost_minor`** (Faza Q4 — busiz deploy API'ni yiqitadi).
 6. **🔴 Telegram webhook** (Faza 21 DEPLOY-BLOKER): deploydan keyin har akkaunt uchun
    `POST /telegram/config/webhook` — aks holda inbound Telegram (jonli supply-approval tugmalari)
    TO'XTAYDI. Tekshir: `businessStatus.webhookSecretSet === true`.
@@ -216,7 +217,7 @@ tashqarisidagi elementni topadi. (3) mavjud javob-shakli regressiz.
 **▶ SESSIYA-BOSHI PROMPT:**
 > `docs/REJA-QOLDIQ-2026-08.md` — **Faza Q5**. O'ZGARMAS QOIDALAR. Faza 27a hisobotидаги naqshni o'qi.
 > `PERF-01`ni kodda tasdiqla. items.service DB-paginate + truncated. TDD: 3 stsenariy. Gate. Hisobot, TO'XTA.
-**◻ HISOBOT:** _(agent to'ldiradi)_
+**☑ HISOBOT (2026-08-09):** BAJARILDI — batafsili «HISOBOT JURNALI → Faza Q5» da.
 
 ---
 
@@ -1029,3 +1030,161 @@ Reja stsenariylari: (1) 1000 tiyin / 3 dona to'liq chiqim → `costBalance` ayna
    `shared/` ga ko'chirilsin.
 
 **Commit:** `fix(cogs): faza q4 — demand oxirgi-birlik + supply remainingQty tozalash (STK-08 sinfi)`
+
+---
+
+## Faza Q5 — Analitika items: DB-paginate + `truncated` (`PERF-01`, asl reja 27b) (2026-08-09) — **Phase-1: strukturaviy + unit-tasdiqlangan + jonli-DB o'lchangan, browser-smoke YO'Q**
+
+### Topilma tasdiqlanishi (o'z ko'zim bilan kodda) — audit da'vosi QISMAN ESKIRGAN
+
+Reja: «`items.service.ts` hammani RAM'ga tortib JS'da agregat + 10k cap jim kesadi» va yechim
+yo'nalishi «qidiruvni `take` dan OLDIN SQL `where` ga tushir». Kod o'qildi (`items.service.ts`,
+o'zgarishdan oldingi 438 qator):
+
+| Da'vo qismi | Dalil (fix'dan oldingi qator) | Xulosa |
+|---|---|---|
+| Cap **10 000** | `:399` `const MAX_PRODUCTS_PER_QUERY = 10_000` | **TASDIQ** |
+| Cap **jim** kesadi | javob shakli `{items,total,page,pageSize,totalPages}` — hech qanday bayroq yo'q | **TASDIQ** |
+| `total` **kesilgan** ro'yxatdan | `:163` `const total = filtered.length` (⇐ `allRows` ⇐ `take: 10_000`) | **TASDIQ** — 12 000 lik katalogda `total` **10 000** deb yolg'on gapirardi |
+| Agregat + saralash JS'da | `:154-165` `filter` → `sort` → `slice` | **TASDIQ** |
+| **Qidiruv `take` dan KEYIN** | `:246-254` `buildProductWhere()` ichida `OR: [name/code/article contains]` → `:84` `findMany({ where: baseWhere, take })` | **❌ ESKIRGAN — qidiruv ALLAQACHON SQL `where` da, `take` dan OLDIN** |
+
+Ya'ni Faza 27a dagi `PERF-10` («search-before-take») ning items'dagi ekvivalenti **allaqachon
+to'g'ri edi**. Bu ko'r-ko'rona qo'llanmadi: TDD testi buni alohida o'lchadi — «qidiruv cap
+oynasidan tashqaridagi tovarni topadi» testi RED bosqichida **faqat `truncated: undefined`**
+sababli yiqildi, `total`/`items` da'volari o'sha yerda ham O'TDI (ya'ni qidiruv haqiqatan
+ishlayotgan edi). Shu sababli `resolveSearchIds()` naqshi items'ga KO'CHIRILMADI — 2 000 lik
+yangi cap qo'shish faqat zarar qilardi.
+
+**+2 QO'SHIMCHA topilma (audit ko'rmagan, o'zim topdim):**
+
+1. **`take: 10_000` da `orderBy` UMUMAN YO'Q edi** (`:83-97`). Ya'ni 12 000 lik katalogdan qaysi
+   10 000 tasi tushishi — DB kayfiyati (`Seq Scan` tartibi). `sort='name' asc` so'ralganda ham
+   alifbodagi birinchi tovar oynadan tashqarida qolishi va sahifa 1 da **umuman ko'rinmasligi**
+   mumkin edi. Bu «yolg'on `total`» dan ham yomonroq: sahifa mazmuni beqaror.
+2. **`stats()` ham aynan shu bug'ga ega edi** (`:178-203`): `totalItems: products.length` va
+   `noPartnerCount` — ikkalasi ham cap-oyna ichidan. KPI kartochkalari 10 000 da muzlab qolardi.
+
+### Yechim — ikki yo'l, `total` HAR IKKALASIDA butun-scope
+
+Faza 27a naqshi qo'llandi (SQL pre-filtr → `skip`/`take` DB'da → alohida `count` → `truncated`),
+lekin items'ning o'ziga xosligi hisobga olindi: saralash maydonlarining bir qismi (`stock`,
+`soldQty`, `sellPrice`) SQL'da YO'Q (agregat/JSON), shuning uchun ular uchun cap saqlanadi.
+
+**A. DB-paginate (cap'siz).** Shart: `sort ∈ {name, code}` **va** `lowStock` yoqilmagan.
+`orderBy: [{sort: order}, {id:'asc'}]` + `skip: (page-1)*pageSize` + `take: pageSize`.
+Node'ga **faqat bir sahifa** (≤200 qator) keladi, agregatlar ham faqat shu sahifa uchun.
+`total = product.count(where)`, `truncated: false`. Bu — FE ning DEFAULT rejimi
+(`page.tsx` da `sort` boshlang'ich qiymati `'name'`), ya'ni real yuklamaning katta qismi.
+
+**B. Agregat-yo'l (cap saqlanadi, lekin JIM EMAS).** Shart: `sort ∈ {stock, soldQty, sellPrice}`
+yoki `lowStock`. `orderBy: [{name:'asc'},{id:'asc'}]` (**deterministik oyna** — 1-qo'shimcha
+topilma), `take: MAX_PRODUCTS_PER_QUERY`. `truncated = scopeTotal > MAX_PRODUCTS_PER_QUERY`.
+`total` = butun-scope `count` (`lowStock` dan tashqari — pastdagi «Qolgan qarz» 1-band).
+
+**`stats()`**: `totalItems` va `noPartnerCount` endi ikkita SQL `count` (butun scope, cap'siz,
+`Promise.all` da). `lowStockCount` cap-oyna ichida qoladi (sabab quyida) + `truncated` bayrog'i.
+
+### Fayllar
+
+| Fayl | O'zgarish |
+|---|---|
+| `apps/api/src/modules/analitika/items.service.ts` | `ItemsResponse.truncated` + `ItemsStats.truncated` (yangi maydonlar, ADDITIV); `list()` ikki yo'lga bo'lindi (A: `skip`/`take`/`orderBy` DB'da, B: deterministik cap-oyna); `total` ⇐ `product.count(where)`; `stats()` da `totalItems`/`noPartnerCount` ⇐ `count`; `MAX_PRODUCTS_PER_QUERY` endi **eksport** qilinadi (test qulflaydi) + izohi «cap bor, ammo jim emas» ga yozildi |
+| `apps/api/src/modules/analitika/items.service.test.ts` | **Edit** (Write EMAS — `never-write-over-existing-test-file`; `git status` da ` M`). Mavjud 9 test SAQLANDI; `makePrisma` dubli `skip`/`take`/`count(where.supplierId)` DB-semantikasiga o'tkazildi (servis endi DB-paginate qiladi ⇒ dubl ham kesishi SHART); **+10 yangi test** (`CAP+5` = 10 005 qatorli sun'iy katalog, `where`→`orderBy`→`skip`/`take` ni baholaydigan dubl) |
+
+**FE tegilmadi.** `apps/web/src/app/(app)/analitika/mahsulotlar/page.tsx` javob shaklini
+o'zining LOKAL `interface ItemsResponse`/`ItemsStatsData` si bilan o'qiydi — yangi maydon
+qo'shilishi uni buzmaydi (grep bilan tekshirildi: butun `apps/web` da items API ning yagona
+iste'molchisi shu sahifa). `truncated` ni FE ko'rsatishi — Faza Q16 ishi.
+
+### Testlar (TDD — RED JONLI o'lchandi)
+
+**RED** (`vitest run src/modules/analitika/items.service.test.ts`): **9 failed | 9 passed (18)**.
+Yiqilganlar (aynan xabarlar):
+
+| # | Test | RED xabari |
+|---|---|---|
+| 1 | sort=name da sahifani DB dan oladi + total butun-scope | `expected 10000 to be 10005` |
+| 2 | sort=name asc alifbodagi birinchi tovarni topadi | `expected 'Tovar-000000' to be 'AAA-alifboda-birinchi'` |
+| 3 | DB-paginate sahifa 2 ni skip bilan oladi | `expected undefined to be 25` (`skip` umuman uzatilmasdi) |
+| 4 | sort=stock cap ga uriladi — total butun-scope, truncated TRUE | `expected 10000 to be 10005` |
+| 5 | cap dan kichik to'plamda truncated=false | `expected undefined to be false` |
+| 6 | qidiruv cap oynasidan tashqaridagi tovarni topadi | `expected undefined to be false` ⇐ **faqat `truncated`**; `total===1` va nom mosligi O'TDI ⇒ qidiruv allaqachon to'g'ri edi |
+| 7 | lowStock cap ga urilganda truncated TRUE | `expected undefined to be true` |
+| 8 | stats totalItems/noPartnerCount butun-scope | `expected 10000 to be 10005` |
+| 9 | kichik to'plamda stats truncated=false | `expected undefined to be false` |
+
+Fix'dan keyin +1 qulf-test qo'shildi (`MAX_PRODUCTS_PER_QUERY === 10_000` — konstanta jimgina
+o'zgarsa `CAP+5` stsenariylari «cap'dan katta» ni tekshirishni to'xtatib qo'yardi).
+
+**GREEN:** `src/modules/analitika` → **13 fayl / 132 test yashil** (items fayli: 19/19).
+
+### Jonli DB o'lchovi (`climart_adopt @ localhost:5432`, rollback-tranzaksiya)
+
+Unit-dubl so'rov SHAKLINI tasdiqlaydi, lekin PLANNI emas. Shu sababli lokal bazada
+rollback-tranzaksiyasi ichida **12 000** sun'iy tovar seed qilinib (`Q5SEED-*`), uchala so'rov
+`EXPLAIN (ANALYZE, BUFFERS)` bilan o'lchandi:
+
+```
+mavjud tovarlar = 8 → seed keyin = 12 008
+A) YANGI count(*)                    2.713 ms · buffers 267 · Seq Scan
+B) YANGI ORDER BY name,id LIMIT 50   5.356 ms · buffers 267 · top-N heapsort (Memory 29kB, rows=50)
+C) ESKI  LIMIT 10000 (width=200)     2.342 ms · buffers 224 · Seq Scan, ORDER BY YO'Q
+rollback keyin tovarlar = 8  OK (seed qolmadi) · Q5SEED qoldiq = 0
+```
+
+**O'qilishi (halol):** DB-vaqti bo'yicha eski yo'l tez ko'rinadi (2.3 ms) — chunki PG uchun
+og'irlik u yerda emas. Farq Node tomonida: eski yo'l **10 000 × width 200 ≈ 2 MB** ni Prisma
+orqali deserializatsiya qilardi, keyin 5 ta agregat-so'rovga **10 000 elementli `IN (…)`**
+uzatardi va 10 000 obyektni JS'da yig'ib-saralardi. Yangi A-yo'lida bu **≤ pageSize (max 200)**
+ga tushdi. B ustuni `Sort → top-N heapsort … rows=50` ni ko'rsatadi: PG faqat 50 qatorni
+materializatsiya qiladi, 12 008 tasini emas. Va C plani `ORDER BY` siz — bu 1-qo'shimcha
+topilmaning jonli dalili: qaysi 10 000 tushishi rejada belgilanmagan.
+
+O'lchov skripti scratchpad'da qoldi, **commit'ga kiritilmadi** (bir martalik).
+
+### Gate (jonli)
+
+| Gate | Natija |
+|---|---|
+| `pnpm --filter @moysklad/api typecheck` | **0 xato** |
+| `pnpm lint:product` | **0 error** (747 warning — siyosat bo'yicha ruxsat) |
+| `vitest run src/modules/analitika src/modules/report` | **50 fayl / 466 test yashil** |
+| To'liq API suite (`--shard=1/3`, `2/3`, `3/3` — watchdog uchun bo'lindi) | 145+145+143 fayl / **5696 passed, 2 skipped** (1 fayl skip). Baza 5686+2 edi, +10 = mening yangi testlarim. **Regress 0** |
+| `pnpm i18n:gate` | Qo'llanmaydi — UI-matn tegilmadi |
+
+### Qolgan qarz / DEFER
+
+1. **`lowStock` rejimida `total` hamon oyna ichidan.** Sabab: «qoldiq < 10» sharti `Stock`
+   jadvalidagi **yig'indiga** bog'liq va Prisma tovar-`where` ustidan aggregate-filtr bermaydi.
+   To'g'ri yechim — `products ⋈ stocks` raw-SQL `GROUP BY … HAVING SUM(qty) < 10` (Faza 27a
+   `countGroups()` uslubida), lekin u `buildProductWhere()` ni (shu jumladan `ILIKE` qidiruv va
+   `inCartIds`) SQL'da TAKRORLASHNI talab qiladi ⇒ drift xavfi. Hozircha: oyna ichida ANIQ son +
+   `truncated: true`. Ayni sabab bilan `stats().lowStockCount` ham cap-oyna ichida.
+2. **B-yo'lida `page > cap/pageSize` bo'sh sahifa qaytaradi** (`total` butun-scope, lekin xizmat
+   ko'rsatiladigan qatorlar 10 000 tasi). Bu ATAYLAB: reja «`total` butun-scope bo'lsin» deydi va
+   `truncated: true` buni oshkor qiladi. FE bunday sahifaga o'tsa bo'sh jadval ko'radi.
+3. **`truncated` FE'da KO'RSATILMAYDI** — Faza 27a ning 1-qarzi bilan bir xil sinf, Faza Q16 ga.
+4. **`loadAggregates()` dagi `lastSupplies take: 5000` — hamon JIM cap.** B-yo'lida 10 000 tovarga
+   5 000 ta pozitsiya yetmasligi mumkin ⇒ ba'zi qatorlar `lastPartnerName: null` bo'lib qoladi va
+   buni hech kim aytmaydi. A-yo'lida xavf yo'q (≤200 tovar). Bu **boshqa o'q** (qator ichidagi
+   maydon, ro'yxat emas) — shu fazada tegilmadi.
+5. **`(account_id, name)` indeksi YO'Q.** A-yo'li `top-N heapsort` bilan ishlaydi (12 000 da 5 ms —
+   yaxshi), lekin katalog o'nlab minglarga chiqsa index-scan bilan haqiqiy top-N bo'lardi.
+   `products_name_trgm_idx` (GIN) faqat `contains` qidiruvga yaraydi, `ORDER BY` ga emas.
+   O'lchangan, **hozircha shart emas** — indeks qo'shish OPS-qadam.
+6. **Browser-smoke YO'Q.** `/analitika/mahsulotlar` real brauzerda ochilmadi — Phase-2 QA sessiyasiga.
+   Ayniqsa tekshirilsin: sahifalagich endi haqiqiy `total` ni ko'rsatadi (katta katalogda sahifa
+   soni O'ZGARADI) va `sort=name` sahifasi endi DB-collation bo'yicha (ilgari JS `localeCompare`)
+   tartiblanadi — kirill/lotin aralash nomlarda tartib biroz farq qilishi mumkin.
+
+### Parallel sessiya sharoiti (CLAUDE.md §6)
+
+Ish daraxtida `docs/REJA-QOLDIQ-2026-08.md` da **Faza Q4** sessiyasining commit qilinmagan 2 qatorli
+OPS-tahriri turgan edi (OPS-5 ga `demand_positions.base_cost_minor` bandi). Q4 ning o'zi
+`8655feb2` da commit qilingan, ya'ni bu — yakunlangan sessiyaning qolib ketgan doc-yozuvi;
+Faza 34 presedenti bo'yicha u shu doc-commit bilan birga keladi. Mening yozuvim faylga
+`appendFileSync` bilan qo'shildi — **marker-kesish YO'Q** (`doc-append-marker-truncation`),
+Q1–Q4 yozuvlariga TEGILMADI. `git add` faqat 3 aniq yo'l bilan.
+
+**Commit:** `fix(report): faza q5 — analitika items db-paginate + truncated (PERF-01)`
