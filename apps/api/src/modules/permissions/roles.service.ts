@@ -12,6 +12,13 @@ import { checkGrantAllowed } from './employee-permission.js';
 import { PermissionsService } from './permissions.service.js';
 import type { PermissionAction, PermissionEntity, PermissionScope } from './permissions.types.js';
 import {
+  ROLE_TEMPLATES,
+  type RoleTemplateSlug,
+  type TemplateCell,
+  isRoleTemplateSlug,
+  resolveTemplateMatrix,
+} from './role-templates.js';
+import {
   CreateRoleSchema,
   type RolePermissionCellInput,
   UpdateRoleSchema,
@@ -45,6 +52,28 @@ export interface RoleDetail extends RoleListRow {
     action: string;
     scope: PermissionScope;
   }>;
+}
+
+/**
+ * MK29 — shablon qo'llangandan KEYIN ham kuchda qoladigan individual
+ * tuzatish (QAROR-B4.3). `templateScope` — shablon nima deyapti,
+ * `overrideScope` — amalda nima kuchda.
+ */
+export interface MaskedOverride {
+  employeeId: string;
+  employeeName: string;
+  entity: string;
+  action: PermissionAction;
+  templateScope: PermissionScope;
+  overrideScope: PermissionScope;
+}
+
+export interface ApplyTemplateResult {
+  role: RoleDetail;
+  slug: RoleTemplateSlug;
+  /** Rolga yozilgan (NO-bo'lmagan) katakchalar soni. */
+  applied: number;
+  maskedByOverride: MaskedOverride[];
 }
 
 /**
@@ -258,6 +287,169 @@ export class RolesService {
       mapVersionedUpdateError(e, 'Role');
       this.handlePrisma(e);
     }
+  }
+
+  /**
+   * MK29 — rol shablonini ROLGA qo'llash (TZ §3.4, QAROR-B4.3).
+   *
+   * ⚠️ SHARTNOMA: bu amal **faqat rol qatlamiga** tegadi. Xodim
+   * override'lari (`employee_permissions`, MK26) **o'chirilmaydi** va
+   * amaldagi ruxsatda g'olib qolaveradi. Buning o'rniga javobda
+   * `maskedByOverride[]` qaytadi — «shu xodimlarda shablondan FARQ qiluvchi
+   * individual tuzatish bor» ro'yxati.
+   *
+   * Nega o'chirmaymiz: `clearOverrides` bayrog'i ko'rib chiqilgan va RAD
+   * ETILGAN (QAROR-B4.3) — tasodifiy bosishda ruxsat jimgina kengayardi va
+   * buni faqat audit jurnalidan keyin bilib olinardi. Nega ro'yxat majburiy:
+   * aks holda admin «standartga qaytardim» deb o'ylardi, amalda esa qo'lda
+   * berilgan ortiqcha ruxsat qolib ketardi.
+   *
+   * G1 (MK26) shu yerda ham ishlaydi: aks holda `role:update` olgan menejer
+   * «Admin» shablonini bosib o'ziga to'liq kirish yozardi — qo'lda tahrir
+   * yo'li yopiq bo'lsa-yu, shablon tugmasi ochiq qolsa, qulf bezakka
+   * aylanardi.
+   */
+  async applyTemplate(
+    accountId: string,
+    roleId: string,
+    slug: RoleTemplateSlug,
+    version: number,
+    actorEmployeeId: string,
+  ): Promise<ApplyTemplateResult> {
+    // Slug tekshiruvi HAR QANDAY DB amalidan oldin: `__proto__` kabi qiymat
+    // `ROLE_TEMPLATES[slug]` orqali o'tib ketmasin.
+    if (!isRoleTemplateSlug(slug)) {
+      throw new BadRequestException(`Noma'lum rol shabloni: ${String(slug)}`);
+    }
+    const tpl = ROLE_TEMPLATES[slug];
+
+    const existing = await this.prisma.client.role.findFirst({
+      where: { id: roleId, accountId },
+      select: { id: true },
+    });
+    if (!existing) throw new NotFoundException(`Role ${roleId} not found`);
+
+    const matrix = resolveTemplateMatrix(slug);
+    const cells = matrix.filter((c) => c.scope !== 'NO');
+
+    // G1 — yozishdan OLDIN, atomik rad etish (yarim qo'llash yo'q).
+    await this.assertNoEscalation(actorEmployeeId, cells);
+
+    try {
+      await this.prisma.client.$transaction(async (tx) => {
+        // Optimistic lock: matritsa to'liq qayta yozilgani uchun eskirgan
+        // version bilan kelgan chaqiruv boshqa sessiyaning tahririni
+        // jimgina bosib ketardi.
+        await tx.role.update({
+          where: { id: roleId, accountId, version },
+          data: {
+            templateSlug: slug,
+            // Kiosk rejimi shablon bilan BIRGA ko'chadi: «Kassir» shabloni
+            // qo'llanib, uiMode `full` qolsa — kassir butun ERP menyusini
+            // ko'rib turardi (kassa TZ §3.1 buzilishi).
+            uiMode: tpl.uiMode,
+            version: { increment: 1 },
+          },
+        });
+        await tx.rolePermission.deleteMany({ where: { roleId } });
+        await tx.rolePermission.createMany({
+          data: cells.map((c) => ({
+            roleId,
+            entity: c.entity,
+            action: c.action,
+            scope: c.scope,
+          })),
+          skipDuplicates: true,
+        });
+        // G3 — audit. Katakchalarni birma-bir yozmaymiz (504 qator): shablon
+        // nomi + soni yetarli, matritsaning o'zi registrda deterministik.
+        await tx.auditLog.create({
+          data: {
+            accountId,
+            userId: actorEmployeeId,
+            entity: 'role',
+            entityId: roleId,
+            action: 'template-apply',
+            fieldChanges: {
+              templateSlug: { before: null, after: slug },
+              cells: { before: null, after: String(cells.length) },
+            },
+          },
+        });
+      });
+    } catch (e) {
+      mapVersionedUpdateError(e, 'Role');
+      this.handlePrisma(e);
+    }
+
+    const maskedByOverride = await this.collectMaskedOverrides(accountId, roleId, matrix);
+
+    return {
+      role: await this.findOne(accountId, roleId),
+      slug,
+      applied: cells.length,
+      maskedByOverride,
+    };
+  }
+
+  /**
+   * Shablon qo'llangandan keyin ham kuchda qoladigan individual tuzatishlar.
+   *
+   * Faqat shablondan **FARQ qiladigan** qatorlar qaytadi: override scope
+   * shablon bilan bir xil bo'lsa amaldagi ruxsat o'zgarmaydi, ya'ni uni
+   * ro'yxatga qo'shish ogohlantirishni shovqinga aylantirardi.
+   */
+  private async collectMaskedOverrides(
+    accountId: string,
+    roleId: string,
+    matrix: readonly TemplateCell[],
+  ): Promise<MaskedOverride[]> {
+    const members = await this.prisma.client.employeeRole.findMany({
+      where: { roleId },
+      select: { employeeId: true },
+    });
+    if (members.length === 0) return [];
+    const memberIds = members.map((m) => m.employeeId);
+
+    const overrides = await this.prisma.client.employeePermission.findMany({
+      where: { accountId, employeeId: { in: memberIds } },
+      select: {
+        employeeId: true,
+        entity: true,
+        action: true,
+        scope: true,
+        employee: { select: { firstName: true, lastName: true } },
+      },
+    });
+
+    const templateScope = new Map(matrix.map((c) => [`${c.entity}.${c.action}`, c.scope]));
+
+    const rows: MaskedOverride[] = [];
+    for (const o of overrides) {
+      const tplScope = templateScope.get(`${o.entity}.${o.action}`) ?? 'NO';
+      if (tplScope === o.scope) continue;
+      rows.push({
+        employeeId: o.employeeId,
+        employeeName:
+          `${o.employee?.lastName ?? ''} ${o.employee?.firstName ?? ''}`.trim() || o.employeeId,
+        entity: o.entity,
+        action: o.action as PermissionAction,
+        templateScope: tplScope,
+        overrideScope: o.scope as PermissionScope,
+      });
+    }
+    // Barqaror tartib — UI ro'yxati va testlar chayqalmasin.
+    rows.sort(
+      (a, b) =>
+        a.employeeName.localeCompare(b.employeeName) ||
+        a.entity.localeCompare(b.entity) ||
+        a.action.localeCompare(b.action),
+    );
+
+    // Yangi matritsa darhol kuchga kirsin (cache TTL 5 daqiqa).
+    for (const id of memberIds) this.permissions.invalidate(id);
+
+    return rows;
   }
 
   async delete(accountId: string, id: string): Promise<{ ok: true }> {

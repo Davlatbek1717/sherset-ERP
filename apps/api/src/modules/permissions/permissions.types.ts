@@ -143,6 +143,127 @@ export type PermissionEntity =
   | 'hractivity'
   | 'hrsettings';
 
+/**
+ * Yuqoridagi union'ning RUNTIME ko'rinishi (MK29).
+ *
+ * Nega kerak: TS union runtime'da yo'q, shu sababli rol shabloni «har entity
+ * uchun qanday scope chiqadi» degan savolga faqat qattiq yozilgan ro'yxat
+ * bilan javob bera oladi. Ro'yxat eskirsa — shablon yangi entity'ni jimgina
+ * `NO` da qoldiradi (yoki `defaults` orqali jimgina OCHIB yuboradi), ya'ni
+ * aynan `permissions-seed-sync.test.ts` tutadigan drift bug-klassi.
+ * Shu sababli o'sha test bu ro'yxatni ham union bilan solishtiradi.
+ *
+ * Tartib union bilan bir xil — snapshot diff'i o'qiladigan bo'lib qolsin.
+ */
+export const PERMISSION_ENTITIES: readonly PermissionEntity[] = [
+  // Master data
+  'product',
+  'productfolder',
+  'variant',
+  'bundle',
+  'service',
+  'pricetype',
+  'counterparty',
+  'contactperson',
+  'organization',
+  'branch',
+  'store',
+  'cashdesk',
+  'bankaccount',
+  'employee',
+  'role',
+  'mxik',
+  'exchangerate',
+  'currency',
+  'project',
+  'contract',
+  'uom',
+  'taxrate',
+  'expenseitem',
+  'customentity',
+  'region',
+  'country',
+  'trackingcode',
+  'discount',
+  // Sales documents
+  'customerorder',
+  'demand',
+  'invoiceout',
+  'salesreturn',
+  'factureout',
+  'commissionreport',
+  'consignment',
+  // Purchase documents
+  'purchaseorder',
+  'supply',
+  'invoicein',
+  'purchasereturn',
+  'facturein',
+  // Money documents
+  'paymentin',
+  'paymentout',
+  'cashin',
+  'cashout',
+  'bankimport',
+  'counterpartyadjustment',
+  'prepayment',
+  'prepaymentreturn',
+  // Warehouse documents
+  'move',
+  'loss',
+  'enter',
+  'inventory',
+  'internalorder',
+  'pricelist',
+  // Production
+  'bom',
+  'workorder',
+  'processingorder',
+  'processing',
+  'processingprocess',
+  'processingstage',
+  'payroll',
+  // Retail / E-commerce
+  'cashiersession',
+  'retailsale',
+  'saleschannel',
+  'onlineorder',
+  // CRM
+  'pipeline',
+  'opportunity',
+  'call',
+  'task',
+  'tasktype',
+  // Cross-cutting
+  'attachment',
+  'auditlog',
+  'report',
+  'publication',
+  'label',
+  'settings',
+  // Analitika
+  'analitika',
+  // Debts
+  'debt',
+  'debtpayment',
+  'debtcardpayment',
+  'debtreport',
+  // HR
+  'hrdashboard',
+  'hrmessage',
+  'hrmessagedemand',
+  'hrmessageorder',
+  'hrmessagepaymentin',
+  'hrmessagesupply',
+  'hrmessagereturn',
+  'hrreport',
+  'hremployee',
+  'hrtask',
+  'hrsalary',
+  'hractivity',
+  'hrsettings',
+];
+
 export type PermissionAction =
   | 'view'
   | 'create'
@@ -150,6 +271,16 @@ export type PermissionAction =
   | 'delete'
   | 'approve' // for documents
   | 'print';
+
+/** Kanonik amal ro'yxati — runtime (matritsa qurish va snapshot uchun). */
+export const PERMISSION_ACTIONS: readonly PermissionAction[] = [
+  'view',
+  'create',
+  'update',
+  'delete',
+  'approve',
+  'print',
+];
 
 export function maxScope(a: PermissionScope, b: PermissionScope): PermissionScope {
   return SCOPE_ORDER[a] >= SCOPE_ORDER[b] ? a : b;

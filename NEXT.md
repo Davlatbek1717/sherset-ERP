@@ -305,6 +305,57 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-10c (REJA-MENEJER-KASSA **MK29** — TZ §3.4: 10 rol shabloni) — ✅ **Phase-1
+> complete** (strukturaviy + unit; **browser-smoke YO'Q**). To'liq hisobot:
+> `docs/REJA-MENEJER-KASSA-2026-08.md` → HISOBOT JURNALI → «Faza MK29».**
+>
+> **⛔ Avval bloklovchi QAROR-B4 yopildi** — va savolning **yarmi noto'g'ri asosga qurilgan**
+> ekan (kodda tekshirildi): **`director` degan rol umuman YO'Q** (u faqat
+> `Organization.director` matn maydoni va Telegram `directorSlot`); `manager` esa kod
+> tekshiradigan, lekin **`seed-hr.ts` da yo'q** slug edi ⇒ menejer shoxi (`resolveShiftActor`,
+> `manager-kpi.resolveActor`) seed qilingan bazada **hech qachon ishga tushmagan**. Egasi uch
+> qarorni tasdiqladi (rejada B4.1/B4.2/B4.3 sifatida yozilgan).
+>
+> **Bajarildi (TDD — 81 yangi test):** `permissions/role-templates.ts` (YANGI — 10 shablon,
+> `defaults → DENY(sezgir) → grants` uch qatlami) · `permissions.types.ts`
+> (`PERMISSION_ENTITIES`/`PERMISSION_ACTIONS` = union'ning runtime nusxasi) ·
+> `Role.templateSlug` + migratsiya `20260810130000_role_template_slug` (lokal `climart_adopt`
+> ga qo'llandi) · `RolesService.applyTemplate()` + 2 endpoint · `scripts/seed-role-templates.ts`
+> (YANGI, idempotent) · `seed-hr.ts` `manager` roli · ru+uz `pages.roleTemplates.*`.
+>
+> **🔴 UCHTA SHARTNOMA (test bilan qulflangan):**
+> (1) **Identifikator = `templateSlug`, `name` EMAS.** Nom foydalanuvchi tahrirlaydigan matn —
+> qayta nomlansa shablon aloqasi jimgina uzilardi va ru interfeysda o'zbekcha nom turaverardi.
+> (2) **Shablon override'ni O'CHIRMAYDI** (QAROR-B4.3) — faqat rol qatlami yoziladi, javobda
+> `maskedByOverride[]` (shablondan **farq qiladigan** individual tuzatishlar). `clearOverrides`
+> bayrog'i ko'rib chiqilib **rad etildi**: tasodifiy bosishda ruxsat jimgina kengayardi.
+> (3) **Kassir shabloni `KIOSK_ALLOWED` bilan MOS bo'lishi shart** — har katakcha
+> `entity→@Controller yo'li`, `action→HTTP metod` bo'yicha tekshiriladi. Aks holda «qog'ozda
+> ruxsat bor, amalda `KioskGuard` bloklaydi» — sozlovchi 403 sababini topa olmasdi.
+>
+> **Testlar bo'sh emasligi O'LCHANDI** (snapshot yashilligi dalil emas): 3 mutatsiya qo'llanib
+> tutilishi ko'rildi — DENY qatlami olinsa **8 test**, kassirga `demand:view` berilsa kiosk
+> testi, `manager` seed'dan olinsa **4 test** yiqiladi.
+>
+> **🧪 Runtime unit test topmagan nuqsonni ko'rsatdi:** seed skripti lokal bazada haqiqatan
+> yugurtirildi (DRY → `--apply` → qayta `--apply`) va migratsiya `Administrator` ni `admin`
+> slug'iga backfill qilgani uchun **ikkinchi «Admin» roli** yaratilgani ko'rindi (bir xil 564
+> katakcha). Qidiruv `templateSlug` → nom tartibiga o'zgartirildi, dublikat o'chirildi, qayta
+> yugurtirib tasdiqlandi (idempotent: 0 o'zgarish).
+>
+> **Gate (to'liq):** api typecheck **0** · web typecheck **0** · `lint:product` **0 xato** ·
+> `vitest run` butun api **515 fayl / 7291 test YASHIL** · `i18n:gate` **9/9**.
+> **Halol yorliq: Phase-1 (strukturaviy + unit), browser-smoke YO'Q** → MK40 (ruxsat QA).
+>
+> **🔴 QARZ:** (1) **UI yo'q** — shablon tugmasi va `maskedByOverride` ro'yxati **MK28** ishi
+> (i18n kalitlari oldindan qo'yildi); (2) **`hrRoles` ↔ ERP roli birlashuvi qilinmadi**
+> (QAROR-B4.2 ataylab) — «Kassir» shabloni berilgan xodim avtomat `cashier` hrRole olmaydi,
+> ikki lug'at hali qo'lda bog'lanadi; (3) **prod migratsiyasi qilinmadi** — 4 OPS-qadam
+> hisobotda (DDL · seed skripti DRY→apply · `manager` HrRole · api restart).
+>
+> **➡️ KEYINGI:** **MK28** (ruxsat matritsasi UI) — endi bloksiz: MK26 (override + G1/G2/G3),
+> MK27 (HR adapteri) va MK29 (shablonlar + `GET /roles/templates`) tayyor.
+
 > **🕒 2026-08-10b (REJA-MENEJER-KASSA **MK26** — TZ §3.1/§3.3: `EmployeePermission` +
 > amaldagi ruxsat hisobi + G1/G2/G3) — ✅ **Phase-1 complete** (strukturaviy + unit;
 > **browser-smoke YO'Q**). To'liq hisobot: `docs/REJA-MENEJER-KASSA-2026-08.md` → HISOBOT

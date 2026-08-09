@@ -58,6 +58,18 @@ const lists: Array<[string, string[]]> = [
       'permissions.service.ts',
     ),
   ],
+  [
+    // MK29 — union'ning runtime nusxasi. Rol shabloni matritsasi shu ro'yxat
+    // ustidan quriladi: u eskirsa yangi entity shablonlarda jimgina `NO` da
+    // qoladi (yoki `defaults` orqali jimgina ochiladi) va snapshot buni
+    // ko'rsatmaydi — chunki snapshot ham shu ro'yxatdan yuradi.
+    'permissions.types.ts PERMISSION_ENTITIES (runtime nusxa)',
+    extract(
+      readFileSync(join(API_ROOT, 'src/modules/permissions/permissions.types.ts'), 'utf8'),
+      /export const PERMISSION_ENTITIES: readonly PermissionEntity\[\] = \[([\s\S]*?)\];/,
+      'PERMISSION_ENTITIES',
+    ),
+  ],
 ];
 
 describe('permission entity lists stay in sync with PermissionEntity', () => {

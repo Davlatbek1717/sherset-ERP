@@ -124,7 +124,7 @@ Umumiy shakl (agar prompt qo'lda yozilsa):
 | ~~**QAROR-B1**~~ | ~~Bonus/jarima **formulasi**~~ — ✅ **YOPILDI 2026-08-09** (egasining tasdig'i), quyida | ~~MK01~~ |
 | ~~**QAROR-B2**~~ | ~~Kompozit ball chegarasi **150%**~~ — ✅ **YOPILDI 2026-08-09** (egasining tasdig'i), quyida | ~~MK13~~ |
 | ~~**QAROR-B3**~~ | ~~`lower_better` formulasi~~ — ✅ **YOPILDI 2026-08-09** (egasining tasdig'i), quyida | ~~MK13~~ |
-| **QAROR-B4** | Rol nomlari: hozir `admin`/`director` = ega, `manager`/`menejer` = menejer — shundaymi? | **MK29** |
+| ~~**QAROR-B4**~~ | ~~Rol nomlari: hozir `admin`/`director` = ega, `manager`/`menejer` = menejer — shundaymi?~~ — ✅ **YOPILDI 2026-08-10** (egasining tasdig'i), quyida | ~~MK29~~ |
 
 **▶ QAROR SESSIYASI PROMPTI:**
 > `docs/REJA-MENEJER-KASSA-2026-08.md` — «EGASIDAN QAROR KUTILMOQDA» dagi 4 qarorni men bilan yop.
@@ -213,6 +213,30 @@ yo'q bo'lardi.
 | Manba raqam | Kunning **MUZLATILGAN** `scorePercent` i (jonli qayta hisob EMAS) |
 | Qamrov | `daysCounted` / `daysInPeriod` javobda **ochiq** qaytadi — «2 kundan chiqqan reyting» yashirilmaydi |
 | Ballanmagan xodim | `rated: false` + sabab; **0 ball bilan oxirgi o'ringa qo'yilmaydi** (NULL ≠ 0) |
+
+### ✅ QAROR-B4 — YOPILDI (2026-08-10, egasining tasdig'i) — rol nomlari
+
+**Savolning asosi qisman NOTO'G'RI edi** (kodda tekshirildi, 2026-08-10):
+
+| Savolda | Kodda haqiqat |
+|---|---|
+| «`admin`/`director` = ega» | `admin` — ROST. **`director` roli YO'Q** — `director` faqat `Organization.director` (matn maydoni) va Telegram `directorSlot`; hech qanday guard uni o'qimaydi |
+| «`manager`/`menejer` = menejer» | `manager` — ROST (kod tekshiradi), lekin `manager` **seed qilinmagan** (`seed-hr.ts` DEFAULT_ROLES = `admin`·`cashier`·`warehouse`·`staff`) → menejer shoxi amalda **o'lik kod** edi |
+
+Ikki parallel lug'at bor va ular **ataylab** aralashtirilmaydi:
+`Role.name` (ERP: `AccountOwner`·`Administrator`·`Manager`·`Employee`·`ReadOnly`·`PointOfSale`) va
+`Employee.hrRoles[]` (HR slug'lari, 5 joyda hokimiyat proksi sifatida o'qiladi).
+
+**Qaror — uch qism:**
+
+| # | Qaror | Oqibati |
+|---|---|---|
+| **B4.1** | Shablon identifikatori = **barqaror `templateSlug`** (`owner`·`admin`·`sales_manager`·`warehouse_manager`·`cashier`·`seller`·`storekeeper`·`accountant`·`supplier`·`driver`), ko'rinadigan nom i18n'dan | Admin rolni qayta nomlasa kod buzilmaydi; ru+uz yorliq mumkin. Narxi: 1 ustun + migratsiya. `AccountOwner→owner`, `Administrator→admin` backfill |
+| **B4.2** | `admin` = ega, `manager` = menejer konvensiyasi **QOLADI**; yetishmayotgan `manager` HR roli seed'ga qo'shiladi | Jonli kassa/menejer guard'lariga TEGILMAYDI (regressiya xavfi nol), o'lik shox tirilaydi. hrRoles↔ERP rol birlashuvi — keyingi faza qarzi |
+| **B4.3** | Shablon qo'llash **faqat ROL qatlamini** yozadi; xodim override'lari (MK26) **o'chmaydi** va g'olib qolaveradi. Javobda `maskedByOverride[]` ro'yxati qaytadi | MK26 ning «override G'OLIB» shartnomasi buzilmaydi; «standartga qaytardim» illyuziyasi ro'yxat bilan yopiladi |
+
+**Nega `clearOverrides` bayrog'i RAD ETILDI:** tasodifiy bosishda ruxsat jimgina kengayardi va
+buni faqat audit jurnalidan keyin bilib olinardi. Kerak bo'lsa keyin qo'shiladi (bir tomonlama eshik).
 
 ---
 
@@ -817,7 +841,7 @@ saqlashdan oldin **farq ko'rsatiladi**.
 
 ---
 
-### MK29 — 10 rol shabloni ☐ HISOBOT
+### MK29 — 10 rol shabloni ☑ HISOBOT (2026-08-10)
 **Bo'lim/blok:** 4-B3 (2-yarim) · **TZ:** §3.4
 **Ustuvorlik:** P2 · **Bog'liqlik:** MK28 · ⛔ **QAROR-B4** (rol nomlari)
 **Qamrov:** Egasi · Admin · Savdo menejeri · Ombor menejeri · Kassir · Sotuvchi · Omborchi ·
@@ -4011,3 +4035,130 @@ ham qator yo'q** edi (ya'ni qat'iy eskirgan nusxa), rejada esa faqat 2 ta noyob 
 `☐ HISOBOT` yorlig'i va `c`. Ikkalasi ham **shikast, kontent emas** ⇒ fayllar HEAD'ga tiklandi
 (avval scratchpad'ga zaxira olindi). Sabab — `isolated-index-leaves-stale-shared-index` klassi:
 oldingi sessiyalar vaqtinchalik indeks bilan commit qilgan, ish daraxti yangilanmagan.
+
+## Faza MK29 — 10 rol shabloni (sana: 2026-08-10)
+
+**Holat:** ✅ **Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q.**
+«done» / «production-ready» / «verified» EMAS — runtime-QA **MK40** (ruxsat QA) ga qoladi.
+Istisno: seed skripti lokal `climart_adopt` bazasida **haqiqatan yugurtirildi** (quyida).
+
+### 0. Bloklovchi qaror avval yopildi — QAROR-B4
+
+Faza `⛔ QAROR-B4` bilan bloklangan edi. Savol kodda tekshirildi va **asosi qisman noto'g'ri**
+chiqdi: **`director` degan rol umuman yo'q** (u faqat `Organization.director` matn maydoni va
+Telegram `directorSlot`); `manager` esa kod tekshiradigan, lekin **seed qilinmagan** slug edi —
+ya'ni menejer shoxi jonli bazada hech qachon ishga tushmagan. Egasiga uch savol ko'rsatildi va
+qaror `⛔ EGASIDAN QAROR KUTILMOQDA` bo'limiga to'liq yozildi (B4.1 / B4.2 / B4.3).
+
+### 1. Nima qilindi
+
+| # | Ish | Fayl |
+|---|---|---|
+| 1 | **10 shablon registri** — `owner`·`admin`·`sales_manager`·`warehouse_manager`·`cashier`·`seller`·`storekeeper`·`accountant`·`supplier`·`driver`. Uch qatlam: `defaults` → DENY(sezgir) → `grants` | `permissions/role-templates.ts` (YANGI) |
+| 2 | **`PermissionEntity` union'ining runtime nusxasi** (`PERMISSION_ENTITIES`, `PERMISSION_ACTIONS`) — matritsa shu ro'yxat ustidan quriladi | `permissions/permissions.types.ts` |
+| 3 | **`Role.templateSlug`** ustuni + migratsiya + backfill (`AccountOwner→owner`, `Administrator→admin`) | `schema.prisma` · `migrations/20260810130000_role_template_slug/` |
+| 4 | **`RolesService.applyTemplate()`** — rol qatlamini to'liq almashtiradi, `templateSlug`+`uiMode` yozadi, G1/G3, optimistic lock, `maskedByOverride[]` qaytaradi | `permissions/roles.service.ts` |
+| 5 | **2 endpoint** — `GET /roles/templates` · `POST /roles/:id/apply-template` | `permissions/roles.controller.ts` · `roles.schema.ts` |
+| 6 | **Seed skripti** (DRY/APPLY/`--rewrite`, idempotent) — registrdan o'qiydi | `apps/api/src/scripts/seed-role-templates.ts` (YANGI) |
+| 7 | **`manager` HR roli** seed'ga qo'shildi (QAROR-B4.2) + sync qo'riqchisi | `packages/db/prisma/seed-hr.ts` · `permissions/hr-role-seed-sync.test.ts` (YANGI) |
+| 8 | **i18n ru+uz** — `pages.roleTemplates.*` (10 nom + 10 tavsif + UI matnlari) | `apps/web/src/messages/{ru,uz}.json` |
+
+### 2. Uchta qaror va ularning kodi
+
+- **B4.1 (slug):** identifikator `Role.name` EMAS, `templateSlug`. Nom foydalanuvchi
+  tahrirlaydigan matn — qayta nomlansa shablon aloqasi uzilardi va ru interfeysda o'zbekcha
+  nom turaverardi. Yorliq i18n'dan.
+- **B4.2 (hokimiyat):** `admin`=ega, `manager`=menejer konvensiyasi **QOLDI**; jonli 5 guard'ga
+  tegilmadi (regressiya xavfi nol). Yetishmayotgan `manager` seed'ga qo'shildi.
+- **B4.3 (override):** shablon **faqat rol qatlamini** yozadi. `employee_permissions` ga umuman
+  tegilmaydi (test buni `deleteMany` chaqirilmasligi bilan qulflaydi); o'rniga javobda
+  `maskedByOverride[]` — shablondan **farq qiladigan** individual tuzatishlar ro'yxati.
+  `clearOverrides` bayrog'i ko'rib chiqildi va **rad etildi** (tasodifiy bosishda ruxsat
+  jimgina kengayardi).
+
+### 3. Testlar — 81 ta yangi (RED→GREEN, mutatsiya bilan tasdiqlangan)
+
+| Fayl | Soni | Nimani qulflaydi |
+|---|---|---|
+| `role-templates.test.ts` | 61 | **10 snapshot** (DoD) · matritsa to'liqligi (94×6=564) · DENY qatlami (`role`/`payroll`/`auditlog`/HR) · vazifalar ajratilishi · **kassir↔kiosk mosligi** · ru+uz i18n |
+| `role-template-apply.test.ts` | 12 | to'liq almashtirish · optimistic lock · G1 (atomik rad) · G3 · cache · **B4.3: override o'chmaydi** |
+| `hr-role-seed-sync.test.ts` | 8 | kod tekshirgan har `hrRoles` slug seed'da bor (+ ro'yxat eskirmaganini tekshiruvchi meta-test) |
+| `permissions-seed-sync.test.ts` | +2 | `PERMISSION_ENTITIES` union bilan sinxron |
+
+**Bo'sh test emasligi o'lchandi** — uch mutatsiya qo'llanib, tutilishi ko'rildi:
+(a) `sales_manager` dan DENY qatlami olib tashlandi → **8 test yiqildi**;
+(b) kassirga `demand:view` berildi → kiosk mosligi testi yiqildi;
+(c) `seed-hr` dan `manager` olib tashlandi → **4 test yiqildi**.
+
+### 4. Kassir ↔ kiosk mosligi (DoD talabi) qanday qulflandi
+
+Kassir shabloniga berilgan **har** katakcha `kiosk-policy.KIOSK_ALLOWED` ro'yxati bilan
+solishtiriladi (`entity → @Controller yo'li`, `action → HTTP metod`). Sabab: «qog'ozda ruxsat
+bor, amalda `KioskGuard` bloklaydi» holati sozlovchini adashtiradi — u ruxsatni to'g'ri
+qo'ygan deb o'ylaydi, kassir esa 403 oladi. 13 marshrut `@Controller(...)` dan tasdiqlangan.
+
+### 5. Runtime tekshiruv (lokal `climart_adopt`)
+
+Skript **haqiqatan yugurtirildi** — DRY, keyin `--apply`, keyin qayta `--apply`:
+
+```
+owner 564 · admin 564 · sales_manager 189 · warehouse_manager 174 · cashier 24
+seller 39 · storekeeper 35 · accountant 186 · supplier 160 · driver 6   → JAMI 10 rol
+2-yugurish: yangi rol 0 · yorliq 0 · qayta yozildi 0   (idempotent)
+```
+
+**Runtime shu yerda unit test topmagan nuqsonni ko'rsatdi:** migratsiya `Administrator` ni
+`admin` slug'iga backfill qiladi, skript esa faqat NOM bo'yicha qidirar edi ⇒ yoniga **ikkinchi
+«Admin» roli** yaratildi (bir xil 564 katakcha). Tuzatildi: qidiruv avval `templateSlug`,
+keyin nom bo'yicha. Dublikat lokal bazadan o'chirildi, qayta yugurtirilib tasdiqlandi.
+
+Ikkinchi qaror: 8 shablon `isSystem: false` bilan yaratiladi (faqat `owner`/`admin` — `true`).
+Sabab: «Haydovchi» kerak bo'lmagan akkaunt uni o'chira olsin; `templateSlug` nomdan mustaqil
+bo'lgani uchun qayta nomlash provenance'ni buzmaydi.
+
+### 6. Gate (hammasi yashil)
+
+- `pnpm --filter @moysklad/api typecheck` → **0**
+- `pnpm --filter @moysklad/web typecheck` → **0**
+- `pnpm lint:product` → **0 error** (830 warning — siyosat bo'yicha ruxsat)
+- `pnpm --filter @moysklad/api exec vitest run` → **515 fayl · 7291 test · 0 yiqilish**
+- `pnpm i18n:gate` → **9/9** (12819 kalit tekshirildi)
+
+### 7. Ochiq qarzlar (yashirilmaydi)
+
+1. **Brauzer-smoke YO'Q** — shablon UI'i (tugma, `maskedByOverride` ro'yxati) **MK28** da,
+   runtime QA **MK40** da. i18n kalitlari oldindan qo'yildi.
+2. **`hrRoles` ↔ ERP roli birlashuvi qilinmadi** (QAROR-B4.2 ataylab shunday). 5 guard hamon
+   `hrRoles` dan o'qiydi; `Kassir` shabloni berilgan xodim **avtomat** `cashier` hrRole olmaydi
+   — ikki lug'at hali qo'lda bog'lanadi.
+3. **`Manager`/`Employee`/`ReadOnly`/`PointOfSale`** eski seed rollari shablonsiz
+   (`templateSlug = null`) qoldi — ataylab: ular TZ §3.4 shablonlari emas.
+4. **`seller`ga `salesreturn` berilmadi** — B2B sotuvchiga qaytarish kerak bo'lishi mumkin,
+   lekin TZ buni aytmaydi; admin matritsadan kengaytira oladi.
+5. **`driver` shabloni ataylab tor** — haydovchiga hujjat biriktirish mexanizmi yo'q
+   (`F043` bilan keladi). Guruhsiz haydovchi hech nima ko'rmaydi (fail-closed).
+
+### OPS-QADAMLAR (prodga TEGILMADI)
+
+1. **DDL:** `sherset_v2` da `migrations/20260810130000_role_template_slug/migration.sql`
+   yugurtirilsin (`ALTER TABLE roles ADD COLUMN template_slug` + backfill + indeks).
+   `IF NOT EXISTS` bilan yozilgan — qayta yugurtirsa xavfsiz.
+2. Keyin `npx tsx src/scripts/seed-role-templates.ts` — **avval DRY**, hisobot odam tomonidan
+   ko'rib chiqilsin, keyin `--apply`. **`--rewrite` ISHLATILMASIN** (qo'lda sozlangan rol
+   matritsalarini bosib ketadi).
+3. `packages/db/prisma/seed-hr.ts` dagi `manager` roli prodga faqat seed orqali tushadi; agar u
+   yugurtirilmasa — `HrRole` qatorini qo'lda qo'shish kerak, aks holda menejer aktyori jonli
+   bazada hamon o'lik qoladi.
+4. Har uchala qadamdan keyin api process **restart** (ruxsat keshi 5 daqiqa TTL).
+
+### Git holati
+
+Ushbu sessiya quyidagi fayllarni o'zgartirdi (barchasi aniq yo'l bilan stage qilindi):
+`apps/api/src/modules/permissions/{role-templates,role-templates.test,role-template-apply.test,hr-role-seed-sync.test,permissions.types,permissions-seed-sync.test,roles.service,roles.controller,roles.schema}.ts` ·
+`apps/api/src/modules/permissions/__snapshots__/role-templates.test.ts.snap` ·
+`apps/api/src/scripts/seed-role-templates.ts` ·
+`packages/db/prisma/{schema.prisma,seed-hr.ts}` + `migrations/20260810130000_role_template_slug/migration.sql` ·
+`apps/web/src/messages/{ru,uz}.json` · shu hisobot + `NEXT.md` + `todo.md`.
+
+Sessiya boshida ish daraxtida **faqat untracked** fayllar bor edi (xlsx, png, txt, scratchpad,
+`docs/audits/demands-REMAINING-2026-07-31.md`) — meniki emas, **tegilmadi** (CLAUDE.md §6.1).

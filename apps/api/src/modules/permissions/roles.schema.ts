@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { SCOPE_ORDER } from './permissions.types.js';
+import { ROLE_TEMPLATE_SLUGS, type RoleTemplateSlug } from './role-templates.js';
 
 /** One cell of the role permission matrix. */
 export const RolePermissionCellSchema = z.object({
@@ -90,3 +91,16 @@ export const ExplainPermissionsSchema = z.object({
     .max(1000),
 });
 export type ExplainPermissionsInput = z.infer<typeof ExplainPermissionsSchema>;
+
+/**
+ * MK29 — rol shablonini qo'llash so'rovi (TZ §3.4).
+ *
+ * `version` MAJBURIY: shablon rol matritsasini TO'LIQ qayta yozadi, ya'ni
+ * eskirgan sahifadan yuborilgan so'rov boshqa sessiyaning tahririni jimgina
+ * bosib ketardi (mavjud `UpdateRoleSchema` bilan bir xil intizom).
+ */
+export const ApplyRoleTemplateSchema = z.object({
+  slug: z.enum(ROLE_TEMPLATE_SLUGS as [RoleTemplateSlug, ...RoleTemplateSlug[]]),
+  version: z.number().int().min(1),
+});
+export type ApplyRoleTemplateInput = z.infer<typeof ApplyRoleTemplateSchema>;

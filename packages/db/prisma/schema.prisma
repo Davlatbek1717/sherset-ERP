@@ -552,6 +552,21 @@ model Role {
   /// (`kiosk-policy.resolveUiMode`). Sukut `full`: kiosk OPT-IN, ya'ni mavjud
   /// xodimlarning hech biri bu migratsiyadan keyin cheklanmaydi.
   uiMode      String   @default("full") @map("ui_mode") @db.VarChar(10)
+  /// MK29 (TZ §3.4) — rol qaysi SHABLONDAN kelganini bildiruvchi BARQAROR
+  /// kalit: `owner` · `admin` · `sales_manager` · `warehouse_manager` ·
+  /// `cashier` · `seller` · `storekeeper` · `accountant` · `supplier` ·
+  /// `driver` (registr: `apps/api/src/modules/permissions/role-templates.ts`).
+  ///
+  /// Nega `name` yetarli emas (QAROR-B4.1): `name` — foydalanuvchi
+  /// tahrirlaydigan matn. Admin rolni qayta nomlashi bilan shablon aloqasi
+  /// jimgina uzilardi, ru interfeysda esa o'zbekcha nom turaverardi.
+  /// Ko'rinadigan yorliq i18n'dan (`pages.roleTemplates.<slug>`), bu ustun
+  /// esa faqat provenance — kod shunga tayanadi.
+  ///
+  /// `null` = shablonsiz rol (admin qo'lda yaratgan yoki eski tizim roli).
+  /// UNIKAL EMAS: bitta shablondan bir necha rol yaratish taqiqlanmaydi
+  /// (masalan «Savdo menejeri — Toshkent» va «— Samarqand»).
+  templateSlug String? @map("template_slug") @db.VarChar(40)
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz()
   /// Optimistic concurrency version (moysklad parity). See Product.version.

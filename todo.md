@@ -72,7 +72,13 @@ kuniga **3 sessiya** → **~6 hafta**.
       qilingan** kunlar (`accepted`/`force_accepted`) kiradi, manba = muzlatilgan `scorePercent`.
       Qamrov (`daysCounted/daysInPeriod`) ochiq qaytadi; qabul qilingan kuni yo'q xodim **0 ball
       bilan oxirgi o'ringa qo'yilmaydi** (`rated:false`). MK13 bajaradi.
-- [ ] **B4. Rol nomlari** — hozir `admin`/`director` = ega, `manager`/`menejer` = menejer.
+- [x] **B4. Rol nomlari** — ✅ **YOPILDI 2026-08-10** (egasi). Savolning yarmi noto'g'ri asosga
+      qurilgan edi: **`director` roli umuman yo'q** (faqat `Organization.director` matn maydoni),
+      `manager` esa kod tekshiradigan, lekin **seed qilinmagan** slug edi. Qaror: (B4.1) shablon
+      identifikatori = barqaror `Role.templateSlug`, yorliq i18n'dan; (B4.2) `admin`=ega,
+      `manager`=menejer konvensiyasi qoladi, yetishmayotgan `manager` seed'ga qo'shildi;
+      (B4.3) shablon qo'llash override'ni **o'chirmaydi**, `maskedByOverride[]` ro'yxatini
+      qaytaradi. MK29 bajardi.
 - [ ] **B5. Kam kelish = rad etishmi?** (5-bo'lim §5.3 taxmini) — hozir: miqdor kam bo'lsa yaroqli
       qism kiradi, sifat nuqsonida butun yetkazma qaytadi. Egasi teskarisini xohlashi mumkin.
 
@@ -288,9 +294,12 @@ kuniga **3 sessiya** → **~6 hafta**.
       ishi) va «eski HR yozuvlari faqat-o'qish» bandi bajarilmagan ⇒ **katakcha OCHIQ qoladi**.
       *(2026-08-10 MK26: `EmployeePermission` endi MAVJUD ⇒ skriptning «jadval yo'q» to'sig'i
       ochildi, lekin APPLY yo'li hamon yozilmagan — qolgani shu bandning ishi.)*
-- [ ] **4-Menejer B3** — Ruxsat matritsasi UI + **10 rol shabloni**
+- [ ] **4-Menejer B3** — Ruxsat matritsasi UI + ~~**10 rol shabloni**~~
       (Egasi · Admin · Savdo menejeri · Ombor menejeri · Kassir · Sotuvchi · Omborchi · Buxgalter ·
       Ta'minotchi · Haydovchi)
+      *(2026-08-10 **MK29**: 10 shablon registri + `Role.templateSlug` + `applyTemplate` +
+      seed skripti + ru/uz i18n **BAJARILDI** (81 test, Phase-1). Katakcha OCHIQ qoladi —
+      qolgani **matritsa UI** (MK28), u hali yozilmagan.)*
 - [ ] **4-Menejer B4** — Tasdiqlash navbati: `ApprovalRule` + `ApprovalItem` (ikkalasi YO'Q),
       `mode: 'review' | 'block'`
 - [ ] **4-Menejer B5** — Record-scope **1-to'lqin**: `customer-order` ✓ · `demand` ✓ ·

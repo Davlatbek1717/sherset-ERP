@@ -20,7 +20,9 @@ import {
 import { SCOPE_ORDER } from './permissions.types.js';
 import type { PermissionAction, PermissionEntity } from './permissions.types.js';
 import { RequirePermission } from './require-permission.decorator.js';
+import { ROLE_TEMPLATES, ROLE_TEMPLATE_SLUGS } from './role-templates.js';
 import {
+  ApplyRoleTemplateSchema,
   ExplainPermissionsSchema,
   SetEmployeePermissionsSchema,
   SetEmployeeRolesSchema,
@@ -60,6 +62,26 @@ export class RolesController {
       categories: CATEGORIES,
       actions: ['view', 'create', 'update', 'delete', 'approve', 'print'] as const,
       scopes: Object.keys(SCOPE_ORDER),
+    };
+  }
+
+  /**
+   * MK29 — mavjud rol shablonlari ro'yxati (TZ §3.4).
+   *
+   * `name` QAYTARILMAYDI: ko'rinadigan yorliq i18n'dan olinadi
+   * (`pages.roleTemplates.<slug>`), aks holda ru interfeysda o'zbekcha nom
+   * turardi. `seedName` faqat yangi rol yaratishda boshlang'ich qiymat.
+   */
+  @Get('templates')
+  @RequirePermission({ entity: 'role', action: 'view' })
+  templates() {
+    return {
+      items: ROLE_TEMPLATE_SLUGS.map((slug) => ({
+        slug,
+        seedName: ROLE_TEMPLATES[slug].seedName,
+        description: ROLE_TEMPLATES[slug].description,
+        uiMode: ROLE_TEMPLATES[slug].uiMode,
+      })),
     };
   }
 
@@ -168,6 +190,27 @@ export class RolesController {
     @Body() body: unknown,
   ) {
     return this.svc.update(user.accountId, id, body, user.sub);
+  }
+
+  /**
+   * MK29 — shablonni shu rolga qo'llash (TZ §3.4).
+   *
+   * `role:update` darvozasi + servis ichida G1 (MK26): «Admin» shablonini
+   * bosish o'zidan yuqori scope yozish yo'liga aylanmasin.
+   *
+   * Javobdagi `maskedByOverride[]` — QAROR-B4.3: xodim override'lari
+   * O'CHIRILMAYDI, lekin qaysilari shablonni niqoblab turgani ochiq
+   * qaytariladi (UI shuni ro'yxat qilib ko'rsatadi).
+   */
+  @Post(':id/apply-template')
+  @RequirePermission({ entity: 'role', action: 'update' })
+  async applyTemplate(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    const { slug, version } = ApplyRoleTemplateSchema.parse(body);
+    return this.svc.applyTemplate(user.accountId, id, slug, version, user.sub);
   }
 
   @Delete(':id')
