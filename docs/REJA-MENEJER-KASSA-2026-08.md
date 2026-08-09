@@ -755,7 +755,7 @@ brifing/yakun ekranlari · qaror jurnali filtri · maqsad kaskadi.
 > chunki u filial o'qi bilan **bitta to'lqinda** qilinishi shart (master roadmap 4.7): alohida
 > qilinsa har endpoint ikki marta qayta yoziladi.
 
-### MK26 — `EmployeePermission` + amaldagi ruxsat hisobi + G1/G2/G3 ☐ HISOBOT
+### MK26 — `EmployeePermission` + amaldagi ruxsat hisobi + G1/G2/G3 ☑ HISOBOT (2026-08-10)
 **Bo'lim/blok:** 4-B1 · **TZ:** §3.1, §3.3
 **Ustuvorlik:** P1 · **Bog'liqlik:** yo'q · **Holat:** `EmployeePermission` sxemada **YO'Q**
 **Qamrov:**
@@ -3869,3 +3869,145 @@ SHIKASTLANGAN holatda turgan edi:** MK19 hisoboti (133 qator) o'chirilgan, MK19 
 `☑ → ☐` qaytarilgan va MK19 SESSIYA-BOSHI PROMPT bloki `c` harfi bilan almashtirilgan ko'rinadi
 (NEXT.md da ham xuddi shu MK19 yozuvi o'chgan). **Bu o'zgarishlar MENIKI EMAS va tegilmadi**
 (CLAUDE.md §6.1). Commitga faqat o'z qo'shimchalarim kiritildi.
+
+## Faza MK26 — `EmployeePermission` + amaldagi ruxsat hisobi + G1/G2/G3 (sana: 2026-08-10)
+
+**Holat:** ✅ **Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q.**
+«done» / «production-ready» / «verified» EMAS — runtime-QA **MK40** (ruxsat QA) ga qoladi.
+Migratsiya lokal bazada (`climart_adopt`) qo'llandi va **jonli zond** bilan tekshirildi; **prodga
+TEGILMADI** (OPS-QADAM sifatida quyida yozildi).
+
+### Nega bu faza MK28 o'rniga bajarildi
+
+Sessiya **MK28** (ruxsat matritsasi UI) prompti bilan boshlandi. O'ZGARMAS QOIDALAR §2 talab
+qilganidek rejadagi da'vo kodda tekshirildi va **MK28 ning bog'liqligi bajarilmaganligi**
+aniqlandi:
+
+| MK28 talabi | Kodda holati (tekshirildi) |
+|---|---|
+| Matritsa entity × action × scope | ✅ mavjud — `analitika/sozlamalar/_components/permission-matrix.tsx` + `GET /roles/meta` |
+| Rol **vs override** qatlamlari farqlansin (G2) | ❌ `EmployeePermission` sxemada YO'Q; «amaldagi ruxsat»ni izohlaydigan endpoint yo'q |
+| G1 buzilishi UI'da rad etilsin | ❌ G1 server tomoni umuman yo'q |
+| Saqlashdan oldin farq | ❌ yo'q (lekin bugungi kod bilan ham qurish mumkin edi) |
+
+Ya'ni MK28 ning 3 testidan **2 tasi** (override vizual farqi · G1 rad etilishi) uchun
+**ma'lumot manbai yo'q** edi. Egasiga uch variant taqdim etildi (MK26 avval · MK28
+qisqartirilgan · ikkalasi birga) va **«avval MK26»** tanlandi. MK28 keyingi sessiyada TO'LIQ
+quriladi.
+
+### Nima o'zgardi
+
+**Sxema (`packages/db/prisma/schema.prisma`) + migratsiya `20260810120000_employee_permission`:**
+- `EmployeePermission` — `@@id([employeeId, entity, action])`, `accountId` · `scope` ·
+  `grantedById` / `grantedAt` / `note` (G2 «kim va qachon berdi»).
+- FK o'chirish qoidalari **ataylab assimetrik**: `account`/`employee` = **CASCADE**,
+  `grantedBy` = **SET NULL**. CASCADE bo'lsa ruxsatni bergan admin ishdan bo'shaganda **u
+  qo'ygan barcha cheklovlar jimgina ochilib ketardi** — endi qator qoladi, faqat «kim berdi»
+  ma'lumoti yo'qoladi.
+- Jadval **BO'SH tug'iladi** ⇒ migratsiya hech kimning amaldagi ruxsatini o'zgartirmaydi.
+
+**Sof qatlam — `permissions/employee-permission.ts` (yangi; Prisma/Nest/`Date.now()` YO'Q):**
+`resolveEffective` (rol MAX → override) · `applyOverride` · `checkGrantAllowed` (G1) ·
+`explainPermission` (G2).
+
+**Servis — `permissions/employee-permission.service.ts` (yangi):** `explain()` (G2 o'qish) ·
+`setOverrides()` (G1 tekshiruvi + G3 audit + cache invalidatsiya).
+
+**Mavjud kodga ulanish:**
+- `permissions.service.ts` — `getCachedOrLoad()` endi override qatorlarini **shu so'rovda**
+  o'qiydi (ikkinchi DB murojaati yo'q) va rol natijasini **almashtiradi**.
+- `roles.service.ts` — `create`/`update` ga **G1** qo'yildi (`assertNoEscalation`); aktor id
+  controller'dan uzatiladi (signatura kengaydi).
+- `roles.controller.ts` — `POST /roles/employee/:id/permissions/explain` (G2) ·
+  `PUT /roles/employee/:id/permissions` (yozish). Ikkalasi `employee:update` darvozasida.
+- `permissions.module.ts` — `EmployeePermissionService` provayder + eksport.
+
+**Bonus (kod o'qilganda aniqlandi):** `GET /permissions/me` `resolveScope()` ustida qurilgani
+uchun override qatlamini **avtomat** hisobga oladi — web'ning modul-yashirish mantiqi qo'shimcha
+ishsiz to'g'ri ishlaydi.
+
+### 🔴 UCHTA SHARTNOMA (test bilan qulflangan, sezgiga zid)
+
+1. **Override `MAX` EMAS — u G'OLIB.** Rol qatlamiga `maxScope` qo'llansa `MAX(ALL, OWN) = ALL`
+   bo'lib **«bitta xodimni cheklash» umuman ishlamas edi**. TZ §3.1 aynan shuning uchun «u
+   g'olib» deydi. Ikkala yo'nalish (ko'tarish va tushirish) alohida testda.
+2. **`scope: null` ≠ `scope: 'NO'`.** `null` = override qatorini **o'chir** (rol qatlamiga
+   qayt); `'NO'` = **ataylab taqiq** (rol `ALL` bersa ham yopiq qoladi). Zod sxemasida
+   `.nullable()` ataylab `.optional()` EMAS — aks holda «maydonni yubormaslik» ham «o'chirish»
+   ma'nosini olardi va UI dagi jimgina xato butun cheklovni bekor qilardi. Shu sababli
+   **NO-qatorlarni sparse-tozalash TAQIQ** (sxema izohida yozib qo'yilgan).
+3. **G1 rad etsa — HECH NIMA yozilmaydi.** Tekshiruv hamma katakchalar uchun yozishdan OLDIN
+   yuradi; bitta buzilish butun so'rovni rad etadi («yarmi o'tdi» holati yo'q — MK27 dagi
+   fail-closed intizomi bilan bir xil). 403 xabari **qaysi katakcha** buzganini aytadi.
+
+### G1 nega ikki joyda
+
+TZ §3.3 hujumni nomlab ko'rsatadi: *«bir marta `role:update` ruxsatini olgan xodim o'zini adminga
+aylantiradi»*. G1 ni faqat xodim-override yo'liga qo'yish **yetarli emas edi** — menejer yangi
+rol yaratib unga `ALL` yozsa va o'ziga biriktirsa, override qatlamiga umuman tegmasdan admin
+bo'lib olardi. Shuning uchun G1 **rol-yozish yo'lida ham** turadi. Nom/tavsif tahriri tekshiruvdan
+ozod (imtiyoz bermaydi), `AccountOwner` ham ozod (allaqachon hamma narsaga ega).
+
+### Testlar (TDD — 44 yangi test)
+
+| Fayl | Test | Nimani qulflaydi |
+|---|---|---|
+| `employee-permission.test.ts` | 16 | sof qatlam: MAX→override (ko'tarish/tushirish/`NO`), G1 jadvali, G2 manbasi + determinist rol tanlovi |
+| `employee-permission.service.test.ts` | 14 | G1 atomik rad etish · `null` vs `NO` · G3 audit eski→yangi · cache invalidatsiya · tenant 404 |
+| `permissions-override.test.ts` | 8 | **regressiya**: override yo'qda xulq o'zgarmaydi · bitta so'rov · `invalidate()` |
+| `roles-escalation.test.ts` | 6 | rol create/update G1 · owner bypass · nom-tahriri o'tadi |
+
+`permissions-record-scope.test.ts` stub'i yangi so'rov shakliga moslandi
+(`permissionOverrides: []`) — kodda `?? []` bilan mudofaa qilinmadi, chunki u haqiqiy
+nomuvofiqlikni yashirardi.
+
+### Gate (commit nuqtasida to'liq)
+
+- `@moysklad/api typecheck` → **0** · `@moysklad/web typecheck` → **0** (sxema o'zgargani uchun)
+- `pnpm lint:product` → **0 xato**
+- `vitest run` (butun api) → **512 fayl / 7208 test yashil** (1 fayl skip) — regressiya yo'q
+- i18n gate **yugurtirilmadi — UI matni TEGILMADI** (bu faza faqat backend)
+- **Jonli zond** (lokal `climart_adopt`): jadval mavjud · 8 ustun · FK qoidalari
+  `account=CASCADE, employee=CASCADE, granted_by=SET NULL` · Prisma client o'qiy oladi
+
+### 🔴 QARZ / keyingi sessiyalarga
+
+1. **UI YO'Q** — override'ni ko'rsatadigan/tahrirlaydigan ekran **MK28** ishi (endi bloki
+   ochildi: sxema, G1/G2/G3 va endpointlar tayyor).
+2. **MK27 APPLY hamon yozilmagan.** MK26 uning **birinchi** to'sig'ini oladi
+   (`employeePermission` jadvali endi mavjud — skriptdagi `if (!store)` tekshiruvi o'tadi),
+   lekin skriptda `fail('APPLY yo'li hali yozilmagan')` qatori turibdi. **U MK27 ning qolgan
+   qismi, bu sessiyada ataylab yozilmadi** (§1 «faqat bitta faza»).
+3. **HR guard hamon eski omborni o'qiydi** — `hr-permission.guard.ts` `hr_employee_permission`
+   jadvalidan ishlaydi; yagona omborga o'tish MK27 qarzi.
+4. **`explain()` uch-liklar ro'yxatini chaqiruvchidan oladi** (butun matritsani o'zi
+   qaytarmaydi) — MK28 UI uni `GET /roles/meta` bilan birga ishlatadi. Zod'da 1000 katakcha chegarasi.
+5. **Prod migratsiyasi qilinmadi** — quyidagi OPS-QADAM.
+
+### OPS-QADAM (prod)
+
+```
+psql $PROD -f packages/db/prisma/migrations/20260810120000_employee_permission/migration.sql
+```
+
+Xavfsiz: faqat `CREATE TABLE` + 1 indeks + 3 FK; mavjud jadvallarga tegmaydi va jadval bo'sh
+tug'ilgani uchun hech kimning amaldagi ruxsati o'zgarmaydi.
+
+### Git holati
+
+Ushbu sessiya **faqat** quyidagi fayllarni o'zgartirdi (barchasi commitga aniq yo'l bilan):
+`apps/api/src/modules/permissions/` dagi 6 yangi fayl
+(`employee-permission{,.service,.test,.service.test}.ts` · `permissions-override.test.ts` ·
+`roles-escalation.test.ts`) va 6 mavjud fayl
+(`permissions.service` · `permissions.module` · `permissions-record-scope.test` ·
+`roles.service` · `roles.controller` · `roles.schema`) ·
+`packages/db/prisma/schema.prisma` + `migrations/20260810120000_employee_permission/migration.sql` ·
+shu hisobot + `NEXT.md` + `todo.md`.
+
+⚠️ **Sessiya boshida ish daraxti TOZA EMAS edi** — `NEXT.md` va shu reja fayli HEAD'ga nisbatan
+**eskirgan** holatda turgan edi (MK27 hisoboti tasvirlagan aynan o'sha shikast: MK19 yozuvi
+o'chgan, `☑ → ☐`, `c` harfi). Tekshirildi: ish daraxtidagi `NEXT.md` da HEAD'da **YO'Q birorta
+ham qator yo'q** edi (ya'ni qat'iy eskirgan nusxa), rejada esa faqat 2 ta noyob qator —
+`☐ HISOBOT` yorlig'i va `c`. Ikkalasi ham **shikast, kontent emas** ⇒ fayllar HEAD'ga tiklandi
+(avval scratchpad'ga zaxira olindi). Sabab — `isolated-index-leaves-stale-shared-index` klassi:
+oldingi sessiyalar vaqtinchalik indeks bilan commit qilgan, ish daraxti yangilanmagan.

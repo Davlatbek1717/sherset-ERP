@@ -25,6 +25,10 @@ function makeService(opts: { enforced: boolean; scope: PermissionScope; groupId?
       id: EMP,
       groupId: opts.groupId === undefined ? GROUP : opts.groupId,
       roles: [{ role: { permissions: [{ entity: 'demand', action: 'view', scope: opts.scope }] } }],
+      // MK26 — `getCachedOrLoad` endi override qatlamini ham o'qiydi. Stub
+      // haqiqiy so'rov shaklini aks ettirishi kerak (bu yerda override yo'q,
+      // ya'ni bu fayl ayni paytda «override yo'q → eski xulq» qulfi hamdir).
+      permissionOverrides: [],
     })),
   };
   const prisma = { client: { account, employee } };

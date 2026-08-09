@@ -1,6 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { AuthModule } from '../auth/auth.module.js';
+import { EmployeePermissionService } from './employee-permission.service.js';
 import { PermissionsController } from './permissions.controller.js';
 import { PermissionsGuard } from './permissions.guard.js';
 import { PermissionsService } from './permissions.service.js';
@@ -18,6 +19,9 @@ import { RolesService } from './roles.service.js';
   providers: [
     PermissionsService,
     RolesService,
+    // MK26 — `RolesController` shu servisni @Inject qiladi; provayder unutilsa
+    // DI faqat RUNTIME'da yiqilardi (@Global modul, `app-boot.test.ts` qulfi).
+    EmployeePermissionService,
     PermissionsGuard,
     // Register PermissionsGuard at the app level so every controller method
     // honours `@RequirePermission(...)` metadata. The guard is opt-in by
@@ -30,6 +34,6 @@ import { RolesService } from './roles.service.js';
       useClass: PermissionsGuard,
     },
   ],
-  exports: [PermissionsService, PermissionsGuard],
+  exports: [PermissionsService, PermissionsGuard, EmployeePermissionService],
 })
 export class PermissionsModule {}

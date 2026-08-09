@@ -8,6 +8,8 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { mapVersionedUpdateError } from '../shared/optimistic-lock.js';
+import { checkGrantAllowed } from './employee-permission.js';
+import { PermissionsService } from './permissions.service.js';
 import type { PermissionAction, PermissionEntity, PermissionScope } from './permissions.types.js';
 import {
   CreateRoleSchema,
@@ -53,7 +55,54 @@ export interface RoleDetail extends RoleListRow {
  */
 @Injectable()
 export class RolesService {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(PermissionsService) private readonly permissions: PermissionsService,
+  ) {}
+
+  /**
+   * MK26 G1 (TZ §3.3) — aktor rol matritsasiga **o'zida yo'q** yoki **o'zidan
+   * yuqori** scope yoza olmaydi.
+   *
+   * Nega bu yerda ham kerak: G1 ni faqat xodim-override yo'liga qo'yish
+   * yetarli emas edi. `role:update` olgan menejer yangi rol yaratib unga
+   * `ALL` yozsa va o'ziga biriktirsa — override qatlamiga tegmasdan admin
+   * bo'lib olardi (TZ shu hujumni nomlab ko'rsatadi).
+   *
+   * `AccountOwner` ozod: u allaqachon hamma narsaga ega, tekshiruv faqat
+   * ortiqcha to'siq bo'lardi.
+   */
+  private async assertNoEscalation(
+    actorEmployeeId: string,
+    cells: readonly RolePermissionCellInput[],
+  ): Promise<void> {
+    if (cells.length === 0) return;
+
+    const actor = await this.prisma.client.employee.findUnique({
+      where: { id: actorEmployeeId },
+      select: { roles: { select: { role: { select: { name: true } } } } },
+    });
+    const actorIsOwner = (actor?.roles ?? []).some((r) => r.role.name === OWNER_ROLE_NAME);
+    if (actorIsOwner) return;
+
+    const refusals: string[] = [];
+    for (const c of cells) {
+      const actorScope = await this.permissions.resolveScope(
+        actorEmployeeId,
+        c.entity as PermissionEntity,
+        c.action,
+      );
+      const verdict = checkGrantAllowed({ actorScope, requestedScope: c.scope });
+      if (!verdict.allowed) {
+        refusals.push(`${c.entity}.${c.action} → ${c.scope} (sizda: ${actorScope})`);
+      }
+    }
+    if (refusals.length > 0) {
+      throw new ForbiddenException(
+        `Imtiyoz oshirish taqiqi (G1) — o'zingizda yo'q ruxsatni rolga yoza olmaysiz: ${refusals.join(' · ')}`,
+      );
+    }
+  }
 
   async list(accountId: string): Promise<{ items: RoleListRow[] }> {
     const rows = await this.prisma.client.role.findMany({
@@ -117,11 +166,13 @@ export class RolesService {
     };
   }
 
-  async create(accountId: string, raw: unknown): Promise<RoleDetail> {
+  async create(accountId: string, raw: unknown, actorEmployeeId: string): Promise<RoleDetail> {
     const parsed = CreateRoleSchema.safeParse(raw);
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.issues.map((i) => i.message).join(', '));
     }
+    // G1 — yozishdan OLDIN (rad etilsa hech nima yaratilmaydi).
+    await this.assertNoEscalation(actorEmployeeId, parsed.data.permissions);
     try {
       const created = await this.prisma.client.role.create({
         data: {
@@ -144,10 +195,20 @@ export class RolesService {
     }
   }
 
-  async update(accountId: string, id: string, raw: unknown): Promise<RoleDetail> {
+  async update(
+    accountId: string,
+    id: string,
+    raw: unknown,
+    actorEmployeeId: string,
+  ): Promise<RoleDetail> {
     const parsed = UpdateRoleSchema.safeParse(raw);
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.issues.map((i) => i.message).join(', '));
+    }
+    // G1 — faqat matritsa TEGILGANDA. Nom/tavsif tahriri imtiyoz bermaydi,
+    // uni bloklash oddiy ishni buzardi.
+    if (parsed.data.permissions !== undefined) {
+      await this.assertNoEscalation(actorEmployeeId, parsed.data.permissions);
     }
     const existing = await this.prisma.client.role.findFirst({
       where: { id, accountId },

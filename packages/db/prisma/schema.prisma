@@ -226,6 +226,7 @@ model Account {
   hrKpiDailyLogs           HrKpiDailyLog[]
   hrKpiMonthlyScores       HrKpiMonthlyScore[]
   hrEmployeePermissions    HrEmployeePermission[]
+  employeePermissions      EmployeePermission[]
   hrRoles                  HrRole[]
   hrNotificationTemplates  HrNotificationTemplate[]
   hrActivityLogs           HrActivityLog[]
@@ -488,6 +489,10 @@ model Employee {
   apiTokens                  ApiToken[]
   roles                      EmployeeRole[]
 
+  // MK26 — xodim darajasidagi ERP ruxsat override qatlami (TZ §3.1).
+  permissionOverrides        EmployeePermission[]      @relation("EmployeePermissionOwner")
+  permissionOverridesGranted EmployeePermission[]      @relation("EmployeePermissionGrantor")
+
   hrPermissions       HrEmployeePermission[] @relation("HrPermEmployee")
   hrTemplatesAssigned HrTaskTemplate[]       @relation("HrTemplateAssignee")
   hrTemplatesChecker  HrTaskTemplate[]       @relation("HrTemplateChecker")
@@ -592,6 +597,35 @@ model EmployeeRole {
   @@id([employeeId, roleId])
   @@index([employeeId])
   @@map("employee_roles")
+}
+
+// MK26 — xodim darajasidagi ruxsat OVERRIDE qatlami (TZ §3.1).
+//
+//     Amaldagi ruxsat = rol qatlami MAX(scope) → SHU JADVAL (qator bo'lsa, u G'OLIB)
+//
+// ⚠️ `scope = 'NO'` qatori — «yozuv yo'q» EMAS, «ataylab taqiqlangan». `RolePermission`
+// da NO-qatorlarni tashlash mumkin (u yerda yo'qlik = NO), bu yerda MUMKIN EMAS:
+// tashlansa «bitta xodimni cheklash» jimgina bekor bo'lardi. Tozalash skriptlari
+// shuning uchun bu jadvalga tegmasin.
+model EmployeePermission {
+  accountId  String @map("account_id") @db.Uuid
+  employeeId String @map("employee_id") @db.Uuid
+  entity     String @db.VarChar(50) // PermissionEntity slug
+  action     String @db.VarChar(20) // 'view' | 'create' | 'update' | 'delete' | 'approve' | 'print'
+  scope      String @default("NO") @db.VarChar(20)
+
+  // G2 «nega bu ruxsat bor?» — kim va qachon berdi (TZ §3.3).
+  grantedById String?  @map("granted_by_id") @db.Uuid
+  grantedAt   DateTime @default(now()) @map("granted_at") @db.Timestamptz()
+  note        String?  @db.VarChar(255)
+
+  account   Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  employee  Employee  @relation("EmployeePermissionOwner", fields: [employeeId], references: [id], onDelete: Cascade)
+  grantedBy Employee? @relation("EmployeePermissionGrantor", fields: [grantedById], references: [id], onDelete: SetNull)
+
+  @@id([employeeId, entity, action])
+  @@index([accountId, employeeId])
+  @@map("employee_permissions")
 }
 
 // Refresh tokens — rotating, HttpOnly cookie-bound.

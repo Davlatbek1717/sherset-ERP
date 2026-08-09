@@ -13,15 +13,29 @@ import {
 import type { AuthenticatedUser } from '../auth/auth.schema.js';
 import { CurrentUser } from '../auth/current-user.decorator.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
+import {
+  EmployeePermissionService,
+  type OverrideCellInput,
+} from './employee-permission.service.js';
 import { SCOPE_ORDER } from './permissions.types.js';
+import type { PermissionAction, PermissionEntity } from './permissions.types.js';
 import { RequirePermission } from './require-permission.decorator.js';
-import { SetEmployeeRolesSchema, TransferOwnerSchema } from './roles.schema.js';
+import {
+  ExplainPermissionsSchema,
+  SetEmployeePermissionsSchema,
+  SetEmployeeRolesSchema,
+  TransferOwnerSchema,
+} from './roles.schema.js';
 import { RolesService } from './roles.service.js';
 
 @Controller('roles')
 @UseGuards(JwtAuthGuard)
 export class RolesController {
-  constructor(@Inject(RolesService) private readonly svc: RolesService) {}
+  constructor(
+    @Inject(RolesService) private readonly svc: RolesService,
+    @Inject(EmployeePermissionService)
+    private readonly employeePermissions: EmployeePermissionService,
+  ) {}
 
   @Get()
   @RequirePermission({ entity: 'role', action: 'view' })
@@ -63,6 +77,47 @@ export class RolesController {
     return this.svc.getEmployeeRoles(user.accountId, employeeId);
   }
 
+  // ─── MK26 — xodim override qatlami (TZ §3.1/§3.3) ─────────────────────────
+  // Ikkalasi ham `employee:update` darvozasidan o'tadi (rol ta'rifi emas,
+  // aynan SHU xodimning kirishi o'zgaradi) — `employee/:id` roli bilan bir xil.
+  // G1 esa servis ichida, ruxsat darvozasidan MUSTAQIL: `employee:update`
+  // bo'lgan menejer ham o'zidan yuqori scope tarqata olmaydi.
+
+  /** G2 — «nega bu ruxsat bor?»: har uch-lik uchun amaldagi scope + manbasi. */
+  @Post('employee/:employeeId/permissions/explain')
+  @RequirePermission({ entity: 'employee', action: 'update' })
+  async explainEmployeePermissions(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('employeeId') employeeId: string,
+    @Body() body: unknown,
+  ) {
+    const { cells } = ExplainPermissionsSchema.parse(body);
+    return {
+      items: await this.employeePermissions.explain(
+        user.accountId,
+        employeeId,
+        cells as Array<{ entity: PermissionEntity; action: PermissionAction }>,
+      ),
+    };
+  }
+
+  /** Override katakchalarini o'rnatish/o'chirish (G1 + G3 servis ichida). */
+  @Put('employee/:employeeId/permissions')
+  @RequirePermission({ entity: 'employee', action: 'update' })
+  async setEmployeePermissions(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('employeeId') employeeId: string,
+    @Body() body: unknown,
+  ) {
+    const { cells } = SetEmployeePermissionsSchema.parse(body);
+    return this.employeePermissions.setOverrides(
+      user.accountId,
+      user.sub,
+      employeeId,
+      cells as OverrideCellInput[],
+    );
+  }
+
   @Put('employee/:employeeId')
   @RequirePermission({ entity: 'employee', action: 'update' })
   async setEmployeeRoles(
@@ -102,7 +157,7 @@ export class RolesController {
   @Post()
   @RequirePermission({ entity: 'role', action: 'create' })
   async create(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
-    return this.svc.create(user.accountId, body);
+    return this.svc.create(user.accountId, body, user.sub);
   }
 
   @Patch(':id')
@@ -112,7 +167,7 @@ export class RolesController {
     @Param('id') id: string,
     @Body() body: unknown,
   ) {
-    return this.svc.update(user.accountId, id, body);
+    return this.svc.update(user.accountId, id, body, user.sub);
   }
 
   @Delete(':id')

@@ -51,3 +51,42 @@ export type TransferOwnerInput = z.infer<typeof TransferOwnerSchema>;
 
 /** Re-export the scope order for the UI to sort dropdowns consistently. */
 export const SCOPE_KEYS = Object.keys(SCOPE_ORDER) as Array<keyof typeof SCOPE_ORDER>;
+
+// ── MK26 — xodim override qatlami (TZ §3.1) ─────────────────────────────────
+
+/**
+ * Bitta override katakchasi.
+ *
+ * ⚠️ `scope: null` ≠ `scope: 'NO'` — `nullable()` ATAYLAB `optional()` EMAS:
+ *   - `null`  → override'ni O'CHIR (xodim rol qatlamiga qaytadi)
+ *   - `'NO'`  → ATAYLAB TAQIQ yoz (rol `ALL` bersa ham yopiq qoladi)
+ * `optional()` bo'lsa «maydonni yubormaslik» ham «o'chirish» ma'nosini olardi
+ * va UI dagi jimgina xato butun cheklovni bekor qilardi.
+ */
+export const EmployeePermissionCellSchema = z.object({
+  entity: z.string().min(1).max(50),
+  action: z.enum(['view', 'create', 'update', 'delete', 'approve', 'print']),
+  scope: z.enum(['NO', 'OWN', 'OWN_GROUP', 'OWN_AND_GROUP', 'ALL']).nullable(),
+  note: z.string().max(255).nullable().optional(),
+});
+export type EmployeePermissionCellInput = z.infer<typeof EmployeePermissionCellSchema>;
+
+export const SetEmployeePermissionsSchema = z.object({
+  /** Faqat O'ZGARADIGAN katakchalar yuboriladi (to'liq matritsa emas). */
+  cells: z.array(EmployeePermissionCellSchema).min(1).max(500),
+});
+export type SetEmployeePermissionsInput = z.infer<typeof SetEmployeePermissionsSchema>;
+
+/** G2 o'qish so'rovi — qaysi uch-liklarni izohlash kerak. */
+export const ExplainPermissionsSchema = z.object({
+  cells: z
+    .array(
+      z.object({
+        entity: z.string().min(1).max(50),
+        action: z.enum(['view', 'create', 'update', 'delete', 'approve', 'print']),
+      }),
+    )
+    .min(1)
+    .max(1000),
+});
+export type ExplainPermissionsInput = z.infer<typeof ExplainPermissionsSchema>;

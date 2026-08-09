@@ -1,6 +1,7 @@
 import type { Prisma } from '@moysklad/db';
 import { ForbiddenException, Inject, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { applyOverride } from './employee-permission.js';
 import {
   type ActorContext,
   type PermissionAction,
@@ -198,6 +199,10 @@ export class PermissionsService {
             },
           },
         },
+        // MK26 — xodim override qatlami SHU SO'ROVDA keladi (TZ §3.1). Alohida
+        // so'rov qilinsa har ruxsat tekshiruvi ikki DB murojaatiga aylanardi;
+        // natija baribir bitta cache yozuviga tushadi.
+        permissionOverrides: { select: { entity: true, action: true, scope: true } },
       },
     });
     if (!employee) {
@@ -217,6 +222,14 @@ export class PermissionsService {
         const current = perms.get(key) ?? 'NO';
         perms.set(key, maxScope(current, p.scope as PermissionScope));
       }
+    }
+
+    // MK26 (TZ §3.1) — xodim qatlami rol natijasini ALMASHTIRADI, `maxScope`
+    // QILINMAYDI. MAX qilinsa «bitta xodimni cheklash» imkonsiz bo'lardi:
+    // override ko'tarishi ham, tushirishi ham kerak. `scope='NO'` qatori —
+    // ataylab taqiq, shuning uchun u ham qo'llanadi (tashlab yuborilmaydi).
+    for (const o of employee.permissionOverrides) {
+      perms.set(`${o.entity}.${o.action}`, applyOverride('NO', o.scope as PermissionScope));
     }
 
     const entry = {

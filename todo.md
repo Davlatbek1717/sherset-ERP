@@ -274,14 +274,20 @@ kuniga **3 sessiya** → **~6 hafta**.
 
 ## 🔵 To'lqin 4 — Nazorat (ruxsatlar)
 
-- [ ] **4-Menejer B1** — `EmployeePermission` (YO'Q) + amaldagi ruxsat hisobi
+- [x] **4-Menejer B1** — `EmployeePermission` + amaldagi ruxsat hisobi
       (rol `MAX(scope)` → xodim override, **ko'tarish VA tushirish**) + **G1** imtiyoz oshirish taqiqi
       (server tomonda) + **G2** «nega bu ruxsat bor» + **G3** audit
+      — ✅ **MK26 (2026-08-10)**: sxema + migratsiya `20260810120000_employee_permission` ·
+      sof qatlam + servis + 2 endpoint · **G1 IKKI joyda** (xodim-override VA rol-yozish yo'li —
+      TZ §3.3 nomlagan hujum aynan rol matritsasi orqali) · 44 test · butun api suite yashil.
+      **UI yo'q** (B3/MK28) · prod migratsiyasi OPS-qarzi.
 - [ ] **4-Menejer B2** — HR ruxsatlarini birlashtirish: adapter + bir martalik migratsiya + hisobot
       *(hozir ikki parallel tizim: ERP `entity×action×scope` vs HR `page×section×access`)*
       — **QISMAN (MK27, 2026-08-10):** adapter + migratsiya rejasi + DRY hisobot + 216 test
       **tayyor**; `--apply` **ataylab yopiq** (yozadigan `EmployeePermission` — `4-Menejer B1`
       ishi) va «eski HR yozuvlari faqat-o'qish» bandi bajarilmagan ⇒ **katakcha OCHIQ qoladi**.
+      *(2026-08-10 MK26: `EmployeePermission` endi MAVJUD ⇒ skriptning «jadval yo'q» to'sig'i
+      ochildi, lekin APPLY yo'li hamon yozilmagan — qolgani shu bandning ishi.)*
 - [ ] **4-Menejer B3** — Ruxsat matritsasi UI + **10 rol shabloni**
       (Egasi · Admin · Savdo menejeri · Ombor menejeri · Kassir · Sotuvchi · Omborchi · Buxgalter ·
       Ta'minotchi · Haydovchi)

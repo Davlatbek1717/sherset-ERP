@@ -305,6 +305,58 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-10b (REJA-MENEJER-KASSA **MK26** — TZ §3.1/§3.3: `EmployeePermission` +
+> amaldagi ruxsat hisobi + G1/G2/G3) — ✅ **Phase-1 complete** (strukturaviy + unit;
+> **browser-smoke YO'Q**). To'liq hisobot: `docs/REJA-MENEJER-KASSA-2026-08.md` → HISOBOT
+> JURNALI → «Faza MK26».**
+>
+> **⚠️ Sessiya MK28 prompti bilan boshlandi, lekin MK28 BLOKLANGAN edi.** O'ZGARMAS QOIDALAR §2
+> bo'yicha kodda tekshirildi: `EmployeePermission` sxemada **yo'q**, G1/G2 server tomoni **yo'q**
+> ⇒ MK28 ning 3 testidan 2 tasiga (override vizual farqi · G1 rad etilishi) **ma'lumot manbai
+> yo'q**. Egasi uch variantdan **«avval MK26»** ni tanladi. **MK28 endi bloksiz** — keyingi
+> sessiya uni TO'LIQ qura oladi (sxema · G1/G2/G3 · 2 endpoint tayyor).
+>
+> **Bajarildi (TDD — 44 yangi test):**
+> `packages/db` — `EmployeePermission` modeli + migratsiya `20260810120000_employee_permission`
+> (lokal `climart_adopt` ga qo'llandi va **jonli zond** bilan tekshirildi: 8 ustun, FK qoidalari).
+> `apps/api/src/modules/permissions/` — `employee-permission.ts` (**sof**, 16 test: rol MAX →
+> override, G1 jadvali, G2 manbasi) · `employee-permission.service.ts` (14 test: G1 atomik rad
+> etish · G3 audit · cache) · `permissions-override.test.ts` (8, **regressiya qulfi**) ·
+> `roles-escalation.test.ts` (6). Ulanish: `permissions.service.ts` (override BIR so'rovda) ·
+> `roles.service.ts` (**G1**) · `roles.controller.ts` (2 yangi endpoint) · `permissions.module.ts`.
+>
+> **🔴 UCHTA SHARTNOMA (sezgiga zid, test bilan qulflangan):**
+> (1) **Override `MAX` EMAS — G'OLIB.** `maxScope` qo'llansa `MAX(ALL, OWN) = ALL` bo'lib
+> «bitta xodimni cheklash» **umuman ishlamas edi** (TZ §3.1 shuning uchun «u g'olib» deydi).
+> (2) **`scope: null` ≠ `scope: 'NO'`** — `null` override'ni O'CHIRADI (rol qatlamiga qaytadi),
+> `'NO'` esa ATAYLAB TAQIQ. Zod'da `.nullable()` ataylab `.optional()` EMAS. Shundan kelib
+> chiqib: **`employee_permissions` dan NO-qatorlarni sparse-tozalash TAQIQ**.
+> (3) **G1 IKKI joyda.** Faqat xodim-override yo'lida bo'lsa yetarli emas edi: TZ §3.3 nomlagan
+> hujum aynan **rol matritsasi** orqali («`role:update` olgan xodim o'zini adminga aylantiradi»)
+> — menejer yangi rol yaratib `ALL` yozib o'ziga biriktirardi. Endi rol create/update ham
+> tekshiriladi; nom-tahriri va `AccountOwner` ozod.
+>
+> **Bonus:** `GET /permissions/me` `resolveScope()` ustida qurilgani uchun override qatlamini
+> **avtomat** hisobga oladi — web'ning modul-yashirish mantiqi qo'shimcha ishsiz to'g'ri ishlaydi.
+>
+> **Gate (to'liq):** api typecheck **0** · web typecheck **0** (sxema tegildi) · `lint:product`
+> **0 xato** · `vitest run` butun api **512 fayl / 7208 test YASHIL** (regressiya yo'q).
+> i18n gate yugurtirilmadi — **UI matni TEGILMADI** (faza faqat backend).
+> **Halol yorliq: Phase-1 (strukturaviy + unit), browser-smoke YO'Q** → MK40 (ruxsat QA).
+>
+> **🔴 QARZ:** (1) **UI yo'q** — MK28 ishi; (2) **MK27 APPLY hamon yozilmagan** — MK26 uning
+> «jadval yo'q» to'sig'ini oldi, lekin skriptdagi `fail('APPLY yo'li hali yozilmagan')` qatori
+> MK27 ning qolgan qismi (ataylab tegilmadi, §1 «faqat bitta faza»); (3) **HR guard** hamon
+> `hr_employee_permission` ni o'qiydi; (4) **prod migratsiyasi qilinmadi** — OPS-qadam
+> hisobotda (`CREATE TABLE` + 3 FK, jadval bo'sh tug'iladi ⇒ hech kimning ruxsati o'zgarmaydi).
+>
+> **🧹 Sessiya boshida daraxt tozalandi (shikast, kontent emas):** `NEXT.md` va reja fayli
+> HEAD'ga nisbatan **eskirgan** turgan edi (MK27 hisoboti tasvirlagan aynan o'sha holat).
+> Tekshirildi — ish daraxtidagi `NEXT.md` da HEAD'da **yo'q birorta qator yo'q** edi, rejada
+> faqat 2 noyob qator (`☐ HISOBOT` yorlig'i va stray `c`) ⇒ HEAD'ga tiklandi, avval zaxira
+> olindi. Sabab: `isolated-index-leaves-stale-shared-index` (vaqtinchalik indeks bilan commit,
+> ish daraxti yangilanmagan).
+
 > **🕒 2026-08-09zf (REJA-MENEJER-KASSA **MK14** — 4M **Phase-2 QA**: menejer nazorati,
 > **REAL BRAUZER**) — 3 mahsulot xatosi topildi va tuzatildi + 2 muhit muammosi yopildi.
 > To'liq hisobot: `docs/REJA-MENEJER-KASSA-2026-08.md` → HISOBOT JURNALI → «Faza MK14».**
