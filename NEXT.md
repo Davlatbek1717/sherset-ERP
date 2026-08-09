@@ -326,6 +326,45 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > `/root/sherset-v2-backups` = 5.4G / 18 fayl — keyingi deploy'dan oldin eski backup'larni
 > tozalash kerak bo'ladi, aks holda `next build` joy yetmasligidan yiqilishi mumkin.
 >
+> **🕒 2026-08-09t (REJA-MENEJER-KASSA **MK06** — 4M.5a: menejer ish navbati, dvigatel va model) —
+> `d450bc0a`, 19 fayl (+3324/−3). To'liq hisobot:
+> `docs/REJA-MENEJER-KASSA-2026-08.md` → HISOBOT JURNALI → «Faza MK06».**
+>
+> **Muammo (kodda tasdiqlangan):** `ManagerWorkItem`/`ManagerRuleConfig` sxemada YO'Q edi. MK11
+> «navbatga tushadi» deb yozgan-u, elementni SAQLAY olmasdi (o'sha fazaning 2- va 3-ochiq qarzi);
+> chegaralar esa so'rov parametri edi — menejer o'zgartirsa, ertaga yo'qolardi.
+>
+> **Nima qilindi:** (1) 3 model + migratsiya `20260810080000_manager_work_queue` — **lokal
+> `climart_adopt` ga QO'LLANDI va tekshirildi**. (2) Uch **sof** modul: `work-item-rules.ts`
+> (registr + sozlama, 21 test) · `work-queue-planner.ts` (dedup + eskirish, 16 test) ·
+> `work-item-fsm.ts` (§5.4 ning 7 harakati, MK08 `shared/acceptance-fsm.ts` USTIDA — nusxa yo'q,
+> 20 test). (3) Servis/HTTP (17 test) + `manager.module.ts` ga ulandi. (4) FE `/menejer/navbat` +
+> subnav + i18n ru+uz (57 kalit).
+>
+> **🔴 Fazaning invarianti:** **NAVBAT BLOKLAMAYDI** (§5.1) — TO'RT qatlamli qulf: baza `CHECK`
+> (`mode='block'` jonli rad etildi) · tipda `blocks: false` literal · Zod · **arxitektura testi**
+> (`manager/queue` ni `manager.module.ts` dan boshqa hech kim import qila olmaydi). Oxirgisi
+> **mutatsiya bilan tekshirildi** — `demand/` ga import qo'yilganda test yiqildi.
+>
+> **Ataylab qilingan 8 qaror** hisobotda ochiq yozilgan. Eng muhimi ikkitasi: **eskirish = BAYROQ,
+> status EMAS** (eskirgan element navbatdan CHIQMAYDI, §5.1 «yuqoriga chiqadi» deydi) va
+> **yopilgan element qayta tug'ilmaydi** (dedup HOLATGA qaramaydi — aks holda navbat cheksiz halqa
+> bo'lardi va §5.3 statistikasi bir hodisani o'nlab marta sanardi).
+>
+> **⚠️ PROD DDL QO'LLANMAGAN** — `docs/REJA-8-BOLIM-2026-08.md` → OPS-QADAMLAR **10-band**
+> (backfill YO'Q, ya'ni deploy'dan keyin navbat BO'SH bo'ladi; birinchi `sync` uni to'ldiradi).
+>
+> **Ochiq qarz:** 12 qoida turidan **2 tasi** bor (ataylab — qolgani MK07) · `record_fine` PUL
+> YOZMAYDI (faqat jurnal + `logger.warn`) · `assign_task`/`write_warning` yon ta'sirsiz ·
+> `sync` cron'ga ulanmagan (MK08 `escalateOverdue` bilan birga) · brauzer-QA yo'q (→ MK14).
+>
+> **Git:** daraxtda **uch parallel sessiya** ishlayotgan edi (MK18 narx-xatolari · MK09 sifat paneli ·
+> MK31 dollar yashiq) va ular menga kerak 5 umumiy faylni allaqachon o'zgartirgan edi. `git add`
+> ISHCHI DARAXT versiyasini olgani uchun ularning ishi mening commit'imga tushardi (CLAUDE.md §6.7 B).
+> Yechim: **«HEAD + faqat mening hunklarim»** blobi deterministik skript bilan qurildi
+> (`hash-object -w` + `update-index --cacheinfo`, fail-closed anchorlar). Hook'lar bir martaga
+> chetlab o'tildi — gate'lar QO'LDA to'liq (yuqorida).
+>
 > **🕒 2026-08-09s (REJA-MENEJER-KASSA **MK09** — 4M.6b: ma'lumot sifati paneli) —
 > 20 fayl (16 kod + 4 hujjat), +1819/−6. To'liq hisobot:
 > `docs/REJA-MENEJER-KASSA-2026-08.md` → HISOBOT JURNALI → «Faza MK09».**

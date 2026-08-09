@@ -348,7 +348,7 @@ xodim taxtada ko'rinmaydi (nol qator tashlanadi). (3) biriktirish tarixi append-
 
 ---
 
-### MK06 — 4M.5a: menejer ish navbati — dvigatel va model ☐ HISOBOT
+### MK06 — 4M.5a: menejer ish navbati — dvigatel va model ☑ HISOBOT (2026-08-09)
 **Bo'lim/blok:** 4M.5 (1-yarim) · **TZ:** §5.1–§5.2
 **Ustuvorlik:** P1 · **Bog'liqlik:** yo'q · **Holat:** `ManagerWorkItem` va `ManagerRuleConfig`
 sxemada **YO'Q** (tasdiqlangan)
@@ -1983,3 +1983,150 @@ bilan qilindi va bu to'rt fayl uchun blob **HEAD + faqat mening hunk'larim** dan
 tree kompilyatsiya bo'lmasdi). Hook'lar bir martaga chetlab o'tildi, gate'lar yuqorida qo'lda.
 Shu commit **MK08 ning commit qilinmay qolgan hand-off hujjatlarini ham** olib keladi (uzilgan
 sessiya artefakti: `NEXT.md`, `todo.md`, ikkala reja fayli indeksda staged turgan edi).
+
+## Faza MK06 — 4M.5a: menejer ish navbati — dvigatel va model (sana: 2026-08-09)
+
+**Holat:** bajarildi — **Phase-1** (strukturaviy + unit-tasdiqlangan, **browser-smoke YO'Q**).
+
+### Rejaning da'volari kodda tekshirildi (O'ZGARMAS QOIDA 2)
+
+| Reja/TZ da'vosi | Kodda holat | Xulosa |
+|---|---|---|
+| `ManagerWorkItem`/`ManagerRuleConfig` sxemada YO'Q | `grep 'model ManagerWorkItem\|model ManagerRuleConfig\|model ApprovalRule'` → **0** | ✅ tasdiqlandi |
+| MK11 tayyor `dedupKey` beradi | `price-change-control.ts` `PriceChangeWorkItem.dedupKey` = `price_change:{auditId}:{field}:{priceTypeId}` | ✅ ko'prik ishlatildi, qayta yozilmadi |
+| Qabul naqshi umumiy dvigatelda | MK08 `shared/acceptance-fsm.ts` ajratgan | ✅ nusxa ko'chirilmadi, shu dvigatel ustiga qurildi |
+| `AuditLog.userId` → xodim | `user Employee? @relation(...)` (schema:7457) | ✅ `subject_employee_id` FK xavfsiz |
+| Kassa farqi manbai bor | `CashierSessionVariance` (`varianceMinor`, `cashierId`, `acknowledgedAt`) | ✅ ikkinchi manba ochilmadi |
+
+### Nima qo'shildi
+
+**Sxema — 3 model + migratsiya `20260810080000_manager_work_queue`:**
+- `ManagerRuleConfig` — qoida chegarasi (`thresholdValue` + **`thresholdUnit`**), `enabled`, `mode`,
+  `severity`, `params`. `@@unique([accountId, ruleType])`.
+- `ManagerWorkItem` — BITTA NAVBAT. §5.1 ning besh savoli ustunlarda: **kim** (`subjectEmployeeId`) ·
+  **qancha** (`amountMinor`, NULL = o'lchanmadi) · **qachon** (`occurredAt` — hodisa vaqti) ·
+  **hujjatga havola** (`docType`/`docId`) · **kontekst** (`context`). `@@unique([accountId, dedupKey])`
+  + 3 indeks.
+- `ManagerWorkItemEvent` — append-only jurnal (§5.3 statistikasining manbai).
+- **Migratsiya lokal `climart_adopt` ga QO'LLANDI** va tekshirildi (pastga qara).
+
+**BE — yangi `apps/api/src/modules/manager/queue/` (8 fayl):**
+- `work-item-rules.ts` — sof. Qoida registri (`MANAGER_RULES`), sozlama birlashtirish
+  (`resolveRules`), 2 namunaviy nomzod yasovchi (`buildPriceChangeCandidates`,
+  `buildCashVarianceCandidates`).
+- `work-queue-planner.ts` — sof. Dvigatelning YADROSI: `planQueueSync` (dedup + eskirish rejasi) va
+  `sortQueue` (eskirgani tepada → jiddiyligi → yangiligi).
+- `work-item-fsm.ts` — sof. §5.4 ning 7 harakati + `dismiss`/`reopen`, `shared/acceptance-fsm.ts`
+  ustida.
+- `manager-queue.service.ts` / `.controller.ts` / `.schema.ts` — I/O va HTTP.
+  `GET manager/queue` · `GET manager/queue/rules` · `GET manager/queue/:id/history` ·
+  `POST manager/queue/sync` · `POST manager/queue/:id/action` · `PUT manager/queue/rules/:ruleType`.
+  Ruxsat `employees:read` / `employees:full` (`manager/kpi` bilan bir xil darvoza).
+- `manager.module.ts` ga ulandi — `app-boot.test.ts` (yetim modul + takroriy route) **9 yashil**.
+
+**FE — 1 yangi sahifa:**
+- `menejer/navbat/page.tsx` — filtr (qoida turi · faqat eskirganlar), «Yangilash» (sync natijasi
+  ko'rinadi), har elementda §5.1 ning uch savoli + **«shu oyda N-marta»** tendensiya qatori,
+  FSM'dan chizilgan tugmalar, yopuvchi amalda sabab+izoh formasi.
+- `domain-status-tone.ts`: `WORK_ITEM_SEVERITY_TONE` / `WORK_ITEM_STATUS_TONE` (UI Convention 6).
+- `layout.tsx` subnav +1 (KPI qabulidan keyin, ataylab tepada). i18n ru+uz: 1 blok (57 kalit) + subnav 1.
+
+### 🔴 «Navbat BLOKLAMAYDI» — TO'RT qatlamli qulf
+
+§5.1 («erkinlik + keyingi nazorat») — bu **yo'q xususiyat**, uni oddiy test isbotlay olmaydi.
+Shuning uchun to'rt mustaqil qatlam:
+
+1. **Baza:** `CHECK (mode IN ('observe','notify'))` — `block` qiymati yozilmaydi.
+   **Jonli tekshirildi:** `INSERT ... mode='block'` → `violates check constraint
+   "manager_rule_configs_mode_not_blocking"`.
+2. **Tip:** har qoida ta'rifida `blocks: false` **literal** (`ManagerRuleDefinition`), test registr
+   bo'ylab yuradi ⇒ MK07 ning 12 qoidasi ham shu qulfdan o'tadi.
+3. **Zod:** `RuleConfigBodySchema.mode` da `block` yo'q; `resolveRules` bazadan `block` kelsa ham
+   `notify` ga tushiradi (qatlamlar mustaqil himoyalanadi).
+4. **Arxitektura:** `queue-does-not-block.test.ts` manba daraxtini skanerlaydi — `manager/queue` ni
+   `manager.module.ts` dan boshqa hech kim import qila olmaydi, ya'ni hujjat yo'liga qo'shib
+   bo'lmaydi. **Mutatsiya bilan tasdiqlandi**: `demand/` ga import qo'yilganda test yiqildi
+   (`expected [ 'demand\__tmp_probe.ts' ] to deeply equal []`), probe o'chirildi.
+
+### Ataylab qilingan qarorlar (TZ'da yo'q — ochiq yozilmoqda)
+
+1. **Eskirish = BAYROQ, status EMAS.** `staleAt` to'ladi, `status` `open` bo'lib qoladi. §5.1
+   «yuqoriga chiqadi» deydi — ya'ni element navbatdan CHIQMAYDI. Alohida `stale` statusi uni
+   ochiqlar ro'yxatidan olib chiqib ketardi va «e'tibordan qolgan element» ikkinchi marta
+   e'tibordan qolardi.
+2. **Eskirish `statusChangedAt` dan sanaladi, `occurredAt` dan EMAS.** Bir oylik audit yozuvi bugun
+   sync qilinsa, u bugun navbatga tushdi — darhol «e'tibordan qolgan» deb belgilash yolg'on ayblov
+   bo'lardi. Test bilan qulflangan.
+3. **YOPILGAN element qayta tug'ilmaydi.** Dedup mavjud elementning HOLATIGA qaramaydi. Aks holda
+   menejer yopgan hodisa ertangi `sync` da qaytib kelib, navbat hech qachon bo'shamas va §5.3
+   sabab statistikasi bir hodisani o'nlab marta sanardi.
+4. **Chegara BIRLIK bilan birga o'qiladi** (`thresholdValue` + `thresholdUnit`). Birlik mos kelmasa
+   sozlama **RAD etiladi** va bu `thresholdRejected` orqali ekranda **KO'RINADI** — jimgina tashlab
+   yuborish menejerni «men chegarani o'zgartirdim-ku» degan yolg'on ishonchda qoldirardi. `PUT` esa
+   noto'g'ri birlikni umuman qabul qilmaydi (400).
+5. **`CASH_VARIANCE` default chegarasi = 0** («o'ylab topilgan raqam» kiritmaslik uchun): farq
+   aktining o'zi allaqachon istisno hodisa, nolga teng bo'lmagan har farq navbatga tushadi. Shovqin
+   ko'p bo'lsa egasi sozlamadan ko'taradi. `PRICE_CHANGE` = MK11 ning `DEFAULT_PRICE_THRESHOLD_PERCENT`
+   (20%) — **import qilingan**, takrorlanmagan.
+6. **Migratsiyada BACKFILL YO'Q.** Bir yillik audit jurnalini navbatga ag'darish menejerni birinchi
+   kuniyoq ko'mib tashlardi; `sync` esa `sinceDays` bilan boshqariladi (default 30 kun).
+7. **Yopuvchi amalda sabab MAJBURIY** — test JADVAL bo'ylab yuradi (`to` yopiq holat ⇒
+   `reasonRequired: true`), ya'ni MK07 yangi yopuvchi amal qo'shsa va `reasonRequired` ni unutsa,
+   test yiqiladi.
+8. **Egaga eskalatsiyani EGA qila olmaydi** — `escalate` aktyori faqat `manager`. Ega o'ziga
+   eskalatsiya qilishining ma'nosi yo'q.
+
+### Testlar (TDD — RED ko'rildi, keyin GREEN)
+
+| Fayl | Test | RED dalili |
+|---|---|---|
+| `work-item-rules.test.ts` | **21** | `Failed to load url ./work-item-rules.js` |
+| `work-queue-planner.test.ts` | **16** | `Failed to load url ./work-queue-planner.js` |
+| `work-item-fsm.test.ts` | **20** | `Failed to load url ./work-item-fsm.js` |
+| `manager-queue.service.test.ts` | **17** | (test-after, oshkora — mock'siz chiqmaydigan shartnomalar) |
+| `queue-does-not-block.test.ts` | **2** | **mutatsiya** bilan tasdiqlandi (yuqorida) |
+
+**Rejaning to'rt testi qayerda:** (1) dedup — `work-queue-planner.test.ts` × 4 + servis × 2;
+(2) eskirish belgisi, o'chirish YO'Q — planner × 7 (shu jumladan «rejada `delete|remove|purge|drop`
+kaliti yo'q») + servis × 2; (3) o'chirilgan qoida element yaratmaydi — rules × 2 + servis × 1
+(«manbani UMUMAN o'qimaydi»); (4) bloklamaydi — yuqoridagi to'rt qatlam.
+
+**Regress:** `src/modules/manager` **484 test yashil** (27 fayl, shundan MK06 niki 76) ·
+`app-boot.test.ts` **9 yashil** · web `src/__tests__` **1197 yashil**.
+
+### Gate
+
+| Gate | Natija |
+|---|---|
+| `@moysklad/api typecheck` | ✅ 0 |
+| `@moysklad/web typecheck` | ✅ 0 |
+| `biome` (shu fazaning 14 fayli) | ✅ 0 |
+| `pnpm i18n:gate` | ✅ 9 yashil (427 fayl, 12638 kalit) |
+| `@moysklad/api` `src/modules/manager` + `app-boot` | ✅ 484 + 9 |
+| `@moysklad/web` `src/__tests__` | 1197 yashil · **2 yiqilgan** — `pos-payment-contract.test.ts`, sababi **parallel sessiyaning** commit qilinmagan `retail-sale.schema.ts` refaktori (`terminalAmountMinor` va boshqalar ichki obyektga ko'chirilgan; test tekis manba matnini qidiradi). Mening diffimda POS fayli YO'Q |
+| UI konventsiya qo'riqchilari | ✅ `raw-element-conventions` (xom `<input type=checkbox>` topildi → DS `Checkbox` ga o'tkazildi) · `domain-status-tone` drift-lock 75 yashil |
+
+### Migratsiya — LOKAL DB'ga qo'llandi
+
+`prisma db execute --file .../20260810080000_manager_work_queue/migration.sql` → `Script executed
+successfully`. Ya'ni SQL sintaksisi va FK'lar **haqiqiy bazada** tekshirildi (MK08 da bu qadam
+o'tkazib yuborilgan edi — u yerda DB o'chiq deb hisoblangan; aslida `climart_adopt` **ishlayapti**,
+preflight'ning TCP probi noto'g'ri xulosa beradi).
+
+⚠️ **PROD (`sherset_v2`) ga QO'LLANMAGAN** — DDL `docs/REJA-8-BOLIM-2026-08.md` → OPS-QADAMLAR
+**10-band**ga yozildi.
+
+### Ochiq qarzlar (jimgina qoldirilmadi)
+
+1. **12 qoida turidan 2 tasi bor** — bu ATAYLAB (reja: «1–2 namunaviy qoida yetarli»). Qolgan 10 turi
+   va §5.3 sabab-kodlari katalogi — **MK07**. Registr va Zod sxemasi shakl o'zgarmasdan kengayadi.
+2. **`record_fine` PUL YOZMAYDI** — hozircha faqat jurnalga tushadi va servis `logger.warn` bilan
+   buni aytadi. `HrBonusFineLog` ga ulash MK01 `applyRule` naqshini talab qiladi (summa qoidaga
+   bog'langan) ⇒ **MK07**.
+3. **`assign_task` / `write_warning` yon ta'sirsiz** — holat va jurnal yoziladi, `hr-task-send` va
+   xodim kartasi jurnaliga ulanmagan (§5.4 kengaytmasi) ⇒ MK07/MK16.
+4. **`sync` cron'ga ulanmagan** — hozircha menejer «Yangilash» bosadi. MK08 ning `escalateOverdue`
+   cron qarzi bilan birga bir joyda yechilishi mantiqiy.
+5. **Indeks o'lchanmagan** — `sync` dagi `OR: [dedupKey in …, status in …]` so'rovi katta akkauntda
+   `EXPLAIN` bilan tekshirilishi kerak (`index-needs-matching-query-shape` sabog'i).
+6. **Brauzer-QA yo'q** — Phase-2 QA navbatida (MK14).

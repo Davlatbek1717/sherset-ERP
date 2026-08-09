@@ -221,6 +221,11 @@ kuniga **3 sessiya** → **~6 hafta**.
 ### 4M.5–4M.10
 - [ ] **4M.5** — Ogohlantirish navbati: `ManagerWorkItem` + `ManagerRuleConfig` (ikkalasi YO'Q) +
       **12 qoida turi** + sabab kodlari + eskirish belgisi
+      · ✅ **YARMI BAJARILDI (MK06)**: ikkala model + migratsiya (lokal DB'ga qo'llandi) + qoida
+        dvigateli (dedup · eskirish BAYROG'I · FSM) + `/menejer/navbat` ekrani. **Navbat
+        BLOKLAMAYDI** — to'rt qatlamli qulf (DB CHECK · tip · Zod · arxitektura testi).
+        Phase-1, brauzer-QA yo'q. Katakcha OCHIQ qoladi — **12 qoida turidan 2 tasi** bor
+        (namunaviy), qolgani va sabab-kodlari katalogi **MK07** da.
 - [x] **4M.6** — Smena yakunini qabul qilish + **ma'lumot sifati paneli**
       · ✅ **MK08**: smena qabuli — FSM (`shift-acceptance.ts`) + append-only
         jurnal + rad→tushuntirish halqasi + navbat/qabul ekrani + javobgarlik taxtasida

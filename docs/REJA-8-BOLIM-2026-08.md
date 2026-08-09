@@ -167,6 +167,21 @@ alohida bajariladi. **Har faza agenti o'zi qo'shgan qadamni shu ro'yxatga yozadi
    smenalar soni `pending` bilan mos kelishi kerak. Keyin `/api/v1/health` (2-band).
    ⚠️ **Lokal `climart_adopt` ga ham QO'LLANMAGAN** (MK08 sessiyasida DB o'chiq edi) — keyingi
    runtime/QA sessiya avval shuni qo'llasin, aks holda API `acceptance_state` ustunini topa olmaydi.
+   *(MK06 sessiyasi aniqladi: `climart_adopt` aslida **ISHLAYAPTI** — `preflight.mjs` ning TCP
+   probi postgres'ni «o'chiq» deb noto'g'ri belgilaydi. Ya'ni bu qadamni darhol bajarish mumkin.)*
+10. **MK06 (2026-08-09) — menejer ish navbatining DDL'i.** Prod (`sherset_v2`) da
+   `packages/db/prisma/migrations/20260810080000_manager_work_queue/migration.sql`
+   ni `prisma db execute --file` bilan qo'llash. Faqat QO'SHADI: uchta YANGI jadval
+   (`manager_rule_configs`, `manager_work_items`, `manager_work_item_events`) + 1 unique + 5 oddiy
+   indeks + 6 FK + 2 CHECK. **Mavjud birorta jadvalga TEGMAYDI.**
+   ✅ **BACKFILL YO'Q va bu ataylab** — deploy'dan keyin navbat **BO'SH** bo'ladi, ya'ni ko'rinadigan
+   xulq o'zgarmaydi. Elementlar faqat menejer `/menejer/navbat` da «Yangilash» bosganda (yoki
+   `POST /api/v1/manager/queue/sync`) paydo bo'ladi va u `sinceDays` (default 30 kun) bilan
+   cheklangan. MK08 dagidan farqli o'laroq bu yerda «birinchi kuni navbat uzun» xavfi YO'Q.
+   ⚠️ **`mode` ustunida CHECK bor** (`observe|notify`) — bu 4M TZ §5.1 («navbat bloklamaydi»)
+   qulfining baza qatlami, olib tashlamang.
+   Tekshiruv: `SELECT count(*) FROM manager_work_items` → **0**; keyin `/api/v1/health` (2-band).
+   ✅ Lokal `climart_adopt` ga **QO'LLANGAN va tekshirilgan** (MK06 sessiyasi).
 
 ---
 
