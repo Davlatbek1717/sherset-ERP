@@ -38,6 +38,13 @@ function makeService(opts: {
     employeeDailyKpi: { updateMany: dayUpdateMany },
     employeeDailyKpiEvent: { create: eventCreate },
     employeeDailyKpiMetric: { update: metricUpdate },
+    // MK01: qabul/bekor bonus-jarima kanaliga tegadi. Bu yerda qoida yo'q
+    // (opt-in) — ya'ni pul yozilmaydi; kanalning O'ZI `kpi-accrual-wiring`
+    // testida qulflangan.
+    hrBonusFineLog: {
+      create: vi.fn().mockResolvedValue({}),
+      findMany: vi.fn().mockResolvedValue([]),
+    },
   };
   const client = {
     employeeDailyKpi: {
@@ -67,6 +74,8 @@ function makeService(opts: {
             : opts.metric,
         ),
     },
+    // Bonus/jarima qoidalari (MK01) — bu testlarda sozlanmagan.
+    hrBonusFineRule: { findMany: vi.fn().mockResolvedValue([]) },
     $transaction: vi
       .fn()
       .mockImplementation(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),

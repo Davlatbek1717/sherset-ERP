@@ -9548,15 +9548,40 @@ model HrBonusFineLog {
   createdById  String?  @map("created_by_id") @db.Uuid
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz()
 
-  account   Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  employee  Employee         @relation("HrBonusEmployee", fields: [employeeId], references: [id])
-  taskLog   HrTaskLog?       @relation(fields: [taskLogId], references: [id])
-  rule      HrBonusFineRule? @relation(fields: [ruleId], references: [id])
-  createdBy Employee?        @relation("HrBonusCreator", fields: [createdById], references: [id])
+  /// Kunlik KPI qabulidan chiqqan yozuv qaysi KUNGA tegishli (MK01, QAROR-B1).
+  ///
+  /// Bekor qilishda ZERO-SUM qatori shu ustun bo'yicha topiladi: kunning sof
+  /// qoldig'i olinadi va nolga keltiriladi. `attendanceId` bu ish uchun
+  /// yaramaydi — u davomat qatoriga bog'langan avto-jarima kanali.
+  /// `SetNull`: kun qatori o'chsa ham PUL YOZUVI qoladi (audit izi), aks holda
+  /// to'langan bonus jimgina yo'qolardi.
+  dailyKpiId String? @map("daily_kpi_id") @db.Uuid
+
+  /// Yozuvni keltirib chiqargan FSM hodisasi (`EmployeeDailyKpiEvent`).
+  ///
+  /// TABIIY KALIT: bir o'tish = ko'pi bilan bitta yozuv (har `kind` uchun).
+  /// Qabul → bekor → qayta qabul siklида har o'tish O'Z hodisasiga ega,
+  /// shuning uchun kalit sikllarni bloklamaydi, lekin bitta o'tishning
+  /// takror yozuvini DB darajasida imkonsiz qiladi.
+  kpiEventId String? @map("kpi_event_id") @db.Uuid
+
+  account   Account                @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  employee  Employee               @relation("HrBonusEmployee", fields: [employeeId], references: [id])
+  taskLog   HrTaskLog?             @relation(fields: [taskLogId], references: [id])
+  rule      HrBonusFineRule?       @relation(fields: [ruleId], references: [id])
+  createdBy Employee?              @relation("HrBonusCreator", fields: [createdById], references: [id])
+  dailyKpi  EmployeeDailyKpi?      @relation(fields: [dailyKpiId], references: [id], onDelete: SetNull)
+  kpiEvent  EmployeeDailyKpiEvent? @relation(fields: [kpiEventId], references: [id], onDelete: SetNull)
 
   @@unique([attendanceId, source], name: "uq_bonusfine_attendance_source")
+  /// Bir FSM o'tishi → har turdan ko'pi bilan bitta yozuv (idempotentlik).
+  /// `kind` kalitda: bekor qilish bitta o'tishda ham bonusni, ham jarimani
+  /// nolga keltirishi mumkin (ikki qator, bitta hodisa).
+  @@unique([kpiEventId, kind], name: "uq_bonusfine_kpi_event_kind")
   @@index([accountId, employeeId, createdAt(sort: Desc)])
   @@index([accountId, source, createdAt(sort: Desc)])
+  /// Kunning sof qoldig'i (zero-sum bekor qilish) shu indeksdan o'qiladi.
+  @@index([accountId, dailyKpiId])
   @@map("hr_bonus_fine_log")
 }
 
@@ -9965,6 +9990,8 @@ model EmployeeDailyKpi {
   metrics        EmployeeDailyKpiMetric[]
   events         EmployeeDailyKpiEvent[]
   corrections    EmployeeKpiCorrection[]
+  /// Qabuldan chiqqan bonus/jarima yozuvlari (4M.3 / MK01, QAROR-B1).
+  bonusFineLogs  HrBonusFineLog[]
 
   @@unique([accountId, employeeId, date])
   // Menejerning kunlik ro'yxati: «shu kun, qabul kutayotganlar».
@@ -10088,6 +10115,10 @@ model EmployeeDailyKpiEvent {
   detail Json?
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  /// Shu o'tish keltirib chiqargan pul yozuvi (MK01) — hodisadan pulga izchil
+  /// iz. Bo'sh bo'lishi normal: har o'tish pul yozmaydi.
+  bonusFineLogs HrBonusFineLog[]
 
   // Kun kartochkasidagi tarix.
   @@index([accountId, dailyKpiId, createdAt])

@@ -21,9 +21,18 @@ import {
   ESCALATE_AFTER_DAYS,
   type FsmFailure,
   QUEUE_STATES,
+  countsTowardPayroll,
   evaluate,
   evaluateAdjust,
 } from './daily-kpi-fsm.js';
+import {
+  type AccrualDecision,
+  type AccrualRuleInput,
+  KPI_ACCRUAL_REVERSAL_SOURCE,
+  KPI_ACCRUAL_SOURCE,
+  planAccrual,
+  planReversalRows,
+} from './kpi-accrual.js';
 import { correctionPeriod, planCorrection } from './kpi-correction.js';
 import { KpiMetricCatalogService } from './kpi-metric-catalog.service.js';
 import {
@@ -337,6 +346,11 @@ export class DailyKpiAcceptanceService {
       state: verdict.to,
       stateChangedAt: now,
     };
+    // Kun oylikka KIRDIMI yoki undan CHIQDIMI — ro'yxat `countsTowardPayroll`
+    // da, bu yerda takrorlanmaydi (FSM shartnomasi: 4M.3 o'z ro'yxatini
+    // yozmaydi, aks holda ikki joyda ikki javob bo'lardi).
+    const entersPayroll = !countsTowardPayroll(from) && countsTowardPayroll(verdict.to);
+    const leavesPayroll = countsTowardPayroll(from) && !countsTowardPayroll(verdict.to);
     // Qabul qilingan payt oylik hisobiga kiradi (§4), shuning uchun kim va
     // qachon — alohida ustunlarda, jurnalga qo'shimcha.
     if (verdict.to === DAILY_KPI_STATE.accepted || verdict.to === DAILY_KPI_STATE.forceAccepted) {
@@ -367,6 +381,17 @@ export class DailyKpiAcceptanceService {
     if (from === DAILY_KPI_STATE.stale && verdict.to !== DAILY_KPI_STATE.stale)
       extra.staleAt = null;
 
+    // Bonus/jarima KERAKMI (QAROR-B1). Manba — endigina MUZLATILGAN ball:
+    // jonli qayta hisob olinsa, keyin og'irlik o'zgarganda pul boshqacha
+    // chiqardi. Qaror sof modulda (`kpi-accrual.ts`), bu yerda I/O.
+    const accrual = entersPayroll
+      ? planAccrual({
+          scorePercent: (extra.scorePercent as number | null) ?? null,
+          rules: await this.accrualRules(ctx.accountId),
+        })
+      : null;
+    if (accrual) this.logAccrualSkip(id, accrual);
+
     // Tuzatuvchi qator KERAKMI — qabuldan OLDINGI muzlatilgan fakt bilan
     // solishtiriladi. Qaror sof modulda; bu yerda faqat ma'lumot yig'iladi.
     const correction =
@@ -386,7 +411,7 @@ export class DailyKpiAcceptanceService {
         // Da'vo tegmadi: yo kun yo'q, yo holat biz o'qigandan keyin o'zgardi.
         throw new ConflictException('Kun holati o`zgarib ketdi — sahifani yangilang');
       }
-      await tx.employeeDailyKpiEvent.create({
+      const event = await tx.employeeDailyKpiEvent.create({
         data: {
           accountId: ctx.accountId,
           dailyKpiId: id,
@@ -399,6 +424,37 @@ export class DailyKpiAcceptanceService {
           comment: input.comment ?? null,
         },
       });
+
+      // ⚠️ Pul yozuvi ham AYNI tranzaksiyada va hodisaga BOG'LANGAN
+      // (`kpiEventId` — tabiiy kalit). Alohida ketsa: holat qaytadi
+      // (rollback), bonus esa qolib ketardi.
+      if (accrual?.accrue) {
+        await tx.hrBonusFineLog.create({
+          data: {
+            accountId: ctx.accountId,
+            employeeId: day.employeeId,
+            employeeName: day.employee?.name ?? null, // snapshot (§13.17)
+            kind: accrual.kind,
+            source: KPI_ACCRUAL_SOURCE,
+            // Summa qoidadan NUSXA — keyin qoida tahrirlansa tarix o'zgarmaydi.
+            amountMinor: accrual.amountMinor,
+            reason: accrualReason(accrual.ruleName, extra.scorePercent as number | null),
+            dailyKpiId: id,
+            kpiEventId: event.id,
+            ruleId: accrual.ruleId,
+            createdById: ctx.actorId,
+          },
+        });
+      }
+      if (leavesPayroll) {
+        await writeReversal(tx, {
+          accountId: ctx.accountId,
+          dailyKpiId: id,
+          eventId: event.id,
+          actorId: ctx.actorId,
+          action,
+        });
+      }
 
       // ⚠️ Tuzatma AYNI tranzaksiyada: agar u alohida yozilsa va oradagi
       // xato yuz bersa, kun yangi fakt bilan qabul qilingan-u oylikda
@@ -554,17 +610,60 @@ export class DailyKpiAcceptanceService {
     return { id, metricKey: input.metricKey };
   }
 
+  /**
+   * Bonus/jarima qoidalari (QAROR-B1 kanali). Faqat FAOL va o'chirilmagan
+   * qoidalar; qaysi biri shu kanalga tegishli ekanini sof modul hal qiladi
+   * (`condition.type`), servis filtr yozmaydi.
+   */
+  private async accrualRules(accountId: string): Promise<AccrualRuleInput[]> {
+    const rows = await this.prisma.client.hrBonusFineRule.findMany({
+      where: { accountId, isActive: true, deletedAt: null },
+      select: { id: true, name: true, kind: true, amountMinor: true, condition: true },
+    });
+    return rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      kind: r.kind,
+      amountMinor: r.amountMinor,
+      condition: r.condition as unknown,
+    }));
+  }
+
+  /**
+   * Pul YOZILMAGANDA sababini logga chiqaradi.
+   *
+   * `invalid_rules` va `ambiguous_bands` — egasining sozlash xatosi: jimgina
+   * o'tkazib yuborilsa, bonus hech qachon to'lanmaydi va buni hech kim
+   * sezmaydi. Qolgan ikki sabab («qoida yo'q», «oraliqqa tushmadi») —
+   * normal holat, log shovqini qilmaydi.
+   */
+  private logAccrualSkip(id: string, decision: AccrualDecision): void {
+    if (decision.accrue) return;
+    if (decision.skipReason === 'invalid_rules') {
+      this.logger.warn(
+        `Bonus/jarima qoidalari BUZUQ (kun ${id}): ${decision.ruleIds?.join(', ')} — pul yozilmadi`,
+      );
+    }
+    if (decision.skipReason === 'ambiguous_bands') {
+      this.logger.warn(
+        `Bonus/jarima oraliqlari USTMA-UST (kun ${id}): ${decision.ruleIds?.join(', ')} — pul yozilmadi`,
+      );
+    }
+  }
+
   private async load(ctx: ActorContext, id: string) {
     const day = await this.prisma.client.employeeDailyKpi.findFirst({
       where: { id, accountId: ctx.accountId },
       // `date` va `acceptedFactMinor` — tuzatuvchi qator uchun (§3.4):
       // birinchisi «qaysi kun uchun», ikkinchisi «avval nima to'langan».
+      // `employee.name` — pul yozuvidagi nom snapshot'i (§13.17).
       select: {
         id: true,
         state: true,
         employeeId: true,
         date: true,
         acceptedFactMinor: true,
+        employee: { select: { name: true } },
       },
     });
     if (!day) throw new NotFoundException('Kun topilmadi');
@@ -701,7 +800,7 @@ export class DailyKpiAcceptanceService {
           },
         });
         if (claimed.count === 0) return false;
-        await tx.employeeDailyKpiEvent.create({
+        const event = await tx.employeeDailyKpiEvent.create({
           data: {
             accountId,
             dailyKpiId: id,
@@ -713,6 +812,18 @@ export class DailyKpiAcceptanceService {
             reasonCode,
           },
         });
+        // Tizim ham kunni oylikdan CHIQARISHI mumkin (`mark_stale`): u holda
+        // bonus/jarima qoldig'i nolga keltiriladi. Busiz eskirgan kun puli
+        // joyida qolib, qayta qabulda IKKI KARRA bo'lardi.
+        if (countsTowardPayroll(from) && !countsTowardPayroll(verdict.to)) {
+          await writeReversal(tx, {
+            accountId,
+            dailyKpiId: id,
+            eventId: event.id,
+            actorId: null,
+            action,
+          });
+        }
         return true;
       });
     } catch (e) {
@@ -723,6 +834,60 @@ export class DailyKpiAcceptanceService {
 }
 
 // ── Yordamchilar ────────────────────────────────────────────────────────────
+
+/** Pul yozuvidagi «nega» — jurnalda raqamsiz qator qolmasin. */
+function accrualReason(ruleName: string, scorePercent: number | null): string {
+  return scorePercent == null ? ruleName : `${ruleName} (ball ${scorePercent}%)`;
+}
+
+/**
+ * Kun oylikdan CHIQQANDA bonus/jarima qoldig'ini nolga keltiradi (QAROR-B1).
+ *
+ * O'CHIRISH YO'Q — teskari qator yoziladi: `HrBonusFineLog` audit izi va uni
+ * o'chirish «pul qayerga ketdi» savolini javobsiz qoldirardi (`remove()` ham
+ * faqat `manual` yozuvlarga ruxsat beradi).
+ *
+ * Xodim qoldiq qatorlarining O'ZIDAN olinadi — kim to'lov olgan bo'lsa,
+ * qaytarish ham o'shanikidan bo'ladi (kun qatoridagi `employeeId` keyin
+ * o'zgargan bo'lishi mumkin).
+ */
+async function writeReversal(
+  tx: Prisma.TransactionClient,
+  ctx: {
+    accountId: string;
+    dailyKpiId: string;
+    eventId: string;
+    actorId: string | null;
+    action: string;
+  },
+): Promise<void> {
+  const rows = await tx.hrBonusFineLog.findMany({
+    where: { accountId: ctx.accountId, dailyKpiId: ctx.dailyKpiId },
+    select: { kind: true, amountMinor: true, employeeId: true, employeeName: true },
+  });
+  const owner = rows.at(0);
+  if (owner == null) return; // kunda pul yozuvi umuman yo'q
+
+  const reversals = planReversalRows(rows);
+  if (reversals.length === 0) return; // qoldiq allaqachon 0 — idempotent
+
+  for (const r of reversals) {
+    await tx.hrBonusFineLog.create({
+      data: {
+        accountId: ctx.accountId,
+        employeeId: owner.employeeId,
+        employeeName: owner.employeeName,
+        kind: r.kind,
+        source: KPI_ACCRUAL_REVERSAL_SOURCE,
+        amountMinor: r.amountMinor,
+        reason: `Kun qabuli bekor qilindi (${ctx.action})`,
+        dailyKpiId: ctx.dailyKpiId,
+        kpiEventId: ctx.eventId,
+        createdById: ctx.actorId,
+      },
+    });
+  }
+}
 
 export interface ActorContext {
   readonly accountId: string;
