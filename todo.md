@@ -27,7 +27,7 @@
 
 | | Soni |
 |---|---|
-| **Qolgan bosqichlar** | **52** |
+| **Qolgan bosqichlar** | **51** |
 | Sifat qarzlari | 7 |
 | Brauzer-QA (Phase-2) o'tishlari | ~9 (har bo'lim uchun 1) |
 | **JAMI ish birligi** | **~75** |
