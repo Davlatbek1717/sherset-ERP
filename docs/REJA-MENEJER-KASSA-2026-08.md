@@ -221,7 +221,7 @@ qo'llanganda oylikda ikki karra ko'rinmaydi. (4) formula chegara qiymatlari (QAR
 
 ---
 
-### MK02 — 4M.4 qoldig'i: ishga qabul tomoni (sinov muddati) ☐ HISOBOT
+### MK02 — 4M.4 qoldig'i: ishga qabul tomoni (sinov muddati) ☑ HISOBOT (2026-08-09)
 **Bo'lim/blok:** 4M.4 qoldig'i · **TZ:** §6.3 (hayot sikli)
 **Ustuvorlik:** P2 · **Bog'liqlik:** yo'q (bo'shatish tomoni `EmployeeOffboarding` bilan bajarilgan)
 **Qamrov:** ishga qabul: sinov muddati (boshlanish/tugash) · **baholash sanasi** va eslatma ·
@@ -1107,3 +1107,129 @@ Alohida: filial ∩ scope kesishmasi · G1 imtiyoz taqiqi UI'da · shablon qo'll
 ### Status yorlig'i
 **Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q.** «done» / «production-ready» /
 «verified» EMAS.
+
+
+## Faza MK02 — 4M.4 qoldig'i: ishga qabul tomoni (sinov muddati) (sana: 2026-08-09)
+
+**Holat:** BAJARILDI (BE) — **Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q**
+**Commit:** `7a8cae28` — `feat(hr): MK02 — ishga qabul tomoni (sinov muddati + baholash sanasi)`
+
+### Nima o'zgardi
+
+**Sxema + migratsiya (🗄️)**
+- `EmployeeOnboarding` modeli (`packages/db/prisma/schema.prisma`) — `EmployeeOffboarding` ning
+  ko'zgusi: `probationStartsOn` / `probationEndsOn` / `evaluationOn` (hammasi `@db.Date`),
+  `outcome` (`'passed' | 'failed' | NULL`) + `outcomeAt/ById/Note`, `items Json` (qo'lda
+  tasdiqlar, offboarding bilan **bir xil shakl**), `@@unique([employeeId])`,
+  `@@index([accountId, outcome, evaluationOn])` (navbat so'rovining shakliga mos).
+- Migratsiya `20260810020000_employee_onboarding_probation` — **yangi jadval, mavjudlariga
+  tegilmaydi**, backfill YO'Q. Qatori yo'q xodim `active` deb qaraladi: aks holda butun mavjud
+  jamoa bir kechada «sinovda» bo'lib qolardi.
+
+**Sof modul `apps/api/src/modules/hr/hr-employee/onboarding.ts` (yangi)**
+- **6 bandli ro'yxat**: `credentials_issued` · `roles_assigned` · `kpi_profile_assigned` ·
+  `telegram_bound` (4 tasi **auto**) · `workplace_ready` · `documents_signed` (2 tasi **qo'lda**).
+  `ITEM_KIND` offboarding modulidan **qayta ishlatildi** (nusxa emas).
+- `canMarkOnboardingManually()` — `auto` bandni qo'lda belgilash **mumkin emas** (TZ talabi).
+- `probationStatus()` — `none / in_probation / due_soon / due / overdue / passed / failed`.
+  Baholash sanasi = `evaluationOn ?? probationEndsOn` (TZ §6.3: baholash — muddat tugagan kuni).
+- `dateLabel()` — Toshkent kalendar kuni **UTC yarim tun yorlig'i** sifatida. Sanalar DATE
+  ustunlar, ya'ni yorliq; xom instant bilan solishtirilsa Toshkentda 19:00 dan keyin kun oldinga
+  sakrab, ogohlantirish **bir kun erta** otilardi (xotira: `month-bounds-label-vs-instant`).
+- `lifecycleStage()` — TZ §6.3 bosqichlari: `archived` → `offboarding` → `probation_failed` →
+  `probation` → `active` (tartib ustuvorlik bilan).
+- `hasResolvableKpiProfile()` — **xodim → lavozim → sukut**, `EmployeeDailyKpiService
+  .resolveProfileVersions` bilan bir xil qoida (ikki joyda ikki xil bo'lsa sabab tushunarsiz qolardi).
+
+**`onboarding.service.ts` (yangi)** — `status` · `start` · `markItem` · `setOutcome` · `listDue`.
+
+**Endpointlar** (`hr-employee.controller.ts`) — 5 ta, offboarding bilan bir xil ruxsat naqshi
+(`read` / `full`), statik segment `:id` dan **oldin**:
+`GET hr/employees/onboarding` · `GET :id/onboarding` · `POST :id/onboarding` ·
+`POST :id/onboarding/item` · `POST :id/onboarding/outcome`.
+
+**Xodim kartasi** (`employee-card.service.ts`) — `onboarding` bloki + `employee.lifecycleStage`;
+`hiredAt` endi `probationStartsOn ?? createdAt` (`createdAt` = qator kiritilgan payt, haqiqiy
+ishga qabul sanasi emas).
+
+### Qulflangan xulqlar (TDD — avval RED ko'rildi, keyin GREEN; 68 yangi test)
+| Talab | Test |
+|---|---|
+| **MK02 test-1** — N kun qolganda ogohlantirish | `probationStatus` chegara testlari: 7 kun → `due_soon`, 8 kun → **hali yo'q**, 0 → `due`, o'tgan → `overdue`; `listDue` `warnCount` |
+| **MK02 test-2** — natijasi belgilanmagan xodim «sinovda» qoladi | `lifecycleStage` + `status` testlari |
+| **MK02 test-3** — qo'lda soxta belgilash rad etiladi | `canMarkOnboardingManually` (4 auto band) + `markItem` `BadRequest` |
+| Ro'yxatsiz «o'tdi» yopilmaydi | `setOutcome('passed')` bloklovchi band ochiqda rad, sabab matnda |
+| Eskirgan ekranga ishonilmaydi (TOCTOU) | «o'tdi» faktlarni **qayta o'qiydi** |
+| «o'tmadi» bo'shatish ro'yxatini chetlab o'tmaydi | xodim **arxivlanmaydi**, `probation_failed` bo'ladi |
+| Qisman tana ma'lumot o'chirmaydi | faqat kelgan kalitlar yangilanadi; oshkora `null` — tozalash |
+| Sana tekshiruvi **qo'shilgan** holat ustida | yolg'iz `probationEndsOn` bazadagi `probationStartsOn` bilan solishtiriladi |
+| Natijani jimgina almashtirib bo'lmaydi | bir xil → idempotent, boshqa → `BadRequest` |
+
+### Ataylab qilingan qarorlar (TZ'da yo'q — ochiq yozilmoqda)
+1. **`EVALUATION_WARN_DAYS = 7`** — TZ'da raqam YO'Q, tanlandi (bir ish haftasi: menejer suhbat
+   tayinlashga ulguradi). Yagona joyda, egasi xohlasa bir qatorda o'zgaradi.
+2. **`telegram_bound` — yagona NON-blocking band.** Omborchi/kassir telefonsiz ishlaydi; uni
+   bloklovchi qilish sinovni tugatib bo'lmaydigan holatga olib kelardi. (Offboarding'dagi
+   «hammasi bloklovchi» qoidasi u yerda o'rinli, bu yerda emas — `blocking` maydoni allaqachon
+   shu holat uchun mo'ljallangan edi.)
+3. **Asimmetriya:** ro'yxat faqat **«o'tdi»** ni to'sadi. «O'tmadi» har doim mumkin — aks holda
+   hujjati imzolanmagan odamni bo'shatish uchun avval hujjatini imzolatish kerak bo'lardi.
+4. **«O'tmadi» ARXIVLAMAYDI** — arxivlash yagona yo'l bilan, bo'shatish ro'yxati orqali
+   (`OffboardingService`), aks holda ochiq smena / topshirilmagan naqd tekshiruvi chetlab o'tilardi.
+
+### Qarz va qilinmagan ish (ochiq yoziladi — §45 «jimgina yarim bajarish TAQIQ»)
+- **`ManagerWorkItem` (TZ §5) YO'Q** — u **MK06** fazasida quriladi. TZ §6.3 dagi «baholash
+  sanasida menejer navbatiga element tushadi» talabi hozircha **`listDue()`** bilan qoplangan
+  (menejer ekrani sinovda turganlarni + kechikkanlarni shundan oladi). MK06 kelganda element
+  yaratish o'sha dvigatelga ko'chiriladi; `listDue` qoladi.
+- **FE ekrani QILINMADI.** Reja `Fayllar` da `apps/web/src/app/(app)/hr/` ko'rsatilgan, lekin
+  **offboarding tomonining ham FE'si yo'q** (BE-only naqsh), va xodim kartasi FE'si aynan
+  **MK04** fazasi (parallel sessiya shu paytda o'sha ishni qilyapti). §1 «FAQAT BITTA FAZA»
+  bo'yicha bu yerda to'xtatildi — aks holda ikki sessiya bir faylda to'qnashardi.
+  ⇒ **DoD dagi «i18n ru+uz» shu sababdan qo'llanmadi:** UI-matn qo'shilmadi, `i18n:gate` uchun
+  tekshiradigan narsa yo'q. Band label'lari (offboarding naqshi bilan bir xil) hozircha API
+  javobida qattiq matn — FE fazasi ularni kalitga ko'chirishi kerak. **Bu qarz MK04 ga tegishli.**
+- `todo.md` 4M.4 «to'liq yopiladi» — **BE tomoni** yopildi; FE bandi MK03/MK04 da.
+
+### Gate natijalari (qo'lda, to'liq)
+- `pnpm --filter @moysklad/api typecheck` — **mening fayllarimda 0 xato**. Repo-da 5 xato bor,
+  **hammasi** parallel sessiyaning commit qilinmagan `manager/kpi/kpi-accrual.ts` faylida
+  (`TS18048: 'win' is possibly 'undefined'`) — meniki emas, **tegilmadi**.
+- `pnpm exec biome check apps/api/src/modules/hr/hr-employee/` — 22 fayl, **0 xato**.
+  (`pnpm lint:product` repo-da 2 xato ko'rsatadi — ikkalasi ham o'sha `kpi-accrual.test.ts` da.)
+- `vitest run src/modules/hr/hr-employee` — **190/190**; `src/modules/hr` + `src/app-boot.test.ts`
+  — **931/931** (marshrut-to'qnashuv qo'riqchisi yangi 5 endpointni ko'rdi).
+- `i18n:gate` — **yugurtirilmadi, sababi yuqorida** (UI-matn qo'shilmagan).
+
+### Migratsiya (🗄️)
+- Lokal `climart_adopt @ 5432` ga `prisma db execute --file` bilan qo'llandi (`_prisma_migrations`
+  tracked emas — xotira: `climart-adopt-local-db-untracked`).
+- `prisma migrate diff --from-schema-datasource --to-schema-datamodel` — **onboarding drifti 0**
+  (qolgan drift = ilgaridan mavjud `ALTER INDEX … RENAME` nomlanish farqlari, meniki emas).
+- **PROD (`sherset_v2`) uchun OPS-QADAM:** shu migratsiya `migrate deploy` bilan **avtomatik
+  qo'llanmaydi** — DDL qo'lda yugurtiriladi. Fayl:
+  `packages/db/prisma/migrations/20260810020000_employee_onboarding_probation/migration.sql`
+  (`CREATE TABLE IF NOT EXISTS` + `DO $$ … EXCEPTION WHEN duplicate_object` ⇒ qayta yugurtirish xavfsiz).
+
+### Git holati (§6.7 ehtiyoti)
+- Sessiya davomida **kamida uch parallel sessiya** faol edi (MK01 `kpi-accrual` · MK03
+  `menejer/jonli`+`javobgarlik` · report-notices). MK03 sessiyasi ish o'rtasida commit qildi
+  (`638212f8`) — mening commit'im **uning ustiga** tushdi, hech narsa yo'qolmadi.
+- `schema.prisma` **umumiy fayl** (menda `EmployeeOnboarding`, ularda `HrBonusFineLog`).
+  Indeks HEAD nusxasi + **faqat MK02 hunk'lari** bilan qurildi (fail-closed skript: anchor
+  topilmasa/ikki marta uchrasa `exit 1`), `git hash-object -w` + `git update-index --cacheinfo`.
+  Commit'da `schema.prisma` = **+52 qator, 0 o'chirish** — tekshirildi.
+- Commit **ajratilgan indeks fayli** (`GIT_INDEX_FILE=<temp>`) bilan qurildi, chunki parallel
+  sessiya o'z fayllarini umumiy indeksga stage qilib qo'ygan edi — ularni unstage qilish o'sha
+  sessiyaning commit'ini buzishi mumkin edi. **Ularning staged ishiga tegilmadi.**
+- ⚠️ **Kuzatilgan hodisa:** MK03 commit qilgach umumiy indeks **eskirib qoldi** va mening yangi
+  fayllarim unda **staged o'chirish** (`D `) bo'lib turdi — o'sha holatda kimdir commit qilsa
+  fayllarim o'chib ketardi. Faqat **o'z yo'llarim** `git restore --staged` bilan HEAD'ga
+  qaytarildi (ularning hech bir fayli staged emas edi — tekshirildi). Indeks toza.
+- Hook'lar bir martaga chetlab o'tildi (`-c core.hooksPath=/dev/null`) — §6.7 B; gate'lar
+  shu sababdan **qo'lda to'liq** yugurtirildi (yuqoriga qara).
+- Commit'dan keyin `git show --stat HEAD` bilan tarkib tekshirildi: **aynan 9 fayl**, begona yo'q.
+
+### Status yorlig'i
+**Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q.** «done» / «production-ready» /
+«verified» EMAS. Runtime-QA — **MK14** (4M Phase-2 QA) fazasida.

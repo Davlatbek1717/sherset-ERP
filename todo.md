@@ -47,7 +47,7 @@ kuniga **3 sessiya** → **~6 hafta**.
 | 2 — Onlayn sotuv / B2B / B2G | B1 | **8** (B2–B9) |
 | 3 — Analitika | B1, B2 (qisman) | **6** (B3–B8) |
 | 4 — Menejer (ruxsatlar) | — | **8** (B1–B8) |
-| 4M — Menejer (kunlik KPI) | 4M.1 4M.2 **4M.4** | **7** (4M.3 qoldig'i + 4M.5–4M.10) |
+| 4M — Menejer (kunlik KPI) | 4M.1 4M.2 **4M.4** ✅to'liq | **7** (4M.3 qoldig'i + 4M.5–4M.10) |
 | 5 — Ta'minotchilar | — | **6** (B1–B6) |
 | 6 — HR | B8 (qisman) | **8** (B1–B7, B9) |
 | 7 — Ombor | B1 (qisman), **B2** | **11** (B2a, B3–B12) |
@@ -188,7 +188,15 @@ kuniga **3 sessiya** → **~6 hafta**.
       ko'radi) — todo'dagi «sessiyalar ochiq qoladi» qismi noto'g'ri edi. Haqiqiy teshiklar:
       Telegram bog'lami · ochiq kassa smenasi · qabul qilinmagan KPI kunlari · jihoz.
       Tizim biladigan band **qo'lda belgilanmaydi** (yolg'onga eshik yopildi).
-- [ ] **Ishga qabul tomoni** — sinov muddati + baholash sanasi *(bo'shatish qismi bajarildi)*
+- [x] **Ishga qabul tomoni** (`EmployeeOnboarding`) — sinov muddati + **baholash sanasi** + natija
+      *(68 test; MK02, `7a8cae28`)*. Bo'shatishning ko'zgusi: u yerda ro'yxat **arxivlashni**
+      to'sadi, bu yerda ro'yxat sinovni **«o'tdi»** deb yopishni to'sadi; ikkalasida ham tizim
+      biladigan band **qo'lda belgilanmaydi**. Baholash sanasiga 7 kun qolganda ogohlantirish,
+      o'tib ketsa «kechikkan» (sana Toshkent kalendar kuni bo'yicha).
+      ⚠️ **«O'tmadi» xodimni ARXIVLAMAYDI** — arxivlash faqat bo'shatish ro'yxati orqali
+      (ochiq smena / topshirilmagan naqd chetlab o'tilmasin).
+      ⚠️ **FE YO'Q** (BE-only, offboarding kabi) · **`ManagerWorkItem` navbati MK06 da** —
+      hozircha `GET hr/employees/onboarding` ro'yxati
 - [x] **Javobgarlik** — `GET manager/kpi/accountability` *(14 test + runtime)*: ochiq smena ·
       haydovchi qo'lidagi naqd · tugallanmagan yig'ish · qabul qilinmagan KPI kunlari.
       Pul ko'p bo'lgan tepada; nol qatorlar tashlanadi — `0bee3ff`
