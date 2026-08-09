@@ -324,7 +324,7 @@ alohida sanaladi (jonli bug'da jami 0 chiqqan edi — regressiya qulfi).
 
 ---
 
-### MK05 — Jihoz reyestri + javobgarlik taxtasida jihoz bloki ☐ HISOBOT
+### MK05 — Jihoz reyestri + javobgarlik taxtasida jihoz bloki ☑ HISOBOT (2026-08-09)
 **Bo'lim/blok:** 4M.4 qo'shimchasi · **TZ:** `2026-08-02-menejer-kunlik-kpi-tz-design.md` §6.4, §6.3
 **Ustuvorlik:** P2 · **Bog'liqlik:** MK03 (javobgarlik taxtasi)
 **Muammo (2026-08-09 da tasdiqlandi):** javobgarlik taxtasida **jihoz bloki ataylab YO'Q** —
@@ -1650,3 +1650,117 @@ Sxemaga tegilmadi (migratsiya = umumiy resurs, parallel sessiya `schema.prisma` 
 4. **Indeks o'lchanmagan** — uch `groupBy` butun `stock_operations` ustidan yuradi.
    Katta akkauntda `EXPLAIN` bilan tekshirilishi kerak (`index-needs-matching-query-shape`).
 5. **Brauzer-QA yo'q** — Phase-2 QA navbatida.
+
+---
+
+## Faza MK05 — Jihoz reyestri + javobgarlik taxtasida jihoz bloki (sana: 2026-08-09)
+
+**Holat:** bajarildi — **Phase-1** (strukturaviy + unit-tasdiqlangan, **browser-smoke YO'Q**).
+**Commit:** pastdagi «Git holati» bo'limiga qara.
+
+### Rejaning da'volari kodda tekshirildi (O'ZGARMAS QOIDA 2)
+- «`Equipment`/`Asset` modeli sxemada YO'Q» — **tasdiqlandi** (`grep 'model Equipment|Asset'` → 0).
+- «Javobgarlik taxtasida jihoz bloki ataylab yo'q» — **tasdiqlandi**: `accountability.ts` boshidagi
+  ⚠️ izoh + `live-status.service.ts` izohi + FE `javobgarlik/page.tsx` izohi, ustiga
+  `menejer-live-boards.test.ts` da **aniq qulf**: `expect(dutiesCode).not.toMatch(/equipment/i)`.
+  Ya'ni MK03 buni qarz sifatida OCHIQ qoldirgan — MK05 aynan shu qulfni ag'dardi.
+- «Bo'shatish ro'yxatidagi jihoz bandi to'liq emas» — **tasdiqlandi**: `OFFBOARDING_ITEM.equipmentReturned`
+  `kind: manual` edi, ya'ni odam «topshirdim» deb belgilardi va tizim hech narsa tekshirmasdi.
+
+### Nima o'zgardi
+
+**Sxema (`packages/db/prisma/schema.prisma` + migratsiya `20260810060000_equipment_registry`):**
+- `Equipment` — nomi · inventar raqami · toifa · holat (`in_stock|assigned|repair|written_off|lost`) · izoh.
+  **«Kimda» ustuni ATAYLAB yo'q** — u faqat ochiq biriktirish qatoridan chiqadi (ikkinchi manba
+  jimgina uzoqlashardi). `@@unique([accountId, inventoryNo])` (NULL lar to'qnashmaydi).
+- `EquipmentAssignment` — **append-only tarix**: `issuedAt/issuedById/issueNote` ·
+  `returnedAt/returnedById/returnCondition/returnNote`. Qaytarish qatorni **o'chirmaydi**, yopadi.
+- 🔴 **Qisman unique indeks** (faqat SQL da — Prisma sxemasi ifodalay olmaydi):
+  `CREATE UNIQUE INDEX ... ON equipment_assignments(equipment_id) WHERE returned_at IS NULL` —
+  bitta jihozda bir vaqtda BITTA ochiq biriktirish (poyga qulfi).
+- Migratsiya **lokal DB'ga qo'llandi** (`climart_adopt @ 5432`, `prisma db execute`) + `prisma generate`.
+  **Prod (`sherset_v2`) uchun DDL ops-ro'yxatiga qarz** — avtomatik `migrate deploy` QILINMADI.
+
+**BE — yangi modul `apps/api/src/modules/hr/hr-equipment/`:**
+- `equipment.ts` (sof modul, **16 test**): `assignBlockReason` · `statusAfterReturn` ·
+  `manualStatusBlockReason` · `normalizeInventoryNo`.
+- `equipment.service.ts` (**12 test**) + `hr-equipment.schema.ts` (Zod) + `hr-equipment.controller.ts`
+  (`GET/POST /hr/equipment`, `GET :id`, `PUT :id`, `POST :id/assign`, `POST :id/return`,
+  `GET employee/:employeeId`) + `hr-equipment.module.ts` → `hr.module.ts` ga ULANDI
+  (yetim-modul qo'riqchisi `app-boot.test.ts` yashil).
+- Ruxsat: mavjud `employees` sahifa kaliti (`read`/`full`). **Yangi ruxsat kaliti kiritilmadi** —
+  u barcha rollarda yopiq bo'lib qolib, funksiyani jimgina o'lik qilardi.
+
+**BE — mavjud ikki joyga ULANISH:**
+- `offboarding.ts`: `equipmentReturned` **`manual` → `auto`**, `AutoFacts.openEquipmentCount`
+  qo'shildi; `offboarding.service.ts` `equipmentAssignment.count({returnedAt: null})` o'qiydi.
+  Endi qaytarilmagan jihoz **bloklovchi** band: xodim arxivlanmaydi.
+- `accountability.ts`: `DUTY.equipmentOut` + `DutyInput.openEquipmentCount`;
+  `live-status.service.ts` `groupBy(employeeId)` bilan ochiq biriktirishlarni sanaydi.
+
+**FE:**
+- Yangi sahifa `apps/web/src/app/(app)/hr/equipment/page.tsx` — reyestr ro'yxati (filtr: holat + qidiruv),
+  qo'shish · berish · qaytarib olish (shart bilan) · **tarix modali** (yopilgan qatorlar ko'rinadi,
+  ochig'i «Qaytarilmagan» deb belgilanadi). `apps/web/src/lib/equipment-api.ts` (alohida fayl —
+  `hr-api.ts` bilan parallel sessiya kesishmasin).
+- `menejer/javobgarlik`: `equipment_out` majburiyat turi; `scope_note` **yangi haqiqatga** moslandi
+  («ro'yxat to'liq emas» → «jihoz reyestr bo'yicha sanaladi, narxi naqd jamiga kirmaydi»).
+- `domain-status-tone.ts`: `DUTY_KIND_TONE.equipment_out` + yangi `EQUIPMENT_STATUS_TONE`
+  (UI Convention 6 — lokal rang jadvali sahifada emas).
+- Nav: `subnav.hr.equipment` → `/hr/equipment`. i18n **ru+uz** (`pages.hrEquipment` 35 kalit).
+
+### Qarorlar (TZ'da yo'q — bu yerda qayd etiladi)
+1. **Jihozning PULI yo'q.** Reyestrda narx saqlanmaydi ⇒ `amountMinor: null` va `totalCashMinor` ga
+   qo'shilmaydi. Taxminiy narx «kimda qancha pul» raqamini buzardi.
+2. **Biriktirilgan jihozning holatini qo'lda o'zgartirib bo'lmaydi.** Aks holda «hisobdan chiqarildi»
+   bosish bilan javobgarlikni jimgina o'chirish yo'li ochiq qolardi (bo'shatish ro'yxati ham,
+   taxta ham uni ko'rmay qolardi). `assigned` holati umuman qo'lda tanlanmaydi.
+3. **Qaytarish sharti holatni belgilaydi**: `ok→in_stock` · `damaged→repair` · `lost→lost`.
+   Yo'qolgan jihoz reyestrdan **o'chirilmaydi**. Noma'lum shart «soz» deb qaraladi — qator baribir
+   yopiladi, aks holda xato qiymat tufayli xodim abadiy bo'shatilmas holatga tushardi.
+4. **Arxivlangan xodimga biriktirib bo'lmaydi** — bo'shatish ro'yxati abadiy ochiq qolardi.
+5. **Eski qo'lda tasdiq e'tiborga olinmaydi**: MK05 gacha `items` JSON'ida yozilgan
+   `equipment_returned` tasdig'i endi hisobga olinmaydi (band `auto`). Reyestr bo'sh bo'lgani uchun
+   hech kim bloklanmaydi — lekin bu **xulq o'zgarishi**, ataylab.
+
+### Testlar (TDD — har biri avval YIQILDI, keyin yashil)
+| Test | Nima qulflaydi |
+|---|---|
+| `equipment.test.ts` (16) | biriktirish qoidalari · qaytarish→holat · qo'lda holat taqiqi · inventar raqami |
+| `equipment.service.test.ts` (12) | tarix append-only (`deleteMany` chaqirilmaydi) · P2002 poygasi → 400 · hisobdan chiqarish taqiqi |
+| `offboarding.test.ts` (+5, jami 26) | jihoz bandi `auto` · soni ko'rsatiladi · **qo'lda tasdiq bilan yopilmaydi** |
+| `offboarding.service.test.ts` (+1) | **qaytarilmagan jihoz bo'lsa `complete()` rad etadi** (reja test-1) |
+| `accountability.test.ts` (+3) | jihoz alohida qator · nol qator tashlanadi (reja test-2) · pul jamiga kirmaydi |
+| `menejer-live-boards.test.ts` | MK03 ning «jihoz YO'Q» qulfi **ag'darildi** (jimgina o'chirilmadi) |
+
+### Gate (o'z ko'zim bilan)
+- `pnpm --filter @moysklad/api typecheck` → **0** · `@moysklad/web typecheck` → **0**
+- `pnpm --filter @moysklad/api exec vitest run src/modules/hr src/modules/manager src/app-boot.test.ts`
+  → **113 fayl / 1328 test yashil**
+- `pnpm --filter @moysklad/web exec vitest run` → **193/195 fayl yashil**; **3 yiqilish MENIKI EMAS**
+  (pastga qara)
+- `pnpm lint:product` → mening fayllarim formatlandi; **qolgan xatolar parallel sessiyaniki**
+- `pnpm i18n:gate` → **mening kalitlarim yashil**; yiqilgan 17 kalit — parallel MK08 sessiyasiniki
+
+### ⚠️ Parallel sessiya (MK08) bilan kesishuv — YIQILGANLAR MENIKI EMAS
+Sessiya davomida **MK08** («smena yakunini qabul qilish») sessiyasi AYNAN shu fayllarda ishladi:
+`accountability.ts` (`DUTY.shiftUnaccepted`), `accountability.test.ts`, `live-status.service.ts`,
+`layout.tsx`, i18n fayllari, `cashier-session/*`. O'sha ishning **tugallanmagan** holati sababli:
+- `menejer-live-boards.test.ts` — 2 yiqilish: `duty_shift_unaccepted` kaliti ru+uz da **yo'q**
+  (MK08 `DUTY` ga tur qo'shgan, tarjimasini hali yozmagan). Mening `equipment_out` kalitim **bor**.
+- `raw-element-conventions.test.ts` — 1 yiqilish: `menejer/smenalar/page.tsx` da xom `<select>`
+  (MK08 sahifasi). Mening sahifam `Select`/`Textarea` primitivlarini ishlatadi.
+- `i18n:gate` — 17 kalit yetishmaydi, **hammasi** `pages.shiftAcceptance.*` +
+  `subnav.menejer.shift_acceptance`.
+- `lint:product` — `cashier-session/*`, `acceptance-fsm*`, `live-status.service.ts` format xatolari.
+**Ularning fayllariga TEGILMADI** (§6.1) — tuzatish MK08 sessiyasining ishi.
+
+### Ochiq qarz (ataylab qilinmagan)
+- **Brauzer-QA yo'q** (Phase-2 / MK14): reyestr sahifasi, berish/qaytarish oqimi va taxtadagi
+  jihoz bloki real brauzerda tekshirilmagan.
+- **Prod DDL** (`sherset_v2`) qo'llanmagan — ops-qadamlar ro'yxatiga qarz.
+- **Xodim kartasi 360°** ga jihoz bloki qo'shilmadi (MK04 fayli; `GET hr/equipment/employee/:id`
+  endpointi tayyor, FE ulanishi keyingi fazaga). Qamrovni kengaytirmadim — §1.
+- **Jihoz narxi/amortizatsiya** yo'q (TZ talab qilmaydi); kerak bo'lsa alohida ustun.
+- `EmployeeOnboarding` (ishga qabul) tomoniga jihoz **berish** bandi qo'shilmadi — TZ §6.3 uni
+  faqat bo'shatishda talab qiladi.

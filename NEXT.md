@@ -326,6 +326,45 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > `/root/sherset-v2-backups` = 5.4G / 18 fayl — keyingi deploy'dan oldin eski backup'larni
 > tozalash kerak bo'ladi, aks holda `next build` joy yetmasligidan yiqilishi mumkin.
 >
+> **🕒 2026-08-09q (REJA-MENEJER-KASSA **MK05** — jihoz reyestri + javobgarlik taxtasida jihoz
+> bloki) — `d1b70266`, 25 fayl (+1913/−45). To'liq hisobot:
+> `docs/REJA-MENEJER-KASSA-2026-08.md` → HISOBOT JURNALI → «Faza MK05».**
+>
+> **Nima qilindi:** yangi `Equipment` + `EquipmentAssignment` (append-only tarix) + migratsiya
+> `20260810060000_equipment_registry` (lokal DB'ga qo'llandi) · yangi modul
+> `apps/api/src/modules/hr/hr-equipment/` (sof qoidalar 16 test + servis 12 test + HTTP sirt
+> `/hr/equipment` assign/return/history, ruxsat `employees`) · FE `/hr/equipment` reyestr sahifasi
+> (+ `lib/equipment-api.ts`) · nav va i18n ru+uz.
+>
+> **Ikki teshik yopildi:** (1) bo'shatish ro'yxatidagi «Jihoz topshirilgan» bandi **qo'lda
+> tasdiqdan `auto` ga** o'tdi — qaytarilmagan jihoz endi arxivlashni BLOKLAYDI; (2) javobgarlik
+> taxtasida MK03'da ataylab tashlangan **jihoz bloki qo'shildi** (`DUTY.equipment_out`), chunki
+> endi son o'lchangan. MK03'ning «jihoz YO'Q» drift-qulfi (`menejer-live-boards.test.ts`) ataylab
+> **ag'darildi**, jimgina o'chirilmadi.
+>
+> **Qarorlar:** jihozning PULI yo'q (reyestrda narx saqlanmaydi ⇒ naqd jamiga kirmaydi) ·
+> biriktirilgan jihozni **hisobdan chiqarib bo'lmaydi** va `assigned` holati qo'lda tanlanmaydi
+> (javobgarlikni jimgina o'chirish yo'li yopiq) · qaytarish sharti holatni belgilaydi
+> (`ok→in_stock`, `damaged→repair`, `lost→lost`, yo'qolgani reyestrda qoladi) · bitta jihozda
+> bitta ochiq biriktirish — **qisman unique indeks** (faqat SQL da, Prisma ifodalay olmaydi).
+>
+> **Holat: Phase-1** — strukturaviy + unit-tasdiqlangan, **browser-smoke YO'Q** (Phase-2 / MK14).
+> **Prod DDL (`sherset_v2`) qo'llanmagan** — ops-qarz. Xodim kartasi 360° ga jihoz bloki
+> QO'SHILMADI (endpoint tayyor: `GET /hr/equipment/employee/:id`).
+>
+> ⚠️ **Parallel sessiyalar (MK08/MK11/MK18) bilan bir daraxtda ishlandi.** Aralashgan fayllar
+> (`accountability.*`, `live-status.service.ts`, `layout.tsx`, `messages/*.json`,
+> `schema.prisma`) uchun indeks **fail-closed skript** bilan qurildi (HEAD + faqat MK05
+> tahrirlari), hook'lar bir martaga chetlab o'tildi, gate qo'lda yugurtirildi.
+> **Saboq:** `git diff -U0` + `--unidiff-zero` bilan hunk BO'LISH qatorlarni noto'g'ri joyga
+> qo'ydi va `accountability.ts` ni sintaktik buzdi (birinchi commit) — **matn-anchor** usuli
+> (har anchor aynan 1 marta) bilan qayta qurildi va commit `--amend` qilindi. Tekshiruv:
+> esbuild sintaksis + izolyatsiyada 17 test + `prisma validate`.
+>
+> **Gate:** typecheck api+web **0** · api `hr`+`manager`+`app-boot` **1328 test yashil** ·
+> web **193/195 fayl**. Yiqilgan 3 test va i18n-gate'dagi 17 kalit — **MK08 sessiyasiniki**
+> (`duty_shift_unaccepted` tarjimasi yo'q, `menejer/smenalar` da xom `<select>`), MENIKI EMAS.
+>
 > **🕒 2026-08-09p (REJA-MENEJER-KASSA **MK11** — 4M.8: uch xil zaxira signali (o'lchov **PUL**)
 > + narx o'zgarishi nazorati) — `2f2de6b8`, 17 fayl (+2588/−5). To'liq hisobot:
 > `docs/REJA-MENEJER-KASSA-2026-08.md` → HISOBOT JURNALI → «Faza MK11».**

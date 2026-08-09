@@ -27,7 +27,7 @@
 
 | | Soni |
 |---|---|
-| **Qolgan bosqichlar** | **58** |
+| **Qolgan bosqichlar** | **57** |
 | Sifat qarzlari | 7 |
 | Brauzer-QA (Phase-2) o'tishlari | ~9 (har bo'lim uchun 1) |
 | **JAMI ish birligi** | **~76** |
@@ -100,8 +100,11 @@ kuniga **3 sessiya** → **~6 hafta**.
 
 > Bu uchtasi hech bir `B`-bosqichga kirmay qolgan edi. Ijro rejasida: **F05**, **F20**, **F39**.
 
-- [ ] **Jihoz reyestri** (4M.4) — `Equipment`/`Asset` modeli YO'Q; javobgarlik taxtasida jihoz
-      bloki shu sababdan ataylab tashlangan, bo'shatish ro'yxatida ham bandi to'liq emas → **F05**
+- [x] **Jihoz reyestri** (4M.4) — `Equipment` + `EquipmentAssignment` (append-only tarix) qo'shildi;
+      javobgarlik taxtasida jihoz bloki BOR, bo'shatish ro'yxatidagi bandi qo'lda tasdiqdan
+      **`auto`** ga o'tdi *(MK05; 28 sof/servis test + 3 wiring qulfi)* → **F05**
+      ⚠️ **Phase-1** (browser-smoke YO'Q) · biriktirilgan jihozni hisobdan chiqarib bo'lmaydi
+      (javobgarlikni jimgina o'chirish yo'li yopiq); bitta ochiq biriktirish — qisman unique indeks
 - [ ] **Kassa `CASH_USD` naqd oqimi** — ulanmagan; smena yopishda **USD farqi yozilmaydi**
       (hozirgi xulq `cashier-session/variance-wiring.test.ts` da qulflangan) → **F20**
 - [ ] **X2 — kassir kesimi hisobotlarda** — `apps/api/src/modules/report/` da `cashierId` **0 marta**
@@ -211,9 +214,9 @@ kuniga **3 sessiya** → **~6 hafta**.
       haydovchi qo'lidagi naqd · tugallanmagan yig'ish · qabul qilinmagan KPI kunlari.
       Pul ko'p bo'lgan tepada; nol qatorlar tashlanadi — `0bee3ff`
       ✅ *FE: `menejer/javobgarlik` (MK03, `638212f8`)*
-      ⚠️ **Jihoz ataylab YO'Q** — reyestr mavjud emas, «0 ta jihoz» deb ko'rsatish yo'q
-      ma'lumotga ishontirardi *(reyestr alohida bosqich; ro'yxat to'liq emasligi endi
-      EKRANDA ham yozilgan — `scope_note`)*
+      ✅ **Jihoz bloki QO'SHILDI** (MK05): `equipment_out` = ochiq biriktirishlar soni — endi
+      son O'LCHANGAN. Jihozning puli yo'q (reyestrda narx saqlanmaydi), shuning uchun naqd
+      jamiga kirmaydi; `scope_note` shu haqiqatga moslandi
 
 ### 4M.5–4M.10
 - [ ] **4M.5** — Ogohlantirish navbati: `ManagerWorkItem` + `ManagerRuleConfig` (ikkalasi YO'Q) +
