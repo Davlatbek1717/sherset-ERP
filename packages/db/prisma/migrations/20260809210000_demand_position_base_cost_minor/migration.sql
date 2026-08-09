@@ -1,0 +1,15 @@
+-- Faza Q4 / STK-08 — exact per-line outflow cost on DemandPosition.
+--
+-- `cost_minor` is the per-unit weighted-average snapshot. `cost_minor × quantity`
+-- cannot express the value that actually left the store when a shipment empties
+-- it: the line must then take the WHOLE remaining cost_balance_minor, which is
+-- generally not a multiple of the rounded per-unit. Without this column every
+-- full shipment left a few stray tiyin on a qty = 0 Stock row, poisoning the
+-- next inbound weighted average — and unpost/cancel, which rebuilt the value
+-- from the per-unit alone, would MINT that difference back.
+--
+-- Nullable on purpose: rows posted before this migration keep NULL and the
+-- service falls back to cost_minor × quantity — i.e. the exact pre-Faza-Q4
+-- arithmetic — so historical shipments still unpost/cancel bit-for-bit.
+-- Mirrors move_positions.base_cost_minor (Faza 34).
+ALTER TABLE "demand_positions" ADD COLUMN IF NOT EXISTS "base_cost_minor" BIGINT;

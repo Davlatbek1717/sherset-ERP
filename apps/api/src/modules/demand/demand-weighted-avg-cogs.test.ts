@@ -45,7 +45,12 @@ describe('post() prices COGS from the per-store weighted average (STK-02/03)', (
 
   it('the per-unit basis is the LOCKED per-store balance (same map the sufficiency check uses)', () => {
     expect(STRIPPED).toMatch(/balances\.get\(p\.assortmentId\)/);
-    expect(STRIPPED).toMatch(/computePerUnitCost\(costBal, onHand\)/);
+    // Faza Q4 moved the division into the shared pure helper (computeOutflowCost
+    // → computeTransferCost → computePerUnitCost); the BASIS is unchanged — it
+    // is still the locked balance's costBalanceMinor ÷ qty, now exact on a full
+    // shipment. See demand-cost-basis.test.ts.
+    expect(STRIPPED).toMatch(/costBalanceMinor: bal\?\.costBalanceMinor/);
+    expect(STRIPPED).toMatch(/onHandQty: bal\?\.qty \?\? '0'/);
   });
 
   it('empty/valueless stock falls back to the product cost (buyPrice), like Loss', () => {
@@ -58,9 +63,10 @@ describe('post() prices COGS from the per-store weighted average (STK-02/03)', (
 });
 
 describe('unpost()/cancel() reverse symmetrically (zero-sum) with a legacy path', () => {
-  it('new-model reversal re-derives the value from the frozen per-unit (identical formula)', () => {
-    const sites =
-      STRIPPED.match(/scaleMinorByQty\(p\.costMinor \?\? 0n, String\(p\.quantity\)\)/g) ?? [];
+  it('new-model reversal hands back the value the post froze (identical formula)', () => {
+    // Faza Q4: the frozen number is now the EXACT line (baseCostMinor), with
+    // the pre-Q4 per-unit × qty kept as the fallback inside reversalLineCost.
+    const sites = STRIPPED.match(/reversalLineCost\(\{/g) ?? [];
     expect(sites.length).toBe(2); // unpost + cancel
   });
 

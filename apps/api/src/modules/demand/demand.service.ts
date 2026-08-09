@@ -1,5 +1,5 @@
 import { Prisma } from '@moysklad/db';
-import { computePositionTotal, scaleMinorByQty } from '@moysklad/money';
+import { computePositionTotal } from '@moysklad/money';
 import {
   BadRequestException,
   ConflictException,
@@ -25,6 +25,9 @@ import { searchTokenGroups } from '../shared/search-tokens.js';
 import { withSerializationRetry } from '../shared/serialization-retry.js';
 import { type StockDelta, StockService } from '../stock/stock.service.js';
 import { WebhookFireService } from '../webhook/webhook-fire.service.js';
+// Exact outflow/reversal arithmetic (Faza Q4 / STK-08) — pure, reuses the
+// Move basis helper so both documents empty a store the same way.
+import { computeOutflowCost, reversalLineCost } from './demand-cost-basis.js';
 // OUTBOUND «Накладные расходы» fold — pure, adversarially tested
 // (demand-overhead.test.ts). §12 helper-pattern, OUTBOUND semantics.
 import { demandOverheadCostSumMinor } from './demand-overhead.js';
@@ -40,12 +43,7 @@ import {
   type UpdateDemandInput,
   UpdateDemandSchema,
 } from './demand.schema.js';
-import {
-  addDecimals,
-  compareDecimals,
-  computePerUnitCost,
-  subtractDecimals,
-} from './fifo-consumer.js';
+import { addDecimals, compareDecimals, subtractDecimals } from './fifo-consumer.js';
 
 interface ComputedTotals {
   sumMinor: bigint;
@@ -1167,17 +1165,19 @@ export class DemandService {
             continue;
           }
           const bal = balances.get(p.assortmentId);
-          const onHand = bal?.qty ?? '0';
-          const costBal = bal?.costBalanceMinor ? BigInt(bal.costBalanceMinor) : 0n;
-          const fallback = buyPriceByProduct.get(p.assortmentId) ?? 0n;
-          const perUnit =
-            costBal > 0n && compareDecimals(onHand, '0') > 0
-              ? computePerUnitCost(costBal, onHand)
-              : fallback;
-          const lineCost = scaleMinorByQty(perUnit, String(p.quantity));
-          positionPerUnit.set(p.id, perUnit);
-          positionCosts.set(p.id, lineCost);
-          docCostMinor += lineCost;
+          // Faza Q4 (STK-08): when this line EMPTIES the store the value that
+          // leaves is the whole costBalanceMinor — `round(avg) × qty` would
+          // strand the rounding residue as value on a qty = 0 row, poisoning
+          // the next inbound average. Same helper Move uses (Faza 34).
+          const { perUnitMinor, lineCostMinor } = computeOutflowCost({
+            costBalanceMinor: bal?.costBalanceMinor ? BigInt(bal.costBalanceMinor) : 0n,
+            onHandQty: bal?.qty ?? '0',
+            shipQty: String(p.quantity),
+            fallbackPerUnitMinor: buyPriceByProduct.get(p.assortmentId) ?? 0n,
+          });
+          positionPerUnit.set(p.id, perUnitMinor);
+          positionCosts.set(p.id, lineCostMinor);
+          docCostMinor += lineCostMinor;
         }
 
         // 4. Build StockDeltas (negative qty + negative cost for outflow).
@@ -1198,14 +1198,20 @@ export class DemandService {
 
         await this.stock.applyDeltas(tx, accountId, userId, deltas);
 
-        // 5. Freeze the per-unit cost onto the position — display AND the
-        //    reversal basis: unpost/cancel rebuild the value with the
-        //    IDENTICAL scaleMinorByQty(costMinor, qty) formula, so the
-        //    post↔unpost stock-value cycle is exactly zero-sum.
+        // 5. Freeze BOTH numbers onto the position (Faza Q4, the Move §34
+        //    pattern): `costMinor` = the per-unit average («Себестоимость»
+        //    display, and the reversal basis for pre-Q4 rows), `baseCostMinor`
+        //    = the EXACT value this line took out. Rounding is lossy, so the
+        //    exact line cannot be rebuilt from the per-unit — it has to be
+        //    stored, otherwise unpost/cancel would hand back 999 for 1000 and
+        //    MINT a tiyin on every full shipment.
         for (const p of existing.positions) {
           await tx.demandPosition.update({
             where: { id: p.id },
-            data: { costMinor: positionPerUnit.get(p.id) ?? 0n },
+            data: {
+              costMinor: positionPerUnit.get(p.id) ?? 0n,
+              baseCostMinor: positionCosts.get(p.id) ?? 0n,
+            },
           });
         }
 
@@ -1313,10 +1319,12 @@ export class DemandService {
           );
         }
 
-        // 1. Reverse the outflow value. New-model demands froze the per-unit
-        //    average onto the position at post — rebuild with the IDENTICAL
-        //    formula (zero-sum). Demands posted under FIFO (pre-18a) instead
-        //    reverse their legacy consumption rows exactly as recorded.
+        // 1. Reverse the outflow value. Q4-and-later demands stored the EXACT
+        //    line they took (baseCostMinor) — hand back that same number, so
+        //    post↔unpost is zero-sum even when the shipment emptied the store.
+        //    Pre-Q4 rows fall back to per-unit × qty (the arithmetic they were
+        //    posted with); demands posted under FIFO (pre-18a) instead reverse
+        //    their legacy consumption rows exactly as recorded.
         const positionRefunds = new Map<string, bigint>();
         for (const p of existing.positions) {
           const legacy = await this.reverseLegacyFifo(tx, accountId, p.id);
@@ -1324,7 +1332,11 @@ export class DemandService {
             p.id,
             legacy.hadRows
               ? legacy.totalCostMinor
-              : scaleMinorByQty(p.costMinor ?? 0n, String(p.quantity)),
+              : reversalLineCost({
+                  baseCostMinor: p.baseCostMinor,
+                  costMinor: p.costMinor,
+                  quantity: String(p.quantity),
+                }),
           );
         }
 
@@ -1346,11 +1358,12 @@ export class DemandService {
 
         await this.stock.applyDeltas(tx, accountId, userId, deltas);
 
-        // 3. Reset per-position costMinor (back to null — no FIFO consumed).
+        // 3. Clear the frozen cost snapshot — a re-post re-freezes both from
+        //    the balance it finds then (idempotent across post→unpost→post).
         for (const p of existing.positions) {
           await tx.demandPosition.update({
             where: { id: p.id },
-            data: { costMinor: null },
+            data: { costMinor: null, baseCostMinor: null },
           });
         }
 
@@ -1440,7 +1453,7 @@ export class DemandService {
           );
         }
 
-        // Reverse the outflow value (same frozen-per-unit ∥ legacy-FIFO split
+        // Reverse the outflow value (same stored-exact-line ∥ legacy-FIFO split
         // as the unpost path).
         const positionRefunds = new Map<string, bigint>();
         for (const p of existing.positions) {
@@ -1449,7 +1462,11 @@ export class DemandService {
             p.id,
             legacy.hadRows
               ? legacy.totalCostMinor
-              : scaleMinorByQty(p.costMinor ?? 0n, String(p.quantity)),
+              : reversalLineCost({
+                  baseCostMinor: p.baseCostMinor,
+                  costMinor: p.costMinor,
+                  quantity: String(p.quantity),
+                }),
           );
         }
 
@@ -1470,11 +1487,11 @@ export class DemandService {
 
         await this.stock.applyDeltas(tx, accountId, userId, deltas);
 
-        // Reset per-position costMinor.
+        // Clear the frozen cost snapshot (see unpost).
         for (const p of existing.positions) {
           await tx.demandPosition.update({
             where: { id: p.id },
-            data: { costMinor: null },
+            data: { costMinor: null, baseCostMinor: null },
           });
         }
 

@@ -13,6 +13,7 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 import { AttributeMetadataService } from '../attribute-metadata/attribute-metadata.service.js';
 import { CounterpartyBalanceService } from '../counterparty-balance/counterparty-balance.service.js';
 import { type CurrencyRate, toBaseMinor } from '../currency/currency-convert.js';
+import { compareDecimals } from '../demand/fifo-consumer.js';
 import { HR_EVENT, type SupplyPostedEvent } from '../hr/hr-shared/hr-events.types.js';
 import { PaymentOutService } from '../payment-out/payment-out.service.js';
 import { PermissionsService } from '../permissions/permissions.service.js';
@@ -63,12 +64,13 @@ const APPROVAL_IN_FLIGHT_MSG =
  *   - Build positive StockDeltas from positions (with costDeltaMinor)
  *   - applyDeltas via StockService (creates StockOperation + Stock upsert)
  *   - Set SupplyPosition.costMinor (per-unit cost after discount)
- *   - Set SupplyPosition.remainingQty = quantity (available for FIFO)
+ *   - Set SupplyPosition.remainingQty = quantity (legacy lot marker — Faza 18a
+ *     retired the FIFO consumer, so nothing decrements it any more; it only
+ *     still guards the reversal of PRE-18a lots)
  *   - Transition state → posted, applicable=true, postedAt=now
  *
- * Unpost reverses stock via negative deltas. FIFO consumption check is
- * deferred (would reject unpost if any Demand has consumed from this
- * supply's lots — needs future FifoConsumption ledger).
+ * Unpost reverses stock via negative deltas, refusing only lots that the old
+ * FIFO ledger had already drawn from (see the guard in unpost()/cancel()).
  */
 @Injectable()
 export class SupplyService {
@@ -1360,12 +1362,19 @@ export class SupplyService {
         //    per-unit cost is the single source of truth — unpost/cancel
         //    reverse stock via (costMinor × qty) with the identical /1000n
         //    formula, so a post→unpost cycle is exactly zero-sum.
+        //
+        //    `remainingQty` is NO LONGER a COGS input (Faza 18a retired the
+        //    FIFO walk — nothing decrements it any more). It stays as the
+        //    "untouched lot" marker the unpost/cancel guard reads, so it is
+        //    still written, but VERBATIM: the old `String(Number(String(q)))`
+        //    round-tripped a Decimal(20,6) through a double (STK-08 class) and
+        //    could store a lot size that differs from the received quantity.
         for (const p of existing.positions) {
           await tx.supplyPosition.update({
             where: { id: p.id },
             data: {
               costMinor: costByPos.get(p.id)?.perUnit ?? 0n,
-              remainingQty: String(Number(String(p.quantity))), // entire lot for FIFO
+              remainingQty: String(p.quantity), // whole lot, exact
             },
           });
         }
@@ -1494,12 +1503,23 @@ export class SupplyService {
       throw new BadRequestException(`O'tkazilmaydi: ${existing.state} → draft. Faqat posted'dan`);
     }
 
-    // FIFO consumption guard: if any SupplyPosition.remainingQty < quantity,
-    // some outbound Demand has consumed from this lot and we can't safely
-    // reverse stock. Future sprint will add the actual consumption ledger;
-    // for now, a remainingQty check suffices.
+    // Partially-consumed-lot guard (LEGACY reach, deliberately kept — Faza Q4).
+    //
+    // `remainingQty < quantity` means an outbound Demand drew from this lot
+    // under the pre-18a FIFO ledger and the received goods are already gone —
+    // reversing stock would unwind value that no longer exists. Faza 18a
+    // retired that ledger, so for lots received AFTER it the two values are
+    // always equal and this guard never fires; it survives purely to protect
+    // the historical rows, whose decremented residue is still in the table.
+    // (The modern equivalent — an on-hand sufficiency check on unpost — is
+    // NOT introduced here: it would newly reject reversals that are legal
+    // today, e.g. after the goods were moved to another store. Logged as debt.)
+    //
+    // The comparison is EXACT: both sides are Decimal(20,6), and the previous
+    // `Number()` compare collapsed them to doubles (STK-08 class) — past 2^53
+    // micro-units a consumed lot compared equal and slipped through.
     for (const p of existing.positions) {
-      if (Number(String(p.remainingQty)) < Number(String(p.quantity))) {
+      if (compareDecimals(String(p.remainingQty), String(p.quantity)) < 0) {
         throw new BadRequestException(
           `Pozitsiya ${p.position}: bu lot qisman iste'mol qilingan (${String(p.remainingQty)}/${String(p.quantity)}), snyat provedeno qilib bo'lmaydi`,
         );
@@ -1624,10 +1644,10 @@ export class SupplyService {
       throw new BadRequestException(`O'tkazilmaydi: ${existing.state} → cancelled`);
     }
 
-    // If posted, run unpost-style reversal first.
+    // If posted, run unpost-style reversal first (same legacy lot guard).
     if (existing.state === 'posted') {
       for (const p of existing.positions) {
-        if (Number(String(p.remainingQty)) < Number(String(p.quantity))) {
+        if (compareDecimals(String(p.remainingQty), String(p.quantity)) < 0) {
           throw new BadRequestException(
             `Pozitsiya ${p.position}: bu lot qisman iste'mol qilingan, cancel qilib bo'lmaydi`,
           );

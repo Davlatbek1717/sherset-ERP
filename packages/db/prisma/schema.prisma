@@ -6281,8 +6281,17 @@ model DemandPosition {
   vat        Int?
   vatEnabled Boolean @default(true) @map("vat_enabled")
 
-  // Cost (per unit, tiyin). Populated by FIFO at post time (Sprint 3.4+).
+  // Cost (per unit, tiyin). Populated at post time from the per-store weighted
+  // average (Faza 18a; the FIFO walk it originally came from is retired).
   costMinor BigInt? @map("cost_minor")
+
+  // Exact line cost that left the store at post time, tiyin (Faza Q4 / STK-08).
+  // `costMinor × quantity` cannot express it when the shipment EMPTIES the
+  // store: the line then takes the whole Stock.costBalanceMinor, which is
+  // generally not a multiple of the rounded per-unit. Nullable on purpose —
+  // rows posted before Faza Q4 keep NULL and reverse through the old
+  // per-unit × qty arithmetic, bit-for-bit as before.
+  baseCostMinor BigInt? @map("base_cost_minor")
 
   // moysklad «Ячейка» — address-storage bin the goods leave FROM. cellId drives
   // per-cell stock (StockByCell) on post; `cell` = denormalized «Зона / Ячейка»

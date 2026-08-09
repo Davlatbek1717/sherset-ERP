@@ -7,7 +7,8 @@ import { discountPercent } from '../shared/discount.js';
  * FSM: draft → posted (stock +, cost recorded) → draft (unpost)
  *      draft → (soft-deleted)
  *
- * Mirror of Demand. Adds FIFO lot tracking via SupplyPosition.remainingQty.
+ * Mirror of Demand. `SupplyPosition.remainingQty` is a LEGACY lot marker — the
+ * FIFO consumer that decremented it was retired in Faza 18a (weighted average).
  */
 
 export const SupplyStateSchema = z.enum(['draft', 'posted', 'cancelled']);

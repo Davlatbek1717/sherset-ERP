@@ -196,7 +196,7 @@ bit-ma-bit zero-sum (yangi va eski qatorlar). (3) supply unpost mavjud xulqi reg
 > `docs/REJA-QOLDIQ-2026-08.md` — **Faza Q4**. O'ZGARMAS QOIDALAR. Faza 18a §QARZ + Faza 34 hisobotini
 > o'qi (Move naqshi tayyor — qayta ishlat). Demand oxirgi-birlik + supply remainingQty tozalash.
 > TDD: 3 stsenariy. Gate. Hisobot, TO'XTA.
-**◻ HISOBOT:** _(agent to'ldiradi)_
+**☑ HISOBOT (2026-08-09):** BAJARILDI — batafsili «HISOBOT JURNALI → Faza Q4» da.
 
 ---
 
@@ -883,3 +883,149 @@ o'rniga). Kassa/pul oilasida xulq **umuman o'zgarmadi**.
   `SELECT` bilan sanash, bo'lsa `CounterpartyAdjustment` / `cancel` bilan korrektirovka.
 
 **Commit:** `fix(api): faza q3 — delete() atomik claim + applyPayment deletedAt (M-01/M-09/STK-01 qoldiqlari)`
+
+---
+
+## Faza Q4 — 2026-08-09 — **Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q**
+### 18c qoldig'i: Demand oxirgi-birlik yaxlitlash (`STK-08`) + supply `remainingQty` o'lik-kod tozalash
+
+**Da'volarni tasdiqlash (kodda, o'z ko'zim bilan — 3/3 TASDIQLANDI)**
+
+| Da'vo (Faza 18a §QARZ 2–3) | Kodda ASLIDA (HEAD, Q2/Q3 dan keyin) |
+|---|---|
+| Demand to'liq chiqimda perUnit-yaxlitlashdan `costBalanceMinor`da ±tiyin qoladi | ✅ `demand.service.ts` post: `perUnit = computePerUnitCost(costBal, onHand)` → `lineCost = scaleMinorByQty(perUnit, qty)`. `qty == onHand` da 1000 tiyin / 3 dona ⇒ chiqim **999**, `qty = 0` qatorda **1 tiyin** osilib qoladi |
+| `SupplyPosition.remainingQty` COGS uchun O'LIK | ✅ butun `apps/api/src` bo'yicha `remainingQty: { decrement` **hech qayerda yo'q**; yagona yozuvchilar — supply post (`= quantity`), unpost/cancel (`'0'`), va `demand.reverseLegacyFifo` (**increment**, legacy) |
+| Guard `remainingQty` ga asoslanadi | ✅ `supply.service.ts` unpost + cancel: `Number(String(p.remainingQty)) < Number(String(p.quantity))` — ikki Decimal(20,6) **float orqali** solishtiriladi |
+| **+1 o'zim topdim** | post `remainingQty: String(Number(String(p.quantity)))` — Decimal(20,6) (20 raqam) **double** orqali (17 raqam) o'tkaziladi: STK-08 sinfining aynan o'zi, lot hajmi qabul qilingan miqdordan farq qilishi mumkin |
+
+### Qaror: variant (ii) — `DemandPosition.baseCostMinor` ustuni (Faza 34 naqshi). (i) Q2-jurnal naqshi YARAMAYDI
+
+Uch yo'l ko'rildi (topshiriq §3a):
+
+1. **(i) `StockOperation` jurnalidan negatsiya (Q2/WorkOrder naqshi)** — **RAD ETILDI, aniq sabab bilan.**
+   Q2 da bu ishladi, chunki WorkOrder FSM `completed` ni **bir marta** beradi (`cancelled` — terminal),
+   ya'ni `docType:'workorder', reason:'post'` to'plami **yagona**. Demand'da esa `unpost` hujjatni
+   `draft` ga qaytaradi va **qayta post qilish mumkin** — post→unpost→post dan keyin jurnalda
+   `docType:'demand', reason:'post'` qatorlarining **IKKI** to'plami turadi va negatsiya ikki karra
+   teskarilardi. Ularni ajratadigan ishonchli filtr yo'q (`postedAt` deltalardan KEYIN yoziladi,
+   `StockOperation` esa append-only — post qatorini «iste'mol qilindi» deb belgilab bo'lmaydi).
+2. **(ii) `DemandPosition.baseCostMinor BigInt?` — TANLANDI.** Aynan Faza 34 `MovePosition.baseCostMinor`
+   naqshi: nullable ⇒ **eski qatorlar NULL** ⇒ eski `costMinor × qty` formulasi ⇒ Faza Q4 dan oldin
+   o'tkazilgan otgruzkalar bit-ma-bit avvalgidek teskarilanadi (**nol-regressiya**), qayta-post esa
+   ikkala qiymatni yangidan muzlatadi (idempotent). `per-unit-snapshot-blocks-exact-cost-fix`
+   xotirasining talabi shu: yaxlitlash **ma'lumot yo'qotadi**, aniq satr-qiymatni per-birlikdan
+   tiklab bo'lmaydi — uni SAQLASH kerak.
+3. **(iii) hech narsa qilmaslik / faqat post'ni tuzatish** — RAD: post 1000 olib, unpost 999 qaytarsa
+   har to'liq chiqim-bekor sikli **1 tiyin YARATADI** (reja Faza 34 da aynan shu tuzoqni yozgan).
+
+**Move tomoni qayta yozilmadi** — `computeTransferCost()` **qayta ishlatildi** (topshiriq talabi).
+
+### Fayllar
+
+| Fayl | O'zgarish |
+|---|---|
+| `apps/api/src/modules/demand/demand-cost-basis.ts` | **YANGI** — sof, Nest'siz: `computeOutflowCost()` (Faza 34 `computeTransferCost` ustiga Demand'ning `buyPrice` fallback'i) + `reversalLineCost()` (`baseCostMinor ?? costMinor × qty`) |
+| `apps/api/src/modules/demand/demand-cost-basis.test.ts` | **YANGI** — 14 test (9 sof arifmetik + 5 manba-skan qo'riqchisi) |
+| `apps/api/src/modules/demand/demand.service.ts` | post: qiymat `computeOutflowCost` orqali, `baseCostMinor` ham muzlatiladi; unpost + cancel: `reversalLineCost`; ikkala reset `costMinor: null, baseCostMinor: null`; `computePerUnitCost`/`scaleMinorByQty` importlari endi kerak emas |
+| `apps/api/src/modules/demand/demand-weighted-avg-cogs.test.ts` | **Edit** (Write EMAS) — 18a ning 2 manba-skan invarianti yangi ifodaga moslandi (bazis va zero-sum talabi **o'zgarmadi**) |
+| `apps/api/src/modules/supply/supply.service.ts` | post `remainingQty: String(p.quantity)` (float round-trip olib tashlandi); unpost + cancel guard `compareDecimals(...) < 0`; sinf-doc + guard izohi haqiqatga moslandi |
+| `apps/api/src/modules/supply/supply.schema.ts` | fayl-doc: «FIFO lot tracking» → «LEGACY lot marker (18a da bekor qilingan)» |
+| `apps/api/src/modules/supply/supply-lot-guard.test.ts` | **YANGI** — 5 test (float round-trip yo'qotishini o'lchaydi + guard manba-skani) |
+| `packages/db/prisma/schema.prisma` | `DemandPosition.baseCostMinor BigInt? @map("base_cost_minor")` + shartnoma izohi |
+| `packages/db/prisma/migrations/20260809210000_demand_position_base_cost_minor/migration.sql` | **YANGI** — `ADD COLUMN IF NOT EXISTS base_cost_minor BIGINT` |
+
+### O'zgarish mohiyati
+
+**(a) Demand oxirgi-birlik.** `computeOutflowCost` **qulflangan** balansdan (yetarlilik tekshiruvi
+ishlatgan aynan o'sha `balances` xaritasi) ikki son qaytaradi: `perUnitMinor` (o'rtacha — ekran va
+pre-Q4 teskarilash bazisi) va `lineCostMinor` (**haqiqatan chiqib ketgan qiymat**). Chiqim omborni
+**bo'shatsa** (`qty === onHand`, `compareDecimals` bilan — float taqqoslash EMAS) satr **butun**
+`costBalanceMinor` ni oladi; qisman chiqimda arifmetika **bit-ma-bit eski** (`computeLineCost` va
+`scaleMinorByQty` ikkalasi ham `roundHalfUp(qty×unit, 1e6)` — manba o'qib tasdiqlandi, shuning uchun
+qisman yo'lda **regressiya nolga teng**). `buyPrice` fallback va uning `?? 0n` shartnomasi
+**o'zgarmadi** (manfiy balans ham bazis emas — bo'linsa satrga o'ylab topilgan manfiy narx berilardi).
+
+**Teskarilash simmetriyasi.** unpost/cancel endi `reversalLineCost` orqali **saqlangan aniq satrni**
+qaytaradi. `??` (`||` EMAS) ⇒ haqiqiy `0n` satr «yo'q» deb talqin qilinmaydi. **Legacy FIFO yo'li
+TEGILMADI:** `reverseLegacyFifo` avvalgidek `remainingQty` ni increment qiladi,
+`DemandPositionCostConsumption` qatorlarini o'chiradi va `hadRows` bo'lsa uning `totalCostMinor` i
+ustun turadi.
+
+**(b) Supply `remainingQty`.** Ustun **sxemadan o'chirilmadi** (legacy qatorlar unga tayanadi) va post
+yozuvi ham **qoldirildi** — lekin `String(Number(String(q)))` float round-trip'i olib tashlandi.
+**Guard QOLDIRILDI** (topshiriq: himoyani yo'qotma), ammo endi rostgo'y izoh bilan: `remainingQty <
+quantity` faqat **18a dan OLDIN** qabul qilingan lotlarda yuzaga keladi (jadvalda o'sha kamaytirilgan
+qoldiq hamon turibdi) va aynan «bu tovar allaqachon sotilgan» signalining yagona qolgan manbasi;
+18a dan keyingi lotlarda ikki qiymat **doim teng**, ya'ni guard hech qachon otilmaydi. Taqqoslash
+`Number()` dan `compareDecimals` ga o'tkazildi — 2^53 mikro-birlikdan katta lotlarda float ikkala
+tomonni bir xil double'ga qisib, **iste'mol qilingan lotni o'tkazib yuborardi**.
+
+**Zamonaviy muqobil mezon ATAYLAB kiritilmadi** (qarz sifatida yozildi): weighted-average modelida
+«tovar sotilganmi» ni tekshirishning to'g'ri yo'li — unpost'da omborda joriy qoldiq yetarliligini
+tekshirish (`assertAvailable`). Lekin u **bugun qonuniy** bo'lgan teskarilashlarni yangidan rad
+etardi (masalan tovar boshqa omborga ko'chirilgan bo'lsa) — bu xulq o'zgarishi Q4 doirasidan tashqari.
+
+### Testlar — RED **jonli o'lchandi**, keyin GREEN
+
+**RED** (fix'dan oldin, `vitest run demand-cost-basis.test.ts supply-lot-guard.test.ts`):
+`Test Files 2 failed (2)` · `Tests 2 failed | 3 passed (5)`
+
+- `demand-cost-basis.test.ts` — **butun fayl yuklanmadi** (`Failed to load url ./demand-cost-basis.js`)
+  ⇒ 14 test umuman hisobga kirmadi;
+- `supply-lot-guard.test.ts` — **2 qizil**: (1) `remainingQty: String(Number(` hamon manbada,
+  (2) `compareDecimals(String(p.remainingQty), …)` uchraydigan joylar soni **0**, kutilgan 2.
+  Qolgan 3 tasi ataylab yashil — ular **float xatosini o'lchaydigan** dalil testlari
+  (`String(Number('99999999999999.999999')) !== '99999999999999.999999'`;
+  `Number('…999998') === Number('…999999')`).
+
+Fix'dan keyin `demand-weighted-avg-cogs.test.ts` da **2 qizil** paydo bo'ldi (18a manba-skani eski
+ifodani qidirardi) — invariantning **mohiyati** o'zgarmagani uchun ikkala assert yangi ifodaga
+moslandi (`Edit`, Write EMAS), izoh bilan.
+
+**GREEN:** `demand + supply` **218/218** · yangi ikki fayl **19/19**.
+Reja stsenariylari: (1) 1000 tiyin / 3 dona to'liq chiqim → `costBalance` aynan **0** ✓
+(2) post↔unpost bit-ma-bit zero-sum, **yangi** (`baseCostMinor`) va **eski** (NULL ⇒ 999) qatorlarda ✓
+(3) supply unpost mavjud xulqi regressiz (218 testda 0 yiqilish) ✓
+
+### Gate (jonli o'lchangan)
+
+| Buyruq | Natija |
+|---|---|
+| `pnpm --filter @moysklad/api typecheck` | **0 xato** |
+| `pnpm lint:product` | **0 error** (747 warning — siyosat bo'yicha ruxsat). Yangi test-fayl avval `format` xatosi bergan edi → `biome format --write` bilan tuzatildi |
+| `vitest run demand + supply + stock + move + loss + retail-sale` | **597/597** (47 fayl) |
+| **To'liq API suite** (`vitest run`) | **5686 passed \| 2 skipped** · **433 fayl passed \| 1 skipped (434)**. Q3 dan keyingi baza **5667 passed / 2 skipped / 431 fayl** ⇒ **+19 test** (14 demand-cost-basis + 5 supply-lot-guard) va **+2 fayl** — aynan qo'shganim. **Regress YO'Q** |
+| Migratsiya | `prisma db execute --file` bilan lokal `climart_adopt @ localhost:5432` ga qo'llandi; `prisma migrate diff` (datamodel↔datasource) chiqishida `demand_positions`/`base_cost_minor` **umuman yo'q** ⇒ o'z obyektim uchun drift **0**; `prisma generate` qayta yugurtirildi |
+| `pnpm i18n:gate` | Qo'llanmaydi — UI-matn tegilmadi |
+| web | **Tegilmadi** |
+
+### Qolgan qarz / DEFER
+
+1. **🔴 Browser-smoke YO'Q.** Hech bir sahifa real brauzerda ochilmadi. Ayniqsa: to'liq chiqimdan
+   keyin `/stock` da omborning **qiymati aynan 0** bo'lishi va otgruzka detalidagi «Себестоимость»
+   ustuni — Phase-2 QA cohort'iga.
+2. **Prod DDL qarzi (OPS):** `demand_positions.base_cost_minor` **prod'da yo'q** — `sherset_v2`
+   sxema-drifti tufayli `migrate deploy` emas, qo'lda `prisma db execute --file` kerak. Reja
+   §OPS-QADAM 5 ro'yxatiga qo'shilsin (u yerda `move_positions.base_cost_minor` allaqachon turibdi).
+   **Busiz deploy API'ni yiqitadi.**
+3. **Tarixiy ma'lumot tuzatilmaydi.** Q4 dan OLDIN to'liq chiqim qilingan otgruzkalar
+   `Stock.costBalanceMinor` da allaqachon tiyin-qoldiq qoldirgan (bo'sh omborda osilgan qiymat).
+   Hajm **o'lchanmagan** — bu OPS-qadam (Inventory bilan qayta-baholash). Bu faza yangi
+   divergensiya YARATILISHINI to'xtatadi.
+4. **Hisobotlar hamon `costMinor × qty` o'qiydi** — `analitika/analysis.service.ts` (`select: … costMinor`)
+   va `Demand.costSumMinor` (endi `Σ baseCostMinor`) hujjat boshiga bir necha tiyinga farq qilishi
+   mumkin. Kosmetik, **jurnal to'g'ri**; Faza 34 ning Move uchun yozgan qarzi bilan bir sinf
+   (o'sha yerda ham backfill yo'q).
+5. **Supply unpost'da zamonaviy «tovar sotilgan» tekshiruvi YO'Q** (yuqorida asoslandi). Bugungi holat:
+   18a dan keyingi lotni unpost qilish omborni **jimgina manfiy**ga tushirishi mumkin
+   (`assertAvailable` chaqirilmaydi). Bu **Q4 dan oldin ham shunday edi** — yangi qarz emas, lekin
+   endi hujjatlashtirilgan. To'g'ri yechim: unpost'ga `assertAvailable` (store `allowNegativeStock`
+   semantikasi bilan) — alohida faza.
+6. **`SupplyPosition.remainingQty` ustunining o'zi qolmoqda** — legacy qatorlar va guard unga tayanadi.
+   To'liq olib tashlash faqat legacy `DemandPositionCostConsumption` qatorlari arxivlangandan keyin mumkin.
+7. **`demand-cost-basis.ts` → `move-cost-basis.ts` importi** — modullararo *sof leaf* import (Faza 34
+   `move-cost-basis.ts → demand/fifo-consumer.ts` presedenti bilan bir xil yo'nalishsizlik). Faza 34 ning
+   5-qarzi (`fifo-consumer.ts` ni `shared/decimal.ts` ga ko'chirish) bajarilganda bu ikkalasi ham
+   `shared/` ga ko'chirilsin.
+
+**Commit:** `fix(cogs): faza q4 — demand oxirgi-birlik + supply remainingQty tozalash (STK-08 sinfi)`
