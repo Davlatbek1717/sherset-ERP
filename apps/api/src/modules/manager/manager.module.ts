@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { PrismaModule } from '../../prisma/prisma.module.js';
 import { AuthModule } from '../auth/auth.module.js';
 import { PermissionsModule } from '../permissions/permissions.module.js';
+import { ManagerInventoryController } from './inventory/manager-inventory.controller.js';
+import { ManagerInventoryService } from './inventory/manager-inventory.service.js';
 import { DailyKpiAcceptanceService } from './kpi/daily-kpi-acceptance.service.js';
 import { DailyKpiDrilldownService } from './kpi/daily-kpi-drilldown.service.js';
 import { EmployeeDailyKpiCron } from './kpi/employee-daily-kpi.cron.js';
@@ -36,7 +38,7 @@ import { LiveStatusService } from './live/live-status.service.js';
  */
 @Module({
   imports: [PrismaModule, AuthModule, PermissionsModule],
-  controllers: [KpiConfigController, ManagerKpiController],
+  controllers: [KpiConfigController, ManagerKpiController, ManagerInventoryController],
   providers: [
     EmployeeDailyKpiService,
     EmployeeDailyKpiCron,
@@ -46,6 +48,7 @@ import { LiveStatusService } from './live/live-status.service.js';
     OwnerWeeklySummaryService,
     LiveStatusService,
     DailyKpiDrilldownService,
+    ManagerInventoryService,
   ],
   exports: [EmployeeDailyKpiService, DailyKpiAcceptanceService],
 })

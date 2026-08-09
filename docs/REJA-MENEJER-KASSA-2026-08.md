@@ -440,7 +440,7 @@ qiladi. (3) yopilgan ob'ekt ro'yxatdan chiqadi.
 
 ---
 
-### MK11 — 4M.8: uch xil zaxira signali + narx o'zgarishi nazorati ☐ HISOBOT
+### MK11 — 4M.8: uch xil zaxira signali + narx o'zgarishi nazorati ☑ HISOBOT (2026-08-09)
 **Bo'lim/blok:** 4M.8 · **TZ:** §8
 **Ustuvorlik:** P2 · **Bog'liqlik:** yo'q
 **Qamrov:**
@@ -1549,3 +1549,104 @@ ikki oraliq mos (konfiguratsiya xatosi — tavakkal summa yozilmaydi). Bekorda *
 **Phase-1: strukturaviy + unit-tasdiqlangan (6063 test), browser-smoke YO'Q.**
 Jonli oqim (menejer kunni brauzerda qabul qiladi → bonus paydo bo'ladi → oylikda ko'rinadi)
 **tekshirilmagan** — u **MK14** (4M Phase-2 QA) ga qoladi.
+
+---
+
+## Faza MK11 — 4M.8: uch xil zaxira signali + narx o'zgarishi nazorati (sana: 2026-08-09)
+
+**Holat:** bajarildi — **Phase-1** (strukturaviy + unit-tasdiqlangan, **browser-smoke YO'Q**).
+
+### Rejaning da'volari kodda tekshirildi (O'ZGARMAS QOIDA 2)
+
+| Reja/TZ da'vosi | Kodda holat | Xulosa |
+|---|---|---|
+| Narx tarixi manbai = `AuditLog.fieldChanges` (TZ §8) | `ProductService.logAudit` `entity:'Product'`, `action:'update'`, `computeDiff` → `buyPrice`/`minPrice`/`salePrices` **yozilyapti** | ✅ tasdiqlandi, yangi yozuvchi ochilmadi |
+| Signal manbai = `Stock` + tan narx | `Stock.costBalanceMinor` (o'rtacha-tortilgan, 18a qaroridan beri COGS bazasi) + `Product/Variant.buyPrice` | ✅ |
+| «Navbatga tushadi» | `ManagerWorkItem`/`ManagerRuleConfig` sxemada **YO'Q** (MK06 ishi) | ⚠️ moslashtirildi — pastga qarang |
+| Chegara sozlamada | Doimiy sozlama uchun jadval yo'q (`CompanySettings` da umumiy JSON blob ham yo'q) | ⚠️ so'rov parametri + hujjatlangan default |
+
+**MK11 ning `Bog'liqlik: yo'q` deyilgani to'g'ri chiqdi, lekin bitta shart bilan:** navbat
+OMBORI MK06 da keladi. Shuning uchun bu faza navbat elementini **saqlamaydi** —
+`reviewPriceChanges` har chegaradan oshgan o'zgarish uchun tayyor `PriceChangeWorkItem`
+(**barqaror `dedupKey` bilan**) qaytaradi va `GET …/price-changes` uni `workItems` da beradi.
+MK06 dvigateli yoqilganda shu kalit bo'yicha element yaratadi — takror element bo'lmaydi.
+Sxemaga tegilmadi (migratsiya = umumiy resurs, parallel sessiya `schema.prisma` ni ushlab turgan edi).
+
+### Nima qo'shildi
+
+**BE — yangi `apps/api/src/modules/manager/inventory/` (5 fayl):**
+- `stock-signals.ts` — sof modul. Uch signal, **o'lchov tiyin**:
+  `dead_money` (qoldiq × tan narx) · `stockout_risk` (gorizontgacha **yopilmagan talab** ×
+  tan narx) · `overstock` (gorizontdan ortiq qoldiq × tan narx). Chegaralar:
+  `deadDays 90` · `coverDays 14` · `overstockDays 120`.
+- `price-change-control.ts` — sof modul. `extractPriceChanges` (audit diffidan tarix) +
+  `reviewPriceChanges` (chegara → navbat nomzodi). `blocks` maydoni **literal `false`** tipida.
+- `manager-inventory.service.ts` — Prisma I/O + `resolveUnitCostMinor` / `assembleSignalInputs`
+  (sof, alohida sinaladi). Sotuv sur'ati `StockOperation` dan (`demand`/`retailsale` +
+  bekor/qaytarim); ombor ichidagi `move_*`/`cell_*` **sanalmaydi** — ular pulni aylantirmaydi.
+- `manager-inventory.controller.ts` + `.schema.ts` — `GET manager/inventory/stock-signals`,
+  `GET manager/inventory/price-changes`. Ruxsat `product:view` (yangi `PermissionEntity`
+  kiritilmadi — u seed matritsasini ham talab qilardi, MK11 qamrovidan tashqarida).
+- `manager.module.ts` ga ulandi (`app-boot.test.ts` yetim-modul qo'riqchisi yashil).
+
+**FE — 2 yangi sahifa:**
+- `menejer/zaxira/page.tsx` — uch signal guruhi, har birida **PUL jami** + «o'lchandi/o'lchanmadi»
+  hisoblagichi; `deadDays`/`coverDays` tanlagichlari.
+- `menejer/narx-nazorati/page.tsx` — narx tarixi (kim/qachon/qancha/foiz), chegara va davr
+  tanlagichlari, **doimiy «bloklamaydi» izohi**.
+- `domain-status-tone.ts`: `STOCK_SIGNAL_TONE`/`stockSignalTone` (UI Convention 6 — sahifada
+  lokal jadval TAQIQ). `layout.tsx` subnav +2. i18n ru+uz: 2 blok (28 + 23 kalit) + subnav 2.
+
+### «Yolg'on ishonch bermaslik» talablari (NULL ≠ 0) qanday bajarildi
+
+- **Tan narx yo'q ⇒ `amountMinor: null`**, hech qachon `0n`. Qator ro'yxatdan yo'qolmaydi
+  (ekranda «Tan narx kiritilmagan» yorlig'i), lekin **jamiga qo'shilmaydi**; har guruh
+  sarlavhasida `o'lchanmadi: N` turadi, ya'ni jamining to'liqligi ko'rinib turadi.
+- **`Stock.costBalanceMinor = 0` ham NOMA'LUM** deb qaraladi (ustun DEFAULT 0 — «yozilmagan»,
+  narx emas). Uni narx deb olish aynan 100% marja yolg'onini qaytarardi.
+- **Sotuv tarixi yo'q ⇒ `dailySaleQty`/`coverDays` NULL**, «0 dona/kun» emas; sur'atsiz
+  «tugash xavfi» va «ortiqcha zaxira» umuman hisoblanmaydi (taxmin yozilmaydi).
+- **Harakat tarixi umuman yo'q ⇒ tovar «o'lik» deb ayblanmaydi** — `no_history` sababi bilan
+  o'lchanmagan qator sifatida chiqadi.
+- **Narx foizi:** baza yo'q yoki 0 ⇒ `deltaPercent: null` va **chegara qo'llanmaydi**
+  («0%» = «o'zgarish bo'lmagan» yolg'oni, `∞%` = navbat shovqini). Valyuta almashgan
+  o'zgarishda ham foiz NULL (kurs bu modulda yo'q — konvertatsiya shartnomasi).
+- **Kesilgan tanlov OSHKORA:** `truncated` bayrog'i + ekranda banner (5000 qoldiq / 1000 audit).
+
+### Testlar (TDD — RED ko'rildi, keyin GREEN)
+
+- `stock-signals.test.ts` — **17 test**. RED dalili: modul yo'q ekan
+  `Failed to load url ./stock-signals.js`. Qoplaydi: pul o'lchovi (dona emas) · tiyin-aniq
+  kasr · NULL≠0 (4 stsenariy) · chegara ta'siri · signal kesishmasligi · manfiy qoldiq ·
+  tartib (o'lchanmagan qatorlar oxirida).
+- `price-change-control.test.ts` — **20 test**. RED dalili: xuddi shunday load-xatosi.
+  Qoplaydi: 3 narx maydoni · `salePrices` massiv diffi · **haqiqiy `{default: …}` shakli**
+  (`setDefaultSalePrice` yozadigan) · buzuq JSON yiqitmasligi · NULL≠0 · **`blocks:false`
+  regressiya qulfi (5 chegara qiymatida)** · dedup kaliti barqarorligi.
+- `manager-inventory.assembly.test.ts` — **15 test** (test-after, oshkora): tan narx tanlash
+  tartibi · qoldiqsiz-u sotuvli tovar tashlanmasligi · ombor bo'yicha ajratish · hujjat
+  turlari to'plami.
+- Regress: `src/modules/manager` **353 test yashil** · `app-boot.test.ts` **9 yashil**.
+
+### Gate
+
+| Gate | Natija |
+|---|---|
+| `@moysklad/api typecheck` | ✅ 0 |
+| `@moysklad/web typecheck` | ✅ 0 |
+| `biome` (shu fazaning 13 fayli) | ✅ 0 |
+| `pnpm lint:product` (repo bo'ylab) | ⚠️ 10 xato — **hammasi parallel sessiyaning** commit qilinmagan MK05/MK08 fayllarida (`cashier-session/shift-acceptance*`, `shared/acceptance-fsm*`, `hr-employee/offboarding.ts`, `manager/live/live-status.service.ts`). Ularga TEGILMADI (§6.1) |
+| `pnpm i18n:gate` | ✅ o'tdi |
+| `@moysklad/web` `src/__tests__` | 1173 yashil · **2 yiqilgan** — `menejer-live-boards.test.ts` (parallel sessiya `duty_equipment_out`/`duty_shift_unaccepted` kutmoqda, kalitlar hali yozilmagan). Mening o'zgarishim faqat kalit QO'SHDI |
+
+### Ochiq qarzlar (jimgina qoldirilmadi)
+
+1. **Ommaviy narx tahriri audit yozmaydi** — `ProductService.bulkUpdate` `logAudit` ni
+   chaqirmaydi, ya'ni «Массовое редактирование» orqali o'zgargan narx bu tarixga
+   **tushmaydi**. Ekranda `scope_note` bilan ochiq yozilgan. Tuzatish `product` modulida.
+2. **Chegaralar doimiy saqlanmaydi** — so'rov parametri. `ManagerRuleConfig` (MK06) kelganda
+   servis o'shani o'qishi kerak, so'rov esa vaqtinchalik override bo'lib qoladi.
+3. **Navbat elementi saqlanmaydi** — `workItems` faqat hisoblanadi (MK06 ombori yo'q).
+4. **Indeks o'lchanmagan** — uch `groupBy` butun `stock_operations` ustidan yuradi.
+   Katta akkauntda `EXPLAIN` bilan tekshirilishi kerak (`index-needs-matching-query-shape`).
+5. **Brauzer-QA yo'q** — Phase-2 QA navbatida.

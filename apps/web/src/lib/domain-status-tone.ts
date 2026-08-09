@@ -434,3 +434,18 @@ export const DUTY_KIND_TONE: Record<string, StateTone> = {
   kpi_pending: 'info',
 };
 export const dutyKindTone = (k: string | null | undefined): StateTone => resolve(DUTY_KIND_TONE, k);
+
+/**
+ * Zaxira signali turi (4M.8 · `stock-signals.ts` dagi STOCK_SIGNAL).
+ *
+ * `stockout_risk` — `destructive`: tugagan tovar sotuvni BUGUN to'xtatadi.
+ * `dead_money` — `warning`: pul qotgan, lekin yo'qolmagan. `overstock` —
+ * `info`: sekin muammo, e'tibor talab qiladi-yu shoshilinch emas.
+ */
+export const STOCK_SIGNAL_TONE: Record<string, StateTone> = {
+  stockout_risk: 'destructive',
+  dead_money: 'warning',
+  overstock: 'info',
+};
+export const stockSignalTone = (k: string | null | undefined): StateTone =>
+  resolve(STOCK_SIGNAL_TONE, k);
