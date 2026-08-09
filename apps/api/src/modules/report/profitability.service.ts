@@ -220,6 +220,12 @@ export interface ProfitabilityReport {
 type SalesRow = {
   gid: string | null;
   currency: string;
+  /**
+   * M-11 (Faza Q8): the document's own frozen rate (×10^8). Optional — the
+   * retail branch has no rate column of its own (its SQL pins `'UZS'`, the
+   * base) and legacy fixtures predate the column.
+   */
+  rate_value?: bigint | null;
   documents: bigint;
   qty: string;
   sum: bigint;
@@ -403,12 +409,16 @@ export class ProfitabilityService {
       excludeNullKey = true;
     }
 
-    // ---- Aggregate queries (key + currency only; labels resolved after) ---
+    // ---- Aggregate queries (key + currency + doc rate; labels after) ------
+    // M-11 (Faza Q8): `rate_value` rides in the GROUP BY so each slice is
+    // valued at the rate its own documents carry — a closed period is not
+    // restated when the Currency table moves.
     const salesRows: SalesRow[] = includeDemands
       ? await this.prisma.client.$queryRaw<SalesRow[]>`
           SELECT
             ${demandKey}::text AS gid,
             d.currency AS currency,
+            d.rate_value AS rate_value,
             COUNT(DISTINCT d.id)::bigint AS documents,
             COALESCE(SUM(dp.quantity), 0)::text AS qty,
             COALESCE(SUM((dp.quantity * dp.price_minor * (100 - dp.discount) / 100)::numeric), 0)::bigint AS sum,
@@ -417,7 +427,7 @@ export class ProfitabilityService {
           FROM demand_positions dp
           JOIN demands d ON d.id = dp.demand_id AND ${demandWhere()}
           WHERE dp.assortment_id IS NOT NULL ${posWhere('dp')}
-          GROUP BY ${demandKey}, d.currency
+          GROUP BY ${demandKey}, d.currency, d.rate_value
         `
       : [];
 
@@ -430,6 +440,7 @@ export class ProfitabilityService {
       SELECT
         ${returnKey}::text AS gid,
         sr.currency AS currency,
+        sr.rate_value AS rate_value,
         COUNT(DISTINCT sr.id)::bigint AS documents,
         COALESCE(SUM(srp.quantity), 0)::text AS qty,
         COALESCE(SUM((srp.quantity * srp.price_minor * (100 - srp.discount) / 100)::numeric), 0)::bigint AS sum,
@@ -438,7 +449,7 @@ export class ProfitabilityService {
       FROM sales_return_positions srp
       JOIN sales_returns sr ON sr.id = srp.sales_return_id AND ${returnWhere()}
       WHERE srp.assortment_id IS NOT NULL ${posWhere('srp')}
-      GROUP BY ${returnKey}, sr.currency
+      GROUP BY ${returnKey}, sr.currency, sr.rate_value
     `;
 
     // ---- Merge into per-group aggregates --------------------------------
@@ -473,7 +484,7 @@ export class ProfitabilityService {
       const a = ensure(gid);
       a.salesDocuments += Number(r.documents);
       a.salesQty += Number(r.qty || '0');
-      a.salesSum += consolidateToBase(r.sum, r.currency, ctx, seen);
+      a.salesSum += consolidateToBase(r.sum, r.currency, ctx, seen, r.rate_value ?? undefined);
       a.salesCost += r.cost; // already base
       a.costMissingLines += Number(r.costMissing ?? 0n);
     }
@@ -483,7 +494,7 @@ export class ProfitabilityService {
       const a = ensure(gid);
       a.returnDocuments += Number(r.documents);
       a.returnQty += Number(r.qty || '0');
-      a.returnSum += consolidateToBase(r.sum, r.currency, ctx, seen);
+      a.returnSum += consolidateToBase(r.sum, r.currency, ctx, seen, r.rate_value ?? undefined);
       a.returnCost += r.cost;
       a.costMissingLines += Number(r.costMissing ?? 0n);
     }
@@ -643,6 +654,10 @@ export class ProfitabilityService {
     const rspPos = filter.productId
       ? Prisma.sql`AND rsp.product_id = ${filter.productId}::uuid`
       : Prisma.empty;
+    // M-11 (Faza Q8) bu shoxga TEGMAYDI: `currency` qattiq `'UZS'` (baza) —
+    // `consolidateToBase` baza valyutada identity qaytaradi, konvertatsiya
+    // umuman bo'lmaydi, demak muzlatilgan kursning ma'nosi yo'q. Chakana
+    // valyutasi bir kun ochilsa, o'shanda `rs.rate_value` ham qo'shiladi.
     const rows = await this.prisma.client.$queryRaw<SalesRow[]>`
       SELECT
         ${key}::text AS gid,
@@ -772,6 +787,8 @@ export class ProfitabilityService {
     type BucketRow = {
       bucket: Date;
       currency: string;
+      /** M-11 (Faza Q8): hujjatning muzlatilgan kursi (×10^8). */
+      rate_value?: bigint | null;
       documents: bigint;
       qty: string;
       sum: bigint;
@@ -783,6 +800,7 @@ export class ProfitabilityService {
     const salesBuckets: BucketRow[] = q.includeDemands
       ? await this.prisma.client.$queryRaw<BucketRow[]>`
           SELECT ${trunc('d.moment')} AS bucket, d.currency AS currency,
+            d.rate_value AS rate_value,
             COUNT(DISTINCT d.id)::bigint AS documents,
             COALESCE(SUM(dp.quantity), 0)::text AS qty,
             COALESCE(SUM((dp.quantity * dp.price_minor * (100 - dp.discount) / 100)::numeric), 0)::bigint AS sum,
@@ -791,11 +809,12 @@ export class ProfitabilityService {
           FROM demand_positions dp
           JOIN demands d ON d.id = dp.demand_id AND ${this.windowedDemandWhere(accountId, filter, gte, lt)}
           WHERE dp.assortment_id IS NOT NULL ${q.posWhere('dp')}
-          GROUP BY 1, d.currency
+          GROUP BY 1, d.currency, d.rate_value
         `
       : [];
     const returnBuckets: BucketRow[] = await this.prisma.client.$queryRaw<BucketRow[]>`
       SELECT ${trunc('sr.moment')} AS bucket, sr.currency AS currency,
+        sr.rate_value AS rate_value,
         COUNT(DISTINCT sr.id)::bigint AS documents,
         COALESCE(SUM(srp.quantity), 0)::text AS qty,
         COALESCE(SUM((srp.quantity * srp.price_minor * (100 - srp.discount) / 100)::numeric), 0)::bigint AS sum,
@@ -804,7 +823,7 @@ export class ProfitabilityService {
       FROM sales_return_positions srp
       JOIN sales_returns sr ON sr.id = srp.sales_return_id AND ${this.windowedReturnWhere(accountId, filter, gte, lt)}
       WHERE srp.assortment_id IS NOT NULL ${q.posWhere('srp')}
-      GROUP BY 1, sr.currency
+      GROUP BY 1, sr.currency, sr.rate_value
     `;
 
     const map = new Map<string, ProfitabilityChartBucket>();
@@ -839,7 +858,8 @@ export class ProfitabilityService {
       b.salesDocuments += Number(r.documents);
       b.salesQuantity = trimNum(Number(b.salesQuantity) + Number(r.qty || '0'));
       b.salesSumMinor = (
-        BigInt(b.salesSumMinor) + consolidateToBase(r.sum, r.currency, ctx, seen)
+        BigInt(b.salesSumMinor) +
+        consolidateToBase(r.sum, r.currency, ctx, seen, r.rate_value ?? undefined)
       ).toString();
       b.salesSumCostMinor = (BigInt(b.salesSumCostMinor) + r.cost).toString();
       b.costMissingLines += Number(r.costMissing ?? 0n);
@@ -849,7 +869,8 @@ export class ProfitabilityService {
       b.returnDocuments += Number(r.documents);
       b.returnQuantity = trimNum(Number(b.returnQuantity) + Number(r.qty || '0'));
       b.returnSumMinor = (
-        BigInt(b.returnSumMinor) + consolidateToBase(r.sum, r.currency, ctx, seen)
+        BigInt(b.returnSumMinor) +
+        consolidateToBase(r.sum, r.currency, ctx, seen, r.rate_value ?? undefined)
       ).toString();
       b.returnSumCostMinor = (BigInt(b.returnSumCostMinor) + r.cost).toString();
       b.costMissingLines += Number(r.costMissing ?? 0n);

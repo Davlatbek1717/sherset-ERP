@@ -112,3 +112,45 @@ describe('UnitEconomicsService — multi-currency fold', () => {
     expect(r.rows[0]?.productId).toBe('big');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Faza Q8 / M-11 — tarixiy kurs (hujjatning o'z `rate_value`'si).
+// Mahsulot daromadi endi sotuv hujjatining kursida baholanadi (COGS allaqachon
+// bazada). Identity (1e8) = «kurs yo'q» ⇒ joriy kontekst kursi.
+// ---------------------------------------------------------------------------
+type HistUERow = CannedUERow & { rate_value?: bigint };
+
+function makeUEServiceAt(rows: HistUERow[], usdRate: bigint) {
+  const client = {
+    currency: {
+      findMany: vi.fn(async () => [
+        { code: 'UZS', default: true, rateValue: E8, multiplicity: 1, indirect: false },
+        { code: 'USD', default: false, rateValue: usdRate * E8, multiplicity: 1, indirect: false },
+      ]),
+    },
+    $queryRaw: vi.fn(async () => rows),
+  };
+  return new UnitEconomicsService({ client } as never);
+}
+
+const usdUESale = (rateValue?: bigint): HistUERow[] => [
+  { ...row({ currency: 'USD', revenue_minor: 10_000n, cogs_minor: 0n }), rate_value: rateValue },
+];
+
+describe('UnitEconomicsService — tarixiy kurs (M-11)', () => {
+  it('hujjat o‘z kursida baholanadi (joriy kurs EMAS)', async () => {
+    const r = await makeUEServiceAt(usdUESale(11_000n * E8), 12_000n).report('acc', RANGE);
+    expect(r.rows[0]?.revenueMinor).toBe('110000000');
+  });
+
+  it('joriy kurs 12 000 → 15 000 bo‘lsa ham o‘tgan davr O‘ZGARMAYDI', async () => {
+    const before = await makeUEServiceAt(usdUESale(11_000n * E8), 12_000n).report('acc', RANGE);
+    const after = await makeUEServiceAt(usdUESale(11_000n * E8), 15_000n).report('acc', RANGE);
+    expect(after.rows[0]?.revenueMinor).toBe(before.rows[0]?.revenueMinor);
+  });
+
+  it('identity-qo‘riqchi: default 1e8 kurs joriy kontekstga tushadi', async () => {
+    const r = await makeUEServiceAt(usdUESale(E8), 12_000n).report('acc', RANGE);
+    expect(r.rows[0]?.revenueMinor).toBe('120000000');
+  });
+});

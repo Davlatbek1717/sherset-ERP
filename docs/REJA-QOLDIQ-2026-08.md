@@ -284,7 +284,7 @@ default-kurs (1e8) hujjat joriy kontekstga tushadi (identity-qo'riqchi).
 > `docs/REJA-QOLDIQ-2026-08.md` — **Faza Q8**. O'ZGARMAS QOIDALAR. Faza 17 hisobotini o'qi (mexanizm +
 > identity-qo'riqchi tayyor). 8 hisobotga `rate_value` tarqat. TDD: davr-barqarorlik testlari. Gate.
 > Hisobot, TO'XTA.
-**◻ HISOBOT:** _(agent to'ldiradi)_
+**☑ HISOBOT (2026-08-09):** BAJARILDI — batafsili «HISOBOT JURNALI → Faza Q8» da.
 
 ---
 
@@ -1457,3 +1457,116 @@ resurs) yolg'iz sessiyada qo'llandi. Bu yozuv faylga **append** bilan qo'shildi 
 **marker-kesish YO'Q** (`doc-append-marker-truncation` xotirasi), Q1–Q6 yozuvlariga TEGILMADI.
 
 **Commit:** `fix(hr): faza q7 — hrattendance soft-delete + audit + jarima storno (HR-13)`
+
+---
+
+## Faza Q8 — Tarixiy kurs: qolgan 8 davr-oqim hisoboti (`M-11`) (2026-08-09) — **Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q**
+
+**Manba:** Faza 17 hisoboti DEFER-1. Mexanizm yangidan YOZILMADI — Faza 17 ning
+`consolidateToBase(amount, code, ctx, tally, docRateValue?)` 5-argumenti va uning
+**identity-qo'riqchisi** (`report-rate-ctx.util.ts:103-112`) o'zgarishsiz qayta ishlatildi;
+bu faza faqat `rate_value` ni har hisobotning guruh-kalitiga olib borib, argument sifatida uzatadi.
+Namuna: `pnl.service.ts` + `cash-flow.service.ts`.
+
+### Da'volarni kodda tasdiqlash (§2) — 8/8 HAQIQIY
+
+Rejadagi ro'yxat 2026-08-09 holatida hamon to'g'ri: sakkizala servis ham `consolidateToBase` ni
+**5-argumentsiz** chaqirardi, ya'ni har biri Currency jadvalining BUGUNGI kursida konsolidatsiya
+qilardi ⇒ kurs qimirlaganda yopilgan davr qayta yozilardi. Grep bilan tekshirilgan chaqiruv o'rinlari
+(fix'dan oldingi qator raqamlari): `profitability` 476/486/842/852 · `sales-by-channel` 150 ·
+`sales-by-hour` 120 · `average-basket` 145 · `unit-economics` 181 · `purchase-management` 195-198 ·
+`warehouse-ops` 117/123 · `report.service` 279/280/287/408/421/422/483/494/500/600.
+**«Konvertatsiya qilmaydi, tegilmadi»** toifasiga tushgan hisobot BO'LMADI — hammasi ko'p-valyutali
+konsolidatsiya qilardi. Sxema tomoni ham tasdiqlandi: `Demand`, `SalesReturn`, `Supply`,
+`PurchaseOrder` (va yana 29 hujjat modeli) `rate_value BigInt @default(100000000)` saqlaydi.
+
+**TEGILMAGAN (ataylab, rejaning o'z qoidasi):** `aging` va `counterparty-balance` — ular ochiq
+qoldiqni **bugungi** kursda revalyatsiya qiladi (Faza 17 qarori). Kod o'zgarmadi.
+
+**Bitta ichki shox TEGILMADI (o'lchangan, ko'r-ko'rona emas):** `profitability.queryRetailSales`
+SQL'i `'UZS' AS currency` ni **qattiq yozadi** (chakana hamisha baza valyutada) ⇒
+`consolidateToBase` u yerda identity qaytaradi, konvertatsiya umuman bo'lmaydi, demak muzlatilgan
+kursning ma'nosi yo'q. Kodda izoh qoldirildi (chakana valyutasi ochilsa `rs.rate_value` qo'shiladi).
+
+### O'zgarishlar (7 servis + 1 Prisma-groupBy servis)
+
+| Fayl | O'zgarish |
+|---|---|
+| `report/sales-by-channel.service.ts` | `Row.rate_value`; SELECT + `GROUP BY … d.currency, d.rate_value`; revenue → 5-argument |
+| `report/sales-by-hour.service.ts` | shu naqsh (`GROUP BY hour, d.currency, d.rate_value`) |
+| `report/average-basket.service.ts` | shu naqsh, `$queryRawUnsafe` pozitsion so'rovida (`GROUP BY bucket, d.currency, d.rate_value`) |
+| `report/unit-economics.service.ts` | qator endi (product, currency, **rate_value**); revenue → 5-argument (COGS baza, tegilmadi) |
+| `report/purchase-management.service.ts` | `po.rate_value` kalitga; **to'rtala** pul ustuni (ordered/received/invoiced/payed) bitta `docRate` bilan |
+| `report/warehouse-ops.service.ts` | Prisma `groupBy(['currency'])` → `groupBy(['currency','rateValue'])` — Supply (kirim) va Demand (chiqim) |
+| `report/profitability.service.ts` | 4 o'rin: agregat demand + agregat return + chart `salesBuckets` + chart `returnBuckets`; `SalesRow.rate_value?` (retail shoxi uchun ixtiyoriy) |
+| `report/report.service.ts` | **uchala mexanizm**: `$queryRaw` totals (demands + sales_returns), `groupByDate` (demands + sales_returns), Prisma `groupByFk` (`by:[fk,'currency','rateValue']`), `groupByProduct` (`d.rate_value`) |
+
+Javob shakliga **yangi maydon qo'shilmadi** (`unconvertedByCurrency` allaqachon Faza 17'da bor) ⇒
+FE iste'molchilari tegilmadi, web build'iga ta'sir yo'q.
+
+### TDD — RED jonli o'lchandi
+
+Avval 29 test yozildi (8 fayl), **RED: `20 failed / 342 passed` (362)**, 8 test fayli qizil.
+Fix'dan keyin **`362 passed` (38 fayl), 0 failed**.
+> Qizil bo'lmagan 9 test — ataylab **negativ-nazorat**: identity-qo'riqchi testlari (`rate_value = 1e8`
+> ⇒ joriy kontekst kursi) fix'dan OLDIN ham yashil bo'lishi SHART, aks holda qo'riqchi ishlamayapti
+> degani. Ular fix'dan keyin ham yashil qoldi ⇒ o'zgarish mavjud (default-kursli) qatorlar uchun
+> bayt-ma-bayt neytral.
+
+Har hisobot uchun bir xil uchlik: (a) **hujjat o'z kursida** baholanadi (11 000, joriy 12 000 EMAS);
+(b) **davr barqarorligi** — joriy kurs 12 000 → 15 000 bo'lganda o'tgan davr natijasi O'ZGARMAYDI;
+(c) **identity-qo'riqchi** — `rate_value = 1e8` bo'lgan USD hujjat joriy kontekst kursiga tushadi
+(120 000 000). Qo'shimcha: `profitability` — qaytarish o'z kursida (netto foyda); `report.service` —
+FK-fold va product-fold alohida; `warehouse-ops` — chiqim (Demand) tomoni ham.
+
+| Test fayli | Holat | Yangi testlar |
+|---|---|---|
+| `sales-by-channel.service.test.ts` | Edit (append) | +3 |
+| `sales-by-hour.service.test.ts` | Edit (append) | +3 |
+| `average-basket.service.test.ts` | Edit (append) | +3 |
+| `unit-economics.service.test.ts` | Edit (append) | +3 |
+| `purchase-management.service.test.ts` | Edit (append) | +3 |
+| `profitability.service.test.ts` | Edit (append) | +4 |
+| `report.service.test.ts` | Edit (append) | +5 |
+| `warehouse-ops.service.test.ts` | **YANGI fayl** | +5 (1 ko'p-valyuta bazasi + 4 M-11) |
+
+Mavjud test-fayllar ustidan **Write QILINMADI** — faqat oxiriga append
+(`never-write-over-existing-test-file` xotirasi); har faylning qator soni append oldidan/keyin
+o'lchandi (115→177, 74→118, 68→124, 114→156, 109→162, 372→476, 147→302).
+
+### Gate (jonli o'lchangan)
+
+- `pnpm --filter @moysklad/api typecheck` → **0 xato**
+- `pnpm lint:product` → **0 error** (747 warning — siyosat bo'yicha ruxsat)
+- `vitest run report + analitika + money + currency` → **555/555 yashil** (59 fayl)
+- Regress, 3 shard (`--shard=N/3 --reporter=dot`): **1884 + 1789 + 2075 = 5748 passed / 2 skipped**
+  (Faza Q7 bazasi 5704+ dan yuqori; yangi 29 testni ayirsak 5719 — regress YO'Q)
+- Web tegilmadi (javob shakli o'zgarmadi) ⇒ `@moysklad/web` typecheck kerak emas. `i18n:gate` —
+  UI-matn tegilmadi. Migratsiya YO'Q (sxemaga tegilmadi; `rate_value` ustunlari allaqachon bor).
+
+### Qolgan qarz / DEFER
+
+1. **`dashboard.service.ts` (4 o'rin: 745, 852, 931-932) hamon joriy kursda** — rejadagi 8 nishon
+   ro'yxatiga kirmagan, shuning uchun bu fazada TEGILMADI. `money-chart` va org-balans vidjetlari
+   davr-oqim xarakterida ⇒ ehtimol keyingi faza ishi; balans-tipidagilari esa `counterparty-balance`
+   bilan bir toifada (ataylab joriy kurs) bo'lishi mumkin — **qaror qabul qilinmagan, o'lchash kerak**.
+2. **`aging` + `counterparty-balance`** — ataylab joriy kursda (revalyatsiya); o'zgarmadi.
+3. **`profitability` chakana shoxi** `'UZS'` ga qattiq bog'langan — chakana valyutasi ochilganda
+   `rs.rate_value` qo'shilishi kerak (kodda izoh bor).
+4. **Tarixiy ma'lumot uchun ta'sir hozircha NOL** — mavjud qatorlarning deyarli hammasi
+   `rate_value = 1e8` (default) ⇒ identity-qo'riqchi ularni joriy kontekstga yuboradi. Haqiqiy
+   tarixiy-kurs xulqi faqat hujjatlarda kurs muzlatila boshlagach ko'rinadi (bu — hujjat-yozish
+   tomonining qarzi, hisobot tomoniniki emas).
+5. **`M-13`** (ikki konvertor yaxlitlash farqi) — Faza 16'dan qolgan, hamon ochiq.
+6. **`unconvertedByCurrency` FE'da ko'rsatilmaydi** — Faza Q16 ishi (bu fazada ATAYLAB tegilmadi).
+7. **Browser-smoke YO'Q** — real ma'lumotda 8 hisobotning davr-barqarorligi Phase-2 QA cohortiga.
+
+### Parallel sessiya sharoiti (CLAUDE.md §6)
+
+Daraxtda foydalanuvchining o'z fayllari bor edi (`todo.md` (M), `docs/REJA-8-BOLIM-2026-08.md`,
+`qabullar-amallar-royxati.txt`, `*.xlsx`, `chek.png`, `SAYT-PROMPT.txt`, `docs/audits/…`,
+`scratchpad/`) — HECH BIRIGA TEGILMADI, `git add` faqat aniq yo'llar bilan. Bu yozuv faylga
+**append** bilan qo'shildi — **marker-kesish YO'Q** (`doc-append-marker-truncation` xotirasi),
+Q1–Q7 yozuvlariga TEGILMADI.
+
+**Commit:** `fix(report): faza q8 — tarixiy kurs qolgan davr-oqim hisobotlarida (M-11)`

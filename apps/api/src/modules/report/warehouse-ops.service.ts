@@ -81,9 +81,13 @@ export class WarehouseOpsService {
     const ctx = await loadRateContext(this.prisma.client, accountId);
     const seen = new CurrencyTally();
 
+    // M-11 (Faza Q8): the money groups key on (currency, rateValue) so each
+    // slice is consolidated at the rate ITS OWN documents were booked with —
+    // a closed period is not restated when the Currency table moves. Counts
+    // are currency/rate-independent and stay correct across the finer split.
     const [supplyByCur, supplyDrafts, demandByCur, backlogRows, doneRows] = await Promise.all([
       this.prisma.client.supply.groupBy({
-        by: ['currency'],
+        by: ['currency', 'rateValue'],
         where: { accountId, deletedAt: null, state: 'posted', moment: window },
         _count: { _all: true },
         _sum: { sumMinor: true },
@@ -92,7 +96,7 @@ export class WarehouseOpsService {
         where: { accountId, deletedAt: null, state: 'draft', moment: window },
       }),
       this.prisma.client.demand.groupBy({
-        by: ['currency'],
+        by: ['currency', 'rateValue'],
         where: { accountId, deletedAt: null, state: 'posted', moment: window },
         _count: { _all: true },
         _sum: { sumMinor: true },
@@ -114,13 +118,25 @@ export class WarehouseOpsService {
     let suppliesSum = 0n;
     for (const r of supplyByCur) {
       suppliesCount += r._count._all;
-      suppliesSum += consolidateToBase(r._sum.sumMinor ?? 0n, r.currency, ctx, seen);
+      suppliesSum += consolidateToBase(
+        r._sum.sumMinor ?? 0n,
+        r.currency,
+        ctx,
+        seen,
+        r.rateValue ?? undefined,
+      );
     }
     let demandsCount = 0;
     let demandsSum = 0n;
     for (const r of demandByCur) {
       demandsCount += r._count._all;
-      demandsSum += consolidateToBase(r._sum.sumMinor ?? 0n, r.currency, ctx, seen);
+      demandsSum += consolidateToBase(
+        r._sum.sumMinor ?? 0n,
+        r.currency,
+        ctx,
+        seen,
+        r.rateValue ?? undefined,
+      );
     }
 
     const putaway = { pending: 0, inProgress: 0, doneInWindow: 0 };

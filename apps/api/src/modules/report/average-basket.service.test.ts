@@ -66,3 +66,59 @@ describe('AverageBasketService — multi-currency consolidation', () => {
     expect(r.mixedCurrency).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Faza Q8 / M-11 — tarixiy kurs (hujjatning o'z `rate_value`'si).
+// O'rtacha chek bucket'i endi hujjat kursida baholanadi; Currency jadvali
+// qimirlaganda yopilgan oy qayta yozilmaydi. Identity (1e8) = «kurs yo'q».
+// ---------------------------------------------------------------------------
+type HistBasketRow = CannedRow & { rate_value?: bigint };
+
+function makeBasketServiceAt(rows: HistBasketRow[], usdRate: bigint) {
+  const client = {
+    currency: {
+      findMany: vi.fn(async () => [
+        { code: 'UZS', default: true, rateValue: E8, multiplicity: 1, indirect: false },
+        { code: 'USD', default: false, rateValue: usdRate * E8, multiplicity: 1, indirect: false },
+      ]),
+    },
+    $queryRawUnsafe: vi.fn(async () => rows),
+  };
+  return new AverageBasketService({ client } as never);
+}
+
+const usdBasketSale = (rateValue?: bigint): HistBasketRow[] => [
+  {
+    bucket: B1,
+    currency: 'USD',
+    order_count: 1n,
+    revenue: 10_000n,
+    total_qty: '1',
+    rate_value: rateValue,
+  },
+];
+
+describe('AverageBasketService — tarixiy kurs (M-11)', () => {
+  it('hujjat o‘z kursida baholanadi (joriy kurs EMAS)', async () => {
+    const r = await makeBasketServiceAt(usdBasketSale(11_000n * E8), 12_000n).report('acc', RANGE);
+    expect(r.totals.revenueMinor).toBe('110000000');
+    expect(r.rows[0]?.averageBasketMinor).toBe('110000000');
+  });
+
+  it('joriy kurs 12 000 → 15 000 bo‘lsa ham o‘tgan davr O‘ZGARMAYDI', async () => {
+    const before = await makeBasketServiceAt(usdBasketSale(11_000n * E8), 12_000n).report(
+      'acc',
+      RANGE,
+    );
+    const after = await makeBasketServiceAt(usdBasketSale(11_000n * E8), 15_000n).report(
+      'acc',
+      RANGE,
+    );
+    expect(after.totals.revenueMinor).toBe(before.totals.revenueMinor);
+  });
+
+  it('identity-qo‘riqchi: default 1e8 kurs joriy kontekstga tushadi', async () => {
+    const r = await makeBasketServiceAt(usdBasketSale(E8), 12_000n).report('acc', RANGE);
+    expect(r.totals.revenueMinor).toBe('120000000');
+  });
+});

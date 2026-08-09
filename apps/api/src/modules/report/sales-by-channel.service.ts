@@ -84,6 +84,8 @@ export class SalesByChannelService {
       channel_name: string | null;
       channel_type: string | null;
       currency: string;
+      /** M-11: hujjatning muzlatilgan kursi (×10^8). */
+      rate_value: bigint | null;
       order_count: bigint;
       revenue: bigint;
       qty: string;
@@ -99,12 +101,19 @@ export class SalesByChannelService {
     // join in the FROM) — a position join would count each demand's sum_minor
     // once per position (fan-out inflation). qty is a per-demand correlated
     // position-sum so it stays correct without fanning the demand rows.
+    //
+    // M-11 (Faza Q8): `d.rate_value` is part of the key so each slice is
+    // valued at the rate ITS OWN documents were booked with — a closed period
+    // is not restated when the Currency table moves. A demand carries exactly
+    // one (currency, rate_value), so the extra split keeps order_count/qty
+    // correct just like the currency split does.
     const rows = await this.prisma.client.$queryRaw<Row[]>`
       SELECT
         co.sales_channel_id::text                       AS channel_id,
         sc.name                                         AS channel_name,
         sc.type                                         AS channel_type,
         d.currency                                      AS currency,
+        d.rate_value                                    AS rate_value,
         COUNT(DISTINCT d.id)::bigint                    AS order_count,
         COALESCE(SUM(d.sum_minor), 0)::bigint           AS revenue,
         COALESCE(SUM(
@@ -120,7 +129,7 @@ export class SalesByChannelService {
         AND d.deleted_at IS NULL
         AND d.moment >= ${gte}
         AND d.moment < ${lt}
-      GROUP BY co.sales_channel_id, sc.name, sc.type, d.currency
+      GROUP BY co.sales_channel_id, sc.name, sc.type, d.currency, d.rate_value
     `;
 
     type ChannelAgg = {
@@ -147,7 +156,7 @@ export class SalesByChannelService {
         byChannel.set(key, agg);
       }
       agg.orderCount += Number(r.order_count);
-      agg.revenue += consolidateToBase(r.revenue, r.currency, ctx, seen);
+      agg.revenue += consolidateToBase(r.revenue, r.currency, ctx, seen, r.rate_value ?? undefined);
       // qty is a Decimal quantity (SUM(dp.quantity)), not an integer — Number, not BigInt.
       agg.qty += Number(r.qty || '0');
     }

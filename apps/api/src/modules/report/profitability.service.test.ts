@@ -370,3 +370,107 @@ describe('ProfitabilityService — SQL shape guard', () => {
     expect(missingCounts.length).toBe(5);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Faza Q8 / M-11 — tarixiy kurs (hujjatning o'z `rate_value`'si).
+//
+// «Прибыльность» daromadi ilgari Currency jadvalining BUGUNGI kursida
+// konsolidatsiya qilinardi ⇒ kurs qimirlaganda yopilgan davrning foydasi
+// qayta yozilardi. Endi agregat SQL (kalit, currency, rate_value) bo'yicha
+// guruhlaydi. Identity (1e8) = «kurs yo'q» ⇒ joriy kontekst kursi.
+// Chakana (retail) shoxi bundan tashqarida: uning SQL'i `'UZS'` ni qattiq
+// yozadi (hamisha baza) ⇒ konvertatsiya umuman yo'q.
+// ---------------------------------------------------------------------------
+type HistRaw = Raw & { rate_value?: bigint };
+
+function makeProfServiceAt(opts: { sales?: HistRaw[]; returns?: HistRaw[] }, usdRate: bigint) {
+  const sales = opts.sales ?? [];
+  const returns = opts.returns ?? [];
+  const client = {
+    currency: {
+      findMany: vi.fn(async () => [
+        { code: 'UZS', default: true, rateValue: E8, multiplicity: 1, indirect: false },
+        { code: 'USD', default: false, rateValue: usdRate * E8, multiplicity: 1, indirect: false },
+      ]),
+    },
+    product: {
+      findMany: vi.fn(async () => [
+        { id: 'p1', name: 'P1', code: '01928', article: null, uom: 'шт' },
+      ]),
+    },
+    variant: { findMany: vi.fn(async () => []) },
+    counterparty: { findMany: vi.fn(async () => []) },
+    employee: { findMany: vi.fn(async () => []) },
+    salesChannel: { findMany: vi.fn(async () => []) },
+    demand: { count: vi.fn(async () => 0) },
+    salesReturn: { count: vi.fn(async () => 0) },
+    $queryRaw: vi.fn(async (strings: TemplateStringsArray) => {
+      const sql = Array.from(strings).join(' ');
+      const isChart = sql.includes('AS bucket');
+      if (sql.includes('retail_sale_positions')) return [];
+      if (sql.includes('sales_return_positions')) return isChart ? [] : returns;
+      if (sql.includes('demand_positions')) return isChart ? [] : sales;
+      return [];
+    }),
+  };
+  return new ProfitabilityService({ client } as never);
+}
+
+// $100.00 = 10 000 sent sotuv, tan narx allaqachon bazada.
+const usdProfSale = (rateValue?: bigint): { sales: HistRaw[] } => ({
+  sales: [
+    {
+      gid: 'p1',
+      currency: 'USD',
+      documents: 1n,
+      qty: '1',
+      sum: 10_000n,
+      cost: 0n,
+      rate_value: rateValue,
+    },
+  ],
+});
+
+describe('ProfitabilityService — tarixiy kurs (M-11)', () => {
+  it('hujjat o‘z kursida baholanadi (joriy kurs EMAS)', async () => {
+    const r = await makeProfServiceAt(usdProfSale(11_000n * E8), 12_000n).report('acc', BASE);
+    expect(r.rows[0]?.salesSumMinor).toBe('110000000'); // 12 000 kursda 120 000 000 bo'lardi
+    expect(r.totals.salesSumMinor).toBe('110000000');
+  });
+
+  it('joriy kurs 12 000 → 15 000 bo‘lsa ham o‘tgan davr O‘ZGARMAYDI', async () => {
+    const before = await makeProfServiceAt(usdProfSale(11_000n * E8), 12_000n).report('acc', BASE);
+    const after = await makeProfServiceAt(usdProfSale(11_000n * E8), 15_000n).report('acc', BASE);
+    expect(after.totals.salesSumMinor).toBe(before.totals.salesSumMinor);
+    expect(after.totals.profitMinor).toBe(before.totals.profitMinor);
+  });
+
+  it('qaytarish ham o‘z kursida baholanadi', async () => {
+    const svc = makeProfServiceAt(
+      {
+        ...usdProfSale(11_000n * E8),
+        returns: [
+          {
+            gid: 'p1',
+            currency: 'USD',
+            documents: 1n,
+            qty: '1',
+            sum: 1_000n,
+            cost: 0n,
+            rate_value: 10_000n * E8,
+          },
+        ],
+      },
+      12_000n,
+    );
+    const r = await svc.report('acc', BASE);
+    expect(r.rows[0]?.returnSumMinor).toBe('10000000'); // 1 000 × 10 000
+    // netto = 110 000 000 − 10 000 000
+    expect(r.totals.profitMinor).toBe('100000000');
+  });
+
+  it('identity-qo‘riqchi: default 1e8 kurs joriy kontekstga tushadi', async () => {
+    const r = await makeProfServiceAt(usdProfSale(E8), 12_000n).report('acc', BASE);
+    expect(r.totals.salesSumMinor).toBe('120000000');
+  });
+});

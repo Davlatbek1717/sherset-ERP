@@ -72,3 +72,47 @@ describe('SalesByHourService — multi-currency consolidation', () => {
     expect(r.mixedCurrency).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Faza Q8 / M-11 — tarixiy kurs (hujjatning o'z `rate_value`'si).
+// Soat-bin daromadi endi hujjat kursida baholanadi; Currency jadvali
+// qimirlaganda o'tgan davr qayta yozilmaydi. Identity (1e8) = «kurs yo'q».
+// ---------------------------------------------------------------------------
+type HistHourRow = CannedRow & { rate_value?: bigint };
+
+function makeHourServiceAt(rows: HistHourRow[], usdRate: bigint) {
+  const client = {
+    currency: {
+      findMany: vi.fn(async () => [
+        { code: 'UZS', default: true, rateValue: E8, multiplicity: 1, indirect: false },
+        { code: 'USD', default: false, rateValue: usdRate * E8, multiplicity: 1, indirect: false },
+      ]),
+    },
+    $queryRaw: vi.fn(async () => rows),
+  };
+  return new SalesByHourService({ client } as never);
+}
+
+const usdHourSale = (rateValue?: bigint): HistHourRow[] => [
+  { hour: 10, currency: 'USD', order_count: 1n, revenue: 10_000n, qty: '1', rate_value: rateValue },
+];
+const hourRevenue = (r: { rows: Array<{ hour: number; revenueMinor: string }> }) =>
+  r.rows.find((x) => x.hour === 10)?.revenueMinor;
+
+describe('SalesByHourService — tarixiy kurs (M-11)', () => {
+  it('hujjat o‘z kursida baholanadi (joriy kurs EMAS)', async () => {
+    const r = await makeHourServiceAt(usdHourSale(11_000n * E8), 12_000n).report('acc', RANGE);
+    expect(hourRevenue(r)).toBe('110000000');
+  });
+
+  it('joriy kurs 12 000 → 15 000 bo‘lsa ham o‘tgan davr O‘ZGARMAYDI', async () => {
+    const before = await makeHourServiceAt(usdHourSale(11_000n * E8), 12_000n).report('acc', RANGE);
+    const after = await makeHourServiceAt(usdHourSale(11_000n * E8), 15_000n).report('acc', RANGE);
+    expect(hourRevenue(after)).toBe(hourRevenue(before));
+  });
+
+  it('identity-qo‘riqchi: default 1e8 kurs joriy kontekstga tushadi', async () => {
+    const r = await makeHourServiceAt(usdHourSale(E8), 12_000n).report('acc', RANGE);
+    expect(hourRevenue(r)).toBe('120000000');
+  });
+});

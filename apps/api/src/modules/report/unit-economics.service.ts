@@ -100,17 +100,23 @@ export class UnitEconomicsService {
     const ctx = await loadRateContext(this.prisma.client, accountId);
     const seen = new CurrencyTally();
 
-    // One row per (product, currency). Revenue is in the demand's currency,
-    // so it must be base-consolidated before products are ranked/aggregated;
-    // COGS (dp.cost_minor) is already base (§Tier-2 step A). minQty / order /
-    // limit are applied per-PRODUCT in JS (a SQL HAVING/LIMIT here would act
-    // per (product,currency) and double-count multi-currency products).
+    // One row per (product, currency, rate_value). Revenue is in the demand's
+    // currency, so it must be base-consolidated before products are ranked/
+    // aggregated; COGS (dp.cost_minor) is already base (§Tier-2 step A).
+    // minQty / order / limit are applied per-PRODUCT in JS (a SQL HAVING/LIMIT
+    // here would act per slice and double-count multi-currency products).
+    //
+    // M-11 (Faza Q8): `d.rate_value` is part of the key so each slice is valued
+    // at the rate its own demands were booked with — a closed period is not
+    // restated when the Currency table moves.
     type Row = {
       product_id: string;
       name: string | null;
       code: string | null;
       uom: string | null;
       currency: string;
+      /** M-11: hujjatning muzlatilgan kursi (×10^8). */
+      rate_value: bigint | null;
       quantity_sold: string;
       orders_count: bigint;
       revenue_minor: bigint;
@@ -128,6 +134,7 @@ export class UnitEconomicsService {
         p.code                                                       AS code,
         p.uom                                                        AS uom,
         d.currency                                                   AS currency,
+        d.rate_value                                                 AS rate_value,
         SUM(dp.quantity)::text                                       AS quantity_sold,
         COUNT(DISTINCT dp.demand_id)::bigint                         AS orders_count,
         SUM(
@@ -147,11 +154,11 @@ export class UnitEconomicsService {
        ${storeFilter}
       LEFT JOIN products p ON p.id = dp.product_id
       WHERE dp.product_id IS NOT NULL
-      GROUP BY dp.product_id, p.name, p.code, p.uom, d.currency
+      GROUP BY dp.product_id, p.name, p.code, p.uom, d.currency, d.rate_value
     `;
 
-    // Fold (product, currency) rows into one per product, consolidating
-    // revenue to base and summing the already-base COGS.
+    // Fold (product, currency, rate_value) rows into one per product,
+    // consolidating revenue to base and summing the already-base COGS.
     type Agg = {
       name: string;
       code: string | null;
@@ -178,7 +185,13 @@ export class UnitEconomicsService {
       }
       a.qty += Number.parseFloat(r.quantity_sold);
       a.orders += Number(r.orders_count);
-      a.revenue += consolidateToBase(r.revenue_minor, r.currency, ctx, seen);
+      a.revenue += consolidateToBase(
+        r.revenue_minor,
+        r.currency,
+        ctx,
+        seen,
+        r.rate_value ?? undefined,
+      );
       a.cogs += r.cogs_minor;
     }
 

@@ -92,6 +92,8 @@ export class AverageBasketService {
     type Row = {
       bucket: Date;
       currency: string;
+      /** M-11: hujjatning muzlatilgan kursi (×10^8). */
+      rate_value: bigint | null;
       order_count: bigint;
       revenue: bigint;
       total_qty: string;
@@ -105,11 +107,17 @@ export class AverageBasketService {
     // position (fan-out inflation), which would inflate the average basket.
     // total_qty is a per-demand correlated position-sum so it stays correct
     // without fanning the demand rows.
+    //
+    // M-11 (Faza Q8): `d.rate_value` joins the key so a closed bucket keeps the
+    // rate its own documents were booked with (no restatement when the Currency
+    // table moves). A demand carries one (currency, rate_value) pair, so the
+    // extra split leaves order_count / total_qty correct.
     const rows = await this.prisma.client.$queryRawUnsafe<Row[]>(
       `
       SELECT
         date_trunc($1, d.moment)                            AS bucket,
         d.currency                                          AS currency,
+        d.rate_value                                        AS rate_value,
         COUNT(DISTINCT d.id)::bigint                        AS order_count,
         COALESCE(SUM(d.sum_minor), 0)::bigint               AS revenue,
         COALESCE(SUM(
@@ -123,7 +131,7 @@ export class AverageBasketService {
         AND d.deleted_at IS NULL
         AND d.moment >= $3
         AND d.moment < $4
-      GROUP BY bucket, d.currency
+      GROUP BY bucket, d.currency, d.rate_value
       ORDER BY bucket ASC
       `,
       truncUnit,
@@ -142,7 +150,7 @@ export class AverageBasketService {
         byBucket.set(key, agg);
       }
       agg.orderCount += Number(r.order_count);
-      agg.revenue += consolidateToBase(r.revenue, r.currency, ctx, seen);
+      agg.revenue += consolidateToBase(r.revenue, r.currency, ctx, seen, r.rate_value ?? undefined);
       agg.qty += Number(r.total_qty);
     }
 

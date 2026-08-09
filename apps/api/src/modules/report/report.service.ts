@@ -233,6 +233,10 @@ export class ReportService {
     // Group by currency so document-currency revenue/VAT can be
     // base-consolidated; COGS (cost_sum_minor) is already base
     // (normalized at supply-post) and is summed directly.
+    //
+    // M-11 (Faza Q8): `rate_value` joins the key so each slice is valued at
+    // the rate its own documents carry — a closed period is not restated when
+    // the Currency table moves.
     const orgC = filter.organizationId
       ? Prisma.sql`AND organization_id = ${filter.organizationId}::uuid`
       : Prisma.empty;
@@ -249,6 +253,8 @@ export class ReportService {
 
     type Row = {
       currency: string;
+      /** M-11: hujjatning muzlatilgan kursi (×10^8). */
+      rate_value: bigint | null;
       cnt: bigint;
       sum_minor: bigint | null;
       vat_minor: bigint | null;
@@ -256,18 +262,18 @@ export class ReportService {
     };
     const [demandRows, returnRows] = await Promise.all([
       this.prisma.client.$queryRaw<Row[]>`
-        SELECT currency, COUNT(*)::bigint AS cnt,
+        SELECT currency, rate_value, COUNT(*)::bigint AS cnt,
           SUM(sum_minor)::bigint AS sum_minor,
           SUM(vat_sum_minor)::bigint AS vat_minor,
           SUM(cost_sum_minor)::bigint AS cost_minor
         FROM demands WHERE account_id = ${accountId}::uuid ${win} ${agentC} ${orgC} ${storeC}
-        GROUP BY currency`,
+        GROUP BY currency, rate_value`,
       this.prisma.client.$queryRaw<Row[]>`
-        SELECT currency, COUNT(*)::bigint AS cnt,
+        SELECT currency, rate_value, COUNT(*)::bigint AS cnt,
           SUM(sum_minor)::bigint AS sum_minor,
           NULL::bigint AS vat_minor, NULL::bigint AS cost_minor
         FROM sales_returns WHERE account_id = ${accountId}::uuid ${win} ${agentC} ${orgC} ${storeC}
-        GROUP BY currency`,
+        GROUP BY currency, rate_value`,
     ]);
 
     let salesCount = 0;
@@ -276,15 +282,22 @@ export class ReportService {
     let cost = 0n;
     for (const r of demandRows) {
       salesCount += Number(r.cnt);
-      sales += consolidateToBase(r.sum_minor ?? 0n, r.currency, ctx, seen);
-      vat += consolidateToBase(r.vat_minor ?? 0n, r.currency, ctx, seen);
+      const docRate = r.rate_value ?? undefined;
+      sales += consolidateToBase(r.sum_minor ?? 0n, r.currency, ctx, seen, docRate);
+      vat += consolidateToBase(r.vat_minor ?? 0n, r.currency, ctx, seen, docRate);
       cost += r.cost_minor ?? 0n; // already base
     }
     let returnsCount = 0;
     let returns = 0n;
     for (const r of returnRows) {
       returnsCount += Number(r.cnt);
-      returns += consolidateToBase(r.sum_minor ?? 0n, r.currency, ctx, seen);
+      returns += consolidateToBase(
+        r.sum_minor ?? 0n,
+        r.currency,
+        ctx,
+        seen,
+        r.rate_value ?? undefined,
+      );
     }
     const net = sales - returns;
     const profit = net - cost;
@@ -347,12 +360,14 @@ export class ReportService {
     const optionalAnd = (col: string, val: string | undefined) =>
       val ? Prisma.sql`AND ${Prisma.raw(col)} = ${val}::uuid` : Prisma.empty;
 
-    // Group by (bucket, currency); revenue/VAT base-consolidated per
-    // currency in TS, COGS summed directly (already base).
+    // Group by (bucket, currency, rate_value); revenue/VAT base-consolidated
+    // per slice in TS at the DOCUMENT's own rate (M-11, Faza Q8), COGS summed
+    // directly (already base).
     const demandRows = await this.prisma.client.$queryRaw<
       Array<{
         bucket: Date;
         currency: string;
+        rate_value: bigint | null;
         cnt: bigint;
         sum_minor: bigint | null;
         vat_minor: bigint | null;
@@ -362,6 +377,7 @@ export class ReportService {
       SELECT
         date_trunc(${truncUnit}, moment AT TIME ZONE 'UTC') AS bucket,
         currency,
+        rate_value,
         COUNT(*)::bigint AS cnt,
         SUM(sum_minor)::bigint AS sum_minor,
         SUM(vat_sum_minor)::bigint AS vat_minor,
@@ -375,16 +391,23 @@ export class ReportService {
         ${optionalAnd('agent_id', filter.counterpartyId)}
         ${optionalAnd('organization_id', filter.organizationId)}
         ${optionalAnd('store_id', filter.storeId)}
-      GROUP BY bucket, currency
+      GROUP BY bucket, currency, rate_value
       ORDER BY bucket ASC
     `;
 
     const returnRows = await this.prisma.client.$queryRaw<
-      Array<{ bucket: Date; currency: string; cnt: bigint; sum_minor: bigint | null }>
+      Array<{
+        bucket: Date;
+        currency: string;
+        rate_value: bigint | null;
+        cnt: bigint;
+        sum_minor: bigint | null;
+      }>
     >`
       SELECT
         date_trunc(${truncUnit}, moment AT TIME ZONE 'UTC') AS bucket,
         currency,
+        rate_value,
         COUNT(*)::bigint AS cnt,
         SUM(sum_minor)::bigint AS sum_minor
       FROM sales_returns
@@ -396,7 +419,7 @@ export class ReportService {
         ${optionalAnd('agent_id', filter.counterpartyId)}
         ${optionalAnd('organization_id', filter.organizationId)}
         ${optionalAnd('store_id', filter.storeId)}
-      GROUP BY bucket, currency
+      GROUP BY bucket, currency, rate_value
       ORDER BY bucket ASC
     `;
 
@@ -405,7 +428,13 @@ export class ReportService {
       const key = r.bucket.toISOString();
       const acc = returnsByBucket.get(key) ?? { cnt: 0, sum: 0n };
       acc.cnt += Number(r.cnt);
-      acc.sum += consolidateToBase(r.sum_minor ?? 0n, r.currency, ctx, seen);
+      acc.sum += consolidateToBase(
+        r.sum_minor ?? 0n,
+        r.currency,
+        ctx,
+        seen,
+        r.rate_value ?? undefined,
+      );
       returnsByBucket.set(key, acc);
     }
 
@@ -418,8 +447,9 @@ export class ReportService {
       const key = d.bucket.toISOString();
       const acc = byBucket.get(key) ?? { date: d.bucket, cnt: 0, sales: 0n, vat: 0n, cost: 0n };
       acc.cnt += Number(d.cnt);
-      acc.sales += consolidateToBase(d.sum_minor ?? 0n, d.currency, ctx, seen);
-      acc.vat += consolidateToBase(d.vat_minor ?? 0n, d.currency, ctx, seen);
+      const docRate = d.rate_value ?? undefined;
+      acc.sales += consolidateToBase(d.sum_minor ?? 0n, d.currency, ctx, seen, docRate);
+      acc.vat += consolidateToBase(d.vat_minor ?? 0n, d.currency, ctx, seen, docRate);
       acc.cost += d.cost_minor ?? 0n; // already base
       byBucket.set(key, acc);
     }
@@ -455,19 +485,23 @@ export class ReportService {
     const demandWhere = this.demandWhere(accountId, filter);
     const returnWhere = this.returnWhere(accountId, filter);
 
-    // Group by (fk, currency); fold per fk in TS so revenue can be
+    // Group by (fk, currency, rateValue); fold per fk in TS so revenue can be
     // base-consolidated and the top-N rank runs on the CONSOLIDATED sales
     // (the SQL `take` is dropped — GROUP BY collapses to #fk × #currency
     // rows, bounded; rank+slice happens after folding).
+    //
+    // M-11 (Faza Q8): `rateValue` is part of the key so each slice keeps the
+    // rate its own documents were booked with — a closed period is not
+    // restated when the Currency table moves.
     const [demandGroups, returnGroups] = await Promise.all([
       this.prisma.client.demand.groupBy({
-        by: [fkField, 'currency'],
+        by: [fkField, 'currency', 'rateValue'],
         where: demandWhere,
         _count: { _all: true },
         _sum: { sumMinor: true, vatSumMinor: true, costSumMinor: true },
       }),
       this.prisma.client.salesReturn.groupBy({
-        by: [fkField, 'currency'],
+        by: [fkField, 'currency', 'rateValue'],
         where: returnWhere,
         _count: { _all: true },
         _sum: { sumMinor: true },
@@ -480,7 +514,13 @@ export class ReportService {
       if (!id) continue;
       const acc = returnsByFk.get(id) ?? { cnt: 0, sum: 0n };
       acc.cnt += r._count._all;
-      acc.sum += consolidateToBase((r._sum.sumMinor as bigint | null) ?? 0n, r.currency, ctx, seen);
+      acc.sum += consolidateToBase(
+        (r._sum.sumMinor as bigint | null) ?? 0n,
+        r.currency,
+        ctx,
+        seen,
+        r.rateValue ?? undefined,
+      );
       returnsByFk.set(id, acc);
     }
 
@@ -491,17 +531,20 @@ export class ReportService {
       if (!id) continue; // nullable ownerId: drop unassigned (parity with prior)
       const acc = byFk.get(id) ?? { cnt: 0, sales: 0n, vat: 0n, cost: 0n };
       acc.cnt += g._count._all;
+      const docRate = g.rateValue ?? undefined;
       acc.sales += consolidateToBase(
         (g._sum.sumMinor as bigint | null) ?? 0n,
         g.currency,
         ctx,
         seen,
+        docRate,
       );
       acc.vat += consolidateToBase(
         (g._sum.vatSumMinor as bigint | null) ?? 0n,
         g.currency,
         ctx,
         seen,
+        docRate,
       );
       acc.cost += (g._sum.costSumMinor as bigint | null) ?? 0n; // already base
       byFk.set(id, acc);
@@ -558,13 +601,15 @@ export class ReportService {
     // sumMinor is what the user trusts; this view shows volume + raw price
     // sum to identify best-sellers. Per-line totals would require a server
     // SQL function, scoped for a follow-up.
-    // Group by (product, demand currency); price_sum (gross qty×price in the
-    // demand's currency) is base-consolidated per currency, then products are
-    // ranked by consolidated revenue (SQL LIMIT dropped → JS rank+slice).
+    // Group by (product, demand currency, doc rate); price_sum (gross qty×price
+    // in the demand's currency) is base-consolidated per slice at the DOCUMENT's
+    // own rate (M-11, Faza Q8), then products are ranked by consolidated revenue
+    // (SQL LIMIT dropped → JS rank+slice).
     const productRows = await this.prisma.client.$queryRaw<
       Array<{
         product_id: string | null;
         currency: string;
+        rate_value: bigint | null;
         qty: string;
         price_sum: bigint | null;
         cnt: bigint;
@@ -573,6 +618,7 @@ export class ReportService {
       SELECT
         dp.product_id AS product_id,
         d.currency AS currency,
+        d.rate_value AS rate_value,
         SUM(dp.quantity)::text AS qty,
         SUM(dp.price_minor * dp.quantity)::numeric::bigint AS price_sum,
         COUNT(*)::bigint AS cnt
@@ -588,7 +634,7 @@ export class ReportService {
         ${optionalAnd('d.organization_id', filter.organizationId)}
         ${optionalAnd('d.store_id', filter.storeId)}
         ${filter.productId ? Prisma.sql`AND dp.product_id = ${filter.productId}::uuid` : Prisma.empty}
-      GROUP BY dp.product_id, d.currency
+      GROUP BY dp.product_id, d.currency, d.rate_value
     `;
 
     // Fold per product: revenue consolidated to base, qty (currency-independent) + count summed.
@@ -597,7 +643,13 @@ export class ReportService {
       if (!r.product_id) continue;
       const acc = byProduct.get(r.product_id) ?? { qty: 0, revenue: 0n, cnt: 0 };
       acc.qty += Number(r.qty);
-      acc.revenue += consolidateToBase(r.price_sum ?? 0n, r.currency, ctx, seen);
+      acc.revenue += consolidateToBase(
+        r.price_sum ?? 0n,
+        r.currency,
+        ctx,
+        seen,
+        r.rate_value ?? undefined,
+      );
       acc.cnt += Number(r.cnt);
       byProduct.set(r.product_id, acc);
     }

@@ -106,6 +106,8 @@ export class PurchaseManagementService {
       agent_name: string | null;
       agent_legal_title: string | null;
       currency: string;
+      /** M-11: hujjatning muzlatilgan kursi (×10^8). */
+      rate_value: bigint | null;
       orders_count: bigint;
       ordered_sum_minor: bigint;
       received_sum_minor: bigint;
@@ -126,12 +128,17 @@ export class PurchaseManagementService {
     // base-consolidated in JS. Counts are currency-independent. Top-N
     // ranking runs on the CONSOLIDATED ordered sum, so the SQL LIMIT is
     // dropped (GROUP BY collapses to #agent × #currency rows — bounded).
+    //
+    // M-11 (Faza Q8): `po.rate_value` joins the key so every money pillar is
+    // valued at the rate the purchase order itself carries — a closed period
+    // is not restated when the Currency table moves.
     const rows = await this.prisma.client.$queryRaw<Row[]>`
       SELECT
         po.agent_id::text                                            AS agent_id,
         cp.name                                                      AS agent_name,
         cp.legal_title                                               AS agent_legal_title,
         po.currency                                                  AS currency,
+        po.rate_value                                                AS rate_value,
         COUNT(*)::bigint                                             AS orders_count,
         SUM(po.sum_minor)::bigint                                    AS ordered_sum_minor,
         SUM(po.received_sum_minor)::bigint                           AS received_sum_minor,
@@ -158,7 +165,7 @@ export class PurchaseManagementService {
         AND po.moment < ${lt}::timestamptz
         ${storeFilter}
         ${orgFilter}
-      GROUP BY po.agent_id, cp.name, cp.legal_title, po.currency
+      GROUP BY po.agent_id, cp.name, cp.legal_title, po.currency, po.rate_value
     `;
 
     type AgentAgg = {
@@ -192,10 +199,11 @@ export class PurchaseManagementService {
         byAgent.set(r.agent_id, agg);
       }
       agg.ordersCount += Number(r.orders_count);
-      agg.ordered += consolidateToBase(r.ordered_sum_minor, r.currency, ctx, seen);
-      agg.received += consolidateToBase(r.received_sum_minor, r.currency, ctx, seen);
-      agg.invoiced += consolidateToBase(r.invoiced_sum_minor, r.currency, ctx, seen);
-      agg.payed += consolidateToBase(r.payed_sum_minor, r.currency, ctx, seen);
+      const docRate = r.rate_value ?? undefined;
+      agg.ordered += consolidateToBase(r.ordered_sum_minor, r.currency, ctx, seen, docRate);
+      agg.received += consolidateToBase(r.received_sum_minor, r.currency, ctx, seen, docRate);
+      agg.invoiced += consolidateToBase(r.invoiced_sum_minor, r.currency, ctx, seen, docRate);
+      agg.payed += consolidateToBase(r.payed_sum_minor, r.currency, ctx, seen, docRate);
       agg.completed += Number(r.completed_count);
       agg.onTime += Number(r.on_time_count);
     }
