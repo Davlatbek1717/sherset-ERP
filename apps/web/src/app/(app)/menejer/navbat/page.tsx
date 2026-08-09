@@ -14,6 +14,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useState } from 'react';
+import { CommentTemplatePicker } from '../_components/comment-template-picker';
 
 /** BE `work-item-fsm.ts` dagi WORK_ITEM_ACTION bilan mos. */
 type QueueAction =
@@ -116,6 +117,12 @@ export default function MenejerNavbatPage() {
   const [pendingAction, setPendingAction] = useState<QueueAction | null>(null);
   const [reason, setReason] = useState('');
   const [comment, setComment] = useState('');
+  /**
+   * MK20 — tanlangan shablon. Jurnalga TUSHMAYDI: u yerga matn ketadi
+   * (`comment`). Bu qiymat faqat «qaysi shablon ishlatildi» statistikasi
+   * uchun BE ga uzatiladi.
+   */
+  const [templateId, setTemplateId] = useState<string | null>(null);
 
   const query = new URLSearchParams();
   if (ruleType) query.set('ruleType', ruleType);
@@ -137,6 +144,7 @@ export default function MenejerNavbatPage() {
     setPendingAction(null);
     setReason('');
     setComment('');
+    setTemplateId(null);
   };
 
   const sync = useMutation({
@@ -145,11 +153,19 @@ export default function MenejerNavbatPage() {
   });
 
   const act = useMutation({
-    mutationFn: (v: { id: string; action: QueueAction; reasonCode?: string; comment?: string }) =>
+    mutationFn: (v: {
+      id: string;
+      action: QueueAction;
+      reasonCode?: string;
+      comment?: string;
+      templateId?: string | null;
+    }) =>
       api.post(`/manager/queue/${v.id}/action`, {
         action: v.action,
         ...(v.reasonCode ? { reasonCode: v.reasonCode } : {}),
         ...(v.comment ? { comment: v.comment } : {}),
+        // MK20 — statistika uchun; jurnalga MATN yoziladi, havola emas.
+        ...(v.templateId ? { templateId: v.templateId } : {}),
       }),
     onSuccess: () => {
       closeForm();
@@ -168,6 +184,7 @@ export default function MenejerNavbatPage() {
       setPendingAction(action);
       setReason('');
       setComment('');
+      setTemplateId(null);
       return;
     }
     act.mutate({ id: row.id, action });
@@ -357,6 +374,20 @@ export default function MenejerNavbatPage() {
                     </NativeSelect>
                   </label>
 
+                  {/* MK20 — shablon TAKLIF qiladi; matn quyidagi maydonda
+                      tahrirlanadi (majburlanmaydi). */}
+                  <CommentTemplatePicker
+                    action={pendingAction}
+                    ruleType={row.ruleType}
+                    data-test-id={`manager-queue-template-${row.id}`}
+                    onPick={(pick) => {
+                      setTemplateId(pick.templateId);
+                      // Matn izoh maydoniga TUSHADI — bu yerdan menejer uni
+                      // tahrirlaydi va jurnalga aynan shu matn ketadi.
+                      setComment(pick.text ?? '');
+                    }}
+                  />
+
                   <div className="min-w-[240px] flex-1">
                     <Input
                       value={comment}
@@ -376,6 +407,7 @@ export default function MenejerNavbatPage() {
                         action: pendingAction,
                         reasonCode: reason,
                         comment: comment.trim() || undefined,
+                        templateId,
                       })
                     }
                     data-test-id={`manager-queue-submit-${row.id}`}

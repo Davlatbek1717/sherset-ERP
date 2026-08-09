@@ -15,6 +15,7 @@ import {
 import { resolveShift } from '../../hr/attendance-geo/resolve-shift.util.js';
 import { monthInstantBounds } from '../../hr/hr-salary/payroll-formula.util.js';
 import { HR_TZ, localDateOnly } from '../../hr/hr-shared/tz.util.js';
+import { ManagerCommentTemplateService } from '../comments/manager-comment-template.service.js';
 import {
   DEFAULT_WINDOW_DAYS,
   ManagerInventoryService,
@@ -143,6 +144,12 @@ export class ManagerQueueService {
      * ko'rardi.
      */
     @Inject(ManagerInventoryService) private readonly inventory: ManagerInventoryService,
+    /**
+     * MK20 — shablon izohlar. Servis faqat MATN qaytaradi: jurnalga shablon
+     * havolasi EMAS, uning nusxasi tushadi (`comment-templates.ts` izohi).
+     */
+    @Inject(ManagerCommentTemplateService)
+    private readonly commentTemplates: ManagerCommentTemplateService,
   ) {}
 
   // ── Qoida sozlamalari ─────────────────────────────────────────────────────
@@ -853,6 +860,16 @@ export class ManagerQueueService {
     if (!item) throw new NotFoundException('Navbat elementi topilmadi');
 
     const from = item.status as WorkItemStatus;
+
+    // MK20 — izoh matni FSM tekshiruvidan OLDIN materiallashadi: `other`
+    // sababida izoh MAJBURIY, ya'ni shablondan kelgan matn ham shu shartni
+    // qanoatlantirishi kerak. Aks holda menejer shablon tanlagan holda
+    // «izoh majburiy» xatosini olardi.
+    const comment = await this.commentTemplates.resolveComment(accountId, {
+      templateId: body.templateId,
+      comment: body.comment,
+    });
+
     // §5.3 — sabab kodlari QOIDAGA bog'langan: «raqobatchi narxi» tan narxdan
     // past sotuvni yopadi, kechikishni EMAS. Umumiy kodlar ikkalasida ham
     // ishlaydi (MK06 regressiyasi yo'q).
@@ -861,7 +878,7 @@ export class ManagerQueueService {
       action: body.action as never,
       actor: actor.actor,
       reasonCode: body.reasonCode,
-      comment: body.comment,
+      comment: comment ?? undefined,
     });
 
     if (!verdict.ok) {
@@ -895,7 +912,8 @@ export class ManagerQueueService {
           ...(closing
             ? {
                 resolutionCode: body.reasonCode ?? null,
-                resolutionComment: body.comment ?? null,
+                // Shablon MATNI (havola emas) — jurnal qatori bilan bir xil.
+                resolutionComment: comment,
                 resolvedById: actor.actorId,
                 resolvedAt: now,
               }
@@ -917,7 +935,7 @@ export class ManagerQueueService {
           actorType: actor.actor,
           actorId: actor.actorId,
           reasonCode: body.reasonCode ?? null,
-          comment: body.comment ?? null,
+          comment,
         },
       });
 

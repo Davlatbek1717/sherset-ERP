@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { materializeComment } from '../comments/comment-templates.js';
 import { DailyKpiAcceptanceService } from './daily-kpi-acceptance.service.js';
 import { BUILT_IN_CATALOG } from './kpi-metrics.js';
 
@@ -89,7 +90,18 @@ function makeService(opts: {
       .fn()
       .mockResolvedValue(new Map([...BUILT_IN_CATALOG.keys()].map((k) => [k, `def-${k}`]))),
   };
-  const svc = new DailyKpiAcceptanceService({ client } as never, catalog as never);
+  // MK20 — shablon servisi dublyori (bu yerda shablonsiz yo'l sinaladi;
+  // sof funksiya bilan, xulq bir xil qolsin).
+  const commentTemplates = {
+    resolveComment: vi.fn(async (_acc: string, input: { comment?: string | null }) =>
+      materializeComment({ comment: input.comment }),
+    ),
+  };
+  const svc = new DailyKpiAcceptanceService(
+    { client } as never,
+    catalog as never,
+    commentTemplates as never,
+  );
   return { svc, dayUpdateMany, eventCreate, metricUpdate, client };
 }
 

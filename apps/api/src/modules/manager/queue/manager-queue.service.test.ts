@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
+import { materializeComment } from '../comments/comment-templates.js';
 import { ManagerQueueService } from './manager-queue.service.js';
 import { WORK_ITEM_ACTION as ACT, WORK_ITEM_STATUS as ST } from './work-item-fsm.js';
 
@@ -57,7 +58,19 @@ function makeClient(over: Record<string, unknown> = {}) {
   // Zaxira signallari MAVJUD moduldan keladi (`manager-inventory`) — navbat
   // o'sha hisobni takrorlamaydi.
   const inventoryService = { stockSignalRows: vi.fn().mockResolvedValue({ rows: [] }) };
-  const service = new ManagerQueueService({ client } as never, inventoryService as never);
+  // MK20 — shablon servisi: bu yerda shablonsiz yo'l sinaladi, shuning uchun
+  // HAQIQIY sof funksiya bilan dublyor (matn kesish/`null` xulqi bir xil
+  // qolsin). Shablonli yo'l `comments/comment-template-wiring.test.ts` da.
+  const commentTemplates = {
+    resolveComment: vi.fn(async (_acc: string, input: { comment?: string }) =>
+      materializeComment({ comment: input.comment }),
+    ),
+  };
+  const service = new ManagerQueueService(
+    { client } as never,
+    inventoryService as never,
+    commentTemplates as never,
+  );
   return { service, client, managerWorkItem, managerWorkItemEvent, inventoryService };
 }
 

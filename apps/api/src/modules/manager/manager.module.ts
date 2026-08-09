@@ -9,6 +9,8 @@ import { ReportModule } from '../report/report.module.js';
 import { StockModule } from '../stock/stock.module.js';
 import { DebtCollectionService } from './collection/debt-collection.service.js';
 import { ManagerCollectionController } from './collection/manager-collection.controller.js';
+import { ManagerCommentTemplateController } from './comments/manager-comment-template.controller.js';
+import { ManagerCommentTemplateService } from './comments/manager-comment-template.service.js';
 import { ManagerInventoryController } from './inventory/manager-inventory.controller.js';
 import { ManagerInventoryService } from './inventory/manager-inventory.service.js';
 import { DecisionJournalService } from './journal/decision-journal.service.js';
@@ -81,6 +83,7 @@ import { ManagerSlaService } from './sla/manager-sla.service.js';
     ManagerQueueController,
     ManagerCollectionController,
     ManagerSlaController,
+    ManagerCommentTemplateController,
     ManagerJournalController,
     MoneyMapController,
   ],
@@ -98,6 +101,10 @@ import { ManagerSlaService } from './sla/manager-sla.service.js';
     ManagerQueueService,
     DebtCollectionService,
     ManagerSlaService,
+    // MK20 — `ManagerQueueService` va `DailyKpiAcceptanceService` shu servisni
+    // @Inject qiladi. Provayder unutilsa DI faqat RUNTIME'da yiqilardi
+    // (`@Global` in'yeksiya qo'riqsiz — `app-boot.test.ts` shu uchun bor).
+    ManagerCommentTemplateService,
     DecisionJournalService,
     MoneyMapService,
   ],

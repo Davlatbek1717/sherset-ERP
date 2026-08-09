@@ -215,6 +215,7 @@ export class ManagerKpiController {
       adjustValue: input.adjustValue == null ? null : BigInt(input.adjustValue),
       reasonCode: input.reasonCode,
       comment: input.comment,
+      templateId: input.templateId,
     });
   }
 

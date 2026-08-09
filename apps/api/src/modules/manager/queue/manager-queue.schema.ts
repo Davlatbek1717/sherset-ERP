@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { MAX_COMMENT_LENGTH } from '../comments/comment-templates.js';
 import { WORK_ITEM_ACTION, WORK_ITEM_STATUS } from './work-item-fsm.js';
 import { MANAGER_RULES, RULE_MODE, THRESHOLD_UNIT } from './work-item-rules.js';
 
@@ -44,7 +45,12 @@ export type QueueSyncBodyInput = z.infer<typeof QueueSyncBodySchema>;
 export const QueueActionBodySchema = z.object({
   action: z.enum(actions),
   reasonCode: z.string().min(1).max(40).optional(),
-  comment: z.string().max(2000).optional(),
+  comment: z.string().max(MAX_COMMENT_LENGTH).optional(),
+  /**
+   * MK20 — tanlangan shablon. Jurnalga uning MATNI ko'chiriladi, havola EMAS
+   * (`comment-templates.ts`). `comment` ham berilsa — tahrirlangan matn ustun.
+   */
+  templateId: z.string().uuid().optional(),
 });
 export type QueueActionBodyInput = z.infer<typeof QueueActionBodySchema>;
 

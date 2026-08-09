@@ -118,6 +118,7 @@ model Account {
   managerRuleConfigs             ManagerRuleConfig[]
   managerWorkItems               ManagerWorkItem[]
   managerWorkItemEvents          ManagerWorkItemEvent[]
+  managerCommentTemplates        ManagerCommentTemplate[]
   employeeKpiCorrections         EmployeeKpiCorrection[]
   employeeOffboardings           EmployeeOffboarding[]
   employeeOnboardings            EmployeeOnboarding[]
@@ -450,6 +451,7 @@ model Employee {
   editedManagerRuleConfigs   ManagerRuleConfig[]        @relation("ManagerRuleConfigEditor")
   managerWorkItemsAbout      ManagerWorkItem[]          @relation("ManagerWorkItemSubject")
   resolvedManagerWorkItems   ManagerWorkItem[]          @relation("ManagerWorkItemResolver")
+  createdCommentTemplates    ManagerCommentTemplate[]   @relation("ManagerCommentTemplateAuthor")
   createdExpenseBudgets      ExpenseBudget[]            @relation("ExpenseBudgetCreator")
   editedExpenseBudgets       ExpenseBudget[]            @relation("ExpenseBudgetEditor")
   retailDrawerOutRecipient   RetailDrawerCashOut[]      @relation("RetailDrawerOutRecipient")
@@ -11466,4 +11468,69 @@ model ManagerWorkItemEvent {
   /// «Qaysi sabab bilan ko'p yopilyapti» statistikasi (§5.3 ning maqsadi).
   @@index([accountId, action, createdAt(sort: Desc)])
   @@map("manager_work_item_events")
+}
+
+/// SHABLON IZOH — 4M TZ §8.1/6 (MK20). Menejer o'zi sozlaydigan tez javob
+/// matnlari: rad etish · tuzatma · ogohlantirish.
+///
+/// 🔴 JURNAL BU JADVALGA HAVOLA SAQLAMAYDI. Shablon tanlanganda uning MATNI
+/// `ManagerWorkItemEvent.comment` / `EmployeeDailyKpiEvent.comment` ustuniga
+/// NUSXA bo'lib tushadi (`comment-templates.ts` → `materializeComment`).
+/// Havola saqlansa: shablon ertaga tahrirlanadi → kechagi qaror bugun boshqacha
+/// o'qiladi, hech kim bexabar qoladi. Shuning uchun bu yerda jurnalga
+/// `templateId` tashqi kaliti YO'Q va bo'lmaydi ham — `usageCount` faqat
+/// «qaysi shablon amalda ishlatilyapti» degan statistikani beradi.
+///
+/// Nega mavjud `MessageTemplate`/`HrNotificationTemplate` ishlatilmadi: ular
+/// **jo'natgichga** bog'langan (kanal, hodisa turi, qabul qiluvchi, o'rinbosar
+/// belgilar bilan) va tashqariga xabar yuboradi. Bu esa ichki jurnal matni —
+/// hech qayerga jo'natilmaydi, kanali yo'q, amal/qoida bo'yicha taklif qilinadi.
+model ManagerCommentTemplate {
+  id        String @id @default(uuid()) @db.Uuid
+  accountId String @map("account_id") @db.Uuid
+
+  /// rejection | correction | warning (`COMMENT_TEMPLATE_KIND`). DB CHECK bilan
+  /// qulflangan — yopiq ro'yxat ikki joyda bir xil turadi.
+  kind String @db.VarChar(20)
+
+  /// `ru` | `uz`. FILTR EMAS, taklif tartibiga ta'sir qiladi: menejer ru
+  /// shablonini uz interfeysda ham ishlata olishi kerak (matn uniki).
+  locale String @default("uz") @db.VarChar(5)
+
+  /// Tanlagichda ko'rinadigan qisqa nom.
+  title String @db.VarChar(120)
+
+  /// Jurnalga ko'chiriladigan MATN. Uzunlik chegarasi izoh chegarasiga teng
+  /// (`MAX_COMMENT_LENGTH` = 2000) — aks holda yuborib bo'lmaydigan izoh
+  /// yaratilardi.
+  body String @db.Text
+
+  /// Bo'sh = hamma qoidaga taklif qilinadi. To'ldirilgan = faqat shu
+  /// `MANAGER_RULES` turlariga (masalan `BIG_DEBT`).
+  ruleTypes String[] @default([]) @map("rule_types")
+
+  /// Bo'sh = `kind` xaritasi bo'yicha (`ACTION_KIND`). To'ldirilgan = OSHKORA
+  /// biriktirish, xarita bo'yicha taklifdan ustun turadi.
+  actions String[] @default([])
+
+  sortOrder Int @default(0) @map("sort_order")
+
+  /// «Qaysi shablon amalda ishlatilyapti» — o'lchov. Jurnal bilan bog'liq EMAS.
+  usageCount Int       @default(0) @map("usage_count")
+  lastUsedAt DateTime? @map("last_used_at") @db.Timestamptz()
+
+  /// Yumshoq o'chirish. Qattiq o'chirish ham tarixni buzmasdi (matn nusxa
+  /// ko'chirilgan), lekin arxiv `usageCount` statistikasini saqlab qoladi.
+  archivedAt DateTime? @map("archived_at") @db.Timestamptz()
+
+  createdById String?  @map("created_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  account   Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdBy Employee? @relation("ManagerCommentTemplateAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+
+  /// Asosiy so'rov: «shu hisobning tirik shablonlari, turi bo'yicha».
+  @@index([accountId, archivedAt, kind])
+  @@map("manager_comment_templates")
 }

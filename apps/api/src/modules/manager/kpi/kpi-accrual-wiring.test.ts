@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+import { materializeComment } from '../comments/comment-templates.js';
 import { DailyKpiAcceptanceService } from './daily-kpi-acceptance.service.js';
 import { KPI_ACCRUAL_CONDITION_TYPE } from './kpi-accrual.js';
 import { BUILT_IN_CATALOG } from './kpi-metrics.js';
@@ -80,7 +81,17 @@ function makeService(opts: {
   const catalog = {
     resolve: vi.fn().mockResolvedValue(BUILT_IN_CATALOG),
   };
-  const service = new DailyKpiAcceptanceService({ client } as never, catalog as never);
+  // MK20 — shablon servisi dublyori (shablonsiz yo'l).
+  const commentTemplates = {
+    resolveComment: vi.fn(async (_acc: string, input: { comment?: string | null }) =>
+      materializeComment({ comment: input.comment }),
+    ),
+  };
+  const service = new DailyKpiAcceptanceService(
+    { client } as never,
+    catalog as never,
+    commentTemplates as never,
+  );
   return { service, logCreate, logFindMany, eventCreate, client, tx };
 }
 

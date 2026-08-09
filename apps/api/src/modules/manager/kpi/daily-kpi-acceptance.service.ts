@@ -11,6 +11,7 @@ import { PrismaService } from '../../../prisma/prisma.service.js';
 // TZ §3.4 — tuzatuvchi qator qoidalari (sof modul, 17 test).
 import { PAYROLL_SALES_METRIC_KEY } from '../../hr/hr-salary/payroll-acceptance.util.js';
 import { localDateOnly, startOfLocalDay } from '../../hr/hr-shared/tz.util.js';
+import { ManagerCommentTemplateService } from '../comments/manager-comment-template.service.js';
 import {
   ACTOR,
   type Actor,
@@ -65,6 +66,12 @@ export class DailyKpiAcceptanceService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(KpiMetricCatalogService) private readonly catalog: KpiMetricCatalogService,
+    /**
+     * MK20 — shablon izohlar. Jurnalga shablon MATNI ko'chiriladi (havola
+     * emas): shablon keyin tahrirlansa kechagi qaror o'zgarmasligi kerak.
+     */
+    @Inject(ManagerCommentTemplateService)
+    private readonly commentTemplates: ManagerCommentTemplateService,
   ) {}
 
   // ── Navbat ────────────────────────────────────────────────────────────────
@@ -323,17 +330,24 @@ export class DailyKpiAcceptanceService {
     ctx: ActorContext,
     id: string,
     action: DailyKpiAction,
-    input: { reasonCode?: string | null; comment?: string | null } = {},
+    input: { reasonCode?: string | null; comment?: string | null; templateId?: string | null } = {},
   ) {
     const day = await this.load(ctx, id);
     const from = day.state as DailyKpiState;
+
+    // MK20 — shablon matni FSM tekshiruvidan OLDIN: `other` sababida izoh
+    // majburiy, shablondan kelgan matn ham shu shartni qoplashi kerak.
+    const comment = await this.commentTemplates.resolveComment(ctx.accountId, {
+      templateId: input.templateId,
+      comment: input.comment,
+    });
 
     const verdict = evaluate({
       from,
       action,
       actor: ctx.actor,
       reasonCode: input.reasonCode,
-      comment: input.comment,
+      comment: comment ?? undefined,
     });
     if (!verdict.ok) throw fsmError(verdict.failure);
 
@@ -421,7 +435,8 @@ export class DailyKpiAcceptanceService {
           actorType: ctx.actor,
           actorId: ctx.actorId,
           reasonCode: input.reasonCode ?? null,
-          comment: input.comment ?? null,
+          // Shablon MATNI (havola emas) — MK20.
+          comment,
         },
       });
 
@@ -547,6 +562,7 @@ export class DailyKpiAcceptanceService {
       adjustValue: bigint | null;
       reasonCode: string;
       comment?: string | null;
+      templateId?: string | null;
     },
   ) {
     if (!metricDef(input.metricKey, await this.catalog.resolve(ctx.accountId))) {
@@ -555,6 +571,12 @@ export class DailyKpiAcceptanceService {
     const day = await this.load(ctx, id);
     const from = day.state as DailyKpiState;
 
+    // MK20 — «tuzatma» shabloni aynan shu amal uchun (`ACTION_KIND.adjust`).
+    const comment = await this.commentTemplates.resolveComment(ctx.accountId, {
+      templateId: input.templateId,
+      comment: input.comment,
+    });
+
     // Tuzatishga faqat menejer/ega haqli — xodim o'z raqamini tuzata olmaydi.
     if (ctx.actor !== ACTOR.manager && ctx.actor !== ACTOR.owner) {
       throw new ForbiddenException('Ko`rsatkichni faqat menejer tuzata oladi');
@@ -562,7 +584,7 @@ export class DailyKpiAcceptanceService {
     const verdict = evaluateAdjust({
       from,
       reasonCode: input.reasonCode,
-      comment: input.comment,
+      comment: comment ?? undefined,
     });
     if (!verdict.ok) throw fsmError(verdict.failure);
 
@@ -596,7 +618,8 @@ export class DailyKpiAcceptanceService {
           actorType: ctx.actor,
           actorId: ctx.actorId,
           reasonCode: input.reasonCode,
-          comment: input.comment ?? null,
+          // Shablon MATNI (havola emas) — MK20.
+          comment,
           detail: {
             metricKey: input.metricKey,
             was: existing.adjustValue?.toString() ?? null,

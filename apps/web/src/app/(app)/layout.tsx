@@ -496,6 +496,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     // 4M TZ §2.4/§0.2 (MK09) — «bu raqamga qanchalik ishonish mumkin».
     // Oxirida ataylab: bu kunlik ish ro'yxati emas, raqamlarning o'lchovi.
     { key: 'data_quality', label: tMenejer('data_quality'), href: '/menejer/sifat' },
+    // 4M TZ §8.1/6 (MK20) — izoh shablonlari. Eng oxirida ataylab: bu kunlik
+    // ish ekrani emas, SOZLAMA (menejer o'z tez javob matnlarini yozadi).
+    {
+      key: 'comment_templates',
+      label: tMenejer('comment_templates'),
+      href: '/menejer/izoh-shablonlari',
+    },
   ];
 
   const analitikaSubNav: SubNavItem[] = [

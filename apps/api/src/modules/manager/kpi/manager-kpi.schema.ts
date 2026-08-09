@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { MAX_COMMENT_LENGTH } from '../comments/comment-templates.js';
 import {
   DAILY_KPI_ACTION,
   DAILY_KPI_STATES,
@@ -62,7 +63,9 @@ export const TransitionSchema = z
   .object({
     action: z.enum(MANUAL_ACTIONS),
     reasonCode: z.string().max(40).optional().nullable(),
-    comment: z.string().max(2000).optional().nullable(),
+    comment: z.string().max(MAX_COMMENT_LENGTH).optional().nullable(),
+    /** MK20 — shablon izoh. Jurnalga MATNI ko'chiriladi, havola emas. */
+    templateId: z.string().uuid().optional().nullable(),
   })
   .superRefine((v, ctx) => {
     const codes = reasonCodesFor(v.action);
@@ -88,7 +91,9 @@ export const AdjustSchema = z.object({
     .regex(/^-?\d+$/, 'Butun son bo`lishi kerak')
     .nullable(),
   reasonCode: z.enum(reasonCodesFor(DAILY_KPI_ACTION.adjust) as unknown as [string, ...string[]]),
-  comment: z.string().max(2000).optional().nullable(),
+  comment: z.string().max(MAX_COMMENT_LENGTH).optional().nullable(),
+  /** MK20 — «tuzatma» shabloni. Jurnalga MATNI ko'chiriladi. */
+  templateId: z.string().uuid().optional().nullable(),
 });
 export type AdjustInput = z.infer<typeof AdjustSchema>;
 

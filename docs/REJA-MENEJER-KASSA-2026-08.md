@@ -598,7 +598,7 @@ yuborish dublikatsiz. (3) barcha raqamlar mavjud servislardan.
 
 ---
 
-### MK20 — Shablon izohlar (tez javob matnlari) ☐ HISOBOT
+### MK20 — Shablon izohlar (tez javob matnlari) ☑ HISOBOT (2026-08-09)
 **Bo'lim/blok:** 4M §8.1/6 · **Ustuvorlik:** P3 · **Bog'liqlik:** MK01, MK06
 **Qamrov:** rad etish/tuzatma/ogohlantirish izohlari uchun shablonlar (menejer sozlaydi) ·
 kontekst bo'yicha taklif · shablon tanlansa ham **matn tahrirlanadi** (majburlanmaydi) ·
@@ -3025,3 +3025,119 @@ commit qilinmagan `menejer/_components/comment-template-settings.tsx` fayli qola
 
 **Yo'q** — sxema o'zgarmadi, migratsiya yaratilmadi, yangi jadval yo'q. Ekran butunlay mavjud
 jadvallardan o'qiydi.
+
+
+## Faza MK20 — Shablon izohlar (tez javob matnlari) (sana: 2026-08-09)
+
+**Holat:** ✅ BAJARILDI — **Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q.**
+**Commit(lar):** pastdagi «Git holati» bo'limiga qara.
+
+### Nima o'zgardi
+
+**Yangi jadval** `manager_comment_templates` (migratsiya `20260810110000_manager_comment_templates`,
+lokal `climart_adopt` bazasiga qo'llangan, drift 0):
+`kind` (rejection|correction|warning, DB CHECK) · `locale` · `title` · `body` (CHECK `length <= 2000`) ·
+`ruleTypes[]` · `actions[]` · `sortOrder` · `usageCount` / `lastUsedAt` · `archivedAt` · `createdById`.
+
+**Yangi sof modul** `apps/api/src/modules/manager/comments/comment-templates.ts` (I/O yo'q, 22 test):
+`materializeComment()` — jurnalga tushadigan MATNni qaytaradi; `suggestTemplates()` — kontekst
+bo'yicha taklif; `templateKindForAction()` — amal → tur xaritasi; `MAX_COMMENT_LENGTH = 2000`.
+
+**Yangi servis + HTTP sirt** `manager/comment-templates`: `GET /` · `GET /suggest` · `POST /` ·
+`PATCH /:id` · `DELETE /:id` (**arxivlash**, o'chirish EMAS) · `POST /:id/restore`.
+Ruxsat `employees:read` / `employees:full` — `manager/queue` bilan AYNI darvoza (yangi
+`PermissionEntity` kiritilmadi, u MK26–MK30 to'lqiniga tegishli).
+
+**Ulanish (ikki jurnal):** `ManagerQueueService.act()` (MK06/MK07) va
+`DailyKpiAcceptanceService.transition()` + `.adjust()` (MK01) endi `templateId` qabul qiladi va
+izohni **materiallashtiradi**.
+
+**Ekran:** `/menejer/izoh-shablonlari` (CRUD sozlamasi) + navbat amal formasidagi **tanlagich**
+(`CommentTemplatePicker`). Subnav bandi qo'shildi. i18n ru+uz — 44 kalit.
+
+### 🔴 Fazaning yagona sababi: JURNALGA MATN KO'CHIRILADI, HAVOLA EMAS
+
+Bu qaror uch qatlamda qulflangan, chunki bittasi buzilsa tarix **jimgina** o'zgaradi (shablon
+ertaga tahrirlansa — kechagi qaror bugun boshqacha o'qiladi, hech kim bexabar):
+
+1. **Sxema qatlami** — `ManagerWorkItemEvent` / `EmployeeDailyKpiEvent` da `templateId` ustuni
+   YO'Q va migratsiya uni qo'shmaydi. Test sxema faylini o'qib `template` so'zini qidiradi.
+2. **Payload qatlami** — ulanish testi HAQIQIY servisni chaqirib, Prisma'ga berilgan `data`
+   obyektining KALITLARINI tekshiradi: hech biri `template` ni o'z ichiga olmasligi shart.
+3. **Sof qatlam** — `materializeComment()` faqat satr qaytaradi; test shablon tanasi keyin
+   o'zgarganda avval materiallashgan matn o'zgarmasligini ko'rsatadi.
+
+Bu «summa qoidadan NUSXA» (MK01 bonus yozuvi) va «tan narx muzlatiladi» (retail) bilan bir klass.
+
+### Qaror va nyuanslar (kod o'qimasdan ko'rinmaydigan)
+
+- **`escalate`/`acknowledge`/`accept`/`reopen` uchun tur TO'QILMAYDI.** Uch tur (rad etish/tuzatma/
+  ogohlantirish) faqat mos amallarga xaritalanadi; qolganiga soxta tur berilsa menejer noto'g'ri
+  shablonlar ro'yxatini ko'rardi. Kerak bo'lsa — menejer `actions` orqali OSHKORA biriktiradi va
+  bu xaritadan **ustun** turadi.
+- **Til FILTR emas, TARTIB omili.** Qattiq filtr menejerning ru shablonini uz interfeysda
+  ko'rinmas qilib, ro'yxatni bo'shatib qo'yardi. Mos tildagi tepaga chiqadi, boshqasi qoladi.
+- **Izoh FSM tekshiruvidan OLDIN materiallashadi.** `other` sababida izoh majburiy; shablondan
+  kelgan matn ham shu shartni qoplashi kerak, aks holda menejer shablon tanlagan holda «izoh
+  majburiy» xatosini olardi.
+- **Statistika qarorni BLOKLAMAYDI.** `usageCount` yozuvi yiqilsa ham izoh qaytadi (try/catch +
+  `logger.warn`) — yordamchi o'lchov navbatni to'xtatib qo'ymaydi (§5.1 falsafasi).
+- **Noma'lum `templateId` → 404.** Jimgina izohsiz yopish menejerni «izohim yozildi» degan yolg'on
+  ishonchda qoldirardi. So'rov `accountId` bilan chegaralangan (begona hisob shabloni ko'rinmaydi).
+- **Chegara bir raqam, uch joyda:** `MAX_COMMENT_LENGTH = 2000` — Zod (queue + kpi), DB CHECK va
+  `materializeComment` kesishi. Uzunroq shablon yaratilsa, foydalanuvchi qo'lda hech qachon
+  yubora olmaydigan izohni jurnalga tushirardi.
+- **Boshlang'ich shablonlar SEED QILINMAYDI.** «Menejer sozlaydi» degani menejerning o'z so'zlari;
+  tayyor matn jurnalga jimgina ko'chib, hech kim yozmagan gap rasmiy izohga aylanardi.
+- **O'chirish emas, ARXIVLASH.** Qattiq o'chirish tarixni buzmasdi (matn nusxasi jurnalda), lekin
+  «qaysi shablon ishlatilgan» statistikasi yo'qolardi.
+- **`ruleTypes`/`actions` — YOPIQ ro'yxatlar** (`MANAGER_RULES` va ikki FSM'dan hisoblanadi). Erkin
+  matn qabul qilinsa, bitta harf xatosi (`BIG_DEPT`) shablonni hech qachon taklif qilinmaydigan
+  qilib qo'yardi — «yaratdim-u ko'rinmaydi» jim nuqsoni.
+- **`open_for_review`/`mark_stale` biriktirib bo'lmaydi** — ular TIZIM amallari (planner/cron
+  yozadi), shablon hech qachon ishlamasdi.
+
+### Testlar (RED → GREEN)
+
+| Fayl | Soni | Nima qulflaydi |
+|---|---|---|
+| `comment-templates.test.ts` | 22 | matn nusxasi · majburlamaslik · amal→tur · taklif tartibi/arxiv |
+| `manager-comment-template.service.test.ts` | 11 | hisob chegarasi · 404 · statistika bloklamasligi · arxiv |
+| `comment-template-wiring.test.ts` | 8 | ikki jurnalga MATN tushishi · payloadda havola yo'qligi · sxema qulfi |
+| `comment-template-i18n.test.ts` | 6 | 3 tur + 12 amal + 18 statik kalit ru+uz (dinamik kalitlar) |
+| `comment-template-picker.test.tsx` | 4 | kontekstli so'rov · matn uzatish · bekor qilish · bo'sh ro'yxat |
+| `comment-template-settings.test.tsx` | 4 | ro'yxat · arxiv belgisi · matn to'liq yuborilishi · bo'sh forma |
+
+**Mutatsiya bilan tekshirildi:** `uz.json` dan `kind_rejection` olib tashlanganda i18n testi
+yiqildi (5 o'tdi / 1 yiqildi) ⇒ qo'riqchi bo'sh emas. Sxema qulfi testi ham bo'sh emasligini
+o'zi tasdiqlaydi (`expect(body).toContain('comment')`).
+
+### Gate natijasi
+
+- api typecheck **0** · web typecheck **0** · biome (tegilgan fayllar) **0**
+- `pnpm i18n:gate` **9/9**
+- api vitest `src/modules/manager/` — **801 o'tdi / 1 yiqildi** (yiqilgan MENIKI EMAS:
+  `kpi-score.test.ts` «SCORE_CAP_PERCENT» — parallel sessiyaning ishi, §6.1 bo'yicha tegilmadi)
+- `src/app-boot.test.ts` **9/9** (yangi `@Inject` grafi va yangi controller marshruti)
+- web vitest to'liq — mening yagona yiqilishim (`raw-element-conventions`: xom `<textarea>`)
+  tuzatildi (`@moysklad/ui` `Textarea` ga o'tkazildi), qayta yugurtirildi
+
+### Ochiq qarz / chegaralar (HALOL)
+
+1. **Browser-smoke YO'Q** — Phase-2 QA (MK25) da tekshirilsin: tanlagich navbat formasida
+   ko'rinishi, matn izoh maydoniga tushishi, saqlangach jurnalda matn turishi.
+2. **Kun qabuli ekrani (`/menejer`) ga tanlagich ULANMADI** — BE tayyor (`templateId` qabul
+   qiladi), FE faqat navbat formasida. Ekran 817 qatorli va MK01 egasining qamrovida.
+3. **`ruleTypes`/`actions` ni sozlash UI'si yo'q** — BE to'liq qo'llab-quvvatlaydi (yaratish/
+   tahrirlashda qabul qiladi), sozlamalar ekrani hozircha tur/til/sarlavha/matn bilan cheklangan.
+   Shablon default holda `kind` xaritasi bo'yicha taklif qilinadi — bu ish rejimi to'liq.
+4. **`usageCount` — taxminiy o'lchov:** menejer shablonni tanlab, keyin matnni butunlay
+   almashtirsa ham «ishlatilgan» deb sanaladi (u ATAYLAB: shablon baribir ishga tushgan).
+5. **Yuklama o'lchanmagan** — `suggest` har amal formasi ochilganda hisobning barcha tirik
+   shablonlarini o'qiydi (hisob-miqyosda o'nlab qator kutiladi, indeks bor).
+
+### OPS-QADAM qo'shildimi
+
+**Ha** — yangi migratsiya `20260810110000_manager_comment_templates`. Prod'ga chiqishda
+`prisma migrate deploy` (yoki repo tartibiga ko'ra `db execute`) talab qilinadi. Backfill YO'Q,
+seed YO'Q — jadval bo'sh boshlanadi va menejer birinchi shablonni o'zi yozadi.

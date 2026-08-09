@@ -326,58 +326,61 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > `/root/sherset-v2-backups` = 5.4G / 18 fayl — keyingi deploy'dan oldin eski backup'larni
 > tozalash kerak bo'ladi, aks holda `next build` joy yetmasligidan yiqilishi mumkin.
 >
-> **🕒 2026-08-09zb (REJA-MENEJER-KASSA **MK21** — 4M §8.1/8: qaror jurnali ekrani) —
-> `ae9b4bc6`, 18 fayl (+2635/−4). To'liq hisobot:
-> `docs/REJA-MENEJER-KASSA-2026-08.md` → HISOBOT JURNALI → «MK21».**
+> **🕒 2026-08-09za (REJA-MENEJER-KASSA **MK20** — 4M §8.1/6: shablon izohlar, tez javob matnlari)
+> — 20 fayl. To'liq hisobot: `docs/REJA-MENEJER-KASSA-2026-08.md` → HISOBOT JURNALI → «Faza MK20».**
+> *(Harf yorlig'i: `z` band edi va alifbo tugadi ⇒ shu kundan boshlab ikki harfli davom —
+> `za`, `zb`, …)*
 >
-> TZ «alohida ekran qilinmaydi» degan edi, **egasi teskarisini tanladi**. Tanlov EKRAN haqida,
-> ma'lumot modeli haqida emas: **yangi jadval ham, yangi yozuvchi ham ochilmadi**. Sahifa
-> `/menejer/qarorlar` — to'rtta MAVJUD append-only hodisa jurnali ustidagi ko'rinish:
-> `EmployeeDailyKpiEvent` (MK01/MK02) · `ManagerWorkItemEvent` (MK06/MK07) ·
-> `CashierSessionAcceptanceEvent` (MK08) · `SupplyApprovalEvent` (qabul zanjiri).
-> «Natijasi» ustunining pul yarmi `HrBonusFineLog.kpiEventId` orqali ulanadi ⇒ teskari (manfiy)
-> yozuv ham ko'rinadi.
+> Menejer kuniga o'nlab navbat elementini yopadi va har safar bir xil gapni qayta yozadi. Endi
+> **shablon** bor: rad etish · tuzatma · ogohlantirish. Yangi jadval `manager_comment_templates`
+> (migratsiya `20260810110000`, lokal bazaga qo'llandi, **drift 0**), yangi sof modul
+> `comments/comment-templates.ts`, yangi HTTP sirt `manager/comment-templates`, ekran
+> `/menejer/izoh-shablonlari` + **navbat amal formasidagi tanlagich**.
 >
-> **Kod o'qimasdan bilinmaydigan qarorlar:**
-> · **Bekor qilish belgisi FILTRDAN OLDIN hisoblanadi**, va servis oynadan KEYINGI `reopen`
->   hodisalarini **zond** sifatida ham o'qiydi (faqat oynadagi sub'ektlar bo'yicha). Aks holda
->   1-avgustda qabul qilinib 5-avgustda qayta ochilgan kun 1–2 avgust oynasida «kuchda»
->   ko'rinardi. Mutant testi shu yo'lni tasdiqladi.
-> · **`adjust` bekor qilinmaydi** (qayta ochish tuzatilgan raqamni tiklamaydi); **`supply` da
->   teskari amal umuman yo'q** — rad etish zanjirning KEYINGI qarori, oldingisini bekor qilmaydi.
-> · **Tizim hodisalari qaror EMAS**: sukut bo'yicha ko'rsatilmaydi, lekin `hiddenSystemCount`
->   ekranda turadi (jimgina yo'qolgan qator «hech narsa bo'lmagan» taassurotini berardi).
-> · **`facets` «tor» filtrlarsiz asos to'plamdan** — aks holda aktyor tanlangach ro'yxatda faqat
->   o'sha aktyor qolib, filtr o'zini o'zi qulflab qo'yardi.
-> · **Eksport = EKRAN** (ikkinchi so'rov YO'Q); ko'p qatorli izoh kataka siqiladi, shuning uchun
->   fayl satri = qator soni. Cheklovi: eksport ekran cap'i bilan chegaralangan (200/500).
+> **🔴 Fazaning butun sababi — JURNALGA MATN KO'CHIRILADI, HAVOLA EMAS.** Havola saqlansa, shablon
+> ertaga tahrirlanganda kechagi qaror bugun boshqacha o'qilardi va hech kim bexabar qolardi («summa
+> qoidadan nusxa» va «tan narx muzlatiladi» bilan bir klass). **Uch qatlamda qulflangan:**
+> (1) sxema — jurnal jadvallarida `templateId` ustuni YO'Q (test `schema.prisma` ni o'qiydi);
+> (2) payload — ulanish testi HAQIQIY servisni chaqirib Prisma `data` kalitlarini tekshiradi;
+> (3) sof — `materializeComment()` faqat satr qaytaradi, shablon keyin o'zgarsa avvalgi matn
+> o'zgarmaydi.
 >
-> **Testlar:** 50 yangi (sof 24 · servis 8 · read-only qo'riqchi 4 · dinamik i18n 8 · CSV 8).
-> Read-only qo'riqchi manba matnini skanerlaydi: sxemada `decision` modeli yo'q · modulda
-> `create/update/delete/upsert` yo'q · faqat ruxsat ro'yxatidagi jadvallar · controllerda
-> yozuvchi metod yo'q (`queue-does-not-block.test.ts` uslubi).
+> **Shablon MAJBURLAMAYDI:** tahrirlangan matn shablon tanasidan ustun · shablonsiz erkin izoh ham,
+> izohsiz amal ham o'tadi · tanlagich shablon bo'lmasa umuman chizilmaydi.
 >
-> **Gate:** web tc 0 · biome 0 · i18n:gate 9/9 · api vitest manager+app-boot **811/811** ·
-> web vitest **2995 o'tdi, 1 yiqildi** ⚠️ — yiqilgan test va api tc'dagi yagona xato parallel
-> sessiyalarning **commit qilinmagan** fayllari (`comment-template-settings.tsx` /
-> `kpi-target.ts`), meniki emas.
+> **Qaror nyuanslari:** `escalate`/`acknowledge`/`accept`/`reopen` uchun tur **to'qilmaydi** (soxta
+> tur noto'g'ri ro'yxat ko'rsatardi) — kerak bo'lsa menejer `actions` orqali oshkora biriktiradi va
+> u xaritadan ustun · **til filtr emas, tartib omili** (qattiq filtr ru shablonini uz UI'da
+> ko'rinmas qilardi) · izoh **FSM tekshiruvidan oldin** materiallashadi (`other` sababida shablon
+> matni ham majburiylikni qoplaydi) · `usageCount` yozuvi yiqilsa ham izoh qaytadi (**statistika
+> qarorni bloklamaydi**) · noma'lum `templateId` → **404** (jimgina izohsiz yopish yo'q) ·
+> `MAX_COMMENT_LENGTH = 2000` bir raqam uch joyda (Zod ×2, DB CHECK, kesish) · **seed YO'Q**
+> (tayyor matn jurnalga jimgina ko'chib, hech kim yozmagan gap rasmiy izohga aylanardi) ·
+> o'chirish emas **arxivlash** · `ruleTypes`/`actions` — yopiq ro'yxatlar (`BIG_DEPT` kabi harf
+> xatosi shablonni ko'rinmas qilardi) · `open_for_review`/`mark_stale` biriktirib bo'lmaydi (tizim
+> amallari).
 >
-> **Mayda tuzatish (+1):** `menejer/qotib-qolgan/page.tsx` dagi xom `<input type=number>` DS
-> `Input` ga o'tkazildi — bu **MK07 hisobotining 1-qarzi** edi va HEAD'da
-> `raw-element-conventions` gate'ini qizil ushlab turardi.
+> **Testlar: +55** — sof modul 22 · servis 11 · ulanish 8 · i18n 6 · FE 8. **Mutatsiya bilan
+> tekshirildi:** `uz.json` dan `kind_rejection` olib tashlanganda i18n testi yiqildi.
 >
-> **⚠️ Parallel sessiyalar (uchta faol edi: MK13/MK15/MK20).** Umumiy fayllar
-> (`manager.module.ts`, `layout.tsx`, `ru/uz.json`, reja hujjati) «HEAD + faqat mening
-> hunk'larim» blobi bilan indekslandi. **Birinchi urinishda reja hujjatiga MK20 ning commit
-> qilinmagan hisoboti ham tushdi** (`live.slice(at)` fayl OXIRIGACHA olgan edi) — `--amend` bilan
-> tuzatildi, blob endi MK21 bo'limida to'xtaydi. Sabog'i: «HEAD + mening qo'shimcham» quruvchi
-> skript **boshlanish ham, TUGASH chegarasini ham** aniq belgilashi kerak.
+> **Gate:** api typecheck **0** · web typecheck **0** · biome (tegilgan) **0** · `i18n:gate` **9/9** ·
+> `src/app-boot.test.ts` **9/9** (yangi DI grafi + yangi controller marshruti) ·
+> api vitest `manager/` **801/802** · web vitest to'liq (mening yagona yiqilishim —
+> `raw-element-conventions` xom `<textarea>` — `@moysklad/ui` `Textarea` ga o'tkazildi).
 >
-> **🔴 Phase-1: strukturaviy/funksional, RUNTIME-TASDIQLANMAGAN — browser-smoke YO'Q.**
-> Qolgan qarz (to'liq ro'yxat hisobotda): sub'ekt kartasiga havola yo'q · taminotchi aktyorining
-> ismi topilmaydi (ID ko'rinadi) · manba o'qish cap'i 1000 da `totalCount` kesilgan to'plamdan ·
-> **`downloadCsv` argument tartibi 9 sahifada TESKARI** (topildi, tuzatilmadi — alohida mayda
-> faza + qo'riqchi test kerak).
+> ⚠️ **Yiqilgan api testi MENIKI EMAS:** `kpi-score.test.ts` «SCORE_CAP_PERCENT» — parallel
+> sessiyaning faol ishi (`thresholds/` untracked). §6.1 bo'yicha tegilmadi.
+>
+> **Parallel sessiyalar:** ish davomida MK15 (money-map), MK21 (qaror jurnali), MK22 (kpi-target/
+> rating) `manager.module.ts`, `layout.tsx`, `ru/uz.json`, reja fayliga tegdi. Ularning ishi
+> **tiklanmadi/o'chirilmadi** — ustiga qurildi; reja hisoboti `appendFileSync` bilan qo'shildi
+> (qator soni 3082 → 3198, kesish yo'q).
+>
+> **Status: Phase-1 — strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q** (→ MK25).
+> **Ochiq qarz:** (1) kun qabuli ekraniga (`/menejer`) tanlagich ULANMADI — BE tayyor, FE faqat
+> navbatda; (2) `ruleTypes`/`actions` ni sozlash UI'si yo'q (BE qo'llab-quvvatlaydi, ekran tur/til/
+> sarlavha/matn bilan cheklangan); (3) `usageCount` taxminiy — matn butunlay almashtirilsa ham
+> sanaladi; (4) `suggest` yuklamasi real ma'lumotda o'lchanmagan.
 
 > **🕒 2026-08-09z (REJA-MENEJER-KASSA **MK07** — 4M.5b: TZ §5.2 ning 12 qoida turi + §5.3 sabab
 > kodlari) — `0b344aaf`, 15 fayl (+2711/−59). To'liq hisobot:
