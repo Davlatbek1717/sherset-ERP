@@ -116,7 +116,32 @@ export type PermissionEntity =
   | 'debt'
   | 'debtpayment'
   | 'debtcardpayment'
-  | 'debtreport';
+  | 'debtreport'
+  // HR ruxsatlari yagona omborda (MK27 — TZ §3.2). Har HR sahifasi/bo'limi
+  // O'ZIGA TEGISHLI slug oladi: `hr-permission-adapter.ts` da tushuntirilgani
+  // kabi, mavjud ERP entity'siga (`demand`, `payroll`, `task`, `employee`…)
+  // xaritalash imtiyoz kengaytmasi bo'lardi — HR sahifasidagi ruxsat ERP
+  // hujjatlarini ochib yuborardi. Bu slug'larni HOZIRCHA hech bir
+  // `@RequirePermission` tekshirmaydi (adapter testi kesishmaslikni qulflaydi).
+  // HR guard'ining yagona omborga o'tishi — keyingi faza.
+  //
+  // DIQQAT: bu izohda NUQTALI VERGUL bo'lmasin — `permissions-seed-sync.test.ts`
+  // union blokini birinchi nuqtali vergulgacha o'qiydi, ya'ni izohdagi bitta
+  // belgi ro'yxatni yarmida kesib «unknown entity» yiqilishini beradi
+  // (aynan shu sodir bo'ldi — ikki marta).
+  | 'hrdashboard'
+  | 'hrmessage'
+  | 'hrmessagedemand'
+  | 'hrmessageorder'
+  | 'hrmessagepaymentin'
+  | 'hrmessagesupply'
+  | 'hrmessagereturn'
+  | 'hrreport'
+  | 'hremployee'
+  | 'hrtask'
+  | 'hrsalary'
+  | 'hractivity'
+  | 'hrsettings';
 
 export type PermissionAction =
   | 'view'

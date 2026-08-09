@@ -279,6 +279,9 @@ kuniga **3 sessiya** → **~6 hafta**.
       (server tomonda) + **G2** «nega bu ruxsat bor» + **G3** audit
 - [ ] **4-Menejer B2** — HR ruxsatlarini birlashtirish: adapter + bir martalik migratsiya + hisobot
       *(hozir ikki parallel tizim: ERP `entity×action×scope` vs HR `page×section×access`)*
+      — **QISMAN (MK27, 2026-08-10):** adapter + migratsiya rejasi + DRY hisobot + 216 test
+      **tayyor**; `--apply` **ataylab yopiq** (yozadigan `EmployeePermission` — `4-Menejer B1`
+      ishi) va «eski HR yozuvlari faqat-o'qish» bandi bajarilmagan ⇒ **katakcha OCHIQ qoladi**.
 - [ ] **4-Menejer B3** — Ruxsat matritsasi UI + **10 rol shabloni**
       (Egasi · Admin · Savdo menejeri · Ombor menejeri · Kassir · Sotuvchi · Omborchi · Buxgalter ·
       Ta'minotchi · Haydovchi)

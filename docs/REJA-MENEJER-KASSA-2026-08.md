@@ -780,7 +780,7 @@ rol-based xulq **o'zgarmaydi** (override yo'q bo'lganda).
 
 ---
 
-### MK27 — HR ruxsatlarini birlashtirish (adapter + migratsiya) ☐ HISOBOT
+### MK27 — HR ruxsatlarini birlashtirish (adapter + migratsiya) ☑ HISOBOT (2026-08-10, QISMAN)
 **Bo'lim/blok:** 4-B2 · **TZ:** §3.2
 **Ustuvorlik:** P1 · **Bog'liqlik:** **MK26**
 **Muammo:** ikki parallel model: ERP `entity×action×scope` vs HR `page×section×access`.
@@ -3744,3 +3744,128 @@ prompti `c` ga aylanib qolgan. Commit **vaqtinchalik indeks** bilan qurildi (`GI
 `read-tree HEAD` + faqat o'z blob'larim); shu uch umumiy hujjatga HEAD blob'i ustiga **faqat
 mening tahrirlarim** fail-closed skript bilan qayta qo'llandi. Ularning ishlari daraxtda
 **tegilmagan** holda qoldi (CLAUDE.md §6.1/§6.7).
+
+## Faza MK27 — HR ruxsatlarini birlashtirish: adapter + migratsiya (sana: 2026-08-10)
+
+**Holat:** 🟡 **QISMAN — Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q.**
+Adapter, migratsiya rejasi (DRY) va qulflar **tayyor va jonli sinaldi**; **APPLY yo'li ATAYLAB
+yopiq** — yozadigan joy (`EmployeePermission`) **MK26** fazasida yaratiladi, u hali bajarilmagan.
+«done» / «production-ready» / «verified» EMAS.
+**Commit(lar):** pastdagi «Git holati» bo'limiga qara.
+
+### Nima o'zgardi
+
+- **`apps/api/src/modules/permissions/hr-permission-adapter.ts`** (yangi, **sof**: Prisma yo'q,
+  Nest yo'q) — HR `page × section × access` → ERP `entity × action × scope`. 13 HR qatorining
+  (8 sahifa + 5 bo'lim) **to'liq** xaritasi · `full → ALL (6 amal)`, `read → view:ALL`,
+  `own_only → view:OWN` (TZ §3.2 jadvali) · `UnmappedHrPermissionError` (fail-closed) ·
+  bo'lim imlosini normallashtirish (`demand` ↔ `messages:demand`) · `hrDecision`/`erpDecision`/
+  `requirementToErp` — qaror ekvivalentligini o'lchash uchun.
+- **`hr-permission-migration.ts`** (yangi, sof) — migratsiya **rejasi**: xaritalash + ziddiyat
+  aniqlash + `gained/lost/unchanged` tasnifi + xulosa. Bitta qator tushunilmasa **butun reja rad
+  etiladi** (`refused: true`, `entries: []`).
+- **`apps/api/src/scripts/migrate-hr-permissions.ts`** (yangi) — faqat I/O: DB o'qish, markdown
+  hisobot yozish, DRY (sukut) / `--apply` / `--allow-loss` / `--out`.
+- **13 yangi entity slug** (`hrdashboard`, `hrmessage`, `hrmessagedemand`, `hrmessageorder`,
+  `hrmessagepaymentin`, `hrmessagesupply`, `hrmessagereturn`, `hrreport`, `hremployee`, `hrtask`,
+  `hrsalary`, `hractivity`, `hrsettings`) — `permissions.types.ts` union + **uchala** seed
+  ro'yxati (`packages/db/prisma/seed.ts`, `apps/api/src/scripts/topup-role-permissions.ts`,
+  `permissions.service.ts`), `permissions-seed-sync.test.ts` talab qilganidek.
+- **Testlar (TDD, avval RED ko'rildi): 216 yangi** — adapter 206 + migratsiya rejasi 10.
+
+### Nega shunday qilindi (qarorlar)
+
+1. **HR sahifalari MAVJUD ERP entity'lariga xaritalanMADI.** Eng tabiiy ko'ringan xaritalash
+   (`messages:demand → demand`, `oylik → payroll`, `reports → report`, `tasks → task`,
+   `employees → employee`) — **imtiyoz kengaytmasi**. Kodda tekshirildi: `hr-messages` HR ning
+   Telegram bildirishnoma jurnalini o'qiydi (`hrTelegramOutbox`), sotuv hujjatini EMAS;
+   `hr-task-review` → `hrTaskLog` (ERP CRM `task` emas); `hr-salary` → `hrSalaryConfig`
+   (ERP `payroll` hujjatlari emas). Bir xil nomlar — boshqa domenlar. Xaritalansa, HR
+   bildirishnoma o'quvchisi butun sotuv hujjatlarini ocha olardi — buni **hech kim bermagan**
+   bo'lardi. Shuning uchun har HR qatori **o'ziga tegishli `hr…` slug** oladi.
+   *(Bu slug'ni keyinchalik mavjud ERP entity'siga qo'shib yuborish — alohida, ODAM tasdiqlaydigan
+   qaror; adapter ishi emas.)*
+2. **«Hech kim ko'proq olmasin» ikki qatlamda qulflangan:**
+   (a) **Kesishmaslik testi** — adapter entity'lari `apps/api/src/modules/**/*.controller.ts`
+   dagi HECH BIR `@RequirePermission({ entity })` bilan kesishmaydi (manba skaneri, 40+ entity
+   topilishi ham tekshiriladi ⇒ skaner o'lik emas). Ya'ni migratsiya **mavjud** ERP imkoniyatini
+   printsipial ravishda BERA OLMAYDI.
+   (b) **Qaror ekvivalentligi** — `have × need` matritsasi (4 × 3) har 13 qator uchun:
+   migratsiyadan keyingi ERP qarori bugungi HR `ACCESS_RANK` qarori bilan **aynan bir xil**
+   (156 test). Bu faqat kengayishni emas, **torayishni** ham tutadi — «yangilikdan keyin xodim
+   ishlay olmay qoldi» sinfini oldini oladi.
+3. **Fail-closed, «jimgina tushib qolish» yo'q.** Notanish sahifa/bo'lim/daraja → xato; migratsiya
+   rejasi butunlay rad etiladi (yarim ko'chirish eng yomon holat: bir qismi yangi omborda, qolgani
+   eskisida qolardi va buni hech kim sezmasdi). Bir (xodim, entity, amal) uchun ikki xil qiymat
+   (masalan `demand`=read va `messages:demand`=own_only) — **ham** rad etiladi: qaysi biri to'g'ri
+   ekanini mashina hal qila olmaydi (QAROR-B1 dagi «ikki qoida mos kelsa — hech nima yozilmaydi»
+   siyosati bilan bir xil).
+4. **`--apply` uch qulfda:** (1) reja rad etilgan bo'lsa; (2) `lost > 0` bo'lsa `--allow-loss`
+   talab qilinadi (override rol qatlamini TUSHIRISHI mumkin — TZ §3.1 «override g'olib»);
+   (3) `EmployeePermission` modeli yo'q bo'lsa. Uchalasi ham **jonli** sinaldi (pastga qara).
+5. **Skript yo'li rejadagidan farq qiladi.** Reja `scripts/migrate-hr-permissions.ts` degan edi;
+   repo ildizidagi `scripts/` dan `@moysklad/db` **resolve bo'lmaydi** (ildizda
+   `node_modules/@moysklad` yo'q — jonli tekshirildi: `MODULE_NOT_FOUND`). Skript boshqa
+   DB-skriptlar yonига (`apps/api/src/scripts/`, `topup-role-permissions.ts` qo'shnisi) qo'yildi —
+   u yerda typecheck va biome qamroviga ham tushadi.
+
+### Jonli tekshiruv (lokal `climart_adopt`, unit testlardan tashqari)
+
+Vaqtinchalik zond qatorlari qo'yilib, to'rt yo'l ham **haqiqiy bazada** yugurtirildi, so'ng
+qatorlar **o'chirildi** (bazada yana 0 ta HR ruxsat qatori — tekshirildi):
+
+| Yo'l | Natija |
+|---|---|
+| DRY (3 qator, 2 xodim) | 16 uch-lik: **oldi 15 · yo'qotdi 1 · o'zgarmadi 0**, hisobot markdown yozildi |
+| `--apply` (lost > 0) | ✗ TO'XTADI — «1 ta yozuv ruxsatni TUSHIRADI … `--allow-loss` bilan qayta yuring» |
+| `--apply --allow-loss` | ✗ TO'XTADI — «`EmployeePermission` jadvali yo'q — u MK26 fazasida yaratiladi» |
+| DRY (xaritalanmagan `driver_tracking` qatori bilan) | ✗ TO'XTADI — 0 uch-lik, xato xabarida aynan o'sha qator |
+
+«yo'qotdi» qatorini chiqarish uchun zond xodimning roliga `hrsalary.view = ALL` qo'yildi (HR'da esa
+`oylik = own_only`) ⇒ hisobot `ALL → OWN` ni **«odam tasdig'i shart»** bo'limida ko'rsatdi. Zond
+qo'shgan rol qatori ham o'chirildi.
+
+### Gate (to'liq)
+
+`@moysklad/api` typecheck **0** · `@moysklad/db` typecheck **0** · `pnpm lint:product` **0 xato**
+(823 ogohlantirish — siyosat bo'yicha ruxsat) · `vitest` (api, TO'LIQ): **508 fayl / 7164 test
+yashil** (1 fayl / 2 test skip; oldingi commitda 506 fayl / 6948 test edi ⇒ **+216** yangi test,
+regress yo'q). Web tegilmadi ⇒ web gate yugurtirilmadi (i18n/UI matn o'zgarmagan).
+
+### 🔴 QARZ / keyingi sessiyaga (halol ro'yxat)
+
+1. **APPLY yozilmagan** — `EmployeePermission` (**MK26**) kutilmoqda. Skript o'zi to'xtaydi, lekin
+   yozish mantig'i (upsert + audit yozuvi + `PermissionsService.invalidate`) hali YO'Q.
+2. **«Eski HR yozuvlari faqat-o'qish»** — qamrovdagi bu band **BAJARILMADI**: HR UI hamon
+   `hr_employee_permission` ga yozadi (`HrEmployeePermissionService.replace`). Uni faqat-o'qishga
+   o'tkazish ma'noli bo'ladi APPLY ishlagach — aks holda HR ruxsat tahriri umuman ishlamay qolardi.
+3. **HR guard hamon eski jadvaldan o'qiydi** (`hr-permission.guard.ts` → `user.hrPermissions`).
+   Adapter **hali hech qayerda chaqirilmaydi** — bu ataylab: yagona omborga o'tish MK26 dan keyin.
+   Ya'ni bugungi xulq **o'zgarmadi** (shu sababli regress ham yo'q).
+4. **Yangi 13 slug uchun UI yo'q** — ruxsat matritsasi ekrani **MK28** ishi.
+5. **Bo'lim imlosi ikki xil** (`demand` vs `messages:demand`) — HR UI birinchisini yozadi,
+   `HR_MESSAGE_SECTIONS` ikkinchisini e'lon qiladi, va **hech bir endpoint** bo'lim darajasidagi
+   HR ruxsatini tekshirmaydi (`@RequireHrPermission('messages', …)` — section'siz). Adapter
+   ikkalasini ham tanidi, lekin **manbadagi ikkilanish tuzatilmadi** (HR UI/tiplar ishi).
+
+### OPS-QADAMLAR (prodga TEGILMADI)
+
+1. `sherset_v2` (prod) da **`npx tsx src/scripts/topup-role-permissions.ts`** yugurtirilsin —
+   13 yangi `hr…` slug uchun tizim rollariga qator qo'shadi. **DDL yo'q, migratsiya yo'q**
+   (faqat `role_permissions` qatorlari). Keyin api process **restart** (ruxsat keshi).
+   *Diqqat: bu skript avvaldan ham qarzda turgan edi (MK14 hisoboti).*
+2. Prod migratsiyasi (`--apply`) **hozircha mumkin emas** (MK26 kutilmoqda). MK26 tugagach:
+   avval **DRY** (`--out`) va hisobotni **odam ko'rib chiqadi** — ayniqsa «yo'qotdi» ro'yxati.
+
+### Git holati
+
+Ushbu sessiya **faqat** quyidagi fayllarni o'zgartirdi (barchasi commitga aniq yo'l bilan qo'shildi):
+`apps/api/src/modules/permissions/{hr-permission-adapter,hr-permission-adapter.test,hr-permission-migration,hr-permission-migration.test,permissions.types,permissions.service}.ts` ·
+`apps/api/src/scripts/{migrate-hr-permissions,topup-role-permissions}.ts` ·
+`packages/db/prisma/seed.ts` · shu hisobot + `todo.md`.
+
+⚠️ **Sessiya boshida ish daraxti TOZA EMAS edi va bu fayl (`REJA-MENEJER-KASSA…`) HEAD'ga nisbatan
+SHIKASTLANGAN holatda turgan edi:** MK19 hisoboti (133 qator) o'chirilgan, MK19 sarlavhasi
+`☑ → ☐` qaytarilgan va MK19 SESSIYA-BOSHI PROMPT bloki `c` harfi bilan almashtirilgan ko'rinadi
+(NEXT.md da ham xuddi shu MK19 yozuvi o'chgan). **Bu o'zgarishlar MENIKI EMAS va tegilmadi**
+(CLAUDE.md §6.1). Commitga faqat o'z qo'shimchalarim kiritildi.

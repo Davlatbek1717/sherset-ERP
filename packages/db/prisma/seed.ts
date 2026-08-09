@@ -147,6 +147,22 @@ async function main(): Promise<void> {
     'debtpayment',
     'debtcardpayment',
     'debtreport',
+    // HR ruxsatlari yagona omborda (MK27 — TZ §3.2). Bu slug'larni hozircha
+    // hech bir guard tekshirmaydi — HR guard'i o'z jadvalidan o'qiydi; seed
+    // ro'yxati union bilan to'liq mos turishi shart (seed-sync qulfi).
+    'hrdashboard',
+    'hrmessage',
+    'hrmessagedemand',
+    'hrmessageorder',
+    'hrmessagepaymentin',
+    'hrmessagesupply',
+    'hrmessagereturn',
+    'hrreport',
+    'hremployee',
+    'hrtask',
+    'hrsalary',
+    'hractivity',
+    'hrsettings',
   ];
   const actions = ['view', 'create', 'update', 'delete', 'approve', 'print'];
   const systemRoles = [

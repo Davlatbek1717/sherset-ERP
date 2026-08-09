@@ -109,6 +109,21 @@ const NEW_ENTITIES = [
   'debtpayment',
   'debtcardpayment',
   'debtreport',
+  // HR ruxsatlari (MK27 — TZ §3.2). Eski DB'lar shu skript bilan davolanadi,
+  // shuning uchun ro'yxat union bilan to'liq mos bo'lishi shart.
+  'hrdashboard',
+  'hrmessage',
+  'hrmessagedemand',
+  'hrmessageorder',
+  'hrmessagepaymentin',
+  'hrmessagesupply',
+  'hrmessagereturn',
+  'hrreport',
+  'hremployee',
+  'hrtask',
+  'hrsalary',
+  'hractivity',
+  'hrsettings',
 ];
 const ACTIONS = ['view', 'create', 'update', 'delete', 'approve', 'print'];
 const TEMPLATES: Record<string, Record<string, string>> = {

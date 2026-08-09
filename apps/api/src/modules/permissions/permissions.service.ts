@@ -323,6 +323,22 @@ export class PermissionsService {
       'debtpayment',
       'debtcardpayment',
       'debtreport',
+      // HR ruxsatlari (MK27 — TZ §3.2). Slug'lar yangi va hozircha hech bir
+      // guard ularni tekshirmaydi; seed'da bo'lishi shart, aks holda
+      // `permissions-seed-sync.test.ts` drift deb yiqiladi.
+      'hrdashboard',
+      'hrmessage',
+      'hrmessagedemand',
+      'hrmessageorder',
+      'hrmessagepaymentin',
+      'hrmessagesupply',
+      'hrmessagereturn',
+      'hrreport',
+      'hremployee',
+      'hrtask',
+      'hrsalary',
+      'hractivity',
+      'hrsettings',
     ];
     const actions: PermissionAction[] = ['view', 'create', 'update', 'delete', 'approve', 'print'];
 
