@@ -10,7 +10,7 @@
 
 import { CounterpartyFormCard } from '@/components/counterparty-form-layout';
 import { api } from '@/lib/api-client';
-import { Button, CatalogPickerField, type PickerItem, useToast } from '@moysklad/ui';
+import { Button, CatalogPickerField, Input, type PickerItem, useToast } from '@moysklad/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useState } from 'react';
@@ -38,9 +38,18 @@ function fmtBalance(
 
 export function AktSverkaCard({ counterpartyId }: { counterpartyId: string }) {
   const t = useTranslations('pages.counterparties');
+  const tCommon = useTranslations('common');
   const { toast } = useToast();
   const qc = useQueryClient();
   const [product, setProduct] = useState<{ id: string; name: string } | null>(null);
+  /**
+   * FAZA Q6 (`PERF-02`) — davr o'qi. Ikkalasi ham BO'SH bo'lsa akt eski
+   * xulqda (butun tarix) quriladi; `dateFrom` berilsa server davrdan oldingi
+   * harakatlarni «Boshlang'ich qoldiq» qatoriga yig'adi (saldo-forward), ya'ni
+   * davr aktida ham yakuniy qoldiq bosh daftar bilan bir xil qoladi.
+   */
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
 
   const listQuery = useQuery<{ items: StatementItem[] }>({
     queryKey: ['cp-statements', counterpartyId],
@@ -52,6 +61,8 @@ export function AktSverkaCard({ counterpartyId }: { counterpartyId: string }) {
       const params = new URLSearchParams();
       if (opts.productId) params.set('productId', opts.productId);
       if (opts.deliver) params.set('deliver', 'true');
+      if (dateFrom) params.set('dateFrom', dateFrom);
+      if (dateTo) params.set('dateTo', dateTo);
       const qs = params.toString();
       return api.post<{ counterpartySent: boolean }>(
         `/counterparty-statements/${counterpartyId}${qs ? `?${qs}` : ''}`,
@@ -71,6 +82,28 @@ export function AktSverkaCard({ counterpartyId }: { counterpartyId: string }) {
   return (
     <CounterpartyFormCard title={t('akt_title')} testId="cp-card-akt">
       <div className="space-y-4">
+        {/* Davr (Faza Q6) — bo'sh qoldirilsa butun tarix. Ikkala doiraga ham amal qiladi. */}
+        <div className="space-y-2">
+          <div className="font-medium text-[var(--ms-text-primary)] text-sm">{t('akt_period')}</div>
+          <div className="flex items-center gap-2">
+            <Input
+              type="date"
+              aria-label={tCommon('from')}
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              data-test-id="cp-akt-date-from"
+            />
+            <span className="text-[var(--ms-text-muted)]">–</span>
+            <Input
+              type="date"
+              aria-label={tCommon('to')}
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              data-test-id="cp-akt-date-to"
+            />
+          </div>
+        </div>
+
         {/* Barcha savdo */}
         <div className="space-y-2">
           <div className="font-medium text-[var(--ms-text-primary)] text-sm">

@@ -1,4 +1,5 @@
 import ExcelJS from 'exceljs';
+import { OPENING_DOC_TYPE } from '../counterparty-balance/counterparty-balance-doc-types.js';
 import { type StatementData, discountLabel, docTypeLabel } from './statement-compute.util.js';
 
 /**
@@ -83,6 +84,34 @@ function titleBlock(ws: ExcelJS.Worksheet, lastCol: string, input: StatementXlsx
   ws.getCell('A3').font = { italic: true, size: 10, color: { argb: 'FF666666' } };
 }
 
+/**
+ * FAZA Q6 — «Boshlang'ich qoldiq» qatori (saldo-forward).
+ *
+ * Davr aktida davrdan OLDINGI harakatlar qatorlar ro'yxatiga tushmaydi, lekin
+ * ular yo'qolmaydi: yig'indisi shu qatorda ochiq turadi va running balans
+ * aynan shundan boshlanadi. Nol qoldiqda qator umuman chizilmaydi — davrsiz
+ * aktning ko'rinishi shu bilan aynan eski holida qoladi.
+ *
+ * `descCol`/`balanceCol` ikki varaqda farq qiladi («Sodda» 3/6, «Batafsil» 3/9).
+ */
+function openingRow(
+  ws: ExcelJS.Worksheet,
+  r: number,
+  data: StatementData,
+  cols: { desc: number; balance: number; total: number },
+): number {
+  if (data.openingMinor === 0n) return r;
+  const row = ws.getRow(r);
+  row.getCell(cols.desc).value = docTypeLabel(OPENING_DOC_TYPE);
+  row.getCell(cols.desc).font = { bold: true, italic: true };
+  row.getCell(cols.balance).value = somSigned(data.openingMinor);
+  for (let i = 1; i <= cols.total; i++) {
+    row.getCell(i).fill = TOTAL_FILL;
+    row.getCell(i).border = thin;
+  }
+  return r + 1;
+}
+
 function finalBanner(
   ws: ExcelJS.Worksheet,
   r: number,
@@ -129,6 +158,7 @@ function addSimpleSheet(wb: ExcelJS.Workbook, input: StatementXlsxInput, unit: s
   ws.views = [{ state: 'frozen', ySplit: HEAD }];
 
   let r = HEAD + 1;
+  r = openingRow(ws, r, input.data, { desc: 3, balance: 6, total: COLS });
   input.data.lines.forEach((line, idx) => {
     const row = ws.getRow(r);
     row.getCell(1).value = idx + 1;
@@ -214,6 +244,7 @@ function addDetailedSheet(wb: ExcelJS.Workbook, input: StatementXlsxInput, unit:
   ws.views = [{ state: 'frozen', ySplit: HEAD }];
 
   let r = HEAD + 1;
+  r = openingRow(ws, r, input.data, { desc: 3, balance: 9, total: COLS });
   input.data.lines.forEach((line, idx) => {
     const dr = ws.getRow(r);
     dr.getCell(1).value = idx + 1;

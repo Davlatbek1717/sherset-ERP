@@ -239,7 +239,7 @@ materialized balansga teng (mavjud invariant buzilmaydi). (3) product-filtr reji
 > `docs/REJA-QOLDIQ-2026-08.md` — **Faza Q6**. O'ZGARMAS QOIDALAR. Faza 27a hisoboti 27c bandini o'qi —
 > dalil eskirgan, jurnal-mashina (`foldJournalPeriod`) tayyor. Davr-filtri + saldo-forward. TDD: 3
 > stsenariy. Gate. Hisobot, TO'XTA.
-**◻ HISOBOT:** _(agent to'ldiradi)_
+**☑ HISOBOT (2026-08-09):** BAJARILDI — batafsili «HISOBOT JURNALI → Faza Q6» da.
 
 ---
 
@@ -1188,3 +1188,108 @@ Faza 34 presedenti bo'yicha u shu doc-commit bilan birga keladi. Mening yozuvim 
 Q1–Q4 yozuvlariga TEGILMADI. `git add` faqat 3 aniq yo'l bilan.
 
 **Commit:** `fix(report): faza q5 — analitika items db-paginate + truncated (PERF-01)`
+
+---
+
+## Faza Q6 — Akt-sverka: davr-filtri + saldo-forward (`PERF-02`, asl reja 27c) (2026-08-09) — **Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q**
+
+### 1. Dalil qanchalik eskirgan edi (o'z ko'zim bilan HEAD kodida)
+
+Audit matni: «akt-sverka 11 ta parallel `findMany` bilan butun tarixni tortadi». HEAD'da o'lchandim:
+
+| Da'vo | HEAD holati | Xulosa |
+|---|---|---|
+| «11 parallel `findMany`» | `counterparty-statement.service.ts:168-173` — BITTA `listJournalEntries` + `resolveBalanceDocs` | **ESKIRGAN** (Faza 10 da ko'chirilgan) |
+| «davr-filtri yo'q» | `aggregate()` da `from`/`to` tushunchasi UMUMAN yo'q edi | **TASDIQ** |
+| «davr-boshi saldo yo'q» | `computeStatement()` running balansni har doim `0n` dan boshlardi | **TASDIQ** |
+| «pozitsiyalar har doim tortiladi» | `:173` `resolveBalanceDocs(…, { withItems: true })` — BUTUN tarix uchun | **TASDIQ** |
+| davr-mashinasi tayyormi | `counterparty-balance-journal.util.ts:184` `foldJournalPeriod(entries, periodStart, periodEnd)` — `openingMinor`/`lines`/`closingMinor` bilan | **TAYYOR** |
+
+**Muhim aniqlik (ikki xil «akt» bor, chalkashmasin):**
+- `report/counterparty-act.service.ts` (FE `/print/reconciliation-act`, chop etiladigan «Акт сверки
+  взаимных расчётов») — davr-filtri va saldo-forward **ALLAQACHON BOR** (`:88-89`, `:131`), FE ham
+  `from`/`to` ni allaqachon uzatadi (`metrics-create-forms.tsx:164-165`). Bu yerda ish YO'Q edi —
+  tekshirildi, o'zgartirilmadi.
+- `counterparty-statement` (Excel akt-sverka, kontragent kartochkasidagi «Akt-sverka» kartochkasi) —
+  davr o'qi YO'Q edi. **Faza Q6 aynan shu ikkinchisini yopadi.**
+
+### 2. O'zgarishlar
+
+| Fayl | O'zgarish |
+|---|---|
+| `apps/api/src/modules/counterparty-statement/statement-compute.util.ts` | `computeStatement(docs, openingMinor = 0n)` — running balans davr-boshi qoldig'idan boshlanadi; `StatementData.openingMinor` qo'shildi. `turnoverMinor` ATAYLAB faqat davr harakatlari (opening unga kirmaydi) |
+| `…/counterparty-statement.service.ts` | `aggregate(accountId, cpId, opts: StatementAggregateOptions)` (ilgari `productId?: string`) — `from`/`to`/`productId`. Jurnal yo'li: `resolveBalanceDocs` (sanalar) → `foldJournalPeriod(dated, periodStart, lt)` → `computeStatement(raw, folded.openingMinor)`. Davr chegaralari `reportDateBounds` dan (o'z formulasi YOZILMADI). `generate()` ham `opts` qabul qiladi; Excel «Davr:» sarlavhasi endi haqiqiy davrni yozadi (`periodLabelOf`) |
+| `…/counterparty-statement.schema.ts` (**yangi**) | `StatementQuerySchema` — `productId`/`dateFrom`/`dateTo` + `dateFrom <= dateTo` refine |
+| `…/counterparty-statement.controller.ts` | `@Query('dateFrom')`/`@Query('dateTo')`; noto'g'ri qiymat → 400 (zod `safeParse`) |
+| `…/xlsx-builder.util.ts` | `openingRow()` — ikkala varaqda («Sodda» C/F, «Batafsil» C/I) «Boshlang'ich qoldiq» qatori. Qoldiq **0** bo'lsa qator umuman chizilmaydi ⇒ davrsiz aktning ko'rinishi eski holida qoladi (mavjud 6 xlsx testi qator-raqamlarini qattiq tekshiradi — ular tegilmadi) |
+| `apps/web/src/components/counterparties/akt-sverka-card.tsx` | «Davr» bloki: ikkita `type="date"` input (`cp-akt-date-from` / `cp-akt-date-to`), `dateFrom`/`dateTo` so'rov parametrlari. Davr ikkala doiraga ham (barcha savdo + buyum bo'yicha) amal qiladi |
+| `apps/web/src/messages/{ru,uz}.json` | 1 yangi kalit: `pages.counterparties.akt_period` — RU **«Период»** (loyihaning o'z lug'atidan grounded: `counterparty_activity.metric_period` = «Период», `ru.json` da 10+ joyda shu qiymat), UZ «Davr». `С`/`По` uchun yangi kalit QO'SHILMADI — mavjud `common.from`/`common.to` aria-label sifatida qayta ishlatildi |
+
+**IKKI BOSQICHLI RESOLVE (`PERF-02` ning perf qismi) — rejadan ONGLI CHEKINISH.** Reja «pozitsiyalarni
+faqat product-filtr rejimida tort» deydi. To'g'ridan-to'g'ri bajarilsa to'liq aktning «Batafsil»
+varag'idagi tovar qatorlari (egasining 2026-07-28 talabi: chegirma ochiq ustunda) JIMGINA yo'qolardi —
+ya'ni perf tuzatishi funksiya-regressiga aylanardi. Buning o'rniga: 1-bosqich sana/raqamni
+pozitsiyalarSIZ oladi (sana HAR qatorga kerak — davr aynan u bo'yicha kesiladi), 2-bosqich
+pozitsiyalarni **faqat davr ichida qolgan** hujjatlar uchun oladi. Natija: bir yillik kontragentda
+oylik akt endi ~12 baravar kam pozitsiya o'qiydi, ko'rinish esa aynan saqlanadi. Test (3) buni
+mexanik qulflaydi.
+
+**Davr HUJJAT sanasi bo'yicha kesiladi, `createdAt` bo'yicha EMAS** — `foldJournalPeriod` ning o'z
+qoidasi (jurnal `where` da davr filtri ATAYLAB yo'q, `journal-where-shape` testi buni ushlab turadi).
+Orqaga sanalgan hujjat (iyul sanasi, avgustda post qilingan) shu sabab o'z davridagi aktda qoladi —
+fixture'da ataylab shunday qator bor (`su-1`).
+
+### 3. TDD — RED jonli o'lchandi
+
+**RED** (`vitest run src/modules/counterparty-statement`): **8 failed / 28 passed (36)**.
+Yiqilish sabablari: `data.openingMinor` → `undefined`; `aggregate()` uchinchi argumentni davr sifatida
+umuman tanimasdi (`opening` qatori qator bo'lib qolar, davr kesilmasdi); `TypeError: Cannot mix BigInt
+and other types` (`openingMinor` yo'qligidan).
+
+**GREEN**: `counterparty-statement` + `counterparty-balance` → **53/53** (shu jumladan Faza 10
+invarianti `balance-readers-invariant.test.ts` **7/7 — o'zgarishsiz yashil**).
+
+Yangi testlar:
+- `counterparty-statement-period.test.ts` (**yangi fayl**, 5 test): (1) davr ichi qatorlar +
+  davr-boshi saldo == jurnal folding'i (opening 1 250 000 = backfill 250 000 + iyun sotuvi;
+  yakun 550 000; `opening + debet − kredit == yakun`); (2) davrsiz yakun == materiallashgan Σ(jurnal);
+  (2b) butun tarixni qamragan davr ham o'sha yakunni beradi; (3) davr tashqarisidagi hujjat uchun
+  pozitsiya so'rovi UMUMAN yuborilmaydi; (4) product-filtr rejimi regresssiz + davr SQL `moment`
+  chegaralari bilan kesiladi (RAM'da emas).
+- `statement-compute.util.test.ts` (**Edit**, +3 test — fayl ustidan Write QILINMADI): opening'dan
+  boshlanuvchi running balans; `opening + debet − kredit == yakun`; opening berilmasa 0 (eski xulq).
+
+### 4. Gate (jonli o'lchangan)
+
+- `pnpm --filter @moysklad/api typecheck` → **0** · `@moysklad/web typecheck` → **0**
+- `pnpm lint:product` → **0 error** (747 warning — siyosat bo'yicha ruxsat)
+- `pnpm i18n:gate` → **o'tdi** (407 fayl, 12 338 kalit)
+- `vitest run counterparty-statement counterparty-balance counterparty report` → **52 fayl / 528 test yashil**
+- API BUTUN suite, 3 shard: **1864 + 1765 + 2075 = 5704 passed / 2 skipped** (baza 5696/2 → **+8**,
+  aynan yangi testlar soni; regress YO'Q)
+- Web BUTUN suite: **187 fayl / 2832 passed / 26 skipped**
+- **Browser-smoke YO'Q.**
+
+### 5. Qolgan qarz / DEFER
+
+1. **Ko'p valyutali akt** — statement hamon `UZS` bilan cheklangan (Faza 10 qarori, o'zgartirilmadi).
+   Davr o'qi valyutaga bog'liq emas, shuning uchun ko'p valyuta qo'shilganda bu ish qayta qilinmaydi.
+2. **`CounterpartyStatement` jadvali davrni SAQLAMAYDI** — saqlangan aktlar ro'yxatida qaysi davr
+   uchun ekani ko'rinmaydi (faqat Excel ichidagi «Davr:» sarlavhasida). Ustun qo'shish = migratsiya
+   (umumiy resurs, §6.4) ⇒ ataylab qilinmadi.
+3. **`take`/paginatsiya hamon YO'Q** — davrsiz akt butun jurnalni RAM'ga oladi. Davr bergan
+   foydalanuvchi uchun muammo yo'q, «butun tarix» esa aktning ma'nosi bo'yicha to'liq bo'lishi kerak
+   (kesish = jim yo'qolgan qator). Cheklov kerak bo'lsa — alohida qaror, o'z fazasi bilan.
+4. **Davr presetlari (вч/сег/нед/мес) Excel kartochkasida YO'Q** — chop-etiladigan aktda bor
+   (`metrics-create-forms.tsx`). Mayda UI qarzi.
+5. **Browser-smoke YO'Q** — kontragent kartochkasi «Akt-sverka» kartochkasi (davr inputlari + hosil
+   bo'lgan Excel'ning «Boshlang'ich qoldiq» qatori) Phase-2 QA cohortiga qoladi.
+
+### Parallel sessiya sharoiti (CLAUDE.md §6)
+
+Ish daraxtida faqat foydalanuvchining untracked fayllari bor edi (`qabullar-amallar-royxati.txt`,
+`*.xlsx`, `chek.png`, `SAYT-PROMPT.txt`, `scratchpad/`) — TEGILMADI. Bu yozuv faylga
+`appendFileSync` bilan qo'shildi (**marker-kesish YO'Q**, `doc-append-marker-truncation` xotirasi),
+Q1–Q5 yozuvlariga TEGILMADI. `git add` faqat aniq yo'llar bilan.
+
+**Commit:** `fix(report): faza q6 — akt-sverka davr-filtri + saldo-forward (PERF-02)`

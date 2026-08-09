@@ -1,5 +1,6 @@
 import { createReadStream } from 'node:fs';
 import {
+  BadRequestException,
   Controller,
   Get,
   Inject,
@@ -14,6 +15,7 @@ import type { AuthenticatedUser } from '../auth/auth.schema.js';
 import { CurrentUser } from '../auth/current-user.decorator.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { RequirePermission } from '../permissions/require-permission.decorator.js';
+import { StatementQuerySchema } from './counterparty-statement.schema.js';
 import { CounterpartyStatementService } from './counterparty-statement.service.js';
 
 @Controller()
@@ -34,12 +36,23 @@ export class CounterpartyStatementController {
     // Only send the file to the counterparty when explicitly requested
     // («Kontragentga yuborish»). Default (generate/download) never messages them.
     @Query('deliver') deliver?: string,
+    // FAZA Q6 (`PERF-02`) — davr o'qi. Sana-only, ikkalasi ham ixtiyoriy.
+    @Query('dateFrom') dateFrom?: string,
+    @Query('dateTo') dateTo?: string,
   ) {
+    const parsed = StatementQuerySchema.safeParse({
+      productId: productId || undefined,
+      dateFrom: dateFrom || undefined,
+      dateTo: dateTo || undefined,
+    });
+    if (!parsed.success)
+      throw new BadRequestException(parsed.error.issues.map((i) => i.message).join(', '));
+
     const { row, cp, data } = await this.svc.generate(
       user.accountId,
       counterpartyId,
       user.sub ?? null,
-      productId || undefined,
+      { productId: parsed.data.productId, from: parsed.data.dateFrom, to: parsed.data.dateTo },
     );
     const delivery = await this.svc.deliver(
       user.accountId,

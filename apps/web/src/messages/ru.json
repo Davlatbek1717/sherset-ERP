@@ -2378,6 +2378,7 @@
       "akt_pick_product": "Выберите товар",
       "akt_generate_product": "Отправить по товару",
       "akt_all_scope": "Все операции",
+      "akt_period": "Период",
       "akt_btn_create": "Сформировать",
       "akt_btn_send": "Отправить контрагенту",
       "akt_toast_created": "Акт сформирован",

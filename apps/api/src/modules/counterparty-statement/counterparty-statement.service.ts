@@ -8,7 +8,11 @@ import {
   docKey,
   resolveBalanceDocs,
 } from '../counterparty-balance/counterparty-balance-doc-resolver.js';
-import { listJournalEntries } from '../counterparty-balance/counterparty-balance-journal.util.js';
+import {
+  type DatedJournalEntry,
+  foldJournalPeriod,
+  listJournalEntries,
+} from '../counterparty-balance/counterparty-balance-journal.util.js';
 import { CounterpartySettlementService } from '../counterparty-settlement/counterparty-settlement.service.js';
 import {
   currencyUnit,
@@ -16,6 +20,7 @@ import {
   settlementTextForCounterparty,
   settlementTextForOwner,
 } from '../counterparty-settlement/counterparty-settlement.util.js';
+import { reportDateBounds } from '../report/report-date-bounds.util.js';
 import { type ProductReportRow, buildProductReportXlsx } from './product-report-xlsx.util.js';
 import { type RawDoc, computeStatement } from './statement-compute.util.js';
 import { type SupplyGoodsRow, buildSupplyGoodsXlsx } from './supply-goods-xlsx.util.js';
@@ -32,6 +37,43 @@ const STATEMENTS_DIR = process.env.STATEMENTS_DIR || join(process.cwd(), 'var', 
  * «closing == materiallashgan UZS balans» invariantining sharti.
  */
 const STATEMENT_CURRENCY = 'UZS';
+
+/**
+ * FAZA Q6 (`PERF-02`) — akt-sverkaning DAVR o'qi.
+ *
+ * `from`/`to` — sana-only chegaralar (`YYYY-MM-DD`, `z.coerce.date()` UTC yarim
+ * tuniga aylantiradi). Ular Toshkent kalendar kuniga `reportDateBounds` orqali
+ * ochiladi — bu yerda O'Z formulasi YOZILMAYDI (`month-bounds-label-vs-instant`
+ * xotirasi: qo'lda yozilgan chegara oxirgi kunni jimgina tashlab ketadi).
+ *
+ * `from` bo'lmasa davr-boshi qoldig'i faqat `opening` (backfill) qatorlaridan
+ * iborat bo'ladi — ya'ni davrsiz akt eski xulqni AYNAN saqlaydi va Faza 10 ning
+ * «closing == materiallashgan balans» invarianti buzilmaydi.
+ */
+export interface StatementPeriod {
+  from?: Date;
+  to?: Date;
+}
+
+export interface StatementAggregateOptions extends StatementPeriod {
+  /** Buyum-bo'yicha akt (balans ko'rinishi EMAS — bitta tovar kesimi). */
+  productId?: string;
+}
+
+/** Davr sarlavhasi (Excel «Davr:» qatori). Sana-only ⇒ UTC bo'yicha formatlanadi. */
+function periodLabelOf(period: StatementPeriod): string {
+  const f = (d: Date) =>
+    new Intl.DateTimeFormat('ru-RU', {
+      timeZone: 'UTC',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    }).format(d);
+  if (period.from && period.to) return `${f(period.from)} – ${f(period.to)}`;
+  if (period.from) return `${f(period.from)} dan`;
+  if (period.to) return `${f(period.to)} gacha`;
+  return 'Butun tarix';
+}
 
 function fmtSom(balanceMinor: bigint): string {
   const abs = balanceMinor < 0n ? -balanceMinor : balanceMinor;
@@ -98,10 +140,22 @@ export class CounterpartyStatementService {
    * When `productId` is set → PRODUCT-filtered log: only goods documents that
    * contain that product, and each row carries only that product's line (sum,
    * qty). Cash/payment docs are excluded (no product). Otherwise → full history.
+   *
+   * FAZA Q6 (`PERF-02`) — `opts.from`/`opts.to` davr o'qi. Davr HUJJATNING O'Z
+   * sanasi bo'yicha kesiladi (jurnal `createdAt` bo'yicha EMAS): orqaga sanalgan
+   * hujjat aks holda o'z davridagi aktdan jimgina tushib qolardi. Davrdan
+   * oldingi harakatlar yo'qolmaydi — ular davr-boshi qoldig'iga (saldo-forward)
+   * yig'iladi.
    */
-  async aggregate(accountId: string, counterpartyId: string, productId?: string) {
+  async aggregate(accountId: string, counterpartyId: string, opts: StatementAggregateOptions = {}) {
     const c = this.prisma.client;
+    const { productId } = opts;
     const where = { accountId, agentId: counterpartyId, state: 'posted' };
+    // `to` berilmasa — hozir; `lt` shunda ham har qanday o'tmish hujjatini
+    // qamraydi (kelajakdagi hujjat yo'q). `from` berilmasa davr-boshi YO'Q.
+    const { gte, lt } = reportDateBounds(opts.from ?? new Date(0), opts.to ?? new Date());
+    const periodStart = opts.from ? gte : null;
+    const momentFilter = opts.from || opts.to ? { moment: { gte, lt } } : {};
 
     const cp = await c.counterparty.findFirst({
       where: { id: counterpartyId, accountId },
@@ -128,7 +182,10 @@ export class CounterpartyStatementService {
           },
         },
       } as const;
-      const w = { ...where, positions: { some: { productId } } };
+      // Davr kesimi SQL darajasida (`moment` chegaralari) — buyum-jurnalida
+      // saldo-forward tushunchasi yo'q (bu balans ko'rinishi emas), shuning
+      // uchun davrdan tashqari hujjatlar shunchaki tortilmaydi.
+      const w = { ...where, ...momentFilter, positions: { some: { productId } } };
       const [invOut, supply, purchaseReturn, product] = await Promise.all([
         c.invoiceOut.findMany({ where: w, select: sel }),
         c.supply.findMany({ where: w, select: sel }),
@@ -170,20 +227,40 @@ export class CounterpartyStatementService {
       counterpartyId,
       currency: STATEMENT_CURRENCY,
     });
-    const resolved = await resolveBalanceDocs(c, accountId, entries, { withItems: true });
 
-    const raw: RawDoc[] = entries.map((e) => {
-      const doc = resolved.get(docKey(e.docType, e.docId));
+    // IKKI BOSQICHLI RESOLVE (Faza Q6, `PERF-02` ning perf qismi):
+    //   1-bosqich — SANA/RAQAM (pozitsiyalarsiz, flat select). Sana HAR bir
+    //      qatorga kerak, chunki davr aynan shu sana bo'yicha kesiladi;
+    //   2-bosqich — TOVAR QATORLARI faqat davr ICHIDA qolgan hujjatlar uchun.
+    // Ilgari butun tarix uchun pozitsiyalar tortilardi — bir yillik kontragentda
+    // bu aktning eng qimmat so'rovi edi, ustiga natijaning ko'p qismi
+    // ishlatilmasdi. «Batafsil» varag'idagi tovar qatorlari SAQLANADI (egasi
+    // 2026-07-28 talabi: chegirma ochiq ustunda) — ular endi faqat KO'RSATILADIGAN
+    // hujjatlar uchun yuklanadi.
+    const heads = await resolveBalanceDocs(c, accountId, entries);
+    const dated: DatedJournalEntry[] = entries.map((e) => ({
+      ...e,
+      docMoment: heads.get(docKey(e.docType, e.docId))?.moment ?? null,
+    }));
+    const folded = foldJournalPeriod(dated, periodStart, lt);
+    const detailed = await resolveBalanceDocs(c, accountId, folded.lines, { withItems: true });
+
+    const raw: RawDoc[] = folded.lines.map((e) => {
+      const key = docKey(e.docType, e.docId);
       return {
-        moment: doc?.moment ?? e.createdAt,
+        moment: e.docMoment ?? e.createdAt,
         docType: e.docType,
-        docNumber: doc?.number ?? '—',
+        docNumber: heads.get(key)?.number ?? '—',
         deltaMinor: e.deltaMinor,
-        items: doc?.items ?? [],
+        items: detailed.get(key)?.items ?? [],
       };
     });
 
-    return { cp, data: computeStatement(raw), productName: null as string | null };
+    return {
+      cp,
+      data: computeStatement(raw, folded.openingMinor),
+      productName: null as string | null,
+    };
   }
 
   /**
@@ -232,9 +309,9 @@ export class CounterpartyStatementService {
     accountId: string,
     counterpartyId: string,
     userId: string | null,
-    productId?: string,
+    opts: StatementAggregateOptions = {},
   ) {
-    const { cp, data, productName } = await this.aggregate(accountId, counterpartyId, productId);
+    const { cp, data, productName } = await this.aggregate(accountId, counterpartyId, opts);
 
     const generatedAtLabel = new Intl.DateTimeFormat('ru-RU', {
       timeZone: 'Asia/Tashkent',
@@ -251,7 +328,9 @@ export class CounterpartyStatementService {
     const buf = await buildStatementXlsx({
       companyName: org?.name ?? 'Sherset',
       counterpartyName: cp.name,
-      periodLabel: productName ? `Buyum: ${productName} · butun tarix` : 'Butun tarix',
+      periodLabel: productName
+        ? `Buyum: ${productName} · ${periodLabelOf(opts)}`
+        : periodLabelOf(opts),
       generatedAtLabel,
       data,
       currency: 'UZS',

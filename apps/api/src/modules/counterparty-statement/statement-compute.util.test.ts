@@ -82,6 +82,41 @@ describe('computeStatement', () => {
 });
 
 /**
+ * FAZA Q6 (`PERF-02`) — DAVR-BOSHI SALDO (saldo-forward).
+ *
+ * Davr-filtri qo'shilgach akt endi butun tarixni ko'rsatmaydi, shuning uchun
+ * davrgacha to'plangan qoldiq ALOHIDA kiritma bo'lib keladi (`foldJournalPeriod`
+ * dan). Running balans undan boshlanishi SHART — aks holda davr aktidagi
+ * «Qoldiq» ustuni bosh daftardan ajralib ketardi (aynan Faza 10 yopgan
+ * bug-klassning davr-varianti).
+ */
+describe('computeStatement — davr-boshi saldo (Faza Q6)', () => {
+  it('opening qatorlarsiz ham berilgan boshlang’ich qoldiqdan boshlanadi', () => {
+    const r = computeStatement([d('2026-07-05', 'cashIn', -300n)], 1_000n);
+    expect(r.openingMinor).toBe(1_000n);
+    expect(r.lines[0]?.runningBalanceMinor).toBe(700n);
+    expect(r.finalBalanceMinor).toBe(700n);
+    // Aylanma FAQAT davr harakatlari — boshlang'ich qoldiq unga kirmaydi.
+    expect(r.turnoverMinor).toBe(300n);
+  });
+
+  it('opening + debet − kredit == yakun (ichki izchillik)', () => {
+    const r = computeStatement(
+      [d('2026-07-01', 'invoiceOut', 500n), d('2026-07-02', 'paymentIn', -200n)],
+      -100n,
+    );
+    expect(r.openingMinor + r.totalDebitMinor - r.totalCreditMinor).toBe(r.finalBalanceMinor);
+    expect(r.finalBalanceMinor).toBe(200n);
+  });
+
+  it('boshlang’ich qoldiq berilmasa — nol (eski xulq saqlanadi)', () => {
+    const r = computeStatement([d('2026-07-01', 'invoiceOut', 100n)]);
+    expect(r.openingMinor).toBe(0n);
+    expect(r.finalBalanceMinor).toBe(100n);
+  });
+});
+
+/**
  * Faza 10 gacha bu bo'lim «akt-sverkaga QO'SHILGAN 5 tur» deb nomlanardi —
  * ya'ni ro'yxatning to'liqligini tekshirardi. Endi tekshiriladigan narsa
  * boshqa: HAR QANDAY tur (ro'yxatda bor-yo'qligidan qat'i nazar) o'z belgisi

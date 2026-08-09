@@ -63,9 +63,18 @@ export interface StatementLine extends RawDoc {
 
 export interface StatementData {
   lines: StatementLine[];
+  /**
+   * FAZA Q6 (`PERF-02`) — DAVR-BOSHI SALDO. Davr boshigacha to'plangan qoldiq
+   * (`foldJournalPeriod().openingMinor`). Davrsiz aktda bu faqat `opening`
+   * (backfill) qatorlarining yig'indisi bo'ladi; davr berilganda esa unga
+   * davrdan OLDINGI barcha harakatlar ham qo'shiladi. Running balans aynan
+   * shundan boshlanadi — aks holda davr aktidagi «Qoldiq» ustuni bosh
+   * daftardan ajralib ketardi.
+   */
+  openingMinor: bigint;
   totalDebitMinor: bigint;
   totalCreditMinor: bigint;
-  /** Total money that moved through the account (debit + credit). */
+  /** Davr harakatlarining aylanmasi (debet + kredit) — opening unga KIRMAYDI. */
   turnoverMinor: bigint;
   /** Net: > 0 they owe us · < 0 we owe them · 0 settled. */
   finalBalanceMinor: bigint;
@@ -114,12 +123,17 @@ export function discountLabel(percent: string | undefined): string {
 /**
  * Build the reconciliation statement. Documents are sorted by `moment` (stable),
  * then a running balance is accumulated. Amounts are absolute tiyin values; the
- * document type decides the debit/credit side.
+ * document sign (`deltaMinor`) decides the debit/credit side.
+ *
+ * `openingMinor` (Faza Q6) — davr-boshi qoldig'i, `foldJournalPeriod` dan
+ * keladi. Berilmasa 0 (davrsiz akt uchun eski xulq). Yakun har doim
+ * `opening + Σdebet − Σkredit` bo'lgani uchun `to = hozir` bo'lganda u
+ * materiallashgan balansga TENG qoladi (Faza 10 invarianti).
  */
-export function computeStatement(docs: RawDoc[]): StatementData {
+export function computeStatement(docs: RawDoc[], openingMinor = 0n): StatementData {
   const sorted = [...docs].sort((a, b) => a.moment.getTime() - b.moment.getTime());
 
-  let running = 0n;
+  let running = openingMinor;
   let totalDebit = 0n;
   let totalCredit = 0n;
 
@@ -143,6 +157,7 @@ export function computeStatement(docs: RawDoc[]): StatementData {
 
   return {
     lines,
+    openingMinor,
     totalDebitMinor: totalDebit,
     totalCreditMinor: totalCredit,
     turnoverMinor: totalDebit + totalCredit,
