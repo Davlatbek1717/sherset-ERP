@@ -833,7 +833,54 @@ check-in tuzatilsa jarima qayta hisob. (4) oy-chegarasi (00:00-05:00) to'g'ri oy
 **▶ SESSIYA-BOSHI PROMPT:**
 > `docs/REJA-AUDIT-FIX-2026-08.md` — **Faza 29**. O'ZGARMAS QOIDALAR. `HR-1/2/3/7/8/13`. Base-salary + shift-resolve
 > + fine-sync + tz + soft-delete. TDD: 5 stsenariy. Og'ir bo'lsa sub-faza. Gate. Hisobot, TO'XTA.
-**◻ HISOBOT:** _(agent to'ldiradi)_
+
+**✅ HISOBOT — 29a (2026-08-09i, `881ebcc7`) — Phase-1: strukturaviy + unit, RUNTIME-TASDIQLANMAGAN:**
+Reja «og'ir bo'lsa sub-faza» degani uchun **29a / 29b** ga bo'lindi. 29a = kod-only beshta to'g'rilik
+nuqsoni (migratsiyasiz); 29b = soft-delete + auditLog (Prisma migratsiya kerak — umumiy resurs, §6.4).
+
+| # | Topilma | Ildiz sabab (o'zim ground-truth qildim) | Yechim |
+|---|---|---|---|
+| HR-1 | fiks oylik prod'da **doim 0** | Xodim kartochkasi (`hr-employee.service` create/update) `Employee.salaryMinor` **USTUNIGA** yozadi; dvigatel esa `salaryConfig` **JSON**'idan o'qirdi. JSON'ning yagona yozuvchisi — `apps/api/scripts/verify-payroll-kpi-smoke.ts` (bir martalik smoke). | `resolveFixComponentMinor({salaryConfig, salaryMinor})`: JSON override ustun turadi (**ataylab 0 ham** aniq qiymat — «fiks yo'q»), buzuq/manfiy = «sozlanmagan» ⇒ ustunga qaytadi. `findFirst` `select`iga `salaryMinor` qo'shildi. |
+| HR-2 | GPS check-in kechikishi noto'g'ri | `ingest()` KELDI yo'li ham, `manualCheckIn()` ham `employeeWorkSchedule.findUnique` (hafta-kuni) dan `computeLateMinutes` chaqirardi. Nomli **siklik/erkin** `HrSchedule` biriktirilgan xodimda bu jadval mos emas ⇒ kechikish va undan kelib chiqqan **avto-jarima** xato. | Ikkala yo'l `resolveShift` + `lateMinutesForShift` ga o'tdi (`hr-attendance.checkIn` bilan **bir xil** manba, §5.1). Xodim + smenasi bitta `findFirst` da (`CHECKIN_EMPLOYEE_SELECT`) — qo'shimcha so'rov yo'q. |
+| HR-3 | tuzatilgan davomat ↔ jarima **desink** | `edit()` `lateMinutes`ni qayta hisoblamas edi; `applyIfLate` esa faqat `create` qiladi va `@@unique(attendanceId, source)` tufayli qayta chaqirilganda eski summani jimgina qoldiradi. | `edit()` kelish vaqti berilganda kechikishni qayta hisoblaydi (`recomputeLateMinutes`, `checkIn` bilan umumiy) + yangi `LateFineService.syncForAttendance` — 0 bo'lsa **storno** (`deleteMany`), aks holda **upsert**. Sinxron faqat kechikish **haqiqatan** o'zgarganda (izoh tahriri jarima yaratib yubormasin). |
+| HR-7/8 (a) | bonus/jarima oyi 5 soat surilgan | `monthBounds` UTC yarim tun beradi, `HrBonusFineLog.createdAt` esa **haqiqiy instant** ⇒ 1-avgust 00:00–05:00 dagi jarima **iyulga** tushardi. | Yangi `monthInstantBounds(yearMonth, tz=HR_TZ)` — Toshkent yarim tuni. |
+| HR-7/8 (b) | kunlik maqsad oyning 1-kunida noto'g'ri | `daysInMonthOf(dayStart)` — `dayStart` mahalliy yarim tunning UTC instanti (Toshkentda oldingi kun 19:00), UTC maydonlari **o'tgan oyni** beradi ⇒ 1-mart uchun 31 emas, **28** ga bo'linardi. | `daysInMonthOf(dateOnly)` — yorliqdan (`localDateOnly`). |
+
+**⚠️ Rejaning (d) bandi ATAYLAB to'liq bajarilmadi — u qo'llanilsa YANGI bug tug'ilardi.**
+Reja «`monthBounds`/`daysInMonthOf`ni Tashkent-tz bilan» deydi. Tekshirdim: `monthBounds` yana
+`EmployeeDailyKpi.date` so'rovida ishlatiladi, u esa `localDateOnly` **YORLIG'I** (UTC yarim tun,
+`manager/kpi/employee-daily-kpi.service.ts:45`) — instant emas. Uni Toshkentga surish oyning
+**1-kunini tashlab**, o'tgan oyning oxirgi kunini **qo'shib** yuborardi. Shuning uchun chegara
+**ikkiga ajratildi**: `monthBounds` = yorliq (o'zgarmadi, izoh bilan qulflandi) ·
+`monthInstantBounds` = instant (yangi). Ikkalasiga ham regressiya testi bor.
+
+**Testlar (TDD, hammasi avval RED ko'rildi):** `payroll-formula.util` +11 · `hr-payroll.service` +5
+(+1 mavjud test **tuzatildi** — u eski UTC oynasini, ya'ni aynan HR-7/8 bug'ini qulflab qo'ygan edi) ·
+`ping-ingest.service` +6 · `late-fine.service` +5 · `hr-attendance.service` +7 · `hr-kpi.service` +5.
+Reja so'ragan 5 stsenariyning 4 tasi qoplandi (5-si — soft-delete — 29b da).
+
+**Gate:** typecheck **9/9** · api `hr/` + `manager/` **101 fayl / 1082 test** yashil · `app-boot` DI **9** ·
+`hr/` qayta yugurtirildi (87 fayl / 841) · biome: shu **14 faylda 0 xato**.
+
+**Parallel sessiya sharoiti (§6):** commit paytida daraxtda ikkinchi sessiyaning faol ishi bor edi
+(`customer-order`, `demand`, `inventory`, `move`, `product`, `stock`, `web/pos`, `schema.prisma` +
+yangi migratsiya). `git add` faqat **14 aniq yo'l** bilan qilindi; ularning fayllariga tegilmadi.
+`pnpm lint:product` daraxt bo'yicha **9 xato** ko'rsatadi — hammasi o'sha uchib turgan fayllarda,
+ATAYLAB tuzatilmadi. `lint-staged` commit'ga **15-fayl** (`docs/progress.json`) qo'shdi — o'zgarish
+faqat hook'ning o'z `generatedAt` tamg'asi, hech kimning ishi emas ⇒ `reset --soft` bilan tarix
+QAYTA YOZILMADI (umumiy checkout'da HEAD'ni surish §6.7 A xavfi shu zarardan katta). §6.7 B
+hodisasining ikkinchi takrori.
+
+**◻ 29b (KEYINGI SESSIYA) — `HR-13` soft-delete + audit:**
+1. `HrAttendance` da **soft-delete ustuni YO'Q** (sxema tekshirildi, 9300–9328) ⇒ Prisma migratsiya
+   kerak (`deletedAt`/`deletedById`). Lokal DB uchun retsept: xotira `climart-adopt-local-db-untracked.md`
+   («2026-08-08 — ENG SODDA ISHLAYDIGAN YO'L»). Migratsiya = umumiy resurs (§6.4), yolg'iz sessiyada.
+2. `delete()` hozir **hard-delete, auditsiz**. Soft-delete'dan keyin barcha o'quvchilarga
+   (`listToday`, `report`, `aggregateEmployeeDay`, davomat dashboard/eksport) `deletedAt: null`
+   filtri qo'shilishi shart — aks holda o'chirilgan qator hisobotda qolaveradi.
+3. **Yetim jarima:** `HrBonusFineLog.attendanceId` — xom FK (relation/cascade YO'Q, 9463-qator).
+   Hard-delete `auto_late` jarimani osilgan holda qoldiradi. `delete()` ham
+   `syncForAttendance`/storno chaqirishi kerak (mexanizm 29a da tayyor).
 
 ---
 
@@ -933,7 +980,16 @@ inventory variance, move per-unit, CO kaskadi va `available = qty − reserved` 
 **▶ SESSIYA-BOSHI PROMPT:**
 > `docs/REJA-AUDIT-FIX-2026-08.md` — **Faza 34**. O'ZGARMAS QOIDALAR. `STK-05`,`STK-08`,`SALES-10`,`STK-12`.
 > Float→BigInt primitivlarni tarqat + `availableOf` helper. TDD: 3 stsenariy. Gate. Hisobot, TO'XTA.
-**◻ HISOBOT:** _(agent to'ldiradi)_
+**✅ HISOBOT (2026-08-09) — Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q:**
+To'rtala topilma kodda TASDIQLANDI (`STK-05` audit «confirmed» degani to'g'ri chiqdi; qolgan uchta
+«unverified» ham dalil-qatorlarida aynan turibdi). Batafsili «HISOBOT JURNALI → Faza 34» da.
+**DIQQAT — reja taklif qilgan yechim STK-08 uchun YETARLI EMAS edi:** «to'liq ko'chirishda
+costDelta = −costBalanceMinor» qoidasi *unpost/cancel*ni buzardi — ular bazadagi per-birlik
+`costMinor` snapshot'idan `perUnit × qty` bilan qayta hisoblaydi, ya'ni post ≠ reversal bo'lib
+qolardi. Shu sababli **migratsiya qo'shildi** (`MovePosition.base_cost_minor`, nullable) — aniq
+satr-qiymati saqlanadi, eski qatorlar NULL bo'lib eski formulaga tushadi (bit-ma-bit teskarilik).
+**Qo'shimcha topildi:** `product-cell-move.service.ts:39` da AYNAN shu float naqsh bor edi (audit
+ko'rmagan) — u ham bir xil helper'ga o'tkazildi.
 
 ---
 
@@ -3443,7 +3499,7 @@ uni ishlatmaydi xolos.
 |---|---|
 | `apps/api/src/modules/report/stock-balance.schema.ts` | `offset` (`min(0).default(0)`) qo'shildi |
 | `apps/api/src/modules/report/stock-balance.service.ts` | `resolveSearchIds()` — ikkala rejim uchun YAGONA qidiruv pre-filtri; grouped rejimda `where.assortmentId` + Prisma `having` (`hideEmpty`) + `skip`/`take`; `countGroups()` raw-SQL guruh-count; `truncated`; `emptyReport()`; `export PRODUCT_SEARCH_CAP = 2000` (eski izohsiz `500`) |
-| `apps/api/src/modules/report/stock-balance.service.test.ts` | **YANGI** — 7 test, Prisma-dubl DB semantikasini (where → having → order → skip/take) taqlid qiladi |
+| `apps/api/src/modules/report/stock-balance.service.test.ts` | Mavjud 5 test (§6 «Доступно» in-transit) SAQLANDI + **7 yangi** test qo'shildi. Yangi blok Prisma-dubl DB semantikasini (where → having → order → skip/take) taqlid qiladi; eski dublga `$queryRaw` qo'shildi (servis endi guruh-count so'raydi) |
 | `apps/api/src/modules/report/counterparty-balance.service.ts` | `buildWhere()` — 5000-ID pre-fetch o'rniga `counterparty` relation-filtri (Prisma JOIN'ga kompilyatsiya qiladi); `aggregateSummaries()` + `aggregateBySign()` — jamilar butun-`where` SQL-agregatidan; `aggregateByCounterparty()` — ko'p-valyutali `groupBy=counterparty` uchun net-per-kontragent; `truncated`; `rowCount = total` |
 | `apps/api/src/modules/report/counterparty-balance.service.test.ts` | Dubl DB-semantikasiga o'tkazildi (`where`-baholovchi, `take`, `groupBy`); **7 yangi test** qo'shildi, mavjud 4 tasi saqlandi |
 
@@ -3501,6 +3557,19 @@ Tekshiruv skripti ataylab **commit'ga kiritilmadi** (bir martalik).
 | `vitest run src/modules/report/` | **37 fayl / 328 test yashil** (regress yo'q; parallel sessiyaning `ttl-cache`/`dashboard` testlari ham shu ichida) |
 | `pnpm i18n:gate` | Qo'llanmaydi — UI-matn tegilmadi |
 
+### 🔴 Yaqin-halokat: mavjud test-fayl ustidan `Write` (xotira bug-klassi TAKRORLANDI)
+
+`stock-balance.service.test.ts` **allaqachon mavjud edi** (218 qator, 5 test — §6 «Доступно»
+in-transit formulasi). Modul ro'yxati `head -40` bilan kesilgani uchun ko'rinmadi va fayl `Write`
+bilan ustidan yozildi ⇒ 5 test JIMGINA o'chdi. Yangi 7 test yashil edi, gate ham yashil bo'lardi.
+
+Tutildi: commit oldidan `git status --short` da fayl `??` (yangi) emas, **` M` (modified)** turgani
+ko'zga tashlandi. `git show HEAD:<fayl>` bilan asl versiya olinib, 5 test tiklandi (jami 12 yashil).
+
+**Qoida (xotira `never-write-over-existing-test-file.md` ni kuchaytiradi):** «yangi test fayli
+yaratdim» degan har holatda commit oldidan `git status` dagi belgini tekshir — `M` bo'lsa `Write`
+mavjud faylni yeb qo'ygan. Fayl mavjudligini `ls | head` bilan tekshirish YETARLI EMAS (kesiladi).
+
 ### Parallel sessiya sharoiti (CLAUDE.md §6)
 
 Bu sessiya davomida shu checkout'da yana **ikki** sessiya ishlagan: **Faza 26** (`dashboard.service.ts`,
@@ -3508,6 +3577,20 @@ Bu sessiya davomida shu checkout'da yana **ikki** sessiya ishlagan: **Faza 26** 
 fayllariga tegilmadi, `git add` faqat aniq yo'llar bilan qilindi. **`docs/REJA-AUDIT-FIX-2026-08.md`
 ATAYLAB stage QILINMADI** — faylda Faza-26 sessiyasining commit qilinmagan jurnal yozuvi turibdi, uni
 o'z commit'imga tortib ketmaslik uchun. Shu yozuv ish daraxtida qoladi va uni keyingi doc-commit oladi.
+
+**Ikki hodisa ro'y berdi (ikkalasi ham §6 da hujjatlangan bug-klass):**
+
+1. **Birinchi commit urinishi commit-msg gate'da rad etildi** (header 117 > 100 belgi). Rad etilgan
+   commit'dan keyin indeks parallel Faza-28 sessiyasiniki bo'lib qoldi (mening 5 faylim
+   unstaged'ga tushdi). Ish daraxti butun qoldi. §6.2 bo'yicha o'sha sessiyaning commit'i
+   (`94b05fa5`) kutildi, keyin qayta stage qilindi. Xotira:
+   `lint-staged-stash-on-rejected-commit.md` — commit xabarini OLDINDAN moslash kerak.
+2. **`lint-staged` commit'ga 6-faylni qo'shdi** (`docs/progress.json`) — `git add` da 5 ta aniq yo'l
+   berilgan bo'lsa ham, va u ataylab `git restore --staged` bilan chiqarilgan bo'lsa ham. §6.7 B
+   aynan shu. Tekshirildi: o'zgarish — hook'ning o'zi yangilagan bitta `generatedAt` vaqt tamg'asi
+   (03:31→03:32), **hech kimning ishi emas**. Shu sababli `reset --soft` bilan tarix qayta
+   YOZILMADI — umumiy checkout'da HEAD'ni orqaga surish parallel sessiyaning commit'ini o'chirish
+   xavfi (§6.7 A) shu zarardan katta.
 
 ### Qolgan qarz / DEFER
 

@@ -305,6 +305,49 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-09i (AUDIT-FIX FAZA **29a** — HR to'g'rilik paketi: base-salary + shift-resolve +
+> jarima-sinxron + tz · `HR-1`,`HR-2`,`HR-3`,`HR-7/8`) · Phase-1: strukturaviy + unit,
+> RUNTIME-TASDIQLANMAGAN (browser-smoke YO'Q, jonli DB sinovi YO'Q) · ⏳ DEPLOY QILINMAGAN ·
+> 🗄️ **migratsiya SHART EMAS** · ⚠️ parallel sessiya `customer-order`/`demand`/`inventory`/`move`/
+> `product`/`stock`/`web-pos`/`schema.prisma` da ishlamoqda — `git add` 14 aniq yo'l bilan,
+> ularning fayllariga TEGILMADI (`lint:product` daraxtdagi 9 xato — hammasi o'shalarniki).**
+>
+> **Nima qilindi (`881ebcc7`):** reja «og'ir bo'lsa sub-faza» degani uchun Faza 29 **29a/29b** ga
+> bo'lindi. 29a = migratsiyasiz **beshta** to'g'rilik nuqsoni, har biri RED→GREEN TDD bilan:
+> **(HR-1)** fiks oylik prod'da **doim 0** edi — xodim kartochkasi `Employee.salaryMinor`
+> **ustuniga** yozadi, dvigatel esa `salaryConfig` **JSON**'idan o'qirdi (JSON'ni faqat bir
+> martalik smoke-skript to'ldiradi) ⇒ yangi `resolveFixComponentMinor` (JSON override ustun,
+> **ataylab 0 ham** aniq qiymat; buzuq/manfiy = sozlanmagan ⇒ ustunga qaytadi).
+> **(HR-2)** GPS check-in ikki yo'li (`ingest` KELDI + `manualCheckIn`) hafta-kuni jadvalidan
+> kechikish hisoblardi — nomli **siklik/erkin** `HrSchedule` li xodimda xato (va undan avto-jarima)
+> ⇒ ikkalasi `resolveShift`+`lateMinutesForShift` ga o'tdi, smena xodim bilan **bitta** so'rovda.
+> **(HR-3)** `edit()` `lateMinutes`ni qayta hisoblamas, `applyIfLate` esa `@@unique` tufayli eski
+> summani jimgina qoldirardi ⇒ qayta hisob + yangi `LateFineService.syncForAttendance`
+> (0 ⇒ **storno**, aks holda **upsert**); sinxron faqat kechikish **haqiqatan** o'zgarganda.
+> **(HR-7/8)** oy chegarasi tz off-by-one **ikki joyda**: bonus/jarima `createdAt` oynasi UTC yarim
+> tunda edi (1-avgust 00:00–05:00 jarimasi **iyulga** tushardi) ⇒ yangi `monthInstantBounds`;
+> `daysInMonthOf(dayStart)` oyning 1-kunida **o'tgan oyni** berardi (1-mart → 28 ga bo'linardi)
+> ⇒ `dateOnly` yorlig'idan.
+>
+> **⚠️ Rejaning (d) bandi ATAYLAB to'liq bajarilmadi.** «`monthBounds`ni Tashkent-tz bilan» deyilgan
+> edi — ko'r-ko'rona qo'llansa **yangi bug** tug'ilardi: `monthBounds` `EmployeeDailyKpi.date`
+> so'rovida ham ishlatiladi, u esa `localDateOnly` **YORLIG'I** (UTC yarim tun), instant emas;
+> surish oyning 1-kunini tashlab yuborardi. Chegara **ikkiga ajratildi**: `monthBounds` = yorliq
+> (o'zgarmadi, izoh+test bilan qulflandi) · `monthInstantBounds` = instant. Ikkalasiga regressiya testi.
+>
+> **Gate:** typecheck **9/9** · api `hr/`+`manager/` **101 fayl / 1082 test** · `app-boot` DI **9** ·
+> biome shu 14 faylda **0**. `lint-staged` yana **`docs/progress.json`** ni commit'ga qo'shdi
+> (faqat hook'ning `generatedAt` tamg'asi, hech kimning ishi emas) — umumiy checkout'da
+> `reset --soft` xavfi (§6.7 A) shu zarardan katta, tarix qayta YOZILMADI.
+>
+> **⏭️ KEYINGI = FAZA 29b (`HR-13` soft-delete + audit)** — batafsil retsept
+> `docs/REJA-AUDIT-FIX-2026-08.md` Faza 29 hisobotining oxirida. Uch ish: (1) `HrAttendance` da
+> soft-delete ustuni **YO'Q** ⇒ Prisma migratsiya (umumiy resurs, §6.4 — yolg'iz sessiyada;
+> lokal DB retsepti xotira `climart-adopt-local-db-untracked.md` da); (2) `delete()` soft+auditLog,
+> so'ng **barcha o'quvchilarga** `deletedAt: null` filtri (aks holda o'chirilgan qator hisobotda
+> qolaveradi); (3) **yetim jarima** — `HrBonusFineLog.attendanceId` xom FK (cascade YO'Q), o'chirishda
+> `auto_late` osilib qoladi ⇒ `delete()` ham storno chaqirsin (mexanizm 29a da tayyor).
+
 > **🕒 2026-08-09h (AUDIT-FIX FAZA 28 — outbox eksklyuziv claim + ijara + dedup ·
 > `INT-08`,`HR-4`,`INT-09`) · Phase-1: strukturaviy + unit, RUNTIME-TASDIQLANMAGAN
 > (browser-smoke YO'Q, jonli DB/cluster sinovi YO'Q) · ⏳ DEPLOY QILINMAGAN ·
