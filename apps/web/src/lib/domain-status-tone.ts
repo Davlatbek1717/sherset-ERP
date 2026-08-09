@@ -467,3 +467,32 @@ export const STOCK_SIGNAL_TONE: Record<string, StateTone> = {
 };
 export const stockSignalTone = (k: string | null | undefined): StateTone =>
   resolve(STOCK_SIGNAL_TONE, k);
+
+/**
+ * Menejer navbati — element JIDDIYLIGI (4M.5 · `work-item-rules.ts` dagi
+ * WORK_ITEM_SEVERITY).
+ */
+export const WORK_ITEM_SEVERITY_TONE: Record<string, StateTone> = {
+  critical: 'destructive',
+  warning: 'warning',
+  info: 'info',
+};
+export const workItemSeverityTone = (s: string | null | undefined): StateTone =>
+  resolve(WORK_ITEM_SEVERITY_TONE, s);
+
+/**
+ * Menejer navbati — element HOLATI (`work-item-fsm.ts` dagi WORK_ITEM_STATUS).
+ *
+ * `escalated` — `destructive` emas, `warning`: eskalatsiya muvaffaqiyatsizlik
+ * emas, to'g'ri qaror (menejer o'z vakolatidan tashqarisini egaga uzatdi).
+ * `dismissed` — `neutral`: element o'rinsiz ekan, hech kim aybdor emas.
+ */
+export const WORK_ITEM_STATUS_TONE: Record<string, StateTone> = {
+  open: 'warning',
+  in_review: 'info',
+  resolved: 'success',
+  dismissed: 'neutral',
+  escalated: 'warning',
+};
+export const workItemStatusTone = (s: string | null | undefined): StateTone =>
+  resolve(WORK_ITEM_STATUS_TONE, s);

@@ -15,6 +15,8 @@ import { KpiMetricCatalogService } from './kpi/kpi-metric-catalog.service.js';
 import { ManagerKpiController } from './kpi/manager-kpi.controller.js';
 import { OwnerWeeklySummaryService } from './kpi/owner-weekly-summary.service.js';
 import { LiveStatusService } from './live/live-status.service.js';
+import { ManagerQueueController } from './queue/manager-queue.controller.js';
+import { ManagerQueueService } from './queue/manager-queue.service.js';
 
 /**
  * Menejer bo'limi — 4-bo'lim TZ kengaytmasi.
@@ -39,7 +41,12 @@ import { LiveStatusService } from './live/live-status.service.js';
  */
 @Module({
   imports: [PrismaModule, AuthModule, PermissionsModule],
-  controllers: [KpiConfigController, ManagerKpiController, ManagerInventoryController],
+  controllers: [
+    KpiConfigController,
+    ManagerKpiController,
+    ManagerInventoryController,
+    ManagerQueueController,
+  ],
   providers: [
     EmployeeDailyKpiService,
     EmployeeDailyKpiCron,
@@ -51,6 +58,7 @@ import { LiveStatusService } from './live/live-status.service.js';
     DailyKpiDrilldownService,
     DataQualityService,
     ManagerInventoryService,
+    ManagerQueueService,
   ],
   exports: [EmployeeDailyKpiService, DailyKpiAcceptanceService],
 })

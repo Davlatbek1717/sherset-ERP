@@ -447,6 +447,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   // va javobgarlikni qo'shdi. Qolgani — 4M.5–4M.9 fazalarida.
   const menejerSubNav: SubNavItem[] = [
     { key: 'acceptance', label: tMenejer('acceptance'), href: '/menejer' },
+    // 4M TZ §5.1 (MK06) — BITTA NAVBAT: «bugun nima muhim» degan yagona joy.
+    // KPI qabulidan keyin ataylab tepada: qolgan sahifalar bitta-bitta signal
+    // turini ko'rsatadi, bu esa hammasini yig'ib beradi. BLOKLAMAYDI.
+    { key: 'work_queue', label: tMenejer('work_queue'), href: '/menejer/navbat' },
     // 4M TZ §6.1 — «hozir kim ishda»: diqqat talab qilgani tepada.
     { key: 'live', label: tMenejer('live'), href: '/menejer/jonli' },
     // 4M TZ §6.4 — «kimda nima qolgan»: pul ko'p bo'lgan tepada.

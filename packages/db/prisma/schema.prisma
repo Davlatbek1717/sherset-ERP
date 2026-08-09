@@ -115,6 +115,9 @@ model Account {
   cashierAuditEvents             CashierAuditEvent[]
   cashierSessionVariances        CashierSessionVariance[]
   cashierSessionAcceptanceEvents CashierSessionAcceptanceEvent[]
+  managerRuleConfigs             ManagerRuleConfig[]
+  managerWorkItems               ManagerWorkItem[]
+  managerWorkItemEvents          ManagerWorkItemEvent[]
   employeeKpiCorrections         EmployeeKpiCorrection[]
   employeeOffboardings           EmployeeOffboarding[]
   employeeOnboardings            EmployeeOnboarding[]
@@ -443,6 +446,9 @@ model Employee {
   receivedEquipment          EquipmentAssignment[]      @relation("EquipmentAssignmentReceiver")
   acceptedKpiCorrections     EmployeeKpiCorrection[]    @relation("EmployeeKpiCorrectionActor")
   acknowledgedVariances      CashierSessionVariance[]   @relation("CashierSessionVarianceAck")
+  editedManagerRuleConfigs   ManagerRuleConfig[]        @relation("ManagerRuleConfigEditor")
+  managerWorkItemsAbout      ManagerWorkItem[]          @relation("ManagerWorkItemSubject")
+  resolvedManagerWorkItems   ManagerWorkItem[]          @relation("ManagerWorkItemResolver")
   retailDrawerOutRecipient   RetailDrawerCashOut[]      @relation("RetailDrawerOutRecipient")
   ownedRetailSalesReturns    RetailSalesReturn[]        @relation("RetailSalesReturnOwner")
   ownedProcessingProcesses   ProcessingProcess[]        @relation("ProcessingProcessOwner")
@@ -11229,4 +11235,171 @@ model MsPickList {
   /// Omborchi ekrani: «yig'ilmagan buyurtmalar» — asosiy so'rov.
   @@index([accountId, pickState, moment(sort: Desc)])
   @@map("ms_pick_lists")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MENEJER ISH NAVBATI — 4M TZ §5 (MK06)
+//
+// «BITTA NAVBAT» tamoyili (§5.1): qoida buzilishi · kun qabuli · e'tiroz ·
+// eskalatsiya — HAMMASI shu jadvalda. Har manba o'z ro'yxatini yasasa, menejer
+// «bugun nima muhim» degan savolga besh joydan javob izlardi va bittasi
+// e'tibordan qolardi.
+//
+// 🔴 NAVBAT BLOKLAMAYDI (§5.1 — egasining falsafasi «erkinlik + keyingi
+// nazorat»). Shuning uchun bu yerda hech qanday `blocked`/`blocksDocument`
+// maydoni YO'Q va `ManagerRuleConfig.mode` da `block` qiymati YO'Q. Kimdir
+// kelajakda navbatdan taqiq yasamoqchi bo'lsa — avval sxemani, tipni va
+// qulf-testni buzishi kerak bo'ladi.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Qoida sozlamasi — asl TZ §5.2 dagi `ApprovalRule { type, threshold, mode }`
+/// kengaytmasi. Bir akkаunt × bir qoida turi = bitta qator.
+model ManagerRuleConfig {
+  id        String @id @default(uuid()) @db.Uuid
+  accountId String @map("account_id") @db.Uuid
+
+  /// `work-item-rules.ts` dagi registry kaliti (MK07 12 turgacha to'ldiradi).
+  ruleType String @map("rule_type") @db.VarChar(40)
+
+  /// O'chirilgan qoida YANGI element yaratmaydi. Mavjudlari O'CHIRILMAYDI —
+  /// ular bo'lib o'tgan hodisa, sozlama o'zgargani tarixni yolg'on qilmaydi.
+  enabled Boolean @default(true)
+
+  /// Chegara qiymati. Birligi `thresholdUnit` da — ikkisi HAR DOIM birga
+  /// o'qiladi: foizni tiyin deb talqin qilish shu repoda allaqachon yuz bergan
+  /// bug-klass (`per-unit-snapshot` hodisasi). `null` = chegarasiz qoida.
+  thresholdValue Decimal? @map("threshold_value") @db.Decimal(20, 4)
+  /// percent | minor | days | qty
+  thresholdUnit  String?  @map("threshold_unit") @db.VarChar(10)
+
+  /// observe | notify. **`block` YO'Q** — yuqoridagi izohga qara.
+  mode String @default("notify") @db.VarChar(10)
+
+  /// info | warning | critical — navbatdagi tartibga ta'sir qiladi.
+  severity String @default("warning") @db.VarChar(10)
+
+  /// Qoidaga xos qo'shimcha sozlama (MK07 to'ldiradi).
+  params Json?
+
+  updatedById String?  @map("updated_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  account   Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  updatedBy Employee? @relation("ManagerRuleConfigEditor", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@unique([accountId, ruleType])
+  @@map("manager_rule_configs")
+}
+
+/// Navbat elementi. Har element §5.1 ning beshta savoliga javob beradi:
+/// **kim** (`subjectEmployeeId`) · **qancha** (`amountMinor`) · **qachon**
+/// (`occurredAt`) · **hujjatga havola** (`docType`/`docId`) · **kontekst**
+/// (`context`).
+model ManagerWorkItem {
+  id        String @id @default(uuid()) @db.Uuid
+  accountId String @map("account_id") @db.Uuid
+
+  ruleType String @map("rule_type") @db.VarChar(40)
+
+  /// Barqaror dedup kaliti. Dvigatel qayta-qayta ishga tushiriladi (cron,
+  /// qo'lda yangilash) — shu kalit bo'yicha ikkinchi element YARATILMAYDI.
+  /// Manba modullari uni allaqachon shu shaklda beradi
+  /// (`price-change-control.ts` → `PriceChangeWorkItem.dedupKey`).
+  dedupKey String @map("dedup_key") @db.VarChar(200)
+
+  /// open | in_review | resolved | dismissed | escalated
+  ///
+  /// ESKIRISH bu ro'yxatda YO'Q — u `staleAt` BAYROG'I (pastga qara).
+  /// Eskirgan element baribir OCHIQ: §5.1 uni «yuqoriga chiqadi» deydi, ya'ni
+  /// navbatdan chiqmaydi, aksincha ko'proq diqqat talab qiladi. Alohida
+  /// `stale` statusi uni ochiqlar ro'yxatidan olib chiqib ketardi — «e'tibordan
+  /// qolgan element» aynan shu yo'l bilan ikkinchi marta e'tibordan qolardi.
+  status   String @default("open") @db.VarChar(20)
+  /// info | warning | critical
+  severity String @default("warning") @db.VarChar(10)
+
+  /// «Kim» — qoida kimning harakatidan kelib chiqdi. `null` = xodimga
+  /// bog'lanmagan signal (masalan ombor qoldig'i).
+  subjectEmployeeId String? @map("subject_employee_id") @db.Uuid
+
+  /// «Qancha» — tiyin. **`null` = O'LCHANMADI, `0` EMAS.** Tan narxsiz tovar
+  /// yoki bazasiz narx o'zgarishi jamiga qo'shilmasligi kerak (NULL ≠ 0).
+  amountMinor BigInt? @map("amount_minor")
+  currency    String? @db.VarChar(3)
+
+  /// «Hujjatga havola». `docId` UUID EMAS — manba tashqi kalit bo'lishi mumkin.
+  docType String? @map("doc_type") @db.VarChar(30)
+  docId   String? @map("doc_id") @db.VarChar(64)
+
+  /// «Qachon» — HODISA vaqti (qator yaratilgan vaqt emas). Eskirish va navbat
+  /// tartibi shundan sanaladi; aks holda eski hodisa bugun kashf etilgani uchun
+  /// «yangi» ko'rinardi.
+  occurredAt DateTime @map("occurred_at") @db.Timestamptz()
+
+  /// §5.1 «shu oydagi naqsh» — bitta hodisa emas, tendensiya.
+  context Json?
+
+  /// ESKIRISH BELGISI (§5.1). Element bu yerda **belgilanadi, o'chirilmaydi** —
+  /// o'chirilgan element hech qachon ko'rilmagani bilinmay qolardi.
+  staleAt DateTime? @map("stale_at") @db.Timestamptz()
+
+  /// Yopilganda sabab kodi MAJBURIY (§5.3) — sababsiz yopilgan navbat
+  /// statistikasiz navbat. Kodlar katalogi MK07 da to'ladi.
+  resolutionCode    String? @map("resolution_code") @db.VarChar(40)
+  resolutionComment String? @map("resolution_comment") @db.Text
+  resolvedById      String? @map("resolved_by_id") @db.Uuid
+
+  statusChangedAt DateTime  @default(now()) @map("status_changed_at") @db.Timestamptz()
+  resolvedAt      DateTime? @map("resolved_at") @db.Timestamptz()
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
+
+  account    Account                @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  subject    Employee?              @relation("ManagerWorkItemSubject", fields: [subjectEmployeeId], references: [id], onDelete: SetNull)
+  resolvedBy Employee?              @relation("ManagerWorkItemResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+  events     ManagerWorkItemEvent[]
+
+  /// Dedup KAFOLATI — dvigatel `createMany({skipDuplicates})` ga tayanadi.
+  @@unique([accountId, dedupKey])
+  /// Asosiy ekran: «ochiq elementlar, eng yangisi tepada».
+  @@index([accountId, status, occurredAt(sort: Desc)])
+  /// Xodim kartasi: «bu odamda nima turibdi».
+  @@index([accountId, subjectEmployeeId, status])
+  /// Qoida bo'yicha statistika va MK07 filtri.
+  @@index([accountId, ruleType, status])
+  @@map("manager_work_items")
+}
+
+/// Append-only jurnal — navbat elementi ustidagi HAR harakat. O'chirish yo'q:
+/// «kim tasdiqladi va nega» nizoda yagona yozma iz.
+model ManagerWorkItemEvent {
+  id        String @id @default(uuid()) @db.Uuid
+  accountId String @map("account_id") @db.Uuid
+  itemId    String @map("item_id") @db.Uuid
+
+  fromStatus String @map("from_status") @db.VarChar(20)
+  toStatus   String @map("to_status") @db.VarChar(20)
+
+  /// `work-item-fsm.ts` dagi WORK_ITEM_ACTION qiymati.
+  action String @db.VarChar(30)
+
+  /// system | manager | owner (FSM'dagi WORK_ITEM_ACTOR).
+  actorType String  @map("actor_type") @db.VarChar(20)
+  actorId   String? @map("actor_id") @db.Uuid
+
+  /// Yopiq ro'yxatdan. `other` bo'lsa izoh MAJBURIY.
+  reasonCode String? @map("reason_code") @db.VarChar(40)
+  comment    String? @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  account Account         @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  item    ManagerWorkItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  /// Element kartochkasidagi tarix.
+  @@index([accountId, itemId, createdAt])
+  /// «Qaysi sabab bilan ko'p yopilyapti» statistikasi (§5.3 ning maqsadi).
+  @@index([accountId, action, createdAt(sort: Desc)])
+  @@map("manager_work_item_events")
 }
