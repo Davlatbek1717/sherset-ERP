@@ -7,6 +7,7 @@ import { Input, formatMoney } from '@moysklad/ui';
 import * as Dialog from '@radix-ui/react-dialog';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Banknote, CreditCard, X } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useState } from 'react';
 
 interface CounterpartyRow {
@@ -99,6 +100,8 @@ export function DebtPaymentDialog({
   onPaid,
 }: Props) {
   const qc = useQueryClient();
+  const t = useTranslations('pages.pos');
+  const tCommon = useTranslations('common');
   const [search, setSearch] = useState('');
   const [agent, setAgent] = useState<CounterpartyRow | null>(null);
   const [amountInput, setAmountInput] = useState('');
@@ -141,7 +144,7 @@ export function DebtPaymentDialog({
       onOpenChange(false);
     },
     onError: (e: unknown) => {
-      setError(e instanceof Error ? e.message : 'To`lov amalga oshmadi');
+      setError(e instanceof Error ? e.message : t('debt_error'));
     },
   });
 
@@ -174,12 +177,12 @@ export function DebtPaymentDialog({
         <Dialog.Content className="-translate-x-1/2 -translate-y-1/2 fixed top-1/2 left-1/2 z-50 flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-[var(--ms-bg-surface)] shadow-2xl outline-none">
           <div className="flex items-center justify-between border-[var(--ms-border)] border-b px-5 py-3">
             <Dialog.Title className="font-semibold text-[var(--ms-text-primary)] text-lg">
-              Qarz to'lovi
+              {t('debt_title')}
             </Dialog.Title>
             <Dialog.Close asChild>
               <button
                 type="button"
-                aria-label="Yopish"
+                aria-label={tCommon('close')}
                 className="rounded-lg p-1 text-[var(--ms-text-muted)] hover:bg-[var(--ms-bg-hover)]"
               >
                 <X size={18} />
@@ -194,10 +197,12 @@ export function DebtPaymentDialog({
                 <Input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Mijoz ismi yoki telefon…"
+                  placeholder={t('debt_search_placeholder')}
                   autoFocus
                 />
-                {cpLoading && <p className="text-[var(--ms-text-muted)] text-sm">Qidirilmoqda…</p>}
+                {cpLoading && (
+                  <p className="text-[var(--ms-text-muted)] text-sm">{t('searching')}</p>
+                )}
                 <div className="flex flex-col gap-1">
                   {(cpData?.items ?? []).map((row) => (
                     <button
@@ -217,7 +222,7 @@ export function DebtPaymentDialog({
                   ))}
                   {!cpLoading && (cpData?.items ?? []).length === 0 && (
                     <p className="py-6 text-center text-[var(--ms-text-muted)] text-sm">
-                      Mijoz topilmadi
+                      {t('debt_no_customers')}
                     </p>
                   )}
                 </div>
@@ -242,21 +247,21 @@ export function DebtPaymentDialog({
                     }}
                     className="text-[var(--ms-brand)] text-xs hover:underline"
                   >
-                    O'zgartirish
+                    {t('change_customer')}
                   </button>
                 </div>
 
                 {sumLoading ? (
-                  <p className="text-[var(--ms-text-muted)] text-sm">Qarz yuklanmoqda…</p>
+                  <p className="text-[var(--ms-text-muted)] text-sm">{t('debt_loading')}</p>
                 ) : outstanding === 0n ? (
                   <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-4 text-center">
-                    <p className="font-semibold text-emerald-800 text-sm">Qarz yo'q</p>
-                    <p className="mt-1 text-emerald-700 text-xs">Bu mijozda ochiq qarz qolmagan.</p>
+                    <p className="font-semibold text-emerald-800 text-sm">{t('debt_none_title')}</p>
+                    <p className="mt-1 text-emerald-700 text-xs">{t('debt_none_hint')}</p>
                   </div>
                 ) : (
                   <>
                     <div className="rounded-xl border border-orange-200 bg-orange-50 px-4 py-3">
-                      <div className="text-orange-700 text-xs">Jami qarz</div>
+                      <div className="text-orange-700 text-xs">{t('debt_total')}</div>
                       <div
                         className="font-bold text-2xl text-orange-900 tabular-nums"
                         data-test-id="debt-pay-outstanding"
@@ -264,9 +269,13 @@ export function DebtPaymentDialog({
                         {formatMoney(outstanding)}
                       </div>
                       <div className="mt-1 text-orange-700 text-xs">
-                        {summary?.openCount} ta qarz · eng eskisi{' '}
-                        {fmtDate(summary?.oldestAt ?? null)}
-                        {oldestDays !== null && oldestDays > 0 && ` (${oldestDays} kun)`}
+                        {t('debt_meta', {
+                          count: summary?.openCount ?? 0,
+                          date: fmtDate(summary?.oldestAt ?? null),
+                        })}
+                        {oldestDays !== null &&
+                          oldestDays > 0 &&
+                          ` (${t('debt_days', { days: oldestDays })})`}
                       </div>
                     </div>
 
@@ -298,7 +307,7 @@ export function DebtPaymentDialog({
                             : 'border-[var(--ms-border)] text-[var(--ms-text-muted)]'
                         }`}
                       >
-                        <Banknote size={16} /> Naqd
+                        <Banknote size={16} /> {t('cash')}
                       </button>
                       <button
                         type="button"
@@ -309,13 +318,13 @@ export function DebtPaymentDialog({
                             : 'border-[var(--ms-border)] text-[var(--ms-text-muted)]'
                         }`}
                       >
-                        <CreditCard size={16} /> Terminal
+                        <CreditCard size={16} /> {t('terminal')}
                       </button>
                     </div>
 
                     {/* ── 4-qadam: summa ─────────────────────────────────────── */}
                     <div className="rounded-xl border-2 border-[var(--ms-brand)] bg-[var(--ms-brand)]/5 px-4 py-3">
-                      <div className="text-[var(--ms-text-muted)] text-xs">To'lov summasi</div>
+                      <div className="text-[var(--ms-text-muted)] text-xs">{t('pay_amount')}</div>
                       <div
                         className="font-bold text-2xl text-[var(--ms-text-primary)] tabular-nums"
                         data-test-id="debt-pay-amount"
@@ -330,14 +339,14 @@ export function DebtPaymentDialog({
                         onClick={() => setAmountInput(formatAmountInput(outstanding, currency))}
                         className="flex-1 rounded-lg border border-[var(--ms-border)] py-2 font-medium text-xs hover:bg-[var(--ms-bg-hover)]"
                       >
-                        Hammasi ({formatMoney(outstanding)})
+                        {t('debt_pay_all', { sum: formatMoney(outstanding) })}
                       </button>
                       <button
                         type="button"
                         onClick={() => setAmountInput('')}
                         className="rounded-lg border border-[var(--ms-border)] px-3 py-2 text-xs hover:bg-[var(--ms-bg-hover)]"
                       >
-                        Tozalash
+                        {t('clear')}
                       </button>
                     </div>
 
@@ -358,8 +367,7 @@ export function DebtPaymentDialog({
 
                     {overpay > 0n && (
                       <p className="rounded-lg bg-red-50 px-3 py-2 text-red-700 text-xs">
-                        Qarzdan {formatMoney(overpay)} ko'p. Qaytimni kassadan bering yoki summani
-                        kamaytiring.
+                        {t('debt_overpay', { sum: formatMoney(overpay) })}
                       </p>
                     )}
                     {error && (
@@ -380,7 +388,7 @@ export function DebtPaymentDialog({
                 data-test-id="debt-pay-confirm"
                 className="h-12 w-full rounded-xl bg-[var(--ms-brand)] font-semibold text-base text-white transition-all hover:bg-[var(--ms-brand-hover)] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
               >
-                {payMut.isPending ? '...' : 'To`lovni qabul qilish'}
+                {payMut.isPending ? '...' : t('debt_submit')}
               </button>
             </div>
           )}

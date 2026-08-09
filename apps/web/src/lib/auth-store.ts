@@ -156,6 +156,18 @@ export async function logout(): Promise<void> {
  */
 let refreshInFlight: Promise<boolean> | null = null;
 
+/**
+ * Tear the session down locally after the server has REJECTED the refresh
+ * token. Clearing the hint is the load-bearing half: the layout suppresses its
+ * redirect-to-login while `ms:auth-hint` is set, so a session left with a stale
+ * hint keeps rendering the full shell while every request 401s (FE-07).
+ */
+function clearSession(): void {
+  state = { accessToken: null, user: null, initialized: true };
+  writeAuthHint(false);
+  emit();
+}
+
 export function refresh(): Promise<boolean> {
   if (refreshInFlight) return refreshInFlight;
   refreshInFlight = (async () => {
@@ -164,7 +176,16 @@ export function refresh(): Promise<boolean> {
         method: 'POST',
         credentials: 'include',
       });
-      if (!res.ok) return false;
+      if (!res.ok) {
+        // 401/403 = the server has ANSWERED that this refresh token is dead
+        // (expired, rotated away, revoked) → the session is genuinely over, so
+        // drop it and let the layout redirect. Anything else (5xx, a proxy
+        // hiccup) means we could not ask — keep the session; logging a cashier
+        // out mid-sale because the API restarted would be a worse bug than the
+        // one this branch fixes.
+        if (res.status === 401 || res.status === 403) clearSession();
+        return false;
+      }
       const data = (await res.json()) as { accessToken: string; user: User };
       state = { accessToken: data.accessToken, user: data.user, initialized: true };
       writeAuthHint(true);

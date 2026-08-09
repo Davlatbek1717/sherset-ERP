@@ -117,6 +117,7 @@ interface MineResponse {
 
 function OpenShiftForm() {
   const tRetail = useTranslations('pages.retail');
+  const t = useTranslations('pages.sotuv');
   const qc = useQueryClient();
   const { toast } = useToast();
 
@@ -150,7 +151,7 @@ function OpenShiftForm() {
   if (isLoading) {
     return (
       <div className="mx-auto mt-16 max-w-sm text-center text-[var(--ms-text-muted)] text-sm">
-        Yuklanmoqda...
+        {t('loading')}
       </div>
     );
   }
@@ -160,16 +161,16 @@ function OpenShiftForm() {
     return (
       <div className="mx-auto mt-16 max-w-sm rounded-2xl bg-[var(--ms-bg-surface)] p-6 shadow-lg text-center">
         <h2 className="mb-2 font-semibold text-[var(--ms-text-primary)] text-xl">
-          Smena biriktirilmagan
+          {t('shift_none_title')}
         </h2>
         <p className="text-sm text-[var(--ms-text-muted)]">
-          Admin sizga smena biriktirishi kerak.
+          {t('shift_none_hint')}
           <br />
           <a
             href="/settings/smena"
             className="text-[var(--ms-text-brand)] underline mt-1 inline-block"
           >
-            Smenalarni boshqarish →
+            {t('shift_manage_link')}
           </a>
         </p>
       </div>
@@ -187,20 +188,20 @@ function OpenShiftForm() {
       {/* Smena ma'lumotlari */}
       <div className="mt-4 mb-5 rounded-xl bg-[var(--ms-bg-app)] p-4 flex flex-col gap-2 text-sm">
         <div className="flex justify-between">
-          <span className="text-[var(--ms-text-muted)]">Smena</span>
+          <span className="text-[var(--ms-text-muted)]">{t('shift_field')}</span>
           <span className="font-medium">{smena.name}</span>
         </div>
         <div className="flex justify-between">
-          <span className="text-[var(--ms-text-muted)]">Ish vaqti</span>
+          <span className="text-[var(--ms-text-muted)]">{t('work_time')}</span>
           <span
             className={withinShift ? 'text-green-600 font-medium' : 'text-orange-500 font-medium'}
           >
             {smena.schedule.startTime}–{smena.schedule.endTime}
-            {withinShift ? ' ✓' : ' (vaqtdan tashqari)'}
+            {withinShift ? ' ✓' : ` ${t('out_of_hours')}`}
           </span>
         </div>
         <div className="flex justify-between">
-          <span className="text-[var(--ms-text-muted)]">Tashkilot</span>
+          <span className="text-[var(--ms-text-muted)]">{t('organization')}</span>
           <span>{smena.organization.name}</span>
         </div>
       </div>
@@ -209,13 +210,15 @@ function OpenShiftForm() {
       {showReasonInput && !withinShift && (
         <div className="mb-4">
           <p className="text-sm text-orange-600 mb-2">
-            Siz o'z ish vaqtingizdan ({smena.schedule.startTime}–{smena.schedule.endTime})
-            tashqarisida ishlayapsiz. Sabab yozing:
+            {t('out_of_hours_reason', {
+              from: smena.schedule.startTime,
+              to: smena.schedule.endTime,
+            })}
           </p>
           <Input
             value={reason}
             onChange={(e) => setReason(e.target.value)}
-            placeholder="Masalan: navbatchi kassir xastalik sababli kelmadi"
+            placeholder={t('reason_placeholder')}
             autoFocus
           />
         </div>
@@ -229,7 +232,7 @@ function OpenShiftForm() {
         onClick={handleOpen}
         disabled={showReasonInput && !reason.trim()}
       >
-        {withinShift ? 'Smena ochish' : showReasonInput ? 'Sabab bilan ochish' : 'Smena ochish'}
+        {showReasonInput && !withinShift ? t('shift_open_with_reason') : t('shift_open_btn')}
       </Button>
     </div>
   );
@@ -264,6 +267,8 @@ interface ChekDetailData {
 }
 
 function ChekDetailPanel({ saleId, onBack }: { saleId: string; onBack: () => void }) {
+  const t = useTranslations('pages.sotuv');
+  const tCommon = useTranslations('common');
   const { data, isLoading } = useQuery<ChekDetailData>({
     queryKey: ['retail-sale-detail', saleId],
     queryFn: () => api.get(`/retail-sales/${saleId}`),
@@ -283,7 +288,7 @@ function ChekDetailPanel({ saleId, onBack }: { saleId: string; onBack: () => voi
       const refundLines = (data?.positions ?? []).filter(
         (p) => normalizeQtyDecimal(returnQty[p.id] ?? '') !== '0',
       );
-      if (refundLines.length === 0) throw new Error('Qaytariladigan tovar tanlanmagan');
+      if (refundLines.length === 0) throw new Error(t('refund_no_lines'));
       const positions = refundLines.map((p) => ({
         productId: p.product.id,
         // Server sxemasi `^\d+(\.\d{1,6})?$` — «1.» yoki eksponent shakl 400 berardi.
@@ -303,11 +308,14 @@ function ChekDetailPanel({ saleId, onBack }: { saleId: string; onBack: () => voi
         positions,
         cashAmountMinor: cashRefund.toString(),
         cardAmountMinor: '0',
+        // ⚠️ i18n-emas, ATAYLAB: bu hujjatning DB'da saqlanadigan izohi, ekran
+        // matni emas. Kassirning tiliga bog'lasak bir xil hujjat kim yaratganiga
+        // qarab turlicha yozilib qolardi (hisobot/qidiruv buziladi).
         description: 'POS qaytarish',
       });
     },
     onSuccess: () => {
-      toast.success('Qaytarildi — tovar omborga qaytdi, omborchiga joylashtirish yuborildi');
+      toast.success(t('refund_success'));
       setReturnMode(false);
       setReturnQty({});
       qc.invalidateQueries({ queryKey: ['retail-sale-detail', saleId] });
@@ -328,7 +336,7 @@ function ChekDetailPanel({ saleId, onBack }: { saleId: string; onBack: () => voi
   if (isLoading || !data) {
     return (
       <div className="flex flex-1 items-center justify-center text-sm text-[var(--ms-text-muted)]">
-        Yuklanmoqda...
+        {t('loading')}
       </div>
     );
   }
@@ -337,12 +345,12 @@ function ChekDetailPanel({ saleId, onBack }: { saleId: string; onBack: () => voi
   const card = BigInt(data.cardAmountMinor ?? '0');
   const terminal = BigInt(data.terminalAmountMinor ?? '0');
   const stateLabel: Record<string, string> = {
-    posted: "To'langan",
-    draft: 'Qoralama',
-    picking: "Yig'ilmoqda",
-    ready: 'Tayyor',
-    cancelled: 'Bekor',
-    refunded: 'Qaytarilgan',
+    posted: t('state_posted'),
+    draft: t('state_draft'),
+    picking: t('state_picking'),
+    ready: t('state_ready'),
+    cancelled: t('state_cancelled'),
+    refunded: t('state_refunded'),
   };
 
   return (
@@ -392,12 +400,12 @@ function ChekDetailPanel({ saleId, onBack }: { saleId: string; onBack: () => voi
                 'width=420,height=680,noopener',
               );
             } else if (!outcome.ok) {
-              toast.error('Chek chiqmadi — printerni tekshiring');
+              toast.error(t('print_error'));
             }
           }}
           className="flex h-8 items-center gap-1.5 rounded-lg border border-[var(--ms-border)] px-3 text-xs font-medium text-[var(--ms-text-muted)] hover:bg-[var(--ms-bg-hover)]"
         >
-          🖨 Chek
+          🖨 {t('receipt')}
         </button>
         {data.state === 'posted' &&
           (returnMode ? (
@@ -406,7 +414,7 @@ function ChekDetailPanel({ saleId, onBack }: { saleId: string; onBack: () => voi
               onClick={() => setReturnMode(false)}
               className="flex h-8 items-center gap-1.5 rounded-lg border border-[var(--ms-border)] px-3 text-xs font-medium text-[var(--ms-text-muted)] hover:bg-[var(--ms-bg-hover)]"
             >
-              Bekor
+              {tCommon('cancel')}
             </button>
           ) : (
             <button
@@ -414,7 +422,7 @@ function ChekDetailPanel({ saleId, onBack }: { saleId: string; onBack: () => voi
               onClick={startReturn}
               className="flex h-8 items-center gap-1.5 rounded-lg bg-[var(--ms-destructive-500)] px-3 text-xs font-bold text-white hover:opacity-90"
             >
-              ↩ Qaytarish
+              ↩ {t('refund')}
             </button>
           ))}
       </div>
@@ -423,18 +431,18 @@ function ChekDetailPanel({ saleId, onBack }: { saleId: string; onBack: () => voi
         {/* Kassir + mijoz */}
         <div className="rounded-xl border border-[var(--ms-border)] bg-[var(--ms-bg-app)] divide-y divide-[var(--ms-border)]">
           <div className="flex justify-between px-4 py-2.5 text-sm">
-            <span className="text-[var(--ms-text-muted)]">Kassir</span>
+            <span className="text-[var(--ms-text-muted)]">{t('cashier')}</span>
             <span className="font-medium">{data.session.cashier.name}</span>
           </div>
           {data.session.store && (
             <div className="flex justify-between px-4 py-2.5 text-sm">
-              <span className="text-[var(--ms-text-muted)]">Do'kon</span>
+              <span className="text-[var(--ms-text-muted)]">{t('shop')}</span>
               <span className="font-medium">{data.session.store.name}</span>
             </div>
           )}
           {data.agent && (
             <div className="flex justify-between px-4 py-2.5 text-sm">
-              <span className="text-[var(--ms-text-muted)]">Mijoz</span>
+              <span className="text-[var(--ms-text-muted)]">{t('customer')}</span>
               <span className="font-medium text-[var(--ms-text-brand)]">{data.agent.name}</span>
             </div>
           )}
@@ -443,7 +451,7 @@ function ChekDetailPanel({ saleId, onBack }: { saleId: string; onBack: () => voi
         {/* Positions */}
         <div className="rounded-xl border border-[var(--ms-border)] overflow-hidden">
           <div className="bg-[var(--ms-bg-app)] px-4 py-2 text-[10px] font-bold uppercase tracking-widest text-[var(--ms-text-muted)]">
-            Tovarlar
+            {t('products')}
           </div>
           <div className="divide-y divide-[var(--ms-border)]">
             {data.positions.map((p) => (
@@ -458,7 +466,9 @@ function ChekDetailPanel({ saleId, onBack }: { saleId: string; onBack: () => voi
                 </div>
                 {returnMode && (
                   <div className="flex shrink-0 items-center gap-1">
-                    <span className="text-xs text-[var(--ms-text-muted)]">Qaytadi:</span>
+                    <span className="text-xs text-[var(--ms-text-muted)]">
+                      {t('refund_qty_label')}
+                    </span>
                     {/* `type="number"` EMAS: brauzer «1.» oraliq holatini
                         bo'sh satr sifatida qaytaradi va kasr miqdorni
                         yozib bo'lmaydi (FE-02). */}
@@ -497,24 +507,24 @@ function ChekDetailPanel({ saleId, onBack }: { saleId: string; onBack: () => voi
         <div className="rounded-xl border border-[var(--ms-border)] bg-[var(--ms-bg-app)] divide-y divide-[var(--ms-border)]">
           {cash > 0n && (
             <div className="flex justify-between px-4 py-2.5 text-sm">
-              <span className="text-[var(--ms-text-muted)]">Naqd</span>
+              <span className="text-[var(--ms-text-muted)]">{t('cash')}</span>
               <span className="font-medium tabular-nums">{formatMoney(cash)}</span>
             </div>
           )}
           {card > 0n && (
             <div className="flex justify-between px-4 py-2.5 text-sm">
-              <span className="text-[var(--ms-text-muted)]">Karta</span>
+              <span className="text-[var(--ms-text-muted)]">{t('card')}</span>
               <span className="font-medium tabular-nums">{formatMoney(card)}</span>
             </div>
           )}
           {terminal > 0n && (
             <div className="flex justify-between px-4 py-2.5 text-sm">
-              <span className="text-[var(--ms-text-muted)]">Terminal</span>
+              <span className="text-[var(--ms-text-muted)]">{t('terminal')}</span>
               <span className="font-medium tabular-nums">{formatMoney(terminal)}</span>
             </div>
           )}
           <div className="flex justify-between px-4 py-3 text-base font-bold">
-            <span>Jami</span>
+            <span>{t('total')}</span>
             <span className="tabular-nums">{formatMoney(BigInt(data.sumMinor))}</span>
           </div>
         </div>
@@ -537,7 +547,7 @@ function ChekDetailPanel({ saleId, onBack }: { saleId: string; onBack: () => voi
               <>
                 <div className="mb-3 flex items-center justify-between">
                   <span className="text-sm text-[var(--ms-text-muted)]">
-                    Qaytariladigan summa (naqd)
+                    {t('refund_amount_cash')}
                   </span>
                   <span className="font-bold text-lg tabular-nums text-[var(--ms-destructive-500)]">
                     {formatMoney(refundMinor)}
@@ -549,7 +559,7 @@ function ChekDetailPanel({ saleId, onBack }: { saleId: string; onBack: () => voi
                   onClick={() => refundMut.mutate()}
                   className="w-full rounded-xl bg-[var(--ms-destructive-500)] py-3 font-bold text-white hover:opacity-90 disabled:opacity-40"
                 >
-                  {refundMut.isPending ? 'Qaytarilmoqda...' : '↩ Qaytarishni tasdiqlash'}
+                  {refundMut.isPending ? t('refunding') : `↩ ${t('refund_confirm')}`}
                 </button>
               </>
             );
@@ -564,6 +574,7 @@ function ChekDetailPanel({ saleId, onBack }: { saleId: string; onBack: () => voi
 
 function SalesScreen({ session }: { session: CurrentSession }) {
   const t = useTranslations('pages.sotuv');
+  const tCommon = useTranslations('common');
   const qc = useQueryClient();
   const { toast } = useToast();
   const { runDestructive } = useDestructiveMutation();
@@ -664,7 +675,7 @@ function SalesScreen({ session }: { session: CurrentSession }) {
     }
     const w = window.open('/customer-display', 'sherset-cfd', 'width=1280,height=720');
     if (!w) {
-      toast.error("Oyna ochilmadi — brauzer popup'ni bloklagan. Ruxsat bering va qayta urining.");
+      toast.error(t('cfd_popup_blocked'));
       return;
     }
     cfdWindowRef.current = w;
@@ -676,7 +687,7 @@ function SalesScreen({ session }: { session: CurrentSession }) {
         ms,
       );
     }
-  }, [toast]);
+  }, [toast, t]);
 
   // Smena tab — drawer + close shift
   const tillCurrency = isCurrencyCode(session.cashDesk?.currency)
@@ -888,10 +899,10 @@ function SalesScreen({ session }: { session: CurrentSession }) {
           'width=420,height=680,noopener',
         );
       } else if (!outcome.ok) {
-        toast.error('Chek chiqmadi — printerni tekshiring');
+        toast.error(t('print_error'));
       }
     },
-    [toast],
+    [toast, t],
   );
 
   // When omborchi marks a sale "Tayyor", the kassir pulls it into the cart:
@@ -937,10 +948,10 @@ function SalesScreen({ session }: { session: CurrentSession }) {
         setTab('savat');
         setCheckoutOpen(true);
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : 'Yuklashda xato');
+        toast.error(e instanceof Error ? e.message : t('load_error'));
       }
     },
-    [toast, cardPrices],
+    [toast, cardPrices, t],
   );
 
   // Step 1: "Rasmilashtirish" → create draft → send to picking → print picking sheet
@@ -959,7 +970,7 @@ function SalesScreen({ session }: { session: CurrentSession }) {
       setDiscountEditing(false);
       qc.invalidateQueries({ queryKey: ['retail-sales-ready', session.id] });
       qc.invalidateQueries({ queryKey: ['retail-sales-picking', session.id] });
-      toast.success('Omborchiga yuborildi');
+      toast.success(t('sent_to_picker'));
       // Per-warehouse routing via the local print-agent: each sklad's sheet goes
       // to its own mapped printer (Settings → Sklad-keepers). If the agent isn't
       // running or no printer is mapped, fall back to the browser popup print.
@@ -967,12 +978,11 @@ function SalesScreen({ session }: { session: CurrentSession }) {
       if (outcome.handled) {
         if (outcome.printed > 0) {
           toast.success(
-            `Chek chiqarildi: ${outcome.printed} ta printer` +
-              (outcome.skipped > 0 ? ` (${outcome.skipped} ombor printersiz)` : ''),
+            t('print_ok_count', { printers: outcome.printed }) +
+              (outcome.skipped > 0 ? ` ${t('print_skipped_count', { n: outcome.skipped })}` : ''),
           );
         }
-        if (outcome.errors > 0)
-          toast.error(`${outcome.errors} ta chek chiqmadi — printerni tekshiring`);
+        if (outcome.errors > 0) toast.error(t('print_error_count', { n: outcome.errors }));
       } else {
         window.open(
           `/print/picking/${saleId}?source=retailsale&auto=1`,
@@ -1013,7 +1023,7 @@ function SalesScreen({ session }: { session: CurrentSession }) {
       debtAmountMinor: bigint;
       agentId?: string;
     }) => {
-      if (!payingSale) throw new Error('Sotuv tanlanmagan');
+      if (!payingSale) throw new Error(t('no_sale_selected'));
       await api.post(`/retail-sales/${payingSale.id}/post`, {
         cashAmountMinor: payment.cashAmountMinor.toString(),
         cardAmountMinor: payment.cardAmountMinor.toString(),
@@ -1030,7 +1040,7 @@ function SalesScreen({ session }: { session: CurrentSession }) {
 
   const drawerMut = useMutation({
     mutationFn: () => {
-      if (!(Number(drawerAmount) > 0)) throw new Error("Summa musbat bo'lishi kerak");
+      if (!(Number(drawerAmount) > 0)) throw new Error(t('amount_must_be_positive'));
       const sumMinor = Money.fromMajor(drawerAmount, tillCurrency).toMinor().toString();
       const path = drawerMode === 'in' ? 'drawer-in' : 'drawer-out';
       return api.post(`/cashier-sessions/${session.id}/${path}`, {
@@ -1043,7 +1053,7 @@ function SalesScreen({ session }: { session: CurrentSession }) {
       setDrawerMode(null);
       setDrawerAmount('');
       setDrawerComment('');
-      toast.success(drawerMode === 'in' ? 'Pul kiritildi' : 'Pul chiqarildi');
+      toast.success(drawerMode === 'in' ? t('drawer_in_done') : t('drawer_out_done'));
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -1080,8 +1090,8 @@ function SalesScreen({ session }: { session: CurrentSession }) {
       qc.invalidateQueries({ queryKey: ['cashier-session-current'] });
       toast.success(
         closeVariance === null || closeVariance === 0n
-          ? 'Smena yopildi'
-          : 'Smena yopildi — farq akti yozildi, menejerga xabar ketdi',
+          ? t('shift_closed')
+          : t('shift_closed_with_variance'),
       );
       setVarianceNote('');
     },
@@ -1188,7 +1198,7 @@ function SalesScreen({ session }: { session: CurrentSession }) {
       <div className="flex w-[600px] shrink-0 flex-col overflow-hidden border-[var(--ms-border)] border-l bg-[var(--ms-bg-surface)]">
         {/* Mijoz-ekran (televizor) boshqaruvi — dasturda ham, brauzerda ham */}
         <div className="flex shrink-0 items-center justify-between border-[var(--ms-border)] border-b px-3 py-1.5">
-          <span className="text-[var(--ms-text-muted)] text-xs">🖥 Mijoz ekrani (televizor)</span>
+          <span className="text-[var(--ms-text-muted)] text-xs">🖥 {t('cfd_title')}</span>
           <button
             type="button"
             onClick={toggleCfd}
@@ -1198,7 +1208,7 @@ function SalesScreen({ session }: { session: CurrentSession }) {
                 : 'border-[var(--ms-border)] text-[var(--ms-text-muted)] hover:bg-[var(--ms-bg-hover)]'
             }`}
           >
-            {cfdOpen ? "🟢 Yoniq — o'chirish" : '📺 Ekranni yoqish'}
+            {cfdOpen ? `🟢 ${t('cfd_on')}` : `📺 ${t('cfd_off')}`}
           </button>
         </div>
         {/* Tab bar */}
@@ -1230,7 +1240,7 @@ function SalesScreen({ session }: { session: CurrentSession }) {
             }`}
           >
             <Clock className="h-4 w-4" />
-            Jarayonda
+            {t('tab_in_progress')}
             {pickingSales.length > 0 && (
               <span className="rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] text-white">
                 {pickingSales.length}
@@ -1247,7 +1257,7 @@ function SalesScreen({ session }: { session: CurrentSession }) {
             }`}
           >
             <CheckCircle className="h-4 w-4" />
-            Tayyor
+            {t('tab_ready')}
             {readySales.length > 0 && (
               <span className="rounded-full bg-emerald-500 px-1.5 py-0.5 text-[10px] text-white">
                 {readySales.length}
@@ -1264,7 +1274,7 @@ function SalesScreen({ session }: { session: CurrentSession }) {
             }`}
           >
             <Receipt className="h-4 w-4" />
-            Cheklar
+            {t('tab_receipts')}
           </button>
           <button
             type="button"
@@ -1276,7 +1286,7 @@ function SalesScreen({ session }: { session: CurrentSession }) {
             }`}
           >
             <Settings className="h-4 w-4" />
-            Smena
+            {t('tab_shift')}
           </button>
         </div>
 
@@ -1286,10 +1296,8 @@ function SalesScreen({ session }: { session: CurrentSession }) {
             {pickingSales.length === 0 ? (
               <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-[var(--ms-text-muted)]">
                 <Clock className="h-10 w-10 opacity-30" />
-                <p className="text-sm">Hozircha jarayonda savdo yo'q</p>
-                <p className="text-xs">
-                  Savatni rasmiylashtirsangiz, omborchi yig'ishi shu yerda ko'rinadi
-                </p>
+                <p className="text-sm">{t('picking_empty_title')}</p>
+                <p className="text-xs">{t('picking_empty_hint')}</p>
               </div>
             ) : (
               <div className="flex flex-col gap-4">
@@ -1297,7 +1305,7 @@ function SalesScreen({ session }: { session: CurrentSession }) {
                 {pickingSales.length > 0 && (
                   <div>
                     <p className="mb-1.5 text-[10px] font-bold uppercase tracking-widest text-amber-600">
-                      Yig'ilmoqda — omborchida
+                      {t('picking_section_title')}
                     </p>
                     <div className="flex flex-col gap-1.5">
                       {pickingSales.map((s) => (
@@ -1313,11 +1321,11 @@ function SalesScreen({ session }: { session: CurrentSession }) {
                             <div className="text-xs text-[var(--ms-text-muted)]">
                               {formatMoney(BigInt(s.sumMinor))}
                               {s._count?.positions != null &&
-                                ` · ${s._count.positions} ta pozitsiya`}
+                                ` · ${t('positions_count', { n: s._count.positions })}`}
                             </div>
                           </div>
                           <span className="shrink-0 rounded-full bg-amber-200 px-2 py-0.5 text-[10px] font-medium text-amber-800">
-                            Omborchi yig'moqda
+                            {t('picker_collecting')}
                           </span>
                           <button
                             type="button"
@@ -1342,10 +1350,8 @@ function SalesScreen({ session }: { session: CurrentSession }) {
             {readySales.length === 0 ? (
               <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-[var(--ms-text-muted)]">
                 <CheckCircle className="h-10 w-10 opacity-30" />
-                <p className="text-sm">Tayyor savdo yo'q</p>
-                <p className="text-xs">
-                  Omborchi yig'ib bo'lgan savdolar shu yerda to'lovni kutadi
-                </p>
+                <p className="text-sm">{t('ready_empty_title')}</p>
+                <p className="text-xs">{t('ready_empty_hint')}</p>
               </div>
             ) : (
               <div className="flex flex-col gap-1.5">
@@ -1377,7 +1383,7 @@ function SalesScreen({ session }: { session: CurrentSession }) {
                       onClick={() => loadReadyToCart(s.id)}
                       className="flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-emerald-500 px-4 text-sm font-bold text-white transition-all hover:bg-emerald-600 active:scale-95"
                     >
-                      💳 To'lov
+                      💳 {t('pay')}
                     </button>
                   </div>
                 ))}
@@ -1392,7 +1398,7 @@ function SalesScreen({ session }: { session: CurrentSession }) {
             {!cheklar || cheklar.items.length === 0 ? (
               <div className="flex h-full flex-col items-center justify-center gap-1 text-[var(--ms-text-muted)]">
                 <Receipt className="h-8 w-8 opacity-40" />
-                <span className="text-sm">Bu smenada hali sotuv yo'q</span>
+                <span className="text-sm">{t('receipts_empty')}</span>
               </div>
             ) : (
               <div className="flex flex-col divide-y divide-[var(--ms-border)]">
@@ -1430,7 +1436,7 @@ function SalesScreen({ session }: { session: CurrentSession }) {
                         {sale._count && (
                           <>
                             <span>·</span>
-                            <span>{sale._count.positions} tovar</span>
+                            <span>{t('items_count', { n: sale._count.positions })}</span>
                           </>
                         )}
                       </div>
@@ -1454,23 +1460,23 @@ function SalesScreen({ session }: { session: CurrentSession }) {
             {/* Session info */}
             <div className="rounded-xl border border-[var(--ms-border)] bg-[var(--ms-bg-app)] px-4 py-3 text-sm">
               <div className="flex justify-between mb-1">
-                <span className="text-[var(--ms-text-muted)]">Kassir</span>
+                <span className="text-[var(--ms-text-muted)]">{t('cashier')}</span>
                 <span className="font-medium">{session.cashier.name}</span>
               </div>
               {session.store && (
                 <div className="flex justify-between mb-1">
-                  <span className="text-[var(--ms-text-muted)]">Ombor</span>
+                  <span className="text-[var(--ms-text-muted)]">{t('store')}</span>
                   <span className="font-medium">{session.store.name}</span>
                 </div>
               )}
               {session.cashDesk && (
                 <div className="flex justify-between mb-1">
-                  <span className="text-[var(--ms-text-muted)]">Kassa</span>
+                  <span className="text-[var(--ms-text-muted)]">{t('cash_desk')}</span>
                   <span className="font-medium">{session.cashDesk.name}</span>
                 </div>
               )}
               <div className="flex justify-between mb-1">
-                <span className="text-[var(--ms-text-muted)]">Ochilgan</span>
+                <span className="text-[var(--ms-text-muted)]">{t('opened_at')}</span>
                 <span className="font-medium tabular-nums">
                   {new Date(session.openedAt).toLocaleTimeString('uz-UZ', {
                     hour: '2-digit',
@@ -1479,9 +1485,10 @@ function SalesScreen({ session }: { session: CurrentSession }) {
                 </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-[var(--ms-text-muted)]">Sotuvlar</span>
+                <span className="text-[var(--ms-text-muted)]">{t('sales')}</span>
                 <span className="font-medium tabular-nums">
-                  {session.salesCount} ta · {formatMoney(BigInt(session.salesSumMinor))}
+                  {t('sales_count', { n: session.salesCount })} ·{' '}
+                  {formatMoney(BigInt(session.salesSumMinor))}
                 </span>
               </div>
             </div>
@@ -1491,14 +1498,14 @@ function SalesScreen({ session }: { session: CurrentSession }) {
               href={`/retail/sessions/${session.id}`}
               className="flex items-center justify-between rounded-xl border border-[var(--ms-border)] bg-[var(--ms-bg-surface)] px-4 py-3 text-sm font-medium text-[var(--ms-text-primary)] hover:bg-[var(--ms-bg-hover)]"
             >
-              <span>Z-hisobot</span>
+              <span>{t('z_report')}</span>
               <span className="text-[var(--ms-text-muted)]">→</span>
             </a>
 
             {/* Drawer — Внесение / Изъятие */}
             <div className="rounded-xl border border-[var(--ms-border)] bg-[var(--ms-bg-surface)] p-4">
               <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-[var(--ms-text-muted)]">
-                Kassa operatsiyasi
+                {t('cash_operation')}
               </p>
               <div className="mb-3 flex gap-2">
                 <button
@@ -1510,7 +1517,7 @@ function SalesScreen({ session }: { session: CurrentSession }) {
                       : 'border-[var(--ms-border)] text-[var(--ms-text-muted)] hover:bg-[var(--ms-bg-hover)]'
                   }`}
                 >
-                  + Kirim
+                  + {t('drawer_in')}
                 </button>
                 <button
                   type="button"
@@ -1521,7 +1528,7 @@ function SalesScreen({ session }: { session: CurrentSession }) {
                       : 'border-[var(--ms-border)] text-[var(--ms-text-muted)] hover:bg-[var(--ms-bg-hover)]'
                   }`}
                 >
-                  − Chiqim
+                  − {t('drawer_out')}
                 </button>
               </div>
               {/* Qarz to'lovi (kassa TZ §7.2) — naqd bo'lsa shu smenaning
@@ -1534,7 +1541,7 @@ function SalesScreen({ session }: { session: CurrentSession }) {
                 data-test-id="pos-debt-pay-open"
                 className="mb-3 w-full rounded-lg border border-[var(--ms-border)] py-2 text-sm font-medium text-[var(--ms-text-primary)] transition-colors hover:bg-[var(--ms-bg-hover)]"
               >
-                Qarz to'lovi
+                {t('debt_payment')}
               </button>
               {/* Xarajat (RKO) va inkassatsiya — kassa TZ §8.2/§8.3. Ikkalasi
                   ham yashiqdan pul chiqaradi, ya'ni smena yakunidagi
@@ -1545,7 +1552,7 @@ function SalesScreen({ session }: { session: CurrentSession }) {
                 data-test-id="pos-cash-out-open"
                 className="mb-3 w-full rounded-lg border border-[var(--ms-border)] py-2 text-sm font-medium text-[var(--ms-text-primary)] transition-colors hover:bg-[var(--ms-bg-hover)]"
               >
-                Xarajat / inkassatsiya
+                {t('expense_or_collection')}
               </button>
               {drawerMode && (
                 <div className="flex flex-col gap-2">
@@ -1555,7 +1562,7 @@ function SalesScreen({ session }: { session: CurrentSession }) {
                     inputMode="decimal"
                     value={drawerAmount}
                     onChange={(e) => setDrawerAmount(e.target.value)}
-                    placeholder="Summa (so'm)"
+                    placeholder={t('amount_placeholder')}
                     // biome-ignore lint/a11y/noAutofocus: intentional POS focus — cashier types the amount immediately when this drawer opens.
                     autoFocus
                     className="h-10 w-full rounded-lg border border-[var(--ms-border)] bg-[var(--ms-bg-input)] px-3 text-sm focus:outline-none focus:border-[var(--ms-border-focus)]"
@@ -1564,7 +1571,7 @@ function SalesScreen({ session }: { session: CurrentSession }) {
                     type="text"
                     value={drawerComment}
                     onChange={(e) => setDrawerComment(e.target.value)}
-                    placeholder="Izoh (ixtiyoriy)"
+                    placeholder={t('comment_placeholder')}
                     className="h-10 w-full rounded-lg border border-[var(--ms-border)] bg-[var(--ms-bg-input)] px-3 text-sm focus:outline-none focus:border-[var(--ms-border-focus)]"
                   />
                   <button
@@ -1580,8 +1587,8 @@ function SalesScreen({ session }: { session: CurrentSession }) {
                     {drawerMut.isPending
                       ? '...'
                       : drawerMode === 'in'
-                        ? 'Kirim tasdiqlash'
-                        : 'Chiqim tasdiqlash'}
+                        ? t('drawer_in_confirm')
+                        : t('drawer_out_confirm')}
                   </button>
                 </div>
               )}
@@ -1590,7 +1597,7 @@ function SalesScreen({ session }: { session: CurrentSession }) {
             {/* Close shift */}
             <div className="rounded-xl border border-red-200 bg-[var(--ms-bg-surface)] p-4">
               <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-[var(--ms-text-muted)]">
-                Smena yopish
+                {t('shift_close_section')}
               </p>
               {!showCloseForm ? (
                 <button
@@ -1598,7 +1605,7 @@ function SalesScreen({ session }: { session: CurrentSession }) {
                   onClick={() => setShowCloseForm(true)}
                   className="w-full rounded-lg border border-red-300 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
                 >
-                  Smenani yopish
+                  {t('shift_close_btn')}
                 </button>
               ) : (
                 <div className="flex flex-col gap-2">
@@ -1607,7 +1614,7 @@ function SalesScreen({ session }: { session: CurrentSession }) {
                     min="0"
                     value={closingCash}
                     onChange={(e) => setClosingCash(e.target.value)}
-                    placeholder="Kassadagi naqd pul (so'm)"
+                    placeholder={t('closing_cash_placeholder')}
                     // biome-ignore lint/a11y/noAutofocus: intentional POS focus — cashier enters the closing cash count immediately when this dialog opens.
                     autoFocus
                     className="h-10 w-full rounded-lg border border-[var(--ms-border)] bg-[var(--ms-bg-input)] px-3 text-sm focus:outline-none focus:border-[var(--ms-border-focus)]"
@@ -1619,7 +1626,7 @@ function SalesScreen({ session }: { session: CurrentSession }) {
                   {expectedCash !== null && (
                     <div className="rounded-lg border border-[var(--ms-border)] bg-[var(--ms-bg-input)] px-3 py-2 text-xs">
                       <div className="flex justify-between">
-                        <span className="text-[var(--ms-text-muted)]">Kutilgan naqd</span>
+                        <span className="text-[var(--ms-text-muted)]">{t('expected_cash')}</span>
                         <span className="font-medium tabular-nums">
                           {formatMoney(expectedCash)}
                         </span>
@@ -1637,10 +1644,10 @@ function SalesScreen({ session }: { session: CurrentSession }) {
                         >
                           <span>
                             {closeVariance === 0n
-                              ? 'Farq yo`q'
+                              ? t('variance_none')
                               : closeVariance < 0n
-                                ? 'Kamomad'
-                                : 'Ortiqcha'}
+                                ? t('variance_shortage')
+                                : t('variance_surplus')}
                           </span>
                           <span className="tabular-nums">
                             {closeVariance === 0n ? '0' : formatMoney(closeVariance)}
@@ -1658,7 +1665,7 @@ function SalesScreen({ session }: { session: CurrentSession }) {
                       type="text"
                       value={varianceNote}
                       onChange={(e) => setVarianceNote(e.target.value)}
-                      placeholder="Farq sababi (masalan: qaytim ortiqcha berildi)"
+                      placeholder={t('variance_note_placeholder')}
                       data-test-id="close-variance-note"
                       className="h-10 w-full rounded-lg border border-amber-300 bg-amber-50 px-3 text-sm focus:outline-none focus:border-amber-500"
                     />
@@ -1670,7 +1677,7 @@ function SalesScreen({ session }: { session: CurrentSession }) {
                       disabled={closeMut.isPending}
                       className="flex-1 h-10 rounded-lg bg-red-600 font-semibold text-sm text-white hover:bg-red-700 disabled:opacity-40"
                     >
-                      {closeMut.isPending ? 'Yopilmoqda...' : 'Tasdiqlash'}
+                      {closeMut.isPending ? t('closing') : t('confirm')}
                     </button>
                     <button
                       type="button"
@@ -1681,7 +1688,7 @@ function SalesScreen({ session }: { session: CurrentSession }) {
                       }}
                       className="h-10 rounded-lg border border-[var(--ms-border)] px-4 text-sm text-[var(--ms-text-muted)] hover:bg-[var(--ms-bg-hover)]"
                     >
-                      Bekor
+                      {tCommon('cancel')}
                     </button>
                   </div>
                 </div>
@@ -1694,7 +1701,7 @@ function SalesScreen({ session }: { session: CurrentSession }) {
         {tab === 'savat' && (
           <>
             <div className="flex shrink-0 items-center gap-2 border-[var(--ms-border)] border-b px-4 py-2">
-              <span className="text-sm text-[var(--ms-text-muted)]">Savat</span>
+              <span className="text-sm text-[var(--ms-text-muted)]">{t('cart_title')}</span>
               {cart.length > 0 && (
                 <Button
                   variant="link"
@@ -1910,7 +1917,7 @@ function SalesScreen({ session }: { session: CurrentSession }) {
                 <div
                   className="cursor-default select-none"
                   onDoubleClick={() => setDiscountEditing((v) => !v)}
-                  title="Chegirma uchun ikki marta bosing"
+                  title={t('discount_dblclick_hint')}
                 >
                   {discountPct > 0 && (
                     <p className="text-sm tabular-nums text-[var(--ms-text-muted)] line-through">
@@ -1924,14 +1931,14 @@ function SalesScreen({ session }: { session: CurrentSession }) {
                   </p>
                   {discountPct > 0 && (
                     <p className="mt-0.5 text-xs font-medium text-emerald-600">
-                      −{discountPct}% chegirma
+                      {t('discount_applied', { pct: discountPct })}
                     </p>
                   )}
                 </div>
 
                 {cartCount > 0 && (
                   <p className="mt-1 text-xs text-[var(--ms-text-muted)]">
-                    {cartCount} ta mahsulot
+                    {t('products_count', { n: cartCount })}
                   </p>
                 )}
 
@@ -1964,7 +1971,7 @@ function SalesScreen({ session }: { session: CurrentSession }) {
                 {/* Inline chegirma input */}
                 {discountEditing && (
                   <div className="mt-2 flex items-center justify-center gap-2">
-                    <span className="text-xs text-[var(--ms-text-muted)]">Chegirma:</span>
+                    <span className="text-xs text-[var(--ms-text-muted)]">{t('discount')}:</span>
                     <div className="flex items-center gap-1 rounded-lg border border-emerald-300 bg-emerald-50 px-2.5 py-1.5">
                       <input
                         type="number"
@@ -2027,7 +2034,7 @@ function SalesScreen({ session }: { session: CurrentSession }) {
                       />
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
                     </svg>
-                    Yuborilmoqda...
+                    {t('sending')}
                   </span>
                 ) : (
                   <>
@@ -2044,7 +2051,7 @@ function SalesScreen({ session }: { session: CurrentSession }) {
                     >
                       <path d="M5 12h14M12 5l7 7-7 7" />
                     </svg>
-                    Omborchiga yuborish
+                    {t('send_to_picker')}
                   </>
                 )}
               </button>
@@ -2063,9 +2070,9 @@ function SalesScreen({ session }: { session: CurrentSession }) {
           // (Q10), lekin kassir buni BILISHI kerak: aks holda farq faqat smena
           // yopilganda chiqib, sababi unutilgan bo'lardi.
           if (doc.auditTypes.includes('CASH_OVERDRAWN')) {
-            toast.error('Diqqat: summa yashiqdagi naqddan ko`p — menejerga bildirildi');
+            toast.error(t('cash_overdrawn_warning'));
           } else {
-            toast.success(`${doc.name} yozildi`);
+            toast.success(t('document_created', { name: doc.name }));
           }
           window.open(`/print/cash-out/${doc.id}?auto=1`, '_blank');
         }}
@@ -2080,8 +2087,8 @@ function SalesScreen({ session }: { session: CurrentSession }) {
         onPaid={(result) => {
           toast.success(
             result.closedCount > 0
-              ? `To'lov qabul qilindi · ${result.closedCount} qarz yopildi`
-              : "To'lov qabul qilindi",
+              ? t('debt_paid_with_closed', { n: result.closedCount })
+              : t('debt_paid'),
           );
           // PKO cheki — kassa TZ §7.2/5-qadam. Yangi oynada, `auto=1` bilan
           // darhol chop etish dialogi ochiladi (retail-sale cheki bilan bir xil).

@@ -7,6 +7,7 @@ import { Input, formatMoney } from '@moysklad/ui';
 import * as Dialog from '@radix-ui/react-dialog';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Banknote, Receipt, X } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useState } from 'react';
 
 interface NamedRow {
@@ -53,6 +54,8 @@ const NUMPAD_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '000', '0', '�
  */
 export function CashOutDialog({ open, onOpenChange, sessionId, currency = 'UZS', onDone }: Props) {
   const qc = useQueryClient();
+  const t = useTranslations('pages.pos');
+  const tCommon = useTranslations('common');
   const [kind, setKind] = useState<Kind>('expense');
   const [amountInput, setAmountInput] = useState('');
   const [expenseItemId, setExpenseItemId] = useState<string | null>(null);
@@ -97,7 +100,7 @@ export function CashOutDialog({ open, onOpenChange, sessionId, currency = 'UZS',
       onOpenChange(false);
     },
     onError: (e: unknown) => {
-      setError(e instanceof Error ? e.message : 'Hujjat yozilmadi');
+      setError(e instanceof Error ? e.message : t('cash_out_error'));
     },
   });
 
@@ -125,12 +128,12 @@ export function CashOutDialog({ open, onOpenChange, sessionId, currency = 'UZS',
         <Dialog.Content className="-translate-x-1/2 -translate-y-1/2 fixed top-1/2 left-1/2 z-50 flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-[var(--ms-bg-surface)] shadow-2xl outline-none">
           <div className="flex items-center justify-between border-[var(--ms-border)] border-b px-5 py-3">
             <Dialog.Title className="font-semibold text-[var(--ms-text-primary)] text-lg">
-              Kassadan chiqim
+              {t('cash_out_title')}
             </Dialog.Title>
             <Dialog.Close asChild>
               <button
                 type="button"
-                aria-label="Yopish"
+                aria-label={tCommon('close')}
                 className="rounded-lg p-1 text-[var(--ms-text-muted)] hover:bg-[var(--ms-bg-hover)]"
               >
                 <X size={18} />
@@ -154,7 +157,7 @@ export function CashOutDialog({ open, onOpenChange, sessionId, currency = 'UZS',
                     : 'border-[var(--ms-border)] text-[var(--ms-text-muted)]'
                 }`}
               >
-                <Receipt size={16} /> Xarajat
+                <Receipt size={16} /> {t('cash_out_kind_expense')}
               </button>
               <button
                 type="button"
@@ -169,14 +172,14 @@ export function CashOutDialog({ open, onOpenChange, sessionId, currency = 'UZS',
                     : 'border-[var(--ms-border)] text-[var(--ms-text-muted)]'
                 }`}
               >
-                <Banknote size={16} /> Inkassatsiya
+                <Banknote size={16} /> {t('cash_out_kind_collection')}
               </button>
             </div>
 
             {/* ── Modda / qabul qiluvchi ──────────────────────────────────── */}
             <div>
               <p className="mb-1.5 text-[var(--ms-text-muted)] text-xs">
-                {kind === 'expense' ? 'Xarajat moddasi' : 'Pulni qabul qiluvchi'}
+                {kind === 'expense' ? t('cash_out_expense_item') : t('cash_out_recipient')}
               </p>
               <div className="flex max-h-40 flex-col gap-1 overflow-y-auto">
                 {pickerRows.map((row) => (
@@ -197,8 +200,8 @@ export function CashOutDialog({ open, onOpenChange, sessionId, currency = 'UZS',
                 {pickerRows.length === 0 && (
                   <p className="py-3 text-center text-[var(--ms-text-muted)] text-sm">
                     {kind === 'expense'
-                      ? "Xarajat moddasi yo'q — sozlamalarda qo'shing"
-                      : "Qabul qiluvchi xodim yo'q"}
+                      ? t('cash_out_no_expense_items')
+                      : t('cash_out_no_recipients')}
                   </p>
                 )}
               </div>
@@ -206,7 +209,7 @@ export function CashOutDialog({ open, onOpenChange, sessionId, currency = 'UZS',
 
             {/* ── Summa ───────────────────────────────────────────────────── */}
             <div className="rounded-xl border-2 border-[var(--ms-brand)] bg-[var(--ms-brand)]/5 px-4 py-3">
-              <div className="text-[var(--ms-text-muted)] text-xs">Summa</div>
+              <div className="text-[var(--ms-text-muted)] text-xs">{t('amount')}</div>
               <div
                 className="font-bold text-2xl text-[var(--ms-text-primary)] tabular-nums"
                 data-test-id="cash-out-amount"
@@ -234,7 +237,7 @@ export function CashOutDialog({ open, onOpenChange, sessionId, currency = 'UZS',
             <Input
               value={comment}
               onChange={(e) => setComment(e.target.value)}
-              placeholder="Izoh (ixtiyoriy)"
+              placeholder={t('comment_placeholder')}
             />
 
             {error && (
@@ -250,7 +253,11 @@ export function CashOutDialog({ open, onOpenChange, sessionId, currency = 'UZS',
               data-test-id="cash-out-confirm"
               className="h-12 w-full rounded-xl bg-[var(--ms-brand)] font-semibold text-base text-white transition-all hover:bg-[var(--ms-brand-hover)] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
             >
-              {mut.isPending ? '...' : kind === 'expense' ? 'Xarajatni yozish' : 'Topshirish'}
+              {mut.isPending
+                ? '...'
+                : kind === 'expense'
+                  ? t('cash_out_submit_expense')
+                  : t('cash_out_submit_collection')}
             </button>
           </div>
         </Dialog.Content>

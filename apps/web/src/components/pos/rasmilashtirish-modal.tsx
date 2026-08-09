@@ -7,6 +7,7 @@ import { Input, formatMoney } from '@moysklad/ui';
 import * as Dialog from '@radix-ui/react-dialog';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Banknote, CreditCard, Monitor, X } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useState } from 'react';
 
 interface CounterpartyRow {
@@ -17,9 +18,12 @@ interface CounterpartyRow {
   companyType: string;
 }
 
-function cpTypeBadge(row: CounterpartyRow) {
-  if (row.tags.includes('usta')) return { label: 'Usta', cls: 'bg-blue-100 text-blue-700' };
-  if (row.tags.includes('dokon')) return { label: "Do'kon", cls: 'bg-orange-100 text-orange-700' };
+/** Mijoz turi rozetkasi. Yorliq chaqiruvchidan keladi — modul darajasida
+ *  `useTranslations` chaqirib bo'lmaydi (hook), shuning uchun `t` uzatiladi. */
+function cpTypeBadge(row: CounterpartyRow, t: (key: string) => string) {
+  if (row.tags.includes('usta')) return { label: t('type_usta'), cls: 'bg-blue-100 text-blue-700' };
+  if (row.tags.includes('dokon'))
+    return { label: t('type_dokon'), cls: 'bg-orange-100 text-orange-700' };
   return null; // oddiy — badge yo'q
 }
 
@@ -70,6 +74,8 @@ export function RasmiyashtirishModal({
   onConfirm,
   loading = false,
 }: Props) {
+  const t = useTranslations('pages.pos');
+  const tCommon = useTranslations('common');
   // ── Counterparty ──────────────────────────────────────────────────────────
   const [search, setSearch] = useState('');
   const [agent, setAgent] = useState<CounterpartyRow | null>(null);
@@ -192,9 +198,9 @@ export function RasmiyashtirishModal({
   const colors = FIELD_COLORS[activeField];
 
   const fieldLabel: Record<ActiveField, string> = {
-    cash: 'Naqd miqdori',
-    card: 'Karta miqdori',
-    terminal: 'Terminal miqdori',
+    cash: t('field_cash'),
+    card: t('field_card'),
+    terminal: t('field_terminal'),
   };
 
   return (
@@ -213,7 +219,7 @@ export function RasmiyashtirishModal({
             <div className="flex items-start justify-between">
               <div>
                 <Dialog.Title className="text-[10px] font-bold uppercase tracking-widest text-[var(--ms-text-muted)]">
-                  To'lov summasi
+                  {t('pay_amount')}
                 </Dialog.Title>
                 <div className="mt-0.5 text-3xl font-bold tabular-nums text-[var(--ms-text-primary)] leading-none">
                   {formatMoney(sumMinor)}
@@ -240,7 +246,7 @@ export function RasmiyashtirishModal({
                 <div className="px-4 pt-4 pb-3 border-b border-[var(--ms-border)]">
                   <div className="mb-2">
                     <span className="text-[10px] text-[var(--ms-text-muted)] italic">
-                      Mijoz (ixtiyoriy)
+                      {t('customer_optional')}
                     </span>
                   </div>
                   {agent ? (
@@ -251,7 +257,7 @@ export function RasmiyashtirishModal({
                             {agent.name}
                           </span>
                           {(() => {
-                            const b = cpTypeBadge(agent);
+                            const b = cpTypeBadge(agent, t);
                             return b ? (
                               <span
                                 className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold ${b.cls}`}
@@ -277,25 +283,26 @@ export function RasmiyashtirishModal({
                     <div className="flex flex-col gap-2">
                       {/* Tur tanlash */}
                       <div className="flex gap-1 rounded-lg bg-[var(--ms-bg-input)] p-0.5">
-                        {(['oddiy', 'usta', 'dokon'] as const).map((t) => (
+                        {/* `t` translator bilan to'qnashmasligi uchun parametr `kind` */}
+                        {(['oddiy', 'usta', 'dokon'] as const).map((kind) => (
                           <button
-                            key={t}
+                            key={kind}
                             type="button"
-                            onClick={() => setNewType(t)}
+                            onClick={() => setNewType(kind)}
                             className={`flex-1 rounded-md py-1 text-[10px] font-semibold transition-all ${
-                              newType === t
+                              newType === kind
                                 ? 'bg-white text-[var(--ms-text-primary)] shadow-sm'
                                 : 'text-[var(--ms-text-muted)] hover:text-[var(--ms-text-primary)]'
                             }`}
                           >
-                            {t === 'oddiy' ? 'Oddiy' : t === 'usta' ? 'Usta' : "Do'kon"}
+                            {t(`type_${kind}`)}
                           </button>
                         ))}
                       </div>
                       <Input
                         value={newName}
                         onChange={(e) => setNewName(e.target.value)}
-                        placeholder="Ism Familiya / Tashkilot nomi"
+                        placeholder={t('new_customer_name_placeholder')}
                         autoFocus
                       />
                       <Input
@@ -318,14 +325,14 @@ export function RasmiyashtirishModal({
                           disabled={!newName.trim() || createMut.isPending}
                           className="flex-1 rounded-lg bg-[var(--ms-brand)] py-1.5 text-xs font-semibold text-white disabled:opacity-40"
                         >
-                          {createMut.isPending ? '...' : "Qo'shish"}
+                          {createMut.isPending ? '...' : t('add')}
                         </button>
                         <button
                           type="button"
                           onClick={() => setCreating(false)}
                           className="rounded-lg border border-[var(--ms-border)] px-3 py-1.5 text-xs text-[var(--ms-text-muted)]"
                         >
-                          Bekor
+                          {tCommon('cancel')}
                         </button>
                       </div>
                     </div>
@@ -335,7 +342,7 @@ export function RasmiyashtirishModal({
                         <Input
                           value={search}
                           onChange={(e) => setSearch(e.target.value)}
-                          placeholder="Qidirish..."
+                          placeholder={t('search_placeholder')}
                         />
                       </div>
                       <div className="max-h-28 overflow-y-auto">
@@ -345,11 +352,11 @@ export function RasmiyashtirishModal({
                           </p>
                         ) : (cpData?.items.length ?? 0) === 0 ? (
                           <p className="py-3 text-center text-xs text-[var(--ms-text-muted)]">
-                            Topilmadi
+                            {t('not_found')}
                           </p>
                         ) : (
                           cpData?.items.map((c) => {
-                            const badge = cpTypeBadge(c);
+                            const badge = cpTypeBadge(c, t);
                             return (
                               <button
                                 type="button"
@@ -387,7 +394,7 @@ export function RasmiyashtirishModal({
                         }}
                         className="w-full border-t border-[var(--ms-border)] px-3 py-2 text-left text-xs text-[var(--ms-text-brand)] hover:bg-[var(--ms-bg-hover)]"
                       >
-                        + Yangi mijoz
+                        {t('new_customer')}
                       </button>
                     </div>
                   )}
@@ -396,7 +403,7 @@ export function RasmiyashtirishModal({
                 {/* Payment method cards */}
                 <div className="flex flex-col gap-2 p-4">
                   <p className="text-[10px] font-bold uppercase tracking-widest text-[var(--ms-text-muted)]">
-                    To'lov turi
+                    {t('payment_method')}
                   </p>
 
                   {/* Naqd */}
@@ -418,7 +425,7 @@ export function RasmiyashtirishModal({
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="text-[10px] font-semibold uppercase tracking-wide text-[var(--ms-text-muted)]">
-                        Naqd
+                        {t('cash')}
                       </div>
                       <div
                         className={`font-bold tabular-nums leading-tight text-sm ${cashMinor > 0n ? 'text-[var(--ms-text-primary)]' : 'text-[var(--ms-text-muted)]'}`}
@@ -450,7 +457,7 @@ export function RasmiyashtirishModal({
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="text-[10px] font-semibold uppercase tracking-wide text-[var(--ms-text-muted)]">
-                        Karta
+                        {t('card')}
                       </div>
                       <div
                         className={`font-bold tabular-nums leading-tight text-sm ${cardMinor > 0n ? 'text-[var(--ms-text-primary)]' : 'text-[var(--ms-text-muted)]'}`}
@@ -482,7 +489,7 @@ export function RasmiyashtirishModal({
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="text-[10px] font-semibold uppercase tracking-wide text-[var(--ms-text-muted)]">
-                        Terminal
+                        {t('terminal')}
                       </div>
                       <div
                         className={`font-bold tabular-nums leading-tight text-sm ${terminalMinor > 0n ? 'text-[var(--ms-text-primary)]' : 'text-[var(--ms-text-muted)]'}`}
@@ -502,30 +509,32 @@ export function RasmiyashtirishModal({
                     agent ? (
                       <div className="rounded-xl bg-red-50 border border-red-300 px-3 py-3 text-center">
                         <p className="text-[10px] font-bold uppercase tracking-wide text-red-500 mb-0.5">
-                          Qarz
+                          {t('debt')}
                         </p>
                         <p className="text-xl font-bold tabular-nums text-red-700 leading-none">
                           {formatMoney(debtMinor)}
                         </p>
-                        <p className="mt-1 text-[10px] text-red-400">{agent.name} ga yoziladi</p>
+                        <p className="mt-1 text-[10px] text-red-400">
+                          {t('debt_assigned_to', { name: agent.name })}
+                        </p>
                       </div>
                     ) : (
                       <div className="rounded-xl bg-orange-50 border border-orange-200 px-3 py-3 text-center">
                         <p className="text-[10px] font-bold uppercase tracking-wide text-orange-500 mb-0.5">
-                          Qoldi
+                          {t('remaining')}
                         </p>
                         <p className="text-xl font-bold tabular-nums text-orange-700 leading-none">
                           {formatMoney(debtMinor)}
                         </p>
                         <p className="mt-1 text-[10px] text-orange-400">
-                          Qarzga berish uchun mijoz tanlang
+                          {t('select_customer_for_debt')}
                         </p>
                       </div>
                     )
                   ) : change > 0n ? (
                     <div className="rounded-xl bg-emerald-50 border border-emerald-300 px-3 py-3 text-center">
                       <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-500 mb-0.5">
-                        Qaytim
+                        {t('change_due')}
                       </p>
                       <p className="text-2xl font-bold tabular-nums text-emerald-700 leading-none">
                         {formatMoney(change)}
@@ -533,7 +542,7 @@ export function RasmiyashtirishModal({
                     </div>
                   ) : totalPaid > 0n && totalPaid === sumMinor ? (
                     <div className="rounded-xl bg-emerald-50 border border-emerald-200 px-3 py-2.5 text-center">
-                      <p className="text-sm font-semibold text-emerald-700">✓ Aniq to'landi</p>
+                      <p className="text-sm font-semibold text-emerald-700">✓ {t('exact_paid')}</p>
                     </div>
                   ) : null}
                 </div>
@@ -544,12 +553,12 @@ export function RasmiyashtirishModal({
                 {/* Hint: why button is disabled */}
                 {changeExceedsCash && !loading && (
                   <p className="mb-2 text-center text-[10px] font-medium text-red-500">
-                    Qaytim faqat naqddan beriladi — ortiqcha karta/terminal summasini kamaytiring
+                    {t('change_cash_only')}
                   </p>
                 )}
                 {totalPaid === 0n && !loading && (
                   <p className="mb-2 text-center text-[10px] text-[var(--ms-text-muted)]">
-                    To'lov summasini kiriting
+                    {t('enter_amount')}
                   </p>
                 )}
                 <button
@@ -576,10 +585,10 @@ export function RasmiyashtirishModal({
                         />
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
                       </svg>
-                      Saqlanmoqda...
+                      {t('saving')}
                     </span>
                   ) : (
-                    '✓ Rasmilashtirish'
+                    `✓ ${t('checkout_submit')}`
                   )}
                 </button>
               </div>
@@ -620,7 +629,7 @@ export function RasmiyashtirishModal({
                 onClick={handleExact}
                 className="w-full rounded-xl border-2 border-dashed border-[var(--ms-border)] bg-white py-2 text-sm font-bold text-[var(--ms-text-primary)] hover:border-[var(--ms-brand)] hover:bg-[var(--ms-bg-hover)] transition-colors"
               >
-                Aniq summa
+                {t('exact_amount')}
               </button>
 
               {/* Numpad — grows to fill remaining space */}
