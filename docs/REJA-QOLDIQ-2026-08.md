@@ -66,6 +66,7 @@ foydalanuvchi bilan birga bajariladi (`/deploy` skill + shu ro'yxat):
    `CounterpartyAdjustment` retsepti.
 4. **Bank-import prod dublikatlari** (Faza 20 hisoboti, SQL tayyor): o'lchash → tozalash → shundan
    KEYINGINA partial unique index migratsiyasi (Faza Q9 «Diqqat» bandi).
+   *(Xuddi shu «avval o'lcha, keyin unique» naqshi shtrix-kodlarga ham tegishli — §14.)*
 5. **Prod (`sherset_v2`) DDL'lari** — sxema-drift tufayli `migrate deploy` emas, qo'lda
    `prisma db execute --file`: jurnal-jadval + `doc_id` nullable · gateway `@@unique` (avval dublikat
    tekshir!) · dashboard indekslari (past yuklamada) · `move_positions.base_cost_minor` ·
@@ -138,6 +139,26 @@ foydalanuvchi bilan birga bajariladi (`/deploy` skill + shu ro'yxat):
     qilingan» ommaviy chiqmasin); (b) bo'shatishni yakunlash → o'sha xodim tab'i keyingi so'rovda
     401 → login sahifasi; (c) arxivlangan xodimlar ro'yxatini deploydan OLDIN ko'zdan kechir
     (`SELECT count(*) FROM employees WHERE archived`) — ular orasida hali ishlayotgani bo'lmasin.
+14. **🔵 Shtrix-kod prod dublikatlari (Faza Q18 / `DB-04`) — O'LCHOV, keyin QAROR.** Barcode
+    unique/normalizatsiyasi **prod raqamlarisiz boshlanmaydi**: unique indeks mavjud dublikatlar
+    ustida deploy'ni yiqitadi. O'lchov skripti tayyor va **faqat o'qiydi** (`APPLY` rejimi YO'Q —
+    berilsa skript to'xtaydi). VPS'da, prod DB'ga qaratib:
+    ```bash
+    # 1) prod (sherset_v2) — FAQAT O'QISH, hech narsa yozmaydi
+    DATABASE_URL='postgresql://<user>:<pass>@localhost:5432/sherset_v2' \
+      pnpm --filter @moysklad/api exec tsx src/scripts/audit-barcode-duplicates.ts
+    # 2) bitta akkauntni ajratib ko'rish (ko'p-akkauntli bazada)
+    ACCOUNT_ID=<uuid> DATABASE_URL='…' pnpm --filter @moysklad/api exec tsx \
+      src/scripts/audit-barcode-duplicates.ts
+    # 3) namunalarni ko'paytirish (default 10)
+    SAMPLES=50 DATABASE_URL='…' pnpm --filter @moysklad/api exec tsx \
+      src/scripts/audit-barcode-duplicates.ts
+    ```
+    **Chiqishdagi hal qiluvchi raqam — `UNIQUE-BLOKER`** (kanonik darajadagi kross-mahsulot
+    guruhlari). `0` bo'lsa sxema-fazasi to'g'ridan-to'g'ri boshlanadi; `>0` bo'lsa avval
+    merge-siyosati tanlanadi (Faza Q18 hisobotidagi 3 variant) va tozalash qilinadi. Shu bilan
+    birga `normalizatsiya YARATADIGAN yangi guruh` raqamiga qara: u `>0` bo'lsa normalizatsiyaning
+    o'zi yangi to'qnashuv ochadi ⇒ backfill unique indeksdan OLDIN bo'lishi shart.
 
 ---
 
@@ -565,7 +586,8 @@ holatida xulq aniq (birinchi/xato — tanlangan siyosat). (3) mavjud POS testlar
 > `docs/REJA-QOLDIQ-2026-08.md` — **Faza Q18** (OPS-4/5 o'lchovidan keyin). O'ZGARMAS QOIDALAR.
 > Faza 25 DEFER-1'ni o'qi. Barcode normalizatsiya + lookup + o'lchash skripti (APPLY'ni yugurtirMA).
 > TDD: 3 stsenariy. Gate + migrate. Hisobot, TO'XTA.
-**◻ HISOBOT:** _(agent to'ldiradi)_
+**◑ HISOBOT (2026-08-09):** QISMAN — o'lchov skripti + qaror-hujjati tayyor; sxema/lookup o'zgarishi
+prod o'lchoviga va foydalanuvchi qaroriga bog'liq (OPS-4/5). Batafsil: «HISOBOT JURNALI → Faza Q18».
 
 ---
 
@@ -3205,5 +3227,221 @@ fayl qo'shmasin — §6.7 B), gate'lar QO'LDA to'liq yugurtirildi.
   (`hr-sync`/`hr-tasks`) bo'shatilgandan keyin uziladimi.
 - **Deploy ta'siri** — OPS-QADAMLAR **§13** ga yozildi: **migratsiya/DDL YO'Q**, qayta login talab
   QILINMAYDI; xulq o'zgarishi faqat `archived`/bo'shatilgan/o'chirilgan xodimlarga tegadi.
+
+---
+
+## Faza Q18 — Barcode dublikat O'LCHOVI + merge-siyosati qaror-hujjati (`DB-04`) (2026-08-09) — **Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q** · **SXEMA O'ZGARISHI BAJARILMADI — ATAYLAB**
+
+> **Halol status:** bu faza **QISMAN** yopildi. Bajarilgani — o'lchov quroli va qaror-hujjati.
+> Bajarilmagani (ataylab) — `schema.prisma`, migratsiya, unique indeks, POS lookup yo'li.
+> Sabab pastda «Nima ATAYLAB qilinmadi» bo'limida.
+
+### 1. Tasdiqlash — HEAD kodida, o'z ko'zim bilan (CLAUDE.md §2)
+
+Faza 25 hisoboti 2026-08-09 dagi; da'volari HEAD'da qayta tekshirildi:
+
+| Da'vo | Holat | Dalil (HEAD) |
+|---|---|---|
+| `Product.barcodes` — Postgres **massiv** (`String[]`), alohida jadval EMAS | **TASDIQLANDI** | `schema.prisma:5054` `barcodes String[] @default([])` (+ `barcodeTypes String[]` — index-aligned parallel massiv, `:5060`) |
+| Barcode GIN indeksi mavjud va **unique EMAS** | **TASDIQLANDI** | `schema.prisma:5130` `@@index([barcodes(ops: ArrayOps)], type: Gin, map: "products_barcodes_gin_idx")`; izohning o'zi «barcode UNIQUENESS is deliberately NOT added here (existing duplicates must be merged by a data-migration first)» deydi. Migratsiya: `20260809140000_perf_index_pack_fk_barcode_inn_cell` |
+| POS/product lookup `barcodes: { has: tok }` shaklida | **TASDIQLANDI** | `product.repository.ts:105` — tokenli qidiruvning OR-shoxi; `:168` `filter.barcode` uchun `{ barcodes: { has: filter.barcode } }` |
+| Skanning ikkinchi yo'li — quti shtrix-kodi | **TASDIQLANDI** | `product.repository.ts:110` `{ packs: { some: { barcode: tok } } }` (`ProductPack.barcode`, `schema.prisma:5185`) |
+
+**Faza 25 aytmagan, o'lchovga qo'shilgan narsa:** shtrix-kod **bitta emas, TO'RT joyda** saqlanadi —
+`Product.barcodes[]`, `Variant.barcode` + `Variant.barcodes[]` (`schema.prisma:1655-1656`),
+`ProductPack.barcode`, `Consignment.barcodes[]` (`schema.prisma:2935`). Ya'ni «unique indeks»
+faqat `products` jadvaliga qo'yilsa **to'liq yechim bo'lmaydi**: bir kod bir tovarda, ikkinchisi
+uning variantida turishi mumkin va POS skani baribir noaniq qoladi. Shu sababli o'lchov to'rtalasini
+birga oladi.
+
+**Lookup shakli haqidagi aniqlik (Faza 25 DEFER-1 matnini to'ldiradi):** shipped kodda POS-skan
+`findFirst` EMAS — u ro'yxat-so'rovining (`findMany` + `take`) OR-shoxi. `LIMIT 1` yo'li Faza 25 da
+sintetik 30k qatorda EXPLAIN bilan o'lchangan. Bu farq **xulosani o'zgartirmaydi** (massiv `@>`
+selektivligi baribir 0.005 default), lekin hisobotda aniq turishi kerak — «findFirst'ni tuzatamiz»
+degan ko'r-ko'rona fix noto'g'ri joyga tegib ketardi.
+
+### 2. Fayllar (yangi — 3 ta, hammasi meniki)
+
+| Fayl | Nima |
+|---|---|
+| `apps/api/src/scripts/barcode-audit-core.ts` | **YANGI** — o'lchovning **sof (DB'siz) yadrosi**: `normalizeBarcode`, `gtinCheckDigit`, `buildBarcodeReport`, + `runBarcodeAudit(db)` (faqat `findMany` chaqiradi). `BarcodeAuditDb` tipi ataylab tor — **yozuv metodlari tipda umuman yo'q** |
+| `apps/api/src/scripts/barcode-audit-core.test.ts` | **YANGI** — 16 test: normalizatsiya (6) + dublikat tasnifi (7) + faqat-o'qish qulfi (2) + bayroq-agregatsiya (1) |
+| `apps/api/src/scripts/audit-barcode-duplicates.ts` | **YANGI** — yuguruvchi qobiq (`recompute-counterparty-balances.ts` naqshi: doc-header + env-flag + aniq chiqish). **DRY yagona rejim**; `APPLY` berilsa exit 1 |
+
+**Kod-mantiq tegilmadi:** `product.repository.ts`, `schema.prisma`, migratsiyalar, POS yo'llari —
+**0 o'zgarish**.
+
+### 3. Skript nima o'lchaydi
+
+- **4 manba:** `Product.barcodes[]` · `Variant.barcode` + `Variant.barcodes[]` · `ProductPack.barcode` ·
+  `Consignment.barcodes[]`. Har qiymat bitta «qator» bo'lib, egasi + **nishon tovari** bilan yig'iladi.
+- **Normalizatsiya-nomzodlari (bayroqlar):** `outer-space` · `inner-space` · `control-char`
+  (NBSP/zero-width/BOM — skaner-drayver va Excel-import aynan shularni qo'shadi) · `lowercase` ·
+  `non-digit` · `leading-zero` (GTIN: UPC-12 `012345678905` ≡ EAN-13 `0012345678905`) ·
+  `odd-length` (8/12/13/14 emas) · `checksum-bad` (GTIN nazorat raqami).
+- **Dublikat TURLARI** (aynan topshiriqdagi «dublikat-ichi-mahsulot vs kross-mahsulot»):
+  - `self` — bitta yozuvning o'z massivida takror (`['X','X']`) ⇒ **zararsiz**, massivdan olib tashlash kifoya;
+  - `intra-product` — turli yozuvlar, lekin **bir tovar** (tovar + varianti) ⇒ POS baribir bitta
+    tovarga olib boradi, avtomatik birlashtirsa bo'ladi;
+  - `cross-product` — **turli tovarlar** ⇒ kassir skani noaniq, **unique indeksni aynan shu bloklaydi**.
+- **Uch daraja:** xom qiymat (hozirgi holat) → probel/registr normalizatsiyasidan keyin → yetakchi-nol
+  kanonizatsiyasidan keyin. Shu uchlik **eng muhim savolga** javob beradi: *normalizatsiyaning O'ZI
+  yangi to'qnashuv yaratadimi* (`normalizedOnlyGroups` / `canonicalOnlyGroups`). Agar ha bo'lsa —
+  backfill unique indeksdan OLDIN bo'lishi shart, aks holda migratsiya prodda yiqiladi.
+- **Akkaunt chegarasi hurmat qilinadi:** boshqa akkauntdagi bir xil kod to'qnashuv sifatida
+  sanalmaydi (lookup `accountId` bo'yicha filtrlaydi) — test bilan qulflangan.
+- **`deletedAt` filtri ATAYLAB yo'q:** unique indeks soft-delete qilingan qatorlarni ham qamraydi,
+  ya'ni o'lchov ham ularni ko'rishi shart. Aks holda «0 bloker» deb aytib, deploy'da yiqilardik.
+
+### 4. Lokal o'lchov natijasi (jonli, `climart_adopt @ localhost:5432`)
+
+```
+qatorlar: 5 | bo'sh: 0 | xom noyob: 5 | kanonik noyob: 5
+manba: product 1 · variant 0 · pack 0 · consignment 4
+bayroqlar: non-digit 1 · leading-zero 1
+to'qnashuv (xom / +probel-registr / +yetakchi-nol):  0 / 0 / 0 guruh
+normalizatsiya YARATADIGAN yangi guruh: 0 | kanonizatsiya qo'shadigan: 0
+✅ UNIQUE-BLOKER YO'Q
+namuna: consignment «AirPods Pro 2 / batch BATCH-2025-018» «0194253397373» [leading-zero]
+```
+
+**Qamrov mustaqil tasdiqlandi** (skriptga ishonmay, alohida SQL bilan): `products` 8 qator, ulardan
+`cardinality(barcodes)>0` — **1** (jami 1 qiymat); `variants` 0; `product_packs` barcode'li 0;
+`consignments` barcode'li 3 qator, jami **4** qiymat ⇒ **1 + 4 = 5** — skript chiqishi bilan
+**aynan mos**. Ya'ni «5» skriptning kamchiligi emas, lokal bazaning haqiqiy hajmi.
+
+**Halol o'qish:** lokal baza bu savolga javob BERMAYDI — 5 qiymatda dublikat bo'lmasligi kutilgan.
+Bu yugurtirish skriptning **ishlashini** (4 manba, bayroqlar, uch daraja, qamrov) isbotlaydi, holos.
+Haqiqiy raqam prod (`sherset_v2`) da olinadi — OPS-QADAMLAR **§14** dagi buyruq bilan.
+
+### 5. 🔷 QAROR-HUJJATI — merge-siyosati (foydalanuvchi tasdig'i kerak)
+
+Prod o'lchovi `cross-product` guruhlarini ko'rsatsa, har guruh uchun «kod kimda qoladi» hal qilinishi
+kerak. Uch variant, ta'siri bilan:
+
+| # | Siyosat | Qanday ishlaydi | Foyda | Zarar / xavf |
+|---|---|---|---|---|
+| **A** | **Birinchi g'olib** (`createdAt` eng eskisi kodni saqlaydi) | Guruhdagi eng eski yozuv kodni ushlab qoladi, qolganlaridan olib tashlanadi | To'liq avtomatik, tushuntirish oson, natija takrorlanuvchi (deterministik) | «Eng eski» ko'pincha **eskirgan/arxiv** kartochka bo'ladi — jonli sotiladigan tovar kodini yo'qotadi va kassir skanini **sindiradi** |
+| **B** | **Eng oxirgi yangilangan g'olib** (`updatedAt` eng yangisi) | Kodni oxirgi tegilgan yozuv saqlaydi | Amaldagi ishlatilayotgan kartochkaga moyil ⇒ POS uzilishi kamroq | `updatedAt` **shovqinli**: ommaviy import/sync butun jadvalni «yangilagan» bo'lishi mumkin ⇒ g'olib tasodifiy tanlanadi. Tarixiy hujjatlar bilan bog'liqlikni hisobga olmaydi |
+| **C** | **Qo'lda ko'rib chiqish navbati** (avtomatik faqat xavfsiz sinflar) | `self` va `intra-product` avtomatik tozalanadi; `cross-product` esa **operator navbatiga** tushadi (ro'yxat + «qaysi tovarda qoldirish» tanlovi), hal qilinmaguncha unique indeks QO'YILMAYDI | Ma'lumot yo'qolmaydi; qaror savdo-ma'nosi bilan qabul qilinadi; migratsiya faqat toza bazaga tushadi | Odam vaqti kerak; guruhlar ko'p bo'lsa cho'ziladi ⇒ unique indeks kechikadi |
+
+**TAVSIYAM — C (gibrid), aniq bosqichlar bilan:**
+
+1. **Avtomatik, xavfsiz qism** (odam qarorisiz): `self` takrorlarni massivdan olib tashlash +
+   probel/ko'rinmas-belgi/registr normalizatsiyasi. Bu **hech qanday** ma'noni o'zgartirmaydi —
+   `«4780 012»` va `«4780012»` skaner uchun bir xil qiymat.
+2. **`intra-product`** — avtomatik birlashtirish (kod tovarning o'zida qoladi, variant/partiya
+   nusxasidan olib tashlanadi). POS natijasi o'zgarmaydi, chunki nishon tovar bir xil.
+3. **`cross-product`** — **QO'LDA**. Har guruh uchun operatorga: ikkala tovar nomi, oxirgi sotuv
+   sanasi, qoldiq. Sabab: bu haqiqatan ikki xil tovar bo'lib, kod ulardan faqat BITTASIGA tegishli —
+   buni faqat savdo tomoni biladi. Mashina tanlasa, kassir **noto'g'ri tovarni sotadi** (pul xatosi,
+   nafaqat noqulaylik).
+4. Navbat bo'shagach — normalized ustun + partial unique migratsiyasi.
+
+**Nega A/B emas:** ikkalasi ham `cross-product` ni **jimgina** hal qiladi. `updatedAt`/`createdAt` —
+tovarning qaysi kodga haqli ekani haqida **hech narsa** demaydi; ular texnik metama'lumot.
+Bu loyihada aynan shunday «jimgina to'g'ri ko'rinadigan» tanlovlar ilgari pul xatosiga olib kelgan
+(`retail-cost-freeze-null-contract`, `applydeltas-cellmode-gotcha` xotiralari).
+
+### 6. 🔷 QAROR-HUJJATI — normalizatsiya sxemasi (ikki variant)
+
+| | **V1: alohida `product_barcodes(barcode, product_id)` jadval** | **V2: normalized ustun + partial unique** |
+|---|---|---|
+| Shakl | `product_barcodes(id, account_id, product_id, variant_id?, barcode, barcode_normalized, type)` + `@@unique([accountId, barcodeNormalized])` | `products.barcodes_normalized String[]` (generated/backfilled) + expression/GIN unique |
+| Lookup | `productBarcode.findUnique({ accountId_barcodeNormalized })` ⇒ **btree teng-qidiruv**, planner uni har doim tanlaydi (`LIMIT 1` muammosi **ildizdan** yo'qoladi) | Massiv baribir qoladi ⇒ `@>` selektivligi va `LIMIT 1` muammosi **saqlanadi**; unique ham massiv ustida ifodalanmaydi (Postgres massiv elementiga unique qo'yolmaydi) |
+| Uniqueness | Tabiiy — bir qator = bir kod | **Amalda imkonsiz**: massivdagi element darajasida unique constraint yo'q. Faqat trigger/exclusion bilan, bu esa V1 dan murakkabroq |
+| Ko'p manba (variant/pack/partiya) | Bitta jadvalda birlashadi ⇒ **butun skan-domeni bir joyda** | Har jadvalda alohida qoladi ⇒ kross-jadval to'qnashuvi ko'rinmaydi |
+| Migratsiya narxi | Yangi jadval + backfill + yozuv yo'llarini (create/update/clone/sync/import) ko'chirish | Ustun qo'shish arzon, lekin asosiy muammoni **yechmaydi** |
+| moysklad-parity | `barcodeTypes` parallel massivi tabiiy ravishda `type` ustuniga aylanadi (hozirgi index-aligned parallel massiv — o'zi mo'rt naqsh) | Parallel massiv mo'rtligi qoladi |
+
+**TAVSIYAM — V1 (alohida jadval)**, `products.barcodes` massivini **o'qish uchun saqlab** (FE
+kontrakti va moysklad-compat buzilmasin), jadval esa yagona haqiqat manbai bo'lsin; massiv keyingi
+fazada generated-view'ga aylantiriladi. V2 «arzon ko'rinadi, lekin `DB-04` ni yopmaydi» — bu aynan
+Faza 25 tuzog'ining takrori bo'lardi (indeks qo'yildi, planner ishlatmadi).
+
+### 7. 🔷 POS lookup qanday o'zgaradi (V1 qabul qilinsa)
+
+- `product.repository.ts:105` dagi `{ barcodes: { has: tok } }` OR-shoxi →
+  `{ barcodeRows: { some: { barcodeNormalized: normalize(tok) } } }`;
+  `:110` dagi `{ packs: { some: { barcode: tok } } }` ham o'sha jadvalga ko'chadi (pack qatori
+  `kind: 'pack'` bilan) ⇒ **bitta** teng-qidiruv, ikkita OR-shoxi o'rniga.
+- `:168` `filter.barcode` — xuddi shunday, lekin normalizatsiya **so'rov tomonida ham** qo'llanadi
+  (aks holda kassir qo'lda kiritgan `«4780 012»` topilmaydi).
+- Muhim: **normalizatsiya bir joyda** bo'lishi shart (yozuv va o'qish bitta funksiyadan) — shuning
+  uchun `normalizeBarcode` allaqachon alohida, testlangan modulda turibdi va kelgusi fazada
+  `apps/api/src/modules/product/` ga ko'chiriladi (skript uni import qiladi, nusxa YO'Q).
+- Kutilgan plan: `Index Scan using product_barcodes_account_norm_key` (`LIMIT 1` da ham) —
+  Faza 25 o'lchagan seq-scan yo'q bo'ladi. Buni **kelgusi faza EXPLAIN bilan o'lchashi shart**,
+  bu yerda o'lchanmadi (jadval hali yo'q).
+
+### 8. Testlar — RED → GREEN (jonli o'lchandi)
+
+- **RED:** `barcode-audit-core.test.ts` yozildi, yadro hali yo'q ⇒
+  `Error: Failed to load url ./barcode-audit-core.js … Does the file exist?` (1 failed suite, 0 test).
+- **Oraliq RED (haqiqiy, foydali):** ko'rinmas belgilar (NBSP/zero-width) test faylida **literal**
+  yozilgani uchun tahrir paytida qiymat siljib, `outer-space` bayrog'i kutilgan joydan chiqmadi
+  (1 failed / 15 passed). Tuzatildi: ko'rinmas belgilar endi **`\u00a0` / `\u200b` escape**'lari
+  bilan yozilgan (literal ko'rinmas belgi tahrirda jimgina yo'qoladi — bu bug-klass hujjatlandi).
+- **GREEN:** `src/scripts/barcode-audit-core.test.ts` → **16/16 passed**.
+- **Regress:** `vitest run src/scripts src/modules/product` → **15 fayl / 183 test passed, 0 fail**
+  (product, product-folder, production, counterparty-balance-sources shu ichida).
+
+**Faqat-o'qish qulfi qanday ishlaydi:** test `prisma` o'rniga `Proxy` beradi — `findMany` dan
+BOSHQA har qanday metodga murojaat (`create/update/updateMany/delete/upsert`) va `$` bilan
+boshlanadigan har narsa (`$executeRaw`, `$transaction`) **darhol Error** otadi. Ya'ni kelajakda
+kimdir skriptga yozuv yo'li qo'shsa, test qizil bo'ladi — «DRY edi, keyin jimgina APPLY bo'lib
+qoldi» stsenariysi mexanik yopilgan. Qulfning o'zi ham alohida test bilan tekshiriladi
+(qulf ishlamay qolsa ham ko'rinadi).
+
+### 9. Gate (jonli o'lchangan, path-cheklangan)
+
+- `pnpm --filter @moysklad/api typecheck` → **0 xato** (butun paket). *Diqqat: shu sessiyaning
+  boshida bu buyruq **parallel sessiyaning** `modules/manager/sla/manager-sla.service.ts` faylidan
+  ~15 xato bergan edi — mening fayllarim emas; parallel sessiya ularni tuzatgach qayta yugurtirildi,
+  0 bo'ldi. Mening 3 faylimda hech qachon xato bo'lmagan.*
+- `npx biome check <3 fayl>` → **0 error** (formatlash avtofiks bilan tuzatildi; qolgan
+  diagnostikalar — `noConsoleLog` **warning**'lari, `src/scripts/` uchun mavjud siyosat, boshqa
+  skriptlarda ham shunday).
+- `vitest run src/scripts src/modules/product` → **183/183 passed**.
+- Skriptning o'zi lokal DB'da **ikki marta** yugurtirildi (formatlashdan oldin va keyin) — bir xil
+  natija; `APPLY=1` bilan **exit 1** + tushuntirish (qo'riqchi jonli tekshirildi).
+- `i18n:gate` yugurtilmadi — **UI-matn tegilmadi** (0 `.tsx`, 0 tarjima kaliti).
+- Migratsiya YO'Q ⇒ `prisma migrate`/`db execute` **yugurtirilmadi** (umumiy resurs, §6.4 — parallel
+  sessiya `packages/db/prisma/` da faol).
+- **Browser-smoke YO'Q.**
+
+### 10. ⛔ Nima ATAYLAB qilinmadi (va nega)
+
+1. **`schema.prisma` o'zgarmadi, migratsiya yaratilmadi, unique indeks qo'yilmadi.** Uch sabab:
+   (a) unique indeks mavjud dublikatlar ustida **prodda deploy'ni yiqitadi**, prod raqami esa hali
+   **o'lchanmagan** (OPS §14); (b) merge-siyosati **foydalanuvchi qarori** (yuqoridagi A/B/C);
+   (c) `packages/db/prisma/schema.prisma` hozir **parallel sessiya qo'lida** (CLAUDE.md §6.1).
+2. **POS lookup yo'li tegilmadi** (`product.repository.ts` — 0 o'zgarish). Yangi yo'l faqat yangi
+   jadval/ustun bilan ma'noga ega; sxemasiz o'zgartirish «yarim qo'llangan» holat yaratardi.
+3. **`APPLY` rejimi yozilmadi** — topshiriq talabi va printsipial to'g'ri: tozalash siyosati
+   tanlanmaguncha yozuv kodi **umuman mavjud bo'lmasligi** kerak (mavjud bo'lsa, kimdir yugurtiradi).
+4. **Prod DB'ga ulanilmadi.** VPS/prod — foydalanuvchi ishtirokidagi ops-sessiya (§6.4).
+5. **EXPLAIN o'lchovi qilinmadi** — o'lchanadigan yangi so'rov yo'li hali yo'q. Faza 25 ning
+   mavjud o'lchovi (`LIMIT 1` → seq scan) o'z kuchida qoladi.
+
+### 11. 🟠 Qolgan qarz / DEFER (Faza Q18-B uchun)
+
+1. **Asosiy ish — sxema fazasi:** `product_barcodes` jadvali + backfill + lookup ko'chirish +
+   EXPLAIN o'lchovi. **Kirish sharti:** OPS §14 prod o'lchovi + merge-siyosati tasdig'i.
+2. **`normalizeBarcode` joyi:** hozir `src/scripts/` da (o'lchov quroli sifatida). Sxema fazasida u
+   `modules/product/` ga ko'chadi va **yozuv yo'llari** (create/update/clone, moysklad-sync, Excel
+   import) ham shundan foydalanishi shart — aks holda normalizatsiya faqat o'qishda bo'lib,
+   baza yana ifloslanadi.
+3. **`barcodeTypes` parallel massivi** (`schema.prisma:5060`) — index-aligned parallel massiv mo'rt
+   naqsh (bir massiv o'zgarib, ikkinchisi qolsa turlar siljiydi). Alohida jadvalga o'tishda tabiiy
+   yo'qoladi; hozircha tegilmadi.
+4. **Checksum-buzuq kodlar siyosati** — skript ularni **sanaydi**, lekin hech narsa taklif qilmaydi.
+   Ba'zi ichki/qo'lda yasalgan kodlar ataylab GTIN emas (`non-digit`/`odd-length`), shuning uchun
+   «checksum yomon ⇒ o'chir» qoidasi **XATO** bo'lardi. Qaror prod raqamlarini ko'rgach.
+5. **Skript butun jadvalni RAM'ga yuklaydi** (`findMany`, chunking yo'q). Bu ataylab: bir martalik
+   ops-o'lchov, va faqat barcode'li qatorlar o'qiladi. Prod'da katalog ~yuz minglab qatorga chiqsa
+   `cursor` bilan bo'lakli o'qish qo'shiladi (bugungi hajmda keraksiz murakkablik).
+6. **Browser-smoke YO'Q** — bu fazada UI o'zgarmagani uchun qamrov ham yo'q; POS skan-QA sxema
+   fazasidan keyin `/qa-cohort` (retail/POS) da.
 
 ---
