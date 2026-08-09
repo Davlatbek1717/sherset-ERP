@@ -569,7 +569,7 @@ belgisi (qo'lda) · sotuvchi bo'yicha kesim · mijoz taqsimoti ekraniga (MK38) u
 
 ---
 
-### MK18 — Xato narx nazorati ☐ HISOBOT
+### MK18 — Xato narx nazorati ☑ HISOBOT (2026-08-09)
 **Bo'lim/blok:** 4M §8.1/4 · **Ustuvorlik:** P2 · **Bog'liqlik:** MK11 (narx o'zgarishi nazorati)
 **Qamrov:** shubhali narx aniqlash — tan narxdan past · optomdan past · o'rtachadan keskin farq ·
 nol/bo'sh narx · o'nlik xatosi (10× / 0.1×) belgisi. **Bloklamaydi** — navbatga tushadi.
@@ -2130,3 +2130,146 @@ preflight'ning TCP probi noto'g'ri xulosa beradi).
 5. **Indeks o'lchanmagan** — `sync` dagi `OR: [dedupKey in …, status in …]` so'rovi katta akkauntda
    `EXPLAIN` bilan tekshirilishi kerak (`index-needs-matching-query-shape` sabog'i).
 6. **Brauzer-QA yo'q** — Phase-2 QA navbatida (MK14).
+
+
+## Faza MK18 — Xato narx nazorati (sana: 2026-08-09)
+
+**Holat:** ✅ bajarildi — **Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q**.
+**Commit:** `b57615ce` — `feat(manager): MK18 — xato narx nazorati (5 detektor, bloklamaydi)`
+(11 fayl, +1927/−1). **Tiklash commit'i:** `84efc024` (sabab quyida, «Git holati»).
+
+### Muammo (kodda tasdiqlangan, reja da'vosi emas)
+MK11 narx **o'zgarishini** ko'radi (`AuditLog.fieldChanges`, sub'ekt — tovar kartasi). Narx
+qiymatining **o'zi mantiqlimi** degan savolni esa hech kim so'ramasdi: kassir 850 000 o'rniga
+8 500 000 yozsa, chek o'tib ketardi va faqat oy oxirida (yoki hech qachon) ko'rinardi.
+
+`retail-sale/cashier-audit.ts` da `SOLD_BELOW_COST` / `SOLD_BELOW_WHOLESALE` hodisalari
+ALLAQACHON bor va kunlik KPI'ga tushadi — lekin (a) faqat **chek** uchun (yuk xatida nazorat
+umuman yo'q), (b) faqat ikkita pol; **o'nlik xatosi, nol narx va o'rtachadan keskin farq**
+detektorlari repoda YO'Q edi.
+
+### Nima o'zgardi
+
+**1. Sof modul — `manager/inventory/price-error-control.ts`** (+`.test.ts`, **32 test**)
+Beshta detektor, har birining O'Z mo'ljali bilan:
+
+| Belgi | Mo'ljal | Chegirma to'sadimi |
+|---|---|---|
+| `ZERO_PRICE` (nol/manfiy) | — | **yo'q** (qisqa tutashtiradi) |
+| `DECIMAL_SHIFT` (10× / 0.1×) | karta narxi | **yo'q** |
+| `BELOW_COST` | muzlatilgan tan narx | **ha** |
+| `BELOW_WHOLESALE` | optom pol | **ha** |
+| `PRICE_OUTLIER` | o'rtacha sotuv narxi | faqat PAST tomonni |
+
+- **Tartib ahamiyatli:** `ZERO_PRICE` qolganini qisqa tutashtiradi (0 narx hamma poldan past —
+  bitta muammoni besh qatorga bo'lish navbatni shovqinga ko'mardi); `DECIMAL_SHIFT`
+  `PRICE_OUTLIER` dan ustun (10× ham keskin farq, ammo «o'nlik xatosi» aniqroq tashxis).
+- **Navbat elementi qator bo'yicha BITTA** (`dedupKey = price_error:<docType>:<lineId>`),
+  belgilar ro'yxati o'zgarsa ham kalit o'zgarmaydi — MK06 dvigateli ikkinchi element yaratmasin.
+  «Qancha» = belgilar ichidagi eng katta MUTLAQ ta'sir, **yig'indi EMAS** (bir zararni ikki
+  marta sanamaslik uchun).
+
+**2. 🔴 Chegirma — TUSHUNTIRISH, xato emas** (fazaning asosiy qarori)
+Reja test (2) ni aynan shu uchun talab qilgan. `cashier-audit.ts` bilan **ATAYLAB
+birlashtirilmadi**, chunki ular boshqa savolga javob beradi:
+- `cashier-audit.ts` — **siyosat**: «pul yo'qotildimi?» Chegirma bilan ham yo'qotilgan pul
+  yo'qotilgan puldir ⇒ chegirma to'smaydi.
+- MK18 — **ma'lumot sifati**: «bu raqam xato yozilganmi?» Chegirma qo'yilgan bo'lsa past narx
+  ATAYLAB qo'yilgan ⇒ xato emas, `unchecked: discounted`.
+
+Sabab modulning bosh izohida va `(2)`/`(2b)` test juftligida qulflangan — kelajakda kimdir
+«ikkitasini bir joyga yig'aylik» demasin.
+
+**3. NULL ≠ 0 va «tekshirilmagan» ≠ «toza»**
+Mo'ljal yo'q bo'lsa hukm CHIQARILMAYDI va sabab `unchecked` ga yoziladi (`no_cost` ·
+`no_wholesale` · `no_reference` · `no_average` · `discounted`). Mo'ljalning **0** qiymati ham
+«yig'ilmagan» deb o'qiladi (`Product.buyPrice` DEFAULT 0 — uni narx deb olish har sotuvni
+«100% marja» qilib ko'rsatgan bug'ning aynan o'zi). Ekranda **«0 xato»** va **«0 xato, lekin
+400 qator tekshirilmadi»** alohida ko'rsatiladi.
+
+**4. O'rtacha — leave-one-out** (`assembleSoldLines`, servis qatlamida)
+Qator o'z o'rtachasiga KIRMAYDI va nol/manfiy narx havzaga qo'shilmaydi. Aks holda 3 sotuvli
+tovarda bitta 10× xato o'rtachani o'zi ko'tarib, keyin o'sha o'rtachaga nisbatan «normal» bo'lib
+chiqardi — detektor o'zini o'zi ko'r qilardi. Namuna **3 tadan kam** bo'lsa hukm yo'q: ikki
+sotuvning o'rtachasi statistik dalil emas. Tovar va modifikatsiya alohida guruh.
+
+**5. Servis + HTTP**
+- `priceErrors()` — `RetailSalePosition` (holat `posted`/`refunded`, oyna cheklar
+  `refundedFromId` bilan chiqariladi) va `DemandPosition` (`posted`, `deletedAt: null`).
+  `SOLD_LINE_CAP = 2000`, kesilsa `truncated: true` — OSHKORA.
+- Optom pol va default narx turi **POS BILAN BIR XIL** qoidadan olinadi
+  (`retail-sale/price-snapshot.ts` + `loadFrozenPrices` naqli: default = `isDefault`, optom =
+  default bo'lmagan birinchi narx turi). Ikki joyda ikki xil bo'lsa, kassirga bir pol
+  ko'rsatilib, menejerga boshqasi hisoblanardi.
+- `GET /manager/inventory/price-errors` (ruxsat `product:view`, faqat o'qiydi, `blocking: false`).
+
+**6. FE** `/menejer/xato-narx` + subnav + i18n **ru+uz** (35 kalit × 2).
+Ekranda doimiy «bloklamaydi» izohi, belgi-sanoqlari, `unchecked` sabablari va qamrov cheklovi.
+
+**7. Qo'riqchi test** — `apps/web/src/__tests__/menejer-price-errors-i18n.test.ts` (13 test)
+BE'ning yopiq ro'yxatlarini (`PRICE_ERROR`, `PRICE_UNCHECKED`) **manbadan skanerlaydi** va har
+biri uchun ru+uz yorlig'i borligini tekshiradi. Sabab: FE ularni `t(\`kind_${...}\`)` shaklida
+DINAMIK chaqiradi va `i18n:gate` bunday kalitlarni **KO'RMAYDI** (289 tasi «skipped»). MK08 da
+aynan shu bo'shliq `duty_shift_unaccepted` ni ru+uz'siz qoldirgan, gate esa yashil bo'lgan.
+
+### Gate (to'liq, commit-nuqtada)
+| Gate | Natija |
+|---|---|
+| `@moysklad/api typecheck` | **0** |
+| `@moysklad/web typecheck` | **0** |
+| `lint:product` | **mening fayllarimda 0** (repo bo'ylab 22 — 22/22 si parallel sessiyalarning commit qilinmagan fayllarida) |
+| `i18n:gate` | **9/9 ✓** |
+| `manager/inventory` (api) | **95 test ✓** (32 sof + 26 assembly + 37 MK11) |
+| FE i18n qo'riqchisi | **13 test ✓** |
+
+**Test sifati o'lchandi (vakuum-test emas):** 5 ta mutant qo'llanib, har biri TUTILDI —
+chegirma gate'i o'chirilsa (2) yiqiladi · `NULL≠0` `!= null` ga tushirilsa (3b) yiqiladi ·
+miqdorga ko'paytirish olib tashlansa 2 test · o'nlik ustunligi olib tashlansa outlier testi ·
+leave-one-out olib tashlansa 5 test. Yorliq qo'riqchisi ham: BE'ga soxta detektor qo'shilganda
+ru+uz ikkalasi yiqildi.
+
+### To'liq suite'dagi yiqilishlar — ikkalasi ham MENIKI EMAS (o'lchab tasdiqlandi)
+1. `api publication.service.test.ts` ×3 — argon2 5000 ms timeout. **Yakka yugurtirilganda
+   21/21 yashil** (4.3–5.0 s, ya'ni chegara ustida). O'sha modulga tegilmagan (`git status` bo'sh).
+2. `web pos-payment-contract.test.ts` ×2 — parallel sessiyaning retail-tenders refaktori
+   `PostRetailSaleSchema` dan `terminalAmountMinor`/`debtAmountMinor` ni olib qo'ygan.
+   **HEAD versiyasida test yashil** (skaner mantiqini ikkala versiyaga qo'llab o'lchandi).
+   Bu o'sha sessiya uchun HAQIQIY signal — qo'riqchi 2026-08-02 prod bug'i uchun yozilgan.
+
+### Git holati — ajratilgan indeks poygasi (yangi bug-klass, hujjatlashtirildi)
+Sessiya davomida daraxtda **4+ parallel sessiya** commit qildi (MK06, MK09, q13, q14).
+Har biri o'z commit'ini **ajratilgan indeks** (`GIT_INDEX_FILE`) bilan qurdi. Muammo:
+**blob bir HEAD dan, `read-tree` esa allaqachon siljigan HEAD dan olinsa, oradagi commit
+qo'shgan narsa jimgina tushib qoladi.** Real zanjir:
+
+- `b57615ce` (MK18) — toza commit, 11 fayl.
+- `8b6dca81` (MK09) — eskirgan umumiy indeksdan qurilgan ⇒ **MK18 ning 11 faylini o'chirdi**.
+- `84efc024` (mening tiklashim) — MK18 qaytdi, ammo blobim `8b6dca81` asosida qurilgan edi va
+  oradagi `8210ac44` (q14) qo'shgan `pages.api_tokens` ni **men tushirib qoldirdim**.
+- Keyingi sessiyalar o'z qismlarini qaytardi (`e96f6578` MK18 subnav+i18n ni tikladi).
+
+**Yakuniy holat tekshirildi:** MK18 ning 8 kod fayli HEAD da ishchi daraxt bilan **bayt-bayt bir
+xil**, `pages.menejerPriceErrors` 35 kalit ru+uz, subnav va layout yozuvi joyida.
+
+**Retsept (keyingi sessiyalar uchun):**
+1. Blob va `read-tree` **BIR XIL pinned HEAD** dan olinsin (`git rev-parse HEAD` bir marta).
+2. Farq **dasturiy** ravishda «faqat-qo'shish» ekani tekshirilsin (HEAD ning har qatori
+   natijada tartib bilan turibdimi).
+3. `git update-ref HEAD <yangi> <eski>` — **compare-and-swap**; HEAD orada siljisa amal bekor.
+4. Commit'dan keyin **har doim** `git show --stat HEAD` + o'z fayllaring HEAD da borligini
+   tekshir (`git cat-file -e HEAD:<path>`).
+
+### Ochiq qarz (ataylab qilinmagan, jimgina emas)
+- **Brauzer-QA yo'q** (Phase-2 → **MK14**): ekran, filtrlar va belgi-badge'lari real brauzerda
+  sinalmagan.
+- **Yuk xatida mo'ljal — kartaning BUGUNGI narxi.** Chekda karta narxi qatorga muzlatilgan
+  (`basePriceMinor`) va u ustun turadi; yuk xatida bunday ustun YO'Q. Shuning uchun uzoq oyna
+  yuk xatilari uchun kamroq ishonchli — javobda `referenceSource` maydoni va ekranda izoh bor.
+  To'liq yechim: `DemandPosition` ga `basePriceMinor` muzlatish (alohida faza, sxema o'zgarishi).
+- **Navbat elementi hali SAQLANMAYDI** — `ManagerWorkItem` ombori MK06 da keldi, lekin MK18
+  unga hali ulanmagan (`dedupKey` ko'prik sifatida tayyor). Ulash MK06 bilan birga qilinsin.
+- **Chegaralar doimiy sozlanmaydi** — so'rovdan keladi; per-akkaunt `ManagerRuleConfig`
+  (MK06/MK07) ga ko'chirilishi kerak.
+- **Valyuta:** narxlar xom `minor` qiymatida taqqoslanadi (butun repo shunday). Ko'p valyutali
+  karta bo'lsa taqqoslash yolg'on bo'lishi mumkin — MK11 dagi `currency_mismatch` naqli bu yerga
+  hali ko'chirilmagan.

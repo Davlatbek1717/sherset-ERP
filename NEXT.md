@@ -326,6 +326,54 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > `/root/sherset-v2-backups` = 5.4G / 18 fayl — keyingi deploy'dan oldin eski backup'larni
 > tozalash kerak bo'ladi, aks holda `next build` joy yetmasligidan yiqilishi mumkin.
 >
+> **🕒 2026-08-09v (REJA-MENEJER-KASSA **MK18** — xato narx nazorati) — `b57615ce`
+> (+ tiklash `84efc024`), 11 fayl (+1927/−1). To'liq hisobot:
+> `docs/REJA-MENEJER-KASSA-2026-08.md` → HISOBOT JURNALI → «Faza MK18».**
+>
+> **Muammo (kodda tasdiqlangan):** MK11 narx **o'zgarishini** ko'radi; narx qiymatining O'ZI
+> mantiqlimi degan savol yo'q edi. `cashier-audit.ts` da `SOLD_BELOW_COST`/`SOLD_BELOW_WHOLESALE`
+> bor, ammo faqat **chek** uchun va faqat ikki pol — **o'nlik xatosi, nol narx, o'rtachadan
+> keskin farq** detektorlari repoda YO'Q edi, yuk xatida esa nazoratning o'zi yo'q edi.
+>
+> **Nima qilindi:** sof modul `manager/inventory/price-error-control.ts` (**32 test**) — 5 detektor
+> (`ZERO_PRICE` · `DECIMAL_SHIFT` 10×/0.1× · `BELOW_COST` · `BELOW_WHOLESALE` · `PRICE_OUTLIER`),
+> har birining o'z mo'ljali bilan. `priceErrors()` servis chek+yuk xati qatorlarini o'qiydi
+> (yangi yozuvchi YO'Q), `GET /manager/inventory/price-errors`, FE `/menejer/xato-narx` + subnav +
+> i18n ru+uz (35 kalit).
+>
+> **🔴 Fazaning qarori:** **chegirma — TUSHUNTIRISH, xato emas.** `cashier-audit.ts` bilan ataylab
+> birlashtirilmadi: u **siyosat** savoliga javob beradi («pul yo'qotildimi?» — chegirma bilan ham
+> yo'qotilgan), bu esa **ma'lumot sifati** savoliga («raqam xato yozilganmi?»). Sabab modul
+> izohida va (2)/(2b) test juftligida qulflangan — kimdir «bittaga yig'aylik» demasin.
+>
+> **NULL≠0 va «tekshirilmagan» ≠ «toza»:** mo'ljal yo'q bo'lsa hukm chiqarilmaydi, sabab
+> `unchecked` ga yoziladi; ekranda «0 xato» va «0 xato, lekin 400 qator tekshirilmadi» ALOHIDA.
+> O'rtacha — **leave-one-out** (aks holda bitta 10× xato o'rtachani ko'tarib o'zini «normal»
+> qilardi), namuna 3 tadan kam bo'lsa hukm yo'q.
+>
+> **Test sifati o'lchandi:** 5 mutant qo'llanib har biri TUTILDI. Yangi FE qo'riqchisi BE yopiq
+> ro'yxatini **manbadan** skanerlaydi — `i18n:gate` dinamik kalitlarni ko'rmaydi (289 «skipped»),
+> MK08 dagi `duty_shift_unaccepted` bo'shlig'i takrorlanmasin.
+>
+> **⚠️ AJRATILGAN INDEKS POYGASI — yangi bug-klass (hisobotda to'liq retsept).** 4 sessiya bir
+> vaqtda `GIT_INDEX_FILE` bilan commit qildi. `8b6dca81` (MK09) eskirgan indeksdan qurilib
+> **MK18 ning 11 faylini o'chirdi**; mening tiklashim (`84efc024`) esa oradagi `8210ac44` (q14)
+> ning `pages.api_tokens` ini tushirib qoldirdi. Keyingi sessiyalar qaytardi. **Qoida:** blob va
+> `read-tree` bir xil **pinned HEAD** dan · farq «faqat-qo'shish» ekani dasturiy tekshirilsin ·
+> `update-ref HEAD <yangi> <eski>` (**compare-and-swap**) · commit'dan keyin
+> `git cat-file -e HEAD:<path>` bilan o'z fayllaringni TEKSHIR.
+>
+> **Yakuniy holat tekshirildi:** 8 kod fayli HEAD da daraxt bilan bayt-bayt bir xil, i18n 35 kalit
+> ru+uz, subnav va layout yozuvi joyida. Gate: api tc 0 · web tc 0 · i18n 9/9 · inventory 95 test ·
+> FE qo'riqchi 13 test. `lint:product` da 22 xato bor — **22/22 si parallel sessiyalarniki**.
+> To'liq suite'dagi 5 yiqilish ham meniki EMAS (o'lchab tasdiqlandi): `publication` argon2 timeout
+> (yakka 21/21 yashil) va `pos-payment-contract` (parallel retail-tenders refaktori; HEAD'da yashil).
+>
+> **Ochiq qarz:** brauzer-QA yo'q (→ MK14) · yuk xatida mo'ljal kartaning BUGUNGI narxi
+> (`DemandPosition.basePriceMinor` muzlatish — alohida faza) · navbat elementi hali SAQLANMAYDI
+> (MK06 `ManagerWorkItem` ga ulash kerak, `dedupKey` ko'prik tayyor) · chegaralar
+> `ManagerRuleConfig` ga ko'chirilmagan · ko'p valyutali karta uchun `currency_mismatch` naqli yo'q.
+>
 > **🕒 2026-08-09t (REJA-MENEJER-KASSA **MK06** — 4M.5a: menejer ish navbati, dvigatel va model) —
 > `d450bc0a`, 19 fayl (+3324/−3). To'liq hisobot:
 > `docs/REJA-MENEJER-KASSA-2026-08.md` → HISOBOT JURNALI → «Faza MK06».**
