@@ -385,6 +385,59 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > panelning real ma'lumotdagi ko'rinishi. **F011 (rollup) hamon ☐** — MK15 uni talab
 > qilmadi (hammasi jonli o'qish), lekin katta hisobda panel sekin bo'lishi mumkin.
 >
+> **🕒 2026-08-09zb (REJA-MENEJER-KASSA **MK21** — 4M §8.1/8: qaror jurnali ekrani) —
+> `ae9b4bc6`, 18 fayl (+2635/−4). To'liq hisobot:
+> `docs/REJA-MENEJER-KASSA-2026-08.md` → HISOBOT JURNALI → «MK21».**
+>
+> TZ «alohida ekran qilinmaydi» degan edi, **egasi teskarisini tanladi**. Tanlov EKRAN haqida,
+> ma'lumot modeli haqida emas: **yangi jadval ham, yangi yozuvchi ham ochilmadi**. Sahifa
+> `/menejer/qarorlar` — to'rtta MAVJUD append-only hodisa jurnali ustidagi ko'rinish:
+> `EmployeeDailyKpiEvent` (MK01/MK02) · `ManagerWorkItemEvent` (MK06/MK07) ·
+> `CashierSessionAcceptanceEvent` (MK08) · `SupplyApprovalEvent` (qabul zanjiri).
+> «Natijasi» ustunining pul yarmi `HrBonusFineLog.kpiEventId` orqali ulanadi ⇒ teskari (manfiy)
+> yozuv ham ko'rinadi.
+>
+> **Kod o'qimasdan bilinmaydigan qarorlar:**
+> · **Bekor qilish belgisi FILTRDAN OLDIN hisoblanadi**, va servis oynadan KEYINGI `reopen`
+>   hodisalarini **zond** sifatida ham o'qiydi (faqat oynadagi sub'ektlar bo'yicha). Aks holda
+>   1-avgustda qabul qilinib 5-avgustda qayta ochilgan kun 1–2 avgust oynasida «kuchda»
+>   ko'rinardi. Mutant testi shu yo'lni tasdiqladi.
+> · **`adjust` bekor qilinmaydi** (qayta ochish tuzatilgan raqamni tiklamaydi); **`supply` da
+>   teskari amal umuman yo'q** — rad etish zanjirning KEYINGI qarori, oldingisini bekor qilmaydi.
+> · **Tizim hodisalari qaror EMAS**: sukut bo'yicha ko'rsatilmaydi, lekin `hiddenSystemCount`
+>   ekranda turadi (jimgina yo'qolgan qator «hech narsa bo'lmagan» taassurotini berardi).
+> · **`facets` «tor» filtrlarsiz asos to'plamdan** — aks holda aktyor tanlangach ro'yxatda faqat
+>   o'sha aktyor qolib, filtr o'zini o'zi qulflab qo'yardi.
+> · **Eksport = EKRAN** (ikkinchi so'rov YO'Q); ko'p qatorli izoh kataka siqiladi, shuning uchun
+>   fayl satri = qator soni. Cheklovi: eksport ekran cap'i bilan chegaralangan (200/500).
+>
+> **Testlar:** 50 yangi (sof 24 · servis 8 · read-only qo'riqchi 4 · dinamik i18n 8 · CSV 8).
+> Read-only qo'riqchi manba matnini skanerlaydi: sxemada `decision` modeli yo'q · modulda
+> `create/update/delete/upsert` yo'q · faqat ruxsat ro'yxatidagi jadvallar · controllerda
+> yozuvchi metod yo'q (`queue-does-not-block.test.ts` uslubi).
+>
+> **Gate:** web tc 0 · biome 0 · i18n:gate 9/9 · api vitest manager+app-boot **811/811** ·
+> web vitest **2995 o'tdi, 1 yiqildi** ⚠️ — yiqilgan test va api tc'dagi yagona xato parallel
+> sessiyalarning **commit qilinmagan** fayllari (`comment-template-settings.tsx` /
+> `kpi-target.ts`), meniki emas.
+>
+> **Mayda tuzatish (+1):** `menejer/qotib-qolgan/page.tsx` dagi xom `<input type=number>` DS
+> `Input` ga o'tkazildi — bu **MK07 hisobotining 1-qarzi** edi va HEAD'da
+> `raw-element-conventions` gate'ini qizil ushlab turardi.
+>
+> **⚠️ Parallel sessiyalar (uchta faol edi: MK13/MK15/MK20).** Umumiy fayllar
+> (`manager.module.ts`, `layout.tsx`, `ru/uz.json`, reja hujjati) «HEAD + faqat mening
+> hunk'larim» blobi bilan indekslandi. **Birinchi urinishda reja hujjatiga MK20 ning commit
+> qilinmagan hisoboti ham tushdi** (`live.slice(at)` fayl OXIRIGACHA olgan edi) — `--amend` bilan
+> tuzatildi, blob endi MK21 bo'limida to'xtaydi. Sabog'i: «HEAD + mening qo'shimcham» quruvchi
+> skript **boshlanish ham, TUGASH chegarasini ham** aniq belgilashi kerak.
+>
+> **🔴 Phase-1: strukturaviy/funksional, RUNTIME-TASDIQLANMAGAN — browser-smoke YO'Q.**
+> Qolgan qarz (to'liq ro'yxat hisobotda): sub'ekt kartasiga havola yo'q · taminotchi aktyorining
+> ismi topilmaydi (ID ko'rinadi) · manba o'qish cap'i 1000 da `totalCount` kesilgan to'plamdan ·
+> **`downloadCsv` argument tartibi 9 sahifada TESKARI** (topildi, tuzatilmadi — alohida mayda
+> faza + qo'riqchi test kerak).
+
 > **🕒 2026-08-09za (REJA-MENEJER-KASSA **MK20** — 4M §8.1/6: shablon izohlar, tez javob matnlari)
 > — 20 fayl. To'liq hisobot: `docs/REJA-MENEJER-KASSA-2026-08.md` → HISOBOT JURNALI → «Faza MK20».**
 > *(Harf yorlig'i: `z` band edi va alifbo tugadi ⇒ shu kundan boshlab ikki harfli davom —
