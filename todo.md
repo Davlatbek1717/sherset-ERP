@@ -177,7 +177,8 @@ kuniga **3 sessiya** → **~6 hafta**.
 - [x] **Jonli holat** — `GET manager/kpi/live` *(26 test + runtime)*: ochiq smena · davomat ·
       haydovchi reysi · yig'ilayotgan buyurtma. **Diqqat talab qiladigani tepada** — ekran
       «hammasi joyida» demaydi, chegaralar izohlangan (smena 12s · kechikish 15daq ·
-      yig'ish 45daq) — `65700d8` ⬜ *FE ekrani yo'q*
+      yig'ish 45daq) — `65700d8` ✅ *FE: `menejer/jonli` (MK03, `638212f8`) — chegaralar
+      endi javobda (`thresholds`), FE da takrorlanmaydi*
 - [x] **Xodim kartasi 360°** + **suhbat va ogohlantirish jurnali** — `GET hr/employees/:id/card`
       *(17 test + runtime)*. Jurnal **append-only**: yozuv o'chirilmaydi, xatosi `void` qilinadi
       va tarixda ko'rinib qoladi · **90 kunlik oyna**, 3 ogohlantirish = naqsh · maqtov turi ham
@@ -200,8 +201,10 @@ kuniga **3 sessiya** → **~6 hafta**.
 - [x] **Javobgarlik** — `GET manager/kpi/accountability` *(14 test + runtime)*: ochiq smena ·
       haydovchi qo'lidagi naqd · tugallanmagan yig'ish · qabul qilinmagan KPI kunlari.
       Pul ko'p bo'lgan tepada; nol qatorlar tashlanadi — `0bee3ff`
+      ✅ *FE: `menejer/javobgarlik` (MK03, `638212f8`)*
       ⚠️ **Jihoz ataylab YO'Q** — reyestr mavjud emas, «0 ta jihoz» deb ko'rsatish yo'q
-      ma'lumotga ishontirardi *(reyestr alohida bosqich)*
+      ma'lumotga ishontirardi *(reyestr alohida bosqich; ro'yxat to'liq emasligi endi
+      EKRANDA ham yozilgan — `scope_note`)*
 
 ### 4M.5–4M.10
 - [ ] **4M.5** — Ogohlantirish navbati: `ManagerWorkItem` + `ManagerRuleConfig` (ikkalasi YO'Q) +

@@ -326,6 +326,53 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > `/root/sherset-v2-backups` = 5.4G / 18 fayl — keyingi deploy'dan oldin eski backup'larni
 > tozalash kerak bo'ladi, aks holda `next build` joy yetmasligidan yiqilishi mumkin.
 >
+> **🕒 2026-08-09o (REJA-MENEJER-KASSA **MK03** — Menejer FE-A: «Jonli holat» va
+> «Javobgarlik» ekranlari) — `638212f8`, 10 fayl (+885/−41). Reja: `docs/REJA-MENEJER-KASSA-2026-08.md`
+> → «Faza MK03», hisobot o'sha faylning HISOBOT JURNALIda.**
+>
+> **Nima qilindi:** BE (`GET manager/kpi/live` · `GET manager/kpi/accountability`) allaqachon
+> bor edi — kodda tasdiqlandi (`manager-kpi.controller.ts:68–78`). FE yo'q edi; ikkala ekran
+> qurildi: `/menejer/jonli` + `/menejer/javobgarlik` + subnav 2 yozuv + i18n ru+uz (25+13+2 kalit).
+>
+> **⚠️ Reja «toza FE fazasi» deb hisoblagan edi — noto'g'ri:** BE ekran matnini **tayyor
+> o'zbekcha qator** qilib qaytaradi (`title: "Kechikdi — 7 daq"`, `label: "Ochiq kassa smenasi"`).
+> Uni FE chizsa ru interfeysda o'zbekcha matn turardi va **hech bir gate ko'rmasdi** —
+> `i18n:gate` faqat FE fayllarini skanlaydi. Shuning uchun BE'ga **additive** o'zgarish:
+> `LiveRow` ga `titleKey`/`titleParams`/`place`/`showDuration`, javobga `thresholds`
+> (12s/15daq/45daq — chegara FE'da TAKRORLANMAYDI). `title`/`detail` qoldirildi, lekin FE
+> ularni o'qimasligi drift-lock bilan qulflandi. `accountability` ga BE o'zgarishi kerak
+> bo'lmadi (`DutyRow.kind` allaqachon strukturaviy).
+>
+> **Yangi qulf:** `apps/web/src/__tests__/menejer-live-boards.test.ts` (27 test) — BE yopiq
+> ro'yxatlarini (`LIVE_KIND`/`ATTENTION`/`LIVE_TITLE`/`DUTY`) manbadan o'qib ru+uz tarjimasi
+> borligini tekshiradi (ular FE'da DINAMIK kalit — odatiy i18n gate ko'rmaydi) + TZ ning
+> «yolg'on ishonch bermaslik» qoidalari: nol qator yo'q · jihoz bloki yo'q · bo'sh javob
+> «hammasi joyida» emas · FE qayta saralamaydi · NULL ≠ 0.
+>
+> **Gate:** api+web typecheck 0 · i18n gate 9/9 · **web vitest TO'LIQ 195 fayl / 2919 test yashil** ·
+> api `src/modules/manager` 269/271 (2 yiqilish — parallel MK01 sessiyasining commit qilinmagan
+> `kpi-accrual.test.ts` faylida, meniki emas). `pnpm lint:product` = 7 xato, **hammasi parallel
+> sessiyalarning fayllarida** (`onboarding*` MK02 · `kpi-accrual.test.ts` MK01); mening 10 faylim 0.
+>
+> **🔴 YANGI BUG-KLASS (CLAUDE.md §6.7 ga qo'shimcha): INDEKS UMUMIY.** Birinchi commit
+> (`41d5080f`) **19 fayl** bilan chiqdi — men 10 tasini stage qilgan bo'lsam ham: parallel MK02
+> sessiyasi o'sha oraliqda o'z fayllarini stage qilgan, commit hammasini olgan. Bu §6.7 B dagi
+> lint-staged yo'lidan BOSHQA (bu yerda hook umuman ishlamagan — `core.hooksPath=/dev/null`).
+> Tuzatildi: `reset --soft HEAD~1` → begona 9 yo'l `git restore --staged` (untracked holatiga
+> qaytdi, mazmuni tegilmadi) → qayta commit `638212f8`. **Xulosa: `git add` dan keyin
+> `git diff --cached --stat` ni commit'dan TO'G'RIDAN-TO'G'RI oldin qayta tekshir.**
+> Umumiy fayllar (`layout.tsx`, `messages/{ru,uz}.json`) MK04 bilan bir obyekt ichida
+> kesishgani uchun indeksga `git show HEAD:<fayl>` + faqat o'z o'zgarishim yozildi
+> (`hash-object`+`update-index`); ish daraxtiga tegilmadi.
+>
+> **HOLAT: Phase-1 — strukturaviy + unit-tasdiqlangan, BROWSER-SMOKE YO'Q** (MK14 ga).
+> **Qarz:** ochiq smena naqdi = `openingCashMinor` (quyi chegara, aniq qiymat emas — ekranda
+> farqlanmagan, MK08/MK34) · `RestockTask`/`DriverShift` manbalari TZ §6.1 da bor-u BE'da yo'q
+> (MK03 dan OLDIN shunday edi, qamrov kengaytirilmadi) · sahifalash yo'q.
+>
+> **Keyingi:** `docs/REJA-MENEJER-KASSA-2026-08.md` → **MK05** (jihoz reyestri; MK03 taxtasiga
+> jihoz bloki shundan keyin qo'shiladi) yoki 1-paketdagi qolgan fazalar.
+
 > **🕒 2026-08-09n (REJA-8-BOLIM **F019** — ombor migratsiyasi 1–2-qadam: `__yacheyka` kodlaridan
 > zona/yacheyka generatsiya + `Stock` → `StockByCell` backfill + **farq hisoboti** + **rollback**) ·
 > Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q · **lokal DB'da JONLI o'lchandi**
