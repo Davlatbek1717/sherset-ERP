@@ -4,6 +4,7 @@ import { PaymentDialog } from '@/components/pos/payment-dialog';
 import { api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-store';
 import { RETAIL_SESSION_STATE_TONE, documentStateTone } from '@/lib/document-state-tone';
+import { discountedCartTotalMinor, discountedLineTotalMinor } from '@/lib/pos/cart-math';
 import { resolveDefaultSalePrice, resolveDefaultSalePriceOrZero } from '@/lib/sale-price';
 import { normalizeScanInput } from '@/lib/scan';
 import { Money } from '@moysklad/money';
@@ -242,12 +243,12 @@ function PosUI({
     enabled: productSearch.length > 0,
   });
 
-  const cartTotal = cart.reduce((sum, l) => {
-    const lineTotal = BigInt(
-      Math.round(l.quantity * Number(l.priceMinor) * (1 - l.discount / 100)),
-    );
-    return sum + lineTotal;
-  }, 0n);
+  // FE-01: jami SERVER formulasi bilan hisoblanadi (`computePositionTotal`).
+  // Ilgari bu yerda float `Math.round(qty * Number(priceMinor) * (1 - d/100))`
+  // turardi — server esa `expectedSumMinor` bilan QAT'IY tenglikni tekshiradi
+  // va bir tiyinlik farqda chekni rad etardi (115 tiyin, −10%: float 103,
+  // server 104).
+  const cartTotal = discountedCartTotalMinor(cart);
 
   const addToCart = useCallback((product: ProductRow) => {
     setCart((prev) => {
@@ -586,9 +587,7 @@ function PosUI({
           ) : (
             <div className="flex flex-col gap-1">
               {cart.map((line) => {
-                const lineTotal = BigInt(
-                  Math.round(line.quantity * Number(line.priceMinor) * (1 - line.discount / 100)),
-                );
+                const lineTotal = discountedLineTotalMinor(line);
                 return (
                   <div
                     key={line.productId}
@@ -655,6 +654,7 @@ function PosUI({
         open={paymentOpen}
         onOpenChange={setPaymentOpen}
         sumMinor={cartTotal}
+        currency={tillCurrency}
         onConfirm={handlePaymentConfirm}
         loading={postMut.isPending}
       />

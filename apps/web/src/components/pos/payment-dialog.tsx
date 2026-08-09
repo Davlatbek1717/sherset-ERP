@@ -1,5 +1,7 @@
 'use client';
 
+import { ceilAmountInput, formatAmountInput, parseAmountToMinor } from '@/lib/pos/parse-amount';
+import type { CurrencyCode } from '@moysklad/money/currencies';
 import { formatMoney } from '@moysklad/ui';
 import * as Dialog from '@radix-ui/react-dialog';
 import { useTranslations } from 'next-intl';
@@ -9,6 +11,8 @@ interface PaymentDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   sumMinor: bigint;
+  /** Kassa valyutasi — major→minor konversiya scale'ini belgilaydi (FE-08). */
+  currency?: CurrencyCode;
   onConfirm: (cashAmountMinor: bigint, cardAmountMinor: bigint, changeMinor: bigint) => void;
   loading?: boolean;
 }
@@ -19,6 +23,7 @@ export function PaymentDialog({
   open,
   onOpenChange,
   sumMinor,
+  currency = 'UZS',
   onConfirm,
   loading = false,
 }: PaymentDialogProps) {
@@ -28,8 +33,11 @@ export function PaymentDialog({
   const [cardInput, setCardInput] = useState('');
   const [activeField, setActiveField] = useState<'cash' | 'card'>('cash');
 
-  const cashAmount = BigInt(cashInput ? Number.parseInt(cashInput, 10) * 100 : 0);
-  const cardAmount = BigInt(cardInput ? Number.parseInt(cardInput, 10) * 100 : 0);
+  // FE-08/FE-09: yagona pul-parse. Ilgari `parseInt(s, 10) * 100` edi —
+  // kiritilgan tiyinni jim kesardi, 0 kasrli kassada 100× shishirardi va
+  // 15+ raqamda `BigInt()` RangeError bilan oynani yiqitardi.
+  const cashAmount = parseAmountToMinor(cashInput, currency);
+  const cardAmount = parseAmountToMinor(cardInput, currency);
   const totalPaid = cashAmount + cardAmount;
   const change = totalPaid >= sumMinor ? totalPaid - sumMinor : 0n;
   const canConfirm = totalPaid >= sumMinor && !loading;
@@ -54,15 +62,12 @@ export function PaymentDialog({
   }, [activeField]);
 
   const handleExact = () => {
-    const sumInUnits = Number(sumMinor) / 100;
-    setCashInput(String(Math.ceil(sumInUnits)));
+    setCashInput(ceilAmountInput(sumMinor, currency));
     setCardInput('');
   };
 
   const handleQuickAdd = (addMinor: bigint) => {
-    const currentCash = BigInt(cashInput ? Number.parseInt(cashInput, 10) * 100 : 0);
-    const newTotal = currentCash + addMinor;
-    setCashInput(String(Number(newTotal) / 100));
+    setCashInput(formatAmountInput(parseAmountToMinor(cashInput, currency) + addMinor, currency));
   };
 
   const handleConfirm = () => {
@@ -110,7 +115,7 @@ export function PaymentDialog({
             >
               <span className="mb-1 text-[var(--ms-text-muted)] text-xs">{t('cash')}</span>
               <span className="font-semibold text-[var(--ms-text-primary)] text-xl tabular-nums">
-                {cashInput ? formatMoney(BigInt(Number.parseInt(cashInput, 10) * 100)) : '0'}
+                {cashInput ? formatMoney(cashAmount) : '0'}
               </span>
             </button>
             <button
@@ -124,7 +129,7 @@ export function PaymentDialog({
             >
               <span className="mb-1 text-[var(--ms-text-muted)] text-xs">{t('card')}</span>
               <span className="font-semibold text-[var(--ms-text-primary)] text-xl tabular-nums">
-                {cardInput ? formatMoney(BigInt(Number.parseInt(cardInput, 10) * 100)) : '0'}
+                {cardInput ? formatMoney(cardAmount) : '0'}
               </span>
             </button>
           </div>

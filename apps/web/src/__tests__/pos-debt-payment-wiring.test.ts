@@ -61,8 +61,16 @@ describe('POS qarz to`lovi — ulanish', () => {
 
   it('«Hammasi» tugmasi qoldiqni Number orqali emas, aniq qo`yadi', () => {
     // Number(bigint)/100 katta summada yaxlitlaydi → server bir tiyinlik
-    // ortiqchani rad etardi.
-    expect(DIALOG).toMatch(/setAmountInput\(minorToInput\(outstanding\)\)/);
+    // ortiqchani rad etardi. FE-09'dan keyin lokal `minorToInput` o'rniga
+    // umumiy `formatAmountInput` (valyuta-scale bilan) ishlatiladi.
+    expect(DIALOG).toMatch(/setAmountInput\(formatAmountInput\(outstanding, currency\)\)/);
     expect(DIALOG).not.toMatch(/Number\(outstanding\)/);
+  });
+
+  it('summa float EMAS, umumiy parse orqali o`qiladi (FE-09)', () => {
+    // Lokal `BigInt(Math.round(n * 100))` nusxasi qaytib kelmasin: u float
+    // orqali yaxlitlardi va scale'ni qattiq 100 deb olardi.
+    expect(DIALOG).toMatch(/parseAmountToMinor\(amountInput, currency\)/);
+    expect(DIALOG).not.toMatch(/Math\.round\([^)]*\*\s*100\)/);
   });
 });

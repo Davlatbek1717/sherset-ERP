@@ -10,6 +10,8 @@
  * va bu chekда jimgina noto'g'ri jami beradi.
  */
 
+import { computePositionTotal } from '@moysklad/money';
+
 /** Savat qatoridan hisob uchun kerakli minimal. */
 export interface CartLineLike {
   quantity: number;
@@ -62,14 +64,103 @@ export function toMinorOrNull(value: string | null | undefined): bigint | null {
   }
 }
 
+/** Qator-darajasidagi chegirmasi bor savat qatori (retail POS). */
+export interface DiscountedCartLine {
+  /** Miqdor — son yoki Decimal(20,6) satri. */
+  quantity: number | string;
+  /** Bir dona narxi (tiyin). */
+  priceMinor: bigint;
+  /** Qator chegirmasi, foiz 0..100 (4 kasr xonagacha). */
+  discount: number | string;
+}
+
+/**
+ * Bitta savat qatorining jami (tiyin) — **server formulasi bilan bir xil**.
+ *
+ * FE-01: ilgari retail POS `BigInt(Math.round(qty * Number(priceMinor) *
+ * (1 - discount / 100)))` hisoblardi. Bu IEEE-754 float; server esa
+ * `computePositionTotal` (BigInt fixed-point, half-up) bilan qayta hisoblab
+ * `expectedSumMinor` bilan QAT'IY tenglikni tekshiradi va farq bo'lsa chekni
+ * RAD ETADI. Misol: 115 tiyin × 1, −10% → float 103, server 104.
+ *
+ * Miqdor/foiz normalizatsiyadan o'tadi (`normalizeQtyDecimal`) — aks holda
+ * eksponent ko'rinishdagi son (`1e-7`) `computePositionTotal` ichida
+ * `BigInt()` bilan otilardi.
+ */
+export function discountedLineTotalMinor(line: DiscountedCartLine): bigint {
+  return computePositionTotal(
+    {
+      quantity: normalizeQtyDecimal(String(line.quantity)),
+      priceMinor: line.priceMinor.toString(),
+      discount: normalizeDecimalString(String(line.discount), 4),
+      vat: null,
+    },
+    false,
+    false,
+  ).totalMinor;
+}
+
+/**
+ * Savat jami — qator-ba-qator (server ham aynan shunday: har qatorni
+ * alohida yaxlitlab qo'shadi, jamiga bir marta emas).
+ */
+export function discountedCartTotalMinor(lines: ReadonlyArray<DiscountedCartLine>): bigint {
+  let sum = 0n;
+  for (const l of lines) sum += discountedLineTotalMinor(l);
+  return sum;
+}
+
+/**
+ * Decimal-satrni server sxemasi qabul qiladigan kanonik shaklga keltiradi.
+ *
+ * Buzuq/eksponent/bo'sh qiymat → `'0'`: `String(number)` chegaraviy
+ * qiymatlarda `'1e-7'` beradi va server regexi (`^\d+(\.\d{1,N})?$`) uni
+ * 400 bilan rad etadi — bu yerda u jimgina nolga aylanadi, chunki nol
+ * miqdor keyingi filtrda tushib qoladi.
+ */
+function normalizeDecimalString(raw: string, maxDecimals: number): string {
+  const s = raw.trim();
+  if (!/^\d*(?:\.\d*)?$/.test(s) || s === '' || s === '.') return '0';
+  const [intPart = '', fracPart = ''] = s.split('.');
+  const int = intPart.replace(/^0+(?=\d)/, '') || '0';
+  const frac = fracPart.slice(0, maxDecimals).replace(/0+$/, '');
+  return frac === '' ? int : `${int}.${frac}`;
+}
+
+/** Miqdor-satr → server sxemasi (`Decimal(20,6)`) qabul qiladigan shakl. */
+export function normalizeQtyDecimal(raw: string): string {
+  return normalizeDecimalString(raw, 6);
+}
+
+/**
+ * Qaytarish maydonining kiritmasini [0..maxQty] oralig'iga qisadi,
+ * **satr sifatida**.
+ *
+ * FE-02: maydon `number` saqlaganda kassir kasr miqdor kirita OLMASDI —
+ * «1.» yozilishi bilan `Number('1.')` = 1 bo'lib nuqta o'chib ketardi,
+ * ya'ni og'irlik bilan sotilgan tovarni qisman qaytarib bo'lmasdi.
+ * Shuning uchun yozilayotgan oraliq holat (`'1.'`, `''`) SAQLANADI va
+ * faqat so'rov yuborishdan oldin normalizatsiya qilinadi.
+ */
+export function clampReturnQty(raw: string, maxQty: string): string {
+  const s = raw.trim();
+  if (s === '') return '';
+  if (s.startsWith('-')) return '0';
+  if (!/^\d*(?:\.\d*)?$/.test(s)) return '';
+  const max = Number(maxQty);
+  const n = Number(s === '.' ? '0' : s);
+  if (!Number.isFinite(n) || !Number.isFinite(max)) return s;
+  return n > max ? maxQty : s;
+}
+
 /** Qaytarish uchun asl chek qatoridan kerakli minimal. */
 export interface RefundableLine {
   /** Asl sotilgan miqdor — Decimal(20,6) satri. */
   quantity: string;
   /** Asl qator summasi CHEGIRMADAN KEYIN (tiyin-satr) — server saqlagan raqam. */
   sumMinor: string;
-  /** Qaytarilayotgan miqdor. */
-  returnQty: number;
+  /** Qaytarilayotgan miqdor (maydon satr saqlaydi — FE-02). */
+  returnQty: number | string;
 }
 
 /** Miqdor (satr yoki son) → mikro-birlik bigint. `BigInt(1.5)` otilishini yopadi. */

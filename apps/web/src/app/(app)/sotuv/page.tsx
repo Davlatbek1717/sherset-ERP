@@ -13,6 +13,8 @@ import { useAuth } from '@/lib/auth-store';
 import {
   applyDiscountMinor,
   cartTotalMinor,
+  clampReturnQty,
+  normalizeQtyDecimal,
   refundPayoutMinor,
   revenueBaseMinor,
   cartCount as sumCartCount,
@@ -270,16 +272,22 @@ function ChekDetailPanel({ saleId, onBack }: { saleId: string; onBack: () => voi
   const qc = useQueryClient();
   const { toast } = useToast();
   const [returnMode, setReturnMode] = useState(false);
-  // positionId → qty to return (defaults to the full sold qty on entering mode).
-  const [returnQty, setReturnQty] = useState<Record<string, number>>({});
+  // positionId → qaytariladigan miqdor, **decimal SATR** (defolt — to'liq
+  // sotilgan miqdor). FE-02: `number` bo'lganda kassir kasr miqdor kirita
+  // olmasdi — «1.» yozilishi bilan nuqta o'chib ketardi, ya'ni og'irlik
+  // bilan sotilgan tovarni qisman qaytarib bo'lmasdi.
+  const [returnQty, setReturnQty] = useState<Record<string, string>>({});
 
   const refundMut = useMutation({
     mutationFn: async () => {
-      const refundLines = (data?.positions ?? []).filter((p) => (returnQty[p.id] ?? 0) > 0);
+      const refundLines = (data?.positions ?? []).filter(
+        (p) => normalizeQtyDecimal(returnQty[p.id] ?? '') !== '0',
+      );
       if (refundLines.length === 0) throw new Error('Qaytariladigan tovar tanlanmagan');
       const positions = refundLines.map((p) => ({
         productId: p.product.id,
-        quantity: String(returnQty[p.id]),
+        // Server sxemasi `^\d+(\.\d{1,6})?$` — «1.» yoki eksponent shakl 400 berardi.
+        quantity: normalizeQtyDecimal(returnQty[p.id] ?? ''),
       }));
       // FE-01: naqd asl chekning CHEGIRMALI qator summasidan proporsional —
       // `priceMinor × qty` mijoz to'lamagan pulni qaytarardi. Server ham
@@ -288,7 +296,7 @@ function ChekDetailPanel({ saleId, onBack }: { saleId: string; onBack: () => voi
         refundLines.map((p) => ({
           quantity: p.quantity,
           sumMinor: p.sumMinor,
-          returnQty: returnQty[p.id] ?? 0,
+          returnQty: normalizeQtyDecimal(returnQty[p.id] ?? ''),
         })),
       );
       await api.post(`/retail-sales/${saleId}/refund`, {
@@ -310,7 +318,9 @@ function ChekDetailPanel({ saleId, onBack }: { saleId: string; onBack: () => voi
 
   const startReturn = () => {
     setReturnQty(
-      Object.fromEntries((data?.positions ?? []).map((p) => [p.id, Number(p.quantity)])),
+      Object.fromEntries(
+        (data?.positions ?? []).map((p) => [p.id, normalizeQtyDecimal(p.quantity)]),
+      ),
     );
     setReturnMode(true);
   };
@@ -449,18 +459,17 @@ function ChekDetailPanel({ saleId, onBack }: { saleId: string; onBack: () => voi
                 {returnMode && (
                   <div className="flex shrink-0 items-center gap-1">
                     <span className="text-xs text-[var(--ms-text-muted)]">Qaytadi:</span>
+                    {/* `type="number"` EMAS: brauzer «1.» oraliq holatini
+                        bo'sh satr sifatida qaytaradi va kasr miqdorni
+                        yozib bo'lmaydi (FE-02). */}
                     <input
-                      type="number"
-                      min={0}
-                      max={Number(p.quantity)}
-                      value={returnQty[p.id] ?? 0}
+                      type="text"
+                      inputMode="decimal"
+                      value={returnQty[p.id] ?? ''}
                       onChange={(e) =>
                         setReturnQty((prev) => ({
                           ...prev,
-                          [p.id]: Math.max(
-                            0,
-                            Math.min(Number(p.quantity), Number(e.target.value) || 0),
-                          ),
+                          [p.id]: clampReturnQty(e.target.value, p.quantity),
                         }))
                       }
                       className="w-14 rounded border border-[var(--ms-border)] bg-[var(--ms-bg-input)] px-1.5 py-0.5 text-right text-sm tabular-nums focus:border-[var(--ms-border-focus)] focus:outline-none"
@@ -521,7 +530,7 @@ function ChekDetailPanel({ saleId, onBack }: { saleId: string; onBack: () => voi
               data.positions.map((p) => ({
                 quantity: p.quantity,
                 sumMinor: p.sumMinor,
-                returnQty: returnQty[p.id] ?? 0,
+                returnQty: normalizeQtyDecimal(returnQty[p.id] ?? ''),
               })),
             );
             return (
@@ -2048,6 +2057,7 @@ function SalesScreen({ session }: { session: CurrentSession }) {
         open={cashOutOpen}
         onOpenChange={setCashOutOpen}
         sessionId={session.id}
+        currency={tillCurrency}
         onDone={(doc) => {
           // `CASH_OVERDRAWN` — yashiqda yo'q pul chiqarildi. Server to'xtatmaydi
           // (Q10), lekin kassir buni BILISHI kerak: aks holda farq faqat smena
@@ -2066,6 +2076,7 @@ function SalesScreen({ session }: { session: CurrentSession }) {
         onOpenChange={setDebtPayOpen}
         sessionId={session.id}
         cashDeskId={session.cashDesk?.id ?? null}
+        currency={tillCurrency}
         onPaid={(result) => {
           toast.success(
             result.closedCount > 0
@@ -2085,6 +2096,7 @@ function SalesScreen({ session }: { session: CurrentSession }) {
           if (!o) setPayingSale(null);
         }}
         sumMinor={payingSale ? payingSale.sumMinor : discountedTotal}
+        currency={tillCurrency}
         onConfirm={(p) => payReadySaleMut.mutate(p)}
         loading={payReadySaleMut.isPending}
       />

@@ -1,6 +1,8 @@
 'use client';
 
 import { api } from '@/lib/api-client';
+import { formatAmountInput, parseAmountToMinor } from '@/lib/pos/parse-amount';
+import type { CurrencyCode } from '@moysklad/money/currencies';
 import { Input, formatMoney } from '@moysklad/ui';
 import * as Dialog from '@radix-ui/react-dialog';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -50,30 +52,12 @@ interface Props {
   /** Joriy smena — naqd to'lov shu smenaning «kutilgan naqd»iga kiradi (TZ §8.4). */
   sessionId: string;
   cashDeskId?: string | null;
+  /** Kassa valyutasi — major→minor scale (FE-08). */
+  currency?: CurrencyCode;
   onPaid?: (result: PayResult) => void;
 }
 
 const NUMPAD_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '000', '0', '⌫'];
-
-function toMinor(s: string): bigint {
-  const n = Number.parseFloat(s);
-  if (!s || !Number.isFinite(n) || n < 0) return 0n;
-  return BigInt(Math.round(n * 100));
-}
-
-/**
- * tiyin → maydon matni, `Number`SIZ.
- *
- * «Hammasi» tugmasi qarz qoldig'ini AYNAN qo'yishi shart: `Number(bigint)/100`
- * katta summada yaxlitlaydi va to'lov bir tiyinga kam/ko'p ketardi — server esa
- * ortiqchani rad etadi. Shuning uchun konversiya satr ustida bajariladi.
- */
-function minorToInput(minor: bigint): string {
-  const s = minor.toString().padStart(3, '0');
-  const frac = s.slice(-2);
-  const int = s.slice(0, -2);
-  return frac === '00' ? int : `${int}.${frac}`;
-}
 
 function fmtDate(iso: string | null): string {
   if (!iso) return '—';
@@ -106,7 +90,14 @@ function daysSince(iso: string | null): number | null {
  * uchun tugma bu yerda ham oldindan bloklanadi — kassir xatoni bosgandan KEYIN
  * emas, OLDIN ko'rsin.
  */
-export function DebtPaymentDialog({ open, onOpenChange, sessionId, cashDeskId, onPaid }: Props) {
+export function DebtPaymentDialog({
+  open,
+  onOpenChange,
+  sessionId,
+  cashDeskId,
+  currency = 'UZS',
+  onPaid,
+}: Props) {
   const qc = useQueryClient();
   const [search, setSearch] = useState('');
   const [agent, setAgent] = useState<CounterpartyRow | null>(null);
@@ -127,7 +118,9 @@ export function DebtPaymentDialog({ open, onOpenChange, sessionId, cashDeskId, o
   });
 
   const outstanding = BigInt(summary?.outstandingMinor ?? '0');
-  const amountMinor = toMinor(amountInput);
+  // FE-09: yagona pul-parse. Ilgari bu yerda lokal `toMinor` yashardi —
+  // float orqali yaxlitlardi va valyuta scale'ini qattiq 100 deb olardi.
+  const amountMinor = parseAmountToMinor(amountInput, currency);
   const overpay = amountMinor > outstanding ? amountMinor - outstanding : 0n;
   const canConfirm = amountMinor > 0n && overpay === 0n && outstanding > 0n;
 
@@ -334,7 +327,7 @@ export function DebtPaymentDialog({ open, onOpenChange, sessionId, cashDeskId, o
                     <div className="flex gap-2">
                       <button
                         type="button"
-                        onClick={() => setAmountInput(minorToInput(outstanding))}
+                        onClick={() => setAmountInput(formatAmountInput(outstanding, currency))}
                         className="flex-1 rounded-lg border border-[var(--ms-border)] py-2 font-medium text-xs hover:bg-[var(--ms-bg-hover)]"
                       >
                         Hammasi ({formatMoney(outstanding)})

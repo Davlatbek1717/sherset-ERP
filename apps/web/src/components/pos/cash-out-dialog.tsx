@@ -1,6 +1,8 @@
 'use client';
 
 import { api } from '@/lib/api-client';
+import { parseAmountToMinor } from '@/lib/pos/parse-amount';
+import type { CurrencyCode } from '@moysklad/money/currencies';
 import { Input, formatMoney } from '@moysklad/ui';
 import * as Dialog from '@radix-ui/react-dialog';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -29,16 +31,12 @@ interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   sessionId: string;
+  /** Kassa valyutasi — major→minor scale (FE-08). */
+  currency?: CurrencyCode;
   onDone?: (result: CashOutResult) => void;
 }
 
 const NUMPAD_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '000', '0', '⌫'];
-
-function toMinor(s: string): bigint {
-  const n = Number.parseFloat(s);
-  if (!s || !Number.isFinite(n) || n < 0) return 0n;
-  return BigInt(Math.round(n * 100));
-}
 
 /**
  * POS «Kassadan chiqim» oynasi — xarajat (RKO) va inkassatsiya
@@ -53,7 +51,7 @@ function toMinor(s: string): bigint {
  * etadi — bu yerda tugma oldindan bloklanadi, kassir xatoni bosgandan
  * KEYIN emas, OLDIN ko'rsin).
  */
-export function CashOutDialog({ open, onOpenChange, sessionId, onDone }: Props) {
+export function CashOutDialog({ open, onOpenChange, sessionId, currency = 'UZS', onDone }: Props) {
   const qc = useQueryClient();
   const [kind, setKind] = useState<Kind>('expense');
   const [amountInput, setAmountInput] = useState('');
@@ -76,7 +74,8 @@ export function CashOutDialog({ open, onOpenChange, sessionId, onDone }: Props) 
     enabled: open && kind === 'collection',
   });
 
-  const amountMinor = toMinor(amountInput);
+  // FE-09: yagona pul-parse (lokal float nusxasi o'rniga).
+  const amountMinor = parseAmountToMinor(amountInput, currency);
   const canConfirm = amountMinor > 0n && (kind === 'expense' ? !!expenseItemId : !!recipientId);
 
   const mut = useMutation<CashOutResult>({

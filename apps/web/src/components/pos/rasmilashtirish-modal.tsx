@@ -1,6 +1,8 @@
 'use client';
 
 import { api } from '@/lib/api-client';
+import { formatAmountInput, parseAmountToMinor } from '@/lib/pos/parse-amount';
+import type { CurrencyCode } from '@moysklad/money/currencies';
 import { Input, formatMoney } from '@moysklad/ui';
 import * as Dialog from '@radix-ui/react-dialog';
 import { useMutation, useQuery } from '@tanstack/react-query';
@@ -33,6 +35,8 @@ interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   sumMinor: bigint;
+  /** Kassa valyutasi — major→minor scale (FE-08). */
+  currency?: CurrencyCode;
   onConfirm: (params: ConfirmParams) => void;
   loading?: boolean;
 }
@@ -62,6 +66,7 @@ export function RasmiyashtirishModal({
   open,
   onOpenChange,
   sumMinor,
+  currency = 'UZS',
   onConfirm,
   loading = false,
 }: Props) {
@@ -101,15 +106,10 @@ export function RasmiyashtirishModal({
   const [terminalInput, setTerminalInput] = useState('');
   const [activeField, setActiveField] = useState<ActiveField>('cash');
 
-  const toMinor = (s: string): bigint => {
-    const n = Number.parseFloat(s);
-    if (!s || !Number.isFinite(n) || n < 0) return 0n;
-    return BigInt(Math.round(n * 100));
-  };
-
-  const cashMinor = toMinor(cashInput);
-  const cardMinor = toMinor(cardInput);
-  const terminalMinor = toMinor(terminalInput);
+  // FE-09: yagona pul-parse (lokal float nusxasi o'rniga).
+  const cashMinor = parseAmountToMinor(cashInput, currency);
+  const cardMinor = parseAmountToMinor(cardInput, currency);
+  const terminalMinor = parseAmountToMinor(terminalInput, currency);
   const totalPaid = cashMinor + cardMinor + terminalMinor;
   const debtMinor = totalPaid < sumMinor ? sumMinor - totalPaid : 0n;
   const change = totalPaid > sumMinor ? totalPaid - sumMinor : 0n;
@@ -173,7 +173,9 @@ export function RasmiyashtirishModal({
       (activeField === 'card' ? 0n : cardMinor) +
       (activeField === 'terminal' ? 0n : terminalMinor);
     const left = sumMinor > others ? sumMinor - others : 0n;
-    setActive(String(Number(left) / 100));
+    // `Number(left) / 100` EMAS: katta summada yaxlitlardi va 0 kasrli
+    // kassada 100× kichraytirardi (FE-08).
+    setActive(formatAmountInput(left, currency));
   };
 
   const handleConfirm = () => {
