@@ -22,6 +22,7 @@ import {
 import { AuthService } from './auth.service.js';
 import { CurrentUser } from './current-user.decorator.js';
 import { JwtAuthGuard } from './jwt-auth.guard.js';
+import { MEDIA_TOKEN_COOKIE, MEDIA_TOKEN_TTL_SEC } from './media-token.js';
 import { PosPinService } from './pos-pin.service.js';
 
 const REFRESH_COOKIE = 'ms_rt';
@@ -31,6 +32,23 @@ const COOKIE_OPTS = {
   secure: process.env.NODE_ENV === 'production',
   path: '/api/v1/auth',
   maxAge: 7 * 24 * 60 * 60, // 7 days in seconds
+};
+
+/**
+ * Faza Q13 — media cookie. `path` refresh cookie'dan KENGROQ (`/api/v1`),
+ * chunki media yo'llari to'rt xil modulda (`/images`, `/attachments`,
+ * `/hr/employees`, `/purchase-orders`) — bitta cookie ularning hammasini
+ * qoplashi kerak. Kengaytirilgan path xavf tug'dirmaydi: token faqat
+ * `extract-token.ts` dagi 4 media regexida qabul qilinadi va u umuman
+ * boshqa (hosila) kalit bilan imzolangan ⇒ access-token o'rnida yaramaydi.
+ * `sameSite: strict` — cross-site `<img>`/navigatsiya cookie'ni yubormaydi.
+ */
+const MEDIA_COOKIE_OPTS = {
+  httpOnly: true,
+  sameSite: 'strict' as const,
+  secure: process.env.NODE_ENV === 'production',
+  path: '/api/v1',
+  maxAge: MEDIA_TOKEN_TTL_SEC,
 };
 
 @Controller('auth')
@@ -51,8 +69,9 @@ export class AuthController {
       userAgent: req.headers['user-agent'],
       ipAddress: (req.headers['x-forwarded-for'] as string | undefined) ?? req.ip,
     };
-    const { accessToken, refreshToken, user } = await this.auth.login(body, meta);
+    const { accessToken, refreshToken, mediaToken, user } = await this.auth.login(body, meta);
     res.setCookie(REFRESH_COOKIE, refreshToken, COOKIE_OPTS);
+    res.setCookie(MEDIA_TOKEN_COOKIE, mediaToken, MEDIA_COOKIE_OPTS);
     return { accessToken, user };
   }
 
@@ -65,8 +84,11 @@ export class AuthController {
       userAgent: req.headers['user-agent'],
       ipAddress: (req.headers['x-forwarded-for'] as string | undefined) ?? req.ip,
     };
-    const { accessToken, refreshToken, user } = await this.auth.refresh(rt, meta);
+    const { accessToken, refreshToken, mediaToken, user } = await this.auth.refresh(rt, meta);
     res.setCookie(REFRESH_COOKIE, refreshToken, COOKIE_OPTS);
+    // Media cookie HAR refresh'da yangilanadi — access-JWT (15 daqiqa) bilan
+    // birga aylanadi, shuning uchun 60 daqiqalik TTL amalda tugamaydi.
+    res.setCookie(MEDIA_TOKEN_COOKIE, mediaToken, MEDIA_COOKIE_OPTS);
     return { accessToken, user };
   }
 
@@ -75,6 +97,7 @@ export class AuthController {
     const rt = req.cookies?.[REFRESH_COOKIE];
     await this.auth.logout(rt ?? null);
     res.clearCookie(REFRESH_COOKIE, { path: '/api/v1/auth' });
+    res.clearCookie(MEDIA_TOKEN_COOKIE, { path: '/api/v1' });
     return { ok: true };
   }
 

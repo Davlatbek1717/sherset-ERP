@@ -110,7 +110,10 @@ export class PurchaseOrderController {
    * report, served INLINE so the browser opens it in its native PDF viewer
    * (page thumbnails + navigation + print/download), 1:1 with moysklad's
    * report-PurchaseOrder.pdf. Declared before `:id` so the static path isn't
-   * shadowed. Auth via `?access_token=` (window.open sends no bearer header).
+   * shadowed. Auth: `window.open` sends no bearer header, so since Faza Q13
+   * this route is authenticated by the HttpOnly `ms_mt` media cookie (a
+   * same-site top-level navigation carries it) — NOT by `?access_token=`,
+   * which used to put a live JWT into every access-log line (AUTH-04).
    */
   @Get('list-report')
   @RequirePermission({ entity: 'purchaseorder', action: 'view' })
@@ -120,8 +123,8 @@ export class PurchaseOrderController {
     @Query() q: Record<string, unknown>,
     @Res() reply: FastifyReply,
   ) {
-    // `access_token` rides in the query (window.open sends no bearer) — strip it
-    // before it reaches the filter parser.
+    // Faza Q13 removed `?access_token=` from the FE URL; the strip stays as a
+    // cheap guard so a hand-appended param can never reach the filter parser.
     const { access_token: _at, ...filter } = q;
     const rows = await this.service.listAllForReport(user.accountId, filter);
     const now = new Date();

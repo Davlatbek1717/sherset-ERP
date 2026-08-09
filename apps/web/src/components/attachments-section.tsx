@@ -3,7 +3,7 @@
 import { useApiMutation } from '@/hooks/use-api-mutation';
 import { useDestructiveMutation } from '@/hooks/use-destructive-mutation';
 import { api } from '@/lib/api-client';
-import { getAccessToken, useAuth } from '@/lib/auth-store';
+import { useAuth } from '@/lib/auth-store';
 import { Button, FormSection, Icons, Modal, StickyHScroll } from '@moysklad/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
@@ -305,10 +305,11 @@ export function AttachmentsSection({
   };
 
   // Native browser requests (<img>, download <a>, <iframe>) can't send the Bearer header — the
-  // access token lives in memory. The /attachments/:id/raw guard accepts a ?access_token= query
-  // fallback exactly for this; append the current token.
-  const authedRaw = (id: string) =>
-    `/api/v1/attachments/${id}/raw?access_token=${encodeURIComponent(getAccessToken() ?? '')}`;
+  // access token lives in memory. Faza Q13: these no longer carry `?access_token=` (a live JWT
+  // in every log line / history entry, AUTH-04). The guard now accepts the HttpOnly `ms_mt`
+  // media cookie on /attachments/:id/raw, which the browser attaches by itself — so the URL
+  // holds nothing secret. See apps/api/src/modules/auth/media-token.ts.
+  const authedRaw = (id: string) => `/api/v1/attachments/${id}/raw`;
   // Image src for a row: staged → its blob object-URL (no auth); saved → the authed raw URL.
   const imgSrc = (row: DisplayRow) => (row.staged ? row.previewUrl : authedRaw(row.key));
 

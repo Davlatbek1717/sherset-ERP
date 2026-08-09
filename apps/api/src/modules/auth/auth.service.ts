@@ -26,7 +26,12 @@ export class AuthService {
   async login(
     raw: unknown,
     meta: { userAgent?: string; ipAddress?: string },
-  ): Promise<{ accessToken: string; refreshToken: string; user: LoginResponse['user'] }> {
+  ): Promise<{
+    accessToken: string;
+    refreshToken: string;
+    mediaToken: string;
+    user: LoginResponse['user'];
+  }> {
     const parsed = this.parseLogin(raw);
 
     // The identifier may be an email OR a username. moysklad-style usernames
@@ -119,6 +124,9 @@ export class AuthService {
     return {
       accessToken,
       refreshToken,
+      // Faza Q13 — media yo'llari (`<img src>`, `<a download>`, PDF navigatsiya)
+      // uchun HttpOnly cookie'ga yoziladigan imzolangan token.
+      mediaToken: this.tokens.signMediaToken(authUser),
       user: {
         id: employee.id,
         accountId: employee.accountId,
@@ -140,7 +148,12 @@ export class AuthService {
   async refresh(
     refreshTokenRaw: string,
     meta: { userAgent?: string; ipAddress?: string },
-  ): Promise<{ accessToken: string; refreshToken: string; user: LoginResponse['user'] }> {
+  ): Promise<{
+    accessToken: string;
+    refreshToken: string;
+    mediaToken: string;
+    user: LoginResponse['user'];
+  }> {
     const rotated = await this.tokens.rotateRefreshToken(refreshTokenRaw, meta);
     if (!rotated) throw new UnauthorizedException('Sessiya tugadi');
 
@@ -187,6 +200,9 @@ export class AuthService {
     return {
       accessToken: this.tokens.signAccessToken(authUser),
       refreshToken: rotated.raw,
+      // Faza Q13 — media-cookie HAR refresh'da yangilanadi (TTL asosi:
+      // media-token.ts izohi).
+      mediaToken: this.tokens.signMediaToken(authUser),
       user: {
         id: employee.id,
         accountId: employee.accountId,

@@ -11,9 +11,9 @@
 //   • O'NG yarim — har 5 sekundda savatdagi mahsulotning KATTA rasmi + izohi
 //
 // Bu oyna alohida Electron oynasi — kassir tokenini ko'rmaydi. Umumiy session
-// cookie'si bo'yicha `refresh()` bilan o'zi token oladi, so'ng rasmni
-// guard qo'llab-quvvatlaydigan `?access_token=` query-param orqali yuklaydi
-// (xuddi SSE-notification stream kabi — jwt-auth.guard.ts).
+// cookie'si bo'yicha `refresh()` bilan o'zi token oladi. Rasm esa (Faza Q13)
+// URL'da tokensiz yuklanadi: `refresh()` HttpOnly `ms_mt` media-cookie'sini
+// ham o'rnatadi va same-origin `<img>` uni o'zi olib ketadi (jwt-auth.guard.ts).
 //
 // Brauzerda sinash (Electron'siz):  /customer-display?demo=1
 
@@ -317,13 +317,16 @@ function preload(url: string): void {
   img.src = url;
 }
 
-// Bitta mahsulotning asosiy rasm URL'i (token bilan) + izohini yuklaydi.
-// Guard `?access_token=` ni qo'llaydi — <img> header yubora olmaydi.
+// Bitta mahsulotning asosiy rasm URL'i + izohini yuklaydi.
+// Faza Q13: rasm URL'ida token YO'Q — `<img>` bearer header yubormaydi, lekin
+// so'rov same-origin, shuning uchun HttpOnly `ms_mt` media-cookie'si o'zi
+// ketadi (bu oyna `refresh()` chaqirganda o'rnatilgan). JSON so'rovlari
+// avvalgidek bearer bilan.
 async function loadMedia(productId: string): Promise<Media> {
   const token = getAccessToken();
   const auth: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
   const [imageUrl, description] = await Promise.all([
-    fetchMainImageUrl(productId, token, auth),
+    fetchMainImageUrl(productId, auth),
     fetchDescription(productId, auth),
   ]);
   return { imageUrl, description };
@@ -337,7 +340,6 @@ interface ImageItem {
 
 async function fetchMainImageUrl(
   productId: string,
-  token: string | null,
   auth: Record<string, string>,
 ): Promise<string | null> {
   try {
@@ -352,8 +354,7 @@ async function fetchMainImageUrl(
     const main =
       items.find((i) => i.isMain) ?? [...items].sort((a, b) => a.position - b.position)[0];
     if (!main) return null;
-    const q = token ? `?access_token=${encodeURIComponent(token)}` : '';
-    return `${API}/images/${main.id}/raw${q}`;
+    return `${API}/images/${main.id}/raw`;
   } catch {
     return null;
   }

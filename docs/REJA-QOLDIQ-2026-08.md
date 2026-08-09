@@ -108,6 +108,22 @@ foydalanuvchi bilan birga bajariladi (`/deploy` skill + shu ro'yxat):
     (`deploy-orphan-poll-loops` xotirasi).
 11. **Phase-2 QA cohortlari:** BARCHA fazalar Phase-1 (browser-smoke YO'Q) — `/qa-cohort` sessiyalari
     alohida rejalashtiriladi (retail/POS cohort birinchi: Faza 6/7/15/30 o'zgarishlari).
+12. **🔴 Media-cookie o'tishi (Faza Q13) — DEPLOYDAN KEYIN DARHOL TEKSHIR.** Media marshrutlari
+    (`/images/:id/raw`, `/attachments/:id/raw`, `/hr/employees/:id/image/raw`,
+    `/purchase-orders/list-report`) endi `?access_token=` ni **QABUL QILMAYDI** — ular HttpOnly
+    `ms_mt` cookie'sini talab qiladi, u esa faqat `/auth/login` va `/auth/refresh` javobida
+    o'rnatiladi. **Xulq o'zgarishi (kutilgan):** deploy paytida ochiq turgan ESKI tab'lar hali
+    eski FE bundle'ni ishlatadi va rasm/PDF URL'lariga tokenni qo'shib yuboradi ⇒ **401 / siniq
+    rasm**. Tuzatish — sahifani yangilash (yangi bundle + `refresh()` cookie'ni o'rnatadi);
+    ma'lumot yo'qolmaydi, qayta login SHART EMAS. Brauzer keshidagi eski `…/raw?access_token=…`
+    havolalari ham 401 beradi (kesh kaliti o'zgargani uchun yangi URL alohida so'raladi).
+    **Deploydan keyin tekshir:** (a) yangi tab'da mahsulot mitti-rasmlari (`/products`),
+    (b) hujjat «Файлы» bo'limida rasm-preview va yuklab olish, (c) xodim kartasi «Изображение»,
+    (d) «Заказы поставщикам → Печать → Список заказов» PDF yangi tab'da ochiladimi,
+    (e) mijoz-ekran (Electron 2-monitor) rasmi, (f) SSE bildirishnomalari (ATAYLAB o'zgarmagan —
+    query-token'da qoldi). Nginx tomonda **hech narsa o'zgartirish shart emas**; Faza 22 taklif
+    qilgan «log_format'da access_token redakti» endi shu 4 yo'l uchun keraksiz (SSE uchun
+    foydali bo'lib qoladi).
 
 ---
 
@@ -422,7 +438,7 @@ ichida ochiladi, tugagach 401. (3) SSE yo'li regressiz.
 > `docs/REJA-QOLDIQ-2026-08.md` — **Faza Q13**. O'ZGARMAS QOIDALAR. Faza 22 hisobotini o'qi (5 marshrut
 > ro'yxati u yerda). Media signed-URL/cookie-path, allowlist faqat SSE. TDD: 3 stsenariy. Gate (API+web).
 > Hisobot, TO'XTA.
-**◻ HISOBOT:** _(agent to'ldiradi)_
+**☑ HISOBOT (2026-08-09):** BAJARILDI — batafsili «HISOBOT JURNALI → Faza Q13» da.
 
 ---
 
@@ -2664,3 +2680,172 @@ Kiruvchi `quantities` Zod'da `^\d+(\.\d{1,6})?$` bilan qulflangani tasdiqlandi, 
 `docs/REJA-8-BOLIM-*`, `docs/REJA-MENEJER-KASSA-*`). Ularning **hech bir fayliga tegilmadi** va
 `git add` faqat aniq yo'llar bilan qilindi; codemod'ning `FROZEN` ro'yxati buni mexanik ravishda
 kafolatladi.
+
+---
+
+## Faza Q13 — 2026-08-09 — **Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q**
+
+**Manba:** Faza 22 hisoboti «Qolgan qarz / DEFER» → 🔴 *FE media signed-URL / cookie-media path*.
+
+### 1. Topilma HEAD'da qayta tasdiqlandi (§2 — hisobot 2026-08-08 dan)
+
+`apps/api/src/modules/auth/extract-token.ts:17-23` — allowlist **AYNAN 5 regex** edi, Faza 22
+hisoboti bilan 1:1 mos:
+
+```
+/^\/api\/v1\/notifications\/stream$/            ← SSE
+/^\/api\/v1\/images\/[^/]+\/raw$/
+/^\/api\/v1\/attachments\/[^/]+\/raw$/
+/^\/api\/v1\/purchase-orders\/list-report$/
+/^\/api\/v1\/hr\/employees\/[^/]+\/image\/raw$/
+```
+
+FE tomonida query-token'ning **5 jonli chaqiruvchisi** topildi (reja 3 tasini sanagan edi —
+`customer-display` **hisobotda ham, rejada ham yo'q edi**, grep bilan topildi):
+`lib/image-url.ts` (×2 helper), `components/attachments-section.tsx`,
+`app/(app)/purchase-orders/page.tsx`, `app/customer-display/page.tsx` (Electron 2-monitor),
+`hooks/use-notification-stream.ts` (SSE — **ataylab qoladi**).
+
+### 2. Tanlangan sxema va NEGA — cookie-transport + hosila-kalitli imzolangan token
+
+Reja ikki variantni ruxsat bergan («qisqa muddatli signed-URL» **yoki** «cookie-auth media-path»).
+**Cookie tanlandi**, chunki u topilmaning ildizini to'liq yopadi, signed-URL esa faqat qisqartiradi:
+
+| | signed-URL (`?mt=…`) | **cookie (tanlandi)** |
+|---|---|---|
+| nginx access-log / brauzer-tarix / `Referer` | sir hamon URL'da (qisqa muddatli) | **URL'da sir YO'Q — sizish nolga tushdi** |
+| `<img src>` chaqiruvchisi | async mint kerak ⇒ ~20 chaqiruv joyida refactor | **sinxron, URL o'zgarmaydi** |
+| brauzer kesh kaliti | har token aylanishida o'zgaradi (kesh o'ladi) | **barqaror** |
+| per-resurs bog'lanish | mumkin | yo'q (o'rniga audience + accountId) |
+
+Per-resurs bog'lanishning yo'qligi bu yerda zarar bermaydi: cookie'ni **o'qib olib** boshqa URL'ga
+yopishtirish uchun avval HttpOnly to'sig'ini yorish kerak, o'sha holatda esa xotiradagi access-token
+ham ketgan bo'ladi. Ya'ni signed-URL faqat *URL sizishi* stsenariysida kuchli — cookie esa o'sha
+stsenariyni butunlay yo'q qiladi.
+
+**Qaror-4 bandlariga javob:**
+- **Audience ajratmasi** — imzo kaliti `HMAC-SHA256(JWT_SECRET, 'media-url-v1')`, ya'ni
+  `JWT_SECRET` dan **hosila**, va format JWT EMAS (`v1.<b64payload>.<b64sig>`). Ajratish
+  **kriptografik + strukturaviy**: media-token'ni `verifyAccessToken` (JWT, boshqa kalit) hech
+  qachon qabul qilmaydi, access-JWT'ni `verifyMediaToken` qabul qilmaydi. Payload'dagi
+  `aud: 'media'` — ikkinchi qatlam. *(Faqat `aud` tekshiruviga tayanish xavfli bo'lardi: bir
+  joyda tekshirish unutilsa ajratma jimgina yo'qoladi.)*
+- **TTL = 60 daqiqa** (reja «5 daqiqa» taklif qilgandi — **ataylab og'dirildi, sabab o'lchandi**):
+  `<img>` 401 olganda O'ZI qayta urinmaydi va FE'da re-render tetigi YO'Q ⇒ muddat ochiq sahifada
+  tugasa rasmlar **jimgina sinardi**. Cookie `/auth/login` va HAR `/auth/refresh` da qayta
+  o'rnatiladi, `JWT_ACCESS_TTL` esa 15 daqiqa ⇒ amalda har ≤15 daqiqada yangilanadi; 60 daqiqa =
+  4× zaxira. Qisqa TTL'ning foydasi bu yerda kichik: sir URL'da emas, HttpOnly, `SameSite=strict`,
+  faqat 4 ta **read-only GET** yo'lida ishlaydi.
+- **Tenant/scope** — media-token access-JWT bilan **AYNAN bir xil claim to'plamini** olib yuradi
+  (`accountId`, `sub`, `hrRoles`, `hrPermissions`, `uiMode`…). Shuning uchun `PermissionsGuard`,
+  `HrPermissionGuard` va servis-darajadagi record-scope **o'zgarishsiz** ishlaydi — media so'rovi
+  «kamroq tekshiriladigan» yon-yo'lga aylanmadi. *(Minimal-claim token `RequireHrPermission`ni
+  buzardi: `/hr/employees/:id/image/raw` `hrRoles`+`hrPermissions` o'qiydi — kodda tekshirildi.)*
+- **Timing-safe** — imzo solishtiruvi `shared/timing-safe.ts` dagi `secretEquals` orqali
+  (Faza 21 naqshi qayta ishlatildi, yangi nusxa yozilmadi).
+
+### 3. Fayllar
+
+| Fayl | O'zgarish |
+|---|---|
+| `auth/media-token.ts` | **YANGI** — `deriveMediaSecret` (fail-closed), `signMediaToken`, `verifyMediaToken`, `MEDIA_TOKEN_COOKIE='ms_mt'`, `MEDIA_TOKEN_TTL_SEC=3600`; format `v1.<b64url(payload)>.<b64url(hmac)>` |
+| `auth/media-token.test.ts` | **YANGI** — 10 test (kalit-hosila, fail-closed, muddat ichida/tugagach, begona sir, payload-forge, imzo-forge, shaklsiz kirish, JWT-shaklidagi qator) |
+| `auth/extract-token.ts` | allowlist **5 → 1** (faqat SSE); yangi `isMediaCookieRoute()` (4 regex) + `extractMediaToken()` — cookie FAQAT media yo'llarida o'qiladi (transport ham default-deny) |
+| `auth/jwt-auth.guard.ts` | token yo'q bo'lsa media-cookie yo'li; boshqa marshrutda `verifyMediaToken` **chaqirilmaydi ham** |
+| `auth/jwt-auth.guard.test.ts` | **Edit** (Write EMAS) — media×4 query-token endi RAD; media-cookie×4 o'tadi; muddati tugagan cookie 401; cookie oddiy endpointda va SSE'da ishlamaydi; Bearer media yo'llarida ishlayveradi. 9 → **20 test** |
+| `permissions/permissions.guard.ts` | APP_GUARD backfill yo'li ham AYNAN bir mantiq (aks holda media so'rovi kontroller-guardgacha yetmasdi) |
+| `permissions/permissions.guard.test.ts` | **Edit** — SSE o'tadi, list-report query-token RAD, media-cookie backfill qiladi, cookie oddiy endpointda RAD. 3 → **6 test** |
+| `auth/token.service.ts` | `signMediaToken`/`verifyMediaToken` (DI-yuza — ikkala guard allaqachon `TokenService` oladi); `JWT_SECRET` lazy+kesh, `resolveSecret` bilan — `auth.module.ts` bilan bir manba, bir fail-closed qoida |
+| `auth/auth.service.ts` | `login`/`refresh` qaytarmasiga `mediaToken` (tip-annotatsiyalari ham) |
+| `auth/auth.controller.ts` | `MEDIA_COOKIE_OPTS` (`httpOnly`, `sameSite:'strict'`, prod'da `secure`, `path:'/api/v1'`, `maxAge=3600`); login/refresh'da `setCookie`, logout'da `clearCookie` |
+| `purchase-order/purchase-order.controller.ts` | izoh yangilandi; `access_token` strip'i **ataylab qoldi** (qo'lda yopishtirilgan param filter-parserga tushmasin) |
+| (FE) `lib/image-url.ts` | ikkala helper endi **sof yo'l** qaytaradi; `getAccessToken` importi olib tashlandi |
+| (FE) `lib/image-url.test.ts` | **YANGI** — 4 test (regressiya qulfi: URL'da `access_token`/`token` bo'lmasin, kesh kaliti barqaror) |
+| (FE) `components/attachments-section.tsx` | `authedRaw` → sof yo'l; `getAccessToken` importi olib tashlandi |
+| (FE) `app/(app)/purchase-orders/page.tsx` | «Список заказов» PDF `window.open` — tokensiz; import olib tashlandi |
+| (FE) `app/customer-display/page.tsx` | Electron 2-monitor rasm URL'i tokensiz; `fetchMainImageUrl` dan `token` parametri olib tashlandi (JSON so'rovlari avvalgidek Bearer bilan) |
+
+**Tegilmadi (ataylab):** `hooks/use-notification-stream.ts` va SSE regexi — `EventSource` custom
+header qo'ya olmaydi; `observability.ts` scrubber ham qoldi (SSE URL'i uchun hamon kerak).
+`hr-employee.controller.ts` dagi eskirgan izoh **tuzatilmadi** — u parallel sessiyaning fayli
+(CLAUDE.md §6.1), matn qarzi sifatida ochiq qoldirildi.
+
+### 4. TDD — RED → GREEN (jonli o'lchandi)
+
+**RED** (fix'dan OLDIN, `19:11`):
+`vitest run media-token.test.ts jwt-auth.guard.test.ts permissions.guard.test.ts` →
+**3 fayl yiqildi · 10 test yiqildi / 16 o'tdi (26)**. Sabablari: `media-token.js` moduli yo'q
+(collect-error); media marshrutlarida query-token hamon QABUL qilinardi (bug jonli ko'rsatildi);
+media-cookie yo'li umuman mavjud emas edi.
+
+**GREEN** (fix'dan keyin, `19:16`): `vitest run src/modules/auth src/modules/permissions` →
+**12 fayl / 193 test yashil**. Web: `image-url.test.ts` **4/4**.
+
+Stsenariylar (topshiriqdagi 4 tasi + qo'shimchalar): (1) media marshruti oddiy access-token query
+bilan **RAD, `verifyAccessToken` chaqirilmaydi ham** ×4 marshrut · (2) media-cookie muddat ichida
+ochiladi ×4, muddati tugagach/yaroqsizda 401 · (3) boshqa sir bilan imzolangan yoki payload'i
+o'zgartirilgan (boshqa `accountId`) token RAD; media-cookie **boshqa endpointda** va hatto SSE'da
+ham ishlamaydi · (4) SSE query-token yo'li regressiz (JwtAuthGuard + PermissionsGuard ikkalasida).
+
+### 5. Gate (jonli, path-cheklangan — parallel sessiya ajratilgan)
+
+- `@moysklad/api typecheck` → **0 xato** · `@moysklad/web typecheck` → **0 xato**.
+- `npx biome check <16 o'z faylim>` → **0 error**; 2 ta `nursery/useSortedClasses` **warning**
+  `purchase-orders/page.tsx` ning MEN TEGMAGAN qatorlarida (553, 579) — oldindan mavjud.
+- `pnpm i18n:gate` → **9/9 yashil** (UI-matn tegilmadi; profilaktik yugurtirildi).
+- API to'liq regress, **3 shard** (`--reporter=dot`): 156+156+153 fayl (**+1 skipped**),
+  **1983+2011+2267 = 6261 test o'tdi / 2 skipped / 0 yiqildi**.
+- Web to'liq suite: **196 fayl · 2923 o'tdi / 26 skipped / 0 yiqildi**.
+
+**Baza bilan solishtirish (halol).** Topshiriqdagi baza — API `6228 passed / 2 skipped / 6 failed
+(hammasi parallel sessiyaniki)`, web `2919 passed / 26 skipped`. Yakuniy o'lchovda:
+- web `2923 = 2919 + mening 4 yangi testim`, yiqilish **0** — regress yo'q, aniq mos keladi;
+- API `6261 > 6228` (mening +33 va parallel sessiyaning yangi testlari), yiqilish **0** —
+  ya'ni **bazadagi 6 yiqilishni parallel sessiya shu sessiya davomida o'zi tuzatdi**, men
+  ularning fayllariga tegmadim.
+
+**Ikki ORALIQ qizil kuzatildi va ikkalasi ham MENIKI EMASLIGI o'lchov bilan isbotlandi
+(§2 — «tasdiqlanmagan ≠ fakt»):**
+1. `permissions/mutation-guard-coverage.test.ts` → *«Test timed out in 5000ms»*. Xuddi shu fayl
+   `19:16` da **707 ms** da o'tgan edi (mening o'zgarishlarim allaqachon joyida). Sabab —
+   **transform narxi**, mantiq emas: test ichida `await import('../debt/debt.controller.js')`
+   butun qarz-grafini tortadi; parallel sessiya o'sha grafdagi fayllarni tahrirlab vite
+   transform-keshini bekor qilgan. `--testTimeout=60000` bilan **51/51 yashil (11.5s)**, shard
+   rejimida esa default timeout bilan ham yashil.
+2. `web/src/__tests__/raw-element-conventions.test.ts` → offender
+   `app/(app)/menejer/smenalar/page.tsx` — **parallel sessiyaning yangi (untracked) sahifasi**.
+   Keyingi yugurtirishda ular o'zi tuzatdi, web suite to'liq yashil bo'ldi.
+
+*Metodik eslatma:* birinchi o'lchovda API va web suite'lari **bir vaqtda** yugurtirilgan edi va
+CPU raqobati 5s timeout'larni soxta qizil qilib ko'rsatdi. Yakuniy raqamlar **ketma-ket** (yolg'iz)
+yugurtirishlardan olindi.
+
+### 6. Qolgan qarz / DEFER
+
+- **🔴 DEPLOY XULQ-O'ZGARISHI** — «OPS-QADAMLAR» §12 ga yozildi: deploy paytida ochiq turgan eski
+  tab'lar (eski FE bundle) media URL'lariga tokenni qo'shishda davom etadi ⇒ **401 / siniq rasm**;
+  yechim — sahifani yangilash (qayta login SHART EMAS). Keshdagi eski `?access_token=` havolalari
+  ham 401 beradi.
+- **SSE hamon query-token'da** (`/notifications/stream`) — bu **ataylab**, `EventSource` header
+  yubora olmaydi. Faza 22 ning nginx `log_format` redakt taklifi shu bitta yo'l uchun **hamon
+  foydali**; qolgan 4 yo'lda keraksiz bo'lib qoldi. To'liq yopish uchun SSE'ni cookie-auth'ga
+  o'tkazish mumkin, lekin mijoz-ekran (Electron) stsenariysida oqim boshqa kontekstda ochilishi
+  mumkinligi tekshirilishi kerak — alohida ish.
+- **`<img>` 401 dan tiklanish yo'li YO'Q** — soatlab uxlagan tab cookie muddati tugagach rasmni
+  re-render qilsa, u siniq qoladi (401 → `<img>` qayta urinmaydi). TTL 60 daqiqa + har refresh'da
+  yangilanish buni amalda deyarli imkonsiz qiladi; to'liq yechim — `onError` → `refresh()` →
+  cache-bust re-render, ~20 chaqiruv joyiga tegadi, qamrovdan tashqari.
+- **Media-token bekor qilib bo'lmaydi** — u stateless (Faza Q12 access-JWT deny-list'i uni
+  qoplamaydi). Offboarding'dan keyin cookie eng ko'pi 60 daqiqa media-o'qish beradi. Faza Q12
+  bajarilganda deny-list `verifyMediaToken` yo'liga ham ulanishi kerak — **Q12 uchun eslatma**.
+- **`hr-employee.controller.ts:272` izohi eskirgan** («auth via ?access_token=») — parallel
+  sessiyaning fayli, tegilmadi (CLAUDE.md §6.1). Keyingi sessiya tuzatsin.
+- **Browser-smoke YO'Q** — 6 ta jonli yo'l (mahsulot mitti-rasmi, hujjat fayllari, xodim rasmi,
+  PO PDF, mijoz-ekran, SSE) Phase-2 QA cohort'ida runtime tekshiriladi. Bu faza
+  **«Phase-1: strukturaviy + unit-tasdiqlangan»**.
+
+**Parallel sessiya sharoiti (CLAUDE.md §6):** MK/kassa sessiyasi faol edi
+(`cashier-session/*`, `manager/*`, `retail-sale/*`, `menejer/smenalar/*`, `messages/{ru,uz}.json`,
+`packages/db/prisma/schema.prisma`, `todo.md`, `docs/REJA-MENEJER-KASSA-*`). Ularning **hech bir
+fayliga yozilmadi**, `git add` faqat aniq yo'llar bilan, commit `-c core.hooksPath=/dev/null` bilan
+(lint-staged begona fayl qo'shmasin — §6.7 B) va gate'lar QO'LDA to'liq yugurtirildi.

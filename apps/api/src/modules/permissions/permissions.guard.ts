@@ -3,7 +3,7 @@ import type { CanActivate, ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import type { FastifyRequest } from 'fastify';
 import type { AuthenticatedUser } from '../auth/auth.schema.js';
-import { extractToken } from '../auth/extract-token.js';
+import { extractMediaToken, extractToken } from '../auth/extract-token.js';
 import { TokenService } from '../auth/token.service.js';
 import { PermissionsService } from './permissions.service.js';
 import { PERMISSION_META, type RequiredPermission } from './require-permission.decorator.js';
@@ -44,18 +44,28 @@ export class PermissionsGuard implements CanActivate {
 
     // Backfill the user from the bearer token if the controller-level
     // JwtAuthGuard has not run yet. Shared extractToken: header first,
-    // `?access_token=` faqat SSE/media allowlist marshrutlarda (AUTH-04).
+    // `?access_token=` faqat SSE marshrutida (AUTH-04, Faza Q13).
     if (!user) {
       const token = extractToken(req);
       if (!token) {
-        throw new UnauthorizedException('Avtorizatsiya kerak');
+        // Media yo'llari: HttpOnly `ms_mt` media-cookie'si. JwtAuthGuard bilan
+        // AYNAN bir mantiq — aks holda APP_GUARD bu yerda media so'rovini
+        // 401 qilib, kontroller-guardgacha yetkazmasdi.
+        const mediaRaw = extractMediaToken(req);
+        const mediaUser = mediaRaw ? this.tokens.verifyMediaToken(mediaRaw) : null;
+        if (!mediaUser) {
+          throw new UnauthorizedException('Avtorizatsiya kerak');
+        }
+        user = mediaUser;
+        req.user = user;
+      } else {
+        try {
+          user = await this.tokens.verifyAccessToken(token);
+        } catch {
+          throw new UnauthorizedException('Yaroqsiz token');
+        }
+        req.user = user;
       }
-      try {
-        user = await this.tokens.verifyAccessToken(token);
-      } catch {
-        throw new UnauthorizedException('Yaroqsiz token');
-      }
-      req.user = user;
     }
 
     await this.permissions.require(

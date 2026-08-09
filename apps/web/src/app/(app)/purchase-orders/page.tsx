@@ -11,7 +11,6 @@ import { useBulkDocumentActions } from '@/hooks/use-bulk-actions';
 import { useColumnVisibility } from '@/hooks/use-column-visibility';
 import { useColumnWidths } from '@/hooks/use-column-widths';
 import { api } from '@/lib/api-client';
-import { getAccessToken } from '@/lib/auth-store';
 import { stashBulkEdit } from '@/lib/bulk-edit-nav';
 import { filterFromQueryString } from '@/lib/filter-from-query';
 import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
@@ -1662,13 +1661,13 @@ export default function PurchaseOrdersPage() {
       // in a NEW TAB. The server renders it (title + «Создал …» + bordered table)
       // and serves it INLINE, so the browser's native PDF viewer shows it with
       // page thumbnails, navigation and print/download — 1:1 with moysklad's
-      // report-*.pdf. `access_token` in the URL because a top-level navigation
-      // sends no bearer header (same pattern as authed <img> URLs). Forwards the
-      // current filter+sort; the report fetches every matching row.
+      // report-*.pdf. Faza Q13: no `access_token` in the URL any more — a
+      // top-level navigation sends no bearer header, but it IS same-site, so
+      // the HttpOnly `ms_mt` media cookie rides along and the guard accepts it
+      // on this route (apps/api/src/modules/auth/media-token.ts). The URL now
+      // carries only the filter+sort; the report fetches every matching row.
       onSelect: () => {
-        const token = getAccessToken();
         const qs = new URLSearchParams(params);
-        if (token) qs.set('access_token', token);
         window.open(`/api/v1/purchase-orders/list-report?${qs.toString()}`, '_blank');
       },
     },

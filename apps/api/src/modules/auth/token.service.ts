@@ -4,6 +4,8 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { AuthenticatedUser } from './auth.schema.js';
+import { resolveSecret } from './boot-secrets.js';
+import { MEDIA_TOKEN_TTL_SEC, signMediaToken, verifyMediaToken } from './media-token.js';
 
 /**
  * Rotation grace window. The refresh cookie is shared by every tab of the
@@ -57,6 +59,37 @@ export class TokenService {
 
   async verifyAccessToken(token: string): Promise<AuthenticatedUser> {
     return this.jwt.verifyAsync<AuthenticatedUser>(token);
+  }
+
+  /**
+   * Media-token imzolash (Faza Q13). Natija HttpOnly `ms_mt` cookie'siga
+   * yoziladi (`auth.controller.ts`) — URL'da hech qachon ko'rinmaydi.
+   */
+  signMediaToken(user: AuthenticatedUser): string {
+    return signMediaToken(user, { secret: this.jwtSecret(), ttlSec: MEDIA_TOKEN_TTL_SEC });
+  }
+
+  /** Media-token tekshiruvi — yaroqsiz/muddati tugaganda `null` (guard 401 beradi). */
+  verifyMediaToken(raw: string | null | undefined): AuthenticatedUser | null {
+    return verifyMediaToken(raw, { secret: this.jwtSecret() });
+  }
+
+  /**
+   * `JWT_SECRET` — `auth.module.ts` dagi JwtModule bilan AYNAN bir manba va
+   * bir fail-closed qoida (`resolveSecret`). Lazy + keshlangan: parameter-
+   * property'lar bilan field-initializer tartibiga tayanmaslik uchun.
+   */
+  private jwtSecretCache: string | null = null;
+  private jwtSecret(): string {
+    if (this.jwtSecretCache === null) {
+      this.jwtSecretCache = resolveSecret({
+        name: 'JWT_SECRET',
+        value: this.config.get<string>('JWT_SECRET'),
+        devFallback: 'dev-secret-change-in-prod',
+        nodeEnv: process.env.NODE_ENV,
+      });
+    }
+    return this.jwtSecretCache;
   }
 
   /**
