@@ -17,7 +17,7 @@ import {
   useToast,
 } from '@moysklad/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 /**
@@ -116,8 +116,30 @@ interface Reference {
   reasonCodes: Record<string, string[]>;
 }
 
-/** Pul birligidagi ko'rsatkichlar — qolganlari dona/daqiqa. */
-const MONEY_UNITS = new Set(['minor']);
+/**
+ * Pul birligidagi ko'rsatkichlar — qolganlari dona/daqiqa.
+ *
+ * 🔴 Qiymat backend lug'atidan olinadi: `kpi-metrics.ts` da birlik
+ * `'money' | 'count' | 'minutes'`. Bu yerda ilgari `'minor'` turgan edi —
+ * u `manager_rule_configs.thresholdUnit` lug'atidan (butunlay boshqa
+ * o'q), shuning uchun HECH BIR pul ko'rsatkichi formatlanmasdi: ekranda
+ * `formatMoney` o'rniga xom minor son turardi (MK14 brauzer-QA: kassa
+ * tushumi 118 100,00 so'm o'rniga «11 810 000»).
+ */
+const MONEY_UNITS = new Set(['money']);
+
+/**
+ * Ko'rsatkich nomi — `KpiMetricDef` ikkala tilni ham olib keladi.
+ *
+ * 🔴 Bu ekran ilgari DOIM `labelUz` chizardi: RU rejimda butun navigatsiya,
+ * sarlavhalar va holat yorliqlari ruscha bo'lgani holda ko'rsatkichlar
+ * jadvali o'zbekcha qolardi (MK14 brauzer-QA). Qardosh ekranlar allaqachon
+ * to'g'ri qiladi — `_components/data-quality-screen.tsx` va
+ * `hr/employees/[id]/kpi/page.tsx`.
+ */
+function metricLabel(m: { labelUz: string; labelRu: string }, locale: string): string {
+  return locale === 'ru' ? m.labelRu || m.labelUz : m.labelUz;
+}
 
 export default function MenejerPage() {
   const t = useTranslations('pages.menejer');
@@ -211,17 +233,41 @@ export default function MenejerPage() {
 
   const can = (action: string) => detail.data?.allowedActions.includes(action) ?? false;
 
-  useHotkey('arrowdown', () => move(1));
-  useHotkey('arrowup', () => move(-1));
-  useHotkey('a', () => {
-    if (can('accept') && !transition.isPending) transition.mutate({ action: 'accept' });
-  });
-  useHotkey('r', () => {
-    if (can('reject')) setRejectOpen(true);
-  });
-  useHotkey('e', () => {
-    if (detail.data && !isFrozenState(detail.data.state)) setAdjustOpen(true);
-  });
+  /**
+   * 🔴 Dialog ochiq bo'lsa tezkor tugmalar O'CHADI (MK14 brauzer-QA).
+   *
+   * Edi: menejer «Rad etish» dialogini ochib sabab `<select>`ida tanlov
+   * qidirib «a» bosganda — `useHotkey` faqat INPUT/TEXTAREA ni istisno
+   * qiladi, SELECT ni emas va dialog ochiqligini bilmaydi — kun JIMGINA
+   * QABUL QILINARDI. Jurnalda `accept stale -> accepted` yozilib qolardi,
+   * ya'ni menejer rad etmoqchi bo'lgan kun muzlatilgan holatga o'tardi
+   * (`accepted` — `isFrozenState`, keyin tuzatib ham bo'lmaydi).
+   */
+  const modalOpen = rejectOpen || adjustOpen || drillMetric != null;
+
+  useHotkey('arrowdown', () => move(1), { enabled: !modalOpen });
+  useHotkey('arrowup', () => move(-1), { enabled: !modalOpen });
+  useHotkey(
+    'a',
+    () => {
+      if (can('accept') && !transition.isPending) transition.mutate({ action: 'accept' });
+    },
+    { enabled: !modalOpen },
+  );
+  useHotkey(
+    'r',
+    () => {
+      if (can('reject')) setRejectOpen(true);
+    },
+    { enabled: !modalOpen },
+  );
+  useHotkey(
+    'e',
+    () => {
+      if (detail.data && !isFrozenState(detail.data.state)) setAdjustOpen(true);
+    },
+    { enabled: !modalOpen },
+  );
 
   return (
     <div className="flex h-full flex-col gap-4 p-4">
@@ -441,6 +487,7 @@ function MetricTable({
   onDrill: (key: string) => void;
   t: ReturnType<typeof useTranslations>;
 }) {
+  const locale = useLocale();
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
@@ -462,7 +509,7 @@ function MetricTable({
                   className="text-left underline-offset-2 hover:underline"
                   onClick={() => onDrill(m.key)}
                 >
-                  {m.labelUz}
+                  {metricLabel(m, locale)}
                 </button>
                 {!m.complete && m.autoValue != null && (
                   <span className="ml-1 text-warning text-xs">{t('partial')}</span>
@@ -611,6 +658,7 @@ function AdjustModal({
   }) => void;
   t: ReturnType<typeof useTranslations>;
 }) {
+  const locale = useLocale();
   const [metricKey, setMetricKey] = useState('');
   const [value, setValue] = useState('');
   const [reason, setReason] = useState('');
@@ -663,7 +711,7 @@ function AdjustModal({
         <NativeSelect value={metricKey} onChange={(e) => setMetricKey(e.target.value)}>
           {metrics.map((m) => (
             <option key={m.key} value={m.key}>
-              {m.labelUz}
+              {metricLabel(m, locale)}
             </option>
           ))}
         </NativeSelect>

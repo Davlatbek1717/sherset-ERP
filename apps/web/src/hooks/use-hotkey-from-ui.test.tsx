@@ -166,6 +166,20 @@ describe('useHotkey', () => {
       expect(handler).not.toHaveBeenCalled();
     });
 
+    // REGRESSION-LOCK (MK14 Phase-2 QA, real browser): a native <select>
+    // does type-ahead, so "a" pressed inside the reject dialog's reason
+    // picker was the manager searching options — and it fired the page's
+    // «accept» shortcut instead, moving the KPI day to the frozen
+    // `accepted` state. SELECT must be ignored like INPUT/TEXTAREA.
+    it('default: drops keystrokes from <select> (type-ahead is not a shortcut)', () => {
+      const handler = vi.fn();
+      renderHook(() => useHotkey('a', handler));
+      const select = document.createElement('select');
+      document.body.appendChild(select);
+      fireKeydown({ key: 'a', target: select });
+      expect(handler).not.toHaveBeenCalled();
+    });
+
     // Note: jsdom does NOT implement HTMLElement.isContentEditable as a
     // derived getter, so the source's `t.isContentEditable` check returns
     // false even when contenteditable="true" is set. Real browsers behave

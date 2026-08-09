@@ -305,6 +305,59 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-09zf (REJA-MENEJER-KASSA **MK14** — 4M **Phase-2 QA**: menejer nazorati,
+> **REAL BRAUZER**) — 3 mahsulot xatosi topildi va tuzatildi + 2 muhit muammosi yopildi.
+> To'liq hisobot: `docs/REJA-MENEJER-KASSA-2026-08.md` → HISOBOT JURNALI → «Faza MK14».**
+>
+> **Uchala xato ham `typecheck` · `biome` · `i18n` · 3078 unit testdan JIM o'tgan edi** —
+> faqat brauzerda ko'rindi (yana `browser-qa-catches-what-static-cannot` sinfi):
+> **(1) 🔴 Pul 100 barobar noto'g'ri.** `menejer/page.tsx` da `MONEY_UNITS = new Set(['minor'])`,
+> backend esa birlikni `'money'` deb yuboradi (`'minor'` — `manager_rule_configs.thresholdUnit`
+> lug'atidan, boshqa o'q) ⇒ hech bir pul ko'rsatkichi `formatMoney` ga tushmasdi: kassa tushumi
+> **118 100,00 so'm** o'rniga **«11 810 000»**. Menejer aynan shu raqamga qarab kunni qabul qiladi.
+> **(2) RU-locale sinishi.** Ko'rsatkich nomi doim `labelUz` chizilardi; RU rejimda butun ekran
+> ruscha bo'lib jadval o'zbekcha qolardi. Fix: yagona `metricLabel(m, locale)` (qardosh ekranlar
+> allaqachon to'g'ri qilardi). **(3) 🔴 DATA-INTEGRITY — dialog ochiq turib «A» kunni JIMGINA
+> QABUL QILARDI:** rad etish dialogining sabab `<select>`ida «a» bosilsa (type-ahead) sahifa
+> tezkor tugmasi otilardi — `useHotkey` `SELECT` ni istisno qilmaydi va dialogni bilmaydi.
+> **Jonli dalil jurnaldan:** `accept stale -> accepted by owner` — menejer RAD ETMOQCHI bo'lgan
+> kun muzlatilgan `accepted` holatiga o'tdi. Fix ikki qatlamli: `useHotkey` endi `SELECT` ni
+> istisno qiladi + beshala bog'lash `enabled: !modalOpen`.
+>
+> **🟡 Ikki MUHIT muammosi (kod emas — lekin PRODGA HAM tegishli, ochiq qarz):**
+> **(A)** `20260810070000_shift_acceptance` migratsiyasi qo'llanmagani uchun 3 ekran 500 berardi
+> (`javobgarlik` · `qarorlar` · `smenalar` — hammasi `cashier_sessions.acceptance_state` dan).
+> Lokal bazaga `prisma migrate diff` → `db execute` bilan qo'llandi (89 satr, faqat qo'shimcha)
+> ⇒ drift 0. **Prodga hamon qo'llanmagan.**
+> **(B)** `/menejer/undirish` **egaga ham 403** berardi: Administrator rolida `debt*` ruxsat
+> qatorlari yo'q edi (eski seed qoldig'i; `permissions-seed-sync.test.ts` YASHIL, ya'ni kod
+> drifti emas). `apps/api/src/scripts/topup-role-permissions.ts` yugurtirildi (456→486 qator).
+> **Prodda ham yugurtirilishi + `pm2 restart` kerak** (ruxsat keshi 5 daqiqa).
+>
+> **✅ Brauzerda tasdiqlangan:** 17 menejer ekrani (konsol xatosi 0 · API 4xx/5xx 0 · xom i18n
+> kaliti 0) · pul formatlash · RU-locale · rad etish dialogi · tuzatma dialogi ·
+> **eskalatsiya → majburiy yopish ikki aktyor bilan** (menejer `escalate` → ega `force_accept`,
+> jurnal ikkalasini aktyor+sabab bilan yozdi) · `hr/employees/[id]/kpi`.
+> Re-runnable: `apps/web/tests/e2e/mk14-manager-qa.spec.ts` (**7/7**), skrinshotlar
+> `apps/web/test-results/mk14/`. *(Eskalatsiya uchun lokal bazada `qa.sotuvchi@qa.local` ga
+> `hrRoles:['manager']` + parol berildi — FSM'da eskalatsiya faqat menejer/tizim amali.)*
+>
+> **⛔ QOPLANMAGAN (halol):** **(1) rad etish → tushuntirish halqasi FE'da YO'Q** — backend
+> to'liq tayyor (`POST /manager/kpi/days/:id/explain`), lekin butun `apps/web` da unga birorta
+> chaqiruv yo'q (grep bilan tasdiqlandi) ⇒ rad etilgan xodim javob bera olmaydi.
+> **Yangi faza qo'shildi: MK44** «Xodim tomoni: mening KPI kunlarim + tushuntirish».
+> **(2) Reyting** — MK13 QISMAN (`KpiTarget` sxemasi/endpoint yo'q) ⇒ QA qilinadigan sirt yo'q.
+> **(3) Navbat/SLA/byudjet** ekranlari ochiladi va toza, lekin **raqam-to'g'riligi**
+> solishtirilmadi (lokal bazada mazmunli ma'lumot yo'q). **(4) Ruxsat matritsasi QA'si — MK40.**
+>
+> **Gate:** web tc **0** · design-system tc **0** · `lint:product` **0 xato** · `i18n:gate` **9/9**
+> · web Vitest **210 fayl / 3078 yashil** · design-system Vitest **155 yashil** · e2e **7/7**.
+> Regressiya qulflari mavjud drift-lock fayllarga qo'shildi (+5 test):
+> `menejer-acceptance-screen.test.ts` (BE birlik lug'ati ↔ FE `MONEY_UNITS` · `metricLabel` ·
+> `enabled: !modalOpen` ×5) va `use-hotkey-from-ui.test.tsx` (`<select>` istisnosi).
+>
+> **Status: 4M (M1) → «Phase-2 verified»** — yuqoridagi 4 ochiq band bilan.
+
 > **🕒 2026-08-09ze (REJA-MENEJER-KASSA **MK32** — POS xulq-testlari qoplamasi,
 > `sotuv/page.tsx` **bo'linishidan OLDIN**) — 6 yangi fayl + `vitest.config.ts`.**
 >

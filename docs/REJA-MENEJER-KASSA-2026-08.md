@@ -556,7 +556,10 @@ formulasi chegara qiymatlarida (QAROR-B3). (3) targeti yo'q ko'rsatkich reytingg
 
 ---
 
-### MK14 — 4M **Phase-2 QA** (menejer nazorati) ☐ HISOBOT
+### MK14 — 4M **Phase-2 QA** (menejer nazorati) ☑ HISOBOT (2026-08-09)
+> **Natija:** 3 mahsulot xatosi (pul 100×, RU-locale, dialogda «A» kunni qabul qilardi) topildi
+> va tuzatildi · 2 muhit muammosi (qo'llanmagan migratsiya, eskirgan ruxsat qatorlari) yopildi ·
+> xodim tomoni FE YO'Q ⇒ **MK44** taklifi. To'liq hisobot: HISOBOT JURNALI → «Faza MK14».
 **Bo'lim/blok:** 4M QA · **TZ:** §10 · **Tur:** QA sessiyasi
 **Ustuvorlik:** P1 · **Bog'liqlik:** MK01–MK13
 **Qamrov (real brauzer):** rad etish → tushuntirish halqasi · eskalatsiya · majburiy yopish ·
@@ -1067,6 +1070,29 @@ Alohida: filial ∩ scope kesishmasi · G1 imtiyoz taqiqi UI'da · shablon qo'll
 > `docs/REJA-MENEJER-KASSA-2026-08.md` — **Faza MK40** (4-Menejer Phase-2 QA) ni bajar. `/qa-cohort`.
 > E2E: rol yaratish → berish → ko'rinish chegarasi → kassa kamomadi navbatda → jarima → HR
 > oyligida. Filial ∩ scope, G1, shablonlar. Hisobot → **TO'XTA**.
+
+---
+
+### MK44 — Xodim tomoni: «mening KPI kunlarim» + tushuntirish ☐ HISOBOT
+**Bo'lim/blok:** 4M §3.3 · **Ustuvorlik:** P1 · **Bog'liqlik:** MK02, MK14
+**Nega (MK14 brauzer-QA topdi):** rad etish → tushuntirish halqasining **backend'i to'liq
+tayyor** — `POST /manager/kpi/days/:id/explain`, FSM `rejected → pending` (aktyor `employee`),
+`HrPermissionGuard` ataylab talab qilinmaydi (oddiy xodimda `employees:read` bo'lmaydi,
+egalik tekshiruvi servisda). Lekin **butun `apps/web` da bu endpointga birorta chaqiruv yo'q**.
+Ya'ni rad etilgan xodim javob bera olmaydi va TZ §3.3 halqasi FE'da UZILGAN: kun `rejected`
+holatida qotib qoladi yoki menejer o'zi `explain` qilishga majbur (FSM `manager` ni ham
+qo'yadi — bu ataylab, lekin xodim ovozi yo'qoladi).
+**Qamrov:** xodimning o'z kunlari ro'yxati (faqat O'ZINIKI) · rad etilgan kun uchun
+tushuntirish formasi (izoh majburiy) · yuborilgandan keyin kun menejer navbatiga qaytishi ·
+jurnalda xodim hodisasi ko'rinishi · `hrRoles` bo'sh oddiy xodim uchun ruxsat oqimi.
+**Diqqat:** yangi endpoint YARATILMAYDI — mavjud `explain` ishlatiladi. Ekran menejer
+navbatining nusxasi EMAS: xodim boshqa hech kimning kunini ko'rmaydi.
+**Tayyorlik (DoD):** oddiy xodim hisobi bilan real brauzerda halqa uchdan-uchiga · gate + i18n.
+**▶ SESSIYA-BOSHI PROMPT:**
+> `docs/REJA-MENEJER-KASSA-2026-08.md` — **Faza MK44** ni bajar. Xodim tomoni FE: «mening KPI
+> kunlarim» + rad etilgan kunga tushuntirish (mavjud `POST /manager/kpi/days/:id/explain`,
+> yangi endpoint YO'Q). Faqat o'z kunlari. Brauzerda oddiy xodim hisobi bilan tasdiqla.
+> Hisobot → **TO'XTA**.
 
 ---
 
@@ -3479,3 +3505,113 @@ parallel tahrirlar commit'ga TUSHMADI, lekin ishchi nusxada butun qoldi).
 
 **MK33** — `page.tsx` (2216 satr) → `OpenShiftForm` / `ChekDetailPanel` / `SalesScreen`.
 Qabul mezoni: shu 77 test **bir harf o'zgarmagan holda** yashil qolishi.
+
+---
+
+## Faza MK14 — 4M **Phase-2 QA** (menejer nazorati) (sana: 2026-08-09)
+
+**Tur:** QA sessiyasi (`/qa-cohort`). **Qamrov:** 17 menejer ekrani + `hr/employees/[id]/kpi`.
+**Vosita:** real Chromium (Playwright), lokal `climart_adopt` @ 5432 · api 4000 · web 3100.
+Re-runnable spec: `apps/web/tests/e2e/mk14-manager-qa.spec.ts` (7 test, skrinshotlar
+`apps/web/test-results/mk14/`).
+
+### 🔴 Uchta MAHSULOT xatosi — brauzerda topildi, o'sha yerda tuzatildi
+
+Uchalasi ham `typecheck` · `biome` · `i18n` · 3078 ta unit testdan **jim o'tgan** edi.
+
+**1. Pul ko'rsatkichlari 100 barobar noto'g'ri ko'rsatilardi** (`menejer/page.tsx`).
+`MONEY_UNITS = new Set(['minor'])` — lekin backend birlikni `'money'` deb yuboradi
+(`kpi-metrics.ts`); `'minor'` esa `manager_rule_configs.thresholdUnit` lug'atidan, ya'ni
+**butunlay boshqa o'q**. Natijada hech bir pul ko'rsatkichi `formatMoney` ga tushmasdi:
+kassa tushumi **118 100,00 so'm** o'rniga ekranda **«11 810 000»** (valyutasiz xom minor)
+turardi. Menejer aynan shu raqamga qarab kunni qabul qiladi. **Fix:** `new Set(['money'])`.
+
+**2. RU-locale sinishi** (`menejer/page.tsx`). Ko'rsatkich nomi DOIM `labelUz` chizilardi,
+holbuki `KpiMetricDef` ikkala tilni ham beradi. RU rejimda butun navigatsiya, sarlavhalar va
+holat yorliqlari rus tilida bo'lib (jonli tasdiq: «Приёмка дневных KPI», «Ждёт приёмки»),
+ko'rsatkichlar jadvali o'zbekcha qolardi. Qardosh ekranlar allaqachon to'g'ri qiladi
+(`_components/data-quality-screen.tsx`, `hr/employees/[id]/kpi/page.tsx`).
+**Fix:** yagona `metricLabel(m, locale)` — jadval + tuzatma dialogi.
+
+**3. 🔴 DATA-INTEGRITY — dialog ochiq turib «A» kunni JIMGINA QABUL QILARDI.**
+Menejer «Rad etish» dialogini ochib sabab `<select>`ida variant qidirib «a» bosganda:
+`useHotkey` faqat `INPUT`/`TEXTAREA` ni istisno qiladi (`SELECT` ni EMAS) va dialog
+ochiqligini bilmaydi ⇒ sahifa darajasidagi «qabul» tugmasi otilardi. **Jurnaldan jonli dalil:**
+`2026-08-09T18:37:15 accept stale -> accepted by owner` — menejer RAD ETMOQCHI bo'lgan kun
+`accepted` (`isFrozenState`) holatiga o'tdi, keyin tuzatib ham bo'lmaydi. **Fix ikki qatlamli:**
+(a) `packages/design-system/src/hooks/useHotkey.ts` — `SELECT` endi istisno (type-ahead
+yozuv, tezkor tugma emas); (b) `menejer/page.tsx` — beshala bog'lash `enabled: !modalOpen`.
+**Tuzatishdan keyin brauzer-tasdiq:** «a» bosilgandan keyin kun `pending` bo'lib qoldi,
+jurnalda yangi `accept` hodisasi YO'Q.
+
+### 🟡 Ikkita MUHIT/OPS muammosi (kod xatosi emas — lekin prodni ham tegishi mumkin)
+
+**A. Qo'llanmagan migratsiya ⇒ 3 ta ekran 500 berardi.** `/menejer/javobgarlik`,
+`/menejer/qarorlar`, `/menejer/smenalar` — hammasi bitta ildizdan:
+`cashier_sessions.acceptance_state` ustuni va `cashier_session_acceptance_events` jadvali
+lokal bazada YO'Q edi (`20260810070000_shift_acceptance`, xotira
+`shift-acceptance-sums-untouched` da «qo'llanmagan» deb yozilgan). Drift `prisma migrate diff`
+bilan chiqarilib (89 satr, **faqat qo'shimcha** — `DROP TABLE`/`DROP COLUMN` yo'q)
+`prisma db execute` orqali qo'llandi → **drift 0**, uch ekran ham 200.
+**⚠️ Prod uchun ochiq qarz:** shu migratsiya prodga ham qo'llanmagan.
+
+**B. Eskirgan ruxsat qatorlari ⇒ `/menejer/undirish` egaga ham 403.** Hisob
+administratorida `debt*` entity'lari uchun BIRORTA `RolePermission` qatori yo'q edi (456 qator,
+`debt` yo'q) ⇒ «Ruxsat yo'q: debt.view uchun kamida OWN kerak (sizda: NO)».
+`permissions-seed-sync.test.ts` **yashil** (seed ro'yxati to'g'ri) — ya'ni bu kod drifti emas,
+`debt` entity'lari qo'shilishidan OLDIN seed qilingan bazaning qoldig'i. Davolash skripti
+allaqachon bor: `apps/api/src/scripts/topup-role-permissions.ts` → 4 rol, 1944 qator,
+Administrator 456→486 → endi 200. **⚠️ Prodda ham yugurtirilishi kerak** (keyin `pm2 restart` —
+ruxsat keshi 5 daqiqa).
+
+### ✅ Brauzerda TASDIQLANGAN oqimlar
+
+| Oqim | Natija |
+|---|---|
+| 17 menejer ekrani ochilishi | ✅ konsol xatosi 0 · API 4xx/5xx 0 · xom i18n kaliti 0 |
+| Pul formatlash (qabul ekrani) | ✅ tuzatilgandan keyin valyuta bilan |
+| RU-locale (ko'rsatkich nomlari) | ✅ tuzatilgandan keyin `labelRu` |
+| Rad etish dialogi + tezkor tugma xavfsizligi | ✅ kun holati o'zgarmaydi |
+| Tuzatma dialogi (saqlash → «Tuzatma» ustuni) | ✅ |
+| **Eskalatsiya → majburiy yopish** (ikki aktyor) | ✅ menejer `escalate` → ega `force_accept`; jurnal: `escalate pending→escalated by manager (above_manager_limit)` + `force_accept escalated→force_accepted by owner (owner_decision)` |
+| `hr/employees/[id]/kpi` (o'z-KPI / katalog) | ✅ toza |
+
+*QA uchun lokal bazada `qa.sotuvchi@qa.local` ga `hrRoles:['manager']` + parol berildi —
+eskalatsiya FSM'da **faqat menejer/tizim** amali, ega uni qila olmaydi, ya'ni bu halqani
+ikkinchi hisobsiz umuman sinab bo'lmaydi.*
+
+### ⛔ QOPLANMAGAN — halol ro'yxat
+
+1. **Rad etish → tushuntirish halqasi FE'da YO'Q.** Backend to'liq tayyor
+   (`POST /manager/kpi/days/:id/explain`, `HrPermissionGuard` ataylab talab qilinmaydi, FSM
+   `rejected → pending`, aktyor `employee`), lekin **butun `apps/web` da bu endpointga
+   birorta chaqiruv yo'q** (grep bilan tasdiqlandi). Ya'ni rad etilgan xodim javob bera
+   olmaydi va TZ §3.3 halqasi FE'da uzilgan. Bu QA tuzatmasi emas — yangi ekran ⇒ **yangi faza
+   taklifi: MK44 «Xodim tomoni: mening KPI kunlarim + tushuntirish»**.
+2. **Reyting** — MK13 QISMAN qolgan (`KpiTarget` sxemasi va reyting endpointi yo'q,
+   `kpi-rating.ts` o'lik kod) ⇒ QA qilinadigan sirt mavjud emas. Bloker: «MK13-ikkinchi qism».
+3. **Navbat / SLA / byudjet** — ekranlar ochiladi va toza (yuqoridagi jadval), lekin
+   **hisob-kitob to'g'riligi** raqam-bo'yicha solishtirilmadi (lokal bazada bu ekranlar uchun
+   mazmunli ma'lumot yo'q). Bu qamrov `MK40` (ruxsatlar QA) yoki alohida ma'lumotli passga.
+4. **Ruxsat matritsasi bo'yicha QA** (kim nimani ko'rmasligi kerak) — MK40 fazasining ishi.
+
+### Gate
+
+`apps/web` typecheck **0** · `packages/design-system` typecheck **0** ·
+`lint:product` **0 xato** (818 warning — siyosat bo'yicha ruxsat) · `i18n:gate` **9/9** ·
+web Vitest **210 fayl / 3078 test yashil** · design-system Vitest **155 yashil** ·
+MK14 e2e **7/7 yashil**.
+
+### Regressiya qulflari
+
+`src/__tests__/menejer-acceptance-screen.test.ts` (mavjud drift-lock faylga qo'shildi, +4 test):
+BE birlik lug'ati ↔ FE `MONEY_UNITS` mosligi · `metricLabel` mavjudligi va JSX'da
+`{m.labelUz}` qolmagani · beshala tezkor tugma `enabled: !modalOpen` bilan ekani.
+`src/hooks/use-hotkey-from-ui.test.tsx` (+1 test): `<select>` dan kelgan bosish tezkor
+tugmani otmasligi.
+
+### Status
+
+**4M (M1 bloki) → «Phase-2 verified»**, quyidagi ochiq bandlar bilan: xodim tomoni FE (MK44),
+reyting (MK13-2), navbat/SLA/byudjet raqam-tekshiruvi, ruxsat QA (MK40).
+Prod ops-qarzi: `20260810070000_shift_acceptance` migratsiyasi + `topup-role-permissions.ts`.

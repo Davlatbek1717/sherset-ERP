@@ -15,9 +15,13 @@ import * as React from 'react';
  * standard cross-platform convention, same as VS Code / Linear.
  *
  * Default behaviour: ignores keystrokes typed inside `<input>`,
- * `<textarea>`, and contenteditable elements so a shortcut like `?` does
- * not fire while the user is typing into a form. Pass
+ * `<textarea>`, `<select>`, and contenteditable elements so a shortcut
+ * like `?` does not fire while the user is typing into a form. Pass
  * `{ ignoreInputs: false }` to override (rare — usually for `Escape`).
+ *
+ * NB: this is per-element, not per-overlay. A dialog that renders its own
+ * buttons still needs `{ enabled: !open }` on the page-level hotkeys —
+ * focus can sit on the dialog body, which is not an input.
  */
 export interface UseHotkeyOptions {
   /** Don't fire when focus is inside an input/textarea. Default true. */
@@ -55,7 +59,18 @@ export function useHotkey(
     const listener = (e: KeyboardEvent) => {
       if (ignoreInputs) {
         const t = e.target as HTMLElement | null;
-        if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) {
+        // SELECT is in this list because a native <select> does type-ahead:
+        // pressing "a" while it has focus is the user searching its options,
+        // not firing a shortcut. Leaving it out cost a real data change —
+        // MK14 browser QA caught a manager pressing "a" in the reject
+        // dialog's reason picker and silently ACCEPTING the day instead.
+        if (
+          t &&
+          (t.tagName === 'INPUT' ||
+            t.tagName === 'TEXTAREA' ||
+            t.tagName === 'SELECT' ||
+            t.isContentEditable)
+        ) {
           return;
         }
       }

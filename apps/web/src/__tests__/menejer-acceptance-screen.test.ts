@@ -110,11 +110,12 @@ describe('dinamik i18n kalitlari — ru va uz da BOR', () => {
 
 describe('TZ §3.5 majburiy xususiyatlari ekranda ulangan', () => {
   it('klaviatura: ↓/↑ o`tish, A qabul, R rad, E tuzatish', () => {
-    expect(pageSrc).toMatch(/useHotkey\('arrowdown'/);
-    expect(pageSrc).toMatch(/useHotkey\('arrowup'/);
-    expect(pageSrc).toMatch(/useHotkey\('a'/);
-    expect(pageSrc).toMatch(/useHotkey\('r'/);
-    expect(pageSrc).toMatch(/useHotkey\('e'/);
+    // `\s*` — bog'lash ko'p qatorli bo'lishi mumkin (`enabled` opsiyasi bilan).
+    expect(pageSrc).toMatch(/useHotkey\(\s*'arrowdown'/);
+    expect(pageSrc).toMatch(/useHotkey\(\s*'arrowup'/);
+    expect(pageSrc).toMatch(/useHotkey\(\s*'a'/);
+    expect(pageSrc).toMatch(/useHotkey\(\s*'r'/);
+    expect(pageSrc).toMatch(/useHotkey\(\s*'e'/);
   });
 
   it('DRILL-DOWN ulangan — «bu raqam qayerdan chiqdi»', () => {
@@ -134,6 +135,79 @@ describe('TZ §3.5 majburiy xususiyatlari ekranda ulangan', () => {
 
   it('tugmalar FSM `allowedActions` dan chiziladi, FE o`z shartini yozmaydi', () => {
     expect(pageSrc).toContain('allowedActions');
+  });
+});
+
+/**
+ * MK14 REGRESSION-LOCK (2026-08-09, real brauzer QA).
+ *
+ * Uchta bug shu yerda qulflanadi. Uchalasi ham typecheck / biome / i18n
+ * gate'laridan JIM o'tgan edi va faqat brauzerda ko'rindi.
+ */
+describe('MK14 brauzer-QA da topilgan uchta xato', () => {
+  const KPI_METRICS = join(
+    __dirname,
+    '..',
+    '..',
+    '..',
+    '..',
+    'apps',
+    'api',
+    'src',
+    'modules',
+    'manager',
+    'kpi',
+    'kpi-metrics.ts',
+  );
+  const metricsSrc = readFileSync(KPI_METRICS, 'utf8');
+
+  /** Backend katalogidagi barcha birliklar (`money` / `count` / `minutes`). */
+  const backendUnits = new Set(
+    [...metricsSrc.matchAll(/unit:\s*'([a-z_]+)'/g)].map((m) => m[1] as string),
+  );
+
+  /** FE `MONEY_UNITS` to'plamining a'zolari. */
+  const frontendMoneyUnits = (() => {
+    const block = pageSrc.match(/const MONEY_UNITS = new Set\(\[([\s\S]*?)\]\)/)?.[1];
+    if (!block) throw new Error('menejer/page.tsx ichida MONEY_UNITS topilmadi');
+    return [...block.matchAll(/'([a-z_]+)'/g)].map((m) => m[1] as string);
+  })();
+
+  it('1a. BE birlik lug`ati `money` ni ishlatadi (test bo`sh emas)', () => {
+    expect(backendUnits.has('money')).toBe(true);
+  });
+
+  it('1b. MONEY_UNITS BE lug`atidan (o`lik qiymat yo`q) va `money` ni o`z ichiga oladi', () => {
+    // Edi: `new Set(['minor'])` — `'minor'` `manager_rule_configs.thresholdUnit`
+    // lug'atidan, ya'ni butunlay boshqa o'q. Natijada HECH BIR pul ko'rsatkichi
+    // `formatMoney` ga tushmasdi: 118 100,00 so'm ekranda «11 810 000» ko'rinardi.
+    expect(frontendMoneyUnits.length).toBeGreaterThan(0);
+    for (const u of frontendMoneyUnits) {
+      expect(backendUnits.has(u), `MONEY_UNITS dagi «${u}» BE lug'atida yo'q`).toBe(true);
+    }
+    expect(frontendMoneyUnits).toContain('money');
+  });
+
+  it('2. ko`rsatkich nomi locale`ga qarab tanlanadi, `labelUz` qotirilgan emas', () => {
+    // Edi: RU rejimda butun ekran ruscha bo'lib, ko'rsatkichlar jadvali
+    // o'zbekcha qolardi. Qardosh ekranlar allaqachon to'g'ri qiladi.
+    expect(pageSrc).toMatch(/function metricLabel\([\s\S]*?labelRu/);
+    expect(
+      pageSrc.includes('{m.labelUz}'),
+      'JSX ichida `{m.labelUz}` qoldi — RU rejimda o`zbekcha nom chiqadi',
+    ).toBe(false);
+  });
+
+  it('3. dialog ochiq bo`lganda tezkor tugmalar O`CHADI', () => {
+    // Edi: «Rad etish» dialogi ochiq turib sabab `<select>`ida «a» bosilsa
+    // kun JIMGINA QABUL QILINARDI (jurnalda `accept stale -> accepted`), ya'ni
+    // menejer rad etmoqchi bo'lgan kun muzlatilgan holatga o'tardi.
+    expect(pageSrc).toMatch(
+      /const modalOpen = rejectOpen \|\| adjustOpen \|\| drillMetric != null/,
+    );
+    const bindings = [...pageSrc.matchAll(/useHotkey\(\s*'(?:a|r|e|arrowup|arrowdown)'/g)];
+    expect(bindings.length).toBe(5);
+    expect([...pageSrc.matchAll(/enabled:\s*!modalOpen/g)].length).toBe(5);
   });
 });
 
