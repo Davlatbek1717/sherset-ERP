@@ -2,7 +2,10 @@ import { Inject, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service.js';
 import { buildAccountability, employeeDuties } from './accountability.js';
 import {
+  LATE_ALERT_MINUTES,
   type LiveRow,
+  PICKING_STUCK_MINUTES,
+  SHIFT_LONG_HOURS,
   attendanceRow,
   buildLiveBoard,
   pickingRow,
@@ -265,12 +268,27 @@ export class LiveStatusService {
       now,
       alertCount: board.alertCount,
       counts: board.counts,
+      /**
+       * Chegaralar ekranda IZOHLANADI (4M.4): menejer «nega bu qator qizil»
+       * degan savolga javob topmasa signalga ishonmaydi. Javobda qaytadi,
+       * FE'da takrorlanmaydi — aks holda chegara ikki joyda yashab, jimgina
+       * bir-biridan uzoqlashardi.
+       */
+      thresholds: {
+        shiftLongHours: SHIFT_LONG_HOURS,
+        lateAlertMinutes: LATE_ALERT_MINUTES,
+        pickingStuckMinutes: PICKING_STUCK_MINUTES,
+      },
       rows: board.rows.map((r) => ({
         kind: r.kind,
         employeeId: r.employeeId || null,
         employeeName: r.employeeName,
         title: r.title,
+        titleKey: r.titleKey,
+        titleParams: r.titleParams,
         detail: r.detail,
+        place: r.place,
+        showDuration: r.showDuration,
         attention: r.attention,
         since: r.since,
       })),

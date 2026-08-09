@@ -404,3 +404,33 @@ export const DAILY_KPI_STATE_TONE: Record<string, StateTone> = {
 };
 export const dailyKpiStateTone = (s: string | null | undefined): StateTone =>
   resolve(DAILY_KPI_STATE_TONE, s);
+
+/**
+ * Jonli holat qatorining diqqat darajasi (4M.4 · `live-status.ts` dagi ATTENTION).
+ *
+ * `alert` — aralashuv KERAK (kechikish, 12 soatdan uzoq smena, qotib qolgan
+ * yig'ish), shuning uchun `destructive`. `ok` ataylab rangsiz: bu ekran
+ * «hammasi joyida» demaydi, normal qator faqat kontekst uchun turadi.
+ */
+export const LIVE_ATTENTION_TONE: Record<string, StateTone> = {
+  alert: 'destructive',
+  info: 'info',
+  ok: 'neutral',
+};
+export const liveAttentionTone = (a: string | null | undefined): StateTone =>
+  resolve(LIVE_ATTENTION_TONE, a);
+
+/**
+ * Xodim majburiyati turi (4M.4 · `accountability.ts` dagi DUTY).
+ *
+ * PUL majburiyatlari (`open_shift`, `cash_on_hand`) — `destructive`: yo'qolgan
+ * pulni qaytarib bo'lmaydi. Yig'ish va qabul qilinmagan KPI kunlari kutishi
+ * mumkin, shuning uchun pastroq daraja.
+ */
+export const DUTY_KIND_TONE: Record<string, StateTone> = {
+  open_shift: 'destructive',
+  cash_on_hand: 'destructive',
+  picking_open: 'warning',
+  kpi_pending: 'info',
+};
+export const dutyKindTone = (k: string | null | undefined): StateTone => resolve(DUTY_KIND_TONE, k);

@@ -1061,7 +1061,9 @@
     },
     "menejer": {
       "acceptance": "Приёмка KPI",
-      "cash_variances": "Расхождения кассы"
+      "cash_variances": "Расхождения кассы",
+      "live": "Живой статус",
+      "accountability": "Ответственность"
     }
   },
   "counterparty_activity": {
@@ -8324,6 +8326,48 @@
       "subtitle": "Каждый день каждого сотрудника проверяется и принимается вручную",
       "title": "Приёмка дневных KPI",
       "worked": "отработано {hours} ч"
+    },
+    "menejerLive": {
+      "title": "Живой статус",
+      "subtitle": "Кто сейчас на работе — в списке только то, что требует внимания",
+      "alert_count": "Требуют внимания: {count}",
+      "thresholds_note": "Пороги: смена дольше {shiftHours} ч · опоздание от {lateMinutes} мин · сборка дольше {pickingMinutes} мин",
+      "kind_shift": "Смена",
+      "kind_attendance": "Посещаемость",
+      "kind_trip": "Рейс",
+      "kind_picking": "Сборка",
+      "attention_alert": "Внимание",
+      "attention_info": "Инфо",
+      "attention_ok": "Норма",
+      "title_shift_open": "Смена открыта",
+      "title_shift_open_desk": "Смена открыта — {desk}",
+      "title_attendance_late": "Опоздал — {minutes} мин",
+      "title_attendance_on_time": "Пришёл на работу",
+      "title_trip_assigned": "Назначен",
+      "title_trip_enroute": "В пути",
+      "title_trip_arrived": "На месте",
+      "title_picking": "Собирает — {doc}",
+      "empty_title": "Живых данных нет",
+      "empty_hint": "Это не значит «всё в порядке»: за сегодня нет ни открытых смен, ни отметок посещаемости, ни рейсов, ни сборок.",
+      "no_employee": "Сотрудник не указан",
+      "duration_minutes": "{m} мин",
+      "duration_hours": "{h} ч",
+      "duration_hours_minutes": "{h} ч {m} мин"
+    },
+    "menejerDuties": {
+      "title": "Ответственность",
+      "subtitle": "Что числится за сотрудником прямо сейчас",
+      "total_cash": "Всего наличных на руках",
+      "employee_count": "Сотрудников: {count}",
+      "duty_open_shift": "Открытая смена кассы",
+      "duty_cash_on_hand": "Несданные наличные",
+      "duty_picking_open": "Незавершённая сборка",
+      "duty_kpi_pending": "Непринятые дни KPI",
+      "duty_count": "{count} шт.",
+      "empty_title": "Незакрытых обязательств нет",
+      "empty_hint": "Ни за кем не числится открытая смена, наличные, незавершённая сборка или непринятый день KPI.",
+      "no_employee": "Сотрудник не указан",
+      "scope_note": "Список неполный: реестра оборудования (телефоны, сканеры, ключи) в системе нет, поэтому оборудование здесь не показывается — «0 единиц» давало бы ложную уверенность."
     },
     "posLock": {
       "hint": "Введите PIN. Корзина сохранена — повторно вводить товары не нужно.",

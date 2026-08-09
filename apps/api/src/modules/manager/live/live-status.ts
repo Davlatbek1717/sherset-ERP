@@ -33,13 +33,47 @@ export const LIVE_KIND = {
 
 export type LiveKind = (typeof LIVE_KIND)[keyof typeof LIVE_KIND];
 
+/**
+ * Sarlavha KALITI — ekran matni serverda yopilmaydi (MK03).
+ *
+ * Quyidagi `title`/`detail` maydonlari o'zbekcha TAYYOR qator qaytaradi.
+ * Ular saqlanadi (UI-bo'lmagan iste'molchilar: log, kelajakdagi Telegram
+ * xulosasi), lekin **FE ularni ishlatmaydi**: ru interfeysda o'zbekcha matn
+ * turib qolardi va hech bir gate buni ko'rmasdi — i18n gate faqat FE
+ * fayllarini skanlaydi, BE stringlarini emas. Shuning uchun har qator
+ * tarjima uchun struktura ham beradi: kalit + parametrlar.
+ */
+export const LIVE_TITLE = {
+  shiftOpen: 'shift_open',
+  shiftOpenDesk: 'shift_open_desk',
+  attendanceLate: 'attendance_late',
+  attendanceOnTime: 'attendance_on_time',
+  tripAssigned: 'trip_assigned',
+  tripEnroute: 'trip_enroute',
+  tripArrived: 'trip_arrived',
+  picking: 'picking',
+} as const;
+
+export type LiveTitleKey = (typeof LIVE_TITLE)[keyof typeof LIVE_TITLE];
+
 export interface LiveRow {
   kind: LiveKind;
   employeeId: string | null;
   employeeName: string | null;
   /** Bir qatorlik holat matni — menejer birinchi shuni o'qiydi. */
   title: string;
+  /** `title` ning tarjima qilinadigan ekvivalenti (FE shuni chizadi). */
+  titleKey: LiveTitleKey;
+  /** Kalit o'rinbosarlari — kassa nomi, kechikish daqiqasi, hujjat raqami. */
+  titleParams: Record<string, string | number>;
   detail: string | null;
+  /**
+   * Joy/manzil — detal qatorining TARJIMASIZ qismi (faqat reysda bo'ladi).
+   * Tarjima kerak emas: bu foydalanuvchi kiritgan manzil matni.
+   */
+  place: string | null;
+  /** Detalda davomiylik ko'rsatiladimi (mijoz `since` dan o'zi hisoblaydi). */
+  showDuration: boolean;
   attention: Attention;
   /** Boshlangan payt — «qancha vaqtdan beri» shundan hisoblanadi. */
   since: Date | null;
@@ -100,7 +134,11 @@ export function shiftRow(s: OpenShiftInput, now: Date): LiveRow {
     employeeId: s.employeeId,
     employeeName: s.employeeName,
     title: s.cashDeskName ? `Smena ochiq — ${s.cashDeskName}` : 'Smena ochiq',
+    titleKey: s.cashDeskName ? LIVE_TITLE.shiftOpenDesk : LIVE_TITLE.shiftOpen,
+    titleParams: s.cashDeskName ? { desk: s.cashDeskName } : {},
     detail: durationLabel(s.openedAt, now),
+    place: null,
+    showDuration: true,
     // Uzoq ochiq smena — pul javobgarligi cho'zilgani, shuning uchun alert.
     attention: long ? ATTENTION.alert : ATTENTION.ok,
     since: s.openedAt,
@@ -121,7 +159,13 @@ export function attendanceRow(a: AttendanceInput): LiveRow {
     employeeId: a.employeeId,
     employeeName: a.employeeName,
     title: late ? `Kechikdi — ${a.lateMinutes} daq` : 'Ishga keldi',
+    titleKey: late ? LIVE_TITLE.attendanceLate : LIVE_TITLE.attendanceOnTime,
+    titleParams: late ? { minutes: a.lateMinutes } : {},
     detail: null,
+    place: null,
+    // «Keldi» — bir martalik hodisa; davomiylik ko'rsatish uni «shuncha
+    // vaqtdan beri kechikmoqda» deb yolg'on o'qitardi.
+    showDuration: false,
     attention:
       a.lateMinutes >= LATE_ALERT_MINUTES ? ATTENTION.alert : late ? ATTENTION.info : ATTENTION.ok,
     since: a.checkInTime,
@@ -145,9 +189,18 @@ export function tripRow(t: TripInput, now: Date): LiveRow {
     employeeName: t.driverName,
     title:
       t.status === 'enroute' ? "Yo'lda" : t.status === 'arrived' ? 'Manzilda' : 'Biriktirilgan',
+    titleKey:
+      t.status === 'enroute'
+        ? LIVE_TITLE.tripEnroute
+        : t.status === 'arrived'
+          ? LIVE_TITLE.tripArrived
+          : LIVE_TITLE.tripAssigned,
+    titleParams: {},
     detail: t.destAddress
       ? `${t.destAddress} · ${durationLabel(started, now)}`
       : durationLabel(started, now),
+    place: t.destAddress,
+    showDuration: true,
     // «Biriktirilgan» — hali yo'lga chiqmagan: shu holatda uzoq turishi
     // diqqat talab qiladi, «yo'lda» esa normal ish.
     attention:
@@ -172,7 +225,11 @@ export function pickingRow(p: PickingInput, now: Date): LiveRow {
     employeeId: p.employeeId,
     employeeName: p.employeeName,
     title: `Yig'moqda — ${p.docName}`,
+    titleKey: LIVE_TITLE.picking,
+    titleParams: { doc: p.docName },
     detail: durationLabel(p.startedAt, now),
+    place: null,
+    showDuration: true,
     attention: stuck ? ATTENTION.alert : ATTENTION.info,
     since: p.startedAt,
   };

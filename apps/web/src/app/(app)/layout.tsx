@@ -441,11 +441,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     { key: 'settings', label: tHr('settings'), href: '/hr/settings' },
   ];
 
-  // 4M.2 da bitta bo'lim: kunni qabul qilish. 4M.4–4M.9 da qo'shiladi
-  // (jonli holat · ish navbati · SLA · byudjet) — shuning uchun subnav
-  // hozircha bitta yozuvli bo'lsa ham strukturasi tayyor turadi.
+  // 4M.2 da bitta bo'lim edi (kunni qabul qilish); 4M.4 (MK03) jonli holat
+  // va javobgarlikni qo'shdi. Qolgani — 4M.5–4M.9 fazalarida.
   const menejerSubNav: SubNavItem[] = [
     { key: 'acceptance', label: tMenejer('acceptance'), href: '/menejer' },
+    // 4M TZ §6.1 — «hozir kim ishda»: diqqat talab qilgani tepada.
+    { key: 'live', label: tMenejer('live'), href: '/menejer/jonli' },
+    // 4M TZ §6.4 — «kimda nima qolgan»: pul ko'p bo'lgan tepada.
+    { key: 'accountability', label: tMenejer('accountability'), href: '/menejer/javobgarlik' },
     // Kassa TZ §8.4 — «ko'rilmagan farq aktlari» menejerning kunlik ishi.
     { key: 'cash_variances', label: tMenejer('cash_variances'), href: '/menejer/kassa-farqlari' },
   ];

@@ -1061,7 +1061,9 @@
     },
     "menejer": {
       "acceptance": "KPI qabuli",
-      "cash_variances": "Kassa farqlari"
+      "cash_variances": "Kassa farqlari",
+      "live": "Jonli holat",
+      "accountability": "Javobgarlik"
     }
   },
   "counterparty_activity": {
@@ -8324,6 +8326,48 @@
       "subtitle": "Har xodimning har kuni qo`lda ko`riladi va qabul qilinadi",
       "title": "Kunlik KPI qabuli",
       "worked": "{hours} soat ishlagan"
+    },
+    "menejerLive": {
+      "title": "Jonli holat",
+      "subtitle": "Hozir kim ishda — ro`yxatda faqat diqqat talab qiladigani",
+      "alert_count": "Diqqat talab qiladi: {count}",
+      "thresholds_note": "Chegaralar: smena {shiftHours} soatdan uzoq · kechikish {lateMinutes} daqiqadan · yig`ish {pickingMinutes} daqiqadan uzoq",
+      "kind_shift": "Smena",
+      "kind_attendance": "Davomat",
+      "kind_trip": "Reys",
+      "kind_picking": "Yig`ish",
+      "attention_alert": "Diqqat",
+      "attention_info": "Ma`lumot",
+      "attention_ok": "Normal",
+      "title_shift_open": "Smena ochiq",
+      "title_shift_open_desk": "Smena ochiq — {desk}",
+      "title_attendance_late": "Kechikdi — {minutes} daq",
+      "title_attendance_on_time": "Ishga keldi",
+      "title_trip_assigned": "Biriktirilgan",
+      "title_trip_enroute": "Yo`lda",
+      "title_trip_arrived": "Manzilda",
+      "title_picking": "Yig`moqda — {doc}",
+      "empty_title": "Jonli ma`lumot yo`q",
+      "empty_hint": "Bu «hammasi joyida» degani EMAS: bugun ochiq smena ham, davomat belgisi ham, reys ham, yig`ish ham topilmadi.",
+      "no_employee": "Xodim ko`rsatilmagan",
+      "duration_minutes": "{m} daq",
+      "duration_hours": "{h} soat",
+      "duration_hours_minutes": "{h} soat {m} daq"
+    },
+    "menejerDuties": {
+      "title": "Javobgarlik",
+      "subtitle": "Hozir xodim zimmasida nima turibdi",
+      "total_cash": "Qo`ldagi jami naqd",
+      "employee_count": "Xodimlar: {count}",
+      "duty_open_shift": "Ochiq kassa smenasi",
+      "duty_cash_on_hand": "Topshirilmagan naqd",
+      "duty_picking_open": "Tugallanmagan yig`ish",
+      "duty_kpi_pending": "Qabul qilinmagan KPI kunlari",
+      "duty_count": "{count} ta",
+      "empty_title": "Yopilmagan majburiyat yo`q",
+      "empty_hint": "Hech kimda ochiq smena, topshirilmagan naqd, tugallanmagan yig`ish yoki qabul qilinmagan KPI kuni yo`q.",
+      "no_employee": "Xodim ko`rsatilmagan",
+      "scope_note": "Ro`yxat to`liq emas: tizimda jihoz (telefon, skaner, kalit) reyestri yo`q, shuning uchun jihoz bu yerda ko`rsatilmaydi — «0 ta jihoz» yolg`on ishonch berardi."
     },
     "posLock": {
       "hint": "PIN kiriting. Savat saqlangan — tovarlarni qaytadan terish shart emas.",

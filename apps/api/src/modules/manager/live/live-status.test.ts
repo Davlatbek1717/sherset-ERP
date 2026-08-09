@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   ATTENTION,
   LIVE_KIND,
+  LIVE_TITLE,
   type LiveRow,
   attendanceRow,
   buildLiveBoard,
@@ -137,43 +138,31 @@ describe('pickingRow — omborchi', () => {
 });
 
 describe('buildLiveBoard — tartib va sanoq', () => {
+  /** Tartib sinovi uchun mazmunsiz qator — faqat `attention`/`since` muhim. */
+  const stub = (
+    kind: LiveRow['kind'],
+    employeeId: string,
+    attention: LiveRow['attention'],
+    since: Date,
+  ): LiveRow => ({
+    kind,
+    employeeId,
+    employeeName: employeeId.toUpperCase(),
+    title: employeeId,
+    titleKey: LIVE_TITLE.shiftOpen,
+    titleParams: {},
+    detail: null,
+    place: null,
+    showDuration: false,
+    attention,
+    since,
+  });
+
   const rows: LiveRow[] = [
-    {
-      kind: LIVE_KIND.shift,
-      employeeId: 'a',
-      employeeName: 'A',
-      title: 's',
-      detail: null,
-      attention: ATTENTION.ok,
-      since: ago(60),
-    },
-    {
-      kind: LIVE_KIND.trip,
-      employeeId: 'b',
-      employeeName: 'B',
-      title: 't',
-      detail: null,
-      attention: ATTENTION.alert,
-      since: ago(30),
-    },
-    {
-      kind: LIVE_KIND.picking,
-      employeeId: 'c',
-      employeeName: 'C',
-      title: 'p',
-      detail: null,
-      attention: ATTENTION.info,
-      since: ago(90),
-    },
-    {
-      kind: LIVE_KIND.trip,
-      employeeId: 'd',
-      employeeName: 'D',
-      title: 't2',
-      detail: null,
-      attention: ATTENTION.alert,
-      since: ago(200),
-    },
+    stub(LIVE_KIND.shift, 'a', ATTENTION.ok, ago(60)),
+    stub(LIVE_KIND.trip, 'b', ATTENTION.alert, ago(30)),
+    stub(LIVE_KIND.picking, 'c', ATTENTION.info, ago(90)),
+    stub(LIVE_KIND.trip, 'd', ATTENTION.alert, ago(200)),
   ];
 
   it('ALERT qatorlar TEPADA', () => {
@@ -211,5 +200,124 @@ describe('buildLiveBoard — tartib va sanoq', () => {
     const original = [...rows];
     buildLiveBoard(rows);
     expect(rows).toEqual(original);
+  });
+});
+
+/**
+ * MK03 — ekran matni SERVERDA yopilmaydi.
+ *
+ * `title`/`detail` o'zbekcha tayyor qator qaytaradi. Agar FE shuni chizsa,
+ * ru interfeysда o'zbekcha matn turardi va **hech bir gate buni ko'rmasdi**
+ * (i18n gate faqat FE fayllarini skanlaydi, BE stringlarini emas). Shuning
+ * uchun har qator tarjima uchun STRUKTURA ham qaytaradi: kalit + parametrlar.
+ */
+describe('MK03: tarjima uchun strukturaviy maydonlar', () => {
+  it('smena — kassa nomi PARAMETR, sarlavhaga yopishtirilmaydi', () => {
+    const r = shiftRow(
+      { employeeId: 'e1', employeeName: 'A', cashDeskName: 'Kassa 1', openedAt: ago(60) },
+      NOW,
+    );
+    expect(r.titleKey).toBe(LIVE_TITLE.shiftOpenDesk);
+    expect(r.titleParams).toEqual({ desk: 'Kassa 1' });
+    expect(r.showDuration).toBe(true);
+  });
+
+  it('kassasiz smena — boshqa kalit (parametrsiz jumla)', () => {
+    const r = shiftRow(
+      { employeeId: 'e1', employeeName: 'A', cashDeskName: null, openedAt: ago(60) },
+      NOW,
+    );
+    expect(r.titleKey).toBe(LIVE_TITLE.shiftOpen);
+    expect(r.titleParams).toEqual({});
+  });
+
+  it('kechikish — daqiqa PARAMETR', () => {
+    const r = attendanceRow({
+      employeeId: 'e1',
+      employeeName: 'A',
+      checkInTime: ago(30),
+      lateMinutes: 7,
+    });
+    expect(r.titleKey).toBe(LIVE_TITLE.attendanceLate);
+    expect(r.titleParams).toEqual({ minutes: 7 });
+    // Davomat qatorida davomiylik ko'rsatilmaydi — «keldi» bir martalik hodisa.
+    expect(r.showDuration).toBe(false);
+  });
+
+  it('vaqtida kelgan — alohida kalit', () => {
+    const r = attendanceRow({
+      employeeId: 'e1',
+      employeeName: 'A',
+      checkInTime: ago(30),
+      lateMinutes: 0,
+    });
+    expect(r.titleKey).toBe(LIVE_TITLE.attendanceOnTime);
+    expect(r.titleParams).toEqual({});
+  });
+
+  it('reys — holat kalitga, manzil `place` ga (matnga qo`shilmaydi)', () => {
+    const base = {
+      driverId: 'd1',
+      driverName: 'K',
+      destAddress: 'Chilonzor 5',
+      assignedAt: ago(30),
+      startedAt: ago(20),
+    };
+    expect(tripRow({ ...base, status: 'enroute' }, NOW).titleKey).toBe(LIVE_TITLE.tripEnroute);
+    expect(tripRow({ ...base, status: 'arrived' }, NOW).titleKey).toBe(LIVE_TITLE.tripArrived);
+    const assigned = tripRow({ ...base, status: 'assigned' }, NOW);
+    expect(assigned.titleKey).toBe(LIVE_TITLE.tripAssigned);
+    expect(assigned.place).toBe('Chilonzor 5');
+    expect(assigned.showDuration).toBe(true);
+  });
+
+  it('manzilsiz reysda `place` NULL (bo`sh satr emas)', () => {
+    const r = tripRow(
+      {
+        driverId: 'd1',
+        driverName: 'K',
+        destAddress: null,
+        status: 'enroute',
+        assignedAt: ago(30),
+        startedAt: ago(5),
+      },
+      NOW,
+    );
+    expect(r.place).toBeNull();
+  });
+
+  it('yig`ish — hujjat raqami PARAMETR', () => {
+    const r = pickingRow(
+      { employeeId: 'w1', employeeName: 'O', docName: 'ZAK-001', startedAt: ago(5) },
+      NOW,
+    );
+    expect(r.titleKey).toBe(LIVE_TITLE.picking);
+    expect(r.titleParams).toEqual({ doc: 'ZAK-001' });
+    expect(r.showDuration).toBe(true);
+  });
+
+  it('HAR kalit `LIVE_TITLE` ro`yxatidan — erkin string emas', () => {
+    // FE tarjima jadvali shu ro'yxatga qulflanadi (web drift-lock testi);
+    // ro'yxatdan tashqari kalit ekranda xom `live_title.xxx` bo'lib chiqardi.
+    const known = new Set<string>(Object.values(LIVE_TITLE));
+    const produced = [
+      shiftRow({ employeeId: 'e', employeeName: null, cashDeskName: 'K', openedAt: ago(1) }, NOW),
+      shiftRow({ employeeId: 'e', employeeName: null, cashDeskName: null, openedAt: ago(1) }, NOW),
+      attendanceRow({ employeeId: 'e', employeeName: null, checkInTime: ago(1), lateMinutes: 0 }),
+      attendanceRow({ employeeId: 'e', employeeName: null, checkInTime: ago(1), lateMinutes: 9 }),
+      tripRow(
+        {
+          driverId: 'd',
+          driverName: null,
+          status: 'assigned',
+          destAddress: null,
+          assignedAt: ago(1),
+          startedAt: null,
+        },
+        NOW,
+      ),
+      pickingRow({ employeeId: null, employeeName: null, docName: 'X', startedAt: ago(1) }, NOW),
+    ];
+    for (const r of produced) expect(known.has(r.titleKey)).toBe(true);
   });
 });
