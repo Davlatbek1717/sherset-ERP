@@ -179,37 +179,38 @@ Belgilar: 🗄️ migratsiya · 🌐 brauzer/QA · 📝 kodsiz · ⛔ qaror kutm
 
 | # | Bir vaqtda beriladigan fazalar |
 |---|---|
-| **1** | **F001** 🗄️ `Branch` modeli + migratsiya (bitta «Asosiy» filial)<br>**F010** X2: kassir kesimi hisobotlarda (hujjat egasidan ajratilgan<br>**F019** Migratsiya 1–2-qadam: zona/yacheyka generatsiya + backfill<br>**F042** Webhook qabul qilish (imzo + idempotentlik + navbat) |
-| **2** | **F002** 🗄️ `Store`/`CashDesk`/`Employee` filialga bog'lanishi + filia<br>**F020** Migratsiya 3-qadam: dual-write + kunlik farq monitoringi<br>**F043** Yetkazish: haydovchi biriktirish + holat + naqd topshirish<br>**F047** Davomat manbalari: kassir/haydovchi smenasi → attendance |
-| **3** | **F003** 🗄️ Hujjatlarda `branchId` muhrlash + backfill<br>**F057** `docs/moysklad-reference` capture'larini tiklash<br>**F058** Parity foizlarini `climart-adoption` da qayta o'lchash<br>**F059** List toolbar: qolgan 37 sahifa |
-| **4** | **F004** 🗄️ Narx dvigateli (shartnoma → mijoz → guruh → default)<br>**F060** Navigation graph (0%)<br>**F067** Vizual parity metodikasi va o'lchov harness'i<br>**F088** 📝⛔B5 TZ taxminlarini reviziya qilish (egasi bilan) |
+| **1** | **F001** 🗄️ `Branch` modeli + migratsiya (bitta «Asosiy» filial) ☑ HIS<br>**F010** X2: kassir kesimi hisobotlarda (hujjat egasidan ajratilgan<br>**F019** Migratsiya 1–2-qadam: zona/yacheyka generatsiya + backfill<br>**F042** Webhook qabul qilish (imzo + idempotentlik + navbat) ☑ HIS |
+| **2** | **F002** 🗄️ `Store`/`CashDesk`/`Employee` filialga bog'lanishi + filia<br>**F043** Yetkazish: haydovchi biriktirish + holat + naqd topshirish<br>**F047** Davomat manbalari: kassir/haydovchi smenasi → attendance<br>**F057** `docs/moysklad-reference` capture'larini tiklash |
+| **3** | **F003** 🗄️ Hujjatlarda `branchId` muhrlash + backfill<br>**F058** Parity foizlarini `climart-adoption` da qayta o'lchash<br>**F059** List toolbar: qolgan 37 sahifa<br>**F060** Navigation graph (0%) |
+| **4** | **F004** 🗄️ Narx dvigateli (shartnoma → mijoz → guruh → default)<br>**F067** Vizual parity metodikasi va o'lchov harness'i<br>**F088** 📝⛔B5 TZ taxminlarini reviziya qilish (egasi bilan) |
 | **5** | **F005** 🗄️ Mijoz egaligi: `ownerId` + bildirishnoma + 90-kun<br>**F040** Hujjatlar: hisob avtomatik + EDO faktura<br>**F068** Vizual 1:1 · cohort A (Production-core)<br>**F069** Vizual 1:1 · cohort B (Stock + internal) |
 | **6** | **F006** 🗄️ Bonus dvigateli (4 qoida) + `BonusAccrual`<br>**F038** Voronka + qo'ng'iroq/vazifa rejasi (sotuvchi paneli)<br>**F041** MXIK tekshiruvi (B2G talabi)<br>**F070** Vizual 1:1 · cohort C (Production-config) |
 | **7** | **F007** 🗄️ `HrPosition.paySchemeConfig` + sxema hal qiluvchi (4 tur)<br>**F062** 📝 F2 (B2B dilerlar kabineti) TZ'si<br>**F071** Vizual 1:1 · cohort D (Money / returns)<br>**F072** Vizual 1:1 · cohort E (Retail) |
 | **8** | **F008** Z2: bonus bazasi lavozimga qarab + kassir korreksiyasi<br>**F011** 🗄️ Rollup jadvallari + tungi cron<br>**F049** Haydovchi: yetkazma ↔ buyurtma + ish birligiga oylik<br>**F063** 📝 F2 B2B kabinetni qurish (meta-faza) |
 | **9** | **F009** Z1: dvigatel → `Payroll` hujjati avtomatik<br>**F012** 🗄️ Rollup qayta qurish CLI + `RollupRebuildQueue`<br>**F013** Rol bo'yicha boshqaruv panellari<br>**F014** Xodim shaxsiy ekrani («Mening natijam») |
-| **10** | **F015** Xodim kesimidagi 4 blok hisoboti<br>**F021** 🗄️ Ko'p yacheyka: `isPrimary` + `extraBins`<br>**F054** Analitika: rollupga `branchId` + filiallar solishtiruvi<br>**F064** 📝 F3 (B2C onlayn do'kon) TZ'si |
-| **11** | **F016** Xodim kartasi (bitta ekran) — 4M.4 bilan birlashtirish<br>**F018** 🌐 3-Analitika Phase-2 QA (panellar va rolluplar)<br>**F022** Migratsiya 4-qadam: yacheyka intizomi (ogohlantirish) + sk<br>**F055** Filial bo'yicha plan/KPI |
-| **12** | **F017** 🌐 T5 Phase-2 QA: bonus → oylik zanjiri<br>**F025** Joylashtirish taklifi (putaway) + skaner tasdiqlash<br>**F065** 📝 F3 B2C do'konni qurish (meta-faza)<br>**F066** 📝 F4 (Marketplace platformasi) TZ'si |
-| **13** | **F023** 🌐 Migratsiya 5-qadam: yig'ish `StockByCell` dan + solishtiri<br>**F073** Vizual 1:1 · cohort F (Catalog items)<br>**F074** Vizual 1:1 · cohort G (CRM)<br>**F075** Vizual 1:1 · cohort H (E-commerce / pricing) |
-| **14** | **F024** 🗄️ Qisman yig'ish + kassirga qaytish + `PickingError`<br>**F026** Inventarizatsiya: yacheyka skaneri · sikl · muzlatish · sa<br>**F076** Vizual 1:1 · cohort I (HR)<br>**F077** Vizual 1:1 · cohort J (Analytics) |
-| **15** | **F027** Omborchi ish o'lchovlari (tezlik + xato)<br>**F028** 🗄️ Yacheykalararo ko'chirish (`CellTransfer`)<br>**F078** Vizual 1:1 · cohort K (Settings-finance)<br>**F079** Vizual 1:1 · cohort L (Settings-org) |
-| **16** | **F029** Migratsiya 6-qadam: intizom majburiy + eski atribut faqat-<br>**F031** 🗄️ `SupplierClaim` + qabulda qayd (kam/rad) + avtomatik da'vo<br>**F053** Filiallararo ko'chirish: «yo'lda» holati + qabul tasdig'i<br>**F080** Vizual 1:1 · ro'yxat sahifalari guruh 1 (L1–L3) |
-| **17** | **F030** 🌐 7-Ombor Phase-2 QA (real brauzer + real skaner)<br>**F032** ⛔B5 Rad etish oqibati: butun yetkazma qaytishi + `invoice-in` <br>**F035** Narx tarixi va barqarorlik tahlili + ogohlantirish<br>**F081** Vizual 1:1 · ro'yxat sahifalari guruh 2 (L4–L6) |
-| **18** | **F033** 🗄️ `SupplierPortalToken` + ta'minotchi oynasi<br>**F082** Vizual 1:1 · ro'yxat sahifalari guruh 3 (L7–L9)<br>**F083** Vizual 1:1 · ro'yxat sahifalari guruh 4 (L10–L12) |
-| **19** | **F034** Ta'minotchi oynasida o'zaro balans + to'lov jadvali + akt-<br>**F036** Da'volar ta'minotchi oynasida + javob yozish<br>**F039** 🗄️ Kommersiya taklifi (KP): `CommercialOffer` + PDF + Telegra<br>**F084** Vizual parity yakuniy o'lchovi + navigatsiya 1:1 |
-| **20** | **F037** 🌐 5-Ta'minotchilar Phase-2 QA<br>**F087** Xavfsizlik auditi (tashqi kirish nuqtalari) |
-| **21** | **F044** 🌐 2-Onlayn sotuv Phase-2 QA |
-| **22** | **F045** 🗄️ `HrLeaveRequest`: ta'til so'rovi + tasdiq + davomat istisn |
-| **23** | **F046** 🗄️ `HrAdvanceRequest`: avans + kassa RKO + oylikdan ushlash<br>**F048** Avtomatik jarima qoidalari + istisnolar |
-| **24** | **F050** 🌐 6-HR Phase-2 QA |
-| **25** | **F051** 🗄️ Tovar tahlili: o'lik zaxira + tugash xavfi + buyurtma tavs |
-| **26** | **F052** Marja × aylanma matritsasi + yo'qotishlar<br>**F056** 🌐 8-Filial Phase-2 QA |
-| **27** | **F061** 🌐 Conv-6 data-bog'liq vizuallar browser-smoke (3/13)<br>**F085** Prod-hajmdagi ma'lumot bilan ishlash (sekin so'rovlarni to |
-| **28** | **F086** Yuklama testi (bir vaqtda ishlovchi foydalanuvchilar) |
-| **29** | **F089** ⛔B5 YAKUNIY: «100% ta'rifi» tekshiruvi + prod deploy verifikat |
+| **10** | **F015** Xodim kesimidagi 4 blok hisoboti<br>**F019b** 🗄️ `SkladKeeper.zoneId` + `skladNo` → `StoreZone` ulanishi<br>**F054** Analitika: rollupga `branchId` + filiallar solishtiruvi<br>**F064** 📝 F3 (B2C onlayn do'kon) TZ'si |
+| **11** | **F016** Xodim kartasi (bitta ekran) — 4M.4 bilan birlashtirish<br>**F018** 🌐 3-Analitika Phase-2 QA (panellar va rolluplar)<br>**F020** Migratsiya 3-qadam: dual-write + kunlik farq monitoringi<br>**F055** Filial bo'yicha plan/KPI |
+| **12** | **F017** 🌐 T5 Phase-2 QA: bonus → oylik zanjiri<br>**F065** 📝 F3 B2C do'konni qurish (meta-faza)<br>**F066** 📝 F4 (Marketplace platformasi) TZ'si<br>**F073** Vizual 1:1 · cohort F (Catalog items) |
+| **13** | **F021** 🗄️ Ko'p yacheyka: `isPrimary` + `extraBins`<br>**F074** Vizual 1:1 · cohort G (CRM)<br>**F075** Vizual 1:1 · cohort H (E-commerce / pricing)<br>**F076** Vizual 1:1 · cohort I (HR) |
+| **14** | **F022** Migratsiya 4-qadam: yacheyka intizomi (ogohlantirish) + sk<br>**F028** 🗄️ Yacheykalararo ko'chirish (`CellTransfer`)<br>**F077** Vizual 1:1 · cohort J (Analytics)<br>**F078** Vizual 1:1 · cohort K (Settings-finance) |
+| **15** | **F023** 🌐 Migratsiya 5-qadam: yig'ish `StockByCell` dan + solishtiri<br>**F025** Joylashtirish taklifi (putaway) + skaner tasdiqlash<br>**F053** Filiallararo ko'chirish: «yo'lda» holati + qabul tasdig'i<br>**F079** Vizual 1:1 · cohort L (Settings-org) |
+| **16** | **F024** 🗄️ Qisman yig'ish + kassirga qaytish + `PickingError`<br>**F026** Inventarizatsiya: yacheyka skaneri · sikl · muzlatish · sa<br>**F080** Vizual 1:1 · ro'yxat sahifalari guruh 1 (L1–L3) |
+| **17** | **F027** Omborchi ish o'lchovlari (tezlik + xato)<br>**F031** 🗄️ `SupplierClaim` + qabulda qayd (kam/rad) + avtomatik da'vo<br>**F081** Vizual 1:1 · ro'yxat sahifalari guruh 2 (L4–L6)<br>**F082** Vizual 1:1 · ro'yxat sahifalari guruh 3 (L7–L9) |
+| **18** | **F029** Migratsiya 6-qadam: intizom majburiy + eski atribut faqat-<br>**F032** ⛔B5 Rad etish oqibati: butun yetkazma qaytishi + `invoice-in` <br>**F033** 🗄️ `SupplierPortalToken` + ta'minotchi oynasi<br>**F035** Narx tarixi va barqarorlik tahlili + ogohlantirish |
+| **19** | **F030** 🌐 7-Ombor Phase-2 QA (real brauzer + real skaner)<br>**F034** Ta'minotchi oynasida o'zaro balans + to'lov jadvali + akt-<br>**F036** Da'volar ta'minotchi oynasida + javob yozish<br>**F083** Vizual 1:1 · ro'yxat sahifalari guruh 4 (L10–L12) |
+| **20** | **F037** 🌐 5-Ta'minotchilar Phase-2 QA<br>**F084** Vizual parity yakuniy o'lchovi + navigatsiya 1:1<br>**F087** Xavfsizlik auditi (tashqi kirish nuqtalari) |
+| **21** | **F039** 🗄️ Kommersiya taklifi (KP): `CommercialOffer` + PDF + Telegra |
+| **22** | **F044** 🌐 2-Onlayn sotuv Phase-2 QA |
+| **23** | **F045** 🗄️ `HrLeaveRequest`: ta'til so'rovi + tasdiq + davomat istisn |
+| **24** | **F046** 🗄️ `HrAdvanceRequest`: avans + kassa RKO + oylikdan ushlash<br>**F048** Avtomatik jarima qoidalari + istisnolar |
+| **25** | **F050** 🌐 6-HR Phase-2 QA |
+| **26** | **F051** 🗄️ Tovar tahlili: o'lik zaxira + tugash xavfi + buyurtma tavs |
+| **27** | **F052** Marja × aylanma matritsasi + yo'qotishlar<br>**F056** 🌐 8-Filial Phase-2 QA |
+| **28** | **F061** 🌐 Conv-6 data-bog'liq vizuallar browser-smoke (3/13)<br>**F085** Prod-hajmdagi ma'lumot bilan ishlash (sekin so'rovlarni to |
+| **29** | **F086** Yuklama testi (bir vaqtda ishlovchi foydalanuvchilar) |
+| **30** | **F089** ⛔B5 YAKUNIY: «100% ta'rifi» tekshiruvi + prod deploy verifikat |
 
-**Jami 29 paket** (89 faza).
+**Jami 30 paket** (90 faza).
 
 ---
 
@@ -682,7 +683,7 @@ hamon «biriktirilmagan» varaqqa tushadi.
 
 ### F020 — Migratsiya 3-qadam: dual-write + kunlik farq monitoringi ☐ HISOBOT
 **Bo'lim/blok:** 7-B3 · **TZ:** §4 (3-qadam)
-**Ustuvorlik:** P1 · **Bog'liqlik:** **F019**
+**Ustuvorlik:** P1 · **Bog'liqlik:** **F019b**
 **Qamrov:** hujjatlar (`supply`, `enter`, `demand`, `retail-sale`, `loss`, `move`,
 `sales-return`, `purchase-return`) **ham eski atributni, ham `StockByCell` ni** yangilaydi ·
 kunlik farq monitoringi (cron + hisobot) · bayroq bilan o'chiriladigan.
