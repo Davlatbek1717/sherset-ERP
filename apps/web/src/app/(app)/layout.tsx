@@ -461,6 +461,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     { key: 'stock_signals', label: tMenejer('stock_signals'), href: '/menejer/zaxira' },
     // 4M TZ §8 — narx o'zgarishi tarixi/chegarasi. BLOKLAMAYDI, ko'rsatadi.
     { key: 'price_control', label: tMenejer('price_control'), href: '/menejer/narx-nazorati' },
+    // 4M TZ §8.1/4 (MK18) — narx O'ZGARISHI emas, narx QIYMATI mantiqsizligi
+    // (o'nlik xatosi, nol narx, poldan past). Narx nazoratidan keyin ataylab:
+    // ikkalasi narx haqida, lekin bu yerda sub'ekt sotilgan QATOR.
+    { key: 'price_errors', label: tMenejer('price_errors'), href: '/menejer/xato-narx' },
     // 4M §7 (M-Q7) — «menejerni kim nazorat qiladi»: egaga haftalik xulosa.
     { key: 'weekly_summary', label: tMenejer('weekly_summary'), href: '/menejer/haftalik' },
     // 4M TZ §2.4/§0.2 (MK09) — «bu raqamga qanchalik ishonish mumkin».

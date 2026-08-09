@@ -3,7 +3,11 @@ import type { AuthenticatedUser } from '../../auth/auth.schema.js';
 import { CurrentUser } from '../../auth/current-user.decorator.js';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard.js';
 import { RequirePermission } from '../../permissions/require-permission.decorator.js';
-import { PriceChangeQuerySchema, StockSignalQuerySchema } from './manager-inventory.schema.js';
+import {
+  PriceChangeQuerySchema,
+  PriceErrorQuerySchema,
+  StockSignalQuerySchema,
+} from './manager-inventory.schema.js';
 import { ManagerInventoryService } from './manager-inventory.service.js';
 
 /**
@@ -35,5 +39,17 @@ export class ManagerInventoryController {
   @RequirePermission({ entity: 'product', action: 'view' })
   async priceChanges(@CurrentUser() user: AuthenticatedUser, @Query() query: unknown) {
     return this.service.priceChanges(user.accountId, PriceChangeQuerySchema.parse(query ?? {}));
+  }
+
+  /**
+   * MK18 — sotilgan qatorlardagi **mantiqsiz narx qiymatlari**.
+   *
+   * `price-changes` dan farqi: u narx **o'zgarishini** ko'radi, bu esa
+   * narxning **o'zi mantiqlimi** deb so'raydi. Ikkalasi ham bloklamaydi.
+   */
+  @Get('price-errors')
+  @RequirePermission({ entity: 'product', action: 'view' })
+  async priceErrors(@CurrentUser() user: AuthenticatedUser, @Query() query: unknown) {
+    return this.service.priceErrors(user.accountId, PriceErrorQuerySchema.parse(query ?? {}));
   }
 }

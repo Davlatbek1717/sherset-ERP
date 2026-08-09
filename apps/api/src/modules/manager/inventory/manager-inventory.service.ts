@@ -1,5 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service.js';
+import {
+  type SalePricesJson,
+  resolveBasePriceMinor,
+  resolveWholesaleMinor,
+} from '../../retail-sale/price-snapshot.js';
 import { computePerUnitCost, parseDecimalScaled } from '../../shared/decimal.js';
 import {
   DEFAULT_PRICE_THRESHOLD_PERCENT,
@@ -7,6 +12,15 @@ import {
   extractPriceChanges,
   reviewPriceChanges,
 } from './price-change-control.js';
+import {
+  DEFAULT_PRICE_ERROR_THRESHOLDS,
+  type PriceErrorDocType,
+  type PriceErrorReview,
+  type PriceErrorThresholds,
+  type SoldLineInput,
+  reviewSoldLinePrices,
+  summarizePriceErrors,
+} from './price-error-control.js';
 import {
   DEFAULT_STOCK_THRESHOLDS,
   type StockSignalInput,
@@ -56,6 +70,17 @@ export const INFLOW_DOC_TYPES = [
 export const STOCK_SCAN_CAP = 5000;
 /** Bir so'rovda ko'riladigan maksimal audit qatori. Kesilsa — OSHKORA. */
 export const PRICE_AUDIT_CAP = 1000;
+/** Bir so'rovda ko'riladigan maksimal sotuv qatori (har hujjat turi uchun). */
+export const SOLD_LINE_CAP = 2000;
+
+/**
+ * Haqiqiy sotuv sanaladigan chek holatlari. `refunded` ham KIRADI: to'liq
+ * qaytarilgan chek shu holatga o'tadi, lekin narxi o'sha kuni yozilgan va xato
+ * bo'lsa xato bo'lib qolgan. `refundedFromId: null` — oyna cheklarni chiqaradi,
+ * aks holda bitta xato narx ikki marta ko'rinardi (repo bo'ylab bir xil naqsh:
+ * `retail-sale.service.ts` sotuv jamini shunday sanaydi).
+ */
+export const SOLD_RETAIL_STATES = ['posted', 'refunded'] as const;
 
 export interface StockKeyed {
   storeId: string;
@@ -179,6 +204,116 @@ export interface PriceChangeQuery {
   thresholdPercent?: number;
   productId?: string;
   limit?: number;
+}
+
+export interface PriceErrorQuery {
+  days?: number;
+  decimalTolerancePercent?: number;
+  outlierPercent?: number;
+  minAverageSample?: number;
+  /** Faqat shu hujjat turi. Berilmasa — ikkalasi. */
+  docType?: PriceErrorDocType;
+  productId?: string;
+  limit?: number;
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// MK18 — xato narx: DB shakllarini sof modul kirishiga aylantirish
+// ───────────────────────────────────────────────────────────────────────────
+
+/** Bitta sotuv qatorining DB'dan o'qilgan xom shakli. */
+export interface SoldLineRowShape {
+  docType: PriceErrorDocType;
+  docId: string;
+  docName: string | null;
+  lineId: string;
+  assortmentKind: 'product' | 'variant';
+  /** Sotilgan birlik id'si (tovar yoki modifikatsiya). Xizmat qatorida `null`. */
+  assortmentId: string | null;
+  assortmentName: string | null;
+  quantity: string;
+  priceMinor: bigint;
+  discountPercent: number;
+  /** Qatorga MUZLATILGAN tan narx. */
+  costMinor: bigint | null;
+  /**
+   * Qatorga MUZLATILGAN karta narxi — faqat chekda bor (`basePriceMinor`).
+   * Yuk xatida yo'q, u yerda kartaning BUGUNGI narxi ishlatiladi.
+   */
+  frozenBaseMinor: bigint | null;
+  soldById: string | null;
+  soldByName: string | null;
+  at: Date;
+}
+
+/** Tovar/modifikatsiya kartasidan olingan mo'ljallar. */
+export interface CardPrices {
+  baseMinor: bigint | null;
+  wholesaleMinor: bigint | null;
+}
+
+/** `product:<id>` / `variant:<id>` — ikki jadval, bitta kalit fazosi. */
+export const cardKeyOf = (kind: 'product' | 'variant', id: string) => `${kind}:${id}`;
+
+/**
+ * Xom qatorlarni hukm kirishiga aylantiradi va **o'rtacha narx**ni shu
+ * to'plamning o'zidan hisoblaydi.
+ *
+ * O'rtacha — **leave-one-out**: qator o'z o'rtachasiga qo'shilmaydi. Aks holda
+ * 3 ta sotuvli tovarda bitta 10× xato o'rtachani o'zi ko'tarib, keyin o'sha
+ * o'rtachaga nisbatan «normal» bo'lib chiqardi — detektor o'zini o'zi ko'r
+ * qilardi.
+ *
+ * Nol/manfiy narxli qatorlar o'rtacha havzasiga KIRMAYDI: xato qiymat
+ * mo'ljalni buzmasligi kerak.
+ */
+export function assembleSoldLines(
+  rows: ReadonlyArray<SoldLineRowShape>,
+  cards: ReadonlyMap<string, CardPrices>,
+): SoldLineInput[] {
+  const pool = new Map<string, { sum: bigint; count: number }>();
+  for (const r of rows) {
+    if (r.assortmentId == null || r.priceMinor <= 0n) continue;
+    const key = cardKeyOf(r.assortmentKind, r.assortmentId);
+    const acc = pool.get(key) ?? { sum: 0n, count: 0 };
+    acc.sum += r.priceMinor;
+    acc.count += 1;
+    pool.set(key, acc);
+  }
+
+  return rows.map((r) => {
+    const key = r.assortmentId == null ? null : cardKeyOf(r.assortmentKind, r.assortmentId);
+    const card = key ? cards.get(key) : undefined;
+    const agg = key ? pool.get(key) : undefined;
+
+    // Qatorning o'zi havzada bo'lsa — uni chiqarib tashlaymiz.
+    const inPool = r.assortmentId != null && r.priceMinor > 0n;
+    const count = (agg?.count ?? 0) - (inPool ? 1 : 0);
+    const sum = (agg?.sum ?? 0n) - (inPool ? r.priceMinor : 0n);
+
+    return {
+      docType: r.docType,
+      docId: r.docId,
+      docName: r.docName,
+      lineId: r.lineId,
+      productId: r.assortmentId,
+      productName: r.assortmentName,
+      quantity: r.quantity,
+      priceMinor: r.priceMinor,
+      discountPercent: r.discountPercent,
+      costMinor: r.costMinor,
+      wholesaleMinor: card?.wholesaleMinor ?? null,
+      // Muzlatilgan narx USTUN: u aynan sotuv ondagi karta narxi. Kartaning
+      // bugungi narxi o'tgan oydagi chekni qayta baholab, o'sha paytda
+      // to'g'ri bo'lgan narxni «xato» qilib ko'rsatishi mumkin.
+      referenceMinor: r.frozenBaseMinor ?? card?.baseMinor ?? null,
+      averageMinor: count > 0 ? sum / BigInt(count) : null,
+      averageSampleCount: Math.max(0, count),
+      soldById: r.soldById,
+      soldByName: r.soldByName,
+      at: r.at,
+    };
+  });
 }
 
 const DEFAULT_WINDOW_DAYS = 30;
@@ -450,6 +585,292 @@ export class ManagerInventoryService {
       })),
     };
   }
+
+  /**
+   * MK18 — **xato narx nazorati**. Sotilgan qatorlarni ko'rib chiqadi va
+   * mantiqsiz narx qiymatlarini belgilaydi.
+   *
+   * **BLOKLAMAYDI va HECH NARSA YOZMAYDI** — faqat o'qish (TZ §5.1).
+   *
+   * Qoidalar bu yerda emas — `price-error-control.ts` da (32 test). Bu yerda
+   * faqat Prisma o'qishlari va mo'ljallarni yechish.
+   *
+   * ⚠️ **Ma'lum cheklovlar (jimgina emas — javobda ham qaytariladi):**
+   * 1. **Yuk xatida mo'ljal — kartaning BUGUNGI narxi.** Chekda karta narxi
+   *    qatorga muzlatilgan (`basePriceMinor`), yuk xatida esa muzlatilmaydi.
+   *    Shuning uchun uzoq oyna yuk xatilari uchun ishonchsiz — default 30 kun.
+   * 2. **Optom po'li — kartaning bugungi narx turi.** POS bilan bir xil
+   *    qoida ishlatiladi (default bo'lmagan birinchi narx turi), aks holda
+   *    kassirga bir pol ko'rsatilib, menejerga boshqasi hisoblanardi.
+   * 3. Chek/xat **bekor qilingan** bo'lsa hisobga olinmaydi.
+   */
+  async priceErrors(accountId: string, query: PriceErrorQuery = {}) {
+    const days = clampInt(query.days, DEFAULT_PRICE_DAYS, 1, 365);
+    const thresholds: PriceErrorThresholds = {
+      decimalTolerancePercent: clampNumber(
+        query.decimalTolerancePercent,
+        DEFAULT_PRICE_ERROR_THRESHOLDS.decimalTolerancePercent,
+        0,
+        50,
+      ),
+      outlierPercent: clampNumber(
+        query.outlierPercent,
+        DEFAULT_PRICE_ERROR_THRESHOLDS.outlierPercent,
+        1,
+        1000,
+      ),
+      minAverageSample: clampInt(
+        query.minAverageSample,
+        DEFAULT_PRICE_ERROR_THRESHOLDS.minAverageSample,
+        1,
+        100,
+      ),
+    };
+    const limit = clampInt(query.limit, DEFAULT_GROUP_LIMIT, 1, 500);
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const wantRetail = query.docType == null || query.docType === 'retailsale';
+    const wantDemand = query.docType == null || query.docType === 'demand';
+
+    const [retailRows, demandRows] = await Promise.all([
+      wantRetail
+        ? this.prisma.client.retailSalePosition.findMany({
+            where: {
+              accountId,
+              ...(query.productId ? { productId: query.productId } : {}),
+              retailSale: {
+                state: { in: [...SOLD_RETAIL_STATES] },
+                refundedFromId: null,
+                moment: { gte: since },
+              },
+            },
+            orderBy: { retailSale: { moment: 'desc' } },
+            take: SOLD_LINE_CAP + 1,
+            select: {
+              id: true,
+              productId: true,
+              quantity: true,
+              priceMinor: true,
+              discount: true,
+              costMinor: true,
+              basePriceMinor: true,
+              product: { select: { name: true } },
+              retailSale: {
+                select: {
+                  id: true,
+                  name: true,
+                  moment: true,
+                  ownerId: true,
+                  owner: { select: { name: true } },
+                },
+              },
+            },
+          })
+        : Promise.resolve([]),
+      wantDemand
+        ? this.prisma.client.demandPosition.findMany({
+            where: {
+              accountId,
+              ...(query.productId ? { assortmentId: query.productId } : {}),
+              demand: { state: 'posted', deletedAt: null, moment: { gte: since } },
+            },
+            orderBy: { demand: { moment: 'desc' } },
+            take: SOLD_LINE_CAP + 1,
+            select: {
+              id: true,
+              assortmentKind: true,
+              assortmentId: true,
+              quantity: true,
+              priceMinor: true,
+              discount: true,
+              costMinor: true,
+              product: { select: { name: true } },
+              demand: {
+                select: {
+                  id: true,
+                  name: true,
+                  moment: true,
+                  ownerId: true,
+                  owner: { select: { name: true } },
+                },
+              },
+            },
+          })
+        : Promise.resolve([]),
+    ]);
+
+    const truncated = retailRows.length > SOLD_LINE_CAP || demandRows.length > SOLD_LINE_CAP;
+
+    const rows: SoldLineRowShape[] = [
+      ...retailRows.slice(0, SOLD_LINE_CAP).map((p) => ({
+        docType: 'retailsale' as const,
+        docId: p.retailSale.id,
+        docName: p.retailSale.name,
+        lineId: p.id,
+        assortmentKind: 'product' as const,
+        assortmentId: p.productId,
+        assortmentName: p.product?.name ?? null,
+        quantity: p.quantity.toString(),
+        priceMinor: p.priceMinor,
+        discountPercent: Number(p.discount),
+        costMinor: p.costMinor,
+        frozenBaseMinor: p.basePriceMinor,
+        soldById: p.retailSale.ownerId,
+        soldByName: p.retailSale.owner?.name ?? null,
+        at: p.retailSale.moment,
+      })),
+      ...demandRows.slice(0, SOLD_LINE_CAP).map((p) => ({
+        docType: 'demand' as const,
+        docId: p.demand.id,
+        docName: p.demand.name,
+        lineId: p.id,
+        assortmentKind: (p.assortmentKind === 'variant' ? 'variant' : 'product') as
+          | 'product'
+          | 'variant',
+        assortmentId: p.assortmentId,
+        assortmentName: p.product?.name ?? null,
+        quantity: p.quantity.toString(),
+        priceMinor: p.priceMinor,
+        discountPercent: Number(p.discount),
+        costMinor: p.costMinor,
+        // Yuk xatida muzlatilgan karta narxi YO'Q — kartadan olinadi.
+        frozenBaseMinor: null,
+        soldById: p.demand.ownerId,
+        soldByName: p.demand.owner?.name ?? null,
+        at: p.demand.moment,
+      })),
+    ];
+
+    const cards = await this.loadCardPrices(accountId, rows);
+    const reviews = reviewSoldLinePrices(assembleSoldLines(rows, cards), thresholds);
+    const flagged = reviews.filter((r) => r.findings.length > 0);
+    const summary = summarizePriceErrors(reviews);
+
+    return {
+      thresholds,
+      days,
+      truncated,
+      scannedLineCount: rows.length,
+      /** Nazorat hech qachon bloklamaydi — mijoz shuni ko'rsatishi uchun. */
+      blocking: false,
+      ...summary,
+      // Eng og'iri tepada: menejer ro'yxatni yuqoridan pastga o'qiydi.
+      rows: flagged
+        .slice()
+        .sort((a, b) => weightOf(b) - weightOf(a) || b.at.getTime() - a.at.getTime())
+        .slice(0, limit)
+        .map(serializePriceError),
+      /** MK06 navbat dvigateliga tayyor elementlar (hali saqlanmaydi). */
+      workItems: flagged.slice(0, limit).map((r) => ({
+        dedupKey: r.workItem?.dedupKey ?? null,
+        ruleType: r.workItem?.ruleType ?? null,
+        subjectEmployeeId: r.workItem?.subjectEmployeeId ?? null,
+        docType: r.docType,
+        docId: r.docId,
+        amountMinor: r.workItem?.amountMinor?.toString() ?? null,
+        at: r.at.toISOString(),
+        kinds: r.findings.map((f) => f.kind),
+      })),
+    };
+  }
+
+  /**
+   * Sotilgan birliklarning karta narxlari (ro'yxat narxi + optom pol).
+   *
+   * Narx turlarini yechish **POS bilan bir xil**: default = `isDefault`, aks
+   * holda birinchi pozitsiya; optom = default BO'LMAGAN birinchi narx turi
+   * (`retail-sale.service.ts → loadFrozenPrices`). Ikki joyda ikki xil bo'lsa,
+   * kassirga bir pol ko'rsatilib, menejerga boshqasi hisoblanardi.
+   */
+  private async loadCardPrices(
+    accountId: string,
+    rows: ReadonlyArray<SoldLineRowShape>,
+  ): Promise<Map<string, CardPrices>> {
+    const productIds = new Set<string>();
+    const variantIds = new Set<string>();
+    for (const r of rows) {
+      if (r.assortmentId == null) continue;
+      if (r.assortmentKind === 'variant') variantIds.add(r.assortmentId);
+      else productIds.add(r.assortmentId);
+    }
+    if (productIds.size === 0 && variantIds.size === 0) return new Map();
+
+    const [products, variants, priceTypes] = await Promise.all([
+      productIds.size
+        ? this.prisma.client.product.findMany({
+            where: { accountId, id: { in: [...productIds] } },
+            select: { id: true, salePrices: true },
+          })
+        : Promise.resolve([]),
+      variantIds.size
+        ? this.prisma.client.variant.findMany({
+            where: { accountId, id: { in: [...variantIds] } },
+            select: { id: true, salePrices: true },
+          })
+        : Promise.resolve([]),
+      this.prisma.client.priceType.findMany({
+        where: { accountId, archived: false },
+        orderBy: { position: 'asc' },
+        select: { id: true, isDefault: true },
+      }),
+    ]);
+
+    const defaultTypeId = priceTypes.find((t) => t.isDefault)?.id ?? priceTypes[0]?.id ?? null;
+    const wholesaleTypeId = priceTypes.find((t) => t.id !== defaultTypeId)?.id ?? null;
+
+    const out = new Map<string, CardPrices>();
+    for (const [kind, list] of [
+      ['product', products],
+      ['variant', variants],
+    ] as const) {
+      for (const row of list) {
+        const salePrices = row.salePrices as SalePricesJson;
+        out.set(cardKeyOf(kind, row.id), {
+          baseMinor: resolveBasePriceMinor(salePrices, defaultTypeId),
+          wholesaleMinor: resolveWholesaleMinor(salePrices, wholesaleTypeId),
+        });
+      }
+    }
+    return out;
+  }
+}
+
+/** Saralash og'irligi — pul ta'siri bo'lmagan belgilar ham ro'yxatdan tushmasin. */
+function weightOf(r: PriceErrorReview): number {
+  const amount = r.workItem?.amountMinor;
+  return amount == null ? 0 : Number(amount < 0n ? -amount : amount);
+}
+
+function serializePriceError(r: PriceErrorReview) {
+  return {
+    docType: r.docType,
+    docId: r.docId,
+    docName: r.docName,
+    lineId: r.lineId,
+    productId: r.productId,
+    productName: r.productName,
+    quantity: r.quantity,
+    priceMinor: r.priceMinor.toString(),
+    discountPercent: r.discountPercent,
+    // NULL ayni NULL bo'lib qoladi — `?? '0'` bu yerda TAQIQ.
+    costMinor: r.costMinor?.toString() ?? null,
+    wholesaleMinor: r.wholesaleMinor?.toString() ?? null,
+    referenceMinor: r.referenceMinor?.toString() ?? null,
+    averageMinor: r.averageMinor?.toString() ?? null,
+    /** Mo'ljal muzlatilganmi (chek) yoki bugungi kartadanmi (yuk xati). */
+    referenceSource: r.docType === 'retailsale' ? 'frozen' : 'card',
+    soldById: r.soldById,
+    soldByName: r.soldByName,
+    at: r.at.toISOString(),
+    blocks: r.blocks,
+    unchecked: r.unchecked,
+    findings: r.findings.map((f) => ({
+      kind: f.kind,
+      expectedMinor: f.expectedMinor?.toString() ?? null,
+      amountMinor: f.amountMinor?.toString() ?? null,
+      factor: f.factor,
+      deviationPercent: f.deviationPercent,
+    })),
+  };
 }
 
 function serializeSignalRow(row: StockSignalRow) {
