@@ -393,11 +393,30 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > va `positions: { some: { costMinor: null } }` runtime'da tasdiqlanmagan (unit testlar Prisma'ni
 > mock qiladi) · `costMinor` NULL ulushi CHEK darajasida (qator darajasida emas).
 >
-> **Git:** daraxtda kamida 3 parallel sessiya ishladi (MK06 · MK18 · Q14 API-token). `manager.module.ts`,
-> `app/(app)/layout.tsx`, `messages/{ru,uz}.json` — UMUMIY fayllar; commit **ajratilgan indeks** bilan
-> qilindi va bu fayllar uchun blob «HEAD + faqat mening hunk'larim» dan qayta qurildi (ularning
-> satrlari tushmadi — fayllari hali untracked, birga commit qilinsa tree kompilyatsiya bo'lmasdi).
-> Hook'lar chetlab o'tildi, gate'lar QO'LDA: api (report+manager+app-boot) 883 ✓ · web 2953 ✓ ·
+> **🔴 GIT HODISASI — KEYINGI SESSIYA UCHUN SABOQ (halol yozilmoqda).**
+> Commit `8b6dca81` **eskirgan indeksdan** qurildi: `git read-tree HEAD` bilan `git commit`
+> orasida ~15 daqiqa o'tdi va o'sha oraliqda parallel sessiya **MK18** ni (`b57615ce`) commit
+> qildi. Natijada mening tree'im MK18 ni **qisman bekor qildi** (11 fayl o'chdi). MK18 sessiyasi
+> buni ko'rib `84efc024` bilan fayllarni tikladi, lekin uchta UMUMIY faylda (`layout.tsx`,
+> `messages/{ru,uz}.json`) MK18 ning ulushi tiklanmay qolgan edi — men `e96f6578` bilan yopdim
+> (`price_errors` subnav bandi + har lokalda 36 kalit; skript fail-closed, hech qaysi
+> revizyadan kalit yo'qolmagani tekshirildi).
+> **Ikkinchi xato:** tuzatishga urinib `git update-ref <yangi> <tip>` qildim — `tip` o'sha
+> paytda allaqachon oldinga ketgan edi, ya'ni **ikkita begona commit** (`84efc024`, MK06) bir
+> lahzaga tushib qoldi; darhol `update-ref` bilan qaytarildi (yo'qotish yo'q, hech narsa
+> push qilinmagan).
+> **Qoida (keyingi safar):** `read-tree` va `commit` **BITTA** buyruq zanjirida bo'lsin; commit
+> parent'ini `git commit` ning o'ziga tanlatish kerak, `commit-tree -p <qo'lda hash>` EMAS;
+> `update-ref` ning eski-qiymat argumenti **himoya emas** — tip o'zgargan bo'lsa u shunchaki
+> begona commit'ni almashtiradi. Kelishilgan yechim baribir **worktree izolyatsiyasi**
+> (CLAUDE.md §6.5).
+> ⚠️ `e96f6578` `messages/{ru,uz}.json` ni butunlay qayta tartibladi (~8k qator diff, **kalit
+> yo'qolmagan** — tekshirildi). Parallel sessiyalarning shu fayldagi keyingi diff'i katta
+> ko'rinadi; bu format-shovqin, mazmun emas.
+>
+> **Git (qolgani):** umumiy fayllar (`manager.module.ts`, `layout.tsx`, `messages/*.json`,
+> hujjatlar) uchun blob har safar «baza + faqat mening hunk'larim» dan qayta qurildi —
+> begona satrlar mening commit'imga TUSHMADI. Hook'lar chetlab o'tildi, gate'lar QO'LDA: api (report+manager+app-boot) 883 ✓ · web 2953 ✓ ·
 > biome 0 · i18n 9 ✓. **Meniki BO'LMAGAN yiqilishlar:** api tc 4 (`moysklad-compat.service.ts`) ·
 > web tc 2 (`settings/api-tokens/page.tsx`) · web test 2 (`pos-payment-contract.test.ts`) — uchalasi
 > ham parallel sessiyalarning in-flight ishi, ularning fayllariga tegmadim.
