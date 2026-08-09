@@ -34,7 +34,13 @@ export interface CounterpartyBalanceRow {
 export interface CounterpartyBalanceReport {
   filter: CounterpartyBalanceFilterInput;
   items: CounterpartyBalanceRow[];
+  /** Filtrga mos qatorlarning to'liq soni (`take` dan oldingi). */
   total: number;
+  /**
+   * `true` ⇒ ko'rsatilgan sahifadan tashqarida yana qator bor. `summaries`
+   * BARIBIR butun filtr bo'yicha (`PERF-04`) — bayroq faqat ro'yxat haqida.
+   */
+  truncated: boolean;
   summaries: {
     rowCount: number;
     debtorCount: number;
@@ -67,52 +73,22 @@ export class CounterpartyBalanceService {
   ): Promise<CounterpartyBalanceReport> {
     const filter = this.parseFilter(raw);
     const ctx = await loadRateContext(this.prisma.client, accountId);
+    const where = this.buildWhere(accountId, filter);
 
-    // Pre-resolve counterpartyIds when search is set.
-    let counterpartyIdFilter: { in: string[] } | undefined;
-    if (filter.search || filter.includeArchived !== true) {
-      const cpWhere: Prisma.CounterpartyWhereInput = {
-        accountId,
-        ...(filter.includeArchived === true ? {} : { archived: false }),
-        ...(filter.search
-          ? {
-              OR: [
-                { name: { contains: filter.search, mode: 'insensitive' } },
-                { legalTitle: { contains: filter.search, mode: 'insensitive' } },
-                { code: { contains: filter.search, mode: 'insensitive' } },
-              ],
-            }
-          : {}),
-      };
-      const cps = await this.prisma.client.counterparty.findMany({
-        where: cpWhere,
-        select: { id: true },
-        take: 5000,
-      });
-      counterpartyIdFilter = { in: cps.map((c) => c.id) };
-      if (counterpartyIdFilter.in.length === 0) {
-        return this.emptyReport(filter, ctx.baseCode);
-      }
-    }
-
-    const where: Prisma.CounterpartyBalanceWhereInput = {
-      accountId,
-      ...(filter.counterpartyId ? { counterpartyId: filter.counterpartyId } : {}),
-      ...(filter.currency ? { currency: filter.currency } : {}),
-      ...(counterpartyIdFilter ? { counterpartyId: counterpartyIdFilter } : {}),
-      ...this.signWhere(filter.signFilter),
-    };
-
-    const balances = await this.prisma.client.counterpartyBalance.findMany({
-      where,
-      orderBy: [{ balanceMinor: 'desc' }],
-      take: filter.limit,
-      include: {
-        counterparty: {
-          select: { id: true, name: true, legalTitle: true, companyType: true, archived: true },
+    const [balances, total, aggregate] = await Promise.all([
+      this.prisma.client.counterpartyBalance.findMany({
+        where,
+        orderBy: [{ balanceMinor: 'desc' }],
+        take: filter.limit,
+        include: {
+          counterparty: {
+            select: { id: true, name: true, legalTitle: true, companyType: true, archived: true },
+          },
         },
-      },
-    });
+      }),
+      this.prisma.client.counterpartyBalance.count({ where }),
+      this.aggregateSummaries(filter, where, ctx),
+    ]);
 
     let items: CounterpartyBalanceRow[] = balances.map((b) =>
       this.toRow(
@@ -127,21 +103,57 @@ export class CounterpartyBalanceService {
       ),
     );
 
-    // mixedCurrency reflects the raw scope (before any collapse), so the flag
-    // survives the groupBy=counterparty path where rows are merged to base.
-    const mixedCurrency = new Set(items.map((r) => r.currency)).size > 1;
-
-    // Bitta tally ikkala yo'ldan o'tadi: collapse bosqichida konvertatsiya
-    // qilinmagan qoldiq keyin base-qatorga aylanib ko'rinmay qolmasin (M-12).
-    const tally = new CurrencyTally();
     if (filter.groupBy === 'counterparty') {
-      items = this.collapseByCounterparty(items, ctx, tally);
+      // Ko'rinish uchun yig'ish. Tally ATAYLAB bir martalik: `unconvertedByCurrency`
+      // endi butun-scope agregatidan keladi, shu tally'ni qo'shsak M-12 qoldig'i
+      // ikki marta sanalardi.
+      items = this.collapseByCounterparty(items, ctx, new CurrencyTally());
     }
 
-    const summaries = this.computeSummaries(items, ctx, mixedCurrency, tally);
-    const total = await this.prisma.client.counterpartyBalance.count({ where });
+    return {
+      filter,
+      items,
+      total,
+      truncated: total > balances.length,
+      summaries: { ...aggregate, rowCount: total },
+    };
+  }
 
-    return { filter, items, total, summaries };
+  /**
+   * `PERF-04` / `DUP-14` — bitta `where`, uchta o'quvchi (ro'yxat, count,
+   * agregat).
+   *
+   * Ilgari qidiruv/arxiv filtri `counterparty.findMany({take:5000})` bilan
+   * ID-ro'yxatga aylantirilardi: 5000 dan ortiq kontragentli akkauntda
+   * qolganlari hisobotdan JIMGINA (xatosiz, ogohlantirishsiz) tushib qolardi,
+   * ustiga IN(5000 uuid) planner uchun og'ir edi. Endi bu Prisma relation-filtri
+   * — Postgres tomonida JOIN'ga kompilyatsiya bo'ladi, chegara kerak emas.
+   */
+  private buildWhere(
+    accountId: string,
+    filter: CounterpartyBalanceFilterInput,
+  ): Prisma.CounterpartyBalanceWhereInput {
+    const cp: Prisma.CounterpartyWhereInput = {};
+    if (filter.includeArchived !== true) cp.archived = false;
+    if (filter.search) {
+      cp.OR = [
+        { name: { contains: filter.search, mode: 'insensitive' } },
+        { legalTitle: { contains: filter.search, mode: 'insensitive' } },
+        { code: { contains: filter.search, mode: 'insensitive' } },
+      ];
+    }
+    const hasCpFilter = Object.keys(cp).length > 0;
+    // Tenant-guard'ni relation tomonida ham saqlaymiz (eski pre-fetch shunday
+    // qilardi) — lekin faqat JOIN allaqachon kerak bo'lganda.
+    if (hasCpFilter) cp.accountId = accountId;
+
+    return {
+      accountId,
+      ...(filter.counterpartyId ? { counterpartyId: filter.counterpartyId } : {}),
+      ...(filter.currency ? { currency: filter.currency } : {}),
+      ...(hasCpFilter ? { counterparty: cp } : {}),
+      ...this.signWhere(filter.signFilter),
+    };
   }
 
   // -------------------------------------------------------------------
@@ -242,21 +254,108 @@ export class CounterpartyBalanceService {
     return out;
   }
 
-  private computeSummaries(
-    items: CounterpartyBalanceRow[],
+  /**
+   * `PERF-04` — jamilar BUTUN `where` ustidan hisoblanadi.
+   *
+   * Ilgari ular sahifadagi (`take: limit`, `balanceMinor desc`) qatorlardan
+   * yig'ilardi. Dashboard buni `limit: 500` bilan chaqiradi, ya'ni nolinchi
+   * bo'lmagan balans 500 dan oshgan zahoti «Задолженность» kartochkasi kichik
+   * qarzlarni yo'qotardi va egasi noto'g'ri umumiy qarz raqamini ko'rardi —
+   * xato indikatorisiz. Kodning o'zi buni `V2 follow-up` deb tan olgan edi.
+   *
+   * Endi ikkita SQL-agregat (debet/kredit kesimi, valyuta bo'yicha GROUP BY):
+   * cardinality = akkauntdagi valyutalar soni, ya'ni amalda 1–3 qator.
+   */
+  private async aggregateSummaries(
+    filter: CounterpartyBalanceFilterInput,
+    where: Prisma.CounterpartyBalanceWhereInput,
     ctx: RateContext,
-    mixedCurrency: boolean,
-    seen: CurrencyTally,
-  ): CounterpartyBalanceReport['summaries'] {
+  ): Promise<Omit<CounterpartyBalanceReport['summaries'], 'rowCount'>> {
+    const tally = new CurrencyTally();
+    const [debit, credit] = await Promise.all([
+      this.aggregateBySign(where, 'debit'),
+      this.aggregateBySign(where, 'credit'),
+    ]);
+
     let totalDebt = 0n;
     let totalCredit = 0n;
     let debtorCount = 0;
     let creditorCount = 0;
-    for (const r of items) {
-      // Consolidate each row to base before summing — without this a USD
-      // balance's cents were added to UZS tiyin. Sign is preserved by the
-      // positive-scale conversion, so debtor/creditor classification holds.
-      const v = consolidateToBase(BigInt(r.balanceMinor), r.currency, ctx, seen);
+    for (const r of debit) {
+      // Consolidate to base before summing — without this a USD balance's
+      // cents were added to UZS tiyin. Sign is preserved by the positive-scale
+      // conversion, so debtor/creditor classification holds.
+      totalDebt += consolidateToBase(r._sum.balanceMinor ?? 0n, r.currency, ctx, tally);
+      debtorCount += r._count._all;
+    }
+    for (const r of credit) {
+      totalCredit += -consolidateToBase(r._sum.balanceMinor ?? 0n, r.currency, ctx, tally);
+      creditorCount += r._count._all;
+    }
+
+    // `groupBy=counterparty` da qatorlar kontragent bo'yicha yig'iladi, ya'ni
+    // bir kontragentning + va − qatorlari BIR-BIRINI YEYDI. Valyuta bitta
+    // bo'lsa `@@unique([counterpartyId, currency])` tufayli har kontragentda
+    // bitta qator bo'ladi ⇒ yig'ish AYNIYAT, arzon yo'l to'g'ri javob beradi.
+    // Faqat ko'p-valyutali scope'da qimmatroq kontragent-kesim kerak bo'ladi.
+    if (filter.groupBy === 'counterparty' && tally.mixed) {
+      return this.aggregateByCounterparty(where, ctx);
+    }
+
+    return {
+      debtorCount,
+      creditorCount,
+      totalDebtMinor: totalDebt.toString(),
+      totalCreditMinor: totalCredit.toString(),
+      netMinor: (totalDebt - totalCredit).toString(),
+      currency: ctx.baseCode,
+      mixedCurrency: tally.mixed,
+      unconvertedByCurrency: tally.unconvertedRows(),
+    };
+  }
+
+  /** Debet (balans > 0) yoki kredit (balans < 0) kesimi, valyuta bo'yicha. */
+  private aggregateBySign(where: Prisma.CounterpartyBalanceWhereInput, side: 'debit' | 'credit') {
+    return this.prisma.client.counterpartyBalance.groupBy({
+      by: ['currency'],
+      // `AND` bilan birikadi, `where` ni USTIGA YOZILMAYDI: `signFilter`
+      // allaqachon `balanceMinor` shartini qo'ygan bo'lishi mumkin va uni
+      // almashtirish «creditors» so'roviga debitorlarni oqizardi.
+      where: { AND: [where, { balanceMinor: side === 'debit' ? { gt: 0 } : { lt: 0 } }] },
+      _sum: { balanceMinor: true },
+      _count: { _all: true },
+    });
+  }
+
+  /**
+   * Ko'p-valyutali `groupBy=counterparty` uchun: har kontragentning bazaga
+   * keltirilgan SOF qoldig'i bo'yicha debitor/kreditor tasnifi. Cardinality =
+   * scope'dagi (kontragent × valyuta) qatorlar soni, lekin bu faqat ikki
+   * baravar kam ma'lumot (`counterpartyId`, `currency`, sum) — sahifa uchun
+   * `include: counterparty` bilan tortiladigan qatorlardan yengil.
+   */
+  private async aggregateByCounterparty(
+    where: Prisma.CounterpartyBalanceWhereInput,
+    ctx: RateContext,
+  ): Promise<Omit<CounterpartyBalanceReport['summaries'], 'rowCount'>> {
+    const tally = new CurrencyTally();
+    const rows = await this.prisma.client.counterpartyBalance.groupBy({
+      by: ['counterpartyId', 'currency'],
+      where,
+      _sum: { balanceMinor: true },
+    });
+
+    const net = new Map<string, bigint>();
+    for (const r of rows) {
+      const v = consolidateToBase(r._sum.balanceMinor ?? 0n, r.currency, ctx, tally);
+      net.set(r.counterpartyId, (net.get(r.counterpartyId) ?? 0n) + v);
+    }
+
+    let totalDebt = 0n;
+    let totalCredit = 0n;
+    let debtorCount = 0;
+    let creditorCount = 0;
+    for (const v of net.values()) {
       if (v > 0n) {
         totalDebt += v;
         debtorCount++;
@@ -265,38 +364,16 @@ export class CounterpartyBalanceService {
         creditorCount++;
       }
     }
+
     return {
-      rowCount: items.length,
       debtorCount,
       creditorCount,
       totalDebtMinor: totalDebt.toString(),
       totalCreditMinor: totalCredit.toString(),
       netMinor: (totalDebt - totalCredit).toString(),
       currency: ctx.baseCode,
-      mixedCurrency,
-      unconvertedByCurrency: seen.unconvertedRows(),
-    };
-  }
-
-  private emptyReport(
-    filter: CounterpartyBalanceFilterInput,
-    baseCode: string,
-  ): CounterpartyBalanceReport {
-    return {
-      filter,
-      items: [],
-      total: 0,
-      summaries: {
-        rowCount: 0,
-        debtorCount: 0,
-        creditorCount: 0,
-        totalDebtMinor: '0',
-        totalCreditMinor: '0',
-        netMinor: '0',
-        currency: baseCode,
-        mixedCurrency: false,
-        unconvertedByCurrency: [],
-      },
+      mixedCurrency: tally.mixed,
+      unconvertedByCurrency: tally.unconvertedRows(),
     };
   }
 

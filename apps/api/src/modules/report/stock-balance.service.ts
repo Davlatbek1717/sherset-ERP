@@ -10,6 +10,15 @@ import { type StockBalanceFilterInput, StockBalanceFilterSchema } from './stock-
 
 const DECIMAL_ZERO = new Prisma.Decimal(0);
 
+/**
+ * Qidiruv pre-filtri qancha tovar ID'sini olishga ruxsat beradi.
+ *
+ * Bu ham CAP — lekin endi JIM emas: unga urilgan so'rov `truncated: true`
+ * qaytaradi (`PERF-10` bug-klassining ildizi aynan «cap bor, ammo hech kim
+ * bilmaydi» edi). Ilgari flat rejimda 500 turardi, izohsiz.
+ */
+export const PRODUCT_SEARCH_CAP = 2000;
+
 export interface StockBalanceRow {
   storeId: string | null;
   storeName: string | null;
@@ -28,7 +37,17 @@ export interface StockBalanceRow {
 export interface StockBalanceReport {
   filter: StockBalanceFilterInput;
   items: StockBalanceRow[];
+  /**
+   * Filtrga mos qatorlarning TO'LIQ soni (sahifa uzunligi EMAS). Grouped
+   * rejimda bu — guruh-count agregati, flat rejimda `stock.count`.
+   */
   total: number;
+  /**
+   * `true` ⇒ ko'rsatilgan sahifadan tashqarida yana qator bor (yoki qidiruv
+   * pre-filtri `PRODUCT_SEARCH_CAP` ga urildi). `PERF-10`: hisobot hech qachon
+   * jimgina kesmaydi — kesilgan bo'lsa buni AYTADI.
+   */
+  truncated: boolean;
   summaries: {
     totalSku: number;
     /** Sum of qty across the visible page (string Decimal). */
@@ -85,54 +104,25 @@ export class StockBalanceService {
 
     // Pre-fetch matching product IDs when search is set; Prisma can't
     // easily filter Stock rows by joined-product fields in one query.
-    let productIdFilter: { in: string[] } | undefined;
-    if (filter.search) {
-      const matches = await this.prisma.client.product.findMany({
-        where: {
-          accountId,
-          deletedAt: null,
-          OR: [
-            { name: { contains: filter.search, mode: 'insensitive' } },
-            { code: { contains: filter.search, mode: 'insensitive' } },
-          ],
-        },
-        select: { id: true },
-        take: 500,
-      });
-      productIdFilter = { in: matches.map((m) => m.id) };
-      if (productIdFilter.in.length === 0) {
-        // Short-circuit: no products matched → empty report.
-        return {
-          filter,
-          items: [],
-          total: 0,
-          summaries: {
-            totalSku: 0,
-            totalQty: '0',
-            totalReserved: '0',
-            totalInTransit: '0',
-            totalAvailable: '0',
-          },
-        };
-      }
-      where.assortmentId = productIdFilter;
-    }
+    const search = await this.resolveSearchIds(accountId, filter.search);
+    if (search && search.ids.length === 0) return this.emptyReport(filter);
+    if (search) where.assortmentId = { in: search.ids };
 
-    // Cursor pagination is intentionally not supported on Stock — the
-    // composite PK (accountId, storeId, assortmentKind, assortmentId)
-    // makes single-key cursors unreliable across store boundaries. The
-    // V1 cap of 500 rows is enough for typical inventory; if you need
-    // more, narrow the storeId filter or use the grouped-by-product
-    // mode which sums across stores into one row per product.
-    const stocks = await this.prisma.client.stock.findMany({
+    // Keyset (cursor) pagination is intentionally not supported on Stock —
+    // the composite PK (accountId, storeId, assortmentKind, assortmentId)
+    // makes single-key cursors unreliable across store boundaries. Offset
+    // pagination over a stable (storeId, assortmentId) sort is used instead
+    // (`PERF-10`): before this the `limit` cap was the ONLY behaviour and
+    // rows beyond it were unreachable.
+    const rows = await this.prisma.client.stock.findMany({
       where,
       orderBy: [{ storeId: 'asc' }, { assortmentId: 'asc' }],
+      skip: filter.offset,
       take: filter.limit,
       include: {
         store: { select: { id: true, name: true } },
       },
     });
-    const rows = stocks;
 
     // Resolve product info (name/code/uom) in a single batched query —
     // we don't have a Stock→Product relation in Prisma because it's
@@ -179,7 +169,13 @@ export class StockBalanceService {
     const total = await this.prisma.client.stock.count({ where });
     const summaries = this.computeSummaries(items);
 
-    return { filter, items, total, summaries };
+    return {
+      filter,
+      items,
+      total,
+      truncated: this.isTruncated(filter, total, items.length, search?.capped),
+      summaries,
+    };
   }
 
   // -------------------------------------------------------------------
@@ -190,37 +186,45 @@ export class StockBalanceService {
     accountId: string,
     filter: StockBalanceFilterInput,
   ): Promise<StockBalanceReport> {
+    // `PERF-10`: `search` va `hideEmpty` ilgari `take` dan KEYIN JS'da
+    // qo'llanardi — ya'ni ular top-N qoldiq ichida ishlardi. Qidirilgan tovar
+    // qoldig'i kichik bo'lsa hisobot uni «yo'q» deb ko'rsatardi (foydalanuvchi
+    // buni xato deb bilmasdi), `hideEmpty` esa to'la bo'lishi mumkin bo'lgan
+    // sahifani kaltalatardi. Endi ikkalasi ham DB tomonida, `take` dan OLDIN:
+    // qidiruv — `where` product-id pre-filtri, hideEmpty — `having`.
+    const search = await this.resolveSearchIds(accountId, filter.search);
+    if (search && search.ids.length === 0) return this.emptyReport(filter);
+
+    const where: Prisma.StockWhereInput = {
+      accountId,
+      ...(filter.storeId ? { storeId: filter.storeId } : {}),
+      ...(filter.assortmentKind ? { assortmentKind: filter.assortmentKind } : {}),
+      ...(filter.productId ? { assortmentId: filter.productId } : {}),
+      ...(search ? { assortmentId: { in: search.ids } } : {}),
+    };
+    // Physical axes only — see the flat-mode note above; in-transit is not a
+    // Stock column, so it cannot participate in a SQL HAVING.
+    const having: Prisma.StockScalarWhereWithAggregatesInput | undefined = filter.hideEmpty
+      ? { OR: [{ qty: { _sum: { not: 0 } } }, { reservedQty: { _sum: { not: 0 } } }] }
+      : undefined;
+
     // Sum the PHYSICAL qty / reserved per (assortmentKind, assortmentId).
     // Expected-incoming («Ожидание») is summed query-time below (not a Stock
     // column). orderBy is required by Prisma whenever take is set on groupBy.
-    const grouped = await this.prisma.client.stock.groupBy({
-      by: ['assortmentKind', 'assortmentId'],
-      where: {
-        accountId,
-        ...(filter.storeId ? { storeId: filter.storeId } : {}),
-        ...(filter.assortmentKind ? { assortmentKind: filter.assortmentKind } : {}),
-        ...(filter.productId ? { assortmentId: filter.productId } : {}),
-      },
-      _sum: { qty: true, reservedQty: true },
-      orderBy: { _sum: { qty: 'desc' } },
-      take: filter.limit,
-    });
+    const [rowsList, total] = await Promise.all([
+      this.prisma.client.stock.groupBy({
+        by: ['assortmentKind', 'assortmentId'],
+        where,
+        having,
+        _sum: { qty: true, reservedQty: true },
+        orderBy: { _sum: { qty: 'desc' } },
+        skip: filter.offset,
+        take: filter.limit,
+      }),
+      this.countGroups(accountId, filter, search?.ids ?? null),
+    ]);
 
-    let rowsList = grouped;
-
-    if (filter.hideEmpty) {
-      // Physical axes only — see the flat-mode note above; in-transit is not a
-      // Stock column.
-      rowsList = rowsList.filter(
-        (g) =>
-          (g._sum.qty as Prisma.Decimal | null)?.toString() !== '0' ||
-          (g._sum.reservedQty as Prisma.Decimal | null)?.toString() !== '0',
-      );
-    }
-
-    // Resolve product names + apply search post-filter (could be pushed
-    // down with a join in raw SQL — kept simple here since the page
-    // limit caps row count).
+    // Resolve product names for the page (search is already applied above).
     const productIds = rowsList
       .filter((g) => g.assortmentKind === 'product')
       .map((g) => g.assortmentId);
@@ -236,7 +240,7 @@ export class StockBalanceService {
       assortmentIds: rowsList.map((g) => g.assortmentId),
     });
 
-    let items: StockBalanceRow[] = rowsList.map((g) => {
+    const items: StockBalanceRow[] = rowsList.map((g) => {
       const product = productMap.get(g.assortmentId);
       const qty = (g._sum.qty as Prisma.Decimal | null) ?? DECIMAL_ZERO;
       const reserved = (g._sum.reservedQty as Prisma.Decimal | null) ?? DECIMAL_ZERO;
@@ -261,22 +265,111 @@ export class StockBalanceService {
       };
     });
 
-    if (filter.search) {
-      const needle = filter.search.toLowerCase();
-      items = items.filter(
-        (r) =>
-          r.productName.toLowerCase().includes(needle) ||
-          (r.productCode?.toLowerCase().includes(needle) ?? false),
-      );
-    }
-
     const summaries = this.computeSummaries(items);
-    return { filter, items, total: items.length, summaries };
+    return {
+      filter,
+      items,
+      total,
+      truncated: this.isTruncated(filter, total, items.length, search?.capped),
+      summaries,
+    };
   }
 
   // -------------------------------------------------------------------
   // helpers
   // -------------------------------------------------------------------
+
+  /**
+   * Qidiruv matnini tovar-ID to'plamiga aylantiradi (`search` yo'q bo'lsa
+   * `null`). IKKALA rejim ham shu yagona yo'ldan yuradi — ilgari flat rejimda
+   * pre-filtr bor, grouped rejimda esa take'dan keyingi JS-filtr edi va aynan
+   * shu assimetriya `PERF-10` ni tug'dirgan.
+   *
+   * `capped` — cap'ga urilganini bildiradi; chaqiruvchi uni `truncated` ga
+   * uzatadi, ya'ni kesish hech qachon jim qolmaydi.
+   */
+  private async resolveSearchIds(
+    accountId: string,
+    search: string | undefined,
+  ): Promise<{ ids: string[]; capped: boolean } | null> {
+    if (!search) return null;
+    const matches = await this.prisma.client.product.findMany({
+      where: {
+        accountId,
+        deletedAt: null,
+        OR: [
+          { name: { contains: search, mode: 'insensitive' } },
+          { code: { contains: search, mode: 'insensitive' } },
+        ],
+      },
+      select: { id: true },
+      take: PRODUCT_SEARCH_CAP,
+    });
+    return { ids: matches.map((m) => m.id), capped: matches.length >= PRODUCT_SEARCH_CAP };
+  }
+
+  /**
+   * Grouped rejimdagi qatorlarning TO'LIQ soni — `GROUP BY` natijasi ustidan
+   * `COUNT(*)`. Prisma `groupBy` ning o'zi count qaytarmaydi, `take`siz
+   * chaqirish esa butun guruh-to'plamini Node'ga tortadi (aynan qochayotgan
+   * narsa), shuning uchun bitta agregat-so'rov. `where`/`having` yuqoridagi
+   * Prisma so'rovi bilan bir xil bo'lishi SHART.
+   */
+  private async countGroups(
+    accountId: string,
+    filter: StockBalanceFilterInput,
+    productIds: string[] | null,
+  ): Promise<number> {
+    const conds: Prisma.Sql[] = [Prisma.sql`account_id = ${accountId}::uuid`];
+    if (filter.storeId) conds.push(Prisma.sql`store_id = ${filter.storeId}::uuid`);
+    if (filter.assortmentKind) conds.push(Prisma.sql`assortment_kind = ${filter.assortmentKind}`);
+    if (filter.productId) conds.push(Prisma.sql`assortment_id = ${filter.productId}::uuid`);
+    if (productIds && productIds.length > 0) {
+      conds.push(
+        Prisma.sql`assortment_id IN (${Prisma.join(productIds.map((id) => Prisma.sql`${id}::uuid`))})`,
+      );
+    }
+    const having = filter.hideEmpty
+      ? Prisma.sql`HAVING SUM(qty) <> 0 OR SUM(reserved_qty) <> 0`
+      : Prisma.empty;
+    const rows = await this.prisma.client.$queryRaw<Array<{ count: bigint }>>`
+      SELECT COUNT(*)::bigint AS count FROM (
+        SELECT 1 FROM stocks
+        WHERE ${Prisma.join(conds, ' AND ')}
+        GROUP BY assortment_kind, assortment_id
+        ${having}
+      ) g`;
+    return Number(rows[0]?.count ?? 0n);
+  }
+
+  /**
+   * Sahifadan tashqarida qator qoldimi. Qidiruv pre-filtri cap'ga urilgan
+   * bo'lsa ham `true` — u ham kesish (faqat boshqa o'qda).
+   */
+  private isTruncated(
+    filter: StockBalanceFilterInput,
+    total: number,
+    pageLength: number,
+    searchCapped: boolean | undefined,
+  ): boolean {
+    return searchCapped === true || total > filter.offset + pageLength;
+  }
+
+  private emptyReport(filter: StockBalanceFilterInput): StockBalanceReport {
+    return {
+      filter,
+      items: [],
+      total: 0,
+      truncated: false,
+      summaries: {
+        totalSku: 0,
+        totalQty: '0',
+        totalReserved: '0',
+        totalInTransit: '0',
+        totalAvailable: '0',
+      },
+    };
+  }
 
   private computeSummaries(items: StockBalanceRow[]): StockBalanceReport['summaries'] {
     // Decimal accumulation (not Number) — avoids float drift across many

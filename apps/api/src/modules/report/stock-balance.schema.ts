@@ -26,5 +26,13 @@ export const StockBalanceFilterSchema = z.object({
   /** Group qty by product across all stores (else per-store rows). */
   groupBy: z.enum(['none', 'product']).default('none'),
   limit: z.coerce.number().int().min(1).max(500).default(100),
+  /**
+   * FAZA 27a (`PERF-10`): sahifa siljishi. Ilgari IKKALA rejimda ham
+   * paginatsiya umuman yo'q edi — `limit` qattiq kesardi va `total` sahifa
+   * uzunligi bo'lgani uchun klient «yana bormi?» degan savolga javob ololmasdi.
+   * Endi `offset` + haqiqiy `total` + `truncated` bayrog'i bilan sahifalash
+   * mumkin.
+   */
+  offset: z.coerce.number().int().min(0).default(0),
 });
 export type StockBalanceFilterInput = z.infer<typeof StockBalanceFilterSchema>;
