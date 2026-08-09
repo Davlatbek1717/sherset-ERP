@@ -113,6 +113,35 @@ export function verifyClickSign(
   return expected === params.sign_string;
 }
 
+/**
+ * Click `amount` (so'mda, o'nlik STRING — masalan `'19.99'`) → tiyin BigInt.
+ *
+ * Faza 19 (`INT-03`). Ilgari summa `Number(amount) * 100` bilan solishtirilardi;
+ * IEEE754'da bu ba'zi qiymatlarda butun songa TUSHMAYDI va qat'iy `!==`
+ * to'g'ri to'lovni «Incorrect amount» bilan rad etardi. O'lchangan misollar:
+ *   0.29 → 28.999999999999996 · 8.29 → 828.9999999999999 · 19.99 → 1998.9999999999998
+ * (audit hisobotidagi `115.23` misoli esa aslida aniq 11523 beradi — bug-klass
+ * real, lekin uni ko'rsatadigan qiymatlar boshqa).
+ *
+ * Shuning uchun bu yerda float UMUMAN qatnashmaydi: string butun/kasr qismga
+ * bo'linadi, kasr 2 xonaga to'ldiriladi/yaxlitlanadi va BigInt yig'iladi.
+ * Yaroqsiz format (`'abc'`, bo'sh, manfiy) → `null` — chaqiruvchi buni
+ * INCORRECT_AMOUNT deb qaytaradi, NaN jimgina o'tib ketmaydi.
+ */
+export function parseClickAmountToMinor(raw: string | number | undefined | null): bigint | null {
+  if (raw === undefined || raw === null) return null;
+  const s = String(raw).trim();
+  if (!/^\d+(\.\d+)?$/.test(s)) return null;
+  const dot = s.indexOf('.');
+  const whole = dot === -1 ? s : s.slice(0, dot);
+  const frac = dot === -1 ? '' : s.slice(dot + 1);
+  const minor = BigInt(whole) * 100n + BigInt(frac.padEnd(2, '0').slice(0, 2));
+  // 2 xonadan ortiq kasr — yarim-yuqoriga yaxlitlash (provider odatda 2 xona
+  // yuboradi; bu faqat himoya qatlami).
+  const third = frac.length > 2 ? Number(frac[2]) : 0;
+  return third >= 5 ? minor + 1n : minor;
+}
+
 /** Build a Click response envelope. */
 export function clickResponse(
   click_trans_id: string,

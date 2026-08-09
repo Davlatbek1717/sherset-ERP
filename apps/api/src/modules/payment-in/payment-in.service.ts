@@ -273,7 +273,14 @@ export class PaymentInService {
     return payment;
   }
 
-  async create(accountId: string, userId: string, raw: unknown) {
+  /**
+   * `userId` — hujjatni yaratayotgan xodim. **`null`** = inson-aktor yo'q
+   * (Faza 19, `INT-02`: Payme/Click webhook'i capture'dan PaymentIn yozadi).
+   * Bunda egalik `ownerId` orqali oshkora beriladi, audit-yozuv esa aktorsiz
+   * qoladi (`AuditLog.userId` nullable) — soxta «tizim xodimi» o'ylab
+   * topilmaydi, chunki u kimningdir ismi ostida yolg'on iz qoldirardi.
+   */
+  async create(accountId: string, userId: string | null, raw: unknown) {
     const parsed = this.parseCreate(raw);
     await this.ensureRefs(accountId, parsed.agentId, parsed.organizationId);
     await assertOrgAccountMatchesOrg(
@@ -300,7 +307,9 @@ export class PaymentInService {
       parsed.attributes,
     );
 
-    const creatorGroupId = await resolveCreatorGroupId(this.prisma.client, accountId, userId);
+    const creatorGroupId = userId
+      ? await resolveCreatorGroupId(this.prisma.client, accountId, userId)
+      : null;
 
     // «Владелец»/«Владелец-отдел»/«Общий доступ» from the owner popover (else fall
     // back to the creator + their dept). Tenant-validate the refs so a hand-crafted
@@ -1100,7 +1109,7 @@ export class PaymentInService {
 
   private async logAudit(
     accountId: string,
-    userId: string,
+    userId: string | null,
     action: string,
     entityId: string,
     fieldChanges: Record<string, unknown> | null,

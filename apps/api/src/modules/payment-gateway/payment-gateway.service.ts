@@ -2,10 +2,12 @@ import type { Prisma } from '@moysklad/db';
 import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { decryptPassword, encryptPassword } from '../email/crypto.js';
+import { PaymentInService } from '../payment-in/payment-in.service.js';
 import {
   CLICK_ERROR,
   type ClickCallbackParams,
   clickResponse,
+  parseClickAmountToMinor,
   verifyClickSign,
 } from './click.protocol.js';
 import {
@@ -46,12 +48,19 @@ interface PublicPaymentGatewayConfig {
  *    redirect-style; useful for Uzcard direct API):
  *    Operator clicks "Pay" → initiatePayment() → provider HTTP POST
  *    → record PaymentGatewayTx with status='pending'.
+ *
+ * Faza 19 (`INT-02`) dan beri capture UCHINCHI qadamga ega: tranzaksiya
+ * `captured`ga o'tganda ERP'da **PaymentIn draft** tug'iladi va CustomerOrder'ga
+ * bog'lanadi. Ilgari bu qadam umuman yo'q edi — pul kelardi, daftar bilmasdi.
  */
 @Injectable()
 export class PaymentGatewayService {
   private readonly logger = new Logger(PaymentGatewayService.name);
 
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(PaymentInService) private readonly paymentIn: PaymentInService,
+  ) {}
 
   // --- config ----------------------------------------------------------
 
@@ -211,10 +220,20 @@ export class PaymentGatewayService {
       where: { id: orderId, accountId, deletedAt: null },
     });
     if (!order) return paymeError(body.id, PAYME_ERROR.ORDER_NOT_FOUND);
-    if (Number(order.sumMinor) !== body.params.amount) {
+    if (!this.paymeAmountMatches(order.sumMinor, body.params.amount)) {
       return paymeError(body.id, PAYME_ERROR.INVALID_AMOUNT);
     }
     return { jsonrpc: '2.0' as const, id: body.id, result: { allow: true } };
+  }
+
+  /**
+   * Payme `amount` — butun tiyin. Solishtiruv BigInt'da: `Number(sumMinor)`
+   * 2^53 dan katta summalarda yaxlitlab yuborardi (INT-03 ning ikkinchi yarmi),
+   * ya'ni katta buyurtmada noto'g'ri summa «mos» ko'rinishi mumkin edi.
+   */
+  private paymeAmountMatches(sumMinor: bigint, amount: unknown): boolean {
+    if (typeof amount !== 'number' || !Number.isInteger(amount)) return false;
+    return sumMinor === BigInt(amount);
   }
 
   private async paymeCreate(
@@ -234,37 +253,66 @@ export class PaymentGatewayService {
       where: { accountId, provider: 'payme', providerTxId: providerId },
     });
     if (existing) {
-      return {
-        jsonrpc: '2.0' as const,
-        id: body.id,
-        result: {
-          create_time: time,
-          transaction: existing.id,
-          state: 1 as const,
-        },
-      };
+      return this.paymeCreateResult(body.id, time, existing.id);
     }
-    const tx = await this.prisma.client.paymentGatewayTx.create({
-      data: {
-        accountId,
-        provider: 'payme',
-        providerTxId: providerId,
-        sourceEntity: 'CustomerOrder',
-        sourceEntityId: orderId,
-        amountMinor: BigInt(amount),
-        status: 'pending',
-        providerLog: { event: 'CreateTransaction', time } as Prisma.InputJsonValue,
-      },
+
+    // Summa endi shu yerda ham qulflanadi: `amountMinor` capture'da to'g'ridan
+    // to'g'ri PaymentIn summasiga aylanadi (INT-02), shuning uchun buyurtma bilan
+    // mos kelmagan CreateTransaction hujjatga noto'g'ri summa olib kelardi.
+    const order = await this.prisma.client.customerOrder.findFirst({
+      where: { id: orderId, accountId, deletedAt: null },
+      select: { id: true, sumMinor: true },
     });
+    if (!order) return paymeError(body.id, PAYME_ERROR.ORDER_NOT_FOUND);
+    if (!this.paymeAmountMatches(order.sumMinor, amount)) {
+      return paymeError(body.id, PAYME_ERROR.INVALID_AMOUNT);
+    }
+
+    try {
+      const tx = await this.prisma.client.paymentGatewayTx.create({
+        data: {
+          accountId,
+          provider: 'payme',
+          providerTxId: providerId,
+          sourceEntity: 'CustomerOrder',
+          sourceEntityId: orderId,
+          amountMinor: BigInt(amount),
+          status: 'pending',
+          providerLog: { event: 'CreateTransaction', time } as Prisma.InputJsonValue,
+        },
+      });
+      return this.paymeCreateResult(body.id, time, tx.id);
+    } catch (err) {
+      // Parallel CreateTransaction poygasi — endi DB cheklovi hakam (INT-04).
+      const raced = await this.findByProviderTxIdOnConflict(err, accountId, 'payme', providerId);
+      if (!raced) throw err;
+      return this.paymeCreateResult(body.id, time, raced.id);
+    }
+  }
+
+  private paymeCreateResult(id: number | string, time: number, txId: string) {
     return {
       jsonrpc: '2.0' as const,
-      id: body.id,
-      result: {
-        create_time: time,
-        transaction: tx.id,
-        state: 1 as const,
-      },
+      id,
+      result: { create_time: time, transaction: txId, state: 1 as const },
     };
+  }
+
+  /**
+   * P2002 (unique `[accountId, provider, providerTxId]`) — check-then-act
+   * poygasida ikkinchi yozuvchi shu yerga tushadi va g'olib yaratgan qatorni
+   * qaytaradi. Boshqa xatolarda `null` (chaqiruvchi qayta throw qiladi).
+   */
+  private async findByProviderTxIdOnConflict(
+    err: unknown,
+    accountId: string,
+    provider: string,
+    providerTxId: string,
+  ) {
+    if ((err as { code?: string }).code !== 'P2002') return null;
+    return this.prisma.client.paymentGatewayTx.findFirst({
+      where: { accountId, provider, providerTxId },
+    });
   }
 
   private async paymePerform(accountId: string, body: PaymeRpcRequest<{ id: string }>) {
@@ -272,21 +320,18 @@ export class PaymentGatewayService {
       where: { accountId, provider: 'payme', providerTxId: body.params.id },
     });
     if (!tx) return paymeError(body.id, PAYME_ERROR.TX_NOT_FOUND);
-    const performTime = Date.now();
-    const updated = await this.prisma.client.paymentGatewayTx.update({
-      where: { id: tx.id },
-      data: {
-        status: 'captured',
-        capturedAt: new Date(performTime),
-        authorizedAt: tx.authorizedAt ?? new Date(performTime),
-      },
-    });
+    // Xato bo'lsa THROW qiladi — handlePaymeRpc uni Payme xato-konvertiga
+    // aylantiradi va Payme PerformTransaction'ni qayta chaqiradi (protokolda
+    // shunday); jim «muvaffaqiyat» qaytarish pulni daftarsiz qoldirardi.
+    const { capturedAt } = await this.settleCapture(accountId, tx);
     return {
       jsonrpc: '2.0' as const,
       id: body.id,
       result: {
-        transaction: updated.id,
-        perform_time: performTime,
+        transaction: tx.id,
+        // Takroriy Perform AYNAN o'sha perform_time'ni qaytaradi (Payme
+        // solishtiradi) — oldin har chaqiruvda `Date.now()` edi.
+        perform_time: capturedAt.getTime(),
         state: 2 as const,
       },
     };
@@ -308,8 +353,22 @@ export class PaymentGatewayService {
         status: wasPerformed ? 'refunded' : 'cancelled',
         cancelledAt: new Date(cancelTime),
         refundedAt: wasPerformed ? new Date(cancelTime) : null,
+        providerLog: {
+          event: 'CancelTransaction',
+          reason: body.params.reason,
+          // Capture'dan keyingi bekor qilish = QAYTARISH. ERP'da avtomatik
+          // teskari hujjat HALI YO'Q (reja Faza 19 buni «qaytarish YOKI
+          // admin-xabar» deb qoldirgan) — draft PaymentIn qo'lda o'chiriladi.
+          refundPendingPaymentInId: wasPerformed ? (tx.paymentInId ?? null) : null,
+        } as Prisma.InputJsonValue,
       },
     });
+    if (wasPerformed) {
+      this.logger.warn(
+        `Payme CancelTransaction ${tx.id}: capture QAYTARILDI — ERP'da teskari hujjat ` +
+          `avtomatik yaratilmaydi. PaymentIn ${tx.paymentInId ?? "(yo'q)"} qo'lda ko'rib chiqilsin.`,
+      );
+    }
     return {
       jsonrpc: '2.0' as const,
       id: body.id,
@@ -379,30 +438,58 @@ export class PaymentGatewayService {
           CLICK_ERROR.USER_NOT_FOUND,
         );
       }
-      if (Number(order.sumMinor) !== Number(params.amount) * 100) {
+      // INT-03: float ko'paytirish YO'Q — o'nlik string butun tiyinga o'giriladi.
+      const amountMinor = parseClickAmountToMinor(params.amount);
+      if (amountMinor === null || amountMinor !== order.sumMinor) {
         return clickResponse(
           params.click_trans_id,
           params.merchant_trans_id,
           CLICK_ERROR.INCORRECT_AMOUNT,
         );
       }
-      const tx = await this.prisma.client.paymentGatewayTx.create({
-        data: {
-          accountId,
-          provider: 'click',
-          providerTxId: params.click_trans_id,
-          sourceEntity: 'CustomerOrder',
-          sourceEntityId: order.id,
-          amountMinor: BigInt(Math.round(Number(params.amount) * 100)),
-          status: 'authorized',
-          authorizedAt: new Date(),
-        },
+      // INT-04: PREPARE'ni qayta yuborish (tarmoq retry — protokolda normal)
+      // ilgari HAR SAFAR yangi qator yaratardi.
+      const existing = await this.prisma.client.paymentGatewayTx.findFirst({
+        where: { accountId, provider: 'click', providerTxId: params.click_trans_id },
       });
+      if (existing) {
+        return clickResponse(
+          params.click_trans_id,
+          params.merchant_trans_id,
+          CLICK_ERROR.SUCCESS,
+          existing.id,
+        );
+      }
+      let txId: string;
+      try {
+        const tx = await this.prisma.client.paymentGatewayTx.create({
+          data: {
+            accountId,
+            provider: 'click',
+            providerTxId: params.click_trans_id,
+            sourceEntity: 'CustomerOrder',
+            sourceEntityId: order.id,
+            amountMinor,
+            status: 'authorized',
+            authorizedAt: new Date(),
+          },
+        });
+        txId = tx.id;
+      } catch (err) {
+        const raced = await this.findByProviderTxIdOnConflict(
+          err,
+          accountId,
+          'click',
+          params.click_trans_id,
+        );
+        if (!raced) throw err;
+        txId = raced.id;
+      }
       return clickResponse(
         params.click_trans_id,
         params.merchant_trans_id,
         CLICK_ERROR.SUCCESS,
-        tx.id,
+        txId,
       );
     }
     if (action === 1) {
@@ -437,19 +524,150 @@ export class PaymentGatewayService {
           CLICK_ERROR.TRANSACTION_CANCELLED,
         );
       }
-      await this.prisma.client.paymentGatewayTx.update({
-        where: { id: tx.id },
-        data: {
-          status: 'captured',
-          capturedAt: new Date(),
-        },
-      });
+      try {
+        await this.settleCapture(accountId, tx);
+      } catch {
+        // Pul Click tomonida qabul qilingan, lekin ERP hujjati yozilmadi —
+        // xatoni Click'ga qaytaramiz (u qayta chaqiradi va `settleCapture`
+        // retry-shoxi qayta urinadi). `errorMsg` qatorga allaqachon yozilgan.
+        return clickResponse(
+          params.click_trans_id,
+          params.merchant_trans_id,
+          CLICK_ERROR.FAILED_TO_UPDATE_USER,
+        );
+      }
       return clickResponse(params.click_trans_id, params.merchant_trans_id, CLICK_ERROR.SUCCESS);
     }
     return clickResponse(
       params.click_trans_id,
       params.merchant_trans_id,
       CLICK_ERROR.ACTION_NOT_FOUND,
+    );
+  }
+
+  // --- capture → ERP moliyasi (INT-02) ---------------------------------
+
+  /**
+   * Tranzaksiyani `captured`ga o'tkazadi VA shu capture uchun PaymentIn draft
+   * yozadi (bir marta, aynan bir marta).
+   *
+   * **Nega bitta DB-tranzaksiya emas.** Reja «(tx) ichida» degan edi; PaymentIn
+   * yaratish `PaymentInService.create` orqali boradi (nom-generatsiya, attribut
+   * validatsiya, audit, webhook) va u o'z klientida ishlaydi — uni tashqi `tx`
+   * klientiga o'tkazish butun servisni qayta simlashni talab qilardi. Shuning
+   * o'rniga **atomik claim** ishlatiladi, u xuddi shu ikki kafolatni beradi:
+   *   • dublikat YO'Q — `updateMany` sharti qatorni qulflab qayta baholanadi,
+   *     shuning uchun parallel ikki Perform'dan faqat bittasi `count === 1`
+   *     oladi (bank-import Faza 20 dagi claim uslubi);
+   *   • yo'qolish YO'Q — hujjat yozilmasa `errorMsg` to'ldiriladi va xato
+   *     yuqoriga otiladi; provider retry'ida ikkinchi shart-shoxi (`paymentInId
+   *     IS NULL AND errorMsg IS NOT NULL`) yana claim beradi ⇒ o'z-o'zini
+   *     tuzatadi. Qoldiq oyna: capture yozildi-yu retry hech qachon kelmasa,
+   *     qator `captured + paymentInId=null + errorMsg` bo'lib qoladi — bu
+   *     KO'RINADIGAN qarz (operator filtri), jimgina yo'qolish emas.
+   */
+  private async settleCapture(
+    accountId: string,
+    tx: { id: string; authorizedAt: Date | null; capturedAt: Date | null },
+  ): Promise<{ capturedAt: Date }> {
+    const at = new Date();
+    const claim = await this.prisma.client.paymentGatewayTx.updateMany({
+      where: {
+        id: tx.id,
+        accountId,
+        OR: [
+          { status: { not: 'captured' } },
+          // Oldingi urinishda hujjat yozilmagan — retry qayta uradi.
+          { paymentInId: null, errorMsg: { not: null } },
+        ],
+      },
+      data: {
+        status: 'captured',
+        capturedAt: at,
+        authorizedAt: tx.authorizedAt ?? at,
+        errorMsg: null,
+      },
+    });
+
+    if (claim.count === 0) {
+      // Allaqachon capture qilingan (va hujjati bor) — takroriy chaqiruv.
+      const fresh = await this.prisma.client.paymentGatewayTx.findFirst({
+        where: { id: tx.id, accountId },
+        select: { capturedAt: true },
+      });
+      return { capturedAt: fresh?.capturedAt ?? tx.capturedAt ?? at };
+    }
+
+    try {
+      await this.writeCapturePaymentIn(accountId, tx.id);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      await this.prisma.client.paymentGatewayTx.update({
+        where: { id: tx.id },
+        data: { errorMsg: `PaymentIn yaratilmadi: ${msg}` },
+      });
+      this.logger.error(
+        `Gateway capture ${tx.id}: pul qabul qilindi, lekin PaymentIn yozilmadi — ${msg}`,
+      );
+      throw err;
+    }
+    return { capturedAt: at };
+  }
+
+  /** Capture uchun PaymentIn draft + tranzaksiyaga havola. */
+  private async writeCapturePaymentIn(accountId: string, txId: string): Promise<void> {
+    const tx = await this.prisma.client.paymentGatewayTx.findFirst({
+      where: { id: txId, accountId },
+    });
+    if (!tx) throw new Error(`PaymentGatewayTx ${txId} topilmadi`);
+    if (tx.sourceEntity !== 'CustomerOrder') {
+      throw new Error(`Qo'llab-quvvatlanmagan manba hujjat: ${tx.sourceEntity}`);
+    }
+    const order = await this.prisma.client.customerOrder.findFirst({
+      where: { id: tx.sourceEntityId, accountId, deletedAt: null },
+      select: {
+        id: true,
+        name: true,
+        agentId: true,
+        organizationId: true,
+        ownerId: true,
+        groupId: true,
+        currency: true,
+      },
+    });
+    if (!order) throw new Error(`CustomerOrder ${tx.sourceEntityId} topilmadi`);
+    // Payme/Click UZS tiyinda hisob-kitob qiladi. Boshqa valyutali buyurtmada
+    // `amountMinor`ni o'sha valyuta minor-birligi deb yozish M-03/M-04 sinfidagi
+    // ~12 000× xatoni tug'dirardi — konvertatsiya qoidasi aniqlanmaguncha TO'XTA.
+    if (order.currency !== 'UZS') {
+      throw new Error(
+        `Gateway to'lovi UZS'da, buyurtma ${order.name} esa ${order.currency}da — valyuta konvertatsiyasi qo'llab-quvvatlanmaydi`,
+      );
+    }
+
+    const amount = tx.amountMinor.toString();
+    // Inson-aktor YO'Q (webhook) — `userId: null`. Egalik buyurtmadan meros
+    // oladi, shunda hujjat o'sha sotuvchining ro'yxatida ko'rinadi.
+    const created = await this.paymentIn.create(accountId, null, {
+      agentId: order.agentId,
+      organizationId: order.organizationId,
+      ownerId: order.ownerId ?? undefined,
+      groupId: order.groupId ?? undefined,
+      moment: new Date().toISOString(),
+      sumMinor: amount,
+      currency: order.currency,
+      paymentPurpose: `${tx.provider} to'lovi · buyurtma ${order.name}`,
+      incomingNumber: tx.providerTxId ?? undefined,
+      operations: [{ targetKind: 'customerorder', customerOrderId: order.id, amountMinor: amount }],
+    });
+    if (!created) throw new Error("PaymentIn yaratilmadi (bo'sh natija)");
+
+    await this.prisma.client.paymentGatewayTx.update({
+      where: { id: tx.id },
+      data: { paymentInId: created.id },
+    });
+    this.logger.log(
+      `Gateway capture ${tx.id} (${tx.provider}) → PaymentIn ${created.id} · buyurtma ${order.name}`,
     );
   }
 

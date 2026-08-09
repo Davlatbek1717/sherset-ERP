@@ -305,6 +305,47 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-09c (AUDIT-FIX FAZA 19 — to'lov-gateway → moliyaviy hujjat + idempotency ·
+> `INT-02`+`INT-03`+`INT-04`) · Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q ·
+> ⏳ DEPLOY QILINMAGAN · 🗄️ **migratsiya BOR** (`20260809120000_gateway_payment_in_link_and_unique`,
+> lokalga qo'llandi) · ⚠️ **navbatdan tashqari** — foydalanuvchi IDE'da Faza 19 promptini tanlagan
+> holda `davom et` dedi (navbat bo'yicha Faza 15 hamon ochiq) · ⚠️ parallel sessiya bir daraxtda
+> Faza 17/23 qilmoqda — diff'im path-cheklangan (§6.6), `lint:product` ham (§6.6). Harf `c` olindi:
+> `2026-08-09a` IKKI marta ishlatilgan (parallel kolliziya), `b` band bo'lishi mumkin.
+>
+> **Nima qilindi.** (a) `INT-02`: Payme `PerformTransaction` / Click COMPLETE endi capture'dan
+> **PaymentIn draft** yaratadi va CustomerOrder'ga `operations[targetKind:'customerorder']` bilan
+> bog'laydi (`paymentInId` ustuni + FK). Ilgari `paymentGatewayTx` BUTUN kod bazasida yagona faylda
+> ishlatilardi ⇒ gateway puli daftarga umuman kirmasdi. Atomiklik: bitta DB-tranzaksiya o'rniga
+> **atomik claim** (`updateMany` ikki shoxli shart) — dublikat yo'q, xato bo'lsa `errorMsg` yozilib
+> provider-retry'da o'z-o'zini tuzatadi. (b) `INT-03`: `parseClickAmountToMinor()` — float butunlay
+> chiqarildi, Payme tomonida BigInt solishtiruv. (c) `INT-04`:
+> `@@unique([accountId, provider, providerTxId])` + P2002-catch idempotency (Click PREPARE va
+> paymeCreate). Bonus: paymeCreate summa-tekshiruvi (yo'q edi), takroriy Perform endi **o'sha**
+> `perform_time`ni qaytaradi, UZS bo'lmagan buyurtmada capture to'xtaydi.
+>
+> **⚠️ Auditning bir da'vosi XATO chiqdi (§2 intizomi ishladi):** `INT-03` misoli `115.23` —
+> o'lchandi, `115.23 * 100 === 11523` AYNAN. Bug-klass real, lekin testlar **o'lchangan** qiymatlarda
+> (`19.99`, `0.29`, `8.29`) yozildi; audit misoliga ishonib yozilsa test yashil bo'lib «fix ishladi»
+> degan yolg'on dalil bo'lardi.
+>
+> **Gate:** api tc **0** · vitest payment-gateway+payment-in+bank-import+app-boot **116/116**
+> (kengaytirilgan: **172/172**) · `i18n:gate` **9/9** · migratsiya qo'llandi, drift 0 · o'z 6 faylim
+> biome **0 error 0 warning** (repo-wide `lint:product` qizil — `report/*`, parallel sessiyaniki).
+> **Browser-smoke YO'Q.** Batafsil: `docs/REJA-AUDIT-FIX-2026-08.md` → HISOBOT JURNALI → Faza 19.
+>
+> **🟠 QARZ:** (1) PaymentIn **draft** bo'lib qoladi — post EMAS, ya'ni balans/pul-daftari hali
+> o'zgarmaydi (ataylab: webhook'dan ledger post qilish alohida faza). (2) Refund hujjati yo'q —
+> `paymeCancel(-2)` faqat warn + `providerLog`. (3) **Prod migratsiya:** `CREATE UNIQUE INDEX`
+> mavjud dublikatlarda yiqiladi (ataylab) — deploydan oldin migratsiya izohidagi `HAVING COUNT(*)>1`
+> so'rovini yugurtir. (4) Ko'p-valyutali gateway buyurtmasi qo'llab-quvvatlanmaydi.
+>
+> **⏭️ KEYINGI:** navbat bo'yicha — `docs/REJA-AUDIT-FIX-2026-08.md` → **Faza 15**
+> (`SALES-02`,`SALES-06`,`SALES-07/08`); yoki Faza 21 (`INT-01`+`INT-14`, gateway oilasining davomi —
+> webhook secret + timing-safe taqqoslash), yoki 18b/18c.
+
+---
+
 > **🕒 2026-08-09a (AUDIT-FIX FAZA 23 — HR self-eskalatsiya guard + login-only mutatsiyalarga ruxsat
 > + offboarding token-revoke · `HR-10`+`AUTH-07`+`AUTH-05`) · Phase-1: strukturaviy +
 > unit-tasdiqlangan, browser-smoke YO'Q · ⏳ DEPLOY QILINMAGAN · 🗄️ migratsiya YO'Q ·
@@ -328,7 +369,7 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > hr-employee +5 · group 4 · kpi-gate 6 · offboarding 4). Batafsil: `docs/REJA-AUDIT-FIX-2026-08.md`
 > → HISOBOT JURNALI → Faza 23.
 >
-> **Gate:** vitest tegilgan modullar (hr/group/manager/auth/permissions) + `app-boot` **1160/1160** ·
+> **Gate:** vitest tegilgan modullar (hr/group/manager/auth/permissions) + `app-boot` **1167/1167** ·
 > butun API suite **5293/5296** · `biome check` tegilgan modullar **0 error**. ⚠️ **Repo-bo'yicha
 > `typecheck`/`lint:product` QIZIL — LEKIN faqat parallel sessiyaning fayllarida** (5 tsc xatosi
 > `payment-gateway/*`da: generated Prisma client ularning yangi `paymentInId` sxemasidan orqada;

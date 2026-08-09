@@ -5882,6 +5882,8 @@ model PaymentIn {
   operations          PaymentInOperation[]
   bankStatementRows   BankStatementRow[]
   facturesOut         FactureOut[]         @relation("FactureOutPaymentIn")
+  /// Faza 19 (`INT-02`) — Payme/Click capture'i shu hujjatni tug'dirgan bo'lsa.
+  gatewayTxs          PaymentGatewayTx[]   @relation("PaymentGatewayTxPaymentIn")
 
   @@unique([accountId, name])
   @@index([accountId, state, deletedAt])
@@ -8946,7 +8948,17 @@ model PaymentGatewayTx {
 
   provider     String  @db.VarChar(20)
   /// Provider's transaction id (Payme: id; Click: transaction_id).
+  /// Unique per (account, provider) — see `@@unique` below. NULL only for
+  /// operator-initiated rows (`initiatePayment`), where Postgres treats
+  /// every NULL as distinct so several may coexist.
   providerTxId String? @map("provider_tx_id") @db.VarChar(100)
+
+  /// Faza 19 (`INT-02`): the ERP money document this capture produced.
+  /// Set exactly once, when the tx first reaches `captured` — the link is
+  /// what makes gateway money visible in the ledger instead of only in
+  /// this table. NULL + `errorMsg` set = capture landed but the PaymentIn
+  /// could not be written; the next provider retry re-attempts it.
+  paymentInId String? @map("payment_in_id") @db.Uuid
 
   /// Source: usually a CustomerOrder or InvoiceOut id.
   sourceEntity   String @map("source_entity") @db.VarChar(40)
@@ -8971,8 +8983,14 @@ model PaymentGatewayTx {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
 
-  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  account   Account    @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  paymentIn PaymentIn? @relation("PaymentGatewayTxPaymentIn", fields: [paymentInId], references: [id], onDelete: SetNull)
 
+  /// Faza 19 (`INT-04`): provider retry (protokolda NORMAL holat) avval har
+  /// safar yangi qator yaratardi — bir to'lov bir necha «authorized» qatorga
+  /// bo'linib, COMPLETE qaysi birini yangilashi noaniq edi. Endi DB darajasida
+  /// bitta: create P2002 bersa chaqiruvchi mavjud qatorni qaytaradi.
+  @@unique([accountId, provider, providerTxId])
   @@index([accountId, provider, status])
   @@index([accountId, sourceEntity, sourceEntityId])
   @@index([providerTxId])
