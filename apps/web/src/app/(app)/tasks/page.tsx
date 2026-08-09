@@ -7,6 +7,7 @@ import { useColumnVisibility } from '@/hooks/use-column-visibility';
 import { useColumnWidths } from '@/hooks/use-column-widths';
 import { api } from '@/lib/api-client';
 import { taskStatusTone } from '@/lib/domain-status-tone';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import {
   Badge,
   CatalogPicker,
@@ -45,12 +46,6 @@ interface Task {
   createdAt: string;
   author: { id: string; name: string } | null;
   assignee: { id: string; name: string } | null;
-}
-
-interface ListResponse {
-  items: Task[];
-  nextCursor?: string;
-  total: number;
 }
 
 const LIMIT = 25;
@@ -125,9 +120,9 @@ export default function TasksPage() {
     sortKey,
     sortDir,
   ] as const;
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<Task>>({
     queryKey: listQueryKey,
-    queryFn: () => api.get<ListResponse>(`/tasks?${params.toString()}`),
+    queryFn: () => api.get<ListResponse<Task>>(`/tasks?${params.toString()}`),
   });
 
   const bulk = useBulkDocumentActions('tasks', listQueryKey, {
@@ -357,7 +352,7 @@ export default function TasksPage() {
         testId="tasks-page"
         moyskladToolbar
         title={t('title')}
-        subtitle={data ? tCommon('records_count', { count: data.total }) : undefined}
+        subtitle={data ? tCommon('records_count', { count: data.total ?? 0 }) : undefined}
         onRefresh={() => refetch()}
         selectionCount={bulk.selectedIds.size}
         createHref="/tasks/new"

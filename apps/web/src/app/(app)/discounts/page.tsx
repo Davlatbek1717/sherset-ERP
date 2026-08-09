@@ -2,6 +2,7 @@
 
 import { FilterToggleButton } from '@/components/filters/filter-toggle-button';
 import { api } from '@/lib/api-client';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import {
   type DataTableColumn,
   InlineFilterPanel,
@@ -19,11 +20,6 @@ interface DiscountRow {
   kind: string;
   active: boolean;
   archived: boolean;
-}
-
-interface ListResponse {
-  items: DiscountRow[];
-  total: number;
 }
 
 const LIMIT = 50;
@@ -50,9 +46,9 @@ export default function DiscountsPage() {
     sortDir,
   });
 
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<DiscountRow>>({
     queryKey: ['discounts', search, kindFilter, showArchived, sortKey, sortDir],
-    queryFn: () => api.get<ListResponse>(`/discounts?${params.toString()}`),
+    queryFn: () => api.get<ListResponse<DiscountRow>>(`/discounts?${params.toString()}`),
   });
 
   const columns: DataTableColumn<DiscountRow>[] = [
@@ -102,7 +98,7 @@ export default function DiscountsPage() {
       testId="discounts-page"
       title={t('title')}
       moyskladToolbar
-      subtitle={data ? tCommon('records_count', { count: data.total }) : undefined}
+      subtitle={data ? tCommon('records_count', { count: data.total ?? 0 }) : undefined}
       createHref="/discounts/new"
       createLabel={t('create_button')}
       createPosition="start"

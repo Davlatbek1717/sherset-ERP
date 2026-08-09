@@ -24,6 +24,7 @@ import { api } from '@/lib/api-client';
 import { stashBulkEdit } from '@/lib/bulk-edit-nav';
 import { documentStateTone } from '@/lib/document-state-tone';
 import { filterFromQueryString } from '@/lib/filter-from-query';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import {
   Badge,
   CatalogPicker,
@@ -56,12 +57,6 @@ interface PriceListRow {
   organization: { id: string; name: string };
   priceType: { id: string; name: string } | null;
   pricesJson: Record<string, Record<string, string>>;
-}
-
-interface ListResponse {
-  items: PriceListRow[];
-  nextCursor?: string;
-  total: number;
 }
 
 const LIMIT = 100;
@@ -196,9 +191,9 @@ export default function PriceListPage() {
     params.toString(),
   ] as const;
 
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<PriceListRow>>({
     queryKey: listQueryKey,
-    queryFn: () => api.get<ListResponse>(`/price-lists?${params.toString()}`),
+    queryFn: () => api.get<ListResponse<PriceListRow>>(`/price-lists?${params.toString()}`),
   });
 
   const bulk = useBulkDocumentActions('price-lists', listQueryKey, {

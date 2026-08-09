@@ -47,6 +47,9 @@ describe('contract provenance registry', () => {
       'CurrentSessionResponseSchema', // nullable wrapper of CurrentSessionSchema
       'ProductStockSchema', // inside PosProductRowSchema
       'SalePriceEntrySchema', // inside PosProductRowSchema
+      'AgentRefSchema', // inside every document-list row
+      'DocumentStatusRefSchema', // inside every document-list row
+      'UzRequisitesSchema', // inside CounterpartyRowSchema
     ]);
 
     const unregistered = exportedSchemas.filter(
@@ -112,6 +115,29 @@ describe('provenance extractors', () => {
     );
   });
 
+  it('selectBlockKeys default anchor lands on the FIRST select, include or not', () => {
+    const src = `
+  async list() {
+    const meta = await this.prisma.client.attributeMetadata.findMany({
+      select: { code: true },
+    });
+    return this.prisma.client.thing.findMany({
+      include: { owner: { select: { id: true, name: true } } },
+    });
+  }
+`;
+    // Default: the lookup's one-key block wins — which is exactly the trap.
+    expect([...selectBlockKeys(src, 'list')].sort()).toEqual(['code']);
+    // `include` anchor skips it and reads the row projection.
+    expect([...selectBlockKeys(src, 'list', 'include')].sort()).toEqual(['id', 'name', 'owner']);
+  });
+
+  it('selectBlockKeys throws when an include anchor is asked for and none exists', () => {
+    expect(() =>
+      selectBlockKeys('  async q() { return x({ select: { a: true } }); }', 'q', 'include'),
+    ).toThrow(/include/i);
+  });
+
   it('methodObjectKeys collects hand-built response keys', () => {
     const src = `
   private async attachStock(page: T[]) {
@@ -125,6 +151,44 @@ describe('provenance extractors', () => {
     for (const k of ['stock', 'onHand', 'reserved', 'inTransit', 'available']) {
       expect(keys.has(k)).toBe(true);
     }
+  });
+
+  it('methodObjectKeys sees SHORTHAND properties, not just `key:`', () => {
+    // The real shape of counterparty.service.ts#list's return: a spread, some
+    // shorthand, some explicit. Before Faza Q15 the shorthand ones were invisible
+    // and three live CRM aggregates read as "produced nowhere".
+    const src = `
+  async list() {
+    const { balances, ...rest } = cp;
+    return {
+      ...rest,
+      balanceMinor,
+      salesCount,
+      salesAmount: salesSumMinor.toString(),
+      averageCheckMinor,
+      profitMinor,
+    };
+  }
+`;
+    const keys = methodObjectKeys(src, 'list');
+    for (const k of [
+      'balanceMinor',
+      'salesCount',
+      'salesAmount',
+      'averageCheckMinor',
+      'profitMinor',
+    ]) {
+      expect(keys.has(k), `${k} must be collected`).toBe(true);
+    }
+  });
+
+  it('selectBlockKeys does NOT take shorthand as a projected column', () => {
+    // Prisma always writes `key: true`; a bare identifier inside a select block
+    // would be a syntax error, so counting it would only ever create false
+    // "provided" answers in the precise extractor.
+    expect(
+      selectBlockKeys('  async q() { return x({ select: { a: true }, other }); }', 'q'),
+    ).toEqual(new Set(['a']));
   });
 
   it('prismaModelFields reads scalar columns and ignores attributes/comments', () => {
@@ -202,5 +266,34 @@ describe('conformance catches the historical POS crash', () => {
     expect(sabotagedBody).not.toBe(body);
     const sabotaged = real.replace(body, sabotagedBody);
     expect(selectBlockKeys(sabotaged, selectSource.method).has('cashier')).toBe(false);
+  });
+
+  /**
+   * Same proof for the document-list contracts added in Faza Q15, against the
+   * real `demand.service.ts`. `bankName` is the honest probe: it is produced by
+   * exactly ONE place (the `agentAccount` select in `list`'s include) — every
+   * other key in that block is also a `Demand` relation/scalar and would still
+   * be "provided" by the model source after a sabotage, which would make the
+   * test pass for the wrong reason.
+   */
+  it('DemandRow contract loses `bankName` when the agentAccount select is removed', () => {
+    const contract = CONTRACT_PROVENANCE.find((c) => c.contract === 'DemandRowSchema');
+    if (!contract) throw new Error('DemandRowSchema not registered');
+    const selectSource = contract.sources.find((s) => s.kind === 'select');
+    if (!selectSource || selectSource.kind !== 'select') {
+      throw new Error('DemandRowSchema must declare a select-provenance source');
+    }
+
+    // The contract really does claim the key, and the live source really does
+    // produce it — otherwise the sabotage below proves nothing.
+    expect(flattenSchemaKeys(contract.schema).has('bankName')).toBe(true);
+    expect(collectSourceKeys(contract.sources).has('bankName')).toBe(true);
+
+    const real = readRepoFile(selectSource.service);
+    const body = sliceMethod(real, selectSource.method);
+    const sabotagedBody = body.replace(/^\s*agentAccount:\s*\{\s*select:.*$/m, '');
+    expect(sabotagedBody).not.toBe(body);
+    const sabotaged = real.replace(body, sabotagedBody);
+    expect(selectBlockKeys(sabotaged, selectSource.method).has('bankName')).toBe(false);
   });
 });

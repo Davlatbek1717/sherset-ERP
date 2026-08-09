@@ -5,6 +5,7 @@ import { FilterToggleButton } from '@/components/filters/filter-toggle-button';
 import { useBulkDocumentActions } from '@/hooks/use-bulk-actions';
 import { api } from '@/lib/api-client';
 import { filterFromQueryString } from '@/lib/filter-from-query';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import {
   CatalogPicker,
   CatalogPickerField,
@@ -41,12 +42,6 @@ interface ProductionRow {
   customerOrder: { id: string; name: string } | null;
   owner: { id: string; name: string } | null;
   _count: { processingOrders: number };
-}
-
-interface ListResponse {
-  items: ProductionRow[];
-  nextCursor?: string;
-  total: number;
 }
 
 const LIMIT = 50;
@@ -149,9 +144,9 @@ export default function ProductionsListPage() {
     organizations,
   ] as const;
 
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<ProductionRow>>({
     queryKey: listQueryKey,
-    queryFn: () => api.get<ListResponse>(`/productions?${params.toString()}`),
+    queryFn: () => api.get<ListResponse<ProductionRow>>(`/productions?${params.toString()}`),
   });
 
   // Bulk actions: row selection + bulk-delete + bulk-transition (post/

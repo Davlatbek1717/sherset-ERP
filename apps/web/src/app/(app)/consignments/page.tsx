@@ -12,6 +12,7 @@ import { ColumnSettings } from '@/components/column-settings';
 import { useColumnVisibility } from '@/hooks/use-column-visibility';
 import { useColumnWidths } from '@/hooks/use-column-widths';
 import { api } from '@/lib/api-client';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import {
   Badge,
   type DataTableColumn,
@@ -35,12 +36,6 @@ interface ConsignmentRow {
   description: string | null;
   product: { id: string; name: string; code: string | null; uom: string | null };
   variant: { id: string; name: string; code: string | null } | null;
-}
-
-interface ListResponse {
-  items: ConsignmentRow[];
-  nextCursor?: string;
-  total: number;
 }
 
 const LIMIT = 100;
@@ -99,9 +94,9 @@ export default function ConsignmentsPage() {
     sortKey,
     sortDir,
   ] as const;
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<ConsignmentRow>>({
     queryKey: listQueryKey,
-    queryFn: () => api.get<ListResponse>(`/consignments?${params.toString()}`),
+    queryFn: () => api.get<ListResponse<ConsignmentRow>>(`/consignments?${params.toString()}`),
   });
 
   const filters: ListViewFilter[] = [

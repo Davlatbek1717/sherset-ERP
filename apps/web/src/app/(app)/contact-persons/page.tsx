@@ -7,6 +7,7 @@ import { useColumnVisibility } from '@/hooks/use-column-visibility';
 import { useColumnWidths } from '@/hooks/use-column-widths';
 import { api } from '@/lib/api-client';
 import { archivedTone } from '@/lib/archived-tone';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import {
   Badge,
   CatalogPicker,
@@ -32,12 +33,6 @@ interface ContactPerson {
   archived: boolean;
   counterparty: { id: string; name: string; legalTitle: string | null };
   owner: { id: string; name: string } | null;
-}
-
-interface ListResponse {
-  items: ContactPerson[];
-  nextCursor?: string;
-  total: number;
 }
 
 /** Multi-select reference field — moysklad checkbox-dropdown holds {id,label}[]. */
@@ -90,9 +85,9 @@ export default function ContactPersonsPage() {
     counterparties.map((x) => x.id).join(','),
     ownerFilter.id,
   ] as const;
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<ContactPerson>>({
     queryKey: listQueryKey,
-    queryFn: () => api.get<ListResponse>(`/contact-persons?${params.toString()}`),
+    queryFn: () => api.get<ListResponse<ContactPerson>>(`/contact-persons?${params.toString()}`),
   });
 
   const bulk = useBulkDocumentActions('contact-persons', listQueryKey, {
@@ -209,7 +204,7 @@ export default function ContactPersonsPage() {
         testId="contact-persons-page"
         moyskladToolbar
         title={t('title')}
-        subtitle={data ? tCommon('records_count', { count: data.total }) : undefined}
+        subtitle={data ? tCommon('records_count', { count: data.total ?? 0 }) : undefined}
         onRefresh={() => refetch()}
         selectionCount={bulk.selectedIds.size}
         createHref="/contact-persons/new"

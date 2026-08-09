@@ -14,6 +14,7 @@ import { api } from '@/lib/api-client';
 import { getAccessToken } from '@/lib/auth-store';
 import { stashBulkEdit } from '@/lib/bulk-edit-nav';
 import { filterFromQueryString } from '@/lib/filter-from-query';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import {
   CatalogPicker,
   CatalogPickerField,
@@ -65,12 +66,6 @@ interface PurchaseOrderRow {
   // pill), NOT the FSM `state`. The list() service already includes it.
   status: { id: string; name: string; color: string | null } | null;
   _count: { positions: number };
-}
-
-interface ListResponse {
-  items: PurchaseOrderRow[];
-  nextCursor?: string;
-  total: number;
 }
 
 // Moysklad parity — 100 rows per page.
@@ -382,9 +377,9 @@ export default function PurchaseOrdersPage() {
     sortDir,
     params.toString(),
   ] as const;
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<PurchaseOrderRow>>({
     queryKey: listQueryKey,
-    queryFn: () => api.get<ListResponse>(`/purchase-orders?${params.toString()}`),
+    queryFn: () => api.get<ListResponse<PurchaseOrderRow>>(`/purchase-orders?${params.toString()}`),
   });
 
   // moysklad-parity: the footer totals sum ALL filtered records (not just the

@@ -3,6 +3,7 @@
 import { FilterToggleButton } from '@/components/filters/filter-toggle-button';
 import { api } from '@/lib/api-client';
 import { archivedTone } from '@/lib/archived-tone';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import {
   Badge,
   type DataTableColumn,
@@ -20,11 +21,6 @@ interface ExpenseItemRow {
   name: string;
   code: string | null;
   archived: boolean;
-}
-
-interface ListResponse {
-  items: ExpenseItemRow[];
-  total: number;
 }
 
 const LIMIT = 50;
@@ -49,9 +45,9 @@ export default function ExpenseItemsPage() {
     sortDir,
   });
 
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<ExpenseItemRow>>({
     queryKey: ['expense-items', search, archived, sortKey, sortDir],
-    queryFn: () => api.get<ListResponse>(`/expense-items?${params.toString()}`),
+    queryFn: () => api.get<ListResponse<ExpenseItemRow>>(`/expense-items?${params.toString()}`),
   });
 
   // moysklad's expense-item list uses moyskladToolbar + Фильтр panel (no
@@ -101,7 +97,7 @@ export default function ExpenseItemsPage() {
       testId="expense-items-page"
       title={t('title')}
       moyskladToolbar
-      subtitle={data ? tCommon('records_count', { count: data.total }) : undefined}
+      subtitle={data ? tCommon('records_count', { count: data.total ?? 0 }) : undefined}
       createHref="/settings/expense-items/new"
       createLabel={t('create_button')}
       createPosition="start"

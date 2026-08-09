@@ -16,6 +16,7 @@
  */
 
 import { api } from '@/lib/api-client';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import { type DataTableColumn, ListView, useDebounce } from '@moysklad/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
@@ -26,10 +27,6 @@ interface CountryRow {
   name: string;
   code: string | null;
   externalCode: string | null;
-}
-
-interface ListResponse {
-  items: CountryRow[];
 }
 
 const LIMIT = 50;
@@ -51,9 +48,9 @@ export default function CountriesPage() {
     ...(cursor ? { cursor } : {}),
   });
 
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<CountryRow>>({
     queryKey: ['countries', search, cursor],
-    queryFn: () => api.get<ListResponse>(`/countries?${params.toString()}`),
+    queryFn: () => api.get<ListResponse<CountryRow>>(`/countries?${params.toString()}`),
   });
 
   const rows = data?.items ?? [];

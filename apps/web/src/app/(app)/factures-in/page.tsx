@@ -16,6 +16,7 @@ import { useColumnWidths } from '@/hooks/use-column-widths';
 import { api } from '@/lib/api-client';
 import { documentStateTone } from '@/lib/document-state-tone';
 import { filterFromQueryString } from '@/lib/filter-from-query';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import {
   Badge,
   Button,
@@ -57,12 +58,6 @@ interface FactureInRow {
   organization: { id: string; name: string };
   owner: { id: string; name: string } | null;
   supply: { id: string; name: string } | null;
-}
-
-interface ListResponse {
-  items: FactureInRow[];
-  nextCursor?: string;
-  total: number;
 }
 
 const CURRENCY_LABEL: Record<string, string> = {
@@ -197,9 +192,9 @@ export default function FacturesInPage() {
     sortDir,
     params.toString(),
   ] as const;
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<FactureInRow>>({
     queryKey: listQueryKey,
-    queryFn: () => api.get<ListResponse>(`/factures-in?${params.toString()}`),
+    queryFn: () => api.get<ListResponse<FactureInRow>>(`/factures-in?${params.toString()}`),
   });
 
   // Generate a draft Счёт-фактура полученный from a Supply (moysklad

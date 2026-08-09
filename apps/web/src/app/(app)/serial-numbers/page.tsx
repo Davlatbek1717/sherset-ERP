@@ -3,6 +3,7 @@
 import { AssortmentPrintDropdown } from '@/components/assortment/print-dropdown';
 import { FilterToggleButton } from '@/components/filters/filter-toggle-button';
 import { api } from '@/lib/api-client';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import {
   CatalogPicker,
   CatalogPickerField,
@@ -45,12 +46,6 @@ interface SerialNumberRow {
   counterparty: string | null;
 }
 
-interface ListResponse {
-  items: SerialNumberRow[];
-  nextCursor?: string;
-  total: number;
-}
-
 type Ref = { id?: string; label?: string };
 type PickerKey = 'productOrGroup' | 'store' | 'counterparty' | 'counterpartyGroup' | 'supplier';
 
@@ -86,7 +81,7 @@ export default function SerialNumbersPage() {
     ...(cursor ? { cursor } : {}),
   });
 
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<SerialNumberRow>>({
     queryKey: [
       'serial-numbers',
       asOfDate,
@@ -99,7 +94,7 @@ export default function SerialNumbersPage() {
       supplier.id,
       cursor,
     ],
-    queryFn: () => api.get<ListResponse>(`/serial-numbers?${params.toString()}`),
+    queryFn: () => api.get<ListResponse<SerialNumberRow>>(`/serial-numbers?${params.toString()}`),
   });
 
   const muted = (value: string | null) => <span className="text-sm">{value ?? '—'}</span>;
@@ -181,7 +176,7 @@ export default function SerialNumbersPage() {
         testId="serial-numbers-page"
         title={t('title')}
         moyskladToolbar
-        subtitle={data ? tCommon('records_count', { count: data.total }) : undefined}
+        subtitle={data ? tCommon('records_count', { count: data.total ?? 0 }) : undefined}
         onRefresh={() => refetch()}
         columns={columns}
         rows={data?.items ?? []}

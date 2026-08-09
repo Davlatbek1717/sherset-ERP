@@ -26,6 +26,7 @@ import { useApiMutation } from '@/hooks/use-api-mutation';
 import { api } from '@/lib/api-client';
 import { archivedTone } from '@/lib/archived-tone';
 import { channelKindTone } from '@/lib/domain-status-tone';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import {
   Badge,
   Button,
@@ -83,12 +84,6 @@ interface ChannelDetail {
   version: number;
 }
 
-interface ListResponse {
-  items: ChannelRow[];
-  nextCursor?: string;
-  total: number;
-}
-
 const LIMIT = 50;
 
 export default function SettingsSalesChannelsPage() {
@@ -113,9 +108,9 @@ export default function SettingsSalesChannelsPage() {
     ...(cursor ? { cursor } : {}),
   });
 
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<ChannelRow>>({
     queryKey: ['sales-channels', search, archived, cursor, sortKey, sortDir],
-    queryFn: () => api.get<ListResponse>(`/sales-channels?${params.toString()}`),
+    queryFn: () => api.get<ListResponse<ChannelRow>>(`/sales-channels?${params.toString()}`),
   });
 
   const invalidateList = () => qc.invalidateQueries({ queryKey: ['sales-channels'] });
@@ -321,7 +316,7 @@ export default function SettingsSalesChannelsPage() {
         title={t('title')}
         moyskladToolbar
         onRefresh={() => refetch()}
-        subtitle={data ? tCommon('records_count', { count: data.total }) : undefined}
+        subtitle={data ? tCommon('records_count', { count: data.total ?? 0 }) : undefined}
         extraActionsLeft={
           <Button variant="secondary" onClick={openCreate} data-test-id="sales-channel-create">
             <Icons.createCircle className="h-4 w-4 text-[var(--ms-brand-400)]" />

@@ -12,6 +12,7 @@ import { useColumnWidths } from '@/hooks/use-column-widths';
 import { api } from '@/lib/api-client';
 import { stashBulkEdit } from '@/lib/bulk-edit-nav';
 import { documentStateTone } from '@/lib/document-state-tone';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import {
   Badge,
   CatalogPicker,
@@ -59,12 +60,6 @@ interface LossRow {
   store: { id: string; name: string };
   owner: { id: string; name: string } | null;
   _count: { positions: number };
-}
-
-interface ListResponse {
-  items: LossRow[];
-  nextCursor?: string;
-  total: number;
 }
 
 // Moysklad parity — 100 rows per page.
@@ -267,9 +262,9 @@ export default function LossesPage() {
     sortDir,
     params.toString(),
   ] as const;
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<LossRow>>({
     queryKey: listQueryKey,
-    queryFn: () => api.get<ListResponse>(`/losses?${params.toString()}`),
+    queryFn: () => api.get<ListResponse<LossRow>>(`/losses?${params.toString()}`),
   });
 
   // moysklad-parity: the pinned «Итого» footer sums ALL filtered records (not

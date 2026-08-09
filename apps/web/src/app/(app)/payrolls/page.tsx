@@ -16,6 +16,7 @@ import { useBulkDocumentActions } from '@/hooks/use-bulk-actions';
 import { api } from '@/lib/api-client';
 import { stashBulkEdit } from '@/lib/bulk-edit-nav';
 import { documentStateTone } from '@/lib/document-state-tone';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import {
   Badge,
   CatalogPicker,
@@ -56,12 +57,6 @@ interface PayrollRow {
   };
   owner: { id: string; name: string } | null;
   _count: { lines: number };
-}
-
-interface ListResponse {
-  items: PayrollRow[];
-  nextCursor?: string;
-  total: number;
 }
 
 const LIMIT = 100;
@@ -142,9 +137,9 @@ export default function PayrollsPage() {
     sortDir,
   ] as const;
 
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<PayrollRow>>({
     queryKey: listQueryKey,
-    queryFn: () => api.get<ListResponse>(`/payrolls?${params.toString()}`),
+    queryFn: () => api.get<ListResponse<PayrollRow>>(`/payrolls?${params.toString()}`),
   });
 
   const bulk = useBulkDocumentActions('payrolls', listQueryKey, {

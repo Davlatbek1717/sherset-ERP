@@ -11,6 +11,7 @@
 import { FilterToggleButton } from '@/components/filters/filter-toggle-button';
 import { api } from '@/lib/api-client';
 import { archivedTone } from '@/lib/archived-tone';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import {
   Badge,
   type DataTableColumn,
@@ -33,12 +34,6 @@ interface StageRow {
   allPerformers: boolean;
   archived: boolean;
   _count: { positions: number };
-}
-
-interface ListResponse {
-  items: StageRow[];
-  nextCursor?: string;
-  total: number;
 }
 
 const LIMIT = 25;
@@ -67,9 +62,9 @@ export default function StagesPage() {
   });
 
   const listQueryKey = ['processing-stages', search, archived, cursor, sortKey, sortDir] as const;
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<StageRow>>({
     queryKey: listQueryKey,
-    queryFn: () => api.get<ListResponse>(`/processing-stages?${params.toString()}`),
+    queryFn: () => api.get<ListResponse<StageRow>>(`/processing-stages?${params.toString()}`),
   });
 
   const columns: DataTableColumn<StageRow>[] = [
@@ -142,7 +137,7 @@ export default function StagesPage() {
       testId="stages-page"
       moyskladToolbar
       title={t('title')}
-      subtitle={data ? tCommon('records_count', { count: data.total }) : undefined}
+      subtitle={data ? tCommon('records_count', { count: data.total ?? 0 }) : undefined}
       onRefresh={() => refetch()}
       createHref="/production/stages/new"
       createLabel={t('create_button')}

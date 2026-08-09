@@ -37,15 +37,61 @@ function collectSources(dir: string, prefix = '', out: string[] = []): string[] 
 }
 
 /** Pages that have adopted the shared contracts and must not regress. */
-const ADOPTERS = ['app/(app)/retail/page.tsx', 'app/(app)/sotuv/page.tsx'];
+const ADOPTERS = [
+  'app/(app)/retail/page.tsx',
+  'app/(app)/sotuv/page.tsx',
+  // Faza Q15 — the document/catalogue list rows.
+  'app/(app)/demands/page.tsx',
+  'app/(app)/customer-orders/page.tsx',
+  'app/(app)/supplies/page.tsx',
+  'app/(app)/invoices-out/page.tsx',
+  'app/(app)/counterparties/page.tsx',
+];
 
 /**
  * Payload type names that belong to `@moysklad/contracts` and must not be
  * re-declared locally anywhere in web. Only names that unambiguously describe
  * ONE endpoint's payload go here — `ProductRow`, for instance, is deliberately
- * absent because different list pages legitimately project different subsets.
+ * absent because different list pages legitimately project different subsets,
+ * and `Counterparty`/`InvoiceRow` because half the app uses those names for
+ * unrelated picker/detail shapes (`InvoiceRow` is also `/invoices-in`).
  */
-const OWNED_BY_CONTRACTS = ['CurrentSession'];
+const OWNED_BY_CONTRACTS = ['CurrentSession', 'DemandRow', 'CustomerOrderRow', 'SupplyRow'];
+
+/**
+ * Endpoints whose list response is genuinely NOT `{ items, total?, nextCursor? }`
+ * and therefore keep a local envelope declaration. Each one was read before
+ * being listed — this is a description of the API, not a to-do list.
+ *
+ * The Faza Q15 codemod migrated the other 84 files; these six are what is left,
+ * and the scan below fails if a seventh appears.
+ */
+const NON_ENVELOPE_LISTS: Array<{ file: string; why: string }> = [
+  {
+    file: 'app/(app)/analitika/kontragentlar/page.tsx',
+    why: 'Returns `{ partners, groups, pagination }` — a different top-level shape entirely (no `items`).',
+  },
+  {
+    file: 'app/(app)/commission-reports/page.tsx',
+    why: 'Page-number pagination (`page`/`pageSize`) plus a five-figure `totals` block.',
+  },
+  {
+    file: 'app/(app)/counterparties/page.tsx',
+    why: 'Carries `balanceTotalMinor` — the all-pages «Итого Баланс» computed over the whole filtered set, not the page.',
+  },
+  {
+    file: 'app/(app)/money/page.tsx',
+    why: 'Carries a per-currency `totals` block, and its `nextCursor` is `string | null` (explicit null) rather than an omitted key.',
+  },
+  {
+    file: 'app/(app)/payments/page.tsx',
+    why: 'Page-number pagination plus an income/expense `totals` block.',
+  },
+  {
+    file: 'app/(app)/settings/employees/page.tsx',
+    why: 'Names its array `rows`, not `items`, and paginates with `page`/`limit`.',
+  },
+];
 
 /**
  * Files still carrying a local declaration, with the reason. Each entry is
@@ -72,12 +118,28 @@ describe('shared API contracts', () => {
           expect(src).not.toMatch(new RegExp(`interface\\s+${name}\\b`));
         }
       });
-
-      it('declares no local ListResponse envelope', () => {
-        expect(read(rel)).not.toMatch(/interface\s+ListResponse\b/);
-      });
     });
   }
+
+  it('no page re-declares the shared list envelope', () => {
+    const allowed = new Set(NON_ENVELOPE_LISTS.map((e) => e.file));
+    const offenders = collectSources(WEB_SRC).filter((file) => {
+      const rel = file.replaceAll('\\', '/');
+      if (allowed.has(rel)) return false;
+      return /interface\s+ListResponse\b/.test(readFileSync(path.join(WEB_SRC, file), 'utf8'));
+    });
+    expect(offenders).toEqual([]);
+  });
+
+  it('every non-envelope exemption is still real (stale entries fail)', () => {
+    for (const entry of NON_ENVELOPE_LISTS) {
+      expect(
+        /interface\s+ListResponse\b/.test(read(entry.file)),
+        `${entry.file} no longer declares ListResponse — delete its NON_ENVELOPE_LISTS entry`,
+      ).toBe(true);
+      expect(entry.why.length).toBeGreaterThan(20);
+    }
+  });
 
   it('no unlisted file re-declares a contract-owned payload type', () => {
     const files = collectSources(WEB_SRC);

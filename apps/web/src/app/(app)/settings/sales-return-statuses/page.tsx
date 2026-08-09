@@ -19,6 +19,7 @@ import { FilterToggleButton } from '@/components/filters/filter-toggle-button';
 import { useApiMutation } from '@/hooks/use-api-mutation';
 import { api } from '@/lib/api-client';
 import { archivedTone } from '@/lib/archived-tone';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import {
   Badge,
   Button,
@@ -44,11 +45,6 @@ interface StatusRow {
   position: number;
   archived: boolean;
 }
-interface ListResponse {
-  items: StatusRow[];
-  nextCursor?: string;
-}
-
 const LIMIT = 200;
 
 // moysklad's account statuses use saturated badge colours; this palette
@@ -94,9 +90,9 @@ export default function SalesReturnStatusesPage() {
     isLoading,
     error: loadError,
     refetch,
-  } = useQuery<ListResponse>({
+  } = useQuery<ListResponse<StatusRow>>({
     queryKey: ['states', ENTITY_TYPE, archived],
-    queryFn: () => api.get<ListResponse>(`/states?${params.toString()}`),
+    queryFn: () => api.get<ListResponse<StatusRow>>(`/states?${params.toString()}`),
   });
 
   // /states has no server-side search; filter the (small) status list locally.

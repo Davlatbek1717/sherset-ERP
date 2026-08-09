@@ -12,6 +12,7 @@ import { useColumnWidths } from '@/hooks/use-column-widths';
 import { api } from '@/lib/api-client';
 import { stashBulkEdit } from '@/lib/bulk-edit-nav';
 import { documentStateTone } from '@/lib/document-state-tone';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import {
   Badge,
   CatalogPicker,
@@ -59,12 +60,6 @@ interface MoveRow {
   destinationStore: { id: string; name: string };
   owner: { id: string; name: string } | null;
   _count: { positions: number };
-}
-
-interface ListResponse {
-  items: MoveRow[];
-  nextCursor?: string;
-  total: number;
 }
 
 // Moysklad parity — 100 rows per page.
@@ -318,9 +313,9 @@ export default function MovesPage() {
     sortDir,
     params.toString(),
   ] as const;
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<MoveRow>>({
     queryKey: listQueryKey,
-    queryFn: () => api.get<ListResponse>(`/moves?${params.toString()}`),
+    queryFn: () => api.get<ListResponse<MoveRow>>(`/moves?${params.toString()}`),
   });
 
   // moysklad «Итого» — the grand total over the ENTIRE active filter set (all

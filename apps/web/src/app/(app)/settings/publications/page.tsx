@@ -13,6 +13,7 @@
  */
 
 import { api } from '@/lib/api-client';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import { Badge, type DataTableColumn, ListView, formatDate, useDebounce } from '@moysklad/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
@@ -31,12 +32,6 @@ interface PublicationRow {
   revokedAt: string | null;
   createdAt: string;
   owner: { id: string; name: string } | null;
-}
-
-interface ListResponse {
-  items: PublicationRow[];
-  nextCursor?: string;
-  total: number;
 }
 
 const LIMIT = 100;
@@ -113,9 +108,9 @@ export default function PublicationsPage() {
     ...(cursor ? { cursor } : {}),
   });
 
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<PublicationRow>>({
     queryKey: ['publications', search, cursor, sortKey, sortDir],
-    queryFn: () => api.get<ListResponse>(`/publications?${params.toString()}`),
+    queryFn: () => api.get<ListResponse<PublicationRow>>(`/publications?${params.toString()}`),
   });
 
   const copyUrl = async (token: string) => {

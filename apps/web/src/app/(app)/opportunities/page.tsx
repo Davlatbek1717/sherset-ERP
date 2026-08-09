@@ -7,6 +7,7 @@ import { useColumnVisibility } from '@/hooks/use-column-visibility';
 import { useColumnWidths } from '@/hooks/use-column-widths';
 import { api } from '@/lib/api-client';
 import { opportunityStatusTone } from '@/lib/domain-status-tone';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import {
   Badge,
   CatalogPicker,
@@ -50,12 +51,6 @@ interface Opportunity {
   counterparty: { id: string; name: string; legalTitle: string | null } | null;
   contactPerson: { id: string; name: string } | null;
   owner: { id: string; name: string } | null;
-}
-
-interface ListResponse {
-  items: Opportunity[];
-  nextCursor?: string;
-  total: number;
 }
 
 const LIMIT = 25;
@@ -125,9 +120,9 @@ export default function OpportunitiesPage() {
     sortKey,
     sortDir,
   ] as const;
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<Opportunity>>({
     queryKey: listQueryKey,
-    queryFn: () => api.get<ListResponse>(`/opportunities?${params.toString()}`),
+    queryFn: () => api.get<ListResponse<Opportunity>>(`/opportunities?${params.toString()}`),
   });
 
   const bulk = useBulkDocumentActions('opportunities', listQueryKey, {
@@ -298,7 +293,7 @@ export default function OpportunitiesPage() {
         testId="opportunities-page"
         moyskladToolbar
         title={t('title')}
-        subtitle={data ? tCommon('records_count', { count: data.total }) : undefined}
+        subtitle={data ? tCommon('records_count', { count: data.total ?? 0 }) : undefined}
         onRefresh={() => refetch()}
         selectionCount={bulk.selectedIds.size}
         createHref="/opportunities/new"

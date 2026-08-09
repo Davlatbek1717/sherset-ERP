@@ -12,6 +12,7 @@
 import { FilterToggleButton } from '@/components/filters/filter-toggle-button';
 import { api } from '@/lib/api-client';
 import { archivedTone } from '@/lib/archived-tone';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import {
   Badge,
   type DataTableColumn,
@@ -35,12 +36,6 @@ interface ProcessRow {
   createdAt: string;
   updatedAt: string;
   _count: { positions: number };
-}
-
-interface ListResponse {
-  items: ProcessRow[];
-  nextCursor?: string;
-  total: number;
 }
 
 const LIMIT = 25;
@@ -76,9 +71,9 @@ export default function ProcessesPage() {
     sortKey,
     sortDir,
   ] as const;
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<ProcessRow>>({
     queryKey: listQueryKey,
-    queryFn: () => api.get<ListResponse>(`/processing-processes?${params.toString()}`),
+    queryFn: () => api.get<ListResponse<ProcessRow>>(`/processing-processes?${params.toString()}`),
   });
 
   const columns: DataTableColumn<ProcessRow>[] = [
@@ -145,7 +140,7 @@ export default function ProcessesPage() {
       testId="processes-page"
       moyskladToolbar
       title={t('title')}
-      subtitle={data ? tCommon('records_count', { count: data.total }) : undefined}
+      subtitle={data ? tCommon('records_count', { count: data.total ?? 0 }) : undefined}
       onRefresh={() => refetch()}
       createHref="/production/processes/new"
       createLabel={t('create_button')}

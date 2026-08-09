@@ -16,6 +16,7 @@ import { FilterToggleButton } from '@/components/filters/filter-toggle-button';
 import { useApiMutation } from '@/hooks/use-api-mutation';
 import { api } from '@/lib/api-client';
 import { archivedTone } from '@/lib/archived-tone';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import {
   Badge,
   Button,
@@ -39,11 +40,6 @@ interface TaskTypeRow {
   position: number;
   archived: boolean;
 }
-interface ListResponse {
-  items: TaskTypeRow[];
-  total: number;
-}
-
 const LIMIT = 200;
 
 const DEFAULT_PALETTE = [
@@ -88,9 +84,9 @@ export default function TaskTypesPage() {
     isLoading,
     error: loadError,
     refetch,
-  } = useQuery<ListResponse>({
+  } = useQuery<ListResponse<TaskTypeRow>>({
     queryKey: ['task-types', archived, search],
-    queryFn: () => api.get<ListResponse>(`/task-types?${params.toString()}`),
+    queryFn: () => api.get<ListResponse<TaskTypeRow>>(`/task-types?${params.toString()}`),
   });
 
   const upsertMut = useMutation({

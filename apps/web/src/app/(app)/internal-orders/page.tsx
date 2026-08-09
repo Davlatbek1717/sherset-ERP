@@ -22,6 +22,7 @@ import { useBulkDocumentActions } from '@/hooks/use-bulk-actions';
 import { useColumnVisibility } from '@/hooks/use-column-visibility';
 import { api } from '@/lib/api-client';
 import { stashBulkEdit } from '@/lib/bulk-edit-nav';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import {
   CatalogPicker,
   type DataTableColumn,
@@ -56,12 +57,6 @@ interface InternalOrderRow {
   store: { id: string; name: string };
   owner: { id: string; name: string } | null;
   _count: { positions: number };
-}
-
-interface ListResponse {
-  items: InternalOrderRow[];
-  nextCursor?: string;
-  total: number;
 }
 
 const LIMIT = 100;
@@ -244,9 +239,9 @@ export default function InternalOrdersPage() {
     params.toString(),
   ] as const;
 
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<InternalOrderRow>>({
     queryKey: listQueryKey,
-    queryFn: () => api.get<ListResponse>(`/internal-orders?${params.toString()}`),
+    queryFn: () => api.get<ListResponse<InternalOrderRow>>(`/internal-orders?${params.toString()}`),
   });
 
   const bulk = useBulkDocumentActions('internal-orders', listQueryKey, {

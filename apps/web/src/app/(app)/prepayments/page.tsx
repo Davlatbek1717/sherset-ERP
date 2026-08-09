@@ -27,6 +27,7 @@ import { useColumnWidths } from '@/hooks/use-column-widths';
 import { api } from '@/lib/api-client';
 import { stashBulkEdit } from '@/lib/bulk-edit-nav';
 import { filterFromQueryString } from '@/lib/filter-from-query';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import {
   CatalogPicker,
   CatalogPickerField,
@@ -64,12 +65,6 @@ interface PrepaymentRow {
   organization: { id: string; name: string };
   customerOrder: { id: string; name: string } | null;
   owner: { id: string; name: string } | null;
-}
-
-interface ListResponse {
-  items: PrepaymentRow[];
-  nextCursor?: string;
-  total: number;
 }
 
 /** Multi-select reference field — moysklad checkbox-dropdown holds {id,label}[]. */
@@ -184,9 +179,9 @@ export default function PrepaymentListPage() {
     organizations,
   ] as const;
 
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<PrepaymentRow>>({
     queryKey: listQueryKey,
-    queryFn: () => api.get<ListResponse>(`/prepayments?${params.toString()}`),
+    queryFn: () => api.get<ListResponse<PrepaymentRow>>(`/prepayments?${params.toString()}`),
   });
 
   const openMassEdit = (ids: string[]) => {

@@ -2,6 +2,7 @@
 
 import { api } from '@/lib/api-client';
 import { systemTone } from '@/lib/domain-status-tone';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import { Badge, StickyHScroll } from '@moysklad/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
@@ -15,15 +16,11 @@ interface RoleRow {
   memberCount: number;
 }
 
-interface ListResponse {
-  items: RoleRow[];
-}
-
 export function RolesListView() {
   const t = useTranslations('pages.analitika_settings');
-  const { data, isLoading } = useQuery<ListResponse>({
+  const { data, isLoading } = useQuery<ListResponse<RoleRow>>({
     queryKey: ['roles', 'list'],
-    queryFn: () => api.get<ListResponse>('/roles'),
+    queryFn: () => api.get<ListResponse<RoleRow>>('/roles'),
   });
   const items = data?.items ?? [];
 

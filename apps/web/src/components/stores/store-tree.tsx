@@ -13,6 +13,7 @@
  */
 
 import { api } from '@/lib/api-client';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 
@@ -20,10 +21,6 @@ interface StoreNode {
   id: string;
   name: string;
   parentId: string | null;
-}
-
-interface ListResponse {
-  items: StoreNode[];
 }
 
 export interface StoreTreeNode extends StoreNode {
@@ -102,9 +99,10 @@ export function StoreTree({
   onSelect(id: string | null, label: string | null): void;
 }) {
   const t = useTranslations('pages.stores');
-  const { data } = useQuery<ListResponse>({
+  const { data } = useQuery<ListResponse<StoreNode>>({
     queryKey: ['stores', 'tree'],
-    queryFn: () => api.get<ListResponse>('/admin/stores?limit=500&sortBy=name&sortDir=asc'),
+    queryFn: () =>
+      api.get<ListResponse<StoreNode>>('/admin/stores?limit=500&sortBy=name&sortDir=asc'),
     staleTime: 60_000,
   });
 

@@ -15,6 +15,10 @@ import { api } from '@/lib/api-client';
 import { stashBulkEdit } from '@/lib/bulk-edit-nav';
 import { INVOICE_STATE_TONE, documentStateTone } from '@/lib/document-state-tone';
 import { filterFromQueryString } from '@/lib/filter-from-query';
+import type {
+  InvoiceOutRow as InvoiceRow,
+  ListEnvelope as ListResponse,
+} from '@moysklad/contracts';
 import {
   Badge,
   CatalogPicker,
@@ -37,37 +41,6 @@ import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-
-interface InvoiceRow {
-  id: string;
-  name: string;
-  state: string;
-  applicable: boolean;
-  sumMinor: string;
-  payedSumMinor: string;
-  shippedSumMinor: string;
-  // moysklad parity (v2.2 audit): backend Prisma currency surfaced.
-  currency: string;
-  moment: string;
-  paymentPlannedMoment: string | null;
-  printed: boolean;
-  published: boolean;
-  description: string | null;
-  agent: { id: string; name: string; legalTitle: string | null };
-  organization: { id: string; name: string };
-  store: { id: string; name: string } | null;
-  owner: { id: string; name: string } | null;
-  customerOrder: { id: string; name: string } | null;
-  // «Статус» — account custom status (coloured pill), NOT the FSM `state`.
-  status: { id: string; name: string; color: string | null } | null;
-  _count: { positions: number };
-}
-
-interface ListResponse {
-  items: InvoiceRow[];
-  nextCursor?: string;
-  total: number;
-}
 
 // Moysklad parity — 100 rows per page (same as CO list).
 const LIMIT = 100;
@@ -349,9 +322,9 @@ export default function InvoicesOutPage() {
     // pick) refetches. Without it, array changes wouldn't invalidate the query.
     params.toString(),
   ] as const;
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<InvoiceRow>>({
     queryKey: listQueryKey,
-    queryFn: () => api.get<ListResponse>(`/invoices-out?${params.toString()}`),
+    queryFn: () => api.get<ListResponse<InvoiceRow>>(`/invoices-out?${params.toString()}`),
   });
 
   const openMassEdit = (ids: string[]) => {

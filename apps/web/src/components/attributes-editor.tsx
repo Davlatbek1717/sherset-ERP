@@ -1,6 +1,7 @@
 'use client';
 
 import { api } from '@/lib/api-client';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import {
   CatalogPickerField,
   Checkbox,
@@ -50,10 +51,6 @@ export interface AttributeMetaRow {
   position: number;
 }
 
-interface ListResponse {
-  items: AttributeMetaRow[];
-}
-
 export interface AttributesEditorProps {
   /** Entity type — must match AttributeMetadata.entity values. */
   entity: string;
@@ -80,9 +77,9 @@ export function AttributesEditor({
   title,
   testIdPrefix,
 }: AttributesEditorProps) {
-  const { data, isLoading } = useQuery<ListResponse>({
+  const { data, isLoading } = useQuery<ListResponse<AttributeMetaRow>>({
     queryKey: ['attribute-metadata-entity', entity],
-    queryFn: () => api.get<ListResponse>(`/attribute-metadata/entity/${entity}`),
+    queryFn: () => api.get<ListResponse<AttributeMetaRow>>(`/attribute-metadata/entity/${entity}`),
     staleTime: 60_000,
   });
 

@@ -1,6 +1,7 @@
 'use client';
 
 import { api } from '@/lib/api-client';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import { useQuery } from '@tanstack/react-query';
 
 export interface AuditLogEntry {
@@ -14,12 +15,6 @@ export interface AuditLogEntry {
   context: Record<string, unknown> | null;
 }
 
-interface ListResponse {
-  items: AuditLogEntry[];
-  nextCursor?: string;
-  total: number;
-}
-
 /**
  * Fetches the audit log for a single entity, keyed by (entity, entityId) so
  * each detail page's History tab gets its own cache bucket. The query is
@@ -27,10 +22,10 @@ interface ListResponse {
  * without triggering requests before data is ready.
  */
 export function useDocumentHistory(entity: string, entityId: string | undefined | null) {
-  return useQuery<ListResponse>({
+  return useQuery<ListResponse<AuditLogEntry>>({
     queryKey: ['audit-logs', entity, entityId],
     queryFn: () =>
-      api.get<ListResponse>(
+      api.get<ListResponse<AuditLogEntry>>(
         `/audit-logs?entity=${encodeURIComponent(entity)}&entityId=${encodeURIComponent(entityId!)}`,
       ),
     enabled: !!entityId,

@@ -2,6 +2,7 @@
 
 import { api } from '@/lib/api-client';
 import { mxikSourceTone } from '@/lib/domain-status-tone';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import {
   Badge,
   Button,
@@ -27,12 +28,6 @@ interface MxikRow {
   archived: boolean;
   createdAt: string;
   updatedAt: string;
-}
-
-interface ListResponse {
-  items: MxikRow[];
-  nextCursor?: string;
-  total: number;
 }
 
 const LIMIT = 25;
@@ -68,9 +63,9 @@ export default function MxikAdminPage() {
     sortKey,
     sortDir,
   ] as const;
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<MxikRow>>({
     queryKey,
-    queryFn: () => api.get<ListResponse>(`/mxik?${params.toString()}`),
+    queryFn: () => api.get<ListResponse<MxikRow>>(`/mxik?${params.toString()}`),
   });
 
   const filters: ListViewFilter[] = [
@@ -149,7 +144,7 @@ export default function MxikAdminPage() {
     <ListView
       testId="mxik-admin-page"
       title={t('title')}
-      subtitle={data ? tCommon('records_count', { count: data.total }) : t('subtitle')}
+      subtitle={data ? tCommon('records_count', { count: data.total ?? 0 }) : t('subtitle')}
       search={searchInput}
       onSearchChange={(v) => {
         setSearchInput(v);

@@ -3,6 +3,7 @@
 import { useApiMutation } from '@/hooks/use-api-mutation';
 import { useDestructiveMutation } from '@/hooks/use-destructive-mutation';
 import { api } from '@/lib/api-client';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import {
   Badge,
   Button,
@@ -21,11 +22,6 @@ interface KorzinaItem {
   name: string;
   deletedAt: string;
   secondary: string | null;
-}
-
-interface ListResponse {
-  items: KorzinaItem[];
-  total: number;
 }
 
 const ENTITY_GROUPS: { key: string; entities: string[] }[] = [
@@ -60,9 +56,9 @@ export default function KorzinaPage() {
   const params = new URLSearchParams({ limit: String(LIMIT), sortBy: sortKey, sortDir });
   if (activeEntity) params.set('entity', activeEntity);
 
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<KorzinaItem>>({
     queryKey: ['korzina', activeEntity ?? 'all', sortKey, sortDir],
-    queryFn: () => api.get<ListResponse>(`/korzina?${params.toString()}`),
+    queryFn: () => api.get<ListResponse<KorzinaItem>>(`/korzina?${params.toString()}`),
   });
 
   const restoreMut = useApiMutation({

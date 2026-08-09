@@ -1,6 +1,7 @@
 'use client';
 
 import { api } from '@/lib/api-client';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import { type DataTableColumn, ListView, formatDate, formatMoney, useDebounce } from '@moysklad/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
@@ -20,12 +21,6 @@ interface SessionRow {
   returnsCount: number;
   returnsSumMinor: string;
   discrepancyMinor: string | null;
-}
-
-interface ListResponse {
-  items: SessionRow[];
-  nextCursor?: string;
-  total: number;
 }
 
 const LIMIT = 25;
@@ -51,9 +46,9 @@ export default function ZReportListPage() {
     ...(cursor ? { cursor } : {}),
   });
 
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<SessionRow>>({
     queryKey: ['z-report-sessions', search, cursor, sortKey, sortDir] as const,
-    queryFn: () => api.get<ListResponse>(`/cashier-sessions?${params.toString()}`),
+    queryFn: () => api.get<ListResponse<SessionRow>>(`/cashier-sessions?${params.toString()}`),
   });
 
   const columns: DataTableColumn<SessionRow>[] = [

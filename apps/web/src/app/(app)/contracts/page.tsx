@@ -1,6 +1,7 @@
 'use client';
 
 import { api } from '@/lib/api-client';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import {
   type DataTableColumn,
   ListView,
@@ -25,11 +26,6 @@ interface ContractRow {
   ownAgent: { id: string; name: string } | null;
 }
 
-interface ListResponse {
-  items: ContractRow[];
-  total: number;
-}
-
 const LIMIT = 25;
 
 export default function ContractsPage() {
@@ -47,9 +43,9 @@ export default function ContractsPage() {
     limit: String(LIMIT),
   });
 
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<ContractRow>>({
     queryKey: ['contracts', search, archived],
-    queryFn: () => api.get<ListResponse>(`/contracts?${params.toString()}`),
+    queryFn: () => api.get<ListResponse<ContractRow>>(`/contracts?${params.toString()}`),
   });
 
   const filters: ListViewFilter[] = [
@@ -138,7 +134,7 @@ export default function ContractsPage() {
     <ListView
       testId="contracts-page"
       title={t('title')}
-      subtitle={data ? tCommon('records_count', { count: data.total }) : undefined}
+      subtitle={data ? tCommon('records_count', { count: data.total ?? 0 }) : undefined}
       createHref="/contracts/new"
       createLabel={t('create_button')}
       search={searchInput}

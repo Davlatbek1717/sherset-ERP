@@ -2,6 +2,7 @@
 
 import { api } from '@/lib/api-client';
 import { documentStateTone } from '@/lib/document-state-tone';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import {
   Badge,
   type DataTableColumn,
@@ -34,12 +35,6 @@ interface SaleRow {
   _count: { positions: number };
 }
 
-interface ListResponse {
-  items: SaleRow[];
-  nextCursor?: string;
-  total: number;
-}
-
 const LIMIT = 25;
 
 export default function RetailSalesListPage() {
@@ -63,9 +58,9 @@ export default function RetailSalesListPage() {
     ...(cursor ? { cursor } : {}),
   });
 
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<SaleRow>>({
     queryKey: ['retail-sales', stateFilter, search, cursor, sortKey, sortDir] as const,
-    queryFn: () => api.get<ListResponse>(`/retail-sales?${params.toString()}`),
+    queryFn: () => api.get<ListResponse<SaleRow>>(`/retail-sales?${params.toString()}`),
   });
 
   const filters: ListViewFilter[] = [
@@ -155,7 +150,7 @@ export default function RetailSalesListPage() {
     <ListView
       testId="retail-sales-page"
       title={t('title')}
-      subtitle={data ? tCommon('records_count', { count: data.total }) : undefined}
+      subtitle={data ? tCommon('records_count', { count: data.total ?? 0 }) : undefined}
       search={searchInput}
       onSearchChange={(v) => {
         setSearchInput(v);

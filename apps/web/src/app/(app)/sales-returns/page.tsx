@@ -16,6 +16,7 @@ import { useColumnWidths } from '@/hooks/use-column-widths';
 import { api } from '@/lib/api-client';
 import { stashBulkEdit } from '@/lib/bulk-edit-nav';
 import { filterFromQueryString } from '@/lib/filter-from-query';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import {
   CatalogPicker,
   CatalogPickerField,
@@ -66,12 +67,6 @@ interface SalesReturnRow {
   // pill), NOT the FSM `state`. The list() service already includes it.
   status: { id: string; name: string; color: string | null } | null;
   _count: { positions: number };
-}
-
-interface ListResponse {
-  items: SalesReturnRow[];
-  nextCursor?: string;
-  total: number;
 }
 
 // Moysklad parity — 100 rows per page.
@@ -256,9 +251,9 @@ export default function SalesReturnsPage() {
     filterValues,
     extFilter,
   ] as const;
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<SalesReturnRow>>({
     queryKey: listQueryKey,
-    queryFn: () => api.get<ListResponse>(`/sales-returns?${params.toString()}`),
+    queryFn: () => api.get<ListResponse<SalesReturnRow>>(`/sales-returns?${params.toString()}`),
   });
 
   // moysklad «Статус» dropdown — the account's custom return statuses (State

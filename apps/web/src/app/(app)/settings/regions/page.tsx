@@ -1,6 +1,7 @@
 'use client';
 
 import { api } from '@/lib/api-client';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import { type DataTableColumn, ListView, type ListViewFilter, useDebounce } from '@moysklad/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
@@ -11,11 +12,6 @@ interface RegionRow {
   name: string;
   code: string | null;
   externalCode: string | null;
-}
-
-interface ListResponse {
-  items: RegionRow[];
-  total: number;
 }
 
 const LIMIT = 50;
@@ -35,9 +31,9 @@ export default function RegionsPage() {
     sortDir,
   });
 
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<RegionRow>>({
     queryKey: ['regions', search, sortKey, sortDir],
-    queryFn: () => api.get<ListResponse>(`/regions?${params.toString()}`),
+    queryFn: () => api.get<ListResponse<RegionRow>>(`/regions?${params.toString()}`),
   });
 
   const columns: DataTableColumn<RegionRow>[] = [
@@ -84,7 +80,7 @@ export default function RegionsPage() {
       testId="regions-page"
       title={t('title')}
       moyskladToolbar
-      subtitle={data ? tCommon('records_count', { count: data.total }) : undefined}
+      subtitle={data ? tCommon('records_count', { count: data.total ?? 0 }) : undefined}
       createHref="/settings/regions/new"
       createLabel={t('create_button')}
       createPosition="start"

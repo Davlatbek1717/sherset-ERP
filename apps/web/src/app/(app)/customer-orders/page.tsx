@@ -15,6 +15,7 @@ import { useColumnWidths } from '@/hooks/use-column-widths';
 import { api } from '@/lib/api-client';
 import { stashBulkEdit } from '@/lib/bulk-edit-nav';
 import { filterFromQueryString } from '@/lib/filter-from-query';
+import type { CustomerOrderRow, ListEnvelope as ListResponse } from '@moysklad/contracts';
 import {
   CatalogPicker,
   CatalogPickerField,
@@ -46,38 +47,6 @@ import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
-
-interface CustomerOrderRow {
-  id: string;
-  name: string;
-  state: string;
-  /** Account-defined custom status (moysklad «Статус», e.g. «Текширилмаган»).
-   *  The list «Статус» column shows this when set; falls back to FSM `state`. */
-  status: { id: string; name: string; color: string | null } | null;
-  applicable: boolean;
-  sumMinor: string;
-  payedSumMinor: string;
-  shippedSumMinor: string;
-  invoicedSumMinor: string;
-  reservedSumMinor: string;
-  /** Document currency code (UZS / USD / RUB / EUR). */
-  currency: string;
-  moment: string;
-  deliveryPlannedMoment: string | null;
-  printed: boolean;
-  published: boolean;
-  description: string | null;
-  agent: { id: string; name: string; legalTitle: string | null };
-  organization: { id: string; name: string };
-  store: { id: string; name: string };
-  owner: { id: string; name: string } | null;
-}
-
-interface ListResponse {
-  items: CustomerOrderRow[];
-  nextCursor?: string;
-  total: number;
-}
 
 /** Account-defined custom field («Дополнительные поля») definition — drives the
  *  dynamic filter fields after «Статус» (moysklad shows «Уста», «Санаси», … each
@@ -370,9 +339,9 @@ export default function CustomerOrdersPage() {
     extFilter,
     attrFilters,
   ] as const;
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<CustomerOrderRow>>({
     queryKey: listQueryKey,
-    queryFn: () => api.get<ListResponse>(`/customer-orders?${params.toString()}`),
+    queryFn: () => api.get<ListResponse<CustomerOrderRow>>(`/customer-orders?${params.toString()}`),
   });
 
   // moysklad «Итого» grand total — the pinned footer sums the ENTIRE filtered

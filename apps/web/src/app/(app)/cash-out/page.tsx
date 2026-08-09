@@ -14,6 +14,7 @@ import { useColumnWidths } from '@/hooks/use-column-widths';
 import { api } from '@/lib/api-client';
 import { stashBulkEdit } from '@/lib/bulk-edit-nav';
 import { filterFromQueryString } from '@/lib/filter-from-query';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import {
   CatalogPicker,
   CatalogPickerField,
@@ -53,12 +54,6 @@ interface CashOutRow {
   cashDesk: { id: string; name: string; currency: string };
   owner: { id: string; name: string } | null;
   _count: { operations: number };
-}
-
-interface ListResponse {
-  items: CashOutRow[];
-  nextCursor?: string;
-  total: number;
 }
 
 /** Multi-select reference field — moysklad checkbox-dropdown holds {id,label}[]. */
@@ -188,9 +183,9 @@ export default function CashOutListPage() {
     agents,
     organizations,
   ] as const;
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<CashOutRow>>({
     queryKey: listQueryKey,
-    queryFn: () => api.get<ListResponse>(`/cash-out?${params.toString()}`),
+    queryFn: () => api.get<ListResponse<CashOutRow>>(`/cash-out?${params.toString()}`),
   });
 
   const bulk = useBulkDocumentActions('cash-out', listQueryKey, { hasFSM: true });

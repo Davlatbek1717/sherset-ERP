@@ -1,6 +1,13 @@
 import type { ZodTypeAny } from 'zod';
 import { z } from 'zod';
 import { CurrentSessionSchema } from './cashier-session.js';
+import { CounterpartyRowSchema } from './counterparty.js';
+import {
+  CustomerOrderRowSchema,
+  DemandRowSchema,
+  InvoiceOutRowSchema,
+  SupplyRowSchema,
+} from './document-list.js';
 import { PosProductRowSchema } from './product.js';
 import { CashDeskRowSchema, OrganizationRefSchema, StoreRefSchema } from './reference.js';
 
@@ -30,8 +37,18 @@ import { CashDeskRowSchema, OrganizationRefSchema, StoreRefSchema } from './refe
 export type ProvenanceSource =
   /** Prisma model whose scalar columns are returned wholesale (service uses `include`, not `select`). */
   | { kind: 'model'; model: string; why: string }
-  /** The `select`/`include` block inside a named service method. */
-  | { kind: 'select'; service: string; method: string; why: string }
+  /**
+   * The `select`/`include` block inside a named service method.
+   *
+   * `block` picks WHICH block to read. The default anchors on the first
+   * `select:` OR `include:` in the method, which is right for services whose
+   * query is the first thing they build. It is WRONG for methods that run a
+   * lookup first — `counterparty.service.ts#list` opens with an
+   * `attributeMetadata.findMany({ select: { code: true } })` while building the
+   * filter, so the default anchor would read a one-key block and quietly
+   * "prove" almost nothing. `block: 'include'` anchors on the row `include:`.
+   */
+  | { kind: 'select'; service: string; method: string; block?: 'include'; why: string }
   /** Every object-literal key inside a named service/repository method (for hand-built blocks). */
   | { kind: 'method'; service: string; method: string; why: string }
   /** A named `z.object({...})` in an apps/api Zod schema — the literal server-Zod ↔ FE-type check. */
@@ -55,6 +72,30 @@ export interface ContractProvenance {
 const API = 'apps/api/src/modules';
 const CASHIER_SESSION_SERVICE = `${API}/cashier-session/cashier-session.service.ts`;
 const PRODUCT_REPOSITORY = `${API}/product/product.repository.ts`;
+const DEMAND_SERVICE = `${API}/demand/demand.service.ts`;
+const CUSTOMER_ORDER_SERVICE = `${API}/customer-order/customer-order.service.ts`;
+const COUNTERPARTY_SERVICE = `${API}/counterparty/counterparty.service.ts`;
+const SUPPLY_SERVICE = `${API}/supply/supply.service.ts`;
+const INVOICE_OUT_SERVICE = `${API}/invoice-out/invoice-out.service.ts`;
+
+/**
+ * Every document list service follows the same two-source shape: `list()` runs
+ * one `findMany` with an `include`, so the response carries (1) every scalar of
+ * the Prisma model and (2) the relation keys named in that `include`.
+ */
+const documentListSources = (model: string, service: string): ProvenanceSource[] => [
+  {
+    kind: 'model',
+    model,
+    why: `${service} \`list\` uses a Prisma \`include\`, so every ${model} scalar is on the wire.`,
+  },
+  {
+    kind: 'select',
+    service,
+    method: 'list',
+    why: 'The relation projections the grid renders (agent / organization / store / owner / status / …). Dropping one leaves a column empty with a green typecheck — the FE-12 failure mode.',
+  },
+];
 
 export const CONTRACT_PROVENANCE: ContractProvenance[] = [
   {
@@ -132,6 +173,69 @@ export const CONTRACT_PROVENANCE: ContractProvenance[] = [
         file: `${API}/product/product.schema.ts`,
         name: 'SalePriceSchema',
         why: 'Entries of the salePrices JSON column are validated by this server Zod schema — the direct server-Zod ↔ FE-type tie.',
+      },
+    ],
+  },
+  {
+    contract: 'DemandRowSchema',
+    endpoint: 'GET /demands',
+    schema: DemandRowSchema,
+    sources: [
+      ...documentListSources('Demand', DEMAND_SERVICE),
+      {
+        kind: 'method',
+        service: DEMAND_SERVICE,
+        method: 'enrichListRows',
+        why: 'Five grid columns («Сумма возвратов» / «Кто изменил» / «Владелец-отдел» / «Комментарий к адресу доставки» / attribute display names) are assembled here in batch, AFTER the query. A refactor that drops this step leaves the `include` intact and the columns silently empty.',
+      },
+    ],
+  },
+  {
+    contract: 'CustomerOrderRowSchema',
+    endpoint: 'GET /customer-orders',
+    schema: CustomerOrderRowSchema,
+    sources: documentListSources('CustomerOrder', CUSTOMER_ORDER_SERVICE),
+  },
+  {
+    contract: 'SupplyRowSchema',
+    endpoint: 'GET /supplies',
+    schema: SupplyRowSchema,
+    sources: documentListSources('Supply', SUPPLY_SERVICE),
+  },
+  {
+    contract: 'InvoiceOutRowSchema',
+    endpoint: 'GET /invoices-out',
+    schema: InvoiceOutRowSchema,
+    sources: documentListSources('InvoiceOut', INVOICE_OUT_SERVICE),
+  },
+  {
+    contract: 'CounterpartyRowSchema',
+    endpoint: 'GET /counterparties',
+    schema: CounterpartyRowSchema,
+    sources: [
+      {
+        kind: 'model',
+        model: 'Counterparty',
+        why: 'counterparty.service.ts `list` uses a Prisma `include` and spreads the row (`...rest`), so every Counterparty scalar is on the wire.',
+      },
+      {
+        kind: 'select',
+        service: COUNTERPARTY_SERVICE,
+        method: 'list',
+        block: 'include',
+        why: 'The relation projections (owner / modifiedBy / group / groups / state / priceType). `block: include` is REQUIRED here — the method opens with an attributeMetadata `select: { code: true }` for the custom-field filter, and the default anchor would read that one-key block instead.',
+      },
+      {
+        kind: 'method',
+        service: COUNTERPARTY_SERVICE,
+        method: 'list',
+        why: 'The CRM aggregates (balanceMinor / salesCount / salesAmount / first+lastSaleDate / averageCheckMinor / profitMinor / returns* / bank* / event* / discountSumMinor) are hand-assembled from four batched queries in this same method — no column produces them. Four of them are emitted as SHORTHAND properties, which the key extractor was blind to until Faza Q15.',
+      },
+      {
+        kind: 'zod',
+        file: `${API}/counterparty/counterparty.schema.ts`,
+        name: 'UzRequisitesSchema',
+        why: 'inn / pinfl / kpp / birthDate / gender live inside the `uzRequisites` JSON column — no column and no select produces them, but the server validates writes with this Zod schema, so it is the real tether. (Our `gender` is a widened `string` where the server writes `enum([male, female])` — the FE must render whatever is stored, including legacy values.)',
       },
     ],
   },

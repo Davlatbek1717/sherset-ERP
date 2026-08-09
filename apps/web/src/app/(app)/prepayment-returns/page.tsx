@@ -22,6 +22,7 @@ import { useColumnWidths } from '@/hooks/use-column-widths';
 import { api } from '@/lib/api-client';
 import { stashBulkEdit } from '@/lib/bulk-edit-nav';
 import { filterFromQueryString, queryFromFilter } from '@/lib/filter-from-query';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import {
   CatalogPicker,
   type DataTableColumn,
@@ -57,12 +58,6 @@ interface PrepaymentReturnRow {
   organization: { id: string; name: string };
   prepayment: { id: string; name: string; sumMinor: string; state: string } | null;
   owner: { id: string; name: string } | null;
-}
-
-interface ListResponse {
-  items: PrepaymentReturnRow[];
-  nextCursor?: string;
-  total: number;
 }
 
 /** Multi-select reference field — moysklad checkbox-dropdown holds {id,label}[]. */
@@ -144,9 +139,10 @@ export default function PrepaymentReturnListPage() {
     organizations,
   ] as const;
 
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<PrepaymentReturnRow>>({
     queryKey: listQueryKey,
-    queryFn: () => api.get<ListResponse>(`/prepayment-returns?${params.toString()}`),
+    queryFn: () =>
+      api.get<ListResponse<PrepaymentReturnRow>>(`/prepayment-returns?${params.toString()}`),
   });
 
   const openMassEdit = (ids: string[]) => {

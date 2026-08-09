@@ -82,12 +82,26 @@ function objectKeysIn(fragment: string): Set<string> {
 /**
  * Keys inside the `select:` / `include:` block of a named service method —
  * the precise check for endpoints that project explicit columns.
+ *
+ * `block` narrows WHICH block is read. The default (`'any'`) anchors on the
+ * first `select:` OR `include:`, which is correct for a method whose query is
+ * the first thing it builds. `'include'` anchors on the first `include:` and
+ * exists for methods that run a lookup first: `counterparty.service.ts#list`
+ * opens with `attributeMetadata.findMany({ select: { code: true } })` while
+ * assembling the filter, so the default anchor would read a ONE-KEY block and
+ * silently turn that contract's conformance check into a near-no-op.
  */
-export function selectBlockKeys(src: string, method: string): Set<string> {
+export function selectBlockKeys(
+  src: string,
+  method: string,
+  block: 'any' | 'include' = 'any',
+): Set<string> {
   const body = sliceMethod(src, method);
-  const anchor = body.search(/\b(?:include|select)\s*:/);
+  const anchor = body.search(block === 'include' ? /\binclude\s*:/ : /\b(?:include|select)\s*:/);
   if (anchor === -1) {
-    throw new Error(`method \`${method}\` has no \`select\`/\`include\` block — restructured?`);
+    throw new Error(
+      `method \`${method}\` has no \`${block === 'include' ? 'include' : 'select`/`include'}\` block — restructured?`,
+    );
   }
   const keys = objectKeysIn(braceBlock(body, anchor));
   // `select`/`include` are Prisma's own structural keywords, not response keys —
@@ -99,8 +113,38 @@ export function selectBlockKeys(src: string, method: string): Set<string> {
 }
 
 /**
- * Every object-literal key in a named method. Used for responses assembled by
- * hand rather than projected from columns (e.g. the live `stock` block).
+ * SHORTHAND object properties (`return { ...rest, salesCount, profitMinor }`).
+ *
+ * `objectKeysIn` only sees `key:` and is blind to these — which is not
+ * theoretical: `counterparty.service.ts#list` emits `balanceMinor`,
+ * `salesCount`, `averageCheckMinor` and `profitMinor` in shorthand, so without
+ * this the CRM aggregates read as "produced nowhere" while the server sends
+ * them every request.
+ *
+ * An identifier alone between `{`/`,` and `,`/`}` — which also matches
+ * DESTRUCTURING patterns (`const { balances, ...rest } = cp`) and array-free
+ * literals. That over-reach is acceptable only inside {@link methodObjectKeys},
+ * which is already the permissive extractor; it is deliberately NOT used by
+ * {@link selectBlockKeys}, where Prisma always writes `key: true`.
+ */
+function shorthandKeysIn(fragment: string): Set<string> {
+  const keys = new Set<string>();
+  const re = /[{,]\s*([A-Za-z_$][\w$]*)\s*(?=[,}])/g;
+  let m: RegExpExecArray | null = re.exec(fragment);
+  while (m !== null) {
+    if (m[1] !== undefined) keys.add(m[1]);
+    // Overlapping shorthands (`{ a, b, c }`) share their separator, so rewind
+    // one char — otherwise every second key is skipped.
+    re.lastIndex = Math.max(re.lastIndex - 1, m.index + 1);
+    m = re.exec(fragment);
+  }
+  return keys;
+}
+
+/**
+ * Every object-literal key in a named method, `key:` and shorthand alike. Used
+ * for responses assembled by hand rather than projected from columns (e.g. the
+ * live `stock` block, or the counterparty CRM aggregates).
  *
  * Weaker than {@link selectBlockKeys}: an unrelated key in the same method
  * counts as "provided". That over-permissiveness is the price of covering
@@ -108,7 +152,10 @@ export function selectBlockKeys(src: string, method: string): Set<string> {
  * the key disappearing.
  */
 export function methodObjectKeys(src: string, method: string): Set<string> {
-  return objectKeysIn(sliceMethod(src, method));
+  const body = sliceMethod(src, method);
+  const keys = objectKeysIn(body);
+  for (const k of shorthandKeysIn(body)) keys.add(k);
+  return keys;
 }
 
 /** Scalar + relation field names declared on a `model X { … }` in schema.prisma. */
@@ -154,7 +201,7 @@ export function collectSourceKeys(sources: readonly ProvenanceSource[]): Set<str
         add(prismaModelFields(readRepoFile('packages/db/prisma/schema.prisma'), source.model));
         break;
       case 'select':
-        add(selectBlockKeys(readRepoFile(source.service), source.method));
+        add(selectBlockKeys(readRepoFile(source.service), source.method, source.block ?? 'any'));
         break;
       case 'method':
         add(methodObjectKeys(readRepoFile(source.service), source.method));

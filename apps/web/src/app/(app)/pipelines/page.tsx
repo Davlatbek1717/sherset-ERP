@@ -3,6 +3,7 @@
 import { FilterToggleButton } from '@/components/filters/filter-toggle-button';
 import { api } from '@/lib/api-client';
 import { archivedTone } from '@/lib/archived-tone';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import {
   Badge,
   type DataTableColumn,
@@ -22,12 +23,6 @@ interface PipelineRow {
   archived: boolean;
   stages: { id: string; name: string; type: 'open' | 'won' | 'lost'; color: string | null }[];
   _count: { opportunities: number };
-}
-
-interface ListResponse {
-  items: PipelineRow[];
-  nextCursor?: string;
-  total: number;
 }
 
 const LIMIT = 25;
@@ -56,9 +51,9 @@ export default function PipelinesPage() {
     ...(cursor ? { cursor } : {}),
   });
 
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<PipelineRow>>({
     queryKey: ['pipelines', search, archived, cursor, sortKey, sortDir],
-    queryFn: () => api.get<ListResponse>(`/pipelines?${params.toString()}`),
+    queryFn: () => api.get<ListResponse<PipelineRow>>(`/pipelines?${params.toString()}`),
   });
 
   // moysklad's pipeline list uses moyskladToolbar + Фильтр panel (no
@@ -145,7 +140,7 @@ export default function PipelinesPage() {
       testId="pipelines-page"
       moyskladToolbar
       title={t('title')}
-      subtitle={data ? tCommon('records_count', { count: data.total }) : undefined}
+      subtitle={data ? tCommon('records_count', { count: data.total ?? 0 }) : undefined}
       onRefresh={() => refetch()}
       createHref="/pipelines/new"
       createLabel={t('create_button')}

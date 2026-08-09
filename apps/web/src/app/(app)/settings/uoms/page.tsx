@@ -17,6 +17,7 @@
 import { UomBulkActionsDropdown } from '@/components/uoms/bulk-actions-dropdown';
 import { useBulkDocumentActions } from '@/hooks/use-bulk-actions';
 import { api } from '@/lib/api-client';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import { type DataTableColumn, ListView, type ListViewFilter, useDebounce } from '@moysklad/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
@@ -28,11 +29,6 @@ interface UomRow {
   code: string | null;
   description: string | null;
   shared: boolean;
-}
-
-interface ListResponse {
-  items: UomRow[];
-  total: number;
 }
 
 const LIMIT = 50;
@@ -54,9 +50,9 @@ export default function UomsPage() {
 
   const listQueryKey = ['uoms', search, sortKey, sortDir] as const;
 
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<UomRow>>({
     queryKey: listQueryKey,
-    queryFn: () => api.get<ListResponse>(`/uoms?${params.toString()}`),
+    queryFn: () => api.get<ListResponse<UomRow>>(`/uoms?${params.toString()}`),
   });
 
   // Единицы измерения is a flat system catalog: no FSM transitions, no
@@ -124,7 +120,7 @@ export default function UomsPage() {
       moyskladToolbar
       onRefresh={() => refetch()}
       selectionCount={bulk.selectedIds.size}
-      subtitle={data ? tCommon('records_count', { count: data.total }) : undefined}
+      subtitle={data ? tCommon('records_count', { count: data.total ?? 0 }) : undefined}
       createHref="/settings/uoms/new"
       createLabel={t('create_button')}
       createPosition="start"

@@ -3,6 +3,7 @@
 import { useApiMutation } from '@/hooks/use-api-mutation';
 import { api } from '@/lib/api-client';
 import { deliveryStatusTone } from '@/lib/domain-status-tone';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import {
   Badge,
   Button,
@@ -40,11 +41,6 @@ interface WebhookDetail {
   enabled: boolean;
 }
 
-interface ListResponse {
-  items: DeliveryRow[];
-  total: number;
-}
-
 const LIMIT = 100;
 
 const STATUSES: Array<DeliveryRow['status']> = ['pending', 'sending', 'sent', 'dead'];
@@ -78,10 +74,12 @@ export default function WebhookDeliveriesPage() {
   const queryParams = new URLSearchParams({ limit: String(LIMIT) });
   if (statusFilter) queryParams.set('status', statusFilter);
 
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<DeliveryRow>>({
     queryKey: ['webhook-deliveries', webhookId, statusFilter],
     queryFn: () =>
-      api.get<ListResponse>(`/webhook/${webhookId}/deliveries?${queryParams.toString()}`),
+      api.get<ListResponse<DeliveryRow>>(
+        `/webhook/${webhookId}/deliveries?${queryParams.toString()}`,
+      ),
   });
 
   const retryMut = useApiMutation({

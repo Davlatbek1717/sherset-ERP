@@ -3,6 +3,7 @@
 import { useApiMutation } from '@/hooks/use-api-mutation';
 import { useDestructiveMutation } from '@/hooks/use-destructive-mutation';
 import { api } from '@/lib/api-client';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import { Badge, Button, type DataTableColumn, Icons, ListView } from '@moysklad/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
@@ -22,12 +23,6 @@ interface WebhookRow {
   authContext: Record<string, unknown> | null;
   createdAt: string;
   updatedAt: string;
-}
-
-interface ListResponse {
-  items: WebhookRow[];
-  nextCursor?: string;
-  total: number;
 }
 
 const LIMIT = 50;
@@ -51,9 +46,9 @@ export default function WebhooksAdminPage() {
     ...(cursor ? { cursor } : {}),
   });
 
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<WebhookRow>>({
     queryKey: ['webhooks', sortKey, sortDir, cursor],
-    queryFn: () => api.get<ListResponse>(`/webhook?${params.toString()}`),
+    queryFn: () => api.get<ListResponse<WebhookRow>>(`/webhook?${params.toString()}`),
   });
 
   const deleteMut = useApiMutation({

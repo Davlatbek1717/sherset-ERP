@@ -1,6 +1,7 @@
 'use client';
 
 import { api } from '@/lib/api-client';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import { type DataTableColumn, ListView, useDebounce } from '@moysklad/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
@@ -10,11 +11,6 @@ interface CustomEntityRow {
   id: string;
   name: string;
   _count: { values: number };
-}
-
-interface ListResponse {
-  items: CustomEntityRow[];
-  total: number;
 }
 
 const LIMIT = 50;
@@ -34,9 +30,9 @@ export default function CustomEntitiesPage() {
     sortDir,
   });
 
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<CustomEntityRow>>({
     queryKey: ['custom-entities', search, sortKey, sortDir],
-    queryFn: () => api.get<ListResponse>(`/custom-entities?${params.toString()}`),
+    queryFn: () => api.get<ListResponse<CustomEntityRow>>(`/custom-entities?${params.toString()}`),
   });
 
   const columns: DataTableColumn<CustomEntityRow>[] = [
@@ -73,7 +69,7 @@ export default function CustomEntitiesPage() {
       testId="custom-entities-page"
       title={t('title')}
       moyskladToolbar
-      subtitle={data ? tCommon('records_count', { count: data.total }) : undefined}
+      subtitle={data ? tCommon('records_count', { count: data.total ?? 0 }) : undefined}
       createHref="/settings/custom-entities/new"
       createLabel={t('create_button')}
       createPosition="start"

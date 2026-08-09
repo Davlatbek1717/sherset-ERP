@@ -2,6 +2,7 @@
 
 import { api } from '@/lib/api-client';
 import { archivedTone } from '@/lib/archived-tone';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import {
   Badge,
   type DataTableColumn,
@@ -21,12 +22,6 @@ interface OrganizationRow {
   phone: string | null;
   uzRequisites: { inn?: string | null; okoned?: string | null; mfo?: string | null } | null;
   archived: boolean;
-}
-
-interface ListResponse {
-  items: OrganizationRow[];
-  nextCursor?: string;
-  total: number;
 }
 
 const LIMIT = 25;
@@ -52,9 +47,10 @@ export default function OrganizationsPage() {
     ...(cursor ? { cursor } : {}),
   });
 
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<OrganizationRow>>({
     queryKey: ['organizations', search, archived, cursor, sortKey, sortDir],
-    queryFn: () => api.get<ListResponse>(`/admin/organizations?${params.toString()}`),
+    queryFn: () =>
+      api.get<ListResponse<OrganizationRow>>(`/admin/organizations?${params.toString()}`),
   });
 
   const filters: ListViewFilter[] = [
@@ -140,7 +136,7 @@ export default function OrganizationsPage() {
     <ListView
       testId="settings-organizations-page"
       title={t('title')}
-      subtitle={data ? tCommon('records_count', { count: data.total }) : undefined}
+      subtitle={data ? tCommon('records_count', { count: data.total ?? 0 }) : undefined}
       createHref="/settings/organizations/new"
       createLabel={t('create_button')}
       search={searchInput}

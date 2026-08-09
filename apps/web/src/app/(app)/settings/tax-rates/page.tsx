@@ -3,6 +3,7 @@
 import { FilterToggleButton } from '@/components/filters/filter-toggle-button';
 import { api } from '@/lib/api-client';
 import { archivedTone } from '@/lib/archived-tone';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import {
   Badge,
   type DataTableColumn,
@@ -21,11 +22,6 @@ interface TaxRateRow {
   comment: string | null;
   shared: boolean;
   archived: boolean;
-}
-
-interface ListResponse {
-  items: TaxRateRow[];
-  total: number;
 }
 
 const LIMIT = 50;
@@ -50,9 +46,9 @@ export default function TaxRatesPage() {
     sortDir,
   });
 
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<TaxRateRow>>({
     queryKey: ['tax-rates', search, archived, sortKey, sortDir],
-    queryFn: () => api.get<ListResponse>(`/tax-rates?${params.toString()}`),
+    queryFn: () => api.get<ListResponse<TaxRateRow>>(`/tax-rates?${params.toString()}`),
   });
 
   // moysklad's tax-rate list uses moyskladToolbar + Фильтр panel (no
@@ -101,7 +97,7 @@ export default function TaxRatesPage() {
       testId="tax-rates-page"
       title={t('title')}
       moyskladToolbar
-      subtitle={data ? tCommon('records_count', { count: data.total }) : undefined}
+      subtitle={data ? tCommon('records_count', { count: data.total ?? 0 }) : undefined}
       createHref="/settings/tax-rates/new"
       createLabel={t('create_button')}
       createPosition="start"

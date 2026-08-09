@@ -2,6 +2,7 @@
 
 import { api } from '@/lib/api-client';
 import { RETAIL_SESSION_STATE_TONE, documentStateTone } from '@/lib/document-state-tone';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import {
   Badge,
   type DataTableColumn,
@@ -31,12 +32,6 @@ interface SessionRow {
   discrepancyMinor: string | null;
 }
 
-interface ListResponse {
-  items: SessionRow[];
-  nextCursor?: string;
-  total: number;
-}
-
 const LIMIT = 25;
 
 export default function SessionsPage() {
@@ -62,9 +57,9 @@ export default function SessionsPage() {
   });
 
   const listQueryKey = ['cashier-sessions', stateFilter, search, cursor, sortKey, sortDir] as const;
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<SessionRow>>({
     queryKey: listQueryKey,
-    queryFn: () => api.get<ListResponse>(`/cashier-sessions?${params.toString()}`),
+    queryFn: () => api.get<ListResponse<SessionRow>>(`/cashier-sessions?${params.toString()}`),
   });
 
   const filters: ListViewFilter[] = [
@@ -212,7 +207,7 @@ export default function SessionsPage() {
     <ListView
       testId="sessions-page"
       title={t('title')}
-      subtitle={data ? tCommon('records_count', { count: data.total }) : undefined}
+      subtitle={data ? tCommon('records_count', { count: data.total ?? 0 }) : undefined}
       search={searchInput}
       onSearchChange={(v) => {
         setSearchInput(v);

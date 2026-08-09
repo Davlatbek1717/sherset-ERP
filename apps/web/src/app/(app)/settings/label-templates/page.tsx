@@ -10,6 +10,7 @@
 
 import { api } from '@/lib/api-client';
 import { archivedTone } from '@/lib/archived-tone';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import { Badge, type DataTableColumn, ListView, formatDate, useDebounce } from '@moysklad/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
@@ -27,11 +28,6 @@ interface TemplateRow {
   barcodeFormat: string;
   archived: boolean;
   createdAt: string;
-}
-
-interface ListResponse {
-  items: TemplateRow[];
-  total: number;
 }
 
 const LIMIT = 100;
@@ -54,9 +50,9 @@ export default function LabelTemplatesPage() {
     sortDir,
   });
 
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<TemplateRow>>({
     queryKey: ['label-templates', search, showArchived, sortKey, sortDir],
-    queryFn: () => api.get<ListResponse>(`/label-templates?${params.toString()}`),
+    queryFn: () => api.get<ListResponse<TemplateRow>>(`/label-templates?${params.toString()}`),
   });
 
   const columns: DataTableColumn<TemplateRow>[] = [

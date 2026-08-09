@@ -18,6 +18,7 @@ import { FilterToggleButton } from '@/components/filters/filter-toggle-button';
 import { useApiMutation } from '@/hooks/use-api-mutation';
 import { api } from '@/lib/api-client';
 import { archivedTone } from '@/lib/archived-tone';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import {
   Badge,
   Button,
@@ -43,11 +44,6 @@ interface StatusRow {
   position: number;
   archived: boolean;
 }
-interface ListResponse {
-  items: StatusRow[];
-  nextCursor?: string;
-}
-
 const LIMIT = 200;
 
 // Includes the live moysklad account's task-state hues (lime/blue/red — Вазифа/
@@ -93,9 +89,9 @@ export default function TaskStatusesPage() {
     isLoading,
     error: loadError,
     refetch,
-  } = useQuery<ListResponse>({
+  } = useQuery<ListResponse<StatusRow>>({
     queryKey: ['states', ENTITY_TYPE, archived],
-    queryFn: () => api.get<ListResponse>(`/states?${params.toString()}`),
+    queryFn: () => api.get<ListResponse<StatusRow>>(`/states?${params.toString()}`),
   });
 
   // /states has no server-side search; filter the (small) list locally.

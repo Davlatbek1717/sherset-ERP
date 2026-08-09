@@ -15,6 +15,7 @@ import { api } from '@/lib/api-client';
 // MASTER-TODO #10: these two maps used to be declared here AND (byte-identical)
 // in counterparty-activity-widget.tsx — consolidated into the shared module.
 import { loyaltyStatusTone, loyaltyTypeTone } from '@/lib/domain-status-tone';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import { Badge, type DataTableColumn, ListView, useDebounce } from '@moysklad/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
@@ -31,12 +32,6 @@ interface BonusOperation {
   description: string | null;
   agent: { id: string; name: string } | null;
   bonusProgram: { id: string; name: string } | null;
-}
-
-interface ListResponse {
-  items: BonusOperation[];
-  nextCursor?: string;
-  total: number;
 }
 
 const LIMIT = 25;
@@ -71,9 +66,10 @@ export default function LoyaltyOperationsPage() {
     ...(cursor ? { cursor } : {}),
   });
   const listQueryKey = ['loyalty-operations', search, cursor] as const;
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<BonusOperation>>({
     queryKey: listQueryKey,
-    queryFn: () => api.get<ListResponse>(`/loyalty/operations?${params.toString()}`),
+    queryFn: () =>
+      api.get<ListResponse<BonusOperation>>(`/loyalty/operations?${params.toString()}`),
   });
 
   const columns: DataTableColumn<BonusOperation>[] = [
@@ -189,7 +185,7 @@ export default function LoyaltyOperationsPage() {
       testId="loyalty-operations-page"
       moyskladToolbar
       title={t('title')}
-      subtitle={data ? tCommon('records_count', { count: data.total }) : undefined}
+      subtitle={data ? tCommon('records_count', { count: data.total ?? 0 }) : undefined}
       onRefresh={() => refetch()}
       search={searchInput}
       onSearchChange={(v) => {

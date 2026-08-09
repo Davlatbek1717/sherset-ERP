@@ -14,6 +14,7 @@ import { useColumnWidths } from '@/hooks/use-column-widths';
 import { api } from '@/lib/api-client';
 import { stashBulkEdit } from '@/lib/bulk-edit-nav';
 import { filterFromQueryString } from '@/lib/filter-from-query';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import {
   CatalogPicker,
   CatalogPickerField,
@@ -52,12 +53,6 @@ interface PaymentRow {
   organization: { id: string; name: string };
   owner: { id: string; name: string } | null;
   _count: { operations: number };
-}
-
-interface ListResponse {
-  items: PaymentRow[];
-  nextCursor?: string;
-  total: number;
 }
 
 /** Multi-select reference field — moysklad checkbox-dropdown holds {id,label}[]. */
@@ -186,9 +181,9 @@ export default function PaymentsInPage() {
     agents,
     organizations,
   ] as const;
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<PaymentRow>>({
     queryKey: listQueryKey,
-    queryFn: () => api.get<ListResponse>(`/payments-in?${params.toString()}`),
+    queryFn: () => api.get<ListResponse<PaymentRow>>(`/payments-in?${params.toString()}`),
   });
 
   const bulk = useBulkDocumentActions('payments-in', listQueryKey, { hasFSM: true });

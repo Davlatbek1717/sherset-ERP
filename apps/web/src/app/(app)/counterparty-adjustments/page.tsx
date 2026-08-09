@@ -25,6 +25,7 @@ import { useColumnWidths } from '@/hooks/use-column-widths';
 import { api } from '@/lib/api-client';
 import { stashBulkEdit } from '@/lib/bulk-edit-nav';
 import { filterFromQueryString } from '@/lib/filter-from-query';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import {
   CatalogPicker,
   CatalogPickerField,
@@ -62,12 +63,6 @@ interface AdjustmentRow {
   agent: { id: string; name: string; legalTitle: string | null };
   organization: { id: string; name: string };
   owner: { id: string; name: string } | null;
-}
-
-interface ListResponse {
-  items: AdjustmentRow[];
-  nextCursor?: string;
-  total: number;
 }
 
 /** Multi-select reference field — moysklad checkbox-dropdown holds {id,label}[]. */
@@ -184,9 +179,10 @@ export default function CounterpartyAdjustmentListPage() {
     agents,
     organizations,
   ] as const;
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<AdjustmentRow>>({
     queryKey: listQueryKey,
-    queryFn: () => api.get<ListResponse>(`/counterparty-adjustments?${params.toString()}`),
+    queryFn: () =>
+      api.get<ListResponse<AdjustmentRow>>(`/counterparty-adjustments?${params.toString()}`),
   });
 
   const openMassEdit = (ids: string[]) => {

@@ -3,6 +3,7 @@
 import { useBulkDocumentActions } from '@/hooks/use-bulk-actions';
 import { api } from '@/lib/api-client';
 import { serviceRequestPriorityTone, serviceRequestStatusTone } from '@/lib/domain-status-tone';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import {
   Badge,
   CatalogPicker,
@@ -32,12 +33,6 @@ interface ServiceRequestRow {
   contactPerson: { id: string; name: string } | null;
   assignee: { id: string; name: string } | null;
   owner: { id: string; name: string } | null;
-}
-
-interface ListResponse {
-  items: ServiceRequestRow[];
-  nextCursor?: string;
-  total: number;
 }
 
 const LIMIT = 50;
@@ -72,9 +67,10 @@ export default function ServiceRequestsListPage() {
     sortKey,
     sortDir,
   ] as const;
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<ServiceRequestRow>>({
     queryKey: listQueryKey,
-    queryFn: () => api.get<ListResponse>(`/service-requests?${params.toString()}`),
+    queryFn: () =>
+      api.get<ListResponse<ServiceRequestRow>>(`/service-requests?${params.toString()}`),
   });
 
   const bulk = useBulkDocumentActions('service-requests', listQueryKey, {

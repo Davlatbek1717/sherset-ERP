@@ -469,7 +469,7 @@ web vitest.
 > `docs/REJA-QOLDIQ-2026-08.md` — **Faza Q15**. O'ZGARMAS QOIDALAR. Faza 33 hisobotini o'qi (provenance
 > naqshi + `total?` nuance). ListResponse codemod (fail-closed) + 3-5 endpoint. Gate. Hisobot (qolgan
 > ro'yxat), TO'XTA.
-**◻ HISOBOT:** _(agent to'ldiradi)_
+**☑ HISOBOT (2026-08-09):** BAJARILDI — batafsili «HISOBOT JURNALI → Faza Q15» da.
 
 ---
 
@@ -2115,3 +2115,198 @@ Bu yozuv faylga **append** bilan qo'shildi — **marker-kesish YO'Q**
    rotatsiyasi atomik emas, 5 — `!creds.secretKey` ortiqcha old-tekshiruvi). Ular Q11 doirasida emas.
 
 **Commit:** `fix(integrations): faza q11 — saveconfig patch-semantika + webhook secret badge (INT-13)`
+
+---
+
+## Faza Q15 — Contracts 2-to'lqin: `ListResponse` codemod + 5 yangi endpoint kontrakti (`FE-12`) (2026-08-09) — **Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q**
+
+**Manba:** Faza 33 hisoboti DEFER-2/3 (`docs/REJA-AUDIT-FIX-2026-08.md`). Mexanizm (`packages/contracts`
+source-only + provenance reyestri + `apps/api` konformans testi + web qo'riqchisi) Faza 33'da qurilgan —
+bu faza uni **qayta ishlatdi**, yangisini o'ylab topmadi.
+
+### 0. O'Z O'LCHOVIM (hisobotdagi raqam ko'r-ko'rona olinmadi)
+
+Faza 33 hisoboti «92 fayl, 91 tasi lokal» degan edi. Sessiya boshida qayta sanadim:
+
+```
+grep -rn "interface ListResponse|type ListResponse" apps/web/src → 90 uchrash, 90 fayl
+```
+
+Ya'ni **90** (92 emas): Faza 33 `retail` + `sotuv` ni allaqachon o'tkazgan. Hisobotda shu 90 raqami
+ishlatiladi.
+
+Shakl bo'yicha taqsimot (deterministik analiz skripti, `scratchpad/analyze-listresponse.mjs`):
+
+| shakl | fayl |
+|---|---|
+| `{ items, nextCursor?, total }` | 66 |
+| `{ items, total }` | 14 |
+| `{ items }` | 4 |
+| **umumiy `ListEnvelope` ga MOS KELMAYDIGAN** | **6** |
+
+### 1. (a) `ListResponse` codemod — 84 fayl
+
+**Skript:** `scratchpad/codemod-listresponse.mjs` (deterministik, ~0 token — CLAUDE.md §0.1).
+**Fail-closed konstruksiya** (`doc-append-marker-truncation` sabog'i):
+
+- har anchor **aynan bitta** marta uchrashi shart: `interface ListResponse` 1 marta, `type ListResponse`
+  0 marta, `export`langan bo'lmasligi, faylda `@moysklad/contracts` yoki `ListEnvelope` bo'lmasligi,
+  e'londan keyin kamida 1 ta `ListResponse` ishlatilishi;
+- birortasi buzilsa fayl **umuman tegilmaydi** va **butun yugurish `exit 1`**;
+- yozish **butun pass tozalanmaguncha kechiktiriladi** (`pending` Map) — ya'ni bitta fayl guard'ni
+  buzsa, avvalgi 83 fayl ham yozilmaydi (yarim qo'llanish yo'q);
+- **ineligible ≠ failure:** umumiy envelope tavsiflay olmaydigan javob shakli (`page`/`pageSize`/`totals`/
+  `pagination`/`balanceTotalMinor`/`rows`/`nextCursor: string | null`) — hisobot qatori, xato emas.
+
+**Transformatsiya:** lokal e'lon o'chiriladi → `import type { ListEnvelope as ListResponse } from
+'@moysklad/contracts'` qo'shiladi (Faza 33 adopter'lari — `retail`/`sotuv` — bilan **aynan bir xil**
+alias naqshi) → qolgan har bir yalang' `ListResponse` → `ListResponse<ElementType>` → keyin biome
+`organizeImports` import'ni joyiga qo'yadi.
+
+**`total?` NUANCE (hisobotdan, tasdiqlandi):** umumiy `ListEnvelope` da `total?: number`, chunki API'ning
+uch xil javob shakli bor. Codemod, faqat `total: number` (majburiy) deb e'lon qilgan fayllarda,
+optional-chain qilinmagan `data.total` ni `data.total ?? 0` ga o'girdi — **27 faylda 27 joy**
+(hammasi `subtitle={data ? tCommon('records_count', { count: data.total }) : …}` naqshi).
+Busiz web typecheck qizil bo'lardi; **birinchi urinishdayoq 0 xato** — ya'ni qoida to'liq qamradi.
+
+**Natija:** 84 fayl o'tkazildi · 6 fayl ineligible · **0 fayl guard'ni buzdi** · skript **idempotent**
+(ikkinchi yugurish `wrote 0 file(s)`). Codemod **birorta test faylini tegmadi** (`git status`da web'da
+o'zgargan yagona `.test.ts` — qo'lda `Edit` qilingan qo'riqchi).
+
+Umumiy envelope'ga mos kelmagan 6 fayl (endi web qo'riqchisida `NON_ENVELOPE_LISTS` sifatida
+sababi bilan qayd etilgan — 7-chisi paydo bo'lsa test yiqiladi):
+
+| fayl | nega |
+|---|---|
+| `analitika/kontragentlar/page.tsx` | `{ partners, groups, pagination }` — `items` umuman yo'q |
+| `commission-reports/page.tsx` | `page`/`pageSize` + 5 raqamli `totals` bloki |
+| `counterparties/page.tsx` | `balanceTotalMinor` — BUTUN filtrlangan to'plamning «Итого Баланс»i |
+| `money/page.tsx` | valyuta-kesimli `totals`, va `nextCursor: string \| null` (oshkora null) |
+| `payments/page.tsx` | `page`/`pageSize` + kirim/chiqim `totals` |
+| `settings/employees/page.tsx` | massiv nomi `rows` (`items` emas), `page`/`limit` |
+
+### 2. (b) 5 yangi endpoint kontrakti + provenance
+
+Yangi fayllar: `packages/contracts/src/document-list.ts`, `packages/contracts/src/counterparty.ts`.
+
+| kontrakt | endpoint | provenance manbalari |
+|---|---|---|
+| `DemandRowSchema` (40 maydon — audit aynan shuni ko'rsatgan) | `GET /demands` | `model: Demand` + `select: demand.service#list` + **`method: demand.service#enrichListRows`** |
+| `CustomerOrderRowSchema` | `GET /customer-orders` | `model: CustomerOrder` + `select: customer-order.service#list` |
+| `SupplyRowSchema` | `GET /supplies` | `model: Supply` + `select: supply.service#list` |
+| `InvoiceOutRowSchema` | `GET /invoices-out` | `model: InvoiceOut` + `select: invoice-out.service#list` |
+| `CounterpartyRowSchema` | `GET /counterparties` | `model: Counterparty` + **`select … block:'include'`** + `method: counterparty.service#list` + **`zod: counterparty.schema#UzRequisitesSchema`** |
+
+**Ehtiyot bandi tasdiqlandi:** butun `apps/api` da **javob** Zod-sxemasi deyarli yo'q — 5 kontraktdan
+faqat bittasida `zod` provenance ishlatildi (`UzRequisitesSchema`, u ham **yozish** validatsiyasi
+sxemasi, lekin `uzRequisites` JSON ustunining ICHKI kalitlarini (`inn/pinfl/kpp/birthDate/gender`)
+bog'laydigan yagona server manbasi). Qolgan hamma kalit `select` bloki / Prisma modeliga bog'landi.
+
+#### Mexanizmga qo'shilgan ikki haqiqiy tuzatish (ikkalasi ham konformans testi TOPDI, taxmin emas)
+
+1. **`select` anchor'i noto'g'ri blokni o'qiyotgan edi.** `selectBlockKeys` metod ichidagi BIRINCHI
+   `select:`/`include:` ga tushadi. `counterparty.service#list` esa custom-attr filtri uchun avval
+   `attributeMetadata.findMany({ select: { code: true } })` chaqiradi ⇒ default anchor **bir kalitli**
+   blokni o'qib, kontraktni jimgina «deyarli hech narsani isbotlamaydigan» holga keltirardi.
+   → `ProvenanceSource` ga `block?: 'include'` qo'shildi, `selectBlockKeys(src, method, block)` uchinchi
+   argument oldi. **Yangi RED-test tuzoqni ko'rsatadi:** default anchor `['code']` qaytaradi,
+   `'include'` anchor `['id','name','owner']`.
+2. **`methodObjectKeys` SHORTHAND xossalarni ko'rmasdi.** `objectKeysIn` faqat `key:` ni topadi;
+   `counterparty.service#list` esa `return { ...rest, balanceMinor, salesCount, averageCheckMinor,
+   profitMinor }` deb qaytaradi. Konformans testi shu 3 kalitni «hech qayerda ishlab chiqarilmaydi»
+   deb qizil berdi — **haqiqiy extractor teshigi** (`contract-provenance.ts` faylining o'zi
+   «bo'sh to'plam qaytaradigan extractor butun suite'ni no-op qiladi» deb ogohlantiradi).
+   → `shorthandKeysIn()` qo'shildi, faqat permissiv `methodObjectKeys` da ishlatiladi;
+   aniq `selectBlockKeys` da ATAYLAB ishlatilmaydi (Prisma doim `key: true` yozadi) — buni ham
+   alohida test qulflaydi.
+
+#### Sahifalar kontraktni QABUL QILDI (faqat e'lon ko'chirish emas)
+
+`scratchpad/adopt-row-contracts.mjs` (fail-closed) 5 sahifaning lokal qator-interfeysini o'chirib
+kontrakt tipiga o'tkazdi: `demands` (`DemandRow`), `customer-orders` (`CustomerOrderRow`), `supplies`
+(`SupplyRow`), `invoices-out` (`InvoiceOutRow as InvoiceRow`), `counterparties`
+(`CounterpartyRow as Counterparty`). Web typecheck **birinchi urinishda 0 xato** — ya'ni kontrakt
+tipi sahifa ishlatayotgan haqiqiy shakl bilan struktura jihatdan mos.
+
+#### Web qo'riqchisi kuchaytirildi (`apps/web/src/__tests__/shared-api-contracts.test.ts`, faqat `Edit`)
+
+- `ADOPTERS`: 2 → **7** sahifa;
+- `OWNED_BY_CONTRACTS`: `['CurrentSession']` → `+ DemandRow, CustomerOrderRow, SupplyRow`
+  (nomi bir ma'noli bo'lganlari; `Counterparty` va `InvoiceRow` **ataylab QO'SHILMADI** — bu nomlar
+  web'da boshqa (picker/detail, `invoices-in`) shakllar uchun ham ishlatiladi);
+- **yangi global skan:** butun `src/` da `interface ListResponse` faqat `NON_ENVELOPE_LISTS` dagi 6
+  faylda bo'lishi mumkin; 7-chisi paydo bo'lsa test yiqiladi. Eskirgan yozuv ham yiqitadi (fayl
+  migratsiya qilinsa exemption'ni o'chirishga majbur qiladi). Bu per-adopter `ListResponse`
+  tekshiruvidan kuchliroq — shuning uchun o'sha eski per-adopter it() o'rniga keldi.
+
+### 3. O'zgargan/yangi fayllar
+
+**Yangi (2):** `packages/contracts/src/document-list.ts` · `packages/contracts/src/counterparty.ts`
+**Modify (4 + 84):**
+`packages/contracts/src/{index,provenance}.ts` ·
+`apps/api/src/modules/shared/{contract-provenance.ts,contract-conformance.test.ts}` ·
+`apps/web/src/__tests__/shared-api-contracts.test.ts` ·
+84 web sahifa/komponent (codemod) — shundan 5 tasi qator-kontraktni ham qabul qildi.
+
+### 4. Gate (jonli o'lchangan) + SANOQ NAZORATI
+
+| gate | natija |
+|---|---|
+| `@moysklad/contracts typecheck` | **0** |
+| `@moysklad/api typecheck` | **0** |
+| `@moysklad/web typecheck` | **0** |
+| `pnpm lint:product` | **0 error** (783 warning — siyosat ruxsat beradi) |
+| web `vitest run` (to'liq) | **2849 passed / 26 skipped** (189 fayl) |
+| api `vitest run` 3 shard | **1925 + 1870 + 2148 = 5943 passed / 2 skipped** |
+
+**Sanoq nazorati — codemod jimgina test yo'qotmadi (arifmetika aynan yopiladi):**
+
+- web bazasi **2835** + mening `shared-api-contracts.test.ts` dagi +10 test (per-adopter 3×2=6 → 2×7=14,
+  global 2 → 4) + parallel sessiyaning yangi `profitability-cashier-slice.test.ts` faylidagi **4** test
+  = **2849** ✓ (o'lchandi: o'sha faylda `grep -c` → 4).
+- api bazasi **5826** + mening `contract-conformance.test.ts` dagi +16 test (5 kontrakt → 10 kontrakt =
+  +10 registry testi, +4 extractor testi, +1 yangi RED-proof, +1 include-anchor throw testi) = 5842;
+  qolgan +101 — parallel sessiyaning yangi **untracked** modullari (`modules/branch/*`,
+  `store/cell-migration*` (27+12), `online-order.{inbound,webhook}`), mening ishimga aloqasi yo'q.
+- Codemod tekkan **84 faylning birortasi ham test fayli emas** (tekshirildi).
+
+### 5. Parallel sessiya (CLAUDE.md §6)
+
+Bu checkout'da parallel sessiya faol edi (`modules/branch/`, `store/cell-migration*`, `permissions/*`,
+`schema.prisma`, `seed.ts`, `todo.md`, `REJA-8-BOLIM`/`REJA-MENEJER-KASSA`). **Ularning birorta fayliga
+tegilmadi va `git add` qilinmadi.** Ish o'rtasida ularning `store/cell-migration.runner.ts` fayli
+`apps/api typecheck` ni 3 xato bilan yiqitdi (`formatDecimalScaled`/`parseDecimalScaled` topilmadi) —
+o'sha payt mening o'zgarishlarim bilan API typecheck allaqachon **yashil** o'lchangan edi; keyingi
+yugurishda ular tuzatdi va yakuniy gate yashil. **Tegilmadi** (§6.1).
+
+### 6. Qolgan qarz / DEFER — 3-to'lqin uchun ro'yxat
+
+1. **6 ta non-envelope ro'yxat** (yuqoridagi jadval). Ular uchun umumiy tip yozish = uch-to'rt xil
+   javob shaklini bitta ittifoqqa siqish; hozircha lokal e'lon **to'g'riroq**. Agar kerak bo'lsa —
+   `PagedEnvelope<T>` (`page`/`pageSize`/`totals`) alohida tip sifatida.
+2. **17 ta `<Nom>ListResponse` variant e'loni — codemod QAMROVIDAN TASHQARIDA** (nomi `ListResponse`
+   emas, shuning uchun anchor mos kelmaydi; bir nechtasi `export` qilingan ⇒ boshqa modul bog'liq):
+   `analitika/inventerizatsiya/_lib/types.ts` (`CountListResponse`, `ReasonListResponse` — ikkalasi
+   `export`) · `analitika/page.tsx` · `analitika/sozlamalar/_components/reason-codes-view.tsx` ·
+   `analitika/xodimlar/page.tsx` (`HrListResponse`) · `bundles` · `ecommerce/page.tsx` ·
+   `production/boms` · `production/work-orders` · `products` · `services` · `settings/audit-log` ·
+   `variants` · `components/document-tasks-section.tsx` · `components/products/product-select-modal.tsx`
+   (×2) · `lib/debt-api.ts` (`DebtListResponse`, `export`).
+3. **Kontraktsiz qolgan yirik `GET` endpointlar** (ustuvorlik bo'yicha, har biri o'z qator-tipini
+   qo'lda e'lon qiladi): `/products` + `/variants` + `/bundles` + `/services` (to'rtovi bitta
+   `Product` modelini turli proyeksiyada o'qiydi — bitta oilaviy kontrakt qilish mumkin) ·
+   `/invoices-in` · `/purchase-orders` · `/moves` · `/enters` · `/losses` · `/inventories` ·
+   `/sales-returns` · `/purchase-returns` · `/retail/sales` + `/retail/sessions` · `/payments-in|out` ·
+   `/cash-in|out` · `/tasks` · `/calls` · `/opportunities` · `/contracts` · `/contact-persons` ·
+   `/projects` · `/stores` (to'liq qator) · `/organizations` (to'liq qator) · `/employees` ·
+   `/price-lists` · `/processings` + `/processing-orders` · `/productions` · `/serial-numbers` ·
+   `/tracking-codes` · `/audit-logs`.
+4. **Konformans testi TIPNI tekshirmaydi** (Faza 33 dagi bilan bir xil chegara): ustun `Int → String`
+   bo'lsa test yashil qoladi; endpoint umuman ishlayotganini ham isbotlamaydi. Bu — **Phase-2 brauzer/
+   runtime** ishi, bu fazada YOPILMADI.
+5. **`methodObjectKeys` endi shorthand'ni ham oladi ⇒ yanada permissiv** — destrukturizatsiya
+   naqshlari (`const { balances, ...rest } = cp`) ham «ishlab chiqarilgan» hisoblanadi. Bu ataylab:
+   u allaqachon hujjatlangan permissiv extractor va u tutadigan yagona holat — kalitning
+   YO'QOLISHI. Aniqroq variant (haqiqiy AST) — alohida ish.
+
+**Commit:** `refactor(web): faza q15 — listresponse codemod + yangi endpoint kontraktlari (FE-12)`

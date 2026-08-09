@@ -18,6 +18,7 @@ import { useOffsetPager } from '@/hooks/use-offset-pager';
 import { api } from '@/lib/api-client';
 import { stashBulkEdit } from '@/lib/bulk-edit-nav';
 import { filterFromQueryString } from '@/lib/filter-from-query';
+import type { DemandRow, ListEnvelope as ListResponse } from '@moysklad/contracts';
 import {
   CatalogPicker,
   CatalogPickerField,
@@ -46,54 +47,6 @@ import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-
-interface DemandRow {
-  id: string;
-  name: string;
-  state: string;
-  applicable: boolean;
-  sumMinor: string;
-  // moysklad parity (v2.2 audit): backend already returns these scalar
-  // fields — surfacing for the missing-default columns.
-  payedSumMinor: string;
-  currency: string;
-  printed: boolean;
-  published: boolean;
-  description: string | null;
-  moment: string;
-  agent: { id: string; name: string; legalTitle: string | null };
-  organization: { id: string; name: string };
-  store: { id: string; name: string };
-  owner: { id: string; name: string } | null;
-  customerOrder: { id: string; name: string } | null;
-  // «Грузополучатель» — optional consignee counterparty (moysklad column).
-  consignee: { id: string; name: string } | null;
-  // «Статус» — account-defined custom status (State row); null = none set.
-  status: { id: string; name: string; color: string | null } | null;
-  // moysklad gear columns (available-but-hidden) — see the columns array.
-  agentAccount: { id: string; accountNumber: string; bankName: string | null } | null;
-  organizationAccount: { id: string; accountNumber: string | null; name: string } | null;
-  project: { id: string; name: string } | null;
-  contract: { id: string; name: string } | null;
-  salesChannel: { id: string; name: string } | null;
-  overheadSumMinor: string;
-  returnSumMinor: string; // «Сумма возвратов» (computed, BE batch)
-  shipmentAddress: string | null;
-  shipmentAddressComment: string | null; // «Комментарий к адресу доставки» (BE batch)
-  shared: boolean;
-  group: { id: string; name: string } | null; // «Владелец-отдел» (BE batch)
-  updatedAt: string;
-  modifiedByName: string | null; // «Кто изменил» (BE batch, last auditLog actor)
-  attributes: Record<string, unknown> | null;
-  attributeDisplay: Record<string, string>; // reference-attr → resolved name (BE)
-  _count: { positions: number };
-}
-
-interface ListResponse {
-  items: DemandRow[];
-  nextCursor?: string;
-  total: number;
-}
 
 // Moysklad parity — 100 rows per page (same as CO list).
 const LIMIT = 100;
@@ -468,9 +421,9 @@ export default function DemandsPage() {
     sortDir,
     params.toString(),
   ] as const;
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<DemandRow>>({
     queryKey: listQueryKey,
-    queryFn: () => api.get<ListResponse>(`/demands?${params.toString()}`),
+    queryFn: () => api.get<ListResponse<DemandRow>>(`/demands?${params.toString()}`),
   });
 
   // Toolbar dropdowns supersede the bottom BulkActionBar; we keep the

@@ -2,6 +2,7 @@
 
 import { FilterToggleButton } from '@/components/filters/filter-toggle-button';
 import { api } from '@/lib/api-client';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import {
   type DataTableColumn,
   InlineFilterPanel,
@@ -21,12 +22,6 @@ interface TrackingCodeRow {
   status: string;
   productId: string | null;
   createdAt: string;
-}
-
-interface ListResponse {
-  items: TrackingCodeRow[];
-  nextCursor?: string;
-  total: number;
 }
 
 const LIMIT = 50;
@@ -62,9 +57,9 @@ export default function TrackingCodesPage() {
     ...(cursor ? { cursor } : {}),
   });
 
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<TrackingCodeRow>>({
     queryKey: ['tracking-codes', search, typeFilter, statusFilter, sortKey, sortDir, cursor],
-    queryFn: () => api.get<ListResponse>(`/tracking-codes?${params.toString()}`),
+    queryFn: () => api.get<ListResponse<TrackingCodeRow>>(`/tracking-codes?${params.toString()}`),
   });
 
   const columns: DataTableColumn<TrackingCodeRow>[] = [
@@ -127,7 +122,7 @@ export default function TrackingCodesPage() {
       testId="tracking-codes-page"
       title={t('title')}
       moyskladToolbar
-      subtitle={data ? tCommon('records_count', { count: data.total }) : undefined}
+      subtitle={data ? tCommon('records_count', { count: data.total ?? 0 }) : undefined}
       createHref="/tracking-codes/new"
       createLabel={t('create_button')}
       createPosition="start"

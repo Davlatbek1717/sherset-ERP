@@ -29,6 +29,7 @@ import { StoreTree } from '@/components/stores/store-tree';
 import { useBulkDocumentActions } from '@/hooks/use-bulk-actions';
 import { useColumnVisibility } from '@/hooks/use-column-visibility';
 import { api } from '@/lib/api-client';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import {
   CatalogPicker,
   CatalogPickerField,
@@ -61,12 +62,6 @@ interface StoreRow {
   archived: boolean;
   owner: RefName | null;
   group: RefName | null;
-}
-
-interface ListResponse {
-  items: StoreRow[];
-  nextCursor?: string;
-  total: number;
 }
 
 export function StoresListView({ formBasePath = '/stores' }: { formBasePath?: string }) {
@@ -122,9 +117,9 @@ export function StoresListView({ formBasePath = '/stores' }: { formBasePath?: st
   const queryString = params.toString();
   const listQueryKey = ['stores', 'list', queryString] as const;
 
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<StoreRow>>({
     queryKey: listQueryKey,
-    queryFn: () => api.get<ListResponse>(`/admin/stores?${queryString}`),
+    queryFn: () => api.get<ListResponse<StoreRow>>(`/admin/stores?${queryString}`),
   });
 
   const bulk = useBulkDocumentActions('admin/stores', listQueryKey, { hasFSM: false });

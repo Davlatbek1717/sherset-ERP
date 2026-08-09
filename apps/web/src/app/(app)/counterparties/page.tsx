@@ -16,6 +16,7 @@ import { useColumnWidths } from '@/hooks/use-column-widths';
 import { useEnterOnHover } from '@/hooks/use-keyboard-nav';
 import { api } from '@/lib/api-client';
 import { attrReferenceEndpoint } from '@/lib/custom-attr';
+import type { CounterpartyRow as Counterparty } from '@moysklad/contracts';
 import {
   Badge,
   Button,
@@ -42,68 +43,6 @@ import { useQuery } from '@tanstack/react-query';
 import { MessageSquare } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useRef, useState } from 'react';
-
-interface Counterparty {
-  id: string;
-  name: string;
-  legalTitle: string | null;
-  companyType: string;
-  email: string | null;
-  phone: string | null;
-  fax: string | null;
-  code: string | null;
-  archived: boolean;
-  salesAmount: string;
-  // UZ requisites + person fields live in the uzRequisites JSON blob (no
-  // migration): inn · pinfl (ПИНФЛ) · kpp (КПП) · birthDate · gender.
-  uzRequisites: {
-    inn?: string;
-    pinfl?: string;
-    kpp?: string;
-    birthDate?: string;
-    gender?: string;
-  } | null;
-  // «Комментарий» column maps to Counterparty.description (moysklad parity).
-  description: string | null;
-  actualAddress: string | null;
-  // Extra gear-available columns climart offers (data already in the payload).
-  legalAddress: string | null; // «Юридический адрес»
-  discountCardNumber: string | null; // «Дисконтная карта»
-  shared: boolean; // «Общий доступ»
-  bonusPoints: number; // «Баллы»
-  priceType: { id: string; name: string } | null; // «Цены»
-  createdAt: string;
-  // «Когда изменен» — climart default column.
-  updatedAt: string;
-  owner: { id: string; name: string } | null;
-  modifiedBy: { id: string; name: string } | null; // «Кто изменил»
-  group: { id: string; name: string } | null; // «Отдел» (access dept) — NOT the list column
-  // «Группы» — moysklad's many-to-many counterparty grouping (the list column).
-  groups: { id: string; name: string }[];
-  // CRM «Статус» — tenant State row (colored pill).
-  state: { id: string; name: string; color: string | null } | null;
-  // Server-computed CRM aggregates (counterparty.service list()):
-  //   balanceMinor   → «Баланс» (base-currency net, tiyin string)
-  //   salesCount     → «Количество продаж» (posted demands)
-  //   lastSaleDate   → «Последняя продажа» (max posted-demand moment)
-  //   averageCheckMinor → «Средний чек» (Σsum / count, tiyin string)
-  balanceMinor: string;
-  salesCount: number;
-  firstSaleDate: string | null; // «Первая продажа»
-  lastSaleDate: string | null;
-  averageCheckMinor: string;
-  profitMinor: string; // «Прибыль» (revenue − self-cost, can be negative)
-  returnsCount: number; // «Количество возвратов»
-  returnsSumMinor: string; // «Сумма возвратов»
-  discountSumMinor: string; // «Сумма скидок»
-  bankName: string | null; // «Банк» (main account)
-  bankAccountNumber: string | null; // «Расчетный счет» (main account)
-  eventDate: string | null; // «Дата события» (last Call)
-  eventText: string | null; // «Текст события» (last Call summary)
-  // Custom «Дополнительные поля» — keyed by attribute-metadata `code` (e.g. the
-  // account's «Усто» / «tgid»). Surfaced as dynamic gear columns.
-  attributes: Record<string, unknown> | null;
-}
 
 // One account-defined custom counterparty attribute (moysklad «Доп. поле»).
 interface AttrMeta {

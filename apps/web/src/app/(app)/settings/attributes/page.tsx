@@ -3,6 +3,7 @@
 import { useApiMutation } from '@/hooks/use-api-mutation';
 import { useDestructiveMutation } from '@/hooks/use-destructive-mutation';
 import { api } from '@/lib/api-client';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import {
   Badge,
   Button,
@@ -29,11 +30,6 @@ interface AttributeRow {
   enumOptions: Array<{ value: string; label: string }> | null;
   referenceEntity: string | null;
   customEntityId: string | null;
-}
-
-interface ListResponse {
-  items: AttributeRow[];
-  total: number;
 }
 
 const LIMIT = 200;
@@ -73,9 +69,9 @@ export default function AttributesAdminPage() {
     sortDir,
   });
 
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<AttributeRow>>({
     queryKey: ['attribute-metadata', entity, sortKey, sortDir],
-    queryFn: () => api.get<ListResponse>(`/attribute-metadata?${params.toString()}`),
+    queryFn: () => api.get<ListResponse<AttributeRow>>(`/attribute-metadata?${params.toString()}`),
   });
 
   const deleteMut = useApiMutation({

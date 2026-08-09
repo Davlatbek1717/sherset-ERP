@@ -2,6 +2,7 @@
 
 import { api } from '@/lib/api-client';
 import { archivedTone } from '@/lib/archived-tone';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import {
   Badge,
   type DataTableColumn,
@@ -19,11 +20,6 @@ interface PriceTypeRow {
   currency: string;
   isDefault: boolean;
   archived: boolean;
-}
-
-interface ListResponse {
-  items: PriceTypeRow[];
-  total: number;
 }
 
 const LIMIT = 25;
@@ -47,9 +43,9 @@ export default function PriceTypesPage() {
     sortDir,
   });
 
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<PriceTypeRow>>({
     queryKey: ['price-types', search, archived, sortKey, sortDir],
-    queryFn: () => api.get<ListResponse>(`/price-types?${params.toString()}`),
+    queryFn: () => api.get<ListResponse<PriceTypeRow>>(`/price-types?${params.toString()}`),
   });
 
   const filters: ListViewFilter[] = [
@@ -119,7 +115,7 @@ export default function PriceTypesPage() {
     <ListView
       testId="price-types-page"
       title={t('title')}
-      subtitle={data ? tCommon('records_count', { count: data.total }) : undefined}
+      subtitle={data ? tCommon('records_count', { count: data.total ?? 0 }) : undefined}
       createHref="/settings/price-types/new"
       createLabel={t('create_button')}
       search={searchInput}

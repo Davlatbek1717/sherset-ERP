@@ -11,15 +11,12 @@
  */
 
 import { api } from '@/lib/api-client';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import { Button, Modal } from '@moysklad/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useState } from 'react';
 import { type StoreTreeNode, buildStoreTree } from './store-tree';
-
-interface ListResponse {
-  items: Array<{ id: string; name: string; parentId: string | null }>;
-}
 
 function PickRow({
   node,
@@ -84,9 +81,12 @@ export function StorePickerDialog({
   const [picked, setPicked] = useState<{ id: string; name: string } | null>(null);
   const [rootPicked, setRootPicked] = useState(false);
 
-  const { data } = useQuery<ListResponse>({
+  const { data } = useQuery<ListResponse<{ id: string; name: string; parentId: string | null }>>({
     queryKey: ['stores', 'tree'],
-    queryFn: () => api.get<ListResponse>('/admin/stores?limit=500&sortBy=name&sortDir=asc'),
+    queryFn: () =>
+      api.get<ListResponse<{ id: string; name: string; parentId: string | null }>>(
+        '/admin/stores?limit=500&sortBy=name&sortDir=asc',
+      ),
     enabled: open,
     staleTime: 60_000,
   });

@@ -7,6 +7,7 @@ import { useColumnVisibility } from '@/hooks/use-column-visibility';
 import { useColumnWidths } from '@/hooks/use-column-widths';
 import { api } from '@/lib/api-client';
 import { callDirectionTone, callStatusTone } from '@/lib/domain-status-tone';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import {
   Badge,
   CatalogPicker,
@@ -38,12 +39,6 @@ interface Call {
   counterparty: { id: string; name: string; legalTitle: string | null } | null;
   contactPerson: { id: string; name: string } | null;
   owner: { id: string; name: string } | null;
-}
-
-interface ListResponse {
-  items: Call[];
-  nextCursor?: string;
-  total: number;
 }
 
 /** Multi-select reference field — moysklad checkbox-dropdown holds {id,label}[]. */
@@ -136,9 +131,9 @@ export default function CallsPage() {
     sortKey,
     sortDir,
   ] as const;
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<Call>>({
     queryKey: listQueryKey,
-    queryFn: () => api.get<ListResponse>(`/calls?${params.toString()}`),
+    queryFn: () => api.get<ListResponse<Call>>(`/calls?${params.toString()}`),
   });
 
   const bulk = useBulkDocumentActions('calls', listQueryKey, {
@@ -290,7 +285,7 @@ export default function CallsPage() {
         testId="calls-page"
         moyskladToolbar
         title={t('title')}
-        subtitle={data ? tCommon('records_count', { count: data.total }) : undefined}
+        subtitle={data ? tCommon('records_count', { count: data.total ?? 0 }) : undefined}
         createHref="/calls/new"
         createLabel={t('create_button')}
         createPosition="start"

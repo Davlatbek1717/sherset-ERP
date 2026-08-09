@@ -16,6 +16,7 @@ import { api } from '@/lib/api-client';
 import { stashBulkEdit } from '@/lib/bulk-edit-nav';
 import { INVOICE_STATE_TONE, documentStateTone } from '@/lib/document-state-tone';
 import { filterFromQueryString } from '@/lib/filter-from-query';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import {
   Badge,
   CatalogPicker,
@@ -66,12 +67,6 @@ interface InvoiceRow {
   owner: { id: string; name: string } | null;
   purchaseOrder: { id: string; name: string } | null;
   _count: { positions: number };
-}
-
-interface ListResponse {
-  items: InvoiceRow[];
-  nextCursor?: string;
-  total: number;
 }
 
 // Moysklad parity — 100 rows per page.
@@ -366,9 +361,9 @@ export default function InvoicesInPage() {
     sortDir,
     params.toString(),
   ] as const;
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<InvoiceRow>>({
     queryKey: listQueryKey,
-    queryFn: () => api.get<ListResponse>(`/invoices-in?${params.toString()}`),
+    queryFn: () => api.get<ListResponse<InvoiceRow>>(`/invoices-in?${params.toString()}`),
   });
 
   // moysklad-parity: the pinned «Итого» footer sums ALL filtered records (not

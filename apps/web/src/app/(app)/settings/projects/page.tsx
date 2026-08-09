@@ -18,6 +18,7 @@ import { useBulkDocumentActions } from '@/hooks/use-bulk-actions';
 import { api } from '@/lib/api-client';
 import { archivedTone } from '@/lib/archived-tone';
 import { stashBulkEdit } from '@/lib/bulk-edit-nav';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import {
   Badge,
   CatalogPicker,
@@ -40,12 +41,6 @@ interface ProjectRow {
   code: string | null;
   description: string | null;
   archived: boolean;
-}
-
-interface ListResponse {
-  items: ProjectRow[];
-  nextCursor?: string;
-  total: number;
 }
 
 const LIMIT = 100;
@@ -95,9 +90,9 @@ export default function ProjectsPage() {
 
   const listQueryKey = ['projects', search, archived, cursor, sortKey, sortDir] as const;
 
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<ProjectRow>>({
     queryKey: listQueryKey,
-    queryFn: () => api.get<ListResponse>(`/projects?${params.toString()}`),
+    queryFn: () => api.get<ListResponse<ProjectRow>>(`/projects?${params.toString()}`),
   });
 
   const openMassEdit = (ids: string[]) => {

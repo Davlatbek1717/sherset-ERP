@@ -2,6 +2,7 @@
 
 import { api } from '@/lib/api-client';
 import { documentStateTone } from '@/lib/document-state-tone';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import {
   Badge,
   type DataTableColumn,
@@ -25,12 +26,6 @@ interface OnlineOrderRow {
   state: string;
   receivedAt: string;
   channel: { id: string; name: string; kind: string } | null;
-}
-
-interface ListResponse {
-  items: OnlineOrderRow[];
-  nextCursor?: string;
-  total: number;
 }
 
 const LIMIT = 25;
@@ -58,9 +53,9 @@ export default function OnlineOrdersPage() {
     ...(cursor ? { cursor } : {}),
   });
 
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<OnlineOrderRow>>({
     queryKey: ['online-orders', search, stateFilter, cursor, sortKey, sortDir],
-    queryFn: () => api.get<ListResponse>(`/online-orders?${params.toString()}`),
+    queryFn: () => api.get<ListResponse<OnlineOrderRow>>(`/online-orders?${params.toString()}`),
   });
 
   const STATE_FILTERS: Array<OrderState | 'all'> = [
@@ -167,7 +162,7 @@ export default function OnlineOrdersPage() {
     <ListView
       testId="online-orders-page"
       title={t('title')}
-      subtitle={data ? tCommon('records_count', { count: data.total }) : undefined}
+      subtitle={data ? tCommon('records_count', { count: data.total ?? 0 }) : undefined}
       search={searchInput}
       onSearchChange={(v) => {
         setSearchInput(v);

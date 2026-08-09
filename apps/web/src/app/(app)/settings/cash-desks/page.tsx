@@ -2,6 +2,7 @@
 
 import { api } from '@/lib/api-client';
 import { archivedTone } from '@/lib/archived-tone';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import {
   Badge,
   type DataTableColumn,
@@ -20,12 +21,6 @@ interface CashDeskRow {
   currency: string;
   balanceMinor: string;
   archived: boolean;
-}
-
-interface ListResponse {
-  items: CashDeskRow[];
-  nextCursor?: string;
-  total: number;
 }
 
 const LIMIT = 25;
@@ -51,9 +46,9 @@ export default function CashDesksPage() {
     ...(cursor ? { cursor } : {}),
   });
 
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<CashDeskRow>>({
     queryKey: ['cash-desks', search, archived, cursor, sortKey, sortDir],
-    queryFn: () => api.get<ListResponse>(`/admin/cash-desks?${params.toString()}`),
+    queryFn: () => api.get<ListResponse<CashDeskRow>>(`/admin/cash-desks?${params.toString()}`),
   });
 
   const filters: ListViewFilter[] = [
@@ -128,7 +123,7 @@ export default function CashDesksPage() {
     <ListView
       testId="settings-cash-desks-page"
       title={t('title')}
-      subtitle={data ? tCommon('records_count', { count: data.total }) : undefined}
+      subtitle={data ? tCommon('records_count', { count: data.total ?? 0 }) : undefined}
       createHref="/settings/cash-desks/new"
       createLabel={t('create_button')}
       search={searchInput}

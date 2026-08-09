@@ -14,6 +14,7 @@
 
 import { useApiMutation } from '@/hooks/use-api-mutation';
 import { api } from '@/lib/api-client';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import {
   Button,
   type DataTableColumn,
@@ -32,11 +33,6 @@ interface DepartmentRow {
   name: string;
   index: number;
 }
-interface ListResponse {
-  items: DepartmentRow[];
-  total: number;
-}
-
 const LIMIT = 500;
 
 export default function DepartmentsPage() {
@@ -59,9 +55,9 @@ export default function DepartmentsPage() {
     isLoading,
     error: loadError,
     refetch,
-  } = useQuery<ListResponse>({
+  } = useQuery<ListResponse<DepartmentRow>>({
     queryKey: ['departments', search],
-    queryFn: () => api.get<ListResponse>(`/groups?${params.toString()}`),
+    queryFn: () => api.get<ListResponse<DepartmentRow>>(`/groups?${params.toString()}`),
   });
 
   const upsertMut = useMutation({

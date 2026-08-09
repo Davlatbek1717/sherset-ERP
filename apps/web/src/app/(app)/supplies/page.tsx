@@ -17,6 +17,7 @@ import { useColumnWidths } from '@/hooks/use-column-widths';
 import { api } from '@/lib/api-client';
 import { stashBulkEdit } from '@/lib/bulk-edit-nav';
 import { filterFromQueryString } from '@/lib/filter-from-query';
+import type { ListEnvelope as ListResponse, SupplyRow } from '@moysklad/contracts';
 import {
   CatalogPicker,
   type CsvColumn,
@@ -41,37 +42,6 @@ import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
-
-interface SupplyRow {
-  id: string;
-  name: string;
-  state: string;
-  applicable: boolean;
-  sumMinor: string;
-  // moysklad parity (v2.2 audit): backend Prisma scalars surfaced.
-  payedSumMinor: string;
-  currency: string;
-  printed: boolean;
-  published: boolean;
-  description: string | null;
-  incomingDate: string | null;
-  moment: string;
-  incomingNumber: string | null;
-  agent: { id: string; name: string; legalTitle: string | null };
-  organization: { id: string; name: string };
-  store: { id: string; name: string };
-  owner: { id: string; name: string } | null;
-  // moysklad «Статус» column = account-defined CUSTOM workflow status (coloured
-  // pill), NOT the FSM `state`. The list() service already includes it.
-  status: { id: string; name: string; color: string | null } | null;
-  _count: { positions: number };
-}
-
-interface ListResponse {
-  items: SupplyRow[];
-  nextCursor?: string;
-  total: number;
-}
 
 // Moysklad parity — 100 rows per page.
 const LIMIT = 100;
@@ -343,9 +313,9 @@ export default function SuppliesPage() {
     sortDir,
     params.toString(),
   ] as const;
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<SupplyRow>>({
     queryKey: listQueryKey,
-    queryFn: () => api.get<ListResponse>(`/supplies?${params.toString()}`),
+    queryFn: () => api.get<ListResponse<SupplyRow>>(`/supplies?${params.toString()}`),
   });
 
   // moysklad pinned footer «Итого» — Сумма + Оплачено raw-summed across ALL

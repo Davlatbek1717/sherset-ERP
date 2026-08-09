@@ -14,6 +14,7 @@ import { useColumnVisibility } from '@/hooks/use-column-visibility';
 import { useColumnWidths } from '@/hooks/use-column-widths';
 import { api } from '@/lib/api-client';
 import { stashBulkEdit } from '@/lib/bulk-edit-nav';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import {
   CatalogPicker,
   CatalogPickerField,
@@ -59,12 +60,6 @@ interface PurchaseReturnRow {
   // pill), NOT the FSM `state`. The list() service already includes it.
   status: { id: string; name: string; color: string | null } | null;
   _count: { positions: number };
-}
-
-interface ListResponse {
-  items: PurchaseReturnRow[];
-  nextCursor?: string;
-  total: number;
 }
 
 // Moysklad parity — 100 rows per page.
@@ -289,9 +284,10 @@ export default function PurchaseReturnsPage() {
     sortDir,
     params.toString(),
   ] as const;
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<PurchaseReturnRow>>({
     queryKey: listQueryKey,
-    queryFn: () => api.get<ListResponse>(`/purchase-returns?${params.toString()}`),
+    queryFn: () =>
+      api.get<ListResponse<PurchaseReturnRow>>(`/purchase-returns?${params.toString()}`),
   });
 
   // moysklad-parity pinned «Итого» footer — sums the «Сумма» column over ALL

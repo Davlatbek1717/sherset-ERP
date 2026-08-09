@@ -3,6 +3,7 @@
 import { useApiMutation } from '@/hooks/use-api-mutation';
 import { api } from '@/lib/api-client';
 import { deliveryStatusTone } from '@/lib/domain-status-tone';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import {
   Badge,
   Button,
@@ -35,10 +36,6 @@ interface EmailLogRow {
   sender: { id: string; name: string } | null;
 }
 
-interface ListResponse {
-  items: EmailLogRow[];
-}
-
 const STATUSES: Array<EmailLogRow['status']> = ['pending', 'sending', 'sent', 'dead', 'failed'];
 const LIMIT = 100;
 
@@ -63,9 +60,9 @@ export default function EmailLogPage() {
   const params = new URLSearchParams({ limit: String(LIMIT), sortBy: sortKey, sortDir });
   if (statusFilter) params.set('status', statusFilter);
 
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<EmailLogRow>>({
     queryKey: ['email-logs', statusFilter, sortKey, sortDir],
-    queryFn: () => api.get<ListResponse>(`/email/logs?${params.toString()}`),
+    queryFn: () => api.get<ListResponse<EmailLogRow>>(`/email/logs?${params.toString()}`),
   });
 
   const retryMut = useApiMutation({

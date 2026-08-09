@@ -38,6 +38,26 @@ export {
   type SalePriceEntry,
 } from './product.js';
 export {
+  AgentRefSchema,
+  CustomerOrderRowSchema,
+  DemandRowSchema,
+  DocumentStatusRefSchema,
+  InvoiceOutRowSchema,
+  SupplyRowSchema,
+  type AgentRef,
+  type CustomerOrderRow,
+  type DemandRow,
+  type DocumentStatusRef,
+  type InvoiceOutRow,
+  type SupplyRow,
+} from './document-list.js';
+export {
+  CounterpartyRowSchema,
+  UzRequisitesSchema,
+  type CounterpartyRow,
+  type UzRequisites,
+} from './counterparty.js';
+export {
   CashDeskRefSchema,
   CashDeskRowSchema,
   OrganizationRefSchema,

@@ -26,6 +26,7 @@ import { useBulkDocumentActions } from '@/hooks/use-bulk-actions';
 import { api } from '@/lib/api-client';
 import { stashBulkEdit } from '@/lib/bulk-edit-nav';
 import { filterFromQueryString } from '@/lib/filter-from-query';
+import type { ListEnvelope as ListResponse } from '@moysklad/contracts';
 import {
   CatalogPicker,
   CatalogPickerField,
@@ -71,12 +72,6 @@ interface ProcessingRow {
   owner: { id: string; name: string } | null;
   processingPlan: ProcessingPlanRef | null;
   processingOrder: { id: string; name: string } | null;
-}
-
-interface ListResponse {
-  items: ProcessingRow[];
-  nextCursor?: string;
-  total: number;
 }
 
 const LIMIT = 100;
@@ -267,9 +262,9 @@ export default function ProcessingsPage() {
     params.toString(),
   ] as const;
 
-  const { data, isLoading, error, refetch } = useQuery<ListResponse>({
+  const { data, isLoading, error, refetch } = useQuery<ListResponse<ProcessingRow>>({
     queryKey: listQueryKey,
-    queryFn: () => api.get<ListResponse>(`/processings?${params.toString()}`),
+    queryFn: () => api.get<ListResponse<ProcessingRow>>(`/processings?${params.toString()}`),
   });
 
   const bulk = useBulkDocumentActions('processings', listQueryKey, {
