@@ -2,6 +2,7 @@ import type { Prisma } from '@moysklad/db';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service.js';
 import { localDateOnly, startOfLocalDay } from '../../hr/hr-shared/tz.util.js';
+import { DATA_QUALITY, aggregateQuality, countSamples } from '../../report/metrics/index.js';
 import { CASHIER_EVENT } from '../../retail-sale/cashier-audit.js';
 import { DailyKpiAcceptanceService } from './daily-kpi-acceptance.service.js';
 import { KPI_METRICS, type MetricValue, measured, unmeasured } from './kpi-metrics.js';
@@ -92,7 +93,12 @@ export class EmployeeDailyKpiService {
       // bo'lishi kerak. O'lchanmagan (null) ko'rsatkich kunni chala qilmaydi —
       // masalan buxgalterda kassa ko'rsatkichi umuman bo'lmaydi, bu kamchilik
       // emas. Chala = «o'lchandi, lekin manba to'liq emas edi».
-      const dataComplete = values.every((v) => v.value == null || v.complete);
+      //
+      // Qoida SHU YERDA yozilmaydi — u `report/metrics/data-quality.ts` da
+      // (MK09). Ilgari bu shart shu satrda qo'lda turardi va panel bayrog'i
+      // bilan kunning `dataComplete` bayrog'i bir kun kelib ikki xil bo'lib
+      // ketishi mumkin edi.
+      const dataComplete = aggregateQuality(countSamples(values)) !== DATA_QUALITY.partial;
       // Profil tanlash: XODIM (individual) → LAVOZIM → hisob sukut profili.
       const profileVersionId =
         profileVersions.byEmployee.get(emp.id) ??

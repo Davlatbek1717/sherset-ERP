@@ -326,6 +326,82 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > `/root/sherset-v2-backups` = 5.4G / 18 fayl — keyingi deploy'dan oldin eski backup'larni
 > tozalash kerak bo'ladi, aks holda `next build` joy yetmasligidan yiqilishi mumkin.
 >
+> **🕒 2026-08-09s (REJA-MENEJER-KASSA **MK09** — 4M.6b: ma'lumot sifati paneli) —
+> 20 fayl (16 kod + 4 hujjat), +1819/−6. To'liq hisobot:
+> `docs/REJA-MENEJER-KASSA-2026-08.md` → HISOBOT JURNALI → «Faza MK09».**
+>
+> **Muammo (kodda tasdiqlangan):** `NULL ≠ 0` shartnomasi kodda ALLAQACHON bor edi
+> (`MetricValue.complete`, `costMinor == null ⇒ complete: false`, `EmployeeDailyKpi.dataComplete`),
+> lekin **hech kim uni KO'RMASDI** — `dataQuality` so'zi butun repoda 0 marta uchrardi.
+> O'lchov bor edi, **javob yo'q edi**.
+>
+> **Nima qilindi:** (1) bayroq qoidasi YAGONA qatlamda —
+> `apps/api/src/modules/report/metrics/data-quality.ts` (19 test): `complete|partial|uncollected` ·
+> `sharePercent` mahrajsiz ⇒ **`null`, `0%` EMAS** · «hech narsa o'lchanmagan» ≠ «qisman» ·
+> o'lchanmagan qator bayroqni tushirmaydi. (2) `manager/kpi/data-quality.service.ts` (12 test) +
+> `GET /manager/kpi/data-quality?from&to` (sukut — oxirgi 30 kun): har ko'rsatkich bayrog'i ·
+> **tan narxsiz cheklar ulushi** (X1 bug-klassining jonli o'lchovi) · **qabul qilinmagan kunlar
+> ulushi** (`countsTowardPayroll` FSM'dan, ro'yxat qayta yozilmadi) · **manbasi yo'q ko'rsatkichlar**
+> · profilsiz kunlar. (3) FE `/menejer/sifat` + subnav + i18n ru+uz (8 test). (4) Takror qoida
+> yopildi: `employee-daily-kpi.service.ts` dagi qo'lda `dataComplete` sharti shu qatlamni chaqiradi.
+>
+> **🔴 Fazaning invarianti:** foiz kataklarining YAGONA chizuvchisi `pct(v)` — `null ⇒ '—'`.
+> Test ikki tomondan qulflaydi: «o'lchov yo'q ⇒ `0%` YO'Q» va «haqiqiy nol ⇒ `0%` BOR».
+>
+> **Sxema TEGILMADI — migratsiya YO'Q** (panel butunlay mavjud ustunlardan o'qiydi).
+>
+> **Ochiq qarz:** brauzer-QA yo'q (→ MK14) — ayniqsa `groupBy` + `_count: { autoValue: true }`
+> va `positions: { some: { costMinor: null } }` runtime'da tasdiqlanmagan (unit testlar Prisma'ni
+> mock qiladi) · `costMinor` NULL ulushi CHEK darajasida (qator darajasida emas).
+>
+> **Git:** daraxtda kamida 3 parallel sessiya ishladi (MK06 · MK18 · Q14 API-token). `manager.module.ts`,
+> `app/(app)/layout.tsx`, `messages/{ru,uz}.json` — UMUMIY fayllar; commit **ajratilgan indeks** bilan
+> qilindi va bu fayllar uchun blob «HEAD + faqat mening hunk'larim» dan qayta qurildi (ularning
+> satrlari tushmadi — fayllari hali untracked, birga commit qilinsa tree kompilyatsiya bo'lmasdi).
+> Hook'lar chetlab o'tildi, gate'lar QO'LDA: api (report+manager+app-boot) 883 ✓ · web 2953 ✓ ·
+> biome 0 · i18n 9 ✓. **Meniki BO'LMAGAN yiqilishlar:** api tc 4 (`moysklad-compat.service.ts`) ·
+> web tc 2 (`settings/api-tokens/page.tsx`) · web test 2 (`pos-payment-contract.test.ts`) — uchalasi
+> ham parallel sessiyalarning in-flight ishi, ularning fayllariga tegmadim.
+> Shu commit **MK08 ning commit qilinmay qolgan hand-off hujjatlarini ham** olib keladi.
+>
+> **🕒 2026-08-09r (REJA-MENEJER-KASSA **MK08** — 4M.6a: smena yakunini qabul qilish) —
+> `8bb11ef5`, 21 fayl (+2206/−163). To'liq hisobot:
+> `docs/REJA-MENEJER-KASSA-2026-08.md` → HISOBOT JURNALI → «Faza MK08».**
+>
+> **Muammo (kodda tasdiqlangan):** yopilgan smenani hech kim QABUL QILMASDI.
+> `CashierSessionVariance.acknowledgedAt` faqat FARQ AKTIni belgilardi — **farqsiz smena
+> hech kimning stolidan o'tmasdi**, ya'ni «hammasi joyida» xulosasi tasdiqlanmagan bo'lardi.
+>
+> **Nima qilindi:** (1) qabul qoidasining **generic dvigateli ajratildi** —
+> `apps/api/src/modules/shared/acceptance-fsm.ts` (16 test); `daily-kpi-fsm.ts` shu dvigatel
+> ustiga ko'chdi, **tashqi shartnoma o'zgarmadi**, 33 regress testi yashil (nusxa-ko'chirish
+> bug-klassining oldi olindi). (2) `cashier-session/shift-acceptance.ts` — smena FSM'i
+> (`open → pending → accepted | rejected | escalated | force_accepted | stale`, 22 test) +
+> `shift-acceptance.service.ts` (navbat · qabul ekrani · o'tish, 11 test). (3) Sxema +
+> migratsiya `20260810070000_shift_acceptance` (`acceptance_state` + append-only
+> `cashier_session_acceptance_events`). (4) `close()` AYNI tranzaksiyada smenani navbatga
+> qo'yadi (`open_for_review`). (5) Javobgarlik taxtasiga `shift_unaccepted` majburiyati.
+> (6) FE `/menejer/smenalar` + subnav + i18n ru+uz.
+>
+> **🔴 Fazaning invarianti:** **QABUL SUMMALARGA TEGMAYDI** — update-payload'da 15 ta summa/holat
+> maydonining YO'Qligi test bilan qulflangan. Menejer kamomadni «tuzatib» yopsa, farq akti dalil
+> bo'lishdan to'xtardi. Raqam noto'g'ri bo'lsa yagona yo'l: rad etish → kassir tushuntiradi.
+>
+> **⚠️ MIGRATSIYA QO'LLANMAGAN** — sessiya davomida lokal `climart_adopt` **o'chiq** edi.
+> Keyingi runtime/QA sessiya avval `prisma db execute --file` qilsin, aks holda API
+> `acceptance_state` ustunini topa olmaydi. Prod DDL — `docs/REJA-8-BOLIM-2026-08.md` →
+> OPS-QADAMLAR **9-band** (⚠️ backfill prodda ko'rinadigan xulq beradi: barcha yopilgan
+> smenalar menejer navbatiga tushadi — ataylab, chunki ularni hech kim ko'rmagan).
+>
+> **Ochiq qarz:** brauzer-QA yo'q (→ MK14) · kassir tomoni FE yo'q (BE `explain` tayyor;
+> menejer ham kirita oladi) · `escalateOverdue` cron'ga ulanmagan (MK06 bilan birga mantiqiy) ·
+> `markStale` chaqiruvchisi yo'q (hujjat-o'zgarish kuzatuvchisi hali yo'q).
+>
+> **Git:** sessiya davomida daraxtda 3+ parallel sessiya ishladi; commit paytiga ular o'z ishini
+> commit qilgani uchun **begona fayl tushmadi** (`git show --stat HEAD` staged ro'yxat bilan 1:1).
+> Hook'lar bir martaga chetlab o'tildi — gate'lar QO'LDA to'liq: api tc 0 · web tc 0 ·
+> lint 0 · i18n 9✓ · api 6261 test ✓ · web 2923 test ✓.
+>
 > **🕒 2026-08-09q (REJA-MENEJER-KASSA **MK05** — jihoz reyestri + javobgarlik taxtasida jihoz
 > bloki) — `d1b70266`, 25 fayl (+1913/−45). To'liq hisobot:
 > `docs/REJA-MENEJER-KASSA-2026-08.md` → HISOBOT JURNALI → «Faza MK05».**

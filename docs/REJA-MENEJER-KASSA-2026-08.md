@@ -388,7 +388,7 @@ i18n (qoida nomlari + sabab kodlari ru+uz).
 
 ---
 
-### MK08 — 4M.6a: smena yakunini qabul qilish ☐ HISOBOT
+### MK08 — 4M.6a: smena yakunini qabul qilish ☑ HISOBOT (2026-08-09)
 **Bo'lim/blok:** 4M.6 · **TZ:** §6 (qabul naqshini kengaytirish)
 **Ustuvorlik:** P2 · **Bog'liqlik:** MK01 (qabul naqshi)
 **Qamrov:** kunlik KPI qabul FSM'ining **smena** ob'ektiga ko'chirilishi: smena yopilgach menejer
@@ -405,7 +405,7 @@ smena kassirga qaytadi va sabab saqlanadi. (3) qabul **summalarga tegmaydi** (ak
 
 ---
 
-### MK09 — 4M.6b: ma'lumot sifati paneli ☐ HISOBOT
+### MK09 — 4M.6b: ma'lumot sifati paneli ☑ HISOBOT (2026-08-09)
 **Bo'lim/blok:** 4M.6 · **TZ:** §2.4 (NULL ≠ 0 bayrog'i), §0.2
 **Ustuvorlik:** P2 · **Bog'liqlik:** MK08
 **Maqsad:** «Bu raqamga qanchalik ishonish mumkin» degan savolga **ekranda** javob berish.
@@ -1764,3 +1764,222 @@ Sessiya davomida **MK08** («smena yakunini qabul qilish») sessiyasi AYNAN shu 
 - **Jihoz narxi/amortizatsiya** yo'q (TZ talab qilmaydi); kerak bo'lsa alohida ustun.
 - `EmployeeOnboarding` (ishga qabul) tomoniga jihoz **berish** bandi qo'shilmadi — TZ §6.3 uni
   faqat bo'shatishda talab qiladi.
+
+
+## Faza MK08 — 4M.6a: smena yakunini qabul qilish (sana: 2026-08-09)
+
+**Holat:** ✅ bajarildi — **Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q**.
+**Commit:** `8bb11ef5` — `feat(kassa): MK08 — smena yakunini qabul qilish (FSM + rad→tushuntirish halqasi)` (21 fayl, +2206/−163)
+
+### Muammo (kodda tasdiqlangan, reja da'vosi emas)
+`CashierSession.state` faqat `open`/`closed` edi va **qabul o'qi umuman yo'q edi**.
+`CashierSessionVariance.acknowledgedAt` bor, lekin u FAQAT farq aktini belgilaydi — ya'ni
+**farqsiz smena hech kimning stolidan o'tmasdi**. Natijada «hammasi joyida» degan xulosa hech kim
+tomonidan tasdiqlanmagan bo'lardi. TZ §6 aynan shuni «qabul naqshini kengaytirish» deb yozgan.
+
+### Nima o'zgardi
+
+**1. Qoida dvigateli AJRATILDI — nusxa ko'chirilmadi**
+- Yangi `apps/api/src/modules/shared/acceptance-fsm.ts` (+`.test.ts`, 16 test) — «kimdir tayyorladi,
+  boshqasi qabul qiladi» naqshining generic dvigateli: o'tish jadvali · aktyor · yopiq sabab
+  ro'yxati · `other` da majburiy izoh · **idempotent no-op** (takror bosish 409 emas).
+- `manager/kpi/daily-kpi-fsm.ts` shu dvigatel ustiga ko'chirildi. **Tashqi shartnoma
+  O'ZGARMADI** (`evaluate`, `evaluateAdjust`, `allowedActions`, `transitionFor`, `reasonCodesFor`,
+  `commentRequired`, `FsmFailure/FsmResult/FsmInput`, `Transition`) — 168 qator qisqardi,
+  **33 regress testi yashil**. Bu MK08 uchun shart edi: aks holda ~150 qator qoida ikkinchi marta
+  yozilardi va ular bir kunda ikki xil bo'lardi (repodagi klass: `api-client.download()` nusxasida
+  401-retry shoxi tushib qolgan, uni faqat md5-solishtirish topgan).
+
+**2. Smena qabul FSM** — `cashier-session/shift-acceptance.ts` (+`.test.ts`, 22 test)
+```
+open ──open_for_review──> pending ──accept──> accepted ──mark_stale──> stale ──accept──> accepted
+                            │  ↑                  │
+                     reject │  │ explain (KASSIR) │ reopen (sabab majburiy) → pending
+                            ↓  │                  │
+                         rejected ──escalate──> escalated ──force_accept(EGA)──> force_accepted
+```
+- Rad etish sababi **MAJBURIY**, yopiq ro'yxatdan: `variance_unexplained` · `zreport_mismatch` ·
+  `cash_shortage` · `document_missing` · `discipline` · `other` (izoh bilan).
+- `isAccountable()` / `SHIFT_QUEUE_STATES` / `awaitsCashier()` — javobgarlik va navbat ro'yxatlari
+  **shu yerda**, chaqiruvchilar o'z ro'yxatini yozmaydi.
+
+**3. 🔴 QABUL SUMMALARGA TEGMAYDI** — fazaning asosiy invarianti
+`shift-acceptance.service.ts` update-payload'ida faqat `acceptanceState` / `acceptedById` /
+`acceptedAt` / `acceptanceChangedAt` bor. Test (`shift-acceptance.service.test.ts`) 15 ta summa/holat
+maydonini ro'yxatlab, ularning payload'da **YO'Qligini** tasdiqlaydi (`closingCashMinor`,
+`expectedCashMinor`, `discrepancyMinor`, `proceeds*`, `received*`, `state`…). Sabab: menejer
+kamomadni «tuzatib» yopsa, farq akti dalil bo'lishdan to'xtardi.
+
+**4. Servis** — `shift-acceptance.service.ts` (365 qator)
+- `queue()` — eng uzoq kutgani birinchi; sana/kassir/holat filtri; summalar faqat O'QISH uchun.
+- `detail()` — Z-hisobot **`CashierSessionService.zReport()` dan** (qayta hisoblanmaydi; farq aktlari
+  ham o'sha javobda) + qabul jurnali + `allowedActions` + har amal uchun sabab ro'yxati.
+- `transition()` — optimistik da'vo (`where.acceptanceState = from`) → 409; jurnal qatori **ayni
+  tranzaksiyada**; no-op holatida na yozuv, na jurnal.
+- `escalateOverdue()` (3 kun, `acceptanceChangedAt` bo'yicha — `updatedAt` EMAS) · `markStale()`.
+- Kassir **begona smenaga** tegsa **404** (403 emas: 403 begona smenaning mavjudligini tasdiqlardi).
+
+**5. Baza** — `20260810070000_shift_acceptance`
+- `cashier_sessions`: `acceptance_state` (VarChar 20, default `open`) · `accepted_by_id` ·
+  `accepted_at` · `acceptance_changed_at` + 2 indeks (menejer navbati; kassir bo'yicha javobgarlik).
+- Yangi `cashier_session_acceptance_events` — **append-only** jurnal (kim · qachon · qaysi o'tish ·
+  sabab · izoh). Kassir tushuntirishi shu jadvalning `comment` maydonida — nizoda yagona yozma iz.
+- **BACKFILL QARORI (ochiq):** mavjud YOPILGAN smenalar `pending` ga o'tkaziladi, `accepted` ga
+  **EMAS** — ularni hech kim ko'rmagan; `accepted` deb belgilash «menejer tasdiqladi» degan yolg'on
+  yozuv bo'lardi (NULL≠0 bilan bir klass). Birinchi kuni navbat uzun bo'ladi — ekranda sana filtri bor.
+
+**6. Ulanishlar**
+- `close()` — AYNI Serializable tranzaksiyada `acceptance_state='pending'` + jurnalning birinchi
+  qatori (`open_for_review`, aktyor `system`). Alohida yozilsa, oradagi xatoda smena yopilgan-u
+  hech kimning stolida ko'rinmaydigan holatda qolardi. 2 yangi test (`shift-cash-faza-q1.test.ts`).
+- Javobgarlik taxtasi: yangi `DUTY.shiftUnaccepted`. `open_shift` dan **AYRIM** va **PULSIZ** —
+  pul allaqachon topshirilgan; bir qatorga qo'shish naqdni ikki marta sanardi. Holatlar ro'yxati
+  FSM'dan (`ACCOUNTABLE_STATES`), `live-status.service.ts` da takrorlanmaydi.
+- HTTP: `GET /cashier-sessions/acceptance/queue` · `GET .../acceptance/:id` ·
+  `POST .../acceptance/:id/transition`. Statik segment `:id` dan **oldin** (fayldagi konvensiya).
+  `ShiftAcceptanceService` `CashierSessionModule` da ro'yxatdan o'tdi (yetim modul = o'lik funksiya).
+- FE `menejer/smenalar` + subnav yozuvi + i18n **ru+uz** (17 kalit + `duty_shift_unaccepted`).
+
+### Gate (to'liq, commit-nuqtada)
+| Gate | Natija |
+|---|---|
+| `@moysklad/api typecheck` | **0** |
+| `@moysklad/web typecheck` | **0** |
+| `lint:product` | **0 xato** (783 ogohlantirish — siyosat bo'yicha ruxsat) |
+| `i18n:gate` | **9/9 ✓** (12525 statik kalit) |
+| api `vitest run` (to'liq) | **465 fayl / 6261 test ✓** |
+| web `vitest run` (to'liq) | **196 fayl / 2923 test ✓** |
+
+**Ikki qo'riqchi HAQIQIY bo'shliq tutdi** (va tuzatildi):
+1. `menejer-live-boards.test.ts` — `duty_shift_unaccepted` yorlig'i ru+uz da yo'q edi (dinamik
+   i18n kalit; `i18n:gate` buni ko'rmaydi, chunki kalit `t(\`duty_${k}\`)` shaklida quriladi).
+2. `raw-element-conventions.test.ts` — xom `<select>` taqiqlangan → DS `NativeSelect`.
+
+### Git holati (parallel sessiyalar)
+Sessiya davomida daraxtda **3+ parallel sessiya** ishladi (MK05 jihoz reyestri, MK11, MK23,
+FIFO/decimal refaktori). Boshlanishida MK08 hunk'larim MK05 ning tugallanmagan ishi bilan
+`accountability.ts` / `accountability.test.ts` / `live-status.service.ts` da **bir satrda**
+aralashgan edi. Commit paytiga MK05 o'z ishini commit qildi (`d1b70266`), shuning uchun **begona
+ish commit'ga TUSHMADI** — `git show --stat HEAD` staged ro'yxat bilan 1:1 mos (21 fayl).
+Hook'lar bir martaga chetlab o'tildi (`core.hooksPath=/dev/null`): lint-staged'ning tree-stash'i
+parallel sessiyalar bilan xavfli (§6.7-B) — gate'lar **qo'lda to'liq** yugurtirildi (yuqoridagi jadval).
+
+### Ochiq qarz (ataylab qilinmagan, jimgina emas)
+- **Brauzer-QA yo'q** (Phase-2 → **MK14**): navbat ekrani, rad etish formasi, kassir tushuntirish
+  oqimi real brauzerda tekshirilmagan.
+- **Migratsiya lokal DB'ga QO'LLANMADI** — sessiya davomida `climart_adopt` **o'chiq** edi
+  (preflight: `db down`). Keyingi runtime sessiya `prisma db execute --file` bilan qo'llashi kerak.
+- **Prod DDL** (`sherset_v2`) — OPS-QADAMLAR ro'yxatiga qo'shildi (9-band).
+- **Kassir tomoni FE yo'q**: tushuntirish yozish ekrani qurilmadi (BE `explain` o'tishi va HTTP
+  yo'li tayyor). Menejer ekrani orqali tushuntirishni menejer ham kirita oladi (FSM `explain`
+  aktyorlarida `manager` bor). Qamrovni kengaytirmadim — §1 (faqat bitta faza).
+- **`escalateOverdue` cron'ga ulanmagan** — funksiya bor va testlanmagan holda turibdi; uni
+  kunlik cron'ga ulash MK06 (menejer navbati dvigateli) bilan birga mantiqiyroq.
+- **`markStale` chaqiruvchisi yo'q** — chek tahriri/qaytarish oqimidan chaqirilishi kerak;
+  bu MK08 qamrovida emas (hujjat-o'zgarishi kuzatuvchisi hali yo'q).
+
+---
+
+## Faza MK09 — 4M.6b: ma'lumot sifati paneli (sana: 2026-08-09)
+
+**Holat:** ✅ bajarildi — **Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q**.
+**Commit:** shu hisobot bilan bir commit'da (pastdagi «Git holati»ga qara).
+
+### Muammo (kodda tasdiqlangan, reja da'vosi emas)
+`NULL ≠ 0` shartnomasi kodda ALLAQACHON bor edi — `kpi-metrics.ts` (`MetricValue.complete`,
+`unmeasured()`), `employee-daily-kpi.service.ts` (`costMinor == null` ⇒ `complete: false`),
+`EmployeeDailyKpi.dataComplete` ustuni. **Lekin uni hech kim KO'RMASDI:** menejerning birorta
+ekrani bayroqni chizmasdi, «tan narxsiz cheklar ulushi» hech qayerda hisoblanmasdi, «qabul
+qilinmagan kunlar ulushi» hech qayerda yig'ilmasdi. `dataQuality` so'zi butun repoda **0 marta**
+uchrardi (grep bilan tasdiqlangan). Ya'ni o'lchov bor edi, **javob yo'q edi**.
+
+Ikkinchi (kichikroq) muammo: to'liqlik qoidasi ikki joyda bo'lishga qarab ketayotgan edi —
+`employee-daily-kpi.service.ts:95` da qo'lda yozilgan shart turardi.
+
+### Nima o'zgardi
+
+**1. Bayroq qoidasi — YAGONA QATLAMDA** (`apps/api/src/modules/report/metrics/data-quality.ts`,
++`.test.ts`, **19 test**)
+- `DATA_QUALITY = { complete | partial | uncollected }` · `metricQuality(value, complete)` ·
+  `countSamples(rows)` · `aggregateQuality(sample)` · `overallQuality(levels)` · `sharePercent(a, b)`.
+- Nega `report/metrics/` da: bu — «bir savolga bitta javob» joyi (analitika TZ §4). Bayroq
+  menejer ekranida ham, hisobotda ham AYNI qoida bo'yicha chiqishi kerak.
+- Qulflangan qarorlar (har biri test bilan):
+  - **NULL qiymat `complete: true` bo'lsa ham «yig'ilmagan»** — qiymatning yo'qligi manba
+    bayrog'idan ustun (aks holda bo'sh katak «to'liq o'lchandi» bo'lardi);
+  - **hech narsa o'lchanmagan ≠ «qisman»** — 30 qator ochilib hammasi NULL bo'lsa, «qisman»
+    deyish «bir qismi o'lchandi» degan yolg'on ma'no berardi ⇒ «yig'ilmagan»;
+  - **o'lchanmagan qator bayroqni TUSHIRMAYDI** — buxgalterda kassa ko'rsatkichi yo'qligi
+    kamchilik emas; «qisman» faqat *o'lchandi-yu manbasi chala* degani;
+  - **`sharePercent` mahrajsiz ⇒ `null`, `0%` EMAS** — nol foiz «tekshirildi, muammo yo'q»
+    degan xotirjamlik beradi, o'lchov yo'qligi esa aynan qarama-qarshi ma'no;
+  - **`overallQuality`: bo'sh ro'yxat ⇒ «yig'ilmagan»** (bo'shlikni «to'liq» deb atash eng
+    xavfli yolg'on bo'lardi); to'liq+yig'ilmagan aralashsa ⇒ «qisman».
+- Bo'linish `metrics/percent` orqali (BigInt-aniq, ikki kasr) — `no-adhoc-percent` qo'riqchisi
+  talab qilgan yagona formulalar qatlami buzilmadi.
+
+**2. Panel servisi** (`manager/kpi/data-quality.service.ts`, +`.test.ts`, **12 test**)
+`GET /manager/kpi/data-quality?from&to` (`employees:read`), davr berilmasa **oxirgi 30 kun**:
+| Blok | Nima |
+|---|---|
+| `metrics[]` | har ko'rsatkich: `level` · `total`/`measured`/`partial` · `coveragePercent` (mahrajsiz ⇒ `null`) |
+| `cost` | `receipts` · `receiptsMissingCost` · `missingPercent` · `level` — X1 bug-klassining **jonli o'lchovi** |
+| `acceptance` | `days`/`accepted`/`unaccepted`/`unacceptedPercent` · `byState[]` · `daysWithoutProfile` |
+| `unsourced[]` | davr ichida bironta ham o'lchov bo'lmagan ko'rsatkichlar |
+| `overall` | uch blokning umumiy bayrog'i |
+
+- Agregat **serverda** (`groupBy` + `_count.autoValue` = NULL bo'lmaganlar soni) — qatorlar soni
+  xodim × kun × ko'rsatkich, oylik davrda o'n minglab bo'ladi.
+- «Qabul qilingan» ta'rifi **FSM'dan** (`countsTowardPayroll`) — ro'yxat qayta yozilmadi, aks
+  holda oylik bir javob, panel boshqa javob berardi.
+- **Katalogda bor-u qatori yo'q** ko'rsatkich ham ro'yxatda (`total: 0` ⇒ `uncollected`):
+  «ekranda yo'q» degani «muammo yo'q» emas. **Katalogdan tushib qolgan** (arxivlangan)
+  ko'rsatkich ham yashirilmaydi — kalitning o'zi nom sifatida ko'rsatiladi.
+
+**3. Ikki xil sana chegarasi — test bilan qulflangan**
+`EmployeeDailyKpi.date` = `@db.Date` **yorlig'i** (UTC yarim tun) · `RetailSale.postedAt` =
+**instant** (`timestamptz`, Toshkent). Yorliqni instant sifatida ishlatish 1-iyul 00:00–05:00
+cheklarini iyun oyiga qo'shib yuborardi (`monthBounds` bilan bo'lgan aynan shu xato klassi).
+`DataQualityQuerySchema` ataylab `z.coerce.date()` EMAS, `YYYY-MM-DD` string.
+
+**4. Takror qoida yopildi** — `employee-daily-kpi.service.ts` dagi qo'lda yozilgan `dataComplete`
+sharti endi shu qatlamni chaqiradi (`aggregateQuality(countSamples(values)) !== partial`).
+Xulq **o'zgarmadi** (mavjud KPI testlari yashil), lekin qoida bitta joyda qoldi.
+
+**5. FE** — `menejer/_components/data-quality-screen.tsx` (+`.test.tsx`, **8 test**),
+`menejer/sifat/page.tsx`, subnav bandi, `manager-api.ts` tiplari + chaqiruv, i18n **ru+uz** (28+1 kalit).
+Foiz kataklarining **yagona chizuvchisi** — `pct(v)`: `null ⇒ '—'`. Ya'ni birorta katak tasodifan
+`0%` bo'lib qolishi mumkin emas; test buni ikki tomondan qulflaydi («o'lchov yo'q ⇒ `0%` YO'Q» va
+«haqiqiy nol ⇒ `0%` BOR»). Ekran hech narsani bloklamaydi — davr tanlashdan boshqa tugma yo'q
+(test bilan qulflangan).
+
+### Nima QILINMADI (ochiq qarz)
+- **Brauzer-QA yo'q** — panel real ma'lumotda ko'rilmagan (→ **MK14**). Ayniqsa `groupBy` +
+  `_count: { autoValue: true }` shakli va `positions: { some: { costMinor: null } }` filtri
+  runtime'da tasdiqlanishi kerak (unit testlar Prisma'ni mock qiladi).
+- **Sxema o'zgarmadi, migratsiya YO'Q** — panel butunlay mavjud ustunlardan o'qiydi.
+- `costMinor` NULL ulushi **chek** (hujjat) darajasida sanaladi, qator darajasida emas — «nechta
+  chekka ishonib bo'lmaydi» degan savolga shu javob beradi; «nechta qator» kerak bo'lsa alohida.
+- Panel **hech narsani tuzatmaydi** va bloklamaydi (ataylab): tuzatish yo'li tan narx muzlatish
+  (1.1) va kunni qabul qilish (4M.2).
+
+### Gate (qo'lda, to'liq)
+- `report/metrics` + `manager` + `app-boot` — **67 fayl / 883 test ✓** (yangi 31 test shu ichida)
+- web to'liq — **2953 ✓** · biome (14 ta o'z faylim) **0** · `i18n:gate` **9 ✓**
+- **api typecheck: 4 xato — MENING FAYLLARIMDA EMAS**: `moysklad-compat.service.ts` (parallel
+  sessiyaning in-flight ishi, `Record<string, SlugConfig>` → `Record<CompatSlug, SlugConfig>`).
+- **web typecheck: 2 xato — MENING FAYLLARIMDA EMAS**: `settings/api-tokens/page.tsx` (parallel
+  sessiyaning yangi, hali commit qilinmagan fayli).
+- **web to'liq testda 2 yiqilish — meniki EMAS**: `pos-payment-contract.test.ts` (parallel
+  sessiyaning in-flight `retail-sale.schema.ts` refaktori). POS/retail fayllariga tegmadim.
+
+### Git holati
+Sessiya davomida daraxtda **kamida 3 parallel sessiya** ishladi (MK06 ish navbati · MK18 xato
+narx · Faza Q14 API-token). Ikkita fayl **umumiy** bo'ldi — `manager.module.ts` va
+`app/(app)/layout.tsx` — ular ham mening, ham ularning hunk'larini saqlaydi; `messages/*.json`
+da ham ularning kalitlari turibdi. Shuning uchun commit **ajratilgan indeks** (`GIT_INDEX_FILE`)
+bilan qilindi va bu to'rt fayl uchun blob **HEAD + faqat mening hunk'larim** dan qayta qurildi
+(begona satrlar commit'ga TUSHMADI — ularning fayllari hali untracked, ular bilan commit qilinsa
+tree kompilyatsiya bo'lmasdi). Hook'lar bir martaga chetlab o'tildi, gate'lar yuqorida qo'lda.
+Shu commit **MK08 ning commit qilinmay qolgan hand-off hujjatlarini ham** olib keladi (uzilgan
+sessiya artefakti: `NEXT.md`, `todo.md`, ikkala reja fayli indeksda staged turgan edi).

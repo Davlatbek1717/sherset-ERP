@@ -16,9 +16,11 @@ import {
   REASON_CODES,
   allowedActions,
 } from './daily-kpi-fsm.js';
+import { DataQualityService } from './data-quality.service.js';
 import { KpiMetricCatalogService } from './kpi-metric-catalog.service.js';
 import {
   AdjustSchema,
+  DataQualityQuerySchema,
   DrilldownQuerySchema,
   QueueFilterSchema,
   SaveCustomMetricSchema,
@@ -49,6 +51,7 @@ export class ManagerKpiController {
   constructor(
     @Inject(DailyKpiAcceptanceService) private readonly acceptance: DailyKpiAcceptanceService,
     @Inject(DailyKpiDrilldownService) private readonly drilldown: DailyKpiDrilldownService,
+    @Inject(DataQualityService) private readonly quality: DataQualityService,
     @Inject(KpiMetricCatalogService) private readonly catalog: KpiMetricCatalogService,
     @Inject(OwnerWeeklySummaryService) private readonly weekly: OwnerWeeklySummaryService,
     @Inject(LiveStatusService) private readonly live: LiveStatusService,
@@ -76,6 +79,19 @@ export class ManagerKpiController {
   @RequireHrPermission('employees', 'read')
   async liveBoard(@CurrentUser() user: AuthenticatedUser) {
     return this.live.board(user.accountId);
+  }
+
+  /**
+   * Ma'lumot sifati paneli (MK09 · TZ §2.4/§0.2) — «bu raqamga qanchalik
+   * ishonish mumkin». Hech narsani bloklamaydi, faqat ko'rinadi.
+   *
+   * Davr berilmasa — oxirgi 30 kun.
+   */
+  @Get('data-quality')
+  @RequireHrPermission('employees', 'read')
+  async dataQuality(@CurrentUser() user: AuthenticatedUser, @Query() query: unknown) {
+    const range = DataQualityQuerySchema.parse(query ?? {});
+    return this.quality.panel(user.accountId, range);
   }
 
   /**

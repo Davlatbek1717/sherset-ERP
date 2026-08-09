@@ -110,7 +110,67 @@ export interface OwnerWeeklySummary {
   activity: WeeklyManagerActivity[];
 }
 
+// ─── Ma'lumot sifati paneli (TZ §2.4/§0.2 · MK09) ──────────────────────
+
+/**
+ * Sifat darajasi: to'liq / qisman / **yig'ilmagan**.
+ *
+ * `uncollected` — o'lchov umuman yo'q. Bu `0` EMAS va ekranda hech qachon
+ * `0%` bo'lib chizilmaydi (NULL ≠ 0 shartnomasi).
+ */
+export type DataQualityLevel = 'complete' | 'partial' | 'uncollected';
+
+export interface DataQualityMetricRow {
+  key: string;
+  labelUz: string;
+  labelRu: string;
+  source: string;
+  level: DataQualityLevel;
+  /** Davr ichida ochilgan qatorlar soni (xodim × kun). */
+  total: number;
+  /** Shulardan qiymati BOR (o'lchangan) qatorlar. */
+  measured: number;
+  /** O'lchangan-u manbasi chala qatorlar. */
+  partial: number;
+  /** `measured / total`. Qator umuman yo'q ⇒ **null**, `0` emas. */
+  coveragePercent: number | null;
+}
+
+export interface DataQualityPanel {
+  from: string;
+  to: string;
+  overall: DataQualityLevel;
+  metrics: DataQualityMetricRow[];
+  /** Manbasi yo'q (davr ichida bironta ham o'lchov bo'lmagan) ko'rsatkichlar. */
+  unsourced: Array<{ key: string; labelUz: string; labelRu: string; source: string }>;
+  cost: {
+    receipts: number;
+    receiptsMissingCost: number;
+    /** Chek bo'lmasa **null** (`0%` emas). */
+    missingPercent: number | null;
+    level: DataQualityLevel;
+  };
+  acceptance: {
+    days: number;
+    accepted: number;
+    unaccepted: number;
+    unacceptedPercent: number | null;
+    byState: Array<{ state: string; count: number }>;
+    daysWithoutProfile: number;
+    withoutProfilePercent: number | null;
+  };
+}
+
 export const managerKpiApi = {
+  /** Ma'lumot sifati paneli. Davr berilmasa — oxirgi 30 kun. */
+  dataQuality: (range?: { from?: string; to?: string }) => {
+    const qs = new URLSearchParams();
+    if (range?.from) qs.set('from', range.from);
+    if (range?.to) qs.set('to', range.to);
+    const suffix = qs.toString();
+    return api.get<DataQualityPanel>(`/manager/kpi/data-quality${suffix ? `?${suffix}` : ''}`);
+  },
+
   /** `week` berilmasa — O'TGAN hafta (tugagan hafta ko'rsatiladi). */
   weeklySummary: (week?: string) =>
     api.get<OwnerWeeklySummary>(`/manager/kpi/weekly-summary${week ? `?week=${week}` : ''}`),

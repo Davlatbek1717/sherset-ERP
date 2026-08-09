@@ -27,10 +27,10 @@
 
 | | Soni |
 |---|---|
-| **Qolgan bosqichlar** | **57** |
+| **Qolgan bosqichlar** | **56** |
 | Sifat qarzlari | 7 |
 | Brauzer-QA (Phase-2) o'tishlari | ~9 (har bo'lim uchun 1) |
-| **JAMI ish birligi** | **~76** |
+| **JAMI ish birligi** | **~75** |
 
 **Hisob:** 1 bosqich ≈ 1 sessiya. Kuniga **1 sessiya** → **~4 oy**; kuniga **2 sessiya** → **~2 oy**;
 kuniga **3 sessiya** → **~6 hafta**.
@@ -221,7 +221,16 @@ kuniga **3 sessiya** → **~6 hafta**.
 ### 4M.5–4M.10
 - [ ] **4M.5** — Ogohlantirish navbati: `ManagerWorkItem` + `ManagerRuleConfig` (ikkalasi YO'Q) +
       **12 qoida turi** + sabab kodlari + eskirish belgisi
-- [ ] **4M.6** — Smena yakunini qabul qilish + **ma'lumot sifati paneli**
+- [x] **4M.6** — Smena yakunini qabul qilish + **ma'lumot sifati paneli**
+      · ✅ **MK08**: smena qabuli — FSM (`shift-acceptance.ts`) + append-only
+        jurnal + rad→tushuntirish halqasi + navbat/qabul ekrani + javobgarlik taxtasida
+        `shift_unaccepted`. **Qabul SUMMALARGA TEGMAYDI** (test bilan qulflangan).
+      · ✅ **MK09**: ma'lumot sifati paneli — bayroq qatlami `report/metrics/data-quality.ts`
+        (yagona formula joyi) + `GET /manager/kpi/data-quality` + `/menejer/sifat`.
+        Har ko'rsatkich bayrog'i · tan narxsiz cheklar ulushi · qabul qilinmagan kunlar ulushi ·
+        manbasi yo'q ko'rsatkichlar. **NULL ≠ 0** ikkala tomondan test bilan qulflangan
+        (mahrajsiz ulush `null`, ekranda `—`; `0%` chizilmaydi).
+      · Ikkalasi ham **Phase-1, brauzer-QA yo'q** (→ MK14).
 - [ ] **4M.7** — «Nima qotib qolgan» + **SLA paneli**
 - [x] **4M.8** — Uch xil zaxira signali (o'lchov **PUL**, dona emas) + narx o'zgarishi nazorati —
       **MK11** (Phase-1, brauzer-QA yo'q). Chegara doimiy sozlamasi va navbat OMBORI `4M.5` da

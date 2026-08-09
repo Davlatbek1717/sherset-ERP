@@ -4,6 +4,16 @@
  */
 export { UNKNOWN_CASHIER_ID, cashierSliceKey, isUnknownCashier } from './cashier-slice.js';
 export {
+  DATA_QUALITY,
+  type DataQualityLevel,
+  type QualitySample,
+  aggregateQuality,
+  countSamples,
+  metricQuality,
+  overallQuality,
+  sharePercent,
+} from './data-quality.js';
+export {
   REPORT_PERCENT_DECIMALS,
   averageCheckMinor,
   grossProfitMinor,

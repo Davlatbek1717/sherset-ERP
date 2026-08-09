@@ -28,6 +28,26 @@ export const QueueFilterSchema = z.object({
 });
 export type QueueFilter = z.infer<typeof QueueFilterSchema>;
 
+/**
+ * Ma'lumot sifati paneli davri (MK09).
+ *
+ * `Date` EMAS, `YYYY-MM-DD` **yorlig'i**: servis ichida bu yorliqdan ikki xil
+ * chegara yasaladi — DATE-ustun uchun UTC yarim tun, `postedAt` uchun Toshkent
+ * instanti. `z.coerce.date()` bo'lsa yorliq allaqachon instantga aylangan
+ * bo'lardi va ikkinchi ma'no yo'qolardi.
+ */
+export const DataQualityQuerySchema = z.object({
+  from: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+  to: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+});
+export type DataQualityQuery = z.infer<typeof DataQualityQuerySchema>;
+
 /** Menejer bajaradigan o'tishlar (tizim amallari HTTP orqali ochilmaydi). */
 const MANUAL_ACTIONS = [
   DAILY_KPI_ACTION.accept,

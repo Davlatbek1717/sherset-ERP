@@ -6,6 +6,7 @@ import { ManagerInventoryController } from './inventory/manager-inventory.contro
 import { ManagerInventoryService } from './inventory/manager-inventory.service.js';
 import { DailyKpiAcceptanceService } from './kpi/daily-kpi-acceptance.service.js';
 import { DailyKpiDrilldownService } from './kpi/daily-kpi-drilldown.service.js';
+import { DataQualityService } from './kpi/data-quality.service.js';
 import { EmployeeDailyKpiCron } from './kpi/employee-daily-kpi.cron.js';
 import { EmployeeDailyKpiService } from './kpi/employee-daily-kpi.service.js';
 import { KpiConfigController } from './kpi/kpi-config.controller.js';
@@ -48,6 +49,7 @@ import { LiveStatusService } from './live/live-status.service.js';
     OwnerWeeklySummaryService,
     LiveStatusService,
     DailyKpiDrilldownService,
+    DataQualityService,
     ManagerInventoryService,
   ],
   exports: [EmployeeDailyKpiService, DailyKpiAcceptanceService],

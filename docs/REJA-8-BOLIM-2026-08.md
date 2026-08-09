@@ -152,6 +152,21 @@ alohida bajariladi. **Har faza agenti o'zi qo'shgan qadamni shu ro'yxatga yozadi
    ⚠️ **Kanal OPT-IN**: DDL o'zi hech qanday pul yozmaydi — egasi `hr_bonus_fine_rule` ga
    `condition = {"type":"kpi_day_score","minPercent":…,"maxPercent":…}` qoidalarini
    qo'shmaguncha xulq o'zgarmaydi.
+9. **MK08 (2026-08-09) — smena qabuli DDL'i.** Prod (`sherset_v2`) da
+   `packages/db/prisma/migrations/20260810070000_shift_acceptance/migration.sql`
+   ni `prisma db execute --file` bilan qo'llash. Qo'shadi: `cashier_sessions` ga 4 ta ustun
+   (`acceptance_state` NOT NULL DEFAULT `'open'`, `accepted_by_id`, `accepted_at`,
+   `acceptance_changed_at`) + 2 indeks; yangi `cashier_session_acceptance_events` jadvali
+   (+3 indeks, 2 FK `ON DELETE CASCADE`).
+   ⚠️ **BACKFILL BOR va u ko'rinadigan xulq o'zgartiradi:** `UPDATE … SET acceptance_state='pending'
+   WHERE state='closed'` — ya'ni prodda ALLAQACHON yopilgan HAMMA smena menejer navbatiga tushadi
+   va **javobgarlik taxtasida kassirlar ustida ko'rinadi**. Bu ATAYLAB: ularni hech kim ko'rmagan,
+   `accepted` deb belgilash yolg'on yozuv bo'lardi. Egasini OLDINDAN ogohlantiring — birinchi kuni
+   navbat uzun bo'ladi (`/menejer/smenalar` da sana filtri bor).
+   Tekshiruv: `SELECT acceptance_state, count(*) FROM cashier_sessions GROUP BY 1` — `closed`
+   smenalar soni `pending` bilan mos kelishi kerak. Keyin `/api/v1/health` (2-band).
+   ⚠️ **Lokal `climart_adopt` ga ham QO'LLANMAGAN** (MK08 sessiyasida DB o'chiq edi) — keyingi
+   runtime/QA sessiya avval shuni qo'llasin, aks holda API `acceptance_state` ustunini topa olmaydi.
 
 ---
 
