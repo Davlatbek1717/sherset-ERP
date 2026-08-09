@@ -379,7 +379,7 @@ saqlansin. (b) `BusinessStatus` tipi + badge (`webhookSecretSet:false` → ogohl
 > `docs/REJA-QOLDIQ-2026-08.md` — **Faza Q11**. O'ZGARMAS QOIDALAR. Faza 21 hisoboti DEFER'larini o'qi.
 > INT-13 klassini barcha saveConfig'larda audit+fix, webhookSecretSet badge. TDD: PATCH-semantika
 > testlari. Gate (API+web+i18n). Hisobot, TO'XTA.
-**◻ HISOBOT:** _(agent to'ldiradi)_
+**☑ HISOBOT (2026-08-09):** BAJARILDI — batafsili «HISOBOT JURNALI → Faza Q11» da.
 
 ---
 
@@ -1962,3 +1962,156 @@ Bir martalik skaner skripti sessiya scratchpad'ida qoldi — **repoga kirmaydi**
 Q1–Q9 yozuvlariga TEGILMADI.
 
 **Commit:** `fix(auth): faza q10 — guard-siz mutatsiya endpointlariga permission (AUTH-07)`
+
+---
+
+## Faza Q11 — saveConfig PATCH-audit (`INT-13` klassi) + `webhookSecretSet` badge (2026-08-09) — **Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q**
+
+Manba: Faza 21 hisoboti DEFER-1 (`webhookSecretSet` UI'da ko'rinmaydi) va DEFER-4 (`INT-13` naqshi
+boshqa integratsiyalarda tekshirilmagan).
+
+### 1. Da'volarni kodda tasdiqlash (O'ZGARMAS QOIDALAR §2) — 2/2 TASDIQLANDI
+
+- **DEFER-1 TASDIQLANDI.** `telegram.service.ts:1023` `businessStatus` haqiqatan
+  `webhookSecretSet: !!cfg?.webhookSecret` qaytaradi (+ Faza 21 izohi joyida), lekin
+  `apps/web/src/components/counterparties/telegram-chat-card.tsx:19-25` dagi `BusinessStatus`
+  interfeysida bu maydon **YO'Q edi** va hech qayerda render qilinmasdi. Ya'ni operator uchun
+  «webhook sozlangan, lekin secret yo'q ⇒ har inbound update 401» holati **butunlay ko'rinmas** edi.
+- **DEFER-4 TASDIQLANDI (qisman — quyida halol o'lchov).** `telegram` fixdan keyin ham `INT-13`
+  naqshi **uchta boshqa** konfiguratsiya-yozuvchida qolgan edi.
+
+### 2. Audit — barcha konfiguratsiya-yozuvchilari (grep + har birini KODDA o'qib)
+
+Kashfiyot: `apps/api/src/modules` ostidagi `async (save|upsert|update)*Config(` — **23 fayl**
+(servis + controller). Ulardan haqiqiy yozuvchi-servislar 12 ta; qolganlari delegatsiya qiluvchi
+controllerlar. Har birining `data` obyekti o'qib chiqildi:
+
+| # | Yozuvchi | `?? null` naqshi bor edimi | Sabab / holat |
+|---|---|---|---|
+| 1 | `telegram/telegram.service.ts` | **bor edi — Faza 21 da TUZATILGAN** | referens naqsh (namuna) |
+| 2 | `email/email.service.ts` | **BOR EDI** (`fromName`, `replyTo`) | ikkalasi sxemada `nullish` + `''`→null preprocess ⇒ TUZATILDI |
+| 3 | `sms/sms.service.ts` | **BOR EDI** (`senderId`) | `optionalEmpty(20)` ⇒ TUZATILDI |
+| 4 | `payment-gateway/payment-gateway.service.ts` | **BOR EDI** (`callbackUrl`) | + sxema tuzatildi (pastda) ⇒ TUZATILDI |
+| 5 | `edo/edo.service.ts` | yo'q edi | sirlar allaqachon `...(X !== undefined ? …)` naqshida; qolgan maydonlar sxemada MAJBURIY |
+| 6 | `marking/marking.service.ts` | yo'q edi | `apiToken` `!== undefined` naqshida; `stir`/`apiBaseUrl` majburiy |
+| 7 | `integrations/onec/onec.service.ts` | yo'q edi | `password` `!== undefined`; qolgani majburiy |
+| 8 | `integrations/bank/bank.service.ts` | yo'q edi | `creds` `!== undefined`; qolgani majburiy |
+| 9 | `integrations/marketplace/marketplace.service.ts` | yo'q edi | `creds` `!== undefined`; qolgani majburiy |
+| 10 | `app-install/app-install.service.ts` | yo'q edi | `config` sxemada `.nullable()` (MAJBURIY) ⇒ `null` = OSHKORA tozalash niyati, `undefined` emas |
+| 11 | `hr/hr-attendance-notify/…service.ts` | yo'q edi | allaqachon to'liq PATCH (`...(dto.X !== undefined && {X})`) |
+| 12 | `hr/hr-salary/hr-salary.service.ts` | yo'q edi | barcha maydon majburiy, to'liq-almashtirish upsert |
+| — | `manager/kpi/kpi-config.service.ts` | `note: input.note ?? null` **bor, lekin BUG EMAS** | har saqlash `kpiProfileVersion` ning **YANGI** qatorini yaratadi (versiyalash) — saqlanadigan oldingi qiymat yo'q ⇒ klass-qulf ALLOWLIST'iga sabab bilan yozildi |
+
+**Halol nuans (ortiqcha da'vo qilmaslik uchun):** 2–4 dagi ta'sir `telegram`nikidan PASTROQ.
+`telegram` sxemasida HAMMA maydon ixtiyoriy edi ⇒ haqiqiy qisman so'rov oson yuz berardi.
+`email`/`sms`/`payment-gateway` sxemalarida bir necha maydon MAJBURIY, ya'ni tana baribir «deyarli
+to'liq» keladi va bug faqat ixtiyoriy maydon (`fromName`/`replyTo`/`senderId`/`callbackUrl`)
+tashlab yuborilganda otiladi. Bu **haqiqiy**, lekin «har rotatsiyada butun inbound o'ladi» darajasi
+emas. `payment-gateway/config` ning esa web-UI'si umuman **yo'q** (chaqiruvchi tashqi/admin
+integratsiya) ⇒ u yerda qisman tana eng ehtimolli.
+
+### 3. O'zgarishlar
+
+**API (3 servis + 1 sxema):**
+1. `email/email.service.ts` — `fromName: parsed.fromName ?? null` va `replyTo: … ?? null` →
+   `...(parsed.X !== undefined ? { X: parsed.X } : {})`. Sabab-izoh yozildi.
+2. `sms/sms.service.ts` — `senderId` uchun xuddi shunday. `token: null` / `tokenIssuedAt: null`
+   **ataylab qoldirildi** (saqlash = keyingi ishlatishda qayta-auth majburiyati, bu maydon
+   operator kiritmaydigan kesh).
+3. `payment-gateway/payment-gateway.service.ts` — `callbackUrl` PATCH-semantikaga.
+4. `payment-gateway/payment-gateway.schema.ts` — **`callbackUrl` sxemasi ham o'zgardi**:
+   `z.string().url().max(500).optional()` → `z.preprocess('' → null, z.string().url().max(500).nullish())`.
+   **Nega majburiy:** eski sxemada `''` `url()` dan o'tmasdi ⇒ «ataylab tozalash»ning YAGONA yo'li
+   maydonni tashlab yuborish edi. PATCH-semantikaga o'tish o'sha yo'lni yopardi va operator callback
+   URL'ini **umuman o'chira olmay qolardi**. Endi telegram/sms'dagi `optionalEmpty` naqshi.
+   `''` dan boshqa noto'g'ri qiymat baribir `url()` bilan rad etiladi (test bilan qulflandi).
+
+**FE (badge, DEFER-1):**
+5. `apps/web/src/components/counterparties/telegram-chat-card.tsx` — `BusinessStatus` ga
+   `webhookSecretSet: boolean` (+ sabab-docblock) va kartochka tanasining boshida ogohlantirish
+   qatori: `status.webhookSet && !status.webhookSecretSet` ⇒ warn-ohangdagi strip
+   (`data-test-id="tg-webhook-secret-warn"`). `webhookSet:false` bo'lsa CHIQMAYDI (u boshqa muammo).
+6. `apps/web/src/messages/{ru,uz}.json` — `telegram_chat.webhook_secret_missing`.
+   **Label grounding (CLAUDE.md §4):** matn o'zimdan to'qilmadi, mavjud lug'atdan yig'ildi —
+   RU `«Webhook»` + `«секрет»` (`pages.webhook_admin.field_secret` = «HMAC-секрет») +
+   `«Входящие»` (`audit.group_payments_in`) + `«…не настроен — администратор должен…»`
+   (`telegram_chat.not_configured` qolipi); UZ `«Webhook»`/`«webhook'ni»`
+   (`pages.webhook_admin.delete_confirm`) + `«kalit»` (`field_secret` = «HMAC kalit»,
+   `driver_trips.geocode_disabled` = «Yandex kaliti yo'q») + `«kiruvchi»`
+   (`audit.group_payments_in`) + `«sozlangan/sozlanmagan»` (`not_configured`).
+
+**Klass-qulf (yangi):**
+7. `apps/api/src/modules/shared/config-patch-semantics-class.test.ts` — **kashfiyot asosida**:
+   `modules/` daraxtini o'zi skanlaydi, har `async *Config(` metodining **TANASINI** `{}` juftligi
+   bo'yicha kesib oladi (butun fayl EMAS — o'sha fayllarning `create` yo'llari `?? null` ni
+   HAQLI ishlatadi: `email` send-log, `sms` log, `marking` code-allocate) va tanada
+   `X: parsed|dto|input.Y ?? null|undefined` naqshini taqiqlaydi. Kommentlar `stripComments()`
+   bilan tashlanadi — **Faza 21 dagi aynan tuzoq**: fixning o'z izohi («Ilgari
+   `parsed.webhookUrl ?? null` uslubi…») aks holda yolg'on-qizil berardi. ALLOWLIST kalit
+   `<fayl>: <aniq qator>` (fayl darajasida emas) ⇒ o'sha fayldagi KEYINGI haqiqiy INT-13 jim
+   o'tmaydi. **Yangi `saveConfig` `?? null` bilan qo'shilsa — ro'yxatga hech narsa qo'shmasdan
+   test yiqiladi.**
+
+### 4. Testlar (TDD — RED jonli o'lchandi, keyin GREEN)
+
+**RED (fixdan OLDIN, jonli):**
+- Klass-qulf: **1 failed / 2 passed** — `offenders` ro'yxati aynan 5 qatorni ko'rsatdi:
+  `email.service.ts: fromName…`, `email.service.ts: replyTo…`,
+  `payment-gateway.service.ts: callbackUrl…`, `sms.service.ts: senderId…`,
+  + `manager/kpi/kpi-config.service.ts: note…` (tekshirilib **yolg'on-musbat** deb topildi va
+  sabab bilan allowlist'ga o'tdi — bu qulfning o'zini kalibrlagan topilma).
+- Xulq testlari: **4 failed / 9 passed** (3 fayl). Dalillar: `sms` — «expected … to not have
+  property "senderId"; Received: null» (ya'ni NULL-reset HAQIQATAN yozilardi);
+  `payment-gateway` — «BadRequestException: Invalid url» (`''` bilan tozalash yo'li HAQIQATAN
+  yopiq edi, sxema tuzatishi taxmin emas — o'lchov).
+- **RED jami: 5 failed / 11 passed (4 fayl).**
+
+**GREEN (fixdan keyin):** yangi 4 fayl / **16 test** yashil; tegilgan modullar
+(`shared`+`email`+`sms`+`payment-gateway`+`telegram`+`manager/kpi`) **63 fayl / 1055 test** yashil.
+
+**Web (badge) — non-vacuity JONLI o'lchandi:** yangi
+`apps/web/src/components/counterparties/telegram-chat-card.test.tsx` (3 test, RTL +
+`renderWithProviders`) yashil; keyin ogohlantirish bloki **vaqtincha olib tashlanib** yugurtirildi
+→ 1-test QIZIL («webhook bor, secret yo'q → ogohlantirish ko'rinadi»), so'ng fayl tiklanib
+`cmp` bilan **bayt-identik** ekani tasdiqlandi. Ya'ni test haqiqatan badge'ni ushlab turadi.
+
+### 5. Gate (jonli o'lchangan)
+
+- `pnpm --filter @moysklad/api typecheck` → **0 xato**
+- `pnpm --filter @moysklad/web typecheck` → **0 xato**
+- `pnpm lint:product` → **0 error** (748 warning — siyosat bo'yicha ruxsat). *(Yangi klass-qulf
+  fayli avval `format` xatosi berdi → `biome format --write`, keyin qayta yashil.)*
+- `pnpm i18n:gate` → **9/9 passed** (407 fayl, 12338 statik `t()` kaliti tekshirildi)
+- To'liq API suite **3 shardda** (`--shard=N/3 --reporter=dot`):
+  **1893 + 1845 + 2088 = 5826 passed / 2 skipped**, 0 failed. Baza (Faza Q10 dan keyin)
+  **5810 passed / 2 skipped** ⇒ **+16 = aynan shu fazaning yangi API testlari**, regress YO'Q.
+- Web suite: **2835 passed / 26 skipped** (188 fayl). Baza **2832 / 26** ⇒ **+3 = badge testi**,
+  regress YO'Q.
+- Migratsiya YO'Q (sxema tegilmadi — o'zgargan `payment-gateway.schema.ts` **Zod** sxemasi,
+  Prisma emas). **Browser-smoke YO'Q.**
+
+### 6. Git gigienasi (CLAUDE.md §6)
+
+Daraxtda menikimas o'zgarishlar bor edi — `todo.md` (modified), `docs/REJA-8-BOLIM-2026-08.md`
+(untracked) va foydalanuvchining untracked fayllari (`qabullar-amallar-royxati.txt`, `*.xlsx`,
+`chek.png`, `SAYT-PROMPT.txt`, `docs/audits/…`, `scratchpad/`) — **HECH BIRIGA TEGILMADI**;
+`git add` faqat aniq yo'llar bilan, commitdan keyin `git show --stat HEAD` bilan tarkib tekshirildi.
+Bu yozuv faylga **append** bilan qo'shildi — **marker-kesish YO'Q**
+(`doc-append-marker-truncation` xotirasi), Q1–Q10 yozuvlariga TEGILMADI.
+
+### 7. 🟠 Qolgan qarz / DEFER
+
+1. **Browser-smoke YO'Q** — badge real brauzerda ko'rilmadi (RTL + happy-dom bilan tasdiqlangan).
+   Kontragent detali cohortining Phase-2 QA sessiyasiga qoladi.
+2. **Zod `default()` reset klassi tekshirilmadi.** `INT-13` `?? null` haqida; lekin
+   `provider`/`testMode`/`port`/`secure` kabi `default(...)` li maydonlar ham qisman tanada
+   **standart qiymatga qaytadi** (masalan `testMode` yuborilmasa `true` bo'lib qoladi). Bu alohida
+   (yumshoqroq) klass — shu fazada ATAYLAB tegilmadi, chunki barcha chaqiruvchilar to'liq tana
+   yuboradi va o'zgartirish sozlash-formalarining hozirgi semantikasini buzishi mumkin.
+3. **`webhookSecretSet` faqat bitta joyda ko'rsatiladi** — kontragent kartochkasida. Sozlamalar
+   sahifasida (agar Telegram sozlash UI'si bo'lsa) ham chiqarish foydali bo'lardi; bu fazada
+   `businessStatus`ning YAGONA iste'molchisi shu kartochka ekani grep bilan tasdiqlandi.
+4. **Faza 21 ning boshqa DEFER'lari ochiq qoladi** (2 — rate-limit/replay dedup, 3 — secret
+   rotatsiyasi atomik emas, 5 — `!creds.secretKey` ortiqcha old-tekshiruvi). Ular Q11 doirasida emas.
+
+**Commit:** `fix(integrations): faza q11 — saveconfig patch-semantika + webhook secret badge (INT-13)`

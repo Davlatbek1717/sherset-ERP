@@ -20,6 +20,14 @@ interface BusinessStatus {
   configured: boolean;
   botUsername: string | null;
   webhookSet: boolean;
+  /**
+   * Faza 21 (`INT-01`) inbound tekshiruvi FAIL-CLOSED: webhook URL bor-u
+   * secret yo'q bo'lsa Telegram'dan kelgan HAR update 401 oladi. `webhookSet`
+   * buni ko'rsata olmaydi (u faqat URL'ga qaraydi) — kartochka «sozlangan»
+   * bo'lib turaveradi, aslida hech narsa kelmaydi. Faza Q11: API allaqachon
+   * qaytarayotgan ikkinchi signal endi UI'da ogohlantirish sifatida ko'rinadi.
+   */
+  webhookSecretSet: boolean;
   connected: boolean;
   businessUserName: string | null;
 }
@@ -133,6 +141,17 @@ export function TelegramChatCard({ counterpartyId }: { counterpartyId: string })
       }
       badgeTone={status.connected ? 'ok' : 'warn'}
     >
+      {/* «Sozlangan-u ishlamayapti» holati — jim nosozlik klassi (Faza Q11).
+          Webhook o'rnatilgan, lekin secret yo'q ⇒ inbound 401. */}
+      {status.webhookSet && !status.webhookSecretSet && (
+        <p
+          className="mb-2 rounded bg-[var(--ms-row-partial-bg)] px-2 py-1 text-[11px] text-[var(--ms-row-partial-accent)]"
+          data-test-id="tg-webhook-secret-warn"
+        >
+          {t('webhook_secret_missing')}
+        </p>
+      )}
+
       {!chat && (
         <div className="space-y-2">
           <p className="text-[var(--ms-text-muted)] text-xs">{t('no_chat_bound')}</p>

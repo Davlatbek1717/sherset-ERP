@@ -79,12 +79,18 @@ export class EmailService {
       throw new BadRequestException('Birinchi sozlash uchun parol majburiy');
     }
 
+    // PATCH-semantika (`INT-13`, faza 21 naqshi / faza Q11 klass-auditi):
+    // kelmagan (`undefined`) ixtiyoriy maydon TEGILMAYDI. Ilgari
+    // `parsed.fromName ?? null` uslubi ularsiz yuborilgan yangilashda
+    // (masalan faqat SMTP host/port almashtirilganda) jo'natuvchi nomi va
+    // «reply-to» manzilini JIMGINA o'chirardi. Ataylab bo'sh string
+    // yuborilsa schema uni `null` qiladi ⇒ tozalash yo'li saqlanadi.
     const data = {
       accountId,
       provider: parsed.provider,
-      fromName: parsed.fromName ?? null,
+      ...(parsed.fromName !== undefined ? { fromName: parsed.fromName } : {}),
       fromEmail: parsed.fromEmail,
-      replyTo: parsed.replyTo ?? null,
+      ...(parsed.replyTo !== undefined ? { replyTo: parsed.replyTo } : {}),
       host: parsed.host,
       port: parsed.port,
       secure: parsed.secure,

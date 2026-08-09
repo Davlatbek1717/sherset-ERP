@@ -9111,6 +9111,7 @@
     "send": "Yuborish",
     "title": "Telegram",
     "unbind": "Uzish",
+    "webhook_secret_missing": "Webhook kalitsiz sozlangan — kiruvchi xabarlar qabul qilinmaydi; administrator webhook'ni qayta sozlashi kerak",
     "write_placeholder": "Xabar yozing… (sizning nomingizdan ketadi)"
   }
 }

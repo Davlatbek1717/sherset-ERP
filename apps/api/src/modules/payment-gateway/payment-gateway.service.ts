@@ -92,7 +92,14 @@ export class PaymentGatewayService {
       merchantId: parsed.merchantId,
       ...(credsCipher !== undefined ? { credsCipher } : {}),
       testMode: parsed.testMode,
-      callbackUrl: parsed.callbackUrl ?? null,
+      // PATCH-semantika (`INT-13`, faza 21 naqshi / faza Q11 klass-auditi):
+      // kelmagan `callbackUrl` TEGILMAYDI. Ilgari `parsed.callbackUrl ?? null`
+      // uslubi uni yubormagan yangilashda (creds rotatsiyasi, `testMode`
+      // o'zgarishi) Payme/Click callback manzilini jimgina o'chirardi — bu
+      // endpointning web-UI'si yo'q, chaqiruvchi tashqi integratsiya.
+      // Ataylab bo'sh string yuborilsa schema uni `null` qiladi ⇒ tozalash
+      // yo'li saqlanadi.
+      ...(parsed.callbackUrl !== undefined ? { callbackUrl: parsed.callbackUrl } : {}),
     };
     const saved = existing
       ? await this.prisma.client.paymentGatewayConfig.update({

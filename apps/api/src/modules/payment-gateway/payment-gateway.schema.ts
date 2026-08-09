@@ -32,7 +32,17 @@ export const SavePaymentGatewayConfigSchema = z.object({
   /** Provider-specific credentials bag — e.g. {secretKey, ...}. */
   creds: z.record(z.string(), z.string().max(2000)).optional(),
   testMode: z.coerce.boolean().default(true),
-  callbackUrl: z.string().url().max(500).optional(),
+  /**
+   * Faza Q11 (`INT-13`): `saveConfig` PATCH-semantikaga o'tdi — kelmagan
+   * maydon TEGILMAYDI. Shuning uchun «ataylab tozalash» uchun alohida yo'l
+   * kerak: bo'sh string `null` ga aylanadi (telegram/sms `optionalEmpty`
+   * naqshi). Busiz operator callback URL'ini umuman o'chira olmay qolardi.
+   * `''` dan boshqa noto'g'ri qiymat baribir `url()` bilan rad etiladi.
+   */
+  callbackUrl: z.preprocess(
+    (v) => (typeof v === 'string' && v.length === 0 ? null : v),
+    z.string().url().max(500).nullish(),
+  ),
 });
 export type SavePaymentGatewayConfigInput = z.infer<typeof SavePaymentGatewayConfigSchema>;
 

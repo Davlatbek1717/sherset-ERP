@@ -83,11 +83,18 @@ export class SmsService {
       throw new BadRequestException('Birinchi sozlash uchun parol majburiy');
     }
 
+    // PATCH-semantika (`INT-13`, faza 21 naqshi / faza Q11 klass-auditi):
+    // kelmagan (`undefined`) `senderId` TEGILMAYDI. Ilgari
+    // `parsed.senderId ?? null` uslubi uni yubormagan yangilashda (parol
+    // rotatsiyasi, provayder almashtirish) TASDIQLANGAN sender-ID'ni
+    // jimgina o'chirar va keyingi SMS'lar boshqa nom bilan ketardi.
+    // Ataylab bo'sh string yuborilsa `optionalEmpty` uni `null` qiladi ⇒
+    // tozalash yo'li saqlanadi.
     const data = {
       accountId,
       provider: parsed.provider,
       email: parsed.email,
-      senderId: parsed.senderId ?? null,
+      ...(parsed.senderId !== undefined ? { senderId: parsed.senderId } : {}),
       ...(passwordCipher ? { passwordCipher } : {}),
       // Saving config invalidates last-test result.
       lastTestedAt: null,
