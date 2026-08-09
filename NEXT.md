@@ -305,6 +305,52 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-09k (AUDIT-FIX FAZA 31 — FE dedup codemodlar: `computeLineTotal` · `YesNoSelect`/
+> `MultiRefField`/`refFetcher` · api-client · `FE-10`,`FE-02`,`FE-06`/`FE-14`) · Phase-1:
+> strukturaviy + unit, RUNTIME-TASDIQLANMAGAN (browser-smoke YO'Q) · ⏳ DEPLOY QILINMAGAN ·
+> 🗄️ migratsiya SHART EMAS · daraxt toza edi (faqat untracked artefaktlar), `git add` 44 aniq
+> yo'l bilan; commit tarkibi `git show --stat HEAD` bilan tasdiqlandi (begona fayl yo'q).**
+>
+> **Nima qilindi (`105897b3`, 45 fayl, +681/−1329 = net −648 qator):** uch nusxa-blok bitta manbaga.
+> **(FE-10)** 13 hujjat-formasidagi `computeLineTotal` → `lib/doc-totals.ts` dagi
+> `computeLineTotalSafe` (struktural row-tip, `discount?` ixtiyoriy ⇒ `internal-orders` satri
+> o'zgarishsiz o'tadi). **(FE-02 dedup)** 24× **bayt-bayt bir xil** (`md5 9c046ac2`) `YesNoSelect`
+> + 3× `MultiRefField` + 3× `refFetcher` → yangi `components/filters/filter-fields.tsx`.
+> **(FE-06/FE-14)** 5 transport (`request`/`download`/`postDownload`/`postOpenInBrowser`/`blobUrl`)
+> bitta `authedFetch` + `saveBlobAs` ga.
+>
+> **🐞 HAQIQIY BUG topildi va yopildi:** `download()` da **401-retry shoxi umuman yo'q edi** —
+> `request()` dan qo'lda ko'chirilganda tushib qolgan. Token muddati tugagach «Экспорт в XLSX»
+> `Download failed: HTTP 401` bilan otilardi va faqat sahifani qayta yuklash yordam berardi
+> (refresh-cookie tirik bo'lsa ham). Hech bir gate buni ko'rmaydi — RED test bilan tasdiqlandi.
+>
+> **⚠️ Reja raqami noto'g'ri edi:** «`FE-02` — 24× YesNoSelect/MultiRefField/refFetcher» bitta
+> raqamga qo'shib yuborgan. O'z o'lchovim: `YesNoSelect` **24** (hammasi bir xil), `MultiRefField`
+> **5** (faqat 3 tasi bir xil shakl), `refFetcher` **4** (faqat 3 tasi modul-darajali bir xil).
+> `commission-reports`/`payments` (boshqa o'ram + `endpoint` prop) va `serial-numbers`
+> (`{id,primary}` qaytaradi) **ataylab tegilmadi** — sabab jurnalda.
+>
+> **⚠️ HODISA:** `lib/api-client.test.ts` **mavjud edi**, `Write` bilan ustidan yozildi va 6 ta
+> Content-Type regress-qo'riqchisi yo'qoldi. `git status` da `M` (`A` emas) bo'lgani bilan tutildi,
+> `git show HEAD:` dan tiklanib birlashtirildi (fayl endi 15 test). Xotira
+> `never-write-over-existing-test-file` — bu **uchinchi** takror; commitdan oldin `A` vs `M`
+> tekshiruvi yagona ishonchli signal.
+>
+> **Codemod:** `scratchpad/codemod-faza31.mjs` — deterministik, **fail-closed** (anchor topilmasa
+> yoki ikki marta uchrasa fayl umuman tegilmaydi, butun yugurish `exit 1`). 37 fayl, ~0 token.
+> Ikki qoldiqni codemod topmadi (yetim izoh bloki + undan kelib chiqqan 4 ishlatilmagan import) —
+> skaner + biome bilan tutilib qo'lda tuzatildi, jurnalda halol qayd etilgan.
+>
+> **Gate:** web typecheck **0** · `check-lint.mjs` **0 error** · `i18n:gate` **9/9** ·
+> to'liq web Vitest **185 fayl / 2814 test yashil, 0 yiqilish** (26 skip). Sanoq nazorati:
+> `2814 = 2788 (HEAD) + 9 + 8 + 9` — jim yo'qolgan test yo'q.
+>
+> **⏭️ KEYINGI:** reja bo'yicha ochiq fazalar — **27b** (`PERF-01`), **27c** (`PERF-02`, dalili
+> ESKIRGAN — qayta o'qi), **29b** (`HR-13` soft-delete), **32** (FE auth-UX + POS i18n),
+> **33** (`FE-12` shared API-tiplar). Faza 31 qarzi (browser-QA; 2 ta dedup qilinmagan
+> `MultiRefField` shakli; `LineTotalRow` ning hamma maydoni ixtiyoriy ⇒ tip-himoyasi bo'sh) —
+> `docs/REJA-AUDIT-FIX-2026-08.md` → «HISOBOT JURNALI → Faza 31 → Qolgan qarz».
+
 > **🕒 2026-08-09j (AUDIT-FIX FAZA 34 — Float→BigInt aniqlik: inventar/ko'chirish/CO kaskadi ·
 > `STK-05`,`STK-08`,`SALES-10`,`STK-12`) · Phase-1: strukturaviy + unit, RUNTIME-TASDIQLANMAGAN
 > (browser-smoke YO'Q) · ⏳ DEPLOY QILINMAGAN · 🗄️ **MIGRATSIYA BOR** —

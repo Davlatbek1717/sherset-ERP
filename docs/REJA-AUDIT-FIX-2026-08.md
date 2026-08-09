@@ -925,7 +925,11 @@ sahifalar typecheck.
 **▶ SESSIYA-BOSHI PROMPT:**
 > `docs/REJA-AUDIT-FIX-2026-08.md` — **Faza 31**. O'ZGARMAS QOIDALAR. `FE-10`,`FE-02`,`FE-06/14`. computeLineTotal +
 > YesNoSelect + api-client helper dedup (codemod). TDD: helper + 401-retry. Gate (web). Hisobot, TO'XTA.
-**◻ HISOBOT:** _(agent to'ldiradi)_
+**☑ HISOBOT:** 2026-08-09 — HISOBOT JURNALI → «Faza 31» (`105897b3`, −648 qator). 13× `computeLineTotal` +
+24× `YesNoSelect` + 3× `MultiRefField`/`refFetcher` yig'ildi; 4 transport bitta `authedFetch` ga.
+**Haqiqiy bug:** `download()` da 401-retry umuman yo'q edi (XLSX eksporti token tugagach otilardi).
+Reja «24× MultiRefField/refFetcher» deb qo'shib yuborgan — aslida dedup qilinadigani 3+3, qolgan 4 tasi
+boshqa shaklda (ataylab tegilmadi).
 
 ---
 
@@ -3768,3 +3772,131 @@ Rejadagi 3 stsenariy: (1) kasr-qty qaytarish — `clampReturnQty`/`normalizeQtyD
 3. **`currency` prop defolti `'UZS'`.** Chaqiruvchi uzatmasa eski xulq saqlanadi (regressiyasiz migratsiya), lekin bu «jim defolt» — yangi chaqiruvchi uzatishni unutsa hech narsa shikoyat qilmaydi.
 4. **FE-08 ning i18n qismi (POS hardcoded o'zbekcha matn) BU FAZADA QILINMADI** — reja Faza 30 ga faqat pul-parse qismini bergan; POS matnlarini `pages.sotuv` nomfazosiga ko'chirish alohida ish bo'lib qoladi.
 5. **Browser-smoke YO'Q.** POS to'lov/qaytarish oqimlari real brauzerda ochilmadi; ayniqsa `type="text" inputMode="decimal"` maydoni va retail chekining serverda QABUL qilinishi (400 yo'qligi) Phase-2 QA sessiyasida tekshirilsin.
+
+---
+
+## Faza 31 — FE dedup codemodlar: computeLineTotal · YesNoSelect/MultiRefField/refFetcher · api-client (`FE-10`, `FE-02`, `FE-06`/`FE-14`) (2026-08-09) — **Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q**
+
+**Commit:** `105897b3` · 45 fayl (44 meniki + `docs/progress.json` hook-artefakti), **+681 / −1329** (net −648 qator).
+
+### O'z o'lchovim (reja raqamlari tasdiqlandi)
+
+Reja raqamlari ko'r-ko'rona olinmadi — har biri qayta sanaldi (xotira:
+`audit-findings-examples-unverified`):
+
+| Reja da'vosi | Mening o'lchovim | Xulosa |
+|---|---|---|
+| `FE-10` — 13× `computeLineTotal` | **13 fayl**, har biri `md5` bo'yicha bir xil semantika (12 tasi bayt-bayt bir xil tana; `internal-orders/new` yagona farq: `discount: '0'` qattiq) | ✅ aniq |
+| `FE-02` — 24× `YesNoSelect` | **24 fayl**, hammasining tanasi **bir xil md5 `9c046ac2`** — bayt-bayt | ✅ aniq |
+| `FE-02` — `MultiRefField`/`refFetcher` | `MultiRefField` **5 ta** (3 bir xil `onSearch`-shakl + 2 boshqa shakl: `commission-reports`, `payments` — `InlineFilterPanel.Field` o'rami + `endpoint` prop); `refFetcher` **4 ta** (3 modul-darajali bir xil + `serial-numbers` ichida **boshqa qaytaruv shakli** `{id, primary}`) | ⚠️ reja «24×» deb bitta raqamga qo'shib yuborgan; dedup qilinadigani **3+3**, qolgan 4 tasi **ataylab tegilmadi** (shakl boshqa) |
+| `FE-06`/`FE-14` — blob/401 4× nusxa + retry-teshigi | 4 transport (`download`, `postDownload`, `postOpenInBrowser`, `blobUrl`) — hammasi `request()` dan qo'lda ko'chirilgan; **`download()` da 401-retry shoxi umuman yo'q** | ✅ teshik jonli, RED test bilan tasdiqlandi |
+
+### Topilgan HAQIQIY bug — `download()` 401-retry teshigi (`FE-06`)
+
+`request()` (JSON) birinchi kundan beri 401 da `refresh()` qilib qayta urinadi.
+Uchta binar transport undan **qo'lda ko'chirilgan**, va `download()` ko'chirishda
+retry shoxini yo'qotgan:
+
+```ts
+// oldin — retry shoxi YO'Q:
+const res = await fetch(`${BASE}${path}`, { headers, credentials: 'include' });
+if (!res.ok) throw new Error(`Download failed: HTTP ${res.status}`);
+```
+
+Simptom: access-token muddati tugagach «Экспорт в XLSX» `Download failed: HTTP 401`
+bilan otiladi va foydalanuvchi sahifani qayta yuklashga majbur — refresh-cookie
+esa hamon tirik. **Typecheck/biome/i18n gate'larining hech biri buni ko'rmaydi**
+(sintaktik jihatdan mutlaqo to'g'ri kod). RED test avval yozildi va aynan shu ikki
+assert bilan qizil bo'ldi:
+
+```
+× download() retries the export once with the refreshed token (FE-06 hole)
+    → promise rejected "Error: Download failed: HTTP 401" instead of resolving
+× download() gives up after ONE retry (no infinite refresh loop)
+    → expected "spy" to be called 2 times, but got 1 times
+```
+
+Yechim: barcha transport bitta `authedFetch(path, init, retry = true)` ga o'tdi
+(auth-header + 401→refresh→retry bitta joyda), blob-saqlash `saveBlobAs()` ga.
+`retry` rekursiv chaqiruvda iste'mol qilinadi ⇒ yangilangan tokenga ham 401
+kelsa **aniq 2 so'rovdan keyin** to'xtaydi, sikl yo'q. Token umuman bo'lmasa
+refresh urinilmaydi (anonim 401 — muddat emas, javob).
+
+### Codemod — deterministik, fail-closed
+
+`scratchpad/codemod-faza31.mjs` (37 fayl, ~0 token). Prinsip: **anchor topilmasa
+yoki ikki marta uchrasa — fayl umuman tegilmaydi va butun yugurish `exit 1`**
+(xotira: `doc-append-marker-truncation` — «jimgina yarim qo'llanish» yo'q).
+Import tozalash `bodyOnly()` (import-statementlar o'chirilgan matn) ustida
+sanaladi, ya'ni faqat haqiqiy foydalanish hisoblanadi.
+
+**Codemod topmagan 2 qoldiq — qo'lda tuzatildi** (halol qayd):
+1. Izoh-blokni «yutish» evristikasi faylda oldinroq `/**` bo'lsa ishlamay qolgan
+   ⇒ `customer-orders/{new,[id]}` da o'chirilgan funksiyani ta'riflaydigan
+   **yetim izoh bloki** qolgan. Skaner bilan topildi (5 nomzoddan 3 tasi
+   `git show HEAD:` bilan **oldindan bor** ekani tasdiqlandi), 2 tasi o'chirildi.
+2. O'sha izohlar `computePositionTotal` / `MultiCombobox` so'zlarini o'z ichiga
+   olgani uchun 4 faylda import «hamon ishlatilmoqda» deb sanalgan ⇒ biome
+   `noUnusedImports` bilan tutildi, qo'lda olib tashlandi.
+
+### Testlar (TDD — RED avval)
+
+| Fayl | Test | Nimani qulflaydi |
+|---|---|---|
+| `lib/doc-totals.test.ts` | **+9** | VAT ichida/tashqarisida, chegirma VAT'dan oldin, **`discount` maydoni yo'q satr** (internal-orders shakli), bo'sh satr = 0 (NaN emas), `vatEnabled=false` da `vat` e'tiborsiz, kasr НДС (`7.5`) BigInt RangeError bermaydi, parse-xatosida nol qaytaradi |
+| `lib/api-client.test.ts` | **+9** | Har 5 transport uchun 401→refresh→retry, aniq bir marta, refresh yiqilsa retry yo'q, tokensiz refresh urinilmaydi, Content-Disposition nomi vs fallback |
+| `components/filters/filter-fields.test.tsx` | **+8** (yangi) | Tri-state kontrakt (bo'sh ⇒ `undefined`, `'false'` ≠ unset), opsiya tartibi `['', 'false', 'true']`, `testId` ixtiyoriy, `refFetcher` URL-enkodlash + `limit=20` + `{value,label}` shakli |
+
+### ⚠️ HODISA — mavjud test-fayl ustidan Write
+
+`apps/web/src/lib/api-client.test.ts` **allaqachon mavjud edi** (6 ta Content-Type
+regress-qo'riqchisi: body-siz so'rovda `Content-Type` yubormaslik — 2026-06-06
+Phase-2 QA da topilgan, 49 ta `api.delete` ni jimgina buzgan bug). Men uni
+`Write` bilan ustidan yozdim. `git status` da `M` (`A` emas) ko'rinishidan
+tutildi, `git show HEAD:` bilan tiklandi va yangi suite bilan **birlashtirildi** —
+fayl endi **15 test**. Xotira `never-write-over-existing-test-file` aynan shu
+haqda ogohlantirgan edi; bu **uchinchi** takror. Yagona ishonchli signal —
+commitdan oldin `git status --short` da `A` vs `M` ni tekshirish.
+
+### Sanoq nazorati (jim yo'qolgan test yo'qligini isbotlash)
+
+`2814 = 2788 (HEAD) + 9 + 8 + 9` — codemoddan keyingi oraliq yugurish 2808
+bergan edi (6 ta yo'q qilingan Content-Type testi bilan), tiklangach aynan +6.
+Test-fayllar soni 185 (yangi `filter-fields.test.tsx` bilan).
+
+### Gate
+
+| Tekshiruv | Natija |
+|---|---|
+| `pnpm --filter @moysklad/web exec tsc --noEmit` | **0 xato** |
+| `node scripts/check-lint.mjs` (lint gate) | **0 error** (746 warning — siyosat bo'yicha ruxsat) |
+| `pnpm i18n:gate` | **9/9 yashil** (UI-matn o'zgarmadi — `common.yes/no` o'sha joyda) |
+| `pnpm --filter @moysklad/web exec vitest run` (to'liq) | **185 fayl / 2814 test yashil**, 26 skip, **0 yiqilish** |
+| `git show --stat HEAD` | 45 fayl — begona fayl yo'q, stash bo'sh (§6.7 B tekshiruvi) |
+
+### Qolgan qarz / DEFER
+
+1. **Browser-smoke YO'Q (Phase-2 qarzi).** 24 ro'yxat sahifasining filtr paneli va
+   13 hujjat formasining «Итого» footeri real brauzerda ochilmadi. `download()`
+   retry'i ham faqat unit darajada — jonli muddati tugagan token bilan XLSX
+   eksporti sinalmagan.
+2. **`commission-reports` / `payments` dagi `MultiRefField` dedup qilinmadi** —
+   ular `InlineFilterPanel.Field` o'ramini va `endpoint` propni oladi (biri
+   `byName` ham). Umumlashtirish uchun shared komponentga ikkinchi rejim kerak;
+   bu alohida ish.
+3. **`serial-numbers` dagi `refFetcher` tegilmadi** — u `{value,label}` emas,
+   `{id, primary}` (PickerItem) qaytaradi va komponent ichida yashaydi.
+4. **`LineTotalRow` ning hamma maydoni ixtiyoriy** ⇒ TypeScript deyarli har
+   qanday obyektni qabul qiladi (chaqiruv joyi o'zgaruvchi uzatsa excess-property
+   tekshiruvi ishlamaydi). 13 chaqiruv joyi hozir `DocPositionRow` avlodini
+   uzatadi, lekin bu «jim defolt» klassi — kelajakda noto'g'ri obyekt uzatilsa
+   typecheck jim qoladi.
+5. **`internal-orders/new`da xulq-ekvivalentlik shartli.** Eski nusxa `discount`
+   ni qattiq `'0'` qilardi; umumiy helper satrning `discount` maydonini o'qiydi.
+   Hozir bu xavfsiz (o'sha faylda `discount` faqat bitta joyda va doim `'0'`,
+   grep bilan tasdiqlandi), lekin kelajakda chegirmali satr manbadan kelsa
+   footer o'zgaradi.
+6. **`supplies-filter-fields.test.ts` yangilandi** — u sahifa matnida
+   `function MultiRefField` borligini talab qilardi; endi import + `<MultiRefField`
+   ishlatilishiga bog'landi. Qo'riqchining maqsadi o'zgarmadi (modal picker emas,
+   inline dropdown), faqat langar ko'chdi.
