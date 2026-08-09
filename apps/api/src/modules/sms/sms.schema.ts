@@ -67,7 +67,8 @@ export const BroadcastSmsSchema = z
   });
 export type BroadcastSmsInput = z.infer<typeof BroadcastSmsSchema>;
 
-export const SmsLogStatusSchema = z.enum(['pending', 'sent', 'dead', 'failed']);
+/** `sending` — Faza 28 claim holati: worker provayder bilan gaplashmoqda. */
+export const SmsLogStatusSchema = z.enum(['pending', 'sending', 'sent', 'dead', 'failed']);
 export type SmsLogStatus = z.infer<typeof SmsLogStatusSchema>;
 
 /** Mijozga ko'rsatiladigan kompaniya aloqa ma'lumotlari (CompanySettings). */

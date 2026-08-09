@@ -98,13 +98,27 @@ describe('canonical domain maps — values locked', () => {
     ],
     HR_MESSAGE_STATUS_TONE: [
       HR_MESSAGE_STATUS_TONE,
-      { sent: 'success', pending: 'neutral', retry: 'warning', failed: 'destructive' },
+      // `sending` — Faza 28 outbox claim (worker in flight), see outbox-claim.ts
+      {
+        sent: 'success',
+        pending: 'neutral',
+        sending: 'info',
+        retry: 'warning',
+        failed: 'destructive',
+      },
     ],
     HR_TASK_PRIORITY_TONE: [HR_TASK_PRIORITY_TONE, { urgent: 'destructive', high: 'warning' }],
     BONUS_FINE_TONE: [BONUS_FINE_TONE, { bonus: 'success', fine: 'destructive' }],
     DELIVERY_STATUS_TONE: [
       DELIVERY_STATUS_TONE,
-      { sent: 'success', pending: 'warning', dead: 'destructive', failed: 'destructive' },
+      // `sending` — Faza 28 outbox claim (worker in flight), see outbox-claim.ts
+      {
+        sent: 'success',
+        pending: 'warning',
+        sending: 'info',
+        dead: 'destructive',
+        failed: 'destructive',
+      },
     ],
     MXIK_SOURCE_TONE: [
       MXIK_SOURCE_TONE,

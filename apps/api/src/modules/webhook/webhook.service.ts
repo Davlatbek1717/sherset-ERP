@@ -1,7 +1,14 @@
 import { Prisma } from '@moysklad/db';
 import type { Webhook } from '@moysklad/db';
-import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { OUTBOX_SENDING } from '../shared/outbox-claim.js';
 import {
   CreateWebhookSchema,
   UpdateWebhookSchema,
@@ -167,6 +174,14 @@ export class WebhookService {
       where: { id: deliveryId, webhookId, accountId },
     });
     if (!delivery) throw new NotFoundException(`Delivery ${deliveryId} topilmadi`);
+    // Faza 28: a delivery parked in 'sending' is IN FLIGHT (a worker holds the
+    // claim). Yanking it back to 'pending' would hand the same POST to a second
+    // worker — the exact duplicate the claim exists to prevent.
+    if (delivery.status === OUTBOX_SENDING) {
+      throw new ConflictException(
+        "Yuborilmoqda — hozir qayta navbatga qo'yib bo'lmaydi, tugashini kuting",
+      );
+    }
     return this.prisma.client.webhookDelivery.update({
       where: { id: deliveryId },
       data: {

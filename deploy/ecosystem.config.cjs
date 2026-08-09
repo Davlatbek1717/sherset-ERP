@@ -24,6 +24,13 @@ module.exports = {
       script: 'src/main.ts',
       interpreter: 'node',
       interpreter_args: '--import tsx/esm',
+      // MAJBURIY: instances MUST stay 1 (fork). @Cron navbat-workerlari
+      // (webhook / sms / email / telegram / hr-telegram outbox) har replikada
+      // yonadi. Faza 28 dan keyin qator-darajasidagi eksklyuziv claim buni
+      // xavfsiz qiladi (`apps/api/src/modules/shared/outbox-claim.ts`), va
+      // ikkinchi qatlam sifatida `isCronLeader()` faqat NODE_APP_INSTANCE=0
+      // replikasida cron ishlatadi — lekin cluster'ga o'tish baribir ATAYLAB
+      // qaror bo'lishi kerak (DB yuki × N, MTProto slot poygasi).
       instances: 1,
       exec_mode: 'fork',
       max_memory_restart: '768M',

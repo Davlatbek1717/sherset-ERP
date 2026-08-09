@@ -70,7 +70,7 @@ describe('SendSmsSchema', () => {
 });
 
 describe('SmsLogStatusSchema', () => {
-  it.each(['pending', 'sent', 'dead', 'failed'])('accepts %s', (s) => {
+  it.each(['pending', 'sending', 'sent', 'dead', 'failed'])('accepts %s', (s) => {
     expect(SmsLogStatusSchema.safeParse(s).success).toBe(true);
   });
 });

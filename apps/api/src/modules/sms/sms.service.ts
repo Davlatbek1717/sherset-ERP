@@ -1,6 +1,7 @@
 import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { decryptPassword, encryptPassword } from '../email/crypto.js';
+import { OUTBOX_SENDING } from '../shared/outbox-claim.js';
 import {
   EskizApiError,
   type EskizCredentials,
@@ -374,6 +375,11 @@ export class SmsService {
     if (!log) throw new NotFoundException(`SmsLog ${logId} topilmadi`);
     if (log.status === 'sent') {
       throw new BadRequestException('Bu SMS muvaffaqiyatli yuborilgan');
+    }
+    // Faza 28: 'sending' = worker hozir provayder bilan gaplashmoqda. Uni
+    // navbatga qaytarish ikkinchi workerga xuddi shu SMS'ni beradi.
+    if (log.status === OUTBOX_SENDING) {
+      throw new BadRequestException("Yuborilmoqda — tugashini kuting, so'ng qayta urinib ko'ring");
     }
     return this.prisma.client.smsLog.update({
       where: { id: logId },

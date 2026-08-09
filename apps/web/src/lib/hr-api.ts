@@ -541,7 +541,8 @@ export const hrTaskReviewApi = {
 
 // ─── HrMessages (outbox read model) ────────────────────────────────────
 
-export type HrMessageStatus = 'pending' | 'retry' | 'sent' | 'failed';
+/** `sending` — Faza 28: outbox worker holds an exclusive claim (in flight). */
+export type HrMessageStatus = 'pending' | 'sending' | 'retry' | 'sent' | 'failed';
 
 export interface HrMessageRow {
   id: string;

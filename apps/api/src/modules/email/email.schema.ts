@@ -63,7 +63,8 @@ export type SendEmailInput = z.infer<typeof SendEmailSchema>;
 
 /** Status values stored on EmailLog. 'failed' is a legacy value from the
  *  pre-Sprint-17.4 inline-send path; new rows use pending/sent/dead. */
-export const EmailLogStatusSchema = z.enum(['pending', 'sent', 'dead', 'failed']);
+/** `sending` — Faza 28 claim holati: worker SMTP bilan gaplashmoqda. */
+export const EmailLogStatusSchema = z.enum(['pending', 'sending', 'sent', 'dead', 'failed']);
 export type EmailLogStatus = z.infer<typeof EmailLogStatusSchema>;
 
 export const ListEmailLogsSchema = z.object({

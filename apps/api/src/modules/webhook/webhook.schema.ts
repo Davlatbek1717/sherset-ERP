@@ -79,8 +79,9 @@ export const WebhookFilterSchema = z.object({
 });
 export type WebhookFilter = z.infer<typeof WebhookFilterSchema>;
 
-/** Status values stored on WebhookDelivery rows. */
-export const WebhookDeliveryStatusSchema = z.enum(['pending', 'sent', 'dead']);
+/** Status values stored on WebhookDelivery rows.
+ *  `sending` — Faza 28 claim holati: worker POST qilmoqda (ijara bilan). */
+export const WebhookDeliveryStatusSchema = z.enum(['pending', 'sending', 'sent', 'dead']);
 export type WebhookDeliveryStatus = z.infer<typeof WebhookDeliveryStatusSchema>;
 
 /** Filter for the per-webhook delivery history endpoint (admin UI). */

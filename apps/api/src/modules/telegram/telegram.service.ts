@@ -20,6 +20,14 @@ import {
 import { normalizeTelegramPhone } from '../hr/hr-shared/phone-normalize.util.js';
 import type { MtprotoInboundHandler } from '../hr/hr-telegram-bridge/mtproto-inbound-handler.js';
 import type { IncomingMtprotoMessage } from '../hr/hr-telegram-bridge/telegram-client-factory.js';
+import { isCronLeader } from '../shared/cron-leader.js';
+import {
+  LEASE_EXPIRED_NOTE,
+  OUTBOX_SENDING,
+  claimLeaseUntil,
+  dedupNote,
+  dedupSince,
+} from '../shared/outbox-claim.js';
 import { secretEquals } from '../shared/timing-safe.js';
 import { DEFAULT_MESSAGING_CONTACT } from '../sms/sms-render.util.js';
 import { SupplyApprovalService } from '../supply-approval/supply-approval.service.js';
@@ -1153,9 +1161,11 @@ export class TelegramService implements MtprotoInboundHandler {
 
   @Cron(CronExpression.EVERY_30_SECONDS)
   async drainOutbox(): Promise<void> {
+    if (!isCronLeader()) return;
     if (this.isRunning) return;
     this.isRunning = true;
     try {
+      await this.reapExpiredClaims(new Date());
       const due = await this.prisma.client.telegramOutbox.findMany({
         where: { status: 'pending', nextRetryAt: { lte: new Date() } },
         orderBy: { nextRetryAt: 'asc' },
@@ -1174,7 +1184,53 @@ export class TelegramService implements MtprotoInboundHandler {
     }
   }
 
+  /** Re-queues rows stranded in `'sending'` by a worker that died mid-send. */
+  private async reapExpiredClaims(now: Date): Promise<void> {
+    const reaped = await this.prisma.client.telegramOutbox.updateMany({
+      where: { status: OUTBOX_SENDING, nextRetryAt: { lte: now } },
+      data: { status: 'pending', attempt: { increment: 1 }, errorMsg: LEASE_EXPIRED_NOTE },
+    });
+    if (reaped.count > 0) {
+      this.logger.warn(`Re-queued ${reaped.count} telegram message(s) with an expired claim lease`);
+    }
+  }
+
   private async deliverOne(row: Prisma.TelegramOutboxGetPayload<true>): Promise<void> {
+    // EXCLUSIVE claim (INT-08) + sending-first (INT-09) — see
+    // `shared/outbox-claim.ts`.
+    const claim = await this.prisma.client.telegramOutbox.updateMany({
+      where: { id: row.id, status: 'pending' },
+      data: { status: OUTBOX_SENDING, attemptedAt: new Date(), nextRetryAt: claimLeaseUntil() },
+    });
+    if (claim.count === 0) return;
+
+    // Re-attempt only: identical text already delivered to the same chat
+    // inside the dedup window ⇒ suppress the duplicate.
+    if (row.attempt > 1) {
+      const twin = await this.prisma.client.telegramOutbox.findFirst({
+        where: {
+          id: { not: row.id },
+          accountId: row.accountId,
+          chatId: row.chatId,
+          text: row.text,
+          status: 'sent',
+          sentAt: { gte: dedupSince() },
+        },
+        select: { sentAt: true },
+        orderBy: { sentAt: 'desc' },
+      });
+      if (twin) {
+        this.logger.warn(
+          `Telegram ${row.id} suppressed by dedup (twin sent ${String(twin.sentAt)})`,
+        );
+        await this.prisma.client.telegramOutbox.update({
+          where: { id: row.id },
+          data: { status: 'sent', sentAt: new Date(), errorMsg: dedupNote(twin.sentAt) },
+        });
+        return;
+      }
+    }
+
     try {
       const cfg = await this.prisma.client.telegramConfig.findUnique({
         where: { accountId: row.accountId },

@@ -2,6 +2,14 @@ import type { Prisma } from '@moysklad/db';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { isCronLeader } from '../shared/cron-leader.js';
+import {
+  LEASE_EXPIRED_NOTE,
+  OUTBOX_SENDING,
+  claimLeaseUntil,
+  dedupNote,
+  dedupSince,
+} from '../shared/outbox-claim.js';
 import { EmailService } from './email.service.js';
 
 /**
@@ -34,8 +42,11 @@ type DueEmail = Prisma.EmailLogGetPayload<true>;
  * On success → status='sent', sentAt=NOW. On error → either schedule the
  * next retry per BACKOFF_MS, or mark 'dead' if attempts exhausted.
  *
- * Single-server safe: @Cron only fires in one process. The `isRunning`
- * flag prevents tick overlap if a tick takes longer than 30s.
+ * Multi-instance safe (Faza 28 / INT-08): each row is claimed
+ * `pending → 'sending'` with a lease BEFORE the SMTP call, so a second
+ * process loses the claim and skips the row; `reapExpiredClaims` recovers
+ * rows abandoned mid-send. The `isRunning` flag still prevents tick overlap
+ * inside one process.
  */
 @Injectable()
 export class EmailDeliveryService {
@@ -49,9 +60,11 @@ export class EmailDeliveryService {
 
   @Cron(CronExpression.EVERY_30_SECONDS)
   async processDue(): Promise<void> {
+    if (!isCronLeader()) return;
     if (this.isRunning) return;
     this.isRunning = true;
     try {
+      await this.reapExpiredClaims(new Date());
       const due = await this.prisma.client.emailLog.findMany({
         where: {
           status: 'pending',
@@ -74,7 +87,52 @@ export class EmailDeliveryService {
     }
   }
 
+  /** Re-queues rows stranded in `'sending'` by a worker that died mid-send. */
+  private async reapExpiredClaims(now: Date): Promise<void> {
+    const reaped = await this.prisma.client.emailLog.updateMany({
+      where: { status: OUTBOX_SENDING, nextRetryAt: { lte: now } },
+      data: { status: 'pending', attempt: { increment: 1 }, errorMsg: LEASE_EXPIRED_NOTE },
+    });
+    if (reaped.count > 0) {
+      this.logger.warn(`Re-queued ${reaped.count} email(s) with an expired claim lease`);
+    }
+  }
+
   private async deliver(log: DueEmail): Promise<void> {
+    // EXCLUSIVE claim (INT-08) + sending-first (INT-09) — see
+    // `shared/outbox-claim.ts` for why `pending → pending` locked nothing.
+    const claim = await this.prisma.client.emailLog.updateMany({
+      where: { id: log.id, status: 'pending' },
+      data: { status: OUTBOX_SENDING, attemptedAt: new Date(), nextRetryAt: claimLeaseUntil() },
+    });
+    if (claim.count === 0) return;
+
+    // Re-attempt only: identical mail already delivered inside the dedup
+    // window ⇒ the interrupted attempt did reach the SMTP server.
+    if (log.attempt > 1) {
+      const twin = await this.prisma.client.emailLog.findFirst({
+        where: {
+          id: { not: log.id },
+          accountId: log.accountId,
+          toAddresses: { equals: log.toAddresses },
+          subject: log.subject,
+          bodyHtml: log.bodyHtml,
+          status: 'sent',
+          sentAt: { gte: dedupSince() },
+        },
+        select: { sentAt: true },
+        orderBy: { sentAt: 'desc' },
+      });
+      if (twin) {
+        this.logger.warn(`Email ${log.id} suppressed by dedup (twin sent ${String(twin.sentAt)})`);
+        await this.prisma.client.emailLog.update({
+          where: { id: log.id },
+          data: { status: 'sent', sentAt: new Date(), errorMsg: dedupNote(twin.sentAt) },
+        });
+        return;
+      }
+    }
+
     try {
       await this.emailService.sendQueuedNow(log.id);
       await this.prisma.client.emailLog.update({

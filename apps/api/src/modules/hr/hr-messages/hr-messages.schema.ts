@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
-export const HR_MESSAGE_STATUSES = ['pending', 'retry', 'sent', 'failed'] as const;
+/** `sending` — Faza 28 claim holati: worker MTProto bilan gaplashmoqda. */
+export const HR_MESSAGE_STATUSES = ['pending', 'sending', 'retry', 'sent', 'failed'] as const;
 export type HrMessageStatus = (typeof HR_MESSAGE_STATUSES)[number];
 
 /**

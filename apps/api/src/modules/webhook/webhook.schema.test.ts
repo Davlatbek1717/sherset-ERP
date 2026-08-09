@@ -121,7 +121,7 @@ describe('WebhookFilterSchema', () => {
 });
 
 describe('WebhookDeliveryStatusSchema', () => {
-  it.each(['pending', 'sent', 'dead'])('accepts %s', (s) => {
+  it.each(['pending', 'sending', 'sent', 'dead'])('accepts %s', (s) => {
     expect(WebhookDeliveryStatusSchema.safeParse(s).success).toBe(true);
   });
 

@@ -23,7 +23,8 @@ interface EmailLogRow {
   toAddresses: string[];
   ccAddresses: string[];
   subject: string;
-  status: 'pending' | 'sent' | 'dead' | 'failed';
+  /** `sending` — Faza 28: worker holds an exclusive claim, SMTP call in flight. */
+  status: 'pending' | 'sending' | 'sent' | 'dead' | 'failed';
   attempt: number;
   maxAttempts: number;
   errorMsg: string | null;
@@ -38,7 +39,7 @@ interface ListResponse {
   items: EmailLogRow[];
 }
 
-const STATUSES: Array<EmailLogRow['status']> = ['pending', 'sent', 'dead', 'failed'];
+const STATUSES: Array<EmailLogRow['status']> = ['pending', 'sending', 'sent', 'dead', 'failed'];
 const LIMIT = 100;
 
 function formatDate(iso: string | null): string {

@@ -1,6 +1,7 @@
 import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import nodemailer, { type Transporter } from 'nodemailer';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { OUTBOX_SENDING } from '../shared/outbox-claim.js';
 import { decryptPassword, encryptPassword } from './crypto.js';
 import {
   ListEmailLogsSchema,
@@ -337,6 +338,11 @@ export class EmailService {
     if (!log) throw new NotFoundException(`EmailLog ${logId} topilmadi`);
     if (log.status === 'sent') {
       throw new BadRequestException('Bu xat muvaffaqiyatli yuborilgan, qayta yuborish shart emas');
+    }
+    // Faza 28: 'sending' = worker hozir SMTP bilan gaplashmoqda — navbatga
+    // qaytarish ikkinchi nusxani yuborishga olib keladi.
+    if (log.status === OUTBOX_SENDING) {
+      throw new BadRequestException("Yuborilmoqda — tugashini kuting, so'ng qayta urinib ko'ring");
     }
     return this.prisma.client.emailLog.update({
       where: { id: logId },

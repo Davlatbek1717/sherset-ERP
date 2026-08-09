@@ -160,6 +160,8 @@ export const attendanceDayStatusTone = (s: string | null | undefined): StateTone
 export const HR_MESSAGE_STATUS_TONE: Record<string, StateTone> = {
   sent: 'success',
   pending: 'neutral',
+  // Faza 28: exclusive claim held, MTProto call in flight.
+  sending: 'info',
   retry: 'warning',
   failed: 'destructive',
 };
@@ -276,6 +278,9 @@ export function systemTone(system: boolean): StateTone {
 export const DELIVERY_STATUS_TONE: Record<string, StateTone> = {
   sent: 'success',
   pending: 'warning',
+  // Faza 28: a worker holds an exclusive claim on the row and is talking to
+  // the provider right now. In flight ≠ waiting ⇒ `info`, not `warning`.
+  sending: 'info',
   dead: 'destructive',
   failed: 'destructive',
 };

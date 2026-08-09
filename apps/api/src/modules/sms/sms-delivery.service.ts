@@ -2,6 +2,14 @@ import type { Prisma } from '@moysklad/db';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { isCronLeader } from '../shared/cron-leader.js';
+import {
+  LEASE_EXPIRED_NOTE,
+  OUTBOX_SENDING,
+  claimLeaseUntil,
+  dedupNote,
+  dedupSince,
+} from '../shared/outbox-claim.js';
 import { SmsService } from './sms.service.js';
 
 /**
@@ -28,9 +36,11 @@ export class SmsDeliveryService {
 
   @Cron(CronExpression.EVERY_30_SECONDS)
   async processDue(): Promise<void> {
+    if (!isCronLeader()) return;
     if (this.isRunning) return;
     this.isRunning = true;
     try {
+      await this.reapExpiredClaims(new Date());
       const due = await this.prisma.client.smsLog.findMany({
         where: { status: 'pending', nextRetryAt: { lte: new Date() } },
         orderBy: { nextRetryAt: 'asc' },
@@ -49,7 +59,55 @@ export class SmsDeliveryService {
     }
   }
 
+  /** Re-queues rows stranded in `'sending'` by a worker that died mid-send. */
+  private async reapExpiredClaims(now: Date): Promise<void> {
+    const reaped = await this.prisma.client.smsLog.updateMany({
+      where: { status: OUTBOX_SENDING, nextRetryAt: { lte: now } },
+      data: { status: 'pending', attempt: { increment: 1 }, errorMsg: LEASE_EXPIRED_NOTE },
+    });
+    if (reaped.count > 0) {
+      this.logger.warn(`Re-queued ${reaped.count} SMS with an expired claim lease`);
+    }
+  }
+
   private async deliver(log: DueSms): Promise<void> {
+    // EXCLUSIVE claim (INT-08) + sending-first (INT-09): the row leaves the
+    // sendable set and `attemptedAt` is stamped BEFORE Eskiz is called, so a
+    // rival worker gets count=0 and a crash cannot present the row as
+    // "never attempted".
+    const claim = await this.prisma.client.smsLog.updateMany({
+      where: { id: log.id, status: 'pending' },
+      data: { status: OUTBOX_SENDING, attemptedAt: new Date(), nextRetryAt: claimLeaseUntil() },
+    });
+    if (claim.count === 0) return;
+
+    // Re-attempt only: an identical SMS already delivered inside the dedup
+    // window means the previous attempt reached the handset — don't charge
+    // the customer for a second one. First attempts are never deduped, so
+    // two deliberately identical messages both go out.
+    if (log.attempt > 1) {
+      const twin = await this.prisma.client.smsLog.findFirst({
+        where: {
+          id: { not: log.id },
+          accountId: log.accountId,
+          toPhone: log.toPhone,
+          body: log.body,
+          status: 'sent',
+          sentAt: { gte: dedupSince() },
+        },
+        select: { sentAt: true },
+        orderBy: { sentAt: 'desc' },
+      });
+      if (twin) {
+        this.logger.warn(`SMS ${log.id} suppressed by dedup (twin sent ${String(twin.sentAt)})`);
+        await this.prisma.client.smsLog.update({
+          where: { id: log.id },
+          data: { status: 'sent', sentAt: new Date(), errorMsg: dedupNote(twin.sentAt) },
+        });
+        return;
+      }
+    }
+
     try {
       const result = await this.smsService.sendQueuedNow(log.id);
       await this.prisma.client.smsLog.update({

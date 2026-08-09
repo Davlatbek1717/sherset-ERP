@@ -1,6 +1,14 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../../../prisma/prisma.service.js';
+import { isCronLeader } from '../../shared/cron-leader.js';
+import {
+  LEASE_EXPIRED_NOTE,
+  OUTBOX_SENDING,
+  claimLeaseUntil,
+  dedupNote,
+  dedupSince,
+} from '../../shared/outbox-claim.js';
 import { MTPROTO_ADAPTER, type MtprotoAdapter, isMtprotoFloodError } from './mtproto-adapter.js';
 import { isExhausted, nextRetryAt } from './retry-backoff.util.js';
 
@@ -18,8 +26,11 @@ import { isExhausted, nextRetryAt } from './retry-backoff.util.js';
  * adapter is expected to refuse sends on flooded slots and pick the other.
  *
  * Concurrency: in-process `running` flag stops overlap when a tick takes
- * longer than the 5s interval. Cross-instance safety still depends on the
- * atomic `updateMany WHERE status IN ('pending','retry')` guard.
+ * longer than the 5s interval. Cross-instance safety comes from the
+ * EXCLUSIVE claim (`pending|retry → 'sending'` + lease) — see
+ * `shared/outbox-claim.ts`. Faza 28 (INT-08/HR-4): the previous guard wrote
+ * `pending → pending`, so a rival worker's `updateMany` also returned
+ * `count = 1` and both sent the same message.
  */
 @Injectable()
 export class HrTelegramOutboxWorker {
@@ -44,6 +55,7 @@ export class HrTelegramOutboxWorker {
 
   @Cron('*/5 * * * * *') // every 5 seconds
   async tick(): Promise<void> {
+    if (!isCronLeader()) return;
     if (this.running) {
       this.logger.warn('Outbox tick skipped: previous run still in flight');
       return;
@@ -61,6 +73,7 @@ export class HrTelegramOutboxWorker {
   /** Test/observability — runs one drain cycle and reports counts. */
   async runOnce(): Promise<{ sent: number; retried: number; failed: number }> {
     const now = new Date();
+    await this.reapExpiredClaims(now);
     const due = await this.prisma.client.hrTelegramOutbox.findMany({
       where: {
         OR: [{ status: 'pending' }, { status: 'retry', nextRetryAt: { lte: now } }],
@@ -74,13 +87,29 @@ export class HrTelegramOutboxWorker {
     let failed = 0;
 
     for (const row of due) {
-      // Atomic guard: only proceed if row is still in a sendable state.
-      // Defeats races with concurrent worker instances or manual admin moves.
+      // EXCLUSIVE claim (INT-08/HR-4): move the row OUT of the sendable set
+      // and stamp a lease. A rival worker blocks on the row lock, re-evaluates
+      // the predicate and gets count=0 ⇒ exactly one sender.
       const claim = await this.prisma.client.hrTelegramOutbox.updateMany({
         where: { id: row.id, status: { in: ['pending', 'retry'] } },
-        data: { status: 'pending' }, // touch to mark "being processed" (idempotent)
+        data: { status: OUTBOX_SENDING, nextRetryAt: claimLeaseUntil(now) },
       });
       if (claim.count === 0) continue;
+
+      // INT-09: on a RE-attempt the previous attempt's outcome may be unknown
+      // (crash after the provider accepted). If the same text already reached
+      // this recipient inside the dedup window, don't send it twice.
+      if (row.retryCount > 0) {
+        const twin = await this.findDeliveredTwin(row, now);
+        if (twin) {
+          await this.prisma.client.hrTelegramOutbox.update({
+            where: { id: row.id },
+            data: { status: 'sent', sentAt: new Date(), failReason: dedupNote(twin.sentAt) },
+          });
+          sent++;
+          continue;
+        }
+      }
 
       try {
         // A row carrying an attachment (акт-сверка .xlsx) is delivered as a
@@ -124,6 +153,52 @@ export class HrTelegramOutboxWorker {
       );
     }
     return { sent, retried, failed };
+  }
+
+  /**
+   * Returns rows abandoned mid-send (worker killed between claim and outcome)
+   * to the queue once their lease expires. Without this a pm2 restart would
+   * strand every in-flight row in `'sending'` forever.
+   *
+   * `retryCount` is incremented so a row that crashes the worker every time
+   * still walks the backoff ladder into `failed` instead of looping.
+   */
+  private async reapExpiredClaims(now: Date): Promise<void> {
+    const reaped = await this.prisma.client.hrTelegramOutbox.updateMany({
+      where: { status: OUTBOX_SENDING, nextRetryAt: { lte: now } },
+      data: { status: 'retry', retryCount: { increment: 1 }, failReason: LEASE_EXPIRED_NOTE },
+    });
+    if (reaped.count > 0) {
+      this.logger.warn(`Outbox: re-queued ${reaped.count} row(s) with an expired claim lease`);
+    }
+  }
+
+  /** Same recipient + same text already delivered inside the dedup window? */
+  private async findDeliveredTwin(
+    row: {
+      id: string;
+      accountId: string;
+      toPhone: string | null;
+      toSelf: boolean;
+      messageText: string;
+      attachmentPath: string | null;
+    },
+    now: Date,
+  ): Promise<{ sentAt: Date | null } | null> {
+    return this.prisma.client.hrTelegramOutbox.findFirst({
+      where: {
+        id: { not: row.id },
+        accountId: row.accountId,
+        toPhone: row.toPhone,
+        toSelf: row.toSelf,
+        messageText: row.messageText,
+        attachmentPath: row.attachmentPath,
+        status: 'sent',
+        sentAt: { gte: dedupSince(now) },
+      },
+      select: { sentAt: true },
+      orderBy: { sentAt: 'desc' },
+    });
   }
 
   private async scheduleRetry(

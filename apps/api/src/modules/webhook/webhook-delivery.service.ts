@@ -3,6 +3,8 @@ import type { Prisma } from '@moysklad/db';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { isCronLeader } from '../shared/cron-leader.js';
+import { LEASE_EXPIRED_NOTE, OUTBOX_SENDING, claimLeaseUntil } from '../shared/outbox-claim.js';
 
 /**
  * Backoff schedule indexed by attempt number (1-based).
@@ -41,10 +43,15 @@ type DueDelivery = Prisma.WebhookDeliveryGetPayload<{ include: { webhook: true }
  * signing (when secretHash present), and either marks them 'sent' or
  * schedules the next retry.
  *
- * Single-server safe: the @Cron decorator only fires in one process. For
- * multi-replica deployments add SELECT ... FOR UPDATE SKIP LOCKED in the
- * fetch query. The `isRunning` guard prevents overlapping ticks within
- * the same process if a tick takes longer than the 30s interval.
+ * Multi-instance safe (Faza 28 / INT-08): every row is claimed
+ * `pending → 'sending'` with a lease BEFORE the HTTP call, so a second
+ * process (pm2 cluster, overlapping deploy) loses the claim and skips the
+ * row. `reapExpiredClaims` returns rows abandoned mid-flight. The
+ * `isRunning` guard still prevents tick overlap inside one process.
+ *
+ * Delivery stays AT-LEAST-ONCE by design (a reaped row is re-sent because
+ * the outcome of the interrupted attempt is unknown). Consumers get an
+ * `Idempotency-Key` header carrying the delivery id so they can dedup.
  */
 @Injectable()
 export class WebhookDeliveryService {
@@ -56,9 +63,11 @@ export class WebhookDeliveryService {
   /** Drain the queue every 30 seconds. */
   @Cron(CronExpression.EVERY_30_SECONDS)
   async processDue(): Promise<void> {
+    if (!isCronLeader()) return;
     if (this.isRunning) return;
     this.isRunning = true;
     try {
+      await this.reapExpiredClaims(new Date());
       const due = await this.prisma.client.webhookDelivery.findMany({
         where: { status: 'pending', nextRetryAt: { lte: new Date() } },
         include: { webhook: true },
@@ -76,7 +85,33 @@ export class WebhookDeliveryService {
     }
   }
 
+  /**
+   * Re-queues deliveries stranded in `'sending'` by a worker that died between
+   * the claim and the outcome write. `attempt` is bumped so a row that keeps
+   * killing the worker still walks toward `dead` instead of looping forever.
+   */
+  private async reapExpiredClaims(now: Date): Promise<void> {
+    const reaped = await this.prisma.client.webhookDelivery.updateMany({
+      where: { status: OUTBOX_SENDING, nextRetryAt: { lte: now } },
+      data: { status: 'pending', attempt: { increment: 1 }, errorMsg: LEASE_EXPIRED_NOTE },
+    });
+    if (reaped.count > 0) {
+      this.logger.warn(
+        `Re-queued ${reaped.count} webhook deliver(ies) with an expired claim lease`,
+      );
+    }
+  }
+
   private async deliver(d: DueDelivery): Promise<void> {
+    // EXCLUSIVE claim before any side effect: `pending` leaves the sendable
+    // set, so a rival worker's identical updateMany returns count=0.
+    // `attemptedAt` is written HERE (before the POST), not after it — INT-09.
+    const claim = await this.prisma.client.webhookDelivery.updateMany({
+      where: { id: d.id, status: 'pending' },
+      data: { status: OUTBOX_SENDING, attemptedAt: new Date(), nextRetryAt: claimLeaseUntil() },
+    });
+    if (claim.count === 0) return;
+
     if (!d.webhook.enabled) {
       // Subscription was disabled after this delivery was enqueued.
       // Drop straight to dead — no point retrying a disabled webhook.
@@ -85,7 +120,13 @@ export class WebhookDeliveryService {
     }
 
     const body = JSON.stringify(d.payload);
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    // Idempotency-Key = delivery id, stable across every retry of this row.
+    // Webhook delivery is at-least-once (a lease-reaped row is re-sent with
+    // an unknown prior outcome) — this is how a consumer dedups.
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'Idempotency-Key': d.id,
+    };
     if (d.webhook.secretHash) {
       headers['X-Lognex-Signature'] = createHmac('sha256', d.webhook.secretHash)
         .update(body)

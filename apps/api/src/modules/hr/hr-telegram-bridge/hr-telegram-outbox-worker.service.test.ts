@@ -7,8 +7,11 @@ function makePrisma() {
     client: {
       hrTelegramOutbox: {
         findMany: vi.fn(),
+        // Defaults: no already-delivered twin, and the lease reaper (the first
+        // updateMany of every tick) finds nothing to re-queue.
+        findFirst: vi.fn(async () => null),
         update: vi.fn(),
-        updateMany: vi.fn(),
+        updateMany: vi.fn(async () => ({ count: 0 })),
       },
     },
   };
@@ -71,6 +74,8 @@ describe('HrTelegramOutboxWorker.runOnce', () => {
     worker = new HrTelegramOutboxWorker(prisma as any, adapter as any);
     // default: claim succeeds (updateMany count=1)
     prisma.client.hrTelegramOutbox.updateMany.mockResolvedValue({ count: 1 });
+    // default: no already-delivered twin (dedup lookup misses)
+    prisma.client.hrTelegramOutbox.findFirst.mockResolvedValue(null);
   });
 
   it('empty queue → no-op (no adapter calls)', async () => {
@@ -252,6 +257,213 @@ describe('HrTelegramOutboxWorker.runOnce', () => {
     expect(prisma.client.hrTelegramOutbox.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ take: 10 }),
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Faza 28 — INT-08 / HR-4 / INT-09: exclusive claim, lease reaper, dedup
+// ---------------------------------------------------------------------------
+
+type Row = Omit<ReturnType<typeof pendingRow>, 'nextRetryAt' | 'sentAt'> & {
+  nextRetryAt: Date | null;
+  sentAt: Date | null;
+  attachmentPath?: string | null;
+};
+type Where = {
+  id?: string | { not: string };
+  status?: string | { in: string[] };
+  nextRetryAt?: { lte: Date } | Date | null;
+};
+type Data = Record<string, unknown>;
+
+function applyData(row: Row, data: Data): void {
+  for (const [k, v] of Object.entries(data)) {
+    if (v && typeof v === 'object' && 'increment' in (v as Record<string, unknown>)) {
+      const cur = (row as unknown as Record<string, number>)[k] ?? 0;
+      (row as unknown as Record<string, number>)[k] =
+        cur + Number((v as { increment: number }).increment);
+    } else {
+      (row as unknown as Record<string, unknown>)[k] = v;
+    }
+  }
+}
+
+function statusMatches(row: Row, s: Where['status']): boolean {
+  if (s === undefined) return true;
+  return typeof s === 'string' ? row.status === s : s.in.includes(row.status);
+}
+
+/**
+ * In-memory stand-in for the `hr_telegram_outbox` table with the ONE property
+ * the fix depends on: `updateMany` evaluates its predicate and writes with no
+ * suspension point in between — i.e. Postgres row-lock semantics under
+ * ReadCommitted. Two workers sharing this store is our cluster simulation.
+ */
+function makeSharedTable(rows: Row[]) {
+  const store = new Map(rows.map((r) => [r.id, { ...r }]));
+  return {
+    store,
+    client: {
+      hrTelegramOutbox: {
+        findMany: vi.fn(async (args: { take: number }) =>
+          [...store.values()]
+            .filter((r) => r.status === 'pending' || r.status === 'retry')
+            .slice(0, args.take)
+            .map((r) => ({ ...r })),
+        ),
+        findFirst: vi.fn(async () => null),
+        updateMany: vi.fn(async (args: { where: Where; data: Data }) => {
+          let count = 0;
+          for (const row of store.values()) {
+            const idWhere = args.where.id;
+            if (typeof idWhere === 'string' && row.id !== idWhere) continue;
+            if (!statusMatches(row, args.where.status)) continue;
+            const nra = args.where.nextRetryAt;
+            if (nra && typeof nra === 'object' && 'lte' in nra) {
+              if (!row.nextRetryAt || row.nextRetryAt > nra.lte) continue;
+            }
+            applyData(row, args.data);
+            count++;
+          }
+          return { count };
+        }),
+        update: vi.fn(async (args: { where: { id: string }; data: Data }) => {
+          const row = store.get(args.where.id);
+          if (row) applyData(row, args.data);
+          return row;
+        }),
+      },
+    },
+  };
+}
+
+describe('HrTelegramOutboxWorker — exclusive claim (INT-08 / HR-4)', () => {
+  it('claim moves the row OUT of the sendable set (pending → sending + lease)', async () => {
+    const prisma = makePrisma();
+    const adapter = makeAdapter();
+    prisma.client.hrTelegramOutbox.updateMany.mockResolvedValue({ count: 1 });
+    prisma.client.hrTelegramOutbox.findFirst.mockResolvedValue(null);
+    prisma.client.hrTelegramOutbox.findMany.mockResolvedValue([pendingRow()]);
+    // biome-ignore lint/suspicious/noExplicitAny: test wiring
+    const worker = new HrTelegramOutboxWorker(prisma as any, adapter as any);
+
+    await worker.runOnce();
+
+    // call 0 = lease reaper, call 1 = the claim
+    const claimArgs = prisma.client.hrTelegramOutbox.updateMany.mock.calls[1]?.[0] as {
+      where: { id: string; status: { in: string[] } };
+      data: { status: string; nextRetryAt: Date };
+    };
+    expect(claimArgs.where).toEqual({ id: 'r-1', status: { in: ['pending', 'retry'] } });
+    // The old guard wrote `pending → pending`, which locked nothing.
+    expect(claimArgs.data.status).toBe('sending');
+    expect(claimArgs.data.nextRetryAt.getTime()).toBeGreaterThan(Date.now() + 60_000);
+  });
+
+  it('two parallel workers on the same row → EXACTLY ONE send', async () => {
+    const shared = makeSharedTable([pendingRow({ id: 'race-1' })]);
+    const adapterA = makeAdapter();
+    const adapterB = makeAdapter();
+    // biome-ignore lint/suspicious/noExplicitAny: test wiring
+    const a = new HrTelegramOutboxWorker(shared as any, adapterA as any);
+    // biome-ignore lint/suspicious/noExplicitAny: test wiring
+    const b = new HrTelegramOutboxWorker(shared as any, adapterB as any);
+
+    const [ra, rb] = await Promise.all([a.runOnce(), b.runOnce()]);
+
+    const sends = adapterA.sendMessage.mock.calls.length + adapterB.sendMessage.mock.calls.length;
+    expect(sends).toBe(1);
+    expect(ra.sent + rb.sent).toBe(1);
+    expect(shared.store.get('race-1')?.status).toBe('sent');
+  });
+
+  it('a row parked in `sending` is invisible to the queue query', async () => {
+    const shared = makeSharedTable([pendingRow({ id: 'inflight', status: 'sending' })]);
+    const adapter = makeAdapter();
+    // biome-ignore lint/suspicious/noExplicitAny: test wiring
+    const worker = new HrTelegramOutboxWorker(shared as any, adapter as any);
+
+    const result = await worker.runOnce();
+
+    expect(result).toEqual({ sent: 0, retried: 0, failed: 0 });
+    expect(adapter.sendMessage).not.toHaveBeenCalled();
+  });
+});
+
+describe('HrTelegramOutboxWorker — lease reaper', () => {
+  it('re-queues a `sending` row whose lease expired, bumping retryCount', async () => {
+    const stale: Row = {
+      ...pendingRow({ id: 'stale', status: 'sending' }),
+      nextRetryAt: new Date(Date.now() - 60_000), // lease already gone
+    };
+    const shared = makeSharedTable([stale]);
+    const adapter = makeAdapter();
+    // biome-ignore lint/suspicious/noExplicitAny: test wiring
+    const worker = new HrTelegramOutboxWorker(shared as any, adapter as any);
+
+    await worker.runOnce();
+
+    const row = shared.store.get('stale');
+    // Reaped → retry (retryCount 0→1), then claimed + sent in the same tick.
+    expect(row?.retryCount).toBe(1);
+    expect(row?.status).toBe('sent');
+    expect(adapter.sendMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves a `sending` row alone while its lease is still valid', async () => {
+    const fresh: Row = {
+      ...pendingRow({ id: 'fresh', status: 'sending' }),
+      nextRetryAt: new Date(Date.now() + 5 * 60_000),
+    };
+    const shared = makeSharedTable([fresh]);
+    const adapter = makeAdapter();
+    // biome-ignore lint/suspicious/noExplicitAny: test wiring
+    const worker = new HrTelegramOutboxWorker(shared as any, adapter as any);
+
+    await worker.runOnce();
+
+    expect(shared.store.get('fresh')?.status).toBe('sending');
+    expect(adapter.sendMessage).not.toHaveBeenCalled();
+  });
+});
+
+describe('HrTelegramOutboxWorker — re-attempt dedup (INT-09)', () => {
+  it('skips the send when an identical message was already delivered', async () => {
+    const prisma = makePrisma();
+    const adapter = makeAdapter();
+    prisma.client.hrTelegramOutbox.updateMany.mockResolvedValue({ count: 1 });
+    prisma.client.hrTelegramOutbox.findMany.mockResolvedValue([
+      pendingRow({ retryCount: 1, status: 'retry' }),
+    ]);
+    const twinSentAt = new Date('2026-08-09T09:00:00.000Z');
+    prisma.client.hrTelegramOutbox.findFirst.mockResolvedValue({ sentAt: twinSentAt });
+    // biome-ignore lint/suspicious/noExplicitAny: test wiring
+    const worker = new HrTelegramOutboxWorker(prisma as any, adapter as any);
+
+    const result = await worker.runOnce();
+
+    expect(adapter.sendMessage).not.toHaveBeenCalled();
+    expect(result.sent).toBe(1);
+    const args = prisma.client.hrTelegramOutbox.update.mock.calls[0]?.[0] as {
+      data: { status: string; failReason: string };
+    };
+    expect(args.data.status).toBe('sent');
+    expect(args.data.failReason).toContain('dedup');
+  });
+
+  it('does NOT dedup a first attempt (two intentional identical messages)', async () => {
+    const prisma = makePrisma();
+    const adapter = makeAdapter();
+    prisma.client.hrTelegramOutbox.updateMany.mockResolvedValue({ count: 1 });
+    prisma.client.hrTelegramOutbox.findMany.mockResolvedValue([pendingRow({ retryCount: 0 })]);
+    prisma.client.hrTelegramOutbox.findFirst.mockResolvedValue({ sentAt: new Date() });
+    // biome-ignore lint/suspicious/noExplicitAny: test wiring
+    const worker = new HrTelegramOutboxWorker(prisma as any, adapter as any);
+
+    await worker.runOnce();
+
+    expect(adapter.sendMessage).toHaveBeenCalledTimes(1);
+    expect(prisma.client.hrTelegramOutbox.findFirst).not.toHaveBeenCalled();
   });
 });
 

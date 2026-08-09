@@ -20,7 +20,8 @@ import { useState } from 'react';
 interface DeliveryRow {
   id: string;
   webhookId: string;
-  status: 'pending' | 'sent' | 'dead';
+  /** `sending` — Faza 28: worker holds an exclusive claim, POST in flight. */
+  status: 'pending' | 'sending' | 'sent' | 'dead';
   attempt: number;
   maxAttempts: number;
   httpStatus: number | null;
@@ -46,7 +47,7 @@ interface ListResponse {
 
 const LIMIT = 100;
 
-const STATUSES: Array<DeliveryRow['status']> = ['pending', 'sent', 'dead'];
+const STATUSES: Array<DeliveryRow['status']> = ['pending', 'sending', 'sent', 'dead'];
 
 function formatDate(iso: string | null): string {
   if (!iso) return '—';

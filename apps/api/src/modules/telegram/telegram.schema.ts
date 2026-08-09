@@ -21,7 +21,8 @@ export const SendTelegramSchema = z.object({
 });
 export type SendTelegramInput = z.infer<typeof SendTelegramSchema>;
 
-export const TelegramOutboxStatusSchema = z.enum(['pending', 'sent', 'dead', 'failed']);
+/** `sending` — Faza 28 claim holati: worker Telegram API bilan gaplashmoqda. */
+export const TelegramOutboxStatusSchema = z.enum(['pending', 'sending', 'sent', 'dead', 'failed']);
 
 export const ListTelegramOutboxSchema = z.object({
   status: TelegramOutboxStatusSchema.optional(),
