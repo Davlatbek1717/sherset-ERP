@@ -20,11 +20,13 @@ import {
 const ACCOUNT = 'acc-1';
 const EMPLOYEE = 'emp-1';
 const POSITION = 'pos-1';
+const DEPARTMENT = 'dep-1';
 
 const subject: TargetSubject = {
   accountId: ACCOUNT,
   employeeId: EMPLOYEE,
   positionId: POSITION,
+  departmentId: DEPARTMENT,
 };
 
 function target(over: Partial<KpiTargetRow> & { id: string }): KpiTargetRow {
@@ -92,6 +94,58 @@ describe('resolveTargets — qamrov aniqligi', () => {
     const rows = [target({ id: 'p', scope: TARGET_SCOPE.position, scopeRef: POSITION })];
     const noPos: TargetSubject = { ...subject, positionId: null };
     expect(resolveTargets(rows, noPos, MONDAY, TARGET_PERIOD.daily).size).toBe(0);
+  });
+});
+
+/**
+ * 🔴 MK22 — kaskad o'qi **ega → bo'lim → xodim**. `department` (bo'lim) qamrovi
+ * MK13'da yo'q edi: faqat `account`/`position`/`employee` bor edi, ya'ni
+ * kaskadning o'rta pog'onasi umuman saqlanmasdi.
+ *
+ * **Nega bo'lim lavozimdan ustun** (`SCOPE_RANK`): bo'lim maqsadi — egadan
+ * pastga TAQSIMLANGAN majburiyat (kaskadning o'zi), lavozim maqsadi esa rolga
+ * qo'yilgan umumiy sukut. Taqsimlangan majburiyat sukutni yengishi kerak, aks
+ * holda kaskad o'z ta'sirini yo'qotadi. Xodim > bo'lim > lavozim > hisob
+ * tartibidagi MAVJUD nisbatlar (xodim eng yuqori, hisob eng past) o'zgarmaydi.
+ */
+describe('resolveTargets — bo`lim (department) qamrovi · MK22 kaskad o`qi', () => {
+  it('bo`lim qatori o`sha bo`lim xodimiga qo`llanadi', () => {
+    const rows = [
+      target({ id: 'd', scope: TARGET_SCOPE.department, scopeRef: DEPARTMENT, targetValue: 250n }),
+    ];
+    const r = resolveTargets(rows, subject, MONDAY, TARGET_PERIOD.daily).get('cash_revenue');
+    expect(r?.value).toBe(250n);
+    expect(r?.scope).toBe(TARGET_SCOPE.department);
+  });
+
+  it('BOSHQA bo`lim qatori olinmaydi', () => {
+    const rows = [target({ id: 'd2', scope: TARGET_SCOPE.department, scopeRef: 'dep-2' })];
+    expect(resolveTargets(rows, subject, MONDAY, TARGET_PERIOD.daily).size).toBe(0);
+  });
+
+  it('bo`limsiz xodim uchun bo`lim qatori olinmaydi (jimgina qo`llanmaydi)', () => {
+    const rows = [target({ id: 'd', scope: TARGET_SCOPE.department, scopeRef: DEPARTMENT })];
+    const noDep: TargetSubject = { ...subject, departmentId: null };
+    expect(resolveTargets(rows, noDep, MONDAY, TARGET_PERIOD.daily).size).toBe(0);
+  });
+
+  it('bo`lim lavozimni yengadi, xodim bo`limni yengadi, bo`lim hisobni yengadi', () => {
+    const rows = [
+      target({ id: 'a', scope: TARGET_SCOPE.account, scopeRef: ACCOUNT, targetValue: 100n }),
+      target({ id: 'p', scope: TARGET_SCOPE.position, scopeRef: POSITION, targetValue: 200n }),
+      target({ id: 'd', scope: TARGET_SCOPE.department, scopeRef: DEPARTMENT, targetValue: 250n }),
+    ];
+    expect(
+      resolveTargets(rows, subject, MONDAY, TARGET_PERIOD.daily).get('cash_revenue')?.rowId,
+    ).toBe('d');
+
+    const withEmployee = [
+      ...rows,
+      target({ id: 'e', scope: TARGET_SCOPE.employee, scopeRef: EMPLOYEE, targetValue: 300n }),
+    ];
+    expect(
+      resolveTargets(withEmployee, subject, MONDAY, TARGET_PERIOD.daily).get('cash_revenue')?.rowId,
+    ).toBe('e');
   });
 });
 

@@ -305,6 +305,58 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-10d (REJA-MENEJER-KASSA **MK22** — 4M TZ §8.1/9: maqsad kaskadi ega → bo'lim →
+> xodim) — ✅ **Phase-1 complete: mantiqiy yadro** (sof modul + unit; **browser-smoke YO'Q,
+> endpoint YO'Q, FE YO'Q**). To'liq hisobot: `docs/REJA-MENEJER-KASSA-2026-08.md` → HISOBOT
+> JURNALI → «Faza MK22».**
+>
+> **🔴 Rejaning premisasi NOTO'G'RI edi — keyingi sessiya buni bilsin.** MK22 bandi «`KpiTarget`
+> (MK13) va `SalesPlan` (MK37) **allaqachon bor** — uchinchi plan modeli yaratma» deydi.
+> O'lchandi: `KpiTarget` ning **Prisma modeli YO'Q** (faqat sof `kpi-target.ts`, `grep` bo'yicha
+> **chaqiruvchisi yo'q** = o'lik kod), `SalesPlan` esa **umuman yo'q** (MK37 ☐ — o'sha bandning
+> o'zida «Holat: `SalesPlan` YO'Q» yozilgan). Ya'ni ogohlantirish paytida DB'da **nol** plan
+> modeli bor edi. Ish baribir bajarildi (qamrovi va uchala testi sof mantiq), lekin natija halol
+> yorliqlanadi: **MK22 hozircha runtime'da yetib bo'lmaydi.**
+>
+> **Bajarildi (TDD — RED ko'rildi, 26 yangi test):**
+> `kpi-target-cascade.ts` (**YANGI**, sof modul, 0 DB) — `allocate()` bir pog'ona ·
+> `buildCascade()` ega→bo'lim→xodim · `cascadeChangePoints()` **tarix yangi jadvalsiz**
+> (mavjud `effectiveFrom/To` chegaralaridan; sana arifmetikasi YO'Q) · `splitEvenly()` haftalikni
+> kunga bo'lish, **qoldiq ochiq** (`kpi-target.ts` dagi «JIMGINA bo'linmaydi» qoidasining amaliy
+> tomoni). `kpi-target.ts` — `TARGET_SCOPE.department` + `TargetSubject.departmentId` (kaskadning
+> **o'rta pog'onasi** yo'q edi; `HrDepartment`/`Employee.departmentId` sxemada allaqachon bor).
+>
+> **🔴 «Jim yolg'on» shartnomalari (hammasi test bilan qulflangan):** ota maqsadi qo'yilmasa
+> qoldiq **`null`**, foiz **`null`** (0 va 100% EMAS) · maqsadsiz bola 0 deb **sanalmaydi**,
+> `unsetChildRefs` ga tushadi · ota `0n` bo'lsa foiz null, lekin `parent_not_set` **EMAS**
+> (0 = qaror, qo'yilmagan = qarorsizlik) · bo'limsiz xodim `unassignedEmployeeRefs` da ·
+> kaskad o'qiga kirmagan `position` qatori `outOfCascadeRowIds` da · oshib ketish
+> **ogohlantiradi, `blocking: false`** (menejer ataylab 110% «zapas» qo'yishi mumkin).
+>
+> **DRY:** kaskad MK13 tanlovini qayta yozmaydi — `isTargetRowActive()` va `targetRowBeats()`
+> `kpi-target.ts` dan **eksport** qilindi (`resolveTargets()` ham endi shulardan foydalanadi),
+> shuning uchun **kaskad va kunlik ball AYNI qatorni g'olib deb biladi**. Qo'riqchi manba
+> matnini skanerlaydi (`SCOPE_RANK|maskWidth` bo'lmasin, `from './kpi-target.js'` bo'lsin).
+>
+> **Testlar bo'sh emasligi MUTATSIYA bilan o'lchandi:** `unallocated: null → 0n` ⇒ 1 test
+> yiqildi · `allocated += child.value ?? 0n` ⇒ 3 test yiqildi. Sof-modul qo'riqchisi avval o'z
+> **hujjat matnidan** yiqilgan edi (izohdagi «`Date.now()` yo'q» jumlasi) — endi izohlarni olib
+> tashlab faqat KOD ustidan skanerlaydi (`codeOnly()`), ya'ni zaiflashmadi.
+>
+> **Gate:** api typecheck **0** · biome **0** (4 fayl) · `vitest run` butun apps/api →
+> **7318 passed | 2 skipped**, 516/518 suite. i18n tegishli emas (API sof mantiq, matn yo'q).
+> ⚠️ **Begona yiqilish:** `permissions/record-scope-coverage.test.ts` — juftlik `.ts` fayli yo'q;
+> u **untracked** va sessiya davomida paydo bo'ldi ⇒ **parallel sessiya ishi** (MK39
+> record-scope). CLAUDE.md §6.1 bo'yicha TEGILMADI; mening o'zgarishimga aloqasi yo'q.
+>
+> **🔴 QARZ — jonlantirish ketma-ketligi (keyingi sessiya shu tartibda olsin):**
+> (1) **MK13-qarz: `KpiTarget` Prisma modeli + migratsiya** — `scope` enum'iga **`department`**
+> ham kirsin, aks holda kaskadning o'rta pog'onasi saqlanmaydi; `TargetSubject.departmentId`
+> `Employee.departmentId` (`department2` relation) dan to'ldiriladi — ⚠️ eski
+> `Employee.department` **String** ustunini ISHLATMANG. (2) MK22 servis/endpoint. (3) MK37
+> (`SalesPlan`) — `allocate()` substrat-neytral, qayta yozilmaydi. (4) MK38 ekranlar
+> («qoldiq **ko'rinadi**» talabining ko'rinish qismi o'sha yerda).
+
 > **🕒 2026-08-10c (REJA-MENEJER-KASSA **MK29** — TZ §3.4: 10 rol shabloni) — ✅ **Phase-1
 > complete** (strukturaviy + unit; **browser-smoke YO'Q**). To'liq hisobot:
 > `docs/REJA-MENEJER-KASSA-2026-08.md` → HISOBOT JURNALI → «Faza MK29».**

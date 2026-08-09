@@ -12,8 +12,9 @@
  * uni aniqroq qamrovda almashtiradi.
  *
  * ```
- * xodim maqsadi  >  lavozim maqsadi  >  hisob maqsadi  >  profil maqsadi  >  maqsad YO'Q
+ * xodim  >  bo'lim  >  lavozim  >  hisob  >  profil maqsadi  >  maqsad YO'Q
  * ```
+ * (`bo'lim` — MK22 kaskadining o'rta pog'onasi; sabab `SCOPE_RANK` izohida.)
  *
  * ## 🔴 Haftalik maqsad kunga JIMGINA bo'linmaydi
  * `period='weekly'` qator kunlik ballga **kirmaydi**. Haftalikni kunga
@@ -43,6 +44,8 @@ export type TargetPeriod = (typeof TARGET_PERIOD)[keyof typeof TARGET_PERIOD];
 export const TARGET_SCOPE = {
   /** Bitta xodimga qo'yilgan reja — eng aniq. */
   employee: 'employee',
+  /** Bo'lim (`HrDepartment`) bo'yicha — MK22 kaskadining o'rta pog'onasi. */
+  department: 'department',
   /** Lavozim bo'yicha. */
   position: 'position',
   /** Butun hisob bo'yicha. */
@@ -51,9 +54,18 @@ export const TARGET_SCOPE = {
 
 export type TargetScope = (typeof TARGET_SCOPE)[keyof typeof TARGET_SCOPE];
 
-/** Aniqlik darajasi — kattasi g'olib. */
+/**
+ * Aniqlik darajasi — kattasi g'olib.
+ *
+ * **Nega bo'lim lavozimdan yuqori (MK22):** bo'lim maqsadi — egadan pastga
+ * TAQSIMLANGAN majburiyat (kaskadning bo'g'ini), lavozim maqsadi esa rolga
+ * qo'yilgan umumiy sukut. Taqsimlangan majburiyat sukutni yengmasa, kaskad
+ * o'z ta'sirini yo'qotadi. MK13'dagi mavjud nisbatlar (xodim eng yuqori,
+ * hisob eng past) o'zgarmaydi — bo'lim ular ORASIGA qo'shildi.
+ */
 const SCOPE_RANK: Readonly<Record<TargetScope, number>> = {
-  [TARGET_SCOPE.employee]: 3,
+  [TARGET_SCOPE.employee]: 4,
+  [TARGET_SCOPE.department]: 3,
   [TARGET_SCOPE.position]: 2,
   [TARGET_SCOPE.account]: 1,
 };
@@ -66,7 +78,10 @@ export interface KpiTargetRow {
   /** `kpi_metric_defs.key` — kod katalogidagi kalit. */
   metricKey: string;
   scope: TargetScope;
-  /** `employee` → employeeId · `position` → positionId · `account` → accountId. */
+  /**
+   * `employee` → employeeId · `department` → departmentId (`HrDepartment`) ·
+   * `position` → positionId · `account` → accountId.
+   */
   scopeRef: string;
   period: TargetPeriod;
   /** Ko'rsatkichning O'Z birligida, butun son (pul = tiyin). */
@@ -85,6 +100,13 @@ export interface TargetSubject {
   employeeId: string;
   /** Lavozimi yo'q xodim uchun `null` — lavozim qatorlari unga tushmaydi. */
   positionId: string | null;
+  /**
+   * `Employee.departmentId` (`HrDepartment`). Bo'limi yo'q xodim uchun `null` —
+   * bo'lim qatorlari unga tushmaydi. Ataylab MAJBURIY maydon: ixtiyoriy bo'lsa
+   * chaqiruvchi uni jimgina tushirib qoldirib, bo'lim maqsadini ko'rinmas
+   * qilardi.
+   */
+  departmentId: string | null;
 }
 
 export type TargetSource = 'target_override' | 'profile' | 'none';
@@ -132,6 +154,9 @@ function maskWidth(mask: number): number {
 
 function appliesTo(row: KpiTargetRow, subject: TargetSubject): boolean {
   if (row.scope === TARGET_SCOPE.employee) return row.scopeRef === subject.employeeId;
+  if (row.scope === TARGET_SCOPE.department) {
+    return subject.departmentId != null && row.scopeRef === subject.departmentId;
+  }
   if (row.scope === TARGET_SCOPE.position) {
     return subject.positionId != null && row.scopeRef === subject.positionId;
   }
@@ -145,7 +170,7 @@ function appliesTo(row: KpiTargetRow, subject: TargetSubject): boolean {
  * `resolveDailyTargets()` da.
  *
  * G'olibni tanlash tartibi (birinchi farq qilgani hal qiladi):
- *   1. **qamrov aniqligi** — xodim > lavozim > hisob;
+ *   1. **qamrov aniqligi** — xodim > bo'lim > lavozim > hisob;
  *   2. **maska torligi** — «faqat shanba» qoidasi «har kuni» qoidasini yengadi
  *      (§2.5: kun turi target'ga ta'sir qiladi);
  *   3. **keyingi `effectiveFrom`** — yangi qaror eskisini almashtiradi;
@@ -158,23 +183,12 @@ export function resolveTargets(
   date: string,
   period: TargetPeriod,
 ): Map<string, ResolvedTarget> {
-  const bit = weekdayBit(date);
-
-  const eligible = rows.filter(
-    (r) =>
-      !r.archived &&
-      r.period === period &&
-      appliesTo(r, subject) &&
-      r.effectiveFrom <= date &&
-      (r.effectiveTo == null || date <= r.effectiveTo) &&
-      // Haftalik maqsad kun maskasiga bog'lanmaydi — u hafta uchun.
-      (period !== TARGET_PERIOD.daily || (r.weekdayMask & bit) !== 0),
-  );
+  const eligible = rows.filter((r) => isTargetRowActive(r, date, period) && appliesTo(r, subject));
 
   const best = new Map<string, KpiTargetRow>();
   for (const row of eligible) {
     const current = best.get(row.metricKey);
-    if (current == null || beats(row, current)) best.set(row.metricKey, row);
+    if (current == null || targetRowBeats(row, current)) best.set(row.metricKey, row);
   }
 
   const out = new Map<string, ResolvedTarget>();
@@ -190,7 +204,32 @@ export function resolveTargets(
   return out;
 }
 
-function beats(candidate: KpiTargetRow, current: KpiTargetRow): boolean {
+/**
+ * Qator shu kun va davr uchun UMUMAN amal qiladimi (qamrovdan qat'i nazar).
+ *
+ * Subyektga bog'liq emas — shuning uchun MK22 kaskadi ham ayni shu shartni
+ * ishlatadi: kaskad qatorlarni qamrov bo'yicha emas, `scopeRef` bo'yicha
+ * yig'adi, lekin «amal qiladimi» savolining javobi BITTA bo'lishi shart.
+ */
+export function isTargetRowActive(row: KpiTargetRow, date: string, period: TargetPeriod): boolean {
+  return (
+    !row.archived &&
+    row.period === period &&
+    row.effectiveFrom <= date &&
+    (row.effectiveTo == null || date <= row.effectiveTo) &&
+    // Haftalik maqsad kun maskasiga bog'lanmaydi — u hafta uchun.
+    (period !== TARGET_PERIOD.daily || (row.weekdayMask & weekdayBit(date)) !== 0)
+  );
+}
+
+/**
+ * Ikki amaldagi qatordan qaysi biri g'olib (yuqoridagi tartib bo'yicha).
+ *
+ * Eksport qilingan — MK22 kaskadi bir `scopeRef` uchun bir nechta qator
+ * uchraganda AYNI tanlovni qiladi. Nusxa-ko'chirilsa bir shox yo'qolardi
+ * (xotira: `copy-paste-loses-a-branch`).
+ */
+export function targetRowBeats(candidate: KpiTargetRow, current: KpiTargetRow): boolean {
   const byScope = SCOPE_RANK[candidate.scope] - SCOPE_RANK[current.scope];
   if (byScope !== 0) return byScope > 0;
 

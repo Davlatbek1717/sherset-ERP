@@ -273,7 +273,7 @@ Belgilar: 🗄️ migratsiya · 🌐 brauzer/QA · 📝 kodsiz · ⛔ qaror kutm
 | **8** | **MK27** HR ruxsatlarini birlashtirish (adapter + migratsiya)<br>**MK30** 🗄️ Tasdiqlash navbati: `ApprovalRule` + `ApprovalItem`<br>**MK35** ⏳ Record-scope 1-to'lqin + filial filtri birga *(kutadi: F003)* |
 | **9** | **MK28** Ruxsat matritsasi UI (entity × action × scope)<br>**MK34** 🌐 1-Kassa Phase-2 QA (real brauzer + real termal printer)<br>**MK36** Record-scope 2–3-to'lqin (pul + mijozlar) |
 | **10** | **MK29** ⛔B4 10 rol shabloni<br>**MK37** 🗄️ `SalesPlan` modeli (xodim × oy × plan turi) |
-| **11** | **MK22** Maqsad kaskadi (ega → bo'lim → xodim)<br>**MK38** ⏳ Plan qo'yish · mijoz taqsimoti · narx siyosati ekranlari *(kutadi: F004)*<br>**MK39** 🗄️ Record-scope 4-to'lqin + `recordScopeEnforced` YOQISH |
+| **11** | ~~**MK22** Maqsad kaskadi (ega → bo'lim → xodim)~~ ☑ mantiqiy yadro (2026-08-10) — jonlantirish MK13-qarzga bog'liq<br>**MK38** ⏳ Plan qo'yish · mijoz taqsimoti · narx siyosati ekranlari *(kutadi: F004)*<br>**MK39** 🗄️ Record-scope 4-to'lqin + `recordScopeEnforced` YOQISH |
 | **12** | **MK17** ⏳ Yo'qolgan mijozlar signali *(kutadi: F005)*<br>**MK40** 🌐 4-Menejer Phase-2 QA (ruxsatlar) |
 | **13** | **MK25** 🌐 M2 Phase-2 QA (mobil qurilma + yangi menejer ekranlari) |
 
@@ -711,12 +711,18 @@ eksport. **Yangi yozuvchi ochilmaydi** — manba mavjud hodisa jurnallari.
 
 ---
 
-### MK22 — Maqsad kaskadi (ega → bo'lim → xodim) ☐ HISOBOT
+### MK22 — Maqsad kaskadi (ega → bo'lim → xodim) ☑ HISOBOT (2026-08-10) — mantiqiy yadro, runtime YO'Q
 **Bo'lim/blok:** 4M §8.1/9 · **Ustuvorlik:** P3 · **Bog'liqlik:** MK13 (`KpiTarget`), MK37 (`SalesPlan`)
 **Qamrov:** yuqoridagi maqsad pastga taqsimlanadi (ega → bo'lim → xodim) · taqsimot qoldig'i
 ko'rinadi (100% taqsimlanmagan bo'lsa ochiq aytiladi) · kaskad o'zgarishi tarixi.
 **Diqqat:** `KpiTarget` (MK13) va `SalesPlan` (MK37) allaqachon bor — **uchinchi plan modeli
 yaratma**, ular ustiga qatlam qur.
+> 🔴 **2026-08-10 TUZATISH — yuqoridagi «Diqqat» NOTO'G'RI edi.** O'lchandi: `KpiTarget` ning
+> **Prisma modeli YO'Q** (faqat sof modul `kpi-target.ts`, chaqiruvchisi yo'q — MK13-ikkinchi qism
+> qarzi), `SalesPlan` esa **umuman yo'q** (MK37 ☐; o'sha banddayoq «Holat: `SalesPlan` YO'Q» deb
+> turibdi). Ya'ni ogohlantirish paytida DB'da **nol** plan modeli bor edi. MK22 sof mantiq
+> qatlami sifatida bajarildi (mavjud `KpiTargetRow` shakli ustida, yangi model YO'Q), lekin
+> **runtime'da yetib bo'lmaydi** — batafsil: pastdagi «Faza MK22» hisobotining «QARZ» bo'limi.
 **Testlar (TDD):** (1) taqsimlanmagan qoldiq ko'rsatiladi, jimgina 0 emas. (2) xodim maqsadlari
 yig'indisi bo'lim maqsadidan oshsa ogohlantiriladi (bloklamaydi). (3) yangi model yaratilmagan.
 **▶ SESSIYA-BOSHI PROMPT:**
@@ -4162,3 +4168,129 @@ Ushbu sessiya quyidagi fayllarni o'zgartirdi (barchasi aniq yo'l bilan stage qil
 
 Sessiya boshida ish daraxtida **faqat untracked** fayllar bor edi (xlsx, png, txt, scratchpad,
 `docs/audits/demands-REMAINING-2026-07-31.md`) — meniki emas, **tegilmadi** (CLAUDE.md §6.1).
+
+---
+
+## Faza MK22 — Maqsad kaskadi (ega → bo'lim → xodim) (sana: 2026-08-10)
+
+**Status: Phase-1 — strukturaviy/mantiqiy, runtime-TASDIQLANMAGAN (browser-smoke YO'Q, endpoint YO'Q).**
+
+### 🔴 Rejaning premisasi NOTO'G'RI edi — avval shuni yozib qo'yamiz
+
+Reja MK22 bandida shunday deyilgan: «`KpiTarget` (MK13) va `SalesPlan` (MK37) **allaqachon bor** —
+uchinchi plan modeli yaratma». Sessiya boshida tekshirildi (CLAUDE.md §2 — tasdiqlanmagan ≠ fakt):
+
+| Da'vo | Haqiqat (2026-08-10, o'lchangan) |
+|---|---|
+| `KpiTarget` bor | **Prisma modeli YO'Q.** Faqat sof modul `kpi-target.ts` (tip + hal qilish mantiqi). `grep`: modulni **hech kim chaqirmaydi** — o'lik kod. Bu MK13-ikkinchi qism qarzi (xotira `manager-threshold-registry-mk13`). |
+| `SalesPlan` bor | **Umuman YO'Q.** MK37 ☐ bajarilmagan; reja MK37 bandining o'zida «**Holat:** `SalesPlan` **YO'Q**» deb turibdi. |
+
+Ya'ni «uchinchi model yaratma» ogohlantirishi paytida DB'da **nol** plan modeli bor edi.
+MK22 shunga qaramay bajarildi — chunki uning qamrovi (taqsimot algebrasi + qoldiq + tarix) va
+rejadagi uchala testi **sof mantiq**, DB talab qilmaydi. Lekin oqibati ochiq aytiladi:
+**MK22 ham hozircha runtime'da yetib bo'lmaydigan qatlam** (pastdagi «Qarz» bo'limi).
+
+### Bajarilgani
+
+**1. `department` (bo'lim) qamrovi — MK13 qatlamining o'rta pog'onasi** (`kpi-target.ts`)
+Kaskad o'qi ega → **bo'lim** → xodim, lekin `TARGET_SCOPE` da faqat `account/position/employee`
+bor edi: bo'lim maqsadini saqlab bo'lmasdi. `HrDepartment` + `Employee.departmentId` sxemada
+allaqachon bor, shuning uchun yangi jadval kerak emas — faqat qamrov qo'shildi.
+- `TARGET_SCOPE.department` · `TargetSubject.departmentId` (**majburiy** maydon: ixtiyoriy bo'lsa
+  chaqiruvchi jimgina tushirib qoldirib, bo'lim maqsadini ko'rinmas qilardi) · `appliesTo()` shoxi.
+- `SCOPE_RANK`: xodim **4** > bo'lim **3** > lavozim **2** > hisob **1**. **Nega bo'lim lavozimdan
+  yuqori:** bo'lim maqsadi — egadan pastga TAQSIMLANGAN majburiyat (kaskadning bo'g'ini), lavozim
+  maqsadi esa rolga qo'yilgan umumiy sukut; taqsimlangan majburiyat sukutni yengmasa kaskad ta'sirini
+  yo'qotadi. MK13'ning mavjud nisbatlari (xodim eng yuqori, hisob eng past) **o'zgarmadi** — bo'lim
+  ular ORASIGA qo'shildi, shuning uchun eski 20 test o'zgarishsiz yashil.
+
+**2. Kaskad qatlami** — `apps/api/src/modules/manager/kpi/kpi-target-cascade.ts` (sof modul, 0 DB)
+- `allocate(parent, children)` — bir pog'ona: `allocated` · `unallocated` · `overAllocated` ·
+  `status` · `unsetChildRefs` · `allocatedPercent` · `blocking: false`.
+- `buildCascade(rows, org, query)` — ikki pog'ona: ega→bo'limlar, har bo'lim→xodimlar.
+- `cascadeChangePoints(rows, query)` — **kaskad o'zgarishi tarixi yangi jadvalsiz**: qatorlarning
+  `effectiveFrom`/`effectiveTo` chegaralaridan. Qatorlar allaqachon versiyalangan, tarix ular ichida.
+  Sana arifmetikasi YO'Q (chegara qator yorlig'i bilan qaytadi) — `month-bounds-label-vs-instant`
+  bug-klassi qaytmasin.
+- `splitEvenly(total, parts)` — haftalikni kunlarga bo'lish, **qoldiq ochiq**. Bu `kpi-target.ts`
+  dagi «haftalik maqsad kunga JIMGINA bo'linmaydi» qoidasining amaliy tomoni: bo'lish taqiqlanmagan,
+  **yashirin** bo'lish taqiqlangan. `parts <= 0` → `null` (0 ga bo'lish yo'q).
+
+### 🔴 «Jim yolg'on» shartnomalari (modulning butun mavjudlik sababi)
+
+Har biri test bilan qulflangan:
+
+| Holat | Qaytadi | Nima UCHUN 0 emas |
+|---|---|---|
+| Ota maqsadi qo'yilmagan | `unallocated: null`, `allocatedPercent: null`, `status: 'parent_not_set'` | «0% taqsimlangan» ≠ «taqsimlashga baza yo'q». Mahrajsiz ulush null (xotira `data-quality-flag-layer`) |
+| Bola maqsadsiz | `unsetChildRefs` ga tushadi, yig'indiga **kirmaydi** | «bo'lim 0 reja oldi» ≠ «bo'limga reja qo'yilmagan» |
+| Ota maqsadi = `0n` | `allocatedPercent: null`, lekin `status` `parent_not_set` **EMAS** | 0 — haqiqiy qaror; «qo'yilmagan» — qaror yo'qligi. Ikkisi bir xil emas |
+| Bo'limsiz xodim | `unassignedEmployeeRefs` | Kaskadga tushmaydi, lekin YO'QOLMAYDI |
+| `position` qamrovidagi qator | `outOfCascadeRowIds` | Kaskad o'qida emas — jimgina tashlanmaydi, ochiq ko'rsatiladi |
+| Bolalar yig'indisi otadan oshdi | `status: 'over'` + `overAllocated > 0`, **`blocking: false`** | Menejer ataylab «zapas» qo'yishi mumkin (110%); taqiqlash ish jarayonini to'xtatardi |
+
+### DRY — kaskad MK13 mantiqini QAYTA yozmaydi
+
+Nusxa-ko'chirish bir shoxni yo'qotadi (xotira `copy-paste-loses-a-branch`), shuning uchun
+`kpi-target.ts` dan ikkita funksiya **eksport** qilindi va kaskad ularni chaqiradi:
+- `isTargetRowActive(row, date, period)` — «qator amal qiladimi» (arxiv · oyna · kun maskasi).
+  `resolveTargets()` ham endi shundan foydalanadi (mantiq ikki joyda emas, bitta joyda).
+- `targetRowBeats(a, b)` — g'olib qator tanlovi. Natijada **kaskad va kunlik ball AYNI qatorni
+  g'olib deb biladi**; aks holda ekranda bir raqam, ballda boshqa raqam chiqardi.
+
+Qo'riqchi test manba matnini skanerlaydi: kaskad faylida `SCOPE_RANK|maskWidth` **bo'lmasligi** va
+`from './kpi-target.js'` **bo'lishi** shart.
+
+### Testlar (TDD — RED ko'rilgan, keyin GREEN)
+
+`kpi-target-cascade.test.ts` **23 test** · `kpi-target.test.ts` **20 → 23 test** (bo'lim qamrovi).
+
+Rejaning uchta testi: (1) taqsimlanmagan qoldiq ko'rsatiladi, jimgina 0 emas ✅ · (2) xodim
+maqsadlari yig'indisi bo'lim maqsadidan oshsa ogohlantiriladi, bloklamaydi ✅ · (3) yangi model
+yaratilmagan ✅ (4 qatlamli qo'riqchi: sxemada `cascade|allocation` modeli yo'q · modul sof
+(Prisma/@nestjs/`Date.now()`/`new Date(` yo'q) · DRY skani · kpi papkasida boshqa `*cascade*` fayli yo'q).
+
+**Qo'riqchilar bo'sh emasligi MUTATSIYA bilan o'lchandi** (xotira `tz-label-test-vacuous-math-round`):
+- mutant `unallocated: null` → `0n` ⇒ **1 test yiqildi** ✅
+- mutant `allocated += child.value ?? 0n` (maqsadsiz bolani jim 0 deb sanash) ⇒ **3 test yiqildi** ✅
+- Sof-modul qo'riqchisi avval o'z **hujjat matnidan** yiqilgan edi (izohdagi «`Date.now()` yo'q»
+  jumlasi) — qo'riqchi izohlarni olib tashlab, faqat KOD ustidan skanerlaydigan qilindi
+  (`codeOnly()`); haqiqiy chaqiruv kodda qolgani uchun bu zaiflashtirish EMAS.
+
+### Gate (o'lchangan, 2026-08-10)
+
+- `tsc -p apps/api --noEmit` → **0** ✅
+- `biome check` (4 fayl) → **0** ✅ (3 fayl faqat formatlash uchun `--write` qilindi)
+- `vitest run` (butun apps/api) → **7318 passed | 2 skipped**, **516/518 suite yashil** ✅
+- **i18n:** tegishli emas — o'zgarish faqat `apps/api` sof mantiq, foydalanuvchiga ko'rinadigan
+  matn qo'shilmadi (`status` kodlari qaytadi, tarjima FE zimmasida — MK38).
+- ⚠️ **Begona yiqilish:** `permissions/record-scope-coverage.test.ts` — `record-scope-coverage.ts`
+  fayli yo'q (`Failed to load url`). Bu fayl **untracked** va sessiya davomida paydo bo'ldi ⇒
+  **parallel sessiyaning faol ishi** (MK39 record-scope). CLAUDE.md §6.1 bo'yicha TEGILMADI.
+  Mening o'zgarishimga aloqasi yo'q (permissions moduli `kpi-target` ni import qilmaydi).
+
+### 🔴 QARZ — MK22 runtime'da YETIB BO'LMAYDI (halol yorliq)
+
+Kaskad mantiqi to'liq va testlangan, lekin **hech kim chaqirmaydi**, chunki quyi qatlam yo'q:
+
+1. **`KpiTarget` Prisma modeli + migratsiyasi YO'Q** (MK13-ikkinchi qism qarzi). Qatorlar
+   saqlanmaguncha `buildCascade()` ga uzatadigan `rows` manbai yo'q.
+   - Model qo'shilganda `scope` enum'iga **`department`** ham kirishi shart (aks holda kaskadning
+     o'rta pog'onasi saqlanmaydi) va `scopeRef` `HrDepartment.id` ni ham qabul qilishi kerak.
+   - `TargetSubject.departmentId` `Employee.departmentId` dan to'ldiriladi (`department2` relation).
+     ⚠️ Eski `Employee.department` **String** ustuni ham bor — FK emas, uni ishlatmang.
+2. **Servis/endpoint yo'q** — kaskad hisobotini beradigan `GET` yozilmagan.
+3. **FE yo'q** — «taqsimlanmagan qoldiq **ko'rinadi**» talabining KO'RINISH qismi MK38 (plan
+   qo'yish ekranlari) zimmasida qoladi. Bu qatlam unga tayyor shartnoma beradi.
+4. **`SalesPlan` (MK37) yo'q** — oylik tushum/foyda plani kaskadi hali boshqa o'q. `allocate()`
+   substrat-neytral, shuning uchun MK37 kelganda **qayta yozilmaydi**, shunchaki chaqiriladi.
+
+**Xulosa:** MK22 = kaskadning **mantiqiy yadrosi tayyor**. Uni jonlantirish ketma-ketligi:
+MK13-qarz (`KpiTarget` DB) → MK22 endpoint → MK37 (`SalesPlan`) → MK38 (ekranlar).
+
+### Fayllar
+
+- `apps/api/src/modules/manager/kpi/kpi-target-cascade.ts` (yangi, sof modul)
+- `apps/api/src/modules/manager/kpi/kpi-target-cascade.test.ts` (yangi, 23 test)
+- `apps/api/src/modules/manager/kpi/kpi-target.ts` (`department` qamrovi + 2 eksport + izohlar)
+- `apps/api/src/modules/manager/kpi/kpi-target.test.ts` (+3 test, `departmentId` maydoni)
