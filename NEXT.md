@@ -352,8 +352,17 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > `_prisma_migrations`-tracked emas ⇒ `prisma db execute --file …` bilan qo'lda; fayl
 > `IF NOT EXISTS` bilan idempotent.
 >
-> **Keyingi:** reja bo'yicha **Faza 27** (hisobot paginatsiya/agregat to'g'riligi —
-> `PERF-01/02/04/10`, `DUP-14`; og'ir bo'lsa sub-fazaga bo'linadi).
+> **Keyingi:** **Faza 27b** (`PERF-01`, analitika-items DB-paginate) — **27a parallel sessiyada
+> allaqachon BAJARILDI** (`PERF-10`,`PERF-04`,`DUP-14`).
+>
+> **⚠️ COMMIT ARALASHUVI (halol qayd).** `git commit -- <pathspec>` berilgan yo'lning **ishchi
+> daraxt** versiyasini oladi, indeksdagi ulushimni emas. `docs/REJA-AUDIT-FIX-2026-08.md` da
+> parallel sessiya o'sha payt Faza 27a hisobotini yozib qo'ygan edi ⇒ **ularning ~127 qatorli
+> hujjat-tahriri mening `1d81f05f` commit'imga tushdi** (kodlari — `report/stock-balance.*`,
+> `report/counterparty-balance.*` — hamon commit qilinmagan, ya'ni hujjat kod'dan oldinda).
+> Hech narsa yo'qolmadi, tuzatilmadi ham (revert parallel ishni buzardi). **Sabot: pathspec
+> ham, `git add` ham begona tahrirdan himoya qilmaydi — commit'dan keyin `git show --stat` YETARLI
+> emas, `git show <commit> -- <fayl>` bilan hunk'larni ham ko'r.**
 
 > **🕒 2026-08-09f (AUDIT-FIX FAZA 25 — DB indeks-paket: hot-FK + barcode GIN + INN/yacheyka
 > expression · `DB-04`,`DB-05`,`DB-08`,`PERF-12`,`PERF-14`) · Phase-1: strukturaviy +
