@@ -373,7 +373,7 @@ export class EmployeeDailyKpiService {
     to: Date,
   ): Promise<Map<string, MetricValue[]>> {
     const rows = await this.prisma.client.hrAttendance.findMany({
-      where: { accountId, checkInTime: { gte: from, lt: to } },
+      where: { accountId, deletedAt: null, checkInTime: { gte: from, lt: to } },
       select: { employeeId: true, checkInTime: true, checkOutTime: true, lateMinutes: true },
     });
 

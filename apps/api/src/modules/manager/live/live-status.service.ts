@@ -165,7 +165,7 @@ export class LiveStatusService {
         },
       }),
       this.prisma.client.hrAttendance.findMany({
-        where: { accountId, checkInTime: { gte: dayStart } },
+        where: { accountId, deletedAt: null, checkInTime: { gte: dayStart } },
         select: {
           checkInTime: true,
           lateMinutes: true,

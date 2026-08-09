@@ -80,7 +80,7 @@ export class HrMonitoringService {
     });
 
     const records = await this.prisma.client.hrAttendance.findMany({
-      where: { accountId, checkInTime: { gte: dayStart, lt: dayEnd } },
+      where: { accountId, deletedAt: null, checkInTime: { gte: dayStart, lt: dayEnd } },
       select: {
         id: true,
         employeeId: true,
@@ -153,7 +153,7 @@ export class HrMonitoringService {
     const toEnd = new Date(toStart.getTime() + DAY_MS);
 
     const rows = await this.prisma.client.hrAttendance.findMany({
-      where: { accountId, employeeId, checkInTime: { gte: fromStart, lt: toEnd } },
+      where: { accountId, employeeId, deletedAt: null, checkInTime: { gte: fromStart, lt: toEnd } },
       select: {
         id: true,
         checkInTime: true,

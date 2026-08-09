@@ -95,7 +95,11 @@ export class AttendanceNotifyService {
           if (sched?.isDayOff) continue;
 
           const att = await this.prisma.client.hrAttendance.findFirst({
-            where: { employeeId: emp.id, checkInTime: { gte: dayStart, lt: dayEnd } },
+            where: {
+              employeeId: emp.id,
+              deletedAt: null,
+              checkInTime: { gte: dayStart, lt: dayEnd },
+            },
             orderBy: { checkInTime: 'asc' },
             select: { checkInTime: true, lateMinutes: true },
           });

@@ -170,6 +170,7 @@ export class HrAttendanceNotifier {
       where: {
         accountId,
         employeeId,
+        deletedAt: null,
         checkInTime: { gte: dayStart, lt: dayEnd },
       },
       select: { checkInTime: true, checkOutTime: true },

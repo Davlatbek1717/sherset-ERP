@@ -210,3 +210,42 @@ describe('LateFineService.syncForAttendance (HR-3)', () => {
     expect(prisma.client.hrBonusFineLog.deleteMany).toHaveBeenCalled();
   });
 });
+
+/**
+ * HR-13 (Faza Q7) — davomat qatori O'CHIRILGANDA jarima ham ketishi kerak.
+ * `HrBonusFineLog.attendanceId` xom FK (relation/cascade YO'Q) ⇒ o'chirilgan
+ * davomatning `auto_late` jarimasi hech kim ko'rmaydigan holda oylikdan pul
+ * ushlab turaverardi.
+ */
+describe('LateFineService.stornoForAttendance (HR-13)', () => {
+  let prisma: ReturnType<typeof makePrisma>;
+  let svc: LateFineService;
+
+  beforeEach(() => {
+    prisma = makePrisma();
+    svc = new LateFineService(prisma as never);
+  });
+
+  it('faqat auto_late qatorini o`chiradi (qo`lda kiritilgan jarima tegilmaydi)', async () => {
+    await svc.stornoForAttendance(ACC, 'att-1');
+    const del = prisma.client.hrBonusFineLog.deleteMany.mock.calls[0]?.[0] as {
+      where: { accountId: string; attendanceId: string; source: string };
+    };
+    expect(del.where).toMatchObject({
+      accountId: ACC,
+      attendanceId: 'att-1',
+      source: 'auto_late',
+    });
+  });
+
+  it('konfiguratsiyani umuman o`qimaydi — storno shartsiz', async () => {
+    await svc.stornoForAttendance(ACC, 'att-1');
+    expect(prisma.client.hrAttendanceNotifyConfig.findUnique).not.toHaveBeenCalled();
+    expect(prisma.client.hrBonusFineLog.deleteMany).toHaveBeenCalledTimes(1);
+  });
+
+  it('qator bo`lmasa ham xato bermaydi (idempotent)', async () => {
+    prisma.client.hrBonusFineLog.deleteMany.mockResolvedValue({ count: 0 } as never);
+    await expect(svc.stornoForAttendance(ACC, 'att-1')).resolves.toBeUndefined();
+  });
+});

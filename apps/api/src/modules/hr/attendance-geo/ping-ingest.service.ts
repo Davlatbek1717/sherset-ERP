@@ -176,6 +176,7 @@ export class HrPingIngestService {
       where: {
         accountId,
         employeeId,
+        deletedAt: null,
         checkInTime: { gte: dayStart, lt: dayEnd },
         checkOutTime: null,
       },
@@ -215,7 +216,7 @@ export class HrPingIngestService {
     } else if (decision === 'KETDI' && openRecord) {
       // Atomic close — only one worker wins the race (mirror hr-deadline-expire).
       const closed = await this.prisma.client.hrAttendance.updateMany({
-        where: { id: openRecord.id, checkOutTime: null },
+        where: { id: openRecord.id, checkOutTime: null, deletedAt: null },
         data: { checkOutTime: now, checkOutLat: dto.lat, checkOutLng: dto.lng },
       });
       attendance = {
@@ -273,6 +274,7 @@ export class HrPingIngestService {
       where: {
         accountId,
         employeeId,
+        deletedAt: null,
         checkInTime: { gte: dayStart, lt: dayEnd },
         checkOutTime: null,
       },
@@ -341,6 +343,7 @@ export class HrPingIngestService {
       where: {
         accountId,
         employeeId,
+        deletedAt: null,
         checkInTime: { gte: dayStart, lt: dayEnd },
         checkOutTime: null,
       },
@@ -350,7 +353,7 @@ export class HrPingIngestService {
     if (!openRecord) return manualBenign('no_open_record');
 
     const closed = await this.prisma.client.hrAttendance.updateMany({
-      where: { id: openRecord.id, checkOutTime: null },
+      where: { id: openRecord.id, checkOutTime: null, deletedAt: null },
       data: { checkOutTime: now, checkOutLat: dto.lat, checkOutLng: dto.lng },
     });
     if (closed.count > 0) {

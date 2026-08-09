@@ -43,7 +43,7 @@ export class HrDavomatAutoCheckoutCron {
     const dayEnd = new Date(dayStart.getTime() + DAY_MS);
 
     const open = await this.prisma.client.hrAttendance.findMany({
-      where: { checkOutTime: null, checkInTime: { gte: dayStart, lt: dayEnd } },
+      where: { checkOutTime: null, deletedAt: null, checkInTime: { gte: dayStart, lt: dayEnd } },
       select: { id: true, employeeId: true, checkInTime: true },
       take: HrDavomatAutoCheckoutCron.MAX_PER_TICK,
     });
@@ -62,7 +62,7 @@ export class HrDavomatAutoCheckoutCron {
         checkOut = endUtc < now ? endUtc : now;
       }
       const upd = await this.prisma.client.hrAttendance.updateMany({
-        where: { id: rec.id, checkOutTime: null },
+        where: { id: rec.id, checkOutTime: null, deletedAt: null },
         data: { checkOutTime: checkOut, autoClosed: true },
       });
       if (upd.count > 0) closed++;

@@ -312,6 +312,7 @@ export class DailyKpiDrilldownService {
       where: {
         accountId: c.accountId,
         employeeId: c.employeeId,
+        deletedAt: null,
         checkInTime: { gte: c.from, lt: c.to },
       },
       select: {

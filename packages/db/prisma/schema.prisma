@@ -9338,6 +9338,14 @@ model HrAttendance {
   workLocationId  String? @map("work_location_id") @db.Uuid // raw FK, no relation (mirror Employee.groupId)
   autoClosed      Boolean @default(false) @map("auto_closed") // closed by nightly cron (departure not seen)
 
+  /// HR-13 (Faza Q7) — soft-delete. `delete()` ilgari HARD-delete qilardi:
+  /// davomat tarixi izsiz yo'qolardi va undan kelib chiqqan `auto_late` jarima
+  /// (`HrBonusFineLog.attendanceId` — xom FK, cascade YO'Q) yetim qolib
+  /// oylikdan pul ushlab turaverardi. Endi qator qoladi, HAMMA o'quvchi
+  /// `deletedAt: null` bilan filtrlaydi (klass-lock: `hr-attendance-soft-delete-class.test.ts`).
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz()
+  deletedById String?   @map("deleted_by_id") @db.Uuid // raw FK, no relation (mirror workLocationId)
+
   account  Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
   employee Employee  @relation("HrAttendanceEmployee", fields: [employeeId], references: [id])
   editedBy Employee? @relation("HrAttendanceEditor", fields: [editedById], references: [id])

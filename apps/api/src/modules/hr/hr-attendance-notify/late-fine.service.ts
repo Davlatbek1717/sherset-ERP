@@ -91,10 +91,7 @@ export class LateFineService {
     const amount = await this.targetAmount(i.accountId, i.lateMinutes);
 
     if (amount === 0n) {
-      // `deleteMany` — qator bo'lmasa ham xato bermaydi (idempotent storno).
-      await this.prisma.client.hrBonusFineLog.deleteMany({
-        where: { attendanceId: i.attendanceId, source: 'auto_late' },
-      });
+      await this.stornoForAttendance(i.accountId, i.attendanceId);
       return 0n;
     }
 
@@ -118,5 +115,24 @@ export class LateFineService {
       },
     });
     return amount;
+  }
+
+  /**
+   * HR-13 (Faza Q7) — davomat qatori O'CHIRILGANDA avto-jarimani so'zsiz olib
+   * tashlaydi.
+   *
+   * `HrBonusFineLog.attendanceId` — xom FK (relation/cascade YO'Q), shuning
+   * uchun davomat yo'q bo'lgach jarima hech kim ko'rmaydigan holda oylikdan
+   * pul ushlab turaverardi. `syncForAttendance`ning nol-shoxidan ajratilgan:
+   * bu yerda konfiguratsiya umuman o'qilmaydi — o'chirilgan davomatning
+   * jarimasi konfiguratsiya holatidan qat'i nazar ketishi kerak.
+   *
+   * `deleteMany` — qator bo'lmasa ham xato bermaydi (idempotent storno).
+   * Faqat `auto_late` qatoriga tegadi: qo'lda kiritilgan jarima saqlanadi.
+   */
+  async stornoForAttendance(accountId: string, attendanceId: string): Promise<void> {
+    await this.prisma.client.hrBonusFineLog.deleteMany({
+      where: { accountId, attendanceId, source: 'auto_late' },
+    });
   }
 }

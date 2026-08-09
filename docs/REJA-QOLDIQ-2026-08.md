@@ -70,7 +70,10 @@ foydalanuvchi bilan birga bajariladi (`/deploy` skill + shu ro'yxat):
    `prisma db execute --file`: jurnal-jadval + `doc_id` nullable · gateway `@@unique` (avval dublikat
    tekshir!) · dashboard indekslari (past yuklamada) · `move_positions.base_cost_minor` ·
    `debt_payments.exchange_rate` ×10⁴→×10⁸ · `retail_sales.debt_return_minor` ·
-   **`demand_positions.base_cost_minor`** (Faza Q4 — busiz deploy API'ni yiqitadi).
+   **`demand_positions.base_cost_minor`** (Faza Q4 — busiz deploy API'ni yiqitadi) ·
+   **`hr_attendance.deleted_at` + `hr_attendance.deleted_by_id`** (Faza Q7 — busiz HR davomat
+   endpointlari yiqiladi; migratsiya `20260809230000_hr_attendance_soft_delete`, ikkala ustun
+   nullable/defaultsiz ⇒ jadval qayta yozilmaydi).
 6. **🔴 Telegram webhook** (Faza 21 DEPLOY-BLOKER): deploydan keyin har akkaunt uchun
    `POST /telegram/config/webhook` — aks holda inbound Telegram (jonli supply-approval tugmalari)
    TO'XTAYDI. Tekshir: `businessStatus.webhookSecretSet === true`.
@@ -261,7 +264,7 @@ ko'rinmaydi. (3) delete'da auto_late jarima storno bo'ladi.
 > `docs/REJA-QOLDIQ-2026-08.md` — **Faza Q7**. O'ZGARMAS QOIDALAR. Faza 29a hisoboti «29b» bandini o'qi
 > (retsept + migratsiya gotcha'lari yozilgan). Soft-delete + audit + o'quvchi-filtrlar + jarima-storno.
 > TDD: 3 stsenariy. Gate + migrate. Hisobot, TO'XTA.
-**◻ HISOBOT:** _(agent to'ldiradi)_
+**☑ HISOBOT (2026-08-09):** BAJARILDI — batafsili «HISOBOT JURNALI → Faza Q7» da.
 
 ---
 
@@ -1293,3 +1296,164 @@ Ish daraxtida faqat foydalanuvchining untracked fayllari bor edi (`qabullar-amal
 Q1–Q5 yozuvlariga TEGILMADI. `git add` faqat aniq yo'llar bilan.
 
 **Commit:** `fix(report): faza q6 — akt-sverka davr-filtri + saldo-forward (PERF-02)`
+
+---
+
+## Faza Q7 — HrAttendance soft-delete + audit + yetim-jarima (`HR-13`, asl reja 29b)
+
+**Sana:** 2026-08-09 · **Status:** ✅ BAJARILDI — **Phase-1: strukturaviy + unit-tasdiqlangan,
+browser-smoke YO'Q** (CLAUDE.md §1). Runtime-QA HR cohortiga qoladi.
+
+### 1. Da'volar HEAD kodida tasdiqlandi (CLAUDE.md §2)
+
+Faza 29a hisobotining «◻ 29b» bloki uch band yozgan edi; uchalasi ham **o'z ko'zim bilan** qayta
+tekshirildi (hisobot yozilganidan beri kod o'zgarmagan, faqat satr raqamlari siljigan):
+
+| 29a da'vosi | HEAD dagi holat | Tasdiq |
+|---|---|---|
+| `HrAttendance` da soft-delete ustuni YO'Q | `schema.prisma:9319–9347` — `deletedAt`/`deletedById` yo'q (bor: `editedById`/`editedAt`) | ✔ tasdiqlandi |
+| `delete()` hard-delete, auditsiz | `hr-attendance.service.ts:256–263` — `findFirst` → `hrAttendance.delete({where:{id}})`, `auditLog` chaqiruvi yo'q | ✔ tasdiqlandi |
+| `HrBonusFineLog.attendanceId` xom FK ⇒ `auto_late` jarima yetim qoladi | `schema.prisma:9472` — `attendanceId String? @map("attendance_id") @db.Uuid`, `@relation`/cascade YO'Q; `@@unique([attendanceId, source])` bor | ✔ tasdiqlandi |
+| `LateFineService.syncForAttendance` mexanizmi tayyor (qayta ishlatilsin) | `late-fine.service.ts:90–121` — nol-shoxda `deleteMany({attendanceId, source:'auto_late'})` | ✔ tasdiqlandi, qayta ishlatildi |
+
+**Qo'shimcha o'lchov (grep, butun `apps/api/src`):** `hrAttendance.*` bo'yicha **23 o'quvchi** +
+**4 shartli yozuv** (`updateMany`) + **1 hard-delete** topildi. RED test aynan shu 23/4/1 ni
+ro'yxatladi (pastda) — ya'ni grep va test bir xil raqamga keldi.
+
+### 2. O'zgarishlar
+
+**(a) Migratsiya — `20260809230000_hr_attendance_soft_delete`**
+`packages/db/prisma/schema.prisma` (`HrAttendance`): `deletedAt DateTime? @map("deleted_at")` +
+`deletedById String? @map("deleted_by_id")`. `deletedById` — **xom FK, relation YO'Q** (ayni
+modeldagi `workLocationId` naqshi): `Employee`ga yangi back-relation qo'shish sxemaning boshqa
+joyiga tegishni talab qilardi, foyda esa yo'q (kim o'chirgani `auditLog.userId` da FK bilan turadi).
+
+Lokal DB (`climart_adopt @ localhost:5432`, `_prisma_migrations`-tracked EMAS) uchun xotira
+retsepti (`climart-adopt-local-db-untracked.md`, «2026-08-08 ENG SODDA YO'L»):
+`prisma db execute --file …` → **«Script executed successfully»** → `prisma migrate diff
+--from-schema-datasource --to-schema-datamodel --script` da `hr_attendance|deleted_at|deleted_by`
+bo'yicha **0 qator** (o'z obyektlarim uchun drift 0; diff'da qolgan narsa — oldindan mavjud
+`RenameIndex` shovqini, meniki emas, TEGILMADI) → `prisma generate` (99.8s).
+DDL ikkala ustun ham nullable/defaultsiz ⇒ prod'da jadval qayta yozilmaydi.
+
+**(b) `delete()` → soft-delete + audit + jarima storno**
+`apps/api/src/modules/hr/attendance/hr-attendance.service.ts`:
+- `findFirst({ id, accountId, deletedAt: null })` (+ `employee.name` — audit uchun snapshot);
+- **bitta shartli yozuv** `updateMany({ where:{ id, accountId, deletedAt: null }, data:{ deletedAt: new Date(), deletedById } })`,
+  `res.count === 0` ⇒ `NotFound` — ikki parallel o'chirish ikki audit qatori/ikki storno yozmaydi
+  (loyihadagi «atomic claim» naqshi);
+- `lateFine.stornoForAttendance(accountId, id)` — yetim jarima yopiladi;
+- `auditLog.create({ entity:'HrAttendance', entityId:id, action:'delete', userId:deletedById,
+  fieldChanges:{ employeeId, employeeName, checkInTime, checkOutTime, lateMinutes } })` — qator
+  endi ro'yxatlarda ko'rinmagani uchun **tarkibi audit ichida saqlanadi**. `try/catch` (best-effort)
+  — `hr-employee.service.ts:296` naqshi: audit yozuvi muvaffaqiyatli o'chirishni bekor qilmaydi.
+- `hr-attendance.controller.ts`: `svc.delete(user.accountId, id, user.sub)` — «kim o'chirdi» yoziladi.
+
+`apps/api/src/modules/hr/hr-attendance-notify/late-fine.service.ts`: yangi
+`stornoForAttendance(accountId, attendanceId)` — `syncForAttendance` ning nol-shoxidan **ajratilgan**
+(o'sha shox endi shuni chaqiradi, ya'ni dublikat mantiq yo'q). Farqi ataylab: storno
+**konfiguratsiyani umuman o'qimaydi** — o'chirilgan davomatning jarimasi `lateFineEnabled` holatidan
+qat'i nazar ketishi kerak. `where` ga `accountId` ham qo'shildi (ilgari faqat `attendanceId+source`).
+
+**(c) `deletedAt: null` filtri — 23 o'quvchi + 4 shartli yozuv (to'liq ro'yxat)**
+
+*O'quvchilar (23) — 12 fayl, 6 modul:*
+
+| # | Fayl:satr | Metod |
+|---|---|---|
+| 1–2 | `hr/attendance/hr-attendance.service.ts:58, 73` | `findMany` — `listToday`, `report` |
+| 3–7 | `hr/attendance/hr-attendance.service.ts:100, 148, 177, 201, 257` | `findFirst` — `checkIn` dublikat-guard, `checkOutByEmployee`, `checkOut`, `edit`, `delete` |
+| 8 | `hr/attendance-geo/attendance-notify.service.ts:97` | `findFirst` — kunlik Telegram digest |
+| 9 | `hr/attendance-geo/davomat-autocheckout.cron.ts:45` | `findMany` — tungi avto-yopish |
+| 10–12 | `hr/attendance-geo/davomat-report.service.ts:79, 112, 180` | `findMany` — oylik hisobot (+eksport shu orqali), `live` tablosi, dashboard |
+| 13 | `hr/attendance-geo/davomat-status.service.ts:45` | `findFirst` — xodim jonli statusi |
+| 14–15 | `hr/attendance-geo/monitoring.service.ts:82, 155` | `findMany` — monitoring ro'yxati + xodim tafsiloti |
+| 16–18 | `hr/attendance-geo/ping-ingest.service.ts:175, 272, 340` | `findFirst` — GPS ochiq-qator qidiruvi (3 yo'l) |
+| 19 | `hr/hr-attendance-notify/attendance-notifier.service.ts:169` | `findMany` — «ishlangan vaqt» yorlig'i |
+| 20 | `hr/hr-employee/employee-card.service.ts:67` | **`aggregate`** — xodim kartochkasi (oylik kechikish yig'indisi) |
+| 21 | `manager/kpi/daily-kpi-drilldown.service.ts:311` | `findMany` — KPI drilldown «davomat» |
+| 22 | `manager/kpi/employee-daily-kpi.service.ts:375` | `findMany` — kunlik KPI davomat-metrikasi |
+| 23 | `manager/live/live-status.service.ts:167` | `findMany` — direktor jonli paneli |
+
+*Shartli yozuvlar (4) — soft-delete qilingan qator fon-jarayonlar tomonidan yopilmasligi uchun:*
+`hr-attendance.service.ts:161` (`checkOutByEmployee`) · `davomat-autocheckout.cron.ts:64` (tungi cron) ·
+`ping-ingest.service.ts:219, 355` (GPS ketish).
+
+`update({where:{id}})` chaqiruvlari (`checkOut`, `edit`) ATAYLAB tegilmadi — Prisma'da unique-`where`
+talab qilinadi va ikkalasi ham allaqachon filtrlangan `findFirst` dan keyin keladi.
+
+**Xom SQL yo'q:** `apps/api/src` da `hr_attendance` ga `$queryRaw`/`$executeRaw` chaqiruvi
+umuman topilmadi (grep) ⇒ filtrsiz qolgan «ko'rinmas» o'quvchi yo'q.
+
+**FE:** `apps/web/src/lib/hr-api.ts:348` — `remove: (id) => api.delete<{ ok: true }>(...)`.
+Javob shakli **o'zgarmadi** (`{ ok: true }`) ⇒ FE tegilmadi, yangi UI-matn yo'q ⇒ i18n gate kerak emas.
+
+### 3. Testlar (TDD — RED jonli o'lchandi)
+
+**Yangi klass-lock:** `apps/api/src/modules/hr/attendance/hr-attendance-soft-delete-class.test.ts`
+(`transition-toctou-class.test.ts` naqshi). Fayl tizimidan hosil qilingan skan: butun `apps/api/src`
+bo'yicha har `hrAttendance.<o'quvchi-metod>(` chaqiruvining argument bloki qavs-balansi bilan
+kesib olinadi va `deletedAt` borligi talab qilinadi. **Filtrsiz yangi o'quvchi qo'shilgan kuni
+test qizaradi** — «bitta o'quvchi qolib ketdi» bug-klassiga qarshi yagona doimiy himoya.
+4 tekshiruv: (1) skan buzilmagani (≥23 sayt, ≥4 modul — vakuum emas), (2) har o'quvchida filtr,
+(3) har shartli yozuvda filtr, (4) daraxtda **hech qayerda hard-delete yo'q**.
+
+**RED (o'lchandi, fix'dan OLDIN):** `14 failed | 32 passed (46)`, 3 fayl qizil.
+Klass-lock aynan **23 filtrsiz o'quvchi**, **4 filtrsiz `updateMany`**, **1 hard-delete**
+(`hr-attendance.service.ts:261`) ro'yxatini chiqardi — grep bilan olingan raqam bilan mos.
+Qolgan qizillar: `stornoForAttendance is not a function` (3), `delete` soft emas edi (5),
+`listToday/report/checkIn` filtrsiz (3).
+
+**GREEN (fix'dan keyin, o'sha uchta fayl):** `46 passed (46)` — 0 qizil.
+
+Reja so'ragan 3 stsenariy + qo'shimchalar: soft-delete + `deletedById` · audit qatori (kim/nima) ·
+`auto_late` storno · `NotFound` (allaqachon o'chirilgan) · poyga yutqazilsa (`count 0`) audit ham
+storno ham YO'Q · `delete/listToday/report/checkIn` da `deletedAt: null` · `stornoForAttendance`
+faqat `auto_late` ga tegadi / konfiguratsiyani o'qimaydi / idempotent.
+
+### 4. Gate (jonli, hammasi shu sessiyada yugurtirildi)
+
+| Gate | Natija |
+|---|---|
+| `pnpm --filter @moysklad/api typecheck` | **0 xato** |
+| `pnpm --filter @moysklad/db typecheck` | **0 xato** |
+| `pnpm lint:product` | **0 error** (747 warning — siyosat bo'yicha ruxsat). Birinchi yugurishda 1 `format` xatosi chiqdi (`attendance-notify.service.ts`) → `biome format --write` bilan tuzatildi. |
+| `vitest run src/modules/hr src/modules/manager` | **102 fayl / 1097 test yashil** |
+| To'liq suite, 3 shard | 1/3: **1876** · 2/3: **1779** · 3/3: **2064 (+2 skipped)** ⇒ **jami 5719 passed / 2 skipped** |
+
+Baza Q6 dan keyin **5704 passed / 2 skipped** edi ⇒ **+15 test**, regress **0**.
+
+### 5. Qolgan qarz / DEFER
+
+1. **🔴 PROD DDL (deploy-bloker)** — `hr_attendance.deleted_at` + `hr_attendance.deleted_by_id`
+   OPS-QADAMLAR 5-bandiga qo'shildi. Prod (`sherset_v2`) sxema-drift tufayli `migrate deploy`
+   ishlamaydi ⇒ qo'lda `prisma db execute --file`. **Busiz deploydan keyin HR davomat
+   endpointlari (`/hr/attendance/*`, monitoring, KPI, jonli panel) darhol yiqiladi** — ustunlar
+   endi HAR o'quvchining `where` ida.
+2. **Tarixiy yetim jarimalar tozalanmadi** — bu fazadan OLDIN hard-delete qilingan davomatlarning
+   `auto_late` jarimalari prod'da hamon `HrBonusFineLog` da (mavjud bo'lmagan `attendance_id` ga
+   ishora qiladi) va oylikdan pul ushlab turibdi. Kod ularni yechmaydi (retroaktiv emas).
+   Retsept: `DELETE FROM hr_bonus_fine_log l WHERE l.source='auto_late' AND l.attendance_id IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM hr_attendance a WHERE a.id = l.attendance_id);` — avval `SELECT`
+   bilan o'lchash, keyin foydalanuvchi qarori bilan. Ops-sessiya ishi, kod fazasi emas.
+3. **O'chirilgan qatorlarni ko'rish/tiklash UI YO'Q** — `deletedAt` faqat filtr sifatida ishlaydi;
+   «savatcha» ekrani yoki `restore()` endpointi yozilmadi (reja so'ramagan). Audit jurnalidan
+   (`entity='HrAttendance'`) kim/qachon ko'rinadi.
+4. **`HrBonusFineLog.attendanceId` hamon xom FK** — cascade/relation qo'shilmadi (yana migratsiya +
+   mavjud yetim qatorlar tufayli FK yaratilmasligi mumkin). Yetimlik endi *kod* darajasida
+   yopiq (`delete()` storno qiladi), *DB* darajasida emas.
+5. **Indeks qo'shilmadi** — o'quvchilar mavjud `(account_id, employee_id, check_in_time DESC)`
+   indeksidan foydalanadi, `deleted_at IS NULL` esa filtr sifatida qo'llanadi. Davomat jadvali
+   kichik; partial indeks kerak bo'lsa — o'lchovdan keyin, alohida qaror.
+6. **Browser-smoke YO'Q** — HR davomat sahifasi (o'chirish tugmasi → qator ro'yxatdan ketadimi,
+   oylik hisobot/eksport/monitoring o'zgardimi) Phase-2 QA cohortiga qoladi.
+
+### Parallel sessiya sharoiti (CLAUDE.md §6)
+
+Ish daraxtida faqat foydalanuvchining o'z fayllari bor edi (`todo.md` (M), `qabullar-amallar-royxati.txt`,
+`*.xlsx`, `chek.png`, `SAYT-PROMPT.txt`, `docs/REJA-8-BOLIM-2026-08.md`, `docs/audits/…`,
+`scratchpad/`) — HECH BIRIGA TEGILMADI, `git add` faqat aniq yo'llar bilan. Migratsiya (§6.4 umumiy
+resurs) yolg'iz sessiyada qo'llandi. Bu yozuv faylga **append** bilan qo'shildi —
+**marker-kesish YO'Q** (`doc-append-marker-truncation` xotirasi), Q1–Q6 yozuvlariga TEGILMADI.
+
+**Commit:** `fix(hr): faza q7 — hrattendance soft-delete + audit + jarima storno (HR-13)`

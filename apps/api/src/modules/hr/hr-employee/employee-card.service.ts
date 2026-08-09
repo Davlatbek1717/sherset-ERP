@@ -65,7 +65,7 @@ export class EmployeeCardService {
       }),
       // Joriy oy davomati — kechikishlar naqshi shu yerdan ko'rinadi.
       this.prisma.client.hrAttendance.aggregate({
-        where: { accountId, employeeId, checkInTime: { gte: monthStart } },
+        where: { accountId, employeeId, deletedAt: null, checkInTime: { gte: monthStart } },
         _count: { _all: true },
         _sum: { lateMinutes: true },
       }),

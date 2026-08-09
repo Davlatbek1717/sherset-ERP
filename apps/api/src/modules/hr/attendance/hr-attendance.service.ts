@@ -58,6 +58,7 @@ export class HrAttendanceService {
     return this.prisma.client.hrAttendance.findMany({
       where: {
         accountId,
+        deletedAt: null,
         checkInTime: { gte: dayStart, lt: dayEnd },
       },
       include: { employee: { select: { id: true, name: true, hrRoles: true } } },
@@ -73,6 +74,7 @@ export class HrAttendanceService {
     return this.prisma.client.hrAttendance.findMany({
       where: {
         accountId,
+        deletedAt: null,
         checkInTime: { gte: dayStart, lt: dayEnd },
         ...(filter.employeeId && { employeeId: filter.employeeId }),
       },
@@ -100,6 +102,7 @@ export class HrAttendanceService {
     const existing = await this.prisma.client.hrAttendance.findFirst({
       where: {
         accountId,
+        deletedAt: null,
         employeeId: input.employeeId,
         checkInTime: { gte: dayStart, lt: dayEnd },
       },
@@ -148,6 +151,7 @@ export class HrAttendanceService {
     const open = await this.prisma.client.hrAttendance.findFirst({
       where: {
         accountId,
+        deletedAt: null,
         employeeId: input.employeeId,
         checkInTime: { gte: dayStart, lt: dayEnd },
         checkOutTime: null,
@@ -159,7 +163,7 @@ export class HrAttendanceService {
       throw new BadRequestException("Ketish vaqti kelishdan oldin bo'la olmaydi");
     }
     const res = await this.prisma.client.hrAttendance.updateMany({
-      where: { id: open.id, checkOutTime: null },
+      where: { id: open.id, checkOutTime: null, deletedAt: null },
       data: { checkOutTime: at, ...(input.notes !== undefined ? { notes: input.notes } : {}) },
     });
     if (res.count === 0) throw new BadRequestException('Ochiq davomat yozuvi topilmadi');
@@ -175,7 +179,7 @@ export class HrAttendanceService {
   /** Mark check-out on an existing attendance row. */
   async checkOut(accountId: string, id: string) {
     const row = await this.prisma.client.hrAttendance.findFirst({
-      where: { id, accountId },
+      where: { id, accountId, deletedAt: null },
     });
     if (!row) throw new NotFoundException('Davomat yozuvi topilmadi');
     if (row.checkOutTime) {
@@ -199,7 +203,7 @@ export class HrAttendanceService {
   /** Edit attendance (admin only — controller-level guard). */
   async edit(accountId: string, id: string, editorId: string, input: EditAttendanceInput) {
     const row = await this.prisma.client.hrAttendance.findFirst({
-      where: { id, accountId },
+      where: { id, accountId, deletedAt: null },
     });
     if (!row) throw new NotFoundException('Davomat yozuvi topilmadi');
 
@@ -253,12 +257,56 @@ export class HrAttendanceService {
     return updated;
   }
 
-  async delete(accountId: string, id: string) {
+  /**
+   * HR-13 (Faza Q7) — SOFT-delete + audit izi + avto-jarima storno.
+   *
+   * Ilgari bu HARD-delete edi va hech qanday audit yozmasdi: (a) kim qaysi
+   * davomatni o'chirganini keyin aniqlab bo'lmasdi, (b)
+   * `HrBonusFineLog.attendanceId` xom FK bo'lgani uchun (relation/cascade
+   * YO'Q) o'sha check-in'dan kelib chiqqan `auto_late` jarima YETIM qolib
+   * oylikdan pul ushlab turaverardi.
+   *
+   * O'chirish bitta SHARTLI yozuv bilan da'vo qilinadi (`deletedAt: null`) —
+   * ikki parallel o'chirish ikki audit qatori/ikki storno yozmaydi.
+   */
+  async delete(accountId: string, id: string, deletedById?: string) {
     const row = await this.prisma.client.hrAttendance.findFirst({
-      where: { id, accountId },
+      where: { id, accountId, deletedAt: null },
+      include: { employee: { select: { id: true, name: true } } },
     });
     if (!row) throw new NotFoundException('Davomat yozuvi topilmadi');
-    await this.prisma.client.hrAttendance.delete({ where: { id } });
+
+    const res = await this.prisma.client.hrAttendance.updateMany({
+      where: { id, accountId, deletedAt: null },
+      data: { deletedAt: new Date(), deletedById: deletedById ?? null },
+    });
+    // Poygada yutqazgan chaqiruv — qator allaqachon o'chirilgan.
+    if (res.count === 0) throw new NotFoundException('Davomat yozuvi topilmadi');
+
+    await this.lateFine.stornoForAttendance(accountId, id);
+
+    // Qator ko'rinmay ketgani uchun tarkibi audit ichida saqlanadi.
+    try {
+      await this.prisma.client.auditLog.create({
+        data: {
+          accountId,
+          userId: deletedById ?? null,
+          entity: 'HrAttendance',
+          entityId: id,
+          action: 'delete',
+          fieldChanges: {
+            employeeId: { before: row.employeeId, after: null },
+            employeeName: { before: row.employee.name, after: null },
+            checkInTime: { before: row.checkInTime.toISOString(), after: null },
+            checkOutTime: { before: row.checkOutTime?.toISOString() ?? null, after: null },
+            lateMinutes: { before: row.lateMinutes, after: null },
+          },
+        },
+      });
+    } catch {
+      // best-effort — o'chirishning o'zi allaqachon muvaffaqiyatli (hr-employee naqshi)
+    }
+
     return { ok: true };
   }
 }

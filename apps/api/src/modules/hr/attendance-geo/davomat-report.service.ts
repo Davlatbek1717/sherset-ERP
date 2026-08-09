@@ -77,7 +77,12 @@ export class HrDavomatReportService {
     const out: MonthlyEmployeeReport[] = [];
     for (const emp of employees) {
       const attendance = await this.prisma.client.hrAttendance.findMany({
-        where: { accountId, employeeId: emp.id, checkInTime: { gte: monthStart, lt: monthEnd } },
+        where: {
+          accountId,
+          employeeId: emp.id,
+          deletedAt: null,
+          checkInTime: { gte: monthStart, lt: monthEnd },
+        },
         select: { checkInTime: true, checkOutTime: true, lateMinutes: true },
         orderBy: { checkInTime: 'asc' },
       });
@@ -110,7 +115,7 @@ export class HrDavomatReportService {
     const weekday = tashkentWeekday(now);
 
     const records = await this.prisma.client.hrAttendance.findMany({
-      where: { accountId, checkInTime: { gte: dayStart, lt: dayEnd } },
+      where: { accountId, deletedAt: null, checkInTime: { gte: dayStart, lt: dayEnd } },
       include: { employee: { select: { id: true, name: true } } },
       orderBy: { checkInTime: 'asc' },
     });
@@ -178,7 +183,7 @@ export class HrDavomatReportService {
     });
 
     const records = await this.prisma.client.hrAttendance.findMany({
-      where: { accountId, checkInTime: { gte: dayStart, lt: dayEnd } },
+      where: { accountId, deletedAt: null, checkInTime: { gte: dayStart, lt: dayEnd } },
       select: {
         employeeId: true,
         checkInTime: true,

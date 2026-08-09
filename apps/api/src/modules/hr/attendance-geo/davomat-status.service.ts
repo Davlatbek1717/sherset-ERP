@@ -43,7 +43,7 @@ export class HrDavomatStatusService {
       select: { startTime: true, endTime: true, isDayOff: true },
     });
     const today = await this.prisma.client.hrAttendance.findFirst({
-      where: { accountId, employeeId, checkInTime: { gte: dayStart, lt: dayEnd } },
+      where: { accountId, employeeId, deletedAt: null, checkInTime: { gte: dayStart, lt: dayEnd } },
       orderBy: { checkInTime: 'desc' },
       select: {
         checkInTime: true,

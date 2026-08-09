@@ -76,6 +76,7 @@ export class HrAttendanceController {
   @Delete(':id')
   @RequireHrPermission('employees', 'full')
   async remove(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
-    return this.svc.delete(user.accountId, id);
+    // HR-13 — soft-delete audit izi «kim o'chirdi»ni yozadi.
+    return this.svc.delete(user.accountId, id, user.sub);
   }
 }

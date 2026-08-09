@@ -16,6 +16,10 @@ function makePrisma() {
       employee: {
         findFirst: vi.fn(),
       },
+      // HR-13 (Faza Q7) — soft-delete audit izi.
+      auditLog: {
+        create: vi.fn().mockResolvedValue({ id: 'al-1' }),
+      },
     },
   };
 }
@@ -26,7 +30,11 @@ function makeEmitter() {
 
 /** HR-3 — davomat tahriridan keyin avto-jarimani moslovchi bog'liqlik. */
 function makeLateFine() {
-  return { syncForAttendance: vi.fn().mockResolvedValue(0n) };
+  return {
+    syncForAttendance: vi.fn().mockResolvedValue(0n),
+    // HR-13 (Faza Q7) — o'chirilgan davomatning avto-jarimasini storno qiladi.
+    stornoForAttendance: vi.fn().mockResolvedValue(undefined),
+  };
 }
 
 describe('HrAttendanceService', () => {
@@ -204,14 +212,169 @@ describe('HrAttendanceService', () => {
     expect(prisma.client.hrAttendance.update).not.toHaveBeenCalled();
   });
 
-  it('delete: success removes row', async () => {
-    prisma.client.hrAttendance.findFirst.mockResolvedValue({ id: 'a1' } as never);
-    prisma.client.hrAttendance.delete.mockResolvedValue({} as never);
+  it('delete: success soft-deletes the row (hard delete never issued)', async () => {
+    prisma.client.hrAttendance.findFirst.mockResolvedValue({
+      id: 'a1',
+      employeeId: 'emp-1',
+      checkInTime: new Date('2026-05-20T04:00:00Z'),
+      checkOutTime: null,
+      lateMinutes: 0,
+      employee: { id: 'emp-1', name: 'Aziz Karimov' },
+    } as never);
+    prisma.client.hrAttendance.updateMany.mockResolvedValue({ count: 1 } as never);
 
-    const result = await service.delete('acc1', 'a1');
+    const result = await service.delete('acc1', 'a1', 'admin-1');
 
-    expect(prisma.client.hrAttendance.delete).toHaveBeenCalledWith({ where: { id: 'a1' } });
+    expect(prisma.client.hrAttendance.delete).not.toHaveBeenCalled();
+    const call = prisma.client.hrAttendance.updateMany.mock.calls[0]?.[0] as {
+      where: Record<string, unknown>;
+      data: { deletedAt: Date; deletedById: string | null };
+    };
+    expect(call.where).toMatchObject({ id: 'a1', accountId: 'acc1', deletedAt: null });
+    expect(call.data.deletedAt).toBeInstanceOf(Date);
+    expect(call.data.deletedById).toBe('admin-1');
     expect(result).toEqual({ ok: true });
+  });
+});
+
+/**
+ * HR-13 (Faza Q7) — `delete()` HARD-delete + auditsiz edi va
+ * `HrBonusFineLog.attendanceId` xom FK bo'lgani uchun undan kelib chiqqan
+ * `auto_late` jarima YETIM qolib oylikdan pul ushlab turaverardi.
+ */
+describe('HrAttendanceService.delete — soft-delete + audit + jarima storno (HR-13)', () => {
+  let prisma: ReturnType<typeof makePrisma>;
+  let lateFine: ReturnType<typeof makeLateFine>;
+  let service: HrAttendanceService;
+
+  const ROW = {
+    id: 'a1',
+    employeeId: 'emp-1',
+    checkInTime: new Date('2026-05-20T05:00:00Z'),
+    checkOutTime: new Date('2026-05-20T13:00:00Z'),
+    lateMinutes: 60,
+    employee: { id: 'emp-1', name: 'Aziz Karimov' },
+  };
+
+  beforeEach(() => {
+    prisma = makePrisma();
+    lateFine = makeLateFine();
+    service = new HrAttendanceService(
+      prisma as never,
+      { emit: vi.fn() } as never,
+      lateFine as never,
+    );
+    prisma.client.hrAttendance.findFirst.mockResolvedValue(ROW as never);
+    prisma.client.hrAttendance.updateMany.mockResolvedValue({ count: 1 } as never);
+  });
+
+  it('audit qatori yoziladi (kim, qachon, qaysi qator)', async () => {
+    await service.delete('acc1', 'a1', 'admin-1');
+
+    const audit = prisma.client.auditLog.create.mock.calls[0]?.[0] as {
+      data: {
+        accountId: string;
+        userId: string | null;
+        entity: string;
+        entityId: string;
+        action: string;
+        fieldChanges?: Record<string, { before?: unknown; after?: unknown }>;
+      };
+    };
+    expect(audit.data).toMatchObject({
+      accountId: 'acc1',
+      userId: 'admin-1',
+      entity: 'HrAttendance',
+      entityId: 'a1',
+      action: 'delete',
+    });
+    // Qator o'chib ketgani uchun tarkibi audit ichida saqlanadi.
+    expect(audit.data.fieldChanges?.employeeId?.before).toBe('emp-1');
+    expect(audit.data.fieldChanges?.lateMinutes?.before).toBe(60);
+  });
+
+  it('auto_late jarima STORNO qilinadi (yetim jarima qolmaydi)', async () => {
+    await service.delete('acc1', 'a1', 'admin-1');
+    expect(lateFine.stornoForAttendance).toHaveBeenCalledWith('acc1', 'a1');
+  });
+
+  it("allaqachon o'chirilgan qator topilmaydi (NotFound, ikkinchi yozuv yo'q)", async () => {
+    prisma.client.hrAttendance.findFirst.mockResolvedValue(null as never);
+    await expect(service.delete('acc1', 'a1', 'admin-1')).rejects.toThrow(NotFoundException);
+    expect(prisma.client.hrAttendance.updateMany).not.toHaveBeenCalled();
+    expect(lateFine.stornoForAttendance).not.toHaveBeenCalled();
+    expect(prisma.client.auditLog.create).not.toHaveBeenCalled();
+  });
+
+  it('poyga yutqazilsa (count 0) audit ham storno ham yozilmaydi', async () => {
+    prisma.client.hrAttendance.updateMany.mockResolvedValue({ count: 0 } as never);
+    await expect(service.delete('acc1', 'a1', 'admin-1')).rejects.toThrow(NotFoundException);
+    expect(lateFine.stornoForAttendance).not.toHaveBeenCalled();
+    expect(prisma.client.auditLog.create).not.toHaveBeenCalled();
+  });
+
+  it("o'quvchi so'rovi o'chirilgan qatorni ko'rmaydi (findFirst deletedAt: null)", async () => {
+    await service.delete('acc1', 'a1', 'admin-1');
+    const call = prisma.client.hrAttendance.findFirst.mock.calls[0]?.[0] as {
+      where: Record<string, unknown>;
+    };
+    expect(call.where).toMatchObject({ id: 'a1', accountId: 'acc1', deletedAt: null });
+  });
+});
+
+/**
+ * HR-13 (Faza Q7) — o'chirilgan qator HECH BIR hisobot/agregatda ko'rinmasligi
+ * kerak. Servis-darajadagi ikki asosiy o'quvchi shu yerda, butun kod bazasi
+ * bo'yicha qamrov esa `hr-attendance-soft-delete-class.test.ts` da qulflangan.
+ */
+describe("HrAttendanceService o'quvchilari o'chirilgan qatorni chiqarmaydi (HR-13)", () => {
+  let prisma: ReturnType<typeof makePrisma>;
+  let service: HrAttendanceService;
+
+  beforeEach(() => {
+    prisma = makePrisma();
+    service = new HrAttendanceService(
+      prisma as never,
+      { emit: vi.fn() } as never,
+      makeLateFine() as never,
+    );
+    prisma.client.hrAttendance.findMany.mockResolvedValue([] as never);
+  });
+
+  function whereOf(callIndex = 0) {
+    return (
+      prisma.client.hrAttendance.findMany.mock.calls[callIndex]?.[0] as {
+        where: Record<string, unknown>;
+      }
+    ).where;
+  }
+
+  it('listToday: deletedAt: null', async () => {
+    await service.listToday('acc1');
+    expect(whereOf()).toMatchObject({ accountId: 'acc1', deletedAt: null });
+  });
+
+  it('report: deletedAt: null', async () => {
+    await service.report('acc1', {
+      dateFrom: new Date('2026-05-01T00:00:00Z'),
+      dateTo: new Date('2026-05-31T00:00:00Z'),
+    });
+    expect(whereOf()).toMatchObject({ accountId: 'acc1', deletedAt: null });
+  });
+
+  it("checkIn dublikat-tekshiruvi o'chirilgan qatorni hisobga olmaydi", async () => {
+    prisma.client.hrAttendance.findFirst.mockResolvedValue(null as never);
+    prisma.client.employee.findFirst.mockResolvedValue({
+      schedule: null,
+      workSchedules: [],
+    } as never);
+    prisma.client.hrAttendance.create.mockResolvedValue({ id: 'a1' } as never);
+
+    await service.checkIn('acc1', { employeeId: '11111111-1111-1111-1111-111111111111' });
+    const call = prisma.client.hrAttendance.findFirst.mock.calls[0]?.[0] as {
+      where: Record<string, unknown>;
+    };
+    expect(call.where).toMatchObject({ deletedAt: null });
   });
 });
 
