@@ -305,6 +305,27 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🚀 2026-08-09 — ✅ DEPLOYED (erp.sherset.uz / sherset-v2): `4944583 → d647250a`.**
+> Box **82 commit orqada** edi (fast-forward, diverging YO'Q) — Faza 32/33 va `q1–q7` ning
+> HAMMASI shu deploy bilan chiqdi, ya'ni yuqoridagi entry'lardagi «⏳ DEPLOY QILINMAGAN»
+> yorliqlari endi eskirgan. **15 migratsiya qo'llandi** (`_prisma_migrations` 190 → 205).
+> Backup: `/root/sherset-v2-backups/pre-deploy-d647250a-20260809-121944.sql.gz` (544MB,
+> `gzip -t` OK, 233 CREATE TABLE). Verifikatsiya: `erp.sherset.uz` 200 · `/login` 200 ·
+> `/supplies` 200 · API `/health` 200 · `/supplies`,`/demands`,`/driver-trips`,
+> `/counterparty-balances/:id` → 401 (tirik) · **2026-08-09 sanasida API stderr'da 0 xato**
+> (log'dagi `FST_ERR_DUPLICATED_ROUTE` — 2026-08-05 dan, deploy'dan OLDINGI).
+> Jonli bundle grep bilan tasdiqlandi (chunk ichida yangi tone-helper turibdi).
+> **⚠️ Hali ham browser-QA YO'Q** — bu HTTP+bundle darajasidagi verifikatsiya, vizual emas.
+>
+> **🔑 SSH bloker YOPILDI:** parol (`Namoz8808`) hamon O'LIK — paramiko ham, native `ssh` ham
+> rad etadi; host-kalitlar o'zgarmagan (server qayta qurilmagan, faqat kirish siyosati).
+> **Ishlaydigan yo'l = kalit:** `ssh -i ~/.ssh/sherset_deploy root@13.140.157.10`
+> (`sherset-deploy-20260808`, box'da o'rnatilgan). Parolni qayta so'ramang.
+>
+> **🗄️ DISK OGOHLANTIRISHI:** `/` **96% to'la, 4.6G bo'sh** (build'dan oldin 5.9G edi).
+> `/root/sherset-v2-backups` = 5.4G / 18 fayl — keyingi deploy'dan oldin eski backup'larni
+> tozalash kerak bo'ladi, aks holda `next build` joy yetmasligidan yiqilishi mumkin.
+>
 > **🕒 2026-08-09m (AUDIT-FIX FAZA 32 — FE auth-UX + POS i18n: refresh-dead redirect +
 > `/sotuv` va 3 POS dialogini i18n ga · `FE-07`, `FE-08`) · Phase-1: strukturaviy + unit,
 > RUNTIME-TASDIQLANMAGAN (browser-smoke YO'Q) · ⏳ DEPLOY QILINMAGAN · 🗄️ migratsiya SHART EMAS ·
