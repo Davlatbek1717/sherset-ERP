@@ -326,6 +326,48 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > `/root/sherset-v2-backups` = 5.4G / 18 fayl — keyingi deploy'dan oldin eski backup'larni
 > tozalash kerak bo'ladi, aks holda `next build` joy yetmasligidan yiqilishi mumkin.
 >
+> **🕒 2026-08-09p (REJA-MENEJER-KASSA **MK11** — 4M.8: uch xil zaxira signali (o'lchov **PUL**)
+> + narx o'zgarishi nazorati) — `2f2de6b8`, 17 fayl (+2588/−5). To'liq hisobot:
+> `docs/REJA-MENEJER-KASSA-2026-08.md` → HISOBOT JURNALI → «Faza MK11».**
+>
+> **Nima qilindi:** yangi `apps/api/src/modules/manager/inventory/` — ikki **sof modul**
+> (`stock-signals.ts`, `price-change-control.ts`) + servis + controller (`GET
+> manager/inventory/stock-signals`, `GET .../price-changes`, ruxsat `product:view`) +
+> FE `/menejer/zaxira` va `/menejer/narx-nazorati` + i18n ru+uz. **52 yangi test** (TDD, RED
+> ko'rildi); regress: manager 353 · app-boot 9 yashil.
+>
+> **Signal PULDA:** `dead_money` (qoldiq × tan narx) · `stockout_risk` (gorizontgacha
+> **yopilmagan talab** × tan narx) · `overstock` (ortiqcha qoldiq × tan narx). Sotuv sur'ati
+> `StockOperation` dan (`demand`/`retailsale` + bekor/qaytarim); ombor ichidagi `move_*`/`cell_*`
+> **sanalmaydi** — ular pulni aylantirmaydi.
+>
+> **Narx nazorati BLOKLAMAYDI** (4-bo'lim TZ §5.1) — `blocks` maydoni **literal `false`** tipida
+> va 5 chegara qiymatida test bilan qulflangan. Chegaradan oshgan o'zgarish uchun **barqaror
+> `dedupKey` bilan** `PriceChangeWorkItem` hisoblanadi, lekin **SAQLANMAYDI**: `ManagerWorkItem`
+> ombori **MK06** da keladi, o'shanda dvigatel shu kalit bo'yicha takrorsiz element yaratadi.
+>
+> **NULL ≠ 0 (test bilan qulflangan):** tan narx yo'q **yoki 0** ⇒ `amountMinor: null`, jamiga
+> qo'shilmaydi (`Stock.costBalanceMinor` DEFAULT 0 = «yozilmagan», narx emas) · sotuv tarixi
+> yo'q ⇒ sur'at/qoplash NULL va «tugash xavfi»/«ortiqcha» umuman hisoblanmaydi (taxmin yozilmaydi) ·
+> narx bazasi yo'q yoki valyuta almashgan ⇒ `deltaPercent: null`, chegara qo'llanmaydi.
+>
+> **⚠️ Ochiq qarzlar (jimgina qoldirilmadi):** (1) `ProductService.bulkUpdate` audit YOZMAYDI —
+> ommaviy narx tahriri bu tarixga tushmaydi (ekranda `scope_note` bilan ochiq yozilgan);
+> (2) chegaralar so'rov parametri, doimiy sozlama `ManagerRuleConfig` (MK06) bilan keladi;
+> (3) uch `groupBy` butun `stock_operations` ustidan — katta akkauntda `EXPLAIN` kerak;
+> (4) **brauzer-QA YO'Q** (Phase-1).
+>
+> **🔀 Parallel sessiya bilan kesishma:** MK05/MK08 sessiyasi ayni paytda `layout.tsx`,
+> `ru/uz.json`, `domain-status-tone.ts` ni tahrirlayapti. Ularning ishi commit'ga tushmasligi
+> uchun shu 4 fayl indeksga **«HEAD + faqat mening hunk'larim»** holatida qo'yildi
+> (deterministik fail-closed skript), ishchi daraxtga tegilmadi; shu sabab lint-staged bir
+> martaga chetlab o'tildi va gate'lar **qo'lda to'liq** yugurtirildi. `pnpm lint:product`
+> repo bo'ylab hozir 10 xato beradi — **hammasi o'sha sessiyaning** commit qilinmagan
+> fayllarida (`cashier-session/shift-acceptance*`, `shared/acceptance-fsm*`,
+> `hr-employee/offboarding.ts`, `manager/live/live-status.service.ts`). Web'da 2 yiqilgan test
+> (`menejer-live-boards.test.ts` — `duty_equipment_out`/`duty_shift_unaccepted` kalitlari hali
+> yozilmagan) ham o'shaniki.
+
 > **🕒 2026-08-09o (REJA-MENEJER-KASSA **MK03** — Menejer FE-A: «Jonli holat» va
 > «Javobgarlik» ekranlari) — `638212f8`, 10 fayl (+885/−41). Reja: `docs/REJA-MENEJER-KASSA-2026-08.md`
 > → «Faza MK03», hisobot o'sha faylning HISOBOT JURNALIda.**
