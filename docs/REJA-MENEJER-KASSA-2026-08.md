@@ -1029,7 +1029,7 @@ filtrlanmaydi** (umumiy qarz). (3) qo'riqchi test yangi modullarni qamraydi.
 
 ---
 
-### MK37 — `SalesPlan` modeli (xodim × oy × plan turi) ☐ HISOBOT
+### MK37 — `SalesPlan` modeli (xodim × oy × plan turi) ☑ HISOBOT (2026-08-10)
 **Bo'lim/blok:** 2-bo'lim qo'shimchasi (4-B7 uchun poydevor) · **TZ:** 2-bo'lim §4.8, 4-bo'lim §6
 **Ustuvorlik:** P2 · **Bog'liqlik:** yo'q · **Holat:** `SalesPlan` **YO'Q**
 **Qamrov:** `SalesPlan` (xodim × oy × plan turi: tushum / foyda / mijoz soni / undirilgan qarz) ·
@@ -1046,7 +1046,7 @@ keladi (ikkinchi formulasi yozilmaydi — `no-adhoc-percent` naqshi). (3) valyut
 
 ---
 
-### MK38 — Plan qo'yish · mijoz taqsimoti · narx siyosati ekranlari ☐ HISOBOT
+### MK38 — Plan qo'yish · mijoz taqsimoti · narx siyosati ekranlari ☑ HISOBOT (2026-08-10, narx TURLARI qismi F004 gacha DEFER)
 **Bo'lim/blok:** 4-B7 · **TZ:** §6
 **Ustuvorlik:** P2 · **Bog'liqlik:** MK37 (plan) · ⚠️ **F004 (asosiy reja) (narx dvigateli) KEYINROQ turadi** — bu yagona oldinga
 qaragan bog'liqlik. Agar F004 (asosiy reja) hali bajarilmagan bo'lsa: plan qo'yish va mijoz taqsimoti qismini
@@ -4399,3 +4399,122 @@ orqali, darvoza ochilgandan keyin).
 - `scripts/record-scope-coverage.ts` (yangi) · `scripts/ops-record-scope-flag.ts` (yangi)
 - `docs/audits/record-scope-coverage.md` (yangi, avtomat hosila)
 - `package.json` (+2 skript) · `docs/audits/_H4-OWN-GROUP-SCOPE-RFC.md` (qaror jurnali)
+
+---
+
+## Faza MK37 + MK38 — `SalesPlan` modeli · plan qo'yish · mijoz taqsimoti · narx siyosati (sana: 2026-08-10)
+
+**Holat:** **Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q.**
+«done» / «production-ready» / «verified» EMAS — runtime QA `MK40` ga qoladi.
+**Commit:** `feat(manager): MK37 SalesPlan + MK38 plan/mijoz/narx ekranlari`
+
+### Nega ikki faza birga
+Sessiya boshida MK38 topshirilgan edi. Rekognossirovkada aniqlandi: **MK38 ning «plan qo'yish»
+ekrani MK37 (`SalesPlan`) ga tayanadi, MK37 esa bajarilmagan** (`SalesPlan` butun repoda 0 hit).
+Foydalanuvchiga ayri variantlar taqdim etildi (MK37 · MK38-qisman · MK39 · ikkalasi birga) va
+**«MK37 + MK38 birga»** tanlandi. Ya'ni O'ZGARMAS QOIDALAR §1 («faqat bitta faza») dan chetlanish
+**egasining aniq qarori** bilan bo'ldi, agent qarori bilan emas.
+
+### Nima o'zgardi — MK37 (`SalesPlan`)
+- **Sxema + migratsiya:** `SalesPlan` (xodim × oy × plan turi) —
+  `packages/db/prisma/migrations/20260810140000_sales_plan/`. Lokal `climart_adopt` ga
+  `prisma db execute` bilan qo'llandi (tracked emas). **Prodga tegilmadi** → OPS-QADAM.
+  CHECK'lar: `target_value >= 0` · oy yorlig'i qat'iy «YYYY-MM» · yopiq `plan_type` lug'ati ·
+  **valyuta↔birlik muvofiqligi** (pul turida valyuta MAJBURIY, `customer_count` da NULL).
+- **Fakt ustuni ATAYLAB YO'Q** — fakt `employee_daily_kpi_metrics` dan o'qiladi. Nusxa qo'yilsa
+  kun qayta hisoblanganda reja yonidagi raqam jimgina eskirardi (`expense_budgets` bilan bir xil
+  qaror).
+- **Sof modullar** (`apps/api/src/modules/sales-plan/`):
+  `sales-plan-types.ts` (4 tur + fakt kalitlari) · `sales-plan-fact.ts` (oylik yig'indi) ·
+  `sales-plan-target.ts` (reja ustuvorligi + valyuta) · `sales-plan-progress.ts` (bajarilish/sur'at,
+  foizi `report/metrics/` dan).
+- **Servis/controller/module** + `app.module.ts` ga ulandi (yetim-modul qo'riqchisi yashil).
+  Ruxsat: `employees:read` / `employees:full` — MK06/MK12 bilan bir xil darvoza, yangi
+  `PermissionEntity` KIRITILMADI.
+
+### Nima o'zgardi — MK38
+- 🔴 **ROOT-FIX (topilgan bo'shliq):** `CounterpartyService.bulkUpdate` **audit YOZMAGAN**. Bitta
+  kontragent tahriri (`update`) yozardi, ommaviy tahrir esa yo'q — ya'ni mijoz taqsimotining eng
+  ko'p ishlatiladigan yo'lida **tarix umuman qolmasdi**. Endi `before`/`after` diff yoziladi;
+  jurnal xatosi amalni YIQITMAYDI (u kuzatuv, biznes amali emas).
+- **Mijoz taqsimoti API** (`apps/api/src/modules/manager/customers/`): ro'yxat + havza manzarasi ·
+  `POST reassign` (egalikni `CounterpartyService.bulkUpdate` ga TOPSHIRADI — ikkinchi yozuvchi
+  ochilmadi) · `GET :id/owner-history` (`audit_log` ustidagi ko'rinish, yangi jadval YO'Q).
+- **3 FE ekran** + nav + i18n (ru+uz): `/menejer/plan` · `/menejer/mijoz-taqsimoti` ·
+  `/menejer/narx-siyosati`.
+- **Narx siyosati** — mavjud `PUT /manager/queue/rules/:ruleType` ustida (`loss_discount` toifasi:
+  `BIG_DISCOUNT` · `BELOW_COST` · `BELOW_WHOLESALE` · `PRICE_CHANGE`). **Ikkinchi sozlama manbai
+  yaratilmadi.** Ekranda `block` rejimi YO'Q va manba-skan testi uning qaytib kirishidan qo'riqlaydi.
+
+### Qabul qilingan qarorlar (TZ jim qolgan joylar)
+1. **Tushum = `sales_revenue` + `cash_revenue`** (foyda = `gross_profit` + `cash_gross_profit`).
+   Manbalar kesishmaydi: `sales_*` = posted `Demand` (`ownerId`), `cash_*` = `CashierSession`
+   (`cashierId`); chakana chek `Demand` YARATMAYDI ⇒ ikki karra sanoq yo'q. Test bilan qulflandi.
+2. **`customer_count` va `collected_debt` — fakt manbai YO'Q.** Katalogda bunday ko'rsatkich yo'q,
+   uni bu yerda hisoblash `report/metrics` dan tashqarida IKKINCHI formula bo'lardi. Turlar
+   ro'yxatda qoldi (TZ talab qiladi), lekin `factSource: 'none'` deb OCHIQ belgilanadi va ekranda
+   «qo'lda kuzatiladi» deb turadi (`kpi-metrics.ts` dagi `manual` naqshi).
+3. **Reja ustuvorligi:** `sales_plans` qatori > `hr_salary_config.monthly_sales_target` (hisob
+   bo'yicha YAGONA qiymat, faqat TUSHUM rejasiga) > reja YO'Q. Uchinchi plan modeli yaratilmadi;
+   `KpiTarget` (kunlik/haftalik) ataylab qatnashmaydi — oylikni kunga bo'lish jim taxmin bo'lardi.
+4. **Valyuta: KONVERTATSIYA YO'Q.** Kunlik KPI omborida valyuta ustuni yo'q (qiymatlar baza
+   valyutasi taxminida). Boshqa valyutadagi reja `comparable: false` bo'ladi — qiymat KO'RINADI,
+   foiz CHIZILMAYDI. Kurs bilan keltirish taxmin ustiga taxmin qo'yib, «bajarildi/bajarilmadi»
+   degan yolg'on javob berardi.
+5. **Sur'at:** kutilgan % = o'tgan kunlar ulushi; prognoz = `fakt × oy kunlari ÷ o'tgan kun`.
+   Oy hali boshlanmagan bo'lsa ikkalasi ham NULL — hech narsa kutilmagan xodimni «orqada» deb
+   belgilash yolg'on ayblov bo'lardi. Oydagi kunlar FAQAT yorliqdan (`monthDayCount`), timezone
+   arifmetikasisiz.
+
+### Testlar (RED → GREEN)
+- **RED ko'rildi:** 4 sof-modul test fayli (modul yo'q edi) → keyin `bulkUpdate` audit testi
+  **3 yiqilish** bilan (audit yozilmasdi) → fix → yashil.
+- **API +99 test:** `sales-plan/` 70 (types 8 · fact 13 · progress 13 · target 9 · service 20 ·
+  no-adhoc-formula 7) · `counterparty-bulk-audit` 5 · `manager/customers` 12 · qolgani mavjud
+  fayllarda.
+- **Web +18 test:** `sales-plan-screen` 5 · `price-policy-screen` 8 · `customer-assignment-screen` 5.
+- Qulflangan shartnomalar: reja yo'q ≠ reja 0 ≠ fakt o'lchanmagan · menejer tuzatmasi ALMASHTIRADI
+  (qo'shmaydi) · fakt kalitlari KPI katalogida haqiqatan mavjud · birlik lug'ati KPI birligi bilan
+  mos (100× klass) · chegara pul birligida tiyinda saqlanadi · rejim ro'yxatida `block` yo'q ·
+  egalik o'zgarishi tarixga tushadi (null↔xodim ikki yo'nalishda ham).
+
+### Gate natijasi (to'liq, commit nuqtasida)
+- `pnpm --filter @moysklad/api typecheck` → **0**
+- `pnpm --filter @moysklad/web typecheck` → **0**
+- `pnpm lint:product` → **0 error** (832 warning — siyosat bo'yicha ruxsat)
+- `pnpm i18n:gate` → **yashil** (461 fayl, 12 888 kalit)
+- `pnpm --filter @moysklad/api exec vitest run` → **7434 passed / 0 failed** (526 fayl)
+- `pnpm --filter @moysklad/web exec vitest run` → **3107 passed / 0 failed** (214 fayl)
+
+### 🔴 BAJARILMAGANI (ochiq qarz — halol yorliq)
+1. **Browser-smoke YO'Q** — uch ekranning hech biri real brauzerda ochilmadi (→ MK40 / Phase-2 QA).
+2. **Narx TURLARI va GURUH narxlari ekrani DEFER** — `ContractPrice` (asosiy reja **F004**) hali
+   qurilmagan. MK38 ning narx qismi faqat **chegirma chegaralarini** qamradi; F004 dan keyin
+   alohida mayda faza kerak (faza matnining o'zi shu yo'lni ko'rsatgan).
+3. **«Kim qancha chegirma bera oladi» — XODIM kesimida YO'Q.** Chegara hozir hisob bo'yicha yagona
+   (`manager_rule_configs`). Xodimga bog'langan limit yangi model talab qiladi (MK26
+   `EmployeePermission` qatlamiga qo'shimcha) — MK38 qamrovidan tashqari, ochiq qoldirildi.
+4. **`customer_count` / `collected_debt` fakti YO'Q** (yuqoridagi qaror 2) — KPI katalogiga yangi
+   ko'rsatkich qo'shish + kunlik dvigatelda hisoblash alohida faza.
+5. **HR oyligi hamon `hr_salary_config` dan o'qiydi** — `sales-plan-target.ts` ustuvorligiga
+   KO'CHIRILMADI (`hr-payroll.service.ts` / `hr-kpi.service.ts` tegilmadi). Bu ataylab: oylik
+   matematikasini o'zgartirish o'z QA'sini talab qiladi.
+6. **Prod migratsiyasi qo'llanmadi** (OPS-QADAM, quyida).
+
+### OPS-QADAM
+`sherset_v2` (prod) ga `20260810140000_sales_plan/migration.sql` **qo'lda** qo'llanishi kerak
+(`_prisma_migrations` tracked emas; avtomatik `migrate deploy` QILINMAYDI). Backfill YO'Q — yangi
+ombor, birinchi oy ekranda «reja qo'yilmagan» bo'lib ko'rinadi.
+
+### Parallel sessiya va yo'l-yo'lakay tuzatma
+- Sessiya davomida boshqa sessiya `62377951` (MK22) va `74bb52fd` (MK39) ni commit qildi. Mening
+  diffim ular bilan **kesishmaydi** (`git diff HEAD` faqat o'z qo'shimchalarimni ko'rsatdi;
+  o'chirilgan 16 qator ham o'zimning almashtirilgan blokim).
+- 🩹 **Yo'l-yo'lakay tuzatildi (meniki emas):** `use-audit-labels.test.tsx` sessiya BOSHIDAN qizil
+  edi — `permission-override` (MK26) va `template-apply` (MK29) audit slug'lari uchun i18n kaliti
+  yo'q edi va Tarix tabida xom slug sizardi. Umumiy gate'ni bloklagani uchun 4 qator qo'shildi
+  (`audit.action_permission_override` / `action_template_apply`, ru+uz). Diqqat: hook
+  separatorlarni `_` ga tekislaydi — kalit `-` bilan yozilsa JIM ishlamaydi.
+- Prisma `generate` da `EPERM: rename query_engine-windows.dll.node` chiqdi (boshqa jarayon DLL'ni
+  ushlab turgan). TS klient TO'LIQ generatsiya bo'lgan (`salesPlan` delegati bor), engine binary
+  esa o'zgarmagan ⇒ ta'sir yo'q; typecheck va 10 500+ test buni tasdiqladi.

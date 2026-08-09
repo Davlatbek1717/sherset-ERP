@@ -108,6 +108,7 @@ import { ReportModule } from './modules/report/report.module.js';
 import { RestockTaskModule } from './modules/restock-task/restock-task.module.js';
 import { RetailSaleModule } from './modules/retail-sale/retail-sale.module.js';
 import { SalesChannelModule } from './modules/sales-channel/sales-channel.module.js';
+import { SalesPlanModule } from './modules/sales-plan/sales-plan.module.js';
 import { SalesReturnModule } from './modules/sales-return/sales-return.module.js';
 import { SavedFilterModule } from './modules/saved-filter/saved-filter.module.js';
 import { SerialNumberModule } from './modules/serial-number/serial-number.module.js';
@@ -238,6 +239,10 @@ import { PrismaModule } from './prisma/prisma.module.js';
     // yonida: u reja qo'yiladigan katalog, bu esa o'sha katalog ustidagi oylik
     // reja/fakt qatlami.
     ExpenseBudgetModule,
+    // MK37 — sotuv rejasi (xodim × oy × plan turi). Xarajat byudjetining
+    // yonida ataylab: ikkalasi ham «shu oyga nima rejalashtirilgan» savoliga
+    // javob beradi va bir xil shaklda qurilgan (reja qatori · fakt YO'Q).
+    SalesPlanModule,
     CustomEntityModule,
     RegionModule,
     TrackingCodeModule,

@@ -486,6 +486,21 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     // Narx bloklaridan keyin ataylab: bu yerda sub'ekt sotuv emas, PUL CHIQISHI.
     // BLOKLAMAYDI — xarajat tasdiqlanmaydi, faqat ko'rinadi.
     { key: 'budget', label: tMenejer('budget'), href: '/menejer/byudjet' },
+    // 4-bo'lim TZ §6 (MK37/MK38) — sotuv rejasi: xodim × oy × plan turi.
+    // Byudjetdan keyin ataylab: byudjet PUL CHIQISHI rejasi, bu esa PUL
+    // KIRISHI rejasi; ikkalasi bir xil shaklda (reja/fakt/og'ish) qurilgan.
+    { key: 'sales_plan', label: tMenejer('sales_plan'), href: '/menejer/plan' },
+    // 4-bo'lim TZ §6 (MK38) — mijoz taqsimoti: egasini o'zgartirish + tarix.
+    // Rejadan keyin ataylab: reja KIMGA qo'yilgani shu yerda hal bo'ladi
+    // (mijoz portfeli sotuvchining rejasi bilan bir savolning ikki tomoni).
+    {
+      key: 'customer_assignment',
+      label: tMenejer('customer_assignment'),
+      href: '/menejer/mijoz-taqsimoti',
+    },
+    // 4-bo'lim TZ §6 (MK38) — narx siyosati: chegirma/zarar chegaralari.
+    // BLOKLAMAYDI: chegaradan oshgan chek navbatga tushadi, to'xtamaydi.
+    { key: 'price_policy', label: tMenejer('price_policy'), href: '/menejer/narx-siyosati' },
     // 4M TZ §8.1/8 (MK21) — «kim nima qaror qildi va nega»: to'rtta mavjud
     // hodisa jurnali ustidagi ko'rinish (yangi jadval EMAS). Kunlik ish
     // ro'yxatlaridan keyin ataylab: bu bo'lib O'TGAN qarorlarning tarixi.

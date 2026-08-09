@@ -153,6 +153,7 @@ model Account {
   taxRates                       TaxRate[]
   expenseItems                   ExpenseItem[]
   expenseBudgets                 ExpenseBudget[]
+  salesPlans                     SalesPlan[]
   customEntities                 CustomEntity[]
   discounts                      Discount[]
   projects                       Project[]
@@ -455,6 +456,9 @@ model Employee {
   createdCommentTemplates    ManagerCommentTemplate[]   @relation("ManagerCommentTemplateAuthor")
   createdExpenseBudgets      ExpenseBudget[]            @relation("ExpenseBudgetCreator")
   editedExpenseBudgets       ExpenseBudget[]            @relation("ExpenseBudgetEditor")
+  salesPlans                 SalesPlan[]                @relation("SalesPlanEmployee")
+  createdSalesPlans          SalesPlan[]                @relation("SalesPlanCreator")
+  editedSalesPlans           SalesPlan[]                @relation("SalesPlanEditor")
   retailDrawerOutRecipient   RetailDrawerCashOut[]      @relation("RetailDrawerOutRecipient")
   ownedRetailSalesReturns    RetailSalesReturn[]        @relation("RetailSalesReturnOwner")
   ownedProcessingProcesses   ProcessingProcess[]        @relation("ProcessingProcessOwner")
@@ -2631,6 +2635,79 @@ model ExpenseBudget {
   @@unique([accountId, expenseItemId, yearMonth])
   @@index([accountId, yearMonth])
   @@map("expense_budgets")
+}
+
+/// SalesPlan — SOTUV REJASI: xodim × oy × plan turi (MK37).
+/// TZ: 2-bo'lim §4.8 («oylik plan har sotuvchiga: summa yoki foyda»),
+/// 4-bo'lim §6 («plan qo'yish» bloki).
+///
+/// ## Nega `ExpenseBudget` naqshi aynan takrorlangan
+/// Ikkalasi ham bitta savolga javob beradi — «shu oyga nima rejalashtirilgan».
+/// Bir xil shakl (oy YORLIG'I · reja qatori · fakt YO'Q) ikkinchi shaklni
+/// o'ylab topishning oldini oladi va `expense-budget` ning sinovdan o'tgan
+/// qarorlarini (reja yo'q ≠ reja 0 · upsert bilan bitta qator) meros qiladi.
+///
+/// ## 🔴 Fakt bu yerda SAQLANMAYDI
+/// Fakt `employee_daily_kpi_metrics` dan o'qiladi (`sales-plan-fact.ts`) —
+/// u kunlik KPI dvigatelining yagona ombori. Reja yoniga fakt ustuni
+/// qo'yilsa, kun qayta hisoblanganda u jimgina eskirardi.
+///
+/// ## Uchinchi plan modeli EMAS
+/// Mavjudlari: `KpiTarget` (MK13 — kunlik/haftalik, ko'rsatkich kesimida;
+/// sxemasi hali yozilmagan sof modul) va `HrSalaryConfig.monthlySalesTargetMinor`
+/// (oylik, DOIMIY qiymat — oy kesimi yo'q). Bu jadval ular bilan
+/// to'qnashmaydi: u OYGA BOG'LANGAN va TURLANGAN reja
+/// (`plan_type`), ustuvorlik esa `sales-plan-target.ts` da BITTA joyda
+/// hal qilinadi (reja → `HrSalaryConfig` sukuti → reja yo'q).
+model SalesPlan {
+  id         String @id @default(uuid()) @db.Uuid
+  accountId  String @map("account_id") @db.Uuid
+  employeeId String @map("employee_id") @db.Uuid
+
+  /// Oy YORLIG'I "YYYY-MM" — `ExpenseBudget.yearMonth` bilan bir xil shakl.
+  /// Instant EMAS: fakt kunlari `employee_daily_kpi.date` (DATE) bo'yicha
+  /// yorliq sifatida solishtiriladi, timezone arifmetikasi yo'q
+  /// ([[month-bounds-label-vs-instant]]).
+  yearMonth String @map("year_month") @db.VarChar(7)
+
+  /// `revenue` | `profit` | `customer_count` | `collected_debt`
+  /// (`sales-plan-types.ts` — yagona lug'at). Yopiq ro'yxat CHECK bilan
+  /// qulflangan: notanish tur reja qo'yiladi-yu, hech qachon fakt olmasdi.
+  planType String @map("plan_type") @db.VarChar(20)
+
+  /// Maqsad — ko'rsatkichning O'Z birligida: pul turlari tiyinda, sanoq
+  /// turlari donada. `Decimal` EMAS: `KpiTarget.targetValue` va butun KPI
+  /// qatlami `BigInt` minor bilan ishlaydi, aralashtirilsa yaxlitlash ikki
+  /// xil bo'lardi.
+  targetValue BigInt @map("target_value")
+
+  /// Reja valyutasi — FAQAT pul turlarida. Sanoq turida NULL bo'lishi SHART
+  /// (CHECK): «5 ta mijoz UZS da» ma'nosiz yozuv, uni keyin kim bo'lsa ham
+  /// konvertatsiya qilishga urinardi ([[manager-kpi-unit-vocabularies]] —
+  /// birlik lug'atlarini aralashtirish bug-klassi).
+  currency String? @db.VarChar(3)
+
+  note String?
+
+  createdById String? @map("created_by_id") @db.Uuid
+  updatedById String? @map("updated_by_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  // Restrict: rejasi bor xodim o'chirilsa reja «egasiz» qolardi va oy
+  // yakunida «kimning rejasi edi?» degan savolga javob bo'lmasdi
+  // (`ExpenseBudget.expenseItem` bilan bir xil sabab).
+  employee  Employee  @relation("SalesPlanEmployee", fields: [employeeId], references: [id], onDelete: Restrict)
+  createdBy Employee? @relation("SalesPlanCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy Employee? @relation("SalesPlanEditor", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  // Bir xodim + bir oy + bir tur = BITTA reja (upsert kaliti).
+  @@unique([accountId, employeeId, yearMonth, planType])
+  // Ekran so'rovi: «shu oyning hamma rejalari» (xodimlar bo'yicha jadval).
+  @@index([accountId, yearMonth])
+  @@map("sales_plans")
 }
 
 /// Custom dictionary — a user-created lookup set. moysklad lets users

@@ -935,21 +935,22 @@ export class CounterpartyService {
     if (patch.groupId !== undefined)
       baseData.group = patch.groupId ? { connect: { id: patch.groupId } } : { disconnect: true };
 
-    // Pre-fetch current JSON ONCE for the merge fields (so the per-row merge keeps
-    // the other keys — a «set Усто» must not wipe a counterparty's other attrs).
+    // Pre-fetch the current rows ONCE. Two jobs at once:
+    //   1. the JSON merge fields (so a «set Усто» does not wipe the other attrs);
+    //   2. 🔴 MK38 — the BEFORE state for the audit journal. Bulk edit used to
+    //      write NO audit at all, so the most-used path for reassigning a
+    //      customer's owner left no history and «kim bu mijozni o'ziga oldi?»
+    //      had no answer. Single-row `update()` has always logged it; the two
+    //      paths now agree (one journal, `audit_log`, not a second store).
     const mergesUz = patch.gender !== undefined || patch.birthDate !== undefined;
     const mergesAttrs = patch.attributes !== undefined;
-    const current =
-      mergesUz || mergesAttrs
-        ? new Map(
-            (
-              await this.prisma.client.counterparty.findMany({
-                where: { accountId, id: { in: ids } },
-                select: { id: true, uzRequisites: true, attributes: true },
-              })
-            ).map((r) => [r.id, r]),
-          )
-        : new Map<string, { uzRequisites: Prisma.JsonValue; attributes: Prisma.JsonValue }>();
+    const current = new Map(
+      (
+        await this.prisma.client.counterparty.findMany({
+          where: { accountId, id: { in: ids } },
+        })
+      ).map((r) => [r.id, r as unknown as Record<string, unknown>]),
+    );
 
     return runBulk(ids, async (id) => {
       const data: Prisma.CounterpartyUpdateInput = { ...baseData };
@@ -967,7 +968,27 @@ export class CounterpartyService {
       }
       // Account-scoped update — `where` tenant-guards; a non-existent id in this
       // account throws P2025 → counted as a per-row failure by runBulk.
-      await this.prisma.client.counterparty.update({ where: { id, accountId }, data });
+      const updated = await this.prisma.client.counterparty.update({
+        where: { id, accountId },
+        data,
+      });
+
+      // MK38 — «kim, qachon, nima» jurnali. Diff bo'sh bo'lsa yozilmaydi:
+      // hech narsa o'zgarmagan qator tarixni shovqinga to'ldirardi.
+      const before = current.get(id);
+      if (before) {
+        const changes = this.diff(before, updated as unknown as Record<string, unknown>);
+        if (Object.keys(changes).length) {
+          // Jurnal — KUZATUV, biznes amali emas. Yozuv yiqilsa allaqachon
+          // muvaffaqiyatli bo'lgan qatorni «failed» qilib ko'rsatish yolg'on
+          // bo'lardi (va foydalanuvchi uni qayta bosardi).
+          try {
+            await this.logAudit(accountId, userId, 'update', id, changes);
+          } catch {
+            // ataylab jim: qator o'zgardi, faqat izi yozilmadi
+          }
+        }
+      }
       return id;
     });
   }

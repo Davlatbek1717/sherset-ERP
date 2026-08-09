@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { PrismaModule } from '../../prisma/prisma.module.js';
 import { AuthModule } from '../auth/auth.module.js';
 import { CashierSessionModule } from '../cashier-session/cashier-session.module.js';
+import { CounterpartyModule } from '../counterparty/counterparty.module.js';
 import { DebtModule } from '../debt/debt.module.js';
 import { DriverTrackingModule } from '../hr/driver-tracking/driver-tracking.module.js';
 import { MoneyModule } from '../money/money.module.js';
@@ -15,6 +16,8 @@ import { DebtCollectionService } from './collection/debt-collection.service.js';
 import { ManagerCollectionController } from './collection/manager-collection.controller.js';
 import { ManagerCommentTemplateController } from './comments/manager-comment-template.controller.js';
 import { ManagerCommentTemplateService } from './comments/manager-comment-template.service.js';
+import { ManagerCustomersController } from './customers/manager-customers.controller.js';
+import { ManagerCustomersService } from './customers/manager-customers.service.js';
 import { ManagerInventoryController } from './inventory/manager-inventory.controller.js';
 import { ManagerInventoryService } from './inventory/manager-inventory.service.js';
 import { DecisionJournalService } from './journal/decision-journal.service.js';
@@ -86,6 +89,12 @@ import { ManagerSlaService } from './sla/manager-sla.service.js';
     DriverTrackingModule,
     CashierSessionModule,
     TelegramModule,
+    // MK38 — `ManagerCustomersService` egalikni O'ZI yozmaydi, u
+    // `CounterpartyService.bulkUpdate` ga topshiradi (tenant qo'riqchisi +
+    // audit jurnali o'sha yerda). Shu sababli modul OSHKORA import qilinadi:
+    // DI grafini hech bir unit test qurmaydi ⇒ unutilsa faqat runtime'da
+    // chiqardi ([[global-di-injection-unguarded]]).
+    CounterpartyModule,
   ],
   controllers: [
     KpiConfigController,
@@ -98,6 +107,7 @@ import { ManagerSlaService } from './sla/manager-sla.service.js';
     ManagerJournalController,
     MoneyMapController,
     ManagerBriefingController,
+    ManagerCustomersController,
   ],
   providers: [
     EmployeeDailyKpiService,
@@ -120,6 +130,7 @@ import { ManagerSlaService } from './sla/manager-sla.service.js';
     DecisionJournalService,
     MoneyMapService,
     DayBriefingService,
+    ManagerCustomersService,
   ],
   exports: [EmployeeDailyKpiService, DailyKpiAcceptanceService],
 })

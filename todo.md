@@ -27,7 +27,7 @@
 
 | | Soni |
 |---|---|
-| **Qolgan bosqichlar** | **51** |
+| **Qolgan bosqichlar** | **50** |
 | Sifat qarzlari | 7 |
 | Brauzer-QA (Phase-2) o'tishlari | ~9 (har bo'lim uchun 1) |
 | **JAMI ish birligi** | **~75** |
@@ -46,7 +46,7 @@ kuniga **3 sessiya** → **~6 hafta**.
 | 1 — Kassa | B1 B2 B3 B4 B5 B6 **B7** | **1** (B8) |
 | 2 — Onlayn sotuv / B2B / B2G | B1 | **8** (B2–B9) |
 | 3 — Analitika | B1, B2 (qisman) | **6** (B3–B8) |
-| 4 — Menejer (ruxsatlar) | — | **8** (B1–B8) |
+| 4 — Menejer (ruxsatlar) | **B7** (qisman — narx TURLARI F004 gacha) | **7** (B1–B6, B8) |
 | 4M — Menejer (kunlik KPI) | 4M.1 4M.2 **4M.3** 4M.4 ✅to'liq, **4M.5 4M.7 4M.8 4M.9** | **2** (4M.6, 4M.10) |
 | 5 — Ta'minotchilar | — | **6** (B1–B6) |
 | 6 — HR | B8 (qisman) | **8** (B1–B7, B9) |
