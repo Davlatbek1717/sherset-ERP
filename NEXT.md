@@ -326,6 +326,68 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > `/root/sherset-v2-backups` = 5.4G / 18 fayl — keyingi deploy'dan oldin eski backup'larni
 > tozalash kerak bo'ladi, aks holda `next build` joy yetmasligidan yiqilishi mumkin.
 >
+> **🕒 2026-08-09z (REJA-MENEJER-KASSA **MK07** — 4M.5b: TZ §5.2 ning 12 qoida turi + §5.3 sabab
+> kodlari) — `0b344aaf`, 15 fayl (+2711/−59). To'liq hisobot:
+> `docs/REJA-MENEJER-KASSA-2026-08.md` → HISOBOT JURNALI → «Faza MK07».**
+>
+> MK06 dvigateli **kodda tasdiqlandi** (registr · planner · FSM · servis, 76 test yashil), keyin
+> registr TZ §5.2 jadvalining to'rt toifasi bo'yicha to'ldirildi. Yangi sof modul
+> `rule-candidates.ts` — har qoida uchun nomzod quruvchi. **Navbat: 76 → 127 test.**
+>
+> **Sanoq halol:** TZ jadvalida 12 katak, registrda 13 TZ turi (`LATE`/`ABSENT` bir katakda, lekin
+> chegara birligi daqiqa vs chegarasiz ⇒ bitta tur ikkisiga xizmat qila olmaydi) + MK06 ning
+> `PRICE_CHANGE` i = jami **14**. Har 12 katak qoplangan, test qo'lda yozilgan `TZ_CATALOG` bilan
+> qulflaydi (registrdan olinmagan — aks holda test o'z-o'zini tasdiqlardi).
+>
+> **Yangi yozuvchi OCHILMADI** — hamma qoida mavjud manbadan: `CashierAuditEvent` (TZ §5.2 ko'rsatgan
+> manba, 4 qoida BITTA so'rovdan) · `Debt` (qoldiq = total−paid) · `HrAttendance` + `resolveShift`
+> jadval hukmi · `stock-signals.ts` (4M.8 — **nusxa emas**, `stockSignalRows()` xom qatorlar uchun
+> ajratildi) · `RestockTask` · `Inventory`.
+>
+> **🔑 `dedupKey` ikki oilaga bo'lindi.** *Hodisa* qoidasi — kalitda manba yozuv `id` si
+> (`below_cost:<eventId>`), bir marta ko'riladi. *Holat* qoidasi (`BIG_DEBT`, `OVERDUE_DEBT`,
+> `LOW_STOCK`, `DEAD_STOCK`) — kalitda obyekt + **OY**: oysiz kalit holatni bir marta ko'rilib
+> **abadiy jim** qilardi, har `sync` da yangilansa navbat bir xil qator bilan ko'milardi. Oy yorlig'i
+> **Toshkent** kalendaridan (UTC dan olinsa oy chegarasida 5 soatlik xato).
+>
+> **§5.3 — sabab kodi endi QOIDAGA bog'langan.** `RULE_REASON_CODES` har qoidaga 3–4 kod beradi
+> (`competitor_price`, `expiring_goods`, `sick_leave`, `theft_suspected`…) va faqat `acknowledge` ga
+> qo'shiladi: `dismiss`/`record_fine`/`escalate` **qarorni** tavsiflaydi, sabab esa hodisa **nega**
+> bo'lganini — aralashtirilsa «raqobatchi narxi tufayli DUBLIKAT» kabi ma'nosiz juftliklar chiqardi.
+> Begona qoidaning kodi **rad etiladi** (`sick_leave` bilan `BELOW_COST` yopilmaydi), aks holda TZ
+> kutgan «zararga sotuvlarning 30% — raqobatchi narxi» statistikasi buzilardi. Tip to'liq `Record`:
+> registrga qoida qo'shilib kodlari unutilsa — **typecheck yiqiladi**.
+>
+> **Sabab ro'yxati endi BE dan keladi** (`list()` javobida `reasonCodes`) — `navbat/page.tsx` dagi
+> qo'lda yozilgan nusxa o'chirildi (ikki ro'yxat ajralsa menejer tanlagan kod 400 bilan qaytardi).
+>
+> **i18n qo'riqchisi:** 12 qoida nomi + 45 sabab kodi ru+uz. Kalitlar ekranda **dinamik** yasalgani
+> uchun `i18n:gate` ularni **umuman ko'rmaydi** (300 dinamik kalit o'tkazib yuboriladi) ⇒ API tomonda
+> `rule-i18n.test.ts` qo'shildi. **Mutatsiya bilan tekshirildi** — `rule_BIG_DEBT` ni uz.json'dan
+> olib tashlaganda 2 test yiqildi, ya'ni test bo'sh emas.
+>
+> **Gate (qo'lda to'liq — hook'lar bir martaga chetlab o'tildi, parallel sessiyalar faol edi):**
+> api typecheck 0 · web typecheck 0 · `lint:product` 0 error · `i18n:gate` 9/9 ·
+> api vitest (manager + attendance-geo + retail-sale) **1017/1017** · `app-boot` 9/9 (yangi
+> `@Inject` grafi) · web vitest **2970 o'tdi, 1 yiqildi**.
+>
+> ⚠️ **Yiqilgan web testi MENIKI EMAS:** `raw-element-conventions` →
+> `app/(app)/menejer/qotib-qolgan/page.tsx:201` xom `<input>`. Fayl **MK10** commit'idan
+> (`5f3ce376`), HEAD'da ham shunday. §6.1 bo'yicha tegilmadi — **MK10 egasining qarzi**.
+>
+> **Parallel sessiyalar:** ish davomida MK10 · MK16 · MK12 commit qilindi va `work-item-rules.ts`
+> (`hours` birligi), `manager.module.ts`, `ru/uz.json`, reja fayliga tegdi. Ularning ishi
+> **tiklanmadi/o'chirilmadi** — ustiga qurildi. Commitdan oldin har fayl `git diff -U0 | grep '^@@'`
+> bilan tekshirilib, daraxtda faqat o'z hunk'larim qolgani tasdiqlandi; commitdan keyin
+> `git show --stat HEAD` — 15 fayl, begona fayl **yo'q**.
+>
+> **Status: Phase-1 — strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q** (→ MK14).
+> **Ochiq qarz:** (1) `record_fine` hamon `HrBonusFineLog` ga **PUL YOZMAYDI** — QAROR-B1 ga bog'liq
+> (MK01 bloklangan); (2) chek valyutasi audit payload'ida muhrlanmagan ⇒ elementlar `currency: null`;
+> (3) `PICKING_SLA` = 4 soat — TZ raqami emas, sozlanadigan boshlang'ich qiymat; (4) `ABSENT` oynasi
+> 31 kun (javobda `absentWindowDays` — kesish oshkora); (5) `sync()` yuklamasi real ma'lumotda
+> **o'lchanmagan**.
+
 > **🕒 2026-08-09y (REJA-MENEJER-KASSA **MK12** — 4M.9: xarajat byudjeti, modda × oy) —
 > `c5e1b153`, 20 fayl (+2202). To'liq hisobot:
 > `docs/REJA-MENEJER-KASSA-2026-08.md` → HISOBOT JURNALI → «Faza MK12».**
