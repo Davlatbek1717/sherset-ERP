@@ -121,7 +121,7 @@ Umumiy shakl (agar prompt qo'lda yozilsa):
 
 | Qaror | Savol | Kimni bloklaydi |
 |---|---|---|
-| **QAROR-B1** | Bonus/jarima **formulasi**: kun qabul qilinganda **qancha** yoziladi? (4M TZ §4.2 — «yoziladi» bor, «qancha» yo'q) | **MK01** |
+| ~~**QAROR-B1**~~ | ~~Bonus/jarima **formulasi**~~ — ✅ **YOPILDI 2026-08-09** (egasining tasdig'i), quyida | ~~MK01~~ |
 | **QAROR-B2** | Kompozit ball chegarasi **150%** (`SCORE_CAP_PERCENT`) — TZ'da yo'q, agent tanlagan | **MK13** |
 | **QAROR-B3** | `lower_better` formulasi (0→200%, maqsad→100%, 2×→0%) — TZ'da yo'q, agent tanlagan | **MK13** |
 | **QAROR-B4** | Rol nomlari: hozir `admin`/`director` = ega, `manager`/`menejer` = menejer — shundaymi? | **MK29** |
@@ -130,6 +130,35 @@ Umumiy shakl (agar prompt qo'lda yozilsa):
 > `docs/REJA-MENEJER-KASSA-2026-08.md` — «EGASIDAN QAROR KUTILMOQDA» dagi 4 qarorni men bilan yop.
 > Har biri uchun TZ'dagi tegishli § ni o'qib, 2–3 variantni oqibati bilan ko'rsat (kod yozma).
 > Javoblarimni shu faylga va `todo.md` ga yozib TO'XTA.
+
+### ✅ QAROR-B1 — YOPILDI (2026-08-09, egasining tasdig'i)
+
+**Savol edi:** kun qabul qilinganda `HrBonusFineLog` ga **qancha** yoziladi (4M TZ §4/2-band —
+«yoziladi» bor, «qancha» yo'q)?
+
+**Qaror: ball-oralig'i (band) qoidalari — OPT-IN, qat'iy summa.** Yangi jadval yo'q, mavjud
+`HrBonusFineRule` ishlatiladi:
+
+| Nima | Qiymat |
+|---|---|
+| Manba raqam | Qabul lahzasida **MUZLATILGAN** `EmployeeDailyKpi.scorePercent` (jonli qayta hisob EMAS) |
+| Sozlama | `HrBonusFineRule.condition = { type: 'kpi_day_score', minPercent, maxPercent }` · `kind` + `amountMinor` qoidaning o'zida |
+| Oraliq | **Yarim ochiq `[min, max)`**, `maxPercent: null` = ∞ ⇒ oraliqlar ustma-ust tushmay tiladi (masalan `[0,70) jarima · [70,100) hech narsa · [100,∞) bonus`) |
+| Yozuv | `source='kpi_accept'`, `kind`/`amountMinor` qoidadan **nusxa** (keyin qoida tahrirlansa tarix o'zgarmaydi — `applyRule` naqshi) |
+| **Qoida yo'q** | **Hech narsa yozilmaydi.** Mavjud hisoblarning xulqi o'zgarmaydi — funksiya yoqilmaguncha pul paydo bo'lmaydi |
+| **Ball yo'q** (`scorePercent = null`) | **Hech narsa yozilmaydi** — NULL ≠ 0 (kun ballanmagan bo'lsa «0% ⇒ jarima» YOLG'ON bo'lardi) |
+| **Ikki qoida mos kelsa** | **Hech narsa yozilmaydi** + ogohlantirish log. Tavakkal summa yozishdan ko'ra yozmaslik xavfsiz; konfiguratsiya xatosi ko'rinib turadi |
+| Bekor qilish | `accepted`/`force_accepted` dan **chiqishda** (`reopen`, `mark_stale`) — sof qoldiqni **nolga** keltiruvchi teskari qator (`source='kpi_accept_reversal'`, manfiy `amountMinor`). **O'chirish YO'Q** (audit izi) |
+| Qayta qabul | Yangi ball → yangi yozuv. Teskari qator + yangi yozuv ⇒ ikki karra bo'lmaydi |
+| Qaysi oyga tushadi | Yozuv `createdAt` bo'yicha (mavjud `aggregateRaw` shunday o'qiydi) — ya'ni iyul kunining avgustdagi bekori **avgust** oyligiga tushadi. Bu `EmployeeKpiCorrection` (`correctionPeriod(now)`) siyosati bilan **bir xil**, ataylab |
+
+**Nega qat'iy summa (foiz emas):** foiz uchun baza kerak (oylik? sotuv?) — u har xodimda har xil va
+`HrSalaryConfig` da faqat akkаunt darajasida turibdi. Qat'iy summa buxgalterga tushunarli va
+`HrBonusFineLog.amountMinor` (BigInt tiyin) bilan aynan mos. Foizli/progressiv variant kerak bo'lsa —
+`condition` ga yangi `type` qo'shiladi, bu qaror buzilmaydi.
+
+**Qamrovdan tashqarida (ataylab):** bir kunda **ham** bonus **ham** jarima (masalan sotuv yaxshi-yu
+kassa farqi bor) — bu 12 qoida turi bilan **MK07** ishi. MK01 da bir qabul = ko'pi bilan bitta yozuv.
 
 ---
 
@@ -156,21 +185,29 @@ Belgilar: 🗄️ migratsiya · 🌐 brauzer/QA · 📝 kodsiz · ⛔ qaror kutm
 
 | # | Bir vaqtda beriladigan fazalar |
 |---|---|
-| **1** | **MK01** ⛔B1 4M.3 yakuni: idempotent bonus/jarima<br>**MK02** 🗄️ 4M.4 qoldig'i: ishga qabul tomoni (sinov muddati)<br>**MK03** Menejer FE-A: «Jonli holat» va «Javobgarlik» ekranlari<br>**MK04** Menejer FE-B: xodim kartasi 360° · jurnal · haftalik xulos |
+| **1** | **MK01** ⛔B1 4M.3 yakuni: idempotent bonus/jarima<br>**MK02** 🗄️ 4M.4 qoldig'i: ishga qabul tomoni (sinov muddati)<br>**MK03** Menejer FE-A: «Jonli holat» va «Javobgarlik» ekranlari<br>**MK04** Menejer FE-B: xodim kartasi 360° · jurnal · haftalik xul |
 | **2** | **MK05** 🗄️ Jihoz reyestri + javobgarlik taxtasida jihoz bloki<br>**MK08** 4M.6a: smena yakunini qabul qilish<br>**MK11** 4M.8: uch xil zaxira signali + narx o'zgarishi nazorati<br>**MK23** 1:1 suhbat va o'qitish rejasi |
-| **3** | **MK06** 🗄️ 4M.5a: menejer ish navbati — dvigatel va model<br>**MK09** 4M.6b: ma'lumot sifati paneli<br>**MK18** Xato narx nazorati<br>**MK31** Kassa USD naqd oqimi (`CASH_USD`): kutilgan naqd · farq ak |
+| **3** | **MK06** 🗄️ 4M.5a: menejer ish navbati — dvigatel va model<br>**MK09** 4M.6b: ma'lumot sifati paneli<br>**MK18** Xato narx nazorati<br>**MK31** Kassa USD naqd oqimi (`CASH_USD`): kutilgan naqd · farq  |
 | **4** | **MK07** 4M.5b: 12 qoida turi + sabab kodlari<br>**MK10** 4M.7: «Nima qotib qolgan» + SLA paneli<br>**MK12** 🗄️ 4M.9: xarajat byudjeti (plan/fakt)<br>**MK16** Qarz undirish ish ro'yxati |
-| **5** | **MK13** 🗄️⛔B2 4M.10: KPI target + kompozit ball va reyting formulasi<br>**MK15** «Korxona puli qayerda» — pul manzarasi paneli<br>**MK20** Shablon izohlar (tez javob matnlari)<br>**MK21** Qaror jurnali (alohida ekran) |
+| **5** | **MK13** 🗄️⛔B2 4M.10: KPI target + kompozit ball va reyting formulasi<br>**MK15** ⏳ «Korxona puli qayerda» — pul manzarasi paneli *(kutadi: F011)*<br>**MK20** Shablon izohlar (tez javob matnlari)<br>**MK21** Qaror jurnali (alohida ekran) |
 | **6** | **MK14** 🌐 4M Phase-2 QA (menejer nazorati)<br>**MK32** POS xulq-testlari qoplamasi (bo'lishdan OLDIN) |
 | **7** | **MK19** Ertalabki brifing va kechki yakun<br>**MK24** Mobil rejim (menejer va kassir/omborchi uchun)<br>**MK26** 🗄️ `EmployeePermission` + amaldagi ruxsat hisobi + G1/G2/G3<br>**MK33** POS komponentlarga bo'linishi |
-| **8** | **MK27** HR ruxsatlarini birlashtirish (adapter + migratsiya)<br>**MK30** 🗄️ Tasdiqlash navbati: `ApprovalRule` + `ApprovalItem`<br>**MK35** Record-scope 1-to'lqin + filial filtri birga |
+| **8** | **MK27** HR ruxsatlarini birlashtirish (adapter + migratsiya)<br>**MK30** 🗄️ Tasdiqlash navbati: `ApprovalRule` + `ApprovalItem`<br>**MK35** ⏳ Record-scope 1-to'lqin + filial filtri birga *(kutadi: F003)* |
 | **9** | **MK28** Ruxsat matritsasi UI (entity × action × scope)<br>**MK34** 🌐 1-Kassa Phase-2 QA (real brauzer + real termal printer)<br>**MK36** Record-scope 2–3-to'lqin (pul + mijozlar) |
 | **10** | **MK29** ⛔B4 10 rol shabloni<br>**MK37** 🗄️ `SalesPlan` modeli (xodim × oy × plan turi) |
-| **11** | **MK22** Maqsad kaskadi (ega → bo'lim → xodim)<br>**MK38** Plan qo'yish · mijoz taqsimoti · narx siyosati ekranlari<br>**MK39** 🗄️ Record-scope 4-to'lqin + `recordScopeEnforced` YOQISH |
-| **12** | **MK17** Yo'qolgan mijozlar signali<br>**MK40** 🌐 4-Menejer Phase-2 QA (ruxsatlar) |
-| **13** | **MK25** 🌐 T2 Phase-2 QA (mobil qurilma + yangi menejer ekranlari) |
+| **11** | **MK22** Maqsad kaskadi (ega → bo'lim → xodim)<br>**MK38** ⏳ Plan qo'yish · mijoz taqsimoti · narx siyosati ekranlari *(kutadi: F004)*<br>**MK39** 🗄️ Record-scope 4-to'lqin + `recordScopeEnforced` YOQISH |
+| **12** | **MK17** ⏳ Yo'qolgan mijozlar signali *(kutadi: F005)*<br>**MK40** 🌐 4-Menejer Phase-2 QA (ruxsatlar) |
+| **13** | **MK25** 🌐 M2 Phase-2 QA (mobil qurilma + yangi menejer ekranlari) |
 
-**Jami 13 paket.**
+**Jami 13 paket** (40 faza).
+
+> ⏳ = **asosiy rejadagi fazani kutadi** (`docs/REJA-8-BOLIM-2026-08.md`). Bu 4 faza shu
+> grafikda o'z o'rnida turibdi, lekin **kutayotgan fazasi bajarilmaguncha boshlanmaydi**:
+> `MK15` ← F011 · > `MK17` ← F005 · > `MK35` ← F003 · > `MK38` ← F004
+
+> ⏳ = **asosiy rejadagi fazani kutadi** (`docs/REJA-8-BOLIM-2026-08.md`). Bu 4 faza shu
+> grafikda o'z o'rnida turibdi, lekin **kutayotgan fazasi bajarilmaguncha boshlanmaydi**:
+> `MK15` ← F011 · > `MK17` ← F005 · > `MK35` ← F003 · > `MK38` ← F004
 
 ---
 
@@ -198,9 +235,9 @@ Belgilar: 🗄️ migratsiya · 🌐 brauzer/QA · 📝 kodsiz · ⛔ qaror kutm
 > Bu to'lqin hech narsaga bog'liq emas (filial ham, kassa ham kerak emas) — darhol boshlanadi.
 > **TZ:** `2026-08-02-menejer-kunlik-kpi-tz-design.md`
 
-### MK01 — 4M.3 yakuni: idempotent bonus/jarima ☐ HISOBOT
+### MK01 — 4M.3 yakuni: idempotent bonus/jarima ☑ HISOBOT (2026-08-09)
 **Bo'lim/blok:** 4M.3 qoldig'i · **TZ:** §4 (Qabul → oylik), §4.2
-**Ustuvorlik:** P1 · **Bog'liqlik:** ⛔ **QAROR-B1** (formula) — qaror yo'q bo'lsa **BOSHLAMA**
+**Ustuvorlik:** P1 · **Bog'liqlik:** ✅ **QAROR-B1 YOPILDI** (2026-08-09) — formula yuqorida
 **Muammo:** «kun qabul qilinganda bonus/jarima yoziladi» deyilgan, lekin **qancha** yozilishi
 TZ'da yo'q. `HrBonusFineLog` sxemada **bor** — yangi jadval kerak emas, tasdiqla.
 **Qamrov:**
@@ -997,6 +1034,73 @@ Alohida: filial ∩ scope kesishmasi · G1 imtiyoz taqiqi UI'da · shablon qo'll
 <!-- HISOBOTLAR SHU QATORDAN KEYIN QO'SHILADI -->
 
 
+## Faza MK01 — 4M.3 yakuni: idempotent bonus/jarima (sana: 2026-08-09)
+
+**Holat:** BLOKLANDI — ⛔ **QAROR-B1 yopilmagan** (bonus/jarima formulasi). Kod YOZILMADI.
+**Commit(lar):** yo'q (kod o'zgarishi yo'q; bu hisobot commit qilinmadi — pastdagi «Git holati»ga qara)
+
+### Nima o'zgardi
+- Kodda **hech narsa**. Faqat shu hisobot qo'shildi (append).
+
+### Bloklovchi — QAROR-B1 uch manbada OCHIQ (o'z ko'zim bilan tekshirildi)
+1. `todo.md:60` — `- [ ] **B1. Bonus/jarima formulasi** (4M.3 §4.2)` — **belgilanmagan**.
+2. Shu reja, «⛔ EGASIDAN QAROR KUTILMOQDA» jadvali (124-qator) — B1 hamon ro'yxatda, `MK01` ni bloklaydi.
+3. TZ `2026-08-02-menejer-kunlik-kpi-tz-design.md` §4 «Qabul → oylik» (243–255-qatorlar) — 5 band bor,
+   2-bandi: «qabul qilinganda bonus/jarima `HrBonusFineLog` ga yoziladi — idempotent». **«Qancha»
+   yozilishi haqida bir og'iz so'z yo'q.** §4 oxirida faqat oylik yig'indi formulasi eslatiladi
+   (`fix + KPI + bonus − jarima + komissiya`, HR TZ §0) — u **bonus miqdorini hisoblamaydi**, uni
+   tayyor deb oladi. *Kichik tuzatma: reja «§4.2» ga ishora qiladi, TZ'da **§4.2 sarlavhasi yo'q** —
+   §4 raqamli bandlar. Bu hujjat-havolasi qarzi.*
+
+⇒ O'ZGARMAS QOIDALAR + faza prompti bo'yicha ish **boshlanmadi**, TDD sikli boshlanmadi.
+
+### Yo'l-yo'lakay tasdiqlangan/rad etilgan da'volar (faqat o'qish, kod tegilmadi)
+- ✅ Reja: «`HrBonusFineLog` sxemada **bor** — yangi jadval kerak emas» — **TASDIQLANDI**:
+  `packages/db/prisma/schema.prisma:9529` (`kind`, `source`, `amountMinor`, `reason`, `attendanceId`,
+  `ruleId`, `taskLogId`, `createdById`).
+- ⚠️ Reja: «idempotentlik uchun tabiiy kalit yoki `@@unique`» — mavjud yagona unique
+  `@@unique([attendanceId, source], name: "uq_bonusfine_attendance_source")` (`:9553`) **KPI-qabul
+  kanali uchun ishlamaydi**: `attendanceId` **nullable**, PostgreSQL'da NULL'lar unique'da
+  to'qnashmaydi ⇒ `(NULL, 'kpi_accept')` qatorlarini cheksiz yozib ketaveradi. Ya'ni **jadval kerak
+  emas, lekin migratsiya (yangi tabiiy kalit, masalan `(employeeId, kpiDay, source)` yoki
+  `dailyKpiId`+`source`) MK01 uchun EHTIMOL KERAK** — reja «migratsiya kerak bo'lsa» deb ochiq
+  qoldirgan, aniqlashtirildi.
+- ✅ Kanal hali ulanmagan: `apps/api/src/modules/manager/kpi/daily-kpi-acceptance.service.ts` da
+  `HrBonusFineLog` ga **birorta ham murojaat yo'q** (grep 0 natija) — MK01 qamrovi haqiqatan ochiq.
+
+### Testlar (RED → GREEN)
+- Yo'q — qaror yo'qligida yoziladigan test formulaga bog'liq (rejadagi 4-test aynan «formula chegara
+  qiymatlari (QAROR-B1 bo'yicha)»). Formulasiz yozilgan test **noto'g'ri xulqni qulflab qo'yardi**.
+
+### Gate natijasi
+- Yugurtirilmadi (kod o'zgarishi yo'q). Sessiya-boshi `node scripts/preflight.mjs`: 2 anomaliya —
+  (a) ish daraxti toza emas (faqat `docs/*.md` + untracked artefaktlar — **meniki emas**, tegilmadi);
+  (b) `NEXT.md` top-entry'larda git'da yo'q hash'lar (`a0b44c73`, `9c046ac2`) — MK01 ga aloqasi yo'q,
+  alohida tekshiruv qarzi. `git worktree list` — 2 worktree (`main`, `climart-adoption`);
+  `git branch --no-merged` — `main` + 3 ta `worktree-wf_9a5c9dc9-*` (takroriy ish xavfi yo'q, MK01
+  hech qayerda boshlanmagan).
+
+### Qolgan qarz / DEFER
+- **Butun MK01 qamrovi** (idempotent yozuv · bekorda zero-sum teskari yozuv · `EmployeeKpiCorrection`
+  bilan ikki-karra bo'lmaslik · formula chegaralari) → **QAROR-B1 yopilgandan keyin qayta beriladi.**
+- QAROR-B1 sessiyasida egaga qo'shimcha aniqlanishi kerak bo'lgan 4 nuqta (formuladan tashqari):
+  (1) bonus/jarima **kunlik** yoziladimi yoki oy oxirida jamlanadimi; (2) `kind`/`source` qiymatlari
+  (masalan `bonus`/`fine`, `source='kpi_accept'`); (3) teskari yozuvning `source`'i (`kpi_accept_undo`?)
+  — zero-sum uchun; (4) eskirgan kun tuzatmasi qayta yozadimi yoki farqni (`delta`) yozadimi.
+- Hujjat qarzi: reja va todo'dagi «§4.2» havolasi TZ'da mavjud emas → «§4/2-band» ga tuzatilsin.
+
+### OPS-QADAM qo'shildimi
+- Yo'q.
+
+### Git holati (§6.7 ehtiyoti)
+- Bu hisobot faylga **append** qilindi, lekin **commit QILINMADI**: shu fayl (`REJA-MENEJER-KASSA…`)
+  va `REJA-8-BOLIM…` da **parallel sessiyaning commit qilinmagan tahriri** turibdi (ijro-grafigi
+  jadvali qayta hosil qilingan). `git add` shu faylga tegsa o'sha begona hunk'lar ham commit'ga
+  tushardi. Egasi/keyingi sessiya o'z tahriri bilan birga commit qilsin.
+
+### Status yorlig'i
+**BLOKLANDI — qaror kutilmoqda. Kod yozilmagan, gate yugurtirilmagan, browser-smoke YO'Q.**
+
 
 ## Faza MK04 — Menejer FE-B: xodim kartasi 360° · jurnal · haftalik xulosa (sana: 2026-08-09)
 
@@ -1103,6 +1207,123 @@ Alohida: filial ∩ scope kesishmasi · G1 imtiyoz taqiqi UI'da · shablon qo'll
   stash qilib tiklaganda parallel sessiyaning fayllarini commit'ga qo'shib yuborardi (§6.7 B).
   Gate'lar shu sababdan **qo'lda to'liq** yugurtirildi (yuqoriga qara).
 - Commit'dan keyin `git show --stat HEAD` bilan tarkib tekshirildi.
+
+### Status yorlig'i
+**Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q.** «done» / «production-ready» /
+«verified» EMAS.
+
+
+## Faza MK03 — Menejer FE-A: «Jonli holat» va «Javobgarlik» ekranlari (sana: 2026-08-09)
+
+**Holat:** bajarildi — **Phase-1** (strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q).
+**Commit:** `638212f8` — 10 fayl, +885/−41.
+
+### Rejaning da'vosi kodda tekshirildi (O'ZGARMAS QOIDA 2)
+- `GET manager/kpi/live` va `GET manager/kpi/accountability` **bor** —
+  `manager-kpi.controller.ts:68–78`, `LiveStatusService.board()/accountability()`.
+  Ikkalasi ham `@RequireHrPermission('employees','read')` ostida. FE **yo'q edi** — tasdiqlandi.
+- **LEKIN reja «BE tayyor» deganda bir narsani hisobga olmagan:** BE ekran matnini
+  **tayyor o'zbekcha qator** qilib qaytaradi (`title: "Kechikdi — 7 daq"`,
+  `label: "Ochiq kassa smenasi"`). Toza FE-faza bilan MK03 ning O'Z DoD'ini
+  («i18n ru+uz») bajarib bo'lmasdi: ru interfeysda o'zbekcha matn turib qolardi va
+  **hech bir gate buni ko'rmasdi** — `i18n:gate` faqat FE fayllarini skanlaydi.
+  Shuning uchun BE'ga **additive** (buzmaydigan) o'zgarish kiritildi va shu yerda ochiq yozildi.
+
+### Nima o'zgardi
+**BE (`apps/api/src/modules/manager/live/`) — additive, mavjud kontrakt buzilmagan:**
+- `LiveRow` ga 4 maydon: `titleKey` (yopiq `LIVE_TITLE` ro'yxatidan) · `titleParams`
+  (kassa nomi / kechikish daqiqasi / hujjat raqami) · `place` (manzil — tarjimasiz,
+  foydalanuvchi matni) · `showDuration` (davomat qatorida `false`: «keldi» bir martalik
+  hodisa, unga davomiylik yozilsa «shuncha vaqtdan beri kechikmoqda» deb yolg'on o'qilardi).
+- `board()` javobiga `thresholds` qo'shildi (`shiftLongHours` 12 · `lateAlertMinutes` 15 ·
+  `pickingStuckMinutes` 45). TZ «chegaralar ekranda izohlanadi» deydi; ularni FE'da
+  yozib qo'yish chegarani ikki joyda yashatardi va ular jimgina uzoqlashardi.
+- `title`/`detail` **saqlandi** (UI-bo'lmagan iste'molchilar uchun), lekin FE ularni
+  o'qimasligi drift-lock test bilan qulflandi.
+- `accountability` ga **BE o'zgarishi kerak bo'lmadi**: `DutyRow.label` o'zbekcha bo'lsa-da,
+  `kind` allaqachon strukturaviy kalit — FE shuni tarjima qiladi.
+
+**FE (yangi 2 sahifa):**
+- `apps/web/src/app/(app)/menejer/jonli/page.tsx` — «Jonli holat» (§6.1): diqqat darajasi
+  badge'i · tur bo'yicha 4 hisoblagich · chegaralar izohi · `since` + server `now` dan
+  hisoblanadigan davomiylik.
+- `apps/web/src/app/(app)/menejer/javobgarlik/page.tsx` — «Javobgarlik» (§6.4): xodim
+  kartasi · jami naqd · majburiyat qatorlari.
+- `layout.tsx` subnav: `live` → `/menejer/jonli`, `accountability` → `/menejer/javobgarlik`.
+- `domain-status-tone.ts`: `LIVE_ATTENTION_TONE`/`liveAttentionTone` va
+  `DUTY_KIND_TONE`/`dutyKindTone` (UI Convention 6 — sahifada lokal jadval TAQIQ, mavjud
+  `domain-status-tone.test.ts` drift-lock detektori shuni tutadi).
+- i18n ru+uz: `pages.menejerLive` 25 kalit · `pages.menejerDuties` 13 kalit · subnav 2.
+
+### TZ ning «yolg'on ishonch bermaslik» talablari qanday bajarildi
+- **Nol qatorlar yo'q:** BE `employeeDuties` tashlaydi; FE ularni `?? 0` bilan qaytarmaydi
+  (drift-lock test aynan shu naqshni bloklaydi).
+- **Jihoz bloki YO'Q:** `Equipment`/`Asset` modeli sxemada yo'q. Qo'shimcha — ro'yxat
+  to'liq emasligi **ekranda ochiq yozilgan** (`scope_note`), aks holda menejer buni
+  «hammasi shu» deb o'qirdi. MK05 reyestr qo'shganda blok shu yerga kiradi.
+- **Bo'sh javob «hammasi joyida» EMAS:** `empty_hint` bo'shlik nima demasligini aytadi.
+- **Tartib serverda:** FE `.sort()` qilmaydi (drift-lock), «diqqat talab qilgani tepada»
+  qoidasi `buildLiveBoard` da qoladi.
+- **NULL ≠ 0:** pulsiz majburiyatda «—» ko'rsatiladi, nol emas.
+
+### Testlar (TDD — RED ko'rildi, keyin GREEN)
+- `live-status.test.ts`: **26 → 34** test. RED dalili: `LIVE_TITLE` yo'q ekan,
+  suite umuman yig'ilmadi (`Cannot read properties of undefined (reading 'shiftOpen')`).
+- `menejer-live-boards.test.ts` (**yangi**, 27 test): BE yopiq ro'yxatlarini
+  (`LIVE_KIND` · `ATTENTION` · `LIVE_TITLE` · `DUTY`) manbadan o'qib, har element uchun
+  ru+uz tarjimasi borligini tekshiradi — bu kalitlar FE'da dinamik chaqiriladi va odatiy
+  i18n gate ularni KO'RMAYDI. Regexlar non-vacuous ekani alohida tekshirildi (mutant
+  satrlar tutiladi, haqiqiy `titleKey:` tutilmaydi).
+
+### Gate natijasi (halol)
+- `pnpm --filter @moysklad/api typecheck` → **0** · `@moysklad/web typecheck` → **0**
+- `pnpm i18n:gate` → **9/9 o'tdi**
+- `pnpm --filter @moysklad/web exec vitest run` (TO'LIQ) → **195 fayl / 2919 test yashil**,
+  26 skip. Regress yo'q.
+- `pnpm --filter @moysklad/api exec vitest run src/modules/manager` → **269/271**.
+  2 yiqilish — parallel sessiyaning commit qilinmagan `kpi-accrual.test.ts` (MK01) faylida,
+  meniki emas, tegilmadi.
+- `pnpm lint:product` → **7 xato, hammasi parallel sessiyalarning fayllarida**
+  (`hr-employee/onboarding*` — MK02 · `manager/kpi/kpi-accrual.test.ts` — MK01).
+  **Mening yo'llarim 0**: `npx biome check <10 faylim>` → xato yo'q. Umumiy gate hozir
+  qizil, sabab meniki emas — halol yozib qo'yildi.
+- **Brauzer-smoke YO'Q** (MK14 ga).
+
+### Qolgan qarz / DEFER
+- **Runtime-QA yo'q:** ikkala ekran real brauzerda ochilmagan (MK14). Jonli ma'lumot
+  talab qiladi (ochiq smena, reys, yig'ish) — seed'siz bo'sh holat ko'rinadi.
+- **Ochiq smena naqdi = `openingCashMinor`** (smena boshidagi summa), joriy kutilgan naqd
+  emas — BE izohida ataylab shunday (§8.4 alohida hisob talab qiladi). Ya'ni «kimda qancha
+  pul» raqami **quyi chegara**, aniq qiymat emas. Ekranda bu farq ko'rsatilmagan —
+  MK08/MK34 qarzi.
+- **`RestockTask` manbasi ulanmagan:** TZ §6.1 «omborchi nima yig'yapti» uchun `RestockTask`
+  (`in_progress`) ni ham sanaydi; BE hozir `MsPickList` + `RetailSale.state='picking'` dan
+  o'qiydi. Tekshirildi — bu MK03 dan OLDIN shunday edi, qamrovni kengaytirmadim
+  (bir faza qoidasi). Xuddi shu holat `DriverShift` + GPS ping uchun ham (BE `DriverTrip` dan).
+- Sahifalash/limit yo'q: ikkala endpoint ham butun ro'yxatni qaytaradi.
+- `title`/`detail` javobda qoldi — hozir hech kim o'qimaydi (o'lik maydon xavfi).
+  Drift-lock faqat shu ikki sahifani qo'riqlaydi.
+
+### OPS-QADAM qo'shildimi
+- Yo'q (migratsiya yo'q, sxema tegilmadi).
+
+### Git holati (§6.7 ehtiyoti)
+- **To'rt parallel sessiya faol** edi (MK01 `kpi-accrual` · MK02 `onboarding`+migratsiya ·
+  MK04 `employee-card`/`haftalik` · report-notices).
+- `layout.tsx` va `messages/{ru,uz}.json` — MK04 bilan **bir obyekt ichida** kesishadi
+  (hunk bo'yicha ajratib bo'lmaydi). Indeksga `git show HEAD:<fayl>` nusxasi + **faqat MK03
+  o'zgarishi** deterministik skript bilan yozildi (anchor topilmasa `exit 1`; begona kalit
+  tushib qolmaganini alohida tekshiradi), keyin `hash-object -w` + `update-index --cacheinfo`.
+  **Ish daraxtiga tegilmadi.**
+- ⚠️ **Yangi bug-klass topildi:** birinchi commit (`41d5080f`) **19 fayl** bilan chiqdi —
+  men 10 tasini stage qilgan bo'lsam ham. Sabab: **indeks umumiy** — parallel MK02 sessiyasi
+  o'sha oraliqda o'z fayllarini stage qilgan va commit hammasini olgan. Bu §6.7 B dagi
+  lint-staged hodisasidan **boshqa** yo'l: bu yerda hook umuman ishlamagan.
+  Tuzatildi: `git reset --soft HEAD~1` → begona 9 yo'l `git restore --staged` bilan
+  chiqarildi (fayllar untracked holatiga qaytdi, MAZMUNI tegilmadi) → qayta commit
+  `638212f8` (10 fayl). Parallel sessiya ishi keyin tekshirildi — hammasi joyida.
+- Hook'lar bir martaga chetlab o'tildi (`-c core.hooksPath=/dev/null`), gate'lar qo'lda to'liq.
+- Commit'dan keyin `git show --stat HEAD` bilan tarkib tasdiqlandi.
 
 ### Status yorlig'i
 **Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q.** «done» / «production-ready» /
@@ -1234,119 +1455,97 @@ ishga qabul sanasi emas).
 **Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q.** «done» / «production-ready» /
 «verified» EMAS. Runtime-QA — **MK14** (4M Phase-2 QA) fazasida.
 
+## Faza MK01 — 4M.3 yakuni: idempotent bonus/jarima (sana: 2026-08-09)
 
-## Faza MK03 — Menejer FE-A: «Jonli holat» va «Javobgarlik» ekranlari (sana: 2026-08-09)
+**Holat:** BAJARILDI *(shu sessiyaning ikkinchi urinishi — birinchisi BLOKLANDI, pastga qara)*
+**Commit(lar):** `<hash>` — `feat(manager): MK01 — qabuldan bonus/jarima (QAROR-B1)`
 
-**Holat:** bajarildi — **Phase-1** (strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q).
-**Commit:** `638212f8` — 10 fayl, +885/−41.
-
-### Rejaning da'vosi kodda tekshirildi (O'ZGARMAS QOIDA 2)
-- `GET manager/kpi/live` va `GET manager/kpi/accountability` **bor** —
-  `manager-kpi.controller.ts:68–78`, `LiveStatusService.board()/accountability()`.
-  Ikkalasi ham `@RequireHrPermission('employees','read')` ostida. FE **yo'q edi** — tasdiqlandi.
-- **LEKIN reja «BE tayyor» deganda bir narsani hisobga olmagan:** BE ekran matnini
-  **tayyor o'zbekcha qator** qilib qaytaradi (`title: "Kechikdi — 7 daq"`,
-  `label: "Ochiq kassa smenasi"`). Toza FE-faza bilan MK03 ning O'Z DoD'ini
-  («i18n ru+uz») bajarib bo'lmasdi: ru interfeysda o'zbekcha matn turib qolardi va
-  **hech bir gate buni ko'rmasdi** — `i18n:gate` faqat FE fayllarini skanlaydi.
-  Shuning uchun BE'ga **additive** (buzmaydigan) o'zgarish kiritildi va shu yerda ochiq yozildi.
+> **⚠️ QAROR-B1 shu sessiyada YOPILDI** (egasi «qaror B1 ni yop va qurishni boshla» dedi).
+> Formulani agent taklif qildi, egasi tasdiqladi. To'liq matn: shu faylda «✅ QAROR-B1 — YOPILDI».
+> Sessiyaning birinchi yozuvi (BLOKLANDI) o'chirilmadi — qaror qanday yopilgani ko'rinib tursin.
 
 ### Nima o'zgardi
-**BE (`apps/api/src/modules/manager/live/`) — additive, mavjud kontrakt buzilmagan:**
-- `LiveRow` ga 4 maydon: `titleKey` (yopiq `LIVE_TITLE` ro'yxatidan) · `titleParams`
-  (kassa nomi / kechikish daqiqasi / hujjat raqami) · `place` (manzil — tarjimasiz,
-  foydalanuvchi matni) · `showDuration` (davomat qatorida `false`: «keldi» bir martalik
-  hodisa, unga davomiylik yozilsa «shuncha vaqtdan beri kechikmoqda» deb yolg'on o'qilardi).
-- `board()` javobiga `thresholds` qo'shildi (`shiftLongHours` 12 · `lateAlertMinutes` 15 ·
-  `pickingStuckMinutes` 45). TZ «chegaralar ekranda izohlanadi» deydi; ularni FE'da
-  yozib qo'yish chegarani ikki joyda yashatardi va ular jimgina uzoqlashardi.
-- `title`/`detail` **saqlandi** (UI-bo'lmagan iste'molchilar uchun), lekin FE ularni
-  o'qimasligi drift-lock test bilan qulflandi.
-- `accountability` ga **BE o'zgarishi kerak bo'lmadi**: `DutyRow.label` o'zbekcha bo'lsa-da,
-  `kind` allaqachon strukturaviy kalit — FE shuni tarjima qiladi.
+- `apps/api/src/modules/manager/kpi/kpi-accrual.ts` — **YANGI sof modul**. `planAccrual()` (ball
+  qaysi oraliqqa tushsa — o'sha qoidaning `kind`+`amountMinor` i) va `planReversalRows()`
+  (bekorda zero-sum). Pul qarori DB'siz sinaladi (`kpi-correction.ts` naqshi).
+- `apps/api/src/modules/manager/kpi/daily-kpi-acceptance.service.ts` — ulash:
+  `entersPayroll`/`leavesPayroll` **`countsTowardPayroll()` dan** o'qiladi (o'z ro'yxati yozilmadi
+  — FSM shartnomasi); qabulda `hrBonusFineLog.create`, chiqishda `writeReversal()` — **ikkalasi ham
+  holat-da'vosi bilan BITTA tranzaksiyada**; `accrualRules()` faqat `isActive && deletedAt: null`;
+  `logAccrualSkip()` buzuq/ustma-ust qoidalarni WARN qiladi (jimgina yo'qotish bo'lmasin);
+  `load()` ga `employee.name` (yozuvdagi nom snapshot'i).
+- `apps/api/src/modules/manager/kpi/daily-kpi-acceptance.service.ts` — `systemTransition()` ham
+  teskari qator yozadi: `mark_stale` **tizim** o'tishi, u `transition()` dan o'tmaydi. Busiz
+  eskirgan kun puli joyida qolib, qayta qabulda ikki karra bo'lardi.
+- `packages/db/prisma/schema.prisma` — `HrBonusFineLog` ga 2 ustun: `dailyKpiId` (so'rov anchor'i)
+  va `kpiEventId` (tabiiy kalit) + `@@unique([kpiEventId, kind])` + `@@index([accountId, dailyKpiId])`
+  + 2 FK `onDelete: SetNull`. `EmployeeDailyKpi`/`EmployeeDailyKpiEvent` ga teskari munosabat.
+- `packages/db/prisma/migrations/20260810030000_bonus_fine_kpi_accrual_link/migration.sql` — DDL.
+- `apps/api/src/modules/manager/kpi/daily-kpi-acceptance.service.test.ts` — **faqat mock qo'shildi**
+  (`hrBonusFineRule.findMany`, `tx.hrBonusFineLog`), bironta test o'zgartirilmadi/o'chirilmadi.
 
-**FE (yangi 2 sahifa):**
-- `apps/web/src/app/(app)/menejer/jonli/page.tsx` — «Jonli holat» (§6.1): diqqat darajasi
-  badge'i · tur bo'yicha 4 hisoblagich · chegaralar izohi · `since` + server `now` dan
-  hisoblanadigan davomiylik.
-- `apps/web/src/app/(app)/menejer/javobgarlik/page.tsx` — «Javobgarlik» (§6.4): xodim
-  kartasi · jami naqd · majburiyat qatorlari.
-- `layout.tsx` subnav: `live` → `/menejer/jonli`, `accountability` → `/menejer/javobgarlik`.
-- `domain-status-tone.ts`: `LIVE_ATTENTION_TONE`/`liveAttentionTone` va
-  `DUTY_KIND_TONE`/`dutyKindTone` (UI Convention 6 — sahifada lokal jadval TAQIQ, mavjud
-  `domain-status-tone.test.ts` drift-lock detektori shuni tutadi).
-- i18n ru+uz: `pages.menejerLive` 25 kalit · `pages.menejerDuties` 13 kalit · subnav 2.
+### QAROR-B1 formulasi (qisqacha)
+Ball-oralig'i qoidalari, **opt-in**, qat'iy summa. Manba = qabulda **muzlatilgan** `scorePercent`.
+Sozlama = mavjud `HrBonusFineRule.condition = {type:'kpi_day_score', minPercent, maxPercent}`.
+Oraliq **`[min, max)`**. **Uch holatda pul yozilmaydi:** qoida yo'q · ball `null` (NULL ≠ 0) ·
+ikki oraliq mos (konfiguratsiya xatosi — tavakkal summa yozilmaydi). Bekorda **teskari qator**
+(manfiy summa, `source='kpi_accept_reversal'`), o'chirish yo'q.
 
-### TZ ning «yolg'on ishonch bermaslik» talablari qanday bajarildi
-- **Nol qatorlar yo'q:** BE `employeeDuties` tashlaydi; FE ularni `?? 0` bilan qaytarmaydi
-  (drift-lock test aynan shu naqshni bloklaydi).
-- **Jihoz bloki YO'Q:** `Equipment`/`Asset` modeli sxemada yo'q. Qo'shimcha — ro'yxat
-  to'liq emasligi **ekranda ochiq yozilgan** (`scope_note`), aks holda menejer buni
-  «hammasi shu» deb o'qirdi. MK05 reyestr qo'shganda blok shu yerga kiradi.
-- **Bo'sh javob «hammasi joyida» EMAS:** `empty_hint` bo'shlik nima demasligini aytadi.
-- **Tartib serverda:** FE `.sort()` qilmaydi (drift-lock), «diqqat talab qilgani tepada»
-  qoidasi `buildLiveBoard` da qoladi.
-- **NULL ≠ 0:** pulsiz majburiyatda «—» ko'rsatiladi, nol emas.
+### Testlar (RED → GREEN)
+- `kpi-accrual.test.ts` — **18 test**, sof modul. Avval YIQILDI (`Failed to load url
+  ./kpi-accrual.js` — modul yo'q) → GREEN. Ichida: chegara qiymatlari (`100.0`→bonus,
+  `69.9`→jarima, `70.0`→hech narsa, `0`→jarima), NULL ball, buzuq qoidalar, ustma-ust oraliqlar,
+  zero-sum idempotentligi.
+- `kpi-accrual-wiring.test.ts` — **15 test**, servis (mock Prisma). Avval 9 tasi YIQILDI
+  (`expected "spy" to be called 1 times, but got 0` — ulash yo'q) → GREEN. Ichida rejadagi
+  4 talab: (1) takroriy qabul → 1 yozuv; (2) qabul→bekor → jami 0; (3) qabul→eskirish→qayta
+  qabul → 50 000 − 50 000 + 30 000 = **30 000** (ikki karra emas); (4) chegara qiymatlari.
+- Yugurtirilgan: `vitest run src/modules/manager src/modules/hr` → **1212 passed** (106 fayl);
+  to'liq `vitest run` (api) → **6063 passed, 2 skipped** (452 fayl), 0 yiqilish.
 
-### Testlar (TDD — RED ko'rildi, keyin GREEN)
-- `live-status.test.ts`: **26 → 34** test. RED dalili: `LIVE_TITLE` yo'q ekan,
-  suite umuman yig'ilmadi (`Cannot read properties of undefined (reading 'shiftOpen')`).
-- `menejer-live-boards.test.ts` (**yangi**, 27 test): BE yopiq ro'yxatlarini
-  (`LIVE_KIND` · `ATTENTION` · `LIVE_TITLE` · `DUTY`) manbadan o'qib, har element uchun
-  ru+uz tarjimasi borligini tekshiradi — bu kalitlar FE'da dinamik chaqiriladi va odatiy
-  i18n gate ularni KO'RMAYDI. Regexlar non-vacuous ekani alohida tekshirildi (mutant
-  satrlar tutiladi, haqiqiy `titleKey:` tutilmaydi).
+### Gate natijasi
+- typecheck (`@moysklad/api`): **0** · biome (`pnpm lint:product`): **0 error** (783 warning —
+  siyosat bo'yicha ruxsat) · vitest api: **6063 passed** · i18n: **N/A** (faqat backend, UI matni
+  tegilmagan) · web: tegilmagan (shuning uchun yugurtirilmadi).
+- Lokal DB (`climart_adopt @ 5432`) da migratsiya **qo'llandi** va tekshirildi:
+  `uq_bonusfine_kpi_event_kind` va `hr_bonus_fine_log_account_id_daily_kpi_id_idx` indekslari
+  `pg_indexes` da bor. `prisma generate` qayta yugurtirildi.
 
-### Gate natijasi (halol)
-- `pnpm --filter @moysklad/api typecheck` → **0** · `@moysklad/web typecheck` → **0**
-- `pnpm i18n:gate` → **9/9 o'tdi**
-- `pnpm --filter @moysklad/web exec vitest run` (TO'LIQ) → **195 fayl / 2919 test yashil**,
-  26 skip. Regress yo'q.
-- `pnpm --filter @moysklad/api exec vitest run src/modules/manager` → **269/271**.
-  2 yiqilish — parallel sessiyaning commit qilinmagan `kpi-accrual.test.ts` (MK01) faylida,
-  meniki emas, tegilmadi.
-- `pnpm lint:product` → **7 xato, hammasi parallel sessiyalarning fayllarida**
-  (`hr-employee/onboarding*` — MK02 · `manager/kpi/kpi-accrual.test.ts` — MK01).
-  **Mening yo'llarim 0**: `npx biome check <10 faylim>` → xato yo'q. Umumiy gate hozir
-  qizil, sabab meniki emas — halol yozib qo'yildi.
-- **Brauzer-smoke YO'Q** (MK14 ga).
+### Tasdiqlangan/rad etilgan da'volar
+- ✅ Reja: «`HrBonusFineLog` sxemada bor — yangi jadval kerak emas» — **TASDIQLANDI** (`:9529`).
+- ❌ Reja: «idempotentlik uchun ... `@@unique`» mavjud kalit bilan yopiladi degan taxmin —
+  **RAD ETILDI**: `@@unique([attendanceId, source])` da `attendanceId` **nullable**, PG'da
+  NULL'lar to'qnashmaydi ⇒ KPI kanali uchun ishlamasdi. Shuning uchun **yangi** kalit
+  `(kpiEventId, kind)`. *(Bu — birinchi hisobotdagi ogohlantirish, endi kodda hal qilindi.)*
+- ✅ Oylikka ulanish **avtomatik**: `HrBonusFineService.aggregateRaw()` → `bonusSumMinor`/
+  `fineSumMinor` → `payroll-formula.util.ts`: `fix + kpi + bonus − fine + commission +
+  correctionNet`. Ya'ni yangi kanal uchun oylik tomonida kod O'ZGARTIRISH KERAK EMAS —
+  `hr-payroll.service.ts:99` va `payroll-formula.util.ts:37` da o'z ko'zim bilan tasdiqlandi.
+- ✅ Ikki karra hisoblanmaslik: `EmployeeKpiCorrection` (sotuv-fakti farqi) va `HrBonusFineLog`
+  (bonus) — oylik formulasida **alohida** hadlar, ustma-ust tushmaydi.
+- ⚠️ Reja/todo'dagi «§4.2» havolasi TZ'da mavjud emas (§4 raqamli bandlar) — hujjat qarzi,
+  tuzatilmadi (matn qarzi, kodga ta'siri yo'q).
 
 ### Qolgan qarz / DEFER
-- **Runtime-QA yo'q:** ikkala ekran real brauzerda ochilmagan (MK14). Jonli ma'lumot
-  talab qiladi (ochiq smena, reys, yig'ish) — seed'siz bo'sh holat ko'rinadi.
-- **Ochiq smena naqdi = `openingCashMinor`** (smena boshidagi summa), joriy kutilgan naqd
-  emas — BE izohida ataylab shunday (§8.4 alohida hisob talab qiladi). Ya'ni «kimda qancha
-  pul» raqami **quyi chegara**, aniq qiymat emas. Ekranda bu farq ko'rsatilmagan —
-  MK08/MK34 qarzi.
-- **`RestockTask` manbasi ulanmagan:** TZ §6.1 «omborchi nima yig'yapti» uchun `RestockTask`
-  (`in_progress`) ni ham sanaydi; BE hozir `MsPickList` + `RetailSale.state='picking'` dan
-  o'qiydi. Tekshirildi — bu MK03 dan OLDIN shunday edi, qamrovni kengaytirmadim
-  (bir faza qoidasi). Xuddi shu holat `DriverShift` + GPS ping uchun ham (BE `DriverTrip` dan).
-- Sahifalash/limit yo'q: ikkala endpoint ham butun ro'yxatni qaytaradi.
-- `title`/`detail` javobda qoldi — hozir hech kim o'qimaydi (o'lik maydon xavfi).
-  Drift-lock faqat shu ikki sahifani qo'riqlaydi.
+- **FE yo'q** — qoidalarni ekranda sozlash (oraliq/summa) va kun kartochkasida «bu kun uchun
+  bonus X» ko'rsatish → **MK03/MK04** (menejer FE fazalari). Hozircha qoidalar mavjud HR
+  bonus/jarima CRUD'i (`hr-bonus-fine-rule`) orqali `condition` JSON bilan kiritiladi.
+- **Bir kunda ham bonus, ham jarima** (masalan sotuv yaxshi-yu kassa farqi bor) — **MK07**
+  (12 qoida turi). MK01 da bir qabul = ko'pi bilan bitta yozuv (ataylab).
+- **Foizli/progressiv formula** — kerak bo'lsa `condition.type` ga yangi qiymat qo'shiladi;
+  joriy qaror buzilmaydi.
+- **Oy chegarasi nuqtasi:** teskari qator `createdAt` bo'yicha o'z oyiga tushadi (iyul kunining
+  avgustdagi bekori → avgust oyligi). Bu `EmployeeKpiCorrection` siyosati bilan bir xil, lekin
+  `payroll-formula.util.ts:133` dagi «00:00–05:00 oralig'ida yozilgan jarima/bonus o'tgan oyga
+  tushib qolardi» izohi shu kanalga ham tegishli — **o'lchanmagan**, alohida tekshiruv qarzi.
+- **Prodda hech narsa qo'llanmagan** (DDL ham, qoida ham) — OPS-QADAM 8.
 
 ### OPS-QADAM qo'shildimi
-- Yo'q (migratsiya yo'q, sxema tegilmadi).
-
-### Git holati (§6.7 ehtiyoti)
-- **To'rt parallel sessiya faol** edi (MK01 `kpi-accrual` · MK02 `onboarding`+migratsiya ·
-  MK04 `employee-card`/`haftalik` · report-notices).
-- `layout.tsx` va `messages/{ru,uz}.json` — MK04 bilan **bir obyekt ichida** kesishadi
-  (hunk bo'yicha ajratib bo'lmaydi). Indeksga `git show HEAD:<fayl>` nusxasi + **faqat MK03
-  o'zgarishi** deterministik skript bilan yozildi (anchor topilmasa `exit 1`; begona kalit
-  tushib qolmaganini alohida tekshiradi), keyin `hash-object -w` + `update-index --cacheinfo`.
-  **Ish daraxtiga tegilmadi.**
-- ⚠️ **Yangi bug-klass topildi:** birinchi commit (`41d5080f`) **19 fayl** bilan chiqdi —
-  men 10 tasini stage qilgan bo'lsam ham. Sabab: **indeks umumiy** — parallel MK02 sessiyasi
-  o'sha oraliqda o'z fayllarini stage qilgan va commit hammasini olgan. Bu §6.7 B dagi
-  lint-staged hodisasidan **boshqa** yo'l: bu yerda hook umuman ishlamagan.
-  Tuzatildi: `git reset --soft HEAD~1` → begona 9 yo'l `git restore --staged` bilan
-  chiqarildi (fayllar untracked holatiga qaytdi, MAZMUNI tegilmadi) → qayta commit
-  `638212f8` (10 fayl). Parallel sessiya ishi keyin tekshirildi — hammasi joyida.
-- Hook'lar bir martaga chetlab o'tildi (`-c core.hooksPath=/dev/null`), gate'lar qo'lda to'liq.
-- Commit'dan keyin `git show --stat HEAD` bilan tarkib tasdiqlandi.
+- **Ha** — `docs/REJA-8-BOLIM-2026-08.md` → «OPS-QADAMLAR» **8-band**: prod DDL (`db execute
+  --file`), backfill kerak emas, unique-indeks xavfi yo'q (eski qatorlarda `kpi_event_id` NULL),
+  keyin `/api/v1/health`. Kanal **opt-in** — DDL o'zi xulqni o'zgartirmaydi.
 
 ### Status yorlig'i
-**Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q.** «done» / «production-ready» /
-«verified» EMAS.
+**Phase-1: strukturaviy + unit-tasdiqlangan (6063 test), browser-smoke YO'Q.**
+Jonli oqim (menejer kunni brauzerda qabul qiladi → bonus paydo bo'ladi → oylikda ko'rinadi)
+**tekshirilmagan** — u **MK14** (4M Phase-2 QA) ga qoladi.

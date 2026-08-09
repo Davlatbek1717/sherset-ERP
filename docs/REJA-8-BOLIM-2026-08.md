@@ -142,6 +142,16 @@ alohida bajariladi. **Har faza agenti o'zi qo'shgan qadamni shu ro'yxatga yozadi
    **`MANIFEST` faylini SAQLANG — qaytarish faqat shu fayl bilan mumkin** (`ROLLBACK=1 APPLY=1`).
    Prod `Store` bittadan ko'p bo'lsa `STORE_ID` **majburiy** (skript o'zi to'xtaydi).
    Migratsiyadan keyin `/api/v1/health` (2-band) + hisobotdagi `|farq| jami` ni yozib qo'ying.
+8. **MK01 (2026-08-09) — bonus/jarima kanalining DDL'i.** Prod (`sherset_v2`) da
+   `packages/db/prisma/migrations/20260810030000_bonus_fine_kpi_accrual_link/migration.sql`
+   ni `prisma db execute --file` bilan qo'llash. Faqat QO'SHADI: `hr_bonus_fine_log` ga ikkita
+   **nullable** ustun (`daily_kpi_id`, `kpi_event_id`) + 1 unique + 1 oddiy indeks + 2 FK
+   (`ON DELETE SET NULL`). Mavjud qatorlarga tegmaydi, backfill KERAK EMAS (eski yozuvlar
+   boshqa kanallardan). **Unique indeks xavfi yo'q**: `kpi_event_id` barcha eski qatorlarda
+   NULL, PostgreSQL'da NULL'lar to'qnashmaydi. Keyin `/api/v1/health` (2-band).
+   ⚠️ **Kanal OPT-IN**: DDL o'zi hech qanday pul yozmaydi — egasi `hr_bonus_fine_rule` ga
+   `condition = {"type":"kpi_day_score","minPercent":…,"maxPercent":…}` qoidalarini
+   qo'shmaguncha xulq o'zgarmaydi.
 
 ---
 
@@ -179,7 +189,7 @@ Belgilar: 🗄️ migratsiya · 🌐 brauzer/QA · 📝 kodsiz · ⛔ qaror kutm
 
 | # | Bir vaqtda beriladigan fazalar |
 |---|---|
-| **1** | **F001** 🗄️ `Branch` modeli + migratsiya (bitta «Asosiy» filial) ☑ HIS<br>**F010** X2: kassir kesimi hisobotlarda (hujjat egasidan ajratilgan<br>**F019** Migratsiya 1–2-qadam: zona/yacheyka generatsiya + backfill<br>**F042** Webhook qabul qilish (imzo + idempotentlik + navbat) ☑ HIS |
+| **1** | **F001** 🗄️ `Branch` modeli + migratsiya (bitta «Asosiy» filial)<br>**F010** X2: kassir kesimi hisobotlarda (hujjat egasidan ajratilgan<br>**F019** Migratsiya 1–2-qadam: zona/yacheyka generatsiya + backfill<br>**F042** Webhook qabul qilish (imzo + idempotentlik + navbat) |
 | **2** | **F002** 🗄️ `Store`/`CashDesk`/`Employee` filialga bog'lanishi + filia<br>**F043** Yetkazish: haydovchi biriktirish + holat + naqd topshirish<br>**F047** Davomat manbalari: kassir/haydovchi smenasi → attendance<br>**F057** `docs/moysklad-reference` capture'larini tiklash |
 | **3** | **F003** 🗄️ Hujjatlarda `branchId` muhrlash + backfill<br>**F058** Parity foizlarini `climart-adoption` da qayta o'lchash<br>**F059** List toolbar: qolgan 37 sahifa<br>**F060** Navigation graph (0%) |
 | **4** | **F004** 🗄️ Narx dvigateli (shartnoma → mijoz → guruh → default)<br>**F067** Vizual parity metodikasi va o'lchov harness'i<br>**F088** 📝⛔B5 TZ taxminlarini reviziya qilish (egasi bilan) |

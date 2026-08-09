@@ -27,7 +27,7 @@
 
 | | Soni |
 |---|---|
-| **Qolgan bosqichlar** | **60** |
+| **Qolgan bosqichlar** | **59** |
 | Sifat qarzlari | 7 |
 | Brauzer-QA (Phase-2) o'tishlari | ~9 (har bo'lim uchun 1) |
 | **JAMI ish birligi** | **~76** |
@@ -47,7 +47,7 @@ kuniga **3 sessiya** → **~6 hafta**.
 | 2 — Onlayn sotuv / B2B / B2G | B1 | **8** (B2–B9) |
 | 3 — Analitika | B1, B2 (qisman) | **6** (B3–B8) |
 | 4 — Menejer (ruxsatlar) | — | **8** (B1–B8) |
-| 4M — Menejer (kunlik KPI) | 4M.1 4M.2 **4M.4** ✅to'liq | **7** (4M.3 qoldig'i + 4M.5–4M.10) |
+| 4M — Menejer (kunlik KPI) | 4M.1 4M.2 **4M.3** 4M.4 ✅to'liq | **6** (4M.5–4M.10) |
 | 5 — Ta'minotchilar | — | **6** (B1–B6) |
 | 6 — HR | B8 (qisman) | **8** (B1–B7, B9) |
 | 7 — Ombor | B1 (qisman), **B2** | **11** (B2a, B3–B12) |
@@ -57,8 +57,11 @@ kuniga **3 sessiya** → **~6 hafta**.
 
 ## ❓ EGASIDAN QAROR KUTILMOQDA (bloklovchi)
 
-- [ ] **B1. Bonus/jarima formulasi** (4M.3 §4.2) — «kun qabul qilinganda bonus/jarima yoziladi»
-      deyilgan, lekin **qancha** yozilmagan. *4M.3 shusiz yopilmaydi.*
+- [x] **B1. Bonus/jarima formulasi** — ✅ **YOPILDI 2026-08-09**: ball-oralig'i (band) qoidalari,
+      **opt-in**, qat'iy summa. `HrBonusFineRule.condition={type:'kpi_day_score',minPercent,maxPercent}`,
+      manba = qabulda MUZLATILGAN `scorePercent`, oraliq `[min,max)`. Qoida yo'q/ball `null`/ikki
+      qoida mos ⇒ **pul yozilmaydi**. Bekorda teskari qator (zero-sum). To'liq matn:
+      `docs/REJA-MENEJER-KASSA-2026-08.md` → «QAROR-B1 — YOPILDI».
 - [ ] **B2. Kompozit ball chegarasi 150%** (`SCORE_CAP_PERCENT`) — TZ'da yo'q, men tanladim.
 - [ ] **B3. `lower_better` formulasi** (0→200%, maqsad→100%, 2×→0%) — TZ'da yo'q, men tanladim.
 - [ ] **B4. Rol nomlari** — hozir `admin`/`director` = ega, `manager`/`menejer` = menejer.
@@ -171,7 +174,13 @@ kuniga **3 sessiya** → **~6 hafta**.
       *(18+7 test)* · 🔴 jonli ma'lumotda bug topildi: `was` birinchi tuzatmada `null` bo'lgani
       uchun jami **doim 0** chiqardi — endi `was ?? autoValue ?? 0` va «yo'qdan kiritilgan»
       alohida sanaladi ✅ *FE: `/menejer/haftalik` (MK04)*
-- [ ] ⛔ **Idempotent bonus/jarima** `HrBonusFineLog` ga — **B1 qaroriga bog'liq**
+- [x] **Idempotent bonus/jarima** `HrBonusFineLog` ga *(**MK01 · 2026-08-09 · Phase-1**: QAROR-B1
+      yopildi — ball-oralig'i qoidalari, **opt-in**. Sof modul `kpi-accrual.ts` (18 test) + ulash
+      (15 test): qabulda `source='kpi_accept'`, bekorda **zero-sum teskari qator**, tabiiy kalit
+      `@@unique([kpiEventId, kind])` (eski `attendanceId` kaliti nullable bo'lgani uchun
+      yaramasdi). Qoida yo'q / ball `null` / ikki oraliq mos ⇒ **pul yozilmaydi**. Oylikka
+      `aggregateRaw` orqali o'zi ulanadi. Migratsiya `20260810030000` — lokalda qo'llandi,
+      **prodda YO'Q** (OPS-8). Browser-smoke YO'Q → MK14)*
 
 ### 4M.4 — To'liq xodimlar nazorati ⭐
 - [x] **Jonli holat** — `GET manager/kpi/live` *(26 test + runtime)*: ochiq smena · davomat ·
