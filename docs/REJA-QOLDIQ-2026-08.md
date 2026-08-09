@@ -84,8 +84,24 @@ foydalanuvchi bilan birga bajariladi (`/deploy` skill + shu ro'yxat):
    TO'XTAYDI. Tekshir: `businessStatus.webhookSecretSet === true`.
 7. **Env sirlari** (Faza 22): deploydan OLDIN VPS'da haqiqiy `JWT_SECRET`/`COOKIE_SECRET` borligini
    tekshir — endi yo'q bo'lsa API boot'da YIQILADI.
-8. **Rol matritsasi QA** (Faza 23 qattiqlashuvi): `employees:full`siz menejer KPI konfiguratsiyasini
-   saqlay olmaydi; `settings`siz «Отделы» yaratilmaydi — rollarni deploydan keyin tekshir/to'ldir.
+8. **Rol matritsasi QA** (Faza 23 + **Faza Q10** qattiqlashuvi): `employees:full`siz menejer KPI
+   konfiguratsiyasini saqlay olmaydi; `settings`siz «Отделы» yaratilmaydi — rollarni deploydan keyin
+   tekshir/to'ldir. **Faza Q10 qo'shdi (16 endpoint, hammasi ilgari HAR xodimga ochiq edi):**
+   `settings.update` — `PUT /sklad-keepers`, `PUT /sklad-keepers/receipt-printer`,
+   `PATCH /admin/shift-schedules/:id`, `PATCH /admin/smenas/:id`, `POST /pick-lists/sync`,
+   `POST /onboarding/{skip,restart,override}` · `settings.create` —
+   `POST /admin/{shift-schedules,smenas}` · `settings.delete` — `DELETE /sklad-keepers/:skladNo`,
+   `DELETE /admin/shift-schedules/:id`, `DELETE /admin/smenas/:id` · `cashiersession.create` —
+   `POST /admin/smenas/open-session` · `debtpayment.create` — `POST /debts/pos/pay` (**pul**) ·
+   `salesreturn.update` — `POST /restock-tasks/from-sales-return` · **`DispatcherGuard`
+   (`hrRoles: ['admin']`)** — `GET /driver-tracking/link/:employeeId`.
+   **Deploydan keyin AYNAN tekshir:** (a) sozlamalar sahifalarini (sklad-keepers / shift-schedules /
+   smena) ishlatadigan xodimda `settings` create/update/delete bormi; (b) POS smenani ochadigan
+   kassirda `cashiersession.create`, POS qarz to'lovini oladigan kassirda `debtpayment.create`
+   bormi (QarzOperatori roli endi POS qarz to'lovini kirita OLMAYDI — TZ §3.6 talabi, kutilgan);
+   (c) haydovchi magic-linkini beradigan HR-menejerda `hrRoles: ['admin']` bormi. **ReadOnly** va
+   **rolsiz** xodimlar bu 16 yo'lda endi 403 oladi; **Employee** roli `delete`larda 403 oladi
+   (`delete: NO`). Egaga (admin) ta'sir YO'Q — seed'da Administrator = hamma joyda `ALL`.
 9. **`retail_sales.agent_id` backfill** audit-hodisalardan (Faza 7 hisoboti tavsiyasi) — legacy qarz
    cheklari qaytarilishi uchun.
 10. **PM2/VPS gigiena:** `instances: 1` saqlanishi; yetim poll-sikllar tekshiruvi
@@ -342,7 +358,7 @@ yoz (deploy-QA uchun, OPS-8 bilan bog'liq).
 > `docs/REJA-QOLDIQ-2026-08.md` — **Faza Q10**. O'ZGARMAS QOIDALAR. Faza 23 hisoboti toifalash
 > ro'yxatini o'qi. «Haqiqiy teshik» endpointlariga permission-guard. TDD: 403-testlar. Ta'sirlangan
 > rollar jadvali hisobotda. Gate. Hisobot, TO'XTA.
-**◻ HISOBOT:** _(agent to'ldiradi)_
+**☑ HISOBOT (2026-08-09):** BAJARILDI — batafsili «HISOBOT JURNALI → Faza Q10» da.
 
 ---
 
@@ -1771,3 +1787,178 @@ o'lchovdan keyin **o'chirildi** — repoga kirmaydi. Bu yozuv faylga **append** 
 **marker-kesish YO'Q** (`doc-append-marker-truncation` xotirasi), Q1-Q8 yozuvlariga TEGILMADI.
 
 **Commit:** `fix(bank-import): faza q9 — create+link bitta tx + inn sql-lookup (INT-05, DB-05)`
+
+---
+
+## Faza Q10 — Guard-siz kontrollerlar: haqiqiy teshiklar paketi (`AUTH-07`) (2026-08-09) — **Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q**
+
+### 1. Da'volarni kodda tasdiqlash (reja §2) — Faza 23 ro'yxati QISMAN eskirgan
+
+Faza 23 hisoboti «61 handler / 23 controller» degan edi. **O'z skanerim bilan qayta o'lchandi**
+(`apps/api/src/modules/**/*.controller.ts` — har `@Post/@Put/@Patch/@Delete` dekorator bloki):
+**875 mutatsiya-handler, shundan 56 tasi guard-siz** (ruxsat metadatasi ham, HR-RBAC ham,
+rol-guard ham yo'q). Farq (61 → 56) — oraliqda yopilgan/o'chgan handlerlar; ro'yxat qayta yig'ildi,
+Faza 23 raqami ko'r-ko'rona olinmadi.
+
+**Nishonlar bo'yicha ground-truth (har biri kodda o'z ko'zim bilan):**
+
+| Faza 23 nishoni | Haqiqiy holat (2026-08-09, o'lchangan) |
+|---|---|
+| `sklad-keeper` PUT / · PUT receipt-printer · DELETE :skladNo | **OCHIQ edi** — faqat `JwtAuthGuard` (kodning o'z kommentida tan olingan: «no fine-grained permission entity yet») → **YOPILDI** |
+| `shift-schedule` POST/PATCH/DELETE | **OCHIQ edi** → **YOPILDI** |
+| `smena` POST/PATCH/DELETE + `POST open-session` | **OCHIQ edi** → **YOPILDI** (open-session ayniqsa: `CashierSessionController#open` `cashiersession.create` talab qiladi, bu esa **o'sha sessiyani ruxsatsiz ochadigan ikkinchi eshik** edi) |
+| `debt.controller` `POST pos/pay` (**pul**) | **OCHIQ edi** → **YOPILDI** (`debtpayment.create`) |
+| `driver-cash` `collect`/`hand-over`/`cancel` | **ALLAQACHON YOPIQ** — `hand-over` va `cancel` da handler-darajasida `@UseGuards(DispatcherGuard)`; `collect` esa self-scope (`driverId` **tanadan emas, `user.sub` dan**). TEGILMADI |
+| `restock-task` (3 handler) | `from-sales-return` **OCHIQ edi** → **YOPILDI** (`salesreturn.update`); `confirmLine`/`confirmScan` → **DEFER** (pastda §5) |
+| `pick-list` `sync`/`pick-state`/`printed` | `sync` **OCHIQ edi** → **YOPILDI** (`settings.update`); qolgan ikkisi → **DEFER** (§5) |
+| `hr/attendance-geo/ping.controller` — «boshqa xodim nomidan ping yozish mumkinmi?» | **MUMKIN EMAS, tasdiqlandi.** To'rtala handler `user.sub` ni uzatadi (`ping.controller.ts:23,33,39,45`) va `PingSchema` (`attendance-geo.schema.ts:5-9`) faqat `lat/lng/accuracy` — **`employeeId` maydoni umuman YO'Q**, ya'ni tanadan boshqa xodimni ko'rsatishning yo'li yo'q. TEGILMADI |
+| `work-location` | **ALLAQACHON YOPIQ** — `@UseGuards(JwtAuthGuard, HrPermissionGuard)` + har mutatsiyada `@RequireHrPermission('employees','full')`. Faza 23 ro'yxati shu bandda ESKIRGAN. TEGILMADI |
+| `driver-trip` | **ALLAQACHON YOPIQ** — klass darajasida `@UseGuards(JwtAuthGuard, DispatcherGuard)`. TEGILMADI |
+| `driver-tracking` | Self-endpointlar (`ping`, `shifts/start|end`) ataylab self-scope; dispecher `live`/`route` da `DispatcherGuard` bor. **LEKIN `GET link/:employeeId` da guard YO'Q edi** — kodda «DISPECHER» deb yozilgan-u, tekshiruv yo'q → **YOPILDI** (pastda) |
+
+**Reja ro'yxatida BO'LMAGAN topilma (Faza 23 toifalashini tuzatadi) — `onboarding`.**
+Faza 23 uni «ataylab ochiq (o'z qadamlari)» toifasiga qo'ygan edi. O'lchov buni **rad etadi**:
+`onboarding.service.ts:51/63/74/98` — hammasi `onboardingProgress.update({ where: { accountId } })`,
+ya'ni progress **xodimniki emas, AKKAUNTNIKI** (bitta qator). Demak har xodim
+`POST /onboarding/restart` bilan butun tenantning sozlash-sehrgarini nolga qaytara olardi
+(`completedSteps: []`), `skip` bilan uni «o'tkazib yuborilgan» qilardi, `override` bilan esa
+istalgan qadamga qo'yardi — oxirgi ikkitasining kodidagi izohda ochiq «admin» deb yozilgan-u,
+hech qanday tekshiruv yo'q edi. **Holatni BUZUVCHI uchtasi yopildi**, `complete-step` (additiv,
+sehrgar oqimining o'zi) ataylab ochiq qoldirildi.
+
+### 2. O'zgarishlar (8 fayl + 1 yangi test)
+
+| Fayl | O'zgarish |
+|---|---|
+| `sklad-keeper/sklad-keeper.controller.ts` | `PUT /` + `PUT receipt-printer` → `settings.update`; `DELETE :skladNo` → `settings.delete`. `GET` ataylab ochiq (omborchi ekrani o'z zonasini shundan oladi) — klass-izoh yangilandi |
+| `shift-schedule/shift-schedule.controller.ts` | `POST/PATCH/DELETE` → `settings.create/update/delete`; izohda **nega**: jadval `late-minutes.util` orqali kechikish daqiqalarini va shundan kelib chiquvchi jarimani belgilaydi ⇒ jadvalni siljitish = davomat tarixini qayta yozish |
+| `smena/smena.controller.ts` | `POST/PATCH/DELETE` → `settings.*`; **`POST open-session` → `cashiersession.create`** (`CashierSessionController#open` bilan bir xil ruxsat) |
+| `debt/debt.controller.ts` | `POST pos/pay` → **`debtpayment.create`** — kassa to'lovi (`POST :id/payments`) bilan AYNAN bir xil. Ilgari TZ §6 ajratmasi («operator kassa to'lovini kirita OLMAYDI») POS oynasi orqali chetlab o'tilardi |
+| `pick-list/pick-list.controller.ts` | `POST sync` → `settings.update` (integratsiya pull-triggeri; `onec` sync-endpointlari precedenti). `pick-state`/`printed` DEFER — sababi izohda |
+| `restock-task/restock-task.controller.ts` | `POST from-sales-return` → `salesreturn.update` (manba hujjat aynan vozvrat; bu yo'l omborchiga bildirishnoma yuboradi). Tasdiqlash handlerlari DEFER |
+| `onboarding/onboarding.controller.ts` | `skip`/`restart`/`override` → `settings.update`; klass-izohda Faza 23 toifalashining tuzatilishi hujjatlandi |
+| `hr/driver-tracking/driver-tracking.controller.ts` | `GET link/:employeeId` → **`@UseGuards(DispatcherGuard)`**. Ilgari HAR xodim ISTALGAN `employeeId` uchun doimiy HMAC-token yasay olardi (`driver-link.util` — token **saqlanmaydi**, bekor qilish faqat `JWT_SECRET` rotatsiyasi bilan), so'ng `POST /p/driver/:token/{ping,shift/start,shift/end}` bilan **boshqa haydovchi nomidan GPS va smena** yozardi ⇒ davomat/marshrut soxtalashtirish |
+| `permissions/mutation-guard-coverage.test.ts` | **YANGI** — pastda |
+
+**Ruxsat slug'lari mavjud lug'atdan olindi, yangisi O'YLAB TOPILMADI** (`permissions.types.ts`
+`PermissionEntity` union'i). `settings` — `company-settings`, `edo`, `email`, `app-install`,
+`attribute-metadata`, `onec`, `group` (Faza 23) bilan bir xil naqsh; `cashiersession`,
+`debtpayment`, `salesreturn` — o'z modullaridagi mavjud chaqiruvlarga aynan mos.
+
+### 3. Testlar (TDD — RED jonli o'lchandi)
+
+**Yangi fayl:** `apps/api/src/modules/permissions/mutation-guard-coverage.test.ts` (**51 test**).
+Mavjud test-fayl ustidan `Write` QILINMADI — bu yagona yangi fayl (`git status`: `??`).
+
+- **(A) Endpoint-daraja, 16 yopilgan handler × 3 test = 48:** (1) dekorator metadatasi aynan
+  kutilgan `entity.action`; (2) **ruxsatsiz aktor → `ForbiddenException`**; (3) **ruxsatli aktor →
+  `true`**. Testlar **haqiqiy `PermissionsGuard` + haqiqiy `Reflector` + controller
+  prototipidagi HAQIQIY handler** orqali yuradi (faqat `PermissionsService.require` stub — u
+  loyihaning o'z `isAtLeast` funksiyasini ishlatadi). Ya'ni «metadata yozilgan-u guard o'qimaydi»
+  holati ham tutiladi.
+- **+ POS qarz to'lovi (TZ §6):** `debtpayment.create` metadatasi + `debt.view` va
+  `debtcardpayment.create` bor (ya'ni **QarzOperatori**) aktor **403 oladi** — TZ ajratmasi
+  mexanik qulflandi.
+- **+ Haydovchi magic-link:** `Reflect.getMetadata('__guards__', …driverLink)` ichida
+  `DispatcherGuard` borligi.
+- **(B) KLASS-QULF (4 test):** skaner butun `apps/api` ni o'qib har guard-siz mutatsiya-handlerni
+  topadi va **oshkora `INTENTIONALLY_OPEN` allowlist'iga** solishtiradi (40 qator, **har biri
+  sababi bilan**: login/webhook/magic-link/self-scope/egasi qarori/DEFER). Uch yo'nalishda qulf:
+  (a) allowlist'da yo'q yangi ochiq handler → qizil; (b) **eskirgan** allowlist qatori (endi yopiq
+  yoki o'chgan) → qizil (allowlist «axlat» to'plamiga aylanmaydi); (c) sababsiz qator → qizil.
+  Vakuum-qarshi tekshiruv ham bor (skaner ≥700 handler topishi va ma'lum ikki nuqtani ko'rishi shart).
+
+**RED → GREEN (jonli o'lchangan):**
+- RED (fix'dan OLDIN): `vitest run src/modules/permissions/mutation-guard-coverage.test.ts` →
+  **33 failed / 18 passed (51)**. Klass-qulf yiqilishi aynan 16 handlerni nomma-nom sanab berdi
+  (`DebtController#posPay`, `SkladKeeperController#upsert`, … `SmenaController#openSession`).
+- GREEN (fix'dan KEYIN): **51/51 passed**.
+
+### 4. 🔴 ROL-TA'SIR JADVALI (deploy-QA uchun — OPS-8)
+
+Seed'lar o'qildi: `packages/db/prisma/seed.ts:140-225` (system rollar + Administrator adminга
+biriktiriladi) va `permissions.service.ts:328+` (`SYSTEM_ROLE_TEMPLATES` bo'yicha top-up).
+**Administrator = har entity/action uchun `ALL` ⇒ EGAGA TA'SIR YO'Q** (Faza 23 dagidek).
+Guard `minScope` bermaganda `'OWN'` talab qiladi ⇒ `NO` dan boshqa har qanday scope o'tadi.
+
+| Endpoint (avval: **har autentifikatsiyalangan xodim**) | Qo'shilgan talab | Kim endi 403 oladi |
+|---|---|---|
+| `PUT /sklad-keepers` | `settings.update` | ReadOnly · QarzOperatori · QarzKassiri · **rolsiz xodim** |
+| `PUT /sklad-keepers/receipt-printer` | `settings.update` | ⇑ o'sha |
+| `DELETE /sklad-keepers/:skladNo` | `settings.delete` | ⇑ + **Employee** (`delete: NO`) |
+| `POST /admin/shift-schedules` | `settings.create` | ReadOnly · Qarz rollari · rolsiz |
+| `PATCH /admin/shift-schedules/:id` | `settings.update` | ⇑ o'sha |
+| `DELETE /admin/shift-schedules/:id` | `settings.delete` | ⇑ + **Employee** |
+| `POST /admin/smenas` | `settings.create` | ReadOnly · Qarz rollari · rolsiz |
+| `PATCH /admin/smenas/:id` | `settings.update` | ⇑ o'sha |
+| `DELETE /admin/smenas/:id` | `settings.delete` | ⇑ + **Employee** |
+| `POST /admin/smenas/open-session` | `cashiersession.create` | ReadOnly · QarzOperatori · QarzKassiri · rolsiz *(Employee/Manager o'tadi — `create: ALL`)* |
+| `POST /debts/pos/pay` (**pul**) | `debtpayment.create` | **QarzOperatori** (TZ §3.6 — KUTILGAN va TALAB QILINGAN) · ReadOnly · rolsiz *(QarzKassiri o'tadi — override)* |
+| `POST /pick-lists/sync` | `settings.update` | ReadOnly · Qarz rollari · rolsiz |
+| `POST /restock-tasks/from-sales-return` | `salesreturn.update` | ReadOnly · Qarz rollari · rolsiz *(FE chaqiruvchisi YO'Q — grep bilan tekshirildi ⇒ jonli oqim buzilmaydi)* |
+| `POST /onboarding/skip` · `restart` · `override` | `settings.update` | ReadOnly · Qarz rollari · rolsiz *(`override` da FE chaqiruvchisi yo'q)* |
+| `GET /driver-tracking/link/:employeeId` | `DispatcherGuard` (JWT `hrRoles ∋ 'admin'`) | `hrRoles` da `admin` bo'lmagan HAR KIM — shu jumladan `employees:full` li HR-menejer |
+
+**Rol shablonlari bo'yicha xulosa:** `Administrator` — ta'sir yo'q · `Manager` — ta'sir yo'q
+(create `ALL`, update/delete `OWN_GROUP` ⇒ `OWN` dan yuqori) · `Employee` — faqat **uch `DELETE`**
+yo'lida 403 (`delete: NO`) · `ReadOnly` — 15 yo'lda 403 (to'g'ri: u faqat ko'rishi kerak) ·
+`QarzOperatori`/`QarzKassiri` — `settings`/`cashiersession` yo'llarida 403 (ular sozlamalar
+roli emas) · **rolsiz xodim** — hammasida 403 (bu eng katta deploy-riski, OPS-8 ga yozildi).
+
+### 5. Qolgan qarz / DEFER
+
+1. **🟡 `PickListController#setPickState` · `#markPrinted` · `RestockTaskController#confirmLine` ·
+   `#confirmScan` — DEFER (4 handler, ataylab).** Sabab: **mos entity-slug YO'Q.** `msPickList`
+   qatori MoySklad «Заказ покупателя» **va** «Возврат» ni aralash saqlaydi (bitta slug ikkalasini
+   yolg'onsiz qoplay olmaydi), `restockTask` esa umuman o'z entity'si. Mavjud lug'atdan biror
+   slug olish = semantik yolg'on; yangi slug o'ylab topish reja §5 bo'yicha TAQIQ. Xavf-tarozi:
+   bu ikki ekran **omborchining yagona API-sirti** (`/pick-lists`, `/restock-tasks/[id]` —
+   boshqa ruxsat-talab qiluvchi chaqiruvi yo'q, grep bilan tekshirildi), noto'g'ri slug prodda
+   ombor ishini to'xtatadi — Faza 23 dagi rol-matritsa hodisasining aynan takrori bo'lardi.
+   Zarar tahlili: bu to'rtalasi **pul ham, ombor qoldig'i ham o'zgartirmaydi** (`markConfirmed` —
+   faqat `confirmedAt` + task statusi; `setPickState` — holat mashinasi; `markPrinted` — birinchi
+   chop etish vaqti), hammasi izlanuvchan va qaytariladigan. **Yechim (alohida faza):**
+   `picklist`/`restocktask` entity'lari + seed-matritsa qatorlari + rol-UI, keyin shu 4 handler.
+   Ular klass-qulf allowlist'ida **`DEFER Q10`** izohi bilan turibdi — «unutildi» emas, «qaror».
+2. **🟡 `OnboardingController#completeStep` ochiq qoldi** — akkaunt-bo'ylab qator bo'lsa-da,
+   amali **additiv** (qadamni bajarilgan deb belgilaydi, hech narsani o'chirmaydi) va sehrgar
+   oqimining o'zi. Buzuvchi uchtasi yopildi.
+3. **🟡 `GET` yo'llari qattiqlashtirilmadi.** Bu faza mutatsiyalarga qaratilgan (klass-qulf ham
+   `@Post/@Put/@Patch/@Delete` ni skanlaydi). Ma'lum ochiq o'qish yo'llari: `GET /debts/pos/summary/:id`
+   va `GET /debts/pos/receipt/:batchId` (kassa oynasi ochilishini buzmaslik uchun ataylab
+   tegilmadi), `GET /sklad-keepers`, `GET /admin/{smenas,shift-schedules}` (picker'lar).
+   `GET`-qamrov alohida faza talab qiladi (breakage yuzasi ancha keng).
+4. **🟡 `DispatcherGuard` hamon JWT `hrRoles: ['admin']` ga tayanadi** (`dispatcher.guard.ts:18`,
+   o'z TODO'si bilan) — ya'ni haydovchi-link endi HR-adminga cheklandi, lekin «dispecher» roli
+   sifatida ajratilmadi. Ikki parallel RBAC birlashuvi (Faza 23 DEFER) — o'sha qarz.
+5. **🟡 Rolsiz xodim = 403 hamma joyda.** Prod'da ba'zi xodimlarda core `Role` biriktirmasi
+   bo'lmasligi mumkin (HR tomonidan yaratilgan xodim avtomatik rol olmaydi). Bu 16 endpoint
+   uchun deploydan keyin rol to'ldirish SHART — OPS-8 ga aniq ro'yxat bilan yozildi.
+6. **Browser-smoke YO'Q — Phase-1.** Runtime tekshiruv (Phase-2 cohort): `/settings/sklad-keepers`
+   saqlash, `/settings/shift-schedules` CRUD, `/settings/smena` CRUD + `/sotuv` dan smena ochish,
+   POS «Qarz to'lovi» oynasidan to'lash, `/pick-lists` sync tugmasi, HR xodim kartochkasidan
+   haydovchi-link olish.
+
+### 6. Gate (jonli, commit oldidan)
+
+- `pnpm --filter @moysklad/api typecheck` → **0 xato**
+- `pnpm lint:product` → **0 error** (748 warning — siyosat bo'yicha ruxsat). *(Yangi test fayli
+  avval `format` xatosi berdi → `biome format --write` bilan tuzatildi, keyin qayta yugurtirildi.)*
+- Tegilgan modullar + `permissions` + `auth` + `app-boot` + `hr/attendance-geo` + `hr/driver-tracking`:
+  **55 fayl / 559 test — hammasi yashil.**
+- To'liq API suite **3 shardda** (`vitest run --shard=N/3 --reporter=dot`):
+  **1884 + 1810 + 2116 = 5810 passed / 2 skipped**, 0 failed. Baza (Faza Q9 dan keyin)
+  **5759 passed / 2 skipped** ⇒ **+51 = aynan shu fazaning yangi testlari**, regress YO'Q.
+- `i18n:gate` — kerak emas (UI-matn tegilmadi; FE umuman tegilmadi).
+
+### 7. Git gigienasi (CLAUDE.md §6)
+
+Daraxtda menikimas o'zgarishlar bor edi — `todo.md` (modified), `docs/REJA-8-BOLIM-2026-08.md`
+(untracked) va foydalanuvchining untracked fayllari (`qabullar-amallar-royxati.txt`, `*.xlsx`,
+`chek.png`, `SAYT-PROMPT.txt`, `docs/audits/...`, `scratchpad/`) — **HECH BIRIGA TEGILMADI**;
+`git add` faqat aniq yo'llar bilan, commitdan keyin `git show --stat HEAD` bilan tarkib tekshirildi.
+Bir martalik skaner skripti sessiya scratchpad'ida qoldi — **repoga kirmaydi**. Bu yozuv faylga
+**append** bilan qo'shildi — **marker-kesish YO'Q** (`doc-append-marker-truncation` xotirasi),
+Q1–Q9 yozuvlariga TEGILMADI.
+
+**Commit:** `fix(auth): faza q10 — guard-siz mutatsiya endpointlariga permission (AUTH-07)`

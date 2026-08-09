@@ -356,7 +356,14 @@ export class DebtController {
     return this.pos.receipt(user.accountId, batchId);
   }
 
+  /**
+   * Faza Q10 (AUTH-07): `debtpayment.create` — kassa to'lovi bilan AYNAN bir xil
+   * ruxsat (`POST :id/payments`). Ilgari bu yo'l ruxsatsiz edi, ya'ni TZ §3.6
+   * ajratmasi («operator kassa to'lovini kirita OLMAYDI») POS oynasi orqali
+   * chetlab o'tilardi — pul harakati RBAC'siz yozilardi.
+   */
   @Post('pos/pay')
+  @RequirePermission({ entity: 'debtpayment', action: 'create' })
   posPay(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
     // Validatsiya SERVISDA — bu controllerdagi qolgan hamma endpoint
     // shu konventsiyada (xom `body` uzatiladi).

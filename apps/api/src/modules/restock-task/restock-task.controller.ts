@@ -2,13 +2,18 @@ import { Body, Controller, Get, Inject, Param, Post, Query, UseGuards } from '@n
 import type { AuthenticatedUser } from '../auth/auth.schema.js';
 import { CurrentUser } from '../auth/current-user.decorator.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
+import { RequirePermission } from '../permissions/require-permission.decorator.js';
 import { RestockTaskService } from './restock-task.service.js';
 
 /**
  * RestockTask (Sherset custom) — return-to-warehouse restock tasks.
  *
- * Guarded by auth + tenant scoping only (no fine-grained permission-matrix
- * entity yet — a follow-up). Every method scopes by user.accountId.
+ * Faza Q10 (AUTH-07): vazifa OCHISH `salesreturn.update` bilan yopildi —
+ * manba hujjat aynan vozvrat, ya'ni vozvrat bilan ishlay olmaydigan xodim
+ * omborchiga vazifa ham yubora olmasligi kerak (bu yo'l omborchiga bildirishnoma
+ * yuboradi). Qatorlarni TASDIQLASH ataylab ochiq qoldi (Q10 DEFER) — omborchi
+ * ekranining yagona sirti, mos entity-slug yo'q; sabab klass-qulf allowlist'ida.
+ * Har metod `user.accountId` bilan tenant-scope qilinadi.
  */
 @Controller('restock-tasks')
 @UseGuards(JwtAuthGuard)
@@ -27,6 +32,7 @@ export class RestockTaskController {
 
   /** «Omborchiga yubordim» — create a restock task from a SalesReturn. */
   @Post('from-sales-return')
+  @RequirePermission({ entity: 'salesreturn', action: 'update' })
   async createFromSalesReturn(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
     return this.svc.createFromSalesReturn(user.accountId, user.sub, body);
   }

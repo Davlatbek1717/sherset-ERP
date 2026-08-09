@@ -2,6 +2,7 @@ import { Body, Controller, Get, Inject, Param, Post, Query, UseGuards } from '@n
 import type { AuthenticatedUser } from '../auth/auth.schema.js';
 import { CurrentUser } from '../auth/current-user.decorator.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
+import { RequirePermission } from '../permissions/require-permission.decorator.js';
 import { PickListSyncService } from './pick-list-sync.service.js';
 import { PickListService } from './pick-list.service.js';
 
@@ -27,8 +28,19 @@ export class PickListController {
     return this.svc.listPick(user.accountId, query);
   }
 
-  /** Manual pull (cron ham har 30s da qiladi). `:id` dan OLDIN e'lon qilinadi. */
+  /**
+   * Manual pull (cron ham har 30s da qiladi). `:id` dan OLDIN e'lon qilinadi.
+   *
+   * Faza Q10 (AUTH-07): `settings.update` — bu integratsiya amali (tashqi
+   * MoySklad API'ga to'liq tortish), `onec` sync-endpointlari bilan bir xil
+   * toifada. Ilgari har xodim tugmasiz ham sync'ni cheksiz qo'zg'ata olardi.
+   *
+   * ⚠️ `:id/pick-state` va `:id/printed` ATAYLAB ochiq qoldi (Q10 DEFER) —
+   * omborchi ekranining yagona sirti, mos entity-slug yo'q (`msPickList` =
+   * MoySklad buyurtma+vozvrat aralash). Sabab klass-qulf allowlist'ida.
+   */
   @Post('sync')
+  @RequirePermission({ entity: 'settings', action: 'update' })
   async syncNow() {
     return this.sync.runOnce();
   }

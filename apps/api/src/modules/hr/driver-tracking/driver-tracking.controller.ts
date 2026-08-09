@@ -29,7 +29,15 @@ export class DriverTrackingController {
   ) {}
 
   // ── DISPECHER: haydovchiga PAROLSIZ magic-link (telefonда ochib GPS yuboradi) ──
+  //
+  // Faza Q10 (AUTH-07): `DispatcherGuard` QO'SHILDI. Ilgari kommentda «DISPECHER»
+  // deb yozilgan-u, guard YO'Q edi — HAR autentifikatsiyalangan xodim ISTAGAN
+  // `employeeId` uchun doimiy HMAC-token yasay olardi (`driver-link.util` — token
+  // saqlanmaydi, bekor qilish faqat JWT_SECRET rotatsiyasi bilan). O'sha token
+  // bilan `POST /p/driver/:token/ping|shift/start|shift/end` — ya'ni boshqa
+  // haydovchi nomidan GPS-iz va smena yozish mumkin edi (davomat soxtalashtirish).
   @Get('link/:employeeId')
+  @UseGuards(DispatcherGuard)
   driverLink(@CurrentUser() user: AuthenticatedUser, @Param('employeeId') employeeId: string) {
     const token = signDriverToken(user.accountId, employeeId);
     const base = process.env.APP_BASE_URL || 'https://erp.sherset.uz';
