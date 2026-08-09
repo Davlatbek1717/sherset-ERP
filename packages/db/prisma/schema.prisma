@@ -1379,6 +1379,7 @@ model CashIn {
   @@index([accountId, state, deletedAt])
   @@index([accountId, agentId])
   @@index([accountId, moment(sort: Desc)])
+  @@index([accountId, updatedAt(sort: Desc)])
   @@index([accountId, cashDeskId])
   @@index([accountId, salesChannelId])
   @@index([accountId, contractId])
@@ -1472,6 +1473,7 @@ model CashOut {
   @@index([accountId, state, deletedAt])
   @@index([accountId, agentId])
   @@index([accountId, moment(sort: Desc)])
+  @@index([accountId, updatedAt(sort: Desc)])
   @@index([accountId, cashDeskId])
   @@index([accountId, salesChannelId])
   @@index([accountId, contractId])
@@ -2774,8 +2776,11 @@ model WebhookDelivery {
   /// Stored once at enqueue time; replayed verbatim on each retry so HMAC
   /// signature stays consistent across attempts.
   payload     Json
-  /// 'pending' | 'sent' | 'failed' | 'dead'
+  /// 'pending' | 'sending' | 'sent' | 'failed' | 'dead'
   /// pending = waiting for worker (or next retry)
+  /// sending = EXCLUSIVE claim held by a worker, POST in flight (Faza 28).
+  ///           `next_retry_at` doubles as the claim LEASE while in this state;
+  ///           once it passes, the reaper returns the row to 'pending'.
   /// sent    = HTTP 2xx received
   /// failed  = transient — non-2xx or network error, will retry
   /// dead    = exhausted all retries, manual review needed
@@ -5233,6 +5238,8 @@ model CustomerOrder {
   @@index([accountId, state, deletedAt])
   @@index([accountId, agentId])
   @@index([accountId, moment(sort: Desc)])
+  @@index([accountId, updatedAt(sort: Desc)])
+  @@index([accountId, deliveryPlannedMoment])
   @@index([accountId, ownerId])
   @@index([accountId, salesChannelId])
   // DB-08 (audit 2026-08-08, faza 25) — FK columns Postgres does NOT index by
@@ -5390,6 +5397,8 @@ model InvoiceOut {
   @@index([accountId, agentId])
   @@index([accountId, customerOrderId])
   @@index([accountId, moment(sort: Desc)])
+  @@index([accountId, updatedAt(sort: Desc)])
+  @@index([accountId, paymentPlannedMoment])
   @@index([accountId, ownerId])
   @@index([accountId, salesChannelId])
   @@index([accountId, contractId])
@@ -5543,6 +5552,7 @@ model Supply {
   @@index([accountId, storeId, applicable])
   @@index([accountId, purchaseOrderId])
   @@index([accountId, moment(sort: Desc)])
+  @@index([accountId, updatedAt(sort: Desc)])
   @@index([accountId, ownerId])
   @@index([accountId, contractId])
   @@index([accountId, projectId])
@@ -5776,6 +5786,7 @@ model PurchaseOrder {
   @@index([accountId, state, deletedAt])
   @@index([accountId, agentId])
   @@index([accountId, moment(sort: Desc)])
+  @@index([accountId, updatedAt(sort: Desc)])
   @@index([accountId, ownerId])
   @@index([accountId, projectId])
   @@index([accountId, contractId])
@@ -5904,6 +5915,7 @@ model PaymentIn {
   @@index([accountId, state, deletedAt])
   @@index([accountId, agentId])
   @@index([accountId, moment(sort: Desc)])
+  @@index([accountId, updatedAt(sort: Desc)])
   @@index([accountId, ownerId])
   @@index([accountId, salesChannelId])
   @@index([accountId, contractId])
@@ -6023,6 +6035,7 @@ model PaymentOut {
   @@index([accountId, state, deletedAt])
   @@index([accountId, agentId])
   @@index([accountId, moment(sort: Desc)])
+  @@index([accountId, updatedAt(sort: Desc)])
   @@index([accountId, ownerId])
   @@index([accountId, salesChannelId])
   @@index([accountId, contractId])
@@ -6188,6 +6201,7 @@ model Demand {
   @@index([accountId, storeId, applicable])
   @@index([accountId, customerOrderId])
   @@index([accountId, moment(sort: Desc)])
+  @@index([accountId, updatedAt(sort: Desc)])
   @@index([accountId, ownerId])
   @@index([accountId, salesChannelId])
   @@index([accountId, contractId])
@@ -6398,6 +6412,7 @@ model SalesReturn {
   @@index([accountId, demandId])
   @@index([accountId, customerOrderId])
   @@index([accountId, moment(sort: Desc)])
+  @@index([accountId, updatedAt(sort: Desc)])
   @@index([accountId, ownerId])
   @@index([accountId, salesChannelId])
   @@index([accountId, contractId])
@@ -6561,6 +6576,7 @@ model PurchaseReturn {
   @@index([accountId, storeId, applicable])
   @@index([accountId, supplyId])
   @@index([accountId, moment(sort: Desc)])
+  @@index([accountId, updatedAt(sort: Desc)])
   @@index([accountId, ownerId])
   @@index([accountId, contractId])
   @@index([accountId, projectId])
@@ -7285,6 +7301,7 @@ model InvoiceIn {
   @@index([accountId, agentId])
   @@index([accountId, purchaseOrderId])
   @@index([accountId, moment(sort: Desc)])
+  @@index([accountId, updatedAt(sort: Desc)])
   @@index([accountId, ownerId])
   @@index([accountId, contractId])
   @@index([accountId, projectId])
@@ -7536,7 +7553,9 @@ model EmailLog {
   /// to re-resolve binary content on each attempt (attachments are stored
   /// in their own bytea table; we reference, not embed).
   attachmentIds String[]  @default([]) @map("attachment_ids") @db.Uuid
-  /// 'pending' | 'sent' | 'dead'.
+  /// 'pending' | 'sending' | 'sent' | 'dead'.
+  /// 'sending' = exclusive worker claim, SMTP call in flight; `next_retry_at`
+  /// is the claim lease (Faza 28, see api `shared/outbox-claim.ts`).
   /// Note: pre-Sprint-17.4 rows may have status='failed' from the legacy
   /// inline-send path. Worker treats those as terminal — no retry.
   status        String    @default("pending") @db.VarChar(20)
@@ -8643,7 +8662,9 @@ model SmsLog {
   toPhone String @map("to_phone") @db.VarChar(20)
   body    String @db.VarChar(1600)
 
-  /// 'pending' | 'sent' | 'dead' | 'failed' (legacy from inline path).
+  /// 'pending' | 'sending' | 'sent' | 'dead' | 'failed' (legacy inline path).
+  /// 'sending' = exclusive worker claim, provider call in flight; `next_retry_at`
+  /// is the claim lease (Faza 28, see api `shared/outbox-claim.ts`).
   status      String @default("pending") @db.VarChar(20)
   attempt     Int    @default(1)
   maxAttempts Int    @default(4) @map("max_attempts")
@@ -8902,7 +8923,9 @@ model TelegramOutbox {
   parseMode String @default("HTML") @map("parse_mode") @db.VarChar(20)
   text      String @db.VarChar(4096)
 
-  /// 'pending' | 'sent' | 'dead' | 'failed'
+  /// 'pending' | 'sending' | 'sent' | 'dead' | 'failed'
+  /// 'sending' = exclusive worker claim, Telegram API call in flight;
+  /// `next_retry_at` is the claim lease (Faza 28, api `shared/outbox-claim.ts`).
   status      String @default("pending") @db.VarChar(20)
   attempt     Int    @default(1)
   maxAttempts Int    @default(4) @map("max_attempts")
@@ -9365,6 +9388,10 @@ model HrTelegramOutbox {
   // Optional file to send as a Telegram document (акт-сверка .xlsx). When set,
   // the mtproto worker uses sendFile(caption=messageText) instead of a text send.
   attachmentPath    String?   @map("attachment_path")
+  /// 'pending' | 'sending' | 'retry' | 'sent' | 'failed'.
+  /// 'sending' = exclusive worker claim, MTProto send in flight; `next_retry_at`
+  /// is the claim lease (Faza 28, api `shared/outbox-claim.ts`). Before that
+  /// fix the "atomic guard" wrote pending→pending and locked nothing (HR-4).
   status            String    @default("pending") @db.VarChar(20)
   retryCount        Int       @default(0) @map("retry_count")
   nextRetryAt       DateTime? @map("next_retry_at") @db.Timestamptz()

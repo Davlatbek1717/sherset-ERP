@@ -727,7 +727,15 @@ request-scope. (c) overdue items'ni raw-SQL predikat bilan (over-fetch o'rniga).
 **▶ SESSIYA-BOSHI PROMPT:**
 > `docs/REJA-AUDIT-FIX-2026-08.md` — **Faza 26**. O'ZGARMAS QOIDALAR. `PERF-05/06/11`. updatedAt-indeks + kesh +
 > overdue raw-SQL. TDD: overdue-mos + kesh testlari. Gate + migrate. Hisobot, TO'XTA.
-**◻ HISOBOT:** _(agent to'ldiradi)_
+**☑ HISOBOT (2026-08-09):** BAJARILDI — batafsili «HISOBOT JURNALI → Faza 26» da. Uchala topilma
+kodda tasdiqlandi; 14 indeks + migratsiya qo'llandi, overdue items raw-SQL'ga, pul bloklari 30 s
+TTL kesh + request-scope rate-context.
+**DIQQAT — reja taklif qilgan yechim YETARLI EMAS edi:** faqat `updatedAt` indekslarini qo'shish
+recentDocs so'rovini **sekinlashtirdi** (18 ms → 66 ms, indeks umuman ishlatilmadi) — Postgres tashqi
+`LIMIT`ni `UNION ALL` shoxlariga tushirmaydi. Har legga o'z `ORDER BY … LIMIT 20` si qo'shilgach
+`Merge Append` + `Index Scan` bo'lib **0.55 ms** ga tushdi (EXPLAIN ANALYZE bilan o'lchandi).
+**Qolgan qarz:** overdue indekslari lokalda o'lchanmadi (jadval bo'sh); `recentDocs` `deleted_at`ni
+filtrlamaydi (eski xulq, alohida topilma); `PERF-04` Faza 27'da.
 
 ---
 
@@ -749,7 +757,14 @@ elementni topadi. (3) balans-jami butun-where bo'yicha.
 **▶ SESSIYA-BOSHI PROMPT:**
 > `docs/REJA-AUDIT-FIX-2026-08.md` — **Faza 27**. O'ZGARMAS QOIDALAR. `PERF-01/02/04/10`,`DUP-14`. Search-before-take
 > + SQL-agregat + davr-filtr. TDD: 3 stsenariy. Og'ir bo'lsa sub-faza taklif. Gate. Hisobot, TO'XTA.
-**◻ HISOBOT:** _(agent to'ldiradi)_
+**☑ HISOBOT (2026-08-09) — SUB-FAZAGA BO'LINDI:** hajm baholanib foydalanuvchi **27a** ni tanladi.
+**27a BAJARILDI** (`PERF-10`,`PERF-04`,`DUP-14` — `report/stock-balance` + `report/counterparty-balance`);
+batafsili «HISOBOT JURNALI → Faza 27a» da. Uchala topilma kodda tasdiqlandi; raw-SQL guruh-count jonli
+`climart_adopt` DB'da rollback-tranzaksiyada mustaqil ground-truth bilan o'lchandi (14/14).
+**◻ 27b — `PERF-01`** (`analitika/items.service.ts` DB-paginate + truncated). KUTMOQDA.
+**◻ 27c — `PERF-02`** (akt-sverka davr-filtri + saldo-forward). KUTMOQDA. **Diqqat: audit dalili
+ESKIRGAN** — «11 parallel findMany» Faza 10 da jurnalga ko'chirilgan; davr-mashinasi
+(`foldJournalPeriod`) allaqachon yozilgan, akt-sverka uni ishlatmaydi xolos. Dalilni qayta o'qi.
 
 ---
 
@@ -3247,3 +3262,242 @@ planner sozlamalari DEFAULT — hech narsa o'chirilmagan):**
    soniyalar, lekin **past yuklamada** qo'llash kerak. `CONCURRENTLY` ishlatilmadi — Prisma
    migratsiyani tranzaksiya ichida yuritadi. Prod DB'lar `_prisma_migrations`-tracked emas ⇒
    `prisma db execute --file` bilan qo'lda qo'llanadi (fayl idempotent).
+
+---
+
+## Faza 26 — Dashboard: recentDocs UNION + updatedAt indekslari + pul-keshi + overdue raw-SQL (`PERF-05`,`PERF-06`,`PERF-11`) (2026-08-09) — **Phase-1: strukturaviy + unit + EXPLAIN-tasdiqlangan, browser-smoke YO'Q**
+
+### Tasdiqlash (kodda, o'z ko'zim bilan)
+
+| ID | Da'vo | Holat |
+|----|-------|-------|
+| `PERF-05` | 12 jadvalli UNION `updated_at` bo'yicha saralanadi, lekin sxemada birorta `updatedAt` indeksi yo'q; kod kommenti «indeks bor» deydi | **TASDIQLANDI** — `grep '@@index' schema.prisma | grep updatedAt` → 0 (486 indeks ichida), yolg'on komment `dashboard.service.ts:464-467` |
+| `PERF-06` | Pul bloklari har ochilishda butun tarixni UNION-agregat qiladi; kesh qatlami yo'q; `loadRateContext` takror yuklanadi | **TASDIQLANDI** — `WITH ledger` da sana chegarasi yo'q; `loadRateContext` bitta so'rovda **3 marta** chaqirilardi (654 / 731 / 792-qatorlar) |
+| `PERF-11` | Overdue-invoys paneli `LIMIT×4` over-fetch + JS-filtr — o'sish bilan noto'g'ri | **TASDIQLANDI** — `take: OVERDUE_LIMIT * 4` + `.filter(r => r.payedSumMinor < r.sumMinor)`; agregat esa raw-SQL'da to'g'ri predikat bilan sanaydi ⇒ `count: N > 0`, `items: []` mumkin |
+
+### REJA TAKLIF QILGAN YECHIM YETARLI EMAS EDI (o'lchov bilan aniqlandi)
+
+Reja (va audit) `PERF-05` uchun «12 jadvalga `@@index([accountId, updatedAt])` qo'sh — komment aytgan
+rejim shunda haqiqatga aylanadi» deydi. **Bu noto'g'ri.** Postgres tashqi `LIMIT`ni `UNION ALL`
+shoxlariga o'zi tushirmaydi, shuning uchun indeks qo'shilgani bilan planner baribir har jadvalni
+to'liq o'qib top-N sort qiladi.
+
+O'lchov — `EXPLAIN (ANALYZE)`, Postgres 18, lokal `climart_adopt`, bitta legda 24 008 sintetik qator
+(tranzaksiya ichida yaratilib **rollback** qilindi — DB'da iz qolmadi):
+
+| indeks | per-leg `ORDER BY … LIMIT` | plan | vaqt |
+|--------|---------------------------|------|------|
+| ✗ | ✗ (shipped kod) | `Append` + top-N `Sort` (24 014 qator) | **18 ms** |
+| ✓ | ✗ (**rejaning taklifi**) | `Append` + top-N `Sort`, **Seq Scan** — indeks umuman ishlatilmaydi | **66 ms** |
+| ✗ | ✓ | `Merge Append` + har legda `Sort` | 33 ms |
+| ✓ | ✓ (**qo'llandi**) | `Merge Append` + `Index Scan using demands_account_id_updated_at_idx` | **0.55 ms** |
+
+Ya'ni ikkala yarim ham kerak: indeksni **so'rov shakli** yoqadi. Shu jadval migratsiya-faylda ham,
+servis kommentida ham yozildi (keyingi sessiya «per-leg LIMIT ortiqcha» deb olib tashlamasin), va
+unit-test shakl'ni qulflaydi (12 ta `ORDER BY updated_at DESC LIMIT`).
+
+### O'zgarishlar
+
+**`packages/db/prisma/schema.prisma`** (+14 indeks) va
+**`packages/db/prisma/migrations/20260809160000_dashboard_updated_at_and_due_date_indexes/migration.sql`**:
+- `PERF-05` — 12 hujjat jadvaliga `@@index([accountId, updatedAt(sort: Desc)])`:
+  `customer_orders`, `demands`, `invoices_out`, `invoices_in`, `supplies`, `sales_returns`,
+  `purchase_orders`, `purchase_returns`, `cash_in`, `cash_out`, `payments_in`, `payments_out`.
+- `PERF-11` qo'llab-quvvatlash — `invoices_out(account_id, payment_planned_moment)` va
+  `customer_orders(account_id, delivery_planned_moment)`: ikkala overdue paneli aynan shu ustun
+  bo'yicha filtrlaydi VA saralaydi, hech bir mavjud indeks bu ustundan boshlanmasdi.
+- SQL nomlari `prisma migrate diff` chiqargani bilan **aynan** (drift bo'lmasin); har `CREATE INDEX`
+  `IF NOT EXISTS` bilan (prod DB'lar `_prisma_migrations`-tracked emas, fayl qo'lda ham qo'llanadi).
+- Lokal DB'ga `prisma db execute --file` bilan qo'llandi (`Script executed successfully`), keyin
+  qayta o'lchandi: `Merge Append` + `Index Scan`, **0.572 ms**.
+
+**`apps/api/src/modules/report/dashboard.service.ts`**:
+- `computeRecentDocs` — har 12 legga `ORDER BY updated_at DESC LIMIT 20` qo'shildi (global top-20
+  albatta per-leg top-20'lar ichida). Yolg'on komment o'chirildi, o'rniga o'lchov jadvali.
+  Yangi `RECENT_DOCS_LIMIT = 20` konstantasi ikkala joyda ishlatiladi.
+- `computeRecentDocs` `Promise.all`dan **keyin** `await` qilinardi — endi ichida (12 legli UNION
+  boshqa hamma blokdan keyin ketma-ket ishlardi, hech qanday bog'liqliksiz).
+- `computeOverdueInvoices` — over-fetch + JS-filtr o'rniga raw-SQL: `payed_sum_minor < sum_minor`
+  predikati agregatnikiga **aynan mos**, `LIMIT 10`. Kontragent nomlari yangi `resolveAgentNames()`
+  helper'i orqali (bitta so'rov; `computeRecentDocs` ham shunga ko'chirildi).
+- `loadRateContext` **request-scope**: `dashboard()` bir marta yuklab, uchala pul-blokiga uzatadi
+  (ilgari har biri o'zi yuklardi = 3 so'rov). Yon foyda: uch blok bazaviy valyuta haqida kelisha
+  olmay qolishi endi imkonsiz.
+- `computeMoneyByOrg` / `computeMoneyChart` — 30 s TTL kesh ostida. Kalitlar: `accountId` va
+  `accountId + oyning boshi`. **Materialized `MoneyOperation` daftaridan o'qish YO'LI TANLANMADI** —
+  unda backfill yo'q (Faza 11), ya'ni 2026-08-08 gacha bo'lgan hujjatlarni bilmaydi va dashboard
+  har tenant uchun kam raqam ko'rsatgan bo'lardi.
+
+**`apps/api/src/modules/report/ttl-cache.util.ts`** (yangi) — kichik in-process TTL kesh:
+`getOrLoad` **pending promise**ni saqlaydi (50 foydalanuvchi bir vaqtda dashboard ochsa loader 1 marta
+ishlaydi), rad etilgan yuklama darhol chiqarib tashlanadi (xato keshlanmaydi), `maxEntries` bilan eng
+eski kalit siqib chiqariladi. API `exec_mode: 'fork', instances: 1` (`deploy/ecosystem.config.cjs`)
+⇒ jarayon keshi = butun kesh, Redis kerak emas.
+
+### Testlar (TDD — RED ko'rildi, keyin GREEN)
+
+`apps/api/src/modules/report/dashboard.service.test.ts` (yangi, 7 test) —
+RED: 4 yiqildi (`items: []`, `currency.findMany` 3 marta, `WITH ledger` 2 marta), GREEN: 7/7.
+- `PERF-11`: eng eski 40 hujjat to'liq to'langan holatda ham panel jonli qarzdorlarni ko'rsatadi
+  (auditda tasvirlangan aynan buzilish); `invoiceOut.findMany` endi umuman chaqirilmaydi.
+- `PERF-05`: recentDocs SQL'ida 11 ta `UNION ALL` + **12 ta** `ORDER BY updated_at DESC LIMIT`.
+- `PERF-06`: `loadRateContext` so'rovga 1 marta; TTL ichida `WITH ledger`/`WITH ops` 1 martadan;
+  **kesh akkaunt bo'yicha kalitlanadi** (`acc-1` → `acc-2` ⇒ 2 marta so'raladi — tenant sizmasligi);
+  TTL tugagach qayta so'raydi.
+
+`apps/api/src/modules/report/ttl-cache.util.test.ts` (yangi, 5 test) — TTL chegarasi, in-flight
+bo'lishish, rad etilgan yuklama keshlanmasligi, `maxEntries` siqib chiqarishi, `clear()`.
+
+### Gate
+
+- `pnpm --filter @moysklad/api typecheck` → **0 xato**
+- `pnpm --filter @moysklad/api exec vitest run src/modules/report` → **37 fayl / 328 test yashil** (regress yo'q)
+- `npx biome check <shu fazaning 4 fayli>` → **0 xato** (3 warning — tegilmagan qatorlardagi eski `noNonNullAssertion`)
+- `pnpm lint:product` (repo bo'ylab) → **17 xato, HAMMASI parallel sessiyaning uchayotgan fayllarida**
+  (`email/*`, `sms/*`, `webhook/*`, `telegram/*`, `hr-telegram-bridge/*`, `shared/cron-leader.test.ts`,
+  `report/counterparty-balance.service.test.ts`). CLAUDE.md §6.1 bo'yicha tegilmadi — bu fazadan
+  oldin ham shunday edi.
+- `pnpm i18n:gate` — **yugurtirilmadi**: UI-matn tegilmagan (rule 4 shartli), `ru/uz.json` esa
+  parallel sessiyada o'zgarmoqda.
+- Migratsiya lokal DB'ga qo'llandi + `EXPLAIN` bilan qayta o'lchandi.
+
+### Qolgan qarz / DEFER
+
+1. **Overdue indekslari EXPLAIN bilan O'LCHANMADI** — lokal `invoices_out` da 0 qator,
+   `customer_orders` da 3 ta. Indeks strukturaviy jihatdan to'g'ri (yetakchi ustun = filtr va sort
+   ustuni), lekin planner tanlovi shu yerda tasdiqlanmagan. Prodda `EXPLAIN` bilan tekshirilsin.
+2. **`recentDocs` `deleted_at` ni filtrlamaydi** (12 legning birortasida ham yo'q — bu faza
+   boshlanguncha ham shunday edi). O'chirilgan hujjat «Недавние документы» da chiqishi mumkin.
+   Bu **xulq** o'zgarishi, PERF fazasi doirasidan tashqarida; audit ro'yxatida ham yo'q — alohida
+   topilma sifatida yozilsin.
+3. **Kesh invalidatsiyasi yo'q** — to'lov post qilingach dashboard tile 30 s gacha eski qoladi.
+   Ataylab: modullararo bog'liqlik (`payment-*`/`cash-*` → report) qo'shishdan ko'ra qisqa TTL
+   arzonroq. Kerak bo'lsa `TtlCache.clear()` allaqachon bor.
+4. **`PERF-04` (dashboard `receivables` top-500 dan sanaladi) shu fazada YOPILMADI** — u
+   **Faza 27** ishi (`counterparty-balance` agregati). Dashboard'dagi `limit: 500` va uning
+   «V2 follow-up» kommenti ataylab tegilmasdan qoldirildi.
+5. **Browser-smoke YO'Q.** Dashboard sahifasi real brauzerda ochilmadi — Phase-2 QA sessiyasiga.
+
+---
+
+## Faza 27a — Hisobot cap-to'g'riligi: stock-balance search-before-take + counterparty-balance butun-where agregat (`PERF-10`,`PERF-04`,`DUP-14`) (2026-08-09) — **Phase-1: strukturaviy + unit + jonli-DB tasdiqlangan, browser-smoke YO'Q**
+
+### Sub-faza qarori (reja ruxsat bergan)
+
+Faza 27 to'rt hisobotni o'z ichiga oladi. Hajm baholandi va foydalanuvchi **27a** ni tanladi:
+
+| sub-faza | qamrov | holat |
+|---|---|---|
+| **27a** | `PERF-10` (stock-balance) + `PERF-04`/`DUP-14` (counterparty-balance) | **shu yozuv** |
+| 27b | `PERF-01` — `analitika/items.service.ts` DB-paginate + truncated | KUTMOQDA |
+| 27c | `PERF-02` — akt-sverka davr-filtri + saldo-forward (API+FE kontrakt) | KUTMOQDA |
+
+Ajratish sababi: 27a/27b sof server-tomon, 27c esa yangi so'rov-parametrlari, XLSX sarlavhasi va FE
+davr-tanlagichini talab qiladi (kontrakt o'zgarishi). Rejadagi 3 TDD stsenariydan **2 tasi** aynan 27a
+ga tushadi («qidiruv cap tashqarisidagi elementni topadi», «balans-jami butun-where bo'yicha»),
+uchinchisi (truncation-flag) ikkala servisda ham qo'yildi.
+
+### Topilma tasdiqlanishi (o'z ko'zim bilan kodda)
+
+| ID | Dalil | Xulosa |
+|---|---|---|
+| `PERF-10` | `stock-balance.service.ts:196-207` `groupBy … take: filter.limit` → `:211-219` `hideEmpty` JS-filtri → `:264-275` `search` JS-filtri | **TASDIQ** — ikkala filtr ham `take` dan KEYIN. Ustiga `total: items.length` (audit aytmagan, lekin bir bug-klass) |
+| `PERF-04` | `counterparty-balance.service.ts:106-115` `findMany({take: filter.limit})` → `:141` `computeSummaries(items…)` | **TASDIQ** — jami faqat sahifadan. Kodning o'z komenti tan oladi: «V2 follow-up» |
+| `DUP-14` | `counterparty-balance.service.ts:87-91` `counterparty.findMany({take: 5000})` → `counterpartyId: {in: […]}` | **TASDIQ** |
+
+**Audit dalili eskirgan bo'lgan joy:** `PERF-02` (27c ga qoldi) «11 ta parallel `findMany`» deydi —
+bu **Faza 10** da jurnalga (`listJournalEntries` + `resolveBalanceDocs`) ko'chirilgan. Muammoning
+o'zi (davr-filtri yo'q, `take` yo'q) qoladi, lekin 27c agenti dalilni QAYTA o'qishi shart. Foydali
+topilma: davr-mashinasi (`foldJournalPeriod`, opening/closing bilan) **allaqachon yozilgan**, akt-sverka
+uni ishlatmaydi xolos.
+
+### Fayllar
+
+| Fayl | O'zgarish |
+|---|---|
+| `apps/api/src/modules/report/stock-balance.schema.ts` | `offset` (`min(0).default(0)`) qo'shildi |
+| `apps/api/src/modules/report/stock-balance.service.ts` | `resolveSearchIds()` — ikkala rejim uchun YAGONA qidiruv pre-filtri; grouped rejimda `where.assortmentId` + Prisma `having` (`hideEmpty`) + `skip`/`take`; `countGroups()` raw-SQL guruh-count; `truncated`; `emptyReport()`; `export PRODUCT_SEARCH_CAP = 2000` (eski izohsiz `500`) |
+| `apps/api/src/modules/report/stock-balance.service.test.ts` | **YANGI** — 7 test, Prisma-dubl DB semantikasini (where → having → order → skip/take) taqlid qiladi |
+| `apps/api/src/modules/report/counterparty-balance.service.ts` | `buildWhere()` — 5000-ID pre-fetch o'rniga `counterparty` relation-filtri (Prisma JOIN'ga kompilyatsiya qiladi); `aggregateSummaries()` + `aggregateBySign()` — jamilar butun-`where` SQL-agregatidan; `aggregateByCounterparty()` — ko'p-valyutali `groupBy=counterparty` uchun net-per-kontragent; `truncated`; `rowCount = total` |
+| `apps/api/src/modules/report/counterparty-balance.service.test.ts` | Dubl DB-semantikasiga o'tkazildi (`where`-baholovchi, `take`, `groupBy`); **7 yangi test** qo'shildi, mavjud 4 tasi saqlandi |
+
+### Muhim texnik qarorlar
+
+1. **`hideEmpty` → SQL `HAVING`**, JS-filtr emas: `having: { OR: [{qty:{_sum:{not:0}}}, {reservedQty:{_sum:{not:0}}}] }`.
+   Aks holda `take` dan keyin kesilgani uchun sahifa to'la bo'lolmasdi.
+2. **`aggregateBySign` `where` ni USTIGA YOZMAYDI, `AND` bilan birikadi.** `{...where, balanceMinor:{gt:0}}`
+   yozilsa `signFilter: 'creditors'` so'roviga debitorlar oqib kirardi — test shuni qulflaydi.
+3. **`groupBy=counterparty` da jami net-per-kontragent bo'yicha.** Valyuta bitta bo'lsa
+   `@@unique([counterpartyId, currency])` tufayli har kontragentda bitta qator ⇒ arzon (2 agregat)
+   yo'l AYNIYAT. Faqat ko'p-valyutali scope'da uchinchi, qimmatroq `groupBy(['counterpartyId','currency'])`
+   ishga tushadi. Ya'ni 99% UZ-akkaunt uchun qo'shimcha narx yo'q.
+4. **`unconvertedByCurrency` (M-12) endi butun-scope'dan.** Ilgari u sahifa qatorlaridan yig'ilardi —
+   kursi yo'q valyutadagi qoldiq sahifadan tashqarida bo'lsa hisobotda umuman ko'rinmasdi. Ko'rinish
+   uchun `collapseByCounterparty` ga **alohida bir martalik tally** beriladi (aks holda ikki marta sanalardi).
+5. **`total` grouped rejimda raw-SQL guruh-count.** Prisma `groupBy` count qaytarmaydi, `take`siz
+   chaqirish esa butun guruh-to'plamini Node'ga tortadi (aynan qochilayotgan narsa).
+
+### Testlar (TDD — RED avval ko'rildi)
+
+- `stock-balance.service.test.ts` — **7/7 RED** (`p3 topilmadi`, `sahifa 2 o'rniga 3`, `total 2 ≠ 7`,
+  `offset e'tiborsiz`, `truncated undefined` ×2) → fix → **7/7 GREEN**.
+- `counterparty-balance.service.test.ts` — **7/7 yangi RED** (`truncated undefined`,
+  `counterparty.findMany 1 marta chaqirildi` ×2, `totalCredit '20' ≠ '100'`, `mixedCurrency false`,
+  `unconverted [] ≠ EUR`, `groupBy=counterparty debt '1200000' ≠ '700'`) → fix → **11/11 GREEN**
+  (mavjud 4 multi-currency testi ham yashil).
+
+### Jonli DB verifikatsiyasi (unit-testlar qoplamaydigan qism)
+
+`countGroups()` ning RAW SQL'i (jadval/ustun nomlari, `HAVING` joyi, `Prisma.join` separatori,
+`::bigint` kasti, `IN (…::uuid)`) dublda TASDIQLANMAYDI. Shu sababli `climart_adopt @ localhost:5432`
+da **rollback-tranzaksiyasida** 6 sun'iy qator (nol / manfiy / faqat-rezerv) seed qilinib, raw-SQL
+natijasi **mustaqil ground-truth** (Prisma'ning o'z `groupBy` i, `take`siz) bilan solishtirildi:
+
+```
+seed'dan keyin: jami guruh=10 · bo'sh emas=9
+✓ grouped total (filtrsiz) 10 · sahifa 2 · truncated true
+✓ grouped total (hideEmpty=HAVING) 9        ← HAVING haqiqatan diskriminatsiya qildi
+✓ grouped truncated (limit yetarli) false · items == total 9
+✓ grouped total (assortmentKind / storeId / search) — uchalasi ground-truth bilan mos
+✓ flat offset siljishi · flat total · flat truncated · grouped offset siljishi
+✓ rollback (seed qolmadi) 0
+14/14 O'TDI
+```
+
+Tekshiruv skripti ataylab **commit'ga kiritilmadi** (bir martalik).
+
+### Gate
+
+| Gate | Natija |
+|---|---|
+| `pnpm --filter @moysklad/api typecheck` | **0 xato** |
+| `pnpm lint:product` | Mening 5 faylimda **0 xato** (`biome check` bilan alohida tasdiqlandi). Repo bo'yicha 17 xato qoladi — **hammasi parallel Faza-28 sessiyasining fayllarida** (`email`/`sms`/`webhook`/`telegram`/`hr-telegram-bridge`/`shared/cron-leader`/`shared/outbox-claim-class`), ularga TEGILMADI (CLAUDE.md §6.1) |
+| `vitest run src/modules/report/` | **37 fayl / 328 test yashil** (regress yo'q; parallel sessiyaning `ttl-cache`/`dashboard` testlari ham shu ichida) |
+| `pnpm i18n:gate` | Qo'llanmaydi — UI-matn tegilmadi |
+
+### Parallel sessiya sharoiti (CLAUDE.md §6)
+
+Bu sessiya davomida shu checkout'da yana **ikki** sessiya ishlagan: **Faza 26** (`dashboard.service.ts`,
+`ttl-cache.util.ts`) va **Faza 28** (`outbox-claim`, `webhook`/`sms`/`email`/`telegram`). Ularning
+fayllariga tegilmadi, `git add` faqat aniq yo'llar bilan qilindi. **`docs/REJA-AUDIT-FIX-2026-08.md`
+ATAYLAB stage QILINMADI** — faylda Faza-26 sessiyasining commit qilinmagan jurnal yozuvi turibdi, uni
+o'z commit'imga tortib ketmaslik uchun. Shu yozuv ish daraxtida qoladi va uni keyingi doc-commit oladi.
+
+### Qolgan qarz / DEFER
+
+1. **`truncated` FE'da KO'RSATILMAYDI.** Bayroq API-da bor, `/reports/stock-balance` va
+   `/reports/counterparty-balance` sahifalari uni o'qimaydi. Sabab: reja «Fayllar» ro'yxati faqat API
+   servislarini beradi, FE banneri ru+uz i18n kalitlarini talab qiladi. **Asosiy zarar yopilgan**
+   (qidiruv endi cap tashqarisini ham topadi), bu qolgan cap uchun ko'rinuvchanlik. → FE fazasiga.
+2. **`PRODUCT_SEARCH_CAP = 2000` hali ham CAP.** Undan ko'p tovarga mos keladigan qidiruv kesiladi —
+   lekin endi `truncated: true` bilan, jimgina emas. To'liq yechim: `Stock`↔`Product` ni raw SQL JOIN
+   bilan bitta so'rovga yig'ish.
+3. **`summaries.totalQty/totalReserved/…` (stock-balance) hamon SAHIFA bo'yicha.** Bu ataylab —
+   interfeys komenti («across the visible page») shundoq turibdi va FE ularni sahifa-jami sifatida
+   ko'rsatadi. `counterparty-balance` da esa jamilar butun-scope'ga o'tkazildi (`PERF-04` aynan shuni
+   talab qiladi) — ikki hisobot bu jihatdan endi ASSIMETRIK. Agar egasi stock-balance'da ham
+   butun-scope jami xohlasa — alohida topilma.
+4. **Grouped rejimda `total` uchun +1 so'rov** (raw count). O'lchanmagan; guruh-count `stocks` ning
+   `(account_id, assortment_kind, assortment_id)` indeksidan foydalanishi kutiladi, lekin `EXPLAIN`
+   bilan tasdiqlanmagan.
+5. **Browser-smoke YO'Q.** Ikkala hisobot sahifasi real brauzerda ochilmadi — Phase-2 QA sessiyasiga.

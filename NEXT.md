@@ -305,6 +305,56 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-09g (AUDIT-FIX FAZA 26 — dashboard: recentDocs UNION + `updatedAt` indekslari +
+> pul-keshi + overdue raw-SQL · `PERF-05`,`PERF-06`,`PERF-11`) · Phase-1: strukturaviy + unit +
+> **EXPLAIN-tasdiqlangan**, browser-smoke YO'Q · ⏳ DEPLOY QILINMAGAN ·
+> 🗄️ **migratsiya BOR** (`20260809160000_dashboard_updated_at_and_due_date_indexes`) ·
+> ⚠️ **navbatdan tashqari** — foydalanuvchi IDE'da Faza 26 sessiya-boshi promptini bevosita berdi ·
+> ⚠️ parallel sessiya email/sms/webhook/telegram/hr modullarida ishlamoqda; commit'im
+> pathspec-cheklangan, ularning fayllariga TEGILMADI
+>
+> **🔴 REJA TAKLIF QILGAN YECHIM YETARLI EMAS EDI** (Faza 25'nikiga o'xshash sabot, boshqa sabab).
+> Reja/audit: «12 jadvalga `updatedAt` indeksi qo'sh — komment aytgan rejim haqiqatga aylanadi».
+> **Aslida indeksni yakka qo'shish so'rovni SEKINLASHTIRDI:** Postgres tashqi `LIMIT`ni `UNION ALL`
+> shoxlariga tushirmaydi, shuning uchun planner baribir har jadvalni to'liq o'qib top-N sort qiladi.
+> EXPLAIN ANALYZE (bitta legda 24 008 sintetik qator, tranzaksiya ichida + ROLLBACK):
+> indekssiz **18 ms** → faqat indeks **66 ms** (indeks umuman ishlatilmaydi) → faqat per-leg LIMIT
+> 33 ms → **ikkalasi birga 0.55 ms** (`Merge Append` + `Index Scan`). **Qoida: indeks qo'shishdan
+> oldin so'rov SHAKLI o'sha indeksni ishlata oladimi — EXPLAIN bilan tekshir.**
+>
+> **Nima qilindi.** (1) `computeRecentDocs` — har 12 legga o'z `ORDER BY updated_at DESC LIMIT 20`
+> si (global top-20 albatta per-leg top-20'lar ichida); yolg'on komment o'rniga o'lchov jadvali;
+> `Promise.all` dan **keyin** await qilinardi — endi ichida. (2) **14 indeks**: 12 ta
+> `[accountId, updatedAt(sort: Desc)]` + `invoices_out[accountId,paymentPlannedMoment]` +
+> `customer_orders[accountId,deliveryPlannedMoment]`. (3) `computeOverdueInvoices` — `LIMIT×4`
+> over-fetch + JS-filtr o'rniga raw-SQL, predikati agregatnikiga **aynan mos** (eski kodda eng eski
+> 40 hujjat to'langan bo'lsa panel `count>0` bo'lsa-da BO'SH chiqardi). (4) `loadRateContext`
+> **request-scope** (3 so'rov → 1). (5) Pul bloklari **30 s TTL kesh** ostida
+> (`report/ttl-cache.util.ts`, yangi) — kalit `accountId` bilan, in-flight promise bo'lishiladi,
+> xato keshlanmaydi.
+>
+> **Materialized daftardan o'qish TANLANMADI** — `MoneyOperation` da backfill yo'q (Faza 11), ya'ni
+> 2026-08-08 gacha hujjatlarni bilmaydi; undan o'qish dashboard raqamini kam ko'rsatgan bo'lardi.
+>
+> **Testlar.** `report/dashboard.service.test.ts` (yangi, 7) — RED'da 4 yiqildi → GREEN 7/7;
+> `report/ttl-cache.util.test.ts` (yangi, 5). Kesh **tenant-kalitlanishi** ham qulflangan.
+> Gate: api typecheck 0 · `vitest run src/modules/report` 37 fayl / 328 test yashil · biome
+> shu fazaning 4 faylida 0 xato. **`pnpm lint:product` repo bo'ylab 17 xato — HAMMASI parallel
+> sessiyaning fayllarida** (§6.1: tegilmadi).
+>
+> **🟠 Qolgan qarz.** (1) Overdue indekslari lokalda **o'lchanmadi** — `invoices_out` bo'sh; prodda
+> EXPLAIN bilan tekshirilsin. (2) **`recentDocs` `deleted_at`ni filtrlamaydi** (eski xulq, 12 legning
+> birortasida ham yo'q) — o'chirilgan hujjat «Недавние документы»da chiqishi mumkin; auditda YO'Q,
+> alohida topilma sifatida yozilsin. (3) Kesh invalidatsiyasi yo'q — tile 30 s gacha eski
+> (ataylab). (4) `PERF-04` (dashboard `receivables` top-500 dan) — **Faza 27** ishi.
+>
+> **Deploy eslatmasi.** `CREATE INDEX` SHARE qulfini oladi — past yuklamada qo'lla. Prod DB'lar
+> `_prisma_migrations`-tracked emas ⇒ `prisma db execute --file …` bilan qo'lda; fayl
+> `IF NOT EXISTS` bilan idempotent.
+>
+> **Keyingi:** reja bo'yicha **Faza 27** (hisobot paginatsiya/agregat to'g'riligi —
+> `PERF-01/02/04/10`, `DUP-14`; og'ir bo'lsa sub-fazaga bo'linadi).
+
 > **🕒 2026-08-09f (AUDIT-FIX FAZA 25 — DB indeks-paket: hot-FK + barcode GIN + INN/yacheyka
 > expression · `DB-04`,`DB-05`,`DB-08`,`PERF-12`,`PERF-14`) · Phase-1: strukturaviy +
 > **EXPLAIN-tasdiqlangan**, browser-smoke YO'Q · ⏳ DEPLOY QILINMAGAN ·

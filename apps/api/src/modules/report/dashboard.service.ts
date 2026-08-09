@@ -17,8 +17,14 @@ import {
 // Analitika TZ §4 — yagona formulalar qatlami. `percentOf` deb nomlangan:
 // bu faylda `percent` lokal o'zgaruvchi sifatida band.
 import { percent as percentOf } from './metrics/index.js';
-import { CurrencyTally, consolidateToBase, loadRateContext } from './report-rate-ctx.util.js';
+import {
+  CurrencyTally,
+  type RateContext,
+  consolidateToBase,
+  loadRateContext,
+} from './report-rate-ctx.util.js';
 import { ReportService } from './report.service.js';
+import { TtlCache } from './ttl-cache.util.js';
 
 /** Products with qty - reservedQty <= this threshold are counted as low-stock. V1 hardcoded. */
 const LOW_STOCK_THRESHOLD = 5;
@@ -29,6 +35,31 @@ const OVERDUE_LIMIT = 10;
 /** How many months go into the cash-flow chart next to "Деньги". */
 const CASH_FLOW_CHART_MONTHS = 6;
 
+/**
+ * Rows in the "Недавние документы" block. Also the per-table LIMIT inside the
+ * UNION — see `computeRecentDocs`; the two MUST stay equal, or the block could
+ * miss a document that belongs in the global top-N.
+ */
+const RECENT_DOCS_LIMIT = 20;
+
+/**
+ * PERF-06 — how long the "Деньги" aggregates stay servable from memory.
+ *
+ * Both of them UNION the four money tables with no date floor on the balance
+ * side, i.e. they scan the account's ENTIRE payment history on every open of
+ * the most-opened page in the product. 30s is the deliberate trade: the tile
+ * can lag a just-posted payment by up to half a minute (it is a summary
+ * widget, not a ledger — /money and the cash-flow report are never cached),
+ * while a burst of users opening the homepage costs one aggregate instead of
+ * one each.
+ *
+ * NOT reading from the materialized MoneyOperation ledger instead: that
+ * journal has no backfill (Faza 11), so it only knows documents created after
+ * 2026-08-08 — sourcing the dashboard from it would silently understate every
+ * tenant's cash position.
+ */
+const MONEY_CACHE_TTL_MS = 30_000;
+
 @Injectable()
 export class DashboardService {
   constructor(
@@ -38,6 +69,14 @@ export class DashboardService {
     @Inject(CounterpartyBalanceService)
     private readonly cpBalanceService: CounterpartyBalanceService,
   ) {}
+
+  /**
+   * PERF-06 caches. Keyed by `accountId` (+ the chart's window start, which
+   * rolls over at each month boundary) — a key that forgot the account would
+   * serve one tenant's cash position to another.
+   */
+  private readonly moneyByOrgCache = new TtlCache<MoneyByOrgRow[]>(MONEY_CACHE_TTL_MS);
+  private readonly moneyChartCache = new TtlCache<MoneyChartPoint[]>(MONEY_CACHE_TTL_MS);
 
   async dashboard(
     accountId: string,
@@ -56,6 +95,13 @@ export class DashboardService {
     // Sales chart bucket size depends on the visible period
     const chartGroupBy: 'day' | 'month' = filter.period === 'year' ? 'month' : 'day';
 
+    // PERF-06 — request-scoped rate context. The three money-consolidating
+    // blocks below used to call `loadRateContext` each on their own, so a
+    // single dashboard hit ran the same Currency query three times. One
+    // context also means the three blocks can never disagree about the base
+    // currency mid-request.
+    const rateCtx = await loadRateContext(this.prisma.client, accountId);
+
     const [
       // Sales — period totals + today + yesterday + previous period + chart buckets
       salesPeriodReport,
@@ -73,6 +119,7 @@ export class DashboardService {
       cpBalanceReport,
       stockData,
       taskData,
+      recentDocs,
     ] = await Promise.all([
       this.salesService.salesReport(accountId, {
         dateFrom: dateFrom.toISOString(),
@@ -100,9 +147,9 @@ export class DashboardService {
         groupBy: chartGroupBy,
       }),
       this.computeOverdueOrders(accountId, now),
-      this.computeOverdueInvoices(accountId, now),
-      this.computeMoneyByOrg(accountId),
-      this.computeMoneyChart(accountId, now),
+      this.computeOverdueInvoices(accountId, now, rateCtx),
+      this.computeMoneyByOrg(accountId, rateCtx),
+      this.computeMoneyChart(accountId, now, rateCtx),
       this.cashFlowService.cashFlowReport(accountId, {
         dateFrom: dateFrom.toISOString(),
         dateTo: dateTo.toISOString(),
@@ -117,6 +164,9 @@ export class DashboardService {
       }),
       this.computeStock(accountId),
       this.computeTasks(accountId, currentUserId),
+      // Was awaited AFTER this Promise.all — a 12-way UNION serialised behind
+      // every other block for no reason. It depends on nothing above.
+      this.computeRecentDocs(accountId),
     ]);
 
     // Build sales sub-blocks (today + period) with deltas vs comparison
@@ -172,7 +222,7 @@ export class DashboardService {
         chart: moneyChart,
       },
 
-      recentDocs: await this.computeRecentDocs(accountId),
+      recentDocs,
 
       // Legacy fields (untouched)
       cashFlow: {
@@ -461,9 +511,21 @@ export class DashboardService {
    * cash-in / cash-out / payment-in / payment-out), sorted by
    * updated_at DESC. Mirrors moysklad's "Недавние документы" block.
    *
-   * UNION ALL is faster than 12 separate Promise.all queries because
-   * each leg only walks its own (account_id, updated_at) index for
-   * the top-20 rows.
+   * PERF-05 — the comment that used to sit here claimed "each leg only walks
+   * its own (account_id, updated_at) index for the top-20 rows". BOTH halves
+   * of that were false, and fixing only one half does nothing. Measured on
+   * this query with 24k rows in one leg (EXPLAIN ANALYZE, Postgres 18):
+   *
+   *   indexes ✗ / per-leg LIMIT ✗ (as shipped) → Append + top-N Sort, 18 ms
+   *   indexes ✓ / per-leg LIMIT ✗              → Append + top-N Sort, 66 ms  ← index unused
+   *   indexes ✗ / per-leg LIMIT ✓              → Merge Append + Sorts,  33 ms
+   *   indexes ✓ / per-leg LIMIT ✓ (now)        → Merge Append + Index Scans, 0.55 ms
+   *
+   * The planner will not push the outer LIMIT into UNION ALL branches by
+   * itself, so without the per-leg `ORDER BY … LIMIT` it reads EVERY document
+   * of the account from all 12 tables and top-N sorts them — adding the
+   * indexes alone left it a full scan (row 2). Each leg must ask for its own
+   * top-20; the global top-20 is necessarily a subset of that union.
    */
   private async computeRecentDocs(accountId: string): Promise<DashboardResult['recentDocs']> {
     const rows = await this.prisma.client.$queryRaw<
@@ -481,65 +543,75 @@ export class DashboardService {
       }>
     >`
       SELECT * FROM (
-        SELECT 'customer-order' AS type, id, name AS number, applicable AS posted,
-               moment AS moment_date, agent_id, organization_id, sum_minor, currency, updated_at AS modified_at
-          FROM customer_orders WHERE account_id = ${accountId}::uuid
+        (SELECT 'customer-order' AS type, id, name AS number, applicable AS posted,
+                moment AS moment_date, agent_id, organization_id, sum_minor, currency, updated_at AS modified_at
+           FROM customer_orders WHERE account_id = ${accountId}::uuid
+          ORDER BY updated_at DESC LIMIT ${RECENT_DOCS_LIMIT})
         UNION ALL
-        SELECT 'demand', id, name, applicable, moment, agent_id, organization_id, sum_minor, currency, updated_at
-          FROM demands WHERE account_id = ${accountId}::uuid
+        (SELECT 'demand', id, name, applicable, moment, agent_id, organization_id, sum_minor, currency, updated_at
+           FROM demands WHERE account_id = ${accountId}::uuid
+          ORDER BY updated_at DESC LIMIT ${RECENT_DOCS_LIMIT})
         UNION ALL
-        SELECT 'invoice-out', id, name, applicable, moment, agent_id, organization_id, sum_minor, currency, updated_at
-          FROM invoices_out WHERE account_id = ${accountId}::uuid
+        (SELECT 'invoice-out', id, name, applicable, moment, agent_id, organization_id, sum_minor, currency, updated_at
+           FROM invoices_out WHERE account_id = ${accountId}::uuid
+          ORDER BY updated_at DESC LIMIT ${RECENT_DOCS_LIMIT})
         UNION ALL
-        SELECT 'invoice-in', id, name, applicable, moment, agent_id, organization_id, sum_minor, currency, updated_at
-          FROM invoices_in WHERE account_id = ${accountId}::uuid
+        (SELECT 'invoice-in', id, name, applicable, moment, agent_id, organization_id, sum_minor, currency, updated_at
+           FROM invoices_in WHERE account_id = ${accountId}::uuid
+          ORDER BY updated_at DESC LIMIT ${RECENT_DOCS_LIMIT})
         UNION ALL
-        SELECT 'supply', id, name, applicable, moment, agent_id, organization_id, sum_minor, currency, updated_at
-          FROM supplies WHERE account_id = ${accountId}::uuid
+        (SELECT 'supply', id, name, applicable, moment, agent_id, organization_id, sum_minor, currency, updated_at
+           FROM supplies WHERE account_id = ${accountId}::uuid
+          ORDER BY updated_at DESC LIMIT ${RECENT_DOCS_LIMIT})
         UNION ALL
-        SELECT 'sales-return', id, name, applicable, moment, agent_id, organization_id, sum_minor, currency, updated_at
-          FROM sales_returns WHERE account_id = ${accountId}::uuid
+        (SELECT 'sales-return', id, name, applicable, moment, agent_id, organization_id, sum_minor, currency, updated_at
+           FROM sales_returns WHERE account_id = ${accountId}::uuid
+          ORDER BY updated_at DESC LIMIT ${RECENT_DOCS_LIMIT})
         UNION ALL
-        SELECT 'purchase-order', id, name, applicable, moment, agent_id, organization_id, sum_minor, currency, updated_at
-          FROM purchase_orders WHERE account_id = ${accountId}::uuid
+        (SELECT 'purchase-order', id, name, applicable, moment, agent_id, organization_id, sum_minor, currency, updated_at
+           FROM purchase_orders WHERE account_id = ${accountId}::uuid
+          ORDER BY updated_at DESC LIMIT ${RECENT_DOCS_LIMIT})
         UNION ALL
-        SELECT 'purchase-return', id, name, applicable, moment, agent_id, organization_id, sum_minor, currency, updated_at
-          FROM purchase_returns WHERE account_id = ${accountId}::uuid
+        (SELECT 'purchase-return', id, name, applicable, moment, agent_id, organization_id, sum_minor, currency, updated_at
+           FROM purchase_returns WHERE account_id = ${accountId}::uuid
+          ORDER BY updated_at DESC LIMIT ${RECENT_DOCS_LIMIT})
         UNION ALL
-        SELECT 'cash-in', id, name, applicable, moment, agent_id, organization_id, sum_minor, currency, updated_at
-          FROM cash_in WHERE account_id = ${accountId}::uuid
+        (SELECT 'cash-in', id, name, applicable, moment, agent_id, organization_id, sum_minor, currency, updated_at
+           FROM cash_in WHERE account_id = ${accountId}::uuid
+          ORDER BY updated_at DESC LIMIT ${RECENT_DOCS_LIMIT})
         UNION ALL
-        SELECT 'cash-out', id, name, applicable, moment, agent_id, organization_id, sum_minor, currency, updated_at
-          FROM cash_out WHERE account_id = ${accountId}::uuid
+        (SELECT 'cash-out', id, name, applicable, moment, agent_id, organization_id, sum_minor, currency, updated_at
+           FROM cash_out WHERE account_id = ${accountId}::uuid
+          ORDER BY updated_at DESC LIMIT ${RECENT_DOCS_LIMIT})
         UNION ALL
-        SELECT 'payment-in', id, name, applicable, moment, agent_id, organization_id, sum_minor, currency, updated_at
-          FROM payments_in WHERE account_id = ${accountId}::uuid
+        (SELECT 'payment-in', id, name, applicable, moment, agent_id, organization_id, sum_minor, currency, updated_at
+           FROM payments_in WHERE account_id = ${accountId}::uuid
+          ORDER BY updated_at DESC LIMIT ${RECENT_DOCS_LIMIT})
         UNION ALL
-        SELECT 'payment-out', id, name, applicable, moment, agent_id, organization_id, sum_minor, currency, updated_at
-          FROM payments_out WHERE account_id = ${accountId}::uuid
+        (SELECT 'payment-out', id, name, applicable, moment, agent_id, organization_id, sum_minor, currency, updated_at
+           FROM payments_out WHERE account_id = ${accountId}::uuid
+          ORDER BY updated_at DESC LIMIT ${RECENT_DOCS_LIMIT})
       ) recent
       ORDER BY modified_at DESC
-      LIMIT 20
+      LIMIT ${RECENT_DOCS_LIMIT}
     `;
 
     if (rows.length === 0) return [];
 
     // Bulk-resolve agent + org names so we don't N+1 the per-row joins.
-    const agentIds = Array.from(new Set(rows.map((r) => r.agent_id).filter(Boolean)));
     const orgIds = Array.from(
       new Set(rows.map((r) => r.organization_id).filter((x): x is string => Boolean(x))),
     );
-    const [agents, orgs] = await Promise.all([
-      this.prisma.client.counterparty.findMany({
-        where: { accountId, id: { in: agentIds } },
-        select: { id: true, name: true },
-      }),
+    const [agentName, orgs] = await Promise.all([
+      this.resolveAgentNames(
+        accountId,
+        rows.map((r) => r.agent_id),
+      ),
       this.prisma.client.organization.findMany({
         where: { accountId, id: { in: orgIds } },
         select: { id: true, name: true },
       }),
     ]);
-    const agentName = new Map(agents.map((a) => [a.id, a.name]));
     const orgName = new Map(orgs.map((o) => [o.id, o.name]));
 
     return rows.map((r) => ({
@@ -610,30 +682,40 @@ export class DashboardService {
    * intentionally don't filter by `applicable` because a posted but
    * unpaid invoice is still an open receivable.
    */
-  private async computeOverdueInvoices(accountId: string, now: Date): Promise<OverdueBlock> {
-    // Prisma doesn't support column-vs-column comparisons in `where`,
-    // so we fetch with the date predicate and filter the unpaid check
-    // in JS. The same predicate runs in the aggregate via raw SQL.
-    const candidateRows = await this.prisma.client.invoiceOut.findMany({
-      where: {
-        accountId,
-        deletedAt: null,
-        paymentPlannedMoment: { lt: now },
-      },
-      select: {
-        id: true,
-        name: true,
-        sumMinor: true,
-        payedSumMinor: true,
-        paymentPlannedMoment: true,
-        agent: { select: { name: true } },
-      },
-      orderBy: { paymentPlannedMoment: 'asc' },
-      take: OVERDUE_LIMIT * 4, // over-fetch to allow JS-side filter
-    });
-
-    const overdue = candidateRows.filter((r) => r.payedSumMinor < r.sumMinor);
-    const top = overdue.slice(0, OVERDUE_LIMIT);
+  private async computeOverdueInvoices(
+    accountId: string,
+    now: Date,
+    ctx: RateContext,
+  ): Promise<OverdueBlock> {
+    // PERF-11 — items come from the SAME predicate as the aggregate below.
+    // Prisma cannot express the column-vs-column `payed_sum_minor <
+    // sum_minor`, so this used to take the 40 oldest rows by due date and
+    // drop the paid ones in JS. Once the oldest 40 overdue invoices are all
+    // settled — which is the steady state after a year of operation, since
+    // paid documents keep their old due date — the panel showed `count: N`
+    // with an EMPTY list: the live debtors sat below the over-fetch window.
+    // Pushing the predicate into SQL makes "top 10 unpaid" exact at any size.
+    const top = await this.prisma.client.$queryRaw<
+      Array<{
+        id: string;
+        name: string;
+        owed_minor: bigint;
+        payment_planned_moment: Date;
+        agent_id: string;
+      }>
+    >`
+      SELECT id, name,
+             (sum_minor - payed_sum_minor)::bigint AS owed_minor,
+             payment_planned_moment,
+             agent_id
+      FROM invoices_out
+      WHERE account_id = ${accountId}::uuid
+        AND deleted_at IS NULL
+        AND payment_planned_moment < ${now}
+        AND payed_sum_minor < sum_minor
+      ORDER BY payment_planned_moment ASC
+      LIMIT ${OVERDUE_LIMIT}
+    `;
 
     // Aggregate via raw SQL since Prisma can't express column-vs-column.
     // Group by currency so the overdue total can be base-consolidated —
@@ -651,7 +733,6 @@ export class DashboardService {
         AND payed_sum_minor < sum_minor
       GROUP BY currency
     `;
-    const ctx = await loadRateContext(this.prisma.client, accountId);
     // M-12 (Faza 17): kursi topilmagan valyuta jamiga QO'SHILMAYDI (ilgari
     // face-value qo'shilardi). Dashboard vidjeti qoldiqni alohida ko'rsatuvchi
     // maydonga ega emas — bu OCHIQ QARZ (rejadagi Faza 17 hisobotida qayd etilgan);
@@ -664,12 +745,19 @@ export class DashboardService {
       totalBase += consolidateToBase(r.total ?? 0n, r.currency, ctx, seen);
     }
 
+    // The raw query can't `include` the agent, so resolve the ≤10 names in one
+    // go (same bulk-lookup shape recentDocs uses).
+    const agentName = await this.resolveAgentNames(
+      accountId,
+      top.map((r) => r.agent_id),
+    );
+
     const items: OverdueDocItem[] = top.map((r) => ({
       id: r.id,
       number: r.name,
-      counterpartyName: r.agent?.name ?? null,
-      sumMinor: (r.sumMinor - r.payedSumMinor).toString(), // moysklad shows owed amount, not gross
-      daysOverdue: this.daysBetween(r.paymentPlannedMoment ?? now, now),
+      counterpartyName: agentName.get(r.agent_id) ?? null,
+      sumMinor: r.owed_minor.toString(), // moysklad shows owed amount, not gross
+      daysOverdue: this.daysBetween(r.payment_planned_moment ?? now, now),
     }));
 
     return {
@@ -677,6 +765,24 @@ export class DashboardService {
       totalSumMinor: totalBase.toString(),
       items,
     };
+  }
+
+  /**
+   * `id → name` for the counterparties referenced by a raw-SQL result set.
+   * One query, duplicates collapsed — raw rows carry `agent_id` only, and
+   * both callers here (recent docs, overdue invoices) would otherwise N+1.
+   */
+  private async resolveAgentNames(
+    accountId: string,
+    agentIds: Array<string | null>,
+  ): Promise<Map<string, string>> {
+    const ids = Array.from(new Set(agentIds.filter((x): x is string => Boolean(x))));
+    if (ids.length === 0) return new Map();
+    const rows = await this.prisma.client.counterparty.findMany({
+      where: { accountId, id: { in: ids } },
+      select: { id: true, name: true },
+    });
+    return new Map(rows.map((a) => [a.id, a.name]));
   }
 
   /** Calendar-day diff (floor). Always non-negative for inputs in order. */
@@ -696,7 +802,15 @@ export class DashboardService {
    * converted to the account base via the exact BigInt rate before summing
    * (consistent with the now currency-aware cash-flow report).
    */
-  private async computeMoneyByOrg(accountId: string): Promise<MoneyByOrgRow[]> {
+  private computeMoneyByOrg(accountId: string, ctx: RateContext): Promise<MoneyByOrgRow[]> {
+    // PERF-06 — whole-history aggregate, cached for MONEY_CACHE_TTL_MS.
+    // `ctx` belongs to the request that MISSED the cache; a rate edit inside
+    // the TTL window is therefore visible one refresh later, same as a new
+    // payment. Both are the accepted staleness of this widget.
+    return this.moneyByOrgCache.getOrLoad(accountId, () => this.loadMoneyByOrg(accountId, ctx));
+  }
+
+  private async loadMoneyByOrg(accountId: string, ctx: RateContext): Promise<MoneyByOrgRow[]> {
     const orgs = await this.prisma.client.organization.findMany({
       where: { accountId, archived: false },
       select: { id: true, name: true },
@@ -728,7 +842,6 @@ export class DashboardService {
       GROUP BY organization_id, currency
     `;
 
-    const ctx = await loadRateContext(this.prisma.client, accountId);
     // M-12 (Faza 17): kursi topilmagan valyuta jamiga QO'SHILMAYDI (ilgari
     // face-value qo'shilardi). Dashboard vidjeti qoldiqni alohida ko'rsatuvchi
     // maydonga ega emas — bu OCHIQ QARZ (rejadagi Faza 17 hisobotida qayd etilgan);
@@ -753,11 +866,28 @@ export class DashboardService {
    * draw 3 series with one fetch. Months are produced even if empty
    * (sparse data still renders a flat line, matching moysklad).
    */
-  private async computeMoneyChart(accountId: string, now: Date): Promise<MoneyChartPoint[]> {
+  private computeMoneyChart(
+    accountId: string,
+    now: Date,
+    ctx: RateContext,
+  ): Promise<MoneyChartPoint[]> {
     // First-of-month, six months back from `now`
     const start = new Date(now.getFullYear(), now.getMonth() - (CASH_FLOW_CHART_MONTHS - 1), 1);
     const end = new Date(now.getFullYear(), now.getMonth() + 1, 1); // exclusive
 
+    // PERF-06 — the window is part of the key, so the cache rolls over by
+    // itself at each month boundary instead of pinning a stale x-axis.
+    return this.moneyChartCache.getOrLoad(`${accountId}:${start.toISOString()}`, () =>
+      this.loadMoneyChart(accountId, start, end, ctx),
+    );
+  }
+
+  private async loadMoneyChart(
+    accountId: string,
+    start: Date,
+    end: Date,
+    ctx: RateContext,
+  ): Promise<MoneyChartPoint[]> {
     // Carry `currency` so each (month,currency) inflow/outflow can be
     // base-consolidated in JS (consistent with the cash-flow report).
     const rows = await this.prisma.client.$queryRaw<
@@ -789,7 +919,6 @@ export class DashboardService {
       ORDER BY bucket
     `;
 
-    const ctx = await loadRateContext(this.prisma.client, accountId);
     // M-12 (Faza 17): kursi topilmagan valyuta jamiga QO'SHILMAYDI (ilgari
     // face-value qo'shilardi). Dashboard vidjeti qoldiqni alohida ko'rsatuvchi
     // maydonga ega emas — bu OCHIQ QARZ (rejadagi Faza 17 hisobotida qayd etilgan);
