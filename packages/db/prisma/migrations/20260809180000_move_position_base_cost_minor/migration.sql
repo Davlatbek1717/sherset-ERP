@@ -1,0 +1,13 @@
+-- Faza 34 / STK-08 — exact per-line transfer cost on MovePosition.
+--
+-- `cost_minor` is the per-unit weighted average snapshot. `cost_minor × quantity`
+-- cannot express the value that actually left the source store when a transfer
+-- empties it: the line must then take the WHOLE remaining cost_balance_minor,
+-- which is generally not a multiple of the rounded per-unit. Without this column
+-- every full transfer left a few stray tiyin on a qty = 0 Stock row, poisoning
+-- the next inbound weighted average.
+--
+-- Nullable on purpose: rows posted before this migration keep NULL and the
+-- service falls back to cost_minor × quantity — i.e. the exact pre-Faza-34
+-- arithmetic — so historical documents still unpost/cancel bit-for-bit.
+ALTER TABLE "move_positions" ADD COLUMN "base_cost_minor" BIGINT;

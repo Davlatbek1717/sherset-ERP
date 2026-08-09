@@ -1,6 +1,7 @@
 import type { Prisma } from '@moysklad/db';
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { formatDecimalScaled, parseDecimalScaled } from '../demand/fifo-consumer.js';
 
 /**
  * Stock service — centralizes ledger writes + balance reads.
@@ -79,23 +80,51 @@ export interface ReservationDelta {
   reason: 'reserve' | 'release_unpost' | 'release_cancel' | 'release_consume' | 'release_manual';
 }
 
-/** Decimal(20,6) → exact integer micro-units (×1e6) — no float drift. */
-function toMicro(v: string): bigint {
-  const neg = v.trim().startsWith('-');
-  const abs = neg ? v.trim().slice(1) : v.trim();
-  const [whole, frac = ''] = abs.split('.');
-  const micro = `${whole}${frac.padEnd(6, '0').slice(0, 6)}`;
-  const n = BigInt(micro || '0');
-  return neg ? -n : n;
+/**
+ * Decimal(20,6) → exact integer micro-units (×1e6) — no float drift.
+ *
+ * Faza 34: this file used to carry its OWN copy of the parse/format pair.
+ * There is now exactly ONE implementation (demand/fifo-consumer.ts, a
+ * dependency-free leaf module) shared by every quantity/cost call site;
+ * the local names are kept because `micro` is this file's vocabulary.
+ */
+const toMicro = parseDecimalScaled;
+/** Exact integer micro-units → trimmed Decimal(20,6) string. */
+const fromMicro = formatDecimalScaled;
+
+/**
+ * «Доступно» for POSTING purposes = on-hand − reserved, exact Decimal(20,6).
+ *
+ * THE single definition of that formula (STK-12): it was hand-rolled with
+ * `Math.max(0, Number(qty) - Number(reservedQty))` in customer-order and
+ * internal-order shortfall while `assertAvailable` used the exact BigInt
+ * path here — three copies that could disagree on fractional Decimal(20,6)
+ * quantities and would drift apart the moment the formula changes.
+ *
+ * ⚠️ NOT moysklad's DISPLAYED «Доступно» (= Остаток − Резерв + Ожидание).
+ * In-transit must never relax a posting check — see assertAvailable's §2c
+ * note and StockBalanceService for the displayed variant.
+ *
+ * Two shapes over ONE subtraction:
+ *   availableMicroOf — raw, SIGNED micro-units. `assertAvailable` needs the
+ *     signed value: on an already-negative balance the shortage is
+ *     `requested − (−5)`, and clamping would understate it.
+ *   availableOf — clamped-at-zero Decimal string, the «how much can this
+ *     order cover» reading the shortfall endpoints want (their old
+ *     `Math.max(0, …)`).
+ */
+export function availableMicroOf(
+  balance: { qty: string; reservedQty: string } | null | undefined,
+): bigint {
+  if (!balance) return 0n;
+  return parseDecimalScaled(balance.qty) - parseDecimalScaled(balance.reservedQty);
 }
 
-/** Exact integer micro-units → trimmed Decimal(20,6) string. */
-function fromMicro(micro: bigint): string {
-  const neg = micro < 0n;
-  const abs = (neg ? -micro : micro).toString().padStart(7, '0');
-  const whole = abs.slice(0, -6);
-  const frac = abs.slice(-6).replace(/0+$/, '');
-  return `${neg ? '-' : ''}${whole}${frac ? `.${frac}` : ''}`;
+export function availableOf(
+  balance: { qty: string; reservedQty: string } | null | undefined,
+): string {
+  const micro = availableMicroOf(balance);
+  return micro > 0n ? formatDecimalScaled(micro) : '0';
 }
 
 /**
@@ -582,7 +611,7 @@ export class StockService {
       // (only Production reservation writes it), so qty − 0 === qty
       // ⇒ byte-identical unless a reservation actually exists; then
       // it correctly blocks other documents from the held stock.
-      const availMicro = bal ? toMicro(bal.qty) - toMicro(bal.reservedQty) : 0n;
+      const availMicro = availableMicroOf(bal);
       if (want.micro > availMicro) {
         shortages.push({
           assortmentKind: want.kind,

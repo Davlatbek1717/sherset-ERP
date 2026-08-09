@@ -18,6 +18,7 @@ import { withSerializationRetry } from '../shared/serialization-retry.js';
 import { type StockDelta, StockService } from '../stock/stock.service.js';
 import { type OverheadLineInput, distributeOverhead } from '../supply/overhead-distribution.js';
 import { WebhookFireService } from '../webhook/webhook-fire.service.js';
+import { computeTransferCost } from './move-cost-basis.js';
 import {
   type CreateMoveInput,
   CreateMoveSchema,
@@ -531,8 +532,11 @@ export class MoveService {
     landedByPos: Map<string, bigint>;
     totalBase: bigint;
   } {
+    // baseCostMinor is the exact post-time line value (Faza 34 / STK-08).
+    // Pre-Faza-34 rows have none — fall back to the old per-unit × qty so
+    // documents posted before this change still reverse bit-for-bit.
     const baseLineOf = (p: (typeof existing.positions)[number]): bigint =>
-      scaleMinorByQty(p.costMinor ?? 0n, String(p.quantity));
+      p.baseCostMinor ?? scaleMinorByQty(p.costMinor ?? 0n, String(p.quantity));
     const baseByPos = new Map<string, bigint>();
     for (const p of existing.positions) baseByPos.set(p.id, baseLineOf(p));
     let totalBase = 0n;
@@ -632,20 +636,27 @@ export class MoveService {
         // money bug — destination goods appeared free, source overstated;
         // §36 deferred this on a stale "Stock has no cost" comment that
         // the schema itself contradicts).
+        //
+        // §Faza-34 (STK-08): the per-unit is ALSO rounded, so `perUnit × qty`
+        // is not the exact value leaving the source when the transfer empties
+        // it. Persist BOTH — costMinor (per-unit, «Цена») and baseCostMinor
+        // (the exact line) — and reverse from the latter.
         for (const p of existing.positions) {
           const bal = balances.get(p.assortmentId);
-          const srcCost = bal?.costBalanceMinor ? BigInt(bal.costBalanceMinor) : 0n;
-          const srcQtyMicro = bal?.qty ? BigInt(Math.round(Number(bal.qty) * 1_000_000)) : 0n;
-          const basePerUnit =
-            srcQtyMicro > 0n ? (srcCost * 1_000_000n + srcQtyMicro / 2n) / srcQtyMicro : 0n;
+          const { perUnitMinor, baseLineMinor } = computeTransferCost({
+            sourceCostBalanceMinor: bal?.costBalanceMinor ? BigInt(bal.costBalanceMinor) : 0n,
+            sourceQty: bal?.qty ? String(bal.qty) : '0',
+            moveQty: String(p.quantity),
+          });
           await tx.movePosition.update({
             where: { id: p.id },
-            data: { costMinor: basePerUnit },
+            data: { costMinor: perUnitMinor, baseCostMinor: baseLineMinor },
           });
           // Reflect the snapshot in the in-memory doc so the pure
           // lineCostsByPosition() helper (shared with unpost/cancel)
           // derives identical base/landed → zero-sum by construction.
-          p.costMinor = basePerUnit;
+          p.costMinor = perUnitMinor;
+          p.baseCostMinor = baseLineMinor;
         }
 
         // §65 B1b: «Накладные расходы» capitalised into the destination

@@ -13,6 +13,12 @@ import { allocateDocumentNumber } from '../../prisma/document-number.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { AttributeType } from '../attribute-metadata/attribute-metadata.schema.js';
 import { AttributeMetadataService } from '../attribute-metadata/attribute-metadata.service.js';
+import {
+  addDecimals,
+  compareDecimals,
+  minDecimal,
+  subtractDecimals,
+} from '../demand/fifo-consumer.js';
 import { type CustomerOrderCreatedEvent, HR_EVENT } from '../hr/hr-shared/hr-events.types.js';
 import { PermissionsService } from '../permissions/permissions.service.js';
 import { tashkentRangeBounds } from '../report/report-date-bounds.util.js';
@@ -25,7 +31,7 @@ import {
   assertAgentAccountMatchesAgent,
   assertOrgAccountMatchesOrg,
 } from '../shared/org-account.js';
-import { StockService } from '../stock/stock.service.js';
+import { StockService, availableOf } from '../stock/stock.service.js';
 import { WebhookFireService } from '../webhook/webhook-fire.service.js';
 import {
   type AttrFilterClause,
@@ -41,6 +47,55 @@ import {
 interface ComputedTotals {
   sumMinor: bigint;
   vatSumMinor: bigint;
+}
+
+/**
+ * How much of a line is still shippable — exact Decimal(20,6), clamped at 0.
+ *
+ * THE definition of `quantity − shippedQty` (SALES-10). It used to be
+ * hand-rolled with `Number()` in three places (the reservation invariant, the
+ * hold cascade, and demand.createFromCustomerOrder's cap check). On fractional
+ * lines float leaves a ~1e-17 residue, which is enough to (a) raise a 400
+ * «shippable = 0.29999999999999993» on a legitimate full shipment and (b) keep
+ * a fully-shipped order out of the `fully_shipped` auto-transition forever.
+ */
+export function remainingToShip(quantity: string, shippedQty: string): string {
+  const remaining = subtractDecimals(quantity, shippedQty);
+  return compareDecimals(remaining, '0') > 0 ? remaining : '0';
+}
+
+/**
+ * The stock hold a CustomerOrder line should carry after a shipment moves —
+ * exact Decimal(20,6) (SALES-10). Pure mirror of the pre-Faza-34 float logic:
+ *
+ *   ship   → the shipped units consume the hold: max(0, hold − shipped)
+ *   revert → a POSTED order re-holds its unshipped remainder (capped by it);
+ *            an unposted one only shrinks an over-large hold to the remainder.
+ */
+export function computeHoldAfterShipment(input: {
+  quantity: string;
+  shippedQty: string;
+  reservedQty: string;
+  shipQty: string;
+  direction: 'ship' | 'revert';
+  orderApplicable: boolean;
+}): { desired: string; delta: string } {
+  const shippedAfter =
+    input.direction === 'ship'
+      ? addDecimals(input.shippedQty, input.shipQty)
+      : subtractDecimals(input.shippedQty, input.shipQty);
+  const remainingAfter = remainingToShip(input.quantity, shippedAfter);
+  const currentHold = input.reservedQty;
+  let desired: string;
+  if (input.direction === 'ship') {
+    const released = subtractDecimals(currentHold, input.shipQty);
+    desired = compareDecimals(released, '0') > 0 ? released : '0';
+  } else if (input.orderApplicable) {
+    desired = minDecimal(remainingAfter, addDecimals(currentHold, input.shipQty));
+  } else {
+    desired = minDecimal(currentHold, remainingAfter);
+  }
+  return { desired, delta: subtractDecimals(desired, currentHold) };
 }
 
 @Injectable()
@@ -384,7 +439,7 @@ export class CustomerOrderService {
   async getSupplyShortfall(accountId: string, id: string) {
     const order = await this.findById(accountId, id);
     const productPositions = order.positions.filter((p) => p.assortmentKind === 'product');
-    const availByProduct = new Map<string, number>();
+    const availByProduct = new Map<string, string>();
     if (productPositions.length > 0) {
       const stocks = await this.prisma.client.stock.findMany({
         where: {
@@ -396,16 +451,22 @@ export class CustomerOrderService {
         select: { assortmentId: true, qty: true, reservedQty: true },
       });
       for (const s of stocks) {
-        availByProduct.set(s.assortmentId, Math.max(0, Number(s.qty) - Number(s.reservedQty)));
+        availByProduct.set(
+          s.assortmentId,
+          availableOf({ qty: String(s.qty), reservedQty: String(s.reservedQty) }),
+        );
       }
     }
     const positions = productPositions
       .map((p) => {
-        const available = availByProduct.get(p.assortmentId) ?? 0;
-        const shortfall = Number(p.quantity) - available;
+        const available = availByProduct.get(p.assortmentId) ?? '0';
+        // Exact Decimal(20,6) (STK-12) — the old float subtraction turned a
+        // fully-covered fractional line (0.2 ordered, 0.3 − 0.1 available)
+        // into a 2.8e-17 shortfall, i.e. a phantom purchase-order row.
+        const shortfall = subtractDecimals(String(p.quantity), available);
         return { p, shortfall };
       })
-      .filter(({ shortfall }) => shortfall > 0)
+      .filter(({ shortfall }) => compareDecimals(shortfall, '0') > 0)
       .map(({ p, shortfall }) => ({
         assortmentId: p.assortmentId,
         quantity: shortfall,
@@ -907,7 +968,7 @@ export class CustomerOrderService {
                 keptIds.add(p.id);
               }
               // Posted-return quantity per kept line (floor component).
-              const returnedByPos = new Map<string, number>();
+              const returnedByPos = new Map<string, string>();
               if (keptIds.size > 0) {
                 const srLines = await tx.salesReturnPosition.findMany({
                   where: {
@@ -923,7 +984,10 @@ export class CustomerOrderService {
                 for (const sr of srLines) {
                   const pid = sr.demandPosition?.customerOrderPositionId;
                   if (pid) {
-                    returnedByPos.set(pid, (returnedByPos.get(pid) ?? 0) + Number(sr.quantity));
+                    returnedByPos.set(
+                      pid,
+                      addDecimals(returnedByPos.get(pid) ?? '0', String(sr.quantity)),
+                    );
                   }
                 }
               }
@@ -931,10 +995,14 @@ export class CustomerOrderService {
                 if (!p.id) continue;
                 // biome-ignore lint/style/noNonNullAssertion: id membership validated above
                 const ex = existingById.get(p.id)!;
-                const shipped = Number(ex.shippedQty);
-                const returned = returnedByPos.get(p.id) ?? 0;
-                const floor = shipped + returned;
-                if (floor > 0) {
+                // Exact Decimal(20,6) floor (SALES-10): the float sum of a
+                // shipped + returned pair drifts by ~1e-17, which either
+                // blocked a legitimate qty edit or let one slip a hair below
+                // what was already shipped.
+                const shipped = String(ex.shippedQty);
+                const returned = returnedByPos.get(p.id) ?? '0';
+                const floor = addDecimals(shipped, returned);
+                if (compareDecimals(floor, '0') > 0) {
                   if (
                     ex.assortmentId !== p.assortmentId ||
                     ex.assortmentKind !== p.assortmentKind
@@ -943,9 +1011,9 @@ export class CustomerOrderService {
                       "Jo'natilgan qatorning tovarini o'zgartirib bo'lmaydi",
                     );
                   }
-                  if (p.quantity < floor) {
+                  if (compareDecimals(String(p.quantity), floor) < 0) {
                     throw new BadRequestException(
-                      returned > 0
+                      compareDecimals(returned, '0') > 0
                         ? `Miqdor jo'natilgan + qaytarilgan miqdordan (${floor}) kam bo'lishi mumkin emas`
                         : "Miqdor jo'natilgan miqdordan kam bo'lishi mumkin emas",
                     );
@@ -957,7 +1025,7 @@ export class CustomerOrderService {
                 .map((ex) => ex.id);
               if (removedIds.length > 0) {
                 for (const ex of existingPositions) {
-                  if (!keptIds.has(ex.id) && Number(ex.shippedQty) > 0) {
+                  if (!keptIds.has(ex.id) && compareDecimals(String(ex.shippedQty), '0') > 0) {
                     throw new BadRequestException(
                       "Jo'natilgan qatorni o'chirib bo'lmaydi — avval Otgruzkani bekor qiling",
                     );
@@ -1510,7 +1578,7 @@ export class CustomerOrderService {
       reservedQty: Prisma.Decimal;
       shippedQty: Prisma.Decimal;
       position: number;
-    }) => number,
+    }) => string,
     opts: { allowCancelled?: boolean; requireApplicable?: boolean } = {},
   ): Promise<void> {
     await this.prisma.client.$transaction(
@@ -1534,10 +1602,14 @@ export class CustomerOrderService {
         }
 
         // Wanted reserve per line, clamped to [0, ordered qty]; non-stocked = 0.
-        const desiredOf = (p: (typeof order.positions)[number]): number =>
-          CustomerOrderService.RESERVABLE_KINDS.has(p.assortmentKind)
-            ? Math.max(0, Math.min(desiredFor(p), Number(p.quantity)))
-            : 0;
+        // Exact Decimal(20,6) (SALES-10) — the clamp used to run through
+        // `Number()` on both sides before being written back to the
+        // `reservedQty` Decimal column.
+        const desiredOf = (p: (typeof order.positions)[number]): string => {
+          if (!CustomerOrderService.RESERVABLE_KINDS.has(p.assortmentKind)) return '0';
+          const capped = minDecimal(desiredFor(p), String(p.quantity));
+          return compareDecimals(capped, '0') > 0 ? capped : '0';
+        };
 
         const stocked = order.positions.filter((p) =>
           CustomerOrderService.RESERVABLE_KINDS.has(p.assortmentKind),
@@ -1565,12 +1637,12 @@ export class CustomerOrderService {
 
         const deltas = stocked
           .map((p) => ({ p, q: desiredOf(p) }))
-          .filter(({ q }) => q > 0)
+          .filter(({ q }) => compareDecimals(q, '0') > 0)
           .map(({ p, q }) => ({
             storeId: order.storeId,
             assortmentKind: p.assortmentKind,
             assortmentId: p.assortmentId,
-            qtyDelta: String(q),
+            qtyDelta: q,
             docType: 'customerorder' as const,
             docId: id,
             reason: 'reserve' as const,
@@ -1615,7 +1687,7 @@ export class CustomerOrderService {
    * concurrency discipline.
    */
   async reserve(accountId: string, userId: string, id: string): Promise<{ id: string }> {
-    await this.runReservationSet(accountId, userId, id, (p) => Number(p.quantity));
+    await this.runReservationSet(accountId, userId, id, (p) => String(p.quantity));
     await this.logAudit(accountId, userId, 'reserve', id, null);
     this.webhookFire.fireForEvent(accountId, 'customerorder', 'UPDATE', id, ['reservedSumMinor']);
     return { id };
@@ -1626,7 +1698,7 @@ export class CustomerOrderService {
    * (desired 0 everywhere). Idempotent; allowed on a cancelled order.
    */
   async clearReserve(accountId: string, userId: string, id: string): Promise<{ id: string }> {
-    await this.runReservationSet(accountId, userId, id, () => 0, { allowCancelled: true });
+    await this.runReservationSet(accountId, userId, id, () => '0', { allowCancelled: true });
     await this.logAudit(accountId, userId, 'clear-reserve', id, null);
     this.webhookFire.fireForEvent(accountId, 'customerorder', 'UPDATE', id, ['reservedSumMinor']);
     return { id };
@@ -1663,7 +1735,10 @@ export class CustomerOrderService {
     for (let attempt = 1; ; attempt++) {
       try {
         await this.runReservationSet(accountId, userId, id, (p) =>
-          Number(payloadPositions[p.position - 1]?.reservedQty ?? 0),
+          // `.toFixed(6)` (not String()) — the payload's reservedQty is a plain
+          // JS number, and String(1e-7) yields exponent notation, which is not a
+          // Decimal literal. Decimal(20,6) cannot hold finer than 1e-6 anyway.
+          (payloadPositions[p.position - 1]?.reservedQty ?? 0).toFixed(6),
         );
         return;
       } catch (e) {
@@ -1700,9 +1775,9 @@ export class CustomerOrderService {
   ): Promise<void> {
     const desiredFor =
       mode === 'release'
-        ? () => 0
+        ? () => '0'
         : (p: { quantity: Prisma.Decimal; shippedQty: Prisma.Decimal }) =>
-            Math.max(0, Number(p.quantity) - Number(p.shippedQty));
+            remainingToShip(String(p.quantity), String(p.shippedQty));
     for (let attempt = 1; ; attempt++) {
       try {
         await this.runReservationSet(accountId, userId, id, desiredFor, {
@@ -1773,8 +1848,8 @@ export class CustomerOrderService {
     direction: 'ship' | 'revert',
   ): Promise<{
     storeId: string;
-    holdDeltas: Map<string, number>;
-    ownHoldAfter: Map<string, number>;
+    holdDeltas: Map<string, string>;
+    ownHoldAfter: Map<string, string>;
   }> {
     const order = await tx.customerOrder.findFirst({
       where: { id: customerOrderId, accountId, deletedAt: null },
@@ -1782,44 +1857,47 @@ export class CustomerOrderService {
     });
     if (!order) throw new NotFoundException(`CustomerOrder ${customerOrderId} not found`);
 
-    const sign = direction === 'ship' ? 1 : -1;
     // Aggregate shipped qty per CO position (dedup multi-line links).
-    const shipByPos = new Map<string, number>();
+    // Exact Decimal(20,6) throughout (SALES-10) — these values are written
+    // straight back into `reservedQty` / `shippedQty` Decimal columns.
+    const shipByPos = new Map<string, string>();
     for (const line of lines) {
-      shipByPos.set(line.positionId, (shipByPos.get(line.positionId) ?? 0) + Number(line.qtyDelta));
+      shipByPos.set(
+        line.positionId,
+        addDecimals(shipByPos.get(line.positionId) ?? '0', line.qtyDelta),
+      );
     }
     const affected: Array<{
       position: (typeof order.positions)[number];
-      desired: number;
-      delta: number;
+      desired: string;
+      delta: string;
     }> = [];
     for (const [positionId, shipQty] of shipByPos) {
       const pos = order.positions.find((p) => p.id === positionId);
       if (!pos || !CustomerOrderService.RESERVABLE_KINDS.has(pos.assortmentKind)) continue;
-      const shippedAfter = Number(pos.shippedQty) + sign * shipQty;
-      const remainingAfter = Math.max(0, Number(pos.quantity) - shippedAfter);
-      const currentHold = Number(pos.reservedQty);
-      const desired =
-        direction === 'ship'
-          ? Math.max(0, currentHold - shipQty)
-          : order.applicable
-            ? Math.min(remainingAfter, currentHold + shipQty)
-            : Math.min(currentHold, remainingAfter);
-      affected.push({ position: pos, desired, delta: desired - currentHold });
+      const { desired, delta } = computeHoldAfterShipment({
+        quantity: String(pos.quantity),
+        shippedQty: String(pos.shippedQty),
+        reservedQty: String(pos.reservedQty),
+        shipQty,
+        direction,
+        orderApplicable: order.applicable,
+      });
+      affected.push({ position: pos, desired, delta });
     }
     // Own post-adjust hold per DEMAND assortment — sum over ALL of the order's
     // positions of that assortment (unlinked sibling lines still belong to
     // this same order, and an order's hold never blocks its own shipment).
     const desiredByIdAll = new Map(affected.map((c) => [c.position.id, c.desired]));
-    const ownHoldAfter = new Map<string, number>();
+    const ownHoldAfter = new Map<string, string>();
     const demandAssortments = new Set(affected.map((c) => c.position.assortmentId));
     for (const p of order.positions) {
       if (!demandAssortments.has(p.assortmentId)) continue;
       if (!CustomerOrderService.RESERVABLE_KINDS.has(p.assortmentKind)) continue;
-      const hold = desiredByIdAll.get(p.id) ?? Number(p.reservedQty);
-      ownHoldAfter.set(p.assortmentId, (ownHoldAfter.get(p.assortmentId) ?? 0) + hold);
+      const hold = desiredByIdAll.get(p.id) ?? String(p.reservedQty);
+      ownHoldAfter.set(p.assortmentId, addDecimals(ownHoldAfter.get(p.assortmentId) ?? '0', hold));
     }
-    const changes = affected.filter((c) => c.delta !== 0);
+    const changes = affected.filter((c) => compareDecimals(c.delta, '0') !== 0);
     if (changes.length === 0) {
       return { storeId: order.storeId, holdDeltas: new Map(), ownHoldAfter };
     }
@@ -1841,10 +1919,11 @@ export class CustomerOrderService {
         storeId: order.storeId,
         assortmentKind: p.assortmentKind,
         assortmentId: p.assortmentId,
-        qtyDelta: String(delta),
+        qtyDelta: delta,
         docType: 'customerorder' as const,
         docId: customerOrderId,
-        reason: delta < 0 ? ('release_consume' as const) : ('reserve' as const),
+        reason:
+          compareDecimals(delta, '0') < 0 ? ('release_consume' as const) : ('reserve' as const),
       })),
     );
     for (const { position: p, desired } of changes) {
@@ -1856,7 +1935,7 @@ export class CustomerOrderService {
     // Re-materialize the header «Резерв» money sum from the post-change holds.
     const { sumMinor: reservedSumMinor } = this.computeTotals(
       order.positions.map((p) => ({
-        quantity: desiredByIdAll.get(p.id) ?? Number(p.reservedQty),
+        quantity: desiredByIdAll.get(p.id) ?? String(p.reservedQty),
         priceMinor: p.priceMinor,
         discount: p.discount,
         vat: p.vat,
@@ -1870,9 +1949,9 @@ export class CustomerOrderService {
       data: { reservedSumMinor },
     });
 
-    const holdDeltas = new Map<string, number>();
+    const holdDeltas = new Map<string, string>();
     for (const { position: p, delta } of changes) {
-      holdDeltas.set(p.assortmentId, (holdDeltas.get(p.assortmentId) ?? 0) + delta);
+      holdDeltas.set(p.assortmentId, addDecimals(holdDeltas.get(p.assortmentId) ?? '0', delta));
     }
     return { storeId: order.storeId, holdDeltas, ownHoldAfter };
   }
@@ -1907,9 +1986,10 @@ export class CustomerOrderService {
     });
     if (!order) throw new NotFoundException(`CustomerOrder ${customerOrderId} not found`);
 
-    const sign = direction === 'ship' ? 1 : -1;
-
-    // 1. Apply per-position shippedQty deltas
+    // 1. Apply per-position shippedQty deltas. `increment` takes the exact
+    //    Decimal string (SALES-10) — routing it through `Number()` fed float
+    //    micro-residue into the Decimal(20,6) `shippedQty` column, which then
+    //    kept `allShipped` permanently false.
     for (const d of deltas) {
       const pos = order.positions.find((p) => p.id === d.positionId);
       if (!pos) {
@@ -1917,7 +1997,7 @@ export class CustomerOrderService {
           `Position ${d.positionId} not found on CustomerOrder ${customerOrderId}`,
         );
       }
-      const delta = Number(d.qtyDelta) * sign;
+      const delta = direction === 'ship' ? d.qtyDelta : subtractDecimals('0', d.qtyDelta);
       await tx.customerOrderPosition.update({
         where: { id: d.positionId },
         data: {
@@ -1935,21 +2015,21 @@ export class CustomerOrderService {
     let allShipped = true;
     let anyShipped = false;
     for (const p of freshPositions) {
-      const qty = Number(String(p.quantity));
-      const shipped = Number(String(p.shippedQty));
-      if (shipped >= qty && qty > 0) {
+      const qty = String(p.quantity);
+      const shipped = String(p.shippedQty);
+      if (compareDecimals(shipped, qty) >= 0 && compareDecimals(qty, '0') > 0) {
         // full
       } else {
         allShipped = false;
       }
-      if (shipped > 0) anyShipped = true;
+      if (compareDecimals(shipped, '0') > 0) anyShipped = true;
 
       // Money of the shipped portion = the line total for the shipped qty.
       // Single-round through the shared helper (the b1eae7be unification) so
       // shippedSum accumulates with the SAME rounding as the header sumMinor
       // (computeTotals): a fully-shipped order's shippedSum then equals
       // sumMinor EXACTLY instead of drifting ±1 tiyin on discounted/VAT lines.
-      if (qty <= 0 || shipped <= 0) continue;
+      if (compareDecimals(qty, '0') <= 0 || compareDecimals(shipped, '0') <= 0) continue;
       const { totalMinor } = computePositionTotal(
         {
           quantity: String(p.shippedQty),
@@ -2776,9 +2856,9 @@ export class CustomerOrderService {
   ): bigint {
     let shippedSumMinor = 0n;
     for (const p of positions) {
-      const qty = Number(String(p.quantity));
-      const shipped = Number(String(p.shippedQty));
-      if (qty <= 0 || shipped <= 0) continue;
+      const qty = String(p.quantity);
+      const shipped = String(p.shippedQty);
+      if (compareDecimals(qty, '0') <= 0 || compareDecimals(shipped, '0') <= 0) continue;
       const { totalMinor } = computePositionTotal(
         {
           quantity: String(p.shippedQty),

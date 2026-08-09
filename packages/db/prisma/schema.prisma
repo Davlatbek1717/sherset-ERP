@@ -6735,6 +6735,16 @@ model MovePosition {
   // accurate cost basis at destination (preserves FIFO cost history).
   costMinor BigInt? @map("cost_minor")
 
+  /// Faza 34 / STK-08 — the EXACT line cost that left the source store at
+  /// post time (tiyin). `costMinor × quantity` cannot express it: when a
+  /// transfer empties the source, the line must take the whole remaining
+  /// costBalanceMinor, which is generally NOT a multiple of the rounded
+  /// per-unit. unpost()/cancel() reverse from THIS value, so the cycle is
+  /// zero-sum by construction. NULL on rows posted before Faza 34 (and on
+  /// drafts) — readers fall back to costMinor × quantity, i.e. exactly the
+  /// pre-Faza-34 behaviour, so legacy documents still reverse bit-for-bit.
+  baseCostMinor BigInt? @map("base_cost_minor")
+
   move    Move     @relation(fields: [moveId], references: [id], onDelete: Cascade)
   product Product? @relation("ProductMovePositions", fields: [productId], references: [id], onDelete: Restrict)
 

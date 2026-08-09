@@ -904,7 +904,8 @@ cart-total server BigInt bilan mos (rad yo'q).
 **▶ SESSIYA-BOSHI PROMPT:**
 > `docs/REJA-AUDIT-FIX-2026-08.md` — **Faza 30**. O'ZGARMAS QOIDALAR. Web `FE-02`,`FE-08/09`,`FE-01`. Refund-crash
 > string-qty + `lib/pos/parse-amount` + retail cart-math. TDD: 3 stsenariy. Gate (web). Hisobot, TO'XTA.
-**◻ HISOBOT:** _(agent to'ldiradi)_
+**☑ HISOBOT:** 2026-08-09 — HISOBOT JURNALI → «Faza 30». `FE-02` ning crash qismi allaqachon yopiq edi
+(qoldiq: kasr-qty kirita bo'lmasligi) · `parse-amount.ts` + 4 dialog + `currency` prop · retail cart-math.
 
 ---
 
@@ -3610,3 +3611,160 @@ o'z commit'imga tortib ketmaslik uchun. Shu yozuv ish daraxtida qoladi va uni ke
    `(account_id, assortment_kind, assortment_id)` indeksidan foydalanishi kutiladi, lekin `EXPLAIN`
    bilan tasdiqlanmagan.
 5. **Browser-smoke YO'Q.** Ikkala hisobot sahifasi real brauzerda ochilmadi — Phase-2 QA sessiyasiga.
+
+---
+
+## Faza 34 — 2026-08-09 — **Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q**
+
+**Topilma tasdiqlanishi (o'z ko'zim bilan kodda).** To'rttasi ham TASDIQLANDI:
+
+| ID | Dalil | Holat |
+|---|---|---|
+| `STK-05` | `inventory.service.ts:627-652` (`Number(expectedQty)`, `String(actualNum - expectedNum)`, `Math.round(Number(costBalance)/expectedNum)`) + `:760-763` cancel | ✅ aynan shunday edi |
+| `STK-08` | `move.service.ts:638` `BigInt(Math.round(Number(bal.qty) * 1_000_000))` + `:639-640` round-then-multiply | ✅ aynan shunday edi |
+| `SALES-10` | `customer-order.service.ts:1799-1807`, `:1920`; `demand.service.ts:496` `Number(String(cop.quantity)) - Number(String(cop.shippedQty))` | ✅ aynan shunday edi |
+| `STK-12` | `customer-order.service.ts:399` ≡ `internal-order.service.ts:207` (`Math.max(0, Number(s.qty) - Number(s.reservedQty))`) vs `stock.service.ts:585` BigInt yo'li | ✅ uchta nusxa |
+
+**+1 QO'SHIMCHA (audit ko'rmagan, o'zim topdim):** `product/product-cell-move.service.ts:39` —
+`BigInt(Math.round(Number(bal.qty) * 1_000_000))`, ya'ni STK-08 ning ayni nusxasi (bundan tashqari
+per-birlikni **kesib** tashlardi, yumaloqlamasdan). Bir xil helperga o'tkazildi.
+
+### Yagona primitiv qatlam
+
+`demand/fifo-consumer.ts` (import'siz leaf modul; 8 modul allaqachon undan import qiladi) endi
+**yagona** manba. `stock.service.ts` o'zining KO'CHIRMA `toMicro`/`fromMicro` juftini tashladi —
+nomlar qoldi (fayl lug'ati), lekin implementatsiya bitta.
+
+### Fayllar
+
+| Fayl | O'zgarish |
+|---|---|
+| `stock/stock.service.ts` | lokal `toMicro`/`fromMicro` → `parseDecimalScaled`/`formatDecimalScaled` alias; **YANGI eksport** `availableMicroOf()` (ishorali) + `availableOf()` (0 ga qisilgan); `assertAvailable` shunga o'tdi |
+| `inventory/inventory.service.ts` | **YANGI eksport** `computeVarianceLine()` + `reverseVarianceCost()`; `post()` va `cancel()` shularga o'tdi |
+| `move/move-cost-basis.ts` | **YANGI FAYL** — sof `computeTransferCost()` (Nest servisidan tashqarida, `product-cell-move` ham ishlatsin uchun) |
+| `move/move.service.ts` | `post()` → `computeTransferCost`; `baseCostMinor` yoziladi; `lineCostsByPosition` `p.baseCostMinor ?? scaleMinorByQty(...)` |
+| `product/product-cell-move.service.ts` | `costOfUnits()` → `computeTransferCost` |
+| `customer-order/customer-order.service.ts` | **YANGI eksport** `remainingToShip()` + `computeHoldAfterShipment()`; `getSupplyShortfall`, `adjustReservationForShipment`, `applyShipment`, `computeShippedSum`, `update()` floor-guard, `runReservationSet` (+4 chaqiruvchi) — hammasi decimal-string |
+| `internal-order/internal-order.service.ts` | `getSupplyShortfall` → `availableOf` + `subtractDecimals` |
+| `demand/demand.service.ts` | `createFromCustomerOrder` cap → `remainingToShip`/`compareDecimals`; `bal.reservedQty` patch → `addDecimals`/`subtractDecimals` |
+| `packages/db/prisma/schema.prisma` + migratsiya `20260809180000_move_position_base_cost_minor` | `MovePosition.baseCostMinor BigInt?` |
+
+### Reja taklif qilgan yechim STK-08 uchun YETARLI EMAS edi
+
+Reja: «agar ko'chirilayotgan qty == butun qoldiq bo'lsa, costDelta = −costBalanceMinor». Bu **post**ni
+to'g'rilaydi, lekin `unpost()`/`cancel()` bazadagi per-birlik `costMinor` snapshot'idan
+`scaleMinorByQty(costMinor, qty)` bilan qayta hisoblaydi — post ≠ reversal bo'lib, hujjatni bekor
+qilish endi **yangi** drift yaratardi. Aniq satr-qiymatni per-birlikdan tiklab bo'lmaydi (yumaloqlash
+ma'lumot yo'qotadi), shuning uchun uni SAQLASH kerak → `base_cost_minor` ustuni (nullable).
+Eski qatorlar NULL ⇒ eski `costMinor × qty` formulasiga tushadi ⇒ Faza-34 dan oldin o'tkazilgan
+hujjatlar bit-ma-bit avvalgidek teskarilanadi (nol-regressiya).
+
+### Chegara qarori: `availableOf` ikki shaklda
+
+`assertAvailable` **ishorali** qiymatga muhtoj — allaqachon manfiy qoldiqda kamomad
+`so'ralgan − (−5)`, 0 ga qisish uni kamaytirib ko'rsatardi. Shu sababli bitta ayirma ustida ikki
+shakl: `availableMicroOf()` (xom, ishorali) va `availableOf()` (0 ga qisilgan string — shortfall
+endpointlarining eski `Math.max(0, …)` semantikasi). Uchala chaqiruvchi bitta ta'rifda.
+
+### Testlar (TDD — avval RED, keyin GREEN)
+
+Uchta yangi test-fayl, **28 test**. Har biri float xatosini AVVAL o'lchaydi (`expect(0.3 - 0.1)
+.not.toBe(0.2)` uslubida), keyin aniq natijani talab qiladi:
+
+| Fayl | Stsenariylar |
+|---|---|
+| `stock/available-of.test.ts` (6) | 0.1+0.2 klassi · **fantom shortfall** (0.2 buyurtma, 0.3−0.1 qoldiq ⇒ float 2.8e-17 lik PO satri o'ylab topardi) · manfiy/0-qisish · 2^53 dan katta qty · **source-scan**: CO va internal-order'da float formula qolmagani |
+| `inventory/inventory-variance.test.ts` (6) | `varianceQty` "0.19999999999999998" emas · **eksponent** ("1.0000000116860974e-7" Decimal literali EMAS) · 2^53 dan katta tan-narx · post↔cancel nol-yig'indi (1000 tiyin / 3 dona) · buyPrice fallback + NULL-shartnoma · kamomad ishorasi |
+| `move/move-cost-basis.test.ts` (5) | **butun qoldiqni ko'chirish qoldiqsiz** (1000/3 ⇒ eski yo'l 999 olib, bo'sh omborda 1 tiyin qoldirardi) · qisman ko'chirishda qoldiq JOYIDA qoladi · qty'ni float'siz parse · bazasiz no-op · kasr qty |
+| `customer-order/co-quantity-math.test.ts` (11) | `remainingToShip` aniqligi · **to'liq jo'natilgan satrda qoldiq yo'q** (0.1×3 ⇒ float 5.5e-17 qoldirib `fully_shipped` ga hech qachon o'tmasdi) · haqiqiy over-ship'ni rad, artefaktni emas · hold: ship/revert/applicable-emas/0-dan past tushmaslik/qoldiq bilan cheklash · **source-scan**: CO va demand'da float qolmagani |
+
+### Gate
+
+| Buyruq | Natija |
+|---|---|
+| `pnpm typecheck` (turbo, butun monorepo) | **9/9 muvaffaqiyatli** |
+| `pnpm lint:product` | **0 error** (746 warning — siyosat bo'yicha ruxsat) |
+| `pnpm --filter @moysklad/api exec vitest run` (to'liq API suite) | **427 fayl / 5549 test** — 5543 yashil, 2 skip, **4 yiqildi**. Yiqilganlar: `publication.service.test.ts` (3) + `hr/hr-employee/hr-employee.service.test.ts` (1) — hammasi **argon2 parol-xeshlash 5 s timeout**i, mening o'zgarishlarimga aloqasi YO'Q (bir vaqtda `turbo typecheck` yugurayotgani uchun CPU yetmadi). Alohida yugurtirilganda **57/57 yashil** (o'sha testlar 303–385 ms). Faza 34 tekkan modullarning barchasi (`stock`, `inventory`, `move`, `product`, `customer-order`, `demand`, `internal-order`) to'liq yashil |
+| Migratsiya | `prisma db execute` bilan lokal `climart_adopt` ga qo'llandi; `migrate diff` bo'yicha `base_cost_minor` drift'i **0** (qolgan diff — parallel sessiyaning indeks qayta-nomlashlari, meniki emas); `prisma generate` qayta yugurtirildi |
+| `pnpm i18n:gate` | Qo'llanmaydi — UI-matn tegilmadi |
+
+### Qolgan qarz / DEFER
+
+1. **Browser-smoke YO'Q.** Hech bir sahifa real brauzerda ochilmadi — Phase-2 QA sessiyasiga.
+   Ayniqsa `move` detali: `costMinor × quantity` bilan hisoblanadigan FE «Сумма» ustuni endi
+   `baseCostMinor` dan bir necha tiyinga farq qilishi mumkin (kosmetik, ledger to'g'ri).
+2. **`CustomerOrderPosition.reservedQty` payload'i hamon `number`** (Zod `.transform(Number)`).
+   Servis ichi endi to'liq decimal-string, lekin HTTP chegarasi float bo'lib qoladi;
+   `(… ?? 0).toFixed(6)` bilan eksponent-notatsiyadan himoyalandi (`String(1e-7)` = `"1e-7"`
+   Decimal literali EMAS va `parseDecimalScaled` uni rad etadi). To'liq yechim = schema'ni
+   string-decimal'ga o'tkazish (FE bilan birga) — alohida ish.
+3. **`customer-order.service.ts` `p.quantity` hamon Zod'dan `number`** — floor-taqqoslash
+   `String(p.quantity)` orqali aniq, lekin manba tipi float. Yuqoridagi (2) bilan bir paket.
+4. **`analitika/analysis.service.ts:294` va `count.service.ts:301`** da `Number(s.qty)` qoldi —
+   ular hisobot-agregatlari (yozuv emas), Faza 34 doirasidan tashqari; alohida topilma sifatida
+   qayd etildi.
+5. **`fifo-consumer.ts` nomi endi yolg'on** — FIFO Faza 18a da bekor qilingan, fayl umumiy decimal
+   primitivlar uyi. `shared/decimal.ts` ga ko'chirish tavsiya (11 import'ni yangilash — mexanik
+   codemod), lekin bu sessiyada QILINMADI (scope).
+6. **`Move.sumMinor` endi `Σ baseCostMinor`** — eski hujjatlarda `Σ round(perUnit × qty)` bo'lib
+   qolaveradi (backfill YO'Q). Farq hujjat boshiga bir necha tiyin.
+
+### Parallel sessiya sharoiti (CLAUDE.md §6)
+
+Bu checkout'da parallel **Faza 30** (FE POS: `lib/pos/parse-amount.ts`, `cart-math.ts`,
+`retail/page.tsx`, `sotuv/page.tsx`, `components/pos/*`) sessiyasi ishlayapti. Ularning
+`apps/web/**` fayllariga TEGILMADI; `git add` faqat aniq yo'llar bilan qilindi.
+`docs/REJA-AUDIT-FIX-2026-08.md` da **Faza 27a** sessiyasining commit qilinmagan jurnal yozuvi
+turgan edi — o'sha sessiya «keyingi doc-commit oladi» deb yozib qoldirgan, shu sababli u shu
+commit bilan birga keladi (o'z yozuvim uning ustiga `appendFileSync` bilan qo'shildi, marker-kesish
+YO'Q).
+
+---
+
+## Faza 30 — FE POS: refund string-qty + yagona pul-parse + retail cart-math (`FE-02`, `FE-08`/`FE-09`, `FE-01`) (2026-08-09) — **Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q**
+
+### Ground-truth (rejadagi da'volar o'z ko'zim bilan tekshirildi)
+
+| Topilma | Reja nima deydi | Kodda ASLIDA |
+|---|---|---|
+| `FE-02` (web, HIGH) | `BigInt(1.5)` render-crash | **Allaqachon TUZATILGAN** — `sotuv/page.tsx` footer va mutatsiya `refundPayoutMinor` (mikro-birlik) ishlatadi, `BigInt(returnQty)` yo'q. **Qoldiq bor:** maydon hamon `Record<string, number>` edi ⇒ (a) kassir kasr miqdor **kirita olmasdi** (`type="number"` da «1.» oraliq holati bo'sh satr qaytaradi, nuqta o'chib ketardi — og'irlik bilan sotilgan tovarni qisman qaytarib bo'lmasdi), (b) `String(number)` chegaraviy qiymatda eksponent (`1e-7`) berardi va server sxemasi (`^\d+(\.\d{1,6})?$`) uni 400 bilan rad etardi. Shu qoldiq tuzatildi. |
+| `FE-08`/`FE-09` (web-arch) | 4 mustaqil pul-parse varianti | **TASDIQLANDI** — `payment-dialog:31,63,113` `parseInt(s,10)*100`; `debt-payment-dialog:61`, `rasmilashtirish-modal:107`, `cash-out-dialog:40` `BigInt(Math.round(n*100))`. Hammasida scale QATTIQ `100`. |
+| `FE-01` (web-arch, HIGH) | retail float total server BigInt bilan rad | **TASDIQLANDI va qo'lda hisoblab isbotlandi** — `retail/page.tsx:245,589` `BigInt(Math.round(qty*Number(priceMinor)*(1-d/100)))`. 115 tiyin × 1, −10%: float `Math.round(103.49999999999999)` = **103**, server `computePositionTotal` = **104** ⇒ `retail-sale.service.ts` `expectedSumMinor !== sale.sumMinor` bilan chekni RAD etadi. |
+
+### O'zgarishlar
+
+| Fayl | Nima |
+|---|---|
+| `apps/web/src/lib/pos/parse-amount.ts` | **YANGI** — `parseAmountToMinor(raw, currency)` (`Money.fromMajor` + **half-up**, buzuq/manfiy/bo'sh → `0n`, istisno OTMAYDI), `formatAmountInput(minor, currency)` (tiyin → maydon matni, `Number` orqali EMAS), `ceilAmountInput(minor, currency)` («Aniq» tugmasi uchun butun major-birlikkacha yuqoriga). Qabul qilinadigan grammatika ataylab qat'iy: `^\d+([.,]\d+)?$` (probellar tozalanadi) — bu klaviatura maydoni, hujjat importi emas. |
+| `apps/web/src/lib/pos/parse-amount.test.ts` | **YANGI** — 19 test (JPY 0-kasrli scale, `1.005` half-up, 17-raqamli kiritma = FE-12 klassi, buzuq kiritma, teskari konversiya). |
+| `apps/web/src/lib/pos/cart-math.ts` | `discountedLineTotalMinor` / `discountedCartTotalMinor` — **server formulasi** (`computePositionTotal`, BigInt); `normalizeQtyDecimal` (+ ichki `normalizeDecimalString`) — server sxemasiga kanonik decimal; `clampReturnQty` — qaytarish maydoni uchun **satr** qisish (yozilayotgan «1.» saqlanadi); `RefundableLine.returnQty` endi `number | string`. |
+| `apps/web/src/lib/pos/cart-math.test.ts` | Mavjud 28 test SAQLANDI (fayl `Write` bilan EMAS, `Edit` bilan kengaytirildi) + **21 yangi** test. |
+| `apps/web/src/components/pos/payment-dialog.tsx` | `currency?: CurrencyCode` prop; `parseInt*100` × 4 joy → `parseAmountToMinor`; `handleExact` → `ceilAmountInput`; `handleQuickAdd` → `formatAmountInput`. |
+| `apps/web/src/components/pos/debt-payment-dialog.tsx` | `currency` prop; lokal `toMinor` va `minorToInput` O'CHIRILDI → umumiy funksiyalar. |
+| `apps/web/src/components/pos/rasmilashtirish-modal.tsx` | `currency` prop; lokal `toMinor` (×3 maydon) → `parseAmountToMinor`; `handleExact` dagi `String(Number(left)/100)` → `formatAmountInput`. |
+| `apps/web/src/components/pos/cash-out-dialog.tsx` | `currency` prop; lokal `toMinor` → `parseAmountToMinor`. |
+| `apps/web/src/app/(app)/retail/page.tsx` | `cartTotal` va qator-jami → `discountedCartTotalMinor`/`discountedLineTotalMinor`; `PaymentDialog`ga `currency={tillCurrency}`. |
+| `apps/web/src/app/(app)/sotuv/page.tsx` | `returnQty: Record<string,string>`; input `type="text" inputMode="decimal"` + `clampReturnQty`; so'rov va ekran `normalizeQtyDecimal` orqali; 3 dialogga `currency={tillCurrency}`. |
+| `apps/web/src/__tests__/pos-debt-payment-wiring.test.ts` | Manba-skan qo'riqchisi yangi invariantga moslandi (`formatAmountInput(outstanding, currency)`) + **yangi qo'riqchi**: `parseAmountToMinor(amountInput, currency)` bo'lishi va lokal `Math.round(… * 100)` QAYTIB kelmasligi. |
+
+### TDD
+
+RED avval yugurtirildi: **21 yiqilish** (`… is not a function` / modul yo'q), keyin 9 ta qo'shimcha RED (`formatAmountInput`/`ceilAmountInput`). GREEN — `src/lib/pos/` 68/68 yashil.
+Rejadagi 3 stsenariy: (1) kasr-qty qaytarish — `clampReturnQty`/`normalizeQtyDecimal` + `refundPayoutMinor` satr-shartnomasi; (2) parse-amount 0-kasrli valyuta va scale'dan ortiq kasr; (3) retail cart-total server BigInt bilan mos (104n, float 103n).
+
+### Gate
+
+| Tekshiruv | Natija |
+|---|---|
+| `pnpm --filter @moysklad/web typecheck` | **0 xato** |
+| `pnpm --filter @moysklad/web exec vitest run` (to'liq) | **184 fayl / 2787 test yashil**, 26 skip; **1 flaky yiqilish** — `components/assortment/bulk-actions-dropdown.test.tsx` (drawer timing, mening o'zgarishlarim tegmagan fayl): to'la yuklangan parallel yugurishda yiqildi, alohida yugurtirilganda **13/13 yashil**. |
+| `pnpm i18n:gate` | **9/9 yashil** (UI-matn qo'shilmadi) |
+| `pnpm lint:product` | **Mening 12 faylimda 0 xato** (`biome check` scoped). Global gate 13 xato bilan QIZIL — **hammasi `apps/api/**` da**, parallel sessiyalarning commit qilinmagan HR/stock/move ishida (`git status` bilan tasdiqlandi; ikki yugurish orasida ro'yxat o'zgardi = jonli tahrir). §6.1 bo'yicha TEGILMADI. |
+
+### Qolgan qarz / DEFER
+
+1. **Klaviaturada nuqta yo'q.** `parseAmountToMinor` kasr qabul qiladi, lekin 4 dialogning ham numpad'i faqat raqam va `000` beradi — tiyin kiritish hamon imkonsiz (UZS'da bu ataylab). Kasr valyuta kerak bo'lganda `.` tugmasi qo'shilishi kerak.
+2. **`QUICK_AMOUNTS` qattiq tiyinda** (`payment-dialog.tsx:20` — `1000_00n`…): 0 kasrli kassada bu tugmalar 100× katta summa qo'shadi. Prop qilib chiqarish kerak; hozircha kassa UZS.
+3. **`currency` prop defolti `'UZS'`.** Chaqiruvchi uzatmasa eski xulq saqlanadi (regressiyasiz migratsiya), lekin bu «jim defolt» — yangi chaqiruvchi uzatishni unutsa hech narsa shikoyat qilmaydi.
+4. **FE-08 ning i18n qismi (POS hardcoded o'zbekcha matn) BU FAZADA QILINMADI** — reja Faza 30 ga faqat pul-parse qismini bergan; POS matnlarini `pages.sotuv` nomfazosiga ko'chirish alohida ish bo'lib qoladi.
+5. **Browser-smoke YO'Q.** POS to'lov/qaytarish oqimlari real brauzerda ochilmadi; ayniqsa `type="text" inputMode="decimal"` maydoni va retail chekining serverda QABUL qilinishi (400 yo'qligi) Phase-2 QA sessiyasida tekshirilsin.

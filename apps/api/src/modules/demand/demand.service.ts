@@ -13,7 +13,7 @@ import { allocateDocumentNumber } from '../../prisma/document-number.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { AttributeType } from '../attribute-metadata/attribute-metadata.schema.js';
 import { AttributeMetadataService } from '../attribute-metadata/attribute-metadata.service.js';
-import { CustomerOrderService } from '../customer-order/customer-order.service.js';
+import { CustomerOrderService, remainingToShip } from '../customer-order/customer-order.service.js';
 import { type DemandPostedEvent, HR_EVENT } from '../hr/hr-shared/hr-events.types.js';
 import { PermissionsService } from '../permissions/permissions.service.js';
 import { tashkentRangeBounds } from '../report/report-date-bounds.util.js';
@@ -40,7 +40,12 @@ import {
   type UpdateDemandInput,
   UpdateDemandSchema,
 } from './demand.schema.js';
-import { compareDecimals, computePerUnitCost } from './fifo-consumer.js';
+import {
+  addDecimals,
+  compareDecimals,
+  computePerUnitCost,
+  subtractDecimals,
+} from './fifo-consumer.js';
 
 interface ComputedTotals {
   sumMinor: bigint;
@@ -493,16 +498,19 @@ export class DemandService {
     // via parsed.quantities[positionId].
     const positions = order.positions
       .map((cop) => {
-        const remaining = Number(String(cop.quantity)) - Number(String(cop.shippedQty));
-        const wantStr = parsed.quantities?.[cop.id] ?? String(remaining);
-        if (wantStr === '0') return null;
-        const want = Number(wantStr);
-        if (want > remaining) {
+        // Exact Decimal(20,6) cap (SALES-10): the float difference of a
+        // partially-shipped fractional line came out ~1e-17 short, so asking
+        // for the genuine remainder raised a 400.
+        const remaining = remainingToShip(String(cop.quantity), String(cop.shippedQty));
+        const wantStr = parsed.quantities?.[cop.id] ?? remaining;
+        if (compareDecimals(wantStr, '0') === 0) return null;
+        const want = wantStr;
+        if (compareDecimals(want, remaining) > 0) {
           throw new BadRequestException(
             `Position ${cop.id}: jo'natilishi mumkin bo'lgan miqdor = ${remaining}, so'ralmoqda ${want}`,
           );
         }
-        if (want <= 0) return null;
+        if (compareDecimals(want, '0') <= 0) return null;
         return {
           assortmentKind: cop.assortmentKind as 'product',
           assortmentId: cop.assortmentId,
@@ -1098,9 +1106,13 @@ export class DemandService {
               for (const assortmentId of assortmentIds) {
                 const bal = balances.get(assortmentId);
                 if (!bal) continue;
-                const delta = adj.holdDeltas.get(assortmentId) ?? 0;
-                const own = adj.ownHoldAfter.get(assortmentId) ?? 0;
-                bal.reservedQty = String(Math.max(0, Number(bal.reservedQty) + delta - own));
+                const delta = adj.holdDeltas.get(assortmentId) ?? '0';
+                const own = adj.ownHoldAfter.get(assortmentId) ?? '0';
+                // Exact Decimal(20,6) (SALES-10) — this patched balance feeds
+                // the sufficiency check, so float drift here can either block
+                // a valid shipment or let one through.
+                const patched = subtractDecimals(addDecimals(bal.reservedQty, delta), own);
+                bal.reservedQty = compareDecimals(patched, '0') > 0 ? patched : '0';
               }
             }
           }

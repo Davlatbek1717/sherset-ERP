@@ -9,6 +9,12 @@ import {
 import { allocateDocumentNumber } from '../../prisma/document-number.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { AttributeMetadataService } from '../attribute-metadata/attribute-metadata.service.js';
+import {
+  compareDecimals,
+  computeLineCost,
+  computePerUnitCost,
+  subtractDecimals,
+} from '../demand/fifo-consumer.js';
 import { tashkentRangeBounds } from '../report/report-date-bounds.util.js';
 import { resolveCreatorGroupId } from '../shared/group-stamp.js';
 import { mapVersionedUpdateError } from '../shared/optimistic-lock.js';
@@ -27,6 +33,61 @@ import {
   type UpdateInventoryInput,
   UpdateInventorySchema,
 } from './inventory.schema.js';
+
+/**
+ * One recount line's variance + cost basis — EXACT, no float (STK-05).
+ *
+ * The old inline math ran every one of these through `Number()`:
+ *   varianceQty  = String(Number(actual) - Number(expected))   → "0.19999999999999998"
+ *                                                              → "1.0000000116860974e-7"
+ *   unitCost     = Math.round(Number(costBalanceMinor) / Number(expected))
+ *   varianceCost = BigInt(Math.round(variance × unitCost))
+ * The first two land straight in a Decimal(20,6) column; the third silently
+ * rounds any cost basis past 2^53 tiyin, breaking the post↔cancel zero-sum
+ * that `cancel()` recomputes from the persisted snapshot.
+ *
+ * Contract (unchanged semantics, exact arithmetic):
+ *   unitCostMinor  — the store's weighted average (costBalanceMinor ÷ expected)
+ *                    when there IS a basis, else the product's buyPrice, else 0.
+ *   varianceCostMinor — null when there is no basis at all (so applyDeltas
+ *                    leaves costBalanceMinor untouched rather than writing 0 —
+ *                    the retail-cost-freeze NULL contract).
+ *   lineSumMinor   — actualQty × unitCost, the doc's «Сумма» contribution.
+ */
+export function computeVarianceLine(input: {
+  expectedQty: string;
+  actualQty: string;
+  costBalanceMinor: bigint;
+  buyPriceMinor: bigint;
+}): {
+  varianceQty: string;
+  unitCostMinor: bigint;
+  varianceCostMinor: bigint | null;
+  lineSumMinor: bigint;
+} {
+  const varianceQty = subtractDecimals(input.actualQty, input.expectedQty);
+  const hasBasis = compareDecimals(input.expectedQty, '0') > 0 && input.costBalanceMinor > 0n;
+  const unitCostMinor = hasBasis
+    ? computePerUnitCost(input.costBalanceMinor, input.expectedQty)
+    : input.buyPriceMinor;
+  return {
+    varianceQty,
+    unitCostMinor,
+    varianceCostMinor: unitCostMinor > 0n ? computeLineCost(varianceQty, unitCostMinor) : null,
+    lineSumMinor: unitCostMinor > 0n ? computeLineCost(input.actualQty, unitCostMinor) : 0n,
+  };
+}
+
+/**
+ * cancel()'s exact reversal of one posted variance line — the negation of
+ * what computeVarianceLine produced, recomputed from the SAME persisted
+ * (varianceQty, costMinor) snapshot, so post→cancel nets to zero tiyin-for-
+ * tiyin regardless of what stock did in between.
+ */
+export function reverseVarianceCost(varianceQty: string, unitCostMinor: bigint): bigint | null {
+  if (unitCostMinor <= 0n) return null;
+  return -computeLineCost(varianceQty, unitCostMinor);
+}
 
 /**
  * InventoryService — physical recount with variance handling.
@@ -624,32 +685,33 @@ export class InventoryService {
           });
           const expectedQty = stockRow?.qty?.toString() ?? '0';
           const actualQty = String(p.actualQty);
-          const expectedNum = Number(expectedQty);
-          const actualNum = Number(actualQty);
-          const varianceNum = actualNum - expectedNum;
-          const varianceStr = String(varianceNum);
 
           // Per-unit cost snapshot («Цена» column + doc «Итого»/sumMinor):
           // weighted-average basis (costBalanceMinor / qty) with a buyPrice
           // fallback — mirrors the Loss editor's себестоимость preview.
-          const costBalance = stockRow?.costBalanceMinor ?? 0n;
-          const unitCostNum =
-            stockRow && expectedNum > 0 && costBalance > 0n
-              ? Math.round(Number(costBalance) / expectedNum)
-              : Number(buyPriceById.get(p.assortmentId) ?? 0n);
-          sumMinor += BigInt(Math.round(actualNum * unitCostNum));
-
+          //
           // Cost delta for the variance — MUST move the cost basis in lock-step
           // with qty, exactly like Loss/Enter do. Passing null (the old bug) kept
           // costBalanceMinor frozen while qty changed → the weighted-average
           // per-unit cost (costBalanceMinor / qty) was corrupted on EVERY recount
           // (e.g. 10 units @1000 recounted to 5 ⇒ 5000/5 = 1000 stays right ONLY
           // if cost also drops by 5×1000; without it 10000/5 = 2000, doubled).
-          // varianceNum carries the sign (surplus + / shortage −); surplus enters
-          // at the current weighted-average (unitCostNum) so the average is
-          // unshifted, shortage leaves at that same average.
-          const varianceCostMinor =
-            unitCostNum > 0 ? BigInt(Math.round(varianceNum * unitCostNum)) : null;
+          // varianceQty carries the sign (surplus + / shortage −); surplus enters
+          // at the current weighted-average so the average is unshifted, shortage
+          // leaves at that same average. All of it exact BigInt (STK-05).
+          const {
+            varianceQty: varianceStr,
+            unitCostMinor,
+            varianceCostMinor,
+            lineSumMinor,
+          } = computeVarianceLine({
+            expectedQty,
+            actualQty,
+            costBalanceMinor: stockRow?.costBalanceMinor ?? 0n,
+            buyPriceMinor: buyPriceById.get(p.assortmentId) ?? 0n,
+          });
+          sumMinor += lineSumMinor;
+          const varianceSign = compareDecimals(varianceStr, '0');
 
           // Persist snapshot + variance on position
           await tx.inventoryPosition.update({
@@ -657,31 +719,31 @@ export class InventoryService {
             data: {
               expectedQty,
               varianceQty: varianceStr,
-              costMinor: unitCostNum > 0 ? BigInt(unitCostNum) : null,
+              costMinor: unitCostMinor > 0n ? unitCostMinor : null,
             },
           });
 
           // Only emit a delta if there's variance
-          if (varianceNum > 0) {
+          if (varianceSign > 0) {
             surplusCount++;
             deltas.push({
               storeId: existing.storeId,
               assortmentKind: p.assortmentKind,
               assortmentId: p.assortmentId,
-              qtyDelta: String(varianceNum),
+              qtyDelta: varianceStr,
               costDeltaMinor: varianceCostMinor,
               docType: 'inventory_surplus',
               docId: id,
               docPositionId: p.id,
               reason: 'post',
             });
-          } else if (varianceNum < 0) {
+          } else if (varianceSign < 0) {
             shortageCount++;
             deltas.push({
               storeId: existing.storeId,
               assortmentKind: p.assortmentKind,
               assortmentId: p.assortmentId,
-              qtyDelta: String(varianceNum), // already negative
+              qtyDelta: varianceStr, // already negative
               costDeltaMinor: varianceCostMinor, // negative — mirrors qty outflow
               docType: 'inventory_shortage',
               docId: id,
@@ -757,16 +819,15 @@ export class InventoryService {
         // by the sale/loss basis but never restored on cancel → drift.
         const deltas: StockDelta[] = [];
         for (const p of existing.positions) {
-          const varianceNum = Number(String(p.varianceQty));
-          if (varianceNum === 0) continue;
-          const unitCost = p.costMinor != null ? Number(p.costMinor) : 0;
-          const reverseCost = unitCost > 0 ? -BigInt(Math.round(varianceNum * unitCost)) : null;
+          const varianceQty = String(p.varianceQty);
+          if (compareDecimals(varianceQty, '0') === 0) continue;
+          const unitCost = p.costMinor ?? 0n;
           deltas.push({
             storeId: existing.storeId,
             assortmentKind: p.assortmentKind,
             assortmentId: p.assortmentId,
-            qtyDelta: String(-varianceNum), // reverse sign
-            costDeltaMinor: reverseCost,
+            qtyDelta: subtractDecimals('0', varianceQty), // reverse sign, exact
+            costDeltaMinor: reverseVarianceCost(varianceQty, unitCost),
             docType: 'inventory_cancel',
             docId: id,
             docPositionId: p.id,

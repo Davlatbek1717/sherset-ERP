@@ -305,6 +305,45 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-09j (AUDIT-FIX FAZA 34 — Float→BigInt aniqlik: inventar/ko'chirish/CO kaskadi ·
+> `STK-05`,`STK-08`,`SALES-10`,`STK-12`) · Phase-1: strukturaviy + unit, RUNTIME-TASDIQLANMAGAN
+> (browser-smoke YO'Q) · ⏳ DEPLOY QILINMAGAN · 🗄️ **MIGRATSIYA BOR** —
+> `20260809180000_move_position_base_cost_minor` (lokal `climart_adopt` ga qo'llandi, prod'da
+> KUTMOQDA) · ⚠️ parallel sessiya `apps/web/**` (Faza 30 POS) da ishlamoqda — `git add` aniq
+> yo'llar bilan, ularning fayllariga TEGILMADI.**
+>
+> **Nima qilindi:** hujjat-post yo'llaridagi miqdor/tan-narx float arifmetikasi aniq BigInt
+> primitivlarga o'tkazildi (`demand/fifo-consumer.ts` — yagona manba; `stock.service.ts` o'zining
+> ko'chirma `toMicro`/`fromMicro` juftini tashladi). To'rtala topilma ham kodda TASDIQLANDI.
+> **(STK-05)** `Inventory.post` variance `String(Number(a) - Number(b))` bilan Decimal(20,6)
+> ustuniga `"0.19999999999999998"` / `"1.0000000116860974e-7"` yozardi, tan-narx esa
+> `Math.round(Number(costBalance)/n)` — 2^53 tiyindan keyin yumaloqlanardi ⇒ yangi sof
+> `computeVarianceLine()`/`reverseVarianceCost()`, post↔cancel nol-yig'indi.
+> **(STK-08)** `Move.post` per-birlikni AVVAL yumaloqlab keyin qty ga ko'paytirardi ⇒ butun
+> qoldiqni ko'chirganda manbada `qty=0` + bir necha tiyin qolardi (keyingi kirimning o'rtachasini
+> buzadi). Yangi `move/move-cost-basis.ts` + **yangi ustun `MovePosition.base_cost_minor`**.
+> **(SALES-10)** CO jo'natish/rezerv kaskadi va `demand.createFromCustomerOrder` cap-tekshiruvi
+> to'liq decimal-string'ga: 0.1×3 jo'natilgan 0.3 lik satr endi haqiqatan `fully_shipped` ga o'tadi.
+> **(STK-12)** «available = qty − reserved» uch nusxadan bitta ta'rifga — `availableOf()` /
+> `availableMicroOf()`; float yo'li 0.2 buyurtmaga 2.8e-17 lik **fantom PO satri** yasardi.
+> **+1 audit ko'rmagan:** `product-cell-move.service.ts:39` da AYNAN shu float naqsh bor edi.
+>
+> **⚠️ Reja taklif qilgan STK-08 yechimi YETARLI EMAS edi** — «to'liq ko'chirishda
+> costDelta = −costBalanceMinor» post'ni to'g'rilab, `unpost`/`cancel`ni buzardi (ular per-birlik
+> snapshot'idan qayta hisoblaydi). Shuning uchun aniq satr-qiymat SAQLANADI; eski qatorlar NULL ⇒
+> eski formulaga tushadi (bit-ma-bit teskarilik, nol-regressiya).
+>
+> **Gate:** typecheck **9/9** · `lint:product` **0 error** · to'liq API suite **5543/5549 yashil**
+> (4 yiqilgan = `publication`+`hr-employee` argon2 **5 s timeout**i, parallel typecheck CPU'ni
+> yeganidan; alohida yugurtirilganda **57/57 yashil**, mening o'zgarishlarimga aloqasi YO'Q) ·
+> tegilgan 7 modul to'liq yashil · **28 yangi test** (3 fayl, har biri avval RED).
+>
+> **⏭️ KEYINGI:** reja bo'yicha ochiq fazalar — **27b** (`PERF-01` analitika-items DB-paginate),
+> **27c** (`PERF-02` akt-sverka davr-filtri, dalili ESKIRGAN — qayta o'qi), **29b** (`HR-13`
+> soft-delete), **30–33** (FE — 30 hozir parallel sessiyada). Faza 34 ning qolgan qarzi
+> (`reservedQty` payload'i hamon `number`, `fifo-consumer.ts` nomi yolg'on, `Move.sumMinor`
+> backfill YO'Q) — `docs/REJA-AUDIT-FIX-2026-08.md` → «HISOBOT JURNALI → Faza 34 → Qolgan qarz».
+
 > **🕒 2026-08-09i (AUDIT-FIX FAZA **29a** — HR to'g'rilik paketi: base-salary + shift-resolve +
 > jarima-sinxron + tz · `HR-1`,`HR-2`,`HR-3`,`HR-7/8`) · Phase-1: strukturaviy + unit,
 > RUNTIME-TASDIQLANMAGAN (browser-smoke YO'Q, jonli DB sinovi YO'Q) · ⏳ DEPLOY QILINMAGAN ·

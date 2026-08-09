@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import type { Prisma } from '@moysklad/db';
-import { scaleMinorByQty } from '@moysklad/money';
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { computeTransferCost } from '../move/move-cost-basis.js';
 import { type StockBalance, StockService } from '../stock/stock.service.js';
 import { CellMoveSchema, CellPlaceSchema, CellRebindSchema } from './product-cell-move.schema.js';
 
@@ -30,15 +30,19 @@ export class ProductCellMoveService {
 
   /**
    * Weighted-average cost (tiyin) of `qty` units at the SOURCE store — the value
-   * that travels with the units on a cross-warehouse transfer. Mirrors
-   * MoveService §65: per-unit = Stock.costBalanceMinor / qty, then × moveQty,
-   * exact BigInt (no float drift). 0 when the source has no cost basis / no stock.
+   * that travels with the units on a cross-warehouse transfer. Shares
+   * MoveService's exact helper (Faza 34 / STK-08): the source qty is parsed as
+   * an exact Decimal(20,6) rather than `Math.round(Number(qty) × 1e6)`, and a
+   * move that empties the source takes the whole costBalanceMinor instead of
+   * round(perUnit) × qty — which used to strand a few tiyin on a qty = 0 row.
+   * 0 when the source has no cost basis / no stock.
    */
   private costOfUnits(bal: StockBalance | undefined, qty: string): bigint {
-    const srcCost = bal?.costBalanceMinor ? BigInt(bal.costBalanceMinor) : 0n;
-    const srcQtyMicro = bal?.qty ? BigInt(Math.round(Number(bal.qty) * 1_000_000)) : 0n;
-    const perUnit = srcQtyMicro > 0n ? (srcCost * 1_000_000n) / srcQtyMicro : 0n;
-    return scaleMinorByQty(perUnit, qty);
+    return computeTransferCost({
+      sourceCostBalanceMinor: bal?.costBalanceMinor ? BigInt(bal.costBalanceMinor) : 0n,
+      sourceQty: bal?.qty ? String(bal.qty) : '0',
+      moveQty: qty,
+    }).baseLineMinor;
   }
 
   /** Resolve a target cell to its store (tenant-scoped). Throws if absent. */

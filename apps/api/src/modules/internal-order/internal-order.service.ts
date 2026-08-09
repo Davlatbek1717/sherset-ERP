@@ -3,10 +3,12 @@ import { scaleMinorByQty } from '@moysklad/money';
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { allocateDocumentNumber } from '../../prisma/document-number.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { compareDecimals, subtractDecimals } from '../demand/fifo-consumer.js';
 import { tashkentRangeBounds } from '../report/report-date-bounds.util.js';
 import { resolveCreatorGroupId } from '../shared/group-stamp.js';
 import { assertMassEditRefsInTenant } from '../shared/mass-edit.js';
 import { mapVersionedUpdateError } from '../shared/optimistic-lock.js';
+import { availableOf } from '../stock/stock.service.js';
 import {
   CreateInternalOrderSchema,
   type InternalOrderFilterInput,
@@ -192,7 +194,7 @@ export class InternalOrderService {
   async getSupplyShortfall(accountId: string, id: string) {
     const order = await this.findById(accountId, id);
     const productPositions = order.positions.filter((p) => p.assortmentKind === 'product');
-    const availByProduct = new Map<string, number>();
+    const availByProduct = new Map<string, string>();
     if (productPositions.length > 0) {
       const stocks = await this.prisma.client.stock.findMany({
         where: {
@@ -204,16 +206,20 @@ export class InternalOrderService {
         select: { assortmentId: true, qty: true, reservedQty: true },
       });
       for (const s of stocks) {
-        availByProduct.set(s.assortmentId, Math.max(0, Number(s.qty) - Number(s.reservedQty)));
+        availByProduct.set(
+          s.assortmentId,
+          availableOf({ qty: String(s.qty), reservedQty: String(s.reservedQty) }),
+        );
       }
     }
     const positions = productPositions
       .map((p) => {
-        const available = availByProduct.get(p.assortmentId) ?? 0;
-        const shortfall = Number(p.quantity) - available;
+        const available = availByProduct.get(p.assortmentId) ?? '0';
+        // Exact Decimal(20,6) — see customer-order.getSupplyShortfall (STK-12).
+        const shortfall = subtractDecimals(String(p.quantity), available);
         return { p, shortfall };
       })
-      .filter(({ shortfall }) => shortfall > 0)
+      .filter(({ shortfall }) => compareDecimals(shortfall, '0') > 0)
       .map(({ p, shortfall }) => ({
         assortmentId: p.assortmentId,
         quantity: shortfall,
