@@ -124,6 +124,20 @@ foydalanuvchi bilan birga bajariladi (`/deploy` skill + shu ro'yxat):
     query-token'da qoldi). Nginx tomonda **hech narsa o'zgartirish shart emas**; Faza 22 taklif
     qilgan «log_format'da access_token redakti» endi shu 4 yo'l uchun keraksiz (SSE uchun
     foydali bo'lib qoladi).
+13. **Access-token deny-list (Faza Q12) — MIGRATSIYA YO'Q, DDL YO'Q.** Deny-holat mavjud
+    jadvallardan o'qiladi (`employees.archived` + `employee_offboardings.completed_at`) ⇒ prod DDL
+    (§5) ro'yxatiga **hech narsa qo'shilmadi** va deploy tartibi o'zgarmaydi. **Xulq o'zgarishi
+    (kutilgan, qayta login TALAB QILINMAYDI):** (a) `archived = true` xodimning amaldagi
+    access-JWT/media-cookie'si endi **darhol 401** beradi (ilgari 15/60 daqiqa ishlardi) — bunday
+    xodim login ham qila olmaydi, ya'ni faqat allaqachon yopiq bo'lishi kerak bo'lgan seanslar
+    uziladi; (b) bo'shatish yakunlangan xodim (`completed_at`) shu zahoti chiqib ketadi;
+    (c) `employees` jadvalida qatori YO'Q `sub` bilan token (o'chirilgan xodim) 401 oladi.
+    **Normal foydalanuvchiga ta'sir yo'q** — hech kim qayta login qilmaydi. Perf: har xodimga
+    **30 soniyada 2 ta indeksli `findUnique`** (`TtlCache`, `instances: 1`). **Deploydan keyin
+    tekshir:** (a) oddiy xodim ishlayveradi (401 to'lqini YO'Q — `pm2 logs` da «Kirish huquqi bekor
+    qilingan» ommaviy chiqmasin); (b) bo'shatishni yakunlash → o'sha xodim tab'i keyingi so'rovda
+    401 → login sahifasi; (c) arxivlangan xodimlar ro'yxatini deploydan OLDIN ko'zdan kechir
+    (`SELECT count(*) FROM employees WHERE archived`) — ular orasida hali ishlayotgani bo'lmasin.
 
 ---
 
@@ -415,7 +429,7 @@ faqat deny-list. Har so'rovda DB'ga bormaslik uchun qisqa-TTL kesh.
 **▶ SESSIYA-BOSHI PROMPT:**
 > `docs/REJA-QOLDIQ-2026-08.md` — **Faza Q12**. O'ZGARMAS QOIDALAR. Faza 23 DEFER'ini o'qi. Access-JWT
 > deny-list (iat < revokedAt) + guard + kesh. TDD: 3 stsenariy. Gate. Hisobot, TO'XTA.
-**◻ HISOBOT:** _(agent to'ldiradi)_
+**☑ HISOBOT (2026-08-09):** BAJARILDI — batafsili «HISOBOT JURNALI → Faza Q12» da.
 
 ---
 
@@ -3020,5 +3034,176 @@ yuqoridagidek **qo'lda to'liq** yugurtirildi.
 5. **Sahifa Phase-1.** `useToast`/`navigator.clipboard`/`Modal` xulqi, scope matritsasining 40
    qatorli scroll'i, `redirect('/settings/api-tokens')` ning sozlamalar layout'i ichida to'g'ri
    ishlashi — **hech biri brauzerda tekshirilmadi**. Phase-2 QA cohort'iga qoldi.
+
+---
+
+## Faza Q12 — Offboarding: access-JWT deny-list (`AUTH-05` qoldig'i) (2026-08-09) — **Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q**
+
+### 1. Da'volarni HEAD kodida tasdiqlash (reja §2) — 5/5 TASDIQLANDI
+
+| Da'vo (Faza 23 DEFER-1 / reja Q12) | Holat | Dalil (HEAD) |
+|---|---|---|
+| Access-JWT TTL **15 daqiqa** | ✅ | `auth/auth.module.ts:50` — `expiresIn: parseTtl(cs.get('JWT_ACCESS_TTL'), '15m', …)`. Qo'shimcha **jonli** o'lchov: `access-deny-list.test.ts` real `JwtService` bilan imzolab `exp − iat === 900` ekanini tasdiqlaydi (taxmin emas) |
+| `revokeAllForEmployee` faqat **bitta** joydan chaqiriladi | ✅ | butun `apps/api` bo'yicha grep: `hr/hr-employee/offboarding.service.ts:222` (tranzaksiya ichida). Boshqa chaqiruvchi YO'Q |
+| Amaldagi access-JWT revoke'dan keyin tirik qoladi | ✅ | `token.service.ts` (fix'dan oldin) `verifyAccessToken` = `jwt.verifyAsync` — **imzo + `exp` dan boshqa hech narsa**. Bekor qilish faqat `refresh_tokens` qatorlariga tegardi |
+| `jwt-auth.guard` qanday ishlaydi | ✅ | `jwt-auth.guard.ts:31` → `tokens.verifyAccessToken`; token yo'q bo'lsa media-cookie yo'li (`verifyMediaToken`). **Lekin `verifyAccessToken` ning 6 ta chaqiruv nuqtasi bor** — `jwt-auth.guard`, `permissions.guard:63`, `kiosk.guard:69`, `moysklad-compat/api-token.guard:96`, `hr-websocket/hr-sync.gateway:78`, `hr-websocket/hr-tasks.gateway:95` |
+| Tokenda `iat` da'vosi bormi | ✅ | `signOptions` da `noTimestamp` YO'Q ⇒ `jsonwebtoken` `iat` ni o'zi qo'shadi. **Jonli tasdiqlandi** testda (`typeof decoded.iat === 'number'`) — ya'ni «eski tokenlarda iat yo'q» muammosi access-JWT'da UMUMAN yuzaga kelmaydi |
+
+**Bonus topilma (rejada yo'q edi):** `iat` **media-token'da YO'Q edi** (`media-token.ts` payload'i faqat
+`aud` + `exp` yozardi). Ya'ni «`iat` bo'lmasa nima qilamiz» savoli aynan media yo'lida real — pastda
+(§3) moslik siyosati bilan yopildi.
+
+### 2. Tanlangan yechim — **migratsiyasiz**, DB manba
+
+**Deny-list manbasi = allaqachon mavjud ikki fakt** (yangi jadval/ustun YO'Q, `schema.prisma` ga
+TEGILMADI — u parallel sessiya qo'lida edi, CLAUDE.md §6.1):
+
+| Manba | Nima beradi | Nega ishonchli |
+|---|---|---|
+| `employees.archived` | **shartsiz** rad | Offboarding yakunida `true` bo'ladi (`offboarding.service.ts:213-216`, AYNAN shu tranzaksiyada). Arxivlangan xodim login (`auth.service.ts:43` `archived: false`) ham, refresh (`auth.service.ts:169` `!employee \|\| employee.archived`) ham qila olmaydi ⇒ uning yaroqli tokeni **bo'lishi mumkin emas** |
+| `employee_offboardings.completed_at` | `revokedAt` **aniq payti** | «Ro'yxat to'liq bajarilib, xodim ARXIVLANGAN payt» (sxema izohi), `@@unique([employeeId])` ⇒ xodimga bitta qator, `findUnique` bilan olinadi. Qayta ishga olingan xodimda qator qoladi-yu `archived` yechiladi ⇒ `iat > completed_at` bo'lgan YANGI token ishlayveradi |
+
+**Nega `refresh_tokens.revokedAt` maksimumi OLINMADI** (ko'rib chiqilgan muqobil): `revokedAt` ni
+**rotatsiya ham** yozadi (`rotateRefreshToken` har `/auth/refresh` da), ya'ni MAX butun vaqt oldinga
+suriladi va hamma tokenni o'ldirardi. `replacedById IS NULL` filtri bilan rotatsiya ajraladi-yu,
+o'shanda **oddiy logout** (bir qurilmada) qolgan qurilmalarning access-tokenlarini o'ldirardi —
+noto'g'ri semantika. Rad etildi.
+
+**Nega migratsiyasiz afzal:** (a) `schema.prisma` parallel sessiya qo'lida (`M`) — tegish TAQIQ;
+(b) prod `sherset_v2` sxema-drifti tufayli har yangi ustun qo'lda DDL talab qiladi (OPS §5 ro'yxati
+allaqachon 8 bandli) — **bu faza unga hech narsa qo'shmadi**; (c) ikkala ustun ham indeksli PK/unique
+bo'yicha o'qiladi.
+
+**Qoldiq cheklov (hujjatlangan):** `revokeAllForEmployee` ning **kelajakdagi** offboardingdan
+boshqa chaqiruvchisi (masalan «majburiy chiqarish» tugmasi) DB'da `revokedAt` qoldirmaydi — u faqat
+in-process floor (§«markRevoked») bilan ishlaydi va API restart'ida yo'qoladi. Bugun bunday
+chaqiruvchi YO'Q. Kerak bo'lganda `employees.access_revoked_at` ustuni qo'shiladi (`schema.prisma`
+bo'shaganda) — loader'ning yagona joyiga (`loadAccessState`) bir qator qo'shish kifoya.
+
+### 3. Media-token qarori — **QAMRALDI** (Faza Q13 eslatmasiga javob)
+
+Faza Q13 hisoboti «media-token stateless, Q12 deny-list uni qoplamaydi» deb qoldirgan edi.
+**Qaror: qoplaydi.** Sabab — TTL 60 daqiqa (`MEDIA_TOKEN_TTL_SEC`), ya'ni access-JWT'dan **4x uzun**;
+qamramaslik bo'shatilgan xodimga eng katta qoldiq oynani (rasm/PDF/xodim kartasi o'qish) qoldirardi
+va fazaning maqsadini yarim qilardi. Narxi kichik: `verifyMediaToken` allaqachon guard ichida
+chaqiriladi, faqat `async` bo'ldi.
+
+**`iat` moslik siyosati (asoslangan):**
+- endi `signMediaToken` payload'ga `iat` yozadi;
+- **eski (Q12 gacha imzolangan) tokenlarda `iat` yo'q** ⇒ chiqarilish vaqti `exp − MEDIA_TOKEN_TTL_SEC`
+  dan hosil qilinadi. Bu tokenning chiqarilishi **mumkin bo'lgan eng erta payti**, ya'ni solishtiruv
+  hech qachon tokenni haqiqiydan **yangiroq** ko'rsatmaydi ⇒ xato **fail-closed** tomonga ketadi.
+  Moslik oynasi eng ko'pi 60 daqiqa (undan keyin bunday token `exp` bo'yicha o'lik).
+- **Access-JWT'da `iat` doim bor** (§1 da jonli tasdiqlandi), lekin qatlam baribir fail-closed:
+  bekor qilish BOR + `iat` YO'Q ⇒ **rad** (tokenning bekor qilishdan keyin chiqarilganini isbotlab
+  bo'lmaydi). Bu qoida faqat bekor qilingan xodimga tegadi — bo'shatilmagan xodimda `iat`ning
+  yo'qligi hech narsani o'zgartirmaydi (fail-open), aks holda `iat`siz bitta anomaliya butun
+  tizimni 401 qilib qo'yardi.
+
+### 4. Fayllar
+
+| Fayl | Nima |
+|---|---|
+| **A** `apps/api/src/modules/auth/access-deny-list.ts` | **YANGI.** `AccessDenyList` — `TtlCache` (Faza 26 / PERF-06 naqshi, `../report/ttl-cache.util.js` QAYTA ISHLATILDI, nusxa YO'Q) + `floors` xaritasi. `markRevoked(employeeId, atMs)` (monoton, faqat oldinga) · `isRevoked(employeeId, iatSec)` · `clear()`. Kesh TTL default **30 s**, `maxEntries` 2000. Floor retention 24 soat (undan eski floor keraksiz — bunday `iat`li har qanday token `exp` bo'yicha o'lik) |
+| **A** `apps/api/src/modules/auth/access-deny-list.test.ts` | **YANGI**, 16 test (pastda) |
+| **M** `apps/api/src/modules/auth/token.service.ts` | `verifyAccessToken` → jwt verify + **deny-list** ⇒ `UnauthorizedException('Kirish huquqi bekor qilingan')` · `verifyMediaToken` → **async**, deny-list'da bo'lsa `null` · `loadAccessState()` (yangi, DB manba) · `revokeAllForEmployee` → `denyList.markRevoked(employeeId)` |
+| **M** `apps/api/src/modules/auth/media-token.ts` | payload'ga `iat` · yangi `verifyMediaTokenDetailed()` (`{user, iatSec}`) · `verifyMediaToken()` — uning ustidagi ingichka o'ram (**mavjud shartnoma o'zgarmadi** ⇒ `media-token.test.ts` ning `toEqual(USER)` tekshiruvi buzilmadi) |
+| **M** `apps/api/src/modules/auth/jwt-auth.guard.ts` | media-verify `await` bo'ldi |
+| **M** `apps/api/src/modules/permissions/permissions.guard.ts` | media-verify `await` bo'ldi |
+| **M** `docs/REJA-QOLDIQ-2026-08.md` | Q12 sarlavha belgisi · **OPS-QADAMLAR §13** (yangi) · shu hisobot |
+
+**`offboarding.service.ts` ga TEGILMADI** (topshiriq talabi): revoke-nuqtasi
+`token.service.ts` → `revokeAllForEmployee` ichiga qo'yildi, chaqiruvchi o'zgarmadi. Offboarding
+tranzaksiyasi va uning testlari (`offboarding.service.test.ts`) daxlsiz.
+
+#### Nega tekshiruv guardda emas, `verifyAccessToken` ICHIDA
+
+`verifyAccessToken` ning **6 ta** chaqiruv nuqtasi bor (§1 jadvali). Tekshiruv `jwt-auth.guard` ga
+qo'yilganda `kiosk.guard`, `api-token.guard` va ikkita **HR WebSocket gateway** (`hr-sync`,
+`hr-tasks`) yo'li ochiq qolardi — aynan «bir yo'l unutildi» bug-klassi. Metodning o'ziga qo'yish
+oltita yo'lni ham bir marta yopadi va kelajakdagi 7-chaqiruvchi ham avtomatik qamraladi.
+Hamma chaqiruvchi `verifyAccessToken` ni `try/catch` bilan o'raydi va 401/`null` beradi
+(tekshirildi: `jwt-auth.guard:34`, `permissions.guard:64`, `kiosk.guard:70`, `api-token.guard:98`,
+ikkala gateway) ⇒ yangi `UnauthorizedException` hech qayerda **500** ga aylanmaydi.
+
+### 5. TDD — RED → GREEN (jonli o'lchangan)
+
+**RED** (`access-deny-list.ts` yozilgan, lekin `TokenService` ga ULANMAGAN holat):
+```
+pnpm --filter @moysklad/api exec vitest run src/modules/auth/access-deny-list.test.ts
+  Tests  9 failed | 7 passed (16)
+```
+O'tgan 7 = `iat` jonli-tasdiqlash (2) + `AccessDenyList` birlik semantikasi (4) + 1; **yiqilgan 9** =
+aynan bug: `TokenService` deny-list'ni umuman ko'rmasdi (bo'shatilgan xodim tokeni `resolves`,
+media-token esa `Promise` ham qaytarmasdi — `sync`).
+
+**GREEN** (fix'dan keyin):
+```
+src/modules/auth/access-deny-list.test.ts (16 tests)   16 passed
+```
+
+**Qamrab olingan stsenariylar (16):**
+1. `@nestjs/jwt` payload'ida `iat` BOR + `exp − iat === 900` (**da'voni jonli tasdiqlash**)
+2. payload'dagi `iat` hurmat qilinadi (fixture shartnomasi)
+3. **(1-talab)** bo'shatishdan keyin eski access-token → throw
+4. **(2-talab)** boshqa xodimning tokeni ishlayveradi
+5. **(3-talab)** `iat > revokedAt` (qayta ishga olingan xodim) ishlaydi; o'sha xodimning eski tokeni rad
+6. `archived` ⇒ shartsiz rad (yangi `iat` bo'lsa ham)
+7. xodim DB'da yo'q ⇒ fail-closed
+8. **(4-talab)** kesh TTL ichida `employee.findUnique` va `employeeOffboarding.findUnique` **1 martadan**
+9. `revokeAllForEmployee` DB keshini kutmasdan darhol kuchga kiradi (floor)
+10-11. media-cookie: bo'shatilganda `null`, bo'shatilmaganda ishlaydi
+12. **`iat`siz ESKI media-token** — `exp − TTL` hosilasi: `exp = +30 daq` (⇒ iat = −30 daq < revokedAt) **rad**, `exp = +58 daq` (⇒ iat = −2 daq > revokedAt) **qabul**
+13-16. `AccessDenyList` birlik: bekor qilish yo'q + `iat` yo'q ⇒ o'tadi · bekor qilish bor + `iat` yo'q ⇒ fail-closed · **loader xatosi hammani chiqarib yubormaydi, lekin floor kuchda qoladi** · TTL tugagach DB qayta so'raladi
+
+### 6. Gate (jonli, path-cheklangan — parallel sessiya bilan ajratilgan)
+
+| Gate | Natija |
+|---|---|
+| `pnpm --filter @moysklad/api typecheck` | **0 xato** (butun paket; parallel sessiyaning fayllari ham toza edi — ajratish shart bo'lmadi) |
+| `npx biome check` (6 ta o'z faylim) | **0 xato** (`Checked 6 files … No fixes applied`). Bir format-xatosi topildi (`denyList` initializer wrap) va tuzatildi |
+| `vitest run src/modules/auth src/modules/permissions` | **13 fayl · 209/209 passed** (shu jumladan `mutation-guard-coverage` 51/51, `--testTimeout=30000` bilan — ma'lum flake, regress EMAS) |
+| `vitest run src/modules/hr` | **93 fayl · 975/975 passed** (offboarding zanjiri regressiz) |
+| To'liq API suite, 3 shard | **shard 1/3: 2062** · **2/3: 2076** · **3/3: 2359 passed \| 2 skipped** ⇒ **jami 6497 passed / 2 skipped** |
+
+**Baza bilan solishtirish:** Faza Q14 dan keyingi baza **6481 passed / 2 skipped** ⇒ **delta = +16**,
+ya'ni AYNAN shu fazaning yangi test fayli. **Regress 0.**
+
+**Web suite yugurtirilmadi va shart emas:** `apps/web` da bironta fayl o'zgartirilmadi
+(deny-list to'liq server tomonda; FE uchun 401 → mavjud `api-client` refresh/logout yo'li).
+
+### 7. Parallel sessiya sharoiti (CLAUDE.md §6)
+
+MK/kassa sessiyasi faol edi: `cashier-session/*`, `manager/{inventory,kpi}/*`, `report/metrics/*`,
+`retail-sale/*`, `apps/web/src/app/(app)/menejer/*`, `messages/{ru,uz}.json`,
+`packages/db/prisma/schema.prisma`, `NEXT.md`, `todo.md`, `docs/REJA-MENEJER-KASSA-*`,
+`docs/REJA-8-BOLIM-2026-08.md`. **Ularning hech bir fayliga yozilmadi.** `schema.prisma` ular
+qo'lida bo'lgani uchun yechim ataylab **migratsiyasiz** qurildi (§2) — to'qnashuv nolga tushdi.
+`git add` faqat aniq yo'llar bilan, commit `-c core.hooksPath=/dev/null` bilan (lint-staged begona
+fayl qo'shmasin — §6.7 B), gate'lar QO'LDA to'liq yugurtirildi.
+
+### 8. Qolgan qarz / DEFER
+
+- **Non-offboarding revoke DB'da qolmaydi** (§2 oxiri): kelajakdagi «majburiy chiqarish» chaqiruvchisi
+  uchun `employees.access_revoked_at` ustuni kerak bo'ladi; bugun bunday chaqiruvchi YO'Q.
+- **Bekor qilish DB orqali eng ko'pi 30 soniya kechikadi** (`DENY_LIST_TTL_MS`). Offboarding'ning
+  o'zida kechikish **0** (in-process floor). 30 s faqat quyidagi holatga tegadi: bekor qilish
+  BOSHQA jarayonda/DB'da bo'lgan va bu jarayon uni hali o'qimagan. `instances: 1` da bu faqat
+  restart oynasi — amalda ahamiyatsiz. TTL'ni kamaytirish = DB yuki, oshirish = kechikish.
+- **Loader xatosida fail-open** (DB blip ⇒ ruxsat). Ataylab: aks holda DB'ning bir soniyalik
+  uzilishi butun tizimni 401 qilib, FE'ni hammani logout qilishga majbur qilardi. Bu oynada
+  in-process floor'lar baribir kuchda qoladi. Xavf: DB uzilishi paytida bo'shatilgan xodim
+  o'tib ketishi mumkin (juda tor stsenariy, hujjatlangan).
+- **`iat` sekund aniqligida** ⇒ bekor qilish bilan AYNAN bir soniyada chiqarilgan token rad etilishi
+  mumkin (fail-closed). Amalda sezilmaydi.
+- **Boshqa akkauntdagi bir xil `employeeId` yo'q** (UUID) ⇒ kesh kaliti tenant'siz bo'lishi
+  xavfsiz; `TtlCache` shartnomasidagi «kalit tenant'ni olib yursin» qoidasi bu yerda `employeeId`
+  ning o'zi global-yagona bo'lgani uchun qanoatlanadi.
+- **Browser-smoke YO'Q** — Phase-2 QA cohort'iga: (a) bo'shatishni yakunlash → xodim tab'i keyingi
+  so'rovda login sahifasiga tushadimi; (b) o'sha xodim ochiq turgan rasm/PDF media-yo'llari
+  401 beradimi; (c) oddiy xodimlarda 401 to'lqini YO'Qligi; (d) HR WebSocket ulanishi
+  (`hr-sync`/`hr-tasks`) bo'shatilgandan keyin uziladimi.
+- **Deploy ta'siri** — OPS-QADAMLAR **§13** ga yozildi: **migratsiya/DDL YO'Q**, qayta login talab
+  QILINMAYDI; xulq o'zgarishi faqat `archived`/bo'shatilgan/o'chirilgan xodimlarga tegadi.
 
 ---

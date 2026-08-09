@@ -65,6 +65,13 @@ interface MediaPayload extends AuthenticatedUser {
   aud: typeof AUDIENCE;
   /** Muddat tugash vaqti — UNIX sekund. */
   exp: number;
+  /**
+   * Chiqarilgan payt — UNIX sekund (Faza Q12 deny-list uchun). **Ixtiyoriy:**
+   * Q12 dan oldin imzolangan tokenlarda bu maydon yo'q; u holda chiqarilish
+   * vaqti `exp − MEDIA_TOKEN_TTL_SEC` deb baholanadi (eng erta mumkin bo'lgan
+   * payt ⇒ deny-list solishtiruvi fail-closed tomonga xato qiladi).
+   */
+  iat?: number;
 }
 
 /**
@@ -97,6 +104,7 @@ export function signMediaToken(
   const payload: MediaPayload = {
     ...user,
     aud: AUDIENCE,
+    iat: Math.floor(now / 1000),
     exp: Math.floor(now / 1000) + (opts.ttlSec ?? MEDIA_TOKEN_TTL_SEC),
   };
   const encoded = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
@@ -116,6 +124,22 @@ export function verifyMediaToken(
   raw: string | null | undefined,
   opts: { secret: string; nowMs?: number },
 ): AuthenticatedUser | null {
+  return verifyMediaTokenDetailed(raw, opts)?.user ?? null;
+}
+
+/**
+ * `verifyMediaToken` ning to'liq natijasi: foydalanuvchi **va** tokenning
+ * chiqarilgan payti (UNIX sekund). Ikkinchisi Faza Q12 deny-list'iga kerak —
+ * `iat < revokedAt` bo'lsa media-cookie ham o'lik hisoblanadi.
+ *
+ * `iat` maydonsiz (Q12 dan oldingi) tokenlarda u `exp − MEDIA_TOKEN_TTL_SEC`
+ * dan hosil qilinadi: bu token chiqarilishi mumkin bo'lgan **eng erta** payt,
+ * ya'ni solishtiruv hech qachon tokenni haqiqiydan yangiroq ko'rsatmaydi.
+ */
+export function verifyMediaTokenDetailed(
+  raw: string | null | undefined,
+  opts: { secret: string; nowMs?: number },
+): { user: AuthenticatedUser; iatSec: number } | null {
   if (typeof raw !== 'string' || raw.length === 0) return null;
   const parts = raw.split('.');
   if (parts.length !== 3) return null;
@@ -141,6 +165,7 @@ export function verifyMediaToken(
   const now = opts.nowMs ?? Date.now();
   if (payload.exp * 1000 <= now) return null;
 
-  const { aud: _aud, exp: _exp, ...user } = payload;
-  return user;
+  const { aud: _aud, exp, iat, ...user } = payload;
+  const iatSec = typeof iat === 'number' && Number.isFinite(iat) ? iat : exp - MEDIA_TOKEN_TTL_SEC;
+  return { user, iatSec };
 }

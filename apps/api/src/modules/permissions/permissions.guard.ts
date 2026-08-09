@@ -52,7 +52,8 @@ export class PermissionsGuard implements CanActivate {
         // AYNAN bir mantiq — aks holda APP_GUARD bu yerda media so'rovini
         // 401 qilib, kontroller-guardgacha yetkazmasdi.
         const mediaRaw = extractMediaToken(req);
-        const mediaUser = mediaRaw ? this.tokens.verifyMediaToken(mediaRaw) : null;
+        // `await` — verify endi deny-list'ga (Faza Q12) qaraydi, ya'ni async.
+        const mediaUser = mediaRaw ? await this.tokens.verifyMediaToken(mediaRaw) : null;
         if (!mediaUser) {
           throw new UnauthorizedException('Avtorizatsiya kerak');
         }

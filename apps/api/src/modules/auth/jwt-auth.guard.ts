@@ -19,7 +19,8 @@ export class JwtAuthGuard implements CanActivate {
       // marshrutda `extractMediaToken` null qaytaradi ⇒ verify ham bo'lmaydi.
       const mediaRaw = extractMediaToken(req);
       if (mediaRaw) {
-        const mediaUser = this.tokens.verifyMediaToken(mediaRaw);
+        // `await` — verify endi deny-list'ga (Faza Q12) qaraydi, ya'ni async.
+        const mediaUser = await this.tokens.verifyMediaToken(mediaRaw);
         if (mediaUser) {
           (req as FastifyRequest & { user?: unknown }).user = mediaUser;
           return true;

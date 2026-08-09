@@ -1,11 +1,12 @@
 import * as crypto from 'node:crypto';
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { AccessDenyList, type EmployeeAccessState } from './access-deny-list.js';
 import type { AuthenticatedUser } from './auth.schema.js';
 import { resolveSecret } from './boot-secrets.js';
-import { MEDIA_TOKEN_TTL_SEC, signMediaToken, verifyMediaToken } from './media-token.js';
+import { MEDIA_TOKEN_TTL_SEC, signMediaToken, verifyMediaTokenDetailed } from './media-token.js';
 
 /**
  * Rotation grace window. The refresh cookie is shared by every tab of the
@@ -57,8 +58,19 @@ export class TokenService {
     });
   }
 
+  /**
+   * Imzo/muddat tekshiruvi **+ deny-list** (Faza Q12, `AUTH-05`). Tekshiruv
+   * ataylab shu METODDA turadi, guardlarda emas: `verifyAccessToken` ning 6 ta
+   * chaqiruv nuqtasi bor (`jwt-auth.guard`, `permissions.guard`, `kiosk.guard`,
+   * `api-token.guard`, ikkita HR WebSocket gateway) — guardga qo'yilsa
+   * ulardan biri unutilib, bo'shatilgan xodimga tirik yo'l qolardi.
+   */
   async verifyAccessToken(token: string): Promise<AuthenticatedUser> {
-    return this.jwt.verifyAsync<AuthenticatedUser>(token);
+    const payload = await this.jwt.verifyAsync<AuthenticatedUser & { iat?: number }>(token);
+    if (await this.denyList.isRevoked(payload.sub, payload.iat)) {
+      throw new UnauthorizedException('Kirish huquqi bekor qilingan');
+    }
+    return payload;
   }
 
   /**
@@ -69,9 +81,55 @@ export class TokenService {
     return signMediaToken(user, { secret: this.jwtSecret(), ttlSec: MEDIA_TOKEN_TTL_SEC });
   }
 
-  /** Media-token tekshiruvi — yaroqsiz/muddati tugaganda `null` (guard 401 beradi). */
-  verifyMediaToken(raw: string | null | undefined): AuthenticatedUser | null {
-    return verifyMediaToken(raw, { secret: this.jwtSecret() });
+  /**
+   * Media-token tekshiruvi — yaroqsiz/muddati tugagan **yoki deny-list'da**
+   * bo'lsa `null` (guard 401 beradi).
+   *
+   * Faza Q13 hisoboti media-tokenni «bekor qilib bo'lmaydi» deb qayd etgan
+   * edi. Faza Q12 uni ataylab **qamrab oladi**: TTL 60 daqiqa (access-JWT'dan
+   * 4x uzun), ya'ni qamramaslik bo'shatilgan xodimga eng katta qoldiq oynani
+   * qoldirardi. Qiymati: `signMediaToken` endi `iat` yozadi; eski tokenlar
+   * uchun u `exp − TTL` dan hosil qilinadi (`verifyMediaTokenDetailed`).
+   */
+  async verifyMediaToken(raw: string | null | undefined): Promise<AuthenticatedUser | null> {
+    const parsed = verifyMediaTokenDetailed(raw, { secret: this.jwtSecret() });
+    if (!parsed) return null;
+    if (await this.denyList.isRevoked(parsed.user.sub, parsed.iatSec)) return null;
+    return parsed.user;
+  }
+
+  /**
+   * Deny-list (Faza Q12). Manba — DB; `TtlCache` faqat tezlatgich.
+   * Arrow-loader `this.prisma` ni FAQAT chaqirilganda o'qiydi, shuning uchun
+   * parameter-property/field-initializer tartibiga bog'liqlik yo'q.
+   */
+  private readonly denyList = new AccessDenyList((employeeId) => this.loadAccessState(employeeId));
+
+  /**
+   * Deny-holatning DB manbasi — **migratsiyasiz**: ikkala fakt ham allaqachon
+   * bor jadvallarda turibdi.
+   *  - `employee.archived` — offboarding yakunida `true` bo'ladi
+   *    (`offboarding.service.ts:213`) va login/refresh uni allaqachon rad etadi;
+   *  - `employee_offboardings.completed_at` — bo'shatish yakunlangan aniq
+   *    payt (`@@unique([employeeId])` ⇒ xodimga bitta qator), ya'ni
+   *    `revokedAt` ning tabiiy manbasi.
+   * Xodim topilmasa `archived: true` — o'chirilgan xodim tokeni o'lik.
+   */
+  private async loadAccessState(employeeId: string): Promise<EmployeeAccessState> {
+    const [employee, offboarding] = await Promise.all([
+      this.prisma.client.employee.findUnique({
+        where: { id: employeeId },
+        select: { archived: true },
+      }),
+      this.prisma.client.employeeOffboarding.findUnique({
+        where: { employeeId },
+        select: { completedAt: true },
+      }),
+    ]);
+    return {
+      archived: employee?.archived ?? true,
+      revokedAt: offboarding?.completedAt ?? null,
+    };
   }
 
   /**
@@ -193,6 +251,12 @@ export class TokenService {
    * majburiy chiqarish). `client` — ixtiyoriy tranzaksiya klienti: chaqiruvchi
    * (masalan `OffboardingService.complete`) arxivlash bilan BIR tranzaksiyada
    * uzishi uchun (AUTH-05). Berilmasa oddiy klient ishlatiladi.
+   *
+   * **Faza Q12:** shu yerda in-process deny-list «floor» ham qo'yiladi, ya'ni
+   * amaldagi access-JWT/media-token DARHOL o'ladi — DB keshi eskirishini
+   * kutmasdan. Chaqiruv tranzaksiya ichida bo'lsa va u rollback bo'lsa, floor
+   * ortiqcha bekor qilib qo'ygan bo'ladi (foydalanuvchi qayta login qiladi) —
+   * teskarisi ochiq xavfsizlik teshigi bo'lardi, shuning uchun fail-closed.
    */
   async revokeAllForEmployee(
     employeeId: string,
@@ -202,6 +266,7 @@ export class TokenService {
       where: { employeeId, revokedAt: null },
       data: { revokedAt: new Date() },
     });
+    this.denyList.markRevoked(employeeId);
   }
 
   private hashToken(raw: string): string {
