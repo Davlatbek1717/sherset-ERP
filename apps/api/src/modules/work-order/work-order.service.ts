@@ -8,9 +8,17 @@ import {
 } from '@nestjs/common';
 import { allocateDocumentNumber } from '../../prisma/document-number.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { compareDecimals } from '../demand/fifo-consumer.js';
 import { assertMassEditRefsInTenant } from '../shared/mass-edit.js';
 import { mapVersionedUpdateError } from '../shared/optimistic-lock.js';
 import { type StockDelta, StockService } from '../stock/stock.service.js';
+import {
+  type WoComponentInput,
+  type WoConsumptionCost,
+  buildReversalDeltas,
+  computeConsumptionCost,
+  negateDecimalString,
+} from './work-order-cost.js';
 import {
   BulkDeleteWorkOrderSchema,
   BulkTransitionWorkOrderSchema,
@@ -43,6 +51,12 @@ import {
  *     InsufficientStock unless `store.allowNegativeStock = true`.
  *   Both run inside the same transaction as the FSM flip + audit row,
  *   guarded by a CAS update so concurrent transitions can't double-fire.
+ *
+ * COST (Faza Q2 / `PP-05`): both cascades carry VALUE, not just quantity —
+ * components leave at the per-store weighted average (`buyPrice` fallback,
+ * NULL kept as NULL), the produced good absorbs exactly that total, and the
+ * cancellation reverses the completion's own ledger rows bit-for-bit rather
+ * than recomputing from the (possibly edited) BOM. See `work-order-cost.ts`.
  *
  * Auto-numbering: ТЗ-YYYY-NNNNN (per-account, per-year sequence).
  */
@@ -425,23 +439,19 @@ export class WorkOrderService {
     const runs = produced / outputQty;
 
     // Consume components — every component carries a non-null productId by schema.
-    const componentDeltas: StockDelta[] = bom.components.map((c) => {
-      // Scale to total consumption: componentQty × runs.
-      const totalConsumed = (Number(String(c.qty)) * runs).toString();
-      return {
-        storeId: args.storeId,
-        assortmentKind: 'product',
-        assortmentId: c.productId,
-        qtyDelta: `-${totalConsumed}`,
-        costDeltaMinor: null,
-        docType: 'workorder',
-        docId: args.workOrderId,
-        docPositionId: c.id,
-        reason: 'post',
-      };
-    });
+    // Scale to total consumption: componentQty × runs.
+    const consumption: WoComponentInput[] = bom.components.map((c) => ({
+      componentId: c.id,
+      productId: c.productId,
+      quantity: (Number(String(c.qty)) * runs).toString(),
+    }));
 
-    if (componentDeltas.length > 0) {
+    // Faza Q2 / PP-05 — the components' VALUE must leave with their quantity.
+    // Basis = the per-store weighted average on the very balances the
+    // sufficiency check locks below (see work-order-cost.ts for the contract).
+    let consumedCost: WoConsumptionCost = { lines: [], totalCostMinor: 0n, hasCost: false };
+
+    if (consumption.length > 0) {
       const balances = await this.stock.lockBalances(
         tx,
         accountId,
@@ -450,23 +460,56 @@ export class WorkOrderService {
       );
       this.stock.assertAvailable(
         store.allowNegativeStock,
-        bom.components.map((c) => ({
+        consumption.map((c) => ({
           assortmentKind: 'product',
           assortmentId: c.productId,
-          requested: (Number(String(c.qty)) * runs).toString(),
+          requested: c.quantity,
         })),
         balances,
       );
+
+      // `buyPrice` fallback for components the store carries no value for.
+      // Only non-NULL buyPrices go into the map — an absent key means UNKNOWN,
+      // which the cost helper keeps as null instead of inventing a 0.
+      const buyPriceByProduct = new Map<string, bigint>();
+      const productIds = [...new Set(consumption.map((c) => c.productId))];
+      const prods = await tx.product.findMany({
+        where: { accountId, id: { in: productIds } },
+        select: { id: true, buyPrice: true },
+      });
+      for (const pr of prods) {
+        if (pr.buyPrice !== null && pr.buyPrice !== undefined) {
+          buyPriceByProduct.set(pr.id, pr.buyPrice);
+        }
+      }
+
+      consumedCost = computeConsumptionCost(consumption, balances, buyPriceByProduct);
+
+      const componentDeltas: StockDelta[] = consumedCost.lines.map((l) => ({
+        storeId: args.storeId,
+        assortmentKind: 'product',
+        assortmentId: l.productId,
+        qtyDelta: `-${l.quantity}`,
+        costDeltaMinor: l.lineCostMinor === null ? null : -l.lineCostMinor,
+        docType: 'workorder',
+        docId: args.workOrderId,
+        docPositionId: l.componentId,
+        reason: 'post',
+      }));
       await this.stock.applyDeltas(tx, accountId, userId, componentDeltas);
     }
 
-    // Emit output: positive delta of producedQty against bom.productId.
+    // Emit output: positive delta of producedQty against bom.productId. The
+    // produced good absorbs the ENTIRE consumed material value (the Processing
+    // engine's single-output case — `distributeOutputCost` with N = 1), so the
+    // cascade is value-conserving: Σ costDelta over the WO is exactly 0. When
+    // no component had a basis at all the output cost is UNKNOWN, not 0.
     const outputDelta: StockDelta = {
       storeId: args.storeId,
       assortmentKind: 'product',
       assortmentId: bom.productId,
       qtyDelta: args.producedQty,
-      costDeltaMinor: null,
+      costDeltaMinor: consumedCost.hasCost ? consumedCost.totalCostMinor : null,
       docType: 'workorder',
       docId: args.workOrderId,
       docPositionId: null,
@@ -497,6 +540,89 @@ export class WorkOrderService {
       producedQty: string;
     },
   ): Promise<void> {
+    const store = await tx.store.findFirst({
+      where: { id: args.storeId, accountId },
+      select: { allowNegativeStock: true },
+    });
+    if (!store) {
+      throw new NotFoundException(`Store ${args.storeId} not found`);
+    }
+
+    // Faza Q2 / PP-05 — FROZEN reversal. The completion's own ledger rows are
+    // the only durable record of what it booked; reversing them exactly makes
+    // the post↔cancel cycle zero-sum on BOTH axes even if the BOM was edited or
+    // the store restocked at a different price in between. (Reversing a
+    // recomputation, as this used to do, silently drifted in both cases.)
+    const postOps = await tx.stockOperation.findMany({
+      where: { accountId, docType: 'workorder', docId: args.workOrderId, reason: 'post' },
+      orderBy: { occurredAt: 'asc' },
+      select: {
+        storeId: true,
+        assortmentKind: true,
+        assortmentId: true,
+        qtyDelta: true,
+        costDeltaMinor: true,
+        docPositionId: true,
+        cellId: true,
+      },
+    });
+
+    if (postOps.length > 0) {
+      const reversals = buildReversalDeltas(
+        postOps.map((op) => ({ ...op, qtyDelta: String(op.qtyDelta) })),
+      );
+
+      // Sufficiency on the OUTFLOW side only (the produced units going back
+      // out). Grouped by the ledger row's own store so the lock matches the
+      // rows being moved, not an assumption about the WO's current store.
+      const outflowsByStore = new Map<string, typeof reversals>();
+      for (const r of reversals) {
+        if (compareDecimals(r.qtyDelta, '0') >= 0) continue;
+        const bucket = outflowsByStore.get(r.storeId) ?? [];
+        bucket.push(r);
+        outflowsByStore.set(r.storeId, bucket);
+      }
+      for (const [storeId, outflows] of outflowsByStore) {
+        const balances = await this.stock.lockBalances(
+          tx,
+          accountId,
+          storeId,
+          outflows.map((r) => ({ kind: r.assortmentKind, id: r.assortmentId })),
+        );
+        this.stock.assertAvailable(
+          store.allowNegativeStock,
+          outflows.map((r) => ({
+            assortmentKind: r.assortmentKind,
+            assortmentId: r.assortmentId,
+            requested: negateDecimalString(r.qtyDelta),
+          })),
+          balances,
+        );
+      }
+
+      await this.stock.applyDeltas(
+        tx,
+        accountId,
+        userId,
+        reversals.map((r) => ({
+          storeId: r.storeId,
+          assortmentKind: r.assortmentKind,
+          assortmentId: r.assortmentId,
+          cellId: r.cellId,
+          qtyDelta: r.qtyDelta,
+          costDeltaMinor: r.costDeltaMinor,
+          docType: 'workorder',
+          docId: args.workOrderId,
+          docPositionId: r.docPositionId,
+          reason: 'unpost',
+        })),
+      );
+      return;
+    }
+
+    // LEGACY fallback — a completion that left no ledger rows behind. Rebuild
+    // from the BOM exactly as before (qty only, cost null): zero regression for
+    // any historical row the ledger read can't serve.
     const bom = await tx.billOfMaterials.findFirst({
       where: { id: args.bomId, accountId },
       select: {
@@ -510,14 +636,6 @@ export class WorkOrderService {
     });
     if (!bom) {
       throw new NotFoundException(`BOM ${args.bomId} not found for account`);
-    }
-
-    const store = await tx.store.findFirst({
-      where: { id: args.storeId, accountId },
-      select: { allowNegativeStock: true },
-    });
-    if (!store) {
-      throw new NotFoundException(`Store ${args.storeId} not found`);
     }
 
     const outputQty = Number(String(bom.outputQty));

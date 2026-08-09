@@ -19,7 +19,7 @@ import { WorkOrderService } from './work-order.service.js';
  *   5. FSM GUARDS — illegal transitions + completed needs producedQty>0.
  */
 
-function makeStock(): {
+function makeStock(balances?: Map<string, { qty: string; costBalanceMinor?: string }>): {
   service: StockService;
   spies: {
     lockBalances: ReturnType<typeof vi.fn>;
@@ -28,7 +28,7 @@ function makeStock(): {
   };
 } {
   const spies = {
-    lockBalances: vi.fn(async () => new Map()),
+    lockBalances: vi.fn(async () => balances ?? new Map()),
     assertAvailable: vi.fn(),
     applyDeltas: vi.fn(async () => undefined),
   };
@@ -102,7 +102,60 @@ function makeWo(over: Partial<WoRow> = {}): WoRow {
   };
 }
 
-function makePrisma(wo: WoRow, opts: { flipCount?: number; allowNegativeStock?: boolean } = {}) {
+interface PostedOpRow {
+  storeId: string;
+  assortmentKind: string;
+  assortmentId: string;
+  qtyDelta: string;
+  costDeltaMinor: bigint | null;
+  docPositionId: string | null;
+  cellId: string | null;
+}
+
+/** Ledger rows a pre-Faza-Q2 completion left behind: qty only, cost NULL. */
+const LEGACY_POST_OPS: PostedOpRow[] = [
+  {
+    storeId: 'store-1',
+    assortmentKind: 'product',
+    assortmentId: 'flour',
+    qtyDelta: '-10',
+    costDeltaMinor: null,
+    docPositionId: 'c1',
+    cellId: null,
+  },
+  {
+    storeId: 'store-1',
+    assortmentKind: 'product',
+    assortmentId: 'sugar',
+    qtyDelta: '-5',
+    costDeltaMinor: null,
+    docPositionId: 'c2',
+    cellId: null,
+  },
+  {
+    storeId: 'store-1',
+    assortmentKind: 'product',
+    assortmentId: 'prod-out',
+    qtyDelta: '50',
+    costDeltaMinor: null,
+    docPositionId: null,
+    cellId: null,
+  },
+];
+
+function makePrisma(
+  wo: WoRow,
+  opts: {
+    flipCount?: number;
+    allowNegativeStock?: boolean;
+    /** Rows returned by the tx.stockOperation.findMany reversal read. */
+    postOps?: PostedOpRow[];
+    /** Locked per-store balances for the cost basis. */
+    balances?: Map<string, { qty: string; costBalanceMinor?: string }>;
+    /** product.buyPrice fallback rows. */
+    products?: Array<{ id: string; buyPrice: bigint | null }>;
+  } = {},
+) {
   const flipCount = opts.flipCount ?? 1;
   const woWithRels = {
     ...wo,
@@ -125,6 +178,12 @@ function makePrisma(wo: WoRow, opts: { flipCount?: number; allowNegativeStock?: 
     },
     store: {
       findFirst: vi.fn(async () => ({ allowNegativeStock: opts.allowNegativeStock ?? false })),
+    },
+    product: {
+      findMany: vi.fn(async () => opts.products ?? []),
+    },
+    stockOperation: {
+      findMany: vi.fn(async () => opts.postOps ?? LEGACY_POST_OPS),
     },
   };
   const client = {
@@ -215,6 +274,213 @@ describe('WorkOrderService.transition — V2 cancel reversal (zero-sum)', () => 
     const { service, spies } = makeStock();
     await svc(prisma, service).transition('acc-1', 'emp-1', 'wo-1', { state: 'cancelled' });
     expect(spies.applyDeltas).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Faza Q2 (`PP-05`) — the four `costDeltaMinor: null` delta points made the
+ * WorkOrder cascade qty-only: components dropped out of stock without their
+ * VALUE leaving, and the produced good entered at zero basis (inflating the
+ * weighted average for every downstream Demand / POS sale). Cancellation then
+ * recomputed from the CURRENT BOM, so a BOM edited after completion made the
+ * post↔cancel cycle non-zero-sum on both axes.
+ */
+describe('WorkOrderService — weighted-average COGS (Faza Q2 / PP-05)', () => {
+  type CostDelta = {
+    assortmentId: string;
+    qtyDelta: string;
+    costDeltaMinor: bigint | null;
+    docPositionId?: string | null;
+  };
+  const flatten = (spies: { applyDeltas: ReturnType<typeof vi.fn> }): CostDelta[] =>
+    spies.applyDeltas.mock.calls.flatMap((c) => c[3] as CostDelta[]);
+
+  it('complete: components leave at the per-store weighted average', async () => {
+    // flour 100 @ 500_000 tiyin ⇒ 5_000/unit × 10 consumed = 50_000
+    // sugar  20 @  60_000 tiyin ⇒ 3_000/unit ×  5 consumed = 15_000
+    const balances = new Map([
+      ['flour', { qty: '100', costBalanceMinor: '500000' }],
+      ['sugar', { qty: '20', costBalanceMinor: '60000' }],
+    ]);
+    const prisma = makePrisma(makeWo(), { balances });
+    const { service, spies } = makeStock(balances);
+    await svc(prisma, service).transition('acc-1', 'emp-1', 'wo-1', {
+      state: 'completed',
+      producedQty: '50',
+    });
+    const deltas = flatten(spies);
+    expect(deltas.find((d) => d.assortmentId === 'flour')?.costDeltaMinor).toBe(-50000n);
+    expect(deltas.find((d) => d.assortmentId === 'sugar')?.costDeltaMinor).toBe(-15000n);
+  });
+
+  it('complete: the produced good absorbs the whole consumed value (value-conserving)', async () => {
+    const balances = new Map([
+      ['flour', { qty: '100', costBalanceMinor: '500000' }],
+      ['sugar', { qty: '20', costBalanceMinor: '60000' }],
+    ]);
+    const prisma = makePrisma(makeWo(), { balances });
+    const { service, spies } = makeStock(balances);
+    await svc(prisma, service).transition('acc-1', 'emp-1', 'wo-1', {
+      state: 'completed',
+      producedQty: '50',
+    });
+    const deltas = flatten(spies);
+    expect(deltas.find((d) => d.assortmentId === 'prod-out')?.costDeltaMinor).toBe(65000n);
+    // Σ over the whole cascade === 0 ⇒ the WO neither creates nor destroys value.
+    expect(deltas.reduce((a, d) => a + (d.costDeltaMinor ?? 0n), 0n)).toBe(0n);
+  });
+
+  it('complete: valueless store falls back to product buyPrice (Loss precedent)', async () => {
+    const balances = new Map([
+      ['flour', { qty: '0', costBalanceMinor: '0' }],
+      ['sugar', { qty: '0', costBalanceMinor: '0' }],
+    ]);
+    const prisma = makePrisma(makeWo(), {
+      balances,
+      products: [
+        { id: 'flour', buyPrice: 700n },
+        { id: 'sugar', buyPrice: 200n },
+      ],
+    });
+    const { service, spies } = makeStock(balances);
+    await svc(prisma, service).transition('acc-1', 'emp-1', 'wo-1', {
+      state: 'completed',
+      producedQty: '50',
+    });
+    const deltas = flatten(spies);
+    expect(deltas.find((d) => d.assortmentId === 'flour')?.costDeltaMinor).toBe(-7000n); // 700×10
+    expect(deltas.find((d) => d.assortmentId === 'sugar')?.costDeltaMinor).toBe(-1000n); // 200×5
+    expect(deltas.find((d) => d.assortmentId === 'prod-out')?.costDeltaMinor).toBe(8000n);
+  });
+
+  it('complete: NULL ≠ 0 — no stock value and no buyPrice ⇒ NULL, not a fabricated 0', async () => {
+    const prisma = makePrisma(makeWo(), { products: [] }); // buyPrice unknown for both
+    const { service, spies } = makeStock(new Map());
+    await svc(prisma, service).transition('acc-1', 'emp-1', 'wo-1', {
+      state: 'completed',
+      producedQty: '50',
+    });
+    const deltas = flatten(spies);
+    expect(deltas.find((d) => d.assortmentId === 'flour')?.costDeltaMinor).toBeNull();
+    expect(deltas.find((d) => d.assortmentId === 'prod-out')?.costDeltaMinor).toBeNull();
+  });
+
+  it('cancel: reverses the FROZEN ledger value bit-for-bit (zero-sum)', async () => {
+    const postOps = [
+      {
+        storeId: 'store-1',
+        assortmentKind: 'product',
+        assortmentId: 'flour',
+        qtyDelta: '-10',
+        costDeltaMinor: -50000n,
+        docPositionId: 'c1',
+        cellId: null,
+      },
+      {
+        storeId: 'store-1',
+        assortmentKind: 'product',
+        assortmentId: 'sugar',
+        qtyDelta: '-5',
+        costDeltaMinor: -15000n,
+        docPositionId: 'c2',
+        cellId: null,
+      },
+      {
+        storeId: 'store-1',
+        assortmentKind: 'product',
+        assortmentId: 'prod-out',
+        qtyDelta: '50',
+        costDeltaMinor: 65000n,
+        docPositionId: null,
+        cellId: null,
+      },
+    ];
+    const prisma = makePrisma(makeWo({ state: 'completed', producedQty: '50' }), { postOps });
+    const { service, spies } = makeStock();
+    await svc(prisma, service).transition('acc-1', 'emp-1', 'wo-1', { state: 'cancelled' });
+    const deltas = flatten(spies);
+    expect(deltas.find((d) => d.assortmentId === 'flour')?.costDeltaMinor).toBe(50000n);
+    expect(deltas.find((d) => d.assortmentId === 'sugar')?.costDeltaMinor).toBe(15000n);
+    expect(deltas.find((d) => d.assortmentId === 'prod-out')?.costDeltaMinor).toBe(-65000n);
+    const sum =
+      postOps.reduce((a, o) => a + (o.costDeltaMinor ?? 0n), 0n) +
+      deltas.reduce((a, d) => a + (d.costDeltaMinor ?? 0n), 0n);
+    expect(sum).toBe(0n);
+  });
+
+  it('cancel: BOM edited AFTER completion cannot corrupt the reversal', async () => {
+    // Ledger says 10 flour @ 50_000 left; the BOM now says 6 per run at a new
+    // average. The reversal must follow the LEDGER, not the current BOM.
+    const postOps = [
+      {
+        storeId: 'store-1',
+        assortmentKind: 'product',
+        assortmentId: 'flour',
+        qtyDelta: '-10',
+        costDeltaMinor: -50000n,
+        docPositionId: 'c1',
+        cellId: null,
+      },
+      {
+        storeId: 'store-1',
+        assortmentKind: 'product',
+        assortmentId: 'prod-out',
+        qtyDelta: '50',
+        costDeltaMinor: 50000n,
+        docPositionId: null,
+        cellId: null,
+      },
+    ];
+    const prisma = makePrisma(makeWo({ state: 'completed', producedQty: '50' }), { postOps });
+    // BOM mutated after completion: 6 per run instead of 2, plus a new component.
+    prisma.tx.billOfMaterials.findFirst = vi.fn(async () => ({
+      id: BOM.id,
+      productId: BOM.productId,
+      outputQty: BOM.outputQty,
+      components: [
+        { id: 'c1', productId: 'flour', qty: '6' },
+        { id: 'c3', productId: 'salt', qty: '3' },
+      ],
+    }));
+    const { service, spies } = makeStock();
+    await svc(prisma, service).transition('acc-1', 'emp-1', 'wo-1', { state: 'cancelled' });
+    const deltas = flatten(spies);
+    expect(deltas).toHaveLength(2);
+    expect(deltas.find((d) => d.assortmentId === 'flour')?.qtyDelta).toBe('10');
+    expect(deltas.find((d) => d.assortmentId === 'salt')).toBeUndefined();
+    expect(deltas.reduce((a, d) => a + (d.costDeltaMinor ?? 0n), 0n)).toBe(0n);
+  });
+
+  it('cancel: legacy (pre-Q2) completion with NULL ledger cost reverses as NULL', async () => {
+    const prisma = makePrisma(makeWo({ state: 'completed', producedQty: '50' }));
+    const { service, spies } = makeStock();
+    await svc(prisma, service).transition('acc-1', 'emp-1', 'wo-1', { state: 'cancelled' });
+    const deltas = flatten(spies);
+    expect(deltas.every((d) => d.costDeltaMinor === null)).toBe(true);
+    expect(deltas.find((d) => d.assortmentId === 'flour')?.qtyDelta).toBe('10');
+    expect(deltas.find((d) => d.assortmentId === 'prod-out')?.qtyDelta).toBe('-50');
+  });
+
+  it('cancel: still asserts availability of the output before removing it', async () => {
+    const prisma = makePrisma(makeWo({ state: 'completed', producedQty: '50' }));
+    const { service, spies } = makeStock();
+    spies.assertAvailable.mockImplementation(() => {
+      throw new BadRequestException('Yetarli emas: Cake');
+    });
+    await expect(
+      svc(prisma, service).transition('acc-1', 'emp-1', 'wo-1', { state: 'cancelled' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(spies.applyDeltas).not.toHaveBeenCalled();
+  });
+
+  it('cancel: falls back to the BOM recompute when the ledger has no post rows', async () => {
+    const prisma = makePrisma(makeWo({ state: 'completed', producedQty: '50' }), { postOps: [] });
+    const { service, spies } = makeStock();
+    await svc(prisma, service).transition('acc-1', 'emp-1', 'wo-1', { state: 'cancelled' });
+    const deltas = flatten(spies);
+    expect(deltas.find((d) => d.assortmentId === 'flour')?.qtyDelta).toBe('10');
+    expect(deltas.find((d) => d.assortmentId === 'prod-out')?.qtyDelta).toBe('-50');
+    expect(deltas.every((d) => d.costDeltaMinor === null)).toBe(true);
   });
 });
 

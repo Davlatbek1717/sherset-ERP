@@ -142,7 +142,7 @@ kamayadi, output store'iga mos qiymat kiradi. (2) complete→cancel zero-sum (BO
 > `docs/REJA-QOLDIQ-2026-08.md` — **Faza Q2**. O'ZGARMAS QOIDALAR. Faza 18a hisobotini o'qi (naqsh
 > tayyor). `PP-05`ni kodda tasdiqla. WorkOrder'ni weighted-avg consume/output + muzlatilgan reversal'ga
 > o'tkaz. TDD: 3 stsenariy. Gate. Hisobot, TO'XTA.
-**◻ HISOBOT:** _(agent to'ldiradi)_
+**☑ HISOBOT (2026-08-09):** BAJARILDI — batafsili «HISOBOT JURNALI → Faza Q2» da.
 
 ---
 
@@ -628,3 +628,138 @@ faqat post payloadida yuboradi (Faza 7/8 hisobotlarida o'lchangan) ⇒ regressiy
   chaqiruvlar ham retry'siz (bir xil konventsiya) — o'zgartirilmadi.
 
 **Commit:** `fix(sales): faza q1 — smena naqdi expected-cash + z-report + close-race (SALES-02/06/07/08)`
+
+---
+
+## Faza Q2 — 2026-08-09 — **Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q**
+### WorkOrder weighted-average cost (`PP-05`, asl reja 18b)
+
+**Da'voni tasdiqlash (kodda, o'z ko'zim bilan — TASDIQLANDI, satr raqamlari ham siljimagan)**
+
+Faza 18a hisoboti `work-order.service.ts:436,469,553,568` deb yozgan edi. `grep -n costDeltaMinor`
+**aynan shu 4 raqamni** qaytardi — hisobot yozilganidan beri fayl tegilmagan:
+
+| Satr | Joy | Nima edi |
+|---|---|---|
+| `:436` | `applyCompleteCascade` — komponent chiqimi | `costDeltaMinor: null` |
+| `:469` | `applyCompleteCascade` — chiqarilgan mahsulot kirimi | `costDeltaMinor: null` |
+| `:553` | `applyCancelCascade` — chiqarilgan mahsulot chiqimi | `costDeltaMinor: null` |
+| `:568` | `applyCancelCascade` — komponent qaytishi | `costDeltaMinor: null` |
+
+Ya'ni ТЗ **faqat MIQDOR** o'qi bo'yicha ishlagan: komponentlar ombordan chiqib ketardi, lekin
+ularning **qiymati** `Stock.costBalanceMinor` da qolardi ⇒ qolgan komponentlarning o'rtacha narxi
+har ТЗ dan keyin **shishardi**; tayyor mahsulot esa **0-bazis** bilan kirardi ⇒ uni keyin sotgan
+Demand/POS **100% marja** ko'rsatardi. Bu 18a POS/Demand uchun yopgan `STK-02` sinfining ayni o'zi.
+
+**Ikkinchi (rejada ko'rsatilgan) topilma ham tasdiqlandi:** `applyCancelCascade` teskarilashni
+**joriy BOM** dan qayta hisoblardi (`bom.components` × `runs`) — ТЗ tugagandan keyin BOM tahrirlansa
+(komponent qo'shilsa/miqdori o'zgarsa) bekor qilish **miqdor o'qida ham** zero-sum bo'lmasdi.
+
+### Qaror: muzlatish uchun YANGI USTUN KERAK EMAS — jurnal o'zi muzlatilgan manba
+
+Reja «pozitsiyaga muzlatiladi» degan, lekin **`WorkOrder` da pozitsiya jadvali YO'Q** (BOM
+komponentlari umumiy katalog obyektlari — ularga muzlatish yozib bo'lmaydi). Ikki variant ko'rildi:
+
+1. `WorkOrder` ga `Json?` snapshot ustuni (Processing `materialsSnapshot` naqshi) — **migratsiya kerak**;
+2. **tanlandi:** teskarilashda ТЗ ning **o'z `StockOperation` qatorlari**ni o'qib aynan negatsiya qilish
+   — 18a dagi **`buildRefundCostBasis`** (POS qaytimi) presedenti. `StockOperation` — append-only
+   jurnal, ya'ni **allaqachon muzlatilgan yozuv**; snapshot ustuni o'sha ma'lumotni ikkinchi marta
+   saqlagan bo'lardi.
+
+⇒ **Migratsiya QILINMADI** (`per-unit-snapshot-blocks-exact-cost-fix` muammosi bu yerda yuzaga
+kelmaydi: jurnal per-birlik emas, **aniq qiymat** saqlaydi). Bonus: bu yechim **miqdor o'qini ham**
+tuzatadi — teskarilash BOM'ni umuman o'qimaydi, shuning uchun BOM tahriri natijaga ta'sir qila olmaydi.
+
+### Fayllar
+
+| Fayl | O'zgarish |
+|---|---|
+| `apps/api/src/modules/work-order/work-order-cost.ts` | **YANGI** — `computeConsumptionCost()` (per-store o'rtacha + `buyPrice` fallback + NULL≠0), `buildReversalDeltas()` (jurnaldan aniq negatsiya), `negateDecimalString()` (float'siz ishora agdarish) |
+| `apps/api/src/modules/work-order/work-order-cost.test.ts` | **YANGI** — 12 sof-arifmetik test |
+| `apps/api/src/modules/work-order/work-order.service.ts` | `applyCompleteCascade` weighted-avg'ga o'tkazildi (`product.findMany` buyPrice fallback bilan); `applyCancelCascade` jurnal-manbali teskarilashga o'tkazildi (+ legacy fallback); sinf doc-kommentiga COST bandi |
+| `apps/api/src/modules/work-order/work-order.service.test.ts` | **Edit** (Write EMAS) — `makePrisma` ga `stockOperation.findMany` + `product.findMany` mock'lari, `makeStock(balances)`; **9 yangi servis-testi** |
+
+### O'zgarish mohiyati
+
+**`applyCompleteCascade` (post).** `lockBalances` + `assertAvailable` dan keyin — **aynan o'sha
+qulflangan balanslardan** (miqdor tekshirilgan qator bilan qiymat olingan qator hech qachon
+ajralmasin) `perUnit = costBalanceMinor ÷ qty`. Qiymatsiz/manfiy ombor ⇒ `product.buyPrice`
+(Loss presedenti: chiqim baribir qiymat olib chiqadi, 0 emas). Komponent deltasi
+`costDeltaMinor = −scaleMinorByQty(perUnit, qty)`. Chiqarilgan mahsulot **butun sarflangan
+qiymatni** oladi (Processing dvigatelidagi `distributeOutputCost` ning N=1 holati) ⇒ ТЗ ning
+Σ `costDelta` = **aynan 0**: ish-buyurtma qiymat yaratmaydi ham, yo'q qilmaydi ham — uni
+komponentlardan tayyor mahsulotga **ko'chiradi**.
+
+**NULL≠0 shartnomasi** (`retail-cost-freeze-null-contract`). `buyPrice` xaritasiga faqat
+**NOT NULL** qiymatlar solinadi. Ombor bazisi ham, `buyPrice` ham yo'q ⇒ `perUnit = null` ⇒
+delta `null` (balansga TEGILMAYDI), `0n` EMAS. Farq muhim: `0n` «material bepul edi» degan
+da'vo bo'lardi va keyingi sotuvda 100% marja yolg'oniga aylanardi. `buyPrice = 0n` esa
+**ma'lum nol** — u `hasCost = true` beradi. Bironta komponentda bazis bo'lmasa chiqarilgan
+mahsulot ham `null` oladi (bo'sh BOM holati ham shunday ⇒ **nol-regressiya**).
+
+**`applyCancelCascade` (unpost).** `stockOperation.findMany({ docType:'workorder', docId, reason:'post' })`
+→ har qator **aniq negatsiya** (miqdor `negateDecimalString` bilan, qiymat `−costDeltaMinor`;
+`null` ⇒ `null`). Qatorlar **birlashtirilmaydi** — BOM bir mahsulotni ikki qatorda ko'rsatgan bo'lsa
+ikkita mos qator qaytadi. Yetarlilik tekshiruvi faqat **chiqim** tomonida (teskarilashda miqdori
+manfiy bo'lgan qatorlar), qator o'z `storeId` si bo'yicha guruhlanib qulflanadi. `reason:'post'`
+filtri o'z `unpost` qatorlarini qayta o'qishdan saqlaydi; FSM `completed` ni bir marta beradi
+(`cancelled` — terminal), shuning uchun post-to'plami yagona.
+
+**Legacy fallback.** Jurnalda post-qator topilmasa — eski BOM-qayta-hisoblash yo'li **o'zgarishsiz**
+qoladi (miqdor, `cost: null`). Fix'dan OLDIN tugatilgan ТЗ larda esa qatorlar bor, ammo
+`costDeltaMinor = NULL` ⇒ teskarilash ham `NULL` beradi = **bugungi xulqning aynan o'zi**
+(qiymat hech qachon to'qib chiqarilmaydi).
+
+### Testlar — RED **jonli o'lchandi**, keyin GREEN
+
+**RED** (fix'dan oldin, `vitest run src/modules/work-order`):
+`Test Files 2 failed | 1 passed (3)` · `Tests 5 failed | 43 passed (48)`
+
+- `work-order-cost.test.ts` — **butun fayl yuklanmadi** (modul hali yo'q) ⇒ 12 test hisobga ham kirmadi;
+- servis-testlarida **5 qizil** (hammasi «Faza Q2» describe'idan):
+  1. `complete: components leave at the per-store weighted average` — kutilgan `-50000n`, olingan `null`;
+  2. `complete: the produced good absorbs the whole consumed value` — kutilgan `65000n`, olingan `null`;
+  3. `complete: valueless store falls back to product buyPrice` — kutilgan `-7000n`, olingan `null`;
+  4. `cancel: reverses the FROZEN ledger value bit-for-bit (zero-sum)` — kutilgan `50000n`, olingan `null`;
+  5. `cancel: BOM edited AFTER completion cannot corrupt the reversal` — **kutilgan 2 delta, olingan 3**
+     (joriy BOM'dagi yangi `salt` komponenti teskarilashga sizib kirgan — miqdor-o'qi bug'i jonli ko'rindi).
+
+Qolgan 4 yangi test ataylab **regressiya-qulfi** (fix'dan oldin ham yashil): legacy NULL teskarilash,
+NULL≠0 post, chiqim yetarlilik tekshiruvi, jurnal-bo'sh BOM-fallback.
+
+**GREEN:** `work-order` **60/60** (48 → 60: +12 sof arifmetik).
+
+Reja stsenariylari: (1) komponent store'ida per-unit o'rtacha × qty kamayadi, output store'iga mos
+qiymat kiradi ✓ (2) complete→cancel zero-sum, BOM keyin o'zgargan bo'lsa ham ✓ (3) bo'sh/qiymatsiz
+stock'da `buyPrice` fallback + NULL≠0 buzilmaydi ✓.
+
+### Gate (jonli o'lchangan)
+
+- `pnpm --filter @moysklad/api typecheck` → **0 xato**
+- `pnpm lint:product` → **0 error** (747 warning — siyosat bo'yicha ruxsat)
+- `vitest run work-order + stock + demand + loss + processing` → **415/415** (29 fayl)
+- **To'liq API suite** → **5609 passed | 2 skipped (431 fayl, 430 passed | 1 skipped)** — regress YO'Q
+- `i18n:gate` **kerak emas** (UI-matn tegilmadi) · web **tegilmadi**
+- **Migratsiya YO'Q** ⇒ sxema-drift/`prisma generate` qadami qo'llanilmadi (lokal DB tegilmagan).
+
+### Qolgan qarz / DEFER
+
+- **🔴 Browser-smoke YO'Q.** ТЗ tugatish→bekor qilish qiymat-simmetriyasi va tayyor mahsulot
+  tannarxining `/stock` da ko'rinishi Phase-2 QA cohort'ida tekshirilishi kerak.
+- **Tarixiy ma'lumot tuzatilmaydi.** Fix'dan OLDIN tugatilgan ТЗ lar `Stock.costBalanceMinor` ni
+  allaqachon buzgan (komponent qiymati qolib ketgan, tayyor mahsulot 0-bazis). Bu faza yangi
+  divergensiya YARATILISHINI to'xtatadi; mavjud qoldiqni tuzatish — **OPS-qadam** (Inventory/Enter
+  bilan qayta-baholash yoki `CounterpartyAdjustment` uslubidagi korrektirovka). Hajm **o'lchanmagan**.
+- **`runs` hamon float** (`produced / outputQty`, `Number(String(c.qty)) * runs`) — miqdor satri
+  `(2 * 5).toString()` kabi hisoblanadi, ya'ni kasrli BOM'da `0.30000000000000004` sinfidagi drift
+  mumkin. **Tegilmadi** (mavjud xulq, alohida sinf — `STK-08` / Faza Q4 oxirgi-birlik ishiga yaqin).
+  Qiymat o'qi bundan himoyalangan: teskarilash o'sha **satrni** jurnaldan aynan qaytaradi.
+- **`delete()` tugatilgan ТЗ ni ombor-teskarilashsiz soft-delete qiladi** — bekor qilinmagan
+  `completed` ТЗ o'chirilsa uning stock kaskadi jurnalda qoladi. Mavjud xulq, Faza Q2 doirasidan
+  tashqarida; **Faza Q3** (`delete()` yo'llari atomik claim) bilan bir sinfda — o'sha yerda ko'rilsin.
+- **Chiqim tannarxi `WorkOrder` qatorida saqlanmaydi** — ТЗ detal sahifasi «Себестоимость» ni
+  ko'rsatmaydi (jurnalni o'qish kerak). FE ishi, alohida.
+- **Ko'p-chiqimli ТЗ yo'q** — BOM bitta `productId` beradi, shuning uchun `distributeOutputCost`
+  kerak bo'lmadi. ТЗ ga qo'shimcha mahsulot/chiqindi qo'shilsa — o'sha helperni ulash kerak.
+
+**Commit:** `fix(cogs): faza q2 — workorder weighted-average cost (PP-05)`
