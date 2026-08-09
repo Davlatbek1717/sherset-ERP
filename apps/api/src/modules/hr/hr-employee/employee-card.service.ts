@@ -2,6 +2,7 @@ import { BadRequestException, Inject, Injectable, NotFoundException } from '@nes
 import { PrismaService } from '../../../prisma/prisma.service.js';
 import { isNoteKind, isValidNoteText, summarizeNotes } from './employee-note.js';
 import { OffboardingService } from './offboarding.service.js';
+import { OnboardingService } from './onboarding.service.js';
 
 /**
  * Xodim kartasi 360° (menejer TZ 4M.4) — bitta odam haqidagi hamma narsa
@@ -21,6 +22,7 @@ export class EmployeeCardService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(OffboardingService) private readonly offboarding: OffboardingService,
+    @Inject(OnboardingService) private readonly onboarding: OnboardingService,
   ) {}
 
   async card(accountId: string, employeeId: string) {
@@ -89,7 +91,13 @@ export class EmployeeCardService {
     for (const g of kpiCounts) byState[g.state] = g._count._all;
 
     // Bo'shatish holati — «bu odam ketyaptimi» savolining javobi.
-    const offboarding = await this.offboarding.status(accountId, employeeId).catch(() => null);
+    // Sinov holati — «bu odam hali sinovdami va qachon baholanadi» (TZ §6.3).
+    // Ikkalasi ham `.catch(() => null)`: yon blok yiqilsa butun karta
+    // yopilib qolmasin (karta — menejerning yagona ko'zi).
+    const [offboarding, onboarding] = await Promise.all([
+      this.offboarding.status(accountId, employeeId).catch(() => null),
+      this.onboarding.status(accountId, employeeId, now).catch(() => null),
+    ]);
 
     return {
       employee: {
@@ -100,7 +108,13 @@ export class EmployeeCardService {
         archived: employee.archived,
         roles: employee.hrRoles,
         telegramBound: employee.telegramChatId !== null,
-        hiredAt: employee.createdAt,
+        // `createdAt` — qator tizimga kiritilgan payt, HAQIQIY ishga qabul
+        // sanasi emas (eski jamoa bir kunda import qilingan). Sinov jarayoni
+        // boshlangan bo'lsa `probationStartsOn` aniqroq manba.
+        hiredAt: onboarding?.probationStartsOn ?? employee.createdAt,
+        // Hayot sikli bosqichi (TZ §6.3): sinovda · sinovdan o'tmagan ·
+        // faol · bo'shatilmoqda · arxivlangan.
+        lifecycleStage: onboarding?.lifecycleStage ?? null,
       },
       kpi: {
         byState,
@@ -142,6 +156,22 @@ export class EmployeeCardService {
             doneCount: offboarding.doneCount,
             total: offboarding.total,
             canArchive: offboarding.canArchive,
+          }
+        : null,
+      onboarding: onboarding
+        ? {
+            started: onboarding.started,
+            probationStartsOn: onboarding.probationStartsOn,
+            probationEndsOn: onboarding.probationEndsOn,
+            evaluationDate: onboarding.evaluationDate,
+            state: onboarding.state,
+            daysLeft: onboarding.daysLeft,
+            // Baholash sanasi yaqin/o'tgan va natija belgilanmagan.
+            warn: onboarding.warn,
+            outcome: onboarding.outcome,
+            doneCount: onboarding.doneCount,
+            total: onboarding.total,
+            canPass: onboarding.canPass,
           }
         : null,
     };

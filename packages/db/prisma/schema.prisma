@@ -116,6 +116,7 @@ model Account {
   cashierSessionVariances        CashierSessionVariance[]
   employeeKpiCorrections         EmployeeKpiCorrection[]
   employeeOffboardings           EmployeeOffboarding[]
+  employeeOnboardings            EmployeeOnboarding[]
   employeeNotes                  EmployeeNote[]
   kpiMetricDefs                  KpiMetricDef[]
   kpiProfiles                    KpiProfile[]
@@ -427,6 +428,9 @@ model Employee {
   cashierSessionVariances    CashierSessionVariance[]   @relation("CashierSessionVarianceCashier")
   kpiCorrections             EmployeeKpiCorrection[]    @relation("EmployeeKpiCorrectionEmployee")
   offboarding                EmployeeOffboarding?       @relation("EmployeeOffboardingEmployee")
+  onboarding                 EmployeeOnboarding?        @relation("EmployeeOnboardingEmployee")
+  startedOnboardings         EmployeeOnboarding[]       @relation("EmployeeOnboardingActor")
+  decidedOnboardings         EmployeeOnboarding[]       @relation("EmployeeOnboardingDecider")
   notes                      EmployeeNote[]             @relation("EmployeeNoteEmployee")
   authoredNotes              EmployeeNote[]             @relation("EmployeeNoteAuthor")
   voidedNotes                EmployeeNote[]             @relation("EmployeeNoteVoider")
@@ -9837,6 +9841,54 @@ model EmployeeOffboarding {
   /// Menejer ekrani: «tugallanmagan bo'shatishlar».
   @@index([accountId, completedAt])
   @@map("employee_offboardings")
+}
+
+/// Ishga qabul tomoni — sinov muddati (menejer TZ 4M.4 / §6.3 «hayot sikli»).
+///
+/// `EmployeeOffboarding` ning ko'zgusi: u yerda ro'yxat tugamaguncha xodim
+/// ARXIVLANMAYDI, bu yerda ro'yxat tugamaguncha sinov «O'TDI» deb yopilmaydi.
+/// Ikkalasida ham `auto` bandni qo'lda belgilab bo'lmaydi.
+model EmployeeOnboarding {
+  id         String @id @default(uuid()) @db.Uuid
+  accountId  String @map("account_id") @db.Uuid
+  employeeId String @map("employee_id") @db.Uuid
+
+  /// Sinov muddatining boshlanishi (= ishga qabul sanasi).
+  /// `Employee.createdAt` EMAS: qator tizimga kiritilgan payt ishga olingan
+  /// kun bilan mos kelmaydi (eski xodimlar bir kunda import qilingan).
+  probationStartsOn DateTime? @map("probation_starts_on") @db.Date
+  /// Sinov muddatining tugashi.
+  probationEndsOn   DateTime? @map("probation_ends_on") @db.Date
+  /// Baholash sanasi. NULL bo'lsa `probationEndsOn` ishlatiladi (TZ §6.3 —
+  /// «o'sha kuni menejer navbatiga element tushadi»).
+  evaluationOn      DateTime? @map("evaluation_on") @db.Date
+
+  /// Sinov natijasi: 'passed' | 'failed'. NULL = hali SINOVDA.
+  /// «O'tdi» faqat bloklovchi bandlar yopilganda yoziladi; «o'tmadi» esa
+  /// har doim mumkin — aks holda ro'yxat odamni ishdan bo'shata olmaslikka
+  /// olib kelardi.
+  outcome     String?   @db.VarChar(10)
+  outcomeAt   DateTime? @map("outcome_at") @db.Timestamptz()
+  outcomeById String?   @map("outcome_by_id") @db.Uuid
+  outcomeNote String?   @map("outcome_note")
+
+  /// Qo'lda tasdiqlangan bandlar: `{ [key]: { doneAt, byId } }` (offboarding bilan bir xil shakl).
+  items Json @default("{}")
+
+  startedById String?  @map("started_by_id") @db.Uuid
+  startedAt   DateTime @default(now()) @map("started_at") @db.Timestamptz()
+
+  account   Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  employee  Employee  @relation("EmployeeOnboardingEmployee", fields: [employeeId], references: [id], onDelete: Cascade)
+  startedBy Employee? @relation("EmployeeOnboardingActor", fields: [startedById], references: [id], onDelete: SetNull)
+  decidedBy Employee? @relation("EmployeeOnboardingDecider", fields: [outcomeById], references: [id], onDelete: SetNull)
+
+  /// Bir xodimda bir vaqtda bitta sinov jarayoni.
+  @@unique([employeeId])
+  /// Menejer ekrani: «sinovda turganlar» + baholash sanasi bo'yicha tartib.
+  /// `outcome` birinchi — hali yopilmagan qatorlar tanlanadi, keyin sana.
+  @@index([accountId, outcome, evaluationOn])
+  @@map("employee_onboardings")
 }
 
 model EmployeeDailyKpi {

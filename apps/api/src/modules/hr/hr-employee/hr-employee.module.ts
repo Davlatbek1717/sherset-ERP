@@ -8,6 +8,7 @@ import { EmployeeTelegramService } from './employee-telegram.service.js';
 import { HrEmployeeController } from './hr-employee.controller.js';
 import { HrEmployeeService } from './hr-employee.service.js';
 import { OffboardingService } from './offboarding.service.js';
+import { OnboardingService } from './onboarding.service.js';
 
 @Module({
   // PermissionsModule OSHKORA: u @Global bo'lsa ham, `OffboardingService`
@@ -15,8 +16,20 @@ import { OffboardingService } from './offboarding.service.js';
   // global'ga tayanish DI grafini jim buzilishga ochiq qoldiradi.
   imports: [PrismaModule, AuthModule, HrAuthModule, PermissionsModule],
   controllers: [HrEmployeeController],
-  providers: [HrEmployeeService, EmployeeTelegramService, OffboardingService, EmployeeCardService],
+  providers: [
+    HrEmployeeService,
+    EmployeeTelegramService,
+    OffboardingService,
+    OnboardingService,
+    EmployeeCardService,
+  ],
   // EmployeeTelegramService export — telegram moduli `/start bind_` callback'da ishlatadi.
-  exports: [HrEmployeeService, EmployeeTelegramService, OffboardingService, EmployeeCardService],
+  exports: [
+    HrEmployeeService,
+    EmployeeTelegramService,
+    OffboardingService,
+    OnboardingService,
+    EmployeeCardService,
+  ],
 })
 export class HrEmployeeModule {}

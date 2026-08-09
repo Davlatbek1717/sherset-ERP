@@ -31,6 +31,7 @@ import {
 } from './hr-employee.schema.js';
 import { HrEmployeeService } from './hr-employee.service.js';
 import { OffboardingService } from './offboarding.service.js';
+import { OnboardingService } from './onboarding.service.js';
 
 @Controller('hr/employees')
 @UseGuards(JwtAuthGuard, HrPermissionGuard)
@@ -39,6 +40,7 @@ export class HrEmployeeController {
     @Inject(HrEmployeeService) private readonly svc: HrEmployeeService,
     @Inject(EmployeeTelegramService) private readonly telegram: EmployeeTelegramService,
     @Inject(OffboardingService) private readonly offboarding: OffboardingService,
+    @Inject(OnboardingService) private readonly onboarding: OnboardingService,
     @Inject(EmployeeCardService) private readonly card: EmployeeCardService,
   ) {}
 
@@ -132,6 +134,62 @@ export class HrEmployeeController {
   @RequireHrPermission('employees', 'full')
   async completeOffboarding(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     return this.offboarding.complete(user.accountId, id);
+  }
+
+  // ── Ishga qabul: sinov muddati (4M.4 «hayot sikli», TZ §6.3) ──────────────
+  //
+  // Bo'shatishning ko'zgusi: u yerda ro'yxat ARXIVLASHNI to'sadi, bu yerda
+  // ro'yxat sinovni «O'TDI» deb yopishni to'sadi. Ikkalasida ham tizim
+  // biladigan band qo'lda belgilanmaydi.
+  //
+  // `:id` li yo'llardan OLDIN — statik segment birinchi (fayl konventsiyasi):
+  // aks holda `onboarding` `:id` sifatida tutilib, ro'yxat 404 qaytarardi.
+
+  /** Sinovda turganlar + baholash sanasi ogohlantirishi — menejer navbati. */
+  @Get('onboarding')
+  @RequireHrPermission('employees', 'read')
+  async listOnboarding(@CurrentUser() user: AuthenticatedUser) {
+    return this.onboarding.listDue(user.accountId);
+  }
+
+  /** Bitta xodimning sinov holati (muddat + ro'yxat + hayot sikli bosqichi). */
+  @Get(':id/onboarding')
+  @RequireHrPermission('employees', 'read')
+  async onboardingStatus(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.onboarding.status(user.accountId, id);
+  }
+
+  /** Sinov muddatini belgilash/tuzatish — natija belgilangach yopiladi. */
+  @Post(':id/onboarding')
+  @RequireHrPermission('employees', 'full')
+  async startOnboarding(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    return this.onboarding.start(user.accountId, user.sub, id, body);
+  }
+
+  /** Qo'lda tasdiqlanadigan bandni belgilash (`auto` band rad etiladi). */
+  @Post(':id/onboarding/item')
+  @RequireHrPermission('employees', 'full')
+  async markOnboardingItem(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    return this.onboarding.markItem(user.accountId, user.sub, id, body);
+  }
+
+  /** Sinov natijasi: `{ result: 'passed' | 'failed', note? }`. */
+  @Post(':id/onboarding/outcome')
+  @RequireHrPermission('employees', 'full')
+  async setOnboardingOutcome(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    return this.onboarding.setOutcome(user.accountId, user.sub, id, body);
   }
 
   @Get()
