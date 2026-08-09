@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service.js';
+import { ACCOUNTABLE_STATES } from '../../cashier-session/shift-acceptance.js';
 import { buildAccountability, employeeDuties } from './accountability.js';
 import {
   LATE_ALERT_MINUTES,
@@ -35,39 +36,49 @@ export class LiveStatusService {
    * manbasiz «0 ta jihoz» menejerni yo'q ma'lumotga ishontirardi.
    */
   async accountability(accountId: string) {
-    const [shifts, handovers, picking, kpiPending, equipment] = await Promise.all([
-      this.prisma.client.cashierSession.findMany({
-        where: { accountId, state: 'open' },
-        select: {
-          cashierId: true,
-          openingCashMinor: true,
-          cashier: { select: { id: true, name: true } },
-        },
-      }),
-      this.prisma.client.driverCashHandover.groupBy({
-        by: ['driverId'],
-        where: { accountId, status: 'pending' },
-        _sum: { amountMinor: true },
-        _count: { _all: true },
-      }),
-      this.prisma.client.msPickList.groupBy({
-        by: ['pickedById'],
-        where: { accountId, pickState: 'picking', pickedById: { not: null } },
-        _count: { _all: true },
-      }),
-      this.prisma.client.employeeDailyKpi.groupBy({
-        by: ['employeeId'],
-        where: { accountId, state: { in: ['pending', 'stale', 'computed'] } },
-        _count: { _all: true },
-      }),
-      // MK05 — qaytarilmagan jihoz: OCHIQ biriktirish qatorlari (jihozdagi
-      // `status` ustuni emas — u qo'lda tahrirdan buzilgan bo'lishi mumkin).
-      this.prisma.client.equipmentAssignment.groupBy({
-        by: ['employeeId'],
-        where: { accountId, returnedAt: null },
-        _count: { _all: true },
-      }),
-    ]);
+    const [shifts, unacceptedShifts, handovers, picking, kpiPending, equipment] = await Promise.all(
+      [
+        this.prisma.client.cashierSession.findMany({
+          where: { accountId, state: 'open' },
+          select: {
+            cashierId: true,
+            openingCashMinor: true,
+            cashier: { select: { id: true, name: true } },
+          },
+        }),
+        // MK08 — yopilgan-u menejer QABUL QILMAGAN smenalar. Holatlar ro'yxati
+        // FSM'dan (`ACCOUNTABLE_STATES`), bu yerda takrorlanmaydi: aks holda
+        // yangi holat qo'shilganda javobgarlik taxtasi jimgina eskirardi.
+        this.prisma.client.cashierSession.groupBy({
+          by: ['cashierId'],
+          where: { accountId, acceptanceState: { in: [...ACCOUNTABLE_STATES] } },
+          _count: { _all: true },
+        }),
+        this.prisma.client.driverCashHandover.groupBy({
+          by: ['driverId'],
+          where: { accountId, status: 'pending' },
+          _sum: { amountMinor: true },
+          _count: { _all: true },
+        }),
+        this.prisma.client.msPickList.groupBy({
+          by: ['pickedById'],
+          where: { accountId, pickState: 'picking', pickedById: { not: null } },
+          _count: { _all: true },
+        }),
+        this.prisma.client.employeeDailyKpi.groupBy({
+          by: ['employeeId'],
+          where: { accountId, state: { in: ['pending', 'stale', 'computed'] } },
+          _count: { _all: true },
+        }),
+        // MK05 — qaytarilmagan jihoz: OCHIQ biriktirish qatorlari (jihozdagi
+        // `status` ustuni emas — u qo'lda tahrirdan buzilgan bo'lishi mumkin).
+        this.prisma.client.equipmentAssignment.groupBy({
+          by: ['employeeId'],
+          where: { accountId, returnedAt: null },
+          _count: { _all: true },
+        }),
+      ],
+    );
 
     // Xodim → yig'ilgan faktlar.
     type Acc = {
@@ -79,6 +90,7 @@ export class LiveStatusService {
       pickingCount: number;
       pendingKpiDays: number;
       openEquipmentCount: number;
+      unacceptedShiftCount: number;
     };
     const byEmp = new Map<string, Acc>();
     const at = (id: string, name?: string | null): Acc => {
@@ -96,6 +108,7 @@ export class LiveStatusService {
         pickingCount: 0,
         pendingKpiDays: 0,
         openEquipmentCount: 0,
+        unacceptedShiftCount: 0,
       };
       byEmp.set(id, fresh);
       return fresh;
@@ -123,6 +136,9 @@ export class LiveStatusService {
     }
     for (const e of equipment) {
       at(e.employeeId).openEquipmentCount += e._count._all;
+    }
+    for (const u of unacceptedShifts) {
+      at(u.cashierId).unacceptedShiftCount += u._count._all;
     }
 
     // Ismlari yo'q xodimlarni bitta so'rovda to'ldiramiz.

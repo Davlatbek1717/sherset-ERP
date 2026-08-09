@@ -11,6 +11,7 @@ const EMPTY: DutyInput = {
   pickingCount: 0,
   pendingKpiDays: 0,
   openEquipmentCount: 0,
+  unacceptedShiftCount: 0,
 };
 
 describe('employeeDuties', () => {
@@ -92,6 +93,33 @@ describe('employeeDuties', () => {
   it('pulsiz majburiyatda amountMinor NULL (0 emas)', () => {
     const d = employeeDuties({ ...EMPTY, pendingKpiDays: 4 });
     expect(d.duties[0]?.amountMinor).toBeNull();
+  });
+
+  it('QABUL QILINMAGAN smena kassir ustida qoladi (MK08)', () => {
+    // Smena yopildi ≠ smena hal bo'ldi: menejer ko'rmaguncha javobgarlik
+    // kassirda. Busiz yopilgan-u ko'rilmagan smena taxtadan YO'QOLARDI.
+    const d = employeeDuties({ ...EMPTY, unacceptedShiftCount: 2 });
+    expect(d.duties).toHaveLength(1);
+    expect(d.duties[0]?.kind).toBe(DUTY.shiftUnaccepted);
+    expect(d.duties[0]?.count).toBe(2);
+    // Summasi YO'Q: pul allaqachon topshirilgan, ochiq emas. Uni «kimda
+    // qancha pul» raqamiga qo'shish naqdni ikki marta sanardi.
+    expect(d.duties[0]?.amountMinor).toBeNull();
+  });
+
+  it('OCHIQ va QABUL QILINMAGAN smena — ikki AYRIM majburiyat', () => {
+    // Ochiq smenada yashiqdagi pul javobgarligi; yopilgan-u qabul
+    // qilinmaganda esa hujjat javobgarligi. Bir qatorga qo'shish menejerga
+    // «yashiqda pul bor» degan yolg'on signal berardi.
+    const d = employeeDuties({
+      ...EMPTY,
+      openShiftCount: 1,
+      openShiftCashMinor: 500_000n,
+      unacceptedShiftCount: 3,
+    });
+    expect(d.duties.map((x) => x.kind)).toEqual([DUTY.openShift, DUTY.shiftUnaccepted]);
+    expect(d.totalCashMinor).toBe(500_000n);
+    expect(d.totalCount).toBe(4);
   });
 
   it('2^53 dan katta summada aniq', () => {

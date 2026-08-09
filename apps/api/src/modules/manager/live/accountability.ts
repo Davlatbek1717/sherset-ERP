@@ -21,6 +21,14 @@
 export const DUTY = {
   /** Kassa smenasi ochiq — yashiqdagi pul shu odamning javobgarligida. */
   openShift: 'open_shift',
+  /**
+   * Smena yopilgan, lekin MENEJER hali qabul qilmagan (MK08).
+   *
+   * `openShift` dan AYRIM: u yerda yashiqdagi pul, bu yerda hujjat
+   * javobgarligi. Bir qatorga qo'shish menejerga «yashiqda pul bor» degan
+   * yolg'on signal berardi va naqd ikki marta sanalardi.
+   */
+  shiftUnaccepted: 'shift_unaccepted',
   /** Haydovchi qo'lidagi topshirilmagan naqd. */
   cashOnHand: 'cash_on_hand',
   /** Boshlangan-u tugallanmagan yig'ish. */
@@ -63,10 +71,13 @@ export interface DutyInput {
   pendingKpiDays: number;
   /** Reyestrda ochiq (qaytarilmagan) biriktirishlar soni. */
   openEquipmentCount: number;
+  /** Yopilgan-u menejer qabul qilmagan smenalar soni (MK08). */
+  unacceptedShiftCount: number;
 }
 
 const LABELS: Record<DutyKind, string> = {
   [DUTY.openShift]: 'Ochiq kassa smenasi',
+  [DUTY.shiftUnaccepted]: 'Qabul qilinmagan smena',
   [DUTY.cashOnHand]: "Topshirilmagan naqd (haydovchi qo'lida)",
   [DUTY.pickingOpen]: "Tugallanmagan yig'ish",
   [DUTY.kpiPending]: 'Qabul qilinmagan KPI kunlari',
@@ -86,6 +97,9 @@ export function employeeDuties(input: DutyInput): EmployeeDuties {
   };
 
   push(DUTY.openShift, input.openShiftCount, input.openShiftCashMinor);
+  // Pulsiz ATAYLAB: pul allaqachon topshirilgan, yashiqda emas. Summa
+  // qo'shilsa bitta naqd ikki qatorda sanalardi.
+  push(DUTY.shiftUnaccepted, input.unacceptedShiftCount, null);
   push(DUTY.cashOnHand, input.pendingHandoverCount, input.pendingHandoverMinor);
   push(DUTY.pickingOpen, input.pickingCount, null);
   push(DUTY.kpiPending, input.pendingKpiDays, null);

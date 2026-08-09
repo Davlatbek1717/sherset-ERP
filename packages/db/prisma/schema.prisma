@@ -114,6 +114,7 @@ model Account {
   cashierSessions                CashierSession[]
   cashierAuditEvents             CashierAuditEvent[]
   cashierSessionVariances        CashierSessionVariance[]
+  cashierSessionAcceptanceEvents CashierSessionAcceptanceEvent[]
   employeeKpiCorrections         EmployeeKpiCorrection[]
   employeeOffboardings           EmployeeOffboarding[]
   employeeOnboardings            EmployeeOnboarding[]
@@ -7865,6 +7866,29 @@ model CashierSession {
   published   Boolean @default(false)
   attributes  Json?   @default("{}")
 
+  /// MENEJER QABULI (MK08 / 4M TZ §6) — `state` dan ALOHIDA o'q.
+  ///
+  /// `state` = smena hayoti (`open`/`closed`), bu ustun = «kim buni ko'rdi va
+  /// rozi bo'ldi». Ikkalasini bitta ustunga siqish yopilgan-u ko'rilmagan
+  /// smenani ko'rsatib bo'lmas holatga olib kelardi.
+  ///
+  /// Qiymatlar `cashier-session/shift-acceptance.ts` FSM'idan: `open` →
+  /// `pending` → `accepted` | `rejected` | `escalated` | `force_accepted` |
+  /// `stale`. VarChar (enum EMAS) — sxemaning umumiy konvensiyasi.
+  acceptanceState String @default("open") @map("acceptance_state") @db.VarChar(20)
+
+  /// Kim va qachon qabul qilgan. FK YO'Q — `actorId` naqshi
+  /// (`EmployeeDailyKpi.acceptedById`, `SupplyApprovalEvent`): aktyor tizim
+  /// yoki egasi ham bo'lishi mumkin.
+  acceptedById String?   @map("accepted_by_id") @db.Uuid
+  acceptedAt   DateTime? @map("accepted_at") @db.Timestamptz()
+
+  /// Qabul holati OXIRGI MARTA qachon o'zgardi — eskalatsiya soati shundan
+  /// sanaydi. `updatedAt` YARAMAYDI: u har qanday tahrirda yangilanadi, ya'ni
+  /// javobsiz turgan smena har tegishda «yangi» bo'lib ko'rinardi va hech
+  /// qachon egaga chiqmasdi (kunlik KPI'dagi `stateChangedAt` bilan bir sabab).
+  acceptanceChangedAt DateTime? @map("acceptance_changed_at") @db.Timestamptz()
+
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
 
@@ -7883,10 +7907,58 @@ model CashierSession {
   retailSalesReturns  RetailSalesReturn[]   @relation("RetailSalesReturnShift")
   auditEvents         CashierAuditEvent[]
   variances          CashierSessionVariance[] @relation("CashierSessionVarianceSession")
+  acceptanceEvents   CashierSessionAcceptanceEvent[]
 
   @@index([accountId, cashierId, state])
   @@index([accountId, cashDeskId, state])
+  /// Menejer navbati: «qabul kutayotgan smenalar, eng eskisi birinchi».
+  @@index([accountId, acceptanceState, acceptanceChangedAt])
+  /// Javobgarlik taxtasi: «shu kassirda nechta yopilmagan smena qolgan».
+  @@index([accountId, cashierId, acceptanceState])
   @@map("cashier_sessions")
+}
+
+/// Smena qabulining APPEND-ONLY jurnali (MK08 / 4M TZ §6, §7).
+///
+/// NEGA JADVAL, ustun emas: menejer «har harakati ham o'lchanadi» (TZ §7) —
+/// egaga haftalik xulosa «nechta qabul, nechta rad etish, qaysi sabablar»
+/// degan savolga aynan shu qatorlardan javob beradi. Yagona `rejectReason`
+/// ustuni faqat OXIRGI holatni saqlardi va nizo paytida yozma iz qolmasdi.
+///
+/// Qator HECH QACHON tahrirlanmaydi/o'chirilmaydi. Tushuntirish halqasi ham
+/// shu yerda: kassir javobi `explain` hodisasining `comment` maydonida.
+model CashierSessionAcceptanceEvent {
+  id        String @id @default(uuid()) @db.Uuid
+  accountId String @map("account_id") @db.Uuid
+  sessionId String @map("session_id") @db.Uuid
+
+  fromState String @map("from_state") @db.VarChar(20)
+  toState   String @map("to_state") @db.VarChar(20)
+
+  /// `shift-acceptance.ts` dagi SHIFT_ACCEPTANCE_ACTION qiymati.
+  action String @db.VarChar(30)
+
+  /// system | manager | cashier | owner (FSM'dagi SHIFT_ACTOR).
+  actorType String  @map("actor_type") @db.VarChar(20)
+  actorId   String? @map("actor_id") @db.Uuid
+
+  /// Yopiq ro'yxatdan (FSM SHIFT_REASON_CODES). `other` bo'lsa izoh MAJBURIY.
+  reasonCode String? @map("reason_code") @db.VarChar(40)
+  /// Rad etish izohi yoki KASSIRNING TUSHUNTIRISHI — nizoda yagona yozma iz.
+  comment    String? @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  account Account        @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  session CashierSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  /// Smena kartochkasidagi tarix.
+  @@index([accountId, sessionId, createdAt])
+  /// Egaga haftalik xulosa: «shu haftada nima bo'ldi».
+  @@index([accountId, createdAt(sort: Desc)])
+  /// «Qaysi sabab bilan ko'p rad etilyapti» statistikasi.
+  @@index([accountId, action, createdAt(sort: Desc)])
+  @@map("cashier_session_acceptance_events")
 }
 
 /// CashierAuditEvent — kassa TZ §9: the control half of the «trust the cashier»

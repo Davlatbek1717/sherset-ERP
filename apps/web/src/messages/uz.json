@@ -1066,6 +1066,7 @@
       "cash_variances": "Kassa farqlari",
       "live": "Jonli holat",
       "price_control": "Narx nazorati",
+      "shift_acceptance": "Smena qabuli",
       "stock_signals": "Zaxira signallari",
       "weekly_summary": "Haftalik xulosa"
     }
@@ -8468,7 +8469,8 @@
       "empty_title": "Yopilmagan majburiyat yo`q",
       "empty_hint": "Hech kimda ochiq smena, topshirilmagan naqd, tugallanmagan yig`ish, qabul qilinmagan KPI kuni yoki qaytarilmagan jihoz yo`q.",
       "no_employee": "Xodim ko`rsatilmagan",
-      "scope_note": "Jihoz reyestr bo`yicha sanaladi: ochiq biriktirishdagi jihozlar ko`rsatiladi. Jihozning qiymati naqd jamiga kirmaydi — reyestrda narx saqlanmaydi."
+      "scope_note": "Jihoz reyestr bo`yicha sanaladi: ochiq biriktirishdagi jihozlar ko`rsatiladi. Jihozning qiymati naqd jamiga kirmaydi — reyestrda narx saqlanmaydi.",
+      "duty_shift_unaccepted": "Qabul qilinmagan smena"
     },
     "menejerStockSignals": {
       "title": "Zaxira signallari",
@@ -8605,6 +8607,39 @@
       "type_dokon": "Do'kon",
       "type_oddiy": "Oddiy",
       "type_usta": "Usta"
+    },
+    "shiftAcceptance": {
+      "title": "Smena yakunini qabul qilish",
+      "hint": "Yopilgan smenani menejer ko'rib chiqadi. Qabul qilish summalarni O'ZGARTIRMAYDI — bu «dalilni ko'rdim» degani. Raqam noto'g'ri bo'lsa: rad eting, kassir tushuntiradi.",
+      "loading": "Yuklanmoqda…",
+      "empty_title": "Qabul kutayotgan smena yo'q",
+      "empty_hint": "Barcha yopilgan smenalar ko'rib chiqilgan.",
+      "sales_count": "Cheklar",
+      "expected": "Kutilgan",
+      "counted": "Sanalgan",
+      "shortage": "Kamomad",
+      "surplus": "Ortiqcha",
+      "awaits_cashier": "Rad etilgan — kassir tushuntirishini kutmoqda.",
+      "open_z_report": "Z-hisobot",
+      "accept": "Qabul qilish",
+      "reject": "Rad etish",
+      "reject_submit": "Rad etishni tasdiqlash",
+      "reason": "Sabab",
+      "reason_placeholder": "Sababni tanlang",
+      "comment_placeholder": "Izoh (`Boshqa` sababida majburiy)",
+      "reason_variance_unexplained": "Kassa farqi tushuntirilmagan",
+      "reason_zreport_mismatch": "Z-hisobot mos kelmadi",
+      "reason_cash_shortage": "Kamomad",
+      "reason_document_missing": "Hujjat biriktirilmagan",
+      "reason_discipline": "Intizom",
+      "reason_other": "Boshqa",
+      "state_open": "Ochiq",
+      "state_pending": "Qabul kutmoqda",
+      "state_accepted": "Qabul qilingan",
+      "state_rejected": "Rad etilgan",
+      "state_escalated": "Egaga chiqarilgan",
+      "state_force_accepted": "Majburiy yopilgan",
+      "state_stale": "Eskirgan"
     }
   },
   "print_entity": {

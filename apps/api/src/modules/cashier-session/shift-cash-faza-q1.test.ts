@@ -158,6 +158,9 @@ function makeClient(f: Fixture = {}) {
       createMany: vi.fn(async () => ({ count: 1 })),
       findMany: vi.fn(async () => []),
     },
+    // MK08 — yopish AYNI tranzaksiyada smenani menejer navbatiga qo'yadi
+    // (`open_for_review`) va jurnalning birinchi qatorini yozadi.
+    cashierSessionAcceptanceEvent: { create: vi.fn(async () => ({ id: 'ae-1' })) },
     hrTelegramOutbox: { create: vi.fn(async () => ({ id: 'ob-1' })) },
     $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(client)),
   };
@@ -269,6 +272,40 @@ describe('Faza Q1 · close() yig`ilayotgan cheklarni bloklaydi', () => {
 
     await svcOf(client).close(ACC, CASHIER, SESSION, { closingCashMinor: '0' });
     expect(session.state).toBe('closed');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 2b. MK08 — yopish MENEJER qabuli navbatini ochadi
+// ---------------------------------------------------------------------------
+
+describe('MK08 · close() smenani qabul navbatiga qo`yadi', () => {
+  it('yopilgan smena `pending` bo`ladi va vaqti muhrlanadi', async () => {
+    const { client, session } = makeClient({ sales: [sale({ id: 'a', state: 'posted' })] });
+
+    await svcOf(client).close(ACC, CASHIER, SESSION, { closingCashMinor: '0' });
+
+    // Busiz yopilgan smena hech kimning stolida ko'rinmasdi: `state='closed'`
+    // «hal bo'ldi» degani EMAS.
+    expect(session.acceptanceState).toBe('pending');
+    expect(session.acceptanceChangedAt).toBeInstanceOf(Date);
+  });
+
+  it('jurnalning BIRINCHI qatori — tizimning `open_for_review` hodisasi', async () => {
+    const { client } = makeClient({ sales: [sale({ id: 'a', state: 'posted' })] });
+
+    await svcOf(client).close(ACC, CASHIER, SESSION, { closingCashMinor: '0' });
+
+    const create = client.cashierSessionAcceptanceEvent.create;
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(create.mock.calls[0][0].data).toMatchObject({
+      sessionId: SESSION,
+      fromState: 'open',
+      toState: 'pending',
+      action: 'open_for_review',
+      actorType: 'system',
+      actorId: null,
+    });
   });
 });
 

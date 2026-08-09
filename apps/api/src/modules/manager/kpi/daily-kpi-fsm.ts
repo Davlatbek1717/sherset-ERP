@@ -30,7 +30,23 @@
  *   2. **Faqat `accepted`/`force_accepted` oylikka kiradi** (M-Q8 bloklash shu
  *      yerda). Bu `countsTowardPayroll` da bitta joyda turadi — 4M.3 shuni
  *      o'qiydi, o'z ro'yxatini yozmaydi.
+ *
+ * ⚙️ **Qoida dvigateli ajratilgan** (MK08): o'tish/aktyor/sabab/idempotentlik
+ * tekshiruvi `shared/acceptance-fsm.ts` da. Bu yerda KUN jadvali va kunga xos
+ * so'rovlar (`countsTowardPayroll`, `isFrozen`, tuzatma) qoladi. Tashqi
+ * shartnoma (`evaluate`, `allowedActions`, `FsmFailure` …) O'ZGARMADI.
  */
+
+import {
+  type AcceptanceFailure,
+  type AcceptanceInput,
+  type AcceptanceResult,
+  type AcceptanceTransition,
+  commentRequired,
+  createAcceptanceFsm,
+} from '../../shared/acceptance-fsm.js';
+
+export { commentRequired };
 
 // ── Holatlar ────────────────────────────────────────────────────────────────
 
@@ -84,28 +100,16 @@ export type Actor = (typeof ACTOR)[keyof typeof ACTOR];
 
 // ── O'tishlar jadvali ───────────────────────────────────────────────────────
 
-export interface Transition {
-  readonly action: DailyKpiAction;
-  readonly from: readonly DailyKpiState[];
-  readonly to: DailyKpiState;
-  readonly actors: readonly Actor[];
-  /** Sabab kodi majburiymi. */
-  readonly reasonRequired: boolean;
-  /**
-   * Amal allaqachon maqsad holatiga olib kelgan bo'lsa — takror chaqiruv XATO
-   * emas, **no-op** (TZ §10.2 idempotentlik shartnomasi).
-   *
-   * Nega kerak: menejer 20+ kunni klaviatura bilan ketma-ket yopadi va `A` ni
-   * ikki marta bosishi mutlaqo normal hodisa. Busiz ikkinchi bosish 409 berardi
-   * va menejer «ishlamadi» deb o'ylardi; muhimrog'i — 4M.3 da bonus yozilganda
-   * takror o'tish bonusni IKKI MARTA yozib yuborardi. Idempotentlik shu yerda
-   * boshlanadi: no-op holatida na yozuv, na jurnal qatori bo'ladi.
-   *
-   * `reopen` va `explain` idempotent EMAS — ular har safar YANGI hodisa
-   * (qayta ochish sababi va tushuntirish matni har safar boshqacha).
-   */
-  readonly idempotent: boolean;
-}
+/**
+ * Qator shakli DVIGATELDAN keladi (`shared/acceptance-fsm.ts`). Bu yerda faqat
+ * KUN jadvali turadi — qoida (o'tish/aktyor/sabab/idempotentlik tekshiruvi)
+ * dvigatelda, chunki smena qabuli (MK08) aynan shu qoidani takrorlaydi va
+ * nusxa ko'chirilsa ikkalasi bir kunda ikki xil bo'lardi.
+ *
+ * `reopen` va `explain` idempotent EMAS — ular har safar YANGI hodisa (qayta
+ * ochish sababi va tushuntirish matni har safar boshqacha).
+ */
+export type Transition = AcceptanceTransition<DailyKpiState, DailyKpiAction, Actor>;
 
 export const TRANSITIONS: readonly Transition[] = [
   {
@@ -224,14 +228,12 @@ export function isAdjustable(state: DailyKpiState): boolean {
 }
 
 export function transitionFor(action: DailyKpiAction): Transition | undefined {
-  return TRANSITIONS.find((t) => t.action === action);
+  return FSM.transitionFor(action);
 }
 
 /** Shu holatdan qaysi amallar mumkin — ekrandagi tugmalar shundan chiziladi. */
 export function allowedActions(state: DailyKpiState, actor: Actor): DailyKpiAction[] {
-  return TRANSITIONS.filter((t) => t.from.includes(state) && t.actors.includes(actor)).map(
-    (t) => t.action,
-  );
+  return FSM.allowedActions(state, actor);
 }
 
 // ── Sabab kodlari ───────────────────────────────────────────────────────────
@@ -275,17 +277,17 @@ export const REASON_CODES = {
 
 export type ReasonCodeAction = keyof typeof REASON_CODES;
 
-export function reasonCodesFor(action: DailyKpiAction): readonly string[] {
-  return (REASON_CODES as Record<string, readonly string[] | undefined>)[action] ?? [];
-}
-
 /**
- * `other` — har ro'yxatning qochish yo'li. Izohsiz `other` sabab kodlarini
- * o'ldiradi: hamma «other» ni tanlaydi va statistika yo'qoladi. Shuning uchun
- * `other` da izoh MAJBURIY.
+ * Kun jadvali + sabab kodlari dvigatelga ULANDI. Shu satrdan keyin barcha
+ * tekshiruv `shared/acceptance-fsm.ts` da bo'ladi — bu yerda takrorlanmaydi.
  */
-export function commentRequired(reasonCode: string | null | undefined): boolean {
-  return reasonCode === 'other';
+const FSM = createAcceptanceFsm<DailyKpiState, DailyKpiAction, Actor>({
+  transitions: TRANSITIONS,
+  reasonCodes: REASON_CODES,
+});
+
+export function reasonCodesFor(action: DailyKpiAction): readonly string[] {
+  return FSM.reasonCodesFor(action);
 }
 
 /** Menejer javob kutadigan kun necha kundan keyin egasiga chiqadi (§1.2). */
@@ -293,80 +295,18 @@ export const ESCALATE_AFTER_DAYS = 3;
 
 // ── Tekshirish ──────────────────────────────────────────────────────────────
 
-export type FsmFailure =
-  | { readonly code: 'unknown_action'; readonly action: string }
-  | {
-      readonly code: 'illegal_transition';
-      readonly action: DailyKpiAction;
-      readonly from: DailyKpiState;
-      readonly allowed: readonly DailyKpiState[];
-    }
-  | { readonly code: 'actor_not_allowed'; readonly action: DailyKpiAction; readonly actor: Actor }
-  | { readonly code: 'reason_required'; readonly action: DailyKpiAction }
-  | {
-      readonly code: 'unknown_reason';
-      readonly action: DailyKpiAction;
-      readonly reasonCode: string;
-    }
-  | { readonly code: 'comment_required'; readonly action: DailyKpiAction };
+export type FsmFailure = AcceptanceFailure<DailyKpiState, DailyKpiAction, Actor>;
 
-export type FsmResult =
-  | {
-      readonly ok: true;
-      readonly to: DailyKpiState;
-      readonly transition: Transition;
-      /**
-       * Kun ALLAQACHON maqsad holatida edi — yozish ham, jurnal qatori ham
-       * SHART EMAS. Chaqiruvchi yon ta'sirlarni (bonus, bildirishnoma)
-       * o'tkazib yuborishi kerak: idempotentlik shu bilan ta'minlanadi.
-       */
-      readonly noop: boolean;
-    }
-  | { readonly ok: false; readonly failure: FsmFailure };
+export type FsmResult = AcceptanceResult<DailyKpiState, DailyKpiAction, Actor>;
 
-export interface FsmInput {
-  readonly from: DailyKpiState;
-  readonly action: DailyKpiAction;
-  readonly actor: Actor;
-  readonly reasonCode?: string | null;
-  readonly comment?: string | null;
-}
+export type FsmInput = AcceptanceInput<DailyKpiState, DailyKpiAction, Actor>;
 
 /**
  * Yagona kirish nuqtasi. Servis SHU javobni bajaradi — o'z shartini yozmaydi,
  * aks holda qoida ikki joyda bo'lib, ular bir-biridan uzoqlashadi.
  */
 export function evaluate(input: FsmInput): FsmResult {
-  const transition = transitionFor(input.action);
-  if (!transition) return { ok: false, failure: { code: 'unknown_action', action: input.action } };
-
-  // Aktyor va sabab tekshiruvi no-op yo'lida ham ISHLAYDI (pastda) — aks holda
-  // «takror» teshigi orqali sababsiz rad etish yoki begona aktyor o'tib ketardi.
-  const repeat = transition.idempotent && input.from === transition.to;
-
-  if (!repeat && !transition.from.includes(input.from)) {
-    return {
-      ok: false,
-      failure: {
-        code: 'illegal_transition',
-        action: input.action,
-        from: input.from,
-        allowed: transition.from,
-      },
-    };
-  }
-
-  if (!transition.actors.includes(input.actor)) {
-    return {
-      ok: false,
-      failure: { code: 'actor_not_allowed', action: input.action, actor: input.actor },
-    };
-  }
-
-  const reasonFailure = checkReason(input.action, input.reasonCode, input.comment, transition);
-  if (reasonFailure) return { ok: false, failure: reasonFailure };
-
-  return { ok: true, to: transition.to, transition, noop: repeat };
+  return FSM.evaluate(input);
 }
 
 /**
@@ -389,28 +329,8 @@ export function evaluateAdjust(input: {
       },
     };
   }
-  const failure = checkReason(DAILY_KPI_ACTION.adjust, input.reasonCode, input.comment, {
+  const failure = FSM.checkReason(DAILY_KPI_ACTION.adjust, input.reasonCode, input.comment, {
     reasonRequired: true,
   });
   return failure ? { ok: false, failure } : { ok: true };
-}
-
-function checkReason(
-  action: DailyKpiAction,
-  reasonCode: string | null | undefined,
-  comment: string | null | undefined,
-  transition: { readonly reasonRequired: boolean },
-): FsmFailure | null {
-  const codes = reasonCodesFor(action);
-
-  if (!reasonCode) {
-    return transition.reasonRequired ? { code: 'reason_required', action } : null;
-  }
-  if (codes.length > 0 && !codes.includes(reasonCode)) {
-    return { code: 'unknown_reason', action, reasonCode };
-  }
-  if (commentRequired(reasonCode) && !comment?.trim()) {
-    return { code: 'comment_required', action };
-  }
-  return null;
 }

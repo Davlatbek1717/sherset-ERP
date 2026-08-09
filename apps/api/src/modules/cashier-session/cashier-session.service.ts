@@ -40,6 +40,12 @@ import {
   summarizeCashOut,
   validateCashOut,
 } from './pos-cash-out.js';
+// MK08 — smena yopilishi bilan MENEJER qabuli navbatiga tushadi.
+import {
+  SHIFT_ACCEPTANCE_ACTION,
+  SHIFT_ACCEPTANCE_STATE,
+  SHIFT_ACTOR,
+} from './shift-acceptance.js';
 // Farq akti va Z-hisobot qoidalari — sof modul (§8.4/§8.5).
 import {
   type VarianceAct,
@@ -259,14 +265,21 @@ export class CashierSessionService {
         // closingCash/expected/discrepancy computed from a stale aggregate
         // read. updateMany returns count=0 if the session has already been
         // closed by a peer.
+        const closedAt = new Date();
         const flipResult = await tx.cashierSession.updateMany({
           where: { id: sessionId, accountId, state: 'open' },
           data: {
             state: 'closed',
-            closedAt: new Date(),
+            closedAt,
             closingCashMinor: closingCash,
             expectedCashMinor: expectedCash,
             discrepancyMinor: discrepancy,
+            // MK08 — yopilgan smena MENEJER navbatiga tushadi
+            // (`open_for_review`). Ayni `updateMany` ichida: agar keyin
+            // alohida yozilsa va oradagi xato yuz bersa, smena yopilgan-u
+            // hech kimning stolida ko'rinmaydigan holatda qolardi.
+            acceptanceState: SHIFT_ACCEPTANCE_STATE.pending,
+            acceptanceChangedAt: closedAt,
             // Persist the close-time note only when supplied — a non-
             // destructive conditional set (codebase-wide convention) so a
             // close without a note keeps the open-time description (§24).
@@ -278,6 +291,20 @@ export class CashierSessionService {
             `Session ${sessionId} state changed; close aborted (already closed?)`,
           );
         }
+        // Qabul jurnalining BIRINCHI qatori — «tizim ko'rikka qo'ydi».
+        // Busiz jurnal menejerning birinchi bosishidan boshlanardi va
+        // «qachondan beri kutmoqda» savoliga javob yo'q bo'lardi.
+        await tx.cashierSessionAcceptanceEvent.create({
+          data: {
+            accountId,
+            sessionId,
+            fromState: SHIFT_ACCEPTANCE_STATE.open,
+            toState: SHIFT_ACCEPTANCE_STATE.pending,
+            action: SHIFT_ACCEPTANCE_ACTION.openForReview,
+            actorType: SHIFT_ACTOR.system,
+            actorId: null,
+          },
+        });
         return { expectedCash, discrepancy };
       },
       { isolationLevel: 'Serializable', timeout: 15000 },

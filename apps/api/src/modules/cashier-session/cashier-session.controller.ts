@@ -3,12 +3,18 @@ import type { AuthenticatedUser } from '../auth/auth.schema.js';
 import { CurrentUser } from '../auth/current-user.decorator.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { RequirePermission } from '../permissions/require-permission.decorator.js';
+import { ShiftAcceptanceQuerySchema, ShiftTransitionSchema } from './cashier-session.schema.js';
 import { CashierSessionService } from './cashier-session.service.js';
+import { SHIFT_ACTOR, type ShiftActor } from './shift-acceptance.js';
+import { ShiftAcceptanceService, type ShiftActorContext } from './shift-acceptance.service.js';
 
 @Controller('cashier-sessions')
 @UseGuards(JwtAuthGuard)
 export class CashierSessionController {
-  constructor(@Inject(CashierSessionService) private readonly sessions: CashierSessionService) {}
+  constructor(
+    @Inject(CashierSessionService) private readonly sessions: CashierSessionService,
+    @Inject(ShiftAcceptanceService) private readonly acceptance: ShiftAcceptanceService,
+  ) {}
 
   @Get()
   @RequirePermission({ entity: 'cashiersession', action: 'view' })
@@ -58,6 +64,49 @@ export class CashierSessionController {
     @Query() query: Record<string, unknown>,
   ) {
     return this.sessions.listVariances(user.accountId, query);
+  }
+
+  // ── MK08 · smena yakunini qabul qilish (4M TZ §6) ───────────────────────
+  //
+  // ⚠️ Yo'llar `:id` dan OLDIN: `acceptance` statik segmenti aks holda
+  // `:id` ga tushib qolardi (fayldagi konvensiya — `current`, `variances`).
+
+  /** Menejer navbati: qabul kutayotgan smenalar (eng eskisi birinchi). */
+  @Get('acceptance/queue')
+  @RequirePermission({ entity: 'cashiersession', action: 'view' })
+  async acceptanceQueue(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: Record<string, unknown>,
+  ) {
+    const parsed = ShiftAcceptanceQuerySchema.parse(query);
+    return this.acceptance.queue(user.accountId, parsed);
+  }
+
+  /** Qabul ekrani: Z-hisobot + farq akti + jurnal + mumkin tugmalar. */
+  @Get('acceptance/:id')
+  @RequirePermission({ entity: 'cashiersession', action: 'view' })
+  async acceptanceDetail(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.acceptance.detail(shiftCtxOf(user), id);
+  }
+
+  /**
+   * Qabul / rad etish / tushuntirish / eskalatsiya / qayta ochish.
+   *
+   * 🔴 Bu yo'l SUMMALARGA TEGMAYDI — servis darajasida qulflangan. Ruxsat
+   * `update` (`create` emas): qabul yangi hujjat yaratmaydi.
+   */
+  @Post('acceptance/:id/transition')
+  @RequirePermission({ entity: 'cashiersession', action: 'update' })
+  async acceptanceTransition(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    const parsed = ShiftTransitionSchema.parse(body);
+    return this.acceptance.transition(shiftCtxOf(user), id, parsed.action, {
+      reasonCode: parsed.reasonCode ?? null,
+      comment: parsed.comment ?? null,
+    });
   }
 
   /** Aktni tan olish — summalar o'zgarmaydi, faqat «ko'rildi» + izoh. */
@@ -156,4 +205,21 @@ export class CashierSessionController {
   async drawerOps(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     return this.sessions.listDrawerOps(user.accountId, id);
   }
+}
+
+/**
+ * Aktyor roli — mavjud `hrRoles` konvensiyasidan (yangi rol tizimi o'ylab
+ * topilmaydi; `manager-kpi.controller.resolveActor` bilan bir xil qoida):
+ * `admin` = EGA, `manager` = menejer, qolgani = KASSIR (faqat o'z smenasiga
+ * tushuntirish bera oladi).
+ */
+export function resolveShiftActor(user: AuthenticatedUser): ShiftActor {
+  const roles = user.hrRoles ?? [];
+  if (roles.includes('admin')) return SHIFT_ACTOR.owner;
+  if (roles.includes('manager')) return SHIFT_ACTOR.manager;
+  return SHIFT_ACTOR.cashier;
+}
+
+function shiftCtxOf(user: AuthenticatedUser): ShiftActorContext {
+  return { accountId: user.accountId, actor: resolveShiftActor(user), actorId: user.sub };
 }

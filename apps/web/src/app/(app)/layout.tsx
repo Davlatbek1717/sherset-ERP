@@ -451,6 +451,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     { key: 'live', label: tMenejer('live'), href: '/menejer/jonli' },
     // 4M TZ §6.4 — «kimda nima qolgan»: pul ko'p bo'lgan tepada.
     { key: 'accountability', label: tMenejer('accountability'), href: '/menejer/javobgarlik' },
+    // 4M TZ §6 (MK08) — yopilgan smenani QABUL QILISH. Farq aktidan oldin:
+    // farqsiz smena ham ko'rilishi kerak, aks holda «hammasi joyida» xulosasi
+    // hech kim tomonidan tasdiqlanmagan bo'lardi.
+    { key: 'shift_acceptance', label: tMenejer('shift_acceptance'), href: '/menejer/smenalar' },
     // Kassa TZ §8.4 — «ko'rilmagan farq aktlari» menejerning kunlik ishi.
     { key: 'cash_variances', label: tMenejer('cash_variances'), href: '/menejer/kassa-farqlari' },
     // 4M TZ §8 — uch xil zaxira signali: o'lchov PUL, dona emas.

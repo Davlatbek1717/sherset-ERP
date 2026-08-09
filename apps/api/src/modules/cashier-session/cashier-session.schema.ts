@@ -1,4 +1,10 @@
 import { z } from 'zod';
+import {
+  SHIFT_ACCEPTANCE_ACTIONS,
+  SHIFT_ACCEPTANCE_STATES,
+  type ShiftAcceptanceAction,
+  type ShiftAcceptanceState,
+} from './shift-acceptance.js';
 
 /**
  * CashierSession — shift at a CashDesk.
@@ -119,3 +125,33 @@ export const SessionFilterSchema = z.object({
 export type SessionFilterInput = z.infer<typeof SessionFilterSchema>;
 
 void boolFromString; // suppress unused warning
+
+// --- MK08 · smena qabuli (4M TZ §6) ---
+
+/**
+ * Amal va holat ro'yxatlari FSM'dan olinadi — bu yerda QO'LDA takrorlanmaydi.
+ * Aks holda yangi holat qo'shilganda sxema jimgina eskirar va HTTP sirt uni
+ * rad etib turardi (qoida ikki joyda = ikki javob).
+ */
+export const ShiftTransitionSchema = z.object({
+  action: z
+    .enum(SHIFT_ACCEPTANCE_ACTIONS as [string, ...string[]])
+    .transform((v) => v as ShiftAcceptanceAction),
+  reasonCode: z.string().trim().min(1).max(40).optional(),
+  comment: z.string().trim().min(1).max(2000).optional(),
+});
+export type ShiftTransitionInput = z.infer<typeof ShiftTransitionSchema>;
+
+export const ShiftAcceptanceQuerySchema = z.object({
+  states: z
+    .union([z.string(), z.array(z.string())])
+    .transform((v) => (Array.isArray(v) ? v : v.split(',')))
+    .pipe(z.array(z.enum(SHIFT_ACCEPTANCE_STATES as [string, ...string[]])))
+    .transform((v) => v as ShiftAcceptanceState[])
+    .optional(),
+  cashierId: z.string().uuid().optional(),
+  from: z.coerce.date().optional(),
+  to: z.coerce.date().optional(),
+  limit: z.coerce.number().int().min(1).max(500).default(200),
+});
+export type ShiftAcceptanceQueryInput = z.infer<typeof ShiftAcceptanceQuerySchema>;
