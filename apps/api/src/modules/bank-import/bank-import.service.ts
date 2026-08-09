@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { Prisma } from '@moysklad/db';
+import { Prisma } from '@moysklad/db';
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { PaymentInService } from '../payment-in/payment-in.service.js';
@@ -29,15 +29,26 @@ interface MatchHit {
  * olinadi. 15 daqiqa = to'lov yaratishning eng yomon holatidan ancha uzoq,
  * operator kutishidan esa ancha qisqa.
  *
- * QOLDIQ XAVF (halol yozilsin): jarayon AYNAN `paymentIn.create` muvaffaqiyatli
- * tugagan-u, `bankStatementRow.update({paymentInId})` hali yozilmagan lahzada
- * o'lsa — yaratilgan to'lov HECH QAYSI qatorga bog'lanmagan bo'ladi, shu
- * sababli TTL'dan keyingi qayta-urinishda dedup uni «egizak» sifatida topa
- * olmaydi va IKKINCHI to'lov yaratiladi. Oyna millisekundlar; to'liq yopish
- * uchun to'lovni qator-bog'lanishi bilan BIR tranzaksiyada yaratish kerak
- * (PaymentInService.create hozir o'z tranzaksiyasini ochadi) — alohida ish.
+ * Faza Q9 (2026-08-09) — o'sha qoldiq crash-oynasi YOPILDI: to'lov va uning
+ * qatorga bog'lanishi endi BITTA tranzaksiyada (`commitRow()`), shuning uchun
+ * «to'lov bor, bog'lanish yo'q» yarim-holati Postgres darajasida mumkin emas.
+ * TTL claim'i esa saqlanadi — u boshqa vazifani bajaradi (parallel commit
+ * poygasi + tranzaksiyadan TASHQARIDAGI jarayon o'limi).
  */
 export const COMMIT_CLAIM_STALE_MS = 15 * 60_000;
+
+/**
+ * Faza Q9 — commit tranzaksiyasi sozlamalari. `timeout` pul-oilasi bilan bir
+ * xil (15s): tranzaksiya ichida hujjat-raqami allokatsiyasi + hujjat yozuvi +
+ * audit + qator-bog'lash bor. Izolyatsiya darajasi DEFAULT (`ReadCommitted`)
+ * qoldirildi — poyga-himoyasi allaqachon shartli `updateMany` claim'ida
+ * (`claimRow`), ya'ni Serializable qo'shimcha kafolat bermay, faqat 40001
+ * abort xavfini olib kelardi.
+ */
+const COMMIT_TX_OPTS = { timeout: 15_000 } as const;
+
+/** `create()` `undefined` qaytarsa tranzaksiyani rollback qilish uchun sentinel. */
+const NO_RECORD_ERROR = 'payment create returned no record';
 
 @Injectable()
 export class BankImportService {
@@ -250,47 +261,56 @@ export class BankImportService {
       if (!claimedAt) continue;
 
       try {
-        if (row.direction === 'in') {
-          const created = await this.paymentIn.create(accountId, userId, {
-            agentId: cpId,
-            organizationId: parsed.organizationId,
-            moment: row.moment.toISOString(),
-            sumMinor: row.amountMinor.toString(),
-            paymentPurpose: row.paymentPurpose ?? undefined,
-            incomingNumber: row.documentNumber ?? undefined,
-            incomingDate: row.moment.toISOString(),
-            currency: row.currency,
-          });
-          if (!created) {
-            await this.releaseClaim(row.id, claimedAt);
-            failed.push({ rowId: row.id, error: 'payment create returned no record' });
-            continue;
+        // Faza Q9 (INT-05 DEFER-1): to'lov + qator-bog'lanish BITTA
+        // tranzaksiyada. Callback ichida biror narsa yiqilsa (jumladan
+        // bog'lash yozuvi) Postgres HAMMASINI qaytarib oladi — «bog'lanmagan
+        // yetim to'lov» holati endi mumkin emas. Claim esa tashqarida
+        // qoladi (u tranzaksiya emas, ish-taqsimoti belgisi) va xatoda
+        // bo'shatiladi.
+        await this.prisma.client.$transaction(async (tx) => {
+          if (row.direction === 'in') {
+            const created = await this.paymentIn.create(
+              accountId,
+              userId,
+              {
+                agentId: cpId,
+                organizationId: parsed.organizationId,
+                moment: row.moment.toISOString(),
+                sumMinor: row.amountMinor.toString(),
+                paymentPurpose: row.paymentPurpose ?? undefined,
+                incomingNumber: row.documentNumber ?? undefined,
+                incomingDate: row.moment.toISOString(),
+                currency: row.currency,
+              },
+              tx,
+            );
+            if (!created) throw new Error(NO_RECORD_ERROR);
+            await tx.bankStatementRow.update({
+              where: { id: row.id },
+              data: { paymentInId: created.id },
+            });
+          } else {
+            const created = await this.paymentOut.create(
+              accountId,
+              userId,
+              {
+                agentId: cpId,
+                organizationId: parsed.organizationId,
+                moment: row.moment.toISOString(),
+                sumMinor: row.amountMinor.toString(),
+                paymentPurpose: row.paymentPurpose ?? undefined,
+                currency: row.currency,
+              },
+              tx,
+            );
+            if (!created) throw new Error(NO_RECORD_ERROR);
+            await tx.bankStatementRow.update({
+              where: { id: row.id },
+              data: { paymentOutId: created.id },
+            });
           }
-          await this.prisma.client.bankStatementRow.update({
-            where: { id: row.id },
-            data: { paymentInId: created.id },
-          });
-          succeeded.push(row.id);
-        } else {
-          const created = await this.paymentOut.create(accountId, userId, {
-            agentId: cpId,
-            organizationId: parsed.organizationId,
-            moment: row.moment.toISOString(),
-            sumMinor: row.amountMinor.toString(),
-            paymentPurpose: row.paymentPurpose ?? undefined,
-            currency: row.currency,
-          });
-          if (!created) {
-            await this.releaseClaim(row.id, claimedAt);
-            failed.push({ rowId: row.id, error: 'payment create returned no record' });
-            continue;
-          }
-          await this.prisma.client.bankStatementRow.update({
-            where: { id: row.id },
-            data: { paymentOutId: created.id },
-          });
-          succeeded.push(row.id);
-        }
+        }, COMMIT_TX_OPTS);
+        succeeded.push(row.id);
       } catch (err) {
         await this.releaseClaim(row.id, claimedAt);
         const msg = err instanceof Error ? err.message : String(err);
@@ -426,6 +446,27 @@ export class BankImportService {
     return r.data;
   }
 
+  /**
+   * Auto-match uchun kontragent qidiruvi (Faza Q9, audit `DB-05`).
+   *
+   * Ilgari bu yer `counterparty.findMany({ accountId, archived: false })` bilan
+   * BUTUN kontragent jadvalini xotiraga yuklab, JS siklida solishtirardi — bir
+   * vypiska yuklash 50k qatorlik o'qish degani edi. Endi bitta SQL-lookup:
+   * faqat MOS KELGAN qatorlar qaytadi.
+   *
+   * ⚠️ Ifodalar (`#>> '{inn}'::text[]`) migratsiyadagi expression-indekslar
+   * bilan **AYNAN** bir xil yozilgan
+   * (`20260809235000_bank_import_inn_lookup_indexes`). `->>` ga o'zgartirilsa
+   * Postgres uni BOSHQA ifoda deb biladi va indeks jimgina o'lik qoladi
+   * (`expression-index-must-match-prisma-sql` sabog'i; Faza 25 aynan shu
+   * xatoni tutgan). Buni `bank-import.service.test.ts` dagi SQL-matn testi
+   * qulflaydi.
+   *
+   * `code` shoxi — eski xulqning davomi: ba'zi kontragentlarda INN aynan
+   * `code` maydonida turadi. U ham indekslangan (`counterparties(account_id, code)`),
+   * aks holda OR butun so'rovni seq-scan'ga tushirib, INN indeksini
+   * foydasiz qilardi.
+   */
   private async buildMatchMap(
     accountId: string,
     innList: string[],
@@ -435,28 +476,34 @@ export class BankImportService {
     const byAcct = new Map<string, string>();
     if (innList.length === 0 && acctList.length === 0) return { byInn, byAcct };
 
-    const cps = await this.prisma.client.counterparty.findMany({
-      where: {
-        accountId,
-        archived: false,
-      },
-      select: { id: true, uzRequisites: true, code: true },
-    });
+    const cps = await this.prisma.client.$queryRaw<
+      Array<{ id: string; inn: string | null; acct: string | null; code: string | null }>
+    >(Prisma.sql`
+      SELECT "id",
+             ("uz_requisites" #>> '{inn}'::text[])     AS "inn",
+             ("uz_requisites" #>> '{account}'::text[]) AS "acct",
+             "code"
+      FROM "counterparties"
+      WHERE "account_id" = ${accountId}::uuid
+        AND "archived" = false
+        AND (
+              ("uz_requisites" #>> '{inn}'::text[])     = ANY(${innList}::text[])
+           OR ("uz_requisites" #>> '{account}'::text[]) = ANY(${acctList}::text[])
+           OR "code"                                    = ANY(${innList}::text[])
+        )
+    `);
 
+    const innWanted = new Set(innList);
+    const acctWanted = new Set(acctList);
+    // Ikki o'tish: haqiqiy rekvizit-INN har doim `code`-fallback'dan ustun
+    // (bir o'tishda bu SQL qaytargan qator tartibiga bog'lanib qolardi).
     for (const cp of cps) {
-      const reqs = (cp.uzRequisites ?? {}) as {
-        inn?: string;
-        mfo?: string;
-        account?: string;
-      };
-      if (reqs.inn && innList.includes(reqs.inn)) {
-        byInn.set(reqs.inn, cp.id);
-      }
-      if (reqs.account && acctList.includes(reqs.account)) {
-        byAcct.set(reqs.account, cp.id);
-      }
-      // Secondary: match code (free-form identifier) to INN list if INN stored there
-      if (cp.code && innList.includes(cp.code) && !byInn.has(cp.code)) {
+      if (cp.inn && innWanted.has(cp.inn)) byInn.set(cp.inn, cp.id);
+      if (cp.acct && acctWanted.has(cp.acct)) byAcct.set(cp.acct, cp.id);
+    }
+    // Secondary: match code (free-form identifier) to INN list if INN stored there
+    for (const cp of cps) {
+      if (cp.code && innWanted.has(cp.code) && !byInn.has(cp.code)) {
         byInn.set(cp.code, cp.id);
       }
     }

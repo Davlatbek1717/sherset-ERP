@@ -19,8 +19,14 @@ import type { PrismaClient } from '@moysklad/db';
  * the given tenant. Stamp ONCE at create; never rewrite on edit (moysklad keeps
  * the creating department).
  */
+/**
+ * `db` — strukturaviy tip (Faza Q9): faqat `employee` delegati kerak, shuning
+ * uchun to'liq `PrismaClient` ham, `Prisma.TransactionClient` ham mos keladi.
+ * Ilgari `PrismaClient` deb yozilgani tashqi tranzaksiya ichidan chaqirishni
+ * bloklardi (TransactionClient'da `$connect`/`$transaction` yo'q).
+ */
 export async function resolveCreatorGroupId(
-  db: PrismaClient,
+  db: Pick<PrismaClient, 'employee'>,
   accountId: string,
   userId: string,
 ): Promise<string | null> {

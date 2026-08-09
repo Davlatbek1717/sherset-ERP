@@ -279,12 +279,33 @@ export class PaymentInService {
    * Bunda egalik `ownerId` orqali oshkora beriladi, audit-yozuv esa aktorsiz
    * qoladi (`AuditLog.userId` nullable) — soxta «tizim xodimi» o'ylab
    * topilmaydi, chunki u kimningdir ismi ostida yolg'on iz qoldirardi.
+   *
+   * `tx` (Faza Q9, `INT-05`) — **ixtiyoriy tashqi tranzaksiya**. Berilsa
+   * hujjatning HAMMA yozuvi (raqam-hisoblagich, `payment_ins` qatori,
+   * operatsiyalar, audit) o'sha tranzaksiyada bajariladi, ya'ni chaqiruvchi
+   * to'lovni **o'z yozuvi bilan atomik** qila oladi. Bank-import shu bilan
+   * «to'lov yaratildi-yu, vypiska qatoriga bog'lanmadi» crash-oynasini
+   * yopadi. Berilmasa xulq eski holicha (har yozuv o'z implicit
+   * tranzaksiyasida) — mavjud chaqiruvchilar o'zgarmaydi.
+   *
+   * ⚠️ Tranzaksiya ICHIGA kirmaydigan ikki narsa (ataylab):
+   *  - `webhookFire.fireForEvent` — fire-and-forget, o'z ulanishida yozadi;
+   *    tashqi tx rollback bo'lsa mavjud bo'lmagan hujjat haqida webhook
+   *    navbatga tushishi mumkin (best-effort quyi tizim, hujjatni bloklamaydi).
+   *  - `assertMassEditRefsInTenant` / `attrs.validateAndNormalize` — faqat
+   *    O'QIYDI (tenant-validatsiya), yozuv qilmaydi.
    */
-  async create(accountId: string, userId: string | null, raw: unknown) {
+  async create(
+    accountId: string,
+    userId: string | null,
+    raw: unknown,
+    tx?: Prisma.TransactionClient,
+  ) {
+    const db: Prisma.TransactionClient = tx ?? this.prisma.client;
     const parsed = this.parseCreate(raw);
-    await this.ensureRefs(accountId, parsed.agentId, parsed.organizationId);
+    await this.ensureRefs(accountId, parsed.agentId, parsed.organizationId, db);
     await assertOrgAccountMatchesOrg(
-      this.prisma.client,
+      db,
       accountId,
       parsed.organizationId,
       parsed.organizationAccountId,
@@ -296,10 +317,10 @@ export class PaymentInService {
       throw new BadRequestException("sumMinor 0 dan katta bo'lishi kerak");
     }
     if (parsed.operations.length > 0) {
-      await this.ensureOperations(accountId, parsed.operations, sumMinor, parsed.currency);
+      await this.ensureOperations(accountId, parsed.operations, sumMinor, parsed.currency, db);
     }
 
-    const name = await this.nextPaymentName(accountId);
+    const name = await this.nextPaymentName(accountId, db);
 
     const attributes = await this.attrs.validateAndNormalize(
       accountId,
@@ -307,9 +328,7 @@ export class PaymentInService {
       parsed.attributes,
     );
 
-    const creatorGroupId = userId
-      ? await resolveCreatorGroupId(this.prisma.client, accountId, userId)
-      : null;
+    const creatorGroupId = userId ? await resolveCreatorGroupId(db, accountId, userId) : null;
 
     // «Владелец»/«Владелец-отдел»/«Общий доступ» from the owner popover (else fall
     // back to the creator + their dept). Tenant-validate the refs so a hand-crafted
@@ -318,7 +337,7 @@ export class PaymentInService {
       await assertMassEditRefsInTenant(this.prisma, accountId, { ownerId: parsed.ownerId });
     }
     if (parsed.groupId) {
-      const grp = await this.prisma.client.group.findFirst({
+      const grp = await db.group.findFirst({
         where: { id: parsed.groupId, accountId },
         select: { id: true },
       });
@@ -326,7 +345,7 @@ export class PaymentInService {
     }
 
     try {
-      const created = await this.prisma.client.paymentIn.create({
+      const created = await db.paymentIn.create({
         data: {
           accountId,
           ownerId: parsed.ownerId ?? userId,
@@ -364,7 +383,7 @@ export class PaymentInService {
         },
       });
 
-      await this.logAudit(accountId, userId, 'create', created.id, null);
+      await this.logAudit(accountId, userId, 'create', created.id, null, db);
       this.webhookFire.fireForEvent(accountId, 'paymentin', 'CREATE', created.id);
       return created;
     } catch (e) {
@@ -982,10 +1001,11 @@ export class PaymentInService {
     accountId: string,
     agentId: string,
     organizationId: string,
+    db: Prisma.TransactionClient = this.prisma.client,
   ): Promise<void> {
     const [agent, org] = await Promise.all([
-      this.prisma.client.counterparty.findFirst({ where: { id: agentId, accountId } }),
-      this.prisma.client.organization.findFirst({ where: { id: organizationId, accountId } }),
+      db.counterparty.findFirst({ where: { id: agentId, accountId } }),
+      db.organization.findFirst({ where: { id: organizationId, accountId } }),
     ]);
     if (!agent) throw new BadRequestException('Kontragent topilmadi');
     if (!org) throw new BadRequestException('Tashkilot topilmadi');
@@ -1005,6 +1025,7 @@ export class PaymentInService {
     }>,
     sumMinor: bigint,
     paymentCurrency: string,
+    db: Prisma.TransactionClient = this.prisma.client,
   ): Promise<void> {
     let total = 0n;
     for (const op of operations) {
@@ -1015,7 +1036,7 @@ export class PaymentInService {
 
       if (op.targetKind === 'invoiceout') {
         if (!op.invoiceOutId) throw new BadRequestException('invoiceOutId majburiy');
-        const inv = await this.prisma.client.invoiceOut.findFirst({
+        const inv = await db.invoiceOut.findFirst({
           where: { id: op.invoiceOutId, accountId, deletedAt: null },
           select: { id: true, currency: true },
         });
@@ -1029,7 +1050,7 @@ export class PaymentInService {
         );
       } else if (op.targetKind === 'customerorder') {
         if (!op.customerOrderId) throw new BadRequestException('customerOrderId majburiy');
-        const co = await this.prisma.client.customerOrder.findFirst({
+        const co = await db.customerOrder.findFirst({
           where: { id: op.customerOrderId, accountId, deletedAt: null },
           select: { id: true, currency: true },
         });
@@ -1063,12 +1084,15 @@ export class PaymentInService {
     }
   }
 
-  private async nextPaymentName(accountId: string): Promise<string> {
+  private async nextPaymentName(
+    accountId: string,
+    db: Prisma.TransactionClient = this.prisma.client,
+  ): Promise<string> {
     // moysklad parity: plain zero-padded sequential number per type — NO
     // «ПП-YYYY-» prefix (moysklad shows «10267»). Mirrors customer-order; seeds
     // from the max existing plain-numeric name (legacy prefixed names ignored).
-    const n = await allocateDocumentNumber(this.prisma.client, accountId, 'paymentin', async () => {
-      const rows = await this.prisma.client.paymentIn.findMany({
+    const n = await allocateDocumentNumber(db, accountId, 'paymentin', async () => {
+      const rows = await db.paymentIn.findMany({
         where: { accountId },
         select: { name: true },
       });
@@ -1121,8 +1145,9 @@ export class PaymentInService {
     action: string,
     entityId: string,
     fieldChanges: Record<string, unknown> | null,
+    db: Prisma.TransactionClient = this.prisma.client,
   ): Promise<void> {
-    await this.prisma.client.auditLog.create({
+    await db.auditLog.create({
       data: {
         accountId,
         userId,

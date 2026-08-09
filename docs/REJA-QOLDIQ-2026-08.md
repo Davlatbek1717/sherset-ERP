@@ -73,7 +73,12 @@ foydalanuvchi bilan birga bajariladi (`/deploy` skill + shu ro'yxat):
    **`demand_positions.base_cost_minor`** (Faza Q4 — busiz deploy API'ni yiqitadi) ·
    **`hr_attendance.deleted_at` + `hr_attendance.deleted_by_id`** (Faza Q7 — busiz HR davomat
    endpointlari yiqiladi; migratsiya `20260809230000_hr_attendance_soft_delete`, ikkala ustun
-   nullable/defaultsiz ⇒ jadval qayta yozilmaydi).
+   nullable/defaultsiz ⇒ jadval qayta yozilmaydi) ·
+   **`counterparties` 3 ta lookup-indeksi** (Faza Q9 — migratsiya
+   `20260809235000_bank_import_inn_lookup_indexes`: `counterparties_inn_expr_idx`,
+   `counterparties_bank_account_expr_idx` — EXPRESSION indekslar, sxemada KO'RINMAYDI, faqat shu
+   faylda; + `counterparties_account_id_code_idx`. Busiz bank-import auto-match prodda Seq Scan
+   qoladi — funksional buzilish EMAS, faqat sekinlik. `CREATE INDEX` SHARE qulfi ⇒ past yuklamada).
 6. **🔴 Telegram webhook** (Faza 21 DEPLOY-BLOKER): deploydan keyin har akkaunt uchun
    `POST /telegram/config/webhook` — aks holda inbound Telegram (jonli supply-approval tugmalari)
    TO'XTAYDI. Tekshir: `businessStatus.webhookSecretSet === true`.
@@ -310,7 +315,7 @@ INN lookup raw-SQL + btree expression-indeks migratsiyasi.
 > `docs/REJA-QOLDIQ-2026-08.md` — **Faza Q9**. O'ZGARMAS QOIDALAR. Faza 20 DEFER-1 + Faza 25 DEFER-2'ni
 > o'qi, kodda tasdiqla. Create+link bitta tx + INN SQL-lookup + btree expression-indeks (EXPLAIN bilan).
 > Unique index QO'YMA (ops-gated). TDD: 3 stsenariy. Gate + migrate. Hisobot, TO'XTA.
-**◻ HISOBOT:** _(agent to'ldiradi)_
+**☑ HISOBOT (2026-08-09):** BAJARILDI — batafsili «HISOBOT JURNALI → Faza Q9» da.
 
 ---
 
@@ -1570,3 +1575,199 @@ Daraxtda foydalanuvchining o'z fayllari bor edi (`todo.md` (M), `docs/REJA-8-BOL
 Q1–Q7 yozuvlariga TEGILMADI.
 
 **Commit:** `fix(report): faza q8 — tarixiy kurs qolgan davr-oqim hisobotlarida (M-11)`
+
+---
+
+## Faza Q9 — Bank-import: crash-oyna tx + INN SQL-lookup (`INT-05`, `DB-05`) (2026-08-09) — **Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q**
+
+### 1. Da'volarni HEAD kodida tasdiqlash (reja §2)
+
+Ikkala DEFER ham **TASDIQLANDI** — hisobotlar 2026-08-08/09 dan, lekin kod o'shandan beri
+o'zgarmagan (satr raqamlari surildi, mazmun bir xil):
+
+| Manba | Da'vo | HEAD'dagi dalil | Holat |
+|---|---|---|---|
+| Faza 20 DEFER-1 | `paymentIn.create` va `bankStatementRow.update({paymentInId})` — ikki alohida yozuv, oradagi crash yetim to'lov qoldiradi | `bank-import.service.ts:254` create → `:269` update (`in`), `:275`→`:288` (`out`); orada hech qanday tranzaksiya yo'q | ✅ |
+| Faza 25 DEFER-2 | `buildMatchMap` butun kontragent jadvalini RAM'ga yuklab JS'da solishtiradi | `bank-import.service.ts:438` `counterparty.findMany({ accountId, archived: false })` + `:446-462` JS sikli | ✅ |
+
+**🔴 Bitta da'vo ANIQLASHTIRILDI (manba-hisobot noaniq yozgan edi).** Faza 20 va reja ikkalasi ham
+«`PaymentInService.create` **hozir o'z tranzaksiyasini ochadi**» deydi. Bu **NOTO'G'RI**: HEAD'da
+`create` hech qanday `$transaction` ochmaydi — u `this.prisma.client` ustida **ketma-ket mustaqil
+yozuv/o'qishlar** qiladi (ref-tekshiruvlar → `allocateDocumentNumber` → `paymentIn.create` (nested
+`operations` bilan) → `logAudit`). Ya'ni crash-oynasi hisobotda yozilganidan **kengroq** edi:
+raqam allokatsiyasi bilan hujjat yozuvi orasida ham, hujjat bilan audit orasida ham. Fix shu
+sababdan «mavjud tx'ni tashqariga chiqarish» emas, **butun `create`ni bitta tranzaksiyaga
+sig'dira oladigan qilish** bo'ldi.
+
+### 2. O'zgarishlar
+
+| Fayl | O'zgarish |
+|---|---|
+| `apps/api/src/modules/payment-in/payment-in.service.ts` | `create(accountId, userId, raw, **tx?**)` — ixtiyoriy tashqi tranzaksiya. Ichida `const db = tx ?? this.prisma.client` va HAMMA yozuv `db` orqali: `ensureRefs`, `assertOrgAccountMatchesOrg`, `ensureOperations`, `nextPaymentName` (`allocateDocumentNumber` + seed), `group.findFirst`, `paymentIn.create`, `logAudit`. Yordamchilarga `db` **default-parametr** bilan qo'shildi ⇒ mavjud chaqiruvlar va testlar o'zgarmadi |
+| `apps/api/src/modules/payment-out/payment-out.service.ts` | Aynan shu simlash (`create(..., tx?)`) — bank-import `commit()` ikkala yo'nalishni ham shu sikldan yuritadi, `out` shoxida crash-oynasi bir xil edi |
+| `apps/api/src/modules/shared/group-stamp.ts` | `resolveCreatorGroupId(db: PrismaClient)` → `db: Pick<PrismaClient, 'employee'>`. Faqat kengaytirish (barcha mavjud chaqiruvchilar mos); ilgari `TransactionClient` uzatib bo'lmasdi |
+| `apps/api/src/modules/bank-import/bank-import.service.ts` | (a) `commit()` sikli: to'lov + qator-bog'lash **bitta `$transaction`** (`COMMIT_TX_OPTS = { timeout: 15_000 }`); `create` `undefined` qaytarsa `NO_RECORD_ERROR` sentinel bilan **rollback**. (b) `buildMatchMap` → **raw SQL lookup** (`Prisma.sql`), `import type { Prisma }` → `import { Prisma }`. (c) Fayl boshidagi «QOLDIQ XAVF» doc-bloki yangilandi |
+| `packages/db/prisma/schema.prisma` | `Counterparty` ga `@@index([accountId, code])` (+ izoh: ikkita hamroh EXPRESSION indeks faqat migratsiya faylida yashaydi) |
+| `packages/db/prisma/migrations/20260809235000_bank_import_inn_lookup_indexes/migration.sql` | **YANGI** — 3 ta `CREATE INDEX IF NOT EXISTS` |
+| `apps/api/src/modules/bank-import/bank-import.service.test.ts` | 11 → **20** test (Edit, Write EMAS) |
+| `apps/api/src/modules/payment-in/payment-in.service.test.ts` | 3 → **5** test (Edit) |
+
+#### (a) Crash-oyna — nima aynan yopildi
+
+```
+OLDIN:  claim -> [paymentIn.create OK] --- X jarayon o'ldi --- update({paymentInId}) X
+        => yetim to'lov: dedup (findImportedTwin) uni topa olmaydi => TTL'dan keyin IKKINCHI to'lov
+
+KEYIN:  claim -> $transaction{ paymentIn.create(..., tx) ; tx.bankStatementRow.update }
+        => ikkisi bitta commit; oraliqdagi har qanday o'lim TO'LIQ rollback
+```
+
+**Ataylab tashqarida qolgan uch narsa** (halol qayd):
+
+1. **`claimRow` / `releaseClaim` tranzaksiyadan TASHQARIDA.** Claim — ish-taqsimoti belgisi, poyga
+   qulfi; uni tx ichiga kiritsak rollback claim'ni ham qaytarib, ikki parallel commit yana bir
+   qatorga kirishi mumkin bo'lardi. Xatoda claim eski holicha bo'shatiladi.
+2. **`webhookFire.fireForEvent`** — fire-and-forget, o'z ulanishida yozadi. Tashqi tx rollback
+   bo'lsa mavjud bo'lmagan hujjat haqida webhook navbatga tushishi mumkin (best-effort quyi tizim;
+   hujjat yozuvini bloklamaydi). Doc-blokda yozildi.
+3. **Izolyatsiya darajasi DEFAULT** (`ReadCommitted`), `MONEY_TX_OPTS`ning `Serializable`i EMAS:
+   poyga-himoyasi allaqachon shartli `updateMany` claim'ida, `Serializable` qo'shimcha kafolat
+   bermay faqat 40001-abort xavfini olib kelardi. `timeout` esa pul-oilasi bilan bir xil — 15s.
+
+#### (b) INN SQL-lookup + expression-indekslar
+
+Yangi so'rov (servisdagi matn bilan **belgi-ma-belgi** bir xil ifodalar):
+
+```sql
+SELECT id, (uz_requisites #>> '{inn}'::text[]) AS inn,
+           (uz_requisites #>> '{account}'::text[]) AS acct, code
+FROM counterparties
+WHERE account_id = $1::uuid AND archived = false
+  AND (  (uz_requisites #>> '{inn}'::text[])     = ANY($2::text[])
+      OR (uz_requisites #>> '{account}'::text[]) = ANY($3::text[])
+      OR code                                    = ANY($2::text[]) )
+```
+
+⚠️ `expression-index-must-match-prisma-sql` sabog'i qo'llandi: `->>` YOZILMADI (Postgres uchun bu
+**boshqa funksiya**; Faza 25 aynan shu xatoni tutgan). Bu yerda so'rov raw bo'lgani uchun ifodani
+biz to'liq boshqaramiz — indeks bilan matn ayni bir xil yozildi, va **unit-test SQL matnini
+qulflaydi** (`expect(sql).not.toContain('->>')`).
+
+**Uchala indeks ham KERAK** (bu fazaning asosiy o'lchov-topilmasi): OR-shoxlaridan bittasi
+indekssiz qolsa planner butun so'rovni **Seq Scan** qiladi va INN indeksi umuman ishlatilmaydi —
+ya'ni «faqat INN indeksi» yechimi Faza 25 DEFER'idagi «yarim yopildi» holatini takrorlagan bo'lardi.
+
+**Ikki-o'tishli map qurish:** haqiqiy rekvizit-INN endi har doim `code`-fallback'dan ustun (bir
+o'tishda natija SQL qaytargan qator tartibiga bog'lanib qolardi).
+
+### 3. Testlar — RED to GREEN (jonli o'lchangan)
+
+**`bank-import.service.test.ts`** — mock'lar HAQIQIY semantikaga keltirildi: `$transaction` endi
+**jurnal** bilan ishlaydi (callback ichidagi yozuvlar faqat callback muvaffaqiyatli tugagach
+qo'llanadi ⇒ throw = ROLLBACK); to'lov-yaratuvchi mock `tx` berilsa jurnalga, berilmasa darhol
+yozadi (Faza Q9'gacha bo'lgan xulq). `vi.fn(async (fn) => fn(client))` mock'i bug'ni **ko'rsata
+olmasdi** — unda rollback bo'lmaydi.
+
+| # | Test | RED sababi |
+|---|---|---|
+| 1 | bog'lash yozuvi paytida yiqilsa NA to'lov, NA bog'lanish qoladi (**in**) | fix'dan oldin to'lov allaqachon commit bo'lgan ⇒ `committedPayments = ['pi-1']` |
+| 2 | xuddi shu — **out** yo'nalishi | ✔ |
+| 3 | create+link BITTA tranzaksiyada; `create` 4-argument sifatida tx oladi | `$transaction` umuman chaqirilmasdi |
+| 4 | PaymentOut yo'nalishi ham tx oladi | ✔ |
+| 5 | mavjud «still imports the row» — bog'lash endi **tx mijozida** | bazaviy `client...update`da edi |
+| 6-10 | INN SQL-lookup: inn / hisob / `code` bo'yicha topish · SQL-matn qulfi (`#>>` bor, `->>` yo'q) · ko'rsatma bo'lmasa SQL umuman yuborilmaydi | `$queryRaw` chaqirilmasdi, `findMany` chaqirilardi |
+
+O'lchangan: `vitest run bank-import.service.test.ts` → **9 failed / 11 passed (20)** → fix'dan keyin
+**20 passed (20)**.
+
+**`payment-in.service.test.ts`** — `create(..., tx)` shartnomasi (prop-drop bug-klassiga qarshi:
+typecheck `db`ni ishlatmasdan ham yashil qoladi). Probe ikki bir xil soxta mijoz beradi (`base`/`tx`)
+va HAR chaqiruvni yorliqlaydi:
+
+- «tx berilganda hujjat, raqam-hisoblagich va audit AYNAN tx'da» + **`base:` prefiksli chaqiruvlar 0 ta**
+- «tx berilmasa hammasi bazaviy mijozda» (eski chaqiruvchilar buzilmaydi)
+
+RED **jonli o'lchandi**: `create`dagi `tx ?? this.prisma.client` vaqtincha neytrallashtirilib
+(`(tx && false) || ...`) yugurtirildi → **1 failed / 4 passed**; qaytarilgach → **5 passed**.
+
+**EXPLAIN RED→GREEN (jonli, `climart_adopt @ localhost:5432`, PG18).** 30 000 sintetik kontragent
+tranzaksiya ichida yaratildi → `ANALYZE` → `EXPLAIN (ANALYZE, BUFFERS)` → **`ROLLBACK`**
+(o'lchovdan keyin `count(*)` = 5, ya'ni DB'da **iz qolmadi**). Planner sozlamalari **DEFAULT** —
+hech narsa o'chirilmadi. Probe skripti bir martalik edi, o'lchovdan keyin **o'chirildi**.
+
+| so'rov | OLDIN (indekssiz) | KEYIN |
+|---|---|---|
+| `buildMatchMap` to'liq so'rovi (3 shoxli OR) | **`Seq Scan`**, 30 004 qator filtrlandi, `Buffers: shared hit=804`, **19.854 ms** | **`BitmapOr`** → 3 ta `Bitmap Index Scan` (`counterparties_inn_expr_idx`, `counterparties_bank_account_expr_idx`, `counterparties_account_id_code_idx`), `Buffers: shared hit=8`, **0.102 ms** |
+| faqat INN predikati | `Bitmap Index Scan` on **`counterparties_inn_trgm_idx`** (cost 596.52, 168 buffer, 3.624 ms) — GIN trgm tenglikni *qoplaydi*, lekin qimmat | **`Index Scan using counterparties_inn_expr_idx`** (cost 8.30, 3 buffer, **0.025 ms**) |
+
+Ya'ni ~**195×** (19.854 → 0.102 ms) va **100× kamroq buffer**. Trgm GIN indeksi (Faza 25) o'rnini
+bosmaydi — u `LIKE '%...%'` uchun.
+
+### 4. Migratsiya
+
+- `20260809235000_bank_import_inn_lookup_indexes/migration.sql` — 3 ta `CREATE INDEX IF NOT EXISTS`.
+- Lokal DB `_prisma_migrations`-tracked emas ⇒ `prisma db execute --file` bilan qo'llandi
+  («Script executed successfully»); **ikkinchi marta** yugurtirildi → yana muvaffaqiyatli =
+  **idempotent**.
+- `prisma migrate diff --from-schema-datasource --to-schema-datamodel --script` → chiqishda
+  **`counterpart` so'zi 0 marta**; qolgan 9 ta `RENAME INDEX` mening ishimdan OLDIN ham bor edi
+  (Faza 25 hisobotida ham qayd etilgan) — **yangi drift YO'Q**. Expression indekslarni Prisma
+  introspection umuman ko'rmaydi ⇒ `DROP` ham chiqarmaydi.
+- `prisma generate` → OK.
+- **OPS-QADAMLAR 5-bandiga qo'shildi** (prod `sherset_v2`da qo'lda qo'llanadi).
+
+### 5. Gate (jonli o'lchangan)
+
+- `pnpm --filter @moysklad/api typecheck` → **0** · `@moysklad/db typecheck` → **0**
+- `pnpm lint:product` → **0 error** (747 warning — siyosat bo'yicha ruxsat)
+- `vitest run bank-import payment-in payment-out payment-gateway counterparty` → **351/351**
+  (jumladan `payment-gateway.service.test.ts` **12/12** — Faza 19 chaqiruvchisi buzilmadi)
+- Butun API suite **3 shardda** (`--reporter=dot`): 1884 + 1791 + 2084 = **5759 passed / 2 skipped**,
+  435 fayl. Baza (Faza Q8) **5748 / 2** ⇒ **+11** (aynan yangi testlar soni), **regress 0**.
+- `i18n:gate` yugurtilmadi — UI-matn tegilmadi (0 `.tsx`, 0 `messages/*.json` o'zgarishi).
+- **Browser-smoke YO'Q.**
+
+### 6. 🟠 Qolgan qarz / DEFER
+
+1. **⛔ Partial unique index HAMON QO'YILMADI — ATAYLAB.** `bank_statement_rows` uchun
+   `(account_id, direction, moment, amount_minor, document_number)` bo'yicha partial unique
+   indeks ikki HAR XIL vypiskadan parallel commit oynasini (row-claim qoplamaydigan yagona
+   qolgan poyga) to'liq yopardi, lekin prod dublikatlari **hali o'lchanmagan** (OPS-4) —
+   indeks migratsiyasi prodda **yiqilardi**. Tartib o'zgarmaydi: avval o'lchash/tozalash,
+   keyin indeks. Faza 20 hisobotidagi o'lchash SQL'i o'z kuchida.
+2. **Ikki HAR XIL vypiskadan parallel commit** — shu sababdan ochiq qoladi: `findImportedTwin()`
+   o'qishdir, qulf emas. Ehtimollik past (bir vaqtda ikki operator ikki faylni commit qilishi),
+   oqibat — dublikat to'lov.
+3. **Webhook yetim navbat** (yuqorida): tashqi tx rollback bo'lsa `paymentin/paymentout CREATE`
+   webhook'i mavjud bo'lmagan hujjat uchun navbatga tushishi mumkin. To'g'ri yechim — outbox'ni
+   tx ICHIGA ko'chirish (`outbox-exclusive-claim-lease` xotirasidagi naqsh), bu alohida ish.
+4. **`assertMassEditRefsInTenant` / `attrs.validateAndNormalize` tx'dan tashqarida** — ikkalasi ham
+   faqat O'QIYDI (tenant-validatsiya), yozuv qilmaydi, shuning uchun atomiklikka ta'sir qilmaydi.
+   Bank-import ularni umuman ishga tushirmaydi (`ownerId`/`groupId` uzatmaydi).
+5. **Hujjat-raqami tx ichida allokatsiya qilinadi** ⇒ `document_sequences` qatorining qulfi endi
+   butun tranzaksiya davomida ushlanadi (~ms). Ketma-ket commit sikli uchun muammo emas; ammo
+   parallel bank-import commit'lari o'sha akkauntda **seriyalanadi** (deadlock emas — qulf tartibi
+   bir xil). Rollback raqamni qaytaradi (gap qolmaydi) — eski xulqdan farq, lekin yaxshi tomonga.
+6. **Boshqa `PaymentInService.create` chaqiruvchilari `tx` UZATMAYDI** (`createFromInvoiceOut`,
+   `payment-gateway.service.ts:651`) — ular uchun xulq **bit-ma-bit eski**. Gateway capture'ining
+   o'z crash-oynasi (`gateway-capture-payment-in-draft` xotirasi) bu fazada **ataylab** tegilmadi:
+   scope bank-import.
+7. **`organizations` jadvalidagi bir xil INN-filtri** (Faza 25 DEFER-3) hamon indekssiz — jadval
+   o'nlab qatorli, foyda yo'q.
+8. **O'lchov sintetik.** 30k qatorda INN/hisob qiymatlari bir xil naqshda generatsiya qilingan;
+   prod statistikasida planner boshqacha qaror qilishi mumkin (Faza 25 DEFER-1 dagi barcode
+   sabog'i). Plan **shakli** (BitmapOr + 3 index scan) esa ifoda mosligining to'g'ridan-to'g'ri
+   dalili.
+9. **Browser-smoke YO'Q** — bank-import commit oqimi (dublikat ogohlantirishi, `failed` ro'yxati,
+   ikki tabdan parallel commit) Phase-2 QA cohortida ko'riladi.
+
+### 7. Git gigienasi (CLAUDE.md §6)
+
+Daraxtda menikimas o'zgarishlar bor edi — `todo.md` (modified), `docs/REJA-8-BOLIM-2026-08.md`
+(untracked) va foydalanuvchining untracked fayllari (`qabullar-amallar-royxati.txt`, `*.xlsx`,
+`chek.png`, `SAYT-PROMPT.txt`, `docs/audits/...`, `scratchpad/`) — **HECH BIRIGA TEGILMADI**,
+`git add` faqat aniq yo'llar bilan. Bir martalik EXPLAIN-probe skripti (`scripts/probe-q9-...`)
+o'lchovdan keyin **o'chirildi** — repoga kirmaydi. Bu yozuv faylga **append** bilan qo'shildi —
+**marker-kesish YO'Q** (`doc-append-marker-truncation` xotirasi), Q1-Q8 yozuvlariga TEGILMADI.
+
+**Commit:** `fix(bank-import): faza q9 — create+link bitta tx + inn sql-lookup (INT-05, DB-05)`

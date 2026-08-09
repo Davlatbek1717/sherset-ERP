@@ -216,11 +216,18 @@ export class PaymentOutService {
     return payment;
   }
 
-  async create(accountId: string, userId: string, raw: unknown) {
+  /**
+   * `tx` (Faza Q9, `INT-05`) — ixtiyoriy tashqi tranzaksiya; `PaymentInService.create`
+   * bilan bir xil shartnoma (o'sha doc-blokni o'qi). Bank-import `commit()`da
+   * to'lov + vypiska-qatorining bog'lanishi shu orqali ATOMIK bo'ladi. Berilmasa
+   * xulq eski holicha.
+   */
+  async create(accountId: string, userId: string, raw: unknown, tx?: Prisma.TransactionClient) {
+    const db: Prisma.TransactionClient = tx ?? this.prisma.client;
     const parsed = this.parseCreate(raw);
-    await this.ensureRefs(accountId, parsed.agentId, parsed.organizationId);
+    await this.ensureRefs(accountId, parsed.agentId, parsed.organizationId, db);
     await assertOrgAccountMatchesOrg(
-      this.prisma.client,
+      db,
       accountId,
       parsed.organizationId,
       parsed.organizationAccountId ?? null,
@@ -236,10 +243,11 @@ export class PaymentOutService {
         parsed.operations as OperationInput[],
         sumMinor,
         parsed.currency,
+        db,
       );
     }
 
-    const name = await this.nextPaymentName(accountId);
+    const name = await this.nextPaymentName(accountId, db);
 
     const attributes = await this.attrs.validateAndNormalize(
       accountId,
@@ -247,7 +255,7 @@ export class PaymentOutService {
       parsed.attributes,
     );
 
-    const creatorGroupId = await resolveCreatorGroupId(this.prisma.client, accountId, userId);
+    const creatorGroupId = await resolveCreatorGroupId(db, accountId, userId);
 
     // «Владелец»/«Владелец-отдел» from the owner popover (else creator + their
     // dept). Tenant-validate so a hand-crafted request can't point at another
@@ -256,7 +264,7 @@ export class PaymentOutService {
       await assertMassEditRefsInTenant(this.prisma, accountId, { ownerId: parsed.ownerId });
     }
     if (parsed.groupId) {
-      const grp = await this.prisma.client.group.findFirst({
+      const grp = await db.group.findFirst({
         where: { id: parsed.groupId, accountId },
         select: { id: true },
       });
@@ -264,7 +272,7 @@ export class PaymentOutService {
     }
 
     try {
-      const created = await this.prisma.client.paymentOut.create({
+      const created = await db.paymentOut.create({
         data: {
           accountId,
           ownerId: parsed.ownerId ?? userId,
@@ -306,7 +314,7 @@ export class PaymentOutService {
         },
       });
 
-      await this.logAudit(accountId, userId, 'create', created.id, null);
+      await this.logAudit(accountId, userId, 'create', created.id, null, db);
       this.webhookFire.fireForEvent(accountId, 'paymentout', 'CREATE', created.id);
       return created;
     } catch (e) {
@@ -971,10 +979,11 @@ export class PaymentOutService {
     accountId: string,
     agentId: string,
     organizationId: string,
+    db: Prisma.TransactionClient = this.prisma.client,
   ): Promise<void> {
     const [agent, org] = await Promise.all([
-      this.prisma.client.counterparty.findFirst({ where: { id: agentId, accountId } }),
-      this.prisma.client.organization.findFirst({ where: { id: organizationId, accountId } }),
+      db.counterparty.findFirst({ where: { id: agentId, accountId } }),
+      db.organization.findFirst({ where: { id: organizationId, accountId } }),
     ]);
     if (!agent) throw new BadRequestException('Kontragent topilmadi');
     if (!org) throw new BadRequestException('Tashkilot topilmadi');
@@ -988,6 +997,7 @@ export class PaymentOutService {
     operations: OperationInput[],
     sumMinor: bigint,
     paymentCurrency: string,
+    db: Prisma.TransactionClient = this.prisma.client,
   ): Promise<void> {
     let total = 0n;
     for (const op of operations) {
@@ -999,7 +1009,7 @@ export class PaymentOutService {
       if (op.targetKind === 'invoicein') {
         if (!op.invoiceInId)
           throw new BadRequestException('invoicein operatsiyasida invoiceInId kerak');
-        const inv = await this.prisma.client.invoiceIn.findFirst({
+        const inv = await db.invoiceIn.findFirst({
           where: { id: op.invoiceInId, accountId, deletedAt: null },
           select: { id: true, currency: true },
         });
@@ -1008,7 +1018,7 @@ export class PaymentOutService {
       } else if (op.targetKind === 'purchaseorder') {
         if (!op.purchaseOrderId)
           throw new BadRequestException('purchaseorder operatsiyasida purchaseOrderId kerak');
-        const order = await this.prisma.client.purchaseOrder.findFirst({
+        const order = await db.purchaseOrder.findFirst({
           where: { id: op.purchaseOrderId, accountId, deletedAt: null },
           select: { id: true, currency: true },
         });
@@ -1040,27 +1050,25 @@ export class PaymentOutService {
     }
   }
 
-  private async nextPaymentName(accountId: string): Promise<string> {
+  private async nextPaymentName(
+    accountId: string,
+    db: Prisma.TransactionClient = this.prisma.client,
+  ): Promise<string> {
     // moysklad parity: plain zero-padded sequential number per type — NO
     // «ПР-YYYY-» prefix (moysklad shows «03204»). Mirrors customer-order; seeds
     // from the max existing plain-numeric name so we continue the real sequence
     // (legacy prefixed names are ignored).
-    const n = await allocateDocumentNumber(
-      this.prisma.client,
-      accountId,
-      'paymentout',
-      async () => {
-        const rows = await this.prisma.client.paymentOut.findMany({
-          where: { accountId },
-          select: { name: true },
-        });
-        let max = 0;
-        for (const r of rows) {
-          if (/^\d+$/.test(r.name)) max = Math.max(max, Number.parseInt(r.name, 10));
-        }
-        return max;
-      },
-    );
+    const n = await allocateDocumentNumber(db, accountId, 'paymentout', async () => {
+      const rows = await db.paymentOut.findMany({
+        where: { accountId },
+        select: { name: true },
+      });
+      let max = 0;
+      for (const r of rows) {
+        if (/^\d+$/.test(r.name)) max = Math.max(max, Number.parseInt(r.name, 10));
+      }
+      return max;
+    });
     return String(n).padStart(5, '0');
   }
 
@@ -1106,8 +1114,9 @@ export class PaymentOutService {
     action: string,
     entityId: string,
     fieldChanges: Record<string, unknown> | null,
+    db: Prisma.TransactionClient = this.prisma.client,
   ): Promise<void> {
-    await this.prisma.client.auditLog.create({
+    await db.auditLog.create({
       data: {
         accountId,
         userId,

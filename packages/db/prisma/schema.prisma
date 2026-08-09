@@ -2063,6 +2063,11 @@ model Counterparty {
   @@index([groupId])
   @@index([stateId])
   @@index([accountId, modifiedById])
+  // Faza Q9 (DB-05) — bank-import auto-match `code` shoxi (ba'zi kontragentlarda
+  // INN aynan `code`da turadi). Hamrohlari — INN/hisob EXPRESSION indekslari,
+  // ular Prisma'da ifodalanmaydi va faqat migratsiya faylida yashaydi:
+  // `20260809235000_bank_import_inn_lookup_indexes`.
+  @@index([accountId, code])
   // Trigram GIN (perf audit 2026-07-23) — counterparty name ILIKE search.
   @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "counterparties_name_trgm_idx")
   @@map("counterparties")
