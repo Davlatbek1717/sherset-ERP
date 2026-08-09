@@ -32,7 +32,13 @@ async function bootstrap(): Promise<void> {
     // Zod cap (dataBase64 ≤ 6 MB) remains the real image backstop.
     new FastifyAdapter({ logger: false, bodyLimit: 8 * 1024 * 1024 }),
     // Hide the bootstrap noise; nestjs-pino takes over once the module loads.
-    { bufferLogs: true },
+    //
+    // `rawBody: true` (F042): Fastify adapteri tahlil qilingan tanaga qo'shimcha
+    // ravishda XOM baytlarni ham `req.rawBody` da qoldiradi. Kiruvchi webhook
+    // imzosi (`/webhooks/online-orders/:channelId`) aynan kelgan baytlar ustidan
+    // tekshirilishi shart — `JSON.stringify(parsed)` probel/kalit-tartibiga
+    // bog'liq bo'lgani uchun to'g'ri imzoni ham yiqitardi.
+    { bufferLogs: true, rawBody: true },
   );
 
   // Swap the default Nest logger for the Pino-backed one. Every controller,

@@ -204,6 +204,8 @@ const INTENTIONALLY_OPEN: Record<string, string> = {
   'ClickWebhookController#webhook': 'Click imzosi tekshiriladi',
   'PaymeWebhookController#webhook': 'Payme imzosi tekshiriladi',
   'TelegramWebhookController#webhook': 'Telegram secret-token (Faza 21)',
+  'OnlineOrderWebhookController#receive':
+    'kanal siri bilan HMAC imzo, xom tana ustidan, constant-time (F042)',
 
   // ── Magic-link (HMAC token URL ichida; accountId token ICHIDAN) ──
   'DriverPublicController#ping': 'haydovchi magic-link (driver-link.util HMAC)',

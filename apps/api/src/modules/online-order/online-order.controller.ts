@@ -34,6 +34,21 @@ export class OnlineOrderController {
     return this.svc.create(user.accountId, body);
   }
 
+  /**
+   * Kanalning kiruvchi webhook sirini yaratadi/yangilaydi. Ochiq matn javobda
+   * **bir marta** qaytadi — qayta ko'rsatish yo'li ataylab yo'q (Payme/Click
+   * creds bilan bir xil siyosat). Sir integratsiya sozlamasi, shuning uchun
+   * ruxsat `settings:update` (payment-gateway config naqshi).
+   */
+  @Post('channels/:channelId/webhook-secret')
+  @RequirePermission({ entity: 'settings', action: 'update' })
+  async rotateWebhookSecret(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('channelId') channelId: string,
+  ) {
+    return this.svc.rotateWebhookSecret(user.accountId, channelId);
+  }
+
   @Post(':id/accept')
   @RequirePermission({ entity: 'onlineorder', action: 'create' })
   async accept(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {

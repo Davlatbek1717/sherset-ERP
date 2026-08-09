@@ -10,8 +10,12 @@ import { z } from 'zod';
  *
  * V1 deferred:
  *   - Actual CustomerOrder + Demand creation (V2)
- *   - Webhook ingestion endpoint (V2 — requires signature validation + queue)
  *   - Stock reservation (V2)
+ *
+ * F042 (2-bo'lim TZ §4.4): webhook qabul qiluvchi endpoint qo'shildi — imzo
+ * (`online-order.inbound.ts`) + `(channelId, externalOrderId)` idempotentligi.
+ * Navbat/qayta-urinish/DLQ qatlami F042b ga qoldirildi (doimiy inbox jadvali
+ * talab qiladi — hozircha sxemada yo'q).
  */
 
 export const ONLINE_ORDER_STATES = ['pending', 'accepted', 'rejected', 'converted'] as const;
@@ -44,6 +48,19 @@ export const CreateOnlineOrderSchema = z.object({
   receivedAt: z.coerce.date().optional(),
 });
 export type CreateOnlineOrderInput = z.infer<typeof CreateOnlineOrderSchema>;
+
+/**
+ * Webhook orqali tashqi kanaldan kelgan buyurtma tanasi (F042).
+ *
+ * `channelId` bu yerda YO'Q — u URL yo'lidan olinadi va imzo o'sha kanal siri bilan
+ * tekshiriladi. Tanadagi `channelId` ga ishonish kanallararo yozuvga yo'l ochardi.
+ *
+ * `externalOrderId` — idempotentlik kaliti (TZ §4.4). Tashqi tomon uni «eventId» deb
+ * atashi mumkin; bizda u `(channelId, externalOrderId)` unique indeksining ikkinchi
+ * qismi va aynan shu takroriy hujjatni to'sadi.
+ */
+export const InboundOnlineOrderSchema = CreateOnlineOrderSchema.omit({ channelId: true });
+export type InboundOnlineOrderInput = z.infer<typeof InboundOnlineOrderSchema>;
 
 export const AcceptOnlineOrderSchema = z.object({
   // No additional fields required — just a state transition
