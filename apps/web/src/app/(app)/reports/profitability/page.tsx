@@ -14,6 +14,7 @@
  *   Рентабельность продаж = Прибыль / (salesSum − returnSum)
  */
 
+import { type UnconvertedAmountRow, UnconvertedNotice } from '@/components/reports/report-notices';
 import { api } from '@/lib/api-client';
 import {
   Breadcrumb,
@@ -98,6 +99,7 @@ interface Report {
   channelBanner: { unsetDemands: number; unsetReturns: number } | null;
   currency: string;
   mixedCurrency: boolean;
+  unconvertedByCurrency: UnconvertedAmountRow[];
 }
 
 interface DraftFilter {
@@ -1261,6 +1263,10 @@ export default function ProfitabilityReportPage() {
           )}
         </div>
       )}
+      <UnconvertedNotice
+        rows={data?.unconvertedByCurrency}
+        testId="profitability-unconverted-warn"
+      />
     </Container>
   );
 }

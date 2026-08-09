@@ -1,5 +1,6 @@
 'use client';
 
+import { TruncatedNotice } from '@/components/reports/report-notices';
 import { api } from '@/lib/api-client';
 import {
   Breadcrumb,
@@ -39,6 +40,12 @@ interface StockBalanceReport {
   filter: { storeId?: string; groupBy: GroupBy };
   items: StockBalanceRow[];
   total: number;
+  /**
+   * `PERF-10` (Faza 27a) — the query hit `PRODUCT_SEARCH_CAP`/page cap and the
+   * rows below are a PREFIX of the real answer. Reading it is the whole point:
+   * a truncated list that says nothing is indistinguishable from a complete one.
+   */
+  truncated: boolean;
   summaries: {
     totalSku: number;
     totalQty: string;
@@ -229,6 +236,8 @@ export default function StockBalanceReportPage() {
           ))}
         </div>
       )}
+
+      <TruncatedNotice truncated={data?.truncated} testId="sb-truncated-warn" />
 
       {error && (
         <div

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { UnconvertedAmount } from './report-rate-ctx.util.js';
 
 export const DashboardPeriod = z.enum(['today', 'week', 'month', 'quarter', 'year']);
 export type DashboardPeriodValue = z.infer<typeof DashboardPeriod>;
@@ -61,6 +62,14 @@ export interface OverdueBlock {
   totalSumMinor: string;
   /** Top N overdue items sorted by daysOverdue desc (most overdue first). */
   items: OverdueDocItem[];
+  /**
+   * `M-12` (Faza 17 DEFER-2 → Faza Q16) — money whose currency has no usable
+   * rate, per currency. Those amounts are deliberately NOT part of
+   * `totalSumMinor` (adding them at face value is the bug Faza 17 removed);
+   * without this field they simply vanished from the widget. Empty array =
+   * everything consolidated cleanly, so the UI shows no banner.
+   */
+  unconvertedByCurrency: UnconvertedAmount[];
 }
 
 export interface MoneyByOrgRow {
@@ -135,6 +144,16 @@ export interface DashboardResult {
     totalSumMinor: string;
     byOrg: MoneyByOrgRow[];
     chart: MoneyChartPoint[];
+    /**
+     * `M-12` (Faza Q16) — currencies the money block could not consolidate.
+     * Sourced from the by-org (whole-history) pass, which is a SUPERSET of the
+     * chart's currency set: both read the same four tables with the same
+     * `state='posted'` predicate and the chart only adds a 6-month window, so
+     * a currency the chart cannot convert is necessarily present here too.
+     * One banner therefore covers the whole "Деньги" section (balance tiles,
+     * per-org table and chart alike).
+     */
+    unconvertedByCurrency: UnconvertedAmount[];
   };
 
   // -------------------------------------------------------------------

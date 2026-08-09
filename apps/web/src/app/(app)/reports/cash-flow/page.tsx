@@ -1,5 +1,7 @@
 'use client';
 
+import { type UnconvertedAmountRow, UnconvertedNotice } from '@/components/reports/report-notices';
+
 import { api } from '@/lib/api-client';
 import {
   Breadcrumb,
@@ -49,6 +51,7 @@ interface CashFlowReport {
   groups: CashFlowRow[];
   currency: string;
   mixedCurrency?: boolean;
+  unconvertedByCurrency: UnconvertedAmountRow[];
 }
 
 const SELECT_CLASS =
@@ -285,6 +288,7 @@ export default function CashFlowReportPage() {
           {t('currency_mixed_warn')}
         </div>
       )}
+      <UnconvertedNotice rows={data?.unconvertedByCurrency} testId="cashflow-unconverted-warn" />
 
       {error && (
         <div

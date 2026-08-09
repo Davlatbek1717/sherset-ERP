@@ -1,5 +1,6 @@
 'use client';
 
+import { TruncatedNotice } from '@/components/reports/report-notices';
 import { api } from '@/lib/api-client';
 import {
   Button,
@@ -37,11 +38,19 @@ interface ItemsResponse {
   page: number;
   pageSize: number;
   totalPages: number;
+  /**
+   * `PERF-01` (Faza Q5) — the aggregate-sort / lowStock paths cap at
+   * `MAX_PRODUCTS_PER_QUERY`; `total` is whole-scope but the served rows are a
+   * 10 000-row window, so a page past the cap legitimately comes back empty.
+   */
+  truncated: boolean;
 }
 interface ItemsStatsData {
   totalItems: number;
   lowStockCount: number;
   noPartnerCount: number;
+  /** `lowStockCount` is still measured inside the cap window (Faza Q5 DEFER-1). */
+  truncated: boolean;
 }
 interface GroupsResponse {
   groups: ItemGroupNode[];
@@ -282,6 +291,13 @@ export default function AnalitikaProductsPage() {
             ? `${t('total_count', { total: pg.total })}${isFetching ? ' …' : ''}`
             : ''}
       </p>
+
+      {/* Faza Q16 — the cap is no longer silent: `total` can exceed the rows
+          the server is willing to serve, and past the cap a page is empty. */}
+      <TruncatedNotice
+        truncated={pg?.truncated || statsQuery.data?.truncated}
+        testId="items-truncated-warn"
+      />
 
       {/* Layout: tree sidebar + items table */}
       <div className="grid gap-4 lg:grid-cols-[16rem_minmax(0,1fr)]">

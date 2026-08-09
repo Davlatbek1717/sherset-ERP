@@ -1140,6 +1140,11 @@
     "tasks_range": "{from}-{to} из {total}",
     "task_mark_done": "Отметить выполненной"
   },
+  "report_notices": {
+    "truncated": "Внимание: показаны не все строки — сработало ограничение выборки. Уточните фильтр или период.",
+    "unconverted_title": "Внимание: для части сумм не найден курс — они не включены в итог",
+    "unconverted_row": "{currency}: {amount}"
+  },
   "product_detail_widget": {
     "tab_prices": "Цены",
     "tab_variants": "Модификации",

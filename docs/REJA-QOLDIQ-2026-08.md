@@ -493,7 +493,7 @@ recentDocs SQL'ida 12× `deleted_at IS NULL` (Faza 26 shakl-qulfi uslubi).
 > `docs/REJA-QOLDIQ-2026-08.md` — **Faza Q16**. O'ZGARMAS QOIDALAR. Faza 27a/17/26 DEFER'larini o'qi.
 > Truncated-banner + unconverted-banner + recentDocs deleted_at. TDD: 3 stsenariy. Gate (API+web+i18n).
 > Hisobot, TO'XTA.
-**◻ HISOBOT:** _(agent to'ldiradi)_
+**☑ HISOBOT (2026-08-09):** BAJARILDI — batafsili «HISOBOT JURNALI → Faza Q16» da.
 
 ---
 
@@ -2310,3 +2310,178 @@ yugurishda ular tuzatdi va yakuniy gate yashil. **Tegilmadi** (§6.1).
    YO'QOLISHI. Aniqroq variant (haqiqiy AST) — alohida ish.
 
 **Commit:** `refactor(web): faza q15 — listresponse codemod + yangi endpoint kontraktlari (FE-12)`
+
+---
+
+## Faza Q16 — Hisobot ko'rinuvchanlik paketi: `truncated` + `unconvertedByCurrency` + `recentDocs deleted_at` (2026-08-09) — **Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q**
+
+**Manba:** Faza 27a DEFER-1 · Faza Q5 DEFER-3 · Faza 17 DEFER-2/3 · Faza Q8 DEFER-6 · Faza 26 DEFER-2.
+
+### 1. Da'volarni HEAD kodida tasdiqlash (§2) — 3/3 HAQIQIY, 1 ta reja-formulasi NOTO'G'RI
+
+| Da'vo | Dalil (fix'dan oldingi holat) | Xulosa |
+|---|---|---|
+| `truncated` FE'da o'qilmaydi | `reports/stock-balance/page.tsx` `StockBalanceReport` (`items/total/summaries`) — maydon YO'Q; `reports/counterparty-balance/page.tsx` `CpBalanceReport` — YO'Q; `analitika/mahsulotlar/page.tsx` `ItemsResponse` — YO'Q. API tomonda esa bor: `stock-balance.service.ts:50`, `counterparty-balance.service.ts:43`, `analitika/items.service.ts:57,65` | **TASDIQ** |
+| `unconvertedByCurrency` hech qayerda chizilmaydi | 12 servis maydonni qaytaradi (`aging`,`average-basket`,`cash-flow`,`counterparty-balance`,`pnl`,`profitability`,`purchase-management`,`report`,`sales-by-channel`,`sales-by-hour`,`unit-economics`,`warehouse-ops`); FE'da `grep unconvertedByCurrency apps/web` → **0 natija** | **TASDIQ** |
+| `recentDocs` `deleted_at` ni filtrlamaydi | `dashboard.service.ts` UNION'ining 12 legida ham faqat `WHERE account_id = …` | **TASDIQ** |
+| *(reja)* «`/money` ga ham unconverted-banner ula» | `money-operation.service.ts:87-110` — javob `totals.byCurrency` (**per-valyuta**, konsolidatsiya YO'Q) ⇒ `CurrencyTally` ham, `unconvertedByCurrency` ham u yerda YO'Q va **ma'noga ega emas** | **❌ REJA FORMULASI XATO** — `/money` konvertatsiya qilmaydi, demak «konvertatsiya qilinmagan qoldiq» tushunchasi unga tegishli emas. Sahifa Faza 17'da allaqachon per-valyuta qatorlar bilan ULANGAN. TEGILMADI (asos shu yerda) |
+
+**Yon-topilma (bonus, rejada yo'q edi):** har 12 servisda `unconvertedByCurrency` aynan `mixedCurrency` dan
+KEYINGI qator — ya'ni ikkalasi bitta interfeysning qo'shni maydonlari. Shu sababli FE tomonida ham
+codemod anchor'i `mixedCurrency` bo'la oldi (deterministik, fail-closed).
+
+### 2. O'zgarishlar
+
+**(a) `truncated` banneri — 3 sahifa**
+
+| Sahifa | Manba maydon | `data-test-id` |
+|---|---|---|
+| `/reports/stock-balance` | `data.truncated` (`PERF-10`) | `sb-truncated-warn` |
+| `/reports/counterparty-balance` | `data.truncated` (`PERF-04`) | `cp-balance-truncated-warn` |
+| `/analitika/mahsulotlar` | `pg.truncated` YOKI `stats.truncated` (`PERF-01`) | `items-truncated-warn` |
+
+`/analitika/mahsulotlar` da IKKALA so'rov ham (`items` + `items/stats`) `truncated` qaytaradi va ikkisi
+mustaqil cap'ga uriladi (Faza Q5 DEFER-1: `lowStockCount` hamon cap-oyna ichida) — shuning uchun banner
+mantiqiy-YOKI bilan ikkalasini oqizadi, aks holda faqat KPI-lentasi yolg'on bo'lgan holat jim qolardi.
+
+**(b) «Konvertatsiya qilinmagan» banneri — 12 hisobot sahifasi + dashboard (2 vidjet)**
+
+FE: `aging`, `average-basket`, `cash-flow`, `counterparty-balance`, `pnl`, `profitability`,
+`purchase-management`, `sales`, `sales-by-channel`, `sales-by-hour`, `unit-economics`, `warehouse-ops`
+(10 tasi deterministik codemod bilan — anchor = `currency_mixed_warn` banner-quyrug'i, 1 martadan
+uchrashi tekshirilib; `profitability` + `warehouse-ops` qo'lda, ular banner'ni boshqa ichki blokda
+chizadi). Har birida javob-interfeysiga `unconvertedByCurrency: UnconvertedAmountRow[]` qo'shildi —
+busiz prop abadiy `undefined` bo'lib banner **hech qachon** yonmasdi (bu aynan Q16'gacha bo'lgan holat).
+
+BE — dashboard javob-shakli KENGAYTIRILDI (Faza 17 DEFER-2 aynan shuni so'raydi):
+- `dashboard.schema.ts`: `OverdueBlock.unconvertedByCurrency` + `DashboardResult.money.unconvertedByCurrency`.
+- `computeOverdueInvoices` → `seen.unconvertedRows()`.
+- `loadMoneyByOrg` → endi `{ rows, unconvertedByCurrency }` qaytaradi; `TtlCache<MoneyByOrgResult>`.
+  **Sabab (kesh gotcha'si):** tally rows bilan BIR keshda yurishi shart — kesh-hit tally'ni tashlab
+  yuborsa banner 30 s ga o'chib qolar, u ogohlantirayotgan raqamlar esa ekranda qolardi.
+- `computeOverdueOrders` → `[]` **ataylab**: u umuman konsolidatsiya qilmaydi (`aggregate` `sum_minor` ni
+  valyutalar bo'ylab face-value qo'shadi), demak «tashlab ketilgan» summa yo'q. Yolg'on bo'sh emas —
+  **haqiqiy** bo'sh; face-value jamining o'zi esa alohida ochiq topilma (quyida DEFER-1).
+- `loadMoneyChart` tally'si ATAYLAB qaytarilmaydi: grafik by-org bilan bir xil 4 jadvalni bir xil
+  `state='posted'` predikati bilan o'qiydi va faqat 6 oylik oyna qo'shadi ⇒ uning konvertatsiya
+  qilinmagan valyutalar to'plami by-org'nikining **osti-to'plami**. Bitta banner butun «Деньги»
+  bo'limini (jami + org-jadval + grafik) qoplaydi; ikki oynani jamlash esa yolg'on son berardi.
+  Bu argument kodda ham, sxemada ham yozib qo'yildi.
+
+**(c) `recentDocs` `deleted_at IS NULL` — 12 leg.** Deterministik skript (anchor 12 marta topilmasa
+`exit 1`) `WHERE account_id = accountId::uuid` → `… AND deleted_at IS NULL`. **Faza 26 shakl-qulfi
+SAQLANDI:** har legning `ORDER BY updated_at DESC LIMIT 20` i tegilmadi va endi test IKKALA yarmini ham
+alohida qulflaydi (12 filtr VA 12 limit) — chunki 0.55 ms vs 66 ms o'lchovi so'rov SHAKLIga bog'liq,
+`WHERE` bandiga emas, va keyingi sessiya filtr qo'shayotib limitni «ortiqcha» deb olib tashlamasligi kerak.
+Sxema tekshirildi: 12 modelning HAMMASIDA `deletedAt` ustuni bor.
+
+**(d) Umumiy komponent** — `apps/web/src/components/reports/report-notices.tsx` (yangi):
+`TruncatedNotice` + `UnconvertedNotice`. Ikkalasi ham hech nima aytilmasa `null` qaytaradi (doim
+ko'rinadigan banner = shovqin = bannersizlik). Stil mavjud `currency_mixed_warn` banneridan olindi.
+Element `<output>` (biome `a11y/useSemanticElements` `role="status"` li `div` ni rad etadi; `<output>`
+ning implicit roli aynan `status` — a11y yo'qolmadi). Summa o'z valyutasida, `displayAs:'none'` bilan
+formatlanadi va kod matn shablonidan chiqadi (banner mazmuni AYNAN valyuta kodi).
+
+**(e) i18n** — yangi top-level namespace `report_notices` (ru + uz), 3 kalit:
+`truncated` · `unconverted_title` · `unconverted_row`.
+**Grounding (CLAUDE.md §4):** bu MoySklad'da mavjud bo'lmagan yangi banner (capture'da field-roli yo'q,
+`moysklad-reference` dir ham yo'q — `moysklad-reference-dir-missing` xotirasi), shuning uchun
+**loyihaning o'z lug'atidagi ogohlantirish-registri** baza qilib olindi: «Внимание: …» prefiksi
+lug'atda **14 marta** field-rolда uchraydi (`currency_mixed_warn` ×12, `duplicate_warning`,
+`cash_overdrawn_warning`); «не найден» naqshi ham lug'atda o'nlab marta. Field-label KO'CHIRILMADI,
+ya'ni §4 ning misground bug-klassi bu yerga taalluqli emas — hujjatlashtirildi.
+
+### 3. TDD — RED jonli o'lchandi
+
+| Test fayl | RED | GREEN |
+|---|---|---|
+| `apps/api/…/report/dashboard.service.test.ts` (**Edit**, +5 test) | **4 failed / 8 passed (12)** — `deleted_at IS NULL` ×12 → `undefined`; `overdueInvoices.unconvertedByCurrency` → `undefined`; `money.unconvertedByCurrency` → `undefined` (×2) | **12/12** |
+| `apps/web/src/components/reports/report-notices.test.tsx` (yangi, 6 test) | **1 fayl failed, 0 test collected** — `Failed to resolve import './report-notices'` | **6/6** |
+| `apps/web/src/__tests__/report-notices-wiring.test.ts` (yangi, 21 test) | **16 failed / 5 passed (21)** | **21/21** |
+
+5 ta yangi API testdan **1 tasi ataylab yashil tug'ildi** — Faza 26 shakl-qulfini qayta-tasdiqlovchi
+regress-test (12 `ORDER BY … LIMIT`); u RED bo'lishi kerak EMAS, u filtr qo'shilishi shaklni
+buzmaganini isbotlaydi.
+
+Stsenariylar: (1) `truncated: true` da banner render / `false` da umuman render yo'q / `undefined` da
+yo'q; (2) `unconvertedByCurrency` qatorlari valyuta-kodi + major summasi bilan ko'rinadi, bo'sh
+ro'yxatda banner yo'q; (3) `recentDocs` SQL'ida **12 ta `deleted_at IS NULL` VA 12 ta per-leg
+`ORDER BY … LIMIT`** (ikkalasi ham, alohida assert).
+
+`report-notices-wiring.test.ts` — `pos-i18n-guard.test.ts` naqshi (`i18n-gate-blind-to-components`
+xotirasi): key-existence skaneri `app/(app)` dan tashqarini KO'RMAYDI, shuning uchun yangi komponent
+kalitlari shu test bilan ikkala lokalda qoplandi. Qo'shimcha invariant — banner **mount qilingan**mi
+va sahifaning o'z tipida maydon **bor**mi (ikkinchisi bo'lmasa prop abadiy `undefined`).
+
+### 4. Gate (jonli o'lchangan)
+
+- `pnpm --filter @moysklad/web typecheck` → **0 xato**
+- `pnpm --filter @moysklad/api typecheck` → **11 xato, HAMMASI parallel sessiyaning fayli**
+  `hr/hr-employee/onboarding.service.ts` da (`employeeOnboarding` Prisma-modeli hali generatsiya
+  qilinmagan — ular `schema.prisma` ustida ishlamoqda). Mening 3 API faylimda 0. §6.1 bo'yicha tegilmadi.
+- `pnpm i18n:gate` → **9/9 yashil** (417 fayl, 12 422 kalit)
+- `pnpm lint:product` → **10 xato, HAMMASI parallel sessiyaniki** (`hr-employee/onboarding*`,
+  `lib/domain-status-tone.ts`, `hr/employees/_components/note-journal*`, `menejer/{javobgarlik,jonli}`).
+  O'z 27 faylimda: `npx biome check <ro'yxat>` → **0 xato**, 13 warning (tegilmagan qatorlardagi eski
+  `nursery/useSortedClasses`).
+- `pnpm --filter @moysklad/api exec vitest run src/modules/report src/modules/analitika` →
+  **52 fayl / 513 test yashil**
+- Web to'liq suite → **195 fayl / 2919 passed / 26 skipped**
+- API to'liq suite, 3 shard → 1946 + 1902 + 2200 = **6048 passed / 2 skipped**
+
+**Sanoq nazorati (baza: Faza Q15 — API 5943/2, web 2849/26):**
+- API `5943 + 5 (meniki) = 5948`, o'lchangan **6048** ⇒ **+100 parallel sessiyadan**
+  (hr-onboarding, manager-kpi, live-status, employee-note testlari — hammasi ularning untracked
+  fayllarida). **Regress 0.**
+- Web `2849 + 27 (meniki) = 2876`, o'lchangan **2919** ⇒ **+43 parallel sessiyadan**
+  (menejer-live-boards, employee-card-360, note-journal). Skip soni **26 → 26 o'zgarmadi**.
+- Shard-2 da **4 yiqilish ko'rindi** (`publication.service.test.ts` ×3,
+  `permissions/mutation-guard-coverage.test.ts` ×1) — hammasi ~5 000 ms da, ya'ni **timeout**, xato
+  emas. Yakka yugurtirilganda: **72/72 yashil** (371 ms / 306 ms / 1 919 ms). Sabab: argon2 CPU-bound
+  hashlar + og'ir DI-graf testi to'liq-suite yuklamasida vitest'ning 5 s chegarasiga urildi. Mening
+  o'zgarishim `report/` ichida — bu ikki modulga tegmaydi.
+
+### 5. Parallel sessiya sharoiti (CLAUDE.md §6)
+
+Daraxtda parallel sessiya faol (hr-employee onboarding/note, manager kpi/live, menejer sahifalari,
+`schema.prisma`, `layout.tsx`, `lib/{hr-api,manager-api,domain-status-tone}.ts`) + foydalanuvchining
+o'z fayllari. HECH BIRIGA TEGILMADI.
+
+**`messages/{ru,uz}.json` — UMUMIY fayl, hunk-darajasida ajratildi.** Ikkala fayl ham parallel
+sessiyaning ~100 qatorini VA mening 5 qatorimni saqlaydi. `git add` butun faylni oladi, `git add -p`
+bu muhitda yo'q ⇒ indeks blob'i **qo'lda yasaldi**: `git show HEAD:<fayl>` + faqat mening
+`report_notices` blokim → `git hash-object -w` → `git update-index --cacheinfo`. Ishchi daraxt
+TEGILMADI (ularning tahriri joyida qoldi), commit'ga esa faqat mening 5 qatorim tushdi.
+Hook'lar bir martaga chetlab o'tildi (`-c core.hooksPath=/dev/null`) — §6.7 B: lint-staged butun
+daraxtni stash/restore qilib begona faylni commit'ga qo'shadi. Gate'lar shu sababli **qo'lda to'liq**
+yugurtirildi (yuqoridagi raqamlar).
+
+Bu yozuv faylga **append** bilan qo'shildi — marker-kesish YO'Q (`doc-append-marker-truncation`
+xotirasi), Q1–Q15 yozuvlariga TEGILMADI.
+
+### 6. Qolgan qarz / DEFER
+
+1. **`overdueOrders` valyutalarni face-value qo'shadi** (`customerOrder.aggregate({_sum: {sumMinor}})`)
+   — USD buyurtma UZS tiyin bilan bir xil songa qo'shiladi. Bu M-12 bug-klassining **buyurtma
+   tomonidagi qolgan qismi**; Faza 17 uni faqat schyot/pul yo'llarida yopgan. Banner bu yerda halol
+   bo'sh, chunki tashlab ketilgan summa yo'q — **noto'g'ri qo'shilgan** summa bor. To'g'ri yechim:
+   `GROUP BY currency` + `consolidateToBase` (overdue-invoice naqshi). O'lchanmagan, alohida faza.
+2. **`dashboard.service.ts` ning 4 konsolidatsiya o'rni hamon JORIY kursda** (Faza Q8 DEFER-1) —
+   tarixiy kurs (`rate_value`) bu fazada tegilmadi, faqat ko'rinuvchanlik qo'shildi.
+3. **`/reports/{abc-analysis,returns-ratio,slow-movers,inventory-variance}`** sahifalarida banner YO'Q —
+   ularning servislari `unconvertedByCurrency` maydonini umuman qaytarmaydi (tekshirildi: 12 servis
+   ro'yxatida yo'q). Ular pul-konsolidatsiya qilsa — avval BE tomoni kerak.
+4. **`truncated` faqat 3 sahifada.** Boshqa cap'li hisobotlar bo'lsa, ular avval API'da bayroq
+   chiqarishi kerak — hozircha bayroq aynan shu 3 endpointda bor (o'lchandi).
+5. **Grafik tally'si javobda yo'q** (§2b, ataylab). Agar kelajakda grafik oynasi by-org predikatidan
+   ajralib ketsa (masalan boshqa `state` filtri), osti-to'plam argumenti buziladi — o'sha o'zgarish
+   bilan birga alohida maydon kerak bo'ladi. Kodda izoh qo'yilgan.
+6. **Kesh + banner nomuvofiqligi oynasi** — `money.unconvertedByCurrency` 30 s TTL keshdan keladi
+   (Faza 26). Kurs kiritilgandan keyin banner yarim daqiqagacha qolishi mumkin. Ataylab: bu raqamlar
+   bilan bir xil eskirish, ikkisi hech qachon bir-biriga zid bo'lmaydi.
+7. **Browser-smoke YO'Q.** 16 sahifaning birortasi ham real brauzerda ochilmadi; bannerlar faqat
+   RTL/happy-dom da render bo'ldi. Ayniqsa tekshirilishi kerak: dashboard `OverduePanel` ichida
+   banner `<section>` oxirida joylashuvi va `/analitika/mahsulotlar` KPI-lentasi ostidagi joylashuv —
+   Phase-2 QA cohortiga.
+
+**Commit:** `feat(report): faza q16 — truncated + konvertatsiyasiz bannerlar, recentdocs deleted_at`

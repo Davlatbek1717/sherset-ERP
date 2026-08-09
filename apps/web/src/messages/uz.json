@@ -1140,6 +1140,11 @@
     "tasks_range": "{from}-{to} / {total}",
     "task_mark_done": "Bajarilgan deb belgilash"
   },
+  "report_notices": {
+    "truncated": "Diqqat: barcha satrlar ko'rsatilmadi — tanlov chegarasi ishladi. Filtr yoki davrni aniqlashtiring.",
+    "unconverted_title": "Diqqat: bir qism summalar uchun kurs topilmadi — ular yakuniy jamiga qo'shilmadi",
+    "unconverted_row": "{currency}: {amount}"
+  },
   "product_detail_widget": {
     "tab_prices": "Narxlar",
     "tab_variants": "Modifikatsiyalar",

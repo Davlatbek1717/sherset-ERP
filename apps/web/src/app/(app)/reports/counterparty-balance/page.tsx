@@ -1,5 +1,10 @@
 'use client';
 
+import {
+  TruncatedNotice,
+  type UnconvertedAmountRow,
+  UnconvertedNotice,
+} from '@/components/reports/report-notices';
 import { api } from '@/lib/api-client';
 import { archivedTone } from '@/lib/archived-tone';
 import { balanceSideTone } from '@/lib/domain-status-tone';
@@ -44,6 +49,11 @@ interface CpBalanceReport {
   filter: { signFilter: SignFilter; groupBy: GroupBy };
   items: CpBalanceRow[];
   total: number;
+  /**
+   * `PERF-04` (Faza 27a) — `total` counts the whole scope but only the first
+   * `limit` rows are served. Without a banner the table reads as complete.
+   */
+  truncated: boolean;
   summaries: {
     rowCount: number;
     debtorCount: number;
@@ -55,6 +65,7 @@ interface CpBalanceReport {
     currency: string;
     /** True when balances span >1 currency (totals are base-converted). */
     mixedCurrency: boolean;
+    unconvertedByCurrency: UnconvertedAmountRow[];
   };
 }
 
@@ -301,6 +312,11 @@ export default function CounterpartyBalanceReportPage() {
           {t('currency_mixed_warn')}
         </div>
       )}
+      <UnconvertedNotice
+        rows={data?.summaries.unconvertedByCurrency}
+        testId="cp-balance-unconverted-warn"
+      />
+      <TruncatedNotice truncated={data?.truncated} testId="cp-balance-truncated-warn" />
 
       {error && (
         <div

@@ -228,6 +228,87 @@ describe('DashboardService — PERF-05: recent-docs UNION shape', () => {
   });
 });
 
+describe('DashboardService — Faza Q16: recentDocs soft-delete filtri', () => {
+  it("o'chirilgan hujjat «Недавние документы» ga TUSHMAYDI (12 legda deleted_at IS NULL)", async () => {
+    // Faza 26 DEFER-2: 12 legning birortasida ham `deleted_at` filtri yo'q edi,
+    // ya'ni soft-delete qilingan hujjat bosh sahifada ko'rinib turardi.
+    const { svc, $queryRaw } = makeDeps();
+    await svc.dashboard('acc-1', 'user-1', {});
+
+    const call = $queryRaw.mock.calls.find((c) =>
+      (c[0] as TemplateStringsArray).raw.join(' ').includes('FROM customer_orders'),
+    );
+    const sql = (call?.[0] as TemplateStringsArray).raw.join('?');
+
+    expect(sql.match(/deleted_at IS NULL/g)?.length).toBe(12);
+  });
+
+  it('Faza 26 shakl-qulfi SAQLANADI — har leg hamon o‘z ORDER BY … LIMIT ига эга', async () => {
+    // Filtr qo'shilishi per-leg LIMIT ni siqib chiqarmasligi kerak: EXPLAIN
+    // o'lchovi (0.55 ms vs 66 ms) aynan shu shaklga bog'liq.
+    const { svc, $queryRaw } = makeDeps();
+    await svc.dashboard('acc-1', 'user-1', {});
+
+    const call = $queryRaw.mock.calls.find((c) =>
+      (c[0] as TemplateStringsArray).raw.join(' ').includes('FROM customer_orders'),
+    );
+    const sql = (call?.[0] as TemplateStringsArray).raw.join('?');
+
+    expect(sql.match(/UNION ALL/g)?.length).toBe(11);
+    expect(sql.match(/ORDER BY updated_at DESC LIMIT/g)?.length).toBe(12);
+  });
+});
+
+describe('DashboardService — Faza Q16: unconvertedByCurrency vidjetlarda', () => {
+  it('overdue-schyot bloki kursi topilmagan valyutani OSHKORA qaytaradi', async () => {
+    // Kontekstda faqat UZS bor (makeDeps mock'i) ⇒ EUR konvertatsiya
+    // qilinmaydi, jamiga qo'shilmaydi va endi javobda ko'rinadi.
+    const { svc } = makeDeps({
+      overdueInvoiceAgg: [
+        { currency: 'UZS', cnt: 1n, total: 300n },
+        { currency: 'EUR', cnt: 1n, total: 500n },
+      ],
+      overdueInvoiceItems: [],
+    });
+
+    const r = await svc.dashboard('acc-1', 'user-1', {});
+
+    expect(r.overdueInvoices.totalSumMinor).toBe('300'); // EUR jamida YO'Q
+    expect(r.overdueInvoices.unconvertedByCurrency).toEqual([
+      { currency: 'EUR', amountMinor: '500' },
+    ]);
+  });
+
+  it('pul bloki (org-balans + grafik) kursi topilmagan valyutani qaytaradi', async () => {
+    const { svc } = makeDeps({
+      ledgerRows: [
+        { organization_id: 'org-1', currency: 'UZS', balance: 1_000n },
+        { organization_id: 'org-1', currency: 'EUR', balance: 700n },
+      ],
+    });
+
+    const r = await svc.dashboard('acc-1', 'user-1', {});
+
+    expect(r.money.totalSumMinor).toBe('1000');
+    expect(r.money.unconvertedByCurrency).toEqual([{ currency: 'EUR', amountMinor: '700' }]);
+  });
+
+  it('konvertatsiya toza bo‘lganda ro‘yxat BO‘SH (banner chiqmaydi)', async () => {
+    const { svc } = makeDeps({
+      overdueInvoiceAgg: [{ currency: 'UZS', cnt: 1n, total: 300n }],
+      ledgerRows: [{ organization_id: 'org-1', currency: 'UZS', balance: 1_000n }],
+    });
+
+    const r = await svc.dashboard('acc-1', 'user-1', {});
+
+    expect(r.overdueInvoices.unconvertedByCurrency).toEqual([]);
+    expect(r.money.unconvertedByCurrency).toEqual([]);
+    // Buyurtma bloki umuman konvertatsiya qilmaydi (face-value jam) —
+    // shu sabab ro'yxati DOIM bo'sh; bu ochiq qarz, hisobotda qayd etilgan.
+    expect(r.overdueOrders.unconvertedByCurrency).toEqual([]);
+  });
+});
+
 describe('DashboardService — PERF-06: rate context + money-block cache', () => {
   it('loads the rate context once per request (was: three times)', async () => {
     const { svc, client } = makeDeps();

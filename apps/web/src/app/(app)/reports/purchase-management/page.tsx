@@ -1,5 +1,7 @@
 'use client';
 
+import { type UnconvertedAmountRow, UnconvertedNotice } from '@/components/reports/report-notices';
+
 /**
  * «Управление закупками» (Purchase Management) — moysklad-parity
  * per-supplier procurement dashboard. For a date window, lists every
@@ -66,6 +68,7 @@ interface PMReport {
   // base (валюта учёта); mixedCurrency flags multi-currency source periods.
   currency: string;
   mixedCurrency: boolean;
+  unconvertedByCurrency: UnconvertedAmountRow[];
 }
 
 type SortKey =
@@ -321,6 +324,7 @@ export default function PurchaseManagementReportPage() {
           {t('currency_mixed_warn')}
         </div>
       )}
+      <UnconvertedNotice rows={data?.unconvertedByCurrency} testId="pm-unconverted-warn" />
 
       {/* Top KPI strip — at-a-glance window totals. */}
       {data && data.totals.ordersCount > 0 && (

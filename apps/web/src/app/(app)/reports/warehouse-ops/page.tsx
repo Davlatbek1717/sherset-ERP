@@ -9,6 +9,7 @@
  * Backend: GET /reports/warehouse-ops?dateFrom=...&dateTo=...
  */
 
+import { type UnconvertedAmountRow, UnconvertedNotice } from '@/components/reports/report-notices';
 import { api } from '@/lib/api-client';
 import { Breadcrumb, Button, Container, Input, PageHeader, formatMoney } from '@moysklad/ui';
 import { useQuery } from '@tanstack/react-query';
@@ -32,6 +33,7 @@ interface WarehouseOpsReport {
   keepers: KeeperRow[];
   currency: string;
   mixedCurrency: boolean;
+  unconvertedByCurrency: UnconvertedAmountRow[];
 }
 
 const INPUT_CLASS =
@@ -148,6 +150,7 @@ export default function WarehouseOpsReportPage() {
               {t('currency_mixed_warn')}
             </div>
           )}
+          <UnconvertedNotice rows={data.unconvertedByCurrency} testId="wo-unconverted-warn" />
 
           <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
             <StatTile

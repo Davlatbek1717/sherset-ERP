@@ -20,6 +20,7 @@ import { percent as percentOf } from './metrics/index.js';
 import {
   CurrencyTally,
   type RateContext,
+  type UnconvertedAmount,
   consolidateToBase,
   loadRateContext,
 } from './report-rate-ctx.util.js';
@@ -60,6 +61,17 @@ const RECENT_DOCS_LIMIT = 20;
  */
 const MONEY_CACHE_TTL_MS = 30_000;
 
+/**
+ * What the by-org money pass produces. The unconverted tally travels WITH the
+ * rows because both go through the same TTL cache — a cached hit that dropped
+ * the tally would make the "не удалось конвертировать" banner flicker off for
+ * 30 s while the numbers it warns about stayed on screen.
+ */
+interface MoneyByOrgResult {
+  rows: MoneyByOrgRow[];
+  unconvertedByCurrency: UnconvertedAmount[];
+}
+
 @Injectable()
 export class DashboardService {
   constructor(
@@ -75,7 +87,7 @@ export class DashboardService {
    * rolls over at each month boundary) — a key that forgot the account would
    * serve one tenant's cash position to another.
    */
-  private readonly moneyByOrgCache = new TtlCache<MoneyByOrgRow[]>(MONEY_CACHE_TTL_MS);
+  private readonly moneyByOrgCache = new TtlCache<MoneyByOrgResult>(MONEY_CACHE_TTL_MS);
   private readonly moneyChartCache = new TtlCache<MoneyChartPoint[]>(MONEY_CACHE_TTL_MS);
 
   async dashboard(
@@ -190,7 +202,7 @@ export class DashboardService {
     );
 
     // Money total = sum of every org's running balance
-    const moneyTotalSumMinor = moneyByOrg
+    const moneyTotalSumMinor = moneyByOrg.rows
       .reduce((acc, row) => acc + BigInt(row.balanceMinor), 0n)
       .toString();
 
@@ -218,8 +230,9 @@ export class DashboardService {
 
       money: {
         totalSumMinor: moneyTotalSumMinor,
-        byOrg: moneyByOrg,
+        byOrg: moneyByOrg.rows,
         chart: moneyChart,
+        unconvertedByCurrency: moneyByOrg.unconvertedByCurrency,
       },
 
       recentDocs,
@@ -526,6 +539,12 @@ export class DashboardService {
    * of the account from all 12 tables and top-N sorts them — adding the
    * indexes alone left it a full scan (row 2). Each leg must ask for its own
    * top-20; the global top-20 is necessarily a subset of that union.
+   *
+   * Faza Q16 — every leg also carries `AND deleted_at IS NULL`. Without it a
+   * soft-deleted document kept showing up in «Недавние документы» (Faza 26
+   * DEFER-2). The per-leg `ORDER BY … LIMIT` above MUST survive that edit: the
+   * measurement is a property of the query SHAPE, not of the WHERE clause, and
+   * `dashboard.service.test.ts` locks both halves (12 filters AND 12 limits).
    */
   private async computeRecentDocs(accountId: string): Promise<DashboardResult['recentDocs']> {
     const rows = await this.prisma.client.$queryRaw<
@@ -545,51 +564,51 @@ export class DashboardService {
       SELECT * FROM (
         (SELECT 'customer-order' AS type, id, name AS number, applicable AS posted,
                 moment AS moment_date, agent_id, organization_id, sum_minor, currency, updated_at AS modified_at
-           FROM customer_orders WHERE account_id = ${accountId}::uuid
+           FROM customer_orders WHERE account_id = ${accountId}::uuid AND deleted_at IS NULL
           ORDER BY updated_at DESC LIMIT ${RECENT_DOCS_LIMIT})
         UNION ALL
         (SELECT 'demand', id, name, applicable, moment, agent_id, organization_id, sum_minor, currency, updated_at
-           FROM demands WHERE account_id = ${accountId}::uuid
+           FROM demands WHERE account_id = ${accountId}::uuid AND deleted_at IS NULL
           ORDER BY updated_at DESC LIMIT ${RECENT_DOCS_LIMIT})
         UNION ALL
         (SELECT 'invoice-out', id, name, applicable, moment, agent_id, organization_id, sum_minor, currency, updated_at
-           FROM invoices_out WHERE account_id = ${accountId}::uuid
+           FROM invoices_out WHERE account_id = ${accountId}::uuid AND deleted_at IS NULL
           ORDER BY updated_at DESC LIMIT ${RECENT_DOCS_LIMIT})
         UNION ALL
         (SELECT 'invoice-in', id, name, applicable, moment, agent_id, organization_id, sum_minor, currency, updated_at
-           FROM invoices_in WHERE account_id = ${accountId}::uuid
+           FROM invoices_in WHERE account_id = ${accountId}::uuid AND deleted_at IS NULL
           ORDER BY updated_at DESC LIMIT ${RECENT_DOCS_LIMIT})
         UNION ALL
         (SELECT 'supply', id, name, applicable, moment, agent_id, organization_id, sum_minor, currency, updated_at
-           FROM supplies WHERE account_id = ${accountId}::uuid
+           FROM supplies WHERE account_id = ${accountId}::uuid AND deleted_at IS NULL
           ORDER BY updated_at DESC LIMIT ${RECENT_DOCS_LIMIT})
         UNION ALL
         (SELECT 'sales-return', id, name, applicable, moment, agent_id, organization_id, sum_minor, currency, updated_at
-           FROM sales_returns WHERE account_id = ${accountId}::uuid
+           FROM sales_returns WHERE account_id = ${accountId}::uuid AND deleted_at IS NULL
           ORDER BY updated_at DESC LIMIT ${RECENT_DOCS_LIMIT})
         UNION ALL
         (SELECT 'purchase-order', id, name, applicable, moment, agent_id, organization_id, sum_minor, currency, updated_at
-           FROM purchase_orders WHERE account_id = ${accountId}::uuid
+           FROM purchase_orders WHERE account_id = ${accountId}::uuid AND deleted_at IS NULL
           ORDER BY updated_at DESC LIMIT ${RECENT_DOCS_LIMIT})
         UNION ALL
         (SELECT 'purchase-return', id, name, applicable, moment, agent_id, organization_id, sum_minor, currency, updated_at
-           FROM purchase_returns WHERE account_id = ${accountId}::uuid
+           FROM purchase_returns WHERE account_id = ${accountId}::uuid AND deleted_at IS NULL
           ORDER BY updated_at DESC LIMIT ${RECENT_DOCS_LIMIT})
         UNION ALL
         (SELECT 'cash-in', id, name, applicable, moment, agent_id, organization_id, sum_minor, currency, updated_at
-           FROM cash_in WHERE account_id = ${accountId}::uuid
+           FROM cash_in WHERE account_id = ${accountId}::uuid AND deleted_at IS NULL
           ORDER BY updated_at DESC LIMIT ${RECENT_DOCS_LIMIT})
         UNION ALL
         (SELECT 'cash-out', id, name, applicable, moment, agent_id, organization_id, sum_minor, currency, updated_at
-           FROM cash_out WHERE account_id = ${accountId}::uuid
+           FROM cash_out WHERE account_id = ${accountId}::uuid AND deleted_at IS NULL
           ORDER BY updated_at DESC LIMIT ${RECENT_DOCS_LIMIT})
         UNION ALL
         (SELECT 'payment-in', id, name, applicable, moment, agent_id, organization_id, sum_minor, currency, updated_at
-           FROM payments_in WHERE account_id = ${accountId}::uuid
+           FROM payments_in WHERE account_id = ${accountId}::uuid AND deleted_at IS NULL
           ORDER BY updated_at DESC LIMIT ${RECENT_DOCS_LIMIT})
         UNION ALL
         (SELECT 'payment-out', id, name, applicable, moment, agent_id, organization_id, sum_minor, currency, updated_at
-           FROM payments_out WHERE account_id = ${accountId}::uuid
+           FROM payments_out WHERE account_id = ${accountId}::uuid AND deleted_at IS NULL
           ORDER BY updated_at DESC LIMIT ${RECENT_DOCS_LIMIT})
       ) recent
       ORDER BY modified_at DESC
@@ -673,6 +692,12 @@ export class DashboardService {
       count: agg._count._all,
       totalSumMinor: ((agg._sum.sumMinor as bigint | null) ?? 0n).toString(),
       items,
+      // This block does NOT consolidate: the aggregate sums `sum_minor` across
+      // currencies at face value, so nothing is ever "left out" — hence an
+      // always-empty list rather than a fake one. The face-value sum itself is
+      // an open finding (M-12 class, orders side), tracked in the Faza Q16
+      // report; fixing it belongs with a currency-aware aggregate, not here.
+      unconvertedByCurrency: [],
     };
   }
 
@@ -734,9 +759,8 @@ export class DashboardService {
       GROUP BY currency
     `;
     // M-12 (Faza 17): kursi topilmagan valyuta jamiga QO'SHILMAYDI (ilgari
-    // face-value qo'shilardi). Dashboard vidjeti qoldiqni alohida ko'rsatuvchi
-    // maydonga ega emas — bu OCHIQ QARZ (rejadagi Faza 17 hisobotida qayd etilgan);
-    // to'liq hisobotlar (/reports/*) unconvertedByCurrency bilan qaytaradi.
+    // face-value qo'shilardi). Faza Q16 dan boshlab qoldiq JIM emas —
+    // `unconvertedByCurrency` bilan javobga chiqadi va vidjet banner chizadi.
     const seen = new CurrencyTally();
     let count = 0;
     let totalBase = 0n;
@@ -764,6 +788,7 @@ export class DashboardService {
       count,
       totalSumMinor: totalBase.toString(),
       items,
+      unconvertedByCurrency: seen.unconvertedRows(),
     };
   }
 
@@ -802,7 +827,7 @@ export class DashboardService {
    * converted to the account base via the exact BigInt rate before summing
    * (consistent with the now currency-aware cash-flow report).
    */
-  private computeMoneyByOrg(accountId: string, ctx: RateContext): Promise<MoneyByOrgRow[]> {
+  private computeMoneyByOrg(accountId: string, ctx: RateContext): Promise<MoneyByOrgResult> {
     // PERF-06 — whole-history aggregate, cached for MONEY_CACHE_TTL_MS.
     // `ctx` belongs to the request that MISSED the cache; a rate edit inside
     // the TTL window is therefore visible one refresh later, same as a new
@@ -810,14 +835,14 @@ export class DashboardService {
     return this.moneyByOrgCache.getOrLoad(accountId, () => this.loadMoneyByOrg(accountId, ctx));
   }
 
-  private async loadMoneyByOrg(accountId: string, ctx: RateContext): Promise<MoneyByOrgRow[]> {
+  private async loadMoneyByOrg(accountId: string, ctx: RateContext): Promise<MoneyByOrgResult> {
     const orgs = await this.prisma.client.organization.findMany({
       where: { accountId, archived: false },
       select: { id: true, name: true },
       orderBy: { name: 'asc' },
     });
 
-    if (orgs.length === 0) return [];
+    if (orgs.length === 0) return { rows: [], unconvertedByCurrency: [] };
 
     // UNION ALL the four money tables into a virtual ledger, group by
     // (org, currency) so each currency net can be base-consolidated in JS.
@@ -843,9 +868,8 @@ export class DashboardService {
     `;
 
     // M-12 (Faza 17): kursi topilmagan valyuta jamiga QO'SHILMAYDI (ilgari
-    // face-value qo'shilardi). Dashboard vidjeti qoldiqni alohida ko'rsatuvchi
-    // maydonga ega emas — bu OCHIQ QARZ (rejadagi Faza 17 hisobotida qayd etilgan);
-    // to'liq hisobotlar (/reports/*) unconvertedByCurrency bilan qaytaradi.
+    // face-value qo'shilardi). Faza Q16 dan boshlab qoldiq JIM emas — tally
+    // rows'lar bilan birga qaytadi va «Деньги» bo'limi banner chizadi.
     const seen = new CurrencyTally();
     const balanceByOrg = new Map<string, bigint>();
     for (const r of rows) {
@@ -853,11 +877,14 @@ export class DashboardService {
       balanceByOrg.set(r.organization_id, (balanceByOrg.get(r.organization_id) ?? 0n) + base);
     }
 
-    return orgs.map((o) => ({
-      orgId: o.id,
-      orgName: o.name,
-      balanceMinor: (balanceByOrg.get(o.id) ?? 0n).toString(),
-    }));
+    return {
+      rows: orgs.map((o) => ({
+        orgId: o.id,
+        orgName: o.name,
+        balanceMinor: (balanceByOrg.get(o.id) ?? 0n).toString(),
+      })),
+      unconvertedByCurrency: seen.unconvertedRows(),
+    };
   }
 
   /**
@@ -919,10 +946,12 @@ export class DashboardService {
       ORDER BY bucket
     `;
 
-    // M-12 (Faza 17): kursi topilmagan valyuta jamiga QO'SHILMAYDI (ilgari
-    // face-value qo'shilardi). Dashboard vidjeti qoldiqni alohida ko'rsatuvchi
-    // maydonga ega emas — bu OCHIQ QARZ (rejadagi Faza 17 hisobotida qayd etilgan);
-    // to'liq hisobotlar (/reports/*) unconvertedByCurrency bilan qaytaradi.
+    // M-12 (Faza 17): kursi topilmagan valyuta jamiga QO'SHILMAYDI. Bu yerda
+    // tally ATAYLAB qaytarilmaydi: grafik by-org bloki bilan BIR XIL to'rt
+    // jadvalni o'qiydi va faqat 6 oylik oyna qo'shadi ⇒ uning konvertatsiya
+    // qilinmagan valyutalari to'plami by-org'nikining OSTI-TO'PLAMI. «Деньги»
+    // bo'limining bitta banneri (money.unconvertedByCurrency) grafikni ham
+    // qoplaydi — ikki manba ikki xil oynani jamlab yolg'on son bermaydi.
     const seen = new CurrencyTally();
     const byMonth = new Map<string, { inflow: bigint; outflow: bigint }>();
     for (const r of rows) {

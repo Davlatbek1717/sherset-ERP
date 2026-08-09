@@ -1,5 +1,7 @@
 'use client';
 
+import { type UnconvertedAmountRow, UnconvertedNotice } from '@/components/reports/report-notices';
+
 import { api } from '@/lib/api-client';
 import {
   Breadcrumb,
@@ -58,6 +60,7 @@ interface SalesReport {
   // (валюта учёта); mixedCurrency flags multi-currency source periods.
   currency: string;
   mixedCurrency: boolean;
+  unconvertedByCurrency: UnconvertedAmountRow[];
 }
 
 const SELECT_CLASS =
@@ -230,6 +233,7 @@ export default function SalesReportPage() {
           {t('currency_mixed_warn')}
         </div>
       )}
+      <UnconvertedNotice rows={data?.unconvertedByCurrency} testId="sales-unconverted-warn" />
 
       {error && (
         <div

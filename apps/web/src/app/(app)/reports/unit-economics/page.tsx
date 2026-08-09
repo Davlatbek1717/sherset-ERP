@@ -1,5 +1,7 @@
 'use client';
 
+import { type UnconvertedAmountRow, UnconvertedNotice } from '@/components/reports/report-notices';
+
 /**
  * «Юнит-экономика» (Unit Economics) — moysklad-parity per-SKU
  * unit-margin breakdown. Where Profitability shows TOTALS per
@@ -58,6 +60,7 @@ interface UEReport {
   currency: string;
   /** True when sales span >1 currency (revenue is converted). */
   mixedCurrency: boolean;
+  unconvertedByCurrency: UnconvertedAmountRow[];
 }
 
 type SortKey = 'name' | 'qty' | 'orders' | 'avgPrice' | 'avgCost' | 'avgMargin' | 'marginPct';
@@ -236,6 +239,7 @@ export default function UnitEconomicsReportPage() {
           {t('currency_mixed_warn')}
         </div>
       )}
+      <UnconvertedNotice rows={data?.unconvertedByCurrency} testId="ue-unconverted-warn" />
 
       {data && data.rows.length > 0 && (
         <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">

@@ -1,5 +1,7 @@
 'use client';
 
+import { type UnconvertedAmountRow, UnconvertedNotice } from '@/components/reports/report-notices';
+
 import { api } from '@/lib/api-client';
 import {
   Breadcrumb,
@@ -40,6 +42,7 @@ interface PnlReport {
   // into the account base (валюта учёта) and flags mixed-currency periods.
   currency: string;
   mixedCurrency: boolean;
+  unconvertedByCurrency: UnconvertedAmountRow[];
 }
 
 const SELECT_CLASS =
@@ -201,6 +204,7 @@ export default function PnlReportPage() {
           {t('currency_mixed_warn')}
         </div>
       )}
+      <UnconvertedNotice rows={data?.unconvertedByCurrency} testId="pnl-unconverted-warn" />
 
       {error && (
         <div

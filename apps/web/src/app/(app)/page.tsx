@@ -2,6 +2,7 @@
 
 import { HomepageTabs } from '@/components/homepage-tabs';
 import { DavomatWidget } from '@/components/hr/davomat-widget';
+import { type UnconvertedAmountRow, UnconvertedNotice } from '@/components/reports/report-notices';
 import { api } from '@/lib/api-client';
 import { Button, Container, StickyHScroll, formatMoney } from '@moysklad/ui';
 import { useQuery } from '@tanstack/react-query';
@@ -55,6 +56,10 @@ interface OverdueBlock {
   count: number;
   totalSumMinor: string;
   items: OverdueDocItem[];
+  // M-12 (Faza Q16): money whose currency has no usable rate is EXCLUDED from
+  // `totalSumMinor` — without this list the widget silently under-reports.
+  // Always `[]` for the orders panel (it does not consolidate at all).
+  unconvertedByCurrency: UnconvertedAmountRow[];
 }
 
 interface MoneyByOrgRow {
@@ -104,6 +109,9 @@ interface DashboardResult {
     totalSumMinor: string;
     byOrg: MoneyByOrgRow[];
     chart: MoneyChartPoint[];
+    // Covers the whole «Деньги» section: the by-org currency set is a superset
+    // of the chart's (same four tables, chart just adds a 6-month window).
+    unconvertedByCurrency: UnconvertedAmountRow[];
   };
   recentDocs: RecentDocItem[];
 }
@@ -519,6 +527,11 @@ function OverduePanel({
           </div>
         )}
       </div>
+
+      <UnconvertedNotice
+        rows={block?.unconvertedByCurrency}
+        testId={`overdue-${variant}-unconverted-warn`}
+      />
     </section>
   );
 }
@@ -573,6 +586,11 @@ function MoneySection({
             </div>
           )}
           <div className="mt-1 text-[10px] text-[var(--ms-text-muted)]">{t('stat_sum')}</div>
+
+          <UnconvertedNotice
+            rows={data?.money.unconvertedByCurrency}
+            testId="money-unconverted-warn"
+          />
 
           <div className="mt-4">
             <div className="grid grid-cols-[3fr_1fr] gap-2 border-[var(--ms-border-default)] border-b pb-2 font-medium text-[var(--ms-text-muted)] text-xs">

@@ -1,5 +1,7 @@
 'use client';
 
+import { type UnconvertedAmountRow, UnconvertedNotice } from '@/components/reports/report-notices';
+
 import { api } from '@/lib/api-client';
 import {
   Breadcrumb,
@@ -36,6 +38,7 @@ interface SalesByChannelResponse {
   // base (валюта учёта); mixedCurrency flags multi-currency source periods.
   currency: string;
   mixedCurrency: boolean;
+  unconvertedByCurrency: UnconvertedAmountRow[];
 }
 
 const INPUT_CLASS =
@@ -122,6 +125,7 @@ export default function SalesByChannelReport() {
           {t('currency_mixed_warn')}
         </div>
       )}
+      <UnconvertedNotice rows={data?.unconvertedByCurrency} testId="channel-unconverted-warn" />
 
       {error && (
         <div className="mb-3 rounded border border-[var(--ms-destructive-200)] bg-[var(--ms-destructive-50)] p-3 text-[var(--ms-text-destructive)] text-sm">
