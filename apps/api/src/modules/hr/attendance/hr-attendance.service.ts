@@ -4,6 +4,7 @@ import { formatInTimeZone } from 'date-fns-tz';
 import { PrismaService } from '../../../prisma/prisma.service.js';
 import { SCHEDULE_SELECT, toResolvedSchedule } from '../attendance-geo/prisma-schedule.util.js';
 import { lateMinutesForShift, resolveShift } from '../attendance-geo/resolve-shift.util.js';
+import { LateFineService } from '../hr-attendance-notify/late-fine.service.js';
 import { HR_EVENT } from '../hr-shared/hr-events.types.js';
 import { HR_TZ, startOfLocalDay } from '../hr-shared/tz.util.js';
 import type {
@@ -18,7 +19,37 @@ export class HrAttendanceService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(EventEmitter2) private readonly events: EventEmitter2,
+    // HR-3: tahrirdan keyin avto-jarimani davomat bilan moslash.
+    @Inject(LateFineService) private readonly lateFine: LateFineService,
   ) {}
+
+  /**
+   * Xodimning `at` kunidagi SMENASI bo'yicha kechikish daqiqalari.
+   * Xodim topilmasa `null` — chaqiruvchi qayta hisobni o'tkazib yuboradi.
+   */
+  private async recomputeLateMinutes(
+    accountId: string,
+    employeeId: string,
+    at: Date,
+  ): Promise<number | null> {
+    const emp = await this.prisma.client.employee.findFirst({
+      where: { id: employeeId, accountId },
+      select: {
+        schedule: { select: SCHEDULE_SELECT },
+        workSchedules: {
+          select: { weekday: true, startTime: true, endTime: true, isDayOff: true },
+        },
+      },
+    });
+    if (!emp) return null;
+    const shift = resolveShift({
+      date: formatInTimeZone(at, HR_TZ, 'yyyy-MM-dd'),
+      tz: HR_TZ,
+      schedule: emp.schedule ? toResolvedSchedule(emp.schedule) : null,
+      weekFallback: emp.workSchedules,
+    });
+    return lateMinutesForShift(at, shift, HR_TZ);
+  }
 
   /** Today's attendance records (one per employee). */
   async listToday(accountId: string, date?: Date) {
@@ -78,24 +109,8 @@ export class HrAttendanceService {
     }
 
     // Resolve the owed shift so a manual check-in still records lateMinutes.
-    const emp = await this.prisma.client.employee.findFirst({
-      where: { id: input.employeeId, accountId },
-      select: {
-        schedule: { select: SCHEDULE_SELECT },
-        workSchedules: {
-          select: { weekday: true, startTime: true, endTime: true, isDayOff: true },
-        },
-      },
-    });
-    if (!emp) throw new NotFoundException('Xodim topilmadi');
-    const localDate = formatInTimeZone(at, HR_TZ, 'yyyy-MM-dd');
-    const shift = resolveShift({
-      date: localDate,
-      tz: HR_TZ,
-      schedule: emp.schedule ? toResolvedSchedule(emp.schedule) : null,
-      weekFallback: emp.workSchedules,
-    });
-    const lateMinutes = lateMinutesForShift(at, shift, HR_TZ);
+    const lateMinutes = await this.recomputeLateMinutes(accountId, input.employeeId, at);
+    if (lateMinutes === null) throw new NotFoundException('Xodim topilmadi');
 
     const created = await this.prisma.client.hrAttendance.create({
       data: {
@@ -207,11 +222,35 @@ export class HrAttendanceService {
       throw new BadRequestException("Ketish vaqti kelishdan oldin bo'la olmaydi");
     }
 
-    return this.prisma.client.hrAttendance.update({
+    // HR-3 — kelish vaqti tuzatilsa kechikish QAYTA hisoblanadi. Ilgari eski
+    // `lateMinutes` qolib ketardi: hisobotda ham, undan kelib chiqqan
+    // avto-jarimada ham tuzatish aks etmasdi.
+    let recomputedLate: number | null = null;
+    if (input.checkInTime !== undefined) {
+      recomputedLate = await this.recomputeLateMinutes(accountId, row.employeeId, finalCheckIn);
+      if (recomputedLate !== null) data.lateMinutes = recomputedLate;
+    }
+
+    const updated = await this.prisma.client.hrAttendance.update({
       where: { id },
       data,
       include: { employee: { select: { id: true, name: true } } },
     });
+
+    // Jarima faqat kechikish HAQIQATAN o'zgarganda moslanadi — aks holda
+    // oddiy izoh tahriri ilgari jarimasi bo'lmagan qatorga jarima yozib
+    // qo'yishi mumkin edi (konfiguratsiya oradan keyin yoqilgan bo'lsa).
+    if (recomputedLate !== null && recomputedLate !== row.lateMinutes) {
+      await this.lateFine.syncForAttendance({
+        accountId,
+        attendanceId: id,
+        employeeId: row.employeeId,
+        employeeName: updated.employee.name,
+        lateMinutes: recomputedLate,
+      });
+    }
+
+    return updated;
   }
 
   async delete(accountId: string, id: string) {

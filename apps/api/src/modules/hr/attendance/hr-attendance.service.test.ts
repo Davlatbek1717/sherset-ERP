@@ -24,15 +24,22 @@ function makeEmitter() {
   return { emit: vi.fn() };
 }
 
+/** HR-3 — davomat tahriridan keyin avto-jarimani moslovchi bog'liqlik. */
+function makeLateFine() {
+  return { syncForAttendance: vi.fn().mockResolvedValue(0n) };
+}
+
 describe('HrAttendanceService', () => {
   let prisma: ReturnType<typeof makePrisma>;
   let emitter: ReturnType<typeof makeEmitter>;
+  let lateFine: ReturnType<typeof makeLateFine>;
   let service: HrAttendanceService;
 
   beforeEach(() => {
     prisma = makePrisma();
     emitter = makeEmitter();
-    service = new HrAttendanceService(prisma as never, emitter as never);
+    lateFine = makeLateFine();
+    service = new HrAttendanceService(prisma as never, emitter as never, lateFine as never);
   });
 
   it('checkIn: success creates a manual row and records lateMinutes', async () => {
@@ -205,5 +212,154 @@ describe('HrAttendanceService', () => {
 
     expect(prisma.client.hrAttendance.delete).toHaveBeenCalledWith({ where: { id: 'a1' } });
     expect(result).toEqual({ ok: true });
+  });
+});
+
+/**
+ * HR-3 — admin `checkInTime`ni tuzatganda `lateMinutes` QAYTA HISOBLANMAS va
+ * avto-jarima eski summada qolib ketardi ⇒ oylikdan noto'g'ri pul ushlanardi.
+ */
+describe('HrAttendanceService.edit — kechikish qayta hisobi + jarima sinxroni (HR-3)', () => {
+  let prisma: ReturnType<typeof makePrisma>;
+  let lateFine: ReturnType<typeof makeLateFine>;
+  let service: HrAttendanceService;
+
+  /** Har kuni 09:00–18:00 hafta-kuni jadvali (nomli jadvalsiz xodim). */
+  const WEEK_9_TO_18 = Array.from({ length: 7 }, (_, weekday) => ({
+    weekday,
+    startTime: '09:00',
+    endTime: '18:00',
+    isDayOff: false,
+  }));
+
+  beforeEach(() => {
+    prisma = makePrisma();
+    lateFine = makeLateFine();
+    service = new HrAttendanceService(
+      prisma as never,
+      { emit: vi.fn() } as never,
+      lateFine as never,
+    );
+    prisma.client.employee.findFirst.mockResolvedValue({
+      schedule: null,
+      workSchedules: WEEK_9_TO_18,
+    } as never);
+    prisma.client.hrAttendance.update.mockResolvedValue({
+      id: 'a1',
+      employee: { id: 'emp-1', name: 'Aziz Karimov' },
+    } as never);
+  });
+
+  function existing(checkInIso: string, lateMinutes: number) {
+    prisma.client.hrAttendance.findFirst.mockResolvedValue({
+      id: 'a1',
+      employeeId: 'emp-1',
+      checkInTime: new Date(checkInIso),
+      checkOutTime: null,
+      lateMinutes,
+    } as never);
+  }
+
+  function updateData() {
+    return (
+      prisma.client.hrAttendance.update.mock.calls[0]?.[0] as {
+        data: Record<string, unknown>;
+      }
+    ).data;
+  }
+
+  it('kelish vaqti 10:00 → 09:00 ga tuzatildi: lateMinutes 60 → 0', async () => {
+    existing('2026-05-20T10:00:00+05:00', 60);
+    await service.edit('acc1', 'a1', 'editor1', {
+      checkInTime: new Date('2026-05-20T09:00:00+05:00'),
+    });
+    expect(updateData().lateMinutes).toBe(0);
+  });
+
+  it('kechikish qayta hisoblangach avto-jarima STORNO uchun sinxronlanadi', async () => {
+    existing('2026-05-20T10:00:00+05:00', 60);
+    await service.edit('acc1', 'a1', 'editor1', {
+      checkInTime: new Date('2026-05-20T09:00:00+05:00'),
+    });
+    expect(lateFine.syncForAttendance).toHaveBeenCalledWith({
+      accountId: 'acc1',
+      attendanceId: 'a1',
+      employeeId: 'emp-1',
+      employeeName: 'Aziz Karimov',
+      lateMinutes: 0,
+    });
+  });
+
+  it('kelish kechroqqa surildi: lateMinutes ortadi va jarima yangilanadi', async () => {
+    existing('2026-05-20T09:30:00+05:00', 30);
+    await service.edit('acc1', 'a1', 'editor1', {
+      checkInTime: new Date('2026-05-20T11:15:00+05:00'),
+    });
+    expect(updateData().lateMinutes).toBe(135);
+    expect(lateFine.syncForAttendance).toHaveBeenCalledWith(
+      expect.objectContaining({ lateMinutes: 135 }),
+    );
+  });
+
+  it('kelish vaqti TEGILMASA (faqat izoh) kechikish ham jarima ham tegilmaydi', async () => {
+    existing('2026-05-20T10:00:00+05:00', 60);
+    await service.edit('acc1', 'a1', 'editor1', { notes: 'yangi izoh' });
+    expect(updateData().lateMinutes).toBeUndefined();
+    expect(lateFine.syncForAttendance).not.toHaveBeenCalled();
+  });
+
+  it('kechikish o`zgarmagan bo`lsa jarima bezovta qilinmaydi', async () => {
+    existing('2026-05-20T10:00:00+05:00', 60);
+    await service.edit('acc1', 'a1', 'editor1', {
+      checkInTime: new Date('2026-05-20T10:00:00+05:00'), // aynan o'sha vaqt
+    });
+    expect(lateFine.syncForAttendance).not.toHaveBeenCalled();
+  });
+
+  it('siklik jadval hisobga olinadi (hafta-kuni jadvali EMAS)', async () => {
+    prisma.client.employee.findFirst.mockResolvedValue({
+      schedule: {
+        type: 'flexible',
+        startDate: new Date('2026-05-20T00:00:00.000Z'),
+        cycleDays: 2,
+        calcOvertime: false,
+        extendedWorkMin: 0,
+        days: [
+          {
+            dayIndex: 1,
+            isWorkday: true,
+            startTime: '08:00',
+            endTime: '17:00',
+            breakStart: null,
+            breakEnd: null,
+          },
+          {
+            dayIndex: 2,
+            isWorkday: false,
+            startTime: null,
+            endTime: null,
+            breakStart: null,
+            breakEnd: null,
+          },
+        ],
+      },
+      workSchedules: WEEK_9_TO_18,
+    } as never);
+    existing('2026-05-20T10:00:00+05:00', 60);
+    await service.edit('acc1', 'a1', 'editor1', {
+      checkInTime: new Date('2026-05-20T09:00:00+05:00'),
+    });
+    // Siklik Kun 1 = 08:00 ⇒ 09:00 kelish 60 daqiqa kech (hafta-kuni 09:00 bo'yicha 0 bo'lardi).
+    expect(updateData().lateMinutes).toBe(60);
+  });
+
+  it("xodim topilmasa kechikish qayta hisoblanmaydi (tahrir baribir o'tadi)", async () => {
+    prisma.client.employee.findFirst.mockResolvedValue(null as never);
+    existing('2026-05-20T10:00:00+05:00', 60);
+    await service.edit('acc1', 'a1', 'editor1', {
+      checkInTime: new Date('2026-05-20T09:00:00+05:00'),
+    });
+    expect(updateData().lateMinutes).toBeUndefined();
+    expect(lateFine.syncForAttendance).not.toHaveBeenCalled();
   });
 });

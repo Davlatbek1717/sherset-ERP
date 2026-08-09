@@ -170,7 +170,7 @@ describe('HrPayrollService.computeMonthly', () => {
     expect(c.create.commissionMinor).toBe(0n);
   });
 
-  it('bonus/fine aggregate queried over the month window', async () => {
+  it('bonus/fine aggregate queried over the month window (TOSHKENT instantlari — HR-7/8)', async () => {
     prisma.client.employee.findFirst.mockResolvedValue({ id: 'emp-1', salaryConfig: null });
     prisma.client.employeeDailyKpi.findMany.mockResolvedValue([acceptedDay(0n)]);
     prisma.client.hrKpiMonthlyScore.upsert.mockResolvedValue({});
@@ -180,9 +180,27 @@ describe('HrPayrollService.computeMonthly', () => {
     const args = bonusFine.aggregateRaw.mock.calls[0];
     expect(args?.[0]).toBe('acc1');
     expect(args?.[1]).toBe('emp-1');
-    expect((args?.[2] as Date).toISOString()).toBe('2026-05-01T00:00:00.000Z');
+    // ⚠️ Bu test ilgari UTC yarim tunni (`2026-05-01T00:00:00.000Z`) qulflab
+    // qo'ygan edi — ya'ni AYNAN HR-7/8 bug'ini. `createdAt` haqiqiy instant,
+    // shuning uchun oy Toshkent yarim tunida (UTC−5s) boshlanadi.
+    expect((args?.[2] as Date).toISOString()).toBe('2026-04-30T19:00:00.000Z');
     // endInclusive = endExclusive - 1ms
-    expect((args?.[3] as Date).toISOString()).toBe('2026-05-31T23:59:59.999Z');
+    expect((args?.[3] as Date).toISOString()).toBe('2026-05-31T18:59:59.999Z');
+  });
+
+  it('kunlik-KPI oynasi YORLIQ chegarasida qoladi (UTC yarim tun) — surilmasligi shart', async () => {
+    prisma.client.employee.findFirst.mockResolvedValue({ id: 'emp-1', salaryConfig: null });
+    prisma.client.employeeDailyKpi.findMany.mockResolvedValue([acceptedDay(0n)]);
+    prisma.client.hrKpiMonthlyScore.upsert.mockResolvedValue({});
+
+    await svc.computeMonthly('acc1', 'emp-1', '2026-05');
+
+    // `EmployeeDailyKpi.date` = `localDateOnly` YORLIG'I (UTC yarim tun), instant
+    // EMAS. Uni Toshkent chegarasiga surish oyning 1-kunini tashlab, o'tgan
+    // oyning oxirgi kunini qo'shib yuborardi.
+    const where = prisma.client.employeeDailyKpi.findMany.mock.calls[0]?.[0]?.where;
+    expect((where.date.gte as Date).toISOString()).toBe('2026-05-01T00:00:00.000Z');
+    expect((where.date.lt as Date).toISOString()).toBe('2026-06-01T00:00:00.000Z');
   });
 
   it('throws when employee not in account', async () => {
@@ -386,5 +404,60 @@ describe('§3.4 — eskirgan kunlar tuzatmasi oylikka kiradi', () => {
     expect(arg.create.correctionIncreaseMinor).toBe(0n);
     expect(arg.create.correctionDecreaseMinor).toBe(0n);
     expect(arg.create.finalSalaryMinor).toBe(100_000n);
+  });
+});
+
+/**
+ * HR-1 — bazaviy oylik prod'da doim 0 edi.
+ *
+ * Xodim kartochkasi `Employee.salaryMinor` USTUNIGA yozadi; dvigatel esa
+ * `salaryConfig` JSON'ini o'qirdi va uni hech kim to'ldirmaydi ⇒ fiks = 0.
+ */
+describe('HR-1 — fiks komponent Employee.salaryMinor ustunidan', () => {
+  function setup(employee: Record<string, unknown>) {
+    const prisma = makePrisma();
+    prisma.client.employee.findFirst.mockResolvedValue({ id: 'emp-1', ...employee });
+    prisma.client.employeeDailyKpi.findMany.mockResolvedValue([]);
+    prisma.client.hrKpiMonthlyScore.upsert.mockImplementation((a: unknown) => a);
+    // biome-ignore lint/suspicious/noExplicitAny: test wiring
+    const svc = new HrPayrollService(prisma as any, makeSalary() as any, makeBonusFine() as any);
+    return { prisma, svc };
+  }
+
+  it("salaryConfig bo'sh — ustundagi 5 mln so'm oylikka KIRADI", async () => {
+    const { prisma, svc } = setup({ salaryConfig: null, salaryMinor: 500_000_000n });
+    await svc.computeMonthly('acc1', 'emp-1', '2026-08');
+
+    const arg = prisma.client.hrKpiMonthlyScore.upsert.mock.calls[0]?.[0];
+    expect(arg.create.fixComponentMinor).toBe(500_000_000n);
+    expect(arg.create.finalSalaryMinor).toBe(500_000_000n);
+  });
+
+  it('so`rov `salaryMinor` ustunini ham TANLAYDI (aks holda qiymat yetib kelmaydi)', async () => {
+    const { prisma, svc } = setup({ salaryConfig: null, salaryMinor: 1n });
+    await svc.computeMonthly('acc1', 'emp-1', '2026-08');
+
+    const select = prisma.client.employee.findFirst.mock.calls[0]?.[0]?.select;
+    expect(select.salaryMinor).toBe(true);
+    expect(select.salaryConfig).toBe(true);
+  });
+
+  it('salaryConfig override ustun turadi', async () => {
+    const { prisma, svc } = setup({
+      salaryConfig: { baseSalaryMinor: '700000' },
+      salaryMinor: 500_000_000n,
+    });
+    await svc.computeMonthly('acc1', 'emp-1', '2026-08');
+
+    const arg = prisma.client.hrKpiMonthlyScore.upsert.mock.calls[0]?.[0];
+    expect(arg.create.fixComponentMinor).toBe(700_000n);
+  });
+
+  it("oylik belgilanmagan xodim — 0n (regressiya yo'q)", async () => {
+    const { prisma, svc } = setup({ salaryConfig: null, salaryMinor: null });
+    await svc.computeMonthly('acc1', 'emp-1', '2026-08');
+
+    const arg = prisma.client.hrKpiMonthlyScore.upsert.mock.calls[0]?.[0];
+    expect(arg.create.fixComponentMinor).toBe(0n);
   });
 });

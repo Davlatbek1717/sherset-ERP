@@ -1,8 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import { formatInTimeZone } from 'date-fns-tz';
 import { PrismaService } from '../../../prisma/prisma.service.js';
 import { HR_EVENT } from '../hr-shared/hr-events.types.js';
-import { HR_TZ, startOfLocalDay, tashkentWeekday } from '../hr-shared/tz.util.js';
+import { HR_TZ, startOfLocalDay } from '../hr-shared/tz.util.js';
 import type { PingInput } from './attendance-geo.schema.js';
 import {
   type AttendanceDecision,
@@ -11,7 +12,12 @@ import {
 } from './attendance-reducer.util.js';
 import { isInsideGeofence } from './geofence.util.js';
 import { jumpFilter } from './jump-filter.util.js';
-import { computeLateMinutes } from './late-minutes.util.js';
+import {
+  type PrismaScheduleShape,
+  SCHEDULE_SELECT,
+  toResolvedSchedule,
+} from './prisma-schedule.util.js';
+import { lateMinutesForShift, resolveShift } from './resolve-shift.util.js';
 
 /** Authoritative status the PWA renders from each accepted ping. */
 export type DavomatLiveStatus = 'not_arrived' | 'at_work' | 'left';
@@ -27,6 +33,43 @@ export interface PingResult {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const ACCURACY_LIMIT_M = 100;
+
+/**
+ * HR-2 — check-in yo'llari uchun xodim + UNING SMENASI bitta so'rovda.
+ *
+ * Ilgari bu yerda faqat `attendanceOptIn`/`workLocationId` olinar, kechikish
+ * esa `employeeWorkSchedule.findUnique` (hafta-kuni jadvali) dan hisoblanardi.
+ * Nomli SIKLIK/ERKIN `HrSchedule` biriktirilgan xodimda o'sha jadval mos
+ * kelmaydi ⇒ kechikish (va undan kelib chiqadigan avto-jarima) noto'g'ri
+ * bo'lardi. Endi manba `resolveShift` — `hr-attendance.service.checkIn` bilan
+ * BIR XIL (§5.1 «yagona sanksiyalangan manba»).
+ */
+const CHECKIN_EMPLOYEE_SELECT = {
+  attendanceOptIn: true,
+  workLocationId: true,
+  schedule: { select: SCHEDULE_SELECT },
+  workSchedules: {
+    select: { weekday: true, startTime: true, endTime: true, isDayOff: true },
+  },
+} as const;
+
+interface CheckInEmployee {
+  attendanceOptIn: boolean;
+  workLocationId: string | null;
+  schedule: PrismaScheduleShape | null;
+  workSchedules: { weekday: number; startTime: string; endTime: string; isDayOff: boolean }[];
+}
+
+/** Kechikish = xodimning O'SHA KUNGA tegishli smenasi bo'yicha (siklik/erkin/hafta-kuni). */
+function lateMinutesFor(emp: CheckInEmployee, at: Date): number {
+  const shift = resolveShift({
+    date: formatInTimeZone(at, HR_TZ, 'yyyy-MM-dd'),
+    tz: HR_TZ,
+    schedule: emp.schedule ? toResolvedSchedule(emp.schedule) : null,
+    weekFallback: emp.workSchedules ?? null,
+  });
+  return lateMinutesForShift(at, shift, HR_TZ);
+}
 
 const benign = (reason: PingResult['reason']): PingResult => ({
   accepted: false,
@@ -73,10 +116,10 @@ export class HrPingIngestService {
 
   async ingest(accountId: string, employeeId: string, dto: PingInput): Promise<PingResult> {
     // 1. Opt-in + assigned work-location gate (benign — never 500).
-    const emp = await this.prisma.client.employee.findFirst({
+    const emp = (await this.prisma.client.employee.findFirst({
       where: { id: employeeId, accountId },
-      select: { attendanceOptIn: true, workLocationId: true },
-    });
+      select: CHECKIN_EMPLOYEE_SELECT,
+    })) as CheckInEmployee | null;
     if (!emp || !emp.attendanceOptIn) return benign('not_opted_in');
     if (!emp.workLocationId) return benign('no_location');
 
@@ -152,12 +195,7 @@ export class HrPingIngestService {
       : null;
 
     if (decision === 'KELDI') {
-      const weekday = tashkentWeekday(now);
-      const sched = await this.prisma.client.employeeWorkSchedule.findUnique({
-        where: { employeeId_weekday: { employeeId, weekday } },
-        select: { startTime: true, endTime: true, isDayOff: true },
-      });
-      const lateMinutes = computeLateMinutes(now, sched, HR_TZ);
+      const lateMinutes = lateMinutesFor(emp, now);
       const created = await this.prisma.client.hrAttendance.create({
         data: {
           accountId,
@@ -213,10 +251,10 @@ export class HrPingIngestService {
     employeeId: string,
     dto: PingInput,
   ): Promise<ManualMarkResult> {
-    const emp = await this.prisma.client.employee.findFirst({
+    const emp = (await this.prisma.client.employee.findFirst({
       where: { id: employeeId, accountId },
-      select: { attendanceOptIn: true, workLocationId: true },
-    });
+      select: CHECKIN_EMPLOYEE_SELECT,
+    })) as CheckInEmployee | null;
     if (!emp || !emp.attendanceOptIn) return manualBenign('not_opted_in');
     if (!emp.workLocationId) return manualBenign('no_location');
     if (dto.accuracy > ACCURACY_LIMIT_M) return manualBenign('accuracy');
@@ -264,12 +302,7 @@ export class HrPingIngestService {
       },
     });
 
-    const weekday = tashkentWeekday(now);
-    const sched = await this.prisma.client.employeeWorkSchedule.findUnique({
-      where: { employeeId_weekday: { employeeId, weekday } },
-      select: { startTime: true, endTime: true, isDayOff: true },
-    });
-    const lateMinutes = computeLateMinutes(now, sched, HR_TZ);
+    const lateMinutes = lateMinutesFor(emp, now);
     const created = await this.prisma.client.hrAttendance.create({
       data: {
         accountId,

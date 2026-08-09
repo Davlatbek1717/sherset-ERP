@@ -13,7 +13,11 @@ function makePrisma() {
   return {
     client: {
       hrAttendanceNotifyConfig: { findUnique: vi.fn() },
-      hrBonusFineLog: { create: vi.fn().mockResolvedValue({ id: 'bf-1' }) },
+      hrBonusFineLog: {
+        create: vi.fn().mockResolvedValue({ id: 'bf-1' }),
+        upsert: vi.fn().mockResolvedValue({ id: 'bf-1' }),
+        deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
     },
   };
 }
@@ -124,5 +128,85 @@ describe('LateFineService.applyIfLate', () => {
     );
     prisma.client.hrBonusFineLog.create.mockRejectedValueOnce(new Error('db down'));
     await expect(svc.applyIfLate({ ...base, lateMinutes: 5 })).rejects.toThrow('db down');
+  });
+});
+
+/**
+ * HR-3 — davomat TUZATILGANDA avto-jarima sinxron emas edi.
+ *
+ * `applyIfLate` faqat `create` qiladi va `(attendanceId, source)` unikal
+ * indeksi tufayli QAYTA chaqirilganda jimgina eskisini qoldiradi. Admin
+ * `checkInTime`ni to'g'rilaganda (masalan xodim aslida o'z vaqtida kelgan)
+ * jarima o'z holicha qolib ketardi. `syncForAttendance` — reconsile:
+ * kerak bo'lsa yozadi/yangilaydi, kerak bo'lmasa STORNO qiladi.
+ */
+describe('LateFineService.syncForAttendance (HR-3)', () => {
+  let prisma: ReturnType<typeof makePrisma>;
+  let svc: LateFineService;
+
+  beforeEach(() => {
+    prisma = makePrisma();
+    svc = new LateFineService(prisma as never);
+  });
+
+  it("kechikish yo'qoldi → mavjud auto_late jarima STORNO qilinadi", async () => {
+    prisma.client.hrAttendanceNotifyConfig.findUnique.mockResolvedValue(
+      cfgRow({ lateFineEnabled: true, lateThresholdMin: 15, lateFineAmountMinor: 10000n }),
+    );
+    expect(await svc.syncForAttendance({ ...base, lateMinutes: 0 })).toBe(0n);
+    const del = prisma.client.hrBonusFineLog.deleteMany.mock.calls[0]?.[0] as {
+      where: { attendanceId: string; source: string };
+    };
+    expect(del.where).toMatchObject({ attendanceId: 'att-1', source: 'auto_late' });
+    expect(prisma.client.hrBonusFineLog.upsert).not.toHaveBeenCalled();
+  });
+
+  it('jarima o`chirib qo`yilgan bo`lsa ham eski qator STORNO qilinadi', async () => {
+    prisma.client.hrAttendanceNotifyConfig.findUnique.mockResolvedValue(
+      cfgRow({ lateFineEnabled: false, lateFineAmountMinor: 10000n }),
+    );
+    expect(await svc.syncForAttendance({ ...base, lateMinutes: 99 })).toBe(0n);
+    expect(prisma.client.hrBonusFineLog.deleteMany).toHaveBeenCalled();
+  });
+
+  it('kechikish o`zgardi → summa/sabab YANGILANADI (dublikat emas)', async () => {
+    prisma.client.hrAttendanceNotifyConfig.findUnique.mockResolvedValue(
+      cfgRow({
+        lateFineEnabled: true,
+        lateThresholdMin: 0,
+        lateFineAmountMinor: 500n,
+        lateFinePerMinute: true,
+      }),
+    );
+    expect(await svc.syncForAttendance({ ...base, lateMinutes: 12 })).toBe(6000n);
+
+    const arg = prisma.client.hrBonusFineLog.upsert.mock.calls[0]?.[0] as {
+      where: { uq_bonusfine_attendance_source: { attendanceId: string; source: string } };
+      create: { amountMinor: bigint; source: string; kind: string };
+      update: { amountMinor: bigint; reason: string };
+    };
+    expect(arg.where.uq_bonusfine_attendance_source).toMatchObject({
+      attendanceId: 'att-1',
+      source: 'auto_late',
+    });
+    expect(arg.create.amountMinor).toBe(6000n);
+    expect(arg.create.kind).toBe('fine');
+    expect(arg.update.amountMinor).toBe(6000n);
+    expect(arg.update.reason).toContain('12');
+    expect(prisma.client.hrBonusFineLog.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('chegaradan pastga tushdi → STORNO (jarima qolib ketmaydi)', async () => {
+    prisma.client.hrAttendanceNotifyConfig.findUnique.mockResolvedValue(
+      cfgRow({ lateFineEnabled: true, lateThresholdMin: 15, lateFineAmountMinor: 10000n }),
+    );
+    expect(await svc.syncForAttendance({ ...base, lateMinutes: 15 })).toBe(0n);
+    expect(prisma.client.hrBonusFineLog.deleteMany).toHaveBeenCalled();
+  });
+
+  it("konfiguratsiya yo'q — storno baribir ishlaydi", async () => {
+    prisma.client.hrAttendanceNotifyConfig.findUnique.mockResolvedValue(null);
+    expect(await svc.syncForAttendance({ ...base, lateMinutes: 40 })).toBe(0n);
+    expect(prisma.client.hrBonusFineLog.deleteMany).toHaveBeenCalled();
   });
 });

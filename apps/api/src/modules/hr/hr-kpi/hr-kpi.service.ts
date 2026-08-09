@@ -67,7 +67,12 @@ export class HrKpiService {
     const dateOnly = localDateOnly(day);
 
     const config = await this.salary.getResolved(accountId);
-    const daysInMonth = daysInMonthOf(dayStart);
+    // HR-7/8: kunlar soni MAHALLIY kun yorlig'idan olinadi, `dayStart`dan emas.
+    // `dayStart` = mahalliy yarim tunning UTC instanti (Toshkentda oldingi kun
+    // 19:00) ⇒ uning UTC oyini o'qish oyning 1-kunida O'TGAN oyni berardi
+    // (1-mart uchun 31 emas, 28 ga bo'linardi). `dateOnly` esa yorliq —
+    // UTC maydonlari aynan mahalliy kalendar kunini beradi.
+    const daysInMonth = daysInMonthOf(dateOnly);
     const dailyTargetMinor = config.monthlySalesTargetMinor / BigInt(daysInMonth);
 
     // All non-archived employees in the account are KPI subjects.

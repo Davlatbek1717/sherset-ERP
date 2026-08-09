@@ -213,3 +213,64 @@ describe('kun YORLIG`I — mahalliy sana (4M.3 da tuzatilgan off-by-one)', () =>
     expect(bounds.lt.toISOString()).toBe('2026-08-04T19:00:00.000Z');
   });
 });
+
+/**
+ * HR-7/8 — kunlik maqsad ulushi oy chegarasida NOTO'G'RI oydan olinardi.
+ *
+ * `daysInMonthOf(dayStart)` argument sifatida `startOfLocalDay(day)` ni olardi:
+ * u mahalliy yarim tunni bildiruvchi UTC instant, ya'ni Toshkentda (+05)
+ * OLDINGI kunning 19:00 i. Uning UTC kalendar maydonlarini o'qish oyning
+ * 1-kunida O'TGAN oyni beradi ⇒ 1-mart uchun kunlik maqsad 31 emas, 28 ga
+ * bo'linardi (fevral). Bu — `localDateOnly` izohidagi bir xil yorliq/instant
+ * chalkashligi, faqat kun emas, OY darajasida.
+ */
+describe('HrKpiService.snapshotDay — kunlik maqsad oyi (HR-7/8)', () => {
+  function upsertTarget(prisma: ReturnType<typeof makePrisma>): bigint {
+    return (
+      prisma.client.hrKpiDailyLog.upsert.mock.calls[0]?.[0] as {
+        create: { targetMinor: bigint };
+      }
+    ).create.targetMinor;
+  }
+
+  async function targetFor(dayIso: string, monthlyTarget: bigint): Promise<bigint> {
+    const prisma = makePrisma();
+    prisma.client.employee.findMany.mockResolvedValue([{ id: 'emp-1' }]);
+    prisma.client.demand.groupBy.mockResolvedValue([]);
+    prisma.client.hrKpiDailyLog.upsert.mockResolvedValue({});
+    // biome-ignore lint/suspicious/noExplicitAny: test wiring
+    const svc = new HrKpiService(
+      prisma as any,
+      makeSalary({ monthlySalesTargetMinor: monthlyTarget }) as any,
+    );
+    await svc.snapshotDay('acc1', new Date(dayIso));
+    return upsertTarget(prisma);
+  }
+
+  it("1-mart (mahalliy) MART kunlari soniga bo'linadi — fevralga EMAS", async () => {
+    // 2026-03-01 03:00 Toshkent = 2026-02-28T22:00Z. Mart = 31 kun.
+    const target = await targetFor('2026-02-28T22:00:00.000Z', 31_000_000_00n);
+    expect(target).toBe(100_000_000n); // 31M / 31
+    // Eski xatolik fevral (28) ni olib 110_714_285n berardi:
+    expect(target).not.toBe(31_000_000_00n / 28n);
+  });
+
+  it('1-mart mahalliy yarim tunning O`ZIDA ham mart', async () => {
+    // 2026-03-01 00:00 Toshkent = 2026-02-28T19:00Z.
+    expect(await targetFor('2026-02-28T19:00:00.000Z', 31_000_000_00n)).toBe(100_000_000n);
+  });
+
+  it('1-fevral (kabisa yili 2028) — 29 kun', async () => {
+    // 2028-02-01 02:00 Toshkent = 2028-01-31T21:00Z.
+    expect(await targetFor('2028-01-31T21:00:00.000Z', 29_000_000_00n)).toBe(100_000_000n);
+  });
+
+  it('oy o`rtasida o`zgarish yo`q (regressiya qulfi)', async () => {
+    expect(await targetFor('2026-03-15T12:00:00.000Z', 31_000_000_00n)).toBe(100_000_000n);
+  });
+
+  it('oyning OXIRGI kuni ham o`z oyida qoladi', async () => {
+    // 2026-03-31 23:00 Toshkent = 2026-03-31T18:00Z → mart (31).
+    expect(await targetFor('2026-03-31T18:00:00.000Z', 31_000_000_00n)).toBe(100_000_000n);
+  });
+});

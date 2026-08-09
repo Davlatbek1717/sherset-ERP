@@ -4,14 +4,35 @@ import { HrPingIngestService } from './ping-ingest.service.js';
 interface MakeOpts {
   attendanceOptIn?: boolean;
   workLocationId?: string | null;
+  /** HR-2: nomli (siklik/erkin) HrSchedule — berilmasa hafta-kuni fallback. */
+  schedule?: unknown;
+  workSchedules?: { weekday: number; startTime: string; endTime: string; isDayOff: boolean }[];
 }
 
+/**
+ * Hafta-kuni fallback: HAR KUN 09:00–18:00 (eski `employeeWorkSchedule.findUnique`
+ * mock'i aynan shuni qaytarardi — qaysi kun bo'lishidan qat'i nazar).
+ */
+const EVERY_WEEKDAY_9_TO_18 = Array.from({ length: 7 }, (_, weekday) => ({
+  weekday,
+  startTime: '09:00',
+  endTime: '18:00',
+  isDayOff: false,
+}));
+
 function makePrisma(opts: MakeOpts = {}) {
-  const { attendanceOptIn = true, workLocationId = 'wl1' } = opts;
+  const {
+    attendanceOptIn = true,
+    workLocationId = 'wl1',
+    schedule = null,
+    workSchedules = EVERY_WEEKDAY_9_TO_18,
+  } = opts;
   return {
     client: {
       employee: {
-        findFirst: vi.fn().mockResolvedValue({ attendanceOptIn, workLocationId }),
+        findFirst: vi
+          .fn()
+          .mockResolvedValue({ attendanceOptIn, workLocationId, schedule, workSchedules }),
       },
       hrWorkLocation: {
         findFirst: vi.fn().mockResolvedValue({ lat: 41.311, lng: 69.24, radiusMeters: 150 }),
@@ -211,5 +232,169 @@ describe('HrPingIngestService.manualCheckOut (instant button)', () => {
       { emit: vi.fn() } as never,
     ).manualCheckOut('acc', 'emp', INSIDE);
     expect(r).toMatchObject({ ok: false, reason: 'no_open_record' });
+  });
+});
+
+/**
+ * HR-2 — GPS check-in `resolveShift`'siz kechikish hisoblardi.
+ *
+ * `ingest()` KELDI yo'li ham, `manualCheckIn()` ham to'g'ridan-to'g'ri
+ * `employeeWorkSchedule.findUnique` (hafta-kuni jadvali) ni o'qib
+ * `computeLateMinutes` chaqirardi. Nomli SIKLIK (`flexible`) yoki ERKIN
+ * (`free`) `HrSchedule` biriktirilgan xodim uchun bu jadval bo'sh/boshqa —
+ * ya'ni kechikish noto'g'ri (ko'pincha 0, ba'zan soatlab ortiqcha) yozilardi
+ * va shu raqamdan avto-jarima kelib chiqardi. To'g'ri manba — `resolveShift`
+ * (`hr-attendance.service.checkIn` allaqachon shundan foydalanadi).
+ */
+describe('HR-2 — kechikish resolveShift orqali hisoblanadi', () => {
+  /** 4 kunlik sikl: Kun 1–2 ish (08:00), Kun 3–4 dam. Anchor = 2026-07-27. */
+  const CYCLIC = {
+    type: 'flexible',
+    startDate: new Date('2026-07-27T00:00:00.000Z'),
+    cycleDays: 4,
+    calcOvertime: false,
+    extendedWorkMin: 0,
+    days: [
+      {
+        dayIndex: 1,
+        isWorkday: true,
+        startTime: '08:00',
+        endTime: '17:00',
+        breakStart: null,
+        breakEnd: null,
+      },
+      {
+        dayIndex: 2,
+        isWorkday: true,
+        startTime: '08:00',
+        endTime: '17:00',
+        breakStart: null,
+        breakEnd: null,
+      },
+      {
+        dayIndex: 3,
+        isWorkday: false,
+        startTime: null,
+        endTime: null,
+        breakStart: null,
+        breakEnd: null,
+      },
+      {
+        dayIndex: 4,
+        isWorkday: false,
+        startTime: null,
+        endTime: null,
+        breakStart: null,
+        breakEnd: null,
+      },
+    ],
+  };
+
+  const FREE = {
+    type: 'free',
+    startDate: new Date('2026-07-01T00:00:00.000Z'),
+    cycleDays: 1,
+    calcOvertime: false,
+    extendedWorkMin: 0,
+    days: [],
+  };
+
+  /** Ikkita ketma-ket «ichkarida» namuna → KELDI qarori. */
+  function keldi(prisma: ReturnType<typeof makePrisma>, at: string) {
+    prisma.client.hrLocationPing.findMany.mockResolvedValue([
+      { inside: true, createdAt: new Date(at) },
+      { inside: true, createdAt: new Date(at) },
+    ]);
+  }
+
+  function lateOf(prisma: ReturnType<typeof makePrisma>): number {
+    const arg = prisma.client.hrAttendance.create.mock.calls[0]?.[0] as {
+      data: { lateMinutes: number };
+    };
+    return arg.data.lateMinutes;
+  }
+
+  it('ingest(): siklik jadval 08:00 — 09:10 kelish = 70 daqiqa (hafta-kuni 09:00 EMAS)', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-27T09:10:00+05:00')); // sikl Kun 1
+    const prisma = makePrisma({ schedule: CYCLIC });
+    keldi(prisma, '2026-07-27T09:10:00+05:00');
+    await new HrPingIngestService(prisma as never, { emit: vi.fn() } as never).ingest(
+      'acc',
+      'emp',
+      INSIDE,
+    );
+    // Eski kod hafta-kuni 09:00 dan hisoblab 10 berardi.
+    expect(lateOf(prisma)).toBe(70);
+  });
+
+  it('ingest(): siklik jadvalning DAM kunida kechikish 0', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-29T09:10:00+05:00')); // sikl Kun 3 = dam
+    const prisma = makePrisma({ schedule: CYCLIC });
+    keldi(prisma, '2026-07-29T09:10:00+05:00');
+    await new HrPingIngestService(prisma as never, { emit: vi.fn() } as never).ingest(
+      'acc',
+      'emp',
+      INSIDE,
+    );
+    expect(lateOf(prisma)).toBe(0);
+  });
+
+  it('ingest(): ERKIN jadval hech qachon kech emas', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-27T15:00:00+05:00'));
+    const prisma = makePrisma({ schedule: FREE });
+    keldi(prisma, '2026-07-27T15:00:00+05:00');
+    await new HrPingIngestService(prisma as never, { emit: vi.fn() } as never).ingest(
+      'acc',
+      'emp',
+      INSIDE,
+    );
+    expect(lateOf(prisma)).toBe(0);
+  });
+
+  it('manualCheckIn(): siklik jadval 08:00 — 09:10 kelish = 70 daqiqa', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-27T09:10:00+05:00'));
+    const prisma = makePrisma({ schedule: CYCLIC });
+    const emitter = { emit: vi.fn() };
+    await new HrPingIngestService(prisma as never, emitter as never).manualCheckIn(
+      'acc',
+      'emp',
+      INSIDE,
+    );
+    expect(lateOf(prisma)).toBe(70);
+    // Avto-jarima aynan shu raqamdan kelib chiqadi — hodisada ham to'g'ri bo'lsin.
+    expect(emitter.emit).toHaveBeenCalledWith(
+      'hr.attendance.checked_in',
+      expect.objectContaining({ lateMinutes: 70 }),
+    );
+  });
+
+  it('jadvalsiz xodim hafta-kuni fallback bilan ishlaydi (regressiya yo`q)', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-27T09:10:00+05:00'));
+    const prisma = makePrisma(); // schedule = null
+    keldi(prisma, '2026-07-27T09:10:00+05:00');
+    await new HrPingIngestService(prisma as never, { emit: vi.fn() } as never).ingest(
+      'acc',
+      'emp',
+      INSIDE,
+    );
+    expect(lateOf(prisma)).toBe(10);
+  });
+
+  it('eskirgan `employeeWorkSchedule.findUnique` yo`li UMUMAN chaqirilmaydi', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-27T09:10:00+05:00'));
+    const prisma = makePrisma({ schedule: CYCLIC });
+    keldi(prisma, '2026-07-27T09:10:00+05:00');
+    await new HrPingIngestService(prisma as never, { emit: vi.fn() } as never).ingest(
+      'acc',
+      'emp',
+      INSIDE,
+    );
+    expect(prisma.client.employeeWorkSchedule.findUnique).not.toHaveBeenCalled();
   });
 });

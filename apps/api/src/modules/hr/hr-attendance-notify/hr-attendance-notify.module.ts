@@ -12,6 +12,8 @@ import { LateFineService } from './late-fine.service.js';
   imports: [PrismaModule, AuthModule, HrAuthModule, HrEventsModule],
   controllers: [HrAttendanceNotifyController],
   providers: [HrAttendanceNotifyService, LateFineService, HrAttendanceNotifier],
-  exports: [HrAttendanceNotifyService],
+  // `LateFineService` — HR-3: `HrAttendanceModule.edit()` tahrirdan keyin
+  // avto-jarimani moslash uchun in'yeksiya qiladi.
+  exports: [HrAttendanceNotifyService, LateFineService],
 })
 export class HrAttendanceNotifyModule {}

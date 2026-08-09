@@ -13,8 +13,9 @@ import {
 } from './payroll-acceptance.util.js';
 import {
   computeFinalSalaryMinor,
-  extractBaseSalaryMinor,
   monthBounds,
+  monthInstantBounds,
+  resolveFixComponentMinor,
 } from './payroll-formula.util.js';
 import {
   computeAchievementPercent,
@@ -50,12 +51,24 @@ export class HrPayrollService {
   ) {}
 
   async computeMonthly(accountId: string, employeeId: string, yearMonth: string) {
+    // İKKI XIL oy chegarasi — ataylab (HR-7/8):
+    //   • `monthBounds`        → YORLIQ chegarasi (UTC yarim tun). Faqat
+    //     `localDateOnly` bilan yozilgan DATE ustunlari uchun
+    //     (`EmployeeDailyKpi.date`). U yerda Toshkentga surish oyning
+    //     1-kunini tashlab yuborardi.
+    //   • `monthInstantBounds` → HAQIQIY instant chegarasi (Toshkent yarim
+    //     tuni). `HrBonusFineLog.createdAt` kabi timestamp ustunlari uchun:
+    //     1-avgust 02:00 mahalliy jarima UTC'da 31-iyul 21:00 bo'lgani uchun
+    //     eski oyna uni IYULGA hisoblardi.
     const { start, endExclusive } = monthBounds(yearMonth);
+    const instant = monthInstantBounds(yearMonth);
     const config = await this.salary.getResolved(accountId);
 
     const employee = await this.prisma.client.employee.findFirst({
       where: { id: employeeId, accountId },
-      select: { id: true, salaryConfig: true },
+      // `salaryMinor` — xodim kartochkasi yozadigan USTUN (HR-1). `salaryConfig`
+      // JSON'i esa ixtiyoriy override bo'lib qoldi.
+      select: { id: true, salaryConfig: true, salaryMinor: true },
     });
     if (!employee) {
       throw new Error(`Employee ${employeeId} not found in account`);
@@ -82,16 +95,16 @@ export class HrPayrollService {
     // 4. commission
     const commissionMinor = computeCommissionMinor(totalSalesMinor, config.commissionPercent);
 
-    // 5. bonus / fine ledger sums (createdAt in month window)
+    // 5. bonus / fine ledger sums (createdAt in month window — Toshkent instantlari)
     const { bonusMinor, fineMinor } = await this.bonusFine.aggregateRaw(
       accountId,
       employeeId,
-      start,
-      new Date(endExclusive.getTime() - 1),
+      instant.start,
+      new Date(instant.endExclusive.getTime() - 1),
     );
 
-    // 6. fix component = per-employee base salary
-    const fixComponentMinor = extractBaseSalaryMinor(employee.salaryConfig);
+    // 6. fix component = per-employee base salary (ustun; JSON = override)
+    const fixComponentMinor = resolveFixComponentMinor(employee);
 
     // 6b. Eskirgan kunlar tuzatmasi (§3.4) — SHU davrga tegishlilari.
     //

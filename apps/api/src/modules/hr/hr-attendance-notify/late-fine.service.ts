@@ -27,18 +27,30 @@ function isUniqueViolation(e: unknown): boolean {
 export class LateFineService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
-  /** Applies the fine if configured + late; returns the fine amount (0n if none). */
-  async applyIfLate(i: LateFineInput): Promise<bigint> {
+  /**
+   * Konfiguratsiya bo'yicha shu kechikishga TEGISHLI jarima summasi.
+   * 0n = jarima bo'lmasligi kerak (o'chirilgan / chegaradan past / summa 0).
+   */
+  private async targetAmount(accountId: string, lateMinutes: number): Promise<bigint> {
     const cfg = await this.prisma.client.hrAttendanceNotifyConfig.findUnique({
-      where: { accountId: i.accountId },
+      where: { accountId },
     });
     if (!cfg?.lateFineEnabled) return 0n;
-    if (i.lateMinutes <= cfg.lateThresholdMin) return 0n;
-
+    if (lateMinutes <= cfg.lateThresholdMin) return 0n;
     const amount = cfg.lateFinePerMinute
-      ? cfg.lateFineAmountMinor * BigInt(i.lateMinutes)
+      ? cfg.lateFineAmountMinor * BigInt(lateMinutes)
       : cfg.lateFineAmountMinor;
-    if (amount <= 0n) return 0n;
+    return amount > 0n ? amount : 0n;
+  }
+
+  private static reason(lateMinutes: number): string {
+    return `Kechikish ${lateMinutes} daqiqa`;
+  }
+
+  /** Applies the fine if configured + late; returns the fine amount (0n if none). */
+  async applyIfLate(i: LateFineInput): Promise<bigint> {
+    const amount = await this.targetAmount(i.accountId, i.lateMinutes);
+    if (amount === 0n) return 0n;
 
     try {
       await this.prisma.client.hrBonusFineLog.create({
@@ -49,7 +61,7 @@ export class LateFineService {
           kind: 'fine',
           source: 'auto_late',
           amountMinor: amount,
-          reason: `Kechikish ${i.lateMinutes} daqiqa`,
+          reason: LateFineService.reason(i.lateMinutes),
           attendanceId: i.attendanceId,
         },
       });
@@ -59,6 +71,52 @@ export class LateFineService {
       if (isUniqueViolation(e)) return amount;
       throw e;
     }
+    return amount;
+  }
+
+  /**
+   * HR-3 — davomat qatori TUZATILGANDAN keyin avto-jarimani qayta moslash.
+   *
+   * `applyIfLate` faqat `create` qiladi: unikal `(attendanceId, source)`
+   * indeksi tufayli u qayta chaqirilganda ESKI summani o'zgarishsiz qoldiradi.
+   * Admin `checkInTime`ni to'g'rilaganda (xodim aslida kechikmagan yoki
+   * boshqacha kechikkan) jarima davomat bilan uzilib qolardi va oylikdan
+   * noto'g'ri pul ushlanardi.
+   *
+   * Bu metod reconsile qiladi: kerakli summa 0 bo'lsa qatorni **storno**
+   * qiladi (o'chiradi), aks holda **upsert** bilan summa+sababni yangilaydi.
+   * Faqat `auto_late` qatoriga tegadi — qo'lda kiritilgan jarima tegilmaydi.
+   */
+  async syncForAttendance(i: LateFineInput): Promise<bigint> {
+    const amount = await this.targetAmount(i.accountId, i.lateMinutes);
+
+    if (amount === 0n) {
+      // `deleteMany` — qator bo'lmasa ham xato bermaydi (idempotent storno).
+      await this.prisma.client.hrBonusFineLog.deleteMany({
+        where: { attendanceId: i.attendanceId, source: 'auto_late' },
+      });
+      return 0n;
+    }
+
+    await this.prisma.client.hrBonusFineLog.upsert({
+      where: {
+        uq_bonusfine_attendance_source: { attendanceId: i.attendanceId, source: 'auto_late' },
+      },
+      create: {
+        accountId: i.accountId,
+        employeeId: i.employeeId,
+        employeeName: i.employeeName,
+        kind: 'fine',
+        source: 'auto_late',
+        amountMinor: amount,
+        reason: LateFineService.reason(i.lateMinutes),
+        attendanceId: i.attendanceId,
+      },
+      update: {
+        amountMinor: amount,
+        reason: LateFineService.reason(i.lateMinutes),
+      },
+    });
     return amount;
   }
 }
