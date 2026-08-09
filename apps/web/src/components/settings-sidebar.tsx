@@ -62,7 +62,9 @@ const MOYSKLAD_GROUPS: SidebarGroup[] = [
     links: [
       { href: '/settings/import', labelKey: 'import' },
       { href: '/settings/export', labelKey: 'export' },
-      { href: '/settings/tokens', labelKey: 'tokens' },
+      // moysklad's «Токены» row — the real screen lives at /settings/api-tokens
+      // (Faza Q14); /settings/tokens is kept as a redirect (⛔ preserve rule).
+      { href: '/settings/api-tokens', labelKey: 'tokens' },
     ],
   },
   {

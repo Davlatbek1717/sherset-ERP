@@ -23,6 +23,8 @@
  * slug matches nothing.
  */
 
+import { compatSlugSet } from './compat-slugs.js';
+
 export type CompatAction = 'read' | 'write';
 
 const SCOPE_RE = /^(?:\*|[a-z][a-z0-9_]*(?::(?:read|write))?)$/;
@@ -41,6 +43,23 @@ export function normalizeScopes(raw: readonly string[]): string[] {
 /** Syntax only — slug membership is NOT checked (a typo simply grants nothing). */
 export function isScopeSyntaxValid(scope: string): boolean {
   return SCOPE_RE.test(scope);
+}
+
+/**
+ * Membership: does this scope name a slug the compat router actually serves?
+ *
+ * Faza 24 checked grammar only, which made `prodcut:read` a valid-looking
+ * scope that granted nothing — the admin discovered it from the first 403.
+ * `known` is injectable so this module stays a leaf (the default is the
+ * canonical registry).
+ */
+export function isScopeSlugKnown(
+  scope: string,
+  known: ReadonlySet<string> = compatSlugSet(),
+): boolean {
+  if (scope === '*') return true;
+  const slug = scope.split(':')[0];
+  return !!slug && known.has(slug);
 }
 
 /** Empty list (legacy tokens) or an explicit `*`. */

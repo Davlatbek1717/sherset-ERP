@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
-import { isScopeSyntaxValid, normalizeScopes } from './api-token.scope.js';
+import { isScopeSlugKnown, isScopeSyntaxValid, normalizeScopes } from './api-token.scope.js';
 
 /**
  * Service for managing ApiToken (long-lived integration tokens).
@@ -48,6 +48,15 @@ export class ApiTokenService {
     if (invalid.length > 0) {
       throw new BadRequestException(
         `Yaroqsiz scope: ${invalid.join(', ')} — kutilgan shakl: '*', '<slug>', '<slug>:read', '<slug>:write'`,
+      );
+    }
+    // Faza Q14: grammar is not enough — `prodcut:read` parses fine and then
+    // silently grants nothing. Compare against the slug registry so the typo
+    // surfaces here, naming the offending entries.
+    const unknown = scopes.filter((s) => !isScopeSlugKnown(s));
+    if (unknown.length > 0) {
+      throw new BadRequestException(
+        `Noma'lum scope: ${unknown.join(', ')} — qo'llab-quvvatlanadigan slug ro'yxati: GET /admin/api-tokens/scopes`,
       );
     }
 

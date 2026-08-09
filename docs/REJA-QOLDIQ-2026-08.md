@@ -459,7 +459,7 @@ unit darajada. (3) scope-enforcement regressiz.
 **▶ SESSIYA-BOSHI PROMPT:**
 > `docs/REJA-QOLDIQ-2026-08.md` — **Faza Q14**. O'ZGARMAS QOIDALAR. Faza 24 hisoboti DEFER'larini o'qi.
 > Scope UI + slug-validatsiya + i18n. TDD: 3 stsenariy. Gate (API+web+i18n). Hisobot, TO'XTA.
-**◻ HISOBOT:** _(agent to'ldiradi)_
+**☑ HISOBOT (2026-08-09):** BAJARILDI — batafsili «HISOBOT JURNALI → Faza Q14» da.
 
 ---
 
@@ -2849,3 +2849,176 @@ yugurtirishlardan olindi.
 `packages/db/prisma/schema.prisma`, `todo.md`, `docs/REJA-MENEJER-KASSA-*`). Ularning **hech bir
 fayliga yozilmadi**, `git add` faqat aniq yo'llar bilan, commit `-c core.hooksPath=/dev/null` bilan
 (lint-staged begona fayl qo'shmasin — §6.7 B) va gate'lar QO'LDA to'liq yugurtirildi.
+
+---
+
+## Faza Q14 — API-token scope UI (`/settings/api-tokens`) + slug-validatsiya (`INT-07`) (2026-08-09) — **Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q**
+
+### Da'volarni HEAD kodida tasdiqlash (reja §2) — 4/4 TASDIQLANDI
+
+Faza 24 hisoboti 2026-08-09 da yozilgan; hammasi bugungi HEAD'da ham shundayligi tekshirildi:
+
+1. **Sahifa HAQIQATAN yo'q edi.** `api-token.controller.ts:23` doc-blokida `UI: /settings/api-tokens
+   (admin-only)` yozilgan, lekin `apps/web` da `admin/api-tokens` bo'yicha **0 chaqiruv** (grep) va
+   `app/(app)/settings/api-tokens/` katalogi yo'q edi. **Qo'shimcha topilma (Faza 24 ko'rmagan):**
+   `settings/tokens/page.tsx` **stub** bo'lib turgan (`EmptyState` + `settings_stub.tokens_title`),
+   va sozlamalar yon-menyusi (`settings-sidebar.tsx:65`) aynan **o'sha stub'ga** olib borardi. Ya'ni
+   moysklad'ning «Токены» qatori bosilganda foydalanuvchi «в разработке» ekranini ko'rardi.
+2. **Slug reyestrga solishtirilmasdi.** `api-token.service.ts` faqat `isScopeSyntaxValid` chaqirardi
+   (`SCOPE_RE = /^(?:\*|[a-z][a-z0-9_]*(?::(?:read|write))?)$/`) — ya'ni `prodcut:read` grammatikaga
+   mos ⇒ **o'tib ketardi**, keyin fail-closed bo'lgani uchun hech narsa ochmasdi.
+3. **`SLUGS` yopiq edi** — `moysklad-compat.service.ts:51` dagi private `const SLUGS: Record<string,
+   SlugConfig>`; yagona tashqi chiqish yo'li `supportedSlugs()` (DI-li servis metodi).
+4. **`_compat/slugs` discovery endpointi JWT bilan O'QILMAYDI** (reja «`_compat/slugs`dan» degan
+   edi — bu **amalda ishlamas edi**): `MoyskladCompatController` butunlay `@UseGuards(ApiTokenGuard)`
+   ostida, ya'ni Bearer **api-token** talab qiladi. Admin brauzerda faqat JWT bilan turadi ⇒
+   sahifa bu endpointdan slug ro'yxatini ololmasdi. Shuning uchun reyestr `/admin/api-tokens/scopes`
+   (JWT + `settings.view`) orqali berildi.
+
+### O'zgarishlar
+
+| Fayl | O'zgarish |
+|---|---|
+| `moysklad-compat/compat-slugs.ts` | **YANGI, sof leaf modul** (import'siz): `COMPAT_SLUGS` (40 slug, `as const`), `CompatSlug` tipi, `isKnownCompatSlug`, `compatSlugSet()` |
+| `moysklad-compat/moysklad-compat.service.ts` | `SLUGS` endi `Record<CompatSlug, SlugConfig>` — **drift = `tsc` xatosi**, konvensiya emas. Runtime lookup'lar uchun `SLUG_LOOKUP: Partial<Record<string, SlugConfig>>` (URL'dan kelgan slug `string`, `CompatSlug` emas) |
+| `moysklad-compat/api-token.scope.ts` | **+`isScopeSlugKnown(scope, known?)`** — `*` doim o'tadi, aks holda slug reyestrda bo'lishi shart. `known` parametr sifatida in'yeksiya qilinadi (modul sof qoladi) |
+| `moysklad-compat/api-token.service.ts` | `create` — sintaksisdan **keyin** reyestr tekshiruvi: `Noma'lum scope: <ro'yxat> — qo'llab-quvvatlanadigan slug ro'yxati: GET /admin/api-tokens/scopes` (`BadRequestException` = 400) |
+| `moysklad-compat/api-token.controller.ts` | **YANGI `GET /admin/api-tokens/scopes`** (`@RequirePermission({entity:'settings', action:'view'})`) → `{ slugs, actions: ['read','write'] }` |
+| `apps/web/.../settings/api-tokens/page.tsx` | **YANGI sahifa**: `ListView` ro'yxat (nom · vakolatlar · xodim · muddat · oxirgi ishlatilgan · yaratilgan · bekor qilish) + yaratish-modali (nom, muddat, **scope checkbox-matritsasi** read/write, filtr, jonli scope-preview) + **bir martalik token dialogi** (nusxalash tugmasi) |
+| `apps/web/.../settings/tokens/page.tsx` | stub → `redirect('/settings/api-tokens')` (⛔ preserve qoidasi: marshrut o'chirilmadi) |
+| `apps/web/src/components/settings-sidebar.tsx` | «Токены» qatori endi haqiqiy sahifaga (`/settings/api-tokens`) — o'lik funksiya emas |
+| `apps/web/src/messages/{ru,uz}.json` | `pages.api_tokens` — **34 kalit × 2 til** |
+
+### Scope UI shartnomasi (qaror + sabab)
+
+- **Checkbox-matritsa → wire scope:** `read+write` ⇒ **yalang'och `<slug>`**, faqat write ⇒
+  `<slug>:write`, faqat read ⇒ `<slug>:read` — aynan `api-token.scope.ts` grammatikasi. `write`
+  belgilanganda `read` avtomatik yoqiladi (serverda `:write` read'ni **qamrab oladi**) — aks holda
+  UI serverdan boshqa narsani va'da qilardi.
+- **Slug ro'yxati SERVERDAN** (`/admin/api-tokens/scopes`), FE'da qattiq yozilmagan: aks holda
+  matritsa taklif qilgan katakcha `create` da 400 beradigan holat tug'ilardi. (Aynan shu drift
+  `webhook-dialog.tsx` da bor — u `ENTITY_TYPES` ni FE'da saqlaydi; yangi kod uni takrorlamadi.)
+- **RU matnlar loyihaning mavjud lug'atidan grounded** (CLAUDE.md §4, DOM-rol emas — bu bizning
+  sahifamiz, moysklad capture'i yo'q): `Токены` (`settings_sidebar.tokens`), `Права доступа`
+  (`hrEmployees.action_permissions`), `Срок действия` (`publication.col_expires`),
+  `Срок действия (пусто = бессрочно)` (`publications.expires_label` — **aynan**), `Отозвать`
+  (`publications.revoke_action` dan), `Полный доступ` (`hrPermissions.col_full` + `Доступ`),
+  `Создано` (`common.created`), `Название` (`fields.name`), subtitle qavs ichidagi
+  `(1C, Telegram-бот, кастомные интеграции)` — `webhook_admin.subtitle` dan **aynan**.
+
+### 🔒 Xavfsizlik nuqtalari (topshiriq §4)
+
+1. **Bo'sh `scopes: []` = TO'LIQ KIRISH — endi JIM EMAS, uch joyda oshkora:**
+   (a) ro'yxat katakchasi bo'sh emas, **`Полный доступ` warning-badge** (`full_access_badge`);
+   (b) sahifa tepasida umumiy banner — «To'liq kirishga ega tokenlar: {count} … bekor qilib,
+   kerakli vakolatlar bilan yangisini yarating» (`full_access_notice`, `fullAccessCount > 0` bo'lsa);
+   (c) yaratish-modalida hech narsa tanlanmagan bo'lsa — «Bo'sh ro'yxat = **TO'LIQ** kirish,
+   «kirishsiz» EMAS» (`full_access_empty_warning`). Shartnomaning o'zi **o'zgartirilmadi** (Faza 24
+   sababi kuchda: jonli 1C/CLIMART-proxy tokenlarining hammasi `scopes: []`).
+2. **Guard FE'da emas, serverda.** `usePermissions` o'z doc-blokida «fail-open by design» deydi
+   (matritsa yuklanguncha hamma narsa ko'rinadi) ⇒ FE gating faqat qulaylik. Haqiqiy qulf —
+   `@RequirePermission({entity:'settings'})` **to'rtala** handler'da (`list`/`scopes`/`create`/
+   `revoke`), va `PermissionsGuard` `APP_GUARD` sifatida global (`permissions.module.ts:30`).
+   `api-token.controller.test.ts` buni **haqiqiy guard + haqiqiy Reflector** bilan tekshiradi —
+   «metadata yozilgan-u o'qilmaydi» holati ham tutiladi (Faza Q10 naqshi).
+3. **Token qiymati oqmaydi.** `list()` `select` da `tokenHash` **yo'q** (test bilan qulflandi);
+   server plaintext'ni faqat `create` javobida bir marta qaytaradi; sahifa uni faqat o'sha
+   javobdan (`createdToken` holati) ko'rsatadi va ro'yxat qatorida token maydoni umuman yo'q
+   (test: `row.token` va `tokenHash` satri sahifada bo'lmasligi shart). Log tomoni: yangi log
+   qo'shilmadi, `create` javobi hech qayerda loglanmaydi.
+
+### Testlar (TDD — RED jonli o'lchandi)
+
+**RED (implementatsiyadan oldin):**
+- `pnpm --filter @moysklad/api exec vitest run src/modules/moysklad-compat` →
+  **3 test-fayl yiqildi / 3 test failed | 84 passed (87)** — `compat-slugs.test.ts` va
+  `api-token.controller.test.ts` collect-bosqichida yiqildi (modul/`scopes` handler yo'q),
+  `api-token.service.test.ts` da 3 yangi assert qizil (`prodcut:read` **o'tib ketardi**).
+- `pnpm --filter @moysklad/web exec vitest run src/__tests__/api-tokens-page.test.ts` →
+  **11 failed / 11** (ENOENT: `settings/api-tokens/page.tsx`).
+
+**GREEN (implementatsiyadan keyin):**
+- `src/modules/moysklad-compat` → **106 passed / 106** (7 fayl). Yangi: `compat-slugs.test.ts` **6**,
+  `api-token.controller.test.ts` **13**, `api-token.service.test.ts` **4 → 9** (+5).
+- web `api-tokens-page.test.ts` → **11 passed / 11**.
+
+**Nima qulflandi:**
+- *Slug reyestri:* `COMPAT_SLUGS` ↔ `supportedSlugs()` **aynan mos** (runtime drift qulfi;
+  compile-time qulf esa `Record<CompatSlug, SlugConfig>`), `isKnownCompatSlug` katta-harf/typo.
+- *400 stsenariysi:* noma'lum slug → `BadRequestException`, **xato matnida aynan o'sha slug**,
+  bir nechta noto'g'ri slug — hammasi sanaladi, `prisma.create` **umuman chaqirilmaydi**.
+  Regress: reyestrdagi slug + `*` o'tadi; Faza 24 ning normalizatsiya/bo'sh-scope/plaintext-format
+  testlari tegilmadi va yashil.
+- *Ruxsat:* 4 endpoint × (metadata · ruxsatsiz aktor **403** · `settings.*: ALL` aktor **o'tadi**)
+  = 12 test + `scopes()` reyestrni qaytarishi.
+- *Scope-enforcement regressi:* `api-token.guard.test.ts` **10/10** va `api-token.scope.test.ts`
+  **35/35** o'zgarishsiz yashil (scope-cheklangan token faqat o'z entity'siga kiradi).
+- *Sahifa kontrakti:* mavjudlik · yon-menyudan yetib borish · `GET/POST /admin/api-tokens` ·
+  `DELETE /admin/api-tokens/${id}` · `runDestructive` · `/admin/api-tokens/scopes` · plaintext
+  faqat create-javobidan · `full_access` ogohlantirishi `scopes.length === 0` ga bog'langan ·
+  read/write ajratilgan · Kirill hardcode yo'q.
+
+### Gate (jonli o'lchangan, path-cheklangan — §6.6)
+
+- `pnpm --filter @moysklad/api typecheck` → **mening fayllarimda 0 xato**. Daraxtda qolgan yagona
+  xato **parallel sessiyaniki**: `manager/queue/manager-queue.controller.ts(100,12) TS2339
+  'employeeId' … AuthenticatedUser` (o'lchov paytida `cashier-session/*` dagi 2 xato ham ko'rindi,
+  keyingi o'lchovda ular yo'qolib manager/queue'niki paydo bo'ldi — ya'ni faol tahrir).
+- `pnpm --filter @moysklad/web exec tsc --noEmit` → **0 xato** (butun web).
+- `npx biome check <12 fayl>` → **0 error**, 7 warning — hammasi `moysklad-compat.service.ts` dagi
+  **mavjud** `any` lar (Faza 24 hisoboti ham shularni «meniki emas» deb qayd etgan).
+- `pnpm i18n:gate` → **9 passed / 9** (426 fayl, 12611 statik kalit, ru+uz parity).
+- `pnpm --filter @moysklad/api exec vitest run src/modules/moysklad-compat src/modules/permissions
+  src/modules/auth` → **299 passed / 299** (`--testTimeout=30000` bilan; baza 275 → +24 yangi test).
+- **API to'liq suite, 3 shard** (`--reporter=dot`): 1/3 → **2062 passed**, 2/3 → **2148 passed**,
+  3/3 → **2271 passed / 2 skipped** ⇒ **6481 passed / 2 skipped / 0 haqiqiy failed**.
+  Baza (Faza Q13) 6261 ⇒ +220, shundan **+24 meniki**, qolgani parallel sessiyaniki.
+- `pnpm --filter @moysklad/web exec vitest run` → **2942 passed / 26 skipped, 0 failed**
+  (198 fayl). Baza 2923 ⇒ +19, shundan **+11 meniki**.
+- ⚠️ **Flake (meniki EMAS, hujjatlangan):** `permissions/mutation-guard-coverage.test.ts` dagi ikki
+  test (`POS qarz to'lovi …`, `haydovchi magic-link …`) 5s default timeout'da yiqiladi — ikkalasi
+  ham **dinamik import** (`debt.controller.js` butun qarz-grafini, `driver-tracking.controller.js`
+  HR-grafini tortadi). `--testTimeout=30000` bilan **51/51 yashil**. Sabab meniki emasligi
+  tekshirildi: `debt/` grafida `moysklad-compat` importi **yo'q** (grep), va bu flake sessiya
+  boshidagi **baza o'lchovida ham** bor edi (implementatsiyadan oldin). Graf og'irlashuvi parallel
+  sessiyaning `retail-sale`/`cashier-session`/`report/metrics` tahrirlaridan.
+- Migratsiya — **YO'Q** (sxema tegilmadi).
+- **Browser-smoke YO'Q.** Sahifa hech qachon jonli brauzerda ochilmadi.
+
+### Parallel sessiya sharoiti (CLAUDE.md §6)
+
+MK/menejer sessiyasi faol edi (`manager/*`, `cashier-session/*`, `retail-sale/*`, `menejer/*`,
+`report/metrics/*`, `messages/{ru,uz}.json`, `app/(app)/layout.tsx`, `sotuv/page.tsx`,
+`lib/manager-api.ts`, va **indeksda staged** `docs/REJA-8-BOLIM-*`, `docs/REJA-MENEJER-KASSA-*`).
+Ularning hech bir fayliga yozilmadi. `messages/{ru,uz}.json` — **umumiy fayl**: ular ham, men ham
+qo'shdik. Commit **ajratilgan indeks** bilan qilindi (`GIT_INDEX_FILE` + `read-tree HEAD` +
+`hash-object` bilan qayta qurilgan «faqat mening `pages.api_tokens` blokim» blobi) — shu sababli
+commit'da ularning i18n qatorlari **yo'q**, umumiy indeks esa tegilmadi
+(`isolated-index-leaves-stale-shared-index` xotirasi bo'yicha commitdan keyin `git diff --cached`
+tekshirildi). Hook'lar bir martaga chetlab o'tildi (`-c core.hooksPath=/dev/null`), gate'lar
+yuqoridagidek **qo'lda to'liq** yugurtirildi.
+
+### 🟠 Qolgan qarz / DEFER
+
+1. **Mavjud tokenlar hamon `scopes: []` = to'liq kirish.** UI endi buni **ko'rsatadi va ogohlantiradi**,
+   lekin **avtomatik migratsiya QILINMADI** (ataylab: qaysi jonli integratsiya qaysi slug'ga
+   muhtojligi o'lchanmagan — ko'r-ko'rona scope berish deploy kunida 1C/CLIMART-proxy'ni o'ldiradi).
+   **Ops-qadam:** admin har tokenni ko'rib chiqib, bekor qilib, kerakli scope bilan qayta yaratsin.
+   `lastUsedAt` + `ipAddress` ustunlari shu inventarizatsiya uchun ro'yxatda ko'rsatilgan.
+2. **Tokenni TAHRIRLASH yo'q** — faqat yaratish/bekor qilish. `PATCH /admin/api-tokens/:id`
+   controller'da mavjud emas (Faza 24 dan beri ham yo'q edi), shuning uchun scope'ni o'zgartirish =
+   «bekor qil + yangisini yarat». Bu ataylab: scope o'zgarishi sirni ham aylantirgani xavfsizroq.
+   Reja «yaratish/yangilash → 400» degan edi — **yangilash yo'li mavjud emasligi** uchun faqat
+   yaratish tomoni yopildi.
+3. **Compat router hamon faqat READ.** `moysklad-compat.controller.ts` da yozuv marshrutlari yo'q
+   ⇒ `:write` scope'i bugun **hech qanday marshrutga** ta'sir qilmaydi (grammatika va guard tayyor,
+   sirt yo'q). UI uni baribir taklif qiladi — yozuv marshrutlari qo'shilganda tokenlarni qayta
+   yaratish kerak bo'lmasligi uchun.
+4. **`webhook-dialog.tsx` dagi `ENTITY_TYPES` FE'da qattiq yozilgan** (37 slug) va endi
+   `COMPAT_SLUGS` (40) bilan **ajralib turadi** — bu Faza Q14 doirasidan tashqarida, lekin bir xil
+   drift bug-klassi. Alohida ish.
+5. **Sahifa Phase-1.** `useToast`/`navigator.clipboard`/`Modal` xulqi, scope matritsasining 40
+   qatorli scroll'i, `redirect('/settings/api-tokens')` ning sozlamalar layout'i ichida to'g'ri
+   ishlashi — **hech biri brauzerda tekshirilmadi**. Phase-2 QA cohort'iga qoldi.
+
+---

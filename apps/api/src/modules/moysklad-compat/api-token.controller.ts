@@ -4,7 +4,9 @@ import type { AuthenticatedUser } from '../auth/auth.schema.js';
 import { CurrentUser } from '../auth/current-user.decorator.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { RequirePermission } from '../permissions/require-permission.decorator.js';
+import type { CompatAction } from './api-token.scope.js';
 import { ApiTokenService } from './api-token.service.js';
+import { COMPAT_SLUGS } from './compat-slugs.js';
 
 const CreateTokenSchema = z.object({
   name: z.string().min(1).max(255),
@@ -31,6 +33,21 @@ export class ApiTokenController {
   @RequirePermission({ entity: 'settings', action: 'view' })
   list(@CurrentUser() user: AuthenticatedUser) {
     return this.svc.list(user.accountId);
+  }
+
+  /**
+   * Scope vocabulary for the UI's checkbox matrix (Faza Q14).
+   *
+   * The compat router's own `_compat/slugs` discovery endpoint sits behind
+   * `ApiTokenGuard` (Bearer api-token) — an admin holding only a JWT cannot
+   * read it, and hardcoding the list in the frontend would drift. Same
+   * registry the create-time validator uses, so what the UI offers is
+   * exactly what the server accepts.
+   */
+  @Get('scopes')
+  @RequirePermission({ entity: 'settings', action: 'view' })
+  scopes(): { slugs: string[]; actions: CompatAction[] } {
+    return { slugs: [...COMPAT_SLUGS], actions: ['read', 'write'] };
   }
 
   @Post()

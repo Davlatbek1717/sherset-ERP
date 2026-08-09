@@ -1,5 +1,6 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import type { CompatSlug } from './compat-slugs.js';
 import { buildListQuery, scalarFieldTypes } from './moysklad-compat.query.js';
 import type {
   MoyskladListParams,
@@ -48,7 +49,13 @@ interface SlugConfig {
   attrEntity?: string;
 }
 
-const SLUGS: Record<string, SlugConfig> = {
+/**
+ * Slug → config. Typed against the shared registry (Faza Q14) so a slug
+ * added here without adding it to `compat-slugs.ts` — or removed here while
+ * still offered by the token scope UI — is a `tsc` error, not a silent
+ * mismatch between "what we serve" and "what a scope may name".
+ */
+const SLUGS: Record<CompatSlug, SlugConfig> = {
   counterparty: {
     type: 'counterparty',
     model: 'counterparty',
@@ -379,6 +386,14 @@ const SLUGS: Record<string, SlugConfig> = {
 /** Fallback when the controller cannot derive a base from the request. */
 const ENV_BASE = process.env.API_BASE_URL ?? 'http://localhost:4000';
 
+/**
+ * String-keyed view of the same object, for runtime lookups where the slug
+ * comes from an URL (untrusted `string`). Keeping the literal typed as
+ * `Record<CompatSlug, …>` is what makes registry drift a compile error; this
+ * alias only relaxes the *read* side.
+ */
+const SLUG_LOOKUP: Partial<Record<string, SlugConfig>> = SLUGS;
+
 @Injectable()
 export class MoyskladCompatService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
@@ -580,7 +595,7 @@ export class MoyskladCompatService {
   // ---- internals ----
 
   private requireConfig(slug: string): SlugConfig {
-    const c = SLUGS[slug];
+    const c = SLUG_LOOKUP[slug];
     if (!c) throw new NotFoundException(`Unknown slug: ${slug}`);
     return c;
   }
@@ -595,7 +610,7 @@ export class MoyskladCompatService {
 
   /** FK fields whose target we can actually inline (has a slug config). */
   private expandableFkFields(config: SlugConfig): string[] {
-    return (config.fkFields ?? []).filter((f) => SLUGS[this.guessTypeFromFkName(f)]);
+    return (config.fkFields ?? []).filter((f) => SLUG_LOOKUP[this.guessTypeFromFkName(f)]);
   }
 
   private listHref(remapBase: string, slug: string, limit: number, offset: number): string {
@@ -676,7 +691,7 @@ export class MoyskladCompatService {
     const refNames = new Map<string, string>();
     for (const [entity, ids] of idsByEntity) {
       const refSlug = REFERENCE_ENTITY_SLUGS[entity];
-      const refConfig = refSlug ? SLUGS[refSlug] : undefined;
+      const refConfig = refSlug ? SLUG_LOOKUP[refSlug] : undefined;
       if (!refConfig) continue;
       const refDelegate = (this.prisma.client as unknown as Record<string, any>)[refConfig.model];
       if (!refDelegate?.findMany) continue;
@@ -710,7 +725,7 @@ export class MoyskladCompatService {
   ): Promise<void> {
     const fkField = `${field}Id`;
     const targetSlug = this.guessTypeFromFkName(fkField);
-    const targetConfig = SLUGS[targetSlug];
+    const targetConfig = SLUG_LOOKUP[targetSlug];
     if (!targetConfig) return;
     const targetDelegate = (this.prisma.client as unknown as Record<string, any>)[
       targetConfig.model

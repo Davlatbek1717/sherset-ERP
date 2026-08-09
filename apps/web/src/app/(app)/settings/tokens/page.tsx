@@ -1,17 +1,12 @@
-'use client';
+import { redirect } from 'next/navigation';
 
-import { EmptyState } from '@moysklad/ui';
-import { useTranslations } from 'next-intl';
-
-// moysklad settings-nav parity: Настройки → Токены (stub — the section
-// content is delivered by a follow-up band).
+/**
+ * Legacy stub route. moysklad's settings nav calls this row «Токены»; the
+ * real screen shipped in Faza Q14 at `/settings/api-tokens` (the path the
+ * API controller has always documented). The old path is kept as a redirect
+ * rather than deleted — ⛔ preserve rule: routes stay reachable, and any
+ * bookmark or older nav build must not 404.
+ */
 export default function SettingsTokensPage() {
-  const t = useTranslations('pages.settings_stub');
-
-  return (
-    <div className="px-8 py-6" data-testid="settings-stub-tokens">
-      <h1 className="font-semibold text-2xl text-[var(--ms-text-primary)]">{t('tokens_title')}</h1>
-      <EmptyState title={t('wip_title')} description={t('wip_desc')} />
-    </div>
-  );
+  redirect('/settings/api-tokens');
 }
