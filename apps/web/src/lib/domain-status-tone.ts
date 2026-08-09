@@ -496,3 +496,21 @@ export const WORK_ITEM_STATUS_TONE: Record<string, StateTone> = {
 };
 export const workItemStatusTone = (s: string | null | undefined): StateTone =>
   resolve(WORK_ITEM_STATUS_TONE, s);
+
+/**
+ * Qaror jurnali — QAROR MANBASI (MK21 · `decision-journal.ts` dagi
+ * DECISION_SOURCE).
+ *
+ * Ranglar «yaxshi/yomon» emas, MANBANI ajratish uchun: bitta oqimda to'rt xil
+ * jurnal aralashadi va ko'z qaysi tizimdan kelganini rangdan tanishi kerak.
+ * Shuning uchun `destructive` ATAYLAB ishlatilmagan — u qatordagi «bekor
+ * qilingan» belgisiga qoldirilgan (yagona haqiqiy ogohlantirish).
+ */
+export const DECISION_SOURCE_TONE: Record<string, StateTone> = {
+  daily_kpi: 'info',
+  work_item: 'warning',
+  shift: 'neutral',
+  supply: 'success',
+};
+export const decisionSourceTone = (s: string | null | undefined): StateTone =>
+  resolve(DECISION_SOURCE_TONE, s);

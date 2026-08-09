@@ -482,6 +482,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     // Narx bloklaridan keyin ataylab: bu yerda sub'ekt sotuv emas, PUL CHIQISHI.
     // BLOKLAMAYDI — xarajat tasdiqlanmaydi, faqat ko'rinadi.
     { key: 'budget', label: tMenejer('budget'), href: '/menejer/byudjet' },
+    // 4M TZ §8.1/8 (MK21) — «kim nima qaror qildi va nega»: to'rtta mavjud
+    // hodisa jurnali ustidagi ko'rinish (yangi jadval EMAS). Kunlik ish
+    // ro'yxatlaridan keyin ataylab: bu bo'lib O'TGAN qarorlarning tarixi.
+    { key: 'decisions', label: tMenejer('decisions'), href: '/menejer/qarorlar' },
     // 4M §7 (M-Q7) — «menejerni kim nazorat qiladi»: egaga haftalik xulosa.
     { key: 'weekly_summary', label: tMenejer('weekly_summary'), href: '/menejer/haftalik' },
     // 4M TZ §2.4/§0.2 (MK09) — «bu raqamga qanchalik ishonish mumkin».

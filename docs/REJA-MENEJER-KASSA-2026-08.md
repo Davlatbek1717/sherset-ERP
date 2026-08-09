@@ -612,7 +612,7 @@ o'zgarsa tarix buzilmaydi). (2) shablonsiz izoh ham qabul qilinadi.
 
 ---
 
-### MK21 — Qaror jurnali (alohida ekran) ☐ HISOBOT
+### MK21 — Qaror jurnali (alohida ekran) ☑ HISOBOT (2026-08-09)
 **Bo'lim/blok:** 4M §8.1/8 · **Ustuvorlik:** P3 · **Bog'liqlik:** MK01, MK06
 **Eslatma:** TZ «qaror jurnali qabul hodisa jurnalidan texnik jihatdan chiqadi — alohida ekran
 qilinmaydi» degan edi. **Egasi teskarisini tanladi** → ekran quriladi (yangi jadval EMAS, mavjud
@@ -2891,3 +2891,137 @@ registrda, tekshiruv ham shu yerda.
 ### OPS-QADAM qo'shildimi
 
 **Yo'q** — sxema o'zgarmadi, migratsiya yaratilmadi. Barcha 12 qoida MAVJUD jadvallardan o'qiydi.
+
+---
+
+## MK21 — Qaror jurnali (alohida ekran) · 2026-08-09
+
+**Holat:** ✅ **Phase-1 complete — strukturaviy/funksional, RUNTIME-TASDIQLANMAGAN (browser-smoke YO'Q).**
+
+### Nima qilindi
+
+TZ «qaror jurnali qabul hodisa jurnalidan texnik jihatdan chiqadi — alohida ekran qilinmaydi»
+degan edi, **egasi teskarisini tanladi**. Tanlov **ekran** haqida, **ma'lumot modeli** haqida emas:
+yangi jadval ham, yangi yozuvchi ham ochilmadi. Ekran to'rtta MAVJUD append-only hodisa jurnali
+ustidagi **ko'rinish**:
+
+| Manba | Jadval | Qayerdan |
+|---|---|---|
+| Kunlik KPI qabuli | `EmployeeDailyKpiEvent` | MK01/MK02 |
+| Menejer ish navbati | `ManagerWorkItemEvent` | MK06/MK07 |
+| Smena qabuli | `CashierSessionAcceptanceEvent` | MK08 |
+| Qabul tasdig'i | `SupplyApprovalEvent` | qabul zanjiri |
+
+«Natijasi» ustunining pul yarmi MK01 dan keladi: `HrBonusFineLog.kpiEventId` bo'yicha ulanadi,
+shu sababli **teskari (manfiy) yozuv ham ko'rinadi** — bekor qilingan bonus jimgina yo'qolmaydi.
+
+### Qabul qilingan qarorlar (va nega)
+
+1. **Bekor qilish belgisi FILTRDAN OLDIN hisoblanadi.** Aks holda ikki yolg'on chiqardi:
+   (a) `action=accept` filtri qayta ochish hodisasini kesib tashlar va bekor qilingan qaror
+   «kuchda» ko'rinardi; (b) davr oynasidan **keyin** bo'lgan qayta ochish umuman ko'rinmasdi.
+   Shuning uchun servis oynadan keyingi `reopen` hodisalarini **zond** sifatida ham o'qiydi
+   (faqat oynadagi sub'ektlar bo'yicha, faqat kalit maydonlar).
+2. **`adjust` bekor qilinmaydi.** Qayta ochish holatni qaytaradi, lekin tuzatilgan raqamni
+   tiklamaydi — uni «bekor qilingan» deb belgilash yolg'on bo'lardi.
+3. **`supply` da teskari amal yo'q.** Rad etish OLDINGI tasdiqni bekor qilmaydi — u zanjirning
+   keyingi qarori. Shuning uchun qabul zanjirida bekor qilish belgisi umuman qo'yilmaydi.
+4. **Tizim hodisalari (`actorType='system'`) qaror EMAS** — sukut bo'yicha ko'rsatilmaydi, lekin
+   **soni ekranda turadi** (`hiddenSystemCount`) va bir belgi bilan ochiladi. Jimgina yo'qolgan
+   qator «hech narsa bo'lmagan» degan taassurot qoldirardi.
+5. **Tanlagich variantlari (`facets`) «tor» filtrlarsiz asos to'plamdan quriladi.** Agar ular
+   filtrlangan natijadan qurilsa, bir marta aktyor tanlangandan keyin ro'yxatda faqat o'sha aktyor
+   qolardi — filtr o'zini o'zi qulflab qo'yardi.
+6. **Eksport = EKRAN.** Fayl ikkinchi so'rovdan emas, ekrandagi qatorlar massividan quriladi;
+   mos kelmaslik uchun ikkinchi ma'lumot manbai kerak bo'lardi, u esa yo'q. Ko'p qatorli izoh
+   kataka siqiladi (` / `), aks holda fayl satrlari soni qatorlar sonidan ko'p bo'lib qolardi.
+7. **Ism topilmasa `null` qoladi** — «Tizim» deb yozilmaydi; ekranda/faylda aktyor ID bilan
+   ko'rinadi (o'chgan xodim qarori yo'qolmaydi).
+8. **Manba o'qish chegarasi (1000/manba) JIM emas** — chegaraga tegilgan manba `cappedSources` da
+   nomma-nom qaytadi va ekranda ogohlantirish chiqadi.
+
+### Fayllar
+
+**API** (`apps/api/src/modules/manager/journal/`, yangi papka):
+- `decision-journal.ts` — sof qatlam (qo'shish · bekor qilish · filtr · facets · jamlar)
+- `decision-journal.service.ts` — Prisma I/O (4 jurnal + yorliq/ism/pul + zond)
+- `manager-journal.schema.ts` — `GET /manager/decisions` so'rov sxemasi (cap 500, manba cap 1000)
+- `manager-journal.controller.ts` — FAQAT `@Get`; ruxsat `employees:read` (MK10/MK16 bilan bir xil)
+- `decision-journal.test.ts` (24) · `decision-journal.service.test.ts` (8) ·
+  `decision-journal-read-only.test.ts` (4) · `decision-journal-i18n.test.ts` (8)
+- `manager.module.ts` — controller + provider ro'yxatiga qo'shildi
+
+**Web:**
+- `app/(app)/menejer/qarorlar/page.tsx` — ekran (filtr + facets + CSV eksport)
+- `lib/decision-journal-csv.ts` (+ test, 8) — eksport ustunlari, sof
+- `lib/domain-status-tone.ts` — `decisionSourceTone` (drift-lock qoidasi: mahalliy tone-map TAQIQ)
+- `app/(app)/layout.tsx` — subnav bandi `/menejer/qarorlar`
+- `messages/{ru,uz}.json` — `pages.managerDecisions` (109 kalit) + `subnav.menejer.decisions`
+
+### Testlar (reja talablari bo'yicha)
+
+| Reja testi | Qayerda | Holat |
+|---|---|---|
+| (1) ekran mavjud jurnaldan o'qiydi, yangi jadval yo'q | `decision-journal-read-only.test.ts` — sxemada `decision` modeli yo'q · modulda `create/update/delete/upsert` yo'q · faqat ruxsat ro'yxatidagi jadvallar · controllerda yozuvchi metod yo'q | ✅ 4/4 |
+| (2) `void` qilingan yozuv ko'rinib qoladi | `decision-journal.test.ts` — 7 stsenariy (oynadan tashqari zond, filtr kesgan holat, `adjust`, begona sub'ekt, supply) | ✅ |
+| (3) filtr/eksport ekran raqamiga mos | `decision-journal-csv.test.ts` — fayl qatorlari = ekran qatorlari (ko'p qatorli izoh bilan ham), RFC 4180 katak sanog'i, bekor qilingan qator faylda | ✅ 8/8 |
+
+**Mutatsiya tekshiruvi (test bo'shligiga qarshi):** `computeVoiding` ni oyna filtridan KEYIN
+chaqiradigan mutant kiritildi → «bekor qiluvchi hodisa oynadan tashqarida» testi **yiqildi**,
+qolganlari o'tdi. Test haqiqatan o'sha xulqni ushlaydi.
+
+### Gate natijalari (jonli o'lchangan)
+
+- `apps/web` typecheck — **0** ✅
+- `apps/api` typecheck — **1 xato, MENIKI EMAS**: `manager/kpi/kpi-target.ts` (parallel sessiyaning
+  commit qilinmagan MK13 fayli). Mening fayllarim toza.
+- `biome check` (12 fayl) — **0** ✅
+- `pnpm i18n:gate` — **9/9** ✅
+- `apps/api vitest src/modules/manager + app-boot` — **811/811** ✅ (48 fayl)
+- `apps/api vitest .../journal` — **42/42** ✅
+- `apps/web vitest` (to'liq) — **2995 o'tdi, 1 yiqildi** ⚠️ — yagona yiqilgan test parallel
+  sessiyaning **commit qilinmagan** `menejer/_components/comment-template-settings.tsx` (MK20)
+  fayli sababli; sessiya boshida u test **ikki** offender bilan qizil edi, ikkinchisi (MK07 qarzi)
+  shu sessiyada yopildi
+
+### Parallel sessiyalar (CLAUDE.md §6)
+
+Sessiya davomida **kamida uchta** parallel sessiya faol edi (MK13 `kpi-target`, MK15 `money-map`,
+MK20 `comments`). Ularning fayllariga **tegilmadi**. Umumiy fayllar (`manager.module.ts`,
+`layout.tsx`, `ru/uz.json`, reja hujjati) — commit `HEAD + faqat mening hunk'larim` blobi bilan
+qilindi (`hash-object -w` + `update-index --cacheinfo`;
+xotira: `commit-pathspec-takes-worktree-version`), hook'lar bir martaga chetlab o'tildi va
+gate'lar qo'lda to'liq yugurtirildi (§6.7 B).
+
+**Qo'shimcha (mayda) tuzatish:** `menejer/qotib-qolgan/page.tsx:201` dagi xom `<input type=number>`
+DS `Input` ga o'tkazildi. Bu **MK07 hisobotining 1-qarzi** edi (`raw-element-conventions` gate'ini
+yiqitardi) va HEAD'da qizil turgan edi. Endi o'sha gate'da faqat parallel sessiyaning
+commit qilinmagan `menejer/_components/comment-template-settings.tsx` fayli qoladi — **meniki emas**.
+
+### Qolgan qarz / DEFER
+
+1. **🔴 Browser-smoke YO'Q** → 4M Phase-2 QA (MK14). Ekranda tekshirilishi kerak: davr chegarasi
+   (kun tanlagichi mahalliy yarim tundan hisoblaydi), facets bo'sh bo'lgan holat, CSV faylining
+   Excel'da ochilishi, RU/UZ locale, `work_item` sub'ekti MK07 tarjimasi bilan chiqishi.
+2. **Sub'ekt kartasiga havola yo'q** — qator qaysi kun/element/smena/qabul haqida ekanini
+   MATN bilan ko'rsatadi, lekin bosib o'tish havolasi qo'yilmadi (har manbaning karta URL'i
+   alohida ish; navbat elementiga hozircha alohida detail sahifa yo'q).
+3. **Aktyor ismi faqat `Employee` dan qidiriladi** — qabul zanjirida aktyor **taminotchi
+   (kontragent)** bo'lishi mumkin, u holda ism `null` qoladi va ID ko'rinadi. Ataylab: kontragent
+   ismini qidirish ikkinchi lookup talab qiladi va «xodim» ustuni ma'nosini buzardi.
+4. **Manba o'qish chegarasi 1000** — chegaraga tegilsa `totalCount` **kesilgan** to'plam bo'yicha
+   bo'ladi. Ekranda ogohlantirish chiqadi, lekin «to'liq soni» ko'rsatilmaydi (aniq son uchun
+   `count()` so'rovi kerak — davr toraytirilsa muammo yo'q).
+5. **Eksport EKRAN CAP'i bilan cheklangan** (`limit`, sukut 200 / maksimum 500). Bu ATAYLAB:
+   reja «eksport ekran raqamiga mos» deydi. Kattaroq eksport kerak bo'lsa — alohida server
+   endpoint'i va boshqa shartnoma.
+6. **`downloadCsv` argument tartibi 9 sahifada TESKARI** (topildi, tuzatilmadi — MK21 qamrovidan
+   tashqarida): `@moysklad/ui` imzosi `downloadCsv(filename, csv)`, lekin
+   `debts/payments`, `debts/reports` (×2), `reports/{cash-flow,counterparty-balance,pnl,sales,stock-balance}`,
+   `settings/audit-log` uni `(csv, filename)` bilan chaqiradi ⇒ fayl **butun CSV matni bilan
+   nomlanadi va ichida fayl nomi turadi**. Alohida mayda faza sifatida tuzatilsin + qo'riqchi test.
+
+### OPS-QADAM qo'shildimi
+
+**Yo'q** — sxema o'zgarmadi, migratsiya yaratilmadi, yangi jadval yo'q. Ekran butunlay mavjud
+jadvallardan o'qiydi.

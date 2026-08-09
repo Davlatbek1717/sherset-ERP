@@ -2,7 +2,16 @@
 
 import { api } from '@/lib/api-client';
 import { workItemSeverityTone } from '@/lib/domain-status-tone';
-import { Badge, Button, Card, NativeSelect, Spinner, formatDate, formatMoney } from '@moysklad/ui';
+import {
+  Badge,
+  Button,
+  Card,
+  Input,
+  NativeSelect,
+  Spinner,
+  formatDate,
+  formatMoney,
+} from '@moysklad/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useState } from 'react';
@@ -198,12 +207,15 @@ export default function MenejerQotibQolganPage() {
                   <span className="text-[var(--ms-text-muted)] text-xs">
                     {t('threshold_label')}
                   </span>
-                  <input
+                  {/* DS `Input` — yonidagi `NativeSelect` bilan bir xil
+                      balandlik/radius (UI Convention 8; qo'lda yozilgan h-8
+                      variant `raw-element-conventions` gate'ini yiqitardi). */}
+                  <Input
                     type="number"
                     min={1}
                     value={draftValue}
                     onChange={(e) => setDraftValue(e.target.value)}
-                    className="h-8 w-24 rounded-md border border-[var(--ms-border)] px-2 text-sm"
+                    className="w-24"
                     data-test-id={`manager-sla-threshold-${s.stage}`}
                   />
                 </label>

@@ -7,6 +7,8 @@ import { DebtCollectionService } from './collection/debt-collection.service.js';
 import { ManagerCollectionController } from './collection/manager-collection.controller.js';
 import { ManagerInventoryController } from './inventory/manager-inventory.controller.js';
 import { ManagerInventoryService } from './inventory/manager-inventory.service.js';
+import { DecisionJournalService } from './journal/decision-journal.service.js';
+import { ManagerJournalController } from './journal/manager-journal.controller.js';
 import { DailyKpiAcceptanceService } from './kpi/daily-kpi-acceptance.service.js';
 import { DailyKpiDrilldownService } from './kpi/daily-kpi-drilldown.service.js';
 import { DataQualityService } from './kpi/data-quality.service.js';
@@ -57,6 +59,7 @@ import { ManagerSlaService } from './sla/manager-sla.service.js';
     ManagerQueueController,
     ManagerCollectionController,
     ManagerSlaController,
+    ManagerJournalController,
   ],
   providers: [
     EmployeeDailyKpiService,
@@ -72,6 +75,7 @@ import { ManagerSlaService } from './sla/manager-sla.service.js';
     ManagerQueueService,
     DebtCollectionService,
     ManagerSlaService,
+    DecisionJournalService,
   ],
   exports: [EmployeeDailyKpiService, DailyKpiAcceptanceService],
 })
