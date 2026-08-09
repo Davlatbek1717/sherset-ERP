@@ -382,7 +382,7 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > sarlavha/matn bilan cheklangan); (3) `usageCount` taxminiy — matn butunlay almashtirilsa ham
 > sanaladi; (4) `suggest` yuklamasi real ma'lumotda o'lchanmagan.
 
-> **🕒 2026-08-09zc (REJA-MENEJER-KASSA **MK13** — 4M.10: KPI target + kompozit ball va reyting
+> **🕒 2026-08-09zd (REJA-MENEJER-KASSA **MK13** — 4M.10: KPI target + kompozit ball va reyting
 > formulasi) — ⚠️ **QISMAN** (formulalar yadrosi tayyor, sxema+wiring QARZ).**
 >
 > **⛔ Bloklovchi qarorlar YOPILDI (egasi bilan, shu sessiyada):** **QAROR-B2** — kompozit ball
