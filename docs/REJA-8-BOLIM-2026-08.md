@@ -197,6 +197,17 @@ alohida bajariladi. **Har faza agenti o'zi qo'shgan qadamni shu ro'yxatga yozadi
    Tekshiruv: `SELECT count(*) FROM cashier_sessions WHERE closing_cash_usd_minor IS NOT NULL`
    → **0**; keyin `/api/v1/health` (2-band).
    ✅ Lokal `climart_adopt` ga **QO'LLANGAN va tekshirilgan** (MK31 sessiyasi).
+12. **MK39 (2026-08-10) — record-scope bayrog'ini prodda yoqish. ⛔ HOZIR EMAS.**
+    **Sxema o'zgarishi YO'Q** (`Account.record_scope_enforced` allaqachon bor, default `false`).
+    Bu qadam faqat **qamrov darvozasi ochilgandan keyin** bajariladi:
+    (a) `pnpm record-scope:coverage --check` → **exit 0** bo'lishi shart (2026-08-10 holati:
+    **exit 1, 45 bloker, qamrov 2/47** — MK35 va MK36 bajarilmagan);
+    (b) faqat shundan keyin prodda `pnpm record-scope:flag --account=<id> --on` — skript
+    darvoza yopiq bo'lsa **o'zi rad etadi**, ya'ni bu bandni xato bajarish mumkin emas;
+    (c) `/api/v1/health` (2-band) + bir nechta ro'yxat ekranini ko'z bilan tekshirish
+    (**hech bir ekran bo'shab qolmasligi** — MK39 regressiya sharti).
+    **Qaytarish:** `pnpm record-scope:flag --account=<id> --off` — darvoza bunga to'siq
+    QO'YMAYDI (bayroq ataylab qaytariladigan).
 
 ---
 

@@ -1065,7 +1065,7 @@ bloklamaydi, navbatga tushadi (falsafa). (3) plan saqlash → MK37 modeliga tush
 
 ---
 
-### MK39 — Record-scope 4-to'lqin + `recordScopeEnforced` **YOQISH** ☐ HISOBOT
+### MK39 — Record-scope 4-to'lqin + `recordScopeEnforced` **YOQISH** ☑ HISOBOT (2026-08-10) — darvoza qurildi, bayroq YOQILMADI (qamrov 2/47)
 **Bo'lim/blok:** 4-B8 · **TZ:** §4.2, §4.3
 **Ustuvorlik:** P1 · **Bog'liqlik:** MK35, MK36 · **Xavf:** yuqori
 **Muammo:** hozir `recordScopeEnforced = false` — `OWN_GROUP` berilsa ham hammasi ko'rinadi.
@@ -4294,3 +4294,108 @@ MK13-qarz (`KpiTarget` DB) → MK22 endpoint → MK37 (`SalesPlan`) → MK38 (ek
 - `apps/api/src/modules/manager/kpi/kpi-target-cascade.test.ts` (yangi, 23 test)
 - `apps/api/src/modules/manager/kpi/kpi-target.ts` (`department` qamrovi + 2 eksport + izohlar)
 - `apps/api/src/modules/manager/kpi/kpi-target.test.ts` (+3 test, `departmentId` maydoni)
+
+---
+
+## Faza MK39 — Record-scope qamrov darvozasi · `recordScopeEnforced` **YOQILMADI** (sana: 2026-08-10)
+
+**Holat:** ✅ BAJARILDI — **Phase-1: strukturaviy + unit-tasdiqlangan · qamrov o'lchovi jonli
+skript bilan · browser-smoke YO'Q.**
+**Fazaning asosiy natijasi — O'LCHANGAN «YO'Q»:** bayroq **ataylab YOQILMADI**.
+
+### Fazaning birinchi buyrug'i bajarildi: qamrov hisoboti
+
+MK39 prompti: *«Yoqishdan oldin qamrov hisobotini chiqar (qoplanmagan endpoint bo'lsa **yoqma**)»*.
+Hisobot chiqarildi (`pnpm record-scope:coverage`) va u **darvozani YOPIQ** deb ko'rsatdi:
+
+| O'lchov | Qiymat |
+|---|---|
+| `schema.prisma` da `{ownerId, groupId, shared}` uchligiga ega model | **55** |
+| Record-scope **qo'llanadigan** (qaror asoslangan, quyiga qara) | **47** |
+| ✅ **majburlangan** (list + detail ikkalasi ham ulangan) | **2** — `demand`, `customerorder` (**4%**) |
+| ❌ ulanmagan (servis bor, chaqiruv yo'q) | **35** |
+| ❌ `PermissionEntity` slug'i yo'q | **5** (`BonusOperation`, `RetailDrawerCashIn/Out`, `Production`, `ServiceRequest`) |
+| ⚪ o'qish-yo'li (list) servisi umuman yo'q | **5** (markirovka + `RetailSalesReturn` + `ProcessingPlanFolder`) |
+| **Blokerlar** | **45** |
+
+To'liq jadval: [`docs/audits/record-scope-coverage.md`](audits/record-scope-coverage.md) (avtomat hosila).
+
+### Nega bayroq yoqilmadi (va bu «yarim bajarish» EMAS)
+
+MK39 ning o'z ta'rifi bo'yicha **yarim yoqilgan holat xavfli**: bayroq yoqilsa faqat
+`recordScopeWhere` / `assertRecordAccess` chaqirilgan **2** modulda cheklov paydo bo'ladi, qolgan
+**45** joyda ro'yxat to'liq ochiq qoladi — ya'ni *«ruxsat berildi deb o'ylanadi, aslida ishlamaydi»*.
+Fazaning qamrov sharti (`qoplanmagan endpoint = 0`) **bajarilmagan**, chunki **MK35 (1-to'lqin) va
+MK36 (2–3-to'lqin) hali bajarilmagan** — reja ularni MK39 ning bog'liqligi deb belgilagan
+(`### MK39 … Bog'liqlik: MK35, MK36`). Shu sababli MK39 ning **yoqish** yarmi MK35/MK36 bajarilgunga
+qadar ochiq qoladi; bu sessiya o'sha yoqishning **darvozasini** qurdi va uni o'lchov bilan yopdi.
+
+### Qurilgani (yoqishni endi xotiraga emas, o'lchovga bog'laydi)
+
+1. **`apps/api/src/modules/permissions/record-scope-coverage.ts`** (yangi) — registr + sof mantiq:
+   - `RECORD_SCOPE_REGISTRY` — 55 model uchun bir qatordan (`entity`, o'qish-yo'li servisi,
+     qo'llanish qarori + sabab);
+   - `analyzeReadPath()` — ulanish **o'z entity literali** bo'yicha aniqlanadi. Izohdagi
+     `recordScopeWhere` so'zi va qo'shni modulning `'demand'` literali **sanalmaydi**
+     (grep-count ≠ grounding, CLAUDE.md §4 bug-klassi);
+   - `canEnableRecordScope()` — **yoqish darvozasi**;
+   - `planFlagChange()` — OPS qarori, **ataylab asimmetrik**: yoqish darvozadan o'tadi,
+     **o'chirish har doim ishlaydi** (MK39 DoD: bayroq qaytariladigan bo'lsin).
+2. **`scripts/record-scope-coverage.ts`** (`pnpm record-scope:coverage`) — hisobotni
+   `docs/audits/record-scope-coverage.md` ga yozadi; `--check` da blokerlar bo'lsa `exit 1`.
+3. **`scripts/ops-record-scope-flag.ts`** (`pnpm record-scope:flag`) — prodda yoqishning yagona
+   xavfsiz yo'li: `--list` · `--account=<id> --on` (darvoza yopiq bo'lsa **RAD etadi**) ·
+   `--account=<id> --off` (**hech qachon to'silmaydi**).
+4. **`record-scope-coverage.test.ts`** (29 test, TDD) — 4 qatlam qulf.
+
+### Testlar — mutatsiya bilan tekshirilgan (bo'sh emasligi isbotlangan)
+
+Repo ustidagi 3 qo'riqchi «yashil turibdi, lekin hech narsa ushlamaydi» bo'lmasligi uchun
+ataylab buzib sinaldi:
+
+| Mutatsiya | Kutilgan | Natija |
+|---|---|---|
+| Registrdagi hamma qator `not-applicable` qilindi (darvoza ochiladi) | DARVOZA-SXEMA testi yiqiladi | ✅ yiqildi |
+| `Demand` servisi boshqa faylga ko'rsatildi | RATCHET yiqiladi | ✅ yiqildi |
+| `Counterparty` «qo'llanmaydi» deb belgilandi | shablon-refutatsiyasi yiqiladi | ✅ yiqildi |
+
+**DARVOZA ↔ SXEMA invarianti:** test `Account.recordScopeEnforced` sxema default'i **aynan**
+`canEnableRecordScope()` natijasiga teng bo'lishini talab qiladi. Bugun ikkalasi ham `false`.
+Qamrov yopilgan kunda bu test **default'ni `true` qilishni majbur qiladi** — ya'ni MK39 ning
+yoqish qadami unutilib qolmaydi.
+
+**«Qo'llanmaydi» qarorini mashina tekshiradi:** 8 model (`Employee`, `Organization`, `Store`,
+`Country`, `Uom`, `TaxRate`, `SalesChannel`, `RetailStore`) record-scope'dan chiqarildi — ular
+dropdown'lar orqasidagi ma'lumotnoma/klassifikator, chegara u yerda **boshqa o'q** (filial filtri
+MK35 · HR ruxsatlari MK27). Bu **yagona qo'lda qaror**, shuning uchun test uni **mustaqil manbaga**
+qarshi refute qiladi: rol shablonlaridan (MK29) birortasi entity'ga `view` uchun ALL'dan past scope
+bergan bo'lsa, uni «qo'llanmaydi» deb belgilashga **yo'l qo'yilmaydi**.
+
+### Gate
+- `pnpm --filter @moysklad/api typecheck` → **0 xato**
+- `pnpm lint:product` → **0 xato** (831 warning — siyosat bo'yicha ruxsat)
+- `pnpm --filter @moysklad/api exec vitest run src/modules/permissions` → **15 fayl / 454 test yashil**
+- Jonli tekshiruv (lokal DB `climart_adopt`): `--list` → akkaunt `OFF` · `--on` → **rad etildi,
+  exit 1, 45 bloker** · `--off` → o'tdi (qaytariladigan). Prodga **tegilmadi**.
+- `i18n:gate` yugurtirilmadi — **UI matni tegilmadi** (backend + skript + hujjat).
+
+### 🔴 BAJARILMAGANI (ochiq qarz — halol yorliq)
+1. **Bayroq YOQILMADI** — qamrov 2/47. Yoqish MK35 + MK36 dan keyin.
+2. **4-to'lqin ulanishi qilinmadi.** MK39 ning «qolgan modullarga scope» qismi MK35/MK36
+   bajarilmagani uchun amalda **45 modul**ni qamraydi — bu bir sessiyaga sig'maydi va uni
+   MK35/MK36 dan oldin qilish rejaning ketma-ketligini buzadi. To'lqinlar tartibi saqlandi.
+3. **Yozish-yo'li (update/delete/post) scope'lari** — H4 RFC bo'yicha alohida keyingi faza;
+   darvoza hozir faqat **o'qish** yo'lini o'lchaydi (buni hisobotda ochiq yozamiz).
+4. **Browser-smoke YO'Q** → MK40 (ruxsatlar Phase-2 QA).
+
+### OPS-QADAM qo'shildimi
+**Ha** — `docs/REJA-8-BOLIM-2026-08.md` → «OPS-QADAMLAR» ro'yxatiga **record-scope yoqish** bandi
+qo'shildi (sxema o'zgarishi YO'Q; prodda bayroqni faqat `pnpm record-scope:flag --account=<id> --on`
+orqali, darvoza ochilgandan keyin).
+
+### Fayllar
+- `apps/api/src/modules/permissions/record-scope-coverage.ts` (yangi)
+- `apps/api/src/modules/permissions/record-scope-coverage.test.ts` (yangi, 29 test)
+- `scripts/record-scope-coverage.ts` (yangi) · `scripts/ops-record-scope-flag.ts` (yangi)
+- `docs/audits/record-scope-coverage.md` (yangi, avtomat hosila)
+- `package.json` (+2 skript) · `docs/audits/_H4-OWN-GROUP-SCOPE-RFC.md` (qaror jurnali)

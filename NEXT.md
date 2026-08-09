@@ -305,6 +305,57 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-10e (REJA-MENEJER-KASSA **MK39** — record-scope qamrov darvozasi) — ✅ **Phase-1
+> complete: darvoza qurildi + qamrov O'LCHANDI · `recordScopeEnforced` ATAYLAB YOQILMADI**
+> (browser-smoke YO'Q). To'liq hisobot: `docs/REJA-MENEJER-KASSA-2026-08.md` → «Faza MK39».**
+>
+> **Fazaning natijasi — o'lchangan «YO'Q».** MK39 prompti birinchi navbatda *«yoqishdan oldin
+> qamrov hisobotini chiqar; qoplanmagan endpoint bo'lsa YOQMA»* deydi. Hisobot chiqarildi va
+> darvoza **YOPIQ** chiqdi: `{ownerId, groupId, shared}` uchligiga ega **55** modeldan
+> record-scope qo'llanadigani **47**, majburlangani esa **2** (`demand`, `customerorder` — **4%**);
+> **45 bloker**. Sabab rejaning o'zida yozilgan: MK39 ning bog'liqligi **MK35 + MK36**, ikkalasi
+> ham ☐. Shuning uchun bayroq yoqilmadi va 4-to'lqin ulanishi qilinmadi — to'lqinlar tartibi
+> saqlandi (aks holda «yarim yoqilgan» holat: 2 modulda cheklov, 45 joyda ro'yxat to'liq ochiq).
+>
+> **Qurilgani (TDD, 29 yangi test):** `permissions/record-scope-coverage.ts` — 55 qatorli registr ·
+> `analyzeReadPath()` ulanishni **o'z entity literali** bo'yicha o'qiydi (izohdagi
+> `recordScopeWhere` so'zi va qo'shni modulning `'demand'` literali **sanalmaydi** — grep-count ≠
+> grounding) · `canEnableRecordScope()` darvoza · `planFlagChange()` **ataylab asimmetrik**
+> (yoqish darvozadan o'tadi, **o'chirish hech qachon to'silmaydi** — bayroq qaytariladigan).
+> `scripts/record-scope-coverage.ts` (`pnpm record-scope:coverage` → `docs/audits/record-scope-coverage.md`,
+> `--check` da exit 1) · `scripts/ops-record-scope-flag.ts` (`pnpm record-scope:flag`).
+>
+> **🔒 DARVOZA ↔ SXEMA invarianti** — eng muhim qulf: test `Account.recordScopeEnforced` sxema
+> default'i **aynan** `canEnableRecordScope()` natijasiga teng bo'lishini talab qiladi. Bugun
+> ikkalasi `false`. **Qamrov yopilgan kunda bu test default'ni `true` qilishni MAJBUR qiladi** —
+> ya'ni MK39 ning yoqish qadami unutilib qolmaydi va qamrov teshigi borligicha yoqib bo'lmaydi.
+>
+> **Testlar bo'sh emasligi MUTATSIYA bilan o'lchandi (3/3 yiqildi):** hamma qator
+> `not-applicable` ⇒ darvoza-sxema testi · `Demand` servisi boshqa faylga ⇒ ratchet ·
+> `Counterparty` «qo'llanmaydi» ⇒ shablon-refutatsiyasi. **Qo'lda qo'yilgan yagona qaror**
+> (8 model record-scope'dan chiqarildi: `Employee`/`Organization`/`Store`/`Country`/`Uom`/
+> `TaxRate`/`SalesChannel`/`RetailStore` — dropdown ortidagi ma'lumotnoma, chegara u yerda
+> filial o'qi MK35 va HR ruxsatlari MK27) **mustaqil manba bilan refute qilinadi**: rol
+> shablonlaridan (MK29) birortasi entity'ga `view` uchun ALL'dan past scope bergan bo'lsa,
+> uni «qo'llanmaydi» deb belgilashga yo'l qo'yilmaydi.
+>
+> **Gate:** api typecheck **0** · `pnpm lint:product` **0 xato** (831 warning) ·
+> `vitest run` butun apps/api → **7368 passed | 2 skipped**. Jonli (lokal `climart_adopt`):
+> `--list` → akkaunt OFF · `--on` → **rad etildi, exit 1, 45 bloker** · `--off` → o'tdi.
+> **Prodga tegilmadi** (OPS-QADAM 12 qo'shildi: `docs/REJA-8-BOLIM-2026-08.md`).
+> ⚠️ **Begona yiqilish:** `src/modules/sales-plan/{progress,target}.test.ts` — **untracked**,
+> parallel sessiyaning in-flight MK37 ishi (`schema.prisma` M, migratsiya
+> `20260810140000_sales_plan` ham ularniki). CLAUDE.md §6.1 bo'yicha TEGILMADI; diff'im
+> path-cheklangan, `schema.prisma` stage QILINMADI.
+>
+> **🔴 QARZ:** (1) **bayroq YOQILMADI** — avval **MK35** (savdo 1-to'lqin + filial filtri),
+> keyin **MK36** (pul + mijozlar), keyin MK39 ning 4-to'lqini; har biridan keyin
+> `pnpm record-scope:coverage` raqami o'sishi kerak. (2) **Yozish-yo'li** (update/delete/post)
+> scope'lari darvoza o'lchoviga KIRMAYDI — H4 RFC bo'yicha alohida keyingi faza.
+> (3) Browser-smoke → MK40. (4) **NEXT.md arxiv qarzi: 102 entry** (limit 8–10) — parallel
+> sessiya faol bo'lgani uchun bu sessiyada arxivlash QILINMADI (katta shared-fayl operatsiyasi
+> ularning ishini chigallashtirardi); toza daraxtda alohida qilinsin.
+
 > **🕒 2026-08-10d (REJA-MENEJER-KASSA **MK22** — 4M TZ §8.1/9: maqsad kaskadi ega → bo'lim →
 > xodim) — ✅ **Phase-1 complete: mantiqiy yadro** (sof modul + unit; **browser-smoke YO'Q,
 > endpoint YO'Q, FE YO'Q**). To'liq hisobot: `docs/REJA-MENEJER-KASSA-2026-08.md` → HISOBOT

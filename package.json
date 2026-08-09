@@ -36,6 +36,8 @@
     "smoke": "bash scripts/smoke-mass-edit.sh",
     "smoke:all": "bash scripts/smoke-mass-edit.sh --all",
     "progress": "node --import ./apps/api/node_modules/tsx/dist/loader.mjs scripts/progress-report.ts",
+    "record-scope:coverage": "node --import ./apps/api/node_modules/tsx/dist/loader.mjs scripts/record-scope-coverage.ts",
+    "record-scope:flag": "node --import ./apps/api/node_modules/tsx/dist/loader.mjs scripts/ops-record-scope-flag.ts",
     "audit:module": "node --env-file=.env.local --import ./apps/api/node_modules/tsx/dist/loader.mjs scripts/audit-module.ts",
     "migrate-moysklad": "node --env-file=.env.local --import ./apps/api/node_modules/tsx/dist/loader.mjs scripts/migrate-moysklad-data.ts",
     "codegen:prisma": "pnpm --filter @moysklad/codegen run prisma",

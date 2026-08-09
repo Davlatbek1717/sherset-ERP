@@ -198,6 +198,22 @@ This is the gate that the deferred-naive-build would have **failed at step 3**
   catalog/production), then write-path scopes (update/delete/post), then staging soak
   before any account's flag is flipped on.
 
+- 2026-08-10 — **W4 COVERAGE GATE BUILT (MK39); the flag was NOT flipped.** The RFC said
+  "flip nothing until the whole cohort is verified" but nothing *measured* the cohort — so
+  "is it safe to enable?" rested on someone's memory. It now rests on a script.
+  `apps/api/src/modules/permissions/record-scope-coverage.ts` holds a registry row for each of
+  the 55 `{ownerId, groupId, shared}` models, detects wiring by the service's **own entity
+  literal** (a comment mentioning `recordScopeWhere`, or a neighbour module's `'demand'`, does
+  NOT count), and exposes `canEnableRecordScope()`. Report: `pnpm record-scope:coverage` →
+  `docs/audits/record-scope-coverage.md`. Safe rollout path: `pnpm record-scope:flag`
+  (enable passes the gate; **disable never does** — the flag must stay revertible).
+  **Measured 2026-08-10: 2 of 47 applicable models enforced (4%) — demand + customer-order.
+  45 blockers. Gate CLOSED.** Guards are mutation-tested (all three fail when deliberately
+  broken), and one test pins `Account.recordScopeEnforced`'s schema default to the gate result,
+  so the default cannot go `true` while holes remain — and must be revisited when they close.
+  **Remaining is unchanged:** wire the rest of the read-path cohort (plan phases MK35/MK36 are
+  its first two waves), then write-path scopes, then the staging soak.
+
 ## 7. P1 grounding (2026-06-14) — turnkey for the next focused session
 
 Confirmed against live source so P1 can execute without re-discovery:
