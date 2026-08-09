@@ -77,7 +77,44 @@ export interface KpiEmployeeDaily {
   metrics: KpiDailyMetric[];
 }
 
+// ─── Egaga haftalik xulosa (M-Q7 · MK04) ───────────────────────────────
+
+/** Bitta menejerning hafta davomidagi faoliyati. */
+export interface WeeklyManagerActivity {
+  managerId: string | null;
+  managerName: string | null;
+  acceptedCount: number;
+  rejectedCount: number;
+  adjustCount: number;
+  /** Tuzatmalarning jami ABSOLYUT summasi (tiyin, string). */
+  adjustedAbsMinor: string;
+  /**
+   * Bazasiz tuzatmalar — menejer raqamni TUZATMAGAN, YO'QDAN KIRITGAN.
+   * Alohida sanaladi: nazorat nuqtai nazaridan boshqa-boshqa ish.
+   */
+  noBaselineCount: number;
+  forceAcceptedCount: number;
+}
+
+export interface OwnerWeeklySummary {
+  weekStart: string;
+  weekEndExclusive: string;
+  totalAccepted: number;
+  totalAdjust: number;
+  totalAdjustedAbsMinor: string;
+  totalForceAccepted: number;
+  totalNoBaseline: number;
+  pendingDays: number;
+  staleDays: number;
+  topAdjuster: WeeklyManagerActivity | null;
+  activity: WeeklyManagerActivity[];
+}
+
 export const managerKpiApi = {
+  /** `week` berilmasa — O'TGAN hafta (tugagan hafta ko'rsatiladi). */
+  weeklySummary: (week?: string) =>
+    api.get<OwnerWeeklySummary>(`/manager/kpi/weekly-summary${week ? `?week=${week}` : ''}`),
+
   metrics: () => api.get<KpiMetricDef[]>('/manager/kpi/metrics'),
   getConfig: (employeeId: string) =>
     api.get<KpiEmployeeConfig>(`/manager/kpi/employee/${employeeId}/config`),

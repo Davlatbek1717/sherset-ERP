@@ -170,7 +170,7 @@ kuniga **3 sessiya** → **~6 hafta**.
 - [x] **Egaga haftalik xulosa** (M-Q7) — dushanba 09:00 cron + `GET manager/kpi/weekly-summary`
       *(18+7 test)* · 🔴 jonli ma'lumotda bug topildi: `was` birinchi tuzatmada `null` bo'lgani
       uchun jami **doim 0** chiqardi — endi `was ?? autoValue ?? 0` va «yo'qdan kiritilgan»
-      alohida sanaladi ⬜ *FE ekrani yo'q*
+      alohida sanaladi ✅ *FE: `/menejer/haftalik` (MK04)*
 - [ ] ⛔ **Idempotent bonus/jarima** `HrBonusFineLog` ga — **B1 qaroriga bog'liq**
 
 ### 4M.4 — To'liq xodimlar nazorati ⭐
@@ -181,7 +181,7 @@ kuniga **3 sessiya** → **~6 hafta**.
 - [x] **Xodim kartasi 360°** + **suhbat va ogohlantirish jurnali** — `GET hr/employees/:id/card`
       *(17 test + runtime)*. Jurnal **append-only**: yozuv o'chirilmaydi, xatosi `void` qilinadi
       va tarixda ko'rinib qoladi · **90 kunlik oyna**, 3 ogohlantirish = naqsh · maqtov turi ham
-      bor (jurnal faqat salbiydan iborat bo'lmasin) ⬜ *FE ekrani yo'q*
+      bor (jurnal faqat salbiydan iborat bo'lmasin) ✅ *FE: `hr/employees/[id]/card` (MK04)*
 - [x] 🔴 **Bo'shatish ro'yxati** (`EmployeeOffboarding`) — ro'yxat tugamaguncha arxivlanmaydi
       *(21 test + runtime)* — `f9e40cd`
       ⚠️ **Aniqlangan haqiqat:** login va refresh ALLAQACHON yopiq edi (`auth.service` `archived` ni

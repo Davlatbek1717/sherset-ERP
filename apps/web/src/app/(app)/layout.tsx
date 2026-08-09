@@ -451,6 +451,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     { key: 'accountability', label: tMenejer('accountability'), href: '/menejer/javobgarlik' },
     // Kassa TZ §8.4 — «ko'rilmagan farq aktlari» menejerning kunlik ishi.
     { key: 'cash_variances', label: tMenejer('cash_variances'), href: '/menejer/kassa-farqlari' },
+    // 4M §7 (M-Q7) — «menejerni kim nazorat qiladi»: egaga haftalik xulosa.
+    { key: 'weekly_summary', label: tMenejer('weekly_summary'), href: '/menejer/haftalik' },
   ];
 
   const analitikaSubNav: SubNavItem[] = [

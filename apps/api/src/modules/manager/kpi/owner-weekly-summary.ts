@@ -90,6 +90,57 @@ export function buildWeeklySummary(input: WeeklySummaryInput): WeeklySummary {
   };
 }
 
+// ── HTTP shakli ─────────────────────────────────────────────────────────────
+
+/** Bitta menejer qatori — tarmoqqa chiqadigan ko'rinish (bigint → string). */
+export interface ManagerActivityDto extends Omit<ManagerActivity, 'adjustedAbsMinor'> {
+  adjustedAbsMinor: string;
+}
+
+export interface WeeklySummaryDto {
+  weekStart: Date;
+  weekEndExclusive: Date;
+  totalAccepted: number;
+  totalAdjust: number;
+  totalAdjustedAbsMinor: string;
+  totalForceAccepted: number;
+  totalNoBaseline: number;
+  pendingDays: number;
+  staleDays: number;
+  topAdjuster: ManagerActivityDto | null;
+  activity: ManagerActivityDto[];
+}
+
+function activityDto(a: ManagerActivity): ManagerActivityDto {
+  return { ...a, adjustedAbsMinor: a.adjustedAbsMinor.toString() };
+}
+
+/**
+ * Xulosani HTTP javobiga aylantiradi.
+ *
+ * ⚠️ Mapping ATAYLAB shu yerda — controller'da qo'lda ko'chirilganda
+ * `noBaselineCount`/`totalNoBaseline` tushib qolgan edi va ekranda
+ * «yo'qdan kiritilgan» DOIM 0 ko'rinardi. Yangi maydon qo'shilganda u
+ * o'z-o'zidan tarmoqqa chiqsin — unutish uchun joy qolmasin.
+ *
+ * `bigint` string'ga o'giriladi: JSON uni ko'tarmaydi (`TypeError`).
+ */
+export function serializeWeeklySummary(s: WeeklySummary): WeeklySummaryDto {
+  return {
+    weekStart: s.weekStart,
+    weekEndExclusive: s.weekEndExclusive,
+    totalAccepted: s.totalAccepted,
+    totalAdjust: s.totalAdjust,
+    totalAdjustedAbsMinor: s.totalAdjustedAbsMinor.toString(),
+    totalForceAccepted: s.totalForceAccepted,
+    totalNoBaseline: s.totalNoBaseline,
+    pendingDays: s.pendingDays,
+    staleDays: s.staleDays,
+    topAdjuster: s.topAdjuster ? activityDto(s.topAdjuster) : null,
+    activity: s.activity.map(activityDto),
+  };
+}
+
 /** Pul matni: tiyin → «12 345,67». Faqat xabar uchun, hisob emas. */
 function fmt(minor: bigint): string {
   const neg = minor < 0n;

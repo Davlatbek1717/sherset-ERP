@@ -67,6 +67,13 @@ export interface NoteSummary {
   /** Takrorlanish belgisi — menejer qaror o'zgartiradigan chegara. */
   hasWarningPattern: boolean;
   lastAt: Date | null;
+  /**
+   * Oyna va chegara ekranga ham chiqadi: «so'nggi 90 kunda 3 ta» matnini
+   * FE o'z konstantasidan yozsa, chegara bu yerda o'zgarganda ekran jimgina
+   * yolg'on aytib turardi. Qoida bitta manbada qoladi.
+   */
+  windowDays: number;
+  patternCount: number;
 }
 
 /**
@@ -103,6 +110,8 @@ export function summarizeNotes(rows: ReadonlyArray<NoteRow>, now: Date): NoteSum
     activeWarnings,
     hasWarningPattern: activeWarnings >= WARNING_PATTERN_COUNT,
     lastAt,
+    windowDays: WARNING_WINDOW_DAYS,
+    patternCount: WARNING_PATTERN_COUNT,
   };
 }
 

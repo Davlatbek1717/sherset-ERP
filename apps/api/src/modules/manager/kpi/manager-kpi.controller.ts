@@ -24,6 +24,7 @@ import {
   SaveCustomMetricSchema,
   TransitionSchema,
 } from './manager-kpi.schema.js';
+import { serializeWeeklySummary } from './owner-weekly-summary.js';
 import { OwnerWeeklySummaryService } from './owner-weekly-summary.service.js';
 
 /**
@@ -92,33 +93,9 @@ export class ManagerKpiController {
       user.accountId,
       ref && !Number.isNaN(ref.getTime()) ? ref : undefined,
     );
-    return {
-      weekStart: s.weekStart,
-      weekEndExclusive: s.weekEndExclusive,
-      totalAccepted: s.totalAccepted,
-      totalAdjust: s.totalAdjust,
-      totalAdjustedAbsMinor: s.totalAdjustedAbsMinor.toString(),
-      totalForceAccepted: s.totalForceAccepted,
-      pendingDays: s.pendingDays,
-      staleDays: s.staleDays,
-      topAdjuster: s.topAdjuster
-        ? {
-            managerId: s.topAdjuster.managerId,
-            managerName: s.topAdjuster.managerName,
-            adjustCount: s.topAdjuster.adjustCount,
-            adjustedAbsMinor: s.topAdjuster.adjustedAbsMinor.toString(),
-          }
-        : null,
-      activity: s.activity.map((a: (typeof s.activity)[number]) => ({
-        managerId: a.managerId,
-        managerName: a.managerName,
-        acceptedCount: a.acceptedCount,
-        rejectedCount: a.rejectedCount,
-        adjustCount: a.adjustCount,
-        adjustedAbsMinor: a.adjustedAbsMinor.toString(),
-        forceAcceptedCount: a.forceAcceptedCount,
-      })),
-    };
+    // Mapping sof modulda (`serializeWeeklySummary`) — bu yerda qo'lda
+    // ko'chirilganda `noBaselineCount` tushib qolgan edi (MK04).
+    return serializeWeeklySummary(s);
   }
 
   // ── Ko'rsatkich katalogi (hisobning O'Z KPI'lari) ────────────────────────

@@ -3,6 +3,7 @@ import {
   NOTE_KIND,
   type NoteRow,
   WARNING_PATTERN_COUNT,
+  WARNING_WINDOW_DAYS,
   isNoteKind,
   isValidNoteText,
   summarizeNotes,
@@ -151,5 +152,19 @@ describe('summarizeNotes — 90 kunlik oyna va naqsh', () => {
     );
     expect(s.activeWarnings).toBe(0);
     expect(s.hasWarningPattern).toBe(false);
+  });
+});
+
+/**
+ * MK04 — ekran matni («so'nggi 90 kunda 3 ta») qoida bilan BIR manbadan.
+ *
+ * FE o'z konstantasidan yozsa, chegara shu yerda o'zgarganda ekran jimgina
+ * eski raqamni ko'rsatib turardi — foydalanuvchi uchun bu jim yolg'on.
+ */
+describe('summarizeNotes — oyna/chegara javobda ochiq', () => {
+  it('windowDays va patternCount qoida bilan bir xil', () => {
+    const s = summarizeNotes([], new Date('2026-08-09T00:00:00Z'));
+    expect(s.windowDays).toBe(WARNING_WINDOW_DAYS);
+    expect(s.patternCount).toBe(WARNING_PATTERN_COUNT);
   });
 });

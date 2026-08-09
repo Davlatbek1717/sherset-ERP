@@ -10,6 +10,7 @@ import Link from 'next/link';
 
 export type EmployeeTab =
   | 'main'
+  | 'card'
   | 'attendance'
   | 'tasks'
   | 'kpi'
@@ -26,6 +27,8 @@ export function TabBar({ employeeId, active }: TabBarProps) {
   const t = useTranslations('pages.hrEmployees');
   const tabs: { key: EmployeeTab; href: string; label: string }[] = [
     { key: 'main', href: `/hr/employees/${employeeId}`, label: t('tab_main') },
+    // «Karta 360°» — bitta odam haqidagi hamma narsa bir ekranda (4M.4).
+    { key: 'card', href: `/hr/employees/${employeeId}/card`, label: t('tab_card') },
     // «Hammasi xodim ichida» (egasi 2026-08-01) — davomat + vazifalar shu yerda.
     {
       key: 'attendance',

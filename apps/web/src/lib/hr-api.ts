@@ -173,7 +173,83 @@ export const hrEmployeeApi = {
     api.get<MoyskladAgentOption[]>(
       `/hr/employees/moysklad-agents${excludeId ? `?excludeId=${excludeId}` : ''}`,
     ),
+
+  // ─── Xodim kartasi 360° + suhbat jurnali (4M.4 / MK04) ───────────────
+  card: (id: string) => api.get<EmployeeCard>(`/hr/employees/${id}/card`),
+  addNote: (id: string, data: { kind: EmployeeNoteKind; text: string }) =>
+    api.post<{ id: string }>(`/hr/employees/${id}/notes`, data),
+  /** BEKOR qilish — o'chirish EMAS: yozuv jurnalda belgisi bilan qoladi. */
+  voidNote: (noteId: string, reason?: string | null) =>
+    api.post<{ id: string; voidedAt: string; changed: boolean }>(
+      `/hr/employees/notes/${noteId}/void`,
+      { reason: reason ?? null },
+    ),
 };
+
+// ─── Xodim kartasi 360° (MK04) ─────────────────────────────────────────
+
+/** Jurnal yozuvi turi: suhbat · ogohlantirish · maqtov. */
+export type EmployeeNoteKind = 'talk' | 'warning' | 'praise';
+
+export interface EmployeeNote {
+  id: string;
+  kind: EmployeeNoteKind;
+  text: string;
+  createdAt: string;
+  author: { id: string; name: string } | null;
+  /** `null` emas = BEKOR qilingan: ro'yxatdan CHIQMAYDI, hisobga kirmaydi. */
+  voidedAt: string | null;
+  voidedBy: { id: string; name: string } | null;
+  voidReason: string | null;
+}
+
+export interface EmployeeCard {
+  employee: {
+    id: string;
+    name: string;
+    email: string | null;
+    phone: string | null;
+    archived: boolean;
+    roles: string[];
+    telegramBound: boolean;
+    hiredAt: string;
+  };
+  kpi: {
+    byState: Record<string, number>;
+    pendingTotal: number;
+    acceptedTotal: number;
+    correctionCount: number;
+  };
+  attendance: { monthDays: number; monthLateMinutes: number };
+  shifts: {
+    openCount: number;
+    lastOpenedAt: string | null;
+    lastClosedAt: string | null;
+    lastDiscrepancyMinor: string | null;
+  };
+  notes: {
+    total: number;
+    talkCount: number;
+    warningCount: number;
+    praiseCount: number;
+    /** 90 kunlik oyna ichidagi KUCHDAGI ogohlantirishlar (bekor qilinganisiz). */
+    activeWarnings: number;
+    /** Serverda hisoblanadi — FE ro'yxatdan QAYTA sanamaydi. */
+    hasWarningPattern: boolean;
+    lastAt: string | null;
+    /** Oyna va chegara serverdan — ekran matni qoida bilan bir manbadan. */
+    windowDays: number;
+    patternCount: number;
+    items: EmployeeNote[];
+  };
+  offboarding: {
+    started: boolean;
+    completedAt: string | null;
+    doneCount: number;
+    total: number;
+    canArchive: boolean;
+  } | null;
+}
 
 // ─── HrRole API ────────────────────────────────────────────────────────
 

@@ -3,6 +3,7 @@ import {
   type ManagerActivity,
   buildWeeklySummary,
   formatWeeklySummary,
+  serializeWeeklySummary,
   weekBounds,
 } from './owner-weekly-summary.js';
 
@@ -177,5 +178,53 @@ describe('weekBounds — dushanbadan', () => {
   it('oraliq aynan 7 kun', () => {
     const { start, endExclusive } = weekBounds(new Date(2026, 7, 6));
     expect((endExclusive.getTime() - start.getTime()) / 86_400_000).toBe(7);
+  });
+});
+
+/**
+ * MK04 — HTTP javob shakli (FE ekrani shu yerdan o'qiydi).
+ *
+ * REGRESSIYA QULFI: `noBaselineCount` sof modulda hisoblanardi, lekin
+ * controller qo'lda yozilgan mapping'da uni TUSHIRIB QOLDIRARDI — ya'ni
+ * «yo'qdan kiritilgan» tuzatma ekranda DOIM 0 bo'lib ko'rinardi va
+ * «tuzatildi» bilan «yo'qdan kiritildi» farqi (M-Q7 ning butun ma'nosi)
+ * yo'qolardi. Shakl endi bitta funksiyada — mapping'ni qo'lda takrorlash yo'q.
+ */
+describe('serializeWeeklySummary — HTTP shakli', () => {
+  const S = buildWeeklySummary({
+    ...WEEK,
+    activity: [
+      A({
+        managerId: 'm1',
+        acceptedCount: 4,
+        adjustCount: 3,
+        adjustedAbsMinor: 300_000n,
+        noBaselineCount: 2,
+      }),
+    ],
+  });
+
+  it('«yo`qdan kiritilgan» jami javobda BOR', () => {
+    expect(serializeWeeklySummary(S).totalNoBaseline).toBe(2);
+  });
+
+  it('har menejer qatorida ham «yo`qdan kiritilgan» bor', () => {
+    expect(serializeWeeklySummary(S).activity[0]?.noBaselineCount).toBe(2);
+  });
+
+  it('topAdjuster qatorida ham bor (u alohida obyekt)', () => {
+    expect(serializeWeeklySummary(S).topAdjuster?.noBaselineCount).toBe(2);
+  });
+
+  it('bigint maydonlar string bo`lib ketadi (JSON bigint`ni ko`tarmaydi)', () => {
+    const out = serializeWeeklySummary(S);
+    expect(out.totalAdjustedAbsMinor).toBe('300000');
+    expect(out.activity[0]?.adjustedAbsMinor).toBe('300000');
+    expect(() => JSON.stringify(out)).not.toThrow();
+  });
+
+  it('tuzatma bo`lmasa topAdjuster null', () => {
+    const empty = buildWeeklySummary({ ...WEEK, activity: [A({ managerId: 'm1' })] });
+    expect(serializeWeeklySummary(empty).topAdjuster).toBeNull();
   });
 });
