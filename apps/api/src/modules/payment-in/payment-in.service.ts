@@ -583,14 +583,22 @@ export class PaymentInService {
   }
 
   async delete(accountId: string, userId: string, id: string) {
-    const payment = await this.findById(accountId, id);
-    if (payment.applicable || payment.state !== 'draft') {
-      throw new BadRequestException("Faqat 'draft' holatidagi to'lovni o'chirish mumkin");
-    }
-    await this.prisma.client.paymentIn.update({
-      where: { id, accountId },
+    // findById gives a clean 404 for a missing / wrong-tenant id.
+    await this.findById(accountId, id);
+    // TOCTOU guard (Faza Q3, `M-01` leftover): the draft check + the soft-delete
+    // are ONE atomic conditional write. Read-check-then-write let a concurrent
+    // post() flip draft→posted inside the window, leaving the doc BOTH posted
+    // (counterparty balance nudged) AND soft-deleted — an orphaned delta no
+    // screen lists and no unpost can reverse. `deletedAt: null` additionally
+    // makes a double-click delete idempotent (second call → 400, not a second
+    // audit row). Same shape as the stock siblings (move/enter/supply/…).
+    const res = await this.prisma.client.paymentIn.updateMany({
+      where: { id, accountId, state: 'draft', applicable: false, deletedAt: null },
       data: { deletedAt: new Date() },
     });
+    if (res.count === 0) {
+      throw new BadRequestException("Faqat 'draft' holatidagi to'lovni o'chirish mumkin");
+    }
     await this.logAudit(accountId, userId, 'delete', id, null);
     this.webhookFire.fireForEvent(accountId, 'paymentin', 'DELETE', id);
     return { ok: true };

@@ -394,14 +394,16 @@ export class CashOutService {
   }
 
   async delete(accountId: string, userId: string, id: string) {
-    const row = await this.findById(accountId, id);
-    if (row.applicable || row.state !== 'draft') {
-      throw new BadRequestException("Faqat 'draft' holatidagi hujjatni o'chirish mumkin");
-    }
-    await this.prisma.client.cashOut.update({
-      where: { id, accountId },
+    // findById gives a clean 404 for a missing / wrong-tenant id.
+    await this.findById(accountId, id);
+    // TOCTOU guard (Faza Q3, `M-01` leftover) — see cash-in.service.delete.
+    const res = await this.prisma.client.cashOut.updateMany({
+      where: { id, accountId, state: 'draft', applicable: false, deletedAt: null },
       data: { deletedAt: new Date() },
     });
+    if (res.count === 0) {
+      throw new BadRequestException("Faqat 'draft' holatidagi hujjatni o'chirish mumkin");
+    }
     await this.logAudit(accountId, userId, 'delete', id, null);
     this.webhookFire.fireForEvent(accountId, 'cashout', 'DELETE', id);
     return { ok: true };

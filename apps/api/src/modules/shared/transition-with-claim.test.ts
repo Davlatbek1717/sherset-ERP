@@ -13,15 +13,21 @@ import { transitionWithClaim } from './transition-with-claim.js';
  */
 
 /** Minimal in-memory delegate that honours the WHERE we care about. */
-function makeDelegate(row: { id: string; accountId: string; state: string }) {
+function makeDelegate(row: {
+  id: string;
+  accountId: string;
+  state: string;
+  deletedAt?: Date | null;
+}) {
   const updateMany = vi.fn(
     async (args: {
-      where: { id: string; accountId: string; state: { in: string[] } };
+      where: { id: string; accountId: string; state: { in: string[] }; deletedAt: null };
       data: { state: string };
     }) => {
       const w = args.where;
+      const alive = w.deletedAt !== null || (row.deletedAt ?? null) === null;
       const hit =
-        row.id === w.id && row.accountId === w.accountId && w.state.in.includes(row.state);
+        row.id === w.id && row.accountId === w.accountId && w.state.in.includes(row.state) && alive;
       if (!hit) return { count: 0 };
       row.state = args.data.state;
       return { count: 1 };
@@ -45,7 +51,7 @@ describe('transitionWithClaim', () => {
     expect(row.state).toBe('posted');
   });
 
-  it('issues a conditional updateMany scoped by id + accountId + state', async () => {
+  it('issues a conditional updateMany scoped by id + accountId + state + deletedAt', async () => {
     const row = { id: 'doc-1', accountId: 'acc-1', state: 'posted' };
     const { delegate, updateMany } = makeDelegate(row);
 
@@ -57,9 +63,27 @@ describe('transitionWithClaim', () => {
     });
 
     expect(updateMany).toHaveBeenCalledWith({
-      where: { id: 'doc-1', accountId: 'acc-1', state: { in: ['posted'] } },
+      where: { id: 'doc-1', accountId: 'acc-1', state: { in: ['posted'] }, deletedAt: null },
       data: { state: 'draft' },
     });
+  });
+
+  it('refuses to transition a soft-deleted row (Faza Q3 — delete racing post)', async () => {
+    // The pre-read (`findById … deletedAt: null`) saw a live draft; a rival
+    // delete() committed before the claim ran. Without `deletedAt: null` in the
+    // WHERE the doc would end up posted AND deleted — an orphaned side effect.
+    const row = { id: 'doc-1', accountId: 'acc-1', state: 'draft', deletedAt: new Date() };
+    const { delegate } = makeDelegate(row);
+
+    await expect(
+      transitionWithClaim(delegate, {
+        id: 'doc-1',
+        accountId: 'acc-1',
+        fromStates: ['draft'],
+        toState: 'posted',
+      }),
+    ).rejects.toThrow(ConflictException);
+    expect(row.state).toBe('draft');
   });
 
   it('throws ConflictException when the row is not in fromStates (count === 0)', async () => {

@@ -26,7 +26,7 @@ import { runBulk } from '../shared/bulk.js';
 import { resolveCreatorGroupId } from '../shared/group-stamp.js';
 import { assertMassEditRefsInTenant, assertStateInTenant } from '../shared/mass-edit.js';
 import { combineMergePositions } from '../shared/merge-positions.util.js';
-import { mapVersionedUpdateError } from '../shared/optimistic-lock.js';
+import { isRecordNotFound, mapVersionedUpdateError } from '../shared/optimistic-lock.js';
 import {
   assertAgentAccountMatchesAgent,
   assertOrgAccountMatchesOrg,
@@ -2158,11 +2158,21 @@ export class CustomerOrderService {
     }
 
     const sign = direction === 'apply' ? 1n : -1n;
-    const order = await tx.customerOrder.update({
-      where: { id: customerOrderId, accountId },
-      data: { payedSumMinor: { increment: amountMinor * sign } },
-      select: { state: true, sumMinor: true, payedSumMinor: true, shippedSumMinor: true },
-    });
+    // Faza Q3 (`M-09` leftover) — see invoice-out.service.applyPayment: the
+    // soft-delete filter belongs on the WRITE; P2025 maps back to the
+    // pre-read's own NotFoundException so the 404 shape is preserved.
+    const order = await tx.customerOrder
+      .update({
+        where: { id: customerOrderId, accountId, deletedAt: null },
+        data: { payedSumMinor: { increment: amountMinor * sign } },
+        select: { state: true, sumMinor: true, payedSumMinor: true, shippedSumMinor: true },
+      })
+      .catch((e: unknown) => {
+        if (isRecordNotFound(e)) {
+          throw new NotFoundException(`CustomerOrder ${customerOrderId} not found`);
+        }
+        throw e;
+      });
 
     const newPayed = order.payedSumMinor;
     if (newPayed < 0n) {

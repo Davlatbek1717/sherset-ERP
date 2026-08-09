@@ -16,7 +16,7 @@ import { tashkentRangeBounds } from '../report/report-date-bounds.util.js';
 import { resolveCreatorGroupId } from '../shared/group-stamp.js';
 import { assertMassEditRefsInTenant, assertStateInTenant } from '../shared/mass-edit.js';
 import { combineMergePositions } from '../shared/merge-positions.util.js';
-import { mapVersionedUpdateError } from '../shared/optimistic-lock.js';
+import { isRecordNotFound, mapVersionedUpdateError } from '../shared/optimistic-lock.js';
 import { assertOrgAccountMatchesOrg } from '../shared/org-account.js';
 import { searchTokenGroups } from '../shared/search-tokens.js';
 import { withSerializationRetry } from '../shared/serialization-retry.js';
@@ -852,14 +852,20 @@ export class InvoiceOutService {
   }
 
   async delete(accountId: string, userId: string, id: string) {
-    const invoice = await this.findById(accountId, id);
-    if (invoice.state !== 'draft') {
-      throw new BadRequestException("Faqat 'draft' holatidagi schyotni o'chirish mumkin");
-    }
-    await this.prisma.client.invoiceOut.update({
-      where: { id, accountId },
+    // findById gives a clean 404 for a missing / wrong-tenant id.
+    await this.findById(accountId, id);
+    // TOCTOU guard (Faza Q3, `M-01` leftover) — see payment-in.service.delete.
+    // `applicable: false` rides along because post()/unpost()/cancel() flip it
+    // in the SAME write as `state` (`:1245`, `:1316`, `:1387`), so it can only
+    // ever strengthen the guard: a doc that already moved the counterparty
+    // balance must not be able to vanish.
+    const res = await this.prisma.client.invoiceOut.updateMany({
+      where: { id, accountId, state: 'draft', applicable: false, deletedAt: null },
       data: { deletedAt: new Date() },
     });
+    if (res.count === 0) {
+      throw new BadRequestException("Faqat 'draft' holatidagi schyotni o'chirish mumkin");
+    }
     await this.logAudit(accountId, userId, 'delete', id, null);
     this.webhookFire.fireForEvent(accountId, 'invoiceout', 'DELETE', id);
     return { ok: true };
@@ -1138,18 +1144,30 @@ export class InvoiceOutService {
     if (!exists) throw new NotFoundException(`InvoiceOut ${invoiceOutId} not found`);
 
     const sign = direction === 'apply' ? 1n : -1n;
-    const invoice = await tx.invoiceOut.update({
-      where: { id: invoiceOutId, accountId },
-      data: { payedSumMinor: { increment: amountMinor * sign } },
-      select: {
-        name: true,
-        state: true,
-        sumMinor: true,
-        payedSumMinor: true,
-        published: true,
-        customerOrderId: true,
-      },
-    });
+    // Faza Q3 (`M-09` leftover): `deletedAt: null` belongs in the WHERE of the
+    // WRITE, not only in the unlocked pre-read above. Otherwise a soft-delete
+    // committing inside that window still gets the increment — payment applied
+    // to a document nobody can see. Zero matched rows → Prisma P2025, mapped
+    // back to the SAME NotFoundException the pre-read raises so the HTTP shape
+    // stays 404 (a raw P2025 escaping a POST route would surface as 400/500).
+    const invoice = await tx.invoiceOut
+      .update({
+        where: { id: invoiceOutId, accountId, deletedAt: null },
+        data: { payedSumMinor: { increment: amountMinor * sign } },
+        select: {
+          name: true,
+          state: true,
+          sumMinor: true,
+          payedSumMinor: true,
+          published: true,
+          customerOrderId: true,
+        },
+      })
+      .catch((e: unknown) => {
+        if (isRecordNotFound(e))
+          throw new NotFoundException(`InvoiceOut ${invoiceOutId} not found`);
+        throw e;
+      });
 
     const applicableStates = ['posted', 'sent', 'partially_paid', 'paid', 'overdue'];
     if (!applicableStates.includes(invoice.state)) {

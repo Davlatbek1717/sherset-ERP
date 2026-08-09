@@ -698,14 +698,36 @@ export class WorkOrderService {
   // =========================================================================
 
   async delete(accountId: string, userId: string, id: string) {
+    // The pre-read only buys a PRECISE message (and a clean 404); the guard
+    // that actually holds is the conditional write below.
     const wo = await this.findById(accountId, id);
     if (wo.state === 'in_progress') {
       throw new BadRequestException("Ishda bo'lgan work orderni o'chirib bo'lmaydi");
     }
-    await this.prisma.client.workOrder.update({
-      where: { id, accountId },
+    // Faza Q3: a COMPLETED ТЗ has already consumed its BOM components and
+    // emitted the produced good (`applyCompleteCascade`, with VALUE since Faza
+    // Q2). Soft-deleting it moved NOTHING back: the components stayed written
+    // off, the output stayed in stock, and the only document that could reverse
+    // them (`completed → cancelled`) disappeared from every list. Deletion is
+    // now allowed only from the two states that hold no stock effect; a
+    // completed order must be CANCELLED first, which runs the exact reversal.
+    if (wo.state === 'completed') {
+      throw new BadRequestException(
+        "Tugatilgan work orderni o'chirib bo'lmaydi — avval bekor qiling (ombor teskarilashi uchun)",
+      );
+    }
+    // TOCTOU guard: the state check + the soft-delete are ONE atomic
+    // conditional write, so a concurrent transition() (draft → in_progress →
+    // completed) cannot slip a delete through the window the pre-read opens.
+    const res = await this.prisma.client.workOrder.updateMany({
+      where: { id, accountId, state: { in: ['draft', 'cancelled'] }, deletedAt: null },
       data: { deletedAt: new Date() },
     });
+    if (res.count === 0) {
+      throw new BadRequestException(
+        "Faqat 'draft' yoki 'cancelled' holatidagi work orderni o'chirish mumkin",
+      );
+    }
     await this.logAudit(accountId, userId, 'delete', id, null);
     return { ok: true };
   }

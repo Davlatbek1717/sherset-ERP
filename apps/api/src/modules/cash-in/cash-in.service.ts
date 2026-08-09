@@ -452,14 +452,19 @@ export class CashInService {
   }
 
   async delete(accountId: string, userId: string, id: string) {
-    const row = await this.findById(accountId, id);
-    if (row.applicable || row.state !== 'draft') {
-      throw new BadRequestException("Faqat 'draft' holatidagi hujjatni o'chirish mumkin");
-    }
-    await this.prisma.client.cashIn.update({
-      where: { id, accountId },
+    // findById gives a clean 404 for a missing / wrong-tenant id.
+    await this.findById(accountId, id);
+    // TOCTOU guard (Faza Q3, `M-01` leftover) — see payment-in.service.delete.
+    // For the cash pair the orphan is doubly bad: post() moves the CashDesk
+    // ledger too, so a posted-and-deleted doc leaves money in the till with no
+    // document behind it.
+    const res = await this.prisma.client.cashIn.updateMany({
+      where: { id, accountId, state: 'draft', applicable: false, deletedAt: null },
       data: { deletedAt: new Date() },
     });
+    if (res.count === 0) {
+      throw new BadRequestException("Faqat 'draft' holatidagi hujjatni o'chirish mumkin");
+    }
     await this.logAudit(accountId, userId, 'delete', id, null);
     this.webhookFire.fireForEvent(accountId, 'cashin', 'DELETE', id);
     return { ok: true };

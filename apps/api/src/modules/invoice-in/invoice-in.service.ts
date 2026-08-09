@@ -16,7 +16,7 @@ import { PurchaseOrderService } from '../purchase-order/purchase-order.service.j
 import { tashkentRangeBounds } from '../report/report-date-bounds.util.js';
 import { resolveCreatorGroupId } from '../shared/group-stamp.js';
 import { assertMassEditRefsInTenant } from '../shared/mass-edit.js';
-import { mapVersionedUpdateError } from '../shared/optimistic-lock.js';
+import { isRecordNotFound, mapVersionedUpdateError } from '../shared/optimistic-lock.js';
 import { assertOrgAccountMatchesOrg } from '../shared/org-account.js';
 import { withSerializationRetry } from '../shared/serialization-retry.js';
 import { MONEY_TX_OPTS, transitionWithClaim } from '../shared/transition-with-claim.js';
@@ -844,14 +844,18 @@ export class InvoiceInService {
   }
 
   async delete(accountId: string, userId: string, id: string) {
-    const invoice = await this.findById(accountId, id);
-    if (invoice.state !== 'draft') {
-      throw new BadRequestException("Faqat 'draft' holatidagi fakturani o'chirish mumkin");
-    }
-    await this.prisma.client.invoiceIn.update({
-      where: { id, accountId },
+    // findById gives a clean 404 for a missing / wrong-tenant id.
+    await this.findById(accountId, id);
+    // TOCTOU guard (Faza Q3, `M-01` leftover) — see invoice-out.service.delete.
+    // Here the orphan is `PurchaseOrder.invoicedSumMinor` (QAROR-B «Supply-only»
+    // keeps InvoiceIn off the counterparty balance).
+    const res = await this.prisma.client.invoiceIn.updateMany({
+      where: { id, accountId, state: 'draft', applicable: false, deletedAt: null },
       data: { deletedAt: new Date() },
     });
+    if (res.count === 0) {
+      throw new BadRequestException("Faqat 'draft' holatidagi fakturani o'chirish mumkin");
+    }
     await this.logAudit(accountId, userId, 'delete', id, null);
     this.webhookFire.fireForEvent(accountId, 'invoicein', 'DELETE', id);
     return { ok: true };
@@ -1038,17 +1042,25 @@ export class InvoiceInService {
     if (!exists) throw new NotFoundException(`InvoiceIn ${invoiceInId} not found`);
 
     const sign = direction === 'apply' ? 1n : -1n;
-    const invoice = await tx.invoiceIn.update({
-      where: { id: invoiceInId, accountId },
-      data: { payedSumMinor: { increment: amountMinor * sign } },
-      select: {
-        name: true,
-        state: true,
-        sumMinor: true,
-        payedSumMinor: true,
-        purchaseOrderId: true,
-      },
-    });
+    // Faza Q3 (`M-09` leftover) — see invoice-out.service.applyPayment for the
+    // rationale: the soft-delete filter has to be on the WRITE, and P2025 is
+    // mapped back to the pre-read's own NotFoundException (404 preserved).
+    const invoice = await tx.invoiceIn
+      .update({
+        where: { id: invoiceInId, accountId, deletedAt: null },
+        data: { payedSumMinor: { increment: amountMinor * sign } },
+        select: {
+          name: true,
+          state: true,
+          sumMinor: true,
+          payedSumMinor: true,
+          purchaseOrderId: true,
+        },
+      })
+      .catch((e: unknown) => {
+        if (isRecordNotFound(e)) throw new NotFoundException(`InvoiceIn ${invoiceInId} not found`);
+        throw e;
+      });
 
     const applicableStates = ['posted', 'partially_paid', 'paid'];
     if (!applicableStates.includes(invoice.state)) {

@@ -171,7 +171,7 @@ counterparty-adjustment.
 > `docs/REJA-QOLDIQ-2026-08.md` — **Faza Q3**. O'ZGARMAS QOIDALAR. Faza 1/3/5 hisobotlarining «Qolgan
 > qarz» bandlarini o'qi, kodda tasdiqla. loss.delete + 7 pul-servis delete claim + applyPayment
 > deletedAt + skaner qamrov-lock. TDD: 3 stsenariy. Gate. Hisobot, TO'XTA.
-**◻ HISOBOT:** _(agent to'ldiradi)_
+**☑ HISOBOT (2026-08-09):** BAJARILDI — batafsili «HISOBOT JURNALI → Faza Q3» da.
 
 ---
 
@@ -763,3 +763,123 @@ stock'da `buyPrice` fallback + NULL≠0 buzilmaydi ✓.
   kerak bo'lmadi. ТЗ ga qo'shimcha mahsulot/chiqindi qo'shilsa — o'sha helperni ulash kerak.
 
 **Commit:** `fix(cogs): faza q2 — workorder weighted-average cost (PP-05)`
+
+---
+
+## Faza Q3 — 2026-08-09 — **Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q**
+### `delete()` yo'llari atomik claim: pul-oila 7 + loss 🔴 + work-order + applyPayment `deletedAt` + skaner qamrov-lock
+
+**Da'volarni tasdiqlash (kodda, o'z ko'zim bilan — 5/5 TASDIQLANDI, hech biri eskirmagan)**
+
+| # | Da'vo | Manba | Holat | Dalil (fix'dan OLDINGI kod) |
+|---|---|---|---|---|
+| a | 🔴 `loss.delete()` — `findById` check → **shartsiz** soft-delete | Faza 5 «Qolgan qarz» | ✅ | `loss.service.ts:517-528`: `const l = await this.findById(…)` → `if (l.applicable \|\| l.state !== 'draft')` → `loss.update({ where: { id, accountId }, data: { deletedAt } })`. 7 sibling (`supply`/`move`/`enter`/`sales-return`/`purchase-return`/`production`/`processing`) da o'sha yo'l `updateMany({ where: { …, state:'draft', applicable:false, deletedAt:null } })` + `res.count === 0` |
+| b | Pul-oilaning 7 `delete()`/`softDelete()` — read-check-then-write | Faza 1 «Qolgan qarz» | ✅ | `payment-in:585`, `payment-out:584`, `cash-in:454`, `cash-out:396`, `invoice-out:854`, `invoice-in:846` — hammasi `findById` → `if (…) throw` → `update({ where: { id, accountId } })`. `counterparty-adjustment.softDelete:270` — `$transaction` bor, lekin claim yo'q va **teskarilash `row.applicable` SNAPSHOT'idan** hisoblanadi |
+| c | Invoice-oila `applyPayment` `deletedAt` TOCTOU | Faza 3 «Qolgan qarz» | ✅ | 4 servisda ham `findFirst({ …, deletedAt: null, select: { id: true } })` → `update({ where: { id, accountId } })` — **yozuvda `deletedAt` sharti YO'Q**: `invoice-out:1139`, `invoice-in:1035`, `customer-order:2152`, `purchase-order:1331` |
+| d | Skaner'da stock qamrov-lock yo'q | Faza 5 «Qolgan qarz» | ✅ | `transition-toctou-class.test.ts` — `MONEY_SERVICES` uchun nomlar-ro'yxati assert'i bor (`:364-376`), stock uchun **hech qanday** qamrov assert'i yo'q; `delete()` claim'i esa faqat 6 stock servisda pin qilingan, MONEY oilasida umuman pin qilinmagan |
+| e | 🔴 `work-order.delete()` tugatilgan ТЗ ni teskarilashsiz o'chiradi | Faza Q2 agenti | ✅ | `work-order.service.ts:700-711`: faqat `in_progress` rad etiladi → `completed` ТЗ (BOM komponentlari yechilgan, chiqim omborga kirgan, **Faza Q2'dan beri QIYMAT bilan**) shartsiz soft-delete bo'ladi; uni teskarilay oladigan yagona hujjat (`completed → cancelled`) ham ro'yxatlardan yo'qoladi ⇒ arvoh qoldiq |
+
+**Poyganing IKKINCHI yo'nalishi (o'z topilmam, rejada yo'q edi).** Faqat `delete()` ni qulflash yetarli EMAS:
+`delete` avval commit bo'lsa, `post` claim'i (`WHERE state='draft'`) hamon mos kelardi — hujjat HAM posted,
+HAM o'chirilgan bo'lib qolardi. Shuning uchun `transitionWithClaim` WHERE'iga **`deletedAt: null`** qo'shildi
+(`transition()` ning `findById` pre-read'i allaqachon shu shartni talab qiladi ⇒ hech bir qonuniy yo'l
+yopilmadi, faqat poyga oynasi) va `loss.post()` ning inline claim'iga ham. Test buni to'g'ridan-to'g'ri
+o'lchaydi (`post ∥ delete` → aynan bittasi yutadi).
+
+**O'zgargan/yaratilgan fayllar**
+
+| Fayl | O'zgarish |
+|---|---|
+| `shared/transition-with-claim.ts` | claim WHERE'iga `deletedAt: null` (+ `StateClaimDelegate` tipi). 7 pul-servis + loss unpost/cancel shu primitiv orqali yuradi ⇒ bitta o'zgarish 23 o'tkazish nuqtasini yopdi |
+| `loss/loss.service.ts` | `delete()` → sibling naqshi (`updateMany` `state:'draft', applicable:false, deletedAt:null` + `res.count === 0`); `post()` inline claim'iga `deletedAt: null`. Xato matni **o'zgarmadi** |
+| `payment-in`, `payment-out`, `cash-in`, `cash-out`, `invoice-out`, `invoice-in` `.service.ts` | `delete()` → shartli `updateMany` claim. Har birining xato matni **o'zgarmadi**. Invoice-juftligida ilgari faqat `state !== 'draft'` tekshirilardi — `applicable: false` qo'shildi (post/unpost/cancel `state` bilan AYNI yozuvda flip qiladi ⇒ faqat kuchaytiradi) |
+| `counterparty-adjustment/counterparty-adjustment.service.ts` | `softDelete()` tx'ining **BIRINCHI amali** — snapshot holatini da'vo qiluvchi claim (`state: row.state, applicable: row.applicable, deletedAt: null`), `claim.count === 0` ⇒ **409**; balans teskarilashi claim'dan KEYIN. `ConflictException` importi |
+| `invoice-out`, `invoice-in`, `customer-order`, `purchase-order` `.service.ts` | `applyPayment`: increment `update` WHERE'iga `deletedAt: null` + `.catch(isRecordNotFound → NotFoundException)` (matn o'zgarmadi). `isRecordNotFound` importi (`shared/optimistic-lock.js` — mavjud primitiv) |
+| `work-order/work-order.service.ts` | `delete()`: `completed` uchun alohida aniq xabar (avval bekor qiling) + atomik `updateMany({ state: { in: ['draft','cancelled'] }, deletedAt: null })` + `res.count === 0` |
+| `shared/delete-claim-race.test.ts` | **Yangi** — 36 test: 7 servis (6 pul + loss) × 4 stsenariy + counterparty-adjustment × 4 + work-order × 4 |
+| `shared/apply-payment-race.test.ts` | **Edit** (Write EMAS): `update` dublyori endi WHERE'ni JONLI qator ustida baholaydi va mos kelmasa `P2025` otadi; + 8 yangi test (`deletedAt` TOCTOU × 4 servis × 2) |
+| `shared/transition-with-claim.test.ts` | **Edit**: WHERE-shakli assert'i yangilandi + soft-deleted qatorni o'tkazmaslik testi |
+| `shared/transition-toctou-class.test.ts` | **Edit**: MONEY oilasiga `delete()` pin (7), loss `delete()` pin + post `deletedAt` pin, **work-order bloki** (3 test), **STOCK qamrov-lock** (2 test) |
+
+**QAROR — `completed` work order endi O'CHIRILMAYDI (xulq o'zgarishi, ataylab).**
+Ikki yo'l bor edi: (1) `delete()` ichida ombor teskarilashini yugurtirish, (2) `completed` dan o'chirishni
+taqiqlash. (1) — `cancel` mantig'ining ikkinchi nusxasi bo'lardi (`applyCancelCascade` bir joydan
+chaqirilishi Faza Q2 zero-sum kafolatining asosi), (2) esa butun kodbaza intizomiga mos: stock oilasida
+**faqat draft** o'chiriladi. Endi tugatilgan ТЗ ni o'chirish uchun avval `cancel` qilinadi — u AYNAN
+muzlatilgan qiymat bilan teskari qiladi, keyin `cancelled` o'chiriladi. `bulkDelete` shu `delete()` ni
+chaqiradi ⇒ tanlovga tugatilgan ТЗ tushsa u `failed` bo'lib qaytadi (jimgina arvoh qoldiq qoldirish
+o'rniga). Kassa/pul oilasida xulq **umuman o'zgarmadi**.
+
+**XATO-SHAKLI o'zgarishi (ochiq hujjatlanadi, reja talab qilgan)**
+- `applyPayment`: `update` endi `deletedAt: null` bilan filtrlanadi ⇒ mos qator yo'q bo'lsa Prisma `P2025`
+  otadi. U **ushlanadi** va **`NotFoundException`** ga aylantiriladi, matn pre-read'nikining AYNAN o'zi
+  (`InvoiceOut <id> not found` va h.k.) ⇒ **HTTP 404 saqlanadi**. Ushlanmasa, `applyPayment` POST
+  marshrutlaridan chaqirilgani uchun global filtr `P2025`ni 400 ga (POST) yoki 500 ga (mapsiz) aylantirardi
+  — mijoz shartnomasi buzilardi. Ya'ni **tashqi shakl o'zgarmadi**, faqat ichki sabab boshqa.
+- `counterparty-adjustment.softDelete`: raqib amal bo'lsa endi **409 `ConflictException`** qaytaradi
+  (ilgari 200 `{ ok: true }` qaytarib balansni IKKINCHI marta teskari qilardi). Bu yagona haqiqiy
+  status-kodi o'zgarishi va u ataylab.
+- `work-order.delete`: `completed` uchun **400** (ilgari 200). Yuqoridagi QAROR.
+
+**Testlar (TDD tartibi kuzatildi — RED JONLI o'lchangan)**
+- **RED-1** `delete-claim-race.test.ts` (fix'dan OLDIN): **27 yiqildi / 36**. Sabablari aynan bug:
+  - 7 servisda «rival allaqachon post qilgan» → `promise resolved "{ ok: true }" instead of rejecting`
+    (POSTED hujjat soft-delete bo'ldi);
+  - 7 servisda `post ∥ delete` → `exactly one of post/delete may win: expected [] to have a length of 1
+    but got +0` (IKKALASI ham yutdi ⇒ posted-va-o'chirilgan);
+  - 7 servisda ikki parallel `delete` → 0 rad etish;
+  - counterparty-adjustment: eskirgan snapshot bilan `softDelete` → **balans ikkinchi marta teskarilandi**;
+    ikki parallel `softDelete` va `cancel ∥ softDelete` → 0 rad etish (2× `applyDelta`);
+  - work-order: `completed` ni o'chirish → `resolved "{ ok: true }"`; `in_progress` ga o'tkazish ∥ delete →
+    0 rad etish.
+  O'tgan 9 tasi — «oddiy draft o'chiriladi» va «posted korrektirovka o'chiriladi» regress-qulflari.
+- **RED-2** `apply-payment-race.test.ts` yangi bloki (fix mexanik o'chirib o'lchandi): **8 yiqildi / 25** —
+  4 servis × 2, hammasi `promise resolved "undefined" instead of rejecting` (increment O'LIK hujjatga
+  yozildi).
+- **GREEN:** `delete-claim-race` **36/36**, `apply-payment-race` **25/25**, `transition-with-claim` **7/7**,
+  `transition-toctou-class` **88/88**.
+- **Skaner vakuum EMAS** (`git show HEAD:` ustidan o'sha regexlar bilan alohida o'lchandi):
+  pre-fix'da **8/8 delete-pin `false`**, work-order pin `false`, loss post `deletedAt` pin `false`;
+  post-fix'da hammasi `true`. Ya'ni 10 ta yangi assert eski kodda qizil bo'lardi.
+- **Test-double halolligi:** `findFirst` yield qiladi va **DETACHED** nusxa qaytaradi (qulfsiz o'qish);
+  `updateMany`/`update` WHERE'ni **JONLI** qator ustida baholaydi va tanasi yield qilmaydi (qator-qulfi
+  ostidagi bitta atomik statement). Eskirgan snapshot `staleSnapshot` orqali modellangan — «raqib
+  commit qildi» oynasi deterministik. Naqsh — `money-transition-race.test.ts` / `loss-transition-race.test.ts`.
+
+**Gate (to'liq, JONLI o'lchangan)**
+- `pnpm --filter @moysklad/api typecheck` → **0 xato**
+- `pnpm lint:product` → **0 error** (747 warning — siyosat bo'yicha ruxsat; 3 `format` xatosi
+  `biome format --write` bilan tuzatildi)
+- Fazaga tegishli modullar: `loss`, `shared`, `payment-in/out`, `cash-in/out`, `invoice-out/in`,
+  `counterparty-adjustment`, `work-order`, `customer-order`, `purchase-order` → **49 fayl / 956 test yashil**
+- `pnpm --filter @moysklad/api exec vitest run` (BUTUN suite) → **431 fayl yashil + 1 skipped /
+  5667 test yashil + 2 skipped, 0 yiqilgan** (oxirgi o'lchov 5609 edi ⇒ **+58** yangi test, regress YO'Q)
+- `i18n:gate` — **kerak emas** (UI-matn tegilmadi, faqat backend)
+
+**Qolgan qarz / DEFER**
+- **Browser-smoke YO'Q.** Poyga faqat in-memory Prisma dublyorida o'lchandi; real Postgres'da
+  (`post` Serializable tx ∥ standalone `delete` UPDATE → 40001/409) hech qachon yugurtirilmadi —
+  Phase-2 QA cohort ishi. `counterparty-adjustment` ning yangi 409'i UI'da qanday ko'rinishi ham.
+- **Stock oilasining `post()` claim'larida `deletedAt: null` YO'Q** (`supply`, `sales-return`,
+  `purchase-return`, `move`, `enter`, `production`). Ular skanerda `state: 'draft' }` shaklida qattiq
+  pin qilingan, ya'ni o'zgartirish 6 regexni ham qayta yozishni talab qiladi — Q3 doirasidan tashqarida.
+  Ta'sir kichikroq: ularning `delete()`i allaqachon atomik, demak `delete → post` ketma-ketligi faqat
+  `delete` OLDIN commit bo'lgan holatda muhim, va Serializable + `lockBalances` uni pozitsiyali
+  hujjatlarda baribir tutadi. **Bo'sh (0 pozitsiyali) hujjatda teshik qoladi** — aynan loss'dagi
+  2026-07-29 stsenariysi. **Alohida mayda faza sifatida yopilsin.**
+- **Skaner qamrov-lock'ida 5 stock-servis `KNOWN_UNPINNED`**: `demand` (o'z claim'i dd33fac5 da, alohida
+  suite'i bor), `inventory`, `retail-sale` (POS FSM — Faza Q1 post+smena claim'ini qattiqlashtirdi),
+  `product-cell-move`, `product-cut`. Ular ataylab ro'yxatda — qamrov-lock ularni ko'radi va
+  klassifikatsiya talab qiladi, lekin claim-shakli pin QILINMAGAN. **Yangi** stock-servis qo'shilsa test
+  yiqiladi (ildiz-sabab yopildi); mavjud 5 tasini pin qilish — keyingi ish.
+- **`counterparty-adjustment.softDelete` izolyatsiyasi tegilmadi** — u hamon default ReadCommitted
+  (`MONEY_TX_OPTS`siz). Claim qator-qulfini oladi va ikki-karra teskarilashni yopadi; Serializable
+  qo'shish `withSerializationRetry` ni ham talab qilardi (aks holda 40001 xom holda chiqadi) va skanerning
+  `txCount: 1` assertini o'zgartirardi — ataylab qilinmadi, xavf tahlili yuqoridagi.
+- **`applyPayment` `state` yozuvi hamon «oxirgi yozuvchi yutadi»** (Faza 3 qarzi, o'zgarmadi):
+  `payedSumMinor` atomik, `state` esa alohida `update`. Real Postgres qator-qulfiga tayanadi.
+- **Tarixiy ma'lumot tekshirilmadi:** prod'da allaqachon «posted + deletedAt» yoki «completed + deletedAt»
+  yetim hujjatlar bor-yo'qligi **o'lchanmadi** (bu bug 2026-06 dan beri ochiq edi). Bu — OPS-qadam:
+  `SELECT` bilan sanash, bo'lsa `CounterpartyAdjustment` / `cancel` bilan korrektirovka.
+
+**Commit:** `fix(api): faza q3 — delete() atomik claim + applyPayment deletedAt (M-01/M-09/STK-01 qoldiqlari)`

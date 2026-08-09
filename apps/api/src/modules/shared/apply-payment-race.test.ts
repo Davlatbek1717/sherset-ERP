@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 import { CustomerOrderService } from '../customer-order/customer-order.service.js';
 import { InvoiceInService } from '../invoice-in/invoice-in.service.js';
@@ -65,6 +65,14 @@ function makeRow(overrides: Partial<DocRow> = {}): DocRow {
 
 type Write = bigint | string | { increment: bigint };
 
+/** Prisma's "record to update not found" — what a WHERE that matches 0 rows raises. */
+class RecordNotFoundError extends Error {
+  readonly code = 'P2025';
+  constructor() {
+    super('Record to update not found.');
+  }
+}
+
 /**
  * Prisma double for ONE document row.
  *
@@ -73,22 +81,33 @@ type Write = bigint | string | { increment: bigint };
  * the very race under test. `update` mutates without yielding (atomic
  * statement) and returns the post-write row, which is what makes
  * `{ increment }` + read-after correct.
+ *
+ * Faza Q3: `update` now EVALUATES its WHERE against the live row and raises
+ * P2025 when it matches nothing — without that the double would silently write
+ * through a `deletedAt: null` guard and the soft-delete race could not be seen.
  */
 function makeClient(modelKey: string, row: DocRow) {
   const snapshot = () => ({ ...row });
 
   const findFirst = vi.fn(async () => snapshot());
-  const update = vi.fn(async (args: { data: Record<string, Write> }) => {
-    for (const [field, write] of Object.entries(args.data)) {
-      if (typeof write === 'object' && write !== null && 'increment' in write) {
-        (row as unknown as Record<string, bigint>)[field] =
-          (row as unknown as Record<string, bigint>)[field] + write.increment;
-      } else {
-        (row as unknown as Record<string, unknown>)[field] = write;
+  const update = vi.fn(
+    async (args: { where?: Record<string, unknown>; data: Record<string, Write> }) => {
+      for (const [field, cond] of Object.entries(args.where ?? {})) {
+        if (cond === undefined) continue;
+        const actual = (row as unknown as Record<string, unknown>)[field];
+        if (cond === null ? actual !== null : actual !== cond) throw new RecordNotFoundError();
       }
-    }
-    return snapshot();
-  });
+      for (const [field, write] of Object.entries(args.data)) {
+        if (typeof write === 'object' && write !== null && 'increment' in write) {
+          (row as unknown as Record<string, bigint>)[field] =
+            (row as unknown as Record<string, bigint>)[field] + write.increment;
+        } else {
+          (row as unknown as Record<string, unknown>)[field] = write;
+        }
+      }
+      return snapshot();
+    },
+  );
 
   const client: Record<string, unknown> = {
     [modelKey]: { findFirst, update },
@@ -229,6 +248,53 @@ describe.each(CASES)('$name applyPayment — M-09 lost update', (c) => {
     await svc.applyPayment(client, 'acc-1', 'user-1', 'doc-1', 1_000_000n, 'revert');
     expect(row.payedSumMinor).toBe(0n);
     expect(row.state).not.toBe(c.settledState);
+  });
+});
+
+/**
+ * Faza Q3 — the `deletedAt` TOCTOU Faza 3 left open.
+ *
+ * `applyPayment` proved existence with an UNLOCKED `findFirst … deletedAt: null`
+ * and then incremented through `update({ where: { id, accountId } })` — no
+ * soft-delete filter on the WRITE. A delete committing inside that window still
+ * got the increment: the payment landed on a document no list, report or
+ * reconciliation can reach, and `payedSumMinor` drifted from the money ledger
+ * that recorded the payment. The fix moves `deletedAt: null` onto the write and
+ * maps the resulting P2025 back to the SAME NotFoundException (404 preserved).
+ *
+ * The double below soft-deletes the row the moment the pre-read returns — the
+ * race, made deterministic.
+ */
+describe.each(CASES)('$name applyPayment — Faza Q3 deletedAt TOCTOU', (c) => {
+  const armSoftDeleteAfterRead = (client: Record<string, unknown>, row: DocRow) => {
+    const delegate = client[c.model] as { findFirst: () => Promise<unknown> };
+    const orig = delegate.findFirst;
+    delegate.findFirst = vi.fn(async () => {
+      const seen = await orig();
+      row.deletedAt = new Date(); // rival delete commits here
+      return seen;
+    });
+  };
+
+  it('a payment racing a soft-delete is refused, not written to the dead doc', async () => {
+    const { client, row } = makeClient(c.model, makeRow(c.row));
+    armSoftDeleteAfterRead(client, row);
+    const svc = c.build(client);
+
+    await expect(
+      svc.applyPayment(client, 'acc-1', 'user-1', 'doc-1', 400_000n, 'apply'),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(row.payedSumMinor, 'no increment may land on a soft-deleted doc').toBe(0n);
+  });
+
+  it('an ALREADY soft-deleted doc is refused with the same 404 as before', async () => {
+    const { client, row } = makeClient(c.model, makeRow({ ...c.row, deletedAt: new Date() }));
+    const svc = c.build(client);
+
+    await expect(
+      svc.applyPayment(client, 'acc-1', 'user-1', 'doc-1', 400_000n, 'apply'),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(row.payedSumMinor).toBe(0n);
   });
 });
 

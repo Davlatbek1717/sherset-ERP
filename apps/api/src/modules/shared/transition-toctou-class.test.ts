@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -151,9 +151,9 @@ for (const svc of SERVICES) {
  *
  * Behavioural counterpart: `../loss/loss-transition-race.test.ts`.
  *
- * NOT pinned here: `loss.delete()` still does read-check-then-write (a post
- * racing a soft-delete can orphan stock) — a real, separate hole left open by
- * Faza 5's scope, see the phase report.
+ * Faza Q3 (2026-08-09) closed what Faza 5 left open here: `loss.delete()` did
+ * read-check-then-write, so a post racing a soft-delete orphaned the stock
+ * movement. It is pinned below like every stock sibling's.
  */
 describe('loss transitions atomically claim their state (TOCTOU class-lock)', () => {
   const SOURCE = stripComments(
@@ -161,10 +161,24 @@ describe('loss transitions atomically claim their state (TOCTOU class-lock)', ()
   );
 
   it('post() claims draft→posted via a conditional updateMany', () => {
+    // Faza Q3 added `deletedAt: null` — a rival delete() must not be able to
+    // soft-delete the draft out from under a post that then still "succeeds".
     expect(SOURCE).toMatch(
-      /tx\.loss\.updateMany\(\{\s*where:\s*\{\s*id,\s*accountId,\s*state:\s*'draft'\s*\},\s*data:\s*\{\s*state:\s*'posted'\s*\}/,
+      /tx\.loss\.updateMany\(\{\s*where:\s*\{\s*id,\s*accountId,\s*state:\s*'draft',\s*deletedAt:\s*null\s*\},\s*data:\s*\{\s*state:\s*'posted'\s*\}/,
     );
     expect(SOURCE).toMatch(/claim\.count === 0/);
+  });
+
+  it('delete() folds the state check into one conditional updateMany (Faza Q3)', () => {
+    // Faza 5 left this hole open ON PURPOSE (out of its scope) and said so in
+    // its report: `findById` + a blind `update({ where: { id, accountId } })`.
+    // A post racing that delete orphaned the StockOperation forever.
+    expect(SOURCE).toMatch(
+      new RegExp(
+        `loss\\.updateMany\\(\\{\\s*where:\\s*\\{\\s*id,\\s*accountId,\\s*${STD_DELETE}\\s*[,}]`,
+      ),
+    );
+    expect(SOURCE).toMatch(/res\.count === 0/);
   });
 
   it('unpost() claims posted→draft through the shared primitive', () => {
@@ -258,6 +272,8 @@ const MONEY_SERVICES = [
     postFrom: "\\['draft'\\]",
     unpostFrom: "\\['posted'\\]",
     cancelFrom: '\\[existing\\.state\\]',
+    delete: STD_DELETE,
+    deleteGuard: 'res\\.count === 0',
   },
   {
     name: 'payment-out',
@@ -266,6 +282,8 @@ const MONEY_SERVICES = [
     postFrom: "\\['draft'\\]",
     unpostFrom: "\\['posted'\\]",
     cancelFrom: '\\[existing\\.state\\]',
+    delete: STD_DELETE,
+    deleteGuard: 'res\\.count === 0',
   },
   {
     name: 'cash-in',
@@ -274,6 +292,8 @@ const MONEY_SERVICES = [
     postFrom: "\\['draft'\\]",
     unpostFrom: "\\['posted'\\]",
     cancelFrom: '\\[existing\\.state\\]',
+    delete: STD_DELETE,
+    deleteGuard: 'res\\.count === 0',
   },
   {
     name: 'cash-out',
@@ -282,6 +302,8 @@ const MONEY_SERVICES = [
     postFrom: "\\['draft'\\]",
     unpostFrom: "\\['posted'\\]",
     cancelFrom: '\\[existing\\.state\\]',
+    delete: STD_DELETE,
+    deleteGuard: 'res\\.count === 0',
   },
   {
     name: 'invoice-out',
@@ -291,6 +313,8 @@ const MONEY_SERVICES = [
     // posted OR sent are both legal unpost sources here → snapshotted state
     unpostFrom: '\\[existing\\.state\\]',
     cancelFrom: '\\[existing\\.state\\]',
+    delete: STD_DELETE,
+    deleteGuard: 'res\\.count === 0',
   },
   {
     name: 'invoice-in',
@@ -299,6 +323,8 @@ const MONEY_SERVICES = [
     postFrom: "\\['draft'\\]",
     unpostFrom: "\\['posted'\\]",
     cancelFrom: '\\[existing\\.state\\]',
+    delete: STD_DELETE,
+    deleteGuard: 'res\\.count === 0',
   },
   {
     name: 'counterparty-adjustment',
@@ -311,6 +337,11 @@ const MONEY_SERVICES = [
     // ONE $transaction branches on the target internally (unlike the other six,
     // which have a separate post()/unpost()/cancel() transaction each).
     txCount: 1,
+    // softDelete is legal from SEVERAL states here and reverses the balance
+    // itself, so it claims the SNAPSHOTTED state + applicable (the cancel()
+    // rule) instead of the `draft` literal the other six use.
+    delete: 'state:\\s*row\\.state,\\s*applicable:\\s*row\\.applicable,\\s*deletedAt:\\s*null',
+    deleteGuard: 'claim\\.count === 0',
   },
 ] as const;
 
@@ -346,6 +377,20 @@ for (const svc of MONEY_SERVICES) {
       );
     });
 
+    it('delete()/softDelete() claims the row in ONE conditional updateMany (Faza Q3)', () => {
+      // Faza 1 hardened post/unpost/cancel and explicitly deferred this half:
+      // `delete()` kept `findById` + a blind `update({ where: { id, accountId }
+      // })`, so a concurrent post() left the doc posted AND soft-deleted — a
+      // counterparty-balance / CashDesk delta nothing lists and nothing can
+      // unpost. `[,}]` allows a STRONGER guard to be added later.
+      expect(SOURCE).toMatch(
+        new RegExp(
+          `${svc.model}\\.updateMany\\(\\{\\s*where:\\s*\\{\\s*id,\\s*accountId,\\s*${svc.delete}\\s*[,}]`,
+        ),
+      );
+      expect(SOURCE).toMatch(new RegExp(svc.deleteGuard));
+    });
+
     it('the transition dispatch retries serialization conflicts and re-reads the row', () => {
       // Serializable ABORTS the loser (40001/P2034) instead of queueing it, so
       // without the retry a legitimate second click would surface a raw DB
@@ -356,6 +401,43 @@ for (const svc of MONEY_SERVICES) {
     });
   });
 }
+
+/**
+ * work-order (ТЗ) — a stock-mutating document whose FSM lives in ONE
+ * `transition()` (CAS-flipped since 2026-06), so it never fitted the
+ * post/unpost/cancel table above. Its `delete()` was the gap: it refused only
+ * `in_progress`, which meant a COMPLETED order — BOM components consumed,
+ * output emitted, value moved (Faza Q2) — could be soft-deleted with no
+ * reversal at all, and the one document able to reverse it (`completed →
+ * cancelled`) vanished with it. Faza Q3 narrows deletion to the two states
+ * that hold no stock effect, atomically.
+ */
+describe('work-order delete() cannot orphan its stock cascade (TOCTOU class-lock)', () => {
+  const SOURCE = stripComments(
+    readFileSync(join(__dirname, '..', 'work-order', 'work-order.service.ts'), 'utf8'),
+  );
+
+  it('the FSM flip claims the exact from-state (regression lock)', () => {
+    expect(SOURCE).toMatch(
+      /tx\.workOrder\.updateMany\(\{\s*where:\s*\{\s*id,\s*accountId,\s*state:\s*from,\s*deletedAt:\s*null\s*\}/,
+    );
+    expect(SOURCE).toMatch(/flip\.count === 0/);
+  });
+
+  it('delete() is confined to the stock-free states in ONE conditional write', () => {
+    expect(SOURCE).toMatch(
+      /workOrder\.updateMany\(\{\s*where:\s*\{\s*id,\s*accountId,\s*state:\s*\{\s*in:\s*\['draft',\s*'cancelled'\]\s*\},\s*deletedAt:\s*null\s*\}/,
+    );
+    expect(SOURCE).toMatch(/res\.count === 0/);
+  });
+
+  it('a completed order is refused BEFORE the write, with its own message', () => {
+    // Without this branch the atomic guard would still hold, but the clerk
+    // would read «faqat draft/cancelled» and never learn that CANCEL is the
+    // action that reverses the warehouse.
+    expect(SOURCE).toMatch(/wo\.state === 'completed'/);
+  });
+});
 
 /**
  * Coverage lock: the money family list above must not silently shrink. If a
@@ -372,5 +454,73 @@ describe('MONEY TOCTOU class-lock covers the whole money-document family', () =>
       'payment-in',
       'payment-out',
     ]);
+  });
+});
+
+/**
+ * Coverage lock for the STOCK family — the thing Faza 5 named as the ROOT CAUSE
+ * of `STK-01` and then could not add: loss survived with an unguarded
+ * transition for two months purely because nothing asserted that every
+ * stock-mutating service is inside this scan. The money family got such a lock
+ * (above); the stock family had none.
+ *
+ * A hardcoded-vs-hardcoded list would only catch shrinkage, so this one is
+ * derived from the FILESYSTEM: every `*.service.ts` that calls
+ * `stock.applyDeltas` (the single choke-point through which Stock rows move)
+ * must be classified — either pinned by this file, or listed as known,
+ * documented debt. A NEW stock-mutating service is neither, so it fails here
+ * the day it lands.
+ */
+describe('STOCK TOCTOU class-lock coverage is complete (Faza Q3)', () => {
+  /** Services whose transition/delete claims are pinned in THIS file. */
+  const PINNED = [
+    'enter',
+    'loss',
+    'move',
+    'processing',
+    'production',
+    'purchase-return',
+    'sales-return',
+    'supply',
+    'work-order',
+  ];
+
+  /**
+   * Stock-mutating services deliberately NOT pinned yet — open debt, each with
+   * a reason. Removing one from here means it must move into PINNED.
+   *   - demand            — claim added in dd33fac5, own regression suite
+   *   - inventory         — recount doc, no draft/posted delete path
+   *   - retail-sale       — POS FSM (Faza Q1 hardened post + shift claim)
+   *   - product-cell-move — warehouse cell transfer, not a document FSM
+   *   - product-cut       — cut/repack helper, not a document FSM
+   */
+  const KNOWN_UNPINNED = ['demand', 'inventory', 'product-cell-move', 'product-cut', 'retail-sale'];
+
+  it('every service that moves Stock is either pinned here or listed as known debt', () => {
+    // Keyed on the SERVICE file, not the module dir: `product/` alone holds two
+    // stock-moving services (cell-move, cut) that must be classified apart.
+    const modulesDir = join(__dirname, '..');
+    const found = new Set<string>();
+    for (const moduleName of readdirSync(modulesDir)) {
+      const dir = join(modulesDir, moduleName);
+      if (!statSync(dir).isDirectory()) continue;
+      for (const file of readdirSync(dir)) {
+        if (!file.endsWith('.service.ts')) continue;
+        const src = readFileSync(join(dir, file), 'utf8');
+        if (/\bstock\.applyDeltas\(/.test(src)) found.add(file.replace('.service.ts', ''));
+      }
+    }
+
+    const classified = new Set([...PINNED, ...KNOWN_UNPINNED]);
+    const unclassified = [...found].filter((m) => !classified.has(m)).sort();
+    expect(
+      unclassified,
+      'a new stock-mutating service appeared: pin its post/delete claims above (or add it to KNOWN_UNPINNED with a reason)',
+    ).toEqual([]);
+  });
+
+  it('the pinned list matches the services actually scanned in this file', () => {
+    const scanned = [...SERVICES.map((s) => s.name), 'loss', 'processing', 'work-order'].sort();
+    expect(PINNED.slice().sort()).toEqual(scanned);
   });
 });

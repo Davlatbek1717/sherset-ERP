@@ -582,14 +582,18 @@ export class PaymentOutService {
   }
 
   async delete(accountId: string, userId: string, id: string) {
-    const payment = await this.findById(accountId, id);
-    if (payment.applicable || payment.state !== 'draft') {
-      throw new BadRequestException("Faqat 'draft' holatidagi to'lovni o'chirish mumkin");
-    }
-    await this.prisma.client.paymentOut.update({
-      where: { id, accountId },
+    // findById gives a clean 404 for a missing / wrong-tenant id.
+    await this.findById(accountId, id);
+    // TOCTOU guard (Faza Q3, `M-01` leftover) — see payment-in.service.delete
+    // for the full rationale: read-check-then-write let a concurrent post()
+    // leave the doc posted AND soft-deleted (orphaned balance delta).
+    const res = await this.prisma.client.paymentOut.updateMany({
+      where: { id, accountId, state: 'draft', applicable: false, deletedAt: null },
       data: { deletedAt: new Date() },
     });
+    if (res.count === 0) {
+      throw new BadRequestException("Faqat 'draft' holatidagi to'lovni o'chirish mumkin");
+    }
     await this.logAudit(accountId, userId, 'delete', id, null);
     this.webhookFire.fireForEvent(accountId, 'paymentout', 'DELETE', id);
     return { ok: true };

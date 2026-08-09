@@ -49,7 +49,7 @@ export const MONEY_TX_OPTS = {
  */
 export interface StateClaimDelegate {
   updateMany(args: {
-    where: { id: string; accountId: string; state: { in: string[] } };
+    where: { id: string; accountId: string; state: { in: string[] }; deletedAt: null };
     data: { state: string };
   }): Promise<{ count: number }>;
 }
@@ -70,15 +70,29 @@ export interface TransitionClaimOptions {
  * Tranzaksiya ichidagi BIRINCHI amal sifatida chaqirilishi SHART — aks holda
  * undan oldingi yozuvlar (balans deltalari) poygada ikki marta qo'llanadi.
  *
+ * FAZA Q3 (2026-08-09) — WHERE'ga `deletedAt: null` QO'SHILDI. Claim faqat
+ * holatni tekshirar edi, shuning uchun poyga ikkinchi yo'nalishda ochiq
+ * qolgandi: raqib `delete()` hujjatni soft-delete qilib ulgursa (holat hamon
+ * `draft`), post claim'i baribir mos kelib o'tib ketardi ⇒ hujjat HAM posted,
+ * HAM o'chirilgan — hech bir ro'yxatda ko'rinmaydigan, hech qachon unpost
+ * qilib bo'lmaydigan yetim balans/qoldiq deltasi. `transition()` ning
+ * `findById` pre-read'i allaqachon `deletedAt: null` talab qiladi, ya'ni bu
+ * shart hech qanday qonuniy yo'lni yopmaydi — faqat poyga oynasini yopadi.
+ *
  * @throws ConflictException — `count === 0` (holat kutilganidan boshqa: raqib
- *   allaqachon o'tkazgan/bekor qilgan, yoki hujjat boshqa tenantniki).
+ *   allaqachon o'tkazgan/bekor qilgan/o'chirgan, yoki hujjat boshqa tenantniki).
  */
 export async function transitionWithClaim(
   delegate: StateClaimDelegate,
   opts: TransitionClaimOptions,
 ): Promise<void> {
   const claim = await delegate.updateMany({
-    where: { id: opts.id, accountId: opts.accountId, state: { in: [...opts.fromStates] } },
+    where: {
+      id: opts.id,
+      accountId: opts.accountId,
+      state: { in: [...opts.fromStates] },
+      deletedAt: null,
+    },
     data: { state: opts.toState },
   });
   if (claim.count === 0) {

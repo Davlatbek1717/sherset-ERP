@@ -16,7 +16,7 @@ import { tashkentRangeBounds } from '../report/report-date-bounds.util.js';
 import { resolveCreatorGroupId } from '../shared/group-stamp.js';
 import { assertMassEditRefsInTenant, assertStateInTenant } from '../shared/mass-edit.js';
 import { combineMergePositions } from '../shared/merge-positions.util.js';
-import { mapVersionedUpdateError } from '../shared/optimistic-lock.js';
+import { isRecordNotFound, mapVersionedUpdateError } from '../shared/optimistic-lock.js';
 import { assertOrgAccountMatchesOrg } from '../shared/org-account.js';
 import { searchTokenGroups } from '../shared/search-tokens.js';
 import { WebhookFireService } from '../webhook/webhook-fire.service.js';
@@ -1337,17 +1337,27 @@ export class PurchaseOrderService {
     }
 
     const sign = direction === 'apply' ? 1n : -1n;
-    const order = await tx.purchaseOrder.update({
-      where: { id: purchaseOrderId, accountId },
-      data: { payedSumMinor: { increment: amountMinor * sign } },
-      select: {
-        state: true,
-        sumMinor: true,
-        payedSumMinor: true,
-        invoicedSumMinor: true,
-        receivedSumMinor: true,
-      },
-    });
+    // Faza Q3 (`M-09` leftover) — see invoice-out.service.applyPayment: the
+    // soft-delete filter belongs on the WRITE; P2025 maps back to the
+    // pre-read's own NotFoundException so the 404 shape is preserved.
+    const order = await tx.purchaseOrder
+      .update({
+        where: { id: purchaseOrderId, accountId, deletedAt: null },
+        data: { payedSumMinor: { increment: amountMinor * sign } },
+        select: {
+          state: true,
+          sumMinor: true,
+          payedSumMinor: true,
+          invoicedSumMinor: true,
+          receivedSumMinor: true,
+        },
+      })
+      .catch((e: unknown) => {
+        if (isRecordNotFound(e)) {
+          throw new NotFoundException(`PurchaseOrder ${purchaseOrderId} not found`);
+        }
+        throw e;
+      });
 
     const newPayed = order.payedSumMinor;
     if (newPayed < 0n) {

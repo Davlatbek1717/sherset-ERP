@@ -515,14 +515,21 @@ export class LossService {
   }
 
   async delete(accountId: string, userId: string, id: string) {
-    const l = await this.findById(accountId, id);
-    if (l.applicable || l.state !== 'draft') {
-      throw new BadRequestException("Faqat 'draft' holatidagini o'chirish mumkin");
-    }
-    await this.prisma.client.loss.update({
-      where: { id, accountId },
+    // findById gives a clean 404 for a missing / wrong-tenant id.
+    await this.findById(accountId, id);
+    // TOCTOU guard (Faza Q3, `STK-01` leftover): the draft-state check + the
+    // soft-delete are ONE atomic conditional write, so a concurrent post()
+    // flipping draft→posted between a naive check and the write can't slip a
+    // delete through — count 0 → rejected. Before this, a posted write-off
+    // could end up soft-deleted with its StockOperation left behind forever.
+    // Same shape as the seven stock siblings (move/enter/supply/…).
+    const res = await this.prisma.client.loss.updateMany({
+      where: { id, accountId, state: 'draft', applicable: false, deletedAt: null },
       data: { deletedAt: new Date() },
     });
+    if (res.count === 0) {
+      throw new BadRequestException("Faqat 'draft' holatidagini o'chirish mumkin");
+    }
     await this.logAudit(accountId, userId, 'delete', id, null);
     this.webhookFire.fireForEvent(accountId, 'loss', 'DELETE', id);
     return { ok: true };
@@ -616,8 +623,12 @@ export class LossService {
         // loser aborts with 40001), but an EMPTY write-off locks nothing, so two
         // concurrent posts could both succeed. The pre-tx `existing.state`
         // check is a read on a stale snapshot and cannot close this.
+        //
+        // Faza Q3: `deletedAt: null` — a rival delete() soft-deleting the draft
+        // between this claim and its own write would otherwise leave the doc
+        // posted AND deleted (orphaned StockOperation, unreachable by unpost).
         const claim = await tx.loss.updateMany({
-          where: { id, accountId, state: 'draft' },
+          where: { id, accountId, state: 'draft', deletedAt: null },
           data: { state: 'posted' },
         });
         if (claim.count === 0) {

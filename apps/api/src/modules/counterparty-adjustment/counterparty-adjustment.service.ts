@@ -1,5 +1,11 @@
 import type { Prisma } from '@moysklad/db';
-import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { allocateDocumentNumber } from '../../prisma/document-number.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { CounterpartyBalanceService } from '../counterparty-balance/counterparty-balance.service.js';
@@ -273,6 +279,35 @@ export class CounterpartyAdjustmentService {
     // otherwise the materialized CounterpartyBalance row keeps the stale
     // delta forever (deletedAt does not propagate to derived data).
     await this.prisma.client.$transaction(async (tx) => {
+      // TOCTOU guard (Faza Q3, `M-01` leftover). `row` is an UNLOCKED snapshot,
+      // and the reversal below is decided from its `applicable`. Without a
+      // claim, a rival that already reversed the same delta — cancel()/unpost(),
+      // or simply a second delete click — let this call reverse it a SECOND
+      // time: the counterparty balance drifts by the doc's sum, silently.
+      // Claiming the EXACT snapshotted state + applicable + `deletedAt: null`
+      // as the FIRST op serialises all of those against each other; the loser
+      // sees count 0 and its whole transaction (including the reversal) rolls
+      // back. Snapshot state — not a literal — because softDelete is legal from
+      // several states, exactly like cancel() in the stock family.
+      const claim = await tx.counterpartyAdjustment.updateMany({
+        where: {
+          id,
+          accountId,
+          state: row.state,
+          applicable: row.applicable,
+          deletedAt: null,
+        },
+        data: {
+          applicable: false,
+          state: 'cancelled',
+          deletedAt: new Date(),
+        },
+      });
+      if (claim.count === 0) {
+        throw new ConflictException(
+          "Korrektirovka holati o'zgargan (boshqa amal bajarildi) — qayta yuklang",
+        );
+      }
       if (row.applicable) {
         const delta = row.direction === 'INCREASE' ? row.sumMinor : -row.sumMinor;
         await this.balances.applyDelta(tx, accountId, row.agentId, row.currency, -delta, {
@@ -281,14 +316,6 @@ export class CounterpartyAdjustmentService {
           organizationId: row.organizationId,
         });
       }
-      await tx.counterpartyAdjustment.update({
-        where: { id },
-        data: {
-          applicable: false,
-          state: 'cancelled',
-          deletedAt: new Date(),
-        },
-      });
     });
     await this.logAudit(accountId, userId, 'delete', id, null);
     return { ok: true };
