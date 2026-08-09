@@ -1,6 +1,6 @@
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
-import { type CurrencyRate, toBaseMinor } from '../currency/currency-convert.js';
+import type { CurrencyRate } from '../currency/currency-convert.js';
 import {
   type ConsolidatedAmounts,
   type CurrencyAwareRow,
@@ -13,7 +13,12 @@ import {
   CashFlowFilterSchema,
 } from './cash-flow.schema.js';
 import { reportDateBounds } from './report-date-bounds.util.js';
-import { loadRateContext } from './report-rate-ctx.util.js';
+import {
+  CurrencyTally,
+  type UnconvertedAmount,
+  consolidateToBase,
+  loadRateContext,
+} from './report-rate-ctx.util.js';
 
 export interface CashFlowRow {
   key: string;
@@ -45,6 +50,12 @@ export interface CashFlowReport {
    * that group breakdowns mix converted figures.
    */
   mixedCurrency: boolean;
+  /**
+   * M-12: rates-siz valyuta jamiga QO'SHILMAYDI — shu yerda o'z valyutasida
+   * alohida qaytadi («konvertatsiya qilinmagan» qatori). Bo'sh = hammasi
+   * konsolidatsiya qilindi.
+   */
+  unconvertedByCurrency: UnconvertedAmount[];
 }
 
 const DATE_TRUNC_UNIT: Record<'day' | 'week' | 'month' | 'quarter' | 'year', string> = {
@@ -85,7 +96,7 @@ export class CashFlowService {
   async cashFlowReport(accountId: string, raw: unknown): Promise<CashFlowReport> {
     const filter = this.parseFilter(raw);
     const ctx = await loadRateContext(this.prisma.client, accountId);
-    const seen = new Set<string>();
+    const seen = new CurrencyTally();
     const totals = await this.computeTotals(accountId, filter, ctx, seen);
     let groups: CashFlowRow[] = [];
     if (filter.groupBy !== 'none') {
@@ -96,7 +107,8 @@ export class CashFlowService {
       totals,
       groups,
       currency: ctx.baseCode,
-      mixedCurrency: seen.size > 1,
+      mixedCurrency: seen.mixed,
+      unconvertedByCurrency: seen.unconvertedRows(),
     };
   }
 
@@ -111,7 +123,7 @@ export class CashFlowService {
     accountId: string,
     filter: CashFlowFilterInput,
     ctx: { baseCode: string; rates: Map<string, CurrencyRate> },
-    seen: Set<string>,
+    seen: CurrencyTally,
   ): Promise<CashFlowRow> {
     const channels = this.activeChannels(filter);
 
@@ -152,7 +164,7 @@ export class CashFlowService {
     filter: CashFlowFilterInput,
     channel: CashFlowChannelValue,
     ctx: { baseCode: string; rates: Map<string, CurrencyRate> },
-    seen: Set<string>,
+    seen: CurrencyTally,
   ): Promise<{ count: number; sum: bigint }> {
     const where = this.channelWhere(accountId, filter, channel);
     const buckets = await this.runGroupByCurrency(channel, where);
@@ -160,17 +172,17 @@ export class CashFlowService {
     let sum = 0n;
     for (const b of buckets) {
       count += b._count._all;
-      const bucket = (b._sum.sumMinor as bigint | null) ?? 0n;
-      const code = b.currency ?? ctx.baseCode;
-      seen.add(code);
-      if (code === ctx.baseCode) {
-        sum += bucket;
-        continue;
-      }
-      const rate = ctx.rates.get(code);
-      // No Currency row for this code ⇒ cannot consolidate faithfully;
-      // include at face value (the `mixedCurrency` flag warns the UI).
-      sum += rate ? toBaseMinor(bucket, rate) : bucket;
+      // Faza 17: one shared conversion contract — the bucket's own historical
+      // rate (M-11) and, when no rate exists at all, exclusion from the total
+      // with the amount kept in `seen` (M-12). The hand-rolled face-value
+      // fallback that used to live here is gone.
+      sum += consolidateToBase(
+        (b._sum.sumMinor as bigint | null) ?? 0n,
+        b.currency ?? ctx.baseCode,
+        ctx,
+        seen,
+        b.rateValue ?? undefined,
+      );
     }
     return { count, sum };
   }
@@ -179,7 +191,12 @@ export class CashFlowService {
     channel: CashFlowChannelValue,
     where: Record<string, unknown>,
   ): Promise<
-    Array<{ currency: string; _count: { _all: number }; _sum: { sumMinor: bigint | null } }>
+    Array<{
+      currency: string;
+      rateValue: bigint | null;
+      _count: { _all: number };
+      _sum: { sumMinor: bigint | null };
+    }>
   > {
     // Prisma's groupBy has a notoriously strict conditional arg type
     // that does not satisfy through a generic wrapper (a documented
@@ -188,12 +205,13 @@ export class CashFlowService {
     // is exact and covered by the cash-flow tests.
     type CurrencyBucket = {
       currency: string;
+      rateValue: bigint | null;
       _count: { _all: number };
       _sum: { sumMinor: bigint | null };
     };
     type GroupByDelegate = {
       groupBy: (args: {
-        by: ['currency'];
+        by: ['currency', 'rateValue'];
         where: Record<string, unknown>;
         orderBy: { currency: 'asc' };
         _count: { _all: true };
@@ -208,7 +226,9 @@ export class CashFlowService {
     };
     const delegate = byChannel[channel] as GroupByDelegate;
     return delegate.groupBy({
-      by: ['currency'],
+      // M-11: rateValue joins the key so each bucket keeps the rate its own
+      // documents were booked with.
+      by: ['currency', 'rateValue'],
       where,
       orderBy: { currency: 'asc' },
       _count: { _all: true },
@@ -224,7 +244,7 @@ export class CashFlowService {
     accountId: string,
     filter: CashFlowFilterInput,
     ctx: { baseCode: string; rates: Map<string, CurrencyRate> },
-    seen: Set<string>,
+    seen: CurrencyTally,
   ): Promise<CashFlowRow[]> {
     switch (filter.groupBy) {
       case 'day':
@@ -249,7 +269,7 @@ export class CashFlowService {
     filter: CashFlowFilterInput,
     unit: 'day' | 'week' | 'month' | 'quarter' | 'year',
     ctx: RateContext,
-    seen: Set<string>,
+    seen: CurrencyTally,
   ): Promise<CashFlowRow[]> {
     const truncUnit = DATE_TRUNC_UNIT[unit];
     const channels = this.activeChannels(filter);
@@ -260,7 +280,7 @@ export class CashFlowService {
     const directionCases = channels
       .map((ch) => {
         const dir = CHANNEL_DIRECTION[ch] === 'in' ? '1' : '-1';
-        return `SELECT moment, sum_minor, currency, ${dir}::int AS direction, agent_id, organization_id FROM ${CHANNEL_TABLE[ch]} WHERE account_id = $1::uuid AND state = 'posted' AND deleted_at IS NULL AND moment >= $2 AND moment < $3${
+        return `SELECT moment, sum_minor, currency, rate_value, ${dir}::int AS direction, agent_id, organization_id FROM ${CHANNEL_TABLE[ch]} WHERE account_id = $1::uuid AND state = 'posted' AND deleted_at IS NULL AND moment >= $2 AND moment < $3${
           filter.counterpartyId ? ' AND agent_id = $4::uuid' : ''
         }${filter.organizationId ? ` AND organization_id = $${filter.counterpartyId ? 5 : 4}::uuid` : ''}`;
       })
@@ -270,17 +290,19 @@ export class CashFlowService {
     if (filter.counterpartyId) params.push(filter.counterpartyId);
     if (filter.organizationId) params.push(filter.organizationId);
 
-    // Group by (bucket, currency); fold to base + collapse per bucket in JS.
+    // Group by (bucket, currency, rate_value); fold to base at each bucket's
+    // OWN historical rate (M-11) + collapse per bucket in JS.
     const sql = `
       SELECT
         date_trunc('${truncUnit}', moment AT TIME ZONE 'UTC') AS bucket,
         currency,
+        rate_value,
         SUM(CASE WHEN direction = 1 THEN 1 ELSE 0 END)::bigint AS inflow_count,
         SUM(CASE WHEN direction = 1 THEN sum_minor ELSE 0 END)::bigint AS inflow_sum,
         SUM(CASE WHEN direction = -1 THEN 1 ELSE 0 END)::bigint AS outflow_count,
         SUM(CASE WHEN direction = -1 THEN sum_minor ELSE 0 END)::bigint AS outflow_sum
       FROM (${directionCases}) AS unified
-      GROUP BY bucket, currency
+      GROUP BY bucket, currency, rate_value
       ORDER BY bucket ASC
     `;
 
@@ -288,6 +310,7 @@ export class CashFlowService {
       Array<{
         bucket: Date;
         currency: string;
+        rate_value: bigint | null;
         inflow_count: bigint;
         inflow_sum: bigint | null;
         outflow_count: bigint;
@@ -305,6 +328,7 @@ export class CashFlowService {
         return {
           key: iso,
           currency: r.currency,
+          rateValue: r.rate_value ?? undefined,
           inflowCount: Number(r.inflow_count),
           inflowSumMinor: r.inflow_sum ?? 0n,
           outflowCount: Number(r.outflow_count),
@@ -330,7 +354,7 @@ export class CashFlowService {
     fkColumn: 'agent_id' | 'organization_id',
     refKind: 'counterparty' | 'organization',
     ctx: RateContext,
-    seen: Set<string>,
+    seen: CurrencyTally,
   ): Promise<CashFlowRow[]> {
     const channels = this.activeChannels(filter);
     const { gte, lt } = reportDateBounds(filter.dateFrom, filter.dateTo);
@@ -342,7 +366,7 @@ export class CashFlowService {
     const segments = channels
       .map((ch) => {
         const dir = CHANNEL_DIRECTION[ch] === 'in' ? '1' : '-1';
-        return `SELECT ${fkColumn} AS fk, sum_minor, currency, ${dir}::int AS direction FROM ${CHANNEL_TABLE[ch]} WHERE account_id = $1::uuid AND state = 'posted' AND deleted_at IS NULL AND moment >= $2 AND moment < $3${
+        return `SELECT ${fkColumn} AS fk, sum_minor, currency, rate_value, ${dir}::int AS direction FROM ${CHANNEL_TABLE[ch]} WHERE account_id = $1::uuid AND state = 'posted' AND deleted_at IS NULL AND moment >= $2 AND moment < $3${
           filter.counterpartyId ? ' AND agent_id = $4::uuid' : ''
         }${filter.organizationId ? ` AND organization_id = $${filter.counterpartyId ? 5 : 4}::uuid` : ''}`;
       })
@@ -356,19 +380,21 @@ export class CashFlowService {
       SELECT
         fk,
         currency,
+        rate_value,
         SUM(CASE WHEN direction = 1 THEN 1 ELSE 0 END)::bigint AS inflow_count,
         SUM(CASE WHEN direction = 1 THEN sum_minor ELSE 0 END)::bigint AS inflow_sum,
         SUM(CASE WHEN direction = -1 THEN 1 ELSE 0 END)::bigint AS outflow_count,
         SUM(CASE WHEN direction = -1 THEN sum_minor ELSE 0 END)::bigint AS outflow_sum
       FROM (${segments}) AS unified
       WHERE fk IS NOT NULL
-      GROUP BY fk, currency
+      GROUP BY fk, currency, rate_value
     `;
 
     const rawRows = await this.prisma.client.$queryRawUnsafe<
       Array<{
         fk: string;
         currency: string;
+        rate_value: bigint | null;
         inflow_count: bigint;
         inflow_sum: bigint | null;
         outflow_count: bigint;
@@ -381,6 +407,7 @@ export class CashFlowService {
         (r): CurrencyAwareRow => ({
           key: r.fk,
           currency: r.currency,
+          rateValue: r.rate_value ?? undefined,
           inflowCount: Number(r.inflow_count),
           inflowSumMinor: r.inflow_sum ?? 0n,
           outflowCount: Number(r.outflow_count),
@@ -430,7 +457,7 @@ export class CashFlowService {
     accountId: string,
     filter: CashFlowFilterInput,
     ctx: { baseCode: string; rates: Map<string, CurrencyRate> },
-    seen: Set<string>,
+    seen: CurrencyTally,
   ): Promise<CashFlowRow[]> {
     const channels = this.activeChannels(filter);
     const aggResults = await Promise.all(

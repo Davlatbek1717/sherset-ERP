@@ -1,4 +1,6 @@
-import { type CurrencyRate, toBaseMinor } from '../currency/currency-convert.js';
+import { type CurrencyTally, type RateContext, consolidateToBase } from './report-rate-ctx.util.js';
+
+export type { RateContext };
 
 /**
  * One raw aggregate row from a currency-aware GROUP BY: a single
@@ -10,6 +12,12 @@ export interface CurrencyAwareRow {
   key: string;
   /** ISO currency code of `inflowSumMinor`/`outflowSumMinor`. */
   currency: string;
+  /**
+   * The documents' own `rate_value` (×10^8) when the GROUP BY includes it —
+   * the historical rate this bucket must be valued at (M-11). Absent ⇒ the
+   * current context rate is used.
+   */
+  rateValue?: bigint;
   inflowCount: number;
   inflowSumMinor: bigint;
   outflowCount: number;
@@ -23,11 +31,6 @@ export interface ConsolidatedAmounts {
   outflowSumMinor: bigint;
 }
 
-export interface RateContext {
-  baseCode: string;
-  rates: Map<string, CurrencyRate>;
-}
-
 /**
  * Fold currency-aware rows into per-key, base-consolidated amounts.
  *
@@ -37,28 +40,28 @@ export interface RateContext {
  * the caller can rely on a stable iteration (date buckets stay chronological
  * when rows arrive sorted).
  *
- * `seen` accumulates every distinct currency code encountered so the caller
+ * `tally` accumulates every distinct currency code encountered so the caller
  * can raise the `mixedCurrency` flag — same contract as the channel path.
  *
- * Fidelity note: a row whose currency has no Currency row in `rates` cannot
- * be consolidated faithfully; it is included at face value (its minor units
- * added as-if base) and its code still lands in `seen`, so the UI's
- * mixed-currency warning fires. This mirrors `aggregateChannel`'s fallback —
- * never silently drop money.
+ * Fidelity note (Faza 17): a row is valued at its own `rateValue` when the
+ * GROUP BY carried one (M-11), else at the current context rate. A row whose
+ * currency has neither cannot be consolidated faithfully — it is EXCLUDED
+ * from the sums and recorded in `tally` as unconverted (M-12), so the caller
+ * reports it on its own line. Money is never silently dropped, and never
+ * silently added at face value either.
  */
 export function foldCurrencyRows(
   rows: CurrencyAwareRow[],
   ctx: RateContext,
-  seen: Set<string>,
+  tally: CurrencyTally,
 ): Map<string, ConsolidatedAmounts> {
   const out = new Map<string, ConsolidatedAmounts>();
 
   for (const row of rows) {
     const code = row.currency || ctx.baseCode;
-    seen.add(code);
 
-    const inflowBase = toBase(row.inflowSumMinor, code, ctx);
-    const outflowBase = toBase(row.outflowSumMinor, code, ctx);
+    const inflowBase = consolidateToBase(row.inflowSumMinor, code, ctx, tally, row.rateValue);
+    const outflowBase = consolidateToBase(row.outflowSumMinor, code, ctx, tally, row.rateValue);
 
     const existing = out.get(row.key);
     if (existing) {
@@ -77,12 +80,4 @@ export function foldCurrencyRows(
   }
 
   return out;
-}
-
-function toBase(amountMinor: bigint, code: string, ctx: RateContext): bigint {
-  if (amountMinor === 0n) return 0n;
-  if (code === ctx.baseCode) return amountMinor;
-  const rate = ctx.rates.get(code);
-  // Unknown currency ⇒ face-value fallback (warned via `seen`/mixedCurrency).
-  return rate ? toBaseMinor(amountMinor, rate) : amountMinor;
 }

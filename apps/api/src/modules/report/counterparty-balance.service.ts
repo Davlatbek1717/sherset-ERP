@@ -5,7 +5,13 @@ import {
   type CounterpartyBalanceFilterInput,
   CounterpartyBalanceFilterSchema,
 } from './counterparty-balance.schema.js';
-import { type RateContext, consolidateToBase, loadRateContext } from './report-rate-ctx.util.js';
+import {
+  CurrencyTally,
+  type RateContext,
+  type UnconvertedAmount,
+  consolidateToBase,
+  loadRateContext,
+} from './report-rate-ctx.util.js';
 
 export interface CounterpartyBalanceRow {
   counterpartyId: string;
@@ -43,6 +49,11 @@ export interface CounterpartyBalanceReport {
     currency: string;
     /** True when balances span >1 currency (totals are base-converted). */
     mixedCurrency: boolean;
+    /**
+     * M-12: kursi yo'q valyutadagi qoldiq jamiga QO'SHILMAYDI — shu yerda
+     * o'z valyutasida alohida qaytadi.
+     */
+    unconvertedByCurrency: UnconvertedAmount[];
   };
 }
 
@@ -120,11 +131,14 @@ export class CounterpartyBalanceService {
     // survives the groupBy=counterparty path where rows are merged to base.
     const mixedCurrency = new Set(items.map((r) => r.currency)).size > 1;
 
+    // Bitta tally ikkala yo'ldan o'tadi: collapse bosqichida konvertatsiya
+    // qilinmagan qoldiq keyin base-qatorga aylanib ko'rinmay qolmasin (M-12).
+    const tally = new CurrencyTally();
     if (filter.groupBy === 'counterparty') {
-      items = this.collapseByCounterparty(items, ctx);
+      items = this.collapseByCounterparty(items, ctx, tally);
     }
 
-    const summaries = this.computeSummaries(items, ctx, mixedCurrency);
+    const summaries = this.computeSummaries(items, ctx, mixedCurrency, tally);
     const total = await this.prisma.client.counterpartyBalance.count({ where });
 
     return { filter, items, total, summaries };
@@ -189,6 +203,7 @@ export class CounterpartyBalanceService {
   private collapseByCounterparty(
     rows: CounterpartyBalanceRow[],
     ctx: RateContext,
+    seen: CurrencyTally,
   ): CounterpartyBalanceRow[] {
     const byCp = new Map<string, CounterpartyBalanceRow[]>();
     for (const r of rows) {
@@ -196,7 +211,6 @@ export class CounterpartyBalanceService {
       arr.push(r);
       byCp.set(r.counterpartyId, arr);
     }
-    const seen = new Set<string>();
     const out: CounterpartyBalanceRow[] = [];
     for (const [, group] of byCp) {
       const first = group[0]!;
@@ -232,12 +246,12 @@ export class CounterpartyBalanceService {
     items: CounterpartyBalanceRow[],
     ctx: RateContext,
     mixedCurrency: boolean,
+    seen: CurrencyTally,
   ): CounterpartyBalanceReport['summaries'] {
     let totalDebt = 0n;
     let totalCredit = 0n;
     let debtorCount = 0;
     let creditorCount = 0;
-    const seen = new Set<string>();
     for (const r of items) {
       // Consolidate each row to base before summing — without this a USD
       // balance's cents were added to UZS tiyin. Sign is preserved by the
@@ -260,6 +274,7 @@ export class CounterpartyBalanceService {
       netMinor: (totalDebt - totalCredit).toString(),
       currency: ctx.baseCode,
       mixedCurrency,
+      unconvertedByCurrency: seen.unconvertedRows(),
     };
   }
 
@@ -280,6 +295,7 @@ export class CounterpartyBalanceService {
         netMinor: '0',
         currency: baseCode,
         mixedCurrency: false,
+        unconvertedByCurrency: [],
       },
     };
   }

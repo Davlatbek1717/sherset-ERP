@@ -5,7 +5,13 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 // Analitika TZ §4 — yagona formulalar qatlami.
 import { percentText } from './metrics/index.js';
 import { reportDateBounds } from './report-date-bounds.util.js';
-import { type RateContext, consolidateToBase, loadRateContext } from './report-rate-ctx.util.js';
+import {
+  CurrencyTally,
+  type RateContext,
+  type UnconvertedAmount,
+  consolidateToBase,
+  loadRateContext,
+} from './report-rate-ctx.util.js';
 
 /**
  * «Прибыльность» (Profitability) report — full moysklad-parity engine.
@@ -202,6 +208,12 @@ export interface ProfitabilityReport {
   channelBanner: { unsetDemands: number; unsetReturns: number } | null;
   currency: string;
   mixedCurrency: boolean;
+  /**
+   * M-12: rates-siz valyuta jamiga QO'SHILMAYDI — shu yerda o'z valyutasida
+   * alohida qaytadi («konvertatsiya qilinmagan» qatori). Bo'sh = hammasi
+   * konsolidatsiya qilindi.
+   */
+  unconvertedByCurrency: UnconvertedAmount[];
 }
 
 /** Aggregate per group key, split by currency (for base consolidation). */
@@ -252,7 +264,7 @@ export class ProfitabilityService {
     const { gte, lt } = reportDateBounds(dateFrom, dateTo);
 
     const ctx = await loadRateContext(this.prisma.client, accountId);
-    const seen = new Set<string>();
+    const seen = new CurrencyTally();
 
     // Resolve indirect filters (folder / supplier / counterparty-group) → id lists
     // via the ORM so the raw SQL stays free of implicit-m2m table names.
@@ -584,7 +596,8 @@ export class ProfitabilityService {
       chart: { granularity: filter.granularity, buckets, compareBuckets },
       channelBanner,
       currency: ctx.baseCode,
-      mixedCurrency: seen.size > 1,
+      mixedCurrency: seen.mixed,
+      unconvertedByCurrency: seen.unconvertedRows(),
     };
   }
 
@@ -741,7 +754,7 @@ export class ProfitabilityService {
     gte: Date,
     lt: Date,
     ctx: RateContext,
-    seen: Set<string>,
+    seen: CurrencyTally,
     q: {
       posWhere: (a: string) => Prisma.Sql;
       includeDemands: boolean;

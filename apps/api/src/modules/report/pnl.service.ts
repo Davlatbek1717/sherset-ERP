@@ -5,7 +5,13 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 import { marginPercentText } from './metrics/index.js';
 import { type PnlFilterInput, PnlFilterSchema, type PnlGroupByValue } from './pnl.schema.js';
 import { reportDateBounds } from './report-date-bounds.util.js';
-import { type RateContext, consolidateToBase, loadRateContext } from './report-rate-ctx.util.js';
+import {
+  CurrencyTally,
+  type RateContext,
+  type UnconvertedAmount,
+  consolidateToBase,
+  loadRateContext,
+} from './report-rate-ctx.util.js';
 
 export interface PnlRow {
   key: string;
@@ -32,6 +38,12 @@ export interface PnlReport {
    * see supply.service cost-currency normalization).
    */
   mixedCurrency: boolean;
+  /**
+   * M-12: rates-siz valyuta jamiga QO'SHILMAYDI — shu yerda o'z valyutasida
+   * alohida qaytadi («konvertatsiya qilinmagan» qatori). Bo'sh = hammasi
+   * konsolidatsiya qilindi.
+   */
+  unconvertedByCurrency: UnconvertedAmount[];
 }
 
 const DATE_TRUNC_UNIT: Record<Exclude<PnlGroupByValue, 'none'>, string> = {
@@ -49,14 +61,21 @@ export class PnlService {
   async pnlReport(accountId: string, raw: unknown): Promise<PnlReport> {
     const filter = this.parseFilter(raw);
     const ctx = await loadRateContext(this.prisma.client, accountId);
-    const seen = new Set<string>();
+    const seen = new CurrencyTally();
 
     const totals = await this.computeTotals(accountId, filter, ctx, seen);
     let groups: PnlRow[] = [];
     if (filter.groupBy !== 'none') {
       groups = await this.computeGroups(accountId, filter, ctx, seen);
     }
-    return { filter, totals, groups, currency: ctx.baseCode, mixedCurrency: seen.size > 1 };
+    return {
+      filter,
+      totals,
+      groups,
+      currency: ctx.baseCode,
+      mixedCurrency: seen.mixed,
+      unconvertedByCurrency: seen.unconvertedRows(),
+    };
   }
 
   // -------------------------------------------------------------------
@@ -67,7 +86,7 @@ export class PnlService {
     accountId: string,
     filter: PnlFilterInput,
     ctx: RateContext,
-    seen: Set<string>,
+    seen: CurrencyTally,
   ): Promise<PnlRow> {
     // Revenue + COGS come from posted Demand minus posted SalesReturn.
     // Other expenses come from posted PaymentOut + CashOut. Each money table
@@ -82,29 +101,39 @@ export class PnlService {
       AND state = 'posted' AND deleted_at IS NULL
       AND moment >= ${gte} AND moment < ${lt}`;
 
-    type CurRow = { currency: string; sum_minor: bigint | null; cost_minor: bigint | null };
+    // M-11 (Faza 17): grouping by (currency, rate_value) keeps each bucket at
+    // the rate its own documents were booked with, so a closed period is not
+    // restated when the Currency table moves.
+    type CurRow = {
+      currency: string;
+      rate_value: bigint | null;
+      sum_minor: bigint | null;
+      cost_minor: bigint | null;
+    };
     const [demandRows, returnRows, payOutRows, cashOutRows] = await Promise.all([
       this.prisma.client.$queryRaw<CurRow[]>`
-        SELECT currency, SUM(sum_minor)::bigint AS sum_minor, SUM(cost_sum_minor)::bigint AS cost_minor
+        SELECT currency, rate_value, SUM(sum_minor)::bigint AS sum_minor, SUM(cost_sum_minor)::bigint AS cost_minor
         FROM demands WHERE account_id = ${accountId}::uuid ${window} ${orgClause}
-        GROUP BY currency`,
+        GROUP BY currency, rate_value`,
       this.prisma.client.$queryRaw<CurRow[]>`
-        SELECT currency, SUM(sum_minor)::bigint AS sum_minor, NULL::bigint AS cost_minor
+        SELECT currency, rate_value, SUM(sum_minor)::bigint AS sum_minor, NULL::bigint AS cost_minor
         FROM sales_returns WHERE account_id = ${accountId}::uuid ${window} ${orgClause}
-        GROUP BY currency`,
+        GROUP BY currency, rate_value`,
       this.prisma.client.$queryRaw<CurRow[]>`
-        SELECT currency, SUM(sum_minor)::bigint AS sum_minor, NULL::bigint AS cost_minor
+        SELECT currency, rate_value, SUM(sum_minor)::bigint AS sum_minor, NULL::bigint AS cost_minor
         FROM payments_out WHERE account_id = ${accountId}::uuid ${window} ${orgClause}
-        GROUP BY currency`,
+        GROUP BY currency, rate_value`,
       this.prisma.client.$queryRaw<CurRow[]>`
-        SELECT currency, SUM(sum_minor)::bigint AS sum_minor, NULL::bigint AS cost_minor
+        SELECT currency, rate_value, SUM(sum_minor)::bigint AS sum_minor, NULL::bigint AS cost_minor
         FROM cash_out WHERE account_id = ${accountId}::uuid ${window} ${orgClause}
-        GROUP BY currency`,
+        GROUP BY currency, rate_value`,
     ]);
 
     const sumRevenue = (rows: CurRow[]): bigint =>
       rows.reduce(
-        (acc, r) => acc + consolidateToBase(r.sum_minor ?? 0n, r.currency, ctx, seen),
+        (acc, r) =>
+          acc +
+          consolidateToBase(r.sum_minor ?? 0n, r.currency, ctx, seen, r.rate_value ?? undefined),
         0n,
       );
 
@@ -126,7 +155,7 @@ export class PnlService {
     accountId: string,
     filter: PnlFilterInput,
     ctx: RateContext,
-    seen: Set<string>,
+    seen: CurrencyTally,
   ): Promise<PnlRow[]> {
     if (filter.groupBy === 'none') return [];
     const truncUnit = DATE_TRUNC_UNIT[filter.groupBy];
@@ -140,13 +169,15 @@ export class PnlService {
     // bucket keys, then merge in TS by bucket. Keeping them separate
     // (rather than UNION ALL) is cheaper because each query uses its
     // own table indexes natively.
-    // Each query groups by (bucket, currency); revenue is base-consolidated
-    // per currency in TS, COGS (cost_minor) is summed directly (already base).
+    // Each query groups by (bucket, currency, rate_value); revenue is
+    // base-consolidated in TS at the bucket documents OWN rate (M-11), COGS
+    // (cost_minor) is summed directly (already base).
     const [demandRows, returnRows, paymentOutRows, cashOutRows] = await Promise.all([
       this.prisma.client.$queryRaw<
         Array<{
           bucket: Date;
           currency: string;
+          rate_value: bigint | null;
           sum_minor: bigint | null;
           cost_minor: bigint | null;
         }>
@@ -154,6 +185,7 @@ export class PnlService {
         SELECT
           date_trunc(${truncUnit}, moment AT TIME ZONE 'UTC') AS bucket,
           currency,
+          rate_value,
           SUM(sum_minor)::bigint AS sum_minor,
           SUM(cost_sum_minor)::bigint AS cost_minor
         FROM demands
@@ -163,15 +195,21 @@ export class PnlService {
           AND moment >= ${gte}
           AND moment < ${lt}
           ${orgAnd}
-        GROUP BY bucket, currency
+        GROUP BY bucket, currency, rate_value
         ORDER BY bucket ASC
       `,
       this.prisma.client.$queryRaw<
-        Array<{ bucket: Date; currency: string; sum_minor: bigint | null }>
+        Array<{
+          bucket: Date;
+          currency: string;
+          rate_value: bigint | null;
+          sum_minor: bigint | null;
+        }>
       >`
         SELECT
           date_trunc(${truncUnit}, moment AT TIME ZONE 'UTC') AS bucket,
           currency,
+          rate_value,
           SUM(sum_minor)::bigint AS sum_minor
         FROM sales_returns
         WHERE account_id = ${accountId}::uuid
@@ -180,15 +218,21 @@ export class PnlService {
           AND moment >= ${gte}
           AND moment < ${lt}
           ${orgAnd}
-        GROUP BY bucket, currency
+        GROUP BY bucket, currency, rate_value
         ORDER BY bucket ASC
       `,
       this.prisma.client.$queryRaw<
-        Array<{ bucket: Date; currency: string; sum_minor: bigint | null }>
+        Array<{
+          bucket: Date;
+          currency: string;
+          rate_value: bigint | null;
+          sum_minor: bigint | null;
+        }>
       >`
         SELECT
           date_trunc(${truncUnit}, moment AT TIME ZONE 'UTC') AS bucket,
           currency,
+          rate_value,
           SUM(sum_minor)::bigint AS sum_minor
         FROM payments_out
         WHERE account_id = ${accountId}::uuid
@@ -197,15 +241,21 @@ export class PnlService {
           AND moment >= ${gte}
           AND moment < ${lt}
           ${orgAnd}
-        GROUP BY bucket, currency
+        GROUP BY bucket, currency, rate_value
         ORDER BY bucket ASC
       `,
       this.prisma.client.$queryRaw<
-        Array<{ bucket: Date; currency: string; sum_minor: bigint | null }>
+        Array<{
+          bucket: Date;
+          currency: string;
+          rate_value: bigint | null;
+          sum_minor: bigint | null;
+        }>
       >`
         SELECT
           date_trunc(${truncUnit}, moment AT TIME ZONE 'UTC') AS bucket,
           currency,
+          rate_value,
           SUM(sum_minor)::bigint AS sum_minor
         FROM cash_out
         WHERE account_id = ${accountId}::uuid
@@ -214,7 +264,7 @@ export class PnlService {
           AND moment >= ${gte}
           AND moment < ${lt}
           ${orgAnd}
-        GROUP BY bucket, currency
+        GROUP BY bucket, currency, rate_value
         ORDER BY bucket ASC
       `,
     ]);
@@ -237,7 +287,13 @@ export class PnlService {
     };
     for (const r of demandRows) {
       const b = ensure(r.bucket.toISOString());
-      b.sales += consolidateToBase(r.sum_minor ?? 0n, r.currency, ctx, seen);
+      b.sales += consolidateToBase(
+        r.sum_minor ?? 0n,
+        r.currency,
+        ctx,
+        seen,
+        r.rate_value ?? undefined,
+      );
       b.cogs += r.cost_minor ?? 0n; // already base
     }
     for (const r of returnRows) {
@@ -246,6 +302,7 @@ export class PnlService {
         r.currency,
         ctx,
         seen,
+        r.rate_value ?? undefined,
       );
     }
     for (const r of paymentOutRows) {
@@ -254,6 +311,7 @@ export class PnlService {
         r.currency,
         ctx,
         seen,
+        r.rate_value ?? undefined,
       );
     }
     for (const r of cashOutRows) {
@@ -262,6 +320,7 @@ export class PnlService {
         r.currency,
         ctx,
         seen,
+        r.rate_value ?? undefined,
       );
     }
 

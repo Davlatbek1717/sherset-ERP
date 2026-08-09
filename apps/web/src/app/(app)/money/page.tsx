@@ -81,7 +81,18 @@ interface MoneyOperationRow {
 interface ListResponse {
   items: MoneyOperationRow[];
   total: number;
-  totals: { netMinor: string; inMinor: string; outMinor: string };
+  // M-14 (Faza 17): totals are PER CURRENCY — the ledger mixes UZS tiyin and
+  // USD cents, so a single number (previously rendered as «so'm») was
+  // meaningless in a multi-currency tenant.
+  totals: {
+    byCurrency: Array<{
+      currency: string;
+      inMinor: string;
+      outMinor: string;
+      netMinor: string;
+    }>;
+    mixedCurrency: boolean;
+  };
   nextCursor: string | null;
 }
 
@@ -237,33 +248,42 @@ export default function MoneyPage() {
     },
   ];
 
-  const totalsRow = data?.totals ? (
+  // One totals line per currency — each amount formatted in ITS OWN currency
+  // (M-14). A single-currency tenant renders exactly one line, as before.
+  const totalsRow = data?.totals?.byCurrency?.length ? (
     <div
-      className="flex flex-wrap items-center gap-6 border-[var(--ms-border-default)] border-b bg-[var(--ms-bg-muted)] px-4 py-2 text-sm"
+      className="flex flex-col gap-1 border-[var(--ms-border-default)] border-b bg-[var(--ms-bg-muted)] px-4 py-2 text-sm"
       data-test-id="money-totals"
     >
-      <div>
-        <span className="text-[var(--ms-text-muted)]">{t('totals_in')}: </span>
-        <span className="font-medium text-emerald-700 tabular-nums">
-          {formatMoney(data.totals.inMinor, 'UZS')}
-        </span>
-      </div>
-      <div>
-        <span className="text-[var(--ms-text-muted)]">{t('totals_out')}: </span>
-        <span className="font-medium text-red-700 tabular-nums">
-          {formatMoney(data.totals.outMinor, 'UZS')}
-        </span>
-      </div>
-      <div>
-        <span className="text-[var(--ms-text-muted)]">{t('totals_net')}: </span>
-        <span
-          className={`font-medium tabular-nums ${
-            data.totals.netMinor.startsWith('-') ? 'text-red-700' : 'text-emerald-700'
-          }`}
-        >
-          {formatMoney(data.totals.netMinor, 'UZS')}
-        </span>
-      </div>
+      {data.totals.byCurrency.map((cur) => (
+        <div key={cur.currency} className="flex flex-wrap items-center gap-6">
+          {data.totals.mixedCurrency ? (
+            <span className="font-medium text-[var(--ms-text-muted)]">{cur.currency}</span>
+          ) : null}
+          <div>
+            <span className="text-[var(--ms-text-muted)]">{t('totals_in')}: </span>
+            <span className="font-medium text-emerald-700 tabular-nums">
+              {formatMoney(cur.inMinor, cur.currency)}
+            </span>
+          </div>
+          <div>
+            <span className="text-[var(--ms-text-muted)]">{t('totals_out')}: </span>
+            <span className="font-medium text-red-700 tabular-nums">
+              {formatMoney(cur.outMinor, cur.currency)}
+            </span>
+          </div>
+          <div>
+            <span className="text-[var(--ms-text-muted)]">{t('totals_net')}: </span>
+            <span
+              className={`font-medium tabular-nums ${
+                cur.netMinor.startsWith('-') ? 'text-red-700' : 'text-emerald-700'
+              }`}
+            >
+              {formatMoney(cur.netMinor, cur.currency)}
+            </span>
+          </div>
+        </div>
+      ))}
     </div>
   ) : null;
 

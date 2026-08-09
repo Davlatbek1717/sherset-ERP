@@ -69,21 +69,22 @@ export class MoneyOperationService {
         : [];
     const counterpartyNameById = new Map(counterparties.map((c) => [c.id, c.name]));
 
-    // Filter-scoped totals for the current view — in / out / net split.
-    // Computed against the same `where` so the toolbar metric stays in
-    // sync with the visible rows. Sum is a bigint sum at the DB level.
-    const totals = await this.prisma.client.moneyOperation.aggregate({
-      where,
-      _sum: { deltaMinor: true },
-    });
-    const inTotalAgg = await this.prisma.client.moneyOperation.aggregate({
-      where: { ...where, deltaMinor: { gt: 0n } },
-      _sum: { deltaMinor: true },
-    });
-    const outTotalAgg = await this.prisma.client.moneyOperation.aggregate({
-      where: { ...where, deltaMinor: { lt: 0n } },
-      _sum: { deltaMinor: true },
-    });
+    // Filter-scoped totals for the current view — in / out / net split,
+    // PER CURRENCY (M-14, Faza 17). Computed against the same `where` so the
+    // toolbar metric stays in sync with the visible rows; the sums are
+    // BigInt sums at the DB level.
+    //
+    // Edi: three `aggregate({_sum:{deltaMinor}})` calls with no currency key —
+    // in a multi-currency tenant a USD cent and a UZS tiyin landed in the same
+    // number and the UI labelled it «so'm». Grouping by currency is the only
+    // faithful answer here: MoneyOperation has no rate column of its own, so
+    // there is nothing to consolidate WITH at this layer (report-level
+    // consolidation lives in `report-rate-ctx.util.ts`).
+    const [inRows, outRows] = await Promise.all([
+      this.groupSumByCurrency({ ...where, deltaMinor: { gt: 0n } }),
+      this.groupSumByCurrency({ ...where, deltaMinor: { lt: 0n } }),
+    ]);
+    const byCurrency = mergeCurrencyTotals(inRows, outRows);
 
     return {
       items: items.map((r) => ({
@@ -105,11 +106,66 @@ export class MoneyOperationService {
       })),
       total,
       totals: {
-        netMinor: (totals._sum.deltaMinor ?? 0n).toString(),
-        inMinor: (inTotalAgg._sum.deltaMinor ?? 0n).toString(),
-        outMinor: (outTotalAgg._sum.deltaMinor ?? 0n).toString(),
+        byCurrency,
+        mixedCurrency: byCurrency.length > 1,
       },
       nextCursor: hasMore ? (items[items.length - 1]?.id ?? null) : null,
     };
   }
+
+  /** `SUM(delta_minor) GROUP BY currency` for an already-built where clause. */
+  private async groupSumByCurrency(where: Prisma.MoneyOperationWhereInput): Promise<CurrencySum[]> {
+    const rows = await this.prisma.client.moneyOperation.groupBy({
+      by: ['currency'],
+      where,
+      _sum: { deltaMinor: true },
+    });
+    return rows.map((r) => ({ currency: r.currency, sum: r._sum.deltaMinor ?? 0n }));
+  }
+}
+
+interface CurrencySum {
+  currency: string;
+  sum: bigint;
+}
+
+/** One toolbar total, in its own currency — never mixed with another's. */
+export interface MoneyOperationCurrencyTotal {
+  currency: string;
+  /** Inflow sum (≥ 0), BigInt-as-string. */
+  inMinor: string;
+  /** Outflow sum (≤ 0 — sign preserved, as the ledger stores it). */
+  outMinor: string;
+  /** `inMinor + outMinor`. */
+  netMinor: string;
+}
+
+/**
+ * Fold the inflow and outflow group-by results into one row per currency.
+ * A currency that only has outflows (or only inflows) still gets a row with
+ * the other side at 0 — the toolbar must not hide half of a ledger.
+ * First-seen order: inflow currencies first, then outflow-only ones.
+ */
+function mergeCurrencyTotals(
+  inRows: CurrencySum[],
+  outRows: CurrencySum[],
+): MoneyOperationCurrencyTotal[] {
+  const acc = new Map<string, { in: bigint; out: bigint }>();
+  const ensure = (currency: string) => {
+    let e = acc.get(currency);
+    if (!e) {
+      e = { in: 0n, out: 0n };
+      acc.set(currency, e);
+    }
+    return e;
+  };
+  for (const r of inRows) ensure(r.currency).in += r.sum;
+  for (const r of outRows) ensure(r.currency).out += r.sum;
+
+  return Array.from(acc, ([currency, v]) => ({
+    currency,
+    inMinor: v.in.toString(),
+    outMinor: v.out.toString(),
+    netMinor: (v.in + v.out).toString(),
+  }));
 }

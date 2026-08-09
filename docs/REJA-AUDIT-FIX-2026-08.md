@@ -481,7 +481,9 @@ chiqarib alohida «konvertatsiya qilinmagan» qatorda ko'rsat (yoki xato). (c) M
 **▶ SESSIYA-BOSHI PROMPT:**
 > `docs/REJA-AUDIT-FIX-2026-08.md` — **Faza 17** (Faza 16 tugagan). O'ZGARMAS QOIDALAR. `M-11`,`M-12`,`M-14`.
 > Tarixiy-kurs + noma'lum-valyuta ajratish + per-valyuta totals. TDD: 3 stsenariy. Gate. Hisobot, TO'XTA.
-**◻ HISOBOT:** _(agent to'ldiradi)_
+**☑ HISOBOT (2026-08-09):** BAJARILDI — batafsili «HISOBOT JURNALI → Faza 17» da. **Diqqat:** tarixiy
+kurs `pnl`+`cash-flow`da qo'llandi (mexanizm umumiy helperda tayyor); qolgan 8 davr-oqim hisoboti
+DEFER, `aging`/`counterparty-balance` esa ataylab joriy kursda (ochiq-qoldiq revalyatsiyasi).
 
 ---
 
@@ -543,7 +545,11 @@ PREPARE o'tadi. (3) takroriy providerTxId → bitta qator (P2002).
 **▶ SESSIYA-BOSHI PROMPT:**
 > `docs/REJA-AUDIT-FIX-2026-08.md` — **Faza 19**. O'ZGARMAS QOIDALAR. `INT-02`,`INT-03`,`INT-04`. Gateway→PaymentIn
 > + Click-amount BigInt + providerTxId unique/idempotency. TDD: 3 stsenariy. Gate + migrate. Hisobot, TO'XTA.
-**◻ HISOBOT:** _(agent to'ldiradi)_
+**☑ HISOBOT (2026-08-09):** BAJARILDI — batafsili «HISOBOT JURNALI → Faza 19» da. **Diqqat:** audit
+keltirgan `115.23` misoli o'lchab ko'rilganda NOTO'G'RI chiqdi (`115.23*100 === 11523` aynan) — bug-klass
+real, testlar `19.99`/`0.29`/`8.29` da yozildi. **Qarz:** PaymentIn `draft` bo'lib qoladi (post EMAS) ·
+refund hujjati yo'q · bitta DB-tranzaksiya o'rniga atomik claim + retry (qoldiq oyna hujjatlangan) ·
+prod'da `CREATE UNIQUE INDEX` dublikatlar bo'lsa yiqiladi (ataylab).
 
 ---
 
@@ -634,7 +640,13 @@ refresh-tokenlar revoke.
 > `docs/REJA-AUDIT-FIX-2026-08.md` — **Faza 23**. O'ZGARMAS QOIDALAR. `HR-10`,`AUTH-07`,`AUTH-05`. Self-eskalatsiya
 > guard + Group permission + offboarding token-revoke. TDD: 3 stsenariy. Gate. Hisobot (qolgan guard-siz
 > controllerlar ro'yxati), TO'XTA.
-**◻ HISOBOT:** _(agent to'ldiradi)_
+**☑ HISOBOT (2026-08-09):** BAJARILDI — batafsili «HISOBOT JURNALI → Faza 23» da. Uchala topilma kodda
+tasdiqlandi va yopildi; qo'shimcha **KPI-config + KPI-metrics** yo'llari ham gate ostiga olindi (oylikka
+ta'sir qiladi). **Qolgan guard-siz: 61 handler / 23 controller** — jurnalda uch toifaga ajratilgan
+(ataylab ochiq ∥ haqiqiy teshik ∥ HR-RBAC ostida). **Ikki parallel RBAC birlashtirilmadi** (HR-10 ildizi)
+va **amaldagi 15-daqiqalik access-JWT offboarding'dan keyin ham tirik** — ikkalasi alohida fazaga.
+**DIQQAT (ruxsat qattiqlashuvi):** `employees:full`siz menejer KPI konfiguratsiyasini saqlay olmaydi,
+`settings` ruxsatisiz «Отделы» yaratib bo'lmaydi — deploy'dan keyin rol matritsasini tekshir.
 
 ---
 
@@ -2644,3 +2656,265 @@ xotirasi) — deploy'da migratsiya oqimi o'tishini tekshirish kerak; o'tmasa SQL
 **Commit:** `94fe12ef` `fix(currency): faza 16 — valyuta konventsiyasi yagonalandi (M-03, DB-01, M-04)`
 *(hook'siz pathspec-commit — parallel Faza 18a sessiyasining staged-indexi faol edi, §6.7B; gate'lar
 qo'lda to'liq yugurtirildi).*
+
+---
+
+## Faza 17 — Hisobot kurslari: tarixiy-kurs + noma'lum-valyuta + aralash-jami (`M-11`,`M-12`,`M-14`)
+
+**Sana:** 2026-08-09 · **Status:** **Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q** ·
+⏳ DEPLOY QILINMAGAN · 🗄️ migratsiya YO'Q (sxemaga tegilmadi) ·
+⚠️ parallel sessiya bir daraxtda ishladi (auth/group/hr/manager/payment-gateway/payment-in +
+`schema.prisma`) — diff'im path-cheklangan, gate o'z yo'llarimda (§6.6).
+
+### Ground-truth tekshiruvi (§2 — audit da'volari ko'r-ko'rona olinmadi)
+Uchala topilma ham **kodda tasdiqlandi**: `report-rate-ctx.util.ts:24-25` va
+`cash-flow-consolidate.util.ts:86-87` haqiqatan `rate ? toBaseMinor(...) : amountMinor` (face-value);
+`money-operation.service.ts:75-86` haqiqatan valyuta kalitsiz `aggregate`. `M-11` uchun qo'shimcha:
+**33 hujjat modeli** `rate_value BigInt @default(100000000)` saqlaydi (schema.prisma), ya'ni tarixiy
+kurs mavjud — faqat hisobotlarda o'qilmasdi.
+
+### Nima qilindi
+
+**(a) `M-11` — tarixiy kurs.** `consolidateToBase(amount, code, ctx, tally, docRateValue?)` — 5-argument
+hujjatning o'z `rate_value`'si. SQL endi kursni ham kalitga oladi:
+- `pnl.service.ts` — totals va groups: `GROUP BY currency, rate_value` (4+4 so'rov).
+- `cash-flow.service.ts` — Prisma `groupBy(['currency','rateValue'])` + ikki raw-SQL yo'lida
+  (`groupByDate`, `groupByFk`) UNION segmentlariga `rate_value`.
+- `cash-flow-consolidate.util.ts` — `CurrencyAwareRow.rateValue?`, `foldCurrencyRows` endi o'z
+  `toBase` nusxasini emas, umumiy `consolidateToBase`ni chaqiradi (ikkinchi konvertor yo'qoldi).
+
+**🔑 IDENTITY-QO'RIQCHISI (rejada yo'q edi, ishlab chiqishda topildi).** `rateValue` sxemada
+`@default(100000000)` — **kurs kiritilmagan USD hujjat ham 1e8** bo'lib turadi. Uni ko'r-ko'rona
+ishlatish face-value bug'ini (M-12 klassi) boshqa eshikdan qaytarardi. Shu sabab: *baza bo'lmagan
+valyutada `docRateValue === 1e8` ⇒ «kurs yo'q»*, joriy kontekst kursiga qaytiladi. Yon-foyda: mavjud
+qatorlarning HAMMASI default kursda ⇒ o'zgarish ular uchun **bayt-ma-bayt neytral**, tarix jimgina
+qayta yozilmaydi.
+
+**(b) `M-12` — noma'lum valyuta ajratildi.** `Set<string> seen` → `CurrencyTally` klassi
+(`add`/`size`/`has`/`mixed` — Set bilan mos, plus `addUnconverted`/`unconvertedRows`). Kursi topilmagan
+summa endi **jamiga qo'shilmaydi** (`0n` qaytadi) va o'z valyutasida tally'ga to'planadi. 11 hisobot
+javobiga + counterparty-balance `summaries`ga yangi maydon: `unconvertedByCurrency: UnconvertedAmount[]`.
+`RateContext` egaligi `cash-flow-consolidate` → `report-rate-ctx`ga ko'chdi (aylanma import yo'q).
+Codemod: 13 servis, 54 o'rin (deterministik skript, anchor topilmasa to'xtaydi).
+
+**(c) `M-14` — per-valyuta totals.** `money-operation.service.ts`: uch `aggregate` → ikki
+`groupBy(['currency'])` (kirim/chiqim) + `mergeCurrencyTotals`. Javob:
+`totals: { byCurrency: [{currency,inMinor,outMinor,netMinor}], mixedCurrency }`. Faqat chiqimi bor
+valyuta ham qatorda qoladi (ikkinchi tomon 0). FE `/money` sahifasi har valyuta uchun alohida
+totals-qatori chizadi va summani **o'z valyutasida** formatlaydi (ilgari qattiq `'UZS'` yozilgan edi —
+ya'ni aralash son «so'm» deb ko'rsatilardi).
+
+### TDD (RED jonli o'lchandi)
+- `report-rate-ctx.util.test.ts` — **9 qizil** (`CurrencyTally is not a constructor`) → 17/17 yashil.
+  M-11: hujjat kursi ustun · davr barqarorligi (kurs 12 000→15 000, natija bir xil) · identity-qo'riqchi ·
+  baza-valyuta identity. M-12: 0 qaytadi · summa tally'da to'planadi · hujjat kursi bo'lsa konvertatsiya
+  bo'ladi · Set-shartnomasi saqlanadi.
+- `money-operation.service.test.ts` (YANGI) — **5 qizil** (`aggregate is not a function`) → 5/5 yashil.
+- `pnl.service.test.ts` — +4 test (tarixiy kurs, davr barqarorligi, bir valyutaning ikki kursli bucket'i,
+  M-12 `unconvertedByCurrency`).
+- `cash-flow-consolidate.util.test.ts` — eski «unknown currency falls back to face value» testi
+  **yangi shartnomaga ko'chirildi** (0 + tally, hujjat soni yo'qolmaydi) + `rateValue` ustunligi testi.
+
+### Gate
+api typecheck **0** · web typecheck **0** · `pnpm lint:product` **0 error** (743 warning — siyosat bo'yicha
+ruxsat) · vitest `report`+`money`+`currency`: **367/367** (43 fayl) · web suite: quyida. `i18n:gate` —
+UI-matn qo'shilmadi (mavjud `totals_in/out/net` kalitlari qayta ishlatildi, yangi matn yo'q).
+
+### Qolgan qarz / DEFER (ochiq, keyingi fazaga)
+1. **Tarixiy kurs faqat pnl + cash-flow'da.** Boshqa davr-oqim hisobotlari (`profitability`,
+   `sales-by-channel`, `sales-by-hour`, `average-basket`, `unit-economics`, `purchase-management`,
+   `warehouse-ops`, `report.service`) hamon **joriy** kursda konsolidatsiya qiladi — mexanizm
+   (`docRateValue` argumenti) tayyor, har biriga SQL'ga `rate_value` qo'shish qoldi. `aging` va
+   `counterparty-balance` **ataylab** joriy kursda qoladi (ochiq-qoldiq revalyatsiyasi — rejaning
+   o'z qoidasi).
+2. **Dashboard vidjetlari** (`overdue`, org-balans, money-chart) `unconvertedByCurrency` maydoniga ega
+   emas — kursi yo'q valyuta endi 0 sifatida ko'rinadi (ilgari noto'g'ri masshtabda ko'rinardi).
+   Har uch joyda kod-izohi qo'yildi; to'liq yechim = dashboard javob-shaklini kengaytirish.
+3. **FE `unconvertedByCurrency` ni hech qayerda chizmaydi** — API qaytaradi, hisobot sahifalari hali
+   ko'rsatmaydi (11 sahifa UI ishi). `/money` sahifasi esa per-valyuta totals bilan **ulandi**.
+4. `M-13` (ikki konvertor yaxlitlash farqi) — Faza 16'dan qolgan, hamon ochiq.
+5. **Browser-smoke YO'Q** — Phase-2 QA cohort'ida runtime tekshiriladi (ayniqsa `/money` toolbar va
+   P&L davr-barqarorligi real ma'lumotda).
+
+---
+
+## Faza 23 — HR self-eskalatsiya + login-only mutatsiyalar + offboarding-revoke (2026-08-09) — **Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q**
+
+**Topilmalar kodda tasdiqlandi (§2) — uchalasi ham HAQIQIY, audit xato o'qimagan:**
+- `HR-10` — `hr-employee-permission.controller.ts:24-33` `PUT /hr/employees/:employeeId/permissions` faqat
+  `@RequireHrPermission('employees','full')`; `employeeId === user.sub` tekshiruvi na controller'da, na
+  `service.replace` (17-32) da bor edi. `hr-employee.service.ts:480` `hrRoles: input.hrRoles` — aktor
+  cheklovsiz; `hr-permission.guard.ts:54` `hrRoles.includes('admin')` → BARCHA HR-tekshiruvini bypass.
+  Ya'ni `employees:full` egasi bir so'rov bilan to'liq HR-admin bo'lib olardi.
+- `AUTH-07` — `group.controller.ts:29-56` faqat `@UseGuards(JwtAuthGuard)`, `@RequirePermission` YO'Q;
+  `permissions.guard.ts:39` talab metadatasi bo'lmasa `true` qaytaradi (opt-in) ⇒ har autentifikatsiyalangan
+  xodim «Отделы» yaratishi/o'chirishi mumkin edi (kodning o'z kommentida tan olingan).
+- `AUTH-05` — `token.service.ts:145` `revokeAllForEmployee` **butun `apps/api` bo'yicha 0 chaqiruv**
+  (grep bilan tasdiqlandi); `offboarding.service.ts:187-196` arxivlash tranzaksiyasi faqat
+  `archived:true` + `completedAt` yozardi.
+
+**Qo'shimcha (o'z skanerim topdi, auditda yo'q):** oylikka ta'sir qiluvchi ikki yo'l ham rol-tekshiruvsiz edi —
+`manager/kpi/kpi-config.controller.ts:33` `PUT employee/:id/config` (kodda `TODO(rol-gate)` turardi) va
+`manager-kpi.controller.ts` `POST metrics` / `metrics/:key` / `metrics/:key/archive` (class'da `HrPermissionGuard`
+bor-u, handler'larda talab yo'q ⇒ guard jim o'tkazadi). Ikkalasi ham shu fazada yopildi.
+
+**Fayllar**
+
+| Fayl | O'zgarish |
+|---|---|
+| `hr/hr-auth/privilege-escalation.ts` | **YANGI** sof modul: `assertNoSelfPrivilegeChange` (aktor==nishon → 403), `grantsAdminRole` (diff: admin BERILDIMI), `assertAdminRoleGrantAllowed` ('admin' rolini faqat admin beradi) |
+| `hr/hr-employee-permission/hr-employee-permission.service.ts` | `replace(..., actorId?)` — o'ziga yozish 403, DB'ga umuman tegilmaydi |
+| `hr/hr-employee-permission/hr-employee-permission.controller.ts` | `user.sub` aktor sifatida uzatiladi |
+| `hr/hr-employee/hr-employee.service.ts` | `update`: `input.hrRoles !== undefined` shoxida self-check + admin-grant check (`current` select'ga `hrRoles` qo'shildi); `create`: admin-grant check (yangi xodimni darhol admin qilib yaratish — o'sha eskalatsiyaning ikkinchi yo'li); `actorHrRoles()` private helper |
+| `group/group.controller.ts` | `POST/PATCH/DELETE` → `@RequirePermission({entity:'settings', action:'create'/'update'/'delete'})`; `GET` ATAYLAB ochiq (bo'lim ro'yxatini ko'plab picker'lar o'qiydi) — komment yangilandi |
+| `manager/kpi/kpi-config.controller.ts` | class'ga `HrPermissionGuard`, `PUT employee/:id/config` → `employees:full` (eski `TODO(rol-gate)` yopildi) |
+| `manager/kpi/manager-kpi.controller.ts` | `createMetric`/`updateMetric`/`archiveMetric` → `employees:full`; `explain` ATAYLAB ochiq qoldi (xodim o'z kunini tushuntiradi — mavjud dizayn) |
+| `auth/token.service.ts` | `revokeAllForEmployee(employeeId, client?)` — ixtiyoriy tranzaksiya klienti (`RevokeClient` tor tip), chaqiruvchi arxivlash bilan BIR tx'da uzadi |
+| `hr/hr-employee/offboarding.service.ts` | `complete()` interaktiv `$transaction`ga o'tdi: `archived:true` + **`hrRoles: []`** + `completedAt` + **`hrEmployeePermission.deleteMany`** + **`tokens.revokeAllForEmployee(id, tx)`**; commit'dan KEYIN `permissions.invalidate(id)` |
+| `hr/hr-employee/hr-employee.module.ts` | `PermissionsModule` **oshkora** import (@Global'ga tayanmaslik — `global-di-injection-unguarded` sabog'i) |
+
+**Testlar (TDD: har biri avval QIZIL ko'rildi, keyin yashil):**
+- `hr-auth/privilege-escalation.test.ts` **YANGI** 9 — self/o'zga/aktorsiz · admin-grant diff (bor→bor, olib tashlash) · admin bo'lmagan aktor 403.
+- `hr-employee-permission/hr-employee-permission.service.test.ts` **YANGI** 2 — o'ziga yozish 403 va `$transaction` **umuman chaqirilmaydi**; o'zgaga yozish o'tadi.
+- `hr-employee/hr-employee.service.test.ts` +5 — update self-403 · non-admin admin-grant 403 · admin grant o'tadi · non-admin oddiy rol o'tadi · create admin-grant 403 (mavjud 31 test saqlandi).
+- `group/group.controller.test.ts` **YANGI** 4 — POST/PATCH/DELETE metadata + `GET` ataylab ochiqligi qulflandi.
+- `manager/kpi/kpi-permission-gate.test.ts` **YANGI** 6 — class'da `HrPermissionGuard` ro'yxatdan o'tgani (**guard bo'lmasa talab metadatasi o'lik** — shuning uchun ikkisi birga tekshiriladi) + 4 handler talabi + `explain` ochiqligi.
+- `hr-employee/offboarding.service.test.ts` **YANGI** 4 — revoke O'SHA `tx` bilan chaqiriladi · `hrEmployeePermission` tozalanadi + `hrRoles: []` · `permissions.invalidate` · allaqachon yakunlangan bo'lsa qayta revoke YO'Q (idempotent).
+
+**Gate:** `vitest` — tegilgan modullar (hr, group, manager, auth, permissions) + `app-boot.test.ts`
+**1160/1160 yashil**; butun API suite **5293/5296** (2 skip + quyidagi 1 flake). `biome check` tegilgan
+5 modul: 0 error (13 warning — mavjud, meniki emas). `i18n:gate` — kerak emas (UI-matn tegilmadi).
+**`typecheck` va `lint:product` REPO BO'YICHA QIZIL, LEKIN MENING FAYLLARIMDA EMAS** — parallel sessiya
+ayni paytda `payment-gateway`/`money`/`report` + `schema.prisma` + yangi migratsiya ustida ishlayapti
+(`git status`: 20+ begona modified fayl, `20260809120000_gateway_payment_in_link_and_unique/` untracked).
+Qolgan 5 tsc xatosi 2 ta begona faylda (`payment-gateway/*` — generated Prisma client ularning yangi
+`paymentInId` sxemasidan orqada), 28 lint xatosi 17 ta begona faylda. **Ularning fayllariga TEGILMADI
+va `prisma generate` YUGURTIRILMADI** (§6.1/§6.4 — ish daraxti ular bilan bo'lishilgan).
+
+**Qolgan guard-siz mutatsiya-controllerlar (reja so'ragan ro'yxat) — 61 handler / 23 controller.**
+Skaner: har `@Post/@Patch/@Put/@Delete` handler'ining dekorator bloki `@RequirePermission` YOKI
+`@RequireHrPermission` bilan yopilganmi. Uch toifa:
+
+1. **ATAYLAB ochiq (ruxsat KERAK EMAS — token/self-scope o'z himoyasi):** `auth.controller` (login/refresh/
+   logout/change-password/pos-pin — o'zi autentifikatsiya sirti; `PATCH me` self-scope), `telegram-webhook`,
+   `payment-gateway` (webhook — provider imzosi), `supply-approval-public` + `driver-public` + `publication`
+   (magic-link token), `presence` (heartbeat), `notification` (mark-read — o'z bildirishnomasi),
+   `user-settings` (`PUT` — o'z sozlamasi), `saved-filter` (o'z filtri), `onboarding` (o'z qadamlari),
+   `manager-kpi.explain` (xodim o'z kuni), `product :id/sale-price` (**egasi qarori 2026-07-17: har kassir
+   qila oladi** — kodda hujjatlangan, TEGILMADI).
+2. **HAQIQIY teshik, keyingi fazaga (ustuvorlik tartibida):** `sklad-keeper` (`PUT /` + `PUT receipt-printer`
+   + `DELETE :skladNo` — kompaniya sozlamasi, `settings` entity aniq), `shift-schedule` va `smena`
+   (ish-jadval/smena CRUD — davomat va jarimaga ta'sir), `debt.controller:359 POST pos/pay` (**pul** —
+   qarz to'lovi), `driver-cash` (`collect`/`hand-over`/`cancel` — **naqd** inkassatsiya),
+   `restock-task`, `pick-list` (`sync`/`pick-state`/`printed`), `hr/attendance-geo/ping.controller`
+   (`my/*` self-scope, lekin `ping` boshqa xodim nomidan yozilishi mumkinmi — tekshirish kerak),
+   `work-location`, `driver-tracking`/`driver-trip` (`DispatcherGuard` bor — qisman yopiq).
+3. **HR-RBAC ostidagilar** (`@RequireHrPermission` bor) skanerda «yopiq» sanaladi — ular ikkinchi
+   RBAC bilan boshqariladi; `HR-10` bilan bir sinfdagi ikki-RBAC birlashuvi qarzi ochiq qoladi.
+
+**Qolgan qarz / DEFER:**
+- **Amaldagi access-JWT (15 daq) offboarding'dan keyin ham tirik** — deny-list yoki qisqaroq TTL bu fazada
+  QILINMADI (auditning o'zi ham «ko'rib chiq» degan). Refresh yo'li endi darhol yopiladi.
+- **Ikki parallel RBAC** (core `Role/RolePermission` ∥ `HrEmployeePermission`+`hrRoles`) birlashtirilmadi —
+  `HR-10`ning strukturaviy ildizi shu; alohida faza talab qiladi.
+- `kpi-config` **o'ziga** konfiguratsiya yozish: endi `employees:full` kerak, lekin `employees:full` egasi
+  hamon O'Z KPI maqsadini qo'ya oladi (self-check faqat ruxsat/rol yo'llariga qo'yildi). Oylik-eskalatsiya
+  qoldig'i — hujjatlandi.
+- **Ruxsat qattiqlashuvi QA talab qiladi:** `employees:full`siz menejer endi KPI konfiguratsiyasini saqlay
+  olmaydi va `settings` ruxsatisiz foydalanuvchi «Отделы» yarata olmaydi (403). Egada `hrRoles:['admin']`
+  bor (seed-hr) ⇒ egaga ta'sir yo'q.
+- **Topilgan flake (meniki emas, tuzatilmadi — boshqa faza):** `hr/hr-shared/crypto.util.test.ts` «tampered
+  ciphertext» testi oxirgi 2 hex belgini `ff` bilan almashtiradi — shifrmatn allaqachon `ff` bilan tugasa
+  «buzish» no-op bo'lib test yiqiladi (~1/256 ehtimol; to'liq suite'da bir marta yiqildi, yakka ishga
+  tushirishda yashil).
+- Browser-smoke YO'Q — **Phase-1**. Runtime tekshiruv: «Отделы» CRUD, HR ruxsat ekrani, KPI konfiguratsiya
+  saqlash, bo'shatishni yakunlash → xodim darhol chiqib ketishi — Phase-2 QA cohort'iga.
+
+---
+
+## Faza 19 — To'lov-gateway → moliyaviy hujjat + idempotency (`INT-02`,`INT-03`,`INT-04`) (2026-08-09) — **Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q**
+
+### Da'volarni kodda tasdiqlash (reja §2) — 3/3, lekin BITTA MISOL NOTO'G'RI
+- **`INT-02` TASDIQLANDI.** `paymePerform` faqat `status:'captured'` yozardi; `handleClickCallback`
+  action=1 ham shunday. `grep -rl paymentGatewayTx apps/api/src` → **yagona fayl** (boshqa iste'molchi
+  yo'q) ⇒ gateway puli daftarga umuman kirmasdi.
+- **`INT-03` TASDIQLANDI, misoli esa YO'Q.** Kod haqiqatan `Number(order.sumMinor) !== Number(params.amount) * 100`
+  edi. Ammo audit keltirgan misol (`115.23 → 11523.000000000002`) **noto'g'ri**: o'lchandi —
+  `115.23 * 100 === 11523` AYNAN. Bug-klass real, uni ko'rsatuvchi qiymatlar boshqa:
+  `0.29 → 28.999999999999996`, `8.29 → 828.9999999999999`, `19.99 → 1998.9999999999998`.
+  Test ana shu **o'lchangan** qiymatlarda yozildi (audit misoli bilan yozilsa test yashil bo'lib,
+  «fix ishladi» degan yolg'on dalil bo'lardi).
+- **`INT-04` TASDIQLANDI.** `schema.prisma` da faqat `@@index([providerTxId])`; Click PREPARE mavjudlik
+  tekshiruvisiz `create` qilardi, `paymeCreate` esa check-then-act edi.
+
+### O'zgarishlar
+1. **`INT-02` — capture → PaymentIn draft.** `settleCapture()` (yangi): (a) **atomik claim**
+   `updateMany({where:{id, OR:[{status:{not:'captured'}}, {paymentInId:null, errorMsg:{not:null}}]}})` —
+   parallel ikki Perform'dan faqat bittasi `count===1` oladi; (b) `writeCapturePaymentIn()` —
+   `PaymentInService.create` orqali **draft** PaymentIn + `operations:[{targetKind:'customerorder'}]`
+   bog'lanishi; (c) `paymentInId` tx'ga yoziladi. Xato bo'lsa `errorMsg` yoziladi va xato yuqoriga
+   otiladi ⇒ Payme/Click qayta chaqiradi va claim'ning **ikkinchi shoxi** qayta urinadi (o'z-o'zini
+   tuzatish). Click COMPLETE ham shu yo'ldan; xatoda `FAILED_TO_UPDATE_USER` qaytadi.
+   `paymeCancel` capture'dan keyingi bekorda **loud warn + `providerLog.refundPendingPaymentInId`**.
+2. **`INT-03` — float yo'q qilindi.** `parseClickAmountToMinor()` (click.protocol.ts): o'nlik STRING
+   butun/kasr qismga bo'linib BigInt tiyin yig'iladi; yaroqsiz format → `null` ⇒ INCORRECT_AMOUNT
+   (NaN jim o'tmaydi). Payme tomonida `paymeAmountMatches()` — `BigInt` solishtiruv
+   (`Number(sumMinor)` 2^53 dan katta summada yaxlitlardi).
+3. **`INT-04` — DB darajasida idempotency.** `@@unique([accountId, provider, providerTxId])` +
+   migratsiya `20260809120000_gateway_payment_in_link_and_unique`. `paymeCreate` va Click PREPARE:
+   existing-check → `create` → **P2002 catch** → g'olib yaratgan qatorni qaytarish
+   (`findByProviderTxIdOnConflict`). NULL `providerTxId` (operator `initiatePayment`) cheklovga
+   tushmaydi — Postgres NULL'larni teng deb hisoblamaydi.
+4. **Yo'l-yo'lakay (mening topilmam, rejada yo'q edi):** (a) `paymeCreate` summani buyurtma bilan
+   **umuman tekshirmasdi** — endi `amountMinor` to'g'ridan-to'g'ri PaymentIn summasiga aylangani uchun
+   bu majburiy bo'ldi (aks holda soxta CreateTransaction hujjatga yolg'on summa yozardi);
+   (b) takroriy `PerformTransaction` har safar **yangi `perform_time`** qaytarardi — Payme uni
+   solishtiradi; endi saqlangan `capturedAt` qaytariladi; (c) UZS bo'lmagan buyurtmada capture
+   **TO'XTAYDI** (gateway UZS tiyinda ishlaydi; `M-03/M-04` sinfidagi ~12 000× xatoning oldi olindi).
+5. **`PaymentInService.create(accountId, userId: string|null, raw)`** — webhook'da inson-aktor yo'q.
+   Soxta «tizim xodimi» O'YLAB TOPILMADI (u kimningdir ismi ostida yolg'on audit-iz qoldirardi):
+   egalik buyurtmadan (`ownerId`/`groupId`) meros oladi, `AuditLog.userId` esa `null` (ustun nullable).
+6. **Modul simlash + qo'riqchi.** `PaymentGatewayModule.imports += PaymentInModule` (OSHKORA —
+   `global-di-injection-unguarded` sinfi). `app-boot.test.ts` dagi «in'yeksiya premisasi» bloki
+   `describe.each(INJECTION_PREMISES)` ga aylantirildi; ro'yxatga `PaymentInService→PaymentInModule`
+   qo'shildi. **Vakuum emasligi o'lchandi**: importni olib tashlab yugurtirildi → test QIZIL.
+
+### Testlar (TDD — avval yiqildi, keyin yashil)
+`payment-gateway.service.test.ts` (yangi, 12 test). **RED jonli o'lchandi: 9 qizil / 3 yashil**
+(3 yashil = ataylab negativ-nazorat: haqiqiy nomuvofiq summa, buzuq `'abc'`, ketma-ket paymeCreate).
+Soxta Prisma `updateMany` semantikasi **haqiqiy** (shart joriy qator holatiga solishtiriladi) —
+`vi.fn(async()=>({count:1}))` mock'i claim-poygasini ko'rsata olmasdi. Qamrov: Payme Perform →
+PaymentIn (barcha maydonlar + `userId===null`) · Click COMPLETE → PaymentIn · **takroriy Perform →
+PaymentIn FAQAT 1 marta + o'sha `perform_time`** · PaymentIn yiqilsa → `errorMsg` + keyingi retry
+qayta yaratadi · 19.99/0.29/8.29 PREPARE'dan o'tadi · nomuvofiqlik va `'abc'` hamon rad · Payme 2^53+1
+aniqlik · takroriy PREPARE/CreateTransaction bitta qator · P2002 poygasi.
+
+### Gate (jonli o'lchangan)
+- `@moysklad/api typecheck` → **0**
+- vitest: `payment-gateway` + `payment-in` + `bank-import` + `app-boot` → **116/116**
+  (+ `customer-order`/`money` bilan kengaytirilgan yugurtish → **172/172**)
+- `i18n:gate` → **9/9** (UI-matn tegilmadi)
+- Migratsiya lokal `climart_adopt`ga qo'llandi; `migrate diff` → mening obyektlarim uchun **drift 0**
+  (qolgan diff = oldindan mavjud indeks-RENAME'lar, meniki emas). `prisma generate` bajarildi.
+- ⚠️ **`pnpm lint:product` PATH-CHEKLANGAN (§6.6):** repo-wide qizil — `apps/api/src/modules/report/*`
+  (parallel sessiyaning Faza 17 ishi, daraxtda commit qilinmagan holda turibdi). **Mening 5 faylim
+  biome: 0 error, 0 warning** (alohida yugurtirildi).
+- **Browser-smoke YO'Q.**
+
+### 🟠 Qolgan qarz / DEFER
+1. **Bitta DB-tranzaksiya emas** (reja «(tx) ichida» degan edi). `PaymentInService.create` o'z
+   klientida ishlaydi; uni tashqi `tx`ga o'tkazish butun servisni qayta simlashni talab qilardi.
+   O'rniga atomik claim + retry-shoxi qo'yildi. **Qoldiq oyna (halol):** claim yozildi-yu hujjat
+   yozilmadi VA provider boshqa retry yubormasa — qator `captured + paymentInId=null + errorMsg`
+   bo'lib qoladi. Bu **ko'rinadigan** qarz (operator filtri), jimgina yo'qolish emas.
+2. **Refund hujjati YO'Q.** `paymeCancel(-2)` faqat ogohlantiradi + `providerLog`ga yozadi; teskari
+   moliyaviy hujjat avtomatik yaratilmaydi (reja ham «qaytarish YOKI admin-xabar» deb qoldirgan edi).
+3. **PaymentIn `draft` bo'lib qoladi** — post qilinmaydi, ya'ni balans/pul-daftari **hali** o'zgarmaydi.
+   Bu ataylab: avtomatik post qilish Faza 3/11 ledger yo'llarini webhook'dan ishga tushirardi.
+   Operator draft'ni ko'radi va o'zi post qiladi. To'liq avtomatlashtirish — alohida faza.
+4. **UZS bo'lmagan buyurtmada capture to'xtaydi** (yuqorida) — ko'p-valyutali gateway alohida ish.
+5. **Prod migratsiya xavfi:** `sherset_v2` sxema-drift muhitida `CREATE UNIQUE INDEX` mavjud
+   dublikatlar bo'lsa **yiqiladi** (ataylab — pul qatorlari jimgina o'chirilmaydi). Deploydan oldin
+   migratsiya izohidagi `SELECT ... HAVING COUNT(*) > 1` so'rovini yugurtirish kerak.
+   Lokalda tekshirildi: jadval bo'sh (0 qator).
+6. `initiatePayment` (operator yo'li) capture'ga ulanmagan — Payme/Click redirect oqimida ishlatilmaydi.

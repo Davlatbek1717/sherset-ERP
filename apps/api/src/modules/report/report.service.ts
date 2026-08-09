@@ -2,7 +2,13 @@ import { Prisma } from '@moysklad/db';
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { reportDateBounds } from './report-date-bounds.util.js';
-import { type RateContext, consolidateToBase, loadRateContext } from './report-rate-ctx.util.js';
+import {
+  CurrencyTally,
+  type RateContext,
+  type UnconvertedAmount,
+  consolidateToBase,
+  loadRateContext,
+} from './report-rate-ctx.util.js';
 import {
   type ProductMovementQueryInput,
   ProductMovementQuerySchema,
@@ -33,6 +39,12 @@ export interface SalesReport {
   currency: string;
   /** True when source docs span >1 currency (revenue is converted). */
   mixedCurrency: boolean;
+  /**
+   * M-12: rates-siz valyuta jamiga QO'SHILMAYDI — shu yerda o'z valyutasida
+   * alohida qaytadi («konvertatsiya qilinmagan» qatori). Bo'sh = hammasi
+   * konsolidatsiya qilindi.
+   */
+  unconvertedByCurrency: UnconvertedAmount[];
 }
 
 /**
@@ -74,7 +86,7 @@ export class ReportService {
   async salesReport(accountId: string, raw: unknown): Promise<SalesReport> {
     const filter = this.parseFilter(raw);
     const ctx = await loadRateContext(this.prisma.client, accountId);
-    const seen = new Set<string>();
+    const seen = new CurrencyTally();
 
     // 1. Totals row — same regardless of grouping.
     const totals = await this.computeTotals(accountId, filter, ctx, seen);
@@ -85,7 +97,14 @@ export class ReportService {
       groups = await this.computeGroups(accountId, filter, ctx, seen);
     }
 
-    return { filter, totals, groups, currency: ctx.baseCode, mixedCurrency: seen.size > 1 };
+    return {
+      filter,
+      totals,
+      groups,
+      currency: ctx.baseCode,
+      mixedCurrency: seen.mixed,
+      unconvertedByCurrency: seen.unconvertedRows(),
+    };
   }
 
   // -------------------------------------------------------------------
@@ -209,7 +228,7 @@ export class ReportService {
     accountId: string,
     filter: SalesReportFilterInput,
     ctx: RateContext,
-    seen: Set<string>,
+    seen: CurrencyTally,
   ): Promise<SalesReportRow> {
     // Group by currency so document-currency revenue/VAT can be
     // base-consolidated; COGS (cost_sum_minor) is already base
@@ -292,7 +311,7 @@ export class ReportService {
     accountId: string,
     filter: SalesReportFilterInput,
     ctx: RateContext,
-    seen: Set<string>,
+    seen: CurrencyTally,
   ): Promise<SalesReportRow[]> {
     switch (filter.groupBy) {
       case 'day':
@@ -321,7 +340,7 @@ export class ReportService {
     filter: SalesReportFilterInput,
     unit: 'day' | 'week' | 'month' | 'quarter' | 'year',
     ctx: RateContext,
-    seen: Set<string>,
+    seen: CurrencyTally,
   ): Promise<SalesReportRow[]> {
     const truncUnit = DATE_TRUNC_UNIT[unit];
     const { gte, lt } = reportDateBounds(filter.dateFrom, filter.dateTo);
@@ -431,7 +450,7 @@ export class ReportService {
     filter: SalesReportFilterInput,
     fkField: 'agentId' | 'organizationId' | 'storeId' | 'ownerId',
     ctx: RateContext,
-    seen: Set<string>,
+    seen: CurrencyTally,
   ): Promise<SalesReportRow[]> {
     const demandWhere = this.demandWhere(accountId, filter);
     const returnWhere = this.returnWhere(accountId, filter);
@@ -521,7 +540,7 @@ export class ReportService {
     accountId: string,
     filter: SalesReportFilterInput,
     ctx: RateContext,
-    seen: Set<string>,
+    seen: CurrencyTally,
   ): Promise<SalesReportRow[]> {
     const { gte, lt } = reportDateBounds(filter.dateFrom, filter.dateTo);
     const optionalAnd = (col: string, val: string | undefined) =>

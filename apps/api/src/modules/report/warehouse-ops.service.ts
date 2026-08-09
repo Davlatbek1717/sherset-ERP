@@ -2,7 +2,12 @@ import { Inject, Injectable } from '@nestjs/common';
 import { z } from 'zod';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { reportDateBounds } from './report-date-bounds.util.js';
-import { consolidateToBase, loadRateContext } from './report-rate-ctx.util.js';
+import {
+  CurrencyTally,
+  type UnconvertedAmount,
+  consolidateToBase,
+  loadRateContext,
+} from './report-rate-ctx.util.js';
 
 /**
  * «Ombor operatsiyalari» (Sherset custom) — the supply→putaway→picking chain
@@ -49,6 +54,12 @@ export interface WarehouseOpsReport {
   currency: string;
   /** True when window documents span >1 currency. */
   mixedCurrency: boolean;
+  /**
+   * M-12: rates-siz valyuta jamiga QO'SHILMAYDI — shu yerda o'z valyutasida
+   * alohida qaytadi («konvertatsiya qilinmagan» qatori). Bo'sh = hammasi
+   * konsolidatsiya qilindi.
+   */
+  unconvertedByCurrency: UnconvertedAmount[];
 }
 
 type TaskGroupRow = {
@@ -68,7 +79,7 @@ export class WarehouseOpsService {
     const { gte, lt } = reportDateBounds(filter.dateFrom, filter.dateTo);
     const window = { gte, lt };
     const ctx = await loadRateContext(this.prisma.client, accountId);
-    const seen = new Set<string>();
+    const seen = new CurrencyTally();
 
     const [supplyByCur, supplyDrafts, demandByCur, backlogRows, doneRows] = await Promise.all([
       this.prisma.client.supply.groupBy({
@@ -172,7 +183,8 @@ export class WarehouseOpsService {
       outbound: { demandsCount, demandsSumMinor: demandsSum.toString() },
       keepers: keeperRows,
       currency: ctx.baseCode,
-      mixedCurrency: seen.size > 1,
+      mixedCurrency: seen.mixed,
+      unconvertedByCurrency: seen.unconvertedRows(),
     };
   }
 }

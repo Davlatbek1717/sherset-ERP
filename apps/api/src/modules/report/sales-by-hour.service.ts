@@ -2,7 +2,12 @@ import { Inject, Injectable } from '@nestjs/common';
 import { z } from 'zod';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { reportDateBounds } from './report-date-bounds.util.js';
-import { consolidateToBase, loadRateContext } from './report-rate-ctx.util.js';
+import {
+  CurrencyTally,
+  type UnconvertedAmount,
+  consolidateToBase,
+  loadRateContext,
+} from './report-rate-ctx.util.js';
 
 export const SalesByHourFilterSchema = z.object({
   /** ISO date — defaults to "30 days ago" if omitted. */
@@ -32,6 +37,12 @@ interface SalesByHourResponse {
   currency: string;
   /** True when demands in scope span >1 currency (revenue is converted). */
   mixedCurrency: boolean;
+  /**
+   * M-12: rates-siz valyuta jamiga QO'SHILMAYDI — shu yerda o'z valyutasida
+   * alohida qaytadi («konvertatsiya qilinmagan» qatori). Bo'sh = hammasi
+   * konsolidatsiya qilindi.
+   */
+  unconvertedByCurrency: UnconvertedAmount[];
 }
 
 /**
@@ -62,7 +73,7 @@ export class SalesByHourService {
     // must include the WHOLE last day (`moment <= to` dropped it). See util.
     const { gte, lt } = reportDateBounds(from, to);
     const ctx = await loadRateContext(this.prisma.client, accountId);
-    const seen = new Set<string>();
+    const seen = new CurrencyTally();
 
     type Row = {
       hour: number;
@@ -138,7 +149,8 @@ export class SalesByHourService {
       rows: padded,
       peakHour,
       currency: ctx.baseCode,
-      mixedCurrency: seen.size > 1,
+      mixedCurrency: seen.mixed,
+      unconvertedByCurrency: seen.unconvertedRows(),
     };
   }
 }

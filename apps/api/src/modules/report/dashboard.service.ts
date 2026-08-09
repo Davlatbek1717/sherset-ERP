@@ -17,7 +17,7 @@ import {
 // Analitika TZ §4 — yagona formulalar qatlami. `percentOf` deb nomlangan:
 // bu faylda `percent` lokal o'zgaruvchi sifatida band.
 import { percent as percentOf } from './metrics/index.js';
-import { consolidateToBase, loadRateContext } from './report-rate-ctx.util.js';
+import { CurrencyTally, consolidateToBase, loadRateContext } from './report-rate-ctx.util.js';
 import { ReportService } from './report.service.js';
 
 /** Products with qty - reservedQty <= this threshold are counted as low-stock. V1 hardcoded. */
@@ -652,7 +652,11 @@ export class DashboardService {
       GROUP BY currency
     `;
     const ctx = await loadRateContext(this.prisma.client, accountId);
-    const seen = new Set<string>();
+    // M-12 (Faza 17): kursi topilmagan valyuta jamiga QO'SHILMAYDI (ilgari
+    // face-value qo'shilardi). Dashboard vidjeti qoldiqni alohida ko'rsatuvchi
+    // maydonga ega emas — bu OCHIQ QARZ (rejadagi Faza 17 hisobotida qayd etilgan);
+    // to'liq hisobotlar (/reports/*) unconvertedByCurrency bilan qaytaradi.
+    const seen = new CurrencyTally();
     let count = 0;
     let totalBase = 0n;
     for (const r of aggRows) {
@@ -725,7 +729,11 @@ export class DashboardService {
     `;
 
     const ctx = await loadRateContext(this.prisma.client, accountId);
-    const seen = new Set<string>();
+    // M-12 (Faza 17): kursi topilmagan valyuta jamiga QO'SHILMAYDI (ilgari
+    // face-value qo'shilardi). Dashboard vidjeti qoldiqni alohida ko'rsatuvchi
+    // maydonga ega emas — bu OCHIQ QARZ (rejadagi Faza 17 hisobotida qayd etilgan);
+    // to'liq hisobotlar (/reports/*) unconvertedByCurrency bilan qaytaradi.
+    const seen = new CurrencyTally();
     const balanceByOrg = new Map<string, bigint>();
     for (const r of rows) {
       const base = consolidateToBase(r.balance, r.currency, ctx, seen);
@@ -782,7 +790,11 @@ export class DashboardService {
     `;
 
     const ctx = await loadRateContext(this.prisma.client, accountId);
-    const seen = new Set<string>();
+    // M-12 (Faza 17): kursi topilmagan valyuta jamiga QO'SHILMAYDI (ilgari
+    // face-value qo'shilardi). Dashboard vidjeti qoldiqni alohida ko'rsatuvchi
+    // maydonga ega emas — bu OCHIQ QARZ (rejadagi Faza 17 hisobotida qayd etilgan);
+    // to'liq hisobotlar (/reports/*) unconvertedByCurrency bilan qaytaradi.
+    const seen = new CurrencyTally();
     const byMonth = new Map<string, { inflow: bigint; outflow: bigint }>();
     for (const r of rows) {
       const key = r.bucket.toISOString().slice(0, 7); // YYYY-MM

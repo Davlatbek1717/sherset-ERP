@@ -1,7 +1,12 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { z } from 'zod';
 import { PrismaService } from '../../prisma/prisma.service.js';
-import { consolidateToBase, loadRateContext } from './report-rate-ctx.util.js';
+import {
+  CurrencyTally,
+  type UnconvertedAmount,
+  consolidateToBase,
+  loadRateContext,
+} from './report-rate-ctx.util.js';
 
 export const AgingFilterSchema = z.object({
   /** 'receivables' (debtors — money customers owe us, default) or 'payables' (suppliers we owe). */
@@ -42,6 +47,12 @@ interface AgingResponse {
   currency: string;
   /** True when invoices in scope span >1 currency (amounts are converted). */
   mixedCurrency: boolean;
+  /**
+   * M-12: rates-siz valyuta jamiga QO'SHILMAYDI — shu yerda o'z valyutasida
+   * alohida qaytadi («konvertatsiya qilinmagan» qatori). Bo'sh = hammasi
+   * konsolidatsiya qilindi.
+   */
+  unconvertedByCurrency: UnconvertedAmount[];
 }
 
 const BUCKETS: Array<Omit<AgingBucket, 'amountMinor' | 'invoiceCount'>> = [
@@ -84,7 +95,7 @@ export class AgingService {
     const filter = AgingFilterSchema.parse(rawFilter);
     const asOf = filter.asOf ? new Date(filter.asOf) : new Date();
     const ctx = await loadRateContext(this.prisma.client, accountId);
-    const seen = new Set<string>();
+    const seen = new CurrencyTally();
 
     type Row = {
       counterparty_id: string;
@@ -202,7 +213,8 @@ export class AgingService {
       totalsByBucket,
       rows: cpRows,
       currency: ctx.baseCode,
-      mixedCurrency: seen.size > 1,
+      mixedCurrency: seen.mixed,
+      unconvertedByCurrency: seen.unconvertedRows(),
     };
   }
 }

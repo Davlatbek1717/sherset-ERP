@@ -2,7 +2,12 @@ import { Inject, Injectable } from '@nestjs/common';
 import { z } from 'zod';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { reportDateBounds } from './report-date-bounds.util.js';
-import { consolidateToBase, loadRateContext } from './report-rate-ctx.util.js';
+import {
+  CurrencyTally,
+  type UnconvertedAmount,
+  consolidateToBase,
+  loadRateContext,
+} from './report-rate-ctx.util.js';
 
 export const AverageBasketFilterSchema = z.object({
   /** ISO date — defaults to "30 days ago" if omitted. */
@@ -43,6 +48,12 @@ interface AverageBasketResponse {
   currency: string;
   /** True when demands in scope span >1 currency (revenue is converted). */
   mixedCurrency: boolean;
+  /**
+   * M-12: rates-siz valyuta jamiga QO'SHILMAYDI — shu yerda o'z valyutasida
+   * alohida qaytadi («konvertatsiya qilinmagan» qatori). Bo'sh = hammasi
+   * konsolidatsiya qilindi.
+   */
+  unconvertedByCurrency: UnconvertedAmount[];
 }
 
 /**
@@ -76,7 +87,7 @@ export class AverageBasketService {
     const truncUnit =
       filter.granularity === 'day' ? 'day' : filter.granularity === 'week' ? 'week' : 'month';
     const ctx = await loadRateContext(this.prisma.client, accountId);
-    const seen = new Set<string>();
+    const seen = new CurrencyTally();
 
     type Row = {
       bucket: Date;
@@ -169,7 +180,8 @@ export class AverageBasketService {
       },
       rows: out,
       currency: ctx.baseCode,
-      mixedCurrency: seen.size > 1,
+      mixedCurrency: seen.mixed,
+      unconvertedByCurrency: seen.unconvertedRows(),
     };
   }
 }

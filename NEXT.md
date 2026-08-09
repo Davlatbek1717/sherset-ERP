@@ -305,6 +305,101 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-09a (AUDIT-FIX FAZA 23 — HR self-eskalatsiya guard + login-only mutatsiyalarga ruxsat
+> + offboarding token-revoke · `HR-10`+`AUTH-07`+`AUTH-05`) · Phase-1: strukturaviy +
+> unit-tasdiqlangan, browser-smoke YO'Q · ⏳ DEPLOY QILINMAGAN · 🗄️ migratsiya YO'Q ·
+> ⚠️ **navbatdan tashqari** — foydalanuvchi Faza 23 sessiya-boshi promptini bevosita berdi ·
+> ⚠️ parallel sessiya AYNI PAYTDA bir daraxtda Faza 17 (`payment-gateway`/`money`/`report` +
+> `schema.prisma` + yangi migratsiya) qilmoqda — commit'im hook'siz va pathspec-cheklangan (§6.7B),
+> `docs/REJA-…md` ham faqat MENING hunk'larim `git apply --cached` bilan staged (ularning
+> commit qilinmagan Faza 17 hisoboti daraxtda tegilmay qoldi)
+>
+> **Nima qilindi.** (a) `HR-10`: `employees:full` egasi bir so'rov bilan HR-admin bo'lib olardi —
+> yangi sof modul `hr/hr-auth/privilege-escalation.ts` (self-check + «'admin' rolini faqat admin
+> beradi»), `PUT /hr/employees/:id/permissions` va `hrRoles` **update+create** yo'llariga ulandi
+> (create ham — yangi xodimni darhol admin qilib yaratish o'sha teshikning ikkinchi og'zi edi).
+> (b) `AUTH-07`: Group `POST/PATCH/DELETE` → `settings` ruxsati (GET ataylab ochiq); **bonus** —
+> skanerim topgan ikki oylik-ta'sirli yo'l ham yopildi: `manager/kpi` `PUT employee/:id/config`
+> (kodda `TODO(rol-gate)` turardi, class'ga `HrPermissionGuard` qo'shildi) va `POST metrics*`
+> (guard bor edi-yu handler talabi yo'q ⇒ jim o'tardi). (c) `AUTH-05`: `revokeAllForEmployee`
+> **0 chaqiruvli o'lik kod** edi — endi `offboarding.complete()` tx'ida chaqiriladi (+ `hrRoles: []`
+> + `HrEmployeePermission` tozalash + commit'dan keyin `permissions.invalidate`); `TokenService`ga
+> ixtiyoriy tx-klient qo'shildi. TDD: har blok avval qizil ko'rildi (helper 9 · permission-service 2 ·
+> hr-employee +5 · group 4 · kpi-gate 6 · offboarding 4). Batafsil: `docs/REJA-AUDIT-FIX-2026-08.md`
+> → HISOBOT JURNALI → Faza 23.
+>
+> **Gate:** vitest tegilgan modullar (hr/group/manager/auth/permissions) + `app-boot` **1160/1160** ·
+> butun API suite **5293/5296** · `biome check` tegilgan modullar **0 error**. ⚠️ **Repo-bo'yicha
+> `typecheck`/`lint:product` QIZIL — LEKIN faqat parallel sessiyaning fayllarida** (5 tsc xatosi
+> `payment-gateway/*`da: generated Prisma client ularning yangi `paymentInId` sxemasidan orqada;
+> 28 lint xatosi `money`/`report`/`payment-gateway`da). Ularga TEGILMADI, `prisma generate`
+> YUGURTIRILMADI (§6.1/§6.4). Mening fayllarim tc+lint toza.
+>
+> **🟠 QARZ / DIQQAT:** (1) **Ruxsat qattiqlashuvi** — `employees:full`siz menejer KPI
+> konfiguratsiyasini saqlay olmaydi, `settings`siz «Отделы» yaratib bo'lmaydi (403). Egada
+> `hrRoles:['admin']` bor (seed-hr) ⇒ egaga ta'sir yo'q, lekin deploy'dan keyin rol matritsasini
+> tekshir. (2) **15-daqiqalik access-JWT offboarding'dan keyin ham tirik** (deny-list/qisqa TTL —
+> alohida ish). (3) **Ikki parallel RBAC birlashtirilmadi** — `HR-10` ildizi. (4) Qolgan guard-siz:
+> **61 handler / 23 controller**, jurnalda 3 toifaga ajratilgan (ataylab ochiq ∥ haqiqiy teshik ∥
+> HR-RBAC ostida); keyingi eng xavflilari: `sklad-keeper`, `smena`/`shift-schedule`,
+> `debt POST pos/pay`, `driver-cash`. (5) Topilgan flake (meniki emas): `hr-shared/crypto.util.test.ts`
+> «tampered ciphertext» ~1/256 yiqiladi (oxirgi 2 hex'ni `ff` bilan almashtiradi).
+>
+> **⏭️ KEYINGI:** navbat bo'yicha — `docs/REJA-AUDIT-FIX-2026-08.md` → **Faza 15**
+> (`SALES-02`,`SALES-06`,`SALES-07/08`) yoki **Faza 24** (`INT-06`+`INT-07`: EDO PFX shifrlash +
+> ApiToken scope). Parallel sessiya Faza 17'ni tugatmaguncha `payment-gateway`/`money`/`report`
+> fayllariga tegmang.
+
+---
+
+> **🕒 2026-08-09a (AUDIT-FIX FAZA 17 — hisobot kurslari: tarixiy-kurs + noma'lum-valyuta ajratish +
+> per-valyuta totals · `M-11`+`M-12`+`M-14`) · Phase-1: strukturaviy + unit-tasdiqlangan,
+> browser-smoke YO'Q · ⏳ DEPLOY QILINMAGAN · 🗄️ migratsiya YO'Q · ⚠️ foydalanuvchi Faza 17
+> sessiya-boshi promptini bevosita berdi · ⚠️ parallel sessiya bir daraxtda ishladi
+> (auth/group/hr/manager/payment-gateway/payment-in + `schema.prisma`) — diff'im path-cheklangan (§6.6)
+>
+> **Ground-truth (§2).** Uchala da'vo ham kodda tasdiqlandi. Qo'shimcha topilma: **33 hujjat modeli**
+> `rate_value @default(100000000)` saqlaydi — tarixiy kurs BOR edi, hisobotlar shunchaki o'qimasdi.
+>
+> **Nima qilindi.** (a) `M-11`: `consolidateToBase(...)` 5-argument — hujjatning o'z kursi; `pnl`
+> (totals+groups) va `cash-flow` (Prisma `groupBy(['currency','rateValue'])` + 2 raw-SQL yo'li) endi
+> `GROUP BY … , rate_value` qiladi ⇒ yopilgan davr kurs qimirlaganda qayta yozilmaydi.
+> **🔑 IDENTITY-QO'RIQCHISI** (rejada yo'q, ishlab chiqishda topildi): `rate_value` default = 1e8, ya'ni
+> kursi KIRITILMAGAN USD hujjat ham 1e8 — uni ishlatish face-value bug'ini boshqa eshikdan qaytarardi.
+> Shu sabab baza bo'lmagan valyutada `1e8` = «kurs yo'q» → joriy kursga qaytiladi. Yon-foyda: mavjud
+> qatorlar uchun o'zgarish **bayt-ma-bayt neytral** (tarix jimgina qayta yozilmaydi).
+> (b) `M-12`: `Set<string> seen` → **`CurrencyTally`** (Set-mos `add/size/has/mixed` + `addUnconverted`/
+> `unconvertedRows`). Kursi topilmagan summa endi jamiga **QO'SHILMAYDI** (ilgari face-value ⇒ USD
+> 1 000.00 → 1 000 so'm, ~12 000× xato) — o'z valyutasida `unconvertedByCurrency` maydonida qaytadi
+> (11 hisobot + counterparty-balance summaries). Codemod: 13 servis, 54 o'rin.
+> `foldCurrencyRows` o'z `toBase` nusxasini tashladi — bitta konvertatsiya shartnomasi.
+> (c) `M-14`: `money-operation` uch valyuta-kalitsiz `aggregate` → ikki `groupBy(['currency'])`;
+> javob `totals.byCurrency[]` + `mixedCurrency`. FE `/money` toolbar har valyutani **o'z valyutasida**
+> formatlaydi (ilgari aralash son qattiq `'UZS'` deb ko'rsatilardi).
+> **TDD:** 9 qizil (`CurrencyTally is not a constructor`) + 5 qizil (`aggregate is not a function`)
+> jonli ko'rildi → yashil; +4 pnl testi; fold-util'ning eski «face value» testi yangi shartnomaga
+> ko'chirildi. Batafsil: `docs/REJA-AUDIT-FIX-2026-08.md` → HISOBOT JURNALI → Faza 17.
+>
+> **Gate:** api tc **0** · web tc **0** · `lint:product` **0 error** · vitest api report+money+currency
+> **367/367** (43 fayl) · web **2746 passed / 26 skipped** (183 fayl). `i18n:gate` kerak emas — yangi
+> UI-matn yo'q (mavjud `totals_in/out/net` kalitlari).
+>
+> **🟠 QARZ / DIQQAT:** (1) Tarixiy kurs faqat `pnl`+`cash-flow`da — qolgan **8 davr-oqim hisoboti**
+> (profitability, sales-by-channel/hour, average-basket, unit-economics, purchase-management,
+> warehouse-ops, report.service) hamon joriy kursda; mexanizm tayyor, SQL'ga `rate_value` qo'shish
+> qoldi. `aging`/`counterparty-balance` **ataylab** joriy kursda (ochiq-qoldiq revalyatsiyasi).
+> (2) **Dashboard** 3 vidjeti `unconvertedByCurrency`ga ega emas — kursi yo'q valyuta endi 0 ko'rinadi
+> (ilgari noto'g'ri masshtabda); har uch joyda kod-izohi qo'yildi. (3) FE hisobot sahifalari
+> `unconvertedByCurrency`ni hali **chizmaydi** (API qaytaradi) — 11 sahifalik UI ishi. (4) `M-13`
+> ochiq. (5) 📚 **NEXT.md arxiv qarzi: 66 top-entry** (chegara 8–10) — arxivlash alohida mayda
+> sessiyaga qoldi, parallel sessiya bilan kolliziya xavfi tufayli hozir qilinmadi.
+>
+> **⏭️ KEYINGI:** navbat bo'yicha — `docs/REJA-AUDIT-FIX-2026-08.md` → **Faza 15**
+> (`SALES-02`,`SALES-06`,`SALES-07/08`); yoki Faza 17 qarzi (qolgan 8 hisobotga tarixiy kurs) /
+> 18b/18c.
+
+---
+
 > **🕒 2026-08-08p (AUDIT-FIX FAZA 16 — valyuta konventsiyasi yagonalandi: isoCode-lookup +
 > kanonik ×10⁸ + valyutalararo to'lov guard · `M-03`+`DB-01`+`M-04`) `94fe12ef` · Phase-1:
 > strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q · ⏳ DEPLOY QILINMAGAN · 🗄️ migratsiya BOR

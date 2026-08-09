@@ -23,10 +23,30 @@ function currencyRows() {
 }
 
 interface TableRows {
-  demands?: Array<{ currency: string; sum_minor: bigint | null; cost_minor: bigint | null }>;
-  sales_returns?: Array<{ currency: string; sum_minor: bigint | null; cost_minor: bigint | null }>;
-  payments_out?: Array<{ currency: string; sum_minor: bigint | null; cost_minor: bigint | null }>;
-  cash_out?: Array<{ currency: string; sum_minor: bigint | null; cost_minor: bigint | null }>;
+  demands?: Array<{
+    currency: string;
+    rate_value?: bigint;
+    sum_minor: bigint | null;
+    cost_minor: bigint | null;
+  }>;
+  sales_returns?: Array<{
+    currency: string;
+    rate_value?: bigint;
+    sum_minor: bigint | null;
+    cost_minor: bigint | null;
+  }>;
+  payments_out?: Array<{
+    currency: string;
+    rate_value?: bigint;
+    sum_minor: bigint | null;
+    cost_minor: bigint | null;
+  }>;
+  cash_out?: Array<{
+    currency: string;
+    rate_value?: bigint;
+    sum_minor: bigint | null;
+    cost_minor: bigint | null;
+  }>;
 }
 
 function makeService(tables: TableRows) {
@@ -95,5 +115,105 @@ describe('PnlService — multi-currency totals', () => {
     expect(r.totals.cogsMinor).toBe('120000');
     expect(r.totals.grossProfitMinor).toBe('380000');
     expect(r.mixedCurrency).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Faza 17 / M-11 — yopilgan davr P&L barqarorligi.
+//
+// Ilgari konsolidatsiya Currency jadvalining BUGUNGI kursi bilan bo'lardi:
+// kurs har qimirlaganda yanvar oyining foydasi qayta yozilardi. Endi SQL
+// (currency, rate_value) bo'yicha guruhlaydi va har bucket o'z kursida
+// baholanadi.
+// ---------------------------------------------------------------------------
+function makeServiceWithRates(
+  tables: TableRows,
+  rates: Array<{
+    code: string;
+    default: boolean;
+    rateValue: bigint;
+    multiplicity: number;
+    indirect: boolean;
+  }>,
+) {
+  const client = {
+    currency: { findMany: vi.fn(async () => rates) },
+    $queryRaw: vi.fn(async (strings: TemplateStringsArray) => {
+      const sql = strings.join(' ');
+      if (sql.includes('FROM demands')) return tables.demands ?? [];
+      if (sql.includes('FROM sales_returns')) return tables.sales_returns ?? [];
+      if (sql.includes('FROM payments_out')) return tables.payments_out ?? [];
+      if (sql.includes('FROM cash_out')) return tables.cash_out ?? [];
+      return [];
+    }),
+  };
+  return new PnlService({ client } as never);
+}
+
+const UZS_BASE = { code: 'UZS', default: true, rateValue: E8, multiplicity: 1, indirect: false };
+const usdAt = (rate: bigint) => ({
+  code: 'USD',
+  default: false,
+  rateValue: rate * E8,
+  multiplicity: 1,
+  indirect: false,
+});
+
+describe('PnlService — tarixiy kurs (M-11)', () => {
+  // $100.00 = 10 000 sent, hujjat 11 000 kursda yozilgan.
+  const janurayUsdSale: TableRows = {
+    demands: [{ currency: 'USD', rate_value: 11_000n * E8, sum_minor: 10_000n, cost_minor: 0n }],
+  };
+
+  it('hujjat o‘z kursida baholanadi (joriy kurs EMAS)', async () => {
+    const svc = makeServiceWithRates(janurayUsdSale, [UZS_BASE, usdAt(12_000n)]);
+    const r = await svc.pnlReport('acc', RANGE);
+    // 10 000 sent × 11 000 = 110 000 000 tiyin (12 000 kursda 120 000 000 bo'lardi)
+    expect(r.totals.revenueMinor).toBe('110000000');
+  });
+
+  it('kurs 12 000 → 15 000 ga o‘zgarsa ham o‘tgan davr O‘ZGARMAYDI', async () => {
+    const before = await makeServiceWithRates(janurayUsdSale, [UZS_BASE, usdAt(12_000n)]).pnlReport(
+      'acc',
+      RANGE,
+    );
+    const after = await makeServiceWithRates(janurayUsdSale, [UZS_BASE, usdAt(15_000n)]).pnlReport(
+      'acc',
+      RANGE,
+    );
+    expect(after.totals.revenueMinor).toBe(before.totals.revenueMinor);
+    expect(after.totals.netProfitMinor).toBe(before.totals.netProfitMinor);
+  });
+
+  it('bir valyutaning ikki kursli buckets’i alohida qo‘shiladi', async () => {
+    const svc = makeServiceWithRates(
+      {
+        demands: [
+          { currency: 'USD', rate_value: 11_000n * E8, sum_minor: 10_000n, cost_minor: 0n },
+          { currency: 'USD', rate_value: 13_000n * E8, sum_minor: 10_000n, cost_minor: 0n },
+        ],
+      },
+      [UZS_BASE, usdAt(12_000n)],
+    );
+    const r = await svc.pnlReport('acc', RANGE);
+    // 110 000 000 + 130 000 000 — o'rtacha kurs bilan «tekislash» YO'Q
+    expect(r.totals.revenueMinor).toBe('240000000');
+  });
+
+  it('kursi YO‘Q valyuta jamiga qo‘shilmaydi, alohida qatorda qaytadi (M-12)', async () => {
+    const svc = makeServiceWithRates(
+      {
+        demands: [
+          { currency: 'UZS', sum_minor: 500_000n, cost_minor: 0n },
+          // Currency jadvalida EUR yo'q va hujjatda kurs muzlatilmagan.
+          { currency: 'EUR', sum_minor: 100_000n, cost_minor: 0n },
+        ],
+      },
+      [UZS_BASE],
+    );
+    const r = await svc.pnlReport('acc', RANGE);
+    expect(r.totals.revenueMinor).toBe('500000'); // 600 000 EMAS
+    expect(r.unconvertedByCurrency).toEqual([{ currency: 'EUR', amountMinor: '100000' }]);
+    expect(r.mixedCurrency).toBe(true);
   });
 });

@@ -5,6 +5,7 @@ import {
   type RateContext,
   foldCurrencyRows,
 } from './cash-flow-consolidate.util.js';
+import { CurrencyTally } from './report-rate-ctx.util.js';
 
 const E8 = 100_000_000n;
 
@@ -39,7 +40,7 @@ function row(
 
 describe('foldCurrencyRows', () => {
   it('base-currency rows pass through unchanged (identity)', () => {
-    const seen = new Set<string>();
+    const seen = new CurrencyTally();
     const out = foldCurrencyRows(
       [row({ key: 'd1', currency: 'UZS', inflowCount: 2, inflowSumMinor: 500_00n })],
       ctx(),
@@ -51,11 +52,12 @@ describe('foldCurrencyRows', () => {
       outflowCount: 0,
       outflowSumMinor: 0n,
     });
-    expect([...seen]).toEqual(['UZS']);
+    expect(seen.size).toBe(1);
+    expect(seen.has('UZS')).toBe(true);
   });
 
   it('foreign-currency rows are converted to base (USD×12000)', () => {
-    const seen = new Set<string>();
+    const seen = new CurrencyTally();
     // 100 USD = 10_000 cents → 100 × 12000 = 1_200_000 UZS = 120_000_000 tiyin
     const out = foldCurrencyRows(
       [row({ key: 'd1', currency: 'USD', inflowCount: 1, inflowSumMinor: 10_000n })],
@@ -67,7 +69,7 @@ describe('foldCurrencyRows', () => {
   });
 
   it('mixes base + foreign within one key: sums consolidated, counts added', () => {
-    const seen = new Set<string>();
+    const seen = new CurrencyTally();
     const out = foldCurrencyRows(
       [
         row({ key: 'd1', currency: 'UZS', inflowCount: 1, inflowSumMinor: 1_000_000n }),
@@ -82,20 +84,42 @@ describe('foldCurrencyRows', () => {
     expect(seen.size).toBe(2);
   });
 
-  it('unknown currency falls back to face value + still flags via seen', () => {
-    const seen = new Set<string>();
+  // M-12 (Faza 17): kursi yo'q valyuta ENDI face-value qo'shilmaydi — jamidan
+  // chiqariladi va o'z valyutasida alohida hisobga tushadi.
+  it('unknown currency is EXCLUDED from the sum and tallied separately (M-12)', () => {
+    const seen = new CurrencyTally();
     const out = foldCurrencyRows(
       [row({ key: 'd1', currency: 'EUR', inflowCount: 1, inflowSumMinor: 999n })],
       ctx(),
       seen,
     );
-    // EUR not in rates ⇒ face value (no silent drop)
-    expect(out.get('d1')?.inflowSumMinor).toBe(999n);
+    expect(out.get('d1')?.inflowSumMinor).toBe(0n);
+    expect(out.get('d1')?.inflowCount).toBe(1); // hujjat soni yo'qolmaydi
     expect(seen.has('EUR')).toBe(true);
+    expect(seen.unconvertedRows()).toEqual([{ currency: 'EUR', amountMinor: '999' }]);
+  });
+
+  // M-11: qator o'z rate_value'sini olib kelsa, o'sha kurs ustun turadi.
+  it('row rateValue wins over the current context rate (M-11)', () => {
+    const seen = new CurrencyTally();
+    const out = foldCurrencyRows(
+      [
+        row({
+          key: 'd1',
+          currency: 'USD',
+          rateValue: 11_000n * E8,
+          inflowCount: 1,
+          inflowSumMinor: 10_000n,
+        }),
+      ],
+      ctx(),
+      seen,
+    );
+    expect(out.get('d1')?.inflowSumMinor).toBe(110_000_000n);
   });
 
   it('separate keys fold independently', () => {
-    const seen = new Set<string>();
+    const seen = new CurrencyTally();
     const out = foldCurrencyRows(
       [
         row({ key: 'd1', currency: 'UZS', inflowSumMinor: 100n, inflowCount: 1 }),
@@ -110,7 +134,7 @@ describe('foldCurrencyRows', () => {
   });
 
   it('preserves first-seen key insertion order (chronological buckets)', () => {
-    const seen = new Set<string>();
+    const seen = new CurrencyTally();
     const out = foldCurrencyRows(
       [
         row({ key: '2026-01', currency: 'UZS', inflowSumMinor: 1n }),
@@ -124,7 +148,7 @@ describe('foldCurrencyRows', () => {
   });
 
   it('outflow conversion works symmetrically', () => {
-    const seen = new Set<string>();
+    const seen = new CurrencyTally();
     const out = foldCurrencyRows(
       [row({ key: 'd1', currency: 'USD', outflowCount: 1, outflowSumMinor: 10_000n })],
       ctx(),
@@ -135,7 +159,7 @@ describe('foldCurrencyRows', () => {
   });
 
   it('empty currency string → treated as base', () => {
-    const seen = new Set<string>();
+    const seen = new CurrencyTally();
     const out = foldCurrencyRows(
       [row({ key: 'd1', currency: '', inflowSumMinor: 42n, inflowCount: 1 })],
       ctx(),
@@ -146,7 +170,7 @@ describe('foldCurrencyRows', () => {
   });
 
   it('zero amounts stay zero (no spurious conversion)', () => {
-    const seen = new Set<string>();
+    const seen = new CurrencyTally();
     const out = foldCurrencyRows(
       [row({ key: 'd1', currency: 'USD', inflowCount: 0, inflowSumMinor: 0n })],
       ctx(),
