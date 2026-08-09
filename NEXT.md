@@ -305,6 +305,45 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-09f (AUDIT-FIX FAZA 25 — DB indeks-paket: hot-FK + barcode GIN + INN/yacheyka
+> expression · `DB-04`,`DB-05`,`DB-08`,`PERF-12`,`PERF-14`) · Phase-1: strukturaviy +
+> **EXPLAIN-tasdiqlangan**, browser-smoke YO'Q · ⏳ DEPLOY QILINMAGAN ·
+> 🗄️ **migratsiya BOR** (`20260809140000_perf_index_pack_fk_barcode_inn_cell`) ·
+> ⚠️ **navbatdan tashqari** — foydalanuvchi IDE'da Faza 25 sessiya-boshi promptini bevosita berdi ·
+> ⚠️ parallel sessiyalar Faza 21/24'ni shu vaqtda commit qildi; `docs/progress.json` ularning
+> stage'ida turgan — commit'im pathspec-cheklangan, ularning ishiga TEGILMADI
+>
+> **Nima qilindi.** 10 indeks: 8 tasi `schema.prisma`da (`Product.barcodes` GIN `ArrayOps` ·
+> `CustomerOrder.statusId/contractId/projectId/storeId` · `Demand.statusId` · `RetailSale.agentId` ·
+> `Debt[accountId,problem,status]`), 2 tasi raw expression (`products_yacheyka_idx`,
+> `counterparties_inn_trgm_idx`). **Kod-mantiq tegilmadi (0 `.ts`), unique/constraint qo'yilmadi.**
+>
+> **🔴 REJA TAKLIF QILGAN IFODA XATO EDI** — keyingi indeks fazalari uchun sabot. Reja
+> `((uz_requisites->>'inn'))` dedi; Prisma esa `(uz_requisites #>> ARRAY['inn']::text[]) LIKE '%…%'`
+> emit qiladi. Postgres expression-indeksni **parse-daraxt tengligi** bo'yicha tanlaydi ⇒ `->>`
+> indeksi hech qachon ishlatilmasdi (ustiga, leading-wildcard LIKE btree'ni butunlay chetlaydi —
+> `gin_trgm_ops` kerak). **Qoida: expression-indeks yozishdan oldin Prisma'ning haqiqiy SQL'ini
+> `log:['query']` bilan qo'lga ol, keyin EXPLAIN normalizatsiyasidan ifodani ko'chir.**
+>
+> **O'lchov (RED→GREEN).** Migratsiyadan oldin 8 predikatning hammasi `Filter`/`Seq Scan` edi →
+> keyin `Index Cond`/`Index Only Scan`. 30k-qatorli hajm-testi (tranzaksiya ichida, ROLLBACK bilan —
+> dev-DB o'zgarmadi, planner DEFAULT): `PERF-12` «Покупатели» semi-join subplan narxi **1948 → 8.30**
+> (`Index Only Scan using retail_sales_agent_id_idx`); yacheyka va INN ham indeksga o'tdi.
+>
+> **🟠 Yarim yopilgan (keyingi fazaga).** (1) **`DB-04`** — barcode GIN ro'yxat/`count` yo'lida
+> ishlaydi, lekin POS `findFirst` (`LIMIT 1`) da planner uni TANLAMAYDI (massiv `@>` uchun default
+> 0.005 selektivlik). Haqiqiy yechim — barcode unique/normalizatsiya (dublikat-merge data-migration).
+> (2) **`DB-05`** — `bank-import.service.ts:443` HAMON butun kontragent jadvalini JS'ga yuklaydi;
+> SQL-lookup'ga o'tkazilgach INN uchun qo'shimcha **btree** expression-indeks kerak (trgm GIN
+> teng-solishtirishga yaramaydi). To'liq ro'yxat: reja → «HISOBOT JURNALI → Faza 25 → DEFER».
+>
+> **Deploy eslatmasi.** `CREATE INDEX` SHARE qulfini oladi (yozuv bloklanadi) — past yuklamada
+> qo'lla. Prod DB'lar `_prisma_migrations`-tracked emas ⇒ `prisma db execute --file …` bilan qo'lda;
+> fayl `IF NOT EXISTS` bilan idempotent (ikki marta yugurtirib tekshirildi).
+>
+> **Keyingi:** reja bo'yicha **Faza 26** (dashboard `updatedAt` indeks + kesh + overdue raw-SQL) —
+> u Faza 25'ni tavsiya-bog'liqlik sifatida ko'rsatgan, endi ochiq.
+
 > **🕒 2026-08-09e (AUDIT-FIX FAZA 21 — Telegram webhook secret validatsiya + gateway constant-time ·
 > `INT-01`/`AUTH-01` + `INT-14` + yo'l-yo'lakay `INT-13`) · Phase-1: strukturaviy +
 > unit-tasdiqlangan, browser-smoke YO'Q · ⏳ DEPLOY QILINMAGAN · 🗄️ migratsiya YO'Q ·

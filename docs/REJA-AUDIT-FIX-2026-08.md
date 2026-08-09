@@ -702,7 +702,14 @@ merge qilish kerak — alohida data-migration); faqat indeks.
 > `docs/REJA-AUDIT-FIX-2026-08.md` — **Faza 25**. O'ZGARMAS QOIDALAR. `DB-04/05/08`,`PERF-12/14`. Hot-FK indeks +
 > barcode GIN + INN/yacheyka expression-indeks migration (unique EMAS, faqat indeks). Gate + migrate + regress.
 > Hisobot, TO'XTA.
-**◻ HISOBOT:** _(agent to'ldiradi)_
+**☑ HISOBOT (2026-08-09):** BAJARILDI — batafsili «HISOBOT JURNALI → Faza 25» da. Beshala topilma
+sxemada tasdiqlandi; 10 indeks (8 sxema + 2 expression) qo'shildi va lokal DB'ga qo'llandi.
+**DIQQAT — reja taklif qilgan ifoda XATO edi:** `((uz_requisites->>'inn'))` Prisma emit qiladigan
+`#>>ARRAY['inn']::text[]` ifodasiga MOS KELMAYDI (Postgres expression-indeksni parse-daraxt
+tengligi bo'yicha tanlaydi) — indeks hech qachon ishlatilmasdi. To'g'ri ifoda + `gin_trgm_ops`
+(so'rov `LIKE '%…%'`, btree yaramaydi) qo'llandi, EXPLAIN bilan RED→GREEN o'lchandi.
+**Qolgan qarz:** barcode GIN `findFirst` (LIMIT 1) yo'lida planner tomonidan TANLANMAYDI (o'lchandi,
+30k qatorda) — DB-04 ning haqiqiy yechimi unique/normalizatsiya, u data-migration talab qiladi.
 
 ---
 
@@ -3124,3 +3131,119 @@ tomonga yoziladi. Tekshirish: `GET /api/v1/telegram/business-status` → `webhoo
    (`onec`, `marketplace`, `bank-adapter`…) shu naqsh borligi TEKSHIRILMADI, faza doirasidan tashqarida.
 5. `payment-gateway.service.ts:184` dagi `!creds.secretKey` old-tekshiruvi qoldirildi (endi
    ortiqcha, chunki `secretEquals` fail-closed) — zararsiz ikki qatlam.
+
+---
+
+## Faza 25 — DB indeks-paket: hot-FK + barcode GIN + INN/yacheyka expression (`DB-04`,`DB-05`,`DB-08`,`PERF-12`,`PERF-14`) (2026-08-09) — **Phase-1: strukturaviy + EXPLAIN-tasdiqlangan, browser-smoke YO'Q**
+
+**Topilma tasdiqlanishi (o'z ko'zim bilan `schema.prisma`da).** Beshalasi ham TASDIQLANDI — audit
+xato o'qimagan. Indeks bloklari fix'dan oldin:
+- `RetailSale` (7980-7983): `[accountId,sessionId,state]`, `[accountId,state,moment]`,
+  `[accountId,customerOrderId]` — **`agentId` YO'Q** (`Demand`da `[accountId,agentId]` bor) ⇒ `PERF-12` ✔
+- `CustomerOrder` (5226-5231): name, state+deletedAt, agentId, moment, ownerId, salesChannelId —
+  **statusId/contractId/projectId/storeId YO'Q** ⇒ `DB-08` ✔
+- `Demand` (6170-6187): contractId/projectId **bor**, lekin **statusId YO'Q** ⇒ `DB-08` ✔ (drift dalili)
+- `Debt` (10494-10503): **`problem` YO'Q** ⇒ `DB-08` ✔
+- `Product` (5030-5041): faqat `name` trgm GIN — **`barcodes` GIN YO'Q** (`DB-04` ✔),
+  **`attributes` uchun hech narsa YO'Q** (`PERF-14` ✔)
+- `Counterparty` (2059-2065): `uz_requisites` uchun hech narsa YO'Q ⇒ `DB-05` ✔
+
+### 🔴 Reja taklif qilgan ifoda XATO edi (fazaning eng muhim topilmasi)
+
+Reja `((uz_requisites->>'inn'))` va `((attributes->>'__yacheyka'))` expression-indekslarini aytdi.
+**Ikkalasi ham hech qachon ishlatilmasdi.** Sabab — Postgres expression-indeksni **parse-daraxt
+tengligi** bo'yicha tanlaydi, ORM filtri qanday o'qilishi bo'yicha emas. Prisma 5.22 nima emit
+qilishini `log: ['query']` bilan **jonli qo'lga oldim**:
+
+| so'rov joyi | Prisma emit qiladi | reja taklifi | mos keladimi |
+|---|---|---|---|
+| `counterparty.service.ts:174` (`string_contains`) | `(uz_requisites #>> ARRAY['inn']::text[]) LIKE '%…%'` | `->>` btree | **YO'Q** — (a) `#>>` ≠ `->>` (ikki xil funksiya), (b) `%…%` leading-wildcard btree'ni butunlay chetlaydi |
+| `product.service.ts:556` (`path`+`equals`) | `(attributes #> ARRAY['__yacheyka']::text[])::jsonb::jsonb = $1` | `->>` btree | **YO'Q** — `#>` **jsonb** qaytaradi, `->>` **text**; taqqoslash ham jsonb |
+
+To'g'ri ifodalar EXPLAIN normalizatsiyasidan olindi (`::jsonb` no-op cast'lar tushib qoladi):
+`(attributes #> '{__yacheyka}'::text[])` va `(uz_requisites #>> '{inn}'::text[])` + **`gin_trgm_ops`**
+(LIKE uchun yagona ishlaydigan opclass).
+
+**Fayllar**
+
+| Fayl | O'zgarish |
+|---|---|
+| `packages/db/prisma/schema.prisma` | 8 ta `@@index` (+ sabab-kommentlari): `Product.barcodes` GIN `ArrayOps`; `CustomerOrder.statusId/contractId/projectId/storeId`; `Demand.statusId`; `RetailSale.agentId`; `Debt [accountId,problem,status]` |
+| `packages/db/prisma/migrations/20260809140000_perf_index_pack_fk_barcode_inn_cell/migration.sql` | **YANGI** — 10 `CREATE INDEX IF NOT EXISTS` (8 sxema-hosilaviy + 2 expression) + `CREATE EXTENSION IF NOT EXISTS pg_trgm` |
+
+Kod-mantiq **tegilmadi** (0 `.ts` o'zgarishi). Unique/constraint **qo'yilmadi** (reja talabi).
+
+**Qaror: FK indekslar bir ustunli (`[statusId]`, `[agentId]` — `[accountId, …]` EMAS).**
+Reja `[accountId, statusId]` degan edi, lekin `DB-08`ning o'z impact-matni FK-skan haqida:
+ota-yozuv o'chganda `ON DELETE SET NULL` **`WHERE status_id = $1`** yuritadi — unda `account_id`
+YO'Q, ya'ni `accountId` yetakchi kompozit indeks **bu skanni umuman qoplamaydi**. Bu UUID FK'lar
+allaqachon akkaunt-unique bo'lgani uchun bir ustunli indeks list-filtrni ham to'liq qoplaydi.
+Jonli dalil (quyida): RI-skan fix'dan oldin `Seq Scan`, keyin `Index Scan`.
+
+**`Debt.problem` — partial EMAS, kompozit.** Reja `WHERE problem` partial indeksni aytdi (kichikroq),
+lekin uni Prisma sxemada e'lon qila olmaydi. `[accountId, problem, status]` — aynan
+`debt.service.ts:470` (`scope==='problem'`) predikati, va sxemada ko'rinadi.
+
+### Testlar — EXPLAIN RED→GREEN (jonli, lokal `climart_adopt@5432`)
+
+TDD bu yerda unit-test emas, **EXPLAIN**: har predikat migratsiyadan oldin/keyin o'lchandi
+(`enable_seqscan=off` — kichik dev-jadvalda indeksning *yaroqliligini* narx afzalligidan ajratish uchun).
+
+| topilma | OLDIN | KEYIN |
+|---|---|---|
+| `PERF-14` yacheyka | `Filter: (attributes #> …)` | **`Index Cond`** → `products_yacheyka_idx` |
+| `DB-08` CustomerOrder statusId | `Filter: (status_id = …)` | **`Index Cond`** → `customer_orders_status_id_idx` |
+| `DB-08` CustomerOrder store/contract/project | `Filter` (3 ta) | **`Index Cond`** (3 ta) |
+| `DB-08` Demand statusId | `Filter` | **`Index Cond`** → `demands_status_id_idx` |
+| `DB-08` Debt problem-scope | `Filter: (problem AND status…)` | **`Index Cond`** (uchala ustun) |
+| `PERF-12` semi-join | `Seq Scan on retail_sales` | **`Index Only Scan`** → `retail_sales_agent_id_idx` |
+| RI-skan `DELETE state → customer_orders` | **`Seq Scan`** | **`Index Scan`** |
+| RI-skan `DELETE counterparty → retail_sales` | `Seq Scan` | **`Index Scan`** |
+
+**Hajm-testi (30k qator, tranzaksiya ichida INSERT + `ANALYZE` → `ROLLBACK`, dev-DB o'zgarmadi;
+planner sozlamalari DEFAULT — hech narsa o'chirilmagan):**
+- `PERF-12` «Покупатели»: `retail_sales` 30k → **`Index Only Scan using retail_sales_agent_id_idx`**
+  (subplan narxi 1948 → 8.30). Fazaning eng katta yutug'i.
+- `PERF-14` yacheyka: **`Index Scan using products_yacheyka_idx`** (583 → 4.17 LIMIT bilan).
+- `DB-05` INN: **`Bitmap Index Scan using counterparties_inn_trgm_idx`**.
+- `DB-04` barcode: ro'yxat-so'rovi (`ORDER BY name LIMIT 50`) va `count(*)` → **GIN ishlatiladi**;
+  `findFirst` (`LIMIT 1`) → **SEQ SCAN qoladi** (pastda, DEFER-1).
+
+### Gate (jonli o'lchangan)
+- `@moysklad/api typecheck` → **0** · `@moysklad/db typecheck` → **0**
+- `pnpm lint:product` → **0 error** (743 warning, siyosat bo'yicha ruxsat)
+- `prisma db execute` → migratsiya lokal DB'ga qo'llandi; **10/10 indeks `pg_indexes`da tasdiqlandi**;
+  fayl **ikkinchi marta** yugurtirildi → idempotent (`IF NOT EXISTS`)
+- `prisma migrate diff` (drift) → **yangi drift YO'Q** (mavjud 9 ta kosmetik `RENAME INDEX` mening
+  ishimdan OLDIN ham bor edi — tegilmadi)
+- `prisma generate` → OK
+- vitest: modul-scoped (product/counterparty/customer-order/demand/retail-sale/debt) **902/902**;
+  **butun API suite → 5390 passed / 2 skipped / 0 fail** (414 fayl) — regress YO'Q
+- `i18n:gate` yugurtilmadi — UI-matn tegilmadi (0 `.ts`/`.tsx` o'zgarishi)
+- **Browser-smoke YO'Q.**
+
+### 🟠 Qolgan qarz / DEFER
+1. **`DB-04` yarim yopildi.** Barcode GIN **mavjud va mos keladi** (dalil: account-predikatsiz so'rovda
+   `Bitmap Index Scan`), lekin POS-ning `findFirst` (`LIMIT 1`) yo'lida planner uni TANLAMAYDI:
+   Postgres massiv `@>` uchun default 0.005 selektivlik beradi (30k'da `rows=150`), shuning uchun
+   «erta chiqish» bilan seq scan arzonroq ko'rinadi — **noto'g'ri skanda esa butun jadval o'qiladi**.
+   Haqiqiy yechim `DB-04`ning o'zi aytgani: barcode **unique/normalizatsiya** (dublikatlarni merge
+   qiluvchi data-migration) yoki so'rov shaklini o'zgartirish — ikkalasi ham «faqat indeks»
+   doirasidan tashqarida. *(Eslatma: bu o'lchov sintetik 30k qatorda — barcode'lar bir xil naqshda;
+   prod statistikasida planner boshqacha qaror qilishi mumkin.)*
+2. **`DB-05` yarim yopildi.** Indeks kontragent ro'yxatidagi INN-filtrni tezlashtiradi, lekin
+   `bank-import.service.ts:443` HAMON butun kontragent jadvalini xotiraga yuklab JS'da solishtiradi —
+   buni faqat **kod o'zgarishi** (SQL-lookup) yopadi. Shu bajarilgach INN uchun qo'shimcha **btree**
+   expression-indeks kerak bo'ladi (trgm GIN teng-solishtirishga yaramaydi).
+3. **`organizations` jadvalidagi bir xil INN-filtri** (`organization.service.ts:31`) indekslanmadi —
+   jadval o'nlab qatorli, foyda yo'q; hajm o'sganda o'sha ifoda bilan qo'shiladi.
+4. **Expression-indekslar sxemada ko'rinmaydi** (Prisma ularni ifodalay olmaydi). Drift **O'LCHANDI**:
+   `migrate diff` ularni `DROP` qilMAYDI (Prisma introspection ularni umuman ko'rmaydi) — ya'ni
+   kutilgan xavf yuzaga chiqmadi. Lekin ular faqat migration-faylda hujjatlangan.
+5. **Mavjud kompozit FK indekslar RI-skanni qoplamaydi** (masalan `Demand`ning
+   `[accountId,contractId]`/`[accountId,projectId]`, `[accountId,agentId]`) — bu fazada `DB-08`
+   ro'yxatidan tashqari jadval/ustunlarga tegilmadi. Umumiy FK-indeks auditi alohida faza.
+6. **Prod deploy:** `CREATE INDEX` SHARE qulfini oladi (yozuvlarni bloklaydi). Hozirgi hajmda
+   soniyalar, lekin **past yuklamada** qo'llash kerak. `CONCURRENTLY` ishlatilmadi — Prisma
+   migratsiyani tranzaksiya ichida yuritadi. Prod DB'lar `_prisma_migrations`-tracked emas ⇒
+   `prisma db execute --file` bilan qo'lda qo'llanadi (fayl idempotent).

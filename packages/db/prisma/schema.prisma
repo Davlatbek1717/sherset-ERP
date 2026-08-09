@@ -5039,6 +5039,12 @@ model Product {
   @@index([accountId, modifiedById])
   // Trigram GIN (perf audit 2026-07-23) — product name ILIKE search.
   @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "products_name_trgm_idx")
+  // DB-04 (audit 2026-08-08, faza 25) — POS barcode scan. The lookup is
+  // `barcodes: { has: tok }` → `barcodes @> ARRAY[tok]`, which only a GIN
+  // array_ops index can serve; without it every scan is a full account scan.
+  // NOTE: this is an index only — barcode UNIQUENESS is deliberately NOT added
+  // here (existing duplicates must be merged by a data-migration first).
+  @@index([barcodes(ops: ArrayOps)], type: Gin, map: "products_barcodes_gin_idx")
   @@map("products")
 }
 
@@ -5229,6 +5235,15 @@ model CustomerOrder {
   @@index([accountId, moment(sort: Desc)])
   @@index([accountId, ownerId])
   @@index([accountId, salesChannelId])
+  // DB-08 (audit 2026-08-08, faza 25) — FK columns Postgres does NOT index by
+  // itself. Single-column on purpose: these UUID FKs are already account-unique
+  // (so `account_id = A AND status_id = S` stays selective), and only a leading
+  // FK column serves the referential-integrity scan the parent's ON DELETE
+  // SET NULL / RESTRICT runs (`WHERE status_id = $1` — no account_id there).
+  @@index([statusId])
+  @@index([contractId])
+  @@index([projectId])
+  @@index([storeId])
   @@map("customer_orders")
 }
 
@@ -6185,6 +6200,10 @@ model Demand {
   // 20260723_trgm_search_indexes. Needs the pg_trgm extension.
   @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "demands_name_trgm_idx")
   @@index([description(ops: raw("gin_trgm_ops"))], type: Gin, map: "demands_description_trgm_idx")
+  // DB-08 (faza 25) — statusId was the one FK left unindexed here while its
+  // siblings (contractId/projectId) were covered; see CustomerOrder for why
+  // single-column.
+  @@index([statusId])
   @@map("demands")
 }
 
@@ -7981,6 +8000,12 @@ model RetailSale {
   @@index([accountId, sessionId, state])
   @@index([accountId, state, moment(sort: Desc)])
   @@index([accountId, customerOrderId])
+  // PERF-12 (faza 25) — the «Покупатели» counterparty tab runs
+  // `id IN (SELECT agent_id FROM retail_sales WHERE agent_id IS NOT NULL)`;
+  // unindexed that is a seq scan of the fastest-growing table in a POS
+  // business. Single-column (the subquery carries no account_id, and it also
+  // serves the RI scan when a counterparty is deleted).
+  @@index([agentId])
   @@map("retail_sales")
 }
 
@@ -10501,6 +10526,12 @@ model Debt {
   @@index([accountId, counterpartyId])
   @@index([accountId, ownerId])
   @@index([accountId, issuedById, createdAt])
+  // DB-08 (faza 25) — «Muammoli qarzdorlar» scope filters exactly on
+  // (accountId, problem, status) (debt.service.ts scope==='problem').
+  // A `WHERE problem` partial index would be smaller, but Prisma cannot declare
+  // one — it would then be dropped by the next `migrate dev` diff — so the
+  // drift-safe composite is used instead.
+  @@index([accountId, problem, status])
   @@map("debts")
 }
 
