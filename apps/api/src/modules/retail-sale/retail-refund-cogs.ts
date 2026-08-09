@@ -15,7 +15,7 @@
  * too, mirroring what actually happened, never a fabricated cost.
  */
 
-import { formatDecimalScaled, parseDecimalScaled, roundHalfUp } from '../demand/fifo-consumer.js';
+import { formatDecimalScaled, parseDecimalScaled, roundHalfUp } from '../shared/decimal.js';
 
 interface StockOpRow {
   assortmentId: string;

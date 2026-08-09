@@ -12,10 +12,15 @@ import { allocateDocumentNumber } from '../../prisma/document-number.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { AttributeMetadataService } from '../attribute-metadata/attribute-metadata.service.js';
 import { CustomerOrderService } from '../customer-order/customer-order.service.js';
-import { computePerUnitCost } from '../demand/fifo-consumer.js';
 import { HR_EVENT, type SalesReturnPostedEvent } from '../hr/hr-shared/hr-events.types.js';
 import { tashkentRangeBounds } from '../report/report-date-bounds.util.js';
 import { runBulk } from '../shared/bulk.js';
+import {
+  addDecimals,
+  compareDecimals,
+  computePerUnitCost,
+  subtractDecimals,
+} from '../shared/decimal.js';
 import { resolveCreatorGroupId } from '../shared/group-stamp.js';
 import { assertMassEditRefsInTenant, assertStateInTenant } from '../shared/mass-edit.js';
 import { mapVersionedUpdateError } from '../shared/optimistic-lock.js';
@@ -352,7 +357,10 @@ export class SalesReturnService {
             onHand,
             reserved,
             inTransit: '0',
-            available: String(Number(onHand) - Number(reserved)),
+            // STK-12, third copy (Faza Q17). Faza 34 replaced the float form in
+            // customer-order and internal-order; this one survived and shipped
+            // artifacts like "2.8000000000000003" to the client.
+            available: subtractDecimals(onHand, reserved),
           },
         };
       }),
@@ -561,19 +569,26 @@ export class SalesReturnService {
       _sum: { quantity: true },
     });
     const returnedByDp = new Map(
-      returnedAgg.map((g) => [g.demandPositionId, Number(g._sum.quantity ?? 0)]),
+      returnedAgg.map((g) => [g.demandPositionId, String(g._sum.quantity ?? 0)]),
     );
 
+    // `SALES-10` class (Faza Q17). The remaining-to-return used to be computed
+    // in float and then STRINGIFIED back into the position payload: after three
+    // 0.1 returns of a 0.3 line the residue is 5.5e-17, so `String(remaining)`
+    // produced "5.5e-17" — an exponent literal that is not a valid Decimal —
+    // and a phantom line was pre-filled for a fully returned position. The
+    // `+ 1e-7` slack on the over-return guard existed only to paper over the
+    // same drift; with exact decimals both sides are correct without it.
     const positions = demand.positions
       .map((dp) => {
-        const alreadyReturned = returnedByDp.get(dp.id) ?? 0;
-        const remaining = Number(String(dp.quantity)) - alreadyReturned;
-        const want = parsed.quantities?.[dp.id] ?? String(remaining > 0 ? remaining : 0);
-        const wantNum = Number(want);
-        if (wantNum <= 0) return null;
-        if (wantNum > remaining + 1e-7) {
+        const alreadyReturned = returnedByDp.get(dp.id) ?? '0';
+        const remaining = subtractDecimals(String(dp.quantity), alreadyReturned);
+        const want =
+          parsed.quantities?.[dp.id] ?? (compareDecimals(remaining, '0') > 0 ? remaining : '0');
+        if (compareDecimals(want, '0') <= 0) return null;
+        if (compareDecimals(want, remaining) > 0) {
           throw new BadRequestException(
-            `Position ${dp.id}: qaytarish mumkin = ${remaining} (jo'natilgan ${String(dp.quantity)} − qaytarilgan ${alreadyReturned}), so'ralmoqda ${wantNum}`,
+            `Position ${dp.id}: qaytarish mumkin = ${remaining} (jo'natilgan ${String(dp.quantity)} − qaytarilgan ${alreadyReturned}), so'ralmoqda ${want}`,
           );
         }
         return {
@@ -1061,9 +1076,7 @@ export class SalesReturnService {
             where: { id: { in: linkedDpIds }, accountId },
             select: { id: true, quantity: true },
           });
-          const demandQtyById = new Map(
-            demandPositions.map((dp) => [dp.id, Number(String(dp.quantity))]),
-          );
+          const demandQtyById = new Map(demandPositions.map((dp) => [dp.id, String(dp.quantity)]));
           const otherPosted = await tx.salesReturnPosition.groupBy({
             by: ['demandPositionId'],
             where: {
@@ -1074,21 +1087,21 @@ export class SalesReturnService {
             _sum: { quantity: true },
           });
           const otherById = new Map(
-            otherPosted.map((g) => [g.demandPositionId, Number(g._sum.quantity ?? 0)]),
+            otherPosted.map((g) => [g.demandPositionId, String(g._sum.quantity ?? 0)]),
           );
-          const thisById = new Map<string, number>();
+          const thisById = new Map<string, string>();
           for (const p of existing.positions) {
             if (p.demandPositionId) {
               thisById.set(
                 p.demandPositionId,
-                (thisById.get(p.demandPositionId) ?? 0) + Number(String(p.quantity)),
+                addDecimals(thisById.get(p.demandPositionId) ?? '0', String(p.quantity)),
               );
             }
           }
           for (const dpId of linkedDpIds) {
-            const cap = demandQtyById.get(dpId) ?? 0;
-            const total = (otherById.get(dpId) ?? 0) + (thisById.get(dpId) ?? 0);
-            if (total > cap + 1e-7) {
+            const cap = demandQtyById.get(dpId) ?? '0';
+            const total = addDecimals(otherById.get(dpId) ?? '0', thisById.get(dpId) ?? '0');
+            if (compareDecimals(total, cap) > 0) {
               throw new ConflictException(
                 `Отгрузка позицияси: qaytarilgan jami (${total}) jo'natilgan (${cap}) dan oshib ketdi`,
               );

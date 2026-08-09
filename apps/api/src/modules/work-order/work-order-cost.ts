@@ -35,7 +35,7 @@ import {
   computePerUnitCost,
   formatDecimalScaled,
   parseDecimalScaled,
-} from '../demand/fifo-consumer.js';
+} from '../shared/decimal.js';
 
 /** One BOM component scaled to its TOTAL consumption (componentQty × runs). */
 export interface WoComponentInput {

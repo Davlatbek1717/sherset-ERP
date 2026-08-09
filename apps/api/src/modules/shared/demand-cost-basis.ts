@@ -9,10 +9,15 @@
  * report. Faza 34 already solved the identical problem for Move; this module
  * reuses that arithmetic (`computeTransferCost`) rather than re-deriving it,
  * and adds Demand's own buyPrice fallback on top.
+ *
+ * Faza Q17 moved it from `demand/` into `shared/` (Faza Q4 DEFER-7): reusing
+ * Move's arithmetic meant `demand/…` imported `../move/…`, a directionless
+ * cross-module leaf import. Both leaves now sit in `shared/` and the import is
+ * local.
  */
 import { scaleMinorByQty } from '@moysklad/money';
-import { computeTransferCost } from '../move/move-cost-basis.js';
-import { compareDecimals } from './fifo-consumer.js';
+import { compareDecimals } from './decimal.js';
+import { computeTransferCost } from './move-cost-basis.js';
 
 /**
  * Price one shipped line against the LOCKED per-store balance.

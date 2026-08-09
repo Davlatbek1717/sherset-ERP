@@ -37,7 +37,7 @@ describe('loss post() records real weighted-average COGS (not a hardcoded 0)', (
   const src = readFileSync(SERVICE, 'utf8');
 
   it('imports the exact per-unit cost helper', () => {
-    expect(src).toMatch(/import \{ computePerUnitCost \} from '\.\.\/demand\/fifo-consumer\.js'/);
+    expect(src).toMatch(/import \{ computePerUnitCost \} from '\.\.\/shared\/decimal\.js'/);
   });
 
   it('post() derives the per-unit cost from the locked balance costBalanceMinor (weighted-average)', () => {

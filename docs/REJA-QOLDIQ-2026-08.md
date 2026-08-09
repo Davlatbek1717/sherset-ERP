@@ -513,7 +513,7 @@ barcha import'lar typecheck; mavjud testlar regressiz.
 **▶ SESSIYA-BOSHI PROMPT:**
 > `docs/REJA-QOLDIQ-2026-08.md` — **Faza Q17**. O'ZGARMAS QOIDALAR. Faza 34 DEFER-4/5'ni o'qi.
 > fifo-consumer → shared/decimal codemod + analitika float'lari. TDD + regress. Gate. Hisobot, TO'XTA.
-**◻ HISOBOT:** _(agent to'ldiradi)_
+**☑ HISOBOT (2026-08-09):** BAJARILDI — batafsili «HISOBOT JURNALI → Faza Q17» da.
 
 ---
 
@@ -2485,3 +2485,182 @@ xotirasi), Q1–Q15 yozuvlariga TEGILMADI.
    Phase-2 QA cohortiga.
 
 **Commit:** `feat(report): faza q16 — truncated + konvertatsiyasiz bannerlar, recentdocs deleted_at`
+
+---
+
+## Faza Q17 — Decimal-primitivlar uyi (`shared/decimal.ts`) + qoldiq float'lar (2026-08-09) — **Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q**
+
+**Manba:** Faza 34 hisoboti DEFER-4/DEFER-5 + Faza Q4 hisoboti DEFER-7.
+
+### Da'volarni tasdiqlash (kodda, o'z ko'zim bilan)
+
+| Da'vo (manba) | Kodda ASLIDA (HEAD `65275f68`) |
+|---|---|
+| Reja: «`demand/fifo-consumer.ts` — 11 import» | ❌ **11 EMAS.** O'z o'lchovim: `from '…fifo-consumer.js'` **21 faylda**; qo'shimcha 2 faylda (`loss/loss-cogs.test.ts`, `sales-return/returns-cogs.test.ts`) yo'l **escape-regex** sifatida source-scan qulfida turibdi (import EMAS — resolver ko'rmaydi), 1 faylda (`stock/stock.service.ts:87`) izohda. Faza 34 dan beri o'sgan |
+| F34 DEFER-4: `analysis.service.ts:294`, `count.service.ts:301` `Number(s.qty)` | ✅ ikkalasi ham aynan shu satrlarda; **+2 qo'shimcha** o'zim topdim: `analysis.service.ts:275,285` `Number(r.quantity)` va undan yasalgan **float pul** (`BigInt(Math.round(q * Number(r.priceMinor)))`), `count.service.ts:718` `Number(stock.qty)` (DB'ga **yoziladigan** `expectedQty`) |
+| Q4 DEFER-7: `demand-cost-basis.ts → move-cost-basis.ts` modullararo leaf-import | ✅ `demand/demand-cost-basis.ts:13` `import { computeTransferCost } from '../move/move-cost-basis.js'` |
+| **+1 o'zim topdim (auditda yo'q)** | `sales-return.service.ts:355` `available: String(Number(onHand) - Number(reserved))` — **`STK-12` ning UCHINCHI nusxasi**. Faza 34 `customer-order` va `internal-order` dagi ikkitasini yopib `availableOf()` yaratgan, bu esa qolib ketgan va mijozga `"2.8000000000000003"` jo'natardi |
+| **+1 o'zim topdim** | `sales-return.createFromDemand` / `purchase-return.createFromSupply`: `remaining = Number(qty) − alreadyReturned` **stringga qaytariladi** (`String(remaining)`) → to'liq qaytarilgan satrda float qoldig'i `5.5e-17`, ya'ni `"5.5e-17"` — **eksponent literal, Decimal EMAS** ⇒ hech narsa qolmagan satr uchun **fantom pozitsiya** oldindan to'ldiriladi. `+ 1e-7` epsilon guard aynan shu drift'ni yopish uchun qo'yilgan edi |
+
+### Qaror: **to'liq ko'chirish + `demand/fifo-consumer.ts` deprecate re-eksport shim**
+
+Ikki variant ko'rildi (topshiriq §3a):
+
+1. **Eski faylni butunlay o'chirish** — **RAD ETILDI**, chunki undan import qiladigan ikki fayl
+   (`store/cell-migration.ts`, `store/cell-migration.runner.ts`) shu paytda **parallel sessiyaning
+   egaligida** (CLAUDE.md §6.1 — begona faylga yozish TAQIQ). O'chirish ularning ishini yiqitardi.
+2. **Re-eksport shim — TANLANDI.** Implementatsiya **butunlay** `shared/decimal.ts` ga ko'chdi
+   (nusxa YO'Q — Faza 34 aynan nusxa-sinfini `stock.service.ts` dan o'chirgan edi), eski faylda
+   faqat `export { … } from '../shared/decimal.js'` va `@deprecated` izohi qoldi.
+   **Qarz ko'rinadigan qilindi:** `decimal-home.test.ts` da `LEGACY_IMPORTERS` allowlist bor va
+   ikki test uni ikki tomondan qulflaydi — (a) allowlist'dan tashqari hech kim eski yo'lni import
+   qilmasligi, (b) allowlist **aynan** shu ikki fayl ekani (ya'ni **o'sa olmaydi**, faqat qisqaradi).
+   Uchinchi test shim'da arifmetika qolmaganini tekshiradi (`function` / `const SCALE` yo'qligi).
+
+**Q4 DEFER-7 ham yopildi:** ikkala sof cost-basis leaf `shared/` ga ko'chdi
+(`shared/move-cost-basis.ts`, `shared/demand-cost-basis.ts`) ⇒ `demand/… → ../move/…`
+yo'nalishsiz modullararo import endi **lokal** (`./move-cost-basis.js`). Test fayllari
+**o'z domenida qoldirildi** (`demand/demand-cost-basis.test.ts`, `move/move-cost-basis.test.ts`) —
+ular `readFileSync(join(__dirname, 'demand.service.ts'))` bilan **domen manbasini** skanerlaydi,
+ko'chirilsa o'sha yo'llar buzilardi.
+
+### Codemod — deterministik, fail-closed (0 token)
+
+`scratchpad/q17-codemod.mjs`. Naqsh: har import spetsifikatori faylning **ESKI** katalogiga nisbatan
+rezolv qilinadi va faylning **YANGI** katalogiga nisbatan qayta yoziladi (ya'ni ko'chayotgan faylning
+o'z importlari ham to'g'ri qayta hisoblanadi). Yozishdan **oldin** uch tekshiruv:
+(1) o'zgargan fayllar to'plami `EXPECTED_FILES` bilan **aynan** teng, (2) har `TEXT_ANCHORS`
+(escape-regex source-scan qatorlari) topilgan, (3) `FROZEN` (parallel sessiya) fayllari hamon shim'ni
+ishlatadi. Har qanday nomuvofiqlikda **hech narsa yozilmaydi va `exit 1`**.
+
+Jonli isbot: birinchi `--check` yugurishi **4 xato bilan to'xtadi** (2 anchor escape-darajasi noto'g'ri
++ 1 kutilmagan fayl + 2 kutilgan-lekin-o'zgarmagan) — hech narsa yozilmadi. Tuzatilgandan keyin
+`--check` toza, `--apply` bajarildi. **Ikkinchi `--apply` yana fail-closed to'xtadi**
+(`MOVE SOURCE MISSING` / `TARGET ALREADY EXISTS`) — ya'ni skript qayta-yugurishda jimgina yarim ish
+qilmaydi.
+
+**O'lchov: 26 fayl o'zgardi, 27 spetsifikator/anchor qayta yozildi** (shundan 4 tasi `git mv`).
+
+### Fayllar
+
+| Fayl | O'zgarish |
+|---|---|
+| `apps/api/src/modules/demand/fifo-consumer.ts` → `apps/api/src/modules/shared/decimal.ts` | **KO'CHDI** (`git mv`, implementatsiya bit-ma-bit o'zgarmadi) + fayl-doc tarixni va yangi shartnomani yozadi |
+| `apps/api/src/modules/demand/fifo-consumer.test.ts` → `apps/api/src/modules/shared/decimal.test.ts` | **KO'CHDI** (`git mv` + import yo'li) |
+| `apps/api/src/modules/move/move-cost-basis.ts` → `apps/api/src/modules/shared/move-cost-basis.ts` | **KO'CHDI** (Q4 DEFER-7) |
+| `apps/api/src/modules/demand/demand-cost-basis.ts` → `apps/api/src/modules/shared/demand-cost-basis.ts` | **KO'CHDI** (Q4 DEFER-7); `../move/…` importi `./move-cost-basis.js` bo'ldi |
+| `apps/api/src/modules/demand/fifo-consumer.ts` | **YANGI (shim)** — `@deprecated`, 9 nomni re-eksport qiladi, arifmetika YO'Q; o'chirish sharti izohda |
+| `apps/api/src/modules/shared/decimal-home.test.ts` | **YANGI** — 6 test (primitivlar + float-dalil + 3 ta uy/allowlist qulfi) |
+| `apps/api/src/modules/analitika/analysis.service.ts` | qty agregatlari **mikro-bigint**, pul `computeLineCost` bilan (float ko'paytma yo'q); DTO chegarasida bir marta `Number(formatDecimalScaled(…))`; `soldShare` maxraji mikro-bigint |
+| `apps/api/src/modules/analitika/count.service.ts` | yangi `decimalQty()` yordamchisi (parse→format→Number); `stockByProduct` va `loadStockQty` shunga o'tdi |
+| `apps/api/src/modules/analitika/analitika-qty-precision.test.ts` | **YANGI** — 6 test (float-drift dalili + 2^53 + izohsizlantirilgan manba-skan) |
+| `apps/api/src/modules/sales-return/sales-return.service.ts` | `available` → `subtractDecimals` (`STK-12` 3-nusxa); `createFromDemand` remaining/guard → `subtractDecimals`+`compareDecimals` (`1e-7` epsilon olib tashlandi); post-vaqt kümülativ cap → `addDecimals`/`compareDecimals` |
+| `apps/api/src/modules/purchase-return/purchase-return.service.ts` | ayni o'zgarishlar `createFromSupply` + post-vaqt cap uchun |
+| `apps/api/src/modules/sales-return/returns-qty-precision.test.ts` | **YANGI** — 5 test |
+| `apps/api/src/modules/sales-return/returns-cogs.test.ts` | **Edit** (Write EMAS) — import-qulfi ko'p-nomli blokka moslandi (invariant o'zgarmadi) |
+| 19 ta import-fayli | `customer-order`, `demand` (2), `internal-order`, `inventory`, `loss` (2), `move`, `product` (2), `purchase-return`, `retail-sale` (2), `sales-return` (2), `stock`, `supply` (2), `work-order` (2) — codemod bilan |
+
+### Testlar — RED **jonli o'lchandi**, keyin GREEN
+
+**RED-1** (`decimal-home.test.ts` + `analitika-qty-precision.test.ts`, fix'dan oldin):
+`Test Files 2 failed (2)` · `Tests no tests` — ikkala suite **yuklanmadi**
+(`Failed to load url ./decimal.js` / `../shared/decimal.js`), ya'ni 12 test umuman hisobga kirmadi.
+
+**RED-2** (`returns-qty-precision.test.ts`): `Test Files 1 failed (1)` · `Tests no tests` — o'sha sabab.
+
+**Oraliq RED** (codemod + fix'dan keyin, birinchi to'liq yugurish):
+`Test Files 3 failed | 50 passed (53)` · `Tests 7 failed | 927 passed (934)`. Yettitasi **haqiqiy
+signal** edi, ikki turli sinfda:
+- **4 tasi mening test xatolarim** — (a) shim-regex `.*` yangi qatordan o'tmaydi; (b) float-dalil
+  sifatida tanlagan `0.1+0.2+0.3+0.1+0.3` **aynan 1 chiqadi** (drift YO'Q — taxminim noto'g'ri edi,
+  `node` bilan o'lchab `0.1+0.1+0.1 = 0.30000000000000004` ga almashtirdim); (c) `Math.round(0.615*100)`
+  **62 qaytaradi**, ya'ni misolim teskari edi — o'lchab `1.005*100 = 100.49999999999999` (float **100**,
+  aniq half-up **101**) ga almashtirdim; (d) manba-skan **o'z izohimni** kod deb hisoblab qizil bo'ldi
+  → skan izohsizlantirilgan manbada ishlaydigan qilindi.
+  *(«Audit misollari o'lchanmagan» xotirasining aynan takrori — bu safar RED o'lchovi tutdi.)*
+- **2 tasi haqiqiy regress** — `returns-cogs.test.ts` ning import-qulfi bir nomli `import { … }` qatorini
+  kutardi; men ikkala servisga bir necha primitiv qo'shganim uchun blok ko'p-nomli bo'lgan.
+  Invariant **mohiyatan o'zgarmagani** uchun ifoda kengaytirildi (`Edit`, Write EMAS).
+
+**GREEN:** `shared + analitika + sales-return + purchase-return` → **53 fayl / 934 test**, 0 yiqilish.
+Yangi + ko'chgan 4 fayl yakka yugurtirilganda **51/51**.
+
+### Gate (jonli o'lchangan, path-cheklangan — parallel sessiya ishi ajratildi)
+
+| Buyruq | Natija |
+|---|---|
+| `pnpm --filter @moysklad/api typecheck` | **2 xato — ikkalasi ham PARALLEL sessiyaniki**: `hr/hr-employee/offboarding.service.ts(57,5)` va `manager/live/live-status.service.ts(132,24)` (`openEquipmentCount` maydoni ularning yangi `AutoFacts`/`DutyInput` tipida). **Mening 26 faylimda 0 xato** — hech biri xato ro'yxatida yo'q |
+| `npx biome check <mening 32 faylim>` | **0 error**, 2 warning (`noNonNullAssertion`, `useTemplate` — ikkalasi ham ko'chgan fayldagi eski kod, siyosat bo'yicha ruxsat). `pnpm lint:product` TO'LIQ yugurtirilmadi: u parallel sessiyaning formatlanmagan yangi fayllarini (`shared/acceptance-fsm.ts` va h.k.) ham qamraydi va meniki bo'lmagan xatolar beradi |
+| `vitest run` (topshiriqdagi 12 modul + `shared`, `sales-return`, `purchase-return`, `store`) | **128 fayl / 1913 test — 0 yiqilish** |
+| To'liq API suite, **3 shard** (`--shard=N/3 --reporter=dot`) | **465 fayl (1 skip) / 6236 test** — **6228 passed · 2 skipped · 6 failed**. Oltala yiqilish **PARALLEL sessiyaniki**: 5 tasi `hr/hr-equipment/equipment.service.test.ts` (butun katalog `git status` da **untracked** — ularning yangi moduli, yuqoridagi typecheck xatolari bilan bir sabab), 1 tasi `permissions/mutation-guard-coverage.test.ts` — u **yakka yugurtirilganda 51/51 yashil** (shard'da CPU raqobati timeout'i, Faza 34 hujjatlagan sinf) |
+| **Sanoq nazorati** | Baza (topshiriq): **6048 passed / 2 skipped**. Hozir: **6228 passed**. Δ = **+180**. Shundan **meniki +17** (6 `decimal-home` + 6 `analitika-qty-precision` + 5 `returns-qty-precision`; `decimal.test.ts` **ko'chdi**, test qo'shmadi). Qolgan **+163** — parallel sessiyaning yangi testlari (`hr-equipment`, `manager/kpi/kpi-accrual*`, `manager/live/accountability`, `hr-employee/offboarding` — hammasi `git status` da untracked/modified va meniki emas). **Jim yo'qolgan test YO'Q** |
+| Migratsiya / `i18n:gate` / web | Qo'llanmaydi — sxema, UI-matn va web tegilmadi |
+
+### O'zgarish mohiyati (b qismi)
+
+**`analysis.service.ts`.** Ilgari har satr `Number(r.quantity)` ga aylanib **yig'ilardi**
+(`cur.qty += q`, keyin `purchasedQtyTotal += pur.qty`) — minglab kasr satrda drift kafolatlangan.
+Yomonrog'i, **pul** ham o'sha float'dan yasalardi: `BigInt(Math.round(q * Number(r.priceMinor)))` —
+(a) float ko'paytma yaxlitlash chegarasining **noto'g'ri tomoniga** tushishi mumkin (test:
+`1.005 × 100` ⇒ float 100, aniq 101), (b) `Number(priceMinor)` 2^53 tiyindan katta narxni **qisadi**.
+Endi qty **mikro-bigint**da yig'iladi, satr qiymati esa **`computeLineCost`** bilan — ya'ni hisobot
+har posting yo'li ishlatadigan **aynan o'sha** arifmetikani ishlatadi (hisobot va jurnal
+konstruksiya bo'yicha kelishadi). `number` ga aylantirish **faqat DTO chegarasida**, bir marta
+(`AnalysisProduct` shartnomasi `number` — o'zgartirilmadi, FE'ga tegmaslik uchun).
+
+**`count.service.ts`.** `decimalQty()` — parse→format→Number. Bu **kanonikalizatsiya**: 20-raqamli
+Prisma Decimal to'g'ridan-to'g'ri double'ga tushmaydi va yaxlitlash nuqtasi **bitta oshkora qadam**
+bo'ladi. Chegarasi hisobotda halol yozilgan (pastda, qarz 3).
+
+**Qaytarish hujjatlari.** `remaining` endi `subtractDecimals`, taqqoslash `compareDecimals` —
+shu sababli **`+ 1e-7` epsilon guard'lari olib tashlandi** (ular faqat float drift'ini yopish uchun
+bor edi; ikkala tomon aniq bo'lgach, ular **haqiqiy** kam-oshiq qaytarishni ham o'tkazib yuboradigan
+teshik). Diqqat: bu **qat'iylashtirish** — ilgari `1e-7` gacha oshiq qaytarish o'tardi, endi o'tmaydi.
+Kiruvchi `quantities` Zod'da `^\d+(\.\d{1,6})?$` bilan qulflangani tasdiqlandi, ya'ni
+`parseDecimalScaled` uchun kirish har doim yaroqli.
+
+### Qolgan qarz / DEFER
+
+1. **🔴 Browser-smoke YO'Q.** Hech bir sahifa real brauzerda ochilmadi — Phase-2 QA cohortiga.
+   Ayniqsa: kontragent **«Анализ»** ekrani (qty/pul jamlari endi boshqa arifmetikadan keladi —
+   eski float qiymatlardan bir necha tiyin/mikro farq qilishi **kutilgan**), `analitika/count`
+   `expectedQty`, va qaytarish hujjatlarining «Доступно» ustuni.
+2. **`demand/fifo-consumer.ts` shim'i qoldi** — `store/cell-migration.ts` va
+   `store/cell-migration.runner.ts` parallel sessiya egaligida bo'lgani uchun. Ular bo'shagach
+   ikki importni `../shared/decimal.js` ga o'tkazib **shim faylni o'chirish** kerak;
+   `decimal-home.test.ts` dagi `LEGACY_IMPORTERS` ham bo'shatiladi (o'sha test allowlist o'sishini
+   bloklaydi, ya'ni qarz jim kengaya olmaydi).
+3. **`AnalitikaCount.expectedQty` hamon `number` sifatida DB'ga yoziladi** — 2^53 mikro-birlikdan
+   (≈9×10⁹ dona) katta miqdorlar **yozuvda** hamon yaxlitlanadi. To'liq yechim = ustunni va
+   `computeVarianceStatus` ni decimal-stringga o'tkazish, ya'ni **API-shartnoma o'zgarishi**
+   (`CountProductRow`, `variance-status.util.ts`, FE) — alohida ish. Kod izohida yozilgan.
+4. **`AnalysisProduct` / `AnalysisStats` DTO'lari hamon `number`** — servis ichi endi aniq, lekin
+   HTTP chegarasi float. Faza 34 DEFER-2/3 bilan bir paket (`qty/reservedQty` string-decimal).
+5. **Yopilmagan bir sinfdagi qoldiq float'lar (o'lchandi, ro'yxatlandi, TEGILMADI).** Grep
+   (`Number(` + `qty|quantity|reserved`) bo'yicha topilgan, kamayish tartibida:
+   - **Yozuv yo'lida (eng xavflisi, keyingi faza nomzodlari):** `bom/bom.service.ts:338`
+     (`Math.round(Number(c.qty) * 1e6)` — `STK-08` sinfi), `edo/edo.service.ts:394` (ayni shakl),
+     `processing-order/processing-order.service.ts:204,410` (`×1000` skalasi float orqali).
+   - **Guard/hisob-kitob:** `purchase-order.service.ts:1476`, `counterparty-statement.service.ts:472`,
+     `supply/overhead-distribution.ts:57`, `inventory.service.ts:294` (ro'yxat ko'rinishi),
+     `product/product.service.ts:533` (`Number(s.qty.toFixed(6))` yig'indisi).
+   - **Sof hisobot-agregatlari (past xavf):** `analitika/items.service.ts` (4 joy),
+     `analitika/order.service.ts:112`, `report/*` (~12 joy: `abc-analysis`, `average-basket`,
+     `inventory-variance`, `profitability`, `report.service`, `returns-ratio`, `sales-by-channel`,
+     `sales-by-hour`), `print-template/*` (3 joy), `pick-list/*` (2 joy),
+     `moysklad-compat.service.ts:887`.
+   - **TEGILMADI (parallel sessiya):** `store/store-address.service.ts:449,474`.
+6. **Sxema-fayl nomi va tarixi.** `shared/decimal.ts` git tarixi `demand/fifo-consumer.ts` dan davom
+   etadi (`git mv` — `git log --follow` ishlaydi), lekin **eski commit'lardagi yo'l** boshqa.
+   Kelajakdagi arxeologiya uchun shu yerda qayd etildi.
+7. **`pnpm lint:product` to'liq yashil emas** — parallel sessiyaning formatlanmagan yangi fayllari
+   sababli. Mening fayllarim uchun `biome check` **0 error**. Ular commit qilgach gate qayta
+   yugurtirilishi kerak.
+
+**Commit:** `refactor(api): faza q17 — decimal primitivlar shared/decimal.ts ga + qoldiq float'lar`
+**Parallel sessiya sharoiti (CLAUDE.md §6):** bu checkout'da MK/HR sessiyasi faol
+(`manager/kpi/*`, `hr/hr-equipment/*`, `hr/hr-employee/offboarding*`, `manager/live/*`,
+`permissions/*`, `store/*`, `packages/db/prisma/schema.prisma`, `NEXT.md`, `todo.md`,
+`docs/REJA-8-BOLIM-*`, `docs/REJA-MENEJER-KASSA-*`). Ularning **hech bir fayliga tegilmadi** va
+`git add` faqat aniq yo'llar bilan qilindi; codemod'ning `FROZEN` ro'yxati buni mexanik ravishda
+kafolatladi.

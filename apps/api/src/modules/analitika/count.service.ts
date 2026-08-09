@@ -1,6 +1,7 @@
 import type { Prisma } from '@moysklad/db';
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { formatDecimalScaled, parseDecimalScaled } from '../shared/decimal.js';
 import {
   BulkApproveSchema,
   CountFilterSchema,
@@ -112,6 +113,25 @@ export interface SnapshotRow {
 }
 
 type SalePricesJson = Array<{ priceTypeId?: string; value?: string }> | null;
+
+/**
+ * Stock qty (Decimal(20,6)) → the `number` this module's wire contract uses,
+ * via the exact micro-bigint (Faza Q17 / Faza 34 DEFER-4).
+ *
+ * `Number(stock.qty)` went straight from a 20-digit decimal to a double: a
+ * Prisma Decimal stringifies with full precision, so tiny or very large
+ * quantities came back as exponent-notation garbage or silently rounded.
+ * Parsing through `parseDecimalScaled` keeps the value canonical and makes the
+ * rounding point ONE explicit step instead of an invisible cast.
+ *
+ * Residual (documented, not fixed here): `expectedQty` is persisted as this
+ * `number`, so quantities beyond 2^53 micro-units (≈ 9×10⁹ units) still round
+ * on write. Making that exact means moving `AnalitikaCount.expectedQty` and
+ * `computeVarianceStatus` onto decimal strings — an API-contract change.
+ */
+function decimalQty(qty: { toString(): string }): number {
+  return Number(formatDecimalScaled(parseDecimalScaled(String(qty))));
+}
 
 @Injectable()
 export class CountService {
@@ -298,7 +318,7 @@ export class CountService {
         select: { id: true },
       }),
     ]);
-    const stockByProduct = new Map(stocks.map((s) => [s.assortmentId, Number(s.qty)]));
+    const stockByProduct = new Map(stocks.map((s) => [s.assortmentId, decimalQty(s.qty)]));
     const countByProduct = new Map(counts.map((c) => [c.productId, c]));
 
     const items: CountProductRow[] = products.map((p) => {
@@ -715,7 +735,7 @@ export class CountService {
       },
       select: { qty: true },
     });
-    return stock ? Number(stock.qty) : 0;
+    return stock ? decimalQty(stock.qty) : 0;
   }
 
   /** Default sale price (minor) for a product; first price as fallback; 0 if none. */

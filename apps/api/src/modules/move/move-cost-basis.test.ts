@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { computeTransferCost } from './move-cost-basis.js';
+import { computeTransferCost } from '../shared/move-cost-basis.js';
 
 /**
  * Faza 34 / STK-08 — Move.post per-unit rounding residue.

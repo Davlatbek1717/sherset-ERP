@@ -11,10 +11,15 @@ import { allocateDocumentNumber } from '../../prisma/document-number.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { AttributeMetadataService } from '../attribute-metadata/attribute-metadata.service.js';
 import { CounterpartyBalanceService } from '../counterparty-balance/counterparty-balance.service.js';
-import { computePerUnitCost } from '../demand/fifo-consumer.js';
 import { PurchaseOrderService } from '../purchase-order/purchase-order.service.js';
 import { tashkentRangeBounds } from '../report/report-date-bounds.util.js';
 import { runBulk } from '../shared/bulk.js';
+import {
+  addDecimals,
+  compareDecimals,
+  computePerUnitCost,
+  subtractDecimals,
+} from '../shared/decimal.js';
 import { resolveCreatorGroupId } from '../shared/group-stamp.js';
 import { assertMassEditRefsInTenant, assertStateInTenant } from '../shared/mass-edit.js';
 import { mapVersionedUpdateError } from '../shared/optimistic-lock.js';
@@ -577,19 +582,23 @@ export class PurchaseReturnService {
       _sum: { quantity: true },
     });
     const returnedBySp = new Map(
-      returnedAgg.map((g) => [g.supplyPositionId, Number(g._sum.quantity ?? 0)]),
+      returnedAgg.map((g) => [g.supplyPositionId, String(g._sum.quantity ?? 0)]),
     );
 
+    // `SALES-10` class (Faza Q17) — identical to sales-return's createFromDemand:
+    // the float residue of a fully returned line stringified to an exponent
+    // literal ("5.5e-17") and pre-filled a phantom position; the `+ 1e-7` slack
+    // on the guard only masked the same drift.
     const positions = supply.positions
       .map((sp) => {
-        const alreadyReturned = returnedBySp.get(sp.id) ?? 0;
-        const remaining = Number(String(sp.quantity)) - alreadyReturned;
-        const want = parsed.quantities?.[sp.id] ?? String(remaining > 0 ? remaining : 0);
-        const wantNum = Number(want);
-        if (wantNum <= 0) return null;
-        if (wantNum > remaining + 1e-7) {
+        const alreadyReturned = returnedBySp.get(sp.id) ?? '0';
+        const remaining = subtractDecimals(String(sp.quantity), alreadyReturned);
+        const want =
+          parsed.quantities?.[sp.id] ?? (compareDecimals(remaining, '0') > 0 ? remaining : '0');
+        if (compareDecimals(want, '0') <= 0) return null;
+        if (compareDecimals(want, remaining) > 0) {
           throw new BadRequestException(
-            `Position ${sp.id}: qaytarish mumkin = ${remaining} (qabul ${String(sp.quantity)} − qaytarilgan ${alreadyReturned}), so'ralmoqda ${wantNum}`,
+            `Position ${sp.id}: qaytarish mumkin = ${remaining} (qabul ${String(sp.quantity)} − qaytarilgan ${alreadyReturned}), so'ralmoqda ${want}`,
           );
         }
         return {
@@ -1028,9 +1037,7 @@ export class PurchaseReturnService {
             where: { id: { in: linkedSpIds }, accountId },
             select: { id: true, quantity: true },
           });
-          const supplyQtyById = new Map(
-            supplyPositions.map((sp) => [sp.id, Number(String(sp.quantity))]),
-          );
+          const supplyQtyById = new Map(supplyPositions.map((sp) => [sp.id, String(sp.quantity)]));
           const otherPosted = await tx.purchaseReturnPosition.groupBy({
             by: ['supplyPositionId'],
             where: {
@@ -1041,21 +1048,21 @@ export class PurchaseReturnService {
             _sum: { quantity: true },
           });
           const otherById = new Map(
-            otherPosted.map((g) => [g.supplyPositionId, Number(g._sum.quantity ?? 0)]),
+            otherPosted.map((g) => [g.supplyPositionId, String(g._sum.quantity ?? 0)]),
           );
-          const thisById = new Map<string, number>();
+          const thisById = new Map<string, string>();
           for (const p of existing.positions) {
             if (p.supplyPositionId) {
               thisById.set(
                 p.supplyPositionId,
-                (thisById.get(p.supplyPositionId) ?? 0) + Number(String(p.quantity)),
+                addDecimals(thisById.get(p.supplyPositionId) ?? '0', String(p.quantity)),
               );
             }
           }
           for (const spId of linkedSpIds) {
-            const cap = supplyQtyById.get(spId) ?? 0;
-            const total = (otherById.get(spId) ?? 0) + (thisById.get(spId) ?? 0);
-            if (total > cap + 1e-7) {
+            const cap = supplyQtyById.get(spId) ?? '0';
+            const total = addDecimals(otherById.get(spId) ?? '0', thisById.get(spId) ?? '0');
+            if (compareDecimals(total, cap) > 0) {
               throw new ConflictException(
                 `Приёмка позицияси: qaytarilgan jami (${total}) qabul qilingan (${cap}) dan oshib ketdi`,
               );

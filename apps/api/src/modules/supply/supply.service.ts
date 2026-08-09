@@ -13,7 +13,6 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 import { AttributeMetadataService } from '../attribute-metadata/attribute-metadata.service.js';
 import { CounterpartyBalanceService } from '../counterparty-balance/counterparty-balance.service.js';
 import { type CurrencyRate, toBaseMinor } from '../currency/currency-convert.js';
-import { compareDecimals } from '../demand/fifo-consumer.js';
 import { HR_EVENT, type SupplyPostedEvent } from '../hr/hr-shared/hr-events.types.js';
 import { PaymentOutService } from '../payment-out/payment-out.service.js';
 import { PermissionsService } from '../permissions/permissions.service.js';
@@ -21,6 +20,7 @@ import { PurchaseOrderService } from '../purchase-order/purchase-order.service.j
 import { PurchaseReturnService } from '../purchase-return/purchase-return.service.js';
 import { tashkentRangeBounds } from '../report/report-date-bounds.util.js';
 import { runBulk } from '../shared/bulk.js';
+import { compareDecimals } from '../shared/decimal.js';
 import { resolveCreatorGroupId } from '../shared/group-stamp.js';
 import { assertMassEditRefsInTenant, assertStateInTenant } from '../shared/mass-edit.js';
 import { combineMergePositions } from '../shared/merge-positions.util.js';

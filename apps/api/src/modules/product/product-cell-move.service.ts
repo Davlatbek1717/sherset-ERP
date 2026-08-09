@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { Prisma } from '@moysklad/db';
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
-import { computeTransferCost } from '../move/move-cost-basis.js';
+import { computeTransferCost } from '../shared/move-cost-basis.js';
 import { type StockBalance, StockService } from '../stock/stock.service.js';
 import { CellMoveSchema, CellPlaceSchema, CellRebindSchema } from './product-cell-move.schema.js';
 

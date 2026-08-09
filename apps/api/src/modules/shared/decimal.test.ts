@@ -9,7 +9,7 @@ import {
   parseDecimalScaled,
   roundHalfUp,
   subtractDecimals,
-} from './fifo-consumer.js';
+} from './decimal.js';
 
 describe('parseDecimalScaled', () => {
   it.each([

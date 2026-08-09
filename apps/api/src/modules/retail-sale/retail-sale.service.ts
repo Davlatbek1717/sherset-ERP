@@ -13,9 +13,6 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 // Kassa TZ §7.1 — qarzga sotish mijoz balansiga yoziladi (moysklad «Баланс»
 // ishora konventsiyasi: musbat = mijoz bizga qarzdor).
 import { CounterpartyBalanceService } from '../counterparty-balance/counterparty-balance.service.js';
-// Faza 18a (QAROR-A weighted-average, STK-02): the POS stock outflow is priced
-// from the per-store locked balance with the same helpers Loss uses.
-import { compareDecimals, computePerUnitCost } from '../demand/fifo-consumer.js';
 // §109: loyalty accrual/reversal on POS sale/refund. Only loyalty's
 // existing public API is called (computeEarnedPoints + createOperation);
 // the loyalty module itself is NOT edited (DO NOT respected).
@@ -23,6 +20,9 @@ import { LoyaltyService } from '../loyalty/loyalty.service.js';
 import { type MoneyDelta, MoneyService } from '../money/money.service.js';
 // F2: «Отправил кладовщику» — in-app 🔔 + SSE push to the warehouse keeper.
 import { NotificationService } from '../notification/notification.service.js';
+// Faza 18a (QAROR-A weighted-average, STK-02): the POS stock outflow is priced
+// from the per-store locked balance with the same helpers Loss uses.
+import { compareDecimals, computePerUnitCost } from '../shared/decimal.js';
 import { resolveCreatorGroupId } from '../shared/group-stamp.js';
 // Optimistic-lock (lost-update guard) for the draft field-edit update() path.
 import { mapVersionedUpdateError } from '../shared/optimistic-lock.js';

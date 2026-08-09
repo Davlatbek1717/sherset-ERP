@@ -9,13 +9,13 @@ import {
 import { allocateDocumentNumber } from '../../prisma/document-number.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { AttributeMetadataService } from '../attribute-metadata/attribute-metadata.service.js';
+import { tashkentRangeBounds } from '../report/report-date-bounds.util.js';
 import {
   compareDecimals,
   computeLineCost,
   computePerUnitCost,
   subtractDecimals,
-} from '../demand/fifo-consumer.js';
-import { tashkentRangeBounds } from '../report/report-date-bounds.util.js';
+} from '../shared/decimal.js';
 import { resolveCreatorGroupId } from '../shared/group-stamp.js';
 import { mapVersionedUpdateError } from '../shared/optimistic-lock.js';
 import { withSerializationRetry } from '../shared/serialization-retry.js';

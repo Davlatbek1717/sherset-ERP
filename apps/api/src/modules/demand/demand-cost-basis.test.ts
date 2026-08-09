@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { scaleMinorByQty } from '@moysklad/money';
 import { describe, expect, it } from 'vitest';
-import { computeOutflowCost, reversalLineCost } from './demand-cost-basis.js';
+import { computeOutflowCost, reversalLineCost } from '../shared/demand-cost-basis.js';
 
 /**
  * Faza Q4 (18c qoldig'i) — Demand LAST-UNIT rounding residue (`STK-08` class).

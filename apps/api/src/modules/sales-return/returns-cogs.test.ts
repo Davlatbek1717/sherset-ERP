@@ -36,7 +36,12 @@ for (const [name, src] of [
 ] as const) {
   describe(`${name} post() values stock at weighted-average cost, not the document price`, () => {
     it('imports the exact per-unit cost helper', () => {
-      expect(src).toMatch(/import \{ computePerUnitCost \} from '\.\.\/demand\/fifo-consumer\.js'/);
+      // Faza Q17: the primitives moved to `shared/decimal.ts` and both services
+      // now pull several of them, so the import is a multi-name block — match
+      // the named import inside whatever block it lives in, not a fixed line.
+      expect(src).toMatch(
+        /import \{[^}]*\bcomputePerUnitCost\b[^}]*\} from '\.\.\/shared\/decimal\.js'/s,
+      );
     });
 
     it('post() derives per-unit cost from the locked balance costBalanceMinor (weighted-average)', () => {

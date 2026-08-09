@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { compareDecimals } from '../demand/fifo-consumer.js';
+import { compareDecimals } from '../shared/decimal.js';
 
 /**
  * Faza Q4 (18c qoldig'i) — `SupplyPosition.remainingQty` is DEAD for COGS.

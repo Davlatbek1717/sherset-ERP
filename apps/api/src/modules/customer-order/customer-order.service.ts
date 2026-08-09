@@ -13,16 +13,11 @@ import { allocateDocumentNumber } from '../../prisma/document-number.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { AttributeType } from '../attribute-metadata/attribute-metadata.schema.js';
 import { AttributeMetadataService } from '../attribute-metadata/attribute-metadata.service.js';
-import {
-  addDecimals,
-  compareDecimals,
-  minDecimal,
-  subtractDecimals,
-} from '../demand/fifo-consumer.js';
 import { type CustomerOrderCreatedEvent, HR_EVENT } from '../hr/hr-shared/hr-events.types.js';
 import { PermissionsService } from '../permissions/permissions.service.js';
 import { tashkentRangeBounds } from '../report/report-date-bounds.util.js';
 import { runBulk } from '../shared/bulk.js';
+import { addDecimals, compareDecimals, minDecimal, subtractDecimals } from '../shared/decimal.js';
 import { resolveCreatorGroupId } from '../shared/group-stamp.js';
 import { assertMassEditRefsInTenant, assertStateInTenant } from '../shared/mass-edit.js';
 import { combineMergePositions } from '../shared/merge-positions.util.js';

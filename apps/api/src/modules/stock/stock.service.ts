@@ -1,7 +1,7 @@
 import type { Prisma } from '@moysklad/db';
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
-import { formatDecimalScaled, parseDecimalScaled } from '../demand/fifo-consumer.js';
+import { formatDecimalScaled, parseDecimalScaled } from '../shared/decimal.js';
 
 /**
  * Stock service — centralizes ledger writes + balance reads.
@@ -84,7 +84,7 @@ export interface ReservationDelta {
  * Decimal(20,6) → exact integer micro-units (×1e6) — no float drift.
  *
  * Faza 34: this file used to carry its OWN copy of the parse/format pair.
- * There is now exactly ONE implementation (demand/fifo-consumer.ts, a
+ * There is now exactly ONE implementation (`shared/decimal.ts`, a
  * dependency-free leaf module) shared by every quantity/cost call site;
  * the local names are kept because `micro` is this file's vocabulary.
  */

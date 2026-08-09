@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { scaleMinorByQty } from '@moysklad/money';
 import { describe, expect, it } from 'vitest';
-import { computePerUnitCost } from './fifo-consumer.js';
+import { computePerUnitCost } from '../shared/decimal.js';
 
 /**
  * Faza 18a (QAROR-A, 2026-08-08 — foydalanuvchi qarori) — Demand COGS moves

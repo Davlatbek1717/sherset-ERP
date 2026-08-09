@@ -3,13 +3,16 @@
  *
  * Lives outside move.service.ts so the per-cell mover (`product-cell-move`)
  * can share the SAME arithmetic without importing a Nest service module.
+ * Faza Q17 moved it from `move/` into `shared/`: three modules across two
+ * domains (move, product, demand) already depended on it, so keeping it under
+ * one document's folder made a leaf look like a cross-module reach-in.
  */
 import {
   compareDecimals,
   computeLineCost,
   computePerUnitCost,
   parseDecimalScaled,
-} from '../demand/fifo-consumer.js';
+} from './decimal.js';
 
 /**
  * The value that physically travels with `moveQty` units out of the source

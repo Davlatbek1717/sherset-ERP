@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { allocateDocumentNumber } from '../../prisma/document-number.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
-import { compareDecimals } from '../demand/fifo-consumer.js';
+import { compareDecimals } from '../shared/decimal.js';
 import { assertMassEditRefsInTenant } from '../shared/mass-edit.js';
 import { mapVersionedUpdateError } from '../shared/optimistic-lock.js';
 import { type StockDelta, StockService } from '../stock/stock.service.js';

@@ -18,6 +18,10 @@ import { type DemandPostedEvent, HR_EVENT } from '../hr/hr-shared/hr-events.type
 import { PermissionsService } from '../permissions/permissions.service.js';
 import { tashkentRangeBounds } from '../report/report-date-bounds.util.js';
 import { runBulk } from '../shared/bulk.js';
+import { addDecimals, compareDecimals, subtractDecimals } from '../shared/decimal.js';
+// Exact outflow/reversal arithmetic (Faza Q4 / STK-08) — pure, reuses the
+// Move basis helper so both documents empty a store the same way.
+import { computeOutflowCost, reversalLineCost } from '../shared/demand-cost-basis.js';
 import { resolveCreatorGroupId } from '../shared/group-stamp.js';
 import { assertMassEditRefsInTenant, assertStateInTenant } from '../shared/mass-edit.js';
 import { mapVersionedUpdateError } from '../shared/optimistic-lock.js';
@@ -25,9 +29,6 @@ import { searchTokenGroups } from '../shared/search-tokens.js';
 import { withSerializationRetry } from '../shared/serialization-retry.js';
 import { type StockDelta, StockService } from '../stock/stock.service.js';
 import { WebhookFireService } from '../webhook/webhook-fire.service.js';
-// Exact outflow/reversal arithmetic (Faza Q4 / STK-08) — pure, reuses the
-// Move basis helper so both documents empty a store the same way.
-import { computeOutflowCost, reversalLineCost } from './demand-cost-basis.js';
 // OUTBOUND «Накладные расходы» fold — pure, adversarially tested
 // (demand-overhead.test.ts). §12 helper-pattern, OUTBOUND semantics.
 import { demandOverheadCostSumMinor } from './demand-overhead.js';
@@ -43,7 +44,6 @@ import {
   type UpdateDemandInput,
   UpdateDemandSchema,
 } from './demand.schema.js';
-import { addDecimals, compareDecimals, subtractDecimals } from './fifo-consumer.js';
 
 interface ComputedTotals {
   sumMinor: bigint;

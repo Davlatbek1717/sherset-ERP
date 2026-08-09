@@ -1,5 +1,6 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { computeLineCost, formatDecimalScaled, parseDecimalScaled } from '../shared/decimal.js';
 import { AnalysisFilterSchema, CounterpartyListFilterSchema } from './analysis.schema.js';
 import { type SalePricesJson, pickSalePriceMinor } from './sale-price.util.js';
 
@@ -268,53 +269,62 @@ export class AnalysisService {
       ],
     );
 
-    // Per-product aggregates (BigInt for money to avoid drift across many rows).
-    const purchasedByProduct = new Map<string, { qty: number; cost: bigint }>();
+    // Per-product aggregates — quantities in exact 1e6-scaled micro-units and
+    // money in BigInt tiyin (Faza Q17 / Faza 34 DEFER-4). Both used to run
+    // through `number`: `cur.qty += Number(r.quantity)` drifts across thousands
+    // of fractional rows, and `BigInt(Math.round(q * Number(r.priceMinor)))`
+    // priced every line with float money AND crushed prices above 2^53 tiyin.
+    // `computeLineCost` is the exact half-up qty × unit-price used by every
+    // posting path, so the report and the ledger now agree by construction.
+    const purchasedByProduct = new Map<string, { qtyMicro: bigint; cost: bigint }>();
     for (const r of supplyRows) {
       if (!r.productId) continue;
-      const q = Number(r.quantity);
-      const cost = BigInt(Math.round(q * Number(r.priceMinor)));
-      const cur = purchasedByProduct.get(r.productId) ?? { qty: 0, cost: 0n };
-      cur.qty += q;
-      cur.cost += cost;
+      const qty = String(r.quantity);
+      const cur = purchasedByProduct.get(r.productId) ?? { qtyMicro: 0n, cost: 0n };
+      cur.qtyMicro += parseDecimalScaled(qty);
+      cur.cost += computeLineCost(qty, r.priceMinor);
       purchasedByProduct.set(r.productId, cur);
     }
-    const soldByProduct = new Map<string, { qty: number; value: bigint; cost: bigint }>();
+    const soldByProduct = new Map<string, { qtyMicro: bigint; value: bigint; cost: bigint }>();
     for (const r of demandRows) {
       if (!r.productId) continue;
-      const q = Number(r.quantity);
-      const value = BigInt(Math.round(q * Number(r.priceMinor)));
-      const cost = BigInt(Math.round(q * Number(r.costMinor ?? 0n)));
-      const cur = soldByProduct.get(r.productId) ?? { qty: 0, value: 0n, cost: 0n };
-      cur.qty += q;
-      cur.value += value;
-      cur.cost += cost;
+      const qty = String(r.quantity);
+      const cur = soldByProduct.get(r.productId) ?? { qtyMicro: 0n, value: 0n, cost: 0n };
+      cur.qtyMicro += parseDecimalScaled(qty);
+      cur.value += computeLineCost(qty, r.priceMinor);
+      cur.cost += computeLineCost(qty, r.costMinor ?? 0n);
       soldByProduct.set(r.productId, cur);
     }
-    const stockByProduct = new Map(stocks.map((s) => [s.assortmentId, Number(s.qty)]));
+    const stockByProduct = new Map(
+      stocks.map((s) => [s.assortmentId, parseDecimalScaled(String(s.qty))]),
+    );
 
-    // Build per-product DTO + accumulate stats.
-    let purchasedQtyTotal = 0;
-    let soldQtyTotal = 0;
+    // Build per-product DTO + accumulate stats. Quantities stay exact until the
+    // very last step: the wire contract (`AnalysisProduct`) is `number`, so the
+    // micro-bigint is formatted to a Decimal string and parsed once, at the
+    // boundary — never accumulated as float.
+    let purchasedQtyMicroTotal = 0n;
+    let soldQtyMicroTotal = 0n;
     let purchasedCostMinor = 0n;
     let soldValueMinor = 0n;
     let soldCostMinor = 0n;
     let purchasedSaleValueMinor = 0n;
+    const qtyOut = (micro: bigint) => Number(formatDecimalScaled(micro));
 
     const productsDto: AnalysisProduct[] = products.map((p) => {
       const sellPriceMinor = pickSalePriceMinor(p.salePrices as SalePricesJson, defaultType?.id);
       const sellPrice = Number(sellPriceMinor);
       const buyPrice = Number(p.buyPrice ?? 0n);
-      const pur = purchasedByProduct.get(p.id) ?? { qty: 0, cost: 0n };
-      const sold = soldByProduct.get(p.id) ?? { qty: 0, value: 0n, cost: 0n };
-      const finalStock = stockByProduct.get(p.id) ?? 0;
+      const pur = purchasedByProduct.get(p.id) ?? { qtyMicro: 0n, cost: 0n };
+      const sold = soldByProduct.get(p.id) ?? { qtyMicro: 0n, value: 0n, cost: 0n };
+      const finalStock = stockByProduct.get(p.id) ?? 0n;
 
-      purchasedQtyTotal += pur.qty;
-      soldQtyTotal += sold.qty;
+      purchasedQtyMicroTotal += pur.qtyMicro;
+      soldQtyMicroTotal += sold.qtyMicro;
       purchasedCostMinor += pur.cost;
       soldValueMinor += sold.value;
       soldCostMinor += sold.cost;
-      purchasedSaleValueMinor += BigInt(Math.round(pur.qty * sellPrice));
+      purchasedSaleValueMinor += computeLineCost(formatDecimalScaled(pur.qtyMicro), sellPriceMinor);
 
       return {
         id: p.id,
@@ -324,12 +334,14 @@ export class AnalysisService {
         unitName: p.uom ?? null,
         buyPrice,
         sellPrice,
-        soldQty: sold.qty,
-        purchasedQty: pur.qty,
-        finalStock,
+        soldQty: qtyOut(sold.qtyMicro),
+        purchasedQty: qtyOut(pur.qtyMicro),
+        finalStock: qtyOut(finalStock),
       };
     });
 
+    const purchasedQtyTotal = qtyOut(purchasedQtyMicroTotal);
+    const soldQtyTotal = qtyOut(soldQtyMicroTotal);
     const stats: AnalysisStats = {
       purchasedQty: purchasedQtyTotal,
       soldQty: soldQtyTotal,
@@ -337,7 +349,13 @@ export class AnalysisService {
       soldCost: Number(soldCostMinor),
       purchasedSaleValue: Number(purchasedSaleValueMinor),
       soldValue: Number(soldValueMinor),
-      soldShare: purchasedQtyTotal > 0 ? soldQtyTotal / purchasedQtyTotal : 0,
+      // A ratio is float by nature; what matters is that BOTH operands are the
+      // exact totals (the `> 0` test is on the micro-bigint, so a pure rounding
+      // residue can no longer masquerade as "something was purchased").
+      soldShare:
+        purchasedQtyMicroTotal > 0n
+          ? Number(soldQtyMicroTotal) / Number(purchasedQtyMicroTotal)
+          : 0,
       lastPurchaseAt: lastSupply?.supply?.moment?.toISOString() ?? null,
       lastSaleAt: lastDemand?.demand?.moment?.toISOString() ?? null,
     };

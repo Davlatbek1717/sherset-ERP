@@ -13,12 +13,12 @@ import { AttributeMetadataService } from '../attribute-metadata/attribute-metada
 import { tashkentRangeBounds } from '../report/report-date-bounds.util.js';
 import { resolveCreatorGroupId } from '../shared/group-stamp.js';
 import { assertMassEditRefsInTenant } from '../shared/mass-edit.js';
+import { computeTransferCost } from '../shared/move-cost-basis.js';
 import { mapVersionedUpdateError } from '../shared/optimistic-lock.js';
 import { withSerializationRetry } from '../shared/serialization-retry.js';
 import { type StockDelta, StockService } from '../stock/stock.service.js';
 import { type OverheadLineInput, distributeOverhead } from '../supply/overhead-distribution.js';
 import { WebhookFireService } from '../webhook/webhook-fire.service.js';
-import { computeTransferCost } from './move-cost-basis.js';
 import {
   type CreateMoveInput,
   CreateMoveSchema,
