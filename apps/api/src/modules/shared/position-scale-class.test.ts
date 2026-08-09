@@ -81,9 +81,19 @@ describe('position line-total class uses scaleMinorByQty (6-dp, no 3-dp truncati
       it('routes price/cost × qty through a shared 6-dp primitive', () => {
         // Cost lines use scaleMinorByQty; billing totals use computePositionTotal
         // (single-round) — both live in @moysklad/money and keep qty at 6 dp.
-        expect(code.includes('scaleMinorByQty(') || code.includes('computePositionTotal(')).toBe(
-          true,
-        );
+        //
+        // `computeLineTotalSafe` is the third accepted form: Faza 31 (`105897b3`)
+        // lifted 13 byte-identical copies of the /new editors' line-total block
+        // into `apps/web/src/lib/doc-totals.ts`, so the pages now call the helper
+        // instead of the primitive directly. That dedup made this guard red on
+        // 9 pages — the guard was stale, not the code. The indirection is only
+        // safe because the helper itself is pinned below, so a rewrite of
+        // `computeLineTotalSafe` that drops the primitive still fails here.
+        expect(
+          code.includes('scaleMinorByQty(') ||
+            code.includes('computePositionTotal(') ||
+            code.includes('computeLineTotalSafe('),
+        ).toBe(true);
       });
 
       it('no legacy 3-dp qty scaling (`Math.round(qty * 1000)` or `/ 1000n`)', () => {
@@ -107,4 +117,43 @@ describe('position line-total class uses scaleMinorByQty (6-dp, no 3-dp truncati
       });
     });
   }
+
+  /**
+   * The indirection Faza 31 introduced, pinned at its own source.
+   *
+   * 13 pages now satisfy the rule above by calling `computeLineTotalSafe`
+   * rather than the primitive. That is only equivalent while the helper keeps
+   * delegating: if someone re-implements it with inline arithmetic, every one
+   * of those 13 pages would still "pass" and the 3-dp truncation would be back
+   * across the whole document family at once.
+   */
+  describe('apps/web/src/lib/doc-totals.ts (the shared helper)', () => {
+    const code = stripComments(readFileSync(join(REPO, 'apps/web/src/lib/doc-totals.ts'), 'utf8'));
+
+    it('computeLineTotalSafe delegates to a @moysklad/money 6-dp primitive', () => {
+      expect(code).toMatch(/export function computeLineTotalSafe/);
+      expect(code.includes('computePositionTotal(') || code.includes('scaleMinorByQty(')).toBe(
+        true,
+      );
+    });
+
+    it('imports that primitive from @moysklad/money, not a local re-implementation', () => {
+      expect(code).toMatch(/from '@moysklad\/money'/);
+    });
+
+    it('carries no legacy 3-dp qty scaling in the money path', () => {
+      // Scoped to the money function, not the file: `docMeasureTotals` in the
+      // same module rounds «Вес»/«Объём» to 3 dp on purpose (`round3`), exactly
+      // like `PositionTable.lineMeasure` above. Grams and millilitres are not
+      // minor units, and banning the idiom file-wide would flag a display
+      // rounding as a money regression.
+      const start = code.indexOf('export function computeLineTotalSafe');
+      expect(start).toBeGreaterThan(-1);
+      const after = code.indexOf('\nexport ', start + 1);
+      const moneyFn = after === -1 ? code.slice(start) : code.slice(start, after);
+
+      expect(moneyFn).not.toMatch(/Math\.round\([^;\n]*\*\s*1_?000\b/);
+      expect(moneyFn).not.toMatch(/\/\s*1_?000n\b/);
+    });
+  });
 });

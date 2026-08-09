@@ -947,7 +947,11 @@ nomfazolariga ko'chir; i18n hardcoded-guard skanerini `components/pos`+`sotuv`ga
 **▶ SESSIYA-BOSHI PROMPT:**
 > `docs/REJA-AUDIT-FIX-2026-08.md` — **Faza 32**. O'ZGARMAS QOIDALAR. `FE-07`+`FE-08`. Refresh-dead redirect +
 > POS i18n ko'chirish. TDD: redirect + i18n testlari. Gate (web+i18n). Hisobot, TO'XTA.
-**◻ HISOBOT:** _(agent to'ldiradi)_
+**☑ HISOBOT:** 2026-08-09 — HISOBOT JURNALI → «Faza 32» (`a54fedd7`). `FE-07` refresh 401/403 →
+seans tozalanadi (tarmoq/5xx ATAYLAB emas). `FE-08` 150 kalit × 2 til (`pages.sotuv` +91,
+yangi `pages.pos` +59). Yangi `pos-i18n-guard.test.ts` ikki gate teshigini yopdi
+(key-existence `components/**` ni ko'rmasdi; no-hardcoded `/sotuv` ni qamramasdi) —
+HEAD'da 88 sizish o'lchandi, hozir 0.
 
 ---
 
@@ -966,7 +970,18 @@ sessiyalarga (hisobotda ro'yxat).
 **▶ SESSIYA-BOSHI PROMPT:**
 > `docs/REJA-AUDIT-FIX-2026-08.md` — **Faza 33**. O'ZGARMAS QOIDALAR. `FE-12`. Zod→shared-type infra + 3-5 endpoint.
 > Test: server-Zod↔FE-tip moslik. Gate. Hisobot (qolgan endpointlar ro'yxati), TO'XTA.
-**◻ HISOBOT:** _(agent to'ldiradi)_
+**✅ HISOBOT (2026-08-09) — Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q:**
+`packages/contracts` (source-only, `dist` yo'q) + **provenance reyestri** — har sxema kalitlari
+serverdagi manbaga (Prisma modeli / `select` bloki / qo'lda yig'ilgan javob / apps/api Zod-sxemasi)
+bog'lanadi, `apps/api` konformans testi uzilishni tutadi. 5 endpoint; `retail/page.tsx` migratsiya
+qilindi. Batafsili «HISOBOT JURNALI → Faza 33» da.
+**DIQQAT — rejaning ikki premisasi noto'g'ri chiqdi:** (1) audit `FE-12` ta'sirini **teskari**
+yozgan — ground-truth bo'yicha `cashDesk`/`store`/`organization` **NOT NULL**, ya'ni `retail` haq
+edi, `sotuv` emas; (2) «apps/api Zod-sxemalaridan `z.infer`» — API'da **javob** Zod-sxemalari
+deyarli yo'q (butun repoda 1 fayl), Zod faqat kirish validatsiyasi uchun. Shu sababli kontraktlar
+yangidan yozilib, **provenance** orqali serverga bog'landi.
+**Parallel sessiya:** `sotuv/page.tsx` (Faza 32 jonli edi) ATAYLAB tegilmadi — qarz web
+qo'riqchisining `PENDING_MIGRATION` ro'yxatida mashina tomonidan kuzatiladi.
 
 ---
 
@@ -3900,3 +3915,240 @@ Test-fayllar soni 185 (yangi `filter-fields.test.tsx` bilan).
    `function MultiRefField` borligini talab qilardi; endi import + `<MultiRefField`
    ishlatilishiga bog'landi. Qo'riqchining maqsadi o'zgarmadi (modal picker emas,
    inline dropdown), faqat langar ko'chdi.
+
+---
+
+## Faza 33 — 2026-08-09 — **Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q**
+
+**Topilma tasdiqlanishi (o'z ko'zim bilan kodda) — `FE-12` TASDIQLANDI, LEKIN AUDIT TA'SIRNI
+TESKARI YOZGAN.** Ikki POS sahifasi AYNI endpoint (`GET /cashier-sessions/current`) uchun
+`CurrentSession` ni alohida-alohida e'lon qilgani rost: `retail/page.tsx:38` `cashDesk: CashDesk`,
+`sotuv/page.tsx:67` `cashDesk: CashDesk | null`. Audit «retail `cashDesk.currency` ga to'g'ridan-
+to'g'ri kiradi ⇒ null-farqlar runtime'da portlaydi» degan — **ya'ni retail'ni xato deb bilgan.
+Ground-truth teskari:** `schema.prisma:7733,7738,7739` da `cashDeskId`/`storeId`/`organizationId`
+**NOT NULL**, `findCurrentForCashier` esa uchala relyatsiyani shartsiz `include` qiladi ⇒
+relyatsiya **hech qachon null emas**, **retail HAQ edi**, sotuv esa ortiqcha himoyalangan.
+Kontrakt ground-truth bo'yicha non-null yozildi. *(Xotira: `audit-findings-examples-unverified` —
+audit misollari o'lchanmagan; bu shu klassning yana bir misoli.)*
+
+**Rejaning yechim taklifi ham qisman noto'g'ri edi.** Reja «apps/api Zod-sxemalaridan `z.infer`
+tiplarni eksport qil» deydi. Tekshirdim: `apps/api/**/*.schema.ts` da **javob (response)
+sxemalari deyarli YO'Q** — `grep "ResponseSchema|Response = z\."` butun API bo'ylab **1 fayl**
+(`exchange-rate`). Zod bu yerda **kirish validatsiyasi** uchun; FE og'rig'i esa **javob**
+tiplarida. Ya'ni «z.infer qilib eksport qilish» uchun eksport qiladigan narsaning o'zi yo'q edi.
+
+### Nima qurildi
+
+**`packages/contracts` — yangi paket (`@moysklad/contracts`), `dist` YO'Q (source-only).**
+`exports` to'g'ridan-to'g'ri `./src/index.ts` ga qaraydi: tsc `.ts` ni o'zining deklaratsiyasi
+sifatida o'qiydi, vitest/vite uchib transpile qiladi, web esa faqat `import type` ishlatadi
+(bundlega hech narsa tushmaydi). Sabab — xotira `money-dist-stale-tsbuildinfo`: `@moysklad/money`
+ning eskirgan `dist`i bir marta «typecheck yashil, runtime `X is not a function`» bergan. Build
+bosqichi bo'lmasa, o'sha nosozlik klassi umuman mavjud emas.
+
+| Fayl | Mazmun |
+|---|---|
+| `src/wire.ts` | Sim-ustidagi primitivlar + **uchta loyiha-bo'ylab serializatsiya qoidasi** hujjatlangan: `BigInt → string` (`main.ts:19` global `toJSON`), `Prisma.Decimal → string`, `DateTime → ISO`. Shu qoidalar hech qayerda yozilmagan edi. |
+| `src/envelope.ts` | `listEnvelope`/`ListEnvelope<T>`. **92 web fayli** o'z `interface ListResponse` ini e'lon qiladi va ular **kelishmaydi**: `{items,total,nextCursor}` (cash-desk, store) vs `{items}` (product) ⇒ `total`/`nextCursor` haqiqatan ixtiyoriy. |
+| `src/reference.ts` | `CashDeskRef`/`CashDeskRow`/`StoreRef`/`OrganizationRef`/`UserRef`. |
+| `src/cashier-session.ts` | `CurrentSessionSchema` (+ `nullable` javob shakli). |
+| `src/product.ts` | `PosProductRowSchema` + `ProductStockSchema` + `SalePriceEntrySchema`. |
+| `src/provenance.ts` | **`CONTRACT_PROVENANCE` reyestri** + `flattenSchemaKeys`. |
+
+**Asosiy g'oya — `provenance.ts`: kontrakt DEKORATIV bo'lmasligi uchun.** Interfeyslarni umumiy
+faylga ko'chirish dublikatni yopadi, lekin **arqonni bog'lamaydi** — server o'zgarsa baribir hech
+narsa yiqilmaydi. Shuning uchun **har sxema o'z kalitlarining serverdagi MANBASINI e'lon qilishi
+shart** (4 tur: Prisma modeli · servis metodidagi `select`/`include` bloki · qo'lda yig'ilgan
+javob obyekti · **apps/api Zod-sxemasi** ← rejadagi «server-Zod ↔ FE-tip» tekshiruvining aynan
+o'zi). Reyestrga qo'shilmagan yangi sxema ham yiqiladi (to'liqlik testi bor).
+
+**5 endpoint qoplandi:** `GET /cashier-sessions/current` · `GET /cash-desks` · `GET /stores` ·
+`GET /organizations` · `GET /products` (POS proyeksiyasi).
+
+### Testlar (TDD — avval RED)
+
+1. **`apps/api/src/modules/shared/contract-conformance.test.ts` (21 test).** Reyestr ustidan
+   data-driven yuradi: sxema kalitlarini yassilaydi va har birini e'lon qilingan manbadan
+   **haqiqiy manba fayldan** o'qib topadi. **RED ko'rildi** (modul yo'q → keyin 3 ta HAQIQIY
+   ekstraktor nuqsoni): (a) `sliceMethod` generikali metodni (`attachStock<T …>`) topa olmasdi;
+   (b) `select`/`include` Prisma kalit so'zlari javob-kaliti sifatida sanalardi; (c) sabotaj
+   testim **noto'g'ri metodni** buzayotgan edi (`list`/`findOne`/`open`/`close` da bayt-bayt bir
+   xil `cashier:` bloki bor, `/m` + global-siz `replace` birinchisini oladi) — ya'ni proof'ning
+   o'zi no-op bo'lib qolgan edi.
+2. **Tarixiy halokatga qarshi RED-proof.** Jonli `cashier-session.service.ts` dan `cashier:`
+   include'i o'chiriladi va kontrakt buzilishi tasdiqlanadi — bu **2026-06-08k da POS registrini
+   yiqitgan** aynan o'sha regressiya (`session.cashier.name` → `undefined`).
+3. **Ekstraktor o'z-testlari** (fixture ustida, doimiy): har biri langar topilmasa **THROW**
+   qiladi — jimgina bo'sh to'plam qaytarsa butun konformans suiti no-op bo'lib qolardi.
+4. **`packages/contracts/src/contracts.test.ts` (15 test).** Sxemalar realistik payload'ni qabul
+   qiladi; **son ko'rinishidagi minor-summani RAD etadi** (`BigInt → string` qoidasi);
+   `flattenSchemaKeys` self-referential sxemada ham to'xtaydi.
+5. **`apps/web/src/__tests__/shared-api-contracts.test.ts` (5 test).** Drift-back qo'riqchisi:
+   butun `web/src` skanlanadi, hech bir fayl kontrakt-egalik qilgan tipni qayta e'lon qila
+   olmaydi; `PENDING_MIGRATION` yozuvi **eskirsa yiqiladi** (migratsiya qilingach istisnoni
+   o'chirishga majbur qiladi).
+
+**Ikkala qo'riqchi ham JONLI sabotaj bilan tekshirildi** (vakuum emas): kontraktga soxta kalit
+qo'shilganda konformans yiqildi (`bogusServerKey`); sotuv istisnosi olib tashlanganda web
+qo'riqchisi `app/(app)/sotuv/page.tsx::CurrentSession` ni tutdi. Ikkalasi ham qaytarildi.
+
+### +1 mayda ish: Faza 31 qoldirgan QIZIL gate tuzatildi (mening regressiyam EMAS)
+
+To'liq API suitini yugurtirganda **9 ta yiqilish** chiqdi — `position-scale-class.test.ts`,
+9 ta `/new` hujjat sahifasi. Kelib chiqishi o'lchandi: `git show 105897b3^:…demands/new/page.tsx`
+da `scaleMinorByQty(|computePositionTotal(` **1 marta bor**, `HEAD` da **0** — ya'ni **Faza 31
+(`105897b3`)** 13 nusxani `computeLineTotalSafe` ga yig'ganda sahifa manbasidan primitiv nomi
+yo'qolgan, qo'riqchi esa sahifa manbasini skanlaydi. **Faza 31 buni ko'rmagan, chunki u faqat WEB
+suitini yugurtirgan — qo'riqchi `apps/api` da yashaydi.** Kod to'g'ri (`computeLineTotalSafe`
+`computePositionTotal` ga delegatsiya qiladi, tekshirildi), **qo'riqchi eskirgan edi**.
+Tuzatish: uchinchi qabul qilinadigan shakl qo'shildi **+ indirektsiyaning o'zi mixlandi** —
+`doc-totals.ts` uchun 3 yangi test (helper primitivga delegatsiya qilishi shart), aks holda 13
+sahifa «o'tadi» va 3-kasrli qirqim butun hujjat oilasiga bir yo'la qaytardi. Bu pin ham sabotaj
+bilan tekshirildi. `docMeasureTotals` dagi `round3` **ataylab chetlab o'tildi** — u «Вес»/«Объём»
+(gramm/ml), pul emas; butun fayl bo'yicha taqiq display-yumaloqlashni pul-regressiyasi deb
+belgilardi.
+
+### Gate
+
+- `@moysklad/contracts` typecheck **0** · `@moysklad/api` typecheck **0** · `@moysklad/web`
+  typecheck **0** *(quyidagi ogohlantirishga qarang)*
+- `pnpm lint:product` — **mening fayllarimda 0 xato**; umumiy natija **2 xato**, ikkalasi ham
+  parallel sessiyaning commit qilinmagan fayllarida (`components/pos/cash-out-dialog.tsx`,
+  `rasmilashtirish-modal.tsx`) — tegilmadi. `scripts/check-lint.mjs` SCOPE'iga
+  `packages/contracts/src` qo'shildi (aks holda yangi paket linsiz ketardi).
+- **To'liq API suite: 427 fayl / 5571 test yashil, 0 yiqilish** (2 skip). Sanoq nazorati:
+  `5573 = 5549 (Faza 34 bazasi) + 21 + 3` — jim yo'qolgan test yo'q. Faza 34 dagi 4 ta argon2
+  timeout takrorlanmadi.
+- **To'liq web suite: 2823 yashil, 1 yiqilish** (26 skip) — yiqilgan yagona test
+  `i18n-key-existence`, **27 ta `pages.sotuv.*` kaliti yetishmaydi va HAMMASI parallel
+  sessiyaning commit qilinmagan Faza 32 ishidan**. O'lchov: `grep "missing in" | grep -v sotuv`
+  = **0**. Mening o'zgarishlarim UI-matnga umuman tegmaydi (retail diff'i faqat tip e'lonlari).
+- `pnpm i18n:gate` — **shu sababdan QIZIL**, o'z qamrovimda toza. Bu gate parallel sessiya o'z
+  kalitlarini qo'shgach yashil bo'ladi.
+
+### ⚠️ Parallel sessiya bilan to'qnashuv — `sotuv/page.tsx` ATAYLAB MIGRATSIYA QILINMADI
+
+Sessiya o'rtasida `git status` parallel sessiyaning **jonli** ishini ko'rsatdi (Faza 32 — POS
+i18n): `sotuv/page.tsx`, `components/pos/{cash-out-dialog,debt-payment-dialog,rasmilashtirish-modal}.tsx`,
+`lib/auth-store.ts(+test)`, keyin yangi `__tests__/pos-i18n-guard.test.ts`. Men `sotuv/page.tsx`
+ni allaqachon tahrirlagan edim — **tahririmni qo'lda qaytardim** (`git checkout --`/`stash`
+ISHLATILMADI, CLAUDE.md §6.7-A). Sabab: u faylni commit qilsam, ularning tugallanmagan i18n ishi
+mening commitimga tushardi (xotira: `commit-pathspec-takes-worktree-version`). Shuning uchun bu
+fazada faqat **`retail/page.tsx`** migratsiya qilindi; `sotuv` qarzi web qo'riqchisining
+`PENDING_MIGRATION` ro'yxatida **mashina tomonidan kuzatiladi** (1 import + 1 blok o'chirish).
+
+Xuddi shu sababdan web typecheck'ning 4 xatosi ham ularniki (`pos-i18n-guard.test.ts`, sessiya
+davomida paydo bo'lgan yangi untracked fayl). O'z qamrovim yashilligi ularning fayliga TEGMASDAN
+o'lchandi: vaqtinchalik `tsconfig.faza33-scope.json` (o'sha bitta fayl `exclude`) → **exit 0**,
+so'ng scratch config o'chirildi.
+
+### Qolgan qarz / DEFER (keyingi sessiyalar uchun ro'yxat)
+
+1. **`sotuv/page.tsx` migratsiyasi** — Faza 32 commit qilingandan KEYIN (yuqoriga qarang).
+2. **`ListResponse` — 92 faylning 91 tasi hali lokal.** `retail` o'tkazildi. Bu mexanik codemod
+   ishi, LEKIN bir nuance bor: umumiy `ListEnvelope` da `total?: number` (API'ning uch xil
+   javob shakli sababli), shuning uchun `data.total` ni to'g'ridan-to'g'ri `number` sifatida
+   ishlatadigan sahifalar `?? 0` talab qiladi — codemod buni hisobga olsin.
+3. **Qamralmagan yirik endpointlar** (keyingi to'lqin, taxminiy ustuvorlik tartibida):
+   `GET /demands` (`DemandRow` — 40+ maydon, audit aynan shuni ko'rsatgan) · `GET /customer-orders` ·
+   `GET /counterparties` · `GET /supplies` · `GET /invoices-out` · `GET /invoices-in` ·
+   `GET /retail-sales` · `GET /payments-in|out` · `GET /cash-in|out` · `GET /variants` ·
+   `GET /bundles` · `GET /price-types` · `GET /employees`.
+4. **Konformans TIPNI tekshirmaydi, faqat kalit MAVJUDLIGINI.** Ustun `Int → String` ga o'zgarsa
+   test o'tadi. Buni yopish uchun Prisma modelining ustun tiplarini o'qib `wire.ts` qoidalari
+   bilan solishtirish kerak — alohida ish.
+5. **`kind:'method'` manbasi ataylab yumshoq** — metod ichidagi begona kalit ham «bor» deb
+   sanaladi. Qo'lda yig'ilgan bloklarni qoplashning narxi; kalit YO'QOLSA baribir yiqiladi.
+6. **Runtime tekshiruvi yo'q.** Hech bir test haqiqiy so'rov yubormaydi — endpoint yetib
+   borishi, avtorizatsiya, real JSON — hammasi **Phase-2 browser-QA** da qoladi.
+
+---
+
+## Faza 32 — FE auth-UX + POS i18n (`FE-07`, `FE-08`) (2026-08-09) — **Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q**
+
+**Commit:** `a54fedd7` — 9 fayl, +982/−277.
+
+### `FE-07` — o'lgan seans «tirik» ko'rinardi
+
+| | |
+|---|---|
+| Da'vo | «refresh o'lganda redirect yo'q» |
+| Holat | **TASDIQLANDI** — `auth-store.ts refresh()` `!res.ok` da faqat `false` qaytarardi; `state.user` eski qiymatda, `ms:auth-hint` hamon `'1'` qolardi. `layout.tsx` redirect sharti `initialized && !user && !hasAuthHint()` — uchala shart ham buzilmagani uchun **hech qachon otilmasdi**. |
+| Ta'sir | Refresh-cookie muddati tugagach ilova to'liq qobiq bilan render bo'laverardi: menyu, tugmalar, bo'sh ro'yxatlar — va HAR so'rov 401. Faqat qo'lda `F5` qutqarardi (u `bootstrapSession` ning o'z tozalash shoxiga tushardi). |
+| Yechim | `clearSession()` — `state` + hint + `emit()`. **Faqat 401/403** da chaqiriladi. |
+
+**ATAYLAB tozalamaydigan hollar:** tarmoq xatosi (`catch`) va 5xx. Sabab — «server javob berdi: bu token o'lik» bilan
+«so'rab ham bo'lmadi» bir narsa emas. API restart yoki bir soniyalik offline kassirni sotuv o'rtasida `/login` ga
+otib yuborsa, bu tuzatilayotgan bugdan battar bo'lardi. Ikkala holat testda qulflandi.
+
+**TDD:** `auth-store.test.ts` ga 5 test qo'shildi (fayl **ustidan yozilmadi** — `Edit`, `git status` da `M`).
+RED bosqichi o'lchandi: 401/403/subscriber testlari yiqildi, ikki negativ test (tarmoq, 5xx) allaqachon yashil edi —
+ya'ni ular haqiqatan yangi xulqni emas, saqlanishi kerak bo'lgan xulqni qulflaydi.
+Subscriber testi `renderHook(useAuth)` bilan `initialized && !user` — layout redirect shartining AYNAN o'zi.
+
+### `FE-08` — POS matnlari i18n ga
+
+**Qamrov:** `/sotuv/page.tsx` (2050 qator) + `components/pos/{cash-out-dialog,debt-payment-dialog,rasmilashtirish-modal}`.
+`payment-dialog` va `pos-pin-lock` **allaqachon toza edi** (`pages.payment_dialog`, `pages.posLock`) — tegilmadi.
+
+**150 kalit × 2 til:** `pages.sotuv` +91 (mavjud 60 ga qo'shildi), yangi `pages.pos` +59 (uch dialog uchun umumiy).
+RU tarjimalar loyihaning mavjud lug'atidan grounded: «Статья расходов» (`fields.expense_item`), «Инкассация»
+(`pages.z_report.collection`), «Получатель» (`fields.payee`), «Наличные/Карта/Сдача» (`pages.payment_dialog`),
+«Кассир» (`pages.retail_sales.cashier`). *(⚠️ `/sotuv` — sherset'ning O'Z sahifasi, moysklad-parity klon EMAS →
+CLAUDE.md §4 capture-grounding bu yerda qo'llanmaydi, chunki solishtiriladigan moysklad capture'i yo'q.)*
+
+**Kalitlar deterministik skript bilan qo'shildi** (`scratchpad/add-pos-keys.mjs`, ~0 token): fail-closed — kalit
+allaqachon BOSHQA qiymat bilan mavjud bo'lsa butun yugurish `exit 1` (parallel sessiya ishini jimgina bosmasin);
+bir xil qiymatda idempotent. Namespace ichi alifbo tartibiga keltirildi (diff barqarorligi uchun).
+
+### Yangi qo'riqchi — ikki gate teshigi o'lchab yopildi
+
+`apps/web/src/__tests__/pos-i18n-guard.test.ts`:
+
+1. **`i18n-key-existence.test.ts` FAQAT `app/(app)` ni yuradi** (`walk(APP_DIR)`, 18–19-qator) — `src/components/**`
+   umuman skanerlanmaydi. POS to'lov oqimining katta qismi `components/pos/*` da: u yerdagi `t('typo')` kassir ekraniga
+   xom kalit satri bo'lib chiqardi va **hamma gate yashil qolardi**.
+2. **`i18n-no-hardcoded.test.ts`** faqat `DONE_ROUTES` ro'yxatidagi `<route>/{new,[id]}/page.tsx` ni tekshiradi —
+   `/sotuv` (yakka `page.tsx`) va dialoglar undan **butunlay tashqarida** edi.
+
+Skaner **pozitsiya bo'yicha** ishlaydi (JSX matn tuguni · user-facing prop · `toast`/`alert`/`new Error` argumenti),
+so'z-ro'yxati bo'yicha emas: `data-test-id`, `queryKey`, API yo'llari va CSS klasslari **strukturaviy** chetda qoladi,
+ya'ni qo'riqchini `data-test-id` ni qayta nomlab aldab bo'lmaydi.
+
+**O'LCHANDI (bo'sh-yashil emas):** aynan shu skaner mantiqi `git show HEAD:` nusxalariga qo'llanganda
+**88 sizish** topdi (sotuv 56 · rasmiylashtirish 16 · debt-payment 10 · cash-out 6 · payment-dialog 0 · pin-lock 0),
+hozir **0**.
+
+**Soxta-musbat tuzatildi:** TS generic yopuvchi `>` JSX teg yopuvchisidan farq qilmaydi —
+`useState<'savat' | 'smena'>('savat')` dan keyingi kod «ekran matni» deb o'qildi. Kod-shakl bo'yicha rad etiladi
+(`;`/`=` bor yoki `(` bilan boshlanadi). Apostrof **ataylab** rad etilmaydi: «Do'kon», «yo'q» — aynan tutilishi
+kerak bo'lgan imlo. Regressiya testi bilan qulflandi.
+
+### Gate (QO'LDA, to'liq)
+
+web typecheck **0** · `check-lint.mjs` **0 error** (745 warning — siyosat ruxsat) · `i18n:gate` **9/9** ·
+to'liq web Vitest **187 fayl / 2829 test yashil, 0 yiqilish** (26 skip).
+**Sanoq nazorati:** `2829 = 2814 (HEAD) + 5 (auth-store) + 5 (pos-guard) + 5 (parallel sessiyaning
+`shared-api-contracts.test.ts`)` — jim yo'qolgan test yo'q.
+
+**Hook'lar bir martaga chetlab o'tildi** (`-c core.hooksPath=/dev/null`): parallel sessiya ayni damda
+`apps/web/src/app/(app)/retail/page.tsx` + `packages/contracts/` ustida ishlayapti, `lint-staged` esa butun daraxtni
+stash qiladi (CLAUDE.md §6.7 B). Shu sababli gate'lar markazda QO'LDA to'liq yugurtirildi.
+`git add` 9 aniq yo'l; `git show --stat HEAD` bilan tasdiqlandi — begona fayl yo'q.
+
+### Qolgan qarz
+
+1. **Browser-QA YO'Q.** Til-almashtirgichni bosib POS ni RU da ko'rish qilinmadi — Phase-2. Statik gate
+   «kalit bor» deydi, «RU matn to'g'ri joyga tushdi» demaydi.
+2. **RU tarjimalar tekshirilmagan.** Ular loyiha lug'atidan grounded, lekin ona tilida so'zlashuvchi ko'rmagan.
+   Ayniqsa: «Оформить» (`checkout_submit`), «Сдать» (`cash_out_submit_collection`), «Записывается на: {name}».
+3. **3 dinamik kalit statik tekshirilmaydi** — `t(\`type_${kind}\`)` (`type_oddiy`/`type_usta`/`type_dokon`).
+   Ular mavjud, lekin imlo xatosi gate'dan o'tib ketardi. Qo'riqchida dinamik kalitlar soni ≤3 shiftiga qo'yildi
+   (qamrov jimgina dinamiklashib ketmasin).
+4. **`'POS qaytarish'` ataylab i18n QILINMADI** — bu DB'da saqlanadigan hujjat izohi, ekran matni emas; kassir tiliga
+   bog'lansa bir xil hujjat kim yaratganiga qarab turlicha yozilib, qidiruv/hisobot buzilardi. Qo'riqchining
+   `ALLOWED_NON_UI` ro'yxatida, chaqiruv joyida izoh bilan.
+5. **`fmtDate` `'uz-UZ'` qattiq yozilgan** (`debt-payment-dialog.tsx`) — `dd.mm.yyyy` ikkala tilda bir xil
+   chiqqani uchun sizish EMAS, lekin lokal-bog'liq format kerak bo'lsa qarz.
+6. **Qo'riqchining ko'r nuqtasi:** ko'p qatorli JSX matn tuguni ichida `{}` bo'lsa o'tkazib yuboriladi
+   (ifoda bilan aralash matn). Bu fazadan keyin bunday qoldiq yo'q, lekin yangisi qo'shilsa tutilmaydi.

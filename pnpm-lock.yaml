@@ -186,6 +186,9 @@ importers:
       '@moysklad/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@moysklad/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@types/node':
         specifier: ^20.14.0
         version: 20.19.39
@@ -247,6 +250,9 @@ importers:
       '@hookform/resolvers':
         specifier: ^3.9.1
         version: 3.10.0(react-hook-form@7.72.1(react@19.2.5))
+      '@moysklad/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@radix-ui/react-dialog':
         specifier: ^1.1.2
         version: 1.1.15(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
@@ -382,6 +388,25 @@ importers:
         version: 2.1.9(@types/node@20.19.39)(happy-dom@15.11.7)(lightningcss@1.32.0)
 
   packages/config: {}
+
+  packages/contracts:
+    dependencies:
+      zod:
+        specifier: ^3.23.8
+        version: 3.25.76
+    devDependencies:
+      '@moysklad/config':
+        specifier: workspace:*
+        version: link:../config
+      '@types/node':
+        specifier: ^20.14.0
+        version: 20.19.39
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@20.19.39)(happy-dom@15.11.7)(lightningcss@1.32.0)
 
   packages/db:
     dependencies:

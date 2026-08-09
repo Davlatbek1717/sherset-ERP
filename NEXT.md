@@ -305,6 +305,58 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-09l (AUDIT-FIX FAZA 33 — `@moysklad/contracts`: API-javob tiplari uchun yagona
+> manba + **provenance** arqoni · `FE-12`) · Phase-1: strukturaviy + unit, RUNTIME-TASDIQLANMAGAN
+> (browser-smoke YO'Q) · ⏳ DEPLOY QILINMAGAN · 🗄️ migratsiya SHART EMAS · ⚠️ parallel sessiya
+> `sotuv/page.tsx` + `components/pos/*` + `auth-store*` da JONLI ishladi (Faza 32) — o'sha
+> fayllarga TEGILMADI, `git add` aniq yo'llar bilan.**
+>
+> **Nima qilindi:** yangi paket `packages/contracts` (**source-only, `dist` YO'Q** — `exports`
+> to'g'ridan `./src` ga; sabab: xotira `money-dist-stale-tsbuildinfo`, eskirgan dist «typecheck
+> yashil, runtime portlaydi» beradi). 5 endpoint kontrakti: `/cashier-sessions/current` ·
+> `/cash-desks` · `/stores` · `/organizations` · `/products` (POS). `retail/page.tsx` lokal
+> interfeyslardan o'tkazildi (−40 qator).
+>
+> **🔑 Asosiy g'oya — kontrakt DEKORATIV bo'lmasligi kerak.** Interfeyslarni umumiy faylga
+> ko'chirish dublikatni yopadi, lekin serverga **arqon bog'lamaydi**. Shuning uchun har sxema
+> kalitlarining serverdagi MANBASINI e'lon qiladi (`CONTRACT_PROVENANCE`: Prisma modeli ·
+> servis `select`/`include` bloki · qo'lda yig'ilgan javob obyekti · **apps/api Zod-sxemasi**),
+> `apps/api` esa data-driven konformans testi bilan uzilishni tutadi. **RED-proof jonli kodda:**
+> `cashier-session.service.ts` dan `cashier:` include'i o'chirilsa test yiqiladi — bu
+> **2026-06-08k da POS registrini yiqitgan** aynan o'sha regressiya.
+>
+> **⚠️ Rejaning IKKI premisasi noto'g'ri chiqdi (ikkalasi ham o'lchandi):** (1) audit `FE-12`
+> ta'sirini **teskari** yozgan — `cashDeskId`/`storeId`/`organizationId` **NOT NULL**, ya'ni
+> `retail` haq edi, `sotuv` ortiqcha himoyalangan; (2) «apps/api Zod-sxemalaridan `z.infer`» —
+> API'da **javob** Zod-sxemalari deyarli YO'Q (butun repoda 1 fayl), Zod faqat kirish
+> validatsiyasi uchun. Kontraktlar yangidan yozildi.
+>
+> **🐞 Faza 31 qoldirgan QIZIL gate topildi va tuzatildi (mening regressiyam EMAS):** to'liq API
+> suitida **9 yiqilish** — `position-scale-class.test.ts`. Sabab o'lchandi: Faza 31 (`105897b3`)
+> 13 nusxani `computeLineTotalSafe` ga yig'ganda sahifa manbasidan primitiv nomi yo'qolgan.
+> **Faza 31 buni ko'rmagan, chunki faqat WEB suitini yugurtirgan — qo'riqchi `apps/api` da.**
+> Qo'riqchi yangilandi **+ indirektsiyaning o'zi mixlandi** (`doc-totals.ts` uchun 3 test), aks
+> holda 13 sahifa «o'tadi» va 3-kasrli qirqim butun hujjat oilasiga bir yo'la qaytardi.
+>
+> **Gate:** contracts/api/web typecheck **0** · `lint:product` **mening fayllarimda 0**
+> (umumiy 2 xato = parallel sessiyaning commit qilinmagan POS dialoglari) · **to'liq API suite
+> 5571/5573 yashil, 0 yiqilish** (sanoq: `5549 + 21 + 3` — jim yo'qolgan test yo'q) · to'liq web
+> **2823 yashil, 1 yiqilish** = `i18n-key-existence`, **27 ta `pages.sotuv.*` kaliti parallel
+> sessiyanikidan** (`grep "missing in" | grep -v sotuv` = **0**). Ikkala yangi qo'riqchi ham
+> **jonli sabotaj** bilan vakuum emasligi tekshirildi.
+>
+> **⏭️ KEYINGI:** ochiq fazalar — **27b** (`PERF-01`), **27c** (`PERF-02`, dalili ESKIRGAN),
+> **29b** (`HR-13` soft-delete), **32** (hozir parallel sessiyada). Faza 33 qarzi:
+> `sotuv/page.tsx` migratsiyasi (Faza 32 commit bo'lgach; web qo'riqchisining
+> `PENDING_MIGRATION` ro'yxati buni **mashina bilan kuzatadi** — istisno eskirsa test yiqiladi) ·
+> `ListResponse` 92 fayldan 91 tasi hali lokal · qamralmagan endpointlar ro'yxati —
+> `docs/REJA-AUDIT-FIX-2026-08.md` → «HISOBOT JURNALI → Faza 33 → Qolgan qarz».
+>
+> **🗂️ ARXIV QARZI (o'lchandi, bu sessiyada ATAYLAB qilinmadi):** «Aniq keyingi vazifa» ostida
+> **77 ta** top-entry bor (norma 8–10). Bu sessiyada arxivlanmadi, chunki parallel sessiya ham
+> NEXT.md'ga yozadi va katta qayta-tuzish ularning entry'sini yo'q qilish xavfini tug'diradi
+> (§6.3). Parallel ish tugagach — birinchi navbatdagi mayda vazifa.
+
 > **🕒 2026-08-09k (AUDIT-FIX FAZA 31 — FE dedup codemodlar: `computeLineTotal` · `YesNoSelect`/
 > `MultiRefField`/`refFetcher` · api-client · `FE-10`,`FE-02`,`FE-06`/`FE-14`) · Phase-1:
 > strukturaviy + unit, RUNTIME-TASDIQLANMAGAN (browser-smoke YO'Q) · ⏳ DEPLOY QILINMAGAN ·

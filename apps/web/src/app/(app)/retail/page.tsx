@@ -7,6 +7,14 @@ import { RETAIL_SESSION_STATE_TONE, documentStateTone } from '@/lib/document-sta
 import { discountedCartTotalMinor, discountedLineTotalMinor } from '@/lib/pos/cart-math';
 import { resolveDefaultSalePrice, resolveDefaultSalePriceOrZero } from '@/lib/sale-price';
 import { normalizeScanInput } from '@/lib/scan';
+import type {
+  CashDeskRef as CashDesk,
+  CurrentSession,
+  ListEnvelope as ListResponse,
+  OrganizationRef as Organization,
+  PosProductRow as ProductRow,
+  StoreRef as Store,
+} from '@moysklad/contracts';
 import { Money } from '@moysklad/money';
 import { isCurrencyCode } from '@moysklad/money/currencies';
 import { Badge, Button, NativeSelect, formatMoney } from '@moysklad/ui';
@@ -15,42 +23,13 @@ import { useTranslations } from 'next-intl';
 import { useCallback, useState } from 'react';
 
 // ── Types ──────────────────────────────────────────────────────────────────
-
-interface CashDesk {
-  id: string;
-  name: string;
-  currency: string;
-}
-interface Store {
-  id: string;
-  name: string;
-}
-interface Organization {
-  id: string;
-  name: string;
-}
-
-interface CurrentSession {
-  id: string;
-  state: 'open' | 'closed';
-  openedAt: string;
-  cashier: { id: string; name: string };
-  cashDesk: CashDesk;
-  store: Store;
-  organization: Organization;
-  salesCount: number;
-  salesSumMinor: string;
-  openingCashMinor: string;
-}
-
-interface ProductRow {
-  id: string;
-  name: string;
-  code: string | null;
-  // The /products list returns the price tiers as a salePrices array (keyed by
-  // PriceType id); resolve the default tier via the shared resolver.
-  salePrices?: Array<{ priceTypeId: string; value: string }> | null;
-}
+//
+// `CashDesk`/`Store`/`Organization`/`CurrentSession`/`ProductRow`/`ListResponse`
+// used to be hand-declared here AND, differently, in `/sotuv` — one endpoint,
+// two contradictory claims, nothing comparing either to the server (audit
+// `FE-12`). They now come from `@moysklad/contracts`, where each key is tied to
+// the place in apps/api that produces it. `CartLine` stays local: it is this
+// page's own UI state, not an API payload.
 
 interface CartLine {
   productId: string;
@@ -58,11 +37,6 @@ interface CartLine {
   quantity: number;
   priceMinor: bigint;
   discount: number;
-}
-
-interface ListResponse<T> {
-  items: T[];
-  total: number;
 }
 
 // ── Open Shift Form ─────────────────────────────────────────────────────────

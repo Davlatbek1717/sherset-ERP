@@ -59,6 +59,7 @@ if (process.env.CHECK_LINT === '0') {
 const SCOPE = [
   'apps/api/src',
   'apps/web/src',
+  'packages/contracts/src',
   'packages/design-system/src',
   'packages/money/src',
   'packages/workflows/src',

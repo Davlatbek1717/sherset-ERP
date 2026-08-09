@@ -60,6 +60,7 @@
   },
   "devDependencies": {
     "@moysklad/config": "workspace:*",
+    "@moysklad/contracts": "workspace:*",
     "@types/node": "^20.14.0",
     "@types/nodemailer": "^8.0.0",
     "@types/pdfkit": "^0.17.6",

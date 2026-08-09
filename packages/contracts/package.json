@@ -1,0 +1,27 @@
+{
+  "name": "@moysklad/contracts",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "//exports": "SOURCE-ONLY package — `exports` points at ./src, there is NO build step and NO dist/. Rationale: @moysklad/money ships a dist and a stale .tsbuildinfo once produced a green typecheck with a runtime 'X is not a function' (memory: money-dist-stale-tsbuildinfo). Contracts are pure Zod + types with no heavy runtime, so shipping source removes that failure mode entirely: tsc reads the .ts as its own declaration file, vitest/vite transpile it on the fly, and web imports the types with `import type` so nothing reaches the bundle.",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@moysklad/config": "workspace:*",
+    "@types/node": "^20.14.0",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
