@@ -50,7 +50,7 @@ kuniga **3 sessiya** → **~6 hafta**.
 | 4M — Menejer (kunlik KPI) | 4M.1 4M.2 **4M.4** | **7** (4M.3 qoldig'i + 4M.5–4M.10) |
 | 5 — Ta'minotchilar | — | **6** (B1–B6) |
 | 6 — HR | B8 (qisman) | **8** (B1–B7, B9) |
-| 7 — Ombor | B1 (qisman) | **11** (B2–B12) |
+| 7 — Ombor | B1 (qisman), **B2** | **11** (B2a, B3–B12) |
 | 8 — Ko'p filiallilik | **B1** | **6** (B2–B7) |
 
 ---
@@ -75,8 +75,9 @@ kuniga **3 sessiya** → **~6 hafta**.
 - [x] **1-Kassa B3** — `RetailSalePayment` aralash to'lov + USD kurs — `26df34f`
 - [x] **2-Onlayn B1** — soxta UUID tuzatish + haqiqiy `CustomerOrder` — `f6cc310`
 - [x] **3-Analitika B1** — `report/metrics/` yagona formulalar — `bbf7af5` + `0c36680`
-- [x] **3-Analitika B2 (qisman)** — X1 `6adc495` · X3 `6d1be01` · **X2 qisman** (kassir o'qi
-      `CashierAuditEvent` da bor, hisobot kesimi yo'q)
+- [x] **3-Analitika B2** — X1 `6adc495` · X3 `6d1be01` · **X2 yopildi** (F010: rentabellikda
+      kassir kesimi — `cashier_sessions.cashier_id`, ega kesimidan ajratilgan; kassiri yo'q
+      tushum «noma'lum» qatorida ko'rinadi)
 - [x] **1-Kassa B8 (yarim)** — `CashierAuditEvent` — `d35efab` *(page.tsx bo'linishi qolgan)*
 - [x] **1-Kassa B4** — kiosk rejim: server guard + POS PIN + menyusiz qobiq — `45350ea` + `3b306c2`
 - [x] **1-Kassa B5 (yadro)** — qarz moduli ulandi + balans simmetriyasi + FIFO — `dae7289`
@@ -84,7 +85,9 @@ kuniga **3 sessiya** → **~6 hafta**.
 - [x] **4M.2** — kunlik qabul FSM · jurnal · ball · ekran · drill-down — `fa58171`+`a2b4bb6` (brauzer-QA `d86320b`)
 - [x] **4M.3 (yarim)** — M-Q8 bloklash + oylik manbai ko'chdi + sana qarzi — `e1a761b`
 - [x] **6-HR B8 (yarim)** — haydovchi naqd topshirig'i (`DriverCashHandover`) + GPS — `fd8056d`, `65655f7`
-- [x] **7-Ombor B1 (yarim)** — `StoreZone` + `SkladKeeper.zoneId` mavjud
+- [x] **7-Ombor B1 (yarim)** — `StoreZone` sxemada bor. **TUZATISH (F019, 2026-08-09):**
+      `SkladKeeper.zoneId` **YO'Q** edi — bu da'vo xato. `skladNo` hamon oddiy `Int`, marshrutlash
+      kod satridan (`skladNoOf`) o'qiydi. Ulash — yangi **7-Ombor B2a** bandi.
 
 ---
 
@@ -252,7 +255,10 @@ kuniga **3 sessiya** → **~6 hafta**.
 
 > Har qadam **qaytariladigan** + tekshiruv hisoboti chiqarishi shart.
 
-- [ ] **7-Ombor B2** — Migratsiya 1–2 qadam: zona/yacheyka generatsiya + backfill + **farq hisoboti**
+- [x] **7-Ombor B2** — Migratsiya 1–2 qadam: zona/yacheyka generatsiya + backfill + **farq hisoboti**
+      + rollback — `migrate-cells-step1-2.ts` (DRY/APPLY/ROLLBACK, 39 test). Prodga **tegilmagan** (OPS-6)
+- [ ] **7-Ombor B2a** — `SkladKeeper.zoneId` (sxema + migratsiya) va `skladNo` → `StoreZone` ulanishi —
+      F019 da **YO'Q** ekani aniqlandi (todo B1 dagi da'vo xato edi)
 - [ ] **7-Ombor B3** — **Dual-write** (3-qadam) + kunlik farq monitoringi
 - [ ] **7-Ombor B4** — Ko'p yacheyka + `StockByCell.isPrimary` (YO'Q) + `extraBins`
 - [ ] **7-Ombor B5** — Yacheyka intizomi (**ogohlantirish** rejimi) + skaner oqimi
@@ -286,6 +292,8 @@ kuniga **3 sessiya** → **~6 hafta**.
 - [ ] **2-B7** — Hujjatlar: hisob avtomatik + **EDO faktura** + **MXIK tekshiruvi**
       *(MXIK yo'qligida faktura bloklanadi — aniq xato matni bilan)*
 - [ ] **2-B8** — Webhook qabul qilish (imzo + **idempotentlik** + navbat)
+      *(2026-08-09: imzo + idempotentlik + qabul endpointi BAJARILDI (F042); qolgani —
+      navbat/qayta-urinish/DLQ, inbox jadvalini talab qiladi → F042b)*
 - [ ] **2-B9** — Yetkazish: haydovchi biriktirish + holat + naqd topshirish
 - [ ] **`SalesPlan`** (YO'Q) — xodim × oy × plan turi
 

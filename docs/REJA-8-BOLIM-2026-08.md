@@ -134,6 +134,14 @@ alohida bajariladi. **Har faza agenti o'zi qo'shgan qadamni shu ro'yxatga yozadi
    `branch.*` ruxsatlarini qo'shadi, aks holda ruxsat matritsasida yangi qator hamma uchun `NO`
    bo'lib qoladi; (c) `/api/v1/health` tekshiruvi (2-band).
    Tekshiruv so'rovi: har akkauntda `branches` dan `is_default = true` bo'lgan **aynan bitta** qator.
+7. **F019 (2026-08-09) — ombor 1–2-qadam prodda.**
+   `pnpm --filter @moysklad/api exec tsx src/scripts/migrate-cells-step1-2.ts` — avval **DRY**
+   (hech narsa yozmaydi). Hisobotni egasi bilan ko'rib chiq: **noto'g'ri formatdagi kodlar** va
+   **nol-to'ldirish to'qnashuvi** ro'yxatlari bo'sh bo'lishi kerak (bo'sh bo'lmasa — avval
+   ma'lumotni tuzatish, keyin APPLY). So'ng `MANIFEST=<yo'l> APPLY=1`.
+   **`MANIFEST` faylini SAQLANG — qaytarish faqat shu fayl bilan mumkin** (`ROLLBACK=1 APPLY=1`).
+   Prod `Store` bittadan ko'p bo'lsa `STORE_ID` **majburiy** (skript o'zi to'xtaydi).
+   Migratsiyadan keyin `/api/v1/health` (2-band) + hisobotdagi `|farq| jami` ni yozib qo'ying.
 
 ---
 
@@ -447,7 +455,7 @@ ishga tushirilsa dublikat hujjat chiqmaydi) · qo'lda tahrir qilingan hujjat **q
 
 ---
 
-### F010 — X2: kassir kesimi hisobotlarda (hujjat egasidan ajratilgan) ☐ HISOBOT
+### F010 — X2: kassir kesimi hisobotlarda (hujjat egasidan ajratilgan) ☑ HISOBOT (2026-08-09)
 **Bo'lim/blok:** 3-Analitika B2 qoldig'i · **TZ:** `2026-08-01-analitika-tz-design.md` §9 (X2)
 **Ustuvorlik:** P1 · **Bog'liqlik:** yo'q
 **Muammo (2026-08-09 da tasdiqlandi):** kassa xodim kesimi `rs.owner_id` (**hujjat egasi**)
@@ -617,7 +625,7 @@ sifat bayrog'i · sekin so'rovlar (panel ochilish vaqti).
 > **Holat:** `StoreZone`, `StoreCell`, `StockByCell` sxemada **bor**; `SkladKeeper.zoneId` bor
 > (7-B1 yarim). `StockByCell.isPrimary`, `PickingError`, `CellTransfer` — **YO'Q**.
 
-### F019 — Migratsiya 1–2-qadam: zona/yacheyka generatsiya + backfill + farq hisoboti ☐ HISOBOT
+### F019 — Migratsiya 1–2-qadam: zona/yacheyka generatsiya + backfill + farq hisoboti ☑ HISOBOT (2026-08-09)
 **Bo'lim/blok:** 7-B2 · **TZ:** §4 (1–2-qadam), §3.1
 **Ustuvorlik:** P1 · **Bog'liqlik:** yo'q
 **Avval tasdiqla:** `todo.md` 7-B1 ni «yarim» deb belgilagan (`StoreZone` + `SkladKeeper.zoneId`
@@ -642,6 +650,33 @@ kod **jimgina tashlanmaydi** — ro'yxatga tushadi. (3) backfilldan keyin `Σ St
 > 7-bo'lim TZ §4 (1–2-qadam) + yacheyka-diapazon-generatori spec'i. Generatsiya + backfill +
 > **farq hisoboti** + **rollback**. `Σ StockByCell == Stock` — asosiy test. Prodga tegma (OPS).
 > TDD, gate → **TO'XTA**.
+
+---
+
+### F019b — `SkladKeeper.zoneId` + `skladNo` → `StoreZone` ulanishi ☐ HISOBOT
+**Bo'lim/blok:** 7-B1 qoldig'i · **TZ:** §2 (Q5), §0.2 P2
+**Ustuvorlik:** P1 · **Bog'liqlik:** F019 (zonalar avval yaratilishi kerak)
+**NEGA YANGI FAZA (F019 topilmasi, 2026-08-09):** reja va `todo.md` `SkladKeeper.zoneId` ni
+«sxemada bor» degan edi — **YO'Q**. `schema.prisma:1111-1127` da `SkladKeeper` da `skladNo Int`
+bor, `zoneId` va `Store`/`StoreZone` ga havola YO'Q. Ya'ni «`skladNo` = `StoreZone`» qarori
+(TZ §2, Q5) hali **kodga kirmagan**: yig'ish varag'ini taqsimlash bugun ham yacheyka kodining
+1-segmentini `Number()` qilib o'qiydi (`restock-task.service.ts:46`, `retail-sale.service.ts:109`),
+jadval-bog'lanish orqali emas. F019 qamrovi (generatsiya + backfill) bunga bog'liq emas —
+shuning uchun bloklamadi, alohida fazaga ajratildi.
+**Qamrov:** `SkladKeeper.zoneId` (nullable) + migratsiya · mavjud yozuvlarni `skladNo` raqami
+bo'yicha zonaga bog'lash (backfill; zona nomi `«01»`/`«1»` yozuvida bo'lishi mumkin — **raqam
+bo'yicha** solishtir, satr bo'yicha emas) · `skladNoOf()` o'qiydigan joylarni zona-bog'lanishiga
+ko'chirish · omborchi sozlamalari UI'da zona tanlagich.
+**Diqqat:** zona nomi = kodning 1-segmenti **satr ko'rinishida** (`«01»`), `skladNo` esa `Int`
+(`1`). F019 hisoboti «nol-to'ldirish to'qnashuvi» ogohlantirishini chiqaradi — backfill oldidan
+DRY hisobotida shu ro'yxat bo'sh ekaniga ishonch hosil qil.
+**Testlar (TDD):** (1) `skladNo` → zona bog'lanishi `«01»` va `«1»` ikkalasida ham topiladi.
+(2) zonasi yo'q omborchi eski xulqni saqlaydi (regress yo'q). (3) bog'lanmagan yacheyka kodi
+hamon «biriktirilmagan» varaqqa tushadi.
+**▶ SESSIYA-BOSHI PROMPT:**
+> `docs/REJA-8-BOLIM-2026-08.md` — **Faza F019b** ni bajar. O'ZGARMAS QOIDALARga amal qil.
+> 7-bo'lim TZ §2 (Q5) + §0.2 P2. `SkladKeeper.zoneId` sxema + migratsiya + backfill + o'quvchilarni
+> ko'chirish. Prodga tegma (OPS). TDD, gate → **TO'XTA**.
 
 ---
 
@@ -1054,7 +1089,7 @@ bor → o'tadi. (3) xato matni i18n ru+uz.
 
 ---
 
-### F042 — Webhook qabul qilish (imzo + idempotentlik + navbat) ☐ HISOBOT
+### F042 — Webhook qabul qilish (imzo + idempotentlik + navbat) ☑ HISOBOT (2026-08-09) · QISMAN
 **Bo'lim/blok:** 2-B8 · **TZ:** §4.4
 **Ustuvorlik:** P2 · **Bog'liqlik:** yo'q · **Xavf:** yuqori (tashqi kirish)
 **Qamrov:** tashqi kanaldan buyurtma qabul qilish: **imzo tekshiruvi** (constant-time) ·
@@ -1062,6 +1097,9 @@ bor → o'tadi. (3) xato matni i18n ru+uz.
 qayta urinish) · xato holatida DLQ.
 **Diqqat:** mavjud `webhook`/`payment-gateway` modullarida imzo va idempotentlik naqshi bor —
 **o'shani qayta ishlat**, yangisini yozma.
+**2026-08-09 holati:** imzo + idempotentlik + qabul endpointi BAJARILDI. **Navbat/qayta-urinish/DLQ
+→ `F042b`** (egasining qarori): ular kiruvchi inbox jadvalini talab qiladi, sxema esa o'sha sessiyada
+F001 qo'lida edi. To'liq tafsilot — jurnaldagi «Faza F042» yozuvi.
 **Fayllar:** `apps/api/src/modules/webhook/`, `online-order/`.
 **Testlar (TDD):** (1) noto'g'ri imzo → 401, log'da sir yo'q. (2) bir xil `eventId` ikki marta →
 bitta hujjat. (3) qayta urinish eksponensial. (4) DLQ ga tushgan hodisa yo'qolmaydi.
@@ -1851,5 +1889,318 @@ O'lchangan (jonli, taxmin emas):
 **Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q.**
 *(Migratsiya invariantlari lokal DB'da JONLI o'lchandi — yuqoridagi raqamlar. Brauzerda hech narsa
 ochilmadi: bu fazada UI umuman yo'q. Runtime-QA → **F056** (8-Filial Phase-2 QA).)*
+
+---
+
+## Faza F010 — X2: kassir kesimi hisobotlarda (hujjat egasidan ajratilgan) (sana: 2026-08-09)
+
+**Holat:** BAJARILDI
+**Commit(lar):** `9b8ea5d6` — feat(report): F010 — kassir kesimi rentabellik hisobotida (X2)
+*(hujjat/`todo.md` tahrirlari commit'ga KIRMADI — o'sha ikki faylda parallel sessiyaning
+commit qilinmagan ishi bor edi, CLAUDE.md §6.1; ular ishchi daraxtda qoldi.)*
+
+### Nima o'zgardi
+- `apps/api/src/modules/report/metrics/cashier-slice.ts` (**yangi**) — kesimning yagona formulasi:
+  `UNKNOWN_CASHIER_ID` sentineli + `cashierSliceKey()` + `isUnknownCashier()`. Funksiya `ownerId`
+  ni **umuman qabul qilmaydi** — «kassir bo'sh bo'lsa egani olaman» degan jim fallback dizayn
+  bilan yozib bo'lmaydi (X2 talabi: ikki kesim yonma-yon, biri ikkinchisini almashtirmaydi).
+- `apps/api/src/modules/report/metrics/index.ts` — uchta eksport qo'shildi.
+- `apps/api/src/modules/report/profitability.service.ts`:
+  - `groupBy` enumiga `'cashier'` qo'shildi (`employee` — ega — **o'zgarmadi**);
+  - chakana agregatida kalit `cs.cashier_id`, manba `LEFT JOIN cashier_sessions cs ON cs.id =
+    rs.session_id` (INNER JOIN sessiyasi topilmagan chekni jimgina tushirib qoldirardi);
+  - otgruzka/qaytarish kaliti kassir kesimida konstanta `NULL::uuid` → hammasi «noma'lum»
+    guruhiga (jam boshqa tablardan farq qilmaydi);
+  - konstanta kalit `GROUP BY` ro'yxatidan chiqarildi (`demandGroupBy`/`returnGroupBy`);
+  - merge nuqtasida kalitni **faqat** `cashierSliceKey()` beradi; label qidiruvida sentinel
+    filtrlanadi (u UUID emas — `employees.id` so'roviga tushsa Prisma yiqilardi).
+- `apps/web/src/app/(app)/reports/profitability/page.tsx` — «По кассирам» tab'i + `col_cashier`
+  sarlavhasi + kassiri aniqlanmagan qator tarjima bilan chiqadi (quruq «—» emas).
+- `apps/web/src/messages/{ru,uz}.json` — `tab_by_cashiers`, `col_cashier`, `row_cashier_unknown`.
+  Qiymatlar ikkala faylda ham RU: shu blokdagi qo'shni tab/ustun kalitlari (`tab_by_employees`,
+  `col_employee`) ham RU — bitta tab-lentada ikki til aralashmasligi uchun.
+
+### Testlar (RED → GREEN)
+- `metrics/cashier-slice.test.ts` (**yangi**, 7 test) — avval YIQILDI (`Failed to load url
+  ./cashier-slice.js`) → YASHIL. Ichida manba-skaneri: sentinel `report/` da qo'lda yozilmaydi va
+  kesimni o'qiydigan fayl kalitni `metrics/` dan oladi (X4 — ikkinchi formula yozilmasin).
+- `profitability.service.test.ts` (**Edit**, +6 test) — avval 5 tasi YIQILDI
+  (`ZodError: Invalid enum value … received 'cashier'`) → YASHIL:
+  1. owner ≠ cashier bo'lgan chek: ega kesimi egaga, kassir kesimi kassirga (jami bir xil);
+  2. smenasiz chek «noma'lum» guruhida, summasi bilan — tashlanmaydi va 0 ham emas;
+  3. kassiri yo'q otgruzka jamida qoladi;
+  4. **regressiya qulfi**: xodim (ega) kesimi SQL'da `rs.owner_id` da qoladi va
+     `cashier_sessions` ga tegmaydi;
+  5. kassir kesimi `LEFT JOIN` qiladi;
+  6. sentinel `employees` so'roviga sizmaydi (mock Prisma kabi UUID bo'lmasa yiqiladi).
+  Testda `Prisma.sql` fragmentlari qayta yig'iladi (`sqlSkeleton`) — «qaysi ustun bo'yicha
+  guruhlandi» degan savolga **mock emas, haqiqiy SQL** javob beradi.
+- `apps/web/src/__tests__/profitability-cashier-slice.test.ts` (**yangi**, 4 test) — FE↔BE
+  kontrakt qulfi (`abc-report-contract.test.ts` konventsiyasi): avval 3 tasi YIQILDI → YASHIL.
+  Sahifadagi sentinel **API'dagi konstanta bilan solishtiriladi** (ikki manba bog'landi).
+- Yugurtirilgan: `vitest run src/modules/report src/modules/cashier-session` → **507 passed** ·
+  web to'liq suite → **2849 passed, 26 skipped, 0 failed**.
+
+### SQL runtime tekshiruvi (unit testlar ko'rmaydigan qism)
+Mock SQL'ni parse qilmaydi, shuning uchun uchala yangi so'rov shakli **haqiqiy Postgres'da**
+(`climart_adopt`, `prisma db execute` + `EXPLAIN`, ma'lumot o'zgarmaydi) tekshirildi: `LEFT JOIN
+cashier_sessions` + `GROUP BY cs.cashier_id`, va SELECT'dagi konstanta `NULL::uuid::text` bilan
+uni GROUP BY'ga qo'shmaslik — uchalasi ham plan bo'ldi. Bu «noto'g'ri GROUP BY = runtime 500»
+sinfini yopadi.
+
+### Gate natijasi
+- api typecheck: **0** · web typecheck: **0** · `lint:product`: **0 xato** (783 ogohlantirish —
+  siyosat bo'yicha ruxsat) · `i18n:gate`: **OK** (12341 kalit) · vitest: yuqoridagi.
+- Eslatma: `lint:product` birinchi yugurishda yiqilgan edi — ro'yxatdagi fayllar
+  (`invoices-out`, `demands`, `customer-orders`, contract testlari) **meniki emas**, parallel
+  sessiyaning o'sha paytdagi holati; qayta yugurtirilganda 0 xato.
+
+### Tasdiqlangan/rad etilgan da'volar
+- «`report/` da `cashierId` 0 marta uchraydi» — **tasdiqlandi** (grep, 0 natija).
+- «kassa xodim kesimi `rs.owner_id` bo'yicha ketadi» — **tasdiqlandi**
+  (`profitability.service.ts:638` va `:398`).
+- «rentabellik **va xodim hisobotlarida**» — `report/` da xodim kesimi **faqat bitta joyda** bor:
+  rentabellikning «По сотрудникам» tab'i. Savdo hisoboti (`report.service.ts`) `owner` bo'yicha
+  guruhlaydi, lekin unda **chakana umuman yo'q** (grep: `retail` — 0 natija), demak u yerda
+  kassir kesimining manbai ham yo'q. Shuning uchun kesim aynan rentabellik hisobotiga qo'shildi.
+- `RetailSale.sessionId` sxemada **NOT NULL** (FK `Restrict`) — ya'ni «smenasiz chek» normal
+  yo'l bilan paydo bo'lmaydi. «Noma'lum» guruhi shunga qaramay kerak: (a) otgruzka/qaytarishda
+  kassir tushunchasi yo'q, (b) prod-DB sxema-drifti bo'lgan holatda LEFT JOIN bo'sh qaytarishi
+  mumkin — ikkala holatda ham pul **ko'rinadi**, yo'qolmaydi.
+
+### Qolgan qarz / DEFER
+- **Grafik** kassir tab'ida chakanani ko'rsatmaydi — bu **oldindan mavjud** bo'shliq
+  (`profitability.service.ts` sarlavhasida hujjatlangan: `chartBuckets` faqat otgruzka+qaytarish).
+  Kassir tab'i chakana-markazli bo'lgani uchun bo'shliq u yerda ko'proq ko'rinadi. Tuzatish shu
+  fazaning qamrovida emas → alohida faza.
+- `documentType=retail` filtri qaytarish so'rovini gate qilmaydi (oldindan mavjud xulq, hamma
+  tablar uchun) — kassir tab'ida qaytarishlar «noma'lum»ga tushadi. O'zgartirilmadi.
+- Chop etish (`print_by_*`) menyusiga kassir varianti qo'shilmadi — qamrovda yo'q.
+- Brauzerda ochilmadi.
+
+### OPS-QADAM qo'shildimi
+- **Yo'q** — sxema o'zgarmadi, migratsiya yo'q, yangi endpoint yo'q (mavjud
+  `GET /reports/profitability` ga bitta `groupBy` qiymati qo'shildi).
+
+### Status yorlig'i
+**Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q.**
+*(SQL shakli haqiqiy Postgres'da EXPLAIN bilan tasdiqlandi, lekin sahifa brauzerda ochilmadi —
+tab, ustun va «noma'lum» qatorining ko'rinishi → **F018** (3-Analitika Phase-2 QA).)*
+
+---
+
+## Faza F019 — Migratsiya 1–2-qadam: zona/yacheyka generatsiya + backfill + farq hisoboti (sana: 2026-08-09)
+
+**Holat:** BAJARILDI
+**Commit(lar):** `<shu sessiya commiti>` — `feat(store): F019 — yacheyka migratsiyasi 1–2-qadam (DRY/APPLY/ROLLBACK)`
+
+### Nima o'zgardi
+- `apps/api/src/modules/store/cell-migration.ts` — **yangi**, SOF planlovchilar (DB yo'q):
+  `parseCellCode` (kod → zona + yacheyka nomi) · `planCellGeneration` (1-qadam) ·
+  `planStockBackfill` (2-qadam) · `diffStockVsCells` (tekshiruv hisoboti) · `planRollback`.
+  Butun miqdor arifmetikasi 1e6-shkalali `bigint` (`fifo-consumer` ning `parseDecimalScaled`/
+  `formatDecimalScaled` i) — `Number` bilan hisoblansa suzuvchi-nuqta xatosi «drift» bo'lib
+  hisobotga chiqardi.
+- `apps/api/src/modules/store/cell-migration.runner.ts` — **yangi**, orkestratsiya
+  `CellMigrationPort` (14 metod) ustida. DRY va APPLY **ayni bir kod yo'lidan** yuradi.
+- `apps/api/src/scripts/migrate-cells-step1-2.ts` — **yangi** CLI: Prisma adapteri + hisobot.
+  Rejimlar: DRY (default) · `APPLY=1` · `ROLLBACK=1` · `ROLLBACK=1 APPLY=1`.
+  Fail-closed: akkaunt/ombor bir qiymatli aniqlanmasa `exit 1`.
+- `todo.md` — 7-Ombor B2 `[x]`; yangi **B2a** bandi; B1 dagi **xato da'vo tuzatildi**.
+- Shu reja — **F019b** fazasi qo'shildi, **OPS-QADAM 7** yozildi.
+
+**Rejadagi fayl yo'lidan ONGLI chetlanish:** reja `scripts/migrate-cells-step1-2.ts` (repo ildizi)
+deydi. `apps/api/src/scripts/` olindi — DB'ga tegadigan `tsx` skriptlar shu yerda
+(`backfill-counterparty-balance-journal.ts` naqshi), `@moysklad/db` import va api tsconfig'i
+shu yerdan ishlaydi; ildizdagi `scripts/` asosan `.mjs` audit/codemod vositalari.
+
+### Testlar (RED → GREEN)
+- `cell-migration.test.ts` (27 test) — avval YIQILDI («Failed to load url ./cell-migration.js»)
+  → keyin YASHIL. Qamrov: kod bo'laklash (kanonik 4 segment · qisqa 2–3 · 1/5 segment rad ·
+  **zona segmenti raqam bo'lishi shart** · bo'sh segment · begona belgi · ichki bo'shliq · 255
+  belgi) · generatsiya (mavjudini qayta yaratmaslik · takroriy kod bitta yacheyka · ombor bo'yicha
+  ajratish · `sortOrder` mavjuddan keyin davom etishi) · **noto'g'ri kod ro'yxatga tushishi** ·
+  **nol-to'ldirish to'qnashuvi** · backfill (to'liq · idempotent farq · nol · `over-allocated` ·
+  4 xil «biriktirilmagan» sababi) · farq hisoboti (**yetim yacheyka qatori ham sanaladi**) ·
+  rollback (toza qaytish · **drift → BLOK** · mavjud qatorni kamaytirish · ishlatilayotgan
+  yacheyka · zona bo'shamasa qolishi).
+- `cell-migration.runner.test.ts` (12 test) — avval YIQILDI («Failed to load url
+  ./cell-migration.runner.js») → keyin YASHIL. **DRY hech narsa yozmaydi** (har yozuv metodi
+  0 marta chaqirilgani o'lchanadi) · **DRY simulyatsiyasi APPLY dan keyingi HAQIQIY farqni
+  oldindan aytadi** · `Σ StockByCell == Stock` · idempotentlik (2-yugurish = 0 yozuv) ·
+  manifest to'liqligi · rollback holatni AYNAN tiklaydi (JSON-snapshot solishtiruvi) ·
+  DRY rollback o'chirmaydi · drift/ishlatilayotgan yacheyka bloklari.
+- Yugurtirilgan: `vitest run src/modules/store src/modules/stock` → **180 passed, 0 failed**
+  (13 fayl) — mavjud yacheyka/qoldiq testlarida regress yo'q.
+
+### JONLI o'lchov (lokal `climart_adopt @ localhost:5432`) — DRY → APPLY → ROLLBACK
+Baza F019 dan **oldingi holatiga to'liq qaytarildi** (quyida tekshirilgan).
+
+1. **DRY:** zona yaratiladi 1 · yacheyka 1 (`01-02-03-04`, zona «01») · noto'g'ri kod 0 ·
+   backfill 0 qator, `allaqachon mos: 1`, biriktirilmagan (`no-home-code`) 3 ·
+   farq: oldin `3 nomuvofiqlik, |farq| 293` → keyin (kutilgan) **aynan o'sha 293**.
+   **Bu son muhim:** tovar `a0b44c73…` ning kodi `01-02-03-04`, lekin uning 30 donasi
+   BOSHQA yacheykada (`01-09-09-01`) turibdi. «Butun `Stock.qty` ni uy-yacheykaga yoz»
+   varianti bu yerda 30 ni IKKI marta sanab, `Σ StockByCell > Stock` driftini yaratardi —
+   `delta = Stock − Σ StockByCell` formulasi buni real ma'lumotda to'sdi.
+2. **APPLY:** raqamlar DRY bilan **aynan** bir xil chiqdi; yozildi `zona 1 · yacheyka 1 ·
+   StockByCell 0`. Bazada tekshirildi: `store_zones` da «01», `store_cells.zone_id` unga ulangan.
+3. **Backfill yo'lini ham o'lchash uchun** bir tovarga (`fceb1d9c…`, qoldiq 99, kodi yo'q edi)
+   vaqtincha `__yacheyka = '02-05-01-03'` qo'yildi → APPLY: `zona 1 · yacheyka 1 · StockByCell 1`,
+   farq **293 → 194** (aynan 99 kamaydi) ⇒ o'sha tovar uchun `Σ StockByCell == Stock`.
+4. **Idempotentlik (jonli):** uchinchi APPLY → `zona 0 · yacheyka 0 · StockByCell 0`, farq 194.
+5. **ROLLBACK:** DRY rejasi (1 qator o'chirish, 1 yacheyka, 1 zona, 0 blok) → APPLY.
+   Ikkala manifest qaytarildi; vaqtinchalik atribut ham tiklandi.
+   **Yakuniy holat = boshlang'ich holat:** `store_zones` 0 · `store_cells` 1 (`01-09-09-01`,
+   `zone_id = null`) · `stock_by_cell` 1 qator (qty 30) · tovar `attributes = {}`.
+
+### Gate natijasi
+- typecheck `@moysklad/api`: **0**
+- biome (shu fazaning 5 fayli): **0 error** (qolgan ogohlantirishlar — CLI'dagi `noConsoleLog`
+  va testlardagi `noNonNullAssertion`, mavjud skriptlar bilan bir xil siyosat)
+- `pnpm lint:product` (butun repo): **7 error — HAMMASI PARALLEL SESSIYA fayllarida**
+  (`apps/web/.../{counterparties,customer-orders,demands,invoices-out}/page.tsx`,
+  `apps/api/src/modules/shared/contract-conformance.test.ts`,
+  `apps/web/src/__tests__/shared-api-contracts.test.ts`). CLAUDE.md §6.1 bo'yicha **tegilmadi**.
+- i18n: **N/A** — bu fazada UI yo'q, `apps/web` tegilmadi
+- vitest: **180 passed / 0 failed** (`src/modules/store` + `src/modules/stock`)
+
+### Tasdiqlangan/rad etilgan da'volar
+- **RAD ETILDI:** reja va `todo.md` «`SkladKeeper.zoneId` sxemada bor (7-B1 yarim)» deydi —
+  **YO'Q**. `schema.prisma:1111-1127`: `SkladKeeper` da faqat `skladNo Int`, `Store`/`StoreZone`
+  ga havola yo'q. Marshrutlash hamon kod satridan o'qiydi (`skladNoOf`, `restock-task.service.ts:46`
+  va `retail-sale.service.ts:109`). F019 ning «Avval tasdiqla» bandi shuni talab qilgan edi →
+  **alohida faza F019b** yaratildi va `todo.md` dagi xato da'vo tuzatildi.
+- **TASDIQLANDI:** `StoreZone` / `StoreCell` / `StockByCell` sxemada bor; `StockByCell.isPrimary`
+  **yo'q** (F021 da).
+- **TASDIQLANDI:** zona = kodning **1-segmenti** — mavjud `skladNoOf()` aynan shuni o'qiydi.
+  Ya'ni generatsiya mavjud marshrutlash bilan bir xil segmentni ishlatadi.
+- **`cell-range.util.ts` (diapazon-generatori) MAVJUD, lekin `bulkCreateCells` servisi/endpointi
+  YO'Q** — spec'ning faqat sof qismi implementatsiya qilingan. F019 unga bog'liq emas
+  (bu yerda manba diapazon emas, mavjud `__yacheyka` kodlari), spec'dan **tamoyillar** olindi:
+  idempotentlik, zonani avtomat yaratish, DRY va APPLY bitta kod yo'li.
+- **`__polka` tegilmadi.** U mavjud kodda zona nomi sifatida yoziladi
+  (`store-address.service.ts:639`), legacy zonasiz yacheykalarda esa **2-segmentga** tushadi
+  (`product-cell-move.service.ts:160`) — ya'ni TZ §2 bilan ziddiyat. F019 zona yaratganda
+  `__polka` ni QAYTA YOZMAYDI: regressiya yo'q (avval bu yacheykalar umuman mavjud emas edi),
+  lekin ziddiyat ochiq qarz bo'lib qoladi → **F019b/F021**.
+
+### Qolgan qarz / DEFER
+- `SkladKeeper.zoneId` + `skladNo → StoreZone` ulanishi → **F019b** (yangi).
+- `__polka` ning 1-segment/2-segment ziddiyati → **F019b/F021**.
+- `ProductCellLink` qatorlari backfillda **yaratilmaydi** (F019 qamrovi = zona/yacheyka +
+  `StockByCell`). Ko'p-yacheyka biriktirmasi → **F021**.
+- `StockByCell.isPrimary` yo'q ⇒ «asosiy yacheyka» hozircha `__yacheyka` atributi orqali
+  bilvosita → **F021**.
+- **Prodda yugurtirilmagan** — OPS-QADAM 7.
+- Lokal DB seed juda kichik (1 kodli tovar, 4 qoldiq qatori) ⇒ **noto'g'ri format** va
+  **nol-to'ldirish to'qnashuvi** ro'yxatlari real ma'lumotda o'lchanmagan; ular unit-testlarda
+  qoplangan, lekin prod DRY hisoboti birinchi haqiqiy o'lchov bo'ladi.
+
+### OPS-QADAM qo'shildimi
+- **Ha** — 7-band: prod DRY → egasi ko'rib chiqadi → `MANIFEST=… APPLY=1` → manifestni saqlash →
+  `/api/v1/health`.
+
+### Status yorlig'i
+**Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q.**
+*(Migratsiya invariantlari — DRY=APPLY, `Σ StockByCell == Stock`, idempotentlik, rollback —
+lokal DB'da JONLI o'lchandi va baza boshlang'ich holatiga qaytarildi. Bu fazada UI yo'q,
+brauzerda hech narsa ochilmadi. Runtime-QA → **F030** (7-Ombor Phase-2 QA).)*
+
+---
+
+## Faza F042 — Webhook qabul qilish (imzo + idempotentlik) (sana: 2026-08-09)
+
+**Holat:** QISMAN — imzo + idempotentlik + qabul endpointi BAJARILDI; **navbat/qayta-urinish/DLQ
+egasining qaroriga ko'ra F042b ga ko'chirildi** (sabab quyida).
+**Commit(lar):** `feat(online-order): F042 — webhook qabul (HMAC imzo + idempotentlik)`
+
+### Nima o'zgardi
+- `apps/api/src/modules/online-order/online-order.inbound.ts` — **YANGI**. Kiruvchi imzo
+  protokoli: `X-Sherset-Signature: sha256=<hex>` = HMAC-SHA256(**xom tana**, kanal siri).
+  Solishtirish `shared/timing-safe.ts` → `secretEquals` bilan constant-time (INT-01/INT-14
+  naqshi qayta ishlatildi, yangisi yozilmadi). FAIL-CLOSED: sir yo'q / sarlavha yo'q / tana yo'q
+  → hech qachon o'tmaydi.
+- `apps/api/src/modules/online-order/online-order.webhook.controller.ts` — **YANGI**. Guard'siz
+  ochiq qabul qiluvchi `POST /api/v1/webhooks/online-orders/:channelId`
+  (Payme/Click/Telegram qabul qiluvchilari bilan bir xil naqsh). `accountId` **tanadan emas**,
+  kanal yozuvidan olinadi.
+- `online-order.service.ts` — `ingestWebhook()` (autentifikatsiya → avtorizatsiya → validatsiya →
+  idempotent yozuv) va `rotateWebhookSecret()` (sir AES-GCM bilan `SalesChannel.settings` da,
+  ochiq matn javobda bir marta).
+- `online-order.controller.ts` — `POST /online-orders/channels/:channelId/webhook-secret`
+  (`settings:update`, payment-gateway config naqshi).
+- `online-order.schema.ts` — `InboundOnlineOrderSchema` = `CreateOnlineOrderSchema.omit(channelId)`.
+- `online-order.module.ts` — yangi controller ro'yxatga olindi.
+- `apps/api/src/main.ts` — `rawBody: true` (Nest 11 Fastify adapteri natively qo'llaydi:
+  `fastify-adapter.js:341-361`). Imzo aynan kelgan baytlar ustidan tekshirilishi shart.
+- `modules/permissions/mutation-guard-coverage.test.ts` — yangi guard'siz endpoint AUTH-07
+  klass-qulfini uyg'otdi (kutilgan xulq); `INTENTIONALLY_OPEN` ga sababi bilan qo'shildi.
+
+### Testlar (RED → GREEN)
+- `online-order.inbound.test.ts` (12 test) — avval YIQILDI («Failed to load url
+  ./online-order.inbound.js») → keyin YASHIL. Qamrov: xom hex va `sha256=` prefiksi, probel/registr,
+  **tana bir baytga o'zgarsa false**, noto'g'ri sir, sirsiz/sarlavhasiz/tanasiz fail-closed.
+- `online-order.webhook.test.ts` (20 test) — avval YIQILDI (controller fayli yo'q) → keyin YASHIL.
+  Qamrov: (1) noto'g'ri imzo → 401 va `create` CHAQIRILMAYDI · (2) javobda ham, **log'da ham** sir
+  va kutilgan imzo YO'Q · (3) bir xil `externalOrderId` ikkinchi marta → ikkinchi hujjat yo'q ·
+  (4) POYGA: `findUnique` bo'sh + `create` P2002 → 500 emas, mavjudi qaytadi · (5) noma'lum
+  channelId → 401 (enumeratsiya oracle yo'q) · (6) arxiv holati **imzosiz aniqlanmaydi** (401,
+  403 emas) · (7) rotatsiya PATCH-semantikada (INT-13 sabog'i) · (8) rotatsiyadan keyingi sir
+  bilan imzolangan so'rov haqiqatda o'tadi.
+- **Log-sizish testi vakuum emasligi o'lchandi:** log qatoriga ataylab `secret=${secret}`
+  qo'shilganda test YIQILDI (`expected … not to contain 'chan-secret-…'`), qaytarilgach YASHIL.
+- Yugurtirilgan: `vitest run src/modules/online-order/` → **57 passed** ·
+  `src/app-boot.test.ts src/modules/webhook src/modules/payment-gateway` → **113 passed** ·
+  `mutation-guard-coverage.test.ts` → **51 passed**.
+
+### Gate natijasi
+- **typecheck:** o'z fayllarimda 0 (16:46 da butun `@moysklad/api` toza edi). Keyinroq paydo
+  bo'lgan 2 xato — F019 sessiyasining **untracked** `store/cell-migration.runner.ts:152`
+  (`parseDecimalScaled` topilmadi), meniki EMAS.
+- **biome:** o'z fayl to'plamimda 0 (`biome check apps/api/src/main.ts modules/online-order/` +
+  guard testi → «No fixes applied»). Repo-keng `pnpm lint:product` qizil — 12 xatoning HAMMASI
+  parallel sessiyalarning jonli fayllarida (`store/cell-migration*`, `shared/contract-*`,
+  `apps/web/.../page.tsx` × 5).
+- **i18n:** N/A — web tegilmadi, UI-matn qo'shilmadi (xato matnlari API qatlamida, qo'shni
+  `'Sales channel not found'` uslubida).
+- **vitest (butun API):** 5942 passed / 1 failed — yiqilgani `mutation-guard-coverage.test.ts >
+  «POS qarz to'lovi…»`, u **izolyatsiyada 51/51 yashil** (to'liq suite'da 5010ms da timeout;
+  3 parallel sessiya yuklamasi). Mening o'zgarishimdan kelgan regress emas.
+
+### Tasdiqlangan/rad etilgan da'volar
+- ✅ «Mavjud `webhook`/`payment-gateway` naqshini qayta ishlat» — **tasdiqlandi va bajarildi**:
+  `secretEquals` (constant-time), guard'siz public-controller naqshi, `encryptPassword` creds
+  saqlash, `P2002` idempotentlik naqshi — hammasi mavjudidan olindi.
+- ✅ «`externalOrderId` bo'yicha idempotentlik» (TZ §4.4) — sxemada `@@unique([channelId,
+  externalOrderId])` **bor**, kalit shu. Faza matnidagi «eventId» aynan shu maydon.
+- ❌ «navbat (outbox/inbox naqshi, qayta urinish) · DLQ» — **kodda tayanch YO'Q**. `OnlineOrder`
+  da `attempt`/`nextRetryAt`/`lastError` maydonlari yo'q; `WebhookDelivery` esa **chiquvchi**
+  obunaga bog'langan (`webhookId` FK) — kiruvchi hodisaga yaramaydi. Reja F042 ni 🗄️ deb
+  belgilamagan va TZ §8 «Baza o'zgarishlari» ro'yxatida inbox jadvali yo'q ⇒ reja bu talabni
+  jadvalsiz tasavvur qilgan, lekin jadvalsiz uni bajarib bo'lmaydi.
+- ℹ️ Replay-himoya vaqt-tamg'asi bilan emas, **idempotentlik** bilan beriladi (o'sha hodisa qayta
+  kelsa ikkinchi hujjat yo'q). Vaqt-tamg'asi kerak bo'lsa imzo bazasi `timestamp + '.' + body`
+  bo'ladi — F042b.
+
+### Qolgan qarz / DEFER → **F042b**
+- **Kiruvchi inbox jadvali** (`OnlineOrderInboxEvent` yoki umumiy inbox): xom hodisa + `attempt` +
+  `nextRetryAt` + `lastError` + `status(queued|processed|dead)`. Undan keyin: eksponensial
+  qayta-urinish (`WebhookDeliveryService` BACKOFF_MS naqshi) va DLQ ro'yxati/qayta-yuborish UI.
+  **Sabab kechiktirilgani:** migratsiya = umumiy resurs (CLAUDE.md §6.4) va shu sessiyada
+  `schema.prisma` F001 (filial modeli) sessiyasining qo'lida edi — egasining qarori bilan
+  ajratildi.
+- Sirni boshqarish UI'si (web) qo'shilmadi — hozircha faqat API endpointi.
+- Brauzerda ochilmadi; tashqi provayder bilan jonli so'rov yuborilmadi.
+
+### OPS-QADAM qo'shildimi
+- **Yo'q** — sxema o'zgarmadi, migratsiya yo'q. Deploy paytida e'tibor: `main.ts` da `rawBody: true`
+  yoqildi (JSON/urlencoded so'rovlar uchun xom Buffer ham saqlanadi — 8 MB `bodyLimit` da
+  rasm-yuklashlar `multipart` bo'lgani uchun ta'sir minimal).
+
+### Status yorlig'i
+**Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q.**
+*(Imzo/idempotentlik faqat unit darajada o'lchandi; jonli HTTP so'rov, `rawBody` ning haqiqiy
+Fastify oqimida yetib kelishi va dublikat-yuborish stsenariysi → **F044** (2-Onlayn Phase-2 QA).)*
 
 ---

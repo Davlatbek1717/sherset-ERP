@@ -326,6 +326,43 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > `/root/sherset-v2-backups` = 5.4G / 18 fayl — keyingi deploy'dan oldin eski backup'larni
 > tozalash kerak bo'ladi, aks holda `next build` joy yetmasligidan yiqilishi mumkin.
 >
+> **🕒 2026-08-09n (REJA-8-BOLIM **F019** — ombor migratsiyasi 1–2-qadam: `__yacheyka` kodlaridan
+> zona/yacheyka generatsiya + `Stock` → `StockByCell` backfill + **farq hisoboti** + **rollback**) ·
+> Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q · **lokal DB'da JONLI o'lchandi**
+> (DRY→APPLY→ROLLBACK, baza boshlang'ich holatiga qaytarildi) · ⏳ **PRODDA YUGURTIRILMAGAN**
+> (OPS-QADAM 7) · 🗄️ **migratsiya SHART EMAS** — sxema o'zgarmadi (`StoreZone`/`StoreCell`/
+> `StockByCell` allaqachon bor) · ⚠️ parallel sessiya F001/F010 ustida JONLI ishlayapti.**
+>
+> **Nima qilindi (3 yangi manba fayl + 2 test fayl, 39 test):**
+> - `apps/api/src/modules/store/cell-migration.ts` — sof planlovchilar: `parseCellCode` ·
+>   `planCellGeneration` · `planStockBackfill` · `diffStockVsCells` · `planRollback`.
+> - `apps/api/src/modules/store/cell-migration.runner.ts` — orkestratsiya port ustida; DRY va
+>   APPLY **bitta kod yo'li**, DRY «keyingi farq»ni simulyatsiya bilan oldindan aytadi.
+> - `apps/api/src/scripts/migrate-cells-step1-2.ts` — CLI: DRY (default) · `APPLY=1` ·
+>   `ROLLBACK=1 [APPLY=1]` · `MANIFEST=<yo'l>`. Akkaunt/ombor noaniq bo'lsa **`exit 1`**.
+>
+> **Kalit qaror — `delta = Stock − Σ StockByCell` (butun `Stock.qty` EMAS).** Lokal bazada shu
+> aynan bug'ni to'sdi: tovar `a0b44c73…` kodi `01-02-03-04`, ammo 30 donasi BOSHQA yacheykada
+> (`01-09-09-01`). «Uy-yacheykaga butun qoldiqni yoz» varianti 30 ni ikki marta sanab
+> `Σ StockByCell > Stock` driftini yaratardi (`applyDeltas` `cellMode` bilan bir bug-klass).
+> Shu formula tufayli qayta yugurtirish ham **0 yozuv** beradi (jonli tasdiqlangan).
+>
+> **🔴 REJADAGI XATO DA'VO TUZATILDI:** reja va `todo.md` «`SkladKeeper.zoneId` sxemada bor
+> (7-B1 yarim)» der edi — **YO'Q**. `schema.prisma:1111-1127` da faqat `skladNo Int`; yig'ish
+> varag'ini taqsimlash hamon yacheyka kodining 1-segmentini `Number()` qilib o'qiydi
+> (`restock-task.service.ts:46`, `retail-sale.service.ts:109`). F019 qamroviga kirmagani uchun
+> bloklamadi → yangi **F019b** fazasi ochildi (`todo.md` 7-Ombor **B2a**).
+>
+> **Gate:** typecheck api **0** · biome (shu fazaning 5 fayli) **0 error** · vitest
+> `store`+`stock` **180 passed / 0 failed** · i18n **N/A** (UI yo'q, web tegilmadi).
+> ⚠️ `pnpm lint:product` repo bo'yicha **7 error** — hammasi **parallel sessiya** fayllarida
+> (4 web `page.tsx` + `contract-conformance.test.ts` + `shared-api-contracts.test.ts`);
+> CLAUDE.md §6.1 bo'yicha **tegilmadi**.
+>
+> **Keyingi:** **F019b** (`SkladKeeper.zoneId`) yoki **F020** (dual-write). Prod migratsiyasi —
+> OPS-QADAM 7 (DRY → egasi ko'radi → `MANIFEST=… APPLY=1`, manifestni SAQLANG).
+> To'liq hisobot: `docs/REJA-8-BOLIM-2026-08.md` → HISOBOT JURNALI → «Faza F019».
+
 > **🕒 2026-08-09m (AUDIT-FIX FAZA 32 — FE auth-UX + POS i18n: refresh-dead redirect +
 > `/sotuv` va 3 POS dialogini i18n ga · `FE-07`, `FE-08`) · Phase-1: strukturaviy + unit,
 > RUNTIME-TASDIQLANMAGAN (browser-smoke YO'Q) · ⏳ DEPLOY QILINMAGAN · 🗄️ migratsiya SHART EMAS ·
