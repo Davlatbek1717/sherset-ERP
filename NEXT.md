@@ -326,6 +326,63 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > `/root/sherset-v2-backups` = 5.4G / 18 fayl — keyingi deploy'dan oldin eski backup'larni
 > tozalash kerak bo'ladi, aks holda `next build` joy yetmasligidan yiqilishi mumkin.
 >
+> **🕒 2026-08-09w (REJA-MENEJER-KASSA **MK10** — 4M.7: «nima qotib qolgan» + SLA paneli) —
+> `5f3ce376`, 15 fayl (+2203/−4). To'liq hisobot:
+> `docs/REJA-MENEJER-KASSA-2026-08.md` → HISOBOT JURNALI → «Faza MK10».**
+>
+> **Nima qilindi:** jarayonning qaysi bosqichida ish turib qolgani + har bosqich uchun SLA
+> chegarasi. **MK06 navbatidan boshqa savol:** navbat bo'lib O'TGAN qoida buzilishini yig'adi,
+> bu panel HALI BO'LMAGAN ishni yoshi bo'yicha ko'rsatadi. Besh bosqich (reja ro'yxati aynan):
+> yig'ilmagan buyurtma (`MsPickList`) · qabul qilinmagan yetkazma (`Supply.approvalStage`) ·
+> javobsiz murojaat (`ServiceRequest`) · yopilmagan smena (`CashierSession`) · o'tkazilmagan
+> hujjat (`Demand`/`PaymentIn`/`PaymentOut`/`CashIn`/`CashOut` qoralamalari).
+> BE: `apps/api/src/modules/manager/sla/` (sof `stuck-sla.ts` + servis/schema/controller,
+> `GET /manager/sla`, `GET /manager/sla/stages`, `PUT /manager/sla/stages/:stage`).
+> FE: `/menejer/qotib-qolgan` + subnav `stuck_sla` (navbatdan keyin) + 48 i18n kalit ru+uz.
+>
+> **Qarorlar (keyingi sessiya bilishi shart):**
+> - **Chegaralar `manager_rule_configs` da, `SLA_*` kalitlari bilan** — MK06 navbat qoidalari
+>   bilan AYNI jadval, kesishmaydigan nom fazosi; `resolveRules`/`resolveSlaStages` bir-birining
+>   kalitini jim tashlab ketadi. **Migratsiya YO'Q** (rejaning «Fayllar» ro'yxatida ham sxema
+>   yo'q edi). MK07 `MANAGER_RULES` ni to'ldirganda shu ajratma buzilmasin.
+> - **Birlik chegaradan ajralmaydi:** faqat `hours`/`days` (24× aniq o'girish). `percent`/`minor`/
+>   `qty` RAD etiladi va `thresholdRejected` bayrog'i ekranda chiqadi.
+> - **`STAGE_OPEN_STATES` = «ochiq holat» yagona manbai** — servis Prisma `where` bandini aynan
+>   shundan quradi, ya'ni yopilgan ob'ekt BAZADAN ham o'qilmaydi.
+> - **Yetkazma yoshi `SupplyApprovalEvent` oxirgi hodisasidan** (`updatedAt` EMAS: pozitsiya
+>   tahriri ham uni yangilab, qotgan hujjatni «hozirgina qimirlagan» qilardi).
+> - **`SHIFT_CLOSE` chegarasi `live-status.ts` dagi `SHIFT_LONG_HOURS` ni import qiladi** —
+>   ikkinchi raqam kiritilmadi (bir hodisa ikki ekranda turlicha baholanmasin).
+>
+> **Halol cheklovlar (qarz):** (1) **browser-smoke YO'Q** — Phase-1, sahifa jonli brauzerda
+> ochilmagan; (2) **i18n gate dinamik kalitlarni ko'rmaydi** — `t(\`stage_${x}\`)`/`t(\`state_${x}\`)`
+> «dynamic» deb o'tkaziladi, ya'ni yangi holat qiymati paydo bo'lsa ekranda kalit nomi ko'rinadi
+> va hech bir gate tutmaydi; (3) `ServiceRequest.dueDate` ISHLATILMADI (panel «qancha vaqtdan beri
+> qimirlamadi» ni o'lchaydi, va'daga nisbatan kechikish — boshqa ko'rsatkich); (4) yig'ish yoshi
+> buyurtma KELGAN paytdan (omborchi qo'liga olgani mijoz kutishini nolga qaytarmaydi);
+> (5) valyutasiz manbalar (`MsPickList`, `CashierSession`) `currency: null` qaytaradi va FE
+> bazaviy valyuta bilan chizadi — tasdiqlanmagan taxmin; (6) boshlang'ich chegaralar
+> (4/24/8/12/48 soat) egasi bilan kelishilmagan — sozlamadan o'zgartiriladi;
+> (7) manba shifti 500/manba — oshsa xulosadagi sonlar «kamida shuncha» (`sourceTruncated`).
+>
+> **Gate (qo'lda, to'liq):** api typecheck 0 · web typecheck 0 · `i18n:gate` o'tdi ·
+> api `manager/` + `app-boot` **595/595** · web `menejer/` **29/29** · biome MK10 yo'llarida 0.
+> ⚠️ `pnpm lint:product` repo-bo'ylab YASHIL EMAS — yiqilishlar **parallel sessiyalarning commit
+> qilinmagan fayllarida** (`queue/manager-queue.service.ts`, `modules/expense-budget/*`,
+> `menejer/_components/expense-budget-screen.tsx`, `queue/rule-candidates*`). Tegilmadi (§6.1).
+>
+> **🔀 PARALLEL SESSIYA OGOHLANTIRISHI:** shu sessiya davomida daraxtda **uch boshqa sessiya**
+> faol edi (MK07 qoida registri · MK12 xarajat byudjeti + migratsiya · MK16 qarz undirish).
+> 5 shared fayl (`manager.module.ts`, `layout.tsx`, `messages/{ru,uz}.json`, REJA md) uchun
+> **«HEAD + faqat mening hunk'larim» blobi** qurildi (`hash-object -w` + `update-index
+> --cacheinfo`), hook'lar bir martaga chetlab o'tildi. Ish daraxti TEGILMADI — ularning
+> commit qilinmagan ishi joyida. `work-item-rules.ts` ga qo'shilgan `hours` birligi
+> QAYTARIB OLINDI (MK07 o'sha faylni yozayotgan edi); MK10 o'z lug'atini saqlaydi
+> (`SLA_THRESHOLD_UNIT`), `days` qiymati MK06 dagi bilan bir xil satr.
+>
+> **Keyingi:** MK07 (12 qoida turi) yoki Phase-2 QA — `/menejer/qotib-qolgan` ni jonli brauzerda
+> (bo'sh holat · chegara tahriri · `thresholdRejected` · `sourceTruncated`).
+
 > **🕒 2026-08-09v (REJA-MENEJER-KASSA **MK18** — xato narx nazorati) — `b57615ce`
 > (+ tiklash `84efc024`), 11 fayl (+1927/−1). To'liq hisobot:
 > `docs/REJA-MENEJER-KASSA-2026-08.md` → HISOBOT JURNALI → «Faza MK18».**
