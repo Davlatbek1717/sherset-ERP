@@ -305,6 +305,53 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-10f (REJA-MENEJER-KASSA **MK37 + MK38** — `SalesPlan` + plan/mijoz/narx ekranlari) —
+> ✅ **Phase-1: strukturaviy + unit-tasdiqlangan, BROWSER-SMOKE YO'Q** (commit `cd091c77`).
+> To'liq hisobot: `docs/REJA-MENEJER-KASSA-2026-08.md` → «Faza MK37 + MK38».**
+>
+> **Nega ikkalasi birga:** topshiriq MK38 edi, lekin uning «plan qo'yish» ekrani **MK37
+> (`SalesPlan`) ga tayanadi va MK37 bajarilmagan edi** (repoda 0 hit). Ayri variantlar taqdim
+> etildi → **egasi «ikkalasi birga»ni tanladi** (§1 «faqat bitta faza» dan chetlanish — agent
+> qarori EMAS).
+>
+> **MK37:** `sales_plans` (xodim × oy × plan turi) + migratsiya `20260810140000_sales_plan`
+> (lokal `climart_adopt` ga qo'llandi; **prodga TEGILMADI → OPS-QADAM**). **Fakt ustuni ATAYLAB
+> YO'Q** — fakt `employee_daily_kpi_metrics` dan o'qiladi, foiz `report/metrics/` dan (ikkinchi
+> formula yozilmadi; `no-adhoc-formula.test.ts` manba-skani buni qulflaydi). Sof modullar:
+> `-types` (4 tur) · `-fact` (oylik yig'indi) · `-target` (**reja ustuvorligi**: `sales_plans` >
+> `hr_salary_config.monthly_sales_target` [faqat tushum] > YO'Q — uchinchi plan modeli
+> yaratilmadi) · `-progress` (bajarilish + sur'at).
+>
+> **MK38:** 🔴 **ROOT-FIX** — `CounterpartyService.bulkUpdate` **audit YOZMAGAN** edi, ya'ni mijoz
+> taqsimotining eng ko'p ishlatiladigan yo'lida **tarix umuman qolmasdi** (bitta-tahrir yozardi).
+> Endi diff yoziladi, jurnal xatosi amalni yiqitmaydi. Yangi `manager/customers` sirti egalikni
+> **o'zi yozmaydi** — `bulkUpdate` ga topshiradi (ikkinchi yozuvchi ochilmadi), tarix esa
+> `audit_log` ustidagi ko'rinish (yangi jadval YO'Q). 3 ekran: `/menejer/plan` ·
+> `/menejer/mijoz-taqsimoti` · `/menejer/narx-siyosati` (oxirgisi mavjud
+> `PUT /manager/queue/rules` ustida — **`block` rejimi YO'Q**, manba-skan testi qo'riqlaydi).
+>
+> **Valyuta shartnomasi:** konvertatsiya YO'Q. Kunlik KPI omborida valyuta ustuni yo'q ⇒ boshqa
+> valyutadagi reja `comparable:false` — qiymat KO'RINADI, foiz CHIZILMAYDI.
+>
+> **Gate:** api tc 0 · web tc 0 · `lint:product` 0 error · `i18n:gate` yashil ·
+> **api vitest 7434 pass · web vitest 3107 pass** (+117 yangi test).
+>
+> **🔴 Ochiq qarz (halol):** (1) **browser-smoke YO'Q** → MK40; (2) **narx TURLARI / guruh
+> narxlari ekrani DEFER** — `ContractPrice` (**F004**, asosiy reja) kutilmoqda; (3) «kim qancha
+> chegirma bera oladi» **xodim kesimida YO'Q** (chegara hisob bo'yicha yagona); (4)
+> `customer_count` / `collected_debt` **fakti o'lchanmaydi** (KPI katalogida ko'rsatkich yo'q —
+> ekranda «qo'lda kuzatiladi» deb turadi); (5) **HR oyligi hamon `hr_salary_config` dan o'qiydi**
+> (ustuvorlik moduliga ko'chirilmadi — oylik matematikasi o'z QA'sini talab qiladi);
+> (6) **prod migratsiyasi qo'llanmadi** (OPS-QADAM).
+>
+> **🩹 Yo'l-yo'lakay (meniki emas):** `use-audit-labels.test.tsx` sessiya BOSHIDAN qizil edi —
+> MK26/MK29 audit slug'lari (`permission-override`, `template-apply`) uchun i18n kaliti yo'q edi
+> va Tarix tabida xom slug sizardi. Umumiy gate'ni bloklagani uchun ru+uz ga qo'shildi.
+> ⚠️ Hook separatorlarni `_` ga tekislaydi — kalit `-` bilan yozilsa JIM ishlamaydi.
+>
+> **⚠️ Parallel sessiya:** shu sessiya davomida boshqa sessiya `62377951` (MK22) va `74bb52fd`
+> (MK39) ni commit qildi. Diffim ular bilan kesishmadi (`git diff HEAD` bilan tekshirildi).
+
 > **🕒 2026-08-10e (REJA-MENEJER-KASSA **MK39** — record-scope qamrov darvozasi) — ✅ **Phase-1
 > complete: darvoza qurildi + qamrov O'LCHANDI · `recordScopeEnforced` ATAYLAB YOQILMADI**
 > (browser-smoke YO'Q). To'liq hisobot: `docs/REJA-MENEJER-KASSA-2026-08.md` → «Faza MK39».**
