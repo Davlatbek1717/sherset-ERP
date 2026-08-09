@@ -326,6 +326,45 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > `/root/sherset-v2-backups` = 5.4G / 18 fayl — keyingi deploy'dan oldin eski backup'larni
 > tozalash kerak bo'ladi, aks holda `next build` joy yetmasligidan yiqilishi mumkin.
 >
+> **🕒 2026-08-09x (REJA-MENEJER-KASSA **MK16** — qarz undirish ish ro'yxati, 4M §8.1/2) —
+> `bc006578`, 15 fayl. To'liq hisobot:
+> `docs/REJA-MENEJER-KASSA-2026-08.md` → HISOBOT JURNALI → «Faza MK16».**
+>
+> Yangi ekran `/menejer/undirish` + `GET/POST /manager/collection[/remind]`. Menejer bir
+> ekranda: **kimdan qancha** · **necha kun kechikkan** · **javobgar** · **oxirgi aloqa** ·
+> **harakat**. BLOKLAMAYDI.
+>
+> **Ikkinchi haqiqat ochilmadi (uch joyda):** qatorlar mavjud `Debt` daftaridan · eslatma
+> mavjud `DebtService.sendBulkReminders` (SMS/Telegram) ga topshiriladi · **idempotentlik
+> jurnali yangi jadval EMAS** — mavjud `DebtNote` ga `kind='reminder'` (migratsiya kerak
+> emas; eslatma qarzning muloqot tarixida ko'rinadi; `recomputeLastCall` faqat `kind='call'`
+> o'qigani uchun qo'ng'iroq natijasi buzilmaydi — kodda tasdiqlandi).
+>
+> **Shartnomalar:** bir qarzga bir **Toshkent kunida** bitta eslatma · jurnal **FAQAT
+> haqiqatan ketganga** yoziladi (telefoni yo'q qarz bugun qayta urinishga ochiq qoladi) ·
+> **NULL ≠ 0** (muddatsiz qarz «bugun» emas, alohida belgi) · kechikish **kalendar
+> kunlarida** (yorliq ≠ instant) · valyutalar qo'shilmaydi · tartib to'liq determinist.
+>
+> **Testlar 34** (22 sof + 12 servis). Sof modul RED holatida ko'rildi; **servis testlari
+> mutatsiya bilan o'lchandi** (idempotentlik qulfi va jurnal filtri olib tashlanganda 4 test
+> yiqildi) — vakuum emas.
+>
+> **Gate:** api+web typecheck mening fayllarimda 0 · biome 0 · i18n mening kalitlarim 0
+> yetishmovchilik · api **204/204** · web **1272 yashil**. Daraxtdagi qolgan yiqilishlar
+> parallel sessiyalarniki (MK07 navbat `reasonCodes`, MK12 byudjet) — hisobotda fayl-ma-fayl
+> o'lchab ajratilgan.
+>
+> **Git:** commit «HEAD + faqat mening hunk'larim» usulida qurilgan (§6.7) — `layout.tsx` va
+> `messages/{uz,ru}.json` da parallel **MK12** sessiyasining commit qilinmagan `byudjet` bandi
+> bor edi, u ATAYLAB olinmadi (sahifasi git'da yo'q ⇒ 404 bo'lardi). Ikki tomon ham
+> tekshirildi: HEAD'da MK16 bor / MK12 yo'q, ishchi daraxtda MK12 omon.
+>
+> **⚠️ Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q** → MK14.
+> **Ochiq qarz:** «muddat» = `nextContactAt` (`Debt` da alohida `dueDate` YO'Q) · MK06
+> navbatiga ulanmagan · kanal-aniq idempotentlik yo'q (bugun SMS ketsa Telegram ham ketmaydi) ·
+> `todo.md` yangilanmadi — §8.1 to'lqini (MK15–MK24) u yerda umuman kuzatilmaydi (hisobotda
+> sababi yozilgan).
+
 > **🕒 2026-08-09w (REJA-MENEJER-KASSA **MK10** — 4M.7: «nima qotib qolgan» + SLA paneli) —
 > `5f3ce376`, 15 fayl (+2203/−4). To'liq hisobot:
 > `docs/REJA-MENEJER-KASSA-2026-08.md` → HISOBOT JURNALI → «Faza MK10».**
