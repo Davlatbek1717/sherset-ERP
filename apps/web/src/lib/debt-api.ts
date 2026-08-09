@@ -23,7 +23,8 @@ export type DebtPaymentMethod =
   | 'card_screenshot'
   | 'account'
   | 'manual_close';
-export type DebtNoteKind = 'call' | 'debt_issue' | 'payment';
+/** `reminder` (MK16) — undirish ro'yxatidan yuborilgan SMS/Telegram eslatmasi. */
+export type DebtNoteKind = 'call' | 'debt_issue' | 'payment' | 'reminder';
 export type DebtAuthorRole = 'operator' | 'cashier' | 'admin';
 /**
  * Ro'yxat ko'rinishlari.

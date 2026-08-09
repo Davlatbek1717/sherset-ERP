@@ -266,12 +266,16 @@ export default function DebtProfilePage() {
         ? t('author_operator')
         : t('author_admin');
 
+  // MK16: `reminder` OSHKORA ajratiladi — aks holda u fallback'ga tushib
+  // «Qo'ng'iroq» deb yolg'on yorliq olardi (eslatma qo'ng'iroq EMAS).
   const kindLabel = (k: DebtNoteRow['kind']) =>
     k === 'debt_issue'
       ? t('kind_debt_issue')
       : k === 'payment'
         ? t('kind_payment')
-        : t('kind_call');
+        : k === 'reminder'
+          ? t('kind_reminder')
+          : t('kind_call');
 
   const when = (iso: string) =>
     new Date(iso).toLocaleString('ru-RU', {

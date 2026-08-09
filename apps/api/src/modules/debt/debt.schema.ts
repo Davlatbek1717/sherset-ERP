@@ -43,7 +43,13 @@ export type DebtPaymentMethod = z.infer<typeof DebtPaymentMethodSchema>;
 export const CASHIER_METHODS: readonly DebtPaymentMethod[] = ['cash', 'terminal'];
 
 /** Muloqot yozuvi manbai (§3.4 — kim/qayerdan yozgani ko'rinadi). */
-export const DebtNoteKindSchema = z.enum(['call', 'debt_issue', 'payment']);
+/**
+ * `reminder` (MK16) — undirish ro'yxatidan yuborilgan SMS/Telegram eslatmasi.
+ * U muloqot tarixida ko'rinadi VA takror yuborishning idempotentlik manbai
+ * bo'ladi (alohida jadval ochilmadi). `recomputeLastCall` faqat `call` ni
+ * o'qiydi ⇒ yangi tur qo'ng'iroq natijasiga tegmaydi.
+ */
+export const DebtNoteKindSchema = z.enum(['call', 'debt_issue', 'payment', 'reminder']);
 export type DebtNoteKind = z.infer<typeof DebtNoteKindSchema>;
 
 /** Pul — faqat musbat butun tiyin (BigInt minor). */

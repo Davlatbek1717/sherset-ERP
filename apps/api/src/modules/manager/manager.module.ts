@@ -1,7 +1,10 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../../prisma/prisma.module.js';
 import { AuthModule } from '../auth/auth.module.js';
+import { DebtModule } from '../debt/debt.module.js';
 import { PermissionsModule } from '../permissions/permissions.module.js';
+import { DebtCollectionService } from './collection/debt-collection.service.js';
+import { ManagerCollectionController } from './collection/manager-collection.controller.js';
 import { ManagerInventoryController } from './inventory/manager-inventory.controller.js';
 import { ManagerInventoryService } from './inventory/manager-inventory.service.js';
 import { DailyKpiAcceptanceService } from './kpi/daily-kpi-acceptance.service.js';
@@ -42,12 +45,17 @@ import { ManagerSlaService } from './sla/manager-sla.service.js';
  * `app.module.ts` da global (`attendance-geo.module.ts` bilan bir xil).
  */
 @Module({
-  imports: [PrismaModule, AuthModule, PermissionsModule],
+  // MK16 — `DebtModule` OSHKORA import qilinadi: `DebtCollectionService`
+  // eslatmani `DebtService.sendBulkReminders` ga topshiradi (yangi jo'natgich
+  // qurilmadi). Hech bir test DI grafini qurmaydi ⇒ modulni import qilishni
+  // unutish faqat runtime'da chiqardi.
+  imports: [PrismaModule, AuthModule, PermissionsModule, DebtModule],
   controllers: [
     KpiConfigController,
     ManagerKpiController,
     ManagerInventoryController,
     ManagerQueueController,
+    ManagerCollectionController,
     ManagerSlaController,
   ],
   providers: [
@@ -62,6 +70,7 @@ import { ManagerSlaService } from './sla/manager-sla.service.js';
     DataQualityService,
     ManagerInventoryService,
     ManagerQueueService,
+    DebtCollectionService,
     ManagerSlaService,
   ],
   exports: [EmployeeDailyKpiService, DailyKpiAcceptanceService],

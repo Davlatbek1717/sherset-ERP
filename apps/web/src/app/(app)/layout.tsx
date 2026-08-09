@@ -460,6 +460,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     { key: 'live', label: tMenejer('live'), href: '/menejer/jonli' },
     // 4M TZ §6.4 — «kimda nima qolgan»: pul ko'p bo'lgan tepada.
     { key: 'accountability', label: tMenejer('accountability'), href: '/menejer/javobgarlik' },
+    // 4M TZ §8.1/2 (MK16) — «kimdan qancha undirish kerak». Javobgarlikdan
+    // keyin ataylab: ikkalasi ham «kimda bizning pulimiz turibdi» savoli, lekin
+    // bu yerda sub'ekt XODIM emas, MIJOZ. BLOKLAMAYDI.
+    { key: 'collection', label: tMenejer('collection'), href: '/menejer/undirish' },
     // 4M TZ §6 (MK08) — yopilgan smenani QABUL QILISH. Farq aktidan oldin:
     // farqsiz smena ham ko'rilishi kerak, aks holda «hammasi joyida» xulosasi
     // hech kim tomonidan tasdiqlanmagan bo'lardi.

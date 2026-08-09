@@ -541,7 +541,7 @@ holati (NULL ≠ 0).
 
 ---
 
-### MK16 — Qarz undirish ish ro'yxati ☐ HISOBOT
+### MK16 — Qarz undirish ish ro'yxati ☑ HISOBOT (2026-08-09)
 **Bo'lim/blok:** 4M §8.1/2 · **Ustuvorlik:** P2 · **Bog'liqlik:** MK06 (navbat dvigateli)
 **Qamrov:** kimdan qancha undirish kerak · muddati o'tgan kunlar bo'yicha tartib · javobgar
 (sotuvchi/ega) · oxirgi aloqa sanasi · harakat (qo'ng'iroq/SMS/Telegram eslatma — mavjud
@@ -2408,3 +2408,135 @@ qilinmagan tahririni birga ushlab turardi: `manager.module.ts`, `layout.tsx`, `m
   tashlab ketadi. Yangi qoida qo'shilganda bu ajratma buzilmasin.
 - Phase-2 QA (MK34 yoki menejer cohort) — shu ekranni jonli brauzerda: bo'sh holat, chegara
   tahriri, `thresholdRejected` bayrog'i, `sourceTruncated` ogohlantirishi.
+
+
+## Faza MK16 — Qarz undirish ish ro'yxati (sana: 2026-08-09)
+
+**Holat:** ✅ **Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q.**
+«done» / «production-ready» / «verified» EMAS — runtime-QA MK14 ga qoladi.
+**Commit:** pastdagi «Git holati» bo'limiga qara.
+
+### Nima o'zgardi
+
+**BE — yangi `apps/api/src/modules/manager/collection/` (4 fayl + 2 test fayl):**
+- `debt-collection.ts` — **sof** qoidalar (Prisma yo'q, `Date.now()` yo'q, «hozir» argument):
+  qator qurish · muddat hisobi · determinist tartib · valyuta-jamlari · idempotentlik oynasi.
+- `debt-collection.service.ts` — I/O: `Debt` o'qish + `DebtNote.groupBy` (oxirgi aloqa / oxirgi
+  eslatma) + eslatmani **mavjud** `DebtService.sendBulkReminders` ga topshirish.
+- `manager-collection.schema.ts` — Zod (`scope`, `responsibleId`, `problemOnly`, `limit≤500`;
+  `remind`: `debtIds≤200`, `channel: sms|telegram`).
+- `manager-collection.controller.ts` — `GET /manager/collection` (`debt:view`) ·
+  `POST /manager/collection/remind` (`debt:update`).
+- `manager.module.ts` — `DebtModule` **oshkora import** + controller/provider ro'yxati.
+- `debt.schema.ts` — `DebtNoteKindSchema` ga `'reminder'` qo'shildi.
+
+**FE:**
+- `apps/web/src/app/(app)/menejer/undirish/page.tsx` — ekran (tanlash · kanal · «Eslatma
+  yuborish» · halol natija paneli).
+- `layout.tsx` — menejer subnav'iga `collection` bandi (javobgarlikdan keyin: ikkalasi ham
+  «bizning pulimiz kimda» savoli, lekin bu yerda sub'ekt xodim emas, **mijoz**).
+- `messages/{uz,ru}.json` — `pages.menejerCollection` (52 kalit ×2) + `subnav.menejer.collection`
+  + `pages.debts.kind_reminder`.
+- `debts/[id]/page.tsx` — `kindLabel` ga `reminder` shoxi (aks holda yangi tur fallback'ga
+  tushib **«Qo'ng'iroq»** deb yolg'on yorliq olardi).
+- `lib/debt-api.ts` — `DebtNoteKind` ga `'reminder'`.
+
+### Qaror: idempotentlik jurnali — YANGI JADVAL EMAS
+Eslatma mavjud `DebtNote` jurnaliga `kind='reminder'` bilan yoziladi. Sabablari:
+1. **Migratsiya kerak emas** (`kind` — `VarChar(20)`, DB'da CHECK yo'q, tekshirildi).
+2. Eslatma qarzning **muloqot tarixida** operator ko'radigan joyda paydo bo'ladi; «oxirgi aloqa»
+   endi eslatmani ham hisobga oladi.
+3. `recomputeLastCall` faqat `kind:'call'` ni o'qiydi (`debt.service.ts:1322`) ⇒ yangi tur
+   qo'ng'iroq natijasini **buzmaydi** — o'z ko'zim bilan tasdiqlandi.
+
+**Idempotentlik oynasi = bir qarzga bir Toshkent kunida bitta eslatma** (kanaldan qat'i nazar).
+Jurnal **FAQAT haqiqatan ketgan** xabarga yoziladi: telefoni yo'qligi sababli o'tkazib
+yuborilgan qarz «bugun eslatilgan» bo'lib qolmaydi va operator raqamni to'g'irlagach **o'sha
+kuni qayta urina oladi**.
+
+### Uch ma'lumot-sifati shartnomasi ekranga ko'chirildi
+- **NULL ≠ 0** — `nextContactAt` yo'q qarzning `overdueDays` i `null` (0 EMAS) va u «Muddat
+  qo'yilmagan» belgisini oladi; `scope='due'` da ham **qoladi** (muddatsizlik o'zi ish).
+- **Yorliq ≠ instant** — kechikish **kalendar kunlarida** (Toshkent) sanaladi, `ms/86400000`
+  bilan emas. Test: kecha 23:00 dagi muddat bugun 14:00 da **1 kun** (0.6 emas).
+- **Valyutalar qo'shilmaydi** — jam har valyuta uchun alohida qatorda.
+
+### Tartib (determinist, to'liq)
+`overdueDays` ↓ (null oxirida) → `currency` ↑ → `remainingMinor` ↓ → `debtId` ↑.
+Oxirgi kalit unikal ⇒ kirish tartibidan qat'i nazar bir xil natija (test bilan qulflangan:
+to'plam teskari berilganda ham natija bir xil).
+
+### Testlar (RED → GREEN)
+- `debt-collection.test.ts` — **22 test**. RED tasdiqlandi (modul yo'q ⇒ suite yuklanmadi).
+- `debt-collection.service.test.ts` — **12 test**.
+  ⚠️ **Halol qayd:** servis testi RED holatida YUGURTIRILMADI (test yozilib, implementatsiya
+  darhol qo'shildi). Buning o'rniga **mutatsiya bilan tekshirildi**: (a) `isRemindedOn` qulfi
+  olib tashlandi, (b) jurnal `skipped`larga ham yozildi ⇒ **4 test yiqildi**, keyin tiklandi
+  (34/34 yashil). Ya'ni testlar **vakuum emas** — o'lchandi.
+- Reja talab qilgan uchta test **borligi**: (1) to'langan qarz ro'yxatdan chiqadi ✅
+  (`buildCollectionRow` null + `list` filtri); (2) eslatma jurnalga tushadi va takror
+  yuborilmaydi ✅ (4 test); (3) tartib determinist ✅ (3 test).
+
+### Gate natijasi
+- `pnpm --filter @moysklad/api typecheck` — **mening fayllarimda 0 xato**. Daraxtda qolgan
+  yiqilish: `manager/sla/manager-sla.service.ts` — **parallel sessiyaning MK10 ishi** (u modul
+  men boshlaganimda umuman yo'q edi).
+- `pnpm --filter @moysklad/web typecheck` — **mening fayllarimda 0 xato**. Qolgani:
+  `menejer/_components/expense-budget-screen.tsx` — parallel sessiyaning MK12 ishi.
+- `pnpm lint:product` — **mening fayllarim toza** (biome `--write` bilan formatlandi).
+  Umumiy hisob 14→19 ga chiqdi, lekin ro'yxatdagi fayllarning **birortasi ham meniki emas**.
+- `pnpm i18n:gate` — **mening kalitlarim 0 yetishmovchilik** (`menejerCollection` /
+  `subnav.menejer.collection` bo'yicha 0 natija); `i18n-no-hardcoded` 6/6 yashil.
+  Gate umumiy yiqiladi — barcha yetishmayotgan kalitlar `pages.managerSla` +
+  `subnav.menejer.stuck_sla`, ya'ni **parallel MK10 sessiyasiniki**.
+- Testlar (api): `app-boot.test.ts` + `src/modules/debt` + `src/modules/manager/collection` —
+  **204/204 yashil (15 fayl)**.
+- Testlar (web): `src/__tests__` + `src/app` — **1272 yashil / 1 yiqilish**. Yiqilgan
+  `raw-element-conventions.test.ts` ning uchala «aybdor» fayli ham parallel sessiyaniki
+  (`menejer/qotib-qolgan/page.tsx` ×1, `menejer/_components/expense-budget-screen.tsx` ×2);
+  mening `menejer/undirish/page.tsx` **ro'yxatda yo'q** — u `NativeSelect`/`Checkbox`
+  dizayn-tizim primitivlarini ishlatadi.
+
+### To'liq suite'dagi yiqilishlar — MENIKI EMAS (o'lchab tasdiqlandi)
+`src/modules/manager` ni to'liq yugurtirganda **5 yiqilish**, hammasi bitta faylda:
+`manager/queue/manager-queue.service.test.ts`. Sabab o'lchandi: test `reasonCodes` ni kutadi,
+`manager-queue.service.ts` da esa u **hali yo'q** (`grep -c`: test 1, servis 0) — parallel
+sessiya MK07 ni TDD bilan yozmoqda (960 qator commit qilinmagan). Mening diff'im o'sha faylga
+tegmaydi.
+
+### Parallel sessiya bilan kesishma (§6 protokoli)
+Sessiya davomida daraxtda kamida **uch** parallel ish oqimi ko'rindi: q12 auth
+(commit `14670927`), MK07 navbat qoidalari, MK10 SLA + MK12 xarajat byudjeti (untracked).
+`manager.module.ts` **ikkalamiz** ham tahrir qildik (men — collection, ular — SLA).
+Diff'im path-cheklangan; `git add` faqat aniq yo'llar bilan.
+
+### Preflight anomaliyalari — ikkalasi ham hal qilindi
+1. «Ish daraxti toza emas» — parallel sessiyaning q12 auth ishi edi; men boshlaganimda
+   `M` bo'lgan fayllar keyin `14670927` bo'lib commit qilindi. **Tegilmadi.**
+2. «NEXT.md'da git'da yo'q hash'lar (`a0b44c73`, `9c046ac2`)» — **YOLG'ON POZITIV, o'lchandi:**
+   `a0b44c73…` — NEXT.md:689 dagi **tovar UUID** prefiksi, `9c046ac2` — NEXT.md:837 dagi
+   **md5** yig'indisi. Ikkalasi ham commit hash emas. Preflight skaneri 8-belgili hex'ni
+   farqlamaydi — kichik qarz, MK16 qamrovidan tashqarida.
+
+### Ochiq qarz (ataylab qilinmagan, jimgina emas)
+- **Brauzer-QA yo'q** (Phase-2 → MK14): ekran, tanlash, «Eslatma yuborish» tugmasi va natija
+  paneli real brauzerda sinalmagan. Eslatmaning **haqiqatan yetib borishi** ham sinalmagan.
+- **«Muddat» = `nextContactAt`.** `Debt` da alohida `dueDate` ustuni **yo'q** — kelishilgan
+  keyingi aloqa sanasi muddat sifatida olindi (TZ §3.3 uni qarz berishda MAJBURIY qiladi).
+  Agar egasi «to'lov muddati» ni aloqa jadvalidan ajratishni istasa — sxema o'zgarishi (alohida
+  faza).
+- **Navbat (MK06) ga ulanmagan** — MK16 mustaqil ekran; `ManagerWorkItem` elementi
+  yaratilmaydi. Reja «Bog'liqlik: MK06» deydi, lekin qamrov ro'yxat/ustunlar deb ta'riflangan;
+  ulash alohida qadam.
+- **Kanal-aniq idempotentlik yo'q** — bugun SMS ketgan bo'lsa, bugun Telegram ham ketmaydi.
+  Kanalni saqlash uchun `DebtNote` ga ustun kerak bo'lardi (migratsiya) — ataylab qilinmadi.
+- **`sendBulkReminders` faqat SON qaytaradi** (`queued`), id ro'yxatini emas. Ketganlar
+  `nomzod − skipped` ayirmasidan chiqariladi; mos kelmasa `logger.warn` va jurnal baribir
+  ayirma bo'yicha yoziladi (mijozga **ikkinchi xabar** ketishi bloklangan urinishdan og'irroq).
+- **`todo.md` YANGILANMADI — ataylab.** O'ZGARMAS QOIDA 11 «tegishli katakchani `[x]` qil»
+  deydi, lekin egasining §8.1 to'lqini (MK15–MK24) `todo.md` da **umuman kuzatilmaydi**:
+  4M bo'limi faqat 4M.1–4M.10 ni sanaydi va MK16 ularning hech biriga to'g'ri kelmaydi.
+  «Qolgan bosqichlar = 54» ni bir kamaytirish **asossiz raqam** bo'lardi (bo'limlar jadvali
+  yig'indisi 58 — hisob allaqachon eskirgan). Qarz: §8.1 to'lqinini `todo.md` ga kiritish.
+- **Prod DDL/migratsiya:** kerak emas (yangi jadval/ustun yo'q). Faqat `kind` ning yangi
+  qiymati — mavjud `VarChar(20)` ga sig'adi.
