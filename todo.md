@@ -260,7 +260,12 @@ kuniga **3 sessiya** → **~6 hafta**.
       Fakt mavjud uch hujjatdan (`cash_out` · `payments_out` · `retail_drawer_cash_out`
       `kind='expense'`), yangi yozuvchi yo'q; inkassatsiya CHIQARILGAN (ikki karra sanoq).
       Reja yo'q = og'ish NULL (0 ham, 100% ham emas). P&L POS xarajatini hamon ko'rmaydi → MK41 qarzi
-- [ ] **4M.10** — `KpiTarget` (YO'Q) + **reyting formulasi** + `SCORE_CAP_PERCENT` ni sozlamaga chiqarish
+- [ ] **4M.10** — ⚠️ **QISMAN (MK13, 2026-08-09)**: `SCORE_CAP_PERCENT` **sozlamaga chiqdi**
+      (`manager-thresholds.ts` registri, `BUDGET_WARN_PERCENT` bilan birga) · **reyting formulasi**
+      va **maqsad qatlami** sof modul + 42 test bilan yozildi (QAROR-B2/B3/B6 yopildi).
+      **QARZ:** `KpiTarget` Prisma modeli + migratsiya hamon **YO'Q** ⇒ `kpi-target.ts` chaqirilmaydi
+      (o'lik kod) · servis/controller wiring yo'q · FE yo'q · §2.5 ta'til/ramp/yarim-stavka → MK43.
+      Katakcha **MK13-ikkinchi qism** tugagach belgilanadi.
 - [ ] **4M Phase-2 QA** — rad→tushuntirish · eskalatsiya · majburiy yopish · tuzatma dialogi ·
       **RU-locale** · o'z-KPI dialogi · **xodim tomoni FE** (BE tayyor, FE yo'q)
 
