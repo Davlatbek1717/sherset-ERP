@@ -326,6 +326,65 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > `/root/sherset-v2-backups` = 5.4G / 18 fayl — keyingi deploy'dan oldin eski backup'larni
 > tozalash kerak bo'ladi, aks holda `next build` joy yetmasligidan yiqilishi mumkin.
 >
+> **🕒 2026-08-09zc (REJA-MENEJER-KASSA **MK15** — 4M §8.1/1: «Korxona puli qayerda» pul
+> manzarasi paneli) — `b497d40f`, 22 fayl (+2091/−7). Sahifa: `/menejer/pul-manzarasi`.**
+>
+> Bir ekranda oltita blok: **kassalarda · bank hisoblarida · mijoz qarzida · ta'minotchi
+> qarzida · haydovchi qo'lida · yo'ldagi tovarda**. **Yangi pul formulasi OCHILMADI** — har
+> blok o'z manbasining EGASIDAN o'qiladi: `MoneyService.sourceBalances` (kassa/bank —
+> u shu qoldiqlarni O'ZI yozadi) · `CounterpartyBalanceService.counterpartyBalanceReport`
+> (ikkala qarz, BITTA chaqiruvdan) · `DriverCashService.outstandingByCurrency` ·
+> `StockInTransitService.getInTransitValueByCurrency`. Qo'riqchi —
+> `money-map-single-source.test.ts`: panel Prisma modeliga to'g'ridan-to'g'ri tegmaydi, xom
+> SQL yozmaydi, o'z kurs/sifat qoidasini yozmaydi (**mutatsiya bilan tekshirilgan** — soxta
+> `prisma.client.cashDesk.aggregate` qo'shilsa yiqiladi, ya'ni qo'riqchi vakuum emas).
+>
+> **Uchta shartnoma test bilan qulflandi (hammasi sezgiga zid):**
+> 1. **NULL ≠ 0** — manba javob bermasa blok `—` («hisoblanmadi»), `0` EMAS. Bank tomonida
+>    bu REAL holat, ehtiyot chorasi emas: `OrganizationAccount.balanceMinor` ni daftar
+>    **Faza 11 gacha umuman yozmagan** (`money.service.ts` dagi `allowNegative` izohi) ⇒
+>    daftar yozuvi yo'q hisobda saqlangan `0` = «o'lchanmagan». `sourceBalances` shuni
+>    provenance sifatida qaytaradi; **kassa esa doim o'lchangan** (har harakat daftardan
+>    o'tgan) — ikki manba ATAYLAB asimmetrik.
+> 2. **Yarim yig'indi berilmaydi** — bitta blok o'lchanmagan bo'lsa **sof qoldiq `null`**,
+>    qolgan beshtasining yig'indisi emas (yarim yig'indi to'liq raqamdek ko'rinardi).
+> 3. **Kurs shartnomasi (Faza 17)** — kursi yo'q pul jamiga qo'shilmaydi,
+>    `unconvertedByCurrency` da o'z valyutasida chiqadi. Kontragent hisoboti summani O'ZI
+>    konsolidatsiya qilgani uchun uning qoldig'i **bir marta** sanaladi: ikkala qarz blokiga
+>    ilinsa yakunda IKKI MARTA chiqardi (yozish paytida tutilgan).
+>
+> **Yo'ldagi tovar QIYMATI** ayni `queryInTransitPositions` dan (per-position
+> `MAX(0, qty − received)` clamp) va umumiy `computePositionTotal` bilan narxlanadi. PO
+> sarlavhasidagi `sumMinor − receivedSumMinor` **ataylab ishlatilmadi**: u agregat-daraja
+> clamp'i, bitta ortiqcha qabul qilingan qator boshqasining qiymatini jimgina yeb qo'yardi.
+>
+> **DI:** `ManagerModule` endi `MoneyModule`/`ReportModule`/`StockModule`/
+> `DriverTrackingModule` ni oshkora import qiladi. **`app-boot.test.ts` bu yerda yordam
+> BERMAYDI** — uning in'yeksiya-premisasi qo'riqchisi servis bilan BIR PAPKAdagi
+> `*.module.ts` ni qidiradi, `manager/money-map/` esa ichki papka (moduli bir pog'ona
+> yuqorida) ⇒ alohida `money-map-wiring.test.ts`. U ayni `report/` dagi
+> `CounterpartyBalanceService` olinishini ham qulflaydi: **repoda shu nomli IKKI klass bor**
+> (`report/` hisobot · `counterparty-balance/` yozuvchi), noto'g'risi typecheck'da ham,
+> DI'da ham «to'g'ri» ko'rinardi.
+>
+> **Gate (QO'LDA to'liq — hooks CHETLAB O'TILDI):** api+web typecheck 0 · biome: mening
+> fayllarim toza · api vitest 63 fayl/616 test · **web vitest 205 fayl/2996 test, regress
+> yo'q** · `i18n:gate` o'tdi **+ 15 dinamik kalit ru+uz da QO'LDA tasdiqlandi** (gate
+> `t(\`mm_block_${key}\`)` ni «dinamik» deb o'tkazib yuboradi — yashil bo'lishi kalit borligini
+> ISBOTLAMAYDI).
+>
+> **⚠️ PARALLEL SESSIYA (MK20/MK21) ayni paytda 4 UMUMIY faylda ishlayotgan edi**
+> (`manager.module.ts`, `layout.tsx`, `ru.json`, `uz.json`). `git add` ishchi daraxt
+> versiyasini olgani uchun ularning tugallanmagan ishi commit'imga tushardi (CLAUDE.md
+> §6.7 B) ⇒ har biri **«HEAD + faqat mening hunk'larim»** blobi sifatida indeksga yozildi
+> (`hash-object -w` + `update-index --cacheinfo`), commit hooks'siz qilindi. Commitdan
+> keyin tekshirildi: **22 fayl, hammasi meniki**; parallel sessiya ishi worktree'da butun.
+>
+> **HOLAT: Phase-1 — strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q.** Runtime-QA
+> **MK14** (4M Phase-2) ga qoladi. Tasdiqlanmagan: jonli Prisma `groupBy`/join shakllari va
+> panelning real ma'lumotdagi ko'rinishi. **F011 (rollup) hamon ☐** — MK15 uni talab
+> qilmadi (hammasi jonli o'qish), lekin katta hisobda panel sekin bo'lishi mumkin.
+>
 > **🕒 2026-08-09za (REJA-MENEJER-KASSA **MK20** — 4M §8.1/6: shablon izohlar, tez javob matnlari)
 > — 20 fayl. To'liq hisobot: `docs/REJA-MENEJER-KASSA-2026-08.md` → HISOBOT JURNALI → «Faza MK20».**
 > *(Harf yorlig'i: `z` band edi va alifbo tugadi ⇒ shu kundan boshlab ikki harfli davom —
