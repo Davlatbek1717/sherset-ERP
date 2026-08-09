@@ -1,5 +1,13 @@
+import { randomBytes } from 'node:crypto';
 import type { Prisma } from '@moysklad/db';
-import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { AttachmentService } from '../attachment/attachment.service.js';
@@ -12,6 +20,7 @@ import {
 import { normalizeTelegramPhone } from '../hr/hr-shared/phone-normalize.util.js';
 import type { MtprotoInboundHandler } from '../hr/hr-telegram-bridge/mtproto-inbound-handler.js';
 import type { IncomingMtprotoMessage } from '../hr/hr-telegram-bridge/telegram-client-factory.js';
+import { secretEquals } from '../shared/timing-safe.js';
 import { DEFAULT_MESSAGING_CONTACT } from '../sms/sms-render.util.js';
 import { SupplyApprovalService } from '../supply-approval/supply-approval.service.js';
 import { parseBusinessUpdate } from './telegram-business.util.js';
@@ -108,12 +117,18 @@ export class TelegramService implements MtprotoInboundHandler {
     if (!botTokenCipher && !existing) {
       throw new BadRequestException('Birinchi sozlash uchun botToken majburiy');
     }
+    // PATCH-semantika (`INT-13`, faza 21): kelmagan (`undefined`) maydon
+    // TEGILMAYDI. Ilgari `parsed.webhookUrl ?? null` uslubi faqat botToken
+    // yangilangan so'rovda (token rotatsiyasi) uchala maydonni NULL'ga reset
+    // qilardi. `INT-01` fail-closed tekshiruvi bilan bu jim sozlama-yo'qolishi
+    // o'sha akkauntning BARCHA inbound update'lari uchun 401'ga aylanadi.
+    // Ataylab bo'sh string yuborilsa schema uni `null` qiladi ⇒ tozalash ishlaydi.
     const data = {
       accountId,
       ...(botTokenCipher !== undefined ? { botTokenCipher } : {}),
-      webhookUrl: parsed.webhookUrl ?? null,
-      webhookSecret: parsed.webhookSecret ?? null,
-      defaultChatId: parsed.defaultChatId ?? null,
+      ...(parsed.webhookUrl !== undefined ? { webhookUrl: parsed.webhookUrl } : {}),
+      ...(parsed.webhookSecret !== undefined ? { webhookSecret: parsed.webhookSecret } : {}),
+      ...(parsed.defaultChatId !== undefined ? { defaultChatId: parsed.defaultChatId } : {}),
       lastTestedAt: null,
       lastTestOk: null,
       lastTestMsg: null,
@@ -158,13 +173,22 @@ export class TelegramService implements MtprotoInboundHandler {
     return { ok, message };
   }
 
-  /** Register / update Telegram webhook URL via setWebhook. */
+  /**
+   * Register / update Telegram webhook URL via setWebhook.
+   *
+   * Faza 21 (`INT-01`): secret endi MAJBURIY — inbound tekshiruvi fail-closed,
+   * ya'ni secret'siz o'rnatilgan webhook birinchi update'dayoq 401 bilan rad
+   * etilardi (jim «hech narsa kelmayapti» nosozligi). Operator bermasa
+   * avtomat generatsiya qilinadi; Telegram `secret_token` uchun
+   * `[A-Za-z0-9_-]{1,256}` talab qiladi — hex shu doirada.
+   */
   async setWebhook(accountId: string, url: string, secret?: string): Promise<{ ok: true }> {
     const cfg = await this.requireConfig(accountId);
-    await tgSetWebhook(decryptPassword(cfg.botTokenCipher), url, secret);
+    const effectiveSecret = secret && secret.length > 0 ? secret : randomBytes(32).toString('hex');
+    await tgSetWebhook(decryptPassword(cfg.botTokenCipher), url, effectiveSecret);
     await this.prisma.client.telegramConfig.update({
       where: { accountId },
-      data: { webhookUrl: url, webhookSecret: secret ?? null },
+      data: { webhookUrl: url, webhookSecret: effectiveSecret },
     });
     return { ok: true };
   }
@@ -239,6 +263,33 @@ export class TelegramService implements MtprotoInboundHandler {
   }
 
   // --- inbound webhook -------------------------------------------------
+
+  /**
+   * Inbound webhook autentifikatsiyasi — Faza 21 (`INT-01`/`AUTH-01`, HIGH).
+   *
+   * `/telegram-webhook/:accountId` yagona guard'siz controller: Telegram bizning
+   * JWT'ni olib yurmaydi. Uning o'rniga `setWebhook` da ro'yxatdan o'tkazilgan
+   * sir har POST'da `X-Telegram-Bot-Api-Secret-Token` sarlavhasida qaytadi va
+   * shu yerda `TelegramConfig.webhookSecret` bilan constant-time solishtiriladi.
+   *
+   * FAIL-CLOSED — quyidagilarning HAMMASI 401:
+   *   · sarlavha yo'q / bo'sh · sir mos kelmadi
+   *   · config'da `webhookSecret` sozlanmagan (null) · akkaunt config'i umuman yo'q
+   * ya'ni «sozlanmagan sir = tekshiruvsiz o'tkazish» YO'Q. Aks holda
+   * accountId'ni bilgan har kim `sa:` (supply-approval) callback'ini inject
+   * qilib qabulni tasdiqlashi yoki `business_connection` bilan egasining
+   * integratsiyasini o'chirishi mumkin edi.
+   */
+  async assertWebhookSecret(accountId: string, header: string | undefined): Promise<void> {
+    const cfg = await this.prisma.client.telegramConfig.findUnique({
+      where: { accountId },
+      select: { webhookSecret: true },
+    });
+    if (!secretEquals(cfg?.webhookSecret, header)) {
+      this.logger.warn(`Telegram webhook: secret mos kelmadi (account ${accountId}) — rad etildi`);
+      throw new UnauthorizedException('Invalid webhook secret');
+    }
+  }
 
   /**
    * Process an inbound Telegram update. V1 just logs it; future
@@ -956,6 +1007,12 @@ export class TelegramService implements MtprotoInboundHandler {
       configured: !!cfg,
       botUsername: cfg?.botUsername ?? null,
       webhookSet: !!cfg?.webhookUrl,
+      // Faza 21 (`INT-01`): inbound tekshiruvi fail-closed ⇒ URL bor-u secret
+      // yo'q holat «sozlangan ko'rinadi, lekin HAR update 401» degan JIM
+      // nosozlik. `webhookSet` buni ko'rsata olmaydi (u faqat URL'ga qaraydi) —
+      // shuning uchun alohida signal. Tuzatish: `POST /telegram/config/webhook`
+      // ni qayta chaqirish (secret berilmasa avtomat generatsiya qilinadi).
+      webhookSecretSet: !!cfg?.webhookSecret,
       connected: !!cfg?.businessConnectionId,
       businessUserName: cfg?.businessUserName ?? null,
     };

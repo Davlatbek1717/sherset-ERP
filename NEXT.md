@@ -305,6 +305,48 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-09e (AUDIT-FIX FAZA 21 — Telegram webhook secret validatsiya + gateway constant-time ·
+> `INT-01`/`AUTH-01` + `INT-14` + yo'l-yo'lakay `INT-13`) · Phase-1: strukturaviy +
+> unit-tasdiqlangan, browser-smoke YO'Q · ⏳ DEPLOY QILINMAGAN · 🗄️ migratsiya YO'Q ·
+> ⚠️ **navbatdan tashqari** — foydalanuvchi IDE'da Faza 21 sessiya-boshi promptini bevosita berdi ·
+> ⚠️ parallel sessiya (Faza 24/25: `edo/*`, `moysklad-compat/*`, `schema.prisma`, perf-migratsiya)
+> daraxtda ochiq ish qoldirgan — TEGILMADI, commit pathspec-cheklangan
+>
+> **🔴 DEPLOYDAN OLDIN — BLOKER.** Webhook tekshiruvi **fail-closed**: prod'da `webhookSecret`
+> sozlanmagan akkauntda inbound Telegram **butunlay to'xtaydi**, jumladan **JONLI qabul-tasdiqlash
+> (supply-approval) inline tugmalari**. DB-backfill yechim EMAS (sirni Telegram tomoni ham bilishi
+> kerak). Har akkaunt uchun bitta chaqiruv: `POST /api/v1/telegram/config/webhook {url:"<mavjud>"}`
+> — `secret` berilmasa avtomat generatsiya qilinadi. Tekshirish: `GET /telegram/business-status`
+> → yangi `webhookSecretSet: true`.
+>
+> **Nima qilindi.** (a) `INT-01`: `/telegram-webhook/:accountId` repo'dagi **yagona guard'siz**
+> controller edi (global guard faqat `KioskGuard`) va `x-telegram-bot-api-secret-token` sarlavhasi
+> `_secretHeader` deb olinib **tashlanardi** ⇒ accountId'ni bilgan har kim `sa:` callback bilan
+> qabulni «tasdiqlashi» mumkin edi. Endi `assertWebhookSecret()` `handleInbound`dan OLDIN,
+> fail-closed (config/secret/sarlavha yo'q — hammasi 401). `setWebhook` secret'siz o'rnatmaydi
+> (berilmasa `randomBytes(32)` generatsiya). (b) `INT-14`: yangi `shared/timing-safe.ts` →
+> `secretEquals()` (SHA-256 digest + `timingSafeEqual` ⇒ uzunlik-oracle ham yopiq, fail-closed);
+> payme/click `===` solishtiruvlari almashtirildi — ular **fail-OPEN** ham edi (`'' === ''`).
+> (c) `INT-13` (reja «ehtiyot bo'l» degan edi): `saveConfig` PATCH-semantikaga o'tdi — aks holda
+> token rotatsiyasi `webhookSecret`ni NULL qilib (a) ni **doimiy 401 uzilishiga** aylantirardi.
+> (d) `businessStatus.webhookSecretSet` (mening topilmam) — eski `webhookSet` faqat URL'ga
+> qaraydi, ya'ni «sozlangan ko'rinadi, har update 401» jim-nosozligini yashirardi.
+> Batafsil: `docs/REJA-AUDIT-FIX-2026-08.md` → HISOBOT JURNALI → Faza 21.
+>
+> **Gate:** `@moysklad/api typecheck` **0** · `lint:product` **0 error** · vitest scoped
+> (shared+telegram+payment-gateway+supply-approval+__tests__) **661/661** · **butun API suite
+> 5388 passed / 2 skip / 0 fail** · `i18n:gate` **9/9**. Klass-qulf **non-vacuity jonli o'lchandi**
+> (fixni bir qatorga qaytarib QIZIL ko'rildi, keyin bayt-identik tiklandi).
+>
+> **🟠 QARZ:** (1) `webhookSecretSet` UI'da ko'rsatilmaydi (web fazasi emas). (2) Update
+> replay/dedup va rate-limit yo'q. (3) Secret rotatsiyasi atomik emas (Telegram→DB oralig'ida
+> millisekundlik 401 oynasi, provider retry qiladi). (4) `INT-13` naqshi boshqa integratsiya
+> `saveConfig`'larida (onec/marketplace/bank-adapter) TEKSHIRILMADI.
+>
+> **⏭️ Keyingi:** reja bo'yicha **Faza 25** (`DB-04/05/08`, `PERF-12/14`) — LEKIN parallel sessiya
+> uni allaqachon boshlagan ko'rinadi (`packages/db/prisma/migrations/20260809140000_perf_index_pack_*`
+> daraxtda turibdi). Boshlashdan oldin `git log` + `git status` bilan tekshir; band bo'lsa **Faza 26**.
+
 > **🕒 2026-08-09d (AUDIT-FIX FAZA 24 — EDO PFX AES-GCM shifrlash + ApiToken scope-enforcement ·
 > `INT-06`+`INT-07`) · Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q ·
 > ⏳ DEPLOY QILINMAGAN · 🗄️ migratsiya YO'Q (sxema tegilmadi) · ⚠️ **navbatdan tashqari** —

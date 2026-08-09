@@ -21,6 +21,8 @@
  * integer minor units (1 sum = 100 tiyin).
  */
 
+import { secretEquals } from '../shared/timing-safe.js';
+
 export interface PaymeRpcRequest<P = unknown> {
   jsonrpc?: '2.0';
   id: number | string;
@@ -124,7 +126,10 @@ export function verifyPaymeAuth(authHeader: string | undefined, secretKey: strin
   const user = decoded.slice(0, colon);
   const pass = decoded.slice(colon + 1);
   if (user !== 'Paycom' && user !== 'Paycomtest') return false;
-  return pass === secretKey;
+  // Faza 21 (`INT-14`): constant-time — bu endpoint guard'siz va ochiq
+  // internetda. Xom `pass === secretKey` timing-oracle qoldirar, ustiga
+  // sozlanmagan sirda (`'' === ''`) fail-OPEN bo'lardi.
+  return secretEquals(pass, secretKey);
 }
 
 // ---- Method param shapes ---------------------------------------------

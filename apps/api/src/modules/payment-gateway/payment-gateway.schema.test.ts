@@ -133,6 +133,15 @@ describe('verifyPaymeAuth', () => {
   it('rejects non-Basic scheme', () => {
     expect(verifyPaymeAuth('Bearer abc', 'secret')).toBe(false);
   });
+
+  // Faza 21 (`INT-14`): xom `pass === secretKey` da sozlanmagan (bo'sh) sir
+  // bo'sh parol bilan MOS kelardi — `'' === ''` ⇒ true. Chaqiruvchi
+  // (`payment-gateway.service.ts:184`) `!creds.secretKey` bilan buni to'sadi,
+  // lekin funksiyaning o'zi fail-open bo'lmasligi kerak.
+  it("bo'sh secretKey hech qachon mos kelmaydi (fail-closed)", () => {
+    const header = `Basic ${Buffer.from('Paycom:').toString('base64')}`;
+    expect(verifyPaymeAuth(header, '')).toBe(false);
+  });
 });
 
 describe('paymeError', () => {

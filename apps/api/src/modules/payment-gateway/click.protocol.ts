@@ -18,6 +18,7 @@
  */
 
 import { createHash } from 'node:crypto';
+import { secretEquals } from '../shared/timing-safe.js';
 
 export type ClickAction = 0 | 1; // 0 = PREPARE, 1 = COMPLETE
 
@@ -110,7 +111,10 @@ export function verifyClickSign(
       ].join(''),
     )
     .digest('hex');
-  return expected === params.sign_string;
+  // Faza 21 (`INT-14`): constant-time solishtirish — guard'siz ochiq
+  // to'lov-callback endpointida standart talab. (MD5'ning o'zi Click
+  // protokoli majburiyati — unga chora yo'q.)
+  return secretEquals(expected, params.sign_string);
 }
 
 /**

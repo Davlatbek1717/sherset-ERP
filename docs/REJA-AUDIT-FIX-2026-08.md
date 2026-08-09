@@ -592,7 +592,12 @@ secret → o'tadi. (3) timing-safe compare mos ishlaydi.
 **▶ SESSIYA-BOSHI PROMPT:**
 > `docs/REJA-AUDIT-FIX-2026-08.md` — **Faza 21**. O'ZGARMAS QOIDALAR. `INT-01`+`INT-14`. Webhook secret
 > validatsiya (timingSafeEqual) + gateway constant-time compare. TDD: 401-testlari. Gate. Hisobot, TO'XTA.
-**◻ HISOBOT:** _(agent to'ldiradi)_
+**☑ HISOBOT (2026-08-09):** BAJARILDI — batafsili «HISOBOT JURNALI → Faza 21» da. Reja aytgan
+`INT-13`ni ham yopdim (u fail-closed tekshiruv bilan JIM sozlama-yo'qolishidan TO'LIQ UZILISHGA
+aylanardi). **🔴 DEPLOY-BLOKER:** tekshiruv fail-closed ⇒ prod'da `webhookSecret` sozlanmagan
+akkauntda inbound Telegram (jumladan JONLI supply-approval tugmalari) deploydan keyin ISHLAMAY
+QOLADI — `POST /telegram/config/webhook` qayta chaqirilishi SHART (secret avtomat generatsiya
+qilinadi). Yangi `businessStatus.webhookSecretSet` shu holatni ko'rsatadi.
 
 ---
 
@@ -3024,3 +3029,98 @@ aniqlik · takroriy PREPARE/CreateTransaction bitta qator · P2002 poygasi.
 5. **`apiTokenCipher` (EDO provider tokeni) hech qachon deshifr qilinmaydi** — `submit()` da
    `decryptPassword` chaqiruvi komment ichida turibdi, provider HTTP hali simlangan emas. Bu
    `INT-06` dan tashqarida, faza-doirasidan chetda qoldi.
+
+---
+
+## Faza 21 — Telegram webhook secret + gateway timing-safe (`INT-01`/`AUTH-01`, `INT-14`, +`INT-13`) (2026-08-09) — **Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q**
+
+### Da'volarni kodda tasdiqlash (reja §2) — 3/3 TASDIQLANDI
+- **`INT-01`/`AUTH-01` TASDIQLANDI.** `telegram-webhook.controller.ts:20` sarlavhani
+  `@Headers('x-telegram-bot-api-secret-token') _secretHeader` deb olardi va **hech qayerda
+  solishtirmasdi** (underscore + «V2: validate» komment). Controller'da `@UseGuards` yo'q;
+  `app.module.ts:286` dagi yagona global guard `KioskGuard` (kassir izolyatsiyasi), auth EMAS —
+  ya'ni endpoint haqiqatan **butunlay ochiq** edi. `handleInbound` (`telegram.service.ts`) esa
+  `cbq.data.startsWith('sa:')` bo'lsa to'g'ridan-to'g'ri `supplyApproval.handleApprovalCallback`
+  ga o'tardi ⇒ accountId'ni bilgan har kim qabulni «tasdiqlashi» mumkin edi.
+- **`INT-14` TASDIQLANDI.** `payme.protocol.ts:127` `return pass === secretKey;`,
+  `click.protocol.ts:113` `return expected === params.sign_string;` — ikkalasi ham guard'siz
+  ochiq POST endpointlar orqasida. **Audit ko'rmagan qo'shimcha:** xom `===` shu bilan birga
+  **fail-OPEN** ham edi — sozlanmagan (bo'sh) sirda `'' === ''` ⇒ `true`.
+- **`INT-13` TASDIQLANDI** (reja «bu fazada ham ko'r» degan edi, va haqli ekan):
+  `telegram.service.ts:114-116` `webhookUrl: parsed.webhookUrl ?? null` (+secret, +defaultChatId)
+  — faqat botToken yangilangan so'rov uchala maydonni NULL'ga reset qilardi. `INT-01` fixidan
+  keyin bu **MEDIUM bug'dan HIGH ta'sirli uzilishga** aylanardi (secret null ⇒ hamma update 401).
+
+### O'zgarishlar
+1. **Yangi umumiy helper `shared/timing-safe.ts` — `secretEquals(a, b)`.** Ikkala tomon avval
+   **SHA-256 digest**iga o'tkaziladi, keyin `crypto.timingSafeEqual`. Digest doim 32 bayt bo'lgani
+   uchun (a) uzunlik farq qilsa xom `timingSafeEqual` kabi **throw qilmaydi**, (b) odatdagi
+   `a.length !== b.length` erta-qaytishi qoldiradigan **uzunlik-oracle ham yopiladi**.
+   **FAIL-CLOSED:** `undefined`/`null`/`''` tomon hech qachon mos kelmaydi.
+2. **`INT-01` — `TelegramService.assertWebhookSecret(accountId, header)`** (yangi) + controller
+   uni `handleInbound`dan **OLDIN** `await` qiladi. 401 beradigan holatlar: sarlavha yo'q/bo'sh ·
+   sir mos kelmadi · config'da `webhookSecret` null · akkaunt config'i umuman yo'q. Ya'ni
+   «sozlanmagan sir = tekshiruvsiz o'tkazish» YO'Q (reja shuni talab qilgan edi).
+3. **`setWebhook` endi secret'siz webhook o'rnatmaydi.** Operator bermasa
+   `randomBytes(32).toString('hex')` generatsiya qilinadi va Telegram'ga ham, DB'ga ham
+   **o'sha qiymat** yoziladi. Aks holda (2) bilan birga «o'rnatdim-u hech narsa kelmayapti»
+   tuzog'i tug'ilardi.
+4. **`businessStatus` ga `webhookSecretSet` qo'shildi** (rejada yo'q, MENING topilmam). Eski
+   `webhookSet` faqat `!!cfg.webhookUrl` ga qaraydi ⇒ fail-closed'dan keyin «URL bor, secret yo'q»
+   holati UI'da **«sozlangan» bo'lib ko'rinib**, amalda har update 401 bo'lardi — aynan jim-nosozlik
+   klassi. Endi ikkinchi signal bor.
+5. **`INT-14` — ikkala protokolda `secretEquals`.** `verifyPaymeAuth`: `pass === secretKey` →
+   `secretEquals(pass, secretKey)`; `verifyClickSign`: `expected === params.sign_string` →
+   `secretEquals(...)`. (Click MD5'ning o'zi provider protokoli majburiyati — unga chora yo'q.)
+6. **`INT-13` — `saveConfig` da PATCH-semantika.** `...(parsed.X !== undefined ? {X: parsed.X} : {})`
+   uslubi (email/sms saveConfig'lardagi mavjud naqsh). Schema `optionalEmpty` bo'sh stringni `null`
+   qilgani uchun **ataylab tozalash** hamon ishlaydi — «kelmagan» (undefined) va «tozala» (`''`)
+   farqlanadi.
+
+### Testlar (TDD — avval yiqildi, keyin yashil)
+**RED jonli o'lchandi: 5 fayl / 14 test qizil, 41 yashil.** Yangi fayllar:
+`shared/timing-safe.test.ts` (7) · `shared/constant-time-secret-class.test.ts` (4, klass-qulf) ·
+`telegram/telegram-webhook.auth.test.ts` (9) · `telegram/telegram-config-patch.test.ts` (4) ·
++1 test mavjud `payment-gateway.schema.test.ts` ga qo'shildi (`git add` bilan Edit, ustidan
+Write QILINMADI — `never-write-over-existing-test-file` xotirasi).
+Muhim RED dalili: controller testi «promise resolved `{ok:true}` instead of rejecting» bilan
+yiqildi — ya'ni soxta secret bilan `handleInbound` **haqiqatan chaqirilardi**.
+- **Klass-qulf non-vacuity JONLI O'LCHANDI:** `secretEquals(pass, secretKey)` bir qatorini
+  `pass === secretKey` ga qaytarib yugurtirildi → klass-qulf **VA** xulq-testi ikkalasi QIZIL;
+  keyin tiklandi va `diff` bilan **bayt-identik** ekani tasdiqlandi. Qulf kommentlarni
+  `stripComments()` bilan tashlaydi — aks holda fixning o'z izohi («ilgari `pass === secretKey`
+  edi») regressiya deb o'qilib yolg'on-qizil berardi (bu birinchi yugurtishda haqiqatan yuz berdi).
+- Timing'ning O'ZI test qilinmaydi (o'lchov flaky bo'lardi) — shuning uchun `timingSafeEqual`
+  ishlatilgani **manba darajasidagi klass-qulf** bilan lock qilingan, xulq esa fail-closed
+  testlari bilan.
+
+### Gate (jonli o'lchangan)
+- `@moysklad/api typecheck` → **0**
+- `pnpm lint:product` → **0 error** (743 warning, siyosat bo'yicha ruxsat)
+- vitest scoped: `shared` + `telegram` + `payment-gateway` + `supply-approval` + `__tests__` →
+  **661/661**; **butun API suite → 5388 passed / 2 skipped / 0 fail** (415 fayl)
+- `i18n:gate` → **9/9** (UI-matn tegilmadi; 401 xabari mashinaga ketadi)
+- Migratsiya YO'Q (sxema tegilmadi). **Browser-smoke YO'Q.**
+
+### 🔴 DEPLOY-BLOKER (deploydan OLDIN o'qi)
+Tekshiruv **fail-closed**. Prod'da `TelegramConfig.webhookSecret` sozlanmagan (null) akkauntda
+deploydan keyin **inbound Telegram butunlay to'xtaydi** — jumladan **JONLI qabul-tasdiqlash
+(supply-approval) inline tugmalari**. DB-backfill bu yerda YECHIM EMAS: sirni Telegram tomoni ham
+bilishi kerak, u esa faqat `setWebhook` chaqiruvi bilan o'rnatiladi.
+**Tuzatish (har akkaunt uchun, 1 chaqiruv):** `POST /api/v1/telegram/config/webhook`
+`{ "url": "<mavjud webhook URL>" }` — `secret` berilmasa avtomat generatsiya qilinadi va ikkala
+tomonga yoziladi. Tekshirish: `GET /api/v1/telegram/business-status` → `webhookSecretSet: true`.
+
+### 🟠 Qolgan qarz / DEFER
+1. **`webhookSecretSet` UI'da ko'rsatilmaydi** — API qaytaradi, `telegram-chat-card.tsx` dagi
+   `BusinessStatus` tipi va badge yangilanmadi (web fazasi emas). Operator hozircha endpointdan
+   ko'radi.
+2. **Rate-limit / replay himoyasi yo'q.** Secret to'g'ri bo'lsa update cheksiz qabul qilinadi;
+   Telegram `update_id` bo'yicha dedup ham yo'q (takroriy yetkazishda `sa:` callback ikki marta
+   ishlanishi mumkin — `supply-approval` o'z FSM qulfiga tayanadi).
+3. **Secret rotatsiyasi atomik emas** — `setWebhook` avval Telegram'ga, keyin DB'ga yozadi; ikki
+   yozuv orasida kelgan update eski sir bilan 401 oladi (oyna millisekundlar, Telegram retry qiladi).
+4. **`INT-13` faqat `telegram` saveConfig'da tuzatildi** — boshqa integratsiya saveConfig'larida
+   (`onec`, `marketplace`, `bank-adapter`…) shu naqsh borligi TEKSHIRILMADI, faza doirasidan tashqarida.
+5. `payment-gateway.service.ts:184` dagi `!creds.secretKey` old-tekshiruvi qoldirildi (endi
+   ortiqcha, chunki `secretEquals` fail-closed) — zararsiz ikki qatlam.
