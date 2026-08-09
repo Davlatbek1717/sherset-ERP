@@ -6,14 +6,25 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { formatInTimeZone, fromZonedTime } from 'date-fns-tz';
 import { PrismaService } from '../../../prisma/prisma.service.js';
+import {
+  SCHEDULE_SELECT,
+  toResolvedSchedule,
+} from '../../hr/attendance-geo/prisma-schedule.util.js';
+import { resolveShift } from '../../hr/attendance-geo/resolve-shift.util.js';
 import { monthInstantBounds } from '../../hr/hr-salary/payroll-formula.util.js';
-import { localDateOnly } from '../../hr/hr-shared/tz.util.js';
+import { HR_TZ, localDateOnly } from '../../hr/hr-shared/tz.util.js';
+import {
+  DEFAULT_WINDOW_DAYS,
+  ManagerInventoryService,
+} from '../inventory/manager-inventory.service.js';
 import {
   type PriceAuditRow,
   extractPriceChanges,
   reviewPriceChanges,
 } from '../inventory/price-change-control.js';
+import { DEFAULT_STOCK_THRESHOLDS } from '../inventory/stock-signals.js';
 import type {
   QueueActionBodyInput,
   QueueListQueryInput,
@@ -21,18 +32,40 @@ import type {
   RuleConfigBodyInput,
 } from './manager-queue.schema.js';
 import {
+  type CashierAuditRow,
+  type DebtRow,
+  type ExpectedWorkday,
+  type InventoryVarianceRow,
+  type LateAttendanceRow,
+  type PickingTaskRow,
+  buildAbsentCandidates,
+  buildBelowCostCandidates,
+  buildBelowWholesaleCandidates,
+  buildBigDebtCandidates,
+  buildBigDiscountCandidates,
+  buildInventoryVarianceCandidates,
+  buildLateCandidates,
+  buildOverdueDebtCandidates,
+  buildPickingSlaCandidates,
+  buildShiftOutOfScheduleCandidates,
+  buildStockSignalCandidates,
+} from './rule-candidates.js';
+import {
   CLOSED_WORK_ITEM_STATUSES,
   WORK_ITEM_ACTION,
   WORK_ITEM_JOURNAL_ONLY_ACTION,
   WORK_ITEM_STATUS,
   type WorkItemActor,
   type WorkItemStatus,
+  reasonCatalogFor,
   workItemFsm,
+  workItemFsmFor,
 } from './work-item-fsm.js';
 import {
   type CashVarianceRow,
   MANAGER_RULES,
   type ManagerRuleType,
+  type ResolvedRule,
   type RuleConfigRow,
   type WorkItemCandidate,
   buildCashVarianceCandidates,
@@ -74,13 +107,43 @@ const AUDIT_CAP = 2000;
 const VARIANCE_CAP = 2000;
 const DEFAULT_LIST_LIMIT = 100;
 
+/** MK07 manbalarining shiftlari — kesilsa ham jimgina emas (pastdagi izoh). */
+const CASHIER_AUDIT_CAP = 3000;
+const DEBT_CAP = 2000;
+const ATTENDANCE_CAP = 5000;
+const EMPLOYEE_CAP = 500;
+const PICKING_CAP = 1000;
+const INVENTORY_CAP = 200;
+
+/**
+ * `ABSENT` oynasi — eng ko'pi 31 kun, `sinceDays` kattaroq bo'lsa ham.
+ *
+ * Yo'qlik dalili yozuvning YO'QLIGI, ya'ni uni topish uchun har xodimning har
+ * kuni bo'yicha jadval hisoblanishi kerak (xodim × kun). Bir yillik oyna
+ * shunchaki behuda: menejer yarim yil oldingi kelmaslikni bugun ko'rib nima
+ * qiladi? Kesish OSHKORA — `sync` javobida `absentWindowDays` qaytadi.
+ */
+const ABSENT_MAX_DAYS = 31;
+
 const OPEN_STATUSES: WorkItemStatus[] = [WORK_ITEM_STATUS.open, WORK_ITEM_STATUS.inReview];
+
+/** Registr + akkаunt sozlamasi birlashgan xarita (`resolveRules` natijasi). */
+type ResolvedRuleMap = Map<ManagerRuleType, ResolvedRule>;
 
 @Injectable()
 export class ManagerQueueService {
   private readonly logger = new Logger(ManagerQueueService.name);
 
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    /**
+     * Zaxira signallari MAVJUD dvigateldan (4M.8) keladi — navbat
+     * «qoldiq × sotuv sur'ati» hisobini TAKRORLAMAYDI. Ikki nusxa bir kunda
+     * ikki xil bo'ladi va menejer bir ekranda «o'lik», boshqasida «normal»
+     * ko'rardi.
+     */
+    @Inject(ManagerInventoryService) private readonly inventory: ManagerInventoryService,
+  ) {}
 
   // ── Qoida sozlamalari ─────────────────────────────────────────────────────
 
@@ -260,6 +323,312 @@ export class ManagerQueueService {
     return buildCashVarianceCandidates(rows satisfies CashVarianceRow[], rule);
   }
 
+  // ── MK07 manbalari ────────────────────────────────────────────────────────
+
+  /**
+   * To'rt sotuv/smena qoidasi — **bitta** `CashierAuditEvent` so'rovi.
+   *
+   * Har qoida uchun alohida so'rov qilish to'rt marta bir xil indeksni
+   * bosardi; hodisa turlari esa allaqachon bir jadvalda va bir indeksda
+   * (`(accountId, type, createdAt)`).
+   */
+  private async saleAuditCandidates(
+    accountId: string,
+    since: Date,
+    rules: ResolvedRuleMap,
+  ): Promise<WorkItemCandidate[]> {
+    const belowCost = rules.get('BELOW_COST');
+    const bigDiscount = rules.get('BIG_DISCOUNT');
+    const belowWholesale = rules.get('BELOW_WHOLESALE');
+    const outOfSchedule = rules.get('SHIFT_OUT_OF_SCHEDULE');
+
+    // Faqat YOQILGAN qoidalarning hodisa turlari o'qiladi — o'chirilgan qoida
+    // manbani umuman bezovta qilmaydi (MK06 shartnomasi).
+    const wanted: string[] = [];
+    if (belowCost?.enabled) wanted.push('SOLD_BELOW_COST');
+    if (bigDiscount?.enabled) wanted.push('PRICE_CHANGED');
+    if (belowWholesale?.enabled) wanted.push('SOLD_BELOW_WHOLESALE');
+    if (outOfSchedule?.enabled) wanted.push('SHIFT_OUT_OF_SCHEDULE');
+    if (wanted.length === 0) return [];
+
+    const rows = await this.prisma.client.cashierAuditEvent.findMany({
+      where: { accountId, type: { in: wanted }, createdAt: { gte: since } },
+      orderBy: { createdAt: 'desc' },
+      take: CASHIER_AUDIT_CAP,
+      select: {
+        id: true,
+        employeeId: true,
+        sessionId: true,
+        type: true,
+        docId: true,
+        payload: true,
+        createdAt: true,
+      },
+    });
+    const audit = rows satisfies CashierAuditRow[];
+
+    return [
+      ...(belowCost ? buildBelowCostCandidates(audit, belowCost) : []),
+      ...(bigDiscount ? buildBigDiscountCandidates(audit, bigDiscount) : []),
+      ...(belowWholesale ? buildBelowWholesaleCandidates(audit, belowWholesale) : []),
+      ...(outOfSchedule ? buildShiftOutOfScheduleCandidates(audit, outOfSchedule) : []),
+    ];
+  }
+
+  /**
+   * Qarz qoidalari **`since` bilan filtrlanmaydi**: bu HOLAT qoidalari.
+   * Yarim yil oldin ochilgan, hamon to'lanmagan qarz aynan shu sababdan
+   * muhim — «oxirgi 30 kun» filtri uni ko'rinmas qilardi.
+   */
+  private async debtCandidates(
+    accountId: string,
+    rules: ResolvedRuleMap,
+    now: Date,
+    periodKey: string,
+  ): Promise<WorkItemCandidate[]> {
+    const bigDebt = rules.get('BIG_DEBT');
+    const overdue = rules.get('OVERDUE_DEBT');
+    if (!bigDebt?.enabled && !overdue?.enabled) return [];
+
+    const rows = await this.prisma.client.debt.findMany({
+      where: { accountId, deletedAt: null, status: { not: 'paid' } },
+      orderBy: { createdAt: 'asc' },
+      take: DEBT_CAP,
+      select: {
+        id: true,
+        name: true,
+        counterpartyId: true,
+        totalMinor: true,
+        paidMinor: true,
+        currency: true,
+        status: true,
+        createdAt: true,
+        ownerId: true,
+        issuedById: true,
+        counterparty: { select: { name: true } },
+      },
+    });
+    const debts: DebtRow[] = rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      counterpartyId: r.counterpartyId,
+      counterpartyName: r.counterparty?.name ?? null,
+      totalMinor: r.totalMinor,
+      paidMinor: r.paidMinor,
+      currency: r.currency,
+      status: r.status,
+      createdAt: r.createdAt,
+      ownerId: r.ownerId,
+      issuedById: r.issuedById,
+    }));
+
+    return [
+      ...(bigDebt ? buildBigDebtCandidates(debts, bigDebt, periodKey) : []),
+      ...(overdue ? buildOverdueDebtCandidates(debts, overdue, now, periodKey) : []),
+    ];
+  }
+
+  /**
+   * `LATE` va `ABSENT`. Ikkalasi ham `HrAttendance` ga tayanadi, lekin teskari
+   * tomondan: kechikish — YOZUVDA, kelmaslik — yozuvning YO'QLIGIDA.
+   *
+   * Jadval hukmi `resolveShift` dan (HR modulida testlangan) olinadi; bu yerda
+   * qayta hisoblanmaydi.
+   */
+  private async attendanceCandidates(
+    accountId: string,
+    since: Date,
+    rules: ResolvedRuleMap,
+    now: Date,
+  ): Promise<{ candidates: WorkItemCandidate[]; absentWindowDays: number }> {
+    const late = rules.get('LATE');
+    const absent = rules.get('ABSENT');
+    if (!late?.enabled && !absent?.enabled) return { candidates: [], absentWindowDays: 0 };
+
+    const rows = await this.prisma.client.hrAttendance.findMany({
+      where: { accountId, deletedAt: null, checkInTime: { gte: since } },
+      orderBy: { checkInTime: 'desc' },
+      take: ATTENDANCE_CAP,
+      select: {
+        id: true,
+        employeeId: true,
+        checkInTime: true,
+        lateMinutes: true,
+        employee: { select: { name: true } },
+      },
+    });
+
+    const candidates: WorkItemCandidate[] = [];
+
+    if (late?.enabled) {
+      const lateRows: LateAttendanceRow[] = rows.map((r) => ({
+        id: r.id,
+        employeeId: r.employeeId,
+        employeeName: r.employee?.name ?? null,
+        checkInTime: r.checkInTime,
+        lateMinutes: r.lateMinutes,
+      }));
+      candidates.push(...buildLateCandidates(lateRows, late));
+    }
+
+    if (!absent?.enabled) return { candidates, absentWindowDays: 0 };
+
+    const sinceDays = Math.ceil((now.getTime() - since.getTime()) / 86_400_000);
+    const absentWindowDays = Math.max(1, Math.min(ABSENT_MAX_DAYS, sinceDays));
+
+    const employees = await this.prisma.client.employee.findMany({
+      where: { accountId, archived: false, attendanceOptIn: true },
+      take: EMPLOYEE_CAP,
+      select: {
+        id: true,
+        name: true,
+        workSchedules: {
+          select: { weekday: true, startTime: true, endTime: true, isDayOff: true },
+        },
+        schedule: { select: SCHEDULE_SELECT },
+      },
+    });
+
+    // «Shu xodim shu kuni belgilanganmi» — mahalliy sana bo'yicha.
+    const attended = new Set(
+      rows.map((r) => `${r.employeeId}:${formatInTimeZone(r.checkInTime, HR_TZ, 'yyyy-MM-dd')}`),
+    );
+
+    // BUGUN kiritilmaydi: smena hali tugamagan, kelmagan deb ayblab bo'lmaydi.
+    const expected: ExpectedWorkday[] = [];
+    for (let back = 1; back <= absentWindowDays; back += 1) {
+      const localDate = formatInTimeZone(
+        new Date(now.getTime() - back * 86_400_000),
+        HR_TZ,
+        'yyyy-MM-dd',
+      );
+      const dayStart = fromZonedTime(`${localDate}T00:00:00`, HR_TZ);
+      for (const emp of employees) {
+        const shift = resolveShift({
+          date: localDate,
+          tz: HR_TZ,
+          schedule: emp.schedule ? toResolvedSchedule(emp.schedule) : null,
+          weekFallback: emp.workSchedules,
+        });
+        expected.push({
+          employeeId: emp.id,
+          employeeName: emp.name,
+          localDate,
+          isWorkday: shift.isWorkday,
+          dayStart,
+        });
+      }
+    }
+
+    candidates.push(...buildAbsentCandidates(expected, attended, absent));
+    return { candidates, absentWindowDays };
+  }
+
+  /** `LOW_STOCK` + `DEAD_STOCK` — chegaralar SOZLAMADAN, hisob 4M.8 dan. */
+  private async stockCandidates(
+    accountId: string,
+    rules: ResolvedRuleMap,
+    now: Date,
+    periodKey: string,
+  ): Promise<WorkItemCandidate[]> {
+    const lowStock = rules.get('LOW_STOCK');
+    const deadStock = rules.get('DEAD_STOCK');
+    if (!lowStock?.enabled && !deadStock?.enabled) return [];
+
+    const { rows } = await this.inventory.stockSignalRows(accountId, {
+      windowDays: DEFAULT_WINDOW_DAYS,
+      thresholds: {
+        deadDays: Math.max(
+          1,
+          Math.trunc(deadStock?.threshold ?? DEFAULT_STOCK_THRESHOLDS.deadDays),
+        ),
+        coverDays: Math.max(
+          0,
+          Math.trunc(lowStock?.threshold ?? DEFAULT_STOCK_THRESHOLDS.coverDays),
+        ),
+        // «Ortiqcha zaxira» navbat qoidasi EMAS (TZ §5.2 da yo'q) — u faqat
+        // 4M.8 taxtasida ko'rinadi. Registr qiymati o'zgarmasdan uzatiladi.
+        overstockDays: DEFAULT_STOCK_THRESHOLDS.overstockDays,
+      },
+      now,
+    });
+
+    return [
+      ...(lowStock ? buildStockSignalCandidates(rows, lowStock, 'LOW_STOCK', periodKey, now) : []),
+      ...(deadStock
+        ? buildStockSignalCandidates(rows, deadStock, 'DEAD_STOCK', periodKey, now)
+        : []),
+    ];
+  }
+
+  /** `PICKING_SLA` — ochiq yig'ish topshiriqlari (yopilganlar qotib qolmaydi). */
+  private async pickingCandidates(
+    accountId: string,
+    rules: ResolvedRuleMap,
+    now: Date,
+  ): Promise<WorkItemCandidate[]> {
+    const rule = rules.get('PICKING_SLA');
+    if (!rule?.enabled) return [];
+
+    const rows = await this.prisma.client.restockTask.findMany({
+      where: { accountId, type: 'picking', status: { in: ['pending', 'in_progress'] } },
+      orderBy: { createdAt: 'asc' },
+      take: PICKING_CAP,
+      select: {
+        id: true,
+        sourceName: true,
+        assigneeId: true,
+        assigneeName: true,
+        status: true,
+        skladNo: true,
+        createdAt: true,
+      },
+    });
+
+    return buildPickingSlaCandidates(rows satisfies PickingTaskRow[], rule, now);
+  }
+
+  /** `INVENTORY_VARIANCE` — faqat O'TKAZILGAN inventarizatsiya (qoralamada farq hali fakt emas). */
+  private async inventoryVarianceCandidates(
+    accountId: string,
+    since: Date,
+    rules: ResolvedRuleMap,
+  ): Promise<WorkItemCandidate[]> {
+    const rule = rules.get('INVENTORY_VARIANCE');
+    if (!rule?.enabled) return [];
+
+    const rows = await this.prisma.client.inventory.findMany({
+      where: { accountId, deletedAt: null, postedAt: { not: null, gte: since } },
+      orderBy: { postedAt: 'desc' },
+      take: INVENTORY_CAP,
+      select: {
+        id: true,
+        name: true,
+        storeId: true,
+        ownerId: true,
+        postedAt: true,
+        moment: true,
+        store: { select: { name: true } },
+        positions: { select: { varianceQty: true, costMinor: true } },
+      },
+    });
+
+    const docs: InventoryVarianceRow[] = rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      storeId: r.storeId,
+      storeName: r.store?.name ?? null,
+      ownerId: r.ownerId,
+      occurredAt: r.postedAt ?? r.moment,
+      positions: r.positions.map((p) => ({
+        varianceQty: p.varianceQty.toString(),
+        costMinor: p.costMinor,
+      })),
+    }));
+
+    return buildInventoryVarianceCandidates(docs, rule);
+  }
+
   // ── Dvigatel ──────────────────────────────────────────────────────────────
 
   /**
@@ -273,10 +642,22 @@ export class ManagerQueueService {
     const staleAfterDays = body.staleAfterDays ?? DEFAULT_STALE_AFTER_DAYS;
 
     const rules = await this.loadRules(accountId);
+    // HOLAT qoidalarining oy yorlig'i — Toshkent kalendari bo'yicha. UTC dan
+    // olinsa oy chegarasida 5 soatlik xato bo'lardi (`monthBounds` sabog'i).
+    const periodKey = formatInTimeZone(now, HR_TZ, 'yyyy-MM');
+
+    const attendance = await this.attendanceCandidates(accountId, since, rules, now);
 
     const candidates = [
       ...(await this.priceChangeCandidates(accountId, since, rules)),
       ...(await this.cashVarianceCandidates(accountId, since, rules)),
+      // MK07 — TZ §5.2 ning 12 katagi.
+      ...(await this.saleAuditCandidates(accountId, since, rules)),
+      ...(await this.debtCandidates(accountId, rules, now, periodKey)),
+      ...attendance.candidates,
+      ...(await this.stockCandidates(accountId, rules, now, periodKey)),
+      ...(await this.pickingCandidates(accountId, rules, now)),
+      ...(await this.inventoryVarianceCandidates(accountId, since, rules)),
     ];
 
     const dedupKeys = [...new Set(candidates.map((c) => c.dedupKey))];
@@ -355,6 +736,8 @@ export class ManagerQueueService {
       markedStale,
       sinceDays,
       staleAfterDays,
+      /** `ABSENT` oynasi `sinceDays` dan qisqa bo'lishi mumkin — OSHKORA. */
+      absentWindowDays: attendance.absentWindowDays,
     };
   }
 
@@ -436,6 +819,14 @@ export class ManagerQueueService {
       monthlyCount: monthlyCount.get(`${r.subjectEmployeeId ?? '-'}:${r.ruleType}`) ?? 1,
       /** Shu holatda menejer qanday tugmalarni ko'radi. */
       allowedActions: workItemFsm.allowedActions(r.status as WorkItemStatus, 'manager'),
+      /**
+       * §5.3 — shu QATOR uchun ruxsat etilgan sabab kodlari, amal bo'yicha.
+       *
+       * Ekran o'z nusxasini saqlamaydi: BE bilan FE ro'yxati ajralib qolsa,
+       * menejer tanlagan kod 400 bilan qaytardi yoki (yomoni) FE'da ko'rinmay,
+       * statistika yarim to'planardi. Bir manba — shu javob.
+       */
+      reasonCodes: reasonCatalogFor(r.ruleType),
     }));
 
     const sorted = sortQueue(shaped);
@@ -457,12 +848,15 @@ export class ManagerQueueService {
   ) {
     const item = await this.prisma.client.managerWorkItem.findFirst({
       where: { accountId, id: itemId },
-      select: { id: true, status: true },
+      select: { id: true, status: true, ruleType: true },
     });
     if (!item) throw new NotFoundException('Navbat elementi topilmadi');
 
     const from = item.status as WorkItemStatus;
-    const verdict = workItemFsm.evaluate({
+    // §5.3 — sabab kodlari QOIDAGA bog'langan: «raqobatchi narxi» tan narxdan
+    // past sotuvni yopadi, kechikishni EMAS. Umumiy kodlar ikkalasida ham
+    // ishlaydi (MK06 regressiyasi yo'q).
+    const verdict = workItemFsmFor(item.ruleType).evaluate({
       from,
       action: body.action as never,
       actor: actor.actor,

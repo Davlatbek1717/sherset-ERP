@@ -316,7 +316,7 @@ export function assembleSoldLines(
   });
 }
 
-const DEFAULT_WINDOW_DAYS = 30;
+export const DEFAULT_WINDOW_DAYS = 30;
 const DEFAULT_PRICE_DAYS = 30;
 const DEFAULT_GROUP_LIMIT = 50;
 
@@ -341,8 +341,58 @@ export class ManagerInventoryService {
       overstockDays: clampInt(query.overstockDays, DEFAULT_STOCK_THRESHOLDS.overstockDays, 1, 3650),
     };
     const limit = clampInt(query.limit, DEFAULT_GROUP_LIMIT, 1, 500);
+
+    const { rows, truncated, scannedStockRows } = await this.stockSignalRows(accountId, {
+      windowDays,
+      thresholds,
+      storeId: query.storeId,
+      now,
+    });
+    const board = buildStockSignalBoard(rows);
+
+    return {
+      thresholds,
+      windowDays,
+      generatedAt: now.toISOString(),
+      /** Qoldiq jadvali kesildimi — «hammasi ko'rildi» degan yolg'on bo'lmasin. */
+      truncated,
+      scannedStockRows,
+      signals: Object.fromEntries(
+        Object.entries(board.signals).map(([kind, group]) => [
+          kind,
+          {
+            totalMinor: group.totalMinor.toString(),
+            measuredCount: group.measuredCount,
+            unmeasuredCount: group.unmeasuredCount,
+            rowCount: group.rows.length,
+            /** Ko'rsatilgan qatorlar soni chegaralangan; sanoq to'liq. */
+            rows: group.rows.slice(0, limit).map(serializeSignalRow),
+          },
+        ]),
+      ),
+    };
+  }
+
+  /**
+   * XOM signal qatorlari — HTTP shakliga keltirilmagan, KESILMAGAN.
+   *
+   * MK07 menejer navbati shu yerdan o'qiydi: `stockSignals()` javobi ekran
+   * uchun serializatsiya qilingan va `limit` bilan qirqilgan — undan qoida
+   * dvigatelini boqish «100 tadan keyingisi muammo emas» degan jimgina
+   * yolg'onni kiritardi. Hisob esa BITTA joyda qoladi (nusxa yo'q).
+   */
+  async stockSignalRows(
+    accountId: string,
+    opts: {
+      windowDays: number;
+      thresholds: StockSignalThresholds;
+      storeId?: string;
+      now: Date;
+    },
+  ): Promise<{ rows: StockSignalRow[]; truncated: boolean; scannedStockRows: number }> {
+    const { windowDays, thresholds, now } = opts;
     const windowStart = new Date(now.getTime() - windowDays * 24 * 60 * 60 * 1000);
-    const storeFilter = query.storeId ? { storeId: query.storeId } : {};
+    const storeFilter = opts.storeId ? { storeId: opts.storeId } : {};
 
     const [stockRows, salesAgg, lastSaleAgg, firstInflowAgg] = await Promise.all([
       this.prisma.client.stock.findMany({
@@ -471,29 +521,8 @@ export class ManagerInventoryService {
     });
 
     const rows = inputs.flatMap((i) => stockSignalsFor(i, thresholds, now));
-    const board = buildStockSignalBoard(rows);
 
-    return {
-      thresholds,
-      windowDays,
-      generatedAt: now.toISOString(),
-      /** Qoldiq jadvali kesildimi — «hammasi ko'rildi» degan yolg'on bo'lmasin. */
-      truncated,
-      scannedStockRows: stocks.length,
-      signals: Object.fromEntries(
-        Object.entries(board.signals).map(([kind, group]) => [
-          kind,
-          {
-            totalMinor: group.totalMinor.toString(),
-            measuredCount: group.measuredCount,
-            unmeasuredCount: group.unmeasuredCount,
-            rowCount: group.rows.length,
-            /** Ko'rsatilgan qatorlar soni chegaralangan; sanoq to'liq. */
-            rows: group.rows.slice(0, limit).map(serializeSignalRow),
-          },
-        ]),
-      ),
-    };
+    return { rows, truncated, scannedStockRows: stocks.length };
   }
 
   /**

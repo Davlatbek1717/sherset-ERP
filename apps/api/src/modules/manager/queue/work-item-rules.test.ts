@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { PriceChangeReview } from '../inventory/price-change-control.js';
+import { DEFAULT_STOCK_THRESHOLDS } from '../inventory/stock-signals.js';
 import {
   type CashVarianceRow,
   MANAGER_RULES,
+  type ManagerRuleDefinition,
   type ManagerRuleType,
+  RULE_CATEGORY,
   RULE_MODE,
+  type RuleCategory,
   type RuleConfigRow,
   THRESHOLD_UNIT,
   WORK_ITEM_SEVERITY,
@@ -61,6 +65,63 @@ describe('qoida registri', () => {
   it('MK06 namunaviy qoidalari mavjud: PRICE_CHANGE va CASH_VARIANCE', () => {
     expect(MANAGER_RULES.PRICE_CHANGE).toBeDefined();
     expect(MANAGER_RULES.CASH_VARIANCE).toBeDefined();
+  });
+});
+
+// ── MK07: TZ §5.2 katalogi ──────────────────────────────────────────────────
+
+/**
+ * 4M TZ §5.2 jadvali — **to'rt toifa, 12 katak**. Ro'yxat shu yerda QO'LDA
+ * yozilgan (registrdan olinmagan): agar kimdir registrdan qoida o'chirsa,
+ * test buni ko'rishi kerak. Registrni manba qilib olsak, test o'z-o'zini
+ * tasdiqlaydigan bo'lib qolardi.
+ *
+ * `LATE` va `ABSENT` TZ da BITTA katakda (`LATE`/`ABSENT`), lekin registrda
+ * ikki tur: chegara birligi har xil (kechikish — daqiqa, kelmaslik —
+ * chegarasiz). Bitta tur ikkisiga xizmat qila olmaydi.
+ */
+const TZ_CATALOG: Record<RuleCategory, readonly string[]> = {
+  [RULE_CATEGORY.lossDiscount]: ['BELOW_COST', 'BIG_DISCOUNT', 'BELOW_WHOLESALE'],
+  [RULE_CATEGORY.debt]: ['BIG_DEBT', 'OVERDUE_DEBT'],
+  [RULE_CATEGORY.shiftAttendance]: ['CASH_VARIANCE', 'LATE', 'ABSENT', 'SHIFT_OUT_OF_SCHEDULE'],
+  [RULE_CATEGORY.warehouse]: ['LOW_STOCK', 'DEAD_STOCK', 'PICKING_SLA', 'INVENTORY_VARIANCE'],
+};
+
+describe('MK07 — TZ §5.2 ning 12 katagi registrda', () => {
+  it('har katak registrda bor va TO`G`RI toifada', () => {
+    for (const [category, types] of Object.entries(TZ_CATALOG)) {
+      for (const type of types) {
+        const rule = (MANAGER_RULES as Record<string, ManagerRuleDefinition | undefined>)[type];
+        expect(rule, `${type} registrda yo'q`).toBeDefined();
+        expect(rule?.category, `${type} toifasi`).toBe(category);
+      }
+    }
+  });
+
+  it('to`rt toifaning HAR biri qoidaga ega (bo`sh toifa = yarim joriy etilgan TZ)', () => {
+    const categories = new Set(Object.values(MANAGER_RULES).map((r) => r.category));
+    for (const category of Object.values(RULE_CATEGORY)) {
+      expect(categories.has(category), `«${category}» toifasi bo'sh`).toBe(true);
+    }
+  });
+
+  it('TZ ning aniq raqamlari registrga o`sha holicha tushgan (§5.2)', () => {
+    // «masalan > 10%» va «masalan > 5 000 000 so'm» / «> 30 kun» — TZ bergan
+    // yagona raqamlar. O'ylab topilgan qiymat bilan almashtirilmasin.
+    expect(MANAGER_RULES.BIG_DISCOUNT.defaultThreshold).toBe(10);
+    expect(MANAGER_RULES.BIG_DISCOUNT.thresholdUnit).toBe(THRESHOLD_UNIT.percent);
+    expect(MANAGER_RULES.BIG_DEBT.defaultThreshold).toBe(500_000_000);
+    expect(MANAGER_RULES.BIG_DEBT.thresholdUnit).toBe(THRESHOLD_UNIT.minor);
+    expect(MANAGER_RULES.OVERDUE_DEBT.defaultThreshold).toBe(30);
+    expect(MANAGER_RULES.OVERDUE_DEBT.thresholdUnit).toBe(THRESHOLD_UNIT.days);
+  });
+
+  it('zaxira chegaralari MAVJUD manbadan olingan (ikkinchi haqiqat yaratilmadi)', () => {
+    // `stock-signals.ts` allaqachon shu raqamlarni ishlatadi (4M.8). Ikki
+    // joyda ikki xil bo'lsa, menejer bir ekranda «o'lik», boshqasida «normal»
+    // ko'rardi.
+    expect(MANAGER_RULES.DEAD_STOCK.defaultThreshold).toBe(DEFAULT_STOCK_THRESHOLDS.deadDays);
+    expect(MANAGER_RULES.LOW_STOCK.defaultThreshold).toBe(DEFAULT_STOCK_THRESHOLDS.coverDays);
   });
 });
 

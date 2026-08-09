@@ -27,7 +27,7 @@
 
 | | Soni |
 |---|---|
-| **Qolgan bosqichlar** | **53** |
+| **Qolgan bosqichlar** | **52** |
 | Sifat qarzlari | 7 |
 | Brauzer-QA (Phase-2) o'tishlari | ~9 (har bo'lim uchun 1) |
 | **JAMI ish birligi** | **~75** |
@@ -47,7 +47,7 @@ kuniga **3 sessiya** → **~6 hafta**.
 | 2 — Onlayn sotuv / B2B / B2G | B1 | **8** (B2–B9) |
 | 3 — Analitika | B1, B2 (qisman) | **6** (B3–B8) |
 | 4 — Menejer (ruxsatlar) | — | **8** (B1–B8) |
-| 4M — Menejer (kunlik KPI) | 4M.1 4M.2 **4M.3** 4M.4 ✅to'liq, **4M.7 4M.8 4M.9** | **3** (4M.5, 4M.6, 4M.10) |
+| 4M — Menejer (kunlik KPI) | 4M.1 4M.2 **4M.3** 4M.4 ✅to'liq, **4M.5 4M.7 4M.8 4M.9** | **2** (4M.6, 4M.10) |
 | 5 — Ta'minotchilar | — | **6** (B1–B6) |
 | 6 — HR | B8 (qisman) | **8** (B1–B7, B9) |
 | 7 — Ombor | B1 (qisman), **B2** | **11** (B2a, B3–B12) |
@@ -222,13 +222,18 @@ kuniga **3 sessiya** → **~6 hafta**.
       jamiga kirmaydi; `scope_note` shu haqiqatga moslandi
 
 ### 4M.5–4M.10
-- [ ] **4M.5** — Ogohlantirish navbati: `ManagerWorkItem` + `ManagerRuleConfig` (ikkalasi YO'Q) +
+- [x] **4M.5** — Ogohlantirish navbati: `ManagerWorkItem` + `ManagerRuleConfig` (ikkalasi YO'Q) +
       **12 qoida turi** + sabab kodlari + eskirish belgisi
-      · ✅ **YARMI BAJARILDI (MK06)**: ikkala model + migratsiya (lokal DB'ga qo'llandi) + qoida
+      · ✅ **MK06**: ikkala model + migratsiya (lokal DB'ga qo'llandi) + qoida
         dvigateli (dedup · eskirish BAYROG'I · FSM) + `/menejer/navbat` ekrani. **Navbat
         BLOKLAMAYDI** — to'rt qatlamli qulf (DB CHECK · tip · Zod · arxitektura testi).
-        Phase-1, brauzer-QA yo'q. Katakcha OCHIQ qoladi — **12 qoida turidan 2 tasi** bor
-        (namunaviy), qolgani va sabab-kodlari katalogi **MK07** da.
+      · ✅ **MK07**: TZ §5.2 ning **12 katagi to'liq** (registrda 14 tur — `LATE`/`ABSENT` ajratilgan
+        + MK06 ning `PRICE_CHANGE` i) · manbalar `CashierAuditEvent`/`Debt`/`HrAttendance`+jadval/
+        `stock-signals` (4M.8, nusxa emas)/`RestockTask`/`Inventory` · §5.3 **sabab kodlari qoidaga
+        bog'landi** (begona qoida kodi RAD etiladi) · sabab ro'yxati BE dan keladi (FE nusxasi
+        o'chirildi) · i18n ru+uz. Navbat moduli **76 → 127 test**.
+        Phase-1, brauzer-QA yo'q (→ MK14). Ochiq qarz: `record_fine` hamon **pul yozmaydi**
+        (QAROR-B1 ga bog'liq, MK01).
 - [x] **4M.6** — Smena yakunini qabul qilish + **ma'lumot sifati paneli**
       · ✅ **MK08**: smena qabuli — FSM (`shift-acceptance.ts`) + append-only
         jurnal + rad→tushuntirish halqasi + navbat/qabul ekrani + javobgarlik taxtasida

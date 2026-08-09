@@ -25,6 +25,7 @@ import {
   DEFAULT_PRICE_THRESHOLD_PERCENT,
   type PriceChangeReview,
 } from '../inventory/price-change-control.js';
+import { DEFAULT_STOCK_THRESHOLDS } from '../inventory/stock-signals.js';
 
 // ── Umumiy tiplar ───────────────────────────────────────────────────────────
 
@@ -57,6 +58,10 @@ export const THRESHOLD_UNIT = {
   percent: 'percent',
   minor: 'minor',
   days: 'days',
+  /** MK07: kechikish daqiqada o'lchanadi (`HrAttendance.lateMinutes`). */
+  minutes: 'minutes',
+  /** MK07: yig'ish SLA'si — kun juda qo'pol (topshiriq smena ichida yopiladi). */
+  hours: 'hours',
   qty: 'qty',
 } as const;
 
@@ -116,6 +121,164 @@ export const MANAGER_RULES = {
   CASH_VARIANCE: {
     ruleType: 'CASH_VARIANCE',
     category: RULE_CATEGORY.shiftAttendance,
+    defaultEnabled: true,
+    defaultThreshold: 0,
+    thresholdUnit: THRESHOLD_UNIT.minor,
+    defaultSeverity: WORK_ITEM_SEVERITY.critical,
+    blocks: false,
+  },
+
+  // ── MK07 / TZ §5.2: zararga sotuv va chegirma ────────────────────────────
+  //
+  // Uchalasining manbai — `CashierAuditEvent` (TZ §5.2 shuni ko'rsatadi).
+  // Chek POST qilinganda hodisa ALLAQACHON yoziladi (`cashier-audit.ts`), ya'ni
+  // navbat yangi yozuvchi ochmaydi va solishtiruvni QAYTA hisoblamaydi.
+  //
+  // ⚠️ Bu MK18 «xato narx» ekrani BILAN QO'SHILMAYDI: u ma'lumot sifati
+  // savoliga javob beradi («raqam xato yozilganmi?») va chegirmani
+  // TUSHUNTIRISH deb biladi; bu yerda esa siyosat savoli («pul yo'qotildimi?»)
+  // va chegirma to'smaydi. Birlashtirilsa biri albatta noto'g'ri bo'ladi.
+
+  /** Tan narxdan past sotildi. TZ chegara bermaydi ⇒ «har qanday» = 0. */
+  BELOW_COST: {
+    ruleType: 'BELOW_COST',
+    category: RULE_CATEGORY.lossDiscount,
+    defaultEnabled: true,
+    defaultThreshold: 0,
+    thresholdUnit: THRESHOLD_UNIT.minor,
+    defaultSeverity: WORK_ITEM_SEVERITY.critical,
+    blocks: false,
+  },
+  /** Katta chegirma. TZ: «masalan > 10%» — o'sha raqam. */
+  BIG_DISCOUNT: {
+    ruleType: 'BIG_DISCOUNT',
+    category: RULE_CATEGORY.lossDiscount,
+    defaultEnabled: true,
+    defaultThreshold: 10,
+    thresholdUnit: THRESHOLD_UNIT.percent,
+    defaultSeverity: WORK_ITEM_SEVERITY.warning,
+    blocks: false,
+  },
+  /** Optom poldan past sotildi (kelishilgan pol buzildi). */
+  BELOW_WHOLESALE: {
+    ruleType: 'BELOW_WHOLESALE',
+    category: RULE_CATEGORY.lossDiscount,
+    defaultEnabled: true,
+    defaultThreshold: 0,
+    thresholdUnit: THRESHOLD_UNIT.minor,
+    defaultSeverity: WORK_ITEM_SEVERITY.warning,
+    blocks: false,
+  },
+
+  // ── MK07 / TZ §5.2: qarz ─────────────────────────────────────────────────
+
+  /** TZ: «masalan > 5 000 000 so'm» ⇒ 500 000 000 tiyin. */
+  BIG_DEBT: {
+    ruleType: 'BIG_DEBT',
+    category: RULE_CATEGORY.debt,
+    defaultEnabled: true,
+    defaultThreshold: 500_000_000,
+    thresholdUnit: THRESHOLD_UNIT.minor,
+    defaultSeverity: WORK_ITEM_SEVERITY.warning,
+    blocks: false,
+  },
+  /** TZ: «masalan > 30 kun». */
+  OVERDUE_DEBT: {
+    ruleType: 'OVERDUE_DEBT',
+    category: RULE_CATEGORY.debt,
+    defaultEnabled: true,
+    defaultThreshold: 30,
+    thresholdUnit: THRESHOLD_UNIT.days,
+    defaultSeverity: WORK_ITEM_SEVERITY.critical,
+    blocks: false,
+  },
+
+  // ── MK07 / TZ §5.2: smena va davomat ─────────────────────────────────────
+
+  /**
+   * Kechikish. Chegara **0 daqiqa** — `lateMinutes > 0` ning o'zi HR
+   * dvigatelining «kechikdi» hukmi; bu yerda ikkinchi, o'ylab topilgan
+   * chegara qo'yilmaydi (CASH_VARIANCE bilan bir xil mulohaza). Shovqin ko'p
+   * bo'lsa egasi sozlamadan ko'taradi.
+   */
+  LATE: {
+    ruleType: 'LATE',
+    category: RULE_CATEGORY.shiftAttendance,
+    defaultEnabled: true,
+    defaultThreshold: 0,
+    thresholdUnit: THRESHOLD_UNIT.minutes,
+    defaultSeverity: WORK_ITEM_SEVERITY.info,
+    blocks: false,
+  },
+  /**
+   * Ish kuni bo'lgani holda davomat belgisi YO'Q. Chegarasi yo'q — «yarim
+   * kelmaslik» degan tushuncha yo'q.
+   */
+  ABSENT: {
+    ruleType: 'ABSENT',
+    category: RULE_CATEGORY.shiftAttendance,
+    defaultEnabled: true,
+    defaultThreshold: null,
+    thresholdUnit: null,
+    defaultSeverity: WORK_ITEM_SEVERITY.warning,
+    blocks: false,
+  },
+  /** Jadvaldan tashqari ochilgan smena (`CashierAuditEvent`, sabab majburiy). */
+  SHIFT_OUT_OF_SCHEDULE: {
+    ruleType: 'SHIFT_OUT_OF_SCHEDULE',
+    category: RULE_CATEGORY.shiftAttendance,
+    defaultEnabled: true,
+    defaultThreshold: null,
+    thresholdUnit: null,
+    defaultSeverity: WORK_ITEM_SEVERITY.warning,
+    blocks: false,
+  },
+
+  // ── MK07 / TZ §5.2: ombor ────────────────────────────────────────────────
+  //
+  // LOW_STOCK va DEAD_STOCK chegaralari `stock-signals.ts` (4M.8) dan olinadi:
+  // o'sha modul allaqachon shu signallarni hisoblaydi. Raqamni bu yerda qayta
+  // yozish ikkinchi haqiqat bo'lardi — menejer bir ekranda «o'lik», boshqasida
+  // «normal» ko'rardi.
+
+  /** Qoldiq shuncha kunlik talabga yetmasa — tugash xavfi. */
+  LOW_STOCK: {
+    ruleType: 'LOW_STOCK',
+    category: RULE_CATEGORY.warehouse,
+    defaultEnabled: true,
+    defaultThreshold: DEFAULT_STOCK_THRESHOLDS.coverDays,
+    thresholdUnit: THRESHOLD_UNIT.days,
+    defaultSeverity: WORK_ITEM_SEVERITY.warning,
+    blocks: false,
+  },
+  /** Shuncha kun sotuvsiz tursa — pul qotgan. */
+  DEAD_STOCK: {
+    ruleType: 'DEAD_STOCK',
+    category: RULE_CATEGORY.warehouse,
+    defaultEnabled: true,
+    defaultThreshold: DEFAULT_STOCK_THRESHOLDS.deadDays,
+    thresholdUnit: THRESHOLD_UNIT.days,
+    defaultSeverity: WORK_ITEM_SEVERITY.info,
+    blocks: false,
+  },
+  /**
+   * Yig'ish topshirig'i qotib qoldi. TZ raqam bermagan — 4 soat BOSHLANG'ICH
+   * qiymat sifatida olindi (bir smena ichida yopilishi kerak degan mulohaza)
+   * va sozlanadi. Bu yerda halol yozib qo'yiladi: raqam TZ dan EMAS.
+   */
+  PICKING_SLA: {
+    ruleType: 'PICKING_SLA',
+    category: RULE_CATEGORY.warehouse,
+    defaultEnabled: true,
+    defaultThreshold: 4,
+    thresholdUnit: THRESHOLD_UNIT.hours,
+    defaultSeverity: WORK_ITEM_SEVERITY.warning,
+    blocks: false,
+  },
+  /** Inventarizatsiya farqi. Chegara 0 — nolga teng bo'lmagan har farq. */
+  INVENTORY_VARIANCE: {
+    ruleType: 'INVENTORY_VARIANCE',
+    category: RULE_CATEGORY.warehouse,
     defaultEnabled: true,
     defaultThreshold: 0,
     thresholdUnit: THRESHOLD_UNIT.minor,

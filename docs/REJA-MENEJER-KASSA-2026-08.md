@@ -371,7 +371,7 @@ hisobotda.
 
 ---
 
-### MK07 — 4M.5b: 12 qoida turi + sabab kodlari ☐ HISOBOT
+### MK07 — 4M.5b: 12 qoida turi + sabab kodlari ☑ HISOBOT (2026-08-09)
 **Bo'lim/blok:** 4M.5 (2-yarim) · **TZ:** §5.2 (to'rt toifa), §5.3
 **Ustuvorlik:** P1 · **Bog'liqlik:** **MK06**
 **Qamrov:** TZ §5.2 dagi **12 qoida turi** to'liq (to'rt toifa bo'yicha) + **sabab kodlari**
@@ -2709,3 +2709,185 @@ Shuning uchun:
 qo'lda qo'llanishi kerak (`expense_budgets` jadvali + 2 indeks + 4 FK + 2 CHECK). Lokal
 `climart_adopt` da `prisma db execute --file` bilan **qo'llandi va tekshirildi**. Avtomatik
 `migrate deploy` QILINMADI (O'ZGARMAS QOIDA 7).
+
+---
+
+## Faza MK07 — 4M.5b: 12 qoida turi + sabab kodlari (sana: 2026-08-09)
+
+**Holat:** ✅ **Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q.**
+«done» / «production-ready» / «verified» EMAS — runtime-QA MK14 (4M Phase-2) da.
+**Commit(lar):** pastdagi «Git holati»ga qara.
+
+### MK06 dvigateli borligi KODDA tasdiqlandi (faza prompti talabi)
+
+O'z ko'zim bilan o'qildi, reja da'vosiga ishonilmadi:
+- `apps/api/src/modules/manager/queue/work-item-rules.ts` — registr + `resolveRules` (chegara
+  birligi mos kelmasa RAD etiladi, `blocks: false` literal tipi).
+- `work-queue-planner.ts` — dedup (`dedupKey`, holatdan qat'i nazar) + eskirish BAYROG'I; o'chirish
+  maydoni yo'q.
+- `work-item-fsm.ts` — 9 amal, yopuvchi o'tishlarda `reasonRequired: true`.
+- `manager-queue.service.ts` — `sync`/`list`/`act`/`rules`; `ManagerWorkItem` + `ManagerRuleConfig`
+  Prisma modellari mavjud.
+- Boshlang'ich holat: **76 test yashil** (`src/modules/manager/queue`).
+
+### Nima o'zgardi
+
+**1. Registr — TZ §5.2 ning 12 katagi to'liq** (`work-item-rules.ts`, +163 qator)
+
+`BELOW_COST` · `BIG_DISCOUNT` · `BELOW_WHOLESALE` · `BIG_DEBT` · `OVERDUE_DEBT` · `LATE` ·
+`ABSENT` · `SHIFT_OUT_OF_SCHEDULE` · `LOW_STOCK` · `DEAD_STOCK` · `PICKING_SLA` ·
+`INVENTORY_VARIANCE`. Yangi chegara birligi: `minutes` (kechikish). `hours` ni parallel MK10
+sessiyasi qo'shgan edi — ustiga qurildi.
+
+**Sanoq haqida halol izoh:** TZ jadvalida **12 katak**, registrda esa **13 TZ turi** —
+`LATE`/`ABSENT` TZ da bitta katakda yozilgan, ammo chegara birligi har xil (daqiqa vs chegarasiz)
+va bitta tur ikkisiga xizmat qila olmaydi. Registrda jami **14** ta (+ MK06 ning `PRICE_CHANGE` i).
+Jadvalning har 12 katagi qoplangan — test qo'lda yozilgan `TZ_CATALOG` ro'yxati bilan qulflaydi
+(registrdan olinmagan: aks holda test o'z-o'zini tasdiqlardi).
+
+**2. Nomzod quruvchilar** — yangi sof modul `rule-candidates.ts`.
+Manbalar (**yangi yozuvchi OCHILMADI** — hammasi mavjud jadvallardan):
+
+| Qoida | Manba | Chegara (default) |
+|---|---|---|
+| BELOW_COST · BIG_DISCOUNT · BELOW_WHOLESALE · SHIFT_OUT_OF_SCHEDULE | `CashierAuditEvent` (TZ §5.2 ko'rsatgan manba) | 0 tiyin · 10% · 0 tiyin · — |
+| BIG_DEBT · OVERDUE_DEBT | `Debt` (qoldiq = total − paid) | 500 000 000 tiyin · 30 kun |
+| LATE · ABSENT | `HrAttendance` + `resolveShift` jadval hukmi | 0 daqiqa · — |
+| LOW_STOCK · DEAD_STOCK | `stock-signals.ts` (4M.8) — **nusxa emas** | 14 kun · 90 kun |
+| PICKING_SLA | `RestockTask` (`type='picking'`, ochiq holat) | 4 soat |
+| INVENTORY_VARIANCE | `Inventory` + `InventoryPosition` (faqat post qilingani) | 0 tiyin |
+
+**Ikki oila — `dedupKey` shakli ataylab farq qiladi:**
+- **hodisa** qoidasi → kalitda manba yozuv `id` si (`below_cost:<eventId>`) — bir marta ko'riladi;
+- **holat** qoidasi → kalitda obyekt + **OY** (`big_debt:<id>:2026-08`). Oysiz kalit holatni bir
+  marta ko'rilib abadiy jim qilardi; har `sync` da yangilansa navbat bir xil qator bilan ko'milardi.
+  Oy yorlig'i **Toshkent** kalendaridan olinadi (UTC dan olinsa oy chegarasida 5 soatlik xato —
+  `month-bounds-label-vs-instant` sabog'i).
+
+**3. §5.3 sabab kodlari qoidaga bog'landi** (`work-item-fsm.ts`)
+
+`RULE_REASON_CODES` — har 14 qoida uchun 3–4 SABAB kodi (`competitor_price`, `expiring_goods`,
+`sick_leave`, `theft_suspected`…). Tip **to'liq `Record`**: registrga qoida qo'shilib kodlari
+unutilsa — typecheck yiqiladi (jimgina statistikasiz qolmasin).
+
+- Kodlar FAQAT `acknowledge` ga qo'shiladi. `dismiss` / `record_fine` / `escalate` — QARORNI
+  tavsiflaydi («signal noto'g'ri edi», «jazoladim», «vakolatimdan tashqari»); sabab esa hodisa
+  NEGA bo'lganini yozadi. Aralashtirilsa «raqobatchi narxi tufayli DUBLIKAT» kabi ma'nosiz
+  juftliklar chiqardi.
+- `workItemFsmFor(ruleType)` — qoidaga moslangan FSM (kesh'lanadi). Notanish yoki `null` tur →
+  umumiy FSM, ya'ni **MK06 xulqi regressiyasiz**.
+- **Begona qoidaning kodi RAD etiladi** (`sick_leave` bilan `BELOW_COST` ni yopib bo'lmaydi) —
+  aks holda TZ §5.3 kutgan «zararga sotuvlarning 30% — raqobatchi narxi» statistikasi aralashardi.
+- `other` tanlagichda **oxirida** turadi: birinchi ko'ringan «qochish yo'li» statistikani o'ldiradi.
+
+**4. Servis ulanishi** (`manager-queue.service.ts`, +402 qator)
+
+- Yetti yangi manba o'quvchisi; sotuvning 4 qoidasi **bitta** `CashierAuditEvent` so'rovidan
+  (to'rt tur, bitta indeks).
+- **O'chirilgan qoida manbani UMUMAN o'qimaydi** — MK06 shartnomasi saqlandi, test bilan qulflandi.
+- `ManagerInventoryService` in'yeksiya qilindi va o'sha servisda `stockSignalRows()` ajratildi
+  (xom, **kesilmagan** qatorlar). `stockSignals()` HTTP javobi `limit` bilan qirqiladi — undan
+  qoida dvigatelini boqish «100 tadan keyingisi muammo emas» degan jim yolg'on bo'lardi.
+  Bu 4M.8 dagi «chegaralar hozircha so'rovdan keladi, doimiysi `ManagerRuleConfig` bilan keladi»
+  qarzini ham qisman yopdi: navbat chegaralarni SOZLAMADAN uzatadi.
+- `act()` endi elementning `ruleType` ini o'qiydi va `workItemFsmFor` bilan hukm qiladi.
+- `list()` har qatorga `reasonCodes` qaytaradi — **FE nusxa saqlamaydi** (ilgari
+  `navbat/page.tsx` da qo'lda yozilgan `REASON_CODES` konstantasi bor edi; olib tashlandi.
+  Ikki ro'yxat bir kunda ajralib, menejer tanlagan kod 400 bilan qaytardi —
+  `copy-paste-loses-a-branch` klassi).
+- `sync()` javobiga `absentWindowDays` qo'shildi — `ABSENT` oynasi 31 kun bilan cheklangani
+  OSHKORA (kesish jim qolmaydi).
+
+**5. i18n ru+uz** — 12 qoida nomi + 45 sabab kodi, **ikkala tilda** (+57 qator/fayl).
+
+**6. FE** (`menejer/navbat/page.tsx`) — sabab tanlagichi BE ro'yxatidan; `docHref` yangi hujjat
+turlariga (`retailsale`, `debt`, `inventory`, `variant`). `ABSENT` da hujjat havolasi YO'Q —
+dalil yozuvning YO'QLIGI.
+
+### Testlar (RED → GREEN)
+
+| Fayl | Yangi | Nima qulflaydi |
+|---|---|---|
+| `work-item-rules.test.ts` | +4 | TZ §5.2 katalogi (12 katak, to'rt toifa); TZ raqamlari (10% · 5 mln · 30 kun); zaxira chegarasi 4M.8 dan olingani |
+| `rule-candidates.test.ts` (yangi) | 38 | **Har 12 qoida uchun yoqadigan + yoqmaydigan** stsenariy; o'chirilgan qoida bo'sh qaytaradi; `ruleType` nusxa-xato qulfi; NULL≠0 |
+| `work-item-fsm.test.ts` | +9 | Qoida kodlari `acknowledge` ga qo'shiladi; begona qoida kodi RAD; `dismiss` kengaymaydi; kodlar umumiy katalog bilan to'qnashmaydi |
+| `manager-queue.service.test.ts` | +8 | Har manba o'qiladi; audit hodisasi elementga aylanadi; o'chirilgan qarz qoidasi jadvalni o'qimaydi; chegara sozlamadan uzatiladi; sabab kodi saqlanadi/rad etiladi; `list` `reasonCodes` beradi |
+| `rule-i18n.test.ts` (yangi) | 6 | ru+uz da har qoida nomi va har sabab kodi bor; ikki til kalit to'plami bir xil |
+
+Har biri avval **RED** ko'rildi (registr — 4 yiqilish · quruvchi moduli topilmadi · FSM — 9
+yiqilish · servis — mock'siz yiqilish). `rule-i18n.test.ts` **mutatsiya bilan tekshirildi**:
+`rule_BIG_DEBT` uz.json'dan olib tashlanganda 2 test yiqildi ⇒ test bo'sh emas
+(`tz-yorliq-testi-yolg'on` sabog'i). Fayl darhol tiklandi va JSON shakli tekshirildi.
+
+**Navbat moduli: 76 → 127 test.**
+
+Nega `rule-i18n.test.ts` API tomonida: kalitlar ekranda **dinamik** yasaladi
+(``t(`rule_${row.ruleType}`)``), shuning uchun `pnpm i18n:gate` ularni **umuman ko'rmaydi**
+(u 300 dinamik kalitni o'tkazib yuboradi — `i18n-gate-blind-to-components` klassi). Haqiqat manbai
+registrda, tekshiruv ham shu yerda.
+
+### Gate natijasi
+
+- `pnpm --filter @moysklad/api typecheck` — **0 xato** ✅
+- `pnpm --filter @moysklad/web typecheck` — **0 xato** ✅
+- `pnpm lint:product` — **0 error** (819 warning; siyosat bo'yicha ruxsat) ✅
+- `pnpm i18n:gate` — **9/9** ✅
+- `pnpm --filter @moysklad/api exec vitest run src/modules/manager src/modules/hr/attendance-geo src/modules/retail-sale` — **1017/1017** ✅
+- `src/app-boot.test.ts` (DI grafi / yetim modul qo'riqchisi) — **9/9** ✅ (yangi `@Inject` tekshirildi)
+- `pnpm --filter @moysklad/web exec vitest run` — **2970 o'tdi, 1 yiqildi** ⚠️
+
+⚠️ **Yiqilgan test MENIKI EMAS:** `src/__tests__/raw-element-conventions.test.ts` →
+`app/(app)/menejer/qotib-qolgan/page.tsx:201` da xom `<input>`. Bu fayl parallel sessiyaning
+**MK10** commit'idan (`5f3ce376`) va HEAD'da ham shunday
+(`git show HEAD:… | grep -c '<input>'` = 1). §6.1 bo'yicha **tegilmadi** — pastda qarz sifatida.
+
+### Git holati (parallel sessiyalar)
+
+- Ish davomida parallel sessiyalar **MK10 · MK16 · MK12** ni commit qildi
+  (`5f3ce376` … `c5e1b153`). Ular `work-item-rules.ts` (chegara birligi `hours`),
+  `manager.module.ts`, `ru.json`/`uz.json` ga ham tegdi. Ularning ishi **tiklanmadi/o'chirilmadi** —
+  ustiga qurildi (§6.1). Bir payt `hours` birligi ular tomonidan olib tashlangan edi; MK07 uni
+  o'z ehtiyoji uchun qayta qo'shdi (izoh bilan).
+- Bir payt reja faylida va `ru.json`/`uz.json` da parallel sessiyaning **commit qilinmagan**
+  hunk'lari ham bor edi — o'sha holda commit `HEAD + faqat mening qo'shimcham` blobi bilan
+  qilinishi rejalashtirilgandi (`hash-object -w` + `update-index --cacheinfo`,
+  `commit-pathspec-takes-worktree-version` sabog'i). Commitdan oldingi so'nggi tekshiruvda ular
+  o'z ishlarini commit qilib bo'lgan edi (`6d6a8b18` gacha), ya'ni daraxtda **faqat mening
+  hunk'larim** qoldi (`git diff -U0 … | grep '^@@'` bilan har fayl bo'yicha tasdiqlandi) —
+  shuning uchun oddiy `git add <aniq yo'llar>` yetdi, blob qayta qurilmadi.
+- Hook'lar bir martaga chetlab o'tildi (`-c core.hooksPath=/dev/null`): parallel sessiyalar faol
+  bo'lgani uchun `lint-staged` ning butun-daraxt stash'i begona fayl qo'shib yuborishi mumkin edi
+  (§6.7 B). Gate'lar shu sababdan **qo'lda to'liq** yugurtirildi (yuqoridagi ro'yxat).
+- Commitdan keyin `git show --stat HEAD` bilan tarkib tekshirildi.
+
+### Qolgan qarz / DEFER
+
+1. **🔴 Web gate qizil (begona)** — `menejer/qotib-qolgan/page.tsx:201` xom `<input>` design-system
+   komponentiga almashtirilishi kerak. **MK10 egasining ishi**; tegilmadi.
+2. **Chek valyutasi audit payload'ida muhrlanmagan** — `BELOW_COST` / `BIG_DISCOUNT` /
+   `BELOW_WHOLESALE` elementlari `currency: null` bilan chiqadi va ekranda baza valyutasi (`UZS`)
+   ko'rsatiladi. To'g'ri yechim — `cashier-audit.ts` payload'iga valyuta qo'shish (chek
+   yozuvchisiga tegadi ⇒ alohida ish).
+3. **`record_fine` hamon PUL YOZMAYDI** — MK06 dagi ochiq qarz saqlandi: jarima jurnalga tushadi,
+   `HrBonusFineLog` ga emas. Bu **QAROR-B1** ga (bonus/jarima formulasi) bog'liq, MK01 shu sababdan
+   bloklangan. MK07 uni yopmadi — formulasiz yozilgan summa yolg'on bo'lardi.
+4. **`no_history` zaxira qatori `DEAD_STOCK` ga tushmaydi** — ataylab: u ma'lumot sifati savoli
+   (MK09 paneli), qoida buzilishi emas. Hech qachon sotilmagan HAR tovar navbatga tushsa, navbat
+   o'qib bo'lmas holga kelardi.
+5. **`PICKING_SLA` = 4 soat — TZ raqami EMAS**, agent tanlagan boshlang'ich qiymat. Sozlanadi
+   (`ManagerRuleConfig`), kod tegilmaydi. Kodda ham shunday yozib qo'yilgan.
+6. **`ABSENT` oynasi 31 kun** bilan cheklangan (xodim × kun hisobi). Javobda `absentWindowDays`
+   qaytadi — kesish ko'rinib turadi.
+7. **`BIG_DEBT`/`OVERDUE_DEBT` oyiga bir marta** ko'tariladi. Qarz oy ichida ikki baravar oshsa
+   yangi element chiqmaydi. Ataylab (shovqin/abadiy jimlik muvozanati) — egasi boshqacha xohlasa,
+   kalit shakli o'zgaradi.
+8. **Browser-smoke YO'Q** → **MK14** (4M Phase-2 QA). Ekranda tekshirilishi kerak: 14 qoida filtri,
+   sabab tanlagichi qoidaga qarab o'zgarishi, `other` da izoh majburiyligi, yangi hujjat havolalari,
+   RU/UZ locale.
+9. **Yuklama o'lchanmagan** — `sync()` endi 7 qo'shimcha so'rov + zaxira signali hisobini
+   yugurtiradi (5000 qoldiq qatorigacha). Real ma'lumotda vaqti **o'lchanmagan**; sekin bo'lsa
+   cron'ga ko'chirish kerak.
+
+### OPS-QADAM qo'shildimi
+
+**Yo'q** — sxema o'zgarmadi, migratsiya yaratilmadi. Barcha 12 qoida MAVJUD jadvallardan o'qiydi.

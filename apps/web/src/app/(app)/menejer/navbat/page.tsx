@@ -27,18 +27,6 @@ type QueueAction =
   | 'dismiss'
   | 'reopen';
 
-/**
- * Yopuvchi amallar — bularda sabab kodi MAJBURIY (§5.3). BE ham shu qoidani
- * tekshiradi; bu yerda faqat forma ochiladi.
- */
-const REASON_CODES: Partial<Record<QueueAction, readonly string[]>> = {
-  acknowledge: ['justified', 'corrected', 'no_action_needed', 'other'],
-  record_fine: ['policy_violation', 'repeated_violation', 'other'],
-  dismiss: ['false_positive', 'rule_misconfigured', 'duplicate', 'other'],
-  escalate: ['beyond_authority', 'systemic_issue', 'other'],
-  reopen: ['new_evidence', 'closed_by_mistake', 'other'],
-};
-
 interface QueueRow {
   id: string;
   ruleType: string;
@@ -55,6 +43,12 @@ interface QueueRow {
   resolutionCode: string | null;
   monthlyCount: number;
   allowedActions: QueueAction[];
+  /**
+   * §5.3 — yopuvchi amal → ruxsat etilgan sabab kodlari, SHU qoida uchun
+   * (MK07). Ro'yxat BE dan keladi: ekranda nusxa saqlansa, ikkalasi bir kunda
+   * ajralib qolar va menejer tanlagan kod 400 bilan qaytardi.
+   */
+  reasonCodes: Partial<Record<QueueAction, string[]>>;
 }
 
 interface QueueResponse {
@@ -80,12 +74,26 @@ interface SyncResult {
   markedStale: number;
 }
 
-/** Hujjatga havola (§5.1) — element qaysi obyektdan kelib chiqqan. */
+/**
+ * Hujjatga havola (§5.1) — element qaysi obyektdan kelib chiqqan.
+ *
+ * Ro'yxatda yo'q `docType` — `null`: mavjud bo'lmagan sahifaga havola
+ * qo'yishdan ko'ra havolasiz qoldirish yaxshi (`ABSENT` da hujjat UMUMAN
+ * yo'q — dalil yozuvning YO'QLIGI).
+ */
+const DOC_ROUTES: Record<string, string> = {
+  product: '/products',
+  variant: '/products',
+  cashiersession: '/retail/sessions',
+  retailsale: '/retail/sales',
+  debt: '/debts',
+  inventory: '/inventories',
+};
+
 function docHref(row: QueueRow): string | null {
-  if (!row.docId) return null;
-  if (row.docType === 'product') return `/products/${row.docId}`;
-  if (row.docType === 'cashiersession') return `/retail/sessions/${row.docId}`;
-  return null;
+  if (!row.docId || !row.docType) return null;
+  const base = DOC_ROUTES[row.docType];
+  return base ? `${base}/${row.docId}` : null;
 }
 
 /**
@@ -154,7 +162,8 @@ export default function MenejerNavbatPage() {
   const misconfigured = rules.filter((r) => r.thresholdRejected);
 
   const runAction = (row: QueueRow, action: QueueAction) => {
-    if (REASON_CODES[action]) {
+    // Sabab kodlari bor amal = YOPUVCHI amal ⇒ forma ochiladi (§5.3).
+    if (row.reasonCodes?.[action]?.length) {
       setActingId(row.id);
       setPendingAction(action);
       setReason('');
@@ -340,7 +349,7 @@ export default function MenejerNavbatPage() {
                       data-test-id={`manager-queue-reason-${row.id}`}
                     >
                       <option value="">{t('reason_placeholder')}</option>
-                      {(REASON_CODES[pendingAction] ?? []).map((code) => (
+                      {(row.reasonCodes?.[pendingAction] ?? []).map((code) => (
                         <option key={code} value={code}>
                           {t(`reason_${code}`)}
                         </option>

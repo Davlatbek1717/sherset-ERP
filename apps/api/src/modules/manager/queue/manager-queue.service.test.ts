@@ -40,6 +40,13 @@ function makeClient(over: Record<string, unknown> = {}) {
     auditLog: { findMany: vi.fn().mockResolvedValue([]) },
     product: { findMany: vi.fn().mockResolvedValue([]) },
     cashierSessionVariance: { findMany: vi.fn().mockResolvedValue([]) },
+    // MK07 manbalari — 12 qoida shulardan o'qiydi.
+    cashierAuditEvent: { findMany: vi.fn().mockResolvedValue([]) },
+    debt: { findMany: vi.fn().mockResolvedValue([]) },
+    hrAttendance: { findMany: vi.fn().mockResolvedValue([]) },
+    employee: { findMany: vi.fn().mockResolvedValue([]) },
+    restockTask: { findMany: vi.fn().mockResolvedValue([]) },
+    inventory: { findMany: vi.fn().mockResolvedValue([]) },
     managerWorkItem,
     managerWorkItemEvent,
     $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
@@ -47,8 +54,11 @@ function makeClient(over: Record<string, unknown> = {}) {
     ),
     ...over,
   };
-  const service = new ManagerQueueService({ client } as never);
-  return { service, client, managerWorkItem, managerWorkItemEvent };
+  // Zaxira signallari MAVJUD moduldan keladi (`manager-inventory`) — navbat
+  // o'sha hisobni takrorlamaydi.
+  const inventoryService = { stockSignalRows: vi.fn().mockResolvedValue({ rows: [] }) };
+  const service = new ManagerQueueService({ client } as never, inventoryService as never);
+  return { service, client, managerWorkItem, managerWorkItemEvent, inventoryService };
 }
 
 const variance = (over = {}) => ({
@@ -354,5 +364,161 @@ describe('ro`yxat', () => {
 
     const res = await service.list(ACC, {});
     expect(res.staleCount).toBe(1);
+  });
+});
+
+// ── MK07: 12 qoida manbaga ulandi ──────────────────────────────────────────
+
+describe('MK07 — har qoida O`Z manbasidan o`qiydi', () => {
+  it('sync barcha manbalarni bir yugurishda o`qiydi', async () => {
+    const { service, client, inventoryService } = makeClient();
+
+    await service.sync(ACC, {});
+
+    // Sotuv qoidalari (BELOW_COST / BIG_DISCOUNT / BELOW_WHOLESALE /
+    // SHIFT_OUT_OF_SCHEDULE) — BITTA so'rov, to'rt hodisa turi.
+    expect(client.cashierAuditEvent.findMany).toHaveBeenCalledTimes(1);
+    expect(client.debt.findMany).toHaveBeenCalledTimes(1);
+    expect(client.hrAttendance.findMany).toHaveBeenCalled();
+    expect(client.restockTask.findMany).toHaveBeenCalledTimes(1);
+    expect(client.inventory.findMany).toHaveBeenCalledTimes(1);
+    // Zaxira — mavjud dvigatel (nusxa emas).
+    expect(inventoryService.stockSignalRows).toHaveBeenCalledTimes(1);
+  });
+
+  it('kassa audit hodisasi navbat elementiga aylanadi (BELOW_COST)', async () => {
+    const { service, client, managerWorkItem } = makeClient();
+    client.cashierAuditEvent.findMany.mockResolvedValue([
+      {
+        id: 'ev-1',
+        employeeId: 'emp-1',
+        sessionId: 'ses-1',
+        type: 'SOLD_BELOW_COST',
+        docId: 'sale-1',
+        payload: { productId: 'p-1', lossMinor: '150000' },
+        createdAt: new Date('2026-08-08T09:00:00Z'),
+      },
+    ]);
+
+    const result = await service.sync(ACC, {});
+
+    expect(result.candidates).toBe(1);
+    const created = managerWorkItem.createMany.mock.calls[0]?.[0].data;
+    expect(created[0]).toMatchObject({ ruleType: 'BELOW_COST', dedupKey: 'below_cost:ev-1' });
+  });
+
+  it('🔴 o`chirilgan qarz qoidalari qarz jadvalini UMUMAN o`qimaydi', async () => {
+    const { service, client } = makeClient();
+    client.managerRuleConfig.findMany.mockResolvedValue(
+      ['BIG_DEBT', 'OVERDUE_DEBT'].map((ruleType) => ({
+        ruleType,
+        enabled: false,
+        thresholdValue: null,
+        thresholdUnit: null,
+        mode: 'notify',
+        severity: 'warning',
+      })),
+    );
+
+    await service.sync(ACC, {});
+
+    expect(client.debt.findMany).not.toHaveBeenCalled();
+  });
+
+  it('zaxira chegaralari SOZLAMADAN uzatiladi (ikkinchi haqiqat yo`q)', async () => {
+    const { service, client, inventoryService } = makeClient();
+    client.managerRuleConfig.findMany.mockResolvedValue([
+      {
+        ruleType: 'DEAD_STOCK',
+        enabled: true,
+        thresholdValue: '150',
+        thresholdUnit: 'days',
+        mode: 'notify',
+        severity: 'info',
+      },
+    ]);
+
+    await service.sync(ACC, {});
+
+    expect(inventoryService.stockSignalRows.mock.calls[0]?.[1].thresholds.deadDays).toBe(150);
+  });
+});
+
+// ── MK07 §5.3: sabab kodi qoidaga bog'landi ────────────────────────────────
+
+describe('MK07 §5.3 — yopishda qoidaning sabab kodi', () => {
+  function withRuledItem(ruleType: string) {
+    const made = makeClient();
+    made.managerWorkItem.findFirst.mockResolvedValue({
+      id: 'wi-1',
+      status: ST.open,
+      ruleType,
+    });
+    return made;
+  }
+
+  it('qoidaning kodi bilan yopiladi va SAQLANADI', async () => {
+    const { service, managerWorkItem } = withRuledItem('BELOW_COST');
+
+    await service.act(ACC, MANAGER, 'wi-1', {
+      action: ACT.acknowledge,
+      reasonCode: 'competitor_price',
+    });
+
+    expect(managerWorkItem.updateMany.mock.calls[0]?.[0].data.resolutionCode).toBe(
+      'competitor_price',
+    );
+  });
+
+  it('🔴 BOSHQA qoidaning kodi 400 (statistika aralashmaydi)', async () => {
+    const { service } = withRuledItem('BELOW_COST');
+
+    await expect(
+      service.act(ACC, MANAGER, 'wi-1', { action: ACT.acknowledge, reasonCode: 'sick_leave' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('umumiy kod hamon ishlaydi (MK06 regressiyasi yo`q)', async () => {
+    const { service } = withRuledItem('BELOW_COST');
+    const res = await service.act(ACC, MANAGER, 'wi-1', {
+      action: ACT.acknowledge,
+      reasonCode: 'justified',
+    });
+    expect(res.ok).toBe(true);
+  });
+});
+
+describe('MK07 — ro`yxat sabab kodlarini O`ZI beradi', () => {
+  it('har qator o`z qoidasining kodlarini olib keladi (FE nusxa saqlamaydi)', async () => {
+    const { service, managerWorkItem } = makeClient();
+    managerWorkItem.findMany.mockResolvedValue([
+      {
+        id: 'wi-1',
+        ruleType: 'ABSENT',
+        dedupKey: 'k',
+        status: ST.open,
+        severity: 'warning',
+        subjectEmployeeId: 'emp-4',
+        amountMinor: null,
+        currency: null,
+        docType: null,
+        docId: null,
+        occurredAt: new Date('2026-08-07T00:00:00Z'),
+        context: {},
+        staleAt: null,
+        resolutionCode: null,
+        resolvedAt: null,
+        subject: null,
+        resolvedBy: null,
+      },
+    ]);
+
+    const res = await service.list(ACC, {});
+
+    const codes = res.rows[0]?.reasonCodes;
+    expect(codes?.[ACT.acknowledge]).toContain('sick_leave');
+    expect(codes?.[ACT.acknowledge]).not.toContain('competitor_price');
+    // Yopuvchi boshqa amallar umumiy katalogda qoladi.
+    expect(codes?.[ACT.dismiss]).toContain('false_positive');
   });
 });
