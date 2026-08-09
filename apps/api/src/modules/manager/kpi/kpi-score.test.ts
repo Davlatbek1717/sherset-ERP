@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { MANAGER_THRESHOLD, MANAGER_THRESHOLDS } from '../thresholds/manager-thresholds.js';
 import {
   SCORE_CAP_PERCENT,
   type ScoreMetricInput,
@@ -189,5 +190,86 @@ describe('ma`lumot sifati bayrog`i', () => {
       m({ metricKey: 'gross_profit', autoValue: null, weight: 0, complete: false }),
     ]);
     expect(day.dataComplete).toBe(true);
+  });
+});
+
+/**
+ * MK13 / QAROR-B2 — chegara endi SOZLAMADAN keladi.
+ *
+ * Sukut xulq o'zgarmasligi qulflanadi: sozlama uzatilmasa 150% (aks holda
+ * o'tgan kunlar bilan yangi kunlar boshqa formulaga tushib qolardi).
+ */
+describe('SCORE_CAP_PERCENT sozlamaga chiqdi (QAROR-B2)', () => {
+  const overshoot = () => [
+    m({ metricKey: 'cash_revenue', autoValue: 4_000_000n, target: 1_000_000n, weight: 100 }),
+  ];
+
+  it('sukut qiymati registr bilan bir xil — 150', () => {
+    expect(SCORE_CAP_PERCENT).toBe(MANAGER_THRESHOLDS[MANAGER_THRESHOLD.kpiScoreCap].defaultValue);
+    expect(SCORE_CAP_PERCENT).toBe(150);
+  });
+
+  it('sozlama uzatilmasa AVVALGI xulq (150% shift)', () => {
+    const day = scoreDay(overshoot());
+    expect(day.metrics[0]?.achievementPercent).toBe(400); // haqiqiy natija ko'rinadi
+    expect(day.metrics[0]?.contributionPercent).toBe(150);
+    expect(day.score).toBe(150);
+  });
+
+  it('sozlangan shift qo`llanadi', () => {
+    const day = scoreDay(overshoot(), undefined, { capPercent: 120 });
+    expect(day.metrics[0]?.contributionPercent).toBe(120);
+    expect(day.score).toBe(120);
+  });
+
+  it('`capPercent: null` = chegara YO`Q (sozlama o`chirilgan)', () => {
+    const day = scoreDay(overshoot(), undefined, { capPercent: null });
+    expect(day.metrics[0]?.contributionPercent).toBe(400);
+    expect(day.score).toBe(400);
+  });
+
+  it('shift faqat HISSAGA ta`sir qiladi, haqiqiy foizga emas', () => {
+    const day = scoreDay(overshoot(), undefined, { capPercent: 110 });
+    expect(day.metrics[0]?.achievementPercent).toBe(400);
+    expect(day.metrics[0]?.contributionPercent).toBe(110);
+  });
+
+  it('shiftdan past natija qisilmaydi', () => {
+    const day = scoreDay(
+      [m({ metricKey: 'cash_revenue', autoValue: 900_000n, target: 1_000_000n, weight: 100 })],
+      undefined,
+      { capPercent: 150 },
+    );
+    expect(day.score).toBe(90);
+  });
+});
+
+/**
+ * MK13 / QAROR-B3 — `lower_better` formulasi QULFLANADI.
+ *
+ * Yuqorida ham tekshirilgan, lekin egasi tasdiqlagan chegara nuqtalari shu
+ * yerda ATAYLAB takrorlanadi: bu qiymatlar endi qaror, tanlov emas.
+ */
+describe('lower_better chegara nuqtalari (QAROR-B3)', () => {
+  it('0 → 200% · maqsad → 100% · 2× → 0% · 2×dan keyin ham 0%', () => {
+    const t = 10n;
+    expect(achievementPercent(0n, t, 'lower_better')).toBe(200);
+    expect(achievementPercent(5n, t, 'lower_better')).toBe(150);
+    expect(achievementPercent(t, t, 'lower_better')).toBe(100);
+    expect(achievementPercent(2n * t, t, 'lower_better')).toBe(0);
+    expect(achievementPercent(3n * t, t, 'lower_better')).toBe(0);
+  });
+
+  it('manfiy maqsad hisoblanmaydi (ma`nosiz sozlama jimgina ballanmaydi)', () => {
+    expect(achievementPercent(5n, -1n, 'lower_better')).toBeNull();
+  });
+
+  it('ideal natija ballga sukut shift bilan 150% bo`lib kiradi', () => {
+    // 200% haqiqiy, lekin hissa 150% — B2 va B3 birgalikda shunday ishlaydi.
+    const day = scoreDay([
+      m({ metricKey: 'late_minutes', autoValue: 0n, target: 10n, weight: 100 }),
+    ]);
+    expect(day.metrics[0]?.achievementPercent).toBe(200);
+    expect(day.metrics[0]?.contributionPercent).toBe(150);
   });
 });

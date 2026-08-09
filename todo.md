@@ -27,7 +27,7 @@
 
 | | Soni |
 |---|---|
-| **Qolgan bosqichlar** | **52** |
+| **Qolgan bosqichlar** | **51** |
 | Sifat qarzlari | 7 |
 | Brauzer-QA (Phase-2) o'tishlari | ~9 (har bo'lim uchun 1) |
 | **JAMI ish birligi** | **~75** |
@@ -62,8 +62,16 @@ kuniga **3 sessiya** → **~6 hafta**.
       manba = qabulda MUZLATILGAN `scorePercent`, oraliq `[min,max)`. Qoida yo'q/ball `null`/ikki
       qoida mos ⇒ **pul yozilmaydi**. Bekorda teskari qator (zero-sum). To'liq matn:
       `docs/REJA-MENEJER-KASSA-2026-08.md` → «QAROR-B1 — YOPILDI».
-- [ ] **B2. Kompozit ball chegarasi 150%** (`SCORE_CAP_PERCENT`) — TZ'da yo'q, men tanladim.
-- [ ] **B3. `lower_better` formulasi** (0→200%, maqsad→100%, 2×→0%) — TZ'da yo'q, men tanladim.
+- [x] **B2. Kompozit ball chegarasi 150%** (`SCORE_CAP_PERCENT`) — ✅ **YOPILDI 2026-08-09** (egasi):
+      **150% qoladi**, lekin qiymat kodda muzlatilmaydi — `manager_rule_configs` ga (`KPI_SCORE_CAP`)
+      chiqariladi. Chegara **har ko'rsatkich hissasiga** qo'llanadi. MK13 bajaradi.
+- [x] **B3. `lower_better` formulasi** (0→200%, maqsad→100%, 2×→0%) — ✅ **YOPILDI 2026-08-09** (egasi):
+      **chiziqli-simmetrik qoladi** (mavjud kod/testlar o'zgarmaydi). Nisbat shakli (maqsad÷fakt) rad
+      etilgan — u nolda cheksizlikka ketadi. MK13 buni hujjatlab qulflaydi.
+- [x] **B6. Reyting bazasi** — ✅ **YOPILDI 2026-08-09** (egasi): davr reytingiga **faqat qabul
+      qilingan** kunlar (`accepted`/`force_accepted`) kiradi, manba = muzlatilgan `scorePercent`.
+      Qamrov (`daysCounted/daysInPeriod`) ochiq qaytadi; qabul qilingan kuni yo'q xodim **0 ball
+      bilan oxirgi o'ringa qo'yilmaydi** (`rated:false`). MK13 bajaradi.
 - [ ] **B4. Rol nomlari** — hozir `admin`/`director` = ega, `manager`/`menejer` = menejer.
 - [ ] **B5. Kam kelish = rad etishmi?** (5-bo'lim §5.3 taxmini) — hozir: miqdor kam bo'lsa yaroqli
       qism kiradi, sifat nuqsonida butun yetkazma qaytadi. Egasi teskarisini xohlashi mumkin.

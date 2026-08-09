@@ -11,6 +11,8 @@
  * o'girishda 2 xona aniqlik bilan tayyorlanadi.
  */
 
+import { MANAGER_THRESHOLD, MANAGER_THRESHOLDS } from '../manager/thresholds/manager-thresholds.js';
+
 export const BUDGET_STATUS = {
   /** Reja qo'yilmagan — og'ish HISOBLANMAYDI. */
   noPlan: 'no_plan',
@@ -22,11 +24,17 @@ export const BUDGET_STATUS = {
 export type BudgetStatus = (typeof BUDGET_STATUS)[keyof typeof BUDGET_STATUS];
 
 /**
- * Ogohlantirish chegarasi (rejaning %). TZ'da yo'q — agent tanlagan default;
- * so'rov parametri bilan sozlanadi (`warnPercent`), ya'ni qiymat kodda
- * muzlatilmagan. MK13 dagi `SCORE_CAP_PERCENT` bilan bir xil naqsh.
+ * Ogohlantirish chegarasi (rejaning %). TZ'da yo'q — agent tanlagan default.
+ *
+ * **MK13 (2026-08-09):** endi bu raqam `manager_rule_configs` registrida
+ * (`BUDGET_WARN_PERCENT`) — MK12 DEFER-3 aynan shuni talab qilgan edi:
+ * «sozlamaga chiqarish MK13 dagi `SCORE_CAP_PERCENT` bilan **birga** qilinsin
+ * (bir xil naqsh, ikki marta emas)». Shu konstanta o'sha registrning SUKUT
+ * qiymati — raqam ikki joyda turmaydi. Chaqiruvchi hisobga sozlangan qiymatni
+ * `warnPercent` argumenti orqali uzatadi.
  */
-export const DEFAULT_WARN_PERCENT = 90;
+export const DEFAULT_WARN_PERCENT =
+  MANAGER_THRESHOLDS[MANAGER_THRESHOLD.budgetWarnPercent].defaultValue;
 
 export interface BudgetVariance {
   plannedMinor: bigint | null;

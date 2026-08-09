@@ -122,8 +122,8 @@ Umumiy shakl (agar prompt qo'lda yozilsa):
 | Qaror | Savol | Kimni bloklaydi |
 |---|---|---|
 | ~~**QAROR-B1**~~ | ~~Bonus/jarima **formulasi**~~ — ✅ **YOPILDI 2026-08-09** (egasining tasdig'i), quyida | ~~MK01~~ |
-| **QAROR-B2** | Kompozit ball chegarasi **150%** (`SCORE_CAP_PERCENT`) — TZ'da yo'q, agent tanlagan | **MK13** |
-| **QAROR-B3** | `lower_better` formulasi (0→200%, maqsad→100%, 2×→0%) — TZ'da yo'q, agent tanlagan | **MK13** |
+| ~~**QAROR-B2**~~ | ~~Kompozit ball chegarasi **150%**~~ — ✅ **YOPILDI 2026-08-09** (egasining tasdig'i), quyida | ~~MK13~~ |
+| ~~**QAROR-B3**~~ | ~~`lower_better` formulasi~~ — ✅ **YOPILDI 2026-08-09** (egasining tasdig'i), quyida | ~~MK13~~ |
 | **QAROR-B4** | Rol nomlari: hozir `admin`/`director` = ega, `manager`/`menejer` = menejer — shundaymi? | **MK29** |
 
 **▶ QAROR SESSIYASI PROMPTI:**
@@ -159,6 +159,60 @@ Umumiy shakl (agar prompt qo'lda yozilsa):
 
 **Qamrovdan tashqarida (ataylab):** bir kunda **ham** bonus **ham** jarima (masalan sotuv yaxshi-yu
 kassa farqi bor) — bu 12 qoida turi bilan **MK07** ishi. MK01 da bir qabul = ko'pi bilan bitta yozuv.
+
+---
+
+### ✅ QAROR-B2 — YOPILDI (2026-08-09, egasining tasdig'i)
+
+**Savol edi:** kompozit ball chegarasi (`SCORE_CAP_PERCENT`) 150% bo'lib qolsinmi? TZ'da yo'q edi,
+agent tanlagan.
+
+**Qaror: 150% QOLADI, lekin kodda muzlatilmaydi — sozlamaga chiqadi.**
+
+| Nima | Qiymat |
+|---|---|
+| Sukut qiymati | **150%** (mavjud xulq o'zgarmaydi ⇒ tarix va testlar buzilmaydi) |
+| Qayerda saqlanadi | `manager_rule_configs`, `ruleType='KPI_SCORE_CAP'`, `thresholdUnit='percent'` — MK06 navbat qoidalari va MK10 `SLA_*` bilan **ayni jadval** (ikkinchi sozlama manbai yaratilmaydi) |
+| Nimaga qo'llanadi | **Har ko'rsatkichning hissasiga** (`contributionPercent`), yig'indiga emas. Shu sababdan kompozit ball ham avtomatik ≤ cap bo'ladi |
+| `achievementPercent` | **Chegaralanmaydi** — ekranda haqiqiy natija (masalan 340%) ko'rinaveradi; faqat ballga kiradigan hissa qisiladi |
+| Nega chegara bor | Bitta yirik ulgurji chek kunni 400% qilib, kassa farqi va kechikishni ballda ko'rinmas qilardi |
+| Tarix | Qabul paytida ball **MUZLATILADI** (`EmployeeDailyKpi.scorePercent`) ⇒ cap keyin o'zgartirilsa **o'tgan kunlar qayta hisoblanmaydi** (§2.3 profil-versiyalash bilan bir xil klass) |
+
+### ✅ QAROR-B3 — YOPILDI (2026-08-09, egasining tasdig'i)
+
+**Savol edi:** `lower_better` (kam = yaxshi: kassa farqi, kechikish daqiqasi, bekor qilingan chek)
+ko'rsatkichlarining bajarish formulasi. TZ'da yo'q edi, agent tanlagan.
+
+**Qaror: chiziqli-simmetrik formula QOLADI** — mavjud kod (`kpi-score.ts::achievementPercent`)
+o'zgarmaydi, MK13 uni faqat **hujjatlab va chegara-testlari bilan qulflaydi**.
+
+| Holat | Natija |
+|---|---|
+| `fakt = 0` | **200%** (chegara bilan ballga 150% kiradi) — nolga intilish rag'batlanadi |
+| `fakt = maqsad` | **100%** |
+| `fakt = 2 × maqsad` | **0%** |
+| `fakt > 2 × maqsad` | **0%** (manfiy bo'lmaydi) |
+| `maqsad = 0` (nol-tolerantlik) | `fakt ≤ 0` ⇒ 100%, aks holda **0%** (chiziqli formula bu yerda nolga bo'lishga olib kelardi) |
+| `maqsad < 0` | `null` — ballanmaydi |
+
+**Nega nisbat shakli (`maqsad ÷ fakt`) RAD ETILDI:** u fakt nolga yaqinlashganda cheksizlikka ketadi —
+bitta ideal kun butun oyni bo'yab yuborardi. **Nega «faqat jarima» varianti rad etildi:** nol kassa
+farqi va nol kechikish uchun mukofot bo'lmasa, xodim uchun «normadan yaxshi» ishlashning ballda aksi
+yo'q bo'lardi.
+
+### ✅ QAROR-B6 — YOPILDI (2026-08-09, egasining tasdig'i) — reyting bazasi
+
+**Savol edi:** davr reytingi qaysi kunlar ustidan hisoblanadi?
+
+**Qaror: FAQAT qabul qilingan kunlar** (`accepted` + `force_accepted`).
+
+| Nima | Qiymat |
+|---|---|
+| Kiradigan kunlar | `accepted`, `force_accepted` — ya'ni `daily-kpi-fsm.countsTowardPayroll()` bilan **ayni shart** (oylik va reyting bir xil haqiqatdan o'qiydi) |
+| Chiqadigan kunlar | `computed`, `pending`, `rejected`, `stale` — menejer ko'rmagan/bahsli raqam reytingni buzmaydi |
+| Manba raqam | Kunning **MUZLATILGAN** `scorePercent` i (jonli qayta hisob EMAS) |
+| Qamrov | `daysCounted` / `daysInPeriod` javobda **ochiq** qaytadi — «2 kundan chiqqan reyting» yashirilmaydi |
+| Ballanmagan xodim | `rated: false` + sabab; **0 ball bilan oxirgi o'ringa qo'yilmaydi** (NULL ≠ 0) |
 
 ---
 
@@ -479,9 +533,12 @@ jamiga qo'shilmaydi (hisobot konvertatsiya shartnomasi).
 
 ---
 
-### MK13 — 4M.10: KPI target + kompozit ball va reyting formulasi ☐ HISOBOT
+### MK13 — 4M.10: KPI target + kompozit ball va reyting formulasi ☑ HISOBOT (2026-08-09, **QISMAN**)
 **Bo'lim/blok:** 4M.10 · **TZ:** §2.5, §11
-**Ustuvorlik:** P2 · **Bog'liqlik:** ⛔ **QAROR-B2 va QAROR-B3** · **Holat:** `KpiTarget` **YO'Q**
+**Ustuvorlik:** P2 · **Bog'liqlik:** ~~⛔ QAROR-B2/B3~~ ✅ **yopildi 2026-08-09** ·
+**Holat:** formulalar yadrosi TAYYOR (sof modullar + 42 test) · `KpiTarget` **sxemasi hamon YO'Q**
+va wiring qilinmagan — parallel sessiya kolliziyasi sababli **MK13-ikkinchi qism** kutmoqda
+(hisobotdagi «BAJARILMAGANI» ro'yxati).
 **Qamrov:** `KpiTarget` (kunlik/haftalik target) · **reyting formulasi** (panelda va'da qilingan,
 formulasi hech qayerda yo'q edi) · `SCORE_CAP_PERCENT` ni **sozlamaga** chiqarish ·
 `lower_better` ko'rsatkichlar formulasi · adolat normalizatsiyasi (§2.5).
@@ -3141,3 +3198,87 @@ o'zi tasdiqlaydi (`expect(body).toContain('comment')`).
 **Ha** — yangi migratsiya `20260810110000_manager_comment_templates`. Prod'ga chiqishda
 `prisma migrate deploy` (yoki repo tartibiga ko'ra `db execute`) talab qilinadi. Backfill YO'Q,
 seed YO'Q — jadval bo'sh boshlanadi va menejer birinchi shablonni o'zi yozadi.
+
+## Faza MK13 — 4M.10: KPI target + kompozit ball va reyting formulasi (sana: 2026-08-09)
+
+**Holat:** ⚠️ **QAMROV QISQARTIRILDI** — formulalar yadrosi bajarildi, **sxema + wiring BAJARILMADI**
+(sabab: parallel sessiya kolliziyasi, quyida). **Phase-1: strukturaviy + unit-tasdiqlangan,
+browser-smoke YO'Q.** «done» / «production-ready» EMAS.
+**Commit(lar):** `feat(manager): MK13 — KPI cap sozlamaga + maqsad qatlami + reyting formulasi`
+
+### ⛔ Bloklovchi qarorlar — YOPILDI (bu sessiyada, egasi bilan)
+Faza prompti «QAROR-B2 va B3 yopilmagan bo'lsa boshlama» degan edi. Uchalasi ham o'z ko'zim bilan
+OCHIQ ekani tasdiqlandi (`todo.md:65-66`, reja jadvali 125-126-qator), keyin egasiga 2–4 variant
+oqibati bilan ko'rsatilib **yopildi**:
+- **QAROR-B2** — cap **150% qoladi**, lekin sozlamaga chiqadi (`KPI_SCORE_CAP`).
+- **QAROR-B3** — `lower_better` **chiziqli-simmetrik** qoladi (0→200%).
+- **QAROR-B6** (yangi, reyting uchun kerak bo'ldi) — reytingga **faqat qabul qilingan kunlar**.
+
+To'liq matn: shu faylda «✅ QAROR-B2/B3/B6 — YOPILDI» bo'limlari; `todo.md` da ham belgilandi.
+
+### Nima o'zgardi (kod)
+| Fayl | Nima |
+|---|---|
+| `manager/thresholds/manager-thresholds.ts` **(yangi)** | Son-chegaralar registri: `KPI_SCORE_CAP` (150) + `BUDGET_WARN_PERCENT` (90). Noto'g'ri sozlama **jimgina qo'llanmaydi** (`unit_mismatch`/`out_of_range`/`not_a_number` ochiq qaytadi); `enabled:false` = **chegara yo'q** (registr sukutiga qaytish EMAS) |
+| `manager/thresholds/manager-thresholds.test.ts` **(yangi)** | 10 test |
+| `manager/kpi/kpi-target.ts` **(yangi)** | Maqsad ustama qatlami: qamrov aniqligi (xodim > lavozim > hisob > profil), amal oynasi, **kun maskasi** (§2.5 «kun turi target'ga ta'sir qiladi»), determinist tanlov. Haftalik maqsad kunga **bo'linmaydi** |
+| `manager/kpi/kpi-target.test.ts` **(yangi)** | 19 test |
+| `manager/kpi/kpi-rating.ts` **(yangi)** | Davr reytingi (TZ §11/M10 — «panelda va'da qilingan, formulasi yo'q edi»). Faqat qabul qilingan kunlar, muzlatilgan balldan, sport-tartibi, determinist |
+| `manager/kpi/kpi-rating.test.ts` **(yangi)** | 13 test |
+| `manager/kpi/kpi-score.ts` | `SCORE_CAP_PERCENT` endi registr sukutidan olinadi; `scoreDay(..., { capPercent })` qo'shildi (`null` = chegarasiz). **Sukut xulq o'zgarmadi** |
+| `manager/kpi/kpi-score.test.ts` | +10 test (cap chegarasi + B3 chegara nuqtalari qulflandi) |
+| `expense-budget/budget-variance.ts` | `DEFAULT_WARN_PERCENT` endi ayni registrdan (MK12 DEFER-3: «bir xil naqsh, ikki marta emas») |
+
+### Formulalar (DoD: «formulalar hujjatda yozib qoldirilgan»)
+**Bajarish foizi** — `higher_better`: `fakt ÷ maqsad × 100`. `lower_better`: `max(0, (2 − fakt÷maqsad) × 100)`;
+`maqsad = 0` ⇒ `fakt ≤ 0 ? 100 : 0`. `neutral` va `maqsad ≤ 0` (higher) ⇒ ballanmaydi.
+**Kunlik ball** — `Σ(og'irlik × min(bajarish%, cap)) ÷ Σ og'irlik`, faqat **ballangan** ko'rsatkichlar
+ustidan; `coverage = weightScored ÷ weightTotal` ochiq qaytadi.
+**Maqsad** — `KpiTarget`(xodim) → `KpiTarget`(lavozim) → `KpiTarget`(hisob) → `KpiProfileMetric.target` → YO'Q.
+Teng aniqlikda: **tor kun-maskasi** → keyingi `effectiveFrom` → `id`.
+**Reyting** — `o'rtacha = Σ scorePercent ÷ daysCounted` (faqat `accepted`/`force_accepted` va
+`scorePercent ≠ null`). Tartib: o'rtacha ↓ → `daysCounted` ↓ → `employeeId` ↑. O'rin **sport tartibi**
+(1,1,3); ballanmagan xodim **o'rin olmaydi** (`rank: null`, `averageScore: null`).
+
+### Gate (o'z ko'zim bilan)
+- `pnpm --filter @moysklad/api typecheck` → **0 xato**
+- `pnpm lint:product` → **0 xato** (818 warning — siyosat bo'yicha ruxsat)
+- `pnpm --filter @moysklad/api exec vitest run src/modules/manager src/modules/expense-budget` →
+  **50 fayl / 832 test yashil**, regress yo'q
+- `i18n:gate` yugurtirilmadi — **UI matni tegilmadi** (faqat backend sof modullar)
+
+### 🔴 BAJARILMAGANI (ochiq qarz — «jimgina yarim bajarish» EMAS)
+Sessiya davomida **parallel sessiya** MK13 ga kerak bo'lgan aynan shu fayllarni commit qilinmagan
+holda tahrirlayotgani aniqlandi: `schema.prisma`, `manager.module.ts`, `daily-kpi-acceptance.service.ts`,
+`manager-kpi.controller.ts` (+ qo'llanmagan `20260810110000_manager_comment_templates`). CLAUDE.md
+§6.7 dagi ikki hodisa aynan shu vaziyatdan kelib chiqqan. **Egasi «kolliziyasiz yadroni hozir qil»
+variantini tanladi.** Shuning uchun QILINMADI:
+
+1. **`KpiTarget` Prisma modeli + migratsiya.** `kpi-target.ts` shartnomasi tayyor va testlangan,
+   lekin **DB jadvali yo'q** ⇒ hozircha hech kim uni chaqirmaydi (o'lik kod). Kerak bo'ladigan
+   ustunlar resolverdan aniq ko'rinadi: `metricDefId · scope('employee'|'position'|'account') ·
+   scopeRef(NOT NULL — NULL'siz unique uchun) · period · targetValue BigInt · effectiveFrom/To DATE ·
+   weekdayMask Int · archived`, unique `[accountId, metricDefId, period, scope, scopeRef, effectiveFrom]`.
+2. **Servis/controller wiring:** `scoreRow()` ga `capPercent` va maqsad ustamasini uzatish,
+   `manager_rule_configs` dan chegaralarni o'qiydigan servis + sozlama endpointi, reyting endpointi.
+3. **FE:** reyting paneli va chegara sozlamasi ekrani (`SLA` sozlamasi naqshi bo'yicha).
+4. **§2.5 ning qolgan bandlari:** tasdiqlangan ta'til kunlarini chiqarish · yangi xodim «sinov ramp»
+   · yarim stavka. Bularning manbai HR (`hr-schedule`/ta'til) — alohida faza taklifi: **MK43**.
+   *(«Soatga normalizatsiya» va «bir kunda ikki smena» allaqachon bor: `KpiMetricDef.perHour` +
+   kunlik agregatsiya.)*
+
+### Qolgan qarz / DEFER
+1. Yuqoridagi 1–4 band — MK13'ning **ikkinchi qismi**. Toza daraxtda bir sessiyada bajariladi.
+2. **Browser-smoke YO'Q** → MK14 (4M Phase-2 QA).
+3. `ManagerCommentTemplateService` `manager.module.ts` providerlarida yo'qday ko'rindi — tekshirilganda
+   bu **parallel sessiyaning in-flight ishi** bo'lib chiqdi (`MM manager.module.ts`), bug EMAS. Tegilmadi.
+
+### OPS-QADAM qo'shildimi
+**Yo'q** — bu qismda sxema o'zgarishi bo'lmadi (migratsiya ataylab qoldirildi, yuqoriga qara).
+
+### Git holati
+Parallel sessiya faol edi (MK20/MK21/MK15 + HR/stock). Commit **vaqtinchalik indeks** bilan qurildi
+(`GIT_INDEX_FILE` + `read-tree HEAD` + faqat o'z blob'larim) — parallel sessiyaning **staged**
+fayllari (`manager.module.ts`, `layout.tsx`, `ru.json`, `uz.json`, `schema.prisma` …) commit'ga
+**kirmadi**. Umumiy hujjatlar (`docs/REJA-MENEJER-KASSA-2026-08.md`) uchun HEAD blob'i olinib
+**faqat mening tahrirlarim** qayta qo'llandi (fail-closed skript: anchor topilmasa `exit 1`).

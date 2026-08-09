@@ -1,3 +1,4 @@
+import { MANAGER_THRESHOLD, MANAGER_THRESHOLDS } from '../thresholds/manager-thresholds.js';
 import {
   BUILT_IN_CATALOG,
   type MetricCatalog,
@@ -32,10 +33,14 @@ import {
  * ham, kechikish ham ahamiyatsiz bo'lib qolardi. 150% = «rejadan sezilarli
  * oshdi» ni taqdirlaydi, lekin kunni bitta hodisaga aylantirmaydi.
  *
- * Bu — TZ'da ko'rsatilmagan, shu bosqichda tanlangan siyosat; sozlanadigan
- * qilish kerak bo'lsa 4M.10 da `ManagerRuleConfig` ga chiqadi.
+ * ✅ **QAROR-B2 (2026-08-09, egasining tasdig'i):** 150% QOLADI, lekin kodda
+ * muzlatilmaydi — qiymat `manager_rule_configs` (`KPI_SCORE_CAP`) dan keladi.
+ * Shu konstanta endi o'sha registrning SUKUT qiymati (`manager-thresholds.ts`),
+ * ya'ni raqam bitta joyda turadi. Chaqiruvchi sozlangan qiymatni
+ * `scoreDay(..., { capPercent })` orqali uzatadi; `capPercent: null` = chegara
+ * yo'q (sozlama o'chirilgan).
  */
-export const SCORE_CAP_PERCENT = 150;
+export const SCORE_CAP_PERCENT = MANAGER_THRESHOLDS[MANAGER_THRESHOLD.kpiScoreCap].defaultValue;
 
 /** Ko'rsatkich ballga nega kirmagani — ekranda ochiq ko'rsatiladi. */
 export type SkipReason =
@@ -72,15 +77,23 @@ export interface ScoredMetric {
   weight: number;
   /** Bajarish foizi — CHEKSIZ (haqiqiy natija ko'rinadi). NULL = hisoblanmadi. */
   achievementPercent: number | null;
-  /** Ballga kirgan hissa — `SCORE_CAP_PERCENT` bilan cheklangan. */
+  /** Ballga kirgan hissa — amaldagi cap bilan cheklangan. */
   contributionPercent: number | null;
   complete: boolean;
   scored: boolean;
   skipReason: SkipReason | null;
 }
 
+export interface ScoreOptions {
+  /**
+   * Bitta ko'rsatkich hissasining shifti (`KPI_SCORE_CAP` sozlamasi).
+   * Berilmasa registr sukuti; **`null` = chegara YO'Q**.
+   */
+  capPercent?: number | null;
+}
+
 export interface DayScore {
-  /** 0…`SCORE_CAP_PERCENT` — og'irlikli o'rtacha. NULL = hech narsa ballanmadi. */
+  /** 0…`capPercent` — og'irlikli o'rtacha. NULL = hech narsa ballanmadi. */
   score: number | null;
   /** Ballga kirgan og'irliklar yig'indisi. */
   weightScored: number;
@@ -134,7 +147,15 @@ export function achievementPercent(
 export function scoreDay(
   inputs: readonly ScoreMetricInput[],
   catalog: MetricCatalog = BUILT_IN_CATALOG,
+  options: ScoreOptions = {},
 ): DayScore {
+  // `undefined` = sozlama uzatilmadi (sukut), `null` = chegara ataylab yo'q.
+  const cap =
+    options.capPercent === undefined
+      ? SCORE_CAP_PERCENT
+      : options.capPercent === null
+        ? Number.POSITIVE_INFINITY
+        : options.capPercent;
   const metrics: ScoredMetric[] = [];
   let weightScored = 0;
   let weightTotal = 0;
@@ -157,7 +178,7 @@ export function scoreDay(
     // `achievementPercent` null qaytarishi mumkin (masalan higher_better,
     // maqsad ≤ 0) — u holda ko'rsatkich ballanmaydi.
     const scored = skipReason == null && achievement != null;
-    const contribution = scored ? Math.min(achievement, SCORE_CAP_PERCENT) : null;
+    const contribution = scored ? Math.min(achievement, cap) : null;
 
     if (scored && contribution != null) {
       weightScored += weight;

@@ -382,6 +382,57 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > sarlavha/matn bilan cheklangan); (3) `usageCount` taxminiy — matn butunlay almashtirilsa ham
 > sanaladi; (4) `suggest` yuklamasi real ma'lumotda o'lchanmagan.
 
+> **🕒 2026-08-09zc (REJA-MENEJER-KASSA **MK13** — 4M.10: KPI target + kompozit ball va reyting
+> formulasi) — ⚠️ **QISMAN** (formulalar yadrosi tayyor, sxema+wiring QARZ).**
+>
+> **⛔ Bloklovchi qarorlar YOPILDI (egasi bilan, shu sessiyada):** **QAROR-B2** — kompozit ball
+> chegarasi **150% qoladi**, lekin kodda muzlatilmaydi (`manager_rule_configs` → `KPI_SCORE_CAP`);
+> **QAROR-B3** — `lower_better` **chiziqli-simmetrik** qoladi (0→200%, maqsad→100%, 2×→0%), nisbat
+> shakli rad etilgan; **QAROR-B6** (yangi) — davr reytingiga **faqat qabul qilingan kunlar**
+> (`accepted`/`force_accepted`), manba = **muzlatilgan** `scorePercent`. To'liq matn: rejada
+> «✅ QAROR-B2/B3/B6 — YOPILDI» + `todo.md`.
+>
+> **Bajarildi (sof modullar, TDD — 42 yangi test):**
+> `manager/thresholds/manager-thresholds.ts` (yangi, 10 test) — son-chegaralar **yagona registri**:
+> `KPI_SCORE_CAP` (150) + `BUDGET_WARN_PERCENT` (90, MK12 DEFER-3 «bir xil naqsh, ikki marta emas»).
+> Noto'g'ri sozlama **jimgina qo'llanmaydi** (`unit_mismatch`/`out_of_range`/`not_a_number` ochiq),
+> `enabled:false` = **chegara yo'q** (sukutga qaytish EMAS) ·
+> `kpi-target.ts` (yangi, 19 test) — maqsad ustama qatlami: **xodim > lavozim > hisob > profil**,
+> amal oynasi (`YYYY-MM-DD` satr, tz'ga tegilmaydi), **kun maskasi** (§2.5 «kun turi target'ga
+> ta'sir qiladi» — tor maska keng maskani yengadi), determinist tanlov ·
+> `kpi-rating.ts` (yangi, 13 test) — TZ §11/M10 reytingi («panelda va'da qilingan, formulasi hech
+> qayerda yo'q edi»): sport-tartibi (1,1,3), ballanmagan xodim **o'rin olmaydi** (`rank:null`,
+> `averageScore:null` — 0 EMAS), qamrov (`daysCounted/daysInPeriod`) ochiq ·
+> `kpi-score.ts` — `scoreDay(..., { capPercent })` (null = chegarasiz), `SCORE_CAP_PERCENT` endi
+> registr sukutidan; **sukut xulq o'zgarmadi** (+10 test B2/B3 chegara nuqtalarini qulfladi) ·
+> `expense-budget/budget-variance.ts` — `DEFAULT_WARN_PERCENT` ayni registrdan.
+>
+> **Gate:** api typecheck **0** · `lint:product` **0 xato** · `vitest manager + expense-budget`
+> **50 fayl / 832 test yashil**. i18n gate yugurtirilmadi — **UI matni tegilmadi**.
+> **Halol yorliq: Phase-1 (strukturaviy + unit), browser-smoke YO'Q.**
+>
+> **🔴 QARZ — «MK13-ikkinchi qism» (keyingi sessiya, TOZA daraxtda):**
+> (1) **`KpiTarget` Prisma modeli + migratsiya** — hozir sxema yo'q, ya'ni `kpi-target.ts` ni hech kim
+> chaqirmaydi (o'lik kod). Ustunlar resolverdan aniq: `metricDefId · scope('employee'|'position'|
+> 'account') · scopeRef **NOT NULL** (NULL'siz unique uchun — `UNIQUE NULLS NOT DISTINCT` kerak
+> bo'lmasin) · period · targetValue BigInt · effectiveFrom/To DATE · weekdayMask Int · archived`,
+> unique `[accountId, metricDefId, period, scope, scopeRef, effectiveFrom]`;
+> (2) **wiring** — `daily-kpi-acceptance.service.ts::scoreRow()` ga `capPercent` + maqsad ustamasi,
+> `manager_rule_configs` dan chegara o'qiydigan servis + sozlama endpointi, reyting endpointi
+> (`ManagerSlaService.updateStage` naqshi bo'yicha), `manager.module.ts` ga ulash;
+> (3) **FE** — reyting paneli + chegara sozlamasi ekrani;
+> (4) **§2.5 qolgan bandlari** — tasdiqlangan ta'til · yangi xodim «sinov ramp» · yarim stavka
+> (manba HR) → yangi faza taklifi **MK43**. *(Soatga normalizatsiya va «ikki smena» allaqachon bor:
+> `KpiMetricDef.perHour` + kunlik agregatsiya.)*
+>
+> **⚠️ Nega qisqartirildi (parallel sessiya):** sessiya davomida boshqa sessiya AYNI MK13 ga kerak
+> bo'lgan fayllarni commit qilinmagan holda tahrirlardi (`schema.prisma`, `manager.module.ts`,
+> `daily-kpi-acceptance.service.ts`, `manager-kpi.controller.ts`) va sessiya o'rtasida `ae9b4bc6`
+> (MK21) commit qildi. Egasi «kolliziyasiz yadroni hozir qil» variantini tanladi (CLAUDE.md §6.4/§6.7).
+> Commit **vaqtinchalik indeks** bilan qurildi (`GIT_INDEX_FILE` + `read-tree HEAD` + faqat o'z
+> blob'larim) — ularning **staged** fayllari commit'imga kirmadi; umumiy hujjatlarga HEAD blob'i
+> ustiga **faqat mening tahrirlarim** qayta qo'llandi (fail-closed skript).
+>
 > **🕒 2026-08-09z (REJA-MENEJER-KASSA **MK07** — 4M.5b: TZ §5.2 ning 12 qoida turi + §5.3 sabab
 > kodlari) — `0b344aaf`, 15 fayl (+2711/−59). To'liq hisobot:
 > `docs/REJA-MENEJER-KASSA-2026-08.md` → HISOBOT JURNALI → «Faza MK07».**
