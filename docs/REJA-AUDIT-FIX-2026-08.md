@@ -784,7 +784,33 @@ yoz; provider dedup-kalit (idempotency) yoki (toPhone+body-hash) kunlik dedup. `
 **▶ SESSIYA-BOSHI PROMPT:**
 > `docs/REJA-AUDIT-FIX-2026-08.md` — **Faza 28**. O'ZGARMAS QOIDALAR. `INT-08`,`HR-4`,`INT-09`. Outbox exclusive
 > claim (processing/SKIP LOCKED) + sending-first + dedup. TDD: parallel-claim testi. Gate. Hisobot, TO'XTA.
-**◻ HISOBOT:** _(agent to'ldiradi)_
+**✅ HISOBOT (2026-08-09h, `94b05fa5`) — Phase-1: strukturaviy + unit, RUNTIME-TASDIQLANMAGAN:**
+Yangi `apps/api/src/modules/shared/outbox-claim.ts` (siyosat) + `shared/cron-leader.ts` (lider-qo'riqchi).
+Besh worker ham bir xil intizomga o'tdi: (1) **eksklyuziv claim** `pending|retry → 'sending'` + **ijara**
+(`nextRetryAt = now+5daq`; `OUTBOX_CLAIM_LEASE_MS`). Reja `'processing'` deyardi — `'sending'` olindi, chunki
+`webhook.schema.test.ts` aynan `'processing'` so'zini rad etishni qulflab qo'ygan. `$queryRaw FOR UPDATE SKIP
+LOCKED` KERAK BO'LMADI: shartli `updateMany` ReadCommitted'da qator-qulfini oladi va raqib predikatni qayta
+baholab `count=0` ko'radi (naqsh `transition-with-claim.ts` bilan bir xil, raw SQL'siz). (2) **sending-first** —
+`attemptedAt`/'sending' provayder chaqiruvidan OLDIN yoziladi. (3) **reaper** — ijarasi tugagan `'sending'`
+qatorlar navbatga qaytariladi, urinish +1 (crash-sikl abadiy bo'lmasligi uchun). (4) **dedup** — FAQAT
+qayta-urinishda (birinchi urinishda emas, aks holda ataylab bir xil ikki xabar bo'g'ilardi): bir xil
+kontragent+matn 24 soat ichida `sent` bo'lgan bo'lsa yuborilmaydi (`OUTBOX_DEDUP_WINDOW_MS`). Webhook uchun
+esa `Idempotency-Key: <delivery id>` sarlavhasi — u yerda at-least-once shartnomasi ATAYLAB saqlandi.
+(5) `isCronLeader()` — pm2 cluster'da faqat `NODE_APP_INSTANCE=0`; `ecosystem.config.cjs` da `instances: 1`
+sababi yozildi (`pm_id` ISHLATILMAYDI — u pm2-global, api `pm_id=1` bo'lishi mumkin). (6) Uchib turgan qatorni
+qo'lda qayta navbatga qo'yish bloklandi (webhook 409 / sms+email 400).
+**Status lug'ati:** `'sending'` → 4 Zod filtr-enum, `HR_MESSAGE_STATUSES`, prisma doc-kommentlari, FE (2 sahifa
+union+filtr-chip, tone→`info`, ru/uz `status_sending` × 4 namespace). **Migratsiya SHART EMAS** (`VarChar(20)`).
+**Testlar:** 3 yangi delivery test-fayli + HR worker testiga 7 yangi holat + `outbox-claim`/`cron-leader` unit +
+**class-lock** `shared/outbox-claim-class.test.ts` (yangi outbox-worker claim'siz kirsa yiqiladi, registry
+to'liqligi ham tekshiriladi). Asosiy stsenariy har workerda: **ikki parallel instansiya bitta qatorga → AYNAN
+BITTA yuborish** (fake store `updateMany`ni atomik predikat+yozuv sifatida modellaydi).
+**Gate:** typecheck 9/9 · `lint:product` 0 error · i18n gate · api Vitest (shared/webhook/sms/email/telegram/hr)
+133 fayl / 1553 test · `app-boot` DI · web `domain-status-tone` drift-lock 75.
+**QOLGAN XAVF (halol):** «provayder qabul qildi → process o'ldi → ijara tugadi → qayta yuborildi» dublikati
+to'liq YOPILMADI — provayder idempotentlik kaliti kerak (MTProto `random_id` adapter shartnomasini
+o'zgartiradi ⇒ bu fazada qilinmadi; Eskiz'da bunday kafolat yo'q). Jonli tekshiruv (bir necha tick,
+`'sending'` qatorlar ilib qolmasligi) DEPLOY'dan keyin.
 
 ---
 

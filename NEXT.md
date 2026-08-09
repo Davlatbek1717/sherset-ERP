@@ -305,6 +305,48 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-09h (AUDIT-FIX FAZA 28 — outbox eksklyuziv claim + ijara + dedup ·
+> `INT-08`,`HR-4`,`INT-09`) · Phase-1: strukturaviy + unit, RUNTIME-TASDIQLANMAGAN
+> (browser-smoke YO'Q, jonli DB/cluster sinovi YO'Q) · ⏳ DEPLOY QILINMAGAN ·
+> 🗄️ **migratsiya SHART EMAS** (status ustunlari `VarChar(20)`) ·
+> ⚠️ parallel sessiya `modules/report/*` da ishlamoqda — commit'im pathspec-cheklangan;
+> commit oldidan ularning 5 report faylini indeksdan CHIQARDIM (ish daraxti tegilmagan,
+> ular qayta `git add` qiladi). `docs/progress.json` (faqat `generatedAt` vaqt-tamg'asi)
+> lint-staged tomonidan commit'ga qo'shilib ketdi — zararsiz, `git show --stat` bilan tekshirildi.**
+>
+> **Nima qilindi (`94b05fa5`):** besh cron-worker (hr-telegram-outbox · webhook · sms · email ·
+> telegram `drainOutbox`) navbatni **egasiz** bo'shatardi. HR outbox'ning «atomik guard»i
+> `pending → pending` yozardi — chiqib ketmaydigan holat, shuning uchun raqib workerning
+> `updateMany`i ham `count=1` qaytarardi (`HR-4`); qolgan to'rttasida claim UMUMAN yo'q edi
+> (`INT-08`); barchasi natijani provayder chaqiruvidan KEYIN yozardi ⇒ oradagi crash qatorni
+> `pending` qoldirib qayta yubortirardi (`INT-09`).
+> **Yechim** — yangi `apps/api/src/modules/shared/outbox-claim.ts`: (1) `pending|retry → 'sending'`
+> eksklyuziv claim + **ijara** (`nextRetryAt = now+5daq`, `OUTBOX_CLAIM_LEASE_MS`) — Postgres
+> qator-qulfi tufayli raqib `count=0` oladi; (2) `attemptedAt`/'sending' provayderdan **OLDIN**
+> yoziladi; (3) ijarasi tugagan `'sending'` qatorlarni **reaper** navbatga qaytaradi (+1 urinish,
+> shuning uchun crash-sikl abadiy emas); (4) **qayta-urinishda** (birinchi urinishda EMAS) bir xil
+> xabar dedup oynasida (24s, `OUTBOX_DEDUP_WINDOW_MS`) yuborilgan bo'lsa yuborish o'tkazib
+> yuboriladi; webhook uchun `Idempotency-Key: <delivery id>` sarlavhasi (at-least-once shartnomasi
+> ataylab saqlandi); (5) `isCronLeader()` (`shared/cron-leader.ts`) — pm2 cluster'da faqat
+> `NODE_APP_INSTANCE=0` replikasi navbat bo'shatadi (`CRON_WORKERS_DISABLED=1` — favqulodda
+> o'chirgich); `deploy/ecosystem.config.cjs` da `instances: 1` sababi hujjatlashtirildi;
+> (6) uchib turgan qatorni QO'LDA qayta navbatga qo'yish bloklandi (webhook/sms/email retry).
+> **Status lug'ati:** `'sending'` 4 Zod filtr-enum + `HR_MESSAGE_STATUSES` + prisma doc-komment +
+> FE (2 sahifa union/filtr-chip, `DELIVERY_STATUS_TONE`/`HR_MESSAGE_STATUS_TONE` → `info`,
+> ru/uz `status_sending` × 4 namespace).
+> **TDD:** har workerda **ikki parallel instansiya bitta qatorga → AYNAN BITTA yuborish**
+> (fake store `updateMany`ni atomik predikat+yozuv sifatida modellaydi = ReadCommitted qator-qulfi),
+> ijara-reaper, dedup, non-leader testlari. **Class-lock** `shared/outbox-claim-class.test.ts` —
+> yangi `*-delivery.service.ts` / `*outbox-worker.service.ts` claim'siz kirsa yiqiladi.
+> **Gate:** typecheck 9/9 · `lint:product` 0 error · i18n gate yashil · api Vitest
+> (shared/webhook/sms/email/telegram/hr) **133 fayl / 1553 test** · `app-boot` DI · web
+> `domain-status-tone` drift-lock 75.
+> **QOLGAN XAVF (halol):** «provayder qabul qildi → process o'ldi → ijara tugadi → qayta
+> yuborildi» dublikati **to'liq yopilmadi** — provayder idempotentlik kaliti kerak (MTProto
+> `random_id` adapter shartnomasini o'zgartiradi, bu fazada QILINMADI; Eskiz'da bunday kafolat yo'q).
+> **Keyingi:** `docs/REJA-AUDIT-FIX-2026-08.md` → **Faza 29** (HR to'g'rilik paketi) yoki navbat
+> bo'yicha; Faza 28 deploy + jonli tekshiruv (bir necha tick, `'sending'` qatorlar ilib qolmasligi).
+>
 > **🕒 2026-08-09g (AUDIT-FIX FAZA 26 — dashboard: recentDocs UNION + `updatedAt` indekslari +
 > pul-keshi + overdue raw-SQL · `PERF-05`,`PERF-06`,`PERF-11`) · Phase-1: strukturaviy + unit +
 > **EXPLAIN-tasdiqlangan**, browser-smoke YO'Q · ⏳ DEPLOY QILINMAGAN ·
