@@ -90,6 +90,9 @@ kuniga **3 sessiya** → **~6 hafta**.
       kassir kesimi — `cashier_sessions.cashier_id`, ega kesimidan ajratilgan; kassiri yo'q
       tushum «noma'lum» qatorida ko'rinadi)
 - [x] **1-Kassa B8 (yarim)** — `CashierAuditEvent` — `d35efab` *(page.tsx bo'linishi qolgan)*
+      · **MK32 bajarildi (2026-08-09):** `sotuv/page.tsx` uchun **77 xarakteristik test**
+      (5 fayl) — xulq O'ZGARMADI, bo'lishdan oldingi regressiya qulfi qo'yildi.
+      **Katakcha OCHIQ qoladi:** B8 ning qolgan qismi = bo'linishning O'ZI (**MK33**).
 - [x] **1-Kassa B4** — kiosk rejim: server guard + POS PIN + menyusiz qobiq — `45350ea` + `3b306c2`
 - [x] **1-Kassa B5 (yadro)** — qarz moduli ulandi + balans simmetriyasi + FIFO — `dae7289`
 - [x] **4M.1** — KPI o'lchov yadrosi + har-xodim config + **o'z ko'rsatkichi** — `829c122`, `809e2891`

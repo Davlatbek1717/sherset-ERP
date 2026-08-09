@@ -887,7 +887,7 @@ akt yoziladi, nol farqda akt YO'Q. (3) kursi yo'q USD summa UZS jamiga qo'shilma
 
 ---
 
-### MK32 — POS xulq-testlari qoplamasi (bo'lishdan OLDIN) ☐ HISOBOT
+### MK32 — POS xulq-testlari qoplamasi (bo'lishdan OLDIN) ☑ HISOBOT (2026-08-09)
 **Bo'lim/blok:** 1-B8 (2-bo'lak, 1-qadam) · **TZ:** `2026-08-01-kassa-tz-design.md` §11, §13.1
 **Ustuvorlik:** P1 · **Bog'liqlik:** yo'q
 **Muammo:** `sotuv/page.tsx` (~1700 satr) uchun render/xulq qoplamasi **YO'Q**. Ko'r-ko'rona
@@ -3369,3 +3369,113 @@ tasdiqlandi: **22 fayl, hammasi meniki**; parallel sessiya ishi worktree'da butu
   o'qish; lekin katta hisobda panel sekin bo'lishi mumkin, rollup kelganda shu yerdan ulanadi.
 - Kontragent qarzi bloki hisobotning o'z sukut qoidalarini meros oladi (arxivlangan
   kontragentlar kirmaydi; jurnal backfill'i hamon yugurtirilmagan — `balance-readers-journal-sourced`).
+
+---
+
+## MK32 — POS xulq-testlari qoplamasi (bo'lishdan OLDIN) — 2026-08-09
+
+**Holat:** ✅ bajarildi · **Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q.**
+`sotuv/page.tsx` ga **bitta satr ham tegilmadi** — bu ataylab: MK32 xarakteristik
+(characterization) faza, uning butun qiymati «kod o'zgarmagan holda xulq qulflandi» degan
+gapda.
+
+### Nima qilindi
+
+`apps/web/src/app/(app)/sotuv/__tests__/` — **5 test fayl + 1 jihoz, 77 test, hammasi yashil.**
+
+| Fayl | Testlar | Nimani qulflaydi |
+|---|---|---|
+| `open-shift-form.test.tsx` | 7 | smena biriktirilmagan · smena ma'lumotlari · ish vaqti ichida/tashqarida ochish · sabab majburiyligi va TRIM'i |
+| `sales-screen-cart.test.tsx` | 24 | setka · savatga qo'shish/takrorlash · miqdor ± va o'chirish · tozalash · narx tahriri · **narx tasmalari** (ZARAR / optomdan past) · tan narx YO'Q holati · «tushirildi» · chek foydasi · chegirma (ochish/qo'llanish/qisilish) |
+| `sales-screen-payment.test.tsx` | 14 | omborchiga yuborish (2 so'rov) · chegirmaning pozitsiyaga yozilishi · «Tayyor» chekni yuklash + chegirmani tiklash · aralash to'lov · qarz (mijoz majburiy) · qaytim faqat naqddan |
+| `sales-screen-shift.test.tsx` | 17 | kassa kirim/chiqim · qarz to'lovi oynasi · kassadan chiqim (xarajat/inkassatsiya) · smena yopish + farq + **dollar sanog'i** |
+| `chek-detail-panel.test.tsx` | 15 | cheklar ro'yxati · chek detali · to'lov taqsimoti · qaytarish (to'liq/qisman/qisish/kasr miqdor) |
+
+**Yondashuv — nega sahifa ILDIZIDAN:** `OpenShiftForm` / `ChekDetailPanel` / `SalesScreen`
+eksport qilinmagan. Eksport qo'shish xulqni buzmasa ham faylning shaklini o'zgartirardi, MK32
+esa «hech narsaga tegmaydigan» faza. Shu sababdan hamma test `SotuvPage` ildizidan kirib,
+ekranni **kassirning ko'zi bilan** boshqaradi. **MK33 uchun bonus:** sahifa uch komponentga
+bo'linganda bu testlarning birortasi ham o'zgarmaydi — ular import yo'llariga emas, xulqqa
+bog'langan. MK33 ning yagona qabul mezoni aynan shu.
+
+**Jihoz** (`__tests__/harness.tsx`, `.test.` EMAS — vitest yig'maydi): yo'l bo'yicha
+marshrutlovchi `api` mok (**mos kelmagan yo'l = xato**, jimgina `undefined` emas — aks holda
+React Query'da u «yuklanmoqda»ga aylanib testni ko'r qilardi) · `SESSION`/`PRODUCT`/`SALE_*`
+fiksturalari · `norm()` (formatMoney UZILMAS bo'shliq beradi) · `at()` (indeksni qat'iy oladi,
+`?.` bilan yumshatish testni jim o'tkazib yuborardi).
+
+### 🔴 Topilgan kamchilik — B-1: butun POS test qamovda edi (TUZATILDI)
+
+Birinchi testning birinchi yugurishi **umuman kompilyatsiya bo'lmadi**:
+
+```
+Failed to resolve import "@moysklad/money/currencies" from "src/app/(app)/sotuv/page.tsx"
+```
+
+`apps/web/vitest.config.ts` da satr-alias `'@moysklad/money' → …/src/index.ts` turgan. Vite
+satr-aliasni **prefiks** bo'yicha moslaydi, ya'ni `@moysklad/money/currencies` ni
+`…/src/index.ts/currencies` ga aylantirgan va resolve bo'lmagan. Oqibati: `@moysklad/money/currencies`
+import qiladigan **hech bir fayl** unit-testda render qilinmasdi — bu 9 fayl, jumladan
+**`/sotuv`, `/retail`, `retail/sessions/[id]`** va to'rtta POS dialogi. Ya'ni «POS qoplanmagan»
+holati faqat vaqt yetishmaganidan emas, **infratuzilma yo'l qo'ymaganidan** ham edi.
+
+**Tuzatildi:** kichik yo'l uchun alohida alias UMUMIY kalitdan **oldin** qo'yildi
+(`vitest.config.ts`, sababi izoh bilan). Bu **test-konfig** o'zgarishi — mahsulot xulqi emas.
+
+### 🟡 Kuzatuvlar (bug sifatida tuzatilmadi — alohida faza qarori)
+
+- **K-1 · Dialog tavsifi yo'q.** Uch POS oynasi (`Rasmiylashtirish` · `Qarz to'lovi` ·
+  `Kassadan chiqim`) `Dialog.Content` ni `Description`/`aria-describedby` siz beradi — Radix
+  har render'da konsolga ogohlantirish yozadi. Xulq buzilmagan; skrinrider foydalanuvchisi
+  uchun oynaning maqsadi aytilmaydi.
+- **K-2 · USD farq qatorida minus noto'g'ri joyda.** Smena yopishda so'm farqi
+  `-5 000,00 сум`, dollar farqi esa **`$-10.00`** (minus `$` dan KEYIN) — chunki qator
+  `${'$'}${(Number(x)/100).toFixed(2)}` bilan yig'iladi. Kosmetik, lekin ikki qator yonma-yon
+  turadi. Test hozirgi holatni **fakt sifatida** qulfladi (tavsiya sifatida emas — izoh bilan).
+- **K-3 · Narx maydoni bo'shatilsa ekran va hisob AJRALADI.** `updatePrice` buzuq/bo'sh
+  kiritmada `priceStr` ni saqlaydi-yu `priceMinor` ni **eski qiymatda** qoldiradi. Kassir narxni
+  o'chirsa maydon bo'sh ko'rinadi, qator summasi/foydasi esa eski narxda qoladi va
+  rasmiylashtirishda **aynan o'sha eski narx** ketadi. Bu — o'lchangan fakt, o'qib taxmin
+  qilingan emas: ikkita test aynan shuni qulfladi. Xavf past (kassir odatda ustiga yozadi),
+  lekin «ko'rgan narsang ketadigan narsa emas» klassiga tegishli ⇒ tuzatish MK33 dan keyin
+  alohida qarorga qoldirildi.
+
+### Qamrovga KIRMAGANI (halol qarz)
+
+- **Mijoz-ekran (CFD) tugmasi** — `BroadcastChannel` + `window.electronAPI` yo'llari
+  (jonli 2-oyna handshake'i). Unit muhitda mazmunli emas → Phase-2 (MK34).
+- **`cancelSale`** (jarayonda/tayyor chekni bekor qilish) — `ConfirmProvider` dialogi orqali;
+  yozilmadi, MK33 dan keyin qo'shilishi mumkin.
+- **Chop etish yo'llari** faqat mok darajasida (agent chaqirildimi) — real printer MK34.
+
+### Gate (to'liq)
+
+- `@moysklad/web typecheck` → **0 xato** (`noUncheckedIndexedAccess` uchun `at()` helperi bilan)
+- `pnpm lint:product` → **0 xato** (818 warning — siyosat bo'yicha ruxsat)
+- `pnpm i18n:gate` → o'tdi (UI matni qo'shilmadi — testlar mavjud kalitlarni O'QIYDI)
+- `@moysklad/web vitest` (to'liq) → **210 fayl / 3097 test**, shundan **1 yiqilgan — meniki EMAS**
+  (pastga qara). MK32 fayllari: **5/5 fayl, 77/77 test yashil.**
+- `apps/api` ga tegilmadi (o'zgarish faqat `apps/web`), shu sababdan api gate yugurtirilmadi.
+
+### ⚠️ Yiqilgan begona test (parallel sessiya, TEGILMADI)
+
+`src/__tests__/menejer-acceptance-screen.test.ts` → «klaviatura: ↓/↑, A, R, E» yiqilgan:
+`useHotkey('a'` topilmadi. **Sabab meniki emas va tekshirildi:**
+`git show HEAD:apps/web/src/app/(app)/menejer/page.tsx` da `useHotkey('a'` **BOR**, ishchi
+daraxt versiyasida esa **YO'Q** ⇒ MK14 sessiyasi ayni paytda shu faylni (+ `useHotkey.ts`,
+`use-hotkey-from-ui.test.tsx`, yangi `mk14-manager-qa.spec.ts`) qayta yozmoqda. CLAUDE.md §6.1
+bo'yicha tegilmadi.
+
+### Git holati (parallel sessiya)
+
+Sessiya boshida indeks **eskirgan** edi: `NEXT.md` (−112) va shu reja fayli (−89) STAGED
+o'chirish bo'lib turgan (parallel sessiyaning «HEAD + faqat mening hunk'larim» texnikasi
+qoldig'i). Shu sababdan commit **vaqtinchalik indeks** orqali qilindi (`GIT_INDEX_FILE`,
+`read-tree HEAD` + faqat o'z yo'llarim) — umumiy indeksga ham, ishchi daraxtga ham tegilmadi.
+`NEXT.md` uchun blob **HEAD + faqat mening yozuvim** sifatida qurildi (ishchi daraxtdagi
+parallel tahrirlar commit'ga TUSHMADI, lekin ishchi nusxada butun qoldi).
+
+### Keyingi qadam
+
+**MK33** — `page.tsx` (2216 satr) → `OpenShiftForm` / `ChekDetailPanel` / `SalesScreen`.
+Qabul mezoni: shu 77 test **bir harf o'zgarmagan holda** yashil qolishi.

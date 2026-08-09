@@ -1,0 +1,285 @@
+/**
+ * MK32 — «Cheklar» ro'yxati + `ChekDetailPanel` (qaytarish) xarakteristik
+ * testlari (kassa TZ §6.3, §11, §13.1).
+ *
+ * **Xulq O'ZGARTIRILMAYDI.** Eng qimmat shartnoma shu yerda: qaytariladigan
+ * naqd asl chekning **CHEGIRMALI** qator summasidan proporsional olinadi
+ * (`priceMinor × qty` EMAS — u mijoz to'lamagan pulni qaytarardi, FE-01), va
+ * ekranda ko'rinadigan raqam so'rovga ketadigani bilan bir xil formuladan
+ * chiqadi.
+ */
+
+import { api } from '@/lib/api-client';
+import { printReceiptViaAgent } from '@/lib/print-agent';
+import { renderWithProviders, screen, userEvent, waitFor } from '@/test-utils';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import SotuvPage from '../page';
+import { type Route, SALE_DETAIL, SALE_ROW, at, norm, router, salesRoutes } from './harness';
+
+vi.mock('@/lib/api-client', () => ({
+  api: { get: vi.fn(), post: vi.fn(), put: vi.fn(), patch: vi.fn(), delete: vi.fn() },
+}));
+
+vi.mock('@/lib/auth-store', () => ({
+  useAuth: () => ({
+    user: { id: 'u-1', name: 'Kassir Aliyev' },
+    accessToken: 't',
+    initialized: true,
+  }),
+  getAccessToken: () => 't',
+  refresh: async () => false,
+}));
+
+vi.mock('@/lib/print-agent', () => ({
+  printReceiptViaAgent: vi.fn(async () => ({ handled: true, ok: true })),
+  printPickingViaAgent: vi.fn(async () => ({ handled: true, printed: 1, skipped: 0, errors: 0 })),
+}));
+
+const LIST_ROW = SALE_ROW({
+  state: 'posted',
+  sumMinor: '1800000',
+  agent: { id: 'cp-1', name: 'Usta Vali' },
+});
+
+function chekRoutes(detail: Record<string, unknown> = {}, over: Route[] = []): Route[] {
+  return salesRoutes([
+    ...over,
+    { match: /limit=100/, value: { items: [LIST_ROW], total: 1 } },
+    { match: /^\/retail-sales\/[^/?]+$/, value: SALE_DETAIL(detail) },
+  ]);
+}
+
+/** «Cheklar» yorlig'ini ochib, birinchi chekni tanlaydi. */
+async function openChekDetail(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(await screen.findByRole('button', { name: /^Cheklar/ }));
+  await user.click(await screen.findByRole('button', { name: /Usta Vali/ }));
+  return await screen.findByText('CHEK-00001');
+}
+
+/** Qaytarish miqdori maydonlari (chap ustundagi qidiruvdan farqlanadi). */
+function refundQtyInputs(): HTMLElement[] {
+  return screen.getAllByRole('textbox').filter((el) => el.getAttribute('inputmode') === 'decimal');
+}
+
+beforeEach(() => {
+  vi.mocked(api.get).mockReset();
+  vi.mocked(api.post).mockReset();
+  vi.mocked(api.get).mockImplementation(router(chekRoutes()));
+  vi.mocked(api.post).mockResolvedValue({ ok: true });
+  vi.mocked(printReceiptViaAgent).mockClear();
+  window.open = vi.fn();
+});
+
+describe('Cheklar ro‘yxati', () => {
+  it('smenada chek yo‘q bo‘lsa — bo‘shlik matni', async () => {
+    vi.mocked(api.get).mockImplementation(
+      router(salesRoutes([{ match: /limit=100/, value: { items: [], total: 0 } }])),
+    );
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+
+    await user.click(await screen.findByRole('button', { name: /^Cheklar/ }));
+    expect(await screen.findByText(/Bu smenada hali sotuv yo.q/)).toBeInTheDocument();
+  });
+
+  it('chek qatori summa, kassir, mijoz va pozitsiyalar sonini ko‘rsatadi', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+
+    await user.click(await screen.findByRole('button', { name: /^Cheklar/ }));
+    const row = await screen.findByRole('button', { name: /Usta Vali/ });
+    expect(norm(row.textContent)).toContain('18 000,00 сум');
+    expect(norm(row.textContent)).toContain('Kassir Aliyev');
+    expect(norm(row.textContent)).toContain('2 tovar');
+  });
+});
+
+describe('ChekDetailPanel — ko‘rinish', () => {
+  it('chek raqami, holati, kassir, do‘kon va mijoz chiziladi', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    await openChekDetail(user);
+
+    expect(screen.getByText("To'langan")).toBeInTheDocument();
+    expect(screen.getByText('Markaziy do‘kon')).toBeInTheDocument();
+    // Mijoz nomi detalda ham turadi.
+    expect(screen.getAllByText('Usta Vali').length).toBeGreaterThan(0);
+  });
+
+  it('pozitsiya qatori miqdor × narx va qator chegirmasini ko‘rsatadi', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    await openChekDetail(user);
+
+    // Tovar nomi chap ustundagi setkada ham bor — «Tovarlar» kartasi ichida qidiramiz.
+    const card = screen.getByText('Tovarlar').parentElement as HTMLElement;
+    expect(norm(card.textContent)).toContain('Kabel 2×2.5');
+    expect(norm(card.textContent)).toContain('18 000,00 сум'); // chegirmali qator summasi
+    expect(norm(card.textContent)).toContain('2 × 10 000,00 сум');
+    expect(norm(card.textContent)).toContain('−10%');
+  });
+
+  it('to‘lov taqsimoti: nol bo‘lgan usul KO‘RSATILMAYDI', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    await openChekDetail(user);
+
+    expect(screen.getByText('Naqd')).toBeInTheDocument();
+    expect(screen.getByText('Karta')).toBeInTheDocument();
+    // `terminalAmountMinor: '0'` — qator umuman chizilmaydi.
+    expect(screen.queryByText('Terminal')).not.toBeInTheDocument();
+    expect(screen.getByText('Jami')).toBeInTheDocument();
+  });
+
+  it('«Chek» tugmasi agent orqali chop etadi (brauzer oynasi ochilmaydi)', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    await openChekDetail(user);
+
+    await user.click(screen.getByRole('button', { name: /Chek$/ }));
+    await waitFor(() => expect(printReceiptViaAgent).toHaveBeenCalledWith('s-1'));
+    expect(window.open).not.toHaveBeenCalled();
+  });
+
+  it('«‹» tugmasi ro‘yxatga qaytaradi', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    await openChekDetail(user);
+
+    await user.click(screen.getByRole('button', { name: '‹' }));
+    expect(screen.queryByText('CHEK-00001')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Usta Vali/ })).toBeInTheDocument();
+  });
+
+  it('to‘lanmagan chekda «Qaytarish» tugmasi YO‘Q', async () => {
+    vi.mocked(api.get).mockImplementation(router(chekRoutes({ state: 'ready' })));
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    await openChekDetail(user);
+
+    // «Tayyor» so'zi yorliqda ham bor — holat detal SARLAVHASIDA ekanini tekshiramiz.
+    const header = screen.getByText('CHEK-00001').parentElement as HTMLElement;
+    expect(norm(header.textContent)).toContain('Tayyor');
+    expect(screen.queryByRole('button', { name: '↩ Qaytarish' })).not.toBeInTheDocument();
+  });
+});
+
+describe('ChekDetailPanel — qaytarish', () => {
+  it('qaytarish rejimi to‘liq miqdor bilan ochiladi va summa CHEGIRMALIdan olinadi', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    await openChekDetail(user);
+
+    await user.click(screen.getByRole('button', { name: '↩ Qaytarish' }));
+
+    const inputs = refundQtyInputs();
+    expect(inputs).toHaveLength(1);
+    expect(at(inputs, 0)).toHaveValue('2');
+    // 2 dona to'liq qaytsa — chegirmali qator summasi (18 000), 20 000 EMAS.
+    const footer = screen.getByText('Qaytariladigan summa (naqd)').parentElement as HTMLElement;
+    expect(norm(footer.textContent)).toContain('18 000,00 сум');
+  });
+
+  it('qisman qaytarish summani proporsional kamaytiradi', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    await openChekDetail(user);
+
+    await user.click(screen.getByRole('button', { name: '↩ Qaytarish' }));
+    const input = at(refundQtyInputs(), 0);
+    await user.clear(input);
+    await user.type(input, '1');
+
+    const footer = screen.getByText('Qaytariladigan summa (naqd)').parentElement as HTMLElement;
+    expect(norm(footer.textContent)).toContain('9 000,00 сум');
+  });
+
+  it('sotilganidan KO‘P miqdor kiritib bo‘lmaydi — sotilganiga qisiladi', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    await openChekDetail(user);
+
+    await user.click(screen.getByRole('button', { name: '↩ Qaytarish' }));
+    const input = at(refundQtyInputs(), 0);
+    await user.clear(input);
+    await user.type(input, '5');
+
+    expect(input).toHaveValue('2');
+  });
+
+  it('miqdor bo‘sh — tasdiq tugmasi BLOKLANGAN (nol summa yuborilmaydi)', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    await openChekDetail(user);
+
+    await user.click(screen.getByRole('button', { name: '↩ Qaytarish' }));
+    await user.clear(at(refundQtyInputs(), 0));
+
+    expect(screen.getByRole('button', { name: /Qaytarishni tasdiqlash/ })).toBeDisabled();
+    expect(api.post).not.toHaveBeenCalled();
+  });
+
+  it('tasdiqlash — normallashtirilgan miqdor va EKRANDAGI summa yuboriladi', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    await openChekDetail(user);
+
+    await user.click(screen.getByRole('button', { name: '↩ Qaytarish' }));
+    await user.click(screen.getByRole('button', { name: /Qaytarishni tasdiqlash/ }));
+
+    await waitFor(() => expect(api.post).toHaveBeenCalled());
+    expect(api.post).toHaveBeenCalledWith('/retail-sales/s-1/refund', {
+      positions: [{ productId: 'p-1', quantity: '2' }],
+      cashAmountMinor: '1800000',
+      cardAmountMinor: '0',
+      // ⚠️ i18n-emas, ATAYLAB: hujjat izohi kassir tiliga bog‘lanmaydi.
+      description: 'POS qaytarish',
+    });
+  });
+
+  it('«Bekor qilish» qaytarish rejimidan chiqaradi', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    await openChekDetail(user);
+
+    await user.click(screen.getByRole('button', { name: '↩ Qaytarish' }));
+    expect(refundQtyInputs()).toHaveLength(1);
+
+    await user.click(screen.getByRole('button', { name: 'Bekor qilish' }));
+    expect(refundQtyInputs()).toHaveLength(0);
+    expect(screen.getByRole('button', { name: '↩ Qaytarish' })).toBeInTheDocument();
+  });
+
+  it('kasr miqdor yozib bo‘ladi — oraliq «1.» holati SAQLANADI (FE-02)', async () => {
+    vi.mocked(api.get).mockImplementation(
+      router(
+        chekRoutes({
+          positions: [
+            {
+              ...SALE_DETAIL().positions[0],
+              quantity: '2.5',
+              sumMinor: '2250000',
+            },
+          ],
+        }),
+      ),
+    );
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    await openChekDetail(user);
+
+    await user.click(screen.getByRole('button', { name: '↩ Qaytarish' }));
+    const input = at(refundQtyInputs(), 0);
+    await user.clear(input);
+    await user.type(input, '1.');
+
+    // Nuqta o'chib ketmaydi — og'irlik bilan sotilgan tovar qisman qaytadi.
+    expect(input).toHaveValue('1.');
+
+    await user.type(input, '5');
+    expect(input).toHaveValue('1.5');
+    const footer = screen.getByText('Qaytariladigan summa (naqd)').parentElement as HTMLElement;
+    // 22 500 × 1.5 / 2.5 = 13 500.
+    expect(norm(footer.textContent)).toContain('13 500,00 сум');
+  });
+});

@@ -22,6 +22,15 @@ export default defineConfig({
       // Mirror tsconfig.paths so vitest can resolve workspace
       // packages without requiring a separate "build" step.
       '@moysklad/ui': path.resolve(__dirname, '../../packages/design-system/src/index.ts'),
+      // Kichik yo'l (`/currencies`) UMUMIY kalitdan OLDIN turishi shart: satr-alias
+      // prefiks bo'yicha mos keladi, ya'ni `@moysklad/money` qoidasi yolg'iz qolsa
+      // `@moysklad/money/currencies` ni `…/src/index.ts/currencies` ga aylantiradi
+      // va import umuman resolve bo'lmaydi. Shu sabab `/sotuv`, `/retail` va POS
+      // dialoglarini HECH BIR test render qila olmasdi (MK32 da aniqlandi).
+      '@moysklad/money/currencies': path.resolve(
+        __dirname,
+        '../../packages/money/src/currencies.ts',
+      ),
       '@moysklad/money': path.resolve(__dirname, '../../packages/money/src/index.ts'),
     },
   },

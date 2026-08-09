@@ -305,6 +305,51 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-09ze (REJA-MENEJER-KASSA **MK32** — POS xulq-testlari qoplamasi,
+> `sotuv/page.tsx` **bo'linishidan OLDIN**) — 6 yangi fayl + `vitest.config.ts`.**
+>
+> **`apps/web/src/app/(app)/sotuv/page.tsx` (2216 satr) ga bitta satr ham tegilmadi** —
+> MK32 xarakteristik faza, butun qiymati «kod o'zgarmagan holda xulq qulflandi» degan gapda.
+> `__tests__/` da **77 test / 5 fayl, hammasi yashil**: smena ochish (7) · savat + narx
+> tasmalari + chegirma (24) · omborchiga yuborish va aralash to'lov (14) · smena yorlig'i:
+> kirim/chiqim, qarz to'lovi, kassadan chiqim, smena yopish + dollar sanog'i (17) ·
+> chek detali va qaytarish (15).
+>
+> **Testlar sahifa ILDIZIDAN kiradi** (`SotuvPage`), ichki komponentlardan emas — ular
+> eksport qilinmagan va eksport qo'shish MK32 ning «tegmaslik» shartini buzardi. Buning
+> **MK33 uchun to'g'ridan-to'g'ri foydasi bor:** sahifa uch komponentga bo'linganda bu
+> testlar **bir harf o'zgarmasdan** yashil qolishi kerak — MK33 ning yagona qabul mezoni shu.
+>
+> 🔴 **B-1 (tuzatildi, test-konfig):** `vitest.config.ts` dagi satr-alias
+> `@moysklad/money` **prefiks** bo'yicha mos kelib, `@moysklad/money/currencies` ni
+> `…/src/index.ts/currencies` ga aylantirardi ⇒ shu kichik yo'lni import qiladigan **9 fayl**
+> (jumladan **`/sotuv`, `/retail`, `retail/sessions/[id]`** va 4 POS dialogi) **umuman
+> render qilinmasdi**. Ya'ni «POS qoplanmagan» holati vaqt yetishmasligidan emas,
+> infratuzilma yo'l qo'ymaganidan ham edi. Kichik yo'l uchun alias umumiysidan OLDIN qo'yildi.
+>
+> 🟡 **Kuzatuvlar (tuzatilmadi, hisobotda K-1…K-3):** (a) uch POS dialogida
+> `Dialog.Description` yo'q; (b) smena yopishda dollar farqi `$-10.00` — minus `$` dan
+> KEYIN, so'm qatoridan farqli; (c) **narx maydoni bo'shatilsa ekran va hisob ajraladi** —
+> `updatePrice` buzuq kiritmada `priceMinor` ni ESKI qiymatda qoldiradi, ya'ni bo'sh maydon
+> ko'rinsa ham rasmiylashtirishga eski narx ketadi (ikkita test bilan **o'lchandi**, o'qib
+> taxmin qilinmadi). Tuzatish MK33 dan keyingi alohida qarorga.
+>
+> **Gate:** web typecheck 0 · `lint:product` 0 · `i18n:gate` o'tdi · to'liq web vitest
+> **210 fayl / 3097 test**. **1 yiqilgan test MENIKI EMAS:**
+> `menejer-acceptance-screen.test.ts` — `useHotkey('a'` HEAD'da BOR, ishchi daraxtda YO'Q
+> ⇒ MK14 sessiyasi `menejer/page.tsx` + `useHotkey.ts` ni ayni paytda qayta yozmoqda
+> (§6.1 bo'yicha tegilmadi). **Phase-1: strukturaviy + unit-tasdiqlangan, browser-smoke YO'Q.**
+>
+> ⚠️ **Git:** sessiya boshida indeks eskirgan edi (`NEXT.md` −112, reja fayli −89 STAGED
+> o'chirish — parallel sessiya qoldig'i). Commit **vaqtinchalik indeks** orqali qilindi
+> (`GIT_INDEX_FILE` + `read-tree HEAD` + faqat o'z yo'llarim); umumiy indeksga va ishchi
+> daraxtga tegilmadi. Shu NEXT.md yozuvi commit'ga **HEAD + faqat mening bloki** sifatida
+> tushdi — ishchi nusxadagi parallel tahrirlar joyida qoldi.
+>
+> **⏭️ Keyingi:** **MK33** — `sotuv/page.tsx` → `OpenShiftForm` (~130) / `ChekDetailPanel`
+> (~280) / `SalesScreen` (~1540). Sof refactor; 77 test o'zgarmagan holda yashil qolishi shart.
+
+
 > **🚀 2026-08-09 — ✅ DEPLOYED (erp.sherset.uz / sherset-v2): `4944583 → d647250a`.**
 > Box **82 commit orqada** edi (fast-forward, diverging YO'Q) — Faza 32/33 va `q1–q7` ning
 > HAMMASI shu deploy bilan chiqdi, ya'ni yuqoridagi entry'lardagi «⏳ DEPLOY QILINMAGAN»
