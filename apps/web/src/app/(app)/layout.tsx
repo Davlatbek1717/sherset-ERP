@@ -478,6 +478,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     // (o'nlik xatosi, nol narx, poldan past). Narx nazoratidan keyin ataylab:
     // ikkalasi narx haqida, lekin bu yerda sub'ekt sotilgan QATOR.
     { key: 'price_errors', label: tMenejer('price_errors'), href: '/menejer/xato-narx' },
+    // 4M TZ §8 (MK12) — xarajat byudjeti: modda × oy, reja/fakt/og'ish.
+    // Narx bloklaridan keyin ataylab: bu yerda sub'ekt sotuv emas, PUL CHIQISHI.
+    // BLOKLAMAYDI — xarajat tasdiqlanmaydi, faqat ko'rinadi.
+    { key: 'budget', label: tMenejer('budget'), href: '/menejer/byudjet' },
     // 4M §7 (M-Q7) — «menejerni kim nazorat qiladi»: egaga haftalik xulosa.
     { key: 'weekly_summary', label: tMenejer('weekly_summary'), href: '/menejer/haftalik' },
     // 4M TZ §2.4/§0.2 (MK09) — «bu raqamga qanchalik ishonish mumkin».

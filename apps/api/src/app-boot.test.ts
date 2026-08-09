@@ -104,6 +104,9 @@ describe('marshrutlar to`qnashmaydi (FST_ERR_DUPLICATED_ROUTE)', () => {
     // qo'riqchisi `BranchModule` AppModule'ga ulanganini alohida tekshiradi;
     // bu qator esa route'ning O'ZI skanerga ko'rinishini qulflaydi.
     expect(routes.some((r) => r.path === 'admin/branches')).toBe(true);
+    // MK12 — xarajat byudjeti. Yangi modul: route skanerga ko'rinadi, moduli
+    // esa pastdagi yetim-modul qo'riqchisi orqali AppModule'da tasdiqlanadi.
+    expect(routes.some((r) => r.path === 'expense-budget')).toBe(true);
   });
 
   it('bitta `metod + yo`l` juftligi FAQAT bir marta e`lon qilingan', () => {

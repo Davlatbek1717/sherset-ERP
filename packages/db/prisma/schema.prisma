@@ -151,6 +151,7 @@ model Account {
   uoms                           Uom[]
   taxRates                       TaxRate[]
   expenseItems                   ExpenseItem[]
+  expenseBudgets                 ExpenseBudget[]
   customEntities                 CustomEntity[]
   discounts                      Discount[]
   projects                       Project[]
@@ -449,6 +450,8 @@ model Employee {
   editedManagerRuleConfigs   ManagerRuleConfig[]        @relation("ManagerRuleConfigEditor")
   managerWorkItemsAbout      ManagerWorkItem[]          @relation("ManagerWorkItemSubject")
   resolvedManagerWorkItems   ManagerWorkItem[]          @relation("ManagerWorkItemResolver")
+  createdExpenseBudgets      ExpenseBudget[]            @relation("ExpenseBudgetCreator")
+  editedExpenseBudgets       ExpenseBudget[]            @relation("ExpenseBudgetEditor")
   retailDrawerOutRecipient   RetailDrawerCashOut[]      @relation("RetailDrawerOutRecipient")
   ownedRetailSalesReturns    RetailSalesReturn[]        @relation("RetailSalesReturnOwner")
   ownedProcessingProcesses   ProcessingProcess[]        @relation("ProcessingProcessOwner")
@@ -2527,9 +2530,56 @@ model ExpenseItem {
   account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
   /// Shu modda bo'yicha kassadan chiqqan xarajatlar (kassa TZ §8.2).
   drawerCashOuts RetailDrawerCashOut[] @relation("RetailDrawerOutExpenseItem")
+  /// Modda × oy byudjeti (MK12 / 4M TZ §8).
+  budgets        ExpenseBudget[]       @relation("ExpenseBudgetItem")
 
   @@unique([accountId, code])
   @@map("expense_items")
+}
+
+/// MK12 / 4M TZ §8 — xarajat byudjeti: **modda × oy** rejasi.
+///
+/// Bu jadval FAQAT REJANI saqlaydi. Fakt hech qachon bu yerga yozilmaydi —
+/// u mavjud xarajat hujjatlaridan (`cash_out` · `payments_out` ·
+/// `retail_drawer_cash_out` `kind='expense'`) o'qib hisoblanadi
+/// (`expense-budget/expense-fact.ts`). Fakt uchun alohida ustun ochilsa, u
+/// hujjatlar tahrirlanganda jimgina eskirardi — bu repoda allaqachon bo'lgan
+/// bug-klass.
+///
+/// Reja YO'QLIGI = qator YO'QLIGI (`planned_minor = 0` EMAS). «Reja
+/// qo'yilmagan» va «reja nol» — ikki boshqa javob; ikkinchisi og'ishni
+/// hisoblatadi, birinchisi hisoblatmaydi.
+model ExpenseBudget {
+  id            String @id @default(uuid()) @db.Uuid
+  accountId     String @map("account_id") @db.Uuid
+  expenseItemId String @map("expense_item_id") @db.Uuid
+
+  /// Oy YORLIG'I "YYYY-MM". Instant EMAS — hujjatlar `moment` bo'yicha
+  /// `monthInstantBounds` (Toshkent) bilan filtrlanadi.
+  yearMonth    String  @map("year_month") @db.VarChar(7)
+  /// Reja summasi, minor (tiyin). Manfiy bo'la olmaydi (CHECK).
+  plannedMinor BigInt  @map("planned_minor")
+  currency     String  @default("UZS") @db.VarChar(3)
+  note         String?
+
+  createdById String? @map("created_by_id") @db.Uuid
+  updatedById String? @map("updated_by_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  // Restrict: rejasi bor modda o'chirilsa byudjet «moddasiz» qolardi va
+  // og'ish jimgina yo'qolardi (`RetailDrawerOutExpenseItem` bilan bir xil sabab).
+  expenseItem ExpenseItem @relation("ExpenseBudgetItem", fields: [expenseItemId], references: [id], onDelete: Restrict)
+  createdBy   Employee?   @relation("ExpenseBudgetCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy   Employee?   @relation("ExpenseBudgetEditor", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  // Bir modda + bir oy = BITTA reja. Ikki qator bo'lsa «qaysi reja?» degan
+  // savolga javob yo'q va og'ish tanlovga qarab o'zgarardi.
+  @@unique([accountId, expenseItemId, yearMonth])
+  @@index([accountId, yearMonth])
+  @@map("expense_budgets")
 }
 
 /// Custom dictionary — a user-created lookup set. moysklad lets users

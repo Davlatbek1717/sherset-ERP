@@ -45,6 +45,7 @@ import { EdoModule } from './modules/edo/edo.module.js';
 import { EmailModule } from './modules/email/email.module.js';
 import { EnterModule } from './modules/enter/enter.module.js';
 import { ExchangeRateModule } from './modules/exchange-rate/exchange-rate.module.js';
+import { ExpenseBudgetModule } from './modules/expense-budget/expense-budget.module.js';
 import { ExpenseItemModule } from './modules/expense-item/expense-item.module.js';
 import { FactureInModule } from './modules/facture-in/facture-in.module.js';
 import { FactureOutModule } from './modules/facture-out/facture-out.module.js';
@@ -233,6 +234,10 @@ import { PrismaModule } from './prisma/prisma.module.js';
     UomModule,
     TaxRateModule,
     ExpenseItemModule,
+    // MK12 — xarajat byudjeti (modda × oy). Moddalar ma'lumotnomasining
+    // yonida: u reja qo'yiladigan katalog, bu esa o'sha katalog ustidagi oylik
+    // reja/fakt qatlami.
+    ExpenseBudgetModule,
     CustomEntityModule,
     RegionModule,
     TrackingCodeModule,
