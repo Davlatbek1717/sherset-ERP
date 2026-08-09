@@ -22,6 +22,8 @@ function makeDeps() {
       employeeOffboarding: { findFirst: vi.fn(), update: vi.fn() },
       cashierSession: { count: vi.fn() },
       employeeDailyKpi: { count: vi.fn() },
+      // MK05 — jihoz reyestri: ochiq biriktirishlar soni `auto` bandni yopadi.
+      equipmentAssignment: { count: vi.fn() },
       $transaction: vi.fn(async (arg: unknown) =>
         typeof arg === 'function' ? (arg as (t: unknown) => unknown)(tx) : arg,
       ),
@@ -50,12 +52,13 @@ describe('OffboardingService.complete — sessiya va ruxsat uzilishi (AUTH-05)',
     } as never);
     deps.prisma.client.cashierSession.count.mockResolvedValue(0 as never);
     deps.prisma.client.employeeDailyKpi.count.mockResolvedValue(0 as never);
+    // Qaytarilmagan jihoz yo'q — MK05 dan keyin bu AUTO band.
+    deps.prisma.client.equipmentAssignment.count.mockResolvedValue(0 as never);
     deps.prisma.client.employeeOffboarding.findFirst.mockResolvedValue({
       id: 'ob1',
       completedAt: null,
       items: {
         [OFFBOARDING_ITEM.cashHandedOver]: { doneAt: '2026-08-09T00:00:00.000Z', byId: 'm1' },
-        [OFFBOARDING_ITEM.equipmentReturned]: { doneAt: '2026-08-09T00:00:00.000Z', byId: 'm1' },
       },
     } as never);
   });
@@ -80,6 +83,16 @@ describe('OffboardingService.complete — sessiya va ruxsat uzilishi (AUTH-05)',
   it('yakunlangach ruxsat keshi tozalanadi', async () => {
     await service.complete('acc1', 'e1');
     expect(deps.permissions.invalidate).toHaveBeenCalledWith('e1');
+  });
+
+  it('QAYTARILMAGAN JIHOZ bo`lsa yakunlanmaydi va arxivlanmaydi (MK05)', async () => {
+    // Reyestrdagi ochiq biriktirish — bo'shatishning BLOKLOVCHI bandi.
+    // Ilgari bu band qo'lda tasdiq edi, ya'ni ketayotgan odamdagi telefon
+    // «topshirildi» deb belgilanib, tizim uni umuman ko'rmasdi.
+    deps.prisma.client.equipmentAssignment.count.mockResolvedValue(2 as never);
+    await expect(service.complete('acc1', 'e1')).rejects.toThrow(/jihoz/i);
+    expect(deps.tx.employee.update).not.toHaveBeenCalled();
+    expect(deps.tokens.revokeAllForEmployee).not.toHaveBeenCalled();
   });
 
   it('allaqachon yakunlangan bo`lsa qayta revoke qilmaydi (idempotent)', async () => {

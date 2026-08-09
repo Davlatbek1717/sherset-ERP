@@ -434,6 +434,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const hrSubNav: SubNavItem[] = [
     { key: 'home', label: tHr('home'), href: '/hr' },
     { key: 'employees', label: tHr('employees'), href: '/hr/employees' },
+    // MK05 — jihoz reyestri (4M TZ §6.4): «kimda nima turibdi» manbai.
+    { key: 'equipment', label: tHr('equipment'), href: '/hr/equipment' },
     { key: 'attendance', label: tHr('attendance'), href: '/hr/attendance' },
     { key: 'tasks', label: tHr('tasks'), href: '/hr/tasks' },
     { key: 'drivers', label: tHr('drivers'), href: '/hr/drivers/live' },

@@ -8,7 +8,8 @@
  *   • **Telegram bog'lami** — ketgan odam kompaniya xabarlarini olishda davom etadi;
  *   • **ochiq kassa smenasi** — yashiqdagi pul hech kimning javobgarligida emas;
  *   • **qabul qilinmagan KPI kunlari** — oylik abadiy bloklangan holda qoladi;
- *   • **jihoz** (telefon, skaner, kalit) — tizim bilmaydi, hech kim so'ramaydi.
+ *   • **jihoz** (telefon, skaner, kalit) — MK05 gacha tizim bilmasdi, hech kim
+ *     so'ramasdi; endi reyestrdagi ochiq biriktirish ko'rsatadi.
  *
  * YECHIM: bo'shatish — bir bosishlik bayroq emas, **ro'yxat**. Ro'yxat
  * tugamaguncha xodim `arxivlangan` holatiga o'tmaydi.
@@ -33,7 +34,14 @@ export const OFFBOARDING_ITEM = {
   rolesRevoked: 'roles_revoked',
   /** Kassa/naqd topshirilgan (qo'lda tasdiq — tizim yashiqni ko'rmaydi). */
   cashHandedOver: 'cash_handed_over',
-  /** Jihoz topshirilgan: telefon, skaner, kalit (qo'lda tasdiq). */
+  /**
+   * Jihoz qaytarilgan: telefon, skaner, kalit.
+   *
+   * **MK05 dan boshlab `auto`** — jihoz reyestri (`Equipment` +
+   * `EquipmentAssignment`) paydo bo'ldi, ya'ni «kimda nima turibdi» tizimga
+   * MA'LUM. Ilgari qo'lda tasdiq edi: reyestrsiz tizim hech narsa bilmasdi
+   * va katakcha faqat odamning so'ziga tayanardi.
+   */
   equipmentReturned: 'equipment_returned',
 } as const;
 
@@ -98,9 +106,9 @@ export const OFFBOARDING_ITEMS: ReadonlyArray<OffboardingItemDef> = [
   },
   {
     key: OFFBOARDING_ITEM.equipmentReturned,
-    kind: ITEM_KIND.manual,
+    kind: ITEM_KIND.auto,
     blocking: true,
-    label: 'Jihoz topshirilgan (telefon, skaner, kalit)',
+    label: 'Jihoz qaytarilgan (telefon, skaner, kalit)',
   },
 ];
 
@@ -116,6 +124,8 @@ export interface AutoFacts {
   openShiftCount: number;
   pendingKpiDays: number;
   roleCount: number;
+  /** Qaytarilmagan (ochiq biriktirishdagi) jihozlar soni — MK05 reyestri. */
+  openEquipmentCount: number;
 }
 
 /** Qo'lda tasdiqlangan bandlar. */
@@ -168,6 +178,11 @@ function autoStatus(
       return {
         done: f.roleCount === 0,
         detail: f.roleCount > 0 ? `${f.roleCount} ta rol` : null,
+      };
+    case OFFBOARDING_ITEM.equipmentReturned:
+      return {
+        done: f.openEquipmentCount === 0,
+        detail: f.openEquipmentCount > 0 ? `${f.openEquipmentCount} ta jihoz qaytarilmagan` : null,
       };
     default:
       return { done: false, detail: null };

@@ -39,7 +39,7 @@ export class OffboardingService {
    * qayta ochilgan smenani ko'rinmas qilardi.
    */
   private async autoFacts(accountId: string, employeeId: string): Promise<AutoFacts> {
-    const [emp, openShiftCount, pendingKpiDays] = await Promise.all([
+    const [emp, openShiftCount, pendingKpiDays, openEquipmentCount] = await Promise.all([
       this.prisma.client.employee.findFirst({
         where: { id: employeeId, accountId },
         select: { telegramChatId: true, hrRoles: true },
@@ -52,6 +52,11 @@ export class OffboardingService {
       this.prisma.client.employeeDailyKpi.count({
         where: { accountId, employeeId, state: { in: ['pending', 'stale', 'computed'] } },
       }),
+      // MK05 — jihoz reyestri: ochiq (qaytarilmagan) biriktirishlar. Shu
+      // manba tufayli band QO'LDA tasdiqdan `auto` ga o'tdi.
+      this.prisma.client.equipmentAssignment.count({
+        where: { accountId, employeeId, returnedAt: null },
+      }),
     ]);
     if (!emp) throw new NotFoundException('Xodim topilmadi');
     return {
@@ -59,6 +64,7 @@ export class OffboardingService {
       openShiftCount,
       pendingKpiDays,
       roleCount: emp.hrRoles.length,
+      openEquipmentCount,
     };
   }
 

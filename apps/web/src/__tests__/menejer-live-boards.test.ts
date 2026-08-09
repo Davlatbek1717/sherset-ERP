@@ -86,7 +86,11 @@ describe('manba: BE yopiq ro`yxatlari o`qildi (test bo`sh emas)', () => {
     expect(LIVE_KINDS).toEqual(['shift', 'attendance', 'trip', 'picking']);
     expect(ATTENTIONS).toEqual(['alert', 'info', 'ok']);
     expect(TITLE_KEYS.length).toBeGreaterThanOrEqual(8);
-    expect(DUTY_KINDS.length).toBe(4);
+    // Aniq son EMAS: `DUTY` o'sib boradi (MK05 jihoz, MK08 qabul qilinmagan
+    // smena). Muhimi — ro'yxat bo'sh emas va har turi tarjima qilinadi
+    // (quyidagi `duty_*` tekshiruvi shuni qulflaydi).
+    expect(DUTY_KINDS.length).toBeGreaterThanOrEqual(4);
+    expect(DUTY_KINDS).toContain('equipment_out');
   });
 });
 
@@ -198,13 +202,13 @@ describe('TZ §6.4 — javobgarlik taxtasi', () => {
     expect(dutiesPageSrc).toContain('duties');
   });
 
-  it('JIHOZ bloki YO`Q — reyestr mavjud emas', () => {
-    // «0 ta jihoz» menejerni yo'q ma'lumotga ishontirardi: ekran «hammasi
-    // topshirilgan» deb turardi, aslida hech kim tekshirmagan (MK05 gacha).
-    // Tekshiruv CHIZILADIGAN kod ustidan — nega yo'qligini tushuntirgan
-    // izoh saqlanishi KERAK.
-    expect(dutiesCode).not.toMatch(/equipment/i);
-    expect(dutiesCode).not.toMatch(/jihoz/i);
+  it('JIHOZ bloki BOR — reyestr paydo bo`ldi (MK05)', () => {
+    // MK03'da bu qulf teskari edi («equipment so'zi UMUMAN bo'lmasin»):
+    // reyestrsiz «0 ta jihoz» menejerni yo'q ma'lumotga ishontirardi.
+    // MK05 reyestrni qo'shdi, ya'ni son endi O'LCHANGAN — qulf AYNAN shu
+    // sababdan ag'darildi (jimgina o'chirilmadi).
+    expect(DUTY_KINDS).toContain('equipment_out');
+    expect(dutiesCode).toContain('equipment_out');
   });
 
   it('ro`yxat to`liq emasligi ekranda OCHIQ yozilgan', () => {

@@ -16,11 +16,15 @@ const CLEAN: AutoFacts = {
   openShiftCount: 0,
   pendingKpiDays: 0,
   roleCount: 0,
+  openEquipmentCount: 0,
 };
 
+/**
+ * MK05 dan keyin QO'LDA tasdiq talab qiladigan YAGONA band — kassa/naqd.
+ * Jihoz `auto` ga o'tdi: reyestr paydo bo'ldi, ya'ni tizim biladi.
+ */
 const ALL_MANUAL = {
   [OFFBOARDING_ITEM.cashHandedOver]: { doneAt: new Date(2026, 7, 6), byId: 'm1' },
-  [OFFBOARDING_ITEM.equipmentReturned]: { doneAt: new Date(2026, 7, 6), byId: 'm1' },
 };
 
 describe('ro`yxat tarkibi', () => {
@@ -36,19 +40,22 @@ describe('ro`yxat tarkibi', () => {
 
   it('tizim biladigan bandlar AUTO', () => {
     // Telegram, smena, KPI kunlari, rollar — hammasini tizim ko'radi.
+    // MK05 dan keyin JIHOZ ham shu ro'yxatda: reyestr paydo bo'ldi.
     for (const k of [
       OFFBOARDING_ITEM.telegramUnbound,
       OFFBOARDING_ITEM.shiftsClosed,
       OFFBOARDING_ITEM.kpiDaysClosed,
       OFFBOARDING_ITEM.rolesRevoked,
+      OFFBOARDING_ITEM.equipmentReturned,
     ]) {
       expect(itemDef(k)?.kind).toBe(ITEM_KIND.auto);
     }
   });
 
-  it('jismoniy narsalar QO`LDA', () => {
+  it('tizim KO`RMAYDIGAN narsa QO`LDA — faqat kassa/naqd', () => {
+    // Yashiqdagi pulni tizim sanamaydi; jihozni esa MK05 dan keyin biladi.
     expect(itemDef(OFFBOARDING_ITEM.cashHandedOver)?.kind).toBe(ITEM_KIND.manual);
-    expect(itemDef(OFFBOARDING_ITEM.equipmentReturned)?.kind).toBe(ITEM_KIND.manual);
+    expect(OFFBOARDING_ITEMS.filter((i) => i.kind === ITEM_KIND.manual)).toHaveLength(1);
   });
 
   it('noma`lum kalit → null', () => {
@@ -65,9 +72,15 @@ describe('canMarkManually — o`zini aldashga yo`l yo`q', () => {
     expect(canMarkManually(OFFBOARDING_ITEM.rolesRevoked)).toBe(false);
   });
 
+  it('JIHOZ bandi endi qo`lda belgilanmaydi (MK05)', () => {
+    // Ilgari qo'lda edi: reyestr yo'q edi, ya'ni tizim hech narsa bilmasdi.
+    // Reyestr paydo bo'lgach, «topshirdim» deb belgilash — qaytarilmagan
+    // telefonni ko'rinmas qilardi.
+    expect(canMarkManually(OFFBOARDING_ITEM.equipmentReturned)).toBe(false);
+  });
+
   it('QO`LDA bandni belgilash mumkin', () => {
     expect(canMarkManually(OFFBOARDING_ITEM.cashHandedOver)).toBe(true);
-    expect(canMarkManually(OFFBOARDING_ITEM.equipmentReturned)).toBe(true);
   });
 
   it('noma`lum kalit rad etiladi', () => {
@@ -95,6 +108,30 @@ describe('evaluateItems — auto bandlar HAR SAFAR qayta tekshiriladi', () => {
     const k = items.find((i) => i.key === OFFBOARDING_ITEM.kpiDaysClosed);
     expect(k?.done).toBe(false);
     expect(k?.detail).toContain('5');
+  });
+
+  it('qaytarilmagan jihoz bo`lsa band ochiq va SONI ko`rsatiladi (MK05)', () => {
+    const items = evaluateItems({ ...CLEAN, openEquipmentCount: 2 }, {});
+    const e = items.find((i) => i.key === OFFBOARDING_ITEM.equipmentReturned);
+    expect(e?.done).toBe(false);
+    expect(e?.detail).toContain('2');
+  });
+
+  it('reyestrda jihozi yo`q xodimda band YOPIQ', () => {
+    // Reyestr bo'sh bo'lsa ham javob halol: «bu odamda ochiq biriktirish
+    // yo'q» — bu O'LCHANGAN fakt, taxmin emas.
+    const items = evaluateItems(CLEAN, {});
+    expect(items.find((i) => i.key === OFFBOARDING_ITEM.equipmentReturned)?.done).toBe(true);
+  });
+
+  it('jihoz bandi QO`LDA tasdiq bilan yopilmaydi', () => {
+    // Eski (MK05 gacha yozilgan) qo'lda tasdiq JSON'da qolgan bo'lishi
+    // mumkin — u endi hisobga OLINMAYDI, faqat fakt.
+    const items = evaluateItems(
+      { ...CLEAN, openEquipmentCount: 1 },
+      { [OFFBOARDING_ITEM.equipmentReturned]: { doneAt: new Date(2026, 7, 6), byId: 'm1' } },
+    );
+    expect(items.find((i) => i.key === OFFBOARDING_ITEM.equipmentReturned)?.done).toBe(false);
   });
 
   it('rollar qolgan bo`lsa band ochiq', () => {
@@ -136,16 +173,26 @@ describe('offboardingProgress — arxivlash sharti', () => {
   });
 
   it('bitta qo`lda band ochiq bo`lsa ham MUMKIN EMAS', () => {
-    const p = offboardingProgress(CLEAN, {
-      [OFFBOARDING_ITEM.cashHandedOver]: { doneAt: new Date(), byId: null },
-    });
+    const p = offboardingProgress(CLEAN, {});
+    expect(p.canArchive).toBe(false);
+    expect(p.blockers.map((b) => b.key)).toEqual([OFFBOARDING_ITEM.cashHandedOver]);
+  });
+
+  it('QAYTARILMAGAN JIHOZ bo`lsa ro`yxat yopilmaydi (MK05)', () => {
+    const p = offboardingProgress({ ...CLEAN, openEquipmentCount: 1 }, ALL_MANUAL);
     expect(p.canArchive).toBe(false);
     expect(p.blockers.map((b) => b.key)).toEqual([OFFBOARDING_ITEM.equipmentReturned]);
   });
 
   it('bo`sh holatda hamma band bloklaydi', () => {
     const p = offboardingProgress(
-      { telegramChatId: 'x', openShiftCount: 1, pendingKpiDays: 1, roleCount: 1 },
+      {
+        telegramChatId: 'x',
+        openShiftCount: 1,
+        pendingKpiDays: 1,
+        roleCount: 1,
+        openEquipmentCount: 1,
+      },
       {},
     );
     expect(p.canArchive).toBe(false);

@@ -29,14 +29,13 @@ export class LiveStatusService {
   /**
    * Javobgarlik — «kimda nima qolgan» (4M.4).
    *
-   * ⚠️ **Jihoz bu yerda YO'Q**: tizimda jihoz reyestri umuman yo'q, kimda
-   * nima borligini hech qayer bilmaydi. «0 ta jihoz» deb ko'rsatish
-   * menejerni yo'q ma'lumotga ishontirardi — ekran «hammasi topshirilgan»
-   * deb turardi, aslida hech kim tekshirmagan. Jihoz faqat bo'shatish
-   * ro'yxatida, qo'lda tasdiq sifatida.
+   * **Jihoz MK05 dan boshlab shu yerda**: reyestr (`Equipment` +
+   * `EquipmentAssignment`) paydo bo'ldi, ya'ni son endi O'LCHANGAN —
+   * ochiq (qaytarilmagan) biriktirishlar. MK03'da bu blok ataylab yo'q edi:
+   * manbasiz «0 ta jihoz» menejerni yo'q ma'lumotga ishontirardi.
    */
   async accountability(accountId: string) {
-    const [shifts, handovers, picking, kpiPending] = await Promise.all([
+    const [shifts, handovers, picking, kpiPending, equipment] = await Promise.all([
       this.prisma.client.cashierSession.findMany({
         where: { accountId, state: 'open' },
         select: {
@@ -61,6 +60,13 @@ export class LiveStatusService {
         where: { accountId, state: { in: ['pending', 'stale', 'computed'] } },
         _count: { _all: true },
       }),
+      // MK05 — qaytarilmagan jihoz: OCHIQ biriktirish qatorlari (jihozdagi
+      // `status` ustuni emas — u qo'lda tahrirdan buzilgan bo'lishi mumkin).
+      this.prisma.client.equipmentAssignment.groupBy({
+        by: ['employeeId'],
+        where: { accountId, returnedAt: null },
+        _count: { _all: true },
+      }),
     ]);
 
     // Xodim → yig'ilgan faktlar.
@@ -72,6 +78,7 @@ export class LiveStatusService {
       pendingHandoverMinor: bigint;
       pickingCount: number;
       pendingKpiDays: number;
+      openEquipmentCount: number;
     };
     const byEmp = new Map<string, Acc>();
     const at = (id: string, name?: string | null): Acc => {
@@ -88,6 +95,7 @@ export class LiveStatusService {
         pendingHandoverMinor: 0n,
         pickingCount: 0,
         pendingKpiDays: 0,
+        openEquipmentCount: 0,
       };
       byEmp.set(id, fresh);
       return fresh;
@@ -112,6 +120,9 @@ export class LiveStatusService {
     }
     for (const k of kpiPending) {
       at(k.employeeId).pendingKpiDays += k._count._all;
+    }
+    for (const e of equipment) {
+      at(e.employeeId).openEquipmentCount += e._count._all;
     }
 
     // Ismlari yo'q xodimlarni bitta so'rovda to'ldiramiz.

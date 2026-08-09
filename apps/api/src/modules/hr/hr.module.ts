@@ -10,6 +10,7 @@ import { HrDashboardModule } from './hr-dashboard/hr-dashboard.module.js';
 import { HrDepartmentModule } from './hr-department/hr-department.module.js';
 import { HrEmployeePermissionModule } from './hr-employee-permission/hr-employee-permission.module.js';
 import { HrEmployeeModule } from './hr-employee/hr-employee.module.js';
+import { HrEquipmentModule } from './hr-equipment/hr-equipment.module.js';
 import { HrEventsModule } from './hr-events/hr-events.module.js';
 import { HrKpiModule } from './hr-kpi/hr-kpi.module.js';
 import { HrMessagesModule } from './hr-messages/hr-messages.module.js';
@@ -57,6 +58,7 @@ import { HrWebsocketModule } from './hr-websocket/hr-websocket.module.js';
     AttendanceGeoModule,
     DriverTrackingModule,
     HrEmployeeModule,
+    HrEquipmentModule,
     HrEmployeePermissionModule,
     HrRoleModule,
     HrDepartmentModule,

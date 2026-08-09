@@ -10,6 +10,7 @@ const EMPTY: DutyInput = {
   pendingHandoverMinor: 0n,
   pickingCount: 0,
   pendingKpiDays: 0,
+  openEquipmentCount: 0,
 };
 
 describe('employeeDuties', () => {
@@ -58,6 +59,34 @@ describe('employeeDuties', () => {
     });
     expect(d.totalCashMinor).toBe(800_000n);
     expect(d.totalCount).toBe(17);
+  });
+
+  it('qaytarilmagan JIHOZ alohida qator (MK05 reyestri)', () => {
+    // MK03'da bu qator ATAYLAB yo'q edi: reyestr bo'lmagani uchun «0 ta
+    // jihoz» yo'q ma'lumotga ishontirardi. Endi son O'LCHANGAN.
+    const d = employeeDuties({ ...EMPTY, openEquipmentCount: 2 });
+    expect(d.duties).toHaveLength(1);
+    expect(d.duties[0]?.kind).toBe(DUTY.equipmentOut);
+    expect(d.duties[0]?.count).toBe(2);
+    // Jihozning puli yo'q — narxi reyestrda saqlanmaydi, «kimda qancha
+    // pul» raqamiga taxminiy qiymat qo'shish uni buzardi.
+    expect(d.duties[0]?.amountMinor).toBeNull();
+  });
+
+  it('jihozi yo`q xodimda jihoz qatori CHIQMAYDI', () => {
+    const d = employeeDuties({ ...EMPTY, pickingCount: 1 });
+    expect(d.duties.map((x) => x.kind)).not.toContain(DUTY.equipmentOut);
+  });
+
+  it('jihoz PUL jamiga qo`shilmaydi', () => {
+    const d = employeeDuties({
+      ...EMPTY,
+      openShiftCount: 1,
+      openShiftCashMinor: 500_000n,
+      openEquipmentCount: 3,
+    });
+    expect(d.totalCashMinor).toBe(500_000n);
+    expect(d.totalCount).toBe(4);
   });
 
   it('pulsiz majburiyatda amountMinor NULL (0 emas)', () => {

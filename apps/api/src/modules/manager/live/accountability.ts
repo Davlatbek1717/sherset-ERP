@@ -6,12 +6,13 @@
  * manbadan quriladi, lekin BOSHQA savolga javob beradi: u yerda «arxivlash
  * mumkinmi», bu yerda «hozir kimda qancha osilib turibdi».
  *
- * ⚠️ **JIHOZ (telefon, skaner, kalit) BU YERDA YO'Q.** Tizimda jihoz
- * reyestri umuman yo'q — kimda nima borligini hech qayer bilmaydi. Uni
- * «0 ta jihoz» deb ko'rsatish menejerni yo'q ma'lumotga ishontirardi:
- * ekran «hammasi topshirilgan» deb turadi, aslida hech kim tekshirmagan.
- * Jihoz faqat bo'shatish ro'yxatida — **qo'lda tasdiq** sifatida bor.
- * Reyestr qo'shilsa shu yerga ham kiradi.
+ * **JIHOZ (telefon, skaner, kalit) — MK05 dan boshlab BU YERDA.** MK03'da
+ * ataylab tashlangan edi: reyestr yo'q edi, «0 ta jihoz» esa menejerni yo'q
+ * ma'lumotga ishontirardi. Endi manba bor (`Equipment` +
+ * `EquipmentAssignment`) va son **o'lchangan** — ochiq biriktirishlar soni.
+ *
+ * ⚠️ Jihozning **puli yo'q**: reyestrda narx saqlanmaydi, taxminiy qiymatni
+ * «kimda qancha pul» raqamiga qo'shish uni buzardi.
  *
  * Sof modul — og'irlik va tartib qoidalari DB'siz sinaladi.
  */
@@ -26,6 +27,8 @@ export const DUTY = {
   pickingOpen: 'picking_open',
   /** Qabul qilinmagan KPI kunlari — oylikni bloklaydi. */
   kpiPending: 'kpi_pending',
+  /** Qaytarilmagan jihoz — reyestrdagi ochiq biriktirish (MK05). */
+  equipmentOut: 'equipment_out',
 } as const;
 
 export type DutyKind = (typeof DUTY)[keyof typeof DUTY];
@@ -58,6 +61,8 @@ export interface DutyInput {
   pendingHandoverMinor: bigint;
   pickingCount: number;
   pendingKpiDays: number;
+  /** Reyestrda ochiq (qaytarilmagan) biriktirishlar soni. */
+  openEquipmentCount: number;
 }
 
 const LABELS: Record<DutyKind, string> = {
@@ -65,6 +70,7 @@ const LABELS: Record<DutyKind, string> = {
   [DUTY.cashOnHand]: "Topshirilmagan naqd (haydovchi qo'lida)",
   [DUTY.pickingOpen]: "Tugallanmagan yig'ish",
   [DUTY.kpiPending]: 'Qabul qilinmagan KPI kunlari',
+  [DUTY.equipmentOut]: 'Qaytarilmagan jihoz',
 };
 
 /**
@@ -83,6 +89,7 @@ export function employeeDuties(input: DutyInput): EmployeeDuties {
   push(DUTY.cashOnHand, input.pendingHandoverCount, input.pendingHandoverMinor);
   push(DUTY.pickingOpen, input.pickingCount, null);
   push(DUTY.kpiPending, input.pendingKpiDays, null);
+  push(DUTY.equipmentOut, input.openEquipmentCount, null);
 
   return {
     employeeId: input.employeeId,

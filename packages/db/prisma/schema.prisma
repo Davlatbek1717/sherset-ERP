@@ -117,6 +117,8 @@ model Account {
   employeeKpiCorrections         EmployeeKpiCorrection[]
   employeeOffboardings           EmployeeOffboarding[]
   employeeOnboardings            EmployeeOnboarding[]
+  equipment                      Equipment[]
+  equipmentAssignments           EquipmentAssignment[]
   employeeNotes                  EmployeeNote[]
   kpiMetricDefs                  KpiMetricDef[]
   kpiProfiles                    KpiProfile[]
@@ -435,6 +437,9 @@ model Employee {
   authoredNotes              EmployeeNote[]             @relation("EmployeeNoteAuthor")
   voidedNotes                EmployeeNote[]             @relation("EmployeeNoteVoider")
   startedOffboardings        EmployeeOffboarding[]      @relation("EmployeeOffboardingActor")
+  equipmentAssignments       EquipmentAssignment[]      @relation("EquipmentAssignmentEmployee")
+  issuedEquipment            EquipmentAssignment[]      @relation("EquipmentAssignmentIssuer")
+  receivedEquipment          EquipmentAssignment[]      @relation("EquipmentAssignmentReceiver")
   acceptedKpiCorrections     EmployeeKpiCorrection[]    @relation("EmployeeKpiCorrectionActor")
   acknowledgedVariances      CashierSessionVariance[]   @relation("CashierSessionVarianceAck")
   retailDrawerOutRecipient   RetailDrawerCashOut[]      @relation("RetailDrawerOutRecipient")
@@ -9914,6 +9919,83 @@ model EmployeeOnboarding {
   /// `outcome` birinchi — hali yopilmagan qatorlar tanlanadi, keyin sana.
   @@index([accountId, outcome, evaluationOn])
   @@map("employee_onboardings")
+}
+
+/// Jihoz reyestri (menejer TZ 4M §6.4 «kimda nima turibdi», MK05).
+///
+/// Ilgari tizim jihoz haqida HECH NARSA bilmasdi: javobgarlik taxtasida
+/// jihoz bloki ataylab tashlangan, bo'shatish ro'yxatidagi bandi esa qo'lda
+/// tasdiq edi. Reyestr shu ikki teshikni yopadi.
+///
+/// «Kimda» ustuni YO'Q — u `EquipmentAssignment` dagi ochiq qatordan
+/// chiqadi. Ikkinchi manba bo'lsa, ular jimgina bir-biridan uzoqlashardi.
+model Equipment {
+  id        String @id @default(uuid()) @db.Uuid
+  accountId String @map("account_id") @db.Uuid
+
+  name String
+  /// Inventar raqami. NULL — raqamsiz jihoz (Postgres NULLlarni takroriy
+  /// deb sanamaydi, ya'ni raqamsizlar bir-biriga xalaqit bermaydi).
+  inventoryNo String? @map("inventory_no")
+  /// Erkin toifa: telefon · skaner · kalit · … (yopiq ro'yxat talab qilinmagan).
+  category    String? @db.VarChar(32)
+
+  /// `in_stock` | `assigned` | `repair` | `written_off` | `lost`.
+  /// `assigned` QO'LDA tanlanmaydi — biriktirishdan kelib chiqadi.
+  status String  @default("in_stock") @db.VarChar(16)
+  note   String?
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  account     Account               @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  assignments EquipmentAssignment[]
+
+  /// Inventar raqami akkaunt ichida takrorlanmaydi.
+  @@unique([accountId, inventoryNo])
+  /// Reyestr ro'yxati: holat bo'yicha filtr + nom bo'yicha tartib.
+  @@index([accountId, status, name])
+  @@map("equipment")
+}
+
+/// Jihozning xodimga biriktirilishi — APPEND-ONLY tarix.
+///
+/// Qaytarish qatorni O'CHIRMAYDI, `returnedAt` ni yozadi: kim, qachon,
+/// qanday holatda topshirgani izsiz ketmasin. Qayta berilsa — YANGI qator.
+///
+/// ⚠️ Bitta jihozda bir vaqtda BITTA ochiq qator bo'lishi migratsiyadagi
+/// **qisman unique indeks** bilan qulflangan (`WHERE returned_at IS NULL`) —
+/// Prisma sxemasi qisman indeksni ifodalay olmaydi, shuning uchun bu yerda
+/// faqat izoh; SQL migratsiyada bor.
+model EquipmentAssignment {
+  id          String @id @default(uuid()) @db.Uuid
+  accountId   String @map("account_id") @db.Uuid
+  equipmentId String @map("equipment_id") @db.Uuid
+  employeeId  String @map("employee_id") @db.Uuid
+
+  issuedAt   DateTime @default(now()) @map("issued_at") @db.Timestamptz()
+  issuedById String?  @map("issued_by_id") @db.Uuid
+  issueNote  String?  @map("issue_note")
+
+  /// NULL = jihoz hamon xodimda (ochiq qator).
+  returnedAt      DateTime? @map("returned_at") @db.Timestamptz()
+  returnedById    String?   @map("returned_by_id") @db.Uuid
+  /// `ok` | `damaged` | `lost` — jihozning YANGI holatini shu belgilaydi.
+  returnCondition String?   @map("return_condition") @db.VarChar(16)
+  returnNote      String?   @map("return_note")
+
+  account    Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  equipment  Equipment @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
+  employee   Employee  @relation("EquipmentAssignmentEmployee", fields: [employeeId], references: [id], onDelete: Cascade)
+  issuedBy   Employee? @relation("EquipmentAssignmentIssuer", fields: [issuedById], references: [id], onDelete: SetNull)
+  receivedBy Employee? @relation("EquipmentAssignmentReceiver", fields: [returnedById], references: [id], onDelete: SetNull)
+
+  /// «Kimda nima qolgan» (javobgarlik taxtasi + bo'shatish ro'yxati):
+  /// xodim bo'yicha ochiq qatorlar.
+  @@index([accountId, employeeId, returnedAt])
+  /// Jihoz kartasidagi tarix — eng yangisi birinchi.
+  @@index([equipmentId, issuedAt(sort: Desc)])
+  @@map("equipment_assignments")
 }
 
 model EmployeeDailyKpi {

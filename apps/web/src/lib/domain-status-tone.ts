@@ -432,15 +432,33 @@ export const DUTY_KIND_TONE: Record<string, StateTone> = {
   cash_on_hand: 'destructive',
   picking_open: 'warning',
   kpi_pending: 'info',
+  // Jihoz (MK05) — `warning`: pul emas, lekin yo'qolsa qaytmaydi.
+  equipment_out: 'warning',
 };
 export const dutyKindTone = (k: string | null | undefined): StateTone => resolve(DUTY_KIND_TONE, k);
+
+/**
+ * Jihoz holati (MK05 · `equipment.ts` dagi `EQUIPMENT_STATUS`).
+ *
+ * `lost` — `destructive`: yo'qolgan jihoz qaytmaydi. `assigned` neytral:
+ * xodimda turishi normal holat, muammo emas.
+ */
+export const EQUIPMENT_STATUS_TONE: Record<string, StateTone> = {
+  in_stock: 'success',
+  assigned: 'info',
+  repair: 'warning',
+  written_off: 'neutral',
+  lost: 'destructive',
+};
+export const equipmentStatusTone = (s: string | null | undefined): StateTone =>
+  resolve(EQUIPMENT_STATUS_TONE, s);
 
 /**
  * Zaxira signali turi (4M.8 · `stock-signals.ts` dagi STOCK_SIGNAL).
  *
  * `stockout_risk` — `destructive`: tugagan tovar sotuvni BUGUN to'xtatadi.
  * `dead_money` — `warning`: pul qotgan, lekin yo'qolmagan. `overstock` —
- * `info`: sekin muammo, e'tibor talab qiladi-yu shoshilinch emas.
+ * `info`: sekin muammо, e'tibor talab qiladi-yu shoshilinch emas.
  */
 export const STOCK_SIGNAL_TONE: Record<string, StateTone> = {
   stockout_risk: 'destructive',

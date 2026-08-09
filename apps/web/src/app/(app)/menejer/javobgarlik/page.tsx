@@ -13,11 +13,11 @@ import { useTranslations } from 'next-intl';
  * majburiyat qoladi — ochiq kassa smenasi · haydovchi qo'lidagi naqd ·
  * tugallanmagan yig'ish · qabul qilinmagan KPI kunlari.
  *
- * ⚠️ **JIHOZ BLOKI YO'Q.** Tizimda jihoz reyestri umuman yo'q (`Equipment`
- * modeli mavjud emas — MK05 fazasi shuni qo'shadi). Uni «0 ta jihoz» deb
- * ko'rsatish menejerni yo'q ma'lumotga ishontirardi: ekran «hammasi
- * topshirilgan» deb turardi, aslida hech kim tekshirmagan. Ro'yxatning
- * to'liq emasligi pastdagi izohda OCHIQ yozilgan — qarz ko'rinib tursin.
+ * **JIHOZ BLOKI BOR (MK05).** MK03'da ataylab tashlangan edi — reyestr yo'q
+ * edi va «0 ta jihoz» menejerni yo'q ma'lumotga ishontirardi. Endi manba
+ * bor (`Equipment` + `EquipmentAssignment`), son o'lchangan: xodimdagi
+ * qaytarilmagan (ochiq biriktirishdagi) jihozlar. Jihozning PULI yo'q —
+ * reyestrda narx saqlanmaydi, shuning uchun summasi «—».
  *
  * NOL QATORLAR KO'RSATILMAYDI: «Ochiq smena: 0» qatori ekranni to'ldirib,
  * haqiqiy majburiyatni ko'rinmas qilardi. Tashlash BE da (`employeeDuties`)
@@ -27,7 +27,13 @@ import { useTranslations } from 'next-intl';
  * bo'lmaydi, yopilmagan yig'ishni ertaga tugatsa bo'ladi.
  */
 
-type DutyKind = 'open_shift' | 'cash_on_hand' | 'picking_open' | 'kpi_pending';
+type DutyKind =
+  | 'open_shift'
+  | 'cash_on_hand'
+  | 'picking_open'
+  | 'kpi_pending'
+  /** MK05 — reyestrdagi qaytarilmagan jihoz. */
+  | 'equipment_out';
 
 interface Duty {
   kind: DutyKind;
