@@ -35,7 +35,14 @@ import { useEffect, useState } from 'react';
 import { type ChartBucket, ProfitabilityChart, type SeriesKey } from './chart.tsx';
 
 // ---------------------------------------------------------------- types
-type GroupBy = 'product' | 'employee' | 'counterparty' | 'saleschannel';
+type GroupBy = 'product' | 'employee' | 'cashier' | 'counterparty' | 'saleschannel';
+
+/**
+ * Kassiri aniqlanmagan qatorning barqaror id'si — manba:
+ * `apps/api/src/modules/report/metrics/cashier-slice.ts` (`UNKNOWN_CASHIER_ID`).
+ * Ikki manba `__tests__/profitability-cashier-slice.test.ts` bilan bog'langan.
+ */
+const UNKNOWN_CASHIER_ID = '__unknown_cashier__';
 type DocType = 'all' | 'demand' | 'retail';
 type Accounted = 'all' | 'products' | 'services' | 'bundles';
 type Gran = 'hour' | 'day' | 'week' | 'month';
@@ -421,9 +428,19 @@ export default function ProfitabilityReportPage() {
     ? t('col_product')
     : groupBy === 'employee'
       ? t('col_employee')
-      : groupBy === 'counterparty'
-        ? t('col_customer')
-        : t('col_channels');
+      : groupBy === 'cashier'
+        ? t('col_cashier')
+        : groupBy === 'counterparty'
+          ? t('col_customer')
+          : t('col_channels');
+
+  /**
+   * Smenaga bog'lanmagan tushum alohida qatorda keladi (API uni tashlab
+   * yubormaydi va 0 qilib ko'rsatmaydi) — uni nomsiz «—» qoldirmaymiz, aks
+   * holda ekranda «kimningdir» puli egasiz turgandek ko'rinardi.
+   */
+  const rowLabel = (r: Row): string =>
+    r.id === UNKNOWN_CASHIER_ID ? t('row_cashier_unknown') : r.name;
 
   // number of body columns for empty/colspan sizing
   const bodyColCount = isProduct ? 5 + 6 + 6 + 3 : (isChannel ? 2 : 1) + 4 + 4 + 3;
@@ -456,6 +473,7 @@ export default function ProfitabilityReportPage() {
             [
               ['product', t('tab_by_products')],
               ['employee', t('tab_by_employees')],
+              ['cashier', t('tab_by_cashiers')],
               ['counterparty', t('tab_by_customers')],
               ['saleschannel', t('tab_by_channels')],
             ] as [GroupBy, string][]
@@ -1070,7 +1088,7 @@ export default function ProfitabilityReportPage() {
                             {r.name}
                           </a>
                         ) : (
-                          <span className="text-[var(--ms-text-primary)]">{r.name}</span>
+                          <span className="text-[var(--ms-text-primary)]">{rowLabel(r)}</span>
                         )}
                       </td>
                       {isChannel && (

@@ -3,7 +3,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { z } from 'zod';
 import { PrismaService } from '../../prisma/prisma.service.js';
 // Analitika TZ §4 — yagona formulalar qatlami.
-import { percentText } from './metrics/index.js';
+import { cashierSliceKey, isUnknownCashier, percentText } from './metrics/index.js';
 import { reportDateBounds } from './report-date-bounds.util.js';
 import {
   CurrencyTally,
@@ -53,8 +53,17 @@ import {
  * `documentType=retail` filter draws an empty/returns-only series. Separate fix.
  */
 export const ProfitabilityFilterSchema = z.object({
-  /** Which dimension to group rows by (the 4 tabs). */
-  groupBy: z.enum(['product', 'employee', 'counterparty', 'saleschannel']).default('product'),
+  /**
+   * Which dimension to group rows by.
+   *
+   * `employee` = hujjat EGASI (`owner_id`) · `cashier` = chekni URGAN kassir
+   * (`cashier_sessions.cashier_id`, analitika TZ §9 X2). Ikkalasi alohida
+   * o'lchov: menejer o'ziga biriktirgan chekni kassir A urgan bo'lishi mumkin,
+   * va kassirning bonusi ikkinchi raqamga tayanadi.
+   */
+  groupBy: z
+    .enum(['product', 'employee', 'cashier', 'counterparty', 'saleschannel'])
+    .default('product'),
   /** Window lower bound (inclusive). Defaults to today − 1 month. */
   dateFrom: z.coerce.date().optional(),
   /** Window upper bound (inclusive; end-of-day for date-only). Defaults to today. */
@@ -383,6 +392,7 @@ export class ProfitabilityService {
 
     // ---- Group-key + label joins per tab --------------------------------
     const isProduct = filter.groupBy === 'product';
+    const isCashierSlice = filter.groupBy === 'cashier';
     // demand group key + returns group key + label select/join fragments.
     let demandKey: Prisma.Sql;
     let returnKey: Prisma.Sql;
@@ -399,6 +409,13 @@ export class ProfitabilityService {
       demandKey = Prisma.sql`d.owner_id`;
       returnKey = Prisma.sql`sr.owner_id`;
       excludeNullKey = true;
+    } else if (isCashierSlice) {
+      // Otgruzka va qaytarish hujjatlarida kassir tushunchasi YO'Q — ular
+      // butunlay «noma'lum kassir» guruhiga tushadi. Tashlab yubormaymiz:
+      // aks holda kassir tab'ining jami boshqa tablardan jimgina farq qilardi
+      // va biriktirilmagan tushum ko'rinmay qolardi (TZ §9 X2).
+      demandKey = Prisma.sql`NULL::uuid`;
+      returnKey = Prisma.sql`NULL::uuid`;
     } else if (filter.groupBy === 'counterparty') {
       demandKey = Prisma.sql`d.agent_id`;
       returnKey = Prisma.sql`sr.agent_id`;
@@ -408,6 +425,17 @@ export class ProfitabilityService {
       returnKey = Prisma.sql`sr.sales_channel_id`;
       excludeNullKey = true;
     }
+
+    // Kassir kesimida demand/return kaliti — KONSTANTA (`NULL::uuid`). Konstanta
+    // hech narsaga bog'liq emas, shuning uchun u GROUP BY ro'yxatiga TUSHMAYDI
+    // (Postgres uni guruhlashni talab qilmaydi); guruh ro'yxati shu sababdan
+    // kalitdan alohida quriladi.
+    const demandGroupBy = isCashierSlice
+      ? Prisma.sql`GROUP BY d.currency, d.rate_value`
+      : Prisma.sql`GROUP BY ${demandKey}, d.currency, d.rate_value`;
+    const returnGroupBy = isCashierSlice
+      ? Prisma.sql`GROUP BY sr.currency, sr.rate_value`
+      : Prisma.sql`GROUP BY ${returnKey}, sr.currency, sr.rate_value`;
 
     // ---- Aggregate queries (key + currency + doc rate; labels after) ------
     // M-11 (Faza Q8): `rate_value` rides in the GROUP BY so each slice is
@@ -427,7 +455,7 @@ export class ProfitabilityService {
           FROM demand_positions dp
           JOIN demands d ON d.id = dp.demand_id AND ${demandWhere()}
           WHERE dp.assortment_id IS NOT NULL ${posWhere('dp')}
-          GROUP BY ${demandKey}, d.currency, d.rate_value
+          ${demandGroupBy}
         `
       : [];
 
@@ -449,7 +477,7 @@ export class ProfitabilityService {
       FROM sales_return_positions srp
       JOIN sales_returns sr ON sr.id = srp.sales_return_id AND ${returnWhere()}
       WHERE srp.assortment_id IS NOT NULL ${posWhere('srp')}
-      GROUP BY ${returnKey}, sr.currency, sr.rate_value
+      ${returnGroupBy}
     `;
 
     // ---- Merge into per-group aggregates --------------------------------
@@ -478,9 +506,14 @@ export class ProfitabilityService {
       return a;
     };
 
+    // Kassir kesimida kalitni yagona formula qatlami beradi: kassiri yo'q qator
+    // «noma'lum» guruhiga tushadi va HECH QACHON egaga qaytmaydi.
+    const gidOf = (raw: string | null): string =>
+      isCashierSlice ? cashierSliceKey(raw) : (raw ?? '__none__');
+
     for (const r of [...salesRows, ...retailRows]) {
       if (r.gid == null && excludeNullKey) continue;
-      const gid = r.gid ?? '__none__';
+      const gid = gidOf(r.gid);
       const a = ensure(gid);
       a.salesDocuments += Number(r.documents);
       a.salesQty += Number(r.qty || '0');
@@ -490,7 +523,7 @@ export class ProfitabilityService {
     }
     for (const r of returnRows) {
       if (r.gid == null && excludeNullKey) continue;
-      const gid = r.gid ?? '__none__';
+      const gid = gidOf(r.gid);
       const a = ensure(gid);
       a.returnDocuments += Number(r.documents);
       a.returnQty += Number(r.qty || '0');
@@ -636,7 +669,17 @@ export class ProfitabilityService {
     let key: Prisma.Sql;
     if (filter.groupBy === 'product') key = Prisma.sql`rsp.product_id`;
     else if (filter.groupBy === 'employee') key = Prisma.sql`rs.owner_id`;
+    else if (filter.groupBy === 'cashier') key = Prisma.sql`cs.cashier_id`;
     else key = Prisma.sql`rs.agent_id`;
+
+    // Kassir kesimining MANBAI: chek → smena → kassir. LEFT JOIN ataylab —
+    // INNER JOIN sessiyasi topilmagan chekni JIMGINA tushirib qoldirardi, bu
+    // esa aynan «yo'q raqamni 0 qilib ko'rsatish» xatosi bo'lardi. LEFT JOIN'da
+    // u `cashier_id IS NULL` bo'lib «noma'lum kassir» guruhiga tushadi.
+    const cashierJoin =
+      filter.groupBy === 'cashier'
+        ? Prisma.sql`LEFT JOIN cashier_sessions cs ON cs.id = rs.session_id`
+        : Prisma.empty;
 
     const rsParts: Prisma.Sql[] = [
       Prisma.sql`rs.account_id = ${accountId}::uuid`,
@@ -669,10 +712,13 @@ export class ProfitabilityService {
         COUNT(*) FILTER (WHERE rsp.cost_minor IS NULL)::bigint AS "costMissing"
       FROM retail_sale_positions rsp
       JOIN retail_sales rs ON rs.id = rsp.retail_sale_id AND ${Prisma.join(rsParts, ' ')}
+      ${cashierJoin}
       WHERE rsp.product_id IS NOT NULL ${rspPos}
       GROUP BY ${key}
     `;
-    return filter.groupBy === 'product' ? rows : rows.filter((r) => r.gid != null);
+    // Kassir kesimida NULL kalit — «noma'lum kassir» guruhi, u SAQLANADI.
+    if (filter.groupBy === 'product' || filter.groupBy === 'cashier') return rows;
+    return rows.filter((r) => r.gid != null);
   }
 
   /**
@@ -686,7 +732,9 @@ export class ProfitabilityService {
     filter: ProfitabilityFilter,
     byGroup: Map<string, Agg>,
   ): Promise<void> {
-    const ids = [...byGroup.keys()].filter((k) => k !== '__none__');
+    // `__none__` va «noma'lum kassir» — sun'iy guruhlar: ular UUID emas, ORM
+    // so'roviga tushsa uuid-ustunda xato beradi (va label'i ham yo'q).
+    const ids = [...byGroup.keys()].filter((k) => k !== '__none__' && !isUnknownCashier(k));
     if (ids.length === 0) return;
 
     if (filter.groupBy === 'product') {
@@ -725,7 +773,9 @@ export class ProfitabilityService {
           a.uom = v.product?.uom ?? null;
         }
       }
-    } else if (filter.groupBy === 'employee') {
+    } else if (filter.groupBy === 'employee' || filter.groupBy === 'cashier') {
+      // Ikkala kesim ham xodimga ishora qiladi (biri ega, biri kassir) —
+      // label manbai bitta jadval.
       const emps = await this.prisma.client.employee.findMany({
         where: { accountId, id: { in: ids } },
         select: { id: true, name: true, fullName: true },

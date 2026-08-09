@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
+import { UNKNOWN_CASHIER_ID } from './metrics/index.js';
 import { ProfitabilityService } from './profitability.service.js';
 
 /**
@@ -472,5 +473,167 @@ describe('ProfitabilityService — tarixiy kurs (M-11)', () => {
   it('identity-qo‘riqchi: default 1e8 kurs joriy kontekstga tushadi', async () => {
     const r = await makeProfServiceAt(usdProfSale(E8), 12_000n).report('acc', BASE);
     expect(r.totals.salesSumMinor).toBe('120000000');
+  });
+});
+
+/**
+ * Kassir kesimi — analitika TZ §9 (X2), faza F010.
+ *
+ * Chekni KIM urgani (`cashier_sessions.cashier_id`) va hujjat KIMGA
+ * biriktirilgani (`owner_id`) — ikki boshqa savol. Ilgari hisobotda faqat
+ * ikkinchisi bor edi, shuning uchun «bu kassir qancha sotdi?» degan savolga
+ * tizim javob bermasdi. Ikki kesim yonma-yon yashaydi: biri ikkinchisini
+ * ALMASHTIRMAYDI (TZ X2 aynan shuni talab qiladi).
+ */
+const OWNER_ID = '11111111-1111-4111-8111-111111111111';
+const CASHIER_ID = '22222222-2222-4222-8222-222222222222';
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * `Prisma.sql` qiymatlari tashqi template'ning `strings` massivida KO'RINMAYDI
+ * (ular alohida uzatiladi). Router bazaga ketadigan skeletni ko'rishi uchun
+ * ichma-ich fragmentlarni qayta yig'amiz — shunda «kassir tab'i qaysi ustun
+ * bo'yicha guruhladi» degan savolga mock EMAS, haqiqiy SQL javob beradi.
+ */
+function sqlSkeleton(strings: readonly string[], values: readonly unknown[]): string {
+  let out = '';
+  for (let i = 0; i < strings.length; i++) {
+    out += strings[i];
+    const v = values[i] as { strings?: string[]; values?: unknown[] } | undefined;
+    if (v && Array.isArray(v.strings)) out += sqlSkeleton(v.strings, v.values ?? []);
+  }
+  return out;
+}
+
+function makeCashierService(opts: {
+  /** Kassir kesimi so'ralganda (SQL `cashier_sessions` ga JOIN qilganda) qaytadi. */
+  retailByCashier?: Raw[];
+  /** Ega kesimi so'ralganda (`rs.owner_id`) qaytadi. */
+  retailByOwner?: Raw[];
+  demands?: Raw[];
+  employees?: Array<{ id: string; name: string; fullName: string | null }>;
+}) {
+  const seenSql: string[] = [];
+  const employeeFindMany = vi.fn(async (args: { where: { id: { in: string[] } } }) => {
+    // `employees.id` — `uuid` ustuni: haqiqiy Prisma UUID bo'lmagan qiymatda
+    // xato beradi. Mock ham shunday qiladi, aks holda sentinelning bazaga
+    // sizib o'tishi testda ko'rinmay qolardi (jim 500).
+    for (const id of args.where.id.in) {
+      if (!UUID_RE.test(id)) throw new Error(`invalid uuid in employee lookup: ${id}`);
+    }
+    return (opts.employees ?? []).filter((e) => args.where.id.in.includes(e.id));
+  });
+  const client = {
+    currency: {
+      findMany: vi.fn(async () => [
+        { code: 'UZS', default: true, rateValue: E8, multiplicity: 1, indirect: false },
+      ]),
+    },
+    product: { findMany: vi.fn(async () => []) },
+    variant: { findMany: vi.fn(async () => []) },
+    counterparty: { findMany: vi.fn(async () => []) },
+    employee: { findMany: employeeFindMany },
+    salesChannel: { findMany: vi.fn(async () => []) },
+    demand: { count: vi.fn(async () => 0) },
+    salesReturn: { count: vi.fn(async () => 0) },
+    $queryRaw: vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+      const outer = Array.from(strings).join(' ');
+      const full = sqlSkeleton(Array.from(strings), values);
+      seenSql.push(full);
+      if (outer.includes('AS bucket')) return [];
+      if (outer.includes('retail_sale_positions'))
+        return full.includes('cashier_sessions')
+          ? (opts.retailByCashier ?? [])
+          : (opts.retailByOwner ?? []);
+      if (outer.includes('sales_return_positions')) return [];
+      if (outer.includes('demand_positions')) return opts.demands ?? [];
+      return [];
+    }),
+  };
+  return { svc: new ProfitabilityService({ client } as never), seenSql, employeeFindMany };
+}
+
+/** Bitta chek: 100 000 tiyin sotuv, 60 000 tan narx. */
+const receipt = (gid: string | null): Raw[] => [
+  { gid, currency: 'UZS', documents: 1n, qty: '1', sum: 100_000n, cost: 60_000n, costMissing: 0n },
+];
+
+describe('ProfitabilityService — kassir kesimi (analitika TZ §9 X2)', () => {
+  it('bitta chek: xodim kesimi EGAga, kassir kesimi KASSIRga yoziladi', async () => {
+    const { svc } = makeCashierService({
+      retailByOwner: receipt(OWNER_ID),
+      retailByCashier: receipt(CASHIER_ID),
+      employees: [
+        { id: OWNER_ID, name: 'Menejer', fullName: 'Menejer Egayev' },
+        { id: CASHIER_ID, name: 'Kassir', fullName: 'Kassir Kassirov' },
+      ],
+    });
+    const byOwner = await svc.report('acc', { ...BASE, groupBy: 'employee' });
+    const byCashier = await svc.report('acc', { ...BASE, groupBy: 'cashier' });
+
+    expect(byOwner.rows.map((r) => r.id)).toEqual([OWNER_ID]);
+    expect(byCashier.rows.map((r) => r.id)).toEqual([CASHIER_ID]);
+    expect(byCashier.rows[0]?.name).toBe('Kassir Kassirov');
+    expect(byCashier.groupBy).toBe('cashier');
+    // Bir xil pul, ikki xil bo'linish — jami o'zgarmaydi.
+    expect(byCashier.totals.salesSumMinor).toBe(byOwner.totals.salesSumMinor);
+    expect(byCashier.totals.profitMinor).toBe('40000');
+  });
+
+  it('smenasiz chek kassir kesimida «noma`lum» — tashlanmaydi va 0 ham emas', async () => {
+    const { svc } = makeCashierService({ retailByCashier: receipt(null) });
+    const r = await svc.report('acc', { ...BASE, groupBy: 'cashier' });
+
+    expect(r.rows.map((x) => x.id)).toEqual([UNKNOWN_CASHIER_ID]);
+    expect(r.rows[0]?.salesSumMinor).toBe('100000');
+    expect(r.rows[0]?.salesSumMinor).not.toBe('0');
+    expect(r.rows[0]?.salesDocuments).toBe(1);
+    expect(r.totals.salesSumMinor).toBe('100000');
+  });
+
+  it('kassiri yo`q hujjat (otgruzka) jamida qoladi — «noma`lum»ga tushadi', async () => {
+    const { svc } = makeCashierService({
+      demands: receipt(null),
+      retailByCashier: receipt(CASHIER_ID),
+      employees: [{ id: CASHIER_ID, name: 'Kassir', fullName: null }],
+    });
+    const r = await svc.report('acc', { ...BASE, groupBy: 'cashier' });
+
+    expect([...r.rows.map((x) => x.id)].sort()).toEqual([CASHIER_ID, UNKNOWN_CASHIER_ID].sort());
+    expect(r.totals.salesSumMinor).toBe('200000');
+    expect(r.rows.find((x) => x.id === UNKNOWN_CASHIER_ID)?.salesSumMinor).toBe('100000');
+  });
+
+  it('regressiya qulfi: xodim (ega) kesimi kassirga O`TMAYDI', async () => {
+    const { svc, seenSql } = makeCashierService({ retailByOwner: receipt(null) });
+    const r = await svc.report('acc', { ...BASE, groupBy: 'employee' });
+
+    const retailSql = seenSql.filter((s) => s.includes('retail_sale_positions'));
+    expect(retailSql.some((s) => s.includes('rs.owner_id'))).toBe(true);
+    expect(retailSql.some((s) => s.includes('cashier_sessions'))).toBe(false);
+    // Egasiz qator xodim kesimida oldingidek tushib qoladi — mavjud xulq.
+    expect(r.rows).toEqual([]);
+  });
+
+  it('kassir kesimi smenaga LEFT JOIN qiladi — sessiyasi topilmagan chek yo`qolmaydi', async () => {
+    const { svc, seenSql } = makeCashierService({ retailByCashier: receipt(CASHIER_ID) });
+    await svc.report('acc', { ...BASE, groupBy: 'cashier' });
+
+    const retailSql = seenSql.find((s) => s.includes('retail_sale_positions')) ?? '';
+    expect(retailSql).toMatch(/LEFT JOIN\s+cashier_sessions/);
+    expect(retailSql).toContain('cs.cashier_id');
+  });
+
+  it('«noma`lum» sentineli employees jadvaliga so`rov bo`lib ketmaydi', async () => {
+    const { svc, employeeFindMany } = makeCashierService({
+      retailByCashier: [...receipt(null), ...receipt(CASHIER_ID)],
+      employees: [{ id: CASHIER_ID, name: 'Kassir', fullName: null }],
+    });
+    // Sentinel `id: { in: [...] }` ga tushsa mock (Prisma kabi) yiqiladi.
+    const r = await svc.report('acc', { ...BASE, groupBy: 'cashier' });
+
+    expect(employeeFindMany).toHaveBeenCalledTimes(1);
+    expect(employeeFindMany.mock.calls[0]?.[0].where.id.in).toEqual([CASHIER_ID]);
+    expect(r.rows.find((x) => x.id === UNKNOWN_CASHIER_ID)?.name).toBe('—');
   });
 });
