@@ -46,9 +46,9 @@ import { useTotalsLabels } from '@/hooks/use-totals-labels';
 import { useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-store';
+import { computeLineTotalSafe } from '@/lib/doc-totals';
 import { distributeAgreementDelta } from '@/lib/position-agreement';
 import { resolveDefaultSalePriceOrZero } from '@/lib/sale-price';
-import { computePositionTotal } from '@moysklad/money';
 import {
   Button,
   CatalogPicker,
@@ -107,32 +107,6 @@ function uid(): string {
 // «События» on the CREATE form — hidden 2026-07-09 (moysklad's old-design /new has
 // no События tab). Flip to true to re-enable; the tab's code is kept below.
 const SHOW_NEW_EVENTS_TAB = false;
-
-function computeLineTotal(
-  p: NewPositionRow,
-  vatIncluded: boolean,
-): { net: bigint; vat: bigint; gross: bigint } {
-  // Delegates to the shared `computePositionTotal` — the SAME single-round,
-  // micro-tiyin discipline the API posts with — so the «Итого» footer agrees
-  // with the per-row «Сумма» cells (PositionTable) and the stored document
-  // total exactly (no FE↔BE rounding drift; a fractional «НДС» like 7.5 no
-  // longer throws a BigInt RangeError mid-edit).
-  try {
-    const { totalMinor, vatAmountMinor, baseMinor } = computePositionTotal(
-      {
-        quantity: p.quantity || '0',
-        priceMinor: p.priceMinor || '0',
-        discount: p.discount || '0',
-        vat: p.vatEnabled && p.vat ? Number(p.vat) : null,
-      },
-      p.vatEnabled,
-      vatIncluded,
-    );
-    return { net: baseMinor, vat: vatAmountMinor, gross: totalMinor };
-  } catch {
-    return { net: 0n, vat: 0n, gross: 0n };
-  }
-}
 
 // moysklad «Возврат покупателя» position columns (direction-flipped mirror of
 // «Возврат поставщику»): always-on = Наименование · Кол-во · Ячейка · Остаток ·
@@ -508,7 +482,7 @@ export default function NewSalesReturnPage() {
     () =>
       positions.reduce(
         (acc, p) => {
-          const lt = computeLineTotal(p, vatIncluded);
+          const lt = computeLineTotalSafe(p, vatIncluded);
           return { net: acc.net + lt.net, vat: acc.vat + lt.vat, gross: acc.gross + lt.gross };
         },
         { net: 0n, vat: 0n, gross: 0n },

@@ -44,10 +44,10 @@ import { useTotalsLabels } from '@/hooks/use-totals-labels';
 import { useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-store';
+import { computeLineTotalSafe } from '@/lib/doc-totals';
 import { imageRawUrl } from '@/lib/image-url';
 import { distributeAgreementDelta } from '@/lib/position-agreement';
 import { resolveDefaultSalePriceOrZero } from '@/lib/sale-price';
-import { computePositionTotal } from '@moysklad/money';
 import {
   Button,
   CatalogPicker,
@@ -100,35 +100,6 @@ interface NewPositionRow extends DocPositionRow {
 
 function uid(): string {
   return Math.random().toString(36).slice(2);
-}
-
-/**
- * Per-line totals. No discount on InternalOrder — purely quantity × price.
- * BigInt-safe so page-level reduce stays exact.
- */
-function computeLineTotal(
-  p: NewPositionRow,
-  vatIncluded: boolean,
-): { net: bigint; vat: bigint; gross: bigint } {
-  // Internal orders carry no discount — delegate to the shared canonical
-  // `computePositionTotal` (discount fixed to 0) so the «Итого» footer agrees
-  // with the per-row PositionTable cells + the stored total, and a fractional
-  // «НДС» no longer throws a BigInt RangeError (the old `BigInt(Number(p.vat))`).
-  try {
-    const { totalMinor, vatAmountMinor, baseMinor } = computePositionTotal(
-      {
-        quantity: p.quantity || '0',
-        priceMinor: p.priceMinor || '0',
-        discount: '0',
-        vat: p.vatEnabled && p.vat ? Number(p.vat) : null,
-      },
-      p.vatEnabled,
-      vatIncluded,
-    );
-    return { net: baseMinor, vat: vatAmountMinor, gross: totalMinor };
-  } catch {
-    return { net: 0n, vat: 0n, gross: 0n };
-  }
 }
 
 // moysklad #internalorder «Сумма ⚙» customizer — optional position columns.
@@ -335,7 +306,7 @@ export default function NewInternalOrderPage() {
     () =>
       positions.reduce(
         (acc, p) => {
-          const t = computeLineTotal(p, vatIncluded);
+          const t = computeLineTotalSafe(p, vatIncluded);
           return { net: acc.net + t.net, vat: acc.vat + t.vat, gross: acc.gross + t.gross };
         },
         { net: 0n, vat: 0n, gross: 0n },

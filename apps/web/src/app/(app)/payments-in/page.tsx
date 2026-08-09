@@ -2,6 +2,7 @@
 
 import { ColumnSettings } from '@/components/column-settings';
 import { SavedFiltersPills } from '@/components/customer-orders/saved-filters-pills';
+import { YesNoSelect } from '@/components/filters/filter-fields';
 import { FilterToggleButton } from '@/components/filters/filter-toggle-button';
 import {
   useDocEditMenuItems,
@@ -64,35 +65,6 @@ type RefMulti = { id: string; label: string };
 
 // Moysklad parity — 100 rows per page (same as CO list).
 const LIMIT = 100;
-
-/** Tri-state ✓ / — / (unset) select — mirrors invoice-out's YesNoSelect for
- *  the boolean flag filter (Проведено). The empty option clears the filter
- *  exactly like moysklad. */
-function YesNoSelect({
-  value,
-  onChange,
-  testId,
-}: {
-  value: 'true' | 'false' | undefined;
-  onChange: (v: 'true' | 'false' | undefined) => void;
-  testId?: string;
-}) {
-  const tCommon = useTranslations('common');
-  return (
-    <NativeSelect
-      value={value ?? ''}
-      onChange={(e) => {
-        const v = e.target.value;
-        onChange(v === '' ? undefined : (v as 'true' | 'false'));
-      }}
-      data-test-id={testId}
-    >
-      <option value="" />
-      <option value="false">{tCommon('no')}</option>
-      <option value="true">{tCommon('yes')}</option>
-    </NativeSelect>
-  );
-}
 
 export default function PaymentsInPage() {
   const t = useTranslations('pages.payments_in');

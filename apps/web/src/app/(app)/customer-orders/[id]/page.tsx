@@ -43,11 +43,11 @@ import { useSaveMutation } from '@/hooks/use-save-mutation';
 import { useTotalsLabels } from '@/hooks/use-totals-labels';
 import { useUnsavedGuard } from '@/hooks/use-unsaved-guard';
 import { api } from '@/lib/api-client';
+import { computeLineTotalSafe } from '@/lib/doc-totals';
 import { imageRawUrl } from '@/lib/image-url';
 import { distributeAgreementDelta } from '@/lib/position-agreement';
 import { buildPrintMenu } from '@/lib/print-menu';
 import { resolveDefaultSalePriceOrZero, usePriceTypeIds } from '@/lib/sale-price';
-import { computePositionTotal } from '@moysklad/money';
 import {
   Button,
   CatalogPicker,
@@ -183,31 +183,6 @@ function uid(): string {
 // Distinguishes a PERSISTED position row (DB uuid — sent back as `id` so the
 // BE diff-upserts it in place) from a session-local row keyed by uid().
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-// Per-line total for the live «Итого» footer — delegates to the shared
-// `computePositionTotal` (the single source the BE + print use) so the editable
-// detail footer shows the EXACT total the API will post, updating as the user
-// edits qty/price/discount. Mirrors /new/page.tsx's helper of the same name.
-function computeLineTotal(
-  p: DetailPositionRow,
-  vatIncluded: boolean,
-): { net: bigint; vat: bigint; gross: bigint } {
-  try {
-    const { totalMinor, vatAmountMinor, baseMinor } = computePositionTotal(
-      {
-        quantity: p.quantity || '0',
-        priceMinor: p.priceMinor || '0',
-        discount: p.discount || '0',
-        vat: p.vatEnabled && p.vat ? Number(p.vat) : null,
-      },
-      p.vatEnabled,
-      vatIncluded,
-    );
-    return { net: baseMinor, vat: vatAmountMinor, gross: totalMinor };
-  } catch {
-    return { net: 0n, vat: 0n, gross: 0n };
-  }
-}
 
 /** ISO moment (UTC) → local `YYYY-MM-DDTHH:MM` — the string the shared
  *  <DocumentHeader> expects (date.slice(0,10) + time at slice(11,16)). Mirrors
@@ -1338,10 +1313,10 @@ export default function CustomerOrderDetailPage() {
   // Live document totals computed from the (editable) form positions — mirrors
   // /new (DocumentTotalsPanel) so the footer updates as the user edits qty / price
   // / discount instead of showing the stale server-saved sum. Single source of
-  // truth = computePositionTotal (the same the BE + print use).
+  // truth = computeLineTotalSafe → computePositionTotal (the BE + print use it too).
   const totals = form.positions.reduce(
     (acc, p) => {
-      const t = computeLineTotal(p, form.vatIncluded);
+      const t = computeLineTotalSafe(p, form.vatIncluded);
       return { net: acc.net + t.net, vat: acc.vat + t.vat, gross: acc.gross + t.gross };
     },
     { net: 0n, vat: 0n, gross: 0n },
@@ -1434,7 +1409,7 @@ export default function CustomerOrderDetailPage() {
                 uom: r.productUom ?? null,
                 qty: r.quantity,
                 priceMinor: r.priceMinor || '0',
-                sumMinor: computeLineTotal(r, form.vatIncluded).gross.toString(),
+                sumMinor: computeLineTotalSafe(r, form.vatIncluded).gross.toString(),
               })),
           }),
       },

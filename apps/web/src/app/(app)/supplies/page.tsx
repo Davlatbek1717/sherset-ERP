@@ -2,6 +2,7 @@
 
 import { ColumnSettings } from '@/components/column-settings';
 import { SavedFiltersPills } from '@/components/customer-orders/saved-filters-pills';
+import { MultiRefField, YesNoSelect, refFetcher } from '@/components/filters/filter-fields';
 import { FilterToggleButton } from '@/components/filters/filter-toggle-button';
 import { SupplyBulkActionsDropdown } from '@/components/supplies/bulk-actions-dropdown';
 import { SupplyCreateDocDropdown } from '@/components/supplies/create-doc-dropdown';
@@ -25,7 +26,6 @@ import {
   Input,
   ListView,
   MassEditModal,
-  MultiCombobox,
   NativeSelect,
   PeriodInputs,
   PeriodShortcuts,
@@ -79,57 +79,6 @@ const LIMIT = 100;
 type RefMulti = { id: string; label: string };
 type ComboItem = { value: string; label: string; sublabel?: string };
 
-/**
- * Multi-select inline reference filter field — moysklad checkbox-dropdown
- * (click opens an in-place dropdown with a search box + checkboxes, pick
- * several). Wraps MultiCombobox + the id↔label merge so each field is a
- * one-liner. MUST be module-level: an inline component is a NEW type each
- * render → React remounts it → the dropdown closes on every keystroke.
- * Mirror demand's MultiRefField.
- */
-function MultiRefField({
-  value,
-  onChange,
-  onSearch,
-  testId,
-}: {
-  value: RefMulti[];
-  onChange: (next: RefMulti[]) => void;
-  onSearch: (q: string) => Promise<ComboItem[]>;
-  testId: string;
-}) {
-  return (
-    <MultiCombobox
-      value={value.map((x) => x.id)}
-      items={value.map((x) => ({ value: x.id, label: x.label }))}
-      onSearch={onSearch}
-      onChange={(nextIds, toggled) => {
-        onChange(
-          nextIds.map((id) => {
-            const ex = value.find((p) => p.id === id);
-            if (ex) return ex;
-            if (toggled?.value === id) return { id, label: String(toggled.label) };
-            return { id, label: id };
-          }),
-        );
-      }}
-      placeholder=""
-      testId={testId}
-    />
-  );
-}
-
-// Module-level fetchers (API list → MultiCombobox items). `api` is module-scoped
-// so these live outside the component (stable identity, no remount churn).
-// Mirror demand.
-const refFetcher =
-  (path: string) =>
-  async (q: string): Promise<ComboItem[]> => {
-    const r = await api.get<{ items: { id: string; name: string }[] }>(
-      `${path}?search=${encodeURIComponent(q)}&limit=20`,
-    );
-    return r.items.map((x) => ({ value: x.id, label: x.name }));
-  };
 const fetchCounterparties = refFetcher('/counterparties');
 const fetchOrganizations = refFetcher('/organizations');
 const fetchStores = refFetcher('/stores');
@@ -143,34 +92,6 @@ const fetchProducts = async (q: string): Promise<ComboItem[]> => {
   );
   return r.items.map((x) => ({ value: x.id, label: x.name, sublabel: x.code ?? undefined }));
 };
-
-/** Tri-state Yes/No/All select for boolean filter fields — mirrors the
- *  purchase-orders gold-standard control (✓ / — / unset). */
-function YesNoSelect({
-  value,
-  onChange,
-  testId,
-}: {
-  value: 'true' | 'false' | undefined;
-  onChange: (v: 'true' | 'false' | undefined) => void;
-  testId?: string;
-}) {
-  const tCommon = useTranslations('common');
-  return (
-    <NativeSelect
-      value={value ?? ''}
-      onChange={(e) => {
-        const v = e.target.value;
-        onChange(v === '' ? undefined : (v as 'true' | 'false'));
-      }}
-      data-test-id={testId}
-    >
-      <option value="" />
-      <option value="false">{tCommon('no')}</option>
-      <option value="true">{tCommon('yes')}</option>
-    </NativeSelect>
-  );
-}
 
 /** «Статус» single-select — Supply's FSM has exactly 3 states
  *  (draft / posted / cancelled); moysklad surfaces it as a plain dropdown

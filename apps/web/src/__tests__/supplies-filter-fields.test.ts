@@ -75,9 +75,16 @@ describe('supplies filter — every reference field renders (live-grounded SET)'
 });
 
 describe('supplies filter — reference fields are INLINE dropdowns, not modals', () => {
-  it('uses the module-level MultiRefField wrapper (inline checkbox-dropdown)', () => {
-    expect(listPage).toContain('function MultiRefField');
-    expect(listPage).toContain('<MultiCombobox');
+  it('uses the shared MultiRefField wrapper (inline checkbox-dropdown)', () => {
+    // 2026-08-09: the page-local `function MultiRefField` (one of 3 identical
+    // copies) moved to `@/components/filters/filter-fields`. What this guard
+    // protects is unchanged — the reference filters must render the inline
+    // checkbox-dropdown wrapper, not a modal picker — so it now anchors on the
+    // import + the usage instead of the local definition.
+    expect(listPage).toMatch(
+      /import \{[^}]*MultiRefField[^}]*\} from '@\/components\/filters\/filter-fields';/,
+    );
+    expect(listPage).toContain('<MultiRefField');
   });
 
   it('does NOT use a modal CatalogPickerField for any reference filter field', () => {

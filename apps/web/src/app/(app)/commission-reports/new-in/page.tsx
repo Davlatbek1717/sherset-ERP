@@ -28,8 +28,8 @@ import { useDocumentEditorLabels } from '@/hooks/use-document-editor-labels';
 import { useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-store';
+import { computeLineTotalSafe } from '@/lib/doc-totals';
 import { distributeAgreementDelta } from '@/lib/position-agreement';
-import { computePositionTotal } from '@moysklad/money';
 import {
   Button,
   CatalogPicker,
@@ -88,27 +88,6 @@ function uid(): string {
   return Math.random().toString(36).slice(2);
 }
 
-function computeLineTotal(
-  p: NewPositionRow,
-  vatIncluded: boolean,
-): { net: bigint; vat: bigint; gross: bigint } {
-  try {
-    const { totalMinor, vatAmountMinor, baseMinor } = computePositionTotal(
-      {
-        quantity: p.quantity || '0',
-        priceMinor: p.priceMinor || '0',
-        discount: p.discount || '0',
-        vat: p.vatEnabled && p.vat ? Number(p.vat) : null,
-      },
-      p.vatEnabled,
-      vatIncluded,
-    );
-    return { net: baseMinor, vat: vatAmountMinor, gross: totalMinor };
-  } catch {
-    return { net: 0n, vat: 0n, gross: 0n };
-  }
-}
-
 /** Sum a position set into {gross, vat, reward, qty} for the totals sections. */
 function sumSet(rows: NewPositionRow[], vatIncluded: boolean) {
   let gross = 0n;
@@ -116,7 +95,7 @@ function sumSet(rows: NewPositionRow[], vatIncluded: boolean) {
   let reward = 0n;
   let qty = 0;
   for (const p of rows) {
-    const t = computeLineTotal(p, vatIncluded);
+    const t = computeLineTotalSafe(p, vatIncluded);
     gross += t.gross;
     vat += t.vat;
     reward += BigInt(p.commissionMinor || '0');
@@ -342,7 +321,7 @@ export default function NewCommissionReportInPage() {
     const pctScaled = BigInt(Math.round(pct * 100));
     makeSetter(grid)((ps) =>
       ps.map((p) => {
-        const { gross } = computeLineTotal(p, vatIncluded);
+        const { gross } = computeLineTotalSafe(p, vatIncluded);
         return { ...p, commissionMinor: ((gross * pctScaled) / 10000n).toString() };
       }),
     );

@@ -1,3 +1,61 @@
+import { computePositionTotal } from '@moysklad/money';
+
+/**
+ * A position row as far as the per-line «Сумма» is concerned.
+ *
+ * Deliberately STRUCTURAL: every document page declares its own
+ * `NewPositionRow` / `DetailPositionRow` interface with extra fields, and
+ * `internal-orders/new` has no `discount` column at all — an optional key
+ * lets that row pass unchanged and fall back to a 0 discount, exactly like
+ * the private copy that hardcoded `discount: '0'`.
+ */
+export interface LineTotalRow {
+  quantity?: string | null;
+  priceMinor?: string | null;
+  discount?: string | null;
+  vat?: string | number | null;
+  vatEnabled?: boolean;
+}
+
+/**
+ * Per-line net / VAT / gross for a document form row — the SINGLE copy of what
+ * was a byte-identical private `computeLineTotal` in 13 document pages
+ * (customer-orders {new,[id]}, demands {new,[id]}, supplies/new,
+ * purchase-orders/new, purchase-returns/new, sales-returns/new,
+ * invoices-{in,out}/new, internal-orders/new, commission-reports/{new,new-in}).
+ *
+ * Delegates to `@moysklad/money`'s `computePositionTotal` — the SAME
+ * single-round micro-tiyin discipline the API posts with — so the «Итого»
+ * footer agrees with the per-row PositionTable cells and the stored document
+ * total exactly (no FE↔BE rounding drift).
+ *
+ * `Safe` = never throws. A form is edited character by character, so it is
+ * routinely asked to total a half-typed row (`priceMinor: ''`, a fractional
+ * «НДС» like `7.5`, a stray letter). Any parse failure yields zeros rather
+ * than unmounting the page with a BigInt RangeError.
+ */
+export function computeLineTotalSafe(
+  p: LineTotalRow,
+  vatIncluded: boolean,
+): { net: bigint; vat: bigint; gross: bigint } {
+  const vatEnabled = p.vatEnabled === true;
+  try {
+    const { totalMinor, vatAmountMinor, baseMinor } = computePositionTotal(
+      {
+        quantity: p.quantity || '0',
+        priceMinor: p.priceMinor || '0',
+        discount: p.discount || '0',
+        vat: vatEnabled && p.vat ? Number(p.vat) : null,
+      },
+      vatEnabled,
+      vatIncluded,
+    );
+    return { net: baseMinor, vat: vatAmountMinor, gross: totalMinor };
+  } catch {
+    return { net: 0n, vat: 0n, gross: 0n };
+  }
+}
+
 /**
  * Document totals for the detail-page totals sidebar (Промежуточный итог / Итого).
  *

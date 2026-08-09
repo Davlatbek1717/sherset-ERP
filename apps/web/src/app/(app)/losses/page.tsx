@@ -2,6 +2,7 @@
 
 import { ColumnSettings } from '@/components/column-settings';
 import { SavedFiltersPills } from '@/components/customer-orders/saved-filters-pills';
+import { YesNoSelect } from '@/components/filters/filter-fields';
 import { FilterToggleButton } from '@/components/filters/filter-toggle-button';
 import { LossBulkActionsDropdown } from '@/components/losses/bulk-actions-dropdown';
 import { LossPrintDropdown } from '@/components/losses/print-dropdown';
@@ -101,37 +102,6 @@ function StatusBadge({ on, label }: { on: boolean; label: string }) {
 }
 
 type LossStateKey = 'draft' | 'posted' | 'cancelled';
-
-/** Tri-state Yes/No/All select for boolean filter fields — LIVE-GROUNDED
- *  2026-06-25 against moysklad #loss (tools/capture/ms-loss-filter-selects-
- *  ground.mjs): the options are «» / «Нет» / «Да» (empty = all). moysklad uses
- *  the WORD, not a «—»/«✓» symbol. Shared by Проведено / Напечатано /
- *  Отправлено / Общий доступ. */
-function YesNoSelect({
-  value,
-  onChange,
-  testId,
-}: {
-  value: 'true' | 'false' | undefined;
-  onChange: (v: 'true' | 'false' | undefined) => void;
-  testId?: string;
-}) {
-  const tCommon = useTranslations('common');
-  return (
-    <NativeSelect
-      value={value ?? ''}
-      onChange={(e) => {
-        const v = e.target.value;
-        onChange(v === '' ? undefined : (v as 'true' | 'false'));
-      }}
-      data-test-id={testId}
-    >
-      <option value="" />
-      <option value="false">{tCommon('no')}</option>
-      <option value="true">{tCommon('yes')}</option>
-    </NativeSelect>
-  );
-}
 
 /** «Статус» single-select — Loss's FSM has exactly 3 states (draft /
  *  posted / cancelled); moysklad surfaces it as a plain dropdown (no

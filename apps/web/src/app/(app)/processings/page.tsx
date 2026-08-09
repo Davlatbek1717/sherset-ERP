@@ -20,6 +20,7 @@
  */
 
 import { SavedFiltersPills } from '@/components/customer-orders/saved-filters-pills';
+import { YesNoSelect } from '@/components/filters/filter-fields';
 import { FilterToggleButton } from '@/components/filters/filter-toggle-button';
 import { useBulkDocumentActions } from '@/hooks/use-bulk-actions';
 import { api } from '@/lib/api-client';
@@ -99,34 +100,6 @@ function microqtyToWhole(microqty: string): string {
   const frac = abs.slice(-3).replace(/0+$/, '');
   const literal = frac ? `${whole}.${frac}` : whole;
   return negative ? `-${literal}` : literal;
-}
-
-/** Tri-state Yes/No/All select for boolean filter fields — mirrors the
- *  internal-orders gold-standard control (✓ / — / unset). */
-function YesNoSelect({
-  value,
-  onChange,
-  testId,
-}: {
-  value: 'true' | 'false' | undefined;
-  onChange: (v: 'true' | 'false' | undefined) => void;
-  testId?: string;
-}) {
-  const tCommon = useTranslations('common');
-  return (
-    <NativeSelect
-      value={value ?? ''}
-      onChange={(e) => {
-        const v = e.target.value;
-        onChange(v === '' ? undefined : (v as 'true' | 'false'));
-      }}
-      data-test-id={testId}
-    >
-      <option value="" />
-      <option value="false">{tCommon('no')}</option>
-      <option value="true">{tCommon('yes')}</option>
-    </NativeSelect>
-  );
 }
 
 /** «Статус» single-select — Processing's FSM has exactly 3 states

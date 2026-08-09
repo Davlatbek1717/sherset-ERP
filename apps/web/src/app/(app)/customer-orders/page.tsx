@@ -7,6 +7,7 @@ import { CustomerOrderKanban } from '@/components/customer-orders/kanban-board';
 import { PrintDropdown } from '@/components/customer-orders/print-dropdown';
 import { SavedFiltersPills } from '@/components/customer-orders/saved-filters-pills';
 import { StatusChangeDropdown } from '@/components/customer-orders/status-change-dropdown';
+import { YesNoSelect } from '@/components/filters/filter-fields';
 import { FilterToggleButton } from '@/components/filters/filter-toggle-button';
 import { useBulkDocumentActions } from '@/hooks/use-bulk-actions';
 import { useColumnVisibility } from '@/hooks/use-column-visibility';
@@ -121,35 +122,6 @@ const ATTR_REF_ENDPOINT: Record<string, string> = {
 // Match moysklad's default — every list page in moysklad.uz paginates
 // at 100 rows. The list-view query supports up to 250.
 const LIMIT = 100;
-
-/** Tri-state ✓ / — / (unset) select — mirrors purchase-order's YesNoSelect
- *  for the boolean flag filters (Проведено / Напечатано / Отправлено /
- *  Общий доступ). The empty option clears the filter exactly like moysklad. */
-function YesNoSelect({
-  value,
-  onChange,
-  testId,
-}: {
-  value: 'true' | 'false' | undefined;
-  onChange: (v: 'true' | 'false' | undefined) => void;
-  testId?: string;
-}) {
-  const tCommon = useTranslations('common');
-  return (
-    <NativeSelect
-      value={value ?? ''}
-      onChange={(e) => {
-        const v = e.target.value;
-        onChange(v === '' ? undefined : (v as 'true' | 'false'));
-      }}
-      data-test-id={testId}
-    >
-      <option value="" />
-      <option value="false">{tCommon('no')}</option>
-      <option value="true">{tCommon('yes')}</option>
-    </NativeSelect>
-  );
-}
 
 export default function CustomerOrdersPage() {
   const t = useTranslations('pages.customer_orders');

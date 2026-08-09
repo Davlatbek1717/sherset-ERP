@@ -2,6 +2,7 @@
 
 import { ColumnSettings } from '@/components/column-settings';
 import { SavedFiltersPills } from '@/components/customer-orders/saved-filters-pills';
+import { MultiRefField, YesNoSelect, refFetcher } from '@/components/filters/filter-fields';
 import { FilterToggleButton } from '@/components/filters/filter-toggle-button';
 import { useDocEditMenuItems } from '@/components/money/document-toolbar-menus';
 import { usePrintTemplatesManager } from '@/components/print/print-templates-provider';
@@ -23,7 +24,6 @@ import {
   type ListToolbarMenuItem,
   ListView,
   MassEditModal,
-  MultiCombobox,
   NativeSelect,
   PeriodInputs,
   PeriodShortcuts,
@@ -72,87 +72,9 @@ interface ListResponse {
 // Moysklad parity — 100 rows per page (same as CO list).
 const LIMIT = 100;
 
-/** Tri-state ✓ / — / (unset) select — mirrors demand's YesNoSelect for the
- *  boolean flag filters (Проведено / Напечатано / Отправлено). The empty
- *  option clears the filter exactly like moysklad. */
-function YesNoSelect({
-  value,
-  onChange,
-  testId,
-}: {
-  value: 'true' | 'false' | undefined;
-  onChange: (v: 'true' | 'false' | undefined) => void;
-  testId?: string;
-}) {
-  const tCommon = useTranslations('common');
-  return (
-    <NativeSelect
-      value={value ?? ''}
-      onChange={(e) => {
-        const v = e.target.value;
-        onChange(v === '' ? undefined : (v as 'true' | 'false'));
-      }}
-      data-test-id={testId}
-    >
-      <option value="" />
-      <option value="false">{tCommon('no')}</option>
-      <option value="true">{tCommon('yes')}</option>
-    </NativeSelect>
-  );
-}
-
 type RefMulti = { id: string; label: string };
 type ComboItem = { value: string; label: string; sublabel?: string };
 
-/**
- * Multi-select inline reference filter field — moysklad checkbox-dropdown
- * («Товар или группа» → click opens an in-place dropdown with a search box +
- * checkboxes, pick several). Wraps MultiCombobox + the id↔label merge so each
- * field is a one-liner. MUST be module-level: an inline component is a NEW type
- * each render → React remounts it → the dropdown closes on every keystroke.
- */
-function MultiRefField({
-  value,
-  onChange,
-  onSearch,
-  testId,
-}: {
-  value: RefMulti[];
-  onChange: (next: RefMulti[]) => void;
-  onSearch: (q: string) => Promise<ComboItem[]>;
-  testId: string;
-}) {
-  return (
-    <MultiCombobox
-      value={value.map((x) => x.id)}
-      items={value.map((x) => ({ value: x.id, label: x.label }))}
-      onSearch={onSearch}
-      onChange={(nextIds, toggled) => {
-        onChange(
-          nextIds.map((id) => {
-            const ex = value.find((p) => p.id === id);
-            if (ex) return ex;
-            if (toggled?.value === id) return { id, label: String(toggled.label) };
-            return { id, label: id };
-          }),
-        );
-      }}
-      placeholder=""
-      testId={testId}
-    />
-  );
-}
-
-// Module-level fetchers (API list → MultiCombobox items). `api` is module-scoped
-// so these live outside the component (stable identity, no remount churn).
-const refFetcher =
-  (path: string) =>
-  async (q: string): Promise<ComboItem[]> => {
-    const r = await api.get<{ items: { id: string; name: string }[] }>(
-      `${path}?search=${encodeURIComponent(q)}&limit=20`,
-    );
-    return r.items.map((x) => ({ value: x.id, label: x.name }));
-  };
 const fetchCounterparties = refFetcher('/counterparties');
 const fetchOrganizations = refFetcher('/organizations');
 const fetchStores = refFetcher('/stores');

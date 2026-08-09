@@ -31,10 +31,10 @@ import { useDocumentEditorLabels } from '@/hooks/use-document-editor-labels';
 import { useTotalsLabels } from '@/hooks/use-totals-labels';
 import { api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-store';
+import { computeLineTotalSafe } from '@/lib/doc-totals';
 import { imageRawUrl } from '@/lib/image-url';
 import { distributeAgreementDelta } from '@/lib/position-agreement';
 import { resolveDefaultSalePriceOrZero, usePriceTypeIds } from '@/lib/sale-price';
-import { computePositionTotal } from '@moysklad/money';
 import {
   Button,
   CatalogPicker,
@@ -127,33 +127,6 @@ function composeAddress(a: DeliveryAddressFull): string | null {
   if (a.other) parts.push(a.other);
   const composed = parts.filter(Boolean).join(', ').trim();
   return composed || null;
-}
-
-// Per-line total for the «Итого» reduce — delegates to the shared
-// `computePositionTotal` so the document footer shows the EXACT total the
-// API will post (the previous inline math rounded price×qty before the
-// discount and truncated the discount division, drifting a tiyin from the
-// API's single-round result; it also crashed on a fractional «НДС» via
-// `BigInt(Number(vat))`). Same single source of truth the BE + print use.
-function computeLineTotal(
-  p: NewPositionRow,
-  vatIncluded: boolean,
-): { net: bigint; vat: bigint; gross: bigint } {
-  try {
-    const { totalMinor, vatAmountMinor, baseMinor } = computePositionTotal(
-      {
-        quantity: p.quantity || '0',
-        priceMinor: p.priceMinor || '0',
-        discount: p.discount || '0',
-        vat: p.vatEnabled && p.vat ? Number(p.vat) : null,
-      },
-      p.vatEnabled,
-      vatIncluded,
-    );
-    return { net: baseMinor, vat: vatAmountMinor, gross: totalMinor };
-  } catch {
-    return { net: 0n, vat: 0n, gross: 0n };
-  }
 }
 
 // moysklad position table = fixed columns (Наименование/Кол-во/Цена/НДС/Скидка/
@@ -671,7 +644,7 @@ export default function NewCustomerOrderPage() {
         uom: r.productUom ?? null,
         qty: r.quantity,
         priceMinor: r.priceMinor || '0',
-        sumMinor: computeLineTotal(r, vatIncluded).gross.toString(),
+        sumMinor: computeLineTotalSafe(r, vatIncluded).gross.toString(),
       })),
     });
   }, [positions, docNumber, organizationLabel, agentLabel, description, user?.name, vatIncluded]);
@@ -777,7 +750,7 @@ export default function NewCustomerOrderPage() {
     () =>
       positions.reduce(
         (acc, p) => {
-          const t = computeLineTotal(p, vatIncluded);
+          const t = computeLineTotalSafe(p, vatIncluded);
           return { net: acc.net + t.net, vat: acc.vat + t.vat, gross: acc.gross + t.gross };
         },
         { net: 0n, vat: 0n, gross: 0n },

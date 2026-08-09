@@ -2,6 +2,7 @@
 
 import { ColumnSettings } from '@/components/column-settings';
 import { SavedFiltersPills } from '@/components/customer-orders/saved-filters-pills';
+import { YesNoSelect } from '@/components/filters/filter-fields';
 import { FilterToggleButton } from '@/components/filters/filter-toggle-button';
 import { usePrintTemplatesManager } from '@/components/print/print-templates-provider';
 import { type KitPrintForm, KitPrintModal } from '@/components/purchase-orders/kit-print-modal';
@@ -142,33 +143,6 @@ function StatusBadge({ on, label }: { on: boolean; label: string }) {
     >
       {label}
     </span>
-  );
-}
-
-/** Tri-state Yes/No/All select for boolean filter fields. */
-function YesNoSelect({
-  value,
-  onChange,
-  testId,
-}: {
-  value: 'true' | 'false' | undefined;
-  onChange: (v: 'true' | 'false' | undefined) => void;
-  testId?: string;
-}) {
-  const tCommon = useTranslations('common');
-  return (
-    <NativeSelect
-      value={value ?? ''}
-      onChange={(e) => {
-        const v = e.target.value;
-        onChange(v === '' ? undefined : (v as 'true' | 'false'));
-      }}
-      data-test-id={testId}
-    >
-      <option value="" />
-      <option value="false">{tCommon('no')}</option>
-      <option value="true">{tCommon('yes')}</option>
-    </NativeSelect>
   );
 }
 

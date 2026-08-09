@@ -2,6 +2,7 @@
 
 import { ColumnSettings } from '@/components/column-settings';
 import { SavedFiltersPills } from '@/components/customer-orders/saved-filters-pills';
+import { YesNoSelect } from '@/components/filters/filter-fields';
 import { FilterToggleButton } from '@/components/filters/filter-toggle-button';
 import { SalesReturnBulkActionsDropdown } from '@/components/sales-returns/bulk-actions-dropdown';
 import { SalesReturnPrintDropdown } from '@/components/sales-returns/print-dropdown';
@@ -75,35 +76,6 @@ interface ListResponse {
 
 // Moysklad parity — 100 rows per page.
 const LIMIT = 100;
-
-/** Tri-state ✓ / — / (unset) select — mirrors the invoice-out gold standard
- *  for the boolean flag filters (Проведено / Напечатано / Отправлено). The
- *  empty option clears the filter exactly like moysklad. */
-function YesNoSelect({
-  value,
-  onChange,
-  testId,
-}: {
-  value: 'true' | 'false' | undefined;
-  onChange: (v: 'true' | 'false' | undefined) => void;
-  testId?: string;
-}) {
-  const tCommon = useTranslations('common');
-  return (
-    <NativeSelect
-      value={value ?? ''}
-      onChange={(e) => {
-        const v = e.target.value;
-        onChange(v === '' ? undefined : (v as 'true' | 'false'));
-      }}
-      data-test-id={testId}
-    >
-      <option value="" />
-      <option value="false">{tCommon('no')}</option>
-      <option value="true">{tCommon('yes')}</option>
-    </NativeSelect>
-  );
-}
 
 /** Multi-select reference field — moysklad checkbox-dropdown holds {id,label}[]. */
 type RefMulti = { id: string; label: string };

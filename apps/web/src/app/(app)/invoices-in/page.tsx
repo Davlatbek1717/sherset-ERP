@@ -2,6 +2,7 @@
 
 import { ColumnSettings } from '@/components/column-settings';
 import { SavedFiltersPills } from '@/components/customer-orders/saved-filters-pills';
+import { YesNoSelect } from '@/components/filters/filter-fields';
 import { FilterToggleButton } from '@/components/filters/filter-toggle-button';
 import {
   useDocEditMenuItems,
@@ -130,34 +131,6 @@ function StatusBadge({ on, label }: { on: boolean; label: string }) {
 }
 
 type InvoiceInStateKey = 'draft' | 'posted' | 'partially_paid' | 'paid' | 'cancelled';
-
-/** Tri-state Yes/No/All select for boolean filter fields — mirrors the
- *  purchase-orders gold-standard control (✓ / — / unset). */
-function YesNoSelect({
-  value,
-  onChange,
-  testId,
-}: {
-  value: 'true' | 'false' | undefined;
-  onChange: (v: 'true' | 'false' | undefined) => void;
-  testId?: string;
-}) {
-  const tCommon = useTranslations('common');
-  return (
-    <NativeSelect
-      value={value ?? ''}
-      onChange={(e) => {
-        const v = e.target.value;
-        onChange(v === '' ? undefined : (v as 'true' | 'false'));
-      }}
-      data-test-id={testId}
-    >
-      <option value="" />
-      <option value="false">{tCommon('no')}</option>
-      <option value="true">{tCommon('yes')}</option>
-    </NativeSelect>
-  );
-}
 
 /** Generic typed select for the moysklad-parity «Оплата» / «Приемка» filters
  *  (mirror the purchase-orders gold standard). The empty option is always

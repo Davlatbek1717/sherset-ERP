@@ -56,12 +56,11 @@ import { useSaveMutation } from '@/hooks/use-save-mutation';
 import { useTotalsLabels } from '@/hooks/use-totals-labels';
 import { useUnsavedGuard } from '@/hooks/use-unsaved-guard';
 import { api } from '@/lib/api-client';
-import { docMeasureTotals } from '@/lib/doc-totals';
+import { computeLineTotalSafe, docMeasureTotals } from '@/lib/doc-totals';
 import { imageRawUrl } from '@/lib/image-url';
 import { distributeAgreementDelta } from '@/lib/position-agreement';
 import { buildPrintMenu } from '@/lib/print-menu';
 import { resolveDefaultSalePriceOrZero, usePriceTypeIds } from '@/lib/sale-price';
-import { computePositionTotal } from '@moysklad/money';
 import {
   Alert,
   CatalogPicker,
@@ -192,29 +191,6 @@ interface DetailPositionRow extends DocPositionRow {
 
 function uid(): string {
   return Math.random().toString(36).slice(2);
-}
-
-/** Per-line total for the live «Итого» footer — the SAME `computePositionTotal`
- *  the BE + print use, so the footer matches the API exactly. */
-function computeLineTotal(
-  p: DetailPositionRow,
-  vatIncluded: boolean,
-): { net: bigint; vat: bigint; gross: bigint } {
-  try {
-    const { totalMinor, vatAmountMinor, baseMinor } = computePositionTotal(
-      {
-        quantity: p.quantity || '0',
-        priceMinor: p.priceMinor || '0',
-        discount: p.discount || '0',
-        vat: p.vatEnabled && p.vat ? Number(p.vat) : null,
-      },
-      p.vatEnabled,
-      vatIncluded,
-    );
-    return { net: baseMinor, vat: vatAmountMinor, gross: totalMinor };
-  } catch {
-    return { net: 0n, vat: 0n, gross: 0n };
-  }
 }
 
 /** ISO moment (UTC) → local `YYYY-MM-DDTHH:MM` for the shared <DocumentHeader>. */
@@ -1170,7 +1146,7 @@ export default function DemandDetailPage() {
   // Live totals from the (editable) form positions.
   const totals = form.positions.reduce(
     (acc, p) => {
-      const t = computeLineTotal(p, form.vatIncluded);
+      const t = computeLineTotalSafe(p, form.vatIncluded);
       return { net: acc.net + t.net, vat: acc.vat + t.vat, gross: acc.gross + t.gross };
     },
     { net: 0n, vat: 0n, gross: 0n },
