@@ -22,8 +22,11 @@ import { resolveCreatorGroupId } from '../shared/group-stamp.js';
 // fixes the §100 latent bug — drawer in/out were omitted from expected).
 import {
   type ShiftCashInputs,
+  type ShiftUsdCashInputs,
   expectedCashMinor,
+  expectedUsdCashMinor,
   shiftDiscrepancyMinor,
+  shiftUsdDiscrepancyMinor,
 } from './cashier-session-reconciliation.js';
 import {
   CloseSessionSchema,
@@ -53,6 +56,9 @@ import {
   formatVarianceMessage,
   planVarianceActs,
 } from './shift-variance.js';
+
+/** Hisob valyutasi — Z-hisobotdagi jamilar shu valyutada (MK31). */
+const BASE_CURRENCY = 'UZS';
 
 /**
  * CashierSessionService — manages cashier shift lifecycle.
@@ -184,6 +190,8 @@ export class CashierSessionService {
           storeId: parsed.storeId,
           organizationId: parsed.organizationId,
           openingCashMinor: BigInt(parsed.openingCashMinor),
+          // MK31 (§8.1) — ochilish naqdi UZS va USD alohida.
+          openingCashUsdMinor: BigInt(parsed.openingCashUsdMinor),
           // Were parsed from OpenSessionSchema but silently dropped before
           // (lossy create — §8.3 pattern). Persist both header fields.
           description: parsed.description ?? null,
@@ -227,6 +235,10 @@ export class CashierSessionService {
     }
 
     const closingCash = BigInt(parsed.closingCashMinor);
+    // MK31 (§8.4): `null` = «dollar sanalmagan», `0n` = «sanadim, dollar
+    // yo'q». Ikkalasi hech qachon aralashtirilmaydi.
+    const closingCashUsd =
+      parsed.closingCashUsdMinor != null ? BigInt(parsed.closingCashUsdMinor) : null;
 
     // Faza Q1 (SALES-07): sanoq + flip BITTA Serializable tranzaksiyada.
     // Ilgari agregatlar tranzaksiyadan tashqarida o'qilardi, ya'ni o'qish bilan
@@ -259,6 +271,29 @@ export class CashierSessionService {
         const expectedCash = expectedCashMinor(cashInputs);
         const discrepancy = shiftDiscrepancyMinor(closingCash, cashInputs);
 
+        // MK31 — dollar yashiq (§8.4). Sentda, so'mga o'girilmaydi.
+        const usdInputs = await this.collectUsdCashInputs(
+          tx,
+          accountId,
+          sessionId,
+          session.openingCashUsdMinor,
+        );
+        const expectedUsd = expectedUsdCashMinor(usdInputs);
+        // Dollar oqimi bo'lgan smenani sanoqsiz yopib bo'lmaydi: jim 0 deb
+        // qabul qilsak, yashiqdagi dollar o'lchanmay qolardi (MK31 gacha
+        // bo'lgan holatning o'zi), yoki to'liq kamomad akti yozilardi.
+        if (expectedUsd !== 0n && closingCashUsd === null) {
+          throw new BadRequestException(
+            `Smenada dollar naqd oqimi bor (kutilgan ${expectedUsd.toString()} sent) — sanalgan dollarni kiriting.`,
+          );
+        }
+        const discrepancyUsd =
+          closingCashUsd === null ? null : shiftUsdDiscrepancyMinor(closingCashUsd, usdInputs);
+        // Dollarga UMUMAN tegilmagan smenada ustunlar NULL bo'lib qoladi:
+        // aks holda «dollar bilan ishlamaydigan kassa» va «dollar sanaldi,
+        // 0 chiqdi» hisobotlarda bir xil ko'rinardi.
+        const usdTouched = expectedUsd !== 0n || closingCashUsd !== null;
+
         // Atomic state guard: 'open' → 'closed'. Two concurrent close() calls
         // would otherwise both succeed (both reads see 'open', both updates
         // target the same id), with the second overwriting
@@ -274,6 +309,13 @@ export class CashierSessionService {
             closingCashMinor: closingCash,
             expectedCashMinor: expectedCash,
             discrepancyMinor: discrepancy,
+            ...(usdTouched
+              ? {
+                  closingCashUsdMinor: closingCashUsd,
+                  expectedCashUsdMinor: expectedUsd,
+                  discrepancyUsdMinor: discrepancyUsd,
+                }
+              : {}),
             // MK08 — yopilgan smena MENEJER navbatiga tushadi
             // (`open_for_review`). Ayni `updateMany` ichida: agar keyin
             // alohida yozilsa va oradagi xato yuz bersa, smena yopilgan-u
@@ -305,7 +347,7 @@ export class CashierSessionService {
             actorId: null,
           },
         });
-        return { expectedCash, discrepancy };
+        return { expectedCash, discrepancy, expectedUsd };
       },
       { isolationLevel: 'Serializable', timeout: 15000 },
     );
@@ -320,6 +362,8 @@ export class CashierSessionService {
       cashierId,
       expectedCash: closed.expectedCash,
       closingCash,
+      expectedUsd: closed.expectedUsd,
+      closingCashUsd,
       varianceNote: parsed.varianceNote ?? null,
     });
 
@@ -402,6 +446,57 @@ export class CashierSessionService {
       drawerOutMinor: drawerOutAgg._sum.sumMinor ?? 0n,
       returnsCashMinor: refundAgg._sum.cashAmountMinor ?? 0n,
       debtCashMinor: debtCashAgg._sum.amountMinor ?? 0n,
+    };
+  }
+
+  /**
+   * Smenaning DOLLAR kirim/chiqimi — sentda (MK31 · §8.4).
+   *
+   * Manba `RetailSalePayment` qatorlari, `RetailSale.cashAmountMinor` EMAS:
+   * o'sha ustun so'm semantikasida qoladi (`retail-tenders.legacyTotals`
+   * dagi sabab) va unga dollarni qo'shish so'm kutilganini buzardi.
+   *
+   * Qaytim a'zosi YO'Q: qaytim doim so'mda beriladi (yashiqdagi dollarni
+   * maydalash yo'li yo'q), ya'ni yashiqqa tushgan dollar — to'lovning
+   * to'liq summasi.
+   */
+  private async collectUsdCashInputs(
+    db: Prisma.TransactionClient,
+    accountId: string,
+    sessionId: string,
+    openingUsdMinor: bigint,
+  ): Promise<ShiftUsdCashInputs> {
+    const [salesAgg, refundAgg] = await Promise.all([
+      db.retailSalePayment.aggregate({
+        where: {
+          accountId,
+          method: TENDER.cashUsd,
+          // Holat filtri so'm oqimi bilan bir xil: OYNA (qaytarish) cheklar
+          // bu yerga tushmaydi, aks holda ular ham (+), ham (−) bo'lib
+          // bir-birini yeb qo'yardi.
+          sale: {
+            accountId,
+            sessionId,
+            state: { in: ['posted', 'refunded'] },
+            refundedFromId: null,
+          },
+        },
+        _sum: { amountMinor: true },
+      }),
+      db.retailSalePayment.aggregate({
+        where: {
+          accountId,
+          method: TENDER.cashUsd,
+          sale: { accountId, sessionId, state: 'posted', refundedFromId: { not: null } },
+        },
+        _sum: { amountMinor: true },
+      }),
+    ]);
+
+    return {
+      openingUsdMinor,
+      salesUsdMinor: salesAgg._sum.amountMinor ?? 0n,
+      returnsUsdMinor: refundAgg._sum.amountMinor ?? 0n,
     };
   }
 
@@ -519,14 +614,30 @@ export class CashierSessionService {
     cashierId: string;
     expectedCash: bigint;
     closingCash: bigint;
+    expectedUsd: bigint;
+    closingCashUsd: bigint | null;
     varianceNote: string | null;
   }): Promise<VarianceAct[]> {
-    // Faqat UZS. Sof modul bir necha valyutani qo'llaydi (`planVarianceActs`),
-    // lekin USD «kutilgan»i hozir hisoblanmaydi — USD naqd oqimi ulanmagan
-    // (CASH_USD). Soxta «USD ortiqcha» aktidan ko'ra akt YO'Qligi to'g'ri:
-    // ogohlantirishga ishonch yo'qolsa, haqiqiy kamomad ham o'qilmaydi.
+    // Har valyuta O'Z aktini oladi va o'z sanoq birligida qoladi (§8.4):
+    // dollarni kurs bilan so'mga o'girish yo'qolgan dollarni «taxminiy
+    // so'm»ga aylantirib, aktni dalil bo'lishdan to'xtatardi.
+    //
+    // MK31: dollar akti faqat dollar SANALGAN bo'lsa rejalanadi. Sanalmagan
+    // (`null`) ni 0 deb olsak, dollar oqimi bo'lgan har smenada to'liq
+    // kamomad akti chiqardi — ya'ni bu fazagacha bo'lgan «soxta signal»
+    // xavfi teskari tomondan qaytardi. (`close()` esa dollar oqimi bor
+    // smenani sanoqsiz yopishga umuman yo'l qo'ymaydi.)
     const acts = planVarianceActs([
       { currency: 'UZS', expectedMinor: args.expectedCash, countedMinor: args.closingCash },
+      ...(args.closingCashUsd != null
+        ? [
+            {
+              currency: 'USD',
+              expectedMinor: args.expectedUsd,
+              countedMinor: args.closingCashUsd,
+            },
+          ]
+        : []),
     ]);
     if (acts.length === 0) return [];
 
@@ -601,6 +712,8 @@ export class CashierSessionService {
         closedAt: true,
         openingCashMinor: true,
         closingCashMinor: true,
+        openingCashUsdMinor: true,
+        closingCashUsdMinor: true,
         cashier: { select: { id: true, name: true } },
         cashDesk: { select: { id: true, name: true, currency: true } },
         store: { select: { name: true } },
@@ -609,53 +722,74 @@ export class CashierSessionService {
     });
     if (!session) throw new NotFoundException(`CashierSession ${sessionId} not found`);
 
-    const [payments, sales, refundAgg, debtAgg, cashOut, variances] = await Promise.all([
-      // To'lov turlari kesimida tushum — `RetailSalePayment` bo'yicha, chunki
-      // aralash to'lovda bitta chek bir necha turga bo'linadi (B3).
-      this.prisma.client.retailSalePayment.groupBy({
-        by: ['method'],
-        where: { sale: { accountId, sessionId, state: { in: ['posted', 'refunded'] } } },
-        _sum: { amountMinor: true },
-      }),
-      this.prisma.client.retailSale.findMany({
-        where: { accountId, sessionId, state: { in: ['posted', 'refunded'] } },
-        select: {
-          id: true,
-          sumMinor: true,
-          refundedFromId: true,
-          positions: {
-            select: {
-              quantity: true,
-              priceMinor: true,
-              sumMinor: true,
-              costMinor: true,
-              basePriceMinor: true,
+    const [payments, unconverted, sales, refundAgg, debtAgg, cashOut, variances] =
+      await Promise.all([
+        // To'lov turlari kesimida tushum — `RetailSalePayment` bo'yicha, chunki
+        // aralash to'lovda bitta chek bir necha turga bo'linadi (B3).
+        //
+        // MK31: valyuta ham kesimga kiradi va jamiga `amountBaseMinor`
+        // (so'mdagi ekvivalent) qo'shiladi. `amountMinor` bo'yicha jamlash
+        // sentni tiyinga qo'shib, tushumni ~12 000 barobar buzardi.
+        this.prisma.client.retailSalePayment.groupBy({
+          by: ['method', 'currency'],
+          where: {
+            sale: { accountId, sessionId, state: { in: ['posted', 'refunded'] } },
+            OR: [{ currency: BASE_CURRENCY }, { rateMinor: { not: null } }],
+          },
+          _sum: { amountMinor: true, amountBaseMinor: true },
+        }),
+        // Kursi YO'Q valyutali qatorlar — jamiga kirmaydi, lekin ko'rinadi
+        // (Faza 17 konvertatsiya shartnomasi). `amountBaseMinor` ustuni NOT
+        // NULL bo'lgani uchun bunday qatorda u jim 1:1 yozilgan bo'lishi
+        // mumkin — shuning uchun manba `rateMinor`, base EMAS.
+        this.prisma.client.retailSalePayment.groupBy({
+          by: ['method', 'currency'],
+          where: {
+            sale: { accountId, sessionId, state: { in: ['posted', 'refunded'] } },
+            currency: { not: BASE_CURRENCY },
+            rateMinor: null,
+          },
+          _sum: { amountMinor: true },
+        }),
+        this.prisma.client.retailSale.findMany({
+          where: { accountId, sessionId, state: { in: ['posted', 'refunded'] } },
+          select: {
+            id: true,
+            sumMinor: true,
+            refundedFromId: true,
+            positions: {
+              select: {
+                quantity: true,
+                priceMinor: true,
+                sumMinor: true,
+                costMinor: true,
+                basePriceMinor: true,
+              },
             },
           },
-        },
-      }),
-      this.prisma.client.retailSale.aggregate({
-        where: { accountId, sessionId, state: 'posted', refundedFromId: { not: null } },
-        _sum: { sumMinor: true },
-      }),
-      this.prisma.client.debtPayment.aggregate({
-        where: { accountId, retailShiftId: sessionId, reversedAt: null },
-        _sum: { amountMinor: true },
-      }),
-      this.cashOutSummary(accountId, sessionId),
-      this.prisma.client.cashierSessionVariance.findMany({
-        where: { accountId, sessionId },
-        select: {
-          currency: true,
-          expectedMinor: true,
-          countedMinor: true,
-          varianceMinor: true,
-          kind: true,
-          cashierNote: true,
-          acknowledgedAt: true,
-        },
-      }),
-    ]);
+        }),
+        this.prisma.client.retailSale.aggregate({
+          where: { accountId, sessionId, state: 'posted', refundedFromId: { not: null } },
+          _sum: { sumMinor: true },
+        }),
+        this.prisma.client.debtPayment.aggregate({
+          where: { accountId, retailShiftId: sessionId, reversedAt: null },
+          _sum: { amountMinor: true },
+        }),
+        this.cashOutSummary(accountId, sessionId),
+        this.prisma.client.cashierSessionVariance.findMany({
+          where: { accountId, sessionId },
+          select: {
+            currency: true,
+            expectedMinor: true,
+            countedMinor: true,
+            varianceMinor: true,
+            kind: true,
+            cashierNote: true,
+            acknowledgedAt: true,
+          },
+        }),
+      ]);
 
     // Yalpi foyda: tan narx MUZLATILGAN qatorlardan. Bittasi ham
     // muzlatilmagan bo'lsa natija `null` — 0 deb ko'rsatish «100% marja»
@@ -701,12 +835,31 @@ export class CashierSessionService {
       session.openingCashMinor,
     );
 
+    const usdInputs = await this.collectUsdCashInputs(
+      this.prisma.client,
+      accountId,
+      sessionId,
+      session.openingCashUsdMinor,
+    );
+
     const z = buildZReport({
       salesCount: realSalesCount,
-      revenueByMethod: payments.map((p) => ({
-        method: p.method,
-        sumMinor: p._sum.amountMinor ?? 0n,
-      })),
+      revenueByMethod: [
+        ...payments.map((p) => ({
+          method: p.method,
+          sumMinor: p._sum.amountMinor ?? 0n,
+          currency: p.currency,
+          baseMinor: p._sum.amountBaseMinor ?? 0n,
+        })),
+        // Kursi yo'q qatorlar: `baseMinor: null` — sof modul ularni jamidan
+        // chiqarib, alohida ro'yxatda ko'rsatadi.
+        ...unconverted.map((p) => ({
+          method: p.method,
+          sumMinor: p._sum.amountMinor ?? 0n,
+          currency: p.currency,
+          baseMinor: null,
+        })),
+      ],
       grossProfitMinor,
       discountMinor,
       creditSoldMinor: creditAgg._sum.amountMinor ?? 0n,
@@ -716,6 +869,10 @@ export class CashierSessionService {
       collectionMinor: BigInt(cashOut.collectionMinor),
       expectedCashMinor: expectedCashMinor(cashInputs),
       countedCashMinor: session.closingCashMinor,
+      // MK31 (§8.5) — dollar qatori. Sentda; `null` sanoq = «hali
+      // sanalmagan», shu holatda farq ham `null` bo'lib qoladi.
+      expectedUsdCashMinor: expectedUsdCashMinor(usdInputs),
+      countedUsdCashMinor: session.closingCashUsdMinor,
     });
 
     return {
@@ -734,6 +891,15 @@ export class CashierSessionService {
       revenueByMethod: z.revenueByMethod.map((r) => ({
         method: r.method,
         sumMinor: r.sumMinor.toString(),
+        currency: r.currency ?? BASE_CURRENCY,
+        baseMinor: r.baseMinor?.toString() ?? null,
+      })),
+      // Kursi noma'lumligi sababli jamiga KIRMAGAN summalar — jimgina
+      // tashlanmaydi, hisobotda ochiq turadi.
+      unconvertedByMethod: z.unconvertedByMethod.map((r) => ({
+        method: r.method,
+        sumMinor: r.sumMinor.toString(),
+        currency: r.currency,
       })),
       averageReceiptMinor: z.averageReceiptMinor?.toString() ?? null,
       grossProfitMinor: z.grossProfitMinor?.toString() ?? null,
@@ -748,6 +914,11 @@ export class CashierSessionService {
       expectedCashMinor: z.expectedCashMinor.toString(),
       countedCashMinor: z.countedCashMinor?.toString() ?? null,
       varianceMinor: z.varianceMinor?.toString() ?? null,
+      // Dollar yashiq — SENTDA (so'mga o'girilmaydi, §8.4).
+      openingCashUsdMinor: session.openingCashUsdMinor.toString(),
+      expectedUsdCashMinor: z.expectedUsdCashMinor.toString(),
+      countedUsdCashMinor: z.countedUsdCashMinor?.toString() ?? null,
+      varianceUsdMinor: z.varianceUsdMinor?.toString() ?? null,
       variances: variances.map((v) => ({
         currency: v.currency,
         expectedMinor: v.expectedMinor.toString(),

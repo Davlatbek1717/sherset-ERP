@@ -311,3 +311,50 @@ describe('RetailSaleFilterSchema', () => {
     expect(parsed.dateTo).toBeInstanceOf(Date);
   });
 });
+
+/**
+ * MK31 — `CASH_USD` to'lov (kassa TZ §6.2).
+ *
+ * Kurs KANONIK ×10^8 masshtabda va MAJBURIY: kurssiz dollar to'lovi
+ * bloklanadi (jim 1:1 qabul qilish taqiqlanadi).
+ */
+describe('PostRetailSaleSchema — dollar naqd (MK31)', () => {
+  const base = { cashAmountMinor: '0', cardAmountMinor: '0', expectedSumMinor: '1000' };
+  const RATE_E8 = '1245027000000'; // 12 450,27 so'm
+
+  it('dollar maydonlari default 0 — eski klient buzilmaydi', () => {
+    const p = PostRetailSaleSchema.parse(base);
+    expect(p.cashUsdAmountMinor).toBe('0');
+    expect(p.usdRateMinor).toBeUndefined();
+  });
+
+  it('dollar + kurs qabul qilinadi', () => {
+    const p = PostRetailSaleSchema.parse({
+      ...base,
+      cashUsdAmountMinor: '1000',
+      usdRateMinor: RATE_E8,
+    });
+    expect(p.cashUsdAmountMinor).toBe('1000');
+    expect(p.usdRateMinor).toBe(RATE_E8);
+  });
+
+  it('KURSSIZ dollar to`lov RAD etiladi (sxema darajasida)', () => {
+    expect(() => PostRetailSaleSchema.parse({ ...base, cashUsdAmountMinor: '1000' })).toThrow();
+  });
+
+  it('eski ×10^4 masshtabdagi kurs RAD etiladi (10 000× xato jim o`tmasin)', () => {
+    // 12 450,27 ni ×10^4 da yuborgan eski klient: 124 502 700. Kanonik deb
+    // o'qilsa kurs «1,24 so'm» bo'lardi va chek deyarli tekinga yopilardi.
+    expect(() =>
+      PostRetailSaleSchema.parse({
+        ...base,
+        cashUsdAmountMinor: '1000',
+        usdRateMinor: '124502700',
+      }),
+    ).toThrow();
+  });
+
+  it('dollar 0 bo`lsa kurs talab qilinmaydi', () => {
+    expect(() => PostRetailSaleSchema.parse({ ...base, cashUsdAmountMinor: '0' })).not.toThrow();
+  });
+});

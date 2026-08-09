@@ -7840,6 +7840,20 @@ model CashierSession {
   discrepancyMinor  BigInt?   @map("discrepancy_minor")
   state             String    @default("open") @db.VarChar(10)
 
+  /// DOLLAR YASHIQ (MK31 · kassa TZ §8.1/§8.4) — SENTDA, so'mga
+  /// o'girilmaydi. Dollar farqi ataylab alohida yuritiladi: kurs bilan
+  /// o'girish yo'qolgan dollarni «taxminiy so'm»ga aylantirib, farq aktini
+  /// dalil bo'lishdan to'xtatardi.
+  ///
+  /// `closing`/`expected`/`discrepancy` NULLABLE va `null` MA'NOLI:
+  /// «sanalmagan» ≠ «sanadim, dollar yo'q» (0). Dollarsiz ishlaydigan
+  /// kassalarda uchalasi ham NULL bo'lib qoladi va hech qanday akt
+  /// yozilmaydi — mavjud smenalar uchun xulq o'zgarmaydi.
+  openingCashUsdMinor  BigInt  @default(0) @map("opening_cash_usd_minor")
+  closingCashUsdMinor  BigInt? @map("closing_cash_usd_minor")
+  expectedCashUsdMinor BigInt? @map("expected_cash_usd_minor")
+  discrepancyUsdMinor  BigInt? @map("discrepancy_usd_minor")
+
   salesCount      Int    @default(0) @map("sales_count")
   salesSumMinor   BigInt @default(0) @map("sales_sum_minor")
   returnsCount    Int    @default(0) @map("returns_count")

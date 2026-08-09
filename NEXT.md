@@ -374,6 +374,40 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > (MK06 `ManagerWorkItem` ga ulash kerak, `dedupKey` ko'prik tayyor) · chegaralar
 > `ManagerRuleConfig` ga ko'chirilmagan · ko'p valyutali karta uchun `currency_mismatch` naqli yo'q.
 >
+> **🕒 2026-08-09u (REJA-MENEJER-KASSA **MK31** — kassa USD naqd oqimi: `CASH_USD` → kutilgan
+> dollar · farq akti · Z-hisobot qatori). To'liq hisobot:
+> `docs/REJA-MENEJER-KASSA-2026-08.md` → HISOBOT JURNALI → «MK31».**
+>
+> **Muammo (kodda tasdiqlangan):** kassadagi dollar **umuman o'lchanmasdi**. `variance-wiring.test.ts`
+> «USD akti yozilmaydi — CASH_USD ulanmagan» deb hozirgi xulqni qulflagan edi; zanjirning boshida
+> esa `CASH_USD` tenderi yo'q, sxema dollar maydonini bilmas, `RetailSalePayment.rateMinor` ga
+> **hech kim yozmasdi**.
+>
+> **Qilingan:** uch sof modul (tender · smena kutilgani · Z-hisobot) → sxema (2 refine: kurssiz
+> dollar va eski ×10⁴ kurs bloklanadi) → migratsiya (`cashier_sessions` +4 ustun) → servis
+> (kurs chekka muzlatiladi, `collectUsdCashInputs`, ikki valyutali farq akti) → POS yopish
+> formasida sanalgan dollar maydoni. **Dollar SENTDA qoladi, so'mga o'girilmaydi** (§8.4).
+> `null` ≠ `0`: dollar oqimi bor smenani sanoqsiz yopib bo'lmaydi, oqimi yo'q smenada ustunlar
+> NULL bo'lib qoladi (backfill YO'Q → ko'rinadigan xulq o'zgarmaydi).
+>
+> **Eski test o'chirilmadi, `Edit` bilan qayta yozildi** — eski shartning SABABI (kutilgan USD
+> yo'q edi) yo'qoldi, MAQSADI (soxta akt yozilmasin) yangi shartda saqlandi: akt faqat dollar
+> haqiqatan sanalganda rejalanadi.
+>
+> **Yo'l-yo'lakay:** `pos-payment-contract.test.ts` skaneri formatga bog'liq edi va `z\n.object({`
+> ko'rinishida **boshqa sxemani** o'qib ketardi (MK06 hisobotida bu «parallel sessiya» deb qayd
+> etilgan edi — aslida shu sessiyaning in-flight tahriri). Skaner qavs-chuqurligi bo'yicha
+> ishlaydigan qilindi + «boshqa e'longa sakramadikmi» tekshiruvi qo'shildi.
+>
+> **Gate:** api typecheck 0 · web typecheck 0 · biome 0 · i18n ✅ · **api 6481 yashil** ·
+> **web 2955 yashil**. Migratsiya lokal `climart_adopt` ga qo'llandi; **prod DDL → OPS-QADAMLAR
+> 11-band**.
+>
+> ⚠️ **Phase-1 — browser-smoke YO'Q** (⇒ MK34). **Ochiq qarzlar:** POS to'lov oynasida dollar
+> tugmasi yo'q (server yo'li tayyor, jonli dollar cheki hali yaratilmaydi) · dollar naqd pul
+> daftariga tushmaydi (`CashDesk` bir valyutali) · ochilish dollari UI'dan kiritilmaydi ·
+> dollar qaytarish va dollar yashiq amallari yo'q.
+>
 > **🕒 2026-08-09t (REJA-MENEJER-KASSA **MK06** — 4M.5a: menejer ish navbati, dvigatel va model) —
 > `d450bc0a`, 19 fayl (+3324/−3). To'liq hisobot:
 > `docs/REJA-MENEJER-KASSA-2026-08.md` → HISOBOT JURNALI → «Faza MK06».**

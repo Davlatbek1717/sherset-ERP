@@ -800,7 +800,7 @@ supply-approval oqimi o'zgarmaydi (regress).
 > Kassa bo'limi `B1`–`B7` va `B8`ning 1-bo'lagi tugagan. Qolgani — **texnik qarz** va **runtime QA**.
 > Menejer yadrosidan keyin darhol keladi (egasining 2026-08-09 qarori); hech narsaga bog'liq emas.
 
-### MK31 — Kassa USD naqd oqimi (`CASH_USD`): kutilgan naqd · farq akti · Z-hisobot ☐ HISOBOT
+### MK31 — Kassa USD naqd oqimi (`CASH_USD`): kutilgan naqd · farq akti · Z-hisobot ☑ HISOBOT (2026-08-09)
 **Bo'lim/blok:** 1-Kassa B3/B7 qoldig'i · **TZ:** `2026-08-01-kassa-tz-design.md` §6, §8.4, §8.5
 **Ustuvorlik:** P1 · **Bog'liqlik:** yo'q
 **Muammo (2026-08-09 da tasdiqlandi):** USD naqd oqimi **ulanmagan** — shu sababdan smena

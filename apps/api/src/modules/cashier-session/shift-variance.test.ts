@@ -202,3 +202,102 @@ describe('buildZReport — §8.5 raqamlari', () => {
     expect(z.collectionMinor).toBe(400_000n);
   });
 });
+
+/**
+ * MK31 — Z-hisobotda dollar (kassa TZ §8.5 + Faza 17 konvertatsiya
+ * shartnomasi: «kursi yo'q pul jamiga qo'shilmaydi»).
+ */
+describe('buildZReport — dollar qatori va konvertatsiya shartnomasi', () => {
+  const base = {
+    salesCount: 2,
+    revenueByMethod: [{ method: 'CASH_UZS', sumMinor: 100_000n }],
+    grossProfitMinor: 0n,
+    discountMinor: 0n,
+    creditSoldMinor: 0n,
+    debtPaidMinor: 0n,
+    returnsMinor: 0n,
+    expenseMinor: 0n,
+    collectionMinor: 0n,
+    expectedCashMinor: 100_000n,
+    countedCashMinor: 100_000n,
+  };
+
+  it('dollar qatori jamiga SO`MDAGI ekvivalenti bilan kiradi (sent EMAS)', () => {
+    // 1 000 sent ($10) ni jamiga o'sha holicha qo'shsak, tushum 12 450
+    // barobar kam ko'rinardi — «kassa bugun deyarli ishlamadi» degan yolg'on.
+    const z = buildZReport({
+      ...base,
+      revenueByMethod: [
+        { method: 'CASH_UZS', sumMinor: 100_000n },
+        { method: 'CASH_USD', sumMinor: 1_000n, currency: 'USD', baseMinor: 12_450_270n },
+      ],
+    });
+    expect(z.revenueMinor).toBe(100_000n + 12_450_270n);
+    expect(z.unconvertedByMethod).toEqual([]);
+  });
+
+  it('KURSI YO`Q dollar qatori jamiga QO`SHILMAYDI va ko`rinib turadi', () => {
+    // Sentni tiyin deb qo'shish ham, jimgina tashlab yuborish ham yolg'on.
+    // Uchinchi yo'l: jamidan chiqarib, alohida ro'yxatda ko'rsatish.
+    const z = buildZReport({
+      ...base,
+      revenueByMethod: [
+        { method: 'CASH_UZS', sumMinor: 100_000n },
+        { method: 'CASH_USD', sumMinor: 1_000n, currency: 'USD', baseMinor: null },
+      ],
+    });
+    expect(z.revenueMinor).toBe(100_000n);
+    expect(z.unconvertedByMethod).toEqual([
+      { method: 'CASH_USD', sumMinor: 1_000n, currency: 'USD' },
+    ]);
+  });
+
+  it('faqat so`m qatorlari — natija BAYT-BA-BAYT eski (regressiya yo`q)', () => {
+    const z = buildZReport(base);
+    expect(z.revenueMinor).toBe(100_000n);
+    expect(z.unconvertedByMethod).toEqual([]);
+  });
+
+  it('o`rtacha chek jamiga KIRGAN tushumdan hisoblanadi', () => {
+    const z = buildZReport({
+      ...base,
+      salesCount: 2,
+      revenueByMethod: [
+        { method: 'CASH_UZS', sumMinor: 100_000n },
+        { method: 'CASH_USD', sumMinor: 1_000n, currency: 'USD', baseMinor: 100_000n },
+      ],
+    });
+    expect(z.averageReceiptMinor).toBe(100_000n);
+  });
+
+  it('dollar kutilgan/sanalgan/farq — sentda, so`mga o`girilmaydi', () => {
+    const z = buildZReport({
+      ...base,
+      expectedUsdCashMinor: 10_000n,
+      countedUsdCashMinor: 9_500n,
+    });
+    expect(z.expectedUsdCashMinor).toBe(10_000n);
+    expect(z.countedUsdCashMinor).toBe(9_500n);
+    expect(z.varianceUsdMinor).toBe(-500n);
+    // So'm farqi mustaqil qoladi.
+    expect(z.varianceMinor).toBe(0n);
+  });
+
+  it('dollar SANALMAGAN bo`lsa farq NULL (nol EMAS)', () => {
+    // `0` = «sanadim, dollar yo'q»; `null` = «hali sanalmagan». Ikkalasini
+    // aralashtirish ochiq smenada soxta kamomad ko'rsatardi.
+    const z = buildZReport({
+      ...base,
+      expectedUsdCashMinor: 10_000n,
+      countedUsdCashMinor: null,
+    });
+    expect(z.varianceUsdMinor).toBeNull();
+  });
+
+  it('dollar maydonlari berilmagan smenada kutilgan 0, farq NULL', () => {
+    const z = buildZReport(base);
+    expect(z.expectedUsdCashMinor).toBe(0n);
+    expect(z.countedUsdCashMinor).toBeNull();
+    expect(z.varianceUsdMinor).toBeNull();
+  });
+});

@@ -21,7 +21,12 @@ const CASHDESK_ID = 'cd-1';
 const AGENT_ID = '11111111-1111-4111-8111-111111111111';
 const TOTAL = 100_000n;
 
-function makeHarness(opts: { agentId?: string | null; balanceAfter?: bigint } = {}) {
+function makeHarness(
+  opts: { agentId?: string | null; balanceAfter?: bigint; total?: bigint } = {},
+) {
+  // Chek summasi — MK31 dagi dollar stsenariylari uchun sozlanadi (dollar
+  // to'lovi butun sentga to'g'ri kelishi kerak).
+  const total = opts.total ?? TOTAL;
   const retailSalePayment = { createMany: vi.fn().mockResolvedValue({ count: 1 }) };
   const counterpartyBalance = {
     findFirst: vi
@@ -36,7 +41,7 @@ function makeHarness(opts: { agentId?: string | null; balanceAfter?: bigint } = 
       updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       findUniqueOrThrow: vi
         .fn()
-        .mockResolvedValue({ id: SALE_ID, state: 'posted', agentId: null, sumMinor: TOTAL }),
+        .mockResolvedValue({ id: SALE_ID, state: 'posted', agentId: null, sumMinor: total }),
     },
     retailSalePosition: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
     retailSalePayment,
@@ -60,7 +65,7 @@ function makeHarness(opts: { agentId?: string | null; balanceAfter?: bigint } = 
         id: SALE_ID,
         name: 'ТРН-1',
         state: 'draft',
-        sumMinor: TOTAL,
+        sumMinor: total,
         sessionId: SESSION_ID,
         agentId: opts.agentId ?? null,
         session: {
@@ -247,5 +252,104 @@ describe('post() — qarzga sotish (TZ §7.1)', () => {
       cashAmountMinor: 40_000n,
       cardAmountMinor: 0n,
     });
+  });
+});
+
+/**
+ * MK31 — `CASH_USD` (kassa TZ §6.2) SERVIS darajasida.
+ *
+ * Kurs 12 450,27 so'm (kanonik ×10^8 = 1_245_027_000_000): $10,00 = 1 000
+ * sent = 12 450 270 tiyin.
+ */
+const USD_RATE = '1245027000000';
+const TEN_USD_CENTS = '1000';
+const TEN_USD_IN_TIYIN = 12_450_270n;
+
+describe('post() — dollar naqd (MK31)', () => {
+  it('dollar to`lov qatori ASL summa + KURS + so`m ekvivalenti bilan yoziladi', async () => {
+    const { svc, retailSalePayment } = makeHarness({ total: TEN_USD_IN_TIYIN });
+    await svc.post(ACCOUNT, USER_ID, SALE_ID, {
+      ...PAY({ cashUsdAmountMinor: TEN_USD_CENTS, usdRateMinor: USD_RATE }),
+      expectedSumMinor: TEN_USD_IN_TIYIN.toString(),
+    });
+
+    const rows = retailSalePayment.createMany.mock.calls[0][0].data;
+    expect(rows).toEqual([
+      expect.objectContaining({
+        method: 'CASH_USD',
+        amountMinor: 1_000n, // sent — chekda ASL summa qoladi
+        currency: 'USD',
+        rateMinor: BigInt(USD_RATE), // kurs chekka MUZLATILADI
+        amountBaseMinor: TEN_USD_IN_TIYIN,
+      }),
+    ]);
+  });
+
+  it('KURSSIZ dollar to`lov RAD etiladi va PUL QIMIRLAMAYDI', async () => {
+    // Ikki qatlam qo'riqlaydi: sxema (`usdRateMinor` majburiy → ZodError,
+    // global filtr uni 400 qiladi) va sof modul (`usd-rate-missing` →
+    // BadRequest, sxemani chetlab o'tadigan chaqiruvchilar uchun). Test
+    // sinfni emas, NATIJANI qulflaydi: rad etildi va hech narsa yozilmadi.
+    const { svc, money, retailSalePayment } = makeHarness({ total: TEN_USD_IN_TIYIN });
+    await expect(
+      svc.post(ACCOUNT, USER_ID, SALE_ID, {
+        ...PAY({ cashUsdAmountMinor: TEN_USD_CENTS }),
+        expectedSumMinor: TEN_USD_IN_TIYIN.toString(),
+      }),
+    ).rejects.toThrow();
+    expect(money.applyDeltas).not.toHaveBeenCalled();
+    expect(retailSalePayment.createMany).not.toHaveBeenCalled();
+  });
+
+  it('dollar SO`M ustuniga (`cashAmountMinor`) tushmaydi', async () => {
+    // Bu ustunni smena «kutilgan so'm naqdi» o'qiydi — dollar qo'shilsa
+    // AYNAN MK31 tuzatayotgan soxta farq qaytib kelardi.
+    const { svc, tx } = makeHarness({ total: TEN_USD_IN_TIYIN });
+    await svc.post(ACCOUNT, USER_ID, SALE_ID, {
+      ...PAY({ cashUsdAmountMinor: TEN_USD_CENTS, usdRateMinor: USD_RATE }),
+      expectedSumMinor: TEN_USD_IN_TIYIN.toString(),
+    });
+    expect(tx.retailSale.updateMany.mock.calls[0][0].data).toMatchObject({
+      cashAmountMinor: 0n,
+      cardAmountMinor: 0n,
+    });
+  });
+
+  it('dollar naqd pul daftariga YOZILMAYDI (kassa bir valyutali)', async () => {
+    // `CashDesk.balanceMinor` — BITTA valyutadagi qoldiq va `money.applyDeltas`
+    // boshqa valyutali deltani rad etadi. Dollarni so'mga o'girib yozish esa
+    // yolg'on bo'lardi (yashiqda dollar yotibdi) va so'm hisobini buzardi.
+    // Dollar yashiq FAQAT smena hisobida yuritiladi (§8.4).
+    const { svc, money } = makeHarness({ total: TEN_USD_IN_TIYIN });
+    await svc.post(ACCOUNT, USER_ID, SALE_ID, {
+      ...PAY({ cashUsdAmountMinor: TEN_USD_CENTS, usdRateMinor: USD_RATE }),
+      expectedSumMinor: TEN_USD_IN_TIYIN.toString(),
+    });
+    expect(money.applyDeltas).not.toHaveBeenCalled();
+  });
+
+  it('dollardan berilgan QAYTIM so`m yashig`idan CHIQADI (manfiy delta)', async () => {
+    // Mijoz $10 berdi, chek 1 000 so'm (100 000 tiyin) — qaytim so'mda.
+    // Yashiqdagi so'm kamayadi: delta MANFIY bo'lishi shart, aks holda
+    // kutilgan so'm naqdi qaytim summasicha ko'p chiqib soxta kamomad berardi.
+    const { svc, money } = makeHarness();
+    await svc.post(ACCOUNT, USER_ID, SALE_ID, {
+      ...PAY({ cashUsdAmountMinor: TEN_USD_CENTS, usdRateMinor: USD_RATE }),
+    });
+    const deltas = money.applyDeltas.mock.calls[0][2];
+    expect(deltas).toEqual([
+      expect.objectContaining({ deltaMinor: -(TEN_USD_IN_TIYIN - 100_000n), currency: 'UZS' }),
+    ]);
+  });
+
+  it('eski ×10^4 masshtabdagi kurs RAD etiladi', async () => {
+    const { svc, money } = makeHarness({ total: TEN_USD_IN_TIYIN });
+    await expect(
+      svc.post(ACCOUNT, USER_ID, SALE_ID, {
+        ...PAY({ cashUsdAmountMinor: TEN_USD_CENTS, usdRateMinor: '124502700' }),
+        expectedSumMinor: TEN_USD_IN_TIYIN.toString(),
+      }),
+    ).rejects.toThrow();
+    expect(money.applyDeltas).not.toHaveBeenCalled();
   });
 });

@@ -27,7 +27,7 @@
 
 | | Soni |
 |---|---|
-| **Qolgan bosqichlar** | **56** |
+| **Qolgan bosqichlar** | **55** |
 | Sifat qarzlari | 7 |
 | Brauzer-QA (Phase-2) o'tishlari | ~9 (har bo'lim uchun 1) |
 | **JAMI ish birligi** | **~75** |
@@ -105,8 +105,11 @@ kuniga **3 sessiya** → **~6 hafta**.
       **`auto`** ga o'tdi *(MK05; 28 sof/servis test + 3 wiring qulfi)* → **F05**
       ⚠️ **Phase-1** (browser-smoke YO'Q) · biriktirilgan jihozni hisobdan chiqarib bo'lmaydi
       (javobgarlikni jimgina o'chirish yo'li yopiq); bitta ochiq biriktirish — qisman unique indeks
-- [ ] **Kassa `CASH_USD` naqd oqimi** — ulanmagan; smena yopishda **USD farqi yozilmaydi**
-      (hozirgi xulq `cashier-session/variance-wiring.test.ts` da qulflangan) → **F20**
+- [x] **Kassa `CASH_USD` naqd oqimi** — ULANDI *(MK31)*: dollar tenderi (kurs chekka muzlatiladi,
+      kurssiz to'lov bloklanadi) · USD kutilgan naqd + farq akti · Z-hisobotda USD qatori
+      *(sof + wiring 480 test yashil)* → **F20**
+      ⚠️ **Phase-1** (browser-smoke YO'Q) · qarz: POS to'lov oynasida dollar tugmasi hali yo'q,
+      dollar pul-daftariga tushmaydi (kassa bir valyutali) → hisobot MK31
 - [ ] **X2 — kassir kesimi hisobotlarda** — `apps/api/src/modules/report/` da `cashierId` **0 marta**
       uchraydi; kassa xodim kesimi hamon `rs.owner_id` (hujjat egasi) bo'yicha → **F39**
 
@@ -150,8 +153,8 @@ kuniga **3 sessiya** → **~6 hafta**.
       ⬜ *real termal printerda sinalmagan → Phase-2*
 - [x] **1-Kassa B7 (BE)** — `CashierSessionVariance` + farq akti (nol farqda akt YO'Q) +
       menejerga Telegram + **Z-hisobot** (§8.5 to'liq tarkibi) *(21 sof + 11 drift-lock test)* —
-      `02f42d7` ⚠️ **USD farqi ataylab yozilmaydi** — USD naqd oqimi (`CASH_USD`) ulanmagan,
-      «kutilgan 0» soxta signal berardi
+      `02f42d7` ✅ **USD farqi endi yoziladi** *(MK31, 2026-08-09)* — dollar naqd oqimi ulandi;
+      akt faqat dollar HAQIQATAN sanalganda rejalanadi (sanalmagan ≠ 0)
 - [x] **1-Kassa B7 (FE)** — yopish formasida **kutilgan naqd + farq TASDIQLASHDAN OLDIN** (farq
       bo'lgandagina izoh maydoni) · smena sahifasiga **§8.5 Z-hisobot bloki** (moddalar bo'yicha
       xarajat, farq aktlari) · **`/menejer/kassa-farqlari`** — default faqat ko'rilmaganlar,

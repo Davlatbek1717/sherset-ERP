@@ -61,34 +61,68 @@ function feKeys(): string[] {
   ];
 }
 
-/** `PostRetailSaleSchema = z.object({ … })` da e'lon qilingan kalitlar. */
+/**
+ * `PostRetailSaleSchema` obyektida e'lon qilingan kalitlar.
+ *
+ * ⚠️ Skaner FORMATGA BOG'LIQ BO'LMASLIGI shart (MK31 da tuzatildi). Ilgari u
+ * `z.object({` satrini va kalitlarni AYNAN 2 bo'shliqli chekinish bilan
+ * qidirardi. Sxemaga `.refine(...)` qo'shilishi bilan biome uni
+ * `z\n  .object({` ko'rinishiga keltirdi va `indexOf('z.object({')`
+ * PostRetailSaleSchema'ni **umuman topmay**, fayldagi KEYINGI sxemani
+ * (`RefundRetailSaleSchema`) o'qiy boshladi. Ya'ni qo'riqchi butunlay boshqa
+ * obyektni tekshirardi — kalitlar tasodifan mos kelganda u YASHIL qolishi
+ * mumkin edi. Endi: izohlar/satrlar tashlanadi, `.object(` nuqtali-vergul
+ * yozuvidan qat'i nazar topiladi va kalitlar CHEKINISH emas, QAVS CHUQURLIGI
+ * bo'yicha olinadi.
+ */
 function apiKeys(): string[] {
-  const src = readFileSync(POST_SCHEMA, 'utf8');
+  const raw = readFileSync(POST_SCHEMA, 'utf8');
+  const src = raw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
   const at = src.indexOf('export const PostRetailSaleSchema');
   expect(at, 'PostRetailSaleSchema topilmadi').toBeGreaterThan(-1);
-  const open = src.indexOf('z.object({', at) + 'z.object('.length;
+  const objAt = src.indexOf('.object(', at);
+  expect(objAt, 'PostRetailSaleSchema ichida `.object(` topilmadi').toBeGreaterThan(-1);
+  // Boshqa e'longa sakrab ketmadikmi — skaner o'z sxemasini o'qiyotganini
+  // tasdiqlaydi (aynan yuqoridagi hodisa qaytmasin).
+  const nextDecl = src.indexOf('export const', at + 1);
+  expect(nextDecl === -1 || objAt < nextDecl, 'skaner boshqa sxemaga sakrab ketdi').toBe(true);
+
+  const open = src.indexOf('{', objAt);
+  const keys: string[] = [];
   let depth = 0;
-  let end = open;
+  let token = '';
   for (let i = open; i < src.length; i++) {
-    if (src[i] === '{') depth++;
-    else if (src[i] === '}') {
-      depth--;
-      if (depth === 0) {
-        end = i;
-        break;
+    const ch = src[i] as string;
+    // Satr ichidagi `:` kalit deb sanalmasin ('...: ...' xabar matnlari).
+    if (ch === "'" || ch === '"' || ch === '`') {
+      const quote = ch;
+      i++;
+      while (i < src.length && src[i] !== quote) {
+        if (src[i] === '\\') i++;
+        i++;
       }
+      token = '';
+      continue;
     }
+    if (ch === '{') {
+      depth++;
+      token = '';
+      continue;
+    }
+    if (ch === '}') {
+      depth--;
+      if (depth === 0) break;
+      token = '';
+      continue;
+    }
+    if (depth !== 1) continue;
+    if (/[A-Za-z0-9_$]/.test(ch)) token += ch;
+    else if (ch === ':') {
+      if (token) keys.push(token);
+      token = '';
+    } else token = '';
   }
-  const body = src
-    .slice(open, end)
-    // Izohlar ichidagi `so'z:` kalit deb sanalmasin.
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/\/\/[^\n]*/g, '');
-  return [
-    ...new Set(
-      [...body.matchAll(/(?:^|\n)\s{2}([a-zA-Z_][\w]*)\s*:/g)].flatMap((m) => (m[1] ? [m[1]] : [])),
-    ),
-  ];
+  return [...new Set(keys)];
 }
 
 describe('POS to`lov shartnomasi — FE yuborgan har maydonni API biladi', () => {

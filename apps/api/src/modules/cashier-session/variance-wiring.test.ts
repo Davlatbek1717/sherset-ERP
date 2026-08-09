@@ -14,8 +14,8 @@ import { describe, expect, it } from 'vitest';
  * 2. **Akt/xabar nosozligi yopishni YIQITMAYDI.** Kassir ishini davom
  *    ettirishi kerak: bir texnik nosozlik butun kassani to'xtatmasin.
  * 3. **Idempotentlik** — `skipDuplicates` + unique(session, currency).
- * 4. **USD akti yozilmaydi** — USD naqd oqimi (CASH_USD) ulanmagan, «kutilgan
- *    0» deb akt yozish har smenada soxta signal berardi.
+ * 4. **USD akti faqat SANALGANDA yoziladi** (MK31 da yangilandi — quyida
+ *    sababi bilan).
  */
 const SERVICE = readFileSync(join(import.meta.dirname, 'cashier-session.service.ts'), 'utf8');
 
@@ -74,15 +74,78 @@ describe('smena farq akti — ulanish', () => {
     expect(body).toContain("sourceEventType: 'kassa.smena_farqi'");
   });
 
-  it('USD akti yozilmaydi — CASH_USD ulanmagan', () => {
+  /**
+   * MK31 da SHARTNOMA O'ZGARDI (test o'chirilmadi — qayta yozildi).
+   *
+   * Eski shart: «USD akti hech qachon yozilmaydi». U vaqtinchalik yechim edi
+   * va sababi aniq yozilgan: CASH_USD ulanmagani uchun kutilgan USD
+   * hisoblanmasdi, uni 0 deb olish esa har smenada soxta «USD ortiqcha»
+   * akti berardi. Endi USD naqd oqimi ULANDI (`collectUsdCashInputs` →
+   * `expectedUsdCashMinor`), ya'ni eski shartning SABABI yo'qoldi: kutilgan
+   * USD haqiqiy raqam. Uni o'z kuchida qoldirish endi teskari xatoni
+   * qulflardi — kassadagi dollar kamomadi hech qachon aktga tushmasdi.
+   *
+   * Yangi shart eski shartning MAQSADINI (soxta akt yozilmasin) saqlaydi:
+   * akt faqat dollar HAQIQATAN sanalganda rejalanadi.
+   */
+  it('USD akti UZS bilan BIR chaqiruvda rejalanadi', () => {
     const body = recordBody();
     expect(body).toMatch(/currency: 'UZS'/);
-    // USD qatori qo'shilsa har smenada soxta «ortiqcha» chiqardi.
-    expect(body).not.toMatch(/currency: 'USD'/);
+    expect(body).toMatch(/currency: 'USD'/);
+  });
+
+  it('USD akti faqat dollar SANALGANDA rejalanadi (sanalmagan ≠ 0)', () => {
+    // `null` = «sanalmagan». Uni 0 deb olsak, dollar oqimi bo'lgan smenada
+    // to'liq kamomad akti yozilardi — eski testning soxta-signal xavfi
+    // aynan shu yerdan qaytib kelardi.
+    const body = recordBody();
+    expect(body).toMatch(/closingCashUsd != null/);
+    const guard = body.indexOf('closingCashUsd != null');
+    const usdAct = body.indexOf("currency: 'USD'");
+    expect(guard).toBeGreaterThan(-1);
+    expect(usdAct).toBeGreaterThan(guard);
   });
 
   it('farq CashierSession da ham saqlanadi (akt yozilmasa ham raqam qoladi)', () => {
     expect(closeBody()).toMatch(/discrepancyMinor: discrepancy/);
+  });
+});
+
+/**
+ * MK31 — dollar naqd oqimining ULANISHI (kassa TZ §8.4).
+ *
+ * Bu yerdagi to'rt invariant ham sof modul testlari bilan tutilmaydi:
+ * formulalar to'g'ri, lekin ular CHAQIRILMASA dollar baribir o'lchanmay
+ * qolardi (aynan MK31 gacha bo'lgan holat).
+ */
+describe('dollar naqd oqimi — ulanish (MK31)', () => {
+  it('kutilgan dollar UMUMIY sof funksiyadan olinadi (nusxa formula yo`q)', () => {
+    // Nusxa formula qoldirilsa, biri jimgina eskirardi — §100 bug'ining
+    // aynan shu klassi (drawer in/out kutilgandan tushib qolgan edi).
+    const body = closeBody();
+    expect(body).toContain('this.collectUsdCashInputs(');
+    expect(body).toContain('expectedUsdCashMinor(');
+  });
+
+  it('dollar oqimi BOR smenada sanoq MAJBURIY (jim 0 qabul qilinmaydi)', () => {
+    // Aks holda kassir maydonni tashlab ketsa, yashiqdagi dollar
+    // hisobga olinmasdan smena yopilardi — o'lchov yana yo'qolardi.
+    const body = closeBody();
+    expect(body).toMatch(/expectedUsd !== 0n && closingCashUsd === null/);
+    expect(body).toMatch(/BadRequestException/);
+  });
+
+  it('dollar sanog`i/kutilgani/farqi smenaga SAQLANADI', () => {
+    const body = closeBody();
+    expect(body).toContain('closingCashUsdMinor: closingCashUsd');
+    expect(body).toContain('expectedCashUsdMinor: expectedUsd');
+    expect(body).toContain('discrepancyUsdMinor: discrepancyUsd');
+  });
+
+  it('dollar oqimi YO`Q smenada ustunlar TEGILMAYDI (NULL bo`lib qoladi)', () => {
+    // Har yopishda 0 yozilsa, «dollar bilan ishlamaydigan kassa» va
+    // «dollar sanaldi, 0 chiqdi» bir xil ko'rinardi.
+    expect(closeBody()).toMatch(/usdTouched/);
   });
 });
 
@@ -108,6 +171,23 @@ describe('Z-hisobot — §8.5 ulanishi', () => {
     expect(body).toContain('expenseMinor');
     expect(body).toContain('collectionMinor');
     expect(body).toContain('expenseByItem');
+  });
+
+  it('dollar qatori: kutilgan/sanalgan/farq Z-hisobotda bor (MK31 · §8.5)', () => {
+    const body = zBody();
+    expect(body).toContain('expectedUsdCashMinor:');
+    expect(body).toContain('countedUsdCashMinor:');
+    expect(body).toContain('varianceUsdMinor');
+  });
+
+  it('tushum jamiga SO`MGA o`girilgan qiymat kiradi (kursi yo`q qator emas)', () => {
+    // `amountMinor` bo'yicha jamlash sentni tiyinga qo'shib, tushumni
+    // buzardi; kursi yo'q qatorni jim tashlash esa hisobotni to'liq
+    // ko'rinishda kam raqam bilan qoldirardi (Faza 17 shartnomasi).
+    const body = zBody();
+    expect(body).toContain('amountBaseMinor: true');
+    expect(body).toContain('unconvertedByMethod');
+    expect(body).toMatch(/rateMinor: null/);
   });
 
   it('tan narx muzlatilmagan qatorda yalpi foyda NULL bo`ladi', () => {

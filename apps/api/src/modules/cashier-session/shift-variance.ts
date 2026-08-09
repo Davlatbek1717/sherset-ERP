@@ -117,10 +117,27 @@ export function formatVarianceMessage(args: VarianceMessageArgs): string {
 
 // ── Z-hisobot (§8.5) ────────────────────────────────────────────────────────
 
+/** Hisob valyutasi — hisobotdagi barcha jamilar shu valyutada. */
+const BASE_CURRENCY = 'UZS';
+
+export interface ZReportRevenueRow {
+  method: string;
+  /** To'lov VALYUTASIDAGI summa (USD → sent). */
+  sumMinor: bigint;
+  /** Berilmasa — hisob valyutasi (so'm). */
+  currency?: string;
+  /**
+   * So'mga o'girilgan qiymat. `null` = **kurs noma'lum** — bunday qator
+   * jamiga QO'SHILMAYDI (Faza 17 konvertatsiya shartnomasi), lekin
+   * yo'qolmaydi ham: `unconvertedByMethod` da ko'rinib turadi.
+   */
+  baseMinor?: bigint | null;
+}
+
 export interface ZReportInput {
   salesCount: number;
   /** To'lov turlari kesimida tushum. */
-  revenueByMethod: ReadonlyArray<{ method: string; sumMinor: bigint }>;
+  revenueByMethod: ReadonlyArray<ZReportRevenueRow>;
   /** Yalpi foyda; noma'lum bo'lsa `null` (tan narx muzlatilmagan chek bor). */
   grossProfitMinor: bigint | null;
   discountMinor: bigint;
@@ -131,13 +148,28 @@ export interface ZReportInput {
   collectionMinor: bigint;
   expectedCashMinor: bigint;
   countedCashMinor: bigint | null;
+  /** Dollar yashiq — sentda (MK31 · §8.4). Berilmasa 0. */
+  expectedUsdCashMinor?: bigint;
+  /** Kassir sanagan dollar; `null` = hali sanalmagan (0 EMAS). */
+  countedUsdCashMinor?: bigint | null;
 }
 
 export interface ZReport extends ZReportInput {
+  /** Faqat so'mga o'girilgan qatorlar yig'indisi. */
   revenueMinor: bigint;
+  /**
+   * Kursi noma'lumligi sababli jamiga KIRMAGAN qatorlar. Bo'sh ro'yxat —
+   * «hammasi hisobga olindi» degan halol javob; jimgina tashlab yuborilsa,
+   * hisobot to'liq ko'rinib turib kam raqam ko'rsatardi.
+   */
+  unconvertedByMethod: Array<{ method: string; sumMinor: bigint; currency: string }>;
   /** O'rtacha chek; cheksiz smenada `null` (0 ga bo'lish emas). */
   averageReceiptMinor: bigint | null;
   varianceMinor: bigint | null;
+  expectedUsdCashMinor: bigint;
+  countedUsdCashMinor: bigint | null;
+  /** Dollar farqi — SENTDA, so'mga o'girilmaydi (§8.4). */
+  varianceUsdMinor: bigint | null;
 }
 
 /**
@@ -150,12 +182,38 @@ export interface ZReport extends ZReportInput {
  * shartnomasi, `retail-cost-freeze-null-contract`).
  */
 export function buildZReport(input: ZReportInput): ZReport {
-  const revenueMinor = input.revenueByMethod.reduce((a, r) => a + r.sumMinor, 0n);
+  // Jamiga faqat SO'MDAGI qiymat kiradi. So'm qatorida u summaning o'zi;
+  // valyutali qatorda — o'girilgan qiymat. Kurs noma'lum bo'lsa qator
+  // jamidan chiqadi (aks holda sent tiyin sifatida qo'shilib, tushum
+  // 12 000 barobar kam ko'rinardi).
+  let revenueMinor = 0n;
+  const unconvertedByMethod: ZReport['unconvertedByMethod'] = [];
+  for (const r of input.revenueByMethod) {
+    const currency = r.currency ?? BASE_CURRENCY;
+    if (currency === BASE_CURRENCY) {
+      revenueMinor += r.baseMinor ?? r.sumMinor;
+      continue;
+    }
+    if (r.baseMinor == null) {
+      unconvertedByMethod.push({ method: r.method, sumMinor: r.sumMinor, currency });
+      continue;
+    }
+    revenueMinor += r.baseMinor;
+  }
+
+  const expectedUsdCashMinor = input.expectedUsdCashMinor ?? 0n;
+  const countedUsdCashMinor = input.countedUsdCashMinor ?? null;
+
   return {
     ...input,
     revenueMinor,
+    unconvertedByMethod,
     averageReceiptMinor: input.salesCount > 0 ? revenueMinor / BigInt(input.salesCount) : null,
     varianceMinor:
       input.countedCashMinor == null ? null : input.countedCashMinor - input.expectedCashMinor,
+    expectedUsdCashMinor,
+    countedUsdCashMinor,
+    varianceUsdMinor:
+      countedUsdCashMinor == null ? null : countedUsdCashMinor - expectedUsdCashMinor,
   };
 }

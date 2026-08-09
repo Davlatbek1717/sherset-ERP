@@ -675,6 +675,10 @@ function SalesScreen({ session }: { session: CurrentSession }) {
   const [drawerAmount, setDrawerAmount] = useState('');
   const [drawerComment, setDrawerComment] = useState('');
   const [closingCash, setClosingCash] = useState('');
+  // MK31 — sanalgan DOLLAR (§8.4 «UZS va USD alohida»). Bo'sh satr =
+  // «sanalmagan»: server uni `null` deb qabul qiladi va 0 bilan
+  // aralashtirmaydi.
+  const [closingCashUsd, setClosingCashUsd] = useState('');
   const [showCloseForm, setShowCloseForm] = useState(false);
   const [varianceNote, setVarianceNote] = useState('');
 
@@ -1041,7 +1045,10 @@ function SalesScreen({ session }: { session: CurrentSession }) {
    * oldin raqamni ko'rishi kerak: farqni faqat menejer ertaga ko'rsa,
    * sababini hech kim eslamaydi.
    */
-  const { data: closePreview } = useQuery<{ expectedCashMinor: string }>({
+  const { data: closePreview } = useQuery<{
+    expectedCashMinor: string;
+    expectedUsdCashMinor: string;
+  }>({
     queryKey: ['z-report-preview', session.id],
     queryFn: () => api.get(`/cashier-sessions/${session.id}/z-report`),
     enabled: showCloseForm,
@@ -1052,12 +1059,26 @@ function SalesScreen({ session }: { session: CurrentSession }) {
   const closeVariance =
     expectedCash === null || countedCash === null ? null : countedCash - expectedCash;
 
+  // Dollar maydoni FAQAT smenada dollar oqimi bo'lganda ko'rinadi: dollarsiz
+  // kassada u har yopishda ortiqcha savol bo'lardi va kassir uni e'tiborsiz
+  // qoldirishga o'rganib qolardi (izoh maydoni bilan bir xil qoida).
+  // Oqim bo'lsa server sanoqni MAJBURIY qiladi — maydonsiz yopib bo'lmaydi.
+  const expectedCashUsd = closePreview ? BigInt(closePreview.expectedUsdCashMinor) : null;
+  const usdInPlay = expectedCashUsd !== null && expectedCashUsd !== 0n;
+  const countedCashUsd =
+    closingCashUsd.trim() === '' ? null : Money.fromMajor(closingCashUsd, 'USD').toMinor();
+  const closeVarianceUsd =
+    expectedCashUsd === null || countedCashUsd === null ? null : countedCashUsd - expectedCashUsd;
+
   const closeMut = useMutation({
     mutationFn: () =>
       api.post(`/cashier-sessions/${session.id}/close`, {
         closingCashMinor: Money.fromMajor(closingCash || '0', tillCurrency)
           .toMinor()
           .toString(),
+        // Sanalmagan dollar UZATILMAYDI (0 emas): `null` va `0` server
+        // uchun boshqa-boshqa ma'no — «sanalmagan» va «sanadim, yo'q».
+        ...(countedCashUsd !== null ? { closingCashUsdMinor: countedCashUsd.toString() } : {}),
         // Farq bo'lsa akt yoziladi va izoh o'sha aktga tushadi (TZ §8.4).
         // Kassir sababni ayni damda yozadi — ertaga eslay olmaydi.
         varianceNote: varianceNote.trim() || null,
@@ -1070,6 +1091,7 @@ function SalesScreen({ session }: { session: CurrentSession }) {
           : t('shift_closed_with_variance'),
       );
       setVarianceNote('');
+      setClosingCashUsd('');
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -1596,6 +1618,22 @@ function SalesScreen({ session }: { session: CurrentSession }) {
                     className="h-10 w-full rounded-lg border border-[var(--ms-border)] bg-[var(--ms-bg-input)] px-3 text-sm focus:outline-none focus:border-[var(--ms-border-focus)]"
                   />
 
+                  {/* MK31 — sanalgan DOLLAR (§8.4). Faqat smenada dollar
+                      oqimi bo'lgan holatda; server bu holatda sanoqni
+                      MAJBURIY qiladi. */}
+                  {usdInPlay && (
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={closingCashUsd}
+                      onChange={(e) => setClosingCashUsd(e.target.value)}
+                      placeholder={t('closing_cash_usd_placeholder')}
+                      data-test-id="close-cash-usd"
+                      className="h-10 w-full rounded-lg border border-[var(--ms-border)] bg-[var(--ms-bg-input)] px-3 text-sm focus:outline-none focus:border-[var(--ms-border-focus)]"
+                    />
+                  )}
+
                   {/* Kutilgan naqd va farq — TASDIQLASHDAN OLDIN.
                       Kassir raqamni ko'rmasdan yopsa, farqni faqat menejer
                       ertaga ko'radi va sababini hech kim eslamaydi. */}
@@ -1630,13 +1668,53 @@ function SalesScreen({ session }: { session: CurrentSession }) {
                           </span>
                         </div>
                       )}
+
+                      {/* Dollar qatori — SENTDA, so'mga o'girilmaydi (§8.4).
+                          O'girilsa yo'qolgan dollar «taxminiy so'm»ga
+                          aylanib, farq dalil bo'lishdan to'xtardi. */}
+                      {usdInPlay && expectedCashUsd !== null && (
+                        <>
+                          <div className="mt-1 flex justify-between border-t border-[var(--ms-border)] pt-1">
+                            <span className="text-[var(--ms-text-muted)]">
+                              {t('expected_cash_usd')}
+                            </span>
+                            <span className="font-medium tabular-nums">
+                              ${(Number(expectedCashUsd) / 100).toFixed(2)}
+                            </span>
+                          </div>
+                          {closeVarianceUsd !== null && (
+                            <div
+                              className={`mt-1 flex justify-between font-semibold ${
+                                closeVarianceUsd === 0n
+                                  ? 'text-emerald-700'
+                                  : closeVarianceUsd < 0n
+                                    ? 'text-red-700'
+                                    : 'text-amber-700'
+                              }`}
+                              data-test-id="close-variance-usd"
+                            >
+                              <span>
+                                {closeVarianceUsd === 0n
+                                  ? t('variance_none')
+                                  : closeVarianceUsd < 0n
+                                    ? t('variance_shortage')
+                                    : t('variance_surplus')}
+                              </span>
+                              <span className="tabular-nums">
+                                ${(Number(closeVarianceUsd) / 100).toFixed(2)}
+                              </span>
+                            </div>
+                          )}
+                        </>
+                      )}
                     </div>
                   )}
 
                   {/* Izoh maydoni FAQAT farq bo'lganda: farqsiz smenada u
                       ortiqcha savol bo'lardi va kassir uni e'tiborsiz
                       qoldirishga o'rganib qolardi. */}
-                  {closeVariance !== null && closeVariance !== 0n && (
+                  {((closeVariance !== null && closeVariance !== 0n) ||
+                    (closeVarianceUsd !== null && closeVarianceUsd !== 0n)) && (
                     <input
                       type="text"
                       value={varianceNote}

@@ -199,3 +199,49 @@ describe('SessionFilterSchema', () => {
     expect(() => SessionFilterSchema.parse({ search: '   ' })).toThrow();
   });
 });
+
+/**
+ * MK31 — dollar naqd (kassa TZ §8.1 «ochilish naqdi UZS va USD alohida»,
+ * §8.4 «kassir sanalgan naqdni kiritadi — UZS va USD alohida»).
+ */
+describe('dollar naqd maydonlari (MK31)', () => {
+  const openBase = { cashDeskId: UUID, storeId: UUID2, organizationId: UUID3 };
+
+  it('ochilishda dollar maydoni bor va default 0 (eski klient buzilmaydi)', () => {
+    expect(OpenSessionSchema.parse(openBase).openingCashUsdMinor).toBe('0');
+    expect(
+      OpenSessionSchema.parse({ ...openBase, openingCashUsdMinor: '15000' }).openingCashUsdMinor,
+    ).toBe('15000');
+  });
+
+  it('ochilishda manfiy/kasr dollar rad etiladi', () => {
+    for (const bad of ['-1', '10.5', 'abc']) {
+      expect(() => OpenSessionSchema.parse({ ...openBase, openingCashUsdMinor: bad })).toThrow();
+    }
+  });
+
+  it('yopishda sanalgan dollar IXTIYORIY — berilmasa `undefined`', () => {
+    // `null`/berilmagan = «sanalmagan», `'0'` = «sanadim, dollar yo'q».
+    // Ikkalasini bittaga siqish dollar oqimi yo'q smenalarda soxta akt
+    // yozdirardi — aynan shu faza tuzatayotgan muammoning teskarisi.
+    const parsed = CloseSessionSchema.parse({ closingCashMinor: '100' });
+    expect(parsed.closingCashUsdMinor).toBeUndefined();
+  });
+
+  it('yopishda sanalgan dollar berilsa saqlanadi va 0 ham QABUL qilinadi', () => {
+    expect(
+      CloseSessionSchema.parse({ closingCashMinor: '100', closingCashUsdMinor: '0' })
+        .closingCashUsdMinor,
+    ).toBe('0');
+    expect(
+      CloseSessionSchema.parse({ closingCashMinor: '100', closingCashUsdMinor: '9500' })
+        .closingCashUsdMinor,
+    ).toBe('9500');
+  });
+
+  it('yopishda manfiy dollar rad etiladi', () => {
+    expect(() =>
+      CloseSessionSchema.parse({ closingCashMinor: '100', closingCashUsdMinor: '-1' }),
+    ).toThrow();
+  });
+});

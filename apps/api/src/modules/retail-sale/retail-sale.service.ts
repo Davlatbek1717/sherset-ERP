@@ -71,7 +71,13 @@ import {
   UpdateRetailSaleSchema,
 } from './retail-sale.schema.js';
 // Kassa TZ §6 — aralash to'lov qoidalari (sof, testlangan).
-import { TENDER, computeTenders, legacyTotals } from './retail-tenders.js';
+import {
+  TENDER,
+  computeTenders,
+  legacyTotals,
+  lineBaseMinor,
+  lineCurrency,
+} from './retail-tenders.js';
 
 /**
  * RetailSaleService — POS receipt CRUD + FSM.
@@ -638,12 +644,19 @@ export class RetailSaleService {
     // `/sotuv` to'lov oynasi to'rttasini ham ALLAQACHON yuborardi; server
     // ikkitasini bilardi va qolgani jimgina tashlanardi → terminal/qarz chek
     // 400 olardi. Qoidalar `retail-tenders.ts` da (sof, testlangan).
+    // MK31 — dollar naqd. Kurs KANONIK ×10^8 va chekka MUZLATILADI (kurs
+    // ertaga o'zgarsa bugungi chek qayta baholanmasin).
+    const cashUsdAmount = BigInt(parsed.cashUsdAmountMinor);
+    const usdRateE8 = parsed.usdRateMinor != null ? BigInt(parsed.usdRateMinor) : null;
+
     const pay = computeTenders({
       cashMinor: cashAmount,
       cardMinor: cardAmount,
       terminalMinor: terminalAmount,
       debtMinor: debtAmount,
       totalMinor: total,
+      cashUsdMinor: cashUsdAmount,
+      usdRateE8,
     });
     if (!pay.ok) {
       if (pay.reason === 'insufficient') {
@@ -654,6 +667,14 @@ export class RetailSaleService {
       if (pay.reason === 'debt-overpaid') {
         throw new BadRequestException(
           `Qarzli chekda to'lov + qarz JAMIga teng bo'lishi kerak: ${pay.paidMinor.toString()} ≠ ${pay.totalMinor.toString()}`,
+        );
+      }
+      if (pay.reason === 'usd-rate-missing') {
+        // TZ §6.2 — kurs topilmasa to'lov BLOKLANADI. Jim 1:1 qabul qilish
+        // sentni tiyin deb o'qib, chekni haqiqiy summaning ~12 000 dan
+        // biriga «to'liq to'langan» qilib yopardi.
+        throw new BadRequestException(
+          "Dollar to'lovi uchun kunlik kurs kerak (kurssiz to'lov qabul qilinmaydi)",
         );
       }
       if (pay.reason === 'change-exceeds-cash') {
@@ -863,11 +884,14 @@ export class RetailSaleService {
             accountId,
             saleId: id,
             method: l.method,
+            // ASL summa to'lov valyutasida (dollar → sent).
             amountMinor: l.amountMinor,
-            currency: sale.session.cashDesk.currency,
-            // UZS to'lovda hisob valyutasidagi summa aynan o'zi. CASH_USD
-            // ulanganda bu yerda `rateMinor` bilan o'girish qo'shiladi.
-            amountBaseMinor: l.amountMinor,
+            // MK31: valyuta/kurs/base sof modulning YAGONA o'quvchilari
+            // orqali olinadi — `?? 'UZS'` ni bu yerda takrorlash bir kun
+            // dollar qatorini so'm deb yozib yuborardi.
+            currency: lineCurrency(l) === 'UZS' ? sale.session.cashDesk.currency : lineCurrency(l),
+            rateMinor: l.rateMinor ?? null,
+            amountBaseMinor: lineBaseMinor(l),
           })),
         });
       }
@@ -885,8 +909,21 @@ export class RetailSaleService {
       // tovar olgan mijozga 10 000 qaytarilsa ham, kassa balansi 100 000 ga
       // o'sardi. Bu smena yopilishida (TZ §8.4 «farq akti») SOXTA KAMOMAD
       // beradi — kutilgan naqd haqiqiydan har qaytim summasicha ko'p bo'ladi.
+      //
+      // ⚠️ MK31 — DOLLAR NAQD BU DAFTARGA TUSHMAYDI. `CashDesk.balanceMinor`
+      // BITTA valyutadagi qoldiq va `money.applyDeltas` boshqa valyutali
+      // deltani rad etadi («Currency mismatch»). Dollarni so'mga o'girib
+      // yozish yolg'on bo'lardi — yashiqda dollar yotibdi, so'm emas — va
+      // so'm qoldig'ini buzardi. Shu sababdan dollar yashiq FAQAT smena
+      // hisobida yuritiladi (§8.4: `CashierSession.*UsdMinor` + `CASH_USD`
+      // to'lov qatorlari). QARZ (ochiq qayd): pul daftari va bank-balans
+      // hisobotlari kassadagi dollarni KO'RSATMAYDI.
+      //
+      // Dollardan berilgan qaytim esa SO'M yashig'idan chiqadi, ya'ni bu
+      // delta MANFIY bo'lishi mumkin — `> 0n` sharti uni jimgina yutib
+      // yuborardi va yashiqdagi so'm haqiqatdan ko'p ko'rinardi.
       const cashToDrawer = cashAmount - change;
-      if (cashToDrawer > 0n) {
+      if (cashToDrawer !== 0n) {
         const moneyDeltas: MoneyDelta[] = [
           {
             sourceKind: 'cash_desk',

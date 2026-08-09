@@ -29,6 +29,15 @@ export const OpenSessionSchema = z.object({
     .string()
     .regex(/^\d+$/, 'openingCashMinor must be a non-negative integer')
     .default('0'),
+  /**
+   * Ochilishdagi DOLLAR naqd, sentda (MK31 · TZ §8.1 «UZS va USD alohida»).
+   * `.default('0')` — dollar bilan ishlamaydigan kassa uchun hech narsa
+   * o'zgarmaydi.
+   */
+  openingCashUsdMinor: z.coerce
+    .string()
+    .regex(/^\d+$/, 'openingCashUsdMinor must be a non-negative integer')
+    .default('0'),
   description: z.string().max(4000).nullish(),
   // moysklad «Внешний код» — universal external-system sync key (the
   // CashierSession model already carries the column; exposes it for
@@ -45,16 +54,21 @@ export const CloseSessionSchema = z.object({
     .regex(/^\d+$/, 'closingCashMinor must be a non-negative integer'),
   description: z.string().max(4000).nullish(),
   /**
-   * Kassirning farq bo'yicha izohi — farq aktiga yoziladi.
+   * Kassir sanagan DOLLAR, sentda (MK31 · TZ §8.4 «UZS va USD alohida»).
    *
-   * ⚠️ **USD sanoq maydoni ATAYLAB YO'Q** (TZ §8.4 «UZS va USD alohida»).
-   * USD naqd oqimi hali ulanmagan: `retail-sale.service.ts` to'lovni har
-   * doim kassa valyutasida yozadi («CASH_USD ulanganda...» degan ochiq
-   * joy). Kutilgan USD hisoblanmaydigan holatda uni 0 deb olish har
-   * smenada soxta «USD ortiqcha» akti berardi — menejer bir hafta ichida
-   * farq ogohlantirishlarini butunlay e'tiborsiz qoldirardi.
-   * USD sanoq CASH_USD bilan BIRGA qo'shiladi.
+   * IXTIYORIY va `null` MA'NOLI: berilmasa — «dollar sanalmagan», `'0'` esa
+   * «sanadim, dollar yo'q». Ikkalasini bittaga siqib, sanalmaganni 0 deb
+   * olish dollar oqimi bo'lgan har smenada to'liq kamomad akti yozardi;
+   * teskarisi (0 ni sanalmagan deb olish) haqiqiy bo'shashni yashirardi.
+   *
+   * Smenada dollar oqimi BO'LSA sanoq majburiy — buni servis tekshiradi
+   * (sxema kutilgan dollarni bilmaydi).
    */
+  closingCashUsdMinor: z.coerce
+    .string()
+    .regex(/^\d+$/, 'closingCashUsdMinor must be a non-negative integer')
+    .optional(),
+  /** Kassirning farq bo'yicha izohi — farq aktiga yoziladi. */
   varianceNote: z.string().trim().max(4000).nullish(),
 });
 export type CloseSessionInput = z.infer<typeof CloseSessionSchema>;

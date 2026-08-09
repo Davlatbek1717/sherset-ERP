@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   type ShiftCashInputs,
+  type ShiftUsdCashInputs,
   expectedCashMinor,
+  expectedUsdCashMinor,
   shiftDiscrepancyMinor,
+  shiftUsdDiscrepancyMinor,
 } from './cashier-session-reconciliation.js';
 
 const base: ShiftCashInputs = {
@@ -148,5 +151,58 @@ describe('naqd qarz to`lovlari (kassa TZ §8.4)', () => {
   it('2^53 dan katta summada ham aniq', () => {
     const big = 9_007_199_254_740_993n;
     expect(expectedCashMinor({ ...base, debtCashMinor: big })).toBe(600_000n + big);
+  });
+});
+
+/**
+ * MK31 — dollar naqd (kassa TZ §8.4: «USD farqi alohida yuritiladi,
+ * UZS'ga o'girilmaydi»).
+ *
+ * Dollar hisobi ATAYLAB alohida funksiya: so'm formulasiga `usd*` maydonlar
+ * qo'shilsa, bitta noto'g'ri chaqiruv dollarni so'm jamiga qo'shib yuborardi
+ * — va typecheck buni ko'rmasdi (ikkalasi ham `bigint`).
+ */
+describe('expectedUsdCashMinor — dollar naqd (§8.4)', () => {
+  const usdBase: ShiftUsdCashInputs = {
+    openingUsdMinor: 0n,
+    salesUsdMinor: 0n,
+    returnsUsdMinor: 0n,
+  };
+
+  it('ochilish + dollar sotuvlar − dollar qaytarishlar', () => {
+    expect(
+      expectedUsdCashMinor({
+        openingUsdMinor: 50_00n,
+        salesUsdMinor: 120_00n,
+        returnsUsdMinor: 20_00n,
+      }),
+    ).toBe(150_00n);
+  });
+
+  it('dollar oqimi yo`q smenada 0 (mavjud smenalar uchun o`zgarish yo`q)', () => {
+    expect(expectedUsdCashMinor(usdBase)).toBe(0n);
+  });
+
+  it('farq = sanalgan − kutilgan, ishora saqlanadi', () => {
+    const i = { ...usdBase, openingUsdMinor: 100_00n, salesUsdMinor: 50_00n };
+    expect(shiftUsdDiscrepancyMinor(150_00n, i)).toBe(0n);
+    expect(shiftUsdDiscrepancyMinor(140_00n, i)).toBe(-10_00n); // kamomad
+    expect(shiftUsdDiscrepancyMinor(160_00n, i)).toBe(10_00n); // ortiqcha
+  });
+
+  it('dollar SENTDA qoladi — so`m formulasi bilan aralashmaydi', () => {
+    // Bir xil raqamlar ikki formulaga berilsa, natijalar bir-biriga
+    // BOG'LIQ EMAS: dollar so'm kutilganiga hech qachon qo'shilmaydi.
+    const som = expectedCashMinor({ ...base, salesCashMinor: 1_000n });
+    const usd = expectedUsdCashMinor({ ...usdBase, salesUsdMinor: 1_000n });
+    expect(som).toBe(1_000n);
+    expect(usd).toBe(1_000n);
+    // ...va so'm formulasida dollarni ifodalovchi maydon YO'Q.
+    expect(Object.keys(base)).not.toContain('salesUsdMinor');
+  });
+
+  it('2^53 dan katta summada ham aniq', () => {
+    const big = 9_007_199_254_740_993n;
+    expect(expectedUsdCashMinor({ ...usdBase, salesUsdMinor: big })).toBe(big);
   });
 });

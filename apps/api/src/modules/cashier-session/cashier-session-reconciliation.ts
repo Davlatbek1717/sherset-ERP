@@ -67,3 +67,38 @@ export function expectedCashMinor(i: ShiftCashInputs): bigint {
 export function shiftDiscrepancyMinor(closingCashMinor: bigint, i: ShiftCashInputs): bigint {
   return closingCashMinor - expectedCashMinor(i);
 }
+
+// ── Dollar naqd (MK31 · kassa TZ §8.4) ──────────────────────────────────────
+
+/**
+ * Yashiqdagi DOLLAR oqimi — sentda.
+ *
+ * ATAYLAB alohida tip va alohida funksiya, `ShiftCashInputs` ga `usd*`
+ * maydon qo'shilmadi. Ikkalasi ham `bigint` bo'lgani uchun bitta noto'g'ri
+ * chaqiruv dollarni so'm jamiga qo'shib yuborardi va typecheck buni
+ * KO'RMASDI — §8.4 esa aynan «USD so'mga o'girilmaydi» deydi.
+ *
+ * Yashiq amallari (Внесение/Изъятие) bu formulada YO'Q: ular hujjat
+ * sifatida kassaning o'z valyutasida yoziladi (`loadOpenShiftForDrawer`),
+ * ya'ni dollar yashiq amali hozircha mavjud emas. Qo'shilgan kunda bu
+ * yerga ikki a'zo qo'shiladi — o'shanda soxta «dollar ortiqcha» chiqmasligi
+ * uchun test bilan birga.
+ */
+export interface ShiftUsdCashInputs {
+  /** Smena boshidagi dollar (sent). */
+  openingUsdMinor: bigint;
+  /** Σ `CASH_USD` to'lovlar — chekdagi ASL sent summasi. */
+  salesUsdMinor: bigint;
+  /** Σ qaytarilgan cheklardagi `CASH_USD` (hozircha 0 — dollar qaytarish yo'li yo'q). */
+  returnsUsdMinor: bigint;
+}
+
+/** Yashiqda smena oxirida bo'lishi KERAK bo'lgan dollar (sent). */
+export function expectedUsdCashMinor(i: ShiftUsdCashInputs): bigint {
+  return i.openingUsdMinor + i.salesUsdMinor - i.returnsUsdMinor;
+}
+
+/** countedUsd − expectedUsd. Musbat = ortiqcha, manfiy = kamomad. Qirqilmaydi. */
+export function shiftUsdDiscrepancyMinor(countedUsdMinor: bigint, i: ShiftUsdCashInputs): bigint {
+  return countedUsdMinor - expectedUsdCashMinor(i);
+}

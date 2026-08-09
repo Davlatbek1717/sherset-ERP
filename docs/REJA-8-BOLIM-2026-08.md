@@ -182,6 +182,21 @@ alohida bajariladi. **Har faza agenti o'zi qo'shgan qadamni shu ro'yxatga yozadi
    qulfining baza qatlami, olib tashlamang.
    Tekshiruv: `SELECT count(*) FROM manager_work_items` → **0**; keyin `/api/v1/health` (2-band).
    ✅ Lokal `climart_adopt` ga **QO'LLANGAN va tekshirilgan** (MK06 sessiyasi).
+11. **MK31 (2026-08-09) — kassa smenasining DOLLAR naqd ustunlari.** Prod (`sherset_v2`) da
+   `packages/db/prisma/migrations/20260810090000_shift_usd_cash/migration.sql`
+   ni `prisma db execute --file` bilan qo'llash. Faqat QO'SHADI: `cashier_sessions` ga 4 ta ustun
+   (`opening_cash_usd_minor` NOT NULL DEFAULT 0, `closing_cash_usd_minor`,
+   `expected_cash_usd_minor`, `discrepancy_usd_minor` — uchalasi NULLABLE). Indeks/FK/CHECK yo'q.
+   ✅ **BACKFILL YO'Q va bu ataylab** — uch ustun NULL bo'lib qoladi, ya'ni «dollar sanalmagan»
+   holati. Ular `0` bilan to'ldirilsa, mavjud smenalar «dollar sanaldi, 0 chiqdi» bo'lib
+   ko'rinardi. Deploy'dan keyin ko'rinadigan xulq O'ZGARMAYDI: dollar maydoni POS yopish
+   formasida faqat smenada `CASH_USD` to'lov bo'lganda paydo bo'ladi, `CASH_USD` esa yangi
+   to'lov turi (eski cheklarda yo'q).
+   ⚠️ **Kurs YOZUVCHISI hali yo'q:** POS to'lov oynasida dollar tugmasi qo'shilmagan (MK31
+   qamrovidan tashqarida) — server yo'li tayyor, jonli oqim keyingi fazada ochiladi.
+   Tekshiruv: `SELECT count(*) FROM cashier_sessions WHERE closing_cash_usd_minor IS NOT NULL`
+   → **0**; keyin `/api/v1/health` (2-band).
+   ✅ Lokal `climart_adopt` ga **QO'LLANGAN va tekshirilgan** (MK31 sessiyasi).
 
 ---
 

@@ -76,33 +76,62 @@ export type UpdateRetailSaleInput = z.infer<typeof UpdateRetailSaleSchema>;
 
 // --- Post (take payment) ---
 
-export const PostRetailSaleSchema = z.object({
-  cashAmountMinor: z.coerce
-    .string()
-    .regex(/^\d+$/, 'cashAmountMinor must be a non-negative integer'),
-  cardAmountMinor: z.coerce
-    .string()
-    .regex(/^\d+$/, 'cardAmountMinor must be a non-negative integer'),
-  // Kassa TZ §6 — aralash to'lov. Bu ikkitasi `/sotuv` to'lov oynasidan
-  // ALLAQACHON kelardi, lekin sxemada yo'q edi: Zod ularni jimgina tashlab
-  // yuborardi va server «0 to'landi» deb 400 qaytarardi. Ya'ni terminal bilan
-  // to'lagan yoki qarzga olgan mijozning cheki umuman rasmiylashmasdi.
-  // `.default('0')` — eski chaqiruvchilar (moysklad-compat, testlar) buzilmasin.
-  terminalAmountMinor: z.coerce
-    .string()
-    .regex(/^\d+$/, 'terminalAmountMinor must be a non-negative integer')
-    .default('0'),
-  debtAmountMinor: z.coerce
-    .string()
-    .regex(/^\d+$/, 'debtAmountMinor must be a non-negative integer')
-    .default('0'),
-  /** Qarzga sotishda MAJBURIY — qarz kimning balansiga yozilishi (TZ §7.1). */
-  agentId: z.string().uuid().optional(),
-  /** Client-side sanity check — server revalidates against DB sum */
-  expectedSumMinor: z.coerce
-    .string()
-    .regex(/^\d+$/, 'expectedSumMinor must be a non-negative integer'),
-});
+export const PostRetailSaleSchema = z
+  .object({
+    cashAmountMinor: z.coerce
+      .string()
+      .regex(/^\d+$/, 'cashAmountMinor must be a non-negative integer'),
+    cardAmountMinor: z.coerce
+      .string()
+      .regex(/^\d+$/, 'cardAmountMinor must be a non-negative integer'),
+    // Kassa TZ §6 — aralash to'lov. Bu ikkitasi `/sotuv` to'lov oynasidan
+    // ALLAQACHON kelardi, lekin sxemada yo'q edi: Zod ularni jimgina tashlab
+    // yuborardi va server «0 to'landi» deb 400 qaytarardi. Ya'ni terminal bilan
+    // to'lagan yoki qarzga olgan mijozning cheki umuman rasmiylashmasdi.
+    // `.default('0')` — eski chaqiruvchilar (moysklad-compat, testlar) buzilmasin.
+    terminalAmountMinor: z.coerce
+      .string()
+      .regex(/^\d+$/, 'terminalAmountMinor must be a non-negative integer')
+      .default('0'),
+    debtAmountMinor: z.coerce
+      .string()
+      .regex(/^\d+$/, 'debtAmountMinor must be a non-negative integer')
+      .default('0'),
+    /** Qarzga sotishda MAJBURIY — qarz kimning balansiga yozilishi (TZ §7.1). */
+    agentId: z.string().uuid().optional(),
+    /**
+     * Dollar naqd — mijoz bergan summa SENTDA (MK31 · TZ §6.2).
+     * `.default('0')` — dollarsiz kassa uchun hech narsa o'zgarmaydi.
+     */
+    cashUsdAmountMinor: z.coerce
+      .string()
+      .regex(/^\d+$/, 'cashUsdAmountMinor must be a non-negative integer')
+      .default('0'),
+    /**
+     * Qo'llanilgan kurs — KANONIK ×10^8 (DB-01, Faza 16; `Currency.rateValue`
+     * va `DebtPayment.exchangeRate` bilan bir xil): 12 450,27 so'm →
+     * '1245027000000'. Chekka MUZLATILADI.
+     */
+    usdRateMinor: z.coerce.string().regex(/^\d+$/, 'usdRateMinor must be an integer').optional(),
+    /** Client-side sanity check — server revalidates against DB sum */
+    expectedSumMinor: z.coerce
+      .string()
+      .regex(/^\d+$/, 'expectedSumMinor must be a non-negative integer'),
+  })
+  // TZ §6.2: kurs topilmasa to'lov BLOKLANADI — sentni tiyin deb jim qabul
+  // qilish chekni haqiqiy summaning ~12 000 dan biriga yopardi.
+  .refine((v) => BigInt(v.cashUsdAmountMinor) === 0n || v.usdRateMinor != null, {
+    message: 'Dollar to‘lovida kurs majburiy',
+    path: ['usdRateMinor'],
+  })
+  // DB-01 (Faza 16): eski ×10^4 masshtabdagi klient qiymati kanonik deb
+  // o'qilsa 10 000× xato bo'lardi. Real USD kursi 10 so'mdan (10^9) ming
+  // barobar yuqori, stale qiymat esa doim past — past qiymat JIM o'tmaydi.
+  // (`debt.schema.ts` dagi bir xil qo'riqchi bilan bitta qoida.)
+  .refine((v) => v.usdRateMinor == null || BigInt(v.usdRateMinor) >= 1_000_000_000n, {
+    message: 'Kurs eski (×10⁴) masshtabda — sahifani yangilang (kanonik ×10⁸)',
+    path: ['usdRateMinor'],
+  });
 export type PostRetailSaleInput = z.infer<typeof PostRetailSaleSchema>;
 
 // --- Refund ---
