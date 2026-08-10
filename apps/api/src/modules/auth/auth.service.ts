@@ -9,6 +9,7 @@ import {
   type LoginResponse,
   LoginSchema,
 } from './auth.schema.js';
+import { assertEmployeeMayLogin } from './employee-login-guards.js';
 import { resolveUiMode } from './kiosk-policy.js';
 import { TokenService } from './token.service.js';
 
@@ -59,22 +60,13 @@ export class AuthService {
       throw new UnauthorizedException("Email yoki parol noto'g'ri");
     }
 
-    if (employee.lockedUntil && employee.lockedUntil > new Date()) {
-      const remaining = Math.ceil((employee.lockedUntil.getTime() - Date.now()) / 60_000);
-      throw new UnauthorizedException(`Hisob vaqtincha bloklangan (${remaining} daqiqa qoldi)`);
-    }
-
-    // moysklad employee card guards: «Разрешить вход в систему» unchecked →
-    // no login at all; «Сеть» allowlists (IPs/CIDR nets) → only from there.
-    // Both live in attributes.__employee_system (no dedicated columns).
-    const sysAttrs = readEmployeeSystemAttrs(employee.attributes);
-    if (sysAttrs.loginAllowed === false) {
-      // Same generic message as bad credentials — do not leak account state.
-      throw new UnauthorizedException("Email yoki parol noto'g'ri");
-    }
-    if (!isIpAllowed(meta.ipAddress, sysAttrs.allowedIps, sysAttrs.allowedNetworks)) {
-      throw new UnauthorizedException('Bu IP-manzildan kirish taqiqlangan');
-    }
+    // Lockout + moysklad employee-card guards («Разрешить вход в систему»,
+    // «Сеть» allowlist). Shared with the kassa PIN login so the two entry
+    // points cannot drift apart — see employee-login-guards.ts.
+    assertEmployeeMayLogin(employee, {
+      ipAddress: meta.ipAddress,
+      genericMessage: "Email yoki parol noto'g'ri",
+    });
 
     const valid = employee.passwordHash
       ? await argon2.verify(employee.passwordHash, parsed.password).catch(() => false)
