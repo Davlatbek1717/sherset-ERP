@@ -25,6 +25,11 @@
  * ko'rsatishi). `onError` berilmasa — xulq eski holicha: xato faqat
  * chaqiruvchiga uzatiladi, zanjir esa uzilmaydi.
  *
+ * `onError`ning O'ZI yiqilsa (toast/setState/render xatosi) — u jim yutiladi
+ * va navbat baribir davom etadi: bitta ko'rsatish xatosi butun skanerni
+ * o'ldirmasligi kerak. Ya'ni `onError` — «oxirgi chegara», undan keyin hech
+ * qanday xato-yo'li qolmaydi.
+ *
  * `handler` ham, `onError` ham ref'ga «qadaladi», shuning uchun qaytgan
  * `enqueue` havolasi qayta render'da O'ZGARMAYDI — kamera hooki qayta ishga
  * tushmaydi.
@@ -44,16 +49,32 @@ export function useScanQueue(
   }, [handler, onError]);
 
   /**
-   * Zanjirning oxiri. Bu yerga HAR DOIM xatosi yutilgan promise yoziladi
-   * (pastdagi `.catch`), shuning uchun `chainRef.current` hech qachon reject
-   * bo'lmaydi — oldiga yana bitta himoya `.catch` qo'yish o'lik shox bo'lardi.
+   * Zanjirning oxiri. Bu yerga HAR DOIM xatosi yutilgan promise yoziladi:
+   * pastdagi `.catch` handler'ning xatosini ham, `onError`ning O'Z xatosini
+   * ham (`try/catch`) yutadi. `.catch` callback'i — zanjirdagi YAGONA reject
+   * manbai, va u endi ota olmaydi ⇒ `chainRef.current` hech qachon reject
+   * bo'lmaydi. Shuning uchun `.then(...)` oldida yana bitta himoya `.catch`
+   * kerak emas (u o'lik shox bo'lardi).
+   *
+   * Nega bu invariant MUHIM: agar `chainRef.current` reject holatda qolsa,
+   * keyingi `enqueue` ning `.then(...)` i UMUMAN ishlamaydi — navbat butunlay
+   * o'ladi (omborchi uchun: skaner «o'lib qoladi», hech qanday xabar yo'q) va
+   * qolaversa o'sha ESKI xato keyingi skanning YANGI `code`i bilan `onError`ga
+   * qayta uzatiladi (noto'g'ri bog'lanish → kaskad).
    */
   const chainRef = useRef<Promise<void>>(Promise.resolve());
 
   return useCallback((code: string) => {
     const next = chainRef.current.then(() => handlerRef.current(code));
     chainRef.current = next.catch((err) => {
-      onErrorRef.current?.(err, code);
+      try {
+        onErrorRef.current?.(err, code);
+      } catch {
+        // `onError` — chaqiruvchining kodi (toast / setState / render), ya'ni
+        // u yiqilishi REAL ehtimol. Uning xatosi navbatni buzmasligi shart,
+        // shuning uchun jim yutiladi: skan xatosini ko'rsatolmaganimiz uchun
+        // butun skanerni o'ldirish — bundan battar.
+      }
     });
     return next;
   }, []);

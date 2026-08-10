@@ -213,6 +213,49 @@ describe('useScanQueue', () => {
       rerender({ tag: 'b' });
       expect(result.current).toBe(first);
     });
+
+    /**
+     * `onError` — chaqiruvchining kodi (toast/setState), ya'ni u YIQILISHI
+     * mumkin. Agar uning xatosi zanjir oxirida qolsa, keyingi `enqueue`
+     * himoyasiz `.then(...)` qiladi ⇒ ikki halokat:
+     *   (1) keyingi handler UMUMAN ishlamaydi — navbat butunlay o'ladi
+     *       (omborchi uchun: skaner «o'lib qoladi»);
+     *   (2) o'sha ESKI xato keyingi skanning YANGI kodi bilan `onError`ga
+     *       qayta uzatiladi — noto'g'ri bog'lanish, kaskad.
+     * Shu test ikkalasini ham qulflaydi.
+     */
+    it('onError OTSA ham keyingi skan ishlanadi va kaskad bo`lmaydi', async () => {
+      const seen: Array<{ message: string; code: string }> = [];
+      const done: string[] = [];
+      const { result } = renderHook(() =>
+        useScanQueue(
+          async (code: string) => {
+            if (code.startsWith('BAD')) throw new Error(`handler:${code}`);
+            done.push(code);
+          },
+          (err, code) => {
+            seen.push({ message: (err as Error).message, code });
+            throw new Error('onError o`zi yiqildi (toast/setState)');
+          },
+        ),
+      );
+
+      await act(async () => {
+        void result.current('BAD1');
+        void result.current('GOOD');
+        void result.current('BAD2');
+        await flush();
+      });
+
+      // (1) navbat o'lmadi — BAD1 ning onError'i otgan bo'lsa ham GOOD ishladi.
+      expect(done).toEqual(['GOOD']);
+      // (2) kaskad yo'q: har xato O'Z kodi bilan keldi, GOOD umuman xato bermadi,
+      //     `onError`ning o'z xatosi esa hech qachon qayta uzatilmadi.
+      expect(seen).toEqual([
+        { message: 'handler:BAD1', code: 'BAD1' },
+        { message: 'handler:BAD2', code: 'BAD2' },
+      ]);
+    });
   });
 
   /**
